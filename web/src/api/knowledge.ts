@@ -44,6 +44,17 @@ export interface RelatedEntity {
   metadata?: EntityMetadata
 }
 
+/** 命中工件时携带的专有元数据（对齐 96-02 后端序列化输出，仅 origin=artifact 时存在）。 */
+export interface KnowledgeSearchArtifactMeta {
+  type_key: string
+  type_name: string
+  carrier: string
+  url: string
+  artifact_id: string
+  project_id: string
+  project_name: string
+}
+
 export interface KnowledgeSearchResultItem {
   entity_id: string
   kind: string
@@ -53,6 +64,9 @@ export interface KnowledgeSearchResultItem {
   provenance: ProvenanceLinks
   llm_grade?: string | null
   llm_reason?: string | null
+  origin?: string
+  source_kind?: string
+  artifact?: KnowledgeSearchArtifactMeta | null
 }
 
 function withAsOf(params: Record<string, string | number | boolean | undefined>, asOf?: string | null) {

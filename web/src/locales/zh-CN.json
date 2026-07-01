@@ -137,7 +137,7 @@
     "rag": {
       "title": "配置向量检索",
       "subtitle": "配置向量库与 Embedding 模型，启用代码语义检索",
-      "about": "向量检索会把你的代码库做语义索引，让 AI 在生成技术方案和编码时检索到最相关的代码片段，显著提升结果准确度。",
+      "about": "为代码库建立语义索引，生成技术方案和编码时能检索到更相关的代码片段。",
       "embeddingGuide": "需要一个 Embedding 模型服务。如果还没有，可前往火山引擎豆包或阿里云通义千问注册并开通 Embedding 能力。",
       "doubaoLink": "火山引擎豆包",
       "qianwenLink": "阿里云通义千问",
@@ -420,7 +420,10 @@
       "initialBody": "输入关键词以检索需求、技术方案与代码变更",
       "emptyTitle": "未找到匹配结果",
       "emptyBody": "换个关键词或调整历史视点后重试",
-      "loading": "正在搜索…"
+      "loading": "正在搜索…",
+      "owningProject": "所属项目",
+      "view": "查看",
+      "openExternal": "打开外链"
     },
     "relation": {
       "HAS_PLAN": "技术方案",
@@ -595,7 +598,7 @@
     },
     "degradedWarning": "对账不可信：排除规则匹配器加载失败，无法判定残留，请检查排除规则后重试。在恢复前清理功能已禁用。",
     "actions": {
-      "cleanupNormal": "一键清理（普通）",
+      "cleanupNormal": "普通清理",
       "cleanupSensitive": "敏感清理",
       "cleaning": "清理派发中…"
     },
@@ -617,7 +620,7 @@
       "failed": "清理失败",
       "matchCount": "本次清理命中 {count} 个文件",
       "failures": "部分文件/面清理失败：{count} 项",
-      "unscrubbedTitle": "以下面未能清除（best-effort 范围之外）",
+      "unscrubbedTitle": "以下内容未能清除",
       "caveatLabel": "边界说明",
       "loadError": "加载清理状态失败"
     }
@@ -1277,7 +1280,7 @@
       "feature": {
         "title": "Features",
         "emptyTitle": "还没有 Feature",
-        "emptyDesc": "补充 feature list 后，这里会按「模块 → 功能点 → 验收项」展示进度。",
+        "emptyDesc": "补充 feature list 后，这里会按模块展示功能点进度。",
         "loadError": "加载 feature 失败",
         "noFeatures": "该模块暂无功能点",
         "noAcceptance": "暂无验收项",
@@ -1343,8 +1346,9 @@
         "rebuildFailed": "重建工作区失败",
         "generateDesc": "用 AI 生成描述",
         "regenerateDesc": "AI 重新生成描述",
-        "descNeedsFeature": "补充 feature list 后即可用 AI 生成项目描述",
+        "descNeedsFeature": "补充 feature list 后可生成项目描述",
         "addFeatureCta": "补充 feature list",
+        "editFeatureList": "编辑 feature list",
         "descGenerated": "已按 feature list 生成项目描述",
         "descGenerateFailed": "生成描述失败（请确认已配置 AI Provider 且有 feature list）",
         "syncing": "同步中",
@@ -1523,10 +1527,10 @@
         "compatible": "可连接",
         "incompatibleTitle": "连线失败",
         "incompatibleBody": "形状不兼容：「{source}」无法接入「{target}」",
-    "attachedBadge": "附着",
-    "attachedHint": "澄清随方案节点存在，删除方案节点将一并移除",
-    "dropHint": "拖入兼容卡片",
-    "dropActiveHint": "松开以接入",
+        "attachedBadge": "附着",
+        "attachedHint": "澄清随方案节点存在，删除方案节点将一并移除",
+        "dropHint": "拖入兼容卡片",
+        "dropActiveHint": "松开以接入",
         "imGatedHint": "需先添加「创建群聊」节点以提供 chat_id",
         "detachTitle": "解除附着",
         "detachBody": "解除后澄清节点将成为独立节点，不再随方案节点联动。确认解除？",

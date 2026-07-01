@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import type { ProvenanceLinks } from '~/api/knowledge'
+import type { ArtifactView } from '~/api/artifacts'
+import type { KnowledgeSearchResultItem, ProvenanceLinks } from '~/api/knowledge'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { knowledgeApi } from '~/api'
+import { artifactsApi } from '~/api/artifacts'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
+import MarkdownRenderer from '~/components/execution/MarkdownRenderer.vue'
 import BatchIngestPanel from '~/components/knowledge/BatchIngestPanel.vue'
 import EntityDetailToolbar from '~/components/knowledge/EntityDetailToolbar.vue'
 import EntityKindBadge from '~/components/knowledge/EntityKindBadge.vue'
@@ -14,10 +17,19 @@ import KnowledgeDashboard from '~/components/knowledge/KnowledgeDashboard.vue'
 import KnowledgeTreePanel from '~/components/knowledge/KnowledgeTreePanel.vue'
 import ProvenanceLinkButton from '~/components/knowledge/ProvenanceLinkButton.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import {
+  Dialog,
+  DialogDescription,
+  DialogHeader,
+  DialogScrollContent,
+  DialogTitle,
+} from '~/components/ui/dialog'
 import { Input } from '~/components/ui/input'
 import { Skeleton } from '~/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 
 const { t } = useI18n()
 const queryClient = useQueryClient()
@@ -90,6 +102,40 @@ const searchQuery = useQuery({
 
 const results = computed(() => searchQuery.data.value ?? [])
 const hasSearched = computed(() => submittedQuery.value.length > 0)
+
+// ── 工件命中：类型徽标 + 项目名 + 一键查看（复用 DependenciesSection 弹窗范式）──
+const { handleError } = useErrorHandler()
+
+// 工件类型徽标配色令牌（与 EntityKindBadge 视觉一致，按载体区分冷暖）。
+const ARTIFACT_BADGE_CLASS = 'bg-amber-500/10 text-amber-700 border-amber-200 dark:text-amber-400'
+
+const viewOpen = ref(false)
+const viewLoading = ref(false)
+const viewData = ref<ArtifactView | null>(null)
+const viewTitle = ref('')
+
+function isExternalArtifact(item: KnowledgeSearchResultItem): boolean {
+  return item.artifact?.carrier === 'external_link'
+}
+
+async function openArtifactView(item: KnowledgeSearchResultItem) {
+  if (!item.artifact)
+    return
+  viewTitle.value = item.title
+  viewData.value = null
+  viewOpen.value = true
+  viewLoading.value = true
+  try {
+    viewData.value = await artifactsApi.view(item.artifact.project_id, item.artifact.artifact_id)
+  }
+  catch (e: unknown) {
+    handleError(e, t('projects.artifacts.viewFailed'))
+    viewOpen.value = false
+  }
+  finally {
+    viewLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -204,6 +250,16 @@ const hasSearched = computed(() => submittedQuery.value.length > 0)
             >
               <div class="flex items-start gap-2.5">
                 <EntityKindBadge :kind="item.kind" class="mt-0.5 shrink-0" />
+                <!-- 工件类型徽标（PRD/埋点评审/UI…），仅工件命中时展示 -->
+                <Badge
+                  v-if="item.artifact"
+                  variant="outline"
+                  :class="ARTIFACT_BADGE_CLASS"
+                  class="mt-0.5 shrink-0"
+                  data-testid="artifact-type-badge"
+                >
+                  {{ item.artifact.type_name }}
+                </Badge>
                 <RouterLink
                   :to="`/knowledge/entities/${item.entity_id}`"
                   class="flex-1 min-w-0 inline-flex items-center gap-1 text-sm font-medium leading-snug transition-colors hover:text-primary"
@@ -212,12 +268,44 @@ const hasSearched = computed(() => submittedQuery.value.length > 0)
                   <span class="icon-[lucide--chevron-right] shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
                 </RouterLink>
               </div>
-              <div class="flex items-center gap-2 text-xs text-muted-foreground">
+              <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span class="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono">
                   <span class="icon-[lucide--gauge] text-[11px]" />
                   {{ t('knowledge.search.scoreLabel') }} {{ item.score.toFixed(3) }}
                 </span>
+                <!-- 所属项目名（跨项目搜索时分辨归属） -->
+                <span
+                  v-if="item.artifact"
+                  class="inline-flex items-center gap-1"
+                  :title="t('knowledge.search.owningProject')"
+                >
+                  <span class="icon-[lucide--folder] text-[11px]" />
+                  <span class="truncate max-w-[10rem]">{{ item.artifact.project_name }}</span>
+                </span>
               </div>
+              <!-- 一键查看：external_link 新标签打开外链；其余文字载体走查看弹窗 -->
+              <a
+                v-if="item.artifact && isExternalArtifact(item)"
+                :href="item.artifact.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                data-testid="artifact-open-external"
+              >
+                <span class="icon-[lucide--external-link] text-[13px]" />
+                {{ t('knowledge.search.openExternal') }}
+              </a>
+              <Button
+                v-else-if="item.artifact"
+                size="sm"
+                variant="outline"
+                class="h-7 gap-1 px-2 text-xs"
+                data-testid="artifact-view-btn"
+                @click="openArtifactView(item)"
+              >
+                <span class="icon-[lucide--eye] text-[13px]" />
+                {{ t('knowledge.search.view') }}
+              </Button>
               <ProvenanceLinkButton
                 v-if="hasProvenance(item.provenance)"
                 :provenance="item.provenance"
@@ -238,5 +326,53 @@ const hasSearched = computed(() => submittedQuery.value.length > 0)
         <KnowledgeTreePanel />
       </TabsContent>
     </Tabs>
+
+    <!-- 工件在线查看弹窗（复用 DependenciesSection 范式） -->
+    <Dialog v-model:open="viewOpen">
+      <DialogScrollContent class="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{{ viewTitle }}</DialogTitle>
+          <DialogDescription>{{ t('projects.artifacts.viewDesc') }}</DialogDescription>
+        </DialogHeader>
+        <div class="mt-2">
+          <div v-if="viewLoading" class="text-sm text-muted-foreground py-6 text-center">
+            {{ t('knowledge.search.loading') }}
+          </div>
+          <template v-else-if="viewData">
+            <p v-if="viewData.error" class="text-sm text-destructive">
+              {{ viewData.error }}
+            </p>
+            <a
+              v-else-if="viewData.render_type === 'link'"
+              :href="viewData.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-sm text-primary underline break-all"
+            >
+              {{ viewData.url }}
+            </a>
+            <div
+              v-else-if="viewData.render_type === 'markdown'"
+              class="max-h-[60vh] overflow-auto"
+            >
+              <MarkdownRenderer :content="viewData.content || ''" />
+            </div>
+            <pre
+              v-else-if="viewData.render_type === 'text'"
+              class="text-xs bg-muted/50 rounded-lg p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap"
+            >{{ viewData.content }}</pre>
+            <div v-else-if="viewData.render_type === 'records'" class="text-xs space-y-1 max-h-[60vh] overflow-auto">
+              <p class="text-muted-foreground">
+                {{ t('projects.artifacts.recordCount', { n: viewData.records?.length ?? 0 }) }}
+              </p>
+              <pre class="bg-muted/50 rounded-lg p-3 overflow-auto">{{ JSON.stringify(viewData.records, null, 2) }}</pre>
+            </div>
+            <p v-else class="text-sm text-muted-foreground">
+              {{ t('projects.artifacts.unsupported') }}
+            </p>
+          </template>
+        </div>
+      </DialogScrollContent>
+    </Dialog>
   </PageContainer>
 </template>
