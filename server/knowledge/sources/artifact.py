@@ -140,7 +140,7 @@ async def _fetch_body(artifact, space, *, request: IngestionRequest) -> str:
                 artifact_id=str(artifact.id),
                 trigger=request.trigger,
                 doc_token=token,
-                error=str(exc),
+                error=redact_secrets_in_text(str(exc)),
                 error_type=type(exc).__name__,
             )
             return ""
@@ -159,7 +159,7 @@ async def _fetch_body(artifact, space, *, request: IngestionRequest) -> str:
                 "artifact_rag_bitable_fetch_failed",
                 artifact_id=str(artifact.id),
                 trigger=request.trigger,
-                error=str(exc),
+                error=redact_secrets_in_text(str(exc)),
                 error_type=type(exc).__name__,
             )
             return ""
