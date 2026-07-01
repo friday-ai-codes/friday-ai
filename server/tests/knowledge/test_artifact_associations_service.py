@@ -128,6 +128,7 @@ async def test_reverse_by_repository_returns_artifacts(
     assert rows[0]["artifact_id"] == str(artifact.id)
     assert rows[0]["title"] == "登录方案"
     assert rows[0]["type_key"] == "prd"
+    assert rows[0]["type_name"] == "PRD"
     assert rows[0]["project_id"] == str(iproj.id)
 
 

@@ -155,6 +155,7 @@ export interface RepositoryArtifact {
   artifact_id: string
   title: string
   type_key: string
+  type_name: string
   carrier: ArtifactCarrier
   project_id: string
   project_name: string

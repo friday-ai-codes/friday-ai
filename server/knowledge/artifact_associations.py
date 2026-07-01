@@ -278,7 +278,9 @@ class ArtifactAssociationService:
 
         同步实现（经 sync_to_async 调用）：先取 document 实体的 source_id（=artifact_id），
         再按 ``allowed_spaces``（``resolve_allowed_project_ids`` 产出的可见 space id）过滤
-        Artifact，返回 ``{entity_id: {artifact_id,title,type_key,project_id,project_name}}``。
+        Artifact，返回 ``{entity_id: {artifact_id,title,type_key,type_name,carrier,
+        project_id,project_name}}``。``type_name``（``ArtifactType.name``）经 ``select_related``
+        随查补全（无 N+1），供前端展示友好类型名（正向搜索一致）。
         """
         from initiatives.models import Artifact
 
@@ -309,6 +311,7 @@ class ArtifactAssociationService:
                 "artifact_id": str(a.id),
                 "title": a.title,
                 "type_key": a.type.key,
+                "type_name": a.type.name,
                 "carrier": a.carrier,
                 "project_id": str(a.project_id),
                 "project_name": a.project.name,

@@ -170,7 +170,7 @@ const isEmpty = computed(() => {
                 class="shrink-0"
                 data-testid="assoc-doc-type-badge"
               >
-                {{ doc.type_key }}
+                {{ doc.type_name || doc.type_key }}
               </Badge>
               <span class="truncate text-sm font-medium hover:text-primary">{{ doc.title }}</span>
             </span>
