@@ -132,6 +132,40 @@ export interface ArtifactTree {
   truncated: boolean
 }
 
+/** 工件正向关联的仓库项（对齐 98-03 `get_artifact_associations` 响应）。 */
+export interface ArtifactAssociationRepo {
+  repository_id: string
+  repo_name: string
+  node_paths: string[]
+  keywords: string[]
+  score: number | null
+}
+
+/** 工件正向关联（仓库 / 能力 / 关键词，对齐 98-03 后端契约）。 */
+export interface ArtifactAssociations {
+  repositories: ArtifactAssociationRepo[]
+  capabilities: string[]
+  keywords: string[]
+}
+
+/** 仓库反查到的相关交付文档项（对齐 99-02 反查端点契约，携带 entity_id）。 */
+export interface RepositoryArtifact {
+  artifact_id: string
+  title: string
+  type_key: string
+  project_id: string
+  project_name: string
+  node_paths: string[]
+  keywords: string[]
+  score: number | null
+  entity_id: string
+}
+
+/** 仓库反查响应（对齐 99-02 后端契约）。 */
+export interface RepositoryArtifacts {
+  artifacts: RepositoryArtifact[]
+}
+
 function withAsOf(params: Record<string, string | number | boolean | undefined>, asOf?: string | null) {
   if (asOf)
     params.as_of = asOf
@@ -190,6 +224,16 @@ export async function fetchArtifactTree(): Promise<ArtifactTree> {
   return get<ArtifactTree>('/knowledge/artifacts/tree/')
 }
 
+/** 正向：工件 → 相关仓库 / 能力 / 关键词（KDEP-11，复用 98-03 端点）。 */
+export async function getArtifactAssociations(artifactId: string): Promise<ArtifactAssociations> {
+  return get<ArtifactAssociations>(`/knowledge/artifacts/${artifactId}/associations/`)
+}
+
+/** 反向：仓库 → 相关交付文档（KDEP-11，消费 99-02 反查端点，每项带 entity_id）。 */
+export async function getRepositoryArtifacts(repositoryId: string): Promise<RepositoryArtifacts> {
+  return get<RepositoryArtifacts>(`/knowledge/repositories/${repositoryId}/artifacts/`)
+}
+
 const knowledgeApi = {
   getEntity,
   getTimeline,
@@ -197,6 +241,8 @@ const knowledgeApi = {
   searchDeliveryKnowledge,
   getArtifactOverview,
   fetchArtifactTree,
+  getArtifactAssociations,
+  getRepositoryArtifacts,
 }
 
 export default knowledgeApi

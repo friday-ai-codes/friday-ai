@@ -8,6 +8,7 @@ import { useRoute } from 'vue-router'
 import { knowledgeApi } from '~/api'
 import { ApiError } from '~/api/client'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
+import EntityAssociationsCard from '~/components/knowledge/EntityAssociationsCard.vue'
 import EntityDetailToolbar from '~/components/knowledge/EntityDetailToolbar.vue'
 import EntityMetadataCard from '~/components/knowledge/EntityMetadataCard.vue'
 import EntityRelationTree from '~/components/knowledge/EntityRelationTree.vue'
@@ -64,11 +65,24 @@ const relatedQuery = useQuery({
   staleTime: 30_000,
 })
 
-const sections = computed<NavSection[]>(() => [
-  { id: 'entity-metadata', label: t('knowledge.entity.sections.metadata') },
-  { id: 'entity-timeline', label: t('knowledge.entity.sections.timeline') },
-  { id: 'entity-related', label: t('knowledge.entity.sections.related') },
-])
+// 工件（document）或仓库（repository）实体才展示关联区块（KDEP-11）。
+const showAssociations = computed(() => {
+  const e = entityQuery.data.value
+  if (!e)
+    return false
+  return e.source_kind === 'artifact' || e.kind === 'repository'
+})
+
+const sections = computed<NavSection[]>(() => {
+  const base: NavSection[] = [
+    { id: 'entity-metadata', label: t('knowledge.entity.sections.metadata') },
+    { id: 'entity-timeline', label: t('knowledge.entity.sections.timeline') },
+    { id: 'entity-related', label: t('knowledge.entity.sections.related') },
+  ]
+  if (showAssociations.value)
+    base.push({ id: 'entity-associations', label: t('knowledge.entity.sections.associations') })
+  return base
+})
 
 useHead({
   title: computed(() => entityQuery.data.value
@@ -130,6 +144,20 @@ function resetAsOf() {
             v-else
             :title="t('knowledge.entity.empty.relatedTitle')"
             :description="t('knowledge.entity.empty.relatedBody')"
+          />
+        </section>
+        <section
+          v-if="showAssociations && entityQuery.data.value"
+          id="entity-associations"
+          class="space-y-4 mt-6"
+        >
+          <h2 class="text-sm font-semibold">
+            {{ t('knowledge.entity.sections.associations') }}
+          </h2>
+          <EntityAssociationsCard
+            :source-kind="entityQuery.data.value.source_kind"
+            :source-id="entityQuery.data.value.source_id"
+            :kind="entityQuery.data.value.kind"
           />
         </section>
       </AnchorNavLayout>
