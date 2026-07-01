@@ -20,6 +20,9 @@ findings:
   info: 1
   total: 5
 status: clean
+resolved: true
+resolved_at: 2026-07-01T20:30:00Z
+resolution_note: 全部 5 项已修复（MED-01/MED-02/LOW-01/LOW-02/INF-01）；tests/knowledge 相关用例绿、ruff 通过。
 ---
 
 # Phase 98: Code Review Report — 工件↔仓库/能力/关键词关联 (v0.16.3)
@@ -47,6 +50,8 @@ status: clean
 
 ### MED-01: 查询服务异常文本未经 `redact_secrets_in_text` 脱敏（违反强制脱敏规范）
 
+> ✅ **已修复**：`artifact_associations.py` 顶部引入 `redact_secrets_in_text`，正向/反向两处 `error=redact_secrets_in_text(str(exc))`。
+
 **File:** `server/knowledge/artifact_associations.py:137` 与 `:221`
 **Issue:** 两处 `except` 分支直接 `error=str(exc)` 落日志，未做脱敏：
 
@@ -66,6 +71,8 @@ error=redact_secrets_in_text(str(exc)),
 
 ### MED-02: 工件→仓库 `RELATES_TO` 路由边缺失效路径，重摄取后陈旧/累积边泄入查询
 
+> ✅ **已修复**：`sources/artifact.py` 新增 `_invalidate_stale_artifact_routing_edges`——路由命中集算出后按 target 收敛，失效该工件既有 `source=="artifact"` 活跃 `RELATES_TO` 出边中不在本轮命中集的边（复用 `graph_store.invalidate_edge`，幂等、独立 best-effort 包 try/except、失败不丢新边）。`artifact_repo_route_completed` 增 `stale_edge_count` 观测。新增 `test_reingest_invalidates_stale_repo_edge` / `test_reingest_same_matches_no_invalidation` 覆盖收敛与幂等 no-op。
+
 **File:** `server/knowledge/sources/artifact.py:132-144`（EdgeSpec 构造）配合 `server/knowledge/ingestion.py:412-422`
 **Issue:** 工件路由边为 `EdgeSpec(RELATES_TO, exclusive=False, metadata={source:"artifact",...})`。`apply_edge_specs` 对**同一 target** 幂等 upsert（无重复，符合要求），但对**不同 target** 无 exclusive/失效逻辑：工件重摄取（title/正文变更→版本翻转→路由重跑，且 `RepoRouterV2 use_llm=True` 存在非确定性）若命中仓库集合发生变化（如上轮命中 repo A、本轮命中 repo B），旧的 `artifact→A` 活跃边**不会失效**，与 `artifact→B` 一同保留。正向 `get_artifact_associations` / 反向 `find_artifacts_by_repository` 会返回已不再匹配的陈旧仓库。
 
@@ -78,6 +85,8 @@ error=redact_secrets_in_text(str(exc)),
 
 ### LOW-01: `_route_artifact_body_edges` 未使用的导入 `repository_node_id`
 
+> ✅ **已修复**：延迟导入改为 `from initiatives.services.knowledge_graph import ProjectKnowledgeGraphService`，移除死导入。
+
 **File:** `server/knowledge/sources/artifact.py:94-98`
 **Issue:** 函数内延迟导入 `repository_node_id`，但仓库节点实际经 `graph_svc.ensure_repository_node(repository)`（:127）获得，`repository_node_id` 全函数未引用——死导入。
 **Fix:** 从 import 中移除 `repository_node_id`：
@@ -88,6 +97,8 @@ from initiatives.services.knowledge_graph import ProjectKnowledgeGraphService
 
 ### LOW-02: `_route_artifact_body_edges` 未使用的形参 `project`
 
+> ✅ **已修复**：从签名与 `normalize` 调用点删除 `project=`（`project` 变量在 `normalize` 内其余用途保留）。
+
 **File:** `server/knowledge/sources/artifact.py:78-80`
 **Issue:** 签名含 `project`（`normalize` 于 :366 传入），但函数体从未使用（仅用 `artifact`/`space`/`content`/`request`）。死参数增加噪声与误读风险。
 **Fix:** 从签名与调用点删除 `project=`，或若为前瞻扩展位则加注释说明保留意图。
@@ -97,6 +108,8 @@ from initiatives.services.knowledge_graph import ProjectKnowledgeGraphService
 ## Info
 
 ### INF-01: `artifact_associations_query_failed` 失败事件缺 `duration_ms`
+
+> ✅ **已修复**：正向/反向两处失败 warning 追加 `duration_ms=round((time.perf_counter() - started) * 1000, 2)`。
 
 **File:** `server/knowledge/artifact_associations.py:131-140` / `:216-225`
 **Issue:** `started = time.perf_counter()` 已取，但失败分支未上报 `duration_ms`（成功分支有）。日志规范建议关键生命周期 started/completed/**failed** 均带 `duration_ms`，便于失败时延分析。
