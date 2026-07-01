@@ -1,39 +1,46 @@
 ---
 phase: 98-artifact-repo-capability-link
 verified: 2026-07-01T11:58:15Z
-status: gaps_found
-score: 3/3 观察真相功能就位（KDEP-07/08/09），但引入 1 个确定性红测 + 1 个 flaky 测试
+status: human_needed
+score: 3/3 观察真相功能就位（KDEP-07/08/09）；两处测试完整性缺口已闭合，仅余 deferred live-env 召回质量待真机验证
 re_verification:
   previous_status: none
   previous_score: n/a
 gaps:
-  - truth: "KDEP-08 verified RepoAssociation 同步为图谱边（功能就位，但引入确定性红测）"
-    status: partial
+  - truth: "KDEP-08 verified RepoAssociation 同步为图谱边（功能就位，确定性红测已修复）"
+    status: resolved
     reason: >-
       98-02 提交（74370358）在 knowledge_graph.py:328 的 sync_relations_from_operational
       docstring 里写了字面量 `RepoAssociation(status=verified)`，被 INV-6 源码扫描守护
       test_repo_association_inv6_guard.py::test_inv6_no_bypass 的正则
       `\b(?:RepoAssociation|RepoVerifyTask)\s*\(` 命中，判为"旁路写表"。这是误报——
-      实际代码只 `.filter(...).select_related(...)`（只读），INV-6 唯一写入口不变；
-      但该守护测试因本阶段 docstring 措辞从绿变红，且确定性复现（纯源码扫描、隔离运行同样失败）。
+      实际代码只 `.filter(...).select_related(...)`（只读），INV-6 唯一写入口不变。
+      已改写该行 docstring 为"status == verified 的 ``RepoAssociation`` 行"，去除调用形
+      字面量，正则不再命中；未触碰生产行为与守护测试本身。test_inv6_no_bypass 恢复绿
+      （2 passed）。
+    resolution:
+      commit: "728411fb"
+      change: "knowledge_graph.py:328 docstring 去调用形字面量；guard 测试 2 passed"
     artifacts:
       - path: "server/initiatives/services/knowledge_graph.py"
-        issue: "第 328 行 docstring 含字面量 `RepoAssociation(status=verified)`，触发 INV-6 守护正则误报"
-    missing:
-      - "改写 knowledge_graph.py:328 docstring，避免 `RepoAssociation(` 字面（去括号或用全角括号），使 test_inv6_no_bypass 恢复绿；无需改动生产行为"
-  - truth: "KDEP-07 边 metadata 幂等 upsert 测试稳定通过"
-    status: partial
+        issue: "第 328 行 docstring 含字面量 `RepoAssociation(status=verified)`，触发 INV-6 守护正则误报（已修复）"
+  - truth: "KDEP-07 边 metadata 幂等 upsert 测试稳定通过（flaky 已修复）"
+    status: resolved
     reason: >-
       test_edge_metadata_upsert.py::test_update_edge_metadata_invalidated_edge_is_noop
-      为 flaky：单测隔离通过、`-v` 整文件 7/7 通过，但整文件普通运行与组合 `-k` 运行会间歇失败
-      （非确定性，1 failed / 6 passed）。生产代码 update_edge_metadata 正确（按 edge_id +
-      invalid_at IS NULL + expired_at IS NULL 过滤）；症状指向 Phase 98 测试文件内的共享状态/顺序依赖
-      （graph_store 单例 / transaction=True 下 async 行泄漏），属测试隔离质量问题，非功能缺陷。
+      间歇失败。实测复现定位真因：并非共享状态/顺序依赖，而是测试自身时序 flaky——
+      `edge_factory(valid_at=timezone.now(), invalid_at=timezone.now())` 两次
+      timezone.now() 可能落在同一微秒 tick，使 invalid_at == valid_at，违反
+      `kedge_valid_range`(invalid_at > valid_at) 约束，抛 IntegrityError（CHECK
+      constraint failed: kedge_valid_range）。生产 update_edge_metadata 正确。
+      已改为 `valid = timezone.now(); invalid_at = valid + timedelta(seconds=1)`，
+      确定性满足约束。整文件普通顺序连续运行 8/8 稳定 7 passed。
+    resolution:
+      commit: "728411fb"
+      change: "invalid_at 显式落在 valid_at 之后；整文件连续 8 次运行全绿（7 passed×8）"
     artifacts:
       - path: "server/tests/knowledge/test_edge_metadata_upsert.py"
-        issue: "test_update_edge_metadata_invalidated_edge_is_noop 存在顺序/共享状态依赖，间歇失败"
-    missing:
-      - "隔离该测试的图/DB 状态（如每测清理活跃边或用独立实体），消除顺序依赖使整文件稳定绿"
+        issue: "invalid_at/valid_at 同微秒 tick 违反 kedge_valid_range 约束致时序 flaky（已修复）"
 human_verification:
   - test: "真机·真实 provider·真实 Qdrant 下 RepoRouterV2 对工件正文的召回质量"
     expected: "ragable 工件正文经 RepoRouterV2.route 命中合理仓库 + matched_node_paths，落 RELATES_TO 边 metadata（score/node_paths/keywords）符合预期；无匹配时仅保留 project 边（fail-soft）"
@@ -44,7 +51,7 @@ human_verification:
 
 **Phase Goal:** 为外部依赖工件建立与代码仓库、业务能力、关键词的结构化关联，并把已确认的项目仓库关联同步进知识图谱，使关联可查询。
 **Verified:** 2026-07-01T11:58:15Z
-**Status:** gaps_found
+**Status:** human_needed（两处测试完整性缺口已闭合于 728411fb；仅余 deferred live-env 召回质量待真机验证）
 **Re-verification:** No — initial verification
 
 ## Goal Achievement
