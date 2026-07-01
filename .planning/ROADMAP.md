@@ -81,7 +81,10 @@
   3. 关联可查询：给定工件列出相关仓库/能力/关键词；给定能力/关键词/仓库反查相关文档；查询走 `graph_store` 收口。
 
 **UI hint**: no（后端图谱 + 路由为主）
-**Plans**: TBD
+**Plans**: 3 plans（2 waves）
+- [ ] 98-01-PLAN.md — KDEP-07 工件正文经 RepoRouterV2 路由落 artifact→repo RELATES_TO 边（call_source + 幂等 upsert + 单向派生 + fail-soft）[wave 1]
+- [ ] 98-02-PLAN.md — KDEP-08 verified RepoAssociation 同步为 project→repo 图谱边（单向派生 + 离开 verified 失效 + best-effort 触发）[wave 2]
+- [ ] 98-03-PLAN.md — KDEP-09 关联双向查询服务（工件↔仓库/能力/关键词，graph_store 收口 + access_scope）+ 只读端点 [wave 2]
 
 ### Phase 99: 关联可视化与交叉入口
 
