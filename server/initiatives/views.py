@@ -1694,24 +1694,48 @@ class ProjectSearchView(APIView):
         return Response({"query": q, "results": body})
 
 
-def _build_project_galaxy(project, tree: dict, *, max_nodes: int = 300) -> dict:
+_ARTIFACT_RELATIONS = frozenset({"HAS_ARTIFACT", "ARTIFACT_REPO", "ARTIFACT_CAPABILITY"})
+
+
+def _build_project_galaxy(
+    project, tree: dict, *, artifact_assocs: dict | None = None, max_nodes: int = 300
+) -> dict:
     """项目作战室 P4：聚合项目关系星图（sync，供 sync_to_async 包裹）。
 
-    节点类型：project / feature / work_item / repository / merge_request。
+    节点类型：project / feature / work_item / repository / merge_request /
+    artifact / capability（KDEP-10）。
     边：project 为枢纽（HAS_FEATURE / HAS_WORK_ITEM / HAS_MR / USES_REPO），
-    叠加 MR→repo、MR→work_item 关联。超 max_nodes 截断（meta.truncated=True）。
+    叠加 MR→repo、MR→work_item 关联；工件侧叠加 HAS_ARTIFACT（project→artifact）、
+    ARTIFACT_REPO（artifact→repo）、ARTIFACT_CAPABILITY（artifact→capability）。
+    项目↔仓库关联来源并入 verified ``RepoAssociation``（不再仅来自 MR）。
+    超 max_nodes 截断（meta.truncated=True）。
+
+    ``artifact_assocs``：``{artifact_id: {repositories:[{repository_id, repo_name, ...}],
+    capabilities:[node_path]}}``——由 ``_agather_artifact_assocs`` 异步预取（复用 Phase 98
+    ``ArtifactAssociationService``，不在本 sync 函数内重复图遍历）；None 视为 {}。
+
+    工件/关联分支整体 best-effort：异常被吞掉，既有 project/feature/work_item/MR/repo
+    星图完整返回（read-only 只读展示，绝不反噬既有星图）。
     """
     from initiatives.models import MergeRequest, ProjectWorkItemLink
 
     nodes: list[dict] = []
     edges: list[dict] = []
     seen: set[str] = set()
+    edge_seen: set[tuple[str, str, str]] = set()
 
     def add_node(nid: str, ntype: str, label: str, **extra) -> None:
         if nid in seen:
             return
         seen.add(nid)
         nodes.append({"id": nid, "type": ntype, "label": label, **extra})
+
+    def add_edge(source: str, target: str, relation: str, **extra) -> None:
+        key = (source, target, relation)
+        if key in edge_seen:
+            return
+        edge_seen.add(key)
+        edges.append({"source": source, "target": target, "relation": relation, **extra})
 
     pid = str(project.id)
     proj_node = f"project:{pid}"
@@ -1727,7 +1751,7 @@ def _build_project_galaxy(project, tree: dict, *, max_nodes: int = 300) -> dict:
                 fid, "feature", fname,
                 state=feat.get("state"), module=module_name,
             )
-            edges.append({"source": proj_node, "target": fid, "relation": "HAS_FEATURE"})
+            add_edge(proj_node, fid, "HAS_FEATURE")
 
     # 工作项节点
     wi_node_by_id: dict[str, str] = {}
@@ -1741,7 +1765,7 @@ def _build_project_galaxy(project, tree: dict, *, max_nodes: int = 300) -> dict:
             nid, "work_item", wi.title or f"工作项 {wi.work_item_id}",
             work_item_type=wi.work_item_type, ref_id=str(wi.id),
         )
-        edges.append({"source": proj_node, "target": nid, "relation": "HAS_WORK_ITEM"})
+        add_edge(proj_node, nid, "HAS_WORK_ITEM")
 
     # MR + 仓库节点
     for mr in (
@@ -1752,19 +1776,72 @@ def _build_project_galaxy(project, tree: dict, *, max_nodes: int = 300) -> dict:
             mr_nid, "merge_request", mr.title or mr.external_id or "MR",
             status=mr.status, url=mr.url, ref_id=str(mr.id),
         )
-        edges.append({"source": proj_node, "target": mr_nid, "relation": "HAS_MR"})
+        add_edge(proj_node, mr_nid, "HAS_MR")
         if mr.repository_id:
             repo_nid = f"repository:{mr.repository_id}"
             repo_name = mr.repository.name if mr.repository else str(mr.repository_id)
             add_node(repo_nid, "repository", repo_name, ref_id=str(mr.repository_id))
-            edges.append({"source": proj_node, "target": repo_nid, "relation": "USES_REPO"})
-            edges.append({"source": mr_nid, "target": repo_nid, "relation": "MR_REPO"})
+            # USES_REPO 纳入统一去重集：与下方 verified RepoAssociation 来源去重（同 repo 一条）。
+            add_edge(proj_node, repo_nid, "USES_REPO")
+            add_edge(mr_nid, repo_nid, "MR_REPO")
         if mr.work_item_id and str(mr.work_item_id) in wi_node_by_id:
-            edges.append({
-                "source": mr_nid,
-                "target": wi_node_by_id[str(mr.work_item_id)],
-                "relation": "MR_WORK_ITEM",
-            })
+            add_edge(mr_nid, wi_node_by_id[str(mr.work_item_id)], "MR_WORK_ITEM")
+
+    # 工件 / 关联分支（KDEP-10）——best-effort，异常绝不反噬既有星图。
+    try:
+        from initiatives.models.repo_association import (
+            RepoAssociation,
+            RepoAssociationStatus,
+        )
+
+        assocs = artifact_assocs or {}
+        for a in Artifact.objects.filter(project_id=pid).select_related("type"):
+            art_nid = f"artifact:{a.id}"
+            add_node(
+                art_nid, "artifact", a.title or "工件",
+                type_key=a.type.key, carrier=a.carrier, ref_id=str(a.id),
+            )
+            add_edge(proj_node, art_nid, "HAS_ARTIFACT")
+            assoc = assocs.get(str(a.id)) or {}
+            for repo in assoc.get("repositories") or []:
+                rid = repo.get("repository_id")
+                if not rid:
+                    continue
+                repo_nid = f"repository:{rid}"
+                add_node(
+                    repo_nid, "repository", repo.get("repo_name") or str(rid),
+                    ref_id=str(rid),
+                )
+                add_edge(art_nid, repo_nid, "ARTIFACT_REPO")
+            for path in assoc.get("capabilities") or []:
+                if not path:
+                    continue
+                cap_nid = f"capability:{path}"
+                label = str(path).rsplit("/", 1)[-1] or str(path)
+                add_node(cap_nid, "capability", label, path=str(path))
+                add_edge(art_nid, cap_nid, "ARTIFACT_CAPABILITY")
+
+        # 项目↔仓库关联来源并入 verified RepoAssociation（与 Phase 98 派生边一致）。
+        for assoc in (
+            RepoAssociation.objects.filter(
+                project_id=pid, status=RepoAssociationStatus.VERIFIED
+            ).select_related("repository")
+        ):
+            repo = assoc.repository
+            repo_nid = f"repository:{repo.id}"
+            add_node(repo_nid, "repository", repo.name, ref_id=str(repo.id))
+            add_edge(proj_node, repo_nid, "USES_REPO")
+    except Exception as exc:  # noqa: BLE001 — best-effort，绝不反噬既有星图
+        from common.logging import redact_secrets_in_text
+
+        logger.warning(
+            "project_galaxy_artifact_branch_failed",
+            project_id=pid,
+            error=redact_secrets_in_text(str(exc)),
+            error_type=type(exc).__name__,
+            component="initiatives.galaxy",
+            category="sampling",
+        )
 
     truncated = False
     if len(nodes) > max_nodes:
@@ -1780,15 +1857,59 @@ def _build_project_galaxy(project, tree: dict, *, max_nodes: int = 300) -> dict:
             "total_nodes": len(nodes),
             "total_edges": len(edges),
             "truncated": truncated,
+            "artifact_nodes": sum(1 for n in nodes if n["type"] == "artifact"),
+            "artifact_edges": sum(1 for e in edges if e["relation"] in _ARTIFACT_RELATIONS),
         },
     }
+
+
+async def _agather_artifact_assocs(project, user) -> dict:
+    """异步预取本项目所有可见工件的关联（复用 Phase 98 ``ArtifactAssociationService``）。
+
+    产出 ``{artifact_id: {repositories:[...], capabilities:[...]}}`` 传入 sync builder。
+    逐工件走正向查询（天然 access_scope fail-closed，不可见/无关联返回 None → 跳过）。
+    整体 best-effort：异常返回 {} 并记 warning——绝不反噬星图。
+    """
+    from knowledge.artifact_associations import ArtifactAssociationService
+
+    try:
+        artifact_ids = await sync_to_async(
+            lambda: list(
+                Artifact.objects.filter(project_id=project.id).values_list(
+                    "id", flat=True
+                )
+            )
+        )()
+        service = ArtifactAssociationService()
+        result: dict[str, dict] = {}
+        for aid in artifact_ids:
+            assoc = await service.get_artifact_associations(aid, user=user)
+            if assoc is None:
+                continue
+            result[str(aid)] = {
+                "repositories": assoc.get("repositories", []),
+                "capabilities": assoc.get("capabilities", []),
+            }
+        return result
+    except Exception as exc:  # noqa: BLE001 — best-effort，绝不反噬星图
+        from common.logging import redact_secrets_in_text
+
+        logger.warning(
+            "project_galaxy_artifact_assoc_failed",
+            project_id=str(project.id),
+            error=redact_secrets_in_text(str(exc)),
+            error_type=type(exc).__name__,
+            component="initiatives.galaxy",
+            category="sampling",
+        )
+        return {}
 
 
 class ProjectGalaxyView(APIView):
     """项目级关系星图（GET，读权限；项目作战室 P4）。
 
-    路由 ``projects/<project_id>/galaxy/``；聚合 项目/feature/工作项/仓库/MR 节点
-    与关联边，前端用力导图呈现「某 feature 关联了什么」。按项目成员 fail-closed。
+    路由 ``projects/<project_id>/galaxy/``；聚合 项目/feature/工作项/仓库/MR/工件/能力
+    节点与关联边，前端用力导图呈现「某 feature/工件关联了什么」。按项目成员 fail-closed。
     """
 
     async def get(self, request, project_id):
@@ -1799,12 +1920,17 @@ class ProjectGalaxyView(APIView):
             return err
         started = time.monotonic()
         tree = await FeatureListService().build_tree(project_id)
-        payload = await sync_to_async(_build_project_galaxy)(project, tree)
+        artifact_assocs = await _agather_artifact_assocs(project, request.user)
+        payload = await sync_to_async(_build_project_galaxy)(
+            project, tree, artifact_assocs=artifact_assocs
+        )
         logger.info(
             "project_galaxy_built",
             project_id=str(project_id),
             nodes=payload["meta"]["total_nodes"],
             edges=payload["meta"]["total_edges"],
+            artifact_nodes=payload["meta"].get("artifact_nodes"),
+            artifact_edges=payload["meta"].get("artifact_edges"),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
             component="initiatives.galaxy",
             category="caller",
