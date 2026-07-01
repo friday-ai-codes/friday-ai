@@ -13,6 +13,8 @@
 @source inline("icon-[lucide--file-text] icon-[lucide--lock] icon-[lucide--file-x] icon-[lucide--settings]");
 @source inline("icon-[lucide--file-up] icon-[lucide--file-check] icon-[lucide--folder-x] icon-[lucide--external-link]");
 @source inline("icon-[lucide--file-code] icon-[lucide--circle] icon-[lucide--git-pull-request] icon-[lucide--file]");
+/* 交付文档 / 外部依赖总览：按载体动态拼接的图标 + 空态图标（KnowledgeDashboard.vue / CompactEmptyState.vue） */
+@source inline("icon-[lucide--table] icon-[lucide--package] icon-[lucide--folder]");
 @source inline("icon-[lucide--git-commit-horizontal] icon-[lucide--git-compare] icon-[lucide--terminal] icon-[lucide--chevron-right] icon-[lucide--chevron-down]");
 @source inline("icon-[lucide--history] icon-[lucide--undo-2] icon-[lucide--play] icon-[lucide--variable] icon-[lucide--info] icon-[lucide--eye]");
 @source inline("icon-[lucide--messages-square] icon-[lucide--workflow] icon-[lucide--bot] icon-[lucide--shield-check] icon-[lucide--map-pin] icon-[lucide--zap-off]");
