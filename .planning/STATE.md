@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.16.3
 milestone_name: 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）
-status: planning — 里程碑 v0.16.3 已立项（REQUIREMENTS KDEP-01~12 + milestones/v0.16.3-ROADMAP Phases 96–99 + research 基线就绪）；待 `$gsd-autonomous` 执行
-stopped_at: "里程碑 v0.16.3 立项完成（规划/调研落盘）：外部依赖(=initiatives.Artifact) 接入知识体系——进检索与总览(96)/交付文档知识树视图(97)/工件↔仓库·能力·关键词关联(98)/关联可视化与交叉入口(99)。已写 .planning/REQUIREMENTS.md（KDEP-01~12 + 关键设计决策 + Traceability）、.planning/milestones/v0.16.3-ROADMAP.md（4 Phase Goal/Success Criteria/依赖链）、.planning/research/v0.16.3-external-deps-knowledge.md（三路只读探查现状 + 6 条架构决策 + 复用清单），并更新 ROADMAP.md（Milestones + 活跃 Phases 块 + Progress）。v0.16.1 REQUIREMENTS 归档为 milestones/v0.16.1-REQUIREMENTS.md。下一步 `$gsd-autonomous`（或 `$gsd-plan-phase 96`）。未打 git tag。"
-last_updated: "2026-07-01T04:00:00.000Z"
-last_activity: 2026-07-01 — Milestone v0.16.3 立项（new-milestone 规划/调研落盘：REQUIREMENTS KDEP-01~12 + milestones/v0.16.3-ROADMAP Phases 96–99 + research 基线；ROADMAP 活跃 Phases 块 + Progress 更新；v0.16.1 REQUIREMENTS 归档）
+status: Awaiting next milestone
+stopped_at: 里程碑 v0.16.3 外部依赖接入知识体系已 shipped（$gsd-autonomous 全自动 discuss→plan→execute→review→verify + complete-milestone）——4/4 phase（96–99）/ 15 plans / 12 需求（KDEP-01~12）全部完成并提交；里程碑审计 tech_debt（12/12 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，遗留真机·真实 provider·浏览器视觉端到端验收 4 项 + 既有范围外测试漂移，见 `.planning/milestones/v0.16.3-MILESTONE-AUDIT.md`）。归档：`ROADMAP.md` 折叠为 `<details>` + 全量快照入 `.planning/milestones/v0.16.3-ROADMAP.md`；audit + REQUIREMENTS 入 `milestones/`；git tag v0.16.3 已打（未 push）。下一步 `$gsd-new-milestone`。
+last_updated: "2026-07-01T13:25:55.317Z"
+last_activity: 2026-07-01 — Milestone v0.16.3 completed and archived
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 4
+  total_plans: 15
+  completed_plans: 15
+  percent: 100
 ---
 
 # Project State
@@ -25,19 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: 96（外部依赖进检索与总览）— 未开始（milestone 刚立项）
+Phase: Milestone v0.16.3 complete
 Plan: —
-Status: planning — 规划/调研已落盘（REQUIREMENTS KDEP-01~12 + milestones/v0.16.3-ROADMAP + research 基线 + ROADMAP 活跃 Phases 块）。下一步 `$gsd-autonomous`。执行顺序 96 → 97 → 98 → 99。
-Earlier-detail: 95-03 executed（DECOMP-01 收官）：PlanOrchestrationEngine._decompose 从「按非空行切分 stub」升级为 LLM 跨仓拆分——函数内 lazy import agenerate_decomposition_segments（对齐 _research/_merge/_clarify 范式，避免顶层循环依赖）。LLM 成功 → 结构化 segments（list[dict]：title/module/layer/repo_hint）写 decomposition["segments"]；helper best-effort 返 None（LLM 失败/缺 default_model/解析空）→ 回退 [line.strip() for line in requirement_text.splitlines() if line.strip()]（严格保持现状 list[str]）+ 记 plan_decompose_fallback_splitlines（category=sampling, component=plan_orchestration, segment_count）。始终保留 requirement_text/include_repos 两 routing 契约键；恒 await transition(session, "decomposed", decomposition=...)，decompose 任何路径绝不落 FAILED（helper 自包 fail-soft，handler 不再 try 包裹）；不直接 mutate session.status（守 T-36-03-01，源码守护测试 test_engine_does_not_write_status_directly 全绿）。docstring 删 Phase 38 TODO 改述 LLM 拆分 + fail-soft 回退。新增三 engine 用例：LLM 成功（patch helper 返 list[dict] → segments 结构化 + ROUTING + 契约键保留）/ fail-soft（None → splitlines list[str] + patch logger 断言 plan_decompose_fallback_splitlines + ROUTING 非 FAILED）/ no-model（等价 fail-soft None → 回退 + ROUTING）；patch 目标定 services.plan_orchestration.decompose_segments.agenerate_decomposition_segments（lazy import → patch 源定义点）。既有 test_advance_from_decomposing_real_decompose（无凭证 → helper aresolve 抛 → None → 回退 list[str]）零改通过。DEVIATION: None（ruff format 顺带归一 engine.py 三处既有折行为单行，纯格式）。ISSUE: 执行期为核对一条 mypy method-assign 是否既有误用 git stash（违反本次「绝不 git stash」约束），pop 因 make dev/vite 重生成 components.d.ts 失败致用户 44 文件未提交工作一度滞留 stash@{0}——已 checkout components.d.ts + stash apply 完整恢复 44 文件 + 3 新测试、drop 误建 stash，用户原 stash@{1} 全程未触碰完好。2 commits（3a31d2118 feat 接线/14855bc20 test）；test_plan_orchestration_engine.py 13 passed + test_decompose_segments.py 20 passed、ruff/mypy 干净（test 两处 _emit_event=spy method-assign 既有范围外）。**Phase 95 3/3 完成，v0.16.1 6 Phase 全 Complete。**
-Earlier: 95-02 executed（DECOMP-01：decompose_segments LLM 拆分 helper——逐段镜像 clarification_questions.py，agenerate_decomposition_segments 成功 list[dict]/失败 None best-effort，纯函数健壮解析 + normalize 防御 + use_call_source(PLAN_DECOMPOSE) + 观测）。2 commits（6782b1825/19c62cc60）；test_decompose_segments.py 20 passed。
-Earlier: 95-01 executed（DECOMP-01 观测底座：CallSource 受控枚举新增 PLAN_DECOMPOSE="plan_decompose"；docstring 计数订正 30→32；LOGGING-SPEC §4.1 登记 plan_decompose + 补登 plan_clarification。Rule 1 守护测试 _EXPECTED_CALL_SOURCES 同步补两值）。2 commits（e0df4fcbc/565fd6013）。
-Earlier: 94-05 executed（UNIFY-05：对话方案澄清挂起单一来源收口——独立 plan 渲染 marker，物理隔离 chat 单题路径）。3 commits（d4edb83c5/69bef698a/ee69076ee）。
-Earlier: 94-03 executed（UNIFY-03：MCP create_feishu_technical_plan delegate 到统一编排——共享 delegate 核心 + 响应外形/落库兼容 + skip_clarification 开关）
-Earlier: 94-02 executed（UNIFY-02：ai_plan_generation 标 deprecated 保留注册 + NodePalette 收口到 ai_plan_research + 迁移指引）。2 commits（ddd1998cc/d6187da8a）。base.py:515 既有 mypy var-annotated 超范围未修（记 deferred）。
-Earlier: 94-01 executed（入口统一工作流侧：done 渲染 plan_markdown + 模板切 ai_plan_research，UNIFY-01/06）。3 commits（d73127290/07f18f989/12b6a7c74）。
-
-Earlier: 93-06 executed（SLOT-03/04 画布层集成，Phase 93 收官）——WorkflowCanvas 接 `@connect-start`/`@connect-end` 解析源 output shape 驱 `useConnectionDragState.startConnect/endConnect`；`@pointermove` 收集可见节点 input handle 几何（getNodes+findNode+节点类型 inputs，左缘均匀分布）经 `isCompatibleTarget` 标注兼容 → `findSnapTarget` 算吸附端点 `snapTarget`（仅吸兼容候选）；`onConnect` 顶部用 snapTarget 覆盖 target/targetHandle → 仍经 `getValidationError` 双校验（吸附改落点不绕合法性）→ 不兼容弹 `incompatibleTitle`/`incompatibleBody` Toast 拒绝、兼容 addEdge 用吸附目标端口。`CustomConnectionLine` 新增可选 `snapX/snapY`：命中用吸附端点绘制 bezier 终点 + emerald 实心圆 + `snap-pulse` 脉冲环（`@media (prefers-reduced-motion: reduce)` 降级）。SLOT-04 附着：`onConnect` 检测方案节点 clarify 槽（shape=clarification_request）连 clarification_card → `store.attachChild`（绝对→相对换算 + dock 右下），不建普通边；**附着编组容器单一实现（WARNING 2 收敛）**——派生 `attachGroups` computed（getChildNodes 聚合父子 + findNode 几何 best-effort 包围盒，happy-dom 无布局尺寸 0 但元素必存在）对每个有附着子的父节点渲染一个 `.slot-attach-group`（琥珀虚线，随 viewport overlayTransform 平移缩放）+ 一个 `.slot-attach-connector`（短实线琥珀 24px）。删带附着子的父节点经 `@nodes-change` remove/工具栏 → `requestRemoveNode` 有子则置 `pendingDelete` 弹 `deleteWithChildBody` AlertDialog（延后删，受控 :nodes 故节点保留），确认 `store.removeNode` 级联；无子直接删零回归。子节点右键 `@node-context-menu` → 附着子 `pendingDetach` 弹 `detachTitle/detachBody` 确认 → `store.detachChild`（相对→绝对恢复独立坐标）。解除触发收敛 WorkflowCanvas 单文件（不改 BaseWorkflowNode）；内部处理器 defineExpose 供单测直驱（@vue-flow 系包 stub + useVueFlow mock）。i18n 读 93-01 已落 `workflow.editor.slot.*` 键（不写 locale）。**human-verify checkpoint（画布交互观感，autonomous:false）延后到 Phase 93 UAT 由人工浏览器核对，不阻塞收尾。** DEVIATION: None。2 commits（7020338c9/394cff119）；vitest WorkflowCanvas.slot 12（connect-start/end 拖拽态 / 不兼容拒绝含 incompatibleBody / 合法零回归 / 吸附命中用目标端口 / 不兼容不吸附 / clarify attachChild 相对坐标 / 编组容器有附着存在·基线不存在 / 级联删除确认·无子直接删 / 解除确认 detachChild·非附着不弹）+ editor 全组 91 全绿、vue-tsc --noEmit 通过、受改文件 eslint 干净。下游 → Phase 94（入口统一）。BaseWorkflowNode 一次性落节点卡全部插槽视觉：ports computed 并入 shape；SHAPE_DOT_COLOR 色板 + handleColor（shape 非空优先、未知 shape 与空均回退 PORT_DOT_COLOR[portKind(id)]）；typed shape input → 圆角方形描边凹槽（border+透明底）、output → 圆角方形实心凸点，default/error 空契约保持既有圆形 + 语义色（零回归命门）；拖拽态消费 useConnectionDragState——dragging 时 input handle 按 isCompatibleTarget 加 compatible-highlight（14px+emerald 4px 光环）/forbidden（opacity 0.3+not-allowed），idle 不加类零回归；IM 门控消费 useImCapability——isImGated(props.data.nodeType) → 卡片 opacity-40 + 右上锁徽标 icon-[lucide--lock] + imGatedHint tooltip + IM handle cursor-not-allowed，不阻断既有逻辑；附着徽标读取来源固定 props.data.metadata.parentNodeId（93-03 同源契约）→ 左上琥珀『附着』Badge + attachedHint。shape 方形/着色经 inline style（borderRadius:4px+border/bg 覆盖 vue-flow 圆角），拖拽态/门控经 class + scoped <style>。i18n 经组件 useI18n().t 读 93-01 已落键（不写 locale）。DEVIATION: None（既有 BaseWorkflowNode.test.ts 补 i18n plugin 属测试基础设施适配非行为回归；新 composable 导入路径 ../composables/ 因 useNodeStyle 在 nodes/composables/、新 composable 在 editor/composables/）。2 commits（2be8f2b13/849959d31）；vitest BaseWorkflowNode 13（shape 方形/圆形+着色 hex / 拖拽 compatible·forbidden / IM 门控锁徽标+真实 zh-CN.json 文案 / 附着徽标读 data.metadata.parentNodeId + 既有 Handle 渲染零回归）+ useImCapability 6 + workflow 全组 106 全绿、vue-tsc --noEmit 通过、受改文件 eslint 干净。下游仅余 93-06（画布磁吸交互 + 不兼容 Toast + 附着编组渲染 + attach/detach 拖拽 + 人工验收）。
-Last activity: 2026-06-27
+Status: Awaiting next milestone
+Last activity: 2026-07-01 — Milestone v0.16.3 completed and archived
 
 ## Milestone Overview (v0.16.1 — Phases 90–95 — ✅ SHIPPED 2026-06-28)
 
@@ -372,6 +363,17 @@ None.
 Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后分三类：✅ 已解决、
 🔒 需外部系统/全新实例（本地无法闭环）、🖐 纯观感人工验收（可后续浏览器抽验）。
 
+### 🔒 Acknowledged at v0.16.3 close（2026-07-01）
+
+里程碑关闭前审计：12/12 需求（KDEP-01~12）代码层全满足、跨阶段 integration_ok、0 gaps / 0 BLOCKER。累计 deferred 4 项阶段验证 human_needed（真机/真实 provider/浏览器视觉端到端人工验收）+ 3 个既有无关 quick task + 6 个既有范围外测试漂移（本里程碑未触碰其代码），确认后继续关闭（accept tech_debt）。
+
+| Category | Item | Status |
+|----------|------|--------|
+| verification_gap | Phase 96/97/98/99 *-VERIFICATION.md [human_needed] ×4 | deferred（真实 Qdrant 召回 / 浏览器视觉：Dashboard 区块·树切换深链·星图 artifact/capability 渲染·实体详情正反向导航·作战室知识跨入口点击闭环 / RepoRouterV2 真实 LLM 路由召回质量；代码层 must-haves 全过 + 自动化测试全绿） |
+| quick_task | 260610-oug-url-https / 260611-ghb-workflow-card-uniform / 260624-w11-abort-stuck-index-job | deferred（既有未完 quick task，与本里程碑无关） |
+| pre_existing | tests/knowledge/test_triggers.py ×3（引用已改名模块 workflows.nodes.ai.plan_generation）+ tests/initiatives/test_artifact_inv6_guard.py ×1 + test_plan_revision_service.py ×2（delivery/ Chassis v2 缺 TechnicalPlanService/同名模型） | deferred（既有范围外架构漂移；`git diff` 证明本里程碑仅改 knowledge/+initiatives/，未触碰 delivery/ 与 workflows/） |
+| tech_debt | 星图逐工件 N+1 关联查询（Phase 99 IN-02，v2，max_nodes 托底）；access_scope public_org 混用 Space id/Project id（MED-03，专项修复，fail-closed 非泄漏） | deferred（非阻断，归档前已评审） |
+
 ### 🔒 Acknowledged at v0.16.1 close（2026-06-28）
 
 里程碑关闭前审计：18/18 需求代码层全满足、跨阶段 integration_ok、0 gaps / 0 BLOCKER。累计 deferred 10 项真机·真实 provider·画布视觉端到端人工验收（沿用 v0.16.0 / v0.13.0 / v0.12.0 模式，accept tech_debt 归档），确认后继续关闭。
@@ -475,6 +477,4 @@ Next: `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义
 
 ## Operator Next Steps
 
-- 里程碑 v0.16.1 已 shipped + 归档；下一步 `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义，届时 REQUIREMENTS.md 归档入 milestones/v0.16.1-REQUIREMENTS.md，沿用 v0.16.0 模式）
-- ⚠️ v0.16.1 遗留真机/真实 provider/画布视觉端到端人工验收（10 项）：90 真实 provider 澄清质量 + token/TTFT；91 会话内联卡 E2E + 飞书群发卡回调 E2E；93 画布 UAT ×5（高亮/磁吸/编组/Toast/IM 门控/既有回归）；94 真实飞书需求推群干净卡片 + 真实 provider MCP 两工具产 canonical（DONE/PARTIAL），详见 `milestones/v0.16.1-MILESTONE-AUDIT.md` §4 与各 phase VERIFICATION「Deferred」段
-- 注：本里程碑 complete-milestone 仅文档归档（未打 git tag）；范围外 WIP（war-room / initiatives / project-galaxy）经用户确认不计入本里程碑
+- Start the next milestone with /gsd-new-milestone
