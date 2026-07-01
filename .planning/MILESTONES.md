@@ -1,5 +1,21 @@
 # Milestones
 
+## v0.16.3 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱） (Shipped: 2026-07-01)
+
+**Phases completed:** 4 phases (96–99), 15 plans, 17 tasks；12/12 需求（KDEP-01~12）；里程碑审计 **tech_debt**（12/12 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留真机·真实 provider·浏览器视觉端到端验收 + 既有范围外测试漂移）见 [milestones/v0.16.3-MILESTONE-AUDIT.md](./milestones/v0.16.3-MILESTONE-AUDIT.md)
+
+**Key accomplishments:**
+
+- **外部依赖进检索与总览（Phase 96）**：全部 `ArtifactType` 在知识体系登记为可发现条目——ragable 走既有向量摄取，非 ragable 落元数据-only `KnowledgeEntity(document)` + `REFERENCES→项目` 边（零 Qdrant 向量、幂等、单一写入入口 INV-6）；`/knowledge` 搜索命中工件标类型徽标 + 项目名 + 一键查看（弹窗/外链）；`KnowledgeDashboard` 新增「交付文档/外部依赖」区块（access_scope 过滤的类型分组聚合接口 + 计数磁贴 + 即时搜索 + 优雅空态）。
+- **交付文档知识树视图（Phase 97）**：`/knowledge` 树页新增并行「交付文档」树（项目→类型→工件），与代码能力树切换/并列（`?view=` URL 深链、PageIndex 能力树零污染）；树内即时搜索 + `<mark>` 高亮 + 命中自动展开 + 叶子查看复用；后端 `GET /api/knowledge/artifacts/tree/` 嵌套树 API（access_scope fail-closed + 三级 clamp + `truncated` 自洽 + 错误态重试）。
+- **工件↔仓库/能力/关键词关联（Phase 98）**：ragable 工件正文经 `RepoRouterV2` 路由落 `KnowledgeEdge(RELATES_TO, artifact→repo)` + metadata（node_paths/keywords/score，复用 `AUX_REPO_ROUTER` call_source、幂等 upsert、重摄取陈旧边收敛、fail-soft 不反噬）；verified `RepoAssociation` 单向派生 project→repo 图谱边（唯一真相源、离开 verified 失效）；`ArtifactAssociationService` 双向查询（graph_store 收口 + access_scope）+ 只读端点。
+- **关联可视化与交叉入口（Phase 99）**：`_build_project_galaxy` 纳入 artifact/capability 节点 + `HAS_ARTIFACT`/`ARTIFACT_REPO`/`ARTIFACT_CAPABILITY` 边 + verified `RepoAssociation` 来源的 `USES_REPO`（统一去重、max_nodes 预算、best-effort）；知识实体详情 `EntityAssociationsCard` 正/反向双向可导航展示关联；作战室「外部依赖」工件行『知识』跨入口 → `/knowledge/entities/{entity_id}`，形成作战室↔知识闭环。
+- **一致性收口**：确定性 `entity_id`（`generate_entity_id(DOCUMENT,"artifact",id)`）四处一致；类型徽标 + 载体图标抽取为共享模块 `artifactDisplay.ts`（消除三处复制）；全端点 access_scope fail-closed 统一收口、无绕过。
+
+**Known deferred items at close:** 4 项阶段验证 human_needed（真机/真实 provider/浏览器视觉端到端人工验收，已记 STATE.md Deferred Items）+ 3 个既有无关 quick task；6 个既有范围外测试漂移（`delivery/` Chassis v2 + `workflows.nodes.ai.plan_generation` 改名模块，本里程碑未触碰）。详见 [milestones/v0.16.3-MILESTONE-AUDIT.md](./milestones/v0.16.3-MILESTONE-AUDIT.md)。
+
+---
+
 ## v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善） (Shipped: 2026-06-28)
 
 **Phases completed:** 6 phases (90–95), 27 plans, 18/18 v1 需求；里程碑审计 **tech_debt**（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留真机·真实 provider·画布视觉端到端验收 + INFO 欠债）见 [milestones/v0.16.1-MILESTONE-AUDIT.md](./milestones/v0.16.1-MILESTONE-AUDIT.md)

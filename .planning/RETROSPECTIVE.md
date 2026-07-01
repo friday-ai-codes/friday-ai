@@ -63,6 +63,35 @@
 - Sessions: 跨多会话执行（v0.8.0 收官于 autonomous lifecycle 单会话）。
 - Notable: phase 内多以 mock IO 边界测试收敛，单 plan 多在 5–25min 量级（见 STATE.md Performance Metrics）。
 
+## Milestone: v0.16.3 — 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）
+
+**Shipped:** 2026-07-01
+**Phases:** 4（96–99） | **Plans:** 15 | **Requirements:** 12/12（KDEP-01~12）| **Audit:** tech_debt
+
+### What Was Built
+把项目外部依赖（`Artifact`）完整接入「知识」体系：全类型工件登记可发现（非 ragable 元数据-only 实体+边）+ 搜索标类型可跳查看 + 知识总览「交付文档」区块（P96）；`/knowledge` 并行「交付文档」树 + 树内搜索/查看 + 后端树 API（P97）；RepoRouterV2 路由工件正文落 `RELATES_TO` 边 + verified `RepoAssociation` 单向派生 + 双向关联查询（P98）；星图纳入 artifact/capability 节点边 + 实体详情双向关联展示 + 作战室↔知识闭环（P99）。
+
+### What Worked
+- **research 基线先行**：里程碑立项时已产出详尽的现状探查 + 架构决策锁定（复用 Artifact / delivery_knowledge / RepoRouterV2 / RepoAssociation / graph_store，不新建真相源），使 smart-discuss 几乎无灰区、plan/execute 直接落到复用点，返工极少。
+- **严格复用 + 单一写入入口（INV-6）**：四阶段层层复用上游产物（P97 镜像 P96 的 access_scope/截断范式、P99 只读消费 P98 查询服务），跨阶段 integration_ok 一次通过。
+- **全自动 discuss→plan→execute→verify→review→fix 流水线**：每阶段 review 都抓到真实"好用/优雅"缺陷（dep_type 预筛未生效、空态连坐隐藏、陈旧路由边累积、type_key 生显）并即时修复，质量门控发挥作用。
+
+### What Was Inefficient
+- **规划文档与工具链契约漂移**：里程碑 Phase 详情初始只放在 `milestones/v0.16.3-ROADMAP.md`，顶层 ROADMAP 缺 `### Phase N:` 明细块，导致 `roadmap.get-phase` 找不到阶段，须先回填明细块工具链才识别。教训：立项即在顶层 ROADMAP 内联当前里程碑 Phase 明细。
+- **共享常量事后抽取**：徽标/载体图标常量在 P96/P97/P99 三处复制，到集成检查才抽 `artifactDisplay.ts`。教训：跨阶段复用的展示常量应在首个阶段就建共享模块。
+
+### Patterns Established
+- 非 ragable 工件「元数据-only 知识实体登记」（建 document 实体 + REFERENCES 边、零向量、幂等）——为无正文工件提供可发现性的通用范式。
+- 关联边 metadata 承载关键词/能力（不建独立实体表）+ 唯一真相源单向派生 + 重摄取陈旧边收敛。
+
+### Key Lessons
+- LLM 非确定性路由必须配"陈旧边失效收敛"，否则关联随重摄取累积污染查询——已在 P98 补齐并加收敛测试。
+- 自动化验证 human_needed（真机/浏览器）是结构性 deferred，代码层 must-haves + 自动化测试全绿即可 accept tech_debt 归档，勿反复回炉。
+
+### Cost Observations
+- Sessions: 单会话全自动执行（$gsd-autonomous），中途 2 次用户中断后 `继续` 无缝续跑（阶段产物已提交，幂等续接）。
+- Notable: 每阶段 planner→executor→verifier→reviewer→fixer 子代理链隔离上下文，主编排上下文保持精简。
+
 ## Cross-Milestone Trends
 
 | Milestone | Phases | Plans | Shipped |
