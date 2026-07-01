@@ -92,6 +92,11 @@ class KnowledgeSearchView(APIView):
         project_ids = _split_ids(request.query_params.get("project_ids"))
         repository_ids = _split_ids(request.query_params.get("repository_ids"))
         include_superseded = request.query_params.get("include_superseded", "").lower() == "true"
+        # KDEP-02：工件是 kind=document 实体，默认被过滤故搜索看不到——启用 document 召回。
+        # 权限不放宽：recall 的 include_document_kind=True 仍受 allowed_project_ids/
+        # allowed_repository_ids 收口（见 vector_recall docstring），access_scope 不被破坏。
+        # 取舍：此改动同时让 feishu_document/project_doc/project_memory 等 document 实体进入
+        # 全局搜索（属预期，均受权限过滤，非泄漏）。
         results = await _service.search_similar(
             q,
             user=request.user,
@@ -99,6 +104,7 @@ class KnowledgeSearchView(APIView):
             project_ids=project_ids,
             repository_ids=repository_ids,
             include_superseded=include_superseded,
+            include_document_kind=True,
             as_of=as_of,
         )
         return Response(serialize_search_results(results))
