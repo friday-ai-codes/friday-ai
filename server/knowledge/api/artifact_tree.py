@@ -50,15 +50,20 @@ def _build_tree(allowed_space_ids: list[str]) -> dict:
 
     `项目 → 类型 → 工件` 三级有序结构：项目按 name、类型按 name、叶子按 -updated_at。
     `count` 记桶内真实计数（随遍历累加），列表按三级 clamp 截断，任一截断置 `truncated`。
+    `total` 记本次可见拉取的工件真实总数（= trim 后 rows 数），与 `truncated` 自洽：
+    即便三级 clamp 裁掉项目/类型/叶子尾部，`total` 仍反映真实可见数，`truncated` 标记有裁剪。
     """
     from initiatives.models import Artifact
 
+    # 多取一行哨兵：仅当哨兵行真实存在（> 硬顶）时才判定全局截断，避免恰好等于硬顶的假阳性。
     rows = list(
         Artifact.objects.filter(project__space_id__in=allowed_space_ids)
         .select_related("type", "project")
-        .order_by("project__name", "type__name", "-updated_at")[:_GLOBAL_FETCH_CAP]
+        .order_by("project__name", "type__name", "-updated_at")[: _GLOBAL_FETCH_CAP + 1]
     )
-    truncated = len(rows) >= _GLOBAL_FETCH_CAP
+    truncated = len(rows) > _GLOBAL_FETCH_CAP
+    rows = rows[:_GLOBAL_FETCH_CAP]
+    total = len(rows)
 
     # dict 保序分组（order_by 已排序 → 插入序即展示序）。
     projects_map: dict[str, dict] = {}
@@ -104,7 +109,6 @@ def _build_tree(allowed_space_ids: list[str]) -> dict:
             truncated = True
 
     projects: list[dict] = []
-    total = 0
     for proj in projects_map.values():
         if len(projects) >= _MAX_PROJECTS:
             truncated = True
@@ -117,7 +121,6 @@ def _build_tree(allowed_space_ids: list[str]) -> dict:
                 break
             types.append(tnode)
         proj["types"] = types
-        total += proj["count"]
         projects.append(proj)
 
     return {"total": total, "projects": projects, "truncated": truncated}
