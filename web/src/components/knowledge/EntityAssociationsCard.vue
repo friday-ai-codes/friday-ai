@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import { knowledgeApi } from '~/api'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
+import { ARTIFACT_BADGE_CLASS, carrierIcon } from '~/components/knowledge/artifactDisplay'
 import { Badge } from '~/components/ui/badge'
 import { Skeleton } from '~/components/ui/skeleton'
 
@@ -18,21 +19,6 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
-
-// 工件类型/能力徽标配色令牌（复用 Phase 96 令牌，视觉统一）。
-const ARTIFACT_BADGE_CLASS = 'bg-amber-500/10 text-amber-700 border-amber-200 dark:text-amber-400'
-
-// 载体/类型兜底图标（复用 Phase 97 载体图标集合，字面量完整 class 命中 Tailwind 扫描）。
-const CARRIER_ICON: Record<string, string> = {
-  feishu_doc: 'icon-[lucide--file-text]',
-  feishu_bitable: 'icon-[lucide--table]',
-  markdown: 'icon-[lucide--file-text]',
-  repo_file: 'icon-[lucide--file-code]',
-  external_link: 'icon-[lucide--external-link]',
-}
-function carrierIcon(carrier: string): string {
-  return CARRIER_ICON[carrier] ?? 'icon-[lucide--file]'
-}
 
 const isForward = computed(() => props.sourceKind === 'artifact')
 const isReverse = computed(() => props.kind === 'repository')

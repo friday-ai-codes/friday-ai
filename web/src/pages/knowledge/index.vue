@@ -10,6 +10,7 @@ import { artifactsApi } from '~/api/artifacts'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import MarkdownRenderer from '~/components/execution/MarkdownRenderer.vue'
+import { ARTIFACT_BADGE_CLASS } from '~/components/knowledge/artifactDisplay'
 import BatchIngestPanel from '~/components/knowledge/BatchIngestPanel.vue'
 import DeliveryDocsTree from '~/components/knowledge/DeliveryDocsTree.vue'
 import EntityDetailToolbar from '~/components/knowledge/EntityDetailToolbar.vue'
@@ -161,9 +162,6 @@ const hasSearched = computed(() => submittedQuery.value.length > 0)
 
 // ── 工件命中：类型徽标 + 项目名 + 一键查看（复用 DependenciesSection 弹窗范式）──
 const { handleError } = useErrorHandler()
-
-// 工件类型徽标配色令牌（与 EntityKindBadge 视觉一致，按载体区分冷暖）。
-const ARTIFACT_BADGE_CLASS = 'bg-amber-500/10 text-amber-700 border-amber-200 dark:text-amber-400'
 
 const viewOpen = ref(false)
 const viewLoading = ref(false)
