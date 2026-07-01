@@ -28,8 +28,9 @@ from asgiref.sync import sync_to_async
 from django.utils import timezone
 
 from common.logging import redact_secrets_in_text
+from knowledge.graph_store import graph_store
 from knowledge.ingestion import EdgeSpec, IngestionEvent, IngestionRequest
-from knowledge.models import EdgeRelation, EntityKind, EntityOrigin
+from knowledge.models import EdgeRelation, EntityKind, EntityOrigin, generate_entity_id
 
 logger = structlog.get_logger(__name__)
 
@@ -75,8 +76,38 @@ def _space_repository_ids(space) -> list[str]:
         return []
 
 
+async def _invalidate_stale_artifact_routing_edges(
+    *, artifact_id: str, matched_targets: set, request: IngestionRequest
+) -> int:
+    """收敛工件路由边（MED-02）：失效该工件既有 ``source=="artifact"`` 活跃
+    ``RELATES_TO`` 出边中、不在本轮命中集合的边，使派生边集与最新路由结果一致。
+
+    重摄取时 RepoRouterV2 非确定性可能改变命中仓库集合；``apply_edge_specs`` 只对
+    **同一 target** 幂等 upsert，对**不再命中**的旧 target 无失效路径，会残留陈旧边
+    并泄入正向/反向查询。此处按 target 收敛：仅失效不在 ``matched_targets`` 的工件
+    路由边（``metadata.source=="artifact"``）。幂等（``neighbors`` 只返活跃边、
+    ``invalidate_edge`` 对已失效边幂等；重跑同命中集为 no-op、不新建、不重复失效），
+    返回失效边数（供观测）。
+    """
+    entity_id = generate_entity_id(EntityKind.DOCUMENT, "artifact", str(artifact_id))
+    now = timezone.now()
+    invalidated = 0
+    existing = await graph_store.neighbors(
+        entity_id, relations=[EdgeRelation.RELATES_TO], direction="out"
+    )
+    for edge in existing:
+        meta = edge.metadata
+        if not isinstance(meta, dict) or meta.get("source") != "artifact":
+            continue
+        if edge.target_id is None or edge.target_id in matched_targets:
+            continue
+        await graph_store.invalidate_edge(edge.edge_id, invalid_at=now)
+        invalidated += 1
+    return invalidated
+
+
 async def _route_artifact_body_edges(
-    *, artifact, project, space, content: str, request: IngestionRequest
+    *, artifact, space, content: str, request: IngestionRequest
 ) -> tuple[EdgeSpec, ...]:
     """工件正文 RepoRouterV2 路由 → RELATES_TO EdgeSpec（best-effort 后置步骤，KDEP-07）。
 
@@ -84,6 +115,9 @@ async def _route_artifact_body_edges(
     ``EdgeSpec(RELATES_TO, artifact→repo, metadata={source,artifact_id,node_paths,
     keywords,score})``。路由/建 spec 任意异常吞掉（fail-soft），返回空 tuple——
     **绝不反噬工件摄取主流程**。RELATES_TO 边的实际写入由 apply_edge_specs 收口。
+
+    命中集算出后经 ``_invalidate_stale_artifact_routing_edges`` 收敛旧路由边
+    （MED-02，独立 best-effort），使查询与最新路由结果一致。
     """
     started = time.perf_counter()
     if not content:
@@ -91,10 +125,7 @@ async def _route_artifact_body_edges(
     try:
         from agents.call_source import CallSource, use_call_source
         from codegraph.services.repo_router_v2 import RepoRouterV2
-        from initiatives.services.knowledge_graph import (
-            ProjectKnowledgeGraphService,
-            repository_node_id,
-        )
+        from initiatives.services.knowledge_graph import ProjectKnowledgeGraphService
         from repositories.models import Repository
 
         repo_ids = await _space_repository_ids(space)
@@ -143,11 +174,32 @@ async def _route_artifact_body_edges(
                 )
             )
 
+        # MED-02 收敛：失效不再命中的旧工件路由边（独立 best-effort，失败不丢新边）。
+        stale_edge_count = 0
+        try:
+            matched_targets = {spec.target_entity_id for spec in specs}
+            stale_edge_count = await _invalidate_stale_artifact_routing_edges(
+                artifact_id=str(artifact.id),
+                matched_targets=matched_targets,
+                request=request,
+            )
+        except Exception as exc:  # noqa: BLE001 — 收敛 best-effort，绝不反噬新边/摄取
+            logger.warning(
+                "artifact_repo_route_converge_failed",
+                artifact_id=str(artifact.id),
+                trigger=request.trigger,
+                reason=redact_secrets_in_text(str(exc)),
+                error_type=type(exc).__name__,
+                component="knowledge",
+                category="sampling",
+            )
+
         logger.info(
             "artifact_repo_route_completed",
             artifact_id=str(artifact.id),
             trigger=request.trigger,
             matched_repo_count=len(specs),
+            stale_edge_count=stale_edge_count,
             node_path_count=node_path_total,
             keyword_count=keyword_total,
             router_version=result.router_version,
@@ -363,7 +415,6 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
     if vectorize and content:
         repo_edges = await _route_artifact_body_edges(
             artifact=artifact,
-            project=project,
             space=space,
             content=content,
             request=request,

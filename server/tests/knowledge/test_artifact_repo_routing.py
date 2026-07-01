@@ -27,7 +27,6 @@ from knowledge.models import (
     KnowledgeEdge,
     generate_entity_id,
 )
-from knowledge.sources import get_normalizer
 from projects.models import Space
 from repositories.models import Repository
 
@@ -66,6 +65,19 @@ def _setup(carrier="markdown", ragable=True, key="rt", *, with_repo=True):
         repository = Repository.objects.create(name="repo-a", git_url="https://git/repo-a.git")
         space.repositories.add(repository)
     return space, project, artifact_type, repository
+
+
+@sync_to_async
+def _setup_two_repos(key="conv"):
+    space = Space.objects.create(name="S", feishu_project_key=f"rt-{key}")
+    project = Project.objects.create(space=space, name="P", feishu_project_key="")
+    artifact_type = ArtifactType.objects.create(
+        key=key, name=key, carrier="markdown", ragable=True
+    )
+    repo_a = Repository.objects.create(name="repo-a", git_url="https://git/repo-a.git")
+    repo_b = Repository.objects.create(name="repo-b", git_url="https://git/repo-b.git")
+    space.repositories.add(repo_a, repo_b)
+    return space, project, artifact_type, repo_a, repo_b
 
 
 async def _create_artifact(project, t, **kw) -> Artifact:
@@ -164,6 +176,94 @@ async def test_reingest_idempotent_overwrites_metadata_no_dup(
     assert len(edges) == 1
     assert edges[0].metadata["score"] == 0.95
     assert edges[0].metadata["keywords"] == ["ui"]
+
+
+async def test_reingest_invalidates_stale_repo_edge(mock_ensure, mock_embedding, mock_upsert):
+    """MED-02：重摄取命中仓库集合变化时，旧命中仓库的路由边被失效收敛。
+
+    首轮命中 repo A → artifact→A 活跃边；次轮改命中 repo B（A 不再命中）→
+    artifact→A 边被失效置位（非删除，历史仍存），artifact→B 活跃。收敛幂等：
+    A 边不会因重复失效报错，B 边不重复。
+    """
+    _space, project, t, repo_a, repo_b = await _setup_two_repos()
+    artifact = await _create_artifact(project, t, title="方案", content_ref="正文内容")
+    entity_id = generate_entity_id(EntityKind.DOCUMENT, "artifact", str(artifact.id))
+    node_a = repository_node_id(repo_a.id)
+    node_b = repository_node_id(repo_b.id)
+
+    with patch(
+        "codegraph.services.repo_router_v2.RepoRouterV2.route",
+        new=AsyncMock(return_value=_route_result(repo_a.id)),
+    ):
+        await ingest(IngestionRequest("artifact", str(artifact.id), "test"))
+
+    assert await KnowledgeEdge.objects.filter(
+        source_entity_id=entity_id,
+        target_entity_id=node_a,
+        relation=EdgeRelation.RELATES_TO,
+        invalid_at__isnull=True,
+    ).aexists()
+
+    with patch(
+        "codegraph.services.repo_router_v2.RepoRouterV2.route",
+        new=AsyncMock(return_value=_route_result(repo_b.id)),
+    ):
+        await ingest(IngestionRequest("artifact", str(artifact.id), "test"))
+
+    # A 边被失效收敛（不再活跃）
+    assert not await KnowledgeEdge.objects.filter(
+        source_entity_id=entity_id,
+        target_entity_id=node_a,
+        relation=EdgeRelation.RELATES_TO,
+        invalid_at__isnull=True,
+    ).aexists()
+    # A 边失效置位而非删除：历史仍存
+    assert await KnowledgeEdge.objects.filter(
+        source_entity_id=entity_id,
+        target_entity_id=node_a,
+        relation=EdgeRelation.RELATES_TO,
+        invalid_at__isnull=False,
+    ).aexists()
+    # B 边活跃且唯一
+    active_b = await sync_to_async(
+        lambda: list(
+            KnowledgeEdge.objects.filter(
+                source_entity_id=entity_id,
+                target_entity_id=node_b,
+                relation=EdgeRelation.RELATES_TO,
+                invalid_at__isnull=True,
+            )
+        )
+    )()
+    assert len(active_b) == 1
+
+
+async def test_reingest_same_matches_no_invalidation(mock_ensure, mock_embedding, mock_upsert):
+    """MED-02 幂等：重摄取命中同一仓库集合 → 无失效、无重复（收敛 no-op）。"""
+    _space, project, t, repo_a, _repo_b = await _setup_two_repos(key="convnoop")
+    artifact = await _create_artifact(project, t, title="方案", content_ref="正文内容")
+    entity_id = generate_entity_id(EntityKind.DOCUMENT, "artifact", str(artifact.id))
+    node_a = repository_node_id(repo_a.id)
+
+    for _ in range(2):
+        with patch(
+            "codegraph.services.repo_router_v2.RepoRouterV2.route",
+            new=AsyncMock(return_value=_route_result(repo_a.id)),
+        ):
+            await ingest(IngestionRequest("artifact", str(artifact.id), "test"))
+
+    all_a = await sync_to_async(
+        lambda: list(
+            KnowledgeEdge.objects.filter(
+                source_entity_id=entity_id,
+                target_entity_id=node_a,
+                relation=EdgeRelation.RELATES_TO,
+            )
+        )
+    )()
+    # 单条 A 边、始终活跃（无失效历史、无重复）
+    assert len(all_a) == 1
+    assert all_a[0].invalid_at is None
 
 
 async def test_non_ragable_no_relates_to_edge(mock_ensure, mock_embedding, mock_upsert):
