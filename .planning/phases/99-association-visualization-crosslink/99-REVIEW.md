@@ -23,8 +23,17 @@ findings:
   low: 2
   info: 2
   total: 4
-status: findings
+status: resolved
+resolution:
+  applied_at: 2026-07-01T21:30:00Z
+  low_01: fixed
+  low_02: fixed
+  in_01: fixed
+  in_02: deferred_v2
 ---
+
+> **Fix pass（2026-07-01）：** LOW-01 / LOW-02 / IN-01 已修复；IN-02 明确延后至 v2（详见各条目「Resolution」）。
+> 验证：`pytest tests/initiatives -k "galaxy or repository_artifact or artifact"` 31 passed（唯一 fail `test_inv6_no_bypass_artifact_write` 命中 `delivery/` 独立同名 `Artifact` 模型，与 Phase 99 无关，属既有问题）；`vue-tsc --noEmit` 通过；改动文件 eslint 无告警。
 
 # Phase 99: 关联可视化与交叉入口 — Code Review Report
 
@@ -57,31 +66,43 @@ Phase 99 在既有星图与知识实体详情之上叠加「工件/能力节点 
 
 ## Low
 
-### LOW-01: 反查文档图标用 `type_key` 查 carrier 图标表，恒回退默认图标
+### LOW-01: 反查文档图标用 `type_key` 查 carrier 图标表，恒回退默认图标 — ✅ 已修复 — ✅ 已修复
 
 **File:** `web/src/components/knowledge/EntityAssociationsCard.vue:164`（配合 `:33` `CARRIER_ICON`）
 **Issue:** 反向分支渲染相关交付文档时用 `carrierIcon(doc.type_key)` 取图标，但 `CARRIER_ICON` 以**载体**（`feishu_doc`/`markdown`/`repo_file`…）为键，而 `RepositoryArtifact`（`web/src/api/knowledge.ts:152`）与后端 `_hydrate_artifacts`（`server/knowledge/artifact_associations.py:308`）返回的是**工件类型 key**（如 `prototype`/`spec`），二者语义域不同。结果：反查文档条目图标恒命中 `?? 'icon-[lucide--file]'` 兜底，永远显示同一个通用文件图标，与正向/工作台按载体区分图标的视觉一致性不符。纯展示缺陷，不崩溃、不影响导航。
 **Fix:** 二选一——(a) 后端反查行补 `carrier` 字段（`_hydrate_artifacts` 增 `"carrier": a.carrier`，`RepositoryArtifact` 加 `carrier: ArtifactCarrier`，前端改 `carrierIcon(doc.carrier)`）；(b) 若无需按载体区分，反查分支直接用固定文档图标（如 `icon-[lucide--file-text]`），移除对 `type_key` 的误用调用。
 
-### LOW-02: 仓库节点跨三来源去重依赖 repository id 字符串格式完全一致
+**Resolution：** 采方案 (a)。后端 `_hydrate_artifacts`（`server/knowledge/artifact_associations.py:312`）补 `"carrier": a.carrier` 并经 `find_artifacts_by_repository` 反查行透传；`RepositoryArtifact`（`web/src/api/knowledge.ts:156`）加 `carrier: ArtifactCarrier`；`EntityAssociationsCard.vue:164` 改 `carrierIcon(doc.carrier)`，`CARRIER_ICON` 表与 Phase 97 `DeliveryDocsTree.vue` 完全一致（载体键 + `icon-[lucide--file]` 兜底），视觉统一。反查文档现按真实载体显示对应图标。
+**Resolution（采用方案 a，与 Phase 97 `DeliveryDocsTree.vue` 按载体取图标一致）:** `_hydrate_artifacts` 补 `"carrier": a.carrier`；`RepositoryArtifact` 加 `carrier: ArtifactCarrier`；组件改 `carrierIcon(doc.carrier)`。反查文档条目现按真实载体显示正确图标，与正向/交付文档树视觉统一。
+
+### LOW-02: 仓库节点跨三来源去重依赖 repository id 字符串格式完全一致 — ✅ 已修复 — ✅ 已修复
 
 **File:** `server/initiatives/views.py:1789-1836`
 **Issue:** 仓库节点 id 由三处拼装——MR 来源 `f"repository:{mr.repository_id}"`、`RepoAssociation` 来源 `f"repository:{repo.id}"`、工件关联来源 `f"repository:{rid}"`（`rid` 来自 `KnowledgeEntity.source_id`）。`add_node`/`add_edge` 的去重完全依赖这三处产出**逐字符相同**的字符串。当前三者均为 UUID 的 `str()` 表示，一致；但 `source_id` 是 `CharField`，一旦上游写入格式漂移（大小写/带 dash 与否/前缀），将产生重复仓库节点与重复 `ARTIFACT_REPO`/`USES_REPO` 边。属健壮性隐患，非当前缺陷。
 **Fix:** 可在 `add_node` 内对 repository id 归一化（如统一 `str(uuid.UUID(rid))`），或在契约测试中显式断言三来源 repo id 同源同格式，锁死不变量。
 
+**Resolution：** `_build_project_galaxy` 内新增 `repo_node_id(raw)` 归一化助手（`server/initiatives/views.py:1729`）：统一产出 `f"repository:{uuid.UUID(str(raw))}"`（无法解析为 UUID 时回退原值）。MR 来源、verified `RepoAssociation` 来源、工件 `ARTIFACT_REPO` 来源三处均改走该助手拼装节点 id 与边端点（`:1796/:1825/:1846`），去重不再依赖上游 `source_id` 字符串格式一致，格式漂移（大小写/带不带 dash）下仍收敛为单一仓库节点与单一边。
+**Resolution:** `_build_project_galaxy` 内新增 `repo_node_id(raw)` 归一化助手（`f"repository:{uuid.UUID(str(raw))}"`，无法解析为 UUID 时回退原值），三来源（MR / verified `RepoAssociation` / 工件 `ARTIFACT_REPO`）统一经此助手产出节点 id 与边端点，锁死 canonical 串形，跨 int/str 漂移仍稳定去重。
+
 ## Info
 
-### IN-01: 未使用的 i18n 键 `knowledge.entity.associations.title`
+### IN-01: 未使用的 i18n 键 `knowledge.entity.associations.title` — ✅ 已修复 — ✅ 已修复
 
 **File:** `web/src/locales/zh-CN.json:381`
 **Issue:** 新增 `associations.title: "关联"` 未被任何组件引用（区块标题走 `knowledge.entity.sections.associations`，卡片内小标题走各自子键）。全仓 grep 无命中，属死键。
 **Fix:** 删除该键，或若计划用于卡片主标题则在 `EntityAssociationsCard.vue` 接入。
 
-### IN-02: `_agather_artifact_assocs` 逐工件 N+1 异步关联查询
+**Resolution：** 全仓 `rg "associations\.title"` 确认零引用后，删除 `web/src/locales/zh-CN.json` 中 `knowledge.entity.associations.title: "关联"` 死键（区块标题仍走 `knowledge.entity.sections.associations`，不受影响）。
+**Resolution:** grep 二次确认 `associations.title` 全仓无代码引用（en-US 亦无对应键），删除该死键。
+
+### IN-02: `_agather_artifact_assocs` 逐工件 N+1 异步关联查询 — ⏸️ 延后 v2 — ⏸️ 已延后（v2）
 
 **File:** `server/initiatives/views.py:1885-1892`
 **Issue:** 对项目内每个工件各发一次 `get_artifact_associations`（内含实体查询 + `graph_store.neighbors` + repo 标题补全），大项目工件数多时星图接口延迟随工件数线性增长。性能问题属 v1 out-of-scope，仅记录。
 **Fix:**（可选，后续优化）批量化：一次性取项目全部工件 document 实体的 `RELATES_TO` 出边聚合，替代逐工件单跳；或对星图工件关联做上限/采样。
+
+**Resolution：** 本轮不修，明确延后至 v2——星图 `max_nodes`（默认 300）末尾统一截断已托底，v1 工件规模下延迟可接受；批量化改造留待 v2 性能优化统一处理。
+**Deferral note:** 本轮 fix 不处理——延后至 v2 批量化优化；当前 `max_nodes`（默认 300）截断已托底星图规模，延迟可控。
 
 ---
 
