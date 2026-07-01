@@ -551,14 +551,94 @@ class RepoAssociationService:
         task.error = safe_error
         task.save(update_fields=["status", "error", "updated_at"])
 
+    async def _sync_association_graph(
+        self, *, association_id: Any, verified: bool, initiated_by_user_id: Any = None
+    ) -> None:
+        """KDEP-08：verified/unverified 状态流转的单一图谱同步 hook（best-effort）。
+
+        ``verified=True`` → 派生 project→repo ``RELATES_TO`` 边（metadata 携
+        source=repo_association 等）；``verified=False`` → 失效对应派生边。整个 hook 吞掉
+        一切异常 + 记 ``repo_association_graph_sync_failed``——同步 best-effort，**绝不反噬**
+        verdict 落库 / 状态流转主流程（对齐模块 fail-soft 纪律）。
+        """
+        try:
+            from initiatives.models import RepoAssociation
+            from initiatives.services.knowledge_graph import ProjectKnowledgeGraphService
+
+            assoc = await sync_to_async(
+                lambda: RepoAssociation.objects.select_related("project", "repository")
+                .filter(id=association_id)
+                .first()
+            )()
+            if assoc is None:
+                return
+            project = await sync_to_async(lambda: assoc.project)()
+            repository = await sync_to_async(lambda: assoc.repository)()
+            if project is None or repository is None:
+                return
+
+            svc = ProjectKnowledgeGraphService()
+            if verified:
+                await svc.link_repository(
+                    project=project,
+                    repository=repository,
+                    metadata={
+                        "source": "repo_association",
+                        "association_id": str(assoc.id),
+                        "score": float(assoc.score or 0.0),
+                        "confidence": assoc.confidence or "",
+                        "matched_node_paths": list(assoc.matched_node_paths or []),
+                    },
+                    initiated_by_user_id=initiated_by_user_id,
+                )
+            else:
+                await svc.unlink_repository(
+                    project=project,
+                    repository=repository,
+                    initiated_by_user_id=initiated_by_user_id,
+                )
+            logger.info(
+                "repo_association_graph_synced",
+                repo_id=str(getattr(repository, "id", "")),
+                verified=verified,
+                initiated_by_user_id=str(initiated_by_user_id)
+                if initiated_by_user_id
+                else "system",
+                component=_COMPONENT,
+                category="caller",
+            )
+        except Exception as exc:  # noqa: BLE001 — best-effort，绝不反噬状态流转
+            logger.warning(
+                "repo_association_graph_sync_failed",
+                association_id=str(association_id),
+                verified=verified,
+                reason=redact_secrets_in_text(str(exc)),
+                error_type=type(exc).__name__,
+                component=_COMPONENT,
+                category="sampling",
+            )
+
     async def record_verdict(self, task: Any, verdict: dict[str, Any]) -> bool:
         """写 verdict JSON + task.status→done + 同步 per-repo association 状态（幂等）。
 
         条件更新（排除已 done）保证幂等：重复 ``record_verdict`` 不翻已终态（no-op）。
         verdict ``fit`` → 关联状态：fit→verified / mismatch→rejected / unknown→保持 verifying
         （最终批量确认/回退由 88-05 处理；此处仅 per-repo 落地）。
+
+        落地成功后挂单一图谱同步 hook（KDEP-08）：fit→verified 派生边 / mismatch→失效派生边。
         """
-        return await self._record_verdict_sync(task, verdict)
+        applied = await self._record_verdict_sync(task, verdict)
+        if applied:
+            fit = str(self._sanitize_verdict(verdict).get("fit") or "unknown").lower()
+            if fit == "fit":
+                await self._sync_association_graph(
+                    association_id=task.association_id, verified=True
+                )
+            elif fit == "mismatch":
+                await self._sync_association_graph(
+                    association_id=task.association_id, verified=False
+                )
+        return applied
 
     @sync_to_async
     def _record_verdict_sync(self, task: Any, verdict: dict[str, Any]) -> bool:
@@ -686,7 +766,14 @@ class RepoAssociationService:
         user_label = (
             str(initiated_by_user_id) if initiated_by_user_id is not None else "system"
         )
-        return await self._accept_mismatch_sync(association, user_label)
+        applied = await self._accept_mismatch_sync(association, user_label)
+        if applied:
+            await self._sync_association_graph(
+                association_id=association.id,
+                verified=True,
+                initiated_by_user_id=user_label,
+            )
+        return applied
 
     @sync_to_async
     def _accept_mismatch_sync(self, association: Any, initiated_by_user_id: str) -> bool:
@@ -723,7 +810,15 @@ class RepoAssociationService:
         user_label = (
             str(initiated_by_user_id) if initiated_by_user_id is not None else "system"
         )
-        return await self._reopen_candidates_sync(association, user_label)
+        applied = await self._reopen_candidates_sync(association, user_label)
+        if applied:
+            # 离开任意态→proposed：若之前是 verified 则失效派生边；非 verified 时 unlink 幂等 no-op。
+            await self._sync_association_graph(
+                association_id=association.id,
+                verified=False,
+                initiated_by_user_id=user_label,
+            )
+        return applied
 
     @sync_to_async
     def _reopen_candidates_sync(
