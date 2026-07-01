@@ -303,8 +303,8 @@ function openDepItem(item: ArtifactOverviewItem) {
       </div>
     </template>
 
-    <!-- ============ 空态 ============ -->
-    <div v-else-if="isEmpty" class="flex min-h-[420px] items-center justify-center">
+    <!-- ============ 全局空态（仅当仓库与交付文档皆空时才占位） ============ -->
+    <div v-else-if="isEmpty && depEmpty && !depLoading" class="flex min-h-[420px] items-center justify-center">
       <CompactEmptyState
         icon="icon-[lucide--book-open]"
         :title="t('knowledge.overview.empty.title')"
@@ -314,280 +314,283 @@ function openDepItem(item: ArtifactOverviewItem) {
 
     <!-- ============ 总览正文 ============ -->
     <template v-else>
-      <!-- 知识库搜索（仓库 / 能力 / 关键词） -->
-      <KnowledgeSearchBar :items="searchItems" :loading="capsLoading" @select="onSearchSelect" />
+      <!-- 仓库派生内容：仅当存在纳管仓库时渲染（交付文档区块与仓库存在性解耦，见下方独立 section） -->
+      <template v-if="!isEmpty">
+        <!-- 知识库搜索（仓库 / 能力 / 关键词） -->
+        <KnowledgeSearchBar :items="searchItems" :loading="capsLoading" @select="onSearchSelect" />
 
-      <!-- 核心指标（渐变磁贴） -->
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-          <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-primary/25 to-transparent blur-2xl" />
-          <div class="relative flex items-center gap-3.5">
-            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-inset ring-primary/15">
-              <span class="icon-[lucide--git-branch] text-xl text-primary" />
-            </div>
-            <div class="min-w-0">
-              <p class="text-2xl font-bold leading-none tabular-nums">
-                {{ totalRepos }}
-              </p>
-              <p class="mt-1.5 truncate text-xs text-muted-foreground">
-                {{ t('knowledge.overview.stats.repos') }}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-          <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-violet-500/25 to-transparent blur-2xl" />
-          <div class="relative flex items-center gap-3.5">
-            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-violet-500/10 ring-1 ring-inset ring-violet-500/15">
-              <span class="icon-[lucide--folder-tree] text-xl text-violet-500" />
-            </div>
-            <div class="min-w-0">
-              <p class="text-2xl font-bold leading-none tabular-nums">
-                {{ domainCount }}
-              </p>
-              <p class="mt-1.5 truncate text-xs text-muted-foreground">
-                {{ t('knowledge.overview.stats.domains') }}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-          <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-emerald-500/25 to-transparent blur-2xl" />
-          <div class="relative flex items-center gap-3.5">
-            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/10 ring-1 ring-inset ring-emerald-500/15">
-              <span class="icon-[lucide--box] text-xl text-emerald-500" />
-            </div>
-            <div class="min-w-0">
-              <p class="text-2xl font-bold leading-none tabular-nums">
-                {{ capabilityCount }}
-              </p>
-              <p class="mt-1.5 truncate text-xs text-muted-foreground">
-                {{ t('knowledge.overview.stats.capabilities') }}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-          <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-amber-500/25 to-transparent blur-2xl" />
-          <div class="relative flex items-center gap-3.5">
-            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 ring-1 ring-inset ring-amber-500/15">
-              <span class="icon-[lucide--hash] text-xl text-amber-500" />
-            </div>
-            <div class="min-w-0">
-              <p class="text-2xl font-bold leading-none tabular-nums">
-                {{ keywordCount }}
-              </p>
-              <p class="mt-1.5 truncate text-xs text-muted-foreground">
-                {{ t('knowledge.overview.stats.keywords') }}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 业务能力全景 -->
-      <section>
-        <div class="mb-3 flex items-center gap-2">
-          <span class="h-4 w-1 rounded-full bg-primary" />
-          <h3 class="text-sm font-semibold">
-            {{ t('knowledge.overview.panorama.title') }}
-          </h3>
-          <span class="text-xs text-muted-foreground">{{ t('knowledge.overview.panorama.hint') }}</span>
-        </div>
-
-        <div class="grid gap-4 lg:grid-cols-5">
-          <!-- 知识星图（小卡：旋转预览，点「展开」看大图 / 拖拽即可交互） -->
-          <div class="flex flex-col overflow-hidden rounded-2xl border border-indigo-500/20 bg-[#0a0a1f] shadow-sm lg:col-span-3">
-            <header class="flex items-center gap-3 px-4 py-3">
-              <div class="shrink-0 rounded-xl bg-indigo-500/15 p-2 ring-1 ring-inset ring-indigo-400/20">
-                <span class="icon-[lucide--orbit] text-lg text-indigo-300" />
+        <!-- 核心指标（渐变磁贴） -->
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-primary/25 to-transparent blur-2xl" />
+            <div class="relative flex items-center gap-3.5">
+              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-inset ring-primary/15">
+                <span class="icon-[lucide--git-branch] text-xl text-primary" />
               </div>
-              <div class="min-w-0 flex-1">
-                <h4 class="text-sm font-semibold text-white">
-                  {{ t('knowledge.overview.starfield.title') }}
-                </h4>
-              </div>
-              <button
-                type="button"
-                class="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-white/70 transition-colors hover:bg-white/15 hover:text-white focus-visible:outline-2 focus-visible:outline-indigo-400"
-                :aria-label="t('knowledge.overview.expand')"
-                @click="starfieldOpen = true"
-              >
-                {{ t('knowledge.overview.expand') }}
-                <span class="icon-[lucide--maximize-2] text-[13px]" />
-              </button>
-            </header>
-            <div class="relative h-64">
-              <KnowledgeStarfield3D
-                v-if="capsReady && !starfieldOpen"
-                :nodes="starNodes"
-                :links="starLinks"
-                :auto-rotate="true"
-                @open="onStarOpen"
-              />
-              <div v-else-if="capsLoading" class="flex h-full items-center justify-center text-sm text-white/50">
-                <span class="icon-[lucide--loader-circle] mr-2 animate-spin text-indigo-300" />
-                {{ t('knowledge.overview.panorama.loading') }}
-              </div>
-              <div v-else-if="!capsReady" class="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-                <span class="icon-[lucide--orbit] text-2xl text-white/25" />
-                <p class="text-xs text-white/45">
-                  {{ t('knowledge.overview.panorama.empty') }}
+              <div class="min-w-0">
+                <p class="text-2xl font-bold leading-none tabular-nums">
+                  {{ totalRepos }}
+                </p>
+                <p class="mt-1.5 truncate text-xs text-muted-foreground">
+                  {{ t('knowledge.overview.stats.repos') }}
                 </p>
               </div>
             </div>
           </div>
-
-          <!-- 知识词云（小卡，点击展开大卡） -->
-          <div
-            role="button"
-            tabindex="0"
-            :aria-label="t('knowledge.overview.cloud.title')"
-            class="group flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-primary motion-safe:hover:-translate-y-0.5 lg:col-span-2"
-            @click="cloudOpen = true"
-            @keydown.enter="cloudOpen = true"
-            @keydown.space.prevent="cloudOpen = true"
-          >
-            <header class="flex items-start gap-3 px-4 py-3">
-              <div class="stat-icon stat-icon-violet h-9 w-9 shrink-0">
-                <span class="icon-[lucide--cloud] text-base" />
+          <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-violet-500/25 to-transparent blur-2xl" />
+            <div class="relative flex items-center gap-3.5">
+              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-violet-500/10 ring-1 ring-inset ring-violet-500/15">
+                <span class="icon-[lucide--folder-tree] text-xl text-violet-500" />
               </div>
-              <div class="min-w-0 flex-1">
-                <h4 class="text-sm font-semibold">
-                  {{ t('knowledge.overview.cloud.title') }}
-                </h4>
-                <p class="truncate text-xs text-muted-foreground">
-                  {{ t('knowledge.overview.cloud.subtitle') }}
+              <div class="min-w-0">
+                <p class="text-2xl font-bold leading-none tabular-nums">
+                  {{ domainCount }}
                 </p>
-              </div>
-              <span class="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
-                {{ t('knowledge.overview.expand') }}
-                <span class="icon-[lucide--maximize-2] text-[13px]" />
-              </span>
-            </header>
-            <div class="relative h-64 overflow-hidden px-2 pb-2">
-              <KnowledgeWordCloud
-                v-if="capsReady && cloudTerms.length"
-                :terms="cloudTerms"
-                :max="120"
-                :min-size="9"
-                :max-size="24"
-                class="pointer-events-none h-full w-full"
-              />
-              <div v-else-if="capsLoading" class="flex h-full items-center justify-center text-sm text-muted-foreground">
-                <span class="icon-[lucide--loader-circle] mr-2 animate-spin text-primary" />
-                {{ t('knowledge.overview.panorama.loading') }}
-              </div>
-              <div v-else class="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-                <span class="icon-[lucide--cloud] text-2xl text-muted-foreground/30" />
-                <p class="text-xs text-muted-foreground">
-                  {{ t('knowledge.overview.panorama.empty') }}
+                <p class="mt-1.5 truncate text-xs text-muted-foreground">
+                  {{ t('knowledge.overview.stats.domains') }}
                 </p>
               </div>
             </div>
-            <footer class="flex items-center gap-2 border-t border-border/60 px-4 py-2.5 text-[11px] text-muted-foreground/80">
-              <span class="icon-[lucide--mouse-pointer-click] text-muted-foreground/50" />
-              {{ t('knowledge.overview.cloud.tip') }}
-            </footer>
+          </div>
+          <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-emerald-500/25 to-transparent blur-2xl" />
+            <div class="relative flex items-center gap-3.5">
+              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/10 ring-1 ring-inset ring-emerald-500/15">
+                <span class="icon-[lucide--box] text-xl text-emerald-500" />
+              </div>
+              <div class="min-w-0">
+                <p class="text-2xl font-bold leading-none tabular-nums">
+                  {{ capabilityCount }}
+                </p>
+                <p class="mt-1.5 truncate text-xs text-muted-foreground">
+                  {{ t('knowledge.overview.stats.capabilities') }}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-amber-500/25 to-transparent blur-2xl" />
+            <div class="relative flex items-center gap-3.5">
+              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 ring-1 ring-inset ring-amber-500/15">
+                <span class="icon-[lucide--hash] text-xl text-amber-500" />
+              </div>
+              <div class="min-w-0">
+                <p class="text-2xl font-bold leading-none tabular-nums">
+                  {{ keywordCount }}
+                </p>
+                <p class="mt-1.5 truncate text-xs text-muted-foreground">
+                  {{ t('knowledge.overview.stats.keywords') }}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
-      </section>
 
-      <!-- 运行状态：双环仪表 + 状态明细 -->
-      <section class="card p-5">
-        <div class="mb-4 flex items-center gap-2">
-          <span class="h-4 w-1 rounded-full bg-primary" />
-          <h3 class="text-sm font-semibold">
-            {{ t('knowledge.overview.health.title') }}
-          </h3>
-          <span class="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            {{ statusBreakdown[0].pct === 100 ? t('knowledge.overview.health.healthy') : t('knowledge.overview.health.running') }}
-          </span>
-        </div>
+        <!-- 业务能力全景 -->
+        <section>
+          <div class="mb-3 flex items-center gap-2">
+            <span class="h-4 w-1 rounded-full bg-primary" />
+            <h3 class="text-sm font-semibold">
+              {{ t('knowledge.overview.panorama.title') }}
+            </h3>
+            <span class="text-xs text-muted-foreground">{{ t('knowledge.overview.panorama.hint') }}</span>
+          </div>
 
-        <div class="grid items-center gap-5 sm:grid-cols-[auto_auto_1fr]">
-          <!-- 环：索引完成率 -->
-          <div class="flex items-center gap-3">
-            <div class="relative h-[88px] w-[88px] shrink-0">
-              <svg viewBox="0 0 36 36" class="h-[88px] w-[88px] -rotate-90">
-                <circle cx="18" cy="18" r="15.915" fill="none" class="stroke-muted" stroke-width="3.2" />
-                <circle
-                  cx="18" cy="18" r="15.915" fill="none"
-                  class="stroke-blue-500 transition-all duration-700"
-                  stroke-width="3.2" stroke-linecap="round"
-                  :stroke-dasharray="`${indexedPct} ${100 - indexedPct}`"
+          <div class="grid gap-4 lg:grid-cols-5">
+            <!-- 知识星图（小卡：旋转预览，点「展开」看大图 / 拖拽即可交互） -->
+            <div class="flex flex-col overflow-hidden rounded-2xl border border-indigo-500/20 bg-[#0a0a1f] shadow-sm lg:col-span-3">
+              <header class="flex items-center gap-3 px-4 py-3">
+                <div class="shrink-0 rounded-xl bg-indigo-500/15 p-2 ring-1 ring-inset ring-indigo-400/20">
+                  <span class="icon-[lucide--orbit] text-lg text-indigo-300" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <h4 class="text-sm font-semibold text-white">
+                    {{ t('knowledge.overview.starfield.title') }}
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  class="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-white/70 transition-colors hover:bg-white/15 hover:text-white focus-visible:outline-2 focus-visible:outline-indigo-400"
+                  :aria-label="t('knowledge.overview.expand')"
+                  @click="starfieldOpen = true"
+                >
+                  {{ t('knowledge.overview.expand') }}
+                  <span class="icon-[lucide--maximize-2] text-[13px]" />
+                </button>
+              </header>
+              <div class="relative h-64">
+                <KnowledgeStarfield3D
+                  v-if="capsReady && !starfieldOpen"
+                  :nodes="starNodes"
+                  :links="starLinks"
+                  :auto-rotate="true"
+                  @open="onStarOpen"
                 />
-              </svg>
-              <div class="absolute inset-0 flex flex-col items-center justify-center">
-                <span class="text-lg font-bold tabular-nums">{{ indexedPct }}%</span>
+                <div v-else-if="capsLoading" class="flex h-full items-center justify-center text-sm text-white/50">
+                  <span class="icon-[lucide--loader-circle] mr-2 animate-spin text-indigo-300" />
+                  {{ t('knowledge.overview.panorama.loading') }}
+                </div>
+                <div v-else-if="!capsReady" class="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+                  <span class="icon-[lucide--orbit] text-2xl text-white/25" />
+                  <p class="text-xs text-white/45">
+                    {{ t('knowledge.overview.panorama.empty') }}
+                  </p>
+                </div>
               </div>
             </div>
-            <div class="text-xs">
-              <p class="font-medium">
-                {{ t('knowledge.overview.coverage.indexed') }}
-              </p>
-              <p class="mt-0.5 text-muted-foreground tabular-nums">
-                {{ indexedRepos }}/{{ totalRepos }}
-              </p>
-            </div>
-          </div>
 
-          <!-- 环：能力树覆盖 -->
-          <div class="flex items-center gap-3">
-            <div class="relative h-[88px] w-[88px] shrink-0">
-              <svg viewBox="0 0 36 36" class="h-[88px] w-[88px] -rotate-90">
-                <circle cx="18" cy="18" r="15.915" fill="none" class="stroke-muted" stroke-width="3.2" />
-                <circle
-                  cx="18" cy="18" r="15.915" fill="none"
-                  class="stroke-primary transition-all duration-700"
-                  stroke-width="3.2" stroke-linecap="round"
-                  :stroke-dasharray="`${coveragePct} ${100 - coveragePct}`"
-                />
-              </svg>
-              <div class="absolute inset-0 flex flex-col items-center justify-center">
-                <span class="text-lg font-bold tabular-nums">{{ coveragePct }}%</span>
-              </div>
-            </div>
-            <div class="text-xs">
-              <p class="font-medium">
-                {{ t('knowledge.overview.coverage.ring') }}
-              </p>
-              <p class="mt-0.5 text-muted-foreground tabular-nums">
-                {{ treedRepos }}/{{ totalRepos }}
-              </p>
-            </div>
-          </div>
-
-          <!-- 状态明细网格 -->
-          <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            <!-- 知识词云（小卡，点击展开大卡） -->
             <div
-              v-for="seg in statusBreakdown"
-              :key="seg.status"
-              class="rounded-xl border border-border/60 bg-muted/30 px-3 py-2"
+              role="button"
+              tabindex="0"
+              :aria-label="t('knowledge.overview.cloud.title')"
+              class="group flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-primary motion-safe:hover:-translate-y-0.5 lg:col-span-2"
+              @click="cloudOpen = true"
+              @keydown.enter="cloudOpen = true"
+              @keydown.space.prevent="cloudOpen = true"
             >
-              <div class="flex items-center gap-1.5">
-                <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="seg.meta.dot" />
-                <span class="truncate text-[11px] text-muted-foreground">{{ seg.meta.label }}</span>
+              <header class="flex items-start gap-3 px-4 py-3">
+                <div class="stat-icon stat-icon-violet h-9 w-9 shrink-0">
+                  <span class="icon-[lucide--cloud] text-base" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <h4 class="text-sm font-semibold">
+                    {{ t('knowledge.overview.cloud.title') }}
+                  </h4>
+                  <p class="truncate text-xs text-muted-foreground">
+                    {{ t('knowledge.overview.cloud.subtitle') }}
+                  </p>
+                </div>
+                <span class="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+                  {{ t('knowledge.overview.expand') }}
+                  <span class="icon-[lucide--maximize-2] text-[13px]" />
+                </span>
+              </header>
+              <div class="relative h-64 overflow-hidden px-2 pb-2">
+                <KnowledgeWordCloud
+                  v-if="capsReady && cloudTerms.length"
+                  :terms="cloudTerms"
+                  :max="120"
+                  :min-size="9"
+                  :max-size="24"
+                  class="pointer-events-none h-full w-full"
+                />
+                <div v-else-if="capsLoading" class="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  <span class="icon-[lucide--loader-circle] mr-2 animate-spin text-primary" />
+                  {{ t('knowledge.overview.panorama.loading') }}
+                </div>
+                <div v-else class="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+                  <span class="icon-[lucide--cloud] text-2xl text-muted-foreground/30" />
+                  <p class="text-xs text-muted-foreground">
+                    {{ t('knowledge.overview.panorama.empty') }}
+                  </p>
+                </div>
               </div>
-              <p class="mt-0.5 text-base font-bold tabular-nums leading-none">
-                {{ seg.count }}
-              </p>
-            </div>
-            <div class="rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
-              <div class="flex items-center gap-1.5">
-                <span class="icon-[lucide--boxes] text-[12px] text-violet-500" />
-                <span class="truncate text-[11px] text-muted-foreground">{{ t('knowledge.overview.coverage.monorepo') }}</span>
-              </div>
-              <p class="mt-0.5 text-base font-bold tabular-nums leading-none">
-                {{ monorepoCount }}
-              </p>
+              <footer class="flex items-center gap-2 border-t border-border/60 px-4 py-2.5 text-[11px] text-muted-foreground/80">
+                <span class="icon-[lucide--mouse-pointer-click] text-muted-foreground/50" />
+                {{ t('knowledge.overview.cloud.tip') }}
+              </footer>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- 交付文档 / 外部依赖（按类型计数 + 入口 + 区块内即时搜索） -->
+        <!-- 运行状态：双环仪表 + 状态明细 -->
+        <section class="card p-5">
+          <div class="mb-4 flex items-center gap-2">
+            <span class="h-4 w-1 rounded-full bg-primary" />
+            <h3 class="text-sm font-semibold">
+              {{ t('knowledge.overview.health.title') }}
+            </h3>
+            <span class="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              {{ statusBreakdown[0].pct === 100 ? t('knowledge.overview.health.healthy') : t('knowledge.overview.health.running') }}
+            </span>
+          </div>
+
+          <div class="grid items-center gap-5 sm:grid-cols-[auto_auto_1fr]">
+            <!-- 环：索引完成率 -->
+            <div class="flex items-center gap-3">
+              <div class="relative h-[88px] w-[88px] shrink-0">
+                <svg viewBox="0 0 36 36" class="h-[88px] w-[88px] -rotate-90">
+                  <circle cx="18" cy="18" r="15.915" fill="none" class="stroke-muted" stroke-width="3.2" />
+                  <circle
+                    cx="18" cy="18" r="15.915" fill="none"
+                    class="stroke-blue-500 transition-all duration-700"
+                    stroke-width="3.2" stroke-linecap="round"
+                    :stroke-dasharray="`${indexedPct} ${100 - indexedPct}`"
+                  />
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                  <span class="text-lg font-bold tabular-nums">{{ indexedPct }}%</span>
+                </div>
+              </div>
+              <div class="text-xs">
+                <p class="font-medium">
+                  {{ t('knowledge.overview.coverage.indexed') }}
+                </p>
+                <p class="mt-0.5 text-muted-foreground tabular-nums">
+                  {{ indexedRepos }}/{{ totalRepos }}
+                </p>
+              </div>
+            </div>
+
+            <!-- 环：能力树覆盖 -->
+            <div class="flex items-center gap-3">
+              <div class="relative h-[88px] w-[88px] shrink-0">
+                <svg viewBox="0 0 36 36" class="h-[88px] w-[88px] -rotate-90">
+                  <circle cx="18" cy="18" r="15.915" fill="none" class="stroke-muted" stroke-width="3.2" />
+                  <circle
+                    cx="18" cy="18" r="15.915" fill="none"
+                    class="stroke-primary transition-all duration-700"
+                    stroke-width="3.2" stroke-linecap="round"
+                    :stroke-dasharray="`${coveragePct} ${100 - coveragePct}`"
+                  />
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                  <span class="text-lg font-bold tabular-nums">{{ coveragePct }}%</span>
+                </div>
+              </div>
+              <div class="text-xs">
+                <p class="font-medium">
+                  {{ t('knowledge.overview.coverage.ring') }}
+                </p>
+                <p class="mt-0.5 text-muted-foreground tabular-nums">
+                  {{ treedRepos }}/{{ totalRepos }}
+                </p>
+              </div>
+            </div>
+
+            <!-- 状态明细网格 -->
+            <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              <div
+                v-for="seg in statusBreakdown"
+                :key="seg.status"
+                class="rounded-xl border border-border/60 bg-muted/30 px-3 py-2"
+              >
+                <div class="flex items-center gap-1.5">
+                  <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="seg.meta.dot" />
+                  <span class="truncate text-[11px] text-muted-foreground">{{ seg.meta.label }}</span>
+                </div>
+                <p class="mt-0.5 text-base font-bold tabular-nums leading-none">
+                  {{ seg.count }}
+                </p>
+              </div>
+              <div class="rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
+                <div class="flex items-center gap-1.5">
+                  <span class="icon-[lucide--boxes] text-[12px] text-violet-500" />
+                  <span class="truncate text-[11px] text-muted-foreground">{{ t('knowledge.overview.coverage.monorepo') }}</span>
+                </div>
+                <p class="mt-0.5 text-base font-bold tabular-nums leading-none">
+                  {{ monorepoCount }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </template>
+
+      <!-- 交付文档 / 外部依赖（按类型计数 + 入口 + 区块内即时搜索）——独立于仓库存在性，靠自身 depLoading/depEmpty 控制 -->
       <section class="card p-5" data-testid="knowledge-deps-section">
         <div class="mb-4 flex items-center gap-2">
           <span class="h-4 w-1 rounded-full bg-primary" />
