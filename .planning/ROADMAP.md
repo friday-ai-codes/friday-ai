@@ -30,7 +30,7 @@
 - [x] Phase 96: 外部依赖进检索与总览 (5/5 plans) — 全类型工件登记可发现 + 搜索命中标类型可跳查看 + 知识总览加「交付文档」区块（KDEP-01/02/03）— completed 2026-07-01
 - [x] Phase 97: 交付文档知识树视图 (3/3 plans) — `/knowledge` 树页并行「交付文档」树（项目→类型→工件）+ 树内搜索/查看 + 后端树数据 API（KDEP-04/05/06）— completed 2026-07-01
 - [x] Phase 98: 工件↔仓库/能力/关键词关联 (3/3 plans) — RepoRouterV2 路由工件正文落 RELATES_TO 边 + 同步 verified RepoAssociation + 关联可查询（KDEP-07/08/09）— completed 2026-07-01
-- [ ] Phase 99: 关联可视化与交叉入口 — 星图纳入 artifact 节点/边 + 知识实体图/详情展示关联 + 作战室↔知识闭环（KDEP-10/11/12）
+- [ ] Phase 99: 关联可视化与交叉入口 (4/4 plans) — 星图纳入 artifact 节点/边 + 知识实体图/详情展示关联 + 作战室↔知识闭环（KDEP-10/11/12）
 
 完整阶段详情（Goal / Success Criteria / 依赖链）见 [milestones/v0.16.3-ROADMAP.md](./milestones/v0.16.3-ROADMAP.md)；需求 KDEP-01~12 见 [REQUIREMENTS.md](./REQUIREMENTS.md)；现状探查 + 架构决策见 [research/v0.16.3-external-deps-knowledge.md](./research/v0.16.3-external-deps-knowledge.md)。**执行顺序 96 → 97 → 98 → 99。** 下一步：`$gsd-autonomous`（或 `$gsd-plan-phase 96`）。
 
@@ -98,7 +98,11 @@
   3. 作战室「外部依赖」区查看工件处可跳知识实体/关联视图，形成「作战室↔知识」闭环。
 
 **UI hint**: yes（星图 + 实体详情 + 作战室交叉入口，`/gsd-ui-phase` 可介入）
-**Plans**: TBD
+**Plans**: 4 plans（3 waves）
+- [ ] 99-01-PLAN.md — KDEP-10 星图后端扩展：artifact 节点 + HAS_ARTIFACT/ARTIFACT_REPO/ARTIFACT_CAPABILITY 边 + verified RepoAssociation project→repo 边（复用 Phase 98 查询 + max_nodes 预算 + best-effort）[wave 1]
+- [ ] 99-02-PLAN.md — KDEP-11/12 后端支撑：仓库→相关文档反查端点（薄委托 Phase 98）+ ArtifactSerializer 暴露 entity_id [wave 1]
+- [ ] 99-03-PLAN.md — KDEP-11 前端：实体详情关联展示（工件→仓库/能力/关键词 + 仓库→相关文档，双向可导航 + 优雅空态，复用 Phase 96/97）[wave 2]
+- [ ] 99-04-PLAN.md — KDEP-10/12 前端：星图渲染 artifact/capability 节点 + 作战室工件行『知识』跨入口（携带 entity_id，闭环）[wave 3]
 
 <details>
 <summary>✅ v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）(Phases 90–95) — SHIPPED 2026-06-28 — 审计 tech_debt</summary>
