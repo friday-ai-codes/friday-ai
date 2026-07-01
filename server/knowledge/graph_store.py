@@ -152,6 +152,8 @@ class GraphStore(Protocol):
 
     async def expire_edge(self, edge_id: uuid.UUID, *, expired_at: datetime) -> None: ...
 
+    async def update_edge_metadata(self, edge_id: uuid.UUID, *, metadata: dict) -> None: ...
+
     async def chunk_in_edges(
         self,
         chunk_id: uuid.UUID,
@@ -274,6 +276,34 @@ class RelationalGraphStore:
             return
         logger.info(
             "knowledge_edge_expired", edge_id=str(edge_id), expired_at=expired_at.isoformat()
+        )
+
+    async def update_edge_metadata(self, edge_id: uuid.UUID, *, metadata: dict) -> None:
+        """活跃边 metadata 就地覆盖（KDEP-07：metadata 覆盖为最新路由结果）。
+
+        仅对当前有效（``invalid_at IS NULL AND expired_at IS NULL``）的边就地
+        ``aupdate(metadata=...)``，绝不触碰四个时间戳（不改写 bi-temporal 历史，
+        T-12-04 纪律）。命中 0 行时区分两态（镜像 ``invalidate_edge``）：边不存在
+        → raise ``KnowledgeEdge.DoesNotExist``（响亮）；边已失效/作废 → warning
+        幂等返回（不复活历史边的 metadata）。
+        """
+        updated = await KnowledgeEdge.objects.filter(
+            id=edge_id, invalid_at__isnull=True, expired_at__isnull=True
+        ).aupdate(metadata=metadata or {})
+        if updated == 0:
+            # 区分两种 0 行情况：边不存在（响亮报错） vs 已失效/作废（幂等返回）
+            if not await KnowledgeEdge.objects.filter(id=edge_id).aexists():
+                raise KnowledgeEdge.DoesNotExist(f"KnowledgeEdge {edge_id} 不存在")
+            logger.warning(
+                "knowledge_edge_metadata_update_skipped",
+                edge_id=str(edge_id),
+                reason="edge_not_active",
+            )
+            return
+        logger.info(
+            "knowledge_edge_metadata_updated",
+            edge_id=str(edge_id),
+            metadata_keys=sorted((metadata or {}).keys()),
         )
 
     async def chunk_in_edges(

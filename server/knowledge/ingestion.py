@@ -409,7 +409,16 @@ async def apply_edge_specs(
                     error_type=type(exc).__name__,
                 )
             continue
-        if any(edge.target_id == spec.target_entity_id for edge in existing):
+        existing_active = next(
+            (edge for edge in existing if edge.target_id == spec.target_entity_id), None
+        )
+        if existing_active is not None:
+            # 幂等 upsert：活跃边已存在。spec 带 metadata → 覆盖为最新（KDEP-07）；
+            # metadata=None（既有 REFERENCES/HAS_PLAN 等）→ 保持跳过，零回归。
+            if spec.metadata is not None:
+                await graph_store.update_edge_metadata(
+                    existing_active.edge_id, metadata=spec.metadata
+                )
             continue
         if spec.exclusive:
             for edge in existing:
@@ -421,6 +430,7 @@ async def apply_edge_specs(
                 target_id=spec.target_entity_id,
                 relation=spec.relation,
                 valid_at=event_time,
+                metadata=spec.metadata,
             )
         except IntegrityError as exc:
             logger.warning(
