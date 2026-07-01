@@ -1806,12 +1806,27 @@ def _build_project_galaxy(
     工件/关联分支整体 best-effort：异常被吞掉，既有 project/feature/work_item/MR/repo
     星图完整返回（read-only 只读展示，绝不反噬既有星图）。
     """
+    import uuid as _uuid
+
     from initiatives.models import MergeRequest, ProjectWorkItemLink
 
     nodes: list[dict] = []
     edges: list[dict] = []
     seen: set[str] = set()
     edge_seen: set[tuple[str, str, str]] = set()
+
+    def repo_node_id(raw) -> str:
+        """归一化仓库 id 到唯一 canonical 串形。
+
+        仓库节点跨三来源（MR / verified RepoAssociation / 工件 ARTIFACT_REPO）拼装，
+        去重依赖节点 id 逐字符一致。``source_id`` 是 ``CharField``，一旦上游写入格式漂移
+        （大小写/带不带 dash/前缀），裸 ``f"repository:{raw}"`` 会产生重复节点与重复边。
+        此处统一归一化为 ``str(uuid.UUID(...))``（无法解析为 UUID 时回退原值），锁死不变量。
+        """
+        try:
+            return f"repository:{_uuid.UUID(str(raw))}"
+        except (ValueError, AttributeError, TypeError):
+            return f"repository:{raw}"
 
     def add_node(nid: str, ntype: str, label: str, **extra) -> None:
         if nid in seen:
@@ -1867,7 +1882,7 @@ def _build_project_galaxy(
         )
         add_edge(proj_node, mr_nid, "HAS_MR")
         if mr.repository_id:
-            repo_nid = f"repository:{mr.repository_id}"
+            repo_nid = repo_node_id(mr.repository_id)
             repo_name = mr.repository.name if mr.repository else str(mr.repository_id)
             add_node(repo_nid, "repository", repo_name, ref_id=str(mr.repository_id))
             # USES_REPO 纳入统一去重集：与下方 verified RepoAssociation 来源去重（同 repo 一条）。
@@ -1896,7 +1911,7 @@ def _build_project_galaxy(
                 rid = repo.get("repository_id")
                 if not rid:
                     continue
-                repo_nid = f"repository:{rid}"
+                repo_nid = repo_node_id(rid)
                 add_node(
                     repo_nid, "repository", repo.get("repo_name") or str(rid),
                     ref_id=str(rid),
@@ -1917,7 +1932,7 @@ def _build_project_galaxy(
             ).select_related("repository")
         ):
             repo = assoc.repository
-            repo_nid = f"repository:{repo.id}"
+            repo_nid = repo_node_id(repo.id)
             add_node(repo_nid, "repository", repo.name, ref_id=str(repo.id))
             add_edge(proj_node, repo_nid, "USES_REPO")
     except Exception as exc:  # noqa: BLE001 — best-effort，绝不反噬既有星图

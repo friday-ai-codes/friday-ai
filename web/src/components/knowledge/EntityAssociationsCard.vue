@@ -161,7 +161,7 @@ const isEmpty = computed(() => {
           class="flex items-start gap-2 rounded border border-border/60 p-2.5 hover:bg-muted/30"
           data-testid="assoc-doc-link"
         >
-          <span :class="carrierIcon(doc.type_key)" class="mt-0.5 shrink-0 text-muted-foreground" />
+          <span :class="carrierIcon(doc.carrier)" class="mt-0.5 shrink-0 text-muted-foreground" />
           <span class="min-w-0 flex-1">
             <span class="flex items-center gap-2">
               <Badge

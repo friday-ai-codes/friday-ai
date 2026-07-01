@@ -227,7 +227,7 @@ async function parseAndFill() {
     success('已开始解析，进度将实时更新（可关闭弹窗，稍后回来查看）')
   }
   catch (e: unknown) {
-    handleError(e, 'AI 解析文档失败')
+    handleError(e, '解析文档失败')
   }
 }
 
@@ -313,9 +313,6 @@ async function handleSubmit() {
         <h2 class="text-sm font-semibold text-foreground">
           编辑 feature list
         </h2>
-        <p class="text-xs text-muted-foreground">
-          录入/编辑「模块 → 功能点 → 验收项」，可拖动排序；或粘贴文档让 AI 分层解析填入
-        </p>
       </div>
       <div class="flex items-center gap-1.5 shrink-0">
         <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
@@ -332,8 +329,7 @@ async function handleSubmit() {
       <div class="rounded-xl border border-dashed border-primary/30 bg-primary/[0.03] p-4 space-y-2.5" data-testid="fl-paste">
         <div class="flex items-center gap-2">
           <span class="icon-[lucide--sparkles] text-primary text-base" />
-          <span class="text-sm font-semibold text-foreground">粘贴文档，AI 分层解析填入</span>
-          <span class="text-xs text-muted-foreground hidden sm:inline">· markdown / 飞书 / gitlab 等均可，逐字保留原文</span>
+          <span class="text-sm font-semibold text-foreground">从文档解析</span>
           <div class="ml-auto inline-flex rounded-md border border-border/60 overflow-hidden text-xs">
             <button
               type="button"
@@ -358,7 +354,7 @@ async function handleSubmit() {
         <Textarea
           v-if="pasteView === 'edit'"
           v-model="pasteText"
-          placeholder="把需求 / PRD / feature 文档整篇粘贴进来（markdown / 飞书 / gitlab / typora 等）。"
+          placeholder="粘贴需求 / PRD 文档，自动拆成模块和功能点"
           :rows="6"
           class="text-sm font-mono leading-relaxed"
           :class="overLimit ? 'border-destructive focus-visible:border-destructive' : ''"
@@ -385,7 +381,7 @@ async function handleSubmit() {
           </span>
           <Button size="sm" :disabled="!pasteText.trim() || parsing || overLimit" data-testid="fl-parse-btn" @click="parseAndFill">
             <span class="icon-[lucide--wand-2] mr-1.5" :class="parsing ? 'animate-pulse' : ''" />
-            {{ parsing ? 'AI 解析中…' : 'AI 解析填入' }}
+            {{ parsing ? '解析中…' : '解析填入' }}
           </Button>
         </div>
 

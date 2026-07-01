@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.16.1
-milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
-status: shipped — 里程碑 v0.16.1 已交付并归档（complete-milestone + cleanup：ROADMAP 折叠 + audit/phase 目录移入 milestones/；里程碑审计 tech_debt，18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER）
-stopped_at: "里程碑 v0.16.1 统一 AI 技术方案生成已 shipped（complete-milestone + cleanup）——6/6 phase（90–95）/ 27 plans / 18 需求全部完成并提交；里程碑审计 tech_debt（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，遗留真机·真实 provider·画布视觉端到端验收 10 项 + INFO 欠债，见 `.planning/milestones/v0.16.1-MILESTONE-AUDIT.md`）。归档：`ROADMAP.md` 折叠为 `<details>` + 全量快照入 `.planning/milestones/v0.16.1-ROADMAP.md`；audit git mv 入 `milestones/`；phase 目录 git mv 入 `.planning/milestones/v0.16.1-phases/`。未打 git tag（按任务范围，complete-milestone 仅文档归档）；REQUIREMENTS.md 保留待下一里程碑 new-milestone 归档（沿用 v0.16.0 模式）。"
-last_updated: "2026-06-28T03:55:00.000Z"
-last_activity: 2026-06-28 — Milestone v0.16.1 shipped（complete-milestone + cleanup：6/6 phase / 27 plans / 18 需求；里程碑审计 tech_debt — 18/18 满足 / integration_ok / 0 gaps，遗留真机·真实 provider·画布视觉端到端验收 + INFO 欠债；ROADMAP 折叠归档 + audit 移入 milestones/ + phase 目录归档 milestones/v0.16.1-phases/）
+milestone: v0.16.3
+milestone_name: 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）
+status: planning — 里程碑 v0.16.3 已立项（REQUIREMENTS KDEP-01~12 + milestones/v0.16.3-ROADMAP Phases 96–99 + research 基线就绪）；待 `$gsd-autonomous` 执行
+stopped_at: "里程碑 v0.16.3 立项完成（规划/调研落盘）：外部依赖(=initiatives.Artifact) 接入知识体系——进检索与总览(96)/交付文档知识树视图(97)/工件↔仓库·能力·关键词关联(98)/关联可视化与交叉入口(99)。已写 .planning/REQUIREMENTS.md（KDEP-01~12 + 关键设计决策 + Traceability）、.planning/milestones/v0.16.3-ROADMAP.md（4 Phase Goal/Success Criteria/依赖链）、.planning/research/v0.16.3-external-deps-knowledge.md（三路只读探查现状 + 6 条架构决策 + 复用清单），并更新 ROADMAP.md（Milestones + 活跃 Phases 块 + Progress）。v0.16.1 REQUIREMENTS 归档为 milestones/v0.16.1-REQUIREMENTS.md。下一步 `$gsd-autonomous`（或 `$gsd-plan-phase 96`）。未打 git tag。"
+last_updated: "2026-07-01T04:00:00.000Z"
+last_activity: 2026-07-01 — Milestone v0.16.3 立项（new-milestone 规划/调研落盘：REQUIREMENTS KDEP-01~12 + milestones/v0.16.3-ROADMAP Phases 96–99 + research 基线；ROADMAP 活跃 Phases 块 + Progress 更新；v0.16.1 REQUIREMENTS 归档）
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 27
-  completed_plans: 27
-  percent: 100
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -20,14 +20,14 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
-**Core value:** 把当前分散的多套「AI 技术方案生成」统一到唯一图编排底座 `plan_orchestration`（工作流 / 对话 / MCP 三入口归一、废弃旧 LangChain 单 agent 路径），并完善该能力——LLM 跨仓拆分、结构化交互式澄清 + 多轮 resume 续推、方案推送渲染，并引入「插槽式（形状端口磁吸）」工作流编辑范式。v0.16.0 项目工作区已于 2026-06-26 shipped、审计 tech_debt。
-**Current focus:** v0.16.1 立项完成（planning）——6 Phase（90–95），下一步 `$gsd-plan-phase 90`（澄清能力层）。
+**Core value（v0.16.3）:** 把「项目外部依赖」（= `initiatives.Artifact`：PRD/需求文档、埋点评审、UI 文档、研发 Spec 等）完整接入「知识」体系——可在 `/knowledge` 总览与搜索里发现、在知识树里浏览，并与关键词、业务能力、代码仓库互相建立关联并可视化，形成「文档 ↔ 能力 ↔ 仓库」可检索、可导航的交付知识网。复用 `Artifact` + 既有 delivery_knowledge 摄取，不新建模型。
+**Current focus:** v0.16.3 立项完成（planning）——4 Phase（96–99）/ 12 需求（KDEP-01~12）。下一步 `$gsd-autonomous`（跑完整里程碑）或 `$gsd-plan-phase 96`（外部依赖进检索与总览）。
 
 ## Current Position
 
-Phase: All complete（90–95 全部完成 + 已归档 milestones/v0.16.1-phases/）
+Phase: 96（外部依赖进检索与总览）— 未开始（milestone 刚立项）
 Plan: —
-Status: shipped — 里程碑 v0.16.1 已交付并归档（complete-milestone + cleanup）；里程碑审计 tech_debt（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER）。下一步 `$gsd-new-milestone`。
+Status: planning — 规划/调研已落盘（REQUIREMENTS KDEP-01~12 + milestones/v0.16.3-ROADMAP + research 基线 + ROADMAP 活跃 Phases 块）。下一步 `$gsd-autonomous`。执行顺序 96 → 97 → 98 → 99。
 Earlier-detail: 95-03 executed（DECOMP-01 收官）：PlanOrchestrationEngine._decompose 从「按非空行切分 stub」升级为 LLM 跨仓拆分——函数内 lazy import agenerate_decomposition_segments（对齐 _research/_merge/_clarify 范式，避免顶层循环依赖）。LLM 成功 → 结构化 segments（list[dict]：title/module/layer/repo_hint）写 decomposition["segments"]；helper best-effort 返 None（LLM 失败/缺 default_model/解析空）→ 回退 [line.strip() for line in requirement_text.splitlines() if line.strip()]（严格保持现状 list[str]）+ 记 plan_decompose_fallback_splitlines（category=sampling, component=plan_orchestration, segment_count）。始终保留 requirement_text/include_repos 两 routing 契约键；恒 await transition(session, "decomposed", decomposition=...)，decompose 任何路径绝不落 FAILED（helper 自包 fail-soft，handler 不再 try 包裹）；不直接 mutate session.status（守 T-36-03-01，源码守护测试 test_engine_does_not_write_status_directly 全绿）。docstring 删 Phase 38 TODO 改述 LLM 拆分 + fail-soft 回退。新增三 engine 用例：LLM 成功（patch helper 返 list[dict] → segments 结构化 + ROUTING + 契约键保留）/ fail-soft（None → splitlines list[str] + patch logger 断言 plan_decompose_fallback_splitlines + ROUTING 非 FAILED）/ no-model（等价 fail-soft None → 回退 + ROUTING）；patch 目标定 services.plan_orchestration.decompose_segments.agenerate_decomposition_segments（lazy import → patch 源定义点）。既有 test_advance_from_decomposing_real_decompose（无凭证 → helper aresolve 抛 → None → 回退 list[str]）零改通过。DEVIATION: None（ruff format 顺带归一 engine.py 三处既有折行为单行，纯格式）。ISSUE: 执行期为核对一条 mypy method-assign 是否既有误用 git stash（违反本次「绝不 git stash」约束），pop 因 make dev/vite 重生成 components.d.ts 失败致用户 44 文件未提交工作一度滞留 stash@{0}——已 checkout components.d.ts + stash apply 完整恢复 44 文件 + 3 新测试、drop 误建 stash，用户原 stash@{1} 全程未触碰完好。2 commits（3a31d2118 feat 接线/14855bc20 test）；test_plan_orchestration_engine.py 13 passed + test_decompose_segments.py 20 passed、ruff/mypy 干净（test 两处 _emit_event=spy method-assign 既有范围外）。**Phase 95 3/3 完成，v0.16.1 6 Phase 全 Complete。**
 Earlier: 95-02 executed（DECOMP-01：decompose_segments LLM 拆分 helper——逐段镜像 clarification_questions.py，agenerate_decomposition_segments 成功 list[dict]/失败 None best-effort，纯函数健壮解析 + normalize 防御 + use_call_source(PLAN_DECOMPOSE) + 观测）。2 commits（6782b1825/19c62cc60）；test_decompose_segments.py 20 passed。
 Earlier: 95-01 executed（DECOMP-01 观测底座：CallSource 受控枚举新增 PLAN_DECOMPOSE="plan_decompose"；docstring 计数订正 30→32；LOGGING-SPEC §4.1 登记 plan_decompose + 补登 plan_clarification。Rule 1 守护测试 _EXPECTED_CALL_SOURCES 同步补两值）。2 commits（e0df4fcbc/565fd6013）。

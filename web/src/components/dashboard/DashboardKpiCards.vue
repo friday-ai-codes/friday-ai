@@ -80,15 +80,13 @@ watch(() => props.stats.map(s => s.value), (newValues) => {
           <p class="text-3xl font-bold text-foreground tabular-nums leading-none">
             {{ Math.round(animated[index]?.value ?? 0) }}
           </p>
-          <p class="text-xs tabular-nums leading-none">
-            <span
-              v-if="stat.todayNew > 0"
-              class="inline-flex items-center gap-1 text-emerald-600 font-medium"
-            >
-              <span class="icon-[lucide--trending-up]" aria-hidden="true" />
-              今日 +{{ stat.todayNew }}
-            </span>
-            <span v-else class="text-muted-foreground/60">今日暂无新增</span>
+          <!-- 仅在有新增时展示「今日 +N」；无新增则不展示（不占位提示）。 -->
+          <p
+            v-if="stat.todayNew > 0"
+            class="text-xs tabular-nums leading-none inline-flex items-center gap-1 text-emerald-600 font-medium"
+          >
+            <span class="icon-[lucide--trending-up]" aria-hidden="true" />
+            今日新增 {{ stat.todayNew }}
           </p>
         </template>
       </RouterLink>

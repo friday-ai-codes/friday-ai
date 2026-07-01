@@ -7,13 +7,21 @@ import { projectWorkspaceApi } from '~/api/projectWorkspace'
 import EmptyState from '~/components/common/EmptyState.vue'
 import InlineMarkdown from '~/components/common/InlineMarkdown.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
+import { Button } from '~/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import { useModal } from '~/composables/useModal'
 import FeatureDetailModal from './FeatureDetailModal.vue'
+import { useFeatureListEditor } from './useFeatureListEditor'
 
 // P1：Feature 大盘——「按状态 / 按模块」视图切换。数据同源 getFeatureList（与 ProjectHealthCard 共享 queryKey，vue-query 去重）。
-const props = defineProps<{ projectId: string }>()
+const props = defineProps<{ projectId: string, canManage?: boolean }>()
+
+// 常驻编辑入口：不受 feature 数量限制，随时可重新编辑/追加 feature list。
+const { openFeatureListEditor } = useFeatureListEditor()
+function openEditor() {
+  openFeatureListEditor(props.projectId)
+}
 
 const { t } = useI18n()
 const projectIdRef = toRef(props, 'projectId')
@@ -129,7 +137,7 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
 
 <template>
   <section class="card" data-testid="warroom-feature-board">
-    <header class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2.5">
+    <header class="px-5 py-3.5 border-b border-border/50 flex flex-wrap items-center gap-x-2.5 gap-y-2">
       <span class="section-chip"><span class="icon-[lucide--list-tree]" /></span>
       <h2 class="text-sm font-semibold text-foreground">
         {{ t('projects.workbench.feature.title') }}
@@ -148,6 +156,19 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
           {{ t('projects.warroom.feature.byModule') }}
         </ToggleGroupItem>
       </ToggleGroup>
+      <!-- 常驻入口（窄面板用紧凑图标按钮，避免与视图切换器挤占空间）：随时可编辑/增删改/拖动排序/追加解析。 -->
+      <Button
+        v-if="canManage"
+        size="icon-sm"
+        variant="ghost"
+        class="shrink-0 text-muted-foreground hover:text-primary"
+        :title="t('projects.warroom.health.editFeatureList')"
+        :aria-label="t('projects.warroom.health.editFeatureList')"
+        data-testid="feature-board-edit-btn"
+        @click="openEditor"
+      >
+        <span class="icon-[lucide--pencil]" />
+      </Button>
     </header>
 
     <div class="p-5">

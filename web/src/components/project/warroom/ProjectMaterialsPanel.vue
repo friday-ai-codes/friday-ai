@@ -6,9 +6,9 @@ import FeatureBoard from '~/components/project/warroom/FeatureBoard.vue'
 import ProjectApiListCard from '~/components/project/warroom/ProjectApiListCard.vue'
 import ProjectGalaxyCard from '~/components/project/warroom/ProjectGalaxyCard.vue'
 import ProjectHealthCard from '~/components/project/warroom/ProjectHealthCard.vue'
+import { useFeatureListEditor } from '~/components/project/warroom/useFeatureListEditor'
 import MembersTab from '~/components/project/workbench/MembersTab.vue'
 import WorkItemsTab from '~/components/project/workbench/WorkItemsTab.vue'
-import { useFeatureListEditor } from '~/components/project/warroom/useFeatureListEditor'
 
 // 左中右布局 · 右栏：项目所有资料的扁平堆叠展示（无卡片、无外边距，分隔线分区）。
 // 各资料组件保持原样复用，卡片样式由本面板局部「拍平」（去描边/圆角/底色），
@@ -50,7 +50,7 @@ const HumanTaskInbox = defineAsyncComponent(() => import('~/components/delivery/
       <!-- 统一人类待办收件箱（P8）：按项目过滤，无待办则不渲染（空项目不突兀） -->
       <HumanTaskInbox :project-id="project.id" hide-when-empty />
 
-      <FeatureBoard :project-id="project.id" />
+      <FeatureBoard :project-id="project.id" :can-manage="canManage" />
 
       <!-- 工作项（裸组件，套扁平分区头） -->
       <section class="flat-section">
