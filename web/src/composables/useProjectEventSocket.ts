@@ -87,5 +87,9 @@ export function useProjectEventSocket(
 
   onScopeDispose(disconnect)
 
+  // 创建即连接：调用方（如 FeatureListEditModal）依赖实时进度推送，
+  // 若等调用方手动 connect 容易遗漏（曾导致解析进度永远卡在 5%）。
+  connect()
+
   return { connected, connect, disconnect }
 }
