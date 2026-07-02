@@ -22,6 +22,8 @@ QUEUE_REPO_SUMMARY = "repo_summary"
 QUEUE_MAINTENANCE = "maintenance"
 # 飞书↔Friday 文档同步（pull/push/poll 对同一文档共用 lock=docsync-{feishu_document_id} 串行）
 QUEUE_DOC_SYNC = "doc_sync"
+# feature list 异步解析（父任务出模块 + fan-out 逐模块并发解析；lock=featparse-slot-{k} 控并发）
+QUEUE_FEATURE_PARSE = "feature_parse"
 
 # 全部已声明队列的汇总，供注册 / 校验 / worker 启动参数等场景遍历。
 ALL_QUEUES: tuple[str, ...] = (
@@ -32,6 +34,7 @@ ALL_QUEUES: tuple[str, ...] = (
     QUEUE_REPO_SUMMARY,
     QUEUE_MAINTENANCE,
     QUEUE_DOC_SYNC,
+    QUEUE_FEATURE_PARSE,
 )
 
 __all__ = [
@@ -42,5 +45,6 @@ __all__ = [
     "QUEUE_REPO_SUMMARY",
     "QUEUE_MAINTENANCE",
     "QUEUE_DOC_SYNC",
+    "QUEUE_FEATURE_PARSE",
     "ALL_QUEUES",
 ]

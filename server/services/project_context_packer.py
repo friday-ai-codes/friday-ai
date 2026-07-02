@@ -31,9 +31,13 @@ _COMPONENT = "initiatives"
 _DEFAULT_TOKEN_BUDGET = 4000
 
 # 分层优先级（数字越小越优先保留；超预算从高数字层开始裁剪）。
+# overview 不进入本 budget 裁剪循环（作为强制头部注入，永不裁剪），此处登记仅为
+# counts/included_layers 观测对齐。
 _PRIORITY = {
+    "overview": -1,
     "memory": 0,
     "requirements": 0,
+    "features": 1,
     "artifacts": 1,
     "knowledge": 2,
     "rag": 2,
@@ -120,9 +124,14 @@ async def pack_project_context(
         )
         return PackedContext()
 
+    # 项目概览（名称/所属空间/状态/描述）——项目级对话的"我是什么项目"直接由此回答。
+    # 作为强制头部注入（不参与 token 预算裁剪，体量极小），保证永远可见、不被降级丢弃。
+    overview_layer = await _layer_overview(project)
+
     layers: list[_Layer] = []
     layers.append(await _layer_memory(project_id))
     layers.append(await _layer_requirements(project_id))
+    layers.append(await _layer_features(project_id))
     layers.append(await _layer_artifacts(project_id))
     layers.append(await _layer_knowledge(project))
     if query:
@@ -147,19 +156,34 @@ async def pack_project_context(
         layer.included = True
         used += cost
 
-    sections = [
+    sections: list[str] = []
+    included_layers: list[str] = []
+    if overview_layer.lines:
+        sections.append(_render_block(overview_layer))
+        included_layers.append("overview")
+        used += _approx_tokens(_render_block(overview_layer))
+    sections.extend(
         _render_block(layer) for layer in layers if layer.included and layer.lines
-    ]
+    )
+    included_layers.extend(
+        layer.name for layer in layers if layer.included and layer.lines
+    )
     text = ""
     if sections:
         text = "# 项目上下文（自动召回）\n\n" + "\n\n".join(sections)
 
     result = PackedContext(
         text=text,
-        included_layers=[layer.name for layer in layers if layer.included and layer.lines],
+        included_layers=included_layers,
         degraded=degraded,
-        counts={layer.name: layer.count for layer in layers},
-        layer_timing_ms={layer.name: layer.elapsed_ms for layer in layers},
+        counts={
+            "overview": overview_layer.count,
+            **{layer.name: layer.count for layer in layers},
+        },
+        layer_timing_ms={
+            "overview": overview_layer.elapsed_ms,
+            **{layer.name: layer.elapsed_ms for layer in layers},
+        },
         scores={layer.name: layer.score for layer in layers if layer.score},
         total_tokens=used,
     )
@@ -176,8 +200,10 @@ async def pack_project_context(
 
 def _render_block(layer: _Layer) -> str:
     titles = {
+        "overview": "## 项目概览",
         "memory": "## 项目记忆",
         "requirements": "## 需求 / 工作项",
+        "features": "## Feature 清单（模块）",
         "artifacts": "## 工件",
         "knowledge": "## 关联知识",
         "rag": "## 语义召回",
@@ -185,6 +211,71 @@ def _render_block(layer: _Layer) -> str:
     }
     header = titles.get(layer.name, f"## {layer.name}")
     return header + "\n" + "\n".join(layer.lines)
+
+
+async def _layer_overview(project: Any) -> _Layer:
+    """项目概览层：名称/所属空间/状态/描述（回答"我是什么项目"的第一信息源）。
+
+    ``project`` 可能未 ``select_related("space")``——所有属性访问（含 lazy space FK /
+    ``get_status_display``）统一在 ``sync_to_async`` 内完成，避免裸 async 触 ORM。
+    """
+    start = perf_counter()
+
+    @sync_to_async
+    def _fetch() -> list[str]:
+        lines: list[str] = []
+        name = (getattr(project, "name", "") or "").strip()
+        if name:
+            lines.append(f"- 名称：{name}")
+        space = getattr(project, "space", None)
+        space_name = (getattr(space, "name", "") or "").strip() if space else ""
+        if space_name:
+            lines.append(f"- 所属空间：{space_name}")
+        try:
+            status_display = project.get_status_display()
+        except Exception:  # noqa: BLE001 — 状态展示 best-effort，回退原始值
+            status_display = getattr(project, "status", "") or ""
+        if status_display:
+            lines.append(f"- 状态：{status_display}")
+        desc = (getattr(project, "description", "") or "").strip()
+        if desc:
+            lines.append(f"- 描述：{desc[:1000]}")
+        return lines
+
+    lines = await _fetch()
+    return _Layer("overview", lines, len(lines), _ms(start))
+
+
+async def _layer_features(project_id: Any) -> _Layer:
+    """Feature 清单层：模块名 + 模块介绍 + 功能点名（只取轻量摘要，非全量验收项）。
+
+    经 ``FeatureListService.build_tree`` 统一解析 markdown / 飞书 bitable 两种载体，
+    fail-soft：无 feature_list 工件 / 拉取失败 → 空层（不反噬打包）。
+    """
+    start = perf_counter()
+    lines: list[str] = []
+    try:
+        from initiatives.services.feature_list_service import FeatureListService
+
+        tree = await FeatureListService().build_tree(project_id)
+        for mod in (tree.get("modules") or [])[:20]:
+            module = str(mod.get("module") or "未分组").strip()
+            feats = mod.get("features") or []
+            summary = str(mod.get("summary") or "").strip()
+            names = "、".join(
+                str(f.get("name") or "").strip()
+                for f in feats[:8]
+                if str(f.get("name") or "").strip()
+            )
+            line = f"- {module}（{len(feats)} 个功能点）"
+            if summary:
+                line += f"：{summary[:120]}"
+            if names:
+                line += f" — {names}"
+            lines.append(line)
+    except Exception:  # noqa: BLE001 — feature 树召回 best-effort，失败降级空层
+        lines = []
+    return _Layer("features", lines, len(lines), _ms(start))
 
 
 async def _layer_memory(project_id: Any) -> _Layer:

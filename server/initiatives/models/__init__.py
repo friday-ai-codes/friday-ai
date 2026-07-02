@@ -6,6 +6,12 @@ from initiatives.models.artifact import (
     ArtifactCarrier,
     ArtifactType,
 )
+from initiatives.models.feature_detail_cache import FeatureDetailCache
+from initiatives.models.feature_list_draft import (
+    FeatureListDraft,
+    FeatureListDraftPhase,
+    FeatureListDraftStatus,
+)
 from initiatives.models.member import ProjectMember, ProjectRole
 from initiatives.models.memory import (
     DraftStatus,
@@ -59,6 +65,10 @@ __all__ = [
     "ProjectStateApi",
     "ApiStatus",
     "ApiSource",
+    "FeatureListDraft",
+    "FeatureListDraftStatus",
+    "FeatureListDraftPhase",
+    "FeatureDetailCache",
     "ProjectMember",
     "ProjectRole",
     "ProjectRelation",

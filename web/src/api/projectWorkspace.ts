@@ -124,6 +124,8 @@ export interface FeatureNode {
   module_normalized?: string
   /** 整段原文（功能点节点）/ 模块概述（模块节点）；供点开后按需结构化为详情 sections。 */
   source?: string
+  /** 预生成/已缓存的详情结构化段落（存在则点开即时渲染，无需再调 LLM）。 */
+  detail_sections?: FeatureDetailSection[]
   children?: FeatureNode[]
 }
 
@@ -199,6 +201,37 @@ export type FeatureListInput
     | { mode: 'feishu', url: string, title?: string }
     | { mode: 'gitlab', url: string, title?: string }
     | { mode: 'paste', text: string, title?: string }
+
+/** feature list 草稿解析状态（对齐后端 FeatureListDraftStatus）。 */
+export type FeatureListDraftStatus = 'idle' | 'parsing' | 'partial' | 'ready' | 'failed'
+
+/** feature list 草稿解析阶段（对齐后端 FeatureListDraftPhase）。 */
+export type FeatureListDraftPhase = 'idle' | 'modules' | 'features' | 'done'
+
+/** 草稿中单个模块的解析状态。 */
+export type FeatureListModuleParseState = 'pending' | 'running' | 'done' | 'failed'
+
+/** 草稿模块（含解析元信息 + 功能点）。 */
+export interface FeatureListDraftModule {
+  module: string
+  summary?: string
+  line_start?: number
+  line_end?: number
+  parse_state?: FeatureListModuleParseState
+  features: FeatureListFeatureInput[]
+}
+
+/** feature list 解析草稿（每项目一份：进度落库 + 断点续看）。 */
+export interface FeatureListDraft {
+  has_draft: boolean
+  status: FeatureListDraftStatus
+  phase: FeatureListDraftPhase
+  progress: number
+  job_id?: string
+  error?: string
+  modules: FeatureListDraftModule[]
+  updated_at?: string | null
+}
 
 /** 项目搜索结果项（WB-05，84-01 ProjectSearchResultSerializer）。 */
 export interface SearchResult {
@@ -291,6 +324,31 @@ export const projectWorkspaceApi = {
     post<{ features: FeatureListFeatureInput[] }>(
       `/projects/${projectId}/feature-list/parse-module-features/`,
       { text },
+    ),
+
+  /** 取回 feature list 解析草稿（进度/状态/部分结果；刷新页面续看）。 */
+  getFeatureListDraft: (projectId: string): Promise<FeatureListDraft> =>
+    get<FeatureListDraft>(`/projects/${projectId}/feature-list/draft/`),
+
+  /** 发起 feature list 异步解析（写草稿 + defer 后台作业，立即返回快照；进度经 WS 推送）。 */
+  parseFeatureListDraft: (projectId: string, text: string): Promise<FeatureListDraft> =>
+    post<FeatureListDraft>(`/projects/${projectId}/feature-list/draft/parse/`, { text }),
+
+  /** 保存 feature list 草稿（用户手工编辑，未确认）。 */
+  saveFeatureListDraft: (
+    projectId: string,
+    modules: FeatureListModuleInput[],
+  ): Promise<FeatureListDraft> =>
+    put<FeatureListDraft>(`/projects/${projectId}/feature-list/draft/`, { modules }),
+
+  /** 确认草稿为正式 feature list（落库后删除草稿）。 */
+  commitFeatureListDraft: (
+    projectId: string,
+    modules?: FeatureListModuleInput[],
+  ): Promise<{ ok: boolean }> =>
+    post<{ ok: boolean }>(
+      `/projects/${projectId}/feature-list/draft/commit/`,
+      modules ? { modules } : {},
     ),
 
   /** 把单个功能点/模块原文结构化为柔性 sections（Step 2，按需，点开详情时调用）。 */

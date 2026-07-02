@@ -6,6 +6,7 @@
  * 业务域亮点、分面分布、快捷入口。数据全部由单次 `getKnowledgeTree()` 派生，
  * 无额外请求（repo card 已自带 facets/index_status）。
  */
+import type { ArtifactView } from '~/api/artifacts'
 import type { ArtifactOverviewItem } from '~/api/knowledge'
 import type { DomainNode, RepoCard } from '~/api/repoTree'
 import type { CloudTerm, KnowledgeSearchItem, StarNode } from '~/composables/useKnowledgeCapabilities'
@@ -13,10 +14,14 @@ import { useQuery } from '@tanstack/vue-query'
 import { gsap } from 'gsap'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { knowledgeApi } from '~/api'
+import { artifactsApi } from '~/api/artifacts'
 import repoTreeApi from '~/api/repoTree'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
+import FeishuLogo from '~/components/common/FeishuLogo.vue'
+import FeishuSheetLogo from '~/components/common/FeishuSheetLogo.vue'
+import MarkdownRenderer from '~/components/execution/MarkdownRenderer.vue'
 import KnowledgeSearchBar from '~/components/knowledge/KnowledgeSearchBar.vue'
 import KnowledgeStarfield3D from '~/components/knowledge/KnowledgeStarfield3D.vue'
 import KnowledgeWordCloud from '~/components/knowledge/KnowledgeWordCloud.vue'
@@ -27,6 +32,7 @@ import {
   DialogTitle,
 } from '~/components/ui/dialog'
 import { Input } from '~/components/ui/input'
+import Pagination from '~/components/ui/pagination/Pagination.vue'
 import { Skeleton } from '~/components/ui/skeleton'
 import { useKnowledgeCapabilities } from '~/composables/useKnowledgeCapabilities'
 
@@ -38,6 +44,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
 
 const treeQuery = useQuery({
   queryKey: ['knowledge', 'tree', 'overview'],
@@ -238,20 +245,31 @@ function onCloudPick() {
   emit('navigate', 'tree')
 }
 
-// ---------- 交付文档 / 外部依赖（KDEP-03，走 96-03 聚合接口）----------
+// ---------- 交付文档 / 外部依赖（KDEP-03，服务端分页 + 排序）----------
+// 分页大小；页码写入 URL（?dep_page=），刷新/前进后退可复原（对齐仓库/执行列表的 URL 状态范式）。
+const DEP_PAGE_SIZE = 20
+const depPage = computed(() => {
+  const raw = Number(route.query.dep_page)
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1
+})
+function setDepPage(p: number) {
+  router.replace({ query: { ...route.query, dep_page: p > 1 ? String(p) : undefined } })
+}
+
 const overviewQuery = useQuery({
-  queryKey: ['knowledge', 'artifact-overview'],
-  queryFn: () => knowledgeApi.getArtifactOverview(),
+  queryKey: ['knowledge', 'artifact-overview', depPage],
+  queryFn: () => knowledgeApi.getArtifactOverview({ page: depPage.value, pageSize: DEP_PAGE_SIZE }),
   staleTime: 60_000,
+  // 翻页时保留上一页数据，避免骨架闪烁。
+  placeholderData: prev => prev,
 })
 const depTypes = computed(() => overviewQuery.data.value?.types ?? [])
 const depItems = computed(() => overviewQuery.data.value?.items ?? [])
 const depTotal = computed(() => overviewQuery.data.value?.total ?? 0)
-const depTruncated = computed(() => overviewQuery.data.value?.truncated ?? false)
 const depLoading = computed(() => overviewQuery.isLoading.value)
 const depEmpty = computed(() => !depLoading.value && depTotal.value === 0)
 
-// 区块内即时搜索：客户端过滤已加载条目（沿用 Dashboard 现有模式，无额外请求）。
+// 区块内即时搜索：客户端过滤**当前页**已加载条目（跨页搜索请用知识搜索 Tab）。
 const depSearch = ref('')
 const filteredDepItems = computed(() => {
   const q = depSearch.value.trim().toLowerCase()
@@ -259,20 +277,113 @@ const filteredDepItems = computed(() => {
     return depItems.value
   return depItems.value.filter(i =>
     i.title.toLowerCase().includes(q)
-    || i.type_name.toLowerCase().includes(q)
+    || depTypeLabel(i.type_key, i.type_name).toLowerCase().includes(q)
     || i.project_name.toLowerCase().includes(q),
   )
 })
 
-const DEP_CARRIER_ICON: Record<string, string> = {
-  feishu_doc: 'lucide--file-text',
-  feishu_bitable: 'lucide--table',
-  external_link: 'lucide--external-link',
-  markdown: 'lucide--file-code',
-  repo_file: 'lucide--file',
+// 载体图标 + 品牌色：飞书文档（蓝）/ 飞书表格（绿）/ markdown（真 logo）各自区分。
+// 颜色类以字面量写在此处，确保被 Tailwind 扫描生成（动态 :class 绑定不影响扫描）。
+const DEP_CARRIER: Record<string, { icon: string, color: string }> = {
+  feishu_doc: { icon: 'lucide--file-text', color: 'text-blue-500' },
+  feishu_bitable: { icon: 'lucide--table', color: 'text-emerald-500' },
+  markdown: { icon: 'simple-icons--markdown', color: 'text-foreground/70' },
+  external_link: { icon: 'lucide--link', color: 'text-violet-500' },
+  repo_file: { icon: 'lucide--file-code', color: 'text-amber-500' },
 }
-function depCarrierIcon(carrier: string): string {
-  return DEP_CARRIER_ICON[carrier] ?? 'lucide--file'
+function depCarrier(carrier: string): { icon: string, color: string } {
+  return DEP_CARRIER[carrier] ?? { icon: 'lucide--file', color: 'text-muted-foreground' }
+}
+
+// 类型中文标签：内置类型直接命中；自定义/英文 key（如 Retro / PRD）归一到中文标签，兜底 type_name。
+const DEP_TYPE_LABEL: Record<string, string> = {
+  requirement_doc: '需求文档',
+  prd: '需求文档',
+  feature_list: 'Feature List',
+  dev_spec: '研发 Spec',
+  ui_design: 'UI 稿',
+  ui_review: 'UI 评审',
+  tracking_doc: '埋点文档',
+  tracking_review: '埋点评审',
+  retrospective: '复盘',
+  retro: '复盘',
+}
+function depTypeLabel(typeKey: string, typeName: string): string {
+  const k = (typeKey || '').toLowerCase()
+  if (DEP_TYPE_LABEL[k])
+    return DEP_TYPE_LABEL[k]
+  if (k.includes('retro'))
+    return '复盘'
+  if (k.includes('prd') || k.includes('requirement'))
+    return '需求文档'
+  if (k.includes('spec'))
+    return '研发 Spec'
+  if (k.includes('tech') || k.includes('solution'))
+    return '技术方案'
+  if (k.includes('test') || k.includes('case'))
+    return '测试用例'
+  if (k.includes('track'))
+    return '埋点文档'
+  if (k === 'ui' || k.includes('ui_') || k.includes('design'))
+    return 'UI 稿'
+  return typeName || typeKey
+}
+
+// 类型标签配色（放标题前的 tag）：按中文类别给不同颜色；字面量类名供 Tailwind 扫描。
+function depTypeColor(typeKey: string, typeName: string): string {
+  switch (depTypeLabel(typeKey, typeName)) {
+    case '需求文档':
+      return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+    case '研发 Spec':
+      return 'bg-violet-500/10 text-violet-600 dark:text-violet-400'
+    case 'UI 稿':
+      return 'bg-pink-500/10 text-pink-600 dark:text-pink-400'
+    case 'UI 评审':
+      return 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400'
+    case '埋点文档':
+      return 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+    case '埋点评审':
+      return 'bg-orange-500/10 text-orange-600 dark:text-orange-400'
+    case '技术方案':
+      return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+    case '测试用例':
+      return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+    case '复盘':
+      return 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+    case 'Feature List':
+      return 'bg-teal-500/10 text-teal-600 dark:text-teal-400'
+    default:
+      return 'bg-slate-500/10 text-slate-600 dark:text-slate-400'
+  }
+}
+
+// markdown 内联预览（走工件在线查看接口，取 content 渲染）；飞书/外链直接新窗口打开。
+const previewOpen = ref(false)
+const previewLoading = ref(false)
+const previewTitle = ref('')
+const previewData = ref<ArtifactView | null>(null)
+async function openInlinePreview(item: ArtifactOverviewItem) {
+  previewTitle.value = item.title
+  previewData.value = null
+  previewOpen.value = true
+  previewLoading.value = true
+  try {
+    previewData.value = await artifactsApi.view(item.project_id, item.artifact_id)
+  }
+  catch {
+    previewData.value = {
+      artifact_id: item.artifact_id,
+      carrier: item.carrier as ArtifactView['carrier'],
+      title: item.title,
+      url: item.url,
+      version: 1,
+      render_type: 'unknown',
+      error: t('projects.artifacts.viewFailed'),
+    }
+  }
+  finally {
+    previewLoading.value = false
+  }
 }
 
 // 点某类型 → 跳搜索 Tab 预筛该类型（?dep_type= 预填，供搜索侧消费）。
@@ -280,9 +391,13 @@ function goToDepType(typeKey: string) {
   router.push({ query: { tab: 'search', dep_type: typeKey } })
 }
 
-// 条目点击：external_link 新标签打开；其余跳搜索 Tab。
+// 条目点击：markdown 内联预览；飞书文档/表格/外链直接新窗口打开对应地址；其余跳搜索 Tab。
 function openDepItem(item: ArtifactOverviewItem) {
-  if (item.carrier === 'external_link' && item.url) {
+  if (item.carrier === 'markdown') {
+    void openInlinePreview(item)
+    return
+  }
+  if (item.url) {
     window.open(item.url, '_blank', 'noopener,noreferrer')
     return
   }
@@ -626,14 +741,16 @@ function openDepItem(item: ArtifactOverviewItem) {
               <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-primary/20 to-transparent blur-2xl" />
               <div class="relative flex items-center gap-3.5">
                 <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-inset ring-primary/15">
-                  <span class="text-lg text-primary" :class="`icon-[${depCarrierIcon(ty.carrier)}]`" />
+                  <FeishuSheetLogo v-if="ty.carrier === 'feishu_bitable'" class="size-5" />
+                  <FeishuLogo v-else-if="ty.carrier === 'feishu_doc'" class="size-5" />
+                  <span v-else class="text-lg" :class="[`icon-[${depCarrier(ty.carrier).icon}]`, depCarrier(ty.carrier).color]" />
                 </div>
                 <div class="min-w-0">
                   <p class="text-xl font-bold leading-none tabular-nums">
                     {{ ty.count }}
                   </p>
                   <p class="mt-1.5 truncate text-xs text-muted-foreground group-hover:text-primary">
-                    {{ ty.type_name }}
+                    {{ depTypeLabel(ty.type_key, ty.type_name) }}
                   </p>
                 </div>
               </div>
@@ -652,27 +769,70 @@ function openDepItem(item: ArtifactOverviewItem) {
             </div>
             <ul class="mt-3 divide-y divide-border/60">
               <li v-for="item in filteredDepItems" :key="item.artifact_id">
-                <button
-                  type="button"
-                  class="group flex w-full items-center gap-3 rounded-lg px-1.5 py-2.5 text-left transition-colors hover:bg-muted/40"
-                  @click="openDepItem(item)"
+                <div
+                  class="group flex w-full items-center gap-2.5 rounded-lg px-1.5 py-2.5 transition-colors hover:bg-muted/40"
                 >
-                  <span class="shrink-0 text-muted-foreground" :class="`icon-[${depCarrierIcon(item.carrier)}]`" />
-                  <span class="min-w-0 flex-1 truncate text-sm transition-colors group-hover:text-primary">{{ item.title }}</span>
-                  <span class="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{{ item.type_name }}</span>
+                  <!-- 载体图标：飞书文档/表格用各自 logo，其余用品牌色语义图标 -->
+                  <FeishuSheetLogo v-if="item.carrier === 'feishu_bitable'" class="size-4 shrink-0" />
+                  <FeishuLogo v-else-if="item.carrier === 'feishu_doc'" class="size-4 shrink-0" />
+                  <span v-else class="shrink-0 text-base" :class="[`icon-[${depCarrier(item.carrier).icon}]`, depCarrier(item.carrier).color]" />
+                  <!-- 类型标签（中文、彩色，置于标题前） -->
+                  <span
+                    class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    :class="depTypeColor(item.type_key, item.type_name)"
+                  >{{ depTypeLabel(item.type_key, item.type_name) }}</span>
+                  <!-- 标题（点击：markdown 内联预览 / 其余新窗口打开） -->
+                  <button
+                    type="button"
+                    class="min-w-0 flex-1 truncate text-left text-sm transition-colors group-hover:text-primary"
+                    @click="openDepItem(item)"
+                  >
+                    {{ item.title }}
+                  </button>
                   <span class="hidden shrink-0 items-center gap-1 text-[11px] text-muted-foreground sm:inline-flex">
                     <span class="icon-[lucide--folder] text-[11px]" />
                     <span class="max-w-[8rem] truncate">{{ item.project_name }}</span>
                   </span>
-                </button>
+                  <!-- 操作：markdown 内联预览 / 有链接则新窗口打开 -->
+                  <button
+                    v-if="item.carrier === 'markdown'"
+                    type="button"
+                    class="shrink-0 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                    :title="t('projects.artifacts.view')"
+                    @click="openInlinePreview(item)"
+                  >
+                    <span class="icon-[lucide--eye] text-[13px]" />
+                  </button>
+                  <a
+                    v-else-if="item.url"
+                    :href="item.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="shrink-0 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                    :title="t('projects.artifacts.openExternal')"
+                  >
+                    <span class="icon-[lucide--external-link] text-[13px]" />
+                  </a>
+                </div>
               </li>
               <li v-if="!filteredDepItems.length" class="py-4 text-center text-xs text-muted-foreground">
                 {{ t('knowledge.overview.deps.noMatch') }}
               </li>
             </ul>
-            <p v-if="depTruncated" class="mt-2 text-[11px] text-muted-foreground">
-              {{ t('knowledge.overview.deps.truncated', { n: depItems.length }) }}
-            </p>
+            <!-- 分页：页码写入 URL（?dep_page=），仅按需加载当前页 -->
+            <div v-if="depTotal > DEP_PAGE_SIZE" class="mt-3 flex items-center justify-between gap-2">
+              <span class="text-[11px] text-muted-foreground tabular-nums">
+                {{ t('knowledge.overview.deps.totalCount', { n: depTotal }) }}
+              </span>
+              <Pagination
+                :page="depPage"
+                :total="depTotal"
+                :items-per-page="DEP_PAGE_SIZE"
+                :sibling-count="1"
+                show-edges
+                @update:page="setDepPage"
+              />
+            </div>
           </div>
         </template>
       </section>
@@ -846,6 +1006,46 @@ function openDepItem(item: ArtifactOverviewItem) {
             :max-size="76"
             @pick="onCloudPick"
           />
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ============ 交付文档 markdown 内联预览 ============ -->
+    <Dialog v-model:open="previewOpen">
+      <DialogContent class="flex max-h-[85vh] w-[94vw] max-w-3xl flex-col">
+        <DialogTitle class="text-base font-semibold">
+          {{ previewTitle }}
+        </DialogTitle>
+        <DialogDescription class="sr-only">
+          {{ t('projects.artifacts.viewDesc') }}
+        </DialogDescription>
+        <div class="min-h-0 flex-1 overflow-auto">
+          <div v-if="previewLoading" class="py-8 text-center text-sm text-muted-foreground">
+            {{ t('projects.loading') }}
+          </div>
+          <template v-else-if="previewData">
+            <p v-if="previewData.error" class="text-sm text-destructive">
+              {{ previewData.error }}
+            </p>
+            <MarkdownRenderer
+              v-else-if="previewData.render_type === 'markdown'"
+              :content="previewData.content || ''"
+            />
+            <pre
+              v-else-if="previewData.render_type === 'text'"
+              class="whitespace-pre-wrap break-words rounded-lg bg-muted/40 p-3 text-xs"
+            >{{ previewData.content }}</pre>
+            <a
+              v-else-if="previewData.url"
+              :href="previewData.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-sm text-primary underline break-all"
+            >{{ previewData.url }}</a>
+            <p v-else class="text-sm text-muted-foreground">
+              {{ t('projects.artifacts.unsupported') }}
+            </p>
+          </template>
         </div>
       </DialogContent>
     </Dialog>

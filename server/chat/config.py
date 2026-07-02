@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from agents.chat_runner import ChatRunnerConfig
 from agents.models import AgentSession
@@ -30,12 +31,53 @@ _NO_SPACE_CONTEXT_LINE = (
 )
 
 
-async def _maybe_pack_project_context(conversation: Conversation) -> str:
+async def _resolve_bound_project(conversation: Conversation) -> Any:
+    """解析会话绑定的项目聚合根（含 ``space``）；无绑定 / 查不到 → None（best-effort）。"""
+    project_id = getattr(conversation, "bound_project_id", None)
+    if not project_id:
+        return None
+    try:
+        from initiatives.models import Project
+
+        return await Project.objects.select_related("space").filter(pk=project_id).afirst()
+    except Exception:  # noqa: BLE001 — 解析 best-effort，绝不反噬 chat
+        return None
+
+
+def _build_project_context_line(project: Any) -> str:
+    """项目级对话的身份/视角指引行：替代「当前空间：xxx」。
+
+    关键行为契约：会话绑定了项目聚合根时，让 LLM 明确"这是一次项目级对话"，
+    始终以本项目视角作答，优先使用项目上下文与项目专属只读工具，而不是仅从
+    空间 / 代码仓库视角回答。
+    """
+    name = (getattr(project, "name", "") or "").strip() or "未命名项目"
+    space = getattr(project, "space", None)
+    space_name = (getattr(space, "name", "") or "").strip() if space else ""
+    space_clause = f"（所属空间：{space_name}）" if space_name else ""
+    return (
+        f"当前项目：{name}{space_clause}\n"
+        "本次是「项目级对话」：请始终以本项目的视角理解与回答问题。回答"
+        "「这是什么项目 / 项目在做什么」等问题时，优先依据下方「项目上下文（自动召回）」"
+        "中的项目概览、Feature 清单、需求与记忆，而不是泛泛地以空间或代码仓库视角作答。\n"
+        "需要更多项目信息时，使用项目专属只读工具：get_project_overview（项目概览）、"
+        "list_project_features / get_project_feature（Feature 清单与详情）、"
+        "list_project_artifacts / get_project_artifact（工件）、get_project_related（项目关联）。\n"
+        "涉及代码时优先定向检索（search_repository_code）与项目关联的仓库，"
+        "不要列举整个空间的仓库或文件树；确需目录结构时先定位到具体仓库再看。"
+    )
+
+
+async def _maybe_pack_project_context(
+    conversation: Conversation, project: Any = None
+) -> str:
     """会话绑定项目聚合根时打包项目上下文（RECALL-02/03，fail-closed + best-effort）。
 
     - 无绑定项目 / 无会话 owner → 返回空串（无法判定成员，fail-closed）。
     - 非项目成员 → packer 内部 fail-closed 返回空（零召回零泄漏）。
     - 任何异常 best-effort 吞掉返回空串，绝不阻断 chat 主流程。
+
+    ``project`` 可由调用方预解析后传入（避免重复查询）；未传则内部按 ``bound_project_id`` 拉取。
     """
     project_id = getattr(conversation, "bound_project_id", None)
     user_id = getattr(conversation, "created_by_id", None)
@@ -47,7 +89,10 @@ async def _maybe_pack_project_context(conversation: Conversation) -> str:
         from initiatives.models import Project
         from services.project_context_packer import pack_project_context
 
-        project = await Project.objects.select_related("space").filter(pk=project_id).afirst()
+        if project is None:
+            project = (
+                await Project.objects.select_related("space").filter(pk=project_id).afirst()
+            )
         if project is None:
             return ""
         user_model = get_user_model()
@@ -110,9 +155,17 @@ async def build_sdk_config(
     has_project = conversation.space_id is not None
     project_name = conversation.space.name if has_project else ""
     project_id = str(conversation.space_id) if has_project else ""
+
+    # 项目级对话：会话绑定项目聚合根时，system prompt 以「项目视角」为主（含项目名/所属空间
+    # + 项目工具指引），而非仅「当前空间：xxx」——修复"在项目里提问却以空间视角作答"。
+    bound_project = await _resolve_bound_project(conversation)
+    bound_project_id = str(conversation.bound_project_id) if conversation.bound_project_id else ""
+
     effective_project_context_line = project_context_line
     if effective_project_context_line is None:
-        if has_project:
+        if bound_project is not None:
+            effective_project_context_line = _build_project_context_line(bound_project)
+        elif has_project:
             effective_project_context_line = f"当前空间：{project_name}"
         else:
             effective_project_context_line = _NO_SPACE_CONTEXT_LINE
@@ -138,8 +191,8 @@ async def build_sdk_config(
     )
 
     # RECALL-02（v0.15.0 Phase 80）：会话绑定项目聚合根时，经 context packer 自动加载项目
-    # 完整上下文（需求/工件/记忆/关联知识），按成员权限 fail-closed（非成员零注入）。
-    project_context = await _maybe_pack_project_context(conversation)
+    # 完整上下文（概览/Feature 清单/需求/工件/记忆/关联知识），按成员权限 fail-closed（非成员零注入）。
+    project_context = await _maybe_pack_project_context(conversation, project=bound_project)
     if project_context:
         system_prompt = f"{system_prompt}\n\n{project_context}"
 
@@ -147,6 +200,9 @@ async def build_sdk_config(
         system_prompt=system_prompt,
         model=model,
         space_id=project_id,
+        # 项目级对话：绑定的项目聚合根 id，供 chat_runner 无条件挂载项目只读工具
+        # （不依赖空间是否有已索引仓库）。空串 = 非项目对话。
+        bound_project_id=bound_project_id,
         session_id=session_id,
         provider_type=resolved.provider_type,
         conversation_id=str(conversation.id),

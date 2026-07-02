@@ -11,6 +11,9 @@ from initiatives.views import (
     ProjectCursorRulesView,
     ProjectDescriptionGenerateView,
     ProjectDetailView,
+    ProjectFeatureListDraftCommitView,
+    ProjectFeatureListDraftParseView,
+    ProjectFeatureListDraftView,
     ProjectFeatureListFeatureDetailView,
     ProjectFeatureListParseConfigView,
     ProjectFeatureListParseModuleFeaturesView,
@@ -227,6 +230,22 @@ urlpatterns = [
         "<uuid:project_id>/feature-list/feature-detail/",
         ProjectFeatureListFeatureDetailView.as_view(),
         name="project-feature-list-feature-detail",
+    ),
+    # feature list 异步解析草稿（每项目一份：进度落库 + 断点续看 + 存草稿 + 确认提交）
+    path(
+        "<uuid:project_id>/feature-list/draft/",
+        ProjectFeatureListDraftView.as_view(),
+        name="project-feature-list-draft",
+    ),
+    path(
+        "<uuid:project_id>/feature-list/draft/parse/",
+        ProjectFeatureListDraftParseView.as_view(),
+        name="project-feature-list-draft-parse",
+    ),
+    path(
+        "<uuid:project_id>/feature-list/draft/commit/",
+        ProjectFeatureListDraftCommitView.as_view(),
+        name="project-feature-list-draft-commit",
     ),
     # 项目「关联仓库」（业务关联 ∪ 分支绑定，#4：按项目而非空间）
     path(

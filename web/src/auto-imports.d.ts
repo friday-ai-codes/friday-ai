@@ -306,6 +306,7 @@ declare global {
   const usePreferredReducedTransparency: typeof import('@vueuse/core').usePreferredReducedTransparency
   const usePrefersReducedMotion: typeof import('./composables/useMotion').usePrefersReducedMotion
   const usePrevious: typeof import('@vueuse/core').usePrevious
+  const useProjectEventSocket: typeof import('./composables/useProjectEventSocket').useProjectEventSocket
   const usePromptsStore: typeof import('./stores/prompts').usePromptsStore
   const useProviderCredentialStore: typeof import('./stores/providerCredential').useProviderCredentialStore
   const useRafFn: typeof import('@vueuse/core').useRafFn
@@ -453,6 +454,9 @@ declare global {
   // @ts-ignore
   export type { UsePollingOptions } from './composables/usePolling'
   import('./composables/usePolling')
+  // @ts-ignore
+  export type { ProjectEvent, ProjectEventHandler } from './composables/useProjectEventSocket'
+  import('./composables/useProjectEventSocket')
   // @ts-ignore
   export type { MonitorStatus, MonitorLog } from './composables/useRunnerMonitor'
   import('./composables/useRunnerMonitor')
@@ -799,6 +803,7 @@ declare module 'vue' {
     readonly usePreferredReducedTransparency: UnwrapRef<typeof import('@vueuse/core')['usePreferredReducedTransparency']>
     readonly usePrefersReducedMotion: UnwrapRef<typeof import('./composables/useMotion')['usePrefersReducedMotion']>
     readonly usePrevious: UnwrapRef<typeof import('@vueuse/core')['usePrevious']>
+    readonly useProjectEventSocket: UnwrapRef<typeof import('./composables/useProjectEventSocket')['useProjectEventSocket']>
     readonly usePromptsStore: UnwrapRef<typeof import('./stores/prompts')['usePromptsStore']>
     readonly useProviderCredentialStore: UnwrapRef<typeof import('./stores/providerCredential')['useProviderCredentialStore']>
     readonly useRafFn: UnwrapRef<typeof import('@vueuse/core')['useRafFn']>

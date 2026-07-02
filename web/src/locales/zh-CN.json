@@ -278,6 +278,7 @@
         "searchPlaceholder": "在已加载的交付文档中搜索标题 / 类型 / 项目…",
         "noMatch": "没有匹配的交付文档",
         "truncated": "仅展示最近 {n} 条，更多请用知识搜索",
+        "totalCount": "共 {n} 条",
         "empty": {
           "title": "暂无交付文档",
           "body": "在作战室「外部依赖」维护 PRD、研发 Spec、UI 稿等，这里就会按类型汇总"

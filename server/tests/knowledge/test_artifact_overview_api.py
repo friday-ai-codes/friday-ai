@@ -60,7 +60,8 @@ def test_overview_scopes_to_visible_spaces(
     assert item["url"] == "https://figma.com/x"
     assert item["project_name"] == "项目A"
     assert "artifact_id" in item
-    assert body["truncated"] is False
+    assert body["has_next"] is False
+    assert body["page"] == 1
 
 
 def test_overview_type_key_prefilter(
@@ -81,10 +82,46 @@ def test_overview_type_key_prefilter(
     assert {i["title"] for i in body["items"]} == {"需求1"}
 
 
+def test_overview_pagination_and_order(
+    project, user, project_memberships, authenticated_client
+):
+    """分页（page/page_size + has_next）+ 默认优先级排序（PRD 在 markdown 之前）。"""
+    iproj = _make_project(project, "项目A")
+    prd = ArtifactType.objects.create(key="prd", name="PRD", carrier="markdown", ragable=True)
+    md = ArtifactType.objects.create(key="note", name="随记", carrier="markdown", ragable=True)
+    # 3 条 markdown 随记 + 1 条 PRD。
+    for i in range(3):
+        _make_artifact(iproj, md, f"随记{i}")
+    _make_artifact(iproj, prd, "需求X")
+
+    # 第 1 页 2 条：PRD 优先级最高，必在首位；仍有下一页。
+    resp = authenticated_client.get(URL, {"page": 1, "page_size": 2})
+    body = resp.json()
+    assert body["total"] == 4
+    assert body["page"] == 1
+    assert body["page_size"] == 2
+    assert body["has_next"] is True
+    assert len(body["items"]) == 2
+    assert body["items"][0]["title"] == "需求X"  # PRD rank 0 排最前
+
+    # 第 2 页 2 条：无下一页。
+    resp2 = authenticated_client.get(URL, {"page": 2, "page_size": 2})
+    body2 = resp2.json()
+    assert body2["has_next"] is False
+    assert len(body2["items"]) == 2
+
+
 def test_overview_no_visible_project_empty(other_user):
     """无可见 project 的用户 → 空结构（非 500）。"""
     client = APIClient()
     client.force_authenticate(user=other_user)
     resp = client.get(URL)
     assert resp.status_code == 200
-    assert resp.json() == {"total": 0, "types": [], "items": [], "truncated": False}
+    assert resp.json() == {
+        "total": 0,
+        "types": [],
+        "items": [],
+        "page": 1,
+        "page_size": 20,
+        "has_next": False,
+    }

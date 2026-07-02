@@ -20,6 +20,7 @@ reasoning + matched_node_paths。
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass, field
@@ -254,22 +255,40 @@ class RepoRouterV2:
         from langchain_core.messages import HumanMessage, SystemMessage
 
         from agents.llm_factory import build_chat_model
-        from services.provider_config import ProviderConfigService, ProviderMissingError
+        from services.provider_config import (
+            ProviderConfigService,
+            ProviderMissingError,
+            aget_claude_code_runtime_config,
+        )
 
         resolved = await ProviderConfigService.aresolve_or_error()
         if isinstance(resolved, ProviderMissingError):
             return None
 
-        # 快速模型优先（haiku 档），未配置时退默认模型
-        model_name = (
-            (resolved.extra or {}).get("haiku_model")
-            or (resolved.extra or {}).get("small_model")
-            or (resolved.extra or {}).get("default_model", "")
-        )
+        # 快速模型解析：优先系统设置里 Claude Code 模型映射的 haiku 档（用户可配的"小/快模型"），
+        # 回退当前解析凭证的 default_model。
+        # 历史 bug：此处曾读 resolved.extra.get("haiku_model")/("small_model")——但
+        # aresolve_or_error().extra 只含 default_model（haiku/small 属于 Claude Code
+        # 运行时配置 claude_code_config.model_mapping，不在通用 extra 里），导致用户在系统
+        # 设置里配的 haiku 档永不生效、Stage 1 总是退到慢的主模型（mimo-v2.5-pro）。
+        model_name = ""
+        try:
+            cc_rt = await aget_claude_code_runtime_config()
+            model_name = (cc_rt.get("haiku_model") or "").strip()
+        except Exception:  # noqa: BLE001 — CC 配置读失败不阻断，回退 default_model
+            model_name = ""
+        if not model_name:
+            model_name = (resolved.extra or {}).get("default_model", "")
         if not model_name:
             return None
+        # 快速失败即降级：max_retries=0 —— 路由是启发式，超时无需 3× 重试空等
+        # （旧行为：langchain 默认 max_retries=2 → 30s×3≈90s 才放弃再回落 Stage 0）。
         model = build_chat_model(
-            resolved, model_name, streaming=False, timeout_seconds=LLM_TIMEOUT_SECONDS
+            resolved,
+            model_name,
+            streaming=False,
+            timeout_seconds=LLM_TIMEOUT_SECONDS,
+            max_retries=0,
         )
 
         context_blocks: list[str] = []
@@ -310,7 +329,12 @@ class RepoRouterV2:
             content=f"用户需求：{query}\n\n候选仓库及命中节点：\n\n" + "\n\n".join(context_blocks)
         )
 
-        response = await model.ainvoke([system, human])
+        # 硬性上限：不管客户端/代理如何处理超时，Stage 1 绝不超过 LLM_TIMEOUT_SECONDS。
+        # 超时抛 TimeoutError → 上层 route() 捕获后降级 Stage 0（0.2s 出结果），
+        # 避免慢模型把整个"仓库分级路由"拖成分钟级。
+        response = await asyncio.wait_for(
+            model.ainvoke([system, human]), timeout=LLM_TIMEOUT_SECONDS
+        )
         from agents.llm_factory import content_to_text
 
         parsed = cls._parse_llm_json_array(content_to_text(response.content))

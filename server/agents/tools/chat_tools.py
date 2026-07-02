@@ -456,10 +456,15 @@ async def browse_file_content(
 @tool(
     name="list_space_structure",
     description=(
-        "列出项目下已索引仓库的文件树结构（缩进格式 + 语言标注）。\n"
-        "- 不传 repository_id：列出空间下所有已索引仓库的文件树（每个仓库一棵树）\n"
-        "- 传 repository_id：只列该单个仓库（深度分析模式下常用 ——"
-        "  先 list_space_repositories 选中相关仓库，再单仓库列文件树定位入口）"
+        "列出**单个仓库**的文件树结构（缩进格式 + 语言标注）。\n"
+        "⚠️ **必须传 repository_id**：本工具只列一个仓库的文件树，不支持"
+        "「列出整个空间所有仓库」——空间下仓库可能几十个、每个上千文件，"
+        "全量文件树会瞬间撑爆上下文，且对回答问题几乎无用。\n"
+        "正确用法：先用 analyze_repository_relevance / list_space_repositories / "
+        "search_repository_code 定位到相关仓库，拿到 repository_id 后再调本工具"
+        "看该仓库的目录结构定位入口文件。\n"
+        "更进一步：只想理解「某功能在哪」时优先 search_repository_code（定向检索），"
+        "通常不需要列整棵文件树。"
     ),
     category="PROJECT",
     parameters={
@@ -471,14 +476,17 @@ async def browse_file_content(
             },
             "repository_id": {
                 "type": "string",
-                "description": ("可选：限定到单个仓库的 UUID。不传则列出空间下所有已索引仓库。"),
+                "description": (
+                    "**必填**：目标仓库 UUID。只列这一个仓库的文件树。"
+                    "先经检索/相关性分析定位到具体仓库再调用。"
+                ),
             },
             "branch": {
                 "type": "string",
                 "description": "Branch name for branch-aware file tree (optional)",
             },
         },
-        "required": ["space_id"],
+        "required": ["space_id", "repository_id"],
     },
 )
 async def list_space_structure(
@@ -486,10 +494,13 @@ async def list_space_structure(
     repository_id: str | None = None,
     branch: str | None = None,
 ) -> ToolResult:
-    """查看空间文件树结构。
+    """查看**单个仓库**的文件树结构。
 
-    查询项目关联的所有已索引仓库（或单个指定仓库），从 Qdrant 获取
-    文件路径列表，构建缩进格式的树状结构。
+    从 Qdrant 获取指定仓库的文件路径列表，构建缩进格式的树状结构。
+
+    契约变更（省 token）：``repository_id`` 必填——不再支持「列出整个空间所有仓库
+    文件树」的全量 dump（空间可能关联数十仓，全量树会撑爆上下文）。未传时返回引导，
+    让 LLM 先定位到具体仓库。
     """
     logger.info(
         "list_space_structure",
@@ -497,7 +508,28 @@ async def list_space_structure(
         repository_id=repository_id,
     )
 
-    # 获取已索引仓库（可选按 repository_id 过滤为单仓库）
+    # 省 token 硬约束：必须限定单仓库，拒绝全空间 dump。
+    if not repository_id:
+        return ToolResult(
+            success=True,
+            output={
+                "data": {
+                    "space_id": space_id,
+                    "repository_id": None,
+                    "structure": "",
+                    "total_files": 0,
+                },
+                "error": (
+                    "list_space_structure 需要 repository_id：本工具只列单个仓库的文件树，"
+                    "不支持列出整个空间（仓库过多会撑爆上下文）。请先用 "
+                    "analyze_repository_relevance 或 search_repository_code / "
+                    "list_space_repositories 定位到相关仓库，拿到 repository_id 后再调用；"
+                    "若只是想找某功能在哪，直接用 search_repository_code 定向检索即可。"
+                ),
+            },
+        )
+
+    # 获取已索引仓库（按 repository_id 限定为单仓库）
     repo_filter = Repository.objects.filter(
         spaces__id=space_id,
         index_status="indexed",
@@ -787,15 +819,18 @@ async def get_space_overview(
                     break
                 offset = next_offset
 
+            # 省 token：只保留出现最多的前 3 种语言（完整直方图对回答问题无用，
+            # 徒增上下文噪声）。
+            top_langs = dict(
+                sorted(
+                    language_counts.items(),
+                    key=lambda x: x[1],
+                    reverse=True,
+                )[:3]
+            )
             return {
                 "file_count": len(file_paths),
-                "languages": dict(
-                    sorted(
-                        language_counts.items(),
-                        key=lambda x: x[1],
-                        reverse=True,
-                    )
-                ),
+                "languages": top_langs,
             }
         except (ResponseHandlingException, UnexpectedResponse) as e:
             logger.warning("qdrant_repo_stats_failed", repo_id=repo_id, error=str(e))

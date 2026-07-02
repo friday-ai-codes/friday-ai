@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
-import type { FeatureListModuleInput, FeatureNode } from '~/api/projectWorkspace'
+import type {
+  FeatureListDraft,
+  FeatureListDraftModule,
+  FeatureListDraftPhase,
+  FeatureListDraftStatus,
+  FeatureListModuleInput,
+  FeatureNode,
+} from '~/api/projectWorkspace'
 import { computed, onMounted, reactive, ref, shallowRef } from 'vue'
 import { VueFinalModal } from 'vue-final-modal'
 import { projectWorkspaceApi } from '~/api/projectWorkspace'
@@ -9,6 +16,7 @@ import { Input } from '~/components/ui/input'
 import { Textarea } from '~/components/ui/textarea'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
+import { useProjectEventSocket } from '~/composables/useProjectEventSocket'
 import { useToast } from '~/composables/useToast'
 
 // feature list 录入弹窗：模块 → 功能点 → 验收项。支持：加载已有 feature list 增删改、
@@ -84,14 +92,6 @@ function onFeatDrop(mi: number, to: number) {
   arr.splice(to, 0, f)
 }
 
-// 判断当前编辑器是否仍是初始空白（只有一个空模块空功能点）——用于解析后决定覆盖还是追加。
-function isPristine(): boolean {
-  if (modules.length !== 1)
-    return false
-  const m = modules[0]
-  return !m.module.trim() && m.features.length === 1 && !m.features[0].name.trim()
-}
-
 // ── 加载已有 feature list（#4：可对已有列表增删改/排序/再解析追加）──────────────
 const loadingExisting = ref(true)
 async function loadExisting() {
@@ -143,7 +143,7 @@ const pasteLen = computed(() => pasteText.value.length)
 const overLimit = computed(() => pasteLen.value > maxInputChars.value)
 
 onMounted(() => {
-  void loadExisting()
+  void loadInitial()
   void (async () => {
     try {
       const cfg = await projectWorkspaceApi.getFeatureListParseConfig(props.projectId)
@@ -160,68 +160,74 @@ onMounted(() => {
   })()
 })
 
-// ── AI 分层渐进式解析：先出模块外壳，再逐模块填充功能点 ──────────────
-const parsing = ref(false)
-const parseProgress = reactive({ done: 0, total: 0 })
+// 优先加载草稿（异步解析进度 / 部分结果落库，刷新页面续看）；无草稿再加载已确认 feature list。
+async function loadInitial() {
+  try {
+    const d = await projectWorkspaceApi.getFeatureListDraft(props.projectId)
+    if (d.has_draft) {
+      applyDraft(d)
+      loadingExisting.value = false
+      return
+    }
+  }
+  catch {}
+  await loadExisting()
+}
+
+// ── 异步解析（durable 后台任务 + WS 实时进度）──────────────
+const draftStatus = ref<FeatureListDraftStatus>('idle')
+const draftPhase = ref<FeatureListDraftPhase>('idle')
+const progress = ref(0)
+const draftError = ref('')
+// 解析进行中：禁用编辑类操作、显示进度条（partial 表示部分模块已完成、仍在跑）。
+const parsing = computed(() => draftStatus.value === 'parsing' || draftStatus.value === 'partial')
+
+function mapDraftModule(m: FeatureListDraftModule): ModuleDraft {
+  const feats = (m.features || []).map(f => newFeature({
+    name: f.name || '',
+    acceptanceText: (f.acceptance || []).join('\n'),
+    source: f.source || '',
+  }))
+  return newModule({
+    module: m.module || '',
+    summary: m.summary || '',
+    features: feats.length ? feats : [newFeature()],
+    parsing: m.parse_state === 'pending' || m.parse_state === 'running',
+  })
+}
+
+// 用草稿快照覆盖本地编辑器（进度 + 模块树）。解析中的快照为权威来源。
+function applyDraft(d: FeatureListDraft) {
+  draftStatus.value = d.status
+  draftPhase.value = d.phase
+  progress.value = d.progress ?? 0
+  draftError.value = d.error || ''
+  if (d.modules?.length)
+    modules.splice(0, modules.length, ...d.modules.map(mapDraftModule))
+}
+
+// WS：后台每完成一个模块 / 阶段变更即推送草稿快照，实时回显进度与逐模块填充。
+useProjectEventSocket(props.projectId, (evt) => {
+  if (evt.event !== 'feature_list_draft')
+    return
+  applyDraft(evt.data as FeatureListDraft)
+})
 
 async function parseAndFill() {
   const text = pasteText.value
   if (!text.trim() || parsing.value || overLimit.value)
     return
   errorText.value = ''
-  parsing.value = true
-  parseProgress.done = 0
-  parseProgress.total = 0
   try {
-    // Step 0：只解析模块（输出极小、不截断）。
-    const { modules: outline } = await projectWorkspaceApi.parseFeatureModules(
-      props.projectId,
-      text.trim(),
-    )
-    if (!outline?.length) {
-      errorText.value = 'AI 未从文档解析出模块，请检查文档内容'
-      return
-    }
-    const docLines = text.split('\n')
-    const replace = isPristine()
-    const baseIndex = replace ? 0 : modules.length
-    const shells = outline.map(o => newModule({ module: o.module, features: [], parsing: true }))
-    if (replace)
-      modules.splice(0, modules.length, ...shells)
-    else
-      modules.push(...shells)
-    parseProgress.total = shells.length
-
-    // Step 1：逐模块切片解析功能点，渐进渲染（通过 modules[idx] 的响应式代理写入）。
-    for (let i = 0; i < outline.length; i++) {
-      const o = outline[i]
-      const mod = modules[baseIndex + i]
-      const slice = docLines.slice(Math.max(0, o.line_start - 1), o.line_end).join('\n')
-      try {
-        const { features } = await projectWorkspaceApi.parseModuleFeatures(props.projectId, slice)
-        mod.features = (features || []).map(f => newFeature({
-          name: f.name || '',
-          acceptanceText: (f.acceptance || []).join('\n'),
-          source: f.source || '',
-        }))
-      }
-      catch {
-        // 单模块解析失败不阻断其余模块。
-      }
-      if (!mod.features.length)
-        mod.features = [newFeature()]
-      mod.parsing = false
-      parseProgress.done = i + 1
-    }
+    // 发起异步解析：写草稿 + defer 后台作业，立即返回；进度与结果经 WS 持续推送。
+    const d = await projectWorkspaceApi.parseFeatureListDraft(props.projectId, text.trim())
+    applyDraft(d)
     pasteText.value = ''
     pasteView.value = 'edit'
-    success(`已解析 ${shells.length} 个模块、${totalFeatures.value} 个功能点`)
+    success('已开始解析，进度将实时更新（可关闭弹窗，稍后回来查看）')
   }
   catch (e: unknown) {
     handleError(e, 'AI 解析文档失败')
-  }
-  finally {
-    parsing.value = false
   }
 }
 
@@ -245,8 +251,30 @@ function buildManualPayload(): FeatureListModuleInput[] {
 }
 
 const submitting = ref(false)
+const savingDraft = ref(false)
 const errorText = ref('')
 
+// 存草稿：保存用户手工编辑到草稿（每项目一份，未确认；与异步解析共用同一草稿）。
+async function saveDraft() {
+  if (savingDraft.value || parsing.value)
+    return
+  errorText.value = ''
+  savingDraft.value = true
+  try {
+    const payload = buildManualPayload()
+    const d = await projectWorkspaceApi.saveFeatureListDraft(props.projectId, payload)
+    applyDraft(d)
+    success('草稿已保存')
+  }
+  catch (e: unknown) {
+    handleError(e, '保存草稿')
+  }
+  finally {
+    savingDraft.value = false
+  }
+}
+
+// 确认保存：草稿 → 正式 feature list（落库后后端删除草稿）。
 async function handleSubmit() {
   errorText.value = ''
   submitting.value = true
@@ -256,7 +284,7 @@ async function handleSubmit() {
       errorText.value = '请至少填写一个功能点'
       return
     }
-    await projectWorkspaceApi.setFeatureList(props.projectId, { mode: 'manual', modules: payload })
+    await projectWorkspaceApi.commitFeatureListDraft(props.projectId, payload)
     success('已保存 feature list')
     emit('confirm')
   }
@@ -348,8 +376,8 @@ async function handleSubmit() {
             :class="overLimit ? 'text-destructive font-medium' : 'text-muted-foreground'"
             data-testid="fl-paste-counter"
           >
-            <template v-if="parsing && parseProgress.total">
-              逐模块解析中 {{ parseProgress.done }} / {{ parseProgress.total }}…
+            <template v-if="parsing">
+              {{ draftPhase === 'modules' ? '解析模块中' : '逐功能点解析中' }} · {{ progress }}%
             </template>
             <template v-else>
               {{ pasteLen.toLocaleString() }} / {{ maxInputChars.toLocaleString() }} 字<template v-if="overLimit"> · 超出上限，请缩减或分段解析</template>
@@ -360,6 +388,19 @@ async function handleSubmit() {
             {{ parsing ? 'AI 解析中…' : 'AI 解析填入' }}
           </Button>
         </div>
+
+        <!-- 异步解析进度条（WS 实时；关闭弹窗后台继续，可稍后回来续看） -->
+        <div v-if="parsing" class="space-y-1" data-testid="fl-parse-progress">
+          <div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              class="h-full rounded-full bg-primary transition-all duration-500"
+              :style="{ width: `${Math.max(3, progress)}%` }"
+            />
+          </div>
+        </div>
+        <p v-if="draftError" class="text-xs text-destructive" data-testid="fl-draft-error">
+          {{ draftError }}
+        </p>
       </div>
 
       <div v-if="loadingExisting" class="py-6 text-center text-sm text-muted-foreground">
@@ -498,9 +539,19 @@ async function handleSubmit() {
         <Button variant="ghost" :disabled="submitting" @click="emit('cancel')">
           取消
         </Button>
-        <Button :disabled="submitting" data-testid="fl-submit" @click="handleSubmit">
+        <Button
+          variant="outline"
+          :disabled="submitting || savingDraft || parsing"
+          data-testid="fl-save-draft"
+          @click="saveDraft"
+        >
+          <span v-if="savingDraft" class="icon-[lucide--loader-2] mr-1.5 animate-spin" />
+          <span v-else class="icon-[lucide--save] mr-1.5" />
+          存草稿
+        </Button>
+        <Button :disabled="submitting || parsing" data-testid="fl-submit" @click="handleSubmit">
           <span v-if="submitting" class="icon-[lucide--loader-2] mr-1.5 animate-spin" />
-          保存
+          确认保存
         </Button>
       </div>
     </footer>

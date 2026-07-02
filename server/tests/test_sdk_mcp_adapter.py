@@ -177,29 +177,26 @@ class TestCreateMcpServer:
         # create_sdk_mcp_server(name="chat-tools", tools=[...])
         assert actual_call.kwargs["name"] == "chat-tools"
         passed_tools = actual_call.kwargs["tools"]
+        # MCP server 注册「所有 PROJECT 类工具」——数量随新增工具动态增长，
+        # 因此对齐动态 expected_count，而非写死常量（历史写死 14 已随新增 PROJECT
+        # 工具 associate_repos / save_project_feature_list 等漂移失效）。
         assert len(passed_tools) == expected_count
-        # implementation 收尾：更新工具数量（新增 start_plan_research → 14）
-        assert expected_count == 14
 
-        # 验证工具名（implementation 更新：补 find_related_code + 3 个 API tools）
+        # 核心工具必须全部暴露（子集校验，抗新增工具漂移）。
         tool_names = {t.name for t in passed_tools}
-        expected_names = {
+        core_tools = {
             "browse_file_content",
             "list_space_structure",
             "get_space_overview",
             "search_repository_code",
             "list_space_repositories",
             "get_repository_info",
-            "deep_analysis",
-            "create_coding_plan",
-            "update_coding_plan",
-            "start_plan_research",
-            "find_related_code",       # implementation
-            "find_api_handler",        # implementation
-            "find_api_callers",        # implementation
-            "list_endpoints",          # implementation
+            "find_related_code",
+            "find_api_handler",
+            "find_api_callers",
+            "list_endpoints",
         }
-        assert tool_names == expected_names
+        assert core_tools <= tool_names, f"缺失核心工具: {core_tools - tool_names}"
 
 
 class TestBuildAllowedTools:
@@ -255,5 +252,10 @@ class TestBuildAllowedTools:
         for name in tools:
             assert pattern.match(name), f"工具名格式不匹配: {name}"
 
-        # 验证数量等于 PROJECT 类别工具数（新增 start_plan_research → 14）
-        assert len(tools) == 14
+        # 数量等于当前注册表 PROJECT 类工具数（动态，抗新增工具漂移；历史写死 14 已失效）。
+        from agents.tools.base import ToolCategory, _tool_registry
+
+        expected_count = sum(
+            1 for td in _tool_registry.values() if td.category == ToolCategory.PROJECT
+        )
+        assert len(tools) == expected_count
