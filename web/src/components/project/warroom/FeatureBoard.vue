@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FeatureListDraft, FeatureNode, FeatureState } from '~/api/projectWorkspace'
 import { useQuery } from '@tanstack/vue-query'
-import { computed, markRaw, ref, toRef } from 'vue'
+import { computed, markRaw, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectWorkspaceApi } from '~/api/projectWorkspace'
 import EmptyState from '~/components/common/EmptyState.vue'
@@ -9,12 +9,12 @@ import InlineMarkdown from '~/components/common/InlineMarkdown.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import { Button } from '~/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
-import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import { useModal } from '~/composables/useModal'
 import FeatureDetailModal from './FeatureDetailModal.vue'
 import { useFeatureListEditor } from './useFeatureListEditor'
 
-// P1：Feature 大盘——「按状态 / 按模块」视图切换。数据同源 getFeatureList（与 ProjectHealthCard 共享 queryKey，vue-query 去重）。
+// P1：Feature 大盘——按「feature list → 模块 → 功能点」层级展示，状态用指示灯（顶部图例示意）。
+// 数据同源 getFeatureList（与 ProjectHealthCard 共享 queryKey，vue-query 去重）。
 const props = defineProps<{ projectId: string, canManage?: boolean }>()
 
 // 常驻编辑入口：不受 feature 数量限制，随时可重新编辑/追加 feature list。
@@ -73,48 +73,25 @@ const modules = computed<FeatureNode[]>(() => {
   return d?.modules ?? []
 })
 
-const view = ref<'status' | 'module'>('status')
-
-const STATE_CLASS: Record<FeatureState, string> = {
-  todo: 'bg-muted text-muted-foreground',
-  in_progress: 'bg-primary/15 text-primary',
-  testing: 'bg-amber-500/15 text-amber-500',
-  done: 'bg-emerald-500/15 text-emerald-500',
+// 状态指示灯配色（不展示文字，仅圆点；顶部图例给出示意）。
+const STATE_DOT_CLASS: Record<FeatureState, string> = {
+  todo: 'bg-muted-foreground/40',
+  in_progress: 'bg-primary',
+  testing: 'bg-amber-500',
+  done: 'bg-emerald-500',
 }
-const STATE_ORDER: FeatureState[] = ['in_progress', 'testing', 'todo', 'done']
+const STATE_ORDER: FeatureState[] = ['todo', 'in_progress', 'testing', 'done']
 
 function normalizeState(state?: FeatureState): FeatureState {
-  return state && state in STATE_CLASS ? state : 'todo'
+  return state && state in STATE_DOT_CLASS ? state : 'todo'
 }
 
-interface FeatureRow {
-  name: string
-  module: string
-  state: FeatureState
-  acceptance: FeatureNode[]
-  statusDisplay?: string
-  node: FeatureNode
+function moduleFeatures(mod: FeatureNode): FeatureNode[] {
+  return (mod.children ?? []).filter(c => c.kind === 'feature')
 }
-
-// 拍平：模块 → 功能点，带模块归属（按状态视图用）。
-const rows = computed<FeatureRow[]>(() => {
-  const out: FeatureRow[] = []
-  for (const mod of modules.value) {
-    for (const feat of mod.children ?? []) {
-      if (feat.kind !== 'feature')
-        continue
-      out.push({
-        name: feat.name,
-        module: feat.module_normalized || mod.name,
-        state: normalizeState(feat.state),
-        acceptance: (feat.children ?? []).filter(c => c.kind === 'acceptance'),
-        statusDisplay: feat.status_display_name,
-        node: feat,
-      })
-    }
-  }
-  return out
-})
+function featureAcceptance(feat: FeatureNode): FeatureNode[] {
+  return (feat.children ?? []).filter(c => c.kind === 'acceptance')
+}
 
 // 点开功能点详情（按需结构化为 sections，含流程图）。
 function openDetail(node: FeatureNode) {
@@ -125,14 +102,10 @@ function openDetail(node: FeatureNode) {
   void open()
 }
 
-const byState = computed(() => {
-  const map: Record<FeatureState, FeatureRow[]> = { in_progress: [], testing: [], todo: [], done: [] }
-  for (const r of rows.value)
-    map[r.state].push(r)
-  return map
-})
-
-const isEmpty = computed(() => rows.value.length === 0 && modules.value.length === 0)
+const totalFeatures = computed(() =>
+  modules.value.reduce((n, m) => n + moduleFeatures(m).length, 0),
+)
+const isEmpty = computed(() => totalFeatures.value === 0 && modules.value.length === 0)
 </script>
 
 <template>
@@ -142,20 +115,17 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
       <h2 class="text-sm font-semibold text-foreground">
         {{ t('projects.workbench.feature.title') }}
       </h2>
-      <ToggleGroup
-        v-model="view"
-        type="single"
-        size="sm"
-        class="ml-auto"
-        :aria-label="t('projects.warroom.feature.viewLabel')"
-      >
-        <ToggleGroupItem value="status" data-testid="feature-view-status">
-          {{ t('projects.warroom.feature.byStatus') }}
-        </ToggleGroupItem>
-        <ToggleGroupItem value="module" data-testid="feature-view-module">
-          {{ t('projects.warroom.feature.byModule') }}
-        </ToggleGroupItem>
-      </ToggleGroup>
+      <!-- 状态图例（示意）：功能点行只显示指示灯圆点，不展示状态文字。 -->
+      <div class="ml-auto flex items-center gap-2.5" data-testid="feature-state-legend">
+        <span
+          v-for="st in STATE_ORDER"
+          :key="st"
+          class="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+        >
+          <span class="size-1.5 rounded-full" :class="STATE_DOT_CLASS[st]" />
+          {{ t(`projects.workbench.feature.state.${st}`) }}
+        </span>
+      </div>
       <!-- 常驻入口（窄面板用紧凑图标按钮，避免与视图切换器挤占空间）：随时可编辑/增删改/拖动排序/追加解析。 -->
       <Button
         v-if="canManage"
@@ -199,71 +169,7 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
         :description="t('projects.workbench.feature.emptyDesc')"
       />
 
-      <!-- 按状态 -->
-      <div v-else-if="view === 'status'" class="space-y-5" data-testid="feature-status-view">
-        <div v-for="st in STATE_ORDER" :key="st">
-          <div class="flex items-center gap-2 mb-2">
-            <span
-              class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
-              :class="STATE_CLASS[st]"
-            >
-              <span class="w-1.5 h-1.5 rounded-full bg-current" />
-              {{ t(`projects.workbench.feature.state.${st}`) }}
-            </span>
-            <span class="text-xs text-muted-foreground tabular-nums">{{ byState[st].length }}</span>
-          </div>
-          <p v-if="byState[st].length === 0" class="pl-1 text-xs text-muted-foreground/70">
-            {{ t('projects.warroom.feature.emptyGroup') }}
-          </p>
-          <div v-else class="space-y-1">
-            <Collapsible
-              v-for="(row, i) in byState[st]"
-              :key="`${st}-${i}`"
-              class="rounded-lg border border-border/40"
-            >
-              <div class="flex items-center gap-2 px-3 py-2">
-                <CollapsibleTrigger
-                  class="group flex min-w-0 flex-1 items-center gap-2 text-left"
-                  data-testid="feature-row"
-                >
-                  <span class="icon-[lucide--chevron-right] text-xs text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                  <span class="icon-[lucide--git-branch] text-muted-foreground shrink-0" />
-                  <span class="text-sm text-foreground truncate"><InlineMarkdown :text="row.name" /></span>
-                  <span class="text-xs text-muted-foreground truncate hidden sm:inline">· <InlineMarkdown :text="row.module" /></span>
-                </CollapsibleTrigger>
-                <span class="text-[11px] text-muted-foreground shrink-0 tabular-nums">
-                  {{ t('projects.warroom.feature.acceptanceCount', { n: row.acceptance.length }) }}
-                </span>
-                <button
-                  type="button"
-                  class="shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-primary hover:bg-primary/5"
-                  data-testid="feature-detail-btn"
-                  @click="openDetail(row.node)"
-                >
-                  <span class="icon-[lucide--panel-right-open] text-[11px]" /> 详情
-                </button>
-              </div>
-              <CollapsibleContent class="px-3 pb-2 pl-9">
-                <p v-if="row.acceptance.length === 0" class="py-1 text-xs text-muted-foreground">
-                  {{ t('projects.workbench.feature.noAcceptance') }}
-                </p>
-                <ul v-else class="space-y-0.5">
-                  <li
-                    v-for="(acc, ai) in row.acceptance"
-                    :key="ai"
-                    class="flex items-center gap-2 py-1 text-xs"
-                  >
-                    <span class="icon-[lucide--check] text-emerald-500/70" />
-                    <span class="truncate text-foreground/80"><InlineMarkdown :text="acc.name" /></span>
-                  </li>
-                </ul>
-              </CollapsibleContent>
-            </Collapsible>
-          </div>
-        </div>
-      </div>
-
-      <!-- 按模块 -->
+      <!-- feature list → 模块 → 功能点 层级（状态只用指示灯圆点，图例见顶部） -->
       <div v-else class="space-y-2" data-testid="feature-module-view">
         <Collapsible
           v-for="(mod, mi) in modules"
@@ -275,34 +181,62 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
             <span class="icon-[lucide--chevron-right] text-xs text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
             <span class="icon-[lucide--folder] text-primary" />
             <span class="text-sm font-medium text-foreground truncate"><InlineMarkdown :text="mod.name" /></span>
+            <span class="ml-auto text-xs text-muted-foreground shrink-0 tabular-nums">
+              {{ moduleFeatures(mod).length }}
+            </span>
           </CollapsibleTrigger>
           <CollapsibleContent class="px-3 pb-2">
-            <p v-if="(mod.children ?? []).filter(c => c.kind === 'feature').length === 0" class="pl-7 py-2 text-xs text-muted-foreground">
+            <p v-if="moduleFeatures(mod).length === 0" class="pl-7 py-2 text-xs text-muted-foreground">
               {{ t('projects.workbench.feature.noFeatures') }}
             </p>
-            <div
-              v-for="(feat, fi) in (mod.children ?? []).filter(c => c.kind === 'feature')"
+            <Collapsible
+              v-for="(feat, fi) in moduleFeatures(mod)"
               :key="`f-${mi}-${fi}`"
-              class="flex items-center justify-between gap-2 pl-5 py-2 border-t border-border/30 first:border-t-0"
+              class="border-t border-border/30 first:border-t-0"
             >
-              <button
-                type="button"
-                class="flex min-w-0 items-center gap-2 text-left group/feat"
-                data-testid="feature-detail-btn"
-                @click="openDetail(feat)"
-              >
-                <span class="icon-[lucide--git-branch] text-muted-foreground shrink-0" />
-                <span class="text-sm text-foreground truncate group-hover/feat:text-primary group-hover/feat:underline"><InlineMarkdown :text="feat.name" /></span>
-              </button>
-              <span
-                class="inline-flex items-center gap-1.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
-                :class="STATE_CLASS[normalizeState(feat.state)]"
-                :title="feat.status_display_name || undefined"
-              >
-                <span class="w-1.5 h-1.5 rounded-full bg-current" />
-                {{ t(`projects.workbench.feature.state.${normalizeState(feat.state)}`) }}
-              </span>
-            </div>
+              <div class="flex items-center gap-2 pl-5 py-2">
+                <CollapsibleTrigger
+                  class="group/feat flex min-w-0 flex-1 items-center gap-2 text-left"
+                  data-testid="feature-row"
+                >
+                  <span class="icon-[lucide--chevron-right] text-xs text-muted-foreground transition-transform group-data-[state=open]/feat:rotate-90" />
+                  <!-- 状态指示灯（无文字，hover 提示状态名） -->
+                  <span
+                    class="size-2 rounded-full shrink-0"
+                    :class="STATE_DOT_CLASS[normalizeState(feat.state)]"
+                    :title="feat.status_display_name || t(`projects.workbench.feature.state.${normalizeState(feat.state)}`)"
+                    data-testid="feature-state-dot"
+                  />
+                  <span class="text-sm text-foreground truncate"><InlineMarkdown :text="feat.name" /></span>
+                </CollapsibleTrigger>
+                <span class="text-[11px] text-muted-foreground shrink-0 tabular-nums">
+                  {{ t('projects.warroom.feature.acceptanceCount', { n: featureAcceptance(feat).length }) }}
+                </span>
+                <button
+                  type="button"
+                  class="shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-primary hover:bg-primary/5"
+                  data-testid="feature-detail-btn"
+                  @click="openDetail(feat)"
+                >
+                  <span class="icon-[lucide--panel-right-open] text-[11px]" /> 详情
+                </button>
+              </div>
+              <CollapsibleContent class="pb-2 pl-12 pr-3">
+                <p v-if="featureAcceptance(feat).length === 0" class="py-1 text-xs text-muted-foreground">
+                  {{ t('projects.workbench.feature.noAcceptance') }}
+                </p>
+                <ul v-else class="space-y-0.5">
+                  <li
+                    v-for="(acc, ai) in featureAcceptance(feat)"
+                    :key="ai"
+                    class="flex items-center gap-2 py-1 text-xs"
+                  >
+                    <span class="icon-[lucide--check] text-emerald-500/70" />
+                    <span class="truncate text-foreground/80"><InlineMarkdown :text="acc.name" /></span>
+                  </li>
+                </ul>
+              </CollapsibleContent>
+            </Collapsible>
           </CollapsibleContent>
         </Collapsible>
       </div>
