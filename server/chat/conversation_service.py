@@ -150,7 +150,10 @@ _STRATEGY_DEFAULT: Final[str] = (
     "不要先假设当前仓库就是答案所在地。\n"
     "  如果当前仓库只是入口、桥接、跳转或 SDK 包装，必须继续按相关性结果追到真正实现仓库，"
     "再使用 search_repository_code / browse_file_content 等工具读代码。\n"
-    "  调用 search_repository_code / browse_file_content / list_space_structure 等工具搜索向量库与代码\n"
+    "  优先用 search_repository_code（定向语义检索）/ find_related_code（关系图）/ "
+    "browse_file_content（读具体文件）获取**精准片段**，而不是罗列大而全的结构。\n"
+    "  只有在确需了解某个**具体仓库**的目录布局时才调 list_space_structure（必须带 "
+    "repository_id，限定单仓）——绝不列整个空间所有仓库的文件树（会撑爆上下文且无用）。\n"
     "  根据需要灵活组合调用，但要有目的性，避免无方向地反复搜索同一内容\n"
     "  信息足够时立即回答，不要为了全面而过度检索\n\n"
     "约束：\n"
@@ -167,6 +170,15 @@ _STRATEGY_DEFAULT: Final[str] = (
 )
 
 _SEARCH_USAGE_RULES: Final[str] = (
+    "\n信息获取总原则（省 token - 只取有用信息，不要一股脑全塞）：\n"
+    "  - 目标是**拿到回答问题所需的最小充分信息**，不是把仓库/空间的全貌倒给自己。\n"
+    "  - 优先级：项目上下文（已注入）/ 交付知识 / 定向语义检索（search_repository_code）/ "
+    "关系图（find_related_code）> 读具体文件（browse_file_content）> 列**单个仓库**结构。\n"
+    "  - **禁止**列出整个空间的文件树 / 逐仓罗列结构（仓库可能几十个，必爆上下文）；"
+    "确需结构时先定位到具体仓库再 list_space_structure(repository_id=...)。\n"
+    "  - 忽略无语义价值的噪声（仓库/文件 UUID、commit hash、完整语言直方图等）——"
+    "它们不帮助推理，只浪费上下文，除非用户明确要这些标识。\n"
+    "  - 一个概念一次检索、按需追加；信息够了立刻作答。\n"
     "\nsearch_repository_code 使用规范（重要 - 用错会一直拿不到结果）：\n"
     "  向量 + BM25 混合搜索对**单一概念的精准 query** 效果最好，对**多概念关键词堆**效果灾难性差。\n\n"
     "  ✅ 正确用法（一次搜一个概念，分多次调用）：\n"
@@ -1626,6 +1638,10 @@ class ConversationService:
                 "session_id": session_id,
                 "system_prompt": sdk_config.system_prompt,
                 "space_id": sdk_config.space_id,
+                # 项目级对话：必须把 bound_project_id 透到 graph_config —— executing_node
+                # 用 cfg 重建 ChatRunnerConfig，少传会让 _get_tool_names 拿不到项目只读工具
+                # （get_project_overview 等），system_prompt 已宣传却未绑定 → 模型调用报「未知工具」。
+                "bound_project_id": sdk_config.bound_project_id,
                 "role": role,
                 "agent_session_id": str(agent_session.id),
                 "notification_user_id": notification_user_id or "",
@@ -2020,6 +2036,9 @@ class ConversationService:
                 "session_id": session_id,
                 "system_prompt": sdk_config.system_prompt,
                 "space_id": sdk_config.space_id,
+                # 项目级对话：透传绑定项目 id（与 send_message_stream 同构），
+                # 否则 resume 后 _get_tool_names 拿不到项目只读工具。
+                "bound_project_id": sdk_config.bound_project_id,
                 "role": "developer",
                 "agent_session_id": str(agent_session.id),
                 "notification_user_id": "",

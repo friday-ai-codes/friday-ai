@@ -95,7 +95,9 @@ export interface ArtifactOverview {
   total: number
   types: ArtifactTypeCount[]
   items: ArtifactOverviewItem[]
-  truncated: boolean
+  page: number
+  page_size: number
+  has_next: boolean
 }
 
 /** 交付文档知识树叶子（对齐 97-01 后端契约）。 */
@@ -213,9 +215,15 @@ export async function searchDeliveryKnowledge(params: {
   })
 }
 
-export async function getArtifactOverview(params?: { typeKey?: string }) {
+export async function getArtifactOverview(params?: {
+  typeKey?: string
+  page?: number
+  pageSize?: number
+}) {
   return get<ArtifactOverview>('/knowledge/artifacts/overview/', {
     type_key: params?.typeKey,
+    page: params?.page,
+    page_size: params?.pageSize,
   })
 }
 

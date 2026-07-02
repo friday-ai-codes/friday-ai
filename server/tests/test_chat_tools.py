@@ -224,6 +224,7 @@ class TestListSpaceStructure:
         ):
             result = await list_space_structure(
                 space_id=str(project.id),
+                repository_id=str(repo.id),
             )
 
         assert result.success is True
@@ -233,10 +234,24 @@ class TestListSpaceStructure:
         assert "README.md" in data["structure"]
         assert "main.py" in data["structure"]
 
-    async def test_no_indexed_repos_returns_empty(self, project):
-        """无已索引仓库时返回空结构 + 提示。"""
+    async def test_missing_repository_id_returns_guidance(self, project):
+        """省 token 契约：不传 repository_id → 拒绝全空间 dump，返回引导提示。"""
         result = await list_space_structure(
             space_id=str(project.id),
+        )
+
+        assert result.success is True
+        data = result.output["data"]
+        assert data["total_files"] == 0
+        assert data["structure"] == ""
+        assert "repository_id" in result.output.get("error", "")
+
+    async def test_no_indexed_repos_returns_empty(self, project):
+        """指定仓库未索引 → 返回空结构 + 提示。"""
+        repo = await project.repositories.afirst()
+        result = await list_space_structure(
+            space_id=str(project.id),
+            repository_id=str(repo.id),
         )
 
         assert result.success is True

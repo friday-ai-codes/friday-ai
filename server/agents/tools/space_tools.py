@@ -162,16 +162,19 @@ async def list_space_repositories(space_id: str) -> ToolResult:
             },
         )
 
-    # Use async for M2M query
+    # 省 token：只暴露对「选哪个仓库」有用的字段——id（后续工具调用需要）、name、
+    # index_status、以及截断后的描述。git_url / platform / default_branch 对 LLM 推理
+    # 基本无用，且 overview_text（仓库摘要）可能上千字，全量塞进上下文是浪费。
+    def _short_desc(text: str | None) -> str:
+        t = (text or "").strip()
+        return t[:240] + "…" if len(t) > 240 else t
+
     repositories = [
         {
             "id": str(repo.id),
             "name": repo.name,
-            "git_url": repo.git_url,
-            "platform": repo.git_platform,
-            "default_branch": repo.default_branch,
-            "description": repo.overview_text,
             "index_status": repo.index_status,
+            "description": _short_desc(repo.overview_text),
         }
         async for repo in Repository.objects.filter(
             spaces=project,

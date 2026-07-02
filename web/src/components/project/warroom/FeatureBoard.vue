@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import type { FeatureNode, FeatureState } from '~/api/projectWorkspace'
+import type { FeatureListDraft, FeatureNode, FeatureState } from '~/api/projectWorkspace'
 import { useQuery } from '@tanstack/vue-query'
 import { computed, markRaw, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectWorkspaceApi } from '~/api/projectWorkspace'
 import EmptyState from '~/components/common/EmptyState.vue'
+import InlineMarkdown from '~/components/common/InlineMarkdown.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
@@ -39,6 +40,21 @@ const { data, isLoading, isError, refetch } = useQuery({
   queryFn: () => projectWorkspaceApi.getFeatureList(props.projectId),
   refetchOnWindowFocus: true,
   refetchInterval: query => (_featureCount(query.state.data) === 0 ? 5000 : false),
+})
+
+// 草稿异步解析进度：解析中轮询回显「功能点解析中 x%」徽标（异步/后台生成也能感知）。
+const { data: draftData } = useQuery({
+  queryKey: ['project-feature-draft', projectIdRef],
+  queryFn: () => projectWorkspaceApi.getFeatureListDraft(props.projectId),
+  refetchOnWindowFocus: true,
+  refetchInterval: (query) => {
+    const s = (query.state.data as FeatureListDraft | undefined)?.status
+    return s === 'parsing' || s === 'partial' ? 3000 : false
+  },
+})
+const draftParsing = computed(() => {
+  const s = draftData.value?.status
+  return s === 'parsing' || s === 'partial'
 })
 
 // feature-list 端点返回 { modules: FeatureNode[] }；兼容历史/测试里的纯数组形态。
@@ -135,6 +151,15 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
     </header>
 
     <div class="p-5">
+      <div
+        v-if="draftParsing"
+        class="mb-3 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-primary"
+        data-testid="feature-draft-progress"
+      >
+        <span class="icon-[lucide--loader-2] animate-spin" />
+        功能点解析中 · {{ draftData?.progress ?? 0 }}%
+      </div>
+
       <LoadingState v-if="isLoading" variant="skeleton" :count="3" />
 
       <div v-else-if="isError" class="py-8 text-center space-y-2" data-testid="feature-error">
@@ -182,8 +207,8 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
                 >
                   <span class="icon-[lucide--chevron-right] text-xs text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
                   <span class="icon-[lucide--git-branch] text-muted-foreground shrink-0" />
-                  <span class="text-sm text-foreground truncate">{{ row.name }}</span>
-                  <span class="text-xs text-muted-foreground truncate hidden sm:inline">· {{ row.module }}</span>
+                  <span class="text-sm text-foreground truncate"><InlineMarkdown :text="row.name" /></span>
+                  <span class="text-xs text-muted-foreground truncate hidden sm:inline">· <InlineMarkdown :text="row.module" /></span>
                 </CollapsibleTrigger>
                 <span class="text-[11px] text-muted-foreground shrink-0 tabular-nums">
                   {{ t('projects.warroom.feature.acceptanceCount', { n: row.acceptance.length }) }}
@@ -208,7 +233,7 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
                     class="flex items-center gap-2 py-1 text-xs"
                   >
                     <span class="icon-[lucide--check] text-emerald-500/70" />
-                    <span class="truncate text-foreground/80">{{ acc.name }}</span>
+                    <span class="truncate text-foreground/80"><InlineMarkdown :text="acc.name" /></span>
                   </li>
                 </ul>
               </CollapsibleContent>
@@ -228,7 +253,7 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
           <CollapsibleTrigger class="group flex w-full items-center gap-2 px-3 py-2.5 text-left">
             <span class="icon-[lucide--chevron-right] text-xs text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
             <span class="icon-[lucide--folder] text-primary" />
-            <span class="text-sm font-medium text-foreground truncate">{{ mod.name }}</span>
+            <span class="text-sm font-medium text-foreground truncate"><InlineMarkdown :text="mod.name" /></span>
           </CollapsibleTrigger>
           <CollapsibleContent class="px-3 pb-2">
             <p v-if="(mod.children ?? []).filter(c => c.kind === 'feature').length === 0" class="pl-7 py-2 text-xs text-muted-foreground">
@@ -246,7 +271,7 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
                 @click="openDetail(feat)"
               >
                 <span class="icon-[lucide--git-branch] text-muted-foreground shrink-0" />
-                <span class="text-sm text-foreground truncate group-hover/feat:text-primary group-hover/feat:underline">{{ feat.name }}</span>
+                <span class="text-sm text-foreground truncate group-hover/feat:text-primary group-hover/feat:underline"><InlineMarkdown :text="feat.name" /></span>
               </button>
               <span
                 class="inline-flex items-center gap-1.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"

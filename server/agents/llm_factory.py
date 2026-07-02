@@ -71,6 +71,7 @@ def build_chat_model(
     max_thinking_tokens: int | None = None,
     reasoning_effort: Literal["low", "medium", "high"] | None = None,
     streaming: bool = True,
+    max_retries: int | None = None,
 ) -> BaseChatModel:
     """单一工厂入口（contract）：capabilities 驱动 kwargs 分派。
 
@@ -113,6 +114,11 @@ def build_chat_model(
     }
     if resolved.base_url:
         kwargs["base_url"] = resolved.base_url  # contract
+
+    # 可选覆盖客户端重试次数。默认 None = 沿用 LangChain 默认（max_retries=2 → 最多 3 次）。
+    # 对"快速失败即降级"的短任务（如仓库分级路由 Stage 1）传 0，避免超时后 3× 叠加空等。
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
 
     # contract thinking 分派（work item，仅 Anthropic 系列支持）
     if capabilities.supports_thinking and max_thinking_tokens:

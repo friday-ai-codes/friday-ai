@@ -389,6 +389,9 @@ async def _build_chat_runner(
         space_id=cfg.get("space_id", ""),
         session_id=cfg.get("session_id", ""),
         conversation_id=cfg.get("conversation_id", ""),
+        # 项目级对话：透传绑定项目 id，否则 _get_tool_names 拿不到项目只读工具，
+        # system_prompt 已宣传 get_project_overview 等却未绑定 → 模型调用报「未知工具」。
+        bound_project_id=cfg.get("bound_project_id", ""),
         api_key=api_key,
         api_base_url=cfg.get("api_base_url", ""),
         max_turns=30,

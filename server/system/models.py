@@ -120,6 +120,9 @@ class SettingKeys:
     # repo_summary 派发槽位上限：durable job 只做轻量派发，槽位用于平滑批量建仓时的
     # session 创建与 Runner 投递洪峰（默认 8，与 Runner.concurrent 量级对齐）。
     CONCURRENCY_SUMMARY_MAX = "concurrency_summary_max"  # 默认 8
+    # feature list 逐模块解析槽位上限：粘贴文档解析 fan-out 时每个模块一个 LLM 调用，
+    # 槽位池控并发（默认 4，避免同时打爆 AI Provider 触发 429）。
+    CONCURRENCY_FEATURE_PARSE_MAX = "concurrency_feature_parse_max"  # 默认 4
 
     # 运行时日志配置（LOG-06，实时生效）：复用 SystemSetting + settings_service(60s 缓存)
     # + signals(写时失效 + 即时调级别)。点分命名与 code_index.exclusion.* 风格一致。

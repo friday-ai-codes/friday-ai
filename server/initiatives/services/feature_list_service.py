@@ -126,6 +126,10 @@ def to_feature_node_tree(tree: dict[str, Any]) -> dict[str, Any]:
             source = str(feat.get("source") or "").strip()
             if source:
                 feat_node["source"] = source
+            # 预生成/已缓存的详情结构化 sections（点开即时、零请求；缺省则前端按需取）。
+            detail = feat.get("detail_sections")
+            if detail:
+                feat_node["detail_sections"] = detail
             feats_out.append(feat_node)
         mod_node: dict[str, Any] = {
             "kind": "module",
@@ -168,6 +172,9 @@ class FeatureListService:
             records = await self._fetch_records(artifact)
             tree = self._parse_records(records, work_item_index)
 
+        # 附上已缓存的详情结构化 sections（点开即时、不再每次调 LLM）。
+        await self._aattach_detail_sections(project_id, tree)
+
         feature_count = sum(len(m["features"]) for m in tree["modules"])
         logger.info(
             "project_feature_list_built",
@@ -179,6 +186,40 @@ class FeatureListService:
             category="caller",
         )
         return tree
+
+    async def _aattach_detail_sections(
+        self, project_id: Any, tree: dict[str, Any]
+    ) -> None:
+        """把已缓存的详情结构化 sections 批量附到功能点节点（best-effort，失败不反噬）。"""
+        try:
+            sources = [
+                str(feat.get("source") or "").strip()
+                for mod in tree.get("modules", [])
+                for feat in mod.get("features", [])
+                if str(feat.get("source") or "").strip()
+            ]
+            if not sources:
+                return
+            from initiatives.services.feature_detail_service import (
+                feature_detail_service,
+            )
+
+            cached = await feature_detail_service.aget_cached_map(project_id, sources)
+            if not cached:
+                return
+            for mod in tree.get("modules", []):
+                for feat in mod.get("features", []):
+                    src = str(feat.get("source") or "").strip()
+                    if src and src in cached:
+                        feat["detail_sections"] = cached[src]
+        except Exception:  # noqa: BLE001 — 详情附加 best-effort，绝不反噬构树
+            logger.warning(
+                "feature_detail_attach_failed",
+                project_id=str(project_id),
+                component=_COMPONENT,
+                category="sampling",
+                exc_info=True,
+            )
 
     async def aset_feature_list(
         self,

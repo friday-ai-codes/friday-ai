@@ -40,6 +40,7 @@ import agents.tools.coding_tools  # noqa: F401
 import agents.tools.delivery_knowledge_tools  # noqa: F401  # RECALL-02 交付知识召回工具
 import agents.tools.plan_research_tools  # noqa: F401
 import agents.tools.project_feature_tools  # noqa: F401  # ENTRY-02 chat 入口薄封装
+import agents.tools.project_read_tools  # noqa: F401  # 项目级对话只读工具集
 import agents.tools.repository_relevance  # noqa: F401
 import agents.tools.space_tools  # noqa: F401
 from agents.call_source import CallSource, get_call_source
@@ -116,6 +117,18 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
 ]
 _DEEP_ANALYSIS_TOOL_NAMES = _INDEXED_TOOL_NAMES + ["deep_analysis"]
 
+# 项目级对话（会话绑定 bound_project）专属只读工具。**不依赖空间是否有已索引仓库**——
+# 只要会话绑定了项目就挂载，让 LLM 能以项目视角查看项目概览 / Feature / 工件 / 关联。
+# 各工具以注入的 conversation_id 反查 bound_project 并 fail-closed（见 project_read_tools）。
+_PROJECT_READ_TOOL_NAMES = [
+    "get_project_overview",
+    "list_project_features",
+    "get_project_feature",
+    "list_project_artifacts",
+    "get_project_artifact",
+    "get_project_related",
+]
+
 
 @dataclass
 class ChatRunnerConfig:
@@ -125,6 +138,9 @@ class ChatRunnerConfig:
     model: str
     space_id: str
     session_id: str
+    # 项目级对话绑定的项目聚合根 id（空串 = 非项目对话）。非空时无条件挂载项目只读工具，
+    # 不受空间是否有已索引仓库的门控影响。
+    bound_project_id: str = ""
     provider_type: ProviderType = ProviderType.ANTHROPIC
     conversation_id: str = ""
     api_key: str = ""
@@ -233,24 +249,38 @@ async def _get_tool_names(
     space_id: str,
     *,
     force_deep_analysis: bool = False,
+    bound_project_id: str = "",
 ) -> list[str]:
     """返回 LLM 可用工具名列表。
 
+    空间工具（受空间/索引门控）：
     - 无空间（space_id 为空，未绑定空间的通用对话）：不注入任何空间工具。
     - 无已索引仓库：仅 `_BASE_TOOL_NAMES`（避免误调检索工具拿空结果）。
     - 有已索引仓库 + 普通模式：`_INDEXED_TOOL_NAMES`，**不含** `deep_analysis`。
     - 有已索引仓库 + 用户开启「深度分析」开关：`_DEEP_ANALYSIS_TOOL_NAMES`。
+
+    项目工具（`_PROJECT_READ_TOOL_NAMES`）：只要会话绑定了项目（``bound_project_id`` 非空）
+    即追加，**与空间/索引状态无关**——项目级对话即便空间没有已索引仓库，也应能查看项目
+    概览 / Feature / 工件 / 关联。
     """
-    if not space_id:
-        return []
-    has_indexed = await Repository.objects.filter(
-        spaces__id=space_id,
-        index_status="indexed",
-        is_deleted=False,
-    ).aexists()
-    if not has_indexed:
-        return _BASE_TOOL_NAMES
-    return _DEEP_ANALYSIS_TOOL_NAMES if force_deep_analysis else _INDEXED_TOOL_NAMES
+    names: list[str] = []
+    if space_id:
+        has_indexed = await Repository.objects.filter(
+            spaces__id=space_id,
+            index_status="indexed",
+            is_deleted=False,
+        ).aexists()
+        if not has_indexed:
+            names = list(_BASE_TOOL_NAMES)
+        else:
+            names = list(
+                _DEEP_ANALYSIS_TOOL_NAMES if force_deep_analysis else _INDEXED_TOOL_NAMES
+            )
+    if bound_project_id:
+        for name in _PROJECT_READ_TOOL_NAMES:
+            if name not in names:
+                names.append(name)
+    return names
 
 
 def _extract_content_blocks(message: Any) -> list[dict[str, Any]]:
@@ -601,6 +631,7 @@ async def _build_tool_specs(
     *,
     default_search_branch: str | None = None,
     force_deep_analysis: bool = False,
+    bound_project_id: str = "",
 ) -> dict[str, _ChatToolSpec]:
     """装配 chat 场景可用的工具清单。
 
@@ -615,6 +646,7 @@ async def _build_tool_specs(
     tool_names = await _get_tool_names(
         space_id,
         force_deep_analysis=force_deep_analysis,
+        bound_project_id=bound_project_id,
     )
     langchain_tools = build_langchain_tools(
         tool_names,
@@ -784,6 +816,7 @@ class ChatAnthropicRunner:
             self._config.conversation_id,
             default_search_branch=self._config.default_search_branch,
             force_deep_analysis=self._config.force_deep_analysis,
+            bound_project_id=self._config.bound_project_id,
         )
         model_with_tools = model.bind_tools([spec.tool for spec in tool_specs.values()])
 

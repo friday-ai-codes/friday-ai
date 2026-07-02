@@ -19,6 +19,7 @@ from procrastinate.contrib.django import app
 from durable.queues import (
     QUEUE_CRAWL_INGEST,
     QUEUE_DOC_SYNC,
+    QUEUE_FEATURE_PARSE,
     QUEUE_GRAPH,
     QUEUE_INDEX,
     QUEUE_MAINTENANCE,
@@ -164,6 +165,52 @@ async def durable_crawl_ingest(**payload: Any) -> dict[str, Any]:
     from durable.tasks_impl import run_crawl_ingest
 
     return await run_crawl_ingest(**payload)
+
+
+@app.task(name="feature_list_parse_start", queue=QUEUE_FEATURE_PARSE)
+async def feature_list_parse_start(
+    *,
+    project_id: str,
+    draft_id: str,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """feature list 解析父任务（procrastinate 包壳，委托共用任务体）。
+
+    显式 ``name="feature_list_parse_start"`` 与 ``backends.defer`` 裸名查找同源；payload
+    仅 ``project_id`` / ``draft_id``（原文落在 FeatureListDraft.source_text，不入 payload）。
+    """
+    from durable.tasks_impl import run_feature_list_parse_start
+
+    return await run_feature_list_parse_start(
+        project_id=project_id,
+        draft_id=draft_id,
+        initiated_by_user_id=initiated_by_user_id,
+    )
+
+
+@app.task(name="feature_list_parse_module", queue=QUEUE_FEATURE_PARSE)
+async def feature_list_parse_module(
+    *,
+    project_id: str,
+    draft_id: str,
+    module_index: int,
+    attempt: int = 0,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """feature list 逐模块解析子任务（procrastinate 包壳，委托共用任务体）。
+
+    入队点带 ``lock=featparse-slot-{k}`` 控并发；429 退回队列由任务体 re-defer（attempt+1
+    + schedule_at 退避）。
+    """
+    from durable.tasks_impl import run_feature_list_parse_module
+
+    return await run_feature_list_parse_module(
+        project_id=project_id,
+        draft_id=draft_id,
+        module_index=module_index,
+        attempt=attempt,
+        initiated_by_user_id=initiated_by_user_id,
+    )
 
 
 @app.task(name="durable_ping", queue=QUEUE_MAINTENANCE)

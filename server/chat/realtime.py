@@ -87,7 +87,9 @@ async def abroadcast_conversation(conversation_id: Any, *, event: str = "upserte
         logger.info(
             "chat_realtime_conversation_broadcast",
             conversation_id=str(conversation_id),
-            event=event,
+            # structlog 保留 `event` 作为日志消息名，业务事件类型改用 `event_type`
+            # 上报，避免 `meth() got multiple values for argument 'event'` 冲突。
+            event_type=event,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
             category="sampling",
             component="chat_realtime",

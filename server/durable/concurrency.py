@@ -28,10 +28,12 @@ import hashlib
 DEFAULT_INDEX_CONCURRENCY = 5
 DEFAULT_GRAPH_CONCURRENCY = 3
 DEFAULT_SUMMARY_CONCURRENCY = 8
+DEFAULT_FEATURE_PARSE_CONCURRENCY = 4
 
 _INDEX_SLOT_PREFIX = "index-slot-"
 _GRAPH_SLOT_PREFIX = "graph-slot-"
 _SUMMARY_SLOT_PREFIX = "summary-slot-"
+_FEATURE_PARSE_SLOT_PREFIX = "featparse-slot-"
 
 
 def _stable_slot(repo_id: str, n: int) -> int:
@@ -58,6 +60,15 @@ def graph_slot_lock(repo_id: str, n: int) -> str:
 def summary_slot_lock(repo_id: str, n: int) -> str:
     """计算 repo_summary 派发槽位 lock 值：``summary-slot-{stable_hash(repo_id) % N}``。"""
     return f"{_SUMMARY_SLOT_PREFIX}{_stable_slot(repo_id, n)}"
+
+
+def feature_parse_slot_lock(key: str, n: int) -> str:
+    """计算 feature list 逐模块解析槽位 lock 值：``featparse-slot-{stable_hash(key) % N}``。
+
+    ``key`` 取 ``{draft_id}:{module_index}`` 稳定映射到某个槽位——全局至多 N 个模块并发
+    打 LLM，超限者原生留 todo 排队、worker 自动跳过（与 index/graph 槽位池同构）。
+    """
+    return f"{_FEATURE_PARSE_SLOT_PREFIX}{_stable_slot(key, n)}"
 
 
 def _read_int_setting_sync(key: str, default: int) -> int:
@@ -132,6 +143,19 @@ async def aget_summary_concurrency() -> int:
     )
 
 
+async def aget_feature_parse_concurrency() -> int:
+    from system.models import SettingKeys
+
+    return await _read_int_setting_async(
+        SettingKeys.CONCURRENCY_FEATURE_PARSE_MAX, DEFAULT_FEATURE_PARSE_CONCURRENCY
+    )
+
+
+async def afeature_parse_lock(key: str) -> str:
+    """读取 N 并返回该模块的 feature list 解析槽位 lock（async 入队点用）。"""
+    return feature_parse_slot_lock(key, await aget_feature_parse_concurrency())
+
+
 async def asummary_lock(repo_id: str) -> str:
     """读取 N 并返回该仓库的 repo_summary 派发槽位 lock（async 入队点用）。"""
     return summary_slot_lock(repo_id, await aget_summary_concurrency())
@@ -161,17 +185,21 @@ __all__ = [
     "DEFAULT_INDEX_CONCURRENCY",
     "DEFAULT_GRAPH_CONCURRENCY",
     "DEFAULT_SUMMARY_CONCURRENCY",
+    "DEFAULT_FEATURE_PARSE_CONCURRENCY",
     "index_slot_lock",
     "graph_slot_lock",
     "summary_slot_lock",
+    "feature_parse_slot_lock",
     "get_index_concurrency_sync",
     "get_graph_concurrency_sync",
     "aget_index_concurrency",
     "aget_graph_concurrency",
     "aget_summary_concurrency",
+    "aget_feature_parse_concurrency",
     "aindex_lock",
     "agraph_lock",
     "asummary_lock",
+    "afeature_parse_lock",
     "index_lock_sync",
     "graph_lock_sync",
 ]

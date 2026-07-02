@@ -231,6 +231,205 @@ async def run_doc_sync_push(
         )
 
 
+# feature list 逐模块解析的 429 退避重试上限与退避基数（秒）。
+_FEATURE_PARSE_MAX_ATTEMPTS = 6
+_FEATURE_PARSE_BACKOFF_BASE = 5
+
+
+def _feature_parse_backoff_seconds(attempt: int) -> float:
+    """429 指数退避（含轻量抖动），上限 60s。"""
+    import random
+
+    delay = min(60.0, _FEATURE_PARSE_BACKOFF_BASE * (2**attempt))
+    return delay + random.uniform(0, delay * 0.2)
+
+
+async def run_feature_list_parse_start(
+    *,
+    project_id: str,
+    draft_id: str,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """feature list 解析父任务：Step0 出模块外壳，再 fan-out 逐模块子任务并发解析。
+
+    模块解析失败不整体失败：出模块阶段失败（无 Provider / 无结构）才置草稿 failed；
+    单模块失败由子任务隔离。``initiated_by_user_id`` worker 入口 re-bind 发起用户。
+    """
+    from initiatives.services.feature_list_draft_service import (
+        FeatureListDraftService,
+    )
+    from initiatives.services.feature_list_import import (
+        FeatureListParseError,
+        agenerate_module_outline,
+    )
+
+    service = FeatureListDraftService()
+    with bind_task_context(
+        user_id=initiated_by_user_id, source="durable", component="feature_list_draft"
+    ):
+        draft = await service.aget_by_id(draft_id)
+        if draft is None:
+            return {"status": "skipped", "reason": "draft_not_found", "draft_id": draft_id}
+        source_text = draft.source_text or ""
+        try:
+            outline = await agenerate_module_outline(project_id, source_text)
+        except FeatureListParseError as exc:
+            await service.afail(draft_id, str(exc))
+            logger.info(
+                "feature_list_parse_start_failed",
+                project_id=str(project_id),
+                draft_id=draft_id,
+                reason="outline",
+            )
+            return {"status": "failed", "reason": "outline", "draft_id": draft_id}
+
+        result = await service.aset_outline(draft_id, outline)
+        if result is None:
+            return {"status": "skipped", "reason": "draft_gone", "draft_id": draft_id}
+        _snapshot, count = result
+
+        from durable.concurrency import afeature_parse_lock
+        from durable.queues import QUEUE_FEATURE_PARSE
+        from durable.service import DurableTaskService
+
+        for idx in range(count):
+            lock = await afeature_parse_lock(f"{draft_id}:{idx}")
+            await DurableTaskService.defer(
+                "feature_list_parse_module",
+                {
+                    "project_id": str(project_id),
+                    "draft_id": str(draft_id),
+                    "module_index": idx,
+                    "attempt": 0,
+                },
+                queue=QUEUE_FEATURE_PARSE,
+                lock=lock,
+                idempotency_key=f"featparse:{draft_id}:{idx}",
+                initiated_by_user_id=initiated_by_user_id,
+            )
+        logger.info(
+            "feature_list_parse_start_dispatched",
+            project_id=str(project_id),
+            draft_id=draft_id,
+            module_count=count,
+        )
+        return {"status": "dispatched", "draft_id": draft_id, "module_count": count}
+
+
+async def run_feature_list_parse_module(
+    *,
+    project_id: str,
+    draft_id: str,
+    module_index: int,
+    attempt: int = 0,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """feature list 逐模块解析子任务：解析单模块功能点，429 退回队列指数退避重试。
+
+    并发由入队点 ``lock=featparse-slot-{k}`` 控（同 lock 串行、超限留 todo）。429 达重试上限
+    或非限流错误 → 该模块置 failed（不拖垮其余模块）。``initiated_by_user_id`` worker 入口 re-bind。
+    """
+    import datetime
+
+    from initiatives.services.feature_list_draft_service import (
+        FeatureListDraftService,
+        slice_module_text,
+    )
+    from initiatives.services.feature_list_import import (
+        FeatureListParseError,
+        agenerate_module_features,
+    )
+
+    service = FeatureListDraftService()
+    with bind_task_context(
+        user_id=initiated_by_user_id, source="durable", component="feature_list_draft"
+    ):
+        draft = await service.aget_by_id(draft_id)
+        if draft is None:
+            return {"status": "skipped", "reason": "draft_gone", "draft_id": draft_id}
+        mods = (draft.tree or {}).get("modules", []) if isinstance(draft.tree, dict) else []
+        if not (0 <= module_index < len(mods)):
+            return {"status": "skipped", "reason": "index_out_of_range"}
+        mod = mods[module_index]
+        slice_text = slice_module_text(
+            draft.source_text or "", mod.get("line_start"), mod.get("line_end")
+        )
+
+        await service.aset_module_running(draft_id, module_index)
+        try:
+            features = await agenerate_module_features(project_id, slice_text)
+        except FeatureListParseError as exc:
+            upstream = getattr(exc, "upstream_status", None)
+            if upstream == 429 and attempt < _FEATURE_PARSE_MAX_ATTEMPTS:
+                await service.aset_module_pending(draft_id, module_index)
+                delay = _feature_parse_backoff_seconds(attempt)
+                run_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+                    seconds=delay
+                )
+                from durable.concurrency import afeature_parse_lock
+                from durable.queues import QUEUE_FEATURE_PARSE
+                from durable.service import DurableTaskService
+
+                lock = await afeature_parse_lock(f"{draft_id}:{module_index}")
+                await DurableTaskService.defer(
+                    "feature_list_parse_module",
+                    {
+                        "project_id": str(project_id),
+                        "draft_id": str(draft_id),
+                        "module_index": module_index,
+                        "attempt": attempt + 1,
+                    },
+                    queue=QUEUE_FEATURE_PARSE,
+                    lock=lock,
+                    run_at=run_at,
+                    initiated_by_user_id=initiated_by_user_id,
+                )
+                logger.info(
+                    "feature_list_parse_module_requeued",
+                    project_id=str(project_id),
+                    draft_id=draft_id,
+                    module_index=module_index,
+                    attempt=attempt + 1,
+                    delay_s=round(delay, 1),
+                )
+                return {"status": "requeued", "module_index": module_index, "attempt": attempt + 1}
+            await service.awrite_module(draft_id, module_index, failed=True)
+            logger.info(
+                "feature_list_parse_module_failed",
+                project_id=str(project_id),
+                draft_id=draft_id,
+                module_index=module_index,
+                upstream_status=upstream,
+            )
+            return {"status": "failed", "module_index": module_index}
+
+        await service.awrite_module(draft_id, module_index, features=features)
+
+        # 预热该模块各功能点的详情结构化缓存（best-effort）：实现「解析时就生成好、
+        # 点开详情秒开、不再每次结构化」。失败不影响模块解析成功。
+        try:
+            from initiatives.services.feature_detail_service import (
+                feature_detail_service,
+            )
+
+            sources = [f["source"] for f in features if f.get("source")]
+            if sources:
+                await feature_detail_service.awarm(project_id, sources)
+        except Exception:  # noqa: BLE001 — 预热绝不反噬模块解析
+            logger.warning(
+                "feature_detail_warm_dispatch_failed",
+                draft_id=draft_id,
+                module_index=module_index,
+                exc_info=True,
+            )
+
+        return {
+            "status": "ok",
+            "module_index": module_index,
+            "feature_count": len(features),
+        }
+
+
 async def run_page_index(
     *, target_id: str | None = None, initiated_by_user_id: str | None = None, **kwargs: Any
 ) -> dict[str, Any]:

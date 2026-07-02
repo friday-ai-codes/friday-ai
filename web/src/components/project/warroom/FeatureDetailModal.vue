@@ -32,10 +32,17 @@ function asText(content: string | string[]): string {
 }
 
 onMounted(async () => {
+  // 优先用解析阶段预生成 / 已缓存的详情（点开即时、零请求、无 loading）。
+  if (props.node.detail_sections?.length) {
+    sections.value = props.node.detail_sections
+    loaded.value = true
+    return
+  }
   if (!hasSource.value)
     return
   loading.value = true
   try {
+    // 兜底：未预热的旧数据首次点开时生成，后端会写缓存，之后不再重算。
     const { sections: out } = await projectWorkspaceApi.getFeatureDetail(
       props.projectId,
       props.node.source as string,

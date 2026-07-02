@@ -47,7 +47,8 @@ async def apush_project_event(
         logger.warning(
             "project_event_push_failed",
             project_id=str(project_id),
-            event=event_type,
+            # structlog 保留 `event` 作为日志消息名，业务事件类型改用 `event_type`。
+            event_type=event_type,
             error=str(exc),
             error_type=type(exc).__name__,
             component="initiatives",

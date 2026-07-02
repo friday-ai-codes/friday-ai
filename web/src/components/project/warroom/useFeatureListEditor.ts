@@ -17,6 +17,8 @@ export function useFeatureListEditor() {
       onConfirm: () => {
         // feature list 落库后让项目相关视图立即回显（Features 灯 / 健康总览 / 星图 / 详情）。
         queryClient.invalidateQueries({ queryKey: ['project-features', projectId] })
+        // 草稿已在 commit 时删除，失效看板草稿进度徽标查询。
+        queryClient.invalidateQueries({ queryKey: ['project-feature-draft', projectId] })
         queryClient.invalidateQueries({ queryKey: ['project-galaxy', projectId] })
         queryClient.invalidateQueries({ queryKey: ['project-work-items', projectId] })
         // 描述可能随 feature list 自动重写，一并失效项目详情缓存。

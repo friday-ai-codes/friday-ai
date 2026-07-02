@@ -181,7 +181,14 @@ class FeatureListParseError(ValueError):
 
     携带用户可读 ``reason``；API 层 ``except ValueError`` 统一转 4xx 并回显该 reason，
     让用户区分「未配置 AI」「文档过长被截断」「文档无可解析结构」。
+
+    ``upstream_status``：上游 HTTP 状态码（如 429 限流），供后台逐模块解析任务据此
+    「退回队列指数退避重试」（None 表示非上游错误 / 无法判定）。
     """
+
+    def __init__(self, *args: object, upstream_status: int | None = None) -> None:
+        super().__init__(*args)
+        self.upstream_status = upstream_status
 
 
 def _parse_gitlab_blob_url(url: str) -> tuple[str, str, str, str]:
@@ -618,20 +625,24 @@ async def _ainvoke_parse_llm(
             ai_msg = await chat_model.ainvoke(messages)
         ttft_ms = int((perf_counter() - start) * 1000)
     except Exception as exc:  # noqa: BLE001 — 转可读错误，不反噬
+        upstream = parse_upstream_status(exc)
         await _record_usage(
-            resolved, model, ttft_ms=None, upstream_status_code=parse_upstream_status(exc)
+            resolved, model, ttft_ms=None, upstream_status_code=upstream
         )
         logger.warning(
             f"{log_event}_failed",
             project_id=str(project_id),
             doc_chars=len(doc),
             model=model,
+            upstream_status=upstream,
             error_type=type(exc).__name__,
             error=redact_secrets_in_text(str(exc))[:300],
             component=_COMPONENT,
             category="caller",
         )
-        raise FeatureListParseError("AI 调用失败，请稍后重试或检查 AI Provider 配置") from exc
+        raise FeatureListParseError(
+            "AI 调用失败，请稍后重试或检查 AI Provider 配置", upstream_status=upstream
+        ) from exc
 
     usage = getattr(ai_msg, "usage_metadata", None) or {}
     await _record_usage(

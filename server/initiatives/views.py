@@ -1594,12 +1594,101 @@ class ProjectFeatureListFeatureDetailView(APIView):
         source = request.data.get("source") or ""
         if not str(source).strip():
             return Response({"sections": []})
-        from initiatives.services.feature_list_import import (
-            agenerate_feature_detail_sections,
+        from initiatives.services.feature_detail_service import feature_detail_service
+
+        # 缓存优先：命中直接返回；未命中生成并写缓存（此后不再重算）。
+        sections = await feature_detail_service.aget_or_generate(project_id, str(source))
+        return Response({"sections": sections})
+
+
+class ProjectFeatureListDraftView(APIView):
+    """feature list 解析草稿：GET 取回（含进度/状态/部分结果） + PUT 保存手工编辑。
+
+    路由 ``projects/<project_id>/feature-list/draft/``。刷新/重开弹窗按项目取回草稿续看
+    （异步解析进度落库、每项目一份）。PUT 保存用户手工编辑的草稿（``{modules}``）。
+    """
+
+    async def get(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        from initiatives.services.feature_list_draft_service import (
+            feature_list_draft_service,
         )
 
-        sections = await agenerate_feature_detail_sections(project_id, str(source))
-        return Response({"sections": sections})
+        data = await feature_list_draft_service.aget_serialized(project_id)
+        return Response(data)
+
+    async def put(self, request, project_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        modules = request.data.get("modules")
+        if not isinstance(modules, list):
+            return Response(
+                {"detail": "需提供 modules 数组"}, status=status.HTTP_400_BAD_REQUEST
+            )
+        from initiatives.services.feature_list_draft_service import (
+            feature_list_draft_service,
+        )
+
+        data = await feature_list_draft_service.asave_manual(
+            project_id, modules, actor_id=getattr(request.user, "id", None)
+        )
+        return Response(data)
+
+
+class ProjectFeatureListDraftParseView(APIView):
+    """发起 feature list 异步解析（POST，写权限）。
+
+    路由 ``projects/<project_id>/feature-list/draft/parse/``；body ``{text}``。写草稿 +
+    defer 后台作业立即返回草稿快照（不阻塞请求），进度经 WS ``feature_list_draft`` 推送。
+    """
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        text = request.data.get("text") or ""
+        if not str(text).strip():
+            return Response({"detail": "需提供 text"}, status=status.HTTP_400_BAD_REQUEST)
+        from initiatives.services.feature_list_draft_service import (
+            feature_list_draft_service,
+        )
+
+        data = await feature_list_draft_service.astart_parse(
+            project_id, str(text), actor_id=getattr(request.user, "id", None)
+        )
+        return Response(data, status=status.HTTP_202_ACCEPTED)
+
+
+class ProjectFeatureListDraftCommitView(APIView):
+    """把 feature list 草稿确认为正式工件（POST，写权限），成功后删除草稿。
+
+    路由 ``projects/<project_id>/feature-list/draft/commit/``；可选 body ``{modules}``
+    （前端确认时提交最终编辑；缺省则用草稿当前 tree）。
+    """
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        from initiatives.services.feature_list_draft_service import (
+            feature_list_draft_service,
+        )
+
+        modules = request.data.get("modules")
+        modules = modules if isinstance(modules, list) else None
+        try:
+            await feature_list_draft_service.acommit(
+                project_id,
+                modules=modules,
+                actor=request.user,
+                actor_id=getattr(request.user, "id", None),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"ok": True})
 
 
 def _serialize_project_repositories(project_id: Any) -> list[dict[str, Any]]:

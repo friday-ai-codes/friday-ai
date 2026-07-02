@@ -1,9 +1,12 @@
-"""implementation Task 01 — contract 对话 Provider pin 语义（后端校验）。
+"""对话 Provider / 模型切换语义（后端校验）。
 
-覆盖 contract 三态判定真源：
-- active/draft → PATCH provider_credential_id / model / title 允许
-- frozen (status ∈ {completed, stopped, error}) → PATCH provider/model 拒绝（400 + code=conversation_frozen）
-- frozen → PATCH title 允许
+产品决策（2026-07）：**任意会话状态都允许 PATCH provider_credential_id / model**
+（不再按 completed/stopped/error 冻结）。会话答完一轮即 completed 但用户仍可继续追问，
+锁死会造成"能聊却不能换模型"的矛盾；进行中那一轮沿用发送时锁定的 config，PATCH 只影响下一轮。
+
+覆盖：
+- 任意状态（draft/running/completed/stopped/error）→ PATCH provider/model 允许（200 持久化）
+- PATCH title 允许
 - 404 对话不存在
 - validation：指向已禁用 / 不存在的 ProviderCredential → 400
 
@@ -14,8 +17,6 @@ Fixture 依赖（conftest.py）：
 """
 
 from __future__ import annotations
-
-import json
 
 import pytest
 from rest_framework.test import APIClient
@@ -33,16 +34,16 @@ def _url(conv_id: str) -> str:
 
 
 # ============================================================================
-# Test A — frozen(completed) PATCH provider_credential_id → 400 conversation_frozen
+# Test A — completed 会话 PATCH provider_credential_id → 200 持久化（不再冻结）
 # ============================================================================
 
 
 @pytest.mark.django_db
-def test_frozen_completed_rejects_provider_repin_with_400(
+def test_completed_allows_provider_repin(
     frozen_conversation_factory,
     project_a_anthropic_credential,
 ) -> None:
-    """Behavior A：已完成对话 PATCH provider_credential_id 返回 400 + code=conversation_frozen。"""
+    """Behavior A：已完成对话仍可切换 Provider（200 持久化）——产品决策：随时可换模型。"""
     conv = frozen_conversation_factory(status="completed")
 
     resp = _client().patch(
@@ -51,14 +52,13 @@ def test_frozen_completed_rejects_provider_repin_with_400(
         format="json",
     )
 
-    assert resp.status_code == 400, resp.content
-    body = resp.json()
-    assert body["code"] == "conversation_frozen"
-    assert "completed" in body["detail"]
+    assert resp.status_code == 200, resp.content
+    conv.refresh_from_db()
+    assert str(conv.provider_credential_id_id) == str(project_a_anthropic_credential.id)
 
 
 # ============================================================================
-# Test B — frozen(completed) PATCH title → 200
+# Test B — completed 会话 PATCH title → 200
 # ============================================================================
 
 
@@ -66,7 +66,7 @@ def test_frozen_completed_rejects_provider_repin_with_400(
 def test_frozen_completed_allows_title_update(
     frozen_conversation_factory,
 ) -> None:
-    """Behavior B：已完成对话 PATCH title（不含 provider/model）允许。"""
+    """Behavior B：已完成对话 PATCH title 允许。"""
     conv = frozen_conversation_factory(status="completed", title="原标题")
 
     resp = _client().patch(
@@ -169,19 +169,19 @@ def test_patch_inactive_provider_credential_rejected(
 
 
 # ============================================================================
-# 辅助断言：frozen 态对 stopped / error 同样拒绝（contract 完整覆盖）
+# 辅助断言：stopped / error 同样允许切换 Provider（产品决策：任意状态不冻结）
 # ============================================================================
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("frozen_status", ["stopped", "error"])
-def test_frozen_variants_also_reject(
+@pytest.mark.parametrize("conv_status", ["stopped", "error"])
+def test_stopped_error_also_allow_repin(
     frozen_conversation_factory,
     project_a_anthropic_credential,
-    frozen_status: str,
+    conv_status: str,
 ) -> None:
-    """Behavior A 扩展：stopped / error 同样拒绝 provider 修改。"""
-    conv = frozen_conversation_factory(status=frozen_status)
+    """Behavior A 扩展：stopped / error 同样允许 provider 修改（200 持久化）。"""
+    conv = frozen_conversation_factory(status=conv_status)
 
     resp = _client().patch(
         _url(str(conv.id)),
@@ -189,7 +189,6 @@ def test_frozen_variants_also_reject(
         format="json",
     )
 
-    assert resp.status_code == 400, resp.content
-    body = resp.json()
-    assert body["code"] == "conversation_frozen"
-    assert frozen_status in body["detail"]
+    assert resp.status_code == 200, resp.content
+    conv.refresh_from_db()
+    assert str(conv.provider_credential_id_id) == str(project_a_anthropic_credential.id)

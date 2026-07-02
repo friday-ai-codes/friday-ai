@@ -664,22 +664,11 @@ class ConversationDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # 2. Frozen 校验（contract 双重防御）
-        FROZEN_STATUSES = {"completed", "stopped", "error"}
-        if conversation.status in FROZEN_STATUSES:
-            if any(k in request.data for k in ("provider_credential_id", "model")):
-                logger.info(
-                    "conversation.patch_rejected_frozen",
-                    conversation_id=str(conversation.id),
-                    status=conversation.status,
-                )
-                return Response(
-                    {
-                        "code": "conversation_frozen",
-                        "detail": (f"对话状态为 {conversation.status}，Provider / 模型不可修改"),
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        # 2. 产品决策（2026-07）：Provider / 模型任意状态可改，不再按会话状态冻结。
+        # 会话答完一轮即变 completed，但用户仍可继续追问——若锁死则"能聊却不能换模型"
+        # 自相矛盾。进行中那一轮沿用发送时锁定的 config（build_sdk_config 已构建），
+        # PATCH 只影响下一轮，故任意状态放行。历史 frozen 拦截（completed/stopped/error）
+        # 已移除。
 
         # 3. Validation（provider_credential_id FK + is_active 校验）
         serializer = ConversationPatchSerializer(data=request.data)

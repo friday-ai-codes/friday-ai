@@ -18,7 +18,7 @@ import time
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
-from django.db.models import Count
+from django.db.models import Case, Count, IntegerField, Q, Value, When
 from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -29,25 +29,109 @@ logger = structlog.get_logger(__name__)
 
 _COMPONENT = "knowledge"
 
-# 跨项目聚合截断保护（沿用 max_nodes 思路）：items 最多返回条数。
-_ITEM_LIMIT = 500
+# 默认分页大小与上限（避免一次性拉全量交付文档）。
+_DEFAULT_PAGE_SIZE = 20
+_MAX_PAGE_SIZE = 100
 
-_EMPTY = {"total": 0, "types": [], "items": [], "truncated": False}
+_EMPTY = {
+    "total": 0,
+    "types": [],
+    "items": [],
+    "page": 1,
+    "page_size": _DEFAULT_PAGE_SIZE,
+    "has_next": False,
+}
 
 
-def _parse_limit(raw: str | None) -> int:
-    """可选 ?limit= 收窄，clamp 到 [1, _ITEM_LIMIT]；非法值 fail-soft 取默认。"""
+def _parse_page(raw: str | None) -> int:
+    """?page= 解析，clamp 到 >=1；非法值 fail-soft 取 1。"""
+    try:
+        return max(1, int(raw)) if raw is not None else 1
+    except (TypeError, ValueError):
+        return 1
+
+
+def _parse_page_size(raw: str | None) -> int:
+    """?page_size= 解析，clamp 到 [1, _MAX_PAGE_SIZE]；非法值 fail-soft 取默认。"""
     if raw is None:
-        return _ITEM_LIMIT
+        return _DEFAULT_PAGE_SIZE
     try:
         value = int(raw)
     except (TypeError, ValueError):
-        return _ITEM_LIMIT
-    return max(1, min(value, _ITEM_LIMIT))
+        return _DEFAULT_PAGE_SIZE
+    return max(1, min(value, _MAX_PAGE_SIZE))
 
 
-def _aggregate(allowed_space_ids: list[str], *, type_key: str | None, limit: int) -> dict:
-    """纯 PG 聚合（sync，经 sync_to_async 调用）：类型分组计数 + 截断条目列表。"""
+# 默认展示优先级（first-match-wins，与前端标签/图标契约一致）：
+# PRD > 研发 Spec > 飞书文档 > 飞书表格 > markdown > 技术方案 > 测试用例 > 复盘 > 其他。
+def _rank(type_key: str, type_name: str, carrier: str) -> int:
+    """纯 python 优先级（供 types 磁贴排序；与 `_rank_case` DB 版保持同序）。"""
+    k = (type_key or "").lower()
+    n = type_name or ""
+    nl = n.lower()
+    if "prd" in k or "requirement" in k or "需求" in n or "prd" in nl:
+        return 0
+    if "spec" in k or "spec" in nl or "研发" in n:
+        return 1
+    if carrier == "feishu_doc":
+        return 2
+    if carrier == "feishu_bitable":
+        return 3
+    if carrier == "markdown":
+        return 4
+    if "tech" in k or "solution" in k or "技术方案" in n or "方案" in n:
+        return 5
+    if "test" in k or "case" in k or "测试" in n or "用例" in n:
+        return 6
+    if "retro" in k or "复盘" in n:
+        return 7
+    return 8
+
+
+def _rank_case() -> Case:
+    """DB 侧优先级 Case（供 items 分页排序）；与 `_rank` 同序。"""
+    return Case(
+        When(
+            Q(type__key__icontains="prd")
+            | Q(type__key__icontains="requirement")
+            | Q(type__name__icontains="需求")
+            | Q(type__name__icontains="PRD"),
+            then=Value(0),
+        ),
+        When(
+            Q(type__key__icontains="spec") | Q(type__name__icontains="研发"),
+            then=Value(1),
+        ),
+        When(Q(carrier="feishu_doc"), then=Value(2)),
+        When(Q(carrier="feishu_bitable"), then=Value(3)),
+        When(Q(carrier="markdown"), then=Value(4)),
+        When(
+            Q(type__key__icontains="tech")
+            | Q(type__key__icontains="solution")
+            | Q(type__name__icontains="技术方案")
+            | Q(type__name__icontains="方案"),
+            then=Value(5),
+        ),
+        When(
+            Q(type__key__icontains="test")
+            | Q(type__key__icontains="case")
+            | Q(type__name__icontains="测试")
+            | Q(type__name__icontains="用例"),
+            then=Value(6),
+        ),
+        When(
+            Q(type__key__icontains="retro") | Q(type__name__icontains="复盘"),
+            then=Value(7),
+        ),
+        default=Value(8),
+        output_field=IntegerField(),
+    )
+
+
+def _aggregate(
+    allowed_space_ids: list[str], *, type_key: str | None, page: int, page_size: int
+) -> dict:
+    """纯 PG 聚合（sync）：类型分组计数（按优先级）+ 按优先级排序的分页条目列表。"""
     from initiatives.models import Artifact
 
     base = Artifact.objects.filter(project__space_id__in=allowed_space_ids)
@@ -58,7 +142,6 @@ def _aggregate(allowed_space_ids: list[str], *, type_key: str | None, limit: int
     type_rows = list(
         base.values("type__key", "type__name", "type__carrier", "type__ragable")
         .annotate(count=Count("id"))
-        .order_by("-count")
     )
     types = [
         {
@@ -70,10 +153,15 @@ def _aggregate(allowed_space_ids: list[str], *, type_key: str | None, limit: int
         }
         for row in type_rows
     ]
+    # 磁贴按默认优先级排序（同级按数量降序）。
+    types.sort(key=lambda r: (_rank(r["type_key"], r["type_name"], r["carrier"]), -r["count"]))
     total = sum(row["count"] for row in type_rows)
 
+    offset = (page - 1) * page_size
     item_rows = list(
-        base.select_related("type", "project").order_by("-updated_at")[:limit]
+        base.select_related("type", "project")
+        .annotate(_rank=_rank_case())
+        .order_by("_rank", "-updated_at")[offset : offset + page_size]
     )
     items = [
         {
@@ -94,7 +182,9 @@ def _aggregate(allowed_space_ids: list[str], *, type_key: str | None, limit: int
         "total": total,
         "types": types,
         "items": items,
-        "truncated": total > limit,
+        "page": page,
+        "page_size": page_size,
+        "has_next": offset + len(items) < total,
     }
 
 
@@ -107,11 +197,13 @@ class ArtifactOverviewView(APIView):
     async def get(self, request):
         started = time.perf_counter()
         type_key = request.query_params.get("type_key") or None
-        limit = _parse_limit(request.query_params.get("limit"))
+        page = _parse_page(request.query_params.get("page"))
+        page_size = _parse_page_size(request.query_params.get("page_size"))
         logger.info(
             "artifact_overview_started",
             type_key=type_key,
-            limit=limit,
+            page=page,
+            page_size=page_size,
             component=_COMPONENT,
             category="caller",
         )
@@ -131,7 +223,9 @@ class ArtifactOverviewView(APIView):
             return Response(dict(_EMPTY))
 
         try:
-            result = await sync_to_async(_aggregate)(allowed, type_key=type_key, limit=limit)
+            result = await sync_to_async(_aggregate)(
+                allowed, type_key=type_key, page=page, page_size=page_size
+            )
         except Exception as exc:  # noqa: BLE001 — 聚合/观测永不反噬请求（返回空结构不 500）
             logger.warning(
                 "artifact_overview_failed",

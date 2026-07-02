@@ -5,6 +5,7 @@ import { computed, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectWorkspaceApi } from '~/api/projectWorkspace'
 import EmptyState from '~/components/common/EmptyState.vue'
+import InlineMarkdown from '~/components/common/InlineMarkdown.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 
@@ -83,7 +84,7 @@ function children(node: FeatureNode): FeatureNode[] {
           >
             <span class="icon-[lucide--chevron-right] text-xs text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
             <span class="icon-[lucide--folder] text-primary" />
-            <span class="text-sm font-medium text-foreground truncate">{{ mod.name }}</span>
+            <span class="text-sm font-medium text-foreground truncate"><InlineMarkdown :text="mod.name" /></span>
           </CollapsibleTrigger>
 
           <CollapsibleContent class="px-3 pb-2">
@@ -107,7 +108,7 @@ function children(node: FeatureNode): FeatureNode[] {
                 >
                   <span class="icon-[lucide--chevron-right] text-xs text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
                   <span class="icon-[lucide--git-branch] text-muted-foreground" />
-                  <span class="text-sm text-foreground truncate">{{ feat.name }}</span>
+                  <span class="text-sm text-foreground truncate"><InlineMarkdown :text="feat.name" /></span>
                 </CollapsibleTrigger>
                 <!-- 进度灯：圆点 + 文案 -->
                 <span
@@ -136,7 +137,7 @@ function children(node: FeatureNode): FeatureNode[] {
                     data-testid="feature-acceptance"
                   >
                     <span class="icon-[lucide--check] text-emerald-500/70" />
-                    <span class="truncate text-foreground/80">{{ acc.name }}</span>
+                    <span class="truncate text-foreground/80"><InlineMarkdown :text="acc.name" /></span>
                   </li>
                 </ul>
               </CollapsibleContent>
