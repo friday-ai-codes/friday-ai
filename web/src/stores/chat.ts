@@ -2622,11 +2622,26 @@ export const useChatStore = defineStore('chat', () => {
    *
    * 与 `ChatMessageArea` 的 `currentConversationId` 过滤配合，防止跨会话串单。
    */
+  /**
+   * 计算「当前最后一条已落库消息」的 id，作为澄清卡片的内联锚点兜底。
+   * 卡片按锚点内联在消息流中：答复后 resume 产出的新消息在卡片下方继续，
+   * 卡片不会跳到整个会话最底部（交互直觉：沿着澄清位置往下走）。
+   */
+  function lastPersistedMessageId(): string {
+    const list = messages.value
+    return list.length > 0 ? list[list.length - 1].id : ''
+  }
+
   function upsertClarification(payload: ClarificationPayload, conversationId?: string) {
     const conv = conversationId ?? payload.conversation_id ?? currentConversationId.value ?? undefined
+    const existing = pendingClarifications.value.get(payload.clarification_id)
     pendingClarifications.value.set(payload.clarification_id, {
       ...payload,
       conversation_id: conv,
+      // 锚点只取首次写入时的位置（re-upsert / 回灌不重算，避免锚点漂到新消息之后）。
+      anchor_message_id:
+        existing?.anchor_message_id || payload.anchor_message_id || lastPersistedMessageId(),
+      triggering_message_id: payload.triggering_message_id || existing?.triggering_message_id,
     })
   }
 
@@ -2638,6 +2653,9 @@ export const useChatStore = defineStore('chat', () => {
       ...existing,
       status: 'answered',
       answer,
+      // 固化锚点为「答复时刻的最后一条消息」：resume 产出的新消息渲染在卡片下方，
+      // 卡片留在原位（不跳最底部）。
+      anchor_message_id: lastPersistedMessageId() || existing.anchor_message_id,
     })
     // 答复后后端在后台 resume graph 继续推理 —— 立刻 kick 一次 runtime 轮询，
     // 让状态条/消息能及时跟上 resume 进度（不依赖既有轮询是否在跑）。
@@ -2665,9 +2683,13 @@ export const useChatStore = defineStore('chat', () => {
    */
   function upsertPlanClarification(payload: PlanClarificationPayload, conversationId?: string) {
     const conv = conversationId ?? payload.conversation_id ?? currentConversationId.value ?? undefined
+    const existing = pendingPlanClarifications.value.get(payload.clarification_id)
     pendingPlanClarifications.value.set(payload.clarification_id, {
       ...payload,
       conversation_id: conv,
+      // 同 upsertClarification：锚点只取首次写入时的位置，供消息流内联渲染。
+      anchor_message_id:
+        existing?.anchor_message_id || payload.anchor_message_id || lastPersistedMessageId(),
     })
   }
 
@@ -2682,6 +2704,8 @@ export const useChatStore = defineStore('chat', () => {
     pendingPlanClarifications.value.set(id, {
       ...existing,
       status: 'answered',
+      // 同 markClarificationAnswered：固化锚点，答复后新消息沿卡片下方继续。
+      anchor_message_id: lastPersistedMessageId() || existing.anchor_message_id,
     })
     const convId = existing.conversation_id ?? currentConversationId.value
     if (convId && convId === currentConversationId.value)
