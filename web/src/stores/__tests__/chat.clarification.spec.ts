@@ -92,6 +92,47 @@ describe('chat store - clarifications', () => {
   })
 
   /**
+   * 澄清卡内联锚定：upsert 记录「当时最后一条消息」为锚点；答复时固化锚点。
+   * ChatMessageArea 据此把卡片内联在消息流触发位置，答复后新消息在卡片下方继续。
+   */
+  describe('内联锚点（anchor_message_id）', () => {
+    function msg(id: string) {
+      return { id, role: 'user', content: 'x', created_at: '2026-07-02T00:00:00Z' } as any
+    }
+
+    it('upsert 时记录当时最后一条消息为锚点', () => {
+      const store = useChatStore()
+      store.messages = [msg('m1'), msg('m2')]
+      store.upsertClarification(makePayload())
+      expect(store.getClarification('clar-1')?.anchor_message_id).toBe('m2')
+    })
+
+    it('re-upsert 不重算锚点（回灌/重复事件不漂移）', () => {
+      const store = useChatStore()
+      store.messages = [msg('m1')]
+      store.upsertClarification(makePayload())
+      store.messages = [msg('m1'), msg('m2')]
+      store.upsertClarification(makePayload({ question: '更新' }))
+      expect(store.getClarification('clar-1')?.anchor_message_id).toBe('m1')
+    })
+
+    it('markClarificationAnswered 固化锚点为答复时刻的最后一条消息', () => {
+      const store = useChatStore()
+      store.messages = [msg('m1')]
+      store.upsertClarification(makePayload())
+      store.messages = [msg('m1'), msg('m2')]
+      store.markClarificationAnswered('clar-1', {
+        selected_option_id: 'opt-A',
+        answered_at: 'now',
+      })
+      expect(store.getClarification('clar-1')?.anchor_message_id).toBe('m2')
+      // 答复后新消息追加不再影响锚点
+      store.messages = [msg('m1'), msg('m2'), msg('m3')]
+      expect(store.getClarification('clar-1')?.anchor_message_id).toBe('m2')
+    })
+  })
+
+  /**
    * UAT 2026-05-27 hotfix（284 round 2）：跨 conversation 串单回归。
    *
    * 复现 284-UAT.md round 2 Gap：用户在 conv 78681e45 (entrance) 视图里

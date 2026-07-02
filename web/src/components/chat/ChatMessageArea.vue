@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ExportCodingPlanToFeishuResponse, ExportToFeishuResponse } from '~/types/chat'
+import type { ClarificationPayload, PlanClarificationPayload } from '~/types/clarification'
 import { gsap } from 'gsap'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -111,6 +112,59 @@ const visiblePlanClarifications = computed(() => {
   return [...chatStore.pendingPlanClarifications.values()].filter(
     p => !p.conversation_id || p.conversation_id === currentConv,
   )
+})
+
+// ============================================================================
+// 澄清卡片内联锚定：卡片渲染在消息流中的触发位置，而不是堆在最底部。
+// 答复后 resume 产出的新消息在卡片下方继续（沿着澄清位置往下走，符合交互直觉）。
+//
+// 锚点解析优先级（对每张卡）：
+// 1) 消息里存在该澄清的「答复消息」（metadata.clarification_id 匹配）→ 卡片渲染在
+//    答复消息**之前**（问题卡 → 「我选了X」→ 续推回复，顺序最精确）；
+// 2) triggering_message_id / anchor_message_id 命中某条消息 → 渲染在该消息**之后**；
+// 3) 均未命中（消息尚未落库等）→ 尾部渲染（跟在流式气泡后，即旧行为）。
+// ============================================================================
+type AnyClarification = ClarificationPayload | PlanClarificationPayload
+
+const clarificationPlacement = computed(() => {
+  const before = new Map<string, AnyClarification[]>()
+  const after = new Map<string, AnyClarification[]>()
+  const trailing: AnyClarification[] = []
+
+  const msgs = chatStore.messages
+  const idSet = new Set(msgs.map(m => m.id))
+  // 答复消息索引：metadata.clarification_id → message id（取首条）。
+  const answerMsgByClarId = new Map<string, string>()
+  for (const m of msgs) {
+    const cid = (m.metadata as Record<string, unknown> | undefined)?.clarification_id
+    if (typeof cid === 'string' && cid && !answerMsgByClarId.has(cid))
+      answerMsgByClarId.set(cid, m.id)
+  }
+
+  const push = (map: Map<string, AnyClarification[]>, key: string, p: AnyClarification) => {
+    const arr = map.get(key)
+    if (arr)
+      arr.push(p)
+    else
+      map.set(key, [p])
+  }
+
+  for (const p of [...visibleClarifications.value, ...visiblePlanClarifications.value]) {
+    const answerMsgId = answerMsgByClarId.get(p.clarification_id)
+    if (answerMsgId) {
+      push(before, answerMsgId, p)
+      continue
+    }
+    const triggering = (p as ClarificationPayload).triggering_message_id
+    const anchor
+      = (triggering && idSet.has(triggering) ? triggering : '')
+        || (p.anchor_message_id && idSet.has(p.anchor_message_id) ? p.anchor_message_id : '')
+    if (anchor)
+      push(after, anchor, p)
+    else
+      trailing.push(p)
+  }
+  return { before, after, trailing }
 })
 
 /**
@@ -333,6 +387,12 @@ function handleExportSuccess(
         <!-- TransitionGroup 不渲染包裹元素，气泡仍是 stack 直接子元素（space-y 生效） -->
         <TransitionGroup :css="false" @enter="onMessageEnter" @leave="onMessageLeave">
           <template v-for="msg in chatStore.messages">
+            <!-- 澄清卡片内联：锚定在答复消息之前（问题卡 → 答复 → 续推回复） -->
+            <ClarificationCard
+              v-for="payload in clarificationPlacement.before.get(msg.id) ?? []"
+              :key="`clar-${payload.clarification_id}`"
+              :payload="payload"
+            />
             <!-- 会话内切换空间标记：渲染为分隔线，不进气泡 -->
             <ChatSpaceSwitchDivider
               v-if="msg.role === 'system' && msg.metadata?.type === 'space_switch'"
@@ -344,6 +404,12 @@ function handleExportSuccess(
               :key="msg.id"
               :message="msg"
               @export-single="handleExportSingle"
+            />
+            <!-- 澄清卡片内联：锚定在触发消息之后 -->
+            <ClarificationCard
+              v-for="payload in clarificationPlacement.after.get(msg.id) ?? []"
+              :key="`clar-${payload.clarification_id}`"
+              :payload="payload"
             />
           </template>
         </TransitionGroup>
@@ -371,19 +437,11 @@ function handleExportSuccess(
           :streaming-doc-summary="(chatStore.streamingMetadata?.docSummary as any) || null"
         />
 
-        <!-- ：协商卡片（pending + answered 两态都保留） -->
-        <!-- UAT 2026-05-27 hotfix（284 round 2）：按 conversation 维度过滤防串单 -->
+        <!-- 澄清卡片尾部兜底：锚点未命中任何已落库消息时跟在流式气泡后渲染 -->
+        <!-- （pending + answered 两态都保留；按 conversation 维度过滤防串单） -->
         <ClarificationCard
-          v-for="payload in visibleClarifications"
-          :key="payload.clarification_id"
-          v-gsap-rise
-          :payload="payload"
-        />
-
-        <!-- 91-05：plan 结构化澄清卡（多题多选），与单题卡共存物理隔离 -->
-        <ClarificationCard
-          v-for="payload in visiblePlanClarifications"
-          :key="`plan-${payload.clarification_id}`"
+          v-for="payload in clarificationPlacement.trailing"
+          :key="`clar-${payload.clarification_id}`"
           v-gsap-rise
           :payload="payload"
         />
