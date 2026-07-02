@@ -1,7 +1,7 @@
 /**
- * FeatureBoard 守护测试（P1 Feature 视图切换）。
+ * FeatureBoard 守护测试（P1 Feature 大盘）。
  *
- * 覆盖：按状态分组（含 module_normalized 回填）/ 按模块视图切换 / 空态。
+ * 覆盖：模块 → 功能点层级渲染 / 状态指示灯与顶部图例 / 空态。
  */
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -18,7 +18,10 @@ vi.mock('~/composables/useErrorHandler', () => ({
 
 const getFeatureListMock = vi.fn()
 vi.mock('~/api/projectWorkspace', () => ({
-  projectWorkspaceApi: { getFeatureList: (...a: unknown[]) => getFeatureListMock(...a) },
+  projectWorkspaceApi: {
+    getFeatureList: (...a: unknown[]) => getFeatureListMock(...a),
+    getFeatureListDraft: vi.fn().mockResolvedValue({ has_draft: false, status: 'idle' }),
+  },
 }))
 
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhCN as any } })
@@ -47,25 +50,27 @@ const TREE = [
 describe('featureBoard（P1）', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('默认按状态视图渲染分组', async () => {
+  it('按模块 → 功能点层级渲染', async () => {
     getFeatureListMock.mockResolvedValue(TREE)
     const wrapper = mountComp()
     await flushPromises()
-    expect(wrapper.find('[data-testid="feature-status-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="feature-module-view"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-testid="feature-row"]').length).toBe(2)
     const text = wrapper.text()
+    expect(text).toContain('登录模块')
     expect(text).toContain('账密登录')
     expect(text).toContain('短信登录')
   })
 
-  it('可切换到按模块视图', async () => {
+  it('功能点行展示状态指示灯，顶部展示图例', async () => {
     getFeatureListMock.mockResolvedValue(TREE)
     const wrapper = mountComp()
     await flushPromises()
-    await wrapper.find('[data-testid="feature-view-module"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="feature-module-view"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('登录模块')
+    expect(wrapper.find('[data-testid="feature-state-legend"]').exists()).toBe(true)
+    const dots = wrapper.findAll('[data-testid="feature-state-dot"]')
+    expect(dots.length).toBe(2)
+    // 状态只用圆点表达：行内不再出现状态文字（图例中出现一次）。
+    expect(dots[0].attributes('class')).toContain('rounded-full')
   })
 
   it('空态渲染真实 zh-CN 文案', async () => {
