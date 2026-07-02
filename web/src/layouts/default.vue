@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FeedbackHeaderButton from '~/components/feedback/FeedbackHeaderButton.vue'
 import AppSidebar from '~/components/layout/AppSidebar.vue'
 import GitHubStarButton from '~/components/layout/GitHubStarButton.vue'
 import SystemHealthPopover from '~/components/layout/SystemHealthPopover.vue'
@@ -50,6 +51,7 @@ const isProjectWorkspace = computed(() => /^\/projects\/[^/]+$/.test(route.path)
         <header class="header-glass shrink-0 z-40 h-16">
           <div class="flex h-full items-center justify-end px-6 gap-3">
             <GitHubStarButton />
+            <FeedbackHeaderButton />
             <NotificationBell />
             <SystemHealthPopover />
           </div>
@@ -70,6 +72,7 @@ const isProjectWorkspace = computed(() => /^\/projects\/[^/]+$/.test(route.path)
             </div>
             <div class="flex items-center gap-3">
               <GitHubStarButton />
+              <FeedbackHeaderButton />
               <NotificationBell />
               <SystemHealthPopover />
             </div>

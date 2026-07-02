@@ -199,7 +199,7 @@ declare module 'vue' {
     FeatureListEditModal: typeof import('./components/project/warroom/FeatureListEditModal.vue')['default']
     FeatureListSection: typeof import('./components/project/workbench/FeatureListSection.vue')['default']
     FeedbackDialog: typeof import('./components/feedback/FeedbackDialog.vue')['default']
-    FeedbackFloatingButton: typeof import('./components/feedback/FeedbackFloatingButton.vue')['default']
+    FeedbackHeaderButton: typeof import('./components/feedback/FeedbackHeaderButton.vue')['default']
     FeedbackPanel: typeof import('./components/feedback/FeedbackPanel.vue')['default']
     FeishuConfigForm: typeof import('./components/feishu/FeishuConfigForm.vue')['default']
     FeishuConfigModal: typeof import('./components/space/FeishuConfigModal.vue')['default']

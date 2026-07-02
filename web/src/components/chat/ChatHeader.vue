@@ -10,6 +10,7 @@
  * 右侧聚合空间 / 角色选择，高度与会话列表栏头部（h-16）对齐。
  */
 import type { ResolvedProvider } from '~/types/providerCredential'
+import FeedbackHeaderButton from '~/components/feedback/FeedbackHeaderButton.vue'
 import ResolvedSourceBadge from '~/components/providers/ResolvedSourceBadge.vue'
 import {
   Select,
@@ -138,6 +139,9 @@ const headerSpace = computed<string>({
           </SelectItem>
         </SelectContent>
       </Select>
+
+      <!-- 反馈入口：/chat 不渲染全局顶栏，这里补一个右上角入口 -->
+      <FeedbackHeaderButton />
     </div>
   </div>
 </template>

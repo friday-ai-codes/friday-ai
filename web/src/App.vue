@@ -2,7 +2,6 @@
 import { useHead } from '@vueuse/head'
 import { ModalsContainer } from 'vue-final-modal'
 import AnnouncementPopup from '~/components/announcements/AnnouncementPopup.vue'
-import FeedbackFloatingButton from '~/components/feedback/FeedbackFloatingButton.vue'
 import GlobalConfirmDialog from '~/components/GlobalConfirmDialog.vue'
 import { usePermissionSync } from '~/composables/usePermissionSync'
 import { useAuthStore } from '~/stores/auth'
@@ -38,6 +37,5 @@ watch(
   <RouterView />
   <ModalsContainer />
   <GlobalConfirmDialog />
-  <FeedbackFloatingButton />
   <AnnouncementPopup />
 </template>
