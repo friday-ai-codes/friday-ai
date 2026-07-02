@@ -17,13 +17,16 @@
  * 后端 endpoint 已落 trace + Message + 后台续推 —— 前端**不再 emit 新 user message**，
  * 答复内容由后端单独写 Message 完成（防双发）。两条路径互不串渲染。
  */
+import type MarkdownIt from 'markdown-it'
 import type { ClarificationPayload, PlanClarificationPayload, PlanClarificationQuestion } from '~/types/clarification'
 import { useI18n } from 'vue-i18n'
 import { postClarificationAnswer, postPlanClarificationAnswer } from '~/api/chat'
+import InlineMarkdown from '~/components/common/InlineMarkdown.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Checkbox } from '~/components/ui/checkbox'
 import { Textarea } from '~/components/ui/textarea'
+import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
 import { useChatStore } from '~/stores/chat'
 
 const props = defineProps<{
@@ -45,10 +48,31 @@ const isAnswered = computed(() => props.payload.status === 'answered')
 const submitting = ref(false)
 const errorMessage = ref<string>('')
 
+// 问题正文块级 markdown 渲染（LLM 产出常含 **加粗**/列表；markdown-it html:false 防 XSS）。
+// 渲染器就绪前降级纯文本，避免闪烁。
+const mdRef = shallowRef<MarkdownIt | null>(null)
+onMounted(async () => {
+  try {
+    mdRef.value = await getMarkdownRenderer()
+  }
+  catch {}
+})
+function renderMd(text: string): string {
+  return mdRef.value ? mdRef.value.render(text || '') : ''
+}
+// 问题正文的 markdown 排版样式（与 FeatureDetailModal 同款约定）。
+const MD_BLOCK_CLASS = 'md-block leading-relaxed wrap-break-word space-y-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-medium [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-primary [&_a]:underline [&_strong]:font-semibold [&_code]:bg-muted [&_code]:px-1 [&_code]:rounded [&_pre]:bg-muted [&_pre]:p-2 [&_pre]:rounded [&_pre]:overflow-x-auto [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground'
+
 // ---------------------------------------------------------------------------
 // chat 单题路径（零回归保留）
 // ---------------------------------------------------------------------------
-const selectedId = ref<string>('')
+// 推荐选项（至多一个）默认选中，降低用户决策成本；已答卡片不回填，避免误导。
+const recommendedSingleId = computed(
+  () => (isPlan.value ? '' : (singlePayload.value.options.find(o => o.recommended)?.id ?? '')),
+)
+const selectedId = ref<string>(
+  props.payload.status === 'answered' ? '' : recommendedSingleId.value,
+)
 const freeformText = ref<string>('')
 const skipping = ref(false)
 
@@ -254,9 +278,9 @@ async function submitPlan() {
         :data-question-id="q.question_id"
         class="space-y-2"
       >
-        <div class="flex items-center gap-2">
-          <p class="text-sm font-medium text-foreground whitespace-pre-wrap">
-            {{ q.question }}
+        <div class="flex items-start gap-2">
+          <p class="text-sm font-medium text-foreground">
+            <InlineMarkdown :text="q.question" />
           </p>
           <span v-if="q.qtype === 'multi'" class="text-xs text-muted-foreground shrink-0">
             {{ t('chat.clarification.multiHint') }}
@@ -296,12 +320,15 @@ async function submitPlan() {
               />
               <div class="min-w-0 flex-1">
                 <div class="text-sm font-medium flex items-center gap-1.5">
-                  <span>{{ opt }}</span>
+                  <span><InlineMarkdown :text="opt" /></span>
+                  <!-- 推荐选项：Friday 品牌标识 +（推荐） -->
                   <span
                     v-if="recommendedOf(q).includes(opt)"
-                    class="inline-flex items-center gap-0.5 text-xs text-amber-500"
+                    class="inline-flex items-center gap-1 text-xs text-primary shrink-0"
+                    data-testid="clarification-recommended"
                   >
-                    <span aria-hidden="true">⭐</span>{{ t('chat.clarification.recommended') }}
+                    <img src="/logo-mark.svg" alt="" aria-hidden="true" class="size-3.5">
+                    {{ t('chat.clarification.recommended') }}
                   </span>
                 </div>
               </div>
@@ -328,9 +355,16 @@ async function submitPlan() {
 
     <!-- chat 单题路径（零回归） -->
     <div v-else class="p-4 space-y-3">
-      <p class="text-sm text-foreground whitespace-pre-wrap">
+      <p v-if="!mdRef" class="text-sm text-foreground whitespace-pre-wrap">
         {{ singlePayload.question }}
       </p>
+      <!-- eslint-disable-next-line vue/no-v-html — markdown-it 以 html:false 渲染，无 XSS 风险 -->
+      <div
+        v-else
+        class="text-sm text-foreground"
+        :class="MD_BLOCK_CLASS"
+        v-html="renderMd(singlePayload.question)"
+      />
 
       <!-- 选项列表（用 button 实现单选；shadcn-vue 项目无 RadioGroup） -->
       <div role="radiogroup" :aria-disabled="isAnswered" class="space-y-2">
@@ -359,11 +393,20 @@ async function submitPlan() {
               ]"
             />
             <div class="min-w-0 flex-1">
-              <div class="text-sm font-medium">
-                {{ opt.label }}
+              <div class="text-sm font-medium flex items-center gap-1.5">
+                <span><InlineMarkdown :text="opt.label" /></span>
+                <!-- 推荐选项：Friday 品牌标识 +（推荐） -->
+                <span
+                  v-if="opt.recommended"
+                  class="inline-flex items-center gap-1 text-xs text-primary shrink-0"
+                  data-testid="clarification-recommended"
+                >
+                  <img src="/logo-mark.svg" alt="" aria-hidden="true" class="size-3.5">
+                  {{ t('chat.clarification.recommended') }}
+                </span>
               </div>
               <div v-if="opt.hint" class="text-xs text-muted-foreground mt-0.5">
-                {{ opt.hint }}
+                <InlineMarkdown :text="opt.hint" />
               </div>
             </div>
           </div>
@@ -391,7 +434,7 @@ async function submitPlan() {
           <span>{{ t('chat.clarification.answeredAt', { time: formatAnsweredAt(singlePayload.answer.answered_at) }) }}</span>
         </div>
         <div v-if="resolvedAnswerLabel" class="mt-1 text-sm">
-          选择：{{ resolvedAnswerLabel }}
+          选择：<InlineMarkdown :text="resolvedAnswerLabel" />
         </div>
       </div>
 

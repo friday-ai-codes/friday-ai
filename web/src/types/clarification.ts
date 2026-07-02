@@ -15,6 +15,8 @@ export interface ClarificationOption {
    * merge 到 result_metadata.inferred_intent。
    */
   implies?: Record<string, unknown>
+  /** 推荐选项（至多一个）：UI 展示 Friday 品牌标识 +「（推荐）」并默认选中。 */
+  recommended?: boolean
 }
 
 export type ClarificationStatus = 'pending' | 'answered'
@@ -33,10 +35,16 @@ export interface ClarificationPayload {
   status: ClarificationStatus
   answer?: ClarificationAnswer
   /**
-   * 触发本次协商的 assistant message id —— 前端按此排序把 ClarificationCard
-   * 紧跟在触发它的 assistant 消息之后渲染。
+   * 触发本次协商的消息 id（后端 ConversationIntentTrace 记录的是 user message id，
+   * SSE 路径可能是 assistant message id）—— ChatMessageArea 按此把已答卡片内联锚定
+   * 在消息流中触发位置，而不是堆在最底部。
    */
   triggering_message_id?: string
+  /**
+   * 兜底锚点：upsert 时记录「当时最后一条已落库消息」的 id。triggering_message_id
+   * 缺失/未命中时按此锚定，保证答复后新消息在卡片下方继续、卡片不跳到最底部。
+   */
+  anchor_message_id?: string
   /**
    * UAT 2026-05-27 hotfix（284 round 2）：协商卡片归属的 conversation id。
    *
@@ -98,6 +106,8 @@ export interface PlanClarificationPayload {
    */
   conversation_id?: string
   status?: ClarificationStatus
+  /** 兜底锚点（同 ClarificationPayload.anchor_message_id）：内联锚定用。 */
+  anchor_message_id?: string
 }
 
 /** 单题答复项：single→selected 为 str；multi→selected 为 string[]。 */

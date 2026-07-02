@@ -163,6 +163,27 @@ describe('clarificationCard - 既有 chat 单题零回归', () => {
     }
   }
 
+  it('recommended 选项展示品牌推荐徽标并默认选中', () => {
+    const payload = singlePayload()
+    payload.options = [
+      { id: 'a', label: '选项A' },
+      { id: 'b', label: '选项B', recommended: true },
+    ]
+    const wrapper = mount(ClarificationCard, {
+      props: { payload },
+      global: { plugins: [i18n] },
+    })
+    const badge = wrapper.find('[data-testid="clarification-recommended"]')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toContain('推荐')
+    // vite 测试构建可能把 svg 内联为 data URI，只断言品牌 logo img 存在。
+    expect(badge.find('img').exists()).toBe(true)
+    // 推荐项默认选中
+    const optBtns = wrapper.findAll('[role="radio"]')
+    expect(optBtns[1].attributes('aria-checked')).toBe('true')
+    expect(optBtns[0].attributes('aria-checked')).toBe('false')
+  })
+
   it('渲染单题并提交走 postClarificationAnswer（不串 plan 路径）', async () => {
     const wrapper = mount(ClarificationCard, {
       props: { payload: singlePayload() },
