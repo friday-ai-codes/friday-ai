@@ -58,7 +58,10 @@ _TOOL_DESCRIPTION = (
     "\n"
     "options[i].implies 推荐 key：selected_repository_ids: list[str] —— 用户"
     "选这个意味着接下来操作的仓库集合；task_category: str —— 任务大类，"
-    "如 backend_api_change / frontend_ui_change。"
+    "如 backend_api_change / frontend_ui_change。\n"
+    "\n"
+    "若你对某个选项有明显倾向（如证据最充分的候选），给该选项设 recommended: true"
+    "（**至多一个**）——UI 会展示「推荐」徽标并默认选中，降低用户决策成本。"
 )
 
 
@@ -101,6 +104,12 @@ _TOOL_PARAMETERS: dict[str, Any] = {
                             "如 {selected_repository_ids: [...], task_category: ...}。"
                         ),
                     },
+                    "recommended": {
+                        "type": "boolean",
+                        "description": (
+                            "是否为推荐选项（至多一个）；UI 展示「推荐」徽标并默认选中。"
+                        ),
+                    },
                 },
                 "required": ["id", "label"],
             },
@@ -123,6 +132,7 @@ def _validate_options(options: list[dict[str, Any]]) -> str | None:
         return f"options 数量必须在 {_MIN_OPTIONS}-{_MAX_OPTIONS} 之间"
 
     seen_ids: set[str] = set()
+    recommended_count = 0
     for idx, opt in enumerate(options):
         if not isinstance(opt, dict):
             return f"options[{idx}] 必须是对象"
@@ -150,6 +160,15 @@ def _validate_options(options: list[dict[str, Any]]) -> str | None:
         implies = opt.get("implies", {})
         if implies and not isinstance(implies, dict):
             return f"options[{idx}].implies 必须是对象"
+
+        recommended = opt.get("recommended", False)
+        if recommended is not None and not isinstance(recommended, bool):
+            return f"options[{idx}].recommended 必须是布尔值"
+        if recommended:
+            recommended_count += 1
+
+    if recommended_count > 1:
+        return "recommended 选项至多一个"
 
     return None
 

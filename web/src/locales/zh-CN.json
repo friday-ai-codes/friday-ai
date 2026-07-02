@@ -4,7 +4,7 @@
       "title": "还需要确认一下",
       "statusPending": "待回复",
       "statusAnswered": "已回复",
-      "recommended": "推荐",
+      "recommended": "（推荐）",
       "multiHint": "（可多选）",
       "freeformLabel": "或自由输入（可选）",
       "freeformPlaceholder": "如果以上选项都不准确，可以在这里补充…",
