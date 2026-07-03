@@ -5,6 +5,9 @@
 - ``feishu_bitable``：经既有 ``BitableClient.list_records`` 读取记录（原始 data，列解析留 v2）；
 - ``external_link``：返回元数据 + 跳转 url（外链不读正文）；
 - ``markdown`` / ``repo_file``：返回 ``content_ref``（内部工件正文，可读可写经 ArtifactService）。
+  其中 ``feature_list`` 类型工件的 ``content_ref`` 是归一 JSON（``{"modules": [...]}``，见
+  ``FeatureListService.aset_feature_list`` manual/paste/gitlab 模式）——直接回显是一坨原始
+  JSON，在线查看时转成「模块 → 功能点 → 验收」的可读 markdown（转换失败回退原文）。
 
 **只读**（不写库，无 INV-6 约束）。飞书正文经 ``redact_secrets_in_text`` 脱敏；拉取失败
 fail-soft（返回 ``error`` 字段 + url，不抛、不阻断查看其他工件）。
@@ -12,6 +15,7 @@ fail-soft（返回 ``error`` 字段 + url，不抛、不阻断查看其他工件
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -22,6 +26,73 @@ from common.logging import redact_secrets_in_text
 logger = structlog.get_logger(__name__)
 
 __all__ = ["aget_artifact_view"]
+
+
+def _as_bullet(text: str) -> str:
+    """归一验收项为列表项：已带 -/* 前缀的保留，多行内容缩进进同一列表项。"""
+    t = text.strip()
+    if not t.startswith(("- ", "* ")):
+        t = f"- {t}"
+    return t.replace("\n", "\n  ")
+
+
+def _strip_duplicate_heading(source: str, name: str) -> str:
+    """去掉 source 原文段首与功能点名重复的 markdown 标题行（避免标题两连）。"""
+    first_line, _sep, rest = source.partition("\n")
+    stripped = first_line.strip()
+    if stripped.startswith("#") and name and name in stripped:
+        return rest.strip()
+    return source
+
+
+def _feature_list_markdown(content: str) -> str | None:
+    """feature_list 工件 ``content_ref`` JSON → 可读 markdown；非该结构返回 None（回退原文）。
+
+    结构契约见 ``FeatureListService._normalize_manual_modules``：
+    ``{"modules": [{"module", "summary"?, "features": [{"name", "acceptance", "status"?, "source"?}]}]}``。
+    优先渲染 ``source``（解析留存的原文片段，本身是 markdown）；否则渲染验收列表。
+    """
+    try:
+        data = json.loads(content or "")
+    except (TypeError, ValueError):
+        return None
+    modules = data.get("modules") if isinstance(data, dict) else None
+    if not isinstance(modules, list):
+        return None
+
+    blocks: list[str] = []
+    feat_no = 0
+    for mod in modules:
+        if not isinstance(mod, dict):
+            continue
+        module_name = str(mod.get("module") or "未分组").strip() or "未分组"
+        blocks.append(f"## {module_name}")
+        summary = str(mod.get("summary") or "").strip()
+        if summary:
+            blocks.append(f"> {summary}")
+        features = [f for f in (mod.get("features") or []) if isinstance(f, dict)]
+        if not features:
+            blocks.append("_该模块暂无功能点_")
+            continue
+        for feat in features:
+            name = str(feat.get("name") or "").strip()
+            if not name:
+                continue
+            feat_no += 1
+            status = str(feat.get("status") or "").strip()
+            heading = f"### {feat_no}. {name}"
+            if status:
+                heading += f"（{status}）"
+            blocks.append(heading)
+            source = str(feat.get("source") or "").strip()
+            if source:
+                blocks.append(_strip_duplicate_heading(source, name))
+                continue
+            acceptance = [str(a).strip() for a in (feat.get("acceptance") or []) if str(a).strip()]
+            if acceptance:
+                blocks.append("**验收标准**")
+                blocks.append("\n".join(_as_bullet(a) for a in acceptance))
+    return "\n\n".join(blocks) if blocks else None
 
 
 def _extract_doc_token(url: str) -> str:
@@ -64,10 +135,16 @@ async def aget_artifact_view(artifact: Any) -> dict[str, Any]:
     }
 
     if carrier in ("markdown", "repo_file"):
+        content = artifact.content_ref or ""
+        # feature_list 工件存的是归一 JSON——在线查看转可读 markdown（失败回退原文）。
+        if getattr(getattr(artifact, "type", None), "key", "") == "feature_list":
+            rendered = _feature_list_markdown(content)
+            if rendered is not None:
+                content = rendered
         return {
             **base,
             "render_type": "markdown" if carrier == "markdown" else "text",
-            "content": redact_secrets_in_text(artifact.content_ref or ""),
+            "content": redact_secrets_in_text(content),
         }
 
     if carrier == "external_link":
