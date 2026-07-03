@@ -112,6 +112,7 @@ declare module 'vue' {
     ConfirmModal: typeof import('./components/modal/ConfirmModal.vue')['default']
     ContextExceededCard: typeof import('./components/chat/ContextExceededCard.vue')['default']
     ContextInspector: typeof import('./components/workflow/ContextInspector.vue')['default']
+    ContextLinksCard: typeof import('./components/project/warroom/ContextLinksCard.vue')['default']
     ContextRetrievalConfig: typeof import('./components/workflow/config/ContextRetrievalConfig.vue')['default']
     ControlNode: typeof import('./components/workflow/editor/nodes/ControlNode.vue')['default']
     ConversationBadges: typeof import('./components/chat/ConversationBadges.vue')['default']

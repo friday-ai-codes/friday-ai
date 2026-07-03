@@ -2,6 +2,7 @@
 import type { Project } from '~/api/projects'
 import { defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ContextLinksCard from '~/components/project/warroom/ContextLinksCard.vue'
 import FeatureBoard from '~/components/project/warroom/FeatureBoard.vue'
 import ProjectApiListCard from '~/components/project/warroom/ProjectApiListCard.vue'
 import ProjectGalaxyCard from '~/components/project/warroom/ProjectGalaxyCard.vue'
@@ -64,6 +65,10 @@ const HumanTaskInbox = defineAsyncComponent(() => import('~/components/delivery/
       </section>
 
       <ProjectApiListCard :project-id="project.id" :can-manage="canManage" />
+
+      <!-- 知识关联：一键生成 仓库/知识/工件/MR 候选 + 成员就地审阅/手动编辑 -->
+      <ContextLinksCard :project-id="project.id" :can-manage="canManage" />
+
       <ProjectGalaxyCard :project-id="project.id" />
 
       <!-- 交付物版本轨 / 时间线（P7，只读）：按项目空间过滤技术方案产物 -->
