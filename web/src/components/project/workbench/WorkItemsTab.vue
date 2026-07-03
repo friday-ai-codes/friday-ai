@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectsApi } from '~/api/projects'
+import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { useConfirmDialog } from '~/composables/useConfirmDialog'
@@ -25,6 +26,8 @@ const { data, isLoading, isError, refetch } = useQuery({
 })
 const items = computed<ProjectWorkItem[]>(() => data.value ?? [])
 
+// 并入表单默认收起（空项目一进来满屏输入框视觉噪声大），点「并入」再展开。
+const showAttach = ref(false)
 const attachId = ref('')
 const attaching = ref(false)
 
@@ -78,12 +81,26 @@ async function detach(item: ProjectWorkItem) {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <!-- 手动并入 -->
-    <div v-if="canManage" class="card p-4 space-y-2">
-      <p class="text-xs text-muted-foreground">
-        {{ t('projects.workItems.attachHint') }}
-      </p>
+  <div class="space-y-3">
+    <!-- 手动并入（默认收起，点「并入」展开） -->
+    <div
+      v-if="canManage && showAttach"
+      class="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2"
+      data-testid="attach-work-item-form"
+    >
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-xs text-muted-foreground">
+          {{ t('projects.workItems.attachHint') }}
+        </p>
+        <button
+          type="button"
+          class="cursor-pointer text-muted-foreground/60 hover:text-foreground transition-colors"
+          aria-label="收起并入表单"
+          @click="showAttach = false"
+        >
+          <span class="icon-[lucide--x] text-sm" />
+        </button>
+      </div>
       <div class="flex gap-2">
         <Input
           v-model="attachId"
@@ -109,11 +126,40 @@ async function detach(item: ProjectWorkItem) {
         {{ t('projects.retry') }}
       </button>
     </div>
-    <div v-else-if="items.length === 0" class="text-sm text-muted-foreground py-8 text-center">
-      {{ t('projects.workItems.empty') }}
-    </div>
+    <CompactEmptyState
+      v-else-if="items.length === 0"
+      icon="lucide--list-checks"
+      :title="t('projects.workItems.empty')"
+    >
+      <Button
+        v-if="canManage && !showAttach"
+        size="sm"
+        variant="outline"
+        class="h-7 text-xs"
+        data-testid="attach-work-item-toggle"
+        @click="showAttach = true"
+      >
+        <span class="icon-[lucide--plus] mr-1" />
+        {{ t('projects.workItems.attach') }}
+      </Button>
+    </CompactEmptyState>
 
-    <ul v-else class="divide-y divide-border/40 rounded-lg border border-border/40 bg-card">
+    <template v-else>
+      <div v-if="canManage && !showAttach" class="flex justify-end">
+        <Button
+          size="sm"
+          variant="ghost"
+          class="h-7 text-xs text-muted-foreground hover:text-primary"
+          data-testid="attach-work-item-toggle"
+          @click="showAttach = true"
+        >
+          <span class="icon-[lucide--plus] mr-1" />
+          {{ t('projects.workItems.attach') }}
+        </Button>
+      </div>
+    </template>
+
+    <ul v-if="!isLoading && !isError && items.length > 0" class="divide-y divide-border/40 rounded-lg border border-border/40 bg-card">
       <li
         v-for="item in items"
         :key="item.id"

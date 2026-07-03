@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/vue-query'
 import { computed, markRaw, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectWorkspaceApi } from '~/api/projectWorkspace'
-import EmptyState from '~/components/common/EmptyState.vue'
+import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import InlineMarkdown from '~/components/common/InlineMarkdown.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import { Button } from '~/components/ui/button'
@@ -162,12 +162,25 @@ const isEmpty = computed(() => totalFeatures.value === 0 && modules.value.length
         </button>
       </div>
 
-      <EmptyState
+      <!-- 紧凑空态（右栏空间有限，全页级 EmptyState 太占高）+ 直达补充入口 -->
+      <CompactEmptyState
         v-else-if="isEmpty"
         icon="lucide--list-tree"
         :title="t('projects.workbench.feature.emptyTitle')"
         :description="t('projects.workbench.feature.emptyDesc')"
-      />
+      >
+        <Button
+          v-if="canManage"
+          size="sm"
+          variant="outline"
+          class="h-7 text-xs"
+          data-testid="feature-empty-add-btn"
+          @click="openEditor"
+        >
+          <span class="icon-[lucide--plus] mr-1" />
+          {{ t('projects.warroom.health.addFeatureCta') }}
+        </Button>
+      </CompactEmptyState>
 
       <!-- feature list → 模块 → 功能点 层级（状态只用指示灯圆点，图例见顶部） -->
       <div v-else class="space-y-2" data-testid="feature-module-view">

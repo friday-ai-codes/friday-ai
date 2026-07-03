@@ -112,60 +112,66 @@ function runAndAdvance() {
 <template>
   <section
     v-if="visible"
-    class="shrink-0 border-b border-border/60 bg-gradient-to-b from-primary/[0.05] to-transparent"
+    class="shrink-0 border-b border-border/60 bg-gradient-to-b from-primary/[0.04] to-transparent"
     data-testid="project-onboarding"
   >
-    <div class="mx-auto w-full max-w-2xl px-4 py-3">
-      <!-- 头部：标题 + 进度 + 跳过 -->
-      <div class="flex items-center gap-2">
-        <span class="inline-flex size-6 items-center justify-center rounded-md bg-primary/12 text-primary">
-          <span class="icon-[lucide--rocket] text-xs" />
-        </span>
-        <h3 class="text-xs font-semibold text-foreground">
-          空项目上手引导
+    <div class="mx-auto w-full max-w-2xl px-4 pt-3 pb-3.5">
+      <!-- 头部：标题 + 分段进度条 + 跳过 -->
+      <div class="flex items-center gap-2.5">
+        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-foreground shrink-0">
+          <span class="icon-[lucide--rocket] text-primary text-sm" />
+          上手引导
         </h3>
-        <span class="text-[11px] text-muted-foreground tabular-nums">
-          第 {{ stepIndex + 1 }} / {{ total }} 步
+        <span class="text-[11px] text-muted-foreground/80 tabular-nums shrink-0">
+          {{ stepIndex + 1 }}/{{ total }}
         </span>
-        <!-- 进度点 -->
-        <div class="ml-1 flex items-center gap-1">
+        <!-- 分段进度条（可点跳步，比进度点更清晰、触达面积更大） -->
+        <div class="flex flex-1 items-center gap-1" role="tablist" aria-label="引导步骤">
           <button
-            v-for="(_, i) in steps"
+            v-for="(s, i) in steps"
             :key="i"
             type="button"
-            class="size-1.5 rounded-full transition-colors"
-            :class="i === stepIndex ? 'bg-primary' : i < stepIndex ? 'bg-primary/40' : 'bg-border'"
-            :aria-label="`跳到第 ${i + 1} 步`"
+            role="tab"
+            class="h-1 flex-1 cursor-pointer rounded-full transition-colors duration-200"
+            :class="i < stepIndex ? 'bg-primary/50 hover:bg-primary/70'
+              : i === stepIndex ? 'bg-primary'
+                : 'bg-border hover:bg-border/80'"
+            :aria-selected="i === stepIndex"
+            :aria-label="`第 ${i + 1} 步：${s.title}`"
+            :title="s.title"
             @click="stepIndex = i"
           />
         </div>
         <button
           type="button"
-          class="ml-auto text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          class="shrink-0 cursor-pointer text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors"
           data-testid="onboarding-dismiss"
           @click="dismissed = true"
         >
-          跳过引导
+          跳过
         </button>
       </div>
 
-      <!-- 当前步骤 -->
-      <div class="mt-2 flex items-center gap-3">
-        <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-card border border-border/60 text-primary">
-          <span :class="current.icon" class="text-sm" />
+      <!-- 当前步骤卡片：图标台 + 内容 + 主 CTA，一体成型 -->
+      <div class="mt-2.5 flex items-center gap-3.5 rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
+        <span class="relative inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 text-primary">
+          <span :class="current.icon" class="text-base" />
+          <span class="absolute -right-1 -top-1 inline-flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-semibold text-primary-foreground tabular-nums">
+            {{ stepIndex + 1 }}
+          </span>
         </span>
         <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium text-foreground">
+          <p class="text-sm font-semibold text-foreground leading-snug">
             {{ current.title }}
           </p>
-          <p class="text-xs text-muted-foreground truncate">
+          <p class="mt-0.5 text-xs text-muted-foreground leading-relaxed truncate">
             {{ current.desc }}
           </p>
         </div>
-        <div class="flex items-center gap-1.5 shrink-0">
+        <div class="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/70 disabled:opacity-30 transition-colors"
+            class="inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/70 disabled:opacity-30 disabled:cursor-default transition-colors"
             :disabled="isFirst"
             aria-label="上一步"
             @click="prev"
@@ -174,7 +180,7 @@ function runAndAdvance() {
           </button>
           <button
             type="button"
-            class="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 h-7 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-3.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50 transition-all duration-150"
             :disabled="stepIndex === 0 && !canManage"
             :data-testid="`onboarding-step-${stepIndex + 1}`"
             @click="runAndAdvance"
@@ -184,7 +190,7 @@ function runAndAdvance() {
           </button>
           <button
             type="button"
-            class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/70 disabled:opacity-30 transition-colors"
+            class="inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/70 disabled:opacity-30 disabled:cursor-default transition-colors"
             :disabled="isLast"
             aria-label="下一步"
             @click="next"

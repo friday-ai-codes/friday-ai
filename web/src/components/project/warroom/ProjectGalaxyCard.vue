@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/vue-query'
 import { computed, onBeforeUnmount, ref, shallowRef, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectGalaxyApi } from '~/api/projectGalaxy'
-import EmptyState from '~/components/common/EmptyState.vue'
+import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 
 // P4：项目级关系星图。3d-force-graph 动态加载 + 节点详情 + a11y 兜底列表。
@@ -147,7 +147,7 @@ onBeforeUnmount(disposeGraph)
         </button>
       </div>
 
-      <EmptyState
+      <CompactEmptyState
         v-else-if="isEmpty"
         icon="lucide--orbit"
         :title="t('projects.warroom.galaxy.emptyTitle')"
