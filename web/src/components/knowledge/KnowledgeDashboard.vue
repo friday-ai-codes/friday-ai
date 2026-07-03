@@ -434,87 +434,55 @@ function openDepItem(item: ArtifactOverviewItem) {
         <!-- 知识库搜索（仓库 / 能力 / 关键词） -->
         <KnowledgeSearchBar :items="searchItems" :loading="capsLoading" @select="onSearchSelect" />
 
-        <!-- 核心指标（渐变磁贴） -->
+        <!-- 核心指标（扁平磁贴：纯色 tint 图标块 + 底部 accent 线，无渐变/位移/阴影） -->
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-primary/25 to-transparent blur-2xl" />
-            <div class="relative flex items-center gap-3.5">
-              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-inset ring-primary/15">
-                <span class="icon-[lucide--git-branch] text-xl text-primary" />
+          <div
+            v-for="stat in [
+              { key: 'repos', icon: 'icon-[lucide--git-branch]', value: totalRepos, label: t('knowledge.overview.stats.repos'), chip: 'bg-primary/10 text-primary', bar: 'bg-primary' },
+              { key: 'domains', icon: 'icon-[lucide--folder-tree]', value: domainCount, label: t('knowledge.overview.stats.domains'), chip: 'bg-violet-500/10 text-violet-600 dark:text-violet-400', bar: 'bg-violet-500' },
+              { key: 'capabilities', icon: 'icon-[lucide--box]', value: capabilityCount, label: t('knowledge.overview.stats.capabilities'), chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', bar: 'bg-emerald-500' },
+              { key: 'keywords', icon: 'icon-[lucide--hash]', value: keywordCount, label: t('knowledge.overview.stats.keywords'), chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', bar: 'bg-amber-500' },
+            ]"
+            :key="stat.key"
+            class="group relative overflow-hidden rounded-xl border border-border bg-card p-4 transition-colors duration-200 hover:border-primary/35"
+          >
+            <div class="flex items-center gap-3.5">
+              <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg" :class="stat.chip">
+                <span :class="stat.icon" class="text-xl" />
               </div>
               <div class="min-w-0">
-                <p class="text-2xl font-bold leading-none tabular-nums">
-                  {{ totalRepos }}
+                <p class="text-[26px] font-bold leading-none tracking-tight tabular-nums">
+                  {{ stat.value }}
                 </p>
                 <p class="mt-1.5 truncate text-xs text-muted-foreground">
-                  {{ t('knowledge.overview.stats.repos') }}
+                  {{ stat.label }}
                 </p>
               </div>
             </div>
-          </div>
-          <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-violet-500/25 to-transparent blur-2xl" />
-            <div class="relative flex items-center gap-3.5">
-              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-violet-500/10 ring-1 ring-inset ring-violet-500/15">
-                <span class="icon-[lucide--folder-tree] text-xl text-violet-500" />
-              </div>
-              <div class="min-w-0">
-                <p class="text-2xl font-bold leading-none tabular-nums">
-                  {{ domainCount }}
-                </p>
-                <p class="mt-1.5 truncate text-xs text-muted-foreground">
-                  {{ t('knowledge.overview.stats.domains') }}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-emerald-500/25 to-transparent blur-2xl" />
-            <div class="relative flex items-center gap-3.5">
-              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/10 ring-1 ring-inset ring-emerald-500/15">
-                <span class="icon-[lucide--box] text-xl text-emerald-500" />
-              </div>
-              <div class="min-w-0">
-                <p class="text-2xl font-bold leading-none tabular-nums">
-                  {{ capabilityCount }}
-                </p>
-                <p class="mt-1.5 truncate text-xs text-muted-foreground">
-                  {{ t('knowledge.overview.stats.capabilities') }}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-amber-500/25 to-transparent blur-2xl" />
-            <div class="relative flex items-center gap-3.5">
-              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 ring-1 ring-inset ring-amber-500/15">
-                <span class="icon-[lucide--hash] text-xl text-amber-500" />
-              </div>
-              <div class="min-w-0">
-                <p class="text-2xl font-bold leading-none tabular-nums">
-                  {{ keywordCount }}
-                </p>
-                <p class="mt-1.5 truncate text-xs text-muted-foreground">
-                  {{ t('knowledge.overview.stats.keywords') }}
-                </p>
-              </div>
-            </div>
+            <!-- 扁平 accent：底部细色条，hover 加宽呼应而非投影位移 -->
+            <span
+              class="absolute inset-x-0 bottom-0 h-[3px] origin-left scale-x-[0.35] transition-transform duration-300 group-hover:scale-x-100"
+              :class="stat.bar"
+            />
           </div>
         </div>
 
         <!-- 业务能力全景 -->
         <section>
-          <div class="mb-3 flex items-center gap-2">
-            <span class="h-4 w-1 rounded-full bg-primary" />
-            <h3 class="text-sm font-semibold">
+          <div class="mb-3 flex items-center gap-2.5">
+            <span class="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <span class="icon-[lucide--telescope] text-[13px]" />
+            </span>
+            <h3 class="text-sm font-semibold tracking-wide">
               {{ t('knowledge.overview.panorama.title') }}
             </h3>
+            <span class="h-3.5 w-px bg-border" />
             <span class="text-xs text-muted-foreground">{{ t('knowledge.overview.panorama.hint') }}</span>
           </div>
 
           <div class="grid gap-4 lg:grid-cols-5">
             <!-- 知识星图（小卡：旋转预览，点「展开」看大图 / 拖拽即可交互） -->
-            <div class="flex flex-col overflow-hidden rounded-2xl border border-indigo-500/20 bg-[#0a0a1f] shadow-sm lg:col-span-3">
+            <div class="flex flex-col overflow-hidden rounded-xl border border-indigo-500/25 bg-[#0a0a1f] lg:col-span-3">
               <header class="flex items-center gap-3 px-4 py-3">
                 <div class="shrink-0 rounded-xl bg-indigo-500/15 p-2 ring-1 ring-inset ring-indigo-400/20">
                   <span class="icon-[lucide--orbit] text-lg text-indigo-300" />
@@ -560,7 +528,7 @@ function openDepItem(item: ArtifactOverviewItem) {
               role="button"
               tabindex="0"
               :aria-label="t('knowledge.overview.cloud.title')"
-              class="group flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-primary motion-safe:hover:-translate-y-0.5 lg:col-span-2"
+              class="group flex cursor-pointer flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors duration-200 hover:border-primary/35 focus-visible:outline-2 focus-visible:outline-primary lg:col-span-2"
               @click="cloudOpen = true"
               @keydown.enter="cloudOpen = true"
               @keydown.space.prevent="cloudOpen = true"
@@ -612,9 +580,11 @@ function openDepItem(item: ArtifactOverviewItem) {
 
         <!-- 运行状态：双环仪表 + 状态明细 -->
         <section class="card p-5">
-          <div class="mb-4 flex items-center gap-2">
-            <span class="h-4 w-1 rounded-full bg-primary" />
-            <h3 class="text-sm font-semibold">
+          <div class="mb-4 flex items-center gap-2.5">
+            <span class="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <span class="icon-[lucide--activity] text-[13px]" />
+            </span>
+            <h3 class="text-sm font-semibold tracking-wide">
               {{ t('knowledge.overview.health.title') }}
             </h3>
             <span class="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
@@ -707,11 +677,14 @@ function openDepItem(item: ArtifactOverviewItem) {
 
       <!-- 交付文档 / 外部依赖（按类型计数 + 入口 + 区块内即时搜索）——独立于仓库存在性，靠自身 depLoading/depEmpty 控制 -->
       <section class="card p-5" data-testid="knowledge-deps-section">
-        <div class="mb-4 flex items-center gap-2">
-          <span class="h-4 w-1 rounded-full bg-primary" />
-          <h3 class="text-sm font-semibold">
+        <div class="mb-4 flex items-center gap-2.5">
+          <span class="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400">
+            <span class="icon-[lucide--package] text-[13px]" />
+          </span>
+          <h3 class="text-sm font-semibold tracking-wide">
             {{ t('knowledge.overview.deps.title') }}
           </h3>
+          <span class="h-3.5 w-px bg-border" />
           <span class="text-xs text-muted-foreground">{{ t('knowledge.overview.deps.hint') }}</span>
         </div>
 
@@ -735,12 +708,11 @@ function openDepItem(item: ArtifactOverviewItem) {
               v-for="ty in depTypes"
               :key="ty.type_key"
               type="button"
-              class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
+              class="group relative cursor-pointer overflow-hidden rounded-xl border border-border bg-card p-4 text-left transition-colors duration-200 hover:border-primary/35"
               @click="goToDepType(ty.type_key)"
             >
-              <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-primary/20 to-transparent blur-2xl" />
-              <div class="relative flex items-center gap-3.5">
-                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-inset ring-primary/15">
+              <div class="flex items-center gap-3.5">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
                   <FeishuSheetLogo v-if="ty.carrier === 'feishu_bitable'" class="size-5" />
                   <FeishuLogo v-else-if="ty.carrier === 'feishu_doc'" class="size-5" />
                   <span v-else class="text-lg" :class="[`icon-[${depCarrier(ty.carrier).icon}]`, depCarrier(ty.carrier).color]" />
@@ -749,11 +721,13 @@ function openDepItem(item: ArtifactOverviewItem) {
                   <p class="text-xl font-bold leading-none tabular-nums">
                     {{ ty.count }}
                   </p>
-                  <p class="mt-1.5 truncate text-xs text-muted-foreground group-hover:text-primary">
+                  <p class="mt-1.5 truncate text-xs text-muted-foreground transition-colors group-hover:text-primary">
                     {{ depTypeLabel(ty.type_key, ty.type_name) }}
                   </p>
                 </div>
+                <span class="icon-[lucide--arrow-up-right] ml-auto shrink-0 text-sm text-muted-foreground/0 transition-colors group-hover:text-primary" />
               </div>
+              <span class="absolute inset-x-0 bottom-0 h-[3px] origin-left scale-x-[0.35] bg-primary transition-transform duration-300 group-hover:scale-x-100" />
             </button>
           </div>
 
@@ -841,11 +815,14 @@ function openDepItem(item: ArtifactOverviewItem) {
       <div v-if="domainHighlights.length || activeFacet" class="grid gap-4 lg:grid-cols-2">
         <!-- 业务域排行（条形榜） -->
         <section v-if="domainHighlights.length" class="card flex flex-col p-5">
-          <div class="mb-4 flex items-center gap-2">
-            <span class="icon-[lucide--trophy] text-primary" />
-            <h3 class="text-sm font-semibold">
+          <div class="mb-4 flex items-center gap-2.5">
+            <span class="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <span class="icon-[lucide--trophy] text-[13px]" />
+            </span>
+            <h3 class="text-sm font-semibold tracking-wide">
               {{ t('knowledge.overview.domains.title') }}
             </h3>
+            <span class="h-3.5 w-px bg-border" />
             <span class="text-xs text-muted-foreground">{{ t('knowledge.overview.domains.hint') }}</span>
             <button
               class="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-primary"
@@ -892,11 +869,14 @@ function openDepItem(item: ArtifactOverviewItem) {
 
         <!-- 分面透视（维度切换 + 分布） -->
         <section v-if="activeFacet" class="card flex flex-col p-5">
-          <div class="mb-3 flex items-center gap-2">
-            <span class="icon-[lucide--sliders-horizontal] text-primary" />
-            <h3 class="text-sm font-semibold">
+          <div class="mb-3 flex items-center gap-2.5">
+            <span class="flex h-6 w-6 items-center justify-center rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400">
+              <span class="icon-[lucide--sliders-horizontal] text-[13px]" />
+            </span>
+            <h3 class="text-sm font-semibold tracking-wide">
               {{ t('knowledge.overview.facets.title') }}
             </h3>
+            <span class="h-3.5 w-px bg-border" />
             <span class="text-xs text-muted-foreground">{{ t('knowledge.overview.facets.hint') }}</span>
           </div>
           <!-- 维度切换 -->
@@ -1012,7 +992,7 @@ function openDepItem(item: ArtifactOverviewItem) {
 
     <!-- ============ 交付文档 markdown 内联预览 ============ -->
     <Dialog v-model:open="previewOpen">
-      <DialogContent class="flex max-h-[85vh] w-[94vw] max-w-3xl flex-col">
+      <DialogContent class="flex h-[88vh] w-[92vw] max-w-5xl flex-col">
         <DialogTitle class="text-base font-semibold">
           {{ previewTitle }}
         </DialogTitle>
