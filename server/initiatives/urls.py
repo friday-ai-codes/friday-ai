@@ -8,6 +8,11 @@ from initiatives.views import (
     ArtifactViewView,
     ProjectBranchDetailView,
     ProjectBranchListCreateView,
+    ProjectContextLinkDecisionView,
+    ProjectContextLinkDetailView,
+    ProjectContextLinkGenerateView,
+    ProjectContextLinkListCreateView,
+    ProjectContextLinkRepoDecisionView,
     ProjectCursorRulesView,
     ProjectDescriptionGenerateView,
     ProjectDetailView,
@@ -92,6 +97,39 @@ urlpatterns = [
         "<uuid:project_id>/knowledge/",
         ProjectKnowledgeLinkView.as_view(),
         name="project-knowledge-link",
+    ),
+    # 上下文关联（「生成知识关联」：候选生成 + 审阅 + 人工编辑）
+    path(
+        "<uuid:project_id>/context-links/",
+        ProjectContextLinkListCreateView.as_view(),
+        name="project-context-link-list",
+    ),
+    path(
+        "<uuid:project_id>/context-links/generate/",
+        ProjectContextLinkGenerateView.as_view(),
+        name="project-context-link-generate",
+    ),
+    path(
+        "<uuid:project_id>/context-links/repo-decision/",
+        ProjectContextLinkRepoDecisionView.as_view(),
+        name="project-context-link-repo-decision",
+    ),
+    path(
+        "<uuid:project_id>/context-links/<uuid:link_id>/",
+        ProjectContextLinkDetailView.as_view(),
+        name="project-context-link-detail",
+    ),
+    path(
+        "<uuid:project_id>/context-links/<uuid:link_id>/accept/",
+        ProjectContextLinkDecisionView.as_view(),
+        {"action": "accept"},
+        name="project-context-link-accept",
+    ),
+    path(
+        "<uuid:project_id>/context-links/<uuid:link_id>/reject/",
+        ProjectContextLinkDecisionView.as_view(),
+        {"action": "reject"},
+        name="project-context-link-reject",
     ),
     path(
         "<uuid:project_id>/graph/",

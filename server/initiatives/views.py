@@ -44,9 +44,12 @@ from initiatives.serializers import (
     ArtifactTypeSerializer,
     ArtifactTypeUpdateSerializer,
     ArtifactUpdateSerializer,
+    ContextLinkManualCreateSerializer,
+    ContextLinkRepoDecisionSerializer,
     MergeRequestSerializer,
     ProjectBranchBindRequestSerializer,
     ProjectBranchSerializer,
+    ProjectContextLinkSerializer,
     ProjectCreateSerializer,
     ProjectDocContentSerializer,
     ProjectDocHumanBlocksWriteSerializer,
@@ -73,6 +76,8 @@ from initiatives.serializers import (
 from initiatives.services import (
     ArtifactError,
     ArtifactService,
+    ContextLinkError,
+    ContextLinkService,
     DocContentError,
     DocContentNotFound,
     DocContentService,
@@ -2040,3 +2045,149 @@ class ProjectGalaxyView(APIView):
             category="caller",
         )
         return Response(payload)
+
+
+# ============================ 项目上下文关联（「生成知识关联」）============================
+
+
+async def _aget_project_for_link_edit(request, project_id):
+    """取项目 + 校验关联编辑权限（Space admin+ 或项目成员）。返回 (project, error_response)。
+
+    作战室「成员就地编辑」语义：项目成员即可审阅/编辑关联，Space viewer 只读。
+    """
+    project = await aget_object_or_404(
+        Project.objects.select_related("space"), pk=project_id
+    )
+    allowed = await auser_can_access_project(request.user, project, SpaceRole.ADMIN)
+    if not allowed:
+        allowed = await auser_is_project_member(request.user, project_id)
+    if not allowed:
+        return None, Response(
+            {"detail": "仅项目成员可编辑关联"}, status=status.HTTP_403_FORBIDDEN
+        )
+    return project, None
+
+
+async def _aserialize_context_links(payload: dict[str, Any]) -> dict[str, Any]:
+    """列表载荷序列化（links 走 serializer，repos 已是 dict）。"""
+    links = await sync_to_async(
+        lambda: ProjectContextLinkSerializer(payload["links"], many=True).data
+    )()
+    return {"links": links, "repos": payload["repos"]}
+
+
+class ProjectContextLinkListCreateView(APIView):
+    """上下文关联列表（GET，读权限）+ 人工添加（POST，成员）。"""
+
+    async def get(self, request, project_id):
+        project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        payload = await ContextLinkService().list_links(project)
+        return Response(await _aserialize_context_links(payload))
+
+    async def post(self, request, project_id):
+        project, err = await _aget_project_for_link_edit(request, project_id)
+        if err is not None:
+            return err
+        serializer = ContextLinkManualCreateSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            link = await ContextLinkService().aadd_manual(
+                project,
+                target_kind=data["target_kind"],
+                target_id=data.get("target_id"),
+                title=data.get("title") or "",
+                url=data.get("url") or "",
+                reason=data.get("reason") or "",
+                actor=request.user,
+                initiated_by_user_id=request.user.id,
+            )
+        except ContextLinkError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        body = await sync_to_async(lambda: ProjectContextLinkSerializer(link).data)()
+        return Response(body, status=status.HTTP_201_CREATED)
+
+
+class ProjectContextLinkGenerateView(APIView):
+    """一键「生成知识关联」（POST，成员）：仓库/知识/工件/MR 四类候选统一编排。"""
+
+    async def post(self, request, project_id):
+        project, err = await _aget_project_for_link_edit(request, project_id)
+        if err is not None:
+            return err
+        summary = await ContextLinkService().agenerate(
+            project, user=request.user, initiated_by_user_id=request.user.id
+        )
+        payload = await ContextLinkService().list_links(project)
+        body = await _aserialize_context_links(payload)
+        body["summary"] = summary
+        return Response(body)
+
+
+class ProjectContextLinkDecisionView(APIView):
+    """候选裁决（POST .../<link_id>/<action>/，action=accept|reject，成员）。"""
+
+    async def post(self, request, project_id, link_id, action):
+        project, err = await _aget_project_for_link_edit(request, project_id)
+        if err is not None:
+            return err
+        try:
+            link = await ContextLinkService().adecide(
+                project,
+                link_id,
+                action=action,
+                actor=request.user,
+                initiated_by_user_id=request.user.id,
+            )
+        except ContextLinkError as exc:
+            not_found = "不存在" in str(exc)
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_404_NOT_FOUND if not_found else status.HTTP_400_BAD_REQUEST,
+            )
+        body = await sync_to_async(lambda: ProjectContextLinkSerializer(link).data)()
+        return Response(body)
+
+
+class ProjectContextLinkDetailView(APIView):
+    """删除一条关联记录（DELETE，成员；人工编辑的移除分支）。"""
+
+    async def delete(self, request, project_id, link_id):
+        project, err = await _aget_project_for_link_edit(request, project_id)
+        if err is not None:
+            return err
+        deleted = await ContextLinkService().aremove(
+            project, link_id, initiated_by_user_id=request.user.id
+        )
+        if not deleted:
+            return Response({"detail": "关联记录不存在"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProjectContextLinkRepoDecisionView(APIView):
+    """仓库候选裁决（POST，成员）：accept → confirm_repos；reject → reject_candidates。"""
+
+    async def post(self, request, project_id):
+        project, err = await _aget_project_for_link_edit(request, project_id)
+        if err is not None:
+            return err
+        serializer = ContextLinkRepoDecisionSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            applied = await ContextLinkService().adecide_repo(
+                project,
+                data["repository_id"],
+                action=data["action"],
+                initiated_by_user_id=request.user.id,
+            )
+        except ContextLinkError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if not applied:
+            return Response(
+                {"detail": "无可裁决的候选（可能已流转或不存在）"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response({"applied": True, "action": data["action"]})

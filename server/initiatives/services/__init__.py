@@ -10,6 +10,12 @@ from initiatives.services.artifact_service import (
     ArtifactService,
     ArtifactTypeError,
 )
+from initiatives.services.board_split_service import BoardSplitService
+from initiatives.services.branch_provision_service import BranchProvisionService
+from initiatives.services.context_link_service import (
+    ContextLinkError,
+    ContextLinkService,
+)
 from initiatives.services.doc_content_service import (
     DocContentError,
     DocContentNotFound,
@@ -17,8 +23,6 @@ from initiatives.services.doc_content_service import (
     HumanWriteForbidden,
     SystemReadOnlyError,
 )
-from initiatives.services.board_split_service import BoardSplitService
-from initiatives.services.branch_provision_service import BranchProvisionService
 from initiatives.services.feature_list_extractor import FeatureListExtractor
 from initiatives.services.feature_list_service import FeatureListService
 from initiatives.services.memory_distill import MemoryDistiller
@@ -83,6 +87,8 @@ __all__ = [
     "MemoryDistiller",
     "MergeRequestService",
     "MergeRequestSyncError",
+    "ContextLinkService",
+    "ContextLinkError",
     "project_group_name",
     "apush_project_event",
 ]

@@ -6,6 +6,12 @@ from initiatives.models.artifact import (
     ArtifactCarrier,
     ArtifactType,
 )
+from initiatives.models.context_link import (
+    ContextLinkKind,
+    ContextLinkOrigin,
+    ContextLinkStatus,
+    ProjectContextLink,
+)
 from initiatives.models.feature_detail_cache import FeatureDetailCache
 from initiatives.models.feature_list_draft import (
     FeatureListDraft,
@@ -91,4 +97,8 @@ __all__ = [
     "MergeRequestEvent",
     "MRPlatform",
     "MRStatus",
+    "ProjectContextLink",
+    "ContextLinkKind",
+    "ContextLinkStatus",
+    "ContextLinkOrigin",
 ]
