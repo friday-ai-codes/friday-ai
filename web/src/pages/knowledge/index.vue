@@ -8,7 +8,6 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { knowledgeApi } from '~/api'
 import { artifactsApi } from '~/api/artifacts'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
-import PageHeader from '~/components/common/PageHeader.vue'
 import MarkdownRenderer from '~/components/execution/MarkdownRenderer.vue'
 import { ARTIFACT_BADGE_CLASS } from '~/components/knowledge/artifactDisplay'
 import BatchIngestPanel from '~/components/knowledge/BatchIngestPanel.vue'
@@ -194,32 +193,43 @@ async function openArtifactView(item: KnowledgeSearchResultItem) {
 
 <template>
   <PageContainer show-background>
-    <!-- 页头（与其他页面统一：渐变图标 + 标题 + 描述） -->
-    <PageHeader
-      icon="lucide--book-open"
-      icon-gradient="from-primary/20 to-primary/10"
-      icon-color="text-primary"
-      :title="t('knowledge.pageTitle')"
-      :description="t('knowledge.pageDescription')"
-    />
+    <!-- 扁平 hero 页头：品牌 teal 色面 + 纯色几何装饰（同心圆环/点阵，无渐变阴影） -->
+    <div class="relative overflow-hidden rounded-2xl border border-primary/15 bg-primary/[0.06] px-6 py-6">
+      <div class="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full border-[12px] border-primary/10" aria-hidden="true" />
+      <div class="pointer-events-none absolute -bottom-12 right-28 h-28 w-28 rounded-full border-8 border-primary/[0.07]" aria-hidden="true" />
+      <div class="pointer-events-none absolute right-7 top-6 hidden grid-cols-6 gap-2 sm:grid" aria-hidden="true">
+        <span v-for="n in 18" :key="n" class="h-1 w-1 rounded-full bg-primary/25" />
+      </div>
+      <div class="relative flex items-center gap-4">
+        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+          <span class="icon-[lucide--book-open] text-2xl" />
+        </div>
+        <div class="min-w-0">
+          <h1 class="text-2xl font-bold tracking-tight">
+            {{ t('knowledge.pageTitle') }}
+          </h1>
+          <p class="mt-1 text-sm text-muted-foreground">
+            {{ t('knowledge.pageDescription') }}
+          </p>
+        </div>
+      </div>
+    </div>
 
     <Tabs v-model="activeTab" class="mt-5">
-      <TabsList>
-        <TabsTrigger value="overview">
-          <span class="icon-[lucide--layout-dashboard]" />
-          {{ t('knowledge.tabs.overview') }}
-        </TabsTrigger>
-        <TabsTrigger value="tree">
-          <span class="icon-[lucide--folder-tree]" />
-          {{ t('knowledge.tabs.tree') }}
-        </TabsTrigger>
-        <TabsTrigger value="ingest">
-          <span class="icon-[lucide--download]" />
-          {{ t('knowledge.tabs.ingest') }}
-        </TabsTrigger>
-        <TabsTrigger value="search">
-          <span class="icon-[lucide--search]" />
-          {{ t('knowledge.tabs.search') }}
+      <TabsList class="h-10 gap-1 rounded-xl bg-muted/70 p-1">
+        <TabsTrigger
+          v-for="tab in ([
+            { value: 'overview', icon: 'icon-[lucide--layout-dashboard]' },
+            { value: 'tree', icon: 'icon-[lucide--folder-tree]' },
+            { value: 'ingest', icon: 'icon-[lucide--download]' },
+            { value: 'search', icon: 'icon-[lucide--search]' },
+          ] as const)"
+          :key="tab.value"
+          :value="tab.value"
+          class="cursor-pointer rounded-lg px-3.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none dark:data-[state=active]:bg-primary dark:data-[state=active]:text-primary-foreground"
+        >
+          <span :class="tab.icon" />
+          {{ t(`knowledge.tabs.${tab.value}`) }}
         </TabsTrigger>
       </TabsList>
 
@@ -426,7 +436,7 @@ async function openArtifactView(item: KnowledgeSearchResultItem) {
 
     <!-- 工件在线查看弹窗（复用 DependenciesSection 范式） -->
     <Dialog v-model:open="viewOpen">
-      <DialogScrollContent class="max-w-2xl">
+      <DialogScrollContent class="w-[92vw] max-w-5xl">
         <DialogHeader>
           <DialogTitle>{{ viewTitle }}</DialogTitle>
           <DialogDescription>{{ t('projects.artifacts.viewDesc') }}</DialogDescription>
@@ -450,15 +460,15 @@ async function openArtifactView(item: KnowledgeSearchResultItem) {
             </a>
             <div
               v-else-if="viewData.render_type === 'markdown'"
-              class="max-h-[60vh] overflow-auto"
+              class="max-h-[72vh] overflow-auto"
             >
               <MarkdownRenderer :content="viewData.content || ''" />
             </div>
             <pre
               v-else-if="viewData.render_type === 'text'"
-              class="text-xs bg-muted/50 rounded-lg p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap"
+              class="text-xs bg-muted/50 rounded-lg p-3 max-h-[72vh] overflow-auto whitespace-pre-wrap"
             >{{ viewData.content }}</pre>
-            <div v-else-if="viewData.render_type === 'records'" class="text-xs space-y-1 max-h-[60vh] overflow-auto">
+            <div v-else-if="viewData.render_type === 'records'" class="text-xs space-y-1 max-h-[72vh] overflow-auto">
               <p class="text-muted-foreground">
                 {{ t('projects.artifacts.recordCount', { n: viewData.records?.length ?? 0 }) }}
               </p>
