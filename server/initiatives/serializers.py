@@ -13,6 +13,7 @@ from initiatives.models import (
     MergeRequest,
     Project,
     ProjectBranch,
+    ProjectContextLink,
     ProjectDoc,
     ProjectMember,
     ProjectMemory,
@@ -456,6 +457,54 @@ class ProjectKnowledgeLinkSerializer(serializers.Serializer):
 
     entity_id = serializers.UUIDField()
     relation = serializers.CharField(required=False, default="REFERENCES", max_length=30)
+
+
+# ---- 项目上下文关联（「生成知识关联」）----
+
+
+class ProjectContextLinkSerializer(serializers.ModelSerializer):
+    """上下文关联记录序列化（响应）。"""
+
+    class Meta:
+        model = ProjectContextLink
+        fields = [
+            "id",
+            "project_id",
+            "target_kind",
+            "target_id",
+            "title",
+            "url",
+            "score",
+            "reason",
+            "origin",
+            "status",
+            "created_by_id",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class ContextLinkManualCreateSerializer(serializers.Serializer):
+    """人工添加上下文关联请求。
+
+    ``external``（外部链接）需 title+url；其余类型需 ``target_id``（存在性由 service 校验）。
+    """
+
+    target_kind = serializers.ChoiceField(
+        choices=["knowledge", "artifact", "merge_request", "external"]
+    )
+    target_id = serializers.UUIDField(required=False, allow_null=True)
+    title = serializers.CharField(required=False, allow_blank=True, max_length=500, default="")
+    url = serializers.CharField(required=False, allow_blank=True, max_length=1000, default="")
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class ContextLinkRepoDecisionSerializer(serializers.Serializer):
+    """仓库候选裁决请求（accept → confirmed；reject → rejected）。"""
+
+    repository_id = serializers.UUIDField()
+    action = serializers.ChoiceField(choices=["accept", "reject"])
 
 
 # ---- 项目记忆（MEM-01~04）----

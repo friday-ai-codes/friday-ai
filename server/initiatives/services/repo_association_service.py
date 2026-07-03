@@ -449,6 +449,48 @@ class RepoAssociationService:
         )
         return confirmed
 
+    async def reject_candidates(
+        self,
+        *,
+        project: Any,
+        repo_ids: list[Any],
+        initiated_by_user_id: Any = None,
+    ) -> int:
+        """用户拒绝候选：命中 proposed 候选置 ``status=rejected``（条件更新幂等）。
+
+        仅作用于 proposed（已 confirmed/verifying/verified 不受影响，回退用
+        :meth:`reopen_candidates`）；被拒候选后续 propose/refine 命中时会被更新回
+        proposed（既有 upsert 语义），供「知识关联」面板的拒绝分支收口。
+        """
+        user_label = (
+            str(initiated_by_user_id) if initiated_by_user_id is not None else "system"
+        )
+        return await self._reject_candidates_sync(project, repo_ids, user_label)
+
+    @sync_to_async
+    def _reject_candidates_sync(
+        self, project: Any, repo_ids: list[Any], initiated_by_user_id: str
+    ) -> int:
+        from initiatives.models import RepoAssociation, RepoAssociationStatus
+
+        ids = [str(r) for r in (repo_ids or []) if r]
+        if not ids:
+            return 0
+        rejected = RepoAssociation.objects.filter(
+            project=project,
+            repository_id__in=ids,
+            status=RepoAssociationStatus.PROPOSED,
+        ).update(status=RepoAssociationStatus.REJECTED, updated_at=timezone.now())
+        logger.info(
+            "repo_association_candidates_rejected",
+            rejected_count=rejected,
+            requested_count=len(ids),
+            initiated_by_user_id=initiated_by_user_id,
+            component=_COMPONENT,
+            category="caller",
+        )
+        return rejected
+
     async def dispatch_verify(
         self,
         *,
