@@ -483,7 +483,7 @@ async function openView(artifact: Artifact) {
 
     <!-- 工件在线查看 -->
     <Dialog v-model:open="viewOpen">
-      <DialogScrollContent class="max-w-2xl">
+      <DialogScrollContent class="w-[92vw] max-w-5xl">
         <DialogHeader>
           <DialogTitle>{{ viewTitle }}</DialogTitle>
           <DialogDescription>{{ t('projects.artifacts.viewDesc') }}</DialogDescription>
@@ -507,15 +507,15 @@ async function openView(artifact: Artifact) {
             </a>
             <div
               v-else-if="viewData.render_type === 'markdown'"
-              class="max-h-[60vh] overflow-auto"
+              class="max-h-[72vh] overflow-auto"
             >
               <MarkdownRenderer :content="viewData.content || ''" />
             </div>
             <pre
               v-else-if="viewData.render_type === 'text'"
-              class="text-xs bg-muted/50 rounded-lg p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap"
+              class="text-xs bg-muted/50 rounded-lg p-3 max-h-[72vh] overflow-auto whitespace-pre-wrap"
             >{{ viewData.content }}</pre>
-            <div v-else-if="viewData.render_type === 'records'" class="text-xs space-y-1 max-h-[60vh] overflow-auto">
+            <div v-else-if="viewData.render_type === 'records'" class="text-xs space-y-1 max-h-[72vh] overflow-auto">
               <p class="text-muted-foreground">
                 {{ t('projects.artifacts.recordCount', { n: viewData.records?.length ?? 0 }) }}
               </p>
