@@ -174,11 +174,19 @@ const STATS = computed(() => [
         <p v-if="project.description" class="text-sm text-muted-foreground whitespace-pre-wrap line-clamp-3">
           {{ project.description }}
         </p>
+        <!-- #3：AI 生成描述依赖 feature list——无描述时只保留一句合并提示（原「暂无描述」+
+             提示两行堆叠视觉噪声大），有 feature 后按钮才出现。 -->
+        <p
+          v-else-if="canManage && !hasFeatures"
+          class="flex items-center gap-1.5 text-xs text-muted-foreground/60"
+          data-testid="gen-desc-hint"
+        >
+          <span class="icon-[lucide--sparkles] text-muted-foreground/40" />
+          {{ t('projects.warroom.health.descNeedsFeature') }}
+        </p>
         <p v-else class="text-sm italic text-muted-foreground/70">
           {{ t('projects.overview.noDescription') }}
         </p>
-        <!-- #3：AI 生成描述依赖 feature list，无 feature 时按钮无意义 → 仅在有 feature 时展示；
-             否则给一句解释，避免用户点了没反应。 -->
         <Button
           v-if="canManage && hasFeatures"
           size="sm"
@@ -194,35 +202,31 @@ const STATS = computed(() => [
           />
           {{ project.description ? t('projects.warroom.health.regenerateDesc') : t('projects.warroom.health.generateDesc') }}
         </Button>
-        <p
-          v-else-if="canManage && !project.description"
-          class="text-xs text-muted-foreground/60"
-          data-testid="gen-desc-hint"
-        >
-          {{ t('projects.warroom.health.descNeedsFeature') }}
-        </p>
       </div>
 
-      <!-- 统计卡（Data-Dense：紧凑 KPI，图标与数字同行，省高度） -->
+      <!-- 统计卡（Data-Dense：紧凑 KPI，图标与数字同行；0 值降噪去彩色，避免空项目满屏彩 0） -->
       <div class="grid grid-cols-3 gap-2" :aria-busy="isLoading">
         <div
           v-for="s in STATS"
           :key="s.key"
-          class="group relative rounded-lg border border-border/60 bg-muted/30 px-2.5 py-2 flex flex-col gap-1 transition-colors duration-200 hover:border-primary/30 hover:bg-primary/4"
+          class="group relative rounded-lg border border-border/50 bg-muted/30 px-2.5 py-2 flex flex-col gap-1 transition-colors duration-200 hover:border-primary/30 hover:bg-primary/4"
           :data-testid="`warroom-stat-${s.key}`"
         >
           <div class="flex items-center gap-1.5">
             <span
-              class="inline-flex size-5 items-center justify-center rounded text-[11px]"
-              :class="s.chip"
+              class="inline-flex size-5 items-center justify-center rounded text-[11px] transition-colors"
+              :class="s.value === 0 ? 'bg-muted/70 text-muted-foreground/40' : s.chip"
             >
               <span :class="s.icon" />
             </span>
-            <p class="text-lg font-bold tabular-nums leading-none tracking-tight" :class="s.cls">
+            <p
+              class="text-lg font-bold tabular-nums leading-none tracking-tight"
+              :class="s.value === 0 ? 'text-muted-foreground/35 font-semibold' : s.cls"
+            >
               {{ s.value }}
             </p>
           </div>
-          <p class="text-[11px] text-muted-foreground truncate">
+          <p class="text-[11px] truncate" :class="s.value === 0 ? 'text-muted-foreground/50' : 'text-muted-foreground'">
             {{ s.label }}
           </p>
         </div>
@@ -230,7 +234,7 @@ const STATS = computed(() => [
 
       <!-- 下一步建议 -->
       <div
-        class="flex items-center gap-3 rounded-lg border border-primary/15 bg-primary/5 px-4 py-3"
+        class="flex items-center gap-3 rounded-xl border border-primary/15 bg-gradient-to-r from-primary/[0.07] to-primary/[0.02] px-4 py-3"
         data-testid="warroom-next-step"
       >
         <span class="inline-flex size-9 items-center justify-center rounded-md bg-primary/12 text-primary shrink-0">

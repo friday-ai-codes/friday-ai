@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { StateApi, StateApiStatus } from '~/api/projectWorkspace'
+import type { BadgeVariants } from '~/components/ui/badge'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, markRaw, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectWorkspaceApi } from '~/api/projectWorkspace'
+import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import ApiSchemaEditModal from '~/components/project/warroom/ApiSchemaEditModal.vue'
-import { Badge, type BadgeVariants } from '~/components/ui/badge'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
   Select,
@@ -122,9 +124,22 @@ async function removeApi(api: StateApi) {
         </button>
       </div>
 
-      <p v-else-if="apis.length === 0" class="py-6 text-center text-sm text-muted-foreground">
-        {{ t('projects.warroom.apis.empty') }}
-      </p>
+      <CompactEmptyState
+        v-else-if="apis.length === 0"
+        icon="lucide--webhook"
+        :title="t('projects.warroom.apis.empty')"
+      >
+        <Button
+          v-if="canManage"
+          size="sm"
+          variant="outline"
+          class="h-7 text-xs"
+          @click="openEditor(null)"
+        >
+          <span class="icon-[lucide--plus] mr-1" />
+          {{ t('projects.warroom.apis.add') }}
+        </Button>
+      </CompactEmptyState>
 
       <ul v-else class="divide-y divide-border/40">
         <li
@@ -143,7 +158,9 @@ async function removeApi(api: StateApi) {
             :title="t('projects.warroom.apis.editDetail')"
             data-testid="api-edit"
             @click="openEditor(api)"
-          >{{ api.path }}</button>
+          >
+            {{ api.path }}
+          </button>
           <span v-else class="text-sm text-foreground font-mono truncate flex-1 min-w-0">{{ api.path }}</span>
           <span
             v-if="(api.request_fields?.length || api.response_fields?.length)"
