@@ -432,7 +432,10 @@
       "loading": "正在加载实体详情…"
     },
     "tree": {
-      "viewSwitch": { "capability": "代码能力树", "docs": "交付文档" },
+      "viewSwitch": {
+        "capability": "代码能力树",
+        "docs": "交付文档"
+      },
       "docs": {
         "loading": "正在加载交付文档树…",
         "loadFailed": "加载交付文档树失败",
@@ -1522,6 +1525,52 @@
         "close": "关闭",
         "empty": "还没有对话",
         "emptyHint": "在中间输入框发出第一条消息，对话会自动出现在这里"
+      },
+      "contextLinks": {
+        "title": "知识关联",
+        "generate": "生成关联",
+        "generating": "生成中…",
+        "generated": "已生成，新增 {created} 条候选",
+        "generateFailed": "生成关联失败",
+        "loadError": "加载知识关联失败",
+        "emptyTitle": "暂无关联",
+        "empty": "暂无关联。点击「生成关联」自动发现相关仓库、知识、工件与 PR/MR，也可手动添加。",
+        "emptyReadonly": "暂无关联。",
+        "proposedTitle": "待确认候选",
+        "acceptedTitle": "已关联",
+        "accept": "关联",
+        "reject": "忽略",
+        "remove": "删除关联",
+        "removeTitle": "删除关联？",
+        "removeConfirm": "确认删除",
+        "removed": "已删除关联",
+        "accepted": "已关联",
+        "rejectedToast": "已忽略候选",
+        "actionFailed": "操作失败",
+        "addManual": "手动添加",
+        "addSubmit": "添加",
+        "added": "已添加关联",
+        "addFailed": "添加失败",
+        "manualBadge": "人工",
+        "form": {
+          "kind": "类型",
+          "title": "标题",
+          "url": "链接",
+          "targetIdHint": "知识实体 / 工件 / MR 的 ID"
+        },
+        "kind": {
+          "knowledge": "知识",
+          "artifact": "工件",
+          "merge_request": "PR/MR",
+          "external": "外部链接"
+        },
+        "repoStatus": {
+          "proposed": "待确认",
+          "confirmed": "已确认",
+          "verifying": "校验中",
+          "verified": "已验证",
+          "rejected": "已拒绝"
+        }
       }
     }
   },
