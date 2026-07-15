@@ -4,12 +4,13 @@
 ====
 QPS/TPS/TTFT/上游错误统计都按 ``call_source`` 区分维度。本模块提供：
 
-- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（33 值，v0.15.0 Phase 80
+- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（35 值，v0.15.0 Phase 80
   新增 ``memory_distill``，v0.16.0 Phase 86 新增 ``ide_hook_distill``，v0.16.0 Phase 87
   新增 ``board_split``，v0.16.0 Phase 88 新增 ``repo_verify_container`` /
   ``repo_association``，v0.16.0 Phase 89 新增 ``plan_deepen`` / ``plan_revision`` /
   ``branch_naming``，v0.16.1 Phase 90 新增 ``plan_clarification``，v0.16.1 Phase 95
-  新增 ``plan_decompose``），作为
+  新增 ``plan_decompose``，v0.17.0 Phase 101 新增 ``learning_case_extraction`` /
+  ``pr_review_capture``），作为
   ``ModelUsageRecord.call_source`` 与各 LLM chokepoint 指标标签的权威取值；任意
   非法字符串经 :meth:`CallSource.normalize` 回退安全默认，杜绝基数失控
   （T-72-02-03 Tampering mitigation）。
@@ -34,7 +35,7 @@ UNKNOWN_CALL_SOURCE = "unknown"
 
 
 class CallSource(str, Enum):
-    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，33 值，权威照抄）。
+    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，35 值，权威照抄）。
 
     取值刻意收敛为有限集合：作为指标/筛选维度时基数可控；任意字符串经
     :meth:`normalize` 回退默认，杜绝外部输入污染 call_source 维度。
@@ -94,6 +95,12 @@ class CallSource(str, Enum):
     # feature list 导入解析：将 GitLab 文档 / 粘贴的整篇文档 LLM 解析为结构化
     # 模块→功能点→验收项（强约束：只解析结构、功能点内容逐字保留原文），单轮，best-effort。
     FEATURE_LIST_PARSE = "feature_list_parse"
+    # v0.17.0 Phase 101：编码完成自动提炼 learning case（三链路 MR 已知锚点，单轮，
+    # best-effort，幂等键 session_id，质量门不过走 REJECT 不入库）。
+    LEARNING_CASE_EXTRACTION = "learning_case_extraction"
+    # v0.17.0 Phase 101：PR 创建后可选轻量 review 沉淀（默认关，单轮，best-effort，
+    # 结论沉淀为 learning case）。
+    PR_REVIEW_CAPTURE = "pr_review_capture"
 
     @classmethod
     def normalize(cls, value: object, default: str = UNKNOWN_CALL_SOURCE) -> str:

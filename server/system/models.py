@@ -154,6 +154,14 @@ class SettingKeys:
     ALERT_FEISHU_CHAT_ID = "alert.feishu_chat_id"  # 系统告警飞书目标群 chat_id。
     ALERT_WEBHOOK_URL = "alert.webhook_url"  # 系统告警 webhook 目标 URL。
 
+    # 完工沉淀闭环（LOOP-03/05，v0.17.0 Phase 101）：
+    # 自动提炼 learning case 总开关。代码侧 aget_bool_setting(..., default=True)
+    # 默认开、可秒关（P2 垃圾率止血阀：关闭时提炼入口直接跳过，不调 LLM 不入库）。
+    LEARNING_CASE_AUTO_EXTRACT = "learning_case.auto_extract_enabled"
+    # PR 创建后可选轻量 review 沉淀开关（LOOP-05）。默认关：
+    # aget_bool_setting(..., default=False)，开启时结论沉淀为一条 learning case。
+    PR_REVIEW_CAPTURE = "learning_case.pr_review_enabled"
+
 
 class CacheVolumeTracker(models.Model):
     """跟踪 Docker 缓存卷的使用情况。

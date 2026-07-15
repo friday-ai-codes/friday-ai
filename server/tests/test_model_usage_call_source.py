@@ -70,6 +70,8 @@ _EXPECTED_CALL_SOURCES = {
     "plan_clarification",
     "plan_decompose",
     "feature_list_parse",
+    "learning_case_extraction",
+    "pr_review_capture",
 }
 
 
@@ -88,10 +90,11 @@ class TestCallSourceEnum:
         v0.16.0 Phase 88 新增 ``repo_verify_container`` / ``repo_association`` 后升至 27 值；
         v0.16.0 Phase 89 新增 ``plan_deepen`` / ``plan_revision`` / ``branch_naming`` 后升至 30 值；
         v0.16.1 Phase 90 新增 ``plan_clarification`` 后升至 31 值；v0.16.1 Phase 95 新增
-        ``plan_decompose`` 后升至 32 值。
+        ``plan_decompose`` 后升至 32 值；v0.17.0 Phase 101 新增
+        ``learning_case_extraction`` / ``pr_review_capture`` 后升至 35 值。
         """
         assert {member.value for member in CallSource} == _EXPECTED_CALL_SOURCES
-        assert len(_EXPECTED_CALL_SOURCES) == 33
+        assert len(_EXPECTED_CALL_SOURCES) == 35
 
     def test_normalize_valid_value(self) -> None:
         assert CallSource.normalize("chat") == "chat"

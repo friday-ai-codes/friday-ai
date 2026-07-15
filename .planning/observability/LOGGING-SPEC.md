@@ -97,6 +97,9 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `branch_naming` | 分支名生成（v0.16.0 Phase 89，89-04） | 按固定格式 + 方案上下文生成分支名，server 权威拼装 + 卡片确认，单轮 |
 | `plan_clarification` | `clarification_questions` / ClarifyAdapter（v0.16.1 Phase 90） | 基于需求+路由+召回产结构化澄清问题（多题/单多选/推荐），单轮 |
 | `plan_decompose` | `decompose_segments` / `PlanOrchestrationEngine._decompose`（v0.16.1 Phase 95） | LLM 跨仓业务线/模块/前后端拆需求 → 结构化 segments，单轮，best-effort 失败回退按行切分 |
+| `feature_list_parse` | feature list 导入解析（GitLab 文档/粘贴文档 → 结构化 模块→功能点→验收项） | 单轮，best-effort，内容逐字保留原文（补登已漂移枚举） |
+| `learning_case_extraction` | `mcp_tools.learning_case_extraction.aextract_learning_case`（v0.17.0 Phase 101） | 编码完成自动提炼，三链路 MR 已知锚点，单轮，幂等键 session_id，best-effort |
+| `pr_review_capture` | PR 创建成功锚点可选 review 沉淀（v0.17.0 Phase 101） | 默认关（SystemSetting），单轮，结论沉淀为 learning case |
 
 > 埋点位置：`acquire_llm_slot`（QPS/排队/`LLMBusyError`）+ 两个 Runner 的 `astream` 循环（TTFT/TPS/上游错误）+ 各 `ainvoke` 站点。详见 MILESTONE-PROPOSAL §1。
 
