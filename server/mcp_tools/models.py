@@ -495,10 +495,21 @@ class McpLearningCase(models.Model):
     """Auditable reusable implementation/fix case for work item RAG."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # v0.17.0 Phase 101：自动提炼场景无 InteractionRun（run 恒为 None），FK 放松为可空；
+    # 人工 create_learning_case 路径继续必传 run，级联语义不变。
     run = models.ForeignKey(
         "interactions.InteractionRun",
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="mcp_learning_cases",
+    )
+    # v0.17.0 Phase 101：自动提炼幂等键（= SubAgentSession.session_id，LOOP-05 review
+    # 沉淀用 "{session_id}:pr_review" 变体，故 max_length=80）。用 null 而非空串默认：
+    # 人工 create_learning_case 路径不写此字段，多条 NULL 不参与 unique 冲突
+    # （SQLite/Postgres 语义一致）。
+    source_session_id = models.CharField(
+        max_length=80, null=True, blank=True, unique=True, default=None
     )
     context = models.ForeignKey(
         McpWorkItemContext,
