@@ -1704,6 +1704,7 @@ class SearchLearningCasesView(McpToolView):
             file_hints=[str(item) for item in input_data.get("file_hints") or []],
             symbol_hints=[str(item) for item in input_data.get("symbol_hints") or []],
             limit=int(input_data.get("limit") or 5),
+            user=request.user,
         )
         output_data = {
             "query": str(input_data.get("query") or ""),
