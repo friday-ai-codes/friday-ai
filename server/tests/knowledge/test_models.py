@@ -127,6 +127,46 @@ def test_generate_entity_id_deterministic_and_kind_sensitive() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase 100（KNOW-01）：learning_case 枚举扩展
+# ---------------------------------------------------------------------------
+
+
+def test_generate_entity_id_learning_case_deterministic() -> None:
+    """learning_case natural key 同参两次派生同 id（Phase 100 规则表新行）。"""
+    source_id = str(uuid.uuid4())
+    eid1 = generate_entity_id("learning_case", "learning_case", source_id)
+    eid2 = generate_entity_id("learning_case", "learning_case", source_id)
+    assert eid1 == eid2
+
+
+def test_entity_learning_case_kind_passes_check_constraint(entity_factory) -> None:
+    """kind=learning_case 落库过 kentity_kind_valid CHECK 约束（migration 0008 放行）。"""
+    entity = entity_factory(
+        kind=EntityKind.LEARNING_CASE,
+        origin=EntityOrigin.MCP,
+        source_kind="learning_case",
+        source_id=str(uuid.uuid4()),
+    )
+    fetched = KnowledgeEntity.objects.get(pk=entity.pk)
+    assert fetched.kind == EntityKind.LEARNING_CASE
+
+
+def test_entity_bogus_kind_still_rejected_after_learning_case_extension() -> None:
+    """枚举扩展后非法 kind 仍被 kentity_kind_valid 拒绝（Phase 100 约束回归）。"""
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            KnowledgeEntity.objects.create(
+                id=uuid.uuid4(),
+                kind="bogus_case",
+                origin=EntityOrigin.MCP,
+                source_kind="learning_case",
+                source_id=str(uuid.uuid4()),
+                title="非法 kind（Phase 100 回归）",
+                event_time=timezone.now(),
+            )
+
+
+# ---------------------------------------------------------------------------
 # KMOD-03：supersedes 版本链
 # ---------------------------------------------------------------------------
 
