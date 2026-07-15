@@ -283,6 +283,11 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 | 飞书人员↔Friday 用户映射作为主R/协作/归因/Cursor 上报的前置基础设施先建 | 现状无映射表；与可观测"谁触发"同源；多对多 + 手动 + JIT | — Pending（v0.15.0，Phase 77） |
 | Cursor 回流先走 MCP + git + 上报 API，不做本地专用插件 | MCP/容器 user_token 地基已在（v0.2.0）；专用插件重、留 v2（PROJX-04）；上报写回须认证 + 归因 + 脱敏 + 质量门槛 | — Pending（v0.15.0，Phase 81） |
 | 缺陷复用 `delivery.WorkItem` 经关系边挂项目，不重复建模为工件 | 缺陷（飞书看板类型=缺陷）与 story 同构；Artifact 只留给文档型依赖 | — Pending（v0.15.0，Phase 78） |
+| 统一知识库 = 既有 `knowledge/` 体系（单一摄取 + 单一检索），不新建存储；各域操作态表保留为写模型 | learning case 等入 `delivery_knowledge` 同 collection 靠 `entity_kinds` 过滤统一排序；新建平行集合与"统一"目标冲突 | — Pending（v0.17.0） |
+| 完工回写/沉淀锚点挂三链路"MR 已知"之后（finalize/create_pr/execute_tasks），不挂容器回调 | 回调时刻 MR 未创建拿不到 mr_url，且回调 handler 有"绝不 5xx/重试风暴"硬约束（INGEST-02 同款结论） | — Pending（v0.17.0） |
+| 容器知识 MCP 走服务端 HTTP 工具面复用（PAT fail-closed），不直连 Qdrant/DB | 权限/排除文件/脱敏天然继承；env 三要素任一为空整体降级不挂（零回归） | — Pending（v0.17.0） |
+| 派发编码任务铸造任务级短 TTL token（明文不落盘、DB 只存 sha256、终态吊销），显式推翻 PATX-04 搁置 | "机会性 PAT"在 Chat 链与飞书触发 workflow 链拿不到明文 → 容器知识 MCP 三链路覆盖必须派生凭证；PAT-02 底线不破 | — Pending（v0.17.0，AGENT-01） |
+| 容器内置 skills 与 `@friday-ai-codes/skills` 包同源（镜像构建期 COPY + hash 一致性测试），禁止第二份手工物料 | 双源必然漂移；skills 与镜像同 repo 同 release 节奏，重建镜像可接受 | — Pending（v0.17.0，AGENT-03） |
 
 ## Evolution
 
