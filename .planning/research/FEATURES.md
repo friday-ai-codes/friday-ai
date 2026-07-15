@@ -1,173 +1,207 @@
 # Feature Research
 
-**Domain:** 交付知识图谱 / 工程记忆（需求/缺陷 ↔ 技术方案 ↔ 代码 diff 的 GraphRAG 关联）— Friday AI v0.3.0
-**Researched:** 2026-06-11
-**Confidence:** MEDIUM-HIGH（对标产品行为来自官方文档/工程博客 HIGH；用户期望推断与复杂度评级为 MEDIUM）
+**Domain:** AI 编码代理平台的统一知识库 / agent memory / 完工沉淀闭环 / 容器代理工具配给（v0.17.0 KNOW·LOOP·AGENT·UNIFY）
+**Researched:** 2026-07-15
+**Confidence:** MEDIUM-HIGH（agent memory 生态与 claude-agent-sdk 集成为 HIGH——官方文档与多源一致；Devin/Cursor 内部机制为 MEDIUM——依据官方文档与工程访谈；本项目落地建议基于 MILESTONE-CONTEXT.md 的代码坐标为 HIGH）
 
-> 范围限定：仅研究 v0.3.0 新能力。代码仓库向量索引、GraphRAG 检索、飞书工作项拉取、ai_plan_generation、AICodingNode、chat/CodingPlan、MCP 19 工具、npm skills 均为已有能力（existing），下文只把它们当作依赖项引用，不重复研究。
+> 范围限定：只调研 v0.17.0 四类新能力（KNOW/LOOP/AGENT/UNIFY）对应的业界做法。既有能力（RAG/codegraph、delivery_knowledge 图谱、process_runtime 编排、wave 编码、飞书链路、MCP 约 30 工具）不重复调研，只作为依赖坐标引用。
 
-## 对标产品的工作方式（行为基线）
+## 业界格局速览（结论先行）
 
-这类「需求-方案-代码 关联知识库」产品的共同行为模式，按对标对象归纳：
-
-- **Linear Similar Issues / Triage Intelligence**：在"创建/进线"时刻即时召回相似 issue（向量 + LLM 复评），给出"重复 / 相关 / 无关"分级 + 一句话理由，用户可接受/驳回；建议与人工设定的元数据在 UI 上明确区分。核心体验是「在最接近源头的入口拦截」——创建表单、triage 收件箱、客服集成。（HIGH，官方工程博客）
-- **Glean（engineering MCP）**：不做独立前端，而是经 MCP 把 permission-aware 检索注入用户已有工具（Cursor/Claude/IDE）；典型 query 是"给定 ticket EN-12345，找相似历史问题 + 关联讨论 + 可能 root cause"；强调跨源（Jira+Slack+GitHub）拼合「why」叙事。（HIGH，官方文档）
-- **GitHub Copilot Workspace → Coding Agent**：issue→spec→plan→code 流水线；教训是研究预览形态被砍、能力并入"把 issue 指派给 agent → 出 PR"的异步主流程——即 plan/code 关联以「工作流副产品」形态存活，而非独立产品。对 Friday 的启示：知识图谱应是现有工作流的自动副产品，不是要用户额外维护的系统。（HIGH，GitHub 官方 blog + 多方报道）
-- **Zep/Graphiti**：bi-temporal 边（valid_at/invalid_at + created_at/expired_at），新事实矛盾旧事实时"失效不删除"；支持 point-in-time（as-of）查询与"现在什么是真的"查询。这是时间语义的事实标准。（HIGH，官方文档 + arXiv 论文）
-- **Traceability 工具（Jama、ContextGit、tracey）**：双向链（forward/backward）、staleness/suspect-link 检测（上游需求变了→下游代码链接标记"可疑"）、覆盖查询（哪些需求没有实现/测试）。关键实践：链接必须自动维护，人工维护的 RTM 必然腐烂。（HIGH/MEDIUM）
-- **git 语义检索工具（GitLore、spelungit、diwa）**：commit/diff/PR 三流索引 + 混合检索，回答"为什么有这段代码/当时为什么这么改"；普遍用 git hook 自动增量索引、MCP 暴露给 agent。（MEDIUM，开源 README）
-
-**用户期望的统一画像**：我提一个新需求（任意入口），系统自动告诉我"以前做过类似的吗、当时方案是什么、最后代码怎么改的、那个方案现在还作数吗"——零额外维护成本，答案带出处和时间限定。
+1. **Agent memory 已收敛出标准分型**：working（上下文内）/ episodic（事件，"上次做了什么"）/ semantic（事实结论）/ procedural（做法规则）。生产系统主流是分层架构：小而热的常驻上下文 + 向量库支撑的检索层 + 显式的整合（consolidation）与遗忘（decay）策略。主流框架 Mem0（混合向量-图）、Zep/Graphiti（**bi-temporal 时间知识图谱**）、Letta/MemGPT（agent 自管理分页）、LangMem（LangGraph 原生）。**Friday 的 `KnowledgeEntity` + bi-temporal 边 + Qdrant 混合检索在架构上就是 Zep/Graphiti 同型**——本里程碑不需要新架构，需要的是把 learning case / MCP 产物这些"漏网数据源"接进既有架构，这正是 KNOW 的定位。
+2. **编码 agent 完工自动沉淀的业界共识是"自动提炼 + 建议先行"**：Devin 自动从会话反馈生成 Knowledge 建议（人工审核后入库，带 Trigger Description 控制召回时机，可 pin 到 repo/org 作用域）；Cursor Memories 用 sidecar 小模型旁路观察对话提取记忆（关键工程教训：**必须激进过滤掉 90%+ 任务特定内容，只留可泛化知识**——主模型直接 tool-call 写记忆会偏向产出"任务日志"）；Qodo/PR-Agent 把"被采纳的 review 建议"沉淀为 auto best practices 文档并在后续 review 中标注引用。
+3. **完工业务回写是 table stakes**：Copilot coding agent 全程锚定 PR——开 draft PR、任务清单打勾、commit message 链接 session log、完工更新 PR 描述并 tag 审核人。"跑完了但业务方（issue/工作项）看不到结果"在业界属于产品缺陷。Friday 三链路（工作流/Chat/MCP）回写不一致正是这个缺陷。
+4. **容器内代理配 MCP 工具的标准做法**：claude-agent-sdk 进程内 SDK MCP server（`create_sdk_mcp_server`）+ `allowed_tools` 白名单（`mcp__<server>__<tool>` 全名）+ **代理凭证代持模式**（工具把请求转发到安全边界外的服务、由服务注入凭证，agent 永远拿不到密钥）——Friday 的"HTTP 调服务端工具面 + PAT 鉴权"方案与官方推荐的 proxy 模式完全一致。skills 走 `setting_sources=["project"]` + `Skill` 工具（task 容器已用此机制加载仓库自带 skills，v0.9.0 验证过）。
+5. **知识库 MCP 工具面的典型形态**是小而稳的核心四件套（store / recall·search / inspect / forget）+ 作用域过滤 + 混合检索，工具数量克制（Loci 6 个、AutoMem 6 个），并附"先召回再干活、完工后存储、失败静默降级"的使用协议（rule/skill 文档）——Friday 已有 `search_*`/`create_learning_case`/`report_project_knowledge`，缺的是 schema snapshot 补全与使用协议（skills 文档）对齐，不是缺工具。
 
 ## Feature Landscape
 
-### Table Stakes (Users Expect These)
+### Table Stakes（用户/业界默认预期，缺了就是断裂）
 
-缺了这些，「交付知识图谱」名不副实。
-
-| Feature | Why Expected | Complexity | Notes |
+| Feature | Why Expected | Complexity | Notes（本项目落点） |
 |---------|--------------|------------|-------|
-| 统一实体/边模型（需求/缺陷、方案、diff、MR 四类实体 + 关系边） | 一切检索/关联的地基；traceability 工具的「双向链」共识 | MEDIUM | 结构化业务数据自带稳定 ID（飞书工作项 ID、CodingPlan ID、MR URL），不需要 LLM 抽实体——比 Graphiti 简单得多。Postgres 表 + GraphStore 接口 |
-| 工作流自动摄取（方案生成/编码完成即入图） | Copilot Coding Agent 教训：关联必须是工作流副产品，用户不会手动建链 | MEDIUM | 挂在 ai_plan_generation / AICodingNode 完成回调上；依赖既有工作流引擎 hooks |
-| 知识向量化入 Qdrant（需求文本/方案/diff） | 相似召回的前提；复用既有 EmbeddingService + hybrid 检索 | MEDIUM | diff 需要切块策略（按文件/hunk）；新建 collection，不污染代码 chunk collection |
-| 相似需求召回（给定新需求 → top-K 历史需求 + 关联方案/MR） | Linear Similar Issues 已把这变成行业基线体验 | MEDIUM | 向量召回 + 1-2 跳图扩散拼上下文；Linear 经验：LLM 复评"重复/相关/无关"显著提升精度，可作增强项 |
-| 实体关联查看（从任一实体出发查上下游：需求→方案→diff→MR，反向亦可） | traceability 的 forward/backward 双向链是底线 | LOW-MEDIUM | PG 递归 CTE 1-3 跳查询（基准已验证）；API 形态即可，前端可视化另计 |
-| 历史迭代轨迹查询（一个需求的方案 v1→v2→v3 与各次编码的时间线） | "当时为什么这么改"是 git 考古类工具的核心 query | MEDIUM | 依赖版本链 + bi-temporal 边；输出按时间排序的叙事结构 |
-| 检索命中最新版（旧版本向量下线，默认不召回失效内容） | 召回过期方案 = 主动提供错误信息，比没有更糟；Hindsight 共识"recency-wins with explicit invalidation" | MEDIUM | 重摄取时旧向量打 deprecated payload 或删点 + 边 expired_at；这是版本化的"消费端"底线 |
-| 至少一个程序化入口（MCP 工具优先） | Glean/spelungit 模式：agent 时代知识库先服务 agent | LOW-MEDIUM | 复用既有 McpToolView + PAT fail-closed 体系；查询类工具 2-3 个即够起步 |
+| **经验/记忆统一进单一检索面（向量检索）** | 所有主流 memory 框架（Mem0/Zep/Letta）第一原则：一个检索入口覆盖全部记忆类型，episodic 条目带 timestamp + scope + metadata 走语义检索 | MEDIUM | `McpLearningCase` 补 `knowledge/sources/learning_case.py` normalizer 入图；`search_learning_cases` 底层切 `DeliveryKnowledgeSearchService`（kind 过滤），API 契约不变。token 打分是业界已淘汰的"naive 关键词检索"形态 |
+| **产物不分入口一律入库** | 同一种产物（方案/分析/执行 trace）走不同入口结果不同，属于数据管道 bug 而非产品选择；Zep/Mem0 都强调 ingestion 是统一入口 | MEDIUM | `McpCodingPlan`/`McpRepositoryAnalysis`/`McpCodingExecutionTrace` 各补 normalizer；与 chat `coding_plan`/`task_result` 用既有 natural key 去重关联 |
+| **完工自动回写业务方（issue/工作项/PR）** | Copilot coding agent 的基线行为：完工更新 PR 描述 + tag 人；Devin 完工在 issue/PR 留痕。业务方在自己的系统里看到结果是底线 | MEDIUM | 从 `work_item_execution_service` 抽公共 write-back service，工作流 `ai_coding` 完成 / Chat 建 PR 后 / MCP 执行三处统一调用；开关默认开、fail-soft |
+| **回写/沉淀 best-effort 不反噬主流程** | AutoMem 等 memory 集成的通用协议明文写死："store 失败照常完成任务，memory 是增强不是必需" | LOW | 项目已有 fail-soft 惯例（审计/回写均如此），沿用即可 |
+| **容器内代理能主动查知识（读工具白名单）** | Devin/Copilot 的执行环境都能查组织知识；claude-agent-sdk 官方推荐 proxy 模式给沙箱代理配受控工具。"编码代理是知识贫民区"在业界是明确反模式 | HIGH | task 侧 `build_knowledge_mcp_server`（进程内 SDK MCP server，HTTP 调 `/api/mcp/tools/*` 白名单子集，PAT 鉴权），复用 `extra_mcp_servers`/`allowed_tools` 机制；注意 `allowed_tools` 须写 `mcp__<server>__<tool>` 全名（官方文档强调的常见踩坑点） |
+| **skills 随代理环境自动可见** | Devin 自动发现 `.agents/skills/`/`.claude/skills/` 等多路径 SKILL.md 并在会话开始即列出 name+description；claude-agent-sdk 需 `setting_sources` 显式启用 + `Skill` 工具在 allowed_tools | MEDIUM | 派发准备 workspace 时注入 friday-code/friday-memory 精简版到 `.claude/skills/`（与仓库自带共存不覆盖）；v0.9.0 已打通 `setting_sources=["project"]` 通道，本次只是多放物料 |
+| **三链路上下文注入对齐** | 同一平台不同入口给代理的上下文不一致 = 行为不可预期；Copilot 无论从 issue/panel/chat 发起都注入同样的 repo instructions | LOW | 工作流 `ai_coding` 节点派发前 prepend `pack_project_context`（对齐 Chat 的 `_resolve_project_context_for_dispatch`），纯复用 |
+| **对外工具 schema 完整可发现** | MCP 生态基线：工具面即产品契约，注册了的工具必须进 schema/文档，否则客户端不可发现 | LOW | `report_project_state`/`reverse_lookup_requirements` 补进 `TOOL_SCHEMA_SNAPSHOT` + 快照测试 |
+| **权限/排除/脱敏在新通道天然继承** | claude-agent-sdk 安全部署指南核心原则：凭证与权限校验留在安全边界外的服务端，agent 经 proxy 调用 | LOW | 容器 MCP 走服务端 HTTP 工具面（不直连 Qdrant/DB），排除文件 fail-closed、PAT 按所有者 RBAC 天然生效——这是选 proxy 方案的最大红利 |
 
-### Differentiators (Competitive Advantage)
+### Differentiators（竞争优势，本里程碑值得投入的差异化）
 
-| Feature | Value Proposition | Complexity | Notes |
+| Feature | Value Proposition | Complexity | Notes（本项目落点） |
 |---------|-------------------|------------|-------|
-| Bi-temporal 边 + 过时标记（valid/invalid + created/expired 四时间戳） | 通用对标里只有 Zep/Graphiti 做到；在"需求会改、方案会推翻"的交付场景，"这个结论现在还作数吗"是高频问题 | MEDIUM-HIGH | 借鉴 Graphiti 模型但大幅简化：失效信号来自结构化事件（方案被新版本替代、需求状态变更），不需要 LLM 矛盾检测。检索结果显式标注 `superseded by vN` |
-| 版本链（同一方案多轮修改形成 supersedes 链，历史可溯） | tracey 的 staleness 检测 + Graphiti 的 invalidation 合体；多轮修改是 Friday 真实工作流（方案评审→改→再改） | MEDIUM | 依赖统一实体模型；版本号 + prev/next 指针即可，不需要 git 式 DAG |
-| diff→chunk 关联（diff hunk 链接到既有 ChunkRegistry 代码块） | 独有打通：从"这个需求改了哪些函数"到"这个函数被哪些需求改过"，市面产品（GitLore 除外）都停留在文件级 | HIGH | 依赖既有 codegraph；难点：chunk 会随代码演化漂移，diff 落地时刻的 chunk 快照与当前 chunk 的对齐需明确策略（建议：记 file+symbol+commit_sha，懒解析到当前 chunk） |
-| 时间感知混合检索（向量 + 图扩散 + 时间衰减 + 过时硬过滤） | RAG freshness 文献的成熟配方（fused score：α·sim + recency，half-life 14-30 天；失效边硬过滤而非降权） | MEDIUM-HIGH | 依赖 bi-temporal 边 + 向量化；注意文献警告：稳定事实不该被衰减惩罚——只对"状态类"内容（方案、需求状态）施加衰减，过时用硬过滤 |
-| 跨入口统一摄取（飞书工作项 / chat 自然语言需求 / MCP / 工作流，同一管道） | Linear 经验：拦截点越靠近源头越有价值；Friday 的多入口（chat 提需求→直接编码）是市面工具覆盖不到的 | MEDIUM | 依赖统一实体模型 + 各入口已有触发点；chat 需求需要从对话里界定"这是一个需求"的判定时机（建议：产出 CodingPlan 或触发编码即摄取，不做对话全量抽取） |
-| 多入口暴露（MCP + chat tools + workflow 节点 + npm skills 四形态同一服务层） | Glean 模式（MCP 进 IDE）+ Linear 模式（创建时刻提示）叠加；让 ai_plan_generation 自动引用历史方案是闭环价值点 | MEDIUM | 同一 service 层 4 个薄封装；workflow 节点（"检索相似交付"）使方案生成节点能消费历史 → 这是飞轮 |
-| 检索结果带出处与时间限定（每条结果附实体类型、版本、valid 区间、来源链接） | Zep "auditable answer" + Linear "explain why suggested"；信任的前提 | LOW | 在检索返回结构里带 metadata 即可，成本低收益高，建议直接并入 table stakes 实现 |
+| **编码完成自动提炼 learning case（全自动入库）** | Devin/Cursor 都停在"建议 + 人工确认"；Qodo auto best practices 是商用独占功能。Friday 做到"任一编码路径完工 → 自动产可检索经验"即超出多数产品的默认形态 | HIGH | 挂 `subagent/api/callbacks.py` 完工回调，LLM 从 TaskResult/diff/plan 提炼，赋新 `call_source`，best-effort。质量门槛见下文专节——这是成败关键，业界教训集中在这里 |
+| **bi-temporal 知识图谱做经验底座** | Zep 把 bi-temporal 作为对 Mem0/Letta 的核心差异化卖点（矛盾事实不删除而是失效 + 时点查询）；Friday 已有这套（v0.3.0/v0.6.0），learning case 入图即免费获得时效失效、supersedes 版本链、图边关联（case→plan→PR→work_item 可追溯） | LOW（复用） | 入图时把 learning case 与 work_item/repository/tech_plan 建边，检索时图扩散召回——纯复用既有 `GraphStore` 能力，业界要单独买 Zep 才有 |
+| **平台级多步 Skill（pre_coding_research / post_coding_capture）** | 业界的"先召回再编码、完工后沉淀"只是 rule 文档里的君子约定（AutoMem 的 automem.mdc、Devin 的 Knowledge 使用习惯）；做成服务端可执行的多步 RemoteTool Skill，Cursor 与容器代理同一份，是把约定变成产品能力 | MEDIUM | 复用 `server/tools/sources/skill.py` 多步 steps + `/api/tools/execute/`；`pre_coding_research`: route→rag→delivery_knowledge→learning_cases 聚合；`post_coding_capture`: summarize_branch→create_learning_case→report_project_knowledge |
+| **编排召回吃到全部沉淀（document/learning_case 扩容）** | 方案生成时召回历史经验/项目记忆 = ExpeL 的"insight 注入 inference"模式产品化；多数编码平台的方案生成不带组织记忆 | LOW | `recall_adapter` kinds 扩 `document` + `learning_case`，可配置开关默认开 |
+| **PR 后轻量 review 沉淀** | Qodo 的差异化能力（商用独占）：review 结论回流成组织经验，形成"review→经验→下次更好"飞轮 | MEDIUM | 范围克制：PR 创建后可选触发 review，结论沉淀为 learning case；不做 review 产品化（UI/规则引擎显式 out of scope） |
+| **skills 单一事实源（容器 == npm 包同源）** | Devin 用"indexed + 磁盘扫描覆盖"保证 skills 不漂移；多数自建平台的容器物料与对外包各维护一份、必然漂移 | LOW | 容器物料由根 `skills/` 包生成/直引，加一致性测试（hash 对比）防 CI 漂移 |
+| **三链路检索同一条经验（统一排序验收）** | "在 Chat / 工作流 / MCP / 编排四处检索能召回同一条 learning case"是统一知识库的可验证承诺，业界没有对等物（各产品都是单入口） | —（验收面） | 这是里程碑验收标准 1，不是独立功能；靠 KNOW 各项共同达成 |
 
-### Anti-Features (Commonly Requested, Often Problematic)
+### Anti-Features（业界踩过的坑，明确不做/不这样做）
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| 全自动双向同步飞书（图谱变更回写飞书工作项、飞书任何字段变更实时入图） | "单一事实源"直觉，traceability 工具宣传双向 | 回写=写权限+冲突解决+回环风暴（写回触发 webhook 再入图）；飞书字段语义多变，全字段同步噪声远大于信号 | 单向摄取：只在"产出方案/触发编码"等关键事件拉取快照入图；回写仅保留既有的工作流状态通知（已有能力） |
-| LLM 自由文本实体/关系抽取（从对话、文档自动抽实体建图） | Graphiti/LightRAG 的标准做法，显得"更智能" | 抽取不稳定、贵、慢；Friday 的实体全部自带稳定 ID（工作项/方案/MR），抽取是负价值；PROJECT.md 已明确排除 | 结构化事件驱动：实体与边由业务事件直接产生，LLM 只用于可选的相似度复评 |
-| 在线图算法分析（社区发现、中心度、全图 PageRank 式分析） | GraphRAG 论文（Microsoft）带火的"全局问答" | 批处理索引成本高、与 1-3 跳查询负载完全不同；PG 方案的优势恰恰在浅跳查询，引入全图算法会反推图数据库迁移 | 限定 1-3 跳递归 CTE + 向量召回的局部子图；全局统计走离线报表（如需要，未来里程碑） |
-| 通用图谱可视化编辑器（前端画布上增删实体/边） | "知识图谱"一词带来的 UI 想象 | 编辑能力破坏"工作流副产品"不变量（人工边没人维护，必然腐烂——RTM 教训）；画布组件开发成本高 | 只读的实体详情页 + 关联时间线（列表/树形态）；已有 3d-force-graph 依赖可做只读局部子图展示，但排在 API/skill 之后 |
-| 对话全量记忆化（把所有 chat 消息当 episode 入图，Zep 式 agent memory） | Zep/Mem0 的产品形态诱惑 | 与本里程碑目标（交付知识）混淆；对话噪声大、隐私敏感（v0.2.0 刚做完会话隔离）、需要 LLM 抽取 | 仅摄取"成为需求"的对话节点（产出 CodingPlan / 触发编码时），其余对话不入图 |
-| 旧版本物理删除 | "省存储、防误召回" | 历史轨迹查询是 table stakes，删除即不可逆破坏；审计需求 | Graphiti 式失效不删除：向量打标/下线，边记 expired_at，as-of 查询保留可能性 |
-| 强一致实时索引（每个事件同步阻塞写图+写向量） | "检索马上能命中" | 嵌入调用慢且可能失败，阻塞工作流主链路；交付知识的新鲜度容忍度是分钟级 | 异步摄取队列（复用 background_runner 模式），主链路只发事件；失败重试 + 幂等 |
+| **主模型直接 tool-call 写记忆（无过滤全自动）** | 实现最简单，"agent 自己决定记什么" | Cursor 实测：强模型有产出"任务日志"的强烈偏好，与"可泛化知识"目标相反；错误记忆会让模型"double down"（坚信记忆正确而拒绝纠正） | 沉淀走独立的提炼调用（旁路 LLM，专用 prompt 强调泛化性），不让编码主 agent 顺手写库；提炼失败静默丢弃 |
+| **"记住一切"（每次完工无门槛入库）** | 数据越多越好的直觉 | Reflexion/ExpeL 系统性结论：无策展的记忆库积累噪声，"lesson rot"（过时经验误导后续）比没有记忆更糟；Mem0 明确把 consolidation 列为必须步骤 | 入库前质量门槛（见下节）+ 复用 bi-temporal 失效机制让过时 case 可被 supersede；重复 case 走实体 natural key 去重 |
+| **给容器代理开放全部 30 个 MCP 工具** | 反正鉴权了，全开省事 | claude-agent-sdk 安全指南：无人值守运行必须窄白名单 + fail-closed；写类工具（create_merge_request 等）在容器内被 prompt injection 滥用的爆炸半径大；每工具都增加时延与 token 负担 | 只开读类知识工具白名单（search_rag_chunks/grep_repository/get_repository_file/search_delivery_knowledge/search_learning_cases/search_project_context/lookup_project_by_branch）+ 每任务调用配额/超时 |
+| **容器直连 Qdrant/DB 查知识** | 绕过 HTTP 一跳，性能好 | 凭证进容器（违反 PAT-02 精神）、排除文件/权限过滤要在容器侧重新实现一遍、脱敏旁路 | 服务端 HTTP 工具面 proxy 模式（官方推荐），权限/排除/脱敏零成本继承 |
+| **learning case 检索造第二套排序** | McpLearningCase 已有 token 打分，加权融合"兼顾两边" | 两套排序 = 统一知识库目标失败的根因（当前痛点就是平行两套"历史经验"无法统一排序） | 底层整体切 `DeliveryKnowledgeSearchService`，token 打分退役；保留 API 契约 + 对照测试守住召回质量（风险 1 的既定缓解） |
+| **本里程碑合并 chat.CodingPlan 与 McpCodingPlan 两张表** | "同名不同物"看着难受，合表最彻底 | 改动面横跨 chat/MCP/执行 bridge，与知识收敛目标正交；MILESTONE-CONTEXT 已显式 out of scope | 两侧 plan 都稳定入统一知识库、可互相检索到（最小趋同）；合表单独立项 |
+| **完整 review 产品化（评审 UI/规则引擎）** | review 沉淀听着像要做全套 | 范围爆炸；Qodo 整个产品线做这一件事 | "PR 后可选 review + 结论沉淀为 learning case"最小环 |
+| **记忆自动注入每次对话开头（无召回条件）** | AutoMem 式"conversation start 自动 recall"看似省心 | 无关记忆污染上下文（context pollution 是 2026 memory 综述列的头号未解问题）；Devin 特意用 Trigger Description 控制"相关才召回" | 走检索式按需召回（既有 RAG 惯例）；Chat 工具面补读工具让 agent 主动查，而非无脑注入 |
+
+## 自动提炼 learning case：触发时机 / 结构化字段 / 质量门槛（专节）
+
+这是 LOOP 的技术核心，业界经验最集中的地方，单独展开供 requirements 直接消费。
+
+**典型触发时机**（业界实践并集，按本项目适配排序）：
+
+1. **编码任务终态回调**（成功与失败都触发——Reflexion/ExpeL 均强调失败经验价值更高，failure pattern 是最有用的 insight 类型）→ 本项目挂 `subagent/api/callbacks.py`。
+2. **PR 创建/合并后**（Copilot/Qodo 的锚点；合并 = 人类隐式验收，质量信号最强）→ 本项目在 write-back service 后串接。
+3. **review 结论产出后**（Qodo：被采纳的建议才入库——"人类采纳"是天然质量门槛）→ 本项目 PR 后轻量 review 的沉淀点。
+4. **用户在会话中给出纠正性反馈时**（Devin Knowledge suggestion / Cursor sidecar 的主触发）→ 本项目已有 Cursor 侧 `create_learning_case` 手动通道 + friday-memory skill 引导，本里程碑不新增会话监听（避免 sidecar 模型这一整套新基建）。
+
+**结构化字段**（Mem0 schema + Devin Knowledge + 既有 McpLearningCase 交集，推荐 schema）：
+
+- `outcome`（success/failure/partial）——ExpeL 的成败配对是提炼输入的基础
+- `root_cause` / `solution`（失败向）或 `approach` / `key_decision`（成功向）——Reflexion 的"可执行改进方向"
+- `trigger_context`（什么场景该召回这条——Devin Trigger Description 的等价物；向量化后这就是检索锚点）
+- `scope`（repository / work_item / 全局——Devin pin 语义；本项目用图边关联 repository/work_item/tech_plan 实现，比字段更强）
+- `source_pointers`（task_result id / PR URL / plan_version——审计与可信度回溯；Mem0 的 source-message pointers）
+- 时间戳 + `initiated_by_user_id`（无则 system）——观测规范既有要求
+
+**质量门槛**（业界教训的并集，按拦截顺序）：
+
+1. **泛化性过滤**：提炼 prompt 显式要求"可复用教训"而非"本次任务日志"（Cursor 的核心教训，90%+ 内容应被丢弃）；产出为空/低置信度直接不入库。
+2. **去重门**：与既有 case 语义相似度过高（业界参考值 cosine > 0.92，Loci 的 dedup gate）则合并/跳过——本项目可复用实体 natural key + 向量相似检查。
+3. **脱敏不可绕过**：提炼输入（TaskResult/diff）与产出都过 `redact_secrets_in_text`——既有强制规范。
+4. **长度/结构校验**：必填字段齐全才入库（Devin：Knowledge 必须有 trigger）。
+5. **可退场**：入库的 case 保留 supersede/失效通道（bi-temporal 天然支持），对抗 lesson rot；不做静默删除（Reflexion 模式明确：显式 retire 而非 overwrite）。
+6. **全程 fail-soft + 观测**：提炼 LLM 调用赋新 `call_source`、失败吞掉、写入走 ingestion 唯一入口（INV-6）。
 
 ## Feature Dependencies
 
 ```
-统一实体/边模型 (bi-temporal schema + GraphStore 接口)
-    ├──required by──> 工作流自动摄取
-    ├──required by──> 跨入口统一摄取（飞书/chat/MCP）
-    ├──required by──> 实体关联查看（1-3 跳查询）
-    ├──required by──> 版本链
-    └──required by──> diff 归档 + diff→chunk 关联
+[KNOW-1 learning case 入图 normalizer]
+    └──requires──> 既有 knowledge/sources/ 注册表 + aschedule_ingestion（v0.3.0）
+[KNOW-2 search_learning_cases 切向量检索]
+    └──requires──> KNOW-1（不入图无从检索）
+[KNOW-3 MCP 产物入图（plan/analysis/trace）]
+    └──requires──> 既有 sources 模式；与 chat coding_plan natural key 去重约定
+[KNOW-4 编排召回扩容 document/learning_case]
+    └──requires──> KNOW-1（learning_case kind 存在）；既有 recall_adapter
+[KNOW-5 Chat 工具面补读工具]
+    └──requires──> KNOW-2（否则 Chat 查到的还是 token 打分结果）
 
-知识向量化 (Qdrant collection + EmbeddingService 复用)
-    ├──requires──> 统一实体/边模型（向量点 payload 引用实体 ID）
-    └──required by──> 相似需求召回
+[LOOP-1 公共飞书回写 service]
+    └──requires──> 既有 work_item_execution_service（抽取源）；三处调用点各自既有链路
+[LOOP-2 完工自动提炼 learning case]
+    └──requires──> KNOW-1（入库通道）+ 既有 callbacks.py + 脱敏/观测设施
+[LOOP-3 平台 Skill 两枚]
+    └──requires──> KNOW-2（pre_coding_research 引用向量版检索）+ 既有 RemoteTool SKILL 多步机制
+[LOOP-4 PR 后轻量 review 沉淀]
+    └──requires──> LOOP-2（沉淀通道同源）+ LOOP-1（挂接点在回写链路附近）
 
-版本链 ──required by──> 检索命中最新版 ──required by──> 时间感知混合检索（过时硬过滤）
-版本链 ──required by──> 历史迭代轨迹查询
+[AGENT-1 容器知识 MCP]
+    └──requires──> 既有 extra_mcp_servers/allowed_tools 机制（task/core/executor.py）+ PAT 直传链路（v0.2.0）
+    └──enhanced by──> KNOW-2（容器查到的 learning case 是向量版）
+[AGENT-2 容器 skills 注入]
+    └──requires──> 既有 setting_sources=["project"] 通道（v0.9.0）+ 根 skills/ 包（同源）
+    └──enhanced by──> LOOP-3（skills 文档引导调用平台 Skill）
+[AGENT-3 工作流上下文对齐 pack_project_context]
+    └──requires──> 既有 project_context_packer（v0.15.0）——纯复用
 
-相似需求召回 + 实体关联查看 ──required by──> 时间感知混合检索（向量+图扩散融合）
-
-diff→chunk 关联 ──requires──> diff 归档（实体模型内）+ 既有 ChunkRegistry/ChunkEdge (existing)
-diff→chunk 关联 ──enhances──> 实体关联查看（代码级反查"这个函数被哪些需求改过"）
-
-时间感知混合检索 ──required by──> 多入口暴露（MCP/chat tools/workflow 节点/skills 是同一检索服务的薄封装）
-
-多入口暴露(workflow 节点) ──enhances──> ai_plan_generation (existing)（方案生成自动引用历史 → 飞轮）
+[UNIFY-1 improve/analyze 收敛 delegate_process_runtime] ──independent──
+[UNIFY-2 schema snapshot 补全] ──independent（但 AGENT-1 白名单工具的 schema 必须先稳定）──
 ```
 
 ### Dependency Notes
 
-- **一切依赖实体模型**：schema 是第一阶段唯一合理起点；GraphStore 接口同期定型（换引擎逃生门是项目既定决策）。
-- **版本链 → 最新版检索 → 时间感知检索** 是一条严格的串行链：没有版本链就没有"什么算过时"，没有过时标记就没有时间感知检索的硬过滤项。
-- **diff→chunk 关联是唯一 HIGH 复杂度且可降级的项**：降级形态 = diff 归档到文件级（记 file path + commit sha），chunk 级对齐推后。不阻塞其他任何功能。
-- **多入口暴露应最后做**：四个入口共享同一 service 层，service 稳定前做入口是返工。
-- **冲突**：对话全量记忆化（anti-feature）与会话隔离（v0.2.0 Validated）冲突——摄取 chat 需求时必须带 owner 语义，检索是否跨用户共享需在 REQUIREMENTS 阶段显式决策（建议：交付知识默认全局共享，因为方案/diff 本就是团队资产；但摄取来源里的对话原文不入图，只入提炼后的需求文本）。
+- **KNOW-1 是全里程碑的枢纽**：LOOP-2 的入库通道、KNOW-2 的检索底层、KNOW-4 的召回扩容、AGENT-1 容器查经验的数据源全部依赖它先落地。Phase 排序上应最先。
+- **LOOP-1 与 KNOW 无依赖**，可并行推进（回写用的是既有飞书能力，不经知识库）。
+- **AGENT-1 依赖 UNIFY-2 的顺序敏感点**：容器白名单里的工具 schema 若在同里程碑变动，会造成容器侧与 snapshot 漂移；建议 UNIFY-2 在 AGENT-1 验收前完成。
+- **LOOP-4 是增值项**：依赖最深（LOOP-1 + LOOP-2 都要先在），范围最该守住"能跑通 + 沉淀"。
 
 ## MVP Definition
 
-### Launch With (v1 = v0.3.0 本里程碑)
+### Launch With (v1 — 本里程碑必达)
 
-- [ ] 统一实体/边模型（bi-temporal）+ GraphStore 接口 — 地基，无可替代
-- [ ] 工作流自动摄取（方案生成/编码完成事件）+ 飞书/chat 需求入口 — "副产品"不变量，决定数据是否存在
-- [ ] 知识向量化 + 相似需求召回（带出处/版本 metadata） — 核心用户价值的最短路径
-- [ ] 版本链 + 检索命中最新版 — 没有它，召回过期方案是负价值
-- [ ] 实体关联查看 + 历史迭代轨迹（API 级） — traceability 底线
-- [ ] 时间感知混合检索（fused score + 过时硬过滤） — 里程碑的差异化承诺
-- [ ] diff 归档 + 向量化（文件级起步，chunk 级对齐为同里程碑 stretch） — 全链路闭环必需
-- [ ] 多入口暴露：MCP 工具 + workflow 检索节点优先，chat tools 次之，npm skill 收尾 — 价值出口
+- [ ] KNOW-1/2 learning case 入图 + 向量检索切换 — 统一知识库的定义性交付，验收标准 1 的前提
+- [ ] KNOW-3 MCP 产物入图 — 消除"同一产物走 MCP 就成盲区"的数据管道断裂
+- [ ] LOOP-1 公共回写 service 三链路接入 — table stakes，业务侧可见性底线
+- [ ] LOOP-2 完工自动提炼（含质量门槛全套） — 里程碑的差异化核心
+- [ ] AGENT-1 容器知识 MCP（读白名单） — "知识贫民区"的直接解药
+- [ ] AGENT-3 工作流 pack_project_context 对齐 — 复杂度最低、断裂感消除最直接
+- [ ] UNIFY-2 schema snapshot 补全 — 低成本、契约完整性
 
-### Add After Validation (v1.x)
+### Add After Validation (v1.x — 里程碑内后置或视进度)
 
-- [ ] LLM 相似度复评（"重复/相关/无关"分级 + 理由）— 触发条件：向量召回精度不满足，参照 Linear 两阶段方案
-- [ ] diff→chunk 符号级精确对齐 + 漂移追踪 — 触发条件：文件级关联被实际使用且用户要求更细粒度
-- [ ] 前端只读子图/时间线可视化 — 触发条件：API/skill 入口验证了查询模式后，按真实高频查询设计 UI
-- [ ] as-of（point-in-time）查询暴露为工具参数 — 数据模型已支持，触发条件：出现审计/复盘场景
+- [ ] KNOW-4 编排召回扩容 — KNOW-1 落地后加 kinds 即可，注意召回质量观测先行
+- [ ] KNOW-5 Chat 工具面补读工具 — 薄封装，随 KNOW-2 顺手
+- [ ] LOOP-3 平台 Skill 两枚 — 机制已有，物料工作为主
+- [ ] AGENT-2 容器 skills 注入 + 同源校验 — 通道已有（v0.9.0），物料 + 一致性测试
+- [ ] LOOP-4 PR 后轻量 review 沉淀 — 依赖最深的增值项，进度紧则最先降级
+- [ ] UNIFY-1 improve/analyze 收敛 — 内部重构，用户不可见，可排后
 
-### Future Consideration (v2+)
+### Future Consideration (v2+ — 显式不做)
 
-- [ ] 跨需求洞察报表（哪些模块返工最多、方案推翻率）— 离线分析，先积累数据
-- [ ] 检索权重自适应（α/half-life 按反馈调参）— 需要使用量与反馈信号
-- [ ] 知识图谱与代码图谱（ChunkEdge）双向融合检索 — 涉及既有 collection 不迁移的约束，谨慎评估
+- [ ] chat.CodingPlan 与 McpCodingPlan 合表 — 单独立项（已 out of scope）
+- [ ] review 产品化（UI/规则引擎） — Qodo 整条产品线的体量
+- [ ] 会话内 sidecar 记忆提取（Cursor Memories 同型） — 需要旁路小模型基建 + 激进过滤 prompt 调优，投入产出比不如完工触发
+- [ ] 记忆 consolidation/decay 自动策展 — 业界前沿（Mem0 刚产品化），先靠 bi-temporal 失效 + 人工 supersede 过渡
+- [ ] 对外知识开放平台（配额/租户/计费） — 已 out of scope
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| 统一实体/边模型 + GraphStore | HIGH（地基） | MEDIUM | P1 |
-| 工作流自动摄取 + 多源入口 | HIGH | MEDIUM | P1 |
-| 向量化 + 相似需求召回 | HIGH | MEDIUM | P1 |
-| 版本链 + 最新版检索 | HIGH | MEDIUM | P1 |
-| 实体关联 + 迭代轨迹查询 | HIGH | LOW-MEDIUM | P1 |
-| 时间感知混合检索 | HIGH（差异化） | MEDIUM-HIGH | P1 |
-| diff 归档（文件级） | MEDIUM-HIGH | MEDIUM | P1 |
-| MCP 工具 + workflow 节点 | HIGH | LOW-MEDIUM | P1 |
-| chat tools + npm skill | MEDIUM | LOW | P2 |
-| diff→chunk 符号级关联 | MEDIUM | HIGH | P2 |
-| LLM 相似度复评 | MEDIUM | MEDIUM | P2 |
-| 前端只读可视化 | MEDIUM | MEDIUM-HIGH | P3 |
-| as-of 查询暴露 | LOW-MEDIUM | LOW | P3 |
+| learning case 入图 + 向量检索（KNOW-1/2） | HIGH | MEDIUM | P1 |
+| MCP 产物入图（KNOW-3） | HIGH | MEDIUM | P1 |
+| 公共回写 service 三链路（LOOP-1） | HIGH | MEDIUM | P1 |
+| 完工自动提炼 learning case（LOOP-2） | HIGH | HIGH | P1 |
+| 容器知识 MCP（AGENT-1） | HIGH | HIGH | P1 |
+| 工作流上下文对齐（AGENT-3） | MEDIUM | LOW | P1 |
+| schema snapshot 补全（UNIFY-2） | MEDIUM | LOW | P1 |
+| 编排召回扩容（KNOW-4） | MEDIUM | LOW | P2 |
+| Chat 工具面补读工具（KNOW-5） | MEDIUM | LOW | P2 |
+| 平台 Skill 两枚（LOOP-3） | MEDIUM | MEDIUM | P2 |
+| 容器 skills 注入 + 同源校验（AGENT-2） | MEDIUM | MEDIUM | P2 |
+| PR 后轻量 review 沉淀（LOOP-4） | MEDIUM | MEDIUM | P3 |
+| improve/analyze 收敛（UNIFY-1） | LOW（内部质量） | MEDIUM | P3 |
 
-## 用户侧呈现形态对比（问题 4）
-
-| 形态 | 用户期望 | 复杂度 | 建议 |
-|------|----------|--------|------|
-| MCP 工具 / chat agent tools | Glean 模式：在 agent 对话中"帮我找相似历史需求/这个方案最新版"；答案带出处与时间限定 | LOW-MEDIUM（复用 McpToolView + chat tools 注册机制） | 首选出口。2-4 个查询工具：`search_delivery_knowledge`、`get_entity_timeline`、`get_related_entities` |
-| workflow 节点 | 方案生成前自动检索相似交付，注入 prompt 上下文——用户甚至无感知 | LOW-MEDIUM（BaseNode 子类 + 注册即生效） | 价值密度最高的出口（飞轮）：历史交付直接提升新方案质量 |
-| npm Friday skill | spelungit/diwa 模式：开发者在自己的 agent 里问"为什么这段代码这么改" | LOW（skill 包装既有 MCP 工具） | 收尾做，纯封装 |
-| 前端可视化 | 实体详情页 + 关联时间线为主；图画布是想象中的需求，实际高频是"列表+跳转" | MEDIUM-HIGH（图画布）/ MEDIUM（时间线页） | 本里程碑最多做只读实体详情 + 时间线；图画布不做（anti-feature 区已述） |
+**Priority key:**
+- P1: 本里程碑必达（验收面 1–5、7、9 的支撑）
+- P2: 应做，机制已有、物料/薄封装为主（验收面 6、10）
+- P3: 增值/内部收口，进度紧可降级
 
 ## Competitor Feature Analysis
 
-| Feature | Linear | Glean | Zep/Graphiti | Our Approach |
-|---------|--------|-------|--------------|--------------|
-| 相似召回 | 创建/triage 时刻向量+LLM 两阶段，给分级+理由 | MCP 内跨源检索 | 向量+图+BM25 混合 | 向量+图扩散一阶段起步，LLM 复评留 P2 |
-| 时间语义 | 无（只有状态字段） | 无显式模型 | bi-temporal 四时间戳，LLM 矛盾检测失效 | bi-temporal 边，但失效信号来自结构化事件（无 LLM 检测）——更便宜更确定 |
-| 实体来源 | 人工创建 issue | 连接器同步全量文档 | LLM 从 episode 抽取 | 业务事件直接产生（稳定 ID），零抽取成本 |
-| 代码关联 | commit/PR magic word 链接（文件级） | code search 独立能力 | 无 | diff 归档 + 与自有 ChunkRegistry 打通（潜在最深差异化） |
-| 暴露形态 | 自家 UI 内嵌 | MCP 进第三方工具 | SDK/API | 四形态（MCP/chat/workflow/skill）共享一个 service 层 |
+| Feature | Devin (Cognition) | Cursor | Copilot coding agent | Qodo/PR-Agent | Our Approach |
+|---------|-------------------|--------|----------------------|---------------|--------------|
+| 经验自动沉淀 | 会话反馈→Knowledge 建议→人工审核入库；Trigger Description 控召回 | sidecar 小模型旁路提取→用户审批；激进过滤任务日志 | 无（session log 可查但不提炼） | 采纳的 review 建议→定期提炼 auto best practices（商用） | 完工回调触发 LLM 提炼→质量门槛（泛化过滤/去重/脱敏/字段校验）→自动入库 + bi-temporal 可失效；比 Devin/Cursor 更自动，靠门槛而非人工审核守质量 |
+| 沉淀数据结构 | 自由文本 + trigger + pin 作用域（repo/org）+ 文件夹 | 短 rule 式条目，项目作用域 | — | markdown 最佳实践文档 | 结构化字段（outcome/root_cause/solution/trigger_context）+ 图边关联（case↔repo↔work_item↔plan↔PR）+ 向量检索——结构化程度业界最高档 |
+| 完工业务回写 | issue/PR 留痕 + session 可追问 | 本地工具，无业务回写 | draft PR 全程锚定：清单打勾、commit 链 session log、完工更新描述 tag 人 | review 评论回写 PR | 公共 write-back service：飞书工作项评论 + 可选文档，三链路（工作流/Chat/MCP）统一格式 |
+| 容器代理知识工具 | 会话内建知识检索（Accessed Knowledge 可见）+ Devin MCP server 对外 | MCP 生态由用户自配 | repo instructions + 自定义 MCP（firewall 内） | — | 进程内 SDK MCP server 经服务端 HTTP proxy（官方推荐模式），PAT 鉴权，读白名单 7 工具，排除/权限/脱敏零成本继承 |
+| skills 分发 | 多路径 SKILL.md 自动发现 + indexed/disk 双源防漂移 + 会话中自动建议新 skill | .cursor/skills + 插件市场 | .github/skills | — | 派发时注入容器 `.claude/skills/`，与 npm 包同源 + hash 一致性测试（对齐 Devin 的防漂移思路） |
+| 知识 MCP 工具面 | Devin MCP：knowledge CRUD + 建议管理 | — | — | — | 既有约 30 工具补 snapshot 完整性 + 平台级多步 Skill（pre/post coding）——多步服务端 Skill 是业界少有形态 |
 
 ## Sources
 
-- Linear: [Using AI to detect similar issues](https://linear.app/now/using-ai-to-detect-similar-issues)、[How we built Triage Intelligence](https://linear.app/now/how-we-built-triage-intelligence)、[Triage Intelligence Docs](https://linear.app/docs/triage-intelligence) — HIGH
-- Glean: [MCP for Engineering](https://docs.glean.com/user-guide/mcp/engineering)、[Code Search](https://docs.glean.com/user-guide/assistant/code-search) — HIGH
-- Zep/Graphiti: [Bi-Temporal Data Model](https://getzep-graphiti.mintlify.app/concepts/temporal-model)、[Zep arXiv 2501.13956](https://arxiv.org/abs/2501.13956)、graphiti `edge_operations.py` 源码 — HIGH
-- GitHub Copilot Workspace 沉浮与 Coding Agent: GitHub Blog（coding agent vs agent mode）、多方报道（sunset 2025-05-30，能力并入 Coding Agent） — HIGH
-- Traceability: [Jama Requirements Traceability Guide](https://www.jamasoftware.com/requirements-management-guide/requirements-traceability/what-is-traceability/)（suspect links / 双向链）、[ContextGit](https://github.com/Mohamedsaleh14/ContextGit)、[tracey](https://github.com/bearcove/tracey)（staleness 检测） — MEDIUM-HIGH
-- Git 语义检索: [GitLore](https://github.com/ami3g/GitLore)（commit/code/PR 三流索引）、[spelungit](https://github.com/haacked/spelungit)（MCP server）、[diwa](https://github.com/Dorky-Robot/diwa)（hook 驱动增量） — MEDIUM
-- 时间衰减检索: [Solving Freshness in RAG (arXiv 2509.19376)](https://arxiv.org/html/2509.19376)（fused score α≈0.7，half-life 14d）、[Memory Retrieval Policies](https://jatinbansal.com/ai-engineering/memory-retrieval-policies/)（staleness 硬过滤 vs 降权）、[Hindsight: Consolidation](https://hindsight.vectorize.io/blog/2026/05/21/agent-memory-consolidation)（recency-wins with explicit invalidation） — MEDIUM-HIGH
+- Devin Docs — Knowledge / Knowledge Onboarding / Skills / Advanced Capabilities（docs.devin.ai，HIGH：官方文档）
+- Cursor Memories 工程访谈（leverage.to Yash Gaitonde 访谈；DataCamp Cursor 课程；MEDIUM：非官方但多源一致——sidecar vs tool-call、任务日志偏好、人工审批）
+- GitHub Copilot coding agent（docs.github.com + GitHub Blog，HIGH：官方——draft PR 锚定、session log、完工回写模式）
+- claude-agent-sdk 安全部署与 MCP/Skills 集成（code.claude.com 官方文档 + 多篇 2026 实践指南，HIGH：`create_sdk_mcp_server`、`allowed_tools` 全名前缀、proxy 凭证模式、`setting_sources` + `Skill` 工具、fail-closed 无人值守）
+- Agent memory 框架综述（Zep arXiv 2501.13956、Mem0 episodic memory blog、Zylos 2026-04 综述、多篇 2026 对比文，HIGH/MEDIUM：四分型、分层架构、bi-temporal、consolidation/decay、context pollution 未解问题）
+- Reflexion（NeurIPS 2023）/ ExpeL（AAAI 2024）（HIGH：学术源——失败经验提炼、ADD/UPVOTE/DOWNVOTE/EDIT insight 策展、lesson rot 与显式 retire）
+- Qodo/PR-Agent auto best practices（docs.qodo.ai + GitHub，HIGH：官方——采纳建议追踪→定期提炼→标注引用闭环，商用独占）
+- Memory MCP server 生态（Loci、AutoMem、mcp-memory、awesome-mcp-servers，MEDIUM：工具面形态——store/recall/forget 核心组、去重门 cosine>0.92 参考值、fail-soft 使用协议）
+- 本项目 `.planning/MILESTONE-CONTEXT.md` / `.planning/PROJECT.md`（HIGH：代码坐标与既有资产）
 
 ---
-*Feature research for: 交付知识图谱（Friday AI v0.3.0）*
-*Researched: 2026-06-11*
+*Feature research for: Friday AI v0.17.0 统一知识库与全链路联动*
+*Researched: 2026-07-15*
