@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v0.17.0
 milestone_name: 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）
 status: planning
-last_updated: "2026-07-15T04:15:01.141Z"
+last_updated: "2026-07-15T04:35:00.000Z"
 last_activity: 2026-07-15
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,15 +19,49 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
-**Core value（v0.16.3）:** 把「项目外部依赖」（= `initiatives.Artifact`：PRD/需求文档、埋点评审、UI 文档、研发 Spec 等）完整接入「知识」体系——可在 `/knowledge` 总览与搜索里发现、在知识树里浏览，并与关键词、业务能力、代码仓库互相建立关联并可视化，形成「文档 ↔ 能力 ↔ 仓库」可检索、可导航的交付知识网。复用 `Artifact` + 既有 delivery_knowledge 摄取，不新建模型。
-**Current focus:** v0.16.3 立项完成（planning）——4 Phase（96–99）/ 12 需求（KDEP-01~12）。下一步 `$gsd-autonomous`（跑完整里程碑）或 `$gsd-plan-phase 96`（外部依赖进检索与总览）。
+**Core value（v0.17.0）:** 让"产出→入图→召回→更好的产出"的知识飞轮真正转起来：任一链路的产物都可被任一链路检索到，任一链路编码完成都自动沉淀经验并回写业务侧，编码容器天然带着 Friday 的知识工具与 skills 干活。统一知识库 = 既有 `knowledge/` 体系（单一摄取入口 + 单一检索服务），不新建存储。
+**Current focus:** v0.17.0 roadmap 已就绪（planning）——5 Phase（100–104）/ 19 需求（KNOW-01~06 / LOOP-01~05 / AGENT-01~04 / UNIFY-01~04），100% 映射。下一步 `$gsd-plan-phase 100`（知识收敛基座）或 `$gsd-autonomous`（跑完整里程碑）。
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 100 of 100–104 (知识收敛基座) — Not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-15 — Milestone v0.17.0 started
+Status: Roadmap created — ready to plan Phase 100
+Last activity: 2026-07-15 — Roadmap v0.17.0 created (Phases 100–104, 19/19 需求映射)
+
+Progress: [░░░░░░░░░░] 0% (0/5 phases)
+
+## Milestone Overview (v0.17.0 — Phases 100–104 — 🟡 PLANNING)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 100 | 知识收敛基座（learning case 入图 + 检索切换 + MCP 产物入图） | KNOW-01/02/03 | ○ Not started |
+| 101 | 完工沉淀闭环（公共回写 + 自动提炼 + Skill 种子） | LOOP-01~05 | ○ Not started |
+| 102 | 知识消费面与对外契约（召回扩容 + Chat 工具 + snapshot/skills 对齐） | KNOW-04/05/06, UNIFY-04 | ○ Not started |
+| 103 | 编码容器集成（短 TTL token + 容器知识 MCP + skills 注入 + 上下文对齐） | AGENT-01~04 | ○ Not started |
+| 104 | 工具面收口（improve/analyze 收敛 + 确定性缝退役 + 端到端验收） | UNIFY-01/02/03 | ○ Not started |
+
+完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（19 条 + Traceability，100% 映射）；阶段详情见 [.planning/ROADMAP.md](./ROADMAP.md)。
+
+**Execution order（依赖链）:** 100 → 101 → 102 → 103 → 104。100 是全里程碑枢纽（natural key 规则表决策先于一切入图工作，KNOW-01 是 LOOP 沉淀/召回扩容/容器查经验的共同前置）；101 的回写抽取（LOOP-01/02）可与 100 并行、沉淀（LOOP-03）依赖 100 入图通路；102 依赖 100（learning_case kind 存在、检索已切向量版）；103 放 KNOW 定版后（容器白名单调的正是定版后的检索工具；AGENT-01 短 TTL token 是 AGENT-02 前置）；104 收口放最后（improve/analyze 收敛依赖 102 编排召回扩容先就位，退役工作最后做减 rebase 面）。
+
+**UI 触面:** 无（本里程碑以后端 service / MCP 工具面 / task 容器 / skills 物料为主，不涉前端页面新增）。
+
+**关键约束 / 设计底座（plan-phase 必读）:**
+
+- **统一知识库 = 既有 `knowledge/` 体系，不新建存储**：一切收敛到 `KnowledgeEntity` + Qdrant `delivery_knowledge` + 既有图边；各域操作态表（`McpLearningCase` 等）保留为写模型；入图一律走 `aschedule_ingestion` 单一入口（INV-6）、检索一律走 `DeliveryKnowledgeSearchService` 按 `entity_kinds` 过滤。禁止为 learning case 新建 Qdrant collection / 平行检索服务。
+- **natural key 规则表先行（P1/P7 共享前置）**：Phase 100 首个产出是扩 `generate_entity_id` docstring 规则表（新增 4 个 source_kind 的 source_id 构成 + Chat plan 与 MCP plan"不同实体 + 边显式关联"决策）；work_item 锚一律照抄 `knowledge/sources/mcp_plan.py`，禁止自造锚格式。
+- **完工回写/沉淀锚点挂三链路"MR 已知"之后**（workflow `_finalize_and_notify` / chat `create_pr_or_skip_node` / MCP `execute_work_item_repo_tasks`），**不挂容器回调** `_handle_completed`（回调时刻 MR 未创建 + 5xx 重试风暴前科，INGEST-02 同款结论）。回写与沉淀一律 best-effort fail-soft 不阻断主流程。
+- **短 TTL token 决策已定版（推翻 PATX-04 搁置）**：派发编码任务铸造任务级短 TTL token——明文仅 dispatch 内存生成后直进容器 env、DB 只存 sha256、`expires_at`=任务 timeout+余量、终态吊销；PAT-02 底线不破（明文不落盘、不从 DB 反取）。已记 PROJECT.md Key Decisions。
+- **容器知识 MCP 走服务端 HTTP 工具面复用**（`/api/mcp/tools/<name>/` + Bearer PAT），不直连 Qdrant/DB；镜像 `task/core/remote_tools.py` 全套约束（handler return-not-raise、PAT 只进 header、端点校验、60s 超时、脱敏）；env 三要素任一为空整体降级不挂（零回归）；`allowed_tools` 排他白名单必须并入 `_BUILTIN_CODING_TOOLS`（WR-02 前科，收口单一构造函数 + 专项测试）。
+- **skills 单一事实源**：容器物料构建期从 `skills/skills/{friday-code,friday-memory}` 同源 COPY（task build context 是 `./task`，需构建前同步脚本拷进 `task/assets/skills/`）+ hash 一致性 CI 测试；禁止第二份手工物料。
+- **观测规范强制（P8 内嵌各 phase 验收，不设独立观测 phase）**：新 LLM 调用点（提炼/review）先登记 `call_source` 进 LOGGING-SPEC §4.1 再写代码；新召回写 `RetrievalTrace` + 条数/耗时/score（MCP + Chat 两链）；容器 MCP 转调入口纳入 QPS/错误率/时长；回写/沉淀带 `initiated_by_user_id`（无则 `system`）；高频循环用 `sampling` 分类。
+- **既有纪律沿用**：INV-6 单一写入入口；async ORM 走 `sync_to_async`；脱敏不可绕过（`redact_secrets_in_text` / `redact_for_ledger`）；MCP schema 变更同步 `TOOL_SCHEMA_SNAPSHOT` + 快照测试；i18n 默认中文。
+- **Out of Scope 锁定**：两套 CodingPlan 合表、Ledger 反哺检索、review 产品化、多模态召回、对外开放平台（配额/租户/计费）、回写/沉淀挂容器回调。
+
+**Research flags（plan-phase 需深入）:** Phase 101 提炼 prompt 泛化性过滤 + 去重阈值（参考 cosine > 0.92）；Phase 103 MCP dispatch 路径 ContextVar 捕获缺口实现细节；Phase 104 improve/analyze 对外契约（同步 vs 会话式）为首个 task。Phase 100/102 全部有既有先例（`coding_plan.py`/`mcp_plan.py`/RECALL-02），可跳过 research-phase。
+
+**设计底座引用:** `.planning/knowledge-loop/MILESTONE-PROPOSAL.md`（断点调研 + 复用坐标表）+ `.planning/research/`（SUMMARY/ARCHITECTURE 含集成点逐一读码核实/PITFALLS 含 P1–P8 映射）。关键落点：`server/knowledge/{ingestion,models,retrieval}.py` + `knowledge/sources/`、`server/mcp_tools/{learning_case_service,work_item_execution_service,orchestration_delegate,serializers}.py`、`server/delivery/services/coding_completion.py`（新）、`server/services/process_runtime/recall_adapter.py`、`server/agents/chat_runner.py`、`server/workflows/nodes/ai/coding.py`、`server/chat/coding_session_service.py`、`task/core/{executor,config,remote_tools,runner}.py` + `task/core/knowledge_tools.py`（新）、`skills/skills/`。
 
 ## Milestone Overview (v0.16.1 — Phases 90–95 — ✅ SHIPPED 2026-06-28)
 
