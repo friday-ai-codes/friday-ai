@@ -74,7 +74,13 @@ Plans:
   5. 新增 LLM 调用点的 `call_source`（提炼、review 各一）先登记 LOGGING-SPEC §4.1，`ModelUsageRecord` 可按 source 聚合；回写/沉淀事件带 `initiated_by_user_id`（无则 `system`）。
 
 **Pitfalls**: P2 自动沉淀噪音/成本失控（幂等键 + 准入门槛 + call_source 登记与功能同 phase，绝不"先跑通后补"）；P3 回写默认值改变存量行为（"模板默认开"与"存量 fallback"区分为设计输入）；P8 观测欠债。
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 101-01-PLAN.md — LOOP-01：CompletionWritebackService 公共回写抽取 + MCP 薄包装零回归（Wave 1）
+- [ ] 101-02-PLAN.md — LOOP-03 核心：call_source 登记先行 + McpLearningCase migration + 提炼管线（质量门/REJECT/幂等/开关）（Wave 1）
+- [ ] 101-03-PLAN.md — LOOP-02/03 锚点：三元组反查器 + workflow write_back 配置与存量 fallback 守门 + chat/MCP 接线 + 前端同步（Wave 2）
+- [ ] 101-04-PLAN.md — LOOP-04/05：平台 Skill 种子 + 步级 trace + PR 后可选 review 沉淀（Wave 3）
 
 ### Phase 102: 知识消费面与对外契约（编排召回扩容 + Chat 工具 + snapshot/skills 对齐）
 
