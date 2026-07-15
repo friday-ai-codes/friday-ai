@@ -1783,6 +1783,14 @@ class AnalyzeRepositoryView(McpToolView):
             summary=result.payload,
             evidence=result.evidence,
         )
+        from knowledge import ingestion  # lazy import 防循环
+
+        # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest(
+                "mcp_repository_analysis", str(artifact.id), "mcp_analysis_created"
+            )
+        )
         output_data = {
             "analysis_id": str(artifact.id),
             "repository_id": repository_id,
@@ -1913,6 +1921,12 @@ class CreateCodingPlanView(McpToolView):
             change_summary="Initial MCP coding plan",
             risk_delta={"added": [], "reduced": []},
         )
+        from knowledge import ingestion  # lazy import 防循环
+
+        # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_coding_plan_created")
+        )
         # 响应外形兼容：保留全部既有键（plan_id/version_id/version/repository_id/branch/plan/
         # evidence/run_id）+ 新增可选 session_id（partial 续推钥匙）+ status（delegate 终态映射）。
         output_data = {
@@ -2010,6 +2024,13 @@ class ImproveCodingPlanView(McpToolView):
         )
         plan.current_version = next_version
         await plan.asave(update_fields=["current_version", "updated_at"])
+        from knowledge import ingestion  # lazy import 防循环
+
+        # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）；
+        # 同一 plan 重摄：content 变更走版本翻转，未变走 hash 短路，天然幂等。
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_coding_plan_improved")
+        )
 
         output_data = {
             "plan_id": str(plan.id),
@@ -2115,6 +2136,15 @@ class ExecuteCodingPlanView(McpToolView):
             await trace.asave(update_fields=["status", "error", "recovery_state", "updated_at"])
 
         await refresh_execution_trace(trace)
+        from knowledge import ingestion  # lazy import 防循环
+
+        # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）；
+        # 放 refresh_execution_trace 之后——摄取时刻 trace 状态更完整。
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest(
+                "mcp_execution_trace", str(trace.id), "mcp_execution_created"
+            )
+        )
         output_data = {
             **execution_trace_payload(trace),
             "run_id": str(run.run_id),
