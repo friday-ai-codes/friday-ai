@@ -3,21 +3,20 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from asgiref.sync import sync_to_async
 from django.utils import timezone
-from qdrant_client import models
 
 from knowledge.metadata_hydrate import hydrate_entity_metadata
 from knowledge.models import CodeChangeArchive, EntityKind
 from knowledge.vector_recall import (
+    VectorHit,
     _build_knowledge_must_filter,
     _dedupe_by_entity,
     _rrf_fuse,
     recall_similar_chunks,
-    VectorHit,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -144,6 +143,76 @@ async def test_vector_default_excludes_document_kind(recall_deps):
         top_k=5,
     )
     assert EntityKind.DOCUMENT not in _demand_entity_kinds(recall_deps)
+
+
+# ---------------------------------------------------------------------------
+# Phase 100（KNOW-02）：显式 entity_kinds 严格过滤（吞参 bug 修复）
+# ---------------------------------------------------------------------------
+
+
+async def test_vector_explicit_learning_case_only_demand_route(recall_deps):
+    """entity_kinds=["learning_case"] → 仅 demand 分路 1 次调用，
+    filter 中 entity_kind 值集合 == {learning_case}（code 分路交集空被跳过）。"""
+    await recall_similar_chunks(
+        "query",
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=["r1"],
+        top_k=10,
+        entity_kinds=["learning_case"],
+    )
+    assert len(recall_deps) == 1
+    assert _demand_entity_kinds(recall_deps) == {"learning_case"}
+
+
+async def test_vector_explicit_unknown_kind_returns_empty_no_query(recall_deps):
+    """entity_kinds=["nonexistent_kind"] → 0 次 hybrid 调用、返回 []。
+
+    本次修复的核心断言（证伪型）：修复前该场景回退全量白名单必然失败。"""
+    result = await recall_similar_chunks(
+        "query",
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=["r1"],
+        top_k=10,
+        entity_kinds=["nonexistent_kind"],
+    )
+    assert result == []
+    assert recall_deps == []
+
+
+async def test_vector_explicit_code_change_only_code_route(recall_deps):
+    """entity_kinds=["code_change"] → 仅 code 分路 1 次调用（demand 交集空被跳过）。"""
+    await recall_similar_chunks(
+        "query",
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=["r1"],
+        top_k=10,
+        entity_kinds=["code_change"],
+    )
+    assert len(recall_deps) == 1
+    kinds: set = set()
+    for cond in recall_deps[0]["filter"].must:
+        if getattr(cond, "key", None) == "entity_kind":
+            kinds.update(cond.match.any)
+    assert kinds == {"code_change"}
+
+
+async def test_vector_default_kinds_include_learning_case(recall_deps):
+    """entity_kinds=None → demand 白名单含 work_item/tech_plan/learning_case，
+    code 分路照常（既有 route quota 零回归 + Phase 100 白名单扩容断言）。"""
+    await recall_similar_chunks(
+        "query",
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=["r1"],
+        top_k=10,
+    )
+    limits = sorted(c["limit"] for c in recall_deps)
+    assert limits == [3, 7]
+    demand_kinds = _demand_entity_kinds(recall_deps)
+    assert {
+        EntityKind.WORK_ITEM,
+        EntityKind.TECH_PLAN,
+        EntityKind.LEARNING_CASE,
+    } <= demand_kinds
 
 
 async def test_vector_dedupe_same_entity():

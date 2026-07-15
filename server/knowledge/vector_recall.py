@@ -24,7 +24,9 @@ logger = structlog.get_logger(__name__)
 
 __all__ = ["VectorHit", "recall_similar_chunks"]
 
-_DEMAND_KINDS = (EntityKind.WORK_ITEM, EntityKind.TECH_PLAN)
+# Phase 100 KNOW-02：learning_case（经验案例）纳入 demand 分路白名单，
+# search_similar(entity_kinds=["learning_case"]) 经 demand 分路可召回。
+_DEMAND_KINDS = (EntityKind.WORK_ITEM, EntityKind.TECH_PLAN, EntityKind.LEARNING_CASE)
 # 项目上下文读路径（CTX-01）额外纳入 DOCUMENT 召回——项目 5 文件/记忆/工件物化为
 # DOCUMENT 实体，仅在 ``include_document_kind=True`` 时叠加到无仓库 demand 分路（不影响
 # 全局代码检索的既有 demand/code 分路）。
@@ -116,8 +118,7 @@ async def _hybrid_query(
             with_payload=True,
         )
         return [
-            {"id": str(r.id), "score": r.score, "payload": r.payload or {}}
-            for r in results.points
+            {"id": str(r.id), "score": r.score, "payload": r.payload or {}} for r in results.points
         ]
 
     return await sync_to_async(_run)()
@@ -139,7 +140,9 @@ def _to_vector_hit(raw: dict[str, Any], rrf_score: float) -> VectorHit | None:
     )
 
 
-def _rrf_fuse(list_a: list[VectorHit], list_b: list[VectorHit], *, k: int = _RRF_K) -> list[VectorHit]:
+def _rrf_fuse(
+    list_a: list[VectorHit], list_b: list[VectorHit], *, k: int = _RRF_K
+) -> list[VectorHit]:
     """跨路 RRF 融合（按 point_id 排名）。"""
     scores: dict[str, float] = {}
     hits_by_point: dict[str, VectorHit] = {}
@@ -203,6 +206,22 @@ async def recall_similar_chunks(
     else:
         code_limit = 0
 
+    # Phase 100 KNOW-02 吞参修复：显式传入 entity_kinds 时各分路取「传入 kinds ∩ 分路白名单」
+    # 严格过滤——交集为空则该分路不发 Qdrant 查询；两分路皆空直接返回 []（信息泄露防线：
+    # 未知 kind 绝不回退全量放大召回面）。entity_kinds=None 时保持既有分路口径零回归。
+    demand_allowed = list(_DEMAND_KINDS)
+    if include_document_kind:
+        demand_allowed = [*demand_allowed, *_DOCUMENT_KINDS]
+    if entity_kinds is None:
+        demand_kinds = demand_allowed
+        code_kinds = list(_CODE_KINDS)
+    else:
+        demand_kinds = [k for k in entity_kinds if k in demand_allowed]
+        code_kinds = [k for k in entity_kinds if k in _CODE_KINDS]
+        if not demand_kinds and not code_kinds:
+            # 短路在 embedding 之前，省一次远程调用
+            return []
+
     query_dense = await EmbeddingService.generate_embedding(query)
     if not query_dense:
         return []
@@ -210,36 +229,26 @@ async def recall_similar_chunks(
     if not query_sparse.get("indices"):
         return []
 
-    kinds_filter = entity_kinds
-    demand_allowed = list(_DEMAND_KINDS)
-    if include_document_kind:
-        demand_allowed = [*demand_allowed, *_DOCUMENT_KINDS]
-    demand_kinds = (
-        [k for k in (kinds_filter or demand_allowed) if k in demand_allowed]
-        or demand_allowed
-    )
-    code_kinds = (
-        [k for k in (kinds_filter or list(_CODE_KINDS)) if k in _CODE_KINDS] or list(_CODE_KINDS)
-    )
-
-    demand_filter = _build_knowledge_must_filter(
-        allowed_project_ids=allowed_project_ids,
-        allowed_repository_ids=allowed_repository_ids,
-        entity_kinds=demand_kinds if kinds_filter else demand_kinds,
-        include_superseded=include_superseded,
-        require_repository=False,
-    )
-    demand_raw = await _hybrid_query(
-        query_dense, query_sparse, limit=demand_limit, query_filter=demand_filter
-    )
-    demand_hits = [h for r in demand_raw if (h := _to_vector_hit(r, 0.0))]
+    demand_hits: list[VectorHit] = []
+    if demand_kinds:
+        demand_filter = _build_knowledge_must_filter(
+            allowed_project_ids=allowed_project_ids,
+            allowed_repository_ids=allowed_repository_ids,
+            entity_kinds=demand_kinds,
+            include_superseded=include_superseded,
+            require_repository=False,
+        )
+        demand_raw = await _hybrid_query(
+            query_dense, query_sparse, limit=demand_limit, query_filter=demand_filter
+        )
+        demand_hits = [h for r in demand_raw if (h := _to_vector_hit(r, 0.0))]
 
     code_hits: list[VectorHit] = []
-    if code_limit > 0:
+    if code_limit > 0 and code_kinds:
         code_filter = _build_knowledge_must_filter(
             allowed_project_ids=allowed_project_ids,
             allowed_repository_ids=allowed_repository_ids,
-            entity_kinds=code_kinds if kinds_filter else code_kinds,
+            entity_kinds=code_kinds,
             include_superseded=include_superseded,
             require_repository=True,
         )
@@ -256,5 +265,6 @@ async def recall_similar_chunks(
         demand=len(demand_hits),
         code=len(code_hits),
         result_count=len(deduped[:top_k]),
+        entity_kinds=entity_kinds,
     )
     return deduped[:top_k]
