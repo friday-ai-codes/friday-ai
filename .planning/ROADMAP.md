@@ -28,7 +28,7 @@
 
 ### 🟡 v0.17.0 统一知识库与全链路联动 (Phases 100–104) — PLANNING
 
-- [ ] **Phase 100: 知识收敛基座** - learning case 入图 + 存量回填 + `search_learning_cases` 切向量检索（契约不变）+ MCP 三类产物入图（KNOW-01/02/03）
+- [x] **Phase 100: 知识收敛基座** - learning case 入图 + 存量回填 + `search_learning_cases` 切向量检索（契约不变）+ MCP 三类产物入图（KNOW-01/02/03）— completed 2026-07-15（4/4 plans，verification passed 5/5）
 - [ ] **Phase 101: 完工沉淀闭环** - 公共飞书回写 service 三链路接入 + 编码完成自动提炼 learning case + 两个平台 Skill 种子 + PR 后可选 review 沉淀（LOOP-01~05）
 - [ ] **Phase 102: 知识消费面与对外契约** - 编排召回扩 kinds + Chat 知识读工具 + ProjectStateApi 可检索 + snapshot/skills 文档对齐（KNOW-04/05/06, UNIFY-04）
 - [ ] **Phase 103: 编码容器集成** - 任务级短 TTL token + 容器知识 MCP + skills 同源注入 + 工作流派发对齐 pack_project_context（AGENT-01~04）
@@ -277,7 +277,7 @@ Plans:
 
 | Phase | Requirements | Plans Complete | Status | Completed |
 |-------|--------------|----------------|--------|-----------|
-| 100. 知识收敛基座 | KNOW-01/02/03 | 0/TBD | Not started | - |
+| 100. 知识收敛基座 | KNOW-01/02/03 | 4/4 | ✅ Complete | 2026-07-15 |
 | 101. 完工沉淀闭环 | LOOP-01~05 | 0/TBD | Not started | - |
 | 102. 知识消费面与对外契约 | KNOW-04/05/06, UNIFY-04 | 0/TBD | Not started | - |
 | 103. 编码容器集成 | AGENT-01~04 | 0/TBD | Not started | - |

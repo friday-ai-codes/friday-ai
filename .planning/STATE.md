@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.17.0
 milestone_name: 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）
-status: planning
-last_updated: "2026-07-15T04:35:00.000Z"
+status: executing
+last_updated: "2026-07-15T09:30:00.000Z"
 last_activity: 2026-07-15
 progress:
   total_phases: 5
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 8
+  completed_plans: 4
+  percent: 20
 ---
 
 # Project State
@@ -20,23 +20,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
 **Core value（v0.17.0）:** 让"产出→入图→召回→更好的产出"的知识飞轮真正转起来：任一链路的产物都可被任一链路检索到，任一链路编码完成都自动沉淀经验并回写业务侧，编码容器天然带着 Friday 的知识工具与 skills 干活。统一知识库 = 既有 `knowledge/` 体系（单一摄取入口 + 单一检索服务），不新建存储。
-**Current focus:** v0.17.0 roadmap 已就绪（planning）——5 Phase（100–104）/ 19 需求（KNOW-01~06 / LOOP-01~05 / AGENT-01~04 / UNIFY-01~04），100% 映射。下一步 `$gsd-plan-phase 100`（知识收敛基座）或 `$gsd-autonomous`（跑完整里程碑）。
+**Current focus:** v0.17.0 autonomous 执行中——Phase 100 已完成（verification passed 5/5，KNOW-01/02/03 交付：learning_case 入图 + 向量检索切换契约不变 + MCP 三产物入图 + backfill）。Phase 101 Wave 1（101-01 回写抽取 / 101-02 提炼管线）执行中；102/103/104 CONTEXT 已就绪。
 
 ## Current Position
 
-Phase: 100 of 100–104 (知识收敛基座) — Not started
-Plan: —
-Status: Roadmap created — ready to plan Phase 100
-Last activity: 2026-07-15 — Roadmap v0.17.0 created (Phases 100–104, 19/19 需求映射)
+Phase: 101 of 100–104 (完工沉淀闭环) — Executing (Wave 1)
+Plan: 101-01 + 101-02 (parallel)
+Status: Phase 100 complete (passed) — Phase 101 wave 1 in flight
+Last activity: 2026-07-15 — Phase 100 verification passed (5/5)，Phase 101 plans PASS 校验并开始执行
 
-Progress: [░░░░░░░░░░] 0% (0/5 phases)
+Progress: [██░░░░░░░░] 20% (1/5 phases)
 
-## Milestone Overview (v0.17.0 — Phases 100–104 — 🟡 PLANNING)
+## Milestone Overview (v0.17.0 — Phases 100–104 — 🚀 EXECUTING)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 100 | 知识收敛基座（learning case 入图 + 检索切换 + MCP 产物入图） | KNOW-01/02/03 | ○ Not started |
-| 101 | 完工沉淀闭环（公共回写 + 自动提炼 + Skill 种子） | LOOP-01~05 | ○ Not started |
+| 100 | 知识收敛基座（learning case 入图 + 检索切换 + MCP 产物入图） | KNOW-01/02/03 | ✅ Complete (4/4, passed) |
+| 101 | 完工沉淀闭环（公共回写 + 自动提炼 + Skill 种子） | LOOP-01~05 | ◐ Executing (0/4) |
 | 102 | 知识消费面与对外契约（召回扩容 + Chat 工具 + snapshot/skills 对齐） | KNOW-04/05/06, UNIFY-04 | ○ Not started |
 | 103 | 编码容器集成（短 TTL token + 容器知识 MCP + skills 注入 + 上下文对齐） | AGENT-01~04 | ○ Not started |
 | 104 | 工具面收口（improve/analyze 收敛 + 确定性缝退役 + 端到端验收） | UNIFY-01/02/03 | ○ Not started |
