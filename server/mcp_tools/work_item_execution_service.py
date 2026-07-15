@@ -271,6 +271,12 @@ async def _ensure_coding_plan(
     await task.asave(
         update_fields=["coding_plan", "plan_version", "status", "recovery_state", "updated_at"]
     )
+    from knowledge import ingestion  # lazy import 防循环
+
+    # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）
+    await ingestion.aschedule_ingestion(
+        ingestion.IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_work_item_plan_created")
+    )
     return plan, version
 
 
@@ -326,6 +332,14 @@ async def _execute_one_task(
             }
             await trace.asave(update_fields=["status", "error", "recovery_state", "updated_at"])
         await refresh_execution_trace(trace)
+        from knowledge import ingestion  # lazy import 防循环
+
+        # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest(
+                "mcp_execution_trace", str(trace.id), "mcp_work_item_execution_created"
+            )
+        )
         task.execution_trace = trace
 
     execution_payload = execution_trace_payload(trace) if trace is not None else {}
