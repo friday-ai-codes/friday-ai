@@ -455,7 +455,26 @@ class GetRelatedEntitiesRequestSerializer(serializers.Serializer):
 
 
 class SearchLearningCasesRequestSerializer(serializers.Serializer):
-    query = serializers.CharField(required=False, allow_blank=True, default="", max_length=2000)
+    """学习案例检索请求（KNOW-02）。
+
+    自 v0.17.0 起结果按统一向量检索排序（``DeliveryKnowledgeSearchService``，
+    entity_kinds=["learning_case"]）；响应 ``score`` 为向量融合分（0-1 浮点），
+    语义由旧 token 命中计数变更为向量分。``repo_hints`` / ``file_hints`` /
+    ``symbol_hints`` / ``work_item_type`` 参与查询文本增强与结果层提权排序，
+    不再是摆设参数。请求/响应键集与 v0.16 完全一致（TOOL_SCHEMA_SNAPSHOT 守门）。
+    """
+
+    query = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=2000,
+        help_text=(
+            "检索问题描述（建议必填）：结果按统一向量检索排序，score 为向量融合分"
+            "（0-1 浮点，自 v0.17.0 起语义由 token 命中计数变更为向量分）；"
+            "query 与全部 hints 拼装后为空时直接返回空结果（向量检索无「无查询返回最新」语义）。"
+        ),
+    )
     work_item_type = serializers.CharField(required=False, allow_blank=True, default="", max_length=80)
     repo_hints = serializers.ListField(
         child=serializers.CharField(max_length=200),
