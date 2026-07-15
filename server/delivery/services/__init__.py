@@ -10,6 +10,11 @@ re-export ``WorkItemService`` / ``WorkItemIdentity``（WorkItem 单一写入入�
 from delivery.services.artifact_service import ArtifactContentInvalid, ArtifactService
 from delivery.services.bitable_release_adapter import BitableReleaseAdapter
 from delivery.services.clarification_service import ClarificationService
+from delivery.services.coding_completion import (
+    CompletionWritebackService,
+    RepoResult,
+    render_results_markdown,
+)
 from delivery.services.comment_event_service import (
     CommentEventService,
     classify_approval_semantic,
@@ -81,4 +86,7 @@ __all__ = [
     "ArtifactContentInvalid",
     "HumanTaskService",
     "HumanTaskView",
+    "CompletionWritebackService",
+    "RepoResult",
+    "render_results_markdown",
 ]
