@@ -93,6 +93,7 @@ async def create_learning_case_from_technical_plan(
     solution_notes: str,
     tests: list[str],
 ) -> LearningCaseResult:
+    """写库成功后经 aschedule_ingestion 投递统一知识摄取（KNOW-01，INV-6 唯一通路）。"""
     technical_plan = await _resolve_technical_plan(technical_plan_id)
     context = technical_plan.context
     tasks = [
@@ -101,7 +102,9 @@ async def create_learning_case_from_technical_plan(
         .filter(technical_plan=technical_plan)
         .order_by("order")
     ]
-    matrix = technical_plan.repository_tasks if isinstance(technical_plan.repository_tasks, list) else []
+    matrix = (
+        technical_plan.repository_tasks if isinstance(technical_plan.repository_tasks, list) else []
+    )
     repositories = _unique([task.repository.name for task in tasks])
     files = _unique(
         [
@@ -123,9 +126,7 @@ async def create_learning_case_from_technical_plan(
     )
     all_tests = _unique([*tests, *task_tests])
     solution = solution_notes.strip() or "\n".join(
-        str(item.get("change_goal") or "")
-        for item in matrix
-        if isinstance(item, dict)
+        str(item.get("change_goal") or "") for item in matrix if isinstance(item, dict)
     )
     source_links = {
         "context_id": str(context.id) if context else "",
@@ -190,6 +191,13 @@ async def create_learning_case_from_technical_plan(
         source_links=source_links,
         case_body=case_body,
         embedding_text=embedding_text,
+    )
+    from knowledge import ingestion  # lazy import 防循环（technical_plan_service.py 同款）
+
+    # aschedule_ingestion 内建 on_commit 语义 + 异常全吞（永不阻塞主流程）；
+    # MCP 链归因经 InteractionRun/ToolCallRecord 留痕，后台摄取记 system，不传 initiated_by_user_id。
+    await ingestion.aschedule_ingestion(
+        ingestion.IngestionRequest("learning_case", str(artifact.id), "mcp_learning_case_created")
     )
     output = {
         "learning_case_id": str(artifact.id),
