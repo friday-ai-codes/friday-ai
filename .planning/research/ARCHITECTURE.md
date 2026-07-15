@@ -1,373 +1,275 @@
 # Architecture Research
 
-**Domain:** 交付知识图谱（需求/缺陷 ↔ 技术方案 ↔ 代码 diff 的 GraphRAG 关联）— brownfield 集成架构
-**Researched:** 2026-06-11
-**Confidence:** HIGH（核心结论全部基于实读本仓库代码验证；外部模式参考 Graphiti bi-temporal 设计为 MEDIUM）
+**Domain:** v0.17.0 统一知识库与全链路联动（brownfield 集成架构：KNOW / LOOP / AGENT / UNIFY）
+**Researched:** 2026-07-15
+**Confidence:** HIGH（全部集成点经读码核实，引用具体文件/函数；无外部生态依赖，纯内部集成）
 
-> 本文回答：v0.3.0 新能力如何与现有 Friday AI 架构集成。所有"现有代码"引用均已实读验证（文件:函数/行号）。
-> 下游消费者：roadmapper 划分 phase。重点输出集成点、新增 vs 修改、数据流、构建顺序。
+> 本文回答：四块新能力如何与既有架构集成——每块的集成点（文件/服务/信号）、新增组件清单（放哪、循什么模式）、数据流变化（写入→摄取→检索→消费）、建议构建顺序。写给 roadmapper 与 plan-phase 消费。
 
 ## Standard Architecture
 
-### System Overview（新增组件在现有架构中的位置）
+### System Overview（改动后的目标形态）
 
 ```
-                      ┌──────────────── 摄取入口（全部为既有代码路径埋 hook）────────────────┐
-                      │                                                                      │
-  workflow:           │  chat:                    MCP HTTP:                  飞书:           │
-  plan_generation.py  │  agents/tools/            mcp_tools/                 feishu/views.py │
-  plan_approval.py    │  coding_tools.py          technical_plan_service.py  Workitem*Event  │
-  (approved port)     │  (create/update_          (acreate 落库点)                            │
-                      │   coding_plan @tool)                                                  │
-  subagent/api/       │                                                                      │
-  callbacks.py        │                                                                      │
-  (_handle_completed) │                                                                      │
-        │             └───────────────┬──────────────────────────────────────────────────────┘
-        │                             │ fire-and-forget（services/background_runner.run_in_background）
-        ▼                             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  NEW: server/knowledge/  （新 Django app = 新 bounded context）              │
-│                                                                              │
-│  ingestion.py        KnowledgeIngestionService（统一摄取，多入口复用）        │
-│  diff_archiver.py    server 侧经 GitPlatformClient 拉全量 diff 并归档        │
-│  graph_store.py      GraphStore 接口（PG 递归 CTE 实现，留换引擎逃生门）      │
-│  search.py           KnowledgeSearchService（时间感知混合检索，与             │
-│                      HybridSearchService 平行，复用底层件）                   │
-│  models.py           KnowledgeEntity / KnowledgeEntityVersion /              │
-│                      KnowledgeEdge（bi-temporal）/ CodeChangeArchive         │
-└──────────┬──────────────────────────────────────┬────────────────────────────┘
-           │ ORM                                  │ 向量
-           ▼                                      ▼
-   ┌───────────────┐                     ┌──────────────────────────┐
-   │ Postgres      │                     │ Qdrant                   │
-   │ knowledge_* 表 │                     │ NEW: delivery_knowledge  │
-   │（与 chunk_*    │                     │ （单 collection，hybrid   │
-   │  edges 并存，  │                     │  dense+sparse，payload    │
-   │  不迁移）      │                     │  filter 隔离 project）    │
-   └───────────────┘                     └──────────────────────────┘
-           ▲                                      ▲
-           │ MODIFIES 边弱引用 chunk_id            │ 复用 EmbeddingService /
-   ┌───────┴────────┐                             │ SparseEncoder / QdrantService
-   │ code_relations │                     ┌───────┴───────────┐
-   │ ChunkRegistry  │                     │ services/         │
-   │ ChunkEdge      │                     │ embedding.py 等    │
-   │（保持不动）     │                     └───────────────────┘
-   └────────────────┘
-
-  暴露出口（复用既有四种入口模式，全部为新增文件、零修改框架）：
-  - MCP HTTP tool   → mcp_tools/views.py McpToolView 子类模式（PAT 认证 + interactions 审计）
-  - chat agent tool → agents/tools/ 新增 @tool（langchain_adapter 自动适配）
-  - workflow node   → workflows/nodes/<category>/ 放 BaseNode 子类即自动注册
-  - npm skill       → mcp/ 包（cli.js）+ skills 文档，指导外部 agent 调上述 MCP tool
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 消费面（读）                                                                │
+│  Chat 工具白名单        编排召回              MCP 工具面          容器内代理    │
+│  agents/chat_runner   recall_adapter      mcp_tools/views    task 容器 MCP │
+│  (+search_learning_   (+document/         (snapshot 补全)     (新: 知识 MCP │
+│   cases 等 3 工具)      learning_case)                          server)     │
+└──────────┬────────────────┬────────────────────┬───────────────┬──────────┘
+           │                │                    │               │ HTTP+PAT
+           ▼                ▼                    ▼               ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 单一检索面：knowledge/retrieval.py DeliveryKnowledgeSearchService           │
+│ （向量 + 图扩散 + bi-temporal + fail-closed 权限）                           │
+├──────────────────────────────────────────────────────────────────────────┤
+│ 单一摄取入口：knowledge/ingestion.py aschedule_ingestion                    │
+│  sources 注册表（现有 10 个 normalizer）＋ 新增：                            │
+│    learning_case / mcp_coding_plan / mcp_repository_analysis /            │
+│    mcp_execution_trace                                                     │
+├──────────────────────────────────────────────────────────────────────────┤
+│ 存储（不新建）：KnowledgeEntity/Version/Edge (PG) + Qdrant delivery_knowledge│
+│ 写模型（保留）：McpLearningCase / McpCodingPlan / chat.CodingPlan / ...      │
+└──────────────────────────────────────────────────────────────────────────┘
+           ▲                                     ▲
+           │ 写入（沉淀）                          │ 回写（业务侧）
+┌──────────┴─────────────────────────────────────┴──────────────────────────┐
+│ LOOP 完工闭环（三链路统一锚点）                                               │
+│  workflow: AICodingNode._finalize_and_notify（MR 后锚点，已投 task_result）  │
+│  chat:     orchestration/coding_graph.create_pr_or_skip_node（已投递）      │
+│  MCP:      mcp_tools/work_item_execution_service（已投 mcp_technical_plan） │
+│  → 新增共用：CodingCompletionService = 飞书回写 + 自动 learning case 提炼     │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Component Responsibilities
+### Component Responsibilities（新增/修改总表）
 
-| Component | Responsibility | 新增/修改 | 位置 |
-|-----------|----------------|-----------|------|
-| `knowledge` app | 实体/边/版本模型 + migrations，bounded context | **新增** | `server/knowledge/` |
-| KnowledgeIngestionService | 统一摄取：实体 upsert + 版本翻转 + 向量写入 + 建边 | **新增** | `server/knowledge/ingestion.py` |
-| GraphStore | 图访问唯一收口（1–3 跳扩散 PG 递归 CTE），接口化 | **新增** | `server/knowledge/graph_store.py` |
-| DiffArchiver | 全量 diff 拉取（git platform）+ 归档 + 向量化 + chunk 打通 | **新增** | `server/knowledge/diff_archiver.py` |
-| KnowledgeSearchService | 向量召回 + 图扩散 + 时间衰减/过时标记 | **新增** | `server/knowledge/search.py` |
-| 摄取 hook（6 处） | 在既有路径调 ingestion（见下文清单） | **修改**（每处 3–10 行） | 见 §摄取触发点清单 |
-| `delivery_knowledge` collection | 知识向量存储（dense+sparse hybrid） | **新增**（Qdrant 内） | 经 `QdrantService.create_collection_by_name` |
-| MCP tool / chat tool / workflow node / npm skill | 多入口暴露 | **新增**（各入口新文件） | 见 §Integration Points |
+| 组件 | 新增/修改 | 位置 | 职责 | 遵循的既有模式 |
+|------|----------|------|------|--------------|
+| learning_case normalizer | **新增** | `server/knowledge/sources/learning_case.py` | `McpLearningCase` → 知识实体（+work_item 锚双事件） | `knowledge/sources/mcp_plan.py` 双事件先例 |
+| MCP 产物 normalizer ×3 | **新增** | `server/knowledge/sources/mcp_coding_plan.py`、`mcp_repository_analysis.py`、`mcp_execution_trace.py` | McpCodingPlan/McpRepositoryAnalysis/McpCodingExecutionTrace 入图 | `knowledge/sources/coding_plan.py`（单事件）/ `mcp_plan.py`（带边） |
+| `EntityKind.LEARNING_CASE` | **修改** | `server/knowledge/models.py` | 新实体分类字面值 | Phase 79 PROJECT/REPOSITORY/SPACE 增量扩枚举先例（不改既有四类、无 PK 漂移） |
+| sources 注册表 | **修改** | `server/knowledge/sources/__init__.py` `_NORMALIZERS` | 登记 4 个新 source_kind | 现有惰性 import 注册表 |
+| `search_learning_cases` 底层切换 | **修改** | `server/mcp_tools/learning_case_service.py` | token 打分退役 → `DeliveryKnowledgeSearchService.search_similar(entity_kinds=["learning_case"])`，回填 `learning_case_payload` 外形 | 对外契约不变（`TOOL_SCHEMA_SNAPSHOT` 键不动） |
+| recall_adapter 扩容 | **修改** | `server/services/process_runtime/recall_adapter.py` `RECALL_ENTITY_KINDS` | kinds 增加 `document`/`learning_case`（可配置） | 现有 adapter 只做接线不重写检索 |
+| Chat 知识读工具 ×3 | **修改** | `server/agents/chat_runner.py` `_INDEXED_TOOL_NAMES` + `server/agents/tools/` 薄封装 | `search_learning_cases`/`read_project_doc`/`search_project_context` 进白名单 | RECALL-02 先例（Phase 80 把 `search_delivery_knowledge` 挂进白名单的方式） |
+| 完工回写+沉淀服务 | **新增** | `server/delivery/services/coding_completion.py`（建议） | 飞书工作项评论/文档回写 + LLM 提炼 learning case，三链路统一调用，全程 fail-soft | 从 `mcp_tools/work_item_execution_service._write_results_back` 抽取；INV-6 单一入口 |
+| 平台 Skill 种子 ×2 | **新增** | `server/tools/` 种子数据（RemoteTool `Source.SKILL`，config.steps） | `pre_coding_research` / `post_coding_capture` 多步串行 | `server/tools/sources/skill.py` 既有 steps 顺序执行器 |
+| 容器知识 MCP server | **新增** | `task/core/knowledge_tools.py`（建议） | 进程内 SDK MCP server，HTTP 调 `/api/mcp/tools/<name>/` 白名单子集，PAT 鉴权 | 镜像 `task/core/remote_tools.py`（handler/脱敏/graceful/端点校验全套约束） |
+| 容器 skills 注入 | **新增** | task 镜像构建（`task/Dockerfile` COPY `skills/skills/`）+ `task/core/runner.py` workspace 准备段 | 把 friday-code/friday-memory 物料写入 `<workspace>/.claude/skills/`（不覆盖仓库自带） | `setting_sources=["project"]` 原生加载（v0.9.0 已验证）；同源=同一仓库路径构建 |
+| workflow 编码上下文对齐 | **修改** | `server/workflows/nodes/ai/coding.py` `_run_repo_coding` / `_dispatch_wave` | dispatch 前 prepend `pack_project_context` 输出 | `chat/coding_session_service.py` `_resolve_project_context_for_dispatch` + `_prepend_project_context` 逐字对齐 |
+| improve/analyze 收敛 | **修改** | `server/mcp_tools/views.py`（Improve/Analyze 两个 View） | 改走 `delegate_process_runtime`，退役 `planning_service.py` 确定性缝 | `create_coding_plan` View 已走 delegate + `map_canonical_to_coding_plan` 外形兼容（UNIFY-04 先例） |
+| plan_orchestration 空壳清理 | **删除** | `server/services/plan_orchestration/`（已核实仅剩 `__pycache__`） | 删目录 + 清文档引用 | — |
+| snapshot 补全 | **修改** | `server/mcp_tools/serializers.py` `TOOL_SCHEMA_SNAPSHOT` | 补 `report_project_state`（已核实缺失；`reverse_lookup_requirements` 已在） | MCP schema 变更同步快照测试（既有纪律） |
 
-## Recommended Project Structure
+## 关键核实点（问题指定的 4 项，全部读码确认）
 
-```
-server/knowledge/                  # 新 Django app（沿用 "app 即 bounded context" 惯例）
-├── __init__.py
-├── apps.py
-├── models.py                      # KnowledgeEntity / KnowledgeEntityVersion / KnowledgeEdge / CodeChangeArchive
-├── migrations/
-├── ingestion.py                   # KnowledgeIngestionService（统一摄取入口，幂等）
-├── sources/                       # 各来源 payload → 统一实体 DTO 的 normalizer
-│   ├── coding_plan.py             #   chat.CodingPlan → entity
-│   ├── mcp_technical_plan.py      #   McpWorkItemTechnicalPlan → entity
-│   ├── work_item.py               #   飞书工作项（McpWorkItemContext / webhook payload）→ entity
-│   └── task_result.py             #   TaskResult/CodingSession 完成 → code_change entity
-├── diff_archiver.py               # 全量 diff 获取 + 归档 + chunk 关联
-├── graph_store.py                 # GraphStore Protocol + PostgresGraphStore 实现
-├── search.py                      # KnowledgeSearchService（时间感知混合检索）
-├── qdrant.py                      # delivery_knowledge collection 管理 + payload schema 常量
-├── api/                           # （可选）管理/调试 REST views
-└── urls.py
+### 核实 1：learning case 入图的 normalizer 确切契约
 
-server/agents/tools/knowledge_tools.py        # chat @tool（search_delivery_knowledge 等）
-server/workflows/nodes/ai/knowledge_retrieval.py  # workflow 节点（自动注册）
-server/mcp_tools/views.py                     # 追加 McpToolView 子类（或拆 knowledge 专属 service 文件）
-```
+**契约（`knowledge/ingestion.py:26-115` 已核实）**：normalizer 是 `async def normalize(request: IngestionRequest) -> list[IngestionEvent]` 协程；hook 只传 ID（`IngestionRequest(source_kind, source_id, trigger)`），normalizer 在后台 worker 内按 `source_id` 重读源模型（`select_related` 防 async 隐式同步访问）；源缺失返回 `[]` 不 raise（`knowledge_normalize_source_missing` warning）。
 
-### Structure Rationale
+`IngestionEvent` 必填字段：`kind`（EntityKind 字面值）、`origin`、`source_kind`、`source_id`、`title`、`content`（embedding 输入全文）、`payload`（结构化快照，落 `KnowledgeEntityVersion.payload`）、`space_id`、`repository_id`、`event_time`（必须 aware）、可选 `edges: tuple[EdgeSpec, ...]`（以本事件实体为 source 的出边）与 `vectorize`（默认 True）。
 
-- **app 内 service 而非 `server/services/`**：`mcp_tools/*_service.py`、`chat/coding_session_service.py` 已确立"领域 service 放 app 内"的先例；`server/services/` 留给跨域基础设施（embedding、qdrant、git_platform）。knowledge 是新领域，service 收口在 app 内，依赖方向单向（knowledge → services/*，其他 app → knowledge.ingestion 仅经一个公开函数）。
-- **`sources/` normalizer 拆分**：6 个触发点 payload 形态差异大（NodeResult dict / Django model / webhook JSON），normalizer 各自独立可测，ingestion 核心只认统一 DTO——这是"多入口复用统一摄取服务"的关键结构。
-- **`graph_store.py` 接口化**：已定决策"图访问收敛 GraphStore 接口，留换引擎逃生门"。Protocol + 单一 PG 实现，knowledge 内任何图遍历不得绕过。
+**natural key 定法**：`generate_entity_id(kind, source_kind, source_id)` 是实体 id 派生唯一入口（`knowledge/models.py:92-124`），规则表 locked。learning case 建议登记为：
+
+| 字段 | 值 |
+|------|-----|
+| source_kind | `learning_case`（新登记进 `_NORMALIZERS` 与 natural key 规则表 docstring） |
+| source_id | `McpLearningCase` UUID str（稳定业务 ID，与 `coding_plan`/`mcp_technical_plan` 同款） |
+| kind | `EntityKind.LEARNING_CASE`（新字面值，见下） |
+| content | `title + problem + root_cause + solution + outcome` 拼接（可直接复用模型已有 `embedding_text` 字段，`learning_case_service.py:159-172` 生成逻辑） |
+| payload | `case_body`（模型已有字段） |
+| event_time | `case.created_at` |
+
+**kind 决策（预设默认，可在 plan-phase 推翻）**：新增 `EntityKind.LEARNING_CASE = "learning_case"` 而非复用 `document`。理由：`search_learning_cases` 底层切换与 recall_adapter 可配置开关都靠 `entity_kinds` 过滤实现，复用 document 会让"项目记忆/工件/PRD"与"经验案例"在同一 kind 下无法区分排序。扩枚举走 Phase 79 先例（`knowledge/models.py:45-50` 注释明确：新增字面值不改既有四类，仅扩 `generate_entity_id` 派生空间与 `kentity_kind_valid` 约束，无 PK 漂移）——需要一个 migration 更新 CHECK 约束。
+
+**边**：复用 `mcp_plan.py` 双事件先例（`knowledge/sources/mcp_plan.py:27-102`）——`McpLearningCase` 带 `work_item_id`/`work_item_type` 与 `technical_plan` FK 时：
+- 产出 work_item 锚事件（`source_id = f"{feishu_project_key}:{work_item_type}:{work_item_id}"`，注意 `McpLearningCase` 无 `feishu_project_key` 字段，需经 `technical_plan.feishu_project_key` 或 `context` 取；取不到则不建锚，只产单事件——镜像 mcp_plan 的"锚缺料只产 tech_plan"防御）；
+- learning_case —`RELATES_TO`→ work_item 锚 + —`REFERENCES`→ tech_plan（`generate_entity_id("tech_plan", "mcp_technical_plan", str(technical_plan_id))`）。批内先持久化全部实体再统一处理边（阶段 B），两端实体保证存在。
+
+**触发点**：`create_learning_case_from_technical_plan`（`mcp_tools/learning_case_service.py:87-210`）在 `acreate` 之后追加 `await ingestion.aschedule_ingestion(IngestionRequest("learning_case", str(artifact.id), "learning_case_created"))`——与 `work_item_execution_service.py:605-610` 的 lazy import 投递写法逐字对齐。LOOP 自动提炼路径写库也经同一函数（INV-6）。
+
+### 核实 2：容器 Friday 知识 MCP 的鉴权与配置传递路径
+
+**既有链路（全部核实）**：server 派发 metadata 顶层 `env_FRIDAY_TASK_*` 键 → runner Docker executor `TrimPrefix("env_")` 注入容器环境变量 → task `TaskConfig`（pydantic `env_prefix="FRIDAY_TASK_"`，`task/core/config.py:22-26`）自动映射 → `ClaudeRunner._execute_claude` 构建 MCP server 并挂 `mcp_servers`/`allowed_tools`（`task/core/executor.py:582-629`）。RemoteTool 先例三要素：`user_token` + `tools_endpoint` + `remote_tools`，任一为空则不挂（向后兼容降级，`task/core/remote_tools.py:130-164`）。
+
+**新链路设计（复用同一机制）**：
+1. **server 侧**：三条派发路径（`workflows/nodes/ai/coding.py:_run_repo_coding` 的 `tools_env` 段、`chat/coding_session_service.py:build_dispatch_metadata`、`mcp_tools/execution_service.py:dispatch_execution`）新增注入 `env_FRIDAY_TASK_KNOWLEDGE_TOOLS`（白名单工具 schema JSON）与 `env_FRIDAY_TASK_MCP_ENDPOINT`（`{FRIDAY_BASE_URL}/api/mcp/tools/`，与 `env_FRIDAY_TASK_TOOLS_ENDPOINT` 派生方式一致，coding.py:1594-1599 先例）。
+2. **task 侧**：`TaskConfig` 加 `knowledge_tools: list[dict]` + `mcp_endpoint: str` 字段（默认空 → 不挂，零回归）；新模块 `task/core/knowledge_tools.py` 提供 `build_knowledge_mcp_server(...)`，handler POST `{mcp_endpoint}{tool_name}/`、body 直接为工具 arguments、header `Authorization: Bearer <PAT>`——逐条镜像 `remote_tools.py` 的约束（PAT 只进 header 绝不进日志、401/403/非 200/非 JSON 一律返回 `is_error` 结构化错误 return 不 raise、端点 scheme/host 校验）。在 `run_execute_mode` 经既有 `extra_mcp_servers`/`extra_allowed_tools` 参数合并挂载（与 ask_user server 并存，`executor.py:262-281` 先例；allowed_tools 排他白名单必须并入 `_BUILTIN_CODING_TOOLS`，WR-02 已有防线）。
+3. **鉴权**：`/api/mcp/tools/<name>/` 的 `McpToolView` 已是 PAT fail-closed 信任边界（v0.2.0），权限/排除/脱敏天然继承，server 侧无需新鉴权代码。
+
+**⚠️ 关键缺口（必须在 roadmap 显式决策）**：PAT 明文的可用性三链路不一致。`AICodingNode._resolve_user_pat`（coding.py:1488-1506）只在"带 PAT 的实时请求线程"能拿到明文（PAT-02：绝不从 DB 反取）；实际上：
+- **MCP 链**：请求本身就是 PAT 认证，实时明文在线程内可捕获——但 `mcp_tools/execution_service.py` dispatch 路径目前**未接** ContextVar 捕获（PROJECT.md 已列为 known follow-up"chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖"）；
+- **Chat 链**：用户经 cookie-JWT 触发，线程内**没有** PAT 明文；
+- **Workflow 链**：仅 API+PAT 触发才有；飞书事件/定时触发没有。
+
+即：若沿用"机会性 PAT"方案，容器知识 MCP 在 Chat 链和飞书触发的 workflow 链**默认不可用**。两个选项：
+- **选项 A（最小改动）**：接受降级——MCP 链补 ContextVar 捕获，Chat/workflow 无 PAT 时容器只靠 prepend 的 `pack_project_context` 文本（AGENT-03 兜底）。验收面第 5 条只对有 PAT 的链路成立。
+- **选项 B（推荐，需人确认）**：派发时为发起用户铸造**短 TTL 任务级 token**（新建一条 `AccessToken`：明文只在 dispatch 内存中生成后直进 env、DB 只存 sha256、`expires_at` = 任务 timeout + 余量、任务终态回调时吊销）。不违反 PAT-02（明文从未落盘、从未从 DB 反取），且与既有"令牌即用户身份"RBAC 完全复用；但与历史决策"短 TTL 派生凭证留 v2（PATX-04）"冲突，需要在 discuss-phase 显式推翻或选 A。
+
+### 核实 3：公共 write-back service 抽取的依赖面
+
+`_write_results_back`（`mcp_tools/work_item_execution_service.py:457-535`）的完整依赖：
+
+| 依赖 | 来源 | 抽取影响 |
+|------|------|---------|
+| `technical_plan.space`（Space 实例） | `McpWorkItemTechnicalPlan.space` FK | 中性化为参数 `space` |
+| `technical_plan.feishu_project_key / work_item_id / work_item_type` | 模型字段 | 中性化为工作项三元组参数（workflow/chat 链从各自锚取） |
+| `technical_plan.feishu_document_id` | 模型字段 | 可选参数（无则跳过文档 append） |
+| `create_feishu_doc_client_for_project(space)` | `agents/tools/feishu_doc_tools` | 直接复用 |
+| `create_feishu_client_for_project(space)` + `client.add_comment(...)` | `services/feishu.py` | 直接复用 |
+| markdown 渲染 `_execution_results_markdown(tasks)` | 同文件，输入是 `McpWorkItemRepoTask` 列表 | 中性化为行数据 `list[{repo_name,status,branch,commit,mr_url,error}]`，MCP/workflow/chat 各自映射 |
+| 回写状态落 `technical_plan.comment_result / retry_state / error_stage` | MCP 模型专属 | **不进公共层**——公共 service 只返回 `{document_update, comment}` 两个结果 dict，MCP 调用方自行落自家 retry_state（保留既有 partial 语义零回归） |
+
+**建议形态**：`server/delivery/services/coding_completion.py` 内 `CompletionWritebackService.awrite_back(space, feishu_project_key, work_item_type, work_item_id, rows, *, feishu_document_id="", markdown="") -> dict`。三链路锚点：
+- **MCP**：`execute_work_item_repo_tasks` 的 `_write_results_back` 改为薄包装调公共 service（行为零回归，含 `write_back` 开关）。
+- **Workflow**：`AICodingNode._finalize_and_notify`（coding.py:1180 起）——MR 创建 + cross-ref 之后、`_send_result_notification` 之前挂 best-effort 段；工作项三元组从 `context.get_trigger_data("payload.*")` 或 plan 追溯链取（`workflows/services/pr_cross_reference.py` 已实现 plan_version → TechnicalPlan → WorkItem 反查，直接复用）；节点 config 加 `write_back_feishu` 开关（模板默认开）。
+- **Chat**：`orchestration/coding_graph.py:create_pr_or_skip_node`（:561 起）——PR 创建/skip 之后；Chat 会话多数无绑定 work_item，取不到三元组即 no-op（fail-soft）。
+
+### 核实 4：workflow `ai_coding` prepend `pack_project_context` 的注入点
+
+Chat 权威基线（`chat/coding_session_service.py:238-301, 404-408`）：`dispatch_coding_task` 在构建 metadata 后、dispatch 前，调 `_resolve_project_context_for_dispatch`（定位项目：`conversation.bound_project` 优先 → `(repository_id, branch_name)` 反查 `initiatives.ProjectBranch`）→ `pack_project_context(project, user, query=branch_name, conversation_id=...)` → `redact_secrets_in_text` → 注入 `env_FRIDAY_TASK_PROJECT_CONTEXT` + `_prepend_project_context(prompt, context)` 拼 prompt 头。全程 fail-soft 返回 ""。
+
+**workflow 注入点**：`AICodingNode._run_repo_coding`（coding.py:1508 起）——`prompt = self._build_coding_prompt(...)` 之后、`DispatchTask` 构建之前，加同款 best-effort 段：
+- 项目定位：workflow 无 conversation，两级 fallback——① `(repository.id, branch_name)` 反查 `ProjectBranch`（直接复用 `_lookup_project_by_branch`，建议把它从 chat 模块提到共享位置或在 initiatives 侧暴露）；② trigger 的 work_item → 项目（若 Phase 78 建立了 work_item↔project 关系边）。
+- user 归因：`workflow_execution.triggered_by`（callbacks.py `_resolve_initiated_user` 同款权威来源）；packer 内置 visibility fail-closed 不能绕过。
+- 注意 per-repo 粒度：`_run_repo_coding` 是逐仓调用，多仓场景 packer 会被调 N 次；`pack_project_context` 内部有 RAG 召回，建议在 `_dispatch_wave` 层按 (project, branch) 解析一次、逐仓复用文本（省 token 与时延）。
+- 复用 `_prepend_project_context` 拼接函数（从 `coding_session_service.py:294-301` 提为共享 helper，避免两处漂移）。
+- wave 推进路径 `_dispatch_next_wave` 走同一 `_dispatch_wave`，天然覆盖（不造两套）。
 
 ## Architectural Patterns
 
-### Pattern 1: 模型设计 — FK 与弱引用混用（双层引用原则）
+### Pattern 1: 触发点只投 ID，normalizer 后台重读（KNOW 全部入图沿用）
 
-**What:** KnowledgeEntity/KnowledgeEdge 对"组织维度"用 FK，对"跨域内容对象"用弱引用（kind + id 二元组）。
+**What:** 业务写入点只调 `aschedule_ingestion(IngestionRequest(source_kind, source_id, trigger))`（`transaction.on_commit` + background runner，异常全吞）；重逻辑全在 normalizer。
+**When to use:** 所有 4 个新 normalizer + LOOP 自动 learning case 的入图。
+**Trade-offs:** 最终一致（非同步入图）；换来主流程零阻塞、幂等可重触发（六步版本翻转 + hash 短路已内建）。
 
-**仓库内已验证的两种先例：**
-- FK 风格：`mcp_tools/models.py` 全部用 FK（`run`/`repository`/`project`，跨 app 可 FK）；
-- 弱引用风格：`code_relations/models.py` `ChunkEdge.source_chunk_id/target_chunk_id` 显式不做 FK（"允许跨仓/chunk 未写入 ChunkRegistry 时柔性引用，孤儿引用由 reconcile 命令兜底"）。
+### Pattern 2: 三链路共用完成锚点服务，锚点在"MR 已知"之后（LOOP）
 
-**取舍建议（opinionated）：**
+**What:** 回写与沉淀不挂容器回调（callbacks.py `_handle_completed`），而挂三条链路各自的"MR 结果已知"锚点——workflow `_finalize_and_notify`、chat `create_pr_or_skip_node`、MCP `execute_work_item_repo_tasks`。这正是 INGEST-02 时序防线的既有结论（coding.py:1247-1249 注释："归档不挂容器回调"），学习案例需要 mr_url/diff，同理。
+**When to use:** `CompletionWritebackService` 与自动 learning case 提炼共用同一组锚点（可合成一个 `on_coding_completed` 编排函数，两步各自独立 try/except）。
+**Trade-offs:** 三处接线 vs 一处回调；但回调时刻拿不到 MR 结果，且回调 5xx 会触发重试风暴（Pitfall 4 已有教训），锚点方案是既有已验证路径。
 
-| 引用对象 | 方式 | 理由 |
-|---------|------|------|
-| `project` / `repository` | FK（`on_delete=CASCADE` 或 `SET_NULL`） | 组织维度稳定，需要按项目过滤索引；与 `McpWorkItemContext.project` 同款 |
-| 源业务对象（CodingPlan / McpWorkItemTechnicalPlan / TaskResult / 飞书工作项…） | **弱引用** `source_kind: CharField(choices)` + `source_id: CharField` | ① 来源横跨 4 个 app（chat/mcp_tools/subagent/feishu），FK 会让 knowledge 反向耦合所有上游 app 的迁移与删除语义；② 飞书工作项根本没有本地模型 FK 可指（`feishu_project_key + work_item_type + work_item_id` 三元组）；③ 源对象删除不应级联抹掉知识历史（bi-temporal 的"历史可查"要求）。不用 GenericForeignKey——contenttypes 框架在本仓库零使用先例，且 GFK 无法表达飞书三元组 |
-| KnowledgeEdge 两端 | FK → KnowledgeEntity（同 app 内，强一致没有代价） | 与 ChunkEdge 不同：知识实体一定先落库再建边，无"柔性引用"需求 |
-| code_change → chunk | 弱引用 `target_chunk_id: UUIDField`（不 FK 到 ChunkRegistry） | 沿用 ChunkEdge 同一原则；chunk 重切分会换 id，孤儿边走 reconcile（见 Pattern 5） |
+**自动提炼的实现要点**：LLM 从 TaskResult/diff/plan 提炼 outcome/root_cause/solution → 落 `McpLearningCase`（复用/泛化 `create_learning_case_from_technical_plan`，workflow/chat 链无 `McpWorkItemTechnicalPlan` 时 `technical_plan`/`context` FK 允许为空——需核对模型字段 null 约束，必要时小 migration）→ 经核实 1 的 ingestion 入图。新 LLM 调用点赋新 `call_source`（如 `learning_case_extraction`）登记 LOGGING-SPEC §4.1；带 `initiated_by_user_id`（workflow 链用 `triggered_by`，无则 system）。
 
-**字段草案（供 roadmapper 评估规模，非最终 contract）：**
+### Pattern 3: 容器能力 = 服务端 HTTP 工具面复用 + env 三要素开关（AGENT）
 
-```python
-class KnowledgeEntity(models.Model):
-    # kind: requirement / defect / technical_plan / code_change
-    id = UUIDField(pk); kind = CharField(choices, db_index=True)
-    project = FK("projects.Project", null=True); repository = FK("repositories.Repository", null=True)
-    source_kind = CharField(choices)   # coding_plan / mcp_technical_plan / mcp_work_item / feishu_webhook / task_result ...
-    source_id = CharField(max_length=200)  # UUID str 或 feishu 三元组拼接
-    title = CharField; summary = TextField   # 检索展示用
-    current_version = PositiveIntegerField(default=1)
-    is_active = BooleanField(default=True)  # 源对象被删除/作废
-    created_at / updated_at
-    # 唯一约束 (kind, source_kind, source_id) —— 重摄取幂等 upsert 的锚点
+**What:** 容器不直连 Qdrant/DB；一切知识能力经 `/api/mcp/tools/*`（PAT fail-closed、排除文件、脱敏天然继承）。挂载由"endpoint + token + 工具清单"三个 env 控制，任一为空整体降级不挂（零回归）。
+**When to use:** `build_knowledge_mcp_server`；未来任何容器新能力同款。
+**Trade-offs:** 每次工具调用一跳 HTTP（时延 + 服务端负载）——用白名单收窄（7 个读工具）+ handler 60s timeout（remote_tools.py 先例）+ 观测埋点先行（新请求入口纳入 QPS/错误率）缓解。
 
-class KnowledgeEntityVersion(models.Model):
-    entity = FK(KnowledgeEntity, related_name="versions")
-    version = PositiveIntegerField()
-    content = TextField               # 该版本全文（embedding 输入）
-    content_hash = CharField(64)      # sha256，内容未变跳过重摄取（CodingPlan.aget_or_create_for_conversation 同款手法）
-    payload = JSONField               # 结构化原文快照
-    qdrant_point_ids = JSONField(default=list)  # 该版本写入的向量点，下线时按 id 删
-    is_latest = BooleanField(db_index=True)
-    valid_at = DateTimeField          # 业务有效起点（bi-temporal: valid time）
-    invalidated_at = DateTimeField(null=True)  # 被新版本替代的时刻
-    created_at                         # 系统记录时间（bi-temporal: transaction time）
-    # UniqueConstraint(entity, version)；部分索引 (entity) WHERE is_latest
+### Pattern 4: skills 单一事实源 = 构建期从仓库同一路径 COPY（AGENT）
 
-class KnowledgeEdge(models.Model):
-    # relation: PLANNED_BY / IMPLEMENTED_BY / SUPERSEDES / MODIFIES_CHUNK / RELATES_TO ...
-    id = UUIDField(pk)
-    source_entity = FK(KnowledgeEntity, related_name="out_edges")
-    target_entity = FK(KnowledgeEntity, null=True, related_name="in_edges")
-    target_chunk_id = UUIDField(null=True, db_index=True)  # MODIFIES_CHUNK 专用，弱引用 ChunkRegistry
-    relation = CharField(choices); weight = FloatField(validators 0..1)
-    metadata = JSONField(default=dict)
-    valid_at = DateTimeField; invalidated_at = DateTimeField(null=True, db_index=True)  # bi-temporal 边
-    created_at; expired_at = DateTimeField(null=True)      # transaction time 对
-    # CheckConstraint: target_entity 与 target_chunk_id 二选一非空
-    # UniqueConstraint(source_entity, target_entity, relation) WHERE invalidated_at IS NULL（活跃边唯一）
-    # 索引：(source_entity, relation)、(target_entity)、(target_chunk_id) —— 对齐 ChunkEdge fanout/target 索引模式
-```
-
-**When to use:** bi-temporal 双时间对（valid_at/invalidated_at + created_at/expired_at）借鉴 Graphiti；检索默认 `invalidated_at IS NULL`，历史回溯按时间点过滤。
-**Trade-offs:** 弱引用需要 reconcile 兜底（已有 `code_relations` reconcile 命令先例可仿）；版本表全文存储有冗余，但换来"旧版本向量精确下线 + 历史可查"，符合已定决策。
-
-### Pattern 2: 统一摄取服务 + fire-and-forget 后台执行
-
-**What:** 所有触发点只做一件事——组装最小上下文调用 `ingest_*` 公开函数；真正的 normalize/embed/写库/建边在 `background_runner` 的常驻 worker loop 中执行。
-
-**Why 选 background_runner 而非 apscheduler（已验证两者实现）：**
-- `services/background_runner.py`：进程级 daemon 线程 + 常驻 event loop，专为"脱离请求生命周期的耗时 coroutine"设计（indexer 已在用）。摄取含远程 embedding API 调用（`EmbeddingService` 走系统配置的 remote API），耗时百 ms～秒级，绝不能同步阻塞回调/webhook 响应。
-- apscheduler（`agents/management/commands/runapscheduler.py`，BackgroundScheduler + DjangoJobStore）是周期 job 基础设施，跑在独立管理命令进程里，不适合事件驱动摄取；但适合加一个**低频补偿扫描 job**（如每小时扫 `updated_at > last_ingested_at` 的源对象）兜底 hook 漏触发——可作为后期增强，非首期必须。
-
-**摄取必须幂等**：以 `(kind, source_kind, source_id)` upsert + `content_hash` 短路。理由：`_handle_completed` 自身已有幂等防御（TaskResult aexists 检查），重复回调/重试是既有事实。
-
-**Example（hook 形态，以 callbacks 为例）：**
-
-```python
-# server/subagent/api/callbacks.py::_handle_completed 末尾追加（与
-# _update_agent_session_cross_repo_relevance 同款"永不阻塞主流程"模式）
-from services.background_runner import run_in_background
-run_in_background(
-    lambda: ingest_task_completion(session_id=session.session_id),
-    name=f"knowledge-ingest-{session.session_id}",
-)
-```
-
-**Trade-offs:** fire-and-forget 失败只留日志 → 需要 `last_error` 落在实体上或依赖补偿扫描；可接受，知识摄取非关键路径。
-
-### Pattern 3: 检索 — 平行服务复用底层件，不扩展 HybridSearchService
-
-**What:** 新建 `KnowledgeSearchService`，与 `services/retrieval/hybrid_search.py::HybridSearchService` 平行，不继承不修改。
-
-**Why（实读 hybrid_search.py 后的结论）：** HybridSearchService 深度耦合代码 chunk 语义——wave 编排里 hop1 直读 Qdrant payload `related_chunks` + `ChunkRegistry.in_bulk`、hop2 走 `ChunkEdge` ORM、输出是 `## Graph Context` 代码邻居 markdown、预算按 rag/graph 60/40 切。知识检索的图扩散对象是 KnowledgeEdge、排序要叠加时间衰减、输出是"需求→方案→diff 轨迹"——共享的只有底层件而非编排。强行扩展会把两套实体模型搅进一个类（hybrid_search.py 已 660 行）。
-
-**复用清单（全部直接 import，零修改）：**
-- `services/embedding.py::EmbeddingService` — query/文档向量化
-- `services/sparse_encoder.py` — sparse 向量（与 code_index hybrid 同款）
-- `services/qdrant_service.py::QdrantService.hybrid_search_by_name / create_collection_by_name / batch_set_payload` — 已支持任意 collection 名 + dense/sparse RRF 融合 + 老 collection 降级
-- `services/retrieval/token_budget.py::estimate_tokens / trim_to_budget` — 输出预算裁剪
-- wave 编排手法（`asyncio.gather(return_exceptions=True)` + 差异化降级 + structlog wave 日志）作为代码模式参照
-
-**检索编排（建议）：** wave0 = Qdrant `delivery_knowledge` hybrid 召回（filter: `is_latest=true` + project/kind）∥ 可选关键词过滤；wave1 = GraphStore 沿 KnowledgeEdge 1–2 跳扩散（活跃边 `invalidated_at IS NULL`）；打分 = 向量分 × 时间衰减因子（`exp(-λ·age)`，λ 可配）+ 过时标记（命中非 latest 版本时显式标注）；输出 = 轨迹化 markdown（需求 → 各版本方案 → code_change → 受影响 chunk）。
-
-**衔接代码图谱：** 命中 code_change 实体后，沿 `MODIFIES_CHUNK` 边拿 chunk_id，可直接调 `HybridSearchService.find_related(chunk_id, ...)`（实读确认该方法不依赖 GraphCapableProvider 守卫，任何 provider 可用）做代码侧续扩——两套图在检索层桥接，存储层互不迁移。
-
-### Pattern 4: diff 归档 — server 侧拉全量，容器回传仅作摘要
-
-**What:** completed 后由 server 经 git platform API 拉全量 diff 归档；不依赖容器回传。
-
-**实读证据：**
-- 容器回传链路现状：`TaskResult.modified_files` 仅文件名列表（callbacks.py `_handle_completed`）；`CodingSession.diff_summary` 来自 `orchestration/coding_graph.py` 冲突预检节点的 compare 调用，**带 truncated 标记**（`test_diff_summary_view.py` 有 truncated=True 用例）；`McpCodingExecutionTrace.last_diff` 同源（`mcp_tools/execution_service.py:286` 取 `output.diff_summary`，`merge_request_service.py:119` 写 branch compare 结果）。三者都是摘要级，不可作全量归档源。
-- server 侧拉取能力已具备：`services/git_platform/base.py::GitPlatformClient` 抽象已有 `get_merge_request_diff(...)` 与 `compare_branches(...)`，GitHub/GitLab 双实现；凭证按仓库加密存库（既有约束，不走 env）。
-
-**归档流程：** `_handle_completed` hook → 后台任务读 `TaskResult.branch_name/commit_sha` + 关联 repository → `compare_branches(target_branch, branch_name)`（或 MR 已建则 `get_merge_request_diff`）→ 全量 per-file diff 落 `CodeChangeArchive`（PG 大文本，FK → code_change 实体的 version）→ per-file diff 文本向量化入 `delivery_knowledge` → 按 file_path 查 `ChunkRegistry`（已有 `idx_chunkreg_repo_branch_file` 复合索引，branch 维度可先落 base `""` 分支）建 `MODIFIES_CHUNK` 边。
-**Trade-offs:** 巨型 diff 需上限保护（per-file 截断 + 文件数上限，参照 `payload_sync.py` 的 5KB 阶梯截断手法）；git platform API 失败需重试（仓库已有 `tenacity` 先例）。
-
-### Pattern 5: 孤儿引用 reconcile
-
-**What:** chunk 重切分/重索引后 chunk_id 变化，`MODIFIES_CHUNK` 边目标失效。沿用 `code_relations` 的 reconcile 管理命令模式：定期或手动按 `(repository, file_path)` 重解析 chunk_id、修复或标记失效边。首期可只标记（边 `invalidated_at`），不强制修复。
+**What:** `skills/skills/{friday-code,friday-memory}`（各为 SKILL.md + references/，已核实）在 task 镜像构建时 COPY 进镜像（如 `/app/friday_skills/`）；运行时 `task/core/runner.py` 在 `GitOperations.setup()`（clone + prune，`task/git_ops/operations.py:99-117`）之后把物料复制进 `<workspace>/.claude/skills/`（目录已存在同名 skill 时跳过，不覆盖仓库自带）；`setting_sources=["project"]` 原生加载（executor.py:597，v0.9.0 已验证）。
+**When to use:** 容器 skills 注入。**不要**走 env 传输（SKILL.md + references 体积会撞 ARG_MAX，sdk_resume transcript 已有此压力先例）。
+**Trade-offs:** skills 更新需重建 task 镜像——可接受（skills 与镜像同 repo 同 release 节奏）；加一致性测试断言"镜像内物料 == `skills/skills/` 文件 hash"（风险 4 的 CI 防漂移）。注意精简容器版：friday-memory 的 setup 向导段对容器无意义，若需裁剪则用构建脚本生成"容器版"，同样以 `skills/` 包为唯一输入。
 
 ## Data Flow
 
-### 摄取触发点清单（hook 埋点，全部为"修改既有文件"项）
-
-| # | 触发事件 | 埋点位置（文件 :: 函数，已实读验证） | 摄取产物 | 执行方式 |
-|---|---------|--------------------------------------|----------|---------|
-| 1 | workflow 技术方案生成 | `server/workflows/nodes/ai/plan_generation.py`（AIPlanGenerationNode 产出经 `validate_technical_plan` 的方案 JSON 后） | technical_plan 实体（草稿态）+ 与 requirement 边 | hook 同步入队，后台执行 |
-| 2 | workflow 方案审批通过 | `server/workflows/nodes/ai/plan_approval.py::PlanApprovalNode`（`approved` 输出 port 路径） | 方案实体状态确认/版本固化 | 同上 |
-| 3 | 编码任务完成回传 | `server/subagent/api/callbacks.py::_handle_completed`（TaskResult 创建 + `amark_completed` 之后；该函数已有 repo_summary / cross_repo_relevance 两个同位 hook 先例） | code_change 实体 + diff 归档（Pattern 4 全流程）+ IMPLEMENTED_BY 边 | 同上（**必须**后台，含 git API + embedding） |
-| 4 | MCP 技术方案落库 | `server/mcp_tools/technical_plan_service.py`（`McpWorkItemTechnicalPlan.objects.acreate`，~L491；更新路径含 retry_state 续跑） | technical_plan 实体 + requirement（来自关联 `McpWorkItemContext`）+ 边 | 同上 |
-| 5 | chat 方案创建/更新 | 收敛到模型层：`server/chat/models.py::CodingPlan.aget_or_create_for_conversation`（created=True 分支）与 `CodingPlan.aupdate_plan` —— 比在 `agents/tools/coding_tools.py` 的 `create_coding_plan`/`update_coding_plan` @tool 埋点更优：模型方法是所有写路径（@tool、未来 API）的必经收口 | technical_plan 实体；update → 新版本 + 旧版失效 | 同上 |
-| 6 | 飞书工作项创建/更新 | `server/feishu/views.py`（事件分发 ~L656–665：`WorkitemCreateEvent` → 创建 requirement 实体；`WorkitemUpdateEvent` → `_handle_workitem_update` 处追加重摄取） | requirement/defect 实体 + 版本翻转 | 同上 |
-
-**同步 vs 后台裁决：** 6 处一律 hook 内同步组装 ID 级最小参数 → `run_in_background` 异步执行。理由：①回调/webhook 都有响应时延约束（飞书 webhook 有重试机制，慢响应会放大重复事件）；②embedding 为远程 API；③`background_runner` 正是为此场景建的基础设施（indexer 同款）。apscheduler 仅作可选补偿扫描。
-
-**版本化重摄取流（触发点 4/5/6 的 update 分支）：**
+### 写入 → 摄取 → 检索 → 消费（KNOW 打通后）
 
 ```
-源对象更新 → ingest(source_kind, source_id, new_content)
-  → content_hash 相同？ → 跳过（no-op）
-  → 不同：entity.current_version += 1
-       ├─ 旧 version: is_latest=False, invalidated_at=now
-       │    └─ 按 qdrant_point_ids 删除/降级旧向量（旧版本向量下线）
-       ├─ 新 version 落库 + embed → upsert 新向量（payload.is_latest=true）
-       └─ 受影响的 KnowledgeEdge: invalidated_at=now，重建新边（SUPERSEDES 链）
+写入（各域写模型，不动）            摄取（单一入口）             检索/消费（单一检索面）
+McpLearningCase ──┐
+McpCodingPlan   ──┤  aschedule_ingestion      DeliveryKnowledgeSearchService
+McpRepoAnalysis ──┼─→ (source_kind, id)  ──→  KnowledgeEntity + Qdrant ──┬→ Chat 工具（白名单+3）
+McpExecTrace    ──┤   normalizer 后台          delivery_knowledge        ├→ 编排召回（kinds+2）
+chat.CodingPlan ──┤   六步版本翻转                                        ├→ MCP search_* 工具
+TaskResult      ──┘   （已有）                                            └→ 容器知识 MCP（新）
 ```
 
-### Qdrant collection 设计
+变化点：① `create_learning_case` 写库后新增投递；② MCP `execution_service` 建 trace / `create_coding_plan` 落库后新增投递；③ `search_learning_cases` 读路径从"全表扫 + token 打分"（`learning_case_service.py:213-245`，`order_by(-created_at)[:200]` 内存打分）切到向量检索 + 按 source_id 回捞 `McpLearningCase` 行渲染既有 payload 外形。
 
-**裁决：单一 `delivery_knowledge` collection，payload filter 隔离，不按 project 分片。**
+### LOOP 完工闭环（新）
 
-理由（对照现状）：代码轨 `code_index_{repo_id}` per-repo 分片（`QdrantService.get_collection_name`）是因为 chunk 体量大（单仓十万级）且生命周期随仓库整体删除；知识实体量级低 2–3 个数量级（每需求个位数实体 + 十数 diff 块），且核心场景"召回相似历史需求"天然要跨项目查——分片反而要 fan-out 多 collection 查询。Qdrant payload index + filter 足够（既有 `create_branch_payload_index` 先例证明 payload 索引是项目惯用法）。仓库删除时按 `repository_id` filter 批量删点即可。
+```
+容器 completed 回调（callbacks.py，不改）
+  └→ 各链路 MR 锚点（finalize/_create_pr/execute_tasks）
+       ├→ [已有] task_result 入图（aschedule_ingestion）
+       ├→ [新] CompletionWritebackService.awrite_back  → 飞书评论 + 文档 append
+       └→ [新] LearningCaseExtractor（LLM, best-effort）→ McpLearningCase → 入图
+```
 
-**创建方式：** 复用 `QdrantService.create_collection_by_name("delivery_knowledge", vector_size, hybrid=True)` —— named vectors `dense` + `sparse`，RRF 融合检索走 `hybrid_search_by_name`，零新基础设施。`vector_size` 从 `SystemSetting(EMBEDDING_DIMENSION)` 读（indexer 同款，当前部署 2560）。
+### AGENT 容器内数据流（新）
 
-**Payload schema：**
+```
+server dispatch (env: MCP_ENDPOINT + USER_TOKEN + KNOWLEDGE_TOOLS)
+  → runner env 注入 → TaskConfig → build_knowledge_mcp_server
+  → agent 调 mcp__friday-knowledge__search_rag_chunks 等
+  → HTTP POST /api/mcp/tools/<name>/ (Bearer PAT)
+  → McpToolView（RBAC + 排除 fail-closed + RetrievalTrace）→ 结构化结果回容器
+```
 
-| 字段 | 类型 | 用途 |
-|------|------|------|
-| `entity_id` / `version_id` | str(UUID) | 回查 PG；版本下线按 version 删点 |
-| `entity_kind` | str | requirement / defect / technical_plan / code_change（filter + payload index） |
-| `project_id` / `repository_id` | str | 范围过滤（payload index） |
-| `source_kind` / `source_id` | str | 溯源 |
-| `version` / `is_latest` | int / bool | **检索默认 filter `is_latest=true`**（payload index） |
-| `valid_at` | ISO str | 时间衰减计算输入 |
-| `chunk_kind` | str | 整体摘要 / diff-file 块（code_change 一实体多点） |
-| `file_path` | str | diff 块定位 + 与 ChunkRegistry 解析 |
-| `text` | str | 命中展示摘要（截断，参照 5KB 纪律） |
-| `embedding_model` | str | 换模型/维度重建时识别旧点 |
+## 建议构建顺序（依赖分析）
 
-### Key Data Flows
+| 序 | 块 | 内容 | 依赖 | 可并行 |
+|----|-----|------|------|--------|
+| 1 | KNOW-基座 | `EntityKind.LEARNING_CASE` + migration + `learning_case` normalizer + `create_learning_case` 投递 + `search_learning_cases` 底层切换（含对照测试） | 无 | 与 2、4 并行 |
+| 2 | KNOW-MCP 产物 | 3 个 MCP 产物 normalizer + 各写入点投递 | 无（不依赖 1） | 与 1、4 并行 |
+| 3 | KNOW-消费面 | recall_adapter kinds 扩容 + Chat 白名单 3 工具 + snapshot 补 `report_project_state` + skills 包文档对齐 | 依赖 1（learning_case kind 存在才有意义） | 内部三件可并行 |
+| 4 | LOOP-回写 | 抽取 `CompletionWritebackService` + MCP 改薄包装（零回归）+ workflow/chat 锚点接线 + 节点开关 | 无 | 与 1、2 并行 |
+| 5 | LOOP-沉淀 | 自动 learning case 提炼（LLM + call_source）+ 三锚点接线；`McpLearningCase` FK 放松（如需） | 依赖 1（入图通路）+ 4（锚点管线成型） | — |
+| 6 | LOOP-Skill 种子 | `pre_coding_research`/`post_coding_capture` 两个 RemoteTool SKILL 种子 | 弱依赖 1（`search_learning_cases` 已切换后体验才对）；机制本身无依赖 | 与 5 并行 |
+| 7 | AGENT-决策+MCP | **先决策 PAT 方案（选项 A/B，见核实 2）**→ task `knowledge_tools.py` + TaskConfig 字段 + 三派发路径 env 注入 + 观测埋点 | 依赖 PAT 决策；工具面本身已存在，不依赖 KNOW（但 KNOW 完成后容器能查到 learning case） | 与 1–6 并行（除决策） |
+| 8 | AGENT-skills+上下文 | 镜像 COPY skills + runner 注入 + 一致性测试；`ai_coding` prepend pack_project_context | 无硬依赖 | 两件互相独立，可并行 |
+| 9 | UNIFY | improve/analyze 收敛 delegate + 退役 `planning_service` 缝 + 删 `plan_orchestration/` 空壳 + 文档 | 无（`map_canonical_to_coding_plan` 复用需保留在别处或随迁） | 全程可并行，建议早做（减少后续 rebase 面） |
+| 10 | 收口验收 | 快照测试全绿 + 四处检索同一 learning case 的端到端验收 + review 沉淀增值项（可选） | 依赖 1–7 | — |
 
-1. **摄取流：** 业务事件（6 触发点）→ hook 最小参数入队 → background worker：normalizer → 实体/版本 upsert（PG）→ embed（EmbeddingService + SparseEncoder）→ upsert 向量（Qdrant delivery_knowledge）→ 建边（GraphStore）。
-2. **diff 归档流：** `_handle_completed` → GitPlatformClient `compare_branches`/`get_merge_request_diff` → CodeChangeArchive（PG）→ per-file 向量化 → `MODIFIES_CHUNK` 边（弱引用 chunk_id，经 ChunkRegistry `(repository, branch_name, file_path)` 解析）。
-3. **检索流：** 任意入口（MCP/chat/workflow/skill→MCP）→ KnowledgeSearchService → Qdrant 召回（is_latest filter）∥ GraphStore 1–2 跳扩散 → 时间衰减重排 + 过时标记 → 轨迹 markdown / 结构化 JSON；可选经 `MODIFIES_CHUNK` → `HybridSearchService.find_related` 续扩代码邻居。
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| 当前（单实例自托管，需求量 <10⁴/项目） | 上述设计直接成立：PG 递归 CTE（基准 22.5K RPS @1–3 跳）、单 collection、background_runner 单 worker loop 均无瓶颈 |
-| 需求量 10⁵+ 或多年累积 | KnowledgeEdge 活跃边部分索引（`WHERE invalidated_at IS NULL`）是关键；版本全文表可按年归档分区 |
-| 团队级并发摄取 | background_runner 是进程级单 loop——若摄取排队成为问题，迁到 apscheduler job 队列或独立 worker；接口（ingest 公开函数）不变 |
-
-### Scaling Priorities
-
-1. **第一瓶颈：** 远程 embedding API 延迟/限流（摄取串行化）→ 批量 embed + 失败重试（tenacity），不阻塞业务路径所以体感钝化。
-2. **第二瓶颈：** diff 归档体量（巨型 MR）→ per-file 上限 + 文件数上限 + 仅向量化文本 diff（二进制跳过）。
+关键路径：**1 → 3/5 → 10**；**7 的 PAT 决策**是唯一需要提前到 discuss-phase 的架构决策（影响 AGENT 全块验收口径）。
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: 复用/改造 ChunkEdge 承载知识边
+### Anti-Pattern 1: 为 learning case 新建向量集合或平行检索服务
 
-**What people do:** 看到 ChunkEdge 已有 8 类边 + weight + metadata，想加 `REQUIREMENT_OF` 之类边型塞进去。
-**Why it's wrong:** ChunkEdge 两端语义是 chunk_id（UUID 弱引用 ChunkRegistry），知识实体不是 chunk；branch_name 唯一约束、payload_sync 的 `related_chunks` 聚合、hop2_expander 都会把知识边当代码邻居漏进代码检索上下文。已定决策也明确"现有 ChunkEdge 不迁移"。
-**Do this instead:** KnowledgeEdge 独立表；与 chunk 的交点只有 `MODIFIES_CHUNK.target_chunk_id` 单向弱引用。
+**What people do:** 给 learning case 单独建 Qdrant collection / 独立检索类。
+**Why it's wrong:** 与"统一排序"目标直接冲突（历史经验必须与 tech_plan/document 同分布可比）；且违背 milestone 锁定的"不新建存储"决策。
+**Do this instead:** 入 `delivery_knowledge` 同一 collection，靠 `entity_kinds` 过滤；`McpLearningCase` 表保留为写模型。
 
-### Anti-Pattern 2: hook 内同步做 embedding / git API 调用
+### Anti-Pattern 2: 回写/沉淀挂容器回调 `_handle_completed`
 
-**What people do:** 在 `_handle_completed` / webhook handler 里直接 await embed + Qdrant 写入。
-**Why it's wrong:** 回调响应被拖慢；更致命的是 ASGI 请求结束后 `CurrentThreadExecutor` 关闭，遗留 `sync_to_async` 调用直接抛 `RuntimeError`（`background_runner.py` 模块 docstring 记载的真实事故模式）。
-**Do this instead:** hook 只传 ID，`run_in_background(coro_factory, name=...)`；任何异常 `logger.warning` 不上抛（对齐 `_update_agent_session_cross_repo_relevance` 的"永不阻塞主流程"纪律）。
+**What people do:** 在 callbacks.py 里加 write-back 与 learning case 提炼。
+**Why it's wrong:** 回调时刻 MR 尚未创建（workflow 的 MR 在节点 resume 段才建），拿不到 mr_url；且回调 handler 已有"绝不 5xx / 重试风暴"硬约束，往里加重逻辑会放大风险。INGEST-02 已为此把归档锚点移到 MR 之后（coding.py:1247 注释）。
+**Do this instead:** Pattern 2 三锚点方案。
 
-### Anti-Pattern 3: 在各触发点各写一套摄取逻辑
+### Anti-Pattern 3: normalizer 直接调 graph_store / 同步写实体
 
-**What people do:** workflow 节点里写一份"方案入库 + embed"，MCP service 里再写一份。
-**Why it's wrong:** 版本翻转/向量下线/幂等逻辑有状态机性质，多份实现必然漂移（检索命中旧版本=里程碑核心目标失败）。
-**Do this instead:** 全部入口经 `knowledge/ingestion.py` 的少数公开函数；触发点差异收敛在 `sources/` normalizer。
+**What people do:** 在新 normalizer 里绕过 `ingest_events` 自己建边或写 KnowledgeEntity。
+**Why it's wrong:** 破坏六步版本翻转/四层幂等/边精细置位不变量；`apply_edge_specs` 是 chunk/实体边写入唯一通路（ingestion.py:356-374 明文）。
+**Do this instead:** normalizer 只返回 `IngestionEvent(+EdgeSpec)`，写入全交给核心。
 
-### Anti-Pattern 4: 直接 import 改 HybridSearchService 编排
+### Anti-Pattern 4: 容器 MCP handler raise / 打印 token
 
-**What people do:** 给 `HybridSearchService.search` 加 `include_knowledge=True` 参数。
-**Why it's wrong:** 该类是代码检索 contract（chat/MCP/workflow 多 callsite + byte-equal 守门测试），混入知识检索会破坏既有 zero-drift 承诺与 token 预算语义。
-**Do this instead:** 平行 `KnowledgeSearchService`；需要联合检索时在更高层（tool/节点）各调一次再拼装。
+**What people do:** 新 handler 遇 401 raise、或把 endpoint/PAT 写日志。
+**Why it's wrong:** raise 会崩容器毁掉整次编码（RTOOL-04 graceful 教训）；PAT 入日志违反脱敏铁律。
+**Do this instead:** 逐条镜像 `remote_tools.py` 的 return-not-raise + 日志只记 tool 名/status。
 
-### Anti-Pattern 5: LLM 自由文本实体抽取
+### Anti-Pattern 5: 手工维护"容器版 skills"第二份物料
 
-已定决策排除。实体/关系全部来自结构化业务对象的稳定 ID（工作项三元组、CodingPlan UUID、TaskResult 等），摄取确定性、可幂等。
+**What people do:** 在 task/ 下另写一套精简 SKILL.md。
+**Why it's wrong:** 与 `@friday-ai-codes/skills` 包必然漂移（风险 4）。
+**Do this instead:** 构建期从 `skills/skills/` 同源 COPY/生成 + hash 一致性测试。
 
 ## Integration Points
 
-### External Services
+### Internal Boundaries（本里程碑触碰的边界汇总）
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| Qdrant | `QdrantService.create_collection_by_name` / `upsert_vectors_by_name` / `hybrid_search_by_name`（全部既有 classmethod） | sync SDK，沿用 indexer 的 `@sync_to_async` 包装纪律；timeout 已调优勿动 |
-| Embedding 远程 API | `services/embedding.py::EmbeddingService`（系统配置，不绑定模型） | payload 记 `embedding_model`，换模型需 collection 重建预案 |
-| GitHub/GitLab | `services/git_platform/base.py::GitPlatformClient.get_merge_request_diff / compare_branches` | 凭证按仓库加密存库；通用 Git（无平台 API）仓库降级为本地 `git diff`（GitPython 已在依赖中）或仅存容器摘要 |
-| 飞书 | `server/feishu/views.py` 事件分发（webhook/长连接均过同一分发） | 摄取 hook 放事件分发处，不动签名校验/TriggerLog |
-
-### Internal Boundaries（新 ↔ 旧，含依赖方向）
-
-| Boundary | Communication | 方向与约束 |
-|----------|---------------|-----------|
-| 6 触发点 → knowledge | 各文件 import `knowledge.ingestion` 单一公开入口，lazy import 防循环（callbacks.py 内 lazy import 是既有惯例） | 上游 app → knowledge 单向；knowledge 不 import chat/mcp_tools 的 service（只在 normalizer 内 lazy 读其 model） |
-| knowledge → code_relations | 仅两点：读 `ChunkRegistry`（解析 file_path→chunk_id）+ 检索层调 `HybridSearchService.find_related` | knowledge 不写 chunk_* 表 |
-| knowledge → services/* | EmbeddingService / SparseEncoder / QdrantService / background_runner / git_platform | 纯消费，零修改 |
-| MCP 入口 | `mcp_tools/views.py` 新增 `McpToolView` 子类（PAT/JWT 双认证 + `begin_interaction_run` 审计已由基类承担） | 修改 `mcp_tools/urls.py` 注册路由 |
-| chat 入口 | `agents/tools/knowledge_tools.py` 新增 `@tool`（registry 自动发现 + langchain_adapter 自动适配） | 纯新增文件 |
-| workflow 入口 | `workflows/nodes/ai/knowledge_retrieval.py` 放 `BaseNode` 子类 + `web/.../node-definitions.json` 补 UI schema | NodeRegistry 包扫描自动注册 |
-| npm skill 入口 | `mcp/` 包（dist/cli.js）扩充 skill 文档，指导外部 agent 调新 MCP tool | 不新增服务端面 |
-
-## 建议构建顺序（供 roadmapper 划 phase）
-
-依赖驱动，每步可独立验证：
-
-1. **数据模型 + GraphStore**（`knowledge` app、4 张表 + migrations、GraphStore Protocol + PG 实现、Qdrant collection 管理）。一切的地基；可单测（含递归 CTE 遍历）。
-2. **统一摄取服务（首批 2 触发点）**：ingestion 核心（幂等 upsert + 版本翻转 + 向量写入）+ `sources/coding_plan.py` + `sources/mcp_technical_plan.py`，hook 进 `CodingPlan` 模型方法与 `technical_plan_service.py`。版本化机制在此一并落地（它是摄取的内建语义，不是后置功能）。
-3. **其余触发点 + diff 归档**：callbacks/_handle_completed hook、plan_generation/plan_approval hook、feishu webhook hook；DiffArchiver（git platform 拉全量 diff + CodeChangeArchive + MODIFIES_CHUNK 边）。依赖 2 的 ingestion 核心。
-4. **时间感知混合检索**：KnowledgeSearchService（向量召回 + 图扩散 + 时间衰减/过时标记 + 轨迹渲染）。依赖 1–3 有数据可检。
-5. **多入口暴露**：MCP tool + chat @tool + workflow 节点 + npm skill 文档。薄层，依赖 4；四入口可并行做。
-6. **（可选收尾）** apscheduler 补偿扫描 job + MODIFIES_CHUNK reconcile 命令。
-
-**Phase 研究标记建议：** 4（时间衰减参数与重排策略需要小范围调研/实验）；其余均为本仓库既有模式的拼装，标准实现即可。
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| 业务写模型 ↔ knowledge | `aschedule_ingestion`（ID-only，on_commit 异步） | 4 个新 source_kind；normalizer 全在 knowledge 侧，业务侧只加一行投递 |
+| mcp_tools ↔ delivery | 抽取后 `mcp_tools/work_item_execution_service` import `delivery.services.coding_completion` | 方向正确（delivery 是领域脊柱层，mcp_tools 是入口层）；注意 lazy import 防循环（既有惯例） |
+| workflows 节点 ↔ initiatives | `_lookup_project_by_branch` + `pack_project_context` | 建议共享 helper 上提，避免 workflow import chat 模块（chat 不应被 workflow 依赖） |
+| server ↔ runner ↔ task | metadata 顶层 `env_FRIDAY_TASK_*` string 键 | runner 只透传非空 string；新键必须顶层（nested dict 被忽略——PF-06 教训，coding.py:1553-1556 注释） |
+| task 容器 ↔ server 工具面 | HTTP + Bearer PAT，`/api/mcp/tools/<name>/` | PAT 可用性三链路不一致是本里程碑唯一悬置架构决策（核实 2） |
+| 快照契约 | `TOOL_SCHEMA_SNAPSHOT` + 快照测试 | 已核实缺 `report_project_state`（urls.py:88 已注册但 snapshot 无键）；`reverse_lookup_requirements` 在 snapshot（:618）但未进对外 skills 文档 |
 
 ## Sources
 
-- 本仓库实读（HIGH）：`server/code_relations/models.py`、`server/code_relations/payload_sync.py`、`server/services/retrieval/hybrid_search.py`、`server/services/retrieval/rag_search.py`、`server/services/qdrant_service.py`、`server/services/indexer.py`、`server/services/embedding.py`、`server/services/background_runner.py`、`server/services/git_platform/base.py`、`server/subagent/api/callbacks.py`、`server/mcp_tools/models.py`、`server/mcp_tools/technical_plan_service.py`、`server/mcp_tools/execution_service.py`、`server/mcp_tools/merge_request_service.py`、`server/mcp_tools/views.py`、`server/chat/models.py`（CodingPlan/CodingSession）、`server/agents/tools/coding_tools.py`、`server/workflows/nodes/ai/plan_generation.py`、`server/workflows/nodes/ai/plan_approval.py`、`server/feishu/views.py`、`server/orchestration/coding_graph.py`、`server/agents/management/commands/runapscheduler.py`
-- `.planning/PROJECT.md` v0.3.0 已定决策（Postgres+Qdrant 双栈 / GraphStore 接口 / 不做 LLM 抽取 / 借鉴 Graphiti bi-temporal / PG 递归 CTE 基准结论）（HIGH，项目权威输入）
-- Graphiti bi-temporal 边模型（valid time + transaction time 双时间对）— 设计借鉴，已由项目前期选型调研确认（MEDIUM，未在本轮重新核对上游文档）
+- 一手代码核实（本文全部断言的依据）：`server/knowledge/ingestion.py`、`server/knowledge/models.py`（generate_entity_id 规则表 + EntityKind）、`server/knowledge/sources/{__init__,coding_plan,mcp_plan}.py`、`server/mcp_tools/{work_item_execution_service,learning_case_service,orchestration_delegate,planning_service,serializers,views,urls}.py`、`server/workflows/nodes/ai/coding.py`、`server/chat/coding_session_service.py`、`server/subagent/api/callbacks.py`、`server/orchestration/coding_graph.py`、`server/services/process_runtime/{recall_adapter,builtin_processes}.py`、`server/services/project_context_packer.py`、`server/agents/chat_runner.py`、`server/tools/sources/skill.py`、`task/core/{executor,config,remote_tools,runner}.py`、`task/git_ops/operations.py`、`skills/package.json` 与 `skills/skills/` 目录
+- 里程碑与项目上下文：`.planning/MILESTONE-CONTEXT.md`、`.planning/PROJECT.md`
+- 空壳确认：`server/services/plan_orchestration/` 仅剩 `__pycache__`（ls 核实）
 
 ---
-*Architecture research for: Friday AI v0.3.0 交付知识图谱（brownfield 集成）*
-*Researched: 2026-06-11*
+*Architecture research for: Friday AI v0.17.0 统一知识库与全链路联动*
+*Researched: 2026-07-15*
