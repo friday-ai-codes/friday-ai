@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.16.3
-milestone_name: 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）
-status: Awaiting next milestone
-stopped_at: 里程碑 v0.16.3 外部依赖接入知识体系已 shipped（$gsd-autonomous 全自动 discuss→plan→execute→review→verify + complete-milestone）——4/4 phase（96–99）/ 15 plans / 12 需求（KDEP-01~12）全部完成并提交；里程碑审计 tech_debt（12/12 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，遗留真机·真实 provider·浏览器视觉端到端验收 4 项 + 既有范围外测试漂移，见 `.planning/milestones/v0.16.3-MILESTONE-AUDIT.md`）。归档：`ROADMAP.md` 折叠为 `<details>` + 全量快照入 `.planning/milestones/v0.16.3-ROADMAP.md`；audit + REQUIREMENTS 入 `milestones/`；git tag v0.16.3 已打（未 push）。下一步 `$gsd-new-milestone`。
-last_updated: "2026-07-01T13:25:55.317Z"
-last_activity: 2026-07-01 — Milestone v0.16.3 completed and archived
+milestone: v0.17.0
+milestone_name: 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）
+status: planning
+last_updated: "2026-07-15T04:15:01.141Z"
+last_activity: 2026-07-15
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: Milestone v0.16.3 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-01 — Milestone v0.16.3 completed and archived
+Status: Defining requirements
+Last activity: 2026-07-15 — Milestone v0.17.0 started
 
 ## Milestone Overview (v0.16.1 — Phases 90–95 — ✅ SHIPPED 2026-06-28)
 
