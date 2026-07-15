@@ -12,7 +12,7 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.16.0 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）（2026-06-26，审计 tech_debt，37/37 需求，Phases 82–89）。里程碑 v0.1.0–v0.16.0（Phases 1–89）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。**当前在建：v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）（Phases 90+，planning）。**
+**Latest shipped:** v0.16.3 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）（2026-07-01，审计 tech_debt，12/12 需求，Phases 96–99）。里程碑 v0.1.0–v0.16.3（Phases 1–99）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。**当前在建：v0.17.0 统一知识库与全链路联动（Phases 100+，planning）。**
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -28,21 +28,21 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
+## Current Milestone: v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）
 
-> v0.16.0 项目工作区（Phases 82–89）已 shipped + 归档（审计 tech_debt，37/37 需求）。本里程碑为 **patch 级优化/统一**（非新功能）：把分散的多套「AI 技术方案生成」统一到唯一图编排底座 `plan_orchestration`，并完善澄清/拆分能力 + 引入插槽式编辑范式。Phases 90+ 续号。需求 18 条见 `.planning/REQUIREMENTS.md`。
+> v0.16.3 外部依赖接入知识体系（Phases 96–99）已 shipped + 归档（审计 tech_debt，12/12 需求）。本里程碑源于全链路断点调研（三路并行代码探查：MCP 工具面 / 工作流与编排链路 / 知识沉淀与 skills 体系）：底座（RAG/编排/派发）已统一，但产物不回流知识体系、执行结果不回写业务侧、编码容器够不着服务端知识。完整调研分析见 `.planning/knowledge-loop/MILESTONE-PROPOSAL.md`。Phases 100+ 续号。
 
-**Goal:** 把当前 4 套分散的「AI 技术方案生成」统一到唯一图编排底座 `plan_orchestration`（工作流 / 对话 / MCP 三入口归一、废弃旧 LangChain 单 agent `ai_plan_generation`），并完善该能力——LLM 跨仓拆分、结构化交互式澄清 + 多轮 resume 续推、方案推送渲染；引入「插槽式（形状端口磁吸）」工作流编辑范式，让澄清等子环节像拼图一样拖拽拼接到方案节点上。
+**Goal:** 把多套"知识/经验/沉淀"收敛成一个统一知识库（单一摄取入口 `knowledge/sources/` + 单一检索面 `DeliveryKnowledgeSearchService`），对外经 MCP 工具面 + `@friday-ai-codes/skills` 提供服务、对内让 Chat/工作流/编排/编码容器天然集成；补齐"完工沉淀"闭环（编码完成 → 经验入库 + 飞书回写，三链路一致）；给编码容器内置 Friday MCP 与 skills，让容器内代理能主动查知识、被动沉淀经验。
 
-**Target features（暂拟 Phase 90 起 / 4 类需求）:**
-- **入口归一（UNIFY）**：工作流模板切 `ai_plan_research`、废弃 `ai_plan_generation`；MCP 方案生成 delegate 到 plan_orchestration；对话澄清挂起收口单一来源；done 出口接「推送方案到群」干净渲染。
-- **澄清能力 + 出口面（CLARIFY）**：`Clarification` 结构化扩展（多问题/单多选/推荐 + 多答案）+ LLM 结构化问题 + 统一 `ask_clarification` 提问能力 + 双出口面（会话内联前端卡 / 工作流·群飞书交互卡）+ 答复回流 resume 续推 + 多轮。
-- **插槽式编辑器（SLOT）**：端口「形状(shape)」语义 + `WorkflowGraphValidator` 形状校验；`ai_plan_research` 暴露 clarify/resume 插槽 + 「澄清卡」节点；@vue-flow 形状磁吸（对上才连）；澄清节点作为方案节点的附着子节点可视编组、可下接发飞书群聊。
-- **拆分完善（DECOMP）**：`decompose` 从按行切升级为 LLM 跨仓业务线/模块/前后端拆分。
+**Target features（4 类需求）:**
+- **KNOW 统一知识库**：learning case 入图（向量检索替代 token 打分）+ MCP 产物（coding plan/analysis/execution trace）补 normalizer 入图 + 编排召回扩 `document`/learning_case + Chat 工具面补知识读工具 + 对外 schema snapshot 补全。
+- **LOOP 完工沉淀闭环**：公共飞书回写 service（工作流/Chat/MCP 三链路统一）+ 编码完成自动提炼 learning case + 内置 `pre_coding_research`/`post_coding_capture` 两个平台 Skill + PR 后可选轻量 review 沉淀。
+- **AGENT 容器内置 MCP/Skills**：task 容器挂 Friday 知识 MCP（HTTP 调 `/api/mcp/tools/*` 白名单子集，PAT 鉴权，排除文件 fail-closed 天然继承）+ 容器注入 friday-code/friday-memory skills（与 `skills/` 包同源）+ 工作流 `ai_coding` 派发对齐 `pack_project_context`。
+- **UNIFY 工具面收口**：`improve_coding_plan`/`analyze_repository` 收敛到 `delegate_process_runtime`（退役确定性缝）+ 清理 `plan_orchestration/` 空壳 + `TOOL_SCHEMA_SNAPSHOT` 补全。
 
-**Key context:** `plan_orchestration` 已是统一底座（**自研 PlanSession 状态机，非 langgraph**；工作流 `ai_plan_research` + 对话 `start_plan_research` 已在用；resume / 多 claude code 容器并行调研 / 架构师融合汇总均已具备；下游 `human_approval`/`ai_coding` 已兼容 `MergedPlan`+wave）。已落地并验证：LLM 结构化澄清问题生成器 + `CallSource.PLAN_CLARIFICATION`、交互澄清卡 `build_clarification_card`（飞书 App 渲染 2.0 表单、网页版不支持）、通知/方案卡渲染修复（markdown 组件 + `•`）。**缺口**：澄清「答→续推」目前仅对话有、工作流侧缺发卡/收答闭环；`Clarification` 仅单 question/answer 需结构化；`decompose` 仍是 stub。**插槽=端口 shape 语义 + 磁吸（输入输出形状对应才能拼）**，反馈环 resume 复用引擎「非 default handle 回边=合法反馈环」（同审批驳回）。约束沿用：INV-6 单一写入、async ORM 走 `sync_to_async`、脱敏不可绕过、新增 LLM 赋 `call_source`、新增召回写 `RetrievalTrace`、i18n 默认中文；**最大化复用 `plan_orchestration`，严禁重复造**。
+**Key context:** 统一知识库 = 现有 `knowledge/` 体系（`KnowledgeEntity` + Qdrant `delivery_knowledge`），不新建存储——"统一"指单一摄取入口 + 单一检索服务，各域操作态表保留为写模型。容器 MCP 走服务端 HTTP 工具面复用（不直连 Qdrant/DB），鉴权用任务 PAT，权限/排除/脱敏天然继承；挂载机制复用 `task/core/executor.py` 既有 `extra_mcp_servers`/`allowed_tools`。skills 单一事实源：容器内置与 `@friday-ai-codes/skills` 包同源，禁止两套漂移。回写与沉淀一律 best-effort fail-soft 不阻断主流程。显式 Out of Scope：两套 CodingPlan 合表、Ledger 反哺检索、review 产品化、多模态召回、对外开放平台（计费/租户）。约束沿用：INV-6 单一写入、async ORM 走 `sync_to_async`、脱敏不可绕过、新增 LLM 赋 `call_source`、新增召回写 `RetrievalTrace`、MCP schema 变更同步快照测试、i18n 默认中文。
 
-**候选后续方向（v2）：** 方案文本流式卡片（STREAM，cardkit/v1 打字机）、插槽系统推广到更多节点类型（SLOTX，通用带槽节点 + 适配拼图生态）。
+**候选后续方向（v2）：** chat.CodingPlan 与 McpCodingPlan 合并 canonical、review 产品化（评审 UI/规则）、知识库对外开放平台（配额/租户）。
 
 ## Latest Milestone: v0.15.0 项目（交付上下文聚合根）— ✅ SHIPPED 2026-06-26（审计 passed）
 
@@ -135,9 +135,9 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **飞书原生 CardKit 流式卡片**：机器人对话回复增量更新（CardKit v1 create/send/stream/settle 封装 + schema 2.0 流式卡），替代 PATCH 全量替换，失败降级既有卡片 — v0.11.0 (CARD-01, `server/services/feishu_im.py`)
 - ✓ **工作流自动建群节点**：`CreateGroupChatNode` 建飞书群 + 拉成员（`FeishuIMClient.create_chat` 建群即拉人）+ chat_id 输出 + 可选写回 `WorkItem.feishu_chat_id`（`WorkItemService.awriteback_feishu_chat_id` 单一入口 INV-6，fail-soft 不阻断） — v0.11.0 (GROUP-01)
 
-### Active（v0.15.0 项目 / 交付上下文聚合根）
+### Active（v0.17.0 统一知识库与全链路联动）
 
-<!-- 本里程碑在建需求（38 条，6 Phase 76–81）。详见 .planning/REQUIREMENTS.md 与 .planning/project-aggregate/MILESTONE-PROPOSAL.md。v0.14.0（CTX/LOG/RATE/RAG/SLA/SNAP/QUERY/ALERT/UI/SPEC）已交付，详见 MILESTONES.md 与 milestones/v0.14.0-*。 -->
+<!-- 本里程碑在建需求（KNOW/LOOP/AGENT/UNIFY 四类），定义见 .planning/REQUIREMENTS.md；完整调研分析见 .planning/knowledge-loop/MILESTONE-PROPOSAL.md。v0.15.0（PROJ 等 38 条）与 v0.16.x 系列均已交付，详见 MILESTONES.md 与 milestones/。以下 v0.15.0 需求清单为历史存档（已全部交付）。 -->
 
 **Phase 76 · 命名腾挪（RENAME）**
 - ☐ **RENAME-01**: 后端 `projects.Project` 重命名为 `Space`，数据零丢失，既有"空间"功能行为零回归
@@ -302,4 +302,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-27 — start milestone v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）*
+*Last updated: 2026-07-15 — start milestone v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）*
