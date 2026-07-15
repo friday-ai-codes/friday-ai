@@ -48,6 +48,10 @@ class EntityKind(models.TextChoices):
     PROJECT = "project", "项目"
     REPOSITORY = "repository", "仓库"
     SPACE = "space", "空间"
+    # v0.17.0 Phase 100（KNOW-01）：经验案例（McpLearningCase）入图。新增字面值不改
+    # 既有 kind，仅扩 generate_entity_id 派生空间与 kentity_kind_valid 约束
+    # （既有 uuid5 PK 零漂移）；MCP plan/analysis/trace 复用既有 kind，经 source_kind 区分。
+    LEARNING_CASE = "learning_case", "经验案例"
 
 
 class EntityOrigin(models.TextChoices):
@@ -112,6 +116,15 @@ def generate_entity_id(kind: str, source_kind: str, source_id: str) -> uuid.UUID
     | project              | initiatives.Project UUID str（kind=project）          | 项目图谱节点（Phase 79）|
     | repository           | repositories.Repository UUID str（kind=repository）   | 仓库图谱节点（Phase 79）|
     | space                | projects.Space UUID str（kind=space）                  | 空间图谱节点（Phase 79）|
+    | learning_case        | McpLearningCase UUID str（kind=learning_case）         | 经验案例（Phase 100）|
+    | mcp_coding_plan      | McpCodingPlan UUID str（kind=tech_plan）               | MCP 编码方案（Phase 100）|
+    | mcp_repository_analysis | McpRepositoryAnalysis UUID str（kind=document）     | MCP 仓库分析（Phase 100）|
+    | mcp_execution_trace  | McpCodingExecutionTrace UUID str（kind=code_change）   | MCP 执行 trace（Phase 100）|
+
+    locked decision（Phase 100 存档）：Chat ``coding_plan`` 与 MCP ``mcp_coding_plan``
+    保持**不同实体 + 边显式关联（RELATES_TO / 共享 work_item 锚）**，不做硬去重；
+    work_item 锚一律沿用 ``feishu_work_item`` +
+    ``{project_key}:{work_item_type_key}:{work_item_id}`` 既有行，禁止自造锚格式。
 
     Args:
         kind: EntityKind 字面值（如 ``"work_item"``）。
