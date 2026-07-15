@@ -57,29 +57,29 @@
 
 ## Traceability
 
-<!-- Filled by roadmapper -->
+<!-- Filled by roadmapper (2026-07-15): 19/19 需求映射到 Phases 100–104，无孤儿、无重复 -->
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| KNOW-01 | — | Pending |
-| KNOW-02 | — | Pending |
-| KNOW-03 | — | Pending |
-| KNOW-04 | — | Pending |
-| KNOW-05 | — | Pending |
-| KNOW-06 | — | Pending |
-| LOOP-01 | — | Pending |
-| LOOP-02 | — | Pending |
-| LOOP-03 | — | Pending |
-| LOOP-04 | — | Pending |
-| LOOP-05 | — | Pending |
-| AGENT-01 | — | Pending |
-| AGENT-02 | — | Pending |
-| AGENT-03 | — | Pending |
-| AGENT-04 | — | Pending |
-| UNIFY-01 | — | Pending |
-| UNIFY-02 | — | Pending |
-| UNIFY-03 | — | Pending |
-| UNIFY-04 | — | Pending |
+| KNOW-01 | Phase 100 | Pending |
+| KNOW-02 | Phase 100 | Pending |
+| KNOW-03 | Phase 100 | Pending |
+| KNOW-04 | Phase 102 | Pending |
+| KNOW-05 | Phase 102 | Pending |
+| KNOW-06 | Phase 102 | Pending |
+| LOOP-01 | Phase 101 | Pending |
+| LOOP-02 | Phase 101 | Pending |
+| LOOP-03 | Phase 101 | Pending |
+| LOOP-04 | Phase 101 | Pending |
+| LOOP-05 | Phase 101 | Pending |
+| AGENT-01 | Phase 103 | Pending |
+| AGENT-02 | Phase 103 | Pending |
+| AGENT-03 | Phase 103 | Pending |
+| AGENT-04 | Phase 103 | Pending |
+| UNIFY-01 | Phase 104 | Pending |
+| UNIFY-02 | Phase 104 | Pending |
+| UNIFY-03 | Phase 104 | Pending |
+| UNIFY-04 | Phase 102 | Pending |
 
 ---
 *Requirements defined: 2026-07-15*
