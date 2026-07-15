@@ -52,7 +52,13 @@
   5. 新召回路径写 `RetrievalTrace` 并上报召回条数/耗时/score（MCP 链 + Chat 链两条都覆盖）。
 
 **Pitfalls**: P1 检索切换回归/契约漂移（normalizer/backfill/读切换同 phase 闭环 + golden set 验收门）；P7 实体去重/关联错误（natural key 规则表扩表为前置 task、锚照抄 `mcp_plan.py`）；P8 观测欠债（RetrievalTrace 断言内嵌验收）。
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 100-01-PLAN.md — 地基：natural key 规则表扩表 + EntityKind.LEARNING_CASE migration + vector_recall kind 过滤吞参修复（Wave 1）
+- [ ] 100-02-PLAN.md — KNOW-01：learning_case normalizer + create 投递钩子 + 幂等重摄测试（Wave 2）
+- [ ] 100-03-PLAN.md — KNOW-03：MCP 三 normalizer + 5 写入点投递 + plan→execution→work_item 边 E2E（Wave 2）
+- [ ] 100-04-PLAN.md — KNOW-02：search_learning_cases 向量切换（契约不变/token 退役/fail-soft）+ backfill 命令 + golden set 验收门 + RetrievalTrace（Wave 3）
 
 ### Phase 101: 完工沉淀闭环（公共回写 + 自动提炼 + Skill 种子）
 
