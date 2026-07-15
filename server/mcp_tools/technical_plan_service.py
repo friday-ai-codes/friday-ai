@@ -360,6 +360,9 @@ async def build_work_item_technical_plan(
             ],
             symbol_hints=[],
             limit=5,
+            # 权限主体 = 发起编排的用户（可空）：None 时 search_similar fail-closed
+            # 空召回，不泄漏越权数据（T-94-03-ELEV 同款文档化降级）。
+            user=actor,
         )
 
     # UNIFY-03：方案生成 delegate 到统一编排（绝不在 MCP 层重写拆分/路由/调研/融合）。
