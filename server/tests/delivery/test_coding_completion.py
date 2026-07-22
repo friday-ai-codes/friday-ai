@@ -19,9 +19,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from asgiref.sync import sync_to_async
 
+from delivery.models import Artifact, ArtifactVersion, WorkItem, WorkItemOrigin
 from delivery.services.coding_completion import (
     CompletionWritebackService,
     RepoResult,
+    aresolve_triple_for_coding_session,
+    aresolve_triple_from_plan_version,
     render_comment_lines,
     render_results_markdown,
 )
@@ -250,6 +253,93 @@ def test_render_results_markdown_matches_mcp_template() -> None:
     assert lines[5] == "|---|---|---|---|---|---|"
     assert lines[6] == "| web | completed | `feat/login` | `abc123` | https://example.com/mr/1 |  |"
     assert markdown.endswith("|\n")
+
+
+# ---------------------------------------------------------------------------
+# 三元组反查器（LOOP-02 / 101-03）
+# ---------------------------------------------------------------------------
+
+
+async def _make_work_item_chain(*, content: dict | None = None) -> tuple[WorkItem, ArtifactVersion]:
+    """构造 WorkItem → Artifact → ArtifactVersion 链（正向反查用）。"""
+    space = await Space.objects.acreate(
+        name="triple-space",
+        feishu_project_key="triple-key",
+    )
+    work_item = await WorkItem.objects.acreate(
+        feishu_project_key="triple-key",
+        work_item_type="story",
+        work_item_id=88,
+        title="多仓登录链路改造",
+        space=space,
+        origin=WorkItemOrigin.MANUAL,
+    )
+    artifact = await Artifact.objects.acreate(
+        artifact_type="technical_plan",
+        work_item=work_item,
+    )
+    version = await ArtifactVersion.objects.acreate(
+        artifact=artifact,
+        version_no=1,
+        content=content or {},
+    )
+    return work_item, version
+
+
+@pytest.mark.asyncio
+async def test_resolve_triple_from_plan_version_hits_work_item() -> None:
+    """workflow 链正向：plan_version_id → ArtifactVersion → artifact.work_item 命中三元组。"""
+    work_item, version = await _make_work_item_chain()
+
+    triple = await aresolve_triple_from_plan_version(str(version.id))
+
+    assert triple is not None
+    assert triple.feishu_project_key == "triple-key"
+    assert triple.work_item_type == "story"
+    assert triple.work_item_id == 88
+    assert triple.title == "多仓登录链路改造"
+    assert triple.space_id == str(work_item.space_id)
+
+
+@pytest.mark.asyncio
+async def test_resolve_triple_from_plan_version_broken_chain_returns_none() -> None:
+    """断链：Artifact 未绑定 work_item → None（fail-soft，无异常）。"""
+    artifact = await Artifact.objects.acreate(artifact_type="technical_plan", work_item=None)
+    version = await ArtifactVersion.objects.acreate(artifact=artifact, version_no=1)
+
+    assert await aresolve_triple_from_plan_version(str(version.id)) is None
+    assert await aresolve_triple_from_plan_version(None) is None
+    assert await aresolve_triple_from_plan_version("not-a-uuid") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_triple_for_coding_session_via_json_key() -> None:
+    """chat 链正向：ArtifactVersion.content 埋 chat_coding_plan_id → 命中三元组。"""
+    plan_id = "11111111-2222-3333-4444-555555555555"
+    _work_item, _version = await _make_work_item_chain(
+        content={"chat_coding_plan_id": plan_id},
+    )
+    coding_session = MagicMock()
+    coding_session.coding_plan_id = plan_id
+
+    triple = await aresolve_triple_for_coding_session(coding_session)
+
+    assert triple is not None
+    assert triple.work_item_id == 88
+    assert triple.feishu_project_key == "triple-key"
+
+
+@pytest.mark.asyncio
+async def test_resolve_triple_for_coding_session_current_state_returns_none() -> None:
+    """现状路径：普通 coding_plan（无 ArtifactVersion 埋键）→ None（零行为变化）。"""
+    coding_session = MagicMock()
+    coding_session.coding_plan_id = "99999999-8888-7777-6666-555555555555"
+
+    assert await aresolve_triple_for_coding_session(coding_session) is None
+
+    # coding_plan 未绑定 → 直接 None（不触 DB）。
+    coding_session.coding_plan_id = None
+    assert await aresolve_triple_for_coding_session(coding_session) is None
 
 
 def test_render_comment_lines_matches_mcp_wording() -> None:

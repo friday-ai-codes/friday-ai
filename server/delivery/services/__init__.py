@@ -13,6 +13,9 @@ from delivery.services.clarification_service import ClarificationService
 from delivery.services.coding_completion import (
     CompletionWritebackService,
     RepoResult,
+    WorkItemTriple,
+    aresolve_triple_for_coding_session,
+    aresolve_triple_from_plan_version,
     render_results_markdown,
 )
 from delivery.services.comment_event_service import (
@@ -88,5 +91,8 @@ __all__ = [
     "HumanTaskView",
     "CompletionWritebackService",
     "RepoResult",
+    "WorkItemTriple",
+    "aresolve_triple_from_plan_version",
+    "aresolve_triple_for_coding_session",
     "render_results_markdown",
 ]
