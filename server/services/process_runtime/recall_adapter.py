@@ -18,6 +18,8 @@ KNOW-04：召回 kinds 与每 kind 限额运行时经 Django settings 读取
 
 from __future__ import annotations
 
+import time
+
 import structlog
 from asgiref.sync import sync_to_async
 
@@ -97,6 +99,7 @@ class DeliveryKnowledgeRecallAdapter:
             from knowledge.retrieval import DeliveryKnowledgeSearchService
 
             user = await self._resolve_actor(session)
+            search_started = time.perf_counter()
             results = await DeliveryKnowledgeSearchService().search_similar(
                 query,
                 user=user,
@@ -109,11 +112,75 @@ class DeliveryKnowledgeRecallAdapter:
                 include_document_kind=("document" in kinds),
             )
         except Exception as exc:  # noqa: BLE001 — best-effort：召回失败不阻断编排
-            logger.warning("plan_recall_search_failed", session_id=str(session.id), error=str(exc))
+            logger.warning(
+                "plan_recall_search_failed",
+                session_id=str(session.id),
+                error=str(exc),
+                category="sampling",
+                component="process_runtime",
+            )
             return {"hits": [], "query": query, "kinds": kinds}
 
+        duration_ms = round((time.perf_counter() - search_started) * 1000, 2)
         hits = self._truncate_per_kind([self._map_hit(r) for r in results], limits=limits)
+        await self._record_trace(
+            session=session, user=user, kinds=kinds, hits=hits, duration_ms=duration_ms
+        )
         return {"hits": hits, "query": query, "kinds": kinds}
+
+    async def _record_trace(
+        self,
+        *,
+        session: ConvergenceSession,
+        user,
+        kinds: list[str],
+        hits: list[dict],
+        duration_ms: float,
+    ) -> None:
+        """召回埋点（KNOW-04「召回埋点先行」）：RetrievalTrace + 结构化事件。
+
+        整段吞异常 best-effort——观测永不反噬业务，trace 写入失败不影响 recall()
+        返回值。payload 只记指标与关联键（session_id 可回查 decomposition），
+        不放召回正文/title 全文与 query 原文（内容留实体表，防信息泄露 T-102-02）。
+        """
+        try:
+            from interactions.ledger import arecord_retrieval_trace
+            from interactions.models import RetrievalTrace
+
+            per_kind_counts: dict[str, int] = {}
+            for hit in hits:
+                per_kind_counts[hit["kind"]] = per_kind_counts.get(hit["kind"], 0) + 1
+            scores = [hit["score"] for hit in hits]
+            top_score = max(scores) if scores else 0
+            await arecord_retrieval_trace(
+                None,  # 编排链无 InteractionRun
+                kind=RetrievalTrace.Kind.CHUNK,
+                payload={
+                    "source": "process_recall",
+                    "session_id": str(session.id),
+                    "kinds": kinds,
+                    "result_count": len(hits),
+                    "per_kind_counts": per_kind_counts,
+                    "scores": scores,
+                    "top_score": top_score,
+                    "duration_ms": duration_ms,
+                },
+                user_id=str(user.id) if user is not None else None,
+                source="process_runtime",
+            )
+            # recalling 属编排内部步骤，用 sampling 分类不刷 caller
+            logger.info(
+                "process_recall_completed",
+                session_id=str(session.id),
+                kinds=kinds,
+                result_count=len(hits),
+                top_score=top_score,
+                duration_ms=duration_ms,
+                category="sampling",
+                component="process_runtime",
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬召回主流程
+            pass
 
     def _truncate_per_kind(self, hits: list[dict], *, limits: dict[str, int]) -> list[dict]:
         """按 kind 分桶截断（KNOW-04 token 预算守卫）。
