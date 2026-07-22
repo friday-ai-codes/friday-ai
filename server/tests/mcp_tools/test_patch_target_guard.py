@@ -29,9 +29,11 @@ _GUARDED_FILES = [
 ]
 
 # 提取首个 dotted-path 字符串字面量参数：monkeypatch.setattr("X.Y.Z", ...) /
-# mock.patch("X.Y.Z") / 裸 patch("X.Y.Z")（patch.object 的对象形式天然不匹配）。
+# mock.patch("X.Y.Z")（含 unittest.mock.patch 前缀形式）/ mocker.patch("X.Y.Z") /
+# 裸 patch("X.Y.Z")（patch.object 的对象形式天然不匹配）。
+# IN-02（review 104）：补 mocker.patch 拼写，防未来改写测试换 pytest-mock 后守卫静默缩水。
 _TARGET_PATTERN = re.compile(
-    r"""(?:monkeypatch\.setattr|mock\.patch|(?<![\w.])patch)\(\s*["']([A-Za-z_][\w.]*\.\w+)["']"""
+    r"""(?:monkeypatch\.setattr|mocker\.patch|mock\.patch|(?<![\w.])patch)\(\s*["']([A-Za-z_][\w.]*\.\w+)["']"""
 )
 
 
