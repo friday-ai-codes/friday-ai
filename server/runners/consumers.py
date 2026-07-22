@@ -632,6 +632,9 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         last_output = session.last_output if isinstance(session.last_output, dict) else {}
         dispatch_payload = last_output.get("dispatch")
         dispatch = dispatch_payload if isinstance(dispatch_payload, dict) else {}
+        metadata = await self._rehydrate_dispatch_credentials(
+            dict(dispatch.get("metadata") or {}), session.session_id
+        )
         return DispatchTask(
             task_id=session.session_id,
             task_type=str(dispatch.get("task_type") or last_output.get("task_type") or "coding"),
@@ -644,8 +647,70 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
             timeout=int(dispatch.get("timeout") or 600),
             node_execution_id=str(dispatch.get("node_execution_id") or ""),
             session_id=session.session_id,
-            metadata=dict(dispatch.get("metadata") or {}),
+            metadata=metadata,
         )
+
+    async def _rehydrate_dispatch_credentials(
+        self, metadata: dict, session_id: str
+    ) -> dict:
+        """重派前从权威源补回落库时剔除的凭证键（103 审查 WR-03）。
+
+        落库副本（last_output.dispatch.metadata）统一剔除 CREDENTIAL_ENV_KEYS 凭证
+        明文键，剔除清单记在 ``_redacted_env_keys`` 标记里（见 chat/
+        coding_session_service.py 落库处）。断连重建按标记重解析：
+
+        - env_FRIDAY_TASK_GIT_ACCESS_TOKEN：repository_id → ``aresolve_git_token``
+          （与首派同一权威源），保证重派 clone 行为与首派一致。
+        - env_FRIDAY_TASK_CLAUDE_API_KEY：``aget_claude_code_runtime_config``
+          （provider 配置权威源）。
+        - env_FRIDAY_TASK_USER_TOKEN：**不重铸**——短 TTL token 生命周期绑定首派，
+          重派容器降级不挂知识工具（fail-soft，与 user 不可解析降级语义一致）。
+
+        best-effort：任一重解析失败只记 warning 跳过该键（重派容器对应能力降级），
+        绝不阻断重建主流程。无标记（历史行 / workflow 链不落 dispatch）→ 原样返回。
+        """
+        redacted = metadata.pop("_redacted_env_keys", None)
+        if not redacted:
+            return metadata
+        if "env_FRIDAY_TASK_GIT_ACCESS_TOKEN" in redacted and metadata.get("repository_id"):
+            try:
+                from repositories.models import Repository
+                from services.git_credentials import aresolve_git_token
+
+                repository = await Repository.objects.filter(
+                    id=metadata["repository_id"]
+                ).afirst()
+                token = await aresolve_git_token(repository) if repository else ""
+                if token:
+                    metadata["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] = token
+            except Exception as exc:  # noqa: BLE001 — best-effort，失败降级不阻断重建
+                logger.warning(
+                    "dispatch_credential_rehydrate_failed",
+                    session_id=session_id,
+                    key="git_access_token",
+                    error_type=type(exc).__name__,
+                    initiated_by_user_id="system",
+                    category="caller",
+                    component="runners",
+                )
+        if "env_FRIDAY_TASK_CLAUDE_API_KEY" in redacted:
+            try:
+                from services.provider_config import aget_claude_code_runtime_config
+
+                cc = await aget_claude_code_runtime_config()
+                if cc.get("api_key"):
+                    metadata["env_FRIDAY_TASK_CLAUDE_API_KEY"] = cc["api_key"]
+            except Exception as exc:  # noqa: BLE001 — best-effort，失败降级不阻断重建
+                logger.warning(
+                    "dispatch_credential_rehydrate_failed",
+                    session_id=session_id,
+                    key="claude_api_key",
+                    error_type=type(exc).__name__,
+                    initiated_by_user_id="system",
+                    category="caller",
+                    component="runners",
+                )
+        return metadata
 
     async def _update_assignment_status(self, session_id: str, status: str) -> None:
         from runners.models import RunnerTaskAssignment

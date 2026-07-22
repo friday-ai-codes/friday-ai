@@ -108,3 +108,149 @@ class TestDisconnectRecovery:
         assert task.prompt == "执行编码"
         assert task.timeout == 3600
         assert task.metadata == {"repository_id": "repo-1"}
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.asyncio
+    async def test_rebuild_rehydrates_redacted_credentials(self, project):
+        """重派重解析（103 审查 WR-03）：落库副本按 ``_redacted_env_keys`` 标记剔除
+        凭证键，重建时从权威源补回 Git token / API key；USER_TOKEN 不重铸（容器
+        降级不挂知识工具）；标记键本身不进重建 metadata。"""
+        from unittest.mock import AsyncMock, patch
+
+        from agents.models import AgentSession
+        from repositories.models import Repository
+        from runners.consumers import RunnerConsumer
+        from subagent.models import SubAgentSession
+
+        repo = await Repository.objects.acreate(
+            name="rehydrate-repo",
+            git_url="https://gitlab.example.com/t/rehydrate.git",
+            git_platform="gitlab",
+            default_branch="main",
+        )
+        runner = await Runner.objects.acreate(
+            name="test-runner-rehydrate",
+            token_hash="c" * 64,
+            channel_name="specific..rehydrate",
+            status=Runner.Status.ONLINE,
+        )
+        agent_session = await AgentSession.objects.acreate(
+            session_id="agent-rehydrate-test",
+            space=project,
+            status=AgentSession.Status.RUNNING,
+        )
+        sub_session = await SubAgentSession.objects.acreate(
+            session_id="coding-rehydrate-test",
+            main_session=agent_session,
+            task_type=SubAgentSession.TaskType.CODING,
+            status=SubAgentSession.Status.PENDING,
+            repo_url=repo.git_url,
+            last_output={
+                "task_type": "coding",
+                "dispatch": {
+                    "repo_url": repo.git_url,
+                    "branch": "main",
+                    "target_branch": "main",
+                    "prompt": "执行编码",
+                    "timeout": 3600,
+                    "tags": [],
+                    "metadata": {
+                        "repository_id": str(repo.id),
+                        "env_FRIDAY_TASK_GIT_AUTH_TYPE": "token",
+                        "_redacted_env_keys": [
+                            "env_FRIDAY_TASK_CLAUDE_API_KEY",
+                            "env_FRIDAY_TASK_GIT_ACCESS_TOKEN",
+                            "env_FRIDAY_TASK_USER_TOKEN",
+                        ],
+                    },
+                },
+            },
+        )
+        await RunnerTaskAssignment.objects.acreate(
+            runner=runner,
+            session=sub_session,
+            status=RunnerTaskAssignment.Status.ASSIGNED,
+        )
+
+        consumer = RunnerConsumer()
+        consumer.runner = runner
+
+        with (
+            patch(
+                "services.git_credentials.aresolve_git_token",
+                new_callable=AsyncMock,
+                return_value="glpat-REHYDRATED",
+            ),
+            patch(
+                "services.provider_config.aget_claude_code_runtime_config",
+                new_callable=AsyncMock,
+                return_value={"api_key": "sk-ant-REHYDRATED"},
+            ),
+        ):
+            task = await consumer._rebuild_dispatch_task("coding-rehydrate-test")
+
+        assert task is not None
+        meta = task.metadata
+        assert meta["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] == "glpat-REHYDRATED"
+        assert meta["env_FRIDAY_TASK_CLAUDE_API_KEY"] == "sk-ant-REHYDRATED"
+        # USER_TOKEN 不重铸（短 TTL token 生命周期绑定首派）
+        assert "env_FRIDAY_TASK_USER_TOKEN" not in meta
+        # 标记键不进重建 metadata
+        assert "_redacted_env_keys" not in meta
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.asyncio
+    async def test_rebuild_rehydrate_failure_degrades_without_raising(self, project):
+        """重解析失败（权威源异常）→ 跳过该键不阻断重建（best-effort 降级）。"""
+        from unittest.mock import AsyncMock, patch
+
+        from agents.models import AgentSession
+        from runners.consumers import RunnerConsumer
+        from subagent.models import SubAgentSession
+
+        runner = await Runner.objects.acreate(
+            name="test-runner-rehydrate-fail",
+            token_hash="d" * 64,
+            channel_name="specific..rehydrate-fail",
+            status=Runner.Status.ONLINE,
+        )
+        agent_session = await AgentSession.objects.acreate(
+            session_id="agent-rehydrate-fail",
+            space=project,
+            status=AgentSession.Status.RUNNING,
+        )
+        sub_session = await SubAgentSession.objects.acreate(
+            session_id="coding-rehydrate-fail",
+            main_session=agent_session,
+            task_type=SubAgentSession.TaskType.CODING,
+            status=SubAgentSession.Status.PENDING,
+            repo_url="https://gitlab.example.com/t/f.git",
+            last_output={
+                "task_type": "coding",
+                "dispatch": {
+                    "repo_url": "https://gitlab.example.com/t/f.git",
+                    "metadata": {
+                        "_redacted_env_keys": ["env_FRIDAY_TASK_CLAUDE_API_KEY"],
+                    },
+                },
+            },
+        )
+        await RunnerTaskAssignment.objects.acreate(
+            runner=runner,
+            session=sub_session,
+            status=RunnerTaskAssignment.Status.ASSIGNED,
+        )
+
+        consumer = RunnerConsumer()
+        consumer.runner = runner
+
+        with patch(
+            "services.provider_config.aget_claude_code_runtime_config",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("provider boom"),
+        ):
+            task = await consumer._rebuild_dispatch_task("coding-rehydrate-fail")
+
+        assert task is not None, "重解析失败绝不阻断重建"
+        assert "env_FRIDAY_TASK_CLAUDE_API_KEY" not in task.metadata
+        assert "_redacted_env_keys" not in task.metadata
