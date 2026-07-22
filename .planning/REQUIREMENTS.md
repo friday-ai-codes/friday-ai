@@ -33,8 +33,8 @@
 ### UNIFY 工具面收口
 
 - [x] **UNIFY-01**: `improve_coding_plan` 走统一编排——View 改 `delegate_process_runtime`（改版语义=携带 feedback 的编排重跑产新 version），trace 中可见编排 session
-- [ ] **UNIFY-02**: `analyze_repository` 收敛且确定性缝退役——分析产物作为编排输入证据挂接；`mcp_tools/planning_service.py` 删除（`map_canonical_to_coding_plan` 等仍被引用的 helper 随迁），相关测试迁移不失覆盖
-- [ ] **UNIFY-03**: `services/plan_orchestration/` 空壳目录删除 + 全仓文档/注释残留引用清理
+- [x] **UNIFY-02**: `analyze_repository` 收敛且确定性缝退役——分析产物作为编排输入证据挂接；`mcp_tools/planning_service.py` 删除（`map_canonical_to_coding_plan` 等仍被引用的 helper 随迁），相关测试迁移不失覆盖
+- [x] **UNIFY-03**: `services/plan_orchestration/` 空壳目录删除 + 全仓文档/注释残留引用清理
 - [ ] **UNIFY-04**: 对外工具契约完整——`TOOL_SCHEMA_SNAPSHOT` 补 `report_project_state`，快照测试全绿；`@friday-ai-codes/skills` 文档对齐新行为（learning case 向量检索、`reverse_lookup_requirements` 收录进 friday-code 技能路由）
 
 ## Future Requirements（明确后置）
@@ -77,8 +77,8 @@
 | AGENT-03 | Phase 103 | Complete |
 | AGENT-04 | Phase 103 | Complete |
 | UNIFY-01 | Phase 104 | Complete |
-| UNIFY-02 | Phase 104 | Pending |
-| UNIFY-03 | Phase 104 | Pending |
+| UNIFY-02 | Phase 104 | Complete |
+| UNIFY-03 | Phase 104 | Complete |
 | UNIFY-04 | Phase 102 | Pending |
 
 ---
