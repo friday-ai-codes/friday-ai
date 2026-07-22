@@ -2020,6 +2020,12 @@ class AICodingNode(SubStepMixin, BaseNode):
             )
         except Exception as e:
             log.error("task_dispatch_failed", error=str(e))
+            # IN-01（103 审查）：dispatch 失败无终态回调兜底吊销 → best-effort 立即
+            # 吊销已铸任务 token（arevoke_task_tokens 自身吞异常不反噬主流程）。
+            if dispatch_user is not None:
+                from access_tokens.services import arevoke_task_tokens
+
+                await arevoke_task_tokens(session_id)
             return {
                 "status": "error",
                 "error": f"任务分发失败: {e}",

@@ -334,6 +334,39 @@ async def test_persisted_dispatch_strips_all_credential_env_keys(
 
 
 @pytest.mark.asyncio
+async def test_chat_dispatch_failure_revokes_minted_token(
+    settings: Any, dispatched_tasks: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """dispatch 抛异常 → 已铸 token best-effort 立即吊销（103 审查 IN-01），
+    不再带全量权限存活至自然过期；异常原样上抛（调用方语义不变）。"""
+    import uuid as uuid_mod
+
+    from access_tokens.models import AccessToken
+    from chat.coding_session_service import dispatch_coding_task
+
+    settings.FRIDAY_BASE_URL = "https://friday.example.com"
+
+    class _BoomDispatcher:
+        async def dispatch(self, task: Any) -> None:
+            raise RuntimeError("runner exploded")
+
+    _boom = _BoomDispatcher()
+    monkeypatch.setattr("runners.dispatcher.get_dispatcher", lambda: _boom)
+
+    _user, _space, _repo, cs = await _make_chat_fixture(
+        username=f"chat-revoke-{uuid_mod.uuid4().hex[:8]}",
+        branch=f"feat/103-revoke-{uuid_mod.uuid4().hex[:6]}",
+    )
+    with pytest.raises(RuntimeError, match="runner exploded"):
+        await dispatch_coding_task(cs, task_type="coding", prompt="实现功能")
+
+    # token 已铸但已被吊销（is_valid=False，revoked_at 非空）
+    token = await AccessToken.objects.aget(kind="task", created_by=_user)
+    assert token.revoked_at is not None
+    assert token.is_valid is False
+
+
+@pytest.mark.asyncio
 async def test_chat_dispatch_degrades_without_user(
     settings: Any, dispatched_tasks: list[Any]
 ) -> None:
