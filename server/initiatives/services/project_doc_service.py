@@ -455,12 +455,27 @@ class ProjectDocService:
         无 STATE ProjectDoc（工作区未 provision）→ 静默跳过。批量上报路径
         （``ReportProjectStateView``）在循环结束后调用本方法一次，实现批内合并
         （102-REVIEW MED-01）；单条 ``upsert_state_api`` 默认路径逐条调用。
+
+        102-REVIEW LO-04：doc_id 反查一并纳入 fail-soft——瞬时 DB 异常绝不让
+        已成功写入的 API 行在调用方被误标失败（物化 best-effort 不反噬主流程）。
         """
-        doc_id = await ProjectDoc.objects.filter(
-            project_id=project_id, doc_type=DocType.STATE
-        ).values_list("id", flat=True).afirst()
-        if doc_id:
-            await self._schedule_materialization(doc_id, initiated_by_user_id)
+        try:
+            doc_id = await ProjectDoc.objects.filter(
+                project_id=project_id, doc_type=DocType.STATE
+            ).values_list("id", flat=True).afirst()
+            if doc_id:
+                await self._schedule_materialization(doc_id, initiated_by_user_id)
+        except Exception as exc:  # noqa: BLE001 — 物化调度 best-effort，绝不反噬上报主流程
+            logger.warning(
+                "state_materialization_schedule_failed",
+                project_id=str(project_id),
+                error_type=type(exc).__name__,
+                initiated_by_user_id=(
+                    str(initiated_by_user_id) if initiated_by_user_id else "system"
+                ),
+                component="initiatives.workspace",
+                category="caller",
+            )
 
     @sync_to_async
     def _upsert_state_api_locked(

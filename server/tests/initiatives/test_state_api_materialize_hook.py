@@ -118,3 +118,19 @@ async def test_materialization_failure_does_not_break_upsert() -> None:
 
     assert created is True
     assert api.method == "DELETE"
+
+
+async def test_doc_id_lookup_failure_does_not_break_upsert() -> None:
+    """doc_id 反查瞬时 DB 异常也 fail-soft：API 行已写入，upsert 不抛（102-REVIEW LO-04）。"""
+    project = await _make_project("sam-lookup-fail")
+    await _make_state_doc(project)
+    with patch(
+        "initiatives.services.project_doc_service.ProjectDoc.objects.filter",
+        side_effect=RuntimeError("DB 瞬时抖动"),
+    ):
+        api, created = await ProjectDocService().upsert_state_api(
+            project_id=project.id, method="PATCH", path="/api/lookup-fail"
+        )
+
+    assert created is True
+    assert api.path == "/api/lookup-fail"
