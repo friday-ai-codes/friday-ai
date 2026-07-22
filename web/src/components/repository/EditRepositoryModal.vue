@@ -53,6 +53,12 @@ const form = reactive({
 // 关联空间（必须至少保留一个）
 const spaceIds = ref<string[]>((props.repository.spaces ?? []).map(s => s.id))
 
+// 一键配置 Webhook（仅 GitLab）：保存后自动在 GitLab 侧创建/更新 push webhook
+const autoSetupWebhook = ref(false)
+const showWebhookOption = computed(
+  () => form.git_platform === 'gitlab' && props.repository.has_credential,
+)
+
 const branches = ref<string[]>([])
 const headBranch = ref<string | null>(props.repository.remote_head_branch ?? null)
 const recommendedBranch = ref<string | null>(null)
@@ -134,6 +140,18 @@ async function handleSubmit() {
     else {
       success('更新成功', '仓库信息已更新')
     }
+
+    // best-effort 自动配置 Webhook：失败不阻塞保存
+    if (showWebhookOption.value && autoSetupWebhook.value) {
+      try {
+        const result = await repositoriesApi.setupWebhook(props.repository.id)
+        success('Webhook 已自动配置', `GitLab push webhook 已${result.action === 'created' ? '创建' : '更新'}（分支：${result.branch_filter || '全部'}）`)
+      }
+      catch (e: unknown) {
+        handleError(e, '自动配置 Webhook（可稍后在仓库详情的 Webhook 面板重试）')
+      }
+    }
+
     emit('confirm')
   }
   catch (e: unknown) {
@@ -335,6 +353,26 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
           </p>
         </div>
       </div>
+
+      <!-- 一键配置 Webhook（仅 GitLab 且已有凭证） -->
+      <label
+        v-if="showWebhookOption"
+        class="flex items-start gap-2.5 p-3 rounded-lg border border-border/50 bg-muted/20 cursor-pointer hover:bg-muted/30 transition-colors"
+      >
+        <input
+          v-model="autoSetupWebhook"
+          type="checkbox"
+          class="mt-0.5 accent-primary"
+        >
+        <span class="min-w-0">
+          <span class="block text-sm font-medium text-foreground">
+            自动配置 Webhook
+          </span>
+          <span class="block text-xs text-muted-foreground">
+            保存后用仓库凭证自动在 GitLab 项目中创建/更新 push webhook：默认分支变更时自动通知本服务更新索引（需要 token 为项目 Maintainer 及以上且具有 api scope）
+          </span>
+        </span>
+      </label>
 
       <!-- 关联空间 -->
       <div class="space-y-2">

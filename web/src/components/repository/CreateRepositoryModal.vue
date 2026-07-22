@@ -64,6 +64,12 @@ const hasCredentialInput = computed(
 // 关联空间（可选，可后期再绑定）
 const spaceIds = ref<string[]>([])
 
+// 一键配置 Webhook（仅 GitLab）：建仓成功后自动在 GitLab 侧创建 push webhook
+const autoSetupWebhook = ref(true)
+const showWebhookOption = computed(
+  () => form.git_platform === 'gitlab' && Boolean(testResult.value?.success),
+)
+
 // 表单验证
 const errors = reactive({
   name: '',
@@ -177,6 +183,18 @@ async function handleSubmit() {
       remote_head_branch: testResult.value?.head_branch ?? undefined,
     })
     success('创建成功', '仓库已创建，正在自动建立知识')
+
+    // best-effort 自动配置 Webhook：失败不阻塞建仓，仅提示到面板手动配置
+    if (showWebhookOption.value && autoSetupWebhook.value) {
+      try {
+        const result = await repositoriesApi.setupWebhook(repository.id)
+        success('Webhook 已自动配置', `GitLab push webhook 已${result.action === 'created' ? '创建' : '更新'}（分支：${result.branch_filter || '全部'}）`)
+      }
+      catch (e: unknown) {
+        handleError(e, '自动配置 Webhook（可稍后在仓库详情的 Webhook 面板重试）')
+      }
+    }
+
     emit('confirm', repository.id)
   }
   catch (e: unknown) {
@@ -462,6 +480,26 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
         <p v-else class="text-xs text-muted-foreground">
           代码索引会使用这个分支，默认选中远端 HEAD 所在分支
         </p>
+
+        <!-- 一键配置 Webhook（仅 GitLab，测连成功后可选） -->
+        <label
+          v-if="showWebhookOption"
+          class="flex items-start gap-2.5 p-3 rounded-lg border border-border/50 bg-muted/20 cursor-pointer hover:bg-muted/30 transition-colors"
+        >
+          <input
+            v-model="autoSetupWebhook"
+            type="checkbox"
+            class="mt-0.5 accent-primary"
+          >
+          <span class="min-w-0">
+            <span class="block text-sm font-medium text-foreground">
+              自动配置 Webhook
+            </span>
+            <span class="block text-xs text-muted-foreground">
+              建仓后用该凭证自动在 GitLab 项目中创建 push webhook：默认分支变更时自动通知本服务更新索引（需要 token 为项目 Maintainer 及以上且具有 api scope）
+            </span>
+          </span>
+        </label>
       </div>
 
       <!-- 关联空间（可选，可后期再绑定） -->

@@ -25,11 +25,33 @@ const { success } = useToast()
 
 const togglingAutoIndex = ref(false)
 const generatingSecret = ref(false)
+const settingUpWebhook = ref(false)
 
 const webhookUrl = computed(() => {
   const base = window.location.origin
   return `${base}/api/repositories/${props.repository.id}/webhooks/push/`
 })
+
+const isGitlab = computed(() => props.repository.git_platform === 'gitlab')
+
+/** 一键配置：调用后端在 GitLab 侧幂等创建/更新 push webhook（默认只订阅默认分支） */
+async function setupWebhook() {
+  settingUpWebhook.value = true
+  try {
+    const result = await repositoriesApi.setupWebhook(props.repository.id)
+    success(
+      result.action === 'created' ? 'Webhook 已创建' : 'Webhook 已更新',
+      `已在 GitLab 项目中配置 push webhook（分支：${result.branch_filter || '全部'}）`,
+    )
+    emit('updated')
+  }
+  catch (e: unknown) {
+    handleError(e, '一键配置 Webhook')
+  }
+  finally {
+    settingUpWebhook.value = false
+  }
+}
 
 async function toggleAutoIndex(enabled: boolean) {
   togglingAutoIndex.value = true
@@ -115,6 +137,31 @@ async function generateSecret() {
         <p class="text-sm font-medium text-muted-foreground">
           Webhook 配置
         </p>
+
+        <!-- 一键配置（仅 GitLab：用已配置的 Git 凭证调 API 自动创建 hook） -->
+        <div
+          v-if="isGitlab"
+          class="flex items-center justify-between gap-3 p-3 rounded-lg border border-primary/20 bg-primary/5"
+        >
+          <div class="min-w-0">
+            <p class="text-sm font-medium">
+              一键配置 Webhook
+            </p>
+            <p class="text-xs text-muted-foreground">
+              用已配置的 Git 凭证自动在 GitLab 项目中创建 push webhook（默认只订阅默认分支），并启用自动索引
+            </p>
+          </div>
+          <button
+            class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0"
+            :disabled="settingUpWebhook"
+            @click="setupWebhook"
+          >
+            <span v-if="settingUpWebhook" class="icon-[lucide--loader-circle] animate-spin" />
+            <span v-else class="icon-[lucide--zap]" />
+            {{ settingUpWebhook ? '配置中...' : '一键配置' }}
+          </button>
+        </div>
+
         <div class="space-y-2">
           <div>
             <label class="text-xs text-muted-foreground">Payload URL</label>

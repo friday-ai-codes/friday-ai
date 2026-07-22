@@ -68,6 +68,20 @@ class MRMetadataResult:
 
 
 @dataclass
+class WebhookSetupResult:
+    """自动配置 project push webhook 的结果（一键配置，幂等）。
+
+    ``action`` 为 ``created``（新建）或 ``updated``（按 URL 命中已有 hook 后更新）。
+    失败时 ``success=False``，``error`` 为已翻译的用户可读中文提示（token 绝不回显）。
+    """
+
+    success: bool
+    action: str = ""  # created / updated
+    hook_id: str = ""
+    error: str = ""
+
+
+@dataclass
 class CompareFileEntry:
     """分支对比中的单个文件变更。"""
 
