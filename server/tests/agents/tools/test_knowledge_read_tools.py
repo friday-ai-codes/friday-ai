@@ -112,7 +112,35 @@ async def test_search_learning_cases_passes_through_to_service() -> None:
     assert kwargs["work_item_type"] == "story"
 
 
+async def test_search_learning_cases_clamps_oversized_limit() -> None:
+    """102-REVIEW LO-02：LLM 直出 limit=10000 → 钳到上界 20，防 Qdrant 放大打击。"""
+    owner = await _make_user("lc-clamp")
+    conversation = await _make_conversation(created_by=owner)
+    mock_search = AsyncMock(return_value=[])
+    with patch("mcp_tools.learning_case_service.search_learning_cases", mock_search):
+        result = await search_learning_cases(
+            query="q", limit=10000, conversation_id=str(conversation.id)
+        )
+    assert result.success is True
+    assert mock_search.await_args.kwargs["limit"] == 20
+
+
 # ---- search_project_context ----
+
+
+async def test_search_project_context_clamps_oversized_top_k() -> None:
+    """102-REVIEW LO-02：LLM 直出 top_k=99999 → 钳到上界 20（对齐 MCP serializer）。"""
+    project, owner = await _make_project_with_owner(key="spc-clamp")
+    conversation = await _make_conversation(created_by=owner, bound_project=project)
+    mock_search = AsyncMock(return_value=[])
+    with patch(
+        "agents.tools.knowledge_read_tools._service.search_similar", mock_search
+    ):
+        result = await search_project_context(
+            query="q", top_k=99999, conversation_id=str(conversation.id)
+        )
+    assert result.success is True
+    assert mock_search.await_args.kwargs["top_k"] == 20
 
 
 async def test_search_project_context_non_member_fail_closed() -> None:

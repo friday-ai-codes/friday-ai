@@ -125,6 +125,9 @@ async def search_learning_cases(
     conversation_id: str = "",
 ) -> ToolResult:
     started = perf_counter()
+    # 102-REVIEW LO-02：LLM 直出参数钳上下界（对齐 MCP serializer max_value=20），
+    # 防 limit=10000 之类放大为 top_k=30000 打 Qdrant。
+    limit = max(1, min(int(limit), 20))
     user = await _resolve_conversation_user(conversation_id)
     if user is None:
         return ToolResult(success=False, error="无法解析会话 owner，拒绝检索（fail-closed）")
@@ -202,6 +205,8 @@ async def search_project_context(
     conversation_id: str = "",
 ) -> ToolResult:
     started = perf_counter()
+    # 102-REVIEW LO-02：LLM 直出参数钳上下界（对齐 MCP serializer max_value=20）。
+    top_k = max(1, min(int(top_k), 20))
     project, user, reason = await _resolve_project_scope(conversation_id)
     if project is None:
         return _deny(reason)
