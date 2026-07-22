@@ -26,6 +26,7 @@ import structlog
 from agents.tools.base import ToolCategory, ToolResult, tool
 from agents.tools.delivery_knowledge_tools import _resolve_conversation_user
 from agents.tools.project_read_tools import _CONV_ID_PARAM, _deny, _resolve_project_scope
+from common.logging import redact_secrets_in_text
 from knowledge.exposure import serialize_search_results
 from knowledge.retrieval import DeliveryKnowledgeSearchService
 
@@ -141,8 +142,10 @@ async def search_learning_cases(
             user=user,
         )
     except Exception as exc:  # noqa: BLE001 — 检索失败转工具错误，不抛
-        logger.exception("search_learning_cases_failed", error=str(exc))
-        return ToolResult(success=False, error=f"检索失败: {exc}")
+        # 102-REVIEW LO-01：异常文本先脱敏再写日志 / 返回 LLM（进入对话消息与留痕）
+        safe_err = redact_secrets_in_text(str(exc))
+        logger.exception("search_learning_cases_failed", error=safe_err)
+        return ToolResult(success=False, error=f"检索失败: {safe_err}")
     duration_ms = round((perf_counter() - started) * 1000, 2)
     scores = [float(item.get("score") or 0) for item in results]
     await _record_chat_retrieval(
@@ -213,8 +216,10 @@ async def search_project_context(
             include_document_kind=True,
         )
     except Exception as exc:  # noqa: BLE001 — 检索失败转工具错误，不抛
-        logger.exception("search_project_context_failed", error=str(exc))
-        return ToolResult(success=False, error=f"检索失败: {exc}")
+        # 102-REVIEW LO-01：异常文本先脱敏再写日志 / 返回 LLM（进入对话消息与留痕）
+        safe_err = redact_secrets_in_text(str(exc))
+        logger.exception("search_project_context_failed", error=safe_err)
+        return ToolResult(success=False, error=f"检索失败: {safe_err}")
     serialized = serialize_search_results(results)
     duration_ms = round((perf_counter() - started) * 1000, 2)
     scores = [item.get("score", 0) for item in serialized]
@@ -283,8 +288,10 @@ async def read_project_doc(
             project_id=str(project.id), doc_type=doc_type
         )
     except Exception as exc:  # noqa: BLE001 — 读取失败转工具错误，不抛
-        logger.exception("read_project_doc_failed", error=str(exc))
-        return ToolResult(success=False, error=f"读取失败: {exc}")
+        # 102-REVIEW LO-01：异常文本先脱敏再写日志 / 返回 LLM（进入对话消息与留痕）
+        safe_err = redact_secrets_in_text(str(exc))
+        logger.exception("read_project_doc_failed", error=safe_err)
+        return ToolResult(success=False, error=f"读取失败: {safe_err}")
     if rendered is None:
         return ToolResult(success=False, error="工作区文件不存在")
     blocks = rendered.get("blocks", []) or []
