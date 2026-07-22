@@ -243,8 +243,10 @@ class ImproveCodingPlanRequestSerializer(serializers.Serializer):
       ``session_id``（不阻塞等容器，Cursor 侧调用不挂起不超时）；partial 后可经
       ``get_coding_execution`` / 后续调用凭 ``session_id`` 跟进。
 
-    request 键集不变（accepted-but-advisory）：``context_chunks`` 若提供则折入
-    feedback 块作为补充上下文；``max_steps`` 收敛到编排后不再截断步骤，仅保留兼容。
+    request 键集不变（accepted-but-advisory）：``context_chunks`` 若提供则经
+    ``normalize_context_chunks`` 截断（≤20 条、content 预览 500 字符）后折入 feedback 块
+    作为补充上下文（WR-03，review 104——系统边界限体积）；``max_steps`` 收敛到编排后
+    不再截断步骤，仅保留兼容。
     """
 
     plan_id = serializers.UUIDField(required=True)

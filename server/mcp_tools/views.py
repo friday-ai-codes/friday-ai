@@ -76,7 +76,7 @@ from .models import (
     McpRepositoryAnalysis,
 )
 from .orchestration_delegate import delegate_process_runtime, map_canonical_to_coding_plan
-from .repository_analysis_service import build_repository_analysis
+from .repository_analysis_service import build_repository_analysis, normalize_context_chunks
 from .serializers import (
     AnalyzeRepositoryRequestSerializer,
     CreateCodingPlanRequestSerializer,
@@ -2054,7 +2054,10 @@ class ImproveCodingPlanView(McpToolView):
             f"## 最新方案摘要（v{latest.version}）\n\n{latest_summary}",
             f"## 用户改版反馈\n\n{feedback}",
         ]
-        context_chunks = list(input_data.get("context_chunks") or [])
+        # WR-03（review 104）：chunk 折入前必须限体积——复用随迁 normalize_context_chunks
+        # 的旧 seam 截断语义（≤20 条 + content_preview[:500]，丢弃任意超大自定义键），防 PAT
+        # 调用方送大 chunk 造出多 MB 的 stage_state 行与 LLM prompt（成本放大 / 超上下文窗口）。
+        context_chunks = normalize_context_chunks(list(input_data.get("context_chunks") or []))
         if context_chunks:
             chunk_lines = "\n".join(
                 json.dumps(chunk, ensure_ascii=False, default=str) for chunk in context_chunks
