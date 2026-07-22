@@ -277,6 +277,63 @@ async def test_chat_dispatch_mints_token_and_no_plaintext_persisted(
 
 
 @pytest.mark.asyncio
+async def test_persisted_dispatch_strips_all_credential_env_keys(
+    settings: Any, dispatched_tasks: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """落库副本剔除全部凭证键（103 审查 WR-03 泄漏守护）：
+
+    - 内存 DispatchTask.metadata 保留 Git token / API key / 任务 token（首派容器行为不变）
+    - SubAgentSession.last_output.dispatch.metadata 三键全无 + 明文不落库
+    - ``_redacted_env_keys`` 标记记录剔除清单（断连重派重解析依据）
+    """
+    import json
+    import uuid as uuid_mod
+
+    import chat.coding_session_service as css
+    from chat.coding_session_service import CREDENTIAL_ENV_KEYS, dispatch_coding_task
+    from subagent.models import SubAgentSession
+
+    settings.FRIDAY_BASE_URL = "https://friday.example.com"
+
+    async def _metadata_with_credentials(repository: Any, coding_session: Any):
+        return {
+            "repository_id": str(repository.id),
+            "env_FRIDAY_TASK_GIT_ACCESS_TOKEN": "glpat-GITSECRET456",
+            "env_FRIDAY_TASK_GIT_AUTH_TYPE": "token",
+            "env_FRIDAY_TASK_CLAUDE_API_KEY": "sk-ant-APISECRET789",
+        }, repository.git_url
+
+    monkeypatch.setattr(css, "build_dispatch_metadata", _metadata_with_credentials)
+
+    _user, _space, _repo, cs = await _make_chat_fixture(
+        username=f"chat-redact-{uuid_mod.uuid4().hex[:8]}",
+        branch=f"feat/103-redact-{uuid_mod.uuid4().hex[:6]}",
+    )
+    session_id = await dispatch_coding_task(cs, task_type="coding", prompt="实现功能")
+
+    # (a) 内存 dispatch metadata 完整（首派容器 clone/SDK 行为不变）
+    meta = dispatched_tasks[0].metadata
+    assert meta["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] == "glpat-GITSECRET456"
+    assert meta["env_FRIDAY_TASK_CLAUDE_API_KEY"] == "sk-ant-APISECRET789"
+    assert meta["env_FRIDAY_TASK_USER_TOKEN"].startswith("friday_pat_")
+
+    # (b) 落库副本三键全无，明文不出现在整个 last_output
+    sub_session = await SubAgentSession.objects.aget(session_id=session_id)
+    persisted_meta = sub_session.last_output["dispatch"]["metadata"]
+    for key in CREDENTIAL_ENV_KEYS:
+        assert key not in persisted_meta, f"凭证键 {key} 不得落库"
+    dumped = json.dumps(sub_session.last_output, ensure_ascii=False)
+    assert "glpat-GITSECRET456" not in dumped
+    assert "sk-ant-APISECRET789" not in dumped
+    assert "friday_pat_" not in dumped
+
+    # (c) 剔除标记（重派重解析依据）：三键均被剔除
+    assert set(persisted_meta["_redacted_env_keys"]) == set(CREDENTIAL_ENV_KEYS)
+    # 非凭证键原样保留
+    assert persisted_meta["env_FRIDAY_TASK_GIT_AUTH_TYPE"] == "token"
+
+
+@pytest.mark.asyncio
 async def test_chat_dispatch_degrades_without_user(
     settings: Any, dispatched_tasks: list[Any]
 ) -> None:

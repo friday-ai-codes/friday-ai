@@ -46,6 +46,19 @@ ACTIVE_STATUSES: frozenset[str] = frozenset(
 # 共享 error 文案常量，避免 service / view / 兼容性命令多处硬编码漂移。
 ERROR_REPO_ACTIVE_BUSY = "该仓库已有进行中的编码会话"
 
+# 落库脱敏键名单（103 审查 WR-03）：dispatch metadata 中凭证明文键——持久化副本
+# （SubAgentSession.last_output.dispatch.metadata）统一剔除，绝不落 DB。
+# 断连重派时由 runners.consumers._rebuild_dispatch_task 按 ``_redacted_env_keys``
+# 标记从权威源重解析补回（Git token / API key），USER_TOKEN 不重铸（容器降级不挂
+# 知识工具，fail-soft）。
+CREDENTIAL_ENV_KEYS: frozenset[str] = frozenset(
+    {
+        "env_FRIDAY_TASK_USER_TOKEN",
+        "env_FRIDAY_TASK_GIT_ACCESS_TOKEN",
+        "env_FRIDAY_TASK_CLAUDE_API_KEY",
+    }
+)
+
 
 @dataclass(frozen=True)
 class CodingExecutionSpec:
@@ -472,13 +485,19 @@ async def dispatch_coding_task(
     )
 
     last_output = sub_session.last_output if isinstance(sub_session.last_output, dict) else {}
-    # 泄漏防线（Phase 103 T-103-01）：落库副本剔除任务 token 明文——last_output 是持久化
-    # 数据，friday_pat_ 明文绝不落盘（PAT-02）。runner 断连重建 dispatch
-    # （consumers._rebuild_dispatch_task）时该键缺失 → 容器降级不挂知识工具（fail-soft，
-    # 与 user 不可解析降级语义一致）。
+    # 泄漏防线（Phase 103 T-103-01 / 审查 WR-03）：落库副本统一剔除 CREDENTIAL_ENV_KEYS
+    # 全部凭证明文键（任务 token / Git token / API key）——last_output 是持久化数据，
+    # 凭证明文绝不落盘（PAT-02 同族纪律）。内存中的 dispatch_task.metadata 保持完整，
+    # 首派容器行为不变。runner 断连重建（consumers._rebuild_dispatch_task）按
+    # ``_redacted_env_keys`` 标记重解析补回 Git token / API key（权威源：
+    # aresolve_git_token / provider 配置）；env_FRIDAY_TASK_USER_TOKEN 不重铸 →
+    # 重派容器降级不挂知识工具（fail-soft，与 user 不可解析降级语义一致）。
+    redacted_env_keys = sorted(CREDENTIAL_ENV_KEYS & dispatch_task.metadata.keys())
     persisted_metadata = {
-        k: v for k, v in dispatch_task.metadata.items() if k != "env_FRIDAY_TASK_USER_TOKEN"
+        k: v for k, v in dispatch_task.metadata.items() if k not in CREDENTIAL_ENV_KEYS
     }
+    if redacted_env_keys:
+        persisted_metadata["_redacted_env_keys"] = redacted_env_keys
     sub_session.last_output = {
         **last_output,
         "dispatch": {
