@@ -7,7 +7,7 @@
 ## 废弃原因
 
 旧的 `ai_plan_generation` 是基于单 agent 的 LangChain 方案生成节点。随着技术方案生成统一收口到
-编排入口（`plan_orchestration` / `ai_plan_research`），节点库需要把方案生成路径收敛到唯一入口，
+编排入口（`process_runtime` / `ai_plan_research`），节点库需要把方案生成路径收敛到唯一入口，
 避免新建工作流时在多个语义重叠的节点之间二选一。因此：
 
 - `ai_plan_generation` 不再从前端节点库（`NodePalette`）暴露，新建工作流无法再拖出该节点。
