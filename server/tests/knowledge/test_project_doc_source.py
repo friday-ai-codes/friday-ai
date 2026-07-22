@@ -73,3 +73,86 @@ async def test_project_doc_normalize_empty_snapshot_still_produces_entity() -> N
     events = await normalize(IngestionRequest("project_doc", str(doc.id), "test"))
     assert len(events) == 1
     assert events[0].content == ""
+
+
+# ---- KNOW-06（Phase 102）：STATE 文档 live API 清单 ----
+
+
+@sync_to_async
+def _make_state_apis(project_id, rows: list[tuple[str, str, str]]) -> None:
+    from initiatives.models import ProjectStateApi
+
+    for method, path, api_status in rows:
+        ProjectStateApi.objects.create(
+            project_id=project_id, method=method, path=path, status=api_status
+        )
+
+
+async def test_state_doc_content_includes_live_api_rows() -> None:
+    """STATE 文档 normalize 追加 live「METHOD path — status」API 行（snapshot 不含 API 行）。"""
+    doc = await _make_doc("# 项目状态\n人工区备注", doc_type=DocType.STATE)
+    project = await sync_to_async(lambda: doc.project)()
+    await _make_state_apis(
+        project.id,
+        [("GET", "/api/x", "implemented"), ("POST", "/api/y", "planned")],
+    )
+    normalize = get_normalizer("project_doc")
+
+    events = await normalize(IngestionRequest("project_doc", str(doc.id), "test"))
+
+    assert len(events) == 1
+    content = events[0].content
+    assert "## API 清单" in content
+    assert "GET /api/x — implemented" in content
+    assert "POST /api/y — planned" in content
+    # snapshot 人工区内容保留（追加而非覆盖）。
+    assert "人工区备注" in content
+
+
+async def test_non_state_doc_content_unchanged() -> None:
+    """非 STATE 文档零变化：同项目存在 ProjectStateApi 行也不拼入 content（仅 snapshot）。"""
+    doc = await _make_doc("# 项目记忆\n记忆正文", doc_type=DocType.MEMORY)
+    project = await sync_to_async(lambda: doc.project)()
+    await _make_state_apis(project.id, [("GET", "/api/x", "implemented")])
+    normalize = get_normalizer("project_doc")
+
+    events = await normalize(IngestionRequest("project_doc", str(doc.id), "test"))
+
+    assert len(events) == 1
+    content = events[0].content
+    assert "GET /api/x" not in content
+    assert "## API 清单" not in content
+    assert "记忆正文" in content
+
+
+async def test_report_to_search_content_chain() -> None:
+    """验收链（CI 无 Qdrant 的诚实边界）：上报 → 物化调度捕获 → normalize 内容含 API 行。
+
+    向量入库与 search_project_context 命中由既有 ingestion/search_similar 测试与
+    include_document_kind 路径（Phase 85 CTX-01 用例）覆盖；本链断言到「摄取内容包含
+    API 清单」这一确定性环节。
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from initiatives.services import ProjectDocService
+
+    doc = await _make_doc("# 项目状态\n", doc_type=DocType.STATE)
+    project = await sync_to_async(lambda: doc.project)()
+
+    mock_schedule = AsyncMock()
+    with patch("knowledge.ingestion.aschedule_ingestion", mock_schedule):
+        await ProjectDocService().upsert_state_api(
+            project_id=project.id, method="GET", path="/api/chain", status="implemented"
+        )
+
+    mock_schedule.assert_awaited()
+    captured_request = mock_schedule.await_args_list[-1].args[0]
+    assert captured_request.source_kind == "project_doc"
+    assert captured_request.source_id == str(doc.id)
+
+    normalize = get_normalizer("project_doc")
+    events = await normalize(captured_request)
+
+    assert len(events) == 1
+    assert events[0].kind == EntityKind.DOCUMENT
+    assert "GET /api/chain — implemented" in events[0].content
