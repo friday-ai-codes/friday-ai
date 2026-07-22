@@ -45,6 +45,22 @@ def test_skill_files_discovered() -> None:
     )
 
 
+def test_tool_token_prefixes_cover_all_snapshot_keys() -> None:
+    """前缀表自检（102-REVIEW LO-03）：_TOOL_TOKEN_RE 必须能匹配 snapshot 全部工具名。
+
+    否则新前缀（如 pack_* / apply_* / submit_*）的工具进 snapshot 后，文档里
+    引用它的 token 不被主守卫识别——守卫静默失效（漏检而非误报，无 CI 信号）。
+    本断言让新前缀工具进 snapshot 时 CI 直接红，提醒扩前缀表。
+    """
+    unmatched = sorted(
+        name for name in TOOL_SCHEMA_SNAPSHOT if not _TOOL_TOKEN_RE.fullmatch(f"`{name}`")
+    )
+    assert not unmatched, (
+        "_TOOL_TOKEN_RE 的动词前缀表未覆盖以下 snapshot 工具名（主守卫会静默漏检"
+        f"文档中对它们的引用），请扩展前缀表：{unmatched}"
+    )
+
+
 def test_skill_tool_references_subset_of_snapshot() -> None:
     """skills 文档引用的 MCP 工具名 ⊆ snapshot 键集 ∪ request/response 字段名集。"""
     allowed = _allowed_tokens()
