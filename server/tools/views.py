@@ -56,6 +56,10 @@ class RemoteToolExecuteView(APIView):
         run = await begin_interaction_run(request, source="tool")
         tool_name = serializer.validated_data["name"]
         arguments = serializer.validated_data.get("arguments") or {}
+        # 安全（101 CR-01）：权限主体绝不信任请求体。PAT 所有者（request.user）是本
+        # 端点唯一受信 principal——服务端权威覆写 user_id，客户端传入的任何 user_id
+        # 一律忽略，防横向越权检索 / 冒名上报（skill 步骤 handler 按该注入值解析权限）。
+        arguments["user_id"] = str(request.user.id)
         started_at = time.perf_counter()
         # run 透传（101-04）：skill 分支写步级 ToolCallRecord；其余顶层审计逻辑不动。
         result = await execute_tool(tool_name, arguments, run=run)

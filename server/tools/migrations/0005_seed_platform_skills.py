@@ -7,8 +7,12 @@
 
 步骤参数语义（tools/sources/skill.py 实现，101-04 Task 2）：**skill 顶层 arguments
 透传合并进每一步、步内静态 arguments 优先**（``{**arguments, **step_args}``）。
-故 skill input_schema 中声明的键（如 query / repository_id / user_id 等）会注入
+故 skill input_schema 中声明的键（如 query / repository_id 等）会注入
 每个步骤，步骤 handler ``**kwargs`` 容忍多余键、只取自己认识的键。
+
+安全（101 CR-01）：``user_id`` 权限主体**不进 input_schema**——该键由
+``RemoteToolExecuteView`` 以 PAT 所有者服务端权威注入，客户端传值一律被覆写，
+绝不作为客户端可填参数对外声明。
 
 范本照抄 0002_seed_builtin_tools（get_or_create + reverse 按名字删除）。
 """
@@ -65,7 +69,6 @@ _STEP_TOOLS = [
             "properties": {
                 "query": {"type": "string", "description": "查询文本"},
                 "top_k": {"type": "integer", "description": "返回条数上限", "default": 5},
-                "user_id": {"type": "string", "description": "权限主体用户 id（fail-closed）"},
                 "project_ids": {"type": "array", "items": {"type": "string"}},
                 "repository_ids": {"type": "array", "items": {"type": "string"}},
                 "entity_kinds": {"type": "array", "items": {"type": "string"}},
@@ -87,7 +90,6 @@ _STEP_TOOLS = [
                 "file_hints": {"type": "array", "items": {"type": "string"}},
                 "symbol_hints": {"type": "array", "items": {"type": "string"}},
                 "limit": {"type": "integer", "description": "返回条数上限", "default": 5},
-                "user_id": {"type": "string", "description": "权限主体用户 id（fail-closed）"},
             },
             "required": ["query"],
         },
@@ -135,7 +137,6 @@ _STEP_TOOLS = [
             "properties": {
                 "project_id": {"type": "string", "description": "项目 UUID"},
                 "content": {"type": "string", "description": "沉淀内容"},
-                "user_id": {"type": "string", "description": "权限主体用户 id（fail-closed）"},
                 "source_conversation_id": {"type": "string", "description": "来源会话 id（可选）"},
             },
             "required": ["project_id", "content"],
@@ -148,7 +149,7 @@ _SKILLS = [
         "name": "pre_coding_research",
         "description": (
             "编码前调研：路由候选仓库 → 代码语义检索 → 交付知识检索 → 历史 learning case。"
-            "顶层 arguments（query/user_id/repository_ids 等）透传合并进每一步。"
+            "顶层 arguments（query/repository_ids 等）透传合并进每一步。"
         ),
         "timeout": 120,
         "input_schema": {
@@ -184,7 +185,6 @@ _SKILLS = [
                 "solution_notes": {"type": "string"},
                 "project_id": {"type": "string"},
                 "content": {"type": "string"},
-                "user_id": {"type": "string"},
             },
             "required": ["repository_id", "source_branch"],
         },

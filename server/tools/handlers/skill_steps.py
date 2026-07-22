@@ -19,10 +19,12 @@ builtin handler。**只做参数适配 + 结果 JSON 化，逻辑全部委托既
 JSON 字符串而非抛裸异常（步骤失败语义由 ``execute_tool`` 的 ok=False 承载——仅
 真异常路径）；其余异常正常上抛交由 executor 归一。
 
-权限主体（fail-closed）：``search_delivery_knowledge`` / ``search_learning_cases`` /
-``report_project_knowledge`` 的底层 service 以 user 为权限主体，handler 经可选
-``user_id`` 入参解析（skill 顶层 arguments 透传即可注入每步）；解析不到返回
-error JSON，绝不以特权身份兜底。
+权限主体（fail-closed，101 CR-01 收紧）：``search_delivery_knowledge`` /
+``search_learning_cases`` / ``report_project_knowledge`` 的底层 service 以 user 为
+权限主体。``user_id`` **仅接受服务端受信注入**——HTTP 链路由
+``RemoteToolExecuteView.post`` 以 ``request.user.id``（PAT 所有者）权威覆写后透传，
+客户端请求体中的 user_id 一律被忽略；未来无 HTTP 上下文的内部调用方必须显式传入
+受信 user_id。解析不到返回 error JSON，绝不以特权身份兜底。
 
 所有 handler 均 ``**kwargs`` 容忍多余键——skill 顶层输入合并透传进每步，
 步骤只取自己认识的键。
@@ -48,7 +50,11 @@ def _error(message: str, **extra: Any) -> str:
 
 
 async def _resolve_user(user_id: str | int | None) -> Any | None:
-    """按 user_id 解析权限主体；缺失/不存在返回 None（调用方 fail-closed）。"""
+    """按 user_id 解析权限主体；缺失/不存在返回 None（调用方 fail-closed）。
+
+    ``user_id`` 必须来自服务端受信注入（``RemoteToolExecuteView`` 以 PAT 所有者
+    权威覆写，见模块 docstring / 101 CR-01），绝不直接消费客户端请求体传值。
+    """
     if user_id is None or str(user_id).strip() == "":
         return None
     from django.contrib.auth import get_user_model
