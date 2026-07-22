@@ -1,18 +1,18 @@
-"""RTOOL-03 server dispatch 契约 RED 脚手架：tools endpoint 推导 + 机会性 PAT 注入 + 不读 DB 明文。
+"""workflow dispatch 契约测试：tools endpoint 推导 + 任务级短 TTL token 铸造注入。
 
-钉死 AICodingNode dispatch 路径在 RemoteTool 闭环中的可验证契约：
-- `env_FRIDAY_TASK_TOOLS_ENDPOINT` 由 `settings.FRIDAY_BASE_URL` 推导（**非** callback_url，Pitfall 1）。
-- 机会性 PAT（CONTEXT <resolution> Option C + 机会性 B）：仅当「实时请求线程提供明文 PAT」时注入
-  `env_FRIDAY_TASK_USER_TOKEN`；无明文来源（背景/飞书触发）→ 不注入该键。
-- PAT-02 安全不变量：dispatch 路径**绝不**从 AccessToken/DB 取明文（AccessToken 仅存 sha256）。
+Phase 103 AGENT-01 机制换代：机会性 PAT 透传通道（请求级 ContextVar 捕获 + 引擎
+瞬态字段下传 + 节点解析器）已整体移除，改为按 `triggered_by` 经
+`access_tokens.services.mint_task_token` **新签发**任务级短 TTL token 注入
+`env_FRIDAY_TASK_USER_TOKEN`（解析器：`AICodingNode._resolve_dispatch_user`）。
 
-WR-3 机制钉定（plan-checker fix）：机会性 PAT 经 `_run_repo_coding` 的**可选 `user_pat` 参数**下传
-（mirror 既有 `anthropic_api_key` 范式）。`_execute_with_branch` 通过 `AICodingNode._resolve_user_pat`
-解析实时 PAT 明文后以 `user_pat=` 传入；非空时注入 `env_FRIDAY_TASK_USER_TOKEN`。Wave 2（11-04）须实现
-**正是这套**：`_resolve_user_pat` 解析器 + `user_pat` 形参 + metadata 注入。
+PAT-02 底线不变（语义澄清）：
+- 明文不落盘、不可从 DB 反取——DB 只存 sha256，dispatch 路径绝不调用 AccessToken
+  的**读取类** manager 方法反取存量 token（T-11-02 spy 收窄为读取类断言）。
+- mint 是"新造"不是"反取"：明文由 generate_pat() 内存生成、一次性直进容器 env
+  （Key Decisions 已定版推翻 PATX-04 搁置）。
+- 无 triggered_by（背景触发）→ 不注入该键（降级不挂，零回归）。
 
 复刻 test_coding_anthropic_base_url_passthrough.py 的 dispatch 捕获 fixture 套（就地复制保独立可单跑）。
-impl 落地前：endpoint / opportunistic-PAT 用例 RED（fail）；omit / never-reads-DB 为安全不变量（GREEN 且须保持）。
 """
 
 from __future__ import annotations
@@ -254,39 +254,42 @@ async def test_dispatch_metadata_includes_tools_endpoint(
 
 
 # =========================================================================
-# RTOOL-03：机会性 PAT —— 实时来源存在时注入（WR-3：经 user_pat 形参）
+# Phase 103 AGENT-01：triggered_by 存在时铸造任务级 token 注入
 # =========================================================================
 
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
-async def test_dispatch_opportunistic_pat_injected_when_present(
+async def test_dispatch_mints_task_token_when_triggered_by_present(
     settings: Any,
-    monkeypatch: pytest.MonkeyPatch,
     execution_context: Any,
+    workflow_execution: Any,
     mock_dispatcher: list[Any],
     mock_subagent_session_create: None,
     mock_fetch_repositories_with_credential: None,
     mock_anthropic_resolved: None,
     log: Any,
 ) -> None:
-    """RED：实时请求线程提供明文 PAT → metadata 注入 env_FRIDAY_TASK_USER_TOKEN。
+    """triggered_by 可解析 → metadata 注入**新签发**的 friday_pat_ token + 知识端点。
 
-    WR-3 机制钉定：Wave 2 须经 `AICodingNode._resolve_user_pat` 解析实时 PAT，
-    以可选 `user_pat=` 形参下传 `_run_repo_coding`（mirror anthropic_api_key），
-    非空时写入 metadata。本用例 monkeypatch 该解析器模拟实时明文来源。
+    机制换代（Phase 103）：`_resolve_dispatch_user` 解析 triggered_by，
+    `_run_repo_coding(dispatch_user=...)` 内经 mint_task_token 新签发——断言
+    DB 行 kind=="task" 且 token_hash==hash_token(env 明文)，证明"新造"而非复用存量。
     """
     settings.FRIDAY_BASE_URL = "https://friday.example.com"
 
+    from asgiref.sync import sync_to_async
+    from django.contrib.auth import get_user_model
+
+    from access_tokens.models import AccessToken
+    from runners.models import hash_token
     from workflows.nodes.ai.coding import AICodingNode
 
-    # 模拟「带 PAT 的实时请求线程」：解析器返回明文 PAT（绝不来自 DB）。
-    monkeypatch.setattr(
-        AICodingNode,
-        "_resolve_user_pat",
-        AsyncMock(return_value="friday_pat_REALTIME"),
-        raising=False,
+    user = await sync_to_async(get_user_model().objects.create_user)(
+        username=f"wf-trigger-{uuid4().hex[:8]}", password="x"
     )
+    workflow_execution.triggered_by = user
+    await workflow_execution.asave(update_fields=["triggered_by"])
 
     node = AICodingNode()
     await node._execute_with_branch(
@@ -297,17 +300,24 @@ async def test_dispatch_opportunistic_pat_injected_when_present(
 
     assert len(mock_dispatcher) == 1
     meta = mock_dispatcher[0].metadata
-    assert meta["env_FRIDAY_TASK_USER_TOKEN"] == "friday_pat_REALTIME"
+    plaintext = meta["env_FRIDAY_TASK_USER_TOKEN"]
+    assert plaintext.startswith("friday_pat_")
+    # 知识端点同点位注入（AGENT-02 服务端面）：base 不带路径
+    assert meta["env_FRIDAY_TASK_KNOWLEDGE_ENDPOINT"] == "https://friday.example.com"
+
+    token = await AccessToken.objects.aget(kind="task", created_by=user)
+    assert token.token_hash == hash_token(plaintext)
+    assert token.session_id == mock_dispatcher[0].session_id
 
 
 # =========================================================================
-# RTOOL-03 / PAT-02：无实时来源 → 不注入（绝不从 AccessToken/DB 取明文）
+# PAT-02：无 triggered_by → 不注入（绝不从 AccessToken/DB 取明文）
 # =========================================================================
 
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
-async def test_dispatch_omits_pat_when_no_realtime_source(
+async def test_dispatch_omits_token_when_no_triggered_by(
     settings: Any,
     execution_context: Any,
     mock_dispatcher: list[Any],
@@ -316,7 +326,7 @@ async def test_dispatch_omits_pat_when_no_realtime_source(
     mock_anthropic_resolved: None,
     log: Any,
 ) -> None:
-    """安全不变量：无明文来源（默认背景触发）→ metadata 不含 env_FRIDAY_TASK_USER_TOKEN（PAT-02）。"""
+    """安全不变量：无 triggered_by（背景触发）→ metadata 不含 env_FRIDAY_TASK_USER_TOKEN。"""
     settings.FRIDAY_BASE_URL = "https://friday.example.com"
 
     from workflows.nodes.ai.coding import AICodingNode
@@ -331,7 +341,7 @@ async def test_dispatch_omits_pat_when_no_realtime_source(
     assert len(mock_dispatcher) == 1
     meta = mock_dispatcher[0].metadata
     assert "env_FRIDAY_TASK_USER_TOKEN" not in meta, (
-        "无实时明文来源时绝不注入 PAT（PAT-02：明文绝不来自 AccessToken/DB）"
+        "无 triggered_by 时绝不注入 token（降级不挂，PAT-02：明文绝不来自 AccessToken/DB）"
     )
 
 
@@ -347,7 +357,13 @@ async def test_dispatch_never_reads_access_token_plaintext(
     mock_anthropic_resolved: None,
     log: Any,
 ) -> None:
-    """安全不变量（T-11-02）：dispatch 路径绝不查询 AccessToken（明文绝不来自 DB）。"""
+    """安全不变量（T-11-02，Phase 103 收窄）：dispatch 路径绝不调用 AccessToken 的
+    **读取类** manager 方法反取存量 token（PAT-02：DB 只有 sha256，明文不可反取）。
+
+    机制换代说明：mint_task_token 会 `acreate` 新行（新签发合法且必要），故 spy
+    只钉读取类方法（filter/get/aget/all/afirst）——本用例无 triggered_by，读取与
+    写入都不应发生。
+    """
     settings.FRIDAY_BASE_URL = "https://friday.example.com"
 
     from access_tokens.models import AccessToken
@@ -379,99 +395,7 @@ async def test_dispatch_never_reads_access_token_plaintext(
     )
 
     assert calls == [], f"dispatch 路径不得查询 AccessToken 取明文（PAT-02），实际调用：{calls}"
-    # 兜底：metadata 中不得出现任何 friday_pat_ 来自 DB 的注入。
+    # 兜底：无 triggered_by → metadata 中不得出现任何 friday_pat_ 注入。
     assert len(mock_dispatcher) == 1
     meta_text = str(mock_dispatcher[0].metadata)
     assert "friday_pat_" not in meta_text
-
-
-# =========================================================================
-# RTOOL follow-up：实时明文 PAT 通道接入（contextvar → ExecutionContext 瞬态字段）
-# =========================================================================
-
-
-@pytest.mark.asyncio
-@pytest.mark.django_db(transaction=True)
-async def test_resolve_user_pat_reads_execution_context_field(
-    settings: Any,
-    execution_context: Any,
-    mock_dispatcher: list[Any],
-    mock_subagent_session_create: None,
-    mock_fetch_repositories_with_credential: None,
-    mock_anthropic_resolved: None,
-    log: Any,
-) -> None:
-    """GREEN：明文经 ExecutionContext.user_pat_plaintext 真实下传 → 注入 USER_TOKEN。
-
-    不 monkeypatch _resolve_user_pat，验证 follow-up 接入后解析器真实读取上下文瞬态字段
-    （通道：请求 ContextVar → start_execution → execution 瞬态属性 → ExecutionContext）。
-    """
-    settings.FRIDAY_BASE_URL = "https://friday.example.com"
-    execution_context.user_pat_plaintext = "friday_pat_REALCHANNEL"
-
-    from workflows.nodes.ai.coding import AICodingNode
-
-    node = AICodingNode()
-    await node._execute_with_branch(
-        context=execution_context, branch_name="feat/test-branch", log=log
-    )
-
-    assert len(mock_dispatcher) == 1
-    assert mock_dispatcher[0].metadata["env_FRIDAY_TASK_USER_TOKEN"] == "friday_pat_REALCHANNEL"
-
-
-def test_pat_context_var_roundtrip() -> None:
-    """ContextVar 通道 set/get/reset 语义；reset 后回到无明文（空串）。"""
-    from access_tokens.context import get_request_pat, reset_request_pat, set_request_pat
-
-    assert get_request_pat() == ""
-    token = set_request_pat("friday_pat_CTX")
-    assert get_request_pat() == "friday_pat_CTX"
-    reset_request_pat(token)
-    assert get_request_pat() == ""
-    # 空写入等价无来源。
-    set_request_pat("")
-    assert get_request_pat() == ""
-
-
-def test_user_pat_plaintext_is_transient_not_persisted_field() -> None:
-    """PAT-02 守护：user_pat_plaintext 仅运行时瞬态，绝不是 WorkflowExecution 的 DB 字段。"""
-    from workflows.models.execution import WorkflowExecution
-
-    field_names = {f.name for f in WorkflowExecution._meta.get_fields()}
-    assert "user_pat_plaintext" not in field_names
-    assert "_user_pat_plaintext" not in field_names
-
-
-@pytest.mark.asyncio
-@pytest.mark.django_db(transaction=True)
-async def test_dispatch_forwards_request_pat_to_start_execution(
-    monkeypatch: pytest.MonkeyPatch,
-    workflow: Any,
-) -> None:
-    """触发边界：dispatch 从请求 ContextVar 取明文并以 user_pat= 转发给 start_execution。"""
-    from access_tokens.context import reset_request_pat, set_request_pat
-    from workflows.triggers.context import TriggerContext
-    from workflows.triggers.dispatcher import TriggerDispatcher
-
-    captured: dict[str, Any] = {}
-
-    async def _fake_start_execution(**kwargs: Any) -> Any:
-        captured.update(kwargs)
-
-        class _Exec:
-            id = uuid4()
-
-        return _Exec()
-
-    dispatcher = TriggerDispatcher()
-    monkeypatch.setattr(dispatcher.engine, "start_execution", _fake_start_execution)
-
-    context = TriggerContext(trigger_type="manual", raw_payload={}, workflow=workflow)
-    token = set_request_pat("friday_pat_FROM_REQUEST")
-    try:
-        await dispatcher.dispatch_single(context)
-    finally:
-        reset_request_pat(token)
-
-    assert captured.get("user_pat") == "friday_pat_FROM_REQUEST"

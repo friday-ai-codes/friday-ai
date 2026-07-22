@@ -417,6 +417,17 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
             )
 
         await session.amark_completed()
+
+        # Phase 103 AGENT-01：WS 直连路径独立写终态（不经 callbacks handler），同点
+        # 吊销任务级短 TTL token（best-effort：service 内吞异常且此处再套一层，
+        # 绝不阻塞 WS 消息处理）。
+        try:
+            from access_tokens.services import arevoke_task_tokens
+
+            await arevoke_task_tokens(session.session_id)
+        except Exception:  # noqa: BLE001 — best-effort，失败由 TTL 自过期兜底
+            pass
+
         if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
             from subagent.api.callbacks import _update_repository_on_summary_complete
 
@@ -485,6 +496,15 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         session.failure_reason = error_msg
         await session.asave(update_fields=["failure_reason"])
         await session.amark_failed(error=error_msg)
+
+        # Phase 103 AGENT-01：WS 失败终态同点吊销任务 token（best-effort，见
+        # _handle_completed 处注释）。
+        try:
+            from access_tokens.services import arevoke_task_tokens
+
+            await arevoke_task_tokens(session.session_id)
+        except Exception:  # noqa: BLE001 — best-effort，失败由 TTL 自过期兜底
+            pass
 
         # 将错误信息写入 last_output.logs，供前端深度分析卡片展示
         last_output = session.last_output or {}
@@ -783,6 +803,11 @@ async def _handle_disconnect_timeout(runner_id: uuid.UUID) -> None:
             error_msg = f"Runner 断连超时（{DISCONNECT_TIMEOUT}秒），任务自动标记失败"
             try:
                 await session.amark_failed(error=error_msg)
+                # Phase 103 AGENT-01：断连收敛终态同点吊销任务 token（best-effort，
+                # service 内吞异常；外层 except 兜底，绝不阻塞其余 assignment 收敛）。
+                from access_tokens.services import arevoke_task_tokens
+
+                await arevoke_task_tokens(session.session_id)
                 if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
                     from subagent.api.callbacks import _update_repository_on_summary_fail
 
