@@ -114,6 +114,32 @@ async def test_reject_path_emits_event_no_store():
     assert rejected[0]["initiated_by_user_id"] == "system"
 
 
+def test_admission_gate_no_false_kill_on_wu_prefixed_solutions():
+    """质量门收窄（101 IN-01）：'无需/无论…' 开头的正常 solution 不被模板门误杀。
+
+    单字 "无"/"略" 已移出 startswith 前缀集（超短模板产物由 _MIN_FIELD_LEN 拦截）；
+    "暂无…" 等真模板前缀仍拦。
+    """
+    from mcp_tools.learning_case_extraction import _admission_gate
+
+    problem = "在 Django 异步视图中直接访问 ORM 会触发 SynchronousOnlyOperation 异常"
+    ok_solution = "无需改动配置，直接把所有异步上下文中的 ORM 访问统一经 sync_to_async 桥接即可"
+    assert _admission_gate({"problem": problem, "solution": ok_solution}) is None
+
+    ok_solution_2 = "无论走哪条链路，都应复用既有 service 层封装并在入口统一做权限校验兜底"
+    assert _admission_gate({"problem": problem, "solution": ok_solution_2}) is None
+
+    # 真模板前缀仍拦（凑长度绕过 _MIN_FIELD_LEN 后依旧 REJECT）。
+    template_solution = "暂无" + "详细方案，待后续补充完善说明" * 3
+    assert (
+        _admission_gate({"problem": problem, "solution": template_solution})
+        == "solution_template"
+    )
+
+    # 纯 "无"/"略" 由长度门拦截（reason 为 too_short，而非漏放行）。
+    assert _admission_gate({"problem": problem, "solution": "无"}) == "solution_too_short"
+
+
 async def test_success_redacted_store_and_ingestion_dispatch():
     """成功路径：case 落库（run=None、幂等键正确、字段已脱敏）+ 入图投递。"""
     ingest = AsyncMock()
