@@ -31,6 +31,11 @@ from claude_agent_sdk import (
 )
 
 from .config import TaskConfig
+from .knowledge_tools import (
+    KNOWLEDGE_MCP_SERVER_NAME,
+    build_knowledge_mcp_server,
+    knowledge_allowed_tools,
+)
 from .question_loop import (
     ASK_USER_MCP_SERVER_NAME,
     ask_user_allowed_tools,
@@ -77,6 +82,78 @@ _READONLY_ANALYSIS_TOOLS = [
     "LS",
     "TodoWrite",
 ]
+
+
+def _build_tool_mounts(
+    config: TaskConfig,
+    task_id: str,
+    extra_mcp_servers: dict[str, Any] | None = None,
+    extra_allowed_tools: list[str] | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    """构建 mcp_servers 与 allowed_tools —— **allowed_tools 合并唯一收口点**（103-02）。
+
+    三源合并（remote + knowledge + extra/ask_user）全在此处，修复"knowledge 单独
+    挂载而 remote 未挂时 builtin 丢失"的隐患面（WR-02 第七面）：
+
+    - remote：remote_tools + tools_endpoint + user_token 三者俱全时挂载。
+    - knowledge：knowledge_endpoint + user_token 俱全时挂载（7 工具白名单内建）。
+    - **builtin 规则**：任一 MCP server 挂载（remote / knowledge / extra）即把
+      ``_BUILTIN_CODING_TOOLS`` 全量并入 allowed_tools——claude-agent-sdk 的
+      allowed_tools 是排他白名单，缺列会连带禁掉 Bash/Edit/Write 等编码必需工具，
+      破坏 execute 模式（WR-02 前科）。
+    - extra（ask_user / repo_summary submit 等）：mcp_servers 并入，allowed_tools
+      去重追加。
+    - 无任何挂载 → 返回 ``({}, [])``（options 不含 mcp_servers/allowed_tools，
+      与现状逐字一致零回归）。
+
+    Args:
+        config: TaskConfig（读 remote_tools/tools_endpoint/user_token/
+            knowledge_endpoint/knowledge_quota）。
+        task_id: 任务 session 标识（dispatch 链 task_id 即 subagent session_id），
+            经 X-Friday-Session-Id 头下发供服务端关联。
+        extra_mcp_servers: 额外挂载的进程内 SDK MCP server。
+        extra_allowed_tools: 追加的工具白名单（去重合并）。
+
+    Returns:
+        ``(mcp_servers, allowed_tools)``。
+    """
+    mcp_servers: dict[str, Any] = {}
+    mounted_allowed: list[str] = []
+
+    # RemoteTool 链路（Phase 11）：三要素俱全才挂载，否则 build 返回 None。
+    remote_server = build_remote_tools_mcp_server(
+        config.remote_tools,
+        config.tools_endpoint,
+        config.user_token,
+    )
+    if remote_server is not None:
+        mcp_servers[REMOTE_MCP_SERVER_NAME] = remote_server
+        mounted_allowed.extend(remote_allowed_tools(config.remote_tools))
+
+    # 容器知识 MCP（Phase 103 AGENT-02）：endpoint + token 俱全才挂载（白名单内建）。
+    knowledge_server = build_knowledge_mcp_server(
+        config.knowledge_endpoint,
+        config.user_token,
+        task_id,
+        config.knowledge_quota,
+    )
+    if knowledge_server is not None:
+        mcp_servers[KNOWLEDGE_MCP_SERVER_NAME] = knowledge_server
+        mounted_allowed.extend(knowledge_allowed_tools())
+
+    if extra_mcp_servers:
+        mcp_servers.update(extra_mcp_servers)
+
+    if not mcp_servers:
+        return {}, []
+
+    # builtin 全量并入（WR-02）：排他白名单一旦非空，缺列即禁用。
+    allowed_tools: list[str] = [*_BUILTIN_CODING_TOOLS]
+    allowed_tools.extend(t for t in mounted_allowed if t not in allowed_tools)
+    if extra_allowed_tools:
+        allowed_tools.extend(t for t in extra_allowed_tools if t not in allowed_tools)
+    return mcp_servers, allowed_tools
+
 
 # repo_summary 结构化提交工具：模型通过 tool call 的参数提交结果，
 # 参数由 SDK 按 input_schema 校验，天然是合法 JSON——不再依赖模型在
@@ -579,13 +656,15 @@ class ClaudeRunner:
             # 主模型优先级：sonnet 档（cc-switch 主力档）> claude_model > 默认 sonnet
             main_model = self.config.claude_sonnet_model or self.config.claude_model or "sonnet"
 
-            # RemoteTool 链路（Phase 11）：仅当 remote_tools + user_token + tools_endpoint
-            # 三者俱全时构建进程内 SDK MCP server；否则 build_* 返回 None，options 不含
-            # mcp_servers/allowed_tools，行为与现状完全一致（向后兼容）。
-            mcp_server = build_remote_tools_mcp_server(
-                self.config.remote_tools,
-                self.config.tools_endpoint,
-                self.config.user_token,
+            # 工具挂载合并收口（103-02）：remote + knowledge + extra 三源与 builtin
+            # 的合并全在 _build_tool_mounts 单一构造函数内；无任何挂载 → ({}, [])，
+            # options 不含 mcp_servers/allowed_tools，行为与现状完全一致（向后兼容）。
+            # session_id 用 task_id（dispatch 链 task_id 即 subagent session_id）。
+            mcp_servers, allowed_tools = _build_tool_mounts(
+                self.config,
+                self.config.task_id,
+                extra_mcp_servers=extra_mcp_servers,
+                extra_allowed_tools=extra_allowed_tools,
             )
 
             options_kwargs = dict(
@@ -607,20 +686,6 @@ class ClaudeRunner:
                     "claude_sdk_resume_enabled",
                     resume_session_id=self.config.resume_session_id,
                 )
-            mcp_servers: dict[str, Any] = {}
-            allowed_tools: list[str] = []
-            if mcp_server is not None:
-                mcp_servers[REMOTE_MCP_SERVER_NAME] = mcp_server
-                # allowed_tools 是排他白名单：必须把内建编码工具与远程工具一并列入，
-                # 否则挂载远程工具会连带禁掉 Bash/Edit/Write，破坏 execute 编码（WR-02）。
-                allowed_tools = [
-                    *_BUILTIN_CODING_TOOLS,
-                    *remote_allowed_tools(self.config.remote_tools),
-                ]
-            if extra_mcp_servers:
-                mcp_servers.update(extra_mcp_servers)
-            if extra_allowed_tools:
-                allowed_tools.extend(t for t in extra_allowed_tools if t not in allowed_tools)
             if mcp_servers:
                 options_kwargs["mcp_servers"] = mcp_servers
             if allowed_tools:
@@ -637,6 +702,7 @@ class ClaudeRunner:
                 has_base_url=bool(self.config.claude_base_url),
                 has_user_token=bool(self.config.user_token),  # 脱敏：仅记 bool
                 remote_tool_count=len(self.config.remote_tools),
+                has_knowledge_endpoint=bool(self.config.knowledge_endpoint),  # 仅记 bool
             )
 
             # 收集所有消息。只读/分析类任务遇到 Claude API 偶发 5xx/stream 中断时
