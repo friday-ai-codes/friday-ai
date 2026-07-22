@@ -151,13 +151,15 @@ async def test_pr_created_with_triple_writes_back_and_schedules_extraction(
     _patch_resolver(monkeypatch, _TRIPLE)
 
     with _patch_node_io(mock_coding_session):
-        result = await create_pr_or_skip_node({
-            "coding_session_id": "cs-completion-1",
-            "skip_pr": False,
-            "confirmed_pr_title": "feat: chat",
-            "confirmed_pr_description": "desc",
-            "target_branch": "main",
-        })
+        result = await create_pr_or_skip_node(
+            {
+                "coding_session_id": "cs-completion-1",
+                "skip_pr": False,
+                "confirmed_pr_title": "feat: chat",
+                "confirmed_pr_description": "desc",
+                "target_branch": "main",
+            }
+        )
 
     assert result == {"phase": "completed", "pr_url": "https://github.com/test/chat-repo/pull/7"}
     assert len(awrite_back_calls) == 1
@@ -184,13 +186,15 @@ async def test_pr_created_without_triple_skips_writeback_but_extracts(
     _patch_resolver(monkeypatch, None)
 
     with _patch_node_io(mock_coding_session):
-        result = await create_pr_or_skip_node({
-            "coding_session_id": "cs-completion-1",
-            "skip_pr": False,
-            "confirmed_pr_title": "feat: chat",
-            "confirmed_pr_description": "desc",
-            "target_branch": "main",
-        })
+        result = await create_pr_or_skip_node(
+            {
+                "coding_session_id": "cs-completion-1",
+                "skip_pr": False,
+                "confirmed_pr_title": "feat: chat",
+                "confirmed_pr_description": "desc",
+                "target_branch": "main",
+            }
+        )
 
     assert result == {"phase": "completed", "pr_url": "https://github.com/test/chat-repo/pull/7"}
     assert awrite_back_calls == []
@@ -208,10 +212,12 @@ async def test_skip_pr_never_writes_back_but_extracts(
     _patch_resolver(monkeypatch, _TRIPLE)
 
     with _patch_node_io(mock_coding_session):
-        result = await create_pr_or_skip_node({
-            "coding_session_id": "cs-completion-1",
-            "skip_pr": True,
-        })
+        result = await create_pr_or_skip_node(
+            {
+                "coding_session_id": "cs-completion-1",
+                "skip_pr": True,
+            }
+        )
 
     assert result["phase"] == "completed"
     assert "branch_url" in result
@@ -232,13 +238,15 @@ async def test_completion_loop_exception_does_not_change_node_result(
     _patch_resolver(monkeypatch, RuntimeError("resolver exploded"))
 
     with _patch_node_io(mock_coding_session):
-        result = await create_pr_or_skip_node({
-            "coding_session_id": "cs-completion-1",
-            "skip_pr": False,
-            "confirmed_pr_title": "feat: chat",
-            "confirmed_pr_description": "desc",
-            "target_branch": "main",
-        })
+        result = await create_pr_or_skip_node(
+            {
+                "coding_session_id": "cs-completion-1",
+                "skip_pr": False,
+                "confirmed_pr_title": "feat: chat",
+                "confirmed_pr_description": "desc",
+                "target_branch": "main",
+            }
+        )
 
     assert result == {"phase": "completed", "pr_url": "https://github.com/test/chat-repo/pull/7"}
     assert awrite_back_calls == []

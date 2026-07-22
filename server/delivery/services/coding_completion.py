@@ -134,9 +134,7 @@ async def aresolve_triple_for_coding_session(coding_session: Any) -> WorkItemTri
         from delivery.models import ArtifactVersion  # lazy import 防循环
 
         row = (
-            await ArtifactVersion.objects.filter(
-                content__chat_coding_plan_id=str(coding_plan_id)
-            )
+            await ArtifactVersion.objects.filter(content__chat_coding_plan_id=str(coding_plan_id))
             .values("artifact__work_item_id")
             .afirst()
         )

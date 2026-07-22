@@ -752,9 +752,7 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
         # LOOP-02/03（101-03）：PR 创建成功（MR 已知）锚点——公共回写（能反查到
         # work_item 三元组才回写，反查不到自然跳过）+ 提炼调度。整块 fail-soft。
         try:
-            await _run_completion_loop(
-                coding_session, pr_url=result.mr_url, write_back=True
-            )
+            await _run_completion_loop(coding_session, pr_url=result.mr_url, write_back=True)
         except Exception as exc:  # noqa: BLE001 — 完工闭环 fail-soft
             logger.warning(
                 "coding_graph_completion_loop_failed",
