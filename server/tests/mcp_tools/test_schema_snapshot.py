@@ -69,11 +69,11 @@ def test_mcp_read_tool_schema_snapshot() -> None:
         },
         "create_coding_plan": {
             "request": ["repository_id", "branch", "requirement", "analysis_id", "context_chunks", "max_steps"],
-            "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "evidence", "run_id"],
+            "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "evidence", "run_id", "session_id", "status"],
         },
         "improve_coding_plan": {
             "request": ["plan_id", "feedback", "context_chunks", "max_steps"],
-            "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "change_summary", "risk_delta", "evidence", "run_id"],
+            "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "change_summary", "risk_delta", "evidence", "run_id", "session_id", "status"],
         },
         "execute_coding_plan": {
             "request": ["plan_id", "version_id", "branch_name", "target_branch", "retry_of_execution_id", "timeout_seconds"],
