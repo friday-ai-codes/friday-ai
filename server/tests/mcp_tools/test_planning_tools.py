@@ -451,3 +451,51 @@ def test_improve_coding_plan_version_conflict_retries_with_max(
     plan.refresh_from_db()
     assert plan.current_version == 3
     assert McpCodingPlanVersion.objects.filter(plan=plan).count() == 3
+
+
+def test_improve_coding_plan_truncates_oversized_context_chunks(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WR-03（review 104）：超大 context_chunks 折入 feedback 块前经 normalize 截断限体积。
+
+    单 chunk content 截为 500 字符预览、任意超大自定义键被丢弃——防 PAT 调用方送大 chunk
+    造出多 MB 的 stage_state 行与 LLM prompt。
+    """
+    client, _plaintext = mcp_client
+    repo_id = str(indexed_repository.id)
+    monkeypatch.setattr(
+        "mcp_tools.views.delegate_process_runtime",
+        _make_fake_delegate(repo_id, indexed_repository.name),
+    )
+    plan_id = _create_plan(client, repo_id)
+
+    improve_kwargs: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "mcp_tools.views.delegate_process_runtime",
+        _make_fake_delegate(repo_id, indexed_repository.name, captured=improve_kwargs),
+    )
+    huge_content = "A" * 50_000
+    oversized_chunk = {
+        **_chunk(),
+        "content": huge_content,
+        "custom_blob": "B" * 50_000,  # 任意超大自定义键，normalize 后应被丢弃
+    }
+    response = client.post(
+        "/api/mcp/tools/improve_coding_plan/",
+        {
+            "plan_id": plan_id,
+            "feedback": "请增加回滚步骤",
+            "context_chunks": [oversized_chunk],
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    requirement_text = improve_kwargs["requirement_text"]
+    # 折入的是 500 字符预览，非 50k 原文；超大自定义键不进 prompt。
+    assert "A" * 500 in requirement_text
+    assert huge_content not in requirement_text
+    assert "custom_blob" not in requirement_text
+    assert len(requirement_text) < 5_000
