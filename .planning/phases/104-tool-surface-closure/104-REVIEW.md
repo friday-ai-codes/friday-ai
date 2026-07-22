@@ -26,6 +26,10 @@ findings:
   info: 4
   total: 7
 status: issues_found
+fixes_applied: 2026-07-22T16:30:00+08:00
+fixes:
+  fixed: 5
+  accepted: 2
 ---
 
 # Phase 104: Code Review Report
@@ -114,6 +118,22 @@ chunk_lines = "\n".join(
 
 ---
 
+## Resolution Notes（fix 迭代 2026-07-22）
+
+逐项处置（`fix(104)` 原子提交，每项含回归测试；改动后 `tests/mcp_tools/` 全量 194 passed，
+`ruff check` 全绿）：
+
+| Finding | 处置 | Commit |
+|---------|------|--------|
+| WR-01 | **Fixed** — `ImproveCodingPlanView` 对 `delegate.status == "failed"` 提前返回：不 `acreate` 新版本、不推进 `current_version`；响应键集保持 snapshot 不变（`version`/`version_id` 回填改版前最新版本，`status="failed"` + `session_id` 供排障），`_record` 以 `call_status="failed"` 留痕，不触发 ingestion。serializer 契约描述同步更新。测试：`test_improve_coding_plan_failed_keeps_current_version` | `2b6e2b3a` |
+| WR-02 | **Fixed** — 版本落库改经 `sync_to_async` + `transaction.atomic`（savepoint）包裹；撞 `(plan, version)` 唯一约束时捕获 `IntegrityError`，按 `Max("version")+1` 重算重试一次（编排结果不丢弃）；再撞映射为 409 `coding_plan_version_conflict` 结构化错误（绝不 500）。冲突埋点 `mcp_improve_version_conflict`（caller/mcp_tools）。测试：`test_improve_coding_plan_version_conflict_retries_with_max` | `6ecf1874` |
+| WR-03 | **Fixed** — improve 折入 `context_chunks` 前复用随迁 `normalize_context_chunks`（≤20 条 + `content_preview[:500]`，丢弃任意超大自定义键），恢复旧 seam 截断语义并限住 stage_state/prompt 体积。serializer 契约描述同步更新。测试：`test_improve_coding_plan_truncates_oversized_context_chunks` | `2855f544` |
+| IN-01 | **Fixed（docstring）** — create 契约 docstring 补"``context_chunks`` 当前 accepted-but-ignored"差异说明（取最小诚实修复，不折入编排） | `2ea6f8cc` |
+| IN-02 | **Fixed** — `_TARGET_PATTERN` 补 `mocker\.patch` 分支（`unittest.mock.patch` 已被 `mock\.patch` 子串覆盖） | `3d197c26` |
+| IN-03 | **Accepted** — URL 模板字面复制维持现状：docstring 已写明组合覆盖逻辑，task 半边由 `task/tests/test_knowledge_tools.py` 兜住；跨包源码正则提取收益低 | — |
+| IN-04 | **Accepted** — 全文件级 ruff format 漂移为既有欠账（500+ 行、Phase 104 之前引入），与本次修复分离，留待单独的全量 format 提交 | — |
+
 _Reviewed: 2026-07-22T08:35:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Fixes applied: 2026-07-22 (gsd-code-fixer)_
