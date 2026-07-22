@@ -403,3 +403,51 @@ def test_improve_coding_plan_failed_keeps_current_version(
         tool_name="improve_coding_plan",
         status="failed",
     ).exists()
+
+
+def test_improve_coding_plan_version_conflict_retries_with_max(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WR-02（review 104）：(plan, version) 唯一约束撞车后按 Max("version") 重算重试一次。
+
+    模拟并发 improve 已落 version=2 但本请求读到 stale current_version=1 的竞态：
+    acreate(version=2) 撞 IntegrityError → 重试落 version=3（编排结果不丢弃、不 500）。
+    """
+    client, _plaintext = mcp_client
+    repo_id = str(indexed_repository.id)
+    monkeypatch.setattr(
+        "mcp_tools.views.delegate_process_runtime",
+        _make_fake_delegate(repo_id, indexed_repository.name),
+    )
+    plan_id = _create_plan(client, repo_id)
+
+    # 直接 ORM 落一条 version=2（模拟并发请求已提交），current_version 保持 1（stale 读）。
+    plan = McpCodingPlan.objects.get(id=plan_id)
+    v1 = McpCodingPlanVersion.objects.get(plan=plan)
+    McpCodingPlanVersion.objects.create(
+        plan=plan,
+        run=v1.run,
+        version=2,
+        plan_body={},
+        change_summary="并发改版占位",
+    )
+    assert plan.current_version == 1
+
+    response = client.post(
+        "/api/mcp/tools/improve_coding_plan/",
+        {
+            "plan_id": plan_id,
+            "feedback": "请增加回滚步骤",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    # current_version=1 → next=2 撞唯一约束 → Max(2)+1=3 重试成功。
+    assert body["version"] == 3
+    plan.refresh_from_db()
+    assert plan.current_version == 3
+    assert McpCodingPlanVersion.objects.filter(plan=plan).count() == 3

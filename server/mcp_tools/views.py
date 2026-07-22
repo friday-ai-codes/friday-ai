@@ -11,6 +11,8 @@ from typing import Any
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
+from django.db import IntegrityError, transaction
+from django.db.models import Max
 from rest_framework import serializers, status
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
 from rest_framework.permissions import IsAuthenticated
@@ -2138,20 +2140,57 @@ class ImproveCodingPlanView(McpToolView):
 
         # 版本递增语义不变：current_version+1；plan_body 优先 canonical content
         # （partial 为 {} 时回退映射后单仓 payload，镜像 create 回退语义）。
+        # WR-02（review 104）：读-改-写竞态下并发 improve 可撞 (plan, version) 唯一约束，
+        # 且此时编排已完整跑完（分钟级成本）不可丢弃——捕获 IntegrityError 后按 Max("version")
+        # 重算重试一次落库；再撞映射为 409 结构化错误（绝不 500）。落库经 sync_to_async +
+        # savepoint（transaction.atomic）：撞约束只回滚本条 insert，不污染外层事务。
+        def _create_version_sync(version_number: int) -> McpCodingPlanVersion:
+            with transaction.atomic():
+                return McpCodingPlanVersion.objects.create(
+                    plan=plan,
+                    run=run,
+                    version=version_number,
+                    plan_body=content or plan_payload,
+                    affected_files=list(plan_payload.get("affected_files") or []),
+                    steps=list(plan_payload.get("steps") or []),
+                    test_plan=list(plan_payload.get("test_plan") or []),
+                    risks=list(plan_payload.get("risks") or []),
+                    evidence=evidence,
+                    change_summary=(
+                        f"编排改版 v{version_number}（status={delegate.status}）：{feedback[:200]}"
+                    ),
+                    risk_delta={"added": [], "reduced": []},
+                )
+
         next_version = int(plan.current_version) + 1
-        version = await McpCodingPlanVersion.objects.acreate(
-            plan=plan,
-            run=run,
-            version=next_version,
-            plan_body=content or plan_payload,
-            affected_files=list(plan_payload.get("affected_files") or []),
-            steps=list(plan_payload.get("steps") or []),
-            test_plan=list(plan_payload.get("test_plan") or []),
-            risks=list(plan_payload.get("risks") or []),
-            evidence=evidence,
-            change_summary=f"编排改版 v{next_version}（status={delegate.status}）：{feedback[:200]}",
-            risk_delta={"added": [], "reduced": []},
-        )
+        version: McpCodingPlanVersion | None = None
+        for attempt in (1, 2):
+            try:
+                version = await sync_to_async(_create_version_sync)(next_version)
+                break
+            except IntegrityError:
+                try:
+                    logger.warning(
+                        "mcp_improve_version_conflict",
+                        category="caller",
+                        component="mcp_tools",
+                        plan_id=str(plan.id),
+                        conflicted_version=next_version,
+                        attempt=attempt,
+                    )
+                except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+                    pass
+                if attempt == 2:
+                    return error_response(
+                        "coding_plan_version_conflict",
+                        "并发改版冲突：版本号已被其他请求占用，请重试",
+                        status_code=status.HTTP_409_CONFLICT,
+                    )
+                agg = await McpCodingPlanVersion.objects.filter(plan=plan).aaggregate(
+                    max_version=Max("version")
+                )
+                next_version = int(agg.get("max_version") or 0) + 1
+        assert version is not None
         plan.current_version = next_version
         await plan.asave(update_fields=["current_version", "updated_at"])
         from knowledge import ingestion  # lazy import 防循环
