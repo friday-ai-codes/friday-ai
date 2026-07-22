@@ -45,7 +45,7 @@ from system.settings_service import aget_bool_setting
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["aextract_learning_case"]
+__all__ = ["aextract_for_session", "aextract_learning_case"]
 
 _COMPONENT = "mcp_tools"
 _EXTRACT_MODEL_FALLBACK = "claude-sonnet-4-20250514"
@@ -122,6 +122,62 @@ async def aextract_learning_case(
             initiated_by_user_id=initiated_by_user_id or "system",
         )
         return None
+
+
+async def aextract_for_session(
+    session_id: str,
+    *,
+    requirement_text: str = "",
+    work_item_type: str = "",
+    work_item_id: int | None = None,
+    pr_url: str = "",
+    initiated_by_user_id: str | None = None,
+) -> None:
+    """三链路共用的提炼便捷入口（101-03 锚点侧样板收敛）。
+
+    经 ``session_id`` 反查 ``SubAgentSession``（status 做状态门入参）+ 关联
+    ``TaskResult``（text_output/branch/pr_url/modified_files 标量取，无则各字段空），
+    组装后转调 :func:`aextract_learning_case`。设计为在 ``run_in_background``
+    后台任务里跑：全程兜底 try/except，任何异常只记日志、绝不上抛。
+    """
+    try:
+        from subagent.models import SubAgentSession, TaskResult  # lazy import 防循环
+
+        session = (
+            await SubAgentSession.objects.filter(session_id=session_id)
+            .values("id", "status")
+            .afirst()
+        )
+        if session is None:
+            _log_skipped(session_id, "session_not_found")
+            return
+        task_result = (
+            await TaskResult.objects.filter(session_id=session["id"])
+            .values("text_output", "branch_name", "pr_url", "modified_files")
+            .afirst()
+        ) or {}
+        await aextract_learning_case(
+            session_id=session_id,
+            task_status=str(session["status"]),
+            requirement_text=requirement_text,
+            text_output=str(task_result.get("text_output") or ""),
+            branch_name=str(task_result.get("branch_name") or ""),
+            pr_url=pr_url or str(task_result.get("pr_url") or ""),
+            modified_files=list(task_result.get("modified_files") or []),
+            work_item_type=work_item_type,
+            work_item_id=work_item_id,
+            initiated_by_user_id=initiated_by_user_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — 后台任务兜底：提炼绝不反噬主流程
+        logger.warning(
+            "learning_case_extraction_failed",
+            session_id=session_id,
+            error=redact_secrets_in_text(str(exc)),
+            error_type=type(exc).__name__,
+            category="caller",
+            component=_COMPONENT,
+            initiated_by_user_id=initiated_by_user_id or "system",
+        )
 
 
 async def _aextract(

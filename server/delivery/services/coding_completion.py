@@ -42,6 +42,120 @@ class RepoResult:
     error: str = ""
 
 
+@dataclass(frozen=True)
+class WorkItemTriple:
+    """回写目标工作项三元组（LOOP-02 反查产物）。
+
+    ``space_id`` 为反查时顺带取出的 ``WorkItem.space_id``，供 ``awrite_back``
+    经 ``space_id`` 直取 Space、免二次 ``feishu_project_key`` 反查。
+    """
+
+    feishu_project_key: str
+    work_item_type: str
+    work_item_id: int
+    title: str = ""
+    space_id: str | None = None
+
+
+async def _atriple_from_work_item_id(work_item_id: Any) -> WorkItemTriple | None:
+    """经 ``WorkItem.id`` 标量查询组装三元组；查不到返回 None（fail-soft）。"""
+    if not work_item_id:
+        return None
+    from delivery.models import WorkItem  # lazy import 防循环
+
+    row = (
+        await WorkItem.objects.filter(id=work_item_id)
+        .values("feishu_project_key", "work_item_type", "work_item_id", "title", "space_id")
+        .afirst()
+    )
+    if row is None:
+        return None
+    if not row["feishu_project_key"] or not row["work_item_type"] or row["work_item_id"] is None:
+        return None
+    return WorkItemTriple(
+        feishu_project_key=row["feishu_project_key"],
+        work_item_type=row["work_item_type"],
+        work_item_id=int(row["work_item_id"]),
+        title=row["title"] or "",
+        space_id=str(row["space_id"]) if row["space_id"] else None,
+    )
+
+
+async def aresolve_triple_from_plan_version(plan_version_id: str | None) -> WorkItemTriple | None:
+    """workflow 链三元组反查：``plan_version_id → ArtifactVersion → artifact.work_item``。
+
+    镜像 ``pr_cross_reference.render_traceability_section`` 的标量链路
+    （``values()`` + ``afirst()``，async ORM 安全）。任一跳空 → None（不记事件）；
+    异常 → None 且记 ``triple_resolve_failed``（warning，fail-soft 绝不上抛）。
+    """
+    if not plan_version_id:
+        return None
+    try:
+        from delivery.models import ArtifactVersion  # lazy import 防循环
+
+        row = (
+            await ArtifactVersion.objects.filter(id=plan_version_id)
+            .values("artifact__work_item_id")
+            .afirst()
+        )
+        if row is None:
+            return None
+        return await _atriple_from_work_item_id(row.get("artifact__work_item_id"))
+    except Exception as exc:  # noqa: BLE001 — 反查 fail-soft，绝不阻塞完工闭环
+        logger.warning(
+            "triple_resolve_failed",
+            chain="plan_version",
+            plan_version_id=str(plan_version_id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+            category="sampling",
+            component=_COMPONENT,
+        )
+        return None
+
+
+async def aresolve_triple_for_coding_session(coding_session: Any) -> WorkItemTriple | None:
+    """chat 链三元组反查：``coding_plan → delivery Artifact → WorkItem``。
+
+    **seam 现状（101-03 锁定）**：``chat.CodingPlan`` 与 delivery ``Artifact`` 之间
+    无既有 FK（``canonical_plan_id`` 已在 Chassis v2 删除）。本函数经
+    ``ArtifactVersion.content`` 的 JSON 键 ``chat_coding_plan_id`` 反查
+    （Django JSONField key transform，SQLite/Postgres 均支持）。该键当前**无写入方**，
+    故存量 chat 会话全部走「反查不到自然跳过」（零行为变化）；未来编排/桥接侧向
+    ``ArtifactVersion.content`` 写入 ``chat_coding_plan_id`` 后，本链路自动点亮。
+    禁止为此重新引入 chat→delivery eager 投影（与 Chassis v2 决策冲突）。
+
+    任一环缺失 / 异常 → None（fail-soft，异常记 ``triple_resolve_failed``）。
+    """
+    coding_plan_id = getattr(coding_session, "coding_plan_id", None)
+    if not coding_plan_id:
+        return None
+    try:
+        from delivery.models import ArtifactVersion  # lazy import 防循环
+
+        row = (
+            await ArtifactVersion.objects.filter(
+                content__chat_coding_plan_id=str(coding_plan_id)
+            )
+            .values("artifact__work_item_id")
+            .afirst()
+        )
+        if row is None:
+            return None
+        return await _atriple_from_work_item_id(row.get("artifact__work_item_id"))
+    except Exception as exc:  # noqa: BLE001 — 反查 fail-soft，绝不阻塞完工闭环
+        logger.warning(
+            "triple_resolve_failed",
+            chain="coding_session",
+            coding_plan_id=str(coding_plan_id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+            category="sampling",
+            component=_COMPONENT,
+        )
+        return None
+
+
 def _table_cell(value: Any) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
     return text.replace("|", "\\|").replace("`", "\\`").replace("\n", "<br>").strip()
@@ -104,6 +218,7 @@ class CompletionWritebackService:
         title: str,
         results: list[RepoResult],
         space=None,
+        space_id: str | None = None,
         feishu_document_id: str = "",
         doc_markdown: str = "",
         initiated_by_user_id: str | None = None,
@@ -116,7 +231,9 @@ class CompletionWritebackService:
             work_item_id: 工作项 id（三元组之一，None 视为缺失）。
             title: 工作项/方案标题（评论文案用）。
             results: 每仓执行结果列表。
-            space: ``projects.models.Space``；None 时经 feishu_project_key 反查。
+            space: ``projects.models.Space``；None 时优先经 ``space_id`` 直取，
+                再退 feishu_project_key 反查。
+            space_id: 可选 ``Space.id``（``WorkItemTriple.space_id`` 透传，免二次反查）。
             feishu_document_id: 飞书文档 id；非空且 doc_markdown 非空才 append。
             doc_markdown: 待 append 的 markdown 内容。
             initiated_by_user_id: 触发用户归因（无则记 "system"）。
@@ -133,6 +250,10 @@ class CompletionWritebackService:
         # 观测与回写都 best-effort：整个方法体兜底捕获，绝不反噬调用方。
         try:
             resolved_space = space
+            if resolved_space is None and space_id:
+                from projects.models import Space  # lazy import 防循环
+
+                resolved_space = await Space.objects.filter(id=space_id).afirst()
             if resolved_space is None and feishu_project_key:
                 from projects.models import Space  # lazy import 防循环
 
