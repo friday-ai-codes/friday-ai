@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.17.0
 milestone_name: 统一知识库与全链路联动
-status: completed
-stopped_at: 执行 103-04（AGENT-04 工作流上下文对齐）完成——chat `_prepend_project_context`/`_lookup_project_by_branch` 上提为 `services/project_context_packer.py` 三个共享 helper（prepend_project_context / aresolve_project_for_repo_branch / apack_dispatch_context，chat 纯重构改引用，workflow 不 import chat）；workflow `_dispatch_wave` 新增 `_resolve_wave_project_contexts` 按 (project, branch) 解析一次逐仓复用（ProjectBranch 反查优先 + work_item ProjectWorkItemLink fallback，user=dispatch_user/triggered_by），`_run_repo_coding` prompt prepend + env_FRIDAY_TASK_PROJECT_CONTEXT 注入与 chat 路径一致；解析失败/无项目/无 user → 空串 no-op fail-soft。2 commits（81956173/113ac520）；新增守护测试 6 例 + chat 99 全绿 + dispatch 触点 54 passed 1 xfailed 零回归。Phase 103 4/4 complete，AGENT-01~04 全部交付。
-last_updated: "2026-07-22T06:45:00.000Z"
-last_activity: 2026-07-22 — 103-04 完成：派发上下文 helper 上提共享 + workflow wave 层解析一次逐仓复用注入，Phase 103 收官（4/4）
+status: executing
+stopped_at: 执行 104-01（UNIFY-01 improve 收敛统一编排）完成——improve_coding_plan 从确定性假改版收敛到 delegate_process_runtime（feedback 三段块编排重跑产新 McpCodingPlanVersion，响应含 session_id/status）；map_canonical_to_coding_plan 随迁 orchestration_delegate.py（零残留）；improve/create 契约定版进 serializer docstring；TOOL_SCHEMA_SNAPSHOT improve/create 双修 session_id/status（create 既有漂移修复），registered==snapshot 守卫保持绿；improve 相关测试全量迁移 fake delegate + 新增 partial 短路契约用例。3 commits（ceb42613/3a3969d7/334930cf）；快照守卫 5 passed + delegate 6 passed + planning/artifact 23 passed。既有 rot：test_work_item_execution.py 5 例失败（103-01 dispatch 签名 rot，记 deferred-items.md）。下一步 104-02（analyze 随迁 + planning_service.py 删除 + 残留清零）。
+last_updated: "2026-07-22T07:05:00.000Z"
+last_activity: 2026-07-22 — 104-01 完成：improve 收敛统一编排 + 契约定版 + snapshot 双修 + map_canonical 随迁
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 18
-  completed_plans: 15
-  percent: 83
+  completed_plans: 16
+  percent: 89
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: 103 of 100–104 (编码容器集成) — ✅ Complete (4/4 plans, AGENT-01~04 delivered)
-Plan: 103-04 工作流上下文对齐完成（helper 上提共享 + wave 层解析一次逐仓复用 + prompt/env 注入）
-Status: Phase 100/101/102/103 complete（verification passed；101 BLOCKER 与 102 HIGH 审查发现均已修复/修复中）；Phase 104 remaining
-Last activity: 2026-07-22 — 103-04 完成：派发上下文 helper 上提共享 + workflow wave 层解析一次逐仓复用注入，Phase 103 收官（4/4）
+Phase: 104 of 100–104 (工具面收口) — ⏳ In progress (1/3 plans)
+Plan: 104-01 improve 收敛统一编排完成（契约定版 + snapshot 双修 + map_canonical 随迁 + 测试迁 fake delegate）
+Status: Phase 100/101/102/103 complete（verification passed）；Phase 104 executing（104-01 ✅，104-02/03 remaining）
+Last activity: 2026-07-22 — 104-01 完成：improve 收敛统一编排 + 契约定版 + snapshot 双修 + map_canonical 随迁
 
 Progress: [████████░░] 80% (4/5 phases)
 
@@ -40,7 +40,7 @@ Progress: [████████░░] 80% (4/5 phases)
 | 101 | 完工沉淀闭环（公共回写 + 自动提炼 + Skill 种子） | LOOP-01~05 | ✅ Complete (4/4, passed) |
 | 102 | 知识消费面与对外契约（召回扩容 + Chat 工具 + snapshot/skills 对齐） | KNOW-04/05/06, UNIFY-04 | ✅ Complete (3/3, passed) |
 | 103 | 编码容器集成（短 TTL token + 容器知识 MCP + skills 注入 + 上下文对齐） | AGENT-01~04 | ✅ Complete (4/4) |
-| 104 | 工具面收口（improve/analyze 收敛 + 确定性缝退役 + 端到端验收） | UNIFY-01/02/03 | ○ Not started |
+| 104 | 工具面收口（improve/analyze 收敛 + 确定性缝退役 + 端到端验收） | UNIFY-01/02/03 | ⏳ In progress (1/3) |
 
 完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（19 条 + Traceability，100% 映射）；阶段详情见 [.planning/ROADMAP.md](./ROADMAP.md)。
 

@@ -145,7 +145,7 @@ Plans:
 
 Plans:
 
-- [ ] 104-01-PLAN.md — UNIFY-01 improve 收敛 delegate：引用清单 + 契约定版进 schema 描述 + map_canonical 随迁 + snapshot 双修（improve/create session_id/status）+ 测试迁 fake delegate（Wave 1）
+- [x] 104-01-PLAN.md — UNIFY-01 improve 收敛 delegate：引用清单 + 契约定版进 schema 描述 + map_canonical 随迁 + snapshot 双修（improve/create session_id/status）+ 测试迁 fake delegate（Wave 1）✅ 2026-07-22
 - [ ] 104-02-PLAN.md — UNIFY-02/03 analyze 随迁 repository_analysis_service + extra_evidence 编排消费接线 + planning_service.py 删除 + plan_orchestration 空壳/docs 清零 + stale patch target 守卫（Wave 2，依赖 104-01）
 - [ ] 104-03-PLAN.md — 里程碑端到端验收：同一 learning case 四面检索（Chat 工具/编排召回/MCP view/容器链同 URL 契约）+ MCP 与 Chat top-1 统一排序断言（Wave 3，依赖 104-02）
 
@@ -302,7 +302,7 @@ Plans:
 | 101. 完工沉淀闭环 | LOOP-01~05 | 4/4 | Complete   | 2026-07-22 |
 | 102. 知识消费面与对外契约 | KNOW-04/05/06, UNIFY-04 | 0/TBD | Not started | - |
 | 103. 编码容器集成 | AGENT-01~04 | 3/4 | In Progress|  |
-| 104. 工具面收口 | UNIFY-01/02/03 | 0/TBD | Not started | - |
+| 104. 工具面收口 | UNIFY-01/02/03 | 1/3 | In progress | 104-01 ✅（UNIFY-01 improve 收敛 delegate + 契约定版 + snapshot 双修） |
 
 **Coverage:** 19/19 需求全部映射，无孤儿、无重复。
 
