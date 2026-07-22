@@ -371,9 +371,9 @@ class AICodingNode(SubStepMixin, BaseNode):
         if context.node_execution:
             node_execution_id = str(context.node_execution.id)
 
-        # RTOOL-03 机会性 PAT：仅解析「当前实时请求线程的明文 PAT」（绝不查 AccessToken/DB）。
-        # 无明文来源（背景/飞书触发）→ 返回 ""，下游省略 env_FRIDAY_TASK_USER_TOKEN（PAT-02）。
-        user_pat = await self._resolve_user_pat(context)
+        # Phase 103 AGENT-01：解析派发发起用户（triggered_by）。有 user → 逐仓 mint 任务级
+        # 短 TTL token；None（背景触发）→ 下游省略 env_FRIDAY_TASK_USER_TOKEN（降级不挂）。
+        dispatch_user = await self._resolve_dispatch_user(context)
 
         # wave 接线：plan_version 可解析且分层完整覆盖时建 RepoCodingTask 行（INV-6 单一写入），
         # 仅 dispatch 当前（最小）wave；否则退化为现有全并行 dispatch 全部仓（零回归命门）。
@@ -420,7 +420,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             node_execution_id=node_execution_id,
             anthropic_api_key=resolved_api_key,
             anthropic_base_url=validated_base_url,
-            user_pat=user_pat,
+            dispatch_user=dispatch_user,
             tasks_by_repo=tasks_by_repo,
             service=service,
             log=log,
@@ -545,7 +545,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         node_execution_id: str,
         anthropic_api_key: str,
         anthropic_base_url: str,
-        user_pat: str,
+        dispatch_user: Any,
         tasks_by_repo: dict[str, Any] | None,
         service: Any,
         log: Any,
@@ -585,7 +585,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 node_execution_id=node_execution_id,
                 anthropic_api_key=anthropic_api_key,
                 anthropic_base_url=anthropic_base_url,
-                user_pat=user_pat,
+                dispatch_user=dispatch_user,
                 upstream_artifacts=by_repo.get(repo_id, []),
                 # GATE-02：仅「通过 gate 且 follow_openspec=True」的仓（天然 = approved SDD 仓）
                 # 注入 env（默认 False 保非 wave/legacy 零回归）。
@@ -1009,7 +1009,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         node_execution_id = ""
         if context.node_execution:
             node_execution_id = str(context.node_execution.id)
-        user_pat = await self._resolve_user_pat(context)
+        dispatch_user = await self._resolve_dispatch_user(context)
 
         await self.emit_sub_step(context, "coding_execute", SubStepStatus.RUNNING)
 
@@ -1040,7 +1040,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             node_execution_id=node_execution_id,
             anthropic_api_key=resolved_api_key,
             anthropic_base_url=validated_base_url,
-            user_pat=user_pat,
+            dispatch_user=dispatch_user,
             tasks_by_repo=tasks_by_repo,
             service=service,
             log=log,
@@ -1694,25 +1694,30 @@ class AICodingNode(SubStepMixin, BaseNode):
     # SubAgent 分发（回调驱动模式）
     # ------------------------------------------------------------------
 
-    async def _resolve_user_pat(self, context: ExecutionContext) -> str:
-        """解析机会性 PAT 明文（RTOOL-03 / Open Q1 Option C + 机会性 B）。
+    async def _resolve_dispatch_user(self, context: ExecutionContext):
+        """解析派发发起用户（Phase 103 AGENT-01，替换机会性 PAT 透传）。
 
-        唯一合法明文来源：**带 PAT 的实时认证请求线程**——仅在该上下文内可拿到明文。
-        本方法**绝不**从 AccessToken / 任何 DB 表读取明文
-        （PAT-02：明文绝不落盘、不可从 DB 取；AccessToken 仅存 sha256 哈希）。
-        明文亦绝不进日志（调用方只记 has_user_token=bool）。
+        读 ``context.workflow_execution.triggered_by_id``（先例：triggers/manual.py
+        的 executor 解析；fields_cache 已缓存 triggered_by 时直用，否则按 id 反查）。
+        有 user 就 mint 任务级短 TTL token（``_run_repo_coding`` 内），不再依赖
+        请求头明文 ContextVar 透传——PAT-02 底线不变：mint 是新签发，明文仅内存
+        直进容器 env，绝不从 AccessToken/DB 反取明文。
 
-        实现（RTOOL follow-up 已接入）：明文经 ``access_tokens.context`` 的请求级
-        ContextVar 在触发边界（``WorkflowViewSet.execute``）捕获，由
-        ``WorkflowEngine.start_execution`` 显式跨线程下传至本 ``ExecutionContext``
-        的瞬态字段 ``user_pat_plaintext``。此处仅读该内存字段，**绝不**从
-        AccessToken / 任何 DB 表读取（PAT-02），亦绝不进日志。
-
-        无实时明文来源（背景/飞书/定时触发、或 JWT 会话手动触发）时该字段为空串，
-        返回 "" → 下游省略 env_FRIDAY_TASK_USER_TOKEN，task 侧不挂 MCP server
-        （向后兼容降级，无回归）。
+        返回 None（背景/无触发用户）→ 下游省略 env_FRIDAY_TASK_USER_TOKEN，
+        task 侧不挂知识 MCP server（降级不挂，向后兼容）。
         """
-        return getattr(context, "user_pat_plaintext", "") or ""
+        execution = context.workflow_execution
+        if execution is None:
+            return None
+        triggered_by_id = getattr(execution, "triggered_by_id", None)
+        if not triggered_by_id:
+            return None
+        cached_user = execution._state.fields_cache.get("triggered_by")
+        if cached_user is not None:
+            return cached_user
+        from django.contrib.auth import get_user_model
+
+        return await get_user_model().objects.filter(pk=triggered_by_id).afirst()
 
     async def _run_repo_coding(
         self,
@@ -1725,7 +1730,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         node_execution_id: str = "",
         anthropic_api_key: str = "",  # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
         anthropic_base_url: str = "",  # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
-        user_pat: str = "",  # RTOOL-03 机会性 PAT：仅实时请求线程明文，绝不落盘/绝不从 DB 取（PAT-02 + Open Q1 Option C）
+        dispatch_user=None,  # Phase 103 AGENT-01：发起用户（User | None）——非 None 时 mint 任务级短 TTL token（替换机会性 PAT 透传）
         upstream_artifacts: list[dict]
         | None = None,  # ARTIFACT-02：上游产物注入（默认 None → 零回归）
         follow_openspec: bool = False,  # GATE-02：approved SDD 仓注入 openspec env（默认 False 保非 wave/legacy 零回归）
@@ -1794,21 +1799,32 @@ class AICodingNode(SubStepMixin, BaseNode):
         if anthropic_base_url:
             anthropic_env["env_FRIDAY_TASK_CLAUDE_BASE_URL"] = anthropic_base_url
 
-        # RTOOL-03：RemoteTool 链路注入。
+        # RTOOL-03 + Phase 103 AGENT-01/02：RemoteTool / 知识 MCP 链路注入。
         #   - tools endpoint 强制由 settings.FRIDAY_BASE_URL 推导（拼 /api/tools/execute/），
         #     绝不用 runner callback_url（Pitfall 1：错用会打到 runner 中转 → 工具调用 404）。
         #     契约：空 base_url 不注入该键（向后兼容降级——task 侧无 endpoint → 不挂 MCP server）。
-        #   - 机会性 PAT：仅当实时请求线程提供明文时注入 env_FRIDAY_TASK_USER_TOKEN（见下），
-        #     无来源则省略该键（PAT-02：明文绝不落盘/不可从 DB 取）。
+        #   - 任务级短 TTL token（替换机会性 PAT 透传）：dispatch_user 非 None 时经
+        #     mint_task_token 新签发并注入 env_FRIDAY_TASK_USER_TOKEN；明文仅本函数
+        #     内存直进 env，绝不落盘/进日志（PAT-02 底线不变——mint 是新签发，非 DB 反取）。
+        #     None → 不注入该键（降级不挂，不阻塞 dispatch）。
+        #   - 知识端点（AGENT-02 服务端注入面）：base 不带路径（task 侧自行拼
+        #     /api/mcp/tools/{name}/），空 FRIDAY_BASE_URL 不注入。
         from django.conf import settings
 
         tools_env: dict[str, str] = {}
         base = getattr(settings, "FRIDAY_BASE_URL", "").rstrip("/")
         if base:
             tools_env["env_FRIDAY_TASK_TOOLS_ENDPOINT"] = f"{base}/api/tools/execute/"
-        # 机会性 PAT：仅当上游解析出实时请求线程明文时注入（无来源 → 不注入该键，不阻塞 dispatch）。
-        if user_pat:
-            tools_env["env_FRIDAY_TASK_USER_TOKEN"] = user_pat
+            tools_env["env_FRIDAY_TASK_KNOWLEDGE_ENDPOINT"] = base
+        if dispatch_user is not None:
+            from access_tokens.services import mint_task_token
+
+            # session_id 即本函数生成的 execution id（与预建 SubAgentSession.session_id
+            # 一致），终态吊销按此定位。
+            plaintext = await mint_task_token(
+                dispatch_user, session_id, config.get("timeout_seconds", 1800)
+            )
+            tools_env["env_FRIDAY_TASK_USER_TOKEN"] = plaintext
 
         # 排除规则下传（Phase 22-04 / EXCL-02 容器读取面，T-22-13/14）：与 chat 派发路径
         # 一致地无条件注入有效排除规则（即便仅 builtin），容器侧 clone 后据此物理删除被排除
@@ -1850,7 +1866,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 **git_env,  # PF-06：env_FRIDAY_TASK_GIT_ACCESS_TOKEN/AUTH_TYPE/SSL_VERIFY（token 非空时）
                 **branch_env,  # PF-06：env_FRIDAY_TASK_BRANCH_STRATEGY/TARGET_BRANCH（多仓 per-repo）
                 **anthropic_env,  # env_FRIDAY_TASK_CLAUDE_API_KEY + env_FRIDAY_TASK_CLAUDE_BASE_URL
-                **tools_env,  # RTOOL-03：env_FRIDAY_TASK_TOOLS_ENDPOINT + 机会性 env_FRIDAY_TASK_USER_TOKEN
+                **tools_env,  # RTOOL-03 + Phase 103：TOOLS/KNOWLEDGE_ENDPOINT + 任务级 env_FRIDAY_TASK_USER_TOKEN
                 **exclude_env,  # Phase 22-04：env_FRIDAY_TASK_EXCLUDE_PATTERNS（容器侧 prune）
                 **openspec_env,  # Phase 51 GATE-02：env_FRIDAY_TASK_FOLLOW_OPENSPEC（仅 approved SDD 仓）
             },
@@ -1905,7 +1921,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 session_id=session_id,
                 has_git_token=bool(token),
                 has_tools_endpoint=bool(base),
-                has_user_token=bool(user_pat),
+                has_user_token=dispatch_user is not None,
             )
         except Exception as e:
             log.error("task_dispatch_failed", error=str(e))

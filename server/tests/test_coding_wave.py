@@ -127,7 +127,7 @@ def _make_node() -> AICodingNode:
     node.emit_sub_step = AsyncMock()  # type: ignore[method-assign]
     node._init_sub_steps = AsyncMock()  # type: ignore[method-assign]
     node._send_result_notification = AsyncMock()  # type: ignore[method-assign]
-    node._resolve_user_pat = AsyncMock(return_value="")  # type: ignore[method-assign]
+    node._resolve_dispatch_user = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
     mr_calls: list[Repository] = []
 

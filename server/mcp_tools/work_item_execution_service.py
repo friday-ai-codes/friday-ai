@@ -293,6 +293,7 @@ async def _execute_one_task(
     timeout_seconds: int,
     reviewer_usernames: list[str],
     initiated_by_user_id: str | None = None,
+    initiating_user=None,
 ) -> McpWorkItemRepoTask:
     task.repository = await Repository.objects.aget(id=task.repository_id)
     if task.status == McpWorkItemRepoTask.Status.COMPLETED and (
@@ -322,6 +323,9 @@ async def _execute_one_task(
                 branch_name=task.branch_name,
                 target_branch=task.target_branch,
                 timeout_seconds=timeout_seconds,
+                # Phase 103 AGENT-01：发起用户 ORM 实例（桥接会话 created_by → mint 任务
+                # token）；与 initiated_by_user_id（字符串归因）并行不混用。
+                initiating_user=initiating_user,
             )
         except ExecutionDispatchError as exc:
             trace.status = McpCodingExecutionTrace.Status.FAILED
@@ -567,6 +571,7 @@ async def execute_work_item_repo_tasks(
     timeout_seconds: int,
     reviewer_usernames: list[str],
     initiated_by_user_id: str | None = None,
+    initiating_user=None,
 ) -> RepoTaskExecutionResult:
     technical_plan, tasks = await _resolve_tasks(
         run=run,
@@ -588,6 +593,7 @@ async def execute_work_item_repo_tasks(
                 timeout_seconds=timeout_seconds,
                 reviewer_usernames=reviewer_usernames,
                 initiated_by_user_id=initiated_by_user_id,
+                initiating_user=initiating_user,
             )
         )
 
