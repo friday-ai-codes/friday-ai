@@ -384,8 +384,14 @@ class ProjectDocService:
         source: str = ApiSource.MANUAL,
         actor: Any = None,
         initiated_by_user_id: Any = None,
+        defer_materialize: bool = False,
     ) -> tuple[ProjectStateApi, bool]:
-        """按 (project, method, path) 幂等新增 API 清单条目；新建时审计 state_api_added。"""
+        """按 (project, method, path) 幂等新增 API 清单条目；新建时审计 state_api_added。
+
+        ``defer_materialize=True`` 供批量调用方（如 ``ReportProjectStateView``）跳过
+        逐条物化调度，循环结束后自行调 ``schedule_state_materialization`` 合并为一次
+        （102-REVIEW MED-01）。单条调用方保持默认逐条调度，行为不变。
+        """
         api, created = await self._upsert_state_api_locked(
             project_id,
             method,
@@ -431,17 +437,30 @@ class ProjectDocService:
         )
         # KNOW-06（Phase 102）：API 上报后调度 STATE 文档物化进 delivery_knowledge——
         # 修复「upsert 只推飞书不物化」断链，让上报的 API 清单可被语义检索。
-        # report_project_state 批量上报会逐条触发，摄取管线 content_hash 短路保证
-        # 重复调度为幂等空操作，不需要额外去抖；工作区未 provision（无 STATE doc）
-        # 时静默跳过（_schedule_materialization 自身全吞异常 fail-soft）。
+        # 注意（102-REVIEW MED-01）：content_hash 短路只对「内容未变」成立——批量
+        # 上报中每条 upsert 都会改变 STATE normalize 内容，逐条调度会放大为 N 次
+        # 互不短路的全量重摄取。批量调用方必须传 defer_materialize=True 并在循环
+        # 结束后合并调度一次；工作区未 provision（无 STATE doc）时静默跳过。
+        if not defer_materialize:
+            await self.schedule_state_materialization(
+                project_id, initiated_by_user_id or getattr(actor, "id", None)
+            )
+        return api, created
+
+    async def schedule_state_materialization(
+        self, project_id: Any, initiated_by_user_id: Any = None
+    ) -> None:
+        """按 (project, STATE) 反查 doc_id 并调度 STATE 文档物化（KNOW-06）。
+
+        无 STATE ProjectDoc（工作区未 provision）→ 静默跳过。批量上报路径
+        （``ReportProjectStateView``）在循环结束后调用本方法一次，实现批内合并
+        （102-REVIEW MED-01）；单条 ``upsert_state_api`` 默认路径逐条调用。
+        """
         doc_id = await ProjectDoc.objects.filter(
             project_id=project_id, doc_type=DocType.STATE
         ).values_list("id", flat=True).afirst()
         if doc_id:
-            await self._schedule_materialization(
-                doc_id, initiated_by_user_id or getattr(actor, "id", None)
-            )
-        return api, created
+            await self._schedule_materialization(doc_id, initiated_by_user_id)
 
     @sync_to_async
     def _upsert_state_api_locked(

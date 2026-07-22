@@ -235,6 +235,32 @@ async def test_attribution_records_token_user(mcp_client, access_user) -> None:
     assert str(event.actor_id) == str(access_user.id)
 
 
+async def test_batch_report_schedules_materialization_once(mcp_client, access_user) -> None:
+    """批量上报 N 条 API → STATE 物化只合并调度一次（102-REVIEW MED-01 去抖）。"""
+    from unittest.mock import AsyncMock, patch
+
+    from initiatives.models import DocType, ProjectDoc
+
+    client, _ = mcp_client
+    project = await _make_project(access_user, key="rps-coalesce")
+    doc = await sync_to_async(ProjectDoc.objects.create)(
+        project=project, doc_type=DocType.STATE
+    )
+    apis = [{"method": "GET", "path": f"/api/batch/{i}"} for i in range(5)]
+    mock_schedule = AsyncMock()
+    with patch("knowledge.ingestion.aschedule_ingestion", mock_schedule):
+        resp = await sync_to_async(client.post)(
+            _URL,
+            {"project_id": str(project.id), "apis": apis},
+            format="json",
+        )
+    assert resp.status_code == 200
+    assert resp.json()["total_applied"] == 5
+    # 逐条 upsert 传 defer_materialize=True，循环后合并调度恰一次。
+    assert mock_schedule.await_count == 1
+    assert mock_schedule.await_args_list[0].args[0].source_id == str(doc.id)
+
+
 async def test_observability_records_tool_call(mcp_client, access_user) -> None:
     """观测留痕：写一条 ToolCallRecord（call_source/tool_name=report_project_state）。"""
     client, _ = mcp_client
