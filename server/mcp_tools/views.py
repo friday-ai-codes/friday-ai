@@ -1786,11 +1786,13 @@ class AnalyzeRepositoryView(McpToolView):
         )
         from knowledge import ingestion  # lazy import 防循环
 
-        # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）
+        # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）；
+        # initiated_by_user_id 绑定触发用户，后台摄取日志可归因（无触发用户的调用点缺省 system）。
         await ingestion.aschedule_ingestion(
             ingestion.IngestionRequest(
                 "mcp_repository_analysis", str(artifact.id), "mcp_analysis_created"
-            )
+            ),
+            initiated_by_user_id=str(request.user.id),
         )
         output_data = {
             "analysis_id": str(artifact.id),
@@ -1924,9 +1926,11 @@ class CreateCodingPlanView(McpToolView):
         )
         from knowledge import ingestion  # lazy import 防循环
 
-        # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）
+        # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）；
+        # initiated_by_user_id 绑定触发用户，后台摄取日志可归因（无触发用户的调用点缺省 system）。
         await ingestion.aschedule_ingestion(
-            ingestion.IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_coding_plan_created")
+            ingestion.IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_coding_plan_created"),
+            initiated_by_user_id=str(request.user.id),
         )
         # 响应外形兼容：保留全部既有键（plan_id/version_id/version/repository_id/branch/plan/
         # evidence/run_id）+ 新增可选 session_id（partial 续推钥匙）+ status（delegate 终态映射）。
@@ -2028,9 +2032,11 @@ class ImproveCodingPlanView(McpToolView):
         from knowledge import ingestion  # lazy import 防循环
 
         # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）；
-        # 同一 plan 重摄：content 变更走版本翻转，未变走 hash 短路，天然幂等。
+        # 同一 plan 重摄：content 变更走版本翻转，未变走 hash 短路，天然幂等；
+        # initiated_by_user_id 绑定触发用户，后台摄取日志可归因（无触发用户的调用点缺省 system）。
         await ingestion.aschedule_ingestion(
-            ingestion.IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_coding_plan_improved")
+            ingestion.IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_coding_plan_improved"),
+            initiated_by_user_id=str(request.user.id),
         )
 
         output_data = {
@@ -2140,11 +2146,13 @@ class ExecuteCodingPlanView(McpToolView):
         from knowledge import ingestion  # lazy import 防循环
 
         # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）；
-        # 放 refresh_execution_trace 之后——摄取时刻 trace 状态更完整。
+        # 放 refresh_execution_trace 之后——摄取时刻 trace 状态更完整；
+        # initiated_by_user_id 绑定触发用户，后台摄取日志可归因（无触发用户的调用点缺省 system）。
         await ingestion.aschedule_ingestion(
             ingestion.IngestionRequest(
                 "mcp_execution_trace", str(trace.id), "mcp_execution_created"
-            )
+            ),
+            initiated_by_user_id=str(request.user.id),
         )
         output_data = {
             **execution_trace_payload(trace),
