@@ -46,8 +46,14 @@ def _doc_title(body: str, fallback: str) -> str:
 
 
 async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
-    """ProjectDoc UUID → 单 document 事件（携 REFERENCES→项目节点 出边）；文件不存在返回空。"""
-    from initiatives.models import ProjectDoc
+    """ProjectDoc UUID → 单 document 事件（携 REFERENCES→项目节点 出边）；文件不存在返回空。
+
+    KNOW-06（Phase 102）：STATE 类型文档在 snapshot 正文之外追加 live「API 清单」内容
+    （``METHOD path — status`` 行，直查 ``ProjectStateApi`` 表）——API 行只存在于表 +
+    飞书系统区、不在 ``last_synced_snapshot`` 里，这是 ProjectStateApi 不可检索的断链根因。
+    非 STATE 文档行为逐字不变。
+    """
+    from initiatives.models import DocType, ProjectDoc, ProjectStateApi
     from initiatives.services.knowledge_graph import ProjectKnowledgeGraphService
 
     started = time.perf_counter()
@@ -81,7 +87,23 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             doc_type=doc.doc_type,
             trigger=request.trigger,
         )
-    # 脱敏不可绕过：正文/异常文本入图前经 redact_secrets_in_text。
+    # KNOW-06：STATE 文档追加 live API 清单行（渲染格式对齐
+    # DocContentService._resolve_system_text：``METHOD path — status``）。
+    # live 来源必须直查 ProjectStateApi 表——get_doc_render 的 rendered_markdown
+    # 同样来自 snapshot 缓存，不能作为 live API 来源。行数上限 500 防极端膨胀。
+    state_api_count = 0
+    if doc.doc_type == DocType.STATE:
+        lines: list[str] = []
+        async for row in (
+            ProjectStateApi.objects.filter(project_id=doc.project_id)
+            .order_by("path")
+            .values("method", "path", "status")[:500]
+        ):
+            lines.append(f"{row['method']} {row['path']} — {row['status']}")
+        state_api_count = len(lines)
+        if lines:
+            raw_body = raw_body + "\n\n## API 清单\n" + "\n".join(lines)
+    # 脱敏不可绕过：正文/异常文本入图前经 redact_secrets_in_text（对拼接后全文执行）。
     body = redact_secrets_in_text(raw_body)
 
     # 项目图谱节点（KLINK-01 锚）：文件→REFERENCES→项目节点出边需目标实体先存在。
@@ -106,6 +128,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         doc_id=str(doc.id),
         doc_type=doc.doc_type,
         content_length=len(body),
+        state_api_count=state_api_count,
         event_count=1,
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
         trigger=request.trigger,
