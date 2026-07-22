@@ -1578,6 +1578,11 @@ class ExecuteWorkItemRepoTasksView(McpToolView):
                 write_back=bool(input_data.get("write_back", True)),
                 timeout_seconds=int(input_data.get("timeout_seconds") or 3600),
                 reviewer_usernames=list(input_data.get("reviewer_usernames") or []),
+                # 观测归因（101 WR-01）：MCP 链真实触发用户 = PAT 所有者（request.user）；
+                # InteractionRun 无 user 字段，必须由入口显式透传。
+                initiated_by_user_id=(
+                    str(request.user.id) if getattr(request.user, "id", None) else None
+                ),
             )
         except WorkItemExecutionError as exc:
             status_map = {
