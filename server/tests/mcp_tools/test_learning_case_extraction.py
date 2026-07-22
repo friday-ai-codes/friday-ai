@@ -132,8 +132,7 @@ def test_admission_gate_no_false_kill_on_wu_prefixed_solutions():
     # 真模板前缀仍拦（凑长度绕过 _MIN_FIELD_LEN 后依旧 REJECT）。
     template_solution = "暂无" + "详细方案，待后续补充完善说明" * 3
     assert (
-        _admission_gate({"problem": problem, "solution": template_solution})
-        == "solution_template"
+        _admission_gate({"problem": problem, "solution": template_solution}) == "solution_template"
     )
 
     # 纯 "无"/"略" 由长度门拦截（reason 为 too_short，而非漏放行）。
