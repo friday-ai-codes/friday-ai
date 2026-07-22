@@ -1583,6 +1583,11 @@ class ExecuteWorkItemRepoTasksView(McpToolView):
                 initiated_by_user_id=(
                     str(request.user.id) if getattr(request.user, "id", None) else None
                 ),
+                # Phase 103 AGENT-01：ORM User 实例（桥接会话 created_by → mint 任务 token），
+                # 与上面的字符串归因并行不混用。
+                initiating_user=(
+                    request.user if getattr(request.user, "id", None) else None
+                ),
             )
         except WorkItemExecutionError as exc:
             status_map = {
@@ -2133,6 +2138,11 @@ class ExecuteCodingPlanView(McpToolView):
                 branch_name=str(input_data.get("branch_name") or ""),
                 target_branch=str(input_data.get("target_branch") or ""),
                 timeout_seconds=int(input_data.get("timeout_seconds") or 3600),
+                # Phase 103 AGENT-01：发起用户（PAT 所有者）透传为桥接会话 created_by，
+                # 使 MCP 链 mint 任务级短 TTL token（与 initiated_by_user_id 归因并行不混用）。
+                initiating_user=(
+                    request.user if getattr(request.user, "id", None) else None
+                ),
             )
         except ExecutionDispatchError as exc:
             dispatch_error = str(exc)

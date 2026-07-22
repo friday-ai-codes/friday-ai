@@ -89,6 +89,7 @@ async def _create_bridge_session(
     plan: McpCodingPlan,
     version: McpCodingPlanVersion,
     branch_name: str,
+    created_by=None,
 ) -> tuple[Conversation, CodingPlan, CodingSession]:
     tech_plan = _plan_body_to_markdown(version)
     affected_files = _affected_files_for_chat(version)
@@ -96,10 +97,14 @@ async def _create_bridge_session(
     @sync_to_async
     def _create() -> tuple[Conversation, CodingPlan, CodingSession]:
         with transaction.atomic():
+            # created_by 透传（Phase 103 AGENT-01）：桥接 Conversation 携带发起用户，
+            # 使 MCP 链在 dispatch_coding_task 内天然走任务 token mint 路径（可归因，
+            # T-103-04）；None 时行为与现状一致（created_by 可空 SET_NULL，不 mint）。
             conversation = Conversation.objects.create(
                 space=project,
                 title=f"MCP execution: {plan.title}"[:200],
                 status=Conversation.Status.RUNNING,
+                created_by=created_by,
             )
             chat_plan = CodingPlan.objects.create(
                 conversation=conversation,
@@ -130,7 +135,15 @@ async def dispatch_execution(
     branch_name: str,
     target_branch: str,
     timeout_seconds: int,
+    initiating_user=None,
 ) -> ExecutionResponse:
+    """派发 MCP coding plan 执行。
+
+    ``initiating_user``（User | None，Phase 103 AGENT-01）：发起用户 ORM 实例，
+    透传为桥接 Conversation.created_by → dispatch_coding_task 据此 mint 任务级
+    短 TTL token。None 时保持现状（不 mint，降级不注入 token env）。与 Phase 101
+    的 ``initiated_by_user_id``（字符串，观测归因）并行不混用。
+    """
     project = await _find_project_for_repository(plan.repository_id)
     if project is None:
         raise ExecutionDispatchError("仓库未关联任何项目，无法创建 CodingSession")
@@ -152,6 +165,7 @@ async def dispatch_execution(
         plan=plan,
         version=version,
         branch_name=effective_branch,
+        created_by=initiating_user,
     )
     await coding_session.aconfirm()
     trace.status = McpCodingExecutionTrace.Status.DISPATCHING

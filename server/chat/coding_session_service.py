@@ -440,6 +440,42 @@ async def dispatch_coding_task(
         coding_session, task_type=task_type,
     )
 
+    # 4.5 任务级短 TTL token + 知识端点注入（Phase 103 AGENT-01/02）：
+    # 仅对真正跑 SDK 的 coding 任务注入（coding_commit 仅 amend+push 不跑 SDK）。
+    # 发起用户从 conversation.created_by_id 解析（conversation 已 select_related，
+    # 本地字段异步安全；MCP 链经桥接会话透传 created_by 后同走此路径）。
+    # user 不可解析 → 不注入 token env（降级，dispatch 行为与现状一致）。
+    # PAT-02：mint 是新签发，明文仅本函数内存直进 env_metadata，绝不落盘/进日志。
+    if task_type != "coding_commit":
+        from django.conf import settings
+
+        from access_tokens.services import mint_task_token
+
+        user_id = coding_session.conversation.created_by_id
+        user = None
+        if user_id is not None:
+            from accounts.models import User
+
+            user = await User.objects.filter(id=user_id).afirst()
+        if user is not None:
+            plaintext = await mint_task_token(
+                user, sub_session.session_id, 3600  # 对齐下方 DispatchTask 硬编码 timeout
+            )
+            env_metadata["env_FRIDAY_TASK_USER_TOKEN"] = plaintext
+        # 知识端点（AGENT-02 服务端注入面）：base 不带路径，task 侧自行拼
+        # /api/mcp/tools/{name}/；空 FRIDAY_BASE_URL 不注入（镜像 workflow tools_env 契约）。
+        knowledge_base = getattr(settings, "FRIDAY_BASE_URL", "").rstrip("/")
+        if knowledge_base:
+            env_metadata["env_FRIDAY_TASK_KNOWLEDGE_ENDPOINT"] = knowledge_base
+        logger.info(
+            "coding_dispatch_task_token",
+            coding_session_id=str(coding_session.id),
+            session_id=sub_session.session_id,
+            has_user_token=user is not None,
+            category="caller",
+            component="chat",
+        )
+
     # 5. 关联 SubAgentSession FK（dispatch 前保存，防竞态）
     coding_session.subagent_session = sub_session
     await coding_session.asave(update_fields=["subagent_session", "updated_at"])
@@ -468,6 +504,13 @@ async def dispatch_coding_task(
     )
 
     last_output = sub_session.last_output if isinstance(sub_session.last_output, dict) else {}
+    # 泄漏防线（Phase 103 T-103-01）：落库副本剔除任务 token 明文——last_output 是持久化
+    # 数据，friday_pat_ 明文绝不落盘（PAT-02）。runner 断连重建 dispatch
+    # （consumers._rebuild_dispatch_task）时该键缺失 → 容器降级不挂知识工具（fail-soft，
+    # 与 user 不可解析降级语义一致）。
+    persisted_metadata = {
+        k: v for k, v in dispatch_task.metadata.items() if k != "env_FRIDAY_TASK_USER_TOKEN"
+    }
     sub_session.last_output = {
         **last_output,
         "dispatch": {
@@ -479,7 +522,7 @@ async def dispatch_coding_task(
             "prompt": dispatch_task.prompt,
             "timeout": dispatch_task.timeout,
             "node_execution_id": dispatch_task.node_execution_id,
-            "metadata": dispatch_task.metadata,
+            "metadata": persisted_metadata,
         },
     }
     await sub_session.asave(update_fields=["last_output", "updated_at"])
