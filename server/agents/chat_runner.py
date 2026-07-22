@@ -38,6 +38,7 @@ import agents.tools.chat_tools  # noqa: F401
 import agents.tools.clarification  # noqa: F401  # implementation
 import agents.tools.coding_tools  # noqa: F401
 import agents.tools.delivery_knowledge_tools  # noqa: F401  # RECALL-02 交付知识召回工具
+import agents.tools.knowledge_read_tools  # noqa: F401  # KNOW-05 chat 知识读工具
 import agents.tools.plan_research_tools  # noqa: F401
 import agents.tools.project_feature_tools  # noqa: F401  # ENTRY-02 chat 入口薄封装
 import agents.tools.project_read_tools  # noqa: F401  # 项目级对话只读工具集
@@ -114,6 +115,9 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     "search_delivery_knowledge",
     "get_entity_timeline",
     "get_related_entities",
+    # KNOW-05（v0.17.0 Phase 102）：历史任务经验检索（LearningCase 向量版），
+    # 凭 conversation_id 解析会话 owner fail-closed。
+    "search_learning_cases",
 ]
 _DEEP_ANALYSIS_TOOL_NAMES = _INDEXED_TOOL_NAMES + ["deep_analysis"]
 
@@ -127,6 +131,9 @@ _PROJECT_READ_TOOL_NAMES = [
     "list_project_artifacts",
     "get_project_artifact",
     "get_project_related",
+    # KNOW-05：项目沉淀语义检索 + 工作区文档读取（bound_project fail-closed）。
+    "search_project_context",
+    "read_project_doc",
 ]
 
 
