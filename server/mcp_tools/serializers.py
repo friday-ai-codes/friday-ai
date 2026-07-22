@@ -236,7 +236,9 @@ class ImproveCodingPlanRequestSerializer(serializers.Serializer):
 
     同步语义：HTTP 请求内同步 await 编排至 pause/terminal——
     - ``DONE`` → 响应 ``status="completed"``；
-    - ``FAILED`` → ``status="failed"``；
+    - ``FAILED`` → ``status="failed"``：**不产新版本、不推进 current_version**（WR-01，
+      review 104——瞬时编排失败不得把默认执行的"当前方案"静默替换成空方案）；响应键集
+      不变，``version`` / ``version_id`` 回填改版前最新版本；
     - research/clarify 在途（容器执行中）→ **立即短路**返回 ``status="partial"`` +
       ``session_id``（不阻塞等容器，Cursor 侧调用不挂起不超时）；partial 后可经
       ``get_coding_execution`` / 后续调用凭 ``session_id`` 跟进。
