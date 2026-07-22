@@ -91,7 +91,12 @@ def build_plan_event(plan, version, *, edges: tuple[EdgeSpec, ...] = ()) -> Inge
         },
         space_id=None,
         repository_id=str(plan.repository_id),
-        event_time=plan.created_at,
+        # updated_at 而非 created_at：版本翻转要求 invalid_at 严格大于旧版 valid_at
+        # （kversion_valid_range CHECK）；improve 路径 plan.asave(update_fields=[...,
+        # "updated_at"]) 会推进 auto_now，created_at 永不推进会使重摄翻版被拒并被吞成
+        # knowledge_ingest_concurrent_conflict（learning_case.py 同款纪律）。
+        # 本函数是锚同源拼法的共享构造（mcp_execution_trace 锚复用），在此统一修。
+        event_time=plan.updated_at,
         edges=edges,
     )
 
@@ -217,7 +222,9 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         },
         space_id=str(tp.space_id) if tp.space_id else None,
         repository_id=None,
-        event_time=plan.created_at,
+        # 同 build_plan_event：updated_at 随内容变更推进，锚 content（context.name/
+        # description）变化时翻版不撞 kversion_valid_range CHECK。
+        event_time=plan.updated_at,
         edges=(
             # 禁用 HAS_PLAN：exclusive 语义会打失效既有 HAS_PLAN→mcp_technical_plan
             # 活跃边（模块 docstring 决策存档，T-100-07）；RELATES_TO 非排他，安全共存。

@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import structlog
-from django.utils import timezone
 
 from knowledge.ingestion import EdgeSpec, IngestionEvent, IngestionRequest
 from knowledge.models import EdgeRelation, EntityKind, EntityOrigin, generate_entity_id
@@ -100,10 +99,10 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
     mr_result = trace.mr_result if isinstance(trace.mr_result, dict) else {}
     mr_url = str(mr_result.get("mr_url") or mr_result.get("url") or "")
     title = f"{repository.name} MCP 执行 @ {trace.commit_sha[:8] or trace.status}"
-    completed_at = trace.completed_at or trace.created_at
-    event_time = (
-        timezone.make_aware(completed_at) if timezone.is_naive(completed_at) else completed_at
-    )
+    # updated_at 而非 completed_at/created_at：completed_at 不变而内容再变（如 error
+    # 补写后经 backfill 重摄）会撞 kversion_valid_range CHECK（invalid_at 须严格大于
+    # 旧版 valid_at）；auto_now updated_at 随每次 asave 推进且恒为 aware
+    # （learning_case.py / build_plan_event 同款纪律，HI-01 同批修复）。
     code_change_event = IngestionEvent(
         kind=EntityKind.CODE_CHANGE,
         origin=EntityOrigin.MCP,
@@ -125,7 +124,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         },
         space_id=None,
         repository_id=str(trace.repository_id),
-        event_time=event_time,
+        event_time=trace.updated_at,
     )
 
     # ---- plan 锚事件（build_plan_event 同源拼法 + IMPLEMENTED_BY 出边挂锚）----
