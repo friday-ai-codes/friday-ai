@@ -21,13 +21,16 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
+if TYPE_CHECKING:
+    from repositories.models import Repository
+
 logger = structlog.get_logger(__name__)
 
-__all__ = ["DelegateResult", "delegate_process_runtime"]
+__all__ = ["DelegateResult", "delegate_process_runtime", "map_canonical_to_coding_plan"]
 
 
 @dataclass(frozen=True)
@@ -238,3 +241,80 @@ async def delegate_process_runtime(
         pass
 
     return result
+
+
+def map_canonical_to_coding_plan(
+    *,
+    content: dict[str, Any],
+    repository: Repository,
+    branch: str,
+    requirement: str,
+) -> dict[str, Any]:
+    """canonical §7 MergedPlan content → 旧单仓 coding plan payload（UNIFY-04，外形兼容）。
+
+    单仓约束（``include_repos=[repository_id]``，Open Q2 决议）下编排只跑该仓，从 canonical
+    ``execution_plan`` 中**筛该 repository_id 的 task**（取首个匹配；无匹配回退首项；空则最小
+    结构），**显式映射回旧字段**（T-94-04-INFO：绝不透传 content 内部键，他仓 task 不进单仓
+    响应）：
+
+    - ``affected_files`` ← 该 task ``files[].path``（缺则空 list）。
+    - ``steps`` ← ``coding_instruction`` 拆解为最小步骤结构（缺则空 list）。
+    - ``test_plan`` ← canonical 无 per-task 测试字段，best-effort 空 list（缺则空 list）。
+    - ``risks`` ← content ``risks`` / ``compat_risks``（best-effort）。
+    - ``title`` ← content ``title`` 或 ``repository.name``。
+
+    缺字段填空不抛（半可信 LLM 产物防御）；附带保留 ``repository_id`` / ``repository_name`` /
+    ``branch`` / ``requirement`` 旧键以维持响应外形。
+    """
+    repo_id = str(repository.id)
+    raw_plan = content.get("execution_plan") if isinstance(content, dict) else None
+    execution_plan: list[Any] = raw_plan if isinstance(raw_plan, list) else []
+
+    task: dict[str, Any] = {}
+    for item in execution_plan:
+        if isinstance(item, dict) and str(item.get("repository_id") or "") == repo_id:
+            task = item
+            break
+    if not task and execution_plan and isinstance(execution_plan[0], dict):
+        # 单仓约束下编排理应仅产该仓 task；无精确匹配时 best-effort 取首项（防御性）。
+        task = execution_plan[0]
+
+    raw_files = task.get("files")
+    files = raw_files if isinstance(raw_files, list) else []
+    affected_files = [
+        str(f.get("path") or "") for f in files if isinstance(f, dict) and f.get("path")
+    ]
+
+    coding_instruction = str(task.get("coding_instruction") or "")
+    task_name = str(task.get("name") or task.get("description") or "")
+    steps: list[dict[str, Any]] = []
+    if coding_instruction or task_name:
+        steps.append(
+            {
+                "order": 1,
+                "title": task_name or "实现编码指令",
+                "detail": coding_instruction or task_name,
+                "files": affected_files,
+            }
+        )
+
+    risks_raw = content.get("risks") if isinstance(content, dict) else None
+    if not isinstance(risks_raw, list) or not risks_raw:
+        risks_raw = content.get("compat_risks") if isinstance(content, dict) else None
+    risks = [str(item) for item in risks_raw] if isinstance(risks_raw, list) else []
+
+    title = (
+        str(content.get("title") or "") if isinstance(content, dict) else ""
+    ) or repository.name
+
+    return {
+        "title": title,
+        "repository_id": repo_id,
+        "repository_name": repository.name,
+        "branch": branch,
+        "requirement": requirement,
+        "affected_files": affected_files,
+        "steps": steps,
+        "test_plan": [],
+        "risks": risks,
+    }

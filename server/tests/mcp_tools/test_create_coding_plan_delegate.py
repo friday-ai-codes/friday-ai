@@ -280,7 +280,7 @@ def test_create_coding_plan_partial_carries_session(
 
 def test_map_canonical_to_coding_plan_empty_content_degrades(indexed_repository) -> None:
     """缺 canonical content（delegate failed/partial 产 {}）→ 安全最小 payload，不抛（V4 降级）。"""
-    from mcp_tools.planning_service import map_canonical_to_coding_plan
+    from mcp_tools.orchestration_delegate import map_canonical_to_coding_plan
 
     payload = map_canonical_to_coding_plan(
         content={},

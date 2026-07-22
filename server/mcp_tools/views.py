@@ -72,11 +72,10 @@ from .models import (
     McpCodingPlanVersion,
     McpRepositoryAnalysis,
 )
-from .orchestration_delegate import delegate_process_runtime
+from .orchestration_delegate import delegate_process_runtime, map_canonical_to_coding_plan
 from .planning_service import (
     build_repository_analysis,
     improve_coding_plan,
-    map_canonical_to_coding_plan,
 )
 from .serializers import (
     AnalyzeRepositoryRequestSerializer,
