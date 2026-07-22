@@ -563,8 +563,10 @@ async def _run_completion_loop(
     *,
     pr_url: str,
     write_back: bool,
+    target_branch: str = "",
 ) -> None:
-    """chat 链完工闭环（LOOP-02/03 / 101-03）：公共回写 + learning case 提炼调度。
+    """chat 链完工闭环（LOOP-02/03 / 101-03，LOOP-05 / 101-04）：公共回写 +
+    learning case 提炼调度 + 可选 PR review 沉淀调度。
 
     调用方须整块 try/except 包裹（best-effort fail-soft，绝不影响节点返回值）。
 
@@ -654,6 +656,40 @@ async def _run_completion_loop(
             name=f"learning-case-{session_id}",
             initiated_by_user_id=initiated_by,
         )
+
+        # LOOP-05（101-04）：PR 创建成功分支（write_back=True 即 PR 分支；skip-PR
+        # 不触发——无 PR 无 diff 目标）且开关开启时调度可选轻量 review 沉淀。
+        # 开关默认关——关闭时不调度后台任务（零 LLM 调用零后台成本；模块内
+        # 开关/幂等还有兜底）。同样不 await Future。
+        if write_back and pr_url:
+            try:
+                from system.models import SettingKeys
+                from system.settings_service import aget_bool_setting
+
+                review_enabled = await aget_bool_setting(
+                    SettingKeys.PR_REVIEW_CAPTURE, default=False
+                )
+            except Exception:  # noqa: BLE001 — 开关读取失败视为关（fail-soft）
+                review_enabled = False
+            if review_enabled:
+                from mcp_tools.pr_review_capture import acapture_pr_review  # lazy import
+
+                repo = coding_session.repository
+                run_in_background(
+                    lambda: acapture_pr_review(
+                        repository_id=str(repo.id),
+                        source_branch=coding_session.branch_name,
+                        target_branch=target_branch or _resolve_target_branch(coding_session),
+                        pr_url=pr_url,
+                        session_id=session_id,
+                        requirement_text=requirement_text,
+                        work_item_type=triple.work_item_type if triple else "",
+                        work_item_id=triple.work_item_id if triple else None,
+                        initiated_by_user_id=initiated_by,
+                    ),
+                    name=f"pr-review-{session_id}",
+                    initiated_by_user_id=initiated_by,
+                )
 
 
 async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
@@ -752,7 +788,12 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
         # LOOP-02/03（101-03）：PR 创建成功（MR 已知）锚点——公共回写（能反查到
         # work_item 三元组才回写，反查不到自然跳过）+ 提炼调度。整块 fail-soft。
         try:
-            await _run_completion_loop(coding_session, pr_url=result.mr_url, write_back=True)
+            await _run_completion_loop(
+                coding_session,
+                pr_url=result.mr_url,
+                write_back=True,
+                target_branch=mr_request.target_branch,
+            )
         except Exception as exc:  # noqa: BLE001 — 完工闭环 fail-soft
             logger.warning(
                 "coding_graph_completion_loop_failed",
