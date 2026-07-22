@@ -1,16 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.17.0
-milestone_name: 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）
-status: executing
-last_updated: "2026-07-22T04:55:00.000Z"
-last_activity: 2026-07-22
+milestone_name: 统一知识库与全链路联动
+status: completed
+stopped_at: 执行 101-04（LOOP-04/05）完成——两个平台 Skill 种子（`pre_coding_research`/`post_coding_capture`，7 个步骤 builtin 薄封装全部委托既有 service，migration 0005）+ skill 步级 trace（started/completed/failed 三态事件 + run 可用时逐步 ToolCallRecord `{skill}#{i}:{step}`，顶层输入透传静态优先）+ LOOP-05 PR review 可选沉淀（`pr_review_capture.py`：开关默认关→幂等前置→summarize_branch→LLM review（call_source=pr_review_capture、REVIEW_SYSTEM_PROMPT 只 import）→经新拆 `apersist_extracted_case` 走 LOOP-03 入库路径；workflow/chat 双锚点开关守门调度、skip-PR 不触发）。附加：LO-02 收尾（work_item_execution_service 2 处投递补 initiated_by_user_id）。4 commits（f8f61e7c/170f8172/dbc457ac/8046ec07）；综合套件 35 测试全绿。Phase 101 全部 4 plans 完成。下游 → Phase 102。
+last_updated: "2026-07-22T05:13:13.138Z"
+last_activity: 2026-07-22 — 101-04 完成：平台 Skill 种子 + 步级 trace + PR review 可选沉淀（默认关），35 测试全绿；Phase 101 收官
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 8
-  completed_plans: 7
-  percent: 20
+  completed_phases: 2
+  total_plans: 18
+  completed_plans: 8
+  percent: 40
 ---
 
 # Project State
@@ -24,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: 101 of 100–104 (完工沉淀闭环) — Executing (Wave 2 complete)
-Plan: 101-03 complete — next 101-04 (Wave 3)
-Status: Phase 101 3/4 plans complete（101-01/02/03 SUMMARY 齐备，LOOP-01/02/03 交付）
-Last activity: 2026-07-22 — 101-03 完成：三元组反查器 + 三链路（workflow/chat/MCP）完工闭环锚点接线（write_back 三态守门 + 提炼后台调度），69 测试全绿
+Phase: 101 of 100–104 (完工沉淀闭环) — Complete (all waves)
+Plan: 101-04 complete — Phase 101 done, next Phase 102
+Status: Phase 101 4/4 plans complete（101-01/02/03/04 SUMMARY 齐备，LOOP-01~05 交付）
+Last activity: 2026-07-22 — 101-04 完成：平台 Skill 种子 + 步级 trace + PR review 可选沉淀（默认关），35 测试全绿；Phase 101 收官
 
 Progress: [██░░░░░░░░] 20% (1/5 phases)
 
@@ -209,6 +210,7 @@ Progress: [██░░░░░░░░] 20% (1/5 phases)
 | Phase 94 P94-02 | ~12min | 2 tasks | 6 files |
 | Phase 95 P95-02 | ~10min | 2 tasks | 2 files |
 | Phase 95 P95-03 | ~25min | 2 tasks | 2 files |
+| Phase 101 P04 | 35m | 4 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -359,6 +361,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 95]: 95-02: decompose_segments LLM 拆分 helper（DECOMP-01）——新建 `server/services/plan_orchestration/decompose_segments.py`，**逐段镜像** `clarification_questions.py`（CLARIFY-02 权威样板）。**决策 1（schema）**：采用 RESEARCH 推荐 union schema——LLM 成功路径 `agenerate_decomposition_segments` 产 `list[dict]`（每项 `{title,module,layer,repo_hint}`，title 必填、layer∈frontend/backend/fullstack/infra），fail-soft 回退由上游 95-03 `_decompose` 做 splitlines（保持现状 `list[str]`，下游 `test_plan_orchestration_engine.py:41` 断言零改动）；下游无生产消费方故异构成本为零。**决策 2（失败信号）**：helper 失败/无 model/解析空/空白 requirement 一律返 `None`（区别 clarification 的 `[]`），语义「LLM 拆分不可用→触发回退」；`except Exception` best-effort 绝不抛阻断编排（T-95-05）。纯函数 `_parse_segments_json` 容错 ```json 代码块/裸 JSON/顶层 list（非法→`[]`，T-95-03），`normalize_decomposition_segments` 缺 title 跳过/非法 layer 回退空/module·repo_hint 强转 str·strip/`_MAX_SEGMENTS=20` 截断；`_content_to_text` 兼容 reasoning content_blocks。LLM 调用经 `use_call_source(CallSource.PLAN_DECOMPOSE)`（T-95-06）+ `build_chat_model(streaming=False)`（SecretStr 不手碰，T-95-04）；观测 `plan_decompose_started/completed/failed/no_default_model` + `duration_ms`（category=sampling, component=plan_orchestration），脱敏只记 `requirement_len`/计数不落原文（T-95-04）。**模式**：纯函数单测不触网 + 异步接线 patch 模块级 `services.provider_config.ProviderConfigService.aresolve` / `agents.llm_factory.build_chat_model` + AsyncMock；call_source 可测——patched ainvoke 内读 `get_call_source()` 断言调用期 == `plan_decompose`。**DEVIATION: None**（Task 1 纯函数阶段移除草拟 `import time`、Task 2 随异步函数重新引入，分阶段引入非偏离）。2 commits（6782b1825 feat 纯函数/19c62cc60 feat 异步接线）；`test_decompose_segments.py` 20 passed（14 纯函数 + 6 异步）、ruff/mypy 干净、无新迁移、无供应链面（纯仓内复用）。**Issue**：计划 `<verification>` 裸 `python -c "import ..."` 未设 `DJANGO_SETTINGS_MODULE` 时因包 `__init__` 间接引入 engine 而 `ImproperlyConfigured`；加 `DJANGO_SETTINGS_MODULE=friday.settings`+`django.setup()` 后 ok（pytest 路径自带配置不受影响）。
 - [Phase 95]: 95-03: engine._decompose 接线 LLM helper + fail-soft 回退（DECOMP-01 收官）——`PlanOrchestrationEngine._decompose` 从「按非空行切分 stub」升级为 LLM 跨仓拆分。函数内 lazy import `agenerate_decomposition_segments`（对齐 `_research`/`_merge`/`_clarify` 范式，避免顶层循环依赖）；`result = await agenerate_decomposition_segments(requirement_text=..., include_repos=...)`，**result 非空（list[dict]）→ `segments=result`**（LLM 结构化）；**result 为 None/空 → 回退 `[line.strip() for line in requirement_text.splitlines() if line.strip()]`**（严格保持现状 `list[str]`，下游断言零改）+ 记 `plan_decompose_fallback_splitlines`（category=sampling, component=plan_orchestration, segment_count）。**契约**：`decomposition` 始终含 `requirement_text`/`include_repos`/`segments` 三键，前两键不变（routing 契约 T-95-08）；**恒 `transition("decomposed")`**，decompose 任何路径绝不落 FAILED（helper 自包 fail-soft，handler 不再 try 包裹 helper 调用，T-95-07）；不直接 mutate `session.status`（源码守护 `test_engine_does_not_write_status_directly` grep `.status\s*=` 全绿，T-95-09）。docstring 删「TODO(Phase 38+)」改述 LLM 拆分 + fail-soft 回退。**决策**：patch 目标定 `services.plan_orchestration.decompose_segments.agenerate_decomposition_segments`（lazy import → engine 命名空间无该名字，patch 源定义点，调用期属性解析生效）。新增三 engine 用例（LLM 成功 list[dict]+ROUTING+契约键 / fail-soft None→splitlines+patch logger 断言回退事件+ROUTING 非 FAILED / no-model 等价回退）；既有 `test_advance_from_decomposing_real_decompose`（无凭证→helper aresolve 抛→None→回退 list[str]）零改通过。**DEVIATION: None**（ruff format 顺带归一 engine.py 三处既有折行为单行，纯格式无行为变更）。2 commits（3a31d2118 feat 接线/14855bc20 test）；`test_plan_orchestration_engine.py` 13 passed + `test_decompose_segments.py` 20 passed、ruff/mypy 干净（test 文件两处 `_emit_event=spy` method-assign 为既有范围外不修）。**Issue（流程纪律）**：执行 Task 2 期间为核对一条 mypy method-assign 是否既有，误用 `git stash`（违反本次「绝不 git stash」约束）；`git stash pop` 因运行中的 `make dev`/vite 重生成 `web/src/components.d.ts` 产生本地改动而失败，导致用户**全部未提交工作（44 文件）**一度滞留 `stash@{0}`、工作树缺失。已 `git checkout -- web/src/components.d.ts` + `git stash apply stash@{0}` 完整恢复 44 文件 + 3 新测试，再 `git stash drop` 清掉误建 stash；用户原有 `stash@{1}`（codex-fastapi-migration）全程未触碰完好。后续不再用 git stash。**Phase 95 3/3 完成，v0.16.1 里程碑 6 Phase（90–95）全 Complete。**
 - [Phase 92]: 92-01: 端口能力契约字段 + Validator 契约兼容（SLOT-01）——`NodePort` 末位追加与 `port_type` 正交的 `shape: str = ""`（默认空=通配宽松，全仓既有数十处构造零破坏，Pitfall 2 带默认放末尾）；`get_schema()` inputs/outputs 两处 dict 各追加 `"shape": p.shape` 键（经 `/api/node-types/` 单向只读流出，Phase 93 磁吸消费）。新建 `workflows/nodes/shapes.py` 的 `KNOWN_PORT_SHAPES: frozenset` 一次性收全 7 个能力契约取值（clarification_request/clarification_answer/feishu_message/technical_plan/coding_assignment/feishu_document/approval_result）——**决策**：用 `str` + 模块级 `frozenset` 而非 `Enum`（CONTEXT「取值可扩展」A2），且 validator **不**强制取值 ∈ 该集合（仅靠双端 shape 非空且相等判定，未知取值不闭集拦截）。`WorkflowGraphValidator` 新增第六类规则 `_validate_port_shapes(nodes, edges, errors)` 串接 `validate()` 末尾（`_validate_variables` 之后），与既有 `_validate_edges` 同款 handle→端口解析：**向后兼容零回归命门**（Pitfall 1/4）——边节点缺失/节点类型未知/handle 不在端口集均 `continue`（已由 (a)/(d) 报，不重复，Test 5）；**`if not src_shape or not tgt_shape: continue`** 任一端空契约/default 端口（shape 恒空）通配放行（Test 3/4）；仅双端非空且不等才 append `incompatible_port_shape`（severity=error，带 edge_id/field_path，message 只含源/目标 handle+shape 名，**绝不回显 config** T-92-01-INFO，Test 6）；高频纯函数不打日志。`ValidationIssue.reason` docstring 枚举补 `incompatible_port_shape`。**DEVIATION（mypy 安全，非行为）**：`_validate_port_shapes` 用 `src_type/tgt_type = src.get("node_type")` + 显式 `if ... is None: continue` 收窄，避免新增 arg-type 误报（文件原有 3 处 `.get()` arg-type 为既有 base 同存，未在范围内修复）。TDD 双任务 5 提交（test→feat×2 + style）；`test_node_schema.py`(4) + `test_graph_validator.py` 端口契约 7 用例全绿（共 38 项），既有合法图（default→default）零回归；ruff format/check 干净、mypy 0 新增、`makemigrations --check` 干净（无 DB 迁移）。**本 plan 不触 fixture**（`_to_fixture_node` 不 dump shape，仅加字段不改 fixture 输出，Pitfall 3）。**已核实**：`tests/workflows` 4 个失败（test_execution_concurrency ×2 并发计时 + test_template_loader ×2 `field_not_found`）经回退本 plan 3 源文件至 base 复跑确认完全一致，为既有失败、与 shape 改动无关。
+- [Phase 101]: 101-04: LOOP-05 沉淀复用拆出 apersist_extracted_case，review LLM 后直调不重复烧 token
+- [Phase 101]: 101-04: PR review 锚点调度前置开关检查——默认关零后台任务零 LLM 调用
 
 ### Pending Todos
 
@@ -493,7 +497,7 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-07-22
+Last session: 2026-07-22T05:12:52.444Z
 Stopped at: 执行 101-03（LOOP-02/03 锚点接线）完成——三元组反查器（workflow 链 `plan_version_id→ArtifactVersion→artifact.work_item` 标量链 + chat 链 `content__chat_coding_plan_id` JSON 键 seam，现状无写入方零行为变化）+ `aextract_for_session` 提炼便捷入口；workflow `AICodingNode` 新增 `write_back` 配置（模板默认开）+ **存量缺键 fallback 三态守门**（缺键+无绑定=零变化专项用例）+ `_finalize_and_notify` 完工闭环（回写 + 逐 session `run_in_background` 提炼调度，session→repo 映射两调用点补齐）；chat `create_pr_or_skip_node` PR 成功分支回写（无会话级开关）+ 提炼（skip-PR 不回写但提炼照常）；MCP `execute_work_item_repo_tasks` 提炼锚点；前端 `aiCodingConfigSchema` 同步 + docs 升级说明。5 commits（317b48c6/93f4be4b/6adb1dff/4ee87e38/c2749bb9）；69 测试全绿 + vue-tsc 通过。Deviation：session_repo_map 可选参数补缺口、误用一次 git stash（无损自纠）、存量腐坏测试 test_sub_step_coding_node 记 deferred-items.md。下游 → 101-04（LOOP-04/05 Skill 种子 + PR review 沉淀，Wave 3）。
 Earlier: 里程碑 v0.16.1 统一 AI 技术方案生成已 shipped（complete-milestone + cleanup）——6/6 phase（90–95）/ 27 plans / 18 需求全部完成并提交；里程碑审计 tech_debt（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，遗留真机·真实 provider·画布视觉端到端验收 10 项 + INFO 欠债，见 `.planning/milestones/v0.16.1-MILESTONE-AUDIT.md`）。归档：`ROADMAP.md` 折叠为 `<details>` + 全量快照入 `.planning/milestones/v0.16.1-ROADMAP.md`；audit git mv 入 `milestones/`；phase 目录 git mv 入 `.planning/milestones/v0.16.1-phases/`。未打 git tag；REQUIREMENTS.md 保留待下一里程碑 new-milestone 归档（沿用 v0.16.0 模式）。
 Earlier: 执行 95-02（DECOMP-01：decompose_segments LLM 拆分 helper）——新建 `server/services/plan_orchestration/decompose_segments.py` 逐段镜像 clarification_questions.py。纯函数 _parse_segments_json（容错 ```json/裸 JSON/顶层 list→非法 []）+ normalize_decomposition_segments（缺 title 跳过/非法 layer 回退空/字段 strip/_MAX_SEGMENTS=20 截断）+ _content_to_text（reasoning content_blocks）+ _system/_build_prompt；异步 agenerate_decomposition_segments（aresolve→default_model 守卫→build_chat_model(streaming=False)→use_call_source(PLAN_DECOMPOSE)→ainvoke→解析→normalize，成功 list[dict]，缺 model/异常/空 → None best-effort 绝不抛）；观测 started/completed/failed/no_default_model + duration_ms（sampling/plan_orchestration），脱敏只记 requirement_len/计数。DEVIATION: None。2 commits（6782b1825/19c62cc60）；test_decompose_segments.py 20 passed（14 纯函数不触网 + 6 异步 patch aresolve/build_chat_model + call_source 断言）、ruff/mypy 干净、无新迁移、无供应链面。下游 → 95-03 engine._decompose 接线（None 触发 splitlines 回退）。
