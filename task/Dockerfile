@@ -63,6 +63,11 @@ RUN adduser -D -u 1000 friday && \
     mkdir -p /app/workspace /app/sessions /home/friday/.claude && \
     chown -R friday:friday /app /home/friday
 
+# Friday skills 同源链路（单一事实源是仓库根 skills/skills/）：
+# skills/skills/ → (task/scripts/sync_skills.py) → assets/skills/
+#   → (此处 COPY) → /opt/friday/skills/ → (runner.py 运行时注入) → {workspace}/.claude/skills/
+COPY --chown=friday:friday assets/skills/ /opt/friday/skills/
+
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
