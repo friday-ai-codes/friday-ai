@@ -2097,8 +2097,47 @@ class ImproveCodingPlanView(McpToolView):
             for path in plan_payload["affected_files"]
         ]
 
+        # WR-01（review 104）：failed 态不产退化版本、不推进 current_version——
+        # execute_coding_plan 不带 version_id 时默认取最新版本，一次瞬时编排失败不得把
+        # "当前可执行方案"静默替换成空方案。响应键集保持 snapshot 不变：version/version_id
+        # 回填改版前最新版本，status="failed" + session_id 供排障；不触发 ingestion。
+        if delegate.status == "failed":
+            output_data = {
+                "plan_id": str(plan.id),
+                "version_id": str(latest.id),
+                "version": latest.version,
+                "repository_id": str(repo.id),
+                "branch": branch,
+                "plan": plan_payload,
+                "change_summary": f"编排改版失败（未产新版本）：{feedback[:200]}",
+                "risk_delta": {"added": [], "reduced": []},
+                "evidence": evidence,
+                "run_id": str(run.run_id),
+                "session_id": str(delegate.session.id),
+                "status": delegate.status,
+            }
+            await self._record_agent_decision(
+                run,
+                action="coding_plan_improve_failed",
+                payload={
+                    "plan_id": str(plan.id),
+                    "version": latest.version,
+                    "feedback_preview": feedback[:240],
+                },
+            )
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data=output_data,
+                traces=[],
+                started_at=started_at,
+                call_status="failed",
+                error="编排失败，未产新版本（current_version 未推进）",
+            )
+            return Response(output_data, status=status.HTTP_200_OK)
+
         # 版本递增语义不变：current_version+1；plan_body 优先 canonical content
-        # （partial/failed 为 {} 时回退映射后单仓 payload，镜像 create 回退语义）。
+        # （partial 为 {} 时回退映射后单仓 payload，镜像 create 回退语义）。
         next_version = int(plan.current_version) + 1
         version = await McpCodingPlanVersion.objects.acreate(
             plan=plan,

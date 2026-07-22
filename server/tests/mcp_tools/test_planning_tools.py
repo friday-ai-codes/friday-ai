@@ -337,3 +337,69 @@ def test_improve_coding_plan_partial_short_circuits_with_session(
     assert version.version == 2
     assert version.plan_body["repository_id"] == repo_id
     assert body["plan"]["affected_files"] == []
+
+
+def _create_plan(client: APIClient, repo_id: str) -> str:
+    """create 一个 plan（fake delegate 已由调用方 patch），返回 plan_id。"""
+    create_response = client.post(
+        "/api/mcp/tools/create_coding_plan/",
+        {
+            "repository_id": repo_id,
+            "requirement": "调整 src/main.py 的错误处理",
+        },
+        format="json",
+    )
+    assert create_response.status_code == 200
+    return create_response.json()["plan_id"]
+
+
+def test_improve_coding_plan_failed_keeps_current_version(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WR-01（review 104）：delegate failed 态不产退化版本、不推进 current_version。
+
+    一次瞬时编排失败不得把 execute_coding_plan 默认执行的"当前方案"静默替换成空方案；
+    响应键集保持 snapshot 不变（version/version_id 回填改版前最新版本 + status="failed"）。
+    """
+    client, _plaintext = mcp_client
+    repo_id = str(indexed_repository.id)
+    monkeypatch.setattr(
+        "mcp_tools.views.delegate_process_runtime",
+        _make_fake_delegate(repo_id, indexed_repository.name),
+    )
+    plan_id = _create_plan(client, repo_id)
+    original_version_id = McpCodingPlanVersion.objects.get(plan_id=plan_id).id
+
+    monkeypatch.setattr(
+        "mcp_tools.views.delegate_process_runtime",
+        _make_fake_delegate(repo_id, indexed_repository.name, status="failed"),
+    )
+    response = client.post(
+        "/api/mcp/tools/improve_coding_plan/",
+        {
+            "plan_id": plan_id,
+            "feedback": "请增加回滚步骤",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "failed"
+    assert body["session_id"]
+    # 不产新版本：version 数不变，current_version 指针不动。
+    plan = McpCodingPlan.objects.get(id=plan_id)
+    assert plan.current_version == 1
+    assert McpCodingPlanVersion.objects.filter(plan=plan).count() == 1
+    # 响应键集稳定：version/version_id 回填改版前最新版本。
+    assert body["version"] == 1
+    assert body["version_id"] == str(original_version_id)
+    assert "失败" in body["change_summary"]
+    # failed 调用留痕（call_status=failed）。
+    assert ToolCallRecord.objects.filter(
+        run__run_id=body["run_id"],
+        tool_name="improve_coding_plan",
+        status="failed",
+    ).exists()
