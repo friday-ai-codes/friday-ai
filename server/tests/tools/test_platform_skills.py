@@ -207,3 +207,83 @@ def test_execute_endpoint_runs_pre_coding_research(
     assert step_records.count() == 4
     names = sorted(r.tool_name for r in step_records)
     assert names == [f"pre_coding_research#{i}:{s}" for i, s in enumerate(_PRE_CODING_STEPS)]
+
+
+# ---------------------------------------------------------------------------
+# 安全（101 CR-01）：user_id 服务端权威覆写——请求体伪造一律被忽略
+# ---------------------------------------------------------------------------
+
+
+def test_execute_endpoint_overrides_forged_user_id(
+    make_access_token: Any, access_user: Any, _reseed_platform_skills: None
+) -> None:
+    """请求体伪造他人 user_id：被服务端以 PAT 所有者覆写，每步收到的都是 PAT user。"""
+    from django.contrib.auth import get_user_model
+
+    victim = get_user_model().objects.create_user(
+        username="victim-user", email="victim@example.com", password="x"
+    )
+    _token, plaintext = make_access_token(name="forged-uid-token")
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {plaintext}")
+    stub = AsyncMock(return_value=json.dumps({"stub": True}, ensure_ascii=False))
+    with (
+        patch(f"{_HANDLER_BASE}.route_repositories", new=stub),
+        patch(f"{_HANDLER_BASE}.search_rag_chunks", new=stub),
+        patch(f"{_HANDLER_BASE}.search_delivery_knowledge", new=stub),
+        patch(f"{_HANDLER_BASE}.search_learning_cases", new=stub),
+    ):
+        response = client.post(
+            "/api/tools/execute/",
+            {
+                "name": "pre_coding_research",
+                # 伪造受害者 user_id——必须被服务端覆写为 PAT 所有者。
+                "arguments": {"query": "登录改造", "user_id": str(victim.id)},
+            },
+            format="json",
+        )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert stub.await_count == 4
+    for call in stub.await_args_list:
+        assert call.kwargs.get("user_id") == str(access_user.id)
+        assert call.kwargs.get("user_id") != str(victim.id)
+
+
+def test_step_tool_resolves_permission_principal_from_pat_user(
+    make_access_token: Any, access_user: Any, _reseed_platform_skills: None
+) -> None:
+    """直接调步骤工具：底层 service 的权限主体 user 解析自 PAT 所有者，非请求体传值。"""
+    from django.contrib.auth import get_user_model
+
+    victim = get_user_model().objects.create_user(
+        username="victim-user-2", email="victim2@example.com", password="x"
+    )
+    _token, plaintext = make_access_token(name="principal-token")
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {plaintext}")
+
+    seen_users: list[Any] = []
+
+    async def _fake_search_similar(self, query: str, *, user: Any, **kwargs: Any) -> list[Any]:
+        seen_users.append(user)
+        return []
+
+    with patch(
+        "knowledge.retrieval.DeliveryKnowledgeSearchService.search_similar",
+        new=_fake_search_similar,
+    ):
+        response = client.post(
+            "/api/tools/execute/",
+            {
+                "name": "search_delivery_knowledge",
+                "arguments": {"query": "登录改造", "user_id": str(victim.id)},
+            },
+            format="json",
+        )
+
+    assert response.status_code == 200
+    assert len(seen_users) == 1
+    assert seen_users[0].id == access_user.id
+    assert seen_users[0].id != victim.id
