@@ -236,6 +236,29 @@ else:
 # doc_sync_cache 模块的 try/except 静默降级直读 DB，绝不反噬渲染主流程。
 DOC_RENDER_CACHE_TTL = env.int("DOC_RENDER_CACHE_TTL", default=300)
 
+# 方案编排 recalling 阶段召回的实体 kinds（KNOW-04 编排召回扩容）。
+# 默认含 document（项目沉淀）与 learning_case（历史经验），新 kinds 默认开；
+# env 逗号分隔列表可覆盖（如 PROCESS_RECALL_ENTITY_KINDS=work_item,tech_plan）。
+# 非法 kind 经 vector_recall「传入 ∩ 白名单」严格交集过滤，不放大召回面。
+PROCESS_RECALL_ENTITY_KINDS = env.list(
+    "PROCESS_RECALL_ENTITY_KINDS",
+    default=["work_item", "tech_plan", "code_change", "document", "learning_case"],
+)
+
+# 每 kind 召回上限（KNOW-04）：编排召回单查后按 kind 截断，守 token 预算
+# （防召回候选集膨胀挤爆下游 prompt）。env 用 JSON 覆盖，
+# 如 PROCESS_RECALL_KIND_LIMITS='{"work_item": 2}'；未配置的 kind 上限兜底 3。
+PROCESS_RECALL_KIND_LIMITS = env.json(
+    "PROCESS_RECALL_KIND_LIMITS",
+    default={
+        "work_item": 4,
+        "tech_plan": 4,
+        "code_change": 4,
+        "document": 3,
+        "learning_case": 3,
+    },
+)
+
 
 def _require_redis_for_multi_replica(*, expect_multi: bool, use_redis: bool) -> None:
     """多副本 / 多 worker 部署必须启用 Redis channel layer 的运行期 fail-closed 校验。
