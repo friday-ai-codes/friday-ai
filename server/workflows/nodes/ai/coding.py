@@ -532,6 +532,77 @@ class AICodingNode(SubStepMixin, BaseNode):
         )
         return resolved_api_key, validated_base_url
 
+    async def _resolve_wave_project_contexts(
+        self,
+        *,
+        repo_ids: list[str],
+        repositories: dict[str, Repository],
+        branch_name: str,
+        config: dict[str, Any],
+        dispatch_user: Any,
+        log: Any,
+    ) -> dict[str, str]:
+        """按 (project, branch) 解析一次项目上下文，逐仓复用（Phase 103 AGENT-04）。
+
+        项目定位：``ProjectBranch`` 反查优先（共享 helper），无绑定时按 config
+        ``work_item_id`` 经 ``ProjectWorkItemLink`` fallback（多命中取首个 fail-soft）。
+        召回按 ``str(project.id)`` 去重缓存——branch 在单次 wave 内恒定，project 维度
+        去重即达成"按 (project, branch) 解析一次逐仓复用"，同 project 多仓不重复召回。
+
+        project / dispatch_user 任一 None、召回空、任何异常 → 该仓空串（fail-soft，
+        dispatch 与现状逐字一致，绝不阻断派发）。
+        """
+        contexts: dict[str, str] = {}
+        if not repo_ids:
+            return contexts
+
+        from services.project_context_packer import (
+            apack_dispatch_context,
+            aresolve_project_for_repo_branch,
+        )
+
+        packed_by_project: dict[str, str] = {}
+        for repo_id in repo_ids:
+            text = ""
+            try:
+                repo = repositories[repo_id]
+                project = await aresolve_project_for_repo_branch(
+                    repository_id=repo.id, branch_name=branch_name
+                )
+                if project is None:
+                    work_item_id = str(config.get("work_item_id", "") or "")
+                    if work_item_id:
+                        from initiatives.models import (  # lazy import 防循环
+                            ProjectWorkItemLink,
+                        )
+
+                        link = await (
+                            ProjectWorkItemLink.objects.filter(
+                                work_item__work_item_id=work_item_id
+                            )
+                            .select_related("project")
+                            .afirst()
+                        )
+                        project = link.project if link is not None else None
+                if project is not None and dispatch_user is not None:
+                    key = str(project.id)
+                    if key not in packed_by_project:
+                        packed_by_project[key] = await apack_dispatch_context(
+                            project, dispatch_user, query=branch_name
+                        )
+                    text = packed_by_project[key]
+            except Exception as exc:  # noqa: BLE001 — 召回 fail-soft，绝不阻断 dispatch
+                log.warning(
+                    "wave_project_context_failed",
+                    repository_id=repo_id,
+                    error_type=type(exc).__name__,
+                    component="workflows",
+                    category="sampling",
+                )
+                text = ""
+            contexts[repo_id] = text
+        return contexts
+
     async def _dispatch_wave(
         self,
         *,
@@ -573,6 +644,18 @@ class AICodingNode(SubStepMixin, BaseNode):
             log=log,
         )
 
+        # ── Phase 103 AGENT-04：dispatch 前按 (project, branch) 解析一次项目上下文，
+        # 逐仓复用传入 _run_repo_coding（prompt prepend + env 注入与 chat 路径一致）。
+        # 解析失败/无项目/无 user → 空串 no-op（fail-soft，dispatch 与现状逐字一致）。
+        project_contexts = await self._resolve_wave_project_contexts(
+            repo_ids=repo_ids,
+            repositories=repositories,
+            branch_name=branch_name,
+            config=config,
+            dispatch_user=dispatch_user,
+            log=log,
+        )
+
         by_repo = upstream_artifacts_by_repo or {}
         coding_tasks = [
             self._run_repo_coding(
@@ -586,6 +669,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 anthropic_api_key=anthropic_api_key,
                 anthropic_base_url=anthropic_base_url,
                 dispatch_user=dispatch_user,
+                project_context=project_contexts.get(repo_id, ""),
                 upstream_artifacts=by_repo.get(repo_id, []),
                 # GATE-02：仅「通过 gate 且 follow_openspec=True」的仓（天然 = approved SDD 仓）
                 # 注入 env（默认 False 保非 wave/legacy 零回归）。
@@ -1731,6 +1815,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         anthropic_api_key: str = "",  # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
         anthropic_base_url: str = "",  # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
         dispatch_user=None,  # Phase 103 AGENT-01：发起用户（User | None）——非 None 时 mint 任务级短 TTL token（替换机会性 PAT 透传）
+        project_context: str = "",  # Phase 103 AGENT-04：wave 层解析的项目上下文（默认空 → 非 wave/legacy 调用路径零回归）
         upstream_artifacts: list[dict]
         | None = None,  # ARTIFACT-02：上游产物注入（默认 None → 零回归）
         follow_openspec: bool = False,  # GATE-02：approved SDD 仓注入 openspec env（默认 False 保非 wave/legacy 零回归）
@@ -1744,6 +1829,15 @@ class AICodingNode(SubStepMixin, BaseNode):
         prompt = self._build_coding_prompt(
             tasks, global_context, branch_name, upstream_artifacts=upstream_artifacts
         )
+
+        # Phase 103 AGENT-04：项目上下文注入（镜像 chat dispatch_coding_task 两件套——
+        # prompt prepend + env_FRIDAY_TASK_PROJECT_CONTEXT）。空 → 与现状逐字一致。
+        context_env: dict[str, str] = {}
+        if project_context:
+            from services.project_context_packer import prepend_project_context
+
+            prompt = prepend_project_context(prompt, project_context)
+            context_env["env_FRIDAY_TASK_PROJECT_CONTEXT"] = project_context
 
         from runners.dispatcher import DispatchTask, get_dispatcher
         from subagent.models import SubAgentSession, generate_execution_id
@@ -1869,6 +1963,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 **tools_env,  # RTOOL-03 + Phase 103：TOOLS/KNOWLEDGE_ENDPOINT + 任务级 env_FRIDAY_TASK_USER_TOKEN
                 **exclude_env,  # Phase 22-04：env_FRIDAY_TASK_EXCLUDE_PATTERNS（容器侧 prune）
                 **openspec_env,  # Phase 51 GATE-02：env_FRIDAY_TASK_FOLLOW_OPENSPEC（仅 approved SDD 仓）
+                **context_env,  # Phase 103 AGENT-04：env_FRIDAY_TASK_PROJECT_CONTEXT（wave 层解析逐仓复用）
             },
         )
 
