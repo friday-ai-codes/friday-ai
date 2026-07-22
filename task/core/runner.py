@@ -12,7 +12,9 @@ CLI 模式使用 cli 模块作为入口点。
 
 import asyncio
 import os
+import shutil
 import sys
+from pathlib import Path
 
 import httpx
 import structlog
@@ -45,6 +47,10 @@ structlog.configure(
 )
 
 logger = structlog.get_logger()
+
+# 镜像内 Friday skills 固定路径（Dockerfile COPY assets/skills/ 的目标）；
+# 本地 CLI / 旧镜像无此目录时注入静默跳过（零回归）。
+IMAGE_SKILLS_DIR = Path("/opt/friday/skills")
 
 _GIT_IDENTITY_ENV = {
     "GIT_AUTHOR_NAME": "Friday Codes AI Agent",
@@ -90,6 +96,11 @@ class TaskRunner:
             # Set up Git repository
             log.info("Setting up Git repository")
             await self.git_ops.setup()
+
+            # 注入 Friday skills 到 workspace/.claude/skills/（同名跳过不覆盖，
+            # best-effort——各 task_mode 统一生效，经 executor setting_sources=["project"]
+            # 既有通道加载，零 executor 改动）
+            self._inject_skills(log)
 
             # Setup task-specific branch based on branch_strategy (work item)
             # CRITICAL: Branch must be created/switched BEFORE any Claude coding execution
@@ -156,6 +167,38 @@ class TaskRunner:
         """工作分支不能为空，也不能等于基础/保护分支。"""
         protected = {"main", "master", "develop", self.config.git_branch}
         return bool(branch_name) and branch_name not in protected
+
+    def _inject_skills(self, log) -> None:
+        """把镜像内 Friday skills 注入 {workspace}/.claude/skills/（best-effort）。
+
+        - 镜像无 skills 目录（本地 CLI / 旧镜像）→ debug 后静默返回，零回归；
+        - 目标同名技能已存在 → 跳过不覆盖（仓库自带 skills 优先，逐目录判断）；
+        - 全程吞异常只 warning——skills 注入绝不因失败挂掉任务。
+        """
+        try:
+            if not IMAGE_SKILLS_DIR.is_dir():
+                log.debug("skills_injection_skipped_no_source", source=str(IMAGE_SKILLS_DIR))
+                return
+
+            target_base = Path(self.git_ops.get_workspace_path()) / ".claude" / "skills"
+            target_base.mkdir(parents=True, exist_ok=True)
+
+            injected: list[str] = []
+            skipped: list[str] = []
+            for source in sorted(IMAGE_SKILLS_DIR.iterdir()):
+                if not source.is_dir():
+                    continue
+                target = target_base / source.name
+                if target.exists():
+                    # 仓库自带同名 skill 优先，不覆盖
+                    skipped.append(source.name)
+                    continue
+                shutil.copytree(source, target)
+                injected.append(source.name)
+
+            log.info("skills_injected", injected=injected, skipped=skipped)
+        except Exception as e:
+            log.warning("skills_injection_failed", error=str(e))
 
     async def _run_plan_mode(self, log, branch_name: str) -> int:
         """Run in plan mode to generate implementation plan."""
