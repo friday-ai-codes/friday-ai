@@ -486,26 +486,10 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
             stop_before_node_id=serializer.validated_data.get("stop_before_node_id") or None,
         )
 
-        # RTOOL-03 机会性 PAT：若本次手动触发由「带 friday_pat_ Bearer 的实时请求」
-        # 发起，则把明文写入请求级 ContextVar，供 dispatch 边界取出后跨线程下传给 AI
-        # 编码节点（点亮 RemoteTool 链路）。明文仅取自当前请求 Authorization 头（已在内存中），
-        # 绝不查 DB（PAT-02）；JWT/会话登录的手动触发无 PAT → 降级不注入。请求结束 finally 复位。
-        from access_tokens.context import reset_request_pat, set_request_pat
-        from access_tokens.models import PAT_PREFIX
-
-        pat_plaintext = ""
-        auth_header = request.META.get("HTTP_AUTHORIZATION", "")
-        if auth_header.startswith("Bearer "):
-            candidate = auth_header[7:]
-            if candidate.startswith(PAT_PREFIX):
-                pat_plaintext = candidate
-        pat_token = set_request_pat(pat_plaintext)
-
-        try:
-            dispatcher = TriggerDispatcher()
-            execution = await dispatcher.dispatch_single(context)
-        finally:
-            reset_request_pat(pat_token)
+        # Phase 103 AGENT-01：机会性 PAT ContextVar 捕获通道已移除——AI 编码节点改为
+        # 按 triggered_by 铸造任务级短 TTL token（access_tokens.services.mint_task_token）。
+        dispatcher = TriggerDispatcher()
+        execution = await dispatcher.dispatch_single(context)
 
         if not execution:
             raise TriggerValidationError("Failed to start workflow execution")

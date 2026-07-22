@@ -159,3 +159,395 @@ def test_legacy_creation_defaults_to_personal(
     token, _plaintext = make_access_token(name="legacy-token")
     assert token.kind == "personal"
     assert token.session_id is None
+
+
+# =========================================================================
+# 派发集成 fixtures（mock runner 在线 + dispatcher 捕获 + metadata 简化）
+# =========================================================================
+
+
+@pytest.fixture
+def dispatched_tasks(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Mock get_dispatcher().dispatch() —— 捕获 DispatchTask；并 mock runner 在线检查
+    与 build_dispatch_metadata / git token 解析（隔离外部 IO，聚焦 token 注入面）。"""
+    from unittest.mock import AsyncMock
+
+    dispatched: list[Any] = []
+
+    class _FakeDispatcher:
+        async def dispatch(self, task: Any) -> None:
+            dispatched.append(task)
+
+    _instance = _FakeDispatcher()
+    monkeypatch.setattr("runners.dispatcher.get_dispatcher", lambda: _instance)
+
+    import chat.coding_session_service as css
+
+    monkeypatch.setattr(css, "check_runner_online", AsyncMock(return_value=True))
+
+    async def _fake_metadata(repository: Any, coding_session: Any) -> tuple[dict, str]:
+        return {"repository_id": str(repository.id)}, repository.git_url
+
+    monkeypatch.setattr(css, "build_dispatch_metadata", _fake_metadata)
+    monkeypatch.setattr(
+        "services.git_credentials.aresolve_git_token", AsyncMock(return_value="")
+    )
+    return dispatched
+
+
+@sync_to_async
+def _make_chat_fixture(*, username: str, branch: str, created_by_none: bool = False):
+    """构造 Space + Repository + Conversation(+created_by) + CodingSession。"""
+    import uuid as uuid_mod
+
+    from django.contrib.auth import get_user_model
+
+    from chat.models import CodingSession, Conversation
+    from projects.models import Space
+    from repositories.models import Repository
+
+    user = get_user_model().objects.create_user(username=username, password="x")
+    space = Space.objects.create(name=f"space-{uuid_mod.uuid4().hex[:6]}")
+    repo = Repository.objects.create(
+        name=f"repo-{uuid_mod.uuid4().hex[:6]}",
+        git_url=f"https://git.example.com/t/{uuid_mod.uuid4().hex[:6]}.git",
+        git_platform="github",
+        default_branch="main",
+    )
+    space.repositories.add(repo)
+    conversation = Conversation.objects.create(
+        space=space,
+        title="token 集成测试",
+        created_by=None if created_by_none else user,
+    )
+    cs = CodingSession.objects.create(
+        conversation=conversation,
+        repository=repo,
+        tech_plan="## 方案",
+        branch_name=branch,
+    )
+    cs = CodingSession.objects.select_related(
+        "repository", "conversation", "conversation__space", "conversation__created_by"
+    ).get(id=cs.id)
+    return user, space, repo, cs
+
+
+# =========================================================================
+# chat 链集成：dispatch 注入新签发 token + 知识端点 + 落库泄漏扫描
+# =========================================================================
+
+
+@pytest.mark.asyncio
+async def test_chat_dispatch_mints_token_and_no_plaintext_persisted(
+    settings: Any, dispatched_tasks: list[Any]
+) -> None:
+    import json
+    import uuid as uuid_mod
+
+    from access_tokens.models import AccessToken
+    from chat.coding_session_service import dispatch_coding_task
+    from subagent.models import SubAgentSession
+
+    settings.FRIDAY_BASE_URL = "https://friday.example.com"
+
+    user, _space, _repo, cs = await _make_chat_fixture(
+        username=f"chat-mint-{uuid_mod.uuid4().hex[:8]}",
+        branch=f"feat/103-chat-{uuid_mod.uuid4().hex[:6]}",
+    )
+    session_id = await dispatch_coding_task(cs, task_type="coding", prompt="实现功能")
+
+    # (a) DispatchTask.metadata 含新签发 token + 知识端点（base 不带路径）
+    assert len(dispatched_tasks) == 1
+    meta = dispatched_tasks[0].metadata
+    plaintext = meta["env_FRIDAY_TASK_USER_TOKEN"]
+    assert plaintext.startswith("friday_pat_")
+    assert meta["env_FRIDAY_TASK_KNOWLEDGE_ENDPOINT"] == "https://friday.example.com"
+
+    # (b) AccessToken 行：kind=task、session_id 关联、token_hash==hash(env 明文)——新签发
+    token = await AccessToken.objects.aget(kind="task", session_id=session_id)
+    assert token.token_hash == hash_token(plaintext)
+    assert token.created_by_id == user.id
+
+    # (c) 落库泄漏扫描：SubAgentSession.last_output 与 CodingSession 持久化字段无明文
+    sub_session = await SubAgentSession.objects.aget(session_id=session_id)
+    assert "friday_pat_" not in json.dumps(sub_session.last_output, ensure_ascii=False)
+    await cs.arefresh_from_db()
+    for field in cs._meta.concrete_fields:
+        assert "friday_pat_" not in str(getattr(cs, field.attname))
+
+
+@pytest.mark.asyncio
+async def test_chat_dispatch_degrades_without_user(
+    settings: Any, dispatched_tasks: list[Any]
+) -> None:
+    """user 不可解析（conversation.created_by=None）→ dispatch 成功且不注入 token env。"""
+    import uuid as uuid_mod
+
+    from access_tokens.models import AccessToken
+    from chat.coding_session_service import dispatch_coding_task
+
+    settings.FRIDAY_BASE_URL = "https://friday.example.com"
+
+    _user, _space, _repo, cs = await _make_chat_fixture(
+        username=f"chat-nouser-{uuid_mod.uuid4().hex[:8]}",
+        branch=f"feat/103-nouser-{uuid_mod.uuid4().hex[:6]}",
+        created_by_none=True,
+    )
+    session_id = await dispatch_coding_task(cs, task_type="coding", prompt="实现功能")
+
+    assert len(dispatched_tasks) == 1
+    meta = dispatched_tasks[0].metadata
+    assert "env_FRIDAY_TASK_USER_TOKEN" not in meta
+    # 知识端点仍注入（与 token 独立；task 侧三要素守门缺 token 自然降级）
+    assert meta["env_FRIDAY_TASK_KNOWLEDGE_ENDPOINT"] == "https://friday.example.com"
+    assert await AccessToken.objects.filter(kind="task", session_id=session_id).acount() == 0
+
+
+# =========================================================================
+# MCP 链覆盖（checker BLOCKER 1 验收钉）：桥接会话 created_by + kind=task token
+# =========================================================================
+
+
+@pytest.mark.asyncio
+async def test_mcp_dispatch_execution_carries_created_by_and_mints(
+    settings: Any, dispatched_tasks: list[Any]
+) -> None:
+    import uuid as uuid_mod
+
+    from django.contrib.auth import get_user_model
+
+    from access_tokens.models import AccessToken
+    from chat.models import CodingSession
+    from mcp_tools.execution_service import dispatch_execution
+    from mcp_tools.models import (
+        McpCodingExecutionTrace,
+        McpCodingPlan,
+        McpCodingPlanVersion,
+    )
+    from projects.models import Space
+    from repositories.models import Repository
+
+    settings.FRIDAY_BASE_URL = "https://friday.example.com"
+
+    @sync_to_async
+    def _make_mcp_fixture():
+        from interactions.ledger import create_interaction_run
+
+        user = get_user_model().objects.create_user(
+            username=f"mcp-mint-{uuid_mod.uuid4().hex[:8]}", password="x"
+        )
+        space = Space.objects.create(name=f"mcp-space-{uuid_mod.uuid4().hex[:6]}")
+        repo = Repository.objects.create(
+            name=f"mcp-repo-{uuid_mod.uuid4().hex[:6]}",
+            git_url=f"https://git.example.com/m/{uuid_mod.uuid4().hex[:6]}.git",
+            git_platform="github",
+            default_branch="main",
+        )
+        space.repositories.add(repo)
+        run = create_interaction_run(
+            token_fingerprint=hash_token(f"mcp-mint-{uuid_mod.uuid4().hex[:6]}"),
+            source="mcp",
+        )
+        plan = McpCodingPlan.objects.create(
+            run=run,
+            repository=repo,
+            requirement="103 任务 token 覆盖",
+            title="MCP token 覆盖",
+        )
+        version = McpCodingPlanVersion.objects.create(
+            plan=plan,
+            run=run,
+            version=1,
+            plan_body={"title": "MCP token 覆盖", "requirement": "103"},
+        )
+        trace = McpCodingExecutionTrace.objects.create(
+            run=run,
+            plan=plan,
+            plan_version=version,
+            repository=repo,
+            branch_name="",
+            target_branch="main",
+            timeout_seconds=600,
+        )
+        return user, plan, version, trace
+
+    user, plan, version, trace = await _make_mcp_fixture()
+
+    branch = f"feat/103-mcp-{uuid_mod.uuid4().hex[:6]}"
+    response = await dispatch_execution(
+        trace=trace,
+        plan=plan,
+        version=version,
+        branch_name=branch,
+        target_branch="main",
+        timeout_seconds=600,
+        initiating_user=user,
+    )
+
+    coding_session = response.coding_session
+    assert coding_session is not None
+    cs = await CodingSession.objects.select_related(
+        "conversation", "subagent_session"
+    ).aget(id=coding_session.id)
+    # 桥接 Conversation 携带发起用户（可归因，T-103-04）
+    assert cs.conversation.created_by_id == user.id
+    # MCP 链派发后存在 kind=task 的 AccessToken（三链覆盖不静默失效）
+    assert cs.subagent_session is not None
+    token = await AccessToken.objects.aget(
+        kind="task", session_id=cs.subagent_session.session_id
+    )
+    assert token.created_by_id == user.id
+    assert len(dispatched_tasks) == 1
+    assert dispatched_tasks[0].metadata["env_FRIDAY_TASK_USER_TOKEN"].startswith(
+        "friday_pat_"
+    )
+
+
+# =========================================================================
+# 终态吊销双路径：callbacks HTTP 版 + consumers WS 版（幂等）
+# =========================================================================
+
+
+@sync_to_async
+def _make_sub_session(username: str):
+    import uuid as uuid_mod
+
+    from django.contrib.auth import get_user_model
+
+    from agents.models import AgentSession
+    from subagent.models import SubAgentSession
+
+    user = get_user_model().objects.create_user(username=username, password="x")
+    main = AgentSession.objects.create(
+        session_id=f"main-{uuid_mod.uuid4().hex[:8]}", metadata={}
+    )
+    session = SubAgentSession.objects.create(
+        session_id=f"coding-{uuid_mod.uuid4().hex[:12]}",
+        main_session=main,
+        task_type=SubAgentSession.TaskType.CODING,
+        status=SubAgentSession.Status.RUNNING,
+        last_output={"task_type": "coding"},
+    )
+    return user, session
+
+
+def _patch_resume_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """屏蔽回调 handler 的续驱/通知副作用（与吊销断言无关的后台调度）。"""
+    from unittest.mock import AsyncMock, MagicMock
+
+    import subagent.api.callbacks as cbs
+
+    monkeypatch.setattr(cbs, "_schedule_workflow_resume", MagicMock())
+    monkeypatch.setattr(cbs, "_schedule_agent_session_resume", MagicMock())
+    monkeypatch.setattr(cbs, "_update_coding_session_on_complete", AsyncMock())
+    monkeypatch.setattr(cbs, "_update_coding_session_on_fail", AsyncMock())
+    monkeypatch.setattr(cbs, "_send_failure_notification", AsyncMock())
+
+
+@pytest.mark.asyncio
+async def test_http_callback_completed_revokes_task_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import uuid as uuid_mod
+
+    import structlog
+
+    from access_tokens.models import AccessToken
+    from access_tokens.services import mint_task_token
+    from subagent.api.callbacks import _handle_completed
+
+    _patch_resume_hooks(monkeypatch)
+    user, session = await _make_sub_session(f"cb-done-{uuid_mod.uuid4().hex[:8]}")
+    await mint_task_token(user, session.session_id, 600)
+
+    log = structlog.get_logger("test-callbacks")
+    payload = {"result_type": "text", "output": {"text": "done"}}
+    resp = await _handle_completed(session, payload, log)
+    assert resp.status_code == 200
+
+    token = await AccessToken.objects.aget(kind="task", session_id=session.session_id)
+    assert token.revoked_at is not None
+    # 重复触发（幂等）：TaskResult 已存在 → 早退，不报错
+    resp2 = await _handle_completed(session, payload, log)
+    assert resp2.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_http_callback_failed_revokes_task_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import uuid as uuid_mod
+
+    import structlog
+
+    from access_tokens.models import AccessToken
+    from access_tokens.services import mint_task_token
+    from subagent.api.callbacks import _handle_failed
+
+    _patch_resume_hooks(monkeypatch)
+    user, session = await _make_sub_session(f"cb-fail-{uuid_mod.uuid4().hex[:8]}")
+    await mint_task_token(user, session.session_id, 600)
+
+    log = structlog.get_logger("test-callbacks")
+    resp = await _handle_failed(session, {"error": "boom"}, log)
+    assert resp.status_code == 200
+
+    token = await AccessToken.objects.aget(kind="task", session_id=session.session_id)
+    assert token.revoked_at is not None
+
+
+@pytest.mark.asyncio
+async def test_ws_handler_completed_revokes_task_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WS 直连路径独立写终态（不经 callbacks handler）→ 同点吊销。"""
+    import uuid as uuid_mod
+
+    import structlog
+
+    from access_tokens.models import AccessToken
+    from access_tokens.services import arevoke_task_tokens, mint_task_token
+    from runners.consumers import RunnerConsumer
+
+    _patch_resume_hooks(monkeypatch)
+    user, session = await _make_sub_session(f"ws-done-{uuid_mod.uuid4().hex[:8]}")
+    await mint_task_token(user, session.session_id, 600)
+
+    consumer = RunnerConsumer.__new__(RunnerConsumer)  # handler 不依赖连接态
+    log = structlog.get_logger("test-ws")
+    await RunnerConsumer._handle_completed(
+        consumer,
+        {"task_id": session.session_id, "result_type": "text", "output": {}},
+        log,
+    )
+
+    token = await AccessToken.objects.aget(kind="task", session_id=session.session_id)
+    assert token.revoked_at is not None
+    # 幂等：再次吊销 count=0 不报错
+    assert await arevoke_task_tokens(session.session_id) == 0
+
+
+@pytest.mark.asyncio
+async def test_ws_handler_failed_revokes_task_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import uuid as uuid_mod
+
+    import structlog
+
+    from access_tokens.models import AccessToken
+    from access_tokens.services import mint_task_token
+    from runners.consumers import RunnerConsumer
+
+    _patch_resume_hooks(monkeypatch)
+    user, session = await _make_sub_session(f"ws-fail-{uuid_mod.uuid4().hex[:8]}")
+    await mint_task_token(user, session.session_id, 600)
+
+    consumer = RunnerConsumer.__new__(RunnerConsumer)
+    log = structlog.get_logger("test-ws")
+    await RunnerConsumer._handle_failed(
+        consumer, {"task_id": session.session_id, "error": "boom"}, log
+    )
+
+    token = await AccessToken.objects.aget(kind="task", session_id=session.session_id)
+    assert token.revoked_at is not None

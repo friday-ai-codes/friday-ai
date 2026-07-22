@@ -99,13 +99,6 @@ class TriggerDispatcher:
             )
             return []
 
-        # RTOOL-03 机会性 PAT：在触发边界（仍处请求异步上下文）取出实时明文 PAT。
-        # 取材仅来自请求级 ContextVar（带 friday_pat_ Bearer 的认证请求写入），绝不查 DB；
-        # 背景/飞书/定时/JWT 触发取不到 → 空串 → 下游降级不注入（PAT-02 + 向后兼容）。
-        from access_tokens.context import get_request_pat
-
-        user_pat = get_request_pat()
-
         # 5. 启动执行
         executions: list["WorkflowExecution"] = []
         for workflow in workflows:
@@ -122,7 +115,6 @@ class TriggerDispatcher:
                     },
                     debug_mode=context.debug_mode,
                     stop_before_node_id=context.stop_before_node_id,
-                    user_pat=user_pat,
                 )
                 executions.append(execution)
                 logger.info(

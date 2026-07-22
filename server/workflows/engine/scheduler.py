@@ -257,7 +257,6 @@ class WorkflowEngine:
         run_sync: bool = False,
         debug_mode: bool = False,
         stop_before_node_id: str | None = None,
-        user_pat: str = "",
     ) -> WorkflowExecution:
         """启动工作流执行
 
@@ -392,11 +391,6 @@ class WorkflowEngine:
             current_ctx["node_snapshots"] = snapshots
             execution.context = current_ctx
             await execution.asave(update_fields=["context"])
-
-        # RTOOL-03 机会性 PAT：把触发边界捕获的实时明文挂到 execution 实例的瞬态属性
-        # （下划线前缀，非模型字段，绝不 save / 绝不落库），随同一实例流入 _run_execution
-        # 的工作流线程，再注入 per-node ExecutionContext。无来源时为空串（向后兼容降级）。
-        execution._user_pat_plaintext = user_pat or ""  # type: ignore[attr-defined]
 
         # 触发开始钩子
         await self.hooks.trigger("execution_started", execution=execution)
@@ -1112,9 +1106,6 @@ class WorkflowEngine:
                     node_snapshots=node_snapshots,
                     trigger_data=execution.trigger_data
                     or {},  # ENG-03 唯一读取侧缺口：注入触发数据使 {{trigger.*}} 真实可解析
-                    # RTOOL-03 机会性 PAT：读 execution 瞬态属性（仅内存，绝不落库），
-                    # AI 编码节点据此机会性注入 env_FRIDAY_TASK_USER_TOKEN。
-                    user_pat_plaintext=getattr(execution, "_user_pat_plaintext", "") or "",
                 )
 
                 # 执行节点（带可选超时）

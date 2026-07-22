@@ -16,9 +16,8 @@ processor 链首位——即"读取当前线程/协程上下文里绑定的字�
 安全契约（务必遵守）
 ====================
 - **只绑定非敏感字段**（``user_id`` / ``request_id`` / ``source`` / ``trace_id``
-  及调用方显式传入的 extra）；明文凭证 / token / 密钥**绝不**进 contextvars
-  （沿用 ``access_tokens/context.py`` 范式）。``redact_credentials`` 仍在 renderer
-  前兜底。
+  及调用方显式传入的 extra）；明文凭证 / token / 密钥**绝不**进 contextvars。
+  ``redact_credentials`` 仍在 renderer 前兜底。
 - ``source`` 经 ``LogSource.normalize`` 受控枚举兜底，非法值回退 ``"system"``，
   防止任意字符串污染 source 基数（T-71-01-03）。
 - ``user_id`` 由服务端在 DRF 认证后权威写入，不取自客户端 header（T-71-01-01）。

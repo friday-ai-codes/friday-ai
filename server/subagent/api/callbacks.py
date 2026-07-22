@@ -855,6 +855,14 @@ async def _handle_completed(
     # 更新 session 状态
     await session.amark_completed()
 
+    # Phase 103 AGENT-01：终态吊销任务级短 TTL token（best-effort，service 内吞异常，
+    # 幂等，绝不阻塞回调主流程）。注：SubAgentSession.amark_timeout/amark_cancelled
+    # 对 coding 任务无调用方（规划期核实；amark_cancelled 仅 REPO_SUMMARY 取消路径
+    # 调用，该类型不 mint token），残余假想终态路径由 expires_at 自过期兜底。
+    from access_tokens.services import arevoke_task_tokens
+
+    await arevoke_task_tokens(session.session_id)
+
     # 更新关联的 CodingSession（如果有）+ 落库 SDK 会话恢复数据
     await _update_coding_session_on_complete(
         session,
@@ -932,6 +940,12 @@ async def _handle_failed(
     session.failure_reason = error_msg
     await session.asave(update_fields=["failure_reason"])
     await session.amark_failed(error=error_msg)
+
+    # Phase 103 AGENT-01：终态吊销任务级短 TTL token（best-effort、幂等，见
+    # _handle_completed 处注释；timeout/cancelled 假想路径由 TTL 自过期兜底）。
+    from access_tokens.services import arevoke_task_tokens
+
+    await arevoke_task_tokens(session.session_id)
 
     # 更新关联的 CodingSession（如果有）
     await _update_coding_session_on_fail(session, error_msg)

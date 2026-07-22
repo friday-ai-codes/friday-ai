@@ -105,12 +105,6 @@ class ExecutionContext:
     # aresolve + structlog warning log（事件名 snapshot.miss_fallback_to_runtime_resolve）。
     node_snapshots: dict[str, dict] = field(default_factory=dict)
 
-    # RTOOL-03 机会性 PAT：仅当本 Execution 由「带 PAT 的实时请求线程」触发时，
-    # 由 start_execution 在触发边界从请求 ContextVar 捕获后写入此瞬态字段。
-    # 安全契约：仅内存运行时存在，绝不落库（不进 WorkflowExecution.context）、绝不进日志。
-    # 缺省空串 → 下游不注入 env_FRIDAY_TASK_USER_TOKEN（向后兼容降级）。
-    user_pat_plaintext: str = ""
-
     def get_input(self, key: str, default: Any = None) -> Any:
         """获取输入数据
 
