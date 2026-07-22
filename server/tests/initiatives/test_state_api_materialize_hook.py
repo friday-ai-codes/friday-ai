@@ -71,6 +71,39 @@ async def test_upsert_state_api_without_state_doc_skips_silently() -> None:
     mock_schedule.assert_not_awaited()
 
 
+async def test_upsert_state_api_defer_materialize_skips_scheduling() -> None:
+    """defer_materialize=True（批量路径）→ 逐条不调度物化（102-REVIEW MED-01）。"""
+    project = await _make_project("sam-defer")
+    await _make_state_doc(project)
+    mock_schedule = AsyncMock()
+    with patch("knowledge.ingestion.aschedule_ingestion", mock_schedule):
+        api, created = await ProjectDocService().upsert_state_api(
+            project_id=project.id,
+            method="GET",
+            path="/api/deferred",
+            defer_materialize=True,
+        )
+
+    assert created is True
+    mock_schedule.assert_not_awaited()
+
+
+async def test_schedule_state_materialization_coalesced_entry() -> None:
+    """批量调用方循环后调 schedule_state_materialization 一次 → 恰调度一次物化。"""
+    project = await _make_project("sam-coalesce")
+    doc = await _make_state_doc(project)
+    mock_schedule = AsyncMock()
+    with patch("knowledge.ingestion.aschedule_ingestion", mock_schedule):
+        await ProjectDocService().schedule_state_materialization(
+            project.id, "user-99"
+        )
+
+    assert mock_schedule.await_count == 1
+    call = mock_schedule.await_args_list[0]
+    assert call.args[0].source_id == str(doc.id)
+    assert call.kwargs["initiated_by_user_id"] == "user-99"
+
+
 async def test_materialization_failure_does_not_break_upsert() -> None:
     """物化调度失败 fail-soft：upsert 仍正常返回（_schedule_materialization 吞异常）。"""
     project = await _make_project("sam-fail")

@@ -3234,6 +3234,8 @@ class ReportProjectStateView(McpToolView):
                         source=ApiSource.HOOK,
                         actor=user,
                         initiated_by_user_id=user.id,
+                        # 102-REVIEW MED-01：批量路径逐条不物化，循环后合并调度一次
+                        defer_materialize=True,
                     )
                     # 既有行：经 INV-6 service 更新 params/status（幂等回写按约束更新既有行）。
                     if not created:
@@ -3272,6 +3274,11 @@ class ReportProjectStateView(McpToolView):
                             "reason": "error",
                         }
                     )
+
+            # 102-REVIEW MED-01：批量上报合并为一次 STATE 物化调度——避免 N 条
+            # API 触发 N 次互不短路（内容逐次变化）的全量重摄取。
+            if total_applied > 0:
+                await service.schedule_state_materialization(project_id, user.id)
 
             output_data = {
                 "applied": total_applied > 0,
