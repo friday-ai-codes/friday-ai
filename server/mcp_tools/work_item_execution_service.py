@@ -485,6 +485,15 @@ async def _write_results_back(
     零回归契约（Phase 101 LOOP-01）：签名入参新增 keyword ``initiated_by_user_id``
     外不变；返回 ``(document_update, comment)`` 外形不变；``retry_state`` 仅在
     error 分支写入（成功路径不动）。
+
+    已知边界差异（101 IN-02，当前不可达、记录在案防误修）：改造前只要
+    ``technical_plan.space`` 存在就会尝试评论——``feishu_project_key`` 为空串也会
+    打到飞书 API → 失败 → error → PARTIAL 翻转 + ``retry_state.retryable=True``；
+    公共层则在三元组任一缺失（空 project_key / 空 work_item_type /
+    ``work_item_id is None``）时记 ``writeback_skipped`` 后双 skipped 返回，
+    不翻 PARTIAL、不置 retry_state。由于 ``McpWorkItemTechnicalPlan`` 三字段
+    NOT NULL 且创建链路必填，MCP 现网数据下两者行为一致；未来若出现空串
+    project_key 的脏数据，行为为 skipped（新语义），**这不是回归**。
     """
     document_update: dict[str, Any] = {"status": "skipped"}
     comment: dict[str, Any] = {"status": "skipped"}
