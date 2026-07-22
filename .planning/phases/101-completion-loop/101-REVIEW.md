@@ -29,7 +29,15 @@ findings:
   medium: 2
   low: 3
   total: 6
-status: findings
+status: resolved
+fixed_at: 2026-07-22T05:55:00Z
+fix_commits:
+  CR-01: c825612e
+  WR-01: 4b3b8339
+  WR-02: d013d0eb
+  IN-01: "0957f642"
+  IN-02: b1c47050
+  IN-03: c219e04b
 ---
 
 # Phase 101: Code Review Report
@@ -70,6 +78,8 @@ result = await execute_tool(tool_name, arguments, run=run)
 
 同时把种子 skill/步骤 `input_schema` 里的 `user_id` 属性删掉（migration 数据可另行修补或在 handler 层注明该键仅接受服务端注入）。若未来存在无 HTTP 上下文的内部调用方，应显式传入受信 `user_id`，而非放开客户端输入。
 
+> **RESOLVED（c825612e）**：`RemoteToolExecuteView.post` 强制 `arguments["user_id"] = str(request.user.id)` 权威覆写（PAT 所有者为唯一受信 principal，客户端传值一律忽略）；`skill_steps.py` 模块与 `_resolve_user` docstring 注明 user_id 仅接受服务端受信注入；migration 0005 从三个步骤工具与 post_coding_capture skill 的 `input_schema` 移除 `user_id` 客户端可填声明。新增测试：伪造 user_id 被覆写为 PAT 用户（skill 链 4 步全断言）+ 直调步骤工具时底层 service 权限主体解析自 PAT 用户（`tests/tools/test_platform_skills.py`，7 passed）。
+
 ### Medium
 
 #### WR-01: MCP 链触发用户归因恒为 "system"——`run.user_id` 是不存在的字段（含 8046ec07 "LO-02 收尾" 实为 no-op）
@@ -93,6 +103,8 @@ result = await execute_work_item_repo_tasks(
 
 （`_ensure_coding_plan`/`_execute_one_task` 由多个入口调用，同样加 keyword 透传；无法拿到时保持 None→system 兜底。）
 
+> **RESOLVED（4b3b8339）**：确认 `InteractionRun` 无 user 字段（仅 `token_fingerprint`），无真实字段可取——采用视图透传方案：`execute_work_item_repo_tasks` / `_execute_one_task` / `_ensure_coding_plan` 均新增 keyword `initiated_by_user_id`（缺省 None→system 兜底），`ExecuteWorkItemRepoTasksView` 以 `request.user.id`（PAT 所有者）传入；四处 `run.user_id` 幻影读取全部替换，L659 第三处 `mcp_tasks_executed` 投递漏传一并补齐。测试：三处 `aschedule_ingestion` + 回写 + 提炼调度归因断言绑定 PAT 用户（`test_work_item_execution.py`，30 passed 含 `test_mcp_artifact_sources.py`）。
+
 #### WR-02: 回写失败的上游异常文本未脱敏即入库（`technical_plan.error` / `comment_result`）
 
 **File:** `server/delivery/services/coding_completion.py:290`、`:292`、`:309`、`:356-358`；落库点 `server/mcp_tools/work_item_execution_service.py:513-529`
@@ -106,6 +118,8 @@ document_update = {"status": "error", "error": redact_secrets_in_text(str(exc))}
 ```
 
 （`:290/:292/:306/:309/:356/:358` 六处同款；`writeback_failed` 日志字段可继续依赖 processor。）
+
+> **RESOLVED（d013d0eb）**：`awrite_back` 全部五处 `str(exc)` 出口（doc append 双 except / 评论 except / 方法级兜底双分支）统一包 `redact_secrets_in_text`；`:306` 为静态文案无需脱敏。模块 docstring 契约描述同步修正。新增凭证泄漏守卫测试（sk-ant 密钥经 doc/评论双路异常均不入库，`test_coding_completion.py`，11 passed）。既有 `error: "feishu comment down"` 断言不受影响（无敏感 token 原样透传）。
 
 ### Low
 
@@ -127,17 +141,23 @@ def _is_template(solution: str) -> bool:
 
 （配合 `_MIN_FIELD_LEN=30`，实际只需把 "无"/"略" 从 startswith 判定中拿掉即可。）
 
+> **RESOLVED（0957f642）**：按最小方案落地——`_TEMPLATE_PREFIXES` 移除单字 "无"/"略"（保留 "暂无"/"N-A"/"N/A"/"TODO"/"待补充"），纯 "无"/"略" 超短产物由 `_MIN_FIELD_LEN` 长度门拦截无漏网。新增 `_admission_gate` 单测覆盖 "无需…"/"无论…" 放行、"暂无…" 仍拦、纯 "无" 走 too_short 三侧。
+
 #### IN-02: `awrite_back` 三元组守门较原实现多拦一类边缘输入——`retry_state` 语义有理论漂移（当前不可达）
 
 **File:** `server/delivery/services/coding_completion.py:262-282`；对照原实现 `git show 5903922f^` 的 `_write_results_back`
 **Issue:** 原 MCP 实现只要 `technical_plan.space` 存在就会尝试评论（`feishu_project_key` 为空串也会打到飞书 API → 失败 → `comment.status="error"` → PARTIAL 翻转 + `retry_state.retryable=True`）。新公共层在 `feishu_project_key` 空 / `work_item_type` 空 / `work_item_id is None` 时改记 `writeback_skipped` 双 skipped 返回——不再翻 PARTIAL、不再置 retry_state。由于 `McpWorkItemTechnicalPlan` 三字段 NOT NULL 且创建链路必填（`models.py:362-364`），此漂移在 MCP 现网数据下不可达；记录在案是为防未来出现空串 project_key 的脏数据时行为悄变。
 **Fix:** 无需改码；建议在 `_write_results_back` docstring 的零回归契约注释里补一句该已知边界差异，避免后人误当回归修。
 
+> **RESOLVED（b1c47050）**：`_write_results_back` docstring 增补"已知边界差异"段——空串 project_key 脏数据下公共层双 skipped（不翻 PARTIAL/retry_state）为新语义、非回归；现网三字段 NOT NULL 不可达。未加运行时守卫（不可达路径加守卫属死代码，按 review 原建议以文档定案）。
+
 #### IN-03: 前端 zod `.default(true)` 会在存量节点任意一次编辑保存时物化 `write_back` 键——静默退出 legacy 三态
 
 **File:** `web/src/types/workflow/schemas.ts:295`
 **Issue:** 存量工作流的 ai_coding 节点 config 无 `write_back` 键（后端走 legacy 静默守门）。用户在流程编辑器里打开该节点、哪怕只改 `timeout_seconds` 保存一次，`aiCodingConfigSchema.parse` 的 `.default(true)` 就会把 `write_back: true` 写进 config——三态从"缺键（无三元组时 debug 级静默）"变为"显式 true（无三元组时记 caller 级 `writeback_skipped` 事件）"。实际回写行为不变（两态下都是"有三元组才回写"），仅观测噪音面变化，且用户在 UI 中可见开关状态，勉强算符合预期；但与 docs/guide/workflows.md "存量工作流升级后行为不变" 的表述存在细微出入（编辑过一次的存量节点会开始产 `writeback_skipped` caller 事件）。
 **Fix:** 可接受现状；若要严格保持三态，用 `z.boolean().optional()` 并让表单 UI 层展示默认值，仅在用户显式操作开关时写键。至少在升级说明里补一句"编辑并保存过节点配置后视同显式开启"。
+
+> **RESOLVED（c219e04b）**：`aiCodingConfigSchema.write_back` 改 `z.boolean().optional()`（无 default）——存量节点缺键在编辑保存后原样保持缺键，legacy 三态不被静默物化；新建节点默认开继续由后端 `config_schema` 模板承担。`AICodingConfig.vue` 面板本就未暴露 write_back 开关，无 UI 展示面需要调整。`pnpm run type-check` 通过。
 
 ## 专项核查结论（未构成 finding 的验证项）
 
@@ -152,6 +172,22 @@ def _is_template(solution: str) -> bool:
 
 ---
 
+## Resolution Summary（2026-07-22）
+
+全部 6 个 finding 已修复，逐项 RESOLVED 注记见各 finding 下方。提交清单：
+
+| Finding | 级别 | Commit | 内容 |
+|---|---|---|---|
+| CR-01 | BLOCKER | `c825612e` | user_id 服务端权威覆写（PAT 唯一受信 principal）+ schema 收口 + 越权测试 |
+| WR-01 | MEDIUM | `4b3b8339` | MCP 链归因视图透传真实用户，移除 run.user_id 幻影读取，补 L659 第三处投递 |
+| WR-02 | MEDIUM | `d013d0eb` | awrite_back 异常文本入库前 redact_secrets_in_text + 凭证泄漏守卫测试 |
+| IN-01 | LOW | `0957f642` | 质量门移除单字 "无"/"略" 前缀误杀 + `_admission_gate` 单测 |
+| IN-02 | LOW | `b1c47050` | `_write_results_back` docstring 记录零回归边界差异（文档定案） |
+| IN-03 | LOW | `c219e04b` | 前端 write_back 改 `.optional()`，legacy 缺键三态不被物化 |
+
+验证：定向套件 64 passed（tools 全部 + work_item_execution + learning_case_extraction + pr_review_capture + skill_workflow_trace + schema_snapshot + skills_snapshot_guard + coding_completion + mcp_artifact_sources）；`tests/workflows/test_coding_writeback.py` 6 passed（MCP/legacy `write_back`/`retry_state` 零回归契约保持全绿）；前端 `pnpm run type-check` 通过；改动文件 `ruff check` 通过。
+
 _Reviewed: 2026-07-22T05:35:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Fixed: 2026-07-22（gsd-code-fixer）_
