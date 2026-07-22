@@ -95,6 +95,8 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             source_kind=request.source_kind,
             source_id=request.source_id,
             trigger=request.trigger,
+            component="knowledge",
+            category="sampling",
         )
         return []
 
@@ -139,6 +141,8 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             source_kind=request.source_kind,
             source_id=request.source_id,
             trigger=request.trigger,
+            component="knowledge",
+            category="sampling",
         )
         return [code_change_event]
     anchor_event = build_plan_event(

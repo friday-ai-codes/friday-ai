@@ -174,6 +174,8 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             source_kind=request.source_kind,
             source_id=request.source_id,
             trigger=request.trigger,
+            component="knowledge",
+            category="sampling",
         )
         return []
     version = await plan.versions.order_by("-version").afirst()
@@ -183,6 +185,8 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             source_kind=request.source_kind,
             source_id=request.source_id,
             trigger=request.trigger,
+            component="knowledge",
+            category="sampling",
         )
         return []
 
