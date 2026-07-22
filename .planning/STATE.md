@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: 101 of 100–104 (完工沉淀闭环) — Complete (all waves)
-Plan: 101-04 complete — Phase 101 done, next Phase 102
-Status: Phase 101 4/4 plans complete（101-01/02/03/04 SUMMARY 齐备，LOOP-01~05 交付）
+Phase: 103 of 100–104 (编码容器集成) — Executing (103-01/02 in flight, 103-03 complete)
+Plan: 103-01 token 铸造 + 103-02 容器知识 MCP 并行执行中
+Status: Phase 100/101/102 complete（verification passed；101 BLOCKER 与 102 HIGH 审查发现均已修复/修复中）；102 verification 4/4（真实 Qdrant 端到端命中列人工验收延后）
 Last activity: 2026-07-22 — 101-04 完成：平台 Skill 种子 + 步级 trace + PR review 可选沉淀（默认关），35 测试全绿；Phase 101 收官
 
 Progress: [██░░░░░░░░] 20% (1/5 phases)
