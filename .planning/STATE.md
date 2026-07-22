@@ -4,17 +4,17 @@ milestone: v0.17.0
 milestone_name: 统一知识库与全链路联动
 current_phase: 104
 current_phase_name: 工具面收口
-status: executing
-stopped_at: 执行 104-01（UNIFY-01 improve 收敛统一编排）完成——improve_coding_plan 从确定性假改版收敛到 delegate_process_runtime（feedback 三段块编排重跑产新 McpCodingPlanVersion，响应含 session_id/status）；map_canonical_to_coding_plan 随迁 orchestration_delegate.py（零残留）；improve/create 契约定版进 serializer docstring；TOOL_SCHEMA_SNAPSHOT improve/create 双修 session_id/status（create 既有漂移修复），registered==snapshot 守卫保持绿；improve 相关测试全量迁移 fake delegate + 新增 partial 短路契约用例。3 commits（ceb42613/3a3969d7/334930cf）；快照守卫 5 passed + delegate 6 passed + planning/artifact 23 passed。既有 rot：test_work_item_execution.py 5 例失败（103-01 dispatch 签名 rot，记 deferred-items.md）。下一步 104-02（analyze 随迁 + planning_service.py 删除 + 残留清零）。
-last_updated: "2026-07-22T07:25:27.878Z"
+status: complete
+stopped_at: 执行 104-03（里程碑四面检索端到端验收）完成——新建 server/tests/test_milestone_e2e_learning_case.py（自包含：内存 Qdrant + 确定性 bag-of-words embedding + PAT mcp_client 本地复刻；双种子区分度设计 T-104-07）；同一条 learning case 四面均可检索：面 1 Chat 工具 search_learning_cases（会话 owner 权限前置直调）、面 2 DeliveryKnowledgeRecallAdapter.recall（learning_case kind 命中且 entity_id 经 generate_entity_id 精确断言）、面 3 MCP view POST /api/mcp/tools/search_learning_cases/（top-1 强相关条）、面 4 容器链同 URL 契约（reverse 反查 == task 侧字面模板）+ 组合覆盖文档化；统一排序断言（MCP 与 Chat top-1 case_id 一致）落地。2 commits（a35d74e7/562f697c）；单文件 3 passed + 定向回归（E2E + mcp_tools + recall_adapter + knowledge_read_tools）216 passed。**Phase 104（工具面收口）3/3 完成，UNIFY-01/02/03 全部交付；v0.17.0 五个 phase（100–104）18/18 plans 全部执行完毕。** 下一步：里程碑审计（/gsd-audit-milestone）→ complete-milestone 归档。
+last_updated: "2026-07-22T07:45:00.000Z"
 last_activity: 2026-07-22
-last_activity_desc: 104-01 完成：improve 收敛统一编排 + 契约定版 + snapshot 双修 + map_canonical 随迁
+last_activity_desc: 104-03 完成：里程碑四面检索 E2E 验收 + 统一排序断言，Phase 104 3/3 收官
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 18
-  completed_plans: 17
-  percent: 80
+  completed_plans: 18
+  percent: 100
 ---
 
 # Project State
@@ -28,12 +28,12 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: 104 of 100–104 (工具面收口) — ⏳ In progress (2/3 plans)
-Plan: 104-02 analyze 收敛 + 确定性缝退役完成（build_repository_analysis 随迁 + extra_evidence 接线 + planning_service.py 删除 + 残留清零 + patch target 守卫）
-Status: Phase 100/101/102/103 complete（verification passed）；Phase 104 executing（104-01/02 ✅，104-03 remaining）
-Last activity: 2026-07-22 — 104-02 完成：extra_evidence 编排消费接线 + planning_service.py 删缝 + 全仓零残留
+Phase: 104 of 100–104 (工具面收口) — ✅ Complete (3/3 plans)
+Plan: 104-03 里程碑四面检索端到端验收完成（自包含 E2E：Chat 工具/编排召回/MCP view/容器链同 URL 契约 + MCP 与 Chat top-1 统一排序断言）
+Status: Phase 100/101/102/103/104 全部 complete——v0.17.0 里程碑 18/18 plans 执行完毕，待里程碑审计/归档
+Last activity: 2026-07-22 — 104-03 完成：里程碑四面检索 E2E 验收 + 统一排序断言，Phase 104 收官
 
-Progress: [████████░░] 80% (4/5 phases)
+Progress: [██████████] 100% (5/5 phases)
 
 ## Milestone Overview (v0.17.0 — Phases 100–104 — 🚀 EXECUTING)
 
@@ -43,7 +43,7 @@ Progress: [████████░░] 80% (4/5 phases)
 | 101 | 完工沉淀闭环（公共回写 + 自动提炼 + Skill 种子） | LOOP-01~05 | ✅ Complete (4/4, passed) |
 | 102 | 知识消费面与对外契约（召回扩容 + Chat 工具 + snapshot/skills 对齐） | KNOW-04/05/06, UNIFY-04 | ✅ Complete (3/3, passed) |
 | 103 | 编码容器集成（短 TTL token + 容器知识 MCP + skills 注入 + 上下文对齐） | AGENT-01~04 | ✅ Complete (4/4) |
-| 104 | 工具面收口（improve/analyze 收敛 + 确定性缝退役 + 端到端验收） | UNIFY-01/02/03 | ⏳ In progress (1/3) |
+| 104 | 工具面收口（improve/analyze 收敛 + 确定性缝退役 + 端到端验收） | UNIFY-01/02/03 | ✅ Complete (3/3) |
 
 完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（19 条 + Traceability，100% 映射）；阶段详情见 [.planning/ROADMAP.md](./ROADMAP.md)。
 
@@ -217,6 +217,7 @@ Progress: [████████░░] 80% (4/5 phases)
 | Phase 103 P02 | 25min | 3 tasks | 7 files |
 | Phase 103 P04 | ~11min | 2 tasks | 5 files |
 | Phase 104 P02 | ~25min | 4 tasks | 12 files |
+| Phase 104 P03 | ~12min | 2 tasks | 1 file |
 
 ## Accumulated Context
 
@@ -509,8 +510,9 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-07-22T07:24:46.062Z
-Stopped at: 执行 103-04（AGENT-04 工作流上下文对齐）完成——共享 helper 上提 `services/project_context_packer.py`（prepend_project_context / aresolve_project_for_repo_branch / apack_dispatch_context，chat 纯重构改引用零回归，workflow 不 import chat）+ workflow `_resolve_wave_project_contexts` 按 (project, branch) 解析一次逐仓复用（ProjectBranch 反查 + work_item fallback，user=dispatch_user）+ `_run_repo_coding` prompt prepend + env_FRIDAY_TASK_PROJECT_CONTEXT 注入（与 chat 一致，fail-soft 空串 no-op）。2 commits（81956173/113ac520）；新守护测试 6 例 + chat 99 全绿 + dispatch 触点 54 passed 零回归。**Phase 103（编码容器集成）4/4 完成，AGENT-01~04 全部交付。** 下游 → Phase 104（工具面收口，UNIFY-01/02/03）。
+Last session: 2026-07-22T07:45:00.000Z
+Stopped at: 执行 104-03（里程碑四面检索端到端验收）完成——新建自包含 E2E 测试 `server/tests/test_milestone_e2e_learning_case.py`（内存 Qdrant + 确定性 embedding + 双种子区分度），同一条 learning case 四面（Chat 工具 / DeliveryKnowledgeRecallAdapter / MCP view / 容器链同 URL 契约+组合覆盖）均可检索 + MCP 与 Chat top-1 统一排序断言。2 commits（a35d74e7/562f697c）；3 passed + 定向回归 216 passed。**Phase 104 3/3 收官，v0.17.0 全部 18 plans 执行完毕。** 下一步：里程碑审计 → complete-milestone。
+Earlier: 执行 103-04（AGENT-04 工作流上下文对齐）完成——共享 helper 上提 `services/project_context_packer.py`（prepend_project_context / aresolve_project_for_repo_branch / apack_dispatch_context，chat 纯重构改引用零回归，workflow 不 import chat）+ workflow `_resolve_wave_project_contexts` 按 (project, branch) 解析一次逐仓复用（ProjectBranch 反查 + work_item fallback，user=dispatch_user）+ `_run_repo_coding` prompt prepend + env_FRIDAY_TASK_PROJECT_CONTEXT 注入（与 chat 一致，fail-soft 空串 no-op）。2 commits（81956173/113ac520）；新守护测试 6 例 + chat 99 全绿 + dispatch 触点 54 passed 零回归。**Phase 103（编码容器集成）4/4 完成，AGENT-01~04 全部交付。** 下游 → Phase 104（工具面收口，UNIFY-01/02/03）。
 Earlier: 执行 101-03（LOOP-02/03 锚点接线）完成——三元组反查器（workflow 链 `plan_version_id→ArtifactVersion→artifact.work_item` 标量链 + chat 链 `content__chat_coding_plan_id` JSON 键 seam，现状无写入方零行为变化）+ `aextract_for_session` 提炼便捷入口；workflow `AICodingNode` 新增 `write_back` 配置（模板默认开）+ **存量缺键 fallback 三态守门**（缺键+无绑定=零变化专项用例）+ `_finalize_and_notify` 完工闭环（回写 + 逐 session `run_in_background` 提炼调度，session→repo 映射两调用点补齐）；chat `create_pr_or_skip_node` PR 成功分支回写（无会话级开关）+ 提炼（skip-PR 不回写但提炼照常）；MCP `execute_work_item_repo_tasks` 提炼锚点；前端 `aiCodingConfigSchema` 同步 + docs 升级说明。5 commits（317b48c6/93f4be4b/6adb1dff/4ee87e38/c2749bb9）；69 测试全绿 + vue-tsc 通过。Deviation：session_repo_map 可选参数补缺口、误用一次 git stash（无损自纠）、存量腐坏测试 test_sub_step_coding_node 记 deferred-items.md。下游 → 101-04（LOOP-04/05 Skill 种子 + PR review 沉淀，Wave 3）。
 Earlier: 里程碑 v0.16.1 统一 AI 技术方案生成已 shipped（complete-milestone + cleanup）——6/6 phase（90–95）/ 27 plans / 18 需求全部完成并提交；里程碑审计 tech_debt（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，遗留真机·真实 provider·画布视觉端到端验收 10 项 + INFO 欠债，见 `.planning/milestones/v0.16.1-MILESTONE-AUDIT.md`）。归档：`ROADMAP.md` 折叠为 `<details>` + 全量快照入 `.planning/milestones/v0.16.1-ROADMAP.md`；audit git mv 入 `milestones/`；phase 目录 git mv 入 `.planning/milestones/v0.16.1-phases/`。未打 git tag；REQUIREMENTS.md 保留待下一里程碑 new-milestone 归档（沿用 v0.16.0 模式）。
 Earlier: 执行 95-02（DECOMP-01：decompose_segments LLM 拆分 helper）——新建 `server/services/plan_orchestration/decompose_segments.py` 逐段镜像 clarification_questions.py。纯函数 _parse_segments_json（容错 ```json/裸 JSON/顶层 list→非法 []）+ normalize_decomposition_segments（缺 title 跳过/非法 layer 回退空/字段 strip/_MAX_SEGMENTS=20 截断）+ _content_to_text（reasoning content_blocks）+ _system/_build_prompt；异步 agenerate_decomposition_segments（aresolve→default_model 守卫→build_chat_model(streaming=False)→use_call_source(PLAN_DECOMPOSE)→ainvoke→解析→normalize，成功 list[dict]，缺 model/异常/空 → None best-effort 绝不抛）；观测 started/completed/failed/no_default_model + duration_ms（sampling/plan_orchestration），脱敏只记 requirement_len/计数。DEVIATION: None。2 commits（6782b1825/19c62cc60）；test_decompose_segments.py 20 passed（14 纯函数不触网 + 6 异步 patch aresolve/build_chat_model + call_source 断言）、ruff/mypy 干净、无新迁移、无供应链面。下游 → 95-03 engine._decompose 接线（None 触发 splitlines 回退）。
