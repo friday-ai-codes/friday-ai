@@ -74,7 +74,7 @@ from .models import (
     McpRepositoryAnalysis,
 )
 from .orchestration_delegate import delegate_process_runtime, map_canonical_to_coding_plan
-from .planning_service import build_repository_analysis
+from .repository_analysis_service import build_repository_analysis
 from .serializers import (
     AnalyzeRepositoryRequestSerializer,
     CreateCodingPlanRequestSerializer,
