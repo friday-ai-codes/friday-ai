@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import structlog
 
+from common.logging import redact_secrets_in_text
 from knowledge.ingestion import EdgeSpec, IngestionEvent, IngestionRequest
 from knowledge.models import EdgeRelation, EntityKind, EntityOrigin, generate_entity_id
 
@@ -72,7 +73,9 @@ def _build_content(trace, title: str, mr_url: str) -> str:
     if test_lines:
         lines += ["## 测试结果", "", *test_lines, ""]
     if trace.error:
-        lines += ["## 错误", "", trace.error[:500], ""]
+        # error 来自 runner/git 执行失败文本，可能含带凭证的 remote URL / 上游响应片段；
+        # 入库留痕（PG content + Qdrant 可检索）前必须脱敏（先脱敏再截断，避免截断残留半个凭证）。
+        lines += ["## 错误", "", redact_secrets_in_text(trace.error)[:500], ""]
     return "\n".join(lines).rstrip() + "\n"
 
 
