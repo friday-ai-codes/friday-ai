@@ -45,7 +45,7 @@ from system.settings_service import aget_bool_setting
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["aextract_for_session", "aextract_learning_case"]
+__all__ = ["aextract_for_session", "aextract_learning_case", "apersist_extracted_case"]
 
 _COMPONENT = "mcp_tools"
 _EXTRACT_MODEL_FALLBACK = "claude-sonnet-4-20250514"
@@ -232,6 +232,59 @@ async def _aextract(
     parsed = _parse_json(raw)
     if parsed is None:
         _log_rejected(key, "json_parse_failed", initiated_by_user_id)
+        return None
+
+    # 5-9. 质量门→脱敏→入库→入图→收尾事件（可复用序列，LOOP-05 review 沉淀同路径）。
+    return await apersist_extracted_case(
+        parsed,
+        session_key=key,
+        session_id=session_id,
+        source=source,
+        pr_url=pr_url,
+        branch_name=branch_name,
+        modified_files=modified_files,
+        repositories=repositories,
+        work_item_type=work_item_type,
+        work_item_id=work_item_id,
+        initiated_by_user_id=initiated_by_user_id,
+        started=started,
+    )
+
+
+async def apersist_extracted_case(
+    parsed: dict[str, Any],
+    *,
+    session_key: str,
+    session_id: str,
+    source: str,
+    pr_url: str = "",
+    branch_name: str = "",
+    modified_files: list[str] | None = None,
+    repositories: list[str] | None = None,
+    work_item_type: str = "",
+    work_item_id: int | None = None,
+    initiated_by_user_id: str | None = None,
+    started: float | None = None,
+) -> McpLearningCase | None:
+    """质量门→脱敏→入库→入图 可复用低层入口（101-04 拆分决策）。
+
+    拆分理由（LOOP-05）：``pr_review_capture`` 自带 review LLM 调用，若复用
+    :func:`aextract_learning_case` 会二次烧 token（其 LLM 提炼步不可绕过）；
+    故把 LLM 之后的"质量门→脱敏→入库→入图→收尾事件"拆为本函数，review 模块
+    LLM 后直接调它——幂等/质量门/脱敏/入库/入图全部复用、不重复 LLM 调用。
+
+    - ``session_key``：完整幂等键（含后缀，如 ``{sid}:pr_review``），入库前
+      先查重（幂等检查在 persist 前做）；
+    - ``parsed``：LLM 产物 dict（title/problem/root_cause/solution/outcome）。
+    """
+    started = perf_counter() if started is None else started
+    key = session_key
+    modified_files = modified_files or []
+    repositories = repositories or []
+
+    # 幂等：persist 前查重（供直调路径；aextract 主链在 LLM 前已查过一次，双查无害）。
+    if await McpLearningCase.objects.filter(source_session_id=key).aexists():
+        _log_skipped(key, "duplicate")
         return None
 
     # 5. 质量门（与提炼功能同 plan，绝不"先跑通后补"）。

@@ -1306,6 +1306,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 failed_repos=failed_repos,
                 completed_session_ids=completed_session_ids,
                 branch_name=branch_name,
+                base_branch=base_branch,
                 plan_title=plan_title,
                 plan_data=plan_data,
                 session_repo_map=session_repo_map or {},
@@ -1369,8 +1370,10 @@ class AICodingNode(SubStepMixin, BaseNode):
         plan_data: dict[str, Any] | None,
         session_repo_map: dict[str, str],
         log: Any,
+        base_branch: str = "",
     ) -> None:
-        """完工闭环（LOOP-02/03）：三元组反查 → write_back 守门回写 → 提炼调度。
+        """完工闭环（LOOP-02/03/05）：三元组反查 → write_back 守门回写 → 提炼调度
+        → 可选 PR review 沉淀调度。
 
         write_back 三态守门（P3 锁定，T-101-03-01）：
         - 键存在且 False → 完全跳过回写（用户显式关）；
@@ -1485,6 +1488,47 @@ class AICodingNode(SubStepMixin, BaseNode):
                     name=f"learning-case-{sid}",
                     initiated_by_user_id=triggered_by,
                 )
+
+        # PR review 沉淀调度（LOOP-05 锚点，101-04）：开关默认关——关闭时不调度
+        # 后台任务（零 LLM 调用零后台成本；模块内开关/幂等还有兜底）。取不到对应
+        # completed session 的仓跳过（无幂等键源）。同样不 await Future。
+        successful_mrs = [r for r in mr_results if r.get("mr_url") and not r.get("error")]
+        if successful_mrs:
+            try:
+                from system.models import SettingKeys
+                from system.settings_service import aget_bool_setting
+
+                review_enabled = await aget_bool_setting(
+                    SettingKeys.PR_REVIEW_CAPTURE, default=False
+                )
+            except Exception:  # noqa: BLE001 — 开关读取失败视为关（fail-soft）
+                review_enabled = False
+            if review_enabled:
+                from mcp_tools.pr_review_capture import acapture_pr_review  # lazy import
+                from services.background_runner import run_in_background
+
+                repo_session_map = {v: k for k, v in session_repo_map.items()}
+                for mr in successful_mrs:
+                    repo_id = str(mr.get("repository_id") or "")
+                    sid = repo_session_map.get(repo_id, "")
+                    if not sid:
+                        continue
+                    mr_url = str(mr.get("mr_url") or "")
+                    run_in_background(
+                        lambda repo_id=repo_id, sid=sid, mr_url=mr_url: acapture_pr_review(
+                            repository_id=repo_id,
+                            source_branch=branch_name,
+                            target_branch=base_branch,
+                            pr_url=mr_url,
+                            session_id=sid,
+                            requirement_text=plan_title,
+                            work_item_type=triple.work_item_type if triple else "",
+                            work_item_id=triple.work_item_id if triple else None,
+                            initiated_by_user_id=triggered_by,
+                        ),
+                        name=f"pr-review-{sid}",
+                        initiated_by_user_id=triggered_by,
+                    )
 
     # ------------------------------------------------------------------
     # 方案解析
