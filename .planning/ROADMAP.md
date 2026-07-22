@@ -79,7 +79,7 @@ Plans:
 Plans:
 - [ ] 101-01-PLAN.md — LOOP-01：CompletionWritebackService 公共回写抽取 + MCP 薄包装零回归（Wave 1）
 - [ ] 101-02-PLAN.md — LOOP-03 核心：call_source 登记先行 + McpLearningCase migration + 提炼管线（质量门/REJECT/幂等/开关）（Wave 1）
-- [ ] 101-03-PLAN.md — LOOP-02/03 锚点：三元组反查器 + workflow write_back 配置与存量 fallback 守门 + chat/MCP 接线 + 前端同步（Wave 2）
+- [x] 101-03-PLAN.md — LOOP-02/03 锚点：三元组反查器 + workflow write_back 配置与存量 fallback 守门 + chat/MCP 接线 + 前端同步（Wave 2）✅ 2026-07-22
 - [ ] 101-04-PLAN.md — LOOP-04/05：平台 Skill 种子 + 步级 trace + PR 后可选 review 沉淀（Wave 3）
 
 ### Phase 102: 知识消费面与对外契约（编排召回扩容 + Chat 工具 + snapshot/skills 对齐）
@@ -289,7 +289,7 @@ Plans:
 | Phase | Requirements | Plans Complete | Status | Completed |
 |-------|--------------|----------------|--------|-----------|
 | 100. 知识收敛基座 | KNOW-01/02/03 | 4/4 | ✅ Complete | 2026-07-15 |
-| 101. 完工沉淀闭环 | LOOP-01~05 | 0/TBD | Not started | - |
+| 101. 完工沉淀闭环 | LOOP-01~05 | 3/4 | In progress | - |
 | 102. 知识消费面与对外契约 | KNOW-04/05/06, UNIFY-04 | 0/TBD | Not started | - |
 | 103. 编码容器集成 | AGENT-01~04 | 0/TBD | Not started | - |
 | 104. 工具面收口 | UNIFY-01/02/03 | 0/TBD | Not started | - |
