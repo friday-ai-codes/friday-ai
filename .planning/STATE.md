@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.17.0
 milestone_name: 统一知识库与全链路联动
 status: completed
-stopped_at: 执行 101-03（LOOP-02/03 锚点接线）完成——三元组反查器（workflow 链 `plan_version_id→ArtifactVersion→artifact.work_item` 标量链 + chat 链 `content__chat_coding_plan_id` JSON 键 seam，现状无写入方零行为变化）+ `aextract_for_session` 提炼便捷入口；workflow `AICodingNode` 新增 `write_back` 配置（模板默认开）+ **存量缺键 fallback 三态守门**（缺键+无绑定=零变化专项用例）+ `_finalize_and_notify` 完工闭环（回写 + 逐 session `run_in_background` 提炼调度，session→repo 映射两调用点补齐）；chat `create_pr_or_skip_node` PR 成功分支回写（无会话级开关）+ 提炼（skip-PR 不回写但提炼照常）；MCP `execute_work_item_repo_tasks` 提炼锚点；前端 `aiCodingConfigSchema` 同步 + docs 升级说明。5 commits（317b48c6/93f4be4b/6adb1dff/4ee87e38/c2749bb9）；69 测试全绿 + vue-tsc 通过。Deviation：session_repo_map 可选参数补缺口、误用一次 git stash（无损自纠）、存量腐坏测试 test_sub_step_coding_node 记 deferred-items.md。下游 → 101-04（LOOP-04/05 Skill 种子 + PR review 沉淀，Wave 3）。
-last_updated: "2026-07-22T05:47:45.359Z"
-last_activity: 2026-07-22 — 101-04 完成：平台 Skill 种子 + 步级 trace + PR review 可选沉淀（默认关），35 测试全绿；Phase 101 收官
+stopped_at: 执行 103-01（AGENT-01 任务级短 TTL token）完成——AccessToken 加 kind/session_id（迁移 0003）+ `access_tokens/services.py` mint_task_token/arevoke_task_tokens（明文仅内存、DB sha256、expires=timeout+10min、幂等吊销 best-effort）；三链接线（chat dispatch mint + MCP `dispatch_execution(initiating_user=)`→桥接 Conversation.created_by 透传 + workflow `_resolve_dispatch_user` 替换机会性透传）+ 两派发路径注入 env_FRIDAY_TASK_KNOWLEDGE_ENDPOINT；机会性 PAT ContextVar 死通道整链移除（context.py/views capture/dispatcher/scheduler/base 字段）；五点终态吊销（callbacks×2 + consumers WS×2 + 断连收敛）。3 commits（a8e9a49c/48f98efd/af02b945）；targeted 155 测试全绿。Deviation：last_output.dispatch 落库副本剔除 token 明文（Rule 2）；amark_cancelled 实有 REPO_SUMMARY 专属调用方（不 mint 故不挂钩，TTL 兜底）。
+last_updated: "2026-07-22T06:25:00.000Z"
+last_activity: 2026-07-22 — 103-01 完成：三链短 TTL token 铸造 + 五点终态吊销 + PAT 死通道移除，155 测试全绿
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 18
-  completed_plans: 13
-  percent: 60
+  completed_plans: 14
+  percent: 65
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: 103 of 100–104 (编码容器集成) — Executing (103-01/02 in flight, 103-03 complete)
-Plan: 103-01 token 铸造 + 103-02 容器知识 MCP 并行执行中
+Phase: 103 of 100–104 (编码容器集成) — Executing (103-01/02/03 complete, 103-04 remaining)
+Plan: 103-01 token 铸造完成（三链 mint + 五点吊销 + 死通道移除）
 Status: Phase 100/101/102 complete（verification passed；101 BLOCKER 与 102 HIGH 审查发现均已修复/修复中）；102 verification 4/4（真实 Qdrant 端到端命中列人工验收延后）
-Last activity: 2026-07-22 — 101-04 完成：平台 Skill 种子 + 步级 trace + PR review 可选沉淀（默认关），35 测试全绿；Phase 101 收官
+Last activity: 2026-07-22 — 103-01 完成：三链短 TTL token 铸造 + 五点终态吊销 + PAT 死通道移除，155 测试全绿
 
 Progress: [██░░░░░░░░] 20% (1/5 phases)
 
@@ -365,6 +365,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 101]: 101-04: LOOP-05 沉淀复用拆出 apersist_extracted_case，review LLM 后直调不重复烧 token
 - [Phase 101]: 101-04: PR review 锚点调度前置开关检查——默认关零后台任务零 LLM 调用
 - [Phase 103]: 103-02：知识工具配额文案不带 is_error（预算终点非错误，防模型重试）；allowed_tools 三源合并收口单一构造函数 _build_tool_mounts（任一 server 挂载即全量并入 builtin，WR-02）
+- [Phase 103]: 103-01：token 过期余量取 10 分钟；chat 链 last_output.dispatch 落库副本剔除 env_FRIDAY_TASK_USER_TOKEN（泄漏防线，runner 断连重建时容器降级不挂知识工具）；T-11-02 spy 收窄为 AccessToken 读取类方法（mint acreate 新签发合法）；amark_cancelled 实有 REPO_SUMMARY 专属调用方（不 mint 故不挂吊销钩子，TTL 自过期兜底）
 
 ### Pending Todos
 
