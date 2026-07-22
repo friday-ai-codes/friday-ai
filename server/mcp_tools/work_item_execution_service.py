@@ -5,9 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from django.utils import timezone
-
-from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from interactions.models import InteractionRun
 from mcp_tools.execution_service import (
     ExecutionDispatchError,
@@ -28,8 +25,6 @@ from mcp_tools.models import (
     McpWorkItemTechnicalPlan,
 )
 from repositories.models import Repository
-from services.feishu import create_feishu_client_for_project
-from services.feishu_doc import FeishuDocAPIError
 
 
 class WorkItemExecutionError(Exception):
@@ -52,11 +47,6 @@ class RepoTaskExecutionResult:
     technical_plan: McpWorkItemTechnicalPlan
     tasks: list[McpWorkItemRepoTask]
     output: dict[str, Any]
-
-
-def _table_cell(value: Any) -> str:
-    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
-    return text.replace("|", "\\|").replace("`", "\\`").replace("\n", "<br>").strip()
 
 
 async def _resolve_technical_plan(technical_plan_id: str) -> McpWorkItemTechnicalPlan:
@@ -445,27 +435,28 @@ async def _execute_one_task(
     return task
 
 
-def _execution_results_markdown(tasks: list[McpWorkItemRepoTask]) -> str:
-    lines = [
-        "## 执行结果",
-        "",
-        f"更新时间：{timezone.now().isoformat()}",
-        "",
-        "| 仓库 | 状态 | 分支 | Commit | PR/MR | 错误 |",
-        "|---|---|---|---|---|---|",
-    ]
-    for task in tasks:
-        lines.append(
-            "| {repo} | {status} | `{branch}` | `{commit}` | {mr} | {error} |".format(
-                repo=_table_cell(task.repository.name),
-                status=_table_cell(task.status),
-                branch=_table_cell(task.branch_name),
-                commit=_table_cell(task.commit_sha),
-                mr=_table_cell(task.mr_url or ""),
-                error=_table_cell(task.error or ""),
-            )
+def _repo_results(tasks: list[McpWorkItemRepoTask]):
+    """把 MCP repo task 列表映射为公共回写层的中性 RepoResult（LOOP-01）。"""
+    from delivery.services.coding_completion import RepoResult  # lazy import 防循环
+
+    return [
+        RepoResult(
+            repo_name=task.repository.name,
+            status=task.status,
+            branch_name=task.branch_name,
+            commit_sha=task.commit_sha,
+            mr_url=task.mr_url or "",
+            error=task.error or "",
         )
-    return "\n".join(lines) + "\n"
+        for task in tasks
+    ]
+
+
+def _execution_results_markdown(tasks: list[McpWorkItemRepoTask]) -> str:
+    """薄委托：渲染模板已迁至 delivery.services.coding_completion（LOOP-01）。"""
+    from delivery.services.coding_completion import render_results_markdown  # lazy import 防循环
+
+    return render_results_markdown(_repo_results(tasks))
 
 
 async def _write_results_back(
@@ -473,7 +464,14 @@ async def _write_results_back(
     technical_plan: McpWorkItemTechnicalPlan,
     tasks: list[McpWorkItemRepoTask],
     markdown: str,
+    initiated_by_user_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    """薄包装：飞书两写委托 CompletionWritebackService，MCP 专属 plan 状态翻转留在本层。
+
+    零回归契约（Phase 101 LOOP-01）：签名入参新增 keyword ``initiated_by_user_id``
+    外不变；返回 ``(document_update, comment)`` 外形不变；``retry_state`` 仅在
+    error 分支写入（成功路径不动）。
+    """
     document_update: dict[str, Any] = {"status": "skipped"}
     comment: dict[str, Any] = {"status": "skipped"}
 
@@ -482,40 +480,25 @@ async def _write_results_back(
     technical_plan.plan_body = body
     technical_plan.markdown = (technical_plan.markdown or "").rstrip() + "\n\n" + markdown
 
-    if technical_plan.space and technical_plan.feishu_document_id:
-        try:
-            doc_client = await create_feishu_doc_client_for_project(technical_plan.space)
-            result = await doc_client.append_markdown(
-                technical_plan.feishu_document_id,
-                markdown,
-            )
-            document_update = {"status": "appended", **result}
-        except (ValueError, FeishuDocAPIError) as exc:
-            document_update = {"status": "error", "error": str(exc)}
-        except Exception as exc:  # noqa: BLE001 - writeback errors should be retryable state.
-            document_update = {"status": "error", "error": str(exc)}
+    # 零回归守门：改造前 doc append / 评论两写均以 technical_plan.space 为前置条件。
+    # space 为 None 时直接跳过公共 service 调用、保持双 skipped——否则 service 会经
+    # feishu_project_key 反查 Space，可能命中并回写，引入改造前不存在的新行为。
+    if technical_plan.space is not None:
+        from delivery.services.coding_completion import (  # lazy import 防循环
+            CompletionWritebackService,
+        )
 
-    if technical_plan.space:
-        lines = [
-            f"Friday 已更新执行结果：{technical_plan.title}",
-            "",
-            "仓库状态：",
-        ]
-        for task in tasks:
-            lines.append(
-                f"- {task.repository.name}: {task.status}, branch `{task.branch_name}`, MR {task.mr_url or '未生成'}"
-            )
-        try:
-            client = create_feishu_client_for_project(technical_plan.space)
-            ok = await client.add_comment(
-                technical_plan.feishu_project_key,
-                technical_plan.work_item_id,
-                technical_plan.work_item_type,
-                "\n".join(lines),
-            )
-            comment = {"status": "written"} if ok else {"status": "error", "error": "Feishu 工作项评论写入失败"}
-        except Exception as exc:  # noqa: BLE001 - writeback failure is partial state.
-            comment = {"status": "error", "error": str(exc)}
+        document_update, comment = await CompletionWritebackService().awrite_back(
+            feishu_project_key=technical_plan.feishu_project_key,
+            work_item_type=technical_plan.work_item_type,
+            work_item_id=technical_plan.work_item_id,
+            title=technical_plan.title,
+            results=_repo_results(tasks),
+            space=technical_plan.space,
+            feishu_document_id=technical_plan.feishu_document_id or "",
+            doc_markdown=markdown,
+            initiated_by_user_id=initiated_by_user_id,
+        )
 
     technical_plan.comment_result = {
         **(technical_plan.comment_result if isinstance(technical_plan.comment_result, dict) else {}),
@@ -591,6 +574,9 @@ async def execute_work_item_repo_tasks(
             technical_plan=technical_plan,
             tasks=executed,
             markdown=markdown,
+            # 观测归因（CONTEXT 观测决策）：MCP 链用 run user；InteractionRun 现无
+            # user 字段，取不到传 None → 公共层记 "system"。
+            initiated_by_user_id=str(run.user_id) if getattr(run, "user_id", None) else None,
         )
 
     status_values = {task.status for task in executed}

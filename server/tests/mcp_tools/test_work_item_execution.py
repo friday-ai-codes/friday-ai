@@ -348,12 +348,13 @@ def test_execute_work_item_repo_tasks_records_partial_multi_repo_results(
     monkeypatch.setattr("mcp_tools.work_item_execution_service.refresh_execution_trace", _refresh)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _summary)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _mr)
+    # LOOP-01：飞书客户端调用已收敛到公共回写层，patch 点随迁（断言不变）。
     monkeypatch.setattr(
-        "mcp_tools.work_item_execution_service.create_feishu_doc_client_for_project",
+        "delivery.services.coding_completion.create_feishu_doc_client_for_project",
         _doc_client,
     )
     monkeypatch.setattr(
-        "mcp_tools.work_item_execution_service.create_feishu_client_for_project",
+        "delivery.services.coding_completion.create_feishu_client_for_project",
         lambda _project: _FakeFeishuClient(),
     )
 
@@ -469,12 +470,13 @@ def test_execute_work_item_repo_tasks_reports_partial_when_feishu_writeback_fail
     monkeypatch.setattr("mcp_tools.work_item_execution_service.refresh_execution_trace", _refresh)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _summary)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _mr)
+    # LOOP-01：飞书客户端调用已收敛到公共回写层，patch 点随迁（断言不变）。
     monkeypatch.setattr(
-        "mcp_tools.work_item_execution_service.create_feishu_doc_client_for_project",
+        "delivery.services.coding_completion.create_feishu_doc_client_for_project",
         _doc_client,
     )
     monkeypatch.setattr(
-        "mcp_tools.work_item_execution_service.create_feishu_client_for_project",
+        "delivery.services.coding_completion.create_feishu_client_for_project",
         lambda _project: _FakeFeishuClient(),
     )
 
@@ -501,3 +503,98 @@ def test_execute_work_item_repo_tasks_reports_partial_when_feishu_writeback_fail
     plan.refresh_from_db()
     assert plan.status == McpWorkItemTechnicalPlan.Status.PARTIAL
     assert plan.error_stage == "execution_writeback"
+
+
+def test_writeback_delegates_to_common_service_and_keeps_partial_flip(
+    mcp_client: tuple[APIClient, str],
+    project,
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回写路径经公共 service；error 时 MCP 层 PARTIAL + retry_state 翻转仍在（LOOP-01）。"""
+    from delivery.services.coding_completion import CompletionWritebackService
+
+    client, _plaintext = mcp_client
+    plan = _technical_plan(project, [indexed_repository])
+    create_response = client.post(
+        "/api/mcp/tools/create_work_item_repo_tasks/",
+        {"technical_plan_id": str(plan.id)},
+        format="json",
+    )
+    assert create_response.status_code == 200
+    task = McpWorkItemRepoTask.objects.get(id=create_response.json()["tasks"][0]["task_id"])
+    task.status = McpWorkItemRepoTask.Status.COMPLETED
+    task.mr_url = "https://example.com/mr/done"
+    task.result = {"mr": {"success": True}}
+    task.recovery_state = {"retryable": False, "stage": "completed"}
+    task.save(update_fields=["status", "mr_url", "result", "recovery_state"])
+
+    async def _unexpected_call(*args, **kwargs):
+        raise AssertionError("completed task should not be dispatched or create another MR")
+
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.dispatch_execution", _unexpected_call)
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _unexpected_call)
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _unexpected_call)
+
+    awrite_back_calls: list[dict[str, Any]] = []
+
+    async def _fake_awrite_back(self, **kwargs):
+        awrite_back_calls.append(kwargs)
+        return {"status": "error", "error": "boom"}, {"status": "skipped"}
+
+    monkeypatch.setattr(CompletionWritebackService, "awrite_back", _fake_awrite_back)
+
+    response = client.post(
+        "/api/mcp/tools/execute_work_item_repo_tasks/",
+        {
+            "technical_plan_id": str(plan.id),
+            "create_missing": True,
+            "dispatch": True,
+            "create_merge_requests": True,
+            "write_back": True,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["document_update"] == {"status": "error", "error": "boom"}
+    assert body["comment"] == {"status": "skipped"}
+
+    # 回写确实经公共 service（入参三元组透传）。
+    assert len(awrite_back_calls) == 1
+    assert awrite_back_calls[0]["feishu_project_key"] == plan.feishu_project_key
+    assert awrite_back_calls[0]["work_item_id"] == 88
+    assert awrite_back_calls[0]["work_item_type"] == "story"
+
+    # MCP 层专属状态翻转仍在：PARTIAL + retry_state failed_stage。
+    plan.refresh_from_db()
+    assert plan.status == McpWorkItemTechnicalPlan.Status.PARTIAL
+    assert plan.retry_state["retryable"] is True
+    assert plan.retry_state["failed_stage"] == "execution_writeback"
+    assert plan.error_stage == "execution_writeback"
+    assert plan.error == "boom"
+
+
+def test_execution_results_markdown_delegates_to_common_renderer(
+    indexed_repository,
+) -> None:
+    """markdown 渲染委托公共层后模板不漂移：标题 + 表头 + 反引号行格式。"""
+    from mcp_tools.work_item_execution_service import _execution_results_markdown
+
+    task = McpWorkItemRepoTask(
+        repository=indexed_repository,
+        status=McpWorkItemRepoTask.Status.COMPLETED,
+        branch_name="feat/login",
+        commit_sha="abc123",
+        mr_url="https://example.com/mr/1",
+        error="",
+    )
+    markdown = _execution_results_markdown([task])
+
+    assert markdown.startswith("## 执行结果\n")
+    assert "| 仓库 | 状态 | 分支 | Commit | PR/MR | 错误 |" in markdown
+    assert "|---|---|---|---|---|---|" in markdown
+    assert "`feat/login`" in markdown
+    assert "`abc123`" in markdown
+    assert markdown.endswith("|\n")
