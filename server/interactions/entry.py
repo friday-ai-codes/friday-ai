@@ -108,7 +108,9 @@ async def begin_interaction_run(request: Request, *, source: str) -> Interaction
     # （RetrievalTrace 经 run 外键天然可达，不重复写）。观测面复用：容器转调走
     # /api/mcp/tools/* 已进 McpToolView._record（RequestMetric source=mcp，
     # labels 含 call_source/run_id），QPS/错误率/时长零新建。
-    task_session_id = request.META.get("HTTP_X_FRIDAY_SESSION_ID", "")
+    # 长度钳制（103 审查 IN-05）：合法值恒 ≤64（SubAgentSession.session_id
+    # max_length=64）；客户端可控 header 截断兜底，防 KB 级串污染留痕。
+    task_session_id = request.META.get("HTTP_X_FRIDAY_SESSION_ID", "")[:64]
     if task_session_id:
         raw_request["task_session_id"] = task_session_id
 

@@ -253,6 +253,45 @@ def test_session_id_header_recorded_in_run_raw_request(
     assert InteractionRun.objects.filter(raw_request__task_session_id="task-session-42").exists()
 
 
+def test_oversize_session_id_header_clamped_to_64(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """超长 X-Friday-Session-Id 截断到 64 字符入库（103 审查 IN-05：合法值恒 ≤64，
+    恶意/异常调用方不得塞 KB 级串污染留痕）。"""
+    client, _ = mcp_client
+    monkeypatch.setattr(
+        "mcp_tools.views.ensure_mirror_commit",
+        AsyncMock(return_value=_snapshot()),
+    )
+    monkeypatch.setattr(
+        "mcp_tools.views.grep_mirror",
+        AsyncMock(
+            return_value={
+                "engine": "git-grep",
+                "matches": [],
+                "total_matches": 0,
+                "files_with_matches": 0,
+                "file_counts": [],
+                "truncated": False,
+            }
+        ),
+    )
+
+    oversize = "s" * 500
+    response = client.post(
+        "/api/mcp/tools/grep_repository/",
+        {"repository_id": str(indexed_repository.id), "pattern": "x"},
+        format="json",
+        HTTP_X_FRIDAY_SESSION_ID=oversize,
+    )
+
+    assert response.status_code == 200
+    run = InteractionRun.objects.get(run_id=response.json()["run_id"])
+    assert run.raw_request["task_session_id"] == "s" * 64
+
+
 def test_no_session_id_header_leaves_raw_request_unchanged(
     mcp_client: tuple[APIClient, str],
     indexed_repository: Any,
