@@ -292,6 +292,8 @@ export const aiCodingConfigSchema = z.object({
   timeout_seconds: z.number().int().min(60, '不能小于 60').max(7200, '不能大于 7200').default(1800),
   chat_id: z.string().default(''),
   polling_interval: z.number().int().min(5, '不能小于 5').max(60, '不能大于 60').default(15),
+  // 与后端 config_schema 模板默认一致：新建节点默认开；存量工作流缺键走后端 fallback 守门
+  write_back: z.boolean().default(true),
 })
 
 /** 全局变量结构 */

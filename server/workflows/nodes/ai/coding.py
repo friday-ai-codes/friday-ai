@@ -149,6 +149,15 @@ class AICodingNode(SubStepMixin, BaseNode):
                 ),
                 "default": "",
             },
+            "write_back": {
+                "type": "boolean",
+                "title": "回写飞书工作项",
+                "description": (
+                    "编码完成（MR 结果已知）后将执行结果回写到绑定的飞书工作项（评论）。"
+                    "需要工作流上游绑定了工作项；未绑定时自动跳过。"
+                ),
+                "default": True,
+            },
             "polling_interval": {
                 "type": "integer",
                 "title": "轮询间隔（秒）",
@@ -803,6 +812,8 @@ class AICodingNode(SubStepMixin, BaseNode):
 
         succeeded: list[dict[str, Any]] = []
         completed_session_ids: list[str] = []
+        # LOOP-03（101-03）：session → repository 映射，供完工闭环按仓取 mr_url。
+        session_repo_map: dict[str, str] = {}
 
         for session_info in pending_sessions:
             session_id = session_info["session_id"]
@@ -826,6 +837,7 @@ class AICodingNode(SubStepMixin, BaseNode):
 
                 if session.status == SubAgentSession.Status.COMPLETED:
                     completed_session_ids.append(session_id)
+                    session_repo_map[session_id] = str(repo_id)
                     # 获取 TaskResult
                     task_result = await TaskResult.objects.filter(
                         session=session,
@@ -900,6 +912,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             plan_title=plan_title,
             plan_data=plan_data,
             log=log,
+            session_repo_map=session_repo_map,
         )
 
     async def _resume_wave(
@@ -1100,6 +1113,8 @@ class AICodingNode(SubStepMixin, BaseNode):
         succeeded: list[dict[str, Any]] = []
         failed_repos: list[dict[str, Any]] = []
         completed_session_ids: list[str] = []
+        # LOOP-03（101-03）：session → repository 映射，供完工闭环按仓取 mr_url。
+        session_repo_map: dict[str, str] = {}
 
         async for task in RepoCodingTask.objects.filter(artifact_version_id=plan_version_id):
             repo_id = str(task.repository_id)
@@ -1113,6 +1128,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                     sess = await SubAgentSession.objects.filter(id=sid).afirst()
                     if sess is not None:
                         completed_session_ids.append(sess.session_id)
+                        session_repo_map[sess.session_id] = repo_id
                         task_result = await TaskResult.objects.filter(session=sess).afirst()
                 if task_result is not None:
                     succeeded.append(
@@ -1175,6 +1191,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             plan_title=plan_title,
             plan_data=plan_data,
             log=log,
+            session_repo_map=session_repo_map,
         )
 
     async def _finalize_and_notify(
@@ -1189,6 +1206,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         plan_title: str,
         plan_data: dict[str, Any] | None,
         log: Any,
+        session_repo_map: dict[str, str] | None = None,
     ) -> NodeResult:
         """收尾段（单 wave / wave 全终态共用，不造两套）：done 仓出 MR + 飞书卡片 + 构建输出。"""
         # 为成功仓库创建 MR
@@ -1278,6 +1296,24 @@ class AICodingNode(SubStepMixin, BaseNode):
                     )
                 )
 
+        # LOOP-02/03（101-03）：完工闭环——MR 结果已知锚点的公共回写 + learning case
+        # 提炼调度。整块 fail-soft（镜像上方 cross-ref 范式）：任何异常仅 warning
+        # 降级，绝不影响 NodeResult / 节点收尾（STATE 约束：锚点不挂容器回调）。
+        try:
+            await self._run_completion_loop(
+                context=context,
+                mr_results=mr_results,
+                failed_repos=failed_repos,
+                completed_session_ids=completed_session_ids,
+                branch_name=branch_name,
+                plan_title=plan_title,
+                plan_data=plan_data,
+                session_repo_map=session_repo_map or {},
+                log=log,
+            )
+        except Exception as exc:  # noqa: BLE001 — 完工闭环 fail-soft
+            log.warning("coding_completion_loop_failed", error=str(exc))
+
         from workflows.models.execution import SubStepStatus
 
         await self.emit_sub_step(context, "create_mr", SubStepStatus.COMPLETED)
@@ -1320,6 +1356,138 @@ class AICodingNode(SubStepMixin, BaseNode):
             output=output,
             next_handle="default",
         )
+
+    async def _run_completion_loop(
+        self,
+        *,
+        context: ExecutionContext,
+        mr_results: list[dict[str, Any]],
+        failed_repos: list[dict[str, Any]],
+        completed_session_ids: list[str],
+        branch_name: str,
+        plan_title: str,
+        plan_data: dict[str, Any] | None,
+        session_repo_map: dict[str, str],
+        log: Any,
+    ) -> None:
+        """完工闭环（LOOP-02/03）：三元组反查 → write_back 守门回写 → 提炼调度。
+
+        write_back 三态守门（P3 锁定，T-101-03-01）：
+        - 键存在且 False → 完全跳过回写（用户显式关）；
+        - 键存在且 True → 有三元组才回写，无三元组记 ``writeback_skipped``（caller）；
+        - **键不存在（存量工作流）→ 有三元组才回写，无三元组静默跳过（debug 级，
+          零行为变化——不产 warning/caller 事件）**。
+
+        提炼调度与回写互不依赖：回写跳过不影响提炼（提炼有自己的 kill switch 与
+        质量门）。经 ``run_in_background`` 后台线程 loop 调度、不 await Future——
+        绝不阻塞节点收尾（T-101-03-03）。
+        """
+        # lazy import 防循环。
+        from delivery.services.coding_completion import (
+            CompletionWritebackService,
+            RepoResult,
+            WorkItemTriple,
+            aresolve_triple_from_plan_version,
+        )
+
+        # 触发用户归因（T-101-03-04）：workflow 链用 triggered_by_id 标量。
+        triggered_by: str | None = None
+        if context.workflow_execution is not None and context.workflow_execution.triggered_by_id:
+            triggered_by = str(context.workflow_execution.triggered_by_id)
+
+        # 三元组反查：主链 plan_version 反查优先于 trigger fallback（T-101-03-02）。
+        triple = await aresolve_triple_from_plan_version(
+            (plan_data or {}).get("plan_version_id")
+        )
+        if triple is None:
+            project_key = context.get_trigger_data("feishu_project_key")
+            raw_item_id = context.get_trigger_data("feishu_work_item_id")
+            item_type = context.get_trigger_data("feishu_work_item_type")
+            if project_key and raw_item_id and item_type:
+                try:
+                    item_id = int(raw_item_id)
+                except (TypeError, ValueError):
+                    item_id = None
+                if item_id is not None:
+                    triple = WorkItemTriple(
+                        feishu_project_key=str(project_key),
+                        work_item_type=str(item_type),
+                        work_item_id=item_id,
+                        title=plan_title,
+                    )
+
+        # 回写守门（三态）。
+        raw_config = context.node_config or {}
+        if "write_back" in raw_config:
+            write_back_enabled = bool(raw_config.get("write_back"))
+            if write_back_enabled and triple is None:
+                log.info(
+                    "writeback_skipped",
+                    reason="no_work_item",
+                    category="caller",
+                    component="workflow",
+                    initiated_by_user_id=triggered_by or "system",
+                )
+            do_write_back = write_back_enabled and triple is not None
+        else:
+            # legacy fallback（存量工作流缺键）：反查不到静默跳过——零行为变化。
+            if triple is None:
+                log.debug("writeback_skipped_legacy_no_binding")
+            do_write_back = triple is not None
+
+        if do_write_back and triple is not None:
+            results = [
+                RepoResult(
+                    repo_name=str(r.get("repository_name") or ""),
+                    status="failed" if r.get("error") else "completed",
+                    branch_name=branch_name,
+                    mr_url=str(r.get("mr_url") or ""),
+                    error=str(r.get("error") or ""),
+                )
+                for r in mr_results
+            ] + [
+                RepoResult(
+                    repo_name=str(r.get("repository_name") or ""),
+                    status="failed",
+                    error=str(r.get("error") or ""),
+                )
+                for r in failed_repos
+            ]
+            await CompletionWritebackService().awrite_back(
+                feishu_project_key=triple.feishu_project_key,
+                work_item_type=triple.work_item_type,
+                work_item_id=triple.work_item_id,
+                title=plan_title or triple.title,
+                results=results,
+                space_id=triple.space_id,
+                initiated_by_user_id=triggered_by,
+            )
+
+        # 提炼调度（LOOP-03 锚点）：不 await Future，不阻塞节点收尾。
+        if completed_session_ids:
+            from mcp_tools.learning_case_extraction import (  # lazy import 防循环
+                aextract_for_session,
+            )
+            from services.background_runner import run_in_background
+
+            mr_url_by_repo = {
+                str(r.get("repository_id") or ""): str(r.get("mr_url") or "")
+                for r in mr_results
+            }
+            for sid in completed_session_ids:
+                pr_url = mr_url_by_repo.get(session_repo_map.get(sid, ""), "")
+                run_in_background(
+                    lambda sid=sid, pr_url=pr_url: aextract_for_session(
+                        sid,
+                        requirement_text=plan_title,
+                        work_item_type=triple.work_item_type if triple else "",
+                        work_item_id=triple.work_item_id if triple else None,
+                        pr_url=pr_url,
+                        initiated_by_user_id=triggered_by,
+                    ),
+                    name=f"learning-case-{sid}",
+                    initiated_by_user_id=triggered_by,
+                )
 
     # ------------------------------------------------------------------
     # 方案解析
