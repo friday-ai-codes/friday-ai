@@ -15,7 +15,6 @@ from typing import Any
 
 from repositories.models import Repository
 
-
 PROMPT_VERSION = "mcp-planning-v1"
 SYSTEM_PROMPT_VERSION = "mcp-planning-system-v1"
 LOCAL_PROVIDER = "friday"

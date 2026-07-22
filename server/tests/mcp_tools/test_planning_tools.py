@@ -173,15 +173,54 @@ def test_create_coding_plan_stores_version_and_evidence(
     assert usage.first().total_tokens == 200
 
 
+def _make_fake_delegate(repo_id: str, repo_name: str, *, status: str = "completed"):
+    """构造 fake delegate（UNIFY-01：improve 收敛统一编排后测试不打真实编排）。
+
+    completed 返回 canonical DONE content；partial 返回空 content（挂起短路契约）。
+    均带 model_usage（WR-03：view 落 ModelUsageRecord 到 MCP run 维度）。
+    """
+
+    async def _fake_delegate(**_kwargs: Any) -> Any:
+        from mcp_tools.orchestration_delegate import DelegateResult
+
+        content = (
+            _canonical_coding_content(repo_id, repo_name) if status == "completed" else {}
+        )
+        return DelegateResult(
+            session=SimpleNamespace(id=uuid.uuid4()),
+            status=status,
+            content=content,
+            plan_version_id=str(uuid.uuid4()) if status == "completed" else None,
+            markdown="**新增 MCP 规划工具**" if status == "completed" else "",
+            model_usage={
+                "provider": "process_runtime",
+                "model": "aggregate",
+                "prompt_tokens": 120,
+                "completion_tokens": 80,
+                "total_tokens": 200,
+                "duration_ms": 42,
+            },
+        )
+
+    return _fake_delegate
+
+
 def test_improve_coding_plan_appends_new_version(
     mcp_client: tuple[APIClient, str],
     indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """UNIFY-01：improve 收敛统一编排后——携带 feedback 的编排重跑产新 version（current_version+1）。"""
     client, _plaintext = mcp_client
+    repo_id = str(indexed_repository.id)
+    monkeypatch.setattr(
+        "mcp_tools.views.delegate_process_runtime",
+        _make_fake_delegate(repo_id, indexed_repository.name),
+    )
     create_response = client.post(
         "/api/mcp/tools/create_coding_plan/",
         {
-            "repository_id": str(indexed_repository.id),
+            "repository_id": repo_id,
             "requirement": "调整 src/main.py 的错误处理",
             "context_chunks": [_chunk()],
         },
@@ -206,10 +245,65 @@ def test_improve_coding_plan_appends_new_version(
     assert plan.current_version == 2
     assert McpCodingPlanVersion.objects.filter(plan=plan).count() == 2
     assert body["version"] == 2
-    assert "回滚步骤" in body["change_summary"]
-    assert body["risk_delta"]["added"]
+    # 响应含编排 session（trace 可见）与终态映射。
+    assert body["session_id"]
+    assert body["status"] == "completed"
+    # change_summary 含 feedback 前缀（编排改版措辞）。
+    assert "请增加回滚步骤" in body["change_summary"]
+    # risk_delta 响应键保留（语义中性化：键存在即可）。
+    assert "added" in body["risk_delta"]
     assert ToolCallRecord.objects.filter(
         run__run_id=body["run_id"],
         tool_name="improve_coding_plan",
     ).exists()
     assert ModelUsageRecord.objects.filter(run__run_id=body["run_id"]).exists()
+
+
+def test_improve_coding_plan_partial_short_circuits_with_session(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """UNIFY-01 partial 短路契约：research/clarify 在途 → 200 + partial + session_id，不挂起不超时。
+
+    partial 仍落新 version（plan_body 回退映射后单仓 payload）——固化「不挂起不超时」契约。
+    """
+    client, _plaintext = mcp_client
+    repo_id = str(indexed_repository.id)
+    monkeypatch.setattr(
+        "mcp_tools.views.delegate_process_runtime",
+        _make_fake_delegate(repo_id, indexed_repository.name),
+    )
+    create_response = client.post(
+        "/api/mcp/tools/create_coding_plan/",
+        {
+            "repository_id": repo_id,
+            "requirement": "调整 src/main.py 的错误处理",
+        },
+        format="json",
+    )
+    assert create_response.status_code == 200
+    plan_id = create_response.json()["plan_id"]
+
+    monkeypatch.setattr(
+        "mcp_tools.views.delegate_process_runtime",
+        _make_fake_delegate(repo_id, indexed_repository.name, status="partial"),
+    )
+    response = client.post(
+        "/api/mcp/tools/improve_coding_plan/",
+        {
+            "plan_id": plan_id,
+            "feedback": "请增加回滚步骤",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "partial"
+    assert body["session_id"]
+    # partial 仍建新 version（version=2），plan_body 回退映射后单仓 payload（空 content 降级）。
+    version = McpCodingPlanVersion.objects.get(id=body["version_id"])
+    assert version.version == 2
+    assert version.plan_body["repository_id"] == repo_id
+    assert body["plan"]["affected_files"] == []

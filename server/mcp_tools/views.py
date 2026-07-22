@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from collections.abc import Iterable
@@ -73,10 +74,7 @@ from .models import (
     McpRepositoryAnalysis,
 )
 from .orchestration_delegate import delegate_process_runtime, map_canonical_to_coding_plan
-from .planning_service import (
-    build_repository_analysis,
-    improve_coding_plan,
-)
+from .planning_service import build_repository_analysis
 from .serializers import (
     AnalyzeRepositoryRequestSerializer,
     CreateCodingPlanRequestSerializer,
@@ -2013,28 +2011,81 @@ class ImproveCodingPlanView(McpToolView):
 
         repo = plan.repository
         branch = plan.branch or (repo.base_branch or repo.default_branch)
-        result = improve_coding_plan(
+        feedback = str(input_data["feedback"])
+
+        # actor 解析（T-104-02，照抄 create 先例）：从 request.user 取发起编排用户透传 delegate
+        # （召回权限 actor）；非真实用户 → None，召回 stage fail-closed 空召回（不绕权限）。
+        user = request.user
+        actor = (
+            user
+            if getattr(user, "is_authenticated", False) and getattr(user, "id", None) is not None
+            else None
+        )
+
+        # UNIFY-01：改版语义 = 携带 feedback 的编排重跑。requirement_text 三段结构（per CONTEXT
+        # 锁定）：原始需求 + 最新版本方案摘要（version 表列，形态稳定）+ 用户 feedback；
+        # context_chunks 若提供则以 JSON 行折入第四段（request 键集不变的兑现方式）。
+        latest_summary = json.dumps(
+            {
+                "title": latest.plan_body.get("title") if isinstance(latest.plan_body, dict) else "",
+                "affected_files": latest.affected_files,
+                "steps": latest.steps,
+            },
+            ensure_ascii=False,
+        )[:2000]
+        sections = [
+            f"## 原始需求\n\n{plan.requirement}",
+            f"## 最新方案摘要（v{latest.version}）\n\n{latest_summary}",
+            f"## 用户改版反馈\n\n{feedback}",
+        ]
+        context_chunks = list(input_data.get("context_chunks") or [])
+        if context_chunks:
+            chunk_lines = "\n".join(
+                json.dumps(chunk, ensure_ascii=False, default=str) for chunk in context_chunks
+            )
+            sections.append(f"## 补充上下文\n\n{chunk_lines}")
+        requirement_text = "\n\n".join(sections)
+
+        # 收敛到统一编排（镜像 create 先例）：include_repos=[repository_id] 单仓约束；
+        # 不加 feedback 专用参数（签名中性，104-02 再扩 extra_evidence）。
+        delegate = await delegate_process_runtime(
+            requirement_text=requirement_text,
+            work_item=None,
+            include_repos=[str(plan.repository_id)],
+            created_by=actor,
+        )
+        content = delegate.content if isinstance(delegate.content, dict) else {}
+        # WR-03：delegate 回传本次编排聚合用量，落 MCP run 维度（归因不回退）。best-effort。
+        if delegate.model_usage:
+            await self._record_model_usage(run, delegate.model_usage)
+        # canonical execution_plan 该仓 task → 旧单仓响应/落库字段映射（显式白名单）。
+        # requirement 传原需求、非 feedback 块——响应外形兼容。
+        plan_payload = map_canonical_to_coding_plan(
+            content=content,
             repository=repo,
             branch=branch,
-            existing_plan=dict(latest.plan_body or {}),
-            feedback=str(input_data["feedback"]),
-            context_chunks=list(input_data.get("context_chunks") or []),
-            max_steps=int(input_data.get("max_steps") or 10),
+            requirement=plan.requirement,
         )
+        evidence = [
+            {"kind": "file", "file_path": path, "reason": "方案影响文件候选"}
+            for path in plan_payload["affected_files"]
+        ]
+
+        # 版本递增语义不变：current_version+1；plan_body 优先 canonical content
+        # （partial/failed 为 {} 时回退映射后单仓 payload，镜像 create 回退语义）。
         next_version = int(plan.current_version) + 1
-        updated_plan = dict(result.payload.get("plan") or {})
         version = await McpCodingPlanVersion.objects.acreate(
             plan=plan,
             run=run,
             version=next_version,
-            plan_body=updated_plan,
-            affected_files=list(updated_plan.get("affected_files") or []),
-            steps=list(updated_plan.get("steps") or []),
-            test_plan=list(updated_plan.get("test_plan") or []),
-            risks=list(updated_plan.get("risks") or []),
-            evidence=result.evidence,
-            change_summary=str(result.payload.get("change_summary") or ""),
-            risk_delta=dict(result.payload.get("risk_delta") or {}),
+            plan_body=content or plan_payload,
+            affected_files=list(plan_payload.get("affected_files") or []),
+            steps=list(plan_payload.get("steps") or []),
+            test_plan=list(plan_payload.get("test_plan") or []),
+            risks=list(plan_payload.get("risks") or []),
+            evidence=evidence,
+            change_summary=f"编排改版 v{next_version}（status={delegate.status}）：{feedback[:200]}",
+            risk_delta={"added": [], "reduced": []},
         )
         plan.current_version = next_version
         await plan.asave(update_fields=["current_version", "updated_at"])
@@ -2054,11 +2105,13 @@ class ImproveCodingPlanView(McpToolView):
             "version": version.version,
             "repository_id": str(repo.id),
             "branch": branch,
-            "plan": updated_plan,
+            "plan": plan_payload,
             "change_summary": version.change_summary,
             "risk_delta": version.risk_delta,
-            "evidence": result.evidence,
+            "evidence": evidence,
             "run_id": str(run.run_id),
+            "session_id": str(delegate.session.id),
+            "status": delegate.status,
         }
         await self._record_agent_decision(
             run,
@@ -2067,15 +2120,14 @@ class ImproveCodingPlanView(McpToolView):
                 "plan_id": str(plan.id),
                 "version_id": str(version.id),
                 "version": version.version,
-                "feedback_preview": str(input_data["feedback"])[:240],
+                "feedback_preview": feedback[:240],
             },
         )
-        await self._record_model_usage(run, result.model_usage)
         tool_call = await self._record(
             run,
             input_data=input_data,
             output_data=output_data,
-            traces=_traces_from_evidence(result.evidence),
+            traces=_traces_from_evidence(evidence),
             started_at=started_at,
         )
         if tool_call is not None:

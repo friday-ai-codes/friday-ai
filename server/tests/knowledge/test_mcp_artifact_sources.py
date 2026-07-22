@@ -574,9 +574,30 @@ class TestTriggers:
         ]
 
     def test_trigger_improve_coding_plan(
-        self, mcp_http_client, indexed_repo, captured_requests
+        self,
+        mcp_http_client,
+        indexed_repo,
+        captured_requests,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        from types import SimpleNamespace
+
+        from mcp_tools.orchestration_delegate import DelegateResult
+
         plan, _version = _make_plan(indexed_repo, _make_run())
+
+        # UNIFY-01：improve 已收敛统一编排——fake delegate 防真实编排（时长爆炸）。
+        async def _fake_delegate(**_kwargs):
+            return DelegateResult(
+                session=SimpleNamespace(id=uuid.uuid4()),
+                status="completed",
+                content={},
+                plan_version_id=None,
+                markdown="",
+                model_usage={},
+            )
+
+        monkeypatch.setattr("mcp_tools.views.delegate_process_runtime", _fake_delegate)
 
         response = mcp_http_client.post(
             "/api/mcp/tools/improve_coding_plan/",
