@@ -212,6 +212,9 @@ class CreateCodingPlanRequestSerializer(serializers.Serializer):
     pause/terminal——``DONE→completed``、``FAILED→failed``、research/clarify 在途
     立即短路返回 ``partial`` + ``session_id``（不阻塞等容器，调用方不挂起不超时）。
     详见 :class:`ImproveCodingPlanRequestSerializer` 的契约描述。
+
+    与 improve 的差异（IN-01，review 104）：``context_chunks`` 当前 accepted-but-ignored
+    （收敛后编排自带召回，不折入 requirement）；improve 侧则折入 feedback 块被消费。
     """
 
     repository_id = serializers.UUIDField(required=True)
