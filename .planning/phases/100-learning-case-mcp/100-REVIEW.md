@@ -136,6 +136,37 @@ from common.logging import redact_secrets_in_text
 
 ---
 
+## Fix Resolution（2026-07-22）
+
+全部 5 项 findings 已处置（4 项完全修复 + 1 项因并发约束部分修复）。测试：`tests/knowledge/ tests/mcp_tools/` 全量 570 passed / 3 failed（失败均为 `test_triggers.py::TestWorkflowTriggers` 存量 rotten failures，与本次修复无关）。
+
+### HI-01 — FIXED（commit `300e5a17`）
+
+- `build_plan_event`（共享构造级别）与同文件 work_item 锚事件 `event_time` 由 `plan.created_at` 改为 `plan.updated_at`（auto_now，improve 路径 `asave(update_fields=[..., "updated_at"])` 推进）；锚 content 拼法未动，`mcp_execution_trace` 锚复用同一构造，字节一致性回归测试（`test_execution_trace_dual_events_anchor_content_byte_equal`）保持通过。
+- 顺带修复 review 点名的同类边角：`mcp_execution_trace.py` code_change 事件 `event_time` 由 `completed_at or created_at` 改为 `trace.updated_at`（error 补写后 backfill 重摄同样需要 event_time 推进）；`make_aware` 兜底随之移除（auto_now 恒为 aware）。
+- 新增回归测试 `TestIdempotentReingest::test_plan_reingest_after_improve_flips_version`：improve 后重摄版本 1→2 翻转、v2 supersedes v1、无 `knowledge_ingest_concurrent_conflict` 伪装。
+
+### HI-02 — FIXED（commit `072847b7`）
+
+- `backfill_learning_cases` 绕过 `aschedule_ingestion` 后台投递，命令内同步逐条 `await ingest(...)`；单条失败 warning（异常文本经 `redact_secrets_in_text` 脱敏）+ 按类 failed 计数不中断；输出措辞由「已调度」改为「已摄取 N 条、失败 M 条」，completed 事件上报 `ingested/failed` 双计数。
+- 测试重写：mock 对象由 `aschedule_ingestion` 换成 `ingest`（断言 handle() 返回前逐条 await 完成）；新增端到端用例（mock 向量栈真跑摄取，命令返回时 `KnowledgeEntity` 已落库）与失败计数用例（毒丸条目不中断其余摄取）。
+
+### ME-01 — FIXED（commit `d479b590`）
+
+- `_build_content` 中 `trace.error` 先经 `redact_secrets_in_text` 脱敏再截断 500 字符入 content；新增守护测试断言 Bearer token 不出现在事件任何字段、`***REDACTED***` 在场。存量实体下次重摄翻一次版本属预期（一次性）。
+
+### LO-01 — FIXED（commit `f814ccea`）
+
+- 三个 MCP normalizer 的 5 处 warning 事件（`knowledge_normalize_source_missing` ×3、`knowledge_normalize_plan_version_missing`、`knowledge_normalize_anchor_plan_missing`）补齐 `component="knowledge", category="sampling"`，与 `learning_case.py` 归类口径一致。
+
+### LO-02 — PARTIALLY FIXED（commit `e8df0951`）
+
+- `views.py` 4 处写入点（AnalyzeRepository / CreateCodingPlan / ImproveCodingPlan / ExecuteCodingPlan）投递均携带 `initiated_by_user_id=str(request.user.id)`，并补注释说明「无触发用户的调用点缺省 system」兜底语义。
+- **跳过**：`work_item_execution_service.py` 2 处（L274-279 / L335-342）——该文件正被 Phase 101-03 并发修改（本次执行的硬约束：不得触碰），待 Phase 101 合流后按同款模式补传（编排发起者透传）。
+
+---
+
 _Reviewed: 2026-07-22T04:25:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Fixed: 2026-07-22 — Claude (gsd-code-fixer), commits 300e5a17 / 072847b7 / d479b590 / f814ccea / e8df0951_
