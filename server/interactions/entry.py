@@ -102,6 +102,16 @@ async def begin_interaction_run(request: Request, *, source: str) -> Interaction
     if data:
         raw_request["data"] = data
 
+    # 容器任务关联键（103-02 AGENT-02）：容器知识 MCP 转调携带 X-Friday-Session-Id
+    # （dispatch 链 task_id 即 subagent session_id），非空时入 raw_request，
+    # run/task 即可按 InteractionRun.raw_request__task_session_id 关联查询
+    # （RetrievalTrace 经 run 外键天然可达，不重复写）。观测面复用：容器转调走
+    # /api/mcp/tools/* 已进 McpToolView._record（RequestMetric source=mcp，
+    # labels 含 call_source/run_id），QPS/错误率/时长零新建。
+    task_session_id = request.META.get("HTTP_X_FRIDAY_SESSION_ID", "")
+    if task_session_id:
+        raw_request["task_session_id"] = task_session_id
+
     run = await acreate_interaction_run(
         token_fingerprint=token_fingerprint,
         source=source,
