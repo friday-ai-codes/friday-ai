@@ -206,6 +206,14 @@ class AnalyzeRepositoryRequestSerializer(serializers.Serializer):
 
 
 class CreateCodingPlanRequestSerializer(serializers.Serializer):
+    """create_coding_plan 请求契约（UNIFY-01 对照）。
+
+    同步语义与 improve_coding_plan 完全同型：HTTP 请求内同步 await 统一编排至
+    pause/terminal——``DONE→completed``、``FAILED→failed``、research/clarify 在途
+    立即短路返回 ``partial`` + ``session_id``（不阻塞等容器，调用方不挂起不超时）。
+    详见 :class:`ImproveCodingPlanRequestSerializer` 的契约描述。
+    """
+
     repository_id = serializers.UUIDField(required=True)
     branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
     requirement = serializers.CharField(required=True, allow_blank=False, max_length=8000)
@@ -221,6 +229,22 @@ class CreateCodingPlanRequestSerializer(serializers.Serializer):
 
 
 class ImproveCodingPlanRequestSerializer(serializers.Serializer):
+    """improve_coding_plan 请求契约（UNIFY-01 定版，与 create_coding_plan 同型）。
+
+    改版语义：携带 feedback 的**统一编排重跑**产新 ``McpCodingPlanVersion``
+    （``version = current_version + 1``，递增语义不变），非旧确定性"往 steps 追加一行"。
+
+    同步语义：HTTP 请求内同步 await 编排至 pause/terminal——
+    - ``DONE`` → 响应 ``status="completed"``；
+    - ``FAILED`` → ``status="failed"``；
+    - research/clarify 在途（容器执行中）→ **立即短路**返回 ``status="partial"`` +
+      ``session_id``（不阻塞等容器，Cursor 侧调用不挂起不超时）；partial 后可经
+      ``get_coding_execution`` / 后续调用凭 ``session_id`` 跟进。
+
+    request 键集不变（accepted-but-advisory）：``context_chunks`` 若提供则折入
+    feedback 块作为补充上下文；``max_steps`` 收敛到编排后不再截断步骤，仅保留兼容。
+    """
+
     plan_id = serializers.UUIDField(required=True)
     feedback = serializers.CharField(required=True, allow_blank=False, max_length=8000)
     context_chunks = serializers.ListField(
@@ -644,11 +668,11 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     },
     "create_coding_plan": {
         "request": ["repository_id", "branch", "requirement", "analysis_id", "context_chunks", "max_steps"],
-        "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "evidence", "run_id"],
+        "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "evidence", "run_id", "session_id", "status"],
     },
     "improve_coding_plan": {
         "request": ["plan_id", "feedback", "context_chunks", "max_steps"],
-        "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "change_summary", "risk_delta", "evidence", "run_id"],
+        "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "change_summary", "risk_delta", "evidence", "run_id", "session_id", "status"],
     },
     "execute_coding_plan": {
         "request": ["plan_id", "version_id", "branch_name", "target_branch", "retry_of_execution_id", "timeout_seconds"],
