@@ -1396,9 +1396,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             triggered_by = str(context.workflow_execution.triggered_by_id)
 
         # 三元组反查：主链 plan_version 反查优先于 trigger fallback（T-101-03-02）。
-        triple = await aresolve_triple_from_plan_version(
-            (plan_data or {}).get("plan_version_id")
-        )
+        triple = await aresolve_triple_from_plan_version((plan_data or {}).get("plan_version_id"))
         if triple is None:
             project_key = context.get_trigger_data("feishu_project_key")
             raw_item_id = context.get_trigger_data("feishu_work_item_id")
@@ -1471,8 +1469,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             from services.background_runner import run_in_background
 
             mr_url_by_repo = {
-                str(r.get("repository_id") or ""): str(r.get("mr_url") or "")
-                for r in mr_results
+                str(r.get("repository_id") or ""): str(r.get("mr_url") or "") for r in mr_results
             }
             for sid in completed_session_ids:
                 pr_url = mr_url_by_repo.get(session_repo_map.get(sid, ""), "")

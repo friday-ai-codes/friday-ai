@@ -686,9 +686,7 @@ def test_execute_tasks_schedules_learning_case_extraction(
     client, _plaintext = mcp_client
     repo_b = _second_repo(project)
     plan = _technical_plan(project, [indexed_repository, repo_b])
-    _patch_execution_io(
-        monkeypatch, _completed_dispatch_with_session(repo_failed_id=repo_b.id)
-    )
+    _patch_execution_io(monkeypatch, _completed_dispatch_with_session(repo_failed_id=repo_b.id))
 
     scheduled: list[dict[str, Any]] = []
 
