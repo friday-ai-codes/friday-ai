@@ -26,7 +26,7 @@
 ### AGENT 编码容器内置 MCP/Skills + 上下文对齐
 
 - [ ] **AGENT-01**: 派发编码任务时为发起用户铸造任务级短 TTL token——明文仅在 dispatch 内存生成后直进容器 env，DB 只存 sha256，`expires_at`=任务 timeout+余量，任务终态回调吊销；三条派发链路（workflow/chat/MCP）统一覆盖（显式推翻 PATX-04 搁置，PAT-02 不违反：明文不落盘、不从 DB 反取）
-- [ ] **AGENT-02**: 容器内编码代理可主动查 Friday 知识——`task/core/knowledge_tools.py` 进程内 SDK MCP server（HTTP POST `/api/mcp/tools/<name>/` + Bearer PAT），白名单读工具（search_rag_chunks/grep_repository/get_repository_file/search_delivery_knowledge/search_learning_cases/search_project_context/lookup_project_by_branch）；env 三要素任一为空整体降级不挂（零回归）；handler return-not-raise + 60s 超时 + 脱敏；服务端排除文件 fail-closed 天然继承；新请求入口纳入 QPS/错误率观测
+- [x] **AGENT-02**: 容器内编码代理可主动查 Friday 知识——`task/core/knowledge_tools.py` 进程内 SDK MCP server（HTTP POST `/api/mcp/tools/<name>/` + Bearer PAT），白名单读工具（search_rag_chunks/grep_repository/get_repository_file/search_delivery_knowledge/search_learning_cases/search_project_context/lookup_project_by_branch）；env 三要素任一为空整体降级不挂（零回归）；handler return-not-raise + 60s 超时 + 脱敏；服务端排除文件 fail-closed 天然继承；新请求入口纳入 QPS/错误率观测
 - [ ] **AGENT-03**: 容器内代理可见 Friday skills——task 镜像构建期从 `skills/skills/{friday-code,friday-memory}` 同源 COPY，运行时注入 `<workspace>/.claude/skills/`（同名不覆盖仓库自带）；hash 一致性测试防双源漂移
 - [ ] **AGENT-04**: 工作流派发的编码容器带项目上下文——`AICodingNode` dispatch 前 prepend `pack_project_context`（项目定位：ProjectBranch 反查 + work_item 关联 fallback；`_dispatch_wave` 层按 (project,branch) 解析一次逐仓复用；共享 `_prepend_project_context` helper 上提避免 workflow import chat）
 
@@ -73,7 +73,7 @@
 | LOOP-04 | Phase 101 | Complete |
 | LOOP-05 | Phase 101 | Complete |
 | AGENT-01 | Phase 103 | Pending |
-| AGENT-02 | Phase 103 | Pending |
+| AGENT-02 | Phase 103 | Complete |
 | AGENT-03 | Phase 103 | Pending |
 | AGENT-04 | Phase 103 | Pending |
 | UNIFY-01 | Phase 104 | Pending |
