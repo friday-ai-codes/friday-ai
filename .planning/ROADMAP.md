@@ -95,7 +95,12 @@ Plans:
   4. `TOOL_SCHEMA_SNAPSHOT` 覆盖全部注册工具（补 `report_project_state`），快照测试全绿且含"注册工具 == snapshot 键集合"防漏断言；`@friday-ai-codes/skills` 文档与新行为对齐（learning case 向量检索语义、`reverse_lookup_requirements` 收录进 friday-code 技能路由）。
 
 **Pitfalls**: P5 skills 双源漂移之文档面（skill 引用工具名 ∈ snapshot 的 grep 测试）；P8 观测欠债（召回埋点内嵌验收）；Performance Trap 编排召回 token 预算膨胀（每 kind 限额）。
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 102-01-PLAN.md — KNOW-04：编排召回扩 5 kinds（settings 可配置 + 每 kind 限额 + RetrievalTrace 埋点 + 测试更新）（Wave 1）
+- [ ] 102-02-PLAN.md — KNOW-05/06：Chat 三个知识读工具（薄封装 + 白名单 + chat 链 trace）+ ProjectStateApi 物化断链修复（upsert 钩子 + STATE normalizer live 内容 + 验收链测试）（Wave 1）
+- [ ] 102-03-PLAN.md — UNIFY-04：snapshot 补 report_project_state + 注册==snapshot 守卫 + skills 工具名 ⊆ snapshot grep 守卫 + friday-memory/friday-code 文档对齐（Wave 1）
 
 ### Phase 103: 编码容器集成（短 TTL token + 容器知识 MCP + skills 注入 + 上下文对齐）
 
