@@ -116,7 +116,13 @@ Plans:
   5. 工作流路径派发的编码容器 prompt 含 `pack_project_context` 输出（与 Chat 路径一致，`_dispatch_wave` 层按 (project, branch) 解析一次逐仓复用）；容器 MCP 转调入口纳入 QPS/错误率/时长观测。
 
 **Pitfalls**: P4 容器 MCP 四险（白名单/配额/PAT 内存化/allowed_tools 合并测试/观测埋点全套同 phase）；P5 skills 双源漂移（hash 一致性 CI 测试）；P8 观测欠债（QPS 独立统计与功能同 phase 上线）。
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 103-01-PLAN.md — AGENT-01 任务级短 TTL token：kind/session_id 迁移 + mint/revoke service + 三链接线（替换 user_pat_plaintext 死通道）+ 终态吊销 + 泄漏防线（Wave 1）
+- [ ] 103-02-PLAN.md — AGENT-02 容器知识 MCP：knowledge_tools.py 7 工具白名单 + 配额 + allowed_tools 收口 + X-Friday-Session-Id 关联 + 第七面排除回归（Wave 1）
+- [ ] 103-03-PLAN.md — AGENT-03 skills 同源注入：sync 脚本 + assets 入库 + Dockerfile COPY + 运行时同名不覆盖注入 + hash 一致性测试（Wave 1）
+- [ ] 103-04-PLAN.md — AGENT-04 工作流上下文对齐：helper 上提 packer + _dispatch_wave 按 project 解析一次逐仓复用 + prompt/env 注入（Wave 2，依赖 103-01）
 
 ### Phase 104: 工具面收口（improve/analyze 收敛 + 确定性缝退役 + 端到端验收）
 
