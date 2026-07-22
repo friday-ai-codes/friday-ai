@@ -688,7 +688,10 @@ async def _build_tool_specs(
             # 透传，unpack 到工具函数时直接抛 TypeError 让整轮失败。
             # 静默 drop 这些字段比硬抛 TypeError 友好：保留 LLM 真实想做的事
             # （调这个工具），下一轮 LLM 看到 ToolMessage 会自己修正参数。
-            allowed = set(_props.keys())
+            # 102-REVIEW HI-01：注入字段（space_id / conversation_id）从 allowed
+            # 集剔除——模型产出的同名字段按未知字段 drop 并留 warning，防
+            # confused-deputy（prompt injection 诱导模型带他人会话 UUID 越权）。
+            allowed = set(_props.keys()) - set(_injected)
             unknown = set(arguments.keys()) - allowed
             if unknown:
                 logger.warning(
@@ -699,7 +702,9 @@ async def _build_tool_specs(
                 )
                 arguments = {k: v for k, v in arguments.items() if k in allowed}
 
-            merged = {**_injected, **arguments}
+            # 102-REVIEW HI-01：服务端注入值终局生效（后展开），语义与
+            # langchain_adapter 宣称的「不存在 kwargs 覆盖 injected」对齐。
+            merged = {**arguments, **_injected}
             # Pitfall #12：LLM 未提供 branch 时用 default，非无条件覆盖
             if "branch" in _props and _dsb:
                 cur = merged.get("branch")

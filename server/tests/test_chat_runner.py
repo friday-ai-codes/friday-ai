@@ -679,6 +679,67 @@ async def test_tool_specs_passes_through_known_args_unchanged() -> None:
         _tool_registry.pop("fake_passthrough_test", None)
 
 
+@pytest.mark.asyncio
+async def test_tool_specs_injected_values_cannot_be_overridden_by_llm() -> None:
+    """102-REVIEW HI-01 回归：模型 tool_call 带不同 conversation_id 也必须以服务端注入值执行。
+
+    confused-deputy 现场：攻击者 A 在自己会话里诱导模型（prompt injection）以
+    受害者 B 的会话 UUID 调用知识读工具（search_project_context / read_project_doc /
+    search_learning_cases 以及既有 project_read 系工具共享此闭包路径）。
+    修复后：服务端注入的 conversation_id / space_id 终局生效，模型产出的同名
+    字段按未知字段 drop。
+    """
+    from agents.tools.base import ToolCategory, ToolDefinition, _tool_registry
+    from agents.tools.base import ToolResult as _TR
+
+    received_kwargs: dict[str, object] = {}
+
+    async def _fake_tool_func(**kwargs: object) -> _TR:
+        received_kwargs.update(kwargs)
+        return _TR(success=True, output={"ok": True})
+
+    fake_def = ToolDefinition(
+        name="fake_injected_override_test",
+        description="test",
+        category=ToolCategory.GENERAL,
+        parameters={
+            "type": "object",
+            "properties": {
+                "space_id": {"type": "string"},
+                "conversation_id": {"type": "string"},
+                "query": {"type": "string"},
+            },
+            "required": ["query"],
+        },
+        func=_fake_tool_func,
+    )
+
+    _tool_registry["fake_injected_override_test"] = fake_def
+    try:
+        with patch(
+            "agents.chat_runner._get_tool_names",
+            return_value=["fake_injected_override_test"],
+        ):
+            specs = await _build_tool_specs(
+                space_id="server-space",
+                conversation_id="server-conv-uuid",
+            )
+
+        # 模型被诱导带上受害者会话 UUID + 异 space_id —— 必须全部被注入值压住
+        result = await specs["fake_injected_override_test"].execute({
+            "query": "找项目上下文",
+            "conversation_id": "victim-conv-uuid",
+            "space_id": "victim-space",
+        })
+
+        assert result.success is True
+        assert received_kwargs["conversation_id"] == "server-conv-uuid"
+        assert received_kwargs["space_id"] == "server-space"
+        assert received_kwargs["query"] == "找项目上下文"
+    finally:
+        _tool_registry.pop("fake_injected_override_test", None)
+
+
 # ---------------------------------------------------------------------------
 # 历史回灌测试：覆盖 _load_history_messages 还原逻辑 + stream() 注入
 #
