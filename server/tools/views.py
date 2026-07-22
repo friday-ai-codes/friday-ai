@@ -57,8 +57,8 @@ class RemoteToolExecuteView(APIView):
         tool_name = serializer.validated_data["name"]
         arguments = serializer.validated_data.get("arguments") or {}
         started_at = time.perf_counter()
-        # 不改 execute_tool 签名、不传 user（Phase 11 gap，per RESEARCH Open Q1）。
-        result = await execute_tool(tool_name, arguments)
+        # run 透传（101-04）：skill 分支写步级 ToolCallRecord；其余顶层审计逻辑不动。
+        result = await execute_tool(tool_name, arguments, run=run)
         # 收尾审计（mirror McpToolView）：记录 tool-call 明细并把 run 推进到终态，
         # 否则 begin_interaction_run 建的 RUNNING run 永不闭合，留下悬挂记录、且
         # X-Friday-Run-ID 复用查询会命中陈旧 run。input/output 经 ledger 写库前
