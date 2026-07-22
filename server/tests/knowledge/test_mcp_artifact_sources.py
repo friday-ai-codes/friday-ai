@@ -414,7 +414,8 @@ class TestNormalizers:
         assert payload["mr_url"] == "https://gitlab.com/test/mcp-artifact/-/merge_requests/7"
         assert payload["file_change_count"] == 1
         assert code_change.repository_id == str(plan.repository_id)
-        assert code_change.event_time == trace.completed_at or code_change.event_time is not None
+        # updated_at 而非 completed_at：内容再变（error 补写重摄）翻版需要 event_time 推进（HI-01）
+        assert code_change.event_time == trace.updated_at
         # T-100-06：diff 原文（last_diff）/runner_logs 哨兵串零泄漏
         for event in trace_events:
             assert _DIFF_SENTINEL not in _event_dump(event)
@@ -841,3 +842,67 @@ class TestIdempotentReingest:
             assert entity.current_version == 1
         skipped = [e for e in cap if e.get("event") == "knowledge_ingest_skipped"]
         assert len(skipped) >= 5  # 第二轮 5 事件（1+2+2）全短路
+
+    async def test_plan_reingest_after_improve_flips_version(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        mock_embedding,
+        mock_qdrant_client,
+    ) -> None:
+        """improve 后重摄：content 变更走版本翻转 1→2，v2 supersedes v1，无 IntegrityError。
+
+        HI-01 回归防线：event_time 曾固定 plan.created_at（永不推进），翻版时
+        invalid_at == 旧版 valid_at 违反 kversion_valid_range CHECK，被吞成
+        knowledge_ingest_concurrent_conflict——improve 后的方案内容永远进不了知识库。
+        """
+        from knowledge.ingestion import ingest
+        from knowledge.models import KnowledgeEntity, KnowledgeEntityVersion
+
+        _patch_vector_stack(monkeypatch)
+
+        plan, _version = await sync_to_async(_make_plan)()
+        request = IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_coding_plan_created")
+        assert await ingest(request) == 1
+
+        plan_entity_id = generate_entity_id("tech_plan", "mcp_coding_plan", str(plan.id))
+        entity = await KnowledgeEntity.objects.aget(id=plan_entity_id)
+        assert entity.current_version == 1
+
+        # 模拟 ImproveCodingPlanView：新建 v2 版本行 + plan.save 推进 auto_now updated_at
+        def _improve():
+            from mcp_tools.models import McpCodingPlanVersion
+
+            McpCodingPlanVersion.objects.create(
+                plan=plan,
+                run=plan.run,
+                version=2,
+                plan_body={"title": plan.title},
+                affected_files=["src/auth.py", "src/session.py"],
+                steps=["排查超时根因", "新增会话续期兜底"],
+                test_plan=["pytest tests/auth"],
+                risks=["登录回归风险"],
+                evidence=[],
+                change_summary="增加会话续期兜底",
+                risk_delta={"added": [], "reduced": []},
+            )
+            plan.current_version = 2
+            plan.save(update_fields=["current_version", "updated_at"])
+
+        await sync_to_async(_improve)()
+
+        with capture_logs() as cap:
+            assert await ingest(request) == 1
+
+        # 不再被吞成并发冲突（IntegrityError 伪装）
+        conflicts = [e for e in cap if e.get("event") == "knowledge_ingest_concurrent_conflict"]
+        assert conflicts == []
+
+        entity = await KnowledgeEntity.objects.aget(id=plan_entity_id)
+        assert entity.current_version == 2
+        v1 = await KnowledgeEntityVersion.objects.aget(entity_id=plan_entity_id, version=1)
+        v2 = await KnowledgeEntityVersion.objects.aget(entity_id=plan_entity_id, version=2)
+        assert v2.is_latest is True
+        assert v2.supersedes_id == v1.id
+        assert "新增会话续期兜底" in v2.content
+        assert v1.is_latest is False
+        assert v1.invalid_at is not None
