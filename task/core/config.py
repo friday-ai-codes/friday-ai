@@ -96,6 +96,20 @@ class TaskConfig(BaseSettings):
         description="RemoteTool schema 列表（FRIDAY_TASK_REMOTE_TOOLS JSON）",
     )
 
+    # Phase 103 容器知识 MCP（AGENT-02，FRIDAY_TASK_ 前缀经 env_prefix 自动映射）。
+    # 两字段默认空/默认值 → 不设置 env 时行为与现状完全一致（三要素守门，不挂 MCP server）。
+    knowledge_endpoint: str = Field(
+        default="",
+        description=(
+            "Friday Server 基址（不带路径），knowledge MCP 拼 /api/mcp/tools/<name>/；"
+            "空 → 不挂（FRIDAY_TASK_KNOWLEDGE_ENDPOINT）"
+        ),
+    )
+    knowledge_quota: int = Field(
+        default=200,
+        description="per-task 知识工具调用配额（FRIDAY_TASK_KNOWLEDGE_QUOTA）",
+    )
+
     # Phase 22-04 排除规则下传（EXCL-02 容器读取面）。server 两条派发路径经
     # FRIDAY_TASK_EXCLUDE_PATTERNS（JSON 规则列表 [{pattern, rule_type}]）注入；
     # 容器 clone+checkout 后 prune 据此物理删除被排除文件，使 agent 不可见。
