@@ -558,6 +558,104 @@ async def await_pr_confirm_node(state: CodingSessionState) -> dict[str, Any]:
     }
 
 
+async def _run_completion_loop(
+    coding_session: CodingSession,
+    *,
+    pr_url: str,
+    write_back: bool,
+) -> None:
+    """chat 链完工闭环（LOOP-02/03 / 101-03）：公共回写 + learning case 提炼调度。
+
+    调用方须整块 try/except 包裹（best-effort fail-soft，绝不影响节点返回值）。
+
+    - 回写（仅 ``write_back=True``，即 PR 创建成功分支；skip-PR 不回写——CONTEXT 锁定）：
+      经 ``aresolve_triple_for_coding_session`` 反查三元组，反查不到自然跳过
+      （debug 级日志，不加会话级开关——避免新配置面）。
+    - 提炼：编码成功完成即调度（skip-PR 分支也触发——LOOP-03 "任一链路编码成功完成"
+      语义；MR 已知 = 无，pr_url 传 ""）。经 ``run_in_background`` 后台调度、
+      不 await Future，绝不阻塞 graph 节点收尾。
+    - 归因（T-101-03-04）：chat 链发起用户 = conversation.created_by（标量取）。
+    """
+    # lazy import 防循环。
+    from chat.models import Conversation
+    from delivery.services.coding_completion import (
+        CompletionWritebackService,
+        RepoResult,
+        aresolve_triple_for_coding_session,
+    )
+    from mcp_tools.learning_case_extraction import aextract_for_session
+    from services.background_runner import run_in_background
+
+    # 发起用户标量取；取不到 fail-soft 为 None（公共层记 "system"）。
+    initiated_by: str | None = None
+    try:
+        created_by_id = (
+            await Conversation.objects.filter(id=coding_session.conversation_id)
+            .values_list("created_by_id", flat=True)
+            .afirst()
+        )
+        initiated_by = str(created_by_id) if created_by_id else None
+    except Exception:  # noqa: BLE001, S110 — 归因取不到不阻断闭环
+        initiated_by = None
+
+    triple = await aresolve_triple_for_coding_session(coding_session)
+
+    if write_back:
+        if triple is None:
+            logger.debug(
+                "chat_writeback_skipped_no_work_item",
+                coding_session_id=str(coding_session.id),
+            )
+        else:
+            title = ""
+            try:
+                if coding_session.coding_plan is not None:
+                    title = coding_session.coding_plan.title or ""
+            except Exception:  # noqa: BLE001, S110 — 标题增强 fail-soft
+                title = ""
+            repo = coding_session.repository
+            await CompletionWritebackService().awrite_back(
+                feishu_project_key=triple.feishu_project_key,
+                work_item_type=triple.work_item_type,
+                work_item_id=triple.work_item_id,
+                title=title or "编码任务",
+                results=[
+                    RepoResult(
+                        repo_name=repo.name,
+                        status="completed",
+                        branch_name=coding_session.branch_name,
+                        mr_url=pr_url,
+                    )
+                ],
+                space_id=triple.space_id,
+                initiated_by_user_id=initiated_by,
+            )
+
+    # 提炼调度（回写与否互不依赖：提炼有自己的 kill switch 与质量门）。
+    if coding_session.subagent_session_id:
+        session_id = str(coding_session.subagent_session.session_id)
+        requirement_text = ""
+        try:
+            if coding_session.coding_plan is not None:
+                requirement_text = coding_session.coding_plan.title or ""
+            if not requirement_text:
+                requirement_text = (coding_session.tech_plan or "")[:500]
+        except Exception:  # noqa: BLE001, S110 — 需求文本增强 fail-soft
+            requirement_text = ""
+        run_in_background(
+            lambda: aextract_for_session(
+                session_id,
+                requirement_text=requirement_text,
+                work_item_type=triple.work_item_type if triple else "",
+                work_item_id=triple.work_item_id if triple else None,
+                pr_url=pr_url,
+                initiated_by_user_id=initiated_by,
+            ),
+            name=f"learning-case-{session_id}",
+            initiated_by_user_id=initiated_by,
+        )
+
+
 async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
     """Phase 步骤 3: 根据用户选择创建 PR 或跳过。
 
@@ -593,6 +691,17 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
             )
 
         await store_coding_complete_to_message(coding_session, branch_url=branch_url)
+
+        # LOOP-03（101-03）：skip-PR 分支不回写（CONTEXT 锁定），但提炼照常触发——
+        # 编码已成功完成，MR 结果已知（= 无）。整块 fail-soft，绝不影响返回值。
+        try:
+            await _run_completion_loop(coding_session, pr_url="", write_back=False)
+        except Exception as exc:  # noqa: BLE001 — 完工闭环 fail-soft
+            logger.warning(
+                "coding_graph_completion_loop_failed",
+                coding_session_id=state["coding_session_id"],
+                error=str(exc),
+            )
 
         logger.info(
             "coding_graph_pr_skipped",
@@ -639,6 +748,19 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
             )
 
         await store_coding_complete_to_message(coding_session)
+
+        # LOOP-02/03（101-03）：PR 创建成功（MR 已知）锚点——公共回写（能反查到
+        # work_item 三元组才回写，反查不到自然跳过）+ 提炼调度。整块 fail-soft。
+        try:
+            await _run_completion_loop(
+                coding_session, pr_url=result.mr_url, write_back=True
+            )
+        except Exception as exc:  # noqa: BLE001 — 完工闭环 fail-soft
+            logger.warning(
+                "coding_graph_completion_loop_failed",
+                coding_session_id=state["coding_session_id"],
+                error=str(exc),
+            )
 
         logger.info(
             "coding_graph_pr_created",
