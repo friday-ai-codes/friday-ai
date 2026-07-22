@@ -280,6 +280,31 @@ async def test_quota_exhausted_returns_text_without_http(
 
 
 @pytest.mark.asyncio
+async def test_quota_exhausted_warning_logged_only_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """配额用尽 warning 只打一条（103 审查 IN-04）：agent 用尽后反复调工具不刷屏，
+    后续调用静默返回文案。"""
+    import structlog
+
+    _patch_post(monkeypatch, _FakeResponse(200, {"results": [], "run_id": "r"}))
+    handler = _handler(quota=1)
+
+    await handler({"query": "a"})  # 消耗配额
+    with structlog.testing.capture_logs() as captured:
+        r2 = await handler({"query": "b"})
+        r3 = await handler({"query": "c"})
+        r4 = await handler({"query": "d"})
+
+    exhausted_events = [e for e in captured if e["event"] == "knowledge_tool_quota_exhausted"]
+    assert len(exhausted_events) == 1, "用尽 warning 只打首次一条"
+    assert exhausted_events[0]["quota_used"] == 1
+    for r in (r2, r3, r4):
+        assert r["content"][0]["text"] == QUOTA_EXHAUSTED_TEXT
+        assert not r.get("is_error")
+
+
+@pytest.mark.asyncio
 async def test_quota_counter_shared_across_tools() -> None:
     """server 内 7 工具共享同一闭包计数器：build 后不同工具消耗同一预算。"""
     from mcp import types as mcp_types
