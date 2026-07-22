@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from rest_framework.test import APIClient
@@ -574,6 +576,243 @@ def test_writeback_delegates_to_common_service_and_keeps_partial_flip(
     assert plan.retry_state["failed_stage"] == "execution_writeback"
     assert plan.error_stage == "execution_writeback"
     assert plan.error == "boom"
+
+
+# ---------------------------------------------------------------------------
+# LOOP-03（101-03）：learning case 提炼锚点
+# ---------------------------------------------------------------------------
+
+
+def _completed_dispatch_with_session(repo_failed_id=None):
+    """构造 dispatch fake：目标仓 COMPLETED 且挂 SubAgentSession；repo_failed_id 仓 FAILED。"""
+
+    async def _dispatch_execution(
+        *,
+        trace: McpCodingExecutionTrace,
+        plan,
+        version,
+        branch_name: str,
+        target_branch: str,
+        timeout_seconds: int,
+    ):
+        if repo_failed_id is not None and trace.repository_id == repo_failed_id:
+            trace.status = McpCodingExecutionTrace.Status.FAILED
+            trace.error = "container exploded"
+            await trace.asave(update_fields=["status", "error", "updated_at"])
+            return
+
+        from agents.models import AgentSession
+        from subagent.models import SubAgentSession
+
+        main = await AgentSession.objects.acreate(metadata={"test_learning_case": True})
+        sub = await SubAgentSession.objects.acreate(
+            session_id=f"sub-mcp-{trace.repository_id.hex[:8]}",
+            main_session=main,
+            repo_url="https://example.com/repo.git",
+            task_type="coding",
+            status=SubAgentSession.Status.COMPLETED,
+        )
+        trace.status = McpCodingExecutionTrace.Status.COMPLETED
+        trace.branch_name = branch_name
+        trace.target_branch = target_branch
+        trace.commit_sha = "c" * 40
+        trace.subagent_session = sub
+        await trace.asave(
+            update_fields=[
+                "status",
+                "branch_name",
+                "target_branch",
+                "commit_sha",
+                "subagent_session",
+                "updated_at",
+            ]
+        )
+
+    return _dispatch_execution
+
+
+def _patch_execution_io(monkeypatch: pytest.MonkeyPatch, dispatch) -> None:
+    async def _refresh(trace: McpCodingExecutionTrace) -> McpCodingExecutionTrace:
+        return trace
+
+    async def _summary(
+        *,
+        repository: Repository,
+        source_branch: str,
+        target_branch: str,
+        max_files: int,
+        trace: McpCodingExecutionTrace | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "repository_id": str(repository.id),
+            "source_branch": source_branch,
+            "target_branch": target_branch,
+            "files": [{"path": f"src/{repository.name}.py"}],
+            "mr_draft": {"title": f"{repository.name} MR", "description": "执行结果"},
+        }
+
+    async def _mr(
+        *,
+        repository: Repository,
+        source_branch: str,
+        target_branch: str,
+        title: str,
+        description: str,
+        reviewer_usernames: list[str],
+        remove_source_branch: bool,
+        trace: McpCodingExecutionTrace | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "success": True,
+            "mr_id": "1",
+            "mr_url": "https://example.com/mr/1",
+            "source_branch": source_branch,
+            "target_branch": target_branch,
+        }
+
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.dispatch_execution", dispatch)
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.refresh_execution_trace", _refresh)
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _summary)
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _mr)
+
+
+def test_execute_tasks_schedules_learning_case_extraction(
+    mcp_client: tuple[APIClient, str],
+    project,
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """COMPLETED（含 mr + trace.subagent_session）→ 每仓一次调度且入参正确；FAILED 仓不调度。"""
+    client, _plaintext = mcp_client
+    repo_b = _second_repo(project)
+    plan = _technical_plan(project, [indexed_repository, repo_b])
+    _patch_execution_io(
+        monkeypatch, _completed_dispatch_with_session(repo_failed_id=repo_b.id)
+    )
+
+    scheduled: list[dict[str, Any]] = []
+
+    def _fake_run_in_background(factory, *, name=None, initiated_by_user_id=None):
+        scheduled.append(
+            {"factory": factory, "name": name, "initiated_by_user_id": initiated_by_user_id}
+        )
+        return MagicMock()
+
+    monkeypatch.setattr("services.background_runner.run_in_background", _fake_run_in_background)
+
+    extract_calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def _fake_extract(sid: str, **kwargs: Any) -> None:
+        extract_calls.append((sid, kwargs))
+
+    monkeypatch.setattr("mcp_tools.learning_case_extraction.aextract_for_session", _fake_extract)
+
+    response = client.post(
+        "/api/mcp/tools/execute_work_item_repo_tasks/",
+        {
+            "technical_plan_id": str(plan.id),
+            "create_missing": True,
+            "dispatch": True,
+            "create_merge_requests": True,
+            "write_back": False,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    # 仅 COMPLETED 仓调度（FAILED 仓不调度）。
+    assert len(scheduled) == 1
+    expected_sid = f"sub-mcp-{indexed_repository.id.hex[:8]}"
+    assert scheduled[0]["name"] == f"learning-case-{expected_sid}"
+
+    # 执行 factory 验证提炼入参（session_id / 三元组 / pr_url 透传）。
+    asyncio.run(scheduled[0]["factory"]())
+    assert len(extract_calls) == 1
+    sid, kwargs = extract_calls[0]
+    assert sid == expected_sid
+    assert kwargs["requirement_text"] == plan.title
+    assert kwargs["work_item_type"] == "story"
+    assert kwargs["work_item_id"] == 88
+    assert kwargs["pr_url"] == "https://example.com/mr/1"
+
+
+def test_execute_tasks_extraction_skipped_without_execution_trace(
+    mcp_client: tuple[APIClient, str],
+    project,
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """COMPLETED 但无 execution_trace（存量已完成任务）→ 不调度提炼。"""
+    client, _plaintext = mcp_client
+    plan = _technical_plan(project, [indexed_repository])
+    create_response = client.post(
+        "/api/mcp/tools/create_work_item_repo_tasks/",
+        {"technical_plan_id": str(plan.id)},
+        format="json",
+    )
+    assert create_response.status_code == 200
+    task = McpWorkItemRepoTask.objects.get(id=create_response.json()["tasks"][0]["task_id"])
+    task.status = McpWorkItemRepoTask.Status.COMPLETED
+    task.mr_url = "https://example.com/mr/done"
+    task.result = {"mr": {"success": True}}
+    task.recovery_state = {"retryable": False, "stage": "completed"}
+    task.save(update_fields=["status", "mr_url", "result", "recovery_state"])
+
+    scheduled: list[Any] = []
+    monkeypatch.setattr(
+        "services.background_runner.run_in_background",
+        lambda *args, **kwargs: scheduled.append(args) or MagicMock(),
+    )
+
+    response = client.post(
+        "/api/mcp/tools/execute_work_item_repo_tasks/",
+        {
+            "technical_plan_id": str(plan.id),
+            "create_missing": True,
+            "dispatch": True,
+            "create_merge_requests": True,
+            "write_back": False,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert scheduled == []
+
+
+def test_execute_tasks_extraction_failure_does_not_affect_result(
+    mcp_client: tuple[APIClient, str],
+    project,
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """调度块抛异常（run_in_background raise）→ 不影响 execute 返回值（fail-soft）。"""
+    client, _plaintext = mcp_client
+    plan = _technical_plan(project, [indexed_repository])
+    _patch_execution_io(monkeypatch, _completed_dispatch_with_session())
+
+    def _boom(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("background runner down")
+
+    monkeypatch.setattr("services.background_runner.run_in_background", _boom)
+
+    response = client.post(
+        "/api/mcp/tools/execute_work_item_repo_tasks/",
+        {
+            "technical_plan_id": str(plan.id),
+            "create_missing": True,
+            "dispatch": True,
+            "create_merge_requests": True,
+            "write_back": False,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["summary"]["completed"] == 1
 
 
 def test_execution_results_markdown_delegates_to_common_renderer(

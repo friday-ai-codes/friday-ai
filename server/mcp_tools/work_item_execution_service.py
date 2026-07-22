@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import structlog
+
 from interactions.models import InteractionRun
 from mcp_tools.execution_service import (
     ExecutionDispatchError,
@@ -25,6 +27,8 @@ from mcp_tools.models import (
     McpWorkItemTechnicalPlan,
 )
 from repositories.models import Repository
+
+logger = structlog.get_logger(__name__)
 
 
 class WorkItemExecutionError(Exception):
@@ -577,6 +581,47 @@ async def execute_work_item_repo_tasks(
             # 观测归因（CONTEXT 观测决策）：MCP 链用 run user；InteractionRun 现无
             # user 字段，取不到传 None → 公共层记 "system"。
             initiated_by_user_id=str(run.user_id) if getattr(run, "user_id", None) else None,
+        )
+
+    # LOOP-03（101-03）：learning case 提炼锚点——MR 结果已知之后（_execute_one_task
+    # 内已完成 MR 创建，符合 STATE 约束"不挂容器回调"）。经 run_in_background 后台
+    # 调度、不 await Future；整块 fail-soft，绝不影响执行返回值（T-101-03-03）。
+    try:
+        from mcp_tools.learning_case_extraction import (  # lazy import 防循环
+            aextract_for_session,
+        )
+        from services.background_runner import run_in_background
+
+        initiated_by = str(run.user_id) if getattr(run, "user_id", None) else None
+        for task in executed:
+            if task.status != McpWorkItemRepoTask.Status.COMPLETED or not task.execution_trace_id:
+                continue
+            session_id = (
+                await McpCodingExecutionTrace.objects.filter(id=task.execution_trace_id)
+                .values_list("subagent_session__session_id", flat=True)
+                .afirst()
+            )
+            if not session_id:
+                continue
+            run_in_background(
+                lambda sid=session_id, mr=task.mr_url or "": aextract_for_session(
+                    sid,
+                    requirement_text=technical_plan.title,
+                    work_item_type=technical_plan.work_item_type,
+                    work_item_id=technical_plan.work_item_id,
+                    pr_url=mr,
+                    initiated_by_user_id=initiated_by,
+                ),
+                name=f"learning-case-{session_id}",
+                initiated_by_user_id=initiated_by,
+            )
+    except Exception as exc:  # noqa: BLE001 — 提炼调度 fail-soft
+        logger.warning(
+            "learning_case_schedule_failed",
+            technical_plan_id=str(technical_plan.id),
+            error=str(exc),
+            category="sampling",
+            component="mcp_tools",
         )
 
     status_values = {task.status for task in executed}
