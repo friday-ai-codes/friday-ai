@@ -124,8 +124,8 @@ Plans:
 Plans:
 
 - [ ] 103-01-PLAN.md — AGENT-01 任务级短 TTL token：kind/session_id 迁移 + mint/revoke service + 三链接线（替换 user_pat_plaintext 死通道）+ 终态吊销 + 泄漏防线（Wave 1）
-- [ ] 103-02-PLAN.md — AGENT-02 容器知识 MCP：knowledge_tools.py 7 工具白名单 + 配额 + allowed_tools 收口 + X-Friday-Session-Id 关联 + 第七面排除回归（Wave 1）
-- [ ] 103-03-PLAN.md — AGENT-03 skills 同源注入：sync 脚本 + assets 入库 + Dockerfile COPY + 运行时同名不覆盖注入 + hash 一致性测试（Wave 1）
+- [x] 103-02-PLAN.md — AGENT-02 容器知识 MCP：knowledge_tools.py 7 工具白名单 + 配额 + allowed_tools 收口 + X-Friday-Session-Id 关联 + 第七面排除回归（Wave 1）
+- [x] 103-03-PLAN.md — AGENT-03 skills 同源注入：sync 脚本 + assets 入库 + Dockerfile COPY + 运行时同名不覆盖注入 + hash 一致性测试（Wave 1）
 - [ ] 103-04-PLAN.md — AGENT-04 工作流上下文对齐：helper 上提 packer + _dispatch_wave 按 project 解析一次逐仓复用 + prompt/env 注入（Wave 2，依赖 103-01）
 
 ### Phase 104: 工具面收口（improve/analyze 收敛 + 确定性缝退役 + 端到端验收）
@@ -301,7 +301,7 @@ Plans:
 | 100. 知识收敛基座 | KNOW-01/02/03 | 4/4 | ✅ Complete | 2026-07-15 |
 | 101. 完工沉淀闭环 | LOOP-01~05 | 4/4 | Complete   | 2026-07-22 |
 | 102. 知识消费面与对外契约 | KNOW-04/05/06, UNIFY-04 | 0/TBD | Not started | - |
-| 103. 编码容器集成 | AGENT-01~04 | 0/TBD | Not started | - |
+| 103. 编码容器集成 | AGENT-01~04 | 2/4 | In Progress|  |
 | 104. 工具面收口 | UNIFY-01/02/03 | 0/TBD | Not started | - |
 
 **Coverage:** 19/19 需求全部映射，无孤儿、无重复。

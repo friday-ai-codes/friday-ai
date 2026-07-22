@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.17.0
 milestone_name: 统一知识库与全链路联动
 status: completed
-stopped_at: 执行 101-04（LOOP-04/05）完成——两个平台 Skill 种子（`pre_coding_research`/`post_coding_capture`，7 个步骤 builtin 薄封装全部委托既有 service，migration 0005）+ skill 步级 trace（started/completed/failed 三态事件 + run 可用时逐步 ToolCallRecord `{skill}#{i}:{step}`，顶层输入透传静态优先）+ LOOP-05 PR review 可选沉淀（`pr_review_capture.py`：开关默认关→幂等前置→summarize_branch→LLM review（call_source=pr_review_capture、REVIEW_SYSTEM_PROMPT 只 import）→经新拆 `apersist_extracted_case` 走 LOOP-03 入库路径；workflow/chat 双锚点开关守门调度、skip-PR 不触发）。附加：LO-02 收尾（work_item_execution_service 2 处投递补 initiated_by_user_id）。4 commits（f8f61e7c/170f8172/dbc457ac/8046ec07）；综合套件 35 测试全绿。Phase 101 全部 4 plans 完成。下游 → Phase 102。
-last_updated: "2026-07-22T05:13:13.138Z"
+stopped_at: 执行 101-03（LOOP-02/03 锚点接线）完成——三元组反查器（workflow 链 `plan_version_id→ArtifactVersion→artifact.work_item` 标量链 + chat 链 `content__chat_coding_plan_id` JSON 键 seam，现状无写入方零行为变化）+ `aextract_for_session` 提炼便捷入口；workflow `AICodingNode` 新增 `write_back` 配置（模板默认开）+ **存量缺键 fallback 三态守门**（缺键+无绑定=零变化专项用例）+ `_finalize_and_notify` 完工闭环（回写 + 逐 session `run_in_background` 提炼调度，session→repo 映射两调用点补齐）；chat `create_pr_or_skip_node` PR 成功分支回写（无会话级开关）+ 提炼（skip-PR 不回写但提炼照常）；MCP `execute_work_item_repo_tasks` 提炼锚点；前端 `aiCodingConfigSchema` 同步 + docs 升级说明。5 commits（317b48c6/93f4be4b/6adb1dff/4ee87e38/c2749bb9）；69 测试全绿 + vue-tsc 通过。Deviation：session_repo_map 可选参数补缺口、误用一次 git stash（无损自纠）、存量腐坏测试 test_sub_step_coding_node 记 deferred-items.md。下游 → 101-04（LOOP-04/05 Skill 种子 + PR review 沉淀，Wave 3）。
+last_updated: "2026-07-22T05:47:45.359Z"
 last_activity: 2026-07-22 — 101-04 完成：平台 Skill 种子 + 步级 trace + PR review 可选沉淀（默认关），35 测试全绿；Phase 101 收官
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 18
-  completed_plans: 8
-  percent: 40
+  completed_plans: 13
+  percent: 60
 ---
 
 # Project State
@@ -211,6 +211,7 @@ Progress: [██░░░░░░░░] 20% (1/5 phases)
 | Phase 95 P95-02 | ~10min | 2 tasks | 2 files |
 | Phase 95 P95-03 | ~25min | 2 tasks | 2 files |
 | Phase 101 P04 | 35m | 4 tasks | 15 files |
+| Phase 103 P02 | 25min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -363,6 +364,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 92]: 92-01: 端口能力契约字段 + Validator 契约兼容（SLOT-01）——`NodePort` 末位追加与 `port_type` 正交的 `shape: str = ""`（默认空=通配宽松，全仓既有数十处构造零破坏，Pitfall 2 带默认放末尾）；`get_schema()` inputs/outputs 两处 dict 各追加 `"shape": p.shape` 键（经 `/api/node-types/` 单向只读流出，Phase 93 磁吸消费）。新建 `workflows/nodes/shapes.py` 的 `KNOWN_PORT_SHAPES: frozenset` 一次性收全 7 个能力契约取值（clarification_request/clarification_answer/feishu_message/technical_plan/coding_assignment/feishu_document/approval_result）——**决策**：用 `str` + 模块级 `frozenset` 而非 `Enum`（CONTEXT「取值可扩展」A2），且 validator **不**强制取值 ∈ 该集合（仅靠双端 shape 非空且相等判定，未知取值不闭集拦截）。`WorkflowGraphValidator` 新增第六类规则 `_validate_port_shapes(nodes, edges, errors)` 串接 `validate()` 末尾（`_validate_variables` 之后），与既有 `_validate_edges` 同款 handle→端口解析：**向后兼容零回归命门**（Pitfall 1/4）——边节点缺失/节点类型未知/handle 不在端口集均 `continue`（已由 (a)/(d) 报，不重复，Test 5）；**`if not src_shape or not tgt_shape: continue`** 任一端空契约/default 端口（shape 恒空）通配放行（Test 3/4）；仅双端非空且不等才 append `incompatible_port_shape`（severity=error，带 edge_id/field_path，message 只含源/目标 handle+shape 名，**绝不回显 config** T-92-01-INFO，Test 6）；高频纯函数不打日志。`ValidationIssue.reason` docstring 枚举补 `incompatible_port_shape`。**DEVIATION（mypy 安全，非行为）**：`_validate_port_shapes` 用 `src_type/tgt_type = src.get("node_type")` + 显式 `if ... is None: continue` 收窄，避免新增 arg-type 误报（文件原有 3 处 `.get()` arg-type 为既有 base 同存，未在范围内修复）。TDD 双任务 5 提交（test→feat×2 + style）；`test_node_schema.py`(4) + `test_graph_validator.py` 端口契约 7 用例全绿（共 38 项），既有合法图（default→default）零回归；ruff format/check 干净、mypy 0 新增、`makemigrations --check` 干净（无 DB 迁移）。**本 plan 不触 fixture**（`_to_fixture_node` 不 dump shape，仅加字段不改 fixture 输出，Pitfall 3）。**已核实**：`tests/workflows` 4 个失败（test_execution_concurrency ×2 并发计时 + test_template_loader ×2 `field_not_found`）经回退本 plan 3 源文件至 base 复跑确认完全一致，为既有失败、与 shape 改动无关。
 - [Phase 101]: 101-04: LOOP-05 沉淀复用拆出 apersist_extracted_case，review LLM 后直调不重复烧 token
 - [Phase 101]: 101-04: PR review 锚点调度前置开关检查——默认关零后台任务零 LLM 调用
+- [Phase 103]: 103-02：知识工具配额文案不带 is_error（预算终点非错误，防模型重试）；allowed_tools 三源合并收口单一构造函数 _build_tool_mounts（任一 server 挂载即全量并入 builtin，WR-02）
 
 ### Pending Todos
 
@@ -497,7 +499,7 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-07-22T05:12:52.444Z
+Last session: 2026-07-22T05:47:07.769Z
 Stopped at: 执行 101-03（LOOP-02/03 锚点接线）完成——三元组反查器（workflow 链 `plan_version_id→ArtifactVersion→artifact.work_item` 标量链 + chat 链 `content__chat_coding_plan_id` JSON 键 seam，现状无写入方零行为变化）+ `aextract_for_session` 提炼便捷入口；workflow `AICodingNode` 新增 `write_back` 配置（模板默认开）+ **存量缺键 fallback 三态守门**（缺键+无绑定=零变化专项用例）+ `_finalize_and_notify` 完工闭环（回写 + 逐 session `run_in_background` 提炼调度，session→repo 映射两调用点补齐）；chat `create_pr_or_skip_node` PR 成功分支回写（无会话级开关）+ 提炼（skip-PR 不回写但提炼照常）；MCP `execute_work_item_repo_tasks` 提炼锚点；前端 `aiCodingConfigSchema` 同步 + docs 升级说明。5 commits（317b48c6/93f4be4b/6adb1dff/4ee87e38/c2749bb9）；69 测试全绿 + vue-tsc 通过。Deviation：session_repo_map 可选参数补缺口、误用一次 git stash（无损自纠）、存量腐坏测试 test_sub_step_coding_node 记 deferred-items.md。下游 → 101-04（LOOP-04/05 Skill 种子 + PR review 沉淀，Wave 3）。
 Earlier: 里程碑 v0.16.1 统一 AI 技术方案生成已 shipped（complete-milestone + cleanup）——6/6 phase（90–95）/ 27 plans / 18 需求全部完成并提交；里程碑审计 tech_debt（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，遗留真机·真实 provider·画布视觉端到端验收 10 项 + INFO 欠债，见 `.planning/milestones/v0.16.1-MILESTONE-AUDIT.md`）。归档：`ROADMAP.md` 折叠为 `<details>` + 全量快照入 `.planning/milestones/v0.16.1-ROADMAP.md`；audit git mv 入 `milestones/`；phase 目录 git mv 入 `.planning/milestones/v0.16.1-phases/`。未打 git tag；REQUIREMENTS.md 保留待下一里程碑 new-milestone 归档（沿用 v0.16.0 模式）。
 Earlier: 执行 95-02（DECOMP-01：decompose_segments LLM 拆分 helper）——新建 `server/services/plan_orchestration/decompose_segments.py` 逐段镜像 clarification_questions.py。纯函数 _parse_segments_json（容错 ```json/裸 JSON/顶层 list→非法 []）+ normalize_decomposition_segments（缺 title 跳过/非法 layer 回退空/字段 strip/_MAX_SEGMENTS=20 截断）+ _content_to_text（reasoning content_blocks）+ _system/_build_prompt；异步 agenerate_decomposition_segments（aresolve→default_model 守卫→build_chat_model(streaming=False)→use_call_source(PLAN_DECOMPOSE)→ainvoke→解析→normalize，成功 list[dict]，缺 model/异常/空 → None best-effort 绝不抛）；观测 started/completed/failed/no_default_model + duration_ms（sampling/plan_orchestration），脱敏只记 requirement_len/计数。DEVIATION: None。2 commits（6782b1825/19c62cc60）；test_decompose_segments.py 20 passed（14 纯函数不触网 + 6 异步 patch aresolve/build_chat_model + call_source 断言）、ruff/mypy 干净、无新迁移、无供应链面。下游 → 95-03 engine._decompose 接线（None 触发 splitlines 回退）。
