@@ -385,6 +385,43 @@ async def test_three_sources_merge_union_with_builtin_no_dupes(
 
 
 @pytest.mark.asyncio
+async def test_extra_only_mount_keeps_caller_allowlist_no_builtin(
+    monkeypatch, temp_workspace, temp_session_dir
+):
+    """extra-only 挂载（repo_summary 形态：remote/knowledge 均未配，仅 extra server）：
+    allowed_tools 恰为调用方自带白名单，builtin 不并入——WebFetch/WebSearch 等
+    网络工具不得被悄悄解禁（103 审查 WR-01：只读分析容器网络出口是白名单级策略）。"""
+    from core import ClaudeRunner
+    from core.executor import _READONLY_ANALYSIS_TOOLS
+
+    config = _make_real_config(temp_session_dir, task_mode="repo_summary")
+    runner = ClaudeRunner(config=config, workspace=temp_workspace)
+
+    captured: dict = {}
+
+    async def fake_query(*, prompt, options):
+        captured["options"] = options
+        if False:  # pragma: no cover - 空 async generator
+            yield None
+
+    monkeypatch.setattr("core.executor.query", fake_query)
+    submit_tool = "mcp__repo-summary__submit_summary"
+    await runner._execute_claude(
+        prompt="hi",
+        permission_mode="bypassPermissions",
+        extra_mcp_servers={"repo-summary": object()},
+        extra_allowed_tools=[*_READONLY_ANALYSIS_TOOLS, submit_tool],
+    )
+    options = captured["options"]
+
+    assert set(options.allowed_tools) == {*_READONLY_ANALYSIS_TOOLS, submit_tool}
+    assert "WebFetch" not in options.allowed_tools
+    assert "WebSearch" not in options.allowed_tools
+    assert "Write" not in options.allowed_tools
+    assert "Edit" not in options.allowed_tools
+
+
+@pytest.mark.asyncio
 async def test_empty_config_options_have_no_mounts(monkeypatch, temp_workspace, temp_session_dir):
     """全空配置（remote/knowledge/extra 均未配）：options 不含任何 MCP server 与
     allowed_tools（零回归钉子——与收口前行为逐字一致）。"""

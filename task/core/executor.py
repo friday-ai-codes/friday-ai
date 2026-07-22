@@ -97,12 +97,14 @@ def _build_tool_mounts(
 
     - remote：remote_tools + tools_endpoint + user_token 三者俱全时挂载。
     - knowledge：knowledge_endpoint + user_token 俱全时挂载（7 工具白名单内建）。
-    - **builtin 规则**：任一 MCP server 挂载（remote / knowledge / extra）即把
+    - **builtin 规则**：仅当 remote / knowledge（编码链 MCP server）挂载时才把
       ``_BUILTIN_CODING_TOOLS`` 全量并入 allowed_tools——claude-agent-sdk 的
       allowed_tools 是排他白名单，缺列会连带禁掉 Bash/Edit/Write 等编码必需工具，
-      破坏 execute 模式（WR-02 前科）。
+      破坏 execute 模式（WR-02 前科）。**extra-only 挂载不并入 builtin**（103 审查
+      WR-01）：repo_summary 等只读分析调用方自带白名单（明确排除 WebFetch/WebSearch
+      网络工具），全量并入会把白名单排除降级为仅 prompt 约束。
     - extra（ask_user / repo_summary submit 等）：mcp_servers 并入，allowed_tools
-      去重追加。
+      去重追加；调用方需要 builtin 时自行列入 extra_allowed_tools（ask_user 先例）。
     - 无任何挂载 → 返回 ``({}, [])``（options 不含 mcp_servers/allowed_tools，
       与现状逐字一致零回归）。
 
@@ -147,8 +149,12 @@ def _build_tool_mounts(
     if not mcp_servers:
         return {}, []
 
-    # builtin 全量并入（WR-02）：排他白名单一旦非空，缺列即禁用。
-    allowed_tools: list[str] = [*_BUILTIN_CODING_TOOLS]
+    # builtin 并入仅限编码链挂载（WR-02 保证 + WR-01 收口）：remote/knowledge 任一
+    # 挂载 → 全量并入（排他白名单缺列即禁用编码必需工具）；extra-only → 沿用调用方
+    # 自带白名单（repo_summary 只读分析不得解禁 WebFetch/WebSearch）。
+    allowed_tools: list[str] = []
+    if remote_server is not None or knowledge_server is not None:
+        allowed_tools.extend(_BUILTIN_CODING_TOOLS)
     allowed_tools.extend(t for t in mounted_allowed if t not in allowed_tools)
     if extra_allowed_tools:
         allowed_tools.extend(t for t in extra_allowed_tools if t not in allowed_tools)
@@ -542,7 +548,12 @@ class ClaudeRunner:
                 max_turns=40,
                 extra_mcp_servers={REPO_SUMMARY_MCP_SERVER_NAME: summary_server},
                 extra_allowed_tools=[*_READONLY_ANALYSIS_TOOLS, submit_tool],
-                disallowed_tools=["Write", "Edit", "MultiEdit", "NotebookEdit"],
+                # WebFetch/WebSearch 显式禁用（103 审查 WR-01）：只读分析容器禁网络
+                # 出口是白名单级策略而非仅 prompt 约束——即使 knowledge/remote 同时
+                # 挂载导致 builtin 并入，disallowed 优先级更高仍兜底。
+                disallowed_tools=[
+                    "Write", "Edit", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch",
+                ],
             )
         except Exception as exc:  # noqa: BLE001
             # CLI 非零退出（如 max-turns 用尽）不应吞掉已捕获的提交结果；
