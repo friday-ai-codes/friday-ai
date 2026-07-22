@@ -55,6 +55,7 @@
 **Plans**: 4 plans
 
 Plans:
+
 - [ ] 100-01-PLAN.md — 地基：natural key 规则表扩表 + EntityKind.LEARNING_CASE migration + vector_recall kind 过滤吞参修复（Wave 1）
 - [ ] 100-02-PLAN.md — KNOW-01：learning_case normalizer + create 投递钩子 + 幂等重摄测试（Wave 2）
 - [ ] 100-03-PLAN.md — KNOW-03：MCP 三 normalizer + 5 写入点投递 + plan→execution→work_item 边 E2E（Wave 2）
@@ -77,10 +78,11 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 101-01-PLAN.md — LOOP-01：CompletionWritebackService 公共回写抽取 + MCP 薄包装零回归（Wave 1）
-- [ ] 101-02-PLAN.md — LOOP-03 核心：call_source 登记先行 + McpLearningCase migration + 提炼管线（质量门/REJECT/幂等/开关）（Wave 1）
+
+- [x] 101-01-PLAN.md — LOOP-01：CompletionWritebackService 公共回写抽取 + MCP 薄包装零回归（Wave 1）
+- [x] 101-02-PLAN.md — LOOP-03 核心：call_source 登记先行 + McpLearningCase migration + 提炼管线（质量门/REJECT/幂等/开关）（Wave 1）
 - [x] 101-03-PLAN.md — LOOP-02/03 锚点：三元组反查器 + workflow write_back 配置与存量 fallback 守门 + chat/MCP 接线 + 前端同步（Wave 2）✅ 2026-07-22
-- [ ] 101-04-PLAN.md — LOOP-04/05：平台 Skill 种子 + 步级 trace + PR 后可选 review 沉淀（Wave 3）
+- [x] 101-04-PLAN.md — LOOP-04/05：平台 Skill 种子 + 步级 trace + PR 后可选 review 沉淀（Wave 3）
 
 ### Phase 102: 知识消费面与对外契约（编排召回扩容 + Chat 工具 + snapshot/skills 对齐）
 
@@ -98,6 +100,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
+
 - [ ] 102-01-PLAN.md — KNOW-04：编排召回扩 5 kinds（settings 可配置 + 每 kind 限额 + RetrievalTrace 埋点 + 测试更新）（Wave 1）
 - [ ] 102-02-PLAN.md — KNOW-05/06：Chat 三个知识读工具（薄封装 + 白名单 + chat 链 trace）+ ProjectStateApi 物化断链修复（upsert 钩子 + STATE normalizer live 内容 + 验收链测试）（Wave 1）
 - [ ] 102-03-PLAN.md — UNIFY-04：snapshot 补 report_project_state + 注册==snapshot 守卫 + skills 工具名 ⊆ snapshot grep 守卫 + friday-memory/friday-code 文档对齐（Wave 1）
@@ -119,6 +122,7 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
+
 - [ ] 103-01-PLAN.md — AGENT-01 任务级短 TTL token：kind/session_id 迁移 + mint/revoke service + 三链接线（替换 user_pat_plaintext 死通道）+ 终态吊销 + 泄漏防线（Wave 1）
 - [ ] 103-02-PLAN.md — AGENT-02 容器知识 MCP：knowledge_tools.py 7 工具白名单 + 配额 + allowed_tools 收口 + X-Friday-Session-Id 关联 + 第七面排除回归（Wave 1）
 - [ ] 103-03-PLAN.md — AGENT-03 skills 同源注入：sync 脚本 + assets 入库 + Dockerfile COPY + 运行时同名不覆盖注入 + hash 一致性测试（Wave 1）
@@ -140,6 +144,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
+
 - [ ] 104-01-PLAN.md — UNIFY-01 improve 收敛 delegate：引用清单 + 契约定版进 schema 描述 + map_canonical 随迁 + snapshot 双修（improve/create session_id/status）+ 测试迁 fake delegate（Wave 1）
 - [ ] 104-02-PLAN.md — UNIFY-02/03 analyze 随迁 repository_analysis_service + extra_evidence 编排消费接线 + planning_service.py 删除 + plan_orchestration 空壳/docs 清零 + stale patch target 守卫（Wave 2，依赖 104-01）
 - [ ] 104-03-PLAN.md — 里程碑端到端验收：同一 learning case 四面检索（Chat 工具/编排召回/MCP view/容器链同 URL 契约）+ MCP 与 Chat top-1 统一排序断言（Wave 3，依赖 104-02）
@@ -294,7 +299,7 @@ Plans:
 | Phase | Requirements | Plans Complete | Status | Completed |
 |-------|--------------|----------------|--------|-----------|
 | 100. 知识收敛基座 | KNOW-01/02/03 | 4/4 | ✅ Complete | 2026-07-15 |
-| 101. 完工沉淀闭环 | LOOP-01~05 | 3/4 | In progress | - |
+| 101. 完工沉淀闭环 | LOOP-01~05 | 4/4 | Complete   | 2026-07-22 |
 | 102. 知识消费面与对外契约 | KNOW-04/05/06, UNIFY-04 | 0/TBD | Not started | - |
 | 103. 编码容器集成 | AGENT-01~04 | 0/TBD | Not started | - |
 | 104. 工具面收口 | UNIFY-01/02/03 | 0/TBD | Not started | - |

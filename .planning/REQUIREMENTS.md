@@ -20,8 +20,8 @@
 - [ ] **LOOP-01**: 飞书回写能力抽为公共服务——`delivery/services/coding_completion.py` `CompletionWritebackService`（工作项评论 + 可选文档 append，入参中性化），MCP `_write_results_back` 改薄包装（含 `write_back` 开关与 retry_state 语义零回归）
 - [x] **LOOP-02**: 工作流与 Chat 编码完成后业务侧可见——workflow `AICodingNode._finalize_and_notify`（MR 后锚点）与 chat `coding_graph.create_pr_or_skip_node` 接入公共回写（节点/会话开关，模板默认开；取不到工作项三元组 no-op fail-soft；三元组经 `pr_cross_reference` 追溯链反查）
 - [x] **LOOP-03**: 任一链路编码完成自动沉淀经验——LLM 从 TaskResult/diff/plan 提炼 outcome/root_cause/solution 落 `McpLearningCase`（FK 放松允许无 technical_plan）并入图；新 `call_source=learning_case_extraction` 登记 LOGGING-SPEC §4.1；质量门槛（最小信息量校验 + 失败/取消任务不沉淀 + 每任务至多一条）；best-effort 绝不阻断主流程；带 `initiated_by_user_id`（无则 system）
-- [ ] **LOOP-04**: 平台内置两个多步 Skill（RemoteTool `Source.SKILL` 种子）——`pre_coding_research`（route_repositories→search_rag_chunks→search_delivery_knowledge→search_learning_cases）与 `post_coding_capture`（summarize_branch→create_learning_case→report_project_knowledge），在 `/api/tools/execute/` 可调、步级 trace 完整
-- [ ] **LOOP-05**: PR 创建后可选触发轻量 review 并沉淀结论为 learning case（可配置默认关；范围=能跑通+沉淀，不做评审 UI/规则引擎）
+- [x] **LOOP-04**: 平台内置两个多步 Skill（RemoteTool `Source.SKILL` 种子）——`pre_coding_research`（route_repositories→search_rag_chunks→search_delivery_knowledge→search_learning_cases）与 `post_coding_capture`（summarize_branch→create_learning_case→report_project_knowledge），在 `/api/tools/execute/` 可调、步级 trace 完整
+- [x] **LOOP-05**: PR 创建后可选触发轻量 review 并沉淀结论为 learning case（可配置默认关；范围=能跑通+沉淀，不做评审 UI/规则引擎）
 
 ### AGENT 编码容器内置 MCP/Skills + 上下文对齐
 
@@ -70,8 +70,8 @@
 | LOOP-01 | Phase 101 | Pending |
 | LOOP-02 | Phase 101 | Complete |
 | LOOP-03 | Phase 101 | Complete |
-| LOOP-04 | Phase 101 | Pending |
-| LOOP-05 | Phase 101 | Pending |
+| LOOP-04 | Phase 101 | Complete |
+| LOOP-05 | Phase 101 | Complete |
 | AGENT-01 | Phase 103 | Pending |
 | AGENT-02 | Phase 103 | Pending |
 | AGENT-03 | Phase 103 | Pending |
