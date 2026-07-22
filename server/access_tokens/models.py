@@ -45,6 +45,21 @@ class AccessToken(models.Model):
     # 明文后 4 字符，与 token_prefix 对称形成 friday_pat_xxx…abcd 指纹（非敏感）。
     # max_length=8 留头部冗余，实际仅存 4 字符。
     token_suffix = models.CharField(max_length=8, default="")
+    # token 种类（Phase 103 AGENT-01）：
+    #   - personal：用户手动创建的长期 PAT（默认，存量行为零变化——认证类
+    #     AccessTokenAuthentication 不读本字段，前缀闸门 + sha256 查表逻辑不变）。
+    #   - task：派发编码任务时按 session 铸造的短 TTL token（services.mint_task_token），
+    #     expires_at = 任务 timeout + 余量，任务终态按 session_id 幂等吊销。
+    # 兼容承诺：存量行未迁移 kind 恒为 personal；认证/序列化/吊销 API 均不区分 kind。
+    kind = models.CharField(
+        max_length=16,
+        choices=[("personal", "Personal"), ("task", "Task")],
+        default="personal",
+        db_index=True,
+    )
+    # 任务 token 关联的 subagent session_id（kind=task 时非空；personal token 恒 None）。
+    # 终态吊销按 (kind="task", session_id) 精确定位（services.arevoke_task_tokens）。
+    session_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     created_by = models.ForeignKey(
         "accounts.User",
         on_delete=models.CASCADE,
