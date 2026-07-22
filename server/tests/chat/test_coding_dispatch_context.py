@@ -157,6 +157,45 @@ class TestResolveProjectContextForDispatch:
         assert ctx == ""
 
     @pytest.mark.asyncio
+    async def test_anonymous_public_org_recalls(self) -> None:
+        """匿名会话（created_by=None）+ PUBLIC_ORG 项目 → 照常召回（103 审查 WR-02 回归）。
+
+        权限判定权威在 pack_project_context 的 visibility 闸门（非成员 + PUBLIC_ORG
+        放行），apack_dispatch_context 不得对 user=None 提前短路。
+        """
+        from chat.coding_session_service import _resolve_project_context_for_dispatch
+
+        project, space, owner = await _make_project(key="ctx-anon")
+        await MemoryService().append(
+            project_id=project.id, content="匿名可见公开项目记忆", contributor=owner
+        )
+        repo = await _make_repository("ctx-anon-repo")
+        cs = await _make_coding_session(
+            space=space, repo=repo, owner=None, bound_project=project
+        )
+
+        ctx = await _resolve_project_context_for_dispatch(cs)
+        assert "匿名可见公开项目记忆" in ctx
+
+    @pytest.mark.asyncio
+    async def test_anonymous_members_only_fail_closed(self) -> None:
+        """匿名会话 + members_only 项目 → packer fail-closed 零召回（不泄漏）。"""
+        from chat.coding_session_service import _resolve_project_context_for_dispatch
+
+        project, space, owner = await _make_project(
+            key="ctx-anon-mo", visibility=ProjectVisibility.MEMBERS_ONLY
+        )
+        await MemoryService().append(
+            project_id=project.id, content="匿名不可见机密记忆", contributor=owner
+        )
+        repo = await _make_repository("ctx-anon-mo-repo")
+        cs = await _make_coding_session(
+            space=space, repo=repo, owner=None, bound_project=project
+        )
+
+        assert await _resolve_project_context_for_dispatch(cs) == ""
+
+    @pytest.mark.asyncio
     async def test_recalled_context_is_redacted(self) -> None:
         from chat.coding_session_service import _resolve_project_context_for_dispatch
 

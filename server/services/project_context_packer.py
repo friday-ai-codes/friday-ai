@@ -257,10 +257,15 @@ async def apack_dispatch_context(
     ``pack_project_context``（内置 visibility fail-closed + RetrievalTrace，不绕过），
     返回前经 ``redact_secrets_in_text`` 脱敏（T-103-13）。
 
-    project/user 任一 None / 召回空 / 任何异常 → 返回 ""（fail-soft，派发与现状
+    ``user`` 可为 None（chat 匿名会话既有语义，103 审查 WR-02）：不在此短路——
+    权限判定权威在 ``pack_project_context`` 的 visibility 闸门（非成员 + PUBLIC_ORG
+    放行、members_only fail-closed），匿名会话 + PUBLIC_ORG 项目照常召回。
+    workflow 链在调用点自行守门 ``dispatch_user is not None``，行为不受影响。
+
+    project 为 None / 召回空 / 任何异常 → 返回 ""（fail-soft，派发与现状
     逐字一致，绝不阻断编码；component 由调用方 bind 决定）。
     """
-    if project is None or user is None:
+    if project is None:
         return ""
     try:
         packed = await pack_project_context(
