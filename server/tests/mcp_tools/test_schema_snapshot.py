@@ -1,6 +1,32 @@
 from __future__ import annotations
 
+import re
+
 from mcp_tools.serializers import TOOL_SCHEMA_SNAPSHOT
+
+
+def test_registered_tools_match_snapshot() -> None:
+    """注册 == snapshot 防漏守卫（Phase 102 UNIFY-04）。
+
+    从 ``mcp_tools/urls.py`` 的 ``tools/<name>/`` 路由提取工具名集合，断言与
+    ``TOOL_SCHEMA_SNAPSHOT`` 键集合完全一致——未来加工具漏 snapshot（或 snapshot
+    残留幽灵键）时 CI 直接红且可读。
+    """
+    from mcp_tools.urls import urlpatterns
+
+    registered: set[str] = set()
+    for p in urlpatterns:
+        m = re.fullmatch(r"tools/([a-z0-9_]+)/", str(p.pattern))
+        if m:
+            registered.add(m.group(1))
+
+    snapshot = set(TOOL_SCHEMA_SNAPSHOT)
+    missing_in_snapshot = registered - snapshot
+    ghost_in_snapshot = snapshot - registered
+    assert registered == snapshot, (
+        f"注册了但没进 snapshot: {sorted(missing_in_snapshot)}; "
+        f"snapshot 残留幽灵键（未注册）: {sorted(ghost_in_snapshot)}"
+    )
 
 
 def test_mcp_read_tool_schema_snapshot() -> None:
@@ -126,6 +152,10 @@ def test_mcp_read_tool_schema_snapshot() -> None:
         "report_project_knowledge": {
             "request": ["project_id", "content", "source_conversation_id"],
             "response": ["accepted", "draft_id", "reason", "run_id"],
+        },
+        "report_project_state": {
+            "request": ["project_id", "branch_name", "repository_id", "apis"],
+            "response": ["applied", "reason", "results", "total_applied", "run_id"],
         },
         "search_project_context": {
             "request": ["project_id", "query", "top_k", "entity_kinds"],
