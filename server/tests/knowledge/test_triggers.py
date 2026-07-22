@@ -203,7 +203,10 @@ def captured_requests(monkeypatch: pytest.MonkeyPatch) -> list[IngestionRequest]
     """
     captured: list[IngestionRequest] = []
 
-    async def _collect(request: IngestionRequest) -> None:
+    async def _collect(
+        request: IngestionRequest, *, initiated_by_user_id: str | None = None
+    ) -> None:
+        # 签名与真实 aschedule_ingestion 对齐（Phase 100 LO-02 起投递点携带归因参数）
         captured.append(request)
 
     monkeypatch.setattr("knowledge.ingestion.aschedule_ingestion", _collect)
