@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 Phase: v0.17.0（Phases 100–104）全部 complete 并归档 — ✅ SHIPPED 2026-07-22
 Plan: complete-milestone 归档完成（ROADMAP/REQUIREMENTS/AUDIT 入 milestones/ + tag v0.17.0）
 Status: shipped / between-milestones——下一里程碑待立项
-Last activity: 2026-07-22 — v0.17.0 complete-milestone 归档 + tag
+Last activity: 2026-07-22 — Completed quick task 260722-npg: GitLab 仓库一键自动配置 push webhook
 
 Progress: [██████████] 100% (5/5 phases)
 
@@ -411,6 +411,7 @@ None.
 | 260621-dwn | 工作流画布对标 dify：横向左入右出 Handle + 单一 0.16 bezier 连线 + 一键自动布局 + 边中点/Handle "+" 加节点 + 四元组重复校验 + 节点配置摘要；验收反馈修复（虚线常驻/+ 误触/间距）。成功-失败双出口与端口 ID 对齐后端延后 | 2026-06-21 | 42fcdffd6 | [260621-dwn-dify-right-left-handle-bezier-curvature0](./quick/260621-dwn-dify-right-left-handle-bezier-curvature0/) |
 | 20260621-wano | 工作流重写收尾：合并 ai_plan_approval→human_approval(mode=plan_feishu)（审批统一走 waiting_approval + 数据迁移 0029）+ 飞书推送从 plan_generation/coding 解耦为独立 notify_feishu_im/feishu_doc_create 节点 + 内置模板切换到 ai_plan_research 编排路径（多仓路由+多 agent 并行，点4 上游输入/驳回回流二义性物理隔离） | 2026-06-21 | 83a0c3494 / adb1e3f27 / c3d3b9dbc | [20260621-workflow-approval-notify-orchestration](./quick/20260621-workflow-approval-notify-orchestration/) |
 | 260623-ax1 | Phase A 数据库连接池（角色感知 psycopg3 池 + CONN_MAX_AGE=0，仅 PG 生效、SQLite/MySQL 零回归）+ PgBouncer 支持（compose opt-in profile + helm pgbouncer.enabled，web 走池/worker·scheduler 直连保 Procrastinate LISTEN/NOTIFY） | 2026-06-23 | 1a9cd6a63 / 0c96576ee / 84ce35731 / 5cae1506e | [260623-ax1-db-pool-pgbouncer](./quick/260623-ax1-db-pool-pgbouncer/) |
+| 260722-npg | GitLab 仓库一键自动配置 push webhook（幂等 ensure_push_webhook + setup-webhook API 复用站点 Host、错误中文翻译，前端一键按钮 + 建仓/编辑勾选项） | 2026-07-22 | 0d4e352e | [260722-npg-gitlab-push-webhook-main](./quick/260722-npg-gitlab-push-webhook-main/) |
 
 ## Deferred Items
 
