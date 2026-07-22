@@ -36,11 +36,13 @@ import uuid
 
 import pytest
 from asgiref.sync import async_to_sync
+from django.urls import reverse
 from rest_framework.test import APIClient
 
 from interactions.ledger import create_interaction_run
 from knowledge.collection import DEFAULT_EMBEDDING_DIMENSION
 from knowledge.ingestion import IngestionRequest, ingest
+from knowledge.models import generate_entity_id
 from mcp_tools.models import McpLearningCase, McpWorkItemContext
 from runners.models import hash_token
 
@@ -288,3 +290,78 @@ def test_mcp_view_and_chat_tool_unified_top1(
     # ---- 统一排序断言（locked）：两面 top-1 entity 标识一致 ----
     chat_top1 = chat_results[0]["case_id"]
     assert mcp_top1 == chat_top1, "MCP 与 Chat 两面 top-1 必须一致（同一排序服务）"
+
+
+# ============================================================================
+# 面 2（编排召回）：DeliveryKnowledgeRecallAdapter.recall（learning_case kind）
+# ============================================================================
+
+
+def test_recall_adapter_surface_hits_seed_case(
+    golden_vector_stack,
+    project,
+    project_memberships,
+    user,
+) -> None:
+    """面 2：编排召回 hits 中存在 kind/entity 指向种子 learning case 的命中。
+
+    ``ConvergenceSession.stage_state.decomposition.requirement_text`` 作 query
+    （engine 同款取数路径）；``created_by`` 为召回权限 actor（与面 1/3 同一用户）。
+    learning_case kind 在 Phase 102 扩容后的默认 kinds 集合内，无需额外配置。
+    命中经知识实体 id 精确断言：``generate_entity_id("learning_case",
+    "learning_case", str(case.id))`` 是 ingest 入图的唯一派生入口（uuid5 稳定）。
+    """
+    from delivery.models import ConvergenceSession, ConvergenceSessionEntrypoint
+    from services.process_runtime import DeliveryKnowledgeRecallAdapter
+
+    strong, _weak = _seed_dual_cases(project)
+    session = ConvergenceSession.objects.create(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="recall",
+        stage_state={"decomposition": {"requirement_text": _QUERY}},
+        created_by=user,
+    )
+
+    result = async_to_sync(DeliveryKnowledgeRecallAdapter().recall)(session)
+
+    assert result["query"] == _QUERY
+    assert "learning_case" in result["kinds"], "learning_case 必须在默认召回 kinds 集合内"
+    expected_entity_id = str(generate_entity_id("learning_case", "learning_case", str(strong.id)))
+    learning_hits = [hit for hit in result["hits"] if hit["kind"] == "learning_case"]
+    assert learning_hits, "编排召回面必须命中 learning_case kind"
+    assert expected_entity_id in [hit["entity_id"] for hit in learning_hits], (
+        "编排召回命中的 entity 必须指向强相关种子 learning case"
+    )
+
+
+# ============================================================================
+# 面 4（容器知识 MCP 链）：同 URL 契约 + 组合覆盖文档化
+# ============================================================================
+
+
+def test_container_chain_same_url_contract(db) -> None:
+    """面 4：容器链同 URL 契约——reverse 反查 == task 侧转调的字面 URL 模板。
+
+    组合覆盖逻辑（locked，per CONTEXT 决策）：
+
+    - **task 侧半边**：``task/tests/test_knowledge_tools.py``（mock 端点模式）已验证
+      task 进程内 SDK MCP server handler 对
+      ``{base}/api/mcp/tools/{tool_name}/``（``task/core/knowledge_tools.py``
+      的字面拼接模板）的请求构造与响应解析契约；
+    - **服务端半边**：本文件面 3 用例已断言同一 URL 上的 view 行为是真实向量检索
+      （种子 case 可召回、排序统一）；
+    - **胶合断言（本用例）**：``reverse("mcp-tool-search-learning-cases")`` 反查出的
+      服务端挂载路径 == 容器侧转调拼出的字面 URL——两半边说的是同一个端点。
+
+    三者组合即证明：容器内编码代理经知识 MCP 代理可检索到同一条 case
+    （服务端链路回归另见 ``server/tests/mcp_tools/test_container_knowledge_chain.py``）。
+    reverse 反查而非硬编码复读（T-104-07）：URL 挂载漂移时本断言显形，
+    而不是测试与生产一起漂移。
+    """
+    # task/core/knowledge_tools.py: url = f"{base}/api/mcp/tools/{tool_name}/"
+    container_url_template = "/api/mcp/tools/{tool_name}/"
+    assert reverse("mcp-tool-search-learning-cases") == container_url_template.format(
+        tool_name="search_learning_cases"
+    )
+    assert reverse("mcp-tool-search-learning-cases") == _SEARCH_URL
