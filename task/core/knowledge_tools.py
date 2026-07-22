@@ -270,11 +270,17 @@ def _make_knowledge_handler(
         # 配额守门（T-103-07）：用尽后直接返回文案，不再发 HTTP。
         # 不带 is_error：这不是错误而是预算终点，避免模型把它当失败反复重试。
         if quota_counter[0] >= quota:
-            logger.warning(
-                "knowledge_tool_quota_exhausted",
-                tool=tool_name,
-                quota_used=quota_counter[0],
-            )
+            # IN-04（103 审查）：warning 只在首次用尽打一条——agent 用尽后反复调
+            # 工具时不刷屏（高频循环日志纪律）。计数器越界一格作为"已告警"哨兵
+            # （7 个 handler 共享同一闭包计数器，全局恰告警一次），后续静默返回
+            # 文案（文案本身已足够让 agent 停手）。
+            if quota_counter[0] == quota:
+                quota_counter[0] = quota + 1
+                logger.warning(
+                    "knowledge_tool_quota_exhausted",
+                    tool=tool_name,
+                    quota_used=quota,
+                )
             return {"content": [{"type": "text", "text": QUOTA_EXHAUSTED_TEXT}]}
         quota_counter[0] += 1
 
