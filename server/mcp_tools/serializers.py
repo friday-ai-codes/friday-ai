@@ -728,6 +728,10 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
         "request": ["project_id", "content", "source_conversation_id"],
         "response": ["accepted", "draft_id", "reason", "run_id"],
     },
+    "report_project_state": {
+        "request": ["project_id", "branch_name", "repository_id", "apis"],
+        "response": ["applied", "reason", "results", "total_applied", "run_id"],
+    },
     "search_project_context": {
         "request": ["project_id", "query", "top_k", "entity_kinds"],
         "response": ["project_id", "query", "results", "total", "run_id"],
