@@ -278,6 +278,7 @@ def test_execute_work_item_repo_tasks_records_partial_multi_repo_results(
         branch_name: str,
         target_branch: str,
         timeout_seconds: int,
+        initiating_user=None,
     ):
         trace.status = McpCodingExecutionTrace.Status.COMPLETED
         trace.branch_name = branch_name
@@ -418,6 +419,7 @@ def test_execute_work_item_repo_tasks_reports_partial_when_feishu_writeback_fail
         branch_name: str,
         target_branch: str,
         timeout_seconds: int,
+        initiating_user=None,
     ):
         trace.status = McpCodingExecutionTrace.Status.COMPLETED
         trace.branch_name = branch_name
@@ -594,6 +596,7 @@ def _completed_dispatch_with_session(repo_failed_id=None):
         branch_name: str,
         target_branch: str,
         timeout_seconds: int,
+        initiating_user=None,
     ):
         if repo_failed_id is not None and trace.repository_id == repo_failed_id:
             trace.status = McpCodingExecutionTrace.Status.FAILED
