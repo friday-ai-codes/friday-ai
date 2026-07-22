@@ -429,6 +429,18 @@ class ProjectDocService:
                 str(initiated_by_user_id or getattr(actor, "id", "")) or None
             ),
         )
+        # KNOW-06（Phase 102）：API 上报后调度 STATE 文档物化进 delivery_knowledge——
+        # 修复「upsert 只推飞书不物化」断链，让上报的 API 清单可被语义检索。
+        # report_project_state 批量上报会逐条触发，摄取管线 content_hash 短路保证
+        # 重复调度为幂等空操作，不需要额外去抖；工作区未 provision（无 STATE doc）
+        # 时静默跳过（_schedule_materialization 自身全吞异常 fail-soft）。
+        doc_id = await ProjectDoc.objects.filter(
+            project_id=project_id, doc_type=DocType.STATE
+        ).values_list("id", flat=True).afirst()
+        if doc_id:
+            await self._schedule_materialization(
+                doc_id, initiated_by_user_id or getattr(actor, "id", None)
+            )
         return api, created
 
     @sync_to_async
