@@ -232,6 +232,52 @@ async def test_comment_error_does_not_raise_and_doc_unaffected(
     assert len(doc_client.appended) == 1
 
 
+@pytest.mark.asyncio
+async def test_upstream_exception_text_redacted_before_persistable_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """凭证泄漏守卫（101 WR-02）：上游异常文本含密钥 → 返回 error 字段已脱敏。
+
+    返回 dict 会被 MCP 薄包装持久化到 ``technical_plan.error`` / ``comment_result``
+    （DB 直写无 processor/ledger 兜底），故 ``awrite_back`` 出口必须已脱敏。
+    """
+    secret = "sk-ant-api03-verysecretcredential1234567890"
+    space = await sync_to_async(Space.objects.create)(
+        name="writeback-space-secret",
+        feishu_project_key="wb-key-secret",
+    )
+
+    async def _doc_factory(_space):
+        raise RuntimeError(f"upstream 401: Authorization: Bearer {secret}")
+
+    monkeypatch.setattr(
+        "delivery.services.coding_completion.create_feishu_doc_client_for_project",
+        _doc_factory,
+    )
+    monkeypatch.setattr(
+        "delivery.services.coding_completion.create_feishu_client_for_project",
+        lambda _space: _FakeFeishuClient(exc=RuntimeError(f"comment failed with key {secret}")),
+    )
+
+    document_update, comment = await CompletionWritebackService().awrite_back(
+        feishu_project_key="wb-key-secret",
+        work_item_type="story",
+        work_item_id=88,
+        title="登录改造",
+        results=_results(),
+        space=space,
+        feishu_document_id="doxcnPlan",
+        doc_markdown="## 执行结果\n",
+    )
+
+    assert document_update["status"] == "error"
+    assert comment["status"] == "error"
+    assert secret not in document_update["error"]
+    assert secret not in comment["error"]
+    assert "REDACTED" in document_update["error"]
+    assert "REDACTED" in comment["error"]
+
+
 def test_render_results_markdown_matches_mcp_template() -> None:
     """渲染模板与 MCP ``_execution_results_markdown`` 现状逐字一致。"""
     result = RepoResult(
