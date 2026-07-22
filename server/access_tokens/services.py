@@ -88,5 +88,15 @@ async def arevoke_task_tokens(session_id: str) -> int:
                 component="access_tokens",
             )
         return count
-    except Exception:  # noqa: BLE001 — best-effort，吊销失败由 expires_at 自过期兜底
+    except Exception as exc:  # noqa: BLE001 — best-effort，吊销失败由 expires_at 自过期兜底
+        # IN-02（103 审查）：吞异常但留结构化 warning——吊销持续失败（DB 抖动等）
+        # 必须可观测，否则只能靠 TTL 兜底且无人知晓。不 raise，保持 best-effort。
+        logger.warning(
+            "task_token_revoke_failed",
+            session_id=session_id,
+            error_type=type(exc).__name__,
+            initiated_by_user_id="system",
+            category="caller",
+            component="access_tokens",
+        )
         return 0
