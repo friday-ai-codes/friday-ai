@@ -137,7 +137,12 @@ Plans:
   4. 里程碑端到端验收成立：同一条 learning case 在 Chat 工具 / 编排召回 / MCP `search_learning_cases` / 容器知识 MCP 四处均可检索到（统一排序）。
 
 **Pitfalls**: P6 收口断裂（契约先定、`rg planning_service` 引用清单为第一个 task、patch target 可 import 断言）。
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 104-01-PLAN.md — UNIFY-01 improve 收敛 delegate：引用清单 + 契约定版进 schema 描述 + map_canonical 随迁 + snapshot 双修（improve/create session_id/status）+ 测试迁 fake delegate（Wave 1）
+- [ ] 104-02-PLAN.md — UNIFY-02/03 analyze 随迁 repository_analysis_service + extra_evidence 编排消费接线 + planning_service.py 删除 + plan_orchestration 空壳/docs 清零 + stale patch target 守卫（Wave 2，依赖 104-01）
+- [ ] 104-03-PLAN.md — 里程碑端到端验收：同一 learning case 四面检索（Chat 工具/编排召回/MCP view/容器链同 URL 契约）+ MCP 与 Chat top-1 统一排序断言（Wave 3，依赖 104-02）
 
 <details>
 <summary>✅ v0.16.3 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）(Phases 96–99) — SHIPPED 2026-07-01 — 审计 tech_debt</summary>
