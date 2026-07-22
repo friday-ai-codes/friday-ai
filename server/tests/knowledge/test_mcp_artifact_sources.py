@@ -420,6 +420,23 @@ class TestNormalizers:
         for event in trace_events:
             assert _DIFF_SENTINEL not in _event_dump(event)
 
+    async def test_execution_trace_error_text_redacted_in_content(self) -> None:
+        """trace.error 含凭证（Bearer token 等）→ content 只留 ***REDACTED***（ME-01）。"""
+        secret = "Bearer sk-friday-secret-token-1234567890abcdef"
+        plan, version = await sync_to_async(_make_plan)()
+        trace = await sync_to_async(
+            lambda: _make_trace(plan, version, error=f"git push 失败：Authorization: {secret}")
+        )()
+
+        events = await normalize_mcp_execution_trace(
+            IngestionRequest("mcp_execution_trace", str(trace.id), "mcp_execution_created")
+        )
+
+        code_change = events[-1]
+        assert "## 错误" in code_change.content
+        assert secret not in _event_dump(code_change)
+        assert "***REDACTED***" in code_change.content
+
     async def test_execution_trace_plan_version_missing_degrades_to_single_event(self) -> None:
         """plan 无自有版本（trace.plan_version 指向他 plan 版本的病理形态）→ 降级单事件。"""
         plan_a, _ = await sync_to_async(lambda: _make_plan(with_version=False))()
