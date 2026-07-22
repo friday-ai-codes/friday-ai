@@ -53,8 +53,10 @@ _EXTRACT_MODEL_FALLBACK = "claude-sonnet-4-20250514"
 _SUCCESS_STATUSES = {"completed"}
 # 质量门：problem/solution 最小信息量（去空白后字符数）。
 _MIN_FIELD_LEN = 30
-# 去模板断言：solution 以占位废话开头视为模板产物。
-_TEMPLATE_PREFIXES = ("暂无", "无", "N-A", "N/A", "TODO", "待补充", "略")
+# 去模板断言：solution 以占位废话开头视为模板产物。单字 "无"/"略" 不进 startswith
+# 判定——会误杀 "无需改动…"/"无论走哪条链路…" 等完全正常的 solution 开头（101 IN-01）；
+# 纯 "无"/"略" 之类超短模板产物已被 _MIN_FIELD_LEN 长度门先行拦截，无漏网。
+_TEMPLATE_PREFIXES = ("暂无", "N-A", "N/A", "TODO", "待补充")
 
 _EXTRACT_PROMPT = (
     "你是工程经验提炼助手。请阅读以下一次编码任务的需求与执行产出，提炼**一条可复用的"
