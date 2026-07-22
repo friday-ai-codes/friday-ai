@@ -4,11 +4,11 @@ milestone: v0.17.0
 milestone_name: 统一知识库与全链路联动
 current_phase: 104
 current_phase_name: 工具面收口
-status: complete
-stopped_at: 执行 104-03（里程碑四面检索端到端验收）完成——新建 server/tests/test_milestone_e2e_learning_case.py（自包含：内存 Qdrant + 确定性 bag-of-words embedding + PAT mcp_client 本地复刻；双种子区分度设计 T-104-07）；同一条 learning case 四面均可检索：面 1 Chat 工具 search_learning_cases（会话 owner 权限前置直调）、面 2 DeliveryKnowledgeRecallAdapter.recall（learning_case kind 命中且 entity_id 经 generate_entity_id 精确断言）、面 3 MCP view POST /api/mcp/tools/search_learning_cases/（top-1 强相关条）、面 4 容器链同 URL 契约（reverse 反查 == task 侧字面模板）+ 组合覆盖文档化；统一排序断言（MCP 与 Chat top-1 case_id 一致）落地。2 commits（a35d74e7/562f697c）；单文件 3 passed + 定向回归（E2E + mcp_tools + recall_adapter + knowledge_read_tools）216 passed。**Phase 104（工具面收口）3/3 完成，UNIFY-01/02/03 全部交付；v0.17.0 五个 phase（100–104）18/18 plans 全部执行完毕。** 下一步：里程碑审计（/gsd-audit-milestone）→ complete-milestone 归档。
-last_updated: "2026-07-22T07:45:00.000Z"
+status: shipped
+stopped_at: v0.17.0 里程碑完成归档（complete-milestone）——里程碑审计 tech_debt（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，报告归档 milestones/v0.17.0-MILESTONE-AUDIT.md）；REQUIREMENTS 19/19 勾选 + Traceability 全 Complete 并归档 milestones/v0.17.0-REQUIREMENTS.md；ROADMAP v0.17.0 详情快照归档 milestones/v0.17.0-ROADMAP.md 并折叠为 <details>；MILESTONES.md 补 v0.17.0 条目；打 annotated tag v0.17.0。下一步：`$gsd-new-milestone` 立项下一里程碑。
+last_updated: "2026-07-22T08:50:00.000Z"
 last_activity: 2026-07-22
-last_activity_desc: 104-03 完成：里程碑四面检索 E2E 验收 + 统一排序断言，Phase 104 3/3 收官
+last_activity_desc: v0.17.0 shipped：complete-milestone 归档 + tag v0.17.0
 progress:
   total_phases: 5
   completed_phases: 5
@@ -23,19 +23,19 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
-**Core value（v0.17.0）:** 让"产出→入图→召回→更好的产出"的知识飞轮真正转起来：任一链路的产物都可被任一链路检索到，任一链路编码完成都自动沉淀经验并回写业务侧，编码容器天然带着 Friday 的知识工具与 skills 干活。统一知识库 = 既有 `knowledge/` 体系（单一摄取入口 + 单一检索服务），不新建存储。
-**Current focus:** v0.17.0 autonomous 执行中——Phase 100 已完成（verification passed 5/5，KNOW-01/02/03 交付：learning_case 入图 + 向量检索切换契约不变 + MCP 三产物入图 + backfill）。Phase 101 Wave 1（101-01 回写抽取 / 101-02 提炼管线）执行中；102/103/104 CONTEXT 已就绪。
+**Core value（v0.17.0，已交付）:** 让"产出→入图→召回→更好的产出"的知识飞轮真正转起来：任一链路的产物都可被任一链路检索到，任一链路编码完成都自动沉淀经验并回写业务侧，编码容器天然带着 Friday 的知识工具与 skills 干活。统一知识库 = 既有 `knowledge/` 体系（单一摄取入口 + 单一检索服务），不新建存储。
+**Current focus:** v0.17.0 已于 2026-07-22 shipped（审计 tech_debt，19/19 需求，归档见 `milestones/v0.17.0-*`）——between-milestones，下一里程碑待 `$gsd-new-milestone` 立项。v0.17.0 遗留 11 项真实环境人工验证 + 接受/递延债务见 [milestones/v0.17.0-MILESTONE-AUDIT.md](./milestones/v0.17.0-MILESTONE-AUDIT.md)。
 
 ## Current Position
 
-Phase: 104 of 100–104 (工具面收口) — ✅ Complete (3/3 plans)
-Plan: 104-03 里程碑四面检索端到端验收完成（自包含 E2E：Chat 工具/编排召回/MCP view/容器链同 URL 契约 + MCP 与 Chat top-1 统一排序断言）
-Status: Phase 100/101/102/103/104 全部 complete——v0.17.0 里程碑 18/18 plans 执行完毕，待里程碑审计/归档
-Last activity: 2026-07-22 — 104-03 完成：里程碑四面检索 E2E 验收 + 统一排序断言，Phase 104 收官
+Phase: v0.17.0（Phases 100–104）全部 complete 并归档 — ✅ SHIPPED 2026-07-22
+Plan: complete-milestone 归档完成（ROADMAP/REQUIREMENTS/AUDIT 入 milestones/ + tag v0.17.0）
+Status: shipped / between-milestones——下一里程碑待立项
+Last activity: 2026-07-22 — v0.17.0 complete-milestone 归档 + tag
 
 Progress: [██████████] 100% (5/5 phases)
 
-## Milestone Overview (v0.17.0 — Phases 100–104 — 🚀 EXECUTING)
+## Milestone Overview (v0.17.0 — Phases 100–104 — ✅ SHIPPED 2026-07-22)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
@@ -45,7 +45,7 @@ Progress: [██████████] 100% (5/5 phases)
 | 103 | 编码容器集成（短 TTL token + 容器知识 MCP + skills 注入 + 上下文对齐） | AGENT-01~04 | ✅ Complete (4/4) |
 | 104 | 工具面收口（improve/analyze 收敛 + 确定性缝退役 + 端到端验收） | UNIFY-01/02/03 | ✅ Complete (3/3) |
 
-完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（19 条 + Traceability，100% 映射）；阶段详情见 [.planning/ROADMAP.md](./ROADMAP.md)。
+完整需求见 [milestones/v0.17.0-REQUIREMENTS.md](./milestones/v0.17.0-REQUIREMENTS.md)（19 条 + Traceability，19/19 Complete）；阶段详情见 [milestones/v0.17.0-ROADMAP.md](./milestones/v0.17.0-ROADMAP.md)；审计见 [milestones/v0.17.0-MILESTONE-AUDIT.md](./milestones/v0.17.0-MILESTONE-AUDIT.md)。
 
 **Execution order（依赖链）:** 100 → 101 → 102 → 103 → 104。100 是全里程碑枢纽（natural key 规则表决策先于一切入图工作，KNOW-01 是 LOOP 沉淀/召回扩容/容器查经验的共同前置）；101 的回写抽取（LOOP-01/02）可与 100 并行、沉淀（LOOP-03）依赖 100 入图通路；102 依赖 100（learning_case kind 存在、检索已切向量版）；103 放 KNOW 定版后（容器白名单调的正是定版后的检索工具；AGENT-01 短 TTL token 是 AGENT-02 前置）；104 收口放最后（improve/analyze 收敛依赖 102 编排召回扩容先就位，退役工作最后做减 rebase 面）。
 
@@ -417,6 +417,22 @@ None.
 Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后分三类：✅ 已解决、
 🔒 需外部系统/全新实例（本地无法闭环）、🖐 纯观感人工验收（可后续浏览器抽验）。
 
+### 🔒 Acknowledged at v0.17.0 close（2026-07-22）
+
+里程碑关闭前审计：19/19 需求（KNOW/LOOP/AGENT/UNIFY）代码层全满足、跨阶段 integration_ok、0 gaps / 0 BLOCKER。累计 deferred 11 项真实环境人工验证 + 若干接受/递延债务 + 少量测试腐化，确认后继续关闭（accept tech_debt）。
+
+| Category | Item | Status |
+|----------|------|--------|
+| uat_gap | Phase 100 — 真实 Qdrant + embedding 环境 backfill_learning_cases 后召回质量/排序抽查 + 存量部署幂等 ×2 | deferred（需真实 Qdrant/存量数据） |
+| uat_gap | Phase 101 — 真实飞书回写 / 真实 LLM 提炼质量 / 自动提炼 case 端到端可召回 / PR review 沉淀开关联动 ×4 | deferred（需真实飞书/LLM/Qdrant） |
+| uat_gap | Phase 102 — ProjectStateApi 端到端检索命中（真实 Qdrant）×1 | deferred |
+| uat_gap | Phase 103 — 真实容器端到端知识工具 / 真实镜像构建 skills 注入 / skills 行为遵循性 / 终态吊销时效 ×4 | deferred（需 runner + Docker 真实环境） |
+| uat_gap | Phase 104 — 真实 Cursor 调 improve_coding_plan（partial 短路不挂起）×1 | deferred |
+| tech_debt | 103：chat 链 mint 超时 3600 与 DispatchTask timeout 魔数双写（IN-03）；kind=task 的 AccessToken 无定期清理且现身用户 PAT 列表（IN-06） | deferred（接受/递延，下次触碰时收敛） |
+| tech_debt | 104：E2E 容器链 URL 字面模板非源码派生（IN-03，task 侧测试兜住）；serializers.py/views.py ruff format 欠账（IN-04） | deferred（接受） |
+| pre_existing | tests/knowledge/test_triggers.py mcp fake _collect 签名漂移（一行修复）+ workflows.nodes.ai.plan_generation 删模块遗留 ×4 + test_feishu_im.py is_bot_in_chat mock 失效 | deferred（测试层腐化，见 audit cross-cutting） |
+| verification_gap | Phases 100–104 均无 *-VALIDATION.md（Nyquist missing），如需补齐逐相 /gsd-validate-phase | deferred |
+
 ### 🔒 Acknowledged at v0.16.3 close（2026-07-01）
 
 里程碑关闭前审计：12/12 需求（KDEP-01~12）代码层全满足、跨阶段 integration_ok、0 gaps / 0 BLOCKER。累计 deferred 4 项阶段验证 human_needed（真机/真实 provider/浏览器视觉端到端人工验收）+ 3 个既有无关 quick task + 6 个既有范围外测试漂移（本里程碑未触碰其代码），确认后继续关闭（accept tech_debt）。
@@ -510,8 +526,9 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-07-22T07:45:00.000Z
-Stopped at: 执行 104-03（里程碑四面检索端到端验收）完成——新建自包含 E2E 测试 `server/tests/test_milestone_e2e_learning_case.py`（内存 Qdrant + 确定性 embedding + 双种子区分度），同一条 learning case 四面（Chat 工具 / DeliveryKnowledgeRecallAdapter / MCP view / 容器链同 URL 契约+组合覆盖）均可检索 + MCP 与 Chat top-1 统一排序断言。2 commits（a35d74e7/562f697c）；3 passed + 定向回归 216 passed。**Phase 104 3/3 收官，v0.17.0 全部 18 plans 执行完毕。** 下一步：里程碑审计 → complete-milestone。
+Last session: 2026-07-22T08:50:00.000Z
+Stopped at: v0.17.0 complete-milestone 归档完成——REQUIREMENTS 19/19 勾选并归档、ROADMAP 快照归档 + 折叠 `<details>`、MILESTONES.md 补条目、audit 移入 milestones/、annotated tag v0.17.0。下一步：`$gsd-new-milestone`。
+Earlier: 执行 104-03（里程碑四面检索端到端验收）完成——新建自包含 E2E 测试 `server/tests/test_milestone_e2e_learning_case.py`（内存 Qdrant + 确定性 embedding + 双种子区分度），同一条 learning case 四面（Chat 工具 / DeliveryKnowledgeRecallAdapter / MCP view / 容器链同 URL 契约+组合覆盖）均可检索 + MCP 与 Chat top-1 统一排序断言。2 commits（a35d74e7/562f697c）；3 passed + 定向回归 216 passed。**Phase 104 3/3 收官，v0.17.0 全部 18 plans 执行完毕。** 下一步：里程碑审计 → complete-milestone。
 Earlier: 执行 103-04（AGENT-04 工作流上下文对齐）完成——共享 helper 上提 `services/project_context_packer.py`（prepend_project_context / aresolve_project_for_repo_branch / apack_dispatch_context，chat 纯重构改引用零回归，workflow 不 import chat）+ workflow `_resolve_wave_project_contexts` 按 (project, branch) 解析一次逐仓复用（ProjectBranch 反查 + work_item fallback，user=dispatch_user）+ `_run_repo_coding` prompt prepend + env_FRIDAY_TASK_PROJECT_CONTEXT 注入（与 chat 一致，fail-soft 空串 no-op）。2 commits（81956173/113ac520）；新守护测试 6 例 + chat 99 全绿 + dispatch 触点 54 passed 零回归。**Phase 103（编码容器集成）4/4 完成，AGENT-01~04 全部交付。** 下游 → Phase 104（工具面收口，UNIFY-01/02/03）。
 Earlier: 执行 101-03（LOOP-02/03 锚点接线）完成——三元组反查器（workflow 链 `plan_version_id→ArtifactVersion→artifact.work_item` 标量链 + chat 链 `content__chat_coding_plan_id` JSON 键 seam，现状无写入方零行为变化）+ `aextract_for_session` 提炼便捷入口；workflow `AICodingNode` 新增 `write_back` 配置（模板默认开）+ **存量缺键 fallback 三态守门**（缺键+无绑定=零变化专项用例）+ `_finalize_and_notify` 完工闭环（回写 + 逐 session `run_in_background` 提炼调度，session→repo 映射两调用点补齐）；chat `create_pr_or_skip_node` PR 成功分支回写（无会话级开关）+ 提炼（skip-PR 不回写但提炼照常）；MCP `execute_work_item_repo_tasks` 提炼锚点；前端 `aiCodingConfigSchema` 同步 + docs 升级说明。5 commits（317b48c6/93f4be4b/6adb1dff/4ee87e38/c2749bb9）；69 测试全绿 + vue-tsc 通过。Deviation：session_repo_map 可选参数补缺口、误用一次 git stash（无损自纠）、存量腐坏测试 test_sub_step_coding_node 记 deferred-items.md。下游 → 101-04（LOOP-04/05 Skill 种子 + PR review 沉淀，Wave 3）。
 Earlier: 里程碑 v0.16.1 统一 AI 技术方案生成已 shipped（complete-milestone + cleanup）——6/6 phase（90–95）/ 27 plans / 18 需求全部完成并提交；里程碑审计 tech_debt（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，遗留真机·真实 provider·画布视觉端到端验收 10 项 + INFO 欠债，见 `.planning/milestones/v0.16.1-MILESTONE-AUDIT.md`）。归档：`ROADMAP.md` 折叠为 `<details>` + 全量快照入 `.planning/milestones/v0.16.1-ROADMAP.md`；audit git mv 入 `milestones/`；phase 目录 git mv 入 `.planning/milestones/v0.16.1-phases/`。未打 git tag；REQUIREMENTS.md 保留待下一里程碑 new-milestone 归档（沿用 v0.16.0 模式）。
@@ -530,7 +547,7 @@ Earlier: 执行 92-03（SLOT-02 收官）——新建 clarification_card 原子�
 Earlier: 执行 92-02（插槽后端 SLOT-02 端口暴露半）——ai_plan_research 暴露 clarify(out)/resume(in) 插槽端口（仅声明零运行时改动）+ build_clarification_card action 前缀参数化；91-05（前端 ClarificationCard 多题多选渲染，CLARIFY-04）——扩展 ClarificationCard.vue 按 payload 形态分支：含 questions[] 走 plan 多题轮（single button / multi Checkbox + ⭐推荐默认选中 + 每题自由输入），否则走既有 chat 单题（零回归）；提交聚合 answers[{question_id,selected,freeform_text}] 打 91-04 专路由 postPlanClarificationAnswer → markPlanClarificationAnswered；新增 PlanClarification* 类型 + ConversationRuntime.pending_plan_clarification 透传 + store 独立 pendingPlanClarifications（conversation 维度隔离）+ runtime 回灌 + ChatMessageArea 渲染分支 + chat.clarification i18n（默认中文）+ TDD 守护 spec（真实 zh-CN.json）。6 用例绿、chat/stores 267 无回归、vue-tsc/eslint 干净。**Phase 91 全部完成（5/5）。**
 Earlier: 执行 91-04（会话端 plan 澄清专路由 + runtime 暴露 + 同源续推）；91-03（飞书澄清回调 plan_clarify_ 收答 → 续推 → approve_node 重调度）；91-02（工作流节点发卡 + WorkflowEventSubscription + WR-03 三处 pending 收口）；91-01（共享回流 helper aanswer_round_and_resume + 多轮放开）；90-04（入口无关 ask_clarification helper）；90-03（ClarifyAdapter 接 LLM 多题 + fail-soft + pending 收口）；90-02（ClarificationService 写入入口）；90-01（结构化澄清数据脊柱）。
 Resume file: None
-Next: `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）；v0.16.1 遗留真机/真实 provider/画布视觉端到端验收（10 项）见 `milestones/v0.16.1-MILESTONE-AUDIT.md` §4 与各 phase VERIFICATION「Deferred」段。
+Next: `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）；v0.17.0 遗留 11 项真实环境人工验证 + 接受/递延债务见 `milestones/v0.17.0-MILESTONE-AUDIT.md`；v0.16.1 遗留真机/真实 provider/画布视觉端到端验收（10 项）见 `milestones/v0.16.1-MILESTONE-AUDIT.md` §4。
 
 ## Operator Next Steps
 

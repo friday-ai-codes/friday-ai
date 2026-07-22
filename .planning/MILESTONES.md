@@ -1,5 +1,17 @@
 # Milestones
 
+## v0.17.0 统一知识库与全链路联动 (Shipped: 2026-07-22)
+
+**Phases completed:** 5 phases (100–104), 18 plans；19/19 需求（KNOW-01~06 / LOOP-01~05 / AGENT-01~04 / UNIFY-01~04）；里程碑审计 **tech_debt**（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留 11 项真实 Qdrant·飞书·容器·Cursor 端人工验证 + 若干接受/递延债务）见 [milestones/v0.17.0-MILESTONE-AUDIT.md](./milestones/v0.17.0-MILESTONE-AUDIT.md)
+
+让"产出→入图→召回→更好的产出"的知识飞轮真正转起来：**统一知识库收敛（KNOW）**——learning case 与 MCP 链路产物（coding plan / 仓库分析 / 执行 trace）全部进既有 `KnowledgeEntity` + Qdrant `delivery_knowledge`（单一摄取 `aschedule_ingestion` + 单一检索 `DeliveryKnowledgeSearchService`，不新建存储），`search_learning_cases` 底层切向量检索契约不变、token 打分退役，存量 case backfill 回填；编排召回扩 `document`/`learning_case` kinds、Chat 新增三个知识读工具、ProjectStateApi 可语义检索。**完工沉淀闭环（LOOP）**——飞书回写抽公共 `CompletionWritebackService` 三链路（workflow / chat / MCP）统一接入（MR 已知锚点、存量 fallback 守门零回归），编码成功完成自动 LLM 提炼 learning case 入统一知识库（质量门/幂等/开关/best-effort），平台内置 `pre_coding_research` / `post_coding_capture` 两个多步 Skill 种子 + PR 后可选轻量 review 沉淀。**编码容器集成（AGENT）**——三链路派发统一铸造任务级短 TTL token（明文仅内存直进容器 env、DB 只存 sha256、终态吊销），容器内代理经进程内 SDK MCP server 主动调 7 个白名单只读知识工具（服务端 HTTP 工具面复用、排除/脱敏天然继承、env 缺失整体降级不挂），friday-code/friday-memory skills 同源注入容器（hash 一致性防双源漂移），工作流派发对齐 `pack_project_context`。**工具面收口（UNIFY）**——`improve_coding_plan`/`analyze_repository` 收敛 `delegate_process_runtime` 统一编排，`planning_service.py` 确定性缝退役、`plan_orchestration/` 空壳删除全仓引用清零，`TOOL_SCHEMA_SNAPSHOT` 补齐 + skills 文档对齐；里程碑四面检索 E2E 验收（同一 learning case 在 Chat 工具 / 编排召回 / MCP view / 容器链四处统一排序可检索）落地。
+
+**Known deferred items at close:** 11 项真实环境人工验证（真实 Qdrant backfill 召回质量 / 真实飞书回写 / 真实 LLM 提炼质量 / 真实容器端到端知识工具与 skills 注入 / 终态吊销时效 / 真实 Cursor 调 improve_coding_plan）+ 接受/递延债务（timeout 魔数双写、task token 清理策略、E2E URL 字面模板、ruff format 欠账）+ 少量测试腐化与 Nyquist VALIDATION 缺失。详见 [milestones/v0.17.0-MILESTONE-AUDIT.md](./milestones/v0.17.0-MILESTONE-AUDIT.md)。
+
+**What's next:** `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）。
+
+---
+
 ## v0.16.3 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱） (Shipped: 2026-07-01)
 
 **Phases completed:** 4 phases (96–99), 15 plans, 17 tasks；12/12 需求（KDEP-01~12）；里程碑审计 **tech_debt**（12/12 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留真机·真实 provider·浏览器视觉端到端验收 + 既有范围外测试漂移）见 [milestones/v0.16.3-MILESTONE-AUDIT.md](./milestones/v0.16.3-MILESTONE-AUDIT.md)
