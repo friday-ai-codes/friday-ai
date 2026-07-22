@@ -31,7 +31,7 @@
 - [x] **Phase 100: 知识收敛基座** - learning case 入图 + 存量回填 + `search_learning_cases` 切向量检索（契约不变）+ MCP 三类产物入图（KNOW-01/02/03）— completed 2026-07-15（4/4 plans，verification passed 5/5）
 - [x] **Phase 101: 完工沉淀闭环** - 公共飞书回写 service 三链路接入 + 编码完成自动提炼 learning case + 两个平台 Skill 种子 + PR 后可选 review 沉淀（LOOP-01~05）— completed 2026-07-22（4/4 plans，verification 5/5，review BLOCKER+5 已修复）
 - [x] **Phase 102: 知识消费面与对外契约** - 编排召回扩 kinds + Chat 知识读工具 + ProjectStateApi 可检索 + snapshot/skills 文档对齐（KNOW-04/05/06, UNIFY-04）— completed 2026-07-22（3/3 plans，verification 4/4，review HIGH+6 修复中）
-- [ ] **Phase 103: 编码容器集成** - 任务级短 TTL token + 容器知识 MCP + skills 同源注入 + 工作流派发对齐 pack_project_context（AGENT-01~04）
+- [x] **Phase 103: 编码容器集成** - 任务级短 TTL token + 容器知识 MCP + skills 同源注入 + 工作流派发对齐 pack_project_context（AGENT-01~04）— completed 2026-07-22（4/4 plans）
 - [ ] **Phase 104: 工具面收口** - improve/analyze 收敛 delegate_process_runtime + 退役 planning_service 确定性缝 + 清理 plan_orchestration 空壳（UNIFY-01/02/03）
 
 **执行顺序（依赖链）:** 100 → 101 → 102 → 103 → 104。100 是全里程碑枢纽（natural key 规则表决策先于一切入图工作）；101 的回写抽取（LOOP-01/02）可与 100 并行、沉淀（LOOP-03）依赖 100 入图通路；102 依赖 100（learning_case kind 存在、检索已切向量版）；103 放 KNOW 定版后（容器白名单调的正是定版后的检索工具，AGENT-01 短 TTL token 是 AGENT-02 前置）；104 收口放最后（improve/analyze 收敛依赖 102 编排召回扩容先就位，退役工作最后做减 rebase 面）。观测埋点不设独立 phase，按 PITFALLS P8 分配内嵌各 phase 验收标准。
@@ -126,7 +126,7 @@ Plans:
 - [x] 103-01-PLAN.md — AGENT-01 任务级短 TTL token：kind/session_id 迁移 + mint/revoke service + 三链接线（替换 user_pat_plaintext 死通道）+ 终态吊销 + 泄漏防线（Wave 1）
 - [x] 103-02-PLAN.md — AGENT-02 容器知识 MCP：knowledge_tools.py 7 工具白名单 + 配额 + allowed_tools 收口 + X-Friday-Session-Id 关联 + 第七面排除回归（Wave 1）
 - [x] 103-03-PLAN.md — AGENT-03 skills 同源注入：sync 脚本 + assets 入库 + Dockerfile COPY + 运行时同名不覆盖注入 + hash 一致性测试（Wave 1）
-- [ ] 103-04-PLAN.md — AGENT-04 工作流上下文对齐：helper 上提 packer + _dispatch_wave 按 project 解析一次逐仓复用 + prompt/env 注入（Wave 2，依赖 103-01）
+- [x] 103-04-PLAN.md — AGENT-04 工作流上下文对齐：helper 上提 packer + _dispatch_wave 按 project 解析一次逐仓复用 + prompt/env 注入（Wave 2，依赖 103-01）✅ 2026-07-22
 
 ### Phase 104: 工具面收口（improve/analyze 收敛 + 确定性缝退役 + 端到端验收）
 
