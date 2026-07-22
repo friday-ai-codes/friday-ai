@@ -33,7 +33,11 @@ findings:
   warning: 3
   info: 6
   total: 9
-status: findings
+status: resolved
+resolution:
+  fixed: 7
+  accepted: 2
+  fixed_at: 2026-07-22T07:40:00Z
 ---
 
 # Phase 103: Code Review Report
@@ -133,6 +137,50 @@ if project is None:
 **Fix:** 后续 phase 加定期清理（如删除 `kind="task"` 且过期/吊销超 N 天的行），列表 API 可选 `kind` 过滤参数。
 
 ---
+
+## Resolution Notes（2026-07-22 code review fixes）
+
+7 项已修复（3 Warning + 4 Info），2 项 Info 登记为接受/递延。每项一个原子提交，
+定向测试全绿（task 全量 235 passed / server 定向 76 passed，含新增守护测试）。
+
+### 已修复
+
+- **WR-01**（`81afe45b`）：采纳方案 B——`_build_tool_mounts` 的 builtin 并入仅在
+  remote / knowledge（编码链 MCP server）挂载时触发，extra-only 挂载沿用调用方
+  自带白名单；同时 repo_summary 调用点 `disallowed_tools` 显式追加
+  WebFetch/WebSearch（双保险：即使 knowledge 同挂导致 builtin 并入，disallowed
+  优先级更高仍兜底）。新增守护测试 `test_extra_only_mount_keeps_caller_allowlist_no_builtin`。
+- **WR-02**（`a3759080`）：收紧属无意漂移，去掉 `apack_dispatch_context` 的
+  `user is None` 短路，恢复"匿名会话 + PUBLIC_ORG 召回"的 chat 既有语义——权限
+  判定权威回归 `pack_project_context` visibility 闸门（members_only 对匿名依旧
+  fail-closed）。workflow 链调用点自带 `dispatch_user is not None` 守门，行为不变。
+  新增匿名 PUBLIC_ORG 召回 + 匿名 members_only fail-closed 两条回归测试。
+- **WR-03**（`ab5a23f0`）：采纳中期方案——落库副本统一剔除 `CREDENTIAL_ENV_KEYS`
+  三键（USER_TOKEN / GIT_ACCESS_TOKEN / CLAUDE_API_KEY），剔除清单记
+  `_redacted_env_keys` 标记；`_rebuild_dispatch_task` 断连重派按标记从权威源重解析
+  补回 Git token（`aresolve_git_token`）与 API key（provider 配置），重派 clone/SDK
+  行为与首派一致；USER_TOKEN 不重铸（重派容器降级不挂知识工具，与既有声明一致）。
+  内存 dispatch 保持完整，首派零变化。新增落库泄漏守护 + 重解析成功/失败降级三条测试。
+- **IN-01**（`bb50af81`）：chat 链 dispatch 抛异常时 best-effort
+  `arevoke_task_tokens(session_id)` 后原样上抛；workflow 链 `task_dispatch_failed`
+  分支同样吊销（`dispatch_user is not None` 守门）。新增吊销回归测试。
+- **IN-02**（`7d8e2d86`）：吞异常分支加结构化 `task_token_revoke_failed` warning
+  （session_id / error_type kv，category=caller / component=access_tokens），仍不 raise。
+- **IN-04**（`fba260dc`）：配额用尽 warning 只打首次一条（计数器越界一格作已告警
+  哨兵，7 handler 共享闭包全局恰一次），后续静默返回文案。新增只打一条守护测试。
+- **IN-05**（`495ff80f`）：`X-Friday-Session-Id` 入库前截断 64 字符（对齐
+  `SubAgentSession.session_id` max_length）。新增超长头截断测试。
+
+### 接受 / 递延
+
+- **IN-03**（chat 链 mint 3600 与 DispatchTask timeout 魔数双写）：接受现状。两处
+  相邻且有注释互指，余量 10 分钟可吸收漂移；单独提变量收益有限，留待下次触碰该
+  函数时顺手收敛。
+- **IN-06**（kind=task 行无清理策略 + 出现在 PAT 管理列表）："API 不区分 kind"为
+  CONTEXT 锁定决策，登记为运维债务递延后续 phase（定期清理任务 + 列表 kind 过滤参数）。
+
+_Fixed: 2026-07-22T07:40:00Z_
+_Fixer: Claude (gsd-code-fixer)_
 
 _Reviewed: 2026-07-22T06:55:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
