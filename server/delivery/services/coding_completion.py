@@ -9,7 +9,10 @@
 - 渲染模板逐字迁移自 ``mcp_tools.work_item_execution_service``（零回归前提）；
 - 回写失败记 ``writeback_failed`` 结构化事件后跳过，绝不重试、绝不上抛；
 - 三元组缺失 / space 解析不到记 ``writeback_skipped`` 后双 skipped 返回；
-- 异常文本仅入内部日志（structlog 已挂脱敏 processor），不写入飞书评论正文。
+- 异常文本不写入飞书评论正文；返回 dict 中的 ``error`` 字段（会被调用方持久化到
+  ``technical_plan.error`` / ``comment_result`` 等 DB 留痕）一律先过
+  ``redact_secrets_in_text``（101 WR-02——DB 直写没有 processor/ledger 兜底），
+  内部日志则继续依赖 structlog 脱敏 processor。
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ import structlog
 from django.utils import timezone
 
 from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
+from common.logging import redact_secrets_in_text
 from services.feishu import create_feishu_client_for_project
 from services.feishu_doc import FeishuDocAPIError
 
@@ -287,9 +291,17 @@ class CompletionWritebackService:
                     result = await doc_client.append_markdown(feishu_document_id, doc_markdown)
                     document_update = {"status": "appended", **result}
                 except (ValueError, FeishuDocAPIError) as exc:
-                    document_update = {"status": "error", "error": str(exc)}
+                    # 101 WR-02：error 会被调用方持久化入库（technical_plan.error /
+                    # comment_result），上游异常文本先脱敏。
+                    document_update = {
+                        "status": "error",
+                        "error": redact_secrets_in_text(str(exc)),
+                    }
                 except Exception as exc:  # noqa: BLE001 - writeback errors should be retryable state.
-                    document_update = {"status": "error", "error": str(exc)}
+                    document_update = {
+                        "status": "error",
+                        "error": redact_secrets_in_text(str(exc)),
+                    }
 
             if resolved_space:
                 try:
@@ -306,7 +318,8 @@ class CompletionWritebackService:
                         else {"status": "error", "error": "Feishu 工作项评论写入失败"}
                     )
                 except Exception as exc:  # noqa: BLE001 - writeback failure is partial state.
-                    comment = {"status": "error", "error": str(exc)}
+                    # 101 WR-02：同上，入库留痕前脱敏上游异常文本。
+                    comment = {"status": "error", "error": redact_secrets_in_text(str(exc))}
 
             duration_ms = int((time.monotonic() - started) * 1000)
             if document_update.get("status") == "error" or comment.get("status") == "error":
@@ -352,8 +365,9 @@ class CompletionWritebackService:
                 )
             except Exception:  # noqa: BLE001, S110 - 观测失败也吞掉
                 pass
+            # 101 WR-02：兜底分支同款——error 字段会被调用方入库，先脱敏。
             if document_update.get("status") == "skipped":
-                document_update = {"status": "error", "error": str(exc)}
+                document_update = {"status": "error", "error": redact_secrets_in_text(str(exc))}
             if comment.get("status") == "skipped":
-                comment = {"status": "error", "error": str(exc)}
+                comment = {"status": "error", "error": redact_secrets_in_text(str(exc))}
             return document_update, comment
