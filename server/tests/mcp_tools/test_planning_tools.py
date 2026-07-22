@@ -173,19 +173,27 @@ def test_create_coding_plan_stores_version_and_evidence(
     assert usage.first().total_tokens == 200
 
 
-def _make_fake_delegate(repo_id: str, repo_name: str, *, status: str = "completed"):
+def _make_fake_delegate(
+    repo_id: str,
+    repo_name: str,
+    *,
+    status: str = "completed",
+    captured: dict[str, Any] | None = None,
+):
     """构造 fake delegate（UNIFY-01：improve 收敛统一编排后测试不打真实编排）。
 
     completed 返回 canonical DONE content；partial 返回空 content（挂起短路契约）。
     均带 model_usage（WR-03：view 落 ModelUsageRecord 到 MCP run 维度）。
+    ``captured`` 提供时记录 delegate 收到的 kwargs（UNIFY-02 extra_evidence 注入断言）。
     """
 
     async def _fake_delegate(**_kwargs: Any) -> Any:
         from mcp_tools.orchestration_delegate import DelegateResult
 
-        content = (
-            _canonical_coding_content(repo_id, repo_name) if status == "completed" else {}
-        )
+        if captured is not None:
+            captured.update(_kwargs)
+
+        content = _canonical_coding_content(repo_id, repo_name) if status == "completed" else {}
         return DelegateResult(
             session=SimpleNamespace(id=uuid.uuid4()),
             status=status,
@@ -213,6 +221,15 @@ def test_improve_coding_plan_appends_new_version(
     """UNIFY-01：improve 收敛统一编排后——携带 feedback 的编排重跑产新 version（current_version+1）。"""
     client, _plaintext = mcp_client
     repo_id = str(indexed_repository.id)
+    # UNIFY-02：先产分析产物并在 create 时挂上，供 improve 侧 extra_evidence 注入断言。
+    analysis_response = client.post(
+        "/api/mcp/tools/analyze_repository/",
+        {"repository_id": repo_id, "focus": "错误处理"},
+        format="json",
+    )
+    assert analysis_response.status_code == 200
+    analysis_id = analysis_response.json()["analysis_id"]
+
     monkeypatch.setattr(
         "mcp_tools.views.delegate_process_runtime",
         _make_fake_delegate(repo_id, indexed_repository.name),
@@ -221,6 +238,7 @@ def test_improve_coding_plan_appends_new_version(
         "/api/mcp/tools/create_coding_plan/",
         {
             "repository_id": repo_id,
+            "analysis_id": analysis_id,
             "requirement": "调整 src/main.py 的错误处理",
             "context_chunks": [_chunk()],
         },
@@ -229,6 +247,12 @@ def test_improve_coding_plan_appends_new_version(
     assert create_response.status_code == 200
     plan_id = create_response.json()["plan_id"]
 
+    # improve 侧换带捕获的 fake delegate（UNIFY-02：plan.analysis_id → extra_evidence 注入）。
+    improve_kwargs: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "mcp_tools.views.delegate_process_runtime",
+        _make_fake_delegate(repo_id, indexed_repository.name, captured=improve_kwargs),
+    )
     response = client.post(
         "/api/mcp/tools/improve_coding_plan/",
         {
@@ -252,6 +276,12 @@ def test_improve_coding_plan_appends_new_version(
     assert "请增加回滚步骤" in body["change_summary"]
     # risk_delta 响应键保留（语义中性化：键存在即可）。
     assert "added" in body["risk_delta"]
+    # UNIFY-02：plan 挂 analysis → improve delegate 收到含该 analysis summary 的 extra_evidence。
+    evidence = improve_kwargs["extra_evidence"]
+    assert isinstance(evidence, list) and len(evidence) == 1
+    assert evidence[0]["kind"] == "repository_analysis"
+    assert evidence[0]["analysis_id"] == analysis_id
+    assert evidence[0]["summary"]["architecture_summary"]
     assert ToolCallRecord.objects.filter(
         run__run_id=body["run_id"],
         tool_name="improve_coding_plan",

@@ -39,24 +39,30 @@ async def start_orchestration(
     conversation_id: Any = None,
     node_execution_id: Any = None,
     initiated_by_user_id: str = "",
+    extra_evidence: list[dict] | None = None,
 ) -> ConvergenceSession:
     """按 technical_plan process 的 stage_state 形态建 ``ConvergenceSession``（多入口共用）。
 
     ``entrypoint`` 合法性（workflow|chat|mcp|webhook|tool_invoke）由 create_session 既有校验。
     INV-2：chat 入口传 ``work_item=None`` 即「自然语言需求」显式标记。
+    ``extra_evidence``（UNIFY-02）：调用方补充的编排输入证据（如 repository analysis
+    summary），写入 ``decomposition.extra_evidence``，merge 阶段消费；不提供则不写键
+    （既有会话形态与其他入口零扰动）。
     """
     from delivery.services import ConvergenceSessionService
+
+    decomposition: dict[str, Any] = {
+        "requirement_text": requirement_text,
+        "include_repos": include_repos or [],
+    }
+    if extra_evidence:
+        decomposition["extra_evidence"] = extra_evidence
 
     return await ConvergenceSessionService().create_session(
         "technical_plan",
         entrypoint,
         work_item=work_item,
-        stage_state={
-            "decomposition": {
-                "requirement_text": requirement_text,
-                "include_repos": include_repos or [],
-            }
-        },
+        stage_state={"decomposition": decomposition},
         created_by=created_by,
         conversation_id=conversation_id,
         node_execution_id=node_execution_id,

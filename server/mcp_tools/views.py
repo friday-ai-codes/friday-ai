@@ -1882,12 +1882,26 @@ class CreateCodingPlanView(McpToolView):
 
         # UNIFY-04：方案生成 delegate 到统一编排，include_repos=[repository_id] 约束**只跑单仓**
         # （Open Q2 决议）；绝不在 MCP 层重写拆分/路由/调研/融合（复用 Plan 03 共享核心）。
+        # UNIFY-02：带 analysis 时把 summary 作为编排输入证据注入（analysis_id 从"仅挂 FK"
+        # 升级为真实证据输入，merge 阶段消费）。
         requirement = str(input_data["requirement"])
+        extra_evidence = (
+            [
+                {
+                    "kind": "repository_analysis",
+                    "analysis_id": str(analysis.id),
+                    "summary": analysis.summary,
+                }
+            ]
+            if analysis
+            else None
+        )
         delegate = await delegate_process_runtime(
             requirement_text=requirement,
             work_item=None,
             include_repos=[repository_id],
             created_by=actor,
+            extra_evidence=extra_evidence,
         )
         content = delegate.content if isinstance(delegate.content, dict) else {}
         # WR-03：恢复 MCP run 维度 token/成本归因——delegate 回传本次编排聚合用量，落本 run
@@ -2046,13 +2060,25 @@ class ImproveCodingPlanView(McpToolView):
             sections.append(f"## 补充上下文\n\n{chunk_lines}")
         requirement_text = "\n\n".join(sections)
 
-        # 收敛到统一编排（镜像 create 先例）：include_repos=[repository_id] 单仓约束；
-        # 不加 feedback 专用参数（签名中性，104-02 再扩 extra_evidence）。
+        # 收敛到统一编排（镜像 create 先例）：include_repos=[repository_id] 单仓约束。
+        # UNIFY-02：plan 挂有 analysis 时把 summary 作为编排输入证据注入（同 create 同型）。
+        extra_evidence = None
+        if plan.analysis_id:
+            analysis = await McpRepositoryAnalysis.objects.filter(id=plan.analysis_id).afirst()
+            if analysis is not None:
+                extra_evidence = [
+                    {
+                        "kind": "repository_analysis",
+                        "analysis_id": str(analysis.id),
+                        "summary": analysis.summary,
+                    }
+                ]
         delegate = await delegate_process_runtime(
             requirement_text=requirement_text,
             work_item=None,
             include_repos=[str(plan.repository_id)],
             created_by=actor,
+            extra_evidence=extra_evidence,
         )
         content = delegate.content if isinstance(delegate.content, dict) else {}
         # WR-03：delegate 回传本次编排聚合用量，落 MCP run 维度（归因不回退）。best-effort。

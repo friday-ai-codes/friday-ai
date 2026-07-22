@@ -66,9 +66,7 @@ async def _load_canonical(session: Any) -> tuple[str | None, dict, str]:
     from services.process_runtime import render_merged_plan_markdown
 
     av_id = (
-        str(session.current_artifact_version_id)
-        if session.current_artifact_version_id
-        else None
+        str(session.current_artifact_version_id) if session.current_artifact_version_id else None
     )
     if not av_id:
         return None, {}, ""
@@ -125,12 +123,16 @@ async def delegate_process_runtime(
     work_item: Any = None,
     include_repos: list[str] | None = None,
     created_by: Any = None,
+    extra_evidence: list[dict] | None = None,
 ) -> DelegateResult:
     """delegate 到 ``process_runtime`` 统一编排，产 canonical MergedPlan/PlanVersion。
 
     流程（仅调共享 helper，绝不在 MCP 层重写编排）：
     ``start_orchestration(entrypoint="workflow")`` → ``build_orchestration_engine(
     skip_clarification=True)`` → ``adrive_convergence_session_to_pause_or_terminal`` → 终态/挂起映射。
+
+    ``extra_evidence``（UNIFY-02）：调用方补充的编排输入证据（如 repository analysis
+    summary），原样透传 ``start_orchestration`` 写入 stage_state，merge 阶段消费。
 
     终态/挂起映射（mirror ``plan_research._map_terminal``）：
     - ``DONE`` → ``status="completed"``，取 ``PlanVersion.content`` + 渲染 markdown。
@@ -155,6 +157,7 @@ async def delegate_process_runtime(
             category="caller",
             component="mcp_tools",
             include_repo_count=len(include_repos or []),
+            extra_evidence_count=len(extra_evidence or []),
         )
     except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
         pass
@@ -171,6 +174,7 @@ async def delegate_process_runtime(
             work_item=work_item,
             created_by=created_by,
             include_repos=include_repos,
+            extra_evidence=extra_evidence,
         )
         engine = build_orchestration_engine(skip_clarification=True)
         session = await adrive_convergence_session_to_pause_or_terminal(engine, session)
