@@ -223,6 +223,7 @@ async def _ensure_coding_plan(
     *,
     run: InteractionRun,
     task: McpWorkItemRepoTask,
+    initiated_by_user_id: str | None = None,
 ) -> tuple[McpCodingPlan, McpCodingPlanVersion]:
     if task.coding_plan_id and task.plan_version_id:
         plan = await McpCodingPlan.objects.select_related("repository").aget(id=task.coding_plan_id)
@@ -268,11 +269,11 @@ async def _ensure_coding_plan(
     from knowledge import ingestion  # lazy import 防循环
 
     # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）；
-    # initiated_by_user_id 绑定编排发起者（run 归属用户），后台摄取日志可归因（LO-02，
-    # 无触发用户的调用点缺省 system）。
+    # initiated_by_user_id 由视图层透传真实触发用户（InteractionRun 无 user 字段，
+    # 不可从 run 读取——101 WR-01），后台摄取日志可归因（LO-02，无触发用户缺省 system）。
     await ingestion.aschedule_ingestion(
         ingestion.IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_work_item_plan_created"),
-        initiated_by_user_id=str(run.user_id) if getattr(run, "user_id", None) else None,
+        initiated_by_user_id=initiated_by_user_id,
     )
     return plan, version
 
@@ -291,6 +292,7 @@ async def _execute_one_task(
     create_merge_requests: bool,
     timeout_seconds: int,
     reviewer_usernames: list[str],
+    initiated_by_user_id: str | None = None,
 ) -> McpWorkItemRepoTask:
     task.repository = await Repository.objects.aget(id=task.repository_id)
     if task.status == McpWorkItemRepoTask.Status.COMPLETED and (
@@ -298,7 +300,9 @@ async def _execute_one_task(
     ):
         return task
 
-    plan, version = await _ensure_coding_plan(run=run, task=task)
+    plan, version = await _ensure_coding_plan(
+        run=run, task=task, initiated_by_user_id=initiated_by_user_id
+    )
     trace = await _load_trace(task)
     if dispatch and trace is None:
         trace = await McpCodingExecutionTrace.objects.acreate(
@@ -332,13 +336,13 @@ async def _execute_one_task(
         from knowledge import ingestion  # lazy import 防循环
 
         # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）；
-        # initiated_by_user_id 绑定编排发起者（run 归属用户），后台摄取日志可归因（LO-02，
-        # 无触发用户的调用点缺省 system）。
+        # initiated_by_user_id 由视图层透传真实触发用户（InteractionRun 无 user 字段，
+        # 不可从 run 读取——101 WR-01），后台摄取日志可归因（LO-02，无触发用户缺省 system）。
         await ingestion.aschedule_ingestion(
             ingestion.IngestionRequest(
                 "mcp_execution_trace", str(trace.id), "mcp_work_item_execution_created"
             ),
-            initiated_by_user_id=str(run.user_id) if getattr(run, "user_id", None) else None,
+            initiated_by_user_id=initiated_by_user_id,
         )
         task.execution_trace = trace
 
@@ -553,6 +557,7 @@ async def execute_work_item_repo_tasks(
     write_back: bool,
     timeout_seconds: int,
     reviewer_usernames: list[str],
+    initiated_by_user_id: str | None = None,
 ) -> RepoTaskExecutionResult:
     technical_plan, tasks = await _resolve_tasks(
         run=run,
@@ -573,6 +578,7 @@ async def execute_work_item_repo_tasks(
                 create_merge_requests=create_merge_requests,
                 timeout_seconds=timeout_seconds,
                 reviewer_usernames=reviewer_usernames,
+                initiated_by_user_id=initiated_by_user_id,
             )
         )
 
@@ -584,9 +590,10 @@ async def execute_work_item_repo_tasks(
             technical_plan=technical_plan,
             tasks=executed,
             markdown=markdown,
-            # 观测归因（CONTEXT 观测决策）：MCP 链用 run user；InteractionRun 现无
-            # user 字段，取不到传 None → 公共层记 "system"。
-            initiated_by_user_id=str(run.user_id) if getattr(run, "user_id", None) else None,
+            # 观测归因（CONTEXT 观测决策 / 101 WR-01）：MCP 链的真实触发用户由
+            # ExecuteWorkItemRepoTasksView 经 request.user 透传（InteractionRun 无
+            # user 字段）；取不到传 None → 公共层记 "system"。
+            initiated_by_user_id=initiated_by_user_id,
         )
 
     # LOOP-03（101-03）：learning case 提炼锚点——MR 结果已知之后（_execute_one_task
@@ -598,7 +605,7 @@ async def execute_work_item_repo_tasks(
         )
         from services.background_runner import run_in_background
 
-        initiated_by = str(run.user_id) if getattr(run, "user_id", None) else None
+        initiated_by = initiated_by_user_id
         for task in executed:
             if task.status != McpWorkItemRepoTask.Status.COMPLETED or not task.execution_trace_id:
                 continue
@@ -656,8 +663,10 @@ async def execute_work_item_repo_tasks(
     from knowledge import ingestion  # lazy import 防循环
 
     plan_id = str(technical_plan.id)
+    # 101 WR-01：与同文件其余投递一致，绑定真实触发用户（缺省 None → system）。
     await ingestion.aschedule_ingestion(
-        ingestion.IngestionRequest("mcp_technical_plan", plan_id, "mcp_tasks_executed")
+        ingestion.IngestionRequest("mcp_technical_plan", plan_id, "mcp_tasks_executed"),
+        initiated_by_user_id=initiated_by_user_id,
     )
     return RepoTaskExecutionResult(
         technical_plan=technical_plan,

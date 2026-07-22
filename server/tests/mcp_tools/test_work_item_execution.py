@@ -678,6 +678,7 @@ def _patch_execution_io(monkeypatch: pytest.MonkeyPatch, dispatch) -> None:
 
 def test_execute_tasks_schedules_learning_case_extraction(
     mcp_client: tuple[APIClient, str],
+    access_user,
     project,
     indexed_repository,
     monkeypatch: pytest.MonkeyPatch,
@@ -722,6 +723,8 @@ def test_execute_tasks_schedules_learning_case_extraction(
     assert len(scheduled) == 1
     expected_sid = f"sub-mcp-{indexed_repository.id.hex[:8]}"
     assert scheduled[0]["name"] == f"learning-case-{expected_sid}"
+    # 101 WR-01：归因绑定真实触发用户（PAT 所有者），非 system/None。
+    assert scheduled[0]["initiated_by_user_id"] == str(access_user.id)
 
     # 执行 factory 验证提炼入参（session_id / 三元组 / pr_url 透传）。
     asyncio.run(scheduled[0]["factory"]())
@@ -732,6 +735,7 @@ def test_execute_tasks_schedules_learning_case_extraction(
     assert kwargs["work_item_type"] == "story"
     assert kwargs["work_item_id"] == 88
     assert kwargs["pr_url"] == "https://example.com/mr/1"
+    assert kwargs["initiated_by_user_id"] == str(access_user.id)
 
 
 def test_execute_tasks_extraction_skipped_without_execution_trace(
@@ -811,6 +815,66 @@ def test_execute_tasks_extraction_failure_does_not_affect_result(
     body = response.json()
     assert body["status"] == "completed"
     assert body["summary"]["completed"] == 1
+
+
+def test_execute_tasks_ingestion_and_writeback_bind_initiated_user(
+    mcp_client: tuple[APIClient, str],
+    access_user,
+    project,
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """101 WR-01：三处 aschedule_ingestion 与回写归因全部绑定 PAT 触发用户（非 system）。"""
+    from delivery.services.coding_completion import CompletionWritebackService
+
+    client, _plaintext = mcp_client
+    plan = _technical_plan(project, [indexed_repository])
+    _patch_execution_io(monkeypatch, _completed_dispatch_with_session())
+
+    ingestion_calls: list[dict[str, Any]] = []
+
+    async def _fake_schedule(request: Any, *, initiated_by_user_id: str | None = None) -> None:
+        ingestion_calls.append(
+            {"trigger": request.trigger, "initiated_by_user_id": initiated_by_user_id}
+        )
+
+    monkeypatch.setattr("knowledge.ingestion.aschedule_ingestion", _fake_schedule)
+
+    writeback_calls: list[dict[str, Any]] = []
+
+    async def _fake_awrite_back(self, **kwargs: Any):
+        writeback_calls.append(kwargs)
+        return {"status": "appended"}, {"status": "written"}
+
+    monkeypatch.setattr(CompletionWritebackService, "awrite_back", _fake_awrite_back)
+
+    response = client.post(
+        "/api/mcp/tools/execute_work_item_repo_tasks/",
+        {
+            "technical_plan_id": str(plan.id),
+            "create_missing": True,
+            "dispatch": True,
+            "create_merge_requests": True,
+            "write_back": True,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    expected_user = str(access_user.id)
+    # 三处投递：plan 创建 / trace 创建 / mcp_tasks_executed（此前第三处漏传）。
+    triggers = sorted(call["trigger"] for call in ingestion_calls)
+    assert triggers == [
+        "mcp_tasks_executed",
+        "mcp_work_item_execution_created",
+        "mcp_work_item_plan_created",
+    ]
+    assert all(call["initiated_by_user_id"] == expected_user for call in ingestion_calls), (
+        ingestion_calls
+    )
+    # 回写归因同样绑定真实触发用户。
+    assert len(writeback_calls) == 1
+    assert writeback_calls[0]["initiated_by_user_id"] == expected_user
 
 
 def test_execution_results_markdown_delegates_to_common_renderer(
