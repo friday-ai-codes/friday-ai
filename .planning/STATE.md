@@ -2,16 +2,19 @@
 gsd_state_version: 1.0
 milestone: v0.17.0
 milestone_name: 统一知识库与全链路联动
+current_phase: 104
+current_phase_name: 工具面收口
 status: executing
 stopped_at: 执行 104-01（UNIFY-01 improve 收敛统一编排）完成——improve_coding_plan 从确定性假改版收敛到 delegate_process_runtime（feedback 三段块编排重跑产新 McpCodingPlanVersion，响应含 session_id/status）；map_canonical_to_coding_plan 随迁 orchestration_delegate.py（零残留）；improve/create 契约定版进 serializer docstring；TOOL_SCHEMA_SNAPSHOT improve/create 双修 session_id/status（create 既有漂移修复），registered==snapshot 守卫保持绿；improve 相关测试全量迁移 fake delegate + 新增 partial 短路契约用例。3 commits（ceb42613/3a3969d7/334930cf）；快照守卫 5 passed + delegate 6 passed + planning/artifact 23 passed。既有 rot：test_work_item_execution.py 5 例失败（103-01 dispatch 签名 rot，记 deferred-items.md）。下一步 104-02（analyze 随迁 + planning_service.py 删除 + 残留清零）。
-last_updated: "2026-07-22T07:05:00.000Z"
-last_activity: 2026-07-22 — 104-01 完成：improve 收敛统一编排 + 契约定版 + snapshot 双修 + map_canonical 随迁
+last_updated: "2026-07-22T07:25:27.878Z"
+last_activity: 2026-07-22
+last_activity_desc: 104-01 完成：improve 收敛统一编排 + 契约定版 + snapshot 双修 + map_canonical 随迁
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 18
-  completed_plans: 16
-  percent: 89
+  completed_plans: 17
+  percent: 80
 ---
 
 # Project State
@@ -25,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: 104 of 100–104 (工具面收口) — ⏳ In progress (1/3 plans)
-Plan: 104-01 improve 收敛统一编排完成（契约定版 + snapshot 双修 + map_canonical 随迁 + 测试迁 fake delegate）
-Status: Phase 100/101/102/103 complete（verification passed）；Phase 104 executing（104-01 ✅，104-02/03 remaining）
-Last activity: 2026-07-22 — 104-01 完成：improve 收敛统一编排 + 契约定版 + snapshot 双修 + map_canonical 随迁
+Phase: 104 of 100–104 (工具面收口) — ⏳ In progress (2/3 plans)
+Plan: 104-02 analyze 收敛 + 确定性缝退役完成（build_repository_analysis 随迁 + extra_evidence 接线 + planning_service.py 删除 + 残留清零 + patch target 守卫）
+Status: Phase 100/101/102/103 complete（verification passed）；Phase 104 executing（104-01/02 ✅，104-03 remaining）
+Last activity: 2026-07-22 — 104-02 完成：extra_evidence 编排消费接线 + planning_service.py 删缝 + 全仓零残留
 
 Progress: [████████░░] 80% (4/5 phases)
 
@@ -213,6 +216,7 @@ Progress: [████████░░] 80% (4/5 phases)
 | Phase 101 P04 | 35m | 4 tasks | 15 files |
 | Phase 103 P02 | 25min | 3 tasks | 7 files |
 | Phase 103 P04 | ~11min | 2 tasks | 5 files |
+| Phase 104 P02 | ~25min | 4 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -370,6 +374,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 101]: 101-04: PR review 锚点调度前置开关检查——默认关零后台任务零 LLM 调用
 - [Phase 103]: 103-02：知识工具配额文案不带 is_error（预算终点非错误，防模型重试）；allowed_tools 三源合并收口单一构造函数 _build_tool_mounts（任一 server 挂载即全量并入 builtin，WR-02）
 - [Phase 103]: 103-01：token 过期余量取 10 分钟；chat 链 last_output.dispatch 落库副本剔除 env_FRIDAY_TASK_USER_TOKEN（泄漏防线，runner 断连重建时容器降级不挂知识工具）；T-11-02 spy 收窄为 AccessToken 读取类方法（mint acreate 新签发合法）；amark_cancelled 实有 REPO_SUMMARY 专属调用方（不 mint 故不挂吊销钩子，TTL 自过期兜底）
+- [Phase ?]: 104-02: extra_evidence 键名定 decomposition.extra_evidence（truthy 才写键），证据形态 [{kind, analysis_id, summary}]，merge prompt 在调研产物段后插补充证据段
 
 ### Pending Todos
 
@@ -504,7 +509,7 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-07-22T06:45:00.000Z
+Last session: 2026-07-22T07:24:46.062Z
 Stopped at: 执行 103-04（AGENT-04 工作流上下文对齐）完成——共享 helper 上提 `services/project_context_packer.py`（prepend_project_context / aresolve_project_for_repo_branch / apack_dispatch_context，chat 纯重构改引用零回归，workflow 不 import chat）+ workflow `_resolve_wave_project_contexts` 按 (project, branch) 解析一次逐仓复用（ProjectBranch 反查 + work_item fallback，user=dispatch_user）+ `_run_repo_coding` prompt prepend + env_FRIDAY_TASK_PROJECT_CONTEXT 注入（与 chat 一致，fail-soft 空串 no-op）。2 commits（81956173/113ac520）；新守护测试 6 例 + chat 99 全绿 + dispatch 触点 54 passed 零回归。**Phase 103（编码容器集成）4/4 完成，AGENT-01~04 全部交付。** 下游 → Phase 104（工具面收口，UNIFY-01/02/03）。
 Earlier: 执行 101-03（LOOP-02/03 锚点接线）完成——三元组反查器（workflow 链 `plan_version_id→ArtifactVersion→artifact.work_item` 标量链 + chat 链 `content__chat_coding_plan_id` JSON 键 seam，现状无写入方零行为变化）+ `aextract_for_session` 提炼便捷入口；workflow `AICodingNode` 新增 `write_back` 配置（模板默认开）+ **存量缺键 fallback 三态守门**（缺键+无绑定=零变化专项用例）+ `_finalize_and_notify` 完工闭环（回写 + 逐 session `run_in_background` 提炼调度，session→repo 映射两调用点补齐）；chat `create_pr_or_skip_node` PR 成功分支回写（无会话级开关）+ 提炼（skip-PR 不回写但提炼照常）；MCP `execute_work_item_repo_tasks` 提炼锚点；前端 `aiCodingConfigSchema` 同步 + docs 升级说明。5 commits（317b48c6/93f4be4b/6adb1dff/4ee87e38/c2749bb9）；69 测试全绿 + vue-tsc 通过。Deviation：session_repo_map 可选参数补缺口、误用一次 git stash（无损自纠）、存量腐坏测试 test_sub_step_coding_node 记 deferred-items.md。下游 → 101-04（LOOP-04/05 Skill 种子 + PR review 沉淀，Wave 3）。
 Earlier: 里程碑 v0.16.1 统一 AI 技术方案生成已 shipped（complete-milestone + cleanup）——6/6 phase（90–95）/ 27 plans / 18 需求全部完成并提交；里程碑审计 tech_debt（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，遗留真机·真实 provider·画布视觉端到端验收 10 项 + INFO 欠债，见 `.planning/milestones/v0.16.1-MILESTONE-AUDIT.md`）。归档：`ROADMAP.md` 折叠为 `<details>` + 全量快照入 `.planning/milestones/v0.16.1-ROADMAP.md`；audit git mv 入 `milestones/`；phase 目录 git mv 入 `.planning/milestones/v0.16.1-phases/`。未打 git tag；REQUIREMENTS.md 保留待下一里程碑 new-milestone 归档（沿用 v0.16.0 模式）。
