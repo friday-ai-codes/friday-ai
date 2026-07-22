@@ -106,10 +106,13 @@ class DeliveryKnowledgeRecallAdapter:
                 include_document_kind=("document" in kinds),
             )
         except Exception as exc:  # noqa: BLE001 — best-effort：召回失败不阻断编排
+            from common.logging import redact_secrets_in_text
+
             logger.warning(
                 "plan_recall_search_failed",
                 session_id=str(session.id),
-                error=str(exc),
+                # 102-REVIEW LO-01：异常文本先脱敏再写日志
+                error=redact_secrets_in_text(str(exc)),
                 category="sampling",
                 component="process_runtime",
             )
