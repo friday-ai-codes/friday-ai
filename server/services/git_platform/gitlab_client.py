@@ -18,9 +18,34 @@ from .models import (
     MRDiffFile,
     MRDiffResult,
     MRMetadataResult,
+    WebhookSetupResult,
 )
 
 logger = structlog.get_logger()
+
+
+def translate_gitlab_hook_error(exc: Exception) -> str:
+    """把 GitLab project hook API 异常翻译成用户可读的中文提示。
+
+    按 ``GitlabError.response_code`` 分类；token / 上游响应体绝不进入返回文本
+    （只保留状态码语义），完整异常由调用方经 ``redact_secrets_in_text`` 后入日志。
+    """
+    code = getattr(exc, "response_code", None)
+    if code == 401:
+        return "Git 凭证无效或已过期，请检查 Access Token / 密钥提供方配置"
+    if code == 403:
+        return (
+            "服务账号权限不足：创建 Webhook 需要该 token 对应账号在项目中为 "
+            "Maintainer 及以上角色，且 PAT 具有 api scope"
+        )
+    if code == 404:
+        return "GitLab 项目不存在，或该 token 无权访问此项目"
+    if code == 422:
+        return (
+            "GitLab 拒绝了 Webhook URL（常见于本地/内网地址）：请在 GitLab 管理端"
+            "启用 Allow requests to the local network from webhooks，或配置公网可达的站点 Host"
+        )
+    return f"GitLab API 调用失败（HTTP {code}）" if code else "GitLab API 调用失败"
 
 
 def _parse_diff_stats(diff_text: str) -> tuple[int, int]:
@@ -74,6 +99,84 @@ class GitLabClient(GitPlatformClient):
             gl = self._get_client()
             self._project = gl.projects.get(self.project_path)
         return self._project
+
+    async def ensure_push_webhook(
+        self,
+        url: str,
+        secret: str,
+        branch_filter: str = "",
+    ) -> WebhookSetupResult:
+        """幂等地确保项目存在指向 ``url`` 的 push webhook（一键配置）。
+
+        按 URL 匹配已有 project hook：命中则更新（token / push_events /
+        branch filter 对齐最新配置，重复点击不会堆出多个 hook），未命中则创建。
+        ``branch_filter`` 为 GitLab 原生 ``push_events_branch_filter``（如
+        ``main``，支持通配符），空串表示所有分支的 push 都通知。
+
+        需要 token 对应账号在项目中为 Maintainer 及以上且 PAT 具有 api scope；
+        失败不上抛，返回 ``success=False`` + 已翻译的中文提示（token 绝不入日志）。
+        """
+        payload: dict[str, Any] = {
+            "url": url,
+            "push_events": True,
+            "push_events_branch_filter": branch_filter or "",
+            "token": secret,
+            "enable_ssl_verification": url.startswith("https://"),
+        }
+        try:
+            project = self._get_project()
+
+            # 按 URL 匹配已有 hook（幂等）：GitLab 允许同 URL 重复建 hook，
+            # 不去重会导致每次点击都多推一份 payload。
+            hooks = await asyncio.to_thread(lambda: list(project.hooks.list(get_all=True)))
+            existing = next((h for h in hooks if getattr(h, "url", "") == url), None)
+
+            if existing is not None:
+                for key, value in payload.items():
+                    setattr(existing, key, value)
+                await asyncio.to_thread(existing.save)
+                logger.info(
+                    "gitlab_push_webhook_updated",
+                    project=self.project_path,
+                    hook_id=existing.id,
+                    branch_filter=branch_filter,
+                    category="caller",
+                    component="git_platform",
+                )
+                return WebhookSetupResult(success=True, action="updated", hook_id=str(existing.id))
+
+            hook = await asyncio.to_thread(project.hooks.create, payload)
+            logger.info(
+                "gitlab_push_webhook_created",
+                project=self.project_path,
+                hook_id=hook.id,
+                branch_filter=branch_filter,
+                category="caller",
+                component="git_platform",
+            )
+            return WebhookSetupResult(success=True, action="created", hook_id=str(hook.id))
+
+        except gitlab.exceptions.GitlabError as e:
+            error_msg = translate_gitlab_hook_error(e)
+            # 只记状态码与翻译文本，不记原始响应体/token（脱敏纪律）
+            logger.warning(
+                "gitlab_push_webhook_setup_failed",
+                project=self.project_path,
+                response_code=getattr(e, "response_code", None),
+                error=error_msg,
+                category="caller",
+                component="git_platform",
+            )
+            return WebhookSetupResult(success=False, error=error_msg)
+        except Exception as e:
+            logger.warning(
+                "gitlab_push_webhook_setup_error",
+                project=self.project_path,
+                error=str(e),
+                category="caller",
+                component="git_platform",
+            )
+            return WebhookSetupResult(success=False, error=f"配置 Webhook 失败: {e}")
 
     async def get_user_id_by_username(self, username: str) -> int | None:
         """Resolve GitLab username to user ID.

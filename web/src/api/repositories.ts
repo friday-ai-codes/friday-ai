@@ -220,6 +220,15 @@ export interface BranchIndexRow {
   effective_chunks_count: number
 }
 
+// 一键配置 Webhook 响应（GitLab project hook 幂等创建/更新）
+export interface SetupWebhookResponse {
+  action: 'created' | 'updated'
+  hook_id: string
+  webhook_url: string
+  branch_filter: string
+  auto_index_enabled: boolean
+}
+
 // 连接测试响应
 export interface TestConnectionResponse {
   success: boolean
@@ -511,6 +520,14 @@ export const repositoriesApi = {
    */
   generateWebhookSecret: async (id: string): Promise<{ webhook_secret: string }> => {
     return post<{ webhook_secret: string }>(`/repositories/${id}/generate-webhook-secret/`)
+  },
+
+  /**
+   * 一键在 Git 平台侧自动创建/更新 push webhook（当前仅 GitLab）。
+   * branch_filter 缺省 = 仓库默认分支；显式传空串表示订阅所有分支。
+   */
+  setupWebhook: async (id: string, options?: { branch_filter?: string }): Promise<SetupWebhookResponse> => {
+    return post<SetupWebhookResponse>(`/repositories/${id}/setup-webhook/`, options ?? {})
   },
 
   /**

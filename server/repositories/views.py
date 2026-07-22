@@ -462,12 +462,14 @@ async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
         if resolved_instance is None:
             host = _extract_git_host(data.get("git_url"))
             if host:
-                resolved_instance = await GitInstanceCredential.objects.filter(
-                    host=host
-                ).afirst()
+                resolved_instance = await GitInstanceCredential.objects.filter(host=host).afirst()
         if resolved_instance is None:
             raise serializers.ValidationError(
-                {"access_token": ["未填写 Access Token 且无可用密钥提供方（实例凭证）：请填写 token 或选择/配置密钥提供方"]}
+                {
+                    "access_token": [
+                        "未填写 Access Token 且无可用密钥提供方（实例凭证）：请填写 token 或选择/配置密钥提供方"
+                    ]
+                }
             )
         # 绑定 FK（仅在用户显式选择密钥提供方时写 FK；host 自动匹配场景运行期按 host 命中）
         if instance_credential is not None:
@@ -820,6 +822,142 @@ class RepositoryViewSet(ModelViewSet):
         await repository.asave(update_fields=["webhook_secret"])
         return Response({"webhook_secret": new_secret})
 
+    @action(detail=True, methods=["post"], url_path="setup-webhook")
+    async def setup_webhook(self, request, pk=None):
+        """POST /api/repositories/{id}/setup-webhook/
+
+        一键在 Git 平台侧自动创建/更新 push webhook（当前仅 GitLab）。
+
+        流程：无 secret 先生成 → aresolve_git_token 解析凭证（per-repo →
+        实例凭证池）→ 用「站点 Host」设置（site_host → 请求 Host →
+        FRIDAY_BASE_URL）拼回调 URL → GitLab project hooks 幂等创建/更新
+        （按 URL 匹配，branch filter 默认 default_branch）。成功后顺手启用
+        auto_index_enabled（接收端对未启用仓库 fail-closed 拒绝）。
+
+        需要 token 对应账号在项目中为 Maintainer 及以上且 PAT 具有 api scope，
+        权限/网络类失败翻译为中文提示返回 400。
+        """
+        import time as _time
+
+        from django.conf import settings as dj_settings
+
+        from common.logging import redact_secrets_in_text
+        from identity.services import aresolve_site_base_url
+        from services.git_platform import (
+            GitLabClient,
+            extract_gitlab_url,
+            extract_project_path,
+        )
+
+        started = _time.monotonic()
+        repository = await self.aget_object()
+
+        if repository.git_platform != GitPlatform.GITLAB:
+            return Response(
+                {"detail": "自动配置 Webhook 目前仅支持 GitLab 仓库，其他平台请按面板指引手动配置"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        token = await aresolve_git_token(repository)
+        if not token:
+            return Response(
+                {"detail": "仓库未配置 Git 凭证（Access Token 或密钥提供方），无法调用 GitLab API"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 站点外部地址：site_host 设置 → 当前请求 Host → FRIDAY_BASE_URL
+        base_url = await aresolve_site_base_url(
+            getattr(dj_settings, "FRIDAY_BASE_URL", ""), request=request
+        )
+        if not base_url:
+            return Response(
+                {"detail": "无法确定站点外部地址，请在系统设置中配置「站点 Host」"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        webhook_url = f"{base_url.rstrip('/')}/api/repositories/{repository.id}/webhooks/push/"
+
+        # 无 secret 先生成（接收端用它验 X-Gitlab-Token）
+        if not repository.webhook_secret:
+            repository.webhook_secret = secrets.token_hex(32)
+            await repository.asave(update_fields=["webhook_secret"])
+
+        # branch filter 默认只订阅默认分支的 push（可通过 body.branch_filter 覆盖；
+        # 显式传空串表示订阅所有分支）
+        branch_filter = request.data.get("branch_filter")
+        if branch_filter is None:
+            branch_filter = repository.default_branch or ""
+
+        logger.info(
+            "repository_webhook_setup_started",
+            repository_id=str(repository.id),
+            branch_filter=branch_filter,
+            category="caller",
+            component="repositories",
+        )
+
+        try:
+            client = GitLabClient(
+                base_url=extract_gitlab_url(repository.git_url),
+                token=token,
+                project_path=extract_project_path(repository.git_url),
+            )
+            result = await client.ensure_push_webhook(
+                url=webhook_url,
+                secret=repository.webhook_secret,
+                branch_filter=branch_filter,
+            )
+        except Exception as e:  # noqa: BLE001 — URL 解析等意外错误统一翻译返回
+            logger.warning(
+                "repository_webhook_setup_failed",
+                repository_id=str(repository.id),
+                error=redact_secrets_in_text(str(e)),
+                duration_ms=int((_time.monotonic() - started) * 1000),
+                category="caller",
+                component="repositories",
+            )
+            return Response(
+                {"detail": f"配置 Webhook 失败: {redact_secrets_in_text(str(e))}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        duration_ms = int((_time.monotonic() - started) * 1000)
+        if not result.success:
+            logger.warning(
+                "repository_webhook_setup_failed",
+                repository_id=str(repository.id),
+                error=result.error,
+                duration_ms=duration_ms,
+                category="caller",
+                component="repositories",
+            )
+            return Response({"detail": result.error}, status=status.HTTP_400_BAD_REQUEST)
+
+        # webhook 接收端对 auto_index_enabled=False 的仓库 fail-closed，
+        # 一键配置的目的就是自动更新，顺手启用避免"配完没反应"。
+        if not repository.auto_index_enabled:
+            repository.auto_index_enabled = True
+            await repository.asave(update_fields=["auto_index_enabled"])
+
+        logger.info(
+            "repository_webhook_setup_completed",
+            repository_id=str(repository.id),
+            action=result.action,
+            hook_id=result.hook_id,
+            branch_filter=branch_filter,
+            duration_ms=duration_ms,
+            category="caller",
+            component="repositories",
+        )
+        return Response(
+            {
+                "action": result.action,
+                "hook_id": result.hook_id,
+                "webhook_url": webhook_url,
+                "branch_filter": branch_filter,
+                "auto_index_enabled": repository.auto_index_enabled,
+            }
+        )
+
 
 class SetAccessTokenView(APIView):
     """View for setting or updating access token."""
@@ -919,9 +1057,9 @@ class RepositorySpacesView(APIView):
         target_ids = {str(s.id) for s in spaces}
         existing = [
             link
-            async for link in SpaceRepository.objects.filter(
-                repository=repository
-            ).select_related("space")
+            async for link in SpaceRepository.objects.filter(repository=repository).select_related(
+                "space"
+            )
         ]
         existing_ids = {str(link.space_id) for link in existing}
 
@@ -988,14 +1126,15 @@ class TestConnectionView(APIView):
                 if instance is None:
                     host = _extract_git_host(git_url)
                     if host:
-                        instance = await GitInstanceCredential.objects.filter(
-                            host=host
-                        ).afirst()
+                        instance = await GitInstanceCredential.objects.filter(host=host).afirst()
                 if instance and instance.encrypted_token:
                     token = decrypt_value(instance.encrypted_token)
             if not token:
                 return Response(
-                    {"success": False, "error": "请提供 Access Token 或选择/配置密钥提供方（实例凭证）"},
+                    {
+                        "success": False,
+                        "error": "请提供 Access Token 或选择/配置密钥提供方（实例凭证）",
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
