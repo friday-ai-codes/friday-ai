@@ -226,6 +226,44 @@ async def test_per_kind_limit_truncates(monkeypatch) -> None:
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
+async def test_malformed_kind_limits_config_degrades_to_defaults(monkeypatch) -> None:
+    """畸形 PROCESS_RECALL_KIND_LIMITS（合法 JSON 但非 dict）→ 降级默认限额，不冒泡（102-REVIEW MED-02）。"""
+    dtos = [
+        _search_result(kind="work_item", score=s, title=f"需求 {i}")
+        for i, s in enumerate([0.9, 0.85, 0.8, 0.75, 0.7, 0.65])
+    ]
+    _patch_search(monkeypatch, AsyncMock(return_value=dtos))
+    session = await _make_session()
+
+    # env.json 读出 list 而非 dict：旧实现在 limits_cfg.get 处 AttributeError 冒泡进 engine
+    with override_settings(PROCESS_RECALL_KIND_LIMITS=[4, 4, 4]):
+        result = await DeliveryKnowledgeRecallAdapter().recall(session)
+
+    # 降级到默认限额（work_item=4），召回正常返回不抛
+    assert len(result["hits"]) == 4
+    assert all(hit["kind"] == "work_item" for hit in result["hits"])
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_non_numeric_kind_limit_degrades_to_defaults(monkeypatch) -> None:
+    """限额 value 非数值（如 "four"）→ 该 kind 降级默认限额，不冒泡（102-REVIEW MED-02）。"""
+    dtos = [
+        _search_result(kind="work_item", score=s, title=f"需求 {i}")
+        for i, s in enumerate([0.9, 0.85, 0.8, 0.75, 0.7, 0.65])
+    ]
+    _patch_search(monkeypatch, AsyncMock(return_value=dtos))
+    session = await _make_session()
+
+    with override_settings(PROCESS_RECALL_KIND_LIMITS={"work_item": "four"}):
+        result = await DeliveryKnowledgeRecallAdapter().recall(session)
+
+    # work_item 降级默认限额 4，召回正常返回不抛
+    assert len(result["hits"]) == 4
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
 async def test_retrieval_trace_written(monkeypatch, trace_mock: AsyncMock) -> None:
     """召回成功 → arecord_retrieval_trace 被 await，payload 含指标与 session_id 关联键。"""
     _patch_search(monkeypatch, AsyncMock(return_value=[_search_result()]))

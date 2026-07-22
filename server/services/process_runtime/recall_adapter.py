@@ -78,13 +78,7 @@ class DeliveryKnowledgeRecallAdapter:
         同一 RRF 融合排序，排序一致性好。top_k 按 sum(每 kind 限额)*2 超采样，
         给按 kind 截断留余量；总量守 token 预算（防召回候选集膨胀）。
         """
-        from django.conf import settings
-
-        kinds = [
-            str(k) for k in getattr(settings, "PROCESS_RECALL_ENTITY_KINDS", RECALL_ENTITY_KINDS)
-        ]
-        limits_cfg = getattr(settings, "PROCESS_RECALL_KIND_LIMITS", _DEFAULT_KIND_LIMITS)
-        limits = {kind: int(limits_cfg.get(kind, _DEFAULT_KIND_LIMIT)) for kind in kinds}
+        kinds, limits = self._resolve_recall_config()
 
         query = (session.decomposition or {}).get("requirement_text", "")
         if not query:
@@ -127,6 +121,58 @@ class DeliveryKnowledgeRecallAdapter:
             session=session, user=user, kinds=kinds, hits=hits, duration_ms=duration_ms
         )
         return {"hits": hits, "query": query, "kinds": kinds}
+
+    def _resolve_recall_config(self) -> tuple[list[str], dict[str, int]]:
+        """读取并解析召回 kinds / 每 kind 限额配置——任何畸形配置降级为默认值，绝不抛。
+
+        102-REVIEW MED-02：``PROCESS_RECALL_KIND_LIMITS`` 经 env.json 读取，合法
+        JSON 但非 dict（如 ``[4,4,4]``）或 value 非数值（如 ``{"work_item": "four"}``）
+        都能通过 settings 加载；此前解析裸奔在 try 之外，运行时 AttributeError /
+        ValueError 直接冒泡进 engine，违反模块自述的 RECALL-01「任何异常不冒泡
+        破坏编排」契约。现在畸形配置 → log warning + 降级默认值。
+        """
+        from django.conf import settings
+
+        try:
+            kinds = [
+                str(k)
+                for k in getattr(settings, "PROCESS_RECALL_ENTITY_KINDS", RECALL_ENTITY_KINDS)
+            ]
+        except Exception:  # noqa: BLE001 — 畸形配置降级默认，不冒泡破坏编排
+            logger.warning(
+                "process_recall_config_invalid",
+                setting="PROCESS_RECALL_ENTITY_KINDS",
+                category="sampling",
+                component="process_runtime",
+            )
+            kinds = [str(k) for k in RECALL_ENTITY_KINDS]
+
+        limits_cfg = getattr(settings, "PROCESS_RECALL_KIND_LIMITS", _DEFAULT_KIND_LIMITS)
+        if not isinstance(limits_cfg, dict):
+            logger.warning(
+                "process_recall_config_invalid",
+                setting="PROCESS_RECALL_KIND_LIMITS",
+                reason="not_a_dict",
+                category="sampling",
+                component="process_runtime",
+            )
+            limits_cfg = _DEFAULT_KIND_LIMITS
+
+        limits: dict[str, int] = {}
+        for kind in kinds:
+            try:
+                limits[kind] = int(limits_cfg.get(kind, _DEFAULT_KIND_LIMIT))
+            except (TypeError, ValueError):
+                logger.warning(
+                    "process_recall_config_invalid",
+                    setting="PROCESS_RECALL_KIND_LIMITS",
+                    reason="non_numeric_limit",
+                    kind=kind,
+                    category="sampling",
+                    component="process_runtime",
+                )
+                limits[kind] = _DEFAULT_KIND_LIMITS.get(kind, _DEFAULT_KIND_LIMIT)
+        return kinds, limits
 
     async def _record_trace(
         self,
