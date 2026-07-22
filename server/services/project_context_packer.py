@@ -23,7 +23,13 @@ from asgiref.sync import sync_to_async
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["PackedContext", "pack_project_context"]
+__all__ = [
+    "PackedContext",
+    "apack_dispatch_context",
+    "aresolve_project_for_repo_branch",
+    "pack_project_context",
+    "prepend_project_context",
+]
 
 _COMPONENT = "initiatives"
 
@@ -196,6 +202,87 @@ async def pack_project_context(
         visibility=str(visibility),
     )
     return result
+
+
+# ----------------------------------------------------------------------------
+# 派发链共享 helper（Phase 103 AGENT-04）
+# chat 与 workflow 派发链共享，勿在各自模块复制实现（workflow 不 import chat）。
+# ----------------------------------------------------------------------------
+
+
+def prepend_project_context(prompt: str, context: str) -> str:
+    """把召回的项目上下文拼到 dispatch prompt 头部（容器侧 agent 一上来即可读）。
+
+    chat 与 workflow 派发链共享，勿在各自模块复制实现。空上下文短路原样返回 prompt。
+    """
+    block = (context or "").strip()
+    if not block:
+        return prompt
+    if not prompt:
+        return block
+    return f"{block}\n\n---\n\n{prompt}"
+
+
+@sync_to_async
+def aresolve_project_for_repo_branch(*, repository_id: Any, branch_name: str) -> Any:
+    """按 ``(repository_id, branch_name)`` 反查 ProjectBranch 显式绑定项目（BIND-02 思路）。
+
+    chat 与 workflow 派发链共享，勿在各自模块复制实现。
+    无分支名 / 无绑定 → None；多绑定取首个（fail-soft，dispatch 召回不因歧义阻断）。
+    """
+    if not branch_name:
+        return None
+    from initiatives.models import ProjectBranch
+
+    binding = (
+        ProjectBranch.objects.filter(
+            repository_id=repository_id, branch_name=branch_name
+        )
+        .select_related("project")
+        .first()
+    )
+    return binding.project if binding is not None else None
+
+
+async def apack_dispatch_context(
+    project: Any,
+    user: Any,
+    *,
+    query: str = "",
+    conversation_id: str = "",
+) -> str:
+    """派发前按项目召回上下文并脱敏，产出可注入容器 prompt/env 的文本。
+
+    chat 与 workflow 派发链共享，勿在各自模块复制实现。召回经
+    ``pack_project_context``（内置 visibility fail-closed + RetrievalTrace，不绕过），
+    返回前经 ``redact_secrets_in_text`` 脱敏（T-103-13）。
+
+    project/user 任一 None / 召回空 / 任何异常 → 返回 ""（fail-soft，派发与现状
+    逐字一致，绝不阻断编码；component 由调用方 bind 决定）。
+    """
+    if project is None or user is None:
+        return ""
+    try:
+        packed = await pack_project_context(
+            project,
+            user,
+            query=query,
+            conversation_id=conversation_id,
+        )
+        text = (packed.text or "").strip()
+        if not text:
+            return ""
+
+        from common.logging import redact_secrets_in_text
+
+        return redact_secrets_in_text(text)
+    except Exception as exc:  # noqa: BLE001 — 召回 fail-soft，绝不阻断派发主流程
+        logger.warning(
+            "dispatch_project_context_failed",
+            error_type=type(exc).__name__,
+            category="sampling",
+        )
+        return ""
 
 
 def _render_block(layer: _Layer) -> str:

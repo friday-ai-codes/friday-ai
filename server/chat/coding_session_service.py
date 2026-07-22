@@ -215,36 +215,21 @@ async def build_dispatch_metadata(
     return env_metadata, repo_url
 
 
-@sync_to_async
-def _lookup_project_by_branch(*, repository_id: Any, branch_name: str) -> Any:
-    """按 ``(repository_id, branch_name)`` 反查 ProjectBranch 显式绑定项目（BIND-02 思路）。
-
-    无分支名 / 无绑定 → None；多绑定取首个（fail-soft，dispatch 召回不因歧义阻断）。
-    """
-    if not branch_name:
-        return None
-    from initiatives.models import ProjectBranch
-
-    binding = (
-        ProjectBranch.objects.filter(
-            repository_id=repository_id, branch_name=branch_name
-        )
-        .select_related("project")
-        .first()
-    )
-    return binding.project if binding is not None else None
-
-
 async def _resolve_project_context_for_dispatch(coding_session: CodingSession) -> str:
     """派发前按绑定项目召回项目上下文（pack_project_context + RetrievalTrace + 脱敏）。
 
     定位项目：优先 ``conversation.bound_project``；否则按 ``(repository, branch)`` 反查
-    ``ProjectBranch`` 显式绑定。命中后经 ``pack_project_context`` 召回（packer 内置
-    visibility fail-closed + 写 RetrievalTrace，不绕过），返回经 ``redact_secrets_in_text``
-    脱敏后的上下文文本。
+    ``ProjectBranch`` 显式绑定（共享 helper ``aresolve_project_for_repo_branch``）。
+    命中后经 ``apack_dispatch_context`` 召回（packer 内置 visibility fail-closed +
+    写 RetrievalTrace + ``redact_secrets_in_text`` 脱敏，不绕过）。
 
     无绑定 / 召回空 / 任何异常 → 返回 ""（fail-soft，派发与现状逐字一致，绝不阻断编码）。
     """
+    from services.project_context_packer import (
+        apack_dispatch_context,
+        aresolve_project_for_repo_branch,
+    )
+
     try:
         cs = await (
             CodingSession.objects.select_related(
@@ -258,28 +243,19 @@ async def _resolve_project_context_for_dispatch(coding_session: CodingSession) -
         user = conversation.created_by  # 触发用户（归因）；匿名会话可为 None
 
         if project is None:
-            project = await _lookup_project_by_branch(
+            project = await aresolve_project_for_repo_branch(
                 repository_id=coding_session.repository_id,
                 branch_name=coding_session.branch_name or "",
             )
         if project is None:
             return ""
 
-        from services.project_context_packer import pack_project_context
-
-        packed = await pack_project_context(
+        return await apack_dispatch_context(
             project,
             user,
             query=coding_session.branch_name or "",
             conversation_id=str(conversation.id),
         )
-        text = (packed.text or "").strip()
-        if not text:
-            return ""
-
-        from common.logging import redact_secrets_in_text
-
-        return redact_secrets_in_text(text)
     except Exception as exc:  # noqa: BLE001 — 召回 fail-soft，绝不阻断派发主流程
         logger.warning(
             "dispatch_project_context_failed",
@@ -289,16 +265,6 @@ async def _resolve_project_context_for_dispatch(coding_session: CodingSession) -
             category="sampling",
         )
         return ""
-
-
-def _prepend_project_context(prompt: str, context: str) -> str:
-    """把召回的项目上下文拼到 dispatch prompt 头部（容器侧 agent 一上来即可读）。"""
-    block = (context or "").strip()
-    if not block:
-        return prompt
-    if not prompt:
-        return block
-    return f"{block}\n\n---\n\n{prompt}"
 
 
 async def create_sub_session(
@@ -402,10 +368,12 @@ async def dispatch_coding_task(
     # 执行 prompt/metadata，让容器侧编码代理一上来即有项目上下文。仅 coding 任务注入
     # （coding_commit 仅 amend+push 不跑 SDK）；召回空 → 不注入，派发与现状逐字一致。
     if task_type != "coding_commit":
+        from services.project_context_packer import prepend_project_context
+
         project_context = await _resolve_project_context_for_dispatch(coding_session)
         if project_context:
             env_metadata["env_FRIDAY_TASK_PROJECT_CONTEXT"] = project_context
-            prompt = _prepend_project_context(prompt, project_context)
+            prompt = prepend_project_context(prompt, project_context)
 
     # 合并 extra_metadata
     if extra_metadata:
