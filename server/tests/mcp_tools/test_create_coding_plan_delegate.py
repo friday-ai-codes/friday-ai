@@ -129,6 +129,77 @@ def test_create_coding_plan_delegates_single_repo(
     assert getattr(captured["created_by"], "id", None) == access_user.id
 
 
+def test_create_coding_plan_with_analysis_injects_extra_evidence(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """UNIFY-02：带 analysis_id 的 create → delegate 收到含该 analysis summary 的 extra_evidence。"""
+    client, _plaintext = mcp_client
+    repo_id = str(indexed_repository.id)
+
+    # 先经 analyze_repository 产确定性分析产物（无 LLM）。
+    analysis_response = client.post(
+        "/api/mcp/tools/analyze_repository/",
+        {"repository_id": repo_id, "focus": "登录链路"},
+        format="json",
+    )
+    assert analysis_response.status_code == 200
+    analysis_id = analysis_response.json()["analysis_id"]
+
+    captured: dict[str, Any] = {}
+
+    async def _fake_delegate(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return _fake_delegate_result(
+            status="completed", repo_id=repo_id, repo_name=indexed_repository.name
+        )
+
+    monkeypatch.setattr("mcp_tools.views.delegate_process_runtime", _fake_delegate)
+
+    response = client.post(
+        "/api/mcp/tools/create_coding_plan/",
+        {
+            "repository_id": repo_id,
+            "analysis_id": analysis_id,
+            "requirement": "登录超过 30 秒 token 过期，需修复刷新边界。",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    # analysis_id 从"仅挂 FK"升级为真实证据输入：summary 注入 extra_evidence。
+    evidence = captured["extra_evidence"]
+    assert isinstance(evidence, list) and len(evidence) == 1
+    assert evidence[0]["kind"] == "repository_analysis"
+    assert evidence[0]["analysis_id"] == analysis_id
+    assert evidence[0]["summary"]["architecture_summary"]
+
+
+def test_create_coding_plan_without_analysis_passes_none_extra_evidence(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """不带 analysis_id 的 create → extra_evidence=None（零行为变化）。"""
+    client, _plaintext = mcp_client
+    repo_id = str(indexed_repository.id)
+    captured: dict[str, Any] = {}
+
+    async def _fake_delegate(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return _fake_delegate_result(
+            status="completed", repo_id=repo_id, repo_name=indexed_repository.name
+        )
+
+    monkeypatch.setattr("mcp_tools.views.delegate_process_runtime", _fake_delegate)
+
+    response = _post_create_coding_plan(client, repo_id)
+
+    assert response.status_code == 200
+    assert captured["extra_evidence"] is None
+
+
 # ============================== ② canonical 映射 ==============================
 
 

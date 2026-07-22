@@ -91,9 +91,19 @@ class LLMMergedPlanSynthesizer:
         decomposition = session.decomposition or {}
         requirement = decomposition.get("requirement_text", "")
         partials_json = json.dumps(partials, ensure_ascii=False)
+        # UNIFY-02：调用方补充证据（decomposition.extra_evidence，如 repository analysis
+        # summary）非空时纳入 merge prompt——analyze 产物实际被编排消费。
+        extra_evidence = decomposition.get("extra_evidence") or []
+        evidence_section = (
+            f"调用方补充证据（repository analysis 等）：\n"
+            f"{json.dumps(extra_evidence, ensure_ascii=False)}\n\n"
+            if extra_evidence
+            else ""
+        )
         return (
             f"需求：\n{requirement}\n\n"
             f"各仓调研产物（PartialPlan）：\n{partials_json}\n\n"
+            f"{evidence_section}"
             "请融合为 §7 MergedPlan JSON，字段：\n"
             "- title / summary\n"
             "- api_contracts：跨仓契约汇总（[{name, repo}]）\n"
@@ -146,14 +156,18 @@ class ArchitectMergeAdapter:
         attempt = await ArchitectMerge.objects.filter(session_id=session.id).acount()
 
         repo_ids = [str(p.get("repository_id", "")) for p in partials]
-        await self._emit(session, EVENT_PLAN_MERGE_STARTED, {"partials": repo_ids})
+        # UNIFY-02：trace 事件可见调用方补充证据条数（extra_evidence 消费可观测）。
+        extra_evidence_count = len((session.decomposition or {}).get("extra_evidence") or [])
+        await self._emit(
+            session,
+            EVENT_PLAN_MERGE_STARTED,
+            {"partials": repo_ids, "extra_evidence_count": extra_evidence_count},
+        )
 
         try:
             merged = await self.synthesizer.synthesize(session, partials)
         except Exception as exc:  # noqa: BLE001 — LLM 合成失败 graceful 降级
-            logger.warning(
-                "architect_synthesis_failed", session_id=str(session.id), error=str(exc)
-            )
+            logger.warning("architect_synthesis_failed", session_id=str(session.id), error=str(exc))
             report: dict[str, Any] = {"reason": "synthesis_failed", "error": str(exc)}
             await self._record_merge(session, ArchitectMergeStatus.FAILED, None, report, attempt)
             await self._emit(
@@ -208,9 +222,7 @@ class ArchitectMergeAdapter:
             return await self._handle_fail(session, report, attempt, has_stale)
 
         version_id = artifact.current_version_id  # async 安全标量
-        await self._record_merge(
-            session, ArchitectMergeStatus.PASSED, version_id, report, attempt
-        )
+        await self._record_merge(session, ArchitectMergeStatus.PASSED, version_id, report, attempt)
         await self._emit(
             session, EVENT_PLAN_MERGE_COMPLETED, {"artifact_version_id": str(version_id)}
         )
@@ -230,9 +242,7 @@ class ArchitectMergeAdapter:
             "attempt": attempt,
         }
 
-    async def _maybe_bind_plan_to_project(
-        self, session: ConvergenceSession, merged: dict
-    ) -> None:
+    async def _maybe_bind_plan_to_project(self, session: ConvergenceSession, merged: dict) -> None:
         """会话绑定了项目时，把生成的技术方案镜像进项目 RESEARCH 文档（绑定到当前项目）。
 
         反查链：``session.conversation_id`` → ``Conversation.bound_project_id`` /
@@ -247,9 +257,11 @@ class ArchitectMergeAdapter:
             from initiatives.services.project_doc_service import ProjectDocService
             from services.process_runtime.render import render_merged_plan_markdown
 
-            row = await Conversation.objects.filter(id=conversation_id).values(
-                "bound_project_id", "created_by_id"
-            ).afirst()
+            row = (
+                await Conversation.objects.filter(id=conversation_id)
+                .values("bound_project_id", "created_by_id")
+                .afirst()
+            )
             if not row or not row.get("bound_project_id"):
                 return
             project_id = row["bound_project_id"]
