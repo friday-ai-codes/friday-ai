@@ -514,7 +514,16 @@ async def dispatch_coding_task(
     }
     await sub_session.asave(update_fields=["last_output", "updated_at"])
 
-    await get_dispatcher().dispatch(dispatch_task)
+    try:
+        await get_dispatcher().dispatch(dispatch_task)
+    except Exception:
+        # IN-01（103 审查）：dispatch 失败无终态回调兜底吊销 → best-effort 立即吊销
+        # 已铸任务 token，不再带全量权限存活至 timeout+余量自然过期
+        # （arevoke_task_tokens 自身吞异常不反噬；未 mint 时幂等 count=0）。
+        from access_tokens.services import arevoke_task_tokens
+
+        await arevoke_task_tokens(sub_session.session_id)
+        raise
 
     logger.info(
         "coding_task_dispatched",
