@@ -267,9 +267,12 @@ async def _ensure_coding_plan(
     )
     from knowledge import ingestion  # lazy import 防循环
 
-    # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）
+    # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）；
+    # initiated_by_user_id 绑定编排发起者（run 归属用户），后台摄取日志可归因（LO-02，
+    # 无触发用户的调用点缺省 system）。
     await ingestion.aschedule_ingestion(
-        ingestion.IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_work_item_plan_created")
+        ingestion.IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_work_item_plan_created"),
+        initiated_by_user_id=str(run.user_id) if getattr(run, "user_id", None) else None,
     )
     return plan, version
 
@@ -328,11 +331,14 @@ async def _execute_one_task(
         await refresh_execution_trace(trace)
         from knowledge import ingestion  # lazy import 防循环
 
-        # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）
+        # KNOW-03：MCP 产物入统一知识库（INV-6 唯一通路，on_commit + 后台，异常自吞不阻塞）；
+        # initiated_by_user_id 绑定编排发起者（run 归属用户），后台摄取日志可归因（LO-02，
+        # 无触发用户的调用点缺省 system）。
         await ingestion.aschedule_ingestion(
             ingestion.IngestionRequest(
                 "mcp_execution_trace", str(trace.id), "mcp_work_item_execution_created"
-            )
+            ),
+            initiated_by_user_id=str(run.user_id) if getattr(run, "user_id", None) else None,
         )
         task.execution_trace = trace
 

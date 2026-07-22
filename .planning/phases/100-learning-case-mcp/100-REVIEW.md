@@ -164,6 +164,10 @@ from common.logging import redact_secrets_in_text
 - `views.py` 4 处写入点（AnalyzeRepository / CreateCodingPlan / ImproveCodingPlan / ExecuteCodingPlan）投递均携带 `initiated_by_user_id=str(request.user.id)`，并补注释说明「无触发用户的调用点缺省 system」兜底语义。
 - **跳过**：`work_item_execution_service.py` 2 处（L274-279 / L335-342）——该文件正被 Phase 101-03 并发修改（本次执行的硬约束：不得触碰），待 Phase 101 合流后按同款模式补传（编排发起者透传）。
 
+#### LO-02 收尾（2026-07-22，Phase 101-04 执行期间补齐）
+
+- 并发文件锁已解除，`work_item_execution_service.py` 2 处（`_ensure_coding_plan` 的 `mcp_coding_plan` 投递、`_execute_one_task` 的 `mcp_execution_trace` 投递）已按同款模式补传 `initiated_by_user_id=str(run.user_id) if getattr(run, "user_id", None) else None`（编排发起者 = run 归属用户），并补齐同款注释。**LO-02 至此全部修复。**
+
 ---
 
 _Reviewed: 2026-07-22T04:25:00Z_
