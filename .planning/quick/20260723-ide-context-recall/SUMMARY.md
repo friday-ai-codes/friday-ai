@@ -44,6 +44,29 @@ completed: 2026-07-23
 2. 「继续开发」→ 注入的 STATE/未完成功能点 + friday-dev 续做流程。
 3. 「现在有什么问题」→ 记忆层 + search_project_context 深挖。
 
+## 实测记录（2026-07-23，study-app main 分支 + Claude Code headless）
+
+在 `~/Projects/guanghe/study-app`（真实公司 monorepo）接入 skills@0.4.0 + mcp@0.3.0 + hooks，
+Friday 本地实例搭「思维培优独立场景」演示项目（绑定 main/feat 分支 + RepoAssociation +
+feature list/记忆/STATE），用 `claude -p` stream-json 实测 6 个场景：
+
+| 用例 | 结果 |
+| --- | --- |
+| T1「我们现在项目开发到哪一步了」 | ✅ hook 注入 + friday-dev 路由 + lookup + 深挖，逐功能点进度带出处 |
+| T2「继续开发」 | ✅ 触发链完整；⚠️ 模型擅自 `git switch` 切走用户分支 → friday-dev 加护栏（0.4.1） |
+| T3「现在有什么问题」 | ✅ 记忆层 + 本地 git 交叉，识别出「main 无 feature 代码」真坑 |
+| T4「接口过滤是为哪个需求改的」 | ✅ 答出 story/7019711929，用 git 实证纠正了演示记忆的错误表述 |
+| T5 负例·纯代码阅读 | ✅ 未走 Friday（反向边界正确） |
+| T6 无 hook（Cursor/Codex 形态） | ✅ 纯 CLAUDE.md 引导 + skill 描述即可触发完整链路 |
+
+实测发现并已修复：
+
+1. **stop hook 噪音**：只读会话结束也把「最近提交」写进项目记忆 → 0.4.1 改为仅工作区有未提交改动才上报。
+2. **friday-dev 缺工作区护栏**：加「绝不擅自 git switch/checkout/stash」首条护栏（0.4.1）。
+3. **向量检索 500 不 fail-soft**：本地 Qdrant 维度漂移（1024 vs 2560）时 `search_project_context` / `search_delivery_knowledge` 直接 500 且不留 ToolCallRecord → server 修复为降级空结果 + `mcp_vector_search_degraded` warning（e1c241b5）。
+4. **环境问题（运维项，未改代码）**：本地 dev DB 缺 migration（`access_tokens.kind`）致所有 MCP 工具 500——`manage.py migrate` 解决；Qdrant `delivery_knowledge` collection 维度与当前 embedding 不匹配，需重建 collection 重新摄取。
+5. **分支解析边界（遗留）**：study-app 真实分支 `feat/260618.m-7019711929.思维培优独立场景` 的 `m-{id}` 写法不被宽松正则（`-m{id}`）命中，靠显式绑定/仓库兜底覆盖；后续可评估扩展 `branch_parsing` 支持 `m-{id}` 段。
+
 ## 已知边界
 
 - Codex 无 hook 能力：靠 AGENTS.md bootstrap 规则 + MCP 驱动（规则已含分支环路强制流程）。
