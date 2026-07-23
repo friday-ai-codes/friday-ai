@@ -10,16 +10,17 @@ Skill 仓库：[friday-ai-codes/skills](https://github.com/friday-ai-codes/skill
 
 ## 内置 Skill
 
-4 个职责清晰的 skill（全中文编写），名字全部 `friday` 开头、一个词收尾。agent 会根据任务自动触发对应的 skill；流水线阶段以小节形式收在 skill 内部，用户只要某一阶段就停在那一阶段：
+5 个职责清晰的 skill（全中文编写），名字全部 `friday` 开头、一个词收尾。agent 会根据任务自动触发对应的 skill；流水线阶段以小节形式收在 skill 内部，用户只要某一阶段就停在那一阶段：
 
 | Skill | 用途 |
 | --- | --- |
 | `friday` | 总入口：技能路由表 + 轨迹纪律，也可直接把任意需求交给它一条龙跑完（安装器 hook / Cursor rule 自动注入） |
+| `friday-dev` | 本地开发上下文面：在本地分支上问「开发到哪一步了 / 继续开发 / 现在有什么问题 / PRD·feature list·技术方案」时，按当前 git 分支召回 Friday 项目上下文；编码开工先召回、收工沉淀回写 |
 | `friday-code` | 远端已索引仓库的全部操作：找仓库 → 分析 → 计划 → 执行/MR，可分阶段也可一条龙 |
 | `friday-feishu` | 飞书工作项闭环：读上下文 → 技术方案 → 多仓执行 → 结果回写，可分阶段也可一条龙 |
 | `friday-memory` | Friday 的记忆层：记录 / 检索 LearningCase 经验 + 交付知识检索（相似需求、版本时间线、关联链、`as_of` 历史时点） |
 
-更细粒度的能力（23 个工具）全部由 [MCP Server](/integrations/mcp) 提供，skill 负责编排与护栏。仓库编码链路（发现 → 分析 → 计划 → 执行）详见 [Codebase Agent 指南](/guide/friday-codebase-agent)。
+更细粒度的能力（30 个工具）全部由 [MCP Server](/integrations/mcp) 提供，skill 负责编排与护栏。仓库编码链路（发现 → 分析 → 计划 → 执行）详见 [Codebase Agent 指南](/guide/friday-codebase-agent)。
 
 ## 安装顺序
 
@@ -60,9 +61,12 @@ npx @friday-ai-codes/skills install -y --no-bootstrap
 npx @friday-ai-codes/skills list
 ```
 
-```bash [Claude Code 插件]
-# 插件形式额外提供 SessionStart hook（自动注入 friday 入口技能）
-# 和捆绑的 MCP server 声明
+```bash [Claude Code 插件（推荐）]
+# 插件形式额外提供三样：
+# 1. SessionStart hook：自动注入 friday 入口技能
+# 2. UserPromptSubmit / Stop hooks：每条消息前按当前 git 分支自动召回
+#    Friday 项目上下文注入对话，轮次结束把改动摘要静默沉淀回项目记忆
+# 3. 捆绑的 MCP server 声明
 claude plugin add friday-ai-codes/skills
 ```
 
@@ -80,7 +84,9 @@ npx skills add friday-ai-codes/skills --skill '*' -g -y
 
 ## 安装之后
 
-直接把任务交给 agent：`friday` 入口技能会按任务类型路由——仓库编码走 `friday-code`（可分阶段，也可一条龙到 MR），飞书工作项走 `friday-feishu`，查历史经验 / 交付知识走 `friday-memory`。
+直接把任务交给 agent：`friday` 入口技能会按任务类型路由——在本地分支上问项目进度 /「继续开发」走 `friday-dev`（按当前分支召回项目上下文），仓库编码走 `friday-code`（可分阶段，也可一条龙到 MR），飞书工作项走 `friday-feishu`，查历史经验 / 交付知识走 `friday-memory`。
+
+在 Friday 项目关联的分支上（分支名含 `-m{工作项id}` 段、控制台显式绑定过、或仓库已做业务关联），直接问「我们现在项目开发到哪一步了」「继续开发」「现在有什么问题」即可触发按分支召回——feature list 进度、PRD / 需求、项目记忆会作为回答与续做的事实依据；Claude Code 插件形态下这一步由 hooks 全自动完成。
 
 环境出问题（看不到 `friday` 工具、调用 401/403）时，agent 会按 `friday` 技能的「环境未就绪」一节引导你重跑 `npx -y @friday-ai-codes/mcp setup`。
 
@@ -90,5 +96,5 @@ npx skills add friday-ai-codes/skills --skill '*' -g -y
 
 ## 相关文档
 
-- [MCP Server](/integrations/mcp) —— 23 个工具的注册与使用
+- [MCP Server](/integrations/mcp) —— 30 个工具的注册与使用
 - [Friday Codebase Agent](/guide/friday-codebase-agent) —— workflow、故障恢复与审计

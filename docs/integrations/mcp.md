@@ -10,7 +10,7 @@ title: MCP Server
 
 接入流程：
 
-<FlowPipeline :steps="['创建访问令牌', 'setup 交互式配置', '注册到 IDE', '连通性测速', '调用 23 个工具']" />
+<FlowPipeline :steps="['创建访问令牌', 'setup 交互式配置', '注册到 IDE', '连通性测速', '调用 30 个工具']" />
 
 ## 一条命令配好（推荐）
 
@@ -84,7 +84,7 @@ args = ["-y", "@friday-ai-codes/mcp"]
 | `friday-mcp register [--agent <name>] [--project]` | 幂等注册进 Cursor / Claude Code / Codex |
 | `friday-mcp doctor` | 检查配置、注册状态与连通性测速（不回显令牌） |
 
-## 工具集（22 个）
+## 工具集（30 个）
 
 每个工具对应 Friday 的 `POST {FRIDAY_BASE_URL}/api/mcp/tools/{tool_name}/` 端点：
 
@@ -93,6 +93,7 @@ args = ["-y", "@friday-ai-codes/mcp"]
 | 仓库发现 | `route_repositories` | 把需求路由到候选仓库并检查索引健康度 |
 | Graph RAG 检索 | `search_rag_chunks` | 混合检索代码 chunk（语义 + 关键词 + 图谱扩散） |
 | | `find_related_chunks` | 沿代码图谱找相关 chunk |
+| | `reverse_lookup_requirements` | 代码位置反查关联需求 / 文档 / 追溯路径（「这段代码是为哪个需求改的」） |
 | 精确检索 | `grep_repository` | 本地 git 镜像快照上的 grep 语义全量检索（ripgrep 优先，回退 git grep）：字面量 / 正则 / glob 过滤、可配置上下文行、`content` / `files_only` / `count` 输出模式、token 预算；默认单仓，`repository_ids` / `all_repositories` 显式跨仓，「穷举所有出现位置」类问题用这个 |
 | 仓库浏览 | `get_repository` | 仓库元信息与索引状态 |
 | | `list_repository_files` | 列出仓库文件 |
@@ -113,6 +114,12 @@ args = ["-y", "@friday-ai-codes/mcp"]
 | 交付知识 | `search_delivery_knowledge` | 检索相似历史需求 / 方案 / 代码变更（支持 `as_of` 历史时点） |
 | | `get_entity_timeline` | 知识实体的版本迭代时间线 |
 | | `get_related_entities` | 需求 → 方案 → MR 关联链图遍历 |
+| 项目上下文环路 | `lookup_project_by_branch` | 用当前 git 分支名反查所属项目并召回需求 / 工件 / 记忆（三源：分支名 work_item 解析 → `ProjectBranch` 显式绑定 → 仓库关联兜底） |
+| | `search_project_context` | 项目交付上下文语义召回 |
+| | `grep_project` | 项目上下文关键词精确匹配 |
+| | `read_project_doc` | 读取项目工作区文档（MEMORY / STATE / 里程碑 / 调研 / 预检） |
+| | `report_project_knowledge` | 把会话沉淀写回项目记忆（按 `branch_name` 自动定位项目，服务端质量门槛 + 脱敏 + 审计兜底） |
+| | `report_project_state` | 把新增 / 改动 API 结构化清单回写项目 STATE |
 
 每个工具都带 MCP 标准 `annotations`（中文 `title` 按「阶段 · 动作」分组，外加 `readOnlyHint` / `idempotentHint` / `openWorldHint` 行为提示），agent 可据此判断工具是否只读、是否触达外部系统。
 
