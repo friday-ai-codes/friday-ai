@@ -24,6 +24,7 @@ from code_relations.models import ChunkRegistry
 from codegraph.models import Symbol
 from common.authentication import CookieJWTAuthentication
 from common.log_context import LogSource, bind_source
+from common.logging import redact_secrets_in_text
 from common.request_metrics import arecord_request_metric
 from interactions.entry import AccessTokenAuthentication, begin_interaction_run
 from interactions.ledger import (
@@ -2660,16 +2661,28 @@ class SearchDeliveryKnowledgeView(McpToolView):
             return error_response("invalid_params", str(exc), status_code=status.HTTP_400_BAD_REQUEST)
         started_at = time.perf_counter()
 
-        results = await _delivery_knowledge_service.search_similar(
-            str(input_data["query"]),
-            user=request.user,
-            top_k=int(input_data.get("top_k") or 5),
-            project_ids=[str(p) for p in input_data.get("project_ids") or []] or None,
-            repository_ids=[str(r) for r in input_data.get("repository_ids") or []] or None,
-            entity_kinds=[str(k) for k in input_data.get("entity_kinds") or []] or None,
-            as_of=as_of,
-            include_superseded=bool(input_data.get("include_superseded")),
-        )
+        # fail-soft（quick-260723）：向量库不可用/维度漂移等基础设施异常降级为空结果，
+        # 与 skills 文档承诺一致（「暂时不可用时返回空 results」），绝不 500 阻断 agent。
+        try:
+            results = await _delivery_knowledge_service.search_similar(
+                str(input_data["query"]),
+                user=request.user,
+                top_k=int(input_data.get("top_k") or 5),
+                project_ids=[str(p) for p in input_data.get("project_ids") or []] or None,
+                repository_ids=[str(r) for r in input_data.get("repository_ids") or []] or None,
+                entity_kinds=[str(k) for k in input_data.get("entity_kinds") or []] or None,
+                as_of=as_of,
+                include_superseded=bool(input_data.get("include_superseded")),
+            )
+        except Exception as exc:  # noqa: BLE001 — 检索基础设施异常降级空结果
+            logger.warning(
+                "mcp_vector_search_degraded",
+                tool_name=self.tool_name,
+                error=redact_secrets_in_text(str(exc))[:500],
+                component="mcp_tools",
+                category="caller",
+            )
+            results = []
         serialized = serialize_search_results(results)
         output_data = {
             "query": str(input_data["query"]),
@@ -3575,16 +3588,29 @@ class SearchProjectContextView(McpToolView):
         project = await _aget_project(project_id)
         if project is not None and await _assert_project_readable(project, request.user):
             recall_started = time.perf_counter()
-            results = await _delivery_knowledge_service.search_similar(
-                query,
-                user=request.user,
-                project_ids=[project_id],
-                entity_kinds=entity_kinds,
-                top_k=top_k,
-                # CTX-01：项目上下文读路径纳入 DOCUMENT 召回（项目 5 文件/记忆/工件物化），
-                # 不放宽 visibility/access 闸（仍由 search_similar 内 project_ids 收口）。
-                include_document_kind=True,
-            )
+            # fail-soft（quick-260723）：向量库不可用/维度漂移等异常降级为空结果不 500，
+            # 与 search_learning_cases / skills 文档口径一致，绝不阻断 agent 编码。
+            try:
+                results = await _delivery_knowledge_service.search_similar(
+                    query,
+                    user=request.user,
+                    project_ids=[project_id],
+                    entity_kinds=entity_kinds,
+                    top_k=top_k,
+                    # CTX-01：项目上下文读路径纳入 DOCUMENT 召回（项目 5 文件/记忆/工件物化），
+                    # 不放宽 visibility/access 闸（仍由 search_similar 内 project_ids 收口）。
+                    include_document_kind=True,
+                )
+            except Exception as exc:  # noqa: BLE001 — 检索基础设施异常降级空结果
+                logger.warning(
+                    "mcp_vector_search_degraded",
+                    tool_name=self.tool_name,
+                    project_id=project_id,
+                    error=redact_secrets_in_text(str(exc))[:500],
+                    component="mcp_tools",
+                    category="caller",
+                )
+                results = []
             recall_ms = round((time.perf_counter() - recall_started) * 1000, 2)
 
         serialized = serialize_search_results(results)
