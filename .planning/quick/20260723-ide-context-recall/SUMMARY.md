@@ -67,6 +67,27 @@ feature list/记忆/STATE），用 `claude -p` stream-json 实测 6 个场景：
 4. **环境问题（运维项，未改代码）**：本地 dev DB 缺 migration（`access_tokens.kind`）致所有 MCP 工具 500——`manage.py migrate` 解决；Qdrant `delivery_knowledge` collection 维度与当前 embedding 不匹配，需重建 collection 重新摄取。
 5. **分支解析边界（已裁决不做）**：study-app 真实分支 `feat/260618.m-7019711929.思维培优独立场景` 的 `m-{id}` 写法不被宽松正则（`-m{id}`）命中。用户裁决：有显式分支绑定（ProjectBranch）+ 仓库关联兜底即可覆盖，不扩展 `branch_parsing`。
 
+## 生产实测记录（2026-07-23，friday.yc345.tv + study-app）
+
+配置切换 `~/.friday/config.json` → yc345.tv（本机 dev 配置留档 `config.json.localdev`）。生产已索引 261 仓（含 study-app `5bdc1da9`）。建真实项目「小学思维培优-刷题入口」（`11b32791`）：挂真实飞书工作项 story/7019711929（upsert 自动回源拉到真实标题）+ 绑定 main/feat 分支。
+
+**30 工具覆盖矩阵**：
+
+- ✅ 通过 21：route_repositories / get_repository / list_repository_files / get_repository_file / grep_repository（branch 参数验证）/ search_rag_chunks / find_related_chunks / reverse_lookup_requirements / search_learning_cases / search_delivery_knowledge / get_entity_timeline / get_related_entities / lookup_project_by_branch（真实召回）/ search_project_context / grep_project / read_project_doc / report_project_knowledge（draft）/ report_project_state / get_feishu_work_item_context（真实飞书）/ analyze_repository / summarize_branch（真实 feat→master diff + MR 草稿）
+- ❌ 504 网关超时 2：create_coding_plan / create_feishu_technical_plan（60s 整被网关掐断，ASGI 断连疑似取消生成协程，知识图谱查无产物）
+- ⛔ 依赖断链未测 3：improve_coding_plan / create_work_item_repo_tasks / create_learning_case（依赖上游 plan_id/technical_plan_id）
+- ⛔ 执行类待用户确认 4：execute_coding_plan / execute_work_item_repo_tasks / create_merge_request（真实副作用）/ get_coding_execution（需已有 execution_id）
+
+**自然对话（claude headless，生产）**：hook 注入被模型显式引用、`.mcp.json` 生效（WaitForMcpServers）、friday-dev 路由 + lookup + 深挖链路全通；修复版 stop hook 无改动会话正确静默（0 噪音记忆）；draft 沉淀落 pending 待人工确认。
+
+**生产新发现问题清单**：
+
+1. 【高】网关 60s 超时使长 LLM 工具（create_coding_plan / create_feishu_technical_plan）在 HTTP/MCP 链路不可用——需调大 `/api/mcp/` 的 proxy 超时（≥300s）或工具异步化（返回 job 轮询）。
+2. 【中】RAG 索引污染：search_rag_chunks top 命中 `.friday/commits/...` 内部文件——索引应排除 `.friday/` 目录。
+3. 【中】`read_project_doc` 只渲染飞书同步快照：未接飞书文档同步的项目渲染为空，而结构化数据在库里（grep_project 能命中）——应回退渲染 DB 内容（ProjectStateApi/ProjectMemory 等）。
+4. 【中】`pack_project_context` RAG 层用分支名当 query：分支名为 `main` 这类通用词时召回跨项目噪音（「原题判定器」等）——应改用项目名/描述做 query 或对通用分支名跳过 RAG 层。
+5. 【轻·已修】项目内容薄时 friday-dev 反复深挖耗尽回合——0.4.2 加「连续两次读半为空即停」止损护栏。
+
 ## 已知边界
 
 - Codex 无 hook 能力：靠 AGENTS.md bootstrap 规则 + MCP 驱动（规则已含分支环路强制流程）。
