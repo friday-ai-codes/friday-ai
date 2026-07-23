@@ -9,6 +9,8 @@
 - public_org 项目 + 非成员 → WS-02 可读（matched 命中且 context 非空）；
 - BIND-02：ProjectBranch 显式绑定单命中召回；双源指向同项目合并去重单命中；
   跨仓同名分支多绑定 fail-soft 多候选；repository_id 收窄到单命中；两源均无命中空候选。
+- quick-260723 RepoAssociation 第三兜底源：人工命名分支 + repository_id 单命中召回；
+  多关联仅候选；proposed 状态不计；分支源命中时兜底不介入。
 """
 
 from __future__ import annotations
@@ -314,3 +316,108 @@ async def test_requires_auth() -> None:
         _URL, {"branch_name": "feat/xxxx-m1-x"}, format="json"
     )
     assert resp.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# quick-260723：RepoAssociation 第三兜底源（人工命名分支的仓库级召回）
+# ---------------------------------------------------------------------------
+
+
+@sync_to_async
+def _make_repo_association(project, repo, status):
+    from initiatives.models import RepoAssociation
+
+    return RepoAssociation.objects.create(project=project, repository=repo, status=status)
+
+
+async def test_repo_association_fallback_single_match(mcp_client, access_user):
+    """人工命名分支（两源无命中）+ repository_id + confirmed 关联 → 兜底单命中召回。"""
+    from initiatives.models import RepoAssociationStatus
+
+    client, _ = mcp_client
+    project = await _make_project(access_user, key="lpb-ra1")
+    repo = await _make_repo("ra-repo-1")
+    await _make_repo_association(project, repo, RepoAssociationStatus.CONFIRMED)
+
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {"branch_name": "feat/login-page", "repository_id": str(repo.id)},
+        format="json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["work_item_id"] is None  # 分支名无 work_item 段
+    assert body["matched"] is True
+    assert body["project"]["id"] == str(project.id)
+    assert len(body["candidates"]) == 1
+
+
+async def test_repo_association_fallback_multi_candidates(mcp_client, access_user):
+    """仓库关联多个项目 → 兜底只回候选（matched=False，绝不臆断）。"""
+    from initiatives.models import RepoAssociationStatus
+
+    client, _ = mcp_client
+    p1 = await _make_project(access_user, key="lpb-ra-m1")
+    p2 = await _make_project(access_user, key="lpb-ra-m2")
+    repo = await _make_repo("ra-repo-multi")
+    await _make_repo_association(p1, repo, RepoAssociationStatus.CONFIRMED)
+    await _make_repo_association(p2, repo, RepoAssociationStatus.VERIFIED)
+
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {"branch_name": "feature/manual-branch", "repository_id": str(repo.id)},
+        format="json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["matched"] is False
+    assert len(body["candidates"]) == 2
+    assert body["context"] == ""
+
+
+async def test_repo_association_proposed_not_counted(mcp_client, access_user):
+    """proposed（未经用户确认）状态的关联不参与兜底 → 空候选。"""
+    from initiatives.models import RepoAssociationStatus
+
+    client, _ = mcp_client
+    project = await _make_project(access_user, key="lpb-ra-p")
+    repo = await _make_repo("ra-repo-proposed")
+    await _make_repo_association(project, repo, RepoAssociationStatus.PROPOSED)
+
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {"branch_name": "feature/unconfirmed", "repository_id": str(repo.id)},
+        format="json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["matched"] is False
+    assert body["candidates"] == []
+
+
+async def test_repo_association_not_used_when_branch_source_hits(mcp_client, access_user):
+    """分支源（ProjectBranch 绑定）命中时兜底不介入——不把仓库关联的其他项目混进候选。"""
+    from initiatives.models import RepoAssociationStatus
+
+    client, _ = mcp_client
+    p_bound = await _make_project(access_user, key="lpb-ra-b1")
+    p_assoc = await _make_project(access_user, key="lpb-ra-b2")
+    repo = await _make_repo("ra-repo-bound")
+    branch = "feature/bound-branch"
+    await ProjectBranchService().bind(
+        project_id=p_bound.id,
+        repository_id=repo.id,
+        branch_name=branch,
+        actor=access_user,
+        initiated_by_user_id=access_user.id,
+    )
+    await _make_repo_association(p_assoc, repo, RepoAssociationStatus.CONFIRMED)
+
+    resp = await sync_to_async(client.post)(
+        _URL, {"branch_name": branch, "repository_id": str(repo.id)}, format="json"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["matched"] is True
+    assert body["project"]["id"] == str(p_bound.id)
+    assert len(body["candidates"]) == 1
