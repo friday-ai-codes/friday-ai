@@ -7,8 +7,8 @@ current_phase_name: 工具面收口
 status: shipped
 stopped_at: v0.17.0 里程碑完成归档（complete-milestone）——里程碑审计 tech_debt（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，报告归档 milestones/v0.17.0-MILESTONE-AUDIT.md）；REQUIREMENTS 19/19 勾选 + Traceability 全 Complete 并归档 milestones/v0.17.0-REQUIREMENTS.md；ROADMAP v0.17.0 详情快照归档 milestones/v0.17.0-ROADMAP.md 并折叠为 <details>；MILESTONES.md 补 v0.17.0 条目；打 annotated tag v0.17.0。下一步：`$gsd-new-milestone` 立项下一里程碑。
 last_updated: "2026-07-22T08:50:00.000Z"
-last_activity: 2026-07-22
-last_activity_desc: v0.17.0 shipped：complete-milestone 归档 + tag v0.17.0
+last_activity: 2026-07-23
+last_activity_desc: Quick task 260723-icr：IDE 本地上下文回流适配（skills@0.4.0 / mcp@0.3.0）
 progress:
   total_phases: 5
   completed_phases: 5
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 Phase: v0.17.0（Phases 100–104）全部 complete 并归档 — ✅ SHIPPED 2026-07-22
 Plan: complete-milestone 归档完成（ROADMAP/REQUIREMENTS/AUDIT 入 milestones/ + tag v0.17.0）
 Status: shipped / between-milestones——下一里程碑待立项
-Last activity: 2026-07-22 — Completed quick task 260722-npg: GitLab 仓库一键自动配置 push webhook
+Last activity: 2026-07-23 — Completed quick task 260723-icr: IDE 本地上下文回流适配（skills@0.4.0 / mcp@0.3.0 发布 + server 兜底与守卫）
 
 Progress: [██████████] 100% (5/5 phases)
 
@@ -412,6 +412,7 @@ None.
 | 20260621-wano | 工作流重写收尾：合并 ai_plan_approval→human_approval(mode=plan_feishu)（审批统一走 waiting_approval + 数据迁移 0029）+ 飞书推送从 plan_generation/coding 解耦为独立 notify_feishu_im/feishu_doc_create 节点 + 内置模板切换到 ai_plan_research 编排路径（多仓路由+多 agent 并行，点4 上游输入/驳回回流二义性物理隔离） | 2026-06-21 | 83a0c3494 / adb1e3f27 / c3d3b9dbc | [20260621-workflow-approval-notify-orchestration](./quick/20260621-workflow-approval-notify-orchestration/) |
 | 260623-ax1 | Phase A 数据库连接池（角色感知 psycopg3 池 + CONN_MAX_AGE=0，仅 PG 生效、SQLite/MySQL 零回归）+ PgBouncer 支持（compose opt-in profile + helm pgbouncer.enabled，web 走池/worker·scheduler 直连保 Procrastinate LISTEN/NOTIFY） | 2026-06-23 | 1a9cd6a63 / 0c96576ee / 84ce35731 / 5cae1506e | [260623-ax1-db-pool-pgbouncer](./quick/260623-ax1-db-pool-pgbouncer/) |
 | 260722-npg | GitLab 仓库一键自动配置 push webhook（幂等 ensure_push_webhook + setup-webhook API 复用站点 Host、错误中文翻译，前端一键按钮 + 建仓/编辑勾选项） | 2026-07-22 | 0d4e352e | [260722-npg-gitlab-push-webhook-main](./quick/260722-npg-gitlab-push-webhook-main/) |
+| 260723-icr | IDE 本地上下文回流适配：skills 新增 friday-dev + 入口决策门翻转 + Claude Code UserPromptSubmit/Stop 通用 hooks（发 skills@0.4.0）；mcp 补 reverse_lookup_requirements 30 工具全齐（发 mcp@0.3.0）；server lookup 增 RepoAssociation 仓库兜底源 + npm 包工具面对齐守卫 + docs | 2026-07-23 | adff8e67 / 5a3f1691 | [20260723-ide-context-recall](./quick/20260723-ide-context-recall/) |
 
 ## Deferred Items
 
