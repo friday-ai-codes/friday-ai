@@ -2832,6 +2832,15 @@ class LookupProjectByBranchView(McpToolView):
     经 Phase-80 ``pack_project_context`` 召回需求/工件/记忆，并写 ``RetrievalTrace``
     （补齐 Phase-80 标注的 MCP 链）。多/无命中 fail-soft（返回候选列表或空，绝不抛）。
 
+    三源合并（优先级递减）：
+
+    1. work_item_id 分支名解析（v0.15.0 既有）；
+    2. ``ProjectBranch`` 显式绑定（BIND-02）；
+    3. **仓库关联兜底**（quick-260723）：前两源均无命中且传了 ``repository_id`` 时，经
+       ``RepoAssociation``（confirmed/verifying/verified）按仓库反查项目——覆盖人工命名
+       分支（如 ``feat/login-page``）无 work_item 段也未显式绑定的场景，让「任意 feat
+       分支问项目进度」可召回。唯一命中照常 matched，多命中仅回候选。
+
     召回经 packer 内置 fail-closed（调用用户非项目成员时零召回），不绕过权限。
     """
 
@@ -2886,6 +2895,13 @@ class LookupProjectByBranchView(McpToolView):
         for p in binding_projects:
             merged.setdefault(p.id, p)
         binding_ids = {p.id for p in binding_projects}
+
+        # 第三兜底源（quick-260723）：分支两源均无命中且已知仓库 → RepoAssociation 反查。
+        if not merged and repository_id:
+            association_projects = await self._lookup_by_repo_association(repository_id)
+            for p in association_projects:
+                merged.setdefault(p.id, p)
+
         projects = list(merged.values())
         output_data["candidates"] = [_project_summary(p) for p in projects]
 
@@ -2893,13 +2909,14 @@ class LookupProjectByBranchView(McpToolView):
             from services.project_context_packer import pack_project_context
 
             project = projects[0]
-            # 标记命中来源（work_item / branch_binding / both），便于排障。
+            # 标记命中来源（work_item / branch_binding / both / repo_association），便于排障。
             in_wi = project.id in work_item_ids
             in_binding = project.id in binding_ids
             binding_source = (
                 "both" if in_wi and in_binding
                 else "work_item" if in_wi
-                else "branch_binding"
+                else "branch_binding" if in_binding
+                else "repo_association"
             )
             packed = await pack_project_context(
                 project, request.user, query=branch_name
@@ -2966,6 +2983,31 @@ class LookupProjectByBranchView(McpToolView):
         seen: dict[Any, Any] = {}
         for binding in qs.select_related("project__space"):
             project = binding.project
+            if project is not None:
+                seen.setdefault(project.id, project)
+        return list(seen.values())
+
+    @sync_to_async
+    def _lookup_by_repo_association(self, repository_id: Any) -> list[Any]:
+        """RepoAssociation 仓库级兜底反查（quick-260723）。
+
+        仅在分支两源（work_item 解析 + ProjectBranch 绑定）均无命中时调用：按
+        ``repository_id`` 查已确认级别（confirmed/verifying/verified）的业务关联项目，
+        覆盖人工命名分支的召回。ORM 参数化无注入；fail-soft 返回空列表。
+        """
+        from initiatives.models import RepoAssociation, RepoAssociationStatus
+
+        qs = RepoAssociation.objects.filter(
+            repository_id=repository_id,
+            status__in=[
+                RepoAssociationStatus.CONFIRMED,
+                RepoAssociationStatus.VERIFYING,
+                RepoAssociationStatus.VERIFIED,
+            ],
+        ).select_related("project__space")
+        seen: dict[Any, Any] = {}
+        for association in qs:
+            project = association.project
             if project is not None:
                 seen.setdefault(project.id, project)
         return list(seen.values())
