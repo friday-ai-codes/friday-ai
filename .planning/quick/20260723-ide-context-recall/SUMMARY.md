@@ -65,7 +65,7 @@ feature list/记忆/STATE），用 `claude -p` stream-json 实测 6 个场景：
 2. **friday-dev 缺工作区护栏**：加「绝不擅自 git switch/checkout/stash」首条护栏（0.4.1）。
 3. **向量检索 500 不 fail-soft**：本地 Qdrant 维度漂移（1024 vs 2560）时 `search_project_context` / `search_delivery_knowledge` 直接 500 且不留 ToolCallRecord → server 修复为降级空结果 + `mcp_vector_search_degraded` warning（e1c241b5）。
 4. **环境问题（运维项，未改代码）**：本地 dev DB 缺 migration（`access_tokens.kind`）致所有 MCP 工具 500——`manage.py migrate` 解决；Qdrant `delivery_knowledge` collection 维度与当前 embedding 不匹配，需重建 collection 重新摄取。
-5. **分支解析边界（遗留）**：study-app 真实分支 `feat/260618.m-7019711929.思维培优独立场景` 的 `m-{id}` 写法不被宽松正则（`-m{id}`）命中，靠显式绑定/仓库兜底覆盖；后续可评估扩展 `branch_parsing` 支持 `m-{id}` 段。
+5. **分支解析边界（已裁决不做）**：study-app 真实分支 `feat/260618.m-7019711929.思维培优独立场景` 的 `m-{id}` 写法不被宽松正则（`-m{id}`）命中。用户裁决：有显式分支绑定（ProjectBranch）+ 仓库关联兜底即可覆盖，不扩展 `branch_parsing`。
 
 ## 已知边界
 
