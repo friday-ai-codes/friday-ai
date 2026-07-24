@@ -1,12 +1,121 @@
 {
-  "SessionStart": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v24.14.1/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-ai/.codex/hooks/gsd-check-update.js\""
-        }
-      ]
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v24.14.1/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-ai/.codex/hooks/gsd-check-update.js\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v22.12.0/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-clean/.codex/hooks/gsd-check-update.js\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v22.12.0/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-clean/.codex/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v22.12.0/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-clean/.codex/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v22.12.0/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-clean/.codex/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v22.12.0/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-clean/.codex/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v22.12.0/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-clean/.codex/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v22.12.0/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-clean/.codex/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v22.12.0/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-clean/.codex/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v22.12.0/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-clean/.codex/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v22.12.0/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-clean/.codex/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }

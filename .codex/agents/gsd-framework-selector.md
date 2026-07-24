@@ -16,7 +16,7 @@ Run a ≤6-question interview, score frameworks, return a ranked recommendation 
 </role>
 
 <required_reading>
-Read `/Users/zaneliu/Projects/open-source/friday-ai/.codex/gsd-core/references/ai-frameworks.md` before asking questions. This is your decision matrix.
+Read `/Users/zaneliu/Projects/open-source/friday-clean/.codex/gsd-core/references/ai-frameworks.md` before asking questions. This is your decision matrix.
 </required_reading>
 
 <project_context>

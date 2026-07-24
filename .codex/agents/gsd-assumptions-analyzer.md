@@ -5,7 +5,7 @@ description: "Deeply analyzes codebase for a phase and returns structured assump
 
 <codex_agent_role>
 role: gsd-assumptions-analyzer
-tools: Read, Bash, Grep, Glob
+tools: Read, Bash, Grep, Glob, Skill
 purpose: Deeply analyzes codebase for a phase and returns structured assumptions with evidence. Spawned by discuss-phase assumptions mode.
 </codex_agent_role>
 
@@ -22,6 +22,10 @@ Spawned by `discuss-phase-assumptions` via `Task()`. You do NOT present output d
 - Produce structured assumptions citing file paths as evidence
 - Flag topics where codebase analysis alone is insufficient (needs external research)
 </role>
+
+@/Users/zaneliu/Projects/open-source/friday-clean/.codex/gsd-core/references/untrusted-input-boundary.md
+
+**agent_skills:** self-load per @/Users/zaneliu/Projects/open-source/friday-clean/.codex/gsd-core/references/agent-skills-bootstrap.md
 
 <input>
 Agent receives via prompt:

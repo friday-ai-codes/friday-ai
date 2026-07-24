@@ -13,6 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const security_cjs_1 = require("./security.cjs");
+const markdown_sectionizer_cjs_1 = require("./markdown-sectionizer.cjs");
 const STATUS_REJECT_SET = new Set(['superseded', 'rejected', 'deprecated']);
 const CANONICAL_HEADERS = {
     status: ['status', 'state', 'lifecycle', 'stage'],
@@ -57,7 +58,6 @@ const CANONICAL_HEADERS = {
         'candidates',
         'approaches considered',
         'variants',
-        'trade-offs',
         'pros and cons of the options',
         'discussion',
     ],
@@ -189,14 +189,30 @@ function normalizeAdrHeader(raw) {
         .replace(/[^\w\s]/g, '')
         .trim();
 }
-function classifyHeader(normalizedHeader) {
+// Normalized synonym index (audit M7). classifyHeader receives an ALREADY-normalized
+// header (via normalizeAdrHeader), but historically compared it against the RAW synonym
+// strings. Because normalizeAdrHeader collapses [\s:._-]+ to a space and strips [^\w\s],
+// any synonym carrying a hyphen/apostrophe/etc. ('trade-offs', "won't do", 'post-grilling')
+// could never match a normalized header — it was silently dead, and its ADR section went
+// unmapped. Normalizing BOTH sides closes that abstraction asymmetry once, so every synonym
+// (current and future) is reachable regardless of punctuation. Precomputed at module load to
+// avoid re-normalizing the whole table per call; insertion order is preserved so first-match-
+// wins and the exact-then-prefix precedence stay identical to the prior raw-compare loop.
+const _NORMALIZED_SYNONYM_INDEX = (() => {
+    const index = [];
     for (const [canonical, synonyms] of Object.entries(CANONICAL_HEADERS)) {
         for (const synonym of synonyms) {
-            if (normalizedHeader === synonym)
-                return canonical;
-            if (normalizedHeader.startsWith(`${synonym} `))
-                return canonical;
+            index.push([normalizeAdrHeader(synonym), canonical]);
         }
+    }
+    return index;
+})();
+function classifyHeader(normalizedHeader) {
+    for (const [synonym, canonical] of _NORMALIZED_SYNONYM_INDEX) {
+        if (normalizedHeader === synonym)
+            return canonical;
+        if (normalizedHeader.startsWith(`${synonym} `))
+            return canonical;
     }
     return null;
 }
@@ -208,24 +224,30 @@ function splitEntries(blockText) {
         .map((line) => line.replace(/^[-*+]\s+/, '').trim())
         .filter(Boolean);
 }
+/**
+ * Thin adapter: wraps the seam's `collectSections` to produce the same
+ * `{ heading: string | null, body: string[] }` shape the rest of adr-parser
+ * consumes. ADR-1372 T2 migration.
+ */
 function parseSections(markdown) {
-    const lines = (typeof markdown === 'string' ? markdown : '').split(/\r?\n/);
-    const sections = [];
-    let current = { heading: null, body: [] };
-    for (const line of lines) {
-        const m = line.match(/^#{1,6}\s+(.*)$/);
-        if (m) {
-            if (current.heading || current.body.length)
-                sections.push(current);
-            current = { heading: m[1].trim(), body: [] };
-        }
-        else {
-            current.body.push(line);
-        }
-    }
-    if (current.heading || current.body.length)
-        sections.push(current);
-    return sections;
+    const content = typeof markdown === 'string' ? markdown : '';
+    // collectSections(content, () => true) collects every heading as a stop
+    // boundary — mirrors the old line-by-line heading walk exactly.
+    const sections = (0, markdown_sectionizer_cjs_1.collectSections)(content, () => true);
+    // Map seam Section → MarkdownSection. The seam's HeadingToken.text is the
+    // heading text after trimming (same as the old m[1].trim() capture).
+    // The body is a trimEnd()-ed joined string; split it back to lines to match
+    // the old string[] shape consumed by parseStatusFromSections / parseAdrMarkdown.
+    //
+    // Note: the old parseSections emitted a leading { heading: null, body: [...] }
+    // entry for preamble text before the first heading.  Both consumers skip it
+    // immediately (parseAdrMarkdown: `if (!heading) continue`; parseStatusFromSections:
+    // `classifyHeader(normalizeAdrHeader(null))` → null ≠ 'status' → continue), so
+    // the preamble entry was dead code and is not reconstructed here.
+    return sections.map((sec) => ({
+        heading: sec.heading.text,
+        body: sec.body === '' ? [] : sec.body.split('\n'),
+    }));
 }
 function parseStatusFromSections(sections) {
     for (const section of sections) {

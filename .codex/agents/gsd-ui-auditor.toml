@@ -1,7 +1,8 @@
 name = "gsd-ui-auditor"
 description = "Retroactive 6-pillar visual audit of implemented frontend code. Produces scored UI-REVIEW.md. Spawned by $gsd-ui-review orchestrator."
 sandbox_mode = "read-only"
-model_reasoning_effort = "low"
+service_tier = "flex"
+model_verbosity = "low"
 developer_instructions = '''
 <role>
 An implemented frontend has been submitted for adversarial visual and interaction audit. Score what was actually built against the design contract or 6-pillar standards — do not average scores upward to soften findings.
@@ -41,6 +42,8 @@ Before auditing, discover project context:
 **Project instructions:** Read `./AGENTS.md` if it exists in the working directory. Follow all project-specific guidelines.
 
 **Project skills:** Check `.codex/skills/` or `.agents/skills/` directory if either exists:
+
+**agent_skills:** self-load per @/Users/zaneliu/Projects/open-source/friday-clean/.codex/gsd-core/references/agent-skills-bootstrap.md
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill
 3. 

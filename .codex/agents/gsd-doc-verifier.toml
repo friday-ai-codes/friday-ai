@@ -1,7 +1,8 @@
 name = "gsd-doc-verifier"
 description = "Verifies factual claims in generated docs against the live codebase. Returns structured JSON per doc."
 sandbox_mode = "read-only"
-model_reasoning_effort = "low"
+service_tier = "flex"
+model_verbosity = "low"
 developer_instructions = '''
 <role>
 A documentation file has been submitted for factual verification against the live codebase. Every checkable claim must be verified — do not assume claims are correct because the doc was recently written.

@@ -13,7 +13,7 @@ Detect the installed GSD version, scope, runtime, and config dir.
 
 First, derive `PREFERRED_CONFIG_DIR` and `PREFERRED_RUNTIME` from the invoking prompt's `execution_context` path — this is the one input only the workflow knows:
 - If the path contains `/gsd-core/workflows/update.md`, strip that suffix and store the remainder as `PREFERRED_CONFIG_DIR`.
-- Infer `PREFERRED_RUNTIME` from the path: `/.codex/` -> `codex`; `/.gemini/antigravity-ide/`, `/.gemini/antigravity-cli/`, `/.gemini/antigravity/`, `/.agent/` -> `antigravity` (`.agent` is the local Antigravity install dir; see bin/install.js `getDirName('antigravity')`, #503); `/.gemini/` -> `gemini`; `/.config/kilo/` or `/.kilo/` -> `kilo`; `/.config/opencode/` or `/.opencode/` -> `opencode`; otherwise `claude`.
+- Infer `PREFERRED_RUNTIME` from the path: `/.codex/` -> `codex`; `/.gemini/antigravity-ide/`, `/.gemini/antigravity-cli/`, `/.gemini/antigravity/`, `/.agents/` or `/.agent/` -> `antigravity` (`.agents` is the canonical local Antigravity install dir (#791); `.agent` is the legacy form (#503); see bin/install.js `getDirName('antigravity')`); `/.config/kilo/` or `/.kilo/` -> `kilo`; `/.config/opencode/` or `/.opencode/` -> `opencode`; otherwise `claude`.
 
 Then resolve the install context via the deterministic projection (#498). **Do NOT re-derive scope, runtime, or version by hand** — `update-context` owns that cascade in tested code (`gsd-core/bin/lib/update-context.cjs`), the same way `check-latest-version` owns the package name (#2992):
 
@@ -25,7 +25,7 @@ Then resolve the install context via the deterministic projection (#498). **Do N
 GSD_TOOLS=""
 for cand in \
   "$PREFERRED_CONFIG_DIR/gsd-core/bin/gsd-tools.cjs" \
-  "/Users/zaneliu/Projects/open-source/friday-ai/.claude/gsd-core/bin/gsd-tools.cjs"; do
+  "/Users/zaneliu/Projects/open-source/friday-clean/.claude/gsd-core/bin/gsd-tools.cjs"; do
   if [ -n "$cand" ] && [ -f "$cand" ]; then GSD_TOOLS="$cand"; break; fi
 done
 # Last resort: the gsd-tools shim on PATH — resolved to its absolute path and
@@ -64,7 +64,7 @@ echo "$GSD_DIR"
 Parse output:
 - Line 1 = installed version (`0.0.0` means unknown version)
 - Line 2 = install scope (`LOCAL`, `GLOBAL`, or `UNKNOWN`)
-- Line 3 = target runtime (`claude`, `opencode`, `gemini`, `kilo`, `codex`, `antigravity`)
+- Line 3 = target runtime (`claude`, `opencode`, `kilo`, `codex`, `antigravity`)
 - Line 4 = resolved GSD config dir (e.g. `/Users/me/.claude`, `/Users/me/.gemini`); empty if scope is `UNKNOWN`. Capture this as `GSD_DIR` and pass it to subsequent steps so they don't re-derive the runtime path.
 - If scope is `UNKNOWN`, proceed to install using the `--claude --global` fallback.
 
@@ -75,10 +75,29 @@ If multiple runtime installs are detected and the invoking runtime cannot be det
 **If VERSION file missing (version resolves to `0.0.0`):** report the installed version as Unknown and proceed to install (treated as `0.0.0` for comparison).
 </step>
 
+<step name="parse_update_channel">
+Determine the release channel from `$ARGUMENTS`. This selects which npm dist-tag the entire update flow targets — `latest` (stable) by default, or `next` (the RC channel established by ADR #660) when the user opts in with `--next`/`--rc`:
+
+```bash
+case " $ARGUMENTS " in
+  *" --next "*|*" --rc "*)
+    TAG="next"
+    CHANNEL_LABEL="next (RC)"
+    ;;
+  *)
+    TAG="latest"
+    CHANNEL_LABEL="latest (stable)"
+    ;;
+esac
+```
+
+`TAG` is restricted to `latest`/`next` by `check-latest-version.cjs` (it rejects any other value with exit 2), so no arbitrary dist-tag can leak through. Omitting `--next`/`--rc` reproduces the prior behavior exactly: `TAG=latest`.
+</step>
+
 <step name="check_latest_version">
 Check npm for latest version via the deterministic script. **Do NOT run `npm view` or `npm search` directly** — the package name must come from the script, not from a free choice at execution time. (#2992: LLM-driven prescriptions of npm package names produced wrong-package queries; moving the package name into a script constant closes that gap.)
 
-The `GSD_DIR` value emitted by `get_installed_version` (line 4) resolves to the runtime-specific config dir (`/Users/zaneliu/Projects/open-source/friday-ai/.claude/`, `~/.gemini/`, `~/.codex/`, etc.), so the script invocation works for every runtime — not just Claude. If `GSD_DIR` is empty (scope `UNKNOWN`), skip this step and go directly to install.
+The `GSD_DIR` value emitted by `get_installed_version` (line 4) resolves to the runtime-specific config dir (`/Users/zaneliu/Projects/open-source/friday-clean/.claude/`, `~/.gemini/`, `~/.codex/`, etc.), so the script invocation works for every runtime — not just Claude. If `GSD_DIR` is empty (scope `UNKNOWN`), skip this step and go directly to install.
 
 `LATEST_RESULT` is a JSON document with the documented shape `{ ok: bool, version: string, reason: string, detail?: string }`. Parse via `jq` ONLY when the script actually ran. When `GSD_DIR` is empty (scope `UNKNOWN`), skip the check entirely and seed the parsed fields with their no-op values so downstream logic does not mistake an unset `LATEST_RESULT` for a failed network check (#2993 CR feedback):
 
@@ -91,7 +110,7 @@ if [ -z "$GSD_DIR" ]; then
   LATEST_VERSION=""
   LATEST_REASON="no_install_detected"
 else
-  LATEST_RESULT="$(node "$GSD_DIR/gsd-core/bin/check-latest-version.cjs" --json 2>/dev/null)"
+  LATEST_RESULT="$(node "$GSD_DIR/gsd-core/bin/check-latest-version.cjs" --json --tag "$TAG" 2>/dev/null)"
   LATEST_STATUS=$?
   # #2993 CR: when node is missing or the script doesn't exist, LATEST_RESULT
   # is empty and piping it to `jq` produces a parse error on stderr while
@@ -114,7 +133,7 @@ fi
 ```text
 Couldn't check for updates (reason: {LATEST_REASON}, exit: {LATEST_STATUS}).
 
-To update manually: `npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global`
+To update manually: `npx -y --package=@opengsd/gsd-core@{TAG} -- gsd-core --global`
 ```
 
 Exit.
@@ -122,6 +141,14 @@ Exit.
 
 <step name="compare_versions">
 Compare installed vs latest:
+
+**Only when `TAG=next`** (the user passed `--next`/`--rc`), prepend a channel banner so they know they are leaving the stable line — add this line immediately after the `**Latest:**` line in whichever output block renders:
+
+**Channel:** {CHANNEL_LABEL}
+
+On the default stable channel (`TAG=latest`), do NOT add a channel line — the output must match the prior stable behavior exactly.
+
+When `TAG=next`, the "latest" value is the release candidate published under `@next` (e.g. `1.4.0-rc.1`). Apply standard semver precedence for prereleases (`1.4.0-rc.1` is newer than `1.3.1` but older than the final `1.4.0`). Do NOT treat an `-rc.N` suffix as a dev install or as "behind" — offer it as an available update.
 
 **If installed == latest:**
 ```
@@ -168,26 +195,32 @@ CHANGELOG_TMP="/tmp/gsd-changelog-$$.md"
 curl -fsSL "https://raw.githubusercontent.com/open-gsd/gsd-core/main/CHANGELOG.md" -o "$CHANGELOG_TMP" 2>/dev/null \
   || wget -qO "$CHANGELOG_TMP" "https://raw.githubusercontent.com/open-gsd/gsd-core/main/CHANGELOG.md" 2>/dev/null
 
-EXTRACT_JSON=$(node "$GSD_DIR/gsd-core/scripts/changeset/cli.cjs" extract \
-  --from "$INSTALLED_VERSION" \
-  --to "$LATEST_VERSION" \
-  --changelog "$CHANGELOG_TMP" \
-  --json 2>/dev/null)
-EXTRACT_EXIT=$?
-rm -f "$CHANGELOG_TMP"
-
-if [ "$EXTRACT_EXIT" -eq 2 ]; then
-  # Exit 2 = no releases in range (e.g. versions are equal or changelog is sparse)
-  CHANGELOG_PREVIEW="No changelog updates between v${INSTALLED_VERSION} and v${LATEST_VERSION}."
-elif [ "$EXTRACT_EXIT" -ne 0 ] || [ -z "$EXTRACT_JSON" ]; then
-  CHANGELOG_PREVIEW="(Could not extract changelog — update will still proceed)"
+GSD_CHANGESET_CLI="$GSD_DIR/scripts/changeset/cli.cjs"
+if [ ! -f "$GSD_CHANGESET_CLI" ]; then
+  CHANGELOG_PREVIEW="(Changelog CLI not found at $GSD_CHANGESET_CLI — reinstall GSD to restore preview. Update will still proceed.)"
 else
-  # Re-run without --json to get the human-readable markdown for display
-  CHANGELOG_PREVIEW=$(node "$GSD_DIR/gsd-core/scripts/changeset/cli.cjs" extract \
+  EXTRACT_JSON=$(node "$GSD_CHANGESET_CLI" extract \
     --from "$INSTALLED_VERSION" \
     --to "$LATEST_VERSION" \
-    --changelog "$CHANGELOG_TMP" 2>/dev/null || echo "(changelog unavailable)")
+    --changelog "$CHANGELOG_TMP" \
+    --json 2>&1)
+  EXTRACT_EXIT=$?
+
+  if [ "$EXTRACT_EXIT" -eq 2 ]; then
+    # Exit 2 = no releases in range (e.g. versions are equal or changelog is sparse)
+    CHANGELOG_PREVIEW="No changelog updates between v${INSTALLED_VERSION} and v${LATEST_VERSION}."
+  elif [ "$EXTRACT_EXIT" -ne 0 ] || [ -z "$EXTRACT_JSON" ]; then
+    CHANGELOG_PREVIEW="(Could not extract changelog — update will still proceed)"
+  else
+    # Re-run without --json to get the human-readable markdown for display
+    CHANGELOG_PREVIEW=$(node "$GSD_CHANGESET_CLI" extract \
+      --from "$INSTALLED_VERSION" \
+      --to "$LATEST_VERSION" \
+      --changelog "$CHANGELOG_TMP" 2>/dev/null || echo "(changelog unavailable)")
+  fi
 fi
+# Clean up temp changelog now that both extract runs are done
+rm -f "$CHANGELOG_TMP"
 ```
 
 3. Display preview and ask for confirmation, using `$CHANGELOG_PREVIEW` from the extract step above:
@@ -211,7 +244,7 @@ fi
 - `agents/gsd-*` files will be replaced
 
 (Paths are relative to detected runtime install location:
-global: `/Users/zaneliu/Projects/open-source/friday-ai/.claude/`, `~/.config/opencode/`, `~/.opencode/`, `~/.gemini/`, `~/.config/kilo/`, or `~/.codex/`
+global: `/Users/zaneliu/Projects/open-source/friday-clean/.claude/`, `~/.config/opencode/`, `~/.opencode/`, `~/.gemini/`, `~/.config/kilo/`, or `~/.codex/`
 local: `./.claude/`, `./.config/opencode/`, `./.opencode/`, `./.gemini/`, `./.kilo/`, or `./.codex/`)
 
 Your custom files in other locations are preserved:
@@ -326,17 +359,17 @@ RUNTIME_FLAG="--$TARGET_RUNTIME"
 
 **If LOCAL install:**
 ```bash
-npx -y --package=@opengsd/gsd-core@latest -- gsd-core "$RUNTIME_FLAG" --local
+npx -y --package=@opengsd/gsd-core@"$TAG" -- gsd-core "$RUNTIME_FLAG" --local
 ```
 
 **If GLOBAL install:**
 ```bash
-npx -y --package=@opengsd/gsd-core@latest -- gsd-core "$RUNTIME_FLAG" --global
+npx -y --package=@opengsd/gsd-core@"$TAG" -- gsd-core "$RUNTIME_FLAG" --global
 ```
 
 **If UNKNOWN install:**
 ```bash
-npx -y --package=@opengsd/gsd-core@latest -- gsd-core --claude --global
+npx -y --package=@opengsd/gsd-core@"$TAG" -- gsd-core --claude --global
 ```
 
 Capture output. If install fails, show error and exit.
@@ -358,9 +391,6 @@ if [ -n "$PREFERRED_CONFIG_DIR" ]; then
 fi
 if [ -n "$CLAUDE_CONFIG_DIR" ]; then
   CACHE_DIRS+=( "$(expand_home "$CLAUDE_CONFIG_DIR")" )
-fi
-if [ -n "$GEMINI_CONFIG_DIR" ]; then
-  CACHE_DIRS+=( "$(expand_home "$GEMINI_CONFIG_DIR")" )
 fi
 if [ -n "$KILO_CONFIG_DIR" ]; then
   CACHE_DIRS+=( "$(expand_home "$KILO_CONFIG_DIR")" )
@@ -410,7 +440,7 @@ for dir in "${CACHE_DIRS[@]}"; do
   fi
 done
 
-for dir in .claude .config/opencode .opencode .gemini/antigravity-ide .gemini/antigravity-cli .gemini/antigravity .agent .gemini .config/kilo .kilo .codex .cursor .codeium/windsurf .augment .trae .qwen .hermes .codebuddy .cline; do
+for dir in .claude .config/opencode .opencode .gemini/antigravity-ide .gemini/antigravity-cli .gemini/antigravity .agents .agent .config/kilo .kilo .codex .cursor .codeium/windsurf .augment .trae .qwen .hermes .codebuddy .cline; do
   rm -f "./$dir/cache/gsd-update-check"*.json
   rm -f "$HOME/$dir/cache/gsd-update-check"*.json
 done

@@ -24,12 +24,12 @@ PATCHES_DIR=""
 
 # Env overrides first — covers custom config directories used with --config-dir
 if [ -n "$KILO_CONFIG_DIR" ]; then
-  candidate="$(expand_home "$KILO_CONFIG_DIR")$gsd-local-patches"
+  candidate="$(expand_home "$KILO_CONFIG_DIR")/gsd-local-patches"
   if [ -d "$candidate" ]; then
     PATCHES_DIR="$candidate"
   fi
 elif [ -n "$KILO_CONFIG" ]; then
-  candidate="$(dirname "$(expand_home "$KILO_CONFIG")")$gsd-local-patches"
+  candidate="$(dirname "$(expand_home "$KILO_CONFIG")")/gsd-local-patches"
   if [ -d "$candidate" ]; then
     PATCHES_DIR="$candidate"
   fi
@@ -41,12 +41,12 @@ elif [ -n "$XDG_CONFIG_HOME" ]; then
 fi
 
 if [ -z "$PATCHES_DIR" ] && [ -n "$OPENCODE_CONFIG_DIR" ]; then
-  candidate="$(expand_home "$OPENCODE_CONFIG_DIR")$gsd-local-patches"
+  candidate="$(expand_home "$OPENCODE_CONFIG_DIR")/gsd-local-patches"
   if [ -d "$candidate" ]; then
     PATCHES_DIR="$candidate"
   fi
 elif [ -z "$PATCHES_DIR" ] && [ -n "$OPENCODE_CONFIG" ]; then
-  candidate="$(dirname "$(expand_home "$OPENCODE_CONFIG")")$gsd-local-patches"
+  candidate="$(dirname "$(expand_home "$OPENCODE_CONFIG")")/gsd-local-patches"
   if [ -d "$candidate" ]; then
     PATCHES_DIR="$candidate"
   fi
@@ -58,21 +58,21 @@ elif [ -z "$PATCHES_DIR" ] && [ -n "$XDG_CONFIG_HOME" ]; then
 fi
 
 if [ -z "$PATCHES_DIR" ] && [ -n "$GEMINI_CONFIG_DIR" ]; then
-  candidate="$(expand_home "$GEMINI_CONFIG_DIR")$gsd-local-patches"
+  candidate="$(expand_home "$GEMINI_CONFIG_DIR")/gsd-local-patches"
   if [ -d "$candidate" ]; then
     PATCHES_DIR="$candidate"
   fi
 fi
 
 if [ -z "$PATCHES_DIR" ] && [ -n "$CODEX_HOME" ]; then
-  candidate="$(expand_home "$CODEX_HOME")$gsd-local-patches"
+  candidate="$(expand_home "$CODEX_HOME")/gsd-local-patches"
   if [ -d "$candidate" ]; then
     PATCHES_DIR="$candidate"
   fi
 fi
 
 if [ -z "$PATCHES_DIR" ] && [ -n "$CLAUDE_CONFIG_DIR" ]; then
-  candidate="$(expand_home "$CLAUDE_CONFIG_DIR")$gsd-local-patches"
+  candidate="$(expand_home "$CLAUDE_CONFIG_DIR")/gsd-local-patches"
   if [ -d "$candidate" ]; then
     PATCHES_DIR="$candidate"
   fi
@@ -91,7 +91,7 @@ if [ -z "$PATCHES_DIR" ]; then
   elif [ -d "$HOME/.codex/gsd-local-patches" ]; then
     PATCHES_DIR="$HOME/.codex/gsd-local-patches"
   else
-    PATCHES_DIR="/Users/zaneliu/Projects/open-source/friday-ai/.codex/gsd-local-patches"
+    PATCHES_DIR="/Users/zaneliu/Projects/open-source/friday-clean/.codex/gsd-local-patches"
   fi
 fi
 # Local install fallback — check all runtime directories
@@ -217,7 +217,7 @@ When no pristine baseline is available, use these **strengthened heuristics**:
 For each file:
 a. Read both versions completely
 b. Identify ALL differences, then classify each as:
-   - **Mechanical drift** — path substitutions (e.g. `/Users/xxx/.claude/` → `/Users/zaneliu/Projects/open-source/friday-ai/.codex/`), variable additions (`${GSD_WS}`, `${AGENT_SKILLS_*}`), error handling additions (`|| true`)
+   - **Mechanical drift** — path substitutions (e.g. `/Users/xxx/.claude/` → `/Users/zaneliu/Projects/open-source/friday-clean/.codex/`), variable additions (`${GSD_WS}`, `${AGENT_SKILLS_*}`), error handling additions (`|| true`)
    - **User customization** — added steps/sections, removed sections, reordered content, changed behavior, added frontmatter fields, modified instructions
 
 c. **If ANY differences remain after filtering out mechanical drift → those are user customizations. Merge them.**
@@ -275,10 +275,10 @@ Two layered gates. Both must pass before proceeding to cleanup.
 
 Run the deterministic verifier script. Do NOT rely solely on the free-text `verified: yes/no` Hunk Verification Table from Step 4 — bug #2969 traced repeated false-positive `verified: yes` reports to that table being filled in without an actual content-presence check. The script performs the check structurally and exits non-zero on any miss.
 
-Run the verifier as a child process (the gsd-tools binary directory is not required — the script ships under `gsd-core/bin/` in the source repo and is installed to `${GSD_HOME}$gsd-core/bin/`; it is also exposed via the SDK at `sdk/dist/cli.js verify-reapply` when present):
+Run the verifier as a child process (the gsd-tools binary directory is not required — the script ships under `gsd-core/bin/` in the source repo and is installed to `${GSD_HOME}/gsd-core/bin/`):
 
 ```bash
-PRISTINE_DIR="${CONFIG_DIR}$gsd-pristine"
+PRISTINE_DIR="${CONFIG_DIR}/gsd-pristine"
 
 # Build args as a bash array so paths with spaces survive expansion intact
 # (string-concat + unquoted expansion would split incorrectly on whitespace).
@@ -295,15 +295,32 @@ VERIFY_ARGS+=(--json)
 # Node warnings, deprecation notices, or stack traces do not corrupt the
 # JSON parse downstream. Stderr is preserved on the controlling terminal
 # for operator visibility.
-VERIFY_OUTPUT="$(node "${GSD_HOME}$gsd-core/bin/verify-reapply-patches.cjs" "${VERIFY_ARGS[@]}")"
+VERIFY_OUTPUT="$(node "${GSD_HOME}/gsd-core/bin/verify-reapply-patches.cjs" "${VERIFY_ARGS[@]}")"
 VERIFY_STATUS=$?
 ```
 
-**Step 5a: drift check** — even when `VERIFY_STATUS` is 0, the report may signal that one or more files were skipped due to pristine-snapshot drift (Bug #3657). Parse the JSON and check:
+**Step 5a: drift check** — even when `VERIFY_STATUS` is 0, the report may signal that one or more files were skipped due to pristine-snapshot drift (Bug #3657) or a missing baseline (Bug #934). Parse the JSON and check:
 
 ```bash
 DRIFTED_COUNT="$(echo "$VERIFY_OUTPUT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(d.drifted||0))")"
 DRIFTED_FILES="$(echo "$VERIFY_OUTPUT"  | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));(d.drifted_files||[]).forEach(f=>process.stdout.write(f+'\n'))")"
+NO_BASELINE_COUNT="$(echo "$VERIFY_OUTPUT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(d.no_baseline||0))")"
+NO_BASELINE_FILES="$(echo "$VERIFY_OUTPUT"  | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));(d.no_baseline_files||[]).forEach(f=>process.stdout.write(f+'\n'))")"
+```
+
+**If `NO_BASELINE_COUNT` is greater than 0**, emit an advisory warning (non-blocking — the gate still exits 0 for these files). Do NOT halt:
+
+```text
+ADVISORY: {NO_BASELINE_COUNT} file(s) could not be diff-verified because no pristine
+baseline exists on disk despite a hash being recorded in backup-meta.json (Bug #934:
+the installer discarded the only pristine candidate because it was from a newer release).
+These files were skipped rather than false-failed; their user customisations may or
+may not have survived the merge.
+
+Unverified files:
+  {each path in NO_BASELINE_FILES, one per line, indented two spaces}
+
+Recommended: manually inspect each file above and confirm your customisations survived.
 ```
 
 **If `DRIFTED_COUNT` is greater than 0**, STOP and report to the user, then set `DRIFT_DETECTED=true` and halt — do not proceed to 5b or cleanup:

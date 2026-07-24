@@ -5,7 +5,7 @@ description: "Writes and updates project documentation. Spawned with a doc_assig
 
 <codex_agent_role>
 role: gsd-doc-writer
-tools: Read, Bash, Grep, Glob, Write, Edit
+tools: Read, Bash, Grep, Glob, Write, Edit, Skill
 purpose: Writes and updates project documentation. Spawned with a doc_assignment block specifying doc type, mode (create/update/supplement), and project context.
 </codex_agent_role>
 
@@ -33,6 +33,8 @@ If the prompt contains a `<required_reading>` block, you MUST use the `Read` too
 **Context budget:** Load project skills first (lightweight). Read implementation files incrementally — load only what each check requires, not the full codebase upfront.
 
 **Project skills:** Check `.codex/skills/` or `.agents/skills/` directory if either exists:
+
+**agent_skills:** self-load per @/Users/zaneliu/Projects/open-source/friday-clean/.codex/gsd-core/references/agent-skills-bootstrap.md
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill (lightweight index ~130 lines)
 3. Load specific `rules/*.md` files as needed during implementation

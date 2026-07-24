@@ -42,9 +42,10 @@ function routeStateCommand({ state, args, cwd, raw, error }) {
         args,
         subcommands: ['load', 'complete-phase', ...command_aliases_cjs_1.STATE_SUBCOMMANDS.filter((s) => s !== 'load')],
         defaultSubcommand: 'load',
-        unsupported: {
-            'add-roadmap-evolution': 'state add-roadmap-evolution is SDK-only. Use: gsd-tools query state.add-roadmap-evolution ...',
-        },
+        // No SDK-only state subcommands remain: add-roadmap-evolution was the last
+        // holdout after the SDK retirement (ADR-0174) and is now implemented in CJS
+        // (handler below). See #1140.
+        unsupported: {},
         error,
         cwd,
         raw,
@@ -113,6 +114,17 @@ function routeStateCommand({ state, args, cwd, raw, error }) {
                 const a = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, ['text', 'text-file']);
                 state.cmdStateAddBlocker(cwd, { text: strArg(a, 'text'), text_file: strArg(a, 'text-file') }, raw);
             },
+            'add-roadmap-evolution': () => {
+                const a = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, ['phase', 'action', 'after', 'note', 'note-file'], ['urgent']);
+                state.cmdStateAddRoadmapEvolution(cwd, {
+                    phase: strArg(a, 'phase'),
+                    action: strArg(a, 'action'),
+                    after: strArg(a, 'after'),
+                    note: strArg(a, 'note'),
+                    note_file: strArg(a, 'note-file'),
+                    urgent: a['urgent'] === true,
+                }, raw);
+            },
             'resolve-blocker': () => state.cmdStateResolveBlocker(cwd, strArg((0, command_arg_projection_cjs_1.parseNamedArgs)(args, ['text']), 'text'), raw),
             'record-session': () => {
                 const a = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, ['stopped-at', 'resume-file']);
@@ -142,6 +154,10 @@ function routeStateCommand({ state, args, cwd, raw, error }) {
             prune: () => {
                 const a = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, ['keep-recent'], ['dry-run']);
                 state.cmdStatePrune(cwd, { keepRecent: strArg(a, 'keep-recent') || '3', dryRun: a['dry-run'] === true }, raw);
+            },
+            rebuild: () => {
+                const a = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['dry-run', 'verbose']);
+                state.cmdStateRebuild(cwd, { dryRun: a['dry-run'] === true, verbose: a['verbose'] === true }, raw);
             },
             // complete-phase: CJS-only — no SDK counterpart.
             'complete-phase': () => {

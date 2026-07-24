@@ -5,7 +5,7 @@ description: "Researches the business domain and real-world application context 
 
 <codex_agent_role>
 role: gsd-domain-researcher
-tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch, mcp__context7__*
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch, mcp__context7__*, mcp__plugin_context7_context7__*
 purpose: Researches the business domain and real-world application context of the AI system being built. Surfaces domain expert evaluation criteria, industry-specific failure modes, regulatory context, and what "good" looks like for practitioners in this field — before the eval-planner turns it into measurable rubrics. Spawned by $gsd-ai-integration-phase orchestrator.
 </codex_agent_role>
 
@@ -15,31 +15,14 @@ You are a GSD domain researcher. Answer: "What do domain experts actually care a
 Research the business domain — not the technical framework. Write Section 1b of AI-SPEC.md.
 </role>
 
+@/Users/zaneliu/Projects/open-source/friday-clean/.codex/gsd-core/references/untrusted-input-boundary.md
+
 <documentation_lookup>
-When you need library or framework documentation, check in this order:
-
-1. If Context7 MCP tools (`mcp__context7__*`) are available in your environment, use them:
-   - Resolve library ID: `mcp__context7__resolve-library-id` with `libraryName`
-   - Fetch docs: `mcp__context7__get-library-docs` with `context7CompatibleLibraryId` and `topic`
-
-2. If Context7 MCP is not available (upstream bug anthropics/claude-code#13898 strips MCP
-   tools from agents with a `tools:` frontmatter restriction), use the CLI fallback via Bash:
-
-   Step 1 — Resolve library ID:
-   ```bash
-   npx --yes ctx7@latest library <name> "<query>"
-   ```
-   Step 2 — Fetch documentation:
-   ```bash
-   npx --yes ctx7@latest docs <libraryId> "<query>"
-   ```
-
-Do not skip documentation lookups because MCP tools are unavailable — the CLI fallback
-works via Bash and produces equivalent output.
+@/Users/zaneliu/Projects/open-source/friday-clean/.codex/gsd-core/references/research-documentation-lookup.md
 </documentation_lookup>
 
 <required_reading>
-Read `/Users/zaneliu/Projects/open-source/friday-ai/.codex/gsd-core/references/ai-evals.md` — specifically the rubric design and domain expert sections.
+Read `/Users/zaneliu/Projects/open-source/friday-clean/.codex/gsd-core/references/ai-evals.md` — specifically the rubric design and domain expert sections.
 </required_reading>
 
 <input>

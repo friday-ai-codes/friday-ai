@@ -11,9 +11,19 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
+const clock_cjs_1 = require("./clock.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const core = require("./core.cjs");
-const { normalizePhaseName, findPhaseInternal, generateSlugInternal, toPosixPath, output, error } = core;
+const ioMod = require("./io.cjs");
+const { output, error } = ioMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const coreUtilsMod = require("./core-utils.cjs");
+const { toPosixPath, generateSlugInternal } = coreUtilsMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const phaseIdMod = require("./phase-id.cjs");
+const { normalizePhaseName } = phaseIdMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const phaseLocatorMod = require("./phase-locator.cjs");
+const { findPhaseInternal } = phaseLocatorMod;
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planningWorkspace = require("./planning-workspace.cjs");
@@ -76,7 +86,7 @@ function cmdTemplateFill(cwd, templateType, options, raw) {
         return;
     }
     const padded = normalizePhaseName(options.phase);
-    const today = new Date().toISOString().split('T')[0];
+    const today = clock_cjs_1.realClock.localToday();
     const phaseName = options.name || phaseInfo.phase_name || 'Unnamed';
     const phaseSlug = phaseInfo.phase_slug || generateSlugInternal(phaseName);
     const phaseId = `${padded}-${phaseSlug}`;

@@ -12,9 +12,28 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
+const security_cjs_1 = require("./security.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const core = require("./core.cjs");
-const { loadConfig, isGitIgnored, normalizePhaseName, comparePhaseNum, getArchivedPhaseDirs, generateSlugInternal, getMilestoneInfo, getMilestonePhaseFilter, resolveModelInternal, resolveEffortInternal, resolveFastModeInternal, resolveEffortForTier, stripShippedMilestones: _stripShippedMilestones, extractCurrentMilestone, toPosixPath, output, error, findPhaseInternal, extractOneLinerFromBody, getRoadmapPhaseInternal, extractPhaseToken, resolveGranularityInternal, } = core;
+const ioMod = require("./io.cjs");
+const { output, error } = ioMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const configLoaderMod = require("./config-loader.cjs");
+const { loadConfig, isGitIgnored } = configLoaderMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const coreUtilsMod = require("./core-utils.cjs");
+const { toPosixPath, generateSlugInternal, extractOneLinerFromBody } = coreUtilsMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const phaseIdMod = require("./phase-id.cjs");
+const { normalizePhaseName, comparePhaseNum, extractPhaseToken } = phaseIdMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const phaseLocatorMod = require("./phase-locator.cjs");
+const { getArchivedPhaseDirs, findPhaseInternal } = phaseLocatorMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const roadmapParserMod = require("./roadmap-parser.cjs");
+const { extractCurrentMilestone, stripShippedMilestones: _stripShippedMilestones, getMilestoneInfo, getMilestonePhaseFilter, getRoadmapPhaseInternal } = roadmapParserMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const modelResolverMod = require("./model-resolver.cjs");
+const { resolveModelInternal, resolveEffortInternal, resolveFastModeInternal, resolveEffortForTier, resolveGranularityInternal, assertValidGranularityOverride } = modelResolverMod;
 const model_catalog_cjs_1 = require("./model-catalog.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planningWorkspace = require("./planning-workspace.cjs");
@@ -26,6 +45,7 @@ const { extractFrontmatter } = frontmatter;
 const modelProfiles = require("./model-profiles.cjs");
 const { MODEL_PROFILES, VALID_PHASE_TYPES } = modelProfiles;
 const runtime_slash_cjs_1 = require("./runtime-slash.cjs");
+const clock_cjs_1 = require("./clock.cjs");
 // ─── Phase Status ─────────────────────────────────────────────────────────────
 /**
  * Determine phase status by checking plan/summary counts AND verification state.
@@ -44,11 +64,19 @@ function determinePhaseStatus(plans, summaries, phaseDir, defaultPending) {
         const verificationFile = files.find(f => f === 'VERIFICATION.md' || f.endsWith('-VERIFICATION.md'));
         if (verificationFile) {
             const content = (0, shell_command_projection_cjs_1.platformReadSync)(node_path_1.default.join(phaseDir, verificationFile)) || '';
-            if (/status:\s*passed/i.test(content))
+            // #1159 (Defect A): read ONLY the frontmatter `status` key to avoid false
+            // matches from historical body metadata such as `previous_status: gaps_found`.
+            // Full-text regexes like /status:\s*gaps_found/ match the substring inside
+            // `previous_status: gaps_found`, producing incorrect phase status labels.
+            const fm = extractFrontmatter(content);
+            // Normalise to lower-case to preserve the prior case-insensitive behaviour
+            // while reading only the frontmatter `status` key (not the full body text).
+            const fmStatus = typeof fm['status'] === 'string' ? fm['status'].trim().toLowerCase() : '';
+            if (fmStatus === 'passed')
                 return 'Complete';
-            if (/status:\s*human_needed/i.test(content))
+            if (fmStatus === 'human_needed')
                 return 'Needs Review';
-            if (/status:\s*gaps_found/i.test(content))
+            if (fmStatus === 'gaps_found')
                 return 'Executed';
             // Verification exists but unrecognized status — treat as executed
             return 'Executed';
@@ -117,6 +145,110 @@ function cmdListTodos(cwd, area, raw) {
     catch { /* intentionally empty */ }
     const result = { count, todos };
     output(result, raw, count.toString());
+}
+/**
+ * List captured seeds from .planning/seeds/SEED-*.md for browsing/audit (#441).
+ *
+ * Unlike audit.scanSeeds (which returns only *unimplemented* seeds for the
+ * milestone surface), this lists seeds of every status with the richer fields a
+ * human audit needs (scope, trigger, planted date). An optional case-insensitive
+ * status filter narrows the set. Seed content is user-controlled, so every
+ * displayed field is passed through sanitizeForDisplay and each file path is
+ * validated with requireSafePath before reading. Read-only — never mutates.
+ */
+/**
+ * Derive the canonical `{ seed_id, slug }` from a seed filename stem and the
+ * frontmatter `id:` value. Pure (no I/O) so it can be property-tested directly.
+ *
+ * seed_id: frontmatter `id:` when it matches `SEED-NNN`, else the numeric prefix
+ * of the filename (`SEED-NNN-…`), else the whole stem. slug: the descriptive
+ * remainder after `SEED-NNN-`, else the stem with a leading `SEED-` stripped.
+ * `rawFmId` is `unknown` because frontmatter values are not guaranteed strings.
+ */
+function deriveSeedIdentity(stem, rawFmId) {
+    const fmId = typeof rawFmId === 'string' ? rawFmId.trim() : '';
+    let seedId;
+    if (/^SEED-\d+$/i.test(fmId)) {
+        seedId = fmId;
+    }
+    else {
+        const numMatch = stem.match(/^(SEED-\d+)/i);
+        seedId = numMatch ? numMatch[1] : stem;
+    }
+    const slugMatch = stem.match(/^SEED-\d+-(.+)$/i);
+    const slug = slugMatch ? slugMatch[1] : stem.replace(/^SEED-/i, '');
+    return { seed_id: seedId, slug };
+}
+function cmdListSeeds(cwd, statusFilter, raw) {
+    const planDir = planningDir(cwd);
+    const seedsDir = node_path_1.default.join(planDir, 'seeds');
+    const wantStatus = statusFilter ? statusFilter.trim().toLowerCase() : null;
+    const seeds = [];
+    const summary = {};
+    // Frontmatter values are not guaranteed to be scalars: extractFrontmatter
+    // yields {} for a bare `key:` line and an array for `key: [a, b]`. Coerce every
+    // read to a string so one malformed seed cannot crash the whole audit list
+    // (`.toLowerCase()` on a non-string throws) or leak a raw object/array into the
+    // JSON contract. Mirrors the existing `typeof fm.id === 'string'` guard below.
+    const fmStr = (v) => (typeof v === 'string' ? v : '');
+    let files;
+    try {
+        files = node_fs_1.default.readdirSync(seedsDir, { withFileTypes: true });
+    }
+    catch {
+        // No seeds dir (or unreadable) — an empty, non-error result. The seed dir is
+        // created lazily by the first plant-seed, so absence is the normal zero case.
+        output({ count: 0, seeds: [], summary: {} }, raw, '0');
+        return;
+    }
+    for (const entry of files) {
+        if (!entry.isFile())
+            continue;
+        if (!entry.name.startsWith('SEED-') || !entry.name.endsWith('.md'))
+            continue;
+        let safeFilePath;
+        try {
+            safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(seedsDir, entry.name), planDir, 'seed file', { allowAbsolute: true });
+        }
+        catch {
+            continue;
+        }
+        const content = (0, shell_command_projection_cjs_1.platformReadSync)(safeFilePath);
+        if (content === null)
+            continue;
+        const fm = extractFrontmatter(content);
+        const status = (fmStr(fm.status) || 'dormant').toLowerCase().trim() || 'dormant';
+        // Match on the raw lowercased status (both sides already normalized);
+        // sanitizeForDisplay is for output, not comparison.
+        if (wantStatus && status !== wantStatus)
+            continue;
+        // Canonical seed id is `SEED-NNN` (frontmatter `id:`, e.g. SEED-001). Fall
+        // back to the numeric prefix of the filename, then to the whole stem. The
+        // descriptive remainder of the filename (`SEED-NNN-<slug>.md`) is the slug.
+        const stem = node_path_1.default.basename(entry.name, '.md');
+        const { seed_id: seedId, slug } = deriveSeedIdentity(stem, fm.id);
+        let title = (0, security_cjs_1.sanitizeForDisplay)(fmStr(fm.title).slice(0, 100));
+        if (!title) {
+            const headingMatch = content.match(/^#\s*(.+)$/m);
+            if (headingMatch)
+                title = (0, security_cjs_1.sanitizeForDisplay)(headingMatch[1].trim().slice(0, 100));
+        }
+        const safeStatus = (0, security_cjs_1.sanitizeForDisplay)(status);
+        summary[safeStatus] = (summary[safeStatus] || 0) + 1;
+        seeds.push({
+            seed_id: (0, security_cjs_1.sanitizeForDisplay)(seedId),
+            slug: (0, security_cjs_1.sanitizeForDisplay)(slug),
+            status: safeStatus,
+            scope: (0, security_cjs_1.sanitizeForDisplay)(fmStr(fm.scope) || 'unknown'),
+            trigger_when: (0, security_cjs_1.sanitizeForDisplay)(fmStr(fm.trigger_when)),
+            planted: (0, security_cjs_1.sanitizeForDisplay)(fmStr(fm.planted)),
+            title,
+            path: toPosixPath(node_path_1.default.relative(cwd, safeFilePath)),
+        });
+    }
+    // Stable order: by seed_id so output is deterministic across filesystems.
+    seeds.sort((a, b) => a.seed_id.localeCompare(b.seed_id));
+    output({ count: seeds.length, seeds, summary }, raw, seeds.length.toString());
 }
 function cmdVerifyPathExists(cwd, targetPath, raw) {
     if (!targetPath) {
@@ -244,11 +376,12 @@ function cmdResolveModel(cwd, agentType, raw) {
         : { model, profile, effort, unknown_agent: true };
     output(result, raw, model);
 }
-function cmdResolveGranularity(cwd, phaseType, raw) {
+function cmdResolveGranularity(cwd, phaseType, raw, override) {
     if (!phaseType) {
         error('phase-type required');
     }
-    const granularity = resolveGranularityInternal(cwd, phaseType);
+    assertValidGranularityOverride(override, error);
+    const granularity = resolveGranularityInternal(cwd, phaseType, override);
     const result = (VALID_PHASE_TYPES).has(phaseType)
         ? { granularity, phase_type: phaseType }
         : { granularity, phase_type: phaseType, unknown_phase_type: true };
@@ -339,9 +472,11 @@ function cmdEffortSync(cwd, raw, opts) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/unbound-method
     const { getGlobalConfigDir } = require('./runtime-homes.cjs');
     // Use install-time resolvers: they merge ~/.gsd/defaults.json with project config,
-    // matching the exact logic used when agents were originally installed.
+    // matching the exact logic used when agents were originally installed. #2071: these
+    // live in the shipped sibling install-effort-resolver.cjs (extracted from the
+    // package-root bin/install.js, which the installer never copies into a runtime home).
     // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/unbound-method
-    const { readGsdEffectiveEffortConfig, resolveInstallTimeEffort } = require('../../../bin/install.js');
+    const { readGsdEffectiveEffortConfig, resolveInstallTimeEffort } = require('./install-effort-resolver.cjs');
     const effortCfg = readGsdEffectiveEffortConfig(cwd);
     const agentsDir = node_path_1.default.join(opts.configDir || getGlobalConfigDir(runtime), 'agents');
     if (!node_fs_1.default.existsSync(agentsDir)) {
@@ -431,7 +566,7 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
                 const phaseInfo = findPhaseInternal(cwd, phaseNum);
                 if (phaseInfo) {
                     branchName = config['phase_branch_template']
-                        .replace('{phase}', phaseInfo['phase_number'])
+                        .replace('{phase}', normalizePhaseName(phaseInfo['phase_number']))
                         .replace('{slug}', phaseInfo['phase_slug'] || 'phase');
                 }
             }
@@ -458,6 +593,7 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
     // Stage files
     const explicitFiles = files && files.length > 0;
     const filesToStage = explicitFiles ? files : ['.planning/'];
+    const stagedPaths = [];
     for (const file of filesToStage) {
         const fullPath = node_path_1.default.join(cwd, file);
         if (!node_fs_1.default.existsSync(fullPath)) {
@@ -473,12 +609,32 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
         }
         else {
             (0, shell_command_projection_cjs_1.execGit)(['add', file], { cwd });
+            stagedPaths.push(file);
         }
     }
-    // Commit (--no-verify skips pre-commit hooks, used by parallel executor agents)
-    const commitArgs = amend ? ['commit', '--amend', '--no-edit'] : ['commit', '-m', sanitizedMessage];
+    // Commit — when the caller declared a scope (--files), append a pathspec so
+    // only the declared files land in the commit, not the entire index (#2112).
+    // The pathspec uses stagedPaths (not filesToStage) so skipped missing files
+    // are excluded — otherwise git would record them as deletions (#2014).
+    // During a merge, git refuses partial commits — fall back to a bare commit.
+    // --amend is left without a pathspec: amending with -- <paths> is a different
+    // operation that rewrites the tip with only those paths.
+    if (explicitFiles && stagedPaths.length === 0 && !amend) {
+        const result = { committed: false, hash: null, reason: 'nothing_to_commit' };
+        output(result, raw, 'nothing');
+        return;
+    }
+    const isMergeInProgress = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd }).exitCode === 0;
+    const canScope = explicitFiles && stagedPaths.length > 0 && !amend
+        && !isMergeInProgress;
+    const commitArgs = amend
+        ? ['commit', '--amend', '--no-edit']
+        : ['commit', '-m', sanitizedMessage];
     if (noVerify)
         commitArgs.push('--no-verify');
+    if (canScope) {
+        commitArgs.push('--', ...stagedPaths);
+    }
     const commitResult = (0, shell_command_projection_cjs_1.execGit)(commitArgs, { cwd });
     if (commitResult.exitCode !== 0) {
         if (commitResult.stdout.includes('nothing to commit') || commitResult.stderr.includes('nothing to commit')) {
@@ -504,13 +660,12 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
 /**
  * Route a list of changed files to their sub-repo prefixes.
  *
- * Bucket sub-repos by their first path segment. Any file that matches a
+ * Bucket sub-repos by their first path segment (#311). Any file that matches a
  * sub-repo prefix must share that sub-repo's first segment, so we only scan
- * the (small) bucket for the file's first segment instead of all sub-repos
- * — O(F + R) expected vs the prior O(F*R) find-in-loop. Candidates stay in
- * sub-repo array order, preserving the original first-match semantics
- * (incl. multi-segment sub-repos like "vendor/pkg", which resolve via the
- * inner startsWith). (#311)
+ * the (small) same-first-segment bucket instead of all sub-repos. Within that
+ * bucket all candidates are scanned to find the longest (most-specific)
+ * matching prefix, so nested sub_repos (e.g. ['packages', 'packages/core'])
+ * route to the deepest match regardless of sub_repos array order (#391).
  *
  * @param files    - changed file paths (relative to project root)
  * @param subRepos - sub-repo path prefixes from config.sub_repos
@@ -530,7 +685,23 @@ function groupFilesBySubrepo(files, subRepos) {
     const unmatched = [];
     for (const file of files) {
         const candidates = reposByFirstSeg.get(file.split('/')[0]);
-        const match = candidates ? candidates.find(repo => file.startsWith(repo + '/')) : undefined;
+        // Select the longest (most-specific) matching sub-repo prefix so nested
+        // sub_repos (e.g. ['packages', 'packages/core']) route correctly regardless
+        // of array order. (#391) String() guards the length read so non-string
+        // entries never throw, matching the tolerance of the prior `.find` path.
+        let match;
+        let matchLen = -1;
+        if (candidates) {
+            for (const repo of candidates) {
+                if (file.startsWith(repo + '/')) {
+                    const repoLen = String(repo).length;
+                    if (repoLen > matchLen) {
+                        match = repo;
+                        matchLen = repoLen;
+                    }
+                }
+            }
+        }
         if (match) {
             (grouped[match] ||= []).push(file);
         }
@@ -561,12 +732,21 @@ function cmdCommitToSubrepo(cwd, message, files, raw) {
     for (const [repo, repoFiles] of Object.entries(grouped)) {
         const repoCwd = node_path_1.default.join(cwd, repo);
         // Stage files (strip sub-repo prefix for paths relative to that repo)
+        const stagedRelPaths = [];
         for (const file of repoFiles) {
             const relativePath = file.slice(repo.length + 1);
-            (0, shell_command_projection_cjs_1.execGit)(['add', relativePath], { cwd: repoCwd });
+            const addResult = (0, shell_command_projection_cjs_1.execGit)(['add', relativePath], { cwd: repoCwd });
+            if (addResult.exitCode === 0) {
+                stagedRelPaths.push(relativePath);
+            }
         }
-        // Commit
-        const commitResult = (0, shell_command_projection_cjs_1.execGit)(['commit', '-m', message], { cwd: repoCwd });
+        // Commit — pathspec limits the commit to the staged files only (#2112)
+        const isMergeInProgressSub = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: repoCwd }).exitCode === 0;
+        const canScopeSub = stagedRelPaths.length > 0 && !isMergeInProgressSub;
+        const commitArgs = canScopeSub
+            ? ['commit', '-m', message, '--', ...stagedRelPaths]
+            : ['commit', '-m', message];
+        const commitResult = (0, shell_command_projection_cjs_1.execGit)(commitArgs, { cwd: repoCwd });
         if (commitResult.exitCode !== 0) {
             if (commitResult.stdout.includes('nothing to commit') || commitResult.stderr.includes('nothing to commit')) {
                 repos[repo] = { committed: false, hash: null, files: repoFiles, reason: 'nothing_to_commit' };
@@ -586,6 +766,153 @@ function cmdCommitToSubrepo(cwd, message, files, raw) {
         unmatched: unmatched.length > 0 ? unmatched : undefined,
     };
     output(result, raw, Object.entries(repos).map(([r, v]) => `${r}:${v.hash || 'skip'}`).join(' '));
+}
+/**
+ * Prepare a sub-repo for a companion PR branch.
+ *
+ * Detects uncommitted changes, creates a new branch, stages every changed
+ * file explicitly (never git add -A per universal-anti-patterns.md:44), commits,
+ * and pushes with --set-upstream. Returns a structured result the workflow uses
+ * to call `gh pr create`.
+ *
+ * On a stage/commit failure (nothing committed yet), the branch is deleted and
+ * the caller is returned to the original HEAD so the repo is left clean. On a
+ * push failure, the commit already exists — the branch is left in place instead
+ * so the user's work is not lost; the error includes a retry instruction.
+ */
+function cmdPrSubrepo(cwd, repo, branch, commitMessage, raw) {
+    if (!repo) {
+        error('--repo required');
+    }
+    if (!branch) {
+        error('--branch required');
+    }
+    if (!commitMessage || commitMessage.startsWith('--')) {
+        error('commit message required');
+    }
+    if (branch.startsWith('-')) {
+        error(`Branch name must not start with '-': ${branch}`);
+    }
+    // 0. Security: validate repo path is contained within the workspace root.
+    //    Uses security.cjs validatePath (symlink-safe realpathSync + startsWith guard)
+    //    to reject ../escape, absolute paths, and symlink traversal.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/unbound-method
+    const { validatePath } = require('./security.cjs');
+    const pathCheck = validatePath(repo, cwd);
+    if (!pathCheck.safe) {
+        error(`Sub-repo path is unsafe: ${pathCheck.error}`);
+    }
+    const repoCwd = pathCheck.resolved;
+    if (!node_fs_1.default.existsSync(repoCwd)) {
+        error(`Sub-repo not found: ${repoCwd}`);
+    }
+    // 1. Collect changed files via porcelain status — explicit, never git add -A.
+    //    ?? (untracked) lines are excluded — only stage tracked modifications.
+    const statusResult = (0, shell_command_projection_cjs_1.execGit)(['-c', 'core.quotePath=false', 'status', '--porcelain'], { cwd: repoCwd });
+    if (statusResult.exitCode !== 0) {
+        error(`git status failed in ${repo}: ${statusResult.stderr}`);
+    }
+    // Parse porcelain output into two lists:
+    //   changedFiles — all affected paths (old + new for renames) → goes into result.files
+    //   filesToStage — paths to pass to git add (rename old-paths are already staged by
+    //                  the rename op and no longer exist in the worktree; only add new paths)
+    const changedFiles = [];
+    const filesToStage = [];
+    for (const line of statusResult.stdout.split('\n').filter(Boolean).filter(l => !l.startsWith('??'))) {
+        // execGit trims the entire stdout string, which may strip the leading X-status
+        // space from the first output line. Normalize before slicing.
+        const normalized = line.trimStart();
+        const file = normalized.slice(2).trim();
+        const arrowIdx = file.indexOf(' -> ');
+        if (arrowIdx !== -1) {
+            const oldPath = file.slice(0, arrowIdx).trim();
+            const newPath = file.slice(arrowIdx + 4).trim();
+            changedFiles.push(oldPath, newPath);
+            filesToStage.push(newPath); // old path already staged; worktree no longer has it
+        }
+        else {
+            changedFiles.push(file);
+            filesToStage.push(file);
+        }
+    }
+    if (changedFiles.length === 0) {
+        output({ ok: true, repo, branch, committed: false, reason: 'nothing_to_commit', files: [] }, raw, 'nothing_to_commit');
+        return;
+    }
+    // 2. Guard: refuse if branch already exists — checkout -b is non-idempotent
+    const branchCheck = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '--verify', branch], { cwd: repoCwd });
+    if (branchCheck.exitCode === 0) {
+        error(`Branch already exists in ${repo}: ${branch}. Delete it first or choose a unique name.`);
+    }
+    // Capture current HEAD before switching so rollback can return explicitly.
+    // git checkout - fails on a fresh single-branch repo with no prior HEAD.
+    const prevBranchResult = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoCwd });
+    const prevBranchName = prevBranchResult.exitCode === 0 ? prevBranchResult.stdout.trim() : null;
+    // 3. Create branch
+    const checkoutResult = (0, shell_command_projection_cjs_1.execGit)(['checkout', '-b', branch], { cwd: repoCwd });
+    if (checkoutResult.exitCode !== 0) {
+        error(`Failed to create branch ${branch} in ${repo}: ${checkoutResult.stderr}`);
+    }
+    // Helper: rollback the created branch and return to the previous HEAD.
+    const rollback = () => {
+        if (prevBranchName) {
+            (0, shell_command_projection_cjs_1.execGit)(['checkout', prevBranchName], { cwd: repoCwd });
+        }
+        (0, shell_command_projection_cjs_1.execGit)(['branch', '-D', branch], { cwd: repoCwd });
+    };
+    // 4. Stage explicit files (never git add -A per universal-anti-patterns.md:44)
+    for (const file of filesToStage) {
+        const addResult = (0, shell_command_projection_cjs_1.execGit)(['add', '--', file], { cwd: repoCwd });
+        if (addResult.exitCode !== 0) {
+            rollback();
+            error(`Failed to stage ${file} in ${repo}: ${addResult.stderr}`);
+        }
+    }
+    // 5. Commit — pathspec limits the commit to the staged files only (#2112).
+    // changedFiles includes both old and new paths for renames so the full
+    // rename is captured atomically (pathspec on newPath alone would leave the
+    // deletion of oldPath stranded in the index).
+    const isMergeInProgressPr = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: repoCwd }).exitCode === 0;
+    const canScopePr = changedFiles.length > 0 && !isMergeInProgressPr;
+    const commitArgs = canScopePr
+        ? ['commit', '-m', commitMessage, '--', ...changedFiles]
+        : ['commit', '-m', commitMessage];
+    const commitResult = (0, shell_command_projection_cjs_1.execGit)(commitArgs, { cwd: repoCwd });
+    if (commitResult.exitCode !== 0) {
+        rollback();
+        error(`Failed to commit in ${repo}: ${commitResult.stderr}`);
+    }
+    // 6. Capture commit hash
+    const hashResult = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '--short', 'HEAD'], { cwd: repoCwd });
+    const commitHash = hashResult.exitCode === 0 ? hashResult.stdout.trim() : null;
+    // 7. Capture remote URL and derive GitHub owner/repo slug for gh pr create
+    const remoteResult = (0, shell_command_projection_cjs_1.execGit)(['remote', 'get-url', 'origin'], { cwd: repoCwd });
+    const remoteUrl = remoteResult.exitCode === 0 ? remoteResult.stdout.trim() : null;
+    let remoteSlug = null;
+    if (remoteUrl) {
+        const m = remoteUrl.match(/github\.com[:/](.+?)(?:\.git)?$/);
+        remoteSlug = m ? m[1] : null;
+    }
+    // 8. Push with --set-upstream so gh pr create can find the branch.
+    //    Network operation — use a longer timeout than the default 10 s.
+    //    Do NOT rollback on push failure — the commit already exists on the local branch.
+    //    Deleting the branch here would destroy the only ref holding the user's work.
+    //    Leave the branch in place so the user can retry the push.
+    const pushResult = (0, shell_command_projection_cjs_1.execGit)(['push', '--set-upstream', 'origin', branch], { cwd: repoCwd, timeout: 60_000 });
+    if (pushResult.exitCode !== 0) {
+        error(`Failed to push ${branch} in ${repo}: ${pushResult.stderr}\nBranch ${branch} was created locally — retry with: git -C ${repo} push --set-upstream origin ${branch}`);
+    }
+    const result = {
+        ok: true,
+        repo,
+        branch,
+        committed: true,
+        files: changedFiles,
+        commit_hash: commitHash,
+        remote_url: remoteUrl,
+        remote_slug: remoteSlug,
+    };
+    output(result, raw, `${repo}@${commitHash ?? 'unknown'}`);
 }
 function cmdSummaryExtract(cwd, summaryPath, fields, raw) {
     if (!summaryPath) {
@@ -871,7 +1198,7 @@ function cmdTodoMatchPhase(cwd, phase, raw) {
                 const planContent = (0, shell_command_projection_cjs_1.platformReadSync)(node_path_1.default.join(phaseDir, pf));
                 if (planContent === null)
                     continue;
-                const fmFiles = planContent.match(/files_modified:\s*\[([^\]]*)\]/);
+                const fmFiles = planContent.match(/files_modified:\s*\[([^\]]{0,8000})\]/);
                 if (fmFiles) {
                     phasePlans.push(...fmFiles[1].split(',').map(s => s.trim().replace(/['"]/g, '')).filter(Boolean));
                 }
@@ -935,7 +1262,7 @@ function cmdTodoComplete(cwd, filename, raw) {
     (0, shell_command_projection_cjs_1.platformEnsureDir)(completedDir);
     // Read, add completion timestamp, move
     let content = node_fs_1.default.readFileSync(sourcePath, 'utf-8');
-    const today = new Date().toISOString().split('T')[0];
+    const today = clock_cjs_1.realClock.localToday();
     content = `completed: ${today}\n` + content;
     (0, shell_command_projection_cjs_1.platformWriteSync)(node_path_1.default.join(completedDir, filename), content);
     node_fs_1.default.unlinkSync(sourcePath);
@@ -944,7 +1271,7 @@ function cmdTodoComplete(cwd, filename, raw) {
 function cmdScaffold(cwd, type, options, raw) {
     const { phase, name } = options;
     const padded = phase ? normalizePhaseName(phase) : '00';
-    const today = new Date().toISOString().split('T')[0];
+    const today = clock_cjs_1.realClock.localToday();
     // Find phase directory
     const phaseInfo = phase ? findPhaseInternal(cwd, phase) : null;
     const phaseDir = phaseInfo ? node_path_1.default.join(cwd, phaseInfo['directory']) : null;
@@ -1016,7 +1343,8 @@ function cmdStats(cwd, format, raw) {
         const roadmapContent = extractCurrentMilestone(roadmapRaw, cwd);
         // Matches both plain numeric (Phase 1:) and milestone-prefixed (Phase 2-01:) headings.
         // Also tolerates optional [bracket-token] scope prefix on phase headings.
-        const headingPattern = /#{2,4}\s*(?:\[[^\]]+\]\s*)?Phase\s+([\w][\w.-]*(?:-[\w.-]+)*)\s*:\s*([^\n]+)/gi;
+        // #1729: `(?:\s*\([^)\n]{0,200}\))?` tolerates a pre-colon ( ) tag (literal mirror of OPTIONAL_PHASE_TAG_SOURCE).
+        const headingPattern = /#{2,4}\s*(?:\[[^\]]{1,200}\]\s*)?Phase\s+([\w][\w.-]*)(?:\s*\([^)\n]{0,200}\))?\s*:\s*([^\n]+)/gi;
         let match;
         while ((match = headingPattern.exec(roadmapContent)) !== null) {
             const key = normalizePhaseName(match[1]);
@@ -1182,6 +1510,8 @@ module.exports = {
     cmdGenerateSlug,
     cmdCurrentTimestamp,
     cmdListTodos,
+    cmdListSeeds,
+    deriveSeedIdentity,
     cmdVerifyPathExists,
     cmdHistoryDigest,
     cmdResolveModel,
@@ -1190,6 +1520,7 @@ module.exports = {
     cmdEffortSync,
     cmdCommit,
     cmdCommitToSubrepo,
+    cmdPrSubrepo,
     cmdSummaryExtract,
     cmdWebsearch,
     cmdProgressRender,

@@ -5,7 +5,7 @@ description: "Retroactive 6-pillar visual audit of implemented frontend code. Pr
 
 <codex_agent_role>
 role: gsd-ui-auditor
-tools: Read, Write, Bash, Grep, Glob
+tools: Read, Write, Bash, Grep, Glob, Skill
 purpose: Retroactive 6-pillar visual audit of implemented frontend code. Produces scored UI-REVIEW.md. Spawned by $gsd-ui-review orchestrator.
 </codex_agent_role>
 
@@ -48,6 +48,8 @@ Before auditing, discover project context:
 **Project instructions:** Read `./AGENTS.md` if it exists in the working directory. Follow all project-specific guidelines.
 
 **Project skills:** Check `.codex/skills/` or `.agents/skills/` directory if either exists:
+
+**agent_skills:** self-load per @/Users/zaneliu/Projects/open-source/friday-clean/.codex/gsd-core/references/agent-skills-bootstrap.md
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill
 3. 

@@ -20,7 +20,9 @@ exports.CLUSTERS = void 0;
 exports.allClusteredSkills = allClusteredSkills;
 exports.CLUSTERS = Object.freeze({
     core_loop: Object.freeze([
+        'next',
         'new-project',
+        'onboard',
         'discuss-phase',
         'plan-phase',
         'execute-phase',
@@ -112,6 +114,8 @@ exports.CLUSTERS = Object.freeze({
         'review-backlog',
         'debug',
         'extract-learnings',
+        'mempalace-recall',
+        'mempalace-capture',
         'surface',
     ]),
 });

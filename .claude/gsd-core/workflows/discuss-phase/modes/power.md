@@ -8,7 +8,7 @@
 ## Dispatch
 
 ```
-Read @/Users/zaneliu/Projects/open-source/friday-ai/.claude/gsd-core/workflows/discuss-phase-power.md
+Read @/Users/zaneliu/Projects/open-source/friday-clean/.claude/gsd-core/workflows/discuss-phase-power.md
 ```
 
 Execute it end-to-end. Do not continue with the standard interactive steps.

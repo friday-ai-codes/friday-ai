@@ -34,7 +34,18 @@ const VALID_CHOICES = ['keep', 'remove'];
 exports.BUNDLED_GSD_HOOK_FILES = Object.freeze(new Set([
     'hooks/gsd-check-update-worker.js',
     'hooks/gsd-check-update.js',
+    'hooks/gsd-config-reload.js',
     'hooks/gsd-context-monitor.js',
+    'hooks/gsd-cursor-post-tool.js',
+    'hooks/gsd-cursor-pre-tool.js',
+    'hooks/gsd-cursor-session-start.js',
+    'hooks/gsd-cursor-stop.js',
+    'hooks/gsd-cursor-subagent-start.js',
+    'hooks/gsd-cursor-subagent-stop.js',
+    // Windsurf/Cascade blocking hooks — registered by writeWindsurfHooksJson (#2100).
+    'hooks/gsd-windsurf-pre-write.js',
+    'hooks/gsd-windsurf-pre-command.js',
+    'hooks/gsd-ensure-canonical-path.js',
     'hooks/gsd-graphify-update.sh',
     'hooks/gsd-phase-boundary.sh',
     'hooks/gsd-prompt-guard.js',

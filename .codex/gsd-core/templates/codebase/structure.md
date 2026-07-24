@@ -216,7 +216,7 @@ gsd-core/
 
 **New Workflow:**
 - Implementation: `gsd-core/workflows/{name}.md`
-- Usage: Reference from command with `@/Users/zaneliu/Projects/open-source/friday-ai/.codex/gsd-core/workflows/{name}.md`
+- Usage: Reference from command with `@/Users/zaneliu/Projects/open-source/friday-clean/.codex/gsd-core/workflows/{name}.md`
 
 **New Reference Document:**
 - Implementation: `gsd-core/references/{name}.md`
@@ -229,12 +229,12 @@ gsd-core/
 ## Special Directories
 
 **gsd-core/**
-- Purpose: Resources installed to /Users/zaneliu/Projects/open-source/friday-ai/.codex/
+- Purpose: Resources installed to /Users/zaneliu/Projects/open-source/friday-clean/.codex/
 - Source: Copied by bin/install.js during installation
 - Committed: Yes (source of truth)
 
 **commands/**
-- Purpose: Slash commands installed to /Users/zaneliu/Projects/open-source/friday-ai/.codex/commands/
+- Purpose: Slash commands installed to /Users/zaneliu/Projects/open-source/friday-clean/.codex/commands/
 - Source: Copied by bin/install.js during installation
 - Committed: Yes (source of truth)
 

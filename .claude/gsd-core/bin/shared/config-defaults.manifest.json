@@ -13,7 +13,7 @@
   "project_code": null,
   "phase_id_convention": null,
   "mode": "interactive",
-  "claude_md_path": "./CLAUDE.md",
+  "claude_md_path": "./.claude/CLAUDE.md",
   "git": {
     "branching_strategy": "none",
     "create_tag": true,
@@ -28,7 +28,6 @@
     "verifier": true,
     "nyquist_validation": true,
     "ai_integration_phase": true,
-    "tdd_mode": false,
     "human_verify_mode": "end-of-phase",
     "auto_advance": false,
     "_auto_chain_active": false,
@@ -54,7 +53,8 @@
     "post_planning_gaps": true,
     "security_enforcement": true,
     "security_asvs_level": 1,
-    "security_block_on": "high"
+    "security_block_on": "high",
+    "context_guard_mode": "warn"
   },
   "planning": {
     "commit_docs": true,
@@ -94,5 +94,12 @@
   "plan_review": {
     "source_grounding": true,
     "source_grounding_authority": "grep"
+  },
+  "capabilities": {
+    "strict_known_registries": null,
+    "auto_update": false
+  },
+  "security": {
+    "injection_blocking": false
   }
 }

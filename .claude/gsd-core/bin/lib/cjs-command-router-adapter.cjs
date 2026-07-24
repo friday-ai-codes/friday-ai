@@ -13,6 +13,12 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const commandRoutingHub = require("./command-routing-hub.cjs");
 const { createHub, ERROR_KINDS } = commandRoutingHub;
+// Phase 2 (#1646): import ERROR_REASON so the UnknownCommand translation can
+// pass `sdk_unknown_command` as the second arg to error(), preserving the
+// JSON-error envelope contract that capability routers' tests assert on.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const io = require("./io.cjs");
+const { ERROR_REASON } = io;
 // ─── Implementation ───────────────────────────────────────────────────────────
 function routeCjsCommandFamily({ args, subcommands, handlers, defaultSubcommand, unsupported = {}, unknownMessage, error, cwd, raw, }) {
     routeHubCommandFamily({
@@ -44,6 +50,18 @@ function routeHubCommandFamily({ family, args, subcommands, handlers, defaultSub
     const available = subcommands.filter((s) => !unsupported[s]);
     const registryHandlers = Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [
         name,
+        // Honestified via amendment #1642 (#1644 Phase 1): the runtime check
+        // `'ok' in result` already passes any `{ok:*}` object through, so the
+        // historical `{ok:true, data}` return type was a lie whenever the
+        // handler returned an err Result. The lying cast below is preserved
+        // because the Hub's `export =` syntax doesn't expose `HubResult` for
+        // import; the Hub's `_validateErrResult` runtime-validates the actual
+        // shape, so structural compatibility is sufficient. The wrapper's
+        // 0-arg signature is assignable to the Hub's `(ctx) => HubResult`
+        // Handler type via TypeScript parameter bivariance; the Hub's per-call
+        // ctx is intentionally ignored (host-router handlers don't use it;
+        // capability-router handlers in Phase 2 will return HubResults that
+        // already carry context).
         () => {
             const result = handler();
             if (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'ok')) {
@@ -66,10 +84,30 @@ function routeHubCommandFamily({ family, args, subcommands, handlers, defaultSub
     if (result.ok)
         return;
     if (result.kind === ERROR_KINDS.UnknownCommand) {
-        error(unknownMessage(subcommand ?? '', available));
+        // Phase 2 (#1646): pass SDK_UNKNOWN_COMMAND as the second arg so the
+        // JSON-error envelope (GSD_JSON_ERRORS=1) preserves the typed reason
+        // for downstream consumers. Additive for host routers (their existing
+        // one-arg `error` callbacks ignore the second arg); required for
+        // capability routers whose tests assert on `reason === 'sdk_unknown_command'`.
+        error(unknownMessage(subcommand ?? '', available), ERROR_REASON.SDK_UNKNOWN_COMMAND);
         return;
     }
-    if (result.kind === ERROR_KINDS.InvalidArgs || result.kind === ERROR_KINDS.HandlerRefusal) {
+    if (result.kind === ERROR_KINDS.InvalidArgs) {
+        // Amendment #1642 (#1644): when the handler provided exitReason, pass it
+        // as the second arg to error() so the JSON-error envelope
+        // (GSD_JSON_ERRORS=1) preserves the typed ERROR_REASON value for
+        // downstream consumers. When exitReason is absent, call error(msg) with
+        // exactly one arg — byte-identical with prior behavior.
+        const invalidArgs = result;
+        if (invalidArgs.exitReason) {
+            error(invalidArgs.reason, invalidArgs.exitReason);
+        }
+        else {
+            error(invalidArgs.reason);
+        }
+        return;
+    }
+    if (result.kind === ERROR_KINDS.HandlerRefusal) {
         error(result.reason);
         return;
     }

@@ -12,10 +12,17 @@
  * Exports:
  *   readSurface(runtimeConfigDir)
  *   writeSurface(runtimeConfigDir, surfaceState)
- *   resolveSurface(runtimeConfigDir, manifest, clusterMap)
- *   applySurface(runtimeConfigDir, layout, manifest, clusterMap)
- *   listSurface(runtimeConfigDir, manifest, clusterMap)
+ *   resolveSurface(runtimeConfigDir, manifest, clusterMap?, registry?)
+ *   applySurface(runtimeConfigDir, layout, manifest, clusterMap?, registry?)
+ *   listSurface(runtimeConfigDir, manifest, clusterMap?, registry?)
  *   pruneSkillDirs(skillsDir, retainedNames, prefix, manifest)
+ *
+ * The optional `registry` param (ADR-857 phase 4c) accepts the capability-registry
+ * object.  When present, capability clusters are merged into the effective cluster
+ * map and the registry is threaded into resolveProfile so capability-contributed
+ * skills participate in the base set and disable-ability.  Absent or undefined
+ * leaves behaviour identical to the pre-registry path (no-op for current registry
+ * where UI=full and the full profile returns '*' regardless).
  *
  * ADR-457 build-at-publish: the hand-written bin/lib/surface.cjs collapsed
  * to a TypeScript source of truth. Behaviour is preserved byte-for-behaviour
@@ -25,6 +32,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 const node_fs_1 = __importDefault(require("node:fs"));
+const node_os_1 = __importDefault(require("node:os"));
 const node_path_1 = __importDefault(require("node:path"));
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -34,6 +42,11 @@ const clusters_cjs_1 = require("./clusters.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const runtimeArtifactLayout = require("./runtime-artifact-layout.cjs");
 const { findInstallSourceRoot } = runtimeArtifactLayout;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const runtimeArtifactConversion = require("./runtime-artifact-conversion.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const runtimeArtifactInstallPlan = require("./runtime-artifact-install-plan.cjs");
+const { assertDestWithinConfigHome } = runtimeArtifactInstallPlan;
 const SURFACE_FILE_NAME = '.gsd-surface.json';
 /**
  * Read the surface state from a runtime config directory.
@@ -85,10 +98,11 @@ function clustersToSkills(clusterNames, clusterMap) {
     const result = new Set();
     for (const name of clusterNames) {
         const members = clusterMap[name];
-        if (members) {
-            for (const s of members)
-                result.add(s);
-        }
+        // FIX 5: guard against non-iterable members — malformed registry must never throw
+        if (!Array.isArray(members))
+            continue;
+        for (const s of members)
+            result.add(s);
     }
     return result;
 }
@@ -131,19 +145,63 @@ function normalizeSkillManifest(runtimeConfigDir, manifest) {
  * 2. Remove skills in disabled clusters
  * 3. Add explicitAdds (and their transitive closure)
  * 4. Remove explicitRemoves (only the stem itself, no cascade)
+ *
+ * ADR-857 phase 4c: optional registry param.  When present:
+ *   - capability clusters are merged into the effective cluster map so
+ *     capability-owned skill groups are disable-able.
+ *   - registry is threaded into resolveProfile so capability skills
+ *     participate in the base skill set and their requires: chains expand.
  */
-function resolveSurface(runtimeConfigDir, manifest, clusterMap) {
-    const cm = clusterMap || clusters_cjs_1.CLUSTERS;
+function resolveSurface(runtimeConfigDir, manifest, clusterMap, registry) {
+    // Merge capability clusters into the cluster map when registry is provided.
+    // The ADR-857 phase 4a HARD gate guarantees that when a capId matches a CLUSTERS
+    // key, the values are EQUAL — so the spread is idempotent for matching names.
+    // Defense-in-depth: if a capId collides with a hand-authored CLUSTERS key AND
+    // the values DIFFER (future drift bypassing the gate), prefer the hand-authored
+    // value so disable behavior is never silently changed by a stale registry entry.
+    // Also guard: skip entries whose value is not a string[] (malformed registry).
+    let cm = clusterMap || clusters_cjs_1.CLUSTERS;
+    if (registry && registry.capabilityClusters && typeof registry.capabilityClusters === 'object') {
+        const baseCm = cm;
+        const capClusters = registry.capabilityClusters;
+        const merged = { ...baseCm };
+        for (const capId of Object.keys(capClusters)) {
+            const val = capClusters[capId];
+            // FIX 5: skip malformed (non-array) entries — never throw on bad registry
+            if (!Array.isArray(val))
+                continue;
+            // FIX 4: if the capId matches an existing cluster key, only override when
+            // the values are identical (guaranteed by 4a gate).  If they differ, the
+            // hand-authored value wins — prefer known-correct disable behavior over
+            // a potentially stale registry entry.
+            if (Object.prototype.hasOwnProperty.call(baseCm, capId)) {
+                const existing = baseCm[capId];
+                if (!Array.isArray(existing)) {
+                    merged[capId] = val;
+                    continue;
+                }
+                // Values differ → hand-authored wins (skip the override)
+                if (existing.length !== val.length || existing.some((v, i) => v !== val[i]))
+                    continue;
+            }
+            // Prototype-pollution guard (parity with _capabilitySkillsForMode in install-profiles.cts)
+            if (capId === '__proto__' || capId === 'constructor' || capId === 'prototype')
+                continue;
+            merged[capId] = val;
+        }
+        cm = merged;
+    }
     const skillManifest = normalizeSkillManifest(runtimeConfigDir, manifest);
     const surface = readSurface(runtimeConfigDir);
     // Determine base profile name: from surface state or from .gsd-profile marker
     const baseProfileName = (surface && surface.baseProfile)
         ? surface.baseProfile
         : (readActiveProfile(runtimeConfigDir) || 'full');
-    // Resolve base profile
+    // Resolve base profile — thread registry so capability skills are included.
     const baseResolved = resolveProfile({
         modes: baseProfileName.split(',').map((s) => s.trim()),
         manifest: skillManifest,
+        registry,
     });
     // If full, we need to enumerate all skills from the manifest
     let skills;
@@ -153,6 +211,36 @@ function resolveSurface(runtimeConfigDir, manifest, clusterMap) {
         for (const [key] of skillManifest) {
             if (!key.startsWith('_calls_agents_'))
                 skills.add(key);
+        }
+        // Issue #2045 (DEFECT 1): third-party capability skills live at
+        // ~/.gsd/capabilities/<id>/skills/<stem>/SKILL.md — NOT in the runtime skills
+        // dir → never in skillManifest → never in the Set → surfaced:false. The
+        // overlay-aware registry's `capabilityClusters` already covers accepted
+        // overlay caps (composed by loadRegistry({includeInstalled})), so union its
+        // values into the surfaced Set. This is IDEMPOTENT for first-party skills
+        // (their stems are already on disk → already in the Set) and ADDITIVE for
+        // third-party skills (the fix). The 'full' profile means everything, and
+        // every cap's profileMembership profiles-array includes 'full' (it is the
+        // suffix top), so no per-tier gate is needed here — this invariant is owned
+        // by gen-capability-registry.cjs deriveProfileMembership (PROFILE_RANK suffix)
+        // + deriveCapabilityClusters (same non-empty-skills scoping); revisit both if
+        // either derivation changes. Prototype-pollution guard mirrors the cluster-
+        // merge block above (lines 217-240). NOTE: third-party cap agents are NOT
+        // unioned here (skillManifest has no `_calls_agents_` companion for them) —
+        // v1 scopes to skills-only caps per issue #2045; agents are a follow-up.
+        if (registry && registry.capabilityClusters && typeof registry.capabilityClusters === 'object') {
+            const BANNED = ['__proto__', 'constructor', 'prototype'];
+            for (const capId of Object.keys(registry.capabilityClusters)) {
+                if (BANNED.includes(capId))
+                    continue;
+                const stems = registry.capabilityClusters[capId];
+                if (!Array.isArray(stems))
+                    continue;
+                for (const s of stems) {
+                    if (typeof s === 'string' && s.length > 0)
+                        skills.add(s);
+                }
+            }
         }
     }
     else {
@@ -204,16 +292,81 @@ function resolveSurface(runtimeConfigDir, manifest, clusterMap) {
  * Re-stage the active surface using the resolved layout.
  * Iterates layout.kinds and syncs each artifact kind to its destination.
  */
-function applySurface(runtimeConfigDir, layout, manifest, clusterMap) {
+function applySurface(runtimeConfigDir, layout, manifest, clusterMap, registry, opts) {
     if (node_path_1.default.resolve(runtimeConfigDir) !== node_path_1.default.resolve(layout.configDir)) {
         throw new TypeError('applySurface runtimeConfigDir must match layout.configDir');
     }
     const skillManifest = normalizeSkillManifest(layout.configDir, manifest);
-    const resolved = resolveSurface(layout.configDir, skillManifest, clusterMap);
-    for (const kind of layout.kinds) {
-        const staged = kind.stage(resolved);
-        const dest = node_path_1.default.join(layout.configDir, kind.destSubpath);
-        _syncGsdDir(staged, dest, kind, skillManifest);
+    const resolved = resolveSurface(layout.configDir, skillManifest, clusterMap, registry);
+    // #1575: agents kind now mirrors createRuntimeArtifactInstallPlan — build
+    // agentCtx (pathPrefix + attribution) and pass it to kind.stage() so
+    // stageAgentsForRuntimeWithConverter applies the full inline-loop pipeline
+    // (pathRewrites -> attribution -> converter -> normalize). Without this,
+    // surface-path agents lack path-prefix rewrites and Co-Authored-By trailers,
+    // diverging from a fresh install.
+    const _homedirFn = opts?.homedir ?? (() => node_os_1.default.homedir());
+    const _resolvedTarget = (0, shell_command_projection_cjs_1.posixNormalize)(node_path_1.default.resolve(layout.configDir));
+    const _homeDir = (0, shell_command_projection_cjs_1.posixNormalize)(_homedirFn());
+    const _isGlobal = (layout.scope ?? 'global') === 'global';
+    const _isOpencode = layout.runtime === 'opencode';
+    const _isWindowsHost = (opts?.platform ?? process.platform) === 'win32';
+    const _pathPrefix = runtimeArtifactConversion._computePathPrefix({ isGlobal: _isGlobal, isOpencode: _isOpencode, isWindowsHost: _isWindowsHost, resolvedTarget: _resolvedTarget, homeDir: _homeDir });
+    const _attribution = opts?.resolveAttribution ? opts.resolveAttribution(layout.runtime) : undefined;
+    const agentCtx = { runtime: layout.runtime, pathPrefix: _pathPrefix, attribution: _attribution };
+    const tempDirsToClean = [];
+    // #1575: When the surface has no state modifications AND the base profile is
+    // 'full', pass the '*' sentinel for agents staging so ALL agents are staged —
+    // matching the install path which uses { skills: '*' }. Without this, agents
+    // not referenced by any skill's _calls_agents_ manifest entry would be silently
+    // dropped from the surface path. For tiered profiles (core/standard) or when
+    // surface mods exist, pass the resolved set so only the filtered subset stages.
+    const _surfaceState = readSurface(layout.configDir);
+    const _baseProfileName = (_surfaceState && _surfaceState.baseProfile)
+        ? _surfaceState.baseProfile
+        : (readActiveProfile(layout.configDir) || 'full');
+    const _hasSurfaceMods = !!_surfaceState && (_surfaceState.disabledClusters.length > 0 ||
+        _surfaceState.explicitAdds.length > 0 ||
+        _surfaceState.explicitRemoves.length > 0);
+    const _isUnmodifiedFull = _baseProfileName === 'full' && !_hasSurfaceMods;
+    try {
+        for (const kind of layout.kinds) {
+            let staged;
+            if (kind.kind === 'agents') {
+                const agentProfile = _isUnmodifiedFull ? { ...resolved, skills: '*' } : resolved;
+                staged = kind.stage(agentProfile, agentCtx);
+            }
+            else {
+                staged = kind.stage(resolved);
+            }
+            if (kind.kind === 'skills') {
+                runtimeArtifactConversion.rewriteStagedSkillBodies(staged, {
+                    runtime: layout.runtime,
+                    configDir: layout.configDir,
+                    scope: layout.scope ?? 'global',
+                });
+            }
+            else if (kind.kind === 'commands') {
+                const rewritten = runtimeArtifactConversion.rewriteStagedCommandBodies(staged, {
+                    runtime: layout.runtime,
+                    configDir: layout.configDir,
+                    scope: layout.scope ?? 'global',
+                });
+                if (rewritten && rewritten !== staged) {
+                    staged = rewritten;
+                    tempDirsToClean.push(rewritten);
+                }
+            }
+            const dest = assertDestWithinConfigHome(layout.configDir, kind.destSubpath);
+            _syncGsdDir(staged, dest, kind, skillManifest, layout.runtime);
+        }
+    }
+    finally {
+        for (const dir of tempDirsToClean) {
+            try {
+                node_fs_1.default.rmSync(dir, { recursive: true, force: true });
+            }
+            catch { /* best-effort cleanup */ }
+        }
     }
     return resolved;
 }
@@ -312,13 +465,21 @@ function pruneSkillDirs(skillsDir, retainedNames, prefix, manifest) {
  * user-owned dirs. GSD-owned = stem in manifest; removal targets = in manifest AND
  * not in staged set. User-owned (not in manifest) are always preserved.
  */
-function _syncGsdDir(stagedDir, destDir, kind, manifest) {
+function _syncGsdDir(stagedDir, destDir, kind, manifest, runtime) {
     if (!node_fs_1.default.existsSync(stagedDir))
         return;
     node_fs_1.default.mkdirSync(destDir, { recursive: true });
     // Normalize: allow legacy string context for backward-compat with internal callers
     const kindName = (typeof kind === 'string') ? kind : kind.kind;
     const kindPrefix = (typeof kind === 'object' && kind !== null) ? kind.prefix : 'gsd-';
+    // #1575 / #2103: agent files are renamed .md -> <agentFileExtension> at copy
+    // time when the runtime's descriptor declares hostBehaviors.agentFileExtension
+    // (e.g. copilot's '.agent.md'), mirroring install-engine.cts's staged-copy
+    // loop (`_copyStaged`) — ONE descriptor read shared by both surfaces instead
+    // of a duplicated hardcoded `runtime === 'copilot'` literal. Other runtimes
+    // (no agentFileExtension declared) keep the staged filename verbatim.
+    const _agentExt = runtime ? runtimeArtifactConversion.agentFileExtensionFor(runtime) : undefined;
+    const isRenamedAgents = !!_agentExt && kindName === 'agents';
     if (kindName === 'skills') {
         // Skills kind: work with directories, not files.
         // Each staged entry is a directory named ${prefix}${stem}.
@@ -335,24 +496,50 @@ function _syncGsdDir(stagedDir, destDir, kind, manifest) {
         pruneSkillDirs(destDir, stagedDirs, kindPrefix, manifest);
     }
     else {
-        // commands / agents kind: work with .md files
-        const stagedFiles = new Set(node_fs_1.default.readdirSync(stagedDir).filter(f => f.endsWith('.md')));
-        // Copy files from staged to dest (overwrite to keep content current)
+        // commands / agents kind: mirror installRuntimeArtifacts (_copyStaged /
+        // _removeGsdEntries in bin/install.js) so surface produces the SAME files as a
+        // fresh install (#816). Flat command dirs (opencode/cursor/augment/kilo) take
+        // the gsd- prefix on copy; namespaced command dirs (commands/gsd) and agents
+        // keep their staged names. Copying staged names verbatim previously diverged
+        // from install and orphaned the installed gsd-*.md files, and the unscoped
+        // prune deleted user-owned command files.
+        //
+        // NOTE: the destName rule below intentionally mirrors bin/install.js
+        // `_copyStaged` (the `namespacedByDir` decision). Keep them in sync.
+        const destLast = (typeof kind === 'object' && kind !== null && kind.destSubpath)
+            ? node_path_1.default.basename(kind.destSubpath)
+            : '';
+        const prefixStem = kindPrefix ? kindPrefix.replace(/-$/, '') : '';
+        const namespacedByDir = kindName === 'commands' && destLast === prefixStem;
+        const stagedFiles = node_fs_1.default.readdirSync(stagedDir).filter(f => f.endsWith('.md'));
+        const stagedDestNames = new Set();
         for (const file of stagedFiles) {
-            node_fs_1.default.copyFileSync(node_path_1.default.join(stagedDir, file), node_path_1.default.join(destDir, file));
+            const destName = isRenamedAgents
+                ? file.replace(/\.md$/, _agentExt)
+                : (kindName === 'agents' || namespacedByDir)
+                    ? file
+                    : `${kindPrefix}${file.slice(0, -3)}.md`;
+            node_fs_1.default.copyFileSync(node_path_1.default.join(stagedDir, file), node_path_1.default.join(destDir, destName));
+            stagedDestNames.add(destName);
         }
-        // Remove gsd-only files from dest that aren't in staged set
-        // For commands dir: all .md files are gsd skills
-        // For agents dir: only gsd-* files
-        const destEntries = node_fs_1.default.readdirSync(destDir).filter(f => f.endsWith('.md'));
-        for (const file of destEntries) {
-            if (kindName === 'agents' && !file.startsWith('gsd-'))
-                continue;
-            if (!stagedFiles.has(file)) {
-                try {
-                    node_fs_1.default.unlinkSync(node_path_1.default.join(destDir, file));
+        // Prune stale GSD-owned files not in the staged set, preserving user-owned files
+        // (mirrors install's prefix-scoped _removeGsdEntries):
+        //   - agents: only gsd-* are GSD-owned (copilot: gsd-*.agent.md)
+        //   - flat command dirs: only `${kindPrefix}`-prefixed are GSD-owned
+        //   - namespaced command dirs: the whole dir is GSD-owned
+        const shouldPruneAgents = !(kindName === 'agents' && (!manifest || manifest.size === 0));
+        if (shouldPruneAgents) {
+            for (const file of node_fs_1.default.readdirSync(destDir).filter(f => f.endsWith('.md'))) {
+                if (kindName === 'agents' && !file.startsWith('gsd-'))
+                    continue;
+                if (kindName === 'commands' && !namespacedByDir && kindPrefix && !file.startsWith(kindPrefix))
+                    continue;
+                if (!stagedDestNames.has(file)) {
+                    try {
+                        node_fs_1.default.unlinkSync(node_path_1.default.join(destDir, file));
+                    }
+                    catch { /* ignore */ }
                 }
-                catch { /* ignore */ }
             }
         }
     }
@@ -366,9 +553,9 @@ function _syncGsdDir(stagedDir, destDir, kind, manifest) {
  * Token cost = sum of description lengths ÷ 4 (mirrors audit script).
  * Descriptions are read from the install source (findInstallSourceRoot).
  */
-function listSurface(runtimeConfigDir, manifest, clusterMap) {
+function listSurface(runtimeConfigDir, manifest, clusterMap, registry) {
     const skillManifest = normalizeSkillManifest(runtimeConfigDir, manifest);
-    const resolved = resolveSurface(runtimeConfigDir, skillManifest, clusterMap);
+    const resolved = resolveSurface(runtimeConfigDir, skillManifest, clusterMap, registry);
     // All known stems from manifest (exclude _calls_agents_ meta keys)
     const allStems = [];
     for (const [key] of skillManifest) {

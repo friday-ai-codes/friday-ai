@@ -47,6 +47,11 @@ function sanitizeWorkstreamSessionToken(value) {
     const token = raw.trim().replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '');
     return token ? token.slice(0, 160) : null;
 }
+/** Test-only seam: clear the memoized controlling-TTY probe cache (#1191). */
+function _resetControllingTtyCacheForTests() {
+    cachedControllingTtyToken = null;
+    didProbeControllingTtyToken = false;
+}
 function probeControllingTtyToken() {
     if (didProbeControllingTtyToken)
         return cachedControllingTtyToken;
@@ -288,4 +293,5 @@ module.exports = {
     parseCliWorkstream,
     resolveActiveWorkstream,
     applyResolvedWorkstreamEnv,
+    _resetControllingTtyCacheForTests,
 };

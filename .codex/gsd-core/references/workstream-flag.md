@@ -94,8 +94,8 @@ This ensures workstream scope chains automatically through the workflow:
 
 ```bash
 # All gsd-tools query commands accept --ws
-gsd-tools query state.json --ws feature-a
-gsd-tools query find-phase 3 --ws feature-b
+node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query state.json --ws feature-a
+node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query find-phase 3 --ws feature-b
 
 # Session-local switching without --ws on every command
 GSD_SESSION_KEY=my-terminal-a gsd-tools query workstream.set feature-a
@@ -104,8 +104,8 @@ GSD_SESSION_KEY=my-terminal-b gsd-tools query workstream.set feature-b
 GSD_SESSION_KEY=my-terminal-b gsd-tools query state.json
 
 # Workstream CRUD
-gsd-tools query workstream.create <name>
-gsd-tools query workstream.list
-gsd-tools query workstream.status <name>
-gsd-tools query workstream.complete <name>
+node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query workstream.create <name>
+node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query workstream.list
+node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query workstream.status <name>
+node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query workstream.complete <name>
 ```

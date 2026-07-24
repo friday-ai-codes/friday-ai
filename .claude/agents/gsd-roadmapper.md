@@ -1,7 +1,7 @@
 ---
 name: gsd-roadmapper
 description: Creates project roadmaps with phase breakdown, requirement mapping, success criteria derivation, and coverage validation. Spawned by /gsd-new-project orchestrator.
-tools: Read, Write, Bash, Glob, Grep
+tools: Read, Write, Bash, Glob, Grep, Skill
 color: purple
 # hooks:
 #   PostToolUse:
@@ -27,6 +27,8 @@ If the prompt contains a `<required_reading>` block, you MUST use the `Read` too
 **Context budget:** Load project skills first (lightweight). Read implementation files incrementally — load only what each check requires, not the full codebase upfront.
 
 **Project skills:** Check `.claude/skills/` or `.agents/skills/` directory if either exists:
+
+**agent_skills:** self-load per @/Users/zaneliu/Projects/open-source/friday-clean/.claude/gsd-core/references/agent-skills-bootstrap.md
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill (lightweight index ~130 lines)
 3. Load specific `rules/*.md` files as needed during implementation
@@ -210,6 +212,27 @@ Track coverage as you go.
 - New milestone: Start at 1
 - Continuing milestone: Check existing phases, start at last + 1
 
+## Phase ID Convention
+
+Read `phase_id_convention` from config.json. This setting controls how phase headers and
+checklist entries are formatted throughout the generated ROADMAP.md.
+
+| Convention | Summary checklist form | Detail header form |
+|---|---|---|
+| `sequential` (default) | `- [ ] **Phase 1: Name**` | `### Phase 1: Name` |
+| `milestone-prefixed` | `- [ ] **Phase 1-01: Name**` | `### Phase 1-01: Name` |
+
+When `phase_id_convention` is absent or set to `"sequential"`, use plain sequential phase IDs
+(e.g. `Phase 1`, `Phase 2`). When set to `"milestone-prefixed"`, prefix each phase ID with the
+current milestone number and a two-digit phase index within that milestone
+(e.g. `Phase 1-01`, `Phase 1-02`, `Phase 2-01`). The milestone number comes from the project's
+active milestone context (default: `1` for new projects). This ensures downstream tools that
+parse `### Phase N-NN:` headers for milestone-scoped workflows receive correctly prefixed IDs.
+
+`project_code` is only a phase-directory prefix. Never include `project_code` in ROADMAP phase
+checklist entries or detail headers. For example, even when `project_code: "PROJ"` is configured,
+write `Phase 7` for `sequential` and `Phase 1-07` for `milestone-prefixed`, not `Phase PROJ-7`.
+
 ## Granularity Calibration
 
 Read granularity from config.json. Granularity controls compression tolerance.
@@ -311,13 +334,31 @@ After roadmap creation, REQUIREMENTS.md gets updated with phase mappings:
 
 ### 1. Summary Checklist (under `## Phases`)
 
+Use the form matching `phase_id_convention` from config.
+Do not include `project_code` in checklist phase IDs.
+
+**Sequential (default — when absent or `"sequential"`):**
+
 ```markdown
 - [ ] **Phase 1: Name** - One-line description
 - [ ] **Phase 2: Name** - One-line description
 - [ ] **Phase 3: Name** - One-line description
 ```
 
+**Milestone-prefixed (when `phase_id_convention: "milestone-prefixed"`):**
+
+```markdown
+- [ ] **Phase 1-01: Name** - One-line description
+- [ ] **Phase 1-02: Name** - One-line description
+- [ ] **Phase 1-03: Name** - One-line description
+```
+
 ### 2. Detail Sections (under `## Phase Details`)
+
+Use the header form matching `phase_id_convention` from config.
+Do not include `project_code` in detail header phase IDs.
+
+**Sequential (default):**
 
 ```markdown
 ### Phase 1: Name
@@ -335,7 +376,25 @@ After roadmap creation, REQUIREMENTS.md gets updated with phase mappings:
 ...
 ```
 
-**The `### Phase X:` headers are parsed by downstream tools.** If you only write the summary checklist, phase lookups will fail.
+**Milestone-prefixed (when `phase_id_convention: "milestone-prefixed"`):**
+
+```markdown
+### Phase 1-01: Name
+**Goal**: What this phase delivers
+**Depends on**: Nothing (first phase)
+**Requirements**: REQ-01, REQ-02
+**Success Criteria** (what must be TRUE):
+  1. Observable behavior from user perspective
+  2. Observable behavior from user perspective
+**Plans**: TBD
+
+### Phase 1-02: Name
+**Goal**: What this phase delivers
+**Depends on**: Phase 1-01
+...
+```
+
+**The `### Phase X:` headers are parsed by downstream tools.** If you only write the summary checklist, phase lookups will fail. Use the correct form for the configured convention so downstream parsing succeeds.
 
 ### UI Phase Detection
 
@@ -375,11 +434,11 @@ This annotation is consumed by downstream workflows (`new-project`, `progress`) 
 | 2. Name | 0/2 | Not started | - |
 ```
 
-Reference full template: `/Users/zaneliu/Projects/open-source/friday-ai/.claude/gsd-core/templates/roadmap.md`
+Reference full template: `/Users/zaneliu/Projects/open-source/friday-clean/.claude/gsd-core/templates/roadmap.md`
 
 ## STATE.md Structure
 
-Use template from `/Users/zaneliu/Projects/open-source/friday-ai/.claude/gsd-core/templates/state.md`.
+Use template from `/Users/zaneliu/Projects/open-source/friday-clean/.claude/gsd-core/templates/state.md`.
 
 Key sections:
 - Project Reference (core value, current focus)
@@ -477,6 +536,8 @@ Apply phase identification methodology:
 2. Identify dependencies between groups
 3. Create phases that complete coherent capabilities
 4. Check granularity setting for compression guidance
+5. Read `phase_id_convention` from config (`sequential` or `milestone-prefixed`); apply the
+   matching header and checklist form throughout all output sections
 
 ## Step 5: Derive Success Criteria
 

@@ -18,6 +18,12 @@
       "appliedAt": "2026-06-05T15:40:44.916Z",
       "journal": null,
       "checksum": "sha256:3a9f1d97f64097fb313203d19c6d93a187a38df61dd299afa5eef73e16124e95"
+    },
+    {
+      "id": "2026-06-09-prune-stale-pristine-get-shit-done",
+      "appliedAt": "2026-07-20T04:28:07.021Z",
+      "journal": null,
+      "checksum": "sha256:6555dd044659276fbc204e81793cd92c5315d54e7316bcdd82d2c98d15a7e9e8"
     }
   ]
 }

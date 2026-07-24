@@ -12,7 +12,7 @@ Default: `balanced` if not set or config missing.
 
 ## Lookup Table
 
-@/Users/zaneliu/Projects/open-source/friday-ai/.claude/gsd-core/references/model-profiles.md
+@/Users/zaneliu/Projects/open-source/friday-clean/.claude/gsd-core/references/model-profiles.md
 
 Look up the agent in the table for the resolved profile. Pass the model parameter to Task calls:
 

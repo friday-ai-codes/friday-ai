@@ -6,7 +6,8 @@
  * Intel files live in .planning/intel/ and store structured data about
  * the project's files, APIs, dependencies, architecture, and tech stack.
  *
- * All public functions gate on intel.enabled config (no-op when false).
+ * All public functions gate on isCapabilityActive('intel', cwd) — the shared
+ * tri-state resolver (installed + surfaced + intel.enabled config key).
  *
  * ADR-457 build-at-publish: the hand-written bin/lib/intel.cjs collapsed
  * to a TypeScript source of truth. Behaviour is preserved byte-for-behaviour
@@ -19,6 +20,9 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_crypto_1 = __importDefault(require("node:crypto"));
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const capabilityStateMod = require("./capability-state.cjs");
+const { isCapabilityActive } = capabilityStateMod;
 // ─── Constants ───────────────────────────────────────────────────────────────
 const INTEL_DIR = '.planning/intel';
 const INTEL_FILES = {
@@ -38,30 +42,20 @@ function ensureIntelDir(planningDir) {
     return intelPath;
 }
 /**
- * Check whether intel is enabled in the project config.
- * Reads config.json directly via fs. Returns false by default
- * (when no config, no intel key, or on error).
+ * Check whether intel is active (installed, surfaced, and config-enabled) for the project at cwd.
+ * Delegates to the shared tri-state capability resolver (isCapabilityActive) which honours the
+ * install profile, runtime surface, and activationKey (intel.enabled config gate).
+ *
+ * NOTE: planningDir is the legacy entry-point; cwd is derived as path.dirname(planningDir).
+ * Callers that have cwd directly may call isCapabilityActive('intel', cwd) themselves.
+ *
+ * INVARIANT: planningDir is always `<cwd>/.planning` (i.e. path.join(cwd, '.planning')).
+ * The intel-command-router always constructs planningDir as path.join(cwd, '.planning'),
+ * so path.dirname(planningDir) === cwd is guaranteed. If a workstream-aware planningDir
+ * were ever passed here, the dirname would be wrong — but no caller does that.
  */
-function isIntelEnabled(planningDir) {
-    try {
-        const configPath = node_path_1.default.join(planningDir, 'config.json');
-        const raw = (0, shell_command_projection_cjs_1.platformReadSync)(configPath);
-        if (raw === null)
-            return false;
-        const config = JSON.parse(raw);
-        if (config &&
-            typeof config === 'object' &&
-            'intel' in config &&
-            config.intel &&
-            typeof config.intel === 'object' &&
-            'enabled' in config.intel &&
-            config.intel.enabled === true)
-            return true;
-        return false;
-    }
-    catch (_e) {
-        return false;
-    }
+function isIntelCapabilityActive(planningDir) {
+    return isCapabilityActive('intel', node_path_1.default.dirname(planningDir));
 }
 /**
  * Return the standard disabled response object.
@@ -86,7 +80,7 @@ function safeReadJson(filePath) {
             return null;
         return JSON.parse(raw);
     }
-    catch (_e) {
+    catch {
         return null;
     }
 }
@@ -101,7 +95,7 @@ function hashFile(filePath) {
             return null;
         return node_crypto_1.default.createHash('sha256').update(content).digest('hex');
     }
-    catch (_e) {
+    catch {
         return null;
     }
 }
@@ -148,28 +142,11 @@ function matchesInValue(value, lowerTerm) {
     return false;
 }
 /**
- * Search for a term in arch.md text content.
- * Returns matching lines.
- */
-function searchArchMd(filePath, term) {
-    try {
-        const content = (0, shell_command_projection_cjs_1.platformReadSync)(filePath);
-        if (content === null)
-            return [];
-        const lowerTerm = term.toLowerCase();
-        const lines = content.split(/\r?\n/);
-        return lines.filter(line => line.toLowerCase().includes(lowerTerm));
-    }
-    catch (_e) {
-        return [];
-    }
-}
-/**
  * Query intel files for a search term.
- * Searches across all JSON intel files (keys and values) and arch.md (text lines).
+ * Searches across all JSON intel files in INTEL_FILES (keys and values), including arch-decisions.json (parsed as JSON, not as text).
  */
 function intelQuery(term, planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     const matches = [];
     let total = 0;
@@ -192,7 +169,7 @@ function intelQuery(term, planningDir) {
  * A file is considered stale if its updated_at is older than 24 hours.
  */
 function intelStatus(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     const STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
     const now = Date.now();
@@ -227,7 +204,7 @@ function intelStatus(planningDir) {
  * Show changes since the last full refresh by comparing file hashes.
  */
 function intelDiff(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     const snapshotPath = intelFilePath(planningDir, '.last-refresh.json');
     const snapshot = safeReadJson(snapshotPath);
@@ -259,7 +236,7 @@ function intelDiff(planningDir) {
  * The actual update is performed by the intel-updater agent (PLAN-02).
  */
 function intelUpdate(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     return {
         action: 'spawn_agent',
@@ -297,7 +274,7 @@ function saveRefreshSnapshot(planningDir) {
  * Writes .last-refresh.json with accurate timestamps and hashes.
  */
 function intelSnapshot(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     return saveRefreshSnapshot(planningDir);
 }
@@ -305,7 +282,7 @@ function intelSnapshot(planningDir) {
  * Validate all intel files for correctness and freshness.
  */
 function intelValidate(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     const errors = [];
     const warnings = [];
@@ -345,7 +322,7 @@ function intelValidate(planningDir) {
         }
         // Validate entries are objects with expected fields
         if (data.entries && typeof data.entries === 'object') {
-            // files.json: check exports are actual symbol names (no spaces)
+            // file-roles.json (INTEL_FILES key 'files'): check exports are actual symbol names (no spaces)
             if (key === 'files') {
                 for (const [entryPath, entry] of Object.entries(data.entries)) {
                     const entryObj = entry;
@@ -365,7 +342,7 @@ function intelValidate(planningDir) {
                     }
                 }
             }
-            // deps.json: check entries have version, type, used_by
+            // dependency-graph.json (INTEL_FILES key 'deps'): check entries have version, type, used_by
             if (key === 'deps') {
                 for (const [depName, entry] of Object.entries(data.entries)) {
                     const entryObj = entry;
@@ -392,7 +369,7 @@ function intelValidate(planningDir) {
  * mistake silence for "nothing exists".
  */
 function intelApiSurface(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     const intelPath = ensureIntelDir(planningDir);
     const apiMapPath = node_path_1.default.join(intelPath, INTEL_FILES.apis);
@@ -443,7 +420,7 @@ function intelApiSurface(planningDir) {
  * Patch _meta.updated_at in a JSON intel file to the current timestamp.
  * Reads the file, updates _meta.updated_at, increments version, writes back.
  *
- * NOTE: Does not gate on isIntelEnabled — operates on arbitrary file paths
+ * NOTE: Does not gate on isCapabilityActive — operates on arbitrary file paths
  * for use by agents patching individual files outside the intel store.
  */
 function intelPatchMeta(filePath) {
@@ -475,7 +452,7 @@ function intelPatchMeta(filePath) {
 /**
  * Extract exports from a JS/CJS file by parsing module.exports or exports.X patterns.
  *
- * NOTE: Does not gate on isIntelEnabled — operates on arbitrary source files
+ * NOTE: Does not gate on isCapabilityActive — operates on arbitrary source files
  * for use by agents building intel data from project files.
  */
 function intelExtractExports(filePath) {
@@ -600,7 +577,7 @@ module.exports = {
     intelApiSurface,
     // Utilities
     ensureIntelDir,
-    isIntelEnabled,
+    isIntelCapabilityActive,
     // Constants
     INTEL_FILES,
     INTEL_DIR,
