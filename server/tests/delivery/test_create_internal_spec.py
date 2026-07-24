@@ -31,9 +31,9 @@ from delivery.services import DocumentService
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-async def _make_work_item(work_item_id: int = 7010225564) -> WorkItem:
+async def _make_work_item(work_item_id: int = 1000000002) -> WorkItem:
     return await WorkItem.objects.acreate(
-        feishu_project_key="622c10eb5daaee81db915189",
+        feishu_project_key="000000000000000000000001",
         work_item_type="story",
         work_item_id=work_item_id,
         origin=WorkItemOrigin.MANUAL,

@@ -38,13 +38,13 @@ QUICK_FIELDS = {
     "prd_url": {
         "key": "prdUrl",
         "name": "需求文档",
-        "path": "$.payload.fields[?(@.key=='field_bcff9b')].value",
+        "path": "$.payload.fields[?(@.key=='field_000001')].value",
         "desc": "PRD 文档链接",
     },
     "tech_doc_url": {
         "key": "techDocUrl",
         "name": "技术方案",
-        "path": "$.payload.fields[?(@.key=='field_3f6667')].value",
+        "path": "$.payload.fields[?(@.key=='field_000009')].value",
         "desc": "技术方案文档链接",
     },
     "description": {

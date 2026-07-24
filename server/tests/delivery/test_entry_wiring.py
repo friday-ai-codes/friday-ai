@@ -19,9 +19,9 @@ import httpx
 import pytest
 import respx
 
-PROJECT_KEY = "622c10eb5daaee81db915189"
+PROJECT_KEY = "000000000000000000000001"
 API_BASE = "https://project.feishu.cn"
-STORY_ID = 7010225564
+STORY_ID = 1000000002
 
 
 # ============================================================================
@@ -34,7 +34,7 @@ async def _make_project():
     from projects.models import Space
 
     return await Space.objects.acreate(
-        name="study_platform",
+        name="example_platform",
         feishu_project_key=PROJECT_KEY,
         feishu_plugin_id="plugin_test_id",
         feishu_plugin_secret_encrypted=encrypt_value("plugin_test_secret"),

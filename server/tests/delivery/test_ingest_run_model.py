@@ -66,8 +66,8 @@ def test_ingest_run_steps_persist_structured_results():
     steps = default_steps()
     steps["work_item"] = {
         "status": "ok",
-        "identifier": "7010225564",
-        "link": "https://project.feishu.cn/abc/issue/detail/7010225564",
+        "identifier": "1000000002",
+        "link": "https://project.feishu.cn/abc/issue/detail/1000000002",
         "error": "",
     }
     steps["document"] = {"status": "skipped", "identifier": "", "link": "", "error": "无文档"}

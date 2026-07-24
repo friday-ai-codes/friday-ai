@@ -46,7 +46,7 @@ def _make_state(
             "clarification_id": clarification_id,
             "question": question,
             "options": options or [
-                {"id": "opt-A", "label": "study-app"},
+                {"id": "opt-A", "label": "example-app"},
                 {"id": "opt-B", "label": "problem-app"},
             ],
             "allow_freeform": True,
@@ -78,7 +78,7 @@ def user_msg(conversation: Conversation) -> Message:
     return Message.objects.create(
         conversation=conversation,
         role=Message.Role.USER,
-        content="我想看 study-app 和 problem-app 的 entrance 字段",
+        content="我想看 example-app 和 problem-app 的 entrance 字段",
     )
 
 

@@ -53,11 +53,11 @@ class TestClassify:
 class TestParseItemsJson:
     def test_plain_array(self) -> None:
         out = cs._parse_items_json(
-            '[{"space":"学习工具","work_item_id":123,"work_item_type":"story","mr_url":"u"}]'
+            '[{"space":"示例","work_item_id":123,"work_item_type":"story","mr_url":"u"}]'
         )
         assert out == [
             {
-                "space": "学习工具",
+                "space": "示例",
                 "work_item_id": 123,
                 "work_item_type": "story",
                 "mr_url": "u",

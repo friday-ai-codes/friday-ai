@@ -27,7 +27,7 @@ from delivery.models import IngestRun
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-BOARD_URL = "https://project.feishu.cn/key123/story/detail/7010225564"
+BOARD_URL = "https://project.feishu.cn/key123/story/detail/1000000002"
 MR_URL = "https://gitlab.com/test/repo/-/merge_requests/5"
 
 

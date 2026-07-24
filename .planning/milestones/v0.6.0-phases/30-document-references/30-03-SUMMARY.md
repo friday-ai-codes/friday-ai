@@ -74,7 +74,7 @@ completed: 2026-06-15
   - normalize 产出形状：wi 锚（携 REFERENCES 出边，target id 经 generate_entity_id）+ document 事件；
   - prd_url + tech_doc_url 同存 → 两 document 事件 + 两 REFERENCES 出边；
   - 端到端 `await ingest_events`：`KnowledgeEntity(kind=document, source_kind=feishu_document, source_id=token)` + `KnowledgeEdge(REFERENCES, source=work_item 实体, target=document 实体)`，边方向 work_item→document；
-  - 操作态 Document(work_item, prd, both, external_ref=token, feishu_tenant=guanghe) + DocumentVersion(content) + facet PRD_BODY=complete；
+  - 操作态 Document(work_item, prd, both, external_ref=token, feishu_tenant=acme) + DocumentVersion(content) + facet PRD_BODY=complete；
   - 降级：get_document_content 抛异常 → 正文空、normalize 不抛、document 事件 + REFERENCES 边仍在、Document 仍建（content 空）、facet=missing；
   - hash 相等二次 normalize → DocumentVersion 计数不变；
   - INV-3：wi 锚事件 content/title 与单独跑 feishu_work_item.normalize 一致；

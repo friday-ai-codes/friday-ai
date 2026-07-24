@@ -69,7 +69,7 @@ def derive_feishu_tenant(canonical_url: str) -> str:
     """从 doc URL host 派生租户 slug（多租户区分来源，CONTEXT Claude's Discretion）。
 
     ``<tenant>.feishu.cn`` / ``<tenant>.larksuite.com`` 取首段子域作为租户标识
-    （如 ``guanghe.feishu.cn`` → "guanghe"）。非飞书域、解析不出 host、或首段无租户
+    （如 ``acme.feishu.cn`` → "acme"）。非飞书域、解析不出 host、或首段无租户
     语义（``feishu.cn`` / ``www`` 等）→ 返回 ""。
 
     Args:

@@ -68,7 +68,7 @@ upsert service 负责：身份去重、镜像字段刷新、保护 Friday 增强
 WorkItem
   id (uuid)
   feishu_project_key, work_item_type, work_item_id   # unique_together 自然键（已由真实 event 坐实）
-  feishu_project_simple_name      # URL slug（如 study_platform），与 project_key 不同，用于建/解析 URL
+  feishu_project_simple_name      # URL slug（如 example_platform），与 project_key 不同，用于建/解析 URL
   project        FK projects.Project (空间)           # null 允许（历史导入未映射）
   origin         choices: feishu_webhook|manual|bitable_import|mr_reverse
   # mirror（飞书权威）
@@ -78,7 +78,7 @@ WorkItem
   status_display_name             # 人类名：取自 current_nodes[].name / state_times[].name（无需单独映射 API）
   is_archived_state, is_init_state (bool)
   feishu_fields (JSON)            # 存完整 fields[].{field_key, field_name, field_value, field_type_key, field_alias}
-  prd_url                         # = 别名 prd_url 的字段值（实测 field_bcff9b → guanghe docx 链接）
+  prd_url                         # = 别名 prd_url 的字段值（实测 field_000001 → acme docx 链接）
   tech_doc_url
   # friday_enhanced（Friday 拥有）
   business_line_normalized, module_normalized   # 由"小组"等自定义 select 字段派生（可选）
@@ -91,7 +91,7 @@ WorkItem
 WorkItemRelation        # ⚠ 实测：关系主要来自"关联型字段"，独立 relation 端点疑似失效（PF-10）
   source_work_item FK, target_work_item FK
   relation_type    choices: belongs_to_project|sprint|version|...   # 派生自 work_item_related_multi_select 字段
-  source_field_key                # 来源字段（如 field_caadeb=所属项目 / planning_sprint / planning_version）
+  source_field_key                # 来源字段（如 field_000008=所属项目 / planning_sprint / planning_version）
   origin           choices: feishu_field|feishu_relation_api|friday
 
 WorkItemStatusEvent     # 状态变更事件流（cur/pre），非就地改写
@@ -101,16 +101,16 @@ WorkItemStatusEvent     # 状态变更事件流（cur/pre），非就地改写
   operator, event_time
 ```
 
-### 1.5 真实数据校准（实测 study_platform，2026-06-14）
+### 1.5 真实数据校准（实测 example_platform，2026-06-14）
 
 > 用真实 plugin 凭证实地调用确认。✅=拉取成功，❌=失败。
 
-- **URL 模式**：`https://project.feishu.cn/{project_simple_name}/{url_type}/detail/{id}`。⚠ **URL 段 ≠ API type_key**：`/project/detail/7010938167` 用 `type=project` 查 API 返回 `WorkItem Not Found(30005)`——容器型真实 type key 未知（需查"工作项类型"接口或 `所属项目` 字段反推）。
+- **URL 模式**：`https://project.feishu.cn/{project_simple_name}/{url_type}/detail/{id}`。⚠ **URL 段 ≠ API type_key**：`/project/detail/1000000004` 用 `type=project` 查 API 返回 `WorkItem Not Found(30005)`——容器型真实 type key 未知（需查"工作项类型"接口或 `所属项目` 字段反推）。
 - **`work_item_type` 开放集**：实测 `issue`(缺陷,✅)、`story`(需求/看板,✅)；缺陷 type=`issue` 非 `bug`。
 - **字段结构（重要修正）**：`fields[]` 每项 = `{field_key(稳定), field_name(人类标签), field_value, field_type_key, field_alias}`。⚠ 现有 `get_work_item` 拍平成 `{field_key: field_value}`，**丢失 field_name/type/alias**（PF-12）。`feishu_fields` 应存完整对象。
-- **关系在字段里（重要修正）**：工作项间关系经 `work_item_related_multi_select` 字段表达——实测 story 7010225564 的 `所属项目`(field_caadeb)=`[7010938167]`、`所属迭代`(planning_sprint)、`规划版本/实际上车版本`(planning_version/actual_online_version)。独立 `get_work_item_relations` 端点 ❌（JSON 解析错，PF-10）。
+- **关系在字段里（重要修正）**：工作项间关系经 `work_item_related_multi_select` 字段表达——实测 story 1000000002 的 `所属项目`(field_000008)=`[1000000004]`、`所属迭代`(planning_sprint)、`规划版本/实际上车版本`(planning_version/actual_online_version)。独立 `get_work_item_relations` 端点 ❌（JSON 解析错，PF-10）。
 - **状态人类名免映射**：story 响应自带 `work_item_status.state_key`(opaque) + `history[]`(状态变更史) + `current_nodes[].name`(="Sprint计划") + `state_times[].name`；issue 的 state 直接为 `OPEN`。→ `status_display_name` 取 current_nodes/state_times，无需另调映射 API。
-- **关键字段别名**：`prd_url`(field_bcff9b→`<tenant>.feishu.cn/docx/...`)、`小组`(field_528f19,alias `study_platform_group`,="学习A")=业务线/小组、`AI审查状态`(field_f2c7f9)。description 为字段。均 mirror。
+- **关键字段别名**：`prd_url`(field_000001→`<tenant>.feishu.cn/docx/...`)、`小组`(field_000002,alias `example_platform_group`,="示例组A")=业务线/小组、`AI审查状态`(field_000003)。description 为字段。均 mirror。
 - **评论 ❌**：`get_comments` 端点 JSON 解析错（PF-11）——评论摄取方案需重新确认正确端点。
 - **凭证体系**：work item 走**项目 plugin token**(`project.feishu.cn`，plugin_id/secret/user_key) ✅；Bitable/文档在 `<tenant>.feishu.cn` 走**开放平台 token**，不同域——见 §4。
 - **GitLab MR ✅**：`<internal-gitlab>` PRIVATE-TOKEN 调通；MR <id> `state=merged`、`target_branch=<release-branch>`(**非 master**)、有 `merge_commit_sha`、`changes[]` 含 6 文件 diff。→ 坐实历史 diff 锚定用 **MR target_branch + merge_commit_sha**，不能假设 master（DOMAIN §历史 diff / ROADMAP v0.6）。
@@ -414,10 +414,10 @@ v0.7 编排即按此产出（落 trace），v0.10 暴露时复用同一 taxonomy
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `feishu_project_key` | `CharField(64)` | 飞书项目 hash（如 `622c10eb...`） |
+| `feishu_project_key` | `CharField(64)` | 飞书项目 hash（如 `00000000...`） |
 | `work_item_type` | `CharField(32)` | 开放集：story/issue/version/... |
 | `work_item_id` | `BigIntegerField` | 飞书 int64 工作项 ID |
-| `feishu_project_simple_name` | `CharField(128, blank)` | URL slug（study_platform），建/解析 URL 用 |
+| `feishu_project_simple_name` | `CharField(128, blank)` | URL slug（example_platform），建/解析 URL 用 |
 | `project` | `FK(projects.Project, null, SET_NULL)` | Friday 空间，历史导入可空 |
 | `origin` | `CharField(choices)` | feishu_webhook / manual / bitable_import / mr_reverse |
 | `title` | `CharField(512)` | mirror |
@@ -458,7 +458,7 @@ v0.7 编排即按此产出（落 trace），v0.10 暴露时复用同一 taxonomy
 | `target_work_item` | `FK(WorkItem, CASCADE, related_name=in_relations, null)` | 目标可能尚未 upsert |
 | `target_external_id` | `BigIntegerField(null)` | 目标飞书 id（target 未落库时占位） |
 | `relation_type` | `CharField(choices)` | belongs_to_project / sprint / version / related |
-| `source_field_key` | `CharField(64)` | 派生来源字段（field_caadeb / planning_sprint / ...） |
+| `source_field_key` | `CharField(64)` | 派生来源字段（field_000008 / planning_sprint / ...） |
 | `origin` | `CharField(choices: feishu_field|feishu_relation_api|friday)` | 主路径 feishu_field |
 
 `unique_together=(source_work_item, relation_type, target_external_id, source_field_key)`。
@@ -471,7 +471,7 @@ v0.7 编排即按此产出（落 trace），v0.10 暴露时复用同一 taxonomy
 
 ### 12.5 `Document` / `DocumentVersion`
 
-`Document`：`document_type(prd|tech_plan|release_note|sdd_spec|other)`、`source_kind(external_feishu|internal_generated)`、`external_ref CharField(blank)`（飞书 doc token）、`canonical_url URLField(blank)`、`content_storage(snapshot|reference|both)`、`current_version FK(DocumentVersion, null)`、`last_synced_at`、`writeback_allowed Bool`、`work_item FK(null)`、`feishu_tenant CharField`（如 guanghe，多租户区分）。
+`Document`：`document_type(prd|tech_plan|release_note|sdd_spec|other)`、`source_kind(external_feishu|internal_generated)`、`external_ref CharField(blank)`（飞书 doc token）、`canonical_url URLField(blank)`、`content_storage(snapshot|reference|both)`、`current_version FK(DocumentVersion, null)`、`last_synced_at`、`writeback_allowed Bool`、`work_item FK(null)`、`feishu_tenant CharField`（如 acme，多租户区分）。
 
 `DocumentVersion`：`document FK`、`version Int`、`supersedes FK(self,null)`、`content TextField`、`content_hash`、`created_at`。
 
@@ -557,28 +557,28 @@ def link(old_record, canonical) -> None              # 回填 canonical_plan_id 
 
 v0.10 对外 API：OpenAI adapter → `reasoning_summary` 文本流；Anthropic adapter → thinking block；皆由同一事件流映射，不暴露原始 CoT。
 
-## 16. 真实数据字段附录（study_platform 实测，2026-06-14）
+## 16. 真实数据字段附录（example_platform 实测，2026-06-14）
 
 > 实地拉取确认，供 normalizer/字段映射实现直接参考。
 
-**自然键 / 顶层**：`project_key=622c10eb5daaee81db915189`、`simple_name=study_platform`、`updated_at`=epoch 毫秒、`work_item_type_key`(story/issue/...)、`pattern=Node`、`template_id`/`template_type`。
+**自然键 / 顶层**：`project_key=000000000000000000000001`、`simple_name=example_platform`、`updated_at`=epoch 毫秒、`work_item_type_key`(story/issue/...)、`pattern=Node`、`template_id`/`template_type`。
 
-**状态**（story 7010225564）：`work_item_status.state_key="fi46o4r6m"` + `history[]`(每项 state_key/updated_at/updated_by) + `current_nodes=[{id:state_2, name:"Sprint计划"}]` + `state_times=[{state_key, name, start_time, end_time}]`。issue 的 state 直接为 `OPEN`。
+**状态**（story 1000000002）：`work_item_status.state_key="fi46o4r6m"` + `history[]`(每项 state_key/updated_at/updated_by) + `current_nodes=[{id:state_2, name:"Sprint计划"}]` + `state_times=[{state_key, name, start_time, end_time}]`。issue 的 state 直接为 `OPEN`。
 
 **关键字段别名 / key（story）**：
 
 | 用途 | field_key | alias | 类型 | 样例值 |
 |------|-----------|-------|------|--------|
-| 需求文档 | `field_bcff9b` | `prd_url` | link | `<tenant>.feishu.cn/docx/<doc_token>` |
-| 小组(业务线) | `field_528f19` | `study_platform_group` | select | "学习A" |
-| 所属项目(父) | `field_caadeb` | — | work_item_related_multi_select | `[7010938167]` |
+| 需求文档 | `field_000001` | `prd_url` | link | `<tenant>.feishu.cn/docx/<doc_token>` |
+| 小组(业务线) | `field_000002` | `example_platform_group` | select | "示例组A" |
+| 所属项目(父) | `field_000008` | — | work_item_related_multi_select | `[1000000004]` |
 | 所属迭代 | `planning_sprint` | `planning_sprint` | work_item_related_multi_select | `[6290075691]` |
 | 规划/上车版本 | `planning_version`/`actual_online_version` | 同名 | work_item_related_multi_select | `[]` |
-| AI 审查状态 | `field_f2c7f9` | — | select | "待AI审查" |
+| AI 审查状态 | `field_000003` | — | select | "待AI审查" |
 | 当前负责人 | `current_status_operator` | 同名 | multi_user | `[...]` |
 | 描述 | `description` | — | multi_text | — |
 
-**缺陷(issue 5580252273)额外字段**：`priority`(P1)、`issue_operator`/`issue_reporter`(multi_user)、`field_9ec880`(实际结果)、`field_04b7fd`(复现步骤)、`field_9b7d9b`(设备系统)、`planning_sprint`、`issue_stage`(发现阶段)、`tags`(缺陷标签)、`field_29e8b4`(缺陷原因归类)。
+**缺陷(issue 1000000006)额外字段**：`priority`(P1)、`issue_operator`/`issue_reporter`(multi_user)、`field_000004`(实际结果)、`field_000005`(复现步骤)、`field_000006`(设备系统)、`planning_sprint`、`issue_stage`(发现阶段)、`tags`(缺陷标签)、`field_000007`(缺陷原因归类)。
 
 **字段对象形状**：`{field_key, field_name(人类标签), field_value, field_type_key, field_alias}`，select 类 value 为 `{label, value}`，关联类为 `[id...]`。
 

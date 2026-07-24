@@ -352,7 +352,7 @@ class FeishuClient:
             project_key: 项目空间 Key
             work_item_id: 工作项 ID
             work_item_type: 工作项类型 (story/task/bug)
-            field_key: 字段 Key (e.g., 'field_bcff9b')
+            field_key: 字段 Key (e.g., 'field_000001')
             field_value: 字段值
 
         Returns:

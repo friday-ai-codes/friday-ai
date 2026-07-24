@@ -10,7 +10,7 @@
 - facet 记录：prd 且 content 非空 → SyncState(prd_body)=complete；content 空 → missing；
   tech_plan → tech_doc facet。
 - work_item=None 不抛、不记 facet、Document.work_item 为空。
-- derive_feishu_tenant 纯函数派生（guanghe.feishu.cn → guanghe；非飞书域 / 无意义首段 → ""）。
+- derive_feishu_tenant 纯函数派生（acme.feishu.cn → acme；非飞书域 / 无意义首段 → ""）。
 
 无真实网络（pytest-socket 隔离；DocumentService 不回源，content 由调用方传入）。
 异步 + sync_to_async 跨线程写库 → transaction=True（与 28-02 service 测试同理）。
@@ -37,10 +37,10 @@ from delivery.services import DocumentService, derive_feishu_tenant
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # DOMAIN §16 实测自然键 + 多租户深链
-PROJECT_KEY = "622c10eb5daaee81db915189"
-STORY_ID = 7010225564
+PROJECT_KEY = "000000000000000000000001"
+STORY_ID = 1000000002
 DOC_TOKEN = "Abcd1234efGhIjKl"
-PRD_URL = f"https://guanghe.feishu.cn/docx/{DOC_TOKEN}"
+PRD_URL = f"https://acme.feishu.cn/docx/{DOC_TOKEN}"
 
 
 async def _make_work_item(work_item_id: int = STORY_ID) -> WorkItem:
@@ -61,7 +61,7 @@ async def _make_work_item(work_item_id: int = STORY_ID) -> WorkItem:
 
 def test_derive_feishu_tenant_from_doc_url() -> None:
     """<tenant>.feishu.cn → 取首段子域作为租户 slug。"""
-    assert derive_feishu_tenant("https://guanghe.feishu.cn/docx/abc") == "guanghe"
+    assert derive_feishu_tenant("https://acme.feishu.cn/docx/abc") == "acme"
     assert derive_feishu_tenant("https://acme.larksuite.com/docx/xyz") == "acme"
 
 
@@ -96,7 +96,7 @@ async def test_first_ingest_creates_document_version_and_facet() -> None:
     assert doc.source_kind == DocumentSourceKind.EXTERNAL_FEISHU
     assert doc.content_storage == ContentStorage.BOTH
     assert doc.external_ref == DOC_TOKEN
-    assert doc.feishu_tenant == "guanghe"
+    assert doc.feishu_tenant == "acme"
     assert doc.canonical_url == PRD_URL
     assert doc.work_item_id == work_item.id
 
@@ -217,7 +217,7 @@ async def test_tech_plan_records_tech_doc_facet() -> None:
         document_type=DocumentType.TECH_PLAN,
         doc_token="TechDocToken99",
         content="技术方案正文",
-        canonical_url="https://guanghe.feishu.cn/docx/TechDocToken99",
+        canonical_url="https://acme.feishu.cn/docx/TechDocToken99",
     )
 
     state = await WorkItemSyncState.objects.aget(work_item=work_item, facet=SyncFacet.TECH_DOC)
@@ -298,14 +298,14 @@ async def test_duplicate_external_ref_raises_integrity_error() -> None:
         document_type=DocumentType.PRD,
         source_kind=DocumentSourceKind.EXTERNAL_FEISHU,
         external_ref=DOC_TOKEN,
-        feishu_tenant="guanghe",
+        feishu_tenant="acme",
     )
     with pytest.raises(IntegrityError):
         await Document.objects.acreate(
             document_type=DocumentType.PRD,
             source_kind=DocumentSourceKind.EXTERNAL_FEISHU,
             external_ref=DOC_TOKEN,
-            feishu_tenant="guanghe",
+            feishu_tenant="acme",
         )
 
 
@@ -345,5 +345,5 @@ async def test_upsert_idempotent_under_unique_constraint() -> None:
     )
     assert doc1.id == doc2.id
     assert (
-        await Document.objects.filter(feishu_tenant="guanghe", external_ref=DOC_TOKEN).acount() == 1
+        await Document.objects.filter(feishu_tenant="acme", external_ref=DOC_TOKEN).acount() == 1
     )

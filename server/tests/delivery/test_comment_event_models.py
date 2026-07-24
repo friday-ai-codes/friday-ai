@@ -8,7 +8,7 @@
 - work_item CASCADE：删 WorkItem，关联 comment_events 随删。
 - (work_item, event_time) 索引存在。
 
-fixture 取值参考 DOMAIN §16 实测（story 7010225564）。
+fixture 取值参考 DOMAIN §16 实测（story 1000000002）。
 """
 
 from __future__ import annotations
@@ -28,16 +28,16 @@ from delivery.models import (
 pytestmark = pytest.mark.django_db
 
 # DOMAIN §16 实测自然键
-PROJECT_KEY = "622c10eb5daaee81db915189"
+PROJECT_KEY = "000000000000000000000001"
 
 
-def _make_work_item(work_item_id: int = 7010225564, **overrides) -> WorkItem:
+def _make_work_item(work_item_id: int = 1000000002, **overrides) -> WorkItem:
     """创建一个 story WorkItem（origin=manual），允许 override。"""
     defaults = dict(
         feishu_project_key=PROJECT_KEY,
         work_item_type="story",
         work_item_id=work_item_id,
-        feishu_project_simple_name="study_platform",
+        feishu_project_simple_name="example_platform",
         origin=WorkItemOrigin.MANUAL,
         title="测试需求",
     )

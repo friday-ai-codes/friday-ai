@@ -53,7 +53,7 @@ describe('hydrateLegacyMessage ', () => {
     expect(toolPart.status).toBe('done')
     expect(toolPart.result).toContain('trace-abc-123')
     // 最终 content 是顶层 text part
-    expect((parts[parts.length - 1] as { text: string }).text).toContain('study-app')
+    expect((parts[parts.length - 1] as { text: string }).text).toContain('example-app')
   })
 
   it('f4: content + timeline + tool_calls → timeline 顺序权威 + content 收尾', () => {
@@ -90,7 +90,7 @@ describe('hydrateLegacyMessage ', () => {
     expect(mainContent.type).toBe('text')
     expect(mainContent.state).toBe('done')
     expect(mainContent.text).toContain('# entrance 字段处理逻辑分析')
-    expect(mainContent.text).toContain('## 1. study-app 仓库')
+    expect(mainContent.text).toContain('## 1. example-app 仓库')
     expect(mainContent.text).toContain('## 2. problem-app 仓库')
     expect(mainContent.text).toContain('```python')
     expect(mainContent.text).toContain('| 字段 | 含义 | 默认值 |')

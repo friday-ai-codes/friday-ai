@@ -21,21 +21,21 @@ from rest_framework_simplejwt.tokens import RefreshToken
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # DOMAIN §16 实测自然键
-PROJECT_KEY = "622c10eb5daaee81db915189"
+PROJECT_KEY = "000000000000000000000001"
 API_BASE = "https://project.feishu.cn"
-STORY_ID = 7010225564
-TARGET_PROJECT_ID = 7010938167
+STORY_ID = 1000000002
+TARGET_PROJECT_ID = 1000000004
 
 _STORY_FIELDS = [
     {
-        "field_key": "field_bcff9b",
+        "field_key": "field_000001",
         "field_name": "需求文档",
         "field_value": "https://tenant.feishu.cn/docx/doc_token_prd",
         "field_type_key": "link",
         "field_alias": "prd_url",
     },
     {
-        "field_key": "field_caadeb",
+        "field_key": "field_000008",
         "field_name": "所属项目",
         "field_value": [TARGET_PROJECT_ID],
         "field_type_key": "work_item_related_multi_select",
@@ -63,7 +63,7 @@ async def _make_project():
     from projects.models import Space
 
     return await Space.objects.acreate(
-        name="study_platform",
+        name="example_platform",
         feishu_project_key=PROJECT_KEY,
         feishu_plugin_id="plugin_test_id",
         feishu_plugin_secret_encrypted=encrypt_value("plugin_test_secret"),

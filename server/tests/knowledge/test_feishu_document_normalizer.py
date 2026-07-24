@@ -49,13 +49,13 @@ from projects.models import Space
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # DOMAIN §16 实测自然键 + 多租户深链
-PROJECT_KEY = "622c10eb5daaee81db915189"
-STORY_ID = 7010225564
+PROJECT_KEY = "000000000000000000000001"
+STORY_ID = 1000000002
 SOURCE_ID = f"{PROJECT_KEY}:story:{STORY_ID}"
 PRD_TOKEN = "PrdDocToken123456"
 TECH_TOKEN = "TechDocToken78901"
-PRD_URL = f"https://guanghe.feishu.cn/docx/{PRD_TOKEN}"
-TECH_URL = f"https://guanghe.feishu.cn/docx/{TECH_TOKEN}"
+PRD_URL = f"https://acme.feishu.cn/docx/{PRD_TOKEN}"
+TECH_URL = f"https://acme.feishu.cn/docx/{TECH_TOKEN}"
 PRD_BODY = "# PRD 标题\n\nPRD 正文内容，验收点若干。"
 TECH_BODY = "# 技术方案\n\n架构与接口设计。"
 
@@ -252,7 +252,7 @@ async def test_operational_document_persisted_via_service(mock_feishu_clients) -
     assert doc.source_kind == DocumentSourceKind.EXTERNAL_FEISHU
     assert doc.content_storage == ContentStorage.BOTH
     assert doc.work_item_id == work_item.id
-    assert doc.feishu_tenant == "guanghe"
+    assert doc.feishu_tenant == "acme"
 
     cur = await DocumentVersion.objects.aget(pk=doc.current_version_id)
     assert cur.content == PRD_BODY

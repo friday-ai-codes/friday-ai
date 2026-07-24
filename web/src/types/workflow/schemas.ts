@@ -70,8 +70,8 @@ export const COMMON_STATUS_OPTIONS = [
 
 /** 常用字段快捷选项 */
 export const QUICK_FIELD_OPTIONS = [
-  { key: 'prdUrl', name: '需求文档', path: '$.fields[?(@.key==\'field_bcff9b\')].value', desc: 'PRD 文档链接' },
-  { key: 'techDocUrl', name: '技术方案', path: '$.fields[?(@.key==\'field_3f6667\')].value', desc: '技术方案文档链接' },
+  { key: 'prdUrl', name: '需求文档', path: '$.fields[?(@.key==\'field_000001\')].value', desc: 'PRD 文档链接' },
+  { key: 'techDocUrl', name: '技术方案', path: '$.fields[?(@.key==\'field_000009\')].value', desc: '技术方案文档链接' },
   { key: 'description', name: '描述', path: '$.fields[?(@.key==\'description\')].value', desc: '工作项描述' },
   { key: 'workItemName', name: '工作项名称', path: '$.name', desc: '工作项标题' },
   { key: 'workItemId', name: '工作项ID', path: '$.id', desc: '工作项唯一标识' },

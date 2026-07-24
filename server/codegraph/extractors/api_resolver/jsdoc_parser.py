@@ -1,11 +1,15 @@
 """JSDoc 元数据解析器 —— 从 /** ... */ 注释提取结构化元数据。
 
 解析 @description / @author / @date / yapi URL pattern。
-yapi URL pattern: https://yapi.yc345.tv/project/{pid}/interface/api/{iid}
+yapi URL pattern: https://{yapi_host}/project/{pid}/interface/api/{iid}
+
+yapi 域名通过环境变量 ``FRIDAY_YAPI_HOST`` 配置（默认占位 ``yapi.example.com``）；
+自托管部署时设为自己的 yapi 域名即可解析对应链接，代码不硬编码任何具体实例地址。
 """
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -13,9 +17,12 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-# yapi URL pattern（per work item 规格）
+# yapi 域名：运行时从环境变量读取，缺省用通用占位（避免在代码中硬编码具体实例）
+_YAPI_HOST = os.environ.get("FRIDAY_YAPI_HOST", "yapi.example.com").strip() or "yapi.example.com"
+
+# yapi URL pattern（host 可配置）
 _YAPI_URL = re.compile(
-    r"https?://yapi\.yc345\.tv/project/(\d+)/interface/api/(\d+)",
+    rf"https?://{re.escape(_YAPI_HOST)}/project/(\d+)/interface/api/(\d+)",
     re.IGNORECASE,
 )
 
@@ -78,7 +85,7 @@ def parse_jsdoc(comment_text: str | None) -> dict[str, Any] | None:
     if m := _YAPI_URL.search(comment_text):
         pid = int(m.group(1))
         iid = int(m.group(2))
-        yapi_url = f"https://yapi.yc345.tv/project/{pid}/interface/api/{iid}"
+        yapi_url = f"https://{_YAPI_HOST}/project/{pid}/interface/api/{iid}"
         result["yapi"] = {"pid": pid, "iid": iid, "url": yapi_url}
 
     return result if result else None

@@ -47,12 +47,12 @@ class TestSetupTaskBranchNoFridayPrefix:
         """显式传入模板分支名 fix20260519.xxx 时应原样保留，不应加 friday/ 前缀。"""
         ops = git_ops_with_mock_repo
         result = await ops.setup_task_branch(
-            branch_strategy="fix20260519.study-app-page-apps-favorites",
+            branch_strategy="fix20260519.example-app-page-apps-favorites",
             task_id="task-001",
         )
-        assert result == "fix20260519.study-app-page-apps-favorites"
+        assert result == "fix20260519.example-app-page-apps-favorites"
         ops.repo.create_head.assert_called_once_with(
-            "fix20260519.study-app-page-apps-favorites"
+            "fix20260519.example-app-page-apps-favorites"
         )
 
     @pytest.mark.asyncio

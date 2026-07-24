@@ -14,11 +14,11 @@ import { del, get, post } from './client'
  */
 export const KEY_FIELDS = {
   /** 需求文档链接 */
-  PRD_URL: 'field_bcff9b',
+  PRD_URL: 'field_000001',
   /** 需求描述 */
   DESCRIPTION: 'description',
   /** 技术方案文档链接 */
-  TECH_DOC_URL: 'field_3f6667',
+  TECH_DOC_URL: 'field_000009',
 } as const
 
 // ============ 类型定义 ============

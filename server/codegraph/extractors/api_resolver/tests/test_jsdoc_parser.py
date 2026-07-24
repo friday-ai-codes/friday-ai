@@ -22,7 +22,7 @@ class TestParseJsdoc:
 
         comment = """/**
  * @description 查询用户的最后一次学习的教材.
- * http://yapi.yc345.tv/project/2279/interface/api/66924
+ * http://yapi.example.com/project/2279/interface/api/66924
  * @author luofeng
  * @date 2023-05-12
  * @export
@@ -36,7 +36,7 @@ class TestParseJsdoc:
         assert "yapi" in result
         assert result["yapi"]["pid"] == 2279
         assert result["yapi"]["iid"] == 66924
-        assert "yapi.yc345.tv" in result["yapi"]["url"]
+        assert "yapi.example.com" in result["yapi"]["url"]
 
     def test_parse_yapi_https(self):
         """https:// yapi URL 正确解析（含 s）。"""
@@ -44,7 +44,7 @@ class TestParseJsdoc:
 
         comment = """/**
  * @description 获取话题完成状态.
- * https://yapi.yc345.tv/project/1234/interface/api/56789
+ * https://yapi.example.com/project/1234/interface/api/56789
  * @author zhangsan
  * @date 2024-01-15
  */"""
@@ -60,7 +60,7 @@ class TestParseJsdoc:
 
         comment = """/**
  * @description 某接口.
- * http://yapi.yc345.tv/project/999/interface/api/111
+ * http://yapi.example.com/project/999/interface/api/111
  * @author test
  */"""
         result = parse_jsdoc(comment)
@@ -143,7 +143,7 @@ class TestEnrichWrapperMetadata:
 
         jsdoc = """/**
  * @description 测试.
- * https://yapi.yc345.tv/project/100/interface/api/200
+ * https://yapi.example.com/project/100/interface/api/200
  * @author tester
  */"""
         wrapper = self._make_wrapper(jsdoc)

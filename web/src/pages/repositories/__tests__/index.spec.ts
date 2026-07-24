@@ -24,8 +24,8 @@ vi.mock('vue-router', async (importOriginal) => {
 function makeRepository(overrides: Partial<Repository> = {}): Repository {
   return {
     id: overrides.id ?? 'repo-1',
-    name: overrides.name ?? 'study-app',
-    git_url: overrides.git_url ?? 'https://gitlab.yc345.tv/frontend/study-app.git',
+    name: overrides.name ?? 'example-app',
+    git_url: overrides.git_url ?? 'https://gitlab.example.com/frontend/example-app.git',
     git_platform: overrides.git_platform ?? 'gitlab',
     default_branch: overrides.default_branch ?? 'master',
     base_branch: overrides.base_branch ?? null,
@@ -92,8 +92,8 @@ describe('/repositories index page', () => {
     listMock.mockResolvedValue([
       makeRepository({
         id: 'repo-1',
-        name: 'study-app',
-        git_url: 'https://gitlab.yc345.tv/frontend/study-app.git',
+        name: 'example-app',
+        git_url: 'https://gitlab.example.com/frontend/example-app.git',
       }),
     ])
 
@@ -121,12 +121,12 @@ describe('/repositories index page', () => {
 
     const card = wrapper.find('.repo-card')
     expect(card.exists()).toBe(true)
-    expect(card.text()).toContain('study-app')
+    expect(card.text()).toContain('example-app')
     expect(card.find('.status-badge-stub').text()).toBe('indexed')
 
     const urlChip = card.find('.repo-url-chip')
     expect(urlChip.exists()).toBe(true)
-    expect(urlChip.text()).toContain('https://gitlab.yc345.tv/frontend/study-app.git')
+    expect(urlChip.text()).toContain('https://gitlab.example.com/frontend/example-app.git')
 
     expect(card.findAll('.repo-meta-item').some(item => item.text().includes('索引于'))).toBe(true)
     expect(card.find('.repo-card-actions').text()).toContain('查看详情')

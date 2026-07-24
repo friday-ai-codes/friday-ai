@@ -235,7 +235,7 @@ class TestGitTokenAuth:
         config = TaskConfig(
             task_id="test-rs-token",
             task_description="test",
-            git_repo_url="git@gitlab.yc345.tv:frontend/onion-practice.git",
+            git_repo_url="git@gitlab.example.com:frontend/example-practice.git",
             git_auth_type="token",
             git_access_token="glpat-a/b+c@d:e",
         )
@@ -245,7 +245,7 @@ class TestGitTokenAuth:
 
         assert config.git_repo_url == (
             "https://oauth2:glpat-a%2Fb%2Bc%40d%3Ae"
-            "@gitlab.yc345.tv/frontend/onion-practice.git"
+            "@gitlab.example.com/frontend/example-practice.git"
         )
 
 

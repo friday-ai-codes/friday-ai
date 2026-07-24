@@ -30,9 +30,9 @@ from services import background_runner
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-BOARD_URL_1 = "https://project.feishu.cn/key123/story/detail/7010225564"
+BOARD_URL_1 = "https://project.feishu.cn/key123/story/detail/1000000002"
 MR_URL_1 = "https://gitlab.com/test/repo/-/merge_requests/5"
-BOARD_URL_2 = "https://project.feishu.cn/key123/story/detail/7010225565"
+BOARD_URL_2 = "https://project.feishu.cn/key123/story/detail/1000000003"
 MR_URL_2 = "https://gitlab.com/test/repo/-/merge_requests/6"
 
 

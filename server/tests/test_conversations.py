@@ -199,7 +199,7 @@ class TestConversationList:
         Message.objects.create(
             conversation=hit,
             role=Message.Role.ASSISTANT,
-            content="思维培优的判断依据是 isThinking 查询参数",
+            content="示例业务的判断依据是 isThinking 查询参数",
         )
         Conversation.objects.create(space=test_project, title="另一个对话")
 

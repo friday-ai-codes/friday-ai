@@ -203,7 +203,7 @@ describe('chat store - clarifications', () => {
         clarification_id: 'c-from-pt-1',
         question: '请确认要看哪个仓库？',
         options: [
-          { id: 'opt-A', label: 'study-app' },
+          { id: 'opt-A', label: 'example-app' },
           { id: 'opt-B', label: 'problem-app' },
         ],
         allow_freeform: true,
@@ -400,7 +400,7 @@ describe('chat store - clarifications', () => {
           marker: 'ask_clarification',
           clarification_id: 'chat-single-1',
           question: '你想动哪个仓库？',
-          options: [{ id: 'opt-A', label: 'study-app' }],
+          options: [{ id: 'opt-A', label: 'example-app' }],
           allow_freeform: true,
         }),
       })

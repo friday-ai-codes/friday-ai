@@ -8,7 +8,7 @@ re_verification:
   previous_status: null
   previous_score: null
 human_verification:
-  - test: "用真实飞书开放平台凭证（多租户，如 guanghe）经 feishu_document normalizer 摄取真实 PRD/技术方案 docx"
+  - test: "用真实飞书开放平台凭证（多租户，如 acme）经 feishu_document normalizer 摄取真实 PRD/技术方案 docx"
     expected: "Document/DocumentVersion 落正文快照，feishu_tenant 正确派生，REFERENCES 边连真实 work_item；多租户 doc client（开放平台 token，与项目 plugin token 不同域）取材成功"
     why_human: "需真实飞书开放平台凭证 + 多租户域；自动化测试全程 mock get_document_content / doc client，无法验证真实多租户端点正确性（CONTEXT Deferred: human-UAT）"
   - test: "internal_generated 文档（上线说明 / SDD spec）的实际产出 + writeback 回写飞书"
@@ -85,7 +85,7 @@ human_verification:
 
 #### 1. 真实多租户飞书 docx 摄取端点正确性
 
-**Test:** 用真实飞书开放平台凭证（多租户，如 guanghe）经 feishu_document normalizer 摄取真实 PRD/技术方案 docx。
+**Test:** 用真实飞书开放平台凭证（多租户，如 acme）经 feishu_document normalizer 摄取真实 PRD/技术方案 docx。
 **Expected:** Document/DocumentVersion 落正文快照，feishu_tenant 正确派生，REFERENCES 边连真实 work_item；多租户 doc client（开放平台 token，与项目 plugin token 不同域）取材成功。
 **Why human:** 需真实开放平台凭证 + 多租户域；自动化测试全程 mock get_document_content / doc client，无法验证真实多租户端点正确性（CONTEXT Deferred: human-UAT）。
 

@@ -63,7 +63,7 @@ completed: 2026-06-15
 
 - `server/delivery/services/document_service.py`：
   - **`_content_hash(text)`**：`hashlib.sha256(text.encode("utf-8")).hexdigest()`——与 knowledge ingestion 同算法（单一来源），不 import knowledge（INV-3）。
-  - **`derive_feishu_tenant(canonical_url)`**：`urlparse().hostname` 取首段子域作租户 slug（`guanghe.feishu.cn` → "guanghe"、`acme.larksuite.com` → "acme"）；非飞书/lark 域、无 host、无意义首段（`feishu.cn`/`www`）→ ""。
+  - **`derive_feishu_tenant(canonical_url)`**：`urlparse().hostname` 取首段子域作租户 slug（`acme.feishu.cn` → "acme"、`acme.larksuite.com` → "acme"）；非飞书/lark 域、无 host、无意义首段（`feishu.cn`/`www`）→ ""。
   - **`DocumentService.upsert_from_feishu(*, work_item, document_type, doc_token, content, canonical_url, feishu_tenant="", source="manual")`**：
     - 去重定位键 `(feishu_tenant or derive_feishu_tenant(canonical_url), external_ref=doc_token)`。
     - 经 `sync_to_async` 的 `_upsert_locked`：`transaction.atomic()` + `Document.objects.select_for_update().get_or_create(...)`，首建落 `source_kind=external_feishu` + `content_storage=both` + canonical_url + work_item；已存在刷 mirror（canonical_url 变更、work_item 先前 None 则补连，document_type 不漂移）。

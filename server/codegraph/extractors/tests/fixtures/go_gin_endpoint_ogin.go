@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"github.com/gin-gonic/gin"
-	"gitlab.yc345.tv/backend/yc/pkg/server/ogin"
+	"gitlab.example.com/backend/example/pkg/server/ogin"
 )
 
 // StartHTTP 模拟 study-course 风格的 *ogin.Server 路由注册（用于 work item 测试）

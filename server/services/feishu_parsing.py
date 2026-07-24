@@ -30,8 +30,8 @@ logger = structlog.get_logger(__name__)
 
 # === 字段 key / alias 常量（唯一事实源；feishu.models.KeyFields 反向 import）===
 
-PRD_URL_FIELD_KEY = "field_bcff9b"  # 需求文档链接
-TECH_DOC_URL_FIELD_KEY = "field_3f6667"  # 技术方案文档链接
+PRD_URL_FIELD_KEY = "field_000001"  # 需求文档链接
+TECH_DOC_URL_FIELD_KEY = "field_000009"  # 技术方案文档链接
 DESCRIPTION_FIELD_KEY = "description"  # 需求描述
 PRD_URL_ALIAS = "prd_url"  # 需求文档字段别名
 
@@ -382,7 +382,7 @@ def extract_related_ids(field_value: Any) -> list[int]:
 
 
 def extract_prd_url(feishu_fields: list[dict]) -> str:
-    """提取需求文档链接：alias `prd_url` 或 key `field_bcff9b`。
+    """提取需求文档链接：alias `prd_url` 或 key `field_000001`。
 
     Args:
         feishu_fields: `build_feishu_fields` 产出的完整字段对象列表。
@@ -397,7 +397,7 @@ def extract_prd_url(feishu_fields: list[dict]) -> str:
 
 
 def extract_tech_doc_url(feishu_fields: list[dict]) -> str:
-    """提取技术方案文档链接：key `field_3f6667`。
+    """提取技术方案文档链接：key `field_000009`。
 
     Args:
         feishu_fields: `build_feishu_fields` 产出的完整字段对象列表。
@@ -428,7 +428,7 @@ def _field_value_as_url(fld: dict | None) -> str:
 
 # 关联字段 → 关系类型映射（DOMAIN §16 实测；未命中归 related）
 RELATION_TYPE_BY_FIELD: dict[str, str] = {
-    "field_caadeb": "belongs_to_project",  # 所属项目（父）
+    "field_000008": "belongs_to_project",  # 所属项目（父）
     "planning_sprint": "sprint",  # 所属迭代
     "planning_version": "version",  # 规划版本
     "actual_online_version": "version",  # 上车版本

@@ -19,7 +19,7 @@ status: complete
 
 - 脚本化清除注释与 docstring 中的 `implementation:` / `work item:` / `per ...` 前缀标记（734 行；tokenize 定位，仅触碰注释与三引号 docstring，跳过运行时字符串与 migrations）
 - 手工改写 `CONTEXT decisions`、"遗留至 v24.0" 等内部决策引用（graph_builder.py、codegraph/views.py、test_git_diff_index.py 等）
-- **个人路径泄漏清理**：10+ 处 `/Users/zaneliu/Projects/guanghe/*` 硬编码默认值改走环境变量（`TS_SAMPLE_REPO` / `GO_GIN_SAMPLE_REPO` / `GO_SAMPLE_REPO` / `VUE_SAMPLE_REPO` / `STUDY_APP_REPO` / `VOLAR_TEST_REPO` / `GOPLS_TEST_REPO`），skipif 增加空值守卫（`Path("")` 即 `.` 会误判存在）；management commands 示例路径改为通用占位，`measure_go_call_completeness --repo-root` 改为必填
+- **个人路径泄漏清理**：10+ 处 `/Users/zaneliu/Projects/acme/*` 硬编码默认值改走环境变量（`TS_SAMPLE_REPO` / `GO_GIN_SAMPLE_REPO` / `GO_SAMPLE_REPO` / `VUE_SAMPLE_REPO` / `STUDY_APP_REPO` / `VOLAR_TEST_REPO` / `GOPLS_TEST_REPO`），skipif 增加空值守卫（`Path("")` 即 `.` 会误判存在）；management commands 示例路径改为通用占位，`measure_go_call_completeness --repo-root` 改为必填
 - 验证：全量 AST 语法检查 0 错误；相关测试 48 passed / 17 skipped（集成测试按预期 skip）；ruff 自动修复 9 处 import 排序
 
 ### Task 3: 社区脚手架（commit 7f0c43818）

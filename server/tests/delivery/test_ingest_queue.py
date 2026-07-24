@@ -32,9 +32,9 @@ from durable import QUEUE_CRAWL_INGEST, DurableTaskService
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-BOARD_URL_1 = "https://project.feishu.cn/key123/story/detail/7010225564"
+BOARD_URL_1 = "https://project.feishu.cn/key123/story/detail/1000000002"
 MR_URL_1 = "https://gitlab.com/test/repo/-/merge_requests/5"
-BOARD_URL_2 = "https://project.feishu.cn/key123/story/detail/7010225565"
+BOARD_URL_2 = "https://project.feishu.cn/key123/story/detail/1000000003"
 MR_URL_2 = "https://gitlab.com/test/repo/-/merge_requests/6"
 
 
@@ -75,7 +75,7 @@ def _resolved_item(board_url: str, mr_url: str, *, ok: bool = True, error: str =
         "space_id": "",
         "space_name": "空间 S",
         "feishu_project_key": "key123",
-        "work_item_id": 7010225564,
+        "work_item_id": 1000000002,
         "work_item_type": "story",
         "mr_url": mr_url,
         "board_url": board_url if ok else "",
@@ -98,7 +98,7 @@ async def test_enqueue_creates_queued_runs_and_defers(stub_durable, monkeypatch)
     client = AsyncClient()
     resp = await client.post(
         "/api/delivery/ingest/queue/",
-        data={"items": [{"space": "key123", "work_item_id": 7010225564}]},
+        data={"items": [{"space": "key123", "work_item_id": 1000000002}]},
         content_type="application/json",
         headers=headers,
     )

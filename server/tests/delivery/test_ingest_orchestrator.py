@@ -43,12 +43,12 @@ from services.git_platform.models import MRDiffFile, MRDiffResult
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # DOMAIN §16 实测自然键
-PROJECT_KEY = "622c10eb5daaee81db915189"
-STORY_ID = 7010225564
+PROJECT_KEY = "000000000000000000000001"
+STORY_ID = 1000000002
 WORK_ITEM_TYPE = "story"
 SOURCE_ID = f"{PROJECT_KEY}:{WORK_ITEM_TYPE}:{STORY_ID}"
 PRD_TOKEN = "PrdDocToken123456"
-PRD_URL = f"https://guanghe.feishu.cn/docx/{PRD_TOKEN}"
+PRD_URL = f"https://acme.feishu.cn/docx/{PRD_TOKEN}"
 PRD_BODY = "# PRD 标题\n\nPRD 正文内容，验收点若干。"
 
 BOARD_URL = f"https://project.feishu.cn/{PROJECT_KEY}/{WORK_ITEM_TYPE}/detail/{STORY_ID}"
@@ -111,7 +111,7 @@ def _work_item_info() -> WorkItemInfo:
         ),
         feishu_fields=[
             {
-                "field_key": "field_bcff9b",
+                "field_key": "field_000001",
                 "field_name": "需求文档",
                 "field_value": PRD_URL,
                 "field_type_key": "link",

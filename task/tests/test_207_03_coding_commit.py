@@ -386,7 +386,7 @@ class TestGenerateSuggestedCommitMessage:
         config.claude_base_url = ""
         config.claude_model = ""
         config.claude_small_model = ""
-        config.task_description = "你正在对项目「学习工具与平台」执行编码任务。\n\n技术方案：很长..."
+        config.task_description = "你正在对项目「示例平台」执行编码任务。\n\n技术方案：很长..."
         runner = TaskRunner(config)
 
         mock_client = AsyncMock()

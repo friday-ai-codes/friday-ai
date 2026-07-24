@@ -382,7 +382,7 @@ async def test_chat_single_clarification_still_captured_zero_regression() -> Non
     result = await ask_clarification(
         question="你想动哪个仓库？",
         options=[
-            {"id": "opt-A", "label": "study-app"},
+            {"id": "opt-A", "label": "example-app"},
             {"id": "opt-B", "label": "problem-app"},
         ],
     )

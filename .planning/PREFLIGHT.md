@@ -98,14 +98,14 @@
 - **验证**：对 issue/story 分别按正确 type 拉取成功（已实测）。
 
 ### PF-10 · `get_work_item_relations` 失效 + 关系实际在字段里
-- **根因**：**实测**该端点返回非预期内容（`Extra data: line 1 column 5` JSON 解析错）。且工作项间关系实际经 `work_item_related_multi_select` 字段表达（`所属项目 field_caadeb`、`planning_sprint`、`planning_version`）。
+- **根因**：**实测**该端点返回非预期内容（`Extra data: line 1 column 5` JSON 解析错）。且工作项间关系实际经 `work_item_related_multi_select` 字段表达（`所属项目 field_000008`、`planning_sprint`、`planning_version`）。
 - **修复方向**：`WorkItemRelation` 改为**从关联字段派生**（DOMAIN §12.3）；独立 relation 端点降级为可选/废弃，或核实正确端点路径。
-- **验证**：从 story 7010225564 的 `field_caadeb=[7010938167]` 正确派生 belongs_to_project 关系。
+- **验证**：从 story 1000000002 的 `field_000008=[1000000004]` 正确派生 belongs_to_project 关系。
 
 ### PF-11 · `get_comments` 失效
 - **根因**：**实测** JSON 解析错（端点路径/格式疑似变化）。
 - **修复方向**：核实飞书项目评论正确端点（可能 `comment/list` 路径或鉴权头有变），修复后再做评论事件流摄取。
-- **验证**：拉取缺陷 5580252273 的评论列表成功并解析。
+- **验证**：拉取缺陷 1000000006 的评论列表成功并解析。
 
 ### PF-12 · `get_work_item` 拍平字段丢元数据
 - **根因**：解析时 `fields_dict[field_key]=field_value`，丢弃 `field_name/field_type_key/field_alias`。而 mirror 需要这些（人类标签、别名 prd_url/小组、类型判断）。

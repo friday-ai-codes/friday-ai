@@ -76,11 +76,11 @@ class TestDisconnectRecovery:
             main_session=agent_session,
             task_type=SubAgentSession.TaskType.CODING,
             status=SubAgentSession.Status.PENDING,
-            repo_url="https://gitlab.example.com/frontend/study-app.git",
+            repo_url="https://gitlab.example.com/frontend/example-app.git",
             last_output={
                 "task_type": "coding",
                 "dispatch": {
-                    "repo_url": "https://gitlab.example.com/frontend/study-app.git",
+                    "repo_url": "https://gitlab.example.com/frontend/example-app.git",
                     "branch": "main",
                     "target_branch": "main",
                     "prompt": "执行编码",
@@ -102,7 +102,7 @@ class TestDisconnectRecovery:
         task = await consumer._rebuild_dispatch_task("coding-recovery-test")
 
         assert task is not None
-        assert task.repo_url == "https://gitlab.example.com/frontend/study-app.git"
+        assert task.repo_url == "https://gitlab.example.com/frontend/example-app.git"
         assert task.branch == "main"
         assert task.target_branch == "main"
         assert task.prompt == "执行编码"

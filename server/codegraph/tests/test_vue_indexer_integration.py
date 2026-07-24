@@ -36,7 +36,7 @@ class TestVueExtractorRegistration:
     reason=f"Vue sample repo not present at {VUE_SAMPLE_REPO}",
 )
 class TestStudyAppVueExtraction:
-    """真实 study-app monorepo 端到端抽取测试（采样三类典型 SFC 形态）。"""
+    """真实 example-app monorepo 端到端抽取测试（采样三类典型 SFC 形态）。"""
 
     def test_options_api_yields_symbols_imports_calls(self) -> None:
         """Vue 2 Options API：utils/task/nps/feedback.vue + main.vue 抽取。"""
@@ -54,7 +54,7 @@ class TestStudyAppVueExtraction:
             ctx = FileContext(
                 file_path=str(path),
                 language="vue",
-                repository_id="study-app",
+                repository_id="example-app",
             )
             bundle = extractor.extract(str(path), source, ctx)
             total_symbols += len(bundle.symbols)
@@ -72,7 +72,7 @@ class TestStudyAppVueExtraction:
             pytest.skip(f"{path} not present")
         source = path.read_text(encoding="utf-8")
         ctx = FileContext(
-            file_path=str(path), language="vue", repository_id="study-app"
+            file_path=str(path), language="vue", repository_id="example-app"
         )
         bundle = extractor.extract(str(path), source, ctx)
 
@@ -88,7 +88,7 @@ class TestStudyAppVueExtraction:
             pytest.skip(f"{path} not present")
         source = path.read_text(encoding="utf-8")
         ctx = FileContext(
-            file_path=str(path), language="vue", repository_id="study-app"
+            file_path=str(path), language="vue", repository_id="example-app"
         )
         bundle = extractor.extract(str(path), source, ctx)
 

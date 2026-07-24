@@ -19,12 +19,12 @@
 
 ### Document/DocumentVersion 模型归属与字段（Grey Area 1，DOMAIN §3/§12.5）
 - 操作态实体落 **delivery app**（`server/delivery/models/document.py`），re-export 于 `models/__init__.py`——与 WorkItem 脊柱同 app（DOMAIN §0：操作态聚合在 delivery）。
-- `Document`：`id(UUID)`、`document_type(choices: prd|tech_plan|release_note|sdd_spec|other)`、`source_kind(choices: external_feishu|internal_generated)`、`external_ref(CharField blank)`（飞书 doc token）、`canonical_url(URLField blank)`、`content_storage(choices: snapshot|reference|both)`、`current_version FK(DocumentVersion, null, SET_NULL)`、`last_synced_at(DateTimeField null)`、`writeback_allowed(Bool default False)`、`work_item FK(delivery.WorkItem, null, SET_NULL)`、`feishu_tenant(CharField blank)`（多租户区分，如 guanghe）、`created_at`/`updated_at`。
+- `Document`：`id(UUID)`、`document_type(choices: prd|tech_plan|release_note|sdd_spec|other)`、`source_kind(choices: external_feishu|internal_generated)`、`external_ref(CharField blank)`（飞书 doc token）、`canonical_url(URLField blank)`、`content_storage(choices: snapshot|reference|both)`、`current_version FK(DocumentVersion, null, SET_NULL)`、`last_synced_at(DateTimeField null)`、`writeback_allowed(Bool default False)`、`work_item FK(delivery.WorkItem, null, SET_NULL)`、`feishu_tenant(CharField blank)`（多租户区分，如 acme）、`created_at`/`updated_at`。
 - `DocumentVersion`：`id(UUID)`、`document FK(CASCADE)`、`version(Int)`、`supersedes FK(self, null, SET_NULL)`、`content(TextField)`、`content_hash(CharField)`、`created_at`。`unique_together(document, version)`。
 - 去重/幂等键：external_feishu 文档按 `(feishu_tenant, external_ref)`（doc token）唯一定位；内部生成按自身规则。版本：内容 hash 相等不产生新版本（沿用 knowledge 既有"hash 相等不翻版本"范式）。
 
 ### DOC-01 区分外部/内部 + PRD/技术方案落独立实体（Grey Area 2）
-- PRD（`prd_url` 别名字段 / field_bcff9b）→ `Document(document_type=prd, source_kind=external_feishu, content_storage=both)`；技术方案 → `document_type=tech_plan`。
+- PRD（`prd_url` 别名字段 / field_000001）→ `Document(document_type=prd, source_kind=external_feishu, content_storage=both)`；技术方案 → `document_type=tech_plan`。
 - 内部生成文档（上线说明/SDD spec）：`source_kind=internal_generated`、可 `writeback_allowed`——本 phase **只立模型字段位**，实际内部生成文档产出是后续里程碑（v0.7+），本 phase 不造内部文档。
 - content_storage：external 飞书文档存 `both`（快照 + canonical_url 引用），飞书为权威。
 
@@ -79,7 +79,7 @@
 <specifics>
 ## Specific Ideas
 
-- DOMAIN §3 / §12.5 是 Document/DocumentVersion 建模权威；§16 实测：PRD=field_bcff9b(alias prd_url)→`<tenant>.feishu.cn/docx/<doc_token>`，多租户（guanghe 等）经开放平台 token，与项目 plugin token 不同域。
+- DOMAIN §3 / §12.5 是 Document/DocumentVersion 建模权威；§16 实测：PRD=field_000001(alias prd_url)→`<tenant>.feishu.cn/docx/<doc_token>`，多租户（acme 等）经开放平台 token，与项目 plugin token 不同域。
 - REFERENCES 边语义：work_item →(REFERENCES)→ document（引用文档），knowledge 投影。
 - INV-3：Document 是 delivery 操作态实体（带 work_item FK），REFERENCES 边是 knowledge 投影——两层并存不混淆。
 </specifics>

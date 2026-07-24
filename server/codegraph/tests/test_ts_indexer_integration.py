@@ -64,7 +64,7 @@ class TestTSExtractorRegistration:
     reason=f"TS sample repo not present at {TS_SAMPLE_REPO}",
 )
 class TestStudyAppExtraction:
-    """真实 study-app monorepo 端到端抽取测试（采样 reciteGeography service + utils/plugin）。"""
+    """真实 example-app monorepo 端到端抽取测试（采样 reciteGeography service + utils/plugin）。"""
 
     def test_recite_geography_service_yields_symbols_imports(self, ts_parser):
         """采样 apps/reciteGeography/src/service/ 全部 .ts 文件，断言 symbols 与 imports 计数 > 0。"""
@@ -82,7 +82,7 @@ class TestStudyAppExtraction:
             ctx = FileContext(
                 file_path=str(ts_file),
                 language="typescript",
-                repository_id="study-app",
+                repository_id="example-app",
             )
             bundle = extractor.extract_all(tree, source, ctx)
             total_symbols += len(bundle.symbols)
@@ -107,7 +107,7 @@ class TestStudyAppExtraction:
         ctx = FileContext(
             file_path=str(tsx_file),
             language="tsx",
-            repository_id="study-app",
+            repository_id="example-app",
         )
         bundle = extractor.extract_all(tree, source, ctx)
 

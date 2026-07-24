@@ -36,7 +36,7 @@ from delivery.models import (
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # DOMAIN §16 实测自然键
-PROJECT_KEY = "622c10eb5daaee81db915189"
+PROJECT_KEY = "000000000000000000000001"
 
 # 含嵌套 dict/list/中文/数字/bool/None 的复杂原始行（REL-01 无损守护）
 COMPLEX_ROW = {
@@ -55,7 +55,7 @@ COMPLEX_ROW = {
 }
 
 
-def _make_work_item(work_item_id: int = 7010225564, **overrides) -> WorkItem:
+def _make_work_item(work_item_id: int = 1000000002, **overrides) -> WorkItem:
     """创建一个 story WorkItem（origin=manual），允许 override。"""
     defaults = dict(
         feishu_project_key=PROJECT_KEY,
@@ -119,12 +119,12 @@ def test_release_record_external_id_placeholder():
     rec = ReleaseRecord.objects.create(
         batch=batch,
         work_item=None,
-        work_item_external_id=7010225564,
+        work_item_external_id=1000000002,
         bitable_record_key=key,
     )
     fetched = ReleaseRecord.objects.get(pk=rec.pk)
     assert fetched.work_item is None
-    assert fetched.work_item_external_id == 7010225564
+    assert fetched.work_item_external_id == 1000000002
     assert fetched.bitable_record_key == "appX:tblY:recZ"
 
 

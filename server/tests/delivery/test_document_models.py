@@ -10,7 +10,7 @@
 - work_item FK 反查 wi.documents；work_item=None 占位亦可建。
 - current_version on_delete=SET_NULL：删被指向版本后 Document 行保留、置 None。
 
-fixture 取值参考 DOMAIN §16 实测（story 7010225564）。
+fixture 取值参考 DOMAIN §16 实测（story 1000000002）。
 """
 
 from __future__ import annotations
@@ -31,10 +31,10 @@ from delivery.models import (
 pytestmark = pytest.mark.django_db
 
 # DOMAIN §16 实测自然键
-PROJECT_KEY = "622c10eb5daaee81db915189"
+PROJECT_KEY = "000000000000000000000001"
 
 
-def _make_work_item(work_item_id: int = 7010225564, **overrides) -> WorkItem:
+def _make_work_item(work_item_id: int = 1000000002, **overrides) -> WorkItem:
     """创建一个 story WorkItem（origin=manual），允许 override。"""
     defaults = dict(
         feishu_project_key=PROJECT_KEY,
@@ -54,7 +54,7 @@ def _make_document(**overrides) -> Document:
         source_kind=DocumentSourceKind.EXTERNAL_FEISHU,
         content_storage=ContentStorage.BOTH,
         external_ref="doc_tok",
-        feishu_tenant="guanghe",
+        feishu_tenant="acme",
     )
     defaults.update(overrides)
     return Document.objects.create(**defaults)
@@ -62,14 +62,14 @@ def _make_document(**overrides) -> Document:
 
 def test_create_document_readback():
     """创建 external_feishu PRD Document 后字段可读回，默认值正确。"""
-    doc = _make_document(canonical_url="https://guanghe.feishu.cn/docx/doc_tok")
+    doc = _make_document(canonical_url="https://acme.feishu.cn/docx/doc_tok")
     fetched = Document.objects.get(pk=doc.pk)
     assert fetched.document_type == DocumentType.PRD
     assert fetched.source_kind == DocumentSourceKind.EXTERNAL_FEISHU
     assert fetched.content_storage == ContentStorage.BOTH
     assert fetched.external_ref == "doc_tok"
-    assert fetched.feishu_tenant == "guanghe"
-    assert fetched.canonical_url == "https://guanghe.feishu.cn/docx/doc_tok"
+    assert fetched.feishu_tenant == "acme"
+    assert fetched.canonical_url == "https://acme.feishu.cn/docx/doc_tok"
     # 默认值
     assert fetched.writeback_allowed is False
     assert fetched.current_version is None

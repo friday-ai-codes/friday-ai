@@ -28,10 +28,10 @@ from delivery.services import DocumentService
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # DOMAIN §16 实测自然键 + 多租户深链
-PROJECT_KEY = "622c10eb5daaee81db915189"
-STORY_ID = 7010225564
+PROJECT_KEY = "000000000000000000000001"
+STORY_ID = 1000000002
 DOC_TOKEN = "Abcd1234efGhIjKl"
-PRD_URL = f"https://guanghe.feishu.cn/docx/{DOC_TOKEN}"
+PRD_URL = f"https://acme.feishu.cn/docx/{DOC_TOKEN}"
 PRD_BODY = "PRD 正文快照"
 
 ENDPOINT = "/api/delivery/work-items/prd-document/"
@@ -101,7 +101,7 @@ async def test_returns_prd_snapshot_via_document_entity() -> None:
     assert body["document_type"] == "prd"
     assert body["content_storage"] == "both"
     assert body["external_ref"] == DOC_TOKEN
-    assert body["feishu_tenant"] == "guanghe"
+    assert body["feishu_tenant"] == "acme"
     assert body["version"] == 1
 
 

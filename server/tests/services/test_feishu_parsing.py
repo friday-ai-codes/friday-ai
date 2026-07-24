@@ -8,7 +8,7 @@
 - `derive_relations_from_fields` 从实测字段派生关系（FIX-02）。
 - `parse_comments` 对齐 comment/list 形状并容错（FIX-03）。
 
-fixture 取自 DOMAIN-MODEL.md §16 实测值（story 7010225564 / issue 5580252273）。
+fixture 取自 DOMAIN-MODEL.md §16 实测值（story 1000000002 / issue 1000000006）。
 纯函数测试不发真实网络（pytest-socket 隔离）；需要 Response 时用 `httpx.Response`
 本地构造，绝不发请求。
 """
@@ -38,7 +38,7 @@ from services.feishu_parsing import (
 
 # === DOMAIN §16 实测字段 fixture ===
 
-# story 7010225564 的代表性字段（含 prd_url link / select / 三个关联字段）
+# story 1000000002 的代表性字段（含 prd_url link / select / 三个关联字段）
 STORY_RAW_FIELDS = [
     {
         "field_key": PRD_URL_FIELD_KEY,
@@ -48,16 +48,16 @@ STORY_RAW_FIELDS = [
         "field_alias": PRD_URL_ALIAS,
     },
     {
-        "field_key": "field_528f19",
+        "field_key": "field_000002",
         "field_name": "小组",
-        "field_value": {"label": "学习A", "value": "opt_1"},
+        "field_value": {"label": "示例组A", "value": "opt_1"},
         "field_type_key": "select",
-        "field_alias": "study_platform_group",
+        "field_alias": "example_platform_group",
     },
     {
-        "field_key": "field_caadeb",
+        "field_key": "field_000008",
         "field_name": "所属项目",
-        "field_value": [7010938167],
+        "field_value": [1000000004],
         "field_type_key": "work_item_related_multi_select",
         "field_alias": None,
     },
@@ -185,14 +185,14 @@ def test_flatten_fields_backward_compatible() -> None:
     """flatten_fields 仍产出 {field_key: field_value}（向后兼容）。"""
     flat = flatten_fields(STORY_RAW_FIELDS)
     assert flat[PRD_URL_FIELD_KEY] == "https://tenant.feishu.cn/docx/doc_token_abc"
-    assert flat["field_caadeb"] == [7010938167]
+    assert flat["field_000008"] == [1000000004]
 
 
 def test_find_field_by_key_and_alias() -> None:
     """find_field 支持按 key 与 alias 查找。"""
     fields = build_feishu_fields(STORY_RAW_FIELDS)
-    by_key = find_field(fields, key="field_528f19")
-    by_alias = find_field(fields, alias="study_platform_group")
+    by_key = find_field(fields, key="field_000002")
+    by_alias = find_field(fields, alias="example_platform_group")
     assert by_key is not None and by_key is by_alias
     assert find_field(fields, key="missing") is None
 
@@ -204,7 +204,7 @@ def test_extract_prd_url_by_alias() -> None:
 
 
 def test_extract_prd_url_by_key_fallback() -> None:
-    """alias 缺失时回退按 key field_bcff9b 提取。"""
+    """alias 缺失时回退按 key field_000001 提取。"""
     fields = build_feishu_fields(
         [
             {
@@ -225,11 +225,11 @@ def test_extract_prd_url_missing_returns_empty() -> None:
 
 
 def test_extract_tech_doc_url_by_key() -> None:
-    """extract_tech_doc_url 按 key field_3f6667 提取。"""
+    """extract_tech_doc_url 按 key field_000009 提取。"""
     fields = build_feishu_fields(
         [
             {
-                "field_key": "field_3f6667",
+                "field_key": "field_000009",
                 "field_name": "技术方案",
                 "field_value": "https://x.feishu.cn/docx/tech",
                 "field_type_key": "link",
@@ -242,14 +242,14 @@ def test_extract_tech_doc_url_by_key() -> None:
 
 def test_extract_select_label() -> None:
     """extract_select_label 从 {label, value} 取 label。"""
-    assert extract_select_label({"label": "学习A", "value": "opt_1"}) == "学习A"
+    assert extract_select_label({"label": "示例组A", "value": "opt_1"}) == "示例组A"
     assert extract_select_label("not a dict") is None
     assert extract_select_label({"value": "no_label"}) is None
 
 
 def test_extract_related_ids_variants() -> None:
     """extract_related_ids 归一 int / 数字字符串 / dict，跳过非 list。"""
-    assert extract_related_ids([7010938167]) == [7010938167]
+    assert extract_related_ids([1000000004]) == [1000000004]
     assert extract_related_ids(["123", 456]) == [123, 456]
     assert extract_related_ids([{"id": 789}]) == [789]
     assert extract_related_ids([]) == []
@@ -309,16 +309,16 @@ def test_rich_text_to_markdown_heading_and_link() -> None:
 
 
 def test_derive_relations_belongs_to_project() -> None:
-    """field_caadeb=[7010938167] → belongs_to_project（DOMAIN §16 实测）。"""
+    """field_000008=[1000000004] → belongs_to_project（DOMAIN §16 实测）。"""
     fields = build_feishu_fields(STORY_RAW_FIELDS)
     specs = derive_relations_from_fields(fields)
-    project_specs = [s for s in specs if s.source_field_key == "field_caadeb"]
+    project_specs = [s for s in specs if s.source_field_key == "field_000008"]
     assert len(project_specs) == 1
     spec = project_specs[0]
     assert spec == RelationSpec(
         relation_type="belongs_to_project",
-        source_field_key="field_caadeb",
-        target_external_id=7010938167,
+        source_field_key="field_000008",
+        target_external_id=1000000004,
         origin="feishu_field",
     )
 
@@ -364,11 +364,11 @@ def test_derive_relations_ignores_non_relation_fields() -> None:
     fields = build_feishu_fields(
         [
             {
-                "field_key": "field_528f19",
+                "field_key": "field_000002",
                 "field_name": "小组",
-                "field_value": {"label": "学习A", "value": "opt_1"},
+                "field_value": {"label": "示例组A", "value": "opt_1"},
                 "field_type_key": "select",
-                "field_alias": "study_platform_group",
+                "field_alias": "example_platform_group",
             },
             {
                 "field_key": "description",

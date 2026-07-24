@@ -41,7 +41,7 @@
   1. 按三元组 `select_for_update` 取/建 WorkItem（幂等键，INV-1）。async 经 `sync_to_async` 包裹 `transaction.atomic` 同步块（项目既有 async ORM 约定）。
   2. `fetch=True` → 调 Phase 27 修好的 `get_work_item`（真实 type，完整 feishu_fields）；按 facet 记 `WorkItemSyncState`。
   3. 刷新 **mirror** 字段；**绝不动 friday_enhanced**；writeback 仅由专门流程改（本 phase 不实现写回，留接口位）。
-  4. 解析 `feishu_fields` 派生：`prd_url`（别名 prd_url/field_bcff9b）、`tech_doc_url`、`status_display_name`（取 current_nodes/state_times，免映射 API）、关联字段 → `WorkItemRelation`（复用 Phase 27 `derive_relations_from_fields`）。
+  4. 解析 `feishu_fields` 派生：`prd_url`（别名 prd_url/field_000001）、`tech_doc_url`、`status_display_name`（取 current_nodes/state_times，免映射 API）、关联字段 → `WorkItemRelation`（复用 Phase 27 `derive_relations_from_fields`）。
   5. 写 `field_provenance` + `last_synced_at`；发 `work_item.synced` 事件（复用既有事件/信号机制，best-effort）。
   6. 失败：部分 facet 失败不回滚整体 WorkItem；落 `WorkItemSyncState.error` + 重试标记，缺料降配继续（对齐 knowledge/sources normalizer 范式）。
 - 幂等：同三元组多次 upsert 收敛同一行；不同 origin 进入也收敛（WIT-01 关键测试）。
@@ -69,7 +69,7 @@
 ### 异步 / ORM / 测试（Claude's Discretion 范围内）
 - async-first：service `async def`，ORM 访问经 `sync_to_async` 桥接；`select_for_update` 放在 `transaction.atomic` 同步函数内再 `sync_to_async`。
 - 测试：`pytest-django` + `factory-boy`（WorkItem/Relation factory）+ `respx`（mock get_work_item 回源）+ `pytest-socket`（网络隔离）。
-- 核心守护测试：① 同三元组不同 origin 多次 upsert → 唯一行（INV-1/WIT-01）；② 只刷 mirror、enhanced 字段被保护（WIT-02）；③ 某 facet 回源失败 → 该 facet SyncState=error/missing、WorkItem 不整体回滚（WIT-03）；④ 从 field_caadeb=[id] 派生 belongs_to_project + 目标未落库走 target_external_id 占位（WIT-04）；⑤ 状态变更 append StatusEvent、非就地改写（WIT-05）；⑥ INV-6 守护：grep 断言无旁路 WorkItem 写表。
+- 核心守护测试：① 同三元组不同 origin 多次 upsert → 唯一行（INV-1/WIT-01）；② 只刷 mirror、enhanced 字段被保护（WIT-02）；③ 某 facet 回源失败 → 该 facet SyncState=error/missing、WorkItem 不整体回滚（WIT-03）；④ 从 field_000008=[id] 派生 belongs_to_project + 目标未落库走 target_external_id 占位（WIT-04）；⑤ 状态变更 append StatusEvent、非就地改写（WIT-05）；⑥ INV-6 守护：grep 断言无旁路 WorkItem 写表。
 
 ### Claude's Discretion
 - `WorkItemIdentity` 的具体形状（dataclass vs NamedTuple）、service 文件拆分粒度、`work_item.synced` 事件的具体投递机制（Django signal vs 既有事件总线）、REST 端点的确切路径与 serializer 字段集、migration 是否拆多个 —— 由实现按既有约定决定。
@@ -103,7 +103,7 @@
 <specifics>
 ## Specific Ideas
 
-- DOMAIN §12.1/§12.2/§12.3/§12.4 字段表是建模权威；§13.1 是 upsert 步骤权威；§16/§1.5 实测字段（story 7010225564：field_caadeb=[7010938167] 派生 belongs_to_project；issue 5580252273）作 fixture。
+- DOMAIN §12.1/§12.2/§12.3/§12.4 字段表是建模权威；§13.1 是 upsert 步骤权威；§16/§1.5 实测字段（story 1000000002：field_000008=[1000000004] 派生 belongs_to_project；issue 1000000006）作 fixture。
 - INV-1 由 DB `unique_together` 强制；INV-6 由"只经 upsert"+ 守护测试强制；INV-3 由"不改 knowledge"守住。
 - 容器型工作项真实 type_key 未知（URL 段 project ≠ API type）→ 目标占位用 target_external_id，不强行解析容器型。
 </specifics>
