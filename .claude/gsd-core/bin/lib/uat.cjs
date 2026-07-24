@@ -15,14 +15,29 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const core = require("./core.cjs");
-const { output, error, getMilestonePhaseFilter, toPosixPath } = core;
+const io = require("./io.cjs");
+const { output, error } = io;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const markdownSectionizer = require("./markdown-sectionizer.cjs");
+const { collectSection, tokenizeHeadings } = markdownSectionizer;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const markdownTable = require("./markdown-table.cjs");
+const { splitTableRow } = markdownTable;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const roadmapParser = require("./roadmap-parser.cjs");
+const { getMilestonePhaseFilter } = roadmapParser;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const coreUtils = require("./core-utils.cjs");
+const { toPosixPath } = coreUtils;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planningWorkspace = require("./planning-workspace.cjs");
 const { planningDir } = planningWorkspace;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const frontmatter = require("./frontmatter.cjs");
 const { extractFrontmatter } = frontmatter;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const phaseIdMod = require("./phase-id.cjs");
+const { PHASE_NUMBER_TOKEN_SOURCE } = phaseIdMod;
 const security_cjs_1 = require("./security.cjs");
 // ─── cmdAuditUat ─────────────────────────────────────────────────────────────
 function cmdAuditUat(cwd, raw) {
@@ -39,7 +54,7 @@ function cmdAuditUat(cwd, raw) {
         .filter(isDirInMilestone)
         .sort();
     for (const dir of dirs) {
-        const phaseMatch = dir.match(/^(\d+[A-Z]?(?:\.\d+)*)/i);
+        const phaseMatch = dir.match(new RegExp(`^(${PHASE_NUMBER_TOKEN_SOURCE})`, 'i'));
         const phaseNum = phaseMatch ? phaseMatch[1] : dir;
         const phaseDir = node_path_1.default.join(phasesDir, dir);
         const files = node_fs_1.default.readdirSync(phaseDir);
@@ -122,11 +137,16 @@ function cmdRenderCheckpoint(cwd, options = {}, raw) {
 }
 // ─── parseCurrentTest ─────────────────────────────────────────────────────────
 function parseCurrentTest(content) {
-    const currentTestMatch = content.match(/##\s*Current Test\s*(?:\n<!--[\s\S]*?-->)?\n([\s\S]*?)(?=\n##\s|$)/i);
-    if (!currentTestMatch) {
+    // Use the seam to locate the ## Current Test section (ADR-1372 T5).
+    // HTML-comment stripping within the section body is UAT-specific, so we keep
+    // the comment removal caller-side after extracting the body.
+    const currentTestSection = collectSection(content, (h) => /^current\s+test$/i.test(h.text) && h.level === 2, { levelBounded: true });
+    if (!currentTestSection) {
         error('UAT file is missing a Current Test section');
     }
-    const section = currentTestMatch[1].trimEnd();
+    // Remove any leading HTML comment block (UAT-specific document structure)
+    const rawBody = currentTestSection.body.replace(/^<!--[\s\S]*?-->\s*\n?/, '');
+    const section = rawBody.trimEnd();
     if (!section.trim()) {
         error('Current Test section is empty');
     }
@@ -139,6 +159,13 @@ function parseCurrentTest(content) {
         || section.match(/^expected:\s*\|\n([\s\S]+)/m);
     const expectedInlineMatch = section.match(/^expected:\s*(.+)\s*$/m);
     if (!numberMatch || !nameMatch || (!expectedBlockMatch && !expectedInlineMatch)) {
+        if (!numberMatch && !nameMatch && !expectedBlockMatch && !expectedInlineMatch) {
+            const pendingTest = parseFirstPendingTest(content);
+            if (pendingTest) {
+                return pendingTest;
+            }
+            error('Current Test section is non-structured and no pending UAT test remains to resume');
+        }
         error('Current Test section is malformed');
     }
     let expected;
@@ -158,6 +185,60 @@ function parseCurrentTest(content) {
         name: (0, security_cjs_1.sanitizeForDisplay)(nameMatch[1].trim()),
         expected: (0, security_cjs_1.sanitizeForDisplay)(expected),
     };
+}
+function parseFirstPendingTest(content) {
+    // Use the seam to locate the ## Tests section (ADR-1372 T5).
+    const testsSection = collectSection(content, (h) => /^tests$/i.test(h.text) && h.level === 2, { levelBounded: true });
+    if (!testsSection) {
+        return null;
+    }
+    const sectionBody = testsSection.body;
+    // Within the Tests section body, find ### N. Name sub-headings.
+    // tokenizeHeadings operates on the section body as a standalone document,
+    // filtering to level-3 headings matching the UAT-specific "N. Name" pattern.
+    // The UAT-specific item parsing (number extraction, result parsing) stays caller-side.
+    const subHeadings = tokenizeHeadings(sectionBody).filter((h) => h.level === 3 && /^\d+\.\s+/.test(h.text));
+    for (let i = 0; i < subHeadings.length; i += 1) {
+        const current = subHeadings[i];
+        const next = subHeadings[i + 1];
+        // Slice the block for this sub-test from the section body text
+        const block = next
+            ? sectionBody.slice(current.offset, next.offset)
+            : sectionBody.slice(current.offset);
+        if (!/^result:\s*\[?pending\]?\s*$/im.test(block)) {
+            continue;
+        }
+        // Extract the UAT-specific number and name from the heading text
+        const headingParts = current.text.match(/^(\d+)\.\s+(.+)$/);
+        if (!headingParts)
+            continue;
+        const testNumber = parseInt(headingParts[1], 10);
+        const testName = headingParts[2].trim();
+        const expected = parseExpectedFromTestBlock(block);
+        if (!expected) {
+            error(`Pending UAT test ${testNumber} is missing an expected field`);
+        }
+        return {
+            complete: false,
+            number: testNumber,
+            name: (0, security_cjs_1.sanitizeForDisplay)(testName),
+            expected: (0, security_cjs_1.sanitizeForDisplay)(expected),
+        };
+    }
+    return null;
+}
+function parseExpectedFromTestBlock(block) {
+    const expectedBlockMatch = block.match(/^expected:\s*\|\n([\s\S]*?)(?=^\w[\w-]*:\s)/m)
+        || block.match(/^expected:\s*\|\n([\s\S]+)/m);
+    if (expectedBlockMatch) {
+        return expectedBlockMatch[1]
+            .split('\n')
+            .map((line) => line.replace(/^ {2}/, ''))
+            .join('\n')
+            .trim();
+    }
+    const expectedInlineMatch = block.match(/^expected:\s*(.+)\s*$/m);
+    return expectedInlineMatch ? expectedInlineMatch[1].trim() : null;
 }
 // ─── buildCheckpoint ──────────────────────────────────────────────────────────
 function buildCheckpoint(currentTest) {
@@ -211,27 +292,70 @@ function parseUatItems(content) {
 function parseVerificationItems(content, status) {
     const items = [];
     if (status === 'human_needed') {
-        // Extract from human_verification section — look for numbered items or table rows
-        const hvSection = content.match(/##\s*Human Verification.*?\n([\s\S]*?)(?=\n##\s|\n---\s|$)/i);
+        // Use the seam to locate the ## Human Verification section (ADR-1372 T5).
+        const hvSection = collectSection(content, (h) => /^human\s+verification/i.test(h.text) && h.level === 2, { levelBounded: true });
         if (hvSection) {
-            const lines = hvSection[1].split('\n');
+            // #2245 review Fix 3: reverted to the pre-Phase-4 (HEAD 2cbf18642)
+            // implementation. The live Human Verification section is NOT a strict
+            // GFM table — the planner/verifier templates mix table rows, numbered
+            // items, and bullet items in the same section (and a `### N.` heading
+            // format is common too), so a table-XOR-list read (parse a table, and
+            // if it parses, suppress numbered/bullet items entirely) silently
+            // dropped items on any mixed or malformed section: a malformed
+            // `| N | … |` table with no valid header/delimiter yielded ZERO items
+            // instead of reading the rows positionally. This per-line scan reads
+            // table rows AND numbered items AND bullet items as a UNION (whichever
+            // pattern a given line matches), exactly like OLD, and reads
+            // `| N | desc |` rows even without a valid table header/delimiter.
+            //
+            // #2245 audit: the table-row branch's CELL SPLIT is name/position-
+            // addressed via `splitTableRow` (escape-aware, canonical) instead of a
+            // hand-rolled pipe regex — candidacy itself is decided WITHOUT a table
+            // regex (a leading `|` plus a purely-numeric first cell), so this no
+            // longer needs an allow-adhoc-markdown suppression at all.
+            const lines = hvSection.body.split('\n');
             for (const line of lines) {
-                // Match table rows: | N | description | ... |
-                const tableMatch = line.match(/\|\s*(\d+)\s*\|\s*([^|]+)/);
+                const trimmedLine = line.trim();
+                // Match table rows: | N | description | ... — candidacy requires a
+                // leading pipe and a purely-numeric first cell (mirrors what the old
+                // regex effectively required: a "|digit|" cell immediately followed
+                // by more content), with at least 2 physical cells so a bare "| N |"
+                // with nothing after it is NOT treated as a row.
+                //
+                // #2245 review Fix 9: this is NOT the same as OLD for a row whose
+                // ONLY content past the digit cell is trailing whitespace (e.g.
+                // "| N | ", no second delimiting `|`). OLD's `([^|]+)` regex ran
+                // against the RAW (untrimmed) line and its `\s*` would backtrack to
+                // let `[^|]+` swallow that trailing whitespace, so OLD matched and
+                // pushed an item with an EMPTY (`.trim()`-collapsed) name. Here,
+                // `trimmedLine = line.trim()` strips that trailing whitespace BEFORE
+                // `splitTableRow` ever sees it, collapsing the line to a single cell
+                // (`candidateCells.length === 1`), which fails the `>= 2` check —
+                // the item is silently dropped instead. A real, acceptable behaviour
+                // change (an empty-named UAT item is not useful either way), but the
+                // two implementations are NOT equivalent on this input.
+                let tableCells = null;
+                if (trimmedLine.startsWith('|')) {
+                    const candidateCells = splitTableRow(trimmedLine);
+                    if (candidateCells.length >= 2 && /^\d+$/.test(candidateCells[0])) {
+                        tableCells = candidateCells;
+                    }
+                }
                 // Match bullet items: - description
                 const bulletMatch = line.match(/^[-*]\s+(.+)/);
                 // Match numbered items: 1. description
                 const numberedMatch = line.match(/^(\d+)\.\s+(.+)/);
-                if (tableMatch) {
+                if (tableCells) {
                     // Skip rows that already have a passing result (PASS, pass, resolved, etc.)
-                    const rowRemainder = line.slice(tableMatch.index + tableMatch[0].length);
-                    const cellValues = rowRemainder.split('|').map(c => c.trim());
-                    const hasPassResult = cellValues.some(c => /^pass$/i.test(c) || /^resolved$/i.test(c));
+                    // — checked over every cell AFTER the description column, mirroring
+                    // OLD's rowRemainder scan (which only ever saw cells past the
+                    // description, the description itself having already been consumed).
+                    const hasPassResult = tableCells.slice(2).some(c => /^pass$/i.test(c) || /^resolved$/i.test(c));
                     if (hasPassResult)
                         continue;
                     items.push({
-                        test: parseInt(tableMatch[1], 10),
-                        name: tableMatch[2].trim(),
+                        test: parseInt(tableCells[0], 10),
+                        name: tableCells[1] ?? '',
                         result: 'human_needed',
                         category: 'human_uat',
                     });

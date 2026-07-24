@@ -19,8 +19,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const core = require("./core.cjs");
-const { toPosixPath, readSubdirectories } = core;
+const coreUtilsMod = require("./core-utils.cjs");
+const { readSubdirectories } = coreUtilsMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planScan = require("./plan-scan.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -63,6 +63,33 @@ function readStateProjection(statePath) {
         };
     }
 }
+/**
+ * #1913: detect an authoritative shipped signal for a workstream so the
+ * inventory status is never trusted from the mutable STATE.md `Status` field
+ * alone. Returns true when EITHER an archived milestone snapshot is present
+ * under `<planningBase>/milestones/` OR the workstream ROADMAP carries a
+ * SHIPPED marker — both are hard to desync, unlike the hand-maintained field.
+ */
+function workstreamMilestoneShipped(roadmapPath, planningBase) {
+    try {
+        const milestonesDir = node_path_1.default.join(planningBase, 'milestones');
+        for (const entry of node_fs_1.default.readdirSync(milestonesDir, { withFileTypes: true })) {
+            if (entry.isFile() && /-ROADMAP\.md$/i.test(entry.name))
+                return true;
+        }
+    }
+    catch {
+        /* no milestones archive dir */
+    }
+    try {
+        if (/SHIPPED/i.test(node_fs_1.default.readFileSync(roadmapPath, 'utf-8')))
+            return true;
+    }
+    catch {
+        /* no roadmap */
+    }
+    return false;
+}
 function sortWorkstreamInventories(inventories, activeWorkstreamName) {
     return [...inventories].sort((a, b) => {
         const aActive = a.name === activeWorkstreamName ? 1 : 0;
@@ -99,6 +126,7 @@ function inspectWorkstream(cwd, name, options = {}) {
             state: node_fs_1.default.existsSync(p.state),
             requirements: node_fs_1.default.existsSync(p.requirements),
         },
+        milestoneShipped: workstreamMilestoneShipped(p.roadmap, p.planning),
     });
 }
 function listWorkstreamInventories(cwd) {

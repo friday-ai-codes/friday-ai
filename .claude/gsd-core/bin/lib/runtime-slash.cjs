@@ -61,8 +61,13 @@ function formatGsdSlash(commandName, runtime) {
     const tail = wsMatch && wsMatch[2] ? wsMatch[2] : '';
     const runtimeText = (typeof runtime === 'string' && runtime ? runtime : 'claude').toLowerCase();
     const rt = (0, runtime_name_policy_cjs_1.canonicalizeRuntimeName)(runtimeText) || runtimeText;
-    if (rt === 'codex') {
-        // Codex skills are invoked as $gsd-<cmd> (shell-var syntax). The command
+    // Descriptor-driven: look up commandStyle from the capability registry.
+    // Mirrors the lazy-require pattern from runtime-homes.cts §getGlobalConfigDir.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { runtimes } = require('./capability-registry.cjs');
+    const style = runtimes[rt]?.runtime?.commandStyle;
+    if (style === 'shell-var') {
+        // shell-var runtimes (currently: codex) use $gsd-<cmd> syntax. The command
         // token is lowercased because shell-var identifiers are conventionally
         // lowercase; matches the convertCodexSlash() projection in bin/install.js.
         return `$gsd-${token.toLowerCase()}${tail}`;

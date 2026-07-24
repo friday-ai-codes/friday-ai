@@ -13,11 +13,6 @@
     "kilo",
     "kilo-cli"
   ],
-  "gemini": [
-    "gemini",
-    "gemini-cli",
-    "gemini-code"
-  ],
   "codex": [
     "codex",
     "codex-app",
@@ -43,7 +38,8 @@
   "windsurf": [
     "windsurf",
     "windsurf-cli",
-    "windsurf-next"
+    "windsurf-next",
+    "devin-desktop"
   ],
   "augment": [
     "augment",
@@ -63,6 +59,9 @@
     "hermes",
     "hermes-agent",
     "hermes-cli"
+  ],
+  "kimi": [
+    "kimi"
   ],
   "codebuddy": [
     "codebuddy",

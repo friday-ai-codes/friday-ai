@@ -3,8 +3,8 @@ Safe git revert workflow. Rolls back GSD phase or plan commits using the phase m
 </purpose>
 
 <required_reading>
-@/Users/example/Projects/open-source/friday-ai/.codex/gsd-core/references/ui-brand.md
-@/Users/example/Projects/open-source/friday-ai/.codex/gsd-core/references/gate-prompts.md
+@/Users/example/Projects/open-source/friday-clean/.codex/gsd-core/references/ui-brand.md
+@/Users/example/Projects/open-source/friday-clean/.codex/gsd-core/references/gate-prompts.md
 </required_reading>
 
 <process>

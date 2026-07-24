@@ -7,7 +7,7 @@
  * from the prior hand-written .cjs; only types are added.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ROADMAP_SUBCOMMANDS = exports.VALIDATE_SUBCOMMANDS = exports.PHASES_SUBCOMMANDS = exports.PHASE_SUBCOMMANDS = exports.INIT_SUBCOMMANDS = exports.VERIFY_SUBCOMMANDS = exports.STATE_SUBCOMMANDS = exports.NON_FAMILY_COMMAND_ALIASES = exports.ROADMAP_COMMAND_ALIASES = exports.VALIDATE_COMMAND_ALIASES = exports.PHASES_COMMAND_ALIASES = exports.PHASE_COMMAND_ALIASES = exports.INIT_COMMAND_ALIASES = exports.VERIFY_COMMAND_ALIASES = exports.STATE_COMMAND_ALIASES = void 0;
+exports.EVAL_SUBCOMMANDS = exports.EVAL_COMMAND_ALIASES = exports.ROADMAP_SUBCOMMANDS = exports.VALIDATE_SUBCOMMANDS = exports.PHASES_SUBCOMMANDS = exports.PHASE_SUBCOMMANDS = exports.INIT_SUBCOMMANDS = exports.VERIFY_SUBCOMMANDS = exports.STATE_SUBCOMMANDS = exports.NON_FAMILY_COMMAND_ALIASES = exports.ROADMAP_COMMAND_ALIASES = exports.VALIDATE_COMMAND_ALIASES = exports.PHASES_COMMAND_ALIASES = exports.PHASE_COMMAND_ALIASES = exports.INIT_COMMAND_ALIASES = exports.VERIFY_COMMAND_ALIASES = exports.STATE_COMMAND_ALIASES = void 0;
 exports.STATE_COMMAND_ALIASES = [
     {
         "canonical": "state.load",
@@ -160,6 +160,14 @@ exports.STATE_COMMAND_ALIASES = [
         "mutation": true
     },
     {
+        "canonical": "state.rebuild",
+        "aliases": [
+            "state rebuild"
+        ],
+        "subcommand": "rebuild",
+        "mutation": true
+    },
+    {
         "canonical": "state.milestone-switch",
         "aliases": [
             "state milestone-switch"
@@ -273,6 +281,14 @@ exports.INIT_COMMAND_ALIASES = [
             "init new-milestone"
         ],
         "subcommand": "new-milestone",
+        "mutation": false
+    },
+    {
+        "canonical": "init.onboard",
+        "aliases": [
+            "init onboard"
+        ],
+        "subcommand": "onboard",
         "mutation": false
     },
     {
@@ -444,6 +460,14 @@ exports.PHASE_COMMAND_ALIASES = [
         ],
         "subcommand": "scaffold",
         "mutation": true
+    },
+    {
+        "canonical": "phase.list-plans",
+        "aliases": [
+            "phase list-plans"
+        ],
+        "subcommand": "list-plans",
+        "mutation": false
     }
 ];
 exports.PHASES_COMMAND_ALIASES = [
@@ -807,3 +831,12 @@ exports.PHASE_SUBCOMMANDS = exports.PHASE_COMMAND_ALIASES.map((entry) => entry.s
 exports.PHASES_SUBCOMMANDS = exports.PHASES_COMMAND_ALIASES.map((entry) => entry.subcommand);
 exports.VALIDATE_SUBCOMMANDS = exports.VALIDATE_COMMAND_ALIASES.map((entry) => entry.subcommand);
 exports.ROADMAP_SUBCOMMANDS = exports.ROADMAP_COMMAND_ALIASES.map((entry) => entry.subcommand);
+exports.EVAL_COMMAND_ALIASES = [
+    {
+        "canonical": "eval.score",
+        "aliases": ["eval score"],
+        "subcommand": "score",
+        "mutation": false
+    }
+];
+exports.EVAL_SUBCOMMANDS = exports.EVAL_COMMAND_ALIASES.map((entry) => entry.subcommand);

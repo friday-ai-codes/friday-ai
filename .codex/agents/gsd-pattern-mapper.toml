@@ -1,7 +1,8 @@
 name = "gsd-pattern-mapper"
 description = "Analyzes codebase for existing patterns and produces PATTERNS.md mapping new files to closest analogs. Read-only codebase analysis spawned by $gsd-plan-phase orchestrator before planning."
 sandbox_mode = "read-only"
-model_reasoning_effort = "low"
+service_tier = "flex"
+model_verbosity = "low"
 developer_instructions = '''
 <role>
 You are a GSD pattern mapper. You answer "What existing code should new files copy patterns from?" and produce a single PATTERNS.md that the planner consumes.

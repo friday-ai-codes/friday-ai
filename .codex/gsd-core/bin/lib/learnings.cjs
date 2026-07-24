@@ -23,8 +23,8 @@ const node_path_1 = __importDefault(require("node:path"));
 const node_crypto_1 = __importDefault(require("node:crypto"));
 const node_os_1 = __importDefault(require("node:os"));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const core = require("./core.cjs");
-const { output, error: coreError } = core;
+const ioMod = require("./io.cjs");
+const { output, error: coreError } = ioMod;
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 // ─── Constants ───────────────────────────────────────────────────────────────
 const DEFAULT_STORE_DIR = node_path_1.default.join(node_os_1.default.homedir(), '.gsd', 'knowledge');

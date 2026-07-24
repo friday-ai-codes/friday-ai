@@ -7,8 +7,8 @@
  * from the prior hand-written .cjs; only types are added.
  */
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const core = require("./core.cjs");
-const { output, error, ERROR_REASON } = core;
+const io = require("./io.cjs");
+const { output, error, ERROR_REASON } = io;
 // ─── Constants ────────────────────────────────────────────────────────────────
 const QUOTA_SENTINELS = [
     '429',

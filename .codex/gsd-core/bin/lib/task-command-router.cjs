@@ -12,8 +12,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const core = require("./core.cjs");
-const { output, error, ERROR_REASON } = core;
+const ioMod = require("./io.cjs");
+const { output, error, ERROR_REASON } = ioMod;
 // ─── Implementation ───────────────────────────────────────────────────────────
 function isBehaviorAddingTaskContent(content) {
     const tddTrue = /\btdd\s*=\s*["']true["']/i.test(content);

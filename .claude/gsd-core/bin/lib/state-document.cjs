@@ -31,25 +31,70 @@ function existingProgressExceedsDerived(existingProgress, derivedProgress, key) 
     const derived = toFiniteNumber(derivedProgress[key]);
     return existing !== null && derived !== null && existing > derived;
 }
+/**
+ * Return true if a pipe-table row's first cell is a separator cell (`---`
+ * variants) rather than a field name.  Prevents the separator row
+ * `| --- | --- |` from being treated as a field named "---".
+ */
+function isTableSeparatorRow(firstCell) {
+    // A separator cell contains only dashes, colons (alignment hints), and whitespace.
+    return /^[\s\-:]+$/.test(firstCell.trim());
+}
+/**
+ * Build a regex that matches a pipe-table row `| FieldName | value |` for the
+ * given (already-escaped) field name.  The match is case-insensitive and
+ * tolerates variable amounts of whitespace around the cell contents.
+ *
+ * Capture group 1: leading pipe + whitespace before the field cell
+ * Capture group 2: the field name cell text (trimmed)
+ * Capture group 3: whitespace between field cell and separator pipe
+ * Capture group 4: the value cell text (trimmed)
+ * Capture group 5: trailing whitespace + closing pipe(s)
+ *
+ * We use a single-line match (`m` flag so ^ anchors work on each line) to
+ * avoid cross-row replacement.
+ */
+function tableRowPattern(escapedFieldName) {
+    return new RegExp(`^(\\|[ \\t]*)(${escapedFieldName})([ \\t]*\\|[ \\t]*)([^|\\n]*?)([ \\t]*\\|[ \\t]*)$`, 'im');
+}
 function stateExtractField(content, fieldName) {
     const escaped = escapeRegex(fieldName);
+    // Bold inline format: **FieldName:** value
     const boldPattern = new RegExp(`\\*\\*${escaped}:\\*\\*[ \\t]*(.+)`, 'i');
     const boldMatch = content.match(boldPattern);
     if (boldMatch)
         return boldMatch[1].trim();
+    // Plain line-start format: FieldName: value
     const plainPattern = new RegExp(`^${escaped}:[ \\t]*(.+)`, 'im');
     const plainMatch = content.match(plainPattern);
-    return plainMatch ? plainMatch[1].trim() : null;
+    if (plainMatch)
+        return plainMatch[1].trim();
+    // Pipe-table format: | FieldName | value |
+    // (Separator rows such as `| --- | --- |` are excluded.)
+    const tableMatch = content.match(tableRowPattern(escaped));
+    if (tableMatch && !isTableSeparatorRow(tableMatch[2]))
+        return tableMatch[4].trim();
+    return null;
 }
 function stateReplaceField(content, fieldName, newValue) {
     const escaped = escapeRegex(fieldName);
+    // Bold inline format: **FieldName:** value
     const boldPattern = new RegExp(`(\\*\\*${escaped}:\\*\\*\\s*)(.*)`, 'i');
     if (boldPattern.test(content)) {
         return content.replace(boldPattern, (_match, prefix) => `${prefix}${newValue}`);
     }
+    // Plain line-start format: FieldName: value
     const plainPattern = new RegExp(`(^${escaped}:\\s*)(.*)`, 'im');
     if (plainPattern.test(content)) {
         return content.replace(plainPattern, (_match, prefix) => `${prefix}${newValue}`);
+    }
+    // Pipe-table format: | FieldName | value |
+    // Preserve the surrounding pipe/whitespace structure; only swap the value cell.
+    const tblPat = tableRowPattern(escaped);
+    const tblMatch = content.match(tblPat);
+    if (tblMatch && !isTableSeparatorRow(tblMatch[2])) {
+        // Reconstruct the row, preserving the original surrounding whitespace/pipes.
+        return content.replace(tblPat, (_m, leadPipe, fieldCell, midPipe, _oldVal, trailPipe) => `${leadPipe}${fieldCell}${midPipe}${newValue}${trailPipe}`);
     }
     return null;
 }
@@ -108,8 +153,10 @@ function shouldPreserveExistingProgress(existingProgress, derivedProgress) {
         return false;
     const existing = existingProgress;
     const derived = derivedProgress;
-    return (existingProgressExceedsDerived(existing, derived, 'total_phases') ||
-        existingProgressExceedsDerived(existing, derived, 'completed_phases') ||
+    // total_phases is intentionally excluded from the ratchet: it must always
+    // take the freshly derived value so it can correct downward (#1446).
+    // Only completed_phases, total_plans, and completed_plans keep ratchet behaviour.
+    return (existingProgressExceedsDerived(existing, derived, 'completed_phases') ||
         existingProgressExceedsDerived(existing, derived, 'total_plans') ||
         existingProgressExceedsDerived(existing, derived, 'completed_plans'));
 }
@@ -176,6 +223,14 @@ exports.KNOWN_STATUS_PATTERNS = [
     /^Phase\s+\d+\s+complete/i,
     /^Verifying Phase\s+\d+/i,
     /^Phase complete/i,
+    // #1070: LLM executors (e.g. OpenCode) may write "Complete ✓" or bare "Complete"
+    // when finishing a phase.  Only bare terminal markers yield to the next phase's
+    // "Ready to execute" during planned-phase.  The pattern is anchored at both ends
+    // so that statuses with trailing prose (e.g. "Complete but needs manual QA",
+    // "Complete — ready for verification") are NOT matched and are preserved as
+    // executor-authored values.  Only exact forms like "Complete", "Complete ✓",
+    // "Complete✓", or "Complete ☑ " (trailing whitespace) match.
+    /^Complete\s*[✓✔✅☑]?\s*$/i,
 ];
 /**
  * Returns true when the given value is a known template default for the field,
