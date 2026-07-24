@@ -59,6 +59,33 @@ _GIT_IDENTITY_ENV = {
     "GIT_COMMITTER_EMAIL": "ai@friday.codes",
 }
 
+# Friday 运行时暂存目录（写入工作区的 usage.json / answer.json 问答协议），
+# 属 Friday 自身产物而非用户改动，不应触发 explore 模式洁净度校验失败。
+_FRIDAY_SCRATCH_DIR = ".friday"
+
+
+def _filter_friday_scratch(status_output: str) -> str:
+    """从 ``git status --porcelain`` 输出中剔除 Friday 自己的 ``.friday/`` 暂存目录。
+
+    正常已在 setup 阶段写入 ``.git/info/exclude``（见 GitOperations），此处为兜底：
+    即便 exclude 因故未生效，explore 洁净度校验也不会把 Friday 自身产物误判为用户改动。
+    保留其余所有条目（含真实的未跟踪 / 已修改文件），逐行按 porcelain v1 解析路径。
+    """
+    kept: list[str] = []
+    for line in status_output.splitlines():
+        if not line.strip():
+            continue
+        # porcelain v1：前两列为状态码 XY，第 3 列为空格，其后为路径（重命名为 "old -> new"）
+        path = line[3:].strip() if len(line) > 3 else ""
+        if path.startswith('"') and path.endswith('"'):
+            path = path[1:-1]
+        if " -> " in path:  # 重命名/复制：取目标路径判断
+            path = path.split(" -> ", 1)[1].strip().strip('"')
+        if path == _FRIDAY_SCRATCH_DIR or path.startswith(f"{_FRIDAY_SCRATCH_DIR}/"):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
 
 class TaskRunner:
     """Main task runner that orchestrates the entire task execution."""
@@ -257,6 +284,9 @@ class TaskRunner:
                 "workspace",
             )
             return False
+
+        # 剔除 Friday 自身写入工作区的 .friday/ 暂存目录，避免把自己的产物当成用户未提交变更。
+        status_output = _filter_friday_scratch(status_output)
 
         if status_output.strip():
             log.error(

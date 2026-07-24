@@ -90,6 +90,43 @@ class TestCheckWorkspaceClean:
         assert status_output in error_msg
 
     @pytest.mark.asyncio
+    async def test_only_friday_scratch_is_clean(self, mock_task_runner, mock_log):
+        """仅有 Friday 自身的 .friday/ 暂存目录时应视为干净（返回 True）。
+
+        复现并锁定线上报错「Explore 模式结束后工作区存在未提交变更: ?? .friday/」：
+        Friday 会往 /workspace/.friday/ 写 usage.json，不应被当成用户未提交变更。
+        """
+        mock_task_runner.git_ops.repo.git.status.return_value = "?? .friday/"
+        result = await mock_task_runner._check_workspace_clean(mock_log)
+        assert result is True
+        mock_log.info.assert_called_with(
+            "workspace_clean", task_id=mock_task_runner.config.task_id
+        )
+
+    @pytest.mark.asyncio
+    async def test_friday_scratch_file_variants_are_clean(self, mock_task_runner, mock_log):
+        """.friday/ 下具体文件（usage.json / answer.json）也应被剔除、视为干净。"""
+        mock_task_runner.git_ops.repo.git.status.return_value = (
+            "?? .friday/usage.json\n?? .friday/answer.json"
+        )
+        result = await mock_task_runner._check_workspace_clean(mock_log)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_friday_scratch_mixed_with_real_change_is_dirty(
+        self, mock_task_runner, mock_log
+    ):
+        """混入真实用户改动时仍判脏（返回 False），且报错里不含被过滤的 .friday/。"""
+        mock_task_runner.git_ops.repo.git.status.return_value = (
+            "?? .friday/usage.json\n M src/main.py"
+        )
+        result = await mock_task_runner._check_workspace_clean(mock_log)
+        assert result is False
+        error_msg = mock_task_runner.callback.report_error.call_args[0][0]
+        assert "src/main.py" in error_msg
+        assert ".friday/" not in error_msg
+
+    @pytest.mark.asyncio
     async def test_repo_none_returns_true(self, mock_task_runner, mock_log):
         """Test 5: repo 为 None 时返回 True（无法检查视为通过）。"""
         mock_task_runner.git_ops.repo = None

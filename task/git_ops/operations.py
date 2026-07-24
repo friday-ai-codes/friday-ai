@@ -98,6 +98,12 @@ class GitOperations:
         await self._clone_repo()
         await self._checkout_branch()
 
+        # 把 Friday 自己的运行时暂存目录 .friday/ 写进本地 .git/info/exclude：
+        # 容器执行期间 Friday 会往 /workspace/.friday/ 写 usage.json / answer.json（问答
+        # 协议），这不是用户改动。若不排除，explore 模式的"工作区必须干净"校验会把
+        # `?? .friday/` 当成未提交变更而失败；编码模式的 `git add -A` 也可能误提交它。
+        self._ensure_friday_scratch_excluded()
+
         # Phase 22-04 / EXCL-02：clone+checkout 后按 exclude 规则物理删除被排除文件，使容器内
         # agent 不可见（T-22-13）。prune 跳过 .git/ 保护 git 元数据（T-22-15）；被排除文件持久
         # 删除失败 → ExclusionPruneError 向上传播使 setup 失败（fail-closed，T-22-16：宁可任务
@@ -117,6 +123,32 @@ class GitOperations:
         self._assert_workspace_populated()
 
         log.info("Git setup complete", branch=self.config.git_branch)
+
+    def _ensure_friday_scratch_excluded(self) -> None:
+        """把 ``.friday/`` 追加进本地 ``.git/info/exclude``（best-effort）。
+
+        info/exclude 是仓库本地忽略规则，不改用户仓库自身的 ``.gitignore``，最小侵入。
+        排除后 ``.friday/``（Friday 运行时暂存：usage.json / answer.json 等）不再出现在
+        ``git status``、也不会被 ``git add -A`` 误纳入。失败仅告警，绝不中断 setup。
+        """
+        if self.repo is None:
+            return
+        try:
+            exclude_file = Path(self.repo.git_dir) / "info" / "exclude"
+            exclude_file.parent.mkdir(parents=True, exist_ok=True)
+            existing = exclude_file.read_text() if exclude_file.exists() else ""
+            if ".friday/" in existing.split():
+                return
+            prefix = "" if (not existing or existing.endswith("\n")) else "\n"
+            with exclude_file.open("a") as fh:
+                fh.write(f"{prefix}.friday/\n")
+            logger.info("friday_scratch_excluded", task_id=self.config.task_id)
+        except Exception as exc:  # noqa: BLE001 — 排除失败不应中断 setup（clean 检查侧有兜底）
+            logger.warning(
+                "friday_scratch_exclude_failed",
+                error=str(exc),
+                task_id=self.config.task_id,
+            )
 
     def _assert_workspace_populated(self) -> None:
         """校验克隆后的工作区确实含仓库工作树文件（除 .git 外非空），否则 fail-closed。"""
@@ -510,8 +542,8 @@ class GitOperations:
         ``friday/`` 前缀（"Normalize: ensure friday/ prefix if not present"），
         是早期 Friday 还在用 ``friday/task-{task_id}`` 唯一命名时的兜底。implementation 引入模板分支名（``feat20260519.xxx`` / ``fix20260519.xxx``）后，
         server 端通过 ``FRIDAY_TASK_BRANCH_STRATEGY`` 把模板名传进容器，但
-        Runner 这里把 ``fix20260519.study-app-page-apps-favorites`` 静默改成
-        ``friday/fix20260519.study-app-page-apps-favorites`` —— 跟 server 端
+        Runner 这里把 ``fix20260519.example-app-page-apps-favorites`` 静默改成
+        ``friday/fix20260519.example-app-page-apps-favorites`` —— 跟 server 端
         校验/记录的分支名完全不一致，GitLab 上的分支名也错位。改为严格尊重
         显式传入的 ``branch_strategy`` 字面值，仅在 caller 不传时落到
         ``friday/task-{task_id}`` 默认值。
