@@ -10,8 +10,8 @@
 - 硬取数路径（`get_work_item`）遇非 JSON → 抛 `FeishuResponseError`（fail-loud）。
 
 所有 HTTP 经 `@respx.mock` 拦截（先 mock token 端点再 mock 业务端点），pytest-socket
-隔离下不发真实网络。fixture 字段形状取 DOMAIN-MODEL.md §16 实测值（story 7010225564 /
-issue 5580252273，project_key 622c10eb5daaee81db915189）。
+隔离下不发真实网络。fixture 字段形状取 DOMAIN-MODEL.md §16 实测值（story 1000000002 /
+issue 1000000006，project_key 000000000000000000000001）。
 """
 
 from __future__ import annotations
@@ -24,31 +24,31 @@ from services.feishu import FeishuClient, WorkItemInfo
 from services.feishu_parsing import FeishuResponseError
 
 API_BASE = "https://project.feishu.cn"
-PROJECT_KEY = "622c10eb5daaee81db915189"
-WORK_ITEM_ID = 5580252273
+PROJECT_KEY = "000000000000000000000001"
+WORK_ITEM_ID = 1000000006
 
 
 # === DOMAIN §16 实测字段 fixture ===
 
 ISSUE_RAW_FIELDS = [
     {
-        "field_key": "field_bcff9b",
+        "field_key": "field_000001",
         "field_name": "需求文档",
         "field_value": "https://tenant.feishu.cn/docx/doc_token_abc",
         "field_type_key": "link",
         "field_alias": "prd_url",
     },
     {
-        "field_key": "field_528f19",
+        "field_key": "field_000002",
         "field_name": "小组",
-        "field_value": {"label": "学习A", "value": "opt_1"},
+        "field_value": {"label": "示例组A", "value": "opt_1"},
         "field_type_key": "select",
-        "field_alias": "study_platform_group",
+        "field_alias": "example_platform_group",
     },
     {
-        "field_key": "field_caadeb",
+        "field_key": "field_000008",
         "field_name": "所属项目",
-        "field_value": [7010938167],
+        "field_value": [1000000004],
         "field_type_key": "work_item_related_multi_select",
         "field_alias": None,
     },
@@ -160,13 +160,13 @@ async def test_get_work_item_preserves_full_feishu_fields() -> None:
     # feishu_fields：完整对象保留元数据
     assert isinstance(info.feishu_fields, list)
     prd = next(f for f in info.feishu_fields if f["field_alias"] == "prd_url")
-    assert prd["field_key"] == "field_bcff9b"
+    assert prd["field_key"] == "field_000001"
     assert prd["field_name"] == "需求文档"
     assert prd["field_type_key"] == "link"
 
     # fields：向后兼容拍平 {field_key: field_value}
-    assert info.fields["field_bcff9b"] == "https://tenant.feishu.cn/docx/doc_token_abc"
-    assert info.fields["field_528f19"] == {"label": "学习A", "value": "opt_1"}
+    assert info.fields["field_000001"] == "https://tenant.feishu.cn/docx/doc_token_abc"
+    assert info.fields["field_000002"] == {"label": "示例组A", "value": "opt_1"}
 
     # status 仍取 work_item_status.state_key
     assert info.status == "in_progress"
@@ -326,7 +326,7 @@ async def test_get_work_item_relations_parses_with_origin() -> None:
                     "relations": [
                         {
                             "relation_type": "parent",
-                            "work_item_id": 7010938167,
+                            "work_item_id": 1000000004,
                             "work_item_type": "project",
                             "name": "所属项目",
                             "status": "open",
@@ -342,7 +342,7 @@ async def test_get_work_item_relations_parses_with_origin() -> None:
 
     assert len(relations) == 1
     assert relations[0]["relation_type"] == "parent"
-    assert relations[0]["work_item_id"] == 7010938167
+    assert relations[0]["work_item_id"] == 1000000004
     assert relations[0]["origin"] == "feishu_relation_api"
 
 

@@ -2,10 +2,10 @@ sub_project,file_path,line,kind,expected_target_path,expected_callee_symbol
 apps/courses,apps/courses/src/services/subscribe.ts,1,import,packages/util-global/src/index.ts,
 apps/courses,apps/courses/src/services/subscribe.ts,2,import,apps/courses/src/services/types.ts,
 apps/courses,apps/courses/src/components/Footer/index.vue,7,import,packages/onion-ui/src/index.ts,
-apps/courses,apps/courses/src/components/Footer/index.vue,8,import,packages/onion-utils/src/index.ts,
+apps/courses,apps/courses/src/components/Footer/index.vue,8,import,packages/shared-utils/src/index.ts,
 apps/courses,apps/courses/src/components/Footer/index.vue,15,call,,onChapterChange
 apps/studyCheckList,apps/studyCheckList/src/services/list.ts,1,import,packages/util-global/src/index.ts,
 apps/home,apps/home/src/App.vue,5,import,packages/onion-ui/src/index.ts,
 apps/explore,apps/explore/src/services/api.ts,1,import,packages/util-global/src/index.ts,
-packages/onion-utils,packages/onion-utils/src/index.ts,1,import,,
+packages/shared-utils,packages/shared-utils/src/index.ts,1,import,,
 apps/courses,apps/courses/src/composables/useStudyFlow.ts,2,call,,getStudyFlowTopicUpdateSubscribe

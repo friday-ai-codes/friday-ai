@@ -53,7 +53,7 @@ metrics:
 - `get_work_item_relations` `.json()` 换 `safe_response_json`，非 JSON（PF-10 实测 `Extra data: line 1 column 5`）→ `[]` + warning，绝不抛；err_code≠0 仍降级 `[]`；关系项新增 `origin="feishu_relation_api"` 标注（主路径不依赖此端点）。
 
 ### Task 3 — canonical client respx 单测 + 回归 + 格式（test `244d31f3`）
-- 新建 `server/tests/services/test_feishu_service.py`（9 用例），`@respx.mock` + `pytest.mark.asyncio`，直接传凭证构造 client 绕过 DB 工厂，先 mock token 端点再 mock 业务端点；fixture 取 DOMAIN §16 形状（issue 5580252273，含 `field_bcff9b`(prd_url link)/`field_528f19`(select)/`field_caadeb`(关联)/description 富文本）。
+- 新建 `server/tests/services/test_feishu_service.py`（9 用例），`@respx.mock` + `pytest.mark.asyncio`，直接传凭证构造 client 绕过 DB 工厂，先 mock token 端点再 mock 业务端点；fixture 取 DOMAIN §16 形状（issue 1000000006，含 `field_000001`(prd_url link)/`field_000002`(select)/`field_000008`(关联)/description 富文本）。
 - FIX-01/02/03/04 各有断言覆盖；ruff format 通过。
 
 ## Verification Results

@@ -107,9 +107,9 @@ class TestEvaluateRelevConfidence:
         # top1=0.8214, top2=0.7841: ratio=0.9546, gap=0.0373 → high（gap >= 0.03）
         result = evaluate_relev_confidence({
             "candidates": [
-                {"repository_id": "study-app", "score": 0.8214, "selected_by_ai": True},
+                {"repository_id": "example-app", "score": 0.8214, "selected_by_ai": True},
                 {"repository_id": "onion-learning", "score": 0.7841, "selected_by_ai": True},
-                {"repository_id": "onion-practice", "score": 0.7797, "selected_by_ai": True},
+                {"repository_id": "example-practice", "score": 0.7797, "selected_by_ai": True},
             ],
         })
         assert result.level == "high_confidence"

@@ -30,12 +30,12 @@
 ### 完整 fields[] 元数据（FIX-04 / PF-12，Grey Area 3）
 - `WorkItemInfo` **新增** `feishu_fields: list[dict]` 属性，保留完整 `fields[]` 对象数组（每项含 `field_key`/`field_name`/`field_value`/`field_type_key`/`field_alias`），对齐 DOMAIN §12.1 `WorkItem.feishu_fields` 与 §16 字段对象形状。
 - **保留**既有 `fields: dict[str, Any]`（拍平 `{field_key: field_value}`）作向后兼容，现有调用方不受影响；新逻辑读 `feishu_fields`。
-- 提供按 alias/type 提取的 helper：`prd_url`（alias `prd_url` / `field_bcff9b`）、`tech_doc_url`、select 类取 `{label, value}` 的 label、关联类取 `[id...]`（DOMAIN §16 实测映射）。
+- 提供按 alias/type 提取的 helper：`prd_url`（alias `prd_url` / `field_000001`）、`tech_doc_url`、select 类取 `{label, value}` 的 label、关联类取 `[id...]`（DOMAIN §16 实测映射）。
 - select 字段 value 形状 `{label, value}`、关联字段为 `[id...]`、`work_item_status` 含 `state_key`/`history[]`/`current_nodes`/`state_times` 一并可解析（为 Phase 28 派生 `status_display_name` 铺路，但本 phase 仅暴露解析能力，不落库）。
 
 ### 关系派生（FIX-02 / PF-10，Grey Area 4）
 - 关系**主路径改为从关联字段派生**：新增纯函数 `derive_relations_from_fields(feishu_fields) -> list[RelationSpec]`，从 `work_item_related_multi_select` 类字段派生：
-  - `field_caadeb`（所属项目）→ `belongs_to_project`
+  - `field_000008`（所属项目）→ `belongs_to_project`
   - `planning_sprint`（所属迭代）→ `sprint`
   - `planning_version` / `actual_online_version`（版本）→ `version`
   - 其余关联字段 → `related`
@@ -55,8 +55,8 @@
 
 ### 测试策略（Claude's Discretion 范围内）
 - 用 `respx`（既有栈，httpx mocking）+ `pytest-asyncio` 写单测，**不发真实网络**（`pytest-socket` 隔离）。
-- 覆盖：① 不传 type 时 fail-loud / 传 issue type 正确取数；② `feishu_fields` 完整对象保留（断言能取到 alias `prd_url` 与 select label）；③ `derive_relations_from_fields` 从 `field_caadeb=[7010938167]` 正确派生 `belongs_to_project`；④ `get_comments` 遇非 JSON 响应 fail-soft 返回 `[]` 不崩 + 正常响应正确解析；⑤ relation 端点 JSON 解析错降级返回 `[]`。
-- 用 DOMAIN §16 实测样例值（story 7010225564 / issue 5580252273 字段）作 fixture，保证贴合真实形状。
+- 覆盖：① 不传 type 时 fail-loud / 传 issue type 正确取数；② `feishu_fields` 完整对象保留（断言能取到 alias `prd_url` 与 select label）；③ `derive_relations_from_fields` 从 `field_000008=[1000000004]` 正确派生 `belongs_to_project`；④ `get_comments` 遇非 JSON 响应 fail-soft 返回 `[]` 不崩 + 正常响应正确解析；⑤ relation 端点 JSON 解析错降级返回 `[]`。
+- 用 DOMAIN §16 实测样例值（story 1000000002 / issue 1000000006 字段）作 fixture，保证贴合真实形状。
 
 ### Claude's Discretion
 - 共享 helper 模块的确切文件名/拆分粒度、`RelationSpec` 的具体 dataclass 形状、helper 函数命名、是否给 `WorkItemInfo` 加 `parse_*` 类方法 —— 由实现按既有约定（snake_case、services 层、中文 docstring）决定。
@@ -87,10 +87,10 @@
 <specifics>
 ## Specific Ideas
 
-- DOMAIN §16 实测字段映射是字段派生/测试 fixture 的权威来源：`prd_url=field_bcff9b(alias prd_url)`、`所属项目=field_caadeb(work_item_related_multi_select)`、`planning_sprint`、`planning_version`/`actual_online_version`、select value 形状 `{label,value}`。
+- DOMAIN §16 实测字段映射是字段派生/测试 fixture 的权威来源：`prd_url=field_000001(alias prd_url)`、`所属项目=field_000008(work_item_related_multi_select)`、`planning_sprint`、`planning_version`/`actual_online_version`、select value 形状 `{label,value}`。
 - PF-09 实测：type=`project` 查容器型返回 `WorkItem Not Found(30005)` → 容器型不在本 phase。
 - PF-10 实测：`get_work_item_relations` 返回 `Extra data: line 1 column 5`（非 JSON）→ 必须防御式解析。
-- 真实样例工作项：story `7010225564`、issue `5580252273`（project_key `622c10eb5daaee81db915189`，simple_name `study_platform`）。
+- 真实样例工作项：story `1000000002`、issue `1000000006`（project_key `000000000000000000000001`，simple_name `example_platform`）。
 </specifics>
 
 <deferred>

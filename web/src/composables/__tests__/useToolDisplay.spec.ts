@@ -15,7 +15,7 @@ import {
 const RELEVANCE_RESULT = JSON.stringify({
   data: {
     candidates: [
-      { repository_id: 'uuid-a', repository_name: 'study-app', score: 0.82, level: 'high', evidence: '命中 2 个文件' },
+      { repository_id: 'uuid-a', repository_name: 'example-app', score: 0.82, level: 'high', evidence: '命中 2 个文件' },
       { repository_id: 'uuid-b', repository_name: 'question-bank', score: 0.55, level: 'medium', evidence: '语义相关' },
     ],
     threshold: 0.5,
@@ -32,12 +32,12 @@ describe('useToolDisplay', () => {
   it('relevanceCandidates 解析 {data:{candidates}} 结构', () => {
     const cands = relevanceCandidates(RELEVANCE_RESULT)
     expect(cands).toHaveLength(2)
-    expect(cands[0]).toMatchObject({ id: 'uuid-a', name: 'study-app', level: 'high' })
+    expect(cands[0]).toMatchObject({ id: 'uuid-a', name: 'example-app', level: 'high' })
   })
 
   it('collectRepoNames 从相关性结果抽取 id→name', () => {
     const map = collectRepoNames('analyze_repository_relevance', {}, RELEVANCE_RESULT)
-    expect(map).toEqual({ 'uuid-a': 'study-app', 'uuid-b': 'question-bank' })
+    expect(map).toEqual({ 'uuid-a': 'example-app', 'uuid-b': 'question-bank' })
   })
 
   it('collectRepoNames 从 coding plan 推荐仓库抽取 id→name', () => {
@@ -46,7 +46,7 @@ describe('useToolDisplay', () => {
   })
 
   it('searchedRepoLabel：指定 repository_id → 仓库名称', () => {
-    expect(searchedRepoLabel({ repository_id: 'uuid-a' }, { 'uuid-a': 'study-app' })).toBe('study-app')
+    expect(searchedRepoLabel({ repository_id: 'uuid-a' }, { 'uuid-a': 'example-app' })).toBe('example-app')
   })
 
   it('searchedRepoLabel：无 repository_id（全空间）→ 全部仓库', () => {
@@ -63,9 +63,9 @@ describe('useToolDisplay', () => {
       'search_repository_code',
       { query: 'entrance', repository_id: 'uuid-a' },
       'ok',
-      { 'uuid-a': 'study-app' },
+      { 'uuid-a': 'example-app' },
     )
-    expect(action).toContain('study-app')
+    expect(action).toContain('example-app')
     expect(action).toContain('entrance')
     expect(action).toContain('RAG')
     expect(action).not.toContain('uuid-a')
@@ -78,7 +78,7 @@ describe('useToolDisplay', () => {
 
   it('toolAction(relevance)：摘要列出关联到的仓库名称', () => {
     const action = toolAction('analyze_repository_relevance', { query: 'entrance' }, RELEVANCE_RESULT)
-    expect(action).toContain('study-app')
+    expect(action).toContain('example-app')
     expect(action).toContain('question-bank')
   })
 
@@ -91,7 +91,7 @@ describe('useToolDisplay', () => {
   })
 
   it('repoInitial 取仓库名首字符大写', () => {
-    expect(repoInitial('study-app')).toBe('S')
+    expect(repoInitial('example-app')).toBe('S')
     expect(repoInitial('')).toBe('?')
   })
 })

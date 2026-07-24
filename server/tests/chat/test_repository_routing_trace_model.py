@@ -46,7 +46,7 @@ def agent_session(db):
 def sample_candidate():
     return {
         "repository_id": str(uuid.uuid4()),
-        "repository_name": "study-app",
+        "repository_name": "example-app",
         "score": 0.92,
         "level": "high",
         "evidence": "命中 3 个相关文件：a.py / b.py / c.py",

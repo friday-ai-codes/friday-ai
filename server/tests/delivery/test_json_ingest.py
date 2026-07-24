@@ -38,14 +38,14 @@ async def _make_project(name: str, key: str):
 
 
 async def test_resolve_space_by_key() -> None:
-    await _make_project("学习工具与平台", "study_platform")
-    project, reason = await aresolve_space("study_platform")
+    await _make_project("示例平台", "example_platform")
+    project, reason = await aresolve_space("example_platform")
     assert project is not None
     assert reason == SpaceResolution.BY_KEY
 
 
 async def test_resolve_space_by_id() -> None:
-    p = await _make_project("学习工具与平台", "study_platform")
+    p = await _make_project("示例平台", "example_platform")
     project, reason = await aresolve_space(str(p.id))
     assert project is not None
     assert project.id == p.id
@@ -53,15 +53,15 @@ async def test_resolve_space_by_id() -> None:
 
 
 async def test_resolve_space_by_fuzzy_name() -> None:
-    await _make_project("学习工具与平台", "study_platform")
-    project, reason = await aresolve_space("学习工具")
+    await _make_project("示例平台", "example_platform")
+    project, reason = await aresolve_space("示例")
     assert project is not None
-    assert project.name == "学习工具与平台"
+    assert project.name == "示例平台"
     assert reason == SpaceResolution.BY_NAME_FUZZY
 
 
 async def test_resolve_space_not_found() -> None:
-    await _make_project("学习工具与平台", "study_platform")
+    await _make_project("示例平台", "example_platform")
     project, reason = await aresolve_space("不存在的空间XYZ")
     assert project is None
     assert reason == SpaceResolution.NOT_FOUND
@@ -81,7 +81,7 @@ async def test_resolve_space_ambiguous() -> None:
 
 
 async def test_resolve_endpoint_reports_per_item(monkeypatch) -> None:
-    await _make_project("学习工具与平台", "study_platform")
+    await _make_project("示例平台", "example_platform")
     headers = await _make_user_headers()
 
     client = AsyncClient()
@@ -89,9 +89,9 @@ async def test_resolve_endpoint_reports_per_item(monkeypatch) -> None:
         "/api/delivery/ingest/resolve/",
         data={
             "items": [
-                {"space": "学习工具", "work_item_id": 6935339052, "work_item_type": "story"},
+                {"space": "示例", "work_item_id": 1000000005, "work_item_type": "story"},
                 {"space": "不存在XYZ", "work_item_id": 1},
-                {"space": "study_platform", "work_item_id": 0},
+                {"space": "example_platform", "work_item_id": 0},
             ]
         },
         content_type="application/json",
@@ -100,8 +100,8 @@ async def test_resolve_endpoint_reports_per_item(monkeypatch) -> None:
     assert resp.status_code == 200, resp.content
     items = resp.json()["items"]
     assert items[0]["resolved"] is True
-    assert items[0]["feishu_project_key"] == "study_platform"
-    assert items[0]["board_url"].endswith("/study_platform/story/detail/6935339052")
+    assert items[0]["feishu_project_key"] == "example_platform"
+    assert items[0]["board_url"].endswith("/example_platform/story/detail/1000000005")
     assert items[1]["resolved"] is False  # 空间未找到
     assert items[2]["resolved"] is False  # work_item_id 非法
 
@@ -112,7 +112,7 @@ async def test_resolve_endpoint_reports_per_item(monkeypatch) -> None:
 
 
 async def test_batch_json_dispatches_resolved_and_skips_rest(monkeypatch) -> None:
-    await _make_project("学习工具与平台", "study_platform")
+    await _make_project("示例平台", "example_platform")
     headers = await _make_user_headers()
 
     recorder = MagicMock(return_value="coro")
@@ -127,7 +127,7 @@ async def test_batch_json_dispatches_resolved_and_skips_rest(monkeypatch) -> Non
         data={
             "concurrency": 5,
             "items": [
-                {"space": "学习工具", "work_item_id": 6935339052, "work_item_type": "story"},
+                {"space": "示例", "work_item_id": 1000000005, "work_item_type": "story"},
                 {"space": "不存在XYZ", "work_item_id": 1},
             ],
         },
@@ -137,8 +137,8 @@ async def test_batch_json_dispatches_resolved_and_skips_rest(monkeypatch) -> Non
     assert resp.status_code == 202, resp.content
     body = resp.json()
     assert len(body["runs"]) == 1
-    assert body["runs"][0]["feishu_project_key"] == "study_platform"
-    assert body["runs"][0]["work_item_id"] == 6935339052
+    assert body["runs"][0]["feishu_project_key"] == "example_platform"
+    assert body["runs"][0]["work_item_id"] == 1000000005
     assert len(body["skipped"]) == 1
 
     batch_id = body["batch_id"]
@@ -167,24 +167,24 @@ async def test_work_item_artifacts_returns_summary() -> None:
 
     headers = await _make_user_headers()
     await WorkItem.objects.acreate(
-        feishu_project_key="study_platform",
+        feishu_project_key="example_platform",
         work_item_type="story",
-        work_item_id=6935339052,
+        work_item_id=1000000005,
         title="切图替换需求",
         status_display_name="开发中",
-        prd_url="https://project.feishu.cn/study_platform/story/detail/6935339052",
+        prd_url="https://project.feishu.cn/example_platform/story/detail/1000000005",
     )
 
     client = AsyncClient()
     resp = await client.get(
         "/api/delivery/work-items/artifacts/"
-        "?feishu_project_key=study_platform&work_item_type=story&work_item_id=6935339052",
+        "?feishu_project_key=example_platform&work_item_type=story&work_item_id=1000000005",
         headers=headers,
     )
     assert resp.status_code == 200, resp.content
     body = resp.json()
     assert body["work_item"]["title"] == "切图替换需求"
-    assert body["work_item"]["prd_url"].endswith("/story/detail/6935339052")
+    assert body["work_item"]["prd_url"].endswith("/story/detail/1000000005")
     assert body["documents"] == []
 
 

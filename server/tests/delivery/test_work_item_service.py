@@ -8,7 +8,7 @@
   `WorkItemStatusEvent`（WIT-05）、relations facet 完整度。
 
 所有回源经 `respx` mock（先 token 端点后业务端点），pytest-socket 隔离不发真实网络。
-fixture 字段形状取 DOMAIN §16 实测（story 7010225564：field_caadeb=[7010938167]）。
+fixture 字段形状取 DOMAIN §16 实测（story 1000000002：field_000008=[1000000004]）。
 """
 
 from __future__ import annotations
@@ -28,10 +28,10 @@ from delivery.services.derivation import derive_status_events, derive_status_fie
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # === DOMAIN §16 实测自然键 ===
-PROJECT_KEY = "622c10eb5daaee81db915189"
+PROJECT_KEY = "000000000000000000000001"
 API_BASE = "https://project.feishu.cn"
-STORY_ID = 7010225564
-TARGET_PROJECT_ID = 7010938167
+STORY_ID = 1000000002
+TARGET_PROJECT_ID = 1000000004
 
 
 # ============================================================================
@@ -58,7 +58,7 @@ def _story_raw_item() -> dict:
 def _issue_raw_item() -> dict:
     """issue 工作项响应 item（无 current_nodes，仅 state_times 回退）。"""
     return {
-        "id": 5580252273,
+        "id": 1000000006,
         "name": "登录崩溃",
         "work_item_status": {
             "state_key": "OPEN",
@@ -166,14 +166,14 @@ def test_work_item_synced_signal_importable() -> None:
 # story 响应字段（含 work_item_related_multi_select → belongs_to_project 派生）
 _STORY_FIELDS = [
     {
-        "field_key": "field_bcff9b",
+        "field_key": "field_000001",
         "field_name": "需求文档",
         "field_value": "https://tenant.feishu.cn/docx/doc_token_prd",
         "field_type_key": "link",
         "field_alias": "prd_url",
     },
     {
-        "field_key": "field_caadeb",
+        "field_key": "field_000008",
         "field_name": "所属项目",
         "field_value": [TARGET_PROJECT_ID],
         "field_type_key": "work_item_related_multi_select",
@@ -188,7 +188,7 @@ async def _make_project():
     from projects.models import Space
 
     return await Space.objects.acreate(
-        name="study_platform",
+        name="example_platform",
         feishu_project_key=PROJECT_KEY,
         feishu_plugin_id="plugin_test_id",
         feishu_plugin_secret_encrypted=encrypt_value("plugin_test_secret"),
@@ -399,7 +399,7 @@ async def test_upsert_project_unconfigured_records_missing() -> None:
 
 @respx.mock
 async def test_upsert_derives_relation_with_external_id_placeholder() -> None:
-    """WIT-04：field_caadeb=[id]（target 未落库）→ belongs_to_project + target_external_id 占位。"""
+    """WIT-04：field_000008=[id]（target 未落库）→ belongs_to_project + target_external_id 占位。"""
     from delivery.models import RelationType, WorkItemRelation
     from delivery.services import WorkItemService
 
@@ -413,7 +413,7 @@ async def test_upsert_derives_relation_with_external_id_placeholder() -> None:
     assert rel.relation_type == RelationType.BELONGS_TO_PROJECT
     assert rel.target_external_id == TARGET_PROJECT_ID
     assert rel.target_work_item_id is None  # target 未落库 → 占位
-    assert rel.source_field_key == "field_caadeb"
+    assert rel.source_field_key == "field_000008"
 
 
 @respx.mock

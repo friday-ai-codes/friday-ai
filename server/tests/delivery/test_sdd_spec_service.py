@@ -46,9 +46,9 @@ async def _make_repo() -> Repository:
 
 async def _make_work_item() -> WorkItem:
     return await WorkItem.objects.acreate(
-        feishu_project_key="622c10eb5daaee81db915189",
+        feishu_project_key="000000000000000000000001",
         work_item_type="story",
-        work_item_id=7010225564,
+        work_item_id=1000000002,
         origin=WorkItemOrigin.MANUAL,
         title="测试需求",
     )

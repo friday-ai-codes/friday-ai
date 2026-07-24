@@ -49,9 +49,9 @@ def test_discover_sub_projects_finds_courses() -> None:
 
 
 def test_discover_sub_projects_finds_onion_utils() -> None:
-    """packages/onion-utils（devDependencies.vue=2.7.14）在 list 内。"""
+    """packages/shared-utils（devDependencies.vue=2.7.14）在 list 内。"""
     result = discover_sub_projects(_FIXTURE_ROOT)
-    onion = [sp for sp in result if sp.root.name == "onion-utils"]
+    onion = [sp for sp in result if sp.root.name == "shared-utils"]
     assert len(onion) == 1
     assert onion[0].vue_version == "2.7.14"
 

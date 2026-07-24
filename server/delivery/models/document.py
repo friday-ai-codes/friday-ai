@@ -86,7 +86,7 @@ class Document(models.Model):
         on_delete=models.SET_NULL,
         related_name="documents",
     )
-    # 多租户区分（如 guanghe）
+    # 多租户区分（如 acme）
     feishu_tenant = models.CharField(max_length=64, blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True)

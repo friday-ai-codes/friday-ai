@@ -100,9 +100,9 @@ def _amake_repo(*, sdd: bool) -> Repository:
 @sync_to_async
 def _amake_work_item() -> WorkItem:
     return WorkItem.objects.create(
-        feishu_project_key="622c10eb5daaee81db915189",
+        feishu_project_key="000000000000000000000001",
         work_item_type="story",
-        work_item_id=7010225564,
+        work_item_id=1000000002,
         origin=WorkItemOrigin.MANUAL,
         title="测试需求",
     )

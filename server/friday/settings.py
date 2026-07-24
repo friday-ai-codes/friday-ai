@@ -796,7 +796,7 @@ ENABLE_CROSS_REPO_ENRICHMENT: bool = env.bool("ENABLE_CROSS_REPO_ENRICHMENT", de
 # volar 真实命令落地（vue-language-server --stdio）
 # initialization_options.typescript.tsdk 由 VolarPool._build_supervisor 在每实例化时
 # 用 node_check.discover_tsdk() 动态注入；占位 None 仅给 mypy 用。
-# advisory（per Pitfall P-checkpoint）：study-app 大插件链场景启动 60-90s，
+# advisory（per Pitfall P-checkpoint）：example-app 大插件链场景启动 60-90s，
 # 运维 env 调 LSP_STARTUP_TIMEOUT_SECONDS=60 缓解。
 LSP_SERVERS: dict[str, dict[str, Any]] = {
     "volar": {

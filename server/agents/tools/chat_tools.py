@@ -186,7 +186,7 @@ def _resolve_fuzzy_path(
          一旦命中即停止下探，保证返回最长尾匹配）。
       3. 都没命中返回 basename（文件名）相同的候选，作为提示。
 
-    举例：requested='apps/study-app/src/apps/foo/index.vue'，indexed 含
+    举例：requested='apps/example-app/src/apps/foo/index.vue'，indexed 含
     'apps/foo/index.vue'。step 1 失败，step 2 用尾段 'apps/foo/index.vue'
     匹配命中。
 

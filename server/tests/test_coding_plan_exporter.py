@@ -190,10 +190,10 @@ async def test_repo_status_table_with_completed_and_running() -> None:
     plan = await _create_plan()
     await _create_session(
         plan,
-        repo_name="study-app",
+        repo_name="example-app",
         branch_name="fix20260520.alpha",
         status=CodingSession.Status.COMPLETED,
-        pr_url="https://gitlab.example.com/ns/study-app/-/merge_requests/123",
+        pr_url="https://gitlab.example.com/ns/example-app/-/merge_requests/123",
         commit_sha="abcdef1234567890",
     )
     await _create_session(
@@ -207,7 +207,7 @@ async def test_repo_status_table_with_completed_and_running() -> None:
     await export_coding_plan_to_feishu(plan, "folder_T", doc_client=mock_client)
     content = mock_client.create_document.await_args.kwargs["content"]
 
-    assert "study-app" in content
+    assert "example-app" in content
     assert "✅ 已完成" in content
     assert "abcdef1" in content
     assert "merge_requests/123" in content

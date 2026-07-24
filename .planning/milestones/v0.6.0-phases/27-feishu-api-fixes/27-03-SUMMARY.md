@@ -54,7 +54,7 @@ metrics:
 
 ### Task 2 — feishu.client respx 单测 + 一致性回归（随 TDD RED 一体写入 `fa4415a2`）
 - 新建 `server/tests/test_feishu_api_client.py`（7 用例），`@respx.mock` + `pytest.mark.asyncio`，直接传凭证构造 client 绕过 DB 工厂，先 mock token 端点再 mock 业务端点。
-- fixture 取 DOMAIN §16 形状（issue 5580252273，含 `field_bcff9b`(alias prd_url, link)、`field_528f19`(select `{label,value}`)、`field_caadeb`(关联多选)、description 富文本）。
+- fixture 取 DOMAIN §16 形状（issue 1000000006，含 `field_000001`(alias prd_url, link)、`field_000002`(select `{label,value}`)、`field_000008`(关联多选)、description 富文本）。
 - 断言与 Plan 27-02 的 `test_feishu_service.py` 对应用例**同输入同输出**（feishu_fields/fields/status/description、评论 id/content/author/thread_parent_id），佐证两份 client 无漂移。
 - FIX-01（不传 type → TypeError × 2）、FIX-03（非 JSON → [] / 正常逐条解析）、FIX-04（feishu_fields 完整 + fields 拍平 + 富文本）、硬路径（非 JSON 抛 FeishuResponseError、消息不含凭证）各有断言覆盖。
 

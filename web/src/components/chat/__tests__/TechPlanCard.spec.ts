@@ -408,13 +408,13 @@ describe('techPlanCard — FAN-04 multi-repo integration', () => {
     setStorePlan([])
     const wrapper = mountCard({
       codingPlanId: 'plan-1',
-      targetRepositories: [{ id: 'r1', name: 'study-app' }],
+      targetRepositories: [{ id: 'r1', name: 'example-app' }],
     } as any)
 
     await flushPromises()
 
     expect(wrapper.text()).toContain('目标仓库')
-    expect(wrapper.text()).toContain('study-app')
+    expect(wrapper.text()).toContain('example-app')
   })
 
   it('shows sessions list and 对新仓库编码 button when sessions exist (追加态)', async () => {

@@ -257,6 +257,6 @@ from services.feishu_parsing import (  # noqa: E402
 class KeyFields:
     """Key field identifiers for work item fields."""
 
-    PRD_URL = PRD_URL_FIELD_KEY  # 需求文档链接 field_bcff9b
+    PRD_URL = PRD_URL_FIELD_KEY  # 需求文档链接 field_000001
     DESCRIPTION = DESCRIPTION_FIELD_KEY  # 需求描述
-    TECH_DOC_URL = TECH_DOC_URL_FIELD_KEY  # 技术方案文档链接 field_3f6667
+    TECH_DOC_URL = TECH_DOC_URL_FIELD_KEY  # 技术方案文档链接 field_000009

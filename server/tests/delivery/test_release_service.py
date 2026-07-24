@@ -32,8 +32,8 @@ from delivery.services import ReleaseService
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # DOMAIN §16 实测自然键
-PROJECT_KEY = "622c10eb5daaee81db915189"
-WORK_ITEM_ID = 7010225564
+PROJECT_KEY = "000000000000000000000001"
+WORK_ITEM_ID = 1000000002
 
 
 async def _make_work_item(work_item_id: int = WORK_ITEM_ID) -> WorkItem:

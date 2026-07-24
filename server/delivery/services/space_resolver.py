@@ -68,7 +68,7 @@ async def aresolve_space(identifier: str) -> tuple[Space | None, str]:
     if len(exact) == 1:
         return exact[0], SpaceResolution.BY_NAME_EXACT
 
-    # 前缀命中优先（如「学习工具」→「学习工具与平台」）
+    # 前缀命中优先（如「示例」→「示例平台」）
     prefix = [p for p in candidates if (p.name or "").lower().startswith(lowered)]
     if len(prefix) == 1:
         return prefix[0], SpaceResolution.BY_NAME_FUZZY

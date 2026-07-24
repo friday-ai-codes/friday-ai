@@ -23,10 +23,10 @@ STUDY_APP_LADDER_SERVICES = (
 @pytest.mark.integration
 @pytest.mark.skipif(
     not STUDY_APP_PATH or not Path(STUDY_APP_PATH).exists(),
-    reason="study-app repo not found (run locally with access to study-app)",
+    reason="example-app repo not found (run locally with access to example-app)",
 )
 class TestApiResolverStep0Integration:
-    """Step 0 study-app 真实仓库测试。"""
+    """Step 0 example-app 真实仓库测试。"""
 
     def test_discover_helpers_from_axios_config(self):
         """Step 0：从 axios.config.ts 自动识别 get/post/put/del LowLevelHelper。"""
@@ -53,10 +53,10 @@ class TestApiResolverStep0Integration:
 @pytest.mark.integration
 @pytest.mark.skipif(
     not STUDY_APP_PATH or not Path(STUDY_APP_PATH).exists(),
-    reason="study-app repo not found (run locally with access to study-app)",
+    reason="example-app repo not found (run locally with access to example-app)",
 )
 class TestApiResolverStep1Integration:
-    """Step 1 study-app 真实仓库测试。"""
+    """Step 1 example-app 真实仓库测试。"""
 
     def test_discover_wrappers_from_home_services(self):
         """Step 1：从 home/src/services/index.ts 发现 ApiWrapper。"""
@@ -137,7 +137,7 @@ class TestApiResolverStep1Integration:
 @pytest.mark.integration
 @pytest.mark.skipif(
     not STUDY_APP_PATH or not Path(STUDY_APP_PATH).exists(),
-    reason="study-app repo not found (run locally with access to study-app)",
+    reason="example-app repo not found (run locally with access to example-app)",
 )
 class TestApiResolverFullScan:
     """完整仓库扫描测试。"""
@@ -183,5 +183,5 @@ class TestApiResolverFullScan:
         wrappers = resolve_wrappers_for_repository(file_paths, STUDY_APP_PATH)
 
         methods = {w.http_method for w in wrappers}
-        # 至少有 GET 或 POST（study-app 同时使用两者）
+        # 至少有 GET 或 POST（example-app 同时使用两者）
         assert "GET" in methods or "POST" in methods, f"期望含 GET 或 POST，实际 {methods}"

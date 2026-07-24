@@ -7,7 +7,7 @@
 - WorkItemRelation 带 target_external_id 占位（target_work_item=None）成功。
 - WorkItemStatusEvent(pre/cur state_key) 成功。
 
-fixture 取值参考 DOMAIN §16 实测（story 7010225564 / issue 5580252273）。
+fixture 取值参考 DOMAIN §16 实测（story 1000000002 / issue 1000000006）。
 """
 
 from __future__ import annotations
@@ -29,16 +29,16 @@ from delivery.models.relation import RelationType
 pytestmark = pytest.mark.django_db
 
 # DOMAIN §16 实测自然键
-PROJECT_KEY = "622c10eb5daaee81db915189"
+PROJECT_KEY = "000000000000000000000001"
 
 
-def _make_work_item(work_item_id: int = 7010225564, **overrides) -> WorkItem:
+def _make_work_item(work_item_id: int = 1000000002, **overrides) -> WorkItem:
     """创建一个 story WorkItem（origin=manual），允许 override。"""
     defaults = dict(
         feishu_project_key=PROJECT_KEY,
         work_item_type="story",
         work_item_id=work_item_id,
-        feishu_project_simple_name="study_platform",
+        feishu_project_simple_name="example_platform",
         origin=WorkItemOrigin.MANUAL,
         title="测试需求",
         status_state_key="fi46o4r6m",
@@ -54,7 +54,7 @@ def test_create_work_item_readback():
     fetched = WorkItem.objects.get(pk=wi.pk)
     assert fetched.feishu_project_key == PROJECT_KEY
     assert fetched.work_item_type == "story"
-    assert fetched.work_item_id == 7010225564
+    assert fetched.work_item_id == 1000000002
     assert fetched.origin == WorkItemOrigin.MANUAL
     assert fetched.status_display_name == "Sprint计划"
     # JSONField 默认值
@@ -72,15 +72,15 @@ def test_duplicate_triple_raises_integrity_error():
         WorkItem.objects.create(
             feishu_project_key=PROJECT_KEY,
             work_item_type="story",
-            work_item_id=7010225564,
+            work_item_id=1000000002,
             origin=WorkItemOrigin.FEISHU_WEBHOOK,
         )
 
 
 def test_different_triple_allowed():
     """不同三元组（不同 type / id）可共存，不触发唯一约束。"""
-    _make_work_item(work_item_id=7010225564)
-    _make_work_item(work_item_id=5580252273, work_item_type="issue")
+    _make_work_item(work_item_id=1000000002)
+    _make_work_item(work_item_id=1000000006, work_item_type="issue")
     assert WorkItem.objects.count() == 2
 
 
@@ -126,13 +126,13 @@ def test_relation_with_external_id_placeholder():
     rel = WorkItemRelation.objects.create(
         source_work_item=wi,
         target_work_item=None,
-        target_external_id=7010938167,
+        target_external_id=1000000004,
         relation_type=RelationType.BELONGS_TO_PROJECT,
-        source_field_key="field_caadeb",
+        source_field_key="field_000008",
     )
     fetched = WorkItemRelation.objects.get(pk=rel.pk)
     assert fetched.target_work_item is None
-    assert fetched.target_external_id == 7010938167
+    assert fetched.target_external_id == 1000000004
     assert fetched.relation_type == RelationType.BELONGS_TO_PROJECT
     # origin 默认 feishu_field
     assert fetched.origin == "feishu_field"

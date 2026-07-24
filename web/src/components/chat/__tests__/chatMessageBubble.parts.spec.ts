@@ -279,7 +279,7 @@ describe('chatMessageBubble parts rendering ', () => {
     const relevanceResult = JSON.stringify({
       data: {
         candidates: [
-          { repository_id: 'repo-uuid-1', repository_name: 'study-app', score: 0.82, level: 'high', evidence: '命中 2 个文件' },
+          { repository_id: 'repo-uuid-1', repository_name: 'example-app', score: 0.82, level: 'high', evidence: '命中 2 个文件' },
           { repository_id: 'repo-uuid-2', repository_name: 'question-bank', score: 0.55, level: 'medium', evidence: '语义相关' },
         ],
       },
@@ -314,9 +314,9 @@ describe('chatMessageBubble parts rendering ', () => {
     const rows = wrapper.findAll('.tpg-row')
     expect(rows.length).toBe(2)
     // 相关性分析行：摘要里出现关联到的仓库名称
-    expect(rows[0].text()).toContain('study-app')
+    expect(rows[0].text()).toContain('example-app')
     // 搜索行：把 repository_id 映射成仓库名称
-    expect(rows[1].text()).toContain('study-app')
+    expect(rows[1].text()).toContain('example-app')
     // 展开相关性行 → 候选仓库名称 + 等级
     await rows[0].find('.tpg-row-head').trigger('click')
     await wrapper.vm.$nextTick()
@@ -328,7 +328,7 @@ describe('chatMessageBubble parts rendering ', () => {
     const relevanceResult = JSON.stringify({
       data: {
         candidates: [
-          { repository_id: 'repo-uuid-1', repository_name: 'study-app', score: 0.82, level: 'high', evidence: 'e1' },
+          { repository_id: 'repo-uuid-1', repository_name: 'example-app', score: 0.82, level: 'high', evidence: 'e1' },
           { repository_id: 'repo-uuid-2', repository_name: 'question-bank', score: 0.55, level: 'medium', evidence: 'e2' },
         ],
       },
@@ -354,7 +354,7 @@ describe('chatMessageBubble parts rendering ', () => {
     expect(legend.exists()).toBe(true)
     const items = wrapper.findAll('.repo-legend-item')
     expect(items.length).toBe(2)
-    expect(items[0].text()).toContain('study-app')
+    expect(items[0].text()).toContain('example-app')
     expect(items[0].text()).toContain('1')
     // 点击图例项 → 过程面板被展开（验证联动不抛错且容器存在）
     await items[1].trigger('click')

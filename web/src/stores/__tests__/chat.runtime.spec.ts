@@ -86,7 +86,7 @@ describe('chat store runtime restore', () => {
           {
             session_id: 'session-1',
             repository_id: 'repo-1',
-            repository_name: 'study-app',
+            repository_name: 'example-app',
             branch_name: 'fix/example',
             status: 'confirmed',
             pr_url: '',

@@ -14,7 +14,7 @@ CLI 用例
 
     python manage.py measure_extractor_precision \\
         --sample-repo=/path/to/vue-repo \\
-        --sub-spaces=apps/courses,apps/home,packages/onion-utils \\
+        --sub-spaces=apps/courses,apps/home,packages/shared-utils \\
         --output-json=/tmp/volar_precision_report.json
 """
 
@@ -69,14 +69,14 @@ class Command(BaseCommand):
             "--sample-repo",
             type=str,
             required=True,
-            help="样本仓库绝对路径（如 /Users/.../study-app）",
+            help="样本仓库绝对路径（如 /Users/.../example-app）",
         )
         parser.add_argument(
             "--sub-projects",
             type=str,
             default=(
                 "apps/courses,apps/studyCheckList,apps/home,"
-                "apps/explore,packages/onion-utils"
+                "apps/explore,packages/shared-utils"
             ),
             help="逗号分隔的 sub-project 相对路径列表（默认 5 项）",
         )

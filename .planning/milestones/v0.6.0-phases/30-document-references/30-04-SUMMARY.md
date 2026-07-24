@@ -74,7 +74,7 @@ completed: 2026-06-15
 ### Task 2: PRD 快照检索守护测试
 
 - `server/tests/delivery/test_document_api.py`（`django_db(transaction=True)`，pytest-socket 零真实网络，端点不回源故无 respx）：7 个测试覆盖
-  - **命中**：force_authenticate（JWT Bearer）→ GET prd-document 三元组 → 200 + `content == "PRD 正文快照"` + `document_type=="prd"` + `content_storage=="both"` + `external_ref==DOC_TOKEN` + `feishu_tenant=="guanghe"` + `version==1`（经 Document 实体检索 PRD 正文，DOC-02 成功标准 3 端到端守护）。
+  - **命中**：force_authenticate（JWT Bearer）→ GET prd-document 三元组 → 200 + `content == "PRD 正文快照"` + `document_type=="prd"` + `content_storage=="both"` + `external_ref==DOC_TOKEN` + `feishu_tenant=="acme"` + `version==1`（经 Document 实体检索 PRD 正文，DOC-02 成功标准 3 端到端守护）。
   - **未认证**：匿名 GET → 401（IsAuthenticated，T-30-09）。
   - **参数**：缺三元组 → 400；`work_item_id` 非整数 → 400。
   - **未命中**：WorkItem 不存在 → 404；WorkItem 存在但未建 PRD Document → 404（明确语义，不返回空文档）。

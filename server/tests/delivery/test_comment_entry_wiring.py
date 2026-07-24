@@ -14,8 +14,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-PROJECT_KEY = "622c10eb5daaee81db915189"
-STORY_ID = 7010225564
+PROJECT_KEY = "000000000000000000000001"
+STORY_ID = 1000000002
 
 
 def _make_view():

@@ -554,7 +554,7 @@ async def test_blocking_tasks_win_over_relev_low_confidence(graph_config: Runnab
         graph = build_graph().compile(checkpointer=MemorySaver())
         result = await graph.ainvoke(
             {
-                "user_message": "分析下 study-app 和 problem-app 里 entrance 字段",
+                "user_message": "分析下 example-app 和 problem-app 里 entrance 字段",
                 "run_id": "run-work-item",
             },
             config=graph_config,

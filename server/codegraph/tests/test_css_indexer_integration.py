@@ -1,6 +1,6 @@
-"""CSS 真实仓库 study-app 端到端集成测试 —— 覆盖 implementation 真实样本。
+"""CSS 真实仓库 example-app 端到端集成测试 —— 覆盖 implementation 真实样本。
 
-study-app .vitepress/theme/style.css 实测含 .dark / .DocSearch 两个 class selector，
+example-app .vitepress/theme/style.css 实测含 .dark / .DocSearch 两个 class selector，
 预期 ≥ 2 SymbolData。仓库不存在时整类 SKIP（per Pitfall 9）。
 """
 
@@ -32,7 +32,7 @@ class TestCssExtractorRegistration:
     reason="sample repo not configured (STUDY_APP_REPO)",
 )
 class TestStudyAppCssExtraction:
-    """study-app 真实 CSS 端到端。"""
+    """example-app 真实 CSS 端到端。"""
 
     def test_vitepress_style_css_yields_data(self) -> None:
         extractor = get_extractor("css")
@@ -41,7 +41,7 @@ class TestStudyAppCssExtraction:
         ctx = FileContext(
             file_path=str(CSS_SAMPLE_FILE.relative_to(CSS_SAMPLE_REPO)),
             language="css",
-            repository_id="study-app",
+            repository_id="example-app",
         )
         bundle = extractor.extract(str(CSS_SAMPLE_FILE), source, ctx)
         # 实测含 .dark + .DocSearch 两个 class selector
@@ -57,7 +57,7 @@ class TestStudyAppCssExtraction:
         ctx = FileContext(
             file_path=str(CSS_SAMPLE_FILE.relative_to(CSS_SAMPLE_REPO)),
             language="css",
-            repository_id="study-app",
+            repository_id="example-app",
         )
         bundle = extractor.extract(str(CSS_SAMPLE_FILE), source, ctx)
         names = {(s.name, s.symbol_type) for s in bundle.symbols}

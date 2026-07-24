@@ -151,10 +151,10 @@ function updateRule(index: number, field: keyof ExtractionRule, value: any) {
   "id": 6659791768,
   "name": "响应式适配需求",
   "description": "修复响应式问题",
-  "project_key": "622c10eb5daaee81db915189",
+  "project_key": "000000000000000000000001",
   "fields": [
-    { "key": "field_bcff9b", "value": "https://docs.example.com/prd" },
-    { "key": "field_3f6667", "value": "https://docs.example.com/tech" },
+    { "key": "field_000001", "value": "https://docs.example.com/prd" },
+    { "key": "field_000009", "value": "https://docs.example.com/tech" },
     { "key": "description", "value": "详细需求描述..." }
   ]
 }</code></pre>
@@ -180,7 +180,7 @@ function updateRule(index: number, field: keyof ExtractionRule, value: any) {
                 <div class="grid grid-cols-3 gap-2 text-xs">
                   <span>需求文档</span>
                   <code class="text-primary">prdUrl</code>
-                  <code>$.fields[?(@.key=='field_bcff9b')].value</code>
+                  <code>$.fields[?(@.key=='field_000001')].value</code>
                 </div>
                 <div class="grid grid-cols-3 gap-2 text-xs">
                   <span>描述</span>
@@ -205,7 +205,7 @@ function updateRule(index: number, field: keyof ExtractionRule, value: any) {
   "prdUrl": {
     "name": "需求文档",
     "value": "https://docs.example.com/prd",
-    "path": "$.fields[?(@.key=='field_bcff9b')].value"
+    "path": "$.fields[?(@.key=='field_000001')].value"
   },
   "description": {
     "name": "描述",

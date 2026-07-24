@@ -5,7 +5,7 @@ status: human_needed
 score: 12/12 must-haves verified (4/4 ROADMAP success criteria structurally verified)
 overrides_applied: 0
 human_verification:
-  - test: "用真实飞书凭证调 get_comments(project_key, work_item_id, work_item_type) 拉取一个已知有评论的工作项（如 study_platform issue 5580252273）"
+  - test: "用真实飞书凭证调 get_comments(project_key, work_item_id, work_item_type) 拉取一个已知有评论的工作项（如 example_platform issue 1000000006）"
     expected: "返回非空评论列表，逐条含 id/content/created_at/author/thread_parent_id；若端点路径/鉴权已变更则 fail-soft 返回 [] 并记 warning（不崩）"
     why_human: "真实端点路径/鉴权正确性（PF-11）需带真实凭证人工验收；自动测试仅以 respx mock 覆盖响应形状，无法验证 live 端点是否仍有效。CONTEXT 已明确记入 human-UAT。"
   - test: "（已知限制，非本 phase 范围）容器型工作项（URL 段 type=project）取数"
@@ -35,7 +35,7 @@ deferred:
 | --- | ----- | ------ | -------- |
 | 1 | 非 JSON 飞书响应（HTML/空/Extra data）经防御解析不抛崩，返回 None 并记 warning | ✓ VERIFIED | `safe_response_json` content-type 校验 + try/except（feishu_parsing.py L60-100），test_feishu_parsing 覆盖 |
 | 2 | 完整 fields[] 对象（field_key/name/value/type_key/alias）被保留不丢元数据 | ✓ VERIFIED | `build_feishu_fields` 保留 5 键（L238-263）；两份 client 双写 `feishu_fields`+`flatten_fields` |
-| 3 | 从 work_item_related_multi_select 字段能派生 belongs_to_project/sprint/version/related | ✓ VERIFIED | `derive_relations_from_fields` + `RELATION_TYPE_BY_FIELD`（L411-468）；fixture `field_caadeb=[7010938167]` 断言 |
+| 3 | 从 work_item_related_multi_select 字段能派生 belongs_to_project/sprint/version/related | ✓ VERIFIED | `derive_relations_from_fields` + `RELATION_TYPE_BY_FIELD`（L411-468）；fixture `field_000008=[1000000004]` 断言 |
 | 4 | 能按 alias/key 从 feishu_fields 取 prd_url 与 select label | ✓ VERIFIED | `extract_prd_url`/`extract_select_label`（L311-377），test 覆盖 alias `prd_url` + `{label}` |
 | 5 | get_work_item / get_comments 不传 work_item_type 时 fail-loud（TypeError） | ✓ VERIFIED | 两份 client 签名 `work_item_type: str`（无默认，feishu.py L122/L312, client.py L132/L304）；TypeError 测试 |
 | 6 | WorkItemInfo 新增 feishu_fields 完整数组，旧 fields 拍平 dict 保留（向后兼容） | ✓ VERIFIED | `feishu_fields: list[dict] = field(default_factory=list)`（feishu.py L34, client.py L44），respx 断言 |
@@ -69,7 +69,7 @@ deferred:
 | Artifact | Expected | Status | Details |
 | -------- | -------- | ------ | ------- |
 | `server/services/feishu_parsing.py` | 防御解析+字段保留/提取+关系派生+评论解析 helper | ✓ VERIFIED | 517 行，含 `derive_relations_from_fields`，无 Django 依赖 |
-| `server/tests/services/test_feishu_parsing.py` | helper 全函数单测（DOMAIN §16 fixture） | ✓ VERIFIED | 26 用例全绿，含 `field_caadeb` fixture |
+| `server/tests/services/test_feishu_parsing.py` | helper 全函数单测（DOMAIN §16 fixture） | ✓ VERIFIED | 26 用例全绿，含 `field_000008` fixture |
 | `server/services/feishu.py` | canonical client FIX-01/02/03/04 | ✓ VERIFIED | import 共享 helper，feishu_fields/双写/fail-soft 接线 |
 | `server/tests/services/test_feishu_service.py` | canonical client respx 单测 | ✓ VERIFIED | 9 用例全绿，respx mock |
 | `server/feishu/client.py` | near-dup client FIX-01/03/04 | ✓ VERIFIED | import 同源 helper，行为对齐 |

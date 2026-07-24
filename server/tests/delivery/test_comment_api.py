@@ -19,8 +19,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-PROJECT_KEY = "622c10eb5daaee81db915189"
-STORY_ID = 7010225564
+PROJECT_KEY = "000000000000000000000001"
+STORY_ID = 1000000002
 
 
 async def _make_user_headers() -> dict[str, str]:

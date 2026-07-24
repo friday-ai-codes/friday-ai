@@ -126,7 +126,7 @@ def _mock_graph(
 _RESUME_PAYLOAD = {
     "clarification_id": "c-001",
     "selected_option_id": "opt-A",
-    "selected_option_label": "study-app",
+    "selected_option_label": "example-app",
     "freeform_text": None,
     "implies": {},
 }
@@ -184,7 +184,7 @@ class TestResumeClarificationRun:
         assert waiting_run.phase == "completed"
         # finalize 被调用并拿到 graph 终态
         assert _mock_finalize["final_content"] == "最终回答"
-        assert _mock_finalize["user_message"] == "study-app"
+        assert _mock_finalize["user_message"] == "example-app"
 
     def test_graph_error_marks_run_and_conversation_error(
         self,

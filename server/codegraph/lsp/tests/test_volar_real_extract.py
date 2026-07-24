@@ -19,17 +19,17 @@ _COURSES_SUB: Path = _STUDY_APP / "apps" / "courses"
 
 
 @pytest.mark.skipif(_VLS_BIN is None, reason="vue-language-server 未在 PATH")
-@pytest.mark.skipif(not _COURSES_SUB.exists(), reason="study-app 仓库不在期望路径")
+@pytest.mark.skipif(not _COURSES_SUB.exists(), reason="example-app 仓库不在期望路径")
 class TestVolarRealExtract:
     """真实 volar 抽 apps/courses sub-project 验收 V2 / V4 端到端。"""
 
     def test_discover_sub_projects_finds_courses(self) -> None:
-        """workspace_discovery 真实跑 study-app 找 apps/courses（vue 2.7.x）。"""
+        """workspace_discovery 真实跑 example-app 找 apps/courses（vue 2.7.x）。"""
         from codegraph.lsp.workspace_discovery import discover_sub_projects
 
         sub_projects = discover_sub_projects(_STUDY_APP)
         assert len(sub_projects) >= 30, (
-            f"study-app 应 ≥ 30 sub-projects，实测 {len(sub_projects)}"
+            f"example-app 应 ≥ 30 sub-projects，实测 {len(sub_projects)}"
         )
         courses = [s for s in sub_projects if s.root == _COURSES_SUB.resolve()]
         assert len(courses) == 1
@@ -57,7 +57,7 @@ class TestVolarRealExtract:
             ctx = FileContext(
                 file_path=str(target_file),
                 language="vue",
-                repository_id="study-app",
+                repository_id="example-app",
             )
             tree = backend.parse_file(str(target_file), source)
             symbols = backend.extract_symbols(tree, source, ctx)
@@ -88,7 +88,7 @@ class TestVolarRealExtract:
             ctx = FileContext(
                 file_path=str(candidate),
                 language="typescript",
-                repository_id="study-app",
+                repository_id="example-app",
             )
             tree = backend.parse_file(str(candidate), source)
             imports = backend.extract_imports(tree, ctx)

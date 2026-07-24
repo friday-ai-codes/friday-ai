@@ -227,7 +227,7 @@ class FeishuClient:
             群 ID 原生回填到工作项的 ``chat_group`` / ``group_id`` 字段（通常数秒内生效，
             调用方需轮询 ``get_work_item`` 查询回填结果）。
 
-            实测（study_platform 空间 story 工作项）：``group_type`` 从 ``"disabled"``
+            实测（example_platform 空间 story 工作项）：``group_type`` 从 ``"disabled"``
             写为 ``"auto"`` 后，约数秒 ``chat_group`` 即出现 ``oc_xxx`` 群 ID。这是目前
             唯一可编程触发"飞书原生绑定群"的方式（区别于走开放平台 IM API 自建群——后者
             不会回填到工作项字段）。

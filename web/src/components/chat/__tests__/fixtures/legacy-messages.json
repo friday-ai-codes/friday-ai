@@ -42,13 +42,13 @@
   "F3": {
     "id": "msg_legacy_f3",
     "role": "assistant",
-    "content": "已选中 study-app 和 problem-app 两个仓库，请确认。",
+    "content": "已选中 example-app 和 problem-app 两个仓库，请确认。",
     "tool_calls": [
       {
         "id": "call_relev_1",
         "name": "analyze_repository_relevance",
         "input": { "query": "entrance 字段处理逻辑" },
-        "result": "{\"output\":{\"data\":{\"trace_id\":\"trace-abc-123\",\"candidates\":[{\"repository_id\":\"repo-1\",\"name\":\"study-app\",\"score\":0.92},{\"repository_id\":\"repo-2\",\"name\":\"problem-app\",\"score\":0.88}],\"threshold\":0.5}}}",
+        "result": "{\"output\":{\"data\":{\"trace_id\":\"trace-abc-123\",\"candidates\":[{\"repository_id\":\"repo-1\",\"name\":\"example-app\",\"score\":0.92},{\"repository_id\":\"repo-2\",\"name\":\"problem-app\",\"score\":0.88}],\"threshold\":0.5}}}",
         "status": "done"
       }
     ],
@@ -101,15 +101,15 @@
   "F5": {
     "id": "msg_legacy_f5",
     "role": "assistant",
-    "content": "# entrance 字段处理逻辑分析\n\n## 1. study-app 仓库\n\n在 `apps/study/views.py` 第 87 行，`entrance` 字段通过 `request.GET.get('entrance', 'default')` 提取，作为 A/B 实验分流的关键参数：\n\n```python\ndef study_index(request):\n    entrance = request.GET.get('entrance', 'default')\n    if entrance == 'invite':\n        return render(request, 'invite.html')\n    return render(request, 'normal.html')\n```\n\n## 2. problem-app 仓库\n\n在 `apps/problem/middleware.py` 中作为中间件处理，统一注入到 `request.context`：\n\n| 字段 | 含义 | 默认值 |\n|---|---|---|\n| entrance | 入口来源 | 'organic' |\n| campaign | 活动 ID | None |\n\n## 3. 共同点\n\n- 都使用 GET 参数读取（不读 POST / Header）\n- 默认值不同：study 用 'default'，problem 用 'organic'\n- 都参与埋点上报（`tracking.py:log_entrance`）\n\n## 建议\n\n两个仓库应统一 entrance 字段的取值规范，建议建立 `apps/common/entrance.py` 公共模块。",
+    "content": "# entrance 字段处理逻辑分析\n\n## 1. example-app 仓库\n\n在 `apps/study/views.py` 第 87 行，`entrance` 字段通过 `request.GET.get('entrance', 'default')` 提取，作为 A/B 实验分流的关键参数：\n\n```python\ndef study_index(request):\n    entrance = request.GET.get('entrance', 'default')\n    if entrance == 'invite':\n        return render(request, 'invite.html')\n    return render(request, 'normal.html')\n```\n\n## 2. problem-app 仓库\n\n在 `apps/problem/middleware.py` 中作为中间件处理，统一注入到 `request.context`：\n\n| 字段 | 含义 | 默认值 |\n|---|---|---|\n| entrance | 入口来源 | 'organic' |\n| campaign | 活动 ID | None |\n\n## 3. 共同点\n\n- 都使用 GET 参数读取（不读 POST / Header）\n- 默认值不同：study 用 'default'，problem 用 'organic'\n- 都参与埋点上报（`tracking.py:log_entrance`）\n\n## 建议\n\n两个仓库应统一 entrance 字段的取值规范，建议建立 `apps/common/entrance.py` 公共模块。",
     "tool_calls": [
       {
         "id": "call_deep_analysis_1",
         "name": "deep_analysis",
         "input": {
-          "task_description": "对比 study-app 和 problem-app 仓库中 entrance 字段的处理逻辑"
+          "task_description": "对比 example-app 和 problem-app 仓库中 entrance 字段的处理逻辑"
         },
-        "result": "[task done]\n会话已完成，cost=$0.0034\n[cross_repo_relevance:trace-deep-456]\n[{\"repository_id\":\"repo-1\",\"name\":\"study-app\",\"score\":0.92,\"selected_by_user_final\":true},{\"repository_id\":\"repo-2\",\"name\":\"problem-app\",\"score\":0.88,\"selected_by_user_final\":true}]",
+        "result": "[task done]\n会话已完成，cost=$0.0034\n[cross_repo_relevance:trace-deep-456]\n[{\"repository_id\":\"repo-1\",\"name\":\"example-app\",\"score\":0.92,\"selected_by_user_final\":true},{\"repository_id\":\"repo-2\",\"name\":\"problem-app\",\"score\":0.88,\"selected_by_user_final\":true}]",
         "status": "done"
       }
     ],

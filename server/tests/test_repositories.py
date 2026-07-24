@@ -190,12 +190,12 @@ class TestRepositoryDetail:
         """更新仓库时 SSH URL 自动转换为 HTTPS。"""
         response = authenticated_client.patch(
             urls.repository_detail(repository.id),
-            {"git_url": "git@gitlab.example.com:frontend/study-app.git"},
+            {"git_url": "git@gitlab.example.com:frontend/example-app.git"},
             format="json",
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["git_url"] == "https://gitlab.example.com/frontend/study-app.git"
+        assert response.data["git_url"] == "https://gitlab.example.com/frontend/example-app.git"
 
     def test_delete_repository(self, authenticated_client, repository, urls):
         """测试删除仓库。"""
@@ -331,8 +331,8 @@ class TestSshGitUrlToHttps:
         from repositories.serializers import ssh_git_url_to_https
 
         assert (
-            ssh_git_url_to_https("git@gitlab.example.com:frontend/study-app.git")
-            == "https://gitlab.example.com/frontend/study-app.git"
+            ssh_git_url_to_https("git@gitlab.example.com:frontend/example-app.git")
+            == "https://gitlab.example.com/frontend/example-app.git"
         )
 
     def test_ssh_protocol_with_port(self):

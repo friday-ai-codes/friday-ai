@@ -7,13 +7,13 @@ function makeMessage(overrides: Partial<ConversationMessage> = {}): Conversation
   return {
     id: 'sys-1',
     role: 'system',
-    content: '已切换空间到「学习工具」',
+    content: '已切换空间到「示例」',
     metadata: {
       type: 'space_switch',
       from_space_id: null,
       from_space_name: '',
       to_space_id: 'space-1',
-      to_space_name: '学习工具',
+      to_space_name: '示例',
     },
     created_at: '2026-06-11T08:00:00Z',
     ...overrides,
@@ -25,7 +25,7 @@ describe('chatSpaceSwitchDivider', () => {
     const wrapper = mount(ChatSpaceSwitchDivider, {
       props: { message: makeMessage() },
     })
-    expect(wrapper.text()).toContain('已切换空间到「学习工具」')
+    expect(wrapper.text()).toContain('已切换空间到「示例」')
     expect(wrapper.attributes('role')).toBe('separator')
   })
 
