@@ -29,6 +29,13 @@ func CheckPID() (int, bool) {
 	if err != nil {
 		return 0, false
 	}
+	// 容器内 runner 恒为 PID 1（entrypoint exec 接管），容器重启后 PID 被复用：
+	// 上一轮遗留的 PID 文件里写的还是 1，而新进程自己也是 1，直接 Signal(0) 必然
+	// "存活"→误判"已在运行"→启动即自杀→无限重启循环（friday-runner crash loop）。
+	// 若 PID 文件里的值等于当前进程自身 PID，必是自己遗留的陈旧文件，判为未运行。
+	if pid == os.Getpid() {
+		return pid, false
+	}
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return pid, false
