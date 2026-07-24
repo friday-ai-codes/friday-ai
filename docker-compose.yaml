@@ -92,7 +92,11 @@ services:
   worker:
     image: ${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/server:${FRIDAY_IMAGE_TAG:-latest}
     container_name: friday-worker
-    command: ["python", "manage.py", "run_worker", "--graceful-timeout", "110"]
+    # --concurrency 控制单 worker 进程内并发消费的 job 数（默认 1=串行）。索引/图谱
+    # 构建是重 IO 任务，串行时一次只跑一个、严重浪费多核。WORKER_CONCURRENCY 默认 4
+    # 提高单进程并发；与横向多副本（--scale worker=N）叠加放大吞吐。此调优只提"并发处
+    # 理任务数"，不会加快单个上游大模型调用的耗时（那是 I/O 等待，加核无用）。
+    command: ["python", "manage.py", "run_worker", "--graceful-timeout", "110", "--concurrency", "${WORKER_CONCURRENCY:-4}"]
     environment:
       - SECRET_KEY=${SECRET_KEY:-}
       - DEBUG=${DEBUG:-false}
