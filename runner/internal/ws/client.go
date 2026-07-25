@@ -44,6 +44,21 @@ type TaskPayload struct {
 	Payload  map[string]any
 }
 
+// CancelOutcome 描述一次 task.cancel 的处置结果。
+//
+// 定义在 ws 包而非 scheduler 包：scheduler 已导入 ws，反向导入会成环。
+type CancelOutcome struct {
+	// Found 表示 task 当时确实在调度中。false 说明任务已结束或从未收到，
+	// 取消按幂等处理（server 重发 cancel、或容器刚好自己跑完都会走到这里）。
+	Found bool
+	// Dequeued 表示任务尚在排队、已直接从队列摘除，容器从未启动。
+	// 此时不会有 runTask 去上报终态，调用方必须自己补一条终态消息。
+	Dequeued bool
+	// ContainerID 非空表示容器已启动，调用方需要停容器。
+	// 停掉后 runTask 的 WaitContainer 会返回，由它上报终态——调用方不要重复上报。
+	ContainerID string
+}
+
 // CallbackService 解耦 ws 与 callback 包的循环依赖。
 type CallbackService interface {
 	Start(ctx context.Context) error
@@ -70,6 +85,7 @@ type ExecutorService interface {
 type SchedulerService interface {
 	SetTaskCallback(fn func(context.Context, TaskPayload))
 	Submit(task TaskPayload)
+	Cancel(taskID string) CancelOutcome
 	Run(ctx context.Context)
 	RegisterContainer(taskID, containerID string)
 	UnregisterContainer(taskID string)
@@ -247,6 +263,8 @@ func readLoop(ctx context.Context, c *websocket.Conn, cfg Config, cb CallbackSer
 		switch msg.Type {
 		case TypeTaskAssign:
 			handleTaskAssign(ctx, c, raw, cfg.Scheduler, queue)
+		case TypeTaskCancel:
+			go handleTaskCancel(ctx, raw, cfg, queue)
 		case TypeToolResult:
 			handleToolResult(raw, cb)
 		case TypeQuestionAnswer:
@@ -342,6 +360,59 @@ func handleTaskAssign(_ context.Context, c *websocket.Conn, raw json.RawMessage,
 	}
 	sched.Submit(task)
 	log.Info().Str("task_id", taskID).Msg("task_accepted")
+}
+
+// handleTaskCancel 处理 server 下发的 task.cancel。
+//
+// 在此之前 runner 完全不处理这个消息类型，导致 chat 的「停止容器」与
+// container_suspend_service 调用 dispatcher.cancel() 后容器照跑不误，一直占着
+// 并发槽位直到超时；而 dispatcher.cancel() 只要 WS 发出去就返回 True，前端拿到
+// 的是成功回执。
+func handleTaskCancel(ctx context.Context, raw json.RawMessage, cfg Config, queue *MessageQueue) {
+	var envelope struct {
+		Payload map[string]any `json:"payload"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		log.Warn().Err(err).Msg("task_cancel_bad_payload")
+		return
+	}
+	taskID := strVal(envelope.Payload, "task_id", "")
+	if taskID == "" {
+		log.Warn().Msg("task_cancel_missing_task_id")
+		return
+	}
+
+	outcome := cfg.Scheduler.Cancel(taskID)
+	if !outcome.Found {
+		// 幂等：任务已结束或重复下发 cancel，静默即可。
+		log.Info().Str("task_id", taskID).Msg("task_cancel_not_active")
+		return
+	}
+
+	if outcome.Dequeued {
+		// 容器从未启动，没有 runTask 会上报终态——这里补一条，否则 server 侧
+		// 一直等在 RUNNING。
+		queue.Push(NewMessage(TypeTaskFailed, map[string]any{
+			"task_id": taskID, "exit_code": -1, "error": "cancelled",
+			"duration_ms": 0, "logs": "",
+		}))
+		log.Info().Str("task_id", taskID).Msg("task_cancelled_before_start")
+		return
+	}
+
+	if outcome.ContainerID == "" {
+		return
+	}
+
+	// RemoveContainer 是 Force 删除（杀 + 删）。停掉后 runTask 里阻塞的
+	// WaitContainer 会返回并上报终态，此处刻意不再推送终态消息避免重复。
+	if err := cfg.Executor.RemoveContainer(ctx, outcome.ContainerID); err != nil {
+		log.Error().Str("task_id", taskID).Str("container_id", outcome.ContainerID).
+			Err(err).Msg("task_cancel_remove_container_failed")
+		return
+	}
+	log.Info().Str("task_id", taskID).Str("container_id", outcome.ContainerID).
+		Msg("task_cancelled_container_removed")
 }
 
 func handleToolResult(raw json.RawMessage, cb CallbackService) {
