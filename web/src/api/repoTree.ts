@@ -114,19 +114,10 @@ export function rebuildKnowledgeTree(): Promise<{ status: string }> {
   return post<{ status: string }>('/repositories/knowledge-tree/rebuild/')
 }
 
-/** 人工修正仓库归属并 pin */
-export function pinRepositoryDomain(repositoryId: string, nodeId: string): Promise<{ status: string }> {
-  return post<{ status: string }>('/repositories/knowledge-tree/pin/', {
-    repository_id: repositoryId,
-    node_id: nodeId,
-  })
-}
-
 export default {
   getKnowledgeTree,
   getFacetView,
   searchKnowledgeTree,
   getRepoIndexTree,
   rebuildKnowledgeTree,
-  pinRepositoryDomain,
 }

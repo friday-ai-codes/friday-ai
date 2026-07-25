@@ -96,127 +96,13 @@ export async function restoreSystemBackup(file: File): Promise<{ detail: string,
 }
 
 // ============================================================================
-// 超管可观测总览（OBS-01）：任务队列全景 + 系统/Runner 负载
-// GET /api/system/observability/（IsSuperUser）
+// 任务队列全景：durable 队列（procrastinate_jobs）按 queue×status 的一行计数。
 // ============================================================================
 
-/** durable 队列（procrastinate_jobs）按 queue×status 的一行计数。 */
 export interface QueueStatusRow {
   queue: string
   status: string
   count: number
-}
-
-/** SubAgent 会话按 task_type×status 的一行计数。 */
-export interface SubagentStatusRow {
-  task_type: string
-  status: string
-  count: number
-}
-
-/** 活跃（pending/running）SubAgent 会话条目。 */
-export interface SubagentActiveItem {
-  session_id: string
-  task_type: string
-  status: string
-  repository_id: string
-  runner_id: string
-  updated_at: string
-}
-
-/** Runner 最近一次心跳上报的负载（与主机等价）。 */
-export interface RunnerLoad {
-  cpu_percent?: number
-  mem_percent?: number
-  mem_total_mb?: number
-  mem_used_mb?: number
-  disk_percent?: number
-  disk_total_gb?: number
-  disk_used_gb?: number
-}
-
-export interface RunnerObservability {
-  id: string
-  name: string
-  status: string
-  current_tasks: number
-  concurrent: number
-  version: string
-  last_heartbeat: string | null
-  load: RunnerLoad
-}
-
-/** server 进程运行时快照：协程数 + 线程数。 */
-export interface RuntimeStats {
-  asyncio_tasks: number | null
-  threads: number
-}
-
-/** 后台（异步）任务数量汇总。 */
-export interface BackgroundTaskSummary {
-  durable_active: number
-  durable_total: number
-  subagent_active: number
-  orchestration_active: number
-  total_active: number
-}
-
-/** 告警事件（AlertRuleExecution）。 */
-export interface AlertEvent {
-  id: string
-  rule_name: string
-  condition_type: string
-  status: string
-  triggered_event: string
-  error_message: string
-  triggered_at: string
-}
-
-export interface ObservabilityResponse {
-  generated_at: string
-  durable_queues: {
-    by_queue_status: QueueStatusRow[]
-    totals: Record<string, number>
-  }
-  subagent: {
-    by_type_status: SubagentStatusRow[]
-    active: SubagentActiveItem[]
-  }
-  repositories: {
-    total: number
-    index_status: Record<string, number>
-    graph_status: Record<string, number>
-    ai_summary_status: Record<string, number>
-  }
-  orchestration: Record<string, number>
-  runners: RunnerObservability[]
-  runtime: RuntimeStats
-  background_tasks: BackgroundTaskSummary
-  alerts: {
-    recent: AlertEvent[]
-    counts: Record<string, number>
-  }
-}
-
-export async function getObservability(): Promise<ObservabilityResponse> {
-  return get<ObservabilityResponse>('/system/observability/')
-}
-
-// ============================================================================
-// 运维监控「系统日志」：内存环形缓冲最近日志
-// GET /api/system/logs/（IsSuperUser）
-// ============================================================================
-
-export interface SystemLogEntry {
-  ts: string | null
-  level: string
-  logger: string
-  message: string
-  source: string
-}
-
-export async function getSystemLogs(params: { limit?: number, level?: string } = {}): Promise<{ logs: SystemLogEntry[] }> {
-  return get<{ logs: SystemLogEntry[] }>('/system/logs/', params)
 }
 
 // ============================================================================
@@ -522,11 +408,6 @@ export async function createAlertRule(body: AlertRuleWrite): Promise<AlertRule> 
   return post<AlertRule>('/system/alerts/rules/', body)
 }
 
-/** 单条规则详情。 */
-export async function getAlertRule(id: number): Promise<AlertRule> {
-  return get<AlertRule>(`/system/alerts/rules/${id}/`)
-}
-
 /** 部分更新规则。 */
 export async function updateAlertRule(id: number, body: Partial<AlertRuleWrite>): Promise<AlertRule> {
   return patch<AlertRule>(`/system/alerts/rules/${id}/`, body)
@@ -540,7 +421,6 @@ export async function deleteAlertRule(id: number): Promise<void> {
 // ----------------------------------------------------------------------------
 // 4) 告警事件（ALERT-02）：GET /system/alerts/events/（IsSuperUser）
 //    对齐 alert_serializers.AlertEventSerializer 全字段（列对齐 REFERENCE-UI §1.4）。
-//    新名 AlertEventRow，避免与既有 OBS-01 AlertEvent interface 撞名。
 // ----------------------------------------------------------------------------
 
 /** 告警事件行（已脱敏只读直出）。 */
@@ -584,10 +464,9 @@ export async function listAlertEvents(
 // ----------------------------------------------------------------------------
 // 5) 系统日志（LOG-01/03/08）：/system/logs/(+/clear/)（IsSuperUser）
 //    对齐 serializers.SystemLogEntrySerializer + log_views 查询/清理契约。
-//    新名 SystemLogRow，避免与既有内存版 SystemLogEntry interface 撞名。
 // ----------------------------------------------------------------------------
 
-/** 持久化系统日志行（SystemLogEntry，payload/correlation 写入前已脱敏）。 */
+/** 持久化系统日志行（payload/correlation 写入前已脱敏）。 */
 export interface SystemLogRow {
   id: number
   ts: string | null
@@ -663,13 +542,6 @@ export interface WebhookEventRow {
   verified: boolean
   correlation: Record<string, any>
   created_at: string
-}
-
-/** webhook 留痕列表（倒序 + kind/user_id/verified/时间段筛选 + 分页）。 */
-export async function listWebhookEvents(
-  params?: { kind?: string, user_id?: string, verified?: boolean, start?: string, end?: string, limit?: number, offset?: number },
-): Promise<{ items: WebhookEventRow[], total: number }> {
-  return get<{ items: WebhookEventRow[], total: number }>('/system/webhooks/', params)
 }
 
 /** 单条 webhook 原始详情（已脱敏，原始可回放）。 */

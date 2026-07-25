@@ -19,7 +19,7 @@ vi.mock('~/api/client', () => ({
   ApiError: MockApiError,
 }))
 
-const { getSymbols, getCallsForSymbol, getImports, getEndpoints, getNeighbors } = await import('~/api/codegraph')
+const { getSymbols, getCallsForSymbol, getImports, getNeighbors } = await import('~/api/codegraph')
 
 const REPO = '48338acf-35d3-4b44-abfc-c8946113529e'
 
@@ -98,16 +98,5 @@ describe('codegraph API URL 构造', () => {
     expect(url).toBe(`/repositories/${REPO}/codegraph/imports/`)
     expect(url).not.toContain('?')
     expect(params).toMatchObject({ limit: 50, offset: 0, source_file: 'src/a.py' })
-  })
-
-  it('getEndpoints 不把 query 拼进 path', async () => {
-    getMock.mockResolvedValueOnce({ count: 0, offset: 0, limit: 50, results: [] })
-
-    await getEndpoints(REPO, { limit: 50, offset: 0 })
-
-    const [url, params] = getMock.mock.calls[0]
-    expect(url).toBe(`/repositories/${REPO}/codegraph/endpoints/`)
-    expect(url).not.toContain('?')
-    expect(params).toMatchObject({ limit: 50, offset: 0 })
   })
 })

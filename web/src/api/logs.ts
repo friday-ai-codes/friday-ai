@@ -6,21 +6,6 @@
 
 import { del, get, post } from './client'
 
-// ============ 常量定义 ============
-
-/**
- * 工作项关键字段常量
- * 用于从飞书工作项中提取关键业务信息
- */
-export const KEY_FIELDS = {
-  /** 需求文档链接 */
-  PRD_URL: 'field_000001',
-  /** 需求描述 */
-  DESCRIPTION: 'description',
-  /** 技术方案文档链接 */
-  TECH_DOC_URL: 'field_000009',
-} as const
-
 // ============ 类型定义 ============
 
 /**

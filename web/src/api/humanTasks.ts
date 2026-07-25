@@ -53,19 +53,6 @@ export interface InboxParams {
   projectId?: string
 }
 
-/** 开原生待办入参（risk_ack / takeover 等）。 */
-export interface OpenHumanTaskBody {
-  task_type: HumanTaskType
-  scope: string
-  subject_id: string
-  assignee_user_id?: string | null
-  assignee_role?: string | null
-  source_signal?: string
-  due_at?: string | null
-  dedup_key?: string
-  resolution?: Record<string, unknown>
-}
-
 /** 单题作答。 */
 export interface ClarificationAnswer {
   question_id: string
@@ -85,13 +72,6 @@ export async function listHumanTasks(params: InboxParams = {}): Promise<HumanTas
   if (params.projectId)
     query.project_id = params.projectId
   return get<HumanTaskView[]>('/delivery/human-tasks/', query)
-}
-
-/**
- * 开一条原生待办（risk_ack / takeover 等）。
- */
-export async function openHumanTask(body: OpenHumanTaskBody): Promise<HumanTaskView> {
-  return post<HumanTaskView>('/delivery/human-tasks/', body)
 }
 
 /**
@@ -115,16 +95,6 @@ export async function skipHumanTask(
 }
 
 /**
- * 转派物化待办。
- */
-export async function reassignHumanTask(
-  taskId: string,
-  payload: { assignee_user_id?: string | null, assignee_role?: string | null },
-): Promise<{ id: string, status: HumanTaskStatus }> {
-  return post(`/delivery/human-tasks/${taskId}/reassign/`, payload)
-}
-
-/**
  * 对投影的待答澄清按题作答（经后端 ClarificationService 单一入口回流）。
  */
 export async function answerClarification(
@@ -136,9 +106,7 @@ export async function answerClarification(
 
 export default {
   listHumanTasks,
-  openHumanTask,
   resolveHumanTask,
   skipHumanTask,
-  reassignHumanTask,
   answerClarification,
 }

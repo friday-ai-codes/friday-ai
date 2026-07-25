@@ -27,13 +27,6 @@ export async function createProvider(data: OIDCProviderCreate): Promise<OIDCProv
 }
 
 /**
- * 获取单个 OIDC Provider
- */
-export async function getProvider(id: string): Promise<OIDCProvider> {
-  return get<OIDCProvider>(`/oidc/providers/${id}/`)
-}
-
-/**
  * 更新 OIDC Provider
  */
 export async function updateProvider(id: string, data: Partial<OIDCProviderCreate>): Promise<OIDCProvider> {
@@ -87,7 +80,6 @@ export async function getAuthorizeUrl(
 export default {
   getProviders,
   createProvider,
-  getProvider,
   updateProvider,
   deleteProvider,
   discoverEndpoints,
