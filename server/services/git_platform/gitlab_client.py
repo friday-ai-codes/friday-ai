@@ -13,6 +13,7 @@ from .base import GitPlatformClient, truncate_diff_lines
 from .models import (
     BranchCompareResult,
     CompareFileEntry,
+    MergeRequestLookupFailed,
     MRCreateRequest,
     MRCreateResult,
     MRDiffFile,
@@ -250,14 +251,16 @@ class GitLabClient(GitPlatformClient):
             )
             return MRCreateResult(success=True, mr_url=mr.web_url, mr_id=str(mr.iid))
         except Exception as e:
-            # token 绝不入日志，仅记分支与 error（fail-soft，不阻断创建）
+            # token 绝不入日志，仅记分支与 error。
+            # 这里刻意不再 fail-soft 返回 None：那会与「查了确实没有」混为一谈，
+            # 让查重 API 一抖动就退化成重复建 MR。抛给调用方显式处理。
             logger.warning(
                 "gitlab_find_open_mr_failed",
                 source=source_branch,
                 target=target_branch,
                 error=str(e),
             )
-            return None
+            raise MergeRequestLookupFailed(str(e)) from e
 
     async def create_merge_request(self, request: MRCreateRequest) -> MRCreateResult:
         """Create a GitLab merge request with optional reviewers.

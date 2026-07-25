@@ -83,6 +83,9 @@ async def test_batch_create_pr_all_success() -> None:
     context = make_context(config)
 
     mock_client = AsyncMock()
+    # 无既有 open PR：CreatePRNode 建 PR 前会先查重（reuse-first 围栏），
+    # AsyncMock 默认返回真值 mock 会被误判成「已存在」而短路。
+    mock_client.find_open_merge_request.return_value = None
     mock_client.create_merge_request.return_value = MRCreateResult(
         success=True,
         mr_url="https://github.com/org/repo/pull/1",
@@ -136,6 +139,9 @@ async def test_batch_create_pr_partial_failure() -> None:
 
     # First call succeeds, second fails
     mock_client = AsyncMock()
+    # 无既有 open PR：CreatePRNode 建 PR 前会先查重（reuse-first 围栏），
+    # AsyncMock 默认返回真值 mock 会被误判成「已存在」而短路。
+    mock_client.find_open_merge_request.return_value = None
     mock_client.create_merge_request.side_effect = [
         MRCreateResult(
             success=True,
@@ -241,6 +247,9 @@ async def test_batch_create_pr_cross_reference_disabled() -> None:
     context = make_context(config)
 
     mock_client = AsyncMock()
+    # 无既有 open PR：CreatePRNode 建 PR 前会先查重（reuse-first 围栏），
+    # AsyncMock 默认返回真值 mock 会被误判成「已存在」而短路。
+    mock_client.find_open_merge_request.return_value = None
     mock_client.create_merge_request.return_value = MRCreateResult(
         success=True,
         mr_url="https://github.com/org/repo/pull/1",
@@ -286,6 +295,9 @@ async def test_batch_create_pr_backward_compat() -> None:
     context = make_context(config)
 
     mock_client = AsyncMock()
+    # 无既有 open PR：CreatePRNode 建 PR 前会先查重（reuse-first 围栏），
+    # AsyncMock 默认返回真值 mock 会被误判成「已存在」而短路。
+    mock_client.find_open_merge_request.return_value = None
     mock_client.create_merge_request.return_value = MRCreateResult(
         success=True,
         mr_url="https://github.com/org/single-repo/pull/1",

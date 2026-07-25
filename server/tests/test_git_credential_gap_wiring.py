@@ -136,6 +136,10 @@ def _patch_pr_client_capture(monkeypatch) -> list[dict[str, str]]:
     calls: list[dict[str, str]] = []
 
     class _FakeClient:
+        async def find_open_merge_request(self, source_branch, target_branch):
+            """无既有 open PR —— CreatePRNode 建 PR 前会先过这道 reuse-first 围栏。"""
+            return None
+
         async def create_merge_request(self, request):
             return MRCreateResult(success=True, mr_url="http://mr/1", mr_id="1")
 
