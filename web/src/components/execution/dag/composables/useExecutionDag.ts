@@ -97,6 +97,8 @@ export function useExecutionDag(
         .map(n => [n.node_id, n]),
     )
 
+    // ai_plan_generation 已随 Chassis v2 退役（编辑态由 0034 迁到 ai_plan_research），
+    // 但历史 NodeExecution 仍保留该 node_type，此处必须继续识别否则旧执行记录渲染异常。
     const AI_NODE_TYPES = ['ai_prompt', 'ai_coding', 'ai_plan_generation', 'ai_coding_dispatcher']
 
     return definition.nodes?.map((defNode) => {

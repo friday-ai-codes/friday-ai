@@ -11,7 +11,6 @@ import {
   Clock,
   CloudUpload,
   Combine,
-  FileCode,
   FileSearch,
   FileText,
   FolderPlus,
@@ -86,7 +85,6 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
   ai_coding_dispatcher: { icon: Bot, color: 'purple' },
   ai_variable_extractor: { icon: Variable, color: 'purple' },
   variable_extractor: { icon: Variable, color: 'purple' },
-  ai_plan_generation: { icon: FileCode, color: 'purple' },
   ai_plan_research: { icon: FileSearch, color: 'purple' },
   ai_coding: { icon: Terminal, color: 'purple' },
 
