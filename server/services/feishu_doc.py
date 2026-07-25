@@ -19,6 +19,8 @@ from tenacity import (
     wait_exponential,
 )
 
+from services.feishu_http import feishu_client
+
 logger = structlog.get_logger(__name__)
 
 
@@ -98,7 +100,7 @@ class FeishuDocClient:
         if self._tenant_token and now < self._token_expires_at:
             return self._tenant_token
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.post(
                 f"{self.OPEN_API_BASE}/auth/v3/tenant_access_token/internal",
                 json={
@@ -352,7 +354,7 @@ class FeishuDocClient:
         """
         token = await self.get_tenant_access_token()
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             # 1. Create empty document
             response = await client.post(
                 f"{self.OPEN_API_BASE}/docx/v1/documents",
@@ -430,7 +432,7 @@ class FeishuDocClient:
         """
         token = await self.get_tenant_access_token()
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.post(
                 f"{self.OPEN_API_BASE}/drive/v1/files/create_folder",
                 headers={
@@ -477,7 +479,7 @@ class FeishuDocClient:
         """
         token = await self.get_tenant_access_token()
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.post(
                 f"{self.OPEN_API_BASE}/drive/v1/files/{file_token}/subscribe",
                 headers={
@@ -539,7 +541,7 @@ class FeishuDocClient:
         """
         token = await self.get_tenant_access_token()
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.request(
                 "DELETE",
                 f"{self.OPEN_API_BASE}/drive/v1/files/{file_token}/subscribe",
