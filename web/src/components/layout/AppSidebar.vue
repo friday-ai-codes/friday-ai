@@ -108,6 +108,8 @@ const adminNavItems: NavItem[] = [
   { to: '/admin/users', label: '用户管理', icon: 'lucide--users' },
   { to: '/admin/conversations', label: '会话管理', icon: 'lucide--messages-square' },
   { to: '/admin/prompts', label: 'Prompt 管理', icon: 'lucide--file-text' },
+  { to: '/admin/git-credentials', label: 'Git 实例凭证', icon: 'lucide--key-round' },
+  { to: '/admin/artifact-types', label: '工件类型管理', icon: 'lucide--shapes' },
   { to: '/admin/audit', label: '操作审计', icon: 'lucide--shield-check' },
   { to: '/admin/feedback', label: '反馈管理', icon: 'lucide--message-square-warning' },
   { to: '/admin/announcements', label: '系统公告', icon: 'lucide--megaphone' },
