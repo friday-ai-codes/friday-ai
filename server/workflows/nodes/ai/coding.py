@@ -1009,10 +1009,14 @@ class AICodingNode(SubStepMixin, BaseNode):
     ) -> NodeResult:
         """wave 推进：经 ``aadvance_coding_waves`` 判 gate → 推下一 wave 或部分成功收尾。
 
-        整段 fail-soft（aadvance 异常 swallow + warning 降级 → 直接收尾），绝不让节点
-        重入异常回灌使容器回调 5xx（对齐 Pitfall 4；``_schedule_workflow_resume`` 本身
-        fire-and-forget 不改契约）。wave N→N+1 由下一轮容器回调重入驱动（**不另造调度**：
-        无轮询 / 无 sleep / 无定时器）。
+        aadvance 异常不外抛，绝不让节点重入异常回灌使容器回调 5xx（对齐 Pitfall 4；
+        ``_schedule_workflow_resume`` 本身 fire-and-forget 不改契约）——但也**不再当作
+        正常收尾**：推进失败说明 wave 状态机没走完（可能仍有仓 RUNNING、或下一 wave
+        未派发），此时仍走 ``_finalize_wave`` 保住已 done 仓的 MR，随后把 NodeResult
+        显式降级为 ``failed``，避免「表面成功、实际丢步骤」。
+
+        wave N→N+1 由下一轮容器回调重入驱动（**不另造调度**：无轮询 / 无 sleep /
+        无定时器）。
 
         有限收敛 ``for`` 循环（非调度循环）仅处理「本 wave 全 dispatch 失败（无容器回调可
         驱动）」时**当轮**再 advance 阻断下游并收敛——每次 continue 都使一批 task 转终态，
@@ -1028,9 +1032,23 @@ class AICodingNode(SubStepMixin, BaseNode):
         for _ in range(max_passes):
             try:
                 result = await aadvance_coding_waves(plan_version_id)
-            except Exception as exc:  # noqa: BLE001 — 推进异常降级收尾，不回灌回调 5xx
-                log.warning("coding_wave_advance_failed", error=str(exc))
-                return await self._finalize_wave(context, output_data, plan_version_id, log)
+            except Exception as exc:  # noqa: BLE001 — 不回灌回调 5xx，但必须标失败
+                # 推进失败意味着 wave 状态机没走完：可能仍有仓在 RUNNING、或下一 wave
+                # 根本没派发。此前这里直接 _finalize_wave 收尾，节点会以「完成」示人并
+                # 触发 MR / 通知 / 经验沉淀——用户看到流程成功，实际编码没做完。
+                #
+                # 仍然收尾（已 done 的仓该出的 MR 不能丢），但把结果显式降级为 failed，
+                # 让「部分完成」在 UI 与后续判断里可见。不 raise 是刻意的：这条路径由
+                # 容器回调驱动，抛异常会让回调 5xx 触发重试风暴（Pitfall 4）。
+                log.error("coding_wave_advance_failed", error=str(exc))
+                partial = await self._finalize_wave(context, output_data, plan_version_id, log)
+                return NodeResult(
+                    status="failed",
+                    output=partial.output,
+                    error=(
+                        f"wave 推进失败，已按当前 DB 状态收尾（可能有仓未完成或未派发）: {exc}"
+                    ),
+                )
 
             # waiting：仍有 RUNNING 在途 task（aadvance 仅在 RUNNING 时返回 waiting）→ 重挂起
             # 等下一次容器回调，绝不当作收尾触发（waiting != finalize）。
