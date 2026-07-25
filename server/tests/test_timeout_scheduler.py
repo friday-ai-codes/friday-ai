@@ -53,7 +53,10 @@ def workflow_node(db: None, workflow: "Workflow") -> "WorkflowNode":
 
     return WorkflowNode.objects.create(
         workflow=workflow,
-        node_type="ai_plan_generation",
+        # Chassis v2 已删除 ai_plan_generation，统一为 ai_plan_research；
+        # 本文件测的是超时调度、节点类型只是载体，但仍应使用注册表里真实存在的类型，
+        # 避免测试数据与生产节点集脱节。
+        node_type="ai_plan_research",
         name="Test Node",
         config={},
     )
