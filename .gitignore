@@ -59,3 +59,8 @@ coverage/
 docs/.vitepress/dist/
 mcp/dist/
 docs/.vitepress/cache/
+
+# GSD 本地 worktree（开发者机器上的临时 worktree，不应进仓库）。
+# 历史上 .claude/worktrees/v0.10-audit 被误当 gitlink 提交且不在 .gitmodules 里，
+# 导致 CI 一旦 checkout submodules 就 fatal: No url found for submodule path。
+.claude/worktrees/
