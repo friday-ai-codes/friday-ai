@@ -7,7 +7,11 @@
   - CLAUDE_* 环境变量在 SDK 子进程中被正确隔离
   - ASGI:   Django ASGI 环境下无 event loop 冲突
 
-用法: cd server && uv run python test_claude_agent_sdk.py
+用法: cd server && uv run python scripts/verify_claude_agent_sdk.py
+
+注：本文件原名 test_claude_agent_sdk.py 且位于 server/ 根目录。它不是 pytest 用例
+（会真的起 SDK 子进程发请求），只因 pytest 的 testpaths=["tests"] 才没被收集——
+改一次配置就会被当成测试跑。移入 scripts/ 并去掉 test_ 前缀以消除这个隐患。
 """
 
 import asyncio
