@@ -211,6 +211,54 @@ def _schedule_agent_session_resume(session: SubAgentSession, log: BoundLogger) -
         asyncio.run(_prepare_and_resume())
 
 
+#: 续跑重试次数。瞬时故障（DB 抖动、连接失效）占多数，几次退避基本能过；
+#: 耗尽即判定为持续性故障，走标失败而不是继续挂着。
+_RESUME_MAX_ATTEMPTS = 3
+
+#: 退避基数（秒），第 N 次重试前等 N × 该值。
+_RESUME_RETRY_BACKOFF_SECONDS = 2.0
+
+#: 持有在途续跑任务的强引用。asyncio 的 loop.create_task 只保弱引用，不持有就
+#: 可能在 await 点被 GC 回收，症状是续跑「偶尔就是没发生」且不留任何日志。
+_PENDING_RESUME_TASKS: set[asyncio.Task] = set()
+
+
+async def _mark_execution_failed_after_resume_exhausted(
+    session: SubAgentSession,
+    error: Exception | None,
+    log: BoundLogger,
+) -> None:
+    """续跑重试耗尽后把工作流执行标失败，避免永久停在 SUSPENDED。
+
+    best-effort：这一步再失败也只能记日志——但至少前面已经有 workflow_resume_exhausted
+    这个可查询、可告警的事件，不再是完全静默。
+    """
+    try:
+        from workflows.models.execution import ExecutionStatus, NodeExecution
+
+        node_exec = (
+            await NodeExecution.objects.select_related("workflow_execution")
+            .filter(id=session.node_execution_id)
+            .afirst()
+        )
+        if not node_exec:
+            return
+        execution = node_exec.workflow_execution
+        if execution.status in (ExecutionStatus.COMPLETED, ExecutionStatus.FAILED):
+            return
+        execution.status = ExecutionStatus.FAILED
+        execution.error_message = (
+            f"容器回调后续跑失败，已重试 {_RESUME_MAX_ATTEMPTS} 次仍未成功: {error}"
+        )
+        await execution.asave(update_fields=["status", "error_message"])
+        log.error(
+            "workflow_marked_failed_after_resume_exhausted",
+            workflow_execution_id=str(execution.id),
+        )
+    except Exception as exc:  # noqa: BLE001 — 标失败本身失败不再上抛，事件已留痕
+        log.exception("mark_execution_failed_error", error=str(exc))
+
+
 def _schedule_workflow_resume(session: SubAgentSession, log: BoundLogger) -> None:
     """触发 workflow 恢复（异步，不阻塞回调响应）。
 
@@ -294,13 +342,48 @@ def _schedule_workflow_resume(session: SubAgentSession, log: BoundLogger) -> Non
 
         except Exception as e:
             log.exception("workflow_resume_error", error=str(e))
+            raise
+
+    async def _resume_with_retry() -> None:
+        """有界重试 + 终局标失败。
+
+        续跑此前是纯 fire-and-forget：异常只 log.exception，执行就永久停在
+        SUSPENDED / WAITING_EVENT。前端显示「等待容器」，容器其实早退出了，只能
+        人工介入，而且没有任何可查询的失败信号。
+
+        DB 抖动之类的瞬时故障占多数，先按退避重试；重试耗尽说明是持续性故障，
+        此时把执行显式标 failed —— 一个可见的失败远好过一个不可见的永久挂起。
+        """
+        last_error: Exception | None = None
+        for attempt in range(1, _RESUME_MAX_ATTEMPTS + 1):
+            try:
+                await _resume()
+                return
+            except Exception as exc:  # noqa: BLE001 — 每轮都已记日志，此处决定是否再试
+                last_error = exc
+                if attempt < _RESUME_MAX_ATTEMPTS:
+                    await asyncio.sleep(_RESUME_RETRY_BACKOFF_SECONDS * attempt)
+
+        log.error(
+            "workflow_resume_exhausted",
+            attempts=_RESUME_MAX_ATTEMPTS,
+            error=str(last_error),
+            session_id=str(session.session_id),
+        )
+        await _mark_execution_failed_after_resume_exhausted(session, last_error, log)
 
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(_resume())
     except RuntimeError:
         # 没有运行中的事件循环，创建新的
-        asyncio.run(_resume())
+        asyncio.run(_resume_with_retry())
+        return
+
+    # 必须持强引用：loop.create_task 只保弱引用，任务可能在 await 点被 GC 回收，
+    # 表现为续跑「有时候就是没发生」且无任何日志。
+    task = loop.create_task(_resume_with_retry())
+    _PENDING_RESUME_TASKS.add(task)
+    task.add_done_callback(_PENDING_RESUME_TASKS.discard)
 
 
 def _schedule_chat_plan_resume(session: SubAgentSession, log: BoundLogger) -> None:
