@@ -72,8 +72,10 @@ class TestBaseBranchCreate:
 class TestBaseBranchUpdate:
     @patch("repositories.views._validate_base_branch", new_callable=AsyncMock, return_value=True)
     def test_update_repository_base_branch(
-        self, mock_validate, authenticated_client, repository
+        self, mock_validate, authenticated_client, repository_in_user_space
     ) -> None:
+        # repository_in_user_space：仓库可见性按空间成员过滤（#9/#11），孤儿仓库普通用户 404
+        repository = repository_in_user_space
         url = reverse("repository-detail", args=[repository.id])
         response = authenticated_client.patch(
             url,
@@ -259,8 +261,9 @@ class TestBaseBranchValidation:
 
     @patch("repositories.views._validate_base_branch", new_callable=AsyncMock, return_value=False)
     def test_update_invalid_branch_returns_400(
-        self, mock_validate, authenticated_client, repository_with_credential
+        self, mock_validate, authenticated_client, repository_with_credential, repository_in_user_space
     ) -> None:
+        # 同上：repository_with_credential 建在 repository 之上，需一并授予可见性
         url = reverse("repository-detail", args=[repository_with_credential.id])
         response = authenticated_client.patch(
             url,

@@ -82,10 +82,16 @@ class TestGenerateSummaryEndpoint:
     def test_generate_summary_returns_403_for_non_admin(
         self,
         authenticated_client: APIClient,
-        repository: Repository,
+        repository_in_user_space: Repository,
         mock_dispatch,
     ) -> None:
-        """#11：非空间管理员的已登录用户不得触发建立知识（fail-closed 403）。"""
+        """#11：空间成员但非管理员不得触发建立知识（fail-closed 403）。
+
+        必须用「成员」而非任意登录用户：仓库可见性已按空间成员过滤（#9/#11），非成员
+        在 get_object() 阶段就拿 404（不泄漏存在性），根本走不到 403 分支。本用例要守护的
+        是「看得见但无权操作 → 403」这一层，与「看不见 → 404」是两件事，不能混。
+        """
+        repository = repository_in_user_space
         url = f"/api/repositories/{repository.id}/generate-summary/"
         response = authenticated_client.post(url)
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -101,8 +107,9 @@ class TestSummaryStatusEndpoint:
     def test_summary_status_returns_correct_fields(
         self,
         authenticated_client: APIClient,
-        repository: Repository,
+        repository_in_user_space: Repository,
     ) -> None:
+        repository = repository_in_user_space
         """GET summary-status 返回 status/progress/summary/generated_at/error 五个字段。"""
         url = f"/api/repositories/{repository.id}/summary-status/"
         response = authenticated_client.get(url)
@@ -117,8 +124,9 @@ class TestSummaryStatusEndpoint:
     def test_summary_status_reflects_model_state(
         self,
         authenticated_client: APIClient,
-        repository: Repository,
+        repository_in_user_space: Repository,
     ) -> None:
+        repository = repository_in_user_space
         """GET summary-status 返回的值与模型字段一致。"""
         repository.ai_summary_status = AISummaryStatus.COMPLETED
         repository.ai_summary = "这是一个测试仓库的 AI 描述"
@@ -133,8 +141,9 @@ class TestSummaryStatusEndpoint:
     def test_summary_status_without_session_returns_empty_logs(
         self,
         authenticated_client: APIClient,
-        repository: Repository,
+        repository_in_user_space: Repository,
     ) -> None:
+        repository = repository_in_user_space
         """无 REPO_SUMMARY 会话时 recent_logs 为空列表（不报错）。"""
         url = f"/api/repositories/{repository.id}/summary-status/"
         response = authenticated_client.get(url)
@@ -144,10 +153,11 @@ class TestSummaryStatusEndpoint:
     def test_summary_status_returns_recent_logs_tail(
         self,
         authenticated_client: APIClient,
-        repository: Repository,
+        repository_in_user_space: Repository,
         user,
     ) -> None:
         """recent_logs 返回最近一次 REPO_SUMMARY 会话日志的尾部 30 条。"""
+        repository = repository_in_user_space
         from agents.models import AgentSession
         from subagent.models import SubAgentSession
 

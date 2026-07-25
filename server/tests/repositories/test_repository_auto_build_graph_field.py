@@ -25,14 +25,25 @@ from repositories.serializers import RepositorySerializer
 
 
 @pytest.fixture
-def graph_repo(db) -> Repository:
-    """供本 plan 测试关联的独立 Repository 实例（避免与全局 fixture 串污染）。"""
-    return Repository.objects.create(
+def graph_repo(db, user) -> Repository:
+    """供本 plan 测试关联的独立 Repository 实例（避免与全局 fixture 串污染）。
+
+    自带独立空间 + user 的 MEMBER 成员关系：仓库可见性按空间成员过滤（#9/#11），
+    孤儿仓库仅超管可见，否则本文件用普通用户走 REST 链路会 404。
+    """
+    from permissions.models import SpaceMembership, SpaceRole
+    from projects.models import Space
+
+    repo = Repository.objects.create(
         name="auto-build-graph-repo",
         git_url="https://github.com/test/auto-build-graph-repo.git",
         git_platform="github",
         default_branch="main",
     )
+    space = Space.objects.create(name="auto-build-graph-space")
+    space.repositories.add(repo)
+    SpaceMembership.objects.create(user=user, space=space, role=SpaceRole.MEMBER)
+    return repo
 
 
 @pytest.mark.django_db

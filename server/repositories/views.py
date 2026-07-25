@@ -544,12 +544,24 @@ class RepositoryViewSet(ModelViewSet):
     serializer_class = RepositorySerializer
 
     def get_queryset(self):
-        """Filter out soft-deleted repositories."""
-        return (
+        """仅返回当前用户可见的仓库（并排除软删除）。
+
+        #9 / #11 可见性口径：超管可见全部；普通用户仅可见其所属空间所关联的仓库。
+        孤儿仓库（未关联任何空间）因而仅超管可见——与 ``can_admin_repository`` 的孤儿
+        规则、以及 ``serializers.py`` / 本文件 #9 注释中「孤儿仓库仅超管可见/管理」的
+        既有约定一致。此前只收口了「管理」，可见性未做隔离，任何登录用户都能列出全库
+        仓库（含他人空间的仓库名与 git_url）。
+        """
+        qs = (
             Repository.objects.filter(is_deleted=False)
             .select_related("credential")
             .prefetch_related("spaces")
         )
+        user = self.request.user
+        if getattr(user, "is_superuser", False):
+            return qs
+        # 同一仓库可关联多个空间，用户又可能同时是多个空间成员 → join 会放大行数，必须 distinct
+        return qs.filter(spaces__memberships__user=user).distinct()
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -1671,6 +1683,10 @@ class RepositorySensitiveSuggestionActionView(APIView):
       重复 accept 不报错（``aget_or_create`` 幂等，T-24-12）。
     - ``dismiss``：仅置建议 ``status=dismissed``，不建规则、不删数据。
     - 越仓 / 不存在的 suggestion_id → 404（不泄漏存在性，T-24-09）；非法 action → 400。
+    - #11：与列表端点同权限——仅空间管理员/系统管理员可操作。本端点既变更索引范围
+      （accept 会建 RepoExclusionRule），响应又回显建议的 path / reason 等敏感字段，
+      授权强度必须与 RepositorySensitiveSuggestionsView 一致，否则列表侧的管控会被
+      本端点旁路。
     """
 
     permission_classes = [IsAuthenticated]
@@ -1680,6 +1696,15 @@ class RepositorySensitiveSuggestionActionView(APIView):
             await Repository.objects.aget(id=repository_id, is_deleted=False)
         except Repository.DoesNotExist:
             return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        # #11：敏感信息仅空间管理员/系统管理员可操作（与列表端点同一守卫）
+        if not await sync_to_async(PermissionService.can_admin_repository)(
+            request.user, str(repository_id)
+        ):
+            return Response(
+                {"detail": "仅空间管理员可操作敏感建议"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         action_name = (request.data.get("action") or "").strip().lower()
         if action_name not in ("accept", "dismiss"):

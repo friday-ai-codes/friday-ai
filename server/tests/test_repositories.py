@@ -9,6 +9,16 @@ from rest_framework import status
 
 from permissions.services import PermissionService
 
+
+def _grant_space_membership(user, space):
+    """给 user 建 space 的 MEMBER 成员关系（仓库可见性按空间成员过滤，见 #9/#11）。"""
+    from permissions.models import SpaceMembership, SpaceRole
+
+    return SpaceMembership.objects.create(
+        user=user, space=space, role=SpaceRole.MEMBER
+    )
+
+
 # ============================================================================
 # 仓库列表和创建测试
 # ============================================================================
@@ -25,13 +35,44 @@ class TestRepositoryListCreate:
         assert response.status_code == status.HTTP_200_OK
         assert response.data == []
 
-    def test_list_repositories_with_data(self, authenticated_client, repository, urls):
+    def test_list_repositories_with_data(
+        self, authenticated_client, repository_in_user_space, urls
+    ):
         """测试有数据的仓库列表。"""
         response = authenticated_client.get(urls.repository_list)
 
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 1
         assert response.data[0]["name"] == "Test Repo"
+
+    def test_list_excludes_orphan_repo_for_non_superuser(
+        self, authenticated_client, authenticated_admin_client, repository, urls
+    ):
+        """#9/#11：孤儿仓库（未关联空间）仅超管可见，普通用户列表里不得出现。
+
+        此前 get_queryset 未做任何隔离，任何登录用户都能列出全库仓库（含他人空间的
+        仓库名与 git_url）；只有「管理」被收口，「可见」没有。
+        """
+        assert authenticated_client.get(urls.repository_list).data == []
+        admin_names = [
+            r["name"] for r in authenticated_admin_client.get(urls.repository_list).data
+        ]
+        assert "Test Repo" in admin_names
+
+    def test_list_excludes_repo_of_other_space(
+        self, authenticated_client, repository, project, urls
+    ):
+        """仓库已挂空间但 user 非该空间成员 → 仍不可见（不是「挂了空间就人人可见」）。"""
+        assert project.repositories.filter(id=repository.id).exists()
+        assert authenticated_client.get(urls.repository_list).data == []
+
+    def test_detail_404_for_repo_outside_user_spaces(
+        self, authenticated_client, repository, urls
+    ):
+        """越权访问详情返回 404 而非 403——不泄漏「该仓库存在」这一事实。"""
+        resp = authenticated_client.get(urls.repository_detail(repository.id))
+        assert resp.status_code == status.HTTP_404_NOT_FOUND
+        assert "Test Repo" not in resp.content.decode()
 
     def test_create_repository_with_token(
         self, authenticated_client, project_without_repo, urls
@@ -180,18 +221,18 @@ class TestRepositoryListCreate:
 class TestRepositoryDetail:
     """仓库详情接口测试。"""
 
-    def test_get_repository(self, authenticated_client, repository, urls):
+    def test_get_repository(self, authenticated_client, repository_in_user_space, urls):
         """测试获取单个仓库。"""
-        response = authenticated_client.get(urls.repository_detail(repository.id))
+        response = authenticated_client.get(urls.repository_detail(repository_in_user_space.id))
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data["name"] == "Test Repo"
         assert "spaces" in response.data
 
-    def test_update_repository(self, authenticated_client, repository, urls):
+    def test_update_repository(self, authenticated_client, repository_in_user_space, urls):
         """测试更新仓库。"""
         response = authenticated_client.patch(
-            urls.repository_detail(repository.id),
+            urls.repository_detail(repository_in_user_space.id),
             {"name": "Updated Repo"},
             format="json",
         )
@@ -200,11 +241,11 @@ class TestRepositoryDetail:
         assert response.data["name"] == "Updated Repo"
 
     def test_update_repository_converts_ssh_git_url(
-        self, authenticated_client, repository, urls
+        self, authenticated_client, repository_in_user_space, urls
     ):
         """更新仓库时 SSH URL 自动转换为 HTTPS。"""
         response = authenticated_client.patch(
-            urls.repository_detail(repository.id),
+            urls.repository_detail(repository_in_user_space.id),
             {"git_url": "git@gitlab.example.com:frontend/example-app.git"},
             format="json",
         )
@@ -212,9 +253,9 @@ class TestRepositoryDetail:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["git_url"] == "https://gitlab.example.com/frontend/example-app.git"
 
-    def test_delete_repository(self, authenticated_client, repository, urls):
+    def test_delete_repository(self, authenticated_client, repository_in_user_space, urls):
         """测试删除仓库。"""
-        response = authenticated_client.delete(urls.repository_detail(repository.id))
+        response = authenticated_client.delete(urls.repository_detail(repository_in_user_space.id))
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
@@ -228,8 +269,11 @@ class TestRepositoryDetail:
 class TestRepositoryCredential:
     """仓库凭据接口测试。"""
 
-    def test_get_credential(self, authenticated_client, project_without_repo, urls):
+    def test_get_credential(self, authenticated_client, project_without_repo, user, urls):
         """测试获取仓库凭据。"""
+        # 建仓后需为 user 建空间成员关系：仓库可见性按空间成员过滤（#9/#11），
+        # 建仓者本身不自动获得可见性。
+        _grant_space_membership(user, project_without_repo)
         # 创建带凭据的仓库
         create_response = authenticated_client.post(
             urls.repository_list,
@@ -249,16 +293,21 @@ class TestRepositoryCredential:
         assert response.data["has_access_token"] is True
         assert response.data["auth_type"] == "access_token"
 
-    def test_get_credential_not_found(self, authenticated_client, repository, urls):
+    def test_get_credential_not_found(
+        self, authenticated_client, repository_in_user_space, urls
+    ):
         """测试获取不存在的凭据。"""
-        response = authenticated_client.get(urls.repository_credential(repository.id))
+        response = authenticated_client.get(urls.repository_credential(repository_in_user_space.id))
 
         # API returns 200 with null when credential doesn't exist
         assert response.status_code == status.HTTP_200_OK
         assert response.data is None
 
-    def test_delete_credential(self, authenticated_client, project_without_repo, urls):
+    def test_delete_credential(
+        self, authenticated_client, project_without_repo, user, urls
+    ):
         """测试删除仓库凭据。"""
+        _grant_space_membership(user, project_without_repo)
         # 创建带凭据的仓库
         create_response = authenticated_client.post(
             urls.repository_list,
