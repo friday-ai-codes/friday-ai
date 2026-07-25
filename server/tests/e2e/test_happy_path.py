@@ -100,7 +100,7 @@ class TestCompleteWorkflowFlow:
 
         work_item_id = f"wi-{uuid.uuid4().hex[:8]}"
 
-        # Configure mock LLM (needed for ai_plan_generation node)
+        # Configure mock LLM (needed for ai_plan_research node)
         custom_plan = create_technical_plan(
             repository_id=str(e2e_repository.id),
             repository_name=e2e_repository.name,
@@ -214,12 +214,21 @@ class TestCompleteWorkflowFlow:
         # Verify technical plan node executed (may have completed or failed)
         plan_node_exec = await sync_to_async(
             lambda: execution.node_executions.filter(
-                node__node_type="ai_plan_generation",
+                node__node_type="ai_plan_research",
             ).first()
         )()
 
         assert plan_node_exec is not None
-        # If completed, verify output exists
+        # 节点类型必须在 NodeRegistry 里查得到。Chassis v2 删掉 ai_plan_generation 后
+        # 这条 E2E 曾长期「绿着但没测到东西」：节点因未知类型直接失败，而下面的
+        # `if COMPLETED` 条件块被跳过，断言形同虚设。这里显式钉住失败原因不能是
+        # 「未知的节点类型」，让工作流引用了不存在节点的回归无法再蒙混过关。
+        assert "未知的节点类型" not in (plan_node_exec.error_message or ""), (
+            f"工作流引用了未注册的节点类型：{plan_node_exec.error_message}"
+        )
+        # 已知缺口：E2E 的 mock LLM 是按旧 LangChain agent 节点搭的，未覆盖
+        # ai_plan_research 的 PlanSession 编排链路，故该节点在本套件下仍不会 COMPLETED。
+        # 下面保持条件断言——补齐编排 mock 后应改为无条件断言。
         if plan_node_exec.status == NodeExecutionStatus.COMPLETED:
             assert plan_node_exec.output_data.get("plan") is not None
             assert plan_node_exec.output_data.get("task_count", 0) >= 1
@@ -555,7 +564,7 @@ class TestWorkflowStateVerification:
         # Check technical plan node exists and ran
         plan_node = await sync_to_async(
             lambda: execution.node_executions.filter(
-                node__node_type="ai_plan_generation"
+                node__node_type="ai_plan_research"
             ).first()
         )()
 
@@ -582,7 +591,7 @@ class TestWorkflowStateVerification:
         work_item_id = f"wi-{uuid.uuid4().hex[:8]}"
         work_item_name = "Global Params Test Story"
 
-        # Configure mock LLM (needed for ai_plan_generation node)
+        # Configure mock LLM (needed for ai_plan_research node)
         custom_plan = create_technical_plan(
             repository_id=str(e2e_repository.id),
             repository_name=e2e_repository.name,

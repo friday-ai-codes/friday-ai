@@ -85,7 +85,7 @@ def e2e_workflow(
 
     The workflow chain:
     1. feishu_event_trigger - Triggers on Feishu work item creation
-    2. ai_plan_generation - Generates technical plan from requirements
+    2. ai_plan_research - Generates technical plan from requirements
     3. wait_feishu_field - Waits for approval status
     4. ai_coding_dispatcher - Dispatches coding tasks
 
@@ -113,20 +113,18 @@ def e2e_workflow(
         },
     )
 
-    # Node 2: AI Plan Generation
+    # Node 2: AI 方案编排调研（Chassis v2 起取代已删除的 ai_plan_generation；
+    # config 形态对齐 AIPlanResearchNode.config_schema，与迁移 0034 的产物一致）
     plan_node = WorkflowNode.objects.create(
         workflow=workflow,
-        node_type="ai_plan_generation",
-        name="AI Plan Generation",
+        node_type="ai_plan_research",
+        name="AI Plan Research",
         position_x=250,
         position_y=100,
         config={
-            "system_prompt": "",
-            "user_prompt": "",
+            "requirement_text": "",
             "include_repos": [],
-            "exclude_repos": [],
-            "max_iterations": 50,
-            "enabled_tools": [],
+            "work_item_id": "",
             "chat_id": "",
             "use_custom_api": False,
             "api_base_url": "",
