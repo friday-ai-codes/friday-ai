@@ -1,10 +1,19 @@
 name: CI
 
-# 聚焦 server 的 durable 底座 CI（DURABLE-04）：
-#   - server-ci    默认 SQLite 路径（零回归基线，addopts 默认排除 postgres_queue）
+# 四个组件的门禁：
+#   - server-ci       默认 SQLite 路径（零回归基线，addopts 默认排除 postgres_queue）
 #   - postgres-queue  postgres:17-alpine service container 跑 -m postgres_queue
-# 仓库历史 workflow 已于 5579e45f2 整体删除；本文件从零创建，只覆盖 server +
-# Postgres 最小门禁，不顺带恢复 web/runner/docs/task/security-scan 等无关 job。
+#   - web-ci          vue-tsc 类型检查 + vitest
+#   - runner-ci       go build / vet / test -race
+#   - task-ci         容器任务执行器 pytest
+#
+# 后三个 job 是补齐的：此前 CI 只有 server 两个 job，web / runner / task 长期无门禁，
+# 直接后果是前端积累了 6 个与实现漂移的失败测试（文案改了断言没改、表单插入字段把
+# 位置下标顶偏）而无人发现，runner 的 task.cancel 整条链路断裂也没被拦住。
+#
+# 未做 per-job 路径过滤（需引第三方 paths-filter action）：宁可多跑几分钟，也不冒
+# 「该跑的检查被静默跳过」的风险——上面那批漂移正是没人跑出来的。concurrency 会
+# 取消被取代的旧 run，实际浪费有限。
 "on":
   # 手动触发：paths 过滤会让「只改仓库根配置（如 .gitignore）却影响 CI」的提交不触发
   # 本工作流，需要一个不依赖改动路径的入口来验证门禁本身。
@@ -13,11 +22,17 @@ name: CI
     branches: [main]
     paths:
       - "server/**"
+      - "web/**"
+      - "runner/**"
+      - "task/**"
       - ".github/workflows/ci.yaml"
   pull_request:
     branches: [main]
     paths:
       - "server/**"
+      - "web/**"
+      - "runner/**"
+      - "task/**"
       - ".github/workflows/ci.yaml"
 
 permissions:
@@ -116,3 +131,77 @@ jobs:
       # 注：真实 kill-worker E2E 为 human_needed（见 60-VALIDATION.md），CI 以 forged-heartbeat 自动逼近 rescue。
       - name: Pytest -m postgres_queue (durable Postgres 行为)
         run: uv run pytest -m postgres_queue --allow-hosts=127.0.0.1,localhost
+
+  web-ci:
+    name: web-ci (类型检查 + 单测)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v6
+      # pnpm 版本以 web/package.json 的 packageManager 字段为准（corepack 语义），
+      # 不在此处写死，避免与仓库声明漂移。
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: web/.nvmrc
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # 类型检查是硬门禁：它是这套自动导入 + 泛型偏重的前端里最便宜的整体性检查。
+      - name: Type check (vue-tsc)
+        run: pnpm exec vue-tsc --noEmit
+      - name: Vitest
+        run: pnpm exec vitest run
+      # ESLint 目前有约 100 处历史遗留问题（多为 jsdoc/格式类），与 server 侧 ruff
+      # 同样按 advisory 处理，不阻塞门禁；待单独一次全量整改后再翻成硬门禁。
+      - name: ESLint (advisory legacy baseline)
+        continue-on-error: true
+        run: pnpm exec eslint src
+
+  runner-ci:
+    name: runner-ci (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: runner
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: runner/go.mod
+          cache-dependency-path: runner/go.sum
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      # -race：调度器有 sync.Map + Cond + semaphore 的并发面（task.cancel 要在
+      # 队列态与运行态之间取舍），竞态回归靠普通 go test 抓不到。
+      - name: Test (race)
+        run: go test ./... -race -count=1
+
+  task-ci:
+    name: task-ci (容器任务执行器)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: task
+    steps:
+      - uses: actions/checkout@v6
+        # skills 同源一致性测试（test_skills_injection.py 的 hash 断言）要比对
+        # task/assets/skills 与 skills submodule，不拉 submodule 会失败。
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          allow-prereleases: true
+      - name: Install dependencies (含 dev 组)
+        run: uv sync --locked --dev
+      - name: Pytest
+        run: uv run pytest
