@@ -56,6 +56,48 @@ func (s *TaskScheduler) Submit(task ws.TaskPayload) {
 	log.Info().Str("task_id", task.TaskID).Msg("task_queued")
 }
 
+// Cancel 取消一个已 Submit 的任务。
+//
+// 两种情形分开处理，因为终态上报的责任方不同：
+//   - 仍在队列里：直接摘除并清掉 active 标记。execute() 永远不会跑，它的 defer
+//     也就不会清理，所以这里必须自己清；同时调用方要补一条终态消息，否则 server
+//     侧的会话会一直等下去。
+//   - 已在跑：只把 container_id 交回给调用方去停容器。停掉后 runTask 里阻塞的
+//     WaitContainer 会返回并上报终态，调用方不要重复上报（重复终态会让 server
+//     的 _free_runner_slot_and_drain 把并发槽位减两次）。
+func (s *TaskScheduler) Cancel(taskID string) ws.CancelOutcome {
+	if taskID == "" {
+		return ws.CancelOutcome{}
+	}
+	if _, active := s.active.Load(taskID); !active {
+		return ws.CancelOutcome{}
+	}
+
+	s.mu.Lock()
+	for i, queued := range s.queue {
+		if queued.TaskID != taskID {
+			continue
+		}
+		s.queue = append(s.queue[:i], s.queue[i+1:]...)
+		s.mu.Unlock()
+		s.active.Delete(taskID)
+		log.Info().Str("task_id", taskID).Msg("task_cancelled_from_queue")
+		return ws.CancelOutcome{Found: true, Dequeued: true}
+	}
+	s.mu.Unlock()
+
+	if v, ok := s.containers.Load(taskID); ok {
+		containerID, _ := v.(string)
+		log.Info().Str("task_id", taskID).Str("container_id", containerID).Msg("task_cancel_stopping_container")
+		return ws.CancelOutcome{Found: true, ContainerID: containerID}
+	}
+
+	// active 但既不在队列也没注册容器：正处于 Submit 与 StartContainer 之间的
+	// 时间窗。此处不阻塞等待——容器起来后会由自身超时/回调收尾。
+	log.Warn().Str("task_id", taskID).Msg("task_cancel_container_not_ready")
+	return ws.CancelOutcome{Found: true}
+}
+
 // Run 主循环：等待 accepting + 队列非空，取出队首，acquire sem，启动 goroutine 执行。
 func (s *TaskScheduler) Run(ctx context.Context) {
 	for {
