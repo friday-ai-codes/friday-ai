@@ -154,6 +154,25 @@
 
 ---
 
+## v0.11.0 开放与协作 (Shipped: 2026-06-17)
+
+**Phases completed:** 4 phases (56–59), 8 plans；6/6 需求（TRACE-01/02 / ANTHROPIC-01/02 / CARD-01 / GROUP-01）；里程碑审计 **passed**（6/6 需求 goal-backward 账实闭环、INV-5/INV-6 成立、Out of Scope 无越界泄漏）见 [milestones/v0.11.0-MILESTONE-AUDIT.md](./milestones/v0.11.0-MILESTONE-AUDIT.md)
+
+对外开放与协作层：把内部工具调用作为 progress/trace 透出给 OpenAI/Anthropic 兼容调用方，新增 Anthropic 兼容 `/v1/messages` 端点，飞书机器人对话改走原生 CardKit 流式卡片，并提供工作流自动建群节点。v0.11.0 是 `ROADMAP-vNext.md` 前瞻路线（v0.5–v0.11）的收官里程碑。
+
+**Key accomplishments:**
+
+- **compat 内部工具调用 → progress/trace 事件透出（Phase 56）**：`compat/progress.py` 的 `tool_event_to_progress`/`retrieval_to_progress`/`make_reasoning_chunk` 把内部 RAG/grep 调用经 §15 事件 taxonomy 映射为 `delta.reasoning_content` progress（「正在检索 RAG…」/「检索完成，命中 N 处」），仅透出命中计数标量；**绝不**写 `delta.tool_calls` / `finish_reason=tool_calls`（规范客户端不会误判挂起等待回传而卡死），THINKING 事件静默 continue 不泄漏模型私有 CoT，无事件时 `prelude_texts` 空 → 零 chunk byte-eq 优雅降级。
+- **Anthropic 兼容端点 `/v1/messages`（Phase 57）**：`anthropic_adapter.py` + `views.MessagesView` 落地非流式（`aggregate_message` 产合法 Messages 形状、usage `input_tokens`/`output_tokens`）与流式 SSE 双行帧（`message_start → content_block_start(thinking) → thinking_delta×N → content_block_stop → content_block_start(text) → text_delta → message_delta → message_stop`），复用既有 chat/agent 检索内核与 Phase 56 同一映射，集成测断言 thinking_delta 严格先于首个 text_delta。
+- **飞书原生流式卡片 CardKit（Phase 58）**：`feishu_im.py` 接 4 个 CardKit 端点（create/send/stream/settle），`bot/service.py` `_CardKitStream` 惰性创建 + ~300ms 节流 + 单调 sequence 增量推送 + 终态 settle，替代原 PATCH 全量替换以消除整篇重绘；create/stream/settle 任一失败全程 try/except fail-soft 切回 `build_answer_card`，答案/引用/usage 不丢且不冒泡 status=error。
+- **工作流自动建群节点（Phase 59）**：`feishu_im.create_chat` 建群即拉人单步 + `CreateGroupChatNode`（`@register_node create_group_chat`）把 `chat_id` 作一等 output 供下游，member_ids 三形态解析，可选 writeback 仅经 `WorkItemService.awriteback_feishu_chat_id` 单一入口（INV-6），DB 异常或返回 False 时节点仍 completed（fail-soft）。
+
+**Known deferred items at close:** CARD-01「顺滑无闪烁」真机观感需真实飞书租户开通 CardKit 后人工 E2E 验收；OpenAI/Anthropic 真实 SDK 客户端 SSE 端到端联调（本地以 view 级集成测覆盖契约形状）；标准双向 `tool_calls` 回传（OPENX-01）与 Anthropic 工具/多模态 content block 全量对齐（OPENX-02）明确留 v2；预存安全 TODO（非本里程碑引入）——`request_handler._prepare` 的 `repository_ids` IDOR 风险，启用 `OPENAI_COMPAT_API_KEYS` 后须加 `PermissionService.has_repository_access` 过滤，记 backlog。详见 [milestones/v0.11.0-MILESTONE-AUDIT.md](./milestones/v0.11.0-MILESTONE-AUDIT.md)。
+
+**What's next:** v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）。
+
+---
+
 ## v0.10.0 操作审计治理 (Shipped: 2026-06-17)
 
 **Phases completed:** 3 phases, 7 plans, 7 tasks
