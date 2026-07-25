@@ -6,6 +6,9 @@ name: CI
 # 仓库历史 workflow 已于 5579e45f2 整体删除；本文件从零创建，只覆盖 server +
 # Postgres 最小门禁，不顺带恢复 web/runner/docs/task/security-scan 等无关 job。
 "on":
+  # 手动触发：paths 过滤会让「只改仓库根配置（如 .gitignore）却影响 CI」的提交不触发
+  # 本工作流，需要一个不依赖改动路径的入口来验证门禁本身。
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
