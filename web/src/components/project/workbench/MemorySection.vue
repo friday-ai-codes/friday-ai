@@ -14,7 +14,7 @@ import { useToast } from '~/composables/useToast'
 /**
  * MemorySection — 工作台「文件 → MEMORY」记忆条目 + LLM 草稿确认（WB-03）。
  *
- * 复用 `MemoryTab` 的条目式渲染 / 编辑 / LLM 草稿确认交互，正文改用
+ * 沿用条目式渲染 / 编辑 / LLM 草稿确认交互（取代已删除的 `MemoryTab`），正文改用
  * `MarkdownRenderer`（查看）渲染；编辑走 textarea 源码。采纳/拒绝草稿均经
  * `useConfirmDialog` 二次确认，分别调 `confirmDraft` / `rejectDraft`，避免共享
  * 记忆被未审阅的 LLM 提议污染（归因由后端记录）。
