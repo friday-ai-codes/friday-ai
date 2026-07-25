@@ -588,6 +588,11 @@ FRIDAY_ENCRYPTION_KEY = os.environ.get("FRIDAY_ENCRYPTION_KEY", "")
 FEISHU_ENCRYPT_KEY = env.str("FEISHU_ENCRYPT_KEY", default="")
 FEISHU_SIGNATURE_REQUIRED = env.bool("FEISHU_SIGNATURE_REQUIRED", default=IS_PRODUCTION)
 
+# 飞书开放平台 HTTP 超时（秒）。httpx 默认 timeout=None 即永不超时——半开连接、
+# DNS 卡死或对端不回都会把 async worker 一直占住，进而级联拖垮工作流触发、webhook
+# 处理与 IM 发卡。统一从这里取值，不在各调用点写魔数。
+FEISHU_HTTP_TIMEOUT_SECONDS = env.float("FEISHU_HTTP_TIMEOUT_SECONDS", default=30.0)
+
 # =============================================================================
 # 邮件（系统告警通知，ALERT-03）
 # =============================================================================

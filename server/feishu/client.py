@@ -14,6 +14,7 @@ from tenacity import (
 )
 
 from common.encryption import decrypt_value
+from services.feishu_http import feishu_client
 from services.feishu_parsing import (
     build_feishu_fields,
     flatten_fields,
@@ -125,7 +126,7 @@ class FeishuClient:
             return self._plugin_token
 
         # 请求新 token（获取 token 接口不需要 X-USER-KEY）
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.post(
                 f"{self.OPEN_API_BASE}/open_api/authen/plugin_token",
                 headers={"Content-Type": "application/json"},
@@ -188,7 +189,7 @@ class FeishuClient:
         if fields:
             body["fields"] = fields
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await _apost_feishu_project(
                 client,
                 f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/query",
@@ -267,7 +268,7 @@ class FeishuClient:
         # 将 Markdown 转换为飞书富文本格式
         rich_content = self._markdown_to_rich_text(content)
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.post(
                 f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/{work_item_id}/comment/create",
                 headers={
@@ -309,7 +310,7 @@ class FeishuClient:
         """
         token = await self.get_plugin_token()
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.get(
                 f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/{work_item_id}/comment/list",
                 headers={
@@ -363,7 +364,7 @@ class FeishuClient:
         """
         token = await self.get_plugin_token()
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.patch(
                 f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/{work_item_id}",
                 headers={
@@ -417,7 +418,7 @@ class FeishuClient:
         """
         token = await self.get_plugin_token()
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             # 获取可用的状态流转
             response = await client.get(
                 f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/{work_item_id}/workflow/transition",
@@ -501,7 +502,7 @@ class FeishuClient:
         if test_key:
             try:
                 token = await self.get_plugin_token()
-                async with httpx.AsyncClient() as client:
+                async with feishu_client() as client:
                     # 尝试获取项目下的工作项类型列表
                     response = await client.get(
                         f"{self.PROJECT_API_BASE}/open_api/{test_key}/work_item/all-types",

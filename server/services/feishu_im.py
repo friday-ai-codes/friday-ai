@@ -12,7 +12,6 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-import httpx
 import structlog
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from tenacity import (
@@ -24,6 +23,7 @@ from tenacity import (
 
 from common.encryption import decrypt_value
 from projects.models import Space
+from services.feishu_http import feishu_client
 from system.models import SettingKeys, SystemSetting
 
 if TYPE_CHECKING:
@@ -196,7 +196,7 @@ class FeishuIMClient:
 
         log = logger.bind(app_id=self.app_id)
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.post(
                 f"{self.OPEN_API_BASE}/auth/v3/tenant_access_token/internal",
                 json={
@@ -252,7 +252,7 @@ class FeishuIMClient:
             msg_type=msg_type,
         )
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.post(
                 f"{self.OPEN_API_BASE}/im/v1/messages",
                 params={"receive_id_type": receive_id_type},
@@ -339,7 +339,7 @@ class FeishuIMClient:
 
         log = logger.bind(message_id=message_id)
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.patch(
                 f"{self.OPEN_API_BASE}/im/v1/messages/{message_id}",
                 headers={
@@ -396,7 +396,7 @@ class FeishuIMClient:
         if uuid:
             body["uuid"] = uuid
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.post(
                 f"{self.OPEN_API_BASE}/cardkit/v1/cards",
                 headers={
@@ -476,7 +476,7 @@ class FeishuIMClient:
         if uuid:
             body["uuid"] = uuid
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.put(
                 f"{self.OPEN_API_BASE}/cardkit/v1/cards/{card_id}/elements/{element_id}/content",
                 headers={
@@ -532,7 +532,7 @@ class FeishuIMClient:
         if uuid:
             body["uuid"] = uuid
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.patch(
                 f"{self.OPEN_API_BASE}/cardkit/v1/cards/{card_id}/settings",
                 headers={
@@ -579,7 +579,7 @@ class FeishuIMClient:
 
         items: list[dict[str, Any]] = []
         page_token = ""
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             while len(items) < max_messages:
                 params: dict[str, Any] = {
                     "container_id_type": "chat",
@@ -641,7 +641,7 @@ class FeishuIMClient:
         token = await self.get_tenant_access_token()
         log = logger.bind(message_id=message_id, file_key=file_key, resource_type=resource_type)
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.get(
                 f"{self.OPEN_API_BASE}/im/v1/messages/{message_id}/resources/{file_key}",
                 params={"type": resource_type},
@@ -761,7 +761,7 @@ class FeishuIMClient:
             return self._bot_open_id
 
         token = await self.get_tenant_access_token()
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.get(
                 f"{self.OPEN_API_BASE}/bot/v3/info",
                 headers={"Authorization": f"Bearer {token}"},
@@ -797,7 +797,7 @@ class FeishuIMClient:
         token = await self.get_tenant_access_token()
         log = logger.bind(chat_id=chat_id)
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.get(
                 f"{self.OPEN_API_BASE}/im/v1/chats/{chat_id}/members",
                 params={"member_id_type": member_id_type, "page_size": 100},
@@ -835,7 +835,7 @@ class FeishuIMClient:
         """
         try:
             token = await self.get_tenant_access_token()
-            async with httpx.AsyncClient() as client:
+            async with feishu_client() as client:
                 response = await client.get(
                     f"{self.OPEN_API_BASE}/im/v1/chats/{chat_id}/members/is_in_chat",
                     headers={"Authorization": f"Bearer {token}"},
@@ -865,7 +865,7 @@ class FeishuIMClient:
         token = await self.get_tenant_access_token()
         log = logger.bind(chat_id=chat_id, app_id=self.app_id)
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.post(
                 f"{self.OPEN_API_BASE}/im/v1/chats/{chat_id}/members",
                 params={"member_id_type": "app_id"},
@@ -976,7 +976,7 @@ class FeishuIMClient:
         if description:
             payload["description"] = description
 
-        async with httpx.AsyncClient() as client:
+        async with feishu_client() as client:
             response = await client.post(
                 f"{self.OPEN_API_BASE}/im/v1/chats",
                 params=params,
