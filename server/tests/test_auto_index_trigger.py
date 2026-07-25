@@ -182,12 +182,17 @@ class TestRepositoryWebhookView:
         )
         assert response.status_code == 403
 
-    @patch("tasks.index_trigger_tasks.clone_and_index_repository", new_callable=AsyncMock)
+    # 必须 patch 真正的异步派发点 DurableTaskService.defer，而不是
+    # clone_and_index_repository——后者只在分支重建路径上，不在 trigger_auto_index 的
+    # 链路里，patch 它对本用例无效。放任 defer 执行会让进程内 durable 兜底把仓库置为
+    # INDEXING，而 trigger_auto_index 的判断顺序是「already_indexing 先于 SHA 去重」，
+    # 于是第二次请求可能提前返回 skipped、而非本用例要验证的 duplicate（竞态：单独跑
+    # 常侥幸通过，全量跑必现）。
+    @patch("durable.DurableTaskService.defer", new_callable=AsyncMock)
     def test_webhook_dedup_same_sha(
-        self, mock_clone: AsyncMock, api_client, webhook_repo: Repository
+        self, mock_defer: AsyncMock, api_client, webhook_repo: Repository
     ) -> None:
         clear_dedup_cache()
-        mock_clone.return_value = {"status": "success"}
         import json
         sha = "d" * 40
         payload = json.dumps({"ref": "refs/heads/main", "after": sha})
