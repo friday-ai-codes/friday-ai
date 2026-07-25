@@ -101,7 +101,7 @@ describe('reconcilePanel', () => {
     // 不渲染空态/已一致
     expect(text).not.toContain('无差异，已索引内容与当前排除规则一致')
     // 双清理按钮均禁用
-    const normalBtn = findButton(wrapper, '一键清理')
+    const normalBtn = findButton(wrapper, '普通清理')
     const sensitiveBtn = findButton(wrapper, '敏感清理')
     expect(normalBtn?.attributes('disabled')).toBeDefined()
     expect(sensitiveBtn?.attributes('disabled')).toBeDefined()
@@ -128,7 +128,7 @@ describe('reconcilePanel', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('*.env')
 
-    await findButton(wrapper, '一键清理')!.trigger('click')
+    await findButton(wrapper, '普通清理')!.trigger('click')
     await flushPromises()
 
     expect(confirmMock).toHaveBeenCalledTimes(1)
@@ -180,7 +180,7 @@ describe('reconcilePanel', () => {
     // 状态端点回显真实未清面 + caveat（非静态文案）
     await flushPromises()
     const text = wrapper.text()
-    expect(text).toContain('以下面未能清除')
+    expect(text).toContain('以下内容未能清除')
     expect(text).toContain('prompt_snapshot')
     expect(text).toContain('git_objects')
     expect(text).toContain('本地 git object 与 Git 历史不承诺物理消失')

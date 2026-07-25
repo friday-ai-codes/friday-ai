@@ -4,6 +4,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ProviderCredentialForm from '~/components/providers/ProviderCredentialForm.vue'
 
+type Wrapper = ReturnType<typeof mount>
+
+/**
+ * 按表单字段名填值。
+ *
+ * 不要用 findAll('input')[i] 的位置下标：表单字段顺序会随需求变动（max_concurrency
+ * 就是后来插到 config 字段前面的，把原来的下标全顶偏了——api_key 收到 base_url 的
+ * 值后过不了 `^sk-ant-` pattern，校验失败，handleSubmit 静默不回调，
+ * 表现为 emitted('submit') 是 undefined 而不是某条断言不符）。
+ */
+async function setField(wrapper: Wrapper, name: string, value: string) {
+  const input = wrapper.findAll('input').find(i => i.attributes('name') === name)
+  expect(input, `未找到表单字段 ${name}`).toBeDefined()
+  await input!.setValue(value)
+  await flushPromises()
+}
+
 // ==== Mock store 模块（ 契约） ====
 // 组件依赖 '~/stores/providerCredential' 与 '~/types/providerCredential'。
 // 本 spec 走 mock 路径，不触 实际实现，也不触网络。
@@ -223,19 +240,16 @@ describe('providerCredentialForm', () => {
     const wrapper = mount(ProviderCredentialForm, { props: { mode: 'create' } })
     await flushPromises()
 
-    const inputs = wrapper.findAll('input')
-    await inputs[0].setValue('deepseek-anthropic')
-    await inputs[1].setValue('sk-ant-validkey1234567890abcdef')
-    await inputs[2].setValue('https://api.deepseek.com/anthropic')
+    await setField(wrapper, 'name', 'deepseek-anthropic')
+    await setField(wrapper, 'config.api_key', 'sk-ant-validkey1234567890abcdef')
+    await setField(wrapper, 'config.base_url', 'https://api.deepseek.com/anthropic')
 
     const manualBtn = wrapper.findAll('button').find(b => b.text().includes('手动输入模型名称'))
     expect(manualBtn).toBeDefined()
     await manualBtn!.trigger('click')
     await flushPromises()
 
-    const modelInput = wrapper.findAll('input').at(-1)
-    expect(modelInput).toBeDefined()
-    await modelInput!.setValue('deepseek-v4-pro')
+    await setField(wrapper, 'default_model', 'deepseek-v4-pro')
 
     await (wrapper.vm as unknown as { onSubmit: () => Promise<void> | void }).onSubmit()
     await flushPromises()
@@ -258,16 +272,14 @@ describe('providerCredentialForm', () => {
     const wrapper = mount(ProviderCredentialForm, { props: { mode: 'create' } })
     await flushPromises()
 
-    const inputs = wrapper.findAll('input')
-    await inputs[0].setValue('deepseek-anthropic')
-    await inputs[1].setValue('sk-ant-validkey1234567890abcdef')
-    await inputs[2].setValue('https://api.deepseek.com/anthropic')
+    await setField(wrapper, 'name', 'deepseek-anthropic')
+    await setField(wrapper, 'config.api_key', 'sk-ant-validkey1234567890abcdef')
+    await setField(wrapper, 'config.base_url', 'https://api.deepseek.com/anthropic')
 
     const manualBtn = wrapper.findAll('button').find(b => b.text().includes('手动输入模型名称'))
     await manualBtn!.trigger('click')
     await flushPromises()
-    const modelInput = wrapper.findAll('input').at(-1)
-    await modelInput!.setValue('deepseek-v4-pro')
+    await setField(wrapper, 'default_model', 'deepseek-v4-pro')
 
     await (wrapper.vm as unknown as { onSubmit: () => Promise<void> | void }).onSubmit()
     await flushPromises()
