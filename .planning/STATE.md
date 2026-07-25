@@ -6,9 +6,9 @@ current_phase: 104
 current_phase_name: 工具面收口
 status: shipped
 stopped_at: v0.17.0 里程碑完成归档（complete-milestone）——里程碑审计 tech_debt（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，报告归档 milestones/v0.17.0-MILESTONE-AUDIT.md）；REQUIREMENTS 19/19 勾选 + Traceability 全 Complete 并归档 milestones/v0.17.0-REQUIREMENTS.md；ROADMAP v0.17.0 详情快照归档 milestones/v0.17.0-ROADMAP.md 并折叠为 <details>；MILESTONES.md 补 v0.17.0 条目；打 annotated tag v0.17.0。下一步：`$gsd-new-milestone` 立项下一里程碑。
-last_updated: "2026-07-22T08:50:00.000Z"
-last_activity: 2026-07-23
-last_activity_desc: Quick task 260723-icr：IDE 本地上下文回流适配（skills@0.4.0 / mcp@0.3.0）
+last_updated: "2026-07-26T00:20:00.000Z"
+last_activity: 2026-07-25
+last_activity_desc: ship 后维护期（07-24/07-25，16 commits，未走 GSD 流程）——测试与生产演进对齐（修复 69 个漂移失败）、仓库可见性授权收敛、runner/task 容器修复、去公司专有标识；发布轨已发 v0.18.0（非 GSD 里程碑）
 progress:
   total_phases: 5
   completed_phases: 5
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
 **Core value（v0.17.0，已交付）:** 让"产出→入图→召回→更好的产出"的知识飞轮真正转起来：任一链路的产物都可被任一链路检索到，任一链路编码完成都自动沉淀经验并回写业务侧，编码容器天然带着 Friday 的知识工具与 skills 干活。统一知识库 = 既有 `knowledge/` 体系（单一摄取入口 + 单一检索服务），不新建存储。
-**Current focus:** v0.17.0 已于 2026-07-22 shipped（审计 tech_debt，19/19 需求，归档见 `milestones/v0.17.0-*`）——between-milestones，下一里程碑待 `$gsd-new-milestone` 立项。v0.17.0 遗留 11 项真实环境人工验证 + 接受/递延债务见 [milestones/v0.17.0-MILESTONE-AUDIT.md](./milestones/v0.17.0-MILESTONE-AUDIT.md)。
+**Current focus:** v0.17.0 已于 2026-07-22 shipped（审计 tech_debt，19/19 需求，归档见 `milestones/v0.17.0-*`）——between-milestones，下一里程碑待 `$gsd-new-milestone` 立项。v0.17.0 遗留 11 项真实环境人工验证 + 接受/递延债务见 [milestones/v0.17.0-MILESTONE-AUDIT.md](./milestones/v0.17.0-MILESTONE-AUDIT.md)。ship 后 07-24/07-25 有一段维护期（16 commits，未走 GSD 流程，明细见下方 Current Position 的 Last activity）。下一里程碑的现成候选提案：[coding-agent/PROPOSAL.md](./coding-agent/PROPOSAL.md)（V1.2，2026-07-21，状态「提案待评审未启动」）。
 
 ## Current Position
 
 Phase: v0.17.0（Phases 100–104）全部 complete 并归档 — ✅ SHIPPED 2026-07-22
 Plan: complete-milestone 归档完成（ROADMAP/REQUIREMENTS/AUDIT 入 milestones/ + tag v0.17.0）
 Status: shipped / between-milestones——下一里程碑待立项
-Last activity: 2026-07-23 — Completed quick task 260723-icr: IDE 本地上下文回流适配（skills@0.4.0 / mcp@0.3.0 发布 + server 兜底与守卫）
+Last activity: 2026-07-25 — ship 后维护期（07-24/07-25，16 commits，直接提交未走 GSD 流程，故无 quick 任务目录）：测试与生产演进对齐（`8cd6ac018` 修 69 个漂移失败、`b05e5e591` 消除测试间状态污染与后台任务泄漏、`b797cd642` 让失效 xfail 重新有牙齿、`f3d77d45d` 补 delivery.Artifact INV-6 守卫）、`57d554f9d` 仓库敏感动作授权 + 按空间成员隔离可见性、`72218198f` 空间仓库关联端点 500→404、`8f14d7f54` structlog processors 列表复用、`da86a3d41` 补回 Chassis v2 漏搬的方案生成侧摄取接线、`71f9dd7a9` runner PID 1 复用误判 crash 循环、`213e003bb` task explore 排除 `.friday/`、`45f12a321` 去公司专有标识改可配置 env、`6687fba2f` WORKER_CONCURRENCY 可配置、CI 修 submodule checkout 与 skills 快照守卫。**v0.17.0 审计记录的测试腐化已在此期间全部修复**（`tests/knowledge/test_triggers.py` + `tests/services/test_feishu_im.py` + `tests/test_sub_step_coding_node.py` 2026-07-26 复跑 79 passed），CI 最新 main 绿。
 
 Progress: [██████████] 100% (5/5 phases)
 
@@ -387,6 +387,8 @@ None.
 
 [Issues that affect future work]
 
+- ⚠️ **发布轨版本号已超前于 GSD 里程碑轨——下一里程碑不可命名 v0.18.0**。两条轨道相互独立：`.github/workflows/release.yaml` 由 `tags: v*` 触发，`github-actions[bot]` 按 conventional commits 自动生成 changelog 并发 GitHub Release；GSD 里程碑轨由 `$gsd-new-milestone` / `$gsd-complete-milestone` 驱动，最后一个里程碑是 v0.17.0。目前 **`v0.18.0` 已作为 GitHub Release 发布并且是 Latest**（tag 打在 2026-07-24 的 `bc67fe4d9`，内容是 Phase 100–104 的 review 修复 + 07-23/07-24 修复的聚合 changelog，**不对应任何 GSD 里程碑**）。历史上 v0.13.3 / v0.16.4 / v0.16.5 同属这类"只有发布、无对应里程碑"的补丁发布。**立项下一里程碑时必须先 `git tag -l` 或 `gh release list` 核对，选一个未被占用的版本号（如 v0.19.0），否则 complete-milestone 打 annotated tag 会与既有 Release 撞号。**
+
 - ✅ ~~v0.2.0 follow-up：实时明文 PAT 通道（contextvar）未接入，RemoteTool 链路休眠~~ —
   已于 2026-06-14 接入（commit 8cb50e928）：带 `friday_pat_` Bearer 的手动触发经请求级
   ContextVar → start_execution → ExecutionContext 瞬态字段下传，AICodingNode 据此注入
@@ -528,8 +530,9 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-07-22T08:50:00.000Z
-Stopped at: v0.17.0 complete-milestone 归档完成——REQUIREMENTS 19/19 勾选并归档、ROADMAP 快照归档 + 折叠 `<details>`、MILESTONES.md 补条目、audit 移入 milestones/、annotated tag v0.17.0。下一步：`$gsd-new-milestone`。
+Last session: 2026-07-26T00:20:00.000Z
+Stopped at: GSD 记录对齐（`/gsd-fast`）——补 07-24/07-25 ship 后维护期 16 commits 的 last_activity 记录（此前 STATE 停在 07-23）；登记"发布轨 v0.18.0 已占号、里程碑轨止于 v0.17.0"的双轨关系与撞号风险（见 Blockers/Concerns）；MILESTONES.md 手写补回缺失的 v0.11.0 条目（health W018；自动 `--backfill` 产出的模板条目位置与内容均不合格已回滚）；`git worktree prune` 清掉 3 个路径已失效的 locked agent worktree 注册（health W017）。health 复跑：warnings 12→8、repairable 1→0。下一步：`$gsd-new-milestone`（注意版本号避开 v0.18.0）。
+Earlier: 2026-07-22T08:50:00.000Z — v0.17.0 complete-milestone 归档完成——REQUIREMENTS 19/19 勾选并归档、ROADMAP 快照归档 + 折叠 `<details>`、MILESTONES.md 补条目、audit 移入 milestones/、annotated tag v0.17.0。
 Earlier: 执行 104-03（里程碑四面检索端到端验收）完成——新建自包含 E2E 测试 `server/tests/test_milestone_e2e_learning_case.py`（内存 Qdrant + 确定性 embedding + 双种子区分度），同一条 learning case 四面（Chat 工具 / DeliveryKnowledgeRecallAdapter / MCP view / 容器链同 URL 契约+组合覆盖）均可检索 + MCP 与 Chat top-1 统一排序断言。2 commits（a35d74e7/562f697c）；3 passed + 定向回归 216 passed。**Phase 104 3/3 收官，v0.17.0 全部 18 plans 执行完毕。** 下一步：里程碑审计 → complete-milestone。
 Earlier: 执行 103-04（AGENT-04 工作流上下文对齐）完成——共享 helper 上提 `services/project_context_packer.py`（prepend_project_context / aresolve_project_for_repo_branch / apack_dispatch_context，chat 纯重构改引用零回归，workflow 不 import chat）+ workflow `_resolve_wave_project_contexts` 按 (project, branch) 解析一次逐仓复用（ProjectBranch 反查 + work_item fallback，user=dispatch_user）+ `_run_repo_coding` prompt prepend + env_FRIDAY_TASK_PROJECT_CONTEXT 注入（与 chat 一致，fail-soft 空串 no-op）。2 commits（81956173/113ac520）；新守护测试 6 例 + chat 99 全绿 + dispatch 触点 54 passed 零回归。**Phase 103（编码容器集成）4/4 完成，AGENT-01~04 全部交付。** 下游 → Phase 104（工具面收口，UNIFY-01/02/03）。
 Earlier: 执行 101-03（LOOP-02/03 锚点接线）完成——三元组反查器（workflow 链 `plan_version_id→ArtifactVersion→artifact.work_item` 标量链 + chat 链 `content__chat_coding_plan_id` JSON 键 seam，现状无写入方零行为变化）+ `aextract_for_session` 提炼便捷入口；workflow `AICodingNode` 新增 `write_back` 配置（模板默认开）+ **存量缺键 fallback 三态守门**（缺键+无绑定=零变化专项用例）+ `_finalize_and_notify` 完工闭环（回写 + 逐 session `run_in_background` 提炼调度，session→repo 映射两调用点补齐）；chat `create_pr_or_skip_node` PR 成功分支回写（无会话级开关）+ 提炼（skip-PR 不回写但提炼照常）；MCP `execute_work_item_repo_tasks` 提炼锚点；前端 `aiCodingConfigSchema` 同步 + docs 升级说明。5 commits（317b48c6/93f4be4b/6adb1dff/4ee87e38/c2749bb9）；69 测试全绿 + vue-tsc 通过。Deviation：session_repo_map 可选参数补缺口、误用一次 git stash（无损自纠）、存量腐坏测试 test_sub_step_coding_node 记 deferred-items.md。下游 → 101-04（LOOP-04/05 Skill 种子 + PR review 沉淀，Wave 3）。
@@ -549,8 +552,11 @@ Earlier: 执行 92-03（SLOT-02 收官）——新建 clarification_card 原子�
 Earlier: 执行 92-02（插槽后端 SLOT-02 端口暴露半）——ai_plan_research 暴露 clarify(out)/resume(in) 插槽端口（仅声明零运行时改动）+ build_clarification_card action 前缀参数化；91-05（前端 ClarificationCard 多题多选渲染，CLARIFY-04）——扩展 ClarificationCard.vue 按 payload 形态分支：含 questions[] 走 plan 多题轮（single button / multi Checkbox + ⭐推荐默认选中 + 每题自由输入），否则走既有 chat 单题（零回归）；提交聚合 answers[{question_id,selected,freeform_text}] 打 91-04 专路由 postPlanClarificationAnswer → markPlanClarificationAnswered；新增 PlanClarification* 类型 + ConversationRuntime.pending_plan_clarification 透传 + store 独立 pendingPlanClarifications（conversation 维度隔离）+ runtime 回灌 + ChatMessageArea 渲染分支 + chat.clarification i18n（默认中文）+ TDD 守护 spec（真实 zh-CN.json）。6 用例绿、chat/stores 267 无回归、vue-tsc/eslint 干净。**Phase 91 全部完成（5/5）。**
 Earlier: 执行 91-04（会话端 plan 澄清专路由 + runtime 暴露 + 同源续推）；91-03（飞书澄清回调 plan_clarify_ 收答 → 续推 → approve_node 重调度）；91-02（工作流节点发卡 + WorkflowEventSubscription + WR-03 三处 pending 收口）；91-01（共享回流 helper aanswer_round_and_resume + 多轮放开）；90-04（入口无关 ask_clarification helper）；90-03（ClarifyAdapter 接 LLM 多题 + fail-soft + pending 收口）；90-02（ClarificationService 写入入口）；90-01（结构化澄清数据脊柱）。
 Resume file: None
-Next: `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）；v0.17.0 遗留 11 项真实环境人工验证 + 接受/递延债务见 `milestones/v0.17.0-MILESTONE-AUDIT.md`；v0.16.1 遗留真机/真实 provider/画布视觉端到端验收（10 项）见 `milestones/v0.16.1-MILESTONE-AUDIT.md` §4。
+Next: `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）——**版本号须避开已被发布轨占用的 v0.18.0**（见 Blockers/Concerns），现成候选提案 `coding-agent/PROPOSAL.md`；v0.17.0 遗留 11 项真实环境人工验证 + 接受/递延债务见 `milestones/v0.17.0-MILESTONE-AUDIT.md`；v0.16.1 遗留真机/真实 provider/画布视觉端到端验收（10 项）见 `milestones/v0.16.1-MILESTONE-AUDIT.md` §4。
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Start the next milestone with /gsd-new-milestone — 先 `gh release list` 核对版本号，避开已发布的 v0.18.0
+- 候选立项输入：`.planning/coding-agent/PROPOSAL.md`（Coding Agent 流水线，V1.2 提案待评审）
+- 把 v0.17.0 遗留的 11 项真实环境人工验证转入运维验收 backlog（目前无承接方）
+- 遗留 housekeeping（非阻断）：`/Users/zaneliu/gsd-workspaces/friday-fastapi-sa/friday-ai` 是 30 天未动的 GSD workspace，其分支 `codex/fastapi-sqlalchemy-migration` 相对 main 已 0 独有提交（工作已并入），可 `git worktree remove` 清理；`worktree-agent-*` 三个分支属另一份与 main 无共同祖先的历史（tip 为 2026-04-30，其提交信息里的 GSD 阶段编号远超本项目最大的 104），worktree 注册已清、分支 ref 待确认后删除
