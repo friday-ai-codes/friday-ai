@@ -254,8 +254,13 @@ class TestGitDiffIndex:
 class TestDiffDispatch:
     """按变更类型分发处理。"""
 
-    @pytest.mark.xfail(reason="Repository.id 已从 str 改为 UUID，fixture 需更新", strict=False)
-    async def test_delete_calls_qdrant_delete(self) -> None:
+    async def test_delete_dispatches_to_purge_file(self) -> None:
+        """D 变更必须走统一清理入口 purge_file。
+
+        PF-03 / PF-05 之前删除分支只调 ``qdrant_delete_by_file_path`` 单删主向量，
+        会在 FileIndex / ChunkRegistry / codegraph / overlay collection 留下孤儿；
+        现在收敛到 ``purge_file`` 一次清净五面。本用例守护这个分发口径不被改回去。
+        """
         mock_proc = AsyncMock()
         mock_proc.communicate = AsyncMock(return_value=(b"D\tremoved.py\n", b""))
         mock_proc.returncode = 0
@@ -270,14 +275,20 @@ class TestDiffDispatch:
                 return_value=(b"D\tremoved.py\n", b""),
             ),
             patch(
-                "services.indexer.qdrant_delete_by_file_path",
+                "services.indexer.purge_file",
                 new_callable=AsyncMock,
-            ) as mock_delete,
+            ) as mock_purge,
         ):
             indexer = IndexerService("test-repo-id")
             result = await indexer.run_git_diff_index("/fake/repo", "old", "new")
-            mock_delete.assert_called_once_with("test-repo-id", "removed.py")
+
+            mock_purge.assert_awaited_once_with("test-repo-id", "removed.py")
             assert result["deleted"] == 1
+            assert result["deleted_files"] == ["removed.py"]
+            # 删除条目不得被误分发到重新索引 / rename 分支
+            assert result["added"] == 0
+            assert result["updated"] == 0
+            assert result["renamed"] == 0
 
 
 # ============================================================================

@@ -1,5 +1,6 @@
 """OIDC 认证 — 完整单元测试。"""
 
+import json
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -110,14 +111,18 @@ def anon_api():
 class TestProviderCRUD:
     """OIDC Provider CRUD API 测试。"""
 
-    @pytest.mark.xfail(reason="OIDCProvider API 字段变更，masked_secret 已移除", strict=False)
     def test_create_provider(self, admin_api):
-        """创建 Provider 成功。"""
+        """创建 Provider 成功，且响应只暴露 has_secret 布尔位，不回显密钥本身。
+
+        历史实现返回 masked_secret 掩码串，现已收敛为 client_secret 只写（write_only）
+        + has_secret 派生布尔。守护的性质不变：client_secret 在任何读路径都不得外泄。
+        """
+        secret = "new-secret-must-never-be-echoed"
         data = {
             "name": "New Provider",
             "issuer_url": "https://new.example.com",
             "client_id": "new-client-id",
-            "client_secret": "new-secret",
+            "client_secret": secret,
             "authorization_endpoint": "https://new.example.com/authorize",
             "token_endpoint": "https://new.example.com/token",
         }
@@ -125,9 +130,24 @@ class TestProviderCRUD:
         assert response.status_code == 201
         result = response.json()
         assert result["name"] == "New Provider"
+        assert result["client_id"] == "new-client-id"
+        # 密钥已落库（has_secret 为派生布尔，不携带任何密钥内容）
         assert result["has_secret"] is True
-        assert result["masked_secret"] == "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
         assert "client_secret" not in result
+        assert "client_secret_encrypted" not in result
+        # 整包体做子串扫描，防止密钥经由任何新增字段/嵌套结构泄漏
+        assert secret not in json.dumps(result)
+
+        # 后续读路径（详情 / 列表）同样不得回显密钥
+        provider_id = result["id"]
+        detail = admin_api.get(f"/api/oidc/providers/{provider_id}/")
+        assert detail.status_code == 200
+        assert detail.json()["has_secret"] is True
+        assert secret not in json.dumps(detail.json())
+
+        listing = admin_api.get("/api/oidc/providers/")
+        assert listing.status_code == 200
+        assert secret not in json.dumps(listing.json())
 
     def test_list_providers(self, admin_api, oidc_provider):
         """列出所有 Provider。"""

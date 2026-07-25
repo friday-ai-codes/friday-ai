@@ -306,9 +306,12 @@ class TestAICodingNode:
         assert len(groups["repo-2"]) == 2
         assert "" not in groups
 
-    @pytest.mark.xfail(reason="_build_output 返回结构已变更，branches 字段不再存在", strict=False)
     def test_build_output_structure(self) -> None:
-        """_build_output 返回包含所有必要字段的输出。"""
+        """_build_output 返回包含所有必要字段的输出。
+
+        结构已调整：merge_requests / branches / changes_summary / failed_details
+        统一收拢到 coding_result 端口内，另有顶层 merge_requests 便捷镜像与 plan 透传。
+        """
         node = AICodingNode()
 
         mr_results = [
@@ -331,30 +334,44 @@ class TestAICodingNode:
             }
         ]
 
+        plan_data = {"execution_plan": [{"repository_id": "repo-1", "name": "Task A"}]}
+
         output = node._build_output(
             mr_results=mr_results,
             failed_repos=failed_repos,
             branch_name="feat/test",
             base_branch="main",
+            plan_data=plan_data,
         )
 
-        assert "merge_requests" in output
-        assert "branches" in output
-        assert "changes_summary" in output
-        assert "failed_details" in output
+        # 顶层端口：coding_result（完整结果）+ merge_requests（便捷镜像）+ plan（透传）
+        assert set(output) == {"coding_result", "merge_requests", "plan"}
+        assert output["plan"] == plan_data
 
-        assert len(output["merge_requests"]) == 1
-        mr = output["merge_requests"][0]
+        coding_result = output["coding_result"]
+        assert "merge_requests" in coding_result
+        assert "branches" in coding_result
+        assert "changes_summary" in coding_result
+        assert "failed_details" in coding_result
+
+        assert len(coding_result["merge_requests"]) == 1
+        mr = coding_result["merge_requests"][0]
         assert mr["repository_id"] == "repo-1"
+        assert mr["repository_name"] == "my-repo"
         assert mr["mr_url"] == "https://example.com/mr/1"
+        assert mr["mr_id"] == "1"
+        assert mr["tasks_completed"] == ["Task A", "Task B"]
         assert mr["files_changed"] == 5
         assert mr["insertions"] == 100
         assert mr["deletions"] == 20
 
-        assert output["branches"]["branch_name"] == "feat/test"
-        assert output["branches"]["base_branch"] == "main"
+        # 顶层 merge_requests 与 coding_result 内的内容一致
+        assert output["merge_requests"] == coding_result["merge_requests"]
 
-        summary = output["changes_summary"]
+        assert coding_result["branches"]["branch_name"] == "feat/test"
+        assert coding_result["branches"]["base_branch"] == "main"
+
+        summary = coding_result["changes_summary"]
         assert summary["total_repos"] == 2
         assert summary["succeeded_repos"] == 1
         assert summary["failed_repos"] == 1
@@ -362,8 +379,9 @@ class TestAICodingNode:
         assert summary["total_insertions"] == 100
         assert summary["total_deletions"] == 20
 
-        assert len(output["failed_details"]) == 1
-        assert output["failed_details"][0]["repository_name"] == "failed-repo"
+        assert len(coding_result["failed_details"]) == 1
+        assert coding_result["failed_details"][0]["repository_name"] == "failed-repo"
+        assert coding_result["failed_details"][0]["error"] == "Build failed"
 
 
 # ---------------------------------------------------------------------------
