@@ -6,7 +6,6 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from asgiref.sync import sync_to_async
 from pydantic import ValidationError
 
 from agents.tools.delivery_knowledge_tools import (
