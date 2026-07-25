@@ -143,7 +143,7 @@ function mrStatusClass(status: string): string {
   }
 }
 
-// ── 工件在线查看（复用 ArtifactsTab 弹窗模式）────────────────
+// ── 工件在线查看（弹窗模式，取代已删除的 ArtifactsTab）────────────────
 const CARRIER_ICON: Record<string, string> = {
   feishu_doc: 'lucide--file-text',
   feishu_bitable: 'lucide--table',
