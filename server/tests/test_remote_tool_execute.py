@@ -35,9 +35,24 @@ pytestmark = pytest.mark.django_db
 EXECUTE_URL = "/api/tools/execute/"
 
 
-async def _stub_ok(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    """execute_tool 成功桩：透传 executor 的 {ok: True, result} 契约。"""
-    return {"ok": True, "result": {"echo": name, "args": arguments}}
+def _make_stub_ok() -> tuple[Callable[..., Any], dict[str, Any]]:
+    """构造 execute_tool 成功桩 + 捕获字典。
+
+    桩签名必须与生产 ``tools.executor.execute_tool`` 对齐：视图按 101-04 步级 trace
+    契约透传 ``run``（本次审计建的 ``InteractionRun``），供 skill 分支写步级
+    ToolCallRecord。捕获下来供用例断言，避免透传被静默丢失。
+    """
+    captured: dict[str, Any] = {}
+
+    async def _stub_ok(
+        name: str, arguments: dict[str, Any], run: InteractionRun | None = None
+    ) -> dict[str, Any]:
+        captured["name"] = name
+        captured["arguments"] = arguments
+        captured["run"] = run
+        return {"ok": True, "result": {"echo": name, "args": arguments}}
+
+    return _stub_ok, captured
 
 
 def test_pat_execute_ok(
@@ -45,7 +60,8 @@ def test_pat_execute_ok(
     make_access_token: Callable[..., tuple[Any, str]],
 ) -> None:
     """RTOOL-01：有效 PAT → 200 + resp.data["ok"] is True（executor 透传）。"""
-    monkeypatch.setattr("tools.views.execute_tool", _stub_ok, raising=False)
+    stub, captured = _make_stub_ok()
+    monkeypatch.setattr("tools.views.execute_tool", stub, raising=False)
     _token, plaintext = make_access_token(name="exec-ok")
 
     client = APIClient()
@@ -56,6 +72,9 @@ def test_pat_execute_ok(
 
     assert resp.status_code == 200
     assert resp.data["ok"] is True
+    assert captured["name"] == "x"
+    # 101-04：执行端点必须把本次审计 run 透传给 executor（步级 trace 的挂载点）。
+    assert isinstance(captured["run"], InteractionRun)
 
 
 def test_anonymous_401() -> None:
@@ -101,7 +120,8 @@ def test_execute_records_run(
     make_access_token: Callable[..., tuple[Any, str]],
 ) -> None:
     """MCPB-02/IDENT-04：执行建审计 InteractionRun，fingerprint=token_hash（无明文）。"""
-    monkeypatch.setattr("tools.views.execute_tool", _stub_ok, raising=False)
+    stub, captured = _make_stub_ok()
+    monkeypatch.setattr("tools.views.execute_tool", stub, raising=False)
     token, plaintext = make_access_token(name="exec-audit")
 
     client = APIClient()
@@ -115,6 +135,8 @@ def test_execute_records_run(
     assert InteractionRun.objects.filter(
         token_fingerprint=token.token_hash
     ).exists()
+    # 透传给 executor 的 run 与审计落库的是同一条，步级 trace 才挂得到正确的顶层 run。
+    assert captured["run"].token_fingerprint == token.token_hash
 
 
 def test_execute_finalizes_run(
@@ -122,7 +144,8 @@ def test_execute_finalizes_run(
     make_access_token: Callable[..., tuple[Any, str]],
 ) -> None:
     """MCPB-02/WR-02：execute 后 run 推进到终态并记录 tool-call，不留悬挂 RUNNING。"""
-    monkeypatch.setattr("tools.views.execute_tool", _stub_ok, raising=False)
+    stub, _captured = _make_stub_ok()
+    monkeypatch.setattr("tools.views.execute_tool", stub, raising=False)
     token, plaintext = make_access_token(name="exec-finalize")
 
     client = APIClient()

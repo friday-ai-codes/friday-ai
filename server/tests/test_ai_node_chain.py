@@ -1,6 +1,6 @@
 """Tests for AI node chain validation.
 
-Validates that all 4 AI nodes (PlanGeneration -> Approval -> Coding -> Review)
+Validates that all 4 AI nodes (PlanResearch -> Approval -> Coding -> Review)
 are properly registered, can be instantiated, and have compatible data contracts.
 """
 
@@ -12,7 +12,7 @@ class TestAINodeRegistration:
     """验证 AI 节点在 NodeRegistry 中注册。"""
 
     AI_NODE_TYPES = [
-        "ai_plan_generation",
+        "ai_plan_research",
         "ai_coding",
     ]
 
@@ -40,13 +40,13 @@ class TestAINodeRegistration:
 class TestAINodeInstantiation:
     """验证 AI 节点能正常实例化。"""
 
-    def test_plan_generation_instantiation(self):
-        """PlanGeneration 节点能正常实例化。"""
-        from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+    def test_plan_research_instantiation(self):
+        """PlanResearch 节点能正常实例化。"""
+        from workflows.nodes.ai.plan_research import AIPlanResearchNode
 
-        node = AIPlanGenerationNode()
-        assert node.node_type == "ai_plan_generation"
-        assert node.display_name == "AI 方案生成"
+        node = AIPlanResearchNode()
+        assert node.node_type == "ai_plan_research"
+        assert node.display_name == "AI 方案编排调研"
 
     def test_plan_approval_instantiation(self):
         """方案审批已合并进 control/human_approval（mode=plan_feishu），能正常实例化。"""
@@ -66,14 +66,13 @@ class TestAINodeInstantiation:
 
 @pytest.mark.django_db
 class TestAINodeAttributes:
-    """验证 AI 节点的关键属性。"""
+    """验证 AI 节点的关键属性。
 
-    def test_plan_generation_has_sub_steps(self):
-        """PlanGeneration 节点应有子步骤定义。"""
-        from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
-
-        assert hasattr(AIPlanGenerationNode, "sub_steps")
-        assert len(AIPlanGenerationNode.sub_steps) > 0
+    「方案节点声明子步骤」的断言随 Chassis v2 一并作废：方案推进已下沉到
+    ConvergenceSession 的 stage graph，AIPlanResearchNode 不再声明 sub_steps。
+    唯一仍声明子步骤的节点是 AICodingNode，其清单断言在
+    test_sub_step_coding_node.py 里逐项覆盖。
+    """
 
     def test_plan_approval_is_blocking(self):
         """方案审批节点应标记为阻塞（等待用户审批）。"""
@@ -90,9 +89,9 @@ class TestAINodeAttributes:
     def test_all_nodes_have_execute_method(self):
         """所有 AI 节点应有 execute 方法。"""
         from workflows.nodes.ai.coding import AICodingNode
-        from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+        from workflows.nodes.ai.plan_research import AIPlanResearchNode
 
-        for node_class in [AIPlanGenerationNode, AICodingNode]:
+        for node_class in [AIPlanResearchNode, AICodingNode]:
             assert hasattr(node_class, "execute"), f"{node_class.__name__} 缺少 execute 方法"
 
 
@@ -196,11 +195,11 @@ class TestAINodeConfigSchema:
         assert isinstance(HumanApprovalNode.config_schema, dict)
         assert "mode" in HumanApprovalNode.config_schema["properties"]
 
-    def test_plan_generation_has_config_schema(self):
-        """PlanGeneration 应有配置 schema（继承自 AIAgentBaseNode）。"""
-        from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+    def test_plan_research_has_config_schema(self):
+        """PlanResearch 应有配置 schema（继承自 AIAgentBaseNode）。"""
+        from workflows.nodes.ai.plan_research import AIPlanResearchNode
 
-        assert hasattr(AIPlanGenerationNode, "config_schema")
+        assert hasattr(AIPlanResearchNode, "config_schema")
 
 
 @pytest.mark.skip(

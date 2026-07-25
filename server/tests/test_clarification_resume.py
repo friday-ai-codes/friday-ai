@@ -31,6 +31,7 @@ from typing import Any
 
 import pytest
 
+from agents.chat_runner import ChatRunnerConfig
 from chat.conversation_service import ConversationService
 from chat.models import Conversation, Message
 from orchestration.models import OrchestrationRun
@@ -55,22 +56,28 @@ def waiting_run(conversation: Conversation) -> OrchestrationRun:
     )
 
 
-def _fake_sdk_config() -> SimpleNamespace:
-    return SimpleNamespace(
+def _fake_sdk_config(bound_project_id: str = "") -> ChatRunnerConfig:
+    """build_sdk_config 的返回值替身。
+
+    直接用生产 dataclass 而不是 SimpleNamespace：resume 会把 sdk_config 的字段整体
+    透传进 graph configurable，生产侧每新增一个字段，手写替身就会漏掉并在运行时
+    AttributeError（``bound_project_id`` 就是这样漏的）。
+
+    ``bound_project_id`` 空串 = 会话未绑定项目聚合根，与生产默认一致。
+    """
+    return ChatRunnerConfig(
         session_id="chat-test-session",
         model="test-model",
         api_key="sk-test-key",
         api_base_url="https://api.example.com",
         system_prompt="system prompt",
         space_id="",
-        max_budget_usd=None,
-        force_deep_analysis=False,
-        available_models=None,
+        bound_project_id=bound_project_id,
     )
 
 
 @pytest.fixture
-def _mock_build_sdk_config(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+def _mock_build_sdk_config(monkeypatch: pytest.MonkeyPatch) -> ChatRunnerConfig:
     agent_session = SimpleNamespace(id=uuid.uuid4())
     sdk_config = _fake_sdk_config()
 
@@ -139,7 +146,7 @@ class TestResumeClarificationRun:
         monkeypatch: pytest.MonkeyPatch,
         conversation: Conversation,
         waiting_run: OrchestrationRun,
-        _mock_build_sdk_config: SimpleNamespace,
+        _mock_build_sdk_config: ChatRunnerConfig,
         _mock_finalize: dict[str, Any],
     ) -> None:
         """核心回归：resume config 必须带 api_key 等 configurable，
@@ -160,13 +167,39 @@ class TestResumeClarificationRun:
         assert cfg["system_prompt"] == "system prompt"
         assert cfg["thread_id"] == str(conversation.id)
         assert cfg["conversation_id"] == str(conversation.id)
+        # 未绑定项目的会话：空串（非 None），与 ChatRunnerConfig 语义一致
+        assert cfg["bound_project_id"] == ""
+
+    def test_resume_config_carries_bound_project_id(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        conversation: Conversation,
+        waiting_run: OrchestrationRun,
+        _mock_build_sdk_config: ChatRunnerConfig,
+        _mock_finalize: dict[str, Any],
+    ) -> None:
+        """项目级对话 resume：bound_project_id 必须透传。
+
+        漏传会让 executing_node 重建 ChatRunnerConfig 时 _get_tool_names 拿不到
+        项目只读工具，system prompt 已宣传 get_project_overview 等却未绑定。
+        """
+        bound_project_id = str(uuid.uuid4())
+        _mock_build_sdk_config.bound_project_id = bound_project_id
+        captured = _mock_graph(monkeypatch, final_state={"phase": "completed"})
+
+        asyncio.run(ConversationService.resume_clarification_run(
+            str(conversation.id), _RESUME_PAYLOAD,
+        ))
+
+        cfg = captured["config"]["configurable"]
+        assert cfg["bound_project_id"] == bound_project_id
 
     def test_completed_run_finalized(
         self,
         monkeypatch: pytest.MonkeyPatch,
         conversation: Conversation,
         waiting_run: OrchestrationRun,
-        _mock_build_sdk_config: SimpleNamespace,
+        _mock_build_sdk_config: ChatRunnerConfig,
         _mock_finalize: dict[str, Any],
     ) -> None:
         _mock_graph(monkeypatch, final_state={
@@ -191,7 +224,7 @@ class TestResumeClarificationRun:
         monkeypatch: pytest.MonkeyPatch,
         conversation: Conversation,
         waiting_run: OrchestrationRun,
-        _mock_build_sdk_config: SimpleNamespace,
+        _mock_build_sdk_config: ChatRunnerConfig,
         _mock_finalize: dict[str, Any],
     ) -> None:
         _mock_graph(monkeypatch, raise_exc=RuntimeError("boom"))
@@ -247,7 +280,7 @@ class TestResumeClarificationRun:
         self,
         monkeypatch: pytest.MonkeyPatch,
         conversation: Conversation,
-        _mock_build_sdk_config: SimpleNamespace,
+        _mock_build_sdk_config: ChatRunnerConfig,
         _mock_finalize: dict[str, Any],
     ) -> None:
         """没有 waiting_clarification 的 run（已被 resume 过/已超时关闭）→ 安静返回。"""

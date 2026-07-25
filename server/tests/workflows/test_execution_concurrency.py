@@ -32,13 +32,27 @@ def concurrency_workflow(db, user):
     return workflow
 
 
-@pytest.mark.asyncio
-@pytest.mark.django_db(transaction=True)
-async def test_pending_execution_blocks_new_start(monkeypatch, concurrency_workflow):
-    def close_background_coro(coro):
+def _patch_background_dispatch(monkeypatch) -> list[dict]:
+    """拦截后台线程派发，只关掉 coroutine 不真跑，并记录派发参数。
+
+    桩签名与生产 ``scheduler._run_in_thread`` 对齐（CTX-02 起带 ``triggered_by_id`` /
+    ``trace_id`` 用于后台线程内重绑发起用户），不用 ``**kwargs`` 吞参数，避免后续
+    签名漂移在这里失去感知。返回派发记录供用例断言。
+    """
+    dispatched: list[dict] = []
+
+    def close_background_coro(coro, *, triggered_by_id=None, trace_id=None):
+        dispatched.append({"triggered_by_id": triggered_by_id, "trace_id": trace_id})
         coro.close()
 
     monkeypatch.setattr(scheduler_module, "_run_in_thread", close_background_coro)
+    return dispatched
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_pending_execution_blocks_new_start(monkeypatch, concurrency_workflow):
+    dispatched = _patch_background_dispatch(monkeypatch)
 
     engine = WorkflowEngine()
 
@@ -50,14 +64,15 @@ async def test_pending_execution_blocks_new_start(monkeypatch, concurrency_workf
     await first.arefresh_from_db()
     assert first.status == ExecutionStatus.PENDING
 
+    # 被并发闸门拦下的那次绝不应派发后台执行；且派发时按 CTX-02 携带发起用户。
+    assert len(dispatched) == 1
+    assert dispatched[0]["triggered_by_id"] == first.triggered_by_id
+
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 async def test_concurrent_starts_allow_only_one(monkeypatch, concurrency_workflow):
-    def close_background_coro(coro):
-        coro.close()
-
-    monkeypatch.setattr(scheduler_module, "_run_in_thread", close_background_coro)
+    dispatched = _patch_background_dispatch(monkeypatch)
 
     engine = WorkflowEngine()
 
@@ -70,6 +85,15 @@ async def test_concurrent_starts_allow_only_one(monkeypatch, concurrency_workflo
 
     results = await asyncio.gather(_start_once(), _start_once())
 
+    # 先把非预期异常暴露出来：上面的宽 except 会把签名漂移之类的 TypeError 也吞成
+    # "既不成功也不是并发失败"，让本用例退化成一句无信息的 0 == 1。
+    unexpected = [
+        item
+        for item in results
+        if isinstance(item, BaseException) and not isinstance(item, ValueError)
+    ]
+    assert not unexpected, f"start_execution 抛出非并发限制异常: {unexpected!r}"
+
     success_count = sum(isinstance(item, WorkflowExecution) for item in results)
     failure_count = sum(isinstance(item, ValueError) for item in results)
 
@@ -81,3 +105,5 @@ async def test_concurrent_starts_allow_only_one(monkeypatch, concurrency_workflo
         status__in=[ExecutionStatus.PENDING, ExecutionStatus.RUNNING],
     ).acount()
     assert active_count == 1
+    # 只有获准的那次才派发后台执行。
+    assert len(dispatched) == 1

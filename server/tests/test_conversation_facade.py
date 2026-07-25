@@ -10,12 +10,13 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+import uuid
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from agents.chat_runner import ChatRunnerConfig
 from agents.core.events import (
     KEEPALIVE,
     MESSAGE_COMPLETE,
@@ -25,27 +26,28 @@ from agents.core.events import (
     TOOL_USE_START,
     AgentEvent,
 )
-from services.provider_config import ProviderType
 
 
-@dataclass
-class _SdkConfigStub:
-    """SdkRunnerConfig 的最小化替身。"""
+def _make_sdk_config(**overrides: Any) -> ChatRunnerConfig:
+    """构建 build_sdk_config 返回的运行配置替身。
 
-    system_prompt: str = "test prompt"
-    model: str = "claude-sonnet-4-5"
-    space_id: str = ""
-    session_id: str = "chat-test-session-001"
-    provider_type: ProviderType = ProviderType.ANTHROPIC
-    conversation_id: str = ""
-    api_key: str = "sk-test-key"
-    api_base_url: str = "https://api.example.com"
-    max_turns: int = 30
-    timeout_seconds: int = 0
-    agent_session: Any = None
-    max_budget_usd: float | None = None
-    force_deep_analysis: bool = False
-    available_models: Any = None
+    直接复用生产 dataclass 而不是另写一个"最小化 stub"：facade 会把 sdk_config 的
+    十余个字段整体透传进 graph_config，生产侧每新增一个字段，手写 stub 就会漏掉并
+    在运行时 AttributeError（``bound_project_id`` 就是这样漏的）。
+
+    未显式覆盖时字段沿用 ChatRunnerConfig 的生产默认值，其中 ``bound_project_id``
+    默认空串 = 会话未绑定项目聚合根（非项目级对话）。
+    """
+    defaults: dict[str, Any] = {
+        "system_prompt": "test prompt",
+        "model": "claude-sonnet-4-5",
+        "space_id": "",
+        "session_id": "chat-test-session-001",
+        "api_key": "sk-test-key",
+        "api_base_url": "https://api.example.com",
+    }
+    defaults.update(overrides)
+    return ChatRunnerConfig(**defaults)
 
 
 class _SessionStub:
@@ -121,7 +123,7 @@ def _facade_patches(
     graph: _MockGraph | None = None,
     finalize_return: list[AgentEvent] | None = None,
     finalize_mock: AsyncMock | None = None,
-    sdk_config: _SdkConfigStub | None = None,
+    sdk_config: ChatRunnerConfig | None = None,
 ) -> tuple[tuple[Any, Any, Any], AsyncMock]:
     """构建 facade 三件套 mock + finalize_mock 引用。"""
     if graph is None:
@@ -129,7 +131,7 @@ def _facade_patches(
     if finalize_mock is None:
         finalize_mock = AsyncMock(return_value=finalize_return or [])
 
-    config_stub = sdk_config or _SdkConfigStub()
+    config_stub = sdk_config or _make_sdk_config()
     config_stub.conversation_id = str(conversation.id)
     config_stub.space_id = str(conversation.space_id)
     session_stub = _SessionStub()
@@ -193,6 +195,47 @@ class TestConversationFacade:
         assert run is not None
         assert run.thread_id == str(conversation.id)
         assert run.status == OrchestrationRun.Status.COMPLETED
+
+    async def test_facade_passes_bound_project_id_to_graph(self, project: Any) -> None:
+        """bound_project_id 必须原样透进 graph_config.configurable。
+
+        executing_node 用 configurable 重建 ChatRunnerConfig，漏传会让
+        _get_tool_names 拿不到项目只读工具（system prompt 已宣传却未绑定）。
+        """
+        conversation = await _create_conversation(project)
+
+        unbound_graph = _make_graph()
+        (p1, p2, p3), _ = _facade_patches(conversation, graph=unbound_graph)
+        with p1, p2, p3:
+            from chat.conversation_service import ConversationService
+
+            async for _ in ConversationService.send_message_stream(
+                conversation_id=str(conversation.id),
+                content="Hello",
+            ):
+                pass
+
+        assert unbound_graph.last_config is not None
+        assert unbound_graph.last_config["configurable"]["bound_project_id"] == ""
+
+        bound_project_id = str(uuid.uuid4())
+        bound_graph = _make_graph()
+        (p1, p2, p3), _ = _facade_patches(
+            conversation,
+            graph=bound_graph,
+            sdk_config=_make_sdk_config(bound_project_id=bound_project_id),
+        )
+        with p1, p2, p3:
+            from chat.conversation_service import ConversationService
+
+            async for _ in ConversationService.send_message_stream(
+                conversation_id=str(conversation.id),
+                content="Hello",
+            ):
+                pass
+
+        assert bound_graph.last_config is not None
+        assert bound_graph.last_config["configurable"]["bound_project_id"] == bound_project_id
 
     async def test_facade_persists_user_input_parts_and_passes_them_to_graph(self, project: Any) -> None:
         """input_parts 是可选增量：含图 user message 落 parts，content 仍只保存文本。"""
@@ -282,7 +325,7 @@ class TestConversationFacade:
         (p1, p2, p3), _ = _facade_patches(
             conversation,
             graph=graph,
-            sdk_config=_SdkConfigStub(model="deepseek-v4-pro"),
+            sdk_config=_make_sdk_config(model="deepseek-v4-pro"),
         )
 
         with p1, p2, p3:

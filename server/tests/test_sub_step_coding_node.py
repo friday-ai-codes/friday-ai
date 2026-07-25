@@ -199,26 +199,29 @@ async def test_coding_node_emit_sub_step(
 
 
 # ============================================================================
-# 回归测试：已有 PlanGenerationNode 仍通过 SubStepMixin 工作
+# 回归测试：未声明子步骤的 AI 节点走 SubStepMixin 空清单短路
 # ============================================================================
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_plan_generation_node_still_works(
+async def test_plan_research_node_declares_no_sub_steps(
     execution_context: "ExecutionContext",
     node_execution: NodeExecution,
 ) -> None:
-    """重构后 AIPlanGenerationNode 通过 SubStepMixin 仍正常工作。"""
-    from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+    """AIPlanResearchNode 未声明子步骤 → _init_sub_steps 零创建、总数保持 0。
 
-    node = AIPlanGenerationNode()
+    原用例断言方案节点有 3 个子步骤，该前提随 Chassis v2 消失（方案推进下沉到
+    ConvergenceSession 的 stage graph）。此处改守 mixin 的另一半契约：宿主节点
+    不声明 sub_steps 时必须静默短路，不能凭空建记录或污染进度计数。
+    """
+    from workflows.nodes.ai.plan_research import AIPlanResearchNode
+
+    node = AIPlanResearchNode()
+    assert node.sub_steps == []
+
     await node._init_sub_steps(execution_context)
 
-    sub_steps = [
-        s async for s in NodeSubStep.objects.filter(
-            node_execution=node_execution
-        ).order_by("step_order")
-    ]
-    assert len(sub_steps) == 3
-    assert sub_steps[0].step_type == "analyze"
+    assert await NodeSubStep.objects.filter(node_execution=node_execution).acount() == 0
+    await node_execution.arefresh_from_db()
+    assert node_execution.sub_step_total_count == 0

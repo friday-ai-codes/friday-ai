@@ -47,8 +47,10 @@ def _make_suggestion(
 
 
 class TestSensitiveSuggestionsList:
+    """list 端点按 #11 收口：敏感信息仅空间管理员/系统管理员可见，故用管理员客户端。"""
+
     def test_list_returns_pending_sorted_real_secret_first(
-        self, authenticated_client, repository: Repository
+        self, authenticated_admin_client, repository: Repository
     ) -> None:
         _make_suggestion(
             repository, "config/app.yaml", SensitiveFileSuggestion.Severity.CONFIG_REVIEW
@@ -66,7 +68,7 @@ class TestSensitiveSuggestionsList:
             status=SensitiveFileSuggestion.Status.DISMISSED,
         )
 
-        resp = authenticated_client.get(LIST_URL.format(repo_id=repository.id))
+        resp = authenticated_admin_client.get(LIST_URL.format(repo_id=repository.id))
         assert resp.status_code == 200
         items = resp.json()["suggestions"]
         # 默认仅 pending（3 条），dismissed 的 old.tmp 不在
@@ -81,14 +83,14 @@ class TestSensitiveSuggestionsList:
         assert severities == ["real_secret", "likely_sensitive", "config_review"]
 
     def test_list_status_all_includes_dismissed(
-        self, authenticated_client, repository: Repository
+        self, authenticated_admin_client, repository: Repository
     ) -> None:
         _make_suggestion(repository, ".env", SensitiveFileSuggestion.Severity.REAL_SECRET)
         _make_suggestion(
             repository, "old.tmp", SensitiveFileSuggestion.Severity.CONFIG_REVIEW,
             status=SensitiveFileSuggestion.Status.DISMISSED,
         )
-        resp = authenticated_client.get(
+        resp = authenticated_admin_client.get(
             LIST_URL.format(repo_id=repository.id) + "?status=all"
         )
         assert resp.status_code == 200
@@ -96,16 +98,16 @@ class TestSensitiveSuggestionsList:
         assert paths == {".env", "old.tmp"}
 
     def test_list_reason_is_redacted_no_secret_body(
-        self, authenticated_client, repository: Repository
+        self, authenticated_admin_client, repository: Repository
     ) -> None:
         # reason 脱敏：序列化输出只回显既定字段，reason 不含密钥本体（T-24-11）。
         _make_suggestion(
             repository, ".env", SensitiveFileSuggestion.Severity.REAL_SECRET,
             reason="命中类型 aws_secret_key（行 3）",
         )
-        items = authenticated_client.get(LIST_URL.format(repo_id=repository.id)).json()[
-            "suggestions"
-        ]
+        items = authenticated_admin_client.get(
+            LIST_URL.format(repo_id=repository.id)
+        ).json()["suggestions"]
         assert set(items[0].keys()) == {
             "id",
             "path",
@@ -126,6 +128,19 @@ class TestSensitiveSuggestionsList:
     def test_unauthenticated_blocked(self, api_client, repository: Repository) -> None:
         resp = api_client.get(LIST_URL.format(repo_id=repository.id))
         assert resp.status_code in (401, 403)
+
+    def test_non_admin_blocked_and_leaks_nothing(
+        self, authenticated_client, repository: Repository
+    ) -> None:
+        """#11：非空间管理员的已登录用户不得查看敏感建议，且响应不泄漏任何条目。"""
+        _make_suggestion(
+            repository, ".env", SensitiveFileSuggestion.Severity.REAL_SECRET,
+            reason="命中类型 aws_secret_key（行 3）",
+        )
+        resp = authenticated_client.get(LIST_URL.format(repo_id=repository.id))
+        assert resp.status_code == 403
+        assert "suggestions" not in resp.json()
+        assert ".env" not in resp.content.decode()
 
 
 class TestSensitiveSuggestionAccept:

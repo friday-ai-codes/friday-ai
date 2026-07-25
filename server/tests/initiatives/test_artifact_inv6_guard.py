@@ -27,6 +27,18 @@ _PRUNE_DIRS = {
 
 _ALLOWED_WRITER = "initiatives/services/artifact_service.py"
 
+# 同名异物豁免（Chassis v2）：``delivery.models.Artifact``（db_table ``delivery_artifact``，
+# 交付物脊柱）与本守护关心的 ``initiatives.models.Artifact``（工件实例）是**两个完全不同
+# 的聚合根**，只是恰好同名。本守护按裸名 grep，区分不了 app，故按模块豁免 delivery 侧的
+# 模型定义与其自己的单一 writer；豁免面仅这两个文件，其余任何模块旁路写
+# ``Artifact``/``ArtifactType`` 仍判违规（守护强度不变）。
+_SIBLING_APP_MODULES = frozenset(
+    {
+        "delivery/models/artifact.py",
+        "delivery/services/artifact_service.py",
+    }
+)
+
 _MODELS = ("Artifact", "ArtifactType")
 _RE_ORM_WRITE = {
     m: re.compile(
@@ -48,7 +60,7 @@ def _iter_py_files() -> list[Path]:
 
 
 def _is_scanned(rel: str) -> bool:
-    if rel == _ALLOWED_WRITER:
+    if rel == _ALLOWED_WRITER or rel in _SIBLING_APP_MODULES:
         return False
     if rel.startswith("tests/") or "/tests/" in rel:
         return False
@@ -82,6 +94,21 @@ def test_inv6_no_bypass_artifact_write() -> None:
         "INV-6 违反：发现旁路 Artifact/ArtifactType 写表"
         f"（落库只允许经 ArtifactService / {_ALLOWED_WRITER}）：\n" + "\n".join(violations)
     )
+
+
+def test_sibling_app_exemption_cannot_smuggle_initiatives_writes() -> None:
+    """豁免安全性：被豁免的 delivery 模块确实只碰自己 app 的同名模型。
+
+    只要它们不引用 ``initiatives`` 的 Artifact，就不可能借豁免旁路写本守护关心的
+    模型——否则 ``_SIBLING_APP_MODULES`` 会退化成真正的漏洞。
+    """
+    for rel in sorted(_SIBLING_APP_MODULES):
+        path = SERVER_DIR / rel
+        assert path.exists(), f"{rel} 不存在（豁免项已失效，应清理）"
+        text = path.read_text(encoding="utf-8")
+        assert "initiatives" not in text, (
+            f"{rel} 引用了 initiatives，豁免不再安全——请收紧 _SIBLING_APP_MODULES"
+        )
 
 
 def test_inv6_writer_module_actually_writes() -> None:

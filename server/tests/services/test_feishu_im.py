@@ -301,15 +301,35 @@ async def test_create_chat_rate_limit():
 # ============================================================================
 
 
+def _patch_is_in_chat(mock_cls, **get_kwargs):
+    """把 httpx.AsyncClient.get 接到 is_in_chat 专用接口上，返回该 mock。
+
+    ``is_bot_in_chat`` 走飞书专用接口 ``/im/v1/chats/{chat_id}/members/is_in_chat``，
+    不再用 ``/members`` 列表比对（该列表只返回用户成员、不含机器人）。
+    """
+    mock_http = AsyncMock()
+    mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+    mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    for key, value in get_kwargs.items():
+        setattr(mock_http.get, key, value)
+    return mock_http
+
+
 @pytest.mark.asyncio
 async def test_is_bot_in_chat_true():
     """is_bot_in_chat 返回 True 当 Bot 在群内。"""
     client = _make_client()
 
-    with patch.object(
-        client, "get_chat_members", return_value=[{"member_id": "cli_test_app"}]
-    ):
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_http = _patch_is_in_chat(
+            mock_cls,
+            return_value=_mock_response({"code": 0, "data": {"is_in_chat": True}}),
+        )
+
         assert await client.is_bot_in_chat("oc_chat") is True
+
+    # 锚定接口，避免再次退回 /members 列表比对而测试仍"通过"。
+    assert mock_http.get.await_args.args[0].endswith("/im/v1/chats/oc_chat/members/is_in_chat")
 
 
 @pytest.mark.asyncio
@@ -317,9 +337,26 @@ async def test_is_bot_in_chat_false():
     """is_bot_in_chat 返回 False 当 Bot 不在群内。"""
     client = _make_client()
 
-    with patch.object(
-        client, "get_chat_members", return_value=[{"member_id": "cli_other"}]
-    ):
+    with patch("httpx.AsyncClient") as mock_cls:
+        _patch_is_in_chat(
+            mock_cls,
+            return_value=_mock_response({"code": 0, "data": {"is_in_chat": False}}),
+        )
+
+        assert await client.is_bot_in_chat("oc_chat") is False
+
+
+@pytest.mark.asyncio
+async def test_is_bot_in_chat_non_zero_code_returns_false():
+    """接口返回业务错误码时降级返回 False（由 ensure_bot_in_chat 幂等加入兜底）。"""
+    client = _make_client()
+
+    with patch("httpx.AsyncClient") as mock_cls:
+        _patch_is_in_chat(
+            mock_cls,
+            return_value=_mock_response({"code": 99992402, "msg": "invalid param"}),
+        )
+
         assert await client.is_bot_in_chat("oc_chat") is False
 
 
@@ -328,9 +365,9 @@ async def test_is_bot_in_chat_error_returns_false():
     """is_bot_in_chat 查询失败时降级返回 False。"""
     client = _make_client()
 
-    with patch.object(
-        client, "get_chat_members", side_effect=FeishuIMError("network error")
-    ):
+    with patch("httpx.AsyncClient") as mock_cls:
+        _patch_is_in_chat(mock_cls, side_effect=FeishuIMError("network error"))
+
         assert await client.is_bot_in_chat("oc_chat") is False
 
 

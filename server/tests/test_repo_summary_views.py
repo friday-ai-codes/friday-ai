@@ -29,13 +29,13 @@ class TestGenerateSummaryEndpoint:
 
     def test_generate_summary_returns_200(
         self,
-        authenticated_client: APIClient,
+        authenticated_admin_client: APIClient,
         repository: Repository,
         mock_dispatch,
     ) -> None:
-        """POST generate-summary 对已登录用户返回 200 + dispatch_task_id。"""
+        """POST generate-summary 对空间管理员/超管返回 200 + dispatch_task_id。"""
         url = f"/api/repositories/{repository.id}/generate-summary/"
-        response = authenticated_client.post(url)
+        response = authenticated_admin_client.post(url)
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert "dispatch_task_id" in data
@@ -43,7 +43,7 @@ class TestGenerateSummaryEndpoint:
 
     def test_generate_summary_returns_409_when_running(
         self,
-        authenticated_client: APIClient,
+        authenticated_admin_client: APIClient,
         repository: Repository,
     ) -> None:
         """POST generate-summary 当 ai_summary_status==running 时返回 409。"""
@@ -51,14 +51,14 @@ class TestGenerateSummaryEndpoint:
         repository.save(update_fields=["ai_summary_status"])
 
         url = f"/api/repositories/{repository.id}/generate-summary/"
-        response = authenticated_client.post(url)
+        response = authenticated_admin_client.post(url)
         assert response.status_code == status.HTTP_409_CONFLICT
         data = response.json()
         assert "摘要正在生成中" in data["detail"]
 
     def test_generate_summary_returns_409_when_pending(
         self,
-        authenticated_client: APIClient,
+        authenticated_admin_client: APIClient,
         repository: Repository,
     ) -> None:
         """POST generate-summary 当 ai_summary_status==pending 时也返回 409。"""
@@ -66,7 +66,7 @@ class TestGenerateSummaryEndpoint:
         repository.save(update_fields=["ai_summary_status"])
 
         url = f"/api/repositories/{repository.id}/generate-summary/"
-        response = authenticated_client.post(url)
+        response = authenticated_admin_client.post(url)
         assert response.status_code == status.HTTP_409_CONFLICT
 
     def test_generate_summary_returns_401_for_unauthenticated(
@@ -78,6 +78,20 @@ class TestGenerateSummaryEndpoint:
         url = f"/api/repositories/{repository.id}/generate-summary/"
         response = api_client.post(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_generate_summary_returns_403_for_non_admin(
+        self,
+        authenticated_client: APIClient,
+        repository: Repository,
+        mock_dispatch,
+    ) -> None:
+        """#11：非空间管理员的已登录用户不得触发建立知识（fail-closed 403）。"""
+        url = f"/api/repositories/{repository.id}/generate-summary/"
+        response = authenticated_client.post(url)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        # 未越权派发：状态保持未开始
+        repository.refresh_from_db()
+        assert repository.ai_summary_status == AISummaryStatus.NOT_STARTED
 
 
 @pytest.mark.django_db

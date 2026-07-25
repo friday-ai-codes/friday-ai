@@ -307,7 +307,6 @@ class TestOverlayIndex:
     @patch("services.indexer.QdrantService.create_branch_payload_index", return_value=True)
     @patch("services.indexer.EmbeddingService.generate_embeddings_batch", new_callable=AsyncMock)
     @patch("services.indexer._parse_git_diff_output")
-    @patch("services.indexer.os.path.exists", return_value=True)
     @patch("services.indexer.asyncio.create_subprocess_exec", new_callable=AsyncMock)
     @patch(
         "services.indexer._deepen_for_merge_base", new_callable=AsyncMock, return_value="merge111"
@@ -320,7 +319,6 @@ class TestOverlayIndex:
         mock_fetch_br,
         mock_deepen,
         mock_subprocess,
-        mock_exists,
         mock_parse,
         mock_embed,
         mock_branch_idx,
@@ -328,10 +326,16 @@ class TestOverlayIndex:
         mock_upsert,
         repository,
         indexer,
+        tmp_path,
     ):
         """有差异的功能分支应创建 overlay collection 并记录 BranchFileIndex。"""
         from repositories.models import BranchIndexStatus, RepositoryBranchIndex
         from services.indexer import DiffAction, FileDiff
+
+        # 用真实临时文件而非 patch os.path.*：管线要 isfile + getsize（大文件预检）
+        # 都成立才会解析，打桩单个函数既脆又会污染全局 os.path。
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "new.py").write_text("def new(): pass\n", encoding="utf-8")
 
         mock_parse.return_value = [FileDiff("src/new.py", DiffAction.ADD)]
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
@@ -356,7 +360,7 @@ class TestOverlayIndex:
         chunk.sibling_signatures = ""
         indexer.parser.parse_file_dual.return_value = ([chunk], None)
 
-        result = await indexer.run_branch_index("/tmp/fake", "feature/x", repository)
+        result = await indexer.run_branch_index(str(tmp_path), "feature/x", repository)
 
         assert result["status"] == "indexed"
         assert result["diff_files"] == 1
@@ -383,7 +387,6 @@ class TestOverlayIndex:
     @patch("services.indexer.QdrantService.create_branch_payload_index", return_value=True)
     @patch("services.indexer.EmbeddingService.generate_embeddings_batch", new_callable=AsyncMock)
     @patch("services.indexer._parse_git_diff_output")
-    @patch("services.indexer.os.path.exists", return_value=True)
     @patch("services.indexer.asyncio.create_subprocess_exec", new_callable=AsyncMock)
     @patch(
         "services.indexer._deepen_for_merge_base", new_callable=AsyncMock, return_value="merge111"
@@ -396,7 +399,6 @@ class TestOverlayIndex:
         mock_fetch_br,
         mock_deepen,
         mock_subprocess,
-        mock_exists,
         mock_parse,
         mock_embed,
         mock_branch_idx,
@@ -404,11 +406,18 @@ class TestOverlayIndex:
         mock_upsert,
         repository,
         indexer,
+        tmp_path,
     ):
         """ME-02：被排除文件（server/.env）不进入 overlay 索引，正常文件照常索引。"""
         from services.exclusion import invalidate_matcher_cache
 
         invalidate_matcher_cache(str(repository.id))
+
+        # 两个文件都真实落盘：证明 .env 是被排除规则剔除的，而不是"文件不存在"蒙对。
+        (tmp_path / "server").mkdir()
+        (tmp_path / "server" / ".env").write_text("SECRET=x\n", encoding="utf-8")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "new.py").write_text("def new(): pass\n", encoding="utf-8")
 
         # diff 同时含被排除的 server/.env（builtin 默认）与正常 src/new.py。
         mock_parse.return_value = [
@@ -437,7 +446,7 @@ class TestOverlayIndex:
         chunk.sibling_signatures = ""
         indexer.parser.parse_file_dual.return_value = ([chunk], None)
 
-        result = await indexer.run_branch_index("/tmp/fake", "feature/excl", repository)
+        result = await indexer.run_branch_index(str(tmp_path), "feature/excl", repository)
 
         assert result["status"] == "indexed"
         # 仅正常文件被解析/索引；被排除文件从源头剔除（不调用 parse_file_dual）。
