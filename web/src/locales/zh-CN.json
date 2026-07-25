@@ -9,7 +9,6 @@
       "freeformLabel": "或自由输入（可选）",
       "freeformPlaceholder": "如果以上选项都不准确，可以在这里补充…",
       "submit": "提交答复",
-      "submitting": "提交中…",
       "submitError": "提交失败，请重试",
       "answeredAt": "已回复 · {time}"
     }
@@ -17,10 +16,8 @@
   "setup": {
     "title": "首次设置",
     "subtitle": "欢迎使用 Friday AI，开始初始化你的实例",
-    "loading": "正在检测系统状态…",
     "cta": "创建管理员账户",
     "submitting": "创建中…",
-    "success": "创建成功，正在进入系统…",
     "fields": {
       "username": "管理员用户名",
       "password": "密码",
@@ -63,11 +60,9 @@
       "fields": {
         "apiKey": "API Key",
         "baseUrl": "接口地址（Base URL）",
-        "model": "默认模型",
         "apiKeyPlaceholder": "粘贴该供应商的 API Key"
       },
       "caps": {
-        "context": "上下文 {n}",
         "vision": "支持图像",
         "textOnly": "纯文本"
       },
@@ -86,30 +81,12 @@
       },
       "validation": {
         "apiKeyRequired": "请填写 API Key",
-        "baseUrlRequired": "请填写接口地址",
-        "modelRequired": "请填写默认模型"
+        "baseUrlRequired": "请填写接口地址"
       },
       "cta": "校验并完成配置",
       "testing": "正在校验连通与鉴权…",
-      "success": "配置成功，正在进入系统…",
-      "skip": "稍后在设置中配置",
       "error": {
-        "healthPrefix": "连接或鉴权失败",
         "default": "供应商配置失败，请检查后重试"
-      }
-    },
-    "security": {
-      "title": "安全密钥校验",
-      "subtitle": "检查加密与签名密钥是否安全配置，仅作提示不阻塞",
-      "checking": "正在检查密钥配置…",
-      "allClear": "密钥配置安全：SECRET_KEY 与 FRIDAY_ENCRYPTION_KEY 均已自定义且相互独立",
-      "unavailable": "暂时无法读取密钥状态，可稍后在部署环境核对（不影响继续）",
-      "riskTitle": "检测到密钥安全风险（不影响完成向导）",
-      "cta": "继续配置可选集成",
-      "risk": {
-        "secretKeyDefault": "SECRET_KEY 仍为默认值，请在生产环境通过环境变量设置为随机强密钥",
-        "encryptionKeyUnset": "未单独设置 FRIDAY_ENCRYPTION_KEY，加密将回退派生自 SECRET_KEY，建议单独配置",
-        "keysNotIndependent": "FRIDAY_ENCRYPTION_KEY 与 SECRET_KEY 相同，建议使用相互独立的密钥"
       }
     },
     "feishu": {
@@ -160,9 +137,6 @@
       "error": {
         "default": "向量检索配置保存失败，请重试"
       }
-    },
-    "finish": {
-      "success": "配置完成，正在进入系统…"
     }
   },
   "specs": {
@@ -178,12 +152,6 @@
       "repository": "仓库",
       "all": "全部"
     },
-    "columns": {
-      "title": "spec 标题",
-      "repository": "仓库",
-      "status": "状态",
-      "updatedAt": "更新时间"
-    },
     "status": {
       "draft": "草稿",
       "in_review": "评审中",
@@ -193,13 +161,10 @@
     },
     "detail": {
       "body": "spec 正文",
-      "relations": "关联",
       "workItem": "关联需求",
       "planVersion": "关联方案",
-      "repository": "所属仓库",
       "reviewHistory": "评审历史",
       "reviewEmpty": "暂无评审记录",
-      "reviewer": "评审人",
       "decisionApprove": "批准",
       "decisionReject": "驳回",
       "unknownReviewer": "未知用户"
@@ -210,7 +175,6 @@
       "specLabel": "规格",
       "prsLabel": "实现 PR",
       "workItemUnlinked": "未关联需求",
-      "planVersionUnlinked": "未关联方案",
       "prsEmpty": "暂无实现 PR",
       "linkedAt": "已关联于 {time}"
     },
@@ -277,7 +241,6 @@
         "hint": "PRD、研发 Spec、UI 稿、埋点文档等按类型汇总",
         "searchPlaceholder": "在已加载的交付文档中搜索标题 / 类型 / 项目…",
         "noMatch": "没有匹配的交付文档",
-        "truncated": "仅展示最近 {n} 条，更多请用知识搜索",
         "totalCount": "共 {n} 条",
         "empty": {
           "title": "暂无交付文档",
@@ -287,15 +250,11 @@
       "stats": {
         "repos": "纳管仓库",
         "domains": "业务域",
-        "treed": "已建能力树",
-        "monorepo": "Monorepo",
         "capabilities": "业务能力",
         "keywords": "关键词"
       },
       "coverage": {
-        "title": "能力覆盖",
         "ring": "能力树",
-        "treed": "已建能力树",
         "indexed": "已索引占比",
         "monorepo": "Monorepo"
       },
@@ -311,16 +270,10 @@
         "hint": "下钻到真实业务粒度：子应用 / 模块 / 能力",
         "loading": "正在聚合能力树…",
         "weaving": "正在编织星图…",
-        "empty": "暂无能力树，先到知识树为仓库生成能力树",
-        "capUnit": "能力",
-        "termUnit": "词条"
+        "empty": "暂无能力树，先到知识树为仓库生成能力树"
       },
       "starfield": {
         "title": "知识星图",
-        "subtitle": "真实业务能力网络 · 点击探索",
-        "hint": "拖拽旋转、滚轮缩放，点击节点进入详情",
-        "tip": "拖拽旋转 · 双指/滚轮缩放 · 点击节点看详情",
-        "galaxy": "代码依赖大图",
         "legendRepo": "仓库",
         "legendSubApp": "子应用",
         "legendModule": "模块",
@@ -334,24 +287,8 @@
       },
       "health": {
         "title": "运行状态",
-        "total": "共 {count} 个仓库",
         "healthy": "运行正常",
         "running": "运行中"
-      },
-      "quick": {
-        "title": "快捷入口",
-        "tree": {
-          "title": "浏览知识树",
-          "body": "按业务域 / 分面下钻能力"
-        },
-        "search": {
-          "title": "搜索知识",
-          "body": "检索需求 / 方案 / 代码变更"
-        },
-        "ingest": {
-          "title": "导入关联",
-          "body": "批量爬取看板与 MR 入库"
-        }
       },
       "domains": {
         "title": "业务域排行",
@@ -362,10 +299,7 @@
       },
       "facets": {
         "title": "分面透视",
-        "hint": "切换维度查看分布",
-        "valueCount": "{count} 类",
-        "more": "另有 {count} 类",
-        "valueUnit": "个"
+        "hint": "切换维度查看分布"
       },
       "snapshot": "域树快照 v{version} · 由 {by} 生成"
     },
@@ -392,18 +326,12 @@
       },
       "fields": {
         "version": "版本",
-        "sourceKind": "来源类型",
-        "sourceId": "来源 ID",
         "validAt": "生效时间",
-        "invalidAt": "失效时间",
         "eventTime": "事件时间",
-        "project": "所属项目",
-        "repository": "所属仓库",
         "entityId": "实体 ID"
       },
       "badges": {
-        "currentVersion": "当前版本",
-        "superseded": "已被新版本取代"
+        "currentVersion": "当前版本"
       },
       "provenance": {
         "feishu": "在飞书中查看",
@@ -413,7 +341,6 @@
       "asOf": {
         "label": "历史视点",
         "placeholder": "选择日期与时间",
-        "active": "正在查看 {datetime} 时点数据",
         "reset": "恢复当前"
       },
       "includeSuperseded": "显示已取代版本",
@@ -425,11 +352,8 @@
       },
       "error": {
         "notFound": "实体不存在或你无权访问",
-        "notFoundAction": "返回上一页",
-        "loadFailed": "加载知识失败，请稍后重试",
-        "retry": "重试"
-      },
-      "loading": "正在加载实体详情…"
+        "notFoundAction": "返回上一页"
+      }
     },
     "tree": {
       "viewSwitch": {
@@ -457,7 +381,6 @@
       }
     },
     "search": {
-      "title": "知识搜索",
       "placeholder": "输入关键词搜索需求、技术方案或代码变更…",
       "button": "搜索",
       "scoreLabel": "相关度",
@@ -483,110 +406,6 @@
       "RELATED": "相关"
     }
   },
-  "ingest": {
-    "title": "批量摄取",
-    "subtitle": "按组填入看板与 MR 链接，可一次提交多组，批量拉取工作项、PRD/技术方案文档与 MR diff 并入库可检索",
-    "batch": {
-      "rowLabel": "第 {n} 组",
-      "addRow": "添加一组",
-      "removeRow": "移除该组",
-      "submit": "开始批量摄取",
-      "submitting": "批量派发中…",
-      "dispatchSuccess": "已提交 {count} 组摄取，将在后台执行并实时更新",
-      "dispatchFailed": "批量摄取派发失败",
-      "runningOverall": "批量摄取进行中…（已完成 {ok}/{total} 组）",
-      "completedOverall": "批量摄取完成（成功 {ok}/{total} 组，相关内容已可检索）",
-      "loadError": "加载批量摄取状态失败，请稍后重试",
-      "empty": {
-        "title": "尚未发起批量摄取",
-        "body": "填写上方各组链接并点击「开始批量摄取」，结果将在此分组显示"
-      }
-    },
-    "form": {
-      "boardUrlLabel": "看板 / 工作项 URL",
-      "boardUrlPlaceholder": "https://project.feishu.cn/{simple_name}/.../detail/{id}",
-      "mrUrlLabel": "MR / PR URL",
-      "mrUrlPlaceholder": "https://gitlab.example.com/group/repo/-/merge_requests/123",
-      "submit": "开始摄取",
-      "submitting": "摄取派发中…",
-      "errorRequired": "请输入链接",
-      "errorInvalidUrl": "请输入合法的 http(s) 链接"
-    },
-    "empty": {
-      "title": "尚未发起摄取",
-      "body": "填写上方两个链接并点击「开始摄取」，结果将在此显示"
-    },
-    "dispatch": {
-      "success": "摄取已在后台执行，结果将实时更新",
-      "failed": "摄取派发失败"
-    },
-    "run": {
-      "running": "摄取进行中…",
-      "completed": "摄取完成，相关内容已可检索",
-      "partial": "部分步骤未完成，可查看下方各步骤详情后重试",
-      "failed": "摄取失败，请查看下方各步骤详情后重试",
-      "timeout": "摄取超时未完成，后台任务可能已中断，请稍后重试",
-      "loadError": "加载摄取状态失败，请稍后重试",
-      "viewLink": "查看"
-    },
-    "steps": {
-      "workItem": "工作项",
-      "document": "PRD / 技术方案文档",
-      "mrDiff": "MR diff"
-    },
-    "status": {
-      "ok": "成功",
-      "failed": "失败",
-      "skipped": "已跳过",
-      "pending": "等待中"
-    }
-  },
-  "release": {
-    "title": "上线文档同步",
-    "subtitle": "从飞书上线文档拉取上线业务与 MR，勾选后批量入库（知识库 + 上线账本）",
-    "load": "加载上线文档",
-    "reload": "重新加载",
-    "loadMore": "加载更多",
-    "loadError": "加载上线文档失败，请稍后重试",
-    "pullLatest": "拉取最新",
-    "pulling": "拉取中…",
-    "pullSuccess": "已拉取并持久化：新增 {created} 条，更新 {updated} 条",
-    "pullFailed": "拉取上线文档失败",
-    "fromBranch": "来自分支",
-    "openKanban": "打开飞书工作项",
-    "noMr": "无 MR",
-    "repoUnmatched": "未匹配仓库",
-    "loadedCount": "已加载 {loaded} 条",
-    "ofTotal": "共 {total}",
-    "selectedCount": "已选 {count} 条",
-    "startSync": "开始同步所选",
-    "syncing": "派发中…",
-    "clearSelection": "清空选择",
-    "dispatchSuccess": "已提交 {count} 条上线记录同步，将在后台执行并实时更新",
-    "dispatchFailed": "同步派发失败",
-    "empty": {
-      "title": "本地暂无上线记录",
-      "body": "点击「拉取最新」从飞书多维表格拉取并持久化到本地（刷新不丢）"
-    },
-    "noRows": {
-      "title": "未解析到可同步的上线记录",
-      "body": "该页没有带 MR 的上线行，可继续加载更多"
-    },
-    "table": {
-      "business": "上线业务",
-      "mr": "MR / 仓库",
-      "kanban": "看板 id",
-      "category": "分类",
-      "date": "上线日期",
-      "selectAll": "全选本页"
-    },
-    "progress": {
-      "overall": "同步进行中…（完成 {ok}/{total}）",
-      "done": "同步完成（成功 {ok}/{total}）",
-      "ledger": "上线账本",
-      "knowledge": "知识库"
-    }
-  },
   "exclusion": {
     "title": "排除规则",
     "subtitle": "命中规则的文件将对 Friday 不可见（索引 / 检索 / AI 代理 / 编码容器均不读取）",
@@ -608,7 +427,6 @@
       "regex": "正则"
     },
     "form": {
-      "patternLabel": "规则模式",
       "patternPlaceholder": "如 *.secret、config/secrets/、.*\\.key$",
       "add": "新增规则",
       "adding": "添加中…"
@@ -638,7 +456,6 @@
     "loading": "正在对账…",
     "loadError": "加载对账结果失败",
     "diff": {
-      "title": "对账差异",
       "matchCount": "已索引但现命中排除规则的文件：{count} 个",
       "empty": "无差异，已索引内容与当前排除规则一致",
       "excludedTitle": "当前排除规则",
@@ -910,7 +727,6 @@
       "subtitle": "收集并处理用户反馈（仅超级管理员可见）",
       "loading": "加载反馈中…",
       "empty": "暂无反馈",
-      "filterStatus": "状态",
       "filterCategory": "类型",
       "search": "搜索",
       "searchPlaceholder": "搜索标题 / 内容",
@@ -923,7 +739,6 @@
         "submitter": "提交者",
         "createdAt": "提交时间"
       },
-      "detailTitle": "反馈详情",
       "context": "上下文",
       "replies": "处理记录",
       "noReplies": "暂无回复",
@@ -952,14 +767,12 @@
     "empty": "暂无通知",
     "markAllRead": "全部已读",
     "viewAll": "查看全部",
-    "unreadCount": "{count} 条未读",
     "loading": "加载中…",
     "justNow": "刚刚",
     "announcementTag": "公告",
     "center": {
       "title": "消息中心",
       "subtitle": "集中查看站内通知与系统公告",
-      "myFeedback": "我的反馈",
       "unreadOnly": "仅看未读",
       "viewDetail": "查看详情",
       "showAll": "查看全部消息",
@@ -1132,12 +945,8 @@
       "settings": "项目配置"
     },
     "tabs": {
-      "overview": "概览",
       "members": "成员",
-      "workItems": "工作项",
-      "artifacts": "工件",
-      "memory": "记忆",
-      "links": "关联"
+      "workItems": "工作项"
     },
     "overview": {
       "description": "项目描述",
@@ -1194,8 +1003,6 @@
       }
     },
     "artifacts": {
-      "loadError": "加载工件失败",
-      "empty": "暂无工件",
       "view": "查看",
       "viewDesc": "按载体在线查看：飞书文档/表格渲染、外链跳转、md/内部内容。",
       "viewFailed": "工件查看失败",
@@ -1251,51 +1058,14 @@
       }
     },
     "links": {
-      "mergeRequests": "合并请求（MR/PR）",
-      "mrLoadError": "加载 MR 失败",
-      "mrEmpty": "暂无关联 MR",
       "mrStatus": {
         "open": "打开",
         "merged": "已合并",
         "closed": "已关闭"
-      },
-      "knowledge": "知识图谱关联",
-      "graphLoadError": "加载关联失败",
-      "graphEmpty": "暂无关联节点"
+      }
     },
     "workbench": {
-      "rebuild": "重建工作区",
-      "rebuilding": "重建中…",
-      "rebuilt": "已触发重建，工作区将很快更新",
-      "rebuildFailed": "重建工作区失败",
-      "nav": {
-        "overview": "大盘",
-        "docs": "文件",
-        "feature": "feature",
-        "deps": "外部依赖",
-        "search": "搜索",
-        "sectionLabel": "工作区导航"
-      },
-      "section": {
-        "buildingTitle": "建设中",
-        "buildingDesc": "该区块将在后续迭代中开放。"
-      },
       "overview": {
-        "title": "大盘",
-        "peopleTitle": "项目人员",
-        "statusTitle": "项目状态",
-        "peopleEmpty": "暂无项目成员",
-        "peopleLoadError": "加载人员失败",
-        "docsLoadError": "加载工作区状态失败",
-        "emptyTitle": "工作台尚未就绪",
-        "emptyDesc": "项目工作区文件正在创建中，稍后刷新即可查看大盘与文件。",
-        "identity": {
-          "pm": "PM",
-          "owner": "开发负责人",
-          "developer": "开发者",
-          "qa": "测试"
-        },
-        "docCount": "工作区文件 {n} 个",
         "syncing": "同步中",
         "synced": "已同步",
         "syncError": "同步异常",
@@ -1303,7 +1073,6 @@
       },
       "docs": {
         "title": "文件",
-        "view": "查看",
         "edit": "编辑源码",
         "cancel": "取消",
         "saving": "保存中…",
@@ -1318,11 +1087,7 @@
         "noHumanArea": "该文件暂无可编辑的人工区",
         "fileNavLabel": "工作区文件导航",
         "file": {
-          "memory": "MEMORY.md",
-          "state": "STATE.md",
-          "milestones": "MILESTONES.md",
-          "research": "RESEARCH.md",
-          "preflight": "PREFLIGHT.md"
+          "state": "STATE.md"
         }
       },
       "feature": {
@@ -1341,17 +1106,13 @@
       },
       "deps": {
         "title": "外部依赖",
-        "loadError": "加载外部依赖失败",
-        "empty": "暂无外部依赖",
         "artifactsTitle": "外部工件",
         "artifactsHint": "原型 / Spec / UI 稿 / 评审 / 复盘 等按类型分组；缺陷以工作项呈现",
         "artifactsEmpty": "暂无工件",
         "artifactsLoadError": "加载工件失败",
         "viewKnowledge": "知识实体",
         "branchesTitle": "关联分支",
-        "branchesDeferred": "分支多绑定将在 Phase 85 开放",
         "branchesEmpty": "暂无关联分支，绑定分支名后可配合 skills 按分支反查项目",
-        "branchesHint": "项目绑定的分支名",
         "branchAdd": "绑定分支",
         "branchBind": "绑定",
         "branchBound": "已绑定分支",
@@ -1372,16 +1133,7 @@
         "mergeRequestsTitle": "关联 PR / MR",
         "mrEmpty": "暂无关联 PR",
         "mrLoadError": "加载 PR 失败"
-      },
-      "search": {
-        "title": "搜索",
-        "placeholder": "搜索项目内容、文件、工件…",
-        "emptyTitle": "没有匹配的内容",
-        "emptyDesc": "换个关键词试试，或调整空间 / 状态 / 成员筛选。",
-        "loadError": "搜索失败"
-      },
-      "loadError": "加载{section}失败，请重试",
-      "retry": "重试"
+      }
     },
     "warroom": {
       "health": {
@@ -1413,10 +1165,6 @@
         }
       },
       "feature": {
-        "viewLabel": "feature 视图切换",
-        "byStatus": "按状态",
-        "byModule": "按模块",
-        "emptyGroup": "暂无",
         "acceptanceCount": "验收项 {n}"
       },
       "apis": {
@@ -1425,8 +1173,6 @@
         "editDetail": "编辑接口详情（字段/类型/返回结构）",
         "fieldCount": "入参 {req} · 出参 {res}",
         "fieldCountTitle": "请求字段数 · 返回字段数",
-        "added": "已新增 API 条目",
-        "addFailed": "新增失败",
         "updateFailed": "更新失败",
         "delete": "删除",
         "deleted": "已删除",
@@ -1435,9 +1181,6 @@
         "confirmDelete": "确认删除",
         "empty": "暂无 API 清单条目",
         "loadError": "加载 API 清单失败",
-        "pathPlaceholder": "/api/资源/路径",
-        "methodLabel": "HTTP 方法",
-        "pathLabel": "API 路径",
         "statusLabel": "状态",
         "status": {
           "planned": "规划中",
@@ -1465,12 +1208,6 @@
       },
       "assistant": {
         "title": "项目助手",
-        "expand": "展开会话栏",
-        "collapse": "收起会话栏",
-        "maximize": "放大会话",
-        "ai": "AI",
-        "you": "我",
-        "switch": "切换会话",
         "actions": "会话操作",
         "noConversation": "选择或新建会话",
         "groupMine": "我的项目会话",
@@ -1478,10 +1215,6 @@
         "newPersonal": "新建个人会话",
         "newShared": "新建共享会话",
         "newFailed": "新建会话失败",
-        "cloneToMine": "克隆到我的会话",
-        "cloneToSpeak": "克隆后发言",
-        "cloned": "已克隆为我的会话",
-        "cloneFailed": "克隆失败",
         "makeShared": "设为项目共享",
         "makePersonal": "设为个人",
         "makeSharedTitle": "设为项目共享会话？",
@@ -1498,24 +1231,7 @@
         "deleteDesc": "删除后无法恢复，确认删除该会话？",
         "deleted": "会话已删除",
         "deleteFailed": "删除失败",
-        "confirm": "确认",
-        "shared": "共享",
-        "personal": "个人",
-        "startHint": "发送消息开始与项目 AI 对话",
-        "welcomeTitle": "向项目 AI 提问",
-        "welcomeDesc": "我已加载当前项目的需求、feature、文档与关联上下文，问我任何关于这个项目的问题。",
-        "quick": {
-          "blocked": "这个项目现在卡在哪里？",
-          "next": "根据当前 feature list，下一步该做什么？",
-          "missingAcceptance": "哪些 feature 还缺验收项？",
-          "summary": "总结一下当前项目进展",
-          "lastFailure": "最近失败的执行是什么原因？",
-          "weekly": "帮我生成项目周报"
-        },
-        "readOnlyHint": "这是项目共享会话（只读），克隆一份到我的会话即可发言。",
-        "inputPlaceholder": "向项目 AI 提问…（Enter 发送 / Shift+Enter 换行）",
-        "send": "发送",
-        "stop": "停止"
+        "confirm": "确认"
       },
       "workspace": {
         "back": "返回",
@@ -1621,13 +1337,10 @@
   "workflow": {
     "editor": {
       "slot": {
-        "compatible": "可连接",
         "incompatibleTitle": "连线失败",
         "incompatibleBody": "形状不兼容：「{source}」无法接入「{target}」",
         "attachedBadge": "附着",
         "attachedHint": "澄清随方案节点存在，删除方案节点将一并移除",
-        "dropHint": "拖入兼容卡片",
-        "dropActiveHint": "松开以接入",
         "imGatedHint": "需先添加「创建群聊」节点以提供 chat_id",
         "detachTitle": "解除附着",
         "detachBody": "解除后澄清节点将成为独立节点，不再随方案节点联动。确认解除？",
@@ -1645,9 +1358,6 @@
         "technicalPlan": "技术方案",
         "codingAssignment": "编码指派",
         "approvalResult": "审批结果"
-      },
-      "palette": {
-        "empty": "未找到匹配节点"
       }
     }
   }

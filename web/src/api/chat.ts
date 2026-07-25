@@ -406,13 +406,6 @@ export async function confirmCodingSession(sessionId: string): Promise<CodingSes
 }
 
 /**
- * 获取编码会话详情
- */
-export async function getCodingSession(sessionId: string): Promise<CodingSessionResponse> {
-  return get<CodingSessionResponse>(`/chat/coding-sessions/${sessionId}/`)
-}
-
-/**
  * 确认编码方案（附带可选的分支名覆盖）— 扩展
  */
 export async function confirmCodingSessionWithBranch(
@@ -442,16 +435,6 @@ export async function confirmCommit(
 }
 
 /**
- * 获取 Commit 确认数据（GET）
- */
-export async function getCommitConfirmData(sessionId: string) {
-  return get<{
-    suggested_commit_message: string
-    affected_files: Array<{ file_path?: string, path?: string, change_type: string }>
-  }>(`/chat/coding-sessions/${sessionId}/commit-confirm/`)
-}
-
-/**
  * 确认/跳过 PR
  */
 export async function confirmPR(
@@ -462,30 +445,6 @@ export async function confirmPR(
     `/chat/coding-sessions/${sessionId}/pr-confirm/`,
     data,
   )
-}
-
-/**
- * 获取 PR 确认数据（GET）
- */
-export async function getPRConfirmData(sessionId: string) {
-  return get<{
-    suggested_pr_title: string
-    suggested_pr_description: string
-    target_branch: string
-    branch_url: string
-  }>(`/chat/coding-sessions/${sessionId}/pr-confirm/`)
-}
-
-/**
- * 获取冲突检查结果
- */
-export async function getConflictCheck(sessionId: string) {
-  return get<{
-    has_conflicts?: boolean
-    conflicting_files?: string[]
-    behind_by?: number
-    suggestion?: string
-  }>(`/chat/coding-sessions/${sessionId}/conflict-check/`)
 }
 
 /**
@@ -596,14 +555,10 @@ export default {
   exportToFeishu,
   exportCodingPlanToFeishu,
   confirmCodingSession,
-  getCodingSession,
   confirmCodingSessionWithBranch,
   createSessionsForPlan,
   confirmCommit,
-  getCommitConfirmData,
   confirmPR,
-  getPRConfirmData,
-  getConflictCheck,
   getDiffSummary,
   postClarificationAnswer,
   postPlanClarificationAnswer,

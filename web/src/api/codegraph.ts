@@ -19,16 +19,6 @@ export interface ImportEdgeRow {
   is_relative: boolean
 }
 
-export interface EndpointRow {
-  id: string
-  http_method: string
-  url_path: string
-  handler_name: string
-  view_type: 'FUNCTION_VIEW' | 'CLASS_VIEW' | 'VIEWSET'
-  file_path: string
-  line_number: number
-}
-
 export interface PaginatedResponse<T> {
   count: number
   offset: number
@@ -48,12 +38,6 @@ export interface GetSymbolsParams {
 export interface GetImportsParams {
   repositoryId: string
   sourceFile?: string
-  limit?: number
-  offset?: number
-}
-
-export interface GetEndpointsParams {
-  repositoryId: string
   limit?: number
   offset?: number
 }
@@ -155,17 +139,6 @@ export async function getImports(
   return get<PaginatedResponse<ImportEdgeRow>>(
     `/repositories/${repositoryId}/codegraph/imports/`,
     { limit, offset, source_file: sourceFile || undefined },
-  )
-}
-
-export async function getEndpoints(
-  repositoryId: string,
-  params: Omit<GetEndpointsParams, 'repositoryId'> = {},
-): Promise<PaginatedResponse<EndpointRow>> {
-  const { limit = 50, offset = 0 } = params
-  return get<PaginatedResponse<EndpointRow>>(
-    `/repositories/${repositoryId}/codegraph/endpoints/`,
-    { limit, offset },
   )
 }
 
