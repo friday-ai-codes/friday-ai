@@ -1,4 +1,14 @@
-"""交付知识 chat agent tool 输入/输出契约（Phase 16-02）。"""
+"""交付知识 chat agent tool 输入契约（Phase 16-02）。
+
+只声明 **Input**。输出侧的权威契约是 ``knowledge/exposure.py`` 的 serializer
+（``serialize_search_results`` / ``serialize_timeline`` / ``serialize_related``），
+它们随召回能力持续扩字段（vector_score、toc_path、code_changes、related_entities…）。
+
+原先这里还有一组 Output 模型，但从未被 tool 引用，且已与 serializer 严重漂移——
+``serialize_search_result`` 实产 15 个字段而 ``SearchResultItemOutput`` 只声明 8 个
+且 ``extra="forbid"``。套上去只有两种结果：报错，或悄悄砍掉 7 个本该给 LLM 的字段。
+与其维护一份跟不上的平行契约，不如让 serializer 单独持有输出形状。
+"""
 
 from __future__ import annotations
 
@@ -8,14 +18,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Direction = Literal["both", "out", "in"]
-
-
-class ProvenanceOutput(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    feishu_url: str | None = None
-    mr_url: str | None = None
-    session_link: str | None = None
 
 
 class SearchDeliveryKnowledgeInput(BaseModel):
@@ -31,28 +33,6 @@ class SearchDeliveryKnowledgeInput(BaseModel):
     conversation_id: str = ""
 
 
-class SearchResultItemOutput(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    entity_id: uuid.UUID
-    kind: str
-    title: str
-    version: int
-    score: float
-    provenance: ProvenanceOutput
-    llm_grade: str | None = None
-    llm_reason: str | None = None
-
-
-class SearchDeliveryKnowledgeOutput(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    query: str
-    results: list[SearchResultItemOutput]
-    total: int
-    as_of: str | None = None
-
-
 class GetEntityTimelineInput(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
@@ -60,24 +40,6 @@ class GetEntityTimelineInput(BaseModel):
     include_superseded: bool = False
     as_of: str | None = None
     conversation_id: str = ""
-
-
-class TimelineNodeOutput(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    entity_id: uuid.UUID
-    version: int
-    kind: str
-    title: str
-    summary: str
-
-
-class GetEntityTimelineOutput(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    entity_id: uuid.UUID
-    nodes: list[TimelineNodeOutput]
-    total: int
 
 
 class GetRelatedEntitiesInput(BaseModel):
@@ -89,21 +51,3 @@ class GetRelatedEntitiesInput(BaseModel):
     as_of: str | None = None
     conversation_id: str = ""
 
-
-class RelatedEntityItemOutput(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    entity_id: uuid.UUID
-    kind: str
-    relation: str
-    depth: int
-    provenance: ProvenanceOutput | None = None
-
-
-class GetRelatedEntitiesOutput(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    entity_id: uuid.UUID
-    related: list[RelatedEntityItemOutput]
-    total: int
-    as_of: str | None = None

@@ -16,12 +16,7 @@ from agents.tools.delivery_knowledge_tools import (
 )
 from agents.tools.langchain_adapter import build_langchain_tools
 from agents.tools.registry import ToolRegistry
-from agents.tools.schemas.delivery_knowledge import (
-    ProvenanceOutput,
-    SearchDeliveryKnowledgeInput,
-    SearchDeliveryKnowledgeOutput,
-    SearchResultItemOutput,
-)
+from agents.tools.schemas.delivery_knowledge import SearchDeliveryKnowledgeInput
 from chat.models import Conversation
 from knowledge.retrieval_types import EntityMetadata, ProvenanceLinks, SearchResultDTO
 
@@ -38,27 +33,79 @@ def test_schema_search_input_requires_query() -> None:
         SearchDeliveryKnowledgeInput.model_validate({"query": ""})
 
 
-def test_schema_search_output_provenance_nested() -> None:
-    out = SearchDeliveryKnowledgeOutput(
-        query="q",
-        results=[
-            SearchResultItemOutput(
-                entity_id=uuid.uuid4(),
-                kind="work_item",
-                title="t",
-                version=1,
-                score=0.9,
-                provenance=ProvenanceOutput(feishu_url="https://x"),
-            )
-        ],
-        total=1,
-    )
-    assert out.results[0].provenance.feishu_url == "https://x"
-
-
 def test_schema_as_of_optional() -> None:
     inp = SearchDeliveryKnowledgeInput.model_validate({"query": "q"})
     assert inp.as_of is None
+
+
+class TestRuntimeInputValidation:
+    """入参边界必须在 tool 运行时生效，而不是只写在 JSON Schema 声明里。
+
+    这三个工具的参数由 LLM 生成。接入 schema 前它们只做了 UUID / as_of 的手工
+    校验，top_k、max_hops、direction 一路裸传到检索服务与图遍历——LLM 传
+    max_hops=99 就真的按 99 跳走。
+
+    与本文件既有异步用例一致：patch 掉 `_resolve_conversation_user`，避免异步
+    上下文直读 DB 触发 SQLite 表锁。
+    """
+
+    @staticmethod
+    def _patch_user(user):
+        return patch(
+            "agents.tools.delivery_knowledge_tools._resolve_conversation_user",
+            new=AsyncMock(return_value=user),
+        )
+
+    @pytest.mark.asyncio
+    async def test_search_rejects_top_k_over_upper_bound(self, user) -> None:
+        with self._patch_user(user):
+            result = await search_delivery_knowledge(query="q", top_k=10_000, conversation_id="c")
+        assert result.success is False
+        assert "top_k" in result.error
+
+    @pytest.mark.asyncio
+    async def test_search_rejects_empty_query(self, user) -> None:
+        with self._patch_user(user):
+            result = await search_delivery_knowledge(query="", conversation_id="c")
+        assert result.success is False
+        assert "query" in result.error
+
+    @pytest.mark.asyncio
+    async def test_related_rejects_max_hops_over_upper_bound(self, user) -> None:
+        with self._patch_user(user):
+            result = await get_related_entities(
+                entity_id=str(uuid.uuid4()), max_hops=99, conversation_id="c"
+            )
+        assert result.success is False
+        assert "max_hops" in result.error
+
+    @pytest.mark.asyncio
+    async def test_related_rejects_unknown_direction(self, user) -> None:
+        with self._patch_user(user):
+            result = await get_related_entities(
+                entity_id=str(uuid.uuid4()), direction="sideways", conversation_id="c"
+            )
+        assert result.success is False
+        assert "direction" in result.error
+
+    @pytest.mark.asyncio
+    async def test_timeline_rejects_bad_entity_id(self, user) -> None:
+        with self._patch_user(user):
+            result = await get_entity_timeline(entity_id="not-a-uuid", conversation_id="c")
+        assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_valid_bounds_still_pass_through(self, user) -> None:
+        """边界内的调用不能被误伤——校验只收窄非法值，不改变既有成功路径。"""
+        with (
+            self._patch_user(user),
+            patch(
+                "agents.tools.delivery_knowledge_tools._service.search_similar",
+                new=AsyncMock(return_value=[]),
+            ),
+        ):
+            result = await search_delivery_knowledge(query="q", top_k=20, conversation_id="c")
+        assert result.success is True
 
 
 @pytest.mark.asyncio
