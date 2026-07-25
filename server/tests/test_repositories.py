@@ -7,6 +7,8 @@ import pytest
 from django.urls import reverse
 from rest_framework import status
 
+from permissions.services import PermissionService
+
 # ============================================================================
 # 仓库列表和创建测试
 # ============================================================================
@@ -56,8 +58,17 @@ class TestRepositoryListCreate:
             id=response.data["id"]
         ).exists()
 
-    def test_create_repository_without_space_fails(self, authenticated_client, urls):
-        """测试不带 space_ids 创建仓库失败（所有仓库必须关联空间）。"""
+    def test_create_repository_without_space_creates_orphan(
+        self, authenticated_client, user, urls
+    ):
+        """不带 space_ids 建仓成功，产出「孤儿仓库」（#9：space_ids 可选，允许后补绑定）。
+
+        放宽 space_ids 必填的补偿控制是仓库级管理权限收口（#11）：孤儿仓库未关联
+        任何空间，`can_admin_repository` 对非超管恒 False —— 建仓者本人也无法对其
+        执行索引/建立知识/敏感信息等管理操作。此处一并断言，确保放宽不等于失守。
+        """
+        from repositories.models import Repository
+
         response = authenticated_client.post(
             urls.repository_list,
             {
@@ -68,8 +79,12 @@ class TestRepositoryListCreate:
             format="json",
         )
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "必填" in str(response.data)
+        assert response.status_code == status.HTTP_201_CREATED
+        repo = Repository.objects.get(id=response.data["id"])
+        # 孤儿仓库：未关联任何空间
+        assert repo.spaces.count() == 0
+        # 补偿控制：孤儿仓库仅超管可管理，建仓者（普通用户）无管理权
+        assert PermissionService.can_admin_repository(user, str(repo.id)) is False
 
     def test_create_repository_head_branch_as_default(
         self, authenticated_client, project_without_repo, urls
@@ -453,15 +468,34 @@ class TestRepositorySpaces:
         assert not project.repositories.filter(id=repository.id).exists()
         assert second_project.repositories.filter(id=repository.id).exists()
 
-    def test_put_empty_rejected(self, authenticated_client, project, repository):
+    def test_put_empty_unbinds_all(self, authenticated_client, user, project, repository):
+        """空数组＝解绑全部空间（#9：不再强制「至少一个空间」）。
+
+        解绑后仓库退化为孤儿仓库，按 #11 仅超管可管理 —— 一并断言，确保放宽
+        校验没有顺带放宽权限。
+        """
         response = authenticated_client.put(
             self._url(repository.id),
             {"space_ids": []},
             format="json",
         )
 
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == []
+        # 全部关联被解除
+        assert not project.repositories.filter(id=repository.id).exists()
+        # 解绑后成为孤儿仓库：非超管无管理权
+        assert PermissionService.can_admin_repository(user, str(repository.id)) is False
+
+    def test_put_non_list_rejected(self, authenticated_client, project, repository):
+        """space_ids 非列表仍应 400，且原有关联保持不变（类型校验未被放宽）。"""
+        response = authenticated_client.put(
+            self._url(repository.id),
+            {"space_ids": "not-a-list"},
+            format="json",
+        )
+
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        # 原有关联保持不变
         assert project.repositories.filter(id=repository.id).exists()
 
     def test_put_unknown_space_rejected(self, authenticated_client, repository):

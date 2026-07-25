@@ -1,5 +1,7 @@
 """implementation data migration 字节级 hash 契约测试。
 
+清单以 ``CONTRACT_SLUGS`` 为准（随 seed 迁移增删同步），不写死条目数。
+
 目的：防止任一方（Python 常量 / DB body）漂移。
 任一方改动都会触发测试红灯，强制开发者同步另一方。
 参考 v17.0 ALL_EVENT_TYPES frozenset 契约模式。
@@ -33,8 +35,10 @@ CONTRACT_SLUGS: list[tuple[str, str, str, str | None]] = [
     (PromptSlugs.CHAT_CODING_GUIDANCE, "chat.conversation_service", "_CODING_GUIDANCE", None),
     (PromptSlugs.AI_NODE_VARIABLE_EXTRACTOR, "workflows.nodes.ai.variable_extractor", "EXTRACTION_PROMPT_TEMPLATE", None),
     (PromptSlugs.AI_NODE_CODE_REVIEW, "workflows.nodes.ai.code_review", "REVIEW_SYSTEM_PROMPT", None),
-    (PromptSlugs.AI_NODE_PLAN_GENERATION, "workflows.nodes.ai.plan_generation", "_PLAN_GENERATION_BASE_PROMPT", None),
 ]
+# ai_node.plan_generation.system 不在清单内：Chassis v2 删除 ai_plan_generation 节点后，
+# prompts/migrations/0002 的 seed 条目对 `_PLAN_GENERATION_BASE_PROMPT` 做了 ImportError
+# 跳过、0009 的 resync 变成 no-op，该 slug 已不再入库（PromptSlugs 常量仅作历史保留）。
 
 
 def _resolve_constant(module_path: str, attr_name: str, dict_key: str | None) -> str:
@@ -48,7 +52,7 @@ def _resolve_constant(module_path: str, attr_name: str, dict_key: str | None) ->
 
 @pytest.mark.django_db
 class TestPromptMigrationContract:
-    """implementation seed 的 12 个 slug 字节级契约测试。"""
+    """implementation seed slug 的字节级契约测试。"""
 
     @pytest.mark.parametrize(
         "slug,module_path,attr_name,dict_key",
@@ -86,8 +90,8 @@ class TestPromptMigrationContract:
             f"OR update Python constant to match DB"
         )
 
-    def test_all_12_seed_slugs_present(self) -> None:
-        """seed 后 12 个系统级 is_builtin slug 都必须在 DB。"""
+    def test_all_seed_slugs_present(self) -> None:
+        """CONTRACT_SLUGS 里的系统级 is_builtin slug 都必须在 DB。"""
         slugs_in_db = set(
             Prompt.objects.filter(
                 scope=PromptScope.SYSTEM,
@@ -98,5 +102,5 @@ class TestPromptMigrationContract:
         missing = expected - slugs_in_db
         assert not missing, (
             f"Missing seed slugs: {sorted(missing)}\n"
-            f"Expected 12 seed slugs, got {len(slugs_in_db & expected)}"
+            f"Expected {len(expected)} seed slugs, got {len(slugs_in_db & expected)}"
         )

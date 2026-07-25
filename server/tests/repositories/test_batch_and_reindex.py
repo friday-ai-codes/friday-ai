@@ -103,8 +103,35 @@ async def test_reindex_all_queues_non_deleted_repos(superuser: User) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_batch_create_creates_multiple_repos(normal_user: User, space: Space) -> None:
-    """批量建仓逐项创建，返回 created/failed 计数。"""
+async def test_batch_create_forbidden_for_normal_user(
+    normal_user: User, space: Space
+) -> None:
+    """普通用户不可调用批量建仓（IsSuperUser fail-closed，平台级运维操作）。"""
+    payload = {
+        "repositories": [
+            {
+                "name": "batch-denied",
+                "git_url": "https://github.com/t/denied.git",
+                "git_platform": "github",
+                "access_token": "tok",
+                "space_ids": [str(space.id)],
+            }
+        ]
+    }
+    client = AsyncClient()
+    resp = await client.post(
+        "/api/repositories/batch/",
+        data=payload,
+        content_type="application/json",
+        headers=await _auth_headers(normal_user),
+    )
+    assert resp.status_code == 403
+    # 越权请求绝不落库
+    assert not await Repository.objects.filter(name="batch-denied").aexists()
+
+
+async def test_batch_create_creates_multiple_repos(superuser: User, space: Space) -> None:
+    """批量建仓逐项创建，返回 created/failed 计数（仅超管可调用）。"""
     payload = {
         "repositories": [
             {
@@ -129,7 +156,7 @@ async def test_batch_create_creates_multiple_repos(normal_user: User, space: Spa
             "/api/repositories/batch/",
             data=payload,
             content_type="application/json",
-            headers=await _auth_headers(normal_user),
+            headers=await _auth_headers(superuser),
         )
 
     assert resp.status_code == 201
@@ -140,7 +167,7 @@ async def test_batch_create_creates_multiple_repos(normal_user: User, space: Spa
 
 
 async def test_batch_create_isolates_per_item_failure(
-    normal_user: User, space: Space
+    superuser: User, space: Space
 ) -> None:
     """单项校验失败不影响其余（缺 git_url 的项落 failed，合法项仍 created）。"""
     payload = {
@@ -161,7 +188,7 @@ async def test_batch_create_isolates_per_item_failure(
             "/api/repositories/batch/",
             data=payload,
             content_type="application/json",
-            headers=await _auth_headers(normal_user),
+            headers=await _auth_headers(superuser),
         )
 
     assert resp.status_code == 201
@@ -171,12 +198,12 @@ async def test_batch_create_isolates_per_item_failure(
     assert data["failed"][0]["index"] == 1
 
 
-async def test_batch_create_rejects_empty(normal_user: User) -> None:
+async def test_batch_create_rejects_empty(superuser: User) -> None:
     client = AsyncClient()
     resp = await client.post(
         "/api/repositories/batch/",
         data={"repositories": []},
         content_type="application/json",
-        headers=await _auth_headers(normal_user),
+        headers=await _auth_headers(superuser),
     )
     assert resp.status_code == 400

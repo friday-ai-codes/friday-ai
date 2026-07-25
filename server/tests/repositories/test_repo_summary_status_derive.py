@@ -130,36 +130,40 @@ class TestResolveSummaryStatus:
 
 
 @pytest.mark.django_db
-class TestActiveSummaryTasks:
+class TestActiveSummaryRows:
+    """任务中心「建立知识」在途枚举（``system.tasks_views._active_summary_rows``）。
+
+    该 helper 原名 ``_active_summary_tasks`` 且直接产出 ``(count, items)``；重构后
+    只负责"哪些仓库真的有在途 session"这一层事实，产出
+    ``{repository_id: session_status}``，仓库名与展示态由 ``ActiveTasksView``
+    用 ``derive_summary_status`` 二次加工。幻影过滤与按仓去重仍在本 helper 内，
+    故守护点不变。
+    """
+
     def test_phantom_not_listed(self, repository: Repository, agent_session) -> None:
         """任务中心列表只反映存活 session：缓存=running 但 session 终态的幻影不出现。"""
-        from system.tasks_views import _active_summary_tasks
+        from system.tasks_views import _active_summary_rows
 
         repository.ai_summary_status = AISummaryStatus.RUNNING
         repository.save(update_fields=["ai_summary_status"])
         _make_session(repository, agent_session, status=SubAgentSession.Status.TIMEOUT)
 
-        count, items = _active_summary_tasks()
-
-        assert count == 0
-        assert items == []
+        assert _active_summary_rows(None) == {}
 
     def test_live_session_listed(self, repository: Repository, agent_session) -> None:
-        from system.tasks_views import _active_summary_tasks
+        from system.tasks_views import _active_summary_rows
 
         _make_session(repository, agent_session, status=SubAgentSession.Status.RUNNING)
 
-        count, items = _active_summary_tasks()
+        rows = _active_summary_rows(None)
 
-        assert count == 1
-        assert items[0]["repository_id"] == str(repository.pk)
-        assert items[0]["name"] == repository.name
-        assert items[0]["status"] == AISummaryStatus.RUNNING
+        assert list(rows) == [str(repository.pk)]
+        assert derive_summary_status(rows[str(repository.pk)]) == AISummaryStatus.RUNNING
 
     def test_dedup_multiple_sessions_per_repo(
         self, repository: Repository, agent_session
     ) -> None:
-        from system.tasks_views import _active_summary_tasks
+        from system.tasks_views import _active_summary_rows
 
         _make_session(
             repository,
@@ -174,9 +178,7 @@ class TestActiveSummaryTasks:
             session_suffix="-b",
         )
 
-        count, items = _active_summary_tasks()
-
-        assert count == 1
+        assert len(_active_summary_rows(None)) == 1
 
 
 @pytest.mark.django_db(transaction=True)

@@ -41,11 +41,13 @@ def stale_indexed_repo(db) -> Repository:
 # ---------------------------------------------------------------------------
 
 
-async def test_trigger_index_resets_progress_counters(stale_indexed_repo: Repository) -> None:
+async def test_trigger_index_resets_progress_counters(
+    stale_indexed_repo: Repository, admin_user
+) -> None:
     """点"更新索引"后，DB 里上一轮的进度残留（100/100）必须被清零。"""
     from rest_framework.parsers import JSONParser
     from rest_framework.request import Request
-    from rest_framework.test import APIRequestFactory
+    from rest_framework.test import APIRequestFactory, force_authenticate
 
     from repositories.index_views import IndexTriggerView
 
@@ -66,8 +68,9 @@ async def test_trigger_index_resets_progress_counters(stale_indexed_repo: Reposi
         wsgi_request = factory.post(
             f"/api/repositories/{stale_indexed_repo.id}/index/", format="json",
         )
-        wsgi_request.user = MagicMock()
-        wsgi_request.auth = None
+        # 索引触发受 #11 仓库管理守卫（仅空间管理员/超管）：必须注入真实认证身份，
+        # 直接挂 MagicMock 无效——DRF Request.user 会重走认证链落到 AnonymousUser。
+        force_authenticate(wsgi_request, user=admin_user)
         request = Request(wsgi_request, parsers=[JSONParser()])  # type: ignore[call-arg]
 
         response = await IndexTriggerView().post(request, stale_indexed_repo.id)

@@ -59,9 +59,25 @@ _RE_COMMENT_INSTANTIATE = re.compile(r"\bWorkItemCommentEvent\s*\(")
 _RE_COMMENT_INSTANCE_SAVE = re.compile(r"\bWorkItemCommentEvent\([^)]*\)\.save\(")
 
 # feishu_chat_id writeback 旁路写表模式（D-6/INV-6/P-5）：
-# 唯一允许写 feishu_chat_id 的模块即 WorkItem 唯一 writer（work_item_service.py）。
 # 锚 `.feishu_chat_id =` 赋值（排除 ==/!=/>= 等比较，只命中单 `=` 赋值）。
 _RE_CHAT_ID_WRITE = re.compile(r"\.feishu_chat_id\s*=\s*[^=]")
+
+# 允许写 `.feishu_chat_id` 的模块（相对 server/）。上面的正则只认属性名、认不出属主
+# 模型，而 `feishu_chat_id` 是**两个互不相干的聚合根**各自的 writeback 字段：
+#
+# - ``WorkItem.feishu_chat_id`` → ``WorkItemService.awriteback_feishu_chat_id``；
+# - ``Project.feishu_chat_id``（Phase 87 项目群复用）→ ``ProjectService``
+#   ``_writeback_chat_id_locked``，其单一写入入口由
+#   ``tests/initiatives/test_project_inv6_guard.py`` 另行守护。
+#
+# 因此按模块豁免这两个各自的 writer，而非放宽正则；除它们之外任何模块出现该赋值
+# 仍判违规，守护强度不变。
+_ALLOWED_CHAT_ID_WRITERS = frozenset(
+    {
+        _ALLOWED_WRITER,
+        "initiatives/services/project_service.py",
+    }
+)
 
 
 def _iter_py_files() -> list[Path]:
@@ -139,29 +155,45 @@ def test_inv6_writer_module_actually_writes() -> None:
 
 
 def test_inv6_no_bypass_feishu_chat_id_write() -> None:
-    """INV-6/P-5：除 WorkItemService 外，server 源码无旁路写 feishu_chat_id。
+    """INV-6/P-5：除各聚合根自己的 Service 外，server 源码无旁路写 feishu_chat_id。
 
-    ``feishu_chat_id`` 是 writeback 字段，唯一合规写入路径为
-    ``WorkItemService.awriteback_feishu_chat_id``（落点 work_item_service.py）。
-    任何其它模块出现 ``.feishu_chat_id =`` 赋值即视为旁路（可能污染 mirror /
-    绕过单一入口），命中即 fail 并列出文件:行。
+    ``feishu_chat_id`` 是 writeback 字段，合规写入路径只有
+    ``WorkItemService.awriteback_feishu_chat_id``（WorkItem）与
+    ``ProjectService._writeback_chat_id_locked``（Project，见
+    ``_ALLOWED_CHAT_ID_WRITERS`` 处说明）。任何其它模块出现 ``.feishu_chat_id =``
+    赋值即视为旁路（可能污染 mirror / 绕过单一入口），命中即 fail 并列出文件:行。
     """
     violations: list[str] = []
 
     for path in _iter_py_files():
         rel = path.relative_to(SERVER_DIR).as_posix()
         # 复用 WorkItem INV-6 剪枝：排除 tests/ / migrations/ / models/ 与唯一 writer
-        if not _is_scanned_for_inv6(rel):
+        if not _is_scanned_for_inv6(rel) or rel in _ALLOWED_CHAT_ID_WRITERS:
             continue
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if _RE_CHAT_ID_WRITE.search(line):
                 violations.append(f"{rel}:{lineno}: {line.strip()}")
 
     assert not violations, (
-        "INV-6 违反：发现旁路写 feishu_chat_id（writeback 只允许经 "
-        f"WorkItemService.awriteback_feishu_chat_id / {_ALLOWED_WRITER}）：\n"
-        + "\n".join(violations)
+        "INV-6 违反：发现旁路写 feishu_chat_id（writeback 只允许经各聚合根单一 writer："
+        f"{sorted(_ALLOWED_CHAT_ID_WRITERS)}）：\n" + "\n".join(violations)
     )
+
+
+def test_inv6_chat_id_writer_exemptions_are_real_writers() -> None:
+    """守护有效性：被豁免的模块确实是各自聚合根的 feishu_chat_id 单一 writer。
+
+    防止 ``_ALLOWED_CHAT_ID_WRITERS`` 被当成"随手加一条就变绿"的白名单——豁免项
+    必须真的含 ``.feishu_chat_id`` 赋值，且显式 ``update_fields`` 不污染其它字段。
+    """
+    for rel in sorted(_ALLOWED_CHAT_ID_WRITERS):
+        writer = SERVER_DIR / rel
+        assert writer.exists(), f"{rel} 不存在（豁免项已失效，应清理）"
+        text = writer.read_text(encoding="utf-8")
+        assert _RE_CHAT_ID_WRITE.search(text), f"{rel} 未实际写 .feishu_chat_id，不应被豁免"
+        assert 'update_fields=["feishu_chat_id"' in text, (
+            f'{rel} 的 feishu_chat_id 写回应显式 save(update_fields=["feishu_chat_id", ...])'
+        )
 
 
 def test_inv6_feishu_chat_id_writer_actually_writes() -> None:

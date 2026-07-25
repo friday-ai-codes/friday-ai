@@ -1,9 +1,14 @@
 """Integration tests for Agent tool framework."""
 
+import uuid
 
 import pytest
 
 from agents.tools import ToolRegistry, ToolResult, tool
+
+# search_repository_code 对非 UUID 的 scope 直接判空（避免 ORM ValidationError → 500），
+# 因此这里必须用合法 UUID 才能走到 HybridSearchService。
+_REPO_ID = str(uuid.uuid4())
 
 
 # Test tool
@@ -71,7 +76,7 @@ async def test_search_repository_code_hybrid_search():
         ) as mock_aget,
     ):
         mock_repo = AsyncMock()
-        mock_repo.id = "repo-1"
+        mock_repo.id = _REPO_ID
         mock_repo.default_branch = "main"
         mock_aget.return_value = mock_repo
 
@@ -80,14 +85,14 @@ async def test_search_repository_code_hybrid_search():
         tool_fn = ToolRegistry.get_tool("search_repository_code")
         assert tool_fn is not None
 
-        result = await tool_fn.func(query="find helper function", repository_id="repo-1")
+        result = await tool_fn.func(query="find helper function", repository_id=_REPO_ID)
 
         assert result.success is True
         # 验证统一经 HybridSearchService.search 检索，带上目标仓库 + top_k
         mock_service.search.assert_awaited_once()
         call = mock_service.search.call_args
         assert call.args[0] == "find helper function"
-        assert call.kwargs["repository_ids"] == ["repo-1"]
+        assert call.kwargs["repository_ids"] == [_REPO_ID]
         assert call.kwargs["top_k"] == 20
 
 
@@ -113,7 +118,7 @@ async def test_search_repository_code_empty_query_dense_only():
         ) as mock_aget,
     ):
         mock_repo = AsyncMock()
-        mock_repo.id = "repo-1"
+        mock_repo.id = _REPO_ID
         mock_repo.default_branch = "main"
         mock_aget.return_value = mock_repo
 
@@ -122,9 +127,9 @@ async def test_search_repository_code_empty_query_dense_only():
         tool_fn = ToolRegistry.get_tool("search_repository_code")
         assert tool_fn is not None
 
-        result = await tool_fn.func(query="x", repository_id="repo-1")
+        result = await tool_fn.func(query="x", repository_id=_REPO_ID)
 
         assert result.success is True
         call = mock_service.search.call_args
-        assert call.kwargs["repository_ids"] == ["repo-1"]
+        assert call.kwargs["repository_ids"] == [_REPO_ID]
         assert call.kwargs["branch_name"] is None

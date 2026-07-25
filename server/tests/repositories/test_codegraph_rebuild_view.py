@@ -597,7 +597,7 @@ def test_cancel_then_rebuild_succeeds(
 
 
 def test_index_creation_not_blocked_by_running_graph(
-    authenticated_client: APIClient,
+    authenticated_admin_client: APIClient,
     repo: Repository,
 ) -> None:
     """ROADMAP implementation success criterion 反向语义验证：向量轨锁与图谱轨锁独立。
@@ -605,6 +605,9 @@ def test_index_creation_not_blocked_by_running_graph(
     ``graph_build_status=RUNNING`` 不参与 ``IndexCreateView`` 的 409 判定 ——
     即 ``POST /index/`` 在图谱构建进行中时仍应放行（生成新 IndexHistory），
     与 ``IndexCreateView`` 既有行为对齐（参考 server/repositories/index_views.py:128）。
+
+    ``POST /index/`` 另受 #11 仓库管理守卫（仅空间管理员/超管），故用管理员客户端 ——
+    否则 403 会先于锁判定短路，让本用例假绿（403 ≠ 409 但也不会建 IndexHistory）。
     """
 
     GraphBuildHistory.objects.create(
@@ -617,12 +620,14 @@ def test_index_creation_not_blocked_by_running_graph(
         "repositories.index_views._schedule_index",
         return_value=MagicMock(),
     ):
-        response = authenticated_client.post(_index_url(repo))
+        response = authenticated_admin_client.post(_index_url(repo))
 
     assert response.status_code != 409, (
         f"图谱锁误参与了向量轨判定（success criterion 违例）：status={response.status_code}, "
         f"data={getattr(response, 'data', None)}"
     )
+    # 放行即 202：避免任何其他非 409 失败码（如 403/500）让上面的断言假绿
+    assert response.status_code == 202, getattr(response, "data", response)
     assert IndexHistory.objects.filter(repository=repo).exists()
     latest = IndexHistory.objects.filter(repository=repo).order_by("-created_at").first()
     assert latest is not None

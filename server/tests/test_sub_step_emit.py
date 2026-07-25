@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,7 +28,24 @@ from workflows.models.execution import (
     SubStepStatus,
     WorkflowExecution,
 )
+from workflows.nodes.ai.sub_step_mixin import SubStepMixin
 from workflows.signals import sub_step_updated
+
+
+class _SubStepProbeNode(SubStepMixin):
+    """机制测试专用探针：唯一职责是声明一份固定子步骤清单。
+
+    本文件测的是 ``SubStepMixin`` 的生命周期机制本身，不是某个业务节点的步骤清单。
+    早期用例借用当时声明了子步骤的方案生成节点，导致机制断言被业务节点的步骤变动
+    牵连（Chassis v2 删除该节点后整组用例失效）。改由探针承载后，机制与业务解耦。
+    """
+
+    sub_steps: ClassVar[list[tuple[str, str]]] = [
+        ("analyze", "分析需求"),
+        ("generate_plan", "生成计划"),
+        ("review", "审查计划"),
+    ]
+
 
 # ============================================================================
 # Fixtures
@@ -50,7 +67,7 @@ def workflow_node(db: None, workflow: "Workflow") -> "WorkflowNode":
 
     return WorkflowNode.objects.create(
         workflow=workflow,
-        node_type="ai_plan_generation",
+        node_type="ai_plan_research",
         name="Test AI Node",
         config={},
     )
@@ -193,9 +210,7 @@ async def test_init_sub_steps_creates_pending(
     node_execution: NodeExecution,
 ) -> None:
     """_init_sub_steps() 批量创建 pending 记录，设置总数。"""
-    from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
-
-    node = AIPlanGenerationNode()
+    node = _SubStepProbeNode()
     await node._init_sub_steps(execution_context)
 
     # 验证创建了 3 个子步骤
@@ -221,9 +236,7 @@ async def test_init_sub_steps_creates_pending(
 @pytest.mark.asyncio
 async def test_init_sub_steps_no_execution(empty_context: "ExecutionContext") -> None:
     """node_execution 为 None 时 _init_sub_steps() 静默返回。"""
-    from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
-
-    node = AIPlanGenerationNode()
+    node = _SubStepProbeNode()
     # 不应抛出异常
     await node._init_sub_steps(empty_context)
 
@@ -240,9 +253,7 @@ async def test_emit_sub_step_running(
     node_execution: NodeExecution,
 ) -> None:
     """emit_sub_step(running) 更新状态和 started_at。"""
-    from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
-
-    node = AIPlanGenerationNode()
+    node = _SubStepProbeNode()
     await node._init_sub_steps(execution_context)
 
     with patch("workflows.signal_handlers.get_channel_layer", return_value=None):
@@ -262,9 +273,7 @@ async def test_emit_sub_step_completed(
     node_execution: NodeExecution,
 ) -> None:
     """emit_sub_step(completed) 更新状态、completed_at 和进度计数。"""
-    from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
-
-    node = AIPlanGenerationNode()
+    node = _SubStepProbeNode()
     await node._init_sub_steps(execution_context)
 
     with patch("workflows.signal_handlers.get_channel_layer", return_value=None):
@@ -288,9 +297,7 @@ async def test_emit_sub_step_failed(
     node_execution: NodeExecution,
 ) -> None:
     """emit_sub_step(failed) 更新状态和 completed_at，但不增加 completed_count。"""
-    from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
-
-    node = AIPlanGenerationNode()
+    node = _SubStepProbeNode()
     await node._init_sub_steps(execution_context)
 
     with patch("workflows.signal_handlers.get_channel_layer", return_value=None):
@@ -314,9 +321,7 @@ async def test_emit_sub_step_sends_signal(
     node_execution: NodeExecution,
 ) -> None:
     """emit_sub_step() 发送 sub_step_updated signal。"""
-    from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
-
-    node = AIPlanGenerationNode()
+    node = _SubStepProbeNode()
     await node._init_sub_steps(execution_context)
 
     signal_received: list[dict[str, Any]] = []
@@ -345,25 +350,17 @@ async def test_emit_sub_step_sends_signal(
 @pytest.mark.asyncio
 async def test_emit_sub_step_no_execution(empty_context: "ExecutionContext") -> None:
     """node_execution 为 None 时 emit_sub_step() 静默返回。"""
-    from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
-
-    node = AIPlanGenerationNode()
+    node = _SubStepProbeNode()
     # 不应抛出异常
     await node.emit_sub_step(empty_context, "analyze", SubStepStatus.RUNNING)
 
 
 # ============================================================================
-# AIPlanGenerationNode sub_steps Declaration Tests
+# sub_steps Declaration Tests
 # ============================================================================
-
-
-def test_plan_generation_node_sub_steps() -> None:
-    """AIPlanGenerationNode 声明 3 个子步骤。"""
-    from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
-
-    assert len(AIPlanGenerationNode.sub_steps) == 3
-    step_types = [s[0] for s in AIPlanGenerationNode.sub_steps]
-    assert step_types == ["analyze", "generate_plan", "review"]
+#
+# 「某具体业务节点声明了 N 个子步骤」的断言归 test_sub_step_coding_node.py
+# （AICodingNode 是当前全仓唯一声明 sub_steps 的节点）；本文件只测机制默认值。
 
 
 def test_base_node_sub_steps_empty() -> None:

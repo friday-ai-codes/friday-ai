@@ -145,7 +145,11 @@ def _fake_qdrant_client(points: list[Any]) -> Any:
 async def test_list_space_structure_filters_excluded(
     monkeypatch: pytest.MonkeyPatch, project: Any, repository: Any
 ) -> None:
-    """文件树不展示被排除文件。"""
+    """文件树不展示被排除文件。
+
+    ``list_space_structure`` 契约已收紧为 repository_id 必填（不再支持全空间 dump），
+    故必须显式限定仓库，否则只会拿到引导文案 + 空树。
+    """
     repository.index_status = "indexed"
     await sync_to_async(repository.save)(update_fields=["index_status"])
 
@@ -162,7 +166,7 @@ async def test_list_space_structure_filters_excluded(
         AsyncMock(return_value=_env_matcher()),
     )
 
-    res = await list_space_structure(str(project.id))
+    res = await list_space_structure(str(project.id), repository_id=str(repository.id))
 
     structure = res.output["data"]["structure"]
     assert ".env" not in structure

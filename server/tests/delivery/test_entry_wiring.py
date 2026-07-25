@@ -110,9 +110,10 @@ async def test_create_handler_wires_delivery_upsert_and_keeps_ingestion() -> Non
 
     captured: dict = {}
 
-    def _fake_rib(factory, *, name=None):
+    def _fake_rib(factory, *, name=None, initiated_by_user_id=None):
         captured["factory"] = factory
         captured["name"] = name
+        captured["initiated_by_user_id"] = initiated_by_user_id
         return MagicMock()
 
     with (
@@ -125,6 +126,8 @@ async def test_create_handler_wires_delivery_upsert_and_keeps_ingestion() -> Non
     mock_ingest.assert_awaited_once()
     # delivery 后台 upsert 已投递
     assert "factory" in captured
+    # CTX-02：webhook 无真实触发用户，后台任务必须显式归因到 system
+    assert captured["initiated_by_user_id"] == "system"
 
     # 执行后台 factory，断言以 source="feishu_webhook" 调 upsert
     with patch.object(WorkItemService, "upsert", new=AsyncMock(return_value=None)) as mock_upsert:

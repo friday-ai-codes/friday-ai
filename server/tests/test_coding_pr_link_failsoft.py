@@ -2,7 +2,8 @@
 
 覆盖 D-52-3：算出 successful_mrs 后逐 MR best-effort 调 link_implementation_pr——
 
-- 回填：正常路径每个 successful_mr 各调一次 link（含正确 repository_id/pr_url/plan_version_id）。
+- 回填：正常路径每个 successful_mr 各调一次 link（含正确 repository_id/pr_url/
+  artifact_version_id —— 后者取自 plan_data["plan_version_id"]）。
 - fail-soft 不阻断：link 抛异常 → 整段吞为 warning sdd_spec_pr_link_failed，
   _finalize_and_notify 仍返回 completed 且通知被调用。
 - 零回归：plan_version_id 缺失 → link 不被调用，既有 MR 创建+通知+输出不受影响。
@@ -85,7 +86,7 @@ async def _run_finalize(
 async def test_link_called_per_successful_mr_on_happy_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """正常路径：每个 successful_mr 各调一次 link，含正确 repository_id/pr_url/plan_version_id。"""
+    """正常路径：每个 successful_mr 各调一次 link，含正确 repository_id/pr_url/版本 id。"""
     # 避免 ≥2 仓触发的 cross-ref 真实网络回写。
     monkeypatch.setattr(
         "workflows.services.pr_cross_reference.add_cross_references",
@@ -109,8 +110,10 @@ async def test_link_called_per_successful_mr_on_happy_path(
 
     assert result.status == "completed"
     assert link_mock.await_count == 2
+    # plan_data 里仍叫 plan_version_id，service 侧形参已随 Chassis v2 更名为
+    # artifact_version_id（PlanVersion → ArtifactVersion）。
     linked = {
-        (c.kwargs["repository_id"], c.kwargs["pr_url"], c.kwargs["plan_version_id"])
+        (c.kwargs["repository_id"], c.kwargs["pr_url"], c.kwargs["artifact_version_id"])
         for c in link_mock.await_args_list
     }
     assert (id_a, f"https://mr/{repo_a.name}", "pv-1") in linked

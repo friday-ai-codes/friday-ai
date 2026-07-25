@@ -267,8 +267,13 @@ class TestConcurrencyLock:
         result = await _acquire_index_lock_async(str(uuid.uuid4()))
         assert result is None
 
-    async def test_index_trigger_creates_index_history(self, repository):
-        """IndexTriggerView.post 触发时创建 IndexHistory 记录（durable defer 已 mock）。"""
+    async def test_index_trigger_creates_index_history(self, repository, admin_user):
+        """IndexTriggerView.post 触发时创建 IndexHistory 记录（durable defer 已 mock）。
+
+        索引触发受 #11 仓库管理守卫（仅空间管理员/超管）保护，故用 DRF
+        ``force_authenticate`` 注入超管身份 —— 直接给 WSGIRequest 挂 MagicMock 无效，
+        DRF ``Request.user`` 会重新走认证链而落到 AnonymousUser。
+        """
         from repositories.index_views import IndexTriggerView
 
         with (
@@ -283,12 +288,11 @@ class TestConcurrencyLock:
         ):
             from rest_framework.parsers import JSONParser
             from rest_framework.request import Request
-            from rest_framework.test import APIRequestFactory
+            from rest_framework.test import APIRequestFactory, force_authenticate
 
             factory = APIRequestFactory()
             wsgi_request = factory.post(f"/api/repositories/{repository.id}/index/", format="json")
-            wsgi_request.user = MagicMock()
-            wsgi_request.auth = None
+            force_authenticate(wsgi_request, user=admin_user)
             request = Request(wsgi_request, parsers=[JSONParser()])
 
             view = IndexTriggerView()
@@ -305,11 +309,13 @@ class TestConcurrencyLock:
 class TestIndexCancelView:
     """验证停止索引接口把运行中状态落为已停止。"""
 
-    async def test_cancel_running_index_updates_repository_and_history(self, repository):
+    async def test_cancel_running_index_updates_repository_and_history(
+        self, repository, admin_user
+    ):
         from django.utils import timezone
         from rest_framework.parsers import JSONParser
         from rest_framework.request import Request
-        from rest_framework.test import APIRequestFactory
+        from rest_framework.test import APIRequestFactory, force_authenticate
 
         from repositories.index_views import IndexCancelView
 
@@ -329,8 +335,8 @@ class TestIndexCancelView:
             f"/api/repositories/{repository.id}/index/cancel/",
             format="json",
         )
-        wsgi_request.user = MagicMock()
-        wsgi_request.auth = None
+        # 停止索引同受 #11 仓库管理守卫，需真实认证身份（见 trigger 用例说明）
+        force_authenticate(wsgi_request, user=admin_user)
         request = Request(wsgi_request, parsers=[JSONParser()])
 
         with patch("repositories.index_views.cancel_background_task", return_value=True):

@@ -42,9 +42,10 @@ async def test_comment_handler_wires_background_append() -> None:
 
     captured: dict = {}
 
-    def _fake_rib(factory, *, name=None):
+    def _fake_rib(factory, *, name=None, initiated_by_user_id=None):
         captured["factory"] = factory
         captured["name"] = name
+        captured["initiated_by_user_id"] = initiated_by_user_id
         return MagicMock()
 
     with patch("services.background_runner.run_in_background", new=_fake_rib):
@@ -53,6 +54,8 @@ async def test_comment_handler_wires_background_append() -> None:
     # 后台 append 已投递
     assert "factory" in captured
     assert captured["name"].startswith(f"comment-append:{PROJECT_KEY}:story:{STORY_ID}")
+    # CTX-02：webhook 无真实触发用户，后台任务必须显式归因到 system，否则日志失去可归因性
+    assert captured["initiated_by_user_id"] == "system"
 
     # 执行后台 factory，断言以 source="feishu_webhook" 调 append_webhook_comment
     with patch.object(
@@ -88,14 +91,16 @@ async def test_comment_handler_extracts_comment_id_from_alternate_key() -> None:
 
     captured: dict = {}
 
-    def _fake_rib(factory, *, name=None):
+    def _fake_rib(factory, *, name=None, initiated_by_user_id=None):
         captured["factory"] = factory
+        captured["initiated_by_user_id"] = initiated_by_user_id
         return MagicMock()
 
     with patch("services.background_runner.run_in_background", new=_fake_rib):
         await view._handle_workitem_comment(project, payload, MagicMock())
 
     assert "factory" in captured
+    assert captured["initiated_by_user_id"] == "system"
     with patch.object(
         CommentEventService, "append_webhook_comment", new=AsyncMock(return_value=1)
     ) as mock_append:
@@ -118,8 +123,9 @@ async def test_comment_handler_missing_comment_id_warns_but_still_delivers() -> 
 
     captured: dict = {}
 
-    def _fake_rib(factory, *, name=None):
+    def _fake_rib(factory, *, name=None, initiated_by_user_id=None):
         captured["factory"] = factory
+        captured["initiated_by_user_id"] = initiated_by_user_id
         return MagicMock()
 
     with (

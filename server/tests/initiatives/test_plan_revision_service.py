@@ -4,9 +4,9 @@
 - ``detect_revision``：经 ``use_call_source(CallSource.PLAN_REVISION)`` LLM（ainvoke 内
   ``get_call_source`` 命中 plan_revision）+ ``arecord_llm_usage`` 被调；产物归一化为受控结构；
   空观测 / LLM 抛错 → 空结构（best-effort 不反噬）。
-- ``apply_supplement_revision``：经 ``TechnicalPlanService.add_version`` 加版本（无旁路写
-  PlanVersion）；delta 为空 → content 不变（content_hash 相等 service 幂等不翻版本）；delta
-  非空 → summary 折入 delta（翻版本）。
+- ``apply_supplement_revision``：经 ``ArtifactService.add_version`` 加版本（无旁路写
+  ArtifactVersion）；delta 为空 → content 不变（content_hash 相等 service 幂等不翻版本）；
+  delta 非空 → summary 折入 delta（翻版本）。
 - 关联同步：add → ``confirm_repos``、remove → ``reopen_candidates``、change →
   ``dispatch_verify`` 分别经 ``RepoAssociationService`` 被调（INV-6 写收口）。
 """
@@ -117,7 +117,7 @@ async def test_detect_revision_llm_failure_is_failsoft() -> None:
 
 
 # ---------------------------------------------------------------------------
-# apply_supplement_revision —— PlanVersion.supersedes（经 TechnicalPlanService）
+# apply_supplement_revision —— ArtifactVersion.supersedes（经 ArtifactService）
 # ---------------------------------------------------------------------------
 
 
@@ -141,7 +141,7 @@ async def test_apply_supplement_revision_adds_version_via_service() -> None:
 
     with (
         patch(f"{_SVC_MOD}.PlanDeepenService._aget_plan_content", new=AsyncMock(return_value=dict(_BASE_CONTENT))),
-        patch("delivery.services.TechnicalPlanService", return_value=plan_svc),
+        patch("delivery.services.ArtifactService", return_value=plan_svc),
         patch(f"{_SVC_MOD}.PlanDeepenService._sync_repo_associations", new=AsyncMock()),
     ):
         version = await PlanDeepenService().apply_supplement_revision(
@@ -149,7 +149,7 @@ async def test_apply_supplement_revision_adds_version_via_service() -> None:
         )
 
     plan_svc.add_version.assert_awaited_once()
-    # 经 TechnicalPlanService 加版本（无旁路写 PlanVersion）；delta 折入 summary（翻版本）
+    # 经 ArtifactService 加版本（无旁路写 ArtifactVersion）；delta 折入 summary（翻版本）
     assert "加缓存" in captured["content"]["summary"]
     assert version.version == 2
 
@@ -164,7 +164,7 @@ async def test_apply_supplement_revision_empty_delta_is_idempotent_content() -> 
 
     with (
         patch(f"{_SVC_MOD}.PlanDeepenService._aget_plan_content", new=AsyncMock(return_value=dict(_BASE_CONTENT))),
-        patch("delivery.services.TechnicalPlanService", return_value=plan_svc),
+        patch("delivery.services.ArtifactService", return_value=plan_svc),
         patch(f"{_SVC_MOD}.PlanDeepenService._sync_repo_associations", new=AsyncMock()),
     ):
         await PlanDeepenService().apply_supplement_revision(
