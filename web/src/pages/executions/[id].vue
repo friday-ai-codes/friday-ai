@@ -113,6 +113,9 @@ const selectedNodeConfig = computed<Record<string, unknown>>(() => {
  *  - undefined: 非 AI 节点（不渲染 ExecutionProviderSnapshot）
  *  - null:      AI 节点但历史 Execution miss（渲染 "未快照" 降级态）
  *  - NodeSnapshot: AI 节点命中快照
+ *
+ * ai_plan_generation 已随 Chassis v2 退役（编辑态由迁移 0034 迁到 ai_plan_research），
+ * 但历史 NodeExecution 仍带该 node_type，保留以正确渲染旧执行记录。
  */
 const AI_NODE_TYPES_WEB = new Set([
   'ai_prompt',

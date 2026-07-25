@@ -6,20 +6,17 @@ import type { NodeComponent } from '@vue-flow/core'
  * condition/parallel 使用 BranchNode（分支在卡片内各自一个出口 handle，命名对齐后端 branch_i）。
  */
 import { markRaw } from 'vue'
-import AIPlanGenerationNode from './AIPlanGenerationNode.vue'
 import BaseWorkflowNode from './BaseWorkflowNode.vue'
 import BranchNode from './BranchNode.vue'
 import { allNodeTypeKeys } from './nodeVisuals'
 
 const baseNode = markRaw(BaseWorkflowNode) as unknown as NodeComponent
 const branchNode = markRaw(BranchNode) as unknown as NodeComponent
-const aiPlanGenNode = markRaw(AIPlanGenerationNode) as unknown as NodeComponent
 
 /** 特殊节点覆盖 */
 const specialNodes: Record<string, NodeComponent> = {
   condition: branchNode,
   parallel: branchNode,
-  ai_plan_generation: aiPlanGenNode,
 }
 
 /**

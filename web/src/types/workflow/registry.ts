@@ -60,7 +60,6 @@ export const CONFIG_COMPONENTS: Record<string, () => Promise<{ default: Componen
   wait_feishu_field: () => import('~/components/workflow/config/WaitFeishuConfig.vue'),
   create_branch: () => import('~/components/workflow/config/CreateBranchConfig.vue'),
   create_pr: () => import('~/components/workflow/config/CreatePRConfig.vue'),
-  ai_plan_generation: () => import('~/components/workflow/config/AIPlanGenerationConfig.vue'),
   ai_coding: () => import('~/components/workflow/config/AICodingConfig.vue'),
 }
 

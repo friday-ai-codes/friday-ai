@@ -31,7 +31,12 @@ const props = defineProps<{
 
 const store = useExecutionsStore()
 
-/** AI 节点类型常量 */
+/**
+ * AI 节点类型常量
+ *
+ * ai_plan_generation 已随 Chassis v2 退役（编辑态由迁移 0034 迁到 ai_plan_research），
+ * 但历史 NodeExecution 仍带该 node_type，保留以正确渲染旧执行记录。
+ */
 const AI_NODE_TYPES = [
   'ai_prompt',
   'ai_coding',
