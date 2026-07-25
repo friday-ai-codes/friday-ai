@@ -16,7 +16,7 @@ import uuid
 
 import pytest
 
-from services.git_platform.models import MRCreateResult, MergeRequestLookupFailed
+from services.git_platform.models import MergeRequestLookupFailed, MRCreateResult
 from workflows.nodes.git.pr import CreatePRNode
 
 
