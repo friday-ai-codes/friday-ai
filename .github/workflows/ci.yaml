@@ -33,7 +33,12 @@ jobs:
       run:
         working-directory: server
     steps:
+      # submodules 必须拉取：skills 快照守卫（test_skills_snapshot_guard）扫
+      # `skills/skills/*/SKILL.md`，skills 是 submodule；不拉会扫到 0 个文件，
+      # 守卫按设计直接失败（防路径漂移导致主守卫静默空跑假绿）。
       - uses: actions/checkout@v6
+        with:
+          submodules: recursive
       # 架构守卫测试（如 test_no_loop_set_payload / test_no_retrieve_with_vectors /
       # test_no_layered_search_direct_import_in_callsites）经 subprocess 调 `rg`
       # 扫码库找反模式；ubuntu runner 默认未装 ripgrep，缺失会 FileNotFoundError。
