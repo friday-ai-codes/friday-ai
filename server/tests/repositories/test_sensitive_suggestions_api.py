@@ -145,13 +145,13 @@ class TestSensitiveSuggestionsList:
 
 class TestSensitiveSuggestionAccept:
     def test_accept_creates_ai_suggested_rule_and_marks_accepted(
-        self, authenticated_client, repository: Repository
+        self, authenticated_admin_client, repository: Repository
     ) -> None:
         s = _make_suggestion(
             repository, ".env", SensitiveFileSuggestion.Severity.REAL_SECRET
         )
         with patch("repositories.views.invalidate_matcher_cache") as inv:
-            resp = authenticated_client.post(
+            resp = authenticated_admin_client.post(
                 ACTION_URL.format(repo_id=repository.id, suggestion_id=s.id),
                 {"action": "accept"},
                 format="json",
@@ -176,7 +176,7 @@ class TestSensitiveSuggestionAccept:
         inv.assert_called_once()
 
     def test_accept_never_deletes_data_no_cleanup_run(
-        self, authenticated_client, repository: Repository
+        self, authenticated_admin_client, repository: Repository
     ) -> None:
         # NEVER silent-delete：accept 绝不触发任何删除/清理（T-24-10）。
         s = _make_suggestion(
@@ -184,7 +184,7 @@ class TestSensitiveSuggestionAccept:
         )
         cleanup_before = CleanupRun.objects.count()
         with patch("services.purge_reconcile.run_cleanup") as run_cleanup_mock:
-            resp = authenticated_client.post(
+            resp = authenticated_admin_client.post(
                 ACTION_URL.format(repo_id=repository.id, suggestion_id=s.id),
                 {"action": "accept"},
                 format="json",
@@ -196,14 +196,14 @@ class TestSensitiveSuggestionAccept:
         run_cleanup_mock.assert_not_called()
 
     def test_accept_is_idempotent(
-        self, authenticated_client, repository: Repository
+        self, authenticated_admin_client, repository: Repository
     ) -> None:
         s = _make_suggestion(
             repository, ".env", SensitiveFileSuggestion.Severity.REAL_SECRET
         )
         url = ACTION_URL.format(repo_id=repository.id, suggestion_id=s.id)
-        r1 = authenticated_client.post(url, {"action": "accept"}, format="json")
-        r2 = authenticated_client.post(url, {"action": "accept"}, format="json")
+        r1 = authenticated_admin_client.post(url, {"action": "accept"}, format="json")
+        r2 = authenticated_admin_client.post(url, {"action": "accept"}, format="json")
         assert r1.status_code == 200
         # 二次 accept 不抛 500
         assert r2.status_code == 200
@@ -218,13 +218,13 @@ class TestSensitiveSuggestionAccept:
 
 class TestSensitiveSuggestionDismiss:
     def test_dismiss_marks_dismissed_no_rule(
-        self, authenticated_client, repository: Repository
+        self, authenticated_admin_client, repository: Repository
     ) -> None:
         s = _make_suggestion(
             repository, "config/app.yaml", SensitiveFileSuggestion.Severity.CONFIG_REVIEW
         )
         with patch("repositories.views.invalidate_matcher_cache") as inv:
-            resp = authenticated_client.post(
+            resp = authenticated_admin_client.post(
                 ACTION_URL.format(repo_id=repository.id, suggestion_id=s.id),
                 {"action": "dismiss"},
                 format="json",
@@ -241,13 +241,13 @@ class TestSensitiveSuggestionDismiss:
 
 class TestSensitiveSuggestionActionGuards:
     def test_cross_repo_suggestion_404(
-        self, authenticated_client, repository: Repository
+        self, authenticated_admin_client, repository: Repository
     ) -> None:
         other = Repository.objects.create(
             name="other", git_url="https://example.com/other.git"
         )
         s = _make_suggestion(other, ".env", SensitiveFileSuggestion.Severity.REAL_SECRET)
-        resp = authenticated_client.post(
+        resp = authenticated_admin_client.post(
             ACTION_URL.format(repo_id=repository.id, suggestion_id=s.id),
             {"action": "accept"},
             format="json",
@@ -259,12 +259,12 @@ class TestSensitiveSuggestionActionGuards:
         assert not RepoExclusionRule.objects.filter(pattern=".env").exists()
 
     def test_invalid_action_400(
-        self, authenticated_client, repository: Repository
+        self, authenticated_admin_client, repository: Repository
     ) -> None:
         s = _make_suggestion(
             repository, ".env", SensitiveFileSuggestion.Severity.REAL_SECRET
         )
-        resp = authenticated_client.post(
+        resp = authenticated_admin_client.post(
             ACTION_URL.format(repo_id=repository.id, suggestion_id=s.id),
             {"action": "nuke"},
             format="json",
@@ -272,6 +272,35 @@ class TestSensitiveSuggestionActionGuards:
         assert resp.status_code == 400
         s.refresh_from_db()
         assert s.status == "pending"
+
+    def test_non_admin_action_blocked_no_side_effect(
+        self, authenticated_client, repository: Repository
+    ) -> None:
+        """#11：非空间管理员不得操作敏感建议——列表侧已管控，动作侧不得成为旁路。
+
+        accept 既变更索引范围（建 RepoExclusionRule）又回显 path/reason，
+        故守卫强度必须与列表端点一致；被拒时不得有任何副作用、不得泄漏路径。
+        """
+        s = _make_suggestion(
+            repository,
+            ".env",
+            SensitiveFileSuggestion.Severity.REAL_SECRET,
+            reason="命中类型 aws_secret_key（行 3）",
+        )
+        resp = authenticated_client.post(
+            ACTION_URL.format(repo_id=repository.id, suggestion_id=s.id),
+            {"action": "accept"},
+            format="json",
+        )
+        assert resp.status_code == 403
+        # 无副作用：建议状态不变、未建任何排除规则
+        s.refresh_from_db()
+        assert s.status == "pending"
+        assert not RepoExclusionRule.objects.filter(repository=repository).exists()
+        # 不泄漏敏感字段
+        body = resp.content.decode()
+        assert ".env" not in body
+        assert "aws_secret_key" not in body
 
     def test_action_404_missing_repo(self, authenticated_client) -> None:
         resp = authenticated_client.post(

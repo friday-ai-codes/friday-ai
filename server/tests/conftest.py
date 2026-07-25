@@ -354,6 +354,22 @@ def project_without_repo(db):
     )
 
 
+@pytest.fixture
+def repository_in_user_space(db, repository, project, user):
+    """让 ``user`` 经空间成员关系可见 ``repository``，并返回该仓库。
+
+    ``RepositoryViewSet.get_queryset`` 按 #9/#11 口径过滤可见性：普通用户只看得到
+    自己所属空间关联的仓库，孤儿仓库仅超管可见。而默认的 ``repository`` fixture 不挂
+    任何空间（刻意保留，供孤儿仓库相关用例使用），因此「普通用户需要看见该仓库」的
+    用例应一并请求本 fixture。
+
+    这里用 MEMBER 而非 ADMIN：可见性只要求空间成员身份，用最低角色可顺带守护
+    「普通成员亦可见」不被误收紧成仅管理员可见。
+    """
+    SpaceMembership.objects.create(user=user, space=project, role=SpaceRole.MEMBER)
+    return repository
+
+
 # ============================================================================
 # URL Helper Fixtures
 # ============================================================================

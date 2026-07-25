@@ -28,6 +28,9 @@ class TestGenerateWebhookSecret:
 
     @pytest.fixture(autouse=True)
     def _setup(self, user) -> None:
+        from permissions.models import SpaceMembership, SpaceRole
+        from projects.models import Space
+
         self.client = APIClient()
         self.client.force_authenticate(user=user)
         self.repo = Repository.objects.create(
@@ -36,6 +39,11 @@ class TestGenerateWebhookSecret:
             git_platform="github",
             default_branch="main",
         )
+        # 本端点是 RepositoryViewSet 的 detail action，走 get_queryset()：仓库可见性按
+        # 空间成员过滤，孤儿仓库仅超管可见（#9/#11），否则普通用户拿到 404。
+        space = Space.objects.create(name="Webhook Secret Space")
+        space.repositories.add(self.repo)
+        SpaceMembership.objects.create(user=user, space=space, role=SpaceRole.MEMBER)
         self.url = f"/api/repositories/{self.repo.id}/generate-webhook-secret/"
 
     def test_generate_secret_returns_64_hex(self) -> None:
