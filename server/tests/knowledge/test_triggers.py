@@ -268,7 +268,7 @@ def _make_workflow_plan_execution(
     project = Space.objects.create(name="知识触发 workflow 项目", feishu_project_key="k-wf-proj")
     workflow = Workflow.objects.create(name="方案工作流", space=project)
     gen_node = WorkflowNode.objects.create(
-        workflow=workflow, node_type="ai_plan_generation", name="方案生成"
+        workflow=workflow, node_type="ai_plan_research", name="方案生成"
     )
     trigger_data = (
         {"raw_payload": {"id": 4242, "work_item_type_key": "story", "name": "登录需求"}}
@@ -959,14 +959,40 @@ class TestWorkflowTriggers:
     """14-04 Task 2：workflow 双触发点投递 + 节点类型过滤 + 异常隔离（-k workflow 可选中）。"""
 
     @staticmethod
-    def _patch_super_execute(monkeypatch: pytest.MonkeyPatch, result) -> None:
-        """mock AIAgentBaseNode.execute（绕过真实 Agent loop，宿主子步骤逻辑保留）。"""
-        from workflows.nodes.ai.base_agent import AIAgentBaseNode
+    def _patch_plan_engine(monkeypatch: pytest.MonkeyPatch, result) -> None:
+        """mock AIPlanResearchNode 的编排推进（session 建/驱动/终态映射全替身）。
 
-        async def _fake_execute(self, context):
+        方案生成节点已由 ai_plan_generation（LangChain agent loop）换成
+        ai_plan_research（ConvergenceSession + ProcessEngine 推进），故不再 mock
+        ``AIAgentBaseNode.execute``，而是替换编排三段——本组用例的断言点只在
+        execute 尾部的知识摄取接线，不涉及编排本身。
+        """
+        from types import SimpleNamespace
+
+        import services.process_runtime as process_runtime
+        from workflows.nodes.ai.plan_research import AIPlanResearchNode
+
+        session = SimpleNamespace(id=uuid.uuid4(), status="done")
+
+        async def _resolve_session(self, context):
+            return session
+
+        async def _drive(engine, current, *, max_steps=0):
+            return current
+
+        async def _maybe_suspend(self, current, context):
+            return None
+
+        async def _map_terminal(self, current):
             return result
 
-        monkeypatch.setattr(AIAgentBaseNode, "execute", _fake_execute)
+        monkeypatch.setattr(AIPlanResearchNode, "_resolve_session", _resolve_session)
+        monkeypatch.setattr(AIPlanResearchNode, "_build_engine", lambda self, ctx, s: object())
+        monkeypatch.setattr(
+            process_runtime, "adrive_convergence_session_to_pause_or_terminal", _drive
+        )
+        monkeypatch.setattr(AIPlanResearchNode, "_maybe_suspend", _maybe_suspend)
+        monkeypatch.setattr(AIPlanResearchNode, "_map_terminal", _map_terminal)
 
     @staticmethod
     def _make_engine(monkeypatch: pytest.MonkeyPatch):
@@ -988,16 +1014,16 @@ class TestWorkflowTriggers:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """生成节点 execute 成功 → 恰 1 条 workflow_plan_generated 投递。"""
-        from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+        from workflows.nodes.ai.plan_research import AIPlanResearchNode
         from workflows.nodes.base import NodeResult
 
-        self._patch_super_execute(
+        self._patch_plan_engine(
             monkeypatch,
             NodeResult(status="completed", output={"plan": {"title": "工作流方案"}}),
         )
-        node = AIPlanGenerationNode()
+        node = AIPlanResearchNode()
         ctx = make_minimal_context(
-            node_config={"user_prompt": "需求"},
+            node_config={"requirement_text": "需求"},
             execution_id="exec-wf-1",
             node_id="node-wf-1",
         )
@@ -1016,15 +1042,15 @@ class TestWorkflowTriggers:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """result.status == "failed" 分支零投递。"""
-        from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+        from workflows.nodes.ai.plan_research import AIPlanResearchNode
         from workflows.nodes.base import NodeResult
 
-        self._patch_super_execute(
+        self._patch_plan_engine(
             monkeypatch,
             NodeResult(status="failed", error="agent boom", next_handle="error"),
         )
-        node = AIPlanGenerationNode()
-        ctx = make_minimal_context(node_config={"user_prompt": "需求"})
+        node = AIPlanResearchNode()
+        ctx = make_minimal_context(node_config={"requirement_text": "需求"})
 
         result = await node.execute(ctx)
 
@@ -1110,20 +1136,20 @@ class TestWorkflowTriggers:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """run_in_background 抛 RuntimeError → 生成节点 execute 仍成功返回。"""
-        from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+        from workflows.nodes.ai.plan_research import AIPlanResearchNode
         from workflows.nodes.base import NodeResult
 
-        def _boom(factory, *, name=None):
+        def _boom(factory, *, name=None, initiated_by_user_id=None):
             raise RuntimeError("runner down")
 
         monkeypatch.setattr("knowledge.ingestion.run_in_background", _boom)
-        self._patch_super_execute(
+        self._patch_plan_engine(
             monkeypatch,
             NodeResult(status="completed", output={"plan": {"title": "隔离方案"}}),
         )
-        node = AIPlanGenerationNode()
+        node = AIPlanResearchNode()
 
-        result = await node.execute(make_minimal_context(node_config={"user_prompt": "需求"}))
+        result = await node.execute(make_minimal_context(node_config={"requirement_text": "需求"}))
 
         assert result.status == "completed"
 

@@ -246,11 +246,14 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             edges=implemented_by,
         )
     elif node_execution is not None:
-        # workflow：同 execution 的 ai_plan_generation 节点（14-04 同款查询）→ 生成节点 key
+        # workflow：同 execution 的方案生成节点（14-04 同款查询）→ 生成节点 key。
+        # 节点类型与 scheduler.approve_node 的兼容清单逐字一致：经典
+        # ai_plan_generation（Chassis v2 已删）与编排 ai_plan_research 两条路径同构，
+        # 都把方案落在 output_data["plan"]。
         generation = (
             await NodeExecution.objects.filter(
                 workflow_execution_id=node_execution.workflow_execution_id,
-                node__node_type="ai_plan_generation",
+                node__node_type__in=["ai_plan_generation", "ai_plan_research"],
                 status=NodeExecutionStatus.COMPLETED,
             )
             .exclude(output_data={})

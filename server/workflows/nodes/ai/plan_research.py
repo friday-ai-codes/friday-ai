@@ -220,7 +220,33 @@ class AIPlanResearchNode(AIAgentBaseNode):
             return suspend
 
         # 5. 终态映射
-        return await self._map_terminal(session)
+        result = await self._map_terminal(session)
+
+        # 6. INGEST-01（14-04）：方案产出成功 → 投递统一摄取（只投 ID，零取材）。
+        #    Chassis v2 删除 ai_plan_generation 时漏搬了生成侧接线：审批侧
+        #    （scheduler.approve_node）已把本节点列为方案生成源，normalizer
+        #    （knowledge/sources/workflow_plan.py）也统一读 output_data["plan"]，
+        #    唯独 workflow_plan_generated 无人投递。此处补回，两侧重新对称。
+        if result.status == "completed":
+            await self._schedule_plan_ingestion(context)
+
+        return result
+
+    @staticmethod
+    async def _schedule_plan_ingestion(context: ExecutionContext) -> None:
+        """投递 workflow_plan_generated（aschedule_ingestion 内部吞异常，不包 try/except）。"""
+        from knowledge import ingestion  # lazy import 防循环
+
+        execution = context.workflow_execution
+        triggered_by_id = getattr(execution, "triggered_by_id", None) if execution else None
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest(
+                "workflow_plan",
+                f"{context.execution_id}:{context.node_id}",
+                "workflow_plan_generated",
+            ),
+            initiated_by_user_id=str(triggered_by_id) if triggered_by_id else None,
+        )
 
     # ===== session 建/恢复 =====
 
