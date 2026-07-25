@@ -9,6 +9,11 @@ import structlog
 from pydantic import ValidationError
 
 from agents.tools.base import ToolCategory, ToolResult, tool
+from agents.tools.schemas.delivery_knowledge import (
+    GetEntityTimelineInput,
+    GetRelatedEntitiesInput,
+    SearchDeliveryKnowledgeInput,
+)
 from chat.models import Conversation
 from knowledge.exposure import (
     parse_as_of,
@@ -111,20 +116,38 @@ async def search_delivery_knowledge(
     user = await _resolve_conversation_user(conversation_id)
     if user is None:
         return ToolResult(success=False, error="无法解析会话 owner，拒绝检索（fail-closed）")
+    # 入参来自 LLM，必须按 schema 收敛边界（top_k 上界 20、query 非空）后再落到
+    # 检索服务；此前只有 JSON Schema 声明、运行时无人校验，top_k 可任意大。
     try:
-        as_of_dt = parse_as_of(as_of)
+        validated = SearchDeliveryKnowledgeInput(
+            query=query,
+            top_k=top_k,
+            project_ids=project_ids or [],
+            repository_ids=repository_ids or [],
+            entity_kinds=entity_kinds or [],
+            as_of=as_of,
+            include_superseded=include_superseded,
+            conversation_id=conversation_id,
+        )
+    except ValidationError as exc:
+        logger.warning(
+            "delivery_knowledge_search_failed", error_type="ValidationError", error=str(exc)
+        )
+        return ToolResult(success=False, error=str(exc))
+    try:
+        as_of_dt = parse_as_of(validated.as_of)
     except ValueError:
         return ToolResult(success=False, error="as_of 格式无效，请使用带时区的 ISO8601")
     try:
         results = await _service.search_similar(
-            query,
+            validated.query,
             user=user,
-            top_k=top_k,
-            project_ids=project_ids or None,
-            repository_ids=repository_ids or None,
-            entity_kinds=entity_kinds or None,
+            top_k=validated.top_k,
+            project_ids=validated.project_ids or None,
+            repository_ids=validated.repository_ids or None,
+            entity_kinds=validated.entity_kinds or None,
             as_of=as_of_dt,
-            include_superseded=include_superseded,
+            include_superseded=validated.include_superseded,
         )
     except Exception as exc:
         logger.exception("delivery_knowledge_search_failed", error=str(exc))
@@ -133,7 +156,7 @@ async def search_delivery_knowledge(
     return ToolResult(
         success=True,
         output={
-            "query": query,
+            "query": validated.query,
             "results": serialized,
             "total": len(serialized),
             "as_of": as_of_dt.isoformat() if as_of_dt else None,
@@ -165,13 +188,29 @@ async def get_entity_timeline(
     user = await _resolve_conversation_user(conversation_id)
     if user is None:
         return ToolResult(success=False, error="无法解析会话 owner，拒绝检索（fail-closed）")
+    # entity_id 先转 UUID 再进 schema：schema 是 strict=True，UUID 字段不接受 str。
     try:
         as_of_dt = parse_as_of(as_of)
         eid = uuid.UUID(str(entity_id))
     except ValueError as exc:
         return ToolResult(success=False, error=f"参数无效: {exc}")
+    try:
+        validated = GetEntityTimelineInput(
+            entity_id=eid,
+            include_superseded=include_superseded,
+            as_of=as_of,
+            conversation_id=conversation_id,
+        )
+    except ValidationError as exc:
+        logger.warning(
+            "delivery_knowledge_timeline_failed", error_type="ValidationError", error=str(exc)
+        )
+        return ToolResult(success=False, error=str(exc))
     nodes = await _service.get_timeline(
-        eid, user=user, include_superseded=include_superseded, as_of=as_of_dt
+        validated.entity_id,
+        user=user,
+        include_superseded=validated.include_superseded,
+        as_of=as_of_dt,
     )
     serialized = serialize_timeline(nodes)
     return ToolResult(
@@ -215,8 +254,27 @@ async def get_related_entities(
         eid = uuid.UUID(str(entity_id))
     except ValueError as exc:
         return ToolResult(success=False, error=f"参数无效: {exc}")
+    # schema 约束 direction 只能是 both/out/in、max_hops 上界 3——此前两者都不校验，
+    # LLM 传 max_hops=99 会直接落到图遍历上。
+    try:
+        validated = GetRelatedEntitiesInput(
+            entity_id=eid,
+            direction=direction,  # type: ignore[arg-type]  # Literal 由 schema 校验
+            max_hops=max_hops,
+            as_of=as_of,
+            conversation_id=conversation_id,
+        )
+    except ValidationError as exc:
+        logger.warning(
+            "delivery_knowledge_related_failed", error_type="ValidationError", error=str(exc)
+        )
+        return ToolResult(success=False, error=str(exc))
     related = await _service.get_related(
-        eid, user=user, direction=direction, max_hops=max_hops, as_of=as_of_dt
+        eid,
+        user=user,
+        direction=validated.direction,
+        max_hops=validated.max_hops,
+        as_of=as_of_dt,
     )
     serialized = serialize_related(related)
     return ToolResult(
