@@ -421,6 +421,23 @@ class WorkflowEngine:
         "ai_coding_dispatcher",
     }
 
+    @staticmethod
+    async def _aget_execution_space(workflow_execution: WorkflowExecution):
+        """安全取 Execution 关联的 Space —— 已缓存直接用，否则异步查。
+
+        直接 `workflow_execution.space` 在未预取时会触发同步 ORM 查询，async 上下文下
+        抛 SynchronousOnlyOperation。
+        """
+        cached = workflow_execution._state.fields_cache.get("space")
+        if cached is not None:
+            return cached
+        space_id = getattr(workflow_execution, "space_id", None)
+        if not space_id:
+            return None
+        from projects.models import Space
+
+        return await Space.objects.filter(id=space_id).afirst()
+
     async def _snapshot_ai_node_providers(
         self,
         dag: "DAG",
@@ -446,8 +463,12 @@ class WorkflowEngine:
             ResolvedProviderConfig,
         )
 
-        # 确保 project 可读（start_execution 主路径已预填 workflow + project 缓存）
-        project = getattr(workflow_execution, "space", None)
+        # 取 project：不能直接 getattr(workflow_execution, "space")。那是惰性 FK 访问，
+        # 未预取时在 async 上下文会抛 SynchronousOnlyOperation，整个快照被 except 吞掉
+        # → node_snapshots 为空 → Replay 不再稳定（后续改 default_provider_credential_id
+        # 会影响历史 Execution），而现场只留一条 sampling 级 error 日志。
+        # 优先读已缓存的关联对象，未缓存时走异步查询。
+        project = await self._aget_execution_space(workflow_execution)
 
         snapshots: dict[str, dict] = {}
         for dag_node in dag.nodes.values():
