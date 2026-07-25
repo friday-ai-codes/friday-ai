@@ -26,6 +26,7 @@ import structlog
 from repositories.models import Repository
 from services.git_credentials import aresolve_git_token
 from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platform_client
+from services.git_platform.models import MergeRequestLookupFailed
 from services.provider_config import ProviderConfigError
 from workflows.nodes.ai.sub_step_mixin import SubStepMixin
 from workflows.nodes.base import (
@@ -2198,8 +2199,18 @@ class AICodingNode(SubStepMixin, BaseNode):
         )
 
         # IDEMP-02：创建前查同 source→target 的 open MR/PR，命中则复用不重复创建。
-        # find_open_merge_request 本身已 fail-soft（异常返回 None），无需额外 try。
-        existing = await client.find_open_merge_request(branch_name, resolved_target)
+        # 查重失败不能当「无命中」继续创建——那正是重复 MR 的来源。显式失败交给
+        # 重试兜底：重试时查重恢复就会命中既有 MR，不会留下重复件。
+        try:
+            existing = await client.find_open_merge_request(branch_name, resolved_target)
+        except MergeRequestLookupFailed as e:
+            log.warning("mr_dedup_lookup_failed", error=str(e))
+            return {
+                "mr_url": "",
+                "mr_id": "",
+                "has_conflicts": False,
+                "error": f"MR 去重查询失败，为避免重复创建已中止（可重试）: {e}",
+            }
         if existing and existing.success:
             log.info(
                 "mr_dedup_reuse_existing",

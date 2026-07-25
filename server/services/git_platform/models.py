@@ -106,3 +106,16 @@ class BranchCompareResult:
     has_potential_conflicts: bool = False
     conflicting_files: list[str] = field(default_factory=list)
     error: str = ""
+
+
+class MergeRequestLookupFailed(Exception):
+    """查「同 source→target 是否已有 open MR/PR」时平台侧出错。
+
+    与「查了，确实没有」必须区分开。此前 ``find_open_merge_request`` 对两种情况
+    一律返回 ``None``，调用方无从分辨，于是查重 API 一抖动就会被当成「无既有 MR」
+    继续创建——本该防重复的围栏反而成了制造重复 PR 的入口。
+
+    抛出方：各平台 client 的 ``find_open_merge_request``。
+    调用方约定：捕获后**不要**当作「无命中」继续创建，应显式失败让重试兜底——
+    重试时若查重恢复正常就能命中既有 MR，不会留下重复件。
+    """

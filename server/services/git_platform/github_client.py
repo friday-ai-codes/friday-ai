@@ -11,6 +11,7 @@ from .base import GitPlatformClient, truncate_diff_lines
 from .models import (
     BranchCompareResult,
     CompareFileEntry,
+    MergeRequestLookupFailed,
     MRCreateRequest,
     MRCreateResult,
     MRDiffFile,
@@ -123,14 +124,16 @@ class GitHubClient(GitPlatformClient):
             )
             return MRCreateResult(success=True, mr_url=pr.html_url, mr_id=str(pr.number))
         except GithubException as e:
-            # token 绝不入日志，仅记分支与 error（fail-soft，不阻断创建）
+            # token 绝不入日志，仅记分支与 error。
+            # 这里刻意不再 fail-soft 返回 None：那会与「查了确实没有」混为一谈，
+            # 让查重 API 一抖动就退化成重复建 PR。抛给调用方显式处理。
             logger.warning(
                 "github_find_open_pr_failed",
                 source=source_branch,
                 target=target_branch,
                 error=str(e),
             )
-            return None
+            raise MergeRequestLookupFailed(str(e)) from e
         except Exception as e:
             logger.warning(
                 "github_find_open_pr_error",
@@ -138,7 +141,7 @@ class GitHubClient(GitPlatformClient):
                 target=target_branch,
                 error=str(e),
             )
-            return None
+            raise MergeRequestLookupFailed(str(e)) from e
 
     async def create_merge_request(self, request: MRCreateRequest) -> MRCreateResult:
         """Create a GitHub pull request with optional reviewers.

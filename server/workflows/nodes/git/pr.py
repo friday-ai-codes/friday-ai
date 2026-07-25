@@ -8,6 +8,7 @@ import structlog
 from repositories.models import Repository
 from services.git_credentials import aresolve_git_token
 from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platform_client
+from services.git_platform.models import MergeRequestLookupFailed
 from workflows.nodes.base import (
     BaseNode,
     ExecutionContext,
@@ -185,6 +186,43 @@ class CreatePRNode(BaseNode):
                 description=body,
                 reviewer_usernames=reviewers,
             )
+
+            # 创建前先查同 source→target 的 open PR/MR（与 AICodingNode 的 IDEMP-02
+            # 同一围栏）。此前本节点完全没有去重：节点重试、手动 re-run、或 runner
+            # 超时重投都会在同一对分支上再开一个 PR，连带交叉引用、飞书通知、review
+            # 沉淀一起重复。查重失败显式中止而不是当「无命中」继续——后者正是重复件
+            # 的来源；重试时查重恢复就会命中既有 PR。
+            try:
+                existing = await client.find_open_merge_request(head_branch, base_branch)
+            except MergeRequestLookupFailed as e:
+                logger.warning(
+                    "pr_dedup_lookup_failed",
+                    repository_id=repo_id,
+                    repository_name=repo_name,
+                    error=str(e),
+                )
+                return PRCreateResult(
+                    repository_id=repo_id,
+                    repository_name=repo_name,
+                    success=False,
+                    error=f"PR 去重查询失败，为避免重复创建已中止（可重试）: {e}",
+                )
+            if existing and existing.success:
+                logger.info(
+                    "pr_dedup_reuse_existing",
+                    repository_id=repo_id,
+                    repository_name=repo_name,
+                    pr_url=existing.mr_url,
+                    pr_id=existing.mr_id,
+                )
+                return PRCreateResult(
+                    repository_id=repo_id,
+                    repository_name=repo_name,
+                    pr_url=existing.mr_url,
+                    pr_id=existing.mr_id,
+                    has_conflicts=False,
+                    success=True,
+                )
 
             # Create PR
             result: MRCreateResult = await client.create_merge_request(request)
