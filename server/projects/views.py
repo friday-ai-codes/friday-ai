@@ -815,6 +815,21 @@ class SpaceRepositoryDetailView(APIView):
             )
         return None
 
+    @staticmethod
+    def _parse_link_pk(pk: str) -> int | None:
+        """把 URL 里的 pk 解析为 SpaceRepository 自增主键，非整型返回 None。
+
+        路由是 ``<str:pk>``，而本端点的 pk 是**关联记录**的自增整型主键，不是 Repository
+        的 UUID。旧 API 恰恰是按 Repository UUID 操作关联的，调用方升级时极易沿用旧写法；
+        此时若直接把 UUID 丢给 ORM，Django 在构造 lookup 时 ``int()`` 失败抛 ValueError，
+        端点返回 500 + 完整堆栈（既不是正确语义，也不该向客户端吐堆栈）。这里前置校验，
+        非整型一律按「关联不存在」处理。
+        """
+        try:
+            return int(pk)
+        except (TypeError, ValueError):
+            return None
+
     async def patch(self, request: object, space_id: str, pk: str) -> Response:
         """更新关联的权限级别。"""
         project = await aget_object_or_404(Space, id=space_id)
@@ -822,7 +837,11 @@ class SpaceRepositoryDetailView(APIView):
         if denied:
             return denied
 
-        link = await aget_object_or_404(SpaceRepository, pk=pk, space=project)
+        link_pk = self._parse_link_pk(pk)
+        if link_pk is None:
+            return Response({"detail": "仓库关联不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        link = await aget_object_or_404(SpaceRepository, pk=link_pk, space=project)
         serializer = SpaceRepositoryUpdateSerializer(data=request.data)
         await sync_to_async(serializer.is_valid)(raise_exception=True)
 
@@ -853,7 +872,11 @@ class SpaceRepositoryDetailView(APIView):
         if denied:
             return denied
 
-        link = await aget_object_or_404(SpaceRepository, pk=pk, space=project)
+        link_pk = self._parse_link_pk(pk)
+        if link_pk is None:
+            return Response({"detail": "仓库关联不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        link = await aget_object_or_404(SpaceRepository, pk=link_pk, space=project)
         link_id = link.id
         snapshot = {"repo_id": str(link.repository_id), "project_id": str(link.space_id)}
         await link.adelete()
