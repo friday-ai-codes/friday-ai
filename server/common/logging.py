@@ -452,26 +452,38 @@ def configure_structlog() -> None:
     3. redact_credentials —— **必须在任何 renderer 之前**（contract 核心）
     4. StackInfoRenderer / format_exc_info —— 异常信息提取
     5. ConsoleRenderer (DEBUG) / JSONRenderer (prod) —— 最后一步
+
+    幂等与列表身份：``cache_logger_on_first_use=True`` 下，已绑定的 logger 会持有
+    **当时那个 processors 列表对象的引用**。若重复调用本函数时传入新建的列表，旧
+    logger 会永远停在旧链上——与之后对配置的任何改动（包括 ``structlog.testing.
+    capture_logs()``，它按官方实现刻意原地改写同一列表以兼容缓存）彻底脱钩。
+    因此这里复用已有列表实例、原地替换内容，绝不换对象。
     """
+    processors = [
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        redact_credentials,  # ← contract 核心；位置 in front of any renderer
+        annotate_category_component,  # ← 脱敏后兜底 category/component（LOG-05，落库前）
+        filter_by_component_level,  # ← component 就位后分级过滤；尽早丢弃省后续开销（LOG-06）
+        buffer_log,  # ← 在脱敏之后写入内存环形缓冲（运维监控「系统日志」）
+        enqueue_system_log,  # ← 在脱敏之后 fan-out 入落库队列（LOG-02，落库内容已脱敏）
+        gate_stack_by_threshold,  # ← 渲染堆栈/traceback 前按阈值门控剥键（LOG-06）
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        (
+            structlog.dev.ConsoleRenderer()
+            if getattr(settings, "DEBUG", False)
+            else structlog.processors.JSONRenderer()
+        ),
+    ]
+    configured = structlog.get_config().get("processors")
+    if isinstance(configured, list):
+        configured[:] = processors
+        processors = configured
+
     structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            redact_credentials,  # ← contract 核心；位置 in front of any renderer
-            annotate_category_component,  # ← 脱敏后兜底 category/component（LOG-05，落库前）
-            filter_by_component_level,  # ← component 就位后分级过滤；尽早丢弃省后续开销（LOG-06）
-            buffer_log,  # ← 在脱敏之后写入内存环形缓冲（运维监控「系统日志」）
-            enqueue_system_log,  # ← 在脱敏之后 fan-out 入落库队列（LOG-02，落库内容已脱敏）
-            gate_stack_by_threshold,  # ← 渲染堆栈/traceback 前按阈值门控剥键（LOG-06）
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            (
-                structlog.dev.ConsoleRenderer()
-                if getattr(settings, "DEBUG", False)
-                else structlog.processors.JSONRenderer()
-            ),
-        ],
+        processors=processors,
         wrapper_class=structlog.make_filtering_bound_logger(_resolve_structlog_level()),
         cache_logger_on_first_use=True,
     )
