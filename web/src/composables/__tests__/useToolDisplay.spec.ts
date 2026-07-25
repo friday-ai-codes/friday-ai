@@ -91,7 +91,7 @@ describe('useToolDisplay', () => {
   })
 
   it('repoInitial 取仓库名首字符大写', () => {
-    expect(repoInitial('example-app')).toBe('S')
+    expect(repoInitial('example-app')).toBe('E')
     expect(repoInitial('')).toBe('?')
   })
 })
