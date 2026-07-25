@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-21T02:13:19.060Z",
+  "generated_at": "2026-07-25T18:15:00.687Z",
   "node_count": 19,
   "nodes": [
     {
@@ -425,7 +425,7 @@
     {
       "node_type": "foreach",
       "display_name": "ForEach 循环",
-      "description": "对列表中的每个元素执行操作",
+      "description": "把列表展开并汇总结果（迭代体透传元素，不执行子流程）",
       "icon": "icon-[lucide--repeat]",
       "category": "control",
       "config_schema": {

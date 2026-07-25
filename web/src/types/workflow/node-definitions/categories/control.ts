@@ -196,7 +196,9 @@ const foreachSchema = z.object({
 export const foreachDef = createNodeDefinition({
   nodeType: 'foreach',
   displayName: 'ForEach 循环',
-  description: '对列表中的每个元素执行操作',
+  // 迭代体尚未实现子 DAG 执行，元素原样透传；描述必须与后端 ForEachNode 一致，
+  // 否则用户会以为拖上来就能对每个元素跑一段子流程。
+  description: '把列表展开并汇总结果（迭代体透传元素，不执行子流程）',
   icon: 'icon-[lucide--repeat]',
   color: 'from-violet-500 to-purple-400',
   category: 'control',

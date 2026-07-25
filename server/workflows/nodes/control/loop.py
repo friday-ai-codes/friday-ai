@@ -21,14 +21,21 @@ logger = structlog.get_logger()
 
 @register_node
 class ForEachNode(BaseNode):
-    """ForEach 循环节点
+    """ForEach 循环节点：把列表展开成多次迭代并汇总结果。
 
-    对列表中的每个元素执行操作，支持串行和并发两种模式。
+    **当前实现不执行循环体**——迭代体（``_run_iteration``）把元素原样透传，没有
+    子 DAG，也不会去调用画布上的下游节点。所以本节点实际是一个「带串/并发控制与
+    错误策略的列表汇总器」：``results`` / ``success_count`` / ``failed_count``
+    都是真实产出，下游可以消费；但 ``execution_mode`` 与 ``max_concurrency``
+    在迭代体为空转的前提下不产生可观测差异。
+
+    不要按字面理解成「对每个元素跑一段子流程」。需要真正的逐项处理时，当前应在
+    下游用其他节点消费 ``results``。补齐子 DAG 执行属未完成工作。
     """
 
     node_type = "foreach"
     display_name = "ForEach 循环"
-    description = "对列表中的每个元素执行操作"
+    description = "把列表展开并汇总结果（迭代体透传元素，不执行子流程）"
     icon = "repeat"
     category = NodeCategory.CONTROL
     execution_mode = "server_local"
@@ -219,10 +226,11 @@ class ForEachNode(BaseNode):
         return [value]
 
     async def _run_iteration(self, context: ExecutionContext, item: Any, index: int) -> dict:
-        """执行单次迭代。
+        """执行单次迭代——当前为透传，不执行任何循环体。
 
-        当前 Phase 简化为直接传递 item（无独立子 DAG）。
-        未来可扩展为对 item 应用模板化操作或调用子节点逻辑。
+        子 DAG 执行尚未实现，这里直接把 item 原样回传。接子流程时，应在此处
+        构造 ``{**context.input_data, "item": item, "index": index}`` 作为迭代
+        上下文并驱动循环体节点；在那之前不预先构造，避免留下无人使用的变量。
 
         Args:
             context: 父执行上下文
@@ -233,16 +241,6 @@ class ForEachNode(BaseNode):
             dict: 迭代结果 {"status": "completed", "output": ...} 或 {"status": "failed", "error": ...}
         """
         try:
-            # 构造包含 item 和 index 的子上下文数据
-            # 将 item 和 index 注入 input_data 以便模板变量解析
-            iteration_input = {
-                **context.input_data,
-                "item": item,
-                "index": index,
-            }
-
-            # 实际执行：当前 Phase 简化为直接返回 item
-            # 后续可在此调用循环体内的节点逻辑
             return {
                 "status": "completed",
                 "output": item,
