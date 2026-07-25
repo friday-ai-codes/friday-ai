@@ -199,11 +199,19 @@ async def test_delegate_failed_maps_failed_empty(
     assert result.markdown == ""
 
 
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_delegate_aggregates_orchestration_model_usage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """WR-03：编排 adapters 落 run 未绑定的用量行 → delegate 聚合本次驱动窗口回传 model_usage。"""
+    """WR-03：编排 adapters 落 run 未绑定的用量行 → delegate 聚合本次驱动窗口回传 model_usage。
+
+    必须 transaction=True：本用例经 async ORM（``acreate``）落 ModelUsageRecord，
+    ``sync_to_async`` 在独立线程拿到另一条 DB 连接，写入会直接提交、逃出模块级非事务
+    ``django_db`` 的回滚，污染后续按 provider 聚合 token 的用例
+    （``test_metrics_query.py::test_tps_sum_tokens_by_provider`` 曾因此多出 200 tokens）。
+    transaction=True 让 pytest-django 在用例结束后 truncate，泄漏不再跨用例。
+    """
     from interactions.models import ModelUsageRecord
     from mcp_tools.orchestration_delegate import delegate_process_runtime
 

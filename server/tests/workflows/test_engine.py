@@ -142,6 +142,27 @@ class TestEngineInitialization:
 class TestExecutionStart:
     """Tests for starting workflow executions."""
 
+    @pytest.fixture(autouse=True)
+    def _no_background_execution(self, monkeypatch):
+        """本组用例只验证 start_execution 的同步副作用，不放后台执行线程出去。
+
+        start_execution 默认经 ``_run_in_thread`` 起 daemon 线程跑工作流。该线程会在
+        测试函数返回后继续访问 DB，触发 pytest-django 的 "Database access not allowed"，
+        并在 teardown 与清库竞争，报 ``sqlite3.OperationalError: database table is
+        locked: workflow_executions``（CI 上必现、本地因时序偏快时常侥幸通过）。
+
+        这里把 ``_run_in_thread`` 换成关闭协程的空实现：既不起线程，也避免协程未 await
+        的告警。不能改用 ``run_sync=True``——那会把工作流真正跑完，
+        ``test_start_execution_status`` 断言的 PENDING/RUNNING 初始态就观察不到了。
+        """
+
+        def _close_without_running(coro, **_kwargs):
+            coro.close()
+
+        monkeypatch.setattr(
+            "workflows.engine.scheduler._run_in_thread", _close_without_running
+        )
+
     async def test_start_execution_creates_record(self, simple_workflow):
         """Test that starting execution creates execution record."""
         engine = WorkflowEngine()
