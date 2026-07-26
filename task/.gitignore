@@ -39,8 +39,9 @@ htmlcov/
 .tox/
 .nox/
 
-# uv
-uv.lock
+# 注意：uv.lock 刻意**不**忽略。task 是应用而非库，锁文件入库才能让 CI 的
+# `uv sync --locked` 与镜像构建可复现（server/uv.lock 一直是追踪的，此处曾不一致，
+# 导致新加的 task-ci job 首次运行即报 "Unable to find lockfile at uv.lock"）。
 
 # Local data
 data/
