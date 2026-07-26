@@ -38,6 +38,7 @@ import agents.tools.chat_tools  # noqa: F401
 import agents.tools.clarification  # noqa: F401  # implementation
 import agents.tools.coding_tools  # noqa: F401
 import agents.tools.delivery_knowledge_tools  # noqa: F401  # RECALL-02 交付知识召回工具
+import agents.tools.feature_solution_tools  # noqa: F401  # feature list → 技术方案对话入口
 import agents.tools.knowledge_read_tools  # noqa: F401  # KNOW-05 chat 知识读工具
 import agents.tools.plan_research_tools  # noqa: F401
 import agents.tools.project_feature_tools  # noqa: F401  # ENTRY-02 chat 入口薄封装
@@ -105,6 +106,9 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     "update_coding_plan",
     # ENTRY-02：对话中发起多仓 / 跨仓方案编排（薄入口，复用同一编排 engine）
     "start_plan_research",
+    # feature list（成批功能点）→ 技术方案：跑新增/改造分类 + 强制确认关联仓库，
+    # 与 start_plan_research 同一编排引擎，差别只在入口形态与强制确认。
+    "start_feature_solution",
     # #5 Part A：把整理出的 feature list 绑定到当前对话所绑定的项目
     "save_project_feature_list",
     # #5 Part A：feature list 拆子看板/工作项并关联到当前对话所绑定的项目
