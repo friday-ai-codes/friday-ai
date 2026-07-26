@@ -8,8 +8,12 @@ LLM 决定问不问——feature list 入口的产品约束是「哪怕路由十
 产出复用既有澄清卡片契约（``question`` / ``type`` / ``options`` / ``recommended``），最终经
 ``normalize_clarification_questions`` 归一，前端与作答回流零改动。
 
-**只在首轮生效**：``round_count > 0`` 时返回 ``[]``，让 ``ClarifyAdapter`` 回落既有 LLM 重判
-路径。否则用户答完确认题后会被反复追问同一批问题（同题死循环，见 CLARIFY-07 Pitfall 2）。
+**只在首轮生效**：``round_count > 0`` 时返回 ``[]``，让 ``ClarifyAdapter`` 回落既有
+policy + LLM 重判路径。否则用户答完确认题后会被反复追问同一批问题（同题死循环，见
+CLARIFY-07 Pitfall 2）。
+
+**执行时机**：``ClarifyAdapter`` 在 policy **之前**调本组装器——默认 policy 见到全 high
+置信路由会判「无需澄清」直接放行，放在其后强制确认就永远轮不到执行。
 """
 
 from __future__ import annotations
@@ -19,9 +23,8 @@ from typing import Any
 from services.process_runtime.clarification_questions import (
     normalize_clarification_questions,
 )
-from services.process_runtime.clarify_adapter import default_needs_clarification
 
-__all__ = ["build_feature_confirm_questions", "feature_list_needs_clarification"]
+__all__ = ["build_feature_confirm_questions"]
 
 # 单题选项上限——功能点可能有几十个，全列会把卡片撑爆且用户无法有效阅读。
 # 超出部分不进选项，题干注明「其余按分类结果执行」。
@@ -29,24 +32,6 @@ _MAX_OPTIONS = 12
 # 选项文本截断长度（功能点名可能很长）。
 _MAX_OPTION_LEN = 60
 _CONFIDENT = {"high", "medium"}
-
-
-def feature_list_needs_clarification(session: Any) -> tuple[bool, str, list]:
-    """feature list 入口的 needs-clarification policy：**有分类结果就一定问一次**。
-
-    取代 ``default_needs_clarification`` 的「路由到高置信候选就不问」——feature list 入口的
-    产品约束是选仓必须经用户确认，路由再确定也要问。无分类结果时回落默认策略（该会话不是
-    feature list 链路，或分类阶段没产出）。
-
-    多轮安全：本 policy 恒判需澄清，但 ``ClarifyAdapter`` 的 pending 短路 +
-    ``_MAX_CLARIFY_ROUNDS`` 上界仍然生效，且 ``build_feature_confirm_questions`` 只在首轮
-    产出——第二轮起走 LLM 重判，信息足够时返回空即放行，不会无限挂起。
-    """
-    stage_state = getattr(session, "stage_state", None) or {}
-    items = (stage_state.get("classification") or {}).get("items") or []
-    if items:
-        return True, "请确认关联仓库与功能点的新增/改造判定", []
-    return default_needs_clarification(session)
 
 
 def _option_label(item: dict[str, Any]) -> str:

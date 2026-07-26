@@ -42,6 +42,7 @@ async def start_orchestration(
     extra_evidence: list[dict] | None = None,
     mode: str = "",
     feature_segments: list[dict] | None = None,
+    feature_meta: dict | None = None,
 ) -> ConvergenceSession:
     """按 technical_plan process 的 stage_state 形态建 ``ConvergenceSession``（多入口共用）。
 
@@ -51,10 +52,12 @@ async def start_orchestration(
     summary），写入 ``decomposition.extra_evidence``，merge 阶段消费；不提供则不写键
     （既有会话形态与其他入口零扰动）。
 
-    ``mode`` / ``feature_segments``：feature list 入口专用。``mode="feature_list"`` 开启
-    「功能点新增/改造分类 + 强制仓库确认」链路；``feature_segments`` 为 feature 树展平后的
-    功能点列表（形如 ``{"title","module","layer"}``），非空时 decompose 直接采用、不再走 LLM
-    拆分。两者均**仅在非空时写键**——不提供时会话形态与既有入口逐字一致。
+    ``mode`` / ``feature_segments`` / ``feature_meta``：feature list 入口专用。
+    ``mode="feature_list"`` 开启「功能点新增/改造分类 + 强制仓库确认」链路；
+    ``feature_segments`` 为 feature 树展平后的功能点列表（形如 ``{"title","module","layer"}``），
+    非空时 decompose 直接采用、不再走 LLM 拆分；``feature_meta`` 存取数溯源元信息
+    （``project_id`` / ``source`` 等，供后续查询做归属校验与展示）。三者均**仅在非空时写键**
+    ——不提供时会话形态与既有入口逐字一致。
     """
     from delivery.services import ConvergenceSessionService
 
@@ -68,6 +71,8 @@ async def start_orchestration(
         decomposition["mode"] = mode
     if feature_segments:
         decomposition["feature_segments"] = feature_segments
+    if feature_meta:
+        decomposition["feature_meta"] = feature_meta
 
     return await ConvergenceSessionService().create_session(
         "technical_plan",
@@ -93,10 +98,10 @@ def build_orchestration_engine(
     ``node_execution_id`` 仅工作流入口传（调研容器回调 resume 钥匙）；``skip_clarification``
     为 True 时注入 no-clarify policy（MCP 单次同步入口 best-effort 直推、不发交互澄清）。
 
-    ``force_confirm``（feature list 入口）：注入「有分类结果就必问一次」的 policy + 确定性
-    确认题组装器，落实「哪怕路由十分确定也要让用户确认关联仓库」的产品约束。与
-    ``skip_clarification`` 互斥——同时为真时 ``skip_clarification`` 优先（显式要求不发交互
-    澄清的调用方不应被强制确认打断）。
+    ``force_confirm``（feature list 入口）：注入确定性确认题组装器，落实「哪怕路由十分确定
+    也要让用户确认关联仓库」的产品约束——组装器在 ``ClarifyAdapter`` 内**先于 policy** 执行，
+    首轮必发确认题，第二轮起自动回落默认 policy（组装器按轮次短路）。与 ``skip_clarification``
+    互斥——同时为真时 ``skip_clarification`` 优先（显式要求不发交互澄清的调用方不应被打断）。
     """
     from delivery.services import ConvergenceSessionService
     from services.process_runtime import (
@@ -110,16 +115,14 @@ def build_orchestration_engine(
     )
     from services.process_runtime.feature_confirm_questions import (
         build_feature_confirm_questions,
-        feature_list_needs_clarification,
     )
 
     if skip_clarification:
         clarify = ClarifyAdapter(policy=_no_clarify)
     elif force_confirm:
-        clarify = ClarifyAdapter(
-            policy=feature_list_needs_clarification,
-            question_builder=build_feature_confirm_questions,
-        )
+        # 只注入组装器、不换 policy：组装器先于 policy 执行保证首轮必问，第二轮起组装器
+        # 返回空 → 回落默认 policy（此时路由已被用户确认，通常直接放行进调研）。
+        clarify = ClarifyAdapter(question_builder=build_feature_confirm_questions)
     else:
         clarify = ClarifyAdapter()
     deps = SimpleNamespace(

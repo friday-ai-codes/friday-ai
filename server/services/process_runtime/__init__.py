@@ -36,7 +36,6 @@ from services.process_runtime.feature_classify import (
 )
 from services.process_runtime.feature_confirm_questions import (
     build_feature_confirm_questions,
-    feature_list_needs_clarification,
 )
 from services.process_runtime.merged_plan import (
     MERGED_PLAN_FIELDS,
@@ -124,7 +123,6 @@ __all__ = [
     "normalize_feature_classifications",
     "build_feature_key",
     "build_feature_confirm_questions",
-    "feature_list_needs_clarification",
     "RepoRouterV2Adapter",
     "DeliveryKnowledgeRecallAdapter",
     "ResearchDispatchAdapter",
