@@ -10,7 +10,7 @@ title: MCP Server
 
 接入流程：
 
-<FlowPipeline :steps="['创建访问令牌', 'setup 交互式配置', '注册到 IDE', '连通性测速', '调用 30 个工具']" />
+<FlowPipeline :steps="['创建访问令牌', 'setup 交互式配置', '注册到 IDE', '连通性测速', '调用 33 个工具']" />
 
 ## 一条命令配好（推荐）
 
@@ -84,7 +84,7 @@ args = ["-y", "@friday-ai-codes/mcp"]
 | `friday-mcp register [--agent <name>] [--project]` | 幂等注册进 Cursor / Claude Code / Codex |
 | `friday-mcp doctor` | 检查配置、注册状态与连通性测速（不回显令牌） |
 
-## 工具集（30 个）
+## 工具集（33 个）
 
 每个工具对应 Friday 的 `POST {FRIDAY_BASE_URL}/api/mcp/tools/{tool_name}/` 端点：
 
@@ -120,6 +120,18 @@ args = ["-y", "@friday-ai-codes/mcp"]
 | | `read_project_doc` | 读取项目工作区文档（MEMORY / STATE / 里程碑 / 调研 / 预检） |
 | | `report_project_knowledge` | 把会话沉淀写回项目记忆（按 `branch_name` 自动定位项目，服务端质量门槛 + 脱敏 + 审计兜底） |
 | | `report_project_state` | 把新增 / 改动 API 结构化清单回写项目 STATE |
+| feature list 技术方案 | `create_feature_tech_plan` | 由 feature list 发起技术方案：判定功能点新增 / 改造 + 给出关联仓库建议，返回**待确认项**（不返回方案） |
+| | `confirm_feature_tech_plan` | 提交用户对关联仓库与分类的确认，继续编排 |
+| | `get_feature_tech_plan` | 查询状态并推进编排；`status=completed` 时 `markdown` 为完整方案（整体 + 分仓 + 落点 + 伪代码） |
+
+::: warning feature list 技术方案是两段式的
+`create_feature_tech_plan` **单次调用拿不到方案**——它只跑到「强制确认」就停下，必须把返回的
+`questions` 给用户过目、拿到答复后调 `confirm_feature_tech_plan` 才会继续。即便仓库路由是高置信度
+也一定会问一次，这是产品约束而非缺陷。
+
+调研阶段是异步的：`confirm` 可能返回 `status="researching"`，此时需轮询 `get_feature_tech_plan`
+直到 `completed`。该工具每次调用都会推进一步编排，不调它方案不会往前走。
+:::
 
 每个工具都带 MCP 标准 `annotations`（中文 `title` 按「阶段 · 动作」分组，外加 `readOnlyHint` / `idempotentHint` / `openWorldHint` 行为提示），agent 可据此判断工具是否只读、是否触达外部系统。
 
