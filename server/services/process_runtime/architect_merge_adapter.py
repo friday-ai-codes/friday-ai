@@ -47,6 +47,43 @@ __all__ = [
 ]
 
 
+def _classification_prompt_parts(session: ConvergenceSession) -> tuple[str, str]:
+    """feature list 分类结果 → (证据段, execution_plan 附加字段说明)；无分类返回 ``("", "")``。
+
+    非 feature list 会话恒返回两个空串——merge prompt 与既有逐字一致（零扰动）。
+    """
+    classification = getattr(session, "classification", None) or {}
+    items = classification.get("items") or []
+    if not items:
+        return "", ""
+
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        label = " / ".join(p for p in (item.get("module"), item.get("name")) if p)
+        parts = [f"- {label}：{item.get('change_type', 'unclear')}"]
+        files = item.get("evidence_files") or []
+        if files:
+            parts.append(f"已有实现落点：{'、'.join(str(f) for f in files)}")
+        location = str(item.get("suggested_location", "") or "").strip()
+        if location:
+            parts.append(f"建议新增位置：{location}")
+        lines.append("；".join(parts))
+
+    section = (
+        "功能点新增/改造分类（已经用户确认，判定为 modify 的项必须在既有落点上改造，"
+        "不要另起炉灶重写）：\n" + "\n".join(lines) + "\n\n"
+    )
+    fields = (
+        "  execution_plan 每项**另需**给出（feature list 方案要求）：\n"
+        "  - change_type：该仓改动整体属 new（新增）还是 modify（改造已有）\n"
+        "  - touch_points：预计改动的文件/目录清单（改造项须取自上面的已有落点）\n"
+        "  - pseudocode：关键逻辑伪代码，说明功能具体落在哪个文件的哪个位置\n"
+    )
+    return section, fields
+
+
 @runtime_checkable
 class MergedPlanSynthesizer(Protocol):
     """架构师 LLM 合成器协议（可注入）：partials → §7 MergedPlan content dict。"""
@@ -100,10 +137,15 @@ class LLMMergedPlanSynthesizer:
             if extra_evidence
             else ""
         )
+        # feature list 入口：把功能点「新增/改造」分类与证据落点喂进融合，让方案能说清
+        # 每条改动落在哪个已有文件上、新增功能建议放哪里。非 feature list 会话该段为空串，
+        # prompt 与既有逐字一致（零扰动）。
+        classification_section, classification_fields = _classification_prompt_parts(session)
         return (
             f"需求：\n{requirement}\n\n"
             f"各仓调研产物（PartialPlan）：\n{partials_json}\n\n"
             f"{evidence_section}"
+            f"{classification_section}"
             "请融合为 §7 MergedPlan JSON，字段：\n"
             "- title / summary\n"
             "- api_contracts：跨仓契约汇总（[{name, repo}]）\n"
@@ -115,6 +157,7 @@ class LLMMergedPlanSynthesizer:
             "- execution_plan：[{id, name, repository_id, repository_name, "
             "branch_strategy, coding_instruction, dependencies, "
             "api_contracts_exposed, dependencies_on_other_repos}]\n"
+            f"{classification_fields}"
             "并补充整体方案字段：\n"
             "- overall_plan：overall 整体方案叙述（文本）\n"
             "- cross_repo_context：跨仓上下文（文本）\n"

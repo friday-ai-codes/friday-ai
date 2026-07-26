@@ -40,6 +40,8 @@ async def start_orchestration(
     node_execution_id: Any = None,
     initiated_by_user_id: str = "",
     extra_evidence: list[dict] | None = None,
+    mode: str = "",
+    feature_segments: list[dict] | None = None,
 ) -> ConvergenceSession:
     """按 technical_plan process 的 stage_state 形态建 ``ConvergenceSession``（多入口共用）。
 
@@ -48,6 +50,11 @@ async def start_orchestration(
     ``extra_evidence``（UNIFY-02）：调用方补充的编排输入证据（如 repository analysis
     summary），写入 ``decomposition.extra_evidence``，merge 阶段消费；不提供则不写键
     （既有会话形态与其他入口零扰动）。
+
+    ``mode`` / ``feature_segments``：feature list 入口专用。``mode="feature_list"`` 开启
+    「功能点新增/改造分类 + 强制仓库确认」链路；``feature_segments`` 为 feature 树展平后的
+    功能点列表（形如 ``{"title","module","layer"}``），非空时 decompose 直接采用、不再走 LLM
+    拆分。两者均**仅在非空时写键**——不提供时会话形态与既有入口逐字一致。
     """
     from delivery.services import ConvergenceSessionService
 
@@ -57,6 +64,10 @@ async def start_orchestration(
     }
     if extra_evidence:
         decomposition["extra_evidence"] = extra_evidence
+    if mode:
+        decomposition["mode"] = mode
+    if feature_segments:
+        decomposition["feature_segments"] = feature_segments
 
     return await ConvergenceSessionService().create_session(
         "technical_plan",
@@ -75,29 +86,51 @@ def build_orchestration_engine(
     session_service: Any = None,
     node_execution_id: str = "",
     skip_clarification: bool = False,
+    force_confirm: bool = False,
 ) -> ProcessEngine:
     """注入 technical_plan 真实 adapters 构造 ``ProcessEngine``（多入口共用同一构造）。
 
     ``node_execution_id`` 仅工作流入口传（调研容器回调 resume 钥匙）；``skip_clarification``
     为 True 时注入 no-clarify policy（MCP 单次同步入口 best-effort 直推、不发交互澄清）。
+
+    ``force_confirm``（feature list 入口）：注入「有分类结果就必问一次」的 policy + 确定性
+    确认题组装器，落实「哪怕路由十分确定也要让用户确认关联仓库」的产品约束。与
+    ``skip_clarification`` 互斥——同时为真时 ``skip_clarification`` 优先（显式要求不发交互
+    澄清的调用方不应被强制确认打断）。
     """
     from delivery.services import ConvergenceSessionService
     from services.process_runtime import (
         ArchitectMergeAdapter,
         ClarifyAdapter,
         DeliveryKnowledgeRecallAdapter,
+        FeatureChangeClassifyAdapter,
         ProcessEngine,
         RepoRouterV2Adapter,
         ResearchDispatchAdapter,
     )
+    from services.process_runtime.feature_confirm_questions import (
+        build_feature_confirm_questions,
+        feature_list_needs_clarification,
+    )
 
-    clarify = ClarifyAdapter(policy=_no_clarify) if skip_clarification else ClarifyAdapter()
+    if skip_clarification:
+        clarify = ClarifyAdapter(policy=_no_clarify)
+    elif force_confirm:
+        clarify = ClarifyAdapter(
+            policy=feature_list_needs_clarification,
+            question_builder=build_feature_confirm_questions,
+        )
+    else:
+        clarify = ClarifyAdapter()
     deps = SimpleNamespace(
         router=RepoRouterV2Adapter(),
         recall=DeliveryKnowledgeRecallAdapter(),
         research=ResearchDispatchAdapter(node_execution_id=node_execution_id),
         merge=ArchitectMergeAdapter(),
         clarify=clarify,
+        # classify 只在 decomposition.mode == "feature_list" 时被 stage handler 调用；
+        # 其余入口穿过 classify stage 时不触碰它（见 _h_classify 的 pass-through）。
+        classify=FeatureChangeClassifyAdapter(),
     )
     return ProcessEngine(
         session_service=session_service or ConvergenceSessionService(),

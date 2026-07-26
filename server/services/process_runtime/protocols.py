@@ -19,6 +19,7 @@ __all__ = [
     "ResearchProtocol",
     "MergeProtocol",
     "ClarifyProtocol",
+    "ClassifyProtocol",
     "SkeletonRouter",
     "SkeletonRecall",
     "SkeletonResearch",
@@ -65,6 +66,18 @@ class ClarifyProtocol(Protocol):
     """
 
     async def clarify(self, session: ConvergenceSession) -> dict: ...
+
+
+@runtime_checkable
+class ClassifyProtocol(Protocol):
+    """feature 变更类型分类 stage 依赖（feature list 入口专用，判新增/改造）。
+
+    返回 ``{"items": [...], "summary": {"new": n, "modify": m, "unclear": k}}``。
+    **只在 ``decomposition.mode == "feature_list"`` 时被调用**——其余入口的 classify
+    stage 走 pass-through，不触碰本依赖（故 deps 上未注入 classify 也不会报错）。
+    """
+
+    async def classify(self, session: ConvergenceSession) -> dict: ...
 
 
 class SkeletonRouter:

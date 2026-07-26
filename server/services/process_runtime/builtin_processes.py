@@ -20,6 +20,7 @@ import structlog
 
 from delivery.artifacts.registry import register_artifact_type
 from delivery.services.event_taxonomy import (
+    EVENT_FEATURE_CLASSIFIED,
     EVENT_KNOWLEDGE_RECALLING,
     EVENT_REPO_ROUTING,
 )
@@ -42,13 +43,35 @@ MAX_MERGE_RETRIES = 1
 
 
 async def _h_decompose(session: Any, engine: Any) -> StageOutcome:
-    """LLM 跨仓拆分 + fail-soft 回退：需求文本 → 结构化 decomposition。"""
+    """LLM 跨仓拆分 + fail-soft 回退：需求文本 → 结构化 decomposition。
+
+    **feature list 入口短路**：feature 树本身已是「模块 → 功能点」的结构化拆分，调用方经
+    ``feature_segments`` 直接给出即可——再让 LLM 拆一遍既浪费一次调用，又会把用户写好的
+    功能点边界揉散（下游分类/确认/落点都以功能点为单位对齐）。仅当 ``feature_segments``
+    为空时才回落既有 LLM 拆分路径。
+    """
     from services.process_runtime.decompose_segments import (
         agenerate_decomposition_segments,
     )
 
     existing = session.decomposition or {}
     requirement_text = existing.get("requirement_text", "")
+
+    feature_segments = existing.get("feature_segments") or []
+    if existing.get("mode") == "feature_list" and feature_segments:
+        decomposition = {
+            **existing,
+            "requirement_text": requirement_text,
+            "segments": feature_segments,
+        }
+        logger.info(
+            "plan_decompose_from_feature_list",
+            category="sampling",
+            component="process_runtime",
+            segment_count=len(feature_segments),
+        )
+        return StageOutcome(event="decomposed", stage_state_update={"decomposition": decomposition})
+
     if not requirement_text and session.work_item_id is not None:
         from delivery.models import WorkItem
 
@@ -74,6 +97,10 @@ async def _h_decompose(session: Any, engine: Any) -> StageOutcome:
         "include_repos": include_repos,
         "segments": segments,
     }
+    # feature list 会话即便退到 LLM 拆分（feature_segments 为空），mode 也必须带下去——
+    # 否则下游 classify stage 会误判为普通入口而 pass-through，分类与强制确认整段失效。
+    if existing.get("mode"):
+        decomposition["mode"] = existing["mode"]
     return StageOutcome(event="decomposed", stage_state_update={"decomposition": decomposition})
 
 
@@ -101,6 +128,35 @@ async def _h_recall(session: Any, engine: Any) -> StageOutcome:
     }
     await engine.session_service._emit_event(EVENT_KNOWLEDGE_RECALLING, session, trace)
     return StageOutcome(event="recalled", stage_state_update={"recall_context": hits})
+
+
+async def _h_classify(session: Any, engine: Any) -> StageOutcome:
+    """分类 stage：feature list 入口判定各功能点新增/改造；**其余入口 pass-through**。
+
+    该 stage 是 feature list 方案编排专用扩展点。非 ``feature_list`` 模式（既有飞书 /
+    对话 / MCP 入口）必须**零副作用穿过**：不调 deps、不发 LLM、不检索、不产
+    stage_state——保证既有链路行为逐字不变。deps 未注入 classify（旧构造）时同样
+    pass-through，不报错。
+    """
+    decomposition = session.decomposition if isinstance(session.decomposition, dict) else {}
+    if decomposition.get("mode") != "feature_list":
+        return StageOutcome(event="classified")
+
+    classifier = getattr(getattr(engine, "deps", None), "classify", None)
+    if classifier is None:
+        return StageOutcome(event="classified")
+
+    result = await classifier.classify(session)
+    classification = result if isinstance(result, dict) else {}
+    await engine.session_service._emit_event(
+        EVENT_FEATURE_CLASSIFIED,
+        session,
+        {
+            "summary": classification.get("summary", {}),
+            "evidence_hits": classification.get("evidence_hits", 0),
+        },
+    )
+    return StageOutcome(event="classified", stage_state_update={"classification": classification})
 
 
 async def _h_clarify(session: Any, engine: Any) -> StageOutcome:
@@ -162,7 +218,12 @@ _TECHNICAL_PLAN_STAGES = {
     "recall": StageDef(
         key="recall",
         handler=_h_recall,
-        transitions={"recalled": "clarify"},
+        transitions={"recalled": "classify"},
+    ),
+    "classify": StageDef(
+        key="classify",
+        handler=_h_classify,
+        transitions={"classified": "clarify"},
     ),
     "clarify": StageDef(
         key="clarify",

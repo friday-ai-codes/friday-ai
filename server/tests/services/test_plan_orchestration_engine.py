@@ -189,7 +189,9 @@ async def test_recall_persists_context_and_emits_event() -> None:
     await engine.advance(session)
 
     reloaded = await ConvergenceSession.objects.aget(id=session.id)
-    assert reloaded.current_stage == "clarify"
+    # recall 之后进 classify（feature list 分类扩展点）；非 feature_list 会话在该 stage
+    # pass-through 到 clarify。
+    assert reloaded.current_stage == "classify"
     assert reloaded.recall_context == hits
     emitted = [
         call for call in spy.call_args_list if call.args and call.args[0] == "knowledge.recalling"
@@ -216,11 +218,19 @@ async def test_injected_protocol_mocks_called() -> None:
     deps = SimpleNamespace(recall=recall, research=research, merge=merge)
     engine = ProcessEngine(session_service=ConvergenceSessionService(), deps=deps)
 
-    # recall → recall.recall → clarify
+    # recall → recall.recall → classify
     s_recall = await _make_session("recall")
     await engine.advance(s_recall)
     recall.recall.assert_awaited_once()
-    assert (await ConvergenceSession.objects.aget(id=s_recall.id)).current_stage == "clarify"
+    assert (await ConvergenceSession.objects.aget(id=s_recall.id)).current_stage == "classify"
+
+    # classify → pass-through → clarify。deps 未注入 classify（本例即是）时 stage 必须
+    # 零副作用穿过，不得报错——保证既有入口不受 feature list 扩展影响。
+    s_classify = await _make_session("classify")
+    await engine.advance(s_classify)
+    reloaded_classify = await ConvergenceSession.objects.aget(id=s_classify.id)
+    assert reloaded_classify.current_stage == "clarify"
+    assert "classification" not in (reloaded_classify.stage_state or {})
 
     # research → research.dispatch → merge（无在途调研 → research_complete）
     s_research = await _make_session("research")
