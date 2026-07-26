@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from asgiref.sync import sync_to_async
+
 from permissions.services import PermissionService
 
 if TYPE_CHECKING:
@@ -24,10 +25,28 @@ def _public_org_project_ids() -> set[str]:
 
     return {
         str(pid)
-        for pid in Project.objects.filter(
-            visibility=ProjectVisibility.PUBLIC_ORG
-        ).values_list("id", flat=True)
+        for pid in Project.objects.filter(visibility=ProjectVisibility.PUBLIC_ORG).values_list(
+            "id", flat=True
+        )
     }
+
+
+@sync_to_async
+def _member_project_ids(user: User) -> set[str]:
+    """user 有 ProjectMember 关系行的 initiatives.Project id 集合（只读，D-02）。"""
+    from initiatives.models import Project
+
+    return {
+        str(pid) for pid in Project.objects.filter(members__user=user).values_list("id", flat=True)
+    }
+
+
+@sync_to_async
+def _all_project_ids() -> set[str]:
+    """全量 initiatives.Project id 集合（仅 superuser 分支并入，D-02）。"""
+    from initiatives.models import Project
+
+    return {str(pid) for pid in Project.objects.values_list("id", flat=True)}
 
 
 async def resolve_allowed_project_ids(
@@ -37,9 +56,14 @@ async def resolve_allowed_project_ids(
     """解析 user 可见的 project_id 列表（fail-closed）。
 
     - user=None → []
-    - superuser → 全项目（caller project_ids 可收窄）
-    - 普通用户 → membership 项目 ∪ visibility==public_org 项目
+    - superuser → 全量 Space id ∪ 全量 initiatives.Project id（caller project_ids 可收窄）
+    - 普通用户 → SpaceMembership 空间 ∪ ProjectMember 项目 ∪ visibility==public_org 项目
     - caller project_ids 与 allowed 取交集；含不可见 id → []（收窄语义不被放宽破坏）
+
+    D-02：members_only 项目文档向量点写 initiatives.Project id，故集合必须含
+    Project 维度（否则成员乃至 superuser 的项目文档 RAG 全黑）。注意
+    ``resolve_allowed_repository_ids`` 拿本集合后走 ``Space.objects.filter(id__in=...)``，
+    新混入的 initiatives.Project UUID 匹配不到 Space 行、自然被忽略——非 bug，无需分流。
     """
     if user is None:
         return []
@@ -52,6 +76,14 @@ async def resolve_allowed_project_ids(
     # WS-02 权限翻转（读半）：public_org 项目并入可读集合（只读，不写）。
     # members_only 不并入 → 非成员维持零可见；caller intersect 收窄语义保持不变。
     allowed_set |= await _public_org_project_ids()
+
+    # D-02：Project 维度并集——普通用户并入 ProjectMember 关系项目；
+    # superuser 并入全量 Project。非成员既无 SpaceMembership 也无 ProjectMember
+    # 行，fail-closed 不被破坏。
+    if user.is_superuser:
+        allowed_set |= await _all_project_ids()
+    else:
+        allowed_set |= await _member_project_ids(user)
 
     if project_ids is None:
         return sorted(allowed_set)
@@ -69,7 +101,7 @@ async def resolve_allowed_repository_ids(
 ) -> list[str]:
     """解析 user 可见 project 下关联的 repository_id（P6 双维权限）。
 
-  仓库通过 Space.repositories M2M 关联；superuser 返回全量仓库。
+    仓库通过 Space.repositories M2M 关联；superuser 返回全量仓库。
     """
     if user is None:
         return []
