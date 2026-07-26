@@ -80,7 +80,9 @@ from .orchestration_delegate import delegate_process_runtime, map_canonical_to_c
 from .repository_analysis_service import build_repository_analysis, normalize_context_chunks
 from .serializers import (
     AnalyzeRepositoryRequestSerializer,
+    ConfirmFeatureTechPlanRequestSerializer,
     CreateCodingPlanRequestSerializer,
+    CreateFeatureTechPlanRequestSerializer,
     CreateFeishuTechnicalPlanRequestSerializer,
     CreateLearningCaseRequestSerializer,
     CreateMergeRequestRequestSerializer,
@@ -90,6 +92,7 @@ from .serializers import (
     FindRelatedChunksRequestSerializer,
     GetCodingExecutionRequestSerializer,
     GetEntityTimelineRequestSerializer,
+    GetFeatureTechPlanRequestSerializer,
     GetFeishuWorkItemContextRequestSerializer,
     GetRelatedEntitiesRequestSerializer,
     GetRepositoryFileRequestSerializer,
@@ -3789,6 +3792,190 @@ class ReadProjectDocView(McpToolView):
             input_data=input_data,
             output_data=output_data,
             traces=traces,
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+# ============================ feature list 技术方案（两段式） ============================
+#
+# 与其它 MCP 工具的关键差异：**单次调用拿不到方案**。
+# create 只跑到「强制确认」挂起并返回待确认题，必须再调 confirm 提交确认才继续编排——
+# 这是产品硬约束（哪怕仓库路由十分确定也要让用户确认一次）的直接后果，不是可跳过的步骤。
+#
+# 调研阶段会派容器，此时 confirm 返回 status="researching"；容器完成后**不会**自动推进
+# 非 chat 入口的会话（自动续驱以 entrypoint==CHAT 守门），故须轮询 get_feature_tech_plan
+# 由其主动续驱到 completed 取回方案。
+
+
+def _feature_solution_error_status(code: str) -> int:
+    """FeatureSolutionError.code → HTTP 状态。"""
+    return {
+        "project_not_found": status.HTTP_404_NOT_FOUND,
+        "session_not_found": status.HTTP_404_NOT_FOUND,
+        "forbidden": status.HTTP_403_FORBIDDEN,
+    }.get(code, status.HTTP_400_BAD_REQUEST)
+
+
+class _FeatureSolutionViewMixin:
+    """三个 feature 方案工具共用的 actor 解析与响应组装。"""
+
+    @staticmethod
+    def _actor(request: Request) -> Any:
+        user = request.user
+        return (
+            user
+            if getattr(user, "is_authenticated", False) and getattr(user, "id", None) is not None
+            else None
+        )
+
+    @staticmethod
+    def _output(state: Any, run: InteractionRun) -> dict[str, Any]:
+        return {**state.as_dict(), "run_id": str(run.run_id)}
+
+
+class CreateFeatureTechPlanView(_FeatureSolutionViewMixin, McpToolView):
+    tool_name = "create_feature_tech_plan"
+
+    async def post(self, request: Request) -> Response:
+        from initiatives.services.feature_solution_service import (
+            FeatureSolutionError,
+            FeatureSolutionService,
+        )
+
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(CreateFeatureTechPlanRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+        actor = self._actor(request)
+
+        try:
+            state = await FeatureSolutionService().start(
+                project_id=input_data.get("project_id"),
+                branch_name=str(input_data.get("branch_name") or ""),
+                repository_id=input_data.get("repository_id"),
+                feature_list_text=str(input_data.get("feature_list_text") or ""),
+                repository_ids=[str(r) for r in (input_data.get("repository_ids") or [])],
+                entrypoint="mcp",
+                actor=actor,
+                initiated_by_user_id=getattr(actor, "id", "") or "",
+            )
+        except FeatureSolutionError as exc:
+            return error_response(
+                exc.code, exc.detail, status_code=_feature_solution_error_status(exc.code)
+            )
+
+        output_data = self._output(state, run)
+        await self._record_agent_decision(
+            run,
+            action="feature_tech_plan_started",
+            payload={
+                "session_id": state.session_id,
+                "source": state.source,
+                "feature_count": state.feature_count,
+                "status": state.status,
+                "question_count": len(state.questions),
+            },
+        )
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=[],
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class ConfirmFeatureTechPlanView(_FeatureSolutionViewMixin, McpToolView):
+    tool_name = "confirm_feature_tech_plan"
+
+    async def post(self, request: Request) -> Response:
+        from initiatives.services.feature_solution_service import (
+            FeatureSolutionError,
+            FeatureSolutionService,
+        )
+
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(ConfirmFeatureTechPlanRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        try:
+            state = await FeatureSolutionService().confirm(
+                session_id=input_data["session_id"],
+                answers=list(input_data.get("answers") or []),
+                actor=self._actor(request),
+            )
+        except FeatureSolutionError as exc:
+            return error_response(
+                exc.code, exc.detail, status_code=_feature_solution_error_status(exc.code)
+            )
+
+        output_data = self._output(state, run)
+        await self._record_agent_decision(
+            run,
+            action="feature_tech_plan_confirmed",
+            payload={
+                "session_id": state.session_id,
+                "status": state.status,
+                "answer_count": len(input_data.get("answers") or []),
+            },
+        )
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=[],
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class GetFeatureTechPlanView(_FeatureSolutionViewMixin, McpToolView):
+    tool_name = "get_feature_tech_plan"
+
+    async def post(self, request: Request) -> Response:
+        from initiatives.services.feature_solution_service import (
+            FeatureSolutionError,
+            FeatureSolutionService,
+        )
+
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(GetFeatureTechPlanRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        try:
+            state = await FeatureSolutionService().get(
+                session_id=input_data["session_id"], actor=self._actor(request)
+            )
+        except FeatureSolutionError as exc:
+            return error_response(
+                exc.code, exc.detail, status_code=_feature_solution_error_status(exc.code)
+            )
+
+        output_data = self._output(state, run)
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=[],
             started_at=started_at,
         )
         return Response(output_data, status=status.HTTP_200_OK)

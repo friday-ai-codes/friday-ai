@@ -636,6 +636,87 @@ class ReportProjectStateRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class CreateFeatureTechPlanRequestSerializer(serializers.Serializer):
+    """feature list 技术方案发起请求（两段式第一段）。
+
+    三种取数源，至少给一个（优先级 ``feature_list_text`` > ``project_id`` > ``branch_name``）：
+    项目已录入的 feature list、分支反查项目（复用手动绑定的 ``ProjectBranch``）、或直接贴原文。
+
+    ``repository_ids`` 只是**候选范围收窄**，不代表最终选仓——最终关联仓库一律由用户在
+    ``confirm_feature_tech_plan`` 确认（产品硬约束：路由再确定也要问一次）。
+    """
+
+    project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    branch_name = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
+    repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    feature_list_text = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=200000
+    )
+    repository_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=20,
+    )
+
+    def validate(self, attrs: dict) -> dict:
+        if (
+            not attrs.get("project_id")
+            and not str(attrs.get("branch_name") or "").strip()
+            and not str(attrs.get("feature_list_text") or "").strip()
+        ):
+            raise serializers.ValidationError(
+                "必须提供 project_id、branch_name 或 feature_list_text 之一"
+            )
+        return attrs
+
+
+class ConfirmFeatureTechPlanRequestSerializer(serializers.Serializer):
+    """feature list 技术方案确认请求（两段式第二段）。
+
+    ``answers`` 形如 ``[{question_id, selected, freeform_text}]``。允许为空表示「全部按推荐
+    执行」——未覆盖到的题服务端按 ``recommended`` 兜底作答，避免漏答让会话永久挂起。
+    """
+
+    session_id = serializers.UUIDField(required=True)
+    answers = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=20,
+    )
+
+
+class GetFeatureTechPlanRequestSerializer(serializers.Serializer):
+    """feature list 技术方案状态查询请求（调研在途时轮询本工具取最终方案）。"""
+
+    session_id = serializers.UUIDField(required=True)
+
+
+# 三个 feature 方案工具共用同一响应形状（FeatureSolutionState.as_dict + run_id）。
+_FEATURE_SOLUTION_RESPONSE_KEYS = [
+    "session_id",
+    "status",
+    "project_id",
+    "source",
+    "feature_count",
+    "truncated",
+    "classification",
+    "routing",
+    "questions",
+    "clarification_id",
+    "plan",
+    "markdown",
+    "artifact_version_id",
+    "error",
+    "run_id",
+]
+
+
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "route_repositories": {
         "request": ["query", "top_k"],
@@ -774,5 +855,23 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "read_project_doc": {
         "request": ["project_id", "doc_type"],
         "response": ["project_id", "doc_type", "rendered_markdown", "blocks", "run_id"],
+    },
+    "create_feature_tech_plan": {
+        "request": [
+            "project_id",
+            "branch_name",
+            "repository_id",
+            "feature_list_text",
+            "repository_ids",
+        ],
+        "response": _FEATURE_SOLUTION_RESPONSE_KEYS,
+    },
+    "confirm_feature_tech_plan": {
+        "request": ["session_id", "answers"],
+        "response": _FEATURE_SOLUTION_RESPONSE_KEYS,
+    },
+    "get_feature_tech_plan": {
+        "request": ["session_id"],
+        "response": _FEATURE_SOLUTION_RESPONSE_KEYS,
     },
 }

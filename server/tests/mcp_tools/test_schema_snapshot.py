@@ -4,6 +4,26 @@ import re
 
 from mcp_tools.serializers import TOOL_SCHEMA_SNAPSHOT
 
+# 三个 feature 方案工具共用的响应键集。**刻意在测试里独立写一份字面量**——从
+# serializers 导入同一个常量会让本守卫退化为自我比较，改错源码也照样绿。
+_FEATURE_SOLUTION_RESPONSE = [
+    "session_id",
+    "status",
+    "project_id",
+    "source",
+    "feature_count",
+    "truncated",
+    "classification",
+    "routing",
+    "questions",
+    "clarification_id",
+    "plan",
+    "markdown",
+    "artifact_version_id",
+    "error",
+    "run_id",
+]
+
 
 def test_registered_tools_match_snapshot() -> None:
     """注册 == snapshot 防漏守卫（Phase 102 UNIFY-04）。
@@ -168,5 +188,23 @@ def test_mcp_read_tool_schema_snapshot() -> None:
         "read_project_doc": {
             "request": ["project_id", "doc_type"],
             "response": ["project_id", "doc_type", "rendered_markdown", "blocks", "run_id"],
+        },
+        "create_feature_tech_plan": {
+            "request": [
+                "project_id",
+                "branch_name",
+                "repository_id",
+                "feature_list_text",
+                "repository_ids",
+            ],
+            "response": _FEATURE_SOLUTION_RESPONSE,
+        },
+        "confirm_feature_tech_plan": {
+            "request": ["session_id", "answers"],
+            "response": _FEATURE_SOLUTION_RESPONSE,
+        },
+        "get_feature_tech_plan": {
+            "request": ["session_id"],
+            "response": _FEATURE_SOLUTION_RESPONSE,
         },
     }
