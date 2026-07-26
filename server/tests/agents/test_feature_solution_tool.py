@@ -146,9 +146,10 @@ async def test_bound_project_used_when_no_explicit_source() -> None:
     """会话已绑定项目时，默认取该项目已录入的 feature list。"""
     state = _state(STATUS_AWAITING_CONFIRMATION, clarification_id="c1")
     bound = "66666666-6666-6666-6666-666666666666"
-    with _patch_context(actor=SimpleNamespace(id="u1"), bound_project=bound), _patch_service(
-        state
-    ) as start_mock:
+    with (
+        _patch_context(actor=SimpleNamespace(id="u1"), bound_project=bound),
+        _patch_service(state) as start_mock,
+    ):
         await start_feature_solution(space_id=_SPACE, conversation_id=_CONV)
 
     assert start_mock.await_args.kwargs["project_id"] == bound
@@ -158,15 +159,34 @@ async def test_bound_project_used_when_no_explicit_source() -> None:
 async def test_explicit_text_takes_precedence_over_bound_project() -> None:
     """显式给了文本时不用项目的 feature list（用户贴的优先）。"""
     state = _state(STATUS_AWAITING_CONFIRMATION, clarification_id="c1")
-    with _patch_context(bound_project="66666666-6666-6666-6666-666666666666"), _patch_service(
-        state
-    ) as start_mock:
+    with (
+        _patch_context(bound_project="66666666-6666-6666-6666-666666666666"),
+        _patch_service(state) as start_mock,
+    ):
         await start_feature_solution(
             space_id=_SPACE, conversation_id=_CONV, feature_list_text="- 功能点 A"
         )
 
     assert start_mock.await_args.kwargs["project_id"] is None
     assert start_mock.await_args.kwargs["feature_list_text"] == "- 功能点 A"
+
+
+@pytest.mark.asyncio
+async def test_conversation_id_is_passed_to_session() -> None:
+    """必须把 conversation_id 传进编排会话。
+
+    前端 plan 澄清卡由 ``runtime.pending_plan_clarification`` 驱动，而 runtime 是
+    **按 conversation_id 反查 ConvergenceSession** 的；收答专路由同理。漏传不会报错，
+    但对话里确认卡渲染不出来、用户也无法作答——静默失效，必须钉住。
+    """
+    state = _state(STATUS_AWAITING_CONFIRMATION, clarification_id="c1")
+    with _patch_context(), _patch_service(state) as start_mock:
+        await start_feature_solution(
+            space_id=_SPACE, conversation_id=_CONV, feature_list_text="- 功能点 A"
+        )
+
+    assert start_mock.await_args.kwargs["conversation_id"] == _CONV
+    assert start_mock.await_args.kwargs["entrypoint"] == "chat"
 
 
 @pytest.mark.asyncio

@@ -121,6 +121,9 @@ async def start_feature_solution(
             entrypoint="chat",
             actor=actor,
             initiated_by_user_id=getattr(actor, "id", "") or "",
+            # 必传：前端 plan 澄清卡由 runtime 按 conversation_id 反查会话驱动，
+            # 收答专路由同理——不传则确认卡渲染不出来、也无法作答。
+            conversation_id=conversation_id,
         )
     except FeatureSolutionError as exc:
         return ToolResult(success=False, error=exc.detail)
