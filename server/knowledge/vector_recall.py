@@ -56,17 +56,46 @@ def _build_knowledge_must_filter(
     include_superseded: bool,
     require_repository: bool = True,
 ) -> models.Filter:
-    """构建 knowledge 检索 must filter（P1/P6，私有无 bypass 出口）。"""
+    """构建 knowledge 检索 must filter（P1/P6，私有无 bypass 出口）。
+
+    project 闸逃生支（quick-260726-q3z D-01）：allowed_project_ids 与
+    allowed_repository_ids 均非空时，project 闸为嵌套 OR——「project_id ∈ allowed」
+    或「project_id 为空串 ∧ repository_id ∈ allowed（不含空串）」；语义为
+    「实体锚定在可见仓库上 ⇒ 可召回」（覆盖 MCP 三类产物 project_id="" 的向量点），
+    与 demand 分路 repository 空串逃生口对称。allowed_repository_ids 为空时保持
+    平铺条件（fail-closed 零回归）。
+    """
     must: list[models.Condition] = []
     if not include_superseded:
         must.append(models.FieldCondition(key="is_latest", match=models.MatchValue(value=True)))
     if allowed_project_ids:
-        must.append(
-            models.FieldCondition(
-                key="project_id",
-                match=models.MatchAny(any=allowed_project_ids),
-            )
+        project_cond = models.FieldCondition(
+            key="project_id",
+            match=models.MatchAny(any=allowed_project_ids),
         )
+        if allowed_repository_ids:
+            # 逃生支的 repository_id MatchAny 绝不含空串——防 project_id 与
+            # repository_id 双空串的孤儿点对任意有仓库权限的用户泄漏。
+            must.append(
+                models.Filter(
+                    should=[
+                        project_cond,
+                        models.Filter(
+                            must=[
+                                models.FieldCondition(
+                                    key="project_id", match=models.MatchValue(value="")
+                                ),
+                                models.FieldCondition(
+                                    key="repository_id",
+                                    match=models.MatchAny(any=allowed_repository_ids),
+                                ),
+                            ]
+                        ),
+                    ]
+                )
+            )
+        else:
+            must.append(project_cond)
     if require_repository:
         if allowed_repository_ids:
             must.append(
