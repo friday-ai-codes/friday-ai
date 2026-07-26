@@ -59,12 +59,22 @@ def _format_items(items: object) -> str:
     return "\n".join(lines) if lines else "（无）"
 
 
-def build_plan_event(plan, version, *, edges: tuple[EdgeSpec, ...] = ()) -> IngestionEvent:
+def build_plan_event(
+    plan,
+    version,
+    *,
+    edges: tuple[EdgeSpec, ...] = (),
+    space_id: str | None = None,
+) -> IngestionEvent:
     """McpCodingPlan + 最新 McpCodingPlanVersion → tech_plan IngestionEvent 纯构造。
 
     同源拼法纪律：mcp_execution_trace.py 的 plan 锚事件复用本函数，content
     逐字节一致 → 重摄走 hash 短路，不翻版本。素材版本由调用方查好传入
     （normalize 与 trace 锚都取 ``plan.versions.order_by("-version").afirst()``）。
+
+    ``space_id``（quick-260726-q3z D-03）：work_item 可解析且 technical_plan 带
+    space 时由调用方传入；不参与 content/hash（byte-equal 守护恒绿），仅进
+    IngestionEvent.space_id 供权限面可见性使用。
     """
     content = (
         f"# {plan.title}\n\n"
@@ -89,7 +99,7 @@ def build_plan_event(plan, version, *, edges: tuple[EdgeSpec, ...] = ()) -> Inge
             "status": plan.status,
             "analysis_id": str(plan.analysis_id) if plan.analysis_id else "",
         },
-        space_id=None,
+        space_id=space_id,
         repository_id=str(plan.repository_id),
         # updated_at 而非 created_at：版本翻转要求 invalid_at 严格大于旧版 valid_at
         # （kversion_valid_range CHECK）；improve 路径 plan.asave(update_fields=[...,
@@ -204,7 +214,13 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
     if resolved is not None:
         edges.extend(await _chat_plan_relates_edges(resolved[0]))
 
-    plan_event = build_plan_event(plan, version, edges=tuple(edges))
+    # D-03（quick-260726-q3z）：work_item 可解析且 technical_plan 带 space 时，主事件
+    # 携带 space_id（与锚事件同款来源）；space_id 不进 content/hash，重摄零翻版。
+    plan_space_id: str | None = None
+    if resolved is not None and resolved[1].space_id:
+        plan_space_id = str(resolved[1].space_id)
+
+    plan_event = build_plan_event(plan, version, edges=tuple(edges), space_id=plan_space_id)
     if resolved is None:
         return [plan_event]
 

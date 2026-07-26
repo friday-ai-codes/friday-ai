@@ -211,6 +211,115 @@ class TestNormalize:
         assert "knowledge_normalize_source_missing" in warnings
 
 
+# ---------------------------------------------------------------------------
+# quick-260726-q3z（D-04）：双 None（无 space 无 repo）learning_case 单仓回填 + warning
+# ---------------------------------------------------------------------------
+
+
+def _make_orphan_case(*, repositories: list[str]):
+    """无 context 无 technical_plan（双 None）的 McpLearningCase 工厂。"""
+    from interactions.ledger import create_interaction_run
+    from mcp_tools.models import McpLearningCase
+    from runners.models import hash_token
+
+    suffix = uuid.uuid4().hex[:8]
+    run = create_interaction_run(token_fingerprint=hash_token(f"orphan-lc-{suffix}"), source="mcp")
+    return McpLearningCase.objects.create(
+        run=run,
+        context=None,
+        technical_plan=None,
+        title=f"孤儿案例-{suffix}",
+        problem="p",
+        root_cause="r",
+        solution="s",
+        outcome="merged",
+        repositories=repositories,
+        embedding_text="孤儿案例向量文本",
+    )
+
+
+def _make_named_repo(name: str):
+    from repositories.models import Repository
+
+    return Repository.objects.create(
+        name=name,
+        git_url=f"https://gitlab.com/test/{name}-{uuid.uuid4().hex[:8]}.git",
+        git_platform="gitlab",
+        default_branch="main",
+    )
+
+
+class TestOrphanRepoBackfill:
+    """D-04：双 None 单仓可解析回填 repository_id；解析不了 warning 不再静默。"""
+
+    async def test_dual_none_single_repo_backfills_repository_id(self) -> None:
+        """证伪（修前红）：双 None + repositories 恰 1 名称且 Repository 表恰 1 行
+        → learning_case 事件 repository_id == str(repo.id)。"""
+        name = f"orphan-repo-{uuid.uuid4().hex[:8]}"
+        repo = await sync_to_async(_make_named_repo)(name)
+        case = await sync_to_async(lambda: _make_orphan_case(repositories=[name]))()
+
+        events = await normalize_learning_case(
+            IngestionRequest("learning_case", str(case.id), "mcp_learning_case_created")
+        )
+
+        assert len(events) == 1
+        event = events[0]
+        assert event.space_id is None
+        assert event.repository_id == str(repo.id)
+
+    async def test_dual_none_unresolvable_stays_none_with_warning(self) -> None:
+        """证伪（修前红）：双 None 且 repositories 空 / 多元素 / 名称撞行 / 名称不存在
+        → repository_id 保持 None + knowledge_normalize_unanchored warning。"""
+        # 撞行：同名两仓
+        dup_name = f"dup-repo-{uuid.uuid4().hex[:8]}"
+        await sync_to_async(_make_named_repo)(dup_name)
+        await sync_to_async(_make_named_repo)(dup_name)
+
+        scenarios: list[list[str]] = [
+            [],  # 空
+            ["a-repo", "b-repo"],  # 多元素
+            [dup_name],  # 名称非唯一
+            [f"ghost-{uuid.uuid4().hex[:8]}"],  # 不存在
+        ]
+        for repositories in scenarios:
+            case = await sync_to_async(
+                lambda repos=repositories: _make_orphan_case(repositories=repos)
+            )()
+            with capture_logs() as cap:
+                events = await normalize_learning_case(
+                    IngestionRequest("learning_case", str(case.id), "mcp_learning_case_created")
+                )
+            assert len(events) == 1
+            assert events[0].repository_id is None, f"repositories={repositories}"
+            unanchored = [
+                e
+                for e in cap
+                if e.get("event") == "knowledge_normalize_unanchored"
+                and e.get("log_level") == "warning"
+            ]
+            assert unanchored, f"repositories={repositories} 应有 unanchored warning"
+            assert unanchored[0].get("component") == "knowledge"
+            assert unanchored[0].get("category") == "sampling"
+
+    async def test_space_present_never_backfills_repository(self) -> None:
+        """守护（恒绿）：technical_plan 带 space 的既有工厂路径 → repository_id 保持 None。
+
+        回归陷阱：space 已有的案例靠 demand 分路空串支对「可见项目但不可见仓库」的
+        用户可见，回填真实 repo id 会反把这类用户挡掉。"""
+        # 既有工厂 repositories=["auth-service"]；即便建同名唯一仓也不得回填
+        await sync_to_async(_make_named_repo)("auth-service")
+        project, _context, _plan, case = await sync_to_async(_make_host)()
+
+        events = await normalize_learning_case(
+            IngestionRequest("learning_case", str(case.id), "mcp_learning_case_created")
+        )
+
+        learning_case = events[-1]
+        assert learning_case.space_id == str(project.id)
+        assert learning_case.repository_id is None
+
+
 class TestTrigger:
     """Task 2/3：create_learning_case 投递断言（test_triggers.py 范式）。"""
 

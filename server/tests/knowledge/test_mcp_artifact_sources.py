@@ -143,8 +143,12 @@ def _make_trace(plan, version, **overrides):
     return McpCodingExecutionTrace.objects.create(**fields)
 
 
-def _make_work_item_closure(plan, version):
-    """context + technical_plan + repo_task 最小闭包（三元组挂载到 plan）。"""
+def _make_work_item_closure(plan, version, *, space=None):
+    """context + technical_plan + repo_task 最小闭包（三元组挂载到 plan）。
+
+    ``space`` 非 None 时挂到 technical_plan（quick-260726-q3z D-03：主事件回填
+    space_id 取材来源）；默认 None 保持既有用例零回归。
+    """
     from mcp_tools.models import (
         McpWorkItemContext,
         McpWorkItemRepoTask,
@@ -164,6 +168,7 @@ def _make_work_item_closure(plan, version):
     technical_plan = McpWorkItemTechnicalPlan.objects.create(
         run=run,
         context=context,
+        space=space,
         feishu_project_key="k-mcp100",
         work_item_type="story",
         work_item_id=7001,
@@ -310,6 +315,52 @@ class TestNormalizers:
         )
         assert plan_event.kind == "tech_plan"
         assert plan_event.source_kind == "mcp_coding_plan"
+
+    async def test_coding_plan_main_event_carries_space_id_when_plan_has_space(self) -> None:
+        """quick-260726-q3z D-03（证伪）：work_item 闭包齐备且 technical_plan 带 space
+        → tech_plan 主事件 space_id == str(space.id)（修前恒 None）。"""
+        from projects.models import Space
+
+        plan, version = await sync_to_async(_make_plan)()
+        space = await sync_to_async(Space.objects.create)(
+            name="mcp-space", feishu_project_key=f"k-sp-{uuid.uuid4().hex[:8]}"
+        )
+        await sync_to_async(lambda: _make_work_item_closure(plan, version, space=space))()
+
+        events = await normalize_mcp_coding_plan(
+            IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_coding_plan_created")
+        )
+
+        assert len(events) == 2
+        work_item, plan_event = events
+        assert plan_event.space_id == str(space.id)
+        # 锚事件既有取材口径不变
+        assert work_item.space_id == str(space.id)
+
+    async def test_execution_trace_anchor_carries_space_id_when_plan_has_space(self) -> None:
+        """quick-260726-q3z D-03（证伪）：mcp_execution_trace 的 plan 锚事件在同样闭包下
+        space_id == str(space.id)（修前恒 None）；content 逐字节不变由 byte-equal 守护。"""
+        from projects.models import Space
+
+        plan, version = await sync_to_async(_make_plan)()
+        space = await sync_to_async(Space.objects.create)(
+            name="mcp-space-trace", feishu_project_key=f"k-sp-{uuid.uuid4().hex[:8]}"
+        )
+        await sync_to_async(lambda: _make_work_item_closure(plan, version, space=space))()
+        trace = await sync_to_async(lambda: _make_trace(plan, version))()
+
+        trace_events = await normalize_mcp_execution_trace(
+            IngestionRequest("mcp_execution_trace", str(trace.id), "mcp_execution_created")
+        )
+        plan_events = await normalize_mcp_coding_plan(
+            IngestionRequest("mcp_coding_plan", str(plan.id), "mcp_coding_plan_created")
+        )
+
+        assert len(trace_events) == 2
+        anchor, _code_change = trace_events
+        assert anchor.space_id == str(space.id)
+        # 同源拼法纪律：space_id 绝不进 content——锚与主事件 content 仍逐字节一致
+        assert anchor.content == plan_events[-1].content
 
     async def test_coding_plan_relates_to_chat_plan_when_resolvable(self) -> None:
         """同 work_item 锚有活跃边的 chat coding_plan → plan 主事件挂 RELATES_TO 出边。"""
