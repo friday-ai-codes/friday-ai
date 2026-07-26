@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from asgiref.sync import sync_to_async
 from django.utils import timezone
+from qdrant_client import models as qmodels
 
 from knowledge.metadata_hydrate import hydrate_entity_metadata
 from knowledge.models import CodeChangeArchive, EntityKind
@@ -63,6 +64,14 @@ def recall_deps(monkeypatch, hybrid_calls):
     return hybrid_calls
 
 
+def _project_gate_filter(flt) -> qmodels.Filter | None:
+    """定位 must 中的嵌套 project 闸（models.Filter 元素，D-01 逃生支）。"""
+    for cond in flt.must:
+        if isinstance(cond, qmodels.Filter):
+            return cond
+    return None
+
+
 async def test_vector_is_latest_filter_in_must():
     """include_superseded=False 时 filter must 含 is_latest=true。"""
     flt = _build_knowledge_must_filter(
@@ -71,21 +80,118 @@ async def test_vector_is_latest_filter_in_must():
         entity_kinds=None,
         include_superseded=False,
     )
-    keys = {c.key for c in flt.must}
+    keys = {getattr(c, "key", None) for c in flt.must}
     assert "is_latest" in keys
 
 
 async def test_vector_project_and_repository_filter():
-    """allowed project/repository → MatchAny 条件。"""
+    """allowed project/repository → repository_id 仍在顶层 must；project 闸移入嵌套支（D-01）。"""
     flt = _build_knowledge_must_filter(
         allowed_project_ids=["proj-a"],
         allowed_repository_ids=["repo-x"],
         entity_kinds=None,
         include_superseded=False,
     )
-    keys = {c.key for c in flt.must}
-    assert "project_id" in keys
+    keys = {getattr(c, "key", None) for c in flt.must}
     assert "repository_id" in keys
+    # project 闸变为嵌套 should 支（allowed_repository_ids 非空时）
+    assert _project_gate_filter(flt) is not None
+
+
+# ---------------------------------------------------------------------------
+# quick-260726-q3z（D-01）：project 闸嵌套 OR 逃生支——MCP 三类产物
+# （payload project_id="" 但 repository_id 非空）对可见该仓库的用户可召回
+# ---------------------------------------------------------------------------
+
+
+def _assert_project_gate_escape(flt, *, projects: list[str], repos: list[str]) -> None:
+    """断言嵌套 project 闸两支结构：A 支 project ∈ allowed；B 支 project=="" ∧ repo ∈ allowed。"""
+
+    gate = _project_gate_filter(flt)
+    assert gate is not None, "project 闸应为嵌套 models.Filter(should=[...])"
+    assert gate.should is not None and len(gate.should) == 2
+    branch_a, branch_b = gate.should
+    # 分支 A：原平铺条件 project_id ∈ allowed_project_ids
+    assert isinstance(branch_a, qmodels.FieldCondition)
+    assert branch_a.key == "project_id"
+    assert isinstance(branch_a.match, qmodels.MatchAny)
+    assert list(branch_a.match.any) == projects
+    # 分支 B：内层 must——project_id 精确空串 ∧ repository_id ∈ allowed_repository_ids
+    assert isinstance(branch_b, qmodels.Filter)
+    assert branch_b.must is not None and len(branch_b.must) == 2
+    proj_cond, repo_cond = branch_b.must
+    assert isinstance(proj_cond, qmodels.FieldCondition)
+    assert proj_cond.key == "project_id"
+    assert isinstance(proj_cond.match, qmodels.MatchValue)
+    assert proj_cond.match.value == ""
+    assert isinstance(repo_cond, qmodels.FieldCondition)
+    assert repo_cond.key == "repository_id"
+    assert isinstance(repo_cond.match, qmodels.MatchAny)
+    assert list(repo_cond.match.any) == repos
+    # 防双空串孤儿点泄漏：第二支 repository_id MatchAny 绝不含空串
+    assert "" not in repo_cond.match.any
+
+
+async def test_vector_project_gate_escape_branch_demand_route():
+    """demand 分路（require_repository=False）：project 闸为嵌套 should 两支结构。"""
+    flt = _build_knowledge_must_filter(
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=["r1"],
+        entity_kinds=None,
+        include_superseded=False,
+        require_repository=False,
+    )
+    _assert_project_gate_escape(flt, projects=["p1"], repos=["r1"])
+
+
+async def test_vector_project_gate_escape_branch_code_route():
+    """code 分路（require_repository=True）同享嵌套 project 闸（独立断言防未来分叉）。"""
+    flt = _build_knowledge_must_filter(
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=["r1"],
+        entity_kinds=None,
+        include_superseded=False,
+        require_repository=True,
+    )
+    _assert_project_gate_escape(flt, projects=["p1"], repos=["r1"])
+
+
+async def test_vector_project_gate_flat_when_no_allowed_repos():
+    """allowed_repository_ids=[] → project 闸退回平铺 FieldCondition，无嵌套 should 支。
+
+    fail-closed 守护：无可见仓库时行为与修复前逐字段一致。"""
+    for require_repository in (False, True):
+        flt = _build_knowledge_must_filter(
+            allowed_project_ids=["p1"],
+            allowed_repository_ids=[],
+            entity_kinds=None,
+            include_superseded=False,
+            require_repository=require_repository,
+        )
+        assert _project_gate_filter(flt) is None
+        project_conds = [c for c in flt.must if getattr(c, "key", None) == "project_id"]
+        assert len(project_conds) == 1
+        cond = project_conds[0]
+        assert isinstance(cond.match, qmodels.MatchAny)
+        assert list(cond.match.any) == ["p1"]
+
+
+async def test_vector_escape_branch_repository_matchany_never_contains_empty():
+    """嵌套第二支 repository_id MatchAny.any 不含空串——防 project/repo 双空串孤儿点泄漏。"""
+    flt = _build_knowledge_must_filter(
+        allowed_project_ids=["p1", "p2"],
+        allowed_repository_ids=["r1", "r2"],
+        entity_kinds=None,
+        include_superseded=False,
+        require_repository=False,
+    )
+    gate = _project_gate_filter(flt)
+    assert gate is not None
+    branch_b = gate.should[1]
+    assert isinstance(branch_b, qmodels.Filter)
+    repo_conds = [c for c in branch_b.must if getattr(c, "key", None) == "repository_id"]
+    assert len(repo_conds) == 1
+    assert "" not in repo_conds[0].match.any
 
 
 async def test_vector_fail_closed_empty_allowed(recall_deps):
