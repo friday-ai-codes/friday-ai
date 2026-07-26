@@ -23,10 +23,20 @@ from services.process_runtime.clarify_adapter import (
     ClarifyAdapter,
     default_needs_clarification,
 )
+from services.process_runtime.classify_adapter import FeatureChangeClassifyAdapter
 from services.process_runtime.engine import ProcessEngine, StageOutcome
 from services.process_runtime.entrypoint import (
     build_orchestration_engine,
     start_orchestration,
+)
+from services.process_runtime.feature_classify import (
+    aclassify_feature_changes,
+    build_feature_key,
+    normalize_feature_classifications,
+)
+from services.process_runtime.feature_confirm_questions import (
+    build_feature_confirm_questions,
+    feature_list_needs_clarification,
 )
 from services.process_runtime.merged_plan import (
     MERGED_PLAN_FIELDS,
@@ -38,6 +48,7 @@ from services.process_runtime.plan_validator import (
 )
 from services.process_runtime.protocols import (
     ClarifyProtocol,
+    ClassifyProtocol,
     MergeProtocol,
     RecallProtocol,
     ResearchProtocol,
@@ -100,6 +111,7 @@ __all__ = [
     "ResearchProtocol",
     "MergeProtocol",
     "ClarifyProtocol",
+    "ClassifyProtocol",
     "SkeletonRouter",
     "SkeletonRecall",
     "SkeletonResearch",
@@ -107,6 +119,12 @@ __all__ = [
     "SkeletonClarify",
     "ClarifyAdapter",
     "default_needs_clarification",
+    "FeatureChangeClassifyAdapter",
+    "aclassify_feature_changes",
+    "normalize_feature_classifications",
+    "build_feature_key",
+    "build_feature_confirm_questions",
+    "feature_list_needs_clarification",
     "RepoRouterV2Adapter",
     "DeliveryKnowledgeRecallAdapter",
     "ResearchDispatchAdapter",

@@ -28,6 +28,7 @@ __all__ = [
     "EVENT_REPO_RESEARCH_FAILED",
     "EVENT_CLARIFICATION_ASKED",
     "EVENT_CLARIFICATION_ANSWERED",
+    "EVENT_FEATURE_CLASSIFIED",
     "EVENT_PLAN_MERGE_STARTED",
     "EVENT_PLAN_MERGE_COMPLETED",
     "EVENT_PLAN_VALIDATION_FAILED",
@@ -53,6 +54,9 @@ EVENT_REPO_RESEARCH_COMPLETED: Final[str] = "repo.research.completed"
 EVENT_REPO_RESEARCH_FAILED: Final[str] = "repo.research.failed"
 EVENT_CLARIFICATION_ASKED: Final[str] = "clarification.asked"
 EVENT_CLARIFICATION_ANSWERED: Final[str] = "clarification.answered"
+# feature list 入口专属：功能点新增/改造分类完成（payload {summary, evidence_hits}）。
+# 非 feature list 入口的 classify stage 走 pass-through，不产出本事件。
+EVENT_FEATURE_CLASSIFIED: Final[str] = "technical_plan.feature.classified"
 # technical_plan process 产出（P2：plan.* → technical_plan.* 通用/process 前缀）
 EVENT_PLAN_MERGE_STARTED: Final[str] = "technical_plan.merge.started"
 EVENT_PLAN_MERGE_COMPLETED: Final[str] = "technical_plan.merge.completed"
@@ -78,6 +82,7 @@ ALL_EVENTS: Final[frozenset[str]] = frozenset(
         EVENT_REPO_RESEARCH_FAILED,
         EVENT_CLARIFICATION_ASKED,
         EVENT_CLARIFICATION_ANSWERED,
+        EVENT_FEATURE_CLASSIFIED,
         EVENT_PLAN_MERGE_STARTED,
         EVENT_PLAN_MERGE_COMPLETED,
         EVENT_PLAN_VALIDATION_FAILED,

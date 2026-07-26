@@ -49,6 +49,10 @@ __all__ = ["default_needs_clarification", "ClarifyAdapter"]
 # needs-clarification policy：(session) -> (needs: bool, question: str, affected_task_ids: list)
 NeedsClarificationPolicy = Callable[[ConvergenceSession], "tuple[bool, str, list]"]
 
+# 可选的确定性问题组装器：(session, round_count) -> questions。返回非空则**取代** LLM 生成
+# （feature list 强制确认场景用），返回空则回落既有 LLM 路径。
+QuestionBuilder = Callable[..., "list[dict[str, Any]]"]
+
 # 高/中置信集合（routing 候选有任一命中即视为可路由，无需澄清）
 _CONFIDENT = {"high", "medium"}
 
@@ -94,10 +98,13 @@ class ClarifyAdapter:
         policy: NeedsClarificationPolicy | None = None,
         clarification_service: ClarificationService | None = None,
         session_service: ConvergenceSessionService | None = None,
+        question_builder: QuestionBuilder | None = None,
     ) -> None:
         self.policy = policy or default_needs_clarification
         self.clarification_service = clarification_service or ClarificationService()
         self.session_service = session_service or ConvergenceSessionService()
+        # None（默认）时行为与既有逐字一致：问什么全由 LLM 生成。
+        self.question_builder = question_builder
 
     async def clarify(self, session: ConvergenceSession) -> dict:
         """多轮判定是否需澄清；需则带已答重判 LLM 产多题经 create_round 落库（CLARIFY-07）。"""
@@ -127,6 +134,31 @@ class ClarifyAdapter:
         needs, question, _affected = self.policy(session)
         if not needs:
             return {"needs_clarification": False}
+
+        # 3.5 确定性问题组装（feature list 强制确认）：builder 非空且产出非空时**取代** LLM
+        #     生成——「确认关联仓库」这类问题不能由 LLM 决定问不问。builder 只在首轮产出
+        #     （自身按 round_count 短路），故后续轮次自然回落下面的 LLM 重判路径，不会同题
+        #     死循环。builder 异常 best-effort 吞掉，退回 LLM 路径（绝不阻断编排）。
+        if self.question_builder is not None:
+            try:
+                built = self.question_builder(session, round_count=round_count)
+            except Exception as exc:  # noqa: BLE001 — 组装失败退回 LLM 路径
+                logger.warning(
+                    "clarification_question_builder_failed",
+                    category="sampling",
+                    component="process_runtime",
+                    session_id=str(session.id),
+                    error=str(exc),
+                )
+                built = []
+            if built:
+                clar = await self.clarification_service.create_round(
+                    session, built, origin_repo=None, round_no=round_count + 1
+                )
+                if clar is None:
+                    return {"needs_clarification": False}
+                await self._emit_asked(session, clar, question)
+                return {"needs_clarification": True, "clarification_id": str(clar.id)}
 
         # 4. 带已答重判「问什么」：把已答轮问答喂进生成输入（答复改变重判输入，防同题死循环
         #    Pitfall 2 / T-91-01-03）。生成器 best-effort（lazy import SDK + 吞异常返回 []，绝不抛）。

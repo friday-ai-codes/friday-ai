@@ -144,3 +144,8 @@ class ConvergenceSession(models.Model):
     @property
     def recall_context(self) -> list:
         return (self.stage_state or {}).get("recall_context") or []
+
+    @property
+    def classification(self) -> dict:
+        """feature list 入口的功能点新增/改造分类结果；其余入口恒为空 dict。"""
+        return (self.stage_state or {}).get("classification") or {}

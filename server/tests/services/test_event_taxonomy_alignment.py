@@ -47,6 +47,7 @@ _EMIT_FILES = [
 _EVENT_PRODUCERS: dict[str, Path] = {
     "knowledge.recalling": _BUILTIN_PROCESSES,
     "repo.routing": _BUILTIN_PROCESSES,
+    "technical_plan.feature.classified": _BUILTIN_PROCESSES,
     "repo.research.started": _RESEARCH_ADAPTER,
     "repo.research.failed": _RESEARCH_ADAPTER,
     "repo.research.completed": _CALLBACKS,
