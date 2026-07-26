@@ -4,7 +4,9 @@ from django.urls import path
 
 from .views import (
     AnalyzeRepositoryView,
+    ConfirmFeatureTechPlanView,
     CreateCodingPlanView,
+    CreateFeatureTechPlanView,
     CreateFeishuTechnicalPlanView,
     CreateLearningCaseView,
     CreateMergeRequestView,
@@ -14,6 +16,7 @@ from .views import (
     FindRelatedChunksView,
     GetCodingExecutionView,
     GetEntityTimelineView,
+    GetFeatureTechPlanView,
     GetFeishuWorkItemContextView,
     GetRelatedEntitiesView,
     GetRepositoryFileView,
@@ -104,5 +107,21 @@ urlpatterns = [
         "tools/read_project_doc/",
         ReadProjectDocView.as_view(),
         name="mcp-tool-read-project-doc",
+    ),
+    # feature list 技术方案（两段式：create 出待确认项 → confirm 提交确认 → get 轮询取方案）
+    path(
+        "tools/create_feature_tech_plan/",
+        CreateFeatureTechPlanView.as_view(),
+        name="mcp-tool-create-feature-tech-plan",
+    ),
+    path(
+        "tools/confirm_feature_tech_plan/",
+        ConfirmFeatureTechPlanView.as_view(),
+        name="mcp-tool-confirm-feature-tech-plan",
+    ),
+    path(
+        "tools/get_feature_tech_plan/",
+        GetFeatureTechPlanView.as_view(),
+        name="mcp-tool-get-feature-tech-plan",
     ),
 ]
