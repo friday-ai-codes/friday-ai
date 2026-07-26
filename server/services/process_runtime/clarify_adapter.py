@@ -129,20 +129,16 @@ class ClarifyAdapter:
             )
             return {"needs_clarification": False}
 
-        # 3. policy 判「要不要问」（答后信号未必变，故必须靠步骤 4 重判吃答案 + 上界兜底，而非
-        #    单轮短路，否则同信号反复追问 = 无限挂起）。
-        needs, question, _affected = self.policy(session)
-        if not needs:
-            return {"needs_clarification": False}
-
-        # 3.5 确定性问题组装（feature list 强制确认）：builder 非空且产出非空时**取代** LLM
-        #     生成——「确认关联仓库」这类问题不能由 LLM 决定问不问。builder 只在首轮产出
-        #     （自身按 round_count 短路），故后续轮次自然回落下面的 LLM 重判路径，不会同题
-        #     死循环。builder 异常 best-effort 吞掉，退回 LLM 路径（绝不阻断编排）。
+        # 3. 确定性问题组装（feature list 强制确认）——**在 policy 之前**。
+        #
+        #    顺序是关键：默认 policy 见到全 high 置信路由会判「无需澄清」直接放行，若把 builder
+        #    放在 policy 之后，强制确认永远轮不到执行。builder 自身按 round_count 短路（只在首轮
+        #    产出），故第二轮起自然落回下面的 policy + LLM 重判路径，不会同题死循环。
+        #    builder 异常 best-effort 吞掉，退回既有路径（绝不阻断编排）。
         if self.question_builder is not None:
             try:
                 built = self.question_builder(session, round_count=round_count)
-            except Exception as exc:  # noqa: BLE001 — 组装失败退回 LLM 路径
+            except Exception as exc:  # noqa: BLE001 — 组装失败退回既有路径
                 logger.warning(
                     "clarification_question_builder_failed",
                     category="sampling",
@@ -157,10 +153,16 @@ class ClarifyAdapter:
                 )
                 if clar is None:
                     return {"needs_clarification": False}
-                await self._emit_asked(session, clar, question)
+                await self._emit_asked(session, clar, str(built[0].get("question", "")))
                 return {"needs_clarification": True, "clarification_id": str(clar.id)}
 
-        # 4. 带已答重判「问什么」：把已答轮问答喂进生成输入（答复改变重判输入，防同题死循环
+        # 4. policy 判「要不要问」（答后信号未必变，故必须靠步骤 5 重判吃答案 + 上界兜底，而非
+        #    单轮短路，否则同信号反复追问 = 无限挂起）。
+        needs, question, _affected = self.policy(session)
+        if not needs:
+            return {"needs_clarification": False}
+
+        # 5. 带已答重判「问什么」：把已答轮问答喂进生成输入（答复改变重判输入，防同题死循环
         #    Pitfall 2 / T-91-01-03）。生成器 best-effort（lazy import SDK + 吞异常返回 []，绝不抛）。
         requirement = ""
         if isinstance(session.decomposition, dict):
@@ -190,7 +192,7 @@ class ClarifyAdapter:
             await self._emit_asked(session, clar, question)
             return {"needs_clarification": True, "clarification_id": str(clar.id)}
 
-        # 5. 生成空（含内部异常已吞为 []）：
+        # 6. 生成空（含内部异常已吞为 []）：
         #    - 首轮（round_count==0）→ fail-soft 回退现状粗单题（经 create_round 建 1 子题轮），
         #      绝不抛、绝不让 engine.advance 通用 except 落 failed（T-90-03-02）。
         #    - 多轮（已答 ≥1 轮）→ 重判信息足够，放行 researching、不再发轮（CLARIFY-07）。

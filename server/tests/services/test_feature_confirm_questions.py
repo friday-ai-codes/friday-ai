@@ -10,7 +10,6 @@ from types import SimpleNamespace
 
 from services.process_runtime.feature_confirm_questions import (
     build_feature_confirm_questions,
-    feature_list_needs_clarification,
 )
 
 
@@ -46,27 +45,6 @@ def test_asks_repo_confirmation_even_when_all_candidates_are_high_confidence() -
     assert "仓库" in questions[0]["question"]
     assert questions[0]["options"] == ["friday-server", "friday-web"]
     assert questions[0]["recommended"] == ["friday-server", "friday-web"]
-
-
-def test_policy_forces_clarification_when_classification_exists() -> None:
-    session = _session(
-        items=[{"key": "m::a", "module": "m", "name": "a", "change_type": "new"}],
-        candidates=_HIGH_CANDIDATES,
-    )
-    needs, question, affected = feature_list_needs_clarification(session)
-    assert needs is True
-    assert question
-    assert affected == []
-
-
-def test_policy_falls_back_to_default_without_classification() -> None:
-    """无分类结果（非 feature list 会话）→ 回落默认策略，不改变既有行为。
-
-    默认策略在有 high 置信候选且无 ambiguous 标记时判「不需澄清」。
-    """
-    session = _session(candidates=_HIGH_CANDIDATES)
-    needs, _question, _affected = feature_list_needs_clarification(session)
-    assert needs is False
 
 
 def test_returns_empty_after_first_round() -> None:
