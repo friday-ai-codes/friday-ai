@@ -22,6 +22,7 @@ from agents.tools.delivery_knowledge_tools import (
     get_related_entities,
     search_delivery_knowledge,
 )
+from agents.tools.feature_solution_tools import start_feature_solution
 from agents.tools.feishu_doc_tools import (
     create_feishu_document,
     fetch_feishu_document,
@@ -102,5 +103,7 @@ __all__ = [
     "request_clarification",
     # Plan orchestration chat entry (ENTRY-02)
     "start_plan_research",
+    # feature list → 技术方案对话入口（同一编排引擎 + 强制仓库确认）
+    "start_feature_solution",
     "save_project_feature_list",
 ]

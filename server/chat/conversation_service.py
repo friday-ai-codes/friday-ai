@@ -235,6 +235,15 @@ _CODING_GUIDANCE: Final[str] = (
     "  - 如果 analyze_repository_relevance 给出 ≥ 2 个 plausible 仓库且 confidence 接近，\n"
     "    必须先调 ask_clarification 让用户挑后再 create_coding_plan，并把用户选项的\n"
     "    implies.selected_repository_ids 作为 recommended_repository_ids 传入。\n"
+    "\n"
+    "feature list → 技术方案（成批功能点，走 start_feature_solution）：\n"
+    "  当用户给出一份 **feature list / 需求清单 / 成批功能点**，或明确说「创建技术方案」\n"
+    "  「生成技术方案」时，调用 start_feature_solution，不要用 create_coding_plan。\n"
+    "  该工具会判定每个功能点是新增还是改造已有功能，并**强制暂停让用户确认关联仓库**，\n"
+    "  确认后产出分仓 + 整体方案（含落点文件与伪代码）。\n"
+    "  - 单个零散需求 → create_coding_plan（编码计划）或 start_plan_research（跨仓方案）。\n"
+    "  - 成批功能点 / 明确要技术方案 → start_feature_solution。\n"
+    "  - 确认环节不可跳过：即便仓库路由十分确定也会问一次，这是产品约束。\n"
 )
 
 _TOOL_BUDGET_RULES: Final[str] = (
