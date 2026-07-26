@@ -81,7 +81,7 @@ def _build_content(trace, title: str, mr_url: str) -> str:
 
 async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
     """McpCodingExecutionTrace → [plan 锚, code_change] 双事件（锚在前）。"""
-    from knowledge.sources.mcp_coding_plan import build_plan_event
+    from knowledge.sources.mcp_coding_plan import _resolve_work_item, build_plan_event
     from mcp_tools.models import McpCodingExecutionTrace
 
     trace = (
@@ -145,6 +145,13 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             category="sampling",
         )
         return [code_change_event]
+    # D-03（quick-260726-q3z）：锚事件与 mcp_coding_plan 主事件同款 space_id 来源
+    # （work_item 可解析且 technical_plan 带 space）；space_id 不进 content/hash，
+    # 锚同源拼法 byte-equal 纪律不破。
+    resolved = await _resolve_work_item(trace.plan_id)
+    anchor_space_id: str | None = None
+    if resolved is not None and resolved[1].space_id:
+        anchor_space_id = str(resolved[1].space_id)
     anchor_event = build_plan_event(
         trace.plan,
         latest_version,
@@ -156,5 +163,6 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
                 ),
             ),
         ),
+        space_id=anchor_space_id,
     )
     return [anchor_event, code_change_event]
