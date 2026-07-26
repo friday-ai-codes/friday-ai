@@ -110,8 +110,14 @@ class FeatureSolutionService:
         entrypoint: str = "mcp",
         actor: Any = None,
         initiated_by_user_id: Any = "",
+        conversation_id: Any = None,
     ) -> FeatureSolutionState:
-        """取 feature list → 建会话 → 续驱到强制确认挂起。"""
+        """取 feature list → 建会话 → 续驱到强制确认挂起。
+
+        ``conversation_id``（对话入口必传）：会话软引用。前端 plan 澄清卡由
+        ``runtime.pending_plan_clarification`` 驱动，而 runtime 是**按 conversation_id 反查
+        ConvergenceSession** 的；收答专路由同理。不传则对话里确认卡渲染不出来、也无法作答。
+        """
         from initiatives.services.feature_source import (
             FeatureSourceError,
             aresolve_feature_source,
@@ -137,6 +143,7 @@ class FeatureSolutionService:
             entrypoint=entrypoint,
             actor=actor,
             initiated_by_user_id=initiated_by_user_id,
+            conversation_id=conversation_id,
         )
         session = await self._adrive(session)
         state = await self._abuild_state(session, resolved=resolved)
@@ -242,6 +249,7 @@ class FeatureSolutionService:
         entrypoint: str,
         actor: Any,
         initiated_by_user_id: Any,
+        conversation_id: Any = None,
     ) -> Any:
         from services.process_runtime import start_orchestration
 
@@ -252,6 +260,7 @@ class FeatureSolutionService:
             created_by=actor if getattr(actor, "id", None) is not None else None,
             include_repos=[str(r) for r in repository_ids],
             initiated_by_user_id=str(initiated_by_user_id or ""),
+            conversation_id=conversation_id or None,
             mode="feature_list",
             feature_segments=resolved.segments,
             feature_meta={
