@@ -32,7 +32,9 @@ async def test_none_user_returns_empty():
     assert await resolve_allowed_repository_ids(None) == []
 
 
-async def test_caller_project_ids_intersect(project, user, project_memberships, project_without_repo):
+async def test_caller_project_ids_intersect(
+    project, user, project_memberships, project_without_repo
+):
     """caller project_ids 只能收窄 allowed 集合。"""
     await sync_to_async(SpaceMembership.objects.create)(
         user=user, space=project_without_repo, role=SpaceRole.MEMBER
@@ -46,7 +48,12 @@ async def test_caller_project_ids_intersect(project, user, project_memberships, 
     assert allowed_invisible == [str(project_without_repo.id)]
 
     # 含不可见项目 → 空
-    assert await resolve_allowed_project_ids(user, project_ids=[str(project.id), "99999999-0000-0000-0000-000000000099"]) == []
+    assert (
+        await resolve_allowed_project_ids(
+            user, project_ids=[str(project.id), "99999999-0000-0000-0000-000000000099"]
+        )
+        == []
+    )
 
 
 async def test_superuser_sees_all_projects(admin_user, project, project_without_repo):
@@ -99,7 +106,9 @@ async def test_members_only_non_member_scope_zero_leak():
     from initiatives.models import ProjectVisibility
 
     owner = await sync_to_async(User.objects.create_user)(username="scope-mo-owner", password="x")
-    stranger = await sync_to_async(User.objects.create_user)(username="scope-mo-stranger", password="x")
+    stranger = await sync_to_async(User.objects.create_user)(
+        username="scope-mo-stranger", password="x"
+    )
     project = await _make_initiative_project(
         owner, key="scope-mo", visibility=ProjectVisibility.MEMBERS_ONLY
     )
@@ -117,7 +126,9 @@ async def test_search_similar_members_only_non_member_zero_hits():
     from knowledge.retrieval import DeliveryKnowledgeSearchService
 
     owner = await sync_to_async(User.objects.create_user)(username="ss-mo-owner", password="x")
-    stranger = await sync_to_async(User.objects.create_user)(username="ss-mo-stranger", password="x")
+    stranger = await sync_to_async(User.objects.create_user)(
+        username="ss-mo-stranger", password="x"
+    )
     project = await _make_initiative_project(
         owner, key="ss-mo", visibility=ProjectVisibility.MEMBERS_ONLY
     )
@@ -132,7 +143,9 @@ async def test_public_org_non_member_scope_visible():
     from initiatives.models import ProjectVisibility
 
     owner = await sync_to_async(User.objects.create_user)(username="scope-po-owner", password="x")
-    stranger = await sync_to_async(User.objects.create_user)(username="scope-po-stranger", password="x")
+    stranger = await sync_to_async(User.objects.create_user)(
+        username="scope-po-stranger", password="x"
+    )
     project = await _make_initiative_project(
         owner, key="scope-po", visibility=ProjectVisibility.PUBLIC_ORG
     )
@@ -154,3 +167,59 @@ async def test_member_members_only_scope_visible():
     )
     allowed = await resolve_allowed_project_ids(member)
     assert str(project.space_id) in allowed
+
+
+# ---------------------------------------------------------------------------
+# quick-260726-q3z（D-02）：resolve_allowed_project_ids 并入 initiatives.Project 维度
+# —— members_only 项目文档向量点写 initiatives.Project id，而修复前集合只含 Space id
+# （成员）/ Space id ∪ public_org Project id（superuser）→ RAG 全黑。
+# ---------------------------------------------------------------------------
+
+
+async def test_project_member_members_only_project_id_in_allowed():
+    """ProjectMember 成员（无 SpaceMembership）→ allowed 含 members_only 项目的 Project id。"""
+    from initiatives.models import ProjectMember, ProjectVisibility
+
+    owner = await sync_to_async(User.objects.create_user)(username="pm-mo-owner", password="x")
+    project = await _make_initiative_project(
+        owner, key="pm-mo", visibility=ProjectVisibility.MEMBERS_ONLY
+    )
+    member = await sync_to_async(User.objects.create_user)(username="pm-mo-member", password="x")
+    await sync_to_async(ProjectMember.objects.create)(project=project, user=member)
+
+    allowed = await resolve_allowed_project_ids(member)
+    assert str(project.id) in allowed
+
+
+async def test_superuser_members_only_project_id_in_allowed(admin_user):
+    """superuser → allowed 含 members_only 项目的 Project id（修复前只有 Space ∪ public_org）。"""
+    from initiatives.models import ProjectVisibility
+
+    owner = await sync_to_async(User.objects.create_user)(username="su-mo-owner", password="x")
+    project = await _make_initiative_project(
+        owner, key="su-mo", visibility=ProjectVisibility.MEMBERS_ONLY
+    )
+
+    allowed = await resolve_allowed_project_ids(admin_user)
+    assert str(project.id) in allowed
+
+
+async def test_non_member_members_only_project_id_still_invisible():
+    """守护：非成员（无 SpaceMembership 也无 ProjectMember）→ members_only Project id 零可见。"""
+    from initiatives.models import ProjectMember, ProjectVisibility
+
+    owner = await sync_to_async(User.objects.create_user)(username="nm-mo-owner", password="x")
+    stranger = await sync_to_async(User.objects.create_user)(
+        username="nm-mo-stranger", password="x"
+    )
+    project = await _make_initiative_project(
+        owner, key="nm-mo", visibility=ProjectVisibility.MEMBERS_ONLY
+    )
+    # 另一用户是 ProjectMember，stranger 不是——确认并集扩容只惠及关系行持有者
+    member = await sync_to_async(User.objects.create_user)(username="nm-mo-member", password="x")
+    await sync_to_async(ProjectMember.objects.create)(project=project, user=member)
+
+    allowed = await resolve_allowed_project_ids(stranger)
+    assert str(project.id) not in allowed
+    # caller 显式传该 id → 收窄为 []（fail-closed）
+    assert await resolve_allowed_project_ids(stranger, project_ids=[str(project.id)]) == []
