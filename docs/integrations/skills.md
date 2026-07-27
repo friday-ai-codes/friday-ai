@@ -10,12 +10,13 @@ Skill 仓库：[friday-ai-codes/skills](https://github.com/friday-ai-codes/skill
 
 ## 内置 Skill
 
-6 个职责清晰的 skill（全中文编写），名字全部 `friday` 开头、一个词收尾。agent 会根据任务自动触发对应的 skill；流水线阶段以小节形式收在 skill 内部，用户只要某一阶段就停在那一阶段：
+7 个职责清晰的 skill（全中文编写），名字全部 `friday` 开头、一个词收尾。agent 会根据任务自动触发对应的 skill；流水线阶段以小节形式收在 skill 内部，用户只要某一阶段就停在那一阶段：
 
 | Skill | 用途 |
 | --- | --- |
 | `friday` | 总入口：技能路由表 + 轨迹纪律，也可直接把任意需求交给它一条龙跑完（安装器 hook / Cursor rule 自动注入） |
 | `friday-dev` | 本地开发上下文面：在本地分支上问「开发到哪一步了 / 继续开发 / 现在有什么问题 / PRD·feature list·技术方案」时，按当前 git 分支召回 Friday 项目上下文；编码开工先召回、收工沉淀回写 |
+| `friday-routing` | 由 feature list / PRD 出仓库路由与落点判定矩阵：目标仓库（含 monorepo 子应用）→ 落点文件 → 新增 / 改造 → 证据 → 置信度；判不准主动带选项批量问，不猜 |
 | `friday-solution` | 由 feature list 出技术方案：判定功能点新增 / 改造 → 确认关联仓库 → 分仓 + 整体方案（含落点文件与伪代码）。关联仓库必须经用户确认 |
 | `friday-code` | 远端已索引仓库的全部操作：找仓库 → 分析 → 计划 → 执行/MR，可分阶段也可一条龙 |
 | `friday-feishu` | 飞书工作项闭环：读上下文 → 技术方案 → 多仓执行 → 结果回写，可分阶段也可一条龙 |
@@ -85,7 +86,7 @@ npx skills add friday-ai-codes/skills --skill '*' -g -y
 
 ## 安装之后
 
-直接把任务交给 agent：`friday` 入口技能会按任务类型路由——在本地分支上问项目进度 /「继续开发」走 `friday-dev`（按当前分支召回项目上下文），给一批功能点要技术方案走 `friday-solution`，仓库编码走 `friday-code`（可分阶段，也可一条龙到 MR），飞书工作项走 `friday-feishu`，查历史经验 / 交付知识走 `friday-memory`。
+直接把任务交给 agent：`friday` 入口技能会按任务类型路由——在本地分支上问项目进度 /「继续开发」走 `friday-dev`（按当前分支召回项目上下文），给一份 feature list / PRD 只要落点矩阵走 `friday-routing`，要完整技术方案走 `friday-solution`，仓库编码走 `friday-code`（可分阶段，也可一条龙到 MR），飞书工作项走 `friday-feishu`，查历史经验 / 交付知识走 `friday-memory`。
 
 在 Friday 项目关联的分支上（分支名含 `-m{工作项id}` 段、控制台显式绑定过、或仓库已做业务关联），直接问「我们现在项目开发到哪一步了」「继续开发」「现在有什么问题」即可触发按分支召回——feature list 进度、PRD / 需求、项目记忆会作为回答与续做的事实依据；Claude Code 插件形态下这一步由 hooks 全自动完成。
 
