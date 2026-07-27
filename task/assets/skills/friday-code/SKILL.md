@@ -37,6 +37,8 @@ description: "当用户要 Friday 操作或追踪某个远端已索引仓库时�
 - `repository_not_indexed`：停下，告诉用户该仓库/分支需要先在 Friday 完成索引。
 - `repository_not_found` 或路由结果为空：换种表述重试一次；仍为空时，让用户在 Friday 控制台确认仓库与"仓库摘要索引"状态——代码索引完成不代表路由索引就绪。
 
+本阶段处理的是**单个需求**的仓库定位。成批功能点 / feature list / PRD 的路由与落点判定走 `friday-routing`：它逐功能点出「目标仓库（含 monorepo 子应用）→ 落点文件 → 新增/改造 → 证据 → 置信度」的矩阵，比在这里一个个 `route_repositories` 更系统。
+
 ## 阶段二 — 分析
 
 前置：需要 `repository_id`，没有就先跑阶段一。
