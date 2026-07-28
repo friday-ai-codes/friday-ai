@@ -28,7 +28,24 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）
+## Current Milestone: v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 方案够深 + 过程可见）
+
+> 版本号避开发布轨已占用的 v0.18.0（见 STATE.md Blockers）。本里程碑源于一次生产实例（friday.yc345.tv / 10.8.8.153）的实证排查：用户在真实需求「高三提分专项」上拿到的技术方案，**根本不是技术方案流水线产出的**——两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`（`research_tasks=0`、`architect_merges=0`、`artifact=None`），agent 等不到就绕道 `create_coding_plan` 徒手编了一份 1890 字的方案。根因链已实测定位：haiku 档误配 `mimo-v2.5-pro[1m]` → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替。前置的仓库去重与 Space 归属治理已于立项前完成（261→259 仓、7 个团队空间、17 个幽灵点清除），Stage 1 超时外置已单独修复（`1c9ebdff`）。Phases 105+ 续号。
+
+**Goal:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，方案结构覆盖数据流编排 / 模块↔仓映射 / 新增改造对照 / 主动澄清，全过程对用户实时可见。
+
+**Target features（5 类需求）:**
+- **RELY 链路可靠性**：查清并修复 clarify 阶段卡死；编排未完成时禁止 `create_coding_plan` 冒充正式方案（或明确降级标注）；路由降级（`v2_stage0_only`）对用户可见而非静默吞掉；Stage 1 抗上游抖动与提速（实测单次 34–71s，偶发连接错误 0s 直接降级）。
+- **ROUTE 路由质量**：分层召回与展示（本项目关联仓 / 全局候选两组分别打分，跨 Space 结果标注「未关联当前平台，可能涉跨组协作」）；补排序信号（业务域匹配、活跃度连续量、`关键程度` 真正参与打分、技术栈新旧与架构适配度）；**多节点命中加成由线性改对数**——现行 `max_score×(1+0.1×min(hits-1,5))` 结构性偏袒大单体，`study-app`（62 应用）天然碾压 `onion-learning`，这正是它误胜的机制。
+- **DEPTH 方案深度**：merge 提示词 + MergedPlan schema + renderer 增加数据流转与业务编排叙事、模块↔仓库映射、新增/改造对照（含与历史功能如何配合）；删除自由发挥的分周实施计划（非模板产物，来自无约束的 `overall_plan` 自由文本）；放开第二轮 LLM 主动澄清，并消费 research 阶段已产出却无人消费的 `unclear_features`。
+- **SPINE 双脊柱合流**：`create_coding_plan` 保留执行半边（选仓 / 分支 / 确认编码 / 飞书导出——这是 SPA 里唯一能把方案变成多仓 Runner 任务的路径），砍掉 LLM 徒手创作半边，把编排产出的 `ArtifactVersion` 投影成 `CodingPlan` 喂给 TechPlanCard。
+- **OBS 过程可观测**：`ConvergenceSessionEvent`（已在发，只进 DB 审计）桥接到 chat SSE；plan_research 容器日志纳入 runtime 快照（现被 `source == "chat_deep_analysis"` 硬过滤挡住）；前端渲染阶段时间线。
+
+**Key context:** **验收有客观标尺**——golden set 首条即本次真实用例：「高三提分专项」路由结果须包含前端 `onion-learning`（而非 `study-app`）、后端 `study-course` + `study-user-status`（而非 `study-practice`）。**不删 `create_coding_plan`**：实证它是 SPA 唯一的编码执行入口，且 MCP 执行链路反过来还要创建 chat `CodingPlan` 做桥接；migration `0031` 曾刻意删除 `canonical_plan_id` 软链，本次是按新语义重新接上而非恢复旧设计。**方案结构提示词全是硬编码 Python 字符串**（`process_runtime/*.py`），不在 Prompt Center，改结构必须改代码、运行时调不了。**路由方案五原则**：召回优先于精排（Space 硬过滤曾把 `study-user-status` 挡在门外）、确定性优先于智能、分数必须可拆解、降级必须可见、幂等（temperature=0 + `(score, repo_id)` 稳定排序 + 输入输出落 `ConvergenceSessionEvent` 可回放）。权重外置到 `SystemSetting`，调参不发版。约束沿用：脱敏不可绕过、后台任务带 `initiated_by_user_id`、新增 LLM 赋 `call_source`、新增召回写 `RetrievalTrace`、async ORM 走 `sync_to_async`、i18n 默认中文。
+
+**显式 Out of Scope：** 仓库归属治理与去重（立项前已完成）；两套 CodingPlan 合表（沿用 v0.17.0 的 out of scope）；客户端仓（ios/android/harmony）接入 Friday；把 161 个未在飞书表覆盖的仓归类。
+
+## Previous Milestone: v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）— ✅ SHIPPED 2026-07-22
 
 > v0.16.3 外部依赖接入知识体系（Phases 96–99）已 shipped + 归档（审计 tech_debt，12/12 需求）。本里程碑源于全链路断点调研（三路并行代码探查：MCP 工具面 / 工作流与编排链路 / 知识沉淀与 skills 体系）：底座（RAG/编排/派发）已统一，但产物不回流知识体系、执行结果不回写业务侧、编码容器够不着服务端知识。完整调研分析见 `.planning/knowledge-loop/MILESTONE-PROPOSAL.md`。Phases 100+ 续号。
 
