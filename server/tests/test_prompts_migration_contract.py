@@ -6,6 +6,7 @@
 任一方改动都会触发测试红灯，强制开发者同步另一方。
 参考 v17.0 ALL_EVENT_TYPES frozenset 契约模式。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -66,9 +67,7 @@ class TestPromptMigrationContract:
             scope=PromptScope.SYSTEM,
             space=None,
         )
-        assert prompt.active_version is not None, (
-            f"Prompt {slug} has no active_version"
-        )
+        assert prompt.active_version is not None, f"Prompt {slug} has no active_version"
         db_body = prompt.active_version.body
         db_hash = _sha256(db_body)
 
