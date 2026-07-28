@@ -50,6 +50,10 @@ def _build_project_context_line(project: Any) -> str:
     关键行为契约：会话绑定了项目聚合根时，让 LLM 明确"这是一次项目级对话"，
     始终以本项目视角作答，优先使用项目上下文与项目专属只读工具，而不是仅从
     空间 / 代码仓库视角回答。
+
+    为什么要显式点名 start_feature_solution：本行装配在 coding_guidance 之前，
+    若只列只读工具，LLM 容易把「生成技术方案」做成读项目后自由写 markdown，
+    绕过正式编排产物。
     """
     name = (getattr(project, "name", "") or "").strip() or "未命名项目"
     space = getattr(project, "space", None)
@@ -62,15 +66,18 @@ def _build_project_context_line(project: Any) -> str:
         "中的项目概览、Feature 清单、需求与记忆，而不是泛泛地以空间或代码仓库视角作答。\n"
         "需要更多项目信息时，使用项目专属只读工具：get_project_overview（项目概览）、"
         "list_project_features / get_project_feature（Feature 清单与详情）、"
-        "list_project_artifacts / get_project_artifact（工件）、get_project_related（项目关联）。\n"
+        "list_project_artifacts / get_project_artifact（工件）、get_project_related（项目关联）；"
+        "这些只读工具只用于取上下文，不能替代方案产出。\n"
+        "用户要「技术方案 / 整体方案 / 成批功能点方案」时，调用 start_feature_solution"
+        "（会跑新增-vs-改造分类并强制确认关联仓库，产出分仓+整体方案）；"
+        "单个零散需求 → create_coding_plan；跨仓自然语言需求 → start_plan_research；"
+        "成批功能点 / 明确要技术方案 → start_feature_solution。\n"
         "涉及代码时优先定向检索（search_repository_code）与项目关联的仓库，"
         "不要列举整个空间的仓库或文件树；确需目录结构时先定位到具体仓库再看。"
     )
 
 
-async def _maybe_pack_project_context(
-    conversation: Conversation, project: Any = None
-) -> str:
+async def _maybe_pack_project_context(conversation: Conversation, project: Any = None) -> str:
     """会话绑定项目聚合根时打包项目上下文（RECALL-02/03，fail-closed + best-effort）。
 
     - 无绑定项目 / 无会话 owner → 返回空串（无法判定成员，fail-closed）。
@@ -90,18 +97,14 @@ async def _maybe_pack_project_context(
         from services.project_context_packer import pack_project_context
 
         if project is None:
-            project = (
-                await Project.objects.select_related("space").filter(pk=project_id).afirst()
-            )
+            project = await Project.objects.select_related("space").filter(pk=project_id).afirst()
         if project is None:
             return ""
         user_model = get_user_model()
         user = await user_model.objects.filter(pk=user_id).afirst()
         if user is None:
             return ""
-        packed = await pack_project_context(
-            project, user, conversation_id=str(conversation.id)
-        )
+        packed = await pack_project_context(project, user, conversation_id=str(conversation.id))
         return packed.text
     except Exception:  # noqa: BLE001 — 项目上下文注入 best-effort，绝不反噬 chat
         return ""
@@ -186,7 +189,10 @@ async def build_sdk_config(
 
     # implementation Task 7: _build_system_prompt 改为 async，调用处必须 await
     system_prompt = await _build_system_prompt(
-        project_name, project_id, role=role, force_deep_analysis=force_deep_analysis,
+        project_name,
+        project_id,
+        role=role,
+        force_deep_analysis=force_deep_analysis,
         project_context_line=effective_project_context_line,
     )
 
