@@ -319,6 +319,20 @@ LLM_CONCURRENCY_LEASE_TTL_SECONDS = env.int(
 )
 
 # =============================================================================
+# 仓库路由 v2（RepoRouterV2）Stage 1 调参
+# =============================================================================
+# Stage 1 是 LLM 树推理，超时即静默降级为 Stage 0（置信度全 low、auto_selected
+# 恒 false，下游强制确认因此无差别触发）。默认 30s 对推理型模型偏紧：实测
+# mimo-v2.5-pro 单次 80s、mimo-v2.5 在 12 候选下也 >30s，导致 Stage 1 从未成功。
+# 三个值均可用环境变量按供应商速度调整，不必改代码发版。
+REPO_ROUTER_STAGE1_TIMEOUT_SECONDS = env.float("REPO_ROUTER_STAGE1_TIMEOUT_SECONDS", default=90.0)
+# 送进 Stage 1 prompt 的候选仓数量上限。Stage 0 仍聚合更多候选供降级时使用，
+# 这里只收窄"喂给 LLM"的部分——prompt 越短越快，且尾部低分候选本就不会被选中。
+REPO_ROUTER_STAGE1_MAX_CANDIDATES = env.int("REPO_ROUTER_STAGE1_MAX_CANDIDATES", default=8)
+# 每个候选仓在 prompt 里展示的命中节点数上限。
+REPO_ROUTER_STAGE1_HITS_PER_REPO = env.int("REPO_ROUTER_STAGE1_HITS_PER_REPO", default=4)
+
+# =============================================================================
 # 可恢复任务（断点恢复）
 # =============================================================================
 # 真相源 = DB（Postgres/SQLite）：长任务（索引 / 图谱构建等）登记到 ResumableTask，
