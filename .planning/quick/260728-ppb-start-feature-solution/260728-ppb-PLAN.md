@@ -20,8 +20,8 @@ requirements: [QUICK-PPB]
 must_haves:
   truths:
     - "部署后执行 `python manage.py migrate prompts` 时，0011 把已部署实例上漂移的 `chat.coding_guidance` / `chat.strategy.default` active body 幂等 resync 到当前 Python 字面量；resync 后 active body 含 `start_feature_solution`"
-    - "`python manage.py check_builtin_prompt_drift` 在容器内可跑：零漂移 exit 0；有漂移打印 slug 清单并以非零退出；`--fix` 走与 resync migration 相同的 append+切 active"
-    - "slug→常量映射只有 `prompts.builtin_contract.BUILTIN_CONTRACT_SLUGS` 一处来源；契约测试与 drift command 都从该模块导入，禁止再维护第二份清单"
+    - "`check_builtin_prompt_drift` 的 exit code 语义由 pytest（`call_command` + django_db）保证：零漂移成功、有漂移非零/`CommandError`/`SystemExit`、`--fix` 走 append+切 active；生产/运维验证仅在 `migrate prompts` 之后对目标库执行该命令并期望 exit 0——不以默认开发库零漂移作为任务完成条件"
+    - "slug→常量映射的运行时唯一来源是 `prompts.builtin_contract.BUILTIN_CONTRACT_SLUGS`（契约测试与 drift command 均从此导入）；测试侧另有 `REQUIRED_SLUGS` 子集锁定断言防清单静默缩水，不是第二份完整映射副本"
     - "项目级对话 `_build_project_context_line` 明确：成批功能点 / 明确要技术方案 → `start_feature_solution`；只读项目工具只取上下文不能替代方案产出；与 `_CODING_GUIDANCE` 三路分流一致（零散→`create_coding_plan`，跨仓自然语言→`start_plan_research`，成批/技术方案→`start_feature_solution`）"
     - "未改 `chat_runner.py` 工具白名单；未做 task_category 兜底路由 / 澄清护栏（第二批）"
   artifacts:
@@ -47,8 +47,8 @@ must_haves:
       pattern: "BUILTIN_CONTRACT_SLUGS"
     - from: "test_prompts_migration_contract.py"
       to: "prompts.builtin_contract.BUILTIN_CONTRACT_SLUGS"
-      via: "import 共享清单，不再本地定义 CONTRACT_SLUGS 副本"
-      pattern: "from prompts.builtin_contract import"
+      via: "import 共享清单 + REQUIRED_SLUGS 子集锁定断言"
+      pattern: "REQUIRED_SLUGS"
     - from: "chat.config._build_project_context_line"
       to: "_build_system_prompt project_line 装配位（coding_guidance 之前）"
       via: "无 slug，改动即对所有实例生效"
@@ -67,6 +67,7 @@ Output: prompts `0011` data migration + `builtin_contract` 单一来源 + `check
 - 不做 task_category 枚举化 / 兜底路由 / 澄清护栏（第二批）。
 - 不碰生产数据库；migration 只由部署流程的 `migrate` 执行。
 - 默认不 resync 未漂移的 chat slug / `ai_node.*` / `aux.*` / `repo.summary_generator`（仅处理已确认漂移的两个 chat slug）。
+- Task A / Task C 不加日志埋点：一次性 data migration 不走请求链路；Task C 仅改静态引导文案，无新 API/LLM/召回入口（勿为「合规」硬塞 logger）。Task B 的 command 日志要求仍适用。
 </objective>
 
 <execution_context>
@@ -112,11 +113,12 @@ Output: prompts `0011` data migration + `builtin_contract` 单一来源 + `check
 - docstring 用中文解释 why（DB hit 路径使 fallback 失效；已部署实例停在旧 seed），不解释 what 机械步骤。
 - 不要改 Python 字面量本身；migration 只把 DB 拉齐到现有字面量。
 - 配套测试照 `test_chat_strategy_route_first_migration.py`：`importlib` 加载 0011 模块，fixture 把两个 slug 的 active body 写成 stale，断言 `forwards` 后等于常量且 coding_guidance 含 `start_feature_solution`；再测幂等不增 version。
+- 不加 structlog 埋点（一次性 data migration，不走请求链路；与 0006/0008/0009 一致）。
 
-生产生效方式（写进 SUMMARY，勿在本任务连生产库）：升级部署跑 `cd server && uv run python manage.py migrate prompts` 时 0011 自动执行；验证可在部署后查 active body 是否含 `start_feature_solution`，或跑 Task B 的 `check_builtin_prompt_drift`（应 exit 0）。
+生产生效方式（写进 SUMMARY，勿在本任务连生产库）：升级部署跑 `cd server && uv run python manage.py migrate prompts` 时 0011 自动执行；验证可在部署后查 active body 是否含 `start_feature_solution`，或在 migrate 之后对目标库跑 `check_builtin_prompt_drift`（应 exit 0）。
   </action>
   <verify>
-    <automated>cd server && uv run pytest tests/test_resync_coding_guidance_feature_solution.py -q && uv run ruff check prompts/migrations/0011_resync_coding_guidance_feature_solution.py tests/test_resync_coding_guidance_feature_solution.py && uv run ruff format --check prompts/migrations/0011_resync_coding_guidance_feature_solution.py tests/test_resync_coding_guidance_feature_solution.py</automated>
+    <automated>cd server && uv run pytest tests/test_resync_coding_guidance_feature_solution.py -q --reuse-db && uv run ruff check prompts/migrations/0011_resync_coding_guidance_feature_solution.py tests/test_resync_coding_guidance_feature_solution.py && uv run ruff format --check prompts/migrations/0011_resync_coding_guidance_feature_solution.py tests/test_resync_coding_guidance_feature_solution.py</automated>
   </verify>
   <done>0011 存在且依赖 0010；两 slug 幂等 resync；测试红→绿证明 stale→current（含 start_feature_solution）与幂等；ruff 通过。</done>
 </task>
@@ -126,16 +128,21 @@ Output: prompts `0011` data migration + `builtin_contract` 单一来源 + `check
   <files>server/prompts/builtin_contract.py, server/prompts/management/__init__.py, server/prompts/management/commands/__init__.py, server/prompts/management/commands/check_builtin_prompt_drift.py, server/tests/test_prompts_migration_contract.py, server/tests/test_check_builtin_prompt_drift.py</files>
   <behavior>
     - `detect_builtin_prompt_drift()`：DB active body sha256 ≠ Python 常量 → 返回含该 slug 的漂移项；一致 → 空列表
-    - `check_builtin_prompt_drift` 无漂移 stdout 说明并 SystemExit/CommandError 路径外 exit code 0；有漂移打印清单并以非零退出（`CommandError` 或 `sys.exit(1)`，与仓库既有 management command 风格一致）
-    - `--fix`：对漂移 slug 执行 append PromptVersion + 切 active；修完后再 detect 应为空
-    - `test_prompts_migration_contract.py` 从 `prompts.builtin_contract` 导入清单，本地不再定义第二份 `CONTRACT_SLUGS`
+    - `check_builtin_prompt_drift` 经 `call_command` 测得：无漂移成功返回；有漂移打印清单并以非零语义退出（断言 `pytest.raises(CommandError)` 或 `pytest.raises(SystemExit)`，与仓库既有 management command 风格一致）
+    - `--fix`：对漂移 slug 执行 append PromptVersion + 切 active；修完后再 detect 应为空；`call_command(..., fix=True)` 后再次无参调用成功
+    - `test_prompts_migration_contract.py` 从 `prompts.builtin_contract` 导入 `BUILTIN_CONTRACT_SLUGS`，本地不再定义完整映射副本；另保留测试侧 `REQUIRED_SLUGS`（`PromptSlugs.*`），断言 `REQUIRED_SLUGS <= {c[0] for c in BUILTIN_CONTRACT_SLUGS}`
   </behavior>
   <action>
 选定方案：**Django management command**（不用 `render_prompt` 热路径告警）。理由：零热路径风险、可在容器直接跑、非零退出码便于运维/CI、可选 `--fix` 与 migration 同逻辑；热路径告警即使采样仍增加 chat 主链路耦合，本任务优先运维可观测。
 
-1. 新建 `server/prompts/builtin_contract.py` 作为单一来源：
+循环依赖硬约束（必须遵守）：
+1. `server/prompts/builtin_contract.py` **禁止**顶层 `import chat.*` / `from chat... import ...`（`chat.conversation_service` 顶层已 `from prompts.services import render_prompt`，顶层互引会成环）。
+2. Python 常量解析**只**允许在 `resolve_builtin_constant` 函数内用 `importlib.import_module`（惰性加载）。
+3. `prompts/services.py` / `render_prompt` **不得** import `builtin_contract`（热路径与运维侧隔离）。
+
+1. 新建 `server/prompts/builtin_contract.py` 作为运行时单一来源：
    - 把现有 `CONTRACT_SLUGS` 原样迁入，命名为 `BUILTIN_CONTRACT_SLUGS`（元组形状不变：`(slug, module_path, attr_name, dict_key_or_None)`）。
-   - 提供 `resolve_builtin_constant(module_path, attr_name, dict_key)`（从现有测试 `_resolve_constant` 抽出）。
+   - 提供 `resolve_builtin_constant(module_path, attr_name, dict_key)`（从现有测试 `_resolve_constant` 抽出；仅函数内 `importlib`）。
    - 提供 `detect_builtin_prompt_drift()`：对每个 slug 查 `Prompt.objects.select_related("active_version").get(slug=..., scope=PromptScope.SYSTEM, space=None)`，比较 body 与常量字节级；返回结构化漂移列表（至少含 slug、py_sha256、db_sha256；可含 body 长度）。缺 Prompt / 无 active_version 也视为漂移项（带 reason），不要静默跳过。
    - 提供 `resync_builtin_prompt_drift(slugs: list[str] | None = None)`：对指定或全部漂移项执行与 migration 相同的 append+切 active（用 ORM 现模型，字段名 `space`）。返回修复的 slug 列表。中文 docstring 只写 why。
 
@@ -144,17 +151,21 @@ Output: prompts `0011` data migration + `builtin_contract` 单一来源 + `check
    - `--fix`：先 detect，再 resync，再 detect 校验；仍有漂移则非零退出。
    - 遵守 observability-logging.mdc：`structlog.get_logger(__name__)`；事件名 snake_case（如 `builtin_prompt_drift_check_started` / `builtin_prompt_drift_check_completed` / `builtin_prompt_drift_detected` / `builtin_prompt_drift_fix_completed`）；kv 字段（slug、drift_count、duration_ms、fixed_count）；`category="sampling"`、`component="prompts"`；`user_id`/`initiated_by` 记 `system`；禁止把完整 prompt body 打进日志（只打 slug / hash / length）。观测 best-effort，`except: pass` 不得打断命令主流程的退出码语义（日志失败吞掉，业务退出码仍按漂移结果）。
    - help / 模块 docstring 中文说明 why（契约测试 fresh migrate 抓不住已部署漂移）。
+   - **任务 verify 禁止**对默认开发库裸跑该命令（settings 默认库 ≠ pytest test DB；未 migrate / 生产同款漂移都会非零）。exit code 语义一律由 pytest `call_command` 覆盖。
 
-3. 改 `server/tests/test_prompts_migration_contract.py`：删除本地 `CONTRACT_SLUGS` / `_resolve_constant`，改为 `from prompts.builtin_contract import BUILTIN_CONTRACT_SLUGS as CONTRACT_SLUGS, resolve_builtin_constant`（或直接用新名改测试引用），行为不变。
+3. 改 `server/tests/test_prompts_migration_contract.py`：
+   - 删除本地完整 `CONTRACT_SLUGS` / `_resolve_constant`，改为 `from prompts.builtin_contract import BUILTIN_CONTRACT_SLUGS, resolve_builtin_constant`。
+   - 新增测试侧 `REQUIRED_SLUGS: frozenset[str]`，用 `PromptSlugs.*` 常量锁定至少：`CHAT_CODING_GUIDANCE`、`CHAT_STRATEGY_DEFAULT`、`CHAT_STRATEGY_DEEP_ANALYSIS`、五个 `CHAT_SYSTEM_*`（developer/pm/designer/qa/general）、`AUX_TITLE_GENERATION`、`AI_NODE_VARIABLE_EXTRACTOR`、`AI_NODE_CODE_REVIEW`。
+   - 断言 `REQUIRED_SLUGS <= {c[0] for c in BUILTIN_CONTRACT_SLUGS}`，防止从共享清单删 slug 后测试与命令同时变绿、静默缩水覆盖面。
 
-4. 新建 `server/tests/test_check_builtin_prompt_drift.py`：用 `call_command` + 故意 stale body 断言非零退出与输出含 slug；`--fix` 后 body 对齐且再跑 exit 0。
+4. 新建 `server/tests/test_check_builtin_prompt_drift.py`：用 `django.core.management.call_command` + `@pytest.mark.django_db` + 故意 stale body；断言漂移时 `pytest.raises(CommandError)` 或 `pytest.raises(SystemExit)`（按实现选型）且输出含 slug；`--fix`（`call_command(..., fix=True)`）后 body 对齐且再次无参调用成功。不要依赖默认 `friday.db`。
 
-不要在 `render_prompt` 加告警。不要复制第二份 slug 清单。
+不要在 `render_prompt` 加告警。不要维护第二份完整 slug→常量映射副本（`REQUIRED_SLUGS` 仅是 slug 集合锁定，不含 module/attr）。
   </action>
   <verify>
-    <automated>cd server && uv run pytest tests/test_prompts_migration_contract.py tests/test_check_builtin_prompt_drift.py -q && uv run python manage.py check_builtin_prompt_drift && uv run ruff check prompts/builtin_contract.py prompts/management/commands/check_builtin_prompt_drift.py tests/test_prompts_migration_contract.py tests/test_check_builtin_prompt_drift.py && uv run ruff format --check prompts/builtin_contract.py prompts/management/commands/check_builtin_prompt_drift.py tests/test_prompts_migration_contract.py tests/test_check_builtin_prompt_drift.py</automated>
+    <automated>cd server && uv run pytest tests/test_prompts_migration_contract.py tests/test_check_builtin_prompt_drift.py -q --reuse-db && uv run ruff check prompts/builtin_contract.py prompts/management/commands/check_builtin_prompt_drift.py tests/test_prompts_migration_contract.py tests/test_check_builtin_prompt_drift.py && uv run ruff format --check prompts/builtin_contract.py prompts/management/commands/check_builtin_prompt_drift.py tests/test_prompts_migration_contract.py tests/test_check_builtin_prompt_drift.py</automated>
   </verify>
-  <done>共享契约模块存在；契约测试仍绿；command 可在 server/ 下直接跑；漂移非零退出、`--fix` 可修；日志字段合规且不落 body 明文；ruff 通过。</done>
+  <done>共享契约模块存在；契约测试仍绿且含 REQUIRED_SLUGS 锁定；command 的零漂移/有漂移/非零退出/`--fix` 语义由 pytest `call_command` 保证（不以默认开发库零漂移为完成条件）；循环依赖硬约束满足；日志字段合规且不落 body 明文；ruff 通过。</done>
 </task>
 
 <task type="auto" tdd="true">
@@ -177,10 +188,11 @@ Output: prompts `0011` data migration + `builtin_contract` 单一来源 + `check
 - 该函数无 Prompt Center slug，改动即对所有实例生效；无需 migration。
 - 已 grep：当前无测试断言 `_build_project_context_line` 全文。新建 `server/tests/test_project_context_line.py`，用简单 namespace/Mock project 对象测上述 behavior（勿依赖 DB）。
 - 注释只解释 why（项目级对话装配在 coding_guidance 之前，缺方案工具点名会导致 LLM 只走只读工具）；中文。
+- 不加 structlog 埋点（仅改静态引导文案，无新 API/LLM/召回入口）。
 - 禁止改 `chat_runner.py`。
   </action>
   <verify>
-    <automated>cd server && uv run pytest tests/test_project_context_line.py -q && uv run ruff check chat/config.py tests/test_project_context_line.py && uv run ruff format --check chat/config.py tests/test_project_context_line.py</automated>
+    <automated>cd server && uv run pytest tests/test_project_context_line.py -q --reuse-db && uv run ruff check chat/config.py tests/test_project_context_line.py && uv run ruff format --check chat/config.py tests/test_project_context_line.py</automated>
   </verify>
   <done>`_build_project_context_line` 含 `start_feature_solution` 与只读工具边界；测试覆盖关键子串；与 coding_guidance 三路分流一致；ruff 通过。</done>
 </task>
@@ -208,16 +220,15 @@ Output: prompts `0011` data migration + `builtin_contract` 单一来源 + `check
 </threat_model>
 
 <verification>
-全量本任务相关测试与命令：
+开发验证（一次 pytest，加 `--reuse-db` 避免契约测试 fresh migrate ~200s；若测试库结构异常可用 `--create-db` 重建一次）：
 
 ```bash
 cd server && uv run pytest \
   tests/test_resync_coding_guidance_feature_solution.py \
   tests/test_prompts_migration_contract.py \
   tests/test_check_builtin_prompt_drift.py \
-  tests/test_project_context_line.py -q
+  tests/test_project_context_line.py -q --reuse-db
 
-cd server && uv run python manage.py check_builtin_prompt_drift
 cd server && uv run ruff check \
   prompts/migrations/0011_resync_coding_guidance_feature_solution.py \
   prompts/builtin_contract.py \
@@ -229,14 +240,22 @@ cd server && uv run ruff check \
   tests/test_project_context_line.py
 ```
 
-生产验证（部署流水线执行，本任务不直连生产库）：`migrate prompts` 后 `check_builtin_prompt_drift` exit 0；或 SQL/admin 确认 `chat.coding_guidance` active body 含 `start_feature_solution`。
+### 生产/运维验证（部署 migrate 之后；本任务不直连生产库）
+
+仅在目标库已应用 prompts migrations（含 0011）之后执行；期望 exit 0：
+
+```bash
+cd server && uv run python manage.py migrate prompts && uv run python manage.py check_builtin_prompt_drift
+```
+
+或 SQL/admin 确认 `chat.coding_guidance` active body 含 `start_feature_solution`。不要在未 migrate 的默认开发库上把该命令 exit 0 当作任务完成条件。
 </verification>
 
 <success_criteria>
 - 0011 migration 幂等 resync 两个漂移 slug；部署 migrate 后生产 DB 注入 `start_feature_solution` 指引
-- `check_builtin_prompt_drift` 可在容器检测漂移并以非零退出；`--fix` 可修；契约清单单一来源
-- 项目级对话 context line 引导技术方案工具，且不与 coding_guidance 三路分流冲突
-- 未改工具白名单；未做第二批路由/护栏；ruff 通过；相关 pytest 绿
+- `check_builtin_prompt_drift` 的零漂移/有漂移/`--fix` 退出语义由 pytest `call_command` 保证；运行时契约清单单一来源 + 测试侧 `REQUIRED_SLUGS` 防缩水；生产验证在 migrate 之后跑该命令期望 exit 0
+- 项目级对话 context line 引导方案工具，且不与 coding_guidance 三路分流冲突
+- 未改工具白名单；未做第二批路由/护栏；ruff 通过；相关 pytest（`--reuse-db`）绿
 </success_criteria>
 
 <output>
