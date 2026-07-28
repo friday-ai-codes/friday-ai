@@ -1,20 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.17.0
-milestone_name: 统一知识库与全链路联动
-current_phase: 104
-current_phase_name: 工具面收口
-status: shipped
-stopped_at: v0.17.0 里程碑完成归档（complete-milestone）——里程碑审计 tech_debt（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER，报告归档 milestones/v0.17.0-MILESTONE-AUDIT.md）；REQUIREMENTS 19/19 勾选 + Traceability 全 Complete 并归档 milestones/v0.17.0-REQUIREMENTS.md；ROADMAP v0.17.0 详情快照归档 milestones/v0.17.0-ROADMAP.md 并折叠为 <details>；MILESTONES.md 补 v0.17.0 条目；打 annotated tag v0.17.0。下一步：`$gsd-new-milestone` 立项下一里程碑。
-last_updated: "2026-07-26T14:50:00.000Z"
-last_activity: 2026-07-26
-last_activity_desc: ship 后维护期（07-24/07-25，16 commits，未走 GSD 流程）——测试与生产演进对齐（修复 69 个漂移失败）、仓库可见性授权收敛、runner/task 容器修复、去公司专有标识；发布轨已发 v0.18.0（非 GSD 里程碑）
+milestone: v0.19.0
+milestone_name: 技术方案可信度
+status: planning
+last_updated: "2026-07-28T10:35:59.760Z"
+last_activity: 2026-07-28
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 18
-  completed_plans: 18
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -28,12 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: v0.17.0（Phases 100–104）全部 complete 并归档 — ✅ SHIPPED 2026-07-22
-Plan: complete-milestone 归档完成（ROADMAP/REQUIREMENTS/AUDIT 入 milestones/ + tag v0.17.0）
-Status: shipped / between-milestones——下一里程碑待立项
-Last activity: 2026-07-27 — Completed quick task 260727-het：新增 `friday-routing` 技能，把「仓库路由 / 架构落点判定」从 `friday-solution` 的服务端三段式黑盒拆成纯 agent 驱动的独立技能（自编排 15 个原子 MCP 检索工具做七阶段调研，唯一产物是七列路由矩阵；无证据降级 `unclear`，澄清必须批量+带具体选项+标推荐项；结论经 `report_project_knowledge` 按分支沉淀）；7 处接入面同步、技能计数 6→7，顺带补齐 260726-uid 漏掉的 README `friday-solution` 行；主仓 1 提交（b02bf9ce）+ skills submodule 2 提交（dc3b012 / 755aae2，**仍未推远端、npm 未发版**）；守卫回归 skills snapshot 5 passed + task 双源 hash 6 passed。真实环境（真 feature list 跑一遍矩阵）未验证。此前 2026-07-26 — 260726-uid：feature list 技术方案能力接入面打通——MCP 三工具（两段式）+ friday-solution Skill + 对话入口，三种取数源（项目 / 分支 / 贴原文），6 个原子提交 + 两个 submodule 提交（skills 0fb4d87 / mcp ca7f1ea，**待推远端发版**）；修两个静默失效缺陷（组装器排序致强制确认失效、对话漏传 conversation_id 致确认卡不渲染）；新增 22 个测试，2167 passed 回归全绿。真实环境（真 LLM / 真容器）端到端未验证。此前 260726-t2f：feature list 技术方案生成能力（后端链路）——technical_plan 编排插入 classify stage（功能点新增/改造判定，证据过滤防幻觉）+ feature_list 入口模式 + 强制仓库确认（确定性题组装），2 个原子提交（2e27493c / c064215a），新增 23 个单测，services/delivery 1254 + mcp_tools/workflows 856 + chat/编排 580 全绿。**该链路尚无对外入口**，MCP 三工具 / Skill 文档 / feature list 取数适配层留待下一个 quick 任务。此前同日 260726-q3z：修复知识库检索面「只进不出」盲区（MCP 产物 project_id="" 不可召回 + members_only 项目文档成员 RAG 全黑），3 个原子提交（f1505eb7 / cdb56b1e / 9b3b59bc），knowledge 全套 425 passed + 消费方/权限回归 283 passed。此前 07-25 为 ship 后维护期（07-24/07-25，16 commits，直接提交未走 GSD 流程，故无 quick 任务目录）：测试与生产演进对齐（`8cd6ac018` 修 69 个漂移失败、`b05e5e591` 消除测试间状态污染与后台任务泄漏、`b797cd642` 让失效 xfail 重新有牙齿、`f3d77d45d` 补 delivery.Artifact INV-6 守卫）、`57d554f9d` 仓库敏感动作授权 + 按空间成员隔离可见性、`72218198f` 空间仓库关联端点 500→404、`8f14d7f54` structlog processors 列表复用、`da86a3d41` 补回 Chassis v2 漏搬的方案生成侧摄取接线、`71f9dd7a9` runner PID 1 复用误判 crash 循环、`213e003bb` task explore 排除 `.friday/`、`45f12a321` 去公司专有标识改可配置 env、`6687fba2f` WORKER_CONCURRENCY 可配置、CI 修 submodule checkout 与 skills 快照守卫。**v0.17.0 审计记录的测试腐化已在此期间全部修复**（`tests/knowledge/test_triggers.py` + `tests/services/test_feishu_im.py` + `tests/test_sub_step_coding_node.py` 2026-07-26 复跑 79 passed），CI 最新 main 绿。
-
-Progress: [██████████] 100% (5/5 phases)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-07-28 — Milestone v0.19.0 started
 
 ## Milestone Overview (v0.17.0 — Phases 100–104 — ✅ SHIPPED 2026-07-22)
 
