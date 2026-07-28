@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -41,7 +42,20 @@ Confidence = Literal["high", "medium", "low"]
 STAGE0_NODE_K = 50
 STAGE0_REPO_K = 12
 DEPRECATED_PENALTY = 0.5  # 活跃度=疑似废弃 的聚合分惩罚系数
-LLM_TIMEOUT_SECONDS = 30.0
+
+# Stage 1 调参从 settings 读（支持环境变量覆盖），取值时机为调用时而非导入时，
+# 便于按供应商速度调整而不必改代码发版。默认见 friday/settings.py。
+_STAGE1_DEFAULTS = {
+    "REPO_ROUTER_STAGE1_TIMEOUT_SECONDS": 90.0,
+    "REPO_ROUTER_STAGE1_MAX_CANDIDATES": 8,
+    "REPO_ROUTER_STAGE1_HITS_PER_REPO": 4,
+}
+
+
+def _stage1_conf(key: str):
+    from django.conf import settings
+
+    return getattr(settings, key, _STAGE1_DEFAULTS[key])
 
 
 @dataclass
@@ -120,7 +134,14 @@ class RepoRouterV2:
                 query, stage0_candidates, repo_buckets, top_k
             )
         except Exception as exc:  # noqa: BLE001 — LLM 任意失败都降级 Stage 0
-            logger.warning("repo_router_v2_llm_failed", error=str(exc))
+            logger.warning(
+                "repo_router_v2_stage1_failed",
+                error_type=type(exc).__name__,
+                error=str(exc)[:200],
+                timeout_seconds=_stage1_conf("REPO_ROUTER_STAGE1_TIMEOUT_SECONDS"),
+                category="sampling",
+                component="repo_router_v2",
+            )
             llm_candidates = None
 
         if not llm_candidates:
@@ -263,6 +284,14 @@ class RepoRouterV2:
 
         resolved = await ProviderConfigService.aresolve_or_error()
         if isinstance(resolved, ProviderMissingError):
+            # 静默返回 None 会让上层降级 Stage 0 且无任何痕迹——路由质量塌成全 low
+            # 却查不出原因（线上实测踩过）。降级原因必须留证。
+            logger.warning(
+                "repo_router_v2_stage1_skipped",
+                reason="provider_missing",
+                category="sampling",
+                component="repo_router_v2",
+            )
             return None
 
         # 快速模型解析：优先系统设置里 Claude Code 模型映射的 haiku 档（用户可配的"小/快模型"），
@@ -280,16 +309,31 @@ class RepoRouterV2:
         if not model_name:
             model_name = (resolved.extra or {}).get("default_model", "")
         if not model_name:
+            logger.warning(
+                "repo_router_v2_stage1_skipped",
+                reason="no_model_configured",
+                category="sampling",
+                component="repo_router_v2",
+            )
             return None
+
+        timeout_seconds = float(_stage1_conf("REPO_ROUTER_STAGE1_TIMEOUT_SECONDS"))
+        max_candidates = int(_stage1_conf("REPO_ROUTER_STAGE1_MAX_CANDIDATES"))
+        hits_per_repo = int(_stage1_conf("REPO_ROUTER_STAGE1_HITS_PER_REPO"))
+
         # 快速失败即降级：max_retries=0 —— 路由是启发式，超时无需 3× 重试空等
         # （旧行为：langchain 默认 max_retries=2 → 30s×3≈90s 才放弃再回落 Stage 0）。
         model = build_chat_model(
             resolved,
             model_name,
             streaming=False,
-            timeout_seconds=LLM_TIMEOUT_SECONDS,
+            timeout_seconds=timeout_seconds,
             max_retries=0,
         )
+
+        # 只把高分候选喂给 LLM：prompt 越短越快，尾部低分候选本就选不中；
+        # Stage 0 仍保留完整候选集供降级时使用。
+        stage0_candidates = stage0_candidates[:max_candidates]
 
         context_blocks: list[str] = []
         for idx, c in enumerate(stage0_candidates, 1):
@@ -300,7 +344,7 @@ class RepoRouterV2:
             }
             if facets:
                 lines.append(f"分面: {json.dumps(facets, ensure_ascii=False)}")
-            for hit in c["hits"][:6]:
+            for hit in c["hits"][:hits_per_repo]:
                 p = hit.get("payload", {})
                 node_path = p.get("node_path", "")
                 summary = p.get("summary", "")
@@ -329,16 +373,31 @@ class RepoRouterV2:
             content=f"用户需求：{query}\n\n候选仓库及命中节点：\n\n" + "\n\n".join(context_blocks)
         )
 
-        # 硬性上限：不管客户端/代理如何处理超时，Stage 1 绝不超过 LLM_TIMEOUT_SECONDS。
+        # 硬性上限：不管客户端/代理如何处理超时，Stage 1 绝不超过配置的超时值。
         # 超时抛 TimeoutError → 上层 route() 捕获后降级 Stage 0（0.2s 出结果），
         # 避免慢模型把整个"仓库分级路由"拖成分钟级。
-        response = await asyncio.wait_for(
-            model.ainvoke([system, human]), timeout=LLM_TIMEOUT_SECONDS
-        )
+        started = time.monotonic()
+        response = await asyncio.wait_for(model.ainvoke([system, human]), timeout=timeout_seconds)
         from agents.llm_factory import content_to_text
 
         parsed = cls._parse_llm_json_array(content_to_text(response.content))
+        logger.info(
+            "repo_router_v2_stage1_completed",
+            model=model_name,
+            candidate_count=len(stage0_candidates),
+            parsed_count=len(parsed or []),
+            duration_ms=int((time.monotonic() - started) * 1000),
+            category="sampling",
+            component="repo_router_v2",
+        )
         if not parsed:
+            logger.warning(
+                "repo_router_v2_stage1_skipped",
+                reason="unparsable_llm_output",
+                model=model_name,
+                category="sampling",
+                component="repo_router_v2",
+            )
             return None
 
         by_id = {c["repo_id"]: c for c in stage0_candidates}
