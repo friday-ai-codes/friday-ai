@@ -70,4 +70,51 @@
 
 ## Traceability
 
-<!-- 由 gsd-roadmapper 填充：REQ-ID → Phase -->
+<!-- 由 gsd-roadmapper 填充：REQ-ID → Phase。相位定义见 ROADMAP.md（Phases 105–110）。 -->
+
+**Coverage: 24/24 — 每条需求恰好映射到一个相位，无孤儿、无重复。**
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| RELY-04 | Phase 105 编排解锁与评估标尺 | Pending |
+| ROUTE-07 | Phase 105 编排解锁与评估标尺 | Pending |
+| ROUTE-08 | Phase 105 编排解锁与评估标尺 | Pending |
+| ROUTE-09 | Phase 105 编排解锁与评估标尺 | Pending |
+| ROUTE-03 | Phase 106 多信号打分函数重构 | Pending |
+| ROUTE-04 | Phase 106 多信号打分函数重构 | Pending |
+| ROUTE-05 | Phase 106 多信号打分函数重构 | Pending |
+| ROUTE-06 | Phase 106 多信号打分函数重构 | Pending |
+| ROUTE-01 | Phase 107 分层呈现与链路韧性 | Pending |
+| ROUTE-02 | Phase 107 分层呈现与链路韧性 | Pending |
+| RELY-02 | Phase 107 分层呈现与链路韧性 | Pending |
+| RELY-03 | Phase 107 分层呈现与链路韧性 | Pending |
+| RELY-05 | Phase 107 分层呈现与链路韧性 | Pending |
+| DEPTH-01 | Phase 108 方案深度 | Pending |
+| DEPTH-02 | Phase 108 方案深度 | Pending |
+| DEPTH-03 | Phase 108 方案深度 | Pending |
+| DEPTH-04 | Phase 108 方案深度 | Pending |
+| DEPTH-05 | Phase 108 方案深度 | Pending |
+| SPINE-01 | Phase 109 双脊柱合流 | Pending |
+| SPINE-02 | Phase 109 双脊柱合流 | Pending |
+| RELY-01 | Phase 109 双脊柱合流 | Pending |
+| OBS-01 | Phase 110 过程可观测 | Pending |
+| OBS-02 | Phase 110 过程可观测 | Pending |
+| OBS-03 | Phase 110 过程可观测 | Pending |
+
+**按相位汇总：**
+
+| Phase | Requirements | 数量 |
+|-------|--------------|------|
+| 105 编排解锁与评估标尺 | RELY-04, ROUTE-07, ROUTE-08, ROUTE-09 | 4 |
+| 106 多信号打分函数重构 | ROUTE-03, ROUTE-04, ROUTE-05, ROUTE-06 | 4 |
+| 107 分层呈现与链路韧性 | ROUTE-01, ROUTE-02, RELY-02, RELY-03, RELY-05 | 5 |
+| 108 方案深度 | DEPTH-01, DEPTH-02, DEPTH-03, DEPTH-04, DEPTH-05 | 5 |
+| 109 双脊柱合流 | SPINE-01, SPINE-02, RELY-01 | 3 |
+| 110 过程可观测 | OBS-01, OBS-02, OBS-03 | 3 |
+| **合计** | | **24** |
+
+**跨类别组合的理由（不按 RELY/ROUTE/DEPTH/SPINE/OBS 机械切分）：**
+
+- **RELY-04 与 ROUTE-07/08/09 同相位**：四者共用同一套分数管线改造（去截断 → 分数分解落 trace → 稳定排序与快照回放 → 离线 harness），且 RELY-04 是解开编排死锁的最短路径、ROUTE-08 是后续所有排序改动的判定标尺，合成一个"解锁性"前置相位。
+- **RELY-02/03/05 与 ROUTE-01/02 同相位**：都是"用户看到的东西不再骗人"——分组与跨组标注、降级可见、澄清必达、Stage 1 有界，共享同一批出口面与事件面改造。
+- **RELY-01 与 SPINE-01/02 同相位**：RELY-01「方案一定来自完整编排链路」正是移除徒手创作路径（SPINE-02）后的对外表述，两者同一改动的两面，且都必须等 SPINE-01 的替代路径先成立。

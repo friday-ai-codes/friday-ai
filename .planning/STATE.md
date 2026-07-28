@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v0.19.0
 milestone_name: 技术方案可信度
 status: planning
-last_updated: "2026-07-28T10:35:59.760Z"
+last_updated: "2026-07-28T18:45:00.000Z"
 last_activity: 2026-07-28
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,15 +19,51 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
-**Core value（v0.17.0，已交付）:** 让"产出→入图→召回→更好的产出"的知识飞轮真正转起来：任一链路的产物都可被任一链路检索到，任一链路编码完成都自动沉淀经验并回写业务侧，编码容器天然带着 Friday 的知识工具与 skills 干活。统一知识库 = 既有 `knowledge/` 体系（单一摄取入口 + 单一检索服务），不新建存储。
-**Current focus:** v0.17.0 已于 2026-07-22 shipped（审计 tech_debt，19/19 需求，归档见 `milestones/v0.17.0-*`）——between-milestones，下一里程碑待 `$gsd-new-milestone` 立项。v0.17.0 遗留 11 项真实环境人工验证 + 接受/递延债务见 [milestones/v0.17.0-MILESTONE-AUDIT.md](./milestones/v0.17.0-MILESTONE-AUDIT.md)。ship 后 07-24/07-25 有一段维护期（16 commits，未走 GSD 流程，明细见下方 Current Position 的 Last activity）。下一里程碑的现成候选提案：[coding-agent/PROPOSAL.md](./coding-agent/PROPOSAL.md)（V1.2，2026-07-21，状态「提案待评审未启动」）。
+**Core value（v0.19.0，在建）:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，方案结构覆盖数据流编排 / 模块↔仓映射 / 新增改造对照 / 主动澄清，全过程对用户实时可见。
+**Current focus:** v0.19.0 技术方案可信度（Phases 105–110，6 阶段 / 24 需求 RELY·ROUTE·DEPTH·SPINE·OBS）已完成 ROADMAP 与需求映射，**待 `$gsd-plan-phase 105`**。v0.17.0 已于 2026-07-22 shipped（审计 tech_debt，19/19 需求，归档见 `milestones/v0.17.0-*`），遗留 11 项真实环境人工验证 + 接受/递延债务见 [milestones/v0.17.0-MILESTONE-AUDIT.md](./milestones/v0.17.0-MILESTONE-AUDIT.md)。ship 后 07-24/07-25 有一段维护期（16 commits，未走 GSD 流程）。另有现成候选提案 [coding-agent/PROPOSAL.md](./coding-agent/PROPOSAL.md)（V1.2，2026-07-21，「提案待评审未启动」）留作后续里程碑输入。
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 105 — 编排解锁与评估标尺（not started）
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-28 — Milestone v0.19.0 started
+Status: Roadmap ready — 待 `$gsd-plan-phase 105`
+Last activity: 2026-07-28 — Milestone v0.19.0 ROADMAP created (Phases 105–110, 24/24 需求映射)
+
+## Milestone Overview (v0.19.0 — Phases 105–110 — 🟡 PLANNING)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 105 | 编排解锁与评估标尺（确定性置信度 + 分数可拆解 + golden set 门禁） | RELY-04, ROUTE-07/08/09 | Not started |
+| 106 | 多信号打分函数重构（尺寸偏置 + 元数据入分 + 活跃度连续 + 权重外置） | ROUTE-03/04/05/06 | Not started |
+| 107 | 分层呈现与链路韧性（分组/跨组标注 + 降级可见 + 澄清必达 + Stage 1 有界） | ROUTE-01/02, RELY-02/03/05 | Not started |
+| 108 | 方案深度（业务编排叙事 + 模块↔仓映射 + 新增/改造对照 + 主动澄清） | DEPTH-01~05 | Not started |
+| 109 | 双脊柱合流（编排产出直连执行流 + 移除徒手创作路径） | SPINE-01/02, RELY-01 | Not started |
+| 110 | 过程可观测（阶段流式 + 容器日志 + 阶段时间线） | OBS-01/02/03 | Not started |
+
+完整需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)（24 条 + Traceability，24/24 映射）；阶段详情见 [ROADMAP.md](./ROADMAP.md)；路由排序设计调研见 [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)。
+
+**Execution order（依赖链，线性）:** 105 → 106 → 107 → 108 → 109 → 110。105 是全里程碑枢纽——RELY-04（置信度由分数 margin 确定性推导）是解开死锁的最短路径，同时解除 RELY-02/RELY-03 的压力，也是 ROUTE 组能被正确评估的前提（Stage 1 不可靠时若置信度仍恒 low，任何排序改进都无法体现为 `auto_selected`）；ROUTE-08 的 golden set 是回归门禁而非优化目标，不先建则后续排序改动全是盲改。106 的 ROUTE-03 是路由误选的直接机制（`max_score×(1+0.1×min(hits-1,5))` 结构性偏袒大单体），research 给了可直接落地的替代公式与数值验算。107 的分组呈现要求两组分数可比，必须等 106 定版。108 DEPTH 的价值依赖 RELY 组先成立。109 内部 SPINE-01 严格先于 SPINE-02。110 OBS 最后做，但必须复用 107 已落的事件源。
+
+**UI 触面:** Phase 107（分组结果与 trust 标注呈现）、Phase 109（TechPlanCard 与选仓/分支执行流）、Phase 110（阶段时间线 + 流式进展）——三者 `/gsd-ui-phase` 应介入。
+
+**实测前置分布（research §9 的 6 个开放项，plan-phase 必须排为该相位首个 task，不得留到实现中途）:**
+
+- **Phase 105**：O-1 全仓能力树节点数 `N_r` 分布直方图（定 `N̄` 与 `b`）；O-3 Stage 0 是否可取 dense 余弦（决定 MaxP 主干用余弦还是 RRF 分）；O-4 golden set 须刻意补 2–3 条「正确答案在跨组」的样本（否则 §5 的 delta 迟滞阈值无从校准）。
+- **Phase 106**：O-2 embedding 在中文短需求 × facet 值上的余弦校准（c_lo/c_hi，区分度 < 0.10 则放弃该 facet 的 T2 通道）；O-5 `last_commit_at` 全仓覆盖率与新鲜度（覆盖不足则退回枚举映射）。
+- **Phase 107**：O-6 Stage 1 的 34–71s 延迟能否压到可接受（压不下来则缓存/回放成为主要收益来源，或考虑 cross-encoder 替代 LLM 重排）。
+
+**关键约束 / 设计底座（plan-phase 必读）:**
+
+- **路由方案五原则**：召回优先于精排（Space 硬过滤曾把 `study-user-status` 挡在门外）、确定性优先于智能、分数必须可拆解、降级必须可见、幂等（temperature=0 + `(score, repo_id)` 稳定排序 + 输入输出落 `ConvergenceSessionEvent` 可回放）。
+- **验收有客观标尺**：golden set 首条即本次真实用例——「高三提分专项」路由结果须包含前端 `onion-learning`（而非 `study-app`）、后端 `study-course` + `study-user-status`（而非 `study-practice`）。断言写机制级（广度加成对比）而非结果级名次（research §7.4）。
+- **不删 `create_coding_plan`**：实证它是 SPA 唯一的编码执行入口，MCP 执行链路反过来还要创建 chat `CodingPlan` 做桥接；本里程碑拆分创作/执行两半而非删除。migration `0031` 曾刻意删除 `canonical_plan_id` 软链，本次是按新语义重新接上而非恢复旧设计。
+- **方案结构提示词全是硬编码 Python 字符串**（`process_runtime/*.py`），不在 Prompt Center，改结构必须改代码、运行时调不了；是否搬进 Prompt Center 另议（本里程碑 Out of Scope）。
+- **融合与排序选型已定版**（research §1/§2）：信号融合层用归一化线性加权和（否决 LTR——10–50 条样本必然过拟合）；RRF 只留在 Stage 0 的 dense+sparse 合并（k=60）；多命中聚合用 MaxP 主干 + pivoted-size-normalized 对数饱和 breadth 加成（加性、上限 λ=0.25），绝不用乘性加成；多值 facet 取 max 绝不取 sum；缺失信号走权重重归一化而非补 0。
+- **LLM 幂等无法在模型层保证**（batch invariance 缺失，temperature=0 不充分）——必须在系统层保证：输入哈希缓存 + LLM 只输出排列不输出分数 + 快照回放 + 稳定 tie-breaking（先 `round(score, 6)` 再比，第二键用不可变 `repository_id`）+ 模型别名前置解析。
+- **权重外置到 `SystemSetting`**（`p, b, n_cap, λ, H, offset, c_lo, c_hi, α, K, CRITICALITY 表`）附 `weight_set_version`；任何评估结果必须绑定 version + prompt hash + model_id + index_version 才有意义。
+- **观测规范强制**：新增 LLM 调用赋 `call_source`（LOGGING-SPEC §4.1 先登记再写代码）；新增召回写 `RetrievalTrace` + 条数/分层耗时/score；后台任务带 `initiated_by_user_id`（无则 `system`）；脱敏不可绕过（快照落库走 `redact_for_ledger`）。
+- **既有纪律沿用**：INV-6 单一写入入口；async ORM 走 `sync_to_async`；i18n 默认中文；观测代码 best-effort 绝不反噬业务。
+- **Out of Scope 锁定**：仓库归属治理与去重（立项前已完成）；删除 `create_coding_plan`；前后端从仓库名迁到彩色标签；Prompt Center 化方案提示词；两套 CodingPlan 合表；弱标签扩样把 golden set 推到 200+（Future Requirements）。
 
 ## Milestone Overview (v0.17.0 — Phases 100–104 — ✅ SHIPPED 2026-07-22)
 
