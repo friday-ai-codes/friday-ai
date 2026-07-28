@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 Phase: 105 — 编排解锁与评估标尺（not started）
 Plan: —
 Status: Roadmap ready — 待 `$gsd-plan-phase 105`
-Last activity: 2026-07-28 — Milestone v0.19.0 ROADMAP created (Phases 105–110, 24/24 需求映射)
+Last activity: 2026-07-28 — Completed quick task 260728-ppb: start_feature_solution drift fix
 
 ## Milestone Overview (v0.19.0 — Phases 105–110 — 🟡 PLANNING)
 
@@ -449,6 +449,7 @@ None.
 | 260726-uid | feature list 技术方案生成能力接入面：MCP 三工具两段式（create 出待确认项 / confirm 提交确认 / get 轮询取方案，五处契约同步）+ friday-solution Skill + 对话 start_feature_solution + system prompt 分流；三种取数源（项目 / 分支反查复用既有手动绑定 / 贴原文含无项目启发式解析）；修两个静默失效缺陷（确认题组装器排在 policy 后致强制确认永不生效、对话漏传 conversation_id 致确认卡渲染不出来） | 2026-07-26 | a2d88bf6 / a6fae1a8 / a89bf052 / b7899893 / 4c740057 / 74a93f68 | [260726-uid-feature-list-mcp-skill](./quick/260726-uid-feature-list-mcp-skill/) |
 | 260726-t2f | feature list 技术方案生成能力（后端链路）：technical_plan 编排在 recall/clarify 之间插入 classify stage（RAG 证据 + LLM 判功能点新增/改造，幻觉路径过滤、无依据降级 unclear）+ feature_list 入口模式（mode/feature_segments，feature 树直供不再 LLM 重拆）+ 强制仓库确认（确定性题组装取代 LLM 判断，全 high 置信仍必问，仅首轮接管防死循环）+ merge prompt 要求 change_type/touch_points/pseudocode；非 feature_list 会话 classify 零副作用穿过 | 2026-07-26 | 2e27493c / c064215a | [260726-t2f-feature-list](./quick/260726-t2f-feature-list/) |
 | 260727-het | 新增 friday-routing 技能：把「仓库路由 / 架构落点判定」从 friday-solution 的服务端三段式黑盒里拆出来，做成纯 agent 驱动的独立技能——自编排 15 个原子 MCP 检索工具做七阶段系统性调研（索引健康度 → 候选仓收敛 → 落点下钻 → 跨仓依赖 → 影响面与历史 → 置信度定级与批量澄清 → report_project_knowledge 沉淀），唯一产物是七列路由矩阵（功能点/目标仓库含 monorepo 子应用/落点文件/new·modify·unclear/证据/置信度/风险与跨仓依赖）；无证据一律降级 unclear，澄清必须批量+带具体选项+标推荐项；7 处接入面同步、技能计数 6→7，README 补齐 260726-uid 漏掉的 friday-solution 行 | 2026-07-27 | b02bf9ce | [260727-het-friday-routing-feature-list-prd](./quick/260727-het-friday-routing-feature-list-prd/) |
+| 260728-ppb | 修复「生成技术方案」不走 start_feature_solution：生产 Prompt Center `chat.coding_guidance`/`chat.strategy.default` body 漂移致指引从未注入；0011 幂等 resync + `check_builtin_prompt_drift` 运维命令 + 项目级对话指引补方案工具 | 2026-07-28 | 4e205236 | [260728-ppb-start-feature-solution](./quick/260728-ppb-start-feature-solution/) |
 
 ## Deferred Items
 
