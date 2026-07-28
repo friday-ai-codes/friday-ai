@@ -10,9 +10,7 @@ from django.apps import apps as django_apps
 from chat.conversation_service import _CODING_GUIDANCE, _STRATEGY_DEFAULT
 from prompts.models import Prompt, PromptVersion
 
-resync = importlib.import_module(
-    "prompts.migrations.0011_resync_coding_guidance_feature_solution"
-)
+resync = importlib.import_module("prompts.migrations.0011_resync_coding_guidance_feature_solution")
 
 
 def _set_stale_body(slug: str) -> Prompt:
