@@ -1,86 +1,73 @@
-# Requirements: Friday AI v0.17.0 统一知识库与全链路联动
+# Requirements — v0.19.0 技术方案可信度
 
-**Defined:** 2026-07-15
-**Core Value:** 让"产出→入图→召回→更好的产出"的知识飞轮真正转起来：任一链路的产物都可被任一链路检索到，任一链路编码完成都自动沉淀经验并回写业务侧，编码容器天然带着 Friday 的知识工具与 skills 干活。
-**调研基线:** `.planning/knowledge-loop/MILESTONE-PROPOSAL.md`（断点调研）+ `.planning/research/`（STACK/FEATURES/ARCHITECTURE/PITFALLS/SUMMARY）
+**Milestone:** v0.19.0
+**Defined:** 2026-07-28
+**Source:** 生产实例实证排查（friday.yc345.tv / 会话 `ccd817d9`）+ `.planning/research/ROUTING-RANKING.md`
 
-## v0.17.0 Requirements
+> 需求以「用户能做到什么 / 用户不会遭遇什么」表述，不描述实现。实现取舍见 PROJECT.md Key context 与 research。
 
-### KNOW 统一知识库（收敛 + 消费面）
+---
 
-- [x] **KNOW-01**: 用户创建的 learning case 自动进入统一知识库——新增 `EntityKind.LEARNING_CASE` 字面值（+CHECK 约束 migration）与 `knowledge/sources/learning_case.py` normalizer（work_item 锚双事件 + RELATES_TO/REFERENCES 边，锚缺料降级单事件），`create_learning_case` 写库后经 `aschedule_ingestion` 投递（INV-6 唯一通路）
-- [x] **KNOW-02**: 用户经 `search_learning_cases` 检索经验时走统一向量检索——底层切换为 `DeliveryKnowledgeSearchService.search_similar(entity_kinds=["learning_case"])` 并按 source_id 回捞行渲染既有 payload 外形，对外契约（`TOOL_SCHEMA_SNAPSHOT` 键）不变，token 打分退役；附对照测试（既有用例召回集合非空 + 存量 case 回填入图）
-- [x] **KNOW-03**: MCP 链路产物（`McpCodingPlan` / `McpRepositoryAnalysis` / `McpCodingExecutionTrace`）可被 `search_delivery_knowledge` 召回——三个 normalizer + 各写入点投递，与 chat `coding_plan` / `task_result` 实体经 natural key 去重关联（不重复入图）
-- [x] **KNOW-04**: 方案编排 recalling 阶段能召回项目沉淀与历史经验——`recall_adapter` 的 `RECALL_ENTITY_KINDS` 扩 `document` 与 `learning_case`（可配置，默认开），召回埋点（RetrievalTrace + 条数/耗时/score）先行
-- [x] **KNOW-05**: Chat 对话能主动读知识——白名单新增 `search_learning_cases` / `read_project_doc` / `search_project_context` 三个薄封装工具（复用既有 service，权限 fail-closed）
-- [x] **KNOW-06**: `ProjectStateApi`（IDE 上报的 API 清单）可被语义检索——经 STATE 文档物化路径确认入向量库并可召回（验收：上报后 `search_project_context` 能命中）
+## v0.19.0 Requirements
 
-### LOOP 完工沉淀闭环（三链路一致）
+### RELY — 链路可靠性
 
-- [x] **LOOP-01**: 飞书回写能力抽为公共服务——`delivery/services/coding_completion.py` `CompletionWritebackService`（工作项评论 + 可选文档 append，入参中性化），MCP `_write_results_back` 改薄包装（含 `write_back` 开关与 retry_state 语义零回归）
-- [x] **LOOP-02**: 工作流与 Chat 编码完成后业务侧可见——workflow `AICodingNode._finalize_and_notify`（MR 后锚点）与 chat `coding_graph.create_pr_or_skip_node` 接入公共回写（节点/会话开关，模板默认开；取不到工作项三元组 no-op fail-soft；三元组经 `pr_cross_reference` 追溯链反查）
-- [x] **LOOP-03**: 任一链路编码完成自动沉淀经验——LLM 从 TaskResult/diff/plan 提炼 outcome/root_cause/solution 落 `McpLearningCase`（FK 放松允许无 technical_plan）并入图；新 `call_source=learning_case_extraction` 登记 LOGGING-SPEC §4.1；质量门槛（最小信息量校验 + 失败/取消任务不沉淀 + 每任务至多一条）；best-effort 绝不阻断主流程；带 `initiated_by_user_id`（无则 system）
-- [x] **LOOP-04**: 平台内置两个多步 Skill（RemoteTool `Source.SKILL` 种子）——`pre_coding_research`（route_repositories→search_rag_chunks→search_delivery_knowledge→search_learning_cases）与 `post_coding_capture`（summarize_branch→create_learning_case→report_project_knowledge），在 `/api/tools/execute/` 可调、步级 trace 完整
-- [x] **LOOP-05**: PR 创建后可选触发轻量 review 并沉淀结论为 learning case（可配置默认关；范围=能跑通+沉淀，不做评审 UI/规则引擎）
+- [ ] **RELY-01**：用户拿到的技术方案一定来自完整编排链路；编排未完成时，系统不会用未经调研的草稿冒充正式方案（如仍提供草稿，必须显式标注「未经代码调研」）
+- [ ] **RELY-02**：技术方案编排不会无人应答地永久停在澄清阶段——澄清必达用户、可作答，且超时/失败有明确出口
+- [ ] **RELY-03**：路由降级时用户能看见「本次未经 LLM 推理，置信度仅供参考」，而不是拿到一份看不出问题的全 low 结果
+- [ ] **RELY-04**：Stage 1 完全失联时，系统仍能给出可用的置信度分级并自动推进——置信度由分数 margin 确定性推导，LLM 判断降为输入而非决策者
+- [ ] **RELY-05**：路由在上游 LLM 抖动或缓慢时仍可用——单次调用有重试与延迟上界，用户不会无限等待
 
-### AGENT 编码容器内置 MCP/Skills + 上下文对齐
+### ROUTE — 路由质量
 
-- [x] **AGENT-01**: 派发编码任务时为发起用户铸造任务级短 TTL token——明文仅在 dispatch 内存生成后直进容器 env，DB 只存 sha256，`expires_at`=任务 timeout+余量，任务终态回调吊销；三条派发链路（workflow/chat/MCP）统一覆盖（显式推翻 PATX-04 搁置，PAT-02 不违反：明文不落盘、不从 DB 反取）
-- [x] **AGENT-02**: 容器内编码代理可主动查 Friday 知识——`task/core/knowledge_tools.py` 进程内 SDK MCP server（HTTP POST `/api/mcp/tools/<name>/` + Bearer PAT），白名单读工具（search_rag_chunks/grep_repository/get_repository_file/search_delivery_knowledge/search_learning_cases/search_project_context/lookup_project_by_branch）；env 三要素任一为空整体降级不挂（零回归）；handler return-not-raise + 60s 超时 + 脱敏；服务端排除文件 fail-closed 天然继承；新请求入口纳入 QPS/错误率观测
-- [x] **AGENT-03**: 容器内代理可见 Friday skills——task 镜像构建期从 `skills/skills/{friday-code,friday-memory}` 同源 COPY，运行时注入 `<workspace>/.claude/skills/`（同名不覆盖仓库自带）；hash 一致性测试防双源漂移
-- [x] **AGENT-04**: 工作流派发的编码容器带项目上下文——`AICodingNode` dispatch 前 prepend `pack_project_context`（项目定位：ProjectBranch 反查 + work_item 关联 fallback；`_dispatch_wave` 层按 (project,branch) 解析一次逐仓复用；共享 `_prepend_project_context` helper 上提避免 workflow import chat）
+- [ ] **ROUTE-01**：路由结果分两组呈现——本项目关联仓一组、全局候选一组，各自排序，用户能一眼看出哪些是本平台内的
+- [ ] **ROUTE-02**：跨组候选带明确标注「未关联当前平台，可能涉及跨组协作」，用户据此判断是否要拉其他团队
+- [ ] **ROUTE-03**：大而全的单体仓库不再因命中节点多而被系统性高估——同等相关度下小而精的正确仓库能胜出
+- [ ] **ROUTE-04**：业务域、团队归属、技术栈、关键程度等元数据参与排序打分，而不只是给 LLM 看
+- [ ] **ROUTE-05**：仓库维护活跃度以连续量参与打分，而非只有「疑似废弃」一档生效
+- [ ] **ROUTE-06**：运维可在不发版的前提下调整各信号权重
+- [ ] **ROUTE-07**：每个候选的分数可展开到各信号的贡献值，用户与开发者都能看懂它为什么排这个位置
+- [ ] **ROUTE-08**：路由质量有可回归的验收基线——golden set 覆盖真实用例，权重改动导致的退化能被自动检出
+- [ ] **ROUTE-09**：同样的需求与同样的索引状态，重复路由得到同样的结果与排序
 
-### UNIFY 工具面收口
+### DEPTH — 方案深度
 
-- [x] **UNIFY-01**: `improve_coding_plan` 走统一编排——View 改 `delegate_process_runtime`（改版语义=携带 feedback 的编排重跑产新 version），trace 中可见编排 session
-- [x] **UNIFY-02**: `analyze_repository` 收敛且确定性缝退役——分析产物作为编排输入证据挂接；`mcp_tools/planning_service.py` 删除（`map_canonical_to_coding_plan` 等仍被引用的 helper 随迁），相关测试迁移不失覆盖
-- [x] **UNIFY-03**: `services/plan_orchestration/` 空壳目录删除 + 全仓文档/注释残留引用清理
-- [x] **UNIFY-04**: 对外工具契约完整——`TOOL_SCHEMA_SNAPSHOT` 补 `report_project_state`，快照测试全绿；`@friday-ai-codes/skills` 文档对齐新行为（learning case 向量检索、`reverse_lookup_requirements` 收录进 friday-code 技能路由）
+- [ ] **DEPTH-01**：技术方案包含数据产出与流转方向、业务流程编排叙事（用户在哪个页面、经哪个接口、传什么参数、拿到什么数据、数据流向哪里、用户有哪几条行为路径）
+- [ ] **DEPTH-02**：技术方案给出功能 ↔ 模块 ↔ 仓库的映射关系
+- [ ] **DEPTH-03**：技术方案逐项标注新增还是改造，改造项须说明与既有功能如何配合、影响哪些已交付能力
+- [ ] **DEPTH-04**：技术方案不再产出以周为单位的分阶段实施计划
+- [ ] **DEPTH-05**：需求存在影响方案质量的不确定点时，系统主动抛出澄清并给出候选选项，而不是带着模糊假设直接出方案
 
-## Future Requirements（明确后置）
+### SPINE — 双脊柱合流
 
-- `chat.CodingPlan` 与 `McpCodingPlan` 合并 canonical `ArtifactVersion` — 单独立项（改动面大）
-- review 产品化（评审 UI / 规则引擎 / 门禁） — Qodo 级体量
-- 会话内 sidecar 记忆提取（Cursor Memories 同型） — 需旁路小模型基建
-- 记忆 consolidation / decay 自动策展 — 先靠 bi-temporal 失效 + 人工 supersede 过渡
-- 对外知识开放平台（配额/租户/计费）
+- [ ] **SPINE-01**：编排产出的技术方案可直接进入选目标仓 → 配置分支 → 确认编码流程，无需用户重新走一遍方案生成
+- [ ] **SPINE-02**：系统不再存在「由对话模型徒手编写方案正文」的产出路径
 
-## Out of Scope
+### OBS — 过程可观测
 
-| 项 | 理由 |
-|----|------|
-| 为 learning case 新建 Qdrant collection / 平行检索服务 | 与统一排序目标冲突；锁定"不新建存储" |
-| Interaction Ledger 反哺检索 | 规范明确指标/留痕/日志分离，保持纯审计 |
-| 图片/UI 稿多模态召回 | 既有 v2 backlog（PROJX-01） |
-| 原生定时触发恢复 | 与本里程碑无关，外部 cron→webhook 可用 |
-| 回写/沉淀挂容器回调 `_handle_completed` | 回调时刻无 MR 结果 + 5xx 重试风暴风险；锚点必须在"MR 已知"之后 |
+- [ ] **OBS-01**：技术方案生成过程实时返回阶段进展与内容，用户能看到它正在做什么，而不是长时间静默后一次性吐出结果
+- [ ] **OBS-02**：方案调研阶段的容器执行日志对用户可见（与深度分析一致的体验）
+- [ ] **OBS-03**：前端展示方案生成的阶段时间线，失败停在哪一步一目了然
+
+---
+
+## Future Requirements（本里程碑不做）
+
+- 把 161 个未被飞书对照表覆盖的仓库归入团队空间（需业务侧先补表）
+- 客户端仓（ios / android / harmony，飞书表中 215 个）接入 Friday 索引
+- 两套 CodingPlan（`chat.CodingPlan` / `mcp_tools.McpCodingPlan`）合表为 canonical
+- 用 `WorkItem → PlanVersion → MR` 追溯链自动生成弱标签，把 golden set 从数十条推到 200+
+- 路由权重的自动调参 / 在线学习（需先积累点击与采纳日志）
+
+## Out of Scope（显式排除及理由）
+
+- **仓库去重与 Space 归属治理** — 立项前已作为前置工作完成（261→259 仓、7 个团队空间、17 个幽灵点清除）
+- **删除 `create_coding_plan`** — 实证它是 SPA 唯一的编码执行入口，MCP 执行链路亦依赖其桥接；本里程碑改为拆分创作/执行两半而非删除
+- **把前后端从仓库名迁到彩色标签** — 生产环境已按前后端加好命名前缀；标签化属 UI 改造，与本里程碑的可信度目标无关
+- **Prompt Center 化方案提示词** — 方案结构提示词硬编码在 `process_runtime/*.py`，本次直接改代码；是否搬进 Prompt Center 另议
+
+---
 
 ## Traceability
 
-<!-- Filled by roadmapper (2026-07-15): 19/19 需求映射到 Phases 100–104，无孤儿、无重复 -->
-
-| REQ-ID | Phase | Status |
-|--------|-------|--------|
-| KNOW-01 | Phase 100 | Complete |
-| KNOW-02 | Phase 100 | Complete |
-| KNOW-03 | Phase 100 | Complete |
-| KNOW-04 | Phase 102 | Complete |
-| KNOW-05 | Phase 102 | Complete |
-| KNOW-06 | Phase 102 | Complete |
-| LOOP-01 | Phase 101 | Complete |
-| LOOP-02 | Phase 101 | Complete |
-| LOOP-03 | Phase 101 | Complete |
-| LOOP-04 | Phase 101 | Complete |
-| LOOP-05 | Phase 101 | Complete |
-| AGENT-01 | Phase 103 | Complete |
-| AGENT-02 | Phase 103 | Complete |
-| AGENT-03 | Phase 103 | Complete |
-| AGENT-04 | Phase 103 | Complete |
-| UNIFY-01 | Phase 104 | Complete |
-| UNIFY-02 | Phase 104 | Complete |
-| UNIFY-03 | Phase 104 | Complete |
-| UNIFY-04 | Phase 102 | Complete |
-
----
-*Requirements defined: 2026-07-15*
-*Last updated: 2026-07-22 — v0.17.0 shipped，19/19 需求全部交付*
+<!-- 由 gsd-roadmapper 填充：REQ-ID → Phase -->
