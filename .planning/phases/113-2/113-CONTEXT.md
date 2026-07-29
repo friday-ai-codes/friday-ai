@@ -33,7 +33,11 @@
 - 新模型 `delivery.BlueprintContextEntry`：`convergence_session FK / project FK / key / kind(finding|api_surface|contract|decision|dependency_claim|question) / repository_id / content JSON / produced_by / seq(会话内单调) / status(active|superseded)`；**不复用 `ProjectMemory`**（那是项目级长期记忆、打包预算仅 30 条，高频调研写入会污染它）
 - key 约定前缀：`repo:{id}.api_surface` / `contract:{name}` / `decision:{thread_id}` / `dependency:{from}->{to}`
 - 容器实时读写：扩容器知识 MCP 白名单新增 `read_blueprint_context`（支持 key_prefix / kind / repository_id / since_seq 增量拉取）与 `report_blueprint_context`（内容过 `redact_secrets_in_text`）；写入即对所有并行容器可见（server-authoritative）
-- **会话隔离必须 view 层自建（按调研纠偏，重要）**：容器 MCP 鉴权链只到 `token → owner(User)`，**不存在** `token → session → user`；`X-Friday-Session-Id` 仅是关联键、不可信作授权依据。故「只能读写本会话总线」必须在 view 层自建三道校验：① header session id 对应的 `SubAgentSession` 存在且属该 token owner；② 该 session 关联的 `ConvergenceSession.process_type == "technical_blueprint"`；③ 目标总线条目的 convergence_session 与之一致。缺任一条拒绝（403/404），绝不放行跨会话读写
+- **会话隔离必须 view 层自建（按调研纠偏，重要）**：容器 MCP 鉴权链只到 `token → owner(User)`，**不存在** `token → session → user`；`X-Friday-Session-Id` 仅是关联键、不可信作授权依据。故「只能读写本会话总线」必须在 view 层自建三道校验，缺任一条拒绝（403/404），绝不放行跨会话读写：
+  - ① **归属校验**：header session id 对应的 session 的 `AgentSession.user` == token owner。**前置补齐（plan-checker BLOCKER 1 定夺）**：该字段现状可空且蓝图派发时未赋值，故 **RepoPlan 派发面（113-03）必须在派发时写入 `AgentSession.user = dispatch_user`**，02 的校验才有真实数据来源；两者同 wave 实现，02 的测试可直接造带 user 的 session
+  - ② **process 校验**：该 session 关联的 `ConvergenceSession.process_type == "technical_blueprint"`（防跨 process 污染，对齐 112 review CRITICAL 的教训）
+  - ③ **条目一致**：目标总线条目的 `convergence_session` 与之一致
+  - 另叠加项目成员校验（沿用既有 packer 口径：成员 或 public_org）
 - 等待原语两档：
   - **短等待**：`await_blueprint_context(key_pattern, timeout)`——**容器侧有界轮询** `read_blueprint_context(since_seq)`（照抄 `task/.../question_loop.py` 的 deadline 骨架），**不做服务端长轮询**：`knowledge_tools.py` 的 `timeout=60.0` 写死在公共 handler 工厂里，改它会波及全部 7 个既有工具。命中即返回；**超时返回正常结果而非 is_error**（否则诱导 agent 重试而非降级），由 agent 自行降级（记录假设 + 开澄清线程），绝不无限挂
   - 短等待**不发心跳**（避免给公共 handler 工厂加 callback 参数，保持既有 7 工具零影响）
@@ -52,13 +56,15 @@
   - `current_state_analysis` ← 各仓 `PartialPlan.content.current_state` 直接投影（citations 一并带上）
   - `implementation_overview`（含 modules 与 items 的 change_type/how/files_touched/depends_on/wave）/`api_contracts`/`interaction_flows`/`impact_analysis` ← LLM 分节起草后装配
   - `must_haves` ← 由 requirement_spec 与实现项确定性派生（复用 111 的派生思路）
-- 跨仓 API 对账用**纯函数**（非 LLM 自查）：consumed 契约找不到 provider → 标 `availability=needs_support` 且要求 `support_repository_id` 出现在 `repo_associations`（缺失即视为缺协作仓，抛澄清）；provider/consumer 字段不一致（schema/字段名/方向）抛澄清，绝不静默拍板
+- 跨仓 API 对账用**纯函数**（非 LLM 自查）：consumed 契约找不到 provider → 标 needs_support 且要求 support_repository_id 出现在 `repo_associations`（缺失即视为缺协作仓，抛澄清）；provider/consumer 字段不一致（schema/字段名/方向）抛澄清，绝不静默拍板
+- **needs_support 落位（plan-checker BLOCKER 4 定夺，关键）**：`api_contracts[]` **无顶层 `availability`**——按 111 schema，它在 `data_source` 下且枚举为 `existing | needs_support`。故对账结果必须写 `data_source.availability` 与 `data_source.support_repository_id`，枚举归一到 `existing|needs_support`（不得引入顶层字段或 `available|unknown` 变体），否则 114/115 按 schema 读不到、SC-4 表面通过实际失效
 - 装配后强制门：过 `validate_blueprint`（111）+ 引用覆盖率门（复用 111 的 `blueprint_quality`，阈值走 SystemSetting 可配）；不达标按归因回退——单仓问题回该仓 `repo_plan`、融合问题重融合，合计上界 2 轮
 - **超界出口（按调研定夺）**：merge 重试超界转 `STAGE_DONE` 并**携未决项清单**（不落 `STAGE_FAILED`）——蓝图已成形只是未达覆盖率，交由 114 的 AI 审查与人审处置，符合「绝不静默通过、也不假装失败」
 - **覆盖率归因（按调研定夺）**：新写 `_coverage_gaps()` 纯函数把未覆盖结论定位到具体仓，作为「单仓回退」的判据来源（否则无法决定回哪个仓）
 
 ### 状态、stage 与观测
 - 阶段 2/3 蓝图状态 = `drafting`（一律经 `BlueprintLifecycleService`）；有 open+blocking 线程时派生显示 `needs_clarification` 并记 `return_stage`（复用 112 的双轨语义与 `blueprint_resume` 判据）
+- **状态映射必须 stage-aware（plan-checker BLOCKER 3 定夺）**：112 的 `blueprint_resume._amap_blueprint_status` 把状态硬编码回 `researching`，若不改，阶段 2/3 的澄清恢复会退回阶段 1。定夺：**允许对 `blueprint_resume.py` 做受限扩展**（它是 112 本里程碑自产文件，不属 §13.2 冻结面）——加 stage→status 映射表（前七 stage → researching，`repo_plan`/`merge` → drafting），且 `repo_plan`/`merge` 两个 handler 开 blocking 线程时必须传 `return_stage`（DRAFTING 对应 stage）；纯追加不改既有前七 stage 行为
 - `builtin_processes.py` 的 `technical_blueprint` 追加 `repo_plan → merge` 两 stage（112 已注册前七个），**只加不改**，`_TECHNICAL_PLAN_STAGES` 零触碰
 - `call_source` 复用 111 已注册的 `blueprint_repo_plan` / `blueprint_merge`，**不新增枚举值**
 - 观测：总线条目读写记 `sampling`，waiter 登记/命中/超时与「谁在等谁」记 `caller` 事件（`component=process_runtime`，容器动作归属 dispatch 用户）并写 `ConvergenceSessionEvent`（blueprint_* 既有类型，供 115 时间线可视化等待关系）
