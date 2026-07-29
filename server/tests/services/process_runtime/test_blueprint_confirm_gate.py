@@ -200,6 +200,14 @@ async def _open_gate_with_two_repos():
     return artifact, session, thread, repo_a, repo_b, adapter
 
 
+async def _grant_scope(session, *repos: Repository) -> None:
+    """把仓纳入蓝图范围白名单（``add_repo`` 的 repository_id 必须在范围内，MJ-01）。"""
+    state = dict(session.stage_state or {})
+    state["include_repos"] = list(state.get("include_repos") or []) + [str(r.id) for r in repos]
+    session.stage_state = state
+    await ConvergenceSession.objects.filter(id=session.id).aupdate(stage_state=state)
+
+
 async def _make_task(session, repo, status: str) -> RepoResearchTask:
     return await RepoResearchTask.objects.acreate(session=session, repository=repo, status=status)
 
@@ -394,6 +402,46 @@ async def test_alock_fail_closed_on_invalid_content(monkeypatch: pytest.MonkeyPa
     assert str(repo_a.id)  # 仓仍在快照里等人修规格后重试
 
 
+async def test_alock_refuses_when_snapshot_changed_mid_flight() -> None:
+    """MJ-03：``confirm`` 读完快照后 ``add_repo`` 才提交 → 落锁必须被 CAS 拒绝。
+
+    没有这道 CAS，``confirm`` 会用旧快照落 ``repo_associations``（新仓不在里面）并
+    ``resolve_thread`` 关门；此后 ``_acollect_thread_marked_repos`` 只查 OPEN/ANSWERED
+    线程，已 RESOLVED 线程里的 ``pending_research`` 再也读不到 → 新仓的 PENDING task
+    既不派发也不终态，用户的加仓动作静默丢失。
+    """
+    artifact, session, thread, _a, _b, adapter = await _open_gate_with_two_repos()
+    repo_c = await _make_repo()
+    await _grant_scope(session, repo_c)
+    user = await _make_user()
+    before = await ArtifactVersion.objects.filter(artifact=artifact).acount()
+    original = adapter._aload_latest_version
+
+    async def _interleaved(artifact_id):
+        # 快照读完之后、落版本之前，另一路 add_repo 提交（真实交错的最短复现）
+        await BlueprintLifecycleService().apply_gate_action(
+            artifact,
+            thread=thread,
+            action="add_repo",
+            payload={"repository_id": str(repo_c.id)},
+            acting_user=user,
+            initiated_by_user_id=str(user.id),
+            session=session,
+        )
+        return await original(artifact_id)
+
+    adapter._aload_latest_version = _interleaved
+
+    result = await adapter.alock(session, acting_user=user)
+
+    assert result["event"] == "awaiting_confirmation"
+    assert result["reason"] == "snapshot_changed"
+    assert await ArtifactVersion.objects.filter(artifact=artifact).acount() == before
+    fresh = await BlueprintThread.objects.aget(id=thread.id)
+    assert fresh.status != ThreadStatus.RESOLVED, "拒绝落锁时确认门必须还开着"
+    assert await _task_status(session, repo_c) == RepoResearchTaskStatus.PENDING
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 6. 五动作 → 重调研规则表（SC-4 逐行断言）
 # ═══════════════════════════════════════════════════════════════════════════
@@ -418,6 +466,7 @@ async def test_apply_gate_action_rejects_unknown_action() -> None:
 async def test_add_repo_requires_research_and_creates_pending_task() -> None:
     artifact, session, thread, _repo_a, _repo_b, _ad = await _open_gate_with_two_repos()
     repo_c = await _make_repo()
+    await _grant_scope(session, repo_c)
     user = await _make_user()
 
     result = await BlueprintLifecycleService().apply_gate_action(
@@ -650,6 +699,7 @@ async def test_pending_probe_reads_live_thread_snapshot() -> None:
     """动作端点只写线程行，stage_state 要等下一次 transition —— 判据必须读活跃线程。"""
     artifact, session, thread, _repo_a, _repo_b, _ad = await _open_gate_with_two_repos()
     repo_c = await _make_repo()
+    await _grant_scope(session, repo_c)
     user = await _make_user()
     await BlueprintLifecycleService().apply_gate_action(
         artifact,

@@ -56,6 +56,8 @@ logger = structlog.get_logger(__name__)
 __all__ = [
     "BlueprintConfirmGateAdapter",
     "STAGE_STATE_KEY",
+    "LOCK_BLOCKED_PENDING_RESEARCH",
+    "LOCK_BLOCKED_SNAPSHOT_CHANGED",
     "acollect_pending_research_repos",
     "acollect_confirmation_state",
     "build_locked_associations",
@@ -63,6 +65,10 @@ __all__ = [
 
 # session.stage_state 内确认门的键（112-04 的增量 dispatch 从这里读 pending_research）。
 STAGE_STATE_KEY = "confirmation"
+
+# `alock` 拒绝落锁的两个并发理由（视图据此选 409 文案；handler 不读）。
+LOCK_BLOCKED_PENDING_RESEARCH = "pending_research"
+LOCK_BLOCKED_SNAPSHOT_CHANGED = "snapshot_changed"
 
 # 快照「小摘要」纪律：正文类字段截断，明细由 115 按 id 自取。
 _MAX_RESPONSIBILITY_CHARS = 2000
@@ -509,6 +515,30 @@ class BlueprintConfirmGateAdapter:
             return self._result("awaiting_confirmation", None, None, 0)
 
         snapshot = iter_snapshot_repos(thread.options)
+        # 锁前重查待调研仓：有仓在调研途中就绝不落锁——否则 `confirm` 会拿着不含新仓的
+        # 旧快照锁定并 `resolve_thread` 关门，而 `_acollect_thread_marked_repos` 只查
+        # OPEN/ANSWERED 线程，已 RESOLVED 线程里的 `pending_research` 标记再也读不到：
+        # 用户的 `add_repo` 静默丢失，那个 PENDING task 成为既不派发也不终态的孤儿。
+        pending = await acollect_pending_research_repos(session)
+        if pending:
+            logger.warning(
+                "blueprint_confirm_gate_lock_blocked_by_pending_research",
+                category="caller",
+                component="process_runtime",
+                session_id=str(getattr(session, "id", "")),
+                artifact_id=str(artifact.id),
+                pending_count=len(pending),
+            )
+            return self._result(
+                "awaiting_confirmation",
+                str(thread.id),
+                None,
+                0,
+                reason=LOCK_BLOCKED_PENDING_RESEARCH,
+            )
+        # 快照 CAS 基线：动作端点每次写快照都会推进 `updated_at`，落锁前比对即可发现
+        # 「读快照之后又有动作提交」的交错，避免按过期快照锁定（用户动作静默丢失）。
+        snapshot_baseline = getattr(thread, "updated_at", None)
         # 锁定基线取 artifact 的**最新**版本而非 session 钉住的那一版：规格门放行时
         # add_version 已推进 current_version，而 session.current_artifact_version 只在
         # 显式 StageOutcome 里才更新——读 session 那一版会把规格门的成果覆盖回旧内容。
@@ -526,6 +556,23 @@ class BlueprintConfirmGateAdapter:
             content.get("decision_log"),
             _build_decision_entries(snapshot, thread_id=str(thread.id)),
         )
+
+        if not await self._asnapshot_unchanged(thread.id, snapshot_baseline):
+            logger.warning(
+                "blueprint_confirm_gate_lock_snapshot_changed",
+                category="caller",
+                component="process_runtime",
+                session_id=str(getattr(session, "id", "")),
+                artifact_id=str(artifact.id),
+                thread_id=str(thread.id),
+            )
+            return self._result(
+                "awaiting_confirmation",
+                str(thread.id),
+                None,
+                0,
+                reason=LOCK_BLOCKED_SNAPSHOT_CHANGED,
+            )
 
         try:
             new_version = await self.artifacts.add_version(
@@ -708,6 +755,18 @@ class BlueprintConfirmGateAdapter:
         )
 
     @staticmethod
+    async def _asnapshot_unchanged(thread_id: Any, baseline: Any) -> bool:
+        """确认门快照自读取以来未被别的动作改过（``updated_at`` 乐观锁）。"""
+        if baseline is None:
+            return True
+        current = await (
+            BlueprintThread.objects.filter(id=thread_id)
+            .values_list("updated_at", flat=True)
+            .afirst()
+        )
+        return current == baseline
+
+    @staticmethod
     @sync_to_async
     def _aload_locked_gate_row(artifact_id: Any) -> dict[str, Any] | None:
         return (
@@ -736,14 +795,23 @@ class BlueprintConfirmGateAdapter:
 
     @staticmethod
     def _result(
-        event: str, thread_id: str | None, stage_state: dict[str, Any] | None, repo_count: int
+        event: str,
+        thread_id: str | None,
+        stage_state: dict[str, Any] | None,
+        repo_count: int,
+        *,
+        reason: str = "",
     ) -> dict[str, Any]:
-        """结果形状恒定：handler 只据 ``event`` 决定 StageOutcome。"""
+        """结果形状恒定：handler 只据 ``event`` 决定 StageOutcome。
+
+        ``reason`` 只给视图层区分 409 文案（并发/待调研 vs 内容非法），handler 不读。
+        """
         return {
             "event": event,
             "thread_id": thread_id,
             "stage_state": stage_state,
             "repo_count": repo_count,
+            "reason": reason,
         }
 
     async def _emit(self, session: Any, event_name: str, payload: dict[str, Any]) -> None:
