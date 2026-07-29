@@ -337,6 +337,90 @@ def test_timeout_passthrough() -> None:
 
 
 # ============================================================================
+# decode 参数透传（105-05 ROUTE-09：temperature / top_p / seed 可选形参）
+# ============================================================================
+
+
+def test_decode_params_passthrough_openai() -> None:
+    """传 temperature/top_p/seed 时对应值到达 OpenAI 构造 kwargs（确定性 decode 固定）。"""
+    resolved = _make_resolved(ProviderType.OPENAI_CHAT)
+    model = build_chat_model(
+        resolved,
+        "gpt-4o-mini",
+        timeout_seconds=5.0,
+        temperature=0.0,
+        top_p=1.0,
+        seed=42,
+    )
+    assert getattr(model, "temperature", None) == 0.0
+    assert getattr(model, "top_p", None) == 1.0
+    assert getattr(model, "seed", None) == 42
+
+
+def test_decode_params_passthrough_ollama_seed() -> None:
+    """Ollama 构造支持 seed，透传生效。"""
+    resolved = _make_resolved(ProviderType.OLLAMA)
+    model = build_chat_model(
+        resolved,
+        "llama3.2",
+        timeout_seconds=5.0,
+        temperature=0.0,
+        seed=42,
+    )
+    assert getattr(model, "temperature", None) == 0.0
+    assert getattr(model, "seed", None) == 42
+
+
+def test_decode_params_default_none_no_new_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """默认 None 时构造 kwargs 与现状一致——无 temperature/top_p/seed 新键（零回归面）。"""
+    import agents.llm_factory as llm_factory_module
+
+    captured: dict[str, Any] = {}
+    original = llm_factory_module.init_chat_model
+
+    def _capture(model_str: str, **kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return original(model_str, **kwargs)
+
+    monkeypatch.setattr(llm_factory_module, "init_chat_model", _capture)
+    resolved = _make_resolved(ProviderType.OPENAI_CHAT)
+    build_chat_model(resolved, "gpt-4o-mini", timeout_seconds=5.0)
+    assert "temperature" not in captured
+    assert "top_p" not in captured
+    assert "seed" not in captured
+
+
+def test_seed_ignored_unsupported_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anthropic 构造不支持 seed：不注入构造 kwargs、构造不抛错（debug 静默忽略）。"""
+    import agents.llm_factory as llm_factory_module
+
+    captured: dict[str, Any] = {}
+    original = llm_factory_module.init_chat_model
+
+    def _capture(model_str: str, **kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return original(model_str, **kwargs)
+
+    monkeypatch.setattr(llm_factory_module, "init_chat_model", _capture)
+    resolved = _make_resolved(ProviderType.ANTHROPIC)
+    model = build_chat_model(
+        resolved,
+        "claude-sonnet-4-5-20250929",
+        # 显式非 reasoning capabilities：隔离 reasoning 分支的 temperature/top_p 剥除
+        capabilities=_make_caps(supports_reasoning=False),
+        timeout_seconds=5.0,
+        temperature=0.0,
+        top_p=1.0,
+        seed=42,
+    )
+    assert isinstance(model, BaseChatModel)
+    assert "seed" not in captured
+    # temperature / top_p 各 Provider 通用，仍透传
+    assert captured.get("temperature") == 0.0
+    assert captured.get("top_p") == 1.0
+
+
+# ============================================================================
 # api_key SecretStr 脱敏（security mitigation-01/02）
 # ============================================================================
 
