@@ -5,7 +5,7 @@ milestone_name: 技术方案蓝图
 current_phase: 113
 current_phase_name: 分仓方案与融合 + Context Bus
 status: executing
-stopped_at: "Phase 112 阶段 1 交付并验证（5/5 plans，verification 16/17 + GAP-1 已闭环：reroute 排除与补候选真实生效）。两轮 plan-checker 修订消除 5 条断链（stage 回边/续驱调用方/禁区显式理由/routing 契约）。code review 进行中（非阻塞）。下一步：Phase 113 smart discuss → plan → execute。"
+stopped_at: "Phase 112 阶段 1 完全收尾（5/5 plans，verification 16/17 + GAP-1 闭环 + code review 2 CRITICAL/7 MAJOR/6 MINOR 全修，相位门 1295 passed，冻结面 10 文件 diff 为空）。Phase 113 规划中：CONTEXT + 2 份 RESEARCH + PATTERNS + 6 PLANs 就位，plan-checker 判 REVISE（5 BLOCKER），3 项已定夺入 CONTEXT，修订第 1 轮进行中。"
 last_updated: "2026-07-29T22:15:00.000Z"
 last_activity: 2026-07-30
 last_activity_desc: Phase 112 complete (16/17 + gap closure)
@@ -88,6 +88,8 @@ Last activity: 2026-07-30 — Phase 112 阶段 1 交付（5/5 plans，verificati
 - [Phase 112, 2026-07-30]: 112-04: fitness/role_suggestion/responsibility/findings 落 `PartialPlan.content`（`RepoResearchTask` 无 report 字段，仅作任务态载体）；dispatch 需 `force_deep_repository_ids` 参数，否则「人工升级深调研」会被重新分回轻量桶静默失效。
 - [Phase 112, 2026-07-30]: 112-05: 确认门动作的续驱触发点在**视图层**（六个改状态端点，confirm 在 alock 之后——塞进 service 会在锁定前空转）；续驱失败只记 caller 事件、REST 仍 2xx、标记留库待下次触发；幂等复用既有 CAS 与 dispatch 白名单，不新造锁。
 - [Phase 112, 2026-07-30]: 112-05: 确认门留痕不可用 `record_answer`（会把门推到 answered 并被重开第二道门）；fitness citations 必须过引用池白名单（否则 confirm 永远锁不上）；`alock` 不可读 session 钉住的版本（会覆盖规格门成果）。
+- [Phase 112 review 修复, 2026-07-30]: **跨 process 污染防线**：确认门 `_aload_session` 必须强制过滤 `process_type="technical_blueprint"`（取不到即 404），且 `adrive_blueprint_session_to_pause_or_terminal` 入口加守卫 no-op——原实现按「最近一条」取会话会把并存的 `technical_plan` 会话用蓝图 engine 驱成 FAILED 而 REST 仍回 2xx（反向断言已证实）。后续任何按 artifact 取会话的代码都必须带 process_type 过滤。
+- [Phase 112 review 修复, 2026-07-30]: **规格门 fail-closed 补洞**：打分不可得或 `total=1.0` 时一律复述原问题重新挂起（兜底问题不参与指纹去重）；「问不出新问题」才放行且必须记 `capped=True` + `release_reason` 区分两条例外路径。
 - [Phase 112, 2026-07-30]: GAP-1 闭环：`reroute.excluded` 必须被候选筛选真实消费（路由候选 + 确认门 pending 两条来源同时剔除，仅人工升级豁免），reroute 轮复用 `blueprint_route(exclude_repository_ids=...)` 补候选、补不到才升门；排除集累积。
 - [Phase 111, 2026-07-30]: 111-04: golden set 与 v0.19.0 路由 golden set 完全分离（`server/tests/fixtures/blueprint_golden/` + `evaluate_blueprint_golden` command），首条 case 为高三提分专项；引用覆盖率/目标仓命中率为纯函数，另三项 DB 统计留接口占位待 112–114 填充数据。
 
@@ -95,6 +97,7 @@ Last activity: 2026-07-30 — Phase 112 阶段 1 交付（5/5 plans，verificati
 
 - [Phase 111 review 跳过项] **MN-06**：需新增 migration 才能修（详见 `.planning/phases/111-schema/111-REVIEW.md` Fix Log）——留到 112/113 有 migration 批次时一并做，避免为单条 MINOR 单独起 migration
 - [Phase 111 review 跳过项] **MN-12**：属权限口径决策（非实现缺陷），与 115 前端权限呈现一并定夺
+- [Phase 112 review 跳过项] **MN-06**：删除/启用皆属零行为收益的 churn（理由见 `.planning/phases/112-1/112-REVIEW.md` Fix Log）；MJ-06 的 `match_kind` 证据字段一并保留
 - [Phase 112 残留 PARTIAL] **FLOW-02 的「替代建议」无结构化字段**：fitness 的 `reasons` 承载了理由，但 unsuitable 时的「建议改去哪个仓」未落成结构化字段（当前混在自由文本里）。113 若需机器消费该建议再补 schema 字段，否则留到 115 前端呈现时定夺
 
 ### Blockers/Concerns
