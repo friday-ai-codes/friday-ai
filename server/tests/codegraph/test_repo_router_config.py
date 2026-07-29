@@ -158,6 +158,23 @@ class TestValidateWeightConfig:
         _, errors = validate_weight_config(_make_config(t2_disabled_facets=["domain", 42]))
         assert any("t2_disabled_facets" in e for e in errors)
 
+    def test_t2_disabled_facets_unknown_value_rejected(self):
+        """MJ-02：枚举白名单——未知取值（含 team、拼错的维度名）直接拒绝。
+
+        修复前只校验「是字符串列表」，运维按校准报告填中文维度名可通过校验但
+        在 resolver 侧永不生效（静默失效比报错危险）。
+        """
+        _, errors = validate_weight_config(_make_config(t2_disabled_facets=["团队", "team"]))
+        assert any("t2_disabled_facets" in e for e in errors)
+
+    def test_t2_disabled_facets_chinese_dim_normalized_to_signal(self):
+        """中文维度名（校准报告行键）合法但落库前归一为英文 signal 名。"""
+        normalized, errors = validate_weight_config(
+            _make_config(t2_disabled_facets=["业务线/产品线", "技术栈"])
+        )
+        assert errors == []
+        assert normalized["t2_disabled_facets"] == ["domain", "stack"]
+
     def test_criticality_anchor_out_of_range_rejected(self):
         cfg = _make_config()
         cfg["criticality_anchors"]["核心"] = 1.5

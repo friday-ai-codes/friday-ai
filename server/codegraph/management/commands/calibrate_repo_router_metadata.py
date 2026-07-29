@@ -62,6 +62,7 @@ from codegraph.services.repo_router_metadata import (
     FACET_STACK,
     MAX_FACET_VALUE_LENGTH,
     UNCLASSIFIED_VALUE,
+    normalize_t2_disabled_facets,
 )
 
 logger = structlog.get_logger(__name__)
@@ -175,13 +176,16 @@ def _render_markdown(report: dict[str, Any]) -> str:
         f"- embedding_model_id: {report['embedding_model_id']}",
         f"- 需求文本样本数: {report['queries_available']}；每 facet 负样本数: {report['negatives_per_facet']}",
         "",
-        "| facet | 闭集值数 | 负样本 min/p50/p95/max | c_lo 建议（负 p95） | c_hi 建议（正 p50） | 判定 |",
-        "|-------|---------|------------------------|--------------------|--------------------|------|",
+        "| facet | 闭集值数 | 负样本 min/p50/p95/max | c_lo 建议（负 p95） "
+        "| c_hi 建议（正 p50） | 判定 | 应写入 t2_disabled_facets |",
+        "|-------|---------|------------------------|--------------------"
+        "|--------------------|------|---------------------------|",
     ]
     for row in report["facets"]:
         if row.get("skipped_reason"):
             lines.append(
-                f"| {row['facet']} | {row['value_count']} | — | — | — | 跳过：{row['skipped_reason']} |"
+                f"| {row['facet']} | {row['value_count']} | — | — | — "
+                f"| 跳过：{row['skipped_reason']} | — |"
             )
             continue
         neg = row["negatives"]
@@ -189,9 +193,12 @@ def _render_markdown(report: dict[str, Any]) -> str:
         c_hi_cell = (
             str(row["c_hi_suggested"]) if row["c_hi_suggested"] is not None else _VERDICT_DEFERRED
         )
+        # 「应写入」列给英文 signal 名（t2_disabled_facets 的唯一取值空间，
+        # MJ-02）——只给中文维度名会被运维原样填进配置而永不生效。
+        disable_cell = row.get("t2_disable_signal") or "—"
         lines.append(
             f"| {row['facet']} | {row['value_count']} | {neg_cell} "
-            f"| {row['c_lo_suggested']} | {c_hi_cell} | {row['verdict']} |"
+            f"| {row['c_lo_suggested']} | {c_hi_cell} | {row['verdict']} | {disable_cell} |"
         )
     if report.get("skipped_positives"):
         lines += ["", f"- 未归属 facet 的正样本条目（跳过）: {report['skipped_positives']} 条"]
@@ -200,7 +207,17 @@ def _render_markdown(report: dict[str, Any]) -> str:
         "**回填指引**：将建议值经 `PUT /api/settings/repo-router/weight-config/` 写入 "
         "`constants.t2_c_lo` / `constants.t2_c_hi` 与 `t2_disabled_facets`，并同步更新 "
         "`weight_set_version` 与 `embedding_model_id`——换 embedding 模型必须重校准（CONTEXT 锁定）。",
+        "",
+        "> `t2_disabled_facets` 只接受英文 signal 名（`domain` / `stack`）——按上表"
+        "「应写入」列填写；中文维度名由后端归一，未知取值直接 400 拒绝。"
+        "`team` 恒不走 T2 通道，无须写入。",
     ]
+    if report.get("t2_disabled_facets_suggested"):
+        lines += [
+            "",
+            "**本次判定应停用 T2 的 signal**："
+            f"`{report['t2_disabled_facets_suggested']}`",
+        ]
     return "\n".join(lines)
 
 
@@ -348,6 +365,7 @@ class Command(BaseCommand):
                         "positives": None,
                         "c_hi_suggested": None,
                         "verdict": None,
+                        "t2_disable_signal": None,
                         "skipped_reason": "无闭集值（FacetVocabulary 未配置该维度）",
                     }
                 )
@@ -377,6 +395,9 @@ class Command(BaseCommand):
             else:
                 verdict = _VERDICT_KEEP
 
+            # 该维度对应的 t2_disabled_facets 取值（英文 signal 名）——只有能映射到
+            # signal 的维度（domain/stack）才可停用 T2（MJ-02）。
+            disable_signals, _ = normalize_t2_disabled_facets([facet])
             facet_rows.append(
                 {
                     "facet": facet,
@@ -386,6 +407,7 @@ class Command(BaseCommand):
                     "positives": pos_stats,
                     "c_hi_suggested": c_hi,
                     "verdict": verdict,
+                    "t2_disable_signal": disable_signals[0] if disable_signals else None,
                     "skipped_reason": None,
                 }
             )
@@ -398,9 +420,19 @@ class Command(BaseCommand):
             "discrimination_threshold": DISCRIMINATION_THRESHOLD,
             "facets": facet_rows,
             "skipped_positives": skipped_positives,
+            # 机器可读的「应写入 t2_disabled_facets 的值」（英文 signal 名，MJ-02）：
+            # 判定为区分度不足且该维度确实走 T2 通道的 signal。
+            "t2_disabled_facets_suggested": sorted(
+                {
+                    row["t2_disable_signal"]
+                    for row in facet_rows
+                    if row["verdict"] == _VERDICT_DISABLE and row.get("t2_disable_signal")
+                }
+            ),
             "next_steps": (
                 "将建议值经 PUT /api/settings/repo-router/weight-config/ 写入 "
-                "constants.t2_c_lo/t2_c_hi 与 t2_disabled_facets，并更新 "
+                "constants.t2_c_lo/t2_c_hi 与 t2_disabled_facets（取值为英文 signal 名 "
+                "domain/stack，见 t2_disabled_facets_suggested），并更新 "
                 "weight_set_version 与 embedding_model_id（换模型必须重校准）"
             ),
         }

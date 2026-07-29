@@ -73,6 +73,58 @@ UNCLASSIFIED_VALUE = "未分类"
 LAYER_T1 = "t1"
 LAYER_T2 = "t2"
 
+# ``t2_disabled_facets`` 的**唯一取值空间**（MJ-02）：英文 signal 名。
+# 只有 domain/stack 走 T2（team 是开放集，恒 allow_t2=False，写进来无意义）。
+T2_DISABLEABLE_SIGNALS: tuple[str, ...] = (SIGNAL_DOMAIN, SIGNAL_STACK)
+
+# 中文 facet 维度名 → signal 名的入口映射：校准命令的报告行键与运维习惯都是
+# 中文维度名，历史上直接填中文导致 ``signal in disabled`` 恒假、O-2「放弃该
+# facet 的 T2 通道」这条硬约束在生产里静默失效。校验层归一 + resolver 兼容
+# 双保险（旧配置行不必手改也能生效）。
+T2_FACET_ALIAS_TO_SIGNAL: dict[str, str] = {
+    FACET_DOMAIN: SIGNAL_DOMAIN,
+    "业务域": SIGNAL_DOMAIN,
+    "业务线": SIGNAL_DOMAIN,
+    "产品线": SIGNAL_DOMAIN,
+    FACET_STACK: SIGNAL_STACK,  # "技术栈"
+}
+
+
+def normalize_t2_disabled_facets(values: Any) -> tuple[list[str], list[str]]:
+    """把 ``t2_disabled_facets`` 归一为 signal 名集合。
+
+    接受英文 signal 名（权威取值）与中文 facet 维度名（校准命令报告/运维习惯，
+    经 :data:`T2_FACET_ALIAS_TO_SIGNAL` 映射）；大小写与首尾空白不敏感。
+
+    Returns:
+        ``(归一后的 signal 名列表（去重保序）, 无法识别的原值列表)``——校验层用
+        第二项报错拒绝写入，resolver 忽略第二项（永不反噬路由）。
+    """
+    normalized: list[str] = []
+    unknown: list[str] = []
+    if not isinstance(values, (list, tuple, set)):
+        return normalized, unknown
+    for raw in values:
+        if not isinstance(raw, str):
+            unknown.append(str(raw))
+            continue
+        item = raw.strip()
+        if not item:
+            continue
+        signal = T2_FACET_ALIAS_TO_SIGNAL.get(item)
+        if signal is None:
+            lowered = item.casefold()
+            for candidate in T2_DISABLEABLE_SIGNALS:
+                if candidate.casefold() == lowered:
+                    signal = candidate
+                    break
+        if signal is None:
+            unknown.append(item)
+            continue
+        if signal not in normalized:
+            normalized.append(signal)
+    return normalized, unknown
+
 # facet 值长度上限：超长直接视为不可匹配（DoS 护栏，T-106-06）。
 MAX_FACET_VALUE_LENGTH = 200
 
@@ -349,11 +401,9 @@ async def resolve_facet_scores(
     """
     facets_map = facets if isinstance(facets, dict) else {}
     disabled_raw = constants.get("t2_disabled_facets") if isinstance(constants, dict) else None
-    disabled = (
-        {str(item) for item in disabled_raw}
-        if isinstance(disabled_raw, (list, tuple, set))
-        else set()
-    )
+    # 归一到 signal 名（MJ-02）：中文维度名（校准命令报告行键 / 运维习惯）与英文
+    # signal 名都能生效；无法识别的值忽略（校验层已在写入时拒绝）。
+    disabled = set(normalize_t2_disabled_facets(disabled_raw)[0])
 
     async def _t2_score(signal: str, value: str) -> float | None:
         """T2 通道前置条件收口：matcher/向量可用且 facet 未被校准禁用。"""
@@ -635,10 +685,13 @@ __all__ = [
     "LAYER_T1",
     "LAYER_T2",
     "MAX_FACET_VALUE_LENGTH",
+    "T2_DISABLEABLE_SIGNALS",
+    "T2_FACET_ALIAS_TO_SIGNAL",
     "UNCLASSIFIED_VALUE",
     "alias_dict_hash",
     "match_t1",
     "merge_alias_dict",
+    "normalize_t2_disabled_facets",
     "resolve_facet_scores",
     "warm_facet_vectors",
 ]
