@@ -97,7 +97,28 @@ Plans:
   4. 运维在系统设置里调整任一权重或常数并保存后，下一次路由立即按新值打分且无需发版；每条路由结果记录其所用的权重版本，跨版本结果不被混作同一口径比较。
   5. 实测前置完成并写入配置说明：embedding 在中文短需求 × facet 值上的余弦校准区间（区分度不足 0.10 的 facet 放弃该通道，O-2）+ `last_commit_at` 的全仓覆盖率与新鲜度（覆盖不足的仓退回枚举映射，O-5）。
 
-**Plans**: TBD
+**Plans**: 8 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 106-01-PLAN.md — 纯函数打分核心六信号扩展（MaxP+pivoted breadth / 元数据消费 / 活跃度衰减 / 关键程度 tie-break）+ INV-R1~R4 性质测试（wave 1）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 106-02-PLAN.md — 权重外置：SettingKeys 三键 + repo_router_config loader/校验单点 + RepoRouterWeightConfigView 专用端点（wave 2）
+- [ ] 106-03-PLAN.md — 元数据 resolver：T1 别名词典 + T2 校准余弦/向量缓存 + 多值/条件/未分类语义（wave 2）
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 106-04-PLAN.md — O-5 活跃度/facets 覆盖率统计 + N_r 快照写入 + O-2 校准 command + 106-MEASUREMENTS.md（wave 3）
+- [ ] 106-05-PLAN.md — 前端：权重设置区（专用端点）+ RoutingDecisionPanel 新信号中文标签（wave 3）
+- [ ] 106-06-PLAN.md — 路由接线：dense 余弦查询 + repo_meta 组装 + 权重调用时读取 + 快照携带 weight_config/repo_meta/scored_at（wave 3）
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 106-07-PLAN.md — 回放兼容：新快照自包含回放 + 105 旧快照回退默认值并标注（wave 4）
+- [ ] 106-08-PLAN.md — golden fixture 扩展 + gk-001 翻转机制断言 + WEIGHT_SET_VERSION bump + GENERATE_GOLDEN=1 重建 baseline（wave 4）
 
 ### Phase 107: 分层呈现与链路韧性（分组/跨组标注 + 降级可见 + 澄清必达 + Stage 1 有界）
 
