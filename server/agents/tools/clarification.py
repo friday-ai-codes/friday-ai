@@ -21,11 +21,13 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any, Final
 
 import structlog
 
+from agents.intent_router import normalize_task_category
 from agents.tools.base import ToolResult, tool
 
 logger = structlog.get_logger(__name__)
@@ -119,6 +121,10 @@ _TOOL_PARAMETERS: dict[str, Any] = {
             "description": "是否允许用户跳过选项自由输入答复，默认 True。",
             "default": True,
         },
+        "conversation_id": {
+            "type": "string",
+            "description": "会话 UUID (auto-injected)",
+        },
     },
     "required": ["question", "options"],
 }
@@ -183,6 +189,7 @@ async def ask_clarification(
     question: str,
     options: list[dict[str, Any]],
     allow_freeform: bool = True,
+    conversation_id: str = "",
 ) -> ToolResult:
     """暂停对话流，让用户在结构化选项里选或自由输入。
 
@@ -209,14 +216,47 @@ async def ask_clarification(
     if err is not None:
         return ToolResult(success=False, error=err)
 
+    categories: set[str] = set()
+    for option in options:
+        implies = option.get("implies")
+        if not isinstance(implies, dict) or "task_category" not in implies:
+            continue
+        raw_category = implies.get("task_category")
+        category = normalize_task_category(raw_category)
+        if category is None:
+            implies.pop("task_category", None)
+            _observe(
+                "task_category_rejected",
+                conversation_id=conversation_id,
+                raw_category=str(raw_category)[:80],
+            )
+            continue
+        implies["task_category"] = category
+        categories.add(category)
+
+    bound_project_id = await _resolve_bound_project(conversation_id)
+    if bound_project_id and _is_solution_scope_clarification(question, options, categories):
+        _observe(
+            "ask_clarification_scope_blocked",
+            conversation_id=conversation_id,
+            bound_project_id=str(bound_project_id),
+        )
+        return ToolResult(
+            success=False,
+            error=(
+                "项目级技术方案覆盖范围不走单题澄清；请立即调用 "
+                "start_feature_solution 启动正式方案编排与多题确认。"
+            ),
+        )
+
     clarification_id = uuid.uuid4().hex
 
-    logger.info(
+    _observe(
         "ask_clarification_emitted",
         clarification_id=clarification_id,
         option_count=len(options),
         allow_freeform=allow_freeform,
-        question_preview=question[:80],
+        conversation_id=conversation_id,
     )
 
     return ToolResult(
@@ -230,6 +270,55 @@ async def ask_clarification(
             "allow_freeform": bool(allow_freeform),
         },
     )
+
+
+def _observe(event: str, **fields: Any) -> None:
+    """工具观测 best-effort，且不记录问题/选项正文。"""
+    try:
+        logger.info(event, category="sampling", component="agents", **fields)
+    except Exception:
+        pass
+
+
+async def _resolve_bound_project(conversation_id: str) -> Any:
+    """conversation_id 只作护栏开关，不作为授权依据；查询失败安全降级。"""
+    if not conversation_id:
+        return None
+    try:
+        from chat.models import Conversation
+
+        return await Conversation.objects.filter(id=conversation_id).values_list(
+            "bound_project", flat=True
+        ).afirst()
+    except Exception:
+        return None
+
+
+def _is_solution_scope_clarification(
+    question: str,
+    options: list[dict[str, Any]],
+    categories: set[str],
+) -> bool:
+    """识别方案覆盖范围澄清，同时放行 RELEV 的编码选仓问题。"""
+    if categories & {"feature_solution", "full_tech_plan"}:
+        return True
+
+    text_parts = [question]
+    for option in options:
+        text_parts.extend([str(option.get("label") or ""), str(option.get("hint") or "")])
+    text = " ".join(text_parts).lower()
+
+    has_scope_terms = any(
+        term in text
+        for term in ("技术方案覆盖", "哪些模块", "整体方案", "方案范围", "覆盖范围")
+    )
+    has_all_modules = bool(re.search(r"全部.{0,12}模块", text))
+    repo_focused = any(term in text for term in ("仓库", "选仓", "哪个仓库"))
+    module_or_scope = any(term in text for term in ("模块", "范围", "覆盖"))
+
+    if "coding_change" in categories or (repo_focused and not module_or_scope):
+        return False
+    return has_scope_terms or has_all_modules
 
 
 __all__ = ["ask_clarification", "CLARIFICATION_PENDING_MARKER"]
