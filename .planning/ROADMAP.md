@@ -70,8 +70,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 105-03-PLAN.md — RepoRouterV2 接线：去截断/breakdown/degraded/确定性 auto_selected + 三种失联行为测试 + clarify policy 回归（wave 2）
-- [ ] 105-04-PLAN.md — golden set fixture + 离线评估 harness + CI 门禁进默认 suite（wave 2）
+- [x] 105-03-PLAN.md — RepoRouterV2 接线：去截断/breakdown/degraded/确定性 auto_selected + 三种失联行为测试 + clarify policy 回归（wave 2）
+- [x] 105-04-PLAN.md — golden set fixture + 离线评估 harness + CI 门禁进默认 suite（wave 2）
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
