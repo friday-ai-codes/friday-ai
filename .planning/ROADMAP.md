@@ -106,8 +106,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 106-02-PLAN.md — 权重外置：SettingKeys 三键 + repo_router_config loader/校验单点 + RepoRouterWeightConfigView 专用端点（wave 2）
-- [ ] 106-03-PLAN.md — 元数据 resolver：T1 别名词典 + T2 校准余弦/向量缓存 + 多值/条件/未分类语义（wave 2）
+- [x] 106-02-PLAN.md — 权重外置：SettingKeys 三键 + repo_router_config loader/校验单点 + RepoRouterWeightConfigView 专用端点（wave 2）
+- [x] 106-03-PLAN.md — 元数据 resolver：T1 别名词典 + T2 校准余弦/向量缓存 + 多值/条件/未分类语义（wave 2）
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
