@@ -55,7 +55,10 @@ from delivery.models import (
     BlueprintReviewer,
     BlueprintStatus,
     BlueprintThread,
+    BlueprintThreadMessage,
     ConvergenceSessionEvent,
+    ThreadAuthorType,
+    ThreadKind,
     ThreadStatus,
 )
 from delivery.services.event_taxonomy import EVENT_BLUEPRINT_STATUS_TRANSITIONED
@@ -129,6 +132,10 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     BlueprintStatus.ARCHIVED: set(),
     BlueprintStatus.SUPERSEDED: set(),
 }
+
+# BlueprintThread.return_stage 字段 max_length（超长截断而非抛，避免澄清线程因恢复
+# 目标串过长开不出来——规格门是 fail-closed 点，开不出线程等于静默放行）。
+_MAX_RETURN_STAGE_CHARS = 16
 
 
 class BlueprintLifecycleService:
@@ -328,3 +335,231 @@ class BlueprintLifecycleService:
                 to_status=to_status,
                 error=str(exc),
             )
+
+    # ------------------------------------------------------------------
+    # 线程写入（Phase 112-02 追加）：BlueprintThread / Message 的唯一 writer。
+    # 规格门（ai_clarification）与确认门（repo_confirmation，112-05）共用同一套 API；
+    # adapter 侧一律零 ORM 写（INV-6），只经下列四个方法开/答/解线程。
+    # 观测规范：日志只记 thread_id / kind / 计数等标量与关联键，**澄清问题与回答正文
+    # 绝不进日志**（T-112-08）。
+    # ------------------------------------------------------------------
+
+    async def ahas_open_blocking_threads(
+        self, artifact: Artifact, *, kind: str | None = None
+    ) -> bool:
+        """是否存在未解决的阻塞线程（复用 confirm 守卫同款查询形）。
+
+        ``kind`` 非空时再按线程种类过滤——规格门只关心 ``ai_clarification``、确认门
+        只关心 ``repo_confirmation``，互不误挡；不传则等价于 LIFE-02 守卫的全量口径
+        （112-05 的 ``blueprint_resume`` 判 pause 用）。
+        """
+        queryset = BlueprintThread.objects.filter(
+            artifact=artifact,
+            status=ThreadStatus.OPEN,
+            blocking=True,
+        )
+        if kind:
+            queryset = queryset.filter(kind=kind)
+        return await queryset.aexists()
+
+    async def open_thread(
+        self,
+        artifact: Artifact,
+        *,
+        kind: str,
+        blocking: bool,
+        question: str,
+        options: list | None = None,
+        initiated_by_user_id: str = "system",
+        created_on_version: Any = None,
+        anchor: dict | None = None,
+        return_stage: str = "",
+    ) -> BlueprintThread:
+        """开一条线程并同事务写入首条 AI 提问消息。
+
+        - ``kind`` 必须 ∈ ``ThreadKind.values``，否则 ``raise ValueError``（DB 不写）。
+        - 线程行与首条消息在同一 ``transaction.atomic``：杜绝「有线程无问题」的半截
+          线程——那会让 HITL 侧看到一条空白阻塞线程且永远答不了。
+        - ``return_stage`` 超 ``max_length=16`` 截断并记 warning（开不出线程 = 规格门
+          静默放行，宁可截断也不抛）。
+        """
+        if kind not in ThreadKind.values:
+            raise ValueError(f"非法线程 kind={kind!r}；合法值={sorted(ThreadKind.values)}")
+
+        stage = str(return_stage or "")
+        if len(stage) > _MAX_RETURN_STAGE_CHARS:
+            logger.warning(
+                "blueprint_thread_return_stage_truncated",
+                category="caller",
+                component="blueprint_lifecycle",
+                artifact_id=str(artifact.id),
+                kind=kind,
+                original_length=len(stage),
+            )
+            stage = stage[:_MAX_RETURN_STAGE_CHARS]
+
+        thread = await self._open_thread_sync(
+            artifact,
+            kind=kind,
+            blocking=bool(blocking),
+            question=str(question or ""),
+            options=list(options or []),
+            initiated_by_user_id=initiated_by_user_id or "system",
+            created_on_version=created_on_version,
+            anchor=anchor,
+            return_stage=stage,
+        )
+        logger.info(
+            "blueprint_thread_opened",
+            category="caller",
+            component="blueprint_lifecycle",
+            artifact_id=str(artifact.id),
+            kind=kind,
+            blocking=bool(blocking),
+            initiated_by_user_id=initiated_by_user_id or "system",
+            thread_id=str(thread.id),
+            option_count=len(options or []),
+        )
+        return thread
+
+    async def record_answer(
+        self,
+        thread: BlueprintThread,
+        *,
+        body: str,
+        author: Any = None,
+        author_type: str = ThreadAuthorType.HUMAN,
+        initiated_by_user_id: str = "system",
+    ) -> BlueprintThreadMessage:
+        """追加一条消息，并把 ``open`` 线程推到 ``answered``（幂等，不回退终态）。
+
+        已是 ``answered`` / ``resolved`` / ``dismissed`` 的线程只追加消息、状态不变——
+        重复作答不得把已解决线程拉回待处理，否则规格门会被同一问题反复挡住。
+        """
+        message = await self._record_answer_sync(
+            thread,
+            body=str(body or ""),
+            author=author,
+            author_type=author_type,
+        )
+        logger.info(
+            "blueprint_thread_answered",
+            category="caller",
+            component="blueprint_lifecycle",
+            thread_id=str(thread.id),
+            kind=thread.kind,
+            author_type=author_type,
+            initiated_by_user_id=initiated_by_user_id or "system",
+        )
+        return message
+
+    async def resolve_thread(
+        self,
+        thread: BlueprintThread,
+        *,
+        resolution: str = "",
+        initiated_by_user_id: str = "system",
+        dismissed: bool = False,
+    ) -> BlueprintThread:
+        """收尾线程：置 ``resolved``（或 ``dismissed``）；终态重复调用为幂等 no-op。
+
+        ``resolution`` 非空时同事务追加一条 AI 结论消息（线程模型无结论字段，结论正文
+        落消息流；结构化留痕由调用方写进蓝图 ``decision_log``）。
+        """
+        target = ThreadStatus.DISMISSED if dismissed else ThreadStatus.RESOLVED
+        changed = await self._resolve_thread_sync(
+            thread, target=target, resolution=str(resolution or "")
+        )
+        logger.info(
+            "blueprint_thread_resolved",
+            category="caller",
+            component="blueprint_lifecycle",
+            thread_id=str(thread.id),
+            kind=thread.kind,
+            to_status=thread.status,
+            changed=changed,
+            initiated_by_user_id=initiated_by_user_id or "system",
+        )
+        return thread
+
+    @sync_to_async
+    def _open_thread_sync(
+        self,
+        artifact: Artifact,
+        *,
+        kind: str,
+        blocking: bool,
+        question: str,
+        options: list,
+        initiated_by_user_id: str,
+        created_on_version: Any,
+        anchor: dict | None,
+        return_stage: str,
+    ) -> BlueprintThread:
+        """线程行 + 首条 AI 消息同事务落库（半截线程不可接受）。"""
+        with transaction.atomic():
+            thread = BlueprintThread.objects.create(
+                artifact=artifact,
+                created_on_version=created_on_version,
+                anchor=anchor,
+                kind=kind,
+                blocking=blocking,
+                options=options,
+                status=ThreadStatus.OPEN,
+                return_stage=return_stage,
+                initiated_by_user_id=initiated_by_user_id,
+            )
+            BlueprintThreadMessage.objects.create(
+                thread=thread,
+                author_type=ThreadAuthorType.AI,
+                body=question,
+            )
+            return thread
+
+    @sync_to_async
+    def _record_answer_sync(
+        self,
+        thread: BlueprintThread,
+        *,
+        body: str,
+        author: Any,
+        author_type: str,
+    ) -> BlueprintThreadMessage:
+        """消息追加 + open→answered 推进同事务（状态推进以 DB 现值为条件，防回退）。"""
+        with transaction.atomic():
+            message = BlueprintThreadMessage.objects.create(
+                thread=thread,
+                author_type=author_type,
+                author=author,
+                body=body,
+            )
+            updated = BlueprintThread.objects.filter(id=thread.id, status=ThreadStatus.OPEN).update(
+                status=ThreadStatus.ANSWERED, updated_at=timezone.now()
+            )
+            if updated == 1:
+                thread.status = ThreadStatus.ANSWERED
+            return message
+
+    @sync_to_async
+    def _resolve_thread_sync(
+        self, thread: BlueprintThread, *, target: str, resolution: str
+    ) -> bool:
+        """终态化线程（幂等）：仅 open/answered 可被推进，返回是否真的改了状态。"""
+        with transaction.atomic():
+            updated = BlueprintThread.objects.filter(
+                id=thread.id, status__in=[ThreadStatus.OPEN, ThreadStatus.ANSWERED]
+            ).update(status=target, updated_at=timezone.now())
+            if updated != 1:
+                # 已是终态：保留首次结论，不覆盖、不追加噪声消息。
+                fresh = BlueprintThread.objects.filter(id=thread.id).values("status").first()
+                if fresh:
+                    thread.status = fresh["status"]
+                return False
+            thread.status = target
+            if resolution:
+                BlueprintThreadMessage.objects.create(
+                    thread=thread,
+                    author_type=ThreadAuthorType.AI,
+                    body=resolution,
+                )
+            return True
