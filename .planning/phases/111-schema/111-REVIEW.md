@@ -1,6 +1,8 @@
 ---
 phase: 111-schema
-status: findings
+status: fixed
+fixed: 2026-07-30
+fixed_summary: "3/3 MAJOR + 11/13 MINOR 修复；MN-06（需新 migration）/ MN-12（权限口径）跳过"
 reviewed: 2026-07-30
 depth: deep
 reviewer: gsd-code-reviewer (adversarial)
@@ -194,6 +196,32 @@ def _fmt(path: str, message: str) -> str:
 | LLM 上游文本脱敏 | 异常文本走 `redact_secrets_in_text`（charter_service.py:363），与 `decompose_segments.py:209` / `feature_classify.py:303` / `recall_adapter.py:115` 既有惯例逐字一致；LLM 响应体从不入日志（只入库供业务消费） — 合规。真正的未脱敏出口在 MJ-03（schema 报错），不在 charter |
 | 观测埋点齐备性 | lifecycle 转移事件与 charter 四事件均带 `category=caller` + `component` + `duration_ms` + `initiated_by_user_id`；golden command 标 `system` — 符合 `.cursor/rules/observability-logging.mdc` |
 | 纯函数无 ORM | `blueprint_schema` / `blueprint_execution` / `blueprint_quality` / `blueprint_anchor` 顶层零 django/ORM import — CLEAN |
+
+---
+
+## Fix Log
+
+**Fixed:** 2026-07-30 · 3/3 MAJOR 修复、11/13 MINOR 修复、2 条跳过
+**相位门:** `cd server && uv run pytest tests/services/ tests/delivery/ tests/repositories/ -q` → **1768 passed, 1 skipped, 0 failed**（191.5s；基线 938 为 VERIFICATION 的窄选集，本次为三目录全量）；`makemigrations --check --dry-run` → No changes detected（**零新增 migration**）；`manage.py evaluate_blueprint_golden` → exit 0。冻结面零触碰。
+
+| Finding | 结论 | 处理 / 理由 | Commit |
+|---------|------|-------------|--------|
+| MJ-01 | fixed | `validate_blueprint` 加后置检查 (c)：`implementation_overview.items[].repository_id` 与 `current_state_analysis[].repository_id` 必须 ∈ `repo_associations`；`derive_execution_plan` 丢弃不在册的 item，不再拿坏仓 id 兜底成 `repository_name`。反向断言：坏 id 被拒 + 幽灵仓不进 execution task；在册但缺名的仓仍回退 id | `f9a52821` |
+| MJ-02 | fixed | 抽出 `_agenerate_draft`，try 只包 LLM 调用与解析；落库单独 try → `error` 级 `reason=persist_error` + 抛 `CharterPersistError`，视图回 500（文案不含「供应商」），503 文案改为「模型调用失败或未配置可用供应商」。测试：落库失败必抛不吞、LLM 报错仍 None 零副作用、API 500≠503 | `acaff2f6` |
+| MJ-03 | fixed | 新增 `_format_error` 唯一出口：`redact_secrets_in_text` 脱敏 + 500 字截断（超长带「已截断」标记），jsonschema 报错与兜底 `except` 两处都走它。测试：超长实例被截断、`sk-ant-*` 被 REDACTED、异常路径同样脱敏 | `d3480ff1` |
+| MN-01 | fixed | 阻塞线程查询移进 `_apply_transition_sync` 的 `transaction.atomic()`，与 CAS 同事务收敛 check-then-act 窗口 | `9cce1125` |
+| MN-02 | fixed | 评审人 upsert 改同事务 `get_or_create`：抛错则状态一起回滚。测试断言 upsert 失败后 DB 仍是 `pending_review` 且名单为空 | `9cce1125` |
+| MN-03 | fixed | 非 `needs_clarification` 目标态显式清空 `return_status` 并记 warning，未校验值不再进事件 payload | `4d4c7c19` |
+| MN-04 | fixed | `session is None` 改记 warning 级 `blueprint_transition_without_session`，让零 DB 留痕的转移可被发现 | `4d4c7c19` |
+| MN-05 | fixed | `_persist` 捕获 `IntegrityError` 重跑一次读-改路径。测试模拟「首次 select_for_update 看不到行 → create 撞唯一约束 → 重试落到就地更新」 | `acaff2f6` |
+| MN-06 | **skipped** | 需要给 `RepoCharter` 加 `confirmed_at` 列 = 新 migration，超出本次「不新增 migration（除非 MAJOR 必需）」的硬纪律；确认时间可追溯性归入后续相位的模型演进 | — |
+| MN-07 | fixed | `_merge_files` 去重键由 `(path, action)` 改为 `path`，冲突按 delete > create > modify 收敛并在 note 标注来源。测试：同 path 的 modify+remove 收敛成单条 delete | `65906082` |
+| MN-08 | fixed | 后置检查 (e)：`items` / `feature_points` / `api_contracts` 的 `id` 唯一，重复即拒（参数化三段反向断言） | `7b44778d` |
+| MN-09 | fixed | 后置检查 (d)：引用池 key 必须等于条目 `citation_id`，不一致即拒 | `7b44778d` |
+| MN-10 | fixed | `builtin_types` 删除重复字面量，判别常量与 `validate_blueprint` 同源懒 import。测试把常量改成 `blueprint/v2` 后判别仍跟随（不会静默落回 v0 校验路径） | `0a434f34` |
+| MN-11 | fixed | 补 `setattr(obj, "blueprint_status", v)` 与 `{"blueprint_status": v}` 两条正则 + 正向对照测试；`delivery/models/` 取消整目录豁免（字段级只豁免 `= models.*` 定义行，模型级在该目录仍查 `.objects.<write>`） | `319f01a9` |
+| MN-12 | **skipped** | 权限收紧（`confirm` → 仓库负责人/`IsAdminUser`）与 `draft` 限流属产品/权限模型决策，REVIEW 自身已判定「不算偏离 CONTEXT」（与 repositories 既有 view 惯例一致）；改动会动 CHARTER-01 已验证的 API 契约，留给后续相位与产品口径一并定夺 | — |
+| MN-13 | fixed | golden command 先判空再拼行，替代对成品字符串 `replace(":  →")`。测试：无 metrics 行为 `name: → FAIL`，含 `":  →"` 的 case 名不被误改 | `0a434f34` |
 
 ---
 
