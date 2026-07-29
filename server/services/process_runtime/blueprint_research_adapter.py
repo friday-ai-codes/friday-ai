@@ -91,6 +91,8 @@ class BlueprintResearchAdapter:
     - `session_service`：`ConvergenceSessionService` 形状（事件 emit 通道）
     - `dispatcher_factory`：无参 callable 返回有 `dispatch(DispatchTask)` 的对象
     - `charters_loader`：`aload_charters(ids) -> {repository_id: 章程字段}` 形状的 async 函数
+    - `route_adapter`：`route(session, *, exclude_repository_ids=) -> 112-03 契约摘要`
+      形状（reroute 轮补候选复用它，缺省惰性构造 `BlueprintRouteAdapter`）
     """
 
     def __init__(
@@ -100,12 +102,14 @@ class BlueprintResearchAdapter:
         session_service: Any = None,
         dispatcher_factory: Any = None,
         charters_loader: Any = None,
+        route_adapter: Any = None,
         node_execution_id: str = "",
     ) -> None:
         self.research_service = research_service or ResearchService()
         self.session_service = session_service or ConvergenceSessionService()
         self._dispatcher_factory = dispatcher_factory
         self._charters_loader = charters_loader
+        self._route_adapter = route_adapter
         self.node_execution_id = node_execution_id or ""
 
     # ── 派发主入口 ────────────────────────────────────────────────────────
@@ -835,6 +839,11 @@ class BlueprintResearchAdapter:
         `stage_state` 是**整字典替换**而非深合并：只回写增量会清空 `decomposition` /
         `routing` / `recall_context` 等既有键（它们正是只读视图属性的数据源），所以这里
         `{**state, ...}` 浅合并整体回写，且 `session` 必须是**刚从 DB 读的新实例**。
+
+        判 `reroute` 时**必须真的补到新仓**才回边：排除集之外重跑一次双面路由，新候选
+        追加进 `routing.candidates`（回边后由 `dispatch` 的增量白名单只为它们起容器）；
+        **补不到任何新候选就地转 `escalate`**（`reason="no_new_candidates"`）带全部现状
+        升确认门 —— 否则回边只是空转，白烧一轮上界。
         """
         session = await self._areload_session(session)
         state = getattr(session, "stage_state", None) or {}
@@ -851,12 +860,35 @@ class BlueprintResearchAdapter:
         fitness = await self.acollect_fitness(session)
         decision = decide_reroute(fitness=fitness, round_no=round_no)
 
+        # 排除集**累积**：本轮 unsuitable ∪ 历轮已排除（历轮的仓可能已无最新结论，
+        # 只靠本轮判定会让它「复活」回候选，排除就不是永久的了）。
+        excluded_all = sorted(
+            self._excluded_repository_ids(state) | set(decision["unsuitable_repository_ids"])
+        )
+        supplemented: list[str] = []
+        refilled_routing: dict | None = None
+        if decision["action"] == "reroute":
+            refill = await self._arefill_candidates(
+                session, state=state, excluded=set(excluded_all), tried=set(fitness or {})
+            )
+            supplemented = refill["added"]
+            refilled_routing = refill["routing"]
+            if not supplemented:
+                # 补不到新仓 ⇒ 回边必然空转 ⇒ 直接升确认门交人裁决（绝不静默失败）。
+                decision = {
+                    "action": "escalate",
+                    "unsuitable_repository_ids": decision["unsuitable_repository_ids"],
+                    "next_round": round_no,
+                    "reason": "no_new_candidates",
+                }
+
         merged = {
             **state,
             _REROUTE_STATE_KEY: {
                 "count": decision["next_round"],
-                "excluded": decision["unsuitable_repository_ids"],
+                "excluded": excluded_all,
                 "last_reason": decision["reason"],
+                "supplemented": supplemented,
             },
             # 只存小摘要（正文与 findings 由下游按 repository_id 自取 PartialPlan）
             _FITNESS_STATE_KEY: {
@@ -868,6 +900,10 @@ class BlueprintResearchAdapter:
                 for repository_id, item in fitness.items()
             },
         }
+        if refilled_routing is not None:
+            # 补候选只**追加** candidates（顶层其余键沿用首轮路由摘要），回边后由
+            # dispatch 的增量白名单只为新仓起容器，既有仓结论一行不动。
+            merged["routing"] = refilled_routing
 
         event_map = {
             "converged": "converged",
@@ -882,6 +918,7 @@ class BlueprintResearchAdapter:
                 "reason": decision["reason"],
                 "round": round_no,
                 "unsuitable_repository_ids": decision["unsuitable_repository_ids"],
+                "excluded_repository_ids": excluded_all,
                 "repos": [
                     {
                         "repository_id": repository_id,
@@ -919,6 +956,72 @@ class BlueprintResearchAdapter:
             "escalation": escalation,
             "decision": decision,
         }
+
+    async def _arefill_candidates(
+        self, session: Any, *, state: dict, excluded: set[str], tried: set[str]
+    ) -> dict:
+        """reroute 轮补候选：在**排除集 ∪ 已试仓**之外重跑双面路由，取真正的新仓。
+
+        复用 112-03 的 `BlueprintRouteAdapter.route`（同一份三分量评分与章程补入逻辑，
+        不另写一套选仓判据）。返回 `{"added": [repository_id...], "routing": dict|None}`；
+        `routing` 是**追加新候选后的整份 routing 摘要**（None = 无新候选，不动 stage_state）。
+
+        best-effort：路由重跑失败按「补不到」处理 —— 调用方据此升确认门，绝不静默失败。
+        """
+        routing = state.get("routing")
+        routing = routing if isinstance(routing, dict) else {}
+        existing = [item for item in (routing.get("candidates") or []) if isinstance(item, dict)]
+        known = {str(item.get("repository_id") or "") for item in existing}
+        known |= {str(repository_id) for repository_id in tried}
+        known.discard("")
+        skip = known | excluded
+
+        started = time.monotonic()
+        try:
+            result = await self._get_route_adapter().route(session, exclude_repository_ids=skip)
+        except Exception as exc:  # noqa: BLE001 — 补候选失败 = 补不到（后续升门），不上抛
+            logger.warning(
+                "blueprint_reroute_refill_failed",
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+            return {"added": [], "routing": None}
+
+        added: list[dict] = []
+        for item in (result or {}).get("candidates") or []:
+            if not isinstance(item, dict):
+                continue
+            repository_id = str(item.get("repository_id") or "")
+            if not repository_id or repository_id in skip:
+                continue
+            skip.add(repository_id)
+            added.append(item)
+
+        logger.info(
+            "blueprint_reroute_refill_completed",
+            session_id=str(getattr(session, "id", "")),
+            excluded_count=len(excluded),
+            tried_count=len(known),
+            added_count=len(added),
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+            category="sampling",
+            component="process_runtime",
+        )
+        if not added:
+            return {"added": [], "routing": None}
+        return {
+            "added": [str(item["repository_id"]) for item in added],
+            "routing": {**routing, "candidates": existing + added},
+        }
+
+    def _get_route_adapter(self) -> Any:
+        if self._route_adapter is not None:
+            return self._route_adapter
+        from services.process_runtime.blueprint_route import BlueprintRouteAdapter
+
+        return BlueprintRouteAdapter()
 
     @staticmethod
     @sync_to_async

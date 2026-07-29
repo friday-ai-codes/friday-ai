@@ -489,9 +489,15 @@ class BlueprintRouteAdapter:
 
         return RepoRouterV2
 
-    async def route(self, session) -> dict:
-        """双面路由主入口，返回 `stage_state["routing"]` 契约摘要（顶层 8 键）。"""
+    async def route(self, session, *, exclude_repository_ids: set[str] | None = None) -> dict:
+        """双面路由主入口，返回 `stage_state["routing"]` 契约摘要（顶层 8 键）。
+
+        `exclude_repository_ids` 供 reroute 轮**补候选**复用本入口：被判 `unsuitable`
+        的仓与已试过的仓一律排除在外，路由器候选与章程补入候选**两条来源同时剔除**，
+        使重路由真的能取到「排除集之外的新仓」。默认 `None` ⇒ 与首轮调用逐字同行为。
+        """
         started = time.monotonic()
+        excluded = {str(rid) for rid in (exclude_repository_ids or set()) if str(rid or "")}
         requirement_spec = await self._aresolve_requirement_spec(session)
         query_terms = _collect_query_terms(requirement_spec)
         query = "\n".join(query_terms)[:_MAX_QUERY_CHARS]
@@ -523,11 +529,12 @@ class BlueprintRouteAdapter:
             }
             for c in getattr(result, "candidates", []) or []
             if str(getattr(c, "repo_id", "") or "")
+            and str(getattr(c, "repo_id", "")) not in excluded
         ]
 
         supplements = await self._collect_supplements(
             query_terms=query_terms,
-            exclude_repository_ids={c["repository_id"] for c in raw_candidates},
+            exclude_repository_ids={c["repository_id"] for c in raw_candidates} | excluded,
             repository_ids=repository_ids,
         )
         raw_candidates.extend(supplements)
