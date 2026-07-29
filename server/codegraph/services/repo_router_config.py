@@ -39,8 +39,10 @@ from asgiref.sync import sync_to_async
 
 from codegraph.services.repo_router_metadata import (
     DEFAULT_ALIAS_DICT,
+    T2_DISABLEABLE_SIGNALS,
     alias_dict_hash,
     merge_alias_dict,
+    normalize_t2_disabled_facets,
 )
 from codegraph.services.repo_router_scoring import (
     DEFAULT_WEIGHT_CONFIG,
@@ -245,7 +247,17 @@ def validate_weight_config(raw: Any) -> tuple[dict[str, Any], list[str]]:
         if not isinstance(facets, list) or not all(isinstance(f, str) for f in facets):
             errors.append("t2_disabled_facets 必须是字符串列表")
         else:
-            normalized["t2_disabled_facets"] = list(facets)
+            # 枚举白名单 + 归一到英文 signal 名（MJ-02）：只有 domain/stack 走
+            # T2，历史上填中文维度名会静默失效（resolver 比的是 signal 名）。
+            signals, unknown = normalize_t2_disabled_facets(facets)
+            if unknown:
+                errors.append(
+                    f"t2_disabled_facets 含未知取值: {', '.join(unknown)}"
+                    f"——只接受 {list(T2_DISABLEABLE_SIGNALS)}（或对应中文维度名"
+                    "「业务线/产品线」「技术栈」；team 不走 T2 通道）"
+                )
+            else:
+                normalized["t2_disabled_facets"] = signals
 
     for optional_str_key in ("embedding_model_id", "calibrated_at"):
         if optional_str_key in raw:

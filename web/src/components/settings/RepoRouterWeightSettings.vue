@@ -50,6 +50,25 @@ const WEIGHT_FIELDS: WeightField[] = [
   { key: 'team', label: '团队归属' },
 ]
 
+/**
+ * T2 可停用的 facet——取值空间是后端 signal 名（唯一权威取值，
+ * 与 repo_router_metadata.T2_DISABLEABLE_SIGNALS 一致）。
+ * team 恒不走 T2 通道（开放集），故不在可选项内。
+ */
+const T2_DISABLEABLE_FACETS: { signal: string, label: string }[] = [
+  { signal: 'domain', label: '业务域（业务线/产品线）' },
+  { signal: 'stack', label: '技术栈' },
+]
+
+/** 历史配置行可能存的中文维度名 → signal（与后端归一表同口径）。 */
+const LEGACY_FACET_ALIASES: Record<string, string> = {
+  '业务线/产品线': 'domain',
+  '业务域': 'domain',
+  '业务线': 'domain',
+  '产品线': 'domain',
+  '技术栈': 'stack',
+}
+
 interface ConstantField {
   key: string
   label: string
@@ -82,7 +101,9 @@ const isDefault = ref(false)
 const versionForm = ref('')
 const weightForm = ref<Record<string, string>>({})
 const constantForm = ref<Record<string, string>>({})
-const facetsForm = ref('')
+// T2 停用 facet：多选（signal 名集合），不再是自由文本——历史上自由文本让运维
+// 按校准报告填中文维度名，后端比的是 signal 名，条款静默失效。
+const disabledFacets = ref<string[]>([])
 
 // 后端 400 返回的逐条校验错误
 const serverErrors = ref<string[]>([])
@@ -105,7 +126,10 @@ async function loadConfig() {
     constantForm.value = Object.fromEntries(
       CONSTANT_FIELDS.map(f => [f.key, String(data.constants[f.key] ?? '')]),
     )
-    facetsForm.value = (data.t2_disabled_facets ?? []).join(', ')
+    // 后端已把取值归一为 signal 名；历史行里的中文维度名映射回选项
+    disabledFacets.value = (data.t2_disabled_facets ?? [])
+      .map(v => LEGACY_FACET_ALIASES[v] ?? v)
+      .filter(v => T2_DISABLEABLE_FACETS.some(f => f.signal === v))
     dirty.value = false
     serverErrors.value = []
   }
@@ -202,11 +226,17 @@ function buildPayload(): Omit<RepoRouterWeightConfig, 'is_default'> {
         CONSTANT_FIELDS.map(f => [f.key, parsedConstant(f.key)]),
       ),
     },
-    t2_disabled_facets: facetsForm.value
-      .split(/[,，]/)
-      .map(s => s.trim())
-      .filter(Boolean),
+    t2_disabled_facets: T2_DISABLEABLE_FACETS.filter(f =>
+      disabledFacets.value.includes(f.signal),
+    ).map(f => f.signal),
   }
+}
+
+function toggleDisabledFacet(signal: string, checked: boolean) {
+  disabledFacets.value = checked
+    ? [...new Set([...disabledFacets.value, signal])]
+    : disabledFacets.value.filter(s => s !== signal)
+  markDirty()
 }
 
 async function save() {
@@ -328,8 +358,14 @@ onMounted(() => {
               </div>
             </div>
             <p class="mt-3 text-xs text-muted-foreground">
-              相对权重经缺失重归一化生效，绝对和无须为 1；元数据（业务域/技术栈/团队归属）
-              权重之和不得超过全部权重和的一半（文本主导不变量 INV-R2）。
+              相对权重经缺失重归一化生效，绝对和无须为 1；文本证据必须 &gt; 0 且为最大项，
+              元数据（业务域/活跃度/技术栈/团队归属）权重之和不得超过全部权重和的一半
+              （文本主导不变量 INV-R2）。
+            </p>
+            <p class="mt-1 text-xs text-muted-foreground">
+              技术栈匹配分口径为 <code>0.8·max + 0.2·second_max</code>：单值精确命中上限
+              0.8、命中两个技术栈才达 1.0（与业务域/团队归属的 1.0 满分不同尺度，
+              看分数分解时不必误判「技术栈信号偏弱」）。
             </p>
           </div>
         </div>
@@ -360,18 +396,29 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- T2 停用 facet 列表 -->
+        <!-- T2 停用 facet（多选，取值为后端 signal 名） -->
         <div class="space-y-2">
-          <Label for="repo-router-t2-disabled">T2 停用 facet（逗号分隔）</Label>
-          <Input
-            id="repo-router-t2-disabled"
-            v-model="facetsForm"
-            placeholder="如：业务域, 团队"
-            class="h-10 bg-muted/30 border-border/50 focus:border-primary/50"
-            @input="markDirty"
-          />
+          <Label>T2 停用 facet</Label>
+          <div class="flex flex-wrap gap-4 rounded-xl bg-muted/30 border border-border/30 p-4">
+            <label
+              v-for="f in T2_DISABLEABLE_FACETS"
+              :key="f.signal"
+              class="flex items-center gap-2 text-sm cursor-pointer"
+            >
+              <input
+                :id="`repo-router-t2-disabled-${f.signal}`"
+                type="checkbox"
+                class="size-4 accent-primary"
+                :checked="disabledFacets.includes(f.signal)"
+                @change="(e) => toggleDisabledFacet(f.signal, (e.target as HTMLInputElement).checked)"
+              >
+              <span>{{ f.label }}</span>
+              <code class="text-xs text-muted-foreground">{{ f.signal }}</code>
+            </label>
+          </div>
           <p class="text-xs text-muted-foreground">
-            O-2 校准判定区分度不足（c_hi − c_lo &lt; 0.10）的 facet 在此停用 T2 embedding 通道，只保留 T1 词典匹配
+            O-2 校准判定区分度不足（c_hi − c_lo &lt; 0.10）的 facet 在此停用 T2 embedding 通道，
+            只保留 T1 词典匹配。团队归属恒不走 T2（开放集），故不可选。
           </p>
         </div>
 

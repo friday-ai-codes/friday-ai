@@ -453,6 +453,44 @@ class TestFacetT2Matcher:
         assert result["domain"] == {"score": None, "layer": None}
         assert mock.await_count == 0
 
+    async def test_resolver_accepts_chinese_facet_dim_name_for_disable(self, monkeypatch):
+        """MJ-02：填中文维度名（校准报告行键 / 运维习惯）同样停用 T2。
+
+        修复前 resolver 比的是英文 signal 名，运维照命令输出与 UI 提示填
+        「业务线/产品线」时 ``signal in disabled`` 恒假——O-2「放弃该 facet 的
+        T2 通道」这条硬约束在生产里静默失效。
+        """
+        mock = AsyncMock(return_value=_vec_with_cos(0.55))
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+        matcher = FacetT2Matcher(model_id="cn-disabled-model", t2_c_lo=0.25, t2_c_hi=0.55)
+        for disabled_value in ("业务线/产品线", "业务域", "DOMAIN"):
+            mock.reset_mock()
+            result = await resolve_facet_scores(
+                "完全无关的需求",
+                {FACET_DOMAIN: "高三提分"},
+                alias_dict=_TEST_ALIAS_DICT,
+                constants={"t2_disabled_facets": [disabled_value]},
+                query_embedding=_QUERY_VEC,
+                t2_matcher=matcher,
+            )
+            assert result["domain"] == {"score": None, "layer": None}, disabled_value
+            assert mock.await_count == 0, disabled_value
+
+    async def test_resolver_ignores_unknown_disable_values(self, monkeypatch):
+        """无法识别的停用值不误伤其他 facet（校验层已在写入时拒绝，此处不反噬）。"""
+        mock = AsyncMock(return_value=_vec_with_cos(0.40))
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+        matcher = FacetT2Matcher(model_id="unknown-disable", t2_c_lo=0.25, t2_c_hi=0.55)
+        result = await resolve_facet_scores(
+            "完全无关的需求",
+            {FACET_DOMAIN: "高三提分"},
+            alias_dict=_TEST_ALIAS_DICT,
+            constants={"t2_disabled_facets": ["不存在的维度", 42]},
+            query_embedding=_QUERY_VEC,
+            t2_matcher=matcher,
+        )
+        assert result["domain"]["layer"] == LAYER_T2
+
     async def test_team_never_uses_t2(self, monkeypatch):
         """团队归属开放集只走 T1——即便 T2 可用也不调 embedding（RESEARCH A3）。"""
         mock = AsyncMock(return_value=_vec_with_cos(0.55))
