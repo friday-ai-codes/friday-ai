@@ -72,6 +72,16 @@ _EXPECTED_CALL_SOURCES = {
     "feature_list_parse",
     "learning_case_extraction",
     "pr_review_capture",
+    "feature_change_classify",
+    # v0.20.0 Phase 111-03 新增蓝图链 8 值（LOGGING-SPEC §4.1 已同步登记）
+    "blueprint_decompose",
+    "blueprint_spec_gate",
+    "blueprint_repo_research",
+    "blueprint_reroute",
+    "blueprint_repo_plan",
+    "blueprint_merge",
+    "blueprint_ai_review",
+    "blueprint_charter_draft",
 }
 
 
@@ -91,10 +101,14 @@ class TestCallSourceEnum:
         v0.16.0 Phase 89 新增 ``plan_deepen`` / ``plan_revision`` / ``branch_naming`` 后升至 30 值；
         v0.16.1 Phase 90 新增 ``plan_clarification`` 后升至 31 值；v0.16.1 Phase 95 新增
         ``plan_decompose`` 后升至 32 值；v0.17.0 Phase 101 新增
-        ``learning_case_extraction`` / ``pr_review_capture`` 后升至 35 值。
+        ``learning_case_extraction`` / ``pr_review_capture`` 后升至 35 值；v0.20.0 Phase 111-03
+        新增蓝图链 8 值（``blueprint_decompose`` / ``blueprint_spec_gate`` /
+        ``blueprint_repo_research`` / ``blueprint_reroute`` / ``blueprint_repo_plan`` /
+        ``blueprint_merge`` / ``blueprint_ai_review`` / ``blueprint_charter_draft``）
+        与 ``feature_change_classify`` 后升至 44 值。
         """
         assert {member.value for member in CallSource} == _EXPECTED_CALL_SOURCES
-        assert len(_EXPECTED_CALL_SOURCES) == 35
+        assert len(_EXPECTED_CALL_SOURCES) == 44
 
     def test_normalize_valid_value(self) -> None:
         assert CallSource.normalize("chat") == "chat"
