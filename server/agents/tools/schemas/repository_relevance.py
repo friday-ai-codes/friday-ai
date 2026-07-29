@@ -37,6 +37,9 @@ class RepositoryRelevanceCandidate(BaseModel):
     # PageIndex v2 扩展（可选，legacy 路径为空）：monorepo 子应用归属及其根目录
     sub_project: str = ""
     sub_project_paths: list[str] = Field(default_factory=list)
+    # 分数可拆解（ROUTE-07）：信号名 → 贡献值，Σ贡献 == score（后端打分核心
+    # INV-R1/R3 保证）。legacy 聚合路径 / 历史 trace 为空 dict，前端静默降级。
+    breakdown: dict[str, float] = Field(default_factory=dict)
 
 
 class RepositoryRelevanceOutput(BaseModel):
