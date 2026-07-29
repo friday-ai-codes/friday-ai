@@ -196,9 +196,7 @@ async def _h_merge(session: Any, engine: Any) -> StageOutcome:
                 "report": result.get("report", {}) if isinstance(result, dict) else {},
             },
         )
-    back_target = (
-        result.get("back_target", "clarify") if isinstance(result, dict) else "clarify"
-    )
+    back_target = result.get("back_target", "clarify") if isinstance(result, dict) else "clarify"
     if back_target == "research":
         return StageOutcome(event="validation_failed_reresearch")
     return StageOutcome(event="validation_failed_reclarify")
@@ -275,9 +273,11 @@ async def _h_echo_draft(session: Any, engine: Any) -> StageOutcome:
     from delivery.services import ArtifactService
 
     raw = (session.stage_state or {}).get("echo_input")
-    content = raw if isinstance(raw, dict) and isinstance(raw.get("message"), str) else {
-        "message": str((raw or {}).get("message", "")) if isinstance(raw, dict) else ""
-    }
+    content = (
+        raw
+        if isinstance(raw, dict) and isinstance(raw.get("message"), str)
+        else {"message": str((raw or {}).get("message", "")) if isinstance(raw, dict) else ""}
+    )
     work_item = None
     if session.work_item_id is not None:
         work_item = await WorkItem.objects.filter(id=session.work_item_id).afirst()
@@ -441,14 +441,6 @@ async def _h_bp_repo_confirmation(session: Any, engine: Any) -> StageOutcome:
     event = "confirmed" if result.get("event") == "confirmed" else "awaiting_confirmation"
     return StageOutcome(event=event, stage_state_update=result.get("stage_state") or None)
 
-
-# 与 112-04 同源的重路由轮次上界（两处各写一个字面量会让「有界」在演进中失效，故复用
-# 其常量而非复制数值）。模块中段 import 是为守「本文件纯追加」纪律：既有 import 块一字不动。
-from services.process_runtime.blueprint_research_adapter import (  # noqa: E402
-    MAX_REROUTE_ROUNDS as _MAX_REROUTE_ROUNDS,
-)
-
-MAX_BLUEPRINT_REROUTE_ROUNDS = _MAX_REROUTE_ROUNDS
 
 _TECHNICAL_BLUEPRINT_STAGES = {
     "intake": StageDef(

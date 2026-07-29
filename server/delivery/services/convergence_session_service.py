@@ -322,6 +322,18 @@ class ConvergenceSessionService:
             session.status = fresh["status"]
             session.current_stage = fresh["current_stage"]
 
+    async def aemit_event(
+        self, event_name: str, session: ConvergenceSession, payload: dict[str, Any] | None = None
+    ) -> None:
+        """**跨模块唯一的事件写入面**（best-effort，绝不抛）。
+
+        adapter / 视图 / 回调一律走它，不再各自直调私有 ``_emit_event`` 或裸建
+        ``ConvergenceSessionEvent`` 行——四种写法写同一张表，后续给事件统一加字段
+        （如 ``initiated_by_user_id``）要改四处，且裸建那处依赖 ``work_item`` 恰好是软
+        UUID 字段，改成真 FK 会静默丢事件。
+        """
+        await self._emit_event(event_name, session, payload or {})
+
     async def _emit_event(
         self, event_name: str, session: ConvergenceSession, payload: dict[str, Any]
     ) -> None:

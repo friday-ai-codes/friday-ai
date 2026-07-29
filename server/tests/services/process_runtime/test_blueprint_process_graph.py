@@ -224,10 +224,40 @@ def test_handler_count_and_registration_count() -> None:
     assert len(re.findall(r"^register_process_type\(", source, re.MULTILINE)) == 3
 
 
-def test_reroute_bound_constant_is_shared_with_research_adapter() -> None:
+def test_reroute_bound_constant_lives_in_the_zero_dependency_module() -> None:
+    """MN-07：轮次上界的定义在零依赖 ``constants``，adapter 只再导出（同一数值单一来源）。"""
     from services.process_runtime.blueprint_research_adapter import MAX_REROUTE_ROUNDS
+    from services.process_runtime.constants import MAX_REROUTE_ROUNDS as SHARED
 
-    assert bp.MAX_BLUEPRINT_REROUTE_ROUNDS == MAX_REROUTE_ROUNDS
+    assert MAX_REROUTE_ROUNDS == SHARED
+
+
+def test_blueprint_modules_emit_events_through_the_public_api_only() -> None:
+    """MN-05：蓝图链的事件写入统一走 ``aemit_event``，不直调私有钩子、不裸建 ORM 行。"""
+    server_dir = Path(bp.__file__).resolve().parents[2]
+    watched = [
+        "services/process_runtime/blueprint_route.py",
+        "services/process_runtime/blueprint_confirm_gate.py",
+        "services/process_runtime/blueprint_research_adapter.py",
+        "services/process_runtime/blueprint_spec_gate.py",
+        "delivery/services/blueprint_lifecycle_service.py",
+    ]
+    violations = []
+    for rel in watched:
+        text = (server_dir / rel).read_text(encoding="utf-8")
+        for pattern in ("._emit_event(", "ConvergenceSessionEvent.objects.acreate("):
+            if pattern in text:
+                violations.append(f"{rel}: {pattern}")
+    assert not violations, "事件写入必须经 ConvergenceSessionService.aemit_event：" + str(
+        violations
+    )
+
+
+def test_process_registration_does_not_import_heavy_adapter_at_module_scope() -> None:
+    """process 注册模块不得为一个数字把重型 adapter 拉进 import 期（循环 import 触发点）。"""
+    source = Path(bp.__file__).read_text(encoding="utf-8")
+    assert "from services.process_runtime.blueprint_research_adapter import" not in source
+    assert "MAX_BLUEPRINT_REROUTE_ROUNDS" not in source, "无消费方的再导出常量应删除"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

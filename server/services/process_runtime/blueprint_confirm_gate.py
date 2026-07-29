@@ -821,7 +821,7 @@ class BlueprintConfirmGateAdapter:
     async def _emit(self, session: Any, event_name: str, payload: dict[str, Any]) -> None:
         """事件 emit best-effort（payload 只含计数与关联键，绝不含职责/需求正文）。"""
         try:
-            await self.session_service._emit_event(event_name, session, payload)
+            await self.session_service.aemit_event(event_name, session, payload)
         except Exception:  # noqa: BLE001 — 观测绝不反噬确认门
             logger.warning(
                 "blueprint_confirm_gate_event_emit_failed",

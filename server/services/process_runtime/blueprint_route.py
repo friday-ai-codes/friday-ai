@@ -835,7 +835,7 @@ class BlueprintRouteAdapter:
                     for c in summary["candidates"]
                 ],
             }
-            await ConvergenceSessionService()._emit_event(
+            await ConvergenceSessionService().aemit_event(
                 EVENT_BLUEPRINT_ROUTE_SCORED, session, payload
             )
         except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬路由主流程

@@ -56,7 +56,6 @@ from delivery.models import (
     BlueprintStatus,
     BlueprintThread,
     BlueprintThreadMessage,
-    ConvergenceSessionEvent,
     ThreadAuthorType,
     ThreadKind,
     ThreadStatus,
@@ -315,12 +314,13 @@ class BlueprintLifecycleService:
                 initiated_by_user_id=initiated_by_user_id,
             )
             return
+        from delivery.services.convergence_session_service import ConvergenceSessionService
+
         try:
-            await ConvergenceSessionEvent.objects.acreate(
-                session=session,
-                event=EVENT_BLUEPRINT_STATUS_TRANSITIONED,
-                work_item=getattr(session, "work_item_id", None),
-                payload={
+            await ConvergenceSessionService().aemit_event(
+                EVENT_BLUEPRINT_STATUS_TRANSITIONED,
+                session,
+                {
                     "artifact_id": str(artifact.id),
                     "from_status": from_status,
                     "to_status": to_status,
@@ -733,8 +733,11 @@ class BlueprintLifecycleService:
         派发由 ``_h_bp_repo_research`` 承担。
 
         Returns:
-            ``{"upgraded": bool, "repository_id": str}``——``upgraded is False`` 表示依赖
-            不可用（视图回 503）；仓不在快照内 / 门未开一律 ``raise ValueError``（视图回 404）。
+            ``{"upgraded": bool, "repository_id": str, "already_running": bool}``——
+            ``upgraded is False`` 表示依赖不可用（视图回 503）；``already_running is True``
+            表示该仓调研本就在途（``mark_stale`` 按 WR-01 只动已终态 task、dispatch 白名单
+            也跳过在途 task），此次调用**没有重开容器**，端点如实告知而不是假装已重开；
+            仓不在快照内 / 门未开一律 ``raise ValueError``（视图回 404）。
         """
         started = time.monotonic()
         repository_id = str(repository_id or "").strip()
@@ -780,6 +783,7 @@ class BlueprintLifecycleService:
             upgraded = bool(
                 await BlueprintResearchAdapter().aupgrade_to_deep(session, repository_id)
             )
+        already_running = upgraded and await self._ais_research_in_flight(session, repository_id)
         self._log_gate_action(
             action=GATE_ACTION_UPGRADE_RESEARCH,
             artifact=artifact,
@@ -790,7 +794,26 @@ class BlueprintLifecycleService:
             started=started,
             blocked_reason="" if upgraded else "upgrade_unavailable",
         )
-        return {"upgraded": upgraded, "repository_id": repository_id}
+        return {
+            "upgraded": upgraded,
+            "repository_id": repository_id,
+            "already_running": already_running,
+        }
+
+    @staticmethod
+    @sync_to_async
+    def _ais_research_in_flight(session: Any, repository_id: str) -> bool:
+        """该仓调研是否仍在途（``RUNNING``）——在途即本次升级没有也不该重开容器。"""
+        from delivery.models import RepoResearchTask, RepoResearchTaskStatus
+
+        try:
+            return RepoResearchTask.objects.filter(
+                session_id=getattr(session, "id", None),
+                repository_id=repository_id,
+                status=RepoResearchTaskStatus.RUNNING,
+            ).exists()
+        except Exception:  # noqa: BLE001 — 非法 uuid 等一律按「不在途」处理
+            return False
 
     async def aload_gate_thread(self, artifact: Artifact) -> BlueprintThread | None:
         """取该蓝图仍在受理中的确认门线程（``open`` / ``answered``），无则 ``None``。"""
@@ -1043,17 +1066,22 @@ class BlueprintLifecycleService:
     async def _emit_gate_action(
         self, session: Any, *, action: str, repository_id: str, thread_id: str
     ) -> None:
-        """确认门动作事件（best-effort；payload 只含 action / id，不含职责正文）。"""
+        """确认门动作事件（best-effort；payload 只含 action / id，不含职责正文）。
+
+        走 ``ConvergenceSessionService.aemit_event`` 而不是裸建 ORM 行：裸建要自己拼
+        ``work_item=session.work_item_id``，依赖它恰好是软 UUID 字段——改成真 FK 就会
+        静默 warning 后丢事件；且给事件统一加字段时只有一处要改。
+        """
         if session is None:
             return
+        from delivery.services.convergence_session_service import ConvergenceSessionService
         from delivery.services.event_taxonomy import EVENT_BLUEPRINT_CONFIRMATION_ACTION
 
         try:
-            await ConvergenceSessionEvent.objects.acreate(
-                session=session,
-                event=EVENT_BLUEPRINT_CONFIRMATION_ACTION,
-                work_item=getattr(session, "work_item_id", None),
-                payload={
+            await ConvergenceSessionService().aemit_event(
+                EVENT_BLUEPRINT_CONFIRMATION_ACTION,
+                session,
+                {
                     "action": action,
                     "repository_id": repository_id,
                     "thread_id": thread_id,

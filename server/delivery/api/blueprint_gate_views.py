@@ -144,6 +144,7 @@ def _action_payload(action: str, result: dict, **extra: Any) -> dict:
         "ready_to_lock": bool(result.get("ready_to_lock")),
         "locked": bool(extra.get("locked")),
         "upgraded": bool(extra.get("upgraded")),
+        "already_running": bool(extra.get("already_running")),
         "locked_repo_count": int(extra.get("locked_repo_count") or 0),
     }
 
@@ -361,8 +362,9 @@ class BlueprintRejectedToBoundaryView(APIView):
     组装成 ``boundaries`` 草案后经 ``charter_draft_writeback.asubmit_charter_draft``
     落 ``source=ai_draft``（对 ``human_confirmed`` 章程只写 ``draft_content``）。
 
-    项目范围：body 的 ``project_id`` 优先，缺省取蓝图 ``meta.project_id``；两者都不是
-    合法 UUID 时须显式给 ``repository_id``，否则 400（绝不跨项目全表沉淀）。
+    项目范围**只由蓝图 ``meta.project_id`` 决定**（URL 里的 artifact 约束写入范围）：
+    body 传了 ``project_id`` 且与之不等 → 403；蓝图没有合法 ``meta.project_id`` → 400
+    （绝不跨项目全表沉淀）。``repository_id`` 只在该范围内进一步收窄。
     全部草案写入失败 → 503（依赖不可用）。
 
     **不接续驱**：本端点不碰 ``stage_state`` / 线程 / task 状态，续驱必为 no-op。
@@ -377,16 +379,24 @@ class BlueprintRejectedToBoundaryView(APIView):
         if artifact is None:
             return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
         body = request.data if isinstance(request.data, dict) else {}
-        project_id = str(body.get("project_id") or "").strip() or await _ablueprint_project_id(
-            artifact
-        )
-        repository_id = str(body.get("repository_id") or "").strip()
-        if not _is_uuid(project_id) and not repository_id:
+        # 项目范围**只从蓝图推导**：body 传了就必须与之相等，否则 403——URL 里的 artifact
+        # 必须约束写入范围，否则任意登录用户可用任意合法 artifact_id + 任意 project_id
+        # 往别的项目的仓批量写 boundaries 草案。
+        project_id = await _ablueprint_project_id(artifact)
+        requested_project_id = str(body.get("project_id") or "").strip()
+        if requested_project_id and requested_project_id != project_id:
             return Response(
-                {"detail": "无法确定项目范围：请提供 project_id 或 repository_id"},
+                {"detail": "project_id 与该蓝图所属项目不一致"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        repository_id = str(body.get("repository_id") or "").strip()
+        if not _is_uuid(project_id):
+            return Response(
+                {"detail": "无法确定项目范围：该蓝图未记录 meta.project_id"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # repository_id 只作范围内的进一步收窄（不在该 project 的仓查不到候选 → 0 条）
         grouped = await _aload_rejected_reasons(project_id, repository_id)
         if not grouped:
             return Response({"candidate_count": 0, "draft_count": 0, "repository_count": 0})
@@ -479,6 +489,7 @@ class BlueprintGateUpgradeResearchView(APIView):
                         "requires_research": True,
                     },
                     upgraded=True,
+                    already_running=bool(result.get("already_running")),
                 )
             )
         )
