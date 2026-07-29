@@ -13,6 +13,7 @@ import uuid
 
 import pytest
 from asgiref.sync import sync_to_async
+
 from codegraph.services.repo_group_scope import aresolve_grouping_repo_ids
 
 pytestmark = pytest.mark.django_db(transaction=True)
