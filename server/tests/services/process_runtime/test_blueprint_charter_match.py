@@ -98,6 +98,32 @@ def test_unrelated_sentence_rule_does_not_match() -> None:
     assert result.score == 0.0
 
 
+def test_single_generic_ngram_overlap_is_not_a_boundary_hit() -> None:
+    """MJ-06：只共享一个通用 3-gram（"配置下"）不判命中。
+
+    命中后果是重的（boundary_hit=-1.0 单条即可把满分 owned 压回 0，并污染确认门快照的
+    violated_boundaries 与 115 呈现面），单个通用 3-gram 偶然重合不足以承担它。
+    """
+    result = score_charter_match(
+        _charter(boundaries=[{"rule": "不承接服务端配置下发"}]),
+        query_terms=["新增查询配置下拉框"],
+    )
+
+    assert result.violated_boundaries == []
+    assert result.score == 0.0
+
+
+def test_multi_ngram_overlap_still_hits_after_threshold() -> None:
+    """阈值不得反噬真命中：多个 3-gram 重合的整句禁区仍判命中（回归护栏）。"""
+    result = score_charter_match(
+        _charter(boundaries=[{"rule": "不承接课程权益鉴权"}]),
+        query_terms=["展示课程内容与权益鉴权状态"],
+    )
+
+    assert result.violated_boundaries == ["不承接课程权益鉴权"]
+    assert result.score < 0.0
+
+
 def test_no_domain_match_scores_zero() -> None:
     """章程存在但 owned_domains 不命中 → 0 分（不倒扣）。"""
     result = score_charter_match(
