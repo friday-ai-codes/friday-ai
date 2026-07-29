@@ -42,6 +42,11 @@ from codegraph.services.repo_router_eval import (
     evaluate_cases,
     score_case,
 )
+from codegraph.services.repo_router_ranking import (
+    GROUP_GLOBAL,
+    GROUP_IN_PROJECT,
+    decide_block_order,
+)
 from codegraph.services.repo_router_scoring import (
     WEIGHT_SET_VERSION,
     ScoredCandidate,
@@ -53,6 +58,20 @@ BASELINE_FIXTURE: Path = FIXTURE_DIR / "golden_baseline.json"
 
 # 事故锚点 case（SC-1）：study-app 以命中广度碾压 onion-learning 的真实场景。
 GK001_CASE_ID = "gk-001-gaosan-tifen"
+
+# 跨组样本（ROUTE-01）：正确答案落在「本项目关联仓之外」，用来验证 block ranking
+# 能把全局组置顶——这正是本里程碑要修的那类故障的离线复现。
+GK008_CASE_ID = "gk-008-cross-group-auth"
+GK009_CASE_ID = "gk-009-cross-group-payment"
+CROSS_GROUP_CASE_IDS = (GK008_CASE_ID, GK009_CASE_ID)
+
+# block ranking 迟滞阈值字面量——与 settings 默认 REPO_ROUTER_GROUP_DELTA 一致，
+# 但门禁不读 settings（同 θ 阈值的离线纪律）。
+GROUP_DELTA = 0.15
+# gk-008 组间分差的上界锁定：该 case 的实测差值略高于 0.177，余量很薄。delta 一旦
+# 超过它，gk-008 就退回「本项目组置顶而正确仓被压在下面」，即重演本里程碑要修的
+# 故障。用区间断言（抗权重微调）而非精确等值（权重微调即假红，ROUTING-RANKING §7.4）。
+GK008_DELTA_CEILING = 0.1772
 
 # θ 阈值字面量——与 settings 默认（REPO_ROUTER_CONF_THETA_*）一致，
 # 但门禁不读 settings：离线纯函数评估不依赖 Django 配置加载。
@@ -110,6 +129,30 @@ def _rank_of(ranked: list[ScoredCandidate], repo_id: str) -> int:
 def _breadth_of(ranked: list[ScoredCandidate], repo_id: str) -> float:
     """候选的 breadth 分项贡献（信号缺失时该键不存在，按 0 计）。"""
     return ranked[_rank_of(ranked, repo_id)].breakdown.get("breadth", 0.0)
+
+
+def _group_tops(case: dict[str, Any]) -> tuple[float, float, list[ScoredCandidate]]:
+    """按 case 的 ``project_scope`` 把候选切成两组，返回 (本项目组首位分, 全局组首位分, 全量候选)。
+
+    ``project_scope`` 是 cross_group fixture 对「本项目关联仓」的离线表达；缺失即
+    fixture 契约退化，必须红（而不是静默按全 global 处理让断言失去意义）。
+    """
+    scope = case.get("project_scope")
+    if not scope:
+        pytest.fail(
+            f"{case['id']} 缺少 project_scope：cross_group fixture 契约退化，分组机制断言失去依据"
+        )
+    in_project_ids = set(scope)
+    ranked = score_case(case)
+    in_project = [c for c in ranked if c.repo_id in in_project_ids]
+    global_side = [c for c in ranked if c.repo_id not in in_project_ids]
+    if not in_project or not global_side:
+        pytest.fail(
+            f"{case['id']} 未能切出两组候选："
+            f"in_project={[c.repo_id for c in in_project]} "
+            f"global={[c.repo_id for c in global_side]}"
+        )
+    return in_project[0].score, global_side[0].score, ranked
 
 
 def _load_baseline() -> dict[str, Any]:
@@ -259,6 +302,61 @@ def test_gk001_cross_group_repos_in_top5(
     top5 = [c.repo_id for c in gk001_ranked[:5]]
     assert "study-course" in top5, top5
     assert "study-user-status" in top5, top5
+
+
+def test_cross_group_cases_trigger_block_order_promotion(
+    golden_cases: list[dict[str, Any]],
+) -> None:
+    """跨组样本的正确仓能被置顶：两组首位分差达阈值 → 全局组置顶且正确仓在其中。
+
+    机制断言（ROUTING-RANKING §7.4）：锁「跨组正确仓能被送到用户眼前」这个因果
+    性质，用默认 delta 常量比较而非某组权重下的精确差值。
+    """
+    by_id = {c["id"]: c for c in golden_cases}
+    for case_id in CROSS_GROUP_CASE_IDS:
+        case = by_id.get(case_id)
+        assert case is not None, f"{case_id} 不在主集里：cross_group 样本缺失"
+        in_project_top, global_top, ranked = _group_tops(case)
+
+        gap = global_top - in_project_top
+        assert gap >= GROUP_DELTA, (
+            f"{case_id} 组间分差 {gap:.4f} < 默认 delta {GROUP_DELTA}："
+            f"跨组正确仓不再能被置顶（in_project={in_project_top:.4f} "
+            f"global={global_top:.4f}）"
+        )
+
+        order = decide_block_order(
+            in_project_top, global_top, delta=GROUP_DELTA, has_project_context=True
+        )
+        assert order == [GROUP_GLOBAL, GROUP_IN_PROJECT], (case_id, order)
+
+        expected_repo = case["expected_repos"][0]
+        in_project_ids = set(case["project_scope"])
+        promoted_group = [c.repo_id for c in ranked if c.repo_id not in in_project_ids]
+        assert expected_repo in promoted_group, (
+            f"{case_id} 的正确仓 {expected_repo} 不在被置顶的 {GROUP_GLOBAL} 组内：{promoted_group}"
+        )
+
+
+def test_cross_group_delta_upper_bound_is_binding(
+    golden_cases: list[dict[str, Any]],
+) -> None:
+    """delta 的可用上界由 gk-008 约束：默认值可用，但余量很薄。
+
+    因果（写成断言而非注释就是为了让它随权重变化被 CI 抓住）：delta 一旦超过
+    gk-008 的组间分差，该 case 就会退回「本项目组置顶而正确仓被压在下面」——正是
+    本里程碑要修的故障。区间断言同时锁两件事：默认 delta 可用，且上界确实很近。
+    """
+    case = next(c for c in golden_cases if c["id"] == GK008_CASE_ID)
+    in_project_top, global_top, _ = _group_tops(case)
+    gap = global_top - in_project_top
+    assert gap >= GROUP_DELTA, (
+        f"gk-008 组间分差 {gap:.4f} 已低于默认 delta {GROUP_DELTA}：默认阈值不再能把跨组正确仓置顶"
+    )
+    assert gap < GK008_DELTA_CEILING, (
+        f"gk-008 组间分差 {gap:.4f} >= 上界锁定值 {GK008_DELTA_CEILING}："
+        f"delta 的可用余量口径已变，需重新评估 REPO_ROUTER_GROUP_DELTA 的上限"
+    )
 
 
 def test_evaluation_is_deterministic(
