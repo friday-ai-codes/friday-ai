@@ -13,7 +13,9 @@ from agents.intent_router import (
     CONFIDENCE_TOP1_MIN,
     build_clarification_from_relev,
     classify_intent,
+    classify_solution_intent,
     evaluate_relev_confidence,
+    normalize_task_category,
 )
 
 
@@ -51,6 +53,41 @@ class TestClassifyIntent:
         # 容错：classify_intent 必须接受任意输入不抛异常
         result = classify_intent(None)  # type: ignore[arg-type]
         assert result.is_coding_request is False
+
+
+class TestSolutionIntent:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (None, None),
+            ("", None),
+            (" coding_change ", "coding_change"),
+            ("needs_clarification", "needs_clarification"),
+            ("FEATURE_SOLUTION", "feature_solution"),
+            ("full_tech_plan", "full_tech_plan"),
+            ("unexpected", None),
+        ],
+    )
+    def test_normalize_task_category(self, raw: object, expected: object) -> None:
+        assert normalize_task_category(raw) == expected
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "帮我生成技术方案",
+            "创建整体方案",
+            "Please produce a feature list",
+            "给出全部 12 个模块的规划",
+        ],
+    )
+    def test_strong_project_solution_intent(self, message: str) -> None:
+        assert classify_solution_intent(message, bound_project_id="project-1") == "feature_solution"
+
+    def test_solution_intent_requires_bound_project(self) -> None:
+        assert classify_solution_intent("生成技术方案", bound_project_id="") is None
+
+    def test_weak_coding_change_is_not_solution(self) -> None:
+        assert classify_solution_intent("改一下登录", bound_project_id="project-1") is None
 
 
 class TestEvaluateRelevConfidence:
