@@ -3,7 +3,9 @@
 覆盖：到期出口（带未澄清假设继续 / 如实失败）、幂等（连跑两次只推进一次只 emit 一次）、
 起算时间取 pending 轮 ``created_at``（刷新会话时间戳不影响到期）、旧行 ``container_status``
 为 NULL 仍被命中、未澄清点结构与脱敏、触发用户归因、单条失败不影响其余、事务纪律
-（``transition`` 调用不在 atomic 块内）。
+（``transition`` 调用不在 atomic 块内）；以及边界（未到期 / 已答 / 终态不动）、两条立即出口
+（送达失败 / 工作流已 TIMEOUT）、运维开关（``--dry-run`` / ``--limit`` / ``--session-id``）与
+D-5 的 chat 协商卡「只观测不出口」。
 
 ``transaction=True``：命令内部 ``asyncio.run`` 经独立连接写库，普通 rollback 型
 ``django_db`` 无法覆盖跨连接提交；TransactionTestCase teardown TRUNCATE 全表。
@@ -299,3 +301,227 @@ def test_legacy_round_with_null_container_status_is_collected() -> None:
 
     assert ConvergenceSession.objects.get(id=session.id).current_stage == "research"
     assert _timed_out_events(session) == 1
+
+
+# ── 边界：未到期 / 已答 / 终态三条各不动 ────────────────────────────────────────
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_not_expired_round_untouched() -> None:
+    """未到期（pending 轮在窗口内）→ stage/status 不变、零 emit。"""
+    session = _make_session()
+    _make_round(session, age_hours=1)
+
+    call_command("expire_pending_clarifications")
+
+    reloaded = ConvergenceSession.objects.get(id=session.id)
+    assert reloaded.current_stage == "clarify"
+    assert reloaded.status == ConvergenceSessionStatus.WAITING_CLARIFICATION
+    assert _timed_out_events(session) == 0
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_answered_round_untouched() -> None:
+    """已答（answered_at 非空 → 无 pending）→ 不动。"""
+    session = _make_session()
+    _make_round(session, age_hours=48, answered=True)
+
+    call_command("expire_pending_clarifications")
+
+    reloaded = ConvergenceSession.objects.get(id=session.id)
+    assert reloaded.current_stage == "clarify"
+    assert reloaded.status == ConvergenceSessionStatus.WAITING_CLARIFICATION
+    assert _timed_out_events(session) == 0
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+@pytest.mark.parametrize(
+    "terminal", [ConvergenceSessionStatus.DONE, ConvergenceSessionStatus.FAILED]
+)
+def test_terminal_session_not_collected(terminal: str) -> None:
+    """终态（done/failed）不在收集范围（filter 只取 waiting_clarification）。"""
+    session = _make_session(status=terminal)
+    _make_round(session, age_hours=48)
+
+    call_command("expire_pending_clarifications")
+
+    reloaded = ConvergenceSession.objects.get(id=session.id)
+    assert reloaded.status == terminal
+    assert reloaded.current_stage == "clarify"
+    assert _timed_out_events(session) == 0
+
+
+# ── 两条立即出口（不等满超时） ─────────────────────────────────────────────────
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_delivery_failed_round_exits_immediately() -> None:
+    """立即出口①：该轮 container_status=delivery_failed 且未到期 → 仍出口，reason=delivery_failed。"""
+    session = _make_session()
+    _make_round(session, age_hours=1, container_status="delivery_failed")
+
+    call_command("expire_pending_clarifications")
+
+    reloaded = ConvergenceSession.objects.get(id=session.id)
+    assert reloaded.current_stage == "research"
+    assert reloaded.stage_state["clarification_exit"]["reason"] == "delivery_failed"
+    assert _timed_out_events(session) == 1
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_workflow_timeout_exits_immediately(project: Any) -> None:
+    """立即出口②：工作流侧已 TIMEOUT 而会话仍等澄清且未到期 → 仍出口，reason=workflow_timeout。"""
+    node_exec = _timed_out_node_execution(project)
+    session = _make_session(node_execution_id=node_exec.id)
+    _make_round(session, age_hours=1)
+
+    call_command("expire_pending_clarifications")
+
+    reloaded = ConvergenceSession.objects.get(id=session.id)
+    assert reloaded.current_stage == "research"
+    assert reloaded.stage_state["clarification_exit"]["reason"] == "workflow_timeout"
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_running_workflow_does_not_trigger_immediate_exit(project: Any) -> None:
+    """工作流侧未超时 + 未到期 → 不动（纵深条件不误伤正常等待）。"""
+    node_exec = _timed_out_node_execution(project, timed_out=False)
+    session = _make_session(node_execution_id=node_exec.id)
+    _make_round(session, age_hours=1)
+
+    call_command("expire_pending_clarifications")
+
+    assert (
+        ConvergenceSession.objects.get(id=session.id).status
+        == ConvergenceSessionStatus.WAITING_CLARIFICATION
+    )
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_exit_reason_is_controlled_enum() -> None:
+    """出口成因是三值受控枚举；正常到期为 no_answer_timeout。"""
+    session = _make_session()
+    _make_round(session, age_hours=48)
+
+    call_command("expire_pending_clarifications")
+
+    reason = ConvergenceSession.objects.get(id=session.id).stage_state["clarification_exit"][
+        "reason"
+    ]
+    assert reason == "no_answer_timeout"
+    assert reason in {"no_answer_timeout", "delivery_failed", "workflow_timeout"}
+
+
+# ── 运维开关：--limit / --dry-run / --session-id ───────────────────────────────
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_limit_caps_processed_sessions() -> None:
+    """--limit 1：3 个到期会话只处理 1 个。"""
+    sessions = [_make_session() for _ in range(3)]
+    for session in sessions:
+        _make_round(session, age_hours=48)
+
+    call_command("expire_pending_clarifications", "--limit", "1")
+
+    exited = [
+        s
+        for s in ConvergenceSession.objects.filter(id__in=[x.id for x in sessions])
+        if s.current_stage == "research"
+    ]
+    assert len(exited) == 1
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_dry_run_has_zero_side_effects(capsys: pytest.CaptureFixture[str]) -> None:
+    """--dry-run：3 个到期会话零写库、零 emit，stdout 列出 3 条。"""
+    sessions = [_make_session() for _ in range(3)]
+    for session in sessions:
+        _make_round(session, age_hours=48)
+    before = sorted(ConvergenceSession.objects.values_list("status", "current_stage"))
+    events_before = ConvergenceSessionEvent.objects.count()
+
+    call_command("expire_pending_clarifications", "--dry-run")
+
+    assert sorted(ConvergenceSession.objects.values_list("status", "current_stage")) == before
+    assert ConvergenceSessionEvent.objects.count() == events_before
+    out = capsys.readouterr().out
+    assert out.count("[dry-run] session=") == 3
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_session_id_targets_single_session() -> None:
+    """--session-id：只处理指定会话，其余不动。"""
+    target = _make_session()
+    _make_round(target, age_hours=48)
+    other = _make_session()
+    _make_round(other, age_hours=48)
+
+    call_command("expire_pending_clarifications", "--session-id", str(target.id))
+
+    assert ConvergenceSession.objects.get(id=target.id).current_stage == "research"
+    assert (
+        ConvergenceSession.objects.get(id=other.id).status
+        == ConvergenceSessionStatus.WAITING_CLARIFICATION
+    )
+
+
+# ── D-5：chat 单题协商卡只观测不出口 ──────────────────────────────────────────
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_chat_unanswered_traces_are_observed_not_exited(project: Any) -> None:
+    """超期未答 chat 协商卡 → 记 chat_clarification_unanswered_observed，且 trace 行零改动。"""
+    import uuid
+
+    from chat.models import Conversation, ConversationIntentTrace
+
+    conversation = Conversation.objects.create(space=project, title="意图协商")
+    trace = ConversationIntentTrace.objects.create(
+        conversation=conversation,
+        clarification_id=uuid.uuid4().hex,
+        question="想改哪个仓库？",
+        options=[{"id": "opt-A", "label": "后端"}],
+    )
+    ConversationIntentTrace.objects.filter(id=trace.id).update(
+        created_at=timezone.now() - timedelta(hours=48)
+    )
+
+    with structlog.testing.capture_logs() as captured:
+        call_command("expire_pending_clarifications")
+
+    observed = [e for e in captured if e.get("event") == "chat_clarification_unanswered_observed"]
+    assert observed, f"未记 chat 观测事件；captured={captured}"
+    assert observed[0].get("count") == 1
+    assert observed[0].get("category") == "sampling"
+    reloaded = ConversationIntentTrace.objects.get(id=trace.id)
+    assert reloaded.answered_at is None
+    assert reloaded.selected_option_id == trace.selected_option_id
+
+
+def _timed_out_node_execution(project: Any, *, timed_out: bool = True) -> Any:
+    """建一条工作流执行链，按需把 NodeExecution / WorkflowExecution 置为 TIMEOUT。"""
+    from workflows.models.execution import (
+        ExecutionStatus,
+        NodeExecution,
+        NodeExecutionStatus,
+        WorkflowExecution,
+    )
+    from workflows.models.node import WorkflowNode
+    from workflows.models.workflow import Workflow
+
+    workflow = Workflow.objects.create(name="Clarify WF", space=project)
+    node = WorkflowNode.objects.create(
+        workflow=workflow, node_type="ai_plan_research", name="research", config={}
+    )
+    wf_exec = WorkflowExecution.objects.create(
+        workflow=workflow,
+        space=project,
+        status=ExecutionStatus.TIMEOUT if timed_out else ExecutionStatus.RUNNING,
+        trigger_type="manual",
+    )
+    return NodeExecution.objects.create(
+        workflow_execution=wf_exec,
+        node=node,
+        status=NodeExecutionStatus.TIMEOUT if timed_out else NodeExecutionStatus.WAITING_EVENT,
+    )
