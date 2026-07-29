@@ -28,6 +28,115 @@
 
 ## Phases
 
+### 🟡 v0.20.0 技术方案蓝图 (Phases 111–116) — PLANNING（与 v0.19.0 双 worktree 并行）
+
+**Milestone Goal:** 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段固定骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，仓库章程补齐净新增落点知识，飞书式划线澄清多轮收敛，全生命周期状态可管理，知识库可查、可引用、可导出。
+
+> **设计输入:** [.planning/technical-blueprint/DESIGN.md](./technical-blueprint/DESIGN.md)（13 节，§12 八项决策已定夺）。**并行纪律（§13.2，强制）:** 不改 `repo_router_v2.py`；冻结既有 `technical_plan` process 六文件（流水线全走 `blueprint_*` 新文件，`builtin_processes.py` 仅加注册项）；`ConvergenceSessionEvent` 既有契约只消费不修改（仅新增 `blueprint_*` 事件类型）；前端只新建组件，TechPlanCard/时间线触点升级留到同步点 2 后。DEPTH-01~05 自 v0.19.0 Phase 108 迁入（映射见 REQUIREMENTS.md）。
+
+- [ ] **Phase 111: 蓝图底座** - blueprint/v1 schema 强制校验 + 11 态生命周期状态机 + 划线线程/评审人模型 + RepoCharter 章程模型与 AI 起草管道 + execution_plan 确定性派生 + golden set 质量基线（SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02）
+- [ ] **Phase 112: 规格门与双面路由调研（阶段 1）** - spec_gate 歧义门与意图分类 + blueprint_route 双面路由（章程/历史落点/能力树融合）+ 逐仓容器 fitness 调研 + reroute 有界循环 + repo_confirmation 硬确认门与章程回灌（FLOW-01/02/03/04, CHARTER-02/03）
+- [ ] **Phase 113: 分仓方案与融合（阶段 2/3）+ Context Bus** - repo_plan 逐仓方案 + 会话级共享上下文总线（实时读写/等待恢复/环检测）+ merge 融合装配（六段 + 引用强制 + 跨仓 API 对账）（FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03）
+- [ ] **Phase 114: 审查与澄清收敛** - AI 对抗审查七类规则与归因打回 + 澄清答案回灌产新版本 + 决策记录物化 + pending 语义 + 人工 block 编辑（FLOW-07, CLAR-02/03/04）
+- [ ] **Phase 115: 前端查看器与知识库** - BlueprintViewer 六段结构化渲染与批注层 + 二级引用预览 + 知识库技术方案 tab + 项目关联 + 人审终审 UI（VIEW-01/02/03/04, CLAR-01, FLOW-08）
+- [ ] **Phase 116: 入口收编与导出** - MCP 异步澄清协议 + 全入口统一走蓝图编排 + 飞书导出升级 + 知识图谱物化 + 触点升级（GATE-01, VIEW-05）
+
+**执行顺序（依赖链）:** 111 → 112 → 113 → 114 → 115 → 116，线性。111 是数据与质量地基（schema/状态机/线程/章程/golden set 全是后续相位的消费对象）；112 先锁规格与仓库集（确认门锁定是 113 分仓方案的输入）；113 产出完整蓝图（114 才有东西可审）；114 收敛审查与澄清闭环（115 才有完整状态与线程可展示）；115 查看器就位后 116 才能做全入口收编（人审终审是收编的前置能力）。**与 v0.19.0 的同步点:** 同步点 1 = 0.19 Phase 107 合并主干（rebase 对齐澄清送达/提醒设施，影响 112/114 的送达通道，未合并前用现有澄清通道兜底）；同步点 2 = 0.19 Phase 109/110 合并（execution 投影与事件时间线契约就位，116 的触点升级与入口切换在其后执行）。
+
+**UI 触面:** Phase 115（查看器/批注层/知识库 tab——`/gsd-ui-phase` 应介入）、Phase 116（TechPlanCard/工作流节点触点接入）。
+
+#### Phase Details (v0.20.0)
+
+### Phase 111: 蓝图底座（schema + 生命周期 + 线程/章程模型 + 质量基线）
+
+**Goal**: 蓝图的一切结构与状态有了权威地基——blueprint/v1 schema 由 jsonschema 强制、11 态生命周期有守卫可追溯、划线线程与评审人模型就位、仓库章程模型与 AI 起草管道可用、execution_plan 可确定性派生、golden set 质量基线建立。
+**Depends on**: Nothing（与 v0.19.0 零文件交集，立即可动工；§13.2 边界纪律全程生效）
+**Requirements**: SCHEMA-01, SCHEMA-06, SCHEMA-07, LIFE-01, LIFE-02, LIFE-03, CHARTER-01, GATE-02
+**Success Criteria** (what must be TRUE):
+
+  1. 构造缺段/缺必填字段的蓝图 JSON 写入被 jsonschema 校验拒绝；六段齐全的样例通过校验落 `ArtifactVersion`（content.schema_version=blueprint/v1），同一蓝图两个版本可产出 block 级 diff（新增/删除/修改块可辨识）。
+  2. 蓝图 11 态转移由 `BlueprintLifecycleService` 单点收口：存在 open+blocking 线程时 confirm 被拒绝；失败/废弃是显式终态且失败可重试；每次转移落 `ConvergenceSessionEvent`（新增 `blueprint_*` 类型，不改既有类型）。
+  3. 任一项目成员执行确认动作后自动进入该蓝图的方案评审人名单，名单可查、可手动增补，署名与时间留痕。
+  4. `RepoCharter` 可由 AI 从 ai_summary/近期 MR 历史/既有 RepoAssociation 裁决蒸馏出草案，人工 confirm 后生效（source=human_confirmed）；对人工确认过的章程 AI 只能提修订草案、不能直接覆盖。
+  5. 蓝图 golden set 离线可跑：含高三提分专项首条 golden case，输出引用覆盖率/目标仓命中率/审查打回率等指标，同输入重复运行结果一致。
+
+**Plans**: TBD
+
+### Phase 112: 规格门与双面路由调研（阶段 1：调研与确认门）
+
+**Goal**: 需求进来先锁规格再定仓——歧义超阈值必澄清、feature_point 带意图分类；路由融合章程/历史落点/能力树三路证据且分数可解释；逐仓容器调研产出 fitness 判定与职责建议；不合适仓有界重路由；出口硬确认门锁定仓库集与职责并回灌章程。
+**Depends on**: Phase 111（schema/线程/章程模型是本相位的读写对象）。软依赖同步点 1（v0.19.0 Phase 107 澄清送达设施；未合并前用现有澄清通道兜底，合并后 rebase 对齐）
+**Requirements**: FLOW-01, FLOW-02, FLOW-03, FLOW-04, CHARTER-02, CHARTER-03
+**Success Criteria** (what must be TRUE):
+
+  1. 需求歧义超阈值时编排停在「需要澄清」并抛出带候选选项与证据的问题，作答后规格锁定且同一问题不再重复问；每个 feature_point 带 greenfield/brownfield/fix 意图标注。
+  2. `blueprint_route` 输出候选带 `charter_match` 分量且分数可拆解；greenfield 功能点上章程 owned(planned) 的仓能进入候选（复现高三提分专项 case：onion-learning 不再因能力树无节点被淘汰）；brownfield 上命中章程禁区的候选被降权，LLM 保留它必须给显式理由。
+  3. 每个候选仓由独立 claude code 容器调研（PLAN 链接通任务 token 与容器知识 MCP），回传 fitness 判定 + role 建议 + 职责描述 + 带 citations 的现状 findings；unsuitable 触发重路由 ≤2 轮，仍不收敛升确认门由用户裁决。
+  4. 确认门展示仓库清单/role/职责/fitness/现状摘要/证据；用户移除仓、手动加仓（触发新仓调研）、改判 role、修改职责均驱动对应重调研；确认后仓库集与职责锁定，后续阶段擅自变更会被 AI 审查判 BLOCKER。
+  5. 确认门动作产生章程修订草案（确认/改判 → owned_domains、移除 → boundaries），人工 confirm 后生效；rejected 路由候选可一键沉淀为章程禁区候选。
+
+**Plans**: TBD
+
+### Phase 113: 分仓方案与融合（阶段 2/3）+ Blueprint Context Bus
+
+**Goal**: 确认后的每个仓产出结构化分仓方案，跨仓动态依赖靠会话级上下文总线协商；主 agent 融合装配出六段齐全、引用完备、跨仓 API 对账闭环的完整蓝图。
+**Depends on**: Phase 112（确认门锁定的仓库集与职责是分仓方案的输入）
+**Requirements**: FLOW-05, FLOW-06, SCHEMA-02, SCHEMA-03, SCHEMA-04, SCHEMA-05, BUS-01, BUS-02, BUS-03
+**Success Criteria** (what must be TRUE):
+
+  1. 每个 direct 仓产出 RepoPlan（实现项含 change_type/伪代码/涉及文件/测试策略、提供与消费 API、局部影响、风险），indirect 仓产出能力引用清单；拟定中可抛澄清线程、可发起单仓定向补调研。
+  2. 蓝图容器凭任务 token 实时读写会话上下文总线（全程无分支）；「A 仓等 B 仓接口契约」场景跑通：短等待 await 轮询拿到即继续，长等待以 waiting_context 携带 partial 产物退出、条目就绪后自动重派续作；互相等待环被检测并抛澄清给用户裁决。
+  3. merge 产出的蓝图通过 schema 校验且六段齐全：实现项逐项标 change_type 并映射功能↔模块↔仓库；交互流程覆盖「页面→接口→参数→数据→流向→行为路径」完整叙事；API 段含数据来源与可用性说明。
+  4. 现状 finding/选仓理由/影响判断的引用覆盖率达到基线（golden set 可量测）；consumed API 无 provider 时被标 needs_support 且支持仓出现在仓库关联；跨仓矛盾在融合中抛澄清而非静默拍板。
+  5. 会话结束后有价值的总线条目可经 distill 管道生成项目记忆草案（人工 confirm 生效）。
+
+**Plans**: TBD
+
+### Phase 114: 审查与澄清收敛（AI 对抗审查 + 线程闭环 + 人工编辑）
+
+**Goal**: 蓝图到达人审前先过独立 AI 对抗审查，findings 化为划线线程有界收敛；澄清答案回灌产新版本、决策物化；pending 语义与人工编辑链路闭环。
+**Depends on**: Phase 113（有完整蓝图可审）
+**Requirements**: FLOW-07, CLAR-02, CLAR-03, CLAR-04
+**Success Criteria** (what must be TRUE):
+
+  1. 独立审查代理（fresh context）按七类规则产出分级 findings 并锚定到 block，直接生成划线线程；仓级 BLOCKER 只打回对应仓的 repo_plan、融合级回 merge，合计 ≤2 轮后带未决项升人审；确认门锁定的仓库集/职责被擅自变更、direct 仓实现项违背章程禁区且无决策记录支撑，均判 BLOCKER。
+  2. 澄清作答后由对应阶段代理消费答案产出新版本，线程置 resolved 并记录 applied_in_version，结论物化进蓝图决策记录段；旧版本批注在新版本上按 block_id + quoted_text 重锚定，失锚线程集中可见。
+  3. 人工直接编辑 block 生成新版本（produced_by=human_edit，归属可审计）；后续 AI 修订以人工版本为基线不覆盖人工内容，冲突时开线程询问。
+  4. blocking 澄清无人应答时会话停在「需要澄清」显式状态并按配置周期提醒（飞书卡片重推/站内通知），随时作答恢复；不自动作答、不判失败。
+
+**Plans**: TBD
+
+### Phase 115: 前端查看器与知识库（结构化阅读 + 批注 + 管理面）
+
+**Goal**: 蓝图对人可读、可审、可管理——结构化查看器（六段导航/批注层/版本 diff/阶段时间线）、二级引用预览、知识库技术方案 tab、项目关联展示、人审终审操作全部可用。
+**Depends on**: Phase 114（有完整状态机与线程数据可展示）
+**Requirements**: VIEW-01, VIEW-02, VIEW-03, VIEW-04, CLAR-01, FLOW-08
+**Success Criteria** (what must be TRUE):
+
+  1. 打开蓝图看到六段结构化渲染（交互流程 mermaid/伪代码块/API 契约卡/影响矩阵/仓库关联卡）+ 11 态状态徽标 + 阶段时间线；生成中各段展示实时进展（复用 ConvergenceSessionEvent，不新建推送通道）。
+  2. AI 划线提问以飞书式下划线高亮呈现，点击展开线程侧栏可多轮回复；用户可对任意选区发起评论；版本切换 + block 级 diff 视图可用。
+  3. 引用 chip 点击在查看器上再弹一层预览（知识实体/代码片段带行高亮/其他蓝图/章程条目）；仓库关联卡可直接跳转仓库页。
+  4. 知识库「技术方案」tab 支持状态/项目/仓库筛选与搜索、深链直达查看器；项目内生成的蓝图自动挂项目并在项目物料面板可见；蓝图互引与知识关联双向可查。
+  5. 人审终审在查看器内完成：通过（评审人署名、状态到已确认）或驳回（带划线评论回产出中、修订轮次 +1）。
+
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 116: 入口收编与导出（全入口统一 + MCP 协议 + 飞书导出 + 图谱物化）
+
+**Goal**: 全入口统一走蓝图编排、MCP 支持异步澄清、飞书导出升级、引用物化进知识图谱——蓝图成为技术方案的唯一产出形态。
+**Depends on**: Phase 115（人审终审是入口收编的前置能力）。**硬依赖同步点 2**（v0.19.0 Phase 109/110 合并：execution 投影与事件时间线契约就位后，才做 TechPlanCard/工作流节点触点升级与默认入口切换）
+**Requirements**: GATE-01, VIEW-05
+**Success Criteria** (what must be TRUE):
+
+  1. workflow `ai_plan_research` 节点、chat `start_plan_research`、MCP `create_feishu_technical_plan`、feature list 链路全部切到 `technical_blueprint` process；旧 `technical_plan` process 进入退役观察（不再是任何入口默认）。
+  2. MCP 入口不再 skip_clarification：立即返回会话与 pending 状态，澄清经新工具可作答、结果可续取；澄清同时推飞书卡片，交互密度按 assumptions 档位可配。
+  3. 导出飞书文档包含六段全量 + 决策记录附录；未确认版本在界面与导出物上均带「未经确认」显式标注（对齐 RELY-01 语义）。
+  4. 蓝图 citations 物化为知识图谱 REFERENCES 边、项目关联物化为 RELATES_TO 边；知识库反查「本蓝图被哪些方案/知识引用」可用。
+
+**Plans**: TBD
+**UI hint**: yes
+
 ### 🟡 v0.19.0 技术方案可信度 (Phases 105–110) — PLANNING
 
 **Milestone Goal:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，方案结构覆盖数据流编排 / 模块↔仓映射 / 新增改造对照 / 主动澄清，全过程对用户实时可见。
@@ -306,6 +415,19 @@ Plans:
 </details>
 
 ## Progress
+
+**🟡 本分支当前立项：v0.20.0 技术方案蓝图（Phases 111–116，6 阶段 / 35 需求 SCHEMA·LIFE·CHARTER·FLOW·CLAR·BUS·VIEW·GATE）**——设计输入 [technical-blueprint/DESIGN.md](./technical-blueprint/DESIGN.md)，与 v0.19.0（`milestone/v0.19.0-plan-trust` worktree，v0.19.0 侧进度以该分支为准）并行开发。**待 `$gsd-plan-phase 111`**。
+
+| Phase | Milestone | Requirements | Plans Complete | Status | Completed |
+|-------|-----------|--------------|----------------|--------|-----------|
+| 111. 蓝图底座 | v0.20.0 | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | 0/TBD | Not started | - |
+| 112. 规格门与双面路由调研 | v0.20.0 | FLOW-01/02/03/04, CHARTER-02/03 | 0/TBD | Not started | - |
+| 113. 分仓方案与融合 + Context Bus | v0.20.0 | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | 0/TBD | Not started | - |
+| 114. 审查与澄清收敛 | v0.20.0 | FLOW-07, CLAR-02/03/04 | 0/TBD | Not started | - |
+| 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 0/TBD | Not started | - |
+| 116. 入口收编与导出 | v0.20.0 | GATE-01, VIEW-05 | 0/TBD | Not started | - |
+
+**Coverage (v0.20.0):** 35/35 需求全部映射，无孤儿、无重复（DEPTH-01~05 自 v0.19.0 Phase 108 迁入，映射见 REQUIREMENTS.md）。
 
 里程碑 v0.1.0–v0.17.0（Phases 1–104）均已交付。**🟡 当前立项：v0.19.0 技术方案可信度（Phases 105–110，6 阶段 / 24 需求 RELY·ROUTE·DEPTH·SPINE·OBS）**——源于一次生产实例的实证排查：用户拿到的技术方案根本不是技术方案流水线产出的，两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`，agent 等不到就绕道 `create_coding_plan` 徒手编了一份。根因链已实测定位（haiku 档误配 → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替）。规划与调研已就绪（REQUIREMENTS 24 条 + [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)），**待 `$gsd-plan-phase 105`**。
 

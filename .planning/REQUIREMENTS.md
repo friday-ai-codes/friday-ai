@@ -1,3 +1,159 @@
+# Requirements — v0.20.0 技术方案蓝图
+
+**Milestone:** v0.20.0
+**Defined:** 2026-07-29
+**Source:** `.planning/technical-blueprint/DESIGN.md`（设计蓝图，13 节，§12 八项决策已定夺）+ 高三提分专项路由试验（RepoCharter 动机实证）
+**并行开发:** 与 v0.19.0（`milestone/v0.19.0-plan-trust` worktree）双线并行，边界纪律见 DESIGN.md §13；DEPTH-01~05 自 v0.19.0 Phase 108 迁入本里程碑（映射：DEPTH-01→SCHEMA-04、DEPTH-02/03→SCHEMA-03、DEPTH-04→SCHEMA-06、DEPTH-05→FLOW-01）
+
+> 需求以「用户能做到什么 / 用户不会遭遇什么」表述，不描述实现。实现取舍见 DESIGN.md。
+
+---
+
+## v0.20.0 Requirements
+
+### SCHEMA — 蓝图产物结构
+
+- [ ] **SCHEMA-01**：用户拿到的技术方案是结构化蓝图（blueprint/v1）：六段固定骨架（仓库关联 / 现状分析 / 实现概述 / API / 影响范围 / 交互流程）+ 需求规格 + 验收锚点；缺段或必填缺失无法通过校验入库（schema 强制而非提示词约定）
+- [ ] **SCHEMA-02**：蓝图关键结论（选仓理由 / 现状 finding / 影响判断）均携带引用证据，指向知识实体 / 代码文件 / RAG chunk / 其他蓝图 / 仓库章程条目，可溯源可预览
+- [ ] **SCHEMA-03**：实现概述逐项标注 change_type（新建 / 改动 / 删除 / 间接完善），并给出功能↔模块↔仓库映射与实现依赖波次（迁入 DEPTH-02/03）
+- [ ] **SCHEMA-04**：交互流程段呈现完整业务编排叙事：在哪个页面、经哪个接口、传什么参数、拿到什么数据、数据流向哪里、有哪几条行为路径（迁入 DEPTH-01）
+- [ ] **SCHEMA-05**：API 段包含接口描述 / 请求响应示例 / 数据来源说明（数据已有，或需哪个仓支持产出）
+- [ ] **SCHEMA-06**：execution_plan 从蓝图确定性派生且与现行 schema 一致，编码分发链路零改动可消费；方案中不出现以周为单位的排期（迁入 DEPTH-04）
+- [ ] **SCHEMA-07**：蓝图是项目级——一个项目一份活跃蓝图，多版本演进；版本间可做 block 级 diff
+
+### LIFE — 生命周期
+
+- [ ] **LIFE-01**：每份蓝图具备 11 态生命周期（调研中 / 产出中 / AI 审查中 / 需要澄清 / 待人类审查 / 已确认 / 实施中 / 实施完成 / 已归档 / 已失败 / 已废弃），状态转移有守卫且全程可追溯
+- [ ] **LIFE-02**：存在未解决的阻塞澄清时蓝图不可确认；执行确认动作的成员自动进入方案评审人名单（可多人），署名留痕、通知定向
+- [ ] **LIFE-03**：生成失败或中途放弃有显式终态，不再停留在进行中状态误导用户；失败可重试
+
+### CHARTER — 仓库章程与双面路由
+
+- [ ] **CHARTER-01**：每仓一份版本化章程（定位 / owned_domains 含 planned / 边界禁区 / 落点偏好 / 演进态），AI 起草、人工确认生效；人工确认内容不被 AI 覆盖，AI 只可提修订草案
+- [ ] **CHARTER-02**：路由按 feature_point 意图分流加权——净新增重章程与历史落点、改造重能力树（章程作 sanity check：命中禁区或 maintenance_only 降权且保留须显式理由）；score breakdown 含 charter_match 分量且可解释
+- [ ] **CHARTER-03**：确认门动作回灌章程学习闭环——确认/改判沉淀 owned_domains 草案、移除仓沉淀 boundaries 草案、rejected 路由候选可提示沉淀为禁区；一律 AI 草案 + 人工 confirm
+
+### FLOW — 三大编排阶段
+
+- [ ] **FLOW-01**：需求歧义超阈值时，系统先抛出带候选选项的澄清再进入调研（规格门），并对每个 feature_point 给出意图分类（greenfield / brownfield / fix）（迁入 DEPTH-05）
+- [ ] **FLOW-02**：阶段 1 逐仓容器调研产出 fitness 判定（suitable / partial / unsuitable + 理由 + 替代建议）；不合适仓自动回主 agent 重路由（有界 ≤2 轮），过程对用户可见
+- [ ] **FLOW-03**：阶段 1 出口是硬确认门——用户确认仓库集与职责后才进入方案拟定；可移除仓 / 手动加仓 / 改判 role / 修改职责，反馈驱动重调研直至确认；确认后锁定，后续变更必须重开确认门
+- [ ] **FLOW-04**：仓库关联区分 direct（要编码改动）/ indirect（被依赖调研），各带结构化选仓理由与证据；indirect 默认轻量调研、可人工升级深调研
+- [ ] **FLOW-05**：阶段 2 按锁定职责逐仓拟定分仓方案（RepoPlan），期间可多轮澄清、可发起单仓定向补调研
+- [ ] **FLOW-06**：阶段 3 主 agent 融合装配六段蓝图并做跨仓 API 对账——消费的接口必须找到提供方或显式标注 needs_support，跨仓矛盾抛澄清而非静默拍板
+- [ ] **FLOW-07**：独立 AI 审查代理按七类规则（schema / goal-backward / 引用覆盖 / 角色一致性 / API 闭环 / 禁令 / 章程边界）产出分级 findings；BLOCKER 按归因有界打回（仓级回该仓、融合级回 merge，合计 ≤2 轮）后升人审
+- [ ] **FLOW-08**：蓝图必经人类终审（通过 / 驳回带划线评论）；驳回回产出中修订并计轮次
+
+### CLAR — 划线澄清
+
+- [ ] **CLAR-01**：AI 可对蓝图任意位置发起飞书文档式划线提问（带候选选项），用户在查看器中看到划线高亮并可多轮回复；人也可对任意选区主动发起评论
+- [ ] **CLAR-02**：澄清答案回灌产生新版本，线程置 resolved 并物化进决策记录；版本变更后批注按 block 重锚定，失锚线程集中可见、不静默丢失
+- [ ] **CLAR-03**：人类可直接编辑蓝图内容（block 级），编辑生成新版本、归属可审计；人工编辑不被 AI 覆盖，冲突时 AI 必须开线程询问
+- [ ] **CLAR-04**：澄清无人应答保持显式 pending——可提醒、可随时作答恢复；不自动作答、不判失败、绝不无声卡死
+
+### BUS — 共享上下文总线
+
+- [ ] **BUS-01**：蓝图容器经任务 token 绑定「会话→项目」作用域（方案期无分支也能定位项目），可实时读写会话级上下文总线，写入即对并行容器可见
+- [ ] **BUS-02**：容器可声明等待某条上下文：短等待保活轮询带超时降级，长等待携带 partial 产物退出、条目就绪后自动重派续作；互相等待环被检测并抛澄清
+- [ ] **BUS-03**：会话结束后有沉淀价值的上下文条目可经 distill 管道进入项目记忆（人工 confirm）
+
+### VIEW — 前端与知识库
+
+- [ ] **VIEW-01**：用户可打开结构化蓝图查看器：六段导航、结构化渲染（流程图 / 伪代码 / API 卡 / 影响矩阵）、状态徽标与阶段时间线（生成中实时进展）
+- [ ] **VIEW-02**：仓库关联可直接跳转仓库页；引用可在查看器上再弹一层预览（知识实体 / 代码片段 / 其他蓝图 / 章程条目）
+- [ ] **VIEW-03**：知识库新增「技术方案」tab：列表、状态 / 项目 / 仓库筛选、搜索、深链直达查看器
+- [ ] **VIEW-04**：蓝图与项目自动关联（项目内生成即挂项目）；蓝图关联的知识 / 上下文 / 其他蓝图互相可查、可引用（互引成图谱边）
+- [ ] **VIEW-05**：蓝图可导出飞书文档（含决策记录附录）；未确认版本在界面与导出物上均显式标注
+
+### GATE — 入口与质量
+
+- [ ] **GATE-01**：workflow / chat / MCP / feature list 全入口统一走蓝图编排；MCP 入口支持异步澄清协议（返回 pending、可作答、可续取结果），不再跳过澄清
+- [ ] **GATE-02**：蓝图 golden set 与质量指标基线建立（引用覆盖率 / AI 打回率 / 人审修改量 / 澄清轮次 / 目标仓命中率，首条 golden case 为高三提分专项），质量退化可被回归检出
+
+---
+
+## Future Requirements（本里程碑不做）
+
+- 蓝图 golden set 弱标签扩样（依赖采纳/修改行为日志积累）
+- AI 审查与起草强制换模型的交叉审查实验（档位已可配，默认同档）
+- 章程 charter_match 权重的自动调参 / 在线学习
+- 段级细粒度编辑权限（初版全员可编辑 + 版本链审计）
+- 母子蓝图的编排级拆分（schema 已支持蓝图互引，编排拆分另议）
+
+## Out of Scope（显式排除及理由）
+
+- **修改 `repo_router_v2.py`** — §13.2 边界纪律：章程/历史落点证据在 `blueprint_route` adapter 层融合，路由核心归 v0.19.0 独占
+- **修改既有 `technical_plan` process 六文件**（decompose_segments / research_adapter / architect_merge_adapter / merged_plan / clarify_adapter / render）— 冻结只读，蓝图流水线全走 `blueprint_*` 新文件；旧 process 退役观察期后另行删除
+- **TechPlanCard / RoutingDecisionPanel / 执行时间线组件改动** — 归 v0.19.0（Phase 109/110）；本里程碑仅在同步点 2 之后做触点接入（Phase 116）
+- **`ConvergenceSessionEvent` 既有事件类型/字段变更** — 契约由 v0.19.0 定义，本里程碑只新增 `blueprint_*` 事件类型
+- **Prompt Center 化蓝图提示词** — 沿用硬编码 Python 字符串惯例，搬迁另议
+
+---
+
+## Traceability
+
+**Coverage: 35/35 — 每条需求恰好映射到一个相位，无孤儿、无重复。**
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| SCHEMA-01 | Phase 111 蓝图底座 | Pending |
+| SCHEMA-06 | Phase 111 蓝图底座 | Pending |
+| SCHEMA-07 | Phase 111 蓝图底座 | Pending |
+| LIFE-01 | Phase 111 蓝图底座 | Pending |
+| LIFE-02 | Phase 111 蓝图底座 | Pending |
+| LIFE-03 | Phase 111 蓝图底座 | Pending |
+| CHARTER-01 | Phase 111 蓝图底座 | Pending |
+| GATE-02 | Phase 111 蓝图底座 | Pending |
+| FLOW-01 | Phase 112 规格门与双面路由调研 | Pending |
+| FLOW-02 | Phase 112 规格门与双面路由调研 | Pending |
+| FLOW-03 | Phase 112 规格门与双面路由调研 | Pending |
+| FLOW-04 | Phase 112 规格门与双面路由调研 | Pending |
+| CHARTER-02 | Phase 112 规格门与双面路由调研 | Pending |
+| CHARTER-03 | Phase 112 规格门与双面路由调研 | Pending |
+| FLOW-05 | Phase 113 分仓方案与融合 + Context Bus | Pending |
+| FLOW-06 | Phase 113 分仓方案与融合 + Context Bus | Pending |
+| SCHEMA-02 | Phase 113 分仓方案与融合 + Context Bus | Pending |
+| SCHEMA-03 | Phase 113 分仓方案与融合 + Context Bus | Pending |
+| SCHEMA-04 | Phase 113 分仓方案与融合 + Context Bus | Pending |
+| SCHEMA-05 | Phase 113 分仓方案与融合 + Context Bus | Pending |
+| BUS-01 | Phase 113 分仓方案与融合 + Context Bus | Pending |
+| BUS-02 | Phase 113 分仓方案与融合 + Context Bus | Pending |
+| BUS-03 | Phase 113 分仓方案与融合 + Context Bus | Pending |
+| FLOW-07 | Phase 114 审查与澄清收敛 | Pending |
+| CLAR-02 | Phase 114 审查与澄清收敛 | Pending |
+| CLAR-03 | Phase 114 审查与澄清收敛 | Pending |
+| CLAR-04 | Phase 114 审查与澄清收敛 | Pending |
+| VIEW-01 | Phase 115 前端查看器与知识库 | Pending |
+| VIEW-02 | Phase 115 前端查看器与知识库 | Pending |
+| VIEW-03 | Phase 115 前端查看器与知识库 | Pending |
+| VIEW-04 | Phase 115 前端查看器与知识库 | Pending |
+| CLAR-01 | Phase 115 前端查看器与知识库 | Pending |
+| FLOW-08 | Phase 115 前端查看器与知识库 | Pending |
+| GATE-01 | Phase 116 入口收编与导出 | Pending |
+| VIEW-05 | Phase 116 入口收编与导出 | Pending |
+
+**按相位汇总：**
+
+| Phase | Requirements | 数量 |
+|-------|--------------|------|
+| 111 蓝图底座 | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | 8 |
+| 112 规格门与双面路由调研 | FLOW-01/02/03/04, CHARTER-02/03 | 6 |
+| 113 分仓方案与融合 + Context Bus | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | 9 |
+| 114 审查与澄清收敛 | FLOW-07, CLAR-02/03/04 | 4 |
+| 115 前端查看器与知识库 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 6 |
+| 116 入口收编与导出 | GATE-01, VIEW-05 | 2 |
+| **合计** | | **35** |
+
+**跨类别组合的理由（不按 SCHEMA/LIFE/CHARTER/FLOW/CLAR/BUS/VIEW/GATE 机械切分）：**
+
+- **CHARTER-01 与底座同相位、CHARTER-02/03 与路由调研同相位**：章程模型/起草管道是数据底座（111），而双面路由与确认门回灌是消费闭环（112）——闭环依赖确认门存在，必须与阶段 1 编排同相位交付。
+- **SCHEMA-02~05 与阶段 2/3 同相位**：六段内容与引用强制由分仓方案与融合真实产出，schema 字段在 111 已定义，但「产出达标」的承诺只能随流水线（113）验收。
+- **CLAR-01 与 FLOW-08 在前端相位**：划线交互与人审终审的用户可见承诺依赖查看器（115），线程/回灌等后端机制在 114 先行。
+- **GATE-02（golden set）放底座**：对齐 v0.19.0 Phase 105 方法论——质量标尺先建，后续每个相位的产出都有客观基线可回归。
+
+---
+---
+
 # Requirements — v0.19.0 技术方案可信度
 
 **Milestone:** v0.19.0
