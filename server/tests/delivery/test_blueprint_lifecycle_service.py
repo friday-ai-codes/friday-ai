@@ -17,9 +17,11 @@ async + sync_to_async 跨线程写库 → transaction=True。
 from __future__ import annotations
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 
+import delivery.services.blueprint_lifecycle_service as lifecycle_module
 from delivery.models import (
     Artifact,
     BlueprintReviewer,
@@ -253,6 +255,35 @@ async def test_transition_without_session_persists_no_event() -> None:
     )
     assert await ConvergenceSessionEvent.objects.acount() == 0
     assert await _db_status(artifact.id) == BlueprintStatus.RESEARCHING
+
+
+async def test_transition_without_session_logs_warning() -> None:
+    """MN-04：零 DB 留痕的转移必须留 warning，否则「怎么变的」只能靠翻 info 日志。"""
+    artifact = await _make_artifact(blueprint_status="")
+    with patch.object(lifecycle_module.logger, "warning") as warn_spy:
+        await BlueprintLifecycleService().transition(
+            artifact, BlueprintStatus.RESEARCHING, initiated_by_user_id="tester"
+        )
+    events = [call.args[0] for call in warn_spy.call_args_list]
+    assert "blueprint_transition_without_session" in events
+
+
+async def test_return_status_ignored_for_non_clarification_target() -> None:
+    """MN-03：非 needs_clarification 目标态传入的 return_status 不得进事件 payload。"""
+    artifact = await _make_artifact(blueprint_status=BlueprintStatus.RESEARCHING)
+    session = await _make_session()
+    with patch.object(lifecycle_module.logger, "warning") as warn_spy:
+        await BlueprintLifecycleService().transition(
+            artifact,
+            BlueprintStatus.DRAFTING,
+            initiated_by_user_id="tester",
+            session=session,
+            return_status="随便一个没校验过的字符串",
+        )
+    event = await ConvergenceSessionEvent.objects.aget(session=session)
+    assert event.payload["return_status"] is None
+    events = [call.args[0] for call in warn_spy.call_args_list]
+    assert "blueprint_return_status_ignored" in events
 
 
 async def test_transition_with_session_persists_event_row() -> None:

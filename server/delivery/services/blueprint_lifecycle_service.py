@@ -31,8 +31,9 @@ best-effort 事件）：
   ai_reviewing}（缺省取 from_status；持久承载走 BlueprintThread.return_stage 由调用
   方写，本 service 只校验与透传进事件 payload——RESEARCH A4，不给 Artifact 加列）。
 - **事件 best-effort（RESEARCH P3）**：``ConvergenceSessionEvent.session`` 是非空
-  FK——``session`` 参数可空，无 session 时只打 structlog 不落事件行；事件持久化
-  整体 try/except 吞掉，观测绝不反噬业务。绝不给 event 模型加字段。
+  FK——``session`` 参数可空，无 session 时只打 structlog（warning 级，让「零 DB 留痕
+  的转移」可被发现）不落事件行；事件持久化整体 try/except 吞掉，观测绝不反噬业务。
+  绝不给 event 模型加字段。
 - **P10 备注**：「一项目一份活跃蓝图」的唯一性守卫由 Phase 112 的创建入口负责，
   本 service 不做（Artifact 无 project FK，项目归属只在 content.meta.project_id）。
 """
@@ -144,7 +145,8 @@ class BlueprintLifecycleService:
 
         - 非法转移 ``raise ValueError``（状态不变、DB 不写）。
         - ``to_status == needs_clarification``：``return_status`` 缺省取 from_status，
-          必须 ∈ {researching, drafting, ai_reviewing}。
+          必须 ∈ {researching, drafting, ai_reviewing}；其它目标态传入 ``return_status``
+          一律忽略并清空（记 warning），不进事件 payload。
         - ``to_status == confirmed``：存在 open+blocking 线程即拒绝（LIFE-02）；
           ``acting_user`` 非空时自动 upsert 进 BlueprintReviewer 名单（首插留痕）。
         - 并发冲突 ``raise ConcurrentBlueprintTransitionError``。
@@ -168,6 +170,19 @@ class BlueprintLifecycleService:
                     f"非法 needs_clarification 恢复目标 return_status={return_status!r}；"
                     f"合法值={sorted(_CLARIFICATION_RETURN_TARGETS)}"
                 )
+        elif return_status is not None:
+            # 其它目标态没有「恢复目标」语义：显式清空，未校验的任意值不得混进事件
+            # payload 污染 115 时间线的语义（MN-03）。
+            logger.warning(
+                "blueprint_return_status_ignored",
+                category="caller",
+                component="process_runtime",
+                artifact_id=str(artifact.id),
+                to_status=to_status,
+                return_status=return_status,
+                initiated_by_user_id=initiated_by_user_id,
+            )
+            return_status = None
 
         if to_status == BlueprintStatus.CONFIRMED:
             has_open_blocking = await BlueprintThread.objects.filter(
@@ -259,6 +274,17 @@ class BlueprintLifecycleService:
             duration_ms=round((time.monotonic() - started) * 1000, 2),
         )
         if session is None:
+            # LIFE-01「可追溯」：无 session 时转移零 DB 留痕，只能翻日志——用 warning
+            # 让这种调用（后台重试 / 管理命令）可被发现并在 112+ 编排层补上 session。
+            logger.warning(
+                "blueprint_transition_without_session",
+                category="caller",
+                component="process_runtime",
+                artifact_id=str(artifact.id),
+                from_status=from_status,
+                to_status=to_status,
+                initiated_by_user_id=initiated_by_user_id,
+            )
             return
         try:
             await ConvergenceSessionEvent.objects.acreate(
