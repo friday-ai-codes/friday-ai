@@ -333,6 +333,18 @@ REPO_ROUTER_STAGE1_MAX_CANDIDATES = env.int("REPO_ROUTER_STAGE1_MAX_CANDIDATES",
 REPO_ROUTER_STAGE1_HITS_PER_REPO = env.int("REPO_ROUTER_STAGE1_HITS_PER_REPO", default=4)
 
 # =============================================================================
+# 仓库路由 v2 确定性置信度阈值（RELY-04）
+# =============================================================================
+# confidence 由分数 margin 确定性推导（codegraph.services.repo_router_scoring
+# .derive_confidence）：S(1) >= θ_abs 且 margin >= θ_margin → high；
+# S(1) >= θ_med → medium；否则 low。调用方读取后以参数注入纯函数。
+# 初值来自 .planning/research/ROUTING-RANKING.md §1.3a；golden set 校准后
+# 可经环境变量调整，不必改代码发版。
+REPO_ROUTER_CONF_THETA_ABS = env.float("REPO_ROUTER_CONF_THETA_ABS", default=0.55)
+REPO_ROUTER_CONF_THETA_MARGIN = env.float("REPO_ROUTER_CONF_THETA_MARGIN", default=0.08)
+REPO_ROUTER_CONF_THETA_MED = env.float("REPO_ROUTER_CONF_THETA_MED", default=0.35)
+
+# =============================================================================
 # 可恢复任务（断点恢复）
 # =============================================================================
 # 真相源 = DB（Postgres/SQLite）：长任务（索引 / 图谱构建等）登记到 ResumableTask，
