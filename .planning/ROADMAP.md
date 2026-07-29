@@ -103,7 +103,15 @@ Plans:
   4. 现状 finding/选仓理由/影响判断的引用覆盖率达到基线（golden set 可量测）；consumed API 无 provider 时被标 needs_support 且支持仓出现在仓库关联；跨仓矛盾在融合中抛澄清而非静默拍板。
   5. 会话结束后有价值的总线条目可经 distill 管道生成项目记忆草案（人工 confirm 生效）。
 
-**Plans**: TBD
+**Plans**: 6 plans（wave 1: 01；wave 2: 02/03 并行；wave 3: 04；wave 4: 05；wave 5: 06）
+
+Plans:
+- [ ] 113-01-PLAN.md — BlueprintContextEntry 模型 + 0032 migration（三复合索引 + seq 唯一约束）+ BlueprintContextService（锁父行 seq 分配 / JSON 递归脱敏自建 / waiter 登记含环检测 / satisfy 同事务置 superseded）+ 三个 blueprint.context.* 事件（BUS-01/02 数据面）
+- [ ] 113-02-PLAN.md — 容器 MCP 两侧接通：服务端 read_/report_blueprint_context 两 view + **view 层自建三道会话校验**（鉴权链只到 token→owner）+ 全路径非 5xx + task 侧白名单 7→9（公共 handler 工厂零改动）（BUS-01）
+- [ ] 113-03-PLAN.md — RepoPlan 分仓方案：新建 blueprint_repo_plan_schema.py（§5.3 十一字段）+ 派发面 mode="plan" 四扩展点（缺省等价 112）+ BlueprintRepoPlanAdapter（确认门仓集 / direct 派发 / indirect 合成 / 有界重试 / 自写完成判据）+ callbacks 第四链（FLOW-05, SCHEMA-03）
+- [ ] 113-04-PLAN.md — 等待原语：await_blueprint_context 容器侧有界轮询（超时返正常结果非 is_error）+ waiting_context 退出与自动重派续作 + 波次预排纯函数（provider 先行）+ 互等环抛澄清；三条路径各有可证伪断言（BUS-02）
+- [ ] 113-05-PLAN.md — 融合装配：blueprint_reconcile 跨仓 API 对账纯函数 + blueprint_merge（确定性投影含 rationale.citations / 引用池先建后填 / 四段分节 LLM / must_haves 确定性派生 / 幂等落 ArtifactVersion）（FLOW-06, SCHEMA-02/03/04/05）
+- [ ] 113-06-PLAN.md — 融合门与 stage 收口：引用覆盖率门（阈值走 SettingKeys.BLUEPRINT_MERGE_CONFIG）+ coverage_gaps 归因 + 有界回退 ≤2 轮 + 超界转 STAGE_DONE 带未决项 + technical_blueprint 追加 repo_plan→merge 两 stage（只加不改）+ distill 沉淀草案（FLOW-06, SCHEMA-02, BUS-03）
 
 ### Phase 114: 审查与澄清收敛（AI 对抗审查 + 线程闭环 + 人工编辑）
 
