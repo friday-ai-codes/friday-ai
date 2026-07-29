@@ -41,8 +41,13 @@ _EVENT_COMPLETED = "measure_repo_index_stats_completed"
 _EVENT_FAILED = "measure_repo_index_stats_failed"
 _EVENT_REPO_COUNT_FAILED = "measure_repo_index_stats_repo_count_failed"
 
-# management command 由运维手动触发，无请求上下文——initiated_by 语义标 system。
-_LOG_KV = {"category": "caller", "component": "codegraph", "initiated_by": "system"}
+# management command 由运维手动触发，无请求上下文——按 LOGGING-SPEC 字段名
+# initiated_by_user_id 标 system（无触发用户记 system）。
+_LOG_KV = {
+    "category": "caller",
+    "component": "codegraph",
+    "initiated_by_user_id": "system",
+}
 
 
 def _compute_stats(counts: list[int]) -> dict[str, Any]:
