@@ -31,14 +31,17 @@
 - 新建 `server/services/process_runtime/blueprint_route.py`：内嵌调用 `RepoRouterV2` 取原样输出，**绝不修改** `codegraph/services/repo_router_v2.py`（§13.2）
 - `charter_match` 为 adapter 层加性分量：`owned_domains`（含 `status=planned`）匹配加分、`boundaries` 命中判负、`evolution=maintenance_only/deprecated` 降权；按 feature_point `intent` 加权——greenfield 重章程与历史落点，brownfield/fix 重能力树，章程作 sanity check（命中禁区仍保留候选时 LLM 必须给显式理由）
 - `history_match` 分量来自既有 delivery knowledge 检索（kinds=`code_change`/`tech_plan`）：召回「同类需求近期实际合进哪个仓」
-- breakdown 在 adapter 层组装（含 charter_match/history_match + RepoRouterV2 原始各信号，各项之和等于总分），写 `ConvergenceSessionEvent`（`blueprint_*` 事件类型）供 115 前端展开；`repo_associations.routing_evidence` 字段形状不变
+- breakdown 在 adapter 层组装并写 `ConvergenceSessionEvent`（`blueprint_*` 事件类型）供 115 前端展开；`repo_associations.routing_evidence` 字段形状不变
+- **breakdown 分量口径（按调研修正）**：`RepoRouteCandidateV2`（`repo_router_v2.py:61-72`）现状**无 breakdown 字段、score 已被 min 到 1.0**，且该文件属冻结面不可改。故本相位 breakdown = `router_base`（把 RepoRouterV2 的整个 score 当**单一不可拆分量**）+ `charter_match` + `history_match`，三项之和等于总分且可解释；同时记录 `router_version`。v0.19.0 Phase 105 落地分数分解后（同步点），把 `router_base` 展开为其内部各信号即可，adapter 组装契约不变
 - 章程条目被引用时产出 `citation.source_type=repo_charter`（schema 引用池支持）
 
 ### 逐仓容器调研与 reroute
 - 新建 `server/services/process_runtime/blueprint_research_adapter.py`：复制 `research_adapter.py` 的 dispatch 范式但为独立文件（冻结面不动）；容器 = `SubAgentSession(TaskType.PLAN)`，按仓 fan-out 并行
-- 容器上下文接通：派发时 `mint_task_token` + 注入 `FRIDAY_TASK_KNOWLEDGE_ENDPOINT`（复制编码链 Phase 103 做法，PLAN 链现状缺失，本相位补齐）；章程内容随 prompt 注入，**不**扩容器 MCP 白名单（留给 113 Context Bus）
+- 容器上下文接通：派发时 `mint_task_token` + 注入 3 个 `FRIDAY_TASK_*` env 键（endpoint/token/quota，复制编码链 Phase 103 做法，PLAN 链现状缺 mint 与注入，本相位补齐）；章程内容随 prompt 注入，**不**扩容器 MCP 白名单（留给 113 Context Bus）
+- **token 吊销无需重写（按调研修正）**：PLAN 链终态回调已复用编码链的 `arevoke_task_tokens`，本相位只补 mint 与 env 注入两侧
 - direct 候选深调研；indirect 候选默认轻量（能力树 + RAG + 知识图谱证据，服务端合成），提供人工升级为深调研的入口（REST 动作）
-- fitness 产物形状：`RepoResearchTask.report` JSON 增 `fitness{verdict: suitable|partial|unsuitable, reasons, citations}` + `role_suggestion(direct|indirect)` + `responsibility` + `findings[]`（带 citations），可直接投影进蓝图 `repo_associations` 与 `current_state_analysis`
+- **fitness 产物落位（按调研修正）**：`RepoResearchTask` **无 `report` 字段**，调研结论落 `PartialPlan.content` JSON——在其中增 `fitness{verdict: suitable|partial|unsuitable, reasons, citations}` + `role_suggestion(direct|indirect)` + `responsibility` + `findings[]`（带 citations），可直接投影进蓝图 `repo_associations` 与 `current_state_analysis`；`RepoResearchTask` 仍作任务态载体（status/attempt/error）
+- **retry 语义注意（按调研）**：`research_service.retry_task` 硬编码 stage `"research"`，本相位新 stage 名若不同需在 adapter 侧自行处理重试而非复用该函数（不改冻结面外的既有 service 语义）
 - reroute 上界 ≤2 轮（计数存 `ConvergenceSession.stage_state`）：unsuitable 仓排除后由主 agent 补候选重调研；仍不收敛 → 带全部现状升确认门由用户裁决（绝不静默失败）
 
 ### 确认门与章程回灌
