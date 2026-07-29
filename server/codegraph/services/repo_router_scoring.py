@@ -71,12 +71,6 @@ PHASE105_WEIGHTS: dict[str, float] = {
     SIGNAL_ACTIVITY: 0.10,
 }
 
-# 版本绑定四元组之一（weight_set_version + prompt_hash + model_id + index_version），
-# 快照与 golden baseline 都必须记录。
-# 注意：bump 到 "phase106-v1" 与 golden baseline 重建同步进行（106-08）——
-# 提前 bump 会使门禁版本守护（test_golden_gate_vs_baseline 首个 assert）失败。
-WEIGHT_SET_VERSION = "phase105-v1"
-
 # 活跃度枚举映射（ROUTING-RANKING §4）；无 last_commit_at 时的回退来源。
 ACTIVITY_ENUM_MAP: dict[str, float] = {
     "活跃开发": 0.9,
@@ -142,6 +136,12 @@ DEFAULT_WEIGHT_CONFIG: dict[str, Any] = {
     "embedding_model_id": None,
     "calibrated_at": None,
 }
+
+# 版本绑定四元组之一（weight_set_version + prompt_hash + model_id + index_version），
+# 快照与 golden baseline 都必须记录。单一来源取自 DEFAULT_WEIGHT_CONFIG——
+# bump 版本必须与 golden baseline 重建在同一提交生效（Pitfall 8 防呆：门禁版本
+# 守护 test_golden_gate_vs_baseline 首个 assert 会拦截不同步的改动）。
+WEIGHT_SET_VERSION: str = DEFAULT_WEIGHT_CONFIG["weight_set_version"]
 
 _SENTINEL_UNAVAILABLE = None  # 信号不可用标记（缺失 ≠ 确认不匹配，走权重重归一化）
 

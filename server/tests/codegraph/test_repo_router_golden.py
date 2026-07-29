@@ -40,15 +40,19 @@ from codegraph.services.repo_router_eval import (
     EvalReport,
     diff_reports,
     evaluate_cases,
+    score_case,
 )
 from codegraph.services.repo_router_scoring import (
     WEIGHT_SET_VERSION,
-    aggregate_and_score,
+    ScoredCandidate,
 )
 
 FIXTURE_DIR: Path = Path(__file__).resolve().parent / "fixtures" / "repo_router_golden"
 MAIN_FIXTURE: Path = FIXTURE_DIR / "golden_main.json"
 BASELINE_FIXTURE: Path = FIXTURE_DIR / "golden_baseline.json"
+
+# 事故锚点 case（SC-1）：study-app 以命中广度碾压 onion-learning 的真实场景。
+GK001_CASE_ID = "gk-001-gaosan-tifen"
 
 # θ 阈值字面量——与 settings 默认（REPO_ROUTER_CONF_THETA_*）一致，
 # 但门禁不读 settings：离线纯函数评估不依赖 Django 配置加载。
@@ -86,6 +90,26 @@ def timed_report(
     )
     elapsed = time.monotonic() - start
     return report, elapsed
+
+
+@pytest.fixture(scope="module")
+def gk001_ranked(golden_cases: list[dict[str, Any]]) -> list[ScoredCandidate]:
+    """gk-001 的打分结果（走 score_case——与门禁 evaluate_cases 同一入口）。"""
+    case = next(c for c in golden_cases if c["id"] == GK001_CASE_ID)
+    return score_case(case)
+
+
+def _rank_of(ranked: list[ScoredCandidate], repo_id: str) -> int:
+    """候选序列中的 0-based 名次；不在候选内直接失败（召回缺失也是退化）。"""
+    for idx, cand in enumerate(ranked):
+        if cand.repo_id == repo_id:
+            return idx
+    raise AssertionError(f"{repo_id} 未进候选：{[c.repo_id for c in ranked]}")
+
+
+def _breadth_of(ranked: list[ScoredCandidate], repo_id: str) -> float:
+    """候选的 breadth 分项贡献（信号缺失时该键不存在，按 0 计）。"""
+    return ranked[_rank_of(ranked, repo_id)].breakdown.get("breadth", 0.0)
 
 
 def _load_baseline() -> dict[str, Any]:
@@ -149,6 +173,9 @@ def test_baseline_carries_version_and_ci_fields() -> None:
     if _GENERATE_MODE:
         pytest.skip("GENERATE_GOLDEN=1 生成模式，跳过 baseline 字段校验")
     baseline = _load_baseline()
+    # 版本守护字面绑定（Pitfall 8）：bump WEIGHT_SET_VERSION 必须与 baseline
+    # 重建同一提交生效——任一单独改动都会使本断言或上面的守护断言失败。
+    assert WEIGHT_SET_VERSION == "phase106-v1"
     assert baseline["weight_set_version"] == WEIGHT_SET_VERSION
     assert "generated_at" in baseline
     ci = baseline["bootstrap_ci"]
@@ -180,7 +207,10 @@ def test_full_eval_within_time_budget(
 
 
 # ---------------------------------------------------------------------------
-# 机制级断言（只锁 Phase 105 已成立的性质，ROUTING-RANKING §7.4）
+# 机制级断言（ROUTING-RANKING §7.4：锁因果性质，不锁权重敏感的绝对名次）
+#
+# 下面三条是 Phase 106 SC-1 的验收锚点：断言的是「尺寸偏置已被消除」这一机制，
+# 而非某组权重下的偶然名次——权重微调不应使其变色（脆弱断言反例见 §7.4）。
 # ---------------------------------------------------------------------------
 
 
@@ -189,7 +219,7 @@ def test_all_candidates_satisfy_score_invariants(
 ) -> None:
     """INV-R1/R3 对 golden set 全部候选成立（无截断 + 分解恒等）。"""
     for case in golden_cases:
-        for cand in aggregate_and_score(case["node_hits"]):
+        for cand in score_case(case):
             assert 0.0 <= cand.score <= 1.0, (case["id"], cand.repo_id, cand.score)
             assert math.fsum(cand.breakdown.values()) == cand.score, (
                 case["id"],
@@ -197,20 +227,38 @@ def test_all_candidates_satisfy_score_invariants(
             )
 
 
-def test_gk001_expected_repos_recalled_into_candidates(
-    golden_cases: list[dict[str, Any]],
+def test_gk001_mechanism_breadth_not_favor_monolith(
+    gk001_ranked: list[ScoredCandidate],
 ) -> None:
-    """gk-001 召回性质：study-course / study-user-status 出现在候选集合。
+    """尺寸偏置已消除：巨仓 study-app 的 breadth 贡献不高于小仓 onion-learning。
 
-    **不断言** onion-learning 排名高于 study-app：Phase 105 不修尺寸偏置
-    （pivoted normalization 归 Phase 106，其 SC-1 负责翻转该 case 的 Top-1）；
-    当前 baseline 下 Top-1 仍是 study-app 是预期基线，不是失败。
+    pivoted normalization 的因果性质——命中数多但仓体量更大（N_r=620 vs 30）时，
+    广度分项不再奖励巨仓。这是机制断言，与两者最终名次无关。
     """
-    case = next(c for c in golden_cases if c["id"] == "gk-001-gaosan-tifen")
-    candidate_ids = {c.repo_id for c in aggregate_and_score(case["node_hits"])}
-    assert "study-course" in candidate_ids
-    assert "study-user-status" in candidate_ids
-    assert "onion-learning" in candidate_ids
+    monolith = _breadth_of(gk001_ranked, "study-app")
+    focused = _breadth_of(gk001_ranked, "onion-learning")
+    assert monolith <= focused, (
+        f"breadth 仍偏袒巨仓：study-app={monolith:.4f} > "
+        f"onion-learning={focused:.4f}（pivoted normalization 失效）"
+    )
+
+
+def test_gk001_mechanism_rank_flipped(
+    gk001_ranked: list[ScoredCandidate],
+) -> None:
+    """事故翻转：onion-learning 排在 study-app 之前（Phase 105 baseline 为反）。"""
+    assert _rank_of(gk001_ranked, "onion-learning") < _rank_of(gk001_ranked, "study-app"), (
+        f"gk-001 未翻转：{[c.repo_id for c in gk001_ranked]}"
+    )
+
+
+def test_gk001_cross_group_repos_in_top5(
+    gk001_ranked: list[ScoredCandidate],
+) -> None:
+    """跨组两仓进 Top-5：新信号不得把 study-course / study-user-status 压出窗口。"""
+    top5 = [c.repo_id for c in gk001_ranked[:5]]
+    assert "study-course" in top5, top5
+    assert "study-user-status" in top5, top5
 
 
 def test_evaluation_is_deterministic(
