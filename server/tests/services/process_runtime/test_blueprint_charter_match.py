@@ -72,6 +72,32 @@ def test_planned_domain_scores_strictly_positive() -> None:
     assert result.score > 0.0
 
 
+def test_sentence_style_boundary_rule_matches_via_ngram() -> None:
+    """无分隔符整句禁区规则也能命中连写需求文本（CJK 3-gram 交集路径）。
+
+    章程禁区常写成整句「不承接课程权益鉴权」，需求也是连写长句——两侧互不包含，
+    片段子串判定必然漏判；漏判会让「命中禁区应降权」这条机制在生产上静默失效。
+    """
+    result = score_charter_match(
+        _charter(boundaries=[{"rule": "不承接课程权益鉴权"}]),
+        query_terms=["在专项学习页展示课程内容与权益鉴权状态"],
+    )
+
+    assert result.violated_boundaries == ["不承接课程权益鉴权"]
+    assert result.score < 0.0
+
+
+def test_unrelated_sentence_rule_does_not_match() -> None:
+    """无关整句规则不误判（3-gram 交集为空 → 不降权）。"""
+    result = score_charter_match(
+        _charter(boundaries=[{"rule": "不承接支付结算与发票开具"}]),
+        query_terms=["在专项学习页展示课程内容与权益鉴权状态"],
+    )
+
+    assert result.violated_boundaries == []
+    assert result.score == 0.0
+
+
 def test_no_domain_match_scores_zero() -> None:
     """章程存在但 owned_domains 不命中 → 0 分（不倒扣）。"""
     result = score_charter_match(

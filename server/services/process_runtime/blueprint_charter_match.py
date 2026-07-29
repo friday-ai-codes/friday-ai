@@ -61,6 +61,13 @@ _SEPARATORS = re.compile(r"[\s/\\|、，,。.;；:：()（）\[\]【】<>《》\
 # 命中成假阳性，因此只让 ≥2 字符的片段参与子串判定。
 _MIN_SEGMENT_LEN = 2
 
+# CJK 片段的 n-gram 长度：中文不带分隔符（章程禁区常写成整句「不承接课程权益鉴权」，
+# 需求文本也是连写长句），纯片段子串判定会漏掉「两条长句共享一个关键词」这类命中。
+# 取 3 而非 2：2-gram 在中文里通用词太多（"学习"/"功能"）会大量假阳性，3-gram 的
+# 区分度实测足够且不引入任何分词依赖（T-112-SC：零新增外部依赖）。
+_CJK_NGRAM_N = 3
+_CJK_CHAR = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
+
 _VALID_DOMAIN_STATUS = ("implemented", "planned")
 
 
@@ -91,17 +98,34 @@ def _segments(text: Any) -> list[str]:
     return [seg for seg in normalized.split(" ") if seg]
 
 
-def _matches(target: Any, query_terms: list[str]) -> bool:
-    """章程文本 `target` 是否命中 `query_terms`（大小写无关的片段/子串判定）。
+def _tokens(text: Any) -> set[str]:
+    """规范化文本 → 比较用 token 集合（ASCII 片段取整词，CJK 片段取 3-gram）。"""
+    tokens: set[str] = set()
+    for seg in _segments(text):
+        if not _CJK_CHAR.search(seg) or len(seg) <= _CJK_NGRAM_N:
+            tokens.add(seg)
+            continue
+        tokens.update(seg[i : i + _CJK_NGRAM_N] for i in range(len(seg) - _CJK_NGRAM_N + 1))
+    return tokens
 
-    不引入分词依赖（T-112-SC：零新增外部依赖）：先做整串互为子串判定，再做
-    ≥2 字符片段的双向子串判定——中文「培优/学习提分」的 `培优` 片段能命中
-    「改造培优课占位入口」这类连写长文本，英文按词切后同样有效。
+
+def _matches(target: Any, query_terms: list[str]) -> bool:
+    """章程文本 `target` 是否命中 `query_terms`（大小写无关的 token 交集 / 子串判定）。
+
+    不引入分词依赖（T-112-SC：零新增外部依赖），三条判定依次尝试：
+
+    1. 整串互为子串——短域名与需求原文的完全包含关系；
+    2. ≥2 字符**片段**的双向子串——「培优/学习提分」的 `培优` 片段能命中连写长句
+       「改造培优课占位入口」；
+    3. token 交集（CJK 取 3-gram）——两侧**都是无分隔符长句**时唯一有效的路径
+       （禁区规则「不承接课程权益鉴权」vs 需求「展示课程内容与权益鉴权状态」，
+       片段子串两头都不包含对方，只有 3-gram 交集能判出命中）。
     """
     norm_target = _normalize(target)
     if not norm_target:
         return False
     target_segments = [seg for seg in norm_target.split(" ") if len(seg) >= _MIN_SEGMENT_LEN]
+    target_tokens = _tokens(target)
     for term in query_terms or []:
         norm_term = _normalize(term)
         if not norm_term:
@@ -111,6 +135,8 @@ def _matches(target: Any, query_terms: list[str]) -> bool:
         if any(seg in norm_term for seg in target_segments):
             return True
         if any(seg in norm_target for seg in norm_term.split(" ") if len(seg) >= _MIN_SEGMENT_LEN):
+            return True
+        if target_tokens & _tokens(term):
             return True
     return False
 
