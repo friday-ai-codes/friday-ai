@@ -83,6 +83,17 @@ def _install_stage0(monkeypatch: pytest.MonkeyPatch, hits: list[dict[str, Any]])
     monkeypatch.setattr(RepoRouterV2, "_stage0_node_search", _fake_search)
 
 
+@pytest.fixture(autouse=True)
+def _fast_stage1_backoff(settings) -> None:
+    """把 Stage 1 重试退避基数压到毫秒级（107-05 Task 1 引入重试后的测试提速）。
+
+    本文件多数用例注入的是可重试类异常（超时 / 连接错误），按默认 2.0s 退避真睡
+    会给整个文件平白加十几秒。退避时长本身只在专门的上界用例里断言，那条用例在
+    本 fixture 之后自行覆盖该值（fixture 先于用例体执行）。
+    """
+    settings.REPO_ROUTER_STAGE1_RETRY_BACKOFF_SECONDS = 0.001
+
+
 def _install_stage1_model(monkeypatch: pytest.MonkeyPatch, model: Any) -> None:
     """让 Stage 1 走到 model.ainvoke：patch lazy import 的 build_chat_model seam
     与 aget_claude_code_runtime_config（模型名解析不触 DB）。"""
@@ -94,6 +105,65 @@ def _install_stage1_model(monkeypatch: pytest.MonkeyPatch, model: Any) -> None:
         "services.provider_config.aget_claude_code_runtime_config", _fake_cc_rt
     )
     monkeypatch.setattr("agents.llm_factory.build_chat_model", lambda *a, **kw: model)
+
+
+def _install_stage1_model_capturing(monkeypatch: pytest.MonkeyPatch, model: Any) -> dict[str, Any]:
+    """同 ``_install_stage1_model``，另把 build_chat_model 的构造 kwargs 记下来。"""
+    captured: dict[str, Any] = {}
+
+    async def _fake_cc_rt() -> dict[str, str]:
+        return {"haiku_model": "fake-haiku"}
+
+    def _build(*_args: Any, **kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return model
+
+    monkeypatch.setattr("services.provider_config.aget_claude_code_runtime_config", _fake_cc_rt)
+    monkeypatch.setattr("agents.llm_factory.build_chat_model", _build)
+    return captured
+
+
+def _spy_wait_for(monkeypatch: pytest.MonkeyPatch) -> list[float | None]:
+    """记录传给 ``asyncio.wait_for`` 的 timeout 实参（per-attempt 超时上界断言）。"""
+    recorded: list[float | None] = []
+    real_wait_for = asyncio.wait_for
+
+    async def _spy(awaitable: Any, timeout: float | None = None) -> Any:
+        recorded.append(timeout)
+        return await real_wait_for(awaitable, timeout=timeout)
+
+    monkeypatch.setattr(asyncio, "wait_for", _spy)
+    return recorded
+
+
+def _spy_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """记录退避睡眠实参并把真实睡眠压成 0（退避上界断言，用例本身秒回）。"""
+    recorded: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def _spy(delay: float, *_args: Any, **_kwargs: Any) -> Any:
+        recorded.append(delay)
+        return await real_sleep(0)
+
+    monkeypatch.setattr(asyncio, "sleep", _spy)
+    return recorded
+
+
+def _llm_order_json(*repo_ids: str, confidence: str = "medium") -> str:
+    """构造 Stage 1 排列输出（数组顺序即 LLM 的排序结论）。"""
+    return json.dumps(
+        [
+            {
+                "repo_id": rid,
+                "sub_project": "",
+                "confidence": confidence,
+                "reasoning": "",
+                "matched_node_paths": [],
+            }
+            for rid in repo_ids
+        ],
+        ensure_ascii=False,
+    )
 
 
 class _RaisingModel:
@@ -121,6 +191,33 @@ class _TextModel:
 
     async def ainvoke(self, messages: Any) -> Any:
         return SimpleNamespace(content=self._text)
+
+
+class _FlakyModel:
+    """前 ``fail_times`` 次 ainvoke 抛异常、其后返回固定文本；记录调用次数。"""
+
+    def __init__(self, exc: Exception, text: str = "", *, fail_times: int = 1) -> None:
+        self._exc = exc
+        self._text = text
+        self._fail_times = fail_times
+        self.calls = 0
+
+    async def ainvoke(self, messages: Any) -> Any:
+        self.calls += 1
+        if self.calls <= self._fail_times:
+            raise self._exc
+        return SimpleNamespace(content=self._text)
+
+
+class _CountingSlowModel:
+    """ainvoke 睡过 per-attempt 超时值并记录调用次数（预算耗尽断言用）。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def ainvoke(self, messages: Any) -> Any:
+        self.calls += 1
+        await asyncio.sleep(5.0)
 
 
 def _assert_degraded_high(result: Any) -> None:
@@ -601,3 +698,133 @@ async def test_redact_stage1_failure_log_event(monkeypatch, mock_aresolve_ok) ->
     assert failed
     assert "sk-ant-" not in json.dumps(failed, ensure_ascii=False, default=str)
     assert "REDACTED" in failed[0]["error"]
+
+
+# ---------------------------------------------------------------------------
+# Stage 1 有界调用：1 次重试 + 首调与重试共享总预算（107-05 Task 1，RELY-05）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stage1_retry_recovers_on_second_attempt(monkeypatch, mock_aresolve_ok) -> None:
+    """首调超时、重试成功 → 正常 v2 结果，替身被调用 2 次，attempts == 2。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    model = _FlakyModel(
+        TimeoutError("first attempt timed out"), _llm_order_json("repo-a"), fail_times=1
+    )
+    _install_stage1_model(monkeypatch, model)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.router_version == "v2"
+    assert result.degraded is False
+    assert model.calls == 2
+    assert result.snapshot["stage1"]["attempts"] == 2
+
+
+@pytest.mark.asyncio
+async def test_stage1_retry_exhausted_degrades_after_two_attempts(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """两次都超时 → 降级继续（timeout），且重试次数硬上界为 1（共 2 次调用）。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    model = _FlakyModel(TimeoutError("still timing out"), fail_times=2)
+    _install_stage1_model(monkeypatch, model)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.router_version == "v2_stage0_only"
+    assert result.degraded is True
+    assert result.degrade_reason == "timeout"
+    assert model.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_stage1_budget_exhausted_skips_second_call(
+    monkeypatch, mock_aresolve_ok, settings
+) -> None:
+    """总预算耗尽 → 不发第二次调用（1 次），并留下预算耗尽事件。"""
+    from structlog.testing import capture_logs
+
+    mock_aresolve_ok()
+    settings.REPO_ROUTER_STAGE1_TOTAL_BUDGET_SECONDS = 0.01
+    _install_stage0(monkeypatch, _high_margin_hits())
+    model = _CountingSlowModel()
+    _install_stage1_model(monkeypatch, model)
+
+    with capture_logs() as events:
+        result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.degraded is True
+    assert model.calls == 1
+    assert [e for e in events if e.get("event") == "repo_router_v2_stage1_budget_exhausted"]
+
+
+@pytest.mark.asyncio
+async def test_stage1_per_attempt_timeout_is_capped_by_remaining_budget(
+    monkeypatch, mock_aresolve_ok, settings
+) -> None:
+    """per-attempt 超时取 min(per_call, 剩余预算)：per_call 远大于总预算时以后者为准。"""
+    mock_aresolve_ok()
+    settings.REPO_ROUTER_STAGE1_TIMEOUT_SECONDS = 1000.0
+    settings.REPO_ROUTER_STAGE1_TOTAL_BUDGET_SECONDS = 2.0
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(monkeypatch, _FlakyModel(ConnectionError("connect failed"), fail_times=2))
+    timeouts = _spy_wait_for(monkeypatch)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.degraded is True
+    assert timeouts, "Stage 1 必须经 asyncio.wait_for 发起调用"
+    assert all(t is not None and t <= 2.0 for t in timeouts)
+
+
+@pytest.mark.asyncio
+async def test_stage1_retry_backoff_never_exceeds_remaining_budget(
+    monkeypatch, mock_aresolve_ok, settings
+) -> None:
+    """退避睡眠不超过剩余预算：退避基数远大于总预算时以剩余预算为准。"""
+    mock_aresolve_ok()
+    settings.REPO_ROUTER_STAGE1_RETRY_BACKOFF_SECONDS = 1000.0
+    settings.REPO_ROUTER_STAGE1_TOTAL_BUDGET_SECONDS = 1.0
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(monkeypatch, _FlakyModel(ConnectionError("connect failed"), fail_times=2))
+    sleeps = _spy_sleep(monkeypatch)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.degraded is True
+    assert sleeps, "可重试失败后必须有一次退避睡眠"
+    assert max(sleeps) <= 1.0
+
+
+@pytest.mark.asyncio
+async def test_stage1_cache_hit_skips_call_and_retry(monkeypatch, mock_aresolve_ok) -> None:
+    """缓存命中路径零调用、零重试，attempts 记 0（口径与 stage1_completed 一致）。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    model = _FlakyModel(TimeoutError("unused"), _llm_order_json("repo-a"), fail_times=0)
+    _install_stage1_model(monkeypatch, model)
+
+    first = await RepoRouterV2.route("高三提分专项需求")
+    second = await RepoRouterV2.route("高三提分专项需求")
+
+    assert first.snapshot["stage1"]["cache_hit"] is False
+    assert model.calls == 1
+    assert second.snapshot["stage1"]["cache_hit"] is True
+    assert model.calls == 1
+    assert second.snapshot["stage1"]["attempts"] == 0
+
+
+@pytest.mark.asyncio
+async def test_stage1_retry_is_not_delegated_to_langchain(monkeypatch, mock_aresolve_ok) -> None:
+    """langchain 内部重试保持关闭：重试写在我们自己的循环里才受总预算约束。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    captured = _install_stage1_model_capturing(monkeypatch, _TextModel(_llm_order_json("repo-a")))
+
+    await RepoRouterV2.route("高三提分专项需求")
+
+    assert captured["max_retries"] == 0
