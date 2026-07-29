@@ -21,6 +21,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from django.db import OperationalError
 
 from repositories.models import RepoCharter, Repository
 from tests.helpers.fake_chat_model import FakeChatModel
@@ -143,6 +144,23 @@ class TestCharterDraft:
         with patch(_ARESOLVE, new=AsyncMock(return_value=None)):
             resp = authenticated_client.post(DRAFT_URL.format(repo_id=repository.id))
         assert resp.status_code == 503
+        assert not RepoCharter.objects.filter(repository=repository).exists()
+
+    def test_draft_persist_error_500_not_503(
+        self, authenticated_client, repository: Repository
+    ) -> None:
+        """MJ-02：草案落库失败回 500，且文案不指向「供应商配置」。"""
+        p1, p2 = _mock_llm()
+        with (
+            p1,
+            p2,
+            patch.object(
+                RepoCharter.objects, "create", side_effect=OperationalError("database is locked")
+            ),
+        ):
+            resp = authenticated_client.post(DRAFT_URL.format(repo_id=repository.id))
+        assert resp.status_code == 500
+        assert "供应商" not in resp.json()["detail"]
         assert not RepoCharter.objects.filter(repository=repository).exists()
 
     def test_draft_missing_repo_404(self, authenticated_client) -> None:

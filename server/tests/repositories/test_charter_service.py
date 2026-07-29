@@ -18,10 +18,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from asgiref.sync import sync_to_async
+from django.db import OperationalError
 
 from agents.call_source import get_call_source
 from repositories.models import RepoCharter, Repository
 from repositories.services.charter_service import (
+    CharterPersistError,
     aconfirm_charter,
     adraft_charter,
     normalize_charter_draft,
@@ -175,6 +178,69 @@ async def test_adraft_missing_repository_raises(db: object) -> None:
     """仓库不存在 → DoesNotExist 上抛（视图层转 404）。"""
     with pytest.raises(Repository.DoesNotExist):
         await adraft_charter("00000000-0000-0000-0000-000000000000")
+
+
+async def test_adraft_llm_error_returns_none(repository: Repository) -> None:
+    """MJ-02：上游模型调用抛错 → best-effort None、零副作用（视图 503）。"""
+    model = MagicMock()
+    model.ainvoke = AsyncMock(side_effect=RuntimeError("upstream 502"))
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=model),
+    ):
+        result = await adraft_charter(str(repository.id))
+    assert result is None
+    assert await RepoCharter.objects.acount() == 0
+
+
+async def test_adraft_persist_error_raises_not_swallowed(repository: Repository) -> None:
+    """MJ-02：落库失败必须抛 CharterPersistError，不得退化成「供应商未配置」的 None。"""
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=_fake_model(_charter_json())),
+        patch.object(
+            RepoCharter.objects, "create", side_effect=OperationalError("database is locked")
+        ),
+        pytest.raises(CharterPersistError),
+    ):
+        await adraft_charter(str(repository.id))
+
+    assert await RepoCharter.objects.acount() == 0
+
+
+async def test_adraft_retries_once_on_unique_race(repository: Repository) -> None:
+    """MN-05：并发首次起草撞 OneToOne 唯一约束 → 重跑读-改路径收敛，不再抛。
+
+    模拟竞态：首次 ``select_for_update`` 看不到行（另一事务尚未提交）→ 走 create
+    撞唯一约束 → IntegrityError → 重跑时读到行 → 就地更新。
+    """
+    await sync_to_async(RepoCharter.objects.create)(
+        repository=repository,
+        source=RepoCharter.Source.AI_DRAFT,
+        version=1,
+        positioning="并发对手写入的草案",
+    )
+
+    real_select_for_update = RepoCharter.objects.select_for_update
+    calls: list[int] = []
+
+    def _blind_first_read(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return RepoCharter.objects.none()  # 首次「看不到」既有行
+        return real_select_for_update(*args, **kwargs)
+
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=_fake_model(_charter_json("重试后的定位"))),
+        patch.object(RepoCharter.objects, "select_for_update", side_effect=_blind_first_read),
+    ):
+        charter = await adraft_charter(str(repository.id))
+
+    assert len(calls) == 2, "应重跑一次读-改路径"
+    assert charter is not None
+    assert charter.positioning == "重试后的定位"
+    assert await RepoCharter.objects.acount() == 1
 
 
 # ── confirm 收口 ──────────────────────────────────────────────────────────

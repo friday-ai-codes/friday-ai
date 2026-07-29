@@ -4,7 +4,9 @@
 五步骨架）：``ai_summary``/``facets``（仓库摘要与语义分面）+ 近期 MR 历史（哪类需求
 实际落在此仓）+ verified/rejected ``RepoAssociation``（verified 作 owned 证据、
 rejected 作 boundaries 候选）→ 单轮 LLM 蒸馏 → :func:`normalize_charter_draft`
-白名单归一 → 落草案。LLM 不可用/解析失败一律 best-effort 返回 ``None``、零副作用。
+白名单归一 → 落草案。LLM 不可用/解析失败一律 best-effort 返回 ``None``、零副作用；
+**落库失败抛 :class:`CharterPersistError`**（DB 写错误不是「供应商未配置」，视图层
+据此区分 500 与 503——MJ-02）。
 
 「AI 不覆盖人工」不变量（P11，CHARTER-01 核心）：``source=human_confirmed`` 之后，
 AI 起草路径只写 ``draft_content``（pending 修订草案），正式字段逐字节不变；草案经
@@ -32,7 +34,22 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["adraft_charter", "aconfirm_charter", "normalize_charter_draft"]
+__all__ = [
+    "adraft_charter",
+    "aconfirm_charter",
+    "normalize_charter_draft",
+    "CharterPersistError",
+]
+
+
+class CharterPersistError(RuntimeError):
+    """章程草案落库失败（DB 写错误 / 唯一约束重试仍失败）。
+
+    与「上游模型不可用」严格区分：后者 best-effort 返回 ``None``（视图 503），
+    本异常是**业务写失败**，必须上抛让视图回 500——不得伪装成「供应商未配置」
+    把运维引向错误的排查方向。
+    """
+
 
 _POSITIONING_MAX = 500
 _FACET_FIELD_MAX = 64
@@ -214,77 +231,82 @@ def _build_prompt(
     return "\n\n".join(parts)
 
 
-async def adraft_charter(
-    repository_id: str, *, initiated_by_user_id: str = "system"
-) -> RepoCharter | None:
-    """AI 起草仓库章程草案（三源蒸馏 → LLM 单调用 → 归一化落库，best-effort）。
+def _draft_failed(
+    reason: str,
+    *,
+    repository_id: str,
+    initiated_by_user_id: str,
+    started: float,
+    error: str | None = None,
+) -> None:
+    """起草失败观测事件（上游不可用类，warning 级——业务侧 best-effort 返回 None）。"""
+    logger.warning(
+        "charter_draft_failed",
+        category="caller",
+        component="charter_service",
+        repository_id=str(repository_id),
+        initiated_by_user_id=initiated_by_user_id,
+        reason=reason,
+        error=error,
+        duration_ms=round((time.monotonic() - started) * 1000, 2),
+    )
 
-    - 仓库不存在：``Repository.DoesNotExist`` 上抛（视图层转 404）。
-    - LLM 不可用（无 provider/default_model）/ 解析失败 / 任何异常：返回 ``None``，
-      不落任何行（首次起草场景零副作用）。
-    - 落库语义（INV-6 单点，P11 不变量）：无 charter → 建行 ``source=ai_draft``；
-      已有且仍是草案 → 正式字段就地更新（version 不变）；已有且
-      ``source=human_confirmed`` → **只写 ``draft_content``**，正式字段一个不碰。
+
+async def _agenerate_draft(
+    repo: Any,
+    *,
+    repository_id: str,
+    initiated_by_user_id: str,
+    started: float,
+) -> dict[str, Any] | None:
+    """三源蒸馏 → LLM 单调用 → 解析归一；上游不可用/解析失败一律返回 ``None``。
+
+    ``try`` 只包「LLM 调用」与「解析」两段（MJ-02）：ORM 读失败与编程错误照常上抛，
+    不被压成「供应商未配置」。
     """
-    from repositories.models import RepoCharter, Repository
+    from langchain_core.messages import HumanMessage, SystemMessage
 
-    repo = await Repository.objects.aget(id=repository_id)  # DoesNotExist 上抛 → 视图转 404
+    from agents.call_source import CallSource, use_call_source
+    from agents.llm_factory import build_chat_model
+    from services.provider_config import ProviderConfigService
 
-    started = time.monotonic()
+    # ── 三源蒸馏输入（ORM 一律 sync_to_async，P1）─────────────────────────────
+    overview = repo.overview_text
+    facets = repo.facets if isinstance(repo.facets, dict) else {}
+
+    def _load_recent_mrs() -> list[dict[str, str]]:
+        from initiatives.models import MergeRequest
+
+        return [
+            {"title": mr.title, "status": mr.status}
+            for mr in MergeRequest.objects.filter(repository_id=repository_id).order_by(
+                "-created_at"
+            )[:_RECENT_LIMIT]
+        ]
+
+    def _load_associations() -> list[dict[str, str]]:
+        from initiatives.models import RepoAssociation
+
+        return [
+            {"status": assoc.status, "routed_reason": assoc.routed_reason}
+            for assoc in RepoAssociation.objects.filter(
+                repository_id=repository_id, status__in=["verified", "rejected"]
+            )[:_RECENT_LIMIT]
+        ]
+
+    recent_mrs = await sync_to_async(_load_recent_mrs)()
+    associations = await sync_to_async(_load_associations)()
+
+    # ── LLM 五步骨架（镜像 decompose_segments）────────────────────────────────
     try:
-        from langchain_core.messages import HumanMessage, SystemMessage
-
-        from agents.call_source import CallSource, use_call_source
-        from agents.llm_factory import build_chat_model
-        from services.provider_config import ProviderConfigService
-
-        logger.info(
-            "charter_draft_started",
-            category="caller",
-            component="charter_service",
-            repository_id=str(repository_id),
-            initiated_by_user_id=initiated_by_user_id,
-        )
-
-        # ── 三源蒸馏输入（ORM 一律 sync_to_async，P1）─────────────────────────
-        overview = repo.overview_text
-        facets = repo.facets if isinstance(repo.facets, dict) else {}
-
-        def _load_recent_mrs() -> list[dict[str, str]]:
-            from initiatives.models import MergeRequest
-
-            return [
-                {"title": mr.title, "status": mr.status}
-                for mr in MergeRequest.objects.filter(repository_id=repository_id).order_by(
-                    "-created_at"
-                )[:_RECENT_LIMIT]
-            ]
-
-        def _load_associations() -> list[dict[str, str]]:
-            from initiatives.models import RepoAssociation
-
-            return [
-                {"status": assoc.status, "routed_reason": assoc.routed_reason}
-                for assoc in RepoAssociation.objects.filter(
-                    repository_id=repository_id, status__in=["verified", "rejected"]
-                )[:_RECENT_LIMIT]
-            ]
-
-        recent_mrs = await sync_to_async(_load_recent_mrs)()
-        associations = await sync_to_async(_load_associations)()
-
-        # ── LLM 五步骨架（镜像 decompose_segments）────────────────────────────
         resolved = await ProviderConfigService.aresolve()
         model_name = (getattr(resolved, "extra", None) or {}).get("default_model", "")
         if not model_name:
-            logger.warning(
-                "charter_draft_failed",
-                category="caller",
-                component="charter_service",
-                repository_id=str(repository_id),
+            _draft_failed(
+                "no_default_model",
+                repository_id=repository_id,
                 initiated_by_user_id=initiated_by_user_id,
-                reason="no_default_model",
-                duration_ms=round((time.monotonic() - started) * 1000, 2),
+                started=started,
             )
             return None
 
@@ -302,68 +324,135 @@ async def adraft_charter(
         ]
         with use_call_source(CallSource.BLUEPRINT_CHARTER_DRAFT):
             response = await model.ainvoke(messages)
-
-        raw = _parse_charter_json(_content_to_text(response.content))
-        if raw is None:
-            logger.warning(
-                "charter_draft_failed",
-                category="caller",
-                component="charter_service",
-                repository_id=str(repository_id),
-                initiated_by_user_id=initiated_by_user_id,
-                reason="parse_failed",
-                duration_ms=round((time.monotonic() - started) * 1000, 2),
-            )
-            return None
-        draft = normalize_charter_draft(raw)
-
-        # ── 落库（INV-6 单点 + P11 不变量）────────────────────────────────────
-        def _persist() -> RepoCharter:
-            from django.db import transaction
-
-            with transaction.atomic():
-                charter = RepoCharter.objects.select_for_update().filter(repository=repo).first()
-                if charter is None:
-                    return RepoCharter.objects.create(
-                        repository=repo,
-                        source=RepoCharter.Source.AI_DRAFT,
-                        version=1,
-                        **draft,
-                    )
-                if charter.source == RepoCharter.Source.AI_DRAFT:
-                    # 仍是草案：正式字段就地更新（version 不变）
-                    for field, value in draft.items():
-                        setattr(charter, field, value)
-                    charter.save()
-                    return charter
-                # human_confirmed：只写 draft_content，正式字段一个不碰（P11）
-                charter.draft_content = draft
-                charter.save(update_fields=["draft_content", "updated_at"])
-                return charter
-
-        charter = await sync_to_async(_persist)()
-        logger.info(
-            "charter_draft_completed",
-            category="caller",
-            component="charter_service",
-            repository_id=str(repository_id),
+    except Exception as exc:  # noqa: BLE001 — 上游不可用 → best-effort None
+        _draft_failed(
+            "llm_error",
+            repository_id=repository_id,
             initiated_by_user_id=initiated_by_user_id,
-            charter_source=str(charter.source),
-            charter_version=charter.version,
-            duration_ms=round((time.monotonic() - started) * 1000, 2),
+            started=started,
+            error=redact_secrets_in_text(str(exc)),
         )
-        return charter
-    except Exception as exc:  # noqa: BLE001 — best-effort，绝不上抛（DB 写失败同样吞）
-        logger.warning(
+        return None
+
+    try:
+        raw = _parse_charter_json(_content_to_text(response.content))
+    except Exception as exc:  # noqa: BLE001 — 畸形响应体 → best-effort None
+        _draft_failed(
+            "parse_failed",
+            repository_id=repository_id,
+            initiated_by_user_id=initiated_by_user_id,
+            started=started,
+            error=redact_secrets_in_text(str(exc)),
+        )
+        return None
+    if raw is None:
+        _draft_failed(
+            "parse_failed",
+            repository_id=repository_id,
+            initiated_by_user_id=initiated_by_user_id,
+            started=started,
+        )
+        return None
+    return normalize_charter_draft(raw)
+
+
+async def adraft_charter(
+    repository_id: str, *, initiated_by_user_id: str = "system"
+) -> RepoCharter | None:
+    """AI 起草仓库章程草案（三源蒸馏 → LLM 单调用 → 归一化落库）。
+
+    - 仓库不存在：``Repository.DoesNotExist`` 上抛（视图层转 404）。
+    - LLM 不可用（无 provider/default_model）/ 上游报错 / 解析失败：返回 ``None``，
+      不落任何行（首次起草场景零副作用）——视图层回 503。
+    - 落库失败（DB 写错误）：``CharterPersistError`` 上抛（视图层回 500）。**不再**
+      与「供应商未配置」共用同一返回值（MJ-02）。
+    - 落库语义（INV-6 单点，P11 不变量）：无 charter → 建行 ``source=ai_draft``；
+      已有且仍是草案 → 正式字段就地更新（version 不变）；已有且
+      ``source=human_confirmed`` → **只写 ``draft_content``**，正式字段一个不碰。
+      并发首次起草撞 OneToOne 唯一约束时重跑一次读-改路径（MN-05）。
+    """
+    from repositories.models import RepoCharter, Repository
+
+    repo = await Repository.objects.aget(id=repository_id)  # DoesNotExist 上抛 → 视图转 404
+
+    started = time.monotonic()
+    logger.info(
+        "charter_draft_started",
+        category="caller",
+        component="charter_service",
+        repository_id=str(repository_id),
+        initiated_by_user_id=initiated_by_user_id,
+    )
+
+    draft = await _agenerate_draft(
+        repo,
+        repository_id=str(repository_id),
+        initiated_by_user_id=initiated_by_user_id,
+        started=started,
+    )
+    if draft is None:
+        return None
+
+    # ── 落库（INV-6 单点 + P11 不变量）────────────────────────────────────────
+    def _write() -> RepoCharter:
+        from django.db import transaction
+
+        with transaction.atomic():
+            charter = RepoCharter.objects.select_for_update().filter(repository=repo).first()
+            if charter is None:
+                return RepoCharter.objects.create(
+                    repository=repo,
+                    source=RepoCharter.Source.AI_DRAFT,
+                    version=1,
+                    **draft,
+                )
+            if charter.source == RepoCharter.Source.AI_DRAFT:
+                # 仍是草案：正式字段就地更新（version 不变）
+                for field, value in draft.items():
+                    setattr(charter, field, value)
+                charter.save()
+                return charter
+            # human_confirmed：只写 draft_content，正式字段一个不碰（P11）
+            charter.draft_content = draft
+            charter.save(update_fields=["draft_content", "updated_at"])
+            return charter
+
+    def _persist() -> RepoCharter:
+        from django.db import IntegrityError
+
+        try:
+            return _write()
+        except IntegrityError:
+            # MN-05：行不存在时 select_for_update 无锁可拿，并发首次起草会双双走
+            # create 撞 OneToOne 唯一约束——重跑一次读-改路径即收敛到就地更新。
+            return _write()
+
+    try:
+        charter = await sync_to_async(_persist)()
+    except Exception as exc:
+        logger.error(
             "charter_draft_failed",
             category="caller",
             component="charter_service",
             repository_id=str(repository_id),
             initiated_by_user_id=initiated_by_user_id,
+            reason="persist_error",
             error=redact_secrets_in_text(str(exc)),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
         )
-        return None
+        raise CharterPersistError("章程草案落库失败") from exc
+
+    logger.info(
+        "charter_draft_completed",
+        category="caller",
+        component="charter_service",
+        repository_id=str(repository_id),
+        initiated_by_user_id=initiated_by_user_id,
+        charter_source=str(charter.source),
+        charter_version=charter.version,
+        duration_ms=round((time.monotonic() - started) * 1000, 2),
+    )
+    return charter
 
 
 async def aconfirm_charter(
