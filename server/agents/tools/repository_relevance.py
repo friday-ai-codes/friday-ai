@@ -211,18 +211,35 @@ async def _analyze_relevance_core(
     router_version = "legacy_hybrid"
     v2_candidates: list[RepositoryRelevanceCandidate] | None = None
     try:
+        from codegraph.services.repo_group_scope import aresolve_grouping_repo_ids
         from codegraph.services.repo_router_v2 import RepoRouterV2
 
+        # D-1：空间关联仓从「硬过滤」改为「分组依据」——继续当硬过滤传的话候选集从一
+        # 开始就只有空间内仓，global 分区恒空、ROUTE-01/02 上线即无效果（Pitfall 2）。
+        # T-107-01 前提：放开后结果含空间外仓名；沿用 mcp_tools 的 RouteRepositoriesView
+        # 与 repositories/route_views.py 两个已上线全库入口的既有判断（仓名不敏感），
+        # 本改动不新增可见性面、不绕过任何现存权限检查。
+        grouping_ids = await aresolve_grouping_repo_ids(space_id=space_id)
         v2_result = await RepoRouterV2.route(
-            query, top_k=top_k, repository_ids=repo_ids
+            query,
+            top_k=top_k,
+            repository_ids=None,
+            grouping_repository_ids=(
+                None if grouping_ids is None else sorted(grouping_ids)
+            ),
         )
         if v2_result.router_version in ("v2", "v2_stage0_only") and v2_result.candidates:
             router_version = v2_result.router_version
             v2_candidates = []
             for c in v2_result.candidates:
-                repo = repo_by_id.get(c.repo_id)
-                if repo is None:
+                # 防御性跳过：repo_id 为空的候选无法映射（正常路径不会出现）。
+                if not c.repo_id:
                     continue
+                repo = repo_by_id.get(c.repo_id)
+                # 跨组候选必然不在 repo_by_id 里（后者只装空间内仓）。此处若沿用旧写法
+                # 「查不到就丢弃」，global 分区会在映射阶段被清空——与硬过滤同一个后果
+                # （Pitfall 2 的第二个入口）。故用候选自带的仓名兜底。
+                repo_name = repo.name if repo is not None else (c.repo_name or c.repo_id)
                 evidence_parts: list[str] = []
                 if c.matched_node_paths:
                     evidence_parts.append(
@@ -239,7 +256,7 @@ async def _analyze_relevance_core(
                 v2_candidates.append(
                     RepositoryRelevanceCandidate(
                         repository_id=c.repo_id,
-                        repository_name=repo.name,
+                        repository_name=repo_name,
                         score=score,
                         level=c.confidence,
                         evidence="；".join(evidence_parts) or f"语义相关度 score={score:.2f}",

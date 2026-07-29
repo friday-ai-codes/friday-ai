@@ -11,8 +11,7 @@ RepoRouterV2 自带的降级链不另加容错。
 
 from __future__ import annotations
 
-from asgiref.sync import sync_to_async
-
+from codegraph.services.repo_group_scope import aresolve_grouping_repo_ids
 from codegraph.services.repo_router_v2 import RepoRouterV2
 from delivery.models import ConvergenceSession
 
@@ -30,27 +29,38 @@ class RepoRouterV2Adapter:
         """路由出候选仓 + confidence，返回精简 dict（候选 + version + auto_selected）。
 
         无 requirement_text（空 query）→ 直接返回空候选（router_version="skipped"），
-        不调 RepoRouterV2、不抛。候选范围 repository_ids 按 include_repos → work_item
-        所属 project 仓库 → 全库 优先级解析（见 ``_resolve_repository_ids``）。
+        不调 RepoRouterV2、不抛。候选范围 ``repository_ids`` 只在 ``include_repos``
+        显式限定时非空（见 ``_resolve_repository_ids``）；项目归属信息走
+        ``grouping_repository_ids``（见 ``_resolve_grouping_repository_ids``）。
 
         ``degraded``（Stage 1 未参与标志，Phase 107 降级 UI 数据底座）随 dict 透传进
-        session.routing；``snapshot``（快照材料）仅供 ``_h_route`` 组 repo.routing
-        事件 payload 用——由 ``_h_route`` 在落 session.routing 前 pop 剔除，
-        **不落库**（session.routing 保持精简，快照细节在 trace 事件里）。
+        session.routing；``block_order`` / ``degrade_reason`` 同理（前端判定是否启用分组
+        呈现与降级提示的唯一依据）。``snapshot``（快照材料）仅供 ``_h_route`` 组
+        repo.routing 事件 payload 用——由 ``_h_route`` 在落 session.routing 前 pop
+        剔除，**不落库**（session.routing 保持精简，快照细节在 trace 事件里）。
         """
         query = (session.decomposition or {}).get("requirement_text", "")
         if not query:
             return {"candidates": [], "router_version": "skipped", "auto_selected": False}
 
         repository_ids = await self._resolve_repository_ids(session)
+        grouping_repository_ids = await self._resolve_grouping_repository_ids(session)
         result = await RepoRouterV2.route(
-            query, top_k=self.top_k, repository_ids=repository_ids, use_llm=True
+            query,
+            top_k=self.top_k,
+            repository_ids=repository_ids,
+            grouping_repository_ids=grouping_repository_ids,
+            use_llm=True,
         )
         candidates = [
             {
                 "repo_id": c.repo_id,
                 "confidence": c.confidence,
                 "repository_name": c.repo_name,
+                # 呈现层两键 additive-safe：下游 clarify/research/feature_confirm 只读
+                # confidence，加键不改任何既有读法。
+                "group": c.group,
+                "trust": c.trust,
             }
             for c in result.candidates
         ]
@@ -59,31 +69,39 @@ class RepoRouterV2Adapter:
             "router_version": result.router_version,
             "auto_selected": result.auto_selected,
             "degraded": result.degraded,
+            "block_order": result.block_order,
+            "degrade_reason": result.degrade_reason,
             "snapshot": result.snapshot,
         }
 
     async def _resolve_repository_ids(self, session: ConvergenceSession) -> list[str] | None:
-        """候选范围优先级解析：① include_repos → ② work_item.space 仓库 → ③ None（全库）。"""
+        """候选范围：仅 ``include_repos`` 显式限定时硬过滤，否则 ``None``（全库召回）。
+
+        D-1（107-CONTEXT）：原先的「② work_item.space 仓库」一级已删除——它正是硬过滤
+        的来源，会让 ``global`` 分区恒空、ROUTE-01/02 上线即无效果，且从 UI 看不出来
+        （只是少一个分区）。空间归属信息现在走 ``grouping_repository_ids``（只标注、
+        不过滤、不打分）。硬过滤语义完整保留给 ``include_repos`` 这类明确要限定范围
+        的调用方。
+
+        T-107-01 前提：放开硬过滤后结果会含用户所在项目外的仓名。沿用
+        ``mcp_tools/views.py`` 的 ``RouteRepositoriesView`` 与
+        ``repositories/route_views.py`` 两个**已上线**入口的既有判断（二者本来就全库
+        路由、无 per-user 可见性过滤 → 仓名不敏感）；Stage 0 侧不存在按用户过滤的
+        机制，故本改动**不绕过任何现存权限检查、不新增可见性面**。
+        """
         include = (session.decomposition or {}).get("include_repos")
         if include:
             return [str(r) for r in include]
-        if session.work_item_id is not None:
-            project_repos = await self._project_repository_ids(session.work_item_id)
-            if project_repos:
-                return project_repos
         return None
 
-    @sync_to_async
-    def _project_repository_ids(self, work_item_id) -> list[str] | None:
-        """取 work_item 所属 project 的仓库 id 列表（同步 ORM 经 sync_to_async）。"""
-        from delivery.models import WorkItem
+    async def _resolve_grouping_repository_ids(
+        self, session: ConvergenceSession
+    ) -> list[str] | None:
+        """分组依据：work_item 所在项目的关联仓宽口径并集（D-2），无上下文返回 ``None``。
 
-        wi = (
-            WorkItem.objects.select_related("space")
-            .filter(id=work_item_id)
-            .first()
-        )
-        if wi is None or wi.space is None:
+        返回排序后的列表而非集合——快照/回放需要确定性的参数序列。
+        """
+        if session.work_item_id is None:
             return None
-        repo_ids = [str(r) for r in wi.space.repositories.values_list("id", flat=True)]
-        return repo_ids or None
+        ids = await aresolve_grouping_repo_ids(work_item_id=session.work_item_id)
+        return None if ids is None else sorted(ids)
