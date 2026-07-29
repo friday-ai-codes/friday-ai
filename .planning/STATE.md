@@ -5,7 +5,7 @@ milestone_name: 技术方案蓝图
 current_phase: 112
 current_phase_name: 规格门与双面路由调研
 status: executing
-stopped_at: "Phase 111 蓝图底座完成并验证通过（4/4 plans，verification 24/24，938 tests 绿，转移表 25/25 边对齐 DESIGN §4.2，冻结面零触碰）。code review 重派中（非阻塞）。下一步：Phase 112 smart discuss → plan → execute。"
+stopped_at: "Phase 111 蓝图底座完成并验证通过（4/4 plans，verification 24/24，转移表 25/25 边对齐 DESIGN §4.2，冻结面零触碰）；code review findings 已修（3 MAJOR + 11 MINOR，跳过 2 条见 Pending Todos），相位门 1768 passed。Phase 112 规划中（CONTEXT + 2 份 RESEARCH + PATTERNS 就位，planner 出计划）。"
 last_updated: "2026-07-29T17:50:00.000Z"
 last_activity: 2026-07-30
 last_activity_desc: Phase 111 complete (verification passed 24/24)
@@ -87,7 +87,8 @@ Last activity: 2026-07-30 — Phase 111 蓝图底座交付（4/4 plans，verific
 
 ### Pending Todos
 
-（无）
+- [Phase 111 review 跳过项] **MN-06**：需新增 migration 才能修（详见 `.planning/phases/111-schema/111-REVIEW.md` Fix Log）——留到 112/113 有 migration 批次时一并做，避免为单条 MINOR 单独起 migration
+- [Phase 111 review 跳过项] **MN-12**：属权限口径决策（非实现缺陷），与 115 前端权限呈现一并定夺
 
 ### Blockers/Concerns
 
