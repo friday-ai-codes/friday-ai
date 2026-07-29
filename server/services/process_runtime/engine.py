@@ -100,17 +100,16 @@ class ProcessEngine:
             await self.session_service.transition(session, "fail", error=error)
             return session
 
-        merged_state = None
-        if outcome.stage_state_update:
-            merged_state = {**(session.stage_state or {}), **outcome.stage_state_update}
-
+        # 增量交给 service 在写入事务内锁行合并：self-loop 转移（pausable stage 的挂起边）
+        # 下 `current_stage` 的 CAS 对两个并发写者同时成立，在这里用内存里的 `session`
+        # 预合并会让后写者整份覆盖先写者的 stage_state（排除集/确认门标记会被回退）。
         from delivery.services.convergence_session_service import ConcurrentTransitionError
 
         try:
             await self.session_service.transition(
                 session,
                 outcome.event,
-                stage_state=merged_state,
+                stage_state_update=outcome.stage_state_update or None,
                 current_artifact_version=outcome.current_artifact_version,
                 error=outcome.error,
             )

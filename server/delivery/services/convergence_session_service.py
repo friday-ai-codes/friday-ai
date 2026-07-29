@@ -24,6 +24,7 @@ from typing import Any
 
 import structlog
 from asgiref.sync import sync_to_async
+from django.db import transaction
 from django.utils import timezone
 
 from delivery.models import (
@@ -129,6 +130,7 @@ class ConvergenceSessionService:
         event: str,
         *,
         stage_state: dict | None = None,
+        stage_state_update: dict | None = None,
         current_artifact_version: Any = _UNSET,
         error: dict | None = None,
         event_time: Any = None,
@@ -137,6 +139,12 @@ class ConvergenceSessionService:
 
         ``event == "fail"``：任意 stage → ``failed`` + 落 ``error``（结构化）。其余事件查
         ``StageDef.transitions[event]``；不在其中 → ``raise ValueError``。
+
+        ``stage_state`` 是**整字典替换**；``stage_state_update`` 是**增量顶层浅合并**，
+        合并基准取写入事务内锁行重读的 DB 当前值（不是调用方内存里那份可能已陈旧的
+        快照）。self-loop 转移（``new_stage == from_stage``）下 ``current_stage`` 的 CAS
+        对两个并发写者同时成立，用内存基准做合并会让后写者整份覆盖先写者；用
+        ``stage_state_update`` 则两份增量都保得住。两者互斥，同传时以 ``stage_state`` 为准。
         """
         if event == "fail":
             return await self._fail(session, error)
@@ -168,9 +176,7 @@ class ConvergenceSessionService:
         elif target == from_stage:
             new_stage = from_stage
             new_status = (
-                stage_def.wait_status
-                if stage_def.pausable
-                else ConvergenceSessionStatus.RUNNING
+                stage_def.wait_status if stage_def.pausable else ConvergenceSessionStatus.RUNNING
             )
         else:
             new_stage, new_status = target, ConvergenceSessionStatus.RUNNING
@@ -181,6 +187,7 @@ class ConvergenceSessionService:
             new_stage=new_stage,
             new_status=str(new_status),
             stage_state=stage_state,
+            stage_state_update=stage_state_update,
             current_artifact_version=current_artifact_version,
             error=error if target == STAGE_FAILED else None,
             event_time=event_time,
@@ -197,18 +204,22 @@ class ConvergenceSessionService:
         new_stage: str,
         new_status: str,
         stage_state: dict | None,
+        stage_state_update: dict | None = None,
         current_artifact_version: Any,
         error: dict | None,
         event_time: Any,
     ) -> None:
-        """以 ``current_stage == from_stage`` 为前置条件的原子更新（WR-01 防 TOCTOU）。"""
+        """以 ``current_stage == from_stage`` 为前置条件的原子更新（WR-01 防 TOCTOU）。
+
+        ``stage_state_update`` 非空时，合并基准在**同一事务内锁行重读**——self-loop 转移
+        下 ``current_stage`` 的 CAS 拦不住并发（两个写者的 from_stage 都成立），只有把
+        「读-合并-写」收进一把行锁才不会丢增量。
+        """
         update_values: dict[str, Any] = {
             "current_stage": new_stage,
             "status": new_status,
             "updated_at": timezone.now(),
         }
-        if stage_state is not None:
-            update_values["stage_state"] = stage_state
         if current_artifact_version is not _UNSET:
             update_values["current_artifact_version_id"] = current_artifact_version
         if error is not None:
@@ -216,15 +227,29 @@ class ConvergenceSessionService:
         if event_time is not None:
             update_values["event_time"] = event_time
 
-        updated = ConvergenceSession.objects.filter(
-            id=session.id, current_stage=from_stage
-        ).update(**update_values)
-        if updated != 1:
-            raise ConcurrentTransitionError(
-                f"并发/陈旧状态转移被拒：session={session.id} "
-                f"expected_from={from_stage} to={new_stage}"
-                "（DB 行 current_stage 已被并发推进改写或行不存在）"
-            )
+        with transaction.atomic():
+            if stage_state is not None:
+                update_values["stage_state"] = stage_state
+            elif stage_state_update:
+                current = (
+                    ConvergenceSession.objects.select_for_update()
+                    .filter(id=session.id)
+                    .values_list("stage_state", flat=True)
+                    .first()
+                )
+                base = current if isinstance(current, dict) else {}
+                update_values["stage_state"] = {**base, **stage_state_update}
+
+            updated = ConvergenceSession.objects.filter(
+                id=session.id, current_stage=from_stage
+            ).update(**update_values)
+            if updated != 1:
+                raise ConcurrentTransitionError(
+                    f"并发/陈旧状态转移被拒：session={session.id} "
+                    f"expected_from={from_stage} to={new_stage}"
+                    "（DB 行 current_stage 已被并发推进改写或行不存在）"
+                )
+        stage_state = update_values.get("stage_state")
         session.current_stage = new_stage
         session.status = new_status
         if stage_state is not None:
@@ -236,9 +261,7 @@ class ConvergenceSessionService:
         if event_time is not None:
             session.event_time = event_time
 
-    async def _fail(
-        self, session: ConvergenceSession, error: Any
-    ) -> ConvergenceSession:
+    async def _fail(self, session: ConvergenceSession, error: Any) -> ConvergenceSession:
         """``fail`` 特判：任意非终态 stage → failed + 落结构化 error。
 
         终态守护：已 done/failed 的会话再 fail 为幂等 no-op（保留首因）。CAS 命中 0 行
@@ -276,9 +299,7 @@ class ConvergenceSessionService:
     def _fail_sync(self, session: ConvergenceSession, error: dict[str, Any]) -> bool:
         """以 ``current_stage == 内存 from_stage`` 为前置条件的原子 fail 更新（WR-03 防盲写覆盖）。"""
         from_stage = session.current_stage
-        updated = ConvergenceSession.objects.filter(
-            id=session.id, current_stage=from_stage
-        ).update(
+        updated = ConvergenceSession.objects.filter(id=session.id, current_stage=from_stage).update(
             status=ConvergenceSessionStatus.FAILED,
             error=error,
             updated_at=timezone.now(),

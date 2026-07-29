@@ -21,11 +21,15 @@
 ``_h_bp_repo_confirmation`` 共用**同一实现**（``blueprint_confirm_gate`` 模块级），
 两处漂移即断链。
 
-**并发/幂等零新造**：同一会话并发续驱由
+**并发/幂等零新造**：跨 stage 的并发续驱由
 ``ConvergenceSessionService._apply_transition_sync`` 的 CAS 去重
 （``filter(id, current_stage=from_stage).update()``；``updated != 1`` →
 ``ConcurrentTransitionError``，engine 已吞掉并记 sampling、绝不落 fail），败者那步
-advance 是 no-op；容器不重开由 112-04 ``dispatch`` 的 ``_DISPATCHABLE_STATUSES`` 白名单
+advance 是 no-op。**注意 self-loop 例外**：三个 pausable stage 的挂起边
+（``spec_gate``/``repo_research``/``repo_confirmation`` 自环）下 ``new_stage == from_stage``，
+CAS 条件对两个并发写者同时成立，去重不生效——``stage_state`` 的一致性因此不靠这把 CAS，
+而靠 ``transition(stage_state_update=...)`` 在写入事务内锁行合并增量（engine 传增量、
+不预合并）。容器不重开由 112-04 ``dispatch`` 的 ``_DISPATCHABLE_STATUSES`` 白名单
 与 ``create_tasks_for_session`` 的 ``get_or_create`` 保证；死循环由 ``max_steps`` 兜底。
 **本文件不加锁、不加字段、不加 status。**
 """
