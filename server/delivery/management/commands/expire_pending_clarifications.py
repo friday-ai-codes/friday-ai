@@ -25,6 +25,7 @@ Usage: python manage.py expire_pending_clarifications [--dry-run] [--limit N] [-
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 from typing import Any
 
 import structlog
@@ -60,6 +61,11 @@ _EXIT_LABELS: dict[str, str] = {
 
 # 出口成因受控枚举（Phase 110 时间线据此区分「等太久」与「矛盾态」）。
 _REASON_NO_ANSWER = "no_answer_timeout"
+_REASON_DELIVERY_FAILED = "delivery_failed"
+_REASON_WORKFLOW_TIMEOUT = "workflow_timeout"
+
+# 澄清卡未送达的展示态标记（107-04 落的 container_status 新取值；该轮仍算 pending）。
+_CONTAINER_DELIVERY_FAILED = "delivery_failed"
 
 # fail 路径落在会话 error 里的稳定原因码。
 _FAIL_REASON = "clarification_timeout_no_answer"
@@ -110,6 +116,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"[dry-run] 扫描 {scanned} 个等待澄清会话，命中 {len(targets)} 个出口目标（未写库）"
             )
+            self._observe_chat_clarifications(now, timeout_seconds)
             return
 
         exited = noop = failed = 0
@@ -145,6 +152,34 @@ class Command(BaseCommand):
             failed=failed,
             timeout_hours=timeout_seconds / 3600,
         )
+        self._observe_chat_clarifications(now, timeout_seconds)
+
+    @staticmethod
+    def _observe_chat_clarifications(now: Any, timeout_seconds: float) -> None:
+        """统计超期未答的 chat 协商卡数量（D-5：只观测，不出口）。
+
+        出口机制只覆盖 ``delivery.Clarification``。chat 单题澄清走的是另一套中断/恢复
+        语义（与 stage graph 完全不同），混做会让改动面不可控，故本命令只统计数量并记一条
+        采样日志，出口留给后续 phase。
+        """
+        # 只读计数：绝不改任何 ConversationIntentTrace 行、绝不触碰 LangGraph 的 interrupt
+        # 恢复路径（D-5 边界）。
+        try:
+            from chat.models import ConversationIntentTrace
+
+            cutoff = now - timedelta(seconds=timeout_seconds)
+            count = ConversationIntentTrace.objects.filter(
+                answered_at__isnull=True, created_at__lt=cutoff
+            ).count()
+            logger.info(
+                "chat_clarification_unanswered_observed",
+                category="sampling",
+                component="delivery",
+                count=count,
+                timeout_hours=timeout_seconds / 3600,
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬扫描主流程
+            pass
 
     # ── 收集阶段（事务内，只读、只收集） ──────────────────────────────────────
 
@@ -189,7 +224,17 @@ class Command(BaseCommand):
     def _evaluate(
         self, session: ConvergenceSession, now: Any, timeout_seconds: float
     ) -> dict[str, Any] | None:
-        """判定单个会话是否到期需出口；返回目标元组（同步读，须在事务内调用）。"""
+        """判定单个会话是否需出口；返回目标元组（同步读，须在事务内调用）。
+
+        三条件取或（受控 reason 枚举，便于后续时间线区分出口成因）：
+
+        1. 等满超时 → ``no_answer_timeout``（正常到期）；
+        2. 该轮澄清卡未送达 → ``delivery_failed``（用户根本没看到卡，等满 24h 毫无意义；
+           107-04 已保证该标记与「仍算 pending」并存）；
+        3. 会话关联的工作流侧已判 TIMEOUT 而会话仍在等 → ``workflow_timeout``（D-4 纵深防御：
+           任何时刻都不得存在「工作流已判超时而会话仍在等」的窗口，兜住携带旧 60 分钟到期
+           时间的存量订阅行）。
+        """
         round_meta = self._pending_round(session.id)
         if round_meta is None:
             return None
@@ -197,15 +242,50 @@ class Command(BaseCommand):
         # 绝不用 session.updated_at —— _apply_transition_sync 每次转移都写它，任何无关
         # 转移都会把它推到现在，超时永不到达（Pitfall 7）。
         waited_seconds = max((now - round_meta["created_at"]).total_seconds(), 0.0)
-        if waited_seconds < timeout_seconds:
+        if waited_seconds >= timeout_seconds:
+            reason = _REASON_NO_ANSWER
+        elif round_meta["container_status"] == _CONTAINER_DELIVERY_FAILED:
+            reason = _REASON_DELIVERY_FAILED
+        elif self._workflow_timed_out(session):
+            reason = _REASON_WORKFLOW_TIMEOUT
+        else:
             return None
         return {
             "session_id": str(session.id),
             "clarification_id": str(round_meta["id"]),
             "round_no": round_meta["round_no"],
             "waited_seconds": waited_seconds,
-            "reason": _REASON_NO_ANSWER,
+            "reason": reason,
         }
+
+    @staticmethod
+    def _workflow_timed_out(session: ConvergenceSession) -> bool:
+        """工作流侧是否已判超时（D-4 纵深条件）。
+
+        关联路径 ``ConvergenceSession.node_execution_id`` → ``NodeExecution.status`` 或其
+        ``workflow_execution.status``。关联缺失（chat / MCP 入口无 node_execution，或行已被
+        清理）→ 条件不成立，不报错。跨 app 读用函数级 import，保持 delivery→workflows 的
+        依赖为惰性。
+        """
+        if not session.node_execution_id:
+            return False
+        from workflows.models.execution import (
+            ExecutionStatus,
+            NodeExecution,
+            NodeExecutionStatus,
+        )
+
+        row = (
+            NodeExecution.objects.filter(id=session.node_execution_id)
+            .values("status", "workflow_execution__status")
+            .first()
+        )
+        if row is None:
+            return False
+        return (
+            row["status"] == NodeExecutionStatus.TIMEOUT
+            or row["workflow_execution__status"] == ExecutionStatus.TIMEOUT
+        )
 
     @staticmethod
     def _pending_round(session_id: Any) -> dict[str, Any] | None:
