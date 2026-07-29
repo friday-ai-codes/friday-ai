@@ -135,6 +135,12 @@ def _routing_snapshot_payload(
         "stage1": snapshot.get("stage1") or {},
         "versions": snapshot.get("versions") or {},
     }
+    # Phase 106 新节（106-07 replay 的回放材料）：weight_config 生效全值 +
+    # per-候选 repo_meta——仅在 router 产出时透传（legacy 快照不加空节），
+    # 同样整体经 redact_for_ledger 脱敏（T-106-15）。
+    for extra_key in ("weight_config", "repo_meta"):
+        if isinstance(snapshot.get(extra_key), dict):
+            payload[extra_key] = snapshot[extra_key]
     return redact_for_ledger(payload)
 
 

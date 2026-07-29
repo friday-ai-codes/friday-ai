@@ -37,6 +37,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 import structlog
@@ -48,6 +49,7 @@ from codegraph.services.repo_index_tree import COLLECTION_NAME
 from codegraph.services.repo_router_config import (
     aload_alias_dict,
     aload_nr_snapshot,
+    aload_weight_config,
 )
 from codegraph.services.repo_router_metadata import (
     FACET_CRITICALITY,
@@ -56,7 +58,7 @@ from codegraph.services.repo_router_metadata import (
     resolve_facet_scores,
 )
 from codegraph.services.repo_router_scoring import (
-    WEIGHT_SET_VERSION,
+    DEFAULT_WEIGHT_CONFIG,
     aggregate_and_score,
     apply_llm_adjustment,
     derive_confidence,
@@ -135,6 +137,9 @@ class RepoRouteCandidateV2:
     matched_node_paths: list[str] = field(default_factory=list)
     # 分数可拆解（ROUTE-07）：信号名 → 贡献值，Σ贡献 == score（打分核心保证）。
     breakdown: dict[str, float] = field(default_factory=dict)
+    # 关键程度锚点值（CONTEXT 裁决：tie-break only）——旁路展示字段，
+    # **不进 breakdown**，前端 Σ贡献==score 校验不受影响。
+    criticality: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -147,6 +152,7 @@ class RepoRouteCandidateV2:
             "sub_project_paths": self.sub_project_paths,
             "matched_node_paths": self.matched_node_paths,
             "breakdown": {k: round(v, 6) for k, v in self.breakdown.items()},
+            "criticality": self.criticality,
         }
 
 
@@ -186,11 +192,81 @@ class RepoRouterV2:
         """
         # ---- Stage 0: 节点级 hybrid 粗筛 ----
         started = time.monotonic()
-        node_hits = await cls._stage0_node_search(query, repository_ids)
+        searched = await cls._stage0_node_search(query, repository_ids)
+        # 返回形状兼容：生产实现返回 (hits, query_dense)（复用已算好的 dense
+        # 向量，零额外 embedding）；既有测试替身只返回 hits 列表——此时
+        # query_dense=None，dense 余弦/T2 走既有降级分支（S_top 回退 RRF）。
+        if isinstance(searched, tuple):
+            node_hits, query_dense = searched
+        else:
+            node_hits, query_dense = searched, None
         if not node_hits:
             return await cls._fallback_v1(query, top_k)
 
-        stage0_candidates = cls._stage0_candidates(node_hits, top_k=STAGE0_REPO_K)
+        # ---- Stage 0.5: 权重配置 + repo_meta 组装（六信号供数，106-06）----
+        # 权重经 loader 调用时读取（保存即生效）；repo_meta 组装整体失败
+        # （意外异常）回退 repo_meta=None → 打分核心走 legacy 三信号路径——
+        # 观测代码与新信号永不反噬路由主流程（T-106-14）。
+        config: dict[str, Any] | None = None
+        repo_meta: dict[str, dict[str, Any]] | None = None
+        meta_stats: dict[str, Any] = {}
+        try:
+            config = await aload_weight_config()
+            repo_meta, meta_stats = await cls._load_repo_meta(
+                node_hits, query, query_dense, config
+            )
+        except Exception as exc:  # noqa: BLE001 — 整体失败回退 legacy，绝不中断路由
+            repo_meta = None
+            try:
+                logger.warning(
+                    "repo_router_meta_load_failed",
+                    error_type=type(exc).__name__,
+                    error=str(exc)[:200],
+                    category="sampling",
+                    component="repo_router_v2",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        # 唯一取 now 的位置（值进快照 stage0.scored_at）——活跃度衰减的时间
+        # 锚点参数注入打分核心，回放/golden 确定性依赖此纪律。
+        scored_at = datetime.now(timezone.utc).isoformat()
+
+        if config is not None and repo_meta is not None:
+            effective_constants = {**config["constants"], "n_bar": meta_stats.get("n_bar")}
+            stage0_candidates = cls._stage0_candidates(
+                node_hits,
+                top_k=STAGE0_REPO_K,
+                weights=config["weights"],
+                repo_meta=repo_meta,
+                constants=effective_constants,
+                now=scored_at,
+            )
+            # 快照携带本次生效全值（回放不依赖当时的 SystemSetting，106-07 消费）。
+            snapshot_weight_config: dict[str, Any] | None = {
+                "weights": dict(config["weights"]),
+                "constants": effective_constants,
+                "weight_set_version": config["weight_set_version"],
+                "alias_dict_hash": meta_stats.get("alias_dict_hash"),
+                "embedding_model_id": meta_stats.get("embedding_model_id"),
+            }
+            # 只记最终候选仓（≤ STAGE0_REPO_K=12），不记全部分桶仓（Pitfall 5
+            # 体积护栏）；per-repo 独立打分，候选外仓的 meta 不影响候选分数。
+            snapshot_repo_meta: dict[str, Any] | None = {
+                c["repo_id"]: repo_meta[c["repo_id"]]
+                for c in stage0_candidates
+                if c["repo_id"] in repo_meta
+            }
+        else:
+            stage0_candidates = cls._stage0_candidates(node_hits, top_k=STAGE0_REPO_K)
+            snapshot_weight_config = None
+            snapshot_repo_meta = None
+
+        snapshot_extras: dict[str, Any] = {
+            "weight_config": snapshot_weight_config,
+            "repo_meta": snapshot_repo_meta,
+            "scored_at": scored_at,
+        }
+
         if not stage0_candidates:
             # node_hits 非空但全部缺 repository_id（打分核心过滤后零候选）：
             # 进 Stage 1 只会发一次空 prompt 的 LLM 调用再被白名单过滤降级——
@@ -202,6 +278,7 @@ class RepoRouterV2:
                 top_k,
                 started,
                 stage1_meta={"skipped_reason": "no_stage0_candidates"},
+                **snapshot_extras,
             )
         # 桶仅供 Stage 1 组 prompt 取命中节点用；打分聚合已在纯函数核心内完成。
         repo_buckets = cls._aggregate_by_repo(node_hits)
@@ -214,6 +291,7 @@ class RepoRouterV2:
                 top_k,
                 started,
                 stage1_meta={"skipped_reason": "use_llm_false"},
+                **snapshot_extras,
             )
 
         # ---- Stage 1: LLM 树推理 ----
@@ -236,7 +314,13 @@ class RepoRouterV2:
         if not llm_candidates:
             # 降级路径同样产出确定性分级，margin 达标即可 auto_selected（RELY-04 解锁点）。
             return cls._stage0_only_result(
-                query, node_hits, stage0_candidates, top_k, started, stage1_meta=stage1_meta
+                query,
+                node_hits,
+                stage0_candidates,
+                top_k,
+                started,
+                stage1_meta=stage1_meta,
+                **snapshot_extras,
             )
 
         # LLM 只降不升已在 _stage1_llm_reasoning 内应用；auto_selected 由最终
@@ -248,7 +332,9 @@ class RepoRouterV2:
             router_version="v2",
             auto_selected=auto_selected,
             degraded=False,
-            snapshot=cls._build_snapshot(query, node_hits, final, stage1_meta=stage1_meta),
+            snapshot=cls._build_snapshot(
+                query, node_hits, final, stage1_meta=stage1_meta, **snapshot_extras
+            ),
         )
         cls._log_scored(result, started)
         return result
@@ -260,15 +346,23 @@ class RepoRouterV2:
     @classmethod
     async def _stage0_node_search(
         cls, query: str, repository_ids: list[str] | None
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], list[float] | None]:
+        """节点级 hybrid 检索。
+
+        Returns:
+            ``(node_hits, query_dense)``——dense 向量随命中一并返回，供
+            ``_load_repo_meta`` 的 dense-only 余弦查询与 T2 匹配复用
+            （零额外 embedding）。``route()`` 对旧形状（测试替身只返回
+            hits 列表）保持兼容。
+        """
         query_sparse = await sync_to_async(
             SparseEncoderService.encode, thread_sensitive=False
         )(query)
         if not query_sparse.get("indices"):
-            return []
+            return [], None
         query_dense = await EmbeddingService.generate_embedding(query)
         if not query_dense:
-            return []
+            return [], None
 
         filters: dict[str, Any] | None = None
         if repository_ids:
@@ -283,7 +377,7 @@ class RepoRouterV2:
             top_k=STAGE0_NODE_K,
             filters=filters,
         )
-        return hits or []
+        return hits or [], query_dense
 
     @classmethod
     def _aggregate_by_repo(
@@ -316,18 +410,28 @@ class RepoRouterV2:
         仓库级 last_commit = ``Max(FileIndex.last_commit_authored_at)``；
         无 FileIndex 行的仓不出现在返回 dict（→ 活跃度走枚举回退，CONTEXT 已锁）。
         sync 实现，调用方经 ``sync_to_async(thread_sensitive=False)`` 包装。
+
+        rid 来自 Qdrant payload（trust boundary，T-106-14 逐字段容错）：
+        repository_id 是 UUIDField，payload 混入非 UUID 值会让 ``__in`` 查询抛
+        ValidationError——按「该信号不可用」处理（活跃度枚举回退），不让脏数据
+        杀掉整条 repo_meta 链路；真正的 DB 故障（OperationalError 等）继续上抛
+        由 route() 整体回退兜底。
         """
+        from django.core.exceptions import ValidationError
         from django.db.models import Max
 
         from repositories.models import FileIndex
 
         if not repository_ids:
             return {}
-        rows = (
-            FileIndex.objects.filter(repository_id__in=repository_ids)
-            .values("repository_id")
-            .annotate(latest=Max("last_commit_authored_at"))
-        )
+        try:
+            rows = list(
+                FileIndex.objects.filter(repository_id__in=repository_ids)
+                .values("repository_id")
+                .annotate(latest=Max("last_commit_authored_at"))
+            )
+        except (ValidationError, ValueError):
+            return {}
         return {
             str(row["repository_id"]): (row["latest"].isoformat() if row["latest"] else None)
             for row in rows
@@ -488,15 +592,27 @@ class RepoRouterV2:
 
     @classmethod
     def _stage0_candidates(
-        cls, node_hits: list[dict[str, Any]], *, top_k: int
+        cls,
+        node_hits: list[dict[str, Any]],
+        *,
+        top_k: int,
+        weights: dict[str, float] | None = None,
+        repo_meta: dict[str, dict[str, Any]] | None = None,
+        constants: dict[str, Any] | None = None,
+        now: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Stage 0 聚合打分薄封装——调纯函数打分核心（105-01）。
+        """Stage 0 聚合打分薄封装——调纯函数打分核心（105-01 / 106-01）。
 
-        分桶/归一/三信号加性合成/稳定排序全部在 ``aggregate_and_score`` 内完成；
+        分桶/归一/信号加性合成/稳定排序全部在 ``aggregate_and_score`` 内完成；
         本方法只把 ``ScoredCandidate`` 转回既有 dict 形状（repo_id/repo_name/
-        score/facets/hits + breakdown）并截取 top_k。
+        score/facets/hits + breakdown + criticality）并截取 top_k。
+
+        ``repo_meta=None``（默认，兼容既有直调方：replay 测试等）→ 打分核心
+        走 legacy 三信号路径；106-06 起 ``route()`` 注入六信号新路径参数。
         """
-        scored = aggregate_and_score(node_hits)
+        scored = aggregate_and_score(
+            node_hits, weights=weights, repo_meta=repo_meta, constants=constants, now=now
+        )
         return [
             {
                 "repo_id": c.repo_id,
@@ -505,6 +621,7 @@ class RepoRouterV2:
                 "breakdown": c.breakdown,
                 "facets": c.facets,
                 "hits": c.hits,
+                "criticality": c.criticality,
             }
             for c in scored[:top_k]
         ]
@@ -562,6 +679,7 @@ class RepoRouterV2:
                     ),
                     matched_node_paths=[p for p in matched_paths if p],
                     breakdown=dict(c.get("breakdown") or {}),
+                    criticality=c.get("criticality"),
                 )
             )
         return out
@@ -576,12 +694,17 @@ class RepoRouterV2:
         started: float,
         *,
         stage1_meta: dict[str, Any] | None = None,
+        weight_config: dict[str, Any] | None = None,
+        repo_meta: dict[str, Any] | None = None,
+        scored_at: str | None = None,
     ) -> RepoRouteResultV2:
         """Stage 1 未参与（use_llm=False / 失联降级）的统一出口。
 
         与 v2 路径语义一致：首位确定性 confidence == high → auto_selected=True，
         margin 达标时编排照常自动推进；``degraded=True`` 标记 Stage 1 未参与。
         ``stage1_meta`` 记录未参与原因（``{"skipped_reason": ...}``）进 snapshot。
+        ``weight_config/repo_meta/scored_at`` 按需透传 ``_build_snapshot``
+        （v2_stage0_only 降级路径与 v2 路径共用 Stage 0 打分材料）。
         """
         finalized = cls._finalize_stage0(stage0_candidates, top_k)
         result = RepoRouteResultV2(
@@ -589,7 +712,15 @@ class RepoRouterV2:
             router_version="v2_stage0_only",
             auto_selected=bool(finalized) and finalized[0].confidence == "high",
             degraded=True,
-            snapshot=cls._build_snapshot(query, node_hits, finalized, stage1_meta=stage1_meta),
+            snapshot=cls._build_snapshot(
+                query,
+                node_hits,
+                finalized,
+                stage1_meta=stage1_meta,
+                weight_config=weight_config,
+                repo_meta=repo_meta,
+                scored_at=scored_at,
+            ),
         )
         cls._log_scored(result, started)
         return result
@@ -614,6 +745,9 @@ class RepoRouterV2:
         candidates: list[RepoRouteCandidateV2],
         *,
         stage1_meta: dict[str, Any] | None = None,
+        weight_config: dict[str, Any] | None = None,
+        repo_meta: dict[str, Any] | None = None,
+        scored_at: str | None = None,
     ) -> dict[str, Any]:
         """组装快照材料（ROUTE-09 数据底座；落 ConvergenceSessionEvent 由 105-07 处理）。
 
@@ -621,6 +755,14 @@ class RepoRouterV2:
         膨胀）。``stage1_meta``：成功路径为脱敏 prompt/response + model_id +
         prompt_hash + cache_hit（与 weight_set_version/index_version 合成版本
         绑定四元组）；失联/降级路径为 ``{"skipped_reason": ...}``。
+
+        Phase 106 扩展（106-07 replay 的输入契约）：
+        - ``weight_config``：本次生效的权重/常数**全值**（含生效 n_bar）+
+          weight_set_version + alias_dict_hash + embedding_model_id——回放
+          不依赖当时的 SystemSetting；缺省（legacy 打分路径）不写该节。
+        - ``repo_meta``：per-候选仓元数据（≤ STAGE0_REPO_K，Pitfall 5 体积
+          护栏）——T2 余弦与 DB 聚合离线不可重算，以数据形式记录。
+        - ``stage0.scored_at``：打分时间锚点（活跃度衰减重算用）。
         """
         minimal_hits: list[dict[str, Any]] = []
         for hit in node_hits:
@@ -647,8 +789,13 @@ class RepoRouterV2:
         # index_version（按喂给 LLM 的候选仓集合计算）——versions 记录的值与
         # 参与缓存 key 的值恒等，回放门禁/缓存审计可直接交叉比对；Stage 1 未
         # 参与（无该值）时按最终候选仓集合计算。
+        #
+        # weight_set_version 一律来自 config loader 传入的生效配置（106-06 起
+        # 105 版本四元组占位换真）；weight_config 缺省（legacy 打分回退 / 兼容
+        # 直调方）时回退 DEFAULT_WEIGHT_CONFIG 的版本号。
         versions: dict[str, Any] = {
-            "weight_set_version": WEIGHT_SET_VERSION,
+            "weight_set_version": (weight_config or {}).get("weight_set_version")
+            or DEFAULT_WEIGHT_CONFIG["weight_set_version"],
             "index_version": stage1.get("index_version")
             or cls._index_version(built_at_by_repo),
         }
@@ -658,12 +805,20 @@ class RepoRouterV2:
             versions["prompt_hash"] = stage1["prompt_hash"]
         if stage1.get("model_id"):
             versions["model_id"] = stage1["model_id"]
-        return {
-            "stage0": {"query": query, "node_hits": minimal_hits},
+        stage0: dict[str, Any] = {"query": query, "node_hits": minimal_hits}
+        if scored_at is not None:
+            stage0["scored_at"] = scored_at
+        snapshot: dict[str, Any] = {
+            "stage0": stage0,
             "stage1": stage1,
             "candidates": [c.to_dict() for c in candidates],
             "versions": versions,
         }
+        if weight_config is not None:
+            snapshot["weight_config"] = weight_config
+        if repo_meta is not None:
+            snapshot["repo_meta"] = repo_meta
+        return snapshot
 
     @classmethod
     def _log_scored(cls, result: RepoRouteResultV2, started: float) -> None:
@@ -676,6 +831,9 @@ class RepoRouterV2:
                 top_score=round(top.score, 6) if top else 0.0,
                 confidence=top.confidence if top else "low",
                 degraded=result.degraded,
+                weight_set_version=(result.snapshot.get("versions") or {}).get(
+                    "weight_set_version"
+                ),
                 duration_ms=int((time.monotonic() - started) * 1000),
                 category="sampling",
                 component="repo_router_v2",
@@ -982,6 +1140,7 @@ class RepoRouterV2:
                         for h in base["hits"][:3]
                     ],
                     breakdown=dict(base.get("breakdown") or {}),
+                    criticality=base.get("criticality"),
                 )
             )
         if not candidates:
