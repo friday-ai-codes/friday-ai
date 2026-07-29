@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+import codegraph.services.repo_router_scoring as repo_router_scoring
 from codegraph.services.repo_router_replay import (
     replay_route_from_snapshot,
     verify_snapshot_replay,
@@ -307,3 +308,421 @@ def test_replay_module_import_purity() -> None:
     assert "aggregate_and_score" in source
     assert "derive_confidence" in source
     assert "apply_llm_adjustment" in source
+
+
+# ===========================================================================
+# Phase 106（106-07）：新格式快照自包含回放 + 105 旧快照回退
+#
+# 新格式快照构造沿用「真实组装路径」纪律：Stage 0 打分走
+# ``RepoRouterV2._stage0_candidates``（新路径参数注入），快照材料走
+# ``_stage0_only_result`` / ``_build_snapshot``（与 route() 同一组装口径，
+# 106-06），payload 走真实 ``_h_route`` 落盘路径——不手写 payload 字面量。
+# ===========================================================================
+
+# 固定时间锚点（远离真实运行时间 2026-07+）：活跃度衰减若误用系统时钟必现偏差。
+SCORED_AT = "2026-01-15T00:00:00+00:00"
+
+# 非默认权重（DEFAULT domain=0.15 → 0.20）：快照自包含检验的辨识度来源。
+WEIGHTS_ALT: dict[str, float] = {
+    "text": 0.40,
+    "domain": 0.20,
+    "activity": 0.12,
+    "stack": 0.08,
+    "team": 0.05,
+}
+
+
+def _full_constants() -> dict:
+    """快照携带的生效常数全值（含 n_bar）——与 route() 组装口径一致（106-06）。"""
+    consts = dict(repo_router_scoring.DEFAULT_WEIGHT_CONFIG["constants"])
+    consts["n_bar"] = 60.0
+    return consts
+
+
+def _full_repo_meta() -> dict[str, dict]:
+    """per-候选 repo_meta：r1/r2 满配（n_r/last_commit_at/dense_cos_max/facet_scores
+    全有），r3 逐字段缺失（信号不可用走重归一化 + 活跃度枚举回退）。
+
+    last_commit_at 与 SCORED_AT 的间隔刻意设计：r1 仅隔 5 天（≤ offset_days=14
+    → 衰减系数恒 1.0），锚点若误用真实 now（2026-07+）该系数必 < 1。
+    """
+    return {
+        "r1": {
+            "n_r": 620,
+            "last_commit_at": "2026-01-10T00:00:00+00:00",
+            "dense_cos_max": 0.62,
+            "facet_scores": {
+                "domain": {"score": 1.0, "layer": "t1"},
+                "stack": {"score": 0.8, "layer": "t2"},
+                "team": {"score": None, "layer": None},
+            },
+            "criticality_value": "核心",
+        },
+        "r2": {
+            "n_r": 30,
+            "last_commit_at": "2025-12-01T00:00:00+00:00",
+            "dense_cos_max": 0.5,
+            "facet_scores": {
+                "domain": {"score": 0.6, "layer": "t1"},
+                "stack": {"score": 1.0, "layer": "t1"},
+                "team": {"score": None, "layer": None},
+            },
+            "criticality_value": "重要",
+        },
+        "r3": {
+            "n_r": 40,
+            "last_commit_at": None,
+            "dense_cos_max": None,
+            "facet_scores": {
+                "domain": {"score": None, "layer": None},
+                "stack": {"score": None, "layer": None},
+                "team": {"score": None, "layer": None},
+            },
+            "criticality_value": None,
+        },
+    }
+
+
+def _snapshot_weight_config(
+    weights: dict[str, float], constants: dict, *, version: str = "replay-test-v1"
+) -> dict:
+    """快照 weight_config 节（与 route() 的组装形状一致，106-06）。"""
+    return {
+        "weights": dict(weights),
+        "constants": dict(constants),
+        "weight_set_version": version,
+        "alias_dict_hash": "d" * 64,
+        "embedding_model_id": "test-embed-model",
+    }
+
+
+def _meta_stage0(
+    node_hits: list[dict],
+    *,
+    weights: dict[str, float] | None = None,
+    repo_meta: dict[str, dict] | None = None,
+    constants: dict | None = None,
+    scored_at: str = SCORED_AT,
+) -> tuple[list[dict], dict, dict]:
+    """新路径 Stage 0 打分 + 快照材料组装（复刻 route() 的六信号注入口径）。"""
+    weights = weights if weights is not None else WEIGHTS_ALT
+    repo_meta = repo_meta if repo_meta is not None else _full_repo_meta()
+    constants = constants if constants is not None else _full_constants()
+    stage0_candidates = RepoRouterV2._stage0_candidates(
+        node_hits,
+        top_k=12,
+        weights=weights,
+        repo_meta=repo_meta,
+        constants=constants,
+        now=scored_at,
+    )
+    snapshot_repo_meta = {
+        c["repo_id"]: repo_meta[c["repo_id"]]
+        for c in stage0_candidates
+        if c["repo_id"] in repo_meta
+    }
+    return stage0_candidates, _snapshot_weight_config(weights, constants), snapshot_repo_meta
+
+
+def _meta_degraded_result(
+    node_hits: list[dict] | None = None, *, top_k: int = 3, scored_at: str = SCORED_AT
+) -> RepoRouteResultV2:
+    """新格式快照（Stage 1 未参与出口）：走真实 ``_stage0_only_result`` 组装路径。"""
+    hits = node_hits if node_hits is not None else _default_hits()
+    stage0_candidates, weight_config, snapshot_repo_meta = _meta_stage0(hits, scored_at=scored_at)
+    return RepoRouterV2._stage0_only_result(
+        QUERY,
+        hits,
+        stage0_candidates,
+        top_k,
+        time.monotonic(),
+        stage1_meta={"skipped_reason": "use_llm_false"},
+        weight_config=weight_config,
+        repo_meta=snapshot_repo_meta,
+        scored_at=scored_at,
+    )
+
+
+def _meta_result_with_stage1(
+    node_hits: list[dict],
+    permutation: list[str],
+    llm_conf_by_id: dict[str, str],
+    stage1_meta: dict,
+    *,
+    top_k: int = 3,
+    repo_meta: dict[str, dict] | None = None,
+) -> RepoRouteResultV2:
+    """新格式快照（Stage 1 参与）：排列重排 + 只降不升，快照带 weight_config 三件套。"""
+    stage0_candidates, weight_config, snapshot_repo_meta = _meta_stage0(
+        node_hits, repo_meta=repo_meta
+    )
+    sorted_scores = [float(c["score"]) for c in stage0_candidates]
+    rank_by_id = {c["repo_id"]: i for i, c in enumerate(stage0_candidates)}
+    by_id = {c["repo_id"]: c for c in stage0_candidates}
+    final: list[RepoRouteCandidateV2] = []
+    for rid in permutation:
+        base = by_id[rid]
+        deterministic = RepoRouterV2._deterministic_confidence(sorted_scores, rank_by_id[rid])
+        confidence = apply_llm_adjustment(deterministic, llm_conf_by_id.get(rid))  # type: ignore[arg-type]
+        final.append(
+            RepoRouteCandidateV2(
+                repo_id=rid,
+                repo_name=base["repo_name"],
+                score=float(base["score"]),
+                confidence=confidence,
+                reasoning="按能力节点命中推理",
+                breakdown=dict(base["breakdown"]),
+                criticality=base.get("criticality"),
+            )
+        )
+    final = final[:top_k]
+    return RepoRouteResultV2(
+        candidates=final,
+        router_version="v2",
+        auto_selected=bool(final) and final[0].confidence == "high",
+        degraded=False,
+        snapshot=RepoRouterV2._build_snapshot(
+            QUERY,
+            node_hits,
+            final,
+            stage1_meta=stage1_meta,
+            weight_config=weight_config,
+            repo_meta=snapshot_repo_meta,
+            scored_at=SCORED_AT,
+        ),
+    )
+
+
+class TestMultiSignalReplay:
+    """新格式快照（weight_config + repo_meta + scored_at）自包含回放守护。"""
+
+    @pytest.mark.asyncio
+    async def test_new_snapshot_replay_matches_recorded(self) -> None:
+        """新格式回放等值：候选顺序/score/breakdown（含 domain 键）/confidence
+        与记录逐字段相等（score 容差 1e-9，round 口径对齐 to_dict）。"""
+        payload = await _emit_payload(_meta_degraded_result())
+        assert payload["weight_config"]["weights"]["domain"] == 0.20  # 非默认权重进快照
+        assert payload["stage0"]["scored_at"] == SCORED_AT
+
+        replayed = replay_route_from_snapshot(payload, **THETA)
+
+        recorded = payload["candidates"]
+        assert (
+            [c["repo_id"] for c in replayed]
+            == [c["repo_id"] for c in recorded]
+            == ["r1", "r2", "r3"]
+        )
+        for rec, rep in zip(recorded, replayed):
+            assert rep["repo_id"] == rec["repo_id"]
+            assert rep["confidence"] == rec["confidence"]
+            assert abs(rep["score"] - rec["score"]) <= 1e-9
+            assert rep["breakdown"] == rec["breakdown"]
+        # 新信号键随记录回放（breakdown 键集合比对天然覆盖新信号）
+        assert "domain" in replayed[0]["breakdown"]
+        assert "stack" in replayed[0]["breakdown"]
+
+        ok, diff = verify_snapshot_replay(payload, **THETA)
+        assert ok, diff
+        assert diff == ""
+
+    @pytest.mark.asyncio
+    async def test_new_snapshot_with_stage1_permutation_matches(self) -> None:
+        """新格式 + Stage 1 排列记录：重放按 payload 排列 + confidence hint 复现记录。"""
+        stage1_meta = {
+            "prompt": "system+human 拼接 prompt",
+            "response": '[{"repo_id": "r2"}, {"repo_id": "r1"}]',
+            "model_id": "fast-model-v1",
+            "prompt_hash": "e" * 64,
+            "cache_hit": False,
+        }
+        result = _meta_result_with_stage1(
+            _default_hits(), ["r2", "r1"], {"r1": "medium"}, stage1_meta
+        )
+        payload = await _emit_payload(result)
+
+        replayed = replay_route_from_snapshot(payload, **THETA)
+
+        recorded = payload["candidates"]
+        assert [c["repo_id"] for c in replayed] == ["r2", "r1"]
+        for rec, rep in zip(recorded, replayed):
+            assert rep["repo_id"] == rec["repo_id"]
+            assert rep["confidence"] == rec["confidence"]
+            assert abs(rep["score"] - rec["score"]) <= 1e-9
+            assert rep["breakdown"] == rec["breakdown"]
+        # r1 被 LLM 降级为 medium 的记录被复现（只降不升在新路径分数上成立）
+        assert replayed[1]["confidence"] == "medium"
+
+        ok, diff = verify_snapshot_replay(payload, **THETA)
+        assert ok, diff
+
+    @pytest.mark.asyncio
+    async def test_replay_weights_come_from_snapshot_not_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """权重/常数来自快照而非环境：改掉 DEFAULT_WEIGHT_CONFIG 后同一快照回放结果不变。"""
+        payload = await _emit_payload(_meta_degraded_result())
+        baseline = replay_route_from_snapshot(payload, **THETA)
+
+        monkeypatch.setitem(
+            repo_router_scoring.DEFAULT_WEIGHT_CONFIG,
+            "weights",
+            {"text": 0.10, "domain": 0.55, "activity": 0.20, "stack": 0.30, "team": 0.40},
+        )
+        monkeypatch.setitem(
+            repo_router_scoring.DEFAULT_WEIGHT_CONFIG,
+            "constants",
+            {**repo_router_scoring.DEFAULT_WEIGHT_CONFIG["constants"], "lam": 0.9},
+        )
+
+        again = replay_route_from_snapshot(payload, **THETA)
+
+        assert list(again) == list(baseline)  # 快照自包含：环境默认值不参与
+        recorded = payload["candidates"]
+        for rec, rep in zip(recorded, again):
+            assert abs(rep["score"] - rec["score"]) <= 1e-9
+            assert rep["breakdown"] == rec["breakdown"]
+
+    @pytest.mark.asyncio
+    async def test_replay_activity_anchor_is_snapshot_scored_at(self) -> None:
+        """衰减锚点取快照 scored_at 而非 now：同一快照相隔两次调用活跃度贡献相同，
+        且 r1（last_commit 距锚点 5 天 ≤ offset）衰减系数恒 1.0——若实现误用真实
+        当前时间（2026-07+，距 last_commit 半年）该系数必 < 1、逐字段等值即失败。"""
+        payload = await _emit_payload(_meta_degraded_result())
+
+        first = replay_route_from_snapshot(payload, **THETA)
+        second = replay_route_from_snapshot(payload, **THETA)
+
+        assert list(first) == list(second)  # 回放不读时钟
+        rec_activity = payload["candidates"][0]["breakdown"]["activity"]
+        assert abs(first[0]["breakdown"]["activity"] - rec_activity) <= 1e-9
+        # 锚点语义直算：r1 available = text+domain+stack+activity，D=0.80，
+        # 衰减系数 1.0 → activity 贡献 = 0.12 * 1.0 / 0.80（round 6 口径）
+        assert abs(rec_activity - round(0.12 * 1.0 / 0.80, 6)) <= 1e-9
+
+    @pytest.mark.asyncio
+    async def test_replay_reports_weight_set_version_and_legacy_flag(self) -> None:
+        """返回值契约新字段：weight_set_version（本次回放采用版本）+ legacy_snapshot。"""
+        payload = await _emit_payload(_meta_degraded_result())
+
+        replayed = replay_route_from_snapshot(payload, **THETA)
+
+        assert replayed.weight_set_version == "replay-test-v1"
+        assert replayed.legacy_snapshot is False
+
+    @pytest.mark.asyncio
+    async def test_verify_detects_tampered_domain_breakdown(self) -> None:
+        """新格式快照篡改候选 breakdown["domain"] → verify 逐信号 diff 拦截（T-106-17）。"""
+        payload = await _emit_payload(_meta_degraded_result())
+        payload["candidates"][0]["breakdown"]["domain"] += 0.01
+
+        ok, diff = verify_snapshot_replay(payload, **THETA)
+
+        assert not ok
+        assert "breakdown[domain]" in diff
+
+    @pytest.mark.asyncio
+    async def test_new_snapshot_payload_under_64kb_with_full_meta(self) -> None:
+        """50 node_hits + 12 候选满配 repo_meta + weight_config 全值 < 64KB（Pitfall 5 复核）。"""
+        hits = [
+            _qdrant_hit(
+                f"node-{i:03d}",
+                f"repo-{i % 12}",
+                1.0 - i * 0.01,
+                repo_name=f"repository-name-{i % 12}",
+                node_path=f"repo-{i % 12}/领域能力/模块-{i:03d}/子能力点-{i:03d}",
+            )
+            for i in range(50)
+        ]
+        full_meta = {
+            f"repo-{r}": {
+                "n_r": 100 + r,
+                "last_commit_at": "2026-01-10T00:00:00+00:00",
+                "dense_cos_max": 0.40 + r * 0.01,
+                "facet_scores": {
+                    "domain": {"score": 1.0, "layer": "t1"},
+                    "stack": {"score": 0.8, "layer": "t2"},
+                    "team": {"score": 0.6, "layer": "t1"},
+                },
+                "criticality_value": "核心",
+            }
+            for r in range(12)
+        }
+        stage1_meta = {
+            "prompt": "候选仓库及命中节点：\n"
+            + "\n".join(f"- 节点 {i} 的能力描述与推理材料" for i in range(50)),
+            "response": json.dumps(
+                [{"repo_id": f"repo-{i}", "reasoning": "一句中文推理理由" * 3} for i in range(3)],
+                ensure_ascii=False,
+            ),
+            "model_id": "fast-model-v1",
+            "prompt_hash": "f" * 64,
+            "cache_hit": False,
+        }
+        result = _meta_result_with_stage1(
+            hits, ["repo-0", "repo-1", "repo-2"], {}, stage1_meta, repo_meta=full_meta
+        )
+        payload = await _emit_payload(result)
+
+        assert len(payload["repo_meta"]) == 12  # 12 候选 repo_meta 全部随快照
+        assert payload["weight_config"]["constants"]["n_bar"] == 60.0
+        assert len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) < 64 * 1024
+
+
+class TestLegacySnapshotFallback:
+    """105 旧快照（phase105-v1 / 缺 weight_config 节）回退守护——按当时版本比对。"""
+
+    @pytest.mark.asyncio
+    async def test_legacy_snapshot_replays_without_error_and_flags(self) -> None:
+        """旧快照回放不抛：legacy 三信号路径重算与记录等值，返回值标注
+        legacy_snapshot=True + weight_set_version="phase105-v1"。"""
+        payload = await _emit_payload(_degraded_result(_default_hits()))
+        assert "weight_config" not in payload  # legacy 快照以缺节识别（106-06 决策）
+
+        replayed = replay_route_from_snapshot(payload, **THETA)
+
+        recorded = payload["candidates"]
+        for rec, rep in zip(recorded, replayed):
+            assert rep["repo_id"] == rec["repo_id"]
+            assert rep["confidence"] == rec["confidence"]
+            assert abs(rep["score"] - rec["score"]) <= 1e-9
+            assert rep["breakdown"] == rec["breakdown"]
+        assert set(replayed[0]["breakdown"]) <= {"text", "breadth", "activity"}  # legacy 三信号
+        assert replayed.legacy_snapshot is True
+        assert replayed.weight_set_version == "phase105-v1"
+
+        ok, diff = verify_snapshot_replay(payload, **THETA)
+        assert ok, diff
+
+    @pytest.mark.asyncio
+    async def test_legacy_verify_diff_carries_version_note(self) -> None:
+        """旧快照构造不等值场景 → diff 文本头部标注「旧版本快照（phase105-v1），
+        按当时版本比对」；新格式快照的 diff 不带该标注（版本不同即不可比，§6.2-9）。"""
+        from codegraph.services.repo_router_replay import LEGACY_SNAPSHOT_NOTE
+
+        payload = await _emit_payload(_degraded_result(_default_hits()))
+        payload["candidates"][2]["confidence"] = "high"  # 构造不等值
+
+        ok, diff = verify_snapshot_replay(payload, **THETA)
+
+        assert not ok
+        assert diff.splitlines()[0] == LEGACY_SNAPSHOT_NOTE
+        assert "phase105-v1" in diff
+
+        new_payload = await _emit_payload(_meta_degraded_result())
+        new_payload["candidates"][0]["breakdown"]["domain"] += 0.01
+        ok2, diff2 = verify_snapshot_replay(new_payload, **THETA)
+        assert not ok2
+        assert LEGACY_SNAPSHOT_NOTE not in diff2
+
+    @pytest.mark.asyncio
+    async def test_malformed_weight_config_falls_back_legacy(self) -> None:
+        """weight_config 节残缺/类型错误 → 视为 legacy 回退路径不抛（T-106-18）。"""
+        payload = await _emit_payload(_degraded_result(_default_hits()))
+        payload["weight_config"] = {"weights": "not-a-dict"}  # 类型错误节
+
+        replayed = replay_route_from_snapshot(payload, **THETA)
+
+        assert replayed.legacy_snapshot is True
+        assert replayed.weight_set_version == "phase105-v1"
+        ok, diff = verify_snapshot_replay(payload, **THETA)
+        assert ok, diff
