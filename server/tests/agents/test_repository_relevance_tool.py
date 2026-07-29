@@ -392,3 +392,131 @@ def test_chat_runner_includes_tool_in_indexed_set():
     from agents.chat_runner import _INDEXED_TOOL_NAMES
 
     assert "analyze_repository_relevance" in _INDEXED_TOOL_NAMES
+
+
+# ---------------------------------------------------------------------------
+# 7. breakdown 透传（ROUTE-07 / 105-06）
+# ---------------------------------------------------------------------------
+
+
+def test_candidate_breakdown_defaults_to_empty_dict():
+    """新字段带默认值——legacy 构造 / 历史 trace 反序列化零破坏。"""
+    from agents.tools.schemas.repository_relevance import RepositoryRelevanceCandidate
+
+    cand = RepositoryRelevanceCandidate(
+        repository_id="r",
+        repository_name="n",
+        score=0.5,
+        level="low",
+        evidence="",
+        selected_by_ai=False,
+        selected_by_user_final=False,
+    )
+    assert cand.breakdown == {}
+
+
+def _make_v2_result(repos):
+    """构造 v2 fake：候选携带 breakdown 且 Σ贡献 == score。"""
+    from codegraph.services.repo_router_v2 import (
+        RepoRouteCandidateV2,
+        RepoRouteResultV2,
+    )
+
+    candidates = [
+        RepoRouteCandidateV2(
+            repo_id=str(repos[0].id),
+            repo_name=repos[0].name,
+            score=0.92,
+            confidence="high",
+            reasoning="树推理命中",
+            matched_node_paths=["auth/登录"],
+            breakdown={"text": 0.5, "breadth": 0.25, "activity": 0.17},
+        ),
+        RepoRouteCandidateV2(
+            repo_id=str(repos[1].id),
+            repo_name=repos[1].name,
+            score=0.55,
+            confidence="medium",
+            reasoning="部分命中",
+            breakdown={"text": 0.3, "breadth": 0.15, "activity": 0.1},
+        ),
+        RepoRouteCandidateV2(
+            repo_id=str(repos[2].id),
+            repo_name=repos[2].name,
+            score=0.3,
+            confidence="medium",
+            reasoning="弱命中",
+            breakdown={"text": 0.2, "breadth": 0.1},
+        ),
+    ]
+    return RepoRouteResultV2(
+        candidates=candidates,
+        router_version="v2",
+        auto_selected=True,
+    )
+
+
+async def test_v2_path_trace_candidates_carry_breakdown_sum_equals_score(
+    project_with_repos, conversation, monkeypatch
+):
+    """v2 路径：trace candidates JSON 含非空 breakdown 且 Σ值 ≈ score（1e-6）；
+    selected = high or (medium and score >= threshold) 行为断言。"""
+    from codegraph.services.repo_router_v2 import RepoRouterV2
+
+    project, repos = project_with_repos
+    monkeypatch.setattr(
+        RepoRouterV2, "route", AsyncMock(return_value=_make_v2_result(repos))
+    )
+
+    result = await analyze_repository_relevance(
+        query="v2 breakdown",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+        threshold=0.5,
+    )
+    assert result.success is True
+
+    trace = await RepositoryRoutingTrace.objects.filter(
+        conversation_id=conversation.id
+    ).afirst()
+    assert trace is not None
+    assert trace.router_version == "v2"
+    assert len(trace.candidates) == 3
+    for cand in trace.candidates:
+        assert cand["breakdown"], "v2 候选 breakdown 必须非空"
+        assert abs(sum(cand["breakdown"].values()) - cand["score"]) < 1e-6
+
+    # selected = high or (medium and score >= threshold)：
+    # margin 达标（confidence=high）→ selected=True（编排解锁行为）
+    by_score = sorted(trace.candidates, key=lambda c: c["score"], reverse=True)
+    assert by_score[0]["level"] == "high"
+    assert by_score[0]["selected_by_ai"] is True
+    # medium + score >= threshold → True
+    assert by_score[1]["selected_by_ai"] is True
+    # medium + score < threshold → False
+    assert by_score[2]["selected_by_ai"] is False
+
+
+async def test_legacy_path_trace_candidates_breakdown_empty(
+    project_with_repos, conversation, monkeypatch
+):
+    """legacy 聚合路径不赋值 breakdown → trace candidates 里为空 dict。"""
+    project, repos = project_with_repos
+    items_by_repo = {
+        str(repos[0].id): [{"score": 0.8, "payload": {"file_path": "x.py"}}],
+    }
+    _patch_hybrid_search(monkeypatch, _make_rag_result(items_by_repo=items_by_repo))
+
+    result = await analyze_repository_relevance(
+        query="legacy breakdown",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    assert result.success is True
+
+    trace = await RepositoryRoutingTrace.objects.filter(
+        conversation_id=conversation.id
+    ).afirst()
+    assert trace is not None
+    assert len(trace.candidates) == 1
+    assert trace.candidates[0]["breakdown"] == {}

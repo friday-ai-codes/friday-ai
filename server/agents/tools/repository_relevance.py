@@ -247,6 +247,9 @@ async def _analyze_relevance_core(
                         selected_by_user_final=selected,
                         sub_project=c.sub_project,
                         sub_project_paths=c.sub_project_paths,
+                        # ROUTE-07：v2 候选 breakdown 透传（105-03 后必有该字段），
+                        # 经 trace.candidates JSON 一路可达前端分数分解展开区。
+                        breakdown=dict(c.breakdown or {}),
                     )
                 )
             if not v2_candidates:
