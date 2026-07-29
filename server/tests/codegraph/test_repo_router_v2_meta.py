@@ -674,3 +674,194 @@ def test_ranking_conf_reads_settings_at_call_time(settings) -> None:
     settings.REPO_ROUTER_STAGE1_RANK_BUDGET_K = 4
 
     assert _ranking_conf() == (0.25, 0.5, 4)
+
+
+# ---------------------------------------------------------------------------
+# 7. 分组标注 / block_order 接线（107-03 Task 2）
+# ---------------------------------------------------------------------------
+
+
+def _install_stage0(monkeypatch: pytest.MonkeyPatch, hits: list[dict[str, Any]]) -> None:
+    """轻量 Stage 0 seam（与 test_repo_router_v2_degraded 同款）：分数可精确构造，
+    且候选仓 id 非 UUID → last_commit 聚合查不到行 → 活跃度走枚举、无时间依赖，
+    两次调用分数逐位相同（SC-2 机制断言的前提）。"""
+
+    async def _fake_search(query: str, repository_ids: list[str] | None) -> list[dict[str, Any]]:
+        return hits
+
+    monkeypatch.setattr(RepoRouterV2, "_stage0_node_search", _fake_search)
+
+
+def _two_repo_hits() -> list[dict[str, Any]]:
+    """repo-a 碾压 repo-b（首位确定性 high，margin 远超 θ_margin）。"""
+    hits = [
+        _hit(f"a{i}", "repo-a", 0.032 - i * 0.002, facets={"活跃度": "活跃开发"}) for i in range(6)
+    ]
+    hits.append(_hit("b0", "repo-b", 0.010))
+    return hits
+
+
+def _cand(
+    rid: str,
+    score: float,
+    *,
+    confidence: str = "medium",
+    score_ranked: float | None = None,
+) -> Any:
+    from codegraph.services.repo_router_v2 import RepoRouteCandidateV2
+
+    return RepoRouteCandidateV2(rid, rid, score, confidence, "why", score_ranked=score_ranked)
+
+
+def test_rank_value_prefers_score_ranked_including_zero() -> None:
+    """`_rank_value` 是排序比较值的唯一所有者：缺旁路分回退 `score`，
+    旁路分为 0.0 时返回 0.0（None 与 0.0 语义不同，绝不能被 falsy 判断吞掉）。"""
+    from codegraph.services.repo_router_v2 import _rank_value
+
+    assert _rank_value(_cand("a", 0.5)) == 0.5
+    assert _rank_value(_cand("a", 0.5, score_ranked=0.0)) == 0.0
+    assert _rank_value(_cand("a", 0.5, score_ranked=0.9)) == 0.9
+
+
+async def test_route_no_project_context_all_global_block_order(monkeypatch) -> None:
+    """无项目上下文（MCP / REST / skill_steps 入口）→ 全部 global 且不报错。"""
+    _install_stage0(monkeypatch, _two_repo_hits())
+
+    result = await RepoRouterV2.route("高三提分专项需求", use_llm=False, top_k=3)
+
+    assert result.candidates
+    assert {c.group for c in result.candidates} == {"global"}
+    assert {c.trust for c in result.candidates} == {"needs_confirmation"}
+    # 无上下文时不写跨组说明——此时「跨组」无意义，标了反而误导
+    assert {c.cross_group_note for c in result.candidates} == {""}
+    assert result.block_order == ["global"]
+
+
+async def test_route_grouping_annotates_two_groups(monkeypatch) -> None:
+    """传分组依据 → 命中仓 in_project/trusted，其余 global/needs_confirmation。"""
+    from codegraph.services.repo_router_ranking import CROSS_GROUP_NOTE
+
+    _install_stage0(monkeypatch, _two_repo_hits())
+
+    result = await RepoRouterV2.route(
+        "高三提分专项需求", use_llm=False, top_k=3, grouping_repository_ids=["repo-a"]
+    )
+
+    by_repo = _by_repo(result)
+    assert (by_repo["repo-a"].group, by_repo["repo-a"].trust) == ("in_project", "trusted")
+    assert by_repo["repo-a"].cross_group_note == ""
+    assert (by_repo["repo-b"].group, by_repo["repo-b"].trust) == (
+        "global",
+        "needs_confirmation",
+    )
+    assert by_repo["repo-b"].cross_group_note == CROSS_GROUP_NOTE
+    assert len(result.block_order) == 2
+    # 快照携带呈现字段与分区顺序（回放比对用）
+    snap_cand = {c["repo_id"]: c for c in result.snapshot["candidates"]}
+    assert snap_cand["repo-a"]["group"] == "in_project"
+    assert result.snapshot["block_order"] == result.block_order
+
+
+async def test_route_grouping_with_empty_in_project_group(monkeypatch) -> None:
+    """某组为空（分组依据全不命中）→ block_order 仍长度 2 且首元素 global。"""
+    _install_stage0(monkeypatch, _two_repo_hits())
+
+    result = await RepoRouterV2.route(
+        "高三提分专项需求", use_llm=False, top_k=3, grouping_repository_ids=["zzz"]
+    )
+
+    assert {c.group for c in result.candidates} == {"global"}
+    assert len(result.block_order) == 2
+    assert result.block_order[0] == "global"
+
+
+def test_presentation_hysteresis_at_delta_threshold() -> None:
+    """迟滞：跨组分差达 delta 才置顶全局组，差一点点不翻转（幂等与体验前提）。"""
+    from codegraph.services.repo_router_v2 import _apply_presentation
+
+    def block_order_for(global_top: float) -> list[str]:
+        _, order = _apply_presentation(
+            [_cand("p0", 0.50), _cand("g0", global_top)],
+            grouping_repository_ids=["p0"],
+            delta=0.15,
+            top_k=3,
+        )
+        return order
+
+    assert block_order_for(0.50 + 0.16)[0] == "global"
+    assert block_order_for(0.50 + 0.14)[0] == "in_project"
+
+
+def test_presentation_per_group_top_k_and_global_descending() -> None:
+    """分组启用时按组各取 top_k 后并集，扁平列表按比较值全局降序。"""
+    from codegraph.services.repo_router_v2 import _apply_presentation
+
+    in_project = [_cand(f"p{i}", 0.90 - i * 0.10) for i in range(5)]
+    global_group = [_cand(f"g{i}", 0.85 - i * 0.10) for i in range(5)]
+
+    merged, order = _apply_presentation(
+        in_project + global_group,
+        grouping_repository_ids=[c.repo_id for c in in_project],
+        delta=0.15,
+        top_k=3,
+    )
+
+    assert len(merged) == 6
+    assert [c.repo_id for c in merged] == ["p0", "g0", "p1", "g1", "p2", "g2"]
+    assert len(order) == 2
+
+
+def test_presentation_flat_top_is_global_max_regardless_of_block_order() -> None:
+    """置顶是呈现层的事：block_order 首位与扁平列表首位所属组可以不同。"""
+    from codegraph.services.repo_router_v2 import _apply_presentation
+
+    merged, order = _apply_presentation(
+        [_cand("p0", 0.50), _cand("g0", 0.60, confidence="high"), _cand("g1", 0.10)],
+        grouping_repository_ids=["p0"],
+        delta=0.15,
+        top_k=3,
+    )
+
+    # 分差 0.10 < delta → 本项目组仍置顶；但扁平首位是全局最高分的跨组候选
+    assert order[0] == "in_project"
+    assert merged[0].repo_id == "g0"
+    assert merged[0].group == "global"
+
+
+async def test_score_and_breakdown_identical_with_and_without_grouping(monkeypatch) -> None:
+    """SC-2 机制断言：组别绝不进分数——同一候选在传/不传分组依据两次调用下
+    `score` 与 `breakdown` 逐键相等。"""
+    _install_stage0(monkeypatch, _two_repo_hits())
+
+    without = await RepoRouterV2.route("高三提分专项需求", use_llm=False, top_k=3)
+    with_grouping = await RepoRouterV2.route(
+        "高三提分专项需求", use_llm=False, top_k=3, grouping_repository_ids=["repo-a"]
+    )
+
+    left = _by_repo(without)
+    right = _by_repo(with_grouping)
+    assert set(left) == set(right)
+    for rid, cand in left.items():
+        assert cand.score == right[rid].score
+        assert cand.breakdown == right[rid].breakdown
+        # 旁路排序分本 plan 不写（107-05 才写）→ 两侧同为未重排
+        assert cand.score_ranked is None and right[rid].score_ranked is None
+
+
+async def test_auto_selected_is_independent_of_block_order(monkeypatch) -> None:
+    """`auto_selected` 只由扁平首位（全局最高分候选）驱动，与 block_order 无关
+    ——否则组别就间接进了编排决策路径。"""
+    _install_stage0(monkeypatch, _two_repo_hits())
+
+    orders: list[list[str]] = []
+    for grouping in (None, ["repo-a"], ["repo-b"]):
+        result = await RepoRouterV2.route(
+            "高三提分专项需求", use_llm=False, top_k=3, grouping_repository_ids=grouping
+        )
+        orders.append(result.block_order)
+        assert result.candidates[0].repo_id == "repo-a"  # 扁平首位恒为全局最高分
+        assert result.candidates[0].confidence == "high"
+        assert result.auto_selected is True
+
+    # 三种分组上下文给出三种分区顺序，auto_selected 却恒为 True
+    assert orders == [["global"], ["in_project", "global"], ["global", "in_project"]]
