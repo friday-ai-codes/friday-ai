@@ -40,6 +40,17 @@ __all__ = [
     "EVENT_BLUEPRINT_STAGE_STARTED",
     "EVENT_BLUEPRINT_STAGE_COMPLETED",
     "EVENT_BLUEPRINT_STAGE_FAILED",
+    "EVENT_BLUEPRINT_SPEC_GATE_SCORED",
+    "EVENT_BLUEPRINT_SPEC_GATE_CLARIFICATION_ASKED",
+    "EVENT_BLUEPRINT_SPEC_GATE_LOCKED",
+    "EVENT_BLUEPRINT_ROUTE_SCORED",
+    "EVENT_BLUEPRINT_REPO_RESEARCH_STARTED",
+    "EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED",
+    "EVENT_BLUEPRINT_REPO_RESEARCH_FAILED",
+    "EVENT_BLUEPRINT_REROUTE_TRIGGERED",
+    "EVENT_BLUEPRINT_CONFIRMATION_OPENED",
+    "EVENT_BLUEPRINT_CONFIRMATION_ACTION",
+    "EVENT_BLUEPRINT_CONFIRMATION_LOCKED",
     "BLUEPRINT_EVENTS",
     "ALL_EVENTS",
     "RESERVED_EVENTS",
@@ -118,6 +129,36 @@ EVENT_BLUEPRINT_STAGE_STARTED: Final[str] = "blueprint.stage.started"
 EVENT_BLUEPRINT_STAGE_COMPLETED: Final[str] = "blueprint.stage.completed"
 EVENT_BLUEPRINT_STAGE_FAILED: Final[str] = "blueprint.stage.failed"
 
+# ---- 蓝图阶段 0/1（v0.20 Phase 112，DESIGN §5.4/§5.7） ----
+# emit 点在 112-02/03/04/05；payload 只记标量与关联键——澄清正文、需求原文、召回内容
+# 一律不进 payload（T-112-04）。供 115 前端时间线展开。
+
+# emit: 112-02 规格门。payload: 四维分数/加权总分/threshold/passed
+EVENT_BLUEPRINT_SPEC_GATE_SCORED: Final[str] = "blueprint.spec_gate.scored"
+# emit: 112-02 超阈值开澄清线程。payload: thread_id/question_count（不含澄清正文）
+EVENT_BLUEPRINT_SPEC_GATE_CLARIFICATION_ASKED: Final[str] = (
+    "blueprint.spec_gate.clarification_asked"
+)
+# emit: 112-02 规格锁定。payload: resolved_thread_count/decision_log_count
+EVENT_BLUEPRINT_SPEC_GATE_LOCKED: Final[str] = "blueprint.spec_gate.locked"
+# emit: 112-03 双面路由。payload: candidate_count/router_version/各候选三分量 breakdown
+EVENT_BLUEPRINT_ROUTE_SCORED: Final[str] = "blueprint.route.scored"
+# emit: 112-04 逐仓容器调研。payload: repository_id/task_id/depth
+EVENT_BLUEPRINT_REPO_RESEARCH_STARTED: Final[str] = "blueprint.repo_research.started"
+# emit: 112-04 调研回调。payload: repository_id/fitness_verdict/role_suggestion
+EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED: Final[str] = "blueprint.repo_research.completed"
+# emit: 112-04 调研失败。payload: repository_id/attempt/error_kind（异常文本已脱敏截断）
+EVENT_BLUEPRINT_REPO_RESEARCH_FAILED: Final[str] = "blueprint.repo_research.failed"
+# emit: 112-04 有界重路由（≤2 轮）。payload: round/excluded_repository_ids/new_candidate_count
+EVENT_BLUEPRINT_REROUTE_TRIGGERED: Final[str] = "blueprint.reroute.triggered"
+# emit: 112-05 确认门开启。payload: thread_id/repository_count
+EVENT_BLUEPRINT_CONFIRMATION_OPENED: Final[str] = "blueprint.confirmation.opened"
+# emit: 112-05 用户动作。payload: action ∈ confirm|remove_repo|add_repo|
+# reclassify_role|edit_responsibility + repository_id
+EVENT_BLUEPRINT_CONFIRMATION_ACTION: Final[str] = "blueprint.confirmation.action"
+# emit: 112-05 仓库集锁定。payload: locked_repository_count/decided_by
+EVENT_BLUEPRINT_CONFIRMATION_LOCKED: Final[str] = "blueprint.confirmation.locked"
+
 # 蓝图事件独立集合（不进 ALL_EVENTS，见上方注释）
 BLUEPRINT_EVENTS: Final[frozenset[str]] = frozenset(
     {
@@ -125,6 +166,17 @@ BLUEPRINT_EVENTS: Final[frozenset[str]] = frozenset(
         EVENT_BLUEPRINT_STAGE_STARTED,
         EVENT_BLUEPRINT_STAGE_COMPLETED,
         EVENT_BLUEPRINT_STAGE_FAILED,
+        EVENT_BLUEPRINT_SPEC_GATE_SCORED,
+        EVENT_BLUEPRINT_SPEC_GATE_CLARIFICATION_ASKED,
+        EVENT_BLUEPRINT_SPEC_GATE_LOCKED,
+        EVENT_BLUEPRINT_ROUTE_SCORED,
+        EVENT_BLUEPRINT_REPO_RESEARCH_STARTED,
+        EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED,
+        EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
+        EVENT_BLUEPRINT_REROUTE_TRIGGERED,
+        EVENT_BLUEPRINT_CONFIRMATION_OPENED,
+        EVENT_BLUEPRINT_CONFIRMATION_ACTION,
+        EVENT_BLUEPRINT_CONFIRMATION_LOCKED,
     }
 )
 
