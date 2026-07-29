@@ -12,6 +12,7 @@ from .models import (
     GitCredential,
     GitInstanceCredential,
     GitPlatform,
+    RepoCharter,
     RepoExclusionRule,
     Repository,
     SensitiveFileSuggestion,
@@ -170,7 +171,9 @@ class RepositoryCreateSerializer(serializers.ModelSerializer):
 
     # TOKEN-02：access_token 改为可选——可填自有 token，或经 git_instance_credential_id
     # 选择「密钥提供方」(实例凭证)，或 host 自动匹配实例池。三者皆无时核心 helper 报错。
-    access_token = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
+    access_token = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, default=""
+    )
     # TOKEN-01：显式选择密钥提供方（实例凭证）。可空。
     git_instance_credential_id = serializers.UUIDField(
         write_only=True, required=False, allow_null=True
@@ -297,6 +300,37 @@ class SensitiveFileSuggestionSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class RepoCharterSerializer(serializers.ModelSerializer):
+    """仓库章程序列化器（111-03，CHARTER-01）。
+
+    API 层**只读**：所有字段 ``read_only``，状态只经 ``services/charter_service``
+    变更（INV-6 单点收口，对齐 ``SensitiveFileSuggestionSerializer`` 契约）——起草走
+    draft 端点、生效走 confirm 端点，不允许直接 PATCH 任意字段。``draft_content``
+    随响应返回，供前端预览 pending 修订草案。
+    """
+
+    class Meta:
+        model = RepoCharter
+        fields = [
+            "id",
+            "repository",
+            "version",
+            "source",
+            "confirmed_by",
+            "positioning",
+            "owned_domains",
+            "boundaries",
+            "placement_preferences",
+            "audience",
+            "form",
+            "evolution",
+            "draft_content",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
 class ReconcileReportSerializer(serializers.Serializer):
     """对账结果出参（Plan 23-02，EXCL-06 / W3）。
 
@@ -417,9 +451,7 @@ class GitInstanceCredentialWriteSerializer(serializers.Serializer):
         required=False,
         default=GitPlatform.GITLAB,
     )
-    label = serializers.CharField(
-        max_length=200, required=False, allow_blank=True, default=""
-    )
+    label = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
     access_token = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=True
     )
