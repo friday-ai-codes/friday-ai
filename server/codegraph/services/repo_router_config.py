@@ -37,6 +37,11 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 
+from codegraph.services.repo_router_metadata import (
+    DEFAULT_ALIAS_DICT,
+    alias_dict_hash,
+    merge_alias_dict,
+)
 from codegraph.services.repo_router_scoring import (
     DEFAULT_WEIGHT_CONFIG,
     SIGNAL_ACTIVITY,
@@ -307,17 +312,36 @@ def load_nr_snapshot() -> dict[str, Any]:
     }
 
 
+def load_alias_dict() -> tuple[dict[str, Any], str]:
+    """读取当前生效的别名词典（sync）——双轨合并 + 快照 hash（T-106-08）。
+
+    ``DEFAULT_ALIAS_DICT``（代码常量起步）与 SystemSetting
+    ``repo_router.alias_dict`` 运维覆盖经 :func:`merge_alias_dict` 合并；
+    覆盖值坏结构（非 dict 维度/条目）由 merge 逐项跳过容错，绝不抛。
+
+    Returns:
+        ``(生效词典, alias_dict_hash)``——hash 进路由快照，保证回放可审计
+        「当时生效的词典版本」。
+    """
+    override = get_json_setting(SettingKeys.REPO_ROUTER_ALIAS_DICT, {})
+    merged = merge_alias_dict(DEFAULT_ALIAS_DICT, override)
+    return merged, alias_dict_hash(merged)
+
+
 # async 侧：整个 loader 包一层（单 JSON 键一次读取，禁逐键 aget——
 # RESEARCH Pitfall 7）。thread_sensitive=False：loader 只读 DB + cache，
 # 无共享可变状态，无需串行到主线程。
 aload_weight_config = sync_to_async(load_weight_config, thread_sensitive=False)
 aload_nr_snapshot = sync_to_async(load_nr_snapshot, thread_sensitive=False)
+aload_alias_dict = sync_to_async(load_alias_dict, thread_sensitive=False)
 
 
 __all__ = [
     "WEIGHT_GRID",
+    "aload_alias_dict",
     "aload_nr_snapshot",
     "aload_weight_config",
+    "load_alias_dict",
     "load_nr_snapshot",
     "load_weight_config",
     "validate_weight_config",

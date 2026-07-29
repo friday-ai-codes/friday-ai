@@ -45,6 +45,16 @@ from django.core.cache import cache
 
 from agents.call_source import CallSource, use_call_source
 from codegraph.services.repo_index_tree import COLLECTION_NAME
+from codegraph.services.repo_router_config import (
+    aload_alias_dict,
+    aload_nr_snapshot,
+)
+from codegraph.services.repo_router_metadata import (
+    FACET_CRITICALITY,
+    LAYER_T2,
+    FacetT2Matcher,
+    resolve_facet_scores,
+)
 from codegraph.services.repo_router_scoring import (
     WEIGHT_SET_VERSION,
     aggregate_and_score,
@@ -298,6 +308,183 @@ class RepoRouterV2:
                 )
             )
         return buckets
+
+    @staticmethod
+    def _load_latest_commits(repository_ids: list[str]) -> dict[str, str | None]:
+        """候选仓 last_commit 一次聚合（免 N+1，RESEARCH §3 口径）。
+
+        仓库级 last_commit = ``Max(FileIndex.last_commit_authored_at)``；
+        无 FileIndex 行的仓不出现在返回 dict（→ 活跃度走枚举回退，CONTEXT 已锁）。
+        sync 实现，调用方经 ``sync_to_async(thread_sensitive=False)`` 包装。
+        """
+        from django.db.models import Max
+
+        from repositories.models import FileIndex
+
+        if not repository_ids:
+            return {}
+        rows = (
+            FileIndex.objects.filter(repository_id__in=repository_ids)
+            .values("repository_id")
+            .annotate(latest=Max("last_commit_authored_at"))
+        )
+        return {
+            str(row["repository_id"]): (row["latest"].isoformat() if row["latest"] else None)
+            for row in rows
+        }
+
+    @classmethod
+    async def _load_repo_meta(
+        cls,
+        node_hits: list[dict[str, Any]],
+        query: str,
+        query_dense: list[float] | None,
+        config: dict[str, Any],
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+        """Stage 0 repo_meta 组装（resolver 编排——六信号的全部 I/O 收口点）。
+
+        对 node_hits 分桶后的**全部**候选仓组装元数据（打分发生在 top_k 截断
+        之前）；输出键契约 == ``repo_router_scoring`` 模块 docstring 的
+        ``repo_meta`` 权威定义。I/O 预算：+1 次 Qdrant dense-only 查询 +
+        1 次 FileIndex 聚合 DB 查询 + 快照/词典缓存读取，无 N+1。
+
+        逐信号降级分支（任一失败路由不失败）：
+        - dense 查询异常/空/query_dense 缺失 → 全仓 ``dense_cos_max=None``
+          （S_top 回退 RRF s_hat，Pitfall 6）+ warning；
+        - N_r 快照缺失 → ``n_bar=None``（breadth denom=1.0 降级）+ warning；
+        - embedding 未配置/配置读取失败 → T2 matcher 不构造，facet 全走 T1。
+
+        Returns:
+            ``(repo_meta, meta_stats)``——meta_stats 供观测与快照组装：
+            ``{"n_bar", "alias_dict_hash", "embedding_model_id", "repo_count",
+            "dense_hit_ratio", "t2_used"}``。
+        """
+        meta_started = time.monotonic()
+        buckets = cls._aggregate_by_repo(node_hits)
+        rids = sorted(buckets)
+
+        # ---- dense 余弦（O-3 口径）：复用已算好的 query_dense，归仓取 max ----
+        cos_by_repo: dict[str, float] = {}
+        if query_dense and rids:
+            try:
+                dense_hits = await sync_to_async(
+                    QdrantService.dense_search_by_name, thread_sensitive=False
+                )(
+                    COLLECTION_NAME,
+                    query_dense,
+                    top_k=STAGE0_NODE_K,
+                    # 与 hybrid 同款 repository_id 过滤构造，限定到分桶候选仓——
+                    # 余弦是 query·point 逐点值，不受候选集缩小影响，且提升
+                    # 候选仓在 top-50 内的覆盖（减少 Pitfall 6 回退面）。
+                    filters={"repository_id": rids},
+                )
+            except Exception:  # noqa: BLE001 — 查询失败按 dense 不可用降级
+                dense_hits = []
+            for hit in dense_hits or []:
+                payload = hit.get("payload") or {}
+                rid = str(payload.get("repository_id", ""))
+                if not rid:
+                    continue
+                score = float(hit.get("score", 0.0))
+                if rid not in cos_by_repo or score > cos_by_repo[rid]:
+                    cos_by_repo[rid] = score
+        if not cos_by_repo:
+            # 异常/空结果/query_dense 缺失同路径：全仓 S_top 回退 RRF s_hat。
+            try:
+                logger.warning(
+                    "repo_router_dense_search_failed",
+                    repo_count=len(rids),
+                    has_query_dense=bool(query_dense),
+                    category="sampling",
+                    component="repo_router_v2",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        # ---- last_commit：一次聚合（免 N+1）----
+        latest_by_repo = await sync_to_async(cls._load_latest_commits, thread_sensitive=False)(rids)
+
+        # ---- N_r / N̄ 快照（106-04 --write-snapshot 供数）----
+        nr_snapshot = await aload_nr_snapshot()
+        n_bar = nr_snapshot.get("n_bar")
+        n_r_by_repo = nr_snapshot.get("n_r_by_repo") or {}
+        if n_bar is None:
+            # 每次路由至多一条（本方法每路由恰调一次）；breadth 走 denom=1.0 降级。
+            try:
+                logger.warning(
+                    "repo_router_nr_snapshot_missing",
+                    repo_count=len(rids),
+                    category="sampling",
+                    component="repo_router_v2",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        # ---- facet_scores（T1 别名词典 + T2 校准余弦，106-03 resolver）----
+        alias_dict, alias_hash = await aload_alias_dict()
+        constants = config.get("constants") or {}
+        t2_matcher: FacetT2Matcher | None = None
+        embedding_model_id: str | None = None
+        try:
+            emb_config = await EmbeddingService.get_config()
+            embedding_model_id = emb_config.get("model")
+            if emb_config.get("api_url") and query_dense:
+                t2_matcher = FacetT2Matcher(
+                    model_id=str(embedding_model_id or "unknown"),
+                    t2_c_lo=constants.get("t2_c_lo"),
+                    t2_c_hi=constants.get("t2_c_hi"),
+                )
+        except Exception:  # noqa: BLE001 — embedding 未配置/读取失败 → 全走 T1
+            t2_matcher = None
+
+        repo_meta: dict[str, dict[str, Any]] = {}
+        t2_used = False
+        for rid in rids:
+            top_payload = buckets[rid][0].get("payload") or {}
+            facets = cls._parse_json_field(top_payload.get("facets"), {})
+            facet_scores = await resolve_facet_scores(
+                query,
+                facets,
+                alias_dict=alias_dict,
+                constants=config,
+                query_embedding=query_dense,
+                t2_matcher=t2_matcher,
+            )
+            if any(
+                isinstance(entry, dict) and entry.get("layer") == LAYER_T2
+                for entry in facet_scores.values()
+            ):
+                t2_used = True
+            crit_raw = facets.get(FACET_CRITICALITY)
+            repo_meta[rid] = {
+                "n_r": n_r_by_repo.get(rid),
+                "last_commit_at": latest_by_repo.get(rid),
+                "dense_cos_max": cos_by_repo.get(rid),
+                "facet_scores": facet_scores,
+                "criticality_value": crit_raw if isinstance(crit_raw, str) else None,
+            }
+
+        meta_stats: dict[str, Any] = {
+            "n_bar": n_bar,
+            "alias_dict_hash": alias_hash,
+            "embedding_model_id": embedding_model_id,
+            "repo_count": len(rids),
+            "dense_hit_ratio": (len(cos_by_repo) / len(rids)) if rids else 0.0,
+            "t2_used": t2_used,
+        }
+        try:
+            logger.debug(
+                "repo_router_meta_resolved",
+                repo_count=len(rids),
+                dense_hit_ratio=round(meta_stats["dense_hit_ratio"], 4),
+                t2_used=t2_used,
+                duration_ms=int((time.monotonic() - meta_started) * 1000),
+                category="sampling",
+                component="repo_router_v2",
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+            pass
+        return repo_meta, meta_stats
 
     @classmethod
     def _stage0_candidates(
