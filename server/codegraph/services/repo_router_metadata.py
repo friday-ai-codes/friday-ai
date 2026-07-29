@@ -39,14 +39,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
+import time
 from typing import Any
 
+import structlog
+
+# repo_router_scoring 是 stdlib-only 模块（零 Django），顶层 import 不破坏本模块契约。
 from codegraph.services.repo_router_scoring import (
+    DEFAULT_WEIGHT_CONFIG,
     SIGNAL_DOMAIN,
     SIGNAL_STACK,
     SIGNAL_TEAM,
 )
+
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # facet 键名常量（全中文实际键名，来源见 106-RESEARCH §2 实况表）
@@ -404,6 +412,218 @@ async def resolve_facet_scores(
     }
 
 
+# ---------------------------------------------------------------------------
+# T2：校准余弦 matcher（async；Django 依赖全部局部 import——模块顶层保持
+# 无 Django 环境可 import，Task 1 acceptance / golden harness 依赖）
+# ---------------------------------------------------------------------------
+
+# facet 值向量缓存 TTL：7 天（闭集几百条，cache 丢失可重建）。
+_FACET_VEC_CACHE_TTL_SECONDS = 604_800
+_FACET_VEC_CACHE_PREFIX = "repo_router:facet_vec"
+
+# 进程内二级缓存（与 Django cache 同 key）：cache 后端故障/驱逐时兜底。
+# facet 值为闭集（FacetVocabulary + 事实分面枚举）+ 超长值已被护栏拒绝，
+# 无界增长风险可忽略。
+_facet_vec_local_cache: dict[str, list[float]] = {}
+
+
+def _facet_vec_cache_key(model_id: str, value: str) -> str:
+    """缓存 key：repo_router:facet_vec:{model_id}:{sha256(value)}——换 embedding
+    模型（model_id 变）自动隔离旧向量，配合重校准纪律（CONTEXT 锁定）。"""
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return f"{_FACET_VEC_CACHE_PREFIX}:{model_id}:{digest}"
+
+
+def _cosine(vec_a: list[float], vec_b: list[float]) -> float | None:
+    """余弦相似度（stdlib 显式循环实现，禁 numpy）；维度不符/零范数 → None。"""
+    if not vec_a or not vec_b or len(vec_a) != len(vec_b):
+        return None
+    dot = 0.0
+    norm_a = 0.0
+    norm_b = 0.0
+    for x, y in zip(vec_a, vec_b):
+        fx = float(x)
+        fy = float(y)
+        dot += fx * fy
+        norm_a += fx * fx
+        norm_b += fy * fy
+    if norm_a <= 0.0 or norm_b <= 0.0:
+        return None
+    return dot / math.sqrt(norm_a * norm_b)
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+class FacetT2Matcher:
+    """T2 校准余弦 matcher：facet 值向量缓存 + ``clip((cos-c_lo)/(c_hi-c_lo), 0, 1)``。
+
+    失败语义（CONTEXT T2 放弃条款）：embedding 未配置/调用失败/余弦不可算
+    → :meth:`match` 返回 None + ``repo_router_t2_degraded`` 采样 warning，
+    **绝不抛异常、绝不阻塞路由**——resolver 侧表现为静默降级 T1-only。
+
+    c_lo/c_hi 为 O-2 校准输出（106-02 weight_config 携带初值 0.25/0.55，
+    生产实测回填 deferred）；非法入参回退 ``DEFAULT_WEIGHT_CONFIG`` 初值。
+    """
+
+    def __init__(self, model_id: str, t2_c_lo: float, t2_c_hi: float) -> None:
+        defaults = DEFAULT_WEIGHT_CONFIG["constants"]
+        lo = float(t2_c_lo) if _is_number(t2_c_lo) else float(defaults["t2_c_lo"])
+        hi = float(t2_c_hi) if _is_number(t2_c_hi) else float(defaults["t2_c_hi"])
+        if hi - lo <= 0.0:
+            lo = float(defaults["t2_c_lo"])
+            hi = float(defaults["t2_c_hi"])
+        self.model_id = str(model_id) if model_id else "unknown"
+        self._c_lo = lo
+        self._c_hi = hi
+
+    async def match(self, query_embedding: list[float] | None, value: str) -> float | None:
+        """校准余弦匹配分 ∈ [0,1]；任何失败 → None（静默降级，观测 best-effort）。"""
+        try:
+            if not query_embedding or not isinstance(value, str):
+                return None
+            cleaned = value.strip()
+            if not cleaned or len(cleaned) > MAX_FACET_VALUE_LENGTH:
+                return None  # DoS 护栏（T-106-06）：超长值不送 embedding
+            vector = await self._get_facet_vector(cleaned)
+            if vector is None:
+                self._warn_degraded(cleaned, "embedding_unavailable")
+                return None
+            cos = _cosine(query_embedding, vector)
+            if cos is None:
+                self._warn_degraded(cleaned, "cosine_undefined")
+                return None
+            calibrated = (cos - self._c_lo) / (self._c_hi - self._c_lo)
+            return min(max(calibrated, 0.0), 1.0)
+        except Exception:  # noqa: BLE001 — T2 绝不反噬路由主流程
+            self._warn_degraded(value if isinstance(value, str) else "", "unexpected_error")
+            return None
+
+    async def _get_facet_vector(self, value: str) -> list[float] | None:
+        """facet 值向量：进程内 dict → Django cache → embedding（miss 回写两级）。"""
+        key = _facet_vec_cache_key(self.model_id, value)
+        local = _facet_vec_local_cache.get(key)
+        if local is not None:
+            return local
+        cached = self._cache_get(key)
+        if isinstance(cached, list) and cached:
+            _facet_vec_local_cache[key] = cached
+            return cached
+        vector = await self._embed(value)
+        if not isinstance(vector, list) or not vector:
+            return None
+        _facet_vec_local_cache[key] = vector
+        self._cache_set(key, vector)
+        return vector
+
+    @staticmethod
+    async def _embed(value: str) -> list[float] | None:
+        # 局部 import：EmbeddingService 顶层 import 会拉起 Django models，
+        # 破坏本模块「无 Django 环境可 import」契约。
+        from agents.call_source import CallSource, use_call_source
+        from services.embedding import EmbeddingService
+
+        # LOGGING-SPEC §4.1：embedding 调用点必须处于 EMBEDDING call_source
+        # 作用域（下游 chokepoint 读 contextvar 归因，无需逐层透参）。
+        with use_call_source(CallSource.EMBEDDING):
+            return await EmbeddingService.generate_embedding(value)
+
+    @staticmethod
+    def _cache_get(key: str) -> Any:
+        """Django cache 读（局部 import + best-effort：后端故障视同 miss）。"""
+        try:
+            from django.core.cache import cache
+
+            return cache.get(key)
+        except Exception:  # noqa: BLE001
+            return None
+
+    @staticmethod
+    def _cache_set(key: str, vector: list[float]) -> None:
+        """Django cache 写（best-effort：写失败不反噬，下次重算）。"""
+        try:
+            from django.core.cache import cache
+
+            cache.set(key, vector, timeout=_FACET_VEC_CACHE_TTL_SECONDS)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _warn_degraded(self, value: str, reason: str) -> None:
+        """T2 降级观测（sampling）：日志失败吞掉，绝不打断主流程。"""
+        try:
+            logger.warning(
+                "repo_router_t2_degraded",
+                facet_value=value[:32],  # T-106-07：截断 32 字符入日志，不泄原文
+                reason=reason,
+                model_id=self.model_id,
+                category="sampling",
+                component="codegraph",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def warm_facet_vectors(values: list[str] | None, matcher: FacetT2Matcher) -> int:
+    """批量预热 facet 值向量（106-04 校准 command / 106-06 router 冷启动调用）。
+
+    返回调用结束后**向量可用**的值条数（先前已缓存 + 本次成功写入）；
+    无效值（非 str/空/"未分类"/超长）跳过、重复值去重；整体 best-effort
+    绝不抛异常（预热失败不阻塞冷启动，T2 自然降级）。
+    """
+    started = time.monotonic()
+    try:
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for raw in values or []:
+            cleaned = _normalize_facet_value(raw)
+            if cleaned is not None and cleaned not in seen:
+                seen.add(cleaned)
+                deduped.append(cleaned)
+
+        pending: list[str] = []
+        available = 0
+        for value in deduped:
+            key = _facet_vec_cache_key(matcher.model_id, value)
+            if key in _facet_vec_local_cache:
+                available += 1
+                continue
+            cached = matcher._cache_get(key)
+            if isinstance(cached, list) and cached:
+                _facet_vec_local_cache[key] = cached
+                available += 1
+                continue
+            pending.append(value)
+
+        if pending:
+            from agents.call_source import CallSource, use_call_source
+            from services.embedding import EmbeddingService
+
+            with use_call_source(CallSource.EMBEDDING):
+                vectors = await EmbeddingService.generate_embeddings_batch(pending)
+            for value, vector in zip(pending, vectors):
+                if isinstance(vector, list) and vector:
+                    key = _facet_vec_cache_key(matcher.model_id, value)
+                    _facet_vec_local_cache[key] = vector
+                    matcher._cache_set(key, vector)
+                    available += 1
+
+        try:
+            logger.debug(
+                "repo_router_facet_vec_warmed",
+                requested=len(deduped),
+                available=available,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                category="sampling",
+                component="codegraph",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return available
+    except Exception:  # noqa: BLE001 — 预热 best-effort，失败不阻塞冷启动
+        return 0
+
+
 __all__ = [
     "DEFAULT_ALIAS_DICT",
     "FACET_ACTIVITY",
@@ -411,6 +631,7 @@ __all__ = [
     "FACET_DOMAIN",
     "FACET_STACK",
     "FACET_TEAM",
+    "FacetT2Matcher",
     "LAYER_T1",
     "LAYER_T2",
     "MAX_FACET_VALUE_LENGTH",
@@ -419,4 +640,5 @@ __all__ = [
     "match_t1",
     "merge_alias_dict",
     "resolve_facet_scores",
+    "warm_facet_vectors",
 ]
