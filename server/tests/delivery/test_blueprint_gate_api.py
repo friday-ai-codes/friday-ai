@@ -308,6 +308,40 @@ def test_confirm_locks_associations_and_registers_reviewer(
     assert thread.status == ThreadStatus.RESOLVED
 
 
+def test_confirm_after_add_repo_never_silently_drops_the_new_repo(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """MJ-03：``add_repo`` 成功后紧接 ``confirm`` —— 要么 409，要么锁定集合含新仓。
+
+    绝不能是「200 且新仓消失」：那样用户的加仓动作静默丢失，线程被 resolve 后
+    ``pending_research`` 标记再也读不到，那个 PENDING task 成为永不派发的孤儿。
+    """
+    _stub_resume(monkeypatch)
+    ctx = _open_gate(user)
+    repo_c = _make_repo()
+    _grant_scope(ctx, repo_c)
+
+    added = authenticated_client.post(
+        ADD_URL.format(aid=ctx.artifact.id), {"repository_id": str(repo_c.id)}, format="json"
+    )
+    assert added.status_code == 200
+
+    resp = authenticated_client.post(CONFIRM_URL.format(aid=ctx.artifact.id))
+
+    if resp.status_code == 200:
+        locked = {a["repository_id"] for a in _latest_content(ctx.artifact)["repo_associations"]}
+        assert str(repo_c.id) in locked, "锁定集合丢了用户刚加的仓"
+    else:
+        assert resp.status_code == 409
+        assert "调研" in resp.json()["detail"]
+        thread = BlueprintThread.objects.get(id=ctx.thread.id)
+        assert thread.status != ThreadStatus.RESOLVED, "拒绝落锁时不得关掉确认门"
+        assert (
+            RepoResearchTask.objects.get(session=ctx.session, repository=repo_c).status
+            == RepoResearchTaskStatus.PENDING
+        ), "新仓 task 必须仍可派发，不能成孤儿"
+
+
 def test_confirm_conflicts_with_pending_clarification(
     authenticated_client, user, monkeypatch
 ) -> None:

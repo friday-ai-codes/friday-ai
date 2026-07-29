@@ -54,6 +54,13 @@ _GATE_NOT_OPEN_DETAIL = {"detail": "确认门未开启"}
 _ARTIFACT_MISSING_DETAIL = {"detail": "artifact 不存在"}
 _SESSION_MISSING_DETAIL = {"detail": "该 artifact 没有蓝图编排会话"}
 
+# alock 拒绝落锁的 409 文案（码由 blueprint_confirm_gate 给，视图只做映射）
+_LOCK_DEFAULT = "蓝图内容校验未通过，确认未生效"
+_LOCK_BLOCKED_MESSAGES = {
+    "pending_research": "有仓库正在调研，暂不能确认，请等待调研完成后重试",
+    "snapshot_changed": "确认门快照已被其它操作更新，请刷新后重新确认",
+}
+
 _MAX_BOUNDARY_RULE_CHARS = 500
 
 
@@ -235,9 +242,14 @@ class BlueprintGateConfirmView(APIView):
 
         lock = await BlueprintConfirmGateAdapter().alock(session, acting_user=request.user)
         if lock.get("event") != "confirmed":
-            # fail-closed：蓝图内容非法时不放行、不落 failed，等人修规格后重试。
+            # fail-closed：内容非法 / 并发未收敛时不放行、不落 failed，等下一次重试。
             return Response(
-                {"detail": "蓝图内容校验未通过，确认未生效"}, status=status.HTTP_409_CONFLICT
+                {
+                    "detail": _LOCK_BLOCKED_MESSAGES.get(
+                        str(lock.get("reason") or ""), _LOCK_DEFAULT
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
             )
         await blueprint_resume.aresume_after_gate_action(
             session, initiated_by_user_id=str(request.user.id)
