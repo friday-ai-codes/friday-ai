@@ -66,6 +66,25 @@ def test_remove_action_mapped_to_delete():
     assert legacy["note"] == "移除旧入口"
 
 
+def test_conflicting_file_actions_converge_by_priority():
+    """MN-07：同 path 的 modify 与 remove 不得同时下发，按 delete > modify 收敛并标注。"""
+    content = make_blueprint()
+    items = content["implementation_overview"]["items"]
+    items[0]["files_touched"] = [
+        {"path": "src/api/legacy_generate.py", "action": "modify", "note": "先改造"},
+        {"path": "src/api/legacy_generate.py", "action": "remove", "note": "又要删"},
+    ]
+    plan = derive_execution_plan(content)
+    backend = next(task for task in plan if task["repository_id"] == "repo-backend")
+    legacy = [f for f in backend["files"] if f["path"] == "src/api/legacy_generate.py"]
+    assert len(legacy) == 1
+    assert legacy[0]["action"] == "delete"
+    assert "冲突" in legacy[0]["note"]
+    doc, err = derive_technical_plan_document(content)
+    assert err is None
+    assert validate_technical_plan(doc)[0] is True
+
+
 def test_cross_repo_depends_on_projected_to_dependencies():
     plan = derive_execution_plan(make_blueprint())
     by_repo = {task["repository_id"]: task for task in plan}

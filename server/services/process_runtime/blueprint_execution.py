@@ -8,7 +8,8 @@ technical_plan 形状的 ``execution_plan``（DESIGN §3.14）：
 - ``coding_instruction`` 由 item 的 how/existing_integration/test_strategy Block[]
   文本确定性拼装；
 - ``files`` 合并 ``files_touched`` 并做 **action 映射 remove→delete**（蓝图侧枚举是
-  create/modify/remove，technical_plan 侧是 create/modify/delete）；
+  create/modify/remove，technical_plan 侧是 create/modify/delete），同一 path 的
+  冲突声明按 delete > create > modify 收敛（不给编码代理自相矛盾的指令）；
 - item 跨仓 ``depends_on`` 投影为仓级 task ``dependencies`` 边；
 - ``repository_id`` 不在 ``repo_associations`` 中的 item **直接丢弃**（引用完整性由
   ``validate_blueprint`` 后置检查 (c) 前置把关，派生器不给坏仓 id 兜底成仓名）。
@@ -36,6 +37,10 @@ DEFAULT_BRANCH_STRATEGY = "feature"
 # 蓝图 files_touched.action（create/modify/remove）→ technical_plan files.action
 # （create/modify/delete）的映射；不映射会被 validate_technical_plan 拒绝。
 _ACTION_MAP = {"remove": "delete"}
+
+# 同一 path 被多个 item 声明成不同 action 时的收敛优先级（MN-07）：删除是终态、
+# 新建次之、修改最弱；未知 action 优先级 0（保留先到者）。
+_ACTION_PRIORITY = {"delete": 3, "create": 2, "modify": 1}
 
 
 def _blocks_to_text(blocks: Any) -> str:
@@ -93,8 +98,13 @@ def _build_coding_instruction(items: list[dict]) -> str:
 
 
 def _merge_files(items: list[dict]) -> list[dict]:
-    """合并该仓全部 files_touched：remove→delete 映射、(path, action) 去重、按 path 排序。"""
-    merged: dict[tuple[str, str], dict] = {}
+    """合并该仓全部 files_touched：remove→delete 映射、**按 path 收敛**、按 path 排序。
+
+    同一 path 被多个 item 声明成不同 action 时按 :data:`_ACTION_PRIORITY` 收敛
+    （delete > create > modify），并在 note 里标注被丢弃的声明——给编码代理同时下发
+    「改这个文件」和「删这个文件」比丢一条声明更危险（MN-07）。
+    """
+    merged: dict[str, dict] = {}
     for item in items:
         for entry in item.get("files_touched") or []:
             if not isinstance(entry, dict):
@@ -104,14 +114,25 @@ def _merge_files(items: list[dict]) -> list[dict]:
             if not isinstance(path, str) or not path or not isinstance(action_raw, str):
                 continue
             action = _ACTION_MAP.get(action_raw, action_raw)
-            key = (path, action)
-            if key in merged:
-                continue
             file_entry: dict[str, Any] = {"path": path, "action": action}
             note = entry.get("note")
             if isinstance(note, str) and note:
                 file_entry["note"] = note
-            merged[key] = file_entry
+
+            existing = merged.get(path)
+            if existing is None:
+                merged[path] = file_entry
+                continue
+            if existing["action"] == action:
+                continue  # 同 path 同 action：先到先得（保留首条 note）
+            if _ACTION_PRIORITY.get(action, 0) > _ACTION_PRIORITY.get(existing["action"], 0):
+                winner, dropped = file_entry, existing
+            else:
+                winner, dropped = existing, file_entry
+            conflict = f"（与 {dropped['action']} 声明冲突，按优先级取 {winner['action']}）"
+            winner_note = winner.get("note") or ""
+            winner["note"] = f"{winner_note}{conflict}" if winner_note else conflict.strip("（）")
+            merged[path] = winner
     return [merged[key] for key in sorted(merged)]
 
 
