@@ -117,8 +117,8 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 106-07-PLAN.md — 回放兼容：新快照自包含回放 + 105 旧快照回退默认值并标注（wave 4）
-- [ ] 106-08-PLAN.md — golden fixture 扩展 + gk-001 翻转机制断言 + WEIGHT_SET_VERSION bump + GENERATE_GOLDEN=1 重建 baseline（wave 4）
+- [x] 106-07-PLAN.md — 回放兼容：新快照自包含回放 + 105 旧快照回退默认值并标注（wave 4）
+- [x] 106-08-PLAN.md — golden fixture 扩展 + gk-001 翻转机制断言 + WEIGHT_SET_VERSION bump + GENERATE_GOLDEN=1 重建 baseline（wave 4）
 
 ### Phase 107: 分层呈现与链路韧性（分组/跨组标注 + 降级可见 + 澄清必达 + Stage 1 有界）
 
