@@ -988,6 +988,18 @@ async def _handle_completed(
             error=str(exc),
         )
 
+    # blueprint_research 容器完成 → fitness 落 PartialPlan.content（经 service，INV-6，112-04）。
+    # 独立 try/except swallow，绝不让回调失败（与上面两条链完全对称）。
+    if _is_blueprint_research(session):
+        try:
+            await _handle_blueprint_research_completion(session, p, log)
+        except Exception as exc:  # noqa: BLE001 — 永不阻塞 _handle_completed 主流程
+            logger.warning(
+                "blueprint_research_completion_callback_failed",
+                session_id=session.session_id,
+                error=str(exc),
+            )
+
     # CR-01：续驱调度必须在 _handle_research_completion 之后——它把 RepoResearchTask 翻终态
     # 并将 chat 入口 session researching→merging。若在其之前调度（旧实现），fire-and-forget
     # 的 _resume() 会与 research 完成处理在事件循环 await 点交错，可能在 task 翻终态前读到
@@ -1059,6 +1071,18 @@ async def _handle_failed(
             session_id=session.session_id,
             error=str(exc),
         )
+
+    # blueprint_research 容器失败 → mark_failed + blueprint.repo_research.failed + barrier（112-04）。
+    # 独立 try/except swallow（失败也是 barrier 终态，不能卡住蓝图续驱）。
+    if _is_blueprint_research(session):
+        try:
+            await _handle_blueprint_research_failure(session, p, log)
+        except Exception as exc:  # noqa: BLE001 — 永不阻塞 _handle_failed 主流程
+            logger.warning(
+                "blueprint_research_failure_callback_failed",
+                session_id=session.session_id,
+                error=str(exc),
+            )
 
     # CR-01：与 _handle_completed 对称——续驱调度移到 _handle_research_failure 之后，确保
     # _resume() 创建时 RepoResearchTask 已翻 FAILED 终态 + session 已 researching→merging，
@@ -1279,6 +1303,9 @@ def _derive_container_call_source(session: SubAgentSession) -> str:
         derived = CallSource.REPO_VERIFY_CONTAINER
     elif session.task_type == SubAgentSession.TaskType.EXPLORE and source == "chat_deep_analysis":
         derived = CallSource.DEEP_ANALYSIS_CONTAINER
+    elif session.task_type == SubAgentSession.TaskType.PLAN and source == _BLUEPRINT_RESEARCH_SOURCE:
+        # 蓝图逐仓调研容器（112-04）：不补这条会回退 sdk_agent_task，违反显式 call_source 要求
+        derived = CallSource.BLUEPRINT_REPO_RESEARCH
     elif (
         session.task_type == SubAgentSession.TaskType.CODING
         or effective_task_type in ("coding", "coding_commit")
@@ -1931,6 +1958,280 @@ async def _handle_repo_verify_failure(
         {"reason": "container_failed", "error": redact_secrets_in_text(str(error_msg))},
     )
     log.info("repo_verify_failure_handled", task_id=str(task.id))
+
+
+# === blueprint_research 容器回调 → fitness 落 PartialPlan.content（Phase 112-04，FLOW-02） ===
+#
+# PLAN 任务类型的**第三种**用途（前两种：plan_research 落 §7 PartialPlan、repo_verify 落
+# verdict）。三者靠 ``last_output.source`` 互斥路由，判定条件不重叠。业务表写入全部经
+# ``ResearchService``（INV-6，本段零裸 ORM 写）。token 吊销由上游终态钩子无条件完成，
+# 本段**不新增吊销调用**。
+
+# 派发侧（services/process_runtime/blueprint_research_adapter.py）写入的 source 值
+_BLUEPRINT_RESEARCH_SOURCE = "blueprint_research"
+_BLUEPRINT_VERDICTS = ("suitable", "partial", "unsuitable")
+_BLUEPRINT_ROLES = ("direct", "indirect")
+# 反幻觉上界：容器编造大量 findings 时截断（T-112-18）
+_BLUEPRINT_MAX_FINDINGS = 20
+_BLUEPRINT_MAX_TEXT = 4000
+# 与 fitness 平级保留的既有 §7 键（容器若一并产出则透传，缺失不补造）
+_BLUEPRINT_PASSTHROUGH_LIST_KEYS = (
+    "proposed_changes",
+    "candidate_files",
+    "api_contracts_exposed",
+    "dependencies_on_other_repos",
+)
+
+
+def _is_blueprint_research(session: SubAgentSession) -> bool:
+    """路由判定：PLAN 任务 + last_output.source == blueprint_research。
+
+    与 ``_is_plan_research`` 互斥（同为 PLAN 任务，靠 source 值区分），因此既有方案调研链
+    不会被本链抢走，反之亦然。
+    """
+    return (
+        session.task_type == SubAgentSession.TaskType.PLAN
+        and isinstance(session.last_output, dict)
+        and session.last_output.get("source") == _BLUEPRINT_RESEARCH_SOURCE
+    )
+
+
+def _parse_blueprint_fitness(output: Any) -> dict[str, Any] | None:
+    """从容器 output 提取蓝图调研结论（**缺 fitness.verdict 即视为不可解析返回 None**）。
+
+    优先结构化透传（output 已含 ``fitness``），否则从 ``output["text"]`` 提 JSON 围栏 /
+    花括号跨度后 ``json.loads``。归一化按白名单 + 枚举校验：``verdict`` 非法即判不可解析
+    （宁可失败重跑，也不把编造结论落进蓝图投影数据）；``role_suggestion`` 非法回落保守的
+    ``direct``（要改动的仓被误判成不改动，代价远高于反过来）。
+    """
+    import json as json_mod
+
+    if not isinstance(output, dict):
+        return None
+    raw: dict[str, Any] | None = output if "fitness" in output else None
+    if raw is None:
+        text = str(output.get("text", "") or "")
+        if not text:
+            return None
+        try:
+            parsed = json_mod.loads(_parse_summary_json(text))
+        except (json_mod.JSONDecodeError, TypeError):
+            return None
+        raw = parsed if isinstance(parsed, dict) else None
+    if raw is None:
+        return None
+
+    fitness = raw.get("fitness")
+    if not isinstance(fitness, dict):
+        return None
+    verdict = str(fitness.get("verdict") or "").strip().lower()
+    if verdict not in _BLUEPRINT_VERDICTS:
+        return None
+
+    role = str(raw.get("role_suggestion") or "").strip().lower()
+    if role not in _BLUEPRINT_ROLES:
+        role = "direct"
+
+    content: dict[str, Any] = {
+        "fitness": {
+            "verdict": verdict,
+            "reasons": _blueprint_str_list(fitness.get("reasons")),
+            "citations": _blueprint_str_list(fitness.get("citations")),
+        },
+        "role_suggestion": role,
+        "responsibility": str(raw.get("responsibility") or "")[:_BLUEPRINT_MAX_TEXT],
+        "findings": _blueprint_findings(raw.get("findings")),
+    }
+    summary = str(raw.get("research_summary") or "")[:_BLUEPRINT_MAX_TEXT]
+    if summary:
+        content["research_summary"] = summary
+    for key in _BLUEPRINT_PASSTHROUGH_LIST_KEYS:
+        value = raw.get(key)
+        if isinstance(value, list):
+            content[key] = value[:_BLUEPRINT_MAX_FINDINGS]
+    return content
+
+
+def _blueprint_str_list(value: Any) -> list[str]:
+    """归一为字符串列表（非 list → []；空项剔除；条数上界）。"""
+    if not isinstance(value, list):
+        return []
+    items = [str(item).strip() for item in value if str(item or "").strip()]
+    return items[:_BLUEPRINT_MAX_FINDINGS]
+
+
+def _blueprint_findings(value: Any) -> list[dict[str, Any]]:
+    """findings 白名单归一：每项 ``{title, detail, citations}``，条数与文本长度设上界。"""
+    if not isinstance(value, list):
+        return []
+    findings: list[dict[str, Any]] = []
+    for item in value[:_BLUEPRINT_MAX_FINDINGS]:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                findings.append(
+                    {"title": "", "detail": text[:_BLUEPRINT_MAX_TEXT], "citations": []}
+                )
+            continue
+        if not isinstance(item, dict):
+            continue
+        findings.append(
+            {
+                "title": str(item.get("title") or "")[:_BLUEPRINT_MAX_TEXT],
+                "detail": str(item.get("detail") or item.get("description") or "")[
+                    :_BLUEPRINT_MAX_TEXT
+                ],
+                "citations": _blueprint_str_list(item.get("citations")),
+            }
+        )
+    return findings
+
+
+async def _aload_blueprint_research_task(session: SubAgentSession):
+    """由 last_output 反查 ``(RepoResearchTask, ConvergenceSession)``（不可用位为 None）。
+
+    缺 ``research_task_id`` 或 task 已终态（done/failed/stale）→ ``(None, None)``，调用方
+    no-op（回调重投递幂等：已落库的结论不会被二次覆盖）。
+    """
+    from delivery.models import ConvergenceSession, RepoResearchTask, RepoResearchTaskStatus
+
+    lo = session.last_output or {}
+    task_id = lo.get("research_task_id")
+    blueprint_session_id = lo.get("blueprint_session_id")
+    if not task_id:
+        return None, None
+    task = await RepoResearchTask.objects.filter(id=task_id).afirst()
+    if task is None or task.status in (
+        RepoResearchTaskStatus.DONE,
+        RepoResearchTaskStatus.FAILED,
+        RepoResearchTaskStatus.STALE,
+    ):
+        return None, None
+    blueprint_session = None
+    if blueprint_session_id:
+        blueprint_session = await ConvergenceSession.objects.filter(
+            id=blueprint_session_id
+        ).afirst()
+    return task, blueprint_session
+
+
+async def _trigger_blueprint_research_barrier(blueprint_session) -> None:
+    """fan-out barrier（幂等）：所有 RepoResearchTask 终态才把会话交给蓝图续驱。
+
+    **计数与 stage 转移都不在这里做**：reroute 轮次只在 barrier 后的单点串行转移里递增
+    （见 blueprint_research_adapter.aadvance_reroute），本函数只负责「全部终态了，叫醒
+    续驱器」。续驱器（blueprint_resume）由 112-05 交付；未就位时静默 no-op，回调不受影响。
+    """
+    if blueprint_session is None:
+        return
+    from services.process_runtime.research_aggregation import aall_research_tasks_terminal
+
+    if not await aall_research_tasks_terminal(blueprint_session.id):
+        return
+    try:
+        from services.process_runtime import blueprint_resume
+    except ImportError:
+        logger.info(
+            "blueprint_research_barrier_reached",
+            session_id=str(blueprint_session.id),
+            driver="pending_112_05",
+            category="sampling",
+            component="subagent",
+        )
+        return
+    resume = getattr(blueprint_resume, "aresume_blueprint_session", None)
+    if resume is None:
+        return
+    await resume(blueprint_session)
+
+
+async def _handle_blueprint_research_completion(
+    session: SubAgentSession, p: dict[str, Any], log: BoundLogger
+) -> None:
+    """蓝图调研容器完成 → fitness/role/responsibility/findings 落 ``PartialPlan.content``。
+
+    不可解析（缺 ``fitness.verdict``）→ ``mark_failed({"reason": "empty_or_unparseable_result"})``
+    + emit failed；否则 ``record_partial``（**已含置 done，不再调 mark_done**）+ emit completed。
+    末尾统一触发 barrier（幂等）。非本链 session 不触发。
+    """
+    if not _is_blueprint_research(session):
+        return
+
+    from delivery.services import ConvergenceSessionService, ResearchService
+    from delivery.services.event_taxonomy import (
+        EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED,
+        EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
+    )
+
+    task, blueprint_session = await _aload_blueprint_research_task(session)
+    if task is None:
+        return
+
+    research_service = ResearchService()
+    session_service = ConvergenceSessionService()
+    content = _parse_blueprint_fitness(p.get("output") or {})
+
+    if content is None:
+        await research_service.mark_failed(task, {"reason": "empty_or_unparseable_result"})
+        if blueprint_session is not None:
+            await session_service._emit_event(
+                EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
+                blueprint_session,
+                {
+                    "repository_id": str(task.repository_id),
+                    "task_id": str(task.id),
+                    "error": "empty_or_unparseable_result",
+                },
+            )
+    else:
+        # 与既有 §7 键平级：repository_id 由服务端权威写入，不采信容器上报值
+        content["repository_id"] = str(task.repository_id)
+        await research_service.record_partial(task, content)
+        if blueprint_session is not None:
+            await session_service._emit_event(
+                EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED,
+                blueprint_session,
+                {
+                    "repository_id": str(task.repository_id),
+                    "task_id": str(task.id),
+                    "verdict": content["fitness"]["verdict"],
+                    "role_suggestion": content["role_suggestion"],
+                    "findings_count": len(content["findings"]),
+                },
+            )
+
+    await _trigger_blueprint_research_barrier(blueprint_session)
+    log.info("blueprint_research_completion_handled", task_id=str(task.id), failed=content is None)
+
+
+async def _handle_blueprint_research_failure(
+    session: SubAgentSession, p: dict[str, Any], log: BoundLogger
+) -> None:
+    """蓝图调研容器失败 → mark_failed(container_failed) + emit failed + barrier（失败也是终态）。"""
+    if not _is_blueprint_research(session):
+        return
+
+    from delivery.services import ConvergenceSessionService, ResearchService
+    from delivery.services.event_taxonomy import EVENT_BLUEPRINT_REPO_RESEARCH_FAILED
+
+    task, blueprint_session = await _aload_blueprint_research_task(session)
+    if task is None:
+        return
+
+    error_msg = redact_secrets_in_text(str(p.get("error", "Unknown error")))
+    await ResearchService().mark_failed(task, {"reason": "container_failed", "error": error_msg})
+    if blueprint_session is not None:
+        await ConvergenceSessionService()._emit_event(
+            EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
+            blueprint_session,
+            {
+                "repository_id": str(task.repository_id),
+                "task_id": str(task.id),
+                "error": error_msg,
+            },
+        )
+    await _trigger_blueprint_research_barrier(blueprint_session)
+    log.info("blueprint_research_failure_handled", task_id=str(task.id))
 
 
 # 处理器映射
