@@ -2,13 +2,17 @@
 gsd_state_version: 1.0
 milestone: v0.19.0
 milestone_name: 技术方案可信度
-status: planning
-last_updated: "2026-07-28T19:20:00.000Z"
-last_activity: 2026-07-28
+current_phase: 105
+current_phase_name: 编排解锁与评估标尺
+status: executing
+stopped_at: "GSD 记录对齐（`/gsd-fast`）——补 07-24/07-25 ship 后维护期 16 commits 的 last_activity 记录（此前 STATE 停在 07-23）；登记\"发布轨 v0.18.0 已占号、里程碑轨止于 v0.17.0\"的双轨关系与撞号风险（见 Blockers/Concerns）；MILESTONES.md 手写补回缺失的 v0.11.0 条目（health W018；自动 `--backfill` 产出的模板条目位置与内容均不合格已回滚）；`git worktree prune` 清掉 3 个路径已失效的 locked agent worktree 注册（health W017）。health 复跑：warnings 12→8、repairable 1→0。下一步：`$gsd-new-milestone`（注意版本号避开 v0.18.0）。"
+last_updated: "2026-07-29T03:31:14.416Z"
+last_activity: 2026-07-29
+last_activity_desc: Phase 105 execution started
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
+  total_plans: 7
   completed_plans: 0
   percent: 0
 ---
@@ -20,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
 **Core value（v0.19.0，在建）:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，方案结构覆盖数据流编排 / 模块↔仓映射 / 新增改造对照 / 主动澄清，全过程对用户实时可见。
-**Current focus:** v0.19.0 技术方案可信度（Phases 105–110，6 阶段 / 24 需求 RELY·ROUTE·DEPTH·SPINE·OBS）已完成 ROADMAP 与需求映射，**待 `$gsd-plan-phase 105`**。v0.17.0 已于 2026-07-22 shipped（审计 tech_debt，19/19 需求，归档见 `milestones/v0.17.0-*`），遗留 11 项真实环境人工验证 + 接受/递延债务见 [milestones/v0.17.0-MILESTONE-AUDIT.md](./milestones/v0.17.0-MILESTONE-AUDIT.md)。ship 后 07-24/07-25 有一段维护期（16 commits，未走 GSD 流程）。另有现成候选提案 [coding-agent/PROPOSAL.md](./coding-agent/PROPOSAL.md)（V1.2，2026-07-21，「提案待评审未启动」）留作后续里程碑输入。
+**Current focus:** Phase 105 — 编排解锁与评估标尺
 
 ## Current Position
 
-Phase: 105 — 编排解锁与评估标尺（not started）
-Plan: —
-Status: Roadmap ready — 待 `$gsd-plan-phase 105`
-Last activity: 2026-07-29 — Completed quick task 260729-emz: task_category router + clarification guard + propose_project_repos
+Phase: 105 (编排解锁与评估标尺) — EXECUTING
+Plan: 1 of 7
+Status: Executing Phase 105
+Last activity: 2026-07-29 — Phase 105 execution started
 
 ## Milestone Overview (v0.19.0 — Phases 105–110 — 🟡 PLANNING)
 
