@@ -430,6 +430,14 @@ _PRUNE_DIRS = {
 
 # 唯一允许写 RepoCharter 的模块（相对 server/）
 _ALLOWED_WRITER = "repositories/services/charter_service.py"
+# 第二个合法 writer（Phase 112-05）：确认门章程回灌需要「接受调用方传入草案」的写入面，
+# 而 charter_service.adraft_charter 只写自己蒸馏出的草案、其 _persist 是函数内闭包无法
+# 复用。charter_draft_writeback 复用 normalize_charter_draft 归一并实现同一套三分支落库
+# （等价性由 tests/repositories/test_charter_draft_writeback.py 逐条对照锁死）。
+# 守护强度不变：合法 writer 仍是**枚举白名单**，新增写点必须显式登记在此。
+_ALLOWED_WRITERS = frozenset(
+    {_ALLOWED_WRITER, "repositories/services/charter_draft_writeback.py"}
+)
 
 _RE_ORM_WRITE = re.compile(
     r"\bRepoCharter\.objects\."
@@ -449,7 +457,7 @@ def _iter_py_files() -> list[Path]:
 
 
 def _is_scanned(rel: str) -> bool:
-    if rel == _ALLOWED_WRITER:
+    if rel in _ALLOWED_WRITERS:
         return False
     if rel.startswith("tests/") or "/tests/" in rel:
         return False
@@ -481,8 +489,8 @@ def test_inv6_no_bypass_writes() -> None:
                 violations.append(f"{rel}:{lineno}: {line.strip()}")
 
     assert not violations, (
-        "INV-6 违反：发现旁路 RepoCharter 写表（唯一 writer = "
-        f"{_ALLOWED_WRITER}）：\n" + "\n".join(violations)
+        "INV-6 违反：发现旁路 RepoCharter 写表（合法 writer 白名单 = "
+        f"{sorted(_ALLOWED_WRITERS)}）：\n" + "\n".join(violations)
     )
 
 

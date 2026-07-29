@@ -86,9 +86,7 @@ class ArtifactListSerializer(serializers.ModelSerializer):
         current = obj.current_version
         if current is None:
             return None
-        return ArtifactVersionTimelineSerializer(
-            current, context=self._version_context(obj)
-        ).data
+        return ArtifactVersionTimelineSerializer(current, context=self._version_context(obj)).data
 
 
 class ArtifactTimelineSerializer(ArtifactListSerializer):
@@ -113,9 +111,7 @@ class ArtifactTimelineSerializer(ArtifactListSerializer):
     def get_versions(self, obj: Artifact) -> list[dict]:
         ctx = self._version_context(obj)
         # 倒序（最新在前）；versions 已由 view prefetch，这里仅本地排序不触发查询。
-        ordered = sorted(
-            obj.versions.all(), key=lambda v: v.version_no, reverse=True
-        )
+        ordered = sorted(obj.versions.all(), key=lambda v: v.version_no, reverse=True)
         return ArtifactVersionTimelineSerializer(ordered, many=True, context=ctx).data
 
     def get_current_version_markdown(self, obj: Artifact) -> str | None:
@@ -172,3 +168,57 @@ class ArchitectMergeRefSerializer(serializers.ModelSerializer):
         model = ArchitectMerge
         fields = ["id", "session_id", "validation_status", "attempt"]
         read_only_fields = fields
+
+
+# ============================================================================
+# 阶段 1 出口确认门（Phase 112-05，FLOW-03）：快照与动作结果只读序列化
+#
+# 快照数据源是确认门线程（``kind=repo_confirmation``）的 ``options``（非模型字段集），
+# 故用 ``serializers.Serializer`` 逐字段声明 —— 全部 ``read_only``：确认门的写入只经
+# ``BlueprintLifecycleService`` / ``BlueprintConfirmGateAdapter``（INV-6），序列化器
+# 绝不作入参校验面（action 白名单与角色枚举归一在 service 层）。
+# ============================================================================
+
+
+class BlueprintGateRepoSerializer(serializers.Serializer):
+    """确认门快照单仓条目（role 建议 / 职责 / fitness 结论 / 现状摘要 / 证据引用）。"""
+
+    repository_id = serializers.CharField(read_only=True)
+    repository_name = serializers.CharField(read_only=True, allow_blank=True)
+    role_suggestion = serializers.CharField(read_only=True, allow_blank=True)
+    responsibility = serializers.CharField(read_only=True, allow_blank=True)
+    confidence = serializers.CharField(read_only=True, allow_blank=True)
+    fitness = serializers.JSONField(read_only=True)
+    current_state_summary = serializers.CharField(read_only=True, allow_blank=True)
+    routing_evidence = serializers.JSONField(read_only=True)
+    task_status = serializers.CharField(read_only=True, allow_blank=True, required=False)
+    pending_research = serializers.BooleanField(read_only=True, required=False)
+    removed = serializers.BooleanField(read_only=True, required=False)
+
+
+class BlueprintGateSnapshotSerializer(serializers.Serializer):
+    """确认门只读快照（GET）：门状态 + 逐仓清单 + 待重调研仓 id。"""
+
+    artifact_id = serializers.CharField(read_only=True)
+    session_id = serializers.CharField(read_only=True, allow_blank=True)
+    thread_id = serializers.CharField(read_only=True, allow_blank=True)
+    thread_status = serializers.CharField(read_only=True, allow_blank=True)
+    current_stage = serializers.CharField(read_only=True, allow_blank=True)
+    repo_count = serializers.IntegerField(read_only=True)
+    pending_research_repository_ids = serializers.ListField(
+        child=serializers.CharField(), read_only=True
+    )
+    repos = BlueprintGateRepoSerializer(many=True, read_only=True)
+
+
+class BlueprintGateActionResultSerializer(serializers.Serializer):
+    """确认门动作结果（POST 五动作 + upgrade-research）：形状恒定，调用方无需判分支。"""
+
+    action = serializers.CharField(read_only=True)
+    repository_id = serializers.CharField(read_only=True, allow_blank=True, allow_null=True)
+    thread_id = serializers.CharField(read_only=True, allow_blank=True)
+    requires_research = serializers.BooleanField(read_only=True)
+    ready_to_lock = serializers.BooleanField(read_only=True)
+    locked = serializers.BooleanField(read_only=True)
+    upgraded = serializers.BooleanField(read_only=True)
+    locked_repo_count = serializers.IntegerField(read_only=True)
