@@ -42,10 +42,14 @@ from common.logging import redact_secrets_in_text
 logger = structlog.get_logger(__name__)
 
 __all__ = [
+    "BLUEPRINT_PROCESS_TYPE",
     "adrive_blueprint_session_to_pause_or_terminal",
     "aresume_after_gate_action",
     "aresume_blueprint_session",
 ]
+
+# 本 helper 唯一允许驱动的 process 类型（与 builtin_processes 第三次注册同值）。
+BLUEPRINT_PROCESS_TYPE = "technical_blueprint"
 
 
 def _safe_log(event: str, **fields: Any) -> None:
@@ -75,6 +79,19 @@ async def adrive_blueprint_session_to_pause_or_terminal(
     from services.process_runtime.blueprint_confirm_gate import (
         acollect_pending_research_repos,
     )
+
+    if str(getattr(session, "process_type", "")) != BLUEPRINT_PROCESS_TYPE:
+        # 蓝图 engine 的 deps 只有 spec_gate/route/research/confirm_gate；用它驱别的 process
+        # 会让旧链 handler 取不到 deps.router 抛异常，engine 随后把那条无关会话落 FAILED。
+        # 宁可 no-op：调用方传错会话是 bug，不是「该会话该失败」。
+        logger.warning(
+            "blueprint_resume_wrong_process_type",
+            category="caller",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            process_type=str(getattr(session, "process_type", "")),
+        )
+        return session
 
     terminal = {ConvergenceSessionStatus.DONE, ConvergenceSessionStatus.FAILED}
     steps = 0

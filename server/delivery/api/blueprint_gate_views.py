@@ -52,6 +52,7 @@ _GATE_ERROR_MESSAGES = {
 }
 _GATE_NOT_OPEN_DETAIL = {"detail": "确认门未开启"}
 _ARTIFACT_MISSING_DETAIL = {"detail": "artifact 不存在"}
+_SESSION_MISSING_DETAIL = {"detail": "该 artifact 没有蓝图编排会话"}
 
 _MAX_BOUNDARY_RULE_CHARS = 500
 
@@ -66,11 +67,22 @@ async def _aload_artifact(artifact_id: Any) -> Any:
 
 
 async def _aload_session(artifact_id: Any) -> Any:
-    """按 artifact 反查其编排会话（取最近一条；续驱与 task 写入都需要它）。"""
+    """按 artifact 反查其**蓝图**编排会话（取最近一条；续驱与 task 写入都需要它）。
+
+    ``process_type`` 过滤不可省：蓝图链刻意复用 ``technical_plan`` 这个 ``artifact_type``
+    （见 ``builtin_processes`` 第三次注册），同一 artifact 上完全可能同时挂着
+    ``technical_plan`` 与 ``technical_blueprint`` 两条会话。不带此条件时「最近一条」可能是
+    旧链会话，随后被蓝图 engine 驱动 → 旧链 handler 取不到 ``deps.router`` → engine 把那条
+    无关会话落 FAILED，而 REST 仍回 2xx（静默污染）。
+    """
     from delivery.models import ConvergenceSession
+    from services.process_runtime.blueprint_resume import BLUEPRINT_PROCESS_TYPE
 
     return await (
-        ConvergenceSession.objects.filter(current_artifact_version__artifact_id=artifact_id)
+        ConvergenceSession.objects.filter(
+            current_artifact_version__artifact_id=artifact_id,
+            process_type=BLUEPRINT_PROCESS_TYPE,
+        )
         .order_by("-created_at")
         .afirst()
     )
@@ -154,6 +166,9 @@ async def _aapply_action(request: Any, artifact_id: Any, action: str) -> tuple[A
         return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND), {}, None
     if thread is None:
         return Response(_GATE_NOT_OPEN_DETAIL, status=status.HTTP_404_NOT_FOUND), {}, None
+    if session is None:
+        # 拿不到蓝图会话就明确 404——绝不退化成「取别的 process 的会话」继续动作与续驱。
+        return Response(_SESSION_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND), {}, None
     body = request.data if isinstance(request.data, dict) else {}
     try:
         result = await BlueprintLifecycleService().apply_gate_action(
@@ -421,6 +436,8 @@ class BlueprintGateUpgradeResearchView(APIView):
             return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
         if thread is None:
             return Response(_GATE_NOT_OPEN_DETAIL, status=status.HTTP_404_NOT_FOUND)
+        if session is None:
+            return Response(_SESSION_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
         body = request.data if isinstance(request.data, dict) else {}
         try:
             result = await BlueprintLifecycleService().aupgrade_repo_research(
