@@ -11,6 +11,11 @@ from delivery.models.artifact import (
     ArtifactVersion,
     BlueprintStatus,
 )
+from delivery.models.blueprint_context_entry import (
+    BlueprintContextEntry,
+    ContextEntryKind,
+    ContextEntryStatus,
+)
 from delivery.models.blueprint_reviewer import BlueprintReviewer
 from delivery.models.blueprint_thread import (
     BlueprintThread,
@@ -133,6 +138,9 @@ __all__ = [
     "BlueprintThread",
     "BlueprintThreadMessage",
     "BlueprintReviewer",
+    "BlueprintContextEntry",
+    "ContextEntryKind",
+    "ContextEntryStatus",
     "ThreadAnchorStatus",
     "ThreadAuthorType",
     "ThreadKind",
