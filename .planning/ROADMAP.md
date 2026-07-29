@@ -28,18 +28,18 @@
 
 ## Phases
 
-### 🟡 v0.19.0 技术方案可信度 (Phases 105–110) — PLANNING
+### 🟡 v0.19.0 技术方案可信度 (Phases 105–110，其中 108 已移交 v0.20.0) — PLANNING
 
-**Milestone Goal:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，方案结构覆盖数据流编排 / 模块↔仓映射 / 新增改造对照 / 主动澄清，全过程对用户实时可见。
+**Milestone Goal:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。（方案结构深度 DEPTH-01~05 已于 2026-07-29 移交 v0.20.0 技术方案蓝图里程碑，与本里程碑双 worktree 并行开发。）
 
 - [ ] **Phase 105: 编排解锁与评估标尺** - 置信度由分数 margin 确定性推导 + 分数可拆解落 trace + 幂等与快照回放 + golden set 回归门禁（RELY-04, ROUTE-07/08/09）
 - [ ] **Phase 106: 多信号打分函数重构** - 消除尺寸偏置 + 元数据信号真正入分 + 活跃度连续化 + 权重外置不发版可调（ROUTE-03/04/05/06）
 - [ ] **Phase 107: 分层呈现与链路韧性** - 本项目/全局两组呈现与跨组标注 + 降级可见 + 澄清必达有出口 + Stage 1 重试与延迟上界（ROUTE-01/02, RELY-02/03/05）
-- [ ] **Phase 108: 方案深度** - 业务流程编排叙事 + 模块↔仓库映射 + 新增/改造对照 + 删除分周计划 + 主动澄清（DEPTH-01~05）
+- ~~**Phase 108: 方案深度**~~ — **已移交 v0.20.0 技术方案蓝图**（DEPTH-01~05 由 blueprint/v1 结构化 schema 原生满足；见 main 分支 `.planning/technical-blueprint/DESIGN.md` §11/§13）
 - [ ] **Phase 109: 双脊柱合流** - 编排产出直连"选仓→分支→确认编码"执行流 + 移除徒手创作路径 + 草稿显式标注（SPINE-01/02, RELY-01）
 - [ ] **Phase 110: 过程可观测** - 编排事件桥接 chat SSE + 调研容器日志可见 + 前端阶段时间线（OBS-01/02/03）
 
-**执行顺序（依赖链）:** 105 → 106 → 107 → 108 → 109 → 110，线性。105 是全里程碑枢纽——RELY-04 是解开死锁的最短路径（Stage 1 不可靠时置信度恒 low → `auto_selected` 恒 false → 编排卡死 → 降级工具顶替），同时解除 RELY-02/RELY-03 的压力，也是 ROUTE 组能被正确评估的前提；ROUTE-08 的 golden set 是回归门禁而非优化目标（research §7.2：10–50 条只能检出大幅退化），不先建则后面每一步排序改动都是盲改。106 的 ROUTE-03 是路由误选的直接机制（现行 `max_score×(1+0.1×min(hits-1,5))` 结构性偏袒大单体），research 给了可直接落地的替代公式与数值验算，风险低收益高故紧随其后。107 的分组呈现要求两组分数可比（同一打分函数、无 group-conditional 项），必须等 106 定版。108 DEPTH 的价值依赖 RELY 组先成立——编排若仍卡死，方案提示词改得再好也一次都用不上。109 内部 SPINE-01 严格先于 SPINE-02（必须先有编排产出直连执行流的替代路径，才能安全砍掉唯一的编码入口）。110 OBS 相对独立放最后，但须复用 107 已落的事件源，不重复建设。
+**执行顺序（依赖链）:** 105 → 106 → 107 → 109 → 110，线性（108 已移交 v0.20.0，107 完成后直接进入 109）。105 是全里程碑枢纽——RELY-04 是解开死锁的最短路径（Stage 1 不可靠时置信度恒 low → `auto_selected` 恒 false → 编排卡死 → 降级工具顶替），同时解除 RELY-02/RELY-03 的压力，也是 ROUTE 组能被正确评估的前提；ROUTE-08 的 golden set 是回归门禁而非优化目标（research §7.2：10–50 条只能检出大幅退化），不先建则后面每一步排序改动都是盲改。106 的 ROUTE-03 是路由误选的直接机制（现行 `max_score×(1+0.1×min(hits-1,5))` 结构性偏袒大单体），research 给了可直接落地的替代公式与数值验算，风险低收益高故紧随其后。107 的分组呈现要求两组分数可比（同一打分函数、无 group-conditional 项），必须等 106 定版。（原 108 DEPTH 已移交 v0.20.0 技术方案蓝图，其「依赖 RELY 组先成立」的判断在 v0.20.0 侧依然成立——蓝图流水线消费本里程碑 105–107 的路由与澄清设施。）109 内部 SPINE-01 严格先于 SPINE-02（必须先有编排产出直连执行流的替代路径，才能安全砍掉唯一的编码入口）；109 不再依赖方案深度——以现行 §7 execution_plan 对接执行流即可。110 OBS 相对独立放最后，但须复用 107 已落的事件源，不重复建设。
 
 **实测前置分布（research §9 的 6 个开放项，不得留到实现中途才发现）:** O-1 全仓能力树节点数 `N_r` 分布 + O-3 Stage 0 是否可取 dense 余弦 + O-4 golden set 跨组样本 → **Phase 105**；O-2 embedding 余弦校准 + O-5 `last_commit_at` 覆盖率 → **Phase 106**；O-6 Stage 1 延迟压降 → **Phase 107**。
 
@@ -136,25 +136,16 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 108: 方案深度（业务编排叙事 + 模块↔仓映射 + 新增/改造对照 + 主动澄清）
+### Phase 108: 方案深度 — 已移交 v0.20.0（2026-07-29）
 
-**Goal**: 编排产出的技术方案覆盖数据产出与流转、业务流程编排叙事、功能↔模块↔仓库映射、新增/改造逐项对照，并在需求含糊时主动抛出带选项的澄清，而不是带着模糊假设直接出方案。
-**Depends on**: Phase 107（编排能稳定跑完并拿到可信路由结果，方案提示词与 schema 的改动才会被真实用到；编排仍卡死时改提示词一次都用不上）
-**Requirements**: DEPTH-01, DEPTH-02, DEPTH-03, DEPTH-04, DEPTH-05
-**Success Criteria** (what must be TRUE):
-
-  1. 用户拿到的方案能读到完整的业务流程叙事与数据流向：在哪个页面、经哪个接口、传什么参数、拿到什么数据、数据流向哪里、用户有哪几条行为路径。
-  2. 方案给出功能 ↔ 模块 ↔ 仓库的映射关系，用户据此能判断每个仓具体要改什么。
-  3. 方案逐项标注「新增」还是「改造」；改造项写明与既有功能如何配合、影响哪些已交付能力。
-  4. 方案中不再出现以周为单位的分阶段实施计划（自由文本产出的分周计划消失，非模板产物不再泄漏到正文）。
-  5. 需求存在影响方案质量的不确定点时（含 research 阶段已产出却无人消费的 `unclear_features`），系统在第二轮主动抛出澄清并给出候选选项，用户作答后方案据此收敛。
-
-**Plans**: TBD
+**移交决策**：DEPTH-01~05 整体移交 v0.20.0「技术方案蓝图」里程碑，由 `blueprint/v1` 结构化 schema 原生满足（业务流程叙事 = interaction_flows、模块↔仓映射 = implementation_overview.modules、新增/改造对照 = change_type 四分类、无分周计划 = AI 审查禁令检查、主动澄清 = spec_gate 歧义门 + 划线澄清线程）。
+**移交理由**：v0.19.0 与 v0.20.0 双 worktree 并行开发，108 与蓝图流水线改同一批 `process_runtime` prompt/schema 文件，两线同改必然打架；蓝图侧按新 schema 新文件实现，本里程碑对 `decompose_segments.py` / `research_adapter.py` / `architect_merge_adapter.py` / `merged_plan.py` / `clarify_adapter.py` / `render.py` **冻结不做 DEPTH 向改动**。
+**详见**：main 分支 `.planning/technical-blueprint/DESIGN.md` §11（落地路线）/ §13（并行开发策略与边界纪律）。
 
 ### Phase 109: 双脊柱合流（编排产出直连执行流 + 移除徒手创作路径）
 
 **Goal**: 编排产出的技术方案可直接进入"选目标仓 → 配置分支 → 确认编码 → 飞书导出"的执行流，系统不再存在由对话模型徒手编写方案正文的产出路径，用户拿到的方案一定来自完整编排链路。
-**Depends on**: Phase 108（先有够深的编排方案，替代徒手创作才不降质）。**Phase 内部顺序硬约束**：SPINE-01 必须先于 SPINE-02——必须先有编排产出直连执行流的替代路径，才能安全砍掉当前 SPA 唯一的编码入口。
+**Depends on**: Phase 107（编排能稳定跑完并拿到可信路由结果）。方案深度不再是前置——109 以**现行 §7 execution_plan** 对接执行流（v0.20.0 蓝图的 derive_execution 保证同 schema，合并后执行流无缝换源，深度由 v0.20.0 提供）。**Phase 内部顺序硬约束**：SPINE-01 必须先于 SPINE-02——必须先有编排产出直连执行流的替代路径，才能安全砍掉当前 SPA 唯一的编码入口。
 **Requirements**: SPINE-01, SPINE-02, RELY-01
 **Success Criteria** (what must be TRUE):
 
@@ -339,18 +330,18 @@ Plans:
 
 ## Progress
 
-里程碑 v0.1.0–v0.17.0（Phases 1–104）均已交付。**🟡 当前立项：v0.19.0 技术方案可信度（Phases 105–110，6 阶段 / 24 需求 RELY·ROUTE·DEPTH·SPINE·OBS）**——源于一次生产实例的实证排查：用户拿到的技术方案根本不是技术方案流水线产出的，两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`，agent 等不到就绕道 `create_coding_plan` 徒手编了一份。根因链已实测定位（haiku 档误配 → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替）。规划与调研已就绪（REQUIREMENTS 24 条 + [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)），**待 `$gsd-plan-phase 105`**。
+里程碑 v0.1.0–v0.17.0（Phases 1–104）均已交付。**🟡 当前立项：v0.19.0 技术方案可信度（Phases 105–110，5 阶段 / 19 需求 RELY·ROUTE·SPINE·OBS；原 108/DEPTH-01~05 已移交 v0.20.0）**——源于一次生产实例的实证排查：用户拿到的技术方案根本不是技术方案流水线产出的，两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`，agent 等不到就绕道 `create_coding_plan` 徒手编了一份。根因链已实测定位（haiku 档误配 → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替）。规划与调研已就绪（REQUIREMENTS 24 条，其中 5 条移交 + [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)）。
 
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
 | 105. 编排解锁与评估标尺 | v0.19.0 | RELY-04, ROUTE-07/08/09 | 0/TBD | Not started | - |
 | 106. 多信号打分函数重构 | v0.19.0 | ROUTE-03/04/05/06 | 0/TBD | Not started | - |
 | 107. 分层呈现与链路韧性 | v0.19.0 | ROUTE-01/02, RELY-02/03/05 | 0/TBD | Not started | - |
-| 108. 方案深度 | v0.19.0 | DEPTH-01~05 | 0/TBD | Not started | - |
+| 108. 方案深度 | 移交 v0.20.0 | DEPTH-01~05（随迁） | - | Moved (2026-07-29) | - |
 | 109. 双脊柱合流 | v0.19.0 | SPINE-01/02, RELY-01 | 0/TBD | Not started | - |
 | 110. 过程可观测 | v0.19.0 | OBS-01/02/03 | 0/TBD | Not started | - |
 
-**Coverage (v0.19.0):** 24/24 需求全部映射，无孤儿、无重复。
+**Coverage (v0.19.0):** 19/19 需求全部映射，无孤儿、无重复（DEPTH-01~05 已移交 v0.20.0，不再计入本里程碑）。
 
 <details>
 <summary>✅ v0.17.0 进度表（Phases 100–104，19/19 需求已交付）</summary>
