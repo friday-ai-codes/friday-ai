@@ -81,7 +81,14 @@ Plans:
   4. 确认门展示仓库清单/role/职责/fitness/现状摘要/证据；用户移除仓、手动加仓（触发新仓调研）、改判 role、修改职责均驱动对应重调研；确认后仓库集与职责锁定，后续阶段擅自变更会被 AI 审查判 BLOCKER。
   5. 确认门动作产生章程修订草案（确认/改判 → owned_domains、移除 → boundaries），人工 confirm 后生效；rejected 路由候选可一键沉淀为章程禁区候选。
 
-**Plans**: TBD
+**Plans**: 5 plans（wave 1: 01；wave 2: 02/03 并行；wave 3: 04；wave 4: 05）
+
+Plans:
+- [ ] 112-01-PLAN.md — feature_points[].intent 必填枚举 + 2 份字面数据同步与 6 个消费测试回归 + SettingKeys 歧义阈值/路由权重两键与 async float/json getter + 112 阶段事件常量（FLOW-01, CHARTER-02 前置）
+- [ ] 112-02-PLAN.md — spec_gate 歧义门：LLM 四维打分（call_source=blueprint_spec_gate）+ 意图分类 + BlueprintThread(ai_clarification, blocking) 澄清回路 + 规格锁定与 decision_log 物化 + 不重复提问（FLOW-01）
+- [ ] 112-03-PLAN.md — blueprint_route 双面路由：RepoRouterV2 原样输出为 router_base + charter_match（owned/planned、boundaries 判负、evolution 降权、章程候选补入）+ history_match（delivery knowledge）+ intent 加权 + breakdown 三分量恒等式（CHARTER-02, FLOW-04）
+- [ ] 112-04-PLAN.md — blueprint_research_adapter 逐仓容器调研：fan-out + mint_task_token 与 3 个 env 键接通 + 章程随 prompt 注入 + fitness 落 PartialPlan.content + callbacks 第三条 PLAN 链 + reroute ≤2 轮与超限升确认门（FLOW-02, FLOW-04）
+- [ ] 112-05-PLAN.md — repo_confirmation 硬确认门：五动作 REST 经 BlueprintLifecycleService 收口 + 仓库集/职责锁定与 decision_log + 章程回灌 ai_draft 与 rejected 一键沉淀 + technical_blueprint 七 stage 注册 + blueprint_resume 蓝图专用续驱（FLOW-03, CHARTER-03）
 
 ### Phase 113: 分仓方案与融合（阶段 2/3）+ Blueprint Context Bus
 
