@@ -94,9 +94,7 @@ def _make_round(
 
 
 def _timed_out_events(session: ConvergenceSession) -> int:
-    return ConvergenceSessionEvent.objects.filter(
-        session_id=session.id, event=_TIMED_OUT
-    ).count()
+    return ConvergenceSessionEvent.objects.filter(session_id=session.id, event=_TIMED_OUT).count()
 
 
 @override_settings(
@@ -200,7 +198,9 @@ def test_unclarified_points_carry_question_id_and_text() -> None:
 def test_unclarified_points_are_redacted() -> None:
     """未澄清点正文经既有脱敏 helper（需求原文可能含凭证，V8）。"""
     session = _make_session()
-    _make_round(session, age_hours=48, questions=("请确认密钥 sk-ant-abcdefghijklmnopqrstuvwx 是否可用",))
+    _make_round(
+        session, age_hours=48, questions=("请确认密钥 sk-ant-abcdefghijklmnopqrstuvwx 是否可用",)
+    )
 
     call_command("expire_pending_clarifications")
 
