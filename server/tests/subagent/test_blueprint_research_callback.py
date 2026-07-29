@@ -314,7 +314,12 @@ async def test_failure_callback_marks_container_failed_and_emits() -> None:
     await task.arefresh_from_db()
     assert task.status == RepoResearchTaskStatus.FAILED
     assert task.error.get("reason") == "container_failed"
-    assert [e for e, _p in emitted] == [EVENT_BLUEPRINT_REPO_RESEARCH_FAILED]
+    # 112-05 把 barrier 的续驱接通后（`blueprint_resume.aresume_blueprint_session` 落地），
+    # 全部 task 终态会顺带驱动 engine，后续 transition 也各自 emit 一条事件。断言收紧为
+    # 「失败事件必须是本次回调 emit 的第一条」——原「恰好只有一条」的口径在 barrier 还是
+    # no-op 桩时才成立。
+    assert emitted, "失败回调必须 emit 事件"
+    assert emitted[0][0] == EVENT_BLUEPRINT_REPO_RESEARCH_FAILED
 
 
 async def test_completion_exception_swallowed_returns_200() -> None:
