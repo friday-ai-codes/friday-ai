@@ -711,7 +711,7 @@ class BlueprintSpecGateAdapter:
     async def _emit(self, session: Any, event_name: str, payload: dict[str, Any]) -> None:
         """事件 emit best-effort（吞异常，观测绝不反噬规格门主流程）。"""
         try:
-            await self.session_service._emit_event(event_name, session, payload)
+            await self.session_service.aemit_event(event_name, session, payload)
         except Exception:  # noqa: BLE001 — 事件失败绝不阻断挂起/锁定
             logger.warning(
                 "blueprint_spec_gate_event_emit_failed",

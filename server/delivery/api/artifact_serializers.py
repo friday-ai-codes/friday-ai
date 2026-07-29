@@ -221,4 +221,6 @@ class BlueprintGateActionResultSerializer(serializers.Serializer):
     ready_to_lock = serializers.BooleanField(read_only=True)
     locked = serializers.BooleanField(read_only=True)
     upgraded = serializers.BooleanField(read_only=True)
+    # 该仓调研本就在途 → 本次升级未重开容器（区别于「刚为你起了深调研」）
+    already_running = serializers.BooleanField(read_only=True, required=False)
     locked_repo_count = serializers.IntegerField(read_only=True)

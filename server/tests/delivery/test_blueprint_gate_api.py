@@ -587,6 +587,16 @@ def test_resume_failure_does_not_roll_back_action_or_change_status(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def _bind_blueprint_project(artifact, project) -> None:
+    """把蓝图 ``meta.project_id`` 指向该 project（沉淀端点的项目范围唯一来源）。"""
+    version = ArtifactVersion.objects.filter(id=artifact.current_version_id).first()
+    content = dict(version.content)
+    meta = dict(content.get("meta") or {})
+    meta["project_id"] = str(project.id)
+    content["meta"] = meta
+    ArtifactVersion.objects.filter(id=version.id).update(content=content)
+
+
 def _make_rejected_association(repo: Repository, reason: str = "该类需求不落此仓"):
     from initiatives.models import Project, RepoAssociation, RepoAssociationStatus
     from projects.models import Space
@@ -609,6 +619,7 @@ def test_rejected_to_boundary_creates_ai_draft(authenticated_client, user, monke
     ctx = _open_gate(user)
     rejected_repo = _make_repo()
     project = _make_rejected_association(rejected_repo)
+    _bind_blueprint_project(ctx.artifact, project)
 
     resp = authenticated_client.post(
         REJECTED_URL.format(aid=ctx.artifact.id), {"project_id": str(project.id)}, format="json"
@@ -628,6 +639,7 @@ def test_rejected_to_boundary_never_overwrites_human_confirmed(
     ctx = _open_gate(user)
     rejected_repo = _make_repo()
     project = _make_rejected_association(rejected_repo)
+    _bind_blueprint_project(ctx.artifact, project)
     confirmed = RepoCharter.objects.create(
         repository=rejected_repo,
         source=RepoCharter.Source.HUMAN_CONFIRMED,
@@ -659,8 +671,30 @@ def test_rejected_to_boundary_requires_scope(authenticated_client, user, monkeyp
     _stub_resume(monkeypatch)
     ctx = _open_gate(user)
     resp = authenticated_client.post(REJECTED_URL.format(aid=ctx.artifact.id), {}, format="json")
-    # 样例蓝图的 meta.project_id 不是 UUID，且未显式给范围 → 400（绝不跨项目全表沉淀）
+    # 样例蓝图的 meta.project_id 不是 UUID → 400（绝不跨项目全表沉淀）
     assert resp.status_code == 400
+
+
+def test_rejected_to_boundary_rejects_foreign_project_id(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """MN-01：body 的 project_id 不能越过 URL 里的 artifact 决定写入范围。"""
+    _stub_resume(monkeypatch)
+    ctx = _open_gate(user)
+    own_repo = _make_repo()
+    own_project = _make_rejected_association(own_repo)
+    _bind_blueprint_project(ctx.artifact, own_project)
+    foreign_repo = _make_repo()
+    foreign_project = _make_rejected_association(foreign_repo, "别的项目的候选")
+
+    resp = authenticated_client.post(
+        REJECTED_URL.format(aid=ctx.artifact.id),
+        {"project_id": str(foreign_project.id)},
+        format="json",
+    )
+
+    assert resp.status_code == 403
+    assert not RepoCharter.objects.filter(repository=foreign_repo).exists()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -713,11 +747,40 @@ def test_upgrade_research_marks_snapshot_and_stales_task(
 
     assert resp.status_code == 200
     assert resp.json()["upgraded"] is True
+    assert resp.json()["already_running"] is False
     task = RepoResearchTask.objects.get(session=ctx.session, repository=target)
     assert task.status == RepoResearchTaskStatus.STALE
     entry = _entry(ctx.artifact, target)
     assert entry["pending_research"] is True
     assert entry["role_suggestion"] == "direct"
+
+
+def test_upgrade_research_reports_already_running_for_in_flight_task(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """MN-03：在途 task 既进不了 mark_stale 也进不了派发白名单 → 如实回 already_running。"""
+    from services.process_runtime.blueprint_research_adapter import BlueprintResearchAdapter
+
+    _stub_resume(monkeypatch)
+    monkeypatch.setattr(
+        BlueprintResearchAdapter,
+        "dispatch",
+        AsyncMock(return_value={"dispatched": 0, "synthesized": 0, "degraded": False, "tasks": []}),
+    )
+    ctx = _open_gate(user)
+    target = ctx.repos[1]
+    RepoResearchTask.objects.create(
+        session=ctx.session, repository=target, status=RepoResearchTaskStatus.RUNNING
+    )
+
+    resp = authenticated_client.post(
+        UPGRADE_URL.format(aid=ctx.artifact.id), {"repository_id": str(target.id)}, format="json"
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["already_running"] is True, "在途时不得假装刚重开了深调研"
+    task = RepoResearchTask.objects.get(session=ctx.session, repository=target)
+    assert task.status == RepoResearchTaskStatus.RUNNING, "在途 task 不得被置 stale"
 
 
 def test_upgrade_research_returns_503_when_dependency_unavailable(

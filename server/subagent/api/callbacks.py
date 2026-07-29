@@ -2174,7 +2174,7 @@ async def _handle_blueprint_research_completion(
     if content is None:
         await research_service.mark_failed(task, {"reason": "empty_or_unparseable_result"})
         if blueprint_session is not None:
-            await session_service._emit_event(
+            await session_service.aemit_event(
                 EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
                 blueprint_session,
                 {
@@ -2188,7 +2188,7 @@ async def _handle_blueprint_research_completion(
         content["repository_id"] = str(task.repository_id)
         await research_service.record_partial(task, content)
         if blueprint_session is not None:
-            await session_service._emit_event(
+            await session_service.aemit_event(
                 EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED,
                 blueprint_session,
                 {
@@ -2202,6 +2202,10 @@ async def _handle_blueprint_research_completion(
 
     await _trigger_blueprint_research_barrier(blueprint_session)
     log.info("blueprint_research_completion_handled", task_id=str(task.id), failed=content is None)
+
+
+# 容器 error 原文入库上界（脱敏 + 截断，与 event_taxonomy 的 payload 口径一致）
+_MAX_CALLBACK_ERROR_CHARS = 500
 
 
 async def _handle_blueprint_research_failure(
@@ -2218,16 +2222,21 @@ async def _handle_blueprint_research_failure(
     if task is None:
         return
 
-    error_msg = redact_secrets_in_text(str(p.get("error", "Unknown error")))
-    await ResearchService().mark_failed(task, {"reason": "container_failed", "error": error_msg})
+    # 上游 error 原文脱敏后**截断**再入库（event_taxonomy 对该事件的口径就是「已脱敏截断」）：
+    # redact_secrets_in_text 只覆盖已知凭证形态，任意长度长文本入库会放大残留泄漏面。
+    error_detail = redact_secrets_in_text(str(p.get("error", "Unknown error")))[
+        :_MAX_CALLBACK_ERROR_CHARS
+    ]
+    await ResearchService().mark_failed(task, {"reason": "container_failed", "error": error_detail})
     if blueprint_session is not None:
-        await ConvergenceSessionService()._emit_event(
+        await ConvergenceSessionService().aemit_event(
             EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
             blueprint_session,
             {
                 "repository_id": str(task.repository_id),
                 "task_id": str(task.id),
-                "error": error_msg,
+                "error_kind": "container_failed",
+                "error_detail": error_detail,
             },
         )
     await _trigger_blueprint_research_barrier(blueprint_session)

@@ -219,8 +219,17 @@ async def _ahas_open_blocking_blueprint_threads(session: Any) -> bool:
         return False
     try:
         return await BlueprintLifecycleService().ahas_open_blocking_threads(artifact)
-    except Exception:  # noqa: BLE001 — 判据读失败按「无阻塞线程」放行（宁可多推一步）
-        return False
+    except Exception as exc:  # noqa: BLE001 — 判据读失败按「有阻塞线程」保持挂起
+        # 与规格门/确认门同向 fail-closed：挂起可由下一次触发恢复，误放行不可逆
+        # （DB 抖动时会把「有未决澄清线程」误判成无门而多推一步 advance）。
+        logger.warning(
+            "blueprint_resume_blocking_probe_failed",
+            category="caller",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            error=redact_secrets_in_text(str(exc)),
+        )
+        return True
 
 
 async def _aload_artifact(session: Any) -> Any:

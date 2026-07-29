@@ -37,6 +37,7 @@ from delivery.services.event_taxonomy import (
     EVENT_BLUEPRINT_REPO_RESEARCH_STARTED,
     EVENT_BLUEPRINT_REROUTE_TRIGGERED,
 )
+from services.process_runtime.constants import MAX_REROUTE_ROUNDS as _MAX_REROUTE_ROUNDS
 
 logger = structlog.get_logger(__name__)
 
@@ -72,9 +73,10 @@ _DEEP_CONFIDENCE = frozenset({"high", "medium"})
 _MAX_PROMPT_TEXT_CHARS = 2000
 _MAX_LIST_ITEMS = 10
 
-# 重路由轮次上界（CONTEXT：「reroute 上界 ≤2 轮」）。达到上界仍有 unsuitable 仓时
-# **升确认门交人裁决**，绝不落 session 失败 —— CONTEXT「绝不静默失败」。
-MAX_REROUTE_ROUNDS = 2
+# 重路由轮次上界：定义下沉到零依赖的 `constants` 模块，本文件与 `builtin_processes`
+# 都从那里读同一个数值（后者不必再为一个数字 import 本重型模块）。此处保留再导出，
+# 既有 `from ...blueprint_research_adapter import MAX_REROUTE_ROUNDS` 的调用方不受影响。
+MAX_REROUTE_ROUNDS = _MAX_REROUTE_ROUNDS
 
 _UNSUITABLE_VERDICT = "unsuitable"
 # stage_state 里两个新键：轮次账本与逐仓结论精简摘要（正文由下游按 id 自取，单字段 <2KB）
@@ -737,8 +739,9 @@ class BlueprintResearchAdapter:
         **绝不走既有 service 的单仓重试入口**（它断言 stage 名为 "research"，本 stage 恒 raise）。
 
         Returns:
-            `True` = 已受理（容器已派发或已置为待派发）；`False` = 该仓不存在于本会话的候选
-            与既有 task 内，或依赖不可用 —— 端点据此回 404/503。
+            `True` = 已受理（容器已派发、已置为待派发，或该仓调研本就在途——`mark_stale`
+            按 WR-01 只动已终态 task，在途 task 无需也不该重开）；`False` = 该仓不存在于
+            本会话的候选与既有 task 内，或依赖不可用 —— 端点据此回 404/503。
         """
         repository_id = str(repository_id or "")
         if not repository_id:
@@ -757,6 +760,7 @@ class BlueprintResearchAdapter:
                 session_id=str(getattr(session, "id", "")),
                 repository_id=repository_id,
                 dispatched=result.get("dispatched", 0),
+                synthesized=result.get("synthesized", 0),
                 initiated_by_user_id=self._initiated_by(session),
                 category="caller",
                 component="process_runtime",
@@ -1062,7 +1066,7 @@ class BlueprintResearchAdapter:
     async def _emit(self, event: str, session: Any, payload: dict) -> None:
         """事件 best-effort：payload 只含标量与关联键，绝不含 token / prompt / 需求正文。"""
         try:
-            await self.session_service._emit_event(event, session, payload)
+            await self.session_service.aemit_event(event, session, payload)
         except Exception:  # noqa: BLE001 — 观测绝不反噬调度主流程
             logger.warning(
                 "blueprint_repo_research_emit_failed",
