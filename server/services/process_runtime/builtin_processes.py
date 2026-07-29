@@ -196,7 +196,9 @@ async def _h_merge(session: Any, engine: Any) -> StageOutcome:
                 "report": result.get("report", {}) if isinstance(result, dict) else {},
             },
         )
-    back_target = result.get("back_target", "clarify") if isinstance(result, dict) else "clarify"
+    back_target = (
+        result.get("back_target", "clarify") if isinstance(result, dict) else "clarify"
+    )
     if back_target == "research":
         return StageOutcome(event="validation_failed_reresearch")
     return StageOutcome(event="validation_failed_reclarify")
@@ -273,11 +275,9 @@ async def _h_echo_draft(session: Any, engine: Any) -> StageOutcome:
     from delivery.services import ArtifactService
 
     raw = (session.stage_state or {}).get("echo_input")
-    content = (
-        raw
-        if isinstance(raw, dict) and isinstance(raw.get("message"), str)
-        else {"message": str((raw or {}).get("message", "")) if isinstance(raw, dict) else ""}
-    )
+    content = raw if isinstance(raw, dict) and isinstance(raw.get("message"), str) else {
+        "message": str((raw or {}).get("message", "")) if isinstance(raw, dict) else ""
+    }
     work_item = None
     if session.work_item_id is not None:
         work_item = await WorkItem.objects.filter(id=session.work_item_id).afirst()
