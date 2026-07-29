@@ -586,3 +586,91 @@ async def test_size_bias_breadth_inverse_tilt_in_production_chain(monkeypatch) -
     # big/small 两仓 facets 形态一致（同 D）——breadth 贡献可直接比较：
     # 大仓 6 命中被 pivoted denom（620/60）压制，小仓单命中反而更高。
     assert by_repo[small].breakdown["breadth"] > by_repo[big].breakdown["breadth"]
+
+
+# ---------------------------------------------------------------------------
+# 6. 呈现字段契约（107-03 Task 1）：additive-safe 默认值 + to_dict 键集合
+# ---------------------------------------------------------------------------
+
+
+_LEGACY_CANDIDATE_KEYS = {
+    "repo_id",
+    "repo_name",
+    "score",
+    "confidence",
+    "reasoning",
+    "sub_project",
+    "sub_project_paths",
+    "matched_node_paths",
+    "breakdown",
+    "criticality",
+}
+_PRESENTATION_CANDIDATE_KEYS = {"group", "trust", "cross_group_note", "score_ranked"}
+
+
+def test_candidate_positional_construction_keeps_new_fields_default() -> None:
+    """5 个位置参数构造仍成立（既有测试替身不炸）→ 四个呈现字段取默认值。"""
+    from codegraph.services.repo_router_v2 import RepoRouteCandidateV2
+
+    c = RepoRouteCandidateV2("r1", "n1", 0.5, "high", "why")
+
+    assert c.group == ""
+    assert c.trust == ""
+    assert c.cross_group_note == ""
+    assert c.score_ranked is None
+
+
+def test_candidate_to_dict_key_set_includes_presentation_fields() -> None:
+    """``to_dict()`` 键集合 == 既有键 ∪ 四个呈现键（机制断言，非人工核对）。"""
+    from codegraph.services.repo_router_v2 import RepoRouteCandidateV2
+
+    c = RepoRouteCandidateV2("r1", "n1", 0.5, "high", "why")
+
+    assert set(c.to_dict()) == _LEGACY_CANDIDATE_KEYS | _PRESENTATION_CANDIDATE_KEYS
+
+
+def test_candidate_to_dict_score_ranked_none_stays_none() -> None:
+    """``score_ranked`` 为 None 时原样输出 None（「未重排」与「重排分为 0」语义不同）。"""
+    from codegraph.services.repo_router_v2 import RepoRouteCandidateV2
+
+    unranked = RepoRouteCandidateV2("r1", "n1", 0.5, "high", "why")
+    ranked_zero = RepoRouteCandidateV2("r2", "n2", 0.5, "high", "why", score_ranked=0.0)
+
+    assert unranked.to_dict()["score_ranked"] is None
+    assert ranked_zero.to_dict()["score_ranked"] == 0.0
+
+
+def test_result_construction_defaults_block_order_and_degrade_reason() -> None:
+    """结果新字段 additive-safe：三个必填参数构造 → block_order/degrade_reason 取默认。"""
+    from codegraph.services.repo_router_v2 import RepoRouteResultV2
+
+    r = RepoRouteResultV2(candidates=[], router_version="v2", auto_selected=False)
+
+    assert r.block_order == []
+    assert r.degrade_reason == ""
+
+
+def test_ranking_conf_clamps_illegal_settings(settings) -> None:
+    """settings 给出非法值时 ``_ranking_conf()`` 返回 clamp 后合法三元组且不抛（T-107-05）。"""
+    from codegraph.services.repo_router_v2 import _ranking_conf
+
+    settings.REPO_ROUTER_GROUP_DELTA = -1.0
+    settings.REPO_ROUTER_STAGE1_ALPHA = 2.0
+    settings.REPO_ROUTER_STAGE1_RANK_BUDGET_K = -3
+
+    delta, alpha, k = _ranking_conf()
+
+    assert delta == 0.0
+    assert alpha == 1.0
+    assert k == 0
+
+
+def test_ranking_conf_reads_settings_at_call_time(settings) -> None:
+    """调用时读取（改配置即生效）：合法值原样透出，不被导入时快照钉住。"""
+    from codegraph.services.repo_router_v2 import _ranking_conf
+
+    settings.REPO_ROUTER_GROUP_DELTA = 0.25
+    settings.REPO_ROUTER_STAGE1_ALPHA = 0.5
+    settings.REPO_ROUTER_STAGE1_RANK_BUDGET_K = 4
+
+    assert _ranking_conf() == (0.25, 0.5, 4)
