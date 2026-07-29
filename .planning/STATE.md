@@ -5,7 +5,7 @@ milestone_name: 技术方案蓝图
 current_phase: 111
 current_phase_name: 蓝图底座
 status: ready-to-plan
-stopped_at: "里程碑创建完成（REQUIREMENTS 35 条 / ROADMAP Phases 111–116 / 设计输入 technical-blueprint/DESIGN.md）。下一步：$gsd-plan-phase 111。"
+stopped_at: "Phase 111 规划全部完成（CONTEXT/RESEARCH/PATTERNS/4 PLANs，plan-checker 通过、1 BLOCKER 已修）。执行 wave 1 派发时被 Cursor 计费阻断（unpaid invoice，三个 executor 未落任何文件，worktree 干净）。恢复：账单解决后重派 wave 1（111-01/02/03 并行）→ wave 2（111-04）→ verifier。"
 last_updated: "2026-07-29T09:30:00.000Z"
 last_activity: 2026-07-29
 last_activity_desc: Milestone v0.20.0 created (parallel worktree with v0.19.0)
