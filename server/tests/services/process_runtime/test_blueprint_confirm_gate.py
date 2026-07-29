@@ -42,8 +42,11 @@ from delivery.models import (
 from delivery.services import ArtifactContentInvalid, ArtifactService
 from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
 from repositories.models import Repository
+from services.process_runtime.blueprint_charter_match import score_charter_match
 from services.process_runtime.blueprint_confirm_gate import (
+    _MAX_DOMAIN_CHARS,
     BlueprintConfirmGateAdapter,
+    _build_charter_draft,
     acollect_pending_research_repos,
     build_locked_associations,
     iter_snapshot_repos,
@@ -440,6 +443,59 @@ async def test_alock_refuses_when_snapshot_changed_mid_flight() -> None:
     fresh = await BlueprintThread.objects.aget(id=thread.id)
     assert fresh.status != ThreadStatus.RESOLVED, "拒绝落锁时确认门必须还开着"
     assert await _task_status(session, repo_c) == RepoResearchTaskStatus.PENDING
+
+
+def test_confirmed_responsibility_never_becomes_a_matching_domain() -> None:
+    """MJ-07：职责正文不得当 ``owned_domains.domain``（那会污染后续路由）。
+
+    ``domain`` 是 ``score_charter_match`` 拿去做子串 / n-gram 匹配的**领域名**；把一整段
+    职责描述塞进去，该仓对任意需求近乎恒命中（owned_implemented=1.0），而
+    ``asubmit_charter_draft`` 对 ``ai_draft`` 章程是正式字段就地生效、不需人工 confirm——
+    一次确认门操作就能把这个仓变成「什么需求都归我」。
+    """
+    responsibility = (
+        "本仓负责在专项学习页展示课程内容与权益鉴权状态并提供组卷相关功能配置，"
+        "同时承接练习记录的读写与统计口径对齐。" * 3
+    )
+    entry = {
+        "repository_id": "r-1",
+        "repository_name": "study-practice",
+        "role_suggestion": "direct",
+        "responsibility": responsibility,
+        "routing_evidence": {"matched_domains": ["专项练习组卷"]},
+    }
+
+    draft = _build_charter_draft(entry)
+
+    domain = draft["owned_domains"][0]["domain"]
+    assert domain == "专项练习组卷"
+    assert len(domain) <= _MAX_DOMAIN_CHARS
+    assert responsibility[:20] in draft["owned_domains"][0]["note"], "职责正文应落 note"
+
+    # 拿这条草案重跑打分：对**无关**需求必须仍为 0（原实现会靠 200 字 domain 命中）
+    charter = {
+        "owned_domains": draft["owned_domains"],
+        "boundaries": [],
+        "evolution": "active",
+        "source": "ai_draft",
+        "version": 1,
+    }
+    result = score_charter_match(charter, query_terms=["新增导出相关功能配置"])
+    assert result.score == 0.0
+    assert result.matched_domains == []
+
+
+def test_no_matched_domain_produces_no_owned_domain_draft() -> None:
+    """取不到短领域名 → 宁可不回灌，也不写一条会污染路由的「领域」。"""
+    entry = {
+        "repository_id": "r-2",
+        "repository_name": "study-practice",
+        "role_suggestion": "direct",
+        "responsibility": "承接练习记录读写",
+        "routing_evidence": {"matched_domains": []},
+    }
+
+    assert _build_charter_draft(entry) == {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -52,6 +52,11 @@ _MERGE_KEYS = {
 }
 _SCALAR_FIELDS = ("positioning", "audience", "form", "evolution")
 
+# `owned_domains[].domain` 的长度兜底：它是被 `score_charter_match` 拿去做子串 / n-gram
+# 匹配的**领域名**，超长文本（如一整段职责描述）与任意需求几乎必然有交集，会让该仓对
+# 什么需求都命中。调用方应给短领域名，这里只是最后一道防线。
+_MAX_DOMAIN_CHARS = 40
+
 
 def _merge_key(field: str, item: Any) -> tuple:
     keys = _MERGE_KEYS[field]
@@ -94,7 +99,7 @@ async def asubmit_charter_draft(
     # 归一逐字复用 charter_service 的公开白名单（绝不另写一套）
     from repositories.services.charter_service import normalize_charter_draft
 
-    normalized = normalize_charter_draft(draft)
+    normalized = _cap_domain_names(normalize_charter_draft(draft))
     try:
         charter, source_before, wrote_draft_content = await sync_to_async(_persist)(
             str(repository_id), normalized, merge
@@ -131,6 +136,17 @@ async def asubmit_charter_draft(
         charter_version=charter.version,
     )
     return charter
+
+
+def _cap_domain_names(draft: dict) -> dict:
+    """``owned_domains[].domain`` 长度兜底（见 ``_MAX_DOMAIN_CHARS``）。"""
+    domains = draft.get("owned_domains")
+    if not isinstance(domains, list):
+        return draft
+    for item in domains:
+        if isinstance(item, dict) and item.get("domain"):
+            item["domain"] = str(item["domain"])[:_MAX_DOMAIN_CHARS]
+    return draft
 
 
 def _apply_draft(charter: Any, draft: dict, merge: bool) -> None:
