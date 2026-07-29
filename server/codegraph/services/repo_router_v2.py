@@ -61,7 +61,13 @@ from codegraph.services.repo_router_metadata import (
     warm_facet_vectors,
 )
 from codegraph.services.repo_router_ranking import (
+    CROSS_GROUP_NOTE,
+    GROUP_GLOBAL,
+    GROUP_IN_PROJECT,
+    TRUST_NEEDS_CONFIRMATION,
+    annotate_groups,
     clamp_ranking_params,
+    decide_block_order,
 )
 from codegraph.services.repo_router_scoring import (
     DEFAULT_WEIGHT_CONFIG,
@@ -250,6 +256,78 @@ class RepoRouteResultV2:
     degrade_reason: str = ""
 
 
+def _rank_value(candidate: RepoRouteCandidateV2) -> float:
+    """排序比较值的**唯一所有者**：有旁路排序分就用它，缺失则回退 `score`。
+
+    `_apply_presentation` 内至少三处需要这个值——组内排序截断、并集后全局排序、
+    取两组首位喂 `decide_block_order`。同一条件表达式内联三遍必然出现「改一处漏
+    一处」（例如 107-05 写入旁路分后只更新了其中两处，排序与置顶判据当场不一致）。
+    后续 plan 只负责把 `score_ranked` **写上**，不得再声明任何等价取值或排序。
+    """
+    return candidate.score_ranked if candidate.score_ranked is not None else candidate.score
+
+
+def _rank_sort_key(candidate: RepoRouteCandidateV2) -> tuple[float, str]:
+    """稳定排序键：先量化到 6 位再比较，第二键用不可变 `repo_id`。
+
+    先量化再比较可避免浮点尾数噪声让顺序在两次等价计算间抖动；第二键取 id 而非
+    name/path（后者可改名）——ROUTING-RANKING §6.2 第 4 条。组内排序与并集后的
+    全局排序共用本函数，别处不得再写一遍等价排序。
+    """
+    return (-round(_rank_value(candidate), 6), candidate.repo_id)
+
+
+def _apply_presentation(
+    candidates: list[RepoRouteCandidateV2],
+    *,
+    grouping_repository_ids: list[str] | None,
+    delta: float,
+    top_k: int,
+) -> tuple[list[RepoRouteCandidateV2], list[str]]:
+    """分组标注 + 组内取 top_k + 全局排序 + 分区顺序（四条 return 出口共用）。
+
+    `grouping_repository_ids is None` = 调用方无项目上下文 → 全部记 `global`、
+    分区顺序退化为 `["global"]`，候选列表行为逐字不变（只做 `[:top_k]`，不重排——
+    Stage 1 成功路径的 LLM 排列必须原样保留）。
+
+    有上下文时按组各取 `top_k` 后并集（ROUTE-01 要求「组内各展示 Top-3」；若维持
+    「全局总共 top_k」则 global 组常为 0 条，分组上线即无信息量），并集再按同一个
+    比较键全局降序——扁平列表首位恒为全局最高分候选，分区顺序只是呈现层事实。
+
+    本函数**绝不写** `score` / `breakdown`：给本项目仓做任何组别相关的分数偏移
+    会让两组分数不可比、「跨组分更低」变成自我实现预言（ROUTING-RANKING §5.1 的
+    in-domain 加分禁令）。
+    """
+    project_repo_ids = (
+        frozenset(str(r) for r in grouping_repository_ids)
+        if grouping_repository_ids is not None
+        else None
+    )
+    annotations = annotate_groups(
+        [c.repo_id for c in candidates], project_repo_ids=project_repo_ids
+    )
+    for c in candidates:
+        c.group, c.trust = annotations.get(c.repo_id, (GROUP_GLOBAL, TRUST_NEEDS_CONFIRMATION))
+        if project_repo_ids is not None and c.group == GROUP_GLOBAL:
+            c.cross_group_note = CROSS_GROUP_NOTE
+
+    if project_repo_ids is None:
+        return candidates[:top_k], decide_block_order(
+            None, None, delta=delta, has_project_context=False
+        )
+
+    in_project = sorted((c for c in candidates if c.group == GROUP_IN_PROJECT), key=_rank_sort_key)
+    global_group = sorted((c for c in candidates if c.group == GROUP_GLOBAL), key=_rank_sort_key)
+    block_order = decide_block_order(
+        _rank_value(in_project[0]) if in_project else None,
+        _rank_value(global_group[0]) if global_group else None,
+        delta=delta,
+        has_project_context=True,
+    )
+    merged = sorted(in_project[:top_k] + global_group[:top_k], key=_rank_sort_key)
+    return merged, block_order
+
+
 class RepoRouterV2:
     """两阶段推理式仓库路由器。"""
 
@@ -260,18 +338,27 @@ class RepoRouterV2:
         *,
         top_k: int = 3,
         repository_ids: list[str] | None = None,
+        grouping_repository_ids: list[str] | None = None,
         use_llm: bool = True,
     ) -> RepoRouteResultV2:
         """执行推理式路由。
 
+        ``repository_ids`` 与 ``grouping_repository_ids`` **正交**，互不影响：
+
         Args:
             query: 用户提问 / 需求文本。
-            top_k: 返回候选数上限。
-            repository_ids: 限定候选仓库范围（如空间内仓库）；None 为全库。
+            top_k: 返回候选数上限（传了 ``grouping_repository_ids`` 时按组各取
+                ``top_k`` 后并集，长度 <= 2*top_k）。
+            repository_ids: 限定候选仓库范围（Qdrant 硬过滤，语义逐字不变）；
+                None 为全库。
+            grouping_repository_ids: 「本项目关联仓」——**只做 group / trust 标注
+                依据，不参与任何过滤或打分**。None = 调用方无项目上下文（MCP /
+                REST / skill_steps）→ 全部记 ``global`` 并跳过分组呈现，不报错。
             use_llm: False 时仅跑 Stage 0（纯检索 API 用）。
         """
         # ---- Stage 0: 节点级 hybrid 粗筛 ----
         started = time.monotonic()
+        group_delta, _alpha, _budget_k = _ranking_conf()
         searched = await cls._stage0_node_search(query, repository_ids)
         # 返回形状兼容：生产实现返回 (hits, query_dense)（复用已算好的 dense
         # 向量，零额外 embedding）；既有测试替身只返回 hits 列表——此时
@@ -281,7 +368,12 @@ class RepoRouterV2:
         else:
             node_hits, query_dense = searched, None
         if not node_hits:
-            return await cls._fallback_v1(query, top_k)
+            return await cls._fallback_v1(
+                query,
+                top_k,
+                grouping_repository_ids=grouping_repository_ids,
+                delta=group_delta,
+            )
 
         # ---- Stage 0.5: 权重配置 + repo_meta 组装（六信号供数，106-06）----
         # 权重经 loader 调用时读取（保存即生效）；repo_meta 组装整体失败
@@ -354,6 +446,11 @@ class RepoRouterV2:
             "scored_at": scored_at,
             "s_top_source": meta_stats.get("s_top_source"),
         }
+        # 呈现参数随三条 Stage 0 出口透传（分组依据只标注、不过滤、不打分）。
+        presentation_extras: dict[str, Any] = {
+            "grouping_repository_ids": grouping_repository_ids,
+            "delta": group_delta,
+        }
 
         if not stage0_candidates:
             # node_hits 非空但全部缺 repository_id（打分核心过滤后零候选）：
@@ -366,6 +463,7 @@ class RepoRouterV2:
                 top_k,
                 started,
                 stage1_meta={"skipped_reason": "no_stage0_candidates"},
+                **presentation_extras,
                 **snapshot_extras,
             )
         # 桶仅供 Stage 1 组 prompt 取命中节点用；打分聚合已在纯函数核心内完成。
@@ -379,6 +477,7 @@ class RepoRouterV2:
                 top_k,
                 started,
                 stage1_meta={"skipped_reason": "use_llm_false"},
+                **presentation_extras,
                 **snapshot_extras,
             )
 
@@ -408,12 +507,20 @@ class RepoRouterV2:
                 top_k,
                 started,
                 stage1_meta=stage1_meta,
+                **presentation_extras,
                 **snapshot_extras,
             )
 
         # LLM 只降不升已在 _stage1_llm_reasoning 内应用；auto_selected 由最终
         # （确定性 + LLM 调节后）confidence 驱动——与降级路径语义一致。
-        final = llm_candidates[:top_k]
+        final, block_order = _apply_presentation(
+            llm_candidates,
+            grouping_repository_ids=grouping_repository_ids,
+            delta=group_delta,
+            top_k=top_k,
+        )
+        # auto_selected 读**扁平列表首位**（即全局最高分候选）：block ranking 是
+        # 呈现层置顶，不得改变编排是否自动推进——否则组别就间接进了决策路径。
         auto_selected = bool(final) and final[0].confidence == "high"
         result = RepoRouteResultV2(
             candidates=final,
@@ -421,8 +528,14 @@ class RepoRouterV2:
             auto_selected=auto_selected,
             degraded=False,
             snapshot=cls._build_snapshot(
-                query, node_hits, final, stage1_meta=stage1_meta, **snapshot_extras
+                query,
+                node_hits,
+                final,
+                stage1_meta=stage1_meta,
+                block_order=block_order,
+                **snapshot_extras,
             ),
+            block_order=block_order,
         )
         cls._log_scored(result, started)
         return result
@@ -864,6 +977,8 @@ class RepoRouterV2:
         started: float,
         *,
         stage1_meta: dict[str, Any] | None = None,
+        grouping_repository_ids: list[str] | None = None,
+        delta: float = 0.0,
         weight_config: dict[str, Any] | None = None,
         repo_meta: dict[str, Any] | None = None,
         scored_at: str | None = None,
@@ -876,8 +991,19 @@ class RepoRouterV2:
         ``stage1_meta`` 记录未参与原因（``{"skipped_reason": ...}``）进 snapshot。
         ``weight_config/repo_meta/scored_at`` 按需透传 ``_build_snapshot``
         （v2_stage0_only 降级路径与 v2 路径共用 Stage 0 打分材料）。
+        ``grouping_repository_ids/delta`` 带默认值：既有直调方与测试替身照旧可用
+        （无分组上下文 → 全部 global）。
         """
-        finalized = cls._finalize_stage0(stage0_candidates, top_k)
+        # 先按全部 Stage 0 候选定稿再交呈现层截断：分组启用时要按组各取 top_k，
+        # 提前截到 top_k 会让 global 组几乎恒空。confidence 推导只依赖候选在
+        # Stage 0 分数序列里的位次，与此处截断上限无关（口径不变）。
+        finalized = cls._finalize_stage0(stage0_candidates, len(stage0_candidates))
+        finalized, block_order = _apply_presentation(
+            finalized,
+            grouping_repository_ids=grouping_repository_ids,
+            delta=delta,
+            top_k=top_k,
+        )
         result = RepoRouteResultV2(
             candidates=finalized,
             router_version="v2_stage0_only",
@@ -888,11 +1014,13 @@ class RepoRouterV2:
                 node_hits,
                 finalized,
                 stage1_meta=stage1_meta,
+                block_order=block_order,
                 weight_config=weight_config,
                 repo_meta=repo_meta,
                 scored_at=scored_at,
                 s_top_source=s_top_source,
             ),
+            block_order=block_order,
         )
         cls._log_scored(result, started)
         return result
@@ -917,6 +1045,7 @@ class RepoRouterV2:
         candidates: list[RepoRouteCandidateV2],
         *,
         stage1_meta: dict[str, Any] | None = None,
+        block_order: list[str] | None = None,
         weight_config: dict[str, Any] | None = None,
         repo_meta: dict[str, Any] | None = None,
         scored_at: str | None = None,
@@ -989,9 +1118,13 @@ class RepoRouterV2:
         snapshot: dict[str, Any] = {
             "stage0": stage0,
             "stage1": stage1,
+            # candidates 节自动带上呈现字段（group/trust/cross_group_note/
+            # score_ranked 已在 to_dict 内）；block_order 另记一键便于回放比对。
             "candidates": [c.to_dict() for c in candidates],
             "versions": versions,
         }
+        if block_order is not None:
+            snapshot["block_order"] = block_order
         if weight_config is not None:
             snapshot["weight_config"] = weight_config
         if repo_meta is not None:
@@ -1343,8 +1476,18 @@ class RepoRouterV2:
     # ------------------------------------------------------------------
 
     @classmethod
-    async def _fallback_v1(cls, query: str, top_k: int) -> RepoRouteResultV2:
-        """repo_index_nodes 无命中 → 回落 v1 单点摘要路由。"""
+    async def _fallback_v1(
+        cls,
+        query: str,
+        top_k: int,
+        *,
+        grouping_repository_ids: list[str] | None = None,
+        delta: float = 0.0,
+    ) -> RepoRouteResultV2:
+        """repo_index_nodes 无命中 → 回落 v1 单点摘要路由。
+
+        ``grouping_repository_ids/delta`` 带默认值：既有直调方与测试替身照旧可用。
+        """
         from codegraph.services.repo_router import RepoRouter
 
         v1_results = await RepoRouter.route(query, top_k=top_k)
@@ -1359,12 +1502,19 @@ class RepoRouterV2:
             )
             for r in v1_results
         ]
+        candidates, block_order = _apply_presentation(
+            candidates,
+            grouping_repository_ids=grouping_repository_ids,
+            delta=delta,
+            top_k=top_k,
+        )
         return RepoRouteResultV2(
             candidates=candidates,
             router_version="v1_fallback",
             auto_selected=False,
             degraded=True,  # Stage 1 未参与（v1 无节点级分数，confidence 保持 low）
-            snapshot={"stage1": {"skipped_reason": "v1_fallback"}},
+            snapshot={"stage1": {"skipped_reason": "v1_fallback"}, "block_order": block_order},
+            block_order=block_order,
         )
 
     @classmethod
