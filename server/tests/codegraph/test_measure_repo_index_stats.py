@@ -294,7 +294,8 @@ def test_write_snapshot_roundtrip_with_loader(memory_qdrant: QdrantClient) -> No
     """--write-snapshot 写读闭环：load_nr_snapshot() 读回与写入一致（ROUTE-03 契约）。
 
     n_bar = 有索引仓（node_count > 0）节点数的 statistics.median；
-    n_r_by_repo 含 0 计数仓（106-06 breadth 对未索引仓可显式判 0）。
+    n_r_by_repo **只收 node_count > 0 的仓**（MJ-04：写入 0 会被 scorer 当有效
+    体量 → denom_size=1-b=0.4，未索引仓反拿最强的尺寸归一红利；缺失才是中性）。
     """
     repo_small = _make_repo("snap-small")
     repo_big = _make_repo("snap-big")
@@ -306,15 +307,15 @@ def test_write_snapshot_roundtrip_with_loader(memory_qdrant: QdrantClient) -> No
 
     assert report["nr_snapshot"]["written"] is True
     assert report["nr_snapshot"]["n_bar"] == statistics.median([3, 7])
-    assert report["nr_snapshot"]["repo_count"] == 3
+    assert report["nr_snapshot"]["repo_count"] == 2
 
     snapshot = load_nr_snapshot()
     assert snapshot["n_bar"] == statistics.median([3, 7])
     assert snapshot["n_r_by_repo"] == {
         str(repo_small.id): 3,
         str(repo_big.id): 7,
-        str(repo_empty.id): 0,
     }
+    assert str(repo_empty.id) not in snapshot["n_r_by_repo"]
     assert snapshot["generated_at"]
 
 

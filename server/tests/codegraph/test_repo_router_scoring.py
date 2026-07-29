@@ -813,6 +813,29 @@ class TestSizeBiasMechanism:
         lam = _C6["lam"]
         assert abs(cand.breakdown[SIGNAL_BREADTH] - lam * expected) < 1e-9  # D=w_text → w_text 约掉
 
+    def test_zero_n_r_treated_as_missing_not_as_zero_volume(self):
+        """MJ-04：n_r <= 0 按缺失处理，不得反获 breadth 加成。
+
+        n_r=0 若当有效值：denom_size = 1-b = 0.4 →「体量为 0 的仓」拿到最强的
+        尺寸归一红利（比中性的「不在快照里」还高 +0.29）。真实触发路径是快照
+        生成后新索引的仓（Qdrant 已有节点，快照里仍是 0）。
+        """
+        hits = [_make_hit("r1", _RRF_BASE, "n0"), _make_hit("r1", _RRF_BASE, "n1")]
+        consts = {"n_bar": 60.0}
+        zero = aggregate_and_score(hits, repo_meta={"r1": _make_meta(n_r=0)}, constants=consts)[0]
+        absent = aggregate_and_score(hits, repo_meta={"r1": _make_meta()}, constants=consts)[0]
+        median = aggregate_and_score(
+            hits, repo_meta={"r1": _make_meta(n_r=60)}, constants=consts
+        )[0]
+        # n_r=0 与「不在快照里」等价（中性），且不高于「体量 = 中位数」
+        assert zero.breakdown[SIGNAL_BREADTH] == absent.breakdown[SIGNAL_BREADTH]
+        assert zero.breakdown[SIGNAL_BREADTH] <= median.breakdown[SIGNAL_BREADTH] + 1e-9
+        # 负值（脏快照）同样按缺失处理，不抛
+        negative = aggregate_and_score(
+            hits, repo_meta={"r1": _make_meta(n_r=-5)}, constants=consts
+        )[0]
+        assert negative.breakdown[SIGNAL_BREADTH] == absent.breakdown[SIGNAL_BREADTH]
+
     def test_soft_count_discounts_weak_hits(self):
         """软计数 p=2：弱命中不算满分——分数为桶首一半的节点只贡献 0.25。"""
         equal_hits = [
