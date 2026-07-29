@@ -60,6 +60,9 @@ from codegraph.services.repo_router_metadata import (
     resolve_facet_scores,
     warm_facet_vectors,
 )
+from codegraph.services.repo_router_ranking import (
+    clamp_ranking_params,
+)
 from codegraph.services.repo_router_scoring import (
     DEFAULT_WEIGHT_CONFIG,
     aggregate_and_score,
@@ -135,6 +138,43 @@ def _conf_thresholds() -> tuple[float, float, float]:
     )
 
 
+# 分组呈现与有界重排三参数默认值（与 friday/settings.py 一致，107-01 落地）。
+_RANKING_DEFAULTS = {
+    "REPO_ROUTER_GROUP_DELTA": 0.15,
+    "REPO_ROUTER_STAGE1_ALPHA": 0.35,
+    "REPO_ROUTER_STAGE1_RANK_BUDGET_K": 3,
+}
+
+
+def _ranking_conf() -> tuple[float, float, int]:
+    """读取分组置顶 delta / 凸组合 α / rank-swap 预算 K（照 ``_stage1_conf`` 模式）。
+
+    调用时读取以保持「改配置即生效」；取值一律经 ``clamp_ranking_params`` 收敛到
+    合法域且**绝不抛**——运维把参数设成极端值或写成非数值不得让路由退化或报错
+    （T-107-05，与 ``repo_router_config`` 的 fail-safe 同款）。
+
+    Returns:
+        ``(delta, alpha, k)``——clamp 后的合法三元组。
+    """
+    from django.conf import settings
+
+    return clamp_ranking_params(
+        delta=getattr(
+            settings, "REPO_ROUTER_GROUP_DELTA", _RANKING_DEFAULTS["REPO_ROUTER_GROUP_DELTA"]
+        ),
+        alpha=getattr(
+            settings,
+            "REPO_ROUTER_STAGE1_ALPHA",
+            _RANKING_DEFAULTS["REPO_ROUTER_STAGE1_ALPHA"],
+        ),
+        k=getattr(
+            settings,
+            "REPO_ROUTER_STAGE1_RANK_BUDGET_K",
+            _RANKING_DEFAULTS["REPO_ROUTER_STAGE1_RANK_BUDGET_K"],
+        ),
+    )
+
+
 @dataclass
 class RepoRouteCandidateV2:
     """v2 路由候选结果。"""
@@ -152,6 +192,21 @@ class RepoRouteCandidateV2:
     # 关键程度锚点值（CONTEXT 裁决：tie-break only）——旁路展示字段，
     # **不进 breakdown**，前端 Σ贡献==score 校验不受影响。
     criticality: float | None = None
+    # 分层呈现字段（107-03，ROUTE-01/02）——沿用 criticality 的旁路纪律：
+    # 全部带默认值（8 个消费方按具名字段读取，位置参数构造的替身不炸），
+    # 且**一律不进 breakdown**。
+    # 归属组别：`""` = 未标注（消费方按 global 处理）；取值见 repo_router_ranking.GROUP_*。
+    group: str = ""
+    # 信任标注：取值见 repo_router_ranking.TRUST_*。
+    trust: str = ""
+    # 跨组说明：**后端留痕/排障用**。前端一律用前端常量渲染文案、不渲染本字段，
+    # 后端自由文本不进 DOM（T-107-06）。
+    cross_group_note: str = ""
+    # 旁路排序分（D-3 硬约束）：**绝不覆盖 `score`**。`None` = 未重排 → 排序回退
+    # `score`（唯一取值口径见模块级 `_rank_value`）。凸组合里 LLM 排名那一项不是
+    # 任何信号的贡献，塞进 `breakdown` 会让「分数分解」变成假的，并打断
+    # `Σbreakdown == score` 的两条既有断言与前端 1e-6 容差校验（ROUTE-07 承诺）。
+    score_ranked: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -165,6 +220,11 @@ class RepoRouteCandidateV2:
             "matched_node_paths": self.matched_node_paths,
             "breakdown": {k: round(v, 6) for k, v in self.breakdown.items()},
             "criticality": self.criticality,
+            "group": self.group,
+            "trust": self.trust,
+            "cross_group_note": self.cross_group_note,
+            # None 原样透出（不折成 0.0）：「未重排」与「重排后分数为 0」语义不同。
+            "score_ranked": (None if self.score_ranked is None else round(self.score_ranked, 4)),
         }
 
 
@@ -180,6 +240,14 @@ class RepoRouteResultV2:
     # Stage 0 快照材料 + versions（ROUTE-09 数据底座；stage1 材料由 105-05 补充，
     # 落 ConvergenceSessionEvent 由 105-07 处理——本结构只保证材料随结果携带）。
     snapshot: dict[str, Any] = field(default_factory=dict)
+    # 分区呈现顺序（107-03）：有分组上下文时**恒长度 2**（即使某组为空），无上下文时
+    # `["global"]`。前端据 `len == 2` 判定是否启用分组呈现，这是唯一依据
+    # （UI-SPEC covered 11），也是区分「无项目上下文」与「有上下文但本项目组为空」
+    # 两种 all-global 场景的唯一依据。
+    block_order: list[str] = field(default_factory=list)
+    # 用户可见降级原因：`repo_router_ranking.DEGRADE_REASONS` 的 6 值闭集 ∪ `""`
+    # （`""` = 无用户可见原因行）。基数受控才能当指标维度用。
+    degrade_reason: str = ""
 
 
 class RepoRouterV2:
