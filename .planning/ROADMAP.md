@@ -60,7 +60,17 @@
   4. golden set 建成并接入 CI 门禁：含「高三提分专项」首条真实用例与至少 2–3 条「正确答案在跨组」的样本，全量跑完 < 5s；Recall@5 低于基线、Top-1 正确数低于基线−1 或误自动选中率 > 10% 时门禁失败，并输出逐例 diff（哪几条变好、哪几条变坏、变坏那条的分数分解如何变化）。
   5. Phase 106 的公式定版输入已实测落文档：全仓能力树节点数 `N_r` 分布直方图（p50/p90/p99/max，用于定 `N̄` 与 `b`，O-1）+ Stage 0 返回结构中 dense 余弦是否可得（决定 MaxP 主干用余弦还是 RRF 分，O-3）。
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+- [ ] 105-01-PLAN.md — 纯函数打分核心（加性分解/margin 置信度/只降不升）+ 阈值外置 + 不变量测试（wave 1）
+- [ ] 105-02-PLAN.md — O-1/O-3 实测 command（measure_repo_index_stats）+ 105-MEASUREMENTS.md（wave 1）
+- [ ] 105-03-PLAN.md — RepoRouterV2 接线：去截断/breakdown/degraded/确定性 auto_selected + 三种失联行为测试 + clarify policy 回归（wave 2）
+- [ ] 105-04-PLAN.md — golden set fixture + 离线评估 harness + CI 门禁进默认 suite（wave 2）
+- [ ] 105-05-PLAN.md — Stage 1 幂等三件套：输入哈希缓存 + 排列输出 + decode 固定 + call_source（wave 3）
+- [ ] 105-06-PLAN.md — 前端最小展开：breakdown 透传 + RoutingDecisionPanel 分数分解 + confidence Tooltip（wave 3）
+- [ ] 105-07-PLAN.md — 快照落 ConvergenceSessionEvent + 离线 replay 零网络同结果（wave 4）
+
 **UI hint**: yes
 
 ### Phase 106: 多信号打分函数重构（尺寸偏置 + 元数据入分 + 活跃度连续 + 权重外置）
