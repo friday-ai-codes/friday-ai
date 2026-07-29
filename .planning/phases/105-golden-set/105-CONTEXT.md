@@ -28,7 +28,7 @@
 ### 分数可拆解与去截断（ROUTE-07）
 - 删除 `repo_router_v2.py` 中所有 `min(score, 1.0)` 截断（`_finalize_stage0` 与 Stage 1 候选构造两处）；改用归一化设计保证 `S ∈ [0,1]`：Stage 0 RRF 分做 query-local max 归一（`s_hat = rrf/rrf_max`），合成一律加性。
 - 每个候选携带 `breakdown` 字典（信号名 → 贡献值），且 `Σ贡献 == 总分` 恒成立——写成不变量测试（INV-R1/R3：`0 <= S <= 1`、分解和恰等于总分、重归一化后仍成立）。
-- 分解同时落两处：`ConvergenceSessionEvent` payload（trace，供回放与逐例 diff）+ 候选 `to_dict()`（供前端展开，Phase 107 消费）。
+- 分解同时落两处：`ConvergenceSessionEvent` payload（trace，供回放与逐例 diff）+ 候选 `to_dict()`。本 phase 含**最小前端展开**：用户在路由结果里展开任一候选可见各信号贡献值且和恰等于总分（success criterion 2）；完整分组呈现/跨组标注/降级标注 UI 归 Phase 107。
 - 本 phase 打分函数范围：把**现有信号**（文本 max、命中广度、疑似废弃惩罚）重构为可拆解加性形式——废弃惩罚从 `score *= 0.5` 乘性改为对活跃度项封顶（`min(A, 0.10)`）；完整多信号公式（pivoted size normalization、元数据入分、权重表）归 Phase 106，本 phase 不引入新信号。
 
 ### 确定性与快照回放（ROUTE-09）
