@@ -338,6 +338,25 @@ REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS = env.int(
 )
 
 # =============================================================================
+# 仓库路由 v2 分组呈现与有界重排（ROUTE-01/02、RELY-05）
+# =============================================================================
+# block ranking 迟滞阈值：仅当 S_global(1) - S_in_project(1) >= delta 才把全局组
+# 置顶。绝不设 0——0 会让 0.001 级分数波动反复翻转置顶顺序，破坏幂等与体验。
+# 可用上界受 golden gk-008 的实测组间分差约束（余量很薄，见
+# tests/codegraph/test_repo_router_golden.py 的上界锁定用例）：delta 超过该差值后
+# gk-008 会退回「本项目组置顶而正确仓被压在下面」，即重演本里程碑要修的故障。
+REPO_ROUTER_GROUP_DELTA = env.float("REPO_ROUTER_GROUP_DELTA", default=0.15)
+# 凸组合 S_ranked = (1-α)·S_final + α·S_llm 的 α（S_llm 由 LLM 给出的排名导出）。
+# 107-CONTEXT D-7 锁定初值：离线 harness 结构上不跑 Stage 1（α 恒 0），故 α 无法
+# 用 golden set 校准，该局限记入 107-MEASUREMENTS.md。Stage 1 降级时按 0 处理
+# （凸组合恒等返回 S_final）。α 只影响排序旁路字段，不改 score/breakdown 口径。
+REPO_ROUTER_STAGE1_ALPHA = env.float("REPO_ROUTER_STAGE1_ALPHA", default=0.35)
+# rank-swap 预算 K：|rank_llm - rank_stage0| <= K，越界排列在**消费侧**裁剪回预算
+# 内并记录违规数。刻意不改 prompt 让 LLM 自觉遵守——改 prompt 必须 bump
+# PROMPT_TEMPLATE_VERSION，会让历史输入哈希缓存全部失效。
+REPO_ROUTER_STAGE1_RANK_BUDGET_K = env.int("REPO_ROUTER_STAGE1_RANK_BUDGET_K", default=3)
+
+# =============================================================================
 # 仓库路由 v2 确定性置信度阈值（RELY-04）
 # =============================================================================
 # confidence 由分数 margin 确定性推导（codegraph.services.repo_router_scoring
@@ -348,6 +367,44 @@ REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS = env.int(
 REPO_ROUTER_CONF_THETA_ABS = env.float("REPO_ROUTER_CONF_THETA_ABS", default=0.55)
 REPO_ROUTER_CONF_THETA_MARGIN = env.float("REPO_ROUTER_CONF_THETA_MARGIN", default=0.08)
 REPO_ROUTER_CONF_THETA_MED = env.float("REPO_ROUTER_CONF_THETA_MED", default=0.35)
+
+# =============================================================================
+# 仓库路由 v2 Stage 1 延迟有界化（RELY-05）
+# =============================================================================
+# 首调 + 1 次重试**共享**的总延迟上界（秒）。REPO_ROUTER_STAGE1_TIMEOUT_SECONDS
+# 保持 per-call 语义且本 phase 不下调：下调会把原本 70–89s 能成功的调用变成用户
+# 可见的降级，必须先有生产延迟实测再定（见 107-MEASUREMENTS.md）。120 = 90 的
+# per-call 上限 + 退避余量，因此重试只在快速失败（网关错误 / 连接失败）场景生效
+# ——相对今日行为零回归。
+REPO_ROUTER_STAGE1_TOTAL_BUDGET_SECONDS = env.float(
+    "REPO_ROUTER_STAGE1_TOTAL_BUDGET_SECONDS", default=120.0
+)
+# 指数退避基数（秒）：实际睡眠不得超过总预算剩余量，否则退避自身吃掉重试机会。
+REPO_ROUTER_STAGE1_RETRY_BACKOFF_SECONDS = env.float(
+    "REPO_ROUTER_STAGE1_RETRY_BACKOFF_SECONDS", default=2.0
+)
+
+# =============================================================================
+# 澄清必达与超时出口（RELY-02）
+# =============================================================================
+# 澄清 pending 轮的超时（小时）。起算时间取 **pending 轮 Clarification.created_at**
+# （auto_now_add，不被刷新），绝不用 session.updated_at——后者每次 transition 都会
+# 刷新，超时永不到达。同一个键同时驱动工作流侧 WorkflowEventSubscription 的
+# timeout_at（107-CONTEXT D-4 单一超时口径），消除「工作流已判超时而会话仍停在
+# waiting_clarification」的矛盾态窗口。
+CLARIFICATION_TIMEOUT_HOURS = env.int("CLARIFICATION_TIMEOUT_HOURS", default=24)
+# 过期澄清的扫描频率（秒）。超时默认 24h，分钟级精度足够；10min 也避免与
+# sample_gauges(45s) / evaluate_system_alerts(60s) 争 SQLite 写锁。
+CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS = env.int(
+    "CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS", default=600
+)
+# 单次扫描的处理上限（防长事务与内存膨胀）。
+CLARIFICATION_EXPIRY_SCAN_LIMIT = env.int("CLARIFICATION_EXPIRY_SCAN_LIMIT", default=200)
+# 超时出口动作（受控二值）：resume_with_assumptions = 带「未澄清假设」标注继续推进
+# （默认）；fail = 如实失败并说明原因。非法取值由读取侧兜底按默认处理。
+CLARIFICATION_TIMEOUT_EXIT_ACTION = env.str(
+    "CLARIFICATION_TIMEOUT_EXIT_ACTION", default="resume_with_assumptions"
+)
 
 # =============================================================================
 # 可恢复任务（断点恢复）
