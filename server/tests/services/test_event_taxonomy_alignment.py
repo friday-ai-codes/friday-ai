@@ -31,7 +31,7 @@ _CLARIFICATION_SERVICE = _SERVER_ROOT / "delivery" / "services" / "clarification
 _SPEC_GENERATION = _SERVER_ROOT / "services" / "process_runtime" / "spec_generation.py"
 # Chassis v2：generic ProcessEngine 不再直接 emit stage 事件，recall/route 落到 stage 处理器
 _BUILTIN_PROCESSES = _SERVER_ROOT / "services" / "process_runtime" / "builtin_processes.py"
-# v0.19 澄清韧性 producer：发卡侧送达失败（已存在）+ 澄清超时扫描命令（后续子计划创建）
+# v0.19 澄清韧性 producer：发卡侧送达失败 + 澄清超时扫描命令
 _PLAN_RESEARCH = _SERVER_ROOT / "workflows" / "nodes" / "ai" / "plan_research.py"
 _EXPIRE_CLARIFICATIONS = (
     _SERVER_ROOT / "delivery" / "management" / "commands" / "expire_pending_clarifications.py"
@@ -67,13 +67,6 @@ _EVENT_PRODUCERS: dict[str, Path] = {
     "clarification.delivery_failed": _PLAN_RESEARCH,
     "clarification.timed_out": _EXPIRE_CLARIFICATIONS,
     "spec.drafted": _SPEC_GENERATION,
-}
-
-# 待落地豁免：emit 点尚未提交，落地后删除对应行（覆盖性反查跳过这些事件）。
-# 值是负责落地该 emit 点的子计划标注——**编号只写在这里**，块注释一律不写编号，
-# 否则删行后编号残留会让下游「标注归零」断言失效。
-_PENDING_PRODUCER_EVENTS: dict[str, str] = {
-    "clarification.timed_out": "107-06",
 }
 
 # emit 调用：捕获事件参数（_emit_event 首参 / architect _emit 第二参）
@@ -141,15 +134,11 @@ def test_all_events_each_emitted_by_producer() -> None:
     """
     # 值 → 常量名（便于在源码里查引用）
     value_to_const = {
-        getattr(taxonomy, name): name
-        for name in dir(taxonomy)
-        if name.startswith("EVENT_")
+        getattr(taxonomy, name): name for name in dir(taxonomy) if name.startswith("EVENT_")
     }
     for event in ALL_EVENTS:
         producer = _EVENT_PRODUCERS.get(event)
         assert producer is not None, f"ALL_EVENTS 事件 {event} 未登记 producer"
-        if event in _PENDING_PRODUCER_EVENTS:
-            continue  # emit 点待落地（producer 文件可能已存在，故不能只靠 exists() 兜）
         if not producer.exists():
             continue  # 顺序安全：producer 尚未落地（如 41-02 clarify）
         const_name = value_to_const[event]

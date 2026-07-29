@@ -28,7 +28,9 @@ _LLM_GEN = "services.process_runtime.clarify_adapter.agenerate_clarification_que
 
 
 async def _clarify_session(
-    *, routing: dict | None = None, decomposition: dict | None = None,
+    *,
+    routing: dict | None = None,
+    decomposition: dict | None = None,
     entrypoint=ConvergenceSessionEntrypoint.WORKFLOW,
 ) -> ConvergenceSession:
     stage_state: dict = {}
@@ -161,6 +163,49 @@ async def test_default_policy_high_candidate_no_clarification() -> None:
 
     reloaded = await ConvergenceSession.objects.aget(id=session.id)
     assert reloaded.current_stage == "research"
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_default_policy_short_circuits_after_clarification_exit() -> None:
+    """stage_state 有 clarification_exit → policy 恒判不需澄清（超时出口后不得被立刻重挂）。
+
+    短路优先级最高：即使 routing 候选全 low、即使 decomposition 标 ambiguous 也不再追问
+    （出口把 stage 推到 research 后，经 merge 的校验失败回退 clarify 会重跑本 policy，
+    无短路即无限循环）。
+    """
+    session = await _clarify_session(
+        routing={"candidates": [{"repo_id": "r1", "confidence": "low"}]},
+        decomposition={"ambiguous": True, "ambiguous_hint": "需求存在歧义"},
+    )
+    session.stage_state["clarification_exit"] = {
+        "action": "resumed_with_assumptions",
+        "reason": "no_answer_timeout",
+    }
+
+    assert default_needs_clarification(session) == (False, "", [])
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_default_policy_unchanged_without_clarification_exit() -> None:
+    """无 clarification_exit → 三条既有判定规则逐字不变（零回归）。"""
+    all_low = await _clarify_session(
+        routing={"candidates": [{"repo_id": "r1", "confidence": "low"}]},
+    )
+    needs, question, affected = default_needs_clarification(all_low)
+    assert needs is True and question and affected == []
+
+    ambiguous = await _clarify_session(
+        routing={"candidates": [{"repo_id": "r1", "confidence": "high"}]},
+        decomposition={"ambiguous": True, "ambiguous_hint": "需求存在歧义"},
+    )
+    assert default_needs_clarification(ambiguous) == (True, "需求存在歧义", [])
+
+    confident = await _clarify_session(
+        routing={"candidates": [{"repo_id": "r1", "confidence": "high"}]},
+    )
+    assert default_needs_clarification(confident) == (False, "", [])
 
 
 @pytest.mark.django_db
@@ -306,7 +351,9 @@ async def test_multi_round_reclarifies_when_still_insufficient() -> None:
 
     adapter = ClarifyAdapter()
     gen = AsyncMock(
-        return_value=[{"question": "Q2", "type": "single", "options": ["x", "y"], "recommended": "x"}]
+        return_value=[
+            {"question": "Q2", "type": "single", "options": ["x", "y"], "recommended": "x"}
+        ]
     )
     with patch(_LLM_GEN, new=gen):
         result = await adapter.clarify(session)
@@ -348,7 +395,9 @@ async def test_round_cap_reached_continues_without_new_round() -> None:
         await _answered_round(session, question=f"Q{i}")
 
     adapter = ClarifyAdapter()
-    gen = AsyncMock(return_value=[{"question": "不该被调", "type": "single", "options": [], "recommended": ""}])
+    gen = AsyncMock(
+        return_value=[{"question": "不该被调", "type": "single", "options": [], "recommended": ""}]
+    )
     with (
         patch(_LLM_GEN, new=gen),
         patch("services.process_runtime.clarify_adapter.logger") as mock_logger,
