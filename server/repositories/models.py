@@ -3,6 +3,7 @@
 import uuid
 from typing import TYPE_CHECKING
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -1085,3 +1086,82 @@ class SensitiveFileSuggestion(models.Model):
 
     def __str__(self) -> str:
         return f"{self.repository_id}:{self.path} ({self.severity}/{self.status})"
+
+
+class RepoCharter(models.Model):
+    """仓库章程：意图面知识（职责/边界/落点偏好），一仓一份、版本化（DESIGN §5.7，CHARTER-01）。
+
+    能力树是**事实面**（这个仓现在有什么，随索引自动刷新），回答不了净新增需求的
+    「应该落哪」与「服务边界归属」这类团队决策——章程补齐**意图面**：正向 owned
+    业务域（含 planned）、负向边界禁区、新功能落点偏好、演进态。112 的
+    ``blueprint_route`` 双面路由与 repo_confirmation 确认门回灌读写本模型。
+
+    写入纪律（INV-6）：唯一 writer = ``repositories/services/charter_service.py``，
+    模型层零业务方法，视图/其他服务禁止直接 create/save。
+
+    「AI 不覆盖人工」契约（CHARTER-01 不变量）：``source=human_confirmed`` 之后，
+    AI 起草路径只能写 ``draft_content``（pending 修订草案），正式字段逐字节不变；
+    草案经人工 confirm（version+1、confirmed_by 署名）才提升为正式内容。
+    """
+
+    class Source(models.TextChoices):
+        """章程内容来源：AI 草案（未生效）/ 人工确认（生效，AI 不可覆盖）。"""
+
+        AI_DRAFT = "ai_draft", "AI 草案"
+        HUMAN_CONFIRMED = "human_confirmed", "人工确认"
+
+    class Evolution(models.TextChoices):
+        """演进态：maintenance_only = 只修不加新功能（路由降权信号）。"""
+
+        ACTIVE = "active", "活跃演进"
+        MAINTENANCE_ONLY = "maintenance_only", "仅维护"
+        DEPRECATED = "deprecated", "已废弃"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.OneToOneField(
+        Repository,
+        on_delete=models.CASCADE,
+        related_name="charter",
+    )
+    version = models.PositiveIntegerField(default=1)
+    source = models.CharField(
+        max_length=16,
+        choices=Source.choices,
+        default=Source.AI_DRAFT,
+    )
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    # 一句话定位，如「C 端学生移动 H5 学习应用集」
+    positioning = models.TextField(blank=True, default="")
+    # 正向 owned 业务域：[{domain, status: implemented|planned, note, citations}]
+    owned_domains = models.JSONField(default=list, blank=True)
+    # 负向边界禁区：[{rule, decided_by, citations}]
+    boundaries = models.JSONField(default=list, blank=True)
+    # 新功能落点偏好（可到子应用/模块粒度）：[{kind, target, note}]
+    placement_preferences = models.JSONField(default=list, blank=True)
+    # 服务对象/技术形态，与 ai_summary.facets 对齐
+    audience = models.CharField(max_length=64, blank=True, default="")
+    form = models.CharField(max_length=64, blank=True, default="")
+    evolution = models.CharField(
+        max_length=24,
+        choices=Evolution.choices,
+        default=Evolution.ACTIVE,
+    )
+    # pending 修订草案（human_confirmed 后 AI 起草只写这里，「单行 + 草案列」承载不覆盖）
+    draft_content = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "repo_charters"
+        verbose_name = "仓库章程"
+        verbose_name_plural = "仓库章程"
+
+    def __str__(self) -> str:
+        return f"Charter({self.repository_id}, v{self.version}, {self.source})"

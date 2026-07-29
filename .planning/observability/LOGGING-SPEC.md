@@ -100,6 +100,14 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `feature_list_parse` | feature list 导入解析（GitLab 文档/粘贴文档 → 结构化 模块→功能点→验收项） | 单轮，best-effort，内容逐字保留原文（补登已漂移枚举） |
 | `learning_case_extraction` | `mcp_tools.learning_case_extraction.aextract_learning_case`（v0.17.0 Phase 101） | 编码完成自动提炼，三链路 MR 已知锚点，单轮，幂等键 session_id，best-effort |
 | `pr_review_capture` | PR 创建成功锚点可选 review 沉淀（v0.17.0 Phase 101） | 默认关（SystemSetting），单轮，结论沉淀为 learning case |
+| `blueprint_decompose` | 蓝图需求对齐拆解（v0.20.0 Phase 111 注册） | 需求 → requirement_spec feature_points；调用点在 112 落地 |
+| `blueprint_spec_gate` | 蓝图歧义门 spec_gate（v0.20.0 Phase 111 注册） | 多轮澄清 + feature_point 意图分类 greenfield/brownfield/fix；调用点在 112 落地 |
+| `blueprint_repo_research` | 蓝图逐仓调研容器（v0.20.0 Phase 111 注册） | 每仓一容器 fitness 判定 + 职责/现状调研，多仓 fan-out；调用点在 112 落地 |
+| `blueprint_reroute` | 蓝图重路由（v0.20.0 Phase 111 注册） | 确认门增删仓/改判后的有界循环重路由；调用点在 112 落地 |
+| `blueprint_repo_plan` | 蓝图分仓方案深化（v0.20.0 Phase 111 注册） | per-repo 实现方案；调用点在 113 落地 |
+| `blueprint_merge` | 蓝图融合装配（v0.20.0 Phase 111 注册） | 分仓方案 → 六段 blueprint/v1；调用点在 113 落地 |
+| `blueprint_ai_review` | 蓝图对抗审查（v0.20.0 Phase 111 注册） | AI 评审员产 review_finding 线程；调用点在 114 落地 |
+| `blueprint_charter_draft` | `repositories.services.charter_service.adraft_charter`（v0.20.0 Phase 111） | 仓库章程 AI 起草：ai_summary/facets + MR 历史 + RepoAssociation 裁决三源蒸馏，单轮，best-effort |
 
 > 埋点位置：`acquire_llm_slot`（QPS/排队/`LLMBusyError`）+ 两个 Runner 的 `astream` 循环（TTFT/TPS/上游错误）+ 各 `ainvoke` 站点。详见 MILESTONE-PROPOSAL §1。
 
