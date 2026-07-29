@@ -226,6 +226,9 @@ def replay_route_from_snapshot(
             weights=wc_weights,
             repo_meta=repo_meta,
             constants=wc.get("constants"),
+            # 锚点表从快照读（MJ-01）：缺该键的旧新格式快照回退默认四档，
+            # tie-break 顺序因此可复现。
+            criticality_anchors=wc.get("criticality_anchors"),
             now=stage0.get("scored_at"),
         )
         weight_set_version = str(wc.get("weight_set_version") or "")

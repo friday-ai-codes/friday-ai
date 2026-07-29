@@ -194,6 +194,10 @@ def score_case(case: dict[str, Any]) -> list[ScoredCandidate]:
         weights={**DEFAULT_WEIGHT_CONFIG["weights"], **case.get("weight_overrides", {})},
         repo_meta=repo_meta,
         constants={**DEFAULT_WEIGHT_CONFIG["constants"], **case.get("constants", {})},
+        criticality_anchors={
+            **DEFAULT_WEIGHT_CONFIG["criticality_anchors"],
+            **case.get("criticality_anchors", {}),
+        },
         now=case.get("scored_at"),
     )
 
