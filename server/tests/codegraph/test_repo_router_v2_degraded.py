@@ -1090,3 +1090,147 @@ async def test_presentation_tie_break_is_repo_id_ascending(
     )
 
     assert [c.repo_id for c in result.candidates] == ["r-a", "r-z"]
+
+
+# ---------------------------------------------------------------------------
+# Stage 1 ModelUsageRecord 埋点（107-05 Task 3，LOGGING-SPEC §9 检查项）
+# ---------------------------------------------------------------------------
+
+
+async def _usage_rows() -> list[Any]:
+    from interactions.models import ModelUsageRecord
+
+    return [row async for row in ModelUsageRecord.objects.all()]
+
+
+@pytest.mark.django_db(transaction=True)
+class TestStage1ModelUsageRecording:
+    """口径：**每次上游调用一行**（重试算两次请求），缓存命中零行。"""
+
+    async def test_stage1_usage_row_on_success(self, monkeypatch, mock_aresolve_ok) -> None:
+        mock_aresolve_ok()
+        _install_stage0(monkeypatch, _high_margin_hits())
+        _install_stage1_model(monkeypatch, _TextModel(_llm_order_json("repo-a")))
+
+        result = await RepoRouterV2.route("高三提分专项需求")
+
+        assert result.router_version == "v2"
+        rows = await _usage_rows()
+        assert len(rows) == 1
+        assert rows[0].call_source == "aux_repo_router"
+        assert rows[0].failure_type == ""
+        assert rows[0].model
+        assert rows[0].duration_ms is not None and rows[0].duration_ms >= 0
+
+    async def test_stage1_usage_row_on_timeout_failure(
+        self, monkeypatch, mock_aresolve_ok, settings
+    ) -> None:
+        mock_aresolve_ok()
+        # 总预算极小 → 首调超时后即刻耗尽，只发一次上游调用（恰一行）。
+        settings.REPO_ROUTER_STAGE1_TOTAL_BUDGET_SECONDS = 0.01
+        _install_stage0(monkeypatch, _high_margin_hits())
+        _install_stage1_model(monkeypatch, _CountingSlowModel())
+
+        result = await RepoRouterV2.route("高三提分专项需求")
+
+        assert result.degraded is True
+        rows = await _usage_rows()
+        assert len(rows) == 1
+        assert rows[0].failure_type == "timeout"
+        assert rows[0].duration_ms is not None and rows[0].duration_ms >= 0
+
+    async def test_stage1_usage_one_row_per_upstream_attempt(
+        self, monkeypatch, mock_aresolve_ok
+    ) -> None:
+        mock_aresolve_ok()
+        _install_stage0(monkeypatch, _high_margin_hits())
+        _install_stage1_model(
+            monkeypatch,
+            _FlakyModel(TimeoutError("first"), _llm_order_json("repo-a"), fail_times=1),
+        )
+
+        result = await RepoRouterV2.route("高三提分专项需求")
+
+        assert result.degraded is False
+        rows = await _usage_rows()
+        assert len(rows) == 2
+        assert {r.failure_type for r in rows} == {"timeout", ""}
+
+    async def test_stage1_usage_zero_rows_on_cache_hit(self, monkeypatch, mock_aresolve_ok) -> None:
+        mock_aresolve_ok()
+        _install_stage0(monkeypatch, _high_margin_hits())
+        _install_stage1_model(monkeypatch, _TextModel(_llm_order_json("repo-a")))
+
+        await RepoRouterV2.route("高三提分专项需求")
+        assert len(await _usage_rows()) == 1
+
+        second = await RepoRouterV2.route("高三提分专项需求")
+
+        assert second.snapshot["stage1"]["cache_hit"] is True
+        assert len(await _usage_rows()) == 1
+
+    async def test_stage1_usage_binds_triggering_user(self, monkeypatch, mock_aresolve_ok) -> None:
+        import structlog
+
+        mock_aresolve_ok()
+        _install_stage0(monkeypatch, _high_margin_hits())
+        _install_stage1_model(monkeypatch, _TextModel(_llm_order_json("repo-a")))
+
+        structlog.contextvars.bind_contextvars(user_id="42")
+        try:
+            await RepoRouterV2.route("高三提分专项需求")
+        finally:
+            structlog.contextvars.unbind_contextvars("user_id")
+
+        rows = await _usage_rows()
+        assert rows[0].user_id == "42"
+
+    async def test_stage1_usage_defaults_user_to_system(
+        self, monkeypatch, mock_aresolve_ok
+    ) -> None:
+        import structlog
+
+        mock_aresolve_ok()
+        structlog.contextvars.clear_contextvars()
+        _install_stage0(monkeypatch, _high_margin_hits())
+        _install_stage1_model(monkeypatch, _TextModel(_llm_order_json("repo-a")))
+
+        await RepoRouterV2.route("高三提分专项需求")
+
+        rows = await _usage_rows()
+        assert rows[0].user_id == "system"
+
+    async def test_stage1_usage_tokens_default_to_zero_when_unknown(
+        self, monkeypatch, mock_aresolve_ok
+    ) -> None:
+        """上游未回 usage metadata → token 一律记 0（不猜）。"""
+        mock_aresolve_ok()
+        _install_stage0(monkeypatch, _high_margin_hits())
+        _install_stage1_model(monkeypatch, _TextModel(_llm_order_json("repo-a")))
+
+        await RepoRouterV2.route("高三提分专项需求")
+
+        rows = await _usage_rows()
+        assert rows[0].prompt_tokens == 0
+        assert rows[0].completion_tokens == 0
+        assert rows[0].total_tokens == 0
+        assert rows[0].ttft_ms is None
+
+    async def test_stage1_usage_write_failure_never_breaks_route(
+        self, monkeypatch, mock_aresolve_ok
+    ) -> None:
+        """埋点写库抛异常 → 路由主流程不受影响（观测 best-effort）。"""
+        mock_aresolve_ok()
+        _install_stage0(monkeypatch, _high_margin_hits())
+        _install_stage1_model(monkeypatch, _TextModel(_llm_order_json("repo-a")))
+
+        async def _boom(**_kwargs: Any) -> None:
+            raise RuntimeError("ledger down")
+
+        monkeypatch.setattr("interactions.ledger.arecord_llm_usage", _boom)
+
+        result = await RepoRouterV2.route("高三提分专项需求")
+
+        assert result.router_version == "v2"
+        assert result.degraded is False
+        assert await _usage_rows() == []
