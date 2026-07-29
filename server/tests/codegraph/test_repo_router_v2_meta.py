@@ -389,12 +389,13 @@ async def test_save_takes_effect_without_restart(monkeypatch) -> None:
     assert first.snapshot["weight_config"]["weight_set_version"] == WEIGHT_SET_VERSION
     first_domain = _by_repo(first)[big].breakdown["domain"]
 
-    # 合法新配置：domain 0.15→0.20、text 0.55→0.40（均在网格内，INV-R2 成立）
+    # 合法新配置：domain 0.15→0.20（网格内；text 保持 0.55 为最大项，
+    # 非文本权重和 0.45 <= 0.5×1.00，MJ-03 后的 INV-R2 口径成立）
     await _write_setting(
         SettingKeys.REPO_ROUTER_WEIGHT_CONFIG,
         {
             "weights": {
-                "text": 0.40,
+                "text": 0.55,
                 "domain": 0.20,
                 "activity": 0.12,
                 "stack": 0.08,
@@ -463,6 +464,97 @@ async def test_meta_overall_failure_falls_back_legacy(monkeypatch) -> None:
     assert "weight_config" not in result.snapshot
     assert "repo_meta" not in result.snapshot
     assert result.snapshot["versions"]["weight_set_version"]  # 版本位仍有值
+
+
+async def test_last_commit_aggregation_cached_across_routes(monkeypatch) -> None:
+    """MJ-05：同一批候选仓的 last_commit 聚合在 TTL 内只查一次 DB。
+
+    该聚合要读候选仓的全部 FileIndex 行算 Max（数千文件 × 数十仓），落在正在压
+    延迟的路由热路径上——短 TTL 缓存 + 覆盖索引（迁移 0040）两手都要。
+    """
+    big, small, bare = await _make_repos()
+    _install_search_stack(
+        monkeypatch,
+        hybrid_hits=_hybrid_hits(big, small, bare),
+        dense_hits=_dense_hits(big, small),
+    )
+    db_calls = {"n": 0}
+    orig_filter = None
+
+    from repositories.models import FileIndex
+
+    orig_filter = FileIndex.objects.filter
+
+    def counting_filter(*args, **kwargs):
+        if "repository_id__in" in kwargs:
+            db_calls["n"] += 1
+        return orig_filter(*args, **kwargs)
+
+    monkeypatch.setattr(FileIndex.objects, "filter", counting_filter)
+
+    first = await RepoRouterV2.route(QUERY, use_llm=False)
+    second = await RepoRouterV2.route(QUERY, use_llm=False)
+
+    assert first.candidates and second.candidates
+    assert db_calls["n"] == 1  # 第二次路由命中缓存，零额外聚合查询
+    # 活跃度信号未因缓存而丢失（两次路由 breakdown 一致）
+    assert _by_repo(first)[big].breakdown["activity"] == pytest.approx(
+        _by_repo(second)[big].breakdown["activity"]
+    )
+
+
+async def test_dirty_repository_id_only_degrades_itself(monkeypatch) -> None:
+    """MN-01：payload 混入非 UUID 的 repository_id 只影响自身活跃度来源。
+
+    修复前实现是 ``except ValidationError: return {}``——一条脏 payload 让全部
+    候选的 last_commit_at 变成 None，全体退化为枚举回退。
+    """
+    big, small, bare = await _make_repos()
+    hits = _hybrid_hits(big, small, bare)
+    hits.append(_hit("dirty0", "not-a-uuid", 0.01, facets=_FACETS_SMALL))
+    _install_search_stack(
+        monkeypatch, hybrid_hits=hits, dense_hits=_dense_hits(big, small)
+    )
+
+    result = await RepoRouterV2.route(QUERY, use_llm=False, top_k=5)
+
+    repo_meta = result.snapshot["repo_meta"]
+    # 干净仓的 last_commit_at 仍来自 DB 聚合（未被脏值牵连）
+    assert repo_meta[big]["last_commit_at"] is not None
+    assert repo_meta[small]["last_commit_at"] is not None
+    # 脏仓自身查不到聚合行 → 该信号不可用（活跃度走枚举回退）
+    assert repo_meta["not-a-uuid"]["last_commit_at"] is None
+
+
+async def test_t2_cold_start_uses_batch_warm_and_respects_budget(monkeypatch) -> None:
+    """MJ-06：T2 冷启动走一次批量预热，逐值不再串行 embedding。"""
+    from codegraph.services import repo_router_metadata
+
+    repo_router_metadata._facet_vec_local_cache.clear()
+    big, small, bare = await _make_repos()
+    calls = _install_search_stack(
+        monkeypatch,
+        hybrid_hits=_hybrid_hits(big, small, bare),
+        dense_hits=_dense_hits(big, small),
+        emb_configured=True,
+    )
+    batch_calls: list[list[str]] = []
+
+    async def fake_batch(texts):
+        batch_calls.append(list(texts))
+        return [[0.1] * 8 for _ in texts]
+
+    monkeypatch.setattr(EmbeddingService, "generate_embeddings_batch", fake_batch)
+
+    result = await RepoRouterV2.route(QUERY, use_llm=False)
+
+    assert result.candidates
+    # 恰一次批量预热覆盖全部候选仓的 domain/stack 值（技术栈已按 "/" 拆分）
+    assert len(batch_calls) == 1
+    assert "学习工具" in batch_calls[0]
+    assert "Vue" in batch_calls[0]
+    # query embedding 1 次（Stage 0 检索用），facet 值不再逐个单条 embedding
+    assert calls["embed"] == 1
 
 
 # ---------------------------------------------------------------------------

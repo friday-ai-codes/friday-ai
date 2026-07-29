@@ -517,7 +517,14 @@ class FacetT2Matcher:
     生产实测回填 deferred）；非法入参回退 ``DEFAULT_WEIGHT_CONFIG`` 初值。
     """
 
-    def __init__(self, model_id: str, t2_c_lo: float, t2_c_hi: float) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        t2_c_lo: float,
+        t2_c_hi: float,
+        *,
+        embed_budget: int | None = None,
+    ) -> None:
         defaults = DEFAULT_WEIGHT_CONFIG["constants"]
         lo = float(t2_c_lo) if _is_number(t2_c_lo) else float(defaults["t2_c_lo"])
         hi = float(t2_c_hi) if _is_number(t2_c_hi) else float(defaults["t2_c_hi"])
@@ -527,6 +534,12 @@ class FacetT2Matcher:
         self.model_id = str(model_id) if model_id else "unknown"
         self._c_lo = lo
         self._c_hi = hi
+        # 单实例（== 单次路由）的 embedding 调用预算（MJ-06）：缓存冷启动时
+        # 逐值串行 embedding 会把 Stage 0 拖到秒级。None = 不限（校准 command
+        # 等离线场景）；超预算后静默降级 T1-only（既有「T2 绝不阻塞路由」原则）。
+        self._embed_budget = int(embed_budget) if embed_budget is not None else None
+        self._embed_calls = 0
+        self._budget_warned = False
 
     async def match(self, query_embedding: list[float] | None, value: str) -> float | None:
         """校准余弦匹配分 ∈ [0,1]；任何失败 → None（静默降级，观测 best-effort）。"""
@@ -551,20 +564,30 @@ class FacetT2Matcher:
             return None
 
     async def _get_facet_vector(self, value: str) -> list[float] | None:
-        """facet 值向量：进程内 dict → Django cache → embedding（miss 回写两级）。"""
+        """facet 值向量：进程内 dict → Django cache → embedding（miss 回写两级）。
+
+        两级缓存都 miss 时才消耗 embedding 预算（见 ``embed_budget``）——预算
+        耗尽后不再发请求，返回 None 让 resolver 降级 T1-only。
+        """
         key = _facet_vec_cache_key(self.model_id, value)
         local = _facet_vec_local_cache.get(key)
         if local is not None:
             return local
-        cached = self._cache_get(key)
+        cached = self.cache_get(key)
         if isinstance(cached, list) and cached:
             _facet_vec_local_cache[key] = cached
             return cached
+        if self._embed_budget is not None and self._embed_calls >= self._embed_budget:
+            if not self._budget_warned:
+                self._budget_warned = True
+                self._warn_degraded(value, "embed_budget_exhausted")
+            return None
+        self._embed_calls += 1
         vector = await self._embed(value)
         if not isinstance(vector, list) or not vector:
             return None
         _facet_vec_local_cache[key] = vector
-        self._cache_set(key, vector)
+        self.cache_set(key, vector)
         return vector
 
     @staticmethod
@@ -580,8 +603,12 @@ class FacetT2Matcher:
             return await EmbeddingService.generate_embedding(value)
 
     @staticmethod
-    def _cache_get(key: str) -> Any:
-        """Django cache 读（局部 import + best-effort：后端故障视同 miss）。"""
+    def cache_get(key: str) -> Any:
+        """Django cache 读（局部 import + best-effort：后端故障视同 miss）。
+
+        公开方法：批量预热 :func:`warm_facet_vectors` 与本类共用同一缓存口径，
+        跨对象访问私有方法不合适（IN-02）。
+        """
         try:
             from django.core.cache import cache
 
@@ -590,7 +617,7 @@ class FacetT2Matcher:
             return None
 
     @staticmethod
-    def _cache_set(key: str, vector: list[float]) -> None:
+    def cache_set(key: str, vector: list[float]) -> None:
         """Django cache 写（best-effort：写失败不反噬，下次重算）。"""
         try:
             from django.core.cache import cache
@@ -615,7 +642,11 @@ class FacetT2Matcher:
 
 
 async def warm_facet_vectors(values: list[str] | None, matcher: FacetT2Matcher) -> int:
-    """批量预热 facet 值向量（106-04 校准 command / 106-06 router 冷启动调用）。
+    """批量预热 facet 值向量。
+
+    生产调用方：``RepoRouterV2._load_repo_meta``（Stage 0 冷启动，MJ-06）——
+    先把本次全部待匹配的 facet 值批量预热一次，再逐值走缓存，避免缓存冷启动时
+    串行发「候选仓数 × facet 分量数」次 embedding。
 
     返回调用结束后**向量可用**的值条数（先前已缓存 + 本次成功写入）；
     无效值（非 str/空/"未分类"/超长）跳过、重复值去重；整体 best-effort
@@ -638,7 +669,7 @@ async def warm_facet_vectors(values: list[str] | None, matcher: FacetT2Matcher) 
             if key in _facet_vec_local_cache:
                 available += 1
                 continue
-            cached = matcher._cache_get(key)
+            cached = matcher.cache_get(key)
             if isinstance(cached, list) and cached:
                 _facet_vec_local_cache[key] = cached
                 available += 1
@@ -651,11 +682,26 @@ async def warm_facet_vectors(values: list[str] | None, matcher: FacetT2Matcher) 
 
             with use_call_source(CallSource.EMBEDDING):
                 vectors = await EmbeddingService.generate_embeddings_batch(pending)
+            vectors = vectors or []
+            if len(vectors) != len(pending):
+                # zip 会静默截断（available 偏低且无痕迹）——记一条采样 warning
+                # 让「批量接口少返回」可被发现（IN-02）。
+                try:
+                    logger.warning(
+                        "repo_router_facet_vec_batch_length_mismatch",
+                        requested=len(pending),
+                        returned=len(vectors),
+                        model_id=matcher.model_id,
+                        category="sampling",
+                        component="codegraph",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             for value, vector in zip(pending, vectors):
                 if isinstance(vector, list) and vector:
                     key = _facet_vec_cache_key(matcher.model_id, value)
                     _facet_vec_local_cache[key] = vector
-                    matcher._cache_set(key, vector)
+                    matcher.cache_set(key, vector)
                     available += 1
 
         try:
