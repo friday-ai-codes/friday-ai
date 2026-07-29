@@ -661,12 +661,20 @@ def derive_confidence(
 
     ``S(1) >= θ_abs 且 margin >= θ_margin → high；S(1) >= θ_med → medium；
     否则 low``。空列表 → low；单候选时 margin = S(1)（s2 视为 0.0）。
+
+    输入单调性（MN-04）：``sorted_scores`` 的名义语义是降序，但新路径的
+    ``_meta_sort_key`` 先按 crit_band 量化带排序、带内按 criticality 决序——
+    同一带内的相邻对可能 ``s1 < s2``，即 ``sorted_scores`` **不再严格单调降序**。
+    因此 margin 取 ``max(0.0, s1 - s2)``：负 margin 与「无区分度」同义，绝不能
+    因为符号问题绕过 θ_margin 闸门。当前常数下 ``θ_margin(0.08) > crit_band
+    (0.03)``，margin 达标即意味着首位是全局最大（不会误 auto-select 非最高分
+    仓）；后续若调小 θ_margin 或调大 crit_band，该推理需重新验算。
     """
     if not sorted_scores:
         return "low"
     s1 = sorted_scores[0]
     s2 = sorted_scores[1] if len(sorted_scores) > 1 else 0.0
-    margin = s1 - s2
+    margin = max(0.0, s1 - s2)
     if s1 >= theta_abs and margin >= theta_margin:
         return "high"
     if s1 >= theta_med:

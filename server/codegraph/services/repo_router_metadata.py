@@ -132,6 +132,11 @@ MAX_FACET_VALUE_LENGTH = 200
 _T1_MATCH_SCORE = 1.0
 _T1_PARENT_SCORE = 0.6
 
+# 裸 ASCII canonical 直接命中的最小长度（MN-08）：长度 < 3 的 ASCII 值
+# （"C" / "Go"）只允许经别名/上位类目命中，词边界不足以挡住 "c 端"/"C 轮"/
+# 英文动词 "go" 这类误报。
+_MIN_ASCII_CANONICAL_LENGTH = 3
+
 # 技术栈多值聚合系数（CONTEXT 锁定 0.8·max + 0.2·second_max）。
 _STACK_MAX_WEIGHT = 0.8
 _STACK_SECOND_WEIGHT = 0.2
@@ -150,7 +155,6 @@ _STACK_SECOND_WEIGHT = 0.2
 DEFAULT_ALIAS_DICT: dict[str, dict[str, dict[str, Any]]] = {
     FACET_STACK: {
         "Python": {"aliases": ["py", "python3"], "parent": None},
-        "Go": {"aliases": ["golang"], "parent": None},
         "TypeScript": {"aliases": ["ts"], "parent": None},
         "JavaScript": {"aliases": ["js"], "parent": None},
         "Vue": {"aliases": ["vue3", "vuejs", "vue.js"], "parent": None},
@@ -161,7 +165,9 @@ DEFAULT_ALIAS_DICT: dict[str, dict[str, dict[str, Any]]] = {
         "PHP": {"aliases": [], "parent": None},
         "C#": {"aliases": ["csharp"], "parent": None},
         "C++": {"aliases": ["cpp"], "parent": None},
-        "C": {"aliases": [], "parent": None},
+        # 单/双字符 ASCII canonical 不能裸值命中（MN-08），必须靠别名带上下文。
+        "C": {"aliases": ["c语言", "c 语言", "c/c++"], "parent": None},
+        "Go": {"aliases": ["golang", "go 语言", "go语言"], "parent": None},
         "Swift": {"aliases": [], "parent": None},
         "Objective-C": {"aliases": ["objc", "objective c"], "parent": None},
         "Scala": {"aliases": [], "parent": None},
@@ -249,8 +255,14 @@ def match_t1(
         return None
 
     query_cf = query_text.casefold()
-    if _contains_token(query_cf, value.casefold()):
-        return _T1_MATCH_SCORE
+    # 短 ASCII canonical（"C" / "Go"）不允许裸值直接命中（MN-08）：加了词边界后
+    # 「c 端」「C 轮」仍会让「技术栈=C」拿满分，英文动词 "go" 会命中 "Go"——T1 是
+    # 确定性层，误报比漏报代价高。这类值只能经别名（"golang"/"c语言"）或上位类目
+    # 命中，别名词典可运维扩充。
+    value_cf = value.casefold()
+    if not (value_cf.isascii() and len(value_cf) < _MIN_ASCII_CANONICAL_LENGTH):
+        if _contains_token(query_cf, value_cf):
+            return _T1_MATCH_SCORE
 
     entry = _lookup_entry(alias_dict, dim, value)
     if entry is None:
