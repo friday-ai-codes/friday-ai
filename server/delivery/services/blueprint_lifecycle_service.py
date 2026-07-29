@@ -26,7 +26,9 @@ best-effort 事件）：
   superseded            （终态，无出边）
   ====================  ==========================================================
 
-- **守卫**：``pending_review → confirmed`` 要求无 open+blocking 线程（LIFE-02）；
+- **守卫**：``pending_review → confirmed`` 要求无 open+blocking 线程（LIFE-02）——
+  守卫查询、CAS 更新与评审人 upsert 在同一 ``transaction.atomic()`` 内，杜绝
+  check-then-act 窗口与「状态已变但名单缺人」的半成功（MN-01/MN-02）；
   进入 ``needs_clarification`` 时 ``return_status`` 必须 ∈ {researching, drafting,
   ai_reviewing}（缺省取 from_status；持久承载走 BlueprintThread.return_stage 由调用
   方写，本 service 只校验与透传进事件 payload——RESEARCH A4，不给 Artifact 加列）。
@@ -45,6 +47,7 @@ from typing import Any
 
 import structlog
 from asgiref.sync import sync_to_async
+from django.db import transaction
 from django.utils import timezone
 
 from delivery.models import (
@@ -149,6 +152,7 @@ class BlueprintLifecycleService:
           一律忽略并清空（记 warning），不进事件 payload。
         - ``to_status == confirmed``：存在 open+blocking 线程即拒绝（LIFE-02）；
           ``acting_user`` 非空时自动 upsert 进 BlueprintReviewer 名单（首插留痕）。
+          守卫、CAS、upsert 三步同事务，任一失败整体回滚。
         - 并发冲突 ``raise ConcurrentBlueprintTransitionError``。
         - 每次转移 best-effort 记事件：structlog caller 事件必打；``session`` 非空
           时才落 ConvergenceSessionEvent 行（失败吞掉只 warning）。
@@ -184,25 +188,12 @@ class BlueprintLifecycleService:
             )
             return_status = None
 
-        if to_status == BlueprintStatus.CONFIRMED:
-            has_open_blocking = await BlueprintThread.objects.filter(
-                artifact=artifact,
-                status=ThreadStatus.OPEN,
-                blocking=True,
-            ).aexists()
-            if has_open_blocking:
-                raise ValueError("存在未解决的阻塞澄清线程，蓝图不可确认")
-
-        await self._apply_transition_sync(artifact, from_status=from_status, to_status=to_status)
-
-        # LIFE-02：确认类动作自动入评审人名单；aget_or_create 保证 first_action 只在
-        # 首插写入（重复确认不覆盖）。
-        if to_status == BlueprintStatus.CONFIRMED and acting_user is not None:
-            await BlueprintReviewer.objects.aget_or_create(
-                artifact=artifact,
-                user=acting_user,
-                defaults={"first_action": "final_approve"},
-            )
+        await self._apply_transition_sync(
+            artifact,
+            from_status=from_status,
+            to_status=to_status,
+            acting_user=acting_user,
+        )
 
         await self._record_transition_event(
             artifact,
@@ -231,22 +222,53 @@ class BlueprintLifecycleService:
 
     @sync_to_async
     def _apply_transition_sync(
-        self, artifact: Artifact, *, from_status: str, to_status: str
+        self,
+        artifact: Artifact,
+        *,
+        from_status: str,
+        to_status: str,
+        acting_user: Any = None,
     ) -> None:
-        """以 ``blueprint_status == from_status`` 为前置条件的 CAS 原子更新（防 TOCTOU）。
+        """守卫查询 + CAS 原子更新 + 评审人 upsert **同一事务**。
 
-        ``Artifact.updated_at`` 是 auto_now 字段，``.update()`` 绕过 auto_now——必须
-        显式带上。成功后同步内存对象字段。
+        - confirm 守卫（open+blocking 线程）与 CAS 同事务：check-then-act 窗口收敛，
+          期间新建的阻塞线程不再被漏挡（MN-01）。
+        - CAS：以 ``blueprint_status == from_status`` 为前置条件（防 TOCTOU）。
+          ``Artifact.updated_at`` 是 auto_now 字段，``.update()`` 绕过 auto_now——
+          必须显式带上。
+        - 评审人 upsert 与状态更新同事务：upsert 失败连状态一起回滚，杜绝「DB 已
+          confirmed、名单却缺人，调用方还收到异常」的不一致（MN-02）。
+          ``get_or_create`` 保证 ``first_action`` 只在首插写入（重复确认不覆盖）。
+
+        成功后（事务提交）同步内存对象字段。
         """
-        updated = Artifact.objects.filter(id=artifact.id, blueprint_status=from_status).update(
-            blueprint_status=to_status, updated_at=timezone.now()
-        )
-        if updated != 1:
-            raise ConcurrentBlueprintTransitionError(
-                f"并发/陈旧蓝图状态转移被拒：artifact={artifact.id} "
-                f"expected_from={from_status or '<未进入状态机>'} to={to_status}"
-                "（DB 行 blueprint_status 已被并发推进改写或行不存在）"
+        with transaction.atomic():
+            if to_status == BlueprintStatus.CONFIRMED:
+                has_open_blocking = BlueprintThread.objects.filter(
+                    artifact=artifact,
+                    status=ThreadStatus.OPEN,
+                    blocking=True,
+                ).exists()
+                if has_open_blocking:
+                    raise ValueError("存在未解决的阻塞澄清线程，蓝图不可确认")
+
+            updated = Artifact.objects.filter(id=artifact.id, blueprint_status=from_status).update(
+                blueprint_status=to_status, updated_at=timezone.now()
             )
+            if updated != 1:
+                raise ConcurrentBlueprintTransitionError(
+                    f"并发/陈旧蓝图状态转移被拒：artifact={artifact.id} "
+                    f"expected_from={from_status or '<未进入状态机>'} to={to_status}"
+                    "（DB 行 blueprint_status 已被并发推进改写或行不存在）"
+                )
+
+            # LIFE-02：确认类动作自动入评审人名单。
+            if to_status == BlueprintStatus.CONFIRMED and acting_user is not None:
+                BlueprintReviewer.objects.get_or_create(
+                    artifact=artifact,
+                    user=acting_user,
+                    defaults={"first_action": "final_approve"},
+                )
         artifact.blueprint_status = to_status
 
     async def _record_transition_event(

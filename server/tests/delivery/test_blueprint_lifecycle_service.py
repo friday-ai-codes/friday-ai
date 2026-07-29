@@ -187,6 +187,42 @@ async def test_confirm_with_acting_user_records_reviewer() -> None:
     assert reviewer.first_action == "final_approve"
 
 
+async def test_reviewer_upsert_failure_rolls_back_status() -> None:
+    """MN-02：评审人 upsert 与状态 CAS 同事务——upsert 抛错则状态不得已经变成 confirmed。"""
+    artifact = await _make_artifact(blueprint_status=BlueprintStatus.PENDING_REVIEW)
+    user = await _make_user()
+    with (
+        patch.object(
+            BlueprintReviewer.objects, "get_or_create", side_effect=RuntimeError("roster down")
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        await BlueprintLifecycleService().transition(
+            artifact,
+            BlueprintStatus.CONFIRMED,
+            initiated_by_user_id=str(user.id),
+            acting_user=user,
+        )
+    assert await _db_status(artifact.id) == BlueprintStatus.PENDING_REVIEW
+    assert await BlueprintReviewer.objects.filter(artifact=artifact).acount() == 0
+
+
+async def test_confirm_guard_and_cas_share_one_transaction() -> None:
+    """MN-01：阻塞线程查询在 CAS 同事务内执行（守卫与写不再分两次往返）。"""
+    artifact = await _make_artifact(blueprint_status=BlueprintStatus.PENDING_REVIEW)
+    await BlueprintThread.objects.acreate(
+        artifact=artifact,
+        kind=ThreadKind.AI_CLARIFICATION,
+        status=ThreadStatus.OPEN,
+        blocking=True,
+    )
+    with pytest.raises(ValueError):
+        await BlueprintLifecycleService().transition(
+            artifact, BlueprintStatus.CONFIRMED, initiated_by_user_id="tester"
+        )
+    assert await _db_status(artifact.id) == BlueprintStatus.PENDING_REVIEW
+
+
 async def test_repeat_confirm_keeps_single_row_and_first_action() -> None:
     """同 user 先入名单再走一轮 confirmed→drafting→…→confirmed：仍一行且 first_action 未变。"""
     artifact = await _make_artifact(blueprint_status=BlueprintStatus.PENDING_REVIEW)
