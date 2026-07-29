@@ -34,11 +34,17 @@ from delivery.services import ConvergenceSessionService, ResearchService
 from delivery.services.event_taxonomy import (
     EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
     EVENT_BLUEPRINT_REPO_RESEARCH_STARTED,
+    EVENT_BLUEPRINT_REROUTE_TRIGGERED,
 )
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["BlueprintResearchAdapter", "BLUEPRINT_RESEARCH_SOURCE"]
+__all__ = [
+    "BlueprintResearchAdapter",
+    "BLUEPRINT_RESEARCH_SOURCE",
+    "MAX_REROUTE_ROUNDS",
+    "decide_reroute",
+]
 
 # runner 在线判定窗口（秒）—— 3 倍心跳，与既有容器链一致
 _RUNNER_HEARTBEAT_WINDOW_SECONDS = 120
@@ -64,6 +70,15 @@ _DEEP_CONFIDENCE = frozenset({"high", "medium"})
 
 _MAX_PROMPT_TEXT_CHARS = 2000
 _MAX_LIST_ITEMS = 10
+
+# 重路由轮次上界（CONTEXT：「reroute 上界 ≤2 轮」）。达到上界仍有 unsuitable 仓时
+# **升确认门交人裁决**，绝不落 session 失败 —— CONTEXT「绝不静默失败」。
+MAX_REROUTE_ROUNDS = 2
+
+_UNSUITABLE_VERDICT = "unsuitable"
+# stage_state 里两个新键：轮次账本与逐仓结论精简摘要（正文由下游按 id 自取，单字段 <2KB）
+_REROUTE_STATE_KEY = "reroute"
+_FITNESS_STATE_KEY = "repo_research_fitness"
 
 
 class BlueprintResearchAdapter:
@@ -720,6 +735,169 @@ class BlueprintResearchAdapter:
             )
             return False
 
+    # ── reroute 判定面（有界循环 + 超限升确认门） ──────────────────────────
+
+    async def acollect_fitness(self, session: Any) -> dict[str, dict]:
+        """按仓聚合**最新有效**调研结论：`{repository_id: {verdict, role_suggestion, ...}}`。
+
+        `record_partial` 每次都 `create` 新行（重跑/升级同一 task 会有多行），因此必须
+        `valid=True` 过滤 + `created_at` 降序**每 task 只取最新一条**；`valid=False`
+        （重索引/澄清失效）的行一律忽略。ORM 经 `sync_to_async`（INV-6：只读）。
+        """
+        try:
+            return await self._collect_fitness_sync(getattr(session, "id", None))
+        except Exception as exc:  # noqa: BLE001 — 读失败按「无结论」处理，判定会走 converged
+            logger.warning(
+                "blueprint_repo_research_fitness_collect_failed",
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+            return {}
+
+    @staticmethod
+    @sync_to_async
+    def _collect_fitness_sync(session_id: Any) -> dict[str, dict]:
+        from delivery.models import PartialPlan, RepoResearchTask
+
+        tasks = list(
+            RepoResearchTask.objects.filter(session_id=session_id).values(
+                "id", "repository_id", "status"
+            )
+        )
+        if not tasks:
+            return {}
+        latest: dict[Any, dict] = {}
+        rows = (
+            PartialPlan.objects.filter(research_task__session_id=session_id, valid=True)
+            .order_by("-created_at")
+            .values("research_task_id", "content")
+        )
+        for row in rows:
+            # 降序取首见即最新（每 task 只取一条）
+            latest.setdefault(row["research_task_id"], row["content"] or {})
+
+        collected: dict[str, dict] = {}
+        for task in tasks:
+            content = latest.get(task["id"]) or {}
+            fitness = content.get("fitness") if isinstance(content, dict) else None
+            fitness = fitness if isinstance(fitness, dict) else {}
+            collected[str(task["repository_id"])] = {
+                "verdict": str(fitness.get("verdict") or ""),
+                "role_suggestion": str(content.get("role_suggestion") or "")
+                if isinstance(content, dict)
+                else "",
+                "responsibility": str(content.get("responsibility") or "")
+                if isinstance(content, dict)
+                else "",
+                "findings": content.get("findings") or [] if isinstance(content, dict) else [],
+                "task_status": str(task["status"]),
+            }
+        return collected
+
+    async def aadvance_reroute(self, session: Any) -> dict:
+        """barrier 收敛后的**单点串行**判定与轮次递增（P3 lost-update 的唯一缓解手段）。
+
+        返回 `{"event", "stage_state_update", "escalation", "decision"}`；**adapter 只返回
+        dict，真正的 `transition` 由 112-05 注册的 handler 用 `StageOutcome` 承担**（engine 纯度）。
+
+        `stage_state` 是**整字典替换**而非深合并：只回写增量会清空 `decomposition` /
+        `routing` / `recall_context` 等既有键（它们正是只读视图属性的数据源），所以这里
+        `{**state, ...}` 浅合并整体回写，且 `session` 必须是**刚从 DB 读的新实例**。
+        """
+        session = await self._areload_session(session)
+        state = getattr(session, "stage_state", None) or {}
+        if not isinstance(state, dict):
+            state = {}
+        round_no = 0
+        existing = state.get(_REROUTE_STATE_KEY)
+        if isinstance(existing, dict):
+            try:
+                round_no = int(existing.get("count", 0) or 0)
+            except (TypeError, ValueError):
+                round_no = 0
+
+        fitness = await self.acollect_fitness(session)
+        decision = decide_reroute(fitness=fitness, round_no=round_no)
+
+        merged = {
+            **state,
+            _REROUTE_STATE_KEY: {
+                "count": decision["next_round"],
+                "excluded": decision["unsuitable_repository_ids"],
+                "last_reason": decision["reason"],
+            },
+            # 只存小摘要（正文与 findings 由下游按 repository_id 自取 PartialPlan）
+            _FITNESS_STATE_KEY: {
+                repository_id: {
+                    "verdict": item["verdict"],
+                    "role_suggestion": item["role_suggestion"],
+                    "task_status": item["task_status"],
+                }
+                for repository_id, item in fitness.items()
+            },
+        }
+
+        event_map = {
+            "converged": "converged",
+            "reroute": "reroute_needed",
+            "escalate": "exhausted",
+        }
+        event = event_map[decision["action"]]
+        escalation: dict = {}
+        if decision["action"] == "escalate":
+            # 带**全部现状**升确认门（每仓 verdict/role/responsibility），交用户裁决
+            escalation = {
+                "reason": decision["reason"],
+                "round": round_no,
+                "unsuitable_repository_ids": decision["unsuitable_repository_ids"],
+                "repos": [
+                    {
+                        "repository_id": repository_id,
+                        "verdict": item["verdict"],
+                        "role_suggestion": item["role_suggestion"],
+                        "responsibility": item["responsibility"],
+                        "task_status": item["task_status"],
+                    }
+                    for repository_id, item in fitness.items()
+                ],
+            }
+
+        if decision["action"] in ("reroute", "escalate"):
+            await self._emit(
+                EVENT_BLUEPRINT_REROUTE_TRIGGERED,
+                session,
+                {
+                    "round": decision["next_round"],
+                    "excluded_count": len(decision["unsuitable_repository_ids"]),
+                    "action": decision["action"],
+                },
+            )
+        logger.info(
+            "blueprint_reroute_decided",
+            session_id=str(getattr(session, "id", "")),
+            action=decision["action"],
+            round=decision["next_round"],
+            excluded_count=len(decision["unsuitable_repository_ids"]),
+            category="sampling",
+            component="process_runtime",
+        )
+        return {
+            "event": event,
+            "stage_state_update": merged,
+            "escalation": escalation,
+            "decision": decision,
+        }
+
+    @staticmethod
+    @sync_to_async
+    def _areload_session(session: Any) -> Any:
+        """重读 session 新实例（绝不用早先持有的陈旧对象做 read-modify-write）。"""
+        from delivery.models import ConvergenceSession
+
+        return ConvergenceSession.objects.filter(id=getattr(session, "id", None)).first() or session
+
     # ── 事件与外部依赖（各自 best-effort） ────────────────────────────────
 
     async def _emit_started(self, session: Any, task: Any) -> None:
@@ -827,6 +1005,58 @@ class BlueprintResearchAdapter:
 
 
 # ── 模块级纯函数 ──────────────────────────────────────────────────────────
+
+
+def decide_reroute(*, fitness: dict, round_no: int, max_rounds: int = MAX_REROUTE_ROUNDS) -> dict:
+    """重路由三分支判定（**纯函数**，可单测、可被 golden set 评估）。
+
+    - 无 `unsuitable` 仓 → `converged`（`next_round` 保持不变，不白烧一轮）。
+    - 有 `unsuitable` 且 `round_no < max_rounds` → `reroute`，带被排除仓清单交主 agent 补候选。
+    - 有 `unsuitable` 且 `round_no >= max_rounds` → **`escalate`**（`reason="reroute_exhausted"`），
+      带全部现状升确认门交用户裁决。
+
+    返回值里**根本不存在** failed 类动作：不收敛是「需要人裁决」，不是「流程失败」
+    （CONTEXT「绝不静默失败」；无界重路由本身也是烧容器额度的 DoS 面 T-112-19）。
+
+    Returns:
+        `{"action": "converged"|"reroute"|"escalate", "unsuitable_repository_ids": [...],
+        "next_round": int, "reason": str}`
+    """
+    try:
+        current = max(0, int(round_no))
+    except (TypeError, ValueError):
+        current = 0
+    try:
+        limit = max(0, int(max_rounds))
+    except (TypeError, ValueError):
+        limit = MAX_REROUTE_ROUNDS
+
+    unsuitable = sorted(
+        str(repository_id)
+        for repository_id, item in (fitness or {}).items()
+        if isinstance(item, dict)
+        and str(item.get("verdict") or "").strip().lower() == _UNSUITABLE_VERDICT
+    )
+    if not unsuitable:
+        return {
+            "action": "converged",
+            "unsuitable_repository_ids": [],
+            "next_round": current,
+            "reason": "no_unsuitable",
+        }
+    if current < limit:
+        return {
+            "action": "reroute",
+            "unsuitable_repository_ids": unsuitable,
+            "next_round": current + 1,
+            "reason": "unsuitable_repos_excluded",
+        }
+    return {
+        "action": "escalate",
+        "unsuitable_repository_ids": unsuitable,
+        "next_round": current,
+        "reason": "reroute_exhausted",
+    }
 
 
 def _iter_confirmation_repos(confirmation: Any) -> list[dict]:
