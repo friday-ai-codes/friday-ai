@@ -24,7 +24,10 @@
 - 载体沿用 `PartialPlan.content`，在其中新增 `repo_plan` 段（同一仓的 fitness 调研结论与方案同源可追溯，无需新表）
 - 产出方式：direct 仓起容器（复用 112 的 `blueprint_research_adapter` 派发面，新增 plan 模式参数区分调研/拟方案两类 prompt）；indirect 仓由服务端 LLM 合成能力引用清单（轻量，不起容器）
 - 澄清与补调研复用既有机制：`BlueprintThread(kind=ai_clarification, blocking)` + dispatch 增量能力；单仓定向补调研走已有 `force_deep_repository_ids` 通路，不新建机制
-- RepoPlan 按 DESIGN §5.3 形状做 jsonschema 校验（新增 `blueprint_repo_plan_schema` 或并入 blueprint_schema 模块的独立 schema 常量）：`repository_id/role/responsibility/fitness/current_state/impl_items/apis_provided/apis_consumed/local_impact/risks/open_question_thread_ids`；不合格触发有界重试（≤2 轮），仍不合格开澄清线程而非静默降级
+- RepoPlan 按 DESIGN §5.3 形状做 jsonschema 校验：**新建独立文件 `blueprint_repo_plan_schema.py`**（不碰 112 已冻结的自检面），字段 `repository_id/role/responsibility/fitness/current_state/impl_items/apis_provided/apis_consumed/local_impact/risks/open_question_thread_ids`；不合格触发有界重试（≤2 轮），仍不合格开澄清线程而非静默降级
+- **plan 模式扩展点（按调研定夺）**：全部走「新增带默认值的 keyword-only 参数」，缺省行为逐字等价 112——`dispatch(…, mode="research")` / `_build_prompt(…, mode=)`；`last_output.source` 换 `blueprint_repo_plan`（否则被 `_is_blueprint_research` 抢走并因缺 `fitness.verdict` 判失败）；`call_source` 换 111 已注册的 `blueprint_repo_plan`；**`env_FRIDAY_TASK_MODE` 保持 `explore` 不动**（它管 git 写拦截，与调研/拟方案正交）
+- **阶段 2 任务态（按调研定夺）**：复用同一 `RepoResearchTask` + `mark_stale` 触发重跑，但 `_h_bp_repo_plan` **自写完成判据**，不复用 `aall_research_tasks_terminal`（阶段语义不同）
+- **一仓多条 PartialPlan**：按 seq/更新时间取最新一条作为该仓 canonical 产物（调研段与方案段同源累积，不覆盖历史）
 
 ### Blueprint Context Bus（会话级共享上下文）
 - 新模型 `delivery.BlueprintContextEntry`：`convergence_session FK / project FK / key / kind(finding|api_surface|contract|decision|dependency_claim|question) / repository_id / content JSON / produced_by / seq(会话内单调) / status(active|superseded)`；**不复用 `ProjectMemory`**（那是项目级长期记忆、打包预算仅 30 条，高频调研写入会污染它）
@@ -45,7 +48,9 @@
   - `implementation_overview`（含 modules 与 items 的 change_type/how/files_touched/depends_on/wave）/`api_contracts`/`interaction_flows`/`impact_analysis` ← LLM 分节起草后装配
   - `must_haves` ← 由 requirement_spec 与实现项确定性派生（复用 111 的派生思路）
 - 跨仓 API 对账用**纯函数**（非 LLM 自查）：consumed 契约找不到 provider → 标 `availability=needs_support` 且要求 `support_repository_id` 出现在 `repo_associations`（缺失即视为缺协作仓，抛澄清）；provider/consumer 字段不一致（schema/字段名/方向）抛澄清，绝不静默拍板
-- 装配后强制门：过 `validate_blueprint`（111）+ 引用覆盖率门（复用 111 的 `blueprint_quality`，阈值走 SystemSetting 可配）；不达标按归因回退——单仓问题回该仓 `repo_plan`、融合问题重融合，合计上界 2 轮，超界带未决项进入 114 的审查/人审而非静默通过
+- 装配后强制门：过 `validate_blueprint`（111）+ 引用覆盖率门（复用 111 的 `blueprint_quality`，阈值走 SystemSetting 可配）；不达标按归因回退——单仓问题回该仓 `repo_plan`、融合问题重融合，合计上界 2 轮
+- **超界出口（按调研定夺）**：merge 重试超界转 `STAGE_DONE` 并**携未决项清单**（不落 `STAGE_FAILED`）——蓝图已成形只是未达覆盖率，交由 114 的 AI 审查与人审处置，符合「绝不静默通过、也不假装失败」
+- **覆盖率归因（按调研定夺）**：新写 `_coverage_gaps()` 纯函数把未覆盖结论定位到具体仓，作为「单仓回退」的判据来源（否则无法决定回哪个仓）
 
 ### 状态、stage 与观测
 - 阶段 2/3 蓝图状态 = `drafting`（一律经 `BlueprintLifecycleService`）；有 open+blocking 线程时派生显示 `needs_clarification` 并记 `return_stage`（复用 112 的双轨语义与 `blueprint_resume` 判据）
