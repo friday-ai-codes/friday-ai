@@ -259,10 +259,11 @@ async def test_full_meta_breakdown_criticality_and_snapshot(monkeypatch) -> None
     assert wc["constants"]["n_bar"] == 60.0
     assert isinstance(wc["alias_dict_hash"], str) and len(wc["alias_dict_hash"]) == 64
     assert wc["embedding_model_id"] == "test-embed-model"
-    # repo_meta：只记最终候选仓（<= STAGE0_REPO_K，Pitfall 5 体积护栏）
+    # repo_meta：记全部分桶仓（BL-02 自包含性——回放按全量 node_hits 重算，
+    # 缺 meta 的仓会拿到缺失红利并污染比对；体积护栏落在 node_hits 上）
     repo_meta = snap["repo_meta"]
     assert set(repo_meta) == {big, small, bare}
-    assert len(repo_meta) <= STAGE0_REPO_K
+    assert len(snap["candidates"]) <= STAGE0_REPO_K
     assert repo_meta[big]["n_r"] == 620
     assert repo_meta[big]["dense_cos_max"] == 0.55
     assert repo_meta[big]["last_commit_at"].startswith("2026-07-01")

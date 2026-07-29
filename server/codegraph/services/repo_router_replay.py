@@ -25,8 +25,9 @@ repo_name 容错契约：快照 node_hits 本就不存 repo_name（105-03 最小
 
 双版本快照契约（Phase 106，ROUTE-06 × research §6.2-9「版本不同即不可比」）：
 新格式快照（106-06 起）携带 ``weight_config``（生效权重/常数全值，含 n_bar）+
-``repo_meta``（per-候选元数据——dense 余弦/DB 聚合/T2 匹配分等外部 I/O 产物
-记录为数据，回放消费数据，与 Stage 1 排列记录同一模式）+ ``stage0.scored_at``
+``repo_meta``（**全部分桶仓**的元数据——dense 余弦/DB 聚合/T2 匹配分等外部
+I/O 产物记录为数据，回放消费数据，与 Stage 1 排列记录同一模式；只存候选仓会
+让非候选仓在回放时拿到缺失红利并污染比对，见 BL-02）+ ``stage0.scored_at``
 （活跃度衰减时间锚点）——回放全部从快照读取，不依赖回放时的 SystemSetting /
 默认常量 / 系统时钟（快照自包含）。105 旧快照（缺 weight_config 节，
 ``versions.weight_set_version == "phase105-v1"``）回退 legacy 三信号路径
@@ -77,6 +78,10 @@ class ReplayResult(list):
     - ``weight_set_version``：本次回放采用的权重版本——新格式取快照
       ``weight_config.weight_set_version``；旧格式恒为 ``"phase105-v1"``。
     - ``legacy_snapshot``：True 表示 105 旧快照回退路径（按当时版本比对）。
+    - ``self_contained``：新格式快照的 ``repo_meta`` 是否覆盖全部分桶仓
+      （BL-02）。False 表示快照不自包含（BL-02 修复前录制的快照）：回放已
+      裁剪掉缺 meta 的仓以保持标尺对称，但结果不可用于「同结果」判定。
+    - ``missing_meta_repo_ids``：被裁剪掉的分桶仓 id（自包含时为空列表）。
     """
 
     def __init__(
@@ -85,10 +90,14 @@ class ReplayResult(list):
         *,
         weight_set_version: str = "",
         legacy_snapshot: bool = False,
+        self_contained: bool = True,
+        missing_meta_repo_ids: list[str] | None = None,
     ) -> None:
         super().__init__(candidates or [])
         self.weight_set_version = weight_set_version
         self.legacy_snapshot = legacy_snapshot
+        self.self_contained = self_contained
+        self.missing_meta_repo_ids = list(missing_meta_repo_ids or [])
 
 
 def _rebuild_hits(node_hits: list[Any]) -> list[dict[str, Any]]:
@@ -178,10 +187,14 @@ def replay_route_from_snapshot(
     记录条数 → 输出 ``ReplayResult``（元素 ``{repo_id, score, breakdown,
     confidence}`` + ``weight_set_version``/``legacy_snapshot`` 元信息）。
 
-    边界（106-06 Pitfall 5 体积护栏的对偶）：快照 ``repo_meta`` 只存**候选仓**
-    （≤12）——录制时全部分桶仓有 meta，回放重算时非候选仓拿不到 meta、其分数
-    可能与录制时不同；verify 比对键只含候选（既有语义），候选自身分数只由自身
-    信号决定，**非候选仓不参与比对**。
+    自包含性（BL-02）：新格式快照必须为**全部分桶仓**存 ``repo_meta``——106-06
+    起录制端如此。对 BL-02 修复前录制的旧快照（只存候选仓），回放会把缺 meta
+    的仓从 hits 中裁掉以保持标尺对称（否则这些仓同时拿到 S_top 口径漂移 +
+    breadth denom=1.0 + facet 全缺三重缺失红利，分数虚高挤进比对窗口），并置
+    ``self_contained=False`` + ``missing_meta_repo_ids``——该情形下
+    :func:`verify_snapshot_replay` 直接判「快照不自包含」，不再输出误导性的
+    字段差异。注意裁剪不能完全还原录制口径（query-local ``rrf_max`` 可能由
+    被裁掉的仓贡献），所以是诊断降级而非等价回放。
     """
     stage0 = payload.get("stage0") or {}
     hits = _rebuild_hits(stage0.get("node_hits") or [])
@@ -190,23 +203,41 @@ def replay_route_from_snapshot(
     wc = weight_config if isinstance(weight_config, dict) else {}
     wc_weights = wc.get("weights")
     legacy = not (isinstance(wc_weights, dict) and wc_weights)
+    self_contained = True
+    missing_meta: list[str] = []
     if legacy:
         # 105 旧快照 / weight_config 残缺：legacy 三信号路径按当时版本重算（不抛）。
         scored = aggregate_and_score(hits)
         weight_set_version = _LEGACY_WEIGHT_SET_VERSION
     else:
-        repo_meta = payload.get("repo_meta")
+        repo_meta_raw = payload.get("repo_meta")
+        repo_meta = repo_meta_raw if isinstance(repo_meta_raw, dict) else {}
+        bucket_rids = {str((h.get("payload") or {}).get("repository_id", "")) for h in hits} - {""}
+        missing_meta = sorted(bucket_rids - set(repo_meta))
+        if missing_meta:
+            self_contained = False
+            hits = [
+                h
+                for h in hits
+                if str((h.get("payload") or {}).get("repository_id", "")) in repo_meta
+            ]
         scored = aggregate_and_score(
             hits,
             weights=wc_weights,
-            repo_meta=repo_meta if isinstance(repo_meta, dict) else {},
+            repo_meta=repo_meta,
             constants=wc.get("constants"),
             now=stage0.get("scored_at"),
         )
         weight_set_version = str(wc.get("weight_set_version") or "")
 
     def _wrap(items: list[dict[str, Any]]) -> ReplayResult:
-        return ReplayResult(items, weight_set_version=weight_set_version, legacy_snapshot=legacy)
+        return ReplayResult(
+            items,
+            weight_set_version=weight_set_version,
+            legacy_snapshot=legacy,
+            self_contained=self_contained,
+            missing_meta_repo_ids=missing_meta,
+        )
 
     sorted_scores = [c.score for c in scored]
     recorded = payload.get("candidates") or []
@@ -258,6 +289,10 @@ def verify_snapshot_replay(
     legacy 快照（105 旧格式回退路径）存在差异时，diff 文本头部加
     ``LEGACY_SNAPSHOT_NOTE`` 行澄清比对口径——版本不同即不可比（research §6.2-9）。
 
+    前置断言（BL-02）：新格式快照的 ``repo_meta`` 必须覆盖全部分桶仓，否则
+    直接判「快照不自包含」并列出缺 meta 的仓——而不是把裁剪/漂移后的分数当成
+    字段差异报出来（后者会让 replay 这个审计工具稳定误报，信任度归零）。
+
     Returns:
         ``(True, "")`` 一致；``(False, diff 文本)`` 不一致（逐候选逐字段列差异）。
         比对键固定为 ``repo_id/score/breakdown/confidence``（不含 repo_name）。
@@ -265,6 +300,13 @@ def verify_snapshot_replay(
     recomputed = replay_route_from_snapshot(
         payload, theta_abs=theta_abs, theta_margin=theta_margin, theta_med=theta_med
     )
+    if not recomputed.self_contained:
+        return (
+            False,
+            "快照不自包含：分桶仓缺 repo_meta "
+            f"{recomputed.missing_meta_repo_ids}——该快照录制于 BL-02 修复前"
+            "（只存候选仓 meta），无法据此判定「回放同结果」；请用修复后录制的快照比对",
+        )
     recorded = payload.get("candidates") or []
     diffs: list[str] = []
     if len(recomputed) != len(recorded):
@@ -274,7 +316,12 @@ def verify_snapshot_replay(
     for i, (rec, rep) in enumerate(zip(recorded, recomputed)):
         rec_id = str(rec.get("repo_id", "")) if isinstance(rec, dict) else ""
         if rec_id != rep["repo_id"]:
-            diffs.append(f"[{i}] repo_id: recorded={rec_id!r} recomputed={rep['repo_id']!r}")
+            # 位次不一致时补全「重算后的完整名次」——只报位置差异无法判断是
+            # 单仓漂移还是整体重排（按位置盲比的诊断盲区）。
+            diffs.append(
+                f"[{i}] repo_id: recorded={rec_id!r} recomputed={rep['repo_id']!r}"
+                f"；重算名次={[c['repo_id'] for c in recomputed]}"
+            )
             continue
         rec_conf = str(rec.get("confidence", ""))
         if rec_conf != rep["confidence"]:
