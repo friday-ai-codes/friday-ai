@@ -67,6 +67,7 @@ from codegraph.services.repo_router_ranking import (
     TRUST_NEEDS_CONFIRMATION,
     annotate_groups,
     clamp_ranking_params,
+    classify_degrade_reason,
     decide_block_order,
 )
 from codegraph.services.repo_router_scoring import (
@@ -76,6 +77,7 @@ from codegraph.services.repo_router_scoring import (
     derive_confidence,
     resolve_s_top_source,
 )
+from common.logging import redact_secrets_in_text
 from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
 from services.sparse_encoder import SparseEncoderService
@@ -393,7 +395,9 @@ class RepoRouterV2:
                 logger.warning(
                     "repo_router_meta_load_failed",
                     error_type=type(exc).__name__,
-                    error=str(exc)[:200],
+                    # 上游异常文本先脱敏再截断：截断只是限长，不是脱敏——密钥出现在
+                    # 前 200 字符时照样落进日志（T-107-02 的同类缺口，两处都要改）。
+                    error=redact_secrets_in_text(str(exc))[:200],
                     category="sampling",
                     component="repo_router_v2",
                 )
@@ -482,21 +486,30 @@ class RepoRouterV2:
             )
 
         # ---- Stage 1: LLM 树推理 ----
+        stage1_exc_type: str | None = None
         try:
             llm_candidates, stage1_meta = await cls._stage1_llm_reasoning(
                 query, stage0_candidates, repo_buckets, top_k
             )
         except Exception as exc:  # noqa: BLE001 — LLM 任意失败都降级 Stage 0
+            stage1_exc_type = type(exc).__name__
+            # 上游异常 body 可能回显请求内容（prompt 片段 / header 残留），必须先脱敏
+            # 再截断——截断不是脱敏。原始 str(exc) 不进任何会回前端的结构。
+            error_redacted = redact_secrets_in_text(str(exc))[:200]
             logger.warning(
                 "repo_router_v2_stage1_failed",
-                error_type=type(exc).__name__,
-                error=str(exc)[:200],
+                error_type=stage1_exc_type,
+                error=error_redacted,
                 timeout_seconds=_stage1_conf("REPO_ROUTER_STAGE1_TIMEOUT_SECONDS"),
                 category="sampling",
                 component="repo_router_v2",
             )
             llm_candidates = None
-            stage1_meta = {"skipped_reason": f"stage1_failed:{type(exc).__name__}"}
+            stage1_meta = {
+                "skipped_reason": f"stage1_failed:{stage1_exc_type}",
+                # 脱敏后的排障文本（供下钻）；入库整体仍走 redact_for_ledger，双保险。
+                "error_redacted": error_redacted,
+            }
 
         if not llm_candidates:
             # 降级路径同样产出确定性分级，margin 达标即可 auto_selected（RELY-04 解锁点）。
@@ -507,6 +520,7 @@ class RepoRouterV2:
                 top_k,
                 started,
                 stage1_meta=stage1_meta,
+                exc_type_name=stage1_exc_type,
                 **presentation_extras,
                 **snapshot_extras,
             )
@@ -977,6 +991,7 @@ class RepoRouterV2:
         started: float,
         *,
         stage1_meta: dict[str, Any] | None = None,
+        exc_type_name: str | None = None,
         grouping_repository_ids: list[str] | None = None,
         delta: float = 0.0,
         weight_config: dict[str, Any] | None = None,
@@ -992,8 +1007,16 @@ class RepoRouterV2:
         ``weight_config/repo_meta/scored_at`` 按需透传 ``_build_snapshot``
         （v2_stage0_only 降级路径与 v2 路径共用 Stage 0 打分材料）。
         ``grouping_repository_ids/delta`` 带默认值：既有直调方与测试替身照旧可用
-        （无分组上下文 → 全部 global）。
+        （无分组上下文 → 全部 global）。``exc_type_name`` 只吃**异常类型名**（不吃
+        实例/消息，脱敏边界），用于区分 ``timeout`` 与 ``upstream_error``。
         """
+        # 内部 skipped_reason 保持原字符串不变（快照/排障口径不破），另映射为面向
+        # 用户的 6 值闭集枚举；两者同时进快照 stage1 节便于交叉核对。
+        degrade_reason = classify_degrade_reason(
+            str((stage1_meta or {}).get("skipped_reason", "")), exc_type_name=exc_type_name
+        )
+        if stage1_meta is not None:
+            stage1_meta = {**stage1_meta, "degrade_reason": degrade_reason}
         # 先按全部 Stage 0 候选定稿再交呈现层截断：分组启用时要按组各取 top_k，
         # 提前截到 top_k 会让 global 组几乎恒空。confidence 推导只依赖候选在
         # Stage 0 分数序列里的位次，与此处截断上限无关（口径不变）。
@@ -1021,6 +1044,7 @@ class RepoRouterV2:
                 s_top_source=s_top_source,
             ),
             block_order=block_order,
+            degrade_reason=degrade_reason,
         )
         cls._log_scored(result, started)
         return result
@@ -1508,13 +1532,18 @@ class RepoRouterV2:
             delta=delta,
             top_k=top_k,
         )
+        degrade_reason = classify_degrade_reason("v1_fallback")
         return RepoRouteResultV2(
             candidates=candidates,
             router_version="v1_fallback",
             auto_selected=False,
             degraded=True,  # Stage 1 未参与（v1 无节点级分数，confidence 保持 low）
-            snapshot={"stage1": {"skipped_reason": "v1_fallback"}, "block_order": block_order},
+            snapshot={
+                "stage1": {"skipped_reason": "v1_fallback", "degrade_reason": degrade_reason},
+                "block_order": block_order,
+            },
             block_order=block_order,
+            degrade_reason=degrade_reason,
         )
 
     @classmethod
