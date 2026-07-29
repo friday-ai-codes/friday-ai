@@ -5,7 +5,8 @@
 - ``GET  /api/repositories/<uuid:repository_id>/charter/``：读取章程（含
   ``draft_content``，供前端预览 pending 修订草案）；无章程 → 404 中性消息。
 - ``POST /api/repositories/<uuid:repository_id>/charter/draft/``：触发 AI 三源
-  蒸馏起草（``call_source=blueprint_charter_draft``）；LLM 不可用 → 503。
+  蒸馏起草（``call_source=blueprint_charter_draft``）；LLM 不可用 → 503，
+  草案落库失败 → 500。
 - ``POST /api/repositories/<uuid:repository_id>/charter/confirm/``：人工确认
   生效（可带 ``{"edits": {...}}``），署名 ``request.user``。
 
@@ -49,8 +50,9 @@ class RepoCharterDetailView(APIView):
 class RepoCharterDraftView(APIView):
     """POST /api/repositories/<uuid:repository_id>/charter/draft/ —— 触发 AI 起草。
 
-    委托 :func:`charter_service.adraft_charter`（best-effort）：仓库不存在 → 404；
-    返回 ``None``（无 provider/default_model、LLM 失败、解析失败）→ 503；
+    委托 :func:`charter_service.adraft_charter`：仓库不存在 → 404；返回 ``None``
+    （无 provider/default_model、LLM 调用失败、解析失败）→ 503；``CharterPersistError``
+    （草案落库失败）→ 500——**内部写失败不得伪装成「供应商未配置」**（MJ-02）；
     成功 → 200 序列化（human_confirmed 章程的新草案只落 ``draft_content``）。
     """
 
@@ -67,10 +69,15 @@ class RepoCharterDraftView(APIView):
             )
         except Repository.DoesNotExist:
             return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+        except charter_service.CharterPersistError:
+            return Response(
+                {"detail": "章程草案保存失败，请稍后重试或联系管理员"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         if charter is None:
             return Response(
-                {"detail": "AI 起草暂不可用，请检查模型供应商配置"},
+                {"detail": "AI 起草暂不可用：模型调用失败或未配置可用供应商"},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
