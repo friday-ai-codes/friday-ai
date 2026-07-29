@@ -14,8 +14,15 @@
 
 from __future__ import annotations
 
-import pytest
+import hashlib
+import math
+from unittest.mock import AsyncMock
 
+import pytest
+from django.core.cache import cache
+from structlog.testing import capture_logs
+
+import codegraph.services.repo_router_metadata as metadata_mod
 from codegraph.services.repo_router_metadata import (
     DEFAULT_ALIAS_DICT,
     FACET_ACTIVITY,
@@ -24,11 +31,14 @@ from codegraph.services.repo_router_metadata import (
     FACET_STACK,
     FACET_TEAM,
     LAYER_T1,
+    LAYER_T2,
     UNCLASSIFIED_VALUE,
+    FacetT2Matcher,
     alias_dict_hash,
     match_t1,
     merge_alias_dict,
     resolve_facet_scores,
+    warm_facet_vectors,
 )
 
 # 测试用别名词典（domain/team 维度 DEFAULT 为空骨架，测试自带条目）
@@ -315,3 +325,189 @@ class TestMergeAliasDict:
         dict_a = {FACET_DOMAIN: {"a": {"aliases": ["x"], "parent": None}}}
         dict_b = {FACET_DOMAIN: {"a": {"aliases": ["y"], "parent": None}}}
         assert alias_dict_hash(dict_a) != alias_dict_hash(dict_b)
+
+
+# ============================================================================
+# FacetT2Matcher：校准余弦 + facet 值向量缓存 + 静默降级（Task 2）
+# ============================================================================
+
+_QUERY_VEC = [1.0, 0.0]
+
+
+def _vec_with_cos(c: float) -> list[float]:
+    """构造与 _QUERY_VEC 余弦恰为 c 的单位向量。"""
+    return [c, math.sqrt(max(0.0, 1.0 - c * c))]
+
+
+def _facet_vec_key(model_id: str, value: str) -> str:
+    """锁定 plan 指定的缓存 key 格式：repo_router:facet_vec:{model_id}:{sha256(value)}。"""
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return f"repo_router:facet_vec:{model_id}:{digest}"
+
+
+@pytest.fixture()
+def _clear_local_vec_cache():
+    """进程内二级缓存跨用例共享——用例前后各清一次（模块级 dict 不随事务回滚）。"""
+    metadata_mod._facet_vec_local_cache.clear()
+    yield
+    metadata_mod._facet_vec_local_cache.clear()
+
+
+@pytest.mark.usefixtures("_clear_local_vec_cache")
+class TestFacetT2Matcher:
+    async def test_calibration_clip_three_points(self, monkeypatch):
+        """校准 clip 三点：cos=0.55→1.0、0.25→0.0、0.40→0.5（lo=0.25/hi=0.55）。"""
+        for cos, expected in ((0.55, 1.0), (0.25, 0.0), (0.40, 0.5)):
+            mock = AsyncMock(return_value=_vec_with_cos(cos))
+            monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+            matcher = FacetT2Matcher(model_id=f"calib-{cos}", t2_c_lo=0.25, t2_c_hi=0.55)
+            score = await matcher.match(_QUERY_VEC, f"校准点-{cos}")
+            assert score == pytest.approx(expected)
+
+    async def test_cache_hit_zero_embedding_calls(self, monkeypatch):
+        """facet 值向量缓存命中 → 零 embedding 调用（用缓存向量算余弦）。"""
+        mock = AsyncMock(return_value=_vec_with_cos(0.55))
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+        model_id = "cache-hit-model"
+        value = "在线教育"
+        cache.set(_facet_vec_key(model_id, value), _vec_with_cos(0.40), timeout=60)
+        matcher = FacetT2Matcher(model_id=model_id, t2_c_lo=0.25, t2_c_hi=0.55)
+        score = await matcher.match(_QUERY_VEC, value)
+        # 命中缓存向量（cos 0.40 → 0.5），而非 mock 的 0.55
+        assert score == pytest.approx(0.5)
+        assert mock.await_count == 0
+
+    async def test_cache_miss_embeds_once_and_writes_back(self, monkeypatch):
+        """miss → 调用一次 embedding 并回写 cache；第二次同值调用次数不增。"""
+        mock = AsyncMock(return_value=_vec_with_cos(0.55))
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+        model_id = "cache-miss-model"
+        value = "唯一值A"
+        matcher = FacetT2Matcher(model_id=model_id, t2_c_lo=0.25, t2_c_hi=0.55)
+        assert await matcher.match(_QUERY_VEC, value) == pytest.approx(1.0)
+        assert mock.await_count == 1
+        # Django cache 已回写
+        assert cache.get(_facet_vec_key(model_id, value)) is not None
+        assert await matcher.match(_QUERY_VEC, value) == pytest.approx(1.0)
+        assert mock.await_count == 1
+
+    async def test_embedding_failure_returns_none_and_warns(self, monkeypatch):
+        """EmbeddingService 返回 None → match 返回 None + repo_router_t2_degraded 采样 warning。"""
+        mock = AsyncMock(return_value=None)
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+        matcher = FacetT2Matcher(model_id="fail-model", t2_c_lo=0.25, t2_c_hi=0.55)
+        long_value = "长值" * 20  # 40 字符：断言日志截断 32
+        with capture_logs() as logs:
+            score = await matcher.match(_QUERY_VEC, long_value)
+        assert score is None
+        degraded = [e for e in logs if e["event"] == "repo_router_t2_degraded"]
+        assert degraded, "必须记录 repo_router_t2_degraded warning"
+        assert degraded[0]["category"] == "sampling"
+        assert len(degraded[0]["facet_value"]) <= 32  # T-106-07 截断
+
+    async def test_resolver_query_embedding_none_all_t1(self, monkeypatch):
+        """query_embedding=None → T2 整体不可用（零 embedding 调用），resolver 全走 T1。"""
+        mock = AsyncMock(return_value=_vec_with_cos(0.55))
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+        matcher = FacetT2Matcher(model_id="no-query-vec", t2_c_lo=0.25, t2_c_hi=0.55)
+        result = await resolve_facet_scores(
+            "完全无关的需求",
+            {FACET_DOMAIN: "高三提分"},
+            alias_dict=_TEST_ALIAS_DICT,
+            constants={},
+            query_embedding=None,
+            t2_matcher=matcher,
+        )
+        assert result["domain"] == {"score": None, "layer": None}
+        assert mock.await_count == 0
+
+    async def test_resolver_t2_wiring_layer_t2(self, monkeypatch):
+        """T1 未命中且 T2 可用 → 走 T2 校准余弦，layer 标注 t2。"""
+        mock = AsyncMock(return_value=_vec_with_cos(0.40))
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+        matcher = FacetT2Matcher(model_id="wiring-model", t2_c_lo=0.25, t2_c_hi=0.55)
+        result = await resolve_facet_scores(
+            "完全无关的需求",
+            {FACET_DOMAIN: "高三提分"},
+            alias_dict=_TEST_ALIAS_DICT,
+            constants={},
+            query_embedding=_QUERY_VEC,
+            t2_matcher=matcher,
+        )
+        assert result["domain"]["score"] == pytest.approx(0.5)
+        assert result["domain"]["layer"] == LAYER_T2
+
+    async def test_resolver_t2_disabled_facet_stays_t1_only(self, monkeypatch):
+        """facet 在 t2_disabled_facets（O-2 放弃条款）→ 不走 T2，零 embedding 调用。"""
+        mock = AsyncMock(return_value=_vec_with_cos(0.55))
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+        matcher = FacetT2Matcher(model_id="disabled-model", t2_c_lo=0.25, t2_c_hi=0.55)
+        result = await resolve_facet_scores(
+            "完全无关的需求",
+            {FACET_DOMAIN: "高三提分"},
+            alias_dict=_TEST_ALIAS_DICT,
+            constants={"t2_disabled_facets": ["domain"]},
+            query_embedding=_QUERY_VEC,
+            t2_matcher=matcher,
+        )
+        assert result["domain"] == {"score": None, "layer": None}
+        assert mock.await_count == 0
+
+    async def test_team_never_uses_t2(self, monkeypatch):
+        """团队归属开放集只走 T1——即便 T2 可用也不调 embedding（RESEARCH A3）。"""
+        mock = AsyncMock(return_value=_vec_with_cos(0.55))
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+        matcher = FacetT2Matcher(model_id="team-model", t2_c_lo=0.25, t2_c_hi=0.55)
+        result = await resolve_facet_scores(
+            "需求未提任何团队",
+            {FACET_TEAM: "group/sub"},
+            alias_dict=_TEST_ALIAS_DICT,
+            constants={},
+            query_embedding=_QUERY_VEC,
+            t2_matcher=matcher,
+        )
+        assert result["team"] == {"score": None, "layer": None}
+        assert mock.await_count == 0
+
+
+@pytest.mark.usefixtures("_clear_local_vec_cache")
+class TestWarmFacetVectors:
+    async def test_warm_batch_success_count(self, monkeypatch):
+        """批量预热：成功条数按可用向量计；预热后 match 零单条 embedding 调用。"""
+        batch_mock = AsyncMock(return_value=[_vec_with_cos(0.5), None, _vec_with_cos(0.3)])
+        monkeypatch.setattr(
+            "services.embedding.EmbeddingService.generate_embeddings_batch", batch_mock
+        )
+        matcher = FacetT2Matcher(model_id="warm-model", t2_c_lo=0.25, t2_c_hi=0.55)
+        count = await warm_facet_vectors(["值一", "值二", "值三"], matcher)
+        assert count == 2
+        assert batch_mock.await_count == 1
+        single_mock = AsyncMock(return_value=_vec_with_cos(0.9))
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", single_mock)
+        assert await matcher.match(_QUERY_VEC, "值一") is not None
+        assert single_mock.await_count == 0
+
+    async def test_warm_skips_invalid_and_dedupes(self, monkeypatch):
+        """无效值（空/未分类/非 str/超长）跳过，重复值去重后只 embed 一次。"""
+        batch_mock = AsyncMock(return_value=[_vec_with_cos(0.5)])
+        monkeypatch.setattr(
+            "services.embedding.EmbeddingService.generate_embeddings_batch", batch_mock
+        )
+        matcher = FacetT2Matcher(model_id="warm-skip-model", t2_c_lo=0.25, t2_c_hi=0.55)
+        values = ["同值", "同值", "", UNCLASSIFIED_VALUE, None, "长" * 201]
+        count = await warm_facet_vectors(values, matcher)
+        assert count == 1
+        batch_mock.assert_awaited_once_with(["同值"])
+
+    async def test_warm_counts_already_cached(self, monkeypatch):
+        """已在缓存的值计入成功条数且不重复 embed。"""
+        model_id = "warm-cached-model"
+        cache.set(_facet_vec_key(model_id, "已缓存值"), _vec_with_cos(0.4), timeout=60)
+        batch_mock = AsyncMock(return_value=[_vec_with_cos(0.5)])
+        monkeypatch.setattr(
+            "services.embedding.EmbeddingService.generate_embeddings_batch", batch_mock
+        )
+        matcher = FacetT2Matcher(model_id=model_id, t2_c_lo=0.25, t2_c_hi=0.55)
+        count = await warm_facet_vectors(["已缓存值", "新值"], matcher)
+        assert count == 2
+        batch_mock.assert_awaited_once_with(["新值"])
