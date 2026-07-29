@@ -40,7 +40,7 @@
 - golden set 存 `server/tests/fixtures/blueprint_golden/*.json` + management command `evaluate_blueprint_golden` 离线运行；独立于 v0.19.0 的路由 golden set（不共文件、不产生冲突面）
 - 首条 golden case：高三提分专项（期望 direct 仓集合 + 关键 feature_points），断言机制级
 - 指标计算 `server/services/process_runtime/blueprint_quality.py` 纯函数：引用覆盖率（带 citations 的关键结论占比）、目标仓命中率（direct 集合对比期望）；AI 打回率/人审修改量/澄清轮次从 DB 统计（本相位留函数接口，数据由后续相位填充）
-- `agents/call_source.py` 枚举新增 7 值：blueprint_decompose / blueprint_spec_gate / blueprint_repo_research / blueprint_reroute / blueprint_repo_plan / blueprint_merge / blueprint_ai_review；同步登记 `.planning/observability/LOGGING-SPEC.md` §4.1
+- `agents/call_source.py` 枚举新增 8 值：blueprint_decompose / blueprint_spec_gate / blueprint_repo_research / blueprint_reroute / blueprint_repo_plan / blueprint_merge / blueprint_ai_review / **blueprint_charter_draft**（章程起草 LLM 调用，RESEARCH Open Question 定夺）；同步登记 `.planning/observability/LOGGING-SPEC.md` §4.1
 - structlog 事件：blueprint_stage_started/completed/failed（duration_ms + category=caller + component=process_runtime）；LifecycleService 状态转移记 caller 事件绑定 initiated_by_user_id
 
 ### Claude's Discretion
