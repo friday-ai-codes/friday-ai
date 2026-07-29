@@ -159,12 +159,26 @@ const validationErrors = computed<string[]>(() => {
   const errs: string[] = []
   const w = parsedWeights()
 
-  // INV-R2 相对形式：元数据三权重之和 ≤ 0.5 × 五权重总和
+  // 文本主导硬前提（与后端 validate_weight_config 同口径）：Σw > 0、
+  // text > 0 且为最大项——全 0 / text=0 会让全部候选得 0 分且置信度恒 low。
   const total = WEIGHT_FIELDS.reduce((acc, f) => acc + (w[f.key] || 0), 0)
-  const metaSum = (w.domain || 0) + (w.stack || 0) + (w.team || 0)
-  if (metaSum > 0.5 * total + 1e-9) {
+  const textWeight = w.text || 0
+  const maxWeight = Math.max(...WEIGHT_FIELDS.map(f => w[f.key] || 0))
+  if (total <= 1e-9) {
+    errs.push('权重不能全为 0：会让全部候选得 0 分、置信度恒为 low，编排无法自动推进')
+  }
+  else if (textWeight <= 1e-9) {
+    errs.push('「文本证据」权重必须大于 0（文本主导不变量 INV-R2 的前提）')
+  }
+  else if (textWeight < maxWeight - 1e-9) {
+    errs.push('「文本证据」权重必须是所有信号中的最大项（文本主导不变量 INV-R2）')
+  }
+
+  // INV-R2 相对形式：非文本权重之和 ≤ 0.5 × 五权重总和（分子含活跃度）
+  const metaSum = (w.domain || 0) + (w.activity || 0) + (w.stack || 0) + (w.team || 0)
+  if (total > 1e-9 && metaSum > 0.5 * total + 1e-9) {
     errs.push(
-      '文本证据必须占主导（INV-R2）：业务域 + 技术栈 + 团队归属 的权重之和不得超过全部权重和的一半',
+      '文本证据必须占主导（INV-R2）：业务域 + 活跃度 + 技术栈 + 团队归属 的权重之和不得超过全部权重和的一半',
     )
   }
 
