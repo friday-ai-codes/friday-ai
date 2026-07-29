@@ -1,0 +1,357 @@
+{
+  "weight_set_version": "phase105-v1",
+  "case_count": 14,
+  "recall_at_5": 0.9642857142857143,
+  "mrr_at_10": 0.9642857142857143,
+  "top1_correct_count": 13,
+  "high_conf_count": 10,
+  "false_auto_select_rate": 0.0,
+  "bootstrap_ci": {
+    "recall_at_5": [
+      0.8928571428571429,
+      1.0
+    ],
+    "mrr_at_10": [
+      0.8928571428571429,
+      1.0
+    ]
+  },
+  "by_label_source": {
+    "human": {
+      "case_count": 9,
+      "recall_at_5": 0.9444444444444444,
+      "mrr_at_10": 0.9444444444444444,
+      "top1_correct_count": 8,
+      "high_conf_count": 6,
+      "false_auto_select_rate": 0.0
+    },
+    "weak": {
+      "case_count": 5,
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct_count": 5,
+      "high_conf_count": 4,
+      "false_auto_select_rate": 0.0
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "gk-001-gaosan-tifen",
+      "label_source": "human",
+      "cross_group": false,
+      "expected_repos": [
+        "onion-learning",
+        "study-course",
+        "study-user-status"
+      ],
+      "ranked_repo_ids": [
+        "study-app",
+        "onion-learning",
+        "study-course",
+        "study-user-status"
+      ],
+      "top1_repo_id": "study-app",
+      "top1_breakdown": {
+        "text": 0.5762195121951219,
+        "breadth": 0.2,
+        "activity": 0.09000000000000001
+      },
+      "confidence": "medium",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 0.5,
+      "top1_correct": false
+    },
+    {
+      "case_id": "gk-002-feishu-webhook",
+      "label_source": "human",
+      "cross_group": false,
+      "expected_repos": [
+        "friday-server"
+      ],
+      "ranked_repo_ids": [
+        "friday-server",
+        "friday-web"
+      ],
+      "top1_repo_id": "friday-server",
+      "top1_breakdown": {
+        "text": 0.7,
+        "breadth": 0.12,
+        "activity": 0.09000000000000001
+      },
+      "confidence": "high",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-003-jwt-refresh",
+      "label_source": "human",
+      "cross_group": false,
+      "expected_repos": [
+        "auth-service"
+      ],
+      "ranked_repo_ids": [
+        "auth-service",
+        "legacy-portal"
+      ],
+      "top1_repo_id": "auth-service",
+      "top1_breakdown": {
+        "text": 0.7,
+        "breadth": 0.08000000000000002,
+        "activity": 0.09000000000000001
+      },
+      "confidence": "high",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-004-order-report-ambiguous",
+      "label_source": "human",
+      "cross_group": false,
+      "expected_repos": [
+        "order-center",
+        "report-engine"
+      ],
+      "ranked_repo_ids": [
+        "order-center",
+        "report-engine"
+      ],
+      "top1_repo_id": "order-center",
+      "top1_breakdown": {
+        "text": 0.7,
+        "breadth": 0.04000000000000001,
+        "activity": 0.09000000000000001
+      },
+      "confidence": "medium",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-005-deprecated-competitor",
+      "label_source": "human",
+      "cross_group": false,
+      "expected_repos": [
+        "push-service"
+      ],
+      "ranked_repo_ids": [
+        "push-service",
+        "notify-legacy"
+      ],
+      "top1_repo_id": "push-service",
+      "top1_breakdown": {
+        "text": 0.6631578947368421,
+        "breadth": 0.04000000000000001,
+        "activity": 0.09000000000000001
+      },
+      "confidence": "medium",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-006-facets-missing",
+      "label_source": "weak",
+      "cross_group": false,
+      "expected_repos": [
+        "sync-worker"
+      ],
+      "ranked_repo_ids": [
+        "sync-worker",
+        "cron-ui"
+      ],
+      "top1_repo_id": "sync-worker",
+      "top1_breakdown": {
+        "text": 0.7777777777777778,
+        "breadth": 0.04444444444444446
+      },
+      "confidence": "high",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-007-monorepo-subapp",
+      "label_source": "human",
+      "cross_group": false,
+      "expected_repos": [
+        "marketing-monorepo"
+      ],
+      "ranked_repo_ids": [
+        "marketing-monorepo",
+        "campaign-service"
+      ],
+      "top1_repo_id": "marketing-monorepo",
+      "top1_breakdown": {
+        "text": 0.7,
+        "breadth": 0.2,
+        "activity": 0.09000000000000001
+      },
+      "confidence": "high",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-008-cross-group-auth",
+      "label_source": "human",
+      "cross_group": true,
+      "expected_repos": [
+        "auth-service"
+      ],
+      "ranked_repo_ids": [
+        "auth-service",
+        "edu-content-hub"
+      ],
+      "top1_repo_id": "auth-service",
+      "top1_breakdown": {
+        "text": 0.7,
+        "breadth": 0.08000000000000002,
+        "activity": 0.09000000000000001
+      },
+      "confidence": "high",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-009-cross-group-payment",
+      "label_source": "weak",
+      "cross_group": true,
+      "expected_repos": [
+        "payment-gateway"
+      ],
+      "ranked_repo_ids": [
+        "payment-gateway",
+        "finance-dashboard"
+      ],
+      "top1_repo_id": "payment-gateway",
+      "top1_breakdown": {
+        "text": 0.7,
+        "breadth": 0.04000000000000001,
+        "activity": 0.06
+      },
+      "confidence": "high",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-010-workflow-retry",
+      "label_source": "weak",
+      "cross_group": false,
+      "expected_repos": [
+        "friday-server"
+      ],
+      "ranked_repo_ids": [
+        "friday-server",
+        "friday-web"
+      ],
+      "top1_repo_id": "friday-server",
+      "top1_breakdown": {
+        "text": 0.7,
+        "breadth": 0.08000000000000002,
+        "activity": 0.09000000000000001
+      },
+      "confidence": "high",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-011-ticket-ambiguous",
+      "label_source": "weak",
+      "cross_group": false,
+      "expected_repos": [
+        "ticket-center"
+      ],
+      "ranked_repo_ids": [
+        "ticket-center",
+        "helpdesk-ui"
+      ],
+      "top1_repo_id": "ticket-center",
+      "top1_breakdown": {
+        "text": 0.7,
+        "breadth": 0.0,
+        "activity": 0.06
+      },
+      "confidence": "medium",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-012-deprecated-only-correct",
+      "label_source": "human",
+      "cross_group": false,
+      "expected_repos": [
+        "legacy-portal"
+      ],
+      "ranked_repo_ids": [
+        "legacy-portal",
+        "misc-tools"
+      ],
+      "top1_repo_id": "legacy-portal",
+      "top1_breakdown": {
+        "text": 0.7,
+        "breadth": 0.04000000000000001,
+        "activity": 0.010000000000000002
+      },
+      "confidence": "high",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-013-partial-recall",
+      "label_source": "human",
+      "cross_group": false,
+      "expected_repos": [
+        "config-center",
+        "gateway-core"
+      ],
+      "ranked_repo_ids": [
+        "config-center",
+        "deploy-console",
+        "release-bot",
+        "ops-dashboard",
+        "infra-scripts",
+        "gateway-core"
+      ],
+      "top1_repo_id": "config-center",
+      "top1_breakdown": {
+        "text": 0.7,
+        "breadth": 0.08000000000000002,
+        "activity": 0.09000000000000001
+      },
+      "confidence": "high",
+      "recall_at_5": 0.5,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    },
+    {
+      "case_id": "gk-014-im-card-callback",
+      "label_source": "weak",
+      "cross_group": false,
+      "expected_repos": [
+        "im-bot"
+      ],
+      "ranked_repo_ids": [
+        "im-bot",
+        "ops-console"
+      ],
+      "top1_repo_id": "im-bot",
+      "top1_breakdown": {
+        "text": 0.7,
+        "breadth": 0.12,
+        "activity": 0.09000000000000001
+      },
+      "confidence": "high",
+      "recall_at_5": 1.0,
+      "mrr_at_10": 1.0,
+      "top1_correct": true
+    }
+  ],
+  "generated_at": "2026-07-29T04:29:06.601270+00:00"
+}
