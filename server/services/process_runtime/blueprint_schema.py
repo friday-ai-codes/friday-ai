@@ -176,7 +176,7 @@ BLUEPRINT_JSON_SCHEMA: dict[str, Any] = {
                     "description": "功能点清单（与 feature list 条目一一对齐）",
                     "items": {
                         "type": "object",
-                        "required": ["id", "title"],
+                        "required": ["id", "title", "intent"],
                         "properties": {
                             "id": {
                                 "type": "string",
@@ -187,6 +187,11 @@ BLUEPRINT_JSON_SCHEMA: dict[str, Any] = {
                                 "type": "string",
                                 "minLength": 1,
                                 "description": "功能点标题",
+                            },
+                            "intent": {
+                                "type": "string",
+                                "enum": ["greenfield", "brownfield", "fix"],
+                                "description": "功能点意图分类（净新增 / 存量改造 / 缺陷修复；驱动 blueprint_route 加权，DESIGN §5.7）",
                             },
                             "description": {
                                 "$ref": "#/$defs/block_list",
