@@ -214,7 +214,9 @@ async def test_advance_reroute_shallow_merge_keeps_existing_stage_state_keys() -
 
     assert merged["decomposition"] == original["decomposition"]
     assert merged["routing"] == original["routing"]
-    assert merged["reroute"]["count"] == 1
+    # 轮次账本落 stage_state["reroute"]["count"]（唯一递增点在 aadvance_reroute 内）
+    reroute_count = merged["reroute"]["count"]
+    assert reroute_count == 1
     assert merged["reroute"]["excluded"] == [str(repo.id)]
     assert merged["repo_research_fitness"][str(repo.id)]["verdict"] == "unsuitable"
     assert result["event"] == "reroute_needed"
