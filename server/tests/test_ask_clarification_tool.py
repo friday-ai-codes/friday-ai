@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -62,8 +63,11 @@ class TestAskClarificationRegistry:
         assert "question" in props
         assert "options" in props
         assert "allow_freeform" in props
+        assert "conversation_id" in props
+        assert "auto-injected" in props["conversation_id"]["description"]
         required = set(tool_def.parameters.get("required", []))
         assert {"question", "options"}.issubset(required)
+        assert "conversation_id" not in required
 
 
 class TestAskClarificationValidation:
@@ -174,3 +178,89 @@ class TestAskClarificationSuccess:
         assert r1.success and r2.success
         assert isinstance(r1.output, dict) and isinstance(r2.output, dict)
         assert r1.output["clarification_id"] != r2.output["clarification_id"]
+
+
+class TestSolutionScopeGuard:
+    @staticmethod
+    def _bind_project(monkeypatch: pytest.MonkeyPatch, project_id: object) -> None:
+        monkeypatch.setattr(
+            "agents.tools.clarification._resolve_bound_project",
+            AsyncMock(return_value=project_id),
+        )
+
+    @pytest.mark.asyncio
+    async def test_bound_project_scope_question_is_blocked(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._bind_project(monkeypatch, "project-1")
+        options = [
+            {"id": "all", "label": "全部 12 个模块"},
+            {"id": "some", "label": "只做部分模块"},
+        ]
+        result = await ask_clarification(
+            "本次技术方案覆盖哪些模块？",
+            options,
+            conversation_id="conversation-1",
+        )
+        assert result.success is False
+        assert "start_feature_solution" in (result.error or "")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("category", ["feature_solution", "full_tech_plan"])
+    async def test_solution_category_is_blocked_even_with_weak_question(
+        self, monkeypatch: pytest.MonkeyPatch, category: str,
+    ) -> None:
+        self._bind_project(monkeypatch, "project-1")
+        options = _valid_options()
+        options[0]["implies"]["task_category"] = category
+        result = await ask_clarification(
+            "请选择下一步操作",
+            options,
+            conversation_id="conversation-1",
+        )
+        assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_repository_selection_coding_change_is_allowed(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._bind_project(monkeypatch, "project-1")
+        options = _valid_options()
+        for option in options:
+            option["implies"]["task_category"] = "coding_change"
+        result = await ask_clarification(
+            "请选择要修改哪个仓库",
+            options,
+            conversation_id="conversation-1",
+        )
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_unbound_conversation_scope_question_is_allowed(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._bind_project(monkeypatch, None)
+        result = await ask_clarification(
+            "本次技术方案覆盖哪些模块？",
+            [
+                {"id": "all", "label": "全部模块"},
+                {"id": "some", "label": "部分模块"},
+            ],
+            conversation_id="conversation-1",
+        )
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_unknown_task_category_is_stripped_without_failing(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._bind_project(monkeypatch, "project-1")
+        options = _valid_options()
+        options[0]["implies"]["task_category"] = "invented_category"
+        result = await ask_clarification(
+            "请选择要修改哪个仓库",
+            options,
+            conversation_id="conversation-1",
+        )
+        assert result.success is True
+        assert "task_category" not in result.output["options"][0]["implies"]
