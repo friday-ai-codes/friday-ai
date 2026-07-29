@@ -940,3 +940,75 @@ async def test_delivery_failed_round_can_still_be_answered() -> None:
     await clar.arefresh_from_db()
     assert clar.answered_at is not None
     assert await ClarificationService().ahas_pending(session.id) is False
+
+
+# ===========================================================================
+# D-4：工作流侧订阅超时与澄清超时读同一配置键（消除矛盾态窗口）
+# ===========================================================================
+
+
+async def _subscribe_kwargs(**env_kwargs) -> tuple[dict, Any]:
+    """挂起一次并返回订阅 acreate 的 kwargs 与调用前时刻。"""
+    from django.utils import timezone
+
+    session = await _seed_clarifying_round()
+    node = AIPlanResearchNode()
+    with _delivery_env(**env_kwargs) as env:
+        before = timezone.now()
+        result = await node._maybe_suspend(session, _workflow_ctx())
+    assert result is not None and result.status == "waiting_event"
+    env.acreate.assert_awaited_once()
+    return env.acreate.await_args.kwargs, before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hours", [1, 3, 24])
+async def test_subscription_timeout_at_follows_clarification_hours(hours: int) -> None:
+    """订阅 timeout_at 距 now 与 CLARIFICATION_TIMEOUT_HOURS 一致（容差 60s）。"""
+    from datetime import timedelta
+
+    from django.test import override_settings
+
+    with override_settings(CLARIFICATION_TIMEOUT_HOURS=hours):
+        kwargs, before = await _subscribe_kwargs()
+
+    delta = kwargs["timeout_at"] - before
+    assert abs(delta - timedelta(hours=hours)) <= timedelta(seconds=60)
+
+
+@pytest.mark.asyncio
+async def test_subscription_timeout_defaults_to_configured_24_hours() -> None:
+    """默认配置（24h）→ 订阅超时约 24 小时，60 分钟写死口径已消失。"""
+    from datetime import timedelta
+
+    kwargs, before = await _subscribe_kwargs()
+
+    delta = kwargs["timeout_at"] - before
+    assert abs(delta - timedelta(hours=24)) <= timedelta(seconds=60)
+    assert delta > timedelta(hours=2)
+
+
+@pytest.mark.asyncio
+async def test_subscription_timeout_falls_back_when_setting_missing() -> None:
+    """配置键缺失 → getattr 兜底 24 小时且不抛。"""
+    from datetime import timedelta
+
+    from django.conf import settings
+    from django.test import override_settings
+
+    with override_settings():
+        del settings.CLARIFICATION_TIMEOUT_HOURS
+        assert not hasattr(settings, "CLARIFICATION_TIMEOUT_HOURS")
+        kwargs, before = await _subscribe_kwargs()
+
+    delta = kwargs["timeout_at"] - before
+    assert abs(delta - timedelta(hours=24)) <= timedelta(seconds=60)
+
+
+@pytest.mark.asyncio
+async def test_subscription_timeout_action_unchanged() -> None:
+    """timeout_action 仍为 fail（工作流引擎语义面不动，会话侧出口由扫描 job 驱动）。"""
+    kwargs, _ = await _subscribe_kwargs()
+
+    assert kwargs["timeout_action"] == "fail"
+    assert kwargs["event_type"] == "PlanClarifyCallback"
