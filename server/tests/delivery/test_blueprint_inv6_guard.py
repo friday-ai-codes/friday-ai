@@ -55,6 +55,14 @@ _RE_INSTANCE_SAVE = re.compile(
 
 # 字段级（镜像 feishu_chat_id 先例）：blueprint_status 赋值/kwarg（排除 ==/!= 等比较）
 _RE_FIELD_WRITE = re.compile(r"\bblueprint_status\s*=\s*[^=]")
+# 字段级绕过形态（MN-11）：setattr(obj, "blueprint_status", v) 与
+# update(**{"blueprint_status": v}) / payload 字典键——字面赋值正则都逮不到。
+_RE_FIELD_SETATTR = re.compile(r"setattr\([^,]+,\s*['\"]blueprint_status['\"]")
+_RE_FIELD_DICT_KEY = re.compile(r"['\"]blueprint_status['\"]\s*:")
+_FIELD_WRITE_PATTERNS = (_RE_FIELD_WRITE, _RE_FIELD_SETATTR, _RE_FIELD_DICT_KEY)
+
+# 字段定义行（模型层唯一合法出现处）：``blueprint_status = models.CharField(...)``
+_RE_FIELD_DEFINITION = re.compile(r"\bblueprint_status\s*=\s*models\.")
 
 
 def _iter_py_files() -> list[Path]:
@@ -68,16 +76,26 @@ def _iter_py_files() -> list[Path]:
 
 
 def _is_scanned(rel: str) -> bool:
-    """扫描范围：排除 writer 自身 / tests/ / migrations/ / delivery/models/（字段与模型定义）。"""
+    """扫描范围：排除 writer 自身 / tests/ / migrations/。
+
+    ``delivery/models/`` **不再整目录豁免**（MN-11）——模型层正是最容易被塞改状态
+    helper 的地方；定义处的噪声（``class Blueprint*`` / ``__str__`` 里的自称 /
+    ``blueprint_status = models.*``）改为逐行或逐正则收窄。
+    """
     if rel == _ALLOWED_WRITER:
         return False
     if rel.startswith("tests/") or "/tests/" in rel:
         return False
     if "/migrations/" in rel:
         return False
-    if rel.startswith("delivery/models/"):
-        return False
     return True
+
+
+def _model_write_patterns(rel: str) -> tuple[re.Pattern[str], ...]:
+    """模型定义目录只查真正的写表调用——实例化/自称正则会被定义与 ``__str__`` 命中。"""
+    if rel.startswith("delivery/models/"):
+        return (_RE_ORM_WRITE,)
+    return (_RE_ORM_WRITE, _RE_INSTANCE_SAVE, _RE_INSTANTIATE)
 
 
 def test_inv6_no_bypass_blueprint_model_write() -> None:
@@ -88,16 +106,13 @@ def test_inv6_no_bypass_blueprint_model_write() -> None:
         rel = path.relative_to(SERVER_DIR).as_posix()
         if not _is_scanned(rel):
             continue
+        patterns = _model_write_patterns(rel)
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             stripped = line.lstrip()
             # 跳过模型/枚举定义行（class BlueprintThread / class BlueprintReviewer ...）
             if stripped.startswith("class Blueprint"):
                 continue
-            if (
-                _RE_ORM_WRITE.search(line)
-                or _RE_INSTANCE_SAVE.search(line)
-                or _RE_INSTANTIATE.search(line)
-            ):
+            if any(pattern.search(line) for pattern in patterns):
                 violations.append(f"{rel}:{lineno}: {line.strip()}")
 
     assert not violations, (
@@ -110,8 +125,9 @@ def test_inv6_no_bypass_blueprint_status_field_write() -> None:
     """INV-6 字段级：除唯一 writer 外，server 源码无 ``blueprint_status=`` 赋值/kwarg。
 
     ``Artifact.blueprint_status`` 的唯一合法写路径是 BlueprintLifecycleService 的
-    CAS ``filter(...).update(blueprint_status=...)``；其它模块出现该 kwarg/赋值即视
-    为旁路（绕过转移表守卫与并发 CAS），命中即 fail 并列出文件:行。
+    CAS ``filter(...).update(blueprint_status=...)``；其它模块出现该 kwarg/赋值/
+    ``setattr``/字典键即视为旁路（绕过转移表守卫与并发 CAS），命中即 fail 并列出
+    文件:行。字段定义行（``blueprint_status = models.*``）逐行豁免。
     """
     violations: list[str] = []
 
@@ -120,7 +136,9 @@ def test_inv6_no_bypass_blueprint_status_field_write() -> None:
         if not _is_scanned(rel):
             continue
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if _RE_FIELD_WRITE.search(line):
+            if _RE_FIELD_DEFINITION.search(line):
+                continue
+            if any(pattern.search(line) for pattern in _FIELD_WRITE_PATTERNS):
                 violations.append(f"{rel}:{lineno}: {line.strip()}")
 
     assert not violations, (
@@ -142,3 +160,16 @@ def test_inv6_blueprint_writer_actually_writes() -> None:
         "BlueprintLifecycleService 应是唯一 BlueprintReviewer 写表点，"
         "但未检出 .objects.<write>（aget_or_create）"
     )
+
+
+def test_inv6_field_patterns_catch_bypass_forms() -> None:
+    """MN-11 正向对照：新增两条正则确实能逮住字面赋值逮不到的绕过写法。"""
+    setattr_line = '    setattr(artifact, "blueprint_status", BlueprintStatus.CONFIRMED)'
+    dict_line = '    Artifact.objects.filter(id=x).update(**{"blueprint_status": "confirmed"})'
+
+    assert not _RE_FIELD_WRITE.search(setattr_line), "字面赋值正则本就逮不到 setattr 形态"
+    assert any(pattern.search(setattr_line) for pattern in _FIELD_WRITE_PATTERNS)
+    assert any(pattern.search(dict_line) for pattern in _FIELD_WRITE_PATTERNS)
+
+    # 字段定义行必须被逐行豁免，否则守护会在模型层自我 fail
+    assert _RE_FIELD_DEFINITION.search("    blueprint_status = models.CharField(")
