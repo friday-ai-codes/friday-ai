@@ -381,14 +381,14 @@ async def aload_weight_config() -> dict:
 
 ## Open Questions
 
-1. **`C_crit` 的实现语义：加性贡献 vs 排序 tie-break**
+1. **(RESOLVED — CONTEXT 已裁决为排序 tie-break，106-01 实现) `C_crit` 的实现语义：加性贡献 vs 排序 tie-break**
    - What we know: CONTEXT 同时锁定「权重表含 C_crit 0.05、Σ=1.00、INV-R2/R3」与「仅作同分带内 tie-break（|S_a-S_b|<0.03 时生效）」。两者机械上互斥：加性贡献最大差 ≈0.05 > 0.03，能翻转带外名次；纯 tie-break 则 C_crit 不进 Σbreakdown。
    - What's unclear: research §3.6 原文是「权重上限 0.05，**且建议只作为**同分带内排序依据」——偏向 tie-break。
    - Recommendation: 实现为**排序 tie-break**：加性和不含 C_crit（其余权重经重归一化天然吸收），排序键 `(-round(score,6), -crit_anchor, repo_id)` 仅在量化后同分带（round 到 |Δ|<0.03 语义可用「score 量化到 0.03 粒度桶」或显式带内比较）生效；C_crit 值仍进 trace/breakdown 旁路字段（informational，不计 Σ）。权重表中 0.05 保留在 weight_config 里作为未来切换开关。planner 若选加性方案，需放弃「仅同分带生效」字面语义并在 SUMMARY 记录取舍。
-2. **N_r/N̄ 快照的存放与刷新**
+2. **(RESOLVED — CONTEXT 已裁决 `--write-snapshot` 落 SystemSetting，106-04/106-06 实现) N_r/N̄ 快照的存放与刷新**
    - What we know: N_r 离线取自 Qdrant 计数（measure command 已有逻辑）；N̄ 为中位数；路由时不应逐次 count（12 仓 × exact count 也可接受但慢）。
    - Recommendation: measure command 增加 `--write-snapshot` 把 `{repo_id: n_r}` + median 写 SystemSetting（如 `repo_router.nr_snapshot`）；router loader 带缓存读取；快照缺失时 breadth 退化（b=0 等价路径）并 warning。索引重建后运维重跑 command（或索引完成钩子自动刷新，planner 定）。
-3. **生产实测数字（O-1/O-3/O-5/O-2）全部 deferred**
+3. **(RESOLVED — 按数据环境标注纪律 deferred，106-04 落管线，生产回填列 UAT) 生产实测数字（O-1/O-3/O-5/O-2）全部 deferred**
    - What we know: 105-MEASUREMENTS 占位表未回填；本 phase 可按「余弦口径 + b=0.6 初值」推进公式形式，常数定版等生产回填。
    - Recommendation: 106-MEASUREMENTS.md 沿用占位表 + 执行指引模式；把「生产执行 + 回填」列为 UAT 挂账人工步骤。
 
