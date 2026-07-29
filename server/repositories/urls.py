@@ -3,6 +3,11 @@
 from adrf.routers import DefaultRouter
 from django.urls import include, path
 
+from .charter_views import (
+    RepoCharterConfirmView,
+    RepoCharterDetailView,
+    RepoCharterDraftView,
+)
 from .chunk_at_views import ChunkAtView
 from .graph_search_views import GraphSearchView
 from .index_views import (
@@ -317,6 +322,22 @@ urlpatterns = [
         "<uuid:repository_id>/refresh-remote-head/",
         RefreshRemoteHeadView.as_view(),
         name="repository-refresh-remote-head",
+    ),
+    # Plan 111-03：仓库章程读取 / AI 起草 / 人工确认（CHARTER-01）
+    path(
+        "<uuid:repository_id>/charter/",
+        RepoCharterDetailView.as_view(),
+        name="repository-charter",
+    ),
+    path(
+        "<uuid:repository_id>/charter/draft/",
+        RepoCharterDraftView.as_view(),
+        name="repository-charter-draft",
+    ),
+    path(
+        "<uuid:repository_id>/charter/confirm/",
+        RepoCharterConfirmView.as_view(),
+        name="repository-charter-confirm",
     ),
     # codegraph API（implementation contract）：必须在末尾，UUID 通配符顺序安全
     path("<uuid:repository_id>/codegraph/", include("codegraph.urls")),
