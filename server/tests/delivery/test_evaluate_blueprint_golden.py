@@ -90,6 +90,24 @@ def test_bad_json_case_fails_without_crashing_run(tmp_path: Path) -> None:
     assert "corrupt" in output and "good_case" in output
 
 
+def test_case_line_format_without_metrics_and_name_with_arrow(tmp_path: Path) -> None:
+    """MN-13：无 metrics 时行首不留双空格；case 名里的 ':  →' 不被误改。"""
+    (tmp_path / "corrupt.json").write_text("{不是 JSON", encoding="utf-8")
+    weird_name = "边界:  → 名字"
+    _write_case(tmp_path, "weird", make_blueprint(), dict(_PERMISSIVE_EXPECTED))
+    payload = json.loads((tmp_path / "weird.json").read_text(encoding="utf-8"))
+    payload["name"] = weird_name
+    (tmp_path / "weird.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    buf = StringIO()
+    with pytest.raises(CommandError, match="未过门槛"):
+        call_command("evaluate_blueprint_golden", "--fixtures-dir", str(tmp_path), stdout=buf)
+    lines = buf.getvalue().splitlines()
+
+    assert "corrupt: → FAIL" in lines  # metrics 为空：无双空格
+    assert any(line.startswith(f"{weird_name}: ") and line.endswith("→ PASS") for line in lines)
+
+
 def test_empty_fixtures_dir_is_hard_error(tmp_path: Path) -> None:
     with pytest.raises(CommandError, match="golden 基线缺失"):
         call_command(

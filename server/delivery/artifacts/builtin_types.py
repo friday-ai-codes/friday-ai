@@ -15,14 +15,18 @@ from delivery.artifacts.registry import register_artifact_type
 
 ARTIFACT_TYPE_TECHNICAL_PLAN = "technical_plan"
 
-BLUEPRINT_SCHEMA_VERSION = "blueprint/v1"
-
 
 def _validate_technical_plan(content: dict) -> tuple[bool, str | None]:
-    if isinstance(content, dict) and content.get("schema_version") == BLUEPRINT_SCHEMA_VERSION:
-        from services.process_runtime.blueprint_schema import validate_blueprint
+    if isinstance(content, dict) and content.get("schema_version"):
+        # 判别常量与校验器同源懒 import（MN-10）：本模块不再复制 "blueprint/v1"
+        # 字面量，避免 schema 演进时漏改一处导致新版蓝图静默走 v0 校验路径。
+        from services.process_runtime.blueprint_schema import (
+            BLUEPRINT_SCHEMA_VERSION,
+            validate_blueprint,
+        )
 
-        return validate_blueprint(content)
+        if content.get("schema_version") == BLUEPRINT_SCHEMA_VERSION:
+            return validate_blueprint(content)
     from workflows.schemas.technical_plan import validate_technical_plan
 
     return validate_technical_plan(content)

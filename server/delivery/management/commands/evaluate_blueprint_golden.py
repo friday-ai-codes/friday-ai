@@ -171,7 +171,10 @@ class Command(BaseCommand):
                 f"{key}={value}" for key, value in sorted(case["metrics"].items())
             )
             verdict = "PASS" if case["passed"] else "FAIL"
-            self.stdout.write(f"{case['name']}: {metric_text} → {verdict}".replace(":  →", ": →"))
+            # 先判空再拼（MN-13）：对成品字符串做 replace 会误伤 case 名里的 ":  →"，
+            # 而确定性双跑门槛正是逐字节比对本行输出。
+            head = f"{case['name']}: {metric_text}" if metric_text else f"{case['name']}:"
+            self.stdout.write(f"{head} → {verdict}")
             for failure in case["failures"]:
                 self.stdout.write(f"  - {failure}")
 

@@ -52,6 +52,29 @@ async def test_v0_content_still_passes_original_validation():
     assert artifact.current_version_id is not None
 
 
+def test_discriminator_follows_schema_module_constant(monkeypatch):
+    """MN-10：判别分支跟随 blueprint_schema 的唯一常量，不复制字面量。
+
+    把常量改成 ``blueprint/v2`` 后，带该 schema_version 的 content 必须仍走
+    ``validate_blueprint``——否则新版蓝图会静默落到 v0 校验路径上。
+    """
+    import services.process_runtime.blueprint_schema as schema_module
+    from delivery.artifacts.builtin_types import _validate_technical_plan
+
+    hits: list[dict] = []
+
+    def _fake_validate(content):
+        hits.append(content)
+        return True, None
+
+    monkeypatch.setattr(schema_module, "BLUEPRINT_SCHEMA_VERSION", "blueprint/v2")
+    monkeypatch.setattr(schema_module, "validate_blueprint", _fake_validate)
+
+    ok, err = _validate_technical_plan({"schema_version": "blueprint/v2"})
+    assert (ok, err) == (True, None)
+    assert len(hits) == 1
+
+
 async def test_v0_invalid_content_still_rejected():
     # v0 缺 execution_plan 仍被原 schema 拒（回归面双向验证）。
     svc = ArtifactService()
