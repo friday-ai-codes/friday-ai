@@ -6,6 +6,8 @@ migration 与默认值断言。
 2. 字段类型 / 默认值（7 字段）
 3. 行为与 cascade（最小创建 / 完整 candidates / 删 conversation 级联）
 4. Meta + migration（ordering / indexes / makemigrations clean / 双 app dep）
+5. 降级/分组两列（107-08）：默认值、列长形状约束、迁移 additive
+6. 会话 detail 的 ``routing_trace`` payload 契约（9 键 + 后端唯一派生 degraded）
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import uuid
 from io import StringIO
 
 import pytest
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.management import call_command
 
 from agents.models import AgentSession
@@ -216,6 +219,82 @@ def test_migration_dependencies_dual_app():
     deps = set(module.Migration.dependencies)
     assert ("chat", "0013_codingsession_unique_active_plan_repo") in deps
     assert ("agents", "0003_nullable_session_project_user") in deps
+
+
+# ---------------------------------------------------------------------------
+# 5. 降级原因 / 区顺序两列（107-08 Task 1）
+# ---------------------------------------------------------------------------
+
+
+def test_degrade_reason_and_block_order_default_to_empty(conversation):
+    """两列不传 → 取列默认值（"" / []），与迁移前的历史行等价、无需回填。"""
+    trace = RepositoryRoutingTrace.objects.create(
+        conversation=conversation,
+        query="默认值",
+        triggered_by=RepositoryRoutingTrace.TriggeredBy.CHAT_TOOL,
+    )
+    trace.refresh_from_db()
+    assert trace.degrade_reason == ""
+    assert trace.block_order == []
+
+
+def test_degrade_reason_column_shape_constraints():
+    """列长 32 与 JSON 默认工厂锁定：degrade_reason 结构上装不下上游异常原文。"""
+    fields = {f.name: f for f in RepositoryRoutingTrace._meta.get_fields()}
+
+    degrade = fields["degrade_reason"]
+    assert degrade.__class__.__name__ == "CharField"
+    assert degrade.max_length == 32  # type: ignore[union-attr]
+    assert degrade.blank is True  # type: ignore[union-attr]
+    assert degrade.default == ""  # type: ignore[union-attr]
+
+    block = fields["block_order"]
+    assert block.__class__.__name__ == "JSONField"
+    assert block.default is list  # type: ignore[union-attr]
+    assert block.blank is True  # type: ignore[union-attr]
+
+
+def test_degrade_reason_rejects_overlong_value(conversation):
+    """超过 32 字符（异常原文的典型长度）→ 校验层拒绝。"""
+    trace = RepositoryRoutingTrace(
+        conversation=conversation,
+        query="超长",
+        triggered_by=RepositoryRoutingTrace.TriggeredBy.CHAT_TOOL,
+        degrade_reason="ConnectionResetError: peer closed the connection",
+    )
+    with pytest.raises(DjangoValidationError):
+        trace.full_clean()
+
+
+def test_degrade_reason_and_block_order_round_trip(conversation):
+    """受控枚举值 + 长度 2 的区顺序写入读取后逐字不变。"""
+    trace = RepositoryRoutingTrace.objects.create(
+        conversation=conversation,
+        query="round trip",
+        triggered_by=RepositoryRoutingTrace.TriggeredBy.CHAT_TOOL,
+        router_version="v2_stage0_only",
+        degrade_reason="timeout",
+        block_order=["global", "in_project"],
+    )
+    trace.refresh_from_db()
+    assert trace.degrade_reason == "timeout"
+    assert trace.block_order == ["global", "in_project"]
+
+
+def test_migration_0032_is_additive_and_reversible():
+    """两列迁移 additive：仅 AddField、无数据迁移、可逆、依赖指向 0031。"""
+    import importlib
+
+    module = importlib.import_module(
+        "chat.migrations.0032_repositoryroutingtrace_degrade_reason"
+    )
+    ops = module.Migration.operations
+    assert [type(op).__name__ for op in ops] == ["AddField", "AddField"]
+    assert {op.name for op in ops} == {"degrade_reason", "block_order"}
+    assert all(op.reversible for op in ops), "AddField 必须可逆（零回填的前提）"
+    assert ("chat", "0031_remove_codingplan_canonical_plan_id") in set(
+        module.Migration.dependencies
+    )
 
 
 def test_candidate_json_schema_round_trip(conversation, sample_candidate):
