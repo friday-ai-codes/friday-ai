@@ -10,11 +10,11 @@ last_updated: "2026-07-29T07:30:40.902Z"
 last_activity: 2026-07-29
 last_activity_desc: Phase 106 execution started
 progress:
-  total_phases: 6
+  total_phases: 5
   completed_phases: 1
   total_plans: 15
   completed_plans: 7
-  percent: 17
+  percent: 20
 ---
 
 # Project State
@@ -23,7 +23,7 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
-**Core value（v0.19.0，在建）:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，方案结构覆盖数据流编排 / 模块↔仓映射 / 新增改造对照 / 主动澄清，全过程对用户实时可见。
+**Core value（v0.19.0，在建）:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。（方案结构深度 DEPTH-01~05 已移交 v0.20.0 技术方案蓝图，双 worktree 并行开发。）
 **Current focus:** Phase 106 — 多信号打分函数重构
 
 ## Current Position
@@ -40,13 +40,13 @@ Last activity: 2026-07-29 — Phase 106 execution started
 | 105 | 编排解锁与评估标尺（确定性置信度 + 分数可拆解 + golden set 门禁） | RELY-04, ROUTE-07/08/09 | Not started |
 | 106 | 多信号打分函数重构（尺寸偏置 + 元数据入分 + 活跃度连续 + 权重外置） | ROUTE-03/04/05/06 | Not started |
 | 107 | 分层呈现与链路韧性（分组/跨组标注 + 降级可见 + 澄清必达 + Stage 1 有界） | ROUTE-01/02, RELY-02/03/05 | Not started |
-| 108 | 方案深度（业务编排叙事 + 模块↔仓映射 + 新增/改造对照 + 主动澄清） | DEPTH-01~05 | Not started |
+| 108 | ~~方案深度~~ **已移交 v0.20.0 技术方案蓝图（2026-07-29）** | DEPTH-01~05（随迁） | Moved |
 | 109 | 双脊柱合流（编排产出直连执行流 + 移除徒手创作路径） | SPINE-01/02, RELY-01 | Not started |
 | 110 | 过程可观测（阶段流式 + 容器日志 + 阶段时间线） | OBS-01/02/03 | Not started |
 
-完整需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)（24 条 + Traceability，24/24 映射）；阶段详情见 [ROADMAP.md](./ROADMAP.md)；路由排序设计调研见 [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)。
+完整需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)（本里程碑 19 条 + Traceability，19/19 映射；DEPTH-01~05 已移交 v0.20.0）；阶段详情见 [ROADMAP.md](./ROADMAP.md)；路由排序设计调研见 [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)。
 
-**Execution order（依赖链，线性）:** 105 → 106 → 107 → 108 → 109 → 110。105 是全里程碑枢纽——RELY-04（置信度由分数 margin 确定性推导）是解开死锁的最短路径，同时解除 RELY-02/RELY-03 的压力，也是 ROUTE 组能被正确评估的前提（Stage 1 不可靠时若置信度仍恒 low，任何排序改进都无法体现为 `auto_selected`）；ROUTE-08 的 golden set 是回归门禁而非优化目标，不先建则后续排序改动全是盲改。106 的 ROUTE-03 是路由误选的直接机制（`max_score×(1+0.1×min(hits-1,5))` 结构性偏袒大单体），research 给了可直接落地的替代公式与数值验算。107 的分组呈现要求两组分数可比，必须等 106 定版。108 DEPTH 的价值依赖 RELY 组先成立。109 内部 SPINE-01 严格先于 SPINE-02。110 OBS 最后做，但必须复用 107 已落的事件源。
+**Execution order（依赖链，线性）:** 105 → 106 → 107 → 109 → 110（108 已移交 v0.20.0，107 完成后直接进入 109）。105 是全里程碑枢纽——RELY-04（置信度由分数 margin 确定性推导）是解开死锁的最短路径，同时解除 RELY-02/RELY-03 的压力，也是 ROUTE 组能被正确评估的前提（Stage 1 不可靠时若置信度仍恒 low，任何排序改进都无法体现为 `auto_selected`）；ROUTE-08 的 golden set 是回归门禁而非优化目标，不先建则后续排序改动全是盲改。106 的 ROUTE-03 是路由误选的直接机制（`max_score×(1+0.1×min(hits-1,5))` 结构性偏袒大单体），research 给了可直接落地的替代公式与数值验算。107 的分组呈现要求两组分数可比，必须等 106 定版。109 不再依赖方案深度——以现行 §7 execution_plan 对接执行流（深度由 v0.20.0 蓝图提供，derive_execution 同 schema 无缝换源）；109 内部 SPINE-01 严格先于 SPINE-02。110 OBS 最后做，但必须复用 107 已落的事件源。
 
 **UI 触面:** Phase 107（分组结果与 trust 标注呈现）、Phase 109（TechPlanCard 与选仓/分支执行流）、Phase 110（阶段时间线 + 流式进展）——三者 `/gsd-ui-phase` 应介入。
 
@@ -258,6 +258,8 @@ Last activity: 2026-07-29 — Phase 106 execution started
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail in `.planning/milestones/v0.2.0-ROADMAP.md`.
+
+- [Milestone v0.19.0, 2026-07-29]: **Phase 108（DEPTH-01~05）整体移交 v0.20.0 技术方案蓝图里程碑**——由 blueprint/v1 结构化 schema 原生满足；v0.19.0 执行顺序改为 105→106→107→109→110；109 依赖改为「以现行 §7 execution_plan 对接执行流」。并行边界纪律：本里程碑冻结不做 `process_runtime` 旧 prompt/schema 文件（decompose_segments/research_adapter/architect_merge_adapter/merged_plan/clarify_adapter/render）的 DEPTH 向改动；`ConvergenceSessionEvent` 事件契约由本里程碑（105-07 快照 + 110 时间线）定义，v0.20.0 只新增 `blueprint_*` 类型。详见 main 分支 `.planning/technical-blueprint/DESIGN.md` §11/§13。
 
 - [Phase 101]: 101-03: chat→delivery 反查 seam 走 `ArtifactVersion.content__chat_coding_plan_id` JSON 键（现状无写入方 → 存量零行为变化；禁止重新引入 chat→delivery eager 投影）
 - [Phase 101]: 101-03: workflow write_back 三态守门——缺键（存量）时有 triple 才回写、无 triple debug 静默；显式 True 无 triple 记 writeback_skipped（caller）
