@@ -102,7 +102,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 106-01-PLAN.md — 纯函数打分核心六信号扩展（MaxP+pivoted breadth / 元数据消费 / 活跃度衰减 / 关键程度 tie-break）+ INV-R1~R4 性质测试（wave 1）
+- [x] 106-01-PLAN.md — 纯函数打分核心六信号扩展（MaxP+pivoted breadth / 元数据消费 / 活跃度衰减 / 关键程度 tie-break）+ INV-R1~R4 性质测试（wave 1）
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
