@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -114,6 +115,11 @@ _STAGE1_DEFAULTS = {
     "REPO_ROUTER_STAGE1_MAX_CANDIDATES": 8,
     "REPO_ROUTER_STAGE1_HITS_PER_REPO": 4,
     "REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS": 86400,
+    # 107-01 落地：首调与 1 次重试**共享**的总延迟上界（per-call 超时语义不变，
+    # 且本 phase 不下调——A5 要求先有 O-6 生产实测）。
+    "REPO_ROUTER_STAGE1_TOTAL_BUDGET_SECONDS": 120.0,
+    # 指数退避基数；实际睡眠额外受剩余预算封顶。
+    "REPO_ROUTER_STAGE1_RETRY_BACKOFF_SECONDS": 2.0,
 }
 
 
@@ -121,6 +127,23 @@ def _stage1_conf(key: str):
     from django.conf import settings
 
     return getattr(settings, key, _STAGE1_DEFAULTS[key])
+
+
+def _stage1_seconds(key: str) -> float:
+    """读取 Stage 1 的秒级时长参数，非数值/非有限/非正值一律回退默认，**绝不抛**。
+
+    运维把总预算写成 ``""`` 或负数不得让路由报错，也不得让预算退化成 0 从而
+    「一次调用都不发」——照 ``clamp_ranking_params`` 的同款 fail-safe 纪律
+    （T-107-05）。
+    """
+    fallback = float(_STAGE1_DEFAULTS[key])
+    try:
+        value = float(_stage1_conf(key))
+    except (TypeError, ValueError):
+        return fallback
+    if not math.isfinite(value) or value <= 0.0:
+        return fallback
+    return value
 
 
 # confidence θ 阈值默认值（与 friday/settings.py 一致；ROUTING-RANKING §1.3a 初值）。
@@ -256,6 +279,20 @@ class RepoRouteResultV2:
     # 用户可见降级原因：`repo_router_ranking.DEGRADE_REASONS` 的 6 值闭集 ∪ `""`
     # （`""` = 无用户可见原因行）。基数受控才能当指标维度用。
     degrade_reason: str = ""
+
+
+def _is_retryable_stage1_error(exc: BaseException) -> bool:
+    """Stage 1 失败是否值得重试——判定只吃**异常类型名**，与降级原因分类同口径。
+
+    可重试 = 超时 / 上游连接与 HTTP 状态类（``classify_degrade_reason`` 归为
+    ``timeout`` / ``upstream_error`` 的那两类，子串表在 ``repo_router_ranking``
+    内单一维护）。不可重试类（解析错误、参数错误等确定性失败）直接上抛：重试
+    一次结果一样，只会白白吃掉总预算并把用户可见降级推迟一个 RTT。
+    """
+    return classify_degrade_reason("", exc_type_name=type(exc).__name__) in (
+        "timeout",
+        "upstream_error",
+    )
 
 
 def _rank_value(candidate: RepoRouteCandidateV2) -> float:
@@ -1271,6 +1308,9 @@ class RepoRouterV2:
             return None, {"skipped_reason": "no_model_configured"}
 
         timeout_seconds = float(_stage1_conf("REPO_ROUTER_STAGE1_TIMEOUT_SECONDS"))
+        # 首调与重试**共享**的总延迟上界 + 退避基数（107-01 落的两个 settings 键）。
+        total_budget_seconds = _stage1_seconds("REPO_ROUTER_STAGE1_TOTAL_BUDGET_SECONDS")
+        backoff_base_seconds = _stage1_seconds("REPO_ROUTER_STAGE1_RETRY_BACKOFF_SECONDS")
         max_candidates = int(_stage1_conf("REPO_ROUTER_STAGE1_MAX_CANDIDATES"))
         hits_per_repo = int(_stage1_conf("REPO_ROUTER_STAGE1_HITS_PER_REPO"))
         cache_ttl = int(_stage1_conf("REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS"))
@@ -1383,16 +1423,68 @@ class RepoRouterV2:
             cache_hit = False
 
         response_text = ""
+        attempts = 0
         if not cache_hit:
             # 硬性上限：不管客户端/代理如何处理超时，Stage 1 绝不超过配置的超时值。
             # 超时抛 TimeoutError → 上层 route() 捕获后降级 Stage 0（0.2s 出结果），
             # 避免慢模型把整个"仓库分级路由"拖成分钟级。
             # call_source 统一在 router 内部声明作用域——消灭调用方遗漏。
+            #
+            # 重试写在**我们自己的循环**里（`range(2)` = 首调 + 1 次重试，硬上界）：
+            # 只有这样重试才受 budget_deadline 约束。langchain 内部重试**不受**该
+            # 约束（旧病：30s×3≈90s 才放弃），故上面构造模型时保持其关闭。
             started = time.monotonic()
-            with use_call_source(CallSource.AUX_REPO_ROUTER):
-                response = await asyncio.wait_for(
-                    model.ainvoke([system, human]), timeout=timeout_seconds
-                )
+            # 首调与重试共享同一截止时刻——循环外取一次，预算耗尽即刻降级。
+            budget_deadline = started + total_budget_seconds
+            response: Any = None
+            for attempt in range(2):
+                remaining = budget_deadline - time.monotonic()
+                if remaining <= 0:
+                    try:
+                        logger.info(
+                            "repo_router_v2_stage1_budget_exhausted",
+                            attempt=attempt,
+                            attempts=attempts,
+                            total_budget_seconds=total_budget_seconds,
+                            category="sampling",
+                            component="repo_router_v2",
+                        )
+                    except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬
+                        pass
+                    raise TimeoutError("stage1_budget_exhausted")
+                attempts += 1
+                try:
+                    with use_call_source(CallSource.AUX_REPO_ROUTER):
+                        response = await asyncio.wait_for(
+                            model.ainvoke([system, human]),
+                            # per-attempt 超时取二者较小值：不存在「首调吃满
+                            # per-call 后重试无余量」的结构。
+                            timeout=min(timeout_seconds, remaining),
+                        )
+                except Exception as exc:  # noqa: BLE001 — 分类后决定重试还是上抛
+                    if attempt == 1 or not _is_retryable_stage1_error(exc):
+                        raise
+                    try:
+                        logger.info(
+                            "repo_router_v2_stage1_retry",
+                            attempt=attempt,
+                            error_type=type(exc).__name__,
+                            error=redact_secrets_in_text(str(exc))[:200],
+                            remaining_seconds=round(budget_deadline - time.monotonic(), 3),
+                            category="sampling",
+                            component="repo_router_v2",
+                        )
+                    except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬
+                        pass
+                    # 退避睡眠同样受总预算封顶：绝不睡到预算之外去。
+                    await asyncio.sleep(
+                        min(
+                            backoff_base_seconds,
+                            max(0.0, budget_deadline - time.monotonic()),
+                        )
+                    )
+                    continue
+                break
             from agents.llm_factory import content_to_text
 
             response_text = content_to_text(response.content)
@@ -1411,6 +1503,7 @@ class RepoRouterV2:
                 model=model_name,
                 candidate_count=len(stage0_candidates),
                 parsed_count=len(parsed or []),
+                attempts=attempts,
                 duration_ms=int((time.monotonic() - started) * 1000),
                 category="sampling",
                 component="repo_router_v2",
@@ -1492,6 +1585,10 @@ class RepoRouterV2:
             # 参与缓存 key 的 index_version 随 meta 回传——snapshot.versions 复用
             # 同一值，保证同一次 route 内「index_version」单一口径（MN-02）。
             "index_version": index_version,
+            # 实际上游调用次数（缓存命中为 0，正常 1，重试后 2）与本次生效的总预算
+            # ——回放/排障自包含：「这次是不是重试过、当时预算是多少」不必查配置。
+            "attempts": attempts,
+            "total_budget_seconds": total_budget_seconds,
         }
         return candidates, stage1_meta
 
