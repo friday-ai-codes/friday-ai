@@ -768,9 +768,7 @@ def _delivery_env(
         patch("initiatives.services.project_service.ProjectService", return_value=proj_svc),
         patch("services.feishu_im.FeishuIMService", feishu_cls),
         patch(_EMIT_PATH, new=emit),
-        patch(
-            "workflows.models.execution.WorkflowEventSubscription.objects.acreate", new=acreate
-        ),
+        patch("workflows.models.execution.WorkflowEventSubscription.objects.acreate", new=acreate),
     ):
         yield SimpleNamespace(im=im, emit=emit, acreate=acreate)
 
