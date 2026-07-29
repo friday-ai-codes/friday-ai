@@ -77,6 +77,83 @@ cd server && uv run python manage.py measure_repo_index_stats --activity --write
 
 ---
 
-## 2. O-2：需求文本 × facet 值余弦分布校准（由 106-04 Task 2 补）
+## 2. O-2：需求文本 × facet 值余弦分布校准（待生产实例执行）
 
-（占位——本节由 `calibrate_repo_router_metadata` command 落地后补齐。）
+**数据环境: 生产实例 friday.yc345.tv（分布实测）——deferred 人工步骤，尚未执行。**
+开发库通常无 FacetVocabulary 词表、无真实需求文本、未配置 EmbeddingService——
+`--structural` 合成样本跑出的数字只证明管线正确，**不得回填本节占位表**。
+
+### 执行指引（人工步骤，按序）
+
+1. **先看覆盖率**：执行 §1 的 measure 命令，确认各 facet 生产覆盖率——覆盖率
+   过低（<30%）的 facet 校准优先级下调（信号常年缺席，重归一化兜底）。
+2. **人工确认正样本**：按 ROUTING-RANKING §3.2 抽约 30 组「需求 × facet 值」
+   人工确认匹配对，存为 JSON 数组（`facet_value` 必须取闭集值，可选 `facet`
+   显式标维度）：
+
+   ```json
+   [{"query": "给作业批改流程增加错题归因", "facet_value": "智能批改"}]
+   ```
+
+3. **跑校准**（EmbeddingService 已配置的生产实例）：
+
+   ```bash
+   cd server && uv run python manage.py calibrate_repo_router_metadata \
+     --positives-file /path/to/positives.json
+   ```
+
+   （默认输出 markdown 表便于直接回填；机器可读加 `--format json`；
+   负样本默认每 facet 200 组可用 `--negatives` 调整。）
+
+4. **回填与生效**：把下方占位表补齐后，将建议值经
+   `PUT /api/settings/repo-router/weight-config/` 写入 `constants.t2_c_lo` /
+   `constants.t2_c_hi` 与 `t2_disabled_facets`，并同步更新 `weight_set_version`
+   与 `embedding_model_id`——**换 embedding 模型必须重校准**（CONTEXT 锁定）。
+
+### O-2 校准占位表（待生产实例执行补录）
+
+| facet | 负样本 p95 → c_lo | 正样本 p50 → c_hi | c_hi−c_lo | 判定（<0.10 弃 T2） | 数据环境 |
+|-------|-------------------|-------------------|-----------|--------------------|---------|
+| 业务线/产品线 | 待生产实例执行补录 | 待生产实例执行补录 | — | 待生产实例执行补录 | 生产实例 friday.yc345.tv（deferred） |
+| 服务对象 | 待生产实例执行补录 | 待生产实例执行补录 | — | 待生产实例执行补录 | 生产实例 friday.yc345.tv（deferred） |
+| 技术形态 | 待生产实例执行补录 | 待生产实例执行补录 | — | 待生产实例执行补录 | 生产实例 friday.yc345.tv（deferred） |
+| 技术栈 | 待生产实例执行补录 | 待生产实例执行补录 | — | 待生产实例执行补录 | 生产实例 friday.yc345.tv（deferred） |
+
+（`团队归属` 为开放集不参与默认校准——T2 对团队名区分度存疑，若生产要启用
+可显式 `--facet 团队归属` 单测并按判定决定是否进 `t2_disabled_facets`。）
+
+### 命令本身的结构性验证（已完成）
+
+**数据环境: 开发库（结构性结论）** —— `server/tests/codegraph/test_calibrate_repo_router_metadata.py`
+在 `--disable-socket` 全局隔离下验证：
+
+- `--structural` 端到端零网络：合成 query/值对 + seed 确定性伪向量 →
+  负样本分布（min/p50/p95/max）→ c_lo 建议 → 判定表；默认 facet 集恰为
+  3 语义分面 + 技术栈（`_EXT_LANGUAGE_MAP` 18 语言枚举）。
+- 无 `--positives-file` 时 c_hi 列输出「需人工正样本，deferred」，不猜正样本分布。
+- `--positives-file` 严格结构校验（非数组/缺键/超长值即报错退出——外部文件
+  不可信，威胁边界 T-106-10/06）；按闭集值反查归属 facet，无法归属的条目
+  跳过计数不猜；正样本 p50 → c_hi，`c_hi-c_lo < 0.10 → 建议加入
+  t2_disabled_facets` 判定口径锁定。
+- EmbeddingService 未配置/全部失败（mock 返回 None）→ 报错退出并提示
+  `--structural`（失败即退不重试轰炸，T-106-11）。
+- 分位数与 `repo_router_eval._quantile` 同口径（线性插值，固定输入 → 已知 p95）。
+
+管线从采样到判定可信，生产执行只是换数据源（真实需求文本 + 真实 embedding）。
+
+---
+
+## 3. deferred 挂账清单（UAT 人工步骤）
+
+以下三项均为「管线已就绪、只差在生产实例跑命令回填数字」的人工步骤
+（同 105 UAT 纪律，数据环境标注不可省略）：
+
+| # | 项 | 执行方式 | 回填位置 |
+|---|----|---------|---------|
+| 1 | **O-1** 全仓 N_r 分布（p50/p90/p99/median） + N_r/N̄ 快照写入 | §1 命令（`--write-snapshot` 同时写 SystemSetting） | 105-MEASUREMENTS.md §2 占位表 + SystemSetting `repo_router.nr_snapshot` |
+| 2 | **O-2** 各 facet c_lo/c_hi 校准数字与 T2 弃用判定 | 本文档 §2 指引（先人工确认 30 组正样本） | 本文档 §2 占位表 + weight_config `constants.t2_c_lo/t2_c_hi`、`t2_disabled_facets` |
+| 3 | **O-5** last_commit_at 覆盖率/新鲜度 + facets 五维覆盖率 | §1 命令（`--activity`） | 本文档 §1 两张占位表 |
+
+**未完成前置**：Phase 106 打分常数（`t2_c_lo`/`t2_c_hi` 初值 0.25/0.55、
+`n_bar` 快照、活跃度 H/offset）在生产回填前按 DEFAULT_WEIGHT_CONFIG 初值运行；
+回填后经权重配置端点生效（保存即生效，无需发版）。
