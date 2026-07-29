@@ -65,6 +65,7 @@ def default_needs_clarification(session: ConvergenceSession) -> tuple[bool, str,
     """默认 needs-clarification policy（CONTEXT Claude's Discretion，可注入替换）。
 
     判定规则：
+    - ``stage_state["clarification_exit"]`` 存在 → 不需澄清（超时出口短路，优先级最高）。
     - routing 候选中无任一 confidence ∈ {high, medium} → 需澄清（请补充涉及的仓库/模块）。
     - decomposition 标 ``ambiguous`` 真 → 需澄清（取 decomposition 提示）。
     - 否则不需澄清。
@@ -72,6 +73,14 @@ def default_needs_clarification(session: ConvergenceSession) -> tuple[bool, str,
     affected_task_ids 默认空——澄清答复后由 answer 端决定影响面（空表示纯解除挂起后
     全量按现状继续）。
     """
+    # 超时出口短路：出口把 stage 推到 research 并在 stage_state 留标注；若之后经 merge 的
+    # validation_failed_reclarify 回到 clarify，本 policy 会被重跑——routing 信号没变就会
+    # 再建一轮新澄清并再次挂起，形成无限循环（_MAX_CLARIFY_ROUNDS 只在下一次 clarify()
+    # 被调用时生效，兜不住这一跳）。标注写入方见 delivery 的澄清超时扫描命令。
+    stage_state = session.stage_state if isinstance(session.stage_state, dict) else {}
+    if stage_state.get("clarification_exit"):
+        return False, "", []
+
     routing = session.routing if isinstance(session.routing, dict) else {}
     candidates = routing.get("candidates", []) or []
     has_confident = any(
