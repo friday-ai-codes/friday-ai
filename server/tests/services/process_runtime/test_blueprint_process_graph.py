@@ -464,6 +464,50 @@ async def test_spec_gate_handler_maps_needs_clarification_and_persists_stage_sta
 
 @pytestmark_db
 @pytest.mark.asyncio
+async def test_self_loop_advances_do_not_overwrite_each_others_stage_state() -> None:
+    """MJ-04：两路并发续驱在 self-loop 挂起边上写不同 stage_state 键，两份增量都必须保住。
+
+    self-loop 时 ``new_stage == from_stage``，``current_stage`` 的 CAS 对两个并发写者
+    **同时成立**（都 ``updated == 1``）——若合并基准取内存里那份陈旧 session，后写者会把
+    先写者的 ``stage_state`` 整份覆盖掉（GAP-1 刚建立的「排除集永久累积」性质在并发下即失效）。
+    """
+    session = await _make_session("repo_confirmation", {"routing": {"candidates": []}})
+    # 两个写者各自持有「同一时刻」读到的 session（真实并发的最短复现）
+    writer_a = await ConvergenceSession.objects.aget(id=session.id)
+    writer_b = await ConvergenceSession.objects.aget(id=session.id)
+
+    engine_a = _engine(
+        confirm_gate=SimpleNamespace(
+            open_gate=AsyncMock(
+                return_value={
+                    "event": "awaiting_confirmation",
+                    "stage_state": {"confirmation": {"repos": ["A"]}},
+                }
+            )
+        )
+    )
+    engine_b = _engine(
+        confirm_gate=SimpleNamespace(
+            open_gate=AsyncMock(
+                return_value={
+                    "event": "awaiting_confirmation",
+                    "stage_state": {"reroute": {"excluded": ["B"]}},
+                }
+            )
+        )
+    )
+
+    await engine_a.advance(writer_a)
+    await engine_b.advance(writer_b)
+
+    fresh = await ConvergenceSession.objects.aget(id=session.id)
+    assert fresh.stage_state["confirmation"] == {"repos": ["A"]}, "先写者的增量被覆盖了"
+    assert fresh.stage_state["reroute"] == {"excluded": ["B"]}
+    assert "routing" in fresh.stage_state, "既有键不得被增量写清空"
+
+
+@pytestmark_db
+@pytest.mark.asyncio
 async def test_adapter_exception_lands_failed_with_stage_name() -> None:
     session = await _make_session("route")
     engine = _engine(route=SimpleNamespace(route=AsyncMock(side_effect=RuntimeError("boom"))))
