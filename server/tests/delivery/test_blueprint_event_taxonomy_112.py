@@ -4,7 +4,7 @@
 
 1. 112 新增 11 个 ``blueprint_*`` 阶段事件常量全部在 ``BLUEPRINT_EVENTS`` 内——
    02/03/04/05 只消费不再改 event_taxonomy.py；
-2. 蓝图事件（新增 11 + 既有 4）**一个都不在** ``ALL_EVENTS``——111 决策：blueprint
+2. 蓝图事件（112 的 11 + 113 的 3 + 既有 4）**一个都不在** ``ALL_EVENTS``——111 决策：blueprint
    事件不进 ALL_EVENTS，否则 ``test_event_taxonomy_alignment`` 的覆盖性反查会误挂；
 3. 既有 4 个常量字面值冻结（并行纪律 3：既有事件契约一字不动）。
 """
@@ -17,6 +17,9 @@ from delivery.services.event_taxonomy import (
     EVENT_BLUEPRINT_CONFIRMATION_ACTION,
     EVENT_BLUEPRINT_CONFIRMATION_LOCKED,
     EVENT_BLUEPRINT_CONFIRMATION_OPENED,
+    EVENT_BLUEPRINT_CONTEXT_ENTRY_APPENDED,
+    EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED,
+    EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED,
     EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED,
     EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
     EVENT_BLUEPRINT_REPO_RESEARCH_STARTED,
@@ -46,6 +49,13 @@ _NEW_112_EVENTS = {
     EVENT_BLUEPRINT_CONFIRMATION_LOCKED: "blueprint.confirmation.locked",
 }
 
+# 113 新增（emit 点在 113-01 BlueprintContextService；本文件只作集合形状快照）
+_NEW_113_EVENTS = {
+    EVENT_BLUEPRINT_CONTEXT_ENTRY_APPENDED: "blueprint.context.entry_appended",
+    EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED: "blueprint.context.waiter_registered",
+    EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED: "blueprint.context.waiter_satisfied",
+}
+
 # 111 既有（冻结快照）
 _EXISTING_111_EVENTS = {
     EVENT_BLUEPRINT_STATUS_TRANSITIONED: "blueprint.status.transitioned",
@@ -68,9 +78,9 @@ def test_new_112_events_in_blueprint_events() -> None:
 
 
 def test_blueprint_events_not_in_all_events() -> None:
-    """新增 11 + 既有 4 均不在 ALL_EVENTS（不污染覆盖性反查）。"""
+    """112 的 11 + 113 的 3 + 既有 4 均不在 ALL_EVENTS（不污染覆盖性反查）。"""
     assert BLUEPRINT_EVENTS.isdisjoint(ALL_EVENTS)
-    for event in list(_NEW_112_EVENTS) + list(_EXISTING_111_EVENTS):
+    for event in list(_NEW_112_EVENTS) + list(_NEW_113_EVENTS) + list(_EXISTING_111_EVENTS):
         assert event not in ALL_EVENTS
 
 
@@ -82,8 +92,8 @@ def test_existing_blueprint_events_frozen() -> None:
 
 
 def test_blueprint_events_shape() -> None:
-    """集合恰好 15 个、全部 blueprint. 前缀、无重复（frozenset 去重后计数一致）。"""
-    assert len(BLUEPRINT_EVENTS) == 15
+    """集合恰好 18 个（111 的 4 + 112 的 11 + 113 的 3）、全 blueprint. 前缀、无重复。"""
+    assert len(BLUEPRINT_EVENTS) == 18
     assert all(event.startswith("blueprint.") for event in BLUEPRINT_EVENTS)
-    declared = list(_NEW_112_EVENTS) + list(_EXISTING_111_EVENTS)
-    assert len(declared) == len(set(declared)) == 15
+    declared = list(_NEW_112_EVENTS) + list(_NEW_113_EVENTS) + list(_EXISTING_111_EVENTS)
+    assert len(declared) == len(set(declared)) == 18
