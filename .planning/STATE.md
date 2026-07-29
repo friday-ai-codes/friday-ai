@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
-current_phase: 112
-current_phase_name: 规格门与双面路由调研
+current_phase: 113
+current_phase_name: 分仓方案与融合 + Context Bus
 status: executing
-stopped_at: "Phase 111 蓝图底座完成并验证通过（4/4 plans，verification 24/24，转移表 25/25 边对齐 DESIGN §4.2，冻结面零触碰）；code review findings 已修（3 MAJOR + 11 MINOR，跳过 2 条见 Pending Todos），相位门 1768 passed。Phase 112 规划中（CONTEXT + 2 份 RESEARCH + PATTERNS 就位，planner 出计划）。"
-last_updated: "2026-07-29T17:50:00.000Z"
+stopped_at: "Phase 112 阶段 1 交付并验证（5/5 plans，verification 16/17 + GAP-1 已闭环：reroute 排除与补候选真实生效）。两轮 plan-checker 修订消除 5 条断链（stage 回边/续驱调用方/禁区显式理由/routing 契约）。code review 进行中（非阻塞）。下一步：Phase 113 smart discuss → plan → execute。"
+last_updated: "2026-07-29T22:15:00.000Z"
 last_activity: 2026-07-30
-last_activity_desc: Phase 111 complete (verification passed 24/24)
+last_activity_desc: Phase 112 complete (16/17 + gap closure)
 progress:
   total_phases: 6
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 17
+  completed_phases: 2
+  total_plans: 9
+  completed_plans: 9
+  percent: 33
 ---
 
 # Project State
@@ -24,21 +24,21 @@ progress:
 See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/technical-blueprint/DESIGN.md](./technical-blueprint/DESIGN.md)**（13 节，§12 八项决策已定夺，plan-phase 必读）。
 
 **Core value（v0.20.0，在建）:** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，仓库章程补齐净新增落点知识，飞书式划线澄清多轮收敛，全生命周期可管理，知识库可查可引可导出。
-**Current focus:** Phase 112 — 规格门与双面路由调研（阶段 1：调研 + 确认门 + 章程回灌）
+**Current focus:** Phase 113 — 分仓方案与融合（阶段 2/3）+ Blueprint Context Bus
 
 ## Current Position
 
-Phase: 112 (规格门与双面路由调研) — NOT STARTED
+Phase: 113 (分仓方案与融合 + Context Bus) — NOT STARTED
 Plan: —
-Status: Phase 111 complete & verified; ready to discuss Phase 112
-Last activity: 2026-07-30 — Phase 111 蓝图底座交付（4/4 plans，verification passed 24/24）
+Status: Phase 112 complete & verified (gap closed); ready to discuss Phase 113
+Last activity: 2026-07-30 — Phase 112 阶段 1 交付（5/5 plans，verification 16/17 + GAP-1 闭环）
 
 ## Milestone Overview (v0.20.0 — Phases 111–116 — 🟡 PLANNING)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 111 | 蓝图底座（schema + 状态机 + 线程/章程模型 + golden set） | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | ✅ Complete (4/4, passed 24/24) |
-| 112 | 规格门与双面路由调研（阶段 1 + 确认门 + 章程回灌） | FLOW-01/02/03/04, CHARTER-02/03 | Not started |
+| 112 | 规格门与双面路由调研（阶段 1 + 确认门 + 章程回灌） | FLOW-01/02/03/04, CHARTER-02/03 | ✅ Complete (5/5, 16/17 + gap closed) |
 | 113 | 分仓方案与融合（阶段 2/3）+ Context Bus | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | Not started |
 | 114 | 审查与澄清收敛（AI 审查 + 线程闭环 + 人工编辑） | FLOW-07, CLAR-02/03/04 | Not started |
 | 115 | 前端查看器与知识库（查看器/批注/tab/终审 UI） | VIEW-01/02/03/04, CLAR-01, FLOW-08 | Not started |
@@ -83,12 +83,19 @@ Last activity: 2026-07-30 — Phase 111 蓝图底座交付（4/4 plans，verific
 - [Phase 111, 2026-07-30]: 111-01: `iter_blocks` 的 section_path 约定 = 点分 + `[标识]`（items→id、repo_associations/current_state_analysis→repository_id、affected_features→feature、steps→seq，缺失回退位置下标）；114 重锚定与 115 渲染均按此约定消费，已有测试锁形状。
 - [Phase 111, 2026-07-30]: 111-02: lifecycle 事件写入对 `ConvergenceSessionEvent.session`（非空 FK）做 session 可选处理——无编排会话时只打 structlog（best-effort）；`blueprint_*` 事件常量放独立 frozenset 不进 `ALL_EVENTS`（避免 taxonomy 覆盖性反查失败）。
 - [Phase 111, 2026-07-30]: 111-03: charter 的「AI 不覆盖人工」不变量守卫落在 `charter_service` 层（human_confirmed 后 AI 只能产新 draft）；REST confirm 端点经 service 收口，不直写模型。
+- [Phase 112, 2026-07-30]: 112-03: breakdown 三分量口径 = `router_base`（RepoRouterV2 整个 score 作单一不可拆分量，因该文件冻结且现状无 breakdown 字段）+ `charter_match` + `history_match`，三项之和等于总分；v0.19.0 Phase 105 落地分数分解后只需展开 router_base，adapter 契约不变。
+- [Phase 112, 2026-07-30]: 112-03: 中文命中判定必须用 CJK 3-gram 交集——原按分隔符切词对「无分隔符整句禁区规则」必然漏判，会让章程禁区降权在生产静默失效。
+- [Phase 112, 2026-07-30]: 112-04: fitness/role_suggestion/responsibility/findings 落 `PartialPlan.content`（`RepoResearchTask` 无 report 字段，仅作任务态载体）；dispatch 需 `force_deep_repository_ids` 参数，否则「人工升级深调研」会被重新分回轻量桶静默失效。
+- [Phase 112, 2026-07-30]: 112-05: 确认门动作的续驱触发点在**视图层**（六个改状态端点，confirm 在 alock 之后——塞进 service 会在锁定前空转）；续驱失败只记 caller 事件、REST 仍 2xx、标记留库待下次触发；幂等复用既有 CAS 与 dispatch 白名单，不新造锁。
+- [Phase 112, 2026-07-30]: 112-05: 确认门留痕不可用 `record_answer`（会把门推到 answered 并被重开第二道门）；fitness citations 必须过引用池白名单（否则 confirm 永远锁不上）；`alock` 不可读 session 钉住的版本（会覆盖规格门成果）。
+- [Phase 112, 2026-07-30]: GAP-1 闭环：`reroute.excluded` 必须被候选筛选真实消费（路由候选 + 确认门 pending 两条来源同时剔除，仅人工升级豁免），reroute 轮复用 `blueprint_route(exclude_repository_ids=...)` 补候选、补不到才升门；排除集累积。
 - [Phase 111, 2026-07-30]: 111-04: golden set 与 v0.19.0 路由 golden set 完全分离（`server/tests/fixtures/blueprint_golden/` + `evaluate_blueprint_golden` command），首条 case 为高三提分专项；引用覆盖率/目标仓命中率为纯函数，另三项 DB 统计留接口占位待 112–114 填充数据。
 
 ### Pending Todos
 
 - [Phase 111 review 跳过项] **MN-06**：需新增 migration 才能修（详见 `.planning/phases/111-schema/111-REVIEW.md` Fix Log）——留到 112/113 有 migration 批次时一并做，避免为单条 MINOR 单独起 migration
 - [Phase 111 review 跳过项] **MN-12**：属权限口径决策（非实现缺陷），与 115 前端权限呈现一并定夺
+- [Phase 112 残留 PARTIAL] **FLOW-02 的「替代建议」无结构化字段**：fitness 的 `reasons` 承载了理由，但 unsuitable 时的「建议改去哪个仓」未落成结构化字段（当前混在自由文本里）。113 若需机器消费该建议再补 schema 字段，否则留到 115 前端呈现时定夺
 
 ### Blockers/Concerns
 
@@ -97,6 +104,6 @@ Last activity: 2026-07-30 — Phase 111 蓝图底座交付（4/4 plans，verific
 
 ## Session Continuity
 
-Last session: 2026-07-29/30 — 设计蓝图收敛（DESIGN.md 13 节）+ 里程碑创建 + Phase 111 全量交付（autonomous 模式）
-Next step: **Phase 112 smart discuss → plan → execute**（DESIGN.md §5.2 阶段 1 契约表、§5.4 歧义门、§5.7 双面路由为直接输入；Phase 111 的 RepoCharter/charter_service/blueprint_schema 为可消费底座）
-Resume file: 无（干净接力点：`git log` 中 Phase 111 全部 commit 已入库）
+Last session: 2026-07-29/30 — 设计蓝图收敛（DESIGN.md 13 节）+ 里程碑创建 + Phase 111/112 全量交付（autonomous 模式）
+Next step: **Phase 113 smart discuss → plan → execute**（DESIGN.md §5.2 阶段 2/3 契约、§5.3 RepoPlan schema、§5.6 Blueprint Context Bus 为直接输入；Phase 111 的 schema/lifecycle + Phase 112 的确认门锁定产物为可消费上游）
+Resume file: 无（干净接力点：Phase 111/112 全部 commit 已入库）
