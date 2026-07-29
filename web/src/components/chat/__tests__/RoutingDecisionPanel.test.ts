@@ -287,3 +287,69 @@ describe('routingDecisionPanel 分数分解', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// Phase 106 新信号标签（ROUTE-04：domain/stack/team 入分后的展示面）
+// ---------------------------------------------------------------------------
+
+describe('routingDecisionPanel Phase 106 新信号标签', () => {
+  it('domain/stack/team 键渲染对应中文标签，既有三信号标签不受影响', async () => {
+    // 值取二进制精确小数，Σbreakdown === score（重归一化后恒等式按构造成立）
+    const breakdown = {
+      text: 0.5,
+      breadth: 0.125,
+      domain: 0.125,
+      stack: 0.0625,
+      team: 0.03125,
+      activity: 0.03125,
+    }
+    const { wrapper } = mountPanelWith([candidateWithBreakdown(breakdown, 0.875)])
+
+    const trigger = findBreakdownTrigger(wrapper)
+    expect(trigger).toBeDefined()
+    await trigger!.trigger('click')
+    await nextTick()
+
+    const text = wrapper.text()
+    // 新信号中文标签（键与后端 SIGNAL_DOMAIN/SIGNAL_STACK/SIGNAL_TEAM 字面对齐）
+    expect(text).toContain('业务域匹配')
+    expect(text).toContain('技术栈匹配')
+    expect(text).toContain('团队归属')
+    // 既有三信号标签零回归
+    expect(text).toContain('文本相关')
+    expect(text).toContain('命中广度')
+    expect(text).toContain('活跃度')
+    // 明细行 + 合计行 == 键数 + 1
+    const rows = wrapper.findAll('div.justify-between')
+    expect(rows.length).toBe(Object.keys(breakdown).length + 1)
+  })
+
+  it('未知 key（future_signal）仍回退英文原名，Σbreakdown==score 时无容差告警', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      // 0.5 + 0.25 + 0.125 = 0.875（二进制精确，reduce 逐步和无舍入误差）
+      const breakdown = {
+        text: 0.5,
+        domain: 0.25,
+        future_signal: 0.125,
+      }
+      const { wrapper } = mountPanelWith([candidateWithBreakdown(breakdown, 0.875)])
+
+      const trigger = findBreakdownTrigger(wrapper)
+      expect(trigger).toBeDefined()
+      await trigger!.trigger('click')
+      await nextTick()
+
+      // 未知 key 回退英文原名（向前兼容既有行为回归断言）
+      expect(wrapper.text()).toContain('future_signal')
+      // Σbreakdown === score → 容差校验静默（重归一化兼容断言）
+      const mismatchWarns = warnSpy.mock.calls.filter(c =>
+        String(c[0]).includes('breakdown 合计与 score 不一致'),
+      )
+      expect(mismatchWarns.length).toBe(0)
+    }
+    finally {
+      warnSpy.mockRestore()
+    }
+  })
+})
