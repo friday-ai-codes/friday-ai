@@ -331,8 +331,9 @@ def _breadth_signal(
     """pivoted-size-normalized 对数饱和 breadth（ROUTING-RANKING §2.3 三步）。
 
     Step 1  n_eff = Σ (s_hat_i / s_hat_bucket_top) ** p   （桶内软计数）
-    Step 2  denom_size = 1 - b + b·(N_r/N̄)               （n_r/n_bar 可用时）
-            否则 denom_size = 1.0（b=0 等价降级——n_bar 缺失时 breadth 仍有定义）
+    Step 2  denom_size = 1 - b + b·(N_r/N̄)               （n_r > 0 且 n_bar > 0 时）
+            否则 denom_size = 1.0（b=0 等价降级——n_bar/n_r 缺失时 breadth 仍有
+            定义；``n_r <= 0`` 按缺失处理，绝不给「体量 0」的仓归一红利）
     Step 3  breadth = min(log1p(n_eff/denom_size) / log1p(n_cap), 1.0)
     """
     top = bucket_s_hats[0] if bucket_s_hats else 0.0
@@ -343,7 +344,12 @@ def _breadth_signal(
 
     n_r = meta.get("n_r")
     n_bar = consts["n_bar"]
-    if _is_number(n_r) and float(n_r) >= 0.0 and _is_number(n_bar) and float(n_bar) > 0.0:
+    # n_r <= 0 视为**缺失**（denom_size=1.0），绝不当有效值：n_r=0 会让
+    # denom_size = 1-b = 0.4，即「体量为 0 的仓」拿到最强的尺寸归一红利
+    # （n_bar=60 时 breadth 0.6438 vs 中性 0.3562，+0.29 的凭空加成）。
+    # 真实触发路径：快照生成后新索引的仓（Qdrant 已有节点 → 会出现在
+    # node_hits，快照里仍是 0）会获得系统性优势——与 ROUTE-03 相反。
+    if _is_number(n_r) and float(n_r) > 0.0 and _is_number(n_bar) and float(n_bar) > 0.0:
         b = consts["b"]
         denom_size = 1.0 - b + b * (float(n_r) / float(n_bar))
         if denom_size <= 0.0:

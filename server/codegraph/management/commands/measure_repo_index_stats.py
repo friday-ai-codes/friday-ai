@@ -413,7 +413,8 @@ class Command(BaseCommand):
         值形状与 ``repo_router_config.load_nr_snapshot`` 读取端契约对齐：
         ``{"n_r_by_repo": {rid: int}, "n_bar": float, "generated_at": iso}``。
         N̄ 取有索引仓（node_count > 0）的**中位数**而非均值——monorepo 会拉爆
-        均值（ROUTING-RANKING §2.3 N̄ 行）。
+        均值（ROUTING-RANKING §2.3 N̄ 行）。``n_r_by_repo`` 同样只收 node_count
+        > 0 的仓（MJ-04：0 会被误当有效体量并反获 breadth 加成）。
         """
         from system.models import SettingKeys, SystemSetting
 
@@ -425,7 +426,14 @@ class Command(BaseCommand):
 
         n_bar = float(statistics.median(indexed_counts))
         snapshot = {
-            "n_r_by_repo": {row["repository_id"]: row["node_count"] for row in per_repo},
+            # 只写有索引的仓（node_count > 0）：写入 0 会被 scorer 当有效值
+            # → denom_size=1-b=0.4，「体量为 0 的仓」反拿最强的尺寸归一红利
+            # （MJ-04；scorer 侧同样把 n_r<=0 视为缺失，两端防呆）。
+            "n_r_by_repo": {
+                row["repository_id"]: row["node_count"]
+                for row in per_repo
+                if row["node_count"] > 0
+            },
             "n_bar": n_bar,
             "generated_at": datetime.now(UTC).isoformat(),
         }
