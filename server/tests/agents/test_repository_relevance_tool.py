@@ -699,6 +699,130 @@ async def test_v2_cross_group_candidate_is_not_dropped_in_mapping(
     assert by_id[str(repos[0].id)]["repository_name"] == repos[0].name
 
 
+# ---------------------------------------------------------------------------
+# 10. trace 写入侧接线（107-08 Task 1）：degrade_reason / block_order 两列
+#
+# 这三条用例守护的不是「模型有列」（那是模型测试的事），而是「写入侧真的在写」。
+# 只测模型与 payload 时，写入侧漏填会让全套测试保持全绿而生产两列恒为列默认值：
+# 降级原因行永不出现（RELY-03 落空）、block_order 恒空导致前端永远平铺。
+# ---------------------------------------------------------------------------
+
+
+def _make_degraded_v2_result(repos):
+    """构造降级的 v2 fake：router_version + 两个结果级字段全部非默认值。"""
+    from codegraph.services.repo_router_v2 import (
+        RepoRouteCandidateV2,
+        RepoRouteResultV2,
+    )
+
+    return RepoRouteResultV2(
+        candidates=[
+            RepoRouteCandidateV2(
+                repo_id=str(repos[0].id),
+                repo_name=repos[0].name,
+                score=0.88,
+                confidence="high",
+                reasoning="Stage 0 节点检索命中（Stage 1 超时未参与）",
+                group="in_project",
+                trust="trusted",
+            )
+        ],
+        router_version="v2_stage0_only",
+        auto_selected=True,
+        degraded=True,
+        block_order=["global", "in_project"],
+        degrade_reason="timeout",
+    )
+
+
+async def test_trace_write_persists_degrade_reason_and_block_order(
+    project_with_repos, conversation, monkeypatch
+):
+    """经工具真实调用路径落 trace 后，从 DB 取回的两列**非**列默认值。
+
+    断言方向刻意写成「!= 默认值」+ 「== router 结果值」两段：前者检出「写入侧漏填」
+    这一类会让其余测试全绿的缺陷，后者锁定值来自 router 而非硬编码。
+    """
+    from codegraph.services.repo_router_v2 import RepoRouterV2
+
+    project, repos = project_with_repos
+    monkeypatch.setattr(
+        RepoRouterV2, "route", AsyncMock(return_value=_make_degraded_v2_result(repos))
+    )
+
+    result = await analyze_repository_relevance(
+        query="trace write degrade",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    assert result.success is True
+
+    trace = await RepositoryRoutingTrace.objects.filter(
+        conversation_id=conversation.id
+    ).afirst()
+    assert trace is not None
+    assert trace.degrade_reason != "", "写入侧未填 degrade_reason → 降级原因行永不出现"
+    assert trace.block_order != [], "写入侧未填 block_order → 前端永远平铺"
+    assert trace.degrade_reason == "timeout"
+    assert trace.block_order == ["global", "in_project"]
+    assert trace.router_version == "v2_stage0_only"
+
+
+async def test_trace_write_undegraded_v2_leaves_degrade_reason_empty(
+    project_with_repos, conversation, monkeypatch
+):
+    """router_version="v2"（未降级）→ degrade_reason 落空串，block_order 仍照落。"""
+    from codegraph.services.repo_router_v2 import RepoRouterV2
+
+    project, repos = project_with_repos
+    monkeypatch.setattr(
+        RepoRouterV2,
+        "route",
+        AsyncMock(return_value=_make_v2_result_with_presentation(repos)),
+    )
+
+    result = await analyze_repository_relevance(
+        query="trace write undegraded",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    assert result.success is True
+
+    trace = await RepositoryRoutingTrace.objects.filter(
+        conversation_id=conversation.id
+    ).afirst()
+    assert trace is not None
+    assert trace.router_version == "v2"
+    assert trace.degrade_reason == ""
+    assert trace.block_order == ["global", "in_project"]
+
+
+async def test_trace_write_legacy_path_keeps_column_defaults(
+    project_with_repos, conversation, monkeypatch
+):
+    """legacy 聚合路径（legacy_hybrid）两列留列默认值——历史行渲染不变。"""
+    project, repos = project_with_repos
+    items_by_repo = {
+        str(repos[0].id): [{"score": 0.8, "payload": {"file_path": "x.py"}}],
+    }
+    _patch_hybrid_search(monkeypatch, _make_rag_result(items_by_repo=items_by_repo))
+
+    result = await analyze_repository_relevance(
+        query="legacy defaults",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    assert result.success is True
+
+    trace = await RepositoryRoutingTrace.objects.filter(
+        conversation_id=conversation.id
+    ).afirst()
+    assert trace is not None
+    assert trace.router_version == "legacy_hybrid"
+    assert trace.degrade_reason == ""
+    assert trace.block_order == []
+
+
 async def test_legacy_path_trace_candidates_breakdown_empty(
     project_with_repos, conversation, monkeypatch
 ):
