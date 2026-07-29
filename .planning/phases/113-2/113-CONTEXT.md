@@ -32,12 +32,17 @@
 ### Blueprint Context Bus（会话级共享上下文）
 - 新模型 `delivery.BlueprintContextEntry`：`convergence_session FK / project FK / key / kind(finding|api_surface|contract|decision|dependency_claim|question) / repository_id / content JSON / produced_by / seq(会话内单调) / status(active|superseded)`；**不复用 `ProjectMemory`**（那是项目级长期记忆、打包预算仅 30 条，高频调研写入会污染它）
 - key 约定前缀：`repo:{id}.api_surface` / `contract:{name}` / `decision:{thread_id}` / `dependency:{from}->{to}`
-- 容器实时读写：扩容器知识 MCP 白名单新增 `read_blueprint_context`（支持 key_prefix / kind / repository_id / since_seq 增量拉取）与 `report_blueprint_context`（服务端校验只能写本会话、内容过 `redact_secrets_in_text`）；写入即对所有并行容器可见（server-authoritative）
+- 容器实时读写：扩容器知识 MCP 白名单新增 `read_blueprint_context`（支持 key_prefix / kind / repository_id / since_seq 增量拉取）与 `report_blueprint_context`（内容过 `redact_secrets_in_text`）；写入即对所有并行容器可见（server-authoritative）
+- **会话隔离必须 view 层自建（按调研纠偏，重要）**：容器 MCP 鉴权链只到 `token → owner(User)`，**不存在** `token → session → user`；`X-Friday-Session-Id` 仅是关联键、不可信作授权依据。故「只能读写本会话总线」必须在 view 层自建三道校验：① header session id 对应的 `SubAgentSession` 存在且属该 token owner；② 该 session 关联的 `ConvergenceSession.process_type == "technical_blueprint"`；③ 目标总线条目的 convergence_session 与之一致。缺任一条拒绝（403/404），绝不放行跨会话读写
 - 等待原语两档：
-  - **短等待**：`await_blueprint_context(key_pattern, timeout)`——机制对齐既有 `ask_user` 先例（容器保持 RUNNING + 轮询），命中即返回，超时返回未命中由 agent 自行降级（记录假设 + 开澄清线程），绝不无限挂
+  - **短等待**：`await_blueprint_context(key_pattern, timeout)`——**容器侧有界轮询** `read_blueprint_context(since_seq)`（照抄 `task/.../question_loop.py` 的 deadline 骨架），**不做服务端长轮询**：`knowledge_tools.py` 的 `timeout=60.0` 写死在公共 handler 工厂里，改它会波及全部 7 个既有工具。命中即返回；**超时返回正常结果而非 is_error**（否则诱导 agent 重试而非降级），由 agent 自行降级（记录假设 + 开澄清线程），绝不无限挂
+  - 短等待**不发心跳**（避免给公共 handler 工厂加 callback 参数，保持既有 7 工具零影响）
+  - 容器知识配额：**不改工厂计数逻辑**，派发时把 `FRIDAY_TASK_KNOWLEDGE_QUOTA` 提到 400 以容纳轮询开销
   - **长等待**：容器以 `waiting_context` 结构化结果**退出**（携 partial 产物 id + 等待声明），编排层登记依赖，目标条目就绪后**重新派发**该仓容器（prompt 带 partial 引用续作）——复用 waiting_event + barrier 与 112 的增量派发白名单
 - 第一道防线是 wave 预排：repo_plan 阶段按 API provider/consumer 关系预排波次（provider 仓先行），`await` 只兜预排不出来的动态依赖，避免退化成人人互等
 - 死锁防护：编排层检测互相等待环（A 等 B、B 等 A）→ 立即判定并抛澄清由用户裁决，不靠超时兜底
+- **waiter 生命周期（按调研定夺）**：写入侧在同事务内把被满足的 waiter 置 `superseded`；超时清理挂在 barrier 续驱路径上（不新起定时任务）
+- **容器镜像向后兼容**：老镜像无新工具时不得崩——服务端新工具缺失/未知工具名一律返回结构化错误而非 500；容器侧 endpoint/token 空值时整个 MCP server 不挂（沿用既有短路）
 - 沉淀：会话结束后有长期价值的条目走 distill 管道产 `ProjectMemory` 草案（人工 confirm 生效，遵守「AI 不覆盖人工」）
 
 ### merge 融合装配
