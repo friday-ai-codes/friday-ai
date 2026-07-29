@@ -377,6 +377,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
         """
         from datetime import timedelta
 
+        from django.conf import settings
         from django.utils import timezone
 
         from delivery.models import Clarification, ConvergenceSessionStatus
@@ -401,12 +402,20 @@ class AIPlanResearchNode(AIAgentBaseNode):
                 # CLARIFY-05：仅工作流入口发卡 + 订阅（chat 入口走 91-04 会话出口面）。
                 if context.workflow_execution and context.node_execution:
                     await self._send_clarify_card(session, context, clarification_id)
+                    # D-4 单一超时口径：订阅超时与澄清超时读**同一个**配置键，两侧同时到期。
+                    # 早先这里写死 60 分钟，而澄清侧按 24 小时判超时——第 60 分钟工作流已被
+                    # check_timeouts 标 TIMEOUT，会话却仍停在 waiting_clarification，中间是
+                    # 23 小时的矛盾态窗口（无声卡死的另一半成因）。
+                    # 生产已有的活跃订阅行携带旧 timeout_at，本改动只影响新建订阅；存量行由
+                    # 澄清超时扫描器的「workflow 已 TIMEOUT + 会话仍 waiting_clarification →
+                    # 立即出口」纵深条件兜住。
+                    timeout_hours = getattr(settings, "CLARIFICATION_TIMEOUT_HOURS", 24)
                     await WorkflowEventSubscription.objects.acreate(
                         workflow_execution=context.workflow_execution,
                         node_execution=context.node_execution,
                         event_type="PlanClarifyCallback",
                         project_key=context.workflow_context.get("project_key", ""),
-                        timeout_at=timezone.now() + timedelta(minutes=60),
+                        timeout_at=timezone.now() + timedelta(hours=timeout_hours),
                         timeout_action="fail",
                     )
                 return NodeResult(
