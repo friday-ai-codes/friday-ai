@@ -35,6 +35,7 @@
         {
           "id": "fp_01",
           "title": "培优课入口改造",
+          "intent": "brownfield",
           "description": [
             {
               "block_id": "blk_gb_fp01_desc",
@@ -48,6 +49,7 @@
         {
           "id": "fp_02",
           "title": "专项学习页",
+          "intent": "greenfield",
           "description": [
             {
               "block_id": "blk_gb_fp02_desc",
@@ -61,6 +63,7 @@
         {
           "id": "fp_03",
           "title": "专项练习",
+          "intent": "greenfield",
           "description": [
             {
               "block_id": "blk_gb_fp03_desc",

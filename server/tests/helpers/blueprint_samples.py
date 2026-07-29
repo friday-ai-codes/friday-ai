@@ -5,7 +5,8 @@
 - citations 池 3 条（repo_file / rag_chunk / knowledge_entity），被 findings /
   rationale 等块引用；
 - 2 个 direct + 1 个 indirect repo_association；
-- 2 个 feature_point；
+- 2 个 feature_point（必填 ``intent`` 枚举各取一值：fp_01 greenfield / fp_02
+  brownfield，天然覆盖两个分支）；
 - 2 个 implementation item（含跨仓 depends_on、wave、files_touched——其中一条
   ``action="remove"`` 供派生器 remove→delete 映射断言）。
 
@@ -49,12 +50,14 @@ _BASE_BLUEPRINT: dict[str, Any] = {
             {
                 "id": "fp_01",
                 "title": "习题生成接口",
+                "intent": "greenfield",
                 "description": [_block("blk_fp01_desc", "后端提供按知识点生成习题的接口。")],
                 "acceptance_criteria": ["POST /api/practice/generate 返回习题列表"],
             },
             {
                 "id": "fp_02",
                 "title": "练习页生成入口",
+                "intent": "brownfield",
                 "description": [_block("blk_fp02_desc", "前端练习页接入生成入口并展示结果。")],
                 "acceptance_criteria": ["练习页点击生成后 3s 内展示首批习题"],
             },

@@ -95,6 +95,33 @@ def test_item_missing_title_rejected():
     assert "title" in (err or "")
 
 
+def test_feature_point_missing_intent_rejected():
+    """FLOW-01：intent 是 feature_point 必填枚举——缺失即被 validate_blueprint 拒绝。"""
+    content = make_blueprint()
+    content["requirement_spec"]["feature_points"][0].pop("intent")
+    ok, err = validate_blueprint(content)
+    assert ok is False
+    assert "intent" in (err or "")
+
+
+def test_feature_point_invalid_intent_rejected():
+    """枚举白名单在 schema 内——非法意图值（refactor）不得过门。"""
+    content = make_blueprint()
+    content["requirement_spec"]["feature_points"][0]["intent"] = "refactor"
+    ok, err = validate_blueprint(content)
+    assert ok is False
+    assert err
+
+
+@pytest.mark.parametrize("intent", ["greenfield", "brownfield", "fix"])
+def test_feature_point_intent_enum_accepted(intent):
+    """三个合法枚举值均通过（正向白名单覆盖，驱动 blueprint_route 加权）。"""
+    content = make_blueprint()
+    content["requirement_spec"]["feature_points"][0]["intent"] = intent
+    ok, err = validate_blueprint(content)
+    assert (ok, err) == (True, None)
+
+
 def test_finding_missing_citations_rejected():
     content = make_blueprint()
     content["current_state_analysis"][0]["findings"][0].pop("citations")
