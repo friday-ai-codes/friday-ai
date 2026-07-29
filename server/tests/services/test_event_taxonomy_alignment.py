@@ -73,7 +73,6 @@ _EVENT_PRODUCERS: dict[str, Path] = {
 # 值是负责落地该 emit 点的子计划标注——**编号只写在这里**，块注释一律不写编号，
 # 否则删行后编号残留会让下游「标注归零」断言失效。
 _PENDING_PRODUCER_EVENTS: dict[str, str] = {
-    "clarification.delivery_failed": "107-04 Task 2",
     "clarification.timed_out": "107-06",
 }
 
