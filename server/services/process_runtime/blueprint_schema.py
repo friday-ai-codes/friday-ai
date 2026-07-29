@@ -748,6 +748,27 @@ BLUEPRINT_JSON_SCHEMA: dict[str, Any] = {
 _VALIDATOR = jsonschema.Draft202012Validator(BLUEPRINT_JSON_SCHEMA)
 
 
+# 校验报错出口长度上限：jsonschema 对 type/enum/const 类失败会把被校验实例的 repr
+# 整段拼进 message 且不做截断，而蓝图 content 是半可信正文（可能夹带代码片段/凭证
+# 样本），报错会进 DRF 响应体与调用方异常日志——出口统一脱敏 + 截断（MJ-03）。
+_MAX_ERROR_CHARS = 500
+_TRUNCATED_SUFFIX = "…（已截断）"
+
+
+def _format_error(path: str, message: Any) -> str:
+    """校验报错唯一出口：脱敏 + 截断，只保留定位信息与开头的可读原因。"""
+    text = str(message)
+    try:
+        from common.logging import redact_secrets_in_text
+
+        text = redact_secrets_in_text(text)
+    except Exception:  # noqa: BLE001 — 脱敏不可用时也不能让校验器抛（fail-safe）
+        pass
+    if len(text) > _MAX_ERROR_CHARS:
+        text = text[:_MAX_ERROR_CHARS] + _TRUNCATED_SUFFIX
+    return f"{path}: {text}"
+
+
 def _iter_citation_refs(node: Any) -> Iterator[str]:
     """递归走查任意节点，产出所有「key 为 citations 且值为 list」中的字符串引用 id。"""
     if isinstance(node, dict):
@@ -774,7 +795,8 @@ def validate_blueprint(content: Any) -> tuple[bool, str | None]:
         content: 半可信 blueprint dict（LLM 装配产物 / API 输入）。
 
     Returns:
-        ``(True, None)`` 合法；``(False, error_message)`` 非法。绝不外抛异常。
+        ``(True, None)`` 合法；``(False, error_message)`` 非法（报错经
+        :func:`_format_error` 脱敏 + 截断，绝不原样回显整段被校验实例）。绝不外抛异常。
     """
     if not isinstance(content, dict):
         return False, "content 必须是 JSON 对象"
@@ -784,7 +806,7 @@ def validate_blueprint(content: Any) -> tuple[bool, str | None]:
         errors = sorted(_VALIDATOR.iter_errors(content), key=lambda e: e.json_path)
         if errors:
             first = errors[0]
-            return False, f"{first.json_path}: {first.message}"
+            return False, _format_error(first.json_path, first.message)
 
         # 后置检查 (a)：引用完整性——全文档任何块/条目的 citations 引用 id
         # 必须存在于顶层 citations 引用池（跳过引用池本身）。
@@ -848,7 +870,7 @@ def validate_blueprint(content: Any) -> tuple[bool, str | None]:
                 )
         return True, None
     except Exception as exc:  # 防御性兜底：半可信输入恒不抛（fail-safe）
-        return False, f"blueprint 校验异常：{exc}"
+        return False, _format_error("blueprint 校验异常", exc)
 
 
 def _item_key(item: dict, key: str, index: int) -> str:

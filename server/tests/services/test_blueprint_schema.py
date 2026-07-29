@@ -162,6 +162,47 @@ def test_indirect_repository_id_accepted_in_items():
     assert (ok, err) == (True, None)
 
 
+# ---- 报错出口脱敏与截断（MJ-03）----
+
+
+def test_validation_error_truncated():
+    """jsonschema 把整段实例 repr 拼进 message；出口必须截断，不做无界正文回显。"""
+    content = make_blueprint()
+    content["requirement_spec"] = ["超长正文" * 500]
+    ok, err = validate_blueprint(content)
+    assert ok is False
+    assert err is not None
+    assert err.endswith("…（已截断）")
+    assert len(err) < 600
+
+
+def test_validation_error_redacts_secrets():
+    """半可信正文里夹带的凭证样本不得原样进 API 响应与日志。"""
+    content = make_blueprint()
+    content["requirement_spec"] = "sk-ant-api03-SECRETVALUE1234567890"
+    ok, err = validate_blueprint(content)
+    assert ok is False
+    assert "sk-ant-api03-SECRETVALUE1234567890" not in (err or "")
+    assert "REDACTED" in (err or "")
+
+
+def test_validation_exception_path_also_formatted(monkeypatch):
+    """兜底 except 出口同样走脱敏 + 截断。"""
+    from types import SimpleNamespace
+
+    import services.process_runtime.blueprint_schema as schema_module
+
+    def _boom(_content):
+        raise RuntimeError("Bearer sk-ant-leaked-token-value")
+
+    monkeypatch.setattr(schema_module, "_VALIDATOR", SimpleNamespace(iter_errors=_boom))
+    ok, err = validate_blueprint(make_blueprint())
+    assert ok is False
+    assert err is not None
+    assert err.startswith("blueprint 校验异常: ")
+    assert "sk-ant-leaked-token-value" not in err
+
+
 # ---- 枚举非法值拒绝 ----
 
 
