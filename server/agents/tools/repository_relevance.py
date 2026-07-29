@@ -267,6 +267,10 @@ async def _analyze_relevance_core(
                         # ROUTE-07：v2 候选 breakdown 透传（105-03 后必有该字段），
                         # 经 trace.candidates JSON 一路可达前端分数分解展开区。
                         breakdown=dict(c.breakdown or {}),
+                        # ROUTE-01/02：分组事实同路透传（107-03 落的 router 侧字段）。
+                        group=c.group,
+                        trust=c.trust,
+                        score_ranked=c.score_ranked,
                     )
                 )
             if not v2_candidates:
