@@ -297,6 +297,63 @@ def _is_retryable_stage1_error(exc: BaseException) -> bool:
     )
 
 
+def _stage1_usage_metadata(response: Any) -> dict[str, Any]:
+    """尽力从 LLM 响应取 token 用量；取不到返回空 dict（调用方据此记 0，绝不猜）。"""
+    try:
+        meta = getattr(response, "usage_metadata", None)
+        if isinstance(meta, dict):
+            return meta
+    except Exception:  # noqa: BLE001 — 取值 best-effort
+        pass
+    return {}
+
+
+async def _record_stage1_usage(
+    *,
+    provider: str,
+    model: str,
+    duration_ms: int,
+    failure_type: str = "",
+    upstream_status_code: int | None = None,
+    usage: dict[str, Any] | None = None,
+) -> None:
+    """Stage 1 每次**上游调用**收尾落一行 ``ModelUsageRecord``（LOGGING-SPEC §9）。
+
+    口径：**一次上游调用一行**——重试算两次请求（QPS/错误率按请求数统计才对得
+    上）；**缓存命中零行**（未发上游调用，与 ``repo_router_v2_stage1_completed``
+    同口径）。与 ``SystemLogEntry.payload.duration_ms``（107-02 的 O-6 数据源）
+    是两个口径：前者是事件日志、受运行时采样配置影响；本表可直接复用
+    ``system/metrics_query.py`` 的既有分位聚合，无需新写查询。
+
+    非流式调用不填首字延迟（不伪造指标）；token 取不到一律记 0。整块 best-effort：
+    写库/取值任何异常都吞掉——观测绝不反噬路由主流程（与 ``_load_repo_meta``
+    的既成纪律一致）。
+    """
+    try:
+        from interactions.ledger import arecord_llm_usage
+
+        ctx = structlog.contextvars.get_contextvars()
+        user_id = str(ctx.get("user_id") or "system")
+        metadata = usage or {}
+        await arecord_llm_usage(
+            # Stage 1 无 InteractionRun 上下文 → run 可选入口，独立成行。
+            run=None,
+            call_source=CallSource.AUX_REPO_ROUTER.value,
+            provider=provider,
+            model=model,
+            prompt_tokens=int(metadata.get("input_tokens") or 0),
+            completion_tokens=int(metadata.get("output_tokens") or 0),
+            total_tokens=int(metadata.get("total_tokens") or 0),
+            duration_ms=duration_ms,
+            ttft_ms=None,
+            upstream_status_code=upstream_status_code,
+            failure_type=failure_type,
+            user_id=user_id,
+        )
+    except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬路由主流程
+        pass
+
+
 def _rank_value(candidate: RepoRouteCandidateV2) -> float:
     """排序比较值的**唯一所有者**：有旁路排序分就用它，缺失则回退 `score`。
 
@@ -1267,6 +1324,7 @@ class RepoRouterV2:
         from langchain_core.messages import HumanMessage, SystemMessage
 
         from agents.llm_factory import build_chat_model
+        from interactions.ledger import parse_upstream_status
         from interactions.redaction import redact_for_ledger
         from services.provider_config import (
             ProviderConfigService,
@@ -1308,6 +1366,9 @@ class RepoRouterV2:
                 component="repo_router_v2",
             )
             return None, {"skipped_reason": "no_model_configured"}
+
+        # ModelUsageRecord 的 provider 维度（口径与两个 Runner 的埋点一致）。
+        provider_name = str(resolved.provider_type)
 
         timeout_seconds = float(_stage1_conf("REPO_ROUTER_STAGE1_TIMEOUT_SECONDS"))
         # 首调与重试**共享**的总延迟上界 + 退避基数（107-01 落的两个 settings 键）。
@@ -1455,6 +1516,7 @@ class RepoRouterV2:
                         pass
                     raise TimeoutError("stage1_budget_exhausted")
                 attempts += 1
+                attempt_started = time.monotonic()
                 try:
                     with use_call_source(CallSource.AUX_REPO_ROUTER):
                         response = await asyncio.wait_for(
@@ -1464,6 +1526,15 @@ class RepoRouterV2:
                             timeout=min(timeout_seconds, remaining),
                         )
                 except Exception as exc:  # noqa: BLE001 — 分类后决定重试还是上抛
+                    await _record_stage1_usage(
+                        provider=provider_name,
+                        model=model_name,
+                        duration_ms=int((time.monotonic() - attempt_started) * 1000),
+                        # 短标签枚举而非异常消息（T-107-02：failure_type 不吃自由文本）。
+                        failure_type=classify_degrade_reason("", exc_type_name=type(exc).__name__),
+                        # 只取数值上游码，绝不取响应体。
+                        upstream_status_code=parse_upstream_status(exc),
+                    )
                     if attempt == 1 or not _is_retryable_stage1_error(exc):
                         raise
                     try:
@@ -1486,6 +1557,12 @@ class RepoRouterV2:
                         )
                     )
                     continue
+                await _record_stage1_usage(
+                    provider=provider_name,
+                    model=model_name,
+                    duration_ms=int((time.monotonic() - attempt_started) * 1000),
+                    usage=_stage1_usage_metadata(response),
+                )
                 break
             from agents.llm_factory import content_to_text
 
