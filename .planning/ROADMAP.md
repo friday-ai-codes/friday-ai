@@ -63,12 +63,23 @@
 **Plans**: 7 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 105-01-PLAN.md — 纯函数打分核心（加性分解/margin 置信度/只降不升）+ 阈值外置 + 不变量测试（wave 1）
 - [ ] 105-02-PLAN.md — O-1/O-3 实测 command（measure_repo_index_stats）+ 105-MEASUREMENTS.md（wave 1）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 105-03-PLAN.md — RepoRouterV2 接线：去截断/breakdown/degraded/确定性 auto_selected + 三种失联行为测试 + clarify policy 回归（wave 2）
 - [ ] 105-04-PLAN.md — golden set fixture + 离线评估 harness + CI 门禁进默认 suite（wave 2）
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 105-05-PLAN.md — Stage 1 幂等三件套：输入哈希缓存 + 排列输出 + decode 固定 + call_source（wave 3）
 - [ ] 105-06-PLAN.md — 前端最小展开：breakdown 透传 + RoutingDecisionPanel 分数分解 + confidence Tooltip（wave 3）
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 105-07-PLAN.md — 快照落 ConvergenceSessionEvent + 离线 replay 零网络同结果（wave 4）
 
 **UI hint**: yes
