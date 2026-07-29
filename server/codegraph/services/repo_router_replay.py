@@ -22,6 +22,17 @@ repo_name 容错契约：快照 node_hits 本就不存 repo_name（105-03 最小
 重建 payload 不含 repo_name——由打分核心的回退规则（缺失 → repo_name=repo_id）
 保证确定性，replay 不自行补名；比对键固定为 repo_id/score/breakdown/confidence
 （不含 repo_name），缺名历史快照回放不抛异常且与含名快照等值输入结果一致。
+
+双版本快照契约（Phase 106，ROUTE-06 × research §6.2-9「版本不同即不可比」）：
+新格式快照（106-06 起）携带 ``weight_config``（生效权重/常数全值，含 n_bar）+
+``repo_meta``（per-候选元数据——dense 余弦/DB 聚合/T2 匹配分等外部 I/O 产物
+记录为数据，回放消费数据，与 Stage 1 排列记录同一模式）+ ``stage0.scored_at``
+（活跃度衰减时间锚点）——回放全部从快照读取，不依赖回放时的 SystemSetting /
+默认常量 / 系统时钟（快照自包含）。105 旧快照（缺 weight_config 节，
+``versions.weight_set_version == "phase105-v1"``）回退 legacy 三信号路径
+（``aggregate_and_score(hits)`` 默认 PHASE105_WEIGHTS）按当时版本重算，
+diff 输出标注 ``LEGACY_SNAPSHOT_NOTE``——不做跨版本换算或比较；
+weight_config 节残缺/类型错误一律按 legacy 容错，不抛（T-106-18）。
 """
 
 from __future__ import annotations
@@ -36,13 +47,48 @@ from codegraph.services.repo_router_scoring import (
     derive_confidence,
 )
 
-__all__ = ["replay_route_from_snapshot", "verify_snapshot_replay"]
+__all__ = [
+    "LEGACY_SNAPSHOT_NOTE",
+    "ReplayResult",
+    "replay_route_from_snapshot",
+    "verify_snapshot_replay",
+]
 
 # score 比对容差：记录值与重算值经过同一 round（score 4 位 / breakdown 6 位，
 # 与 RepoRouteCandidateV2.to_dict 一致），理论差为 0，容差仅防序列化噪声。
 _SCORE_TOLERANCE = 1e-9
 
 _COMPARE_KEYS = ("repo_id", "score", "breakdown", "confidence")
+
+# 旧快照回放标注（research §6.2-9）：版本不同即不可比——legacy 快照按当时
+# 版本（phase105-v1 三信号权重）重算比对，diff 头部加本行澄清比对口径。
+LEGACY_SNAPSHOT_NOTE = "旧版本快照（phase105-v1），按当时版本比对"
+
+# legacy 快照回放采用的版本标注值（105 快照 versions 位记录的即该字符串）。
+_LEGACY_WEIGHT_SET_VERSION = "phase105-v1"
+
+
+class ReplayResult(list):
+    """回放候选列表 + 本次回放的版本元信息。
+
+    向后兼容契约：仍是 ``list[dict]``（迭代/索引/len/== 语义不变，比对键
+    repo_id/score/breakdown/confidence 不受影响），额外携带：
+
+    - ``weight_set_version``：本次回放采用的权重版本——新格式取快照
+      ``weight_config.weight_set_version``；旧格式恒为 ``"phase105-v1"``。
+    - ``legacy_snapshot``：True 表示 105 旧快照回退路径（按当时版本比对）。
+    """
+
+    def __init__(
+        self,
+        candidates: list[dict[str, Any]] | None = None,
+        *,
+        weight_set_version: str = "",
+        legacy_snapshot: bool = False,
+    ) -> None:
+        super().__init__(candidates or [])
+        self.weight_set_version = weight_set_version
+        self.legacy_snapshot = legacy_snapshot
 
 
 def _rebuild_hits(node_hits: list[Any]) -> list[dict[str, Any]]:
@@ -114,16 +160,54 @@ def replay_route_from_snapshot(
     theta_abs: float,
     theta_margin: float,
     theta_med: float,
-) -> list[dict[str, Any]]:
+) -> ReplayResult:
     """从快照 payload 重建输入并纯函数重算候选（零网络）。
 
-    流程：``payload["stage0"]["node_hits"]`` 还原 hit 形状 → ``aggregate_and_score``
-    重算分数/排序 → Stage 1 参与（``stage1`` 无 skipped_reason）时按 payload 排列
-    记录重排 + 逐候选 ``apply_llm_adjustment``（confidence hint）；未参与时按重算
-    排序取记录条数 → 输出 ``[{repo_id, score, breakdown, confidence}]``。
+    版本分流（双版本契约见模块 docstring）：
+
+    - **新格式**（``payload["weight_config"]`` 存在且 weights 为非空 dict）：
+      权重/常数（含快照当时生效的 n_bar）/repo_meta/scored_at 全部从快照读取
+      注入 ``aggregate_and_score`` 六信号新路径——回放不依赖当时的 SystemSetting。
+    - **legacy**（缺 weight_config 节的 105 快照，或节残缺/类型错误，T-106-18）：
+      ``aggregate_and_score(hits)`` 默认三信号路径（PHASE105_WEIGHTS）重算，
+      不抛异常；结果标注 ``legacy_snapshot=True``。
+
+    流程：``payload["stage0"]["node_hits"]`` 还原 hit 形状 → 按版本重算分数/排序
+    → Stage 1 参与（``stage1`` 无 skipped_reason）时按 payload 排列记录重排 +
+    逐候选 ``apply_llm_adjustment``（confidence hint）；未参与时按重算排序取
+    记录条数 → 输出 ``ReplayResult``（元素 ``{repo_id, score, breakdown,
+    confidence}`` + ``weight_set_version``/``legacy_snapshot`` 元信息）。
+
+    边界（106-06 Pitfall 5 体积护栏的对偶）：快照 ``repo_meta`` 只存**候选仓**
+    （≤12）——录制时全部分桶仓有 meta，回放重算时非候选仓拿不到 meta、其分数
+    可能与录制时不同；verify 比对键只含候选（既有语义），候选自身分数只由自身
+    信号决定，**非候选仓不参与比对**。
     """
     stage0 = payload.get("stage0") or {}
-    scored = aggregate_and_score(_rebuild_hits(stage0.get("node_hits") or []))
+    hits = _rebuild_hits(stage0.get("node_hits") or [])
+
+    weight_config = payload.get("weight_config")
+    wc = weight_config if isinstance(weight_config, dict) else {}
+    wc_weights = wc.get("weights")
+    legacy = not (isinstance(wc_weights, dict) and wc_weights)
+    if legacy:
+        # 105 旧快照 / weight_config 残缺：legacy 三信号路径按当时版本重算（不抛）。
+        scored = aggregate_and_score(hits)
+        weight_set_version = _LEGACY_WEIGHT_SET_VERSION
+    else:
+        repo_meta = payload.get("repo_meta")
+        scored = aggregate_and_score(
+            hits,
+            weights=wc_weights,
+            repo_meta=repo_meta if isinstance(repo_meta, dict) else {},
+            constants=wc.get("constants"),
+            now=stage0.get("scored_at"),
+        )
+        weight_set_version = str(wc.get("weight_set_version") or "")
+
+    def _wrap(items: list[dict[str, Any]]) -> ReplayResult:
+        return ReplayResult(items, weight_set_version=weight_set_version, legacy_snapshot=legacy)
+
     sorted_scores = [c.score for c in scored]
     recorded = payload.get("candidates") or []
     stage1 = payload.get("stage1") or {}
@@ -154,11 +238,11 @@ def replay_route_from_snapshot(
                 hint_raw if hint_raw in ("high", "medium", "low") else None  # type: ignore[assignment]
             )
             out.append(_as_output(cand, apply_llm_adjustment(_conf(rank_by_id[rid]), hint)))
-        return out
+        return _wrap(out)
 
     # 降级/跳过路径：排列纯由重算分数导出，截取到记录条数（route() 的 top_k 截断）。
     top_n = len(recorded) if recorded else len(scored)
-    return [_as_output(cand, _conf(rank)) for rank, cand in enumerate(scored[:top_n])]
+    return _wrap([_as_output(cand, _conf(rank)) for rank, cand in enumerate(scored[:top_n])])
 
 
 def verify_snapshot_replay(
@@ -169,6 +253,10 @@ def verify_snapshot_replay(
     theta_med: float,
 ) -> tuple[bool, str]:
     """重算结果与 ``payload["candidates"]`` 记录逐字段比对（score 容差 1e-9）。
+
+    比对键与容差对新旧快照一致（breakdown 键集合比对天然覆盖新信号键）；
+    legacy 快照（105 旧格式回退路径）存在差异时，diff 文本头部加
+    ``LEGACY_SNAPSHOT_NOTE`` 行澄清比对口径——版本不同即不可比（research §6.2-9）。
 
     Returns:
         ``(True, "")`` 一致；``(False, diff 文本)`` 不一致（逐候选逐字段列差异）。
@@ -211,4 +299,6 @@ def verify_snapshot_replay(
                         f"[{i}] {rec_id} breakdown[{sig}]: "
                         f"recorded={rec_bd[sig]} recomputed={rep_bd[sig]}"
                     )
+    if diffs and recomputed.legacy_snapshot:
+        diffs.insert(0, LEGACY_SNAPSHOT_NOTE)
     return (not diffs, "\n".join(diffs))
