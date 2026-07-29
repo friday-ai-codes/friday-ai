@@ -148,9 +148,9 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 107-05-PLAN.md — Stage 1 有界化：1 次重试 + 共享总预算 deadline + K=3 裁剪与凸组合写 score_ranked + ModelUsageRecord 埋点（wave 3）
-- [ ] 107-06-PLAN.md — 澄清超时出口：expire_pending_clarifications 命令（幂等 CAS / 两段式事务 / 两条立即出口 / dry-run）+ apscheduler job + clarify policy 短路（wave 3）
-- [ ] 107-07-PLAN.md — D-1/D-2 入口改造：项目关联仓宽口径并集解析 + 编排与 chat 两个入口改传分组依据（唯一回归风险点）+ chat 链候选透传（wave 3）
+- [x] 107-05-PLAN.md — Stage 1 有界化：1 次重试 + 共享总预算 deadline + K=3 裁剪与凸组合写 score_ranked + ModelUsageRecord 埋点（wave 3）
+- [x] 107-06-PLAN.md — 澄清超时出口：expire_pending_clarifications 命令（幂等 CAS / 两段式事务 / 两条立即出口 / dry-run）+ apscheduler job + clarify policy 短路（wave 3）
+- [x] 107-07-PLAN.md — D-1/D-2 入口改造：项目关联仓宽口径并集解析 + 编排与 chat 两个入口改传分组依据（唯一回归风险点）+ chat 链候选透传（wave 3）
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
