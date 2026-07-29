@@ -6,8 +6,9 @@ TechnicalBlueprint v1 的唯一 schema 事实源（DESIGN §3.2–§3.13）：
   implementation_overview / api_contracts / impact_analysis / interaction_flows）
   + meta + requirement_spec + must_haves + 文档级 citations 引用池，Block/Citation
   基元以 ``$defs`` 复用。
-- ``validate_blueprint``：jsonschema 结构校验 + 两项后置引用完整性检查（块内
-  citations id ∈ 文档级引用池；items[].feature_point_id ∈ feature_points[].id）。
+- ``validate_blueprint``：jsonschema 结构校验 + 三项后置引用完整性检查（块内
+  citations id ∈ 文档级引用池；items[].feature_point_id ∈ feature_points[].id；
+  items / current_state_analysis 的 repository_id ∈ repo_associations）。
   无 ``schema_version`` 的旧 MergedPlan 形状（隐式 v0）直接 pass-through，零迁移。
 - ``iter_blocks`` / ``diff_blueprint_blocks``：block 级走查与版本间三分类 diff
   （added / removed / modified），供版本演进与 114 重锚定消费。
@@ -814,6 +815,36 @@ def validate_blueprint(content: Any) -> tuple[bool, str | None]:
                     False,
                     f"implementation_overview.items[{item_id}].feature_point_id "
                     f"{fp_id!r} 无法解析到 requirement_spec.feature_points",
+                )
+
+        # 后置检查 (c)：repository_id 引用完整性——items / current_state_analysis 引用的
+        # 仓库必须出现在 repo_associations。坏 id 过门会被派生器原样搬进 execution task，
+        # 失败点被推到编码执行期（下游 dispatcher 拿它建分支/克隆仓）。
+        assoc_ids = {
+            assoc.get("repository_id")
+            for assoc in (content.get("repo_associations") or [])
+            if isinstance(assoc, dict) and assoc.get("repository_id")
+        }
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            rid = item.get("repository_id")
+            if rid not in assoc_ids:
+                item_id = item.get("id") or "?"
+                return (
+                    False,
+                    f"implementation_overview.items[{item_id}].repository_id "
+                    f"{rid!r} 不在 repo_associations 中",
+                )
+        for idx, analysis in enumerate(content.get("current_state_analysis") or []):
+            if not isinstance(analysis, dict):
+                continue
+            rid = analysis.get("repository_id")
+            if rid not in assoc_ids:
+                return (
+                    False,
+                    f"current_state_analysis[{idx}].repository_id "
+                    f"{rid!r} 不在 repo_associations 中",
                 )
         return True, None
     except Exception as exc:  # 防御性兜底：半可信输入恒不抛（fail-safe）
