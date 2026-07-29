@@ -37,15 +37,19 @@ from codegraph.services.repo_router_scoring import (
     DEFAULT_WEIGHT_CONFIG,
     DEPRECATED_ACTIVITY_CAP,
     PHASE105_WEIGHTS,
+    S_TOP_SOURCE_DENSE,
+    S_TOP_SOURCE_RRF,
     SIGNAL_ACTIVITY,
     SIGNAL_BREADTH,
     SIGNAL_DOMAIN,
     SIGNAL_STACK,
     SIGNAL_TEAM,
     SIGNAL_TEXT,
+    WEIGHT_SET_VERSION,
     aggregate_and_score,
     apply_llm_adjustment,
     derive_confidence,
+    resolve_s_top_source,
 )
 
 # RRF 融合分的真实量级（rank-1 双列表命中 ≈ 0.0328，单列表 ≈ 0.0164）
@@ -503,6 +507,78 @@ class TestMultiSignalInvariants:
         assert w_text > 0  # 权重表健全性（防手滑改零）
 
 
+class TestSTopSingleScalePerQuery:
+    """BL-01：S_top 口径在一次查询内唯一（校准余弦 / RRF 二选一，绝不混用）。
+
+    混用的病理：校准余弦把 cos=0.30 压到 0.167，而 RRF query-local 比值的
+    rank-1 恒为 1.0——「没被 dense 覆盖」恰恰意味着 dense 相似度低，混用会
+    让这类仓反拿最高 S_top（结构性偏袒换形状重演，与 ROUTE-03 相反）。
+    """
+
+    def _mixed_coverage(self):
+        """有 dense 证据的强仓（cos=0.30）vs 无 dense 证据的次强仓。"""
+        hits = [
+            _make_hit("with_cos", _RRF_BASE, "w-n0"),
+            _make_hit("no_cos", _RRF_BASE * 0.95, "n-n0"),
+        ]
+        meta = {
+            "with_cos": _make_meta(dense_cos_max=0.30),
+            "no_cos": _make_meta(),  # dense top-K 未覆盖
+        }
+        return hits, meta
+
+    def test_source_is_rrf_when_any_repo_lacks_cosine(self):
+        """任一仓缺 dense_cos_max → 整条查询统一走 RRF 口径。"""
+        _, meta = self._mixed_coverage()
+        assert resolve_s_top_source(meta.keys(), meta) == S_TOP_SOURCE_RRF
+
+    def test_source_is_dense_only_when_all_repos_covered(self):
+        """全仓都有 dense_cos_max → 才启用校准余弦口径。"""
+        meta = {
+            "a": _make_meta(dense_cos_max=0.30),
+            "b": _make_meta(dense_cos_max=0.28),
+        }
+        assert resolve_s_top_source(meta.keys(), meta) == S_TOP_SOURCE_DENSE
+
+    def test_missing_cosine_repo_never_outranks_covered_repo_by_fallback(self):
+        """回归复现：覆盖不全时缺 dense 的次强仓不得因「缺失红利」反超。
+
+        修复前 with_cos 走校准余弦 (0.30-0.25)/0.30 = 0.167、no_cos 走 RRF
+        0.95 —— S_top 差 5.7 倍，text 分项直接把弱仓抬到首位。
+        """
+        hits, meta = self._mixed_coverage()
+        ranked = aggregate_and_score(hits, repo_meta=meta, now=_NOW)
+        assert [c.repo_id for c in ranked] == ["with_cos", "no_cos"]
+        # 同一标尺下 text 分项按 RRF s_hat 单调（1.0 vs 0.95）
+        assert ranked[0].breakdown[SIGNAL_TEXT] > ranked[1].breakdown[SIGNAL_TEXT]
+
+    def test_all_candidates_share_one_source_value(self):
+        """口径值随候选回传且全候选恒等（trace/快照记录同一口径）。"""
+        hits, meta = self._mixed_coverage()
+        ranked = aggregate_and_score(hits, repo_meta=meta, now=_NOW)
+        assert {c.s_top_source for c in ranked} == {S_TOP_SOURCE_RRF}
+
+        covered_meta = {
+            "with_cos": _make_meta(dense_cos_max=0.30),
+            "no_cos": _make_meta(dense_cos_max=0.28),
+        }
+        covered = aggregate_and_score(hits, repo_meta=covered_meta, now=_NOW)
+        assert {c.s_top_source for c in covered} == {S_TOP_SOURCE_DENSE}
+
+    def test_s_top_source_not_in_breakdown(self):
+        """口径是旁路 informational 字段——不进 breakdown（INV-R3 不受影响）。"""
+        hits, meta = self._mixed_coverage()
+        for cand in aggregate_and_score(hits, repo_meta=meta, now=_NOW):
+            assert "s_top_source" not in cand.breakdown
+            assert math.fsum(cand.breakdown.values()) == cand.score
+
+    def test_empty_or_non_dict_meta_falls_back_to_rrf(self):
+        """空仓集 / repo_meta 非 dict（trust boundary）→ RRF 口径，不抛。"""
+        assert resolve_s_top_source([], {}) == S_TOP_SOURCE_RRF
+        assert resolve_s_top_source(["a"], None) == S_TOP_SOURCE_RRF
+        assert resolve_s_top_source(["a"], {"a": "not-a-dict"}) == S_TOP_SOURCE_RRF
+
+
 class TestActivityDecay:
     """活跃度真值表（Pitfall 4 四行）+ 指数衰减单调性。"""
 
@@ -786,7 +862,10 @@ class TestNewPathDeterminismAndLegacy:
 
     def test_default_weight_config_shape(self):
         """DEFAULT_WEIGHT_CONFIG 契约：版本、五信号权重、常数键齐全。"""
-        assert DEFAULT_WEIGHT_CONFIG["weight_set_version"] == "phase106-v1"
+        # 版本字面绑定只在 golden 门禁一处（bump 必须与 baseline 重建同提交）；
+        # 此处只校验形状与单一来源一致性，避免版本字面量散落多个文件。
+        assert DEFAULT_WEIGHT_CONFIG["weight_set_version"] == WEIGHT_SET_VERSION
+        assert DEFAULT_WEIGHT_CONFIG["weight_set_version"].startswith("phase106-")
         assert set(_W6) == {
             SIGNAL_TEXT,
             SIGNAL_DOMAIN,

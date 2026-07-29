@@ -175,7 +175,7 @@ def test_baseline_carries_version_and_ci_fields() -> None:
     baseline = _load_baseline()
     # 版本守护字面绑定（Pitfall 8）：bump WEIGHT_SET_VERSION 必须与 baseline
     # 重建同一提交生效——任一单独改动都会使本断言或上面的守护断言失败。
-    assert WEIGHT_SET_VERSION == "phase106-v1"
+    assert WEIGHT_SET_VERSION == "phase106-v2"
     assert baseline["weight_set_version"] == WEIGHT_SET_VERSION
     assert "generated_at" in baseline
     ci = baseline["bootstrap_ci"]
