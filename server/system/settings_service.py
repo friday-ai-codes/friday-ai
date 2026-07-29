@@ -119,3 +119,35 @@ async def aget_int_setting(key: str, default: int = 0) -> int:
         return int(value)
     except ValueError:
         return default
+
+
+async def aget_float_setting(key: str, default: float = 0.0) -> float:
+    """Async version of get_float_setting（语义与同步版一致：非法值回默认）。
+
+    沿 aget_* 既有约定不走 60s 缓存，每次 afirst() 打 DB；供 async stage handler
+    读运行时阈值（如 blueprint.spec_gate.config 的 threshold 兜底路径）。
+    """
+    value = await aget_setting(key, "")
+    if not value:
+        return default
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
+async def aget_json_setting(key: str, default: dict | None = None) -> dict:
+    """Async version of get_json_setting（语义与同步版一致：失败/非 dict 回默认，绝不抛）。
+
+    沿 aget_* 既有约定不走 60s 缓存；供 async stage handler 读运行时权重 map
+    （blueprint.spec_gate.config / blueprint.route.weights）。
+    """
+    fallback = dict(default) if default else {}
+    value = await aget_setting(key, "")
+    if not value:
+        return fallback
+    try:
+        parsed = json.loads(value)
+    except (ValueError, TypeError):
+        return fallback
+    return parsed if isinstance(parsed, dict) else fallback
