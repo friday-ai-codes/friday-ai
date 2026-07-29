@@ -1,5 +1,5 @@
 {
-  "weight_set_version": "phase106-v1",
+  "weight_set_version": "phase106-v2",
   "case_count": 14,
   "recall_at_5": 0.9642857142857143,
   "mrr_at_10": 1.0,
@@ -47,8 +47,8 @@
       "ranked_repo_ids": [
         "onion-learning",
         "study-course",
-        "study-app",
-        "study-user-status"
+        "study-user-status",
+        "study-app"
       ],
       "top1_repo_id": "onion-learning",
       "top1_breakdown": {
@@ -368,5 +368,5 @@
       "top1_correct": true
     }
   ],
-  "generated_at": "2026-07-29T16:48:34.485232+00:00"
+  "generated_at": "2026-07-29T17:59:00.964765+00:00"
 }

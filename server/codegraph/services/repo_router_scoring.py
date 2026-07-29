@@ -86,11 +86,21 @@ DEPRECATED_ACTIVITY_CAP = 0.10
 # 关键程度缺失时的中性档：不奖不罚，与「一般」锚点同值（CONTEXT tie-break 裁决）。
 _CRITICALITY_NEUTRAL = 0.4
 
+# S_top 主干口径标识（per-query 单一标尺，进 trace/快照）。
+# 校准余弦与 RRF query-local 比值是两套不可比标尺（前者 cos=0.30 → 0.167，
+# 后者 rank-1 恒为 1.0），CONTEXT O-3 的「回退 RRF」是**整链路二选一**，
+# 绝不允许同一次查询内 per-repo 混用——混用会让「没进 dense top-K」（即
+# dense 相似度低）的仓反而拿到最高 S_top，把结构性偏袒换个形状重演。
+S_TOP_SOURCE_DENSE = "dense_cosine"
+S_TOP_SOURCE_RRF = "rrf_s_hat"
+
 # 默认权重/常数配置——全 phase 唯一默认值来源：
 # 106-02 config loader 的回退值、106-07 replay 的兜底值、106-08 golden harness
 # 的默认值全部 import 本常量，禁止各处复制字面量。
 DEFAULT_WEIGHT_CONFIG: dict[str, Any] = {
-    "weight_set_version": "phase106-v1",
+    # phase106-v2：S_top 口径由 per-repo 混用改为 per-query 单一标尺（BL-01）
+    # ——打分公式变更，与 golden baseline 重建同提交生效。
+    "weight_set_version": "phase106-v2",
     # 五信号加性权重（per 106-CONTEXT：C_crit 已裁决为同分带 tie-break，
     # 不进加性和；相对权重经缺失重归一化生效，绝对和 0.95 无须为 1）。
     "weights": {
@@ -168,6 +178,10 @@ class ScoredCandidate:
     hits: list[dict[str, Any]] = field(default_factory=list)
     # 关键程度锚点值（{核心:1.0, 重要:0.7, 一般:0.4, 边缘:0.15}）；缺失/枚举外 → None。
     criticality: float | None = None
+    # 本次查询采用的 S_top 口径（``S_TOP_SOURCE_DENSE`` / ``S_TOP_SOURCE_RRF``）：
+    # 同一次打分内全候选恒等（per-query 单一标尺，BL-01），旁路 informational
+    # 字段——**不进 breakdown**，供 trace/快照记录「本次用的哪套标尺」。
+    s_top_source: str = ""
 
 
 def _parse_facets(value: Any) -> dict[str, Any]:
@@ -265,21 +279,47 @@ def _clip01(value: float) -> float:
     return min(max(value, 0.0), 1.0)
 
 
+def resolve_s_top_source(repo_ids: Any, repo_meta: Any) -> str:
+    """本次查询的 S_top 口径（per-query 二选一，BL-01）。
+
+    全部参与打分的仓都有可用 ``dense_cos_max`` → ``S_TOP_SOURCE_DENSE``
+    （校准余弦口径）；**任一仓缺失** → ``S_TOP_SOURCE_RRF``，整条链路统一
+    回退 RRF query-local s_hat（CONTEXT O-3 的「回退」是整链路取舍）。
+
+    纯函数、无副作用：router（记 trace/快照）与 scorer（实际打分）调同一
+    函数、喂同一输入，两处口径恒等；回放从快照 ``repo_meta`` 重算亦然
+    （快照自包含前提见 BL-02）。
+    """
+    if not isinstance(repo_meta, dict):
+        return S_TOP_SOURCE_RRF
+    rids = [str(rid) for rid in repo_ids]
+    if not rids:
+        return S_TOP_SOURCE_RRF
+    for rid in rids:
+        meta = repo_meta.get(rid)
+        if not isinstance(meta, dict) or not _is_number(meta.get("dense_cos_max")):
+            return S_TOP_SOURCE_RRF
+    return S_TOP_SOURCE_DENSE
+
+
 def _s_top_signal(
     meta: dict[str, Any],
     bucket_s_hats: list[float],
     consts: dict[str, Any],
+    source: str,
 ) -> float:
-    """MaxP 主干：dense 余弦 affine clip 校准；缺失回退桶内 max s_hat。
+    """MaxP 主干，口径由 ``source`` 统一指定（per-query，绝不 per-repo 混用）。
 
-    dense_cos_max 缺失（dense top-50 与 RRF top-50 集合不重合，Pitfall 6）
-    时**不打死**——回退 RRF query-local s_hat（per CONTEXT O-3 口径）。
+    - ``S_TOP_SOURCE_DENSE``：dense 余弦 affine clip 校准（全仓都有余弦时）；
+    - ``S_TOP_SOURCE_RRF``：桶内 max s_hat（任一仓缺余弦时全仓一律走此口径，
+      Pitfall 6 的整链路降级——缺 dense 覆盖的仓不打死，也不因缺失反获高分）。
     """
-    cos = meta.get("dense_cos_max")
-    if _is_number(cos):
-        c_lo = consts["s_top_c_lo"]
-        c_hi = consts["s_top_c_hi"]
-        return _clip01((float(cos) - c_lo) / (c_hi - c_lo))
+    if source == S_TOP_SOURCE_DENSE:
+        cos = meta.get("dense_cos_max")
+        if _is_number(cos):
+            c_lo = consts["s_top_c_lo"]
+            c_hi = consts["s_top_c_hi"]
+            return _clip01((float(cos) - c_lo) / (c_hi - c_lo))
     return max(bucket_s_hats) if bucket_s_hats else 0.0
 
 
@@ -403,7 +443,10 @@ def aggregate_and_score(
       （回放/golden 确定性）；naive 时间戳按 UTC 处理，last_commit_at 同规则。
 
     新路径逐信号（分桶/桶内排序/query-local s_hat 归一与 legacy 共用）：
-    1. ``S_top``：dense_cos_max affine clip 校准；缺失回退桶内 max s_hat。
+    1. ``S_top``：口径按 :func:`resolve_s_top_source` **per-query** 定一次
+       （全仓都有 dense_cos_max → 校准余弦；任一仓缺失 → 全仓统一回退桶内
+       max s_hat）——同一次查询内标尺唯一，口径值随 ``ScoredCandidate
+       .s_top_source`` 回传供 trace/快照记录。
     2. ``breadth``：pivoted-size-normalized 对数饱和（§2.3 三步）。
     3. 文本合成 ``S_text = (1-λ)·S_top + λ·breadth``，breakdown 拆两个扁平键：
        ``text`` 贡献 = w_text·(1-λ)·S_top/D、``breadth`` 贡献 = w_text·λ·breadth/D
@@ -505,6 +548,10 @@ def _score_with_meta(
     consts = _merge_constants(constants)
     now_dt = _parse_iso_utc(now)
     lam = consts["lam"]
+    # BL-01：S_top 口径在**进入循环前**按全仓 dense 覆盖情况定一次，循环内
+    # 全候选共用——同一次查询内标尺唯一，不存在「有余弦的按余弦、没余弦的
+    # 按 RRF」的混用。
+    s_top_source = resolve_s_top_source(buckets.keys(), repo_meta)
 
     candidates: list[ScoredCandidate] = []
     for rid, hits in buckets.items():
@@ -515,7 +562,7 @@ def _score_with_meta(
         bucket_s_hats = [s_hat_fn(h) for h in hits]
 
         # 1-2. 文本主干两分量（text 信号本身恒可用——候选来自它）
-        s_top = _s_top_signal(meta, bucket_s_hats, consts)
+        s_top = _s_top_signal(meta, bucket_s_hats, consts, s_top_source)
         breadth = _breadth_signal(meta, bucket_s_hats, consts)
 
         # 4-5. 元数据/活跃度信号（不可用 → None，走重归一化，绝不补 0）
@@ -551,6 +598,7 @@ def _score_with_meta(
                 hits=hits,
                 # 7. 关键程度锚点值（旁路字段，不计入 Σbreakdown==score 恒等式）
                 criticality=_criticality_value(meta),
+                s_top_source=s_top_source,
             )
         )
 
@@ -613,6 +661,8 @@ __all__ = [
     "DEFAULT_WEIGHT_CONFIG",
     "DEPRECATED_ACTIVITY_CAP",
     "PHASE105_WEIGHTS",
+    "S_TOP_SOURCE_DENSE",
+    "S_TOP_SOURCE_RRF",
     "SIGNAL_ACTIVITY",
     "SIGNAL_BREADTH",
     "SIGNAL_DOMAIN",
@@ -624,4 +674,5 @@ __all__ = [
     "aggregate_and_score",
     "apply_llm_adjustment",
     "derive_confidence",
+    "resolve_s_top_source",
 ]

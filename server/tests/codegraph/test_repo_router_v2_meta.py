@@ -33,6 +33,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from django.core.cache import cache
 
+from codegraph.services.repo_router_scoring import WEIGHT_SET_VERSION
 from codegraph.services.repo_router_v2 import STAGE0_REPO_K, RepoRouterV2
 from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
@@ -252,9 +253,9 @@ async def test_full_meta_breakdown_criticality_and_snapshot(monkeypatch) -> None
     assert "criticality" not in top.breakdown
 
     snap = result.snapshot
-    # weight_config：本次生效全值（默认配置 → phase106-v1）
+    # weight_config：本次生效全值（默认配置 → 当前 WEIGHT_SET_VERSION）
     wc = snap["weight_config"]
-    assert wc["weight_set_version"] == "phase106-v1"
+    assert wc["weight_set_version"] == WEIGHT_SET_VERSION
     assert wc["constants"]["n_bar"] == 60.0
     assert isinstance(wc["alias_dict_hash"], str) and len(wc["alias_dict_hash"]) == 64
     assert wc["embedding_model_id"] == "test-embed-model"
@@ -273,7 +274,7 @@ async def test_full_meta_breakdown_criticality_and_snapshot(monkeypatch) -> None
     scored_at = snap["stage0"]["scored_at"]
     assert datetime.fromisoformat(scored_at).tzinfo is not None
     # versions 与 weight_config 同源（占位换真，SC-4）
-    assert snap["versions"]["weight_set_version"] == "phase106-v1"
+    assert snap["versions"]["weight_set_version"] == WEIGHT_SET_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +365,7 @@ async def test_degraded_invalid_weight_config_row(monkeypatch) -> None:
     result = await RepoRouterV2.route(QUERY, use_llm=False)
 
     assert result.candidates
-    assert result.snapshot["weight_config"]["weight_set_version"] == "phase106-v1"
+    assert result.snapshot["weight_config"]["weight_set_version"] == WEIGHT_SET_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +383,7 @@ async def test_save_takes_effect_without_restart(monkeypatch) -> None:
     )
 
     first = await RepoRouterV2.route(QUERY, use_llm=False)
-    assert first.snapshot["weight_config"]["weight_set_version"] == "phase106-v1"
+    assert first.snapshot["weight_config"]["weight_set_version"] == WEIGHT_SET_VERSION
     first_domain = _by_repo(first)[big].breakdown["domain"]
 
     # 合法新配置：domain 0.15→0.20、text 0.55→0.40（均在网格内，INV-R2 成立）

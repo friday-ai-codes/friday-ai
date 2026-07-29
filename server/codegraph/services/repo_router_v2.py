@@ -62,6 +62,7 @@ from codegraph.services.repo_router_scoring import (
     aggregate_and_score,
     apply_llm_adjustment,
     derive_confidence,
+    resolve_s_top_source,
 )
 from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
@@ -265,6 +266,7 @@ class RepoRouterV2:
             "weight_config": snapshot_weight_config,
             "repo_meta": snapshot_repo_meta,
             "scored_at": scored_at,
+            "s_top_source": meta_stats.get("s_top_source"),
         }
 
         if not stage0_candidates:
@@ -568,6 +570,11 @@ class RepoRouterV2:
                 "criticality_value": crit_raw if isinstance(crit_raw, str) else None,
             }
 
+        # BL-01：本次查询的 S_top 口径（per-query 单一标尺）——与 scorer 调同一
+        # 纯函数、同一输入，两处恒等；进 meta_stats → 快照 stage0 + 观测事件，
+        # 回放/审计据此区分「本次用的是校准余弦还是 RRF」。
+        s_top_source = resolve_s_top_source(rids, repo_meta)
+
         meta_stats: dict[str, Any] = {
             "n_bar": n_bar,
             "alias_dict_hash": alias_hash,
@@ -575,12 +582,14 @@ class RepoRouterV2:
             "repo_count": len(rids),
             "dense_hit_ratio": (len(cos_by_repo) / len(rids)) if rids else 0.0,
             "t2_used": t2_used,
+            "s_top_source": s_top_source,
         }
         try:
             logger.debug(
                 "repo_router_meta_resolved",
                 repo_count=len(rids),
                 dense_hit_ratio=round(meta_stats["dense_hit_ratio"], 4),
+                s_top_source=s_top_source,
                 t2_used=t2_used,
                 duration_ms=int((time.monotonic() - meta_started) * 1000),
                 category="sampling",
@@ -697,6 +706,7 @@ class RepoRouterV2:
         weight_config: dict[str, Any] | None = None,
         repo_meta: dict[str, Any] | None = None,
         scored_at: str | None = None,
+        s_top_source: str | None = None,
     ) -> RepoRouteResultV2:
         """Stage 1 未参与（use_llm=False / 失联降级）的统一出口。
 
@@ -720,6 +730,7 @@ class RepoRouterV2:
                 weight_config=weight_config,
                 repo_meta=repo_meta,
                 scored_at=scored_at,
+                s_top_source=s_top_source,
             ),
         )
         cls._log_scored(result, started)
@@ -748,6 +759,7 @@ class RepoRouterV2:
         weight_config: dict[str, Any] | None = None,
         repo_meta: dict[str, Any] | None = None,
         scored_at: str | None = None,
+        s_top_source: str | None = None,
     ) -> dict[str, Any]:
         """组装快照材料（ROUTE-09 数据底座；落 ConvergenceSessionEvent 由 105-07 处理）。
 
@@ -763,6 +775,8 @@ class RepoRouterV2:
         - ``repo_meta``：per-候选仓元数据（≤ STAGE0_REPO_K，Pitfall 5 体积
           护栏）——T2 余弦与 DB 聚合离线不可重算，以数据形式记录。
         - ``stage0.scored_at``：打分时间锚点（活跃度衰减重算用）。
+        - ``stage0.s_top_source``：本次 S_top 采用的口径（校准余弦 / RRF
+          s_hat，per-query 单一标尺，BL-01）——回放与 golden 据此区分口径。
         """
         minimal_hits: list[dict[str, Any]] = []
         for hit in node_hits:
@@ -808,6 +822,8 @@ class RepoRouterV2:
         stage0: dict[str, Any] = {"query": query, "node_hits": minimal_hits}
         if scored_at is not None:
             stage0["scored_at"] = scored_at
+        if s_top_source is not None:
+            stage0["s_top_source"] = s_top_source
         snapshot: dict[str, Any] = {
             "stage0": stage0,
             "stage1": stage1,
