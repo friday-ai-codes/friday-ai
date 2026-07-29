@@ -139,3 +139,43 @@ def build_orchestration_engine(
         session_service=session_service or ConvergenceSessionService(),
         deps=deps,
     )
+
+
+def build_blueprint_engine(
+    *, session_service: Any = None, node_execution_id: str = ""
+) -> ProcessEngine:
+    """注入 ``technical_blueprint`` 四个蓝图 adapter 构造 ``ProcessEngine``（Phase 112-05）。
+
+    engine 工厂在本仓集中于本模块（与 ``resume.py`` docstring「绝不在此新建第二个 engine
+    工厂」的纪律同调）：``blueprint_resume`` 缺省 engine 时 lazy import 本函数，不再造第二
+    个工厂点。
+
+    deps 属性名单与 ``builtin_processes`` 七个 ``_h_bp_*`` handler 的 ``getattr`` 取名
+    **逐字一致**（``spec_gate`` / ``route`` / ``research`` / ``confirm_gate``）——名单漂移会
+    让 handler 恒 pass-through，即「注册了但永远空转」的静默失败。
+
+    ``node_execution_id`` 仅工作流入口传（调研容器回调 resume 钥匙）。两条链互不污染：
+    本工厂不含 technical_plan 的 router/recall/merge/clarify/classify，
+    ``build_orchestration_engine`` 也不含蓝图 adapter。
+    """
+    from delivery.services import ConvergenceSessionService
+    from services.process_runtime.blueprint_confirm_gate import BlueprintConfirmGateAdapter
+    from services.process_runtime.blueprint_research_adapter import BlueprintResearchAdapter
+    from services.process_runtime.blueprint_route import BlueprintRouteAdapter
+    from services.process_runtime.blueprint_spec_gate import BlueprintSpecGateAdapter
+    from services.process_runtime.engine import ProcessEngine
+
+    deps = SimpleNamespace(
+        spec_gate=BlueprintSpecGateAdapter(),
+        route=BlueprintRouteAdapter(),
+        research=BlueprintResearchAdapter(node_execution_id=node_execution_id),
+        confirm_gate=BlueprintConfirmGateAdapter(),
+    )
+    return ProcessEngine(
+        session_service=session_service or ConvergenceSessionService(),
+        deps=deps,
+    )
+
+
+# 纯追加纪律（既有 __all__ 行一字不动）：新工厂追加进导出面。
+__all__ += ["build_blueprint_engine"]

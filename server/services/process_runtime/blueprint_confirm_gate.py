@@ -509,7 +509,12 @@ class BlueprintConfirmGateAdapter:
             return self._result("awaiting_confirmation", None, None, 0)
 
         snapshot = iter_snapshot_repos(thread.options)
-        content = copy.deepcopy(version.content if isinstance(version.content, dict) else {})
+        # 锁定基线取 artifact 的**最新**版本而非 session 钉住的那一版：规格门放行时
+        # add_version 已推进 current_version，而 session.current_artifact_version 只在
+        # 显式 StageOutcome 里才更新——读 session 那一版会把规格门的成果覆盖回旧内容。
+        latest = await self._aload_latest_version(artifact.id)
+        base = latest if latest is not None else version
+        content = copy.deepcopy(base.content if isinstance(base.content, dict) else {})
         pool = content.get("citations")
         citation_pool = set(pool.keys()) if isinstance(pool, dict) else set()
 
@@ -682,6 +687,12 @@ class BlueprintConfirmGateAdapter:
             return None
         return await (
             ArtifactVersion.objects.select_related("artifact").filter(id=version_id).afirst()
+        )
+
+    @staticmethod
+    async def _aload_latest_version(artifact_id: Any) -> Any:
+        return await (
+            ArtifactVersion.objects.filter(artifact_id=artifact_id).order_by("-version_no").afirst()
         )
 
     @staticmethod

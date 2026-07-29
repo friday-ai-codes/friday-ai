@@ -10,6 +10,16 @@ from delivery.api.artifact_views import (
     ArtifactTimelineView,
     ArtifactVersionDownstreamView,
 )
+from delivery.api.blueprint_gate_views import (
+    BlueprintGateAddRepoView,
+    BlueprintGateConfirmView,
+    BlueprintGateEditResponsibilityView,
+    BlueprintGateReclassifyRoleView,
+    BlueprintGateRemoveRepoView,
+    BlueprintGateSnapshotView,
+    BlueprintGateUpgradeResearchView,
+    BlueprintRejectedToBoundaryView,
+)
 from delivery.api.human_task_views import (
     ClarificationAnswerView,
     HumanTaskActionView,
@@ -121,6 +131,49 @@ urlpatterns = [
         "artifact-versions/<uuid:version_id>/downstream/",
         ArtifactVersionDownstreamView.as_view(),
         name="artifact-version-downstream",
+    ),
+    # 阶段 1 出口确认门（112-05，FLOW-03/FLOW-04）：1 个只读快照 + 7 个动作端点。
+    # 全部挂在 artifacts/<uuid>/blueprint-gate/ 下（字面动作段，与 artifact-timeline
+    # 的整段精确匹配互不遮挡）。
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-gate/",
+        BlueprintGateSnapshotView.as_view(),
+        name="blueprint-gate-snapshot",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-gate/confirm/",
+        BlueprintGateConfirmView.as_view(),
+        name="blueprint-gate-confirm",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-gate/remove-repo/",
+        BlueprintGateRemoveRepoView.as_view(),
+        name="blueprint-gate-remove-repo",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-gate/add-repo/",
+        BlueprintGateAddRepoView.as_view(),
+        name="blueprint-gate-add-repo",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-gate/reclassify-role/",
+        BlueprintGateReclassifyRoleView.as_view(),
+        name="blueprint-gate-reclassify-role",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-gate/edit-responsibility/",
+        BlueprintGateEditResponsibilityView.as_view(),
+        name="blueprint-gate-edit-responsibility",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-gate/rejected-to-boundary/",
+        BlueprintRejectedToBoundaryView.as_view(),
+        name="blueprint-gate-rejected-to-boundary",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-gate/upgrade-research/",
+        BlueprintGateUpgradeResearchView.as_view(),
+        name="blueprint-gate-upgrade-research",
     ),
     # Human Task Center（P8）：统一待办收件箱（list/open）+ 物化待办动作 + 投影澄清回流。
     # 字面段 clarification/ 必须在 <uuid:task_id> 动作路由之前注册（避免被 uuid 段吞）。
