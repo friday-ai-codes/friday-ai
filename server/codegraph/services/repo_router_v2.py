@@ -181,6 +181,18 @@ class RepoRouterV2:
             return await cls._fallback_v1(query, top_k)
 
         stage0_candidates = cls._stage0_candidates(node_hits, top_k=STAGE0_REPO_K)
+        if not stage0_candidates:
+            # node_hits 非空但全部缺 repository_id（打分核心过滤后零候选）：
+            # 进 Stage 1 只会发一次空 prompt 的 LLM 调用再被白名单过滤降级——
+            # 提前短路省掉这次浪费（IN-04a）。
+            return cls._stage0_only_result(
+                query,
+                node_hits,
+                stage0_candidates,
+                top_k,
+                started,
+                stage1_meta={"skipped_reason": "no_stage0_candidates"},
+            )
         # 桶仅供 Stage 1 组 prompt 取命中节点用；打分聚合已在纯函数核心内完成。
         repo_buckets = cls._aggregate_by_repo(node_hits)
 

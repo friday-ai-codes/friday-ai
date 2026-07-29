@@ -182,8 +182,16 @@ class Command(BaseCommand):
             if options["verify_cosine"]:
                 report["cosine_probe"] = self._verify_cosine(client, per_repo)
         except Exception as exc:
+            from common.logging import redact_secrets_in_text
+
             duration_ms = int((time.monotonic() - start) * 1000)
-            logger.error(_EVENT_FAILED, error=str(exc), duration_ms=duration_ms, **_LOG_KV)
+            # 异常文本可能含上游（Qdrant）连接串等敏感片段——手动脱敏兜底
+            logger.error(
+                _EVENT_FAILED,
+                error=redact_secrets_in_text(str(exc)),
+                duration_ms=duration_ms,
+                **_LOG_KV,
+            )
             raise
 
         duration_ms = int((time.monotonic() - start) * 1000)
