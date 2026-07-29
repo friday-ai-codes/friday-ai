@@ -136,9 +136,7 @@ def test_long_path_truncated_to_max_inline_len():
 def test_bucket_truncated_with_more_elision():
     """单桶文件数超上限 → 仅渲染前 N 条 + 「… (+M more)」省略行（MD-02，T-45-02）。"""
     files = [f"api/contract_{i}.proto" for i in range(60)]
-    section = render_upstream_artifacts_section(
-        [{"repository_id": "r1", "api_contracts": files}]
-    )
+    section = render_upstream_artifacts_section([{"repository_id": "r1", "api_contracts": files}])
     rendered = [line for line in section.split("\n") if line.strip().startswith("- `")]
     assert len(rendered) == 50  # 仅前 50 条
     assert "… (+10 more)" in section
@@ -147,7 +145,5 @@ def test_bucket_truncated_with_more_elision():
 def test_bucket_at_limit_no_elision():
     """恰好等于上限 → 不出现省略行（边界）。"""
     files = [f"api/contract_{i}.proto" for i in range(50)]
-    section = render_upstream_artifacts_section(
-        [{"repository_id": "r1", "api_contracts": files}]
-    )
+    section = render_upstream_artifacts_section([{"repository_id": "r1", "api_contracts": files}])
     assert "more)" not in section

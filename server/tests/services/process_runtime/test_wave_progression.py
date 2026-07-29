@@ -70,9 +70,7 @@ async def test_wave_gate() -> None:
     rid_b, rid_a = str(repo_b.id), str(repo_a.id)
     # b 在 wave0，a 在 wave1 依赖 b。
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(
-        plan_version, {rid_b: 0, rid_a: 1}, {rid_a: [rid_b]}
-    )
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid_b: 0, rid_a: 1}, {rid_a: [rid_b]})
     # wave0 task_b 标 running 并挂 SubAgentSession（status=running 在途）。
     sub_b = await _make_subagent(SubAgentSession.Status.RUNNING)
     await svc.mark_running(tasks[rid_b], sub_b)
@@ -137,9 +135,7 @@ async def test_downstream_blocked() -> None:
     repo_b, repo_c = await _make_repo(), await _make_repo()
     rid_b, rid_c = str(repo_b.id), str(repo_c.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(
-        plan_version, {rid_b: 0, rid_c: 1}, {rid_c: [rid_b]}
-    )
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid_b: 0, rid_c: 1}, {rid_c: [rid_b]})
     await svc.mark_failed(tasks[rid_b], "boom")
 
     result = await aadvance_coding_waves(plan_version.id, service=svc)
