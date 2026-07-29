@@ -150,7 +150,7 @@ class TestResolveFacetScores:
         assert result["domain"] == {"score": None, "layer": None}
 
     async def test_stack_multivalue_max_aggregation(self):
-        """"Python/Vue/Go" 仅命中 Python → 0.8·1.0 + 0.2·0 = 0.8（绝不 sum/mean）。"""
+        """ "Python/Vue/Go" 仅命中 Python → 0.8·1.0 + 0.2·0 = 0.8（绝不 sum/mean）。"""
         result = await resolve_facet_scores(
             "python 后端接口优化",
             {FACET_STACK: "Python/Vue/Go"},
