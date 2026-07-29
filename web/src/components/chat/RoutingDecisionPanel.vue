@@ -75,13 +75,19 @@ function labelOf(level: RoutingLevel): string {
 }
 
 /**
- * 分数分解信号名 → 中文标签（ROUTE-07）。未知 key 回退显示原始英文
- * key——Phase 106 新增信号零前端改动即可展示。
+ * 分数分解信号名 → 中文标签（ROUTE-07 / ROUTE-04）。键与后端
+ * SIGNAL_TEXT/SIGNAL_BREADTH/SIGNAL_ACTIVITY/SIGNAL_DOMAIN/SIGNAL_STACK/
+ * SIGNAL_TEAM 常量字面对齐——Phase 106 六信号已入分；criticality 为同分带
+ * tie-break 旁路字段不入 breakdown，故无标签。未知 key 回退显示原始英文
+ * key（向前兼容，后续新增信号零前端改动即可展示）。
  */
 const SIGNAL_LABELS: Record<string, string> = {
   text: '文本相关',
   breadth: '命中广度',
   activity: '活跃度',
+  domain: '业务域匹配',
+  stack: '技术栈匹配',
+  team: '团队归属',
 }
 
 function signalLabel(key: string): string {
