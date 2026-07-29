@@ -133,7 +133,33 @@ Plans:
   4. 编排进入澄清后，澄清一定送达用户且可作答；无人应答时有明确超时出口（继续推进或如实失败并说明原因），会话不会再永久停在 `waiting_clarification`。
   5. Stage 1 单次调用有重试与延迟上界，超出即降级继续，用户不会无限等待；O-6 的延迟压降结论（实测 34–71s 能否压到可接受）已落文档，若压不下来则缓存与快照回放作为主要收益来源已体现在设计中。
 
-**Plans**: TBD
+**Plans**: 9 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 107-01-PLAN.md — 纯函数排序/分组核心（分组标注 + block_order 迟滞 + K 裁剪 + 凸组合 + 降级原因分类 + 参数 clamp）+ 9 个参数外置 + golden cross_group 机制断言（wave 1）
+- [ ] 107-02-PLAN.md — O-6 延迟实测命令（measure_stage1_latency）+ 107-MEASUREMENTS.md（delta 上界 / α 未校准局限 / per-call 不下调理由）（wave 1）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 107-03-PLAN.md — RepoRouterV2 呈现字段与分组接线：grouping_repository_ids 正交参数 + group/trust/cross_group_note/score_ranked + block_order/degrade_reason + 异常文本脱敏（wave 2）
+- [ ] 107-04-PLAN.md — 澄清必达：发卡 5 条失败路径留痕 + 两个事件常量入 taxonomy + D-4 订阅超时统一口径（wave 2）
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 107-05-PLAN.md — Stage 1 有界化：1 次重试 + 共享总预算 deadline + K=3 裁剪与凸组合写 score_ranked + ModelUsageRecord 埋点（wave 3）
+- [ ] 107-06-PLAN.md — 澄清超时出口：expire_pending_clarifications 命令（幂等 CAS / 两段式事务 / 两条立即出口 / dry-run）+ apscheduler job + clarify policy 短路（wave 3）
+- [ ] 107-07-PLAN.md — D-1/D-2 入口改造：项目关联仓宽口径并集解析 + 编排与 chat 两个入口改传分组依据（唯一回归风险点）+ chat 链候选透传（wave 3）
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 107-08-PLAN.md — trace 落库与 API 边界：degrade_reason/block_order 两列 + detail payload 补 4 键 + override 继承回传（wave 4）
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 107-09-PLAN.md — 前端分区渲染 + 跨组两层标注 + 迟滞置顶提示 + 降级横幅与徽标灰化 + override 不丢字段（wave 5）
+
 **UI hint**: yes
 
 ### Phase 108: 方案深度 — 已移交 v0.20.0（2026-07-29）
