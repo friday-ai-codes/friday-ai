@@ -37,6 +37,8 @@ from delivery.models import (
     BlueprintThread,
     ConvergenceSession,
     ConvergenceSessionEntrypoint,
+    ConvergenceSessionStatus,
+    PartialPlan,
     RepoResearchTask,
     RepoResearchTaskStatus,
     ThreadKind,
@@ -688,3 +690,203 @@ def test_gate_views_contain_no_orm_writes() -> None:
     )
     assert "aresume_after_gate_action" in text
     assert "sync_to_async" in text
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 10. SC-4 端到端证伪线（**经真实 REST 入口，不桩续驱**）
+#
+# 上面那批断言把 `aresume_after_gate_action` 桩掉了，只验「调用点存在 + 失败不反噬」。
+# 本节**不桩续驱**（process 已注册、engine 工厂已就位），只把容器 dispatcher 换成替身：
+# 断言经 REST 动作真的能把 session 推过 `research_required` 回边、只为待调研仓起容器、
+# 已完成仓的结论与 PartialPlan 行数逐一不变。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _e2e_setup(user, monkeypatch, roles=("direct", "indirect")) -> SimpleNamespace:
+    """预置停在 ``repo_confirmation``、A/B 两仓 task 已 ``done`` 的真实会话。
+
+    容器链只替身化 dispatcher（``get_dispatcher``）与凭证解析；**续驱、stage graph、
+    增量 dispatch、判据全部走真实代码**。deep 桶需要在线 runner，否则 112-04 会整体
+    降级轻量合成、dispatcher 永不被调用（那样断言就测不到容器链）。
+    """
+    from django.utils import timezone
+
+    from runners.models import Runner
+
+    ctx = _open_gate(user, roles)
+    Runner.objects.create(
+        name=f"runner-{uuid.uuid4().hex[:6]}",
+        token_hash=uuid.uuid4().hex + uuid.uuid4().hex,
+        status=Runner.Status.ONLINE,
+        last_heartbeat=timezone.now(),
+    )
+    for repo in ctx.repos:
+        task = RepoResearchTask.objects.create(
+            session=ctx.session, repository=repo, status=RepoResearchTaskStatus.DONE
+        )
+        PartialPlan.objects.create(
+            research_task=task,
+            content={"repository_id": str(repo.id), "fitness": {"verdict": "suitable"}},
+            content_hash=uuid.uuid4().hex,
+            valid=True,
+        )
+    dispatcher = _FakeDispatcher()
+    monkeypatch.setattr(_DISPATCHER_TARGET, lambda: dispatcher)
+    monkeypatch.setattr(
+        "services.provider_config.aget_claude_code_runtime_config",
+        AsyncMock(return_value={"api_key": "k", "default_model": "m"}),
+    )
+    monkeypatch.setattr("services.git_credentials.aresolve_git_token", AsyncMock(return_value=""))
+    ctx.dispatcher = dispatcher
+    ctx.baseline_partials = PartialPlan.objects.count()
+    return ctx
+
+
+def _task(ctx, repo) -> RepoResearchTask:
+    return RepoResearchTask.objects.get(session=ctx.session, repository=repo)
+
+
+def _stage(ctx) -> str:
+    return ConvergenceSession.objects.get(id=ctx.session.id).current_stage
+
+
+def test_e2e_add_repo_through_rest_reaches_repo_research_and_dispatches_only_new_repo(
+    authenticated_client, user, monkeypatch
+) -> None:
+    ctx = _e2e_setup(user, monkeypatch)
+    repo_c = _make_repo()
+
+    resp = authenticated_client.post(
+        ADD_URL.format(aid=ctx.artifact.id), {"repository_id": str(repo_c.id)}, format="json"
+    )
+
+    assert resp.status_code == 200
+    # ① 确实走了 research_required 回边（证明续驱在生产路径上被触发）
+    assert _stage(ctx) == "repo_research"
+    # ② 只为新仓起容器
+    assert _task(ctx, repo_c).status in (
+        RepoResearchTaskStatus.PENDING,
+        RepoResearchTaskStatus.RUNNING,
+    )
+    assert ctx.dispatcher.await_count == 1
+    assert repo_c.name in ctx.dispatcher.tasks[0].repo_url
+    # ③ 已完成仓的 task 状态与 PartialPlan 行数逐一不变（结论保留，不重跑）
+    for repo in ctx.repos:
+        assert _task(ctx, repo).status == RepoResearchTaskStatus.DONE
+    assert PartialPlan.objects.count() == ctx.baseline_partials
+
+
+def test_e2e_reclassify_indirect_to_direct_reaches_repo_research(
+    authenticated_client, user, monkeypatch
+) -> None:
+    ctx = _e2e_setup(user, monkeypatch)
+    target = ctx.repos[1]  # indirect
+
+    resp = authenticated_client.post(
+        RECLASSIFY_URL.format(aid=ctx.artifact.id),
+        {"repository_id": str(target.id), "role": "direct"},
+        format="json",
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["requires_research"] is True
+    assert _stage(ctx) == "repo_research"
+    assert _task(ctx, target).status in (
+        RepoResearchTaskStatus.STALE,
+        RepoResearchTaskStatus.RUNNING,
+    )
+    assert ctx.dispatcher.await_count == 1
+    assert _task(ctx, ctx.repos[0]).status == RepoResearchTaskStatus.DONE
+
+
+def test_e2e_reclassify_direct_to_indirect_does_not_trigger_research(
+    authenticated_client, user, monkeypatch
+) -> None:
+    ctx = _e2e_setup(user, monkeypatch)
+
+    resp = authenticated_client.post(
+        RECLASSIFY_URL.format(aid=ctx.artifact.id),
+        {"repository_id": str(ctx.repos[0].id), "role": "indirect"},
+        format="json",
+    )
+
+    assert resp.status_code == 200
+    assert _stage(ctx) == "repo_confirmation", "无谓重调研不得被触发"
+    assert ctx.dispatcher.await_count == 0
+
+
+def test_e2e_remove_repo_does_not_drive_research(authenticated_client, user, monkeypatch) -> None:
+    ctx = _e2e_setup(user, monkeypatch)
+
+    resp = authenticated_client.post(
+        REMOVE_URL.format(aid=ctx.artifact.id),
+        {"repository_id": str(ctx.repos[1].id)},
+        format="json",
+    )
+
+    assert resp.status_code == 200
+    assert _stage(ctx) == "repo_confirmation"
+    assert ctx.dispatcher.await_count == 0
+
+
+def test_e2e_upgrade_research_starts_deep_container_for_that_repo_only(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """``upgrade-research`` 同链：真实入口 → 该仓被起深调研容器，其它仓结论保留。
+
+    与 ``add_repo`` / ``reclassify_role`` 的差别在于 112-04 的 ``aupgrade_to_deep`` 自带
+    ``dispatch``（它必须带 ``force_deep_repository_ids``，否则被重新分回 light 桶再合成
+    一遍），所以增量派发在 service 调用内就完成了；随后视图触发的续驱看到该仓 task 已
+    ``running``（判据合取的第二项为假）→ 在 pause 短路处零 advance，``current_stage`` 仍为
+    ``repo_confirmation``。断言因此落在**这个端点真正要保证的事**上：容器确实为且只为该仓起了。
+    """
+    ctx = _e2e_setup(user, monkeypatch)
+    target = ctx.repos[1]  # indirect + done
+
+    resp = authenticated_client.post(
+        UPGRADE_URL.format(aid=ctx.artifact.id), {"repository_id": str(target.id)}, format="json"
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["upgraded"] is True
+    assert _task(ctx, target).status in (
+        RepoResearchTaskStatus.STALE,
+        RepoResearchTaskStatus.RUNNING,
+    )
+    assert ctx.dispatcher.await_count == 1
+    assert target.name in ctx.dispatcher.tasks[0].repo_url
+    assert _task(ctx, ctx.repos[0]).status == RepoResearchTaskStatus.DONE
+    assert _entry(ctx.artifact, target)["role_suggestion"] == "direct"
+
+
+def test_e2e_confirm_through_rest_drives_session_to_terminal(
+    authenticated_client, user, monkeypatch
+) -> None:
+    ctx = _e2e_setup(user, monkeypatch)
+
+    resp = authenticated_client.post(CONFIRM_URL.format(aid=ctx.artifact.id))
+
+    assert resp.status_code == 200
+    fresh = ConvergenceSession.objects.get(id=ctx.session.id)
+    assert fresh.status == ConvergenceSessionStatus.DONE, "confirm 也接了续驱，不停在挂起态"
+    assert ctx.dispatcher.await_count == 0
+    content = _latest_content(ctx.artifact)
+    assert all(a["confirmed_at_gate"] for a in content["repo_associations"])
+
+
+def test_e2e_resume_failure_keeps_marker_for_next_trigger(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """续驱失败不反噬（真链路版）：标记与新仓 task 已持久化，下次触发仍可闭环。"""
+    ctx = _e2e_setup(user, monkeypatch)
+    repo_c = _make_repo()
+    monkeypatch.setattr(_DRIVE_TARGET, AsyncMock(side_effect=RuntimeError("resume boom")))
+
+    resp = authenticated_client.post(
+        ADD_URL.format(aid=ctx.artifact.id), {"repository_id": str(repo_c.id)}, format="json"
+    )
+
+    assert resp.status_code == 200
+    assert _stage(ctx) == "repo_confirmation", "续驱炸了 → stage 不前进（但动作已落库）"
+    assert _task(ctx, repo_c).status == RepoResearchTaskStatus.PENDING
+    assert _entry(ctx.artifact, repo_c)["pending_research"] is True

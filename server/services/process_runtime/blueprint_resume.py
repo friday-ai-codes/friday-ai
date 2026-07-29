@@ -3,7 +3,7 @@
 四段契约：
 
 - **形状照 ``resume.py`` 但换 pause 判据**：``resume.py`` 的 ``waiting_clarification``
-  短路绑 ``delivery.Clarification``，与蓝图的 ``BlueprintThread`` 不匹配；改它会让旧
+  短路绑旧编排链的澄清轮模型，与蓝图的 ``BlueprintThread`` 不匹配；改它会让旧
   ``technical_plan`` process 回归，所以新建本文件（``resume.py`` 逐字未改）。
 - **旧 process 零感知**：本文件只被 ``technical_blueprint`` 链调用（确认门七动作端点、
   调研 fan-out barrier）。
