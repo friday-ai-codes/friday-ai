@@ -36,6 +36,11 @@ __all__ = [
     "EVENT_SPEC_DRAFTED",
     "EVENT_CODING_WAVE_STARTED",
     "EVENT_CODING_WAVE_COMPLETED",
+    "EVENT_BLUEPRINT_STATUS_TRANSITIONED",
+    "EVENT_BLUEPRINT_STAGE_STARTED",
+    "EVENT_BLUEPRINT_STAGE_COMPLETED",
+    "EVENT_BLUEPRINT_STAGE_FAILED",
+    "BLUEPRINT_EVENTS",
     "ALL_EVENTS",
     "RESERVED_EVENTS",
     "build_envelope",
@@ -97,6 +102,29 @@ RESERVED_EVENTS: Final[frozenset[str]] = frozenset(
         EVENT_WORK_ITEM_SYNCING,
         EVENT_CODING_WAVE_STARTED,
         EVENT_CODING_WAVE_COMPLETED,
+    }
+)
+
+# ---- 蓝图（v0.20 Phase 111，DESIGN §4.2/§10） ----
+# 蓝图生命周期/阶段事件。emit 点 = blueprint_lifecycle_service（111）与 112+ 编排阶段，
+# 不在 ALL_EVENTS 守护测试的 producer 扫描清单内——故镜像 RESERVED_EVENTS 的
+# 「已定义但不计入 ALL_EVENTS」先例，放独立 BLUEPRINT_EVENTS 集合（避免
+# test_event_taxonomy_alignment 覆盖性反查误挂，RESEARCH P4）。
+
+# 111 唯一实际 emit：蓝图状态转移（payload: artifact_id/from/to/initiated_by_user_id）
+EVENT_BLUEPRINT_STATUS_TRANSITIONED: Final[str] = "blueprint.status.transitioned"
+# 供 112+ 编排阶段消费（本相位仅定义常量）
+EVENT_BLUEPRINT_STAGE_STARTED: Final[str] = "blueprint.stage.started"
+EVENT_BLUEPRINT_STAGE_COMPLETED: Final[str] = "blueprint.stage.completed"
+EVENT_BLUEPRINT_STAGE_FAILED: Final[str] = "blueprint.stage.failed"
+
+# 蓝图事件独立集合（不进 ALL_EVENTS，见上方注释）
+BLUEPRINT_EVENTS: Final[frozenset[str]] = frozenset(
+    {
+        EVENT_BLUEPRINT_STATUS_TRANSITIONED,
+        EVENT_BLUEPRINT_STAGE_STARTED,
+        EVENT_BLUEPRINT_STAGE_COMPLETED,
+        EVENT_BLUEPRINT_STAGE_FAILED,
     }
 )
 
