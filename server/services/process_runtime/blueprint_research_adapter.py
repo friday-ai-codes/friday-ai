@@ -14,9 +14,10 @@
    容器不需要新工具即可看到章程。
 
 派发是**天然增量**的：候选来源 = `stage_state["routing"].candidates` ∪
-`stage_state["confirmation"]` 内 `pending_research is True` 的仓；只对
-`PENDING` / `STALE` 的 task 起容器或合成，已 `running` / `done` / `failed` 的仓一律跳过。
-因此确认门的 `add_repo` / `reclassify_role` 让会话重进 `repo_research` 时，既有结论被保留。
+`stage_state["confirmation"]` 内 `pending_research is True` 的仓，**减去**
+`stage_state["reroute"]["excluded"]` 排除集；只对 `PENDING` / `STALE` 的 task 起容器或合成，
+已 `running` / `done` / `failed` 的仓一律跳过。因此确认门的 `add_repo` / `reclassify_role`
+让会话重进 `repo_research` 时，既有结论被保留，而被判 `unsuitable` 排除的仓不会被再次派发。
 """
 
 from __future__ import annotations
@@ -122,7 +123,8 @@ class BlueprintResearchAdapter:
         """
         started = time.monotonic()
         forced = {str(rid) for rid in (force_deep_repository_ids or set())}
-        candidates = self._collect_candidates(session)
+        # `forced` 是人工显式动作（升级深调研端点）——它是排除集的唯一豁免口。
+        candidates = self._collect_candidates(session, allow_repository_ids=forced)
         if not candidates:
             # 形状恒定（下游 handler 无需判空分支）：缺 "routing" 键 / candidates 为空 /
             # 确认门无 pending_research 仓 —— 一律零派发，不抛。
@@ -243,19 +245,45 @@ class BlueprintResearchAdapter:
     # ── 候选来源与分桶 ────────────────────────────────────────────────────
 
     @staticmethod
-    def _collect_candidates(session: Any) -> dict[str, dict]:
-        """候选并集（按 `repository_id` 去重）：路由候选 ∪ 确认门 `pending_research` 仓。
+    def _excluded_repository_ids(stage_state: Any) -> set[str]:
+        """reroute 排除集（`stage_state["reroute"]["excluded"]`）—— **唯一读取方在候选筛选处**。
+
+        被判 `unsuitable` 的仓由 `aadvance_reroute` 累积写入这里；派发侧读它做剔除，
+        使「排除 unsuitable」为真：被排除仓不会再进任何一轮派发（否则重路由只是空转）。
+        """
+        if not isinstance(stage_state, dict):
+            return set()
+        reroute = stage_state.get(_REROUTE_STATE_KEY)
+        if not isinstance(reroute, dict):
+            return set()
+        raw = reroute.get("excluded")
+        if not isinstance(raw, list):
+            return set()
+        return {str(item) for item in raw if str(item or "")}
+
+    @staticmethod
+    def _collect_candidates(
+        session: Any, *, allow_repository_ids: set[str] | None = None
+    ) -> dict[str, dict]:
+        """候选并集（按 `repository_id` 去重）：路由候选 ∪ 确认门 `pending_research` 仓，
+        **减去** `stage_state["reroute"]["excluded"]` 排除集。
 
         `stage_state["routing"]` 逐字按 112-03 契约读，**只取三键**：`repository_id` /
         `role_suggestion` / `confidence`（`confidence` 直作 `routed_confidence` 入参）；
         其余顶层键仅供事件回显，不参与派发判定。确认门快照（112-05 写入）里
         `pending_research is True` 的仓 = `add_repo` 新增 + `reclassify_role` 需重调研，
         后写者覆盖前者（确认门是更晚的人工裁决）。
+
+        `allow_repository_ids` 是排除集的豁免口，只由**人工显式动作**填（升级深调研）：
+        自动重路由排除的仓仍允许用户手动指名重开，但绝不会被自动流程再派发。
         """
         stage_state = getattr(session, "stage_state", None) or {}
         if not isinstance(stage_state, dict):
             return {}
 
+        excluded = BlueprintResearchAdapter._excluded_repository_ids(stage_state) - (
+            allow_repository_ids or set()
+        )
         collected: dict[str, dict] = {}
 
         routing = stage_state.get("routing")
@@ -264,7 +292,7 @@ class BlueprintResearchAdapter:
             if not isinstance(item, dict):
                 continue
             repository_id = str(item.get("repository_id") or "")
-            if not repository_id:
+            if not repository_id or repository_id in excluded:
                 continue
             collected[repository_id] = {
                 "repository_id": repository_id,
@@ -276,7 +304,7 @@ class BlueprintResearchAdapter:
 
         for item in _iter_confirmation_repos(stage_state.get("confirmation")):
             repository_id = str(item.get("repository_id") or "")
-            if not repository_id or not item.get("pending_research"):
+            if not repository_id or repository_id in excluded or not item.get("pending_research"):
                 continue
             existing = collected.get(repository_id) or {}
             collected[repository_id] = {
@@ -711,7 +739,9 @@ class BlueprintResearchAdapter:
             task_id = await self._afind_task_id(session, repository_id)
             if task_id is not None:
                 await self.research_service.mark_stale([task_id])
-            elif repository_id not in self._collect_candidates(session):
+            elif repository_id not in self._collect_candidates(
+                session, allow_repository_ids={repository_id}
+            ):
                 return False
             result = await self.dispatch(session, force_deep_repository_ids={repository_id})
             logger.info(

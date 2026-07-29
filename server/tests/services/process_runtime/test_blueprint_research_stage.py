@@ -418,6 +418,75 @@ async def test_incremental_dispatch_only_new_pending_research_repo() -> None:
     assert await RepoResearchTask.objects.filter(session=session).acount() == 3
 
 
+@override_settings(FRIDAY_BASE_URL="https://friday.example.com")
+async def test_excluded_repo_is_never_dispatched_again() -> None:
+    """**排除集被真的消费**：`reroute.excluded` 里的仓不再进候选，一个容器都不为它起。
+
+    这是 GAP-1 的证伪断言——`excluded` 只写不读时本例会为 A 起容器（await_count == 2）。
+    """
+    repo_a = await _make_repo("unsuitable-a")
+    repo_b = await _make_repo("keeper-b")
+    stage_state = _routing_state(_candidate(repo_a), _candidate(repo_b))
+    stage_state["reroute"] = {"count": 1, "excluded": [str(repo_a.id)]}
+    session = await _make_session(stage_state)
+    await _make_online_runner()
+    dispatcher = _FakeDispatcher()
+    cfg, git = _stub_runtime()
+
+    with cfg, git:
+        result = await _adapter(dispatcher, charters_loader=AsyncMock(return_value={})).dispatch(
+            session
+        )
+
+    assert result["dispatched"] == 1
+    assert dispatcher.await_count == 1
+    assert dispatcher.tasks[0].repo_url == repo_b.git_url
+    # 被排除仓连 task 行都不新建（不是「起了容器又跳过」）
+    assert not await RepoResearchTask.objects.filter(session=session, repository=repo_a).aexists()
+
+
+@override_settings(FRIDAY_BASE_URL="https://friday.example.com")
+async def test_excluded_repo_skipped_even_when_confirmation_marks_pending() -> None:
+    """排除集对**两条候选来源**都生效（确认门 `pending_research` 分支同样剔除）。"""
+    repo_a = await _make_repo("unsuitable-a")
+    stage_state = _routing_state()
+    stage_state["confirmation"] = {
+        "repos": [
+            {"repository_id": str(repo_a.id), "role_suggestion": "direct", "pending_research": True}
+        ]
+    }
+    stage_state["reroute"] = {"count": 1, "excluded": [str(repo_a.id)]}
+    session = await _make_session(stage_state)
+    await _make_online_runner()
+    dispatcher = _FakeDispatcher()
+
+    result = await _adapter(dispatcher).dispatch(session)
+
+    assert result == {"dispatched": 0, "synthesized": 0, "degraded": False, "tasks": []}
+    assert dispatcher.await_count == 0
+    assert await RepoResearchTask.objects.filter(session=session).acount() == 0
+
+
+@override_settings(FRIDAY_BASE_URL="https://friday.example.com")
+async def test_manual_upgrade_bypasses_exclusion() -> None:
+    """排除集只约束**自动流程**：人工指名升级深调研仍可重开被排除仓（唯一豁免口）。"""
+    repo = await _make_repo()
+    stage_state = _routing_state(_candidate(repo, role="indirect", confidence="low"))
+    stage_state["reroute"] = {"count": 1, "excluded": [str(repo.id)]}
+    session = await _make_session(stage_state)
+    await _make_online_runner()
+    dispatcher = _FakeDispatcher()
+    cfg, git = _stub_runtime()
+
+    with cfg, git:
+        ok = await _adapter(
+            dispatcher, charters_loader=AsyncMock(return_value={})
+        ).aupgrade_to_deep(session, str(repo.id))
+
+    assert ok is True
+    assert dispatcher.await_count == 1
+
+
 @pytest.mark.parametrize(
     "stage_state",
     [{}, {"routing": {}}, {"routing": {"candidates": []}}, {"routing": "not-a-dict"}],
