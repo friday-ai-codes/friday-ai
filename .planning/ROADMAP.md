@@ -80,7 +80,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 105-07-PLAN.md — 快照落 ConvergenceSessionEvent + 离线 replay 零网络同结果（wave 4）
+- [x] 105-07-PLAN.md — 快照落 ConvergenceSessionEvent + 离线 replay 零网络同结果（wave 4）
 
 **UI hint**: yes
 
