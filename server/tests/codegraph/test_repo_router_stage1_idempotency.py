@@ -211,6 +211,41 @@ def test_cache_key_sensitive_to_stage0_input() -> None:
     assert k_a == RepoRouterV2._stage1_cache_key("m1", input_a, decode, "iv-1")
 
 
+def test_cache_key_sensitive_to_output_cap() -> None:
+    """prompt 动态插值「最多输出 max(top_k,3) 项」并入 key 材料（MJ-02）。
+
+    top_k=3 与 top_k=5 渲染出不同 prompt——是不同 LLM 输入，key 必须不同，
+    否则先缓存的 ≤3 项排列会冒充 top_k=5 请求的结果（条数错误 + prompt_hash
+    审计断链）。
+    """
+    decode = {"temperature": 0.0, "top_p": 1.0, "seed": 42}
+    base = {"query": "需求", "candidates": [{"repo_id": "repo-a", "hits": []}]}
+    input_cap3 = {**base, "output_cap": 3}
+    input_cap5 = {**base, "output_cap": 5}
+
+    k3 = RepoRouterV2._stage1_cache_key("m1", input_cap3, decode, "iv-1")
+    k5 = RepoRouterV2._stage1_cache_key("m1", input_cap5, decode, "iv-1")
+    assert k3 != k5
+
+
+@pytest.mark.asyncio
+async def test_cache_not_shared_across_top_k(monkeypatch, mock_aresolve_ok) -> None:
+    """同 query 不同 top_k 不得命中同一缓存（端到端行为守护，MJ-02）。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _hits())
+    model = _CountingModel(_llm_output())
+    _install_stage1_model(monkeypatch, model)
+
+    first = await RepoRouterV2.route("高三提分专项需求", top_k=3)
+    assert model.calls == 1
+    assert first.snapshot["stage1"]["cache_hit"] is False
+
+    second = await RepoRouterV2.route("高三提分专项需求", top_k=5)
+    # output_cap 3 → 5：不同 prompt = 不同输入，必须真调 LLM 而非命中旧缓存
+    assert model.calls == 2
+    assert second.snapshot["stage1"]["cache_hit"] is False
+
+
 def test_cache_key_sensitive_to_index_version() -> None:
     """重索引（built_at 变化 → index_version 变化）→ key 不同，旧缓存自然失效。"""
     decode = {"temperature": 0.0, "top_p": 1.0, "seed": 42}

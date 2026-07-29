@@ -598,7 +598,15 @@ class RepoRouterV2:
 
         # stage0_input：喂给 LLM 的候选材料的结构化源（context_blocks 由此渲染）。
         # 含 query——同候选不同需求文本是不同输入，缓存 key 必须区分。
-        stage0_input: dict[str, Any] = {"query": query, "candidates": []}
+        # 含 output_cap——system prompt 的动态插值「最多输出 max(top_k,3) 项」
+        # 也是 LLM 输入的一部分：不同 top_k 渲染出不同 prompt，是不同输入，
+        # 必须并入 key 材料，否则跨 top_k 请求缓存碰撞（105 评审 MJ-02）。
+        output_cap = max(top_k, 3)
+        stage0_input: dict[str, Any] = {
+            "query": query,
+            "candidates": [],
+            "output_cap": output_cap,
+        }
         context_blocks: list[str] = []
         built_at_by_repo: dict[str, str] = {}
         for idx, c in enumerate(stage0_candidates, 1):
@@ -643,7 +651,7 @@ class RepoRouterV2:
                 "规则：\n"
                 "- 按相关度降序排列输出，数组顺序即你的排序结论；"
                 "不要输出任何数值分数字段（如 score / 浮点分值）——排序只用数组顺序表达\n"
-                "- 最多输出 " + str(max(top_k, 3)) + " 项，无关候选不要输出\n"
+                "- 最多输出 " + str(output_cap) + " 项，无关候选不要输出\n"
                 "- 只有当需求明确指向唯一仓库时首位才给 high\n"
                 "- 活跃度=疑似废弃的仓库除非别无选择，否则降级或剔除\n"
                 "- repo_id 必须从候选中选取，禁止编造"
