@@ -74,7 +74,12 @@ def test_cross_repo_depends_on_projected_to_dependencies():
     assert by_repo["repo-backend"]["dependencies"] == []
 
 
-def test_missing_repo_association_falls_back_to_repository_id():
+def test_item_with_unknown_repository_id_dropped():
+    """MJ-01：repository_id 不在 repo_associations 的 item 被丢弃，不再兜底成仓名。
+
+    坏仓 id 由 ``validate_blueprint`` 后置检查 (c) 前置拦截；派生器再丢一次作双保险
+    ——绝不产出 ``repository_name == <不存在的仓 id>`` 的 execution task。
+    """
     content = make_blueprint()
     content["implementation_overview"]["items"].append(
         {
@@ -87,11 +92,20 @@ def test_missing_repo_association_falls_back_to_repository_id():
         }
     )
     plan = derive_execution_plan(content)
-    ghost = next(task for task in plan if task["repository_id"] == "repo-ghost")
-    assert ghost["repository_name"] == "repo-ghost"
+    assert [task["repository_id"] for task in plan] == ["repo-backend", "repo-frontend"]
+    assert all(task["repository_name"] != "repo-ghost" for task in plan)
     doc, err = derive_technical_plan_document(content)
     assert err is None
     assert validate_technical_plan(doc)[0] is True
+
+
+def test_association_without_name_falls_back_to_repository_id():
+    """在册但缺 repository_name 的仓：仍派生 task，仓名回退 id（technical_plan 必填）。"""
+    content = make_blueprint()
+    content["repo_associations"][0].pop("repository_name")
+    plan = derive_execution_plan(content)
+    backend = next(task for task in plan if task["repository_id"] == "repo-backend")
+    assert backend["repository_name"] == "repo-backend"
 
 
 def test_empty_items_yields_empty_plan_and_valid_document():

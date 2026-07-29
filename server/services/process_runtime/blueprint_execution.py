@@ -9,7 +9,9 @@ technical_plan 形状的 ``execution_plan``（DESIGN §3.14）：
   文本确定性拼装；
 - ``files`` 合并 ``files_touched`` 并做 **action 映射 remove→delete**（蓝图侧枚举是
   create/modify/remove，technical_plan 侧是 create/modify/delete）；
-- item 跨仓 ``depends_on`` 投影为仓级 task ``dependencies`` 边。
+- item 跨仓 ``depends_on`` 投影为仓级 task ``dependencies`` 边；
+- ``repository_id`` 不在 ``repo_associations`` 中的 item **直接丢弃**（引用完整性由
+  ``validate_blueprint`` 后置检查 (c) 前置把关，派生器不给坏仓 id 兜底成仓名）。
 
 **纯函数**（无 IO / 无 ORM / 无 LLM），顶层仅 import ``validate_technical_plan``
 与 stdlib。同输入重复调用输出逐字节一致（排序全部显式化），派生文档必须通过既有
@@ -117,8 +119,9 @@ def derive_execution_plan(blueprint: dict) -> list[dict]:
     """从 blueprint/v1 派生 technical_plan 形状的 execution_plan（确定性）。
 
     Args:
-        blueprint: 半可信 blueprint dict（逐字段 ``.get`` 防御，缺 id/repository_id
-            的 item 跳过；无效 depends_on 引用过滤）。
+        blueprint: 半可信 blueprint dict（逐字段 ``.get`` 防御，缺 id 或
+            ``repository_id`` 不在 ``repo_associations`` 中的 item 跳过；无效
+            depends_on 引用过滤）。
 
     Returns:
         每仓一个 task 的列表，按 ``(min(item.wave, default=1), repository_id)``
@@ -126,27 +129,30 @@ def derive_execution_plan(blueprint: dict) -> list[dict]:
     """
     if not isinstance(blueprint, dict):
         return []
+
+    # repository_name 快照：从 repo_associations 查表（缺名才回退 repository_id 字符串，
+    # 漏 repository_name 会被 validate_technical_plan 拒，RESEARCH P9）。
+    # assoc_ids 同时充当仓库白名单：坏 repository_id 由 validate_blueprint 后置检查 (c)
+    # 前置拦截，派生器再丢弃一次作双保险——绝不把不存在的仓 id 当仓名兜底下发。
+    assoc_ids: set[str] = set()
+    repo_names: dict[str, str] = {}
+    for assoc in blueprint.get("repo_associations") or []:
+        if not isinstance(assoc, dict) or not assoc.get("repository_id"):
+            continue
+        assoc_ids.add(assoc["repository_id"])
+        name = assoc.get("repository_name")
+        if isinstance(name, str) and name:
+            repo_names.setdefault(assoc["repository_id"], name)
+
     overview = blueprint.get("implementation_overview")
     raw_items = overview.get("items") if isinstance(overview, dict) else None
     items = [
         item
         for item in (raw_items if isinstance(raw_items, list) else [])
-        if isinstance(item, dict) and item.get("id") and item.get("repository_id")
+        if isinstance(item, dict) and item.get("id") and item.get("repository_id") in assoc_ids
     ]
     if not items:
         return []
-
-    # repository_name 快照：从 repo_associations 查表，查不到回退 repository_id 字符串
-    # （漏 repository_name 会被 validate_technical_plan 拒，RESEARCH P9）。
-    repo_names: dict[str, str] = {}
-    for assoc in blueprint.get("repo_associations") or []:
-        if (
-            isinstance(assoc, dict)
-            and assoc.get("repository_id")
-            and isinstance(assoc.get("repository_name"), str)
-            and assoc["repository_name"]
-        ):
-            repo_names.setdefault(assoc["repository_id"], assoc["repository_name"])
 
     item_repo = {item["id"]: item["repository_id"] for item in items}
 

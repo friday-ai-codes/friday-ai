@@ -134,6 +134,34 @@ def test_feature_point_id_unresolvable_rejected():
     assert "fp_nope" in (err or "")
 
 
+def test_item_repository_id_not_in_associations_rejected():
+    """MJ-01：items[].repository_id 必须存在于 repo_associations（坏仓 id 不得过门）。"""
+    content = make_blueprint()
+    content["implementation_overview"]["items"][0]["repository_id"] = "repo-ghost"
+    ok, err = validate_blueprint(content)
+    assert ok is False
+    assert "repo-ghost" in (err or "")
+    assert "repo_associations" in (err or "")
+
+
+def test_current_state_analysis_repository_id_not_in_associations_rejected():
+    """MJ-01：current_state_analysis[].repository_id 同款引用完整性。"""
+    content = make_blueprint()
+    content["current_state_analysis"][0]["repository_id"] = "repo-ghost"
+    ok, err = validate_blueprint(content)
+    assert ok is False
+    assert "repo-ghost" in (err or "")
+    assert "repo_associations" in (err or "")
+
+
+def test_indirect_repository_id_accepted_in_items():
+    """indirect 仓也在 repo_associations 中——引用完整性只查在册与否，不查 role。"""
+    content = make_blueprint()
+    content["implementation_overview"]["items"][0]["repository_id"] = "repo-shared"
+    ok, err = validate_blueprint(content)
+    assert (ok, err) == (True, None)
+
+
 # ---- 枚举非法值拒绝 ----
 
 
