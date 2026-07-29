@@ -1,5 +1,5 @@
 {
-  "_notice": "hold-out 封存：仅里程碑验收开箱，每次开箱 opened_count += 1 并记 opened_log（ROUTING-RANKING §7.3-2 防过拟合闸）。门禁测试与调参流程一律禁止加载本文件。",
+  "_notice": "hold-out 封存：仅里程碑验收开箱，每次开箱 opened_count += 1 并记 opened_log（ROUTING-RANKING §7.3-2 防过拟合闸）。门禁测试与调参流程一律禁止加载本文件。106-08：仅做字段同形扩展（hit facets 五维 / case 级 repo_meta / scored_at / constants），未参与任何评估，opened_count 未变。",
   "opened_count": 0,
   "opened_log": [],
   "cases": [
@@ -10,11 +10,17 @@
       "cross_group": false,
       "expected_repos": ["content-audit"],
       "node_hits": [
-        {"score": 0.0195, "payload": {"node_id": "n-h01-ca-1", "repository_id": "content-audit", "repo_name": "content-audit", "node_path": "审核/流水线/敏感词检测", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0175, "payload": {"node_id": "n-h01-ca-2", "repository_id": "content-audit", "repo_name": "content-audit", "node_path": "审核/规则/词库管理", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0150, "payload": {"node_id": "n-h01-ca-3", "repository_id": "content-audit", "repo_name": "content-audit", "node_path": "审核/回调/结果通知", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0090, "payload": {"node_id": "n-h01-ech-1", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/内容发布流程", "facets": {"活跃度": "活跃开发"}}}
-      ]
+        {"score": 0.0195, "payload": {"node_id": "n-h01-ca-1", "repository_id": "content-audit", "repo_name": "content-audit", "node_path": "审核/流水线/敏感词检测", "facets": {"业务线/产品线": "内容审核", "技术栈": "Go", "团队归属": "内容安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0175, "payload": {"node_id": "n-h01-ca-2", "repository_id": "content-audit", "repo_name": "content-audit", "node_path": "审核/规则/词库管理", "facets": {"业务线/产品线": "内容审核", "技术栈": "Go", "团队归属": "内容安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0150, "payload": {"node_id": "n-h01-ca-3", "repository_id": "content-audit", "repo_name": "content-audit", "node_path": "审核/回调/结果通知", "facets": {"业务线/产品线": "内容审核", "技术栈": "Go", "团队归属": "内容安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0090, "payload": {"node_id": "n-h01-ech-1", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/内容发布流程", "facets": {"业务线/产品线": "教研内容中台", "技术栈": "Java", "团队归属": "教研技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
+      ],
+      "repo_meta": {
+        "content-audit": {"n_r": 40, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"},
+        "edu-content-hub": {"n_r": 80, "last_commit_at": "2026-07-25T00:00:00+00:00", "facet_scores": {"domain": {"score": 0.6, "layer": "t1"}}, "criticality_value": "重要"}
+      },
+      "scored_at": "2026-07-29T00:00:00+00:00",
+      "constants": {"n_bar": 60}
     },
     {
       "id": "gk-h02-question-bank-import",
@@ -23,10 +29,16 @@
       "cross_group": false,
       "expected_repos": ["question-bank"],
       "node_hits": [
-        {"score": 0.0185, "payload": {"node_id": "n-h02-qb-1", "repository_id": "question-bank", "repo_name": "question-bank", "node_path": "题库/导入/Excel 解析", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0155, "payload": {"node_id": "n-h02-qb-2", "repository_id": "question-bank", "repo_name": "question-bank", "node_path": "题库/校验/题型格式校验", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0085, "payload": {"node_id": "n-h02-mt-1", "repository_id": "misc-tools", "repo_name": "misc-tools", "node_path": "工具集/表格转换脚本", "facets": {"活跃度": "低频"}}}
-      ]
+        {"score": 0.0185, "payload": {"node_id": "n-h02-qb-1", "repository_id": "question-bank", "repo_name": "question-bank", "node_path": "题库/导入/Excel 解析", "facets": {"业务线/产品线": "题库内容", "技术栈": "Java", "团队归属": "教研技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+        {"score": 0.0155, "payload": {"node_id": "n-h02-qb-2", "repository_id": "question-bank", "repo_name": "question-bank", "node_path": "题库/校验/题型格式校验", "facets": {"业务线/产品线": "题库内容", "技术栈": "Java", "团队归属": "教研技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+        {"score": 0.0085, "payload": {"node_id": "n-h02-mt-1", "repository_id": "misc-tools", "repo_name": "misc-tools", "node_path": "工具集/表格转换脚本", "facets": {"业务线/产品线": "工具脚本集", "技术栈": "Shell", "团队归属": "效能工具组", "关键程度": "边缘", "活跃度": "低频"}}}
+      ],
+      "repo_meta": {
+        "question-bank": {"n_r": 50, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"},
+        "misc-tools": {"n_r": 10, "last_commit_at": "2026-01-10T00:00:00+00:00", "criticality_value": "边缘"}
+      },
+      "scored_at": "2026-07-29T00:00:00+00:00",
+      "constants": {"n_bar": 60}
     },
     {
       "id": "gk-h03-cross-group-learning",
@@ -36,12 +48,18 @@
       "project_scope": ["study-app"],
       "expected_repos": ["onion-learning"],
       "node_hits": [
-        {"score": 0.0170, "payload": {"node_id": "n-h03-ol-1", "repository_id": "onion-learning", "repo_name": "onion-learning", "node_path": "学习产品/专项训练/交互流程", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0145, "payload": {"node_id": "n-h03-ol-2", "repository_id": "onion-learning", "repo_name": "onion-learning", "node_path": "学习产品/组件库/训练卡片", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0140, "payload": {"node_id": "n-h03-sa-1", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/study-home/学习首页", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0130, "payload": {"node_id": "n-h03-sa-2", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/study-plan/学习计划", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0125, "payload": {"node_id": "n-h03-sa-3", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/exam-center/考试中心", "facets": {"活跃度": "活跃开发"}}}
-      ]
+        {"score": 0.0170, "payload": {"node_id": "n-h03-ol-1", "repository_id": "onion-learning", "repo_name": "onion-learning", "node_path": "学习产品/专项训练/交互流程", "facets": {"业务线/产品线": "学习产品", "技术栈": "Vue / TypeScript", "团队归属": "学习产品团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0145, "payload": {"node_id": "n-h03-ol-2", "repository_id": "onion-learning", "repo_name": "onion-learning", "node_path": "学习产品/组件库/训练卡片", "facets": {"业务线/产品线": "学习产品", "技术栈": "Vue / TypeScript", "团队归属": "学习产品团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0140, "payload": {"node_id": "n-h03-sa-1", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/study-home/学习首页", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0130, "payload": {"node_id": "n-h03-sa-2", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/study-plan/学习计划", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0125, "payload": {"node_id": "n-h03-sa-3", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/exam-center/考试中心", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}}
+      ],
+      "repo_meta": {
+        "onion-learning": {"n_r": 30, "last_commit_at": "2026-07-26T00:00:00+00:00", "dense_cos_max": 0.6, "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}, "stack": {"score": 0.6, "layer": "t1"}}, "criticality_value": "核心"},
+        "study-app": {"n_r": 620, "last_commit_at": "2026-07-27T00:00:00+00:00", "dense_cos_max": 0.5, "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}, "stack": {"score": 0.6, "layer": "t1"}}, "criticality_value": "核心"}
+      },
+      "scored_at": "2026-07-29T00:00:00+00:00",
+      "constants": {"n_bar": 60}
     },
     {
       "id": "gk-h04-alert-threshold",
@@ -50,10 +68,16 @@
       "cross_group": false,
       "expected_repos": ["ops-dashboard"],
       "node_hits": [
-        {"score": 0.0175, "payload": {"node_id": "n-h04-od-1", "repository_id": "ops-dashboard", "repo_name": "ops-dashboard", "node_path": "运维大盘/告警/阈值配置", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0150, "payload": {"node_id": "n-h04-od-2", "repository_id": "ops-dashboard", "repo_name": "ops-dashboard", "node_path": "运维大盘/告警/通知渠道绑定", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0095, "payload": {"node_id": "n-h04-ps-1", "repository_id": "push-service", "repo_name": "push-service", "node_path": "推送/渠道管理", "facets": {"活跃度": "活跃开发"}}}
-      ]
+        {"score": 0.0175, "payload": {"node_id": "n-h04-od-1", "repository_id": "ops-dashboard", "repo_name": "ops-dashboard", "node_path": "运维大盘/告警/阈值配置", "facets": {"业务线/产品线": "运维监控", "技术栈": "Vue / TypeScript", "团队归属": "运维团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+        {"score": 0.0150, "payload": {"node_id": "n-h04-od-2", "repository_id": "ops-dashboard", "repo_name": "ops-dashboard", "node_path": "运维大盘/告警/通知渠道绑定", "facets": {"业务线/产品线": "运维监控", "技术栈": "Vue / TypeScript", "团队归属": "运维团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+        {"score": 0.0095, "payload": {"node_id": "n-h04-ps-1", "repository_id": "push-service", "repo_name": "push-service", "node_path": "推送/渠道管理", "facets": {"业务线/产品线": "消息推送", "技术栈": "Go", "团队归属": "消息团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
+      ],
+      "repo_meta": {
+        "ops-dashboard": {"n_r": 40, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"},
+        "push-service": {"n_r": 50, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 0.6, "layer": "t1"}}, "criticality_value": "重要"}
+      },
+      "scored_at": "2026-07-29T00:00:00+00:00",
+      "constants": {"n_bar": 60}
     },
     {
       "id": "gk-h05-exam-grading-ambiguous",
@@ -62,11 +86,17 @@
       "cross_group": false,
       "expected_repos": ["exam-service", "grading-service"],
       "node_hits": [
-        {"score": 0.0165, "payload": {"node_id": "n-h05-es-1", "repository_id": "exam-service", "repo_name": "exam-service", "node_path": "考试/判分/规则引擎", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0148, "payload": {"node_id": "n-h05-es-2", "repository_id": "exam-service", "repo_name": "exam-service", "node_path": "考试/试卷/题目组卷", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0160, "payload": {"node_id": "n-h05-gs-1", "repository_id": "grading-service", "repo_name": "grading-service", "node_path": "判分/主观题/人工复核队列", "facets": {"活跃度": "活跃开发"}}},
-        {"score": 0.0142, "payload": {"node_id": "n-h05-gs-2", "repository_id": "grading-service", "repo_name": "grading-service", "node_path": "判分/评分标准/量表管理", "facets": {"活跃度": "活跃开发"}}}
-      ]
+        {"score": 0.0165, "payload": {"node_id": "n-h05-es-1", "repository_id": "exam-service", "repo_name": "exam-service", "node_path": "考试/判分/规则引擎", "facets": {"业务线/产品线": "考试测评", "技术栈": "Java", "团队归属": "考试业务团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0148, "payload": {"node_id": "n-h05-es-2", "repository_id": "exam-service", "repo_name": "exam-service", "node_path": "考试/试卷/题目组卷", "facets": {"业务线/产品线": "考试测评", "技术栈": "Java", "团队归属": "考试业务团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0160, "payload": {"node_id": "n-h05-gs-1", "repository_id": "grading-service", "repo_name": "grading-service", "node_path": "判分/主观题/人工复核队列", "facets": {"业务线/产品线": "判分服务", "技术栈": "Python", "团队归属": "考试业务团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+        {"score": 0.0142, "payload": {"node_id": "n-h05-gs-2", "repository_id": "grading-service", "repo_name": "grading-service", "node_path": "判分/评分标准/量表管理", "facets": {"业务线/产品线": "判分服务", "技术栈": "Python", "团队归属": "考试业务团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
+      ],
+      "repo_meta": {
+        "exam-service": {"n_r": 60, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"},
+        "grading-service": {"n_r": 35, "last_commit_at": "2026-07-25T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"}
+      },
+      "scored_at": "2026-07-29T00:00:00+00:00",
+      "constants": {"n_bar": 60}
     },
     {
       "id": "gk-h06-legacy-crawler",
@@ -75,10 +105,16 @@
       "cross_group": false,
       "expected_repos": ["data-crawler"],
       "node_hits": [
-        {"score": 0.0140, "payload": {"node_id": "n-h06-dc-1", "repository_id": "data-crawler", "repo_name": "data-crawler", "node_path": "爬虫/代理池/切换策略", "facets": {"活跃度": "疑似废弃"}}},
-        {"score": 0.0120, "payload": {"node_id": "n-h06-dc-2", "repository_id": "data-crawler", "repo_name": "data-crawler", "node_path": "爬虫/签名/请求签名", "facets": {"活跃度": "疑似废弃"}}},
+        {"score": 0.0140, "payload": {"node_id": "n-h06-dc-1", "repository_id": "data-crawler", "repo_name": "data-crawler", "node_path": "爬虫/代理池/切换策略", "facets": {"业务线/产品线": "数据采集", "技术栈": "Python", "团队归属": "数据平台团队", "关键程度": "边缘", "活跃度": "疑似废弃"}}},
+        {"score": 0.0120, "payload": {"node_id": "n-h06-dc-2", "repository_id": "data-crawler", "repo_name": "data-crawler", "node_path": "爬虫/签名/请求签名", "facets": {"业务线/产品线": "数据采集", "技术栈": "Python", "团队归属": "数据平台团队", "关键程度": "边缘", "活跃度": "疑似废弃"}}},
         {"score": 0.0075, "payload": {"node_id": "n-h06-sw-1", "repository_id": "sync-worker", "repo_name": "sync-worker", "node_path": "同步/外部数据源接入", "facets": {}}}
-      ]
+      ],
+      "repo_meta": {
+        "data-crawler": {"n_r": 30, "last_commit_at": "2024-06-01T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "边缘"},
+        "sync-worker": {"n_r": 25, "last_commit_at": "2026-07-26T00:00:00+00:00"}
+      },
+      "scored_at": "2026-07-29T00:00:00+00:00",
+      "constants": {"n_bar": 60}
     }
   ]
 }
