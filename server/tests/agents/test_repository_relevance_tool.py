@@ -498,6 +498,125 @@ async def test_v2_path_trace_candidates_carry_breakdown_sum_equals_score(
 
 
 # ---------------------------------------------------------------------------
+# 9. 分组事实透传（ROUTE-01/02，107-07 Task 3）
+# ---------------------------------------------------------------------------
+
+
+def _bare_candidate():
+    """按 105 期字段集构造 pydantic 候选（新字段必须全部有默认值）。"""
+    from agents.tools.schemas.repository_relevance import RepositoryRelevanceCandidate
+
+    return RepositoryRelevanceCandidate(
+        repository_id="r",
+        repository_name="n",
+        score=0.5,
+        level="high",
+        evidence="e",
+        selected_by_ai=False,
+        selected_by_user_final=False,
+    )
+
+
+def test_presentation_fields_default_to_empty_and_none():
+    """group / trust 缺省空串、score_ranked 缺省 None（历史 trace 反序列化零破坏）。"""
+    cand = _bare_candidate()
+    assert cand.group == ""
+    assert cand.trust == ""
+    assert cand.score_ranked is None
+
+
+def test_model_dump_key_set_includes_presentation_fields():
+    """model_dump 键集合含三个新键（经 trace.candidates JSON 自动到达前端）。"""
+    dumped = _bare_candidate().model_dump()
+    assert {"group", "trust", "score_ranked"} <= set(dumped)
+
+
+def test_model_dump_keeps_score_ranked_none_as_none():
+    """score_ranked 为 None 时原样输出 None（**不**被转成 0.0——前端据此回退 score）。"""
+    assert _bare_candidate().model_dump()["score_ranked"] is None
+
+
+def _make_v2_result_with_presentation(repos):
+    """构造带呈现字段的 v2 fake（group / trust / score_ranked 三者都非缺省）。"""
+    from codegraph.services.repo_router_v2 import (
+        RepoRouteCandidateV2,
+        RepoRouteResultV2,
+    )
+
+    return RepoRouteResultV2(
+        candidates=[
+            RepoRouteCandidateV2(
+                repo_id=str(repos[0].id),
+                repo_name=repos[0].name,
+                score=0.92,
+                confidence="high",
+                reasoning="树推理命中",
+                group="global",
+                trust="needs_confirmation",
+                score_ranked=0.42,
+            )
+        ],
+        router_version="v2",
+        auto_selected=True,
+        block_order=["global", "in_project"],
+    )
+
+
+async def test_v2_presentation_fields_mapped_to_pydantic_candidate(
+    project_with_repos, conversation, monkeypatch
+):
+    """router 候选的 group / trust / score_ranked 逐字映射到 pydantic 候选。"""
+    from codegraph.services.repo_router_v2 import RepoRouterV2
+
+    project, repos = project_with_repos
+    monkeypatch.setattr(
+        RepoRouterV2,
+        "route",
+        AsyncMock(return_value=_make_v2_result_with_presentation(repos)),
+    )
+
+    candidates, _trace_id = await _analyze_relevance_core(
+        query="presentation mapping",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    assert len(candidates) == 1
+    assert candidates[0].group == "global"
+    assert candidates[0].trust == "needs_confirmation"
+    assert candidates[0].score_ranked == pytest.approx(0.42)
+
+
+async def test_trace_candidates_json_carries_presentation_fields(
+    project_with_repos, conversation, monkeypatch
+):
+    """RepositoryRoutingTrace.candidates JSON 每个元素含三个新键（model_dump 透传）。"""
+    from codegraph.services.repo_router_v2 import RepoRouterV2
+
+    project, repos = project_with_repos
+    monkeypatch.setattr(
+        RepoRouterV2,
+        "route",
+        AsyncMock(return_value=_make_v2_result_with_presentation(repos)),
+    )
+
+    result = await analyze_repository_relevance(
+        query="presentation trace",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    assert result.success is True
+
+    trace = await RepositoryRoutingTrace.objects.filter(
+        conversation_id=conversation.id
+    ).afirst()
+    assert trace is not None
+    for cand in trace.candidates:
+        assert cand["group"] == "global"
+        assert cand["trust"] == "needs_confirmation"
+        assert cand["score_ranked"] == pytest.approx(0.42)
+
+
+# ---------------------------------------------------------------------------
 # 8. D-1 候选范围语义（107-07）：项目关联仓改走分组依据
 # ---------------------------------------------------------------------------
 
