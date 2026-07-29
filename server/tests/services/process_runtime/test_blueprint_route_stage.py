@@ -351,8 +351,12 @@ async def _boundary_session_and_router(
     return session, router, blocked
 
 
-async def test_router_reasoning_becomes_override_reason_without_llm() -> None:
-    """情形 1：router reasoning 非空 → 直接作保留理由，且不多花一次 LLM 调用。"""
+async def test_router_reasoning_does_not_substitute_for_boundary_reason() -> None:
+    """MJ-05 情形 1：router reasoning 非空**也**要走 sanity-check；LLM 不可得即打标记。
+
+    reasoning 是能力树命中说明（对召回候选恒非空），拿它冒充禁区保留理由会让
+    sanity-check 成为死路径、`unjustified_boundary_hit` 几乎永远为 False。
+    """
     session, router, blocked = await _boundary_session_and_router(
         reasoning="命中能力节点: apps/study/entitlement"
     )
@@ -362,12 +366,12 @@ async def test_router_reasoning_becomes_override_reason_without_llm() -> None:
 
     candidate = result["candidates"][0]
     assert candidate["repository_id"] == str(blocked.id)
-    assert (
-        candidate["evidence"]["boundary_override_reason"] == "命中能力节点: apps/study/entitlement"
-    )
-    assert candidate["evidence"]["unjustified_boundary_hit"] is False
-    assert result["unjustified_boundary_hit_count"] == 0
-    assert explain.await_count == 0
+    assert explain.await_count == 1, "禁区命中候选必须全部进 sanity-check 批次"
+    assert candidate["evidence"]["boundary_override_reason"] == ""
+    assert candidate["evidence"]["unjustified_boundary_hit"] is True
+    assert result["unjustified_boundary_hit_count"] == 1
+    # 路由说明仍作展示字段留在 evidence 里，只是不参与判定
+    assert candidate["evidence"]["reasoning"] == "命中能力节点: apps/study/entitlement"
 
 
 async def test_sanity_check_llm_supplies_reason_in_single_call() -> None:

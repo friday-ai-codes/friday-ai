@@ -197,7 +197,7 @@ def _normalize_evidence(evidence: dict | None) -> dict:
 def resolve_boundary_override(
     *,
     violated_boundaries: list[str],
-    router_reasoning: str,
+    router_reasoning: str = "",  # noqa: ARG001 — 仅保留签名兼容，判定不认它（见 docstring）
     llm_reason: str = "",
 ) -> tuple[str, bool]:
     """判定禁区命中候选的保留理由（**纯函数**，T-112-14b）。
@@ -205,8 +205,11 @@ def resolve_boundary_override(
     候选**只降权不淘汰**，因此凡留在候选列表里的禁区命中仓都必须有一条显式理由；
     拿不到理由就打 `unjustified_boundary_hit` 标记——不允许「命中禁区却无人解释为何还留着」。
 
-    优先级：① 路由器原样 `reasoning`（必填 str，Stage0 形如 `"命中能力节点: ..."`）
-    → ② 单次 sanity-check LLM 补的理由 → ③ 皆空则打标记。
+    **只认针对禁区的判断**：理由唯一来源是 sanity-check LLM 的 `llm_reason`。路由器的
+    `router_reasoning` 是能力树命中说明（形如 `"命中能力节点: ..."`），与「为什么明令
+    不承接却还留着」毫无关系，且对召回的候选恒非空——拿它当理由会让
+    `unjustified_boundary_hit` 几乎永远为 False，「LLM 必须给显式理由」只在形式上成立。
+    该字段仅作展示留在 evidence 里，不参与判定。
 
     Returns:
         `(boundary_override_reason, unjustified_boundary_hit)`。未命中禁区恒
@@ -214,12 +217,9 @@ def resolve_boundary_override(
     """
     if not violated_boundaries:
         return "", False
-    reason = str(router_reasoning or "").strip()
+    reason = str(llm_reason or "").strip()
     if reason:
         return reason[:_MAX_REASON_CHARS], False
-    fallback = str(llm_reason or "").strip()
-    if fallback:
-        return fallback[:_MAX_REASON_CHARS], False
     return "", True
 
 
@@ -726,11 +726,12 @@ class BlueprintRouteAdapter:
             return HistoryMatchResult(unavailable_reason="retrieval_error")
 
     async def _apply_boundary_overrides(self, candidates: list[dict]) -> int:
-        """禁区命中候选的显式保留理由（SC2 后半）：单次 LLM 覆盖全部待补候选。
+        """禁区命中候选的显式保留理由（SC2 后半）：单次 LLM 覆盖全部禁区命中候选。
 
-        先用路由器原样 `reasoning`；`reasoning` 为空白的那批凑成**一批**走一次
-        sanity-check 调用；仍拿不到理由的候选被打 `unjustified_boundary_hit` 标记
-        （只降权不淘汰，但不允许无人解释地保留）。
+        **全部**禁区命中候选都进 sanity-check 批次（不再按路由器 `reasoning` 是否为空筛
+        —— 那是能力树命中说明，不是禁区保留理由，且恒非空，会让这条 LLM 路径变成死代码）；
+        拿不到理由的候选被打 `unjustified_boundary_hit` 标记（只降权不淘汰，但不允许
+        无人解释地保留）。
         """
         hits = [c for c in candidates if c["evidence"]["violated_boundaries"]]
         if not hits:
@@ -743,9 +744,8 @@ class BlueprintRouteAdapter:
                 "violated_boundaries": c["evidence"]["violated_boundaries"],
             }
             for c in hits
-            if not str(c["evidence"]["reasoning"] or "").strip()
         ]
-        llm_reasons = await _aexplain_boundary_overrides(pending) if pending else {}
+        llm_reasons = await _aexplain_boundary_overrides(pending)
 
         unjustified = 0
         for candidate in hits:

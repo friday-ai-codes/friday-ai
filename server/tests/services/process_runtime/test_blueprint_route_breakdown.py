@@ -174,23 +174,27 @@ def test_no_boundary_hit_is_neutral() -> None:
     )
 
 
-def test_router_reasoning_is_preferred_reason() -> None:
-    """命中禁区 + router reasoning 非空 → 取 reasoning，不打标记。"""
+def test_router_reasoning_alone_is_not_a_boundary_reason() -> None:
+    """MJ-05：路由器 reasoning 是能力树命中说明，不能冒充禁区保留理由。
+
+    它对召回的候选恒非空——认它就等于 `unjustified_boundary_hit` 永远为 False，
+    「命中禁区仍保留时 LLM 必须给显式理由」只在形式上成立。
+    """
     reason, unjustified = resolve_boundary_override(
         violated_boundaries=["不承接权益鉴权"],
         router_reasoning="命中能力节点: apps/study/entitlement",
-        llm_reason="不应该被用到",
+        llm_reason="",
     )
 
-    assert reason == "命中能力节点: apps/study/entitlement"
-    assert unjustified is False
+    assert reason == ""
+    assert unjustified is True
 
 
-def test_llm_reason_used_when_router_reasoning_blank() -> None:
-    """命中禁区 + reasoning 空白 → 取 sanity-check LLM 理由，不打标记。"""
+def test_llm_reason_is_the_only_accepted_reason() -> None:
+    """命中禁区 → 只认 sanity-check LLM 的针对性理由，不打标记。"""
     reason, unjustified = resolve_boundary_override(
         violated_boundaries=["不承接权益鉴权"],
-        router_reasoning="   ",
+        router_reasoning="命中能力节点: apps/study/entitlement",
         llm_reason="本次写入面落在其 owned 领域",
     )
 
@@ -208,7 +212,7 @@ def test_no_reason_flags_unjustified() -> None:
 def test_reason_is_truncated() -> None:
     """理由截断 300（防超长文本进 stage_state 与事件 payload）。"""
     reason, unjustified = resolve_boundary_override(
-        violated_boundaries=["x"], router_reasoning="理" * 500
+        violated_boundaries=["x"], llm_reason="理" * 500
     )
 
     assert len(reason) == 300
@@ -223,6 +227,7 @@ def test_reason_is_truncated() -> None:
         ("", ""),
         ("   ", "   "),
         ("命中能力节点: a", "LLM 给的理由"),
+        ("命中能力节点: a", "   "),
     ],
 )
 def test_boundary_hit_reason_xor_flag_invariant(router_reasoning: str, llm_reason: str) -> None:
