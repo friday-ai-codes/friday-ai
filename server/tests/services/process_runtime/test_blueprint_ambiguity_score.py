@@ -31,6 +31,35 @@ _BUILD = "agents.llm_factory.build_chat_model"
 _DIMS = ("goal", "boundary", "constraint", "acceptance")
 
 
+def _clear_blueprint_settings() -> None:
+    """清掉 blueprint.* 设置行与其 60s 缓存。
+
+    ``sync_to_async(_save_setting)`` 在独立线程/连接里提交，非事务型 ``django_db``
+    回滚覆盖不到——不主动清就会跨测试文件污染阈值与权重（实测：残留的 weights 让
+    规格门加权总分从 0.05 掉到 0.035）。
+    """
+    from django.core.cache import cache
+
+    from system.models import SettingKeys, SystemSetting
+    from system.settings_service import _cache_key
+
+    SystemSetting.objects.filter(key__startswith="blueprint.").delete()
+    for key in (SettingKeys.BLUEPRINT_SPEC_GATE_CONFIG, SettingKeys.BLUEPRINT_ROUTE_WEIGHTS):
+        cache.delete(_cache_key(key))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_blueprint_settings(request: pytest.FixtureRequest):
+    """仅对需要 DB 的用例前后清设置（纯函数用例不碰 DB）。"""
+    if request.node.get_closest_marker("django_db") is None:
+        yield
+        return
+    request.getfixturevalue("db")
+    _clear_blueprint_settings()
+    yield
+    _clear_blueprint_settings()
+
+
 def _resolved(default_model: str = "test-model") -> SimpleNamespace:
     return SimpleNamespace(extra={"default_model": default_model})
 
@@ -162,13 +191,13 @@ def _save_setting(key: str, value: str) -> None:
     SystemSetting.objects.update_or_create(key=key, defaults={"value": value})
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_load_config_missing_returns_default() -> None:
     assert await aload_spec_gate_config() == DEFAULT_SPEC_GATE_CONFIG
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_load_config_coerces_string_threshold() -> None:
     from asgiref.sync import sync_to_async
@@ -183,7 +212,7 @@ async def test_load_config_coerces_string_threshold() -> None:
     assert config["weights"] == DEFAULT_SPEC_GATE_CONFIG["weights"]
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_load_config_clamps_extreme_threshold() -> None:
     """阈值被写成极端值不得让门形同虚设（T-112-07）。"""
@@ -197,7 +226,7 @@ async def test_load_config_clamps_extreme_threshold() -> None:
     assert (await aload_spec_gate_config())["threshold"] == 1.0
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_load_config_weights_list_falls_back() -> None:
     from asgiref.sync import sync_to_async
@@ -212,7 +241,7 @@ async def test_load_config_weights_list_falls_back() -> None:
     assert config["weights"] == DEFAULT_SPEC_GATE_CONFIG["weights"]
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_load_config_negative_weight_becomes_zero() -> None:
     from asgiref.sync import sync_to_async
@@ -231,7 +260,7 @@ async def test_load_config_negative_weight_becomes_zero() -> None:
 # ── ascore_ambiguity 接线 ─────────────────────────────────────────────────
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_score_parses_bare_json() -> None:
     model = _model_returning(json.dumps(_full_payload(0.8)))
@@ -245,7 +274,7 @@ async def test_score_parses_bare_json() -> None:
     assert len(result["questions"]) == 1
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_score_parses_fenced_json() -> None:
     content = f"分析如下：\n```json\n{json.dumps(_full_payload(0.05))}\n```\n完毕"
@@ -259,7 +288,7 @@ async def test_score_parses_fenced_json() -> None:
     assert result["dimensions"]["acceptance"]["score"] == 0.05
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_score_non_json_response_returns_none() -> None:
     """不可解析 → None（上游 fail-closed 判需澄清），绝不返回「全 0」放行。"""
@@ -271,14 +300,14 @@ async def test_score_non_json_response_returns_none() -> None:
         assert await ascore_ambiguity(goal="g", feature_points=[]) is None
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_score_without_default_model_returns_none() -> None:
     with patch(_ARESOLVE, AsyncMock(return_value=_resolved(""))):
         assert await ascore_ambiguity(goal="g", feature_points=[]) is None
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_score_build_model_exception_swallowed() -> None:
     with (
@@ -288,7 +317,7 @@ async def test_score_build_model_exception_swallowed() -> None:
         assert await ascore_ambiguity(goal="g", feature_points=[]) is None
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_score_prior_context_enters_prompt() -> None:
     """已澄清结论必须进重判输入，否则同一问题会被反复问。"""
