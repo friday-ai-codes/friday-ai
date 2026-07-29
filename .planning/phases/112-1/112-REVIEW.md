@@ -1,7 +1,12 @@
 ---
 phase: 112-1
-status: findings
+status: fixed
 reviewed: 2026-07-30
+fixed: 2026-07-30
+fix_summary:
+  fixed: 15
+  skipped: 1
+  gate: "1295 passed, 0 failed"
 depth: deep
 diff_base: 94479721
 findings:
@@ -570,3 +575,66 @@ repository_id/attempt/error_kind（异常文本已脱敏**截断**）」，adapt
 
 _Reviewed: 2026-07-30_
 _Reviewer: gsd-code-reviewer（deep，跨文件调用链追踪 + 冻结面 git diff 复核）_
+
+---
+
+## Fix Log
+
+**修复基线：** `d0d89e57`（本审查报告入库的 commit）。11 个 fix commit，每条 finding 一组，
+先跑对应测试绿了再单独提交。**相位门**：
+`pytest tests/services/process_runtime/ tests/delivery/ tests/repositories/ tests/subagent/ -q`
+→ **1295 passed, 0 failed**（基线 1268 + 新增 27 条断言；`tests/mcp_tools/` 的 skills
+submodule 环境问题不在此子集内）。**冻结面复核：10 个声明冻结文件 `git diff` 仍为空。**
+
+| Finding | 状态 | 修法要点 | Commit |
+|---------|------|---------|--------|
+| **CR-01** 确认门按「最近一条」取会话，可把无关 `technical_plan` 会话驱成 FAILED | ✅ fixed | `_aload_session` 强制 `process_type="technical_blueprint"`；取不到蓝图会话时动作端点与 `upgrade-research` 明确 404（不退化取别的会话）；`adrive_blueprint_session_to_pause_or_terminal` 入口加 process_type 守卫（no-op + warning）防其它调用方再犯 | `6e70a684` |
+| **CR-02** 规格门 fail-closed 有放行洞（LLM 持续不可用时第 2 轮放行且不留痕） | ✅ fixed | 「超阈值 + 无新问题」时，若 scorer 不可得**或** `total ≥ 1.0`（满歧义）→ 复述原问题重新挂起，绝不放行（轮数上界仍兜底）；打分可得且未满歧义的「问不出新问题」是第二条放行例外，`capped=True` + 新增 `ambiguity_report.release_reason`（`round_cap` / `no_new_questions`）落痕，`spec_locked` 与 `spec_gate_scored` 事件同步带上 | `7a39ab4e` |
+| **MJ-01** `add_repo` 不做范围校验 | ✅ fixed | 范围白名单与路由同源（`routing.candidates` ∪ 显式 `include_repos` ∪ `work_item.space` 仓 ∪ 确认门快照已有仓）；并集为空或读失败一律拒绝（fail-closed），越界统一回中性 404 | `3c01ba0e` |
+| **MJ-02** 派发次数上界是死代码 | ✅ fixed | `ResearchService` 新增公开 `bump_attempt`（只动 `attempt`、不改 status、不绑 stage 名，`retry_task` 语义逐字不动），在 `_dispatch_deep_task` 成功派发后调用 | `2d23ae7b` |
+| **MJ-03** `confirm` 与 `add_repo` 并发时用户动作静默丢失 | ✅ fixed | `alock` 两道闸：① 落锁前重查 `acollect_pending_research_repos`，非空即拒；② 快照 `updated_at` 乐观锁（CAS），读快照之后有动作提交即拒。两种拒绝都不关确认门、不落新版本，视图映射成 409 具体文案 | `f4114c49` |
+| **MJ-04** self-loop 让 CAS 失效，`stage_state` 并发覆盖 | ✅ fixed | `transition` 新增 `stage_state_update`（增量顶层浅合并，基准在同一事务内 `select_for_update` 重读 DB 当前值），`engine.advance` 改传增量、不再用内存 session 预合并；`stage_state=`（整字典替换）语义与既有调用方逐字不动 | `3fc909a8` |
+| **MJ-05** 禁区保留理由被路由器 `reasoning` 顶替 | ✅ fixed | `resolve_boundary_override` 只认 `llm_reason`；`_apply_boundary_overrides` 的 `pending` 改为全部禁区命中候选（不再按 `reasoning` 是否为空筛），`router_reasoning` 仅作展示字段 | `aaf95bab` |
+| **MJ-06** CJK 单个 3-gram 交集即判禁区命中 | ✅ fixed（部分保留） | n-gram 交集要求 `≥ _MIN_NGRAM_OVERLAP(=2)`。**保留说明**：审查建议里的例子（「不承接支付相关功能」vs「新增导出相关功能」）实际共享 2 个 gram（`相关功`/`关功能`），阈值 2 与覆盖率 0.3 都无法把它与真命中（「不承接课程权益鉴权」vs「展示课程内容与权益鉴权状态」，同为 2 gram）区分——纯词法规则分不出「相关功能」与「权益鉴权」，要分只能引入停用词表/分词依赖（T-112-SC 禁止）。故断言改用真正的单 gram 假阳性（「不承接服务端配置下发」vs「新增查询配置下拉框」）。`match_kind` 证据字段**未做**：`evidence` 键集是 112-04/05 与 115 呈现面的消费契约，加键应随呈现面一起改 | `156aab9b` |
+| **MJ-07** 章程回灌把整段职责当 `owned_domains.domain` | ✅ fixed | `domain` 改取 `routing_evidence.matched_domains` 首项（上限 40 字），职责正文落 `note`（不参与匹配）；取不到领域名就不产草案；`charter_draft_writeback` 侧加同名长度兜底 | `d8439761` |
+| **MN-01** `rejected-to-boundary` 范围由请求体决定 | ✅ fixed | `project_id` 只从蓝图 `meta.project_id` 推导，body 传了且不等 → 403，蓝图无合法 `project_id` → 400；`repository_id` 只在该范围内收窄 | `c1813378` |
+| **MN-02** 阻塞线程判据读失败 fail-open | ✅ fixed | 改按「有阻塞线程」保持挂起（与规格门/确认门同向）：误放行不可逆，挂起可由下次触发恢复 | `c1813378` |
+| **MN-03** `aupgrade_to_deep` 对在途 task 回 `True` 但 no-op | ✅ fixed | 新增 `already_running` 响应字段（service 侧查该仓 task 是否 `RUNNING`），端点如实告知「本就在途、未重开容器」；依赖不可用仍 503 | `c1813378` |
+| **MN-04** 容器 error 文本未截断即入库 | ✅ fixed | 脱敏后截断 500，payload 拆成 `error_kind`（枚举）+ `error_detail`（截断文本） | `c1813378` |
+| **MN-05** 事件 emit 通道四处不一 | ✅ fixed | `ConvergenceSessionService` 新增公开 `aemit_event`；蓝图链五个模块 + 回调三处统一走它，不再直调私有 `_emit_event` / 裸建 ORM 行；附源码扫描守护测试 | `c1813378` |
+| **MN-06** `aget_float_setting` 无生产调用方 | ⏭️ skipped | 它是本相位新增的**通用** async 标量 getter，有专门测试覆盖、语义与同步版一致。删除要连带删测试、"改成真的用它"要新增 `SettingKeys` 标量键并改 `system/models.py`（该文件正是 VERIFICATION Anti-Pattern #3 里 formatter 回流的摩擦点）。两条路都是零行为收益的churn，判为主观项跳过 | — |
+| **MN-07** `builtin_processes` 中段 import 重型 adapter + 无消费方常量 | ✅ fixed | 轮次上界下沉到零依赖 `process_runtime/constants.py`，`builtin_processes` 不再 import `blueprint_research_adapter`（循环 import 触发点消除），删除无消费方的 `MAX_BLUEPRINT_REROUTE_ROUNDS`；`blueprint_research_adapter` 保留再导出，既有调用方不受影响 | `c1813378` |
+
+**统计：** CRITICAL 2/2 fixed；MAJOR 7/7 fixed；MINOR 6/7 fixed、1 skipped（MN-06，理由见上）。
+
+### 反向断言清单（每条修复都配了能证伪原实现的断言）
+
+| Finding | 断言 | 原实现下的表现 |
+|---------|------|---------------|
+| CR-01 | `test_gate_action_never_touches_unrelated_technical_plan_session`：同 artifact 上并存 `technical_plan` 会话，`remove-repo` 后它的 status/stage 不变 | 红（那条会话被驱成 `failed`，REST 仍 200） |
+| CR-01 | `test_gate_action_404s_when_only_non_blueprint_session_exists` / `test_resume_refuses_to_drive_non_blueprint_session` | 红 / 新守卫 |
+| CR-02 | `test_scorer_unavailable_never_releases_via_fingerprint_dedup`：兜底问题答过后仍不可得 → 不放行、不落新版本 | 红（`spec_locked` + `capped=False`） |
+| CR-02 | `test_two_consecutive_unavailable_rounds_stay_blocked` / `test_max_ambiguity_never_releases_even_with_available_scorer` / 两条放行例外的 `release_reason` 可区分 | 红 |
+| MJ-01 | `test_add_repo_outside_blueprint_scope_is_404_and_starts_nothing`：越界仓 404 且不进快照、不建 task、不触发续驱 | 红（200 + 起容器） |
+| MJ-02 | `test_repeated_manual_upgrade_is_bounded_by_max_attempts`：连续三次升级 `await_count == 2` | 红（3） |
+| MJ-03 | `test_alock_refuses_when_snapshot_changed_mid_flight`：交错提交下落锁被拒、线程未 RESOLVED、新仓 task 仍 PENDING | 红（`confirmed`，新仓消失） |
+| MJ-04 | `test_self_loop_advances_do_not_overwrite_each_others_stage_state`：两路并发 advance 后两份增量都在 | 红（`KeyError: 'confirmation'`） |
+| MJ-05 | `test_router_reasoning_does_not_substitute_for_boundary_reason`：路由器有 reasoning 时仍走 sanity-check，不可得即打标记 | 红（`unjustified=False` + explain 零调用） |
+| MJ-06 | `test_single_generic_ngram_overlap_is_not_a_boundary_hit` + `test_multi_ngram_overlap_still_hits_after_threshold`（回归护栏） | 红 / — |
+| MJ-07 | `test_confirmed_responsibility_never_becomes_a_matching_domain`：200 字职责确认后该仓对无关需求 `charter_match` 仍为 0 | 红（domain=职责正文 → 恒命中） |
+| MN-01/03/05/07 | 越权 `project_id` → 403；在途 task → `already_running is True`；事件写入面源码扫描守护；`builtin_processes` 不 import 重型 adapter | 红 |
+
+### 纪律复核
+
+- **冻结面零改动**：10 个声明冻结文件 `git diff d0d89e57..HEAD` 为空（含 `repo_router_v2.py` / `resume.py` / `charter_service.py` / `settings_service.py` 既有 getter）。
+- **`_TECHNICAL_PLAN_STAGES` / `_ECHO_STAGES` 零改动**；`builtin_processes.py` 本次唯一删除是 MN-07 的中段 import 与无消费方常量（`2d0e62d4` 已把 `ruff format` 对既有 `_h_merge` / `_h_echo_draft` 的两处换行重排回滚，守「只对新增段跑 format」）。
+- **无新增 migration**（无模型字段变更）。
+- 所有改动文件已跑 `ruff format` + `ruff check --fix`，All checks passed。
+
+### 需要留意的外溢改动（超出蓝图链的两处共享面）
+
+1. `ConvergenceSessionService.transition` 新增 `stage_state_update` + `engine.advance` 改传增量（MJ-04）——影响两条链，但语义严格更安全（合并基准从陈旧内存改为事务内 DB 当前值），`stage_state=` 整替换路径与既有调用方逐字未动，`technical_plan` / `echo` 全量测试通过。
+2. `ResearchService.bump_attempt`（MJ-02）为纯新增公开方法，`retry_task` / `mark_stale` 等既有语义未触碰。
+
+_Fixed: 2026-07-30_
+_Fixer: gsd-code-fixer_
