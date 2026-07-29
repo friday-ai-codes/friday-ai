@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v0.19.0
 milestone_name: 技术方案可信度
-current_phase: 106
-current_phase_name: 多信号打分函数重构
+current_phase: 107
+current_phase_name: 分层呈现与链路韧性
 status: executing
-stopped_at: "GSD 记录对齐（`/gsd-fast`）——补 07-24/07-25 ship 后维护期 16 commits 的 last_activity 记录（此前 STATE 停在 07-23）；登记\\\\\\\"发布轨 v0.18.0 已占号、里程碑轨止于 v0.17.0\\\\\\\"的双轨关系与撞号风险（见 Blockers/Concerns）；MILESTONES.md 手写补回缺失的 v0.11.0 条目（health W018；自动 `--backfill` 产出的模板条目位置与内容均不合格已回滚）；`git worktree prune` 清掉 3 个路径已失效的 locked agent worktree 注册（health W017）。health 复跑：warnings 12→8、repairable 1→0。下一步：`$gsd-new-milestone`（注意版本号避开 v0.18.0）。"
-last_updated: "2026-07-29T07:30:40.902Z"
-last_activity: 2026-07-29
-last_activity_desc: Phase 106 execution started
+stopped_at: "GSD 记录对齐（`/gsd-fast`）——补 07-24/07-25 ship 后维护期 16 commits 的 last_activity 记录（此前 STATE 停在 07-23）；登记\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"发布轨 v0.18.0 已占号、里程碑轨止于 v0.17.0\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"的双轨关系与撞号风险（见 Blockers/Concerns）；MILESTONES.md 手写补回缺失的 v0.11.0 条目（health W018；自动 `--backfill` 产出的模板条目位置与内容均不合格已回滚）；`git worktree prune` 清掉 3 个路径已失效的 locked agent worktree 注册（health W017）。health 复跑：warnings 12→8、repairable 1→0。下一步：`$gsd-new-milestone`（注意版本号避开 v0.18.0）。"
+last_updated: "2026-07-29T21:13:14.187Z"
+last_activity: 2026-07-30
+last_activity_desc: Phase 107 execution started
 progress:
-  total_phases: 5
-  completed_phases: 1
-  total_plans: 15
-  completed_plans: 7
-  percent: 20
+  total_phases: 6
+  completed_phases: 2
+  total_plans: 24
+  completed_plans: 15
+  percent: 33
 ---
 
 # Project State
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
 **Core value（v0.19.0，在建）:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。（方案结构深度 DEPTH-01~05 已移交 v0.20.0 技术方案蓝图，双 worktree 并行开发。）
-**Current focus:** Phase 106 — 多信号打分函数重构
+**Current focus:** Phase 107 — 分层呈现与链路韧性
 
 ## Current Position
 
-Phase: 106 (多信号打分函数重构) — EXECUTING
-Plan: 1 of 8
-Status: Executing Phase 106
-Last activity: 2026-07-29 — Phase 106 execution started
+Phase: 107 (分层呈现与链路韧性) — EXECUTING
+Plan: 1 of 9
+Status: Executing Phase 107
+Last activity: 2026-07-30 — Phase 107 execution started
 
 ## Milestone Overview (v0.19.0 — Phases 105–110 — 🟡 PLANNING)
 
