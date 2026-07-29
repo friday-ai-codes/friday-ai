@@ -6,9 +6,10 @@ TechnicalBlueprint v1 的唯一 schema 事实源（DESIGN §3.2–§3.13）：
   implementation_overview / api_contracts / impact_analysis / interaction_flows）
   + meta + requirement_spec + must_haves + 文档级 citations 引用池，Block/Citation
   基元以 ``$defs`` 复用。
-- ``validate_blueprint``：jsonschema 结构校验 + 三项后置引用完整性检查（块内
-  citations id ∈ 文档级引用池；items[].feature_point_id ∈ feature_points[].id；
-  items / current_state_analysis 的 repository_id ∈ repo_associations）。
+- ``validate_blueprint``：jsonschema 结构校验 + 五项后置检查（块内 citations id
+  ∈ 文档级引用池；items[].feature_point_id ∈ feature_points[].id；items /
+  current_state_analysis 的 repository_id ∈ repo_associations；引用池 key ==
+  条目 citation_id；items / feature_points / api_contracts 的 id 唯一）。
   无 ``schema_version`` 的旧 MergedPlan 形状（隐式 v0）直接 pass-through，零迁移。
 - ``iter_blocks`` / ``diff_blueprint_blocks``：block 级走查与版本间三分类 diff
   （added / removed / modified），供版本演进与 114 重锚定消费。
@@ -868,6 +869,35 @@ def validate_blueprint(content: Any) -> tuple[bool, str | None]:
                     f"current_state_analysis[{idx}].repository_id "
                     f"{rid!r} 不在 repo_associations 中",
                 )
+
+        # 后置检查 (d)：引用池 key 必须等于条目自身的 citation_id（MN-09）。两者不一致
+        # 时块内按哪个引用都可能被误判（悬空引用放过 / 合法引用误报）。
+        if isinstance(pool, dict):
+            for key, entry in pool.items():
+                if isinstance(entry, dict) and entry.get("citation_id") != key:
+                    return (
+                        False,
+                        f"citations[{key}].citation_id {entry.get('citation_id')!r} "
+                        f"与引用池键不一致",
+                    )
+
+        # 后置检查 (e)：标识唯一性（MN-08）。重复 id 会让按 id 建索引的下游（派生器的
+        # item→repo 映射、模块/契约引用）静默取到后者，投影出错误的依赖边。
+        for label, records in (
+            ("requirement_spec.feature_points", feature_points or []),
+            ("implementation_overview.items", items or []),
+            ("api_contracts", content.get("api_contracts") or []),
+        ):
+            seen_ids: set[str] = set()
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                record_id = record.get("id")
+                if not isinstance(record_id, str) or not record_id:
+                    continue
+                if record_id in seen_ids:
+                    return False, f"{label} 存在重复 id {record_id!r}"
+                seen_ids.add(record_id)
         return True, None
     except Exception as exc:  # 防御性兜底：半可信输入恒不抛（fail-safe）
         return False, _format_error("blueprint 校验异常", exc)

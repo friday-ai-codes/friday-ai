@@ -154,6 +154,42 @@ def test_current_state_analysis_repository_id_not_in_associations_rejected():
     assert "repo_associations" in (err or "")
 
 
+def test_citation_pool_key_mismatch_rejected():
+    """MN-09：引用池 key 与条目 citation_id 不一致 → 拒绝（否则引用判定两头落空）。"""
+    content = make_blueprint()
+    content["citations"]["cit_repo_file"]["citation_id"] = "cite_1"
+    ok, err = validate_blueprint(content)
+    assert ok is False
+    assert "cit_repo_file" in (err or "")
+
+
+@pytest.mark.parametrize(
+    ("section", "duplicate"),
+    [
+        ("implementation_overview.items", "impl_01"),
+        ("requirement_spec.feature_points", "fp_01"),
+        ("api_contracts", "api_01"),
+    ],
+)
+def test_duplicate_ids_rejected(section, duplicate):
+    """MN-08：id 重复 → 拒绝（按 id 建索引的下游会静默后者胜出）。"""
+    content = make_blueprint()
+    if section == "implementation_overview.items":
+        records = content["implementation_overview"]["items"]
+    elif section == "requirement_spec.feature_points":
+        records = content["requirement_spec"]["feature_points"]
+    else:
+        records = content["api_contracts"]
+    clone = copy.deepcopy(records[0])
+    clone["id"] = duplicate
+    records.append(clone)
+
+    ok, err = validate_blueprint(content)
+    assert ok is False
+    assert duplicate in (err or "")
+    assert "重复 id" in (err or "")
+
+
 def test_indirect_repository_id_accepted_in_items():
     """indirect 仓也在 repo_associations 中——引用完整性只查在册与否，不查 role。"""
     content = make_blueprint()
