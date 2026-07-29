@@ -331,6 +331,11 @@ REPO_ROUTER_STAGE1_TIMEOUT_SECONDS = env.float("REPO_ROUTER_STAGE1_TIMEOUT_SECON
 REPO_ROUTER_STAGE1_MAX_CANDIDATES = env.int("REPO_ROUTER_STAGE1_MAX_CANDIDATES", default=8)
 # 每个候选仓在 prompt 里展示的命中节点数上限。
 REPO_ROUTER_STAGE1_HITS_PER_REPO = env.int("REPO_ROUTER_STAGE1_HITS_PER_REPO", default=4)
+# Stage 1 输入哈希缓存 TTL（秒）。缓存 key 已含 index_version（参与候选各仓
+# built_at 拼接哈希）——重索引后 key 变化、旧缓存自然失效，TTL 仅兜底防无界增长。
+REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS = env.int(
+    "REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS", default=86400
+)
 
 # =============================================================================
 # 仓库路由 v2 确定性置信度阈值（RELY-04）
