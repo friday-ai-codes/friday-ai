@@ -497,6 +497,89 @@ async def test_v2_path_trace_candidates_carry_breakdown_sum_equals_score(
     assert by_score[2]["selected_by_ai"] is False
 
 
+# ---------------------------------------------------------------------------
+# 8. D-1 候选范围语义（107-07）：项目关联仓改走分组依据
+# ---------------------------------------------------------------------------
+
+
+async def test_v2_route_receives_grouping_not_hard_filter(
+    project_with_repos, conversation, monkeypatch
+):
+    """chat 入口：repository_ids 放开为 None，空间仓改经 grouping_repository_ids 传入。"""
+    from codegraph.services.repo_router_v2 import RepoRouterV2
+
+    project, repos = project_with_repos
+    spy = AsyncMock(return_value=_make_v2_result(repos))
+    monkeypatch.setattr(RepoRouterV2, "route", spy)
+
+    result = await analyze_repository_relevance(
+        query="grouping kwargs",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    assert result.success is True
+
+    kwargs = spy.await_args.kwargs
+    assert kwargs["repository_ids"] is None
+    assert kwargs["grouping_repository_ids"] == sorted(str(r.id) for r in repos)
+
+
+async def test_v2_cross_group_candidate_is_not_dropped_in_mapping(
+    project_with_repos, conversation, monkeypatch
+):
+    """全库召回后跨组候选不在 repo_by_id 里 → 用候选自带 repo_name 兜底，不被丢弃。
+
+    继续沿用「查不到就跳过」的旧写法会让 global 分区在映射阶段被清空——与硬过滤
+    同一个后果（Pitfall 2 的第二个入口）。
+    """
+    from codegraph.services.repo_router_v2 import (
+        RepoRouteCandidateV2,
+        RepoRouteResultV2,
+        RepoRouterV2,
+    )
+
+    project, repos = project_with_repos
+    stub = RepoRouteResultV2(
+        candidates=[
+            RepoRouteCandidateV2(
+                repo_id="repo-outside-space",
+                repo_name="外部仓",
+                score=0.95,
+                confidence="high",
+                reasoning="正确实现在空间关联范围之外",
+                group="global",
+                trust="needs_confirmation",
+            ),
+            RepoRouteCandidateV2(
+                repo_id=str(repos[0].id),
+                repo_name=repos[0].name,
+                score=0.40,
+                confidence="medium",
+                reasoning="空间内弱命中",
+                group="in_project",
+                trust="trusted",
+            ),
+        ],
+        router_version="v2",
+        auto_selected=True,
+        block_order=["global", "in_project"],
+    )
+    monkeypatch.setattr(RepoRouterV2, "route", AsyncMock(return_value=stub))
+
+    result = await analyze_repository_relevance(
+        query="cross group mapping",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    assert result.success is True
+
+    cands = result.output["data"]["candidates"]
+    by_id = {c["repository_id"]: c for c in cands}
+    assert "repo-outside-space" in by_id, "跨组候选被映射阶段丢弃即命中 Pitfall 2"
+    assert by_id["repo-outside-space"]["repository_name"] == "外部仓"
+    assert by_id[str(repos[0].id)]["repository_name"] == repos[0].name
+
+
 async def test_legacy_path_trace_candidates_breakdown_empty(
     project_with_repos, conversation, monkeypatch
 ):
