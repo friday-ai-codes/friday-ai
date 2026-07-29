@@ -446,12 +446,15 @@ django_cache.set(cache_key, permutation, timeout=STAGE1_CACHE_TTL)  # TTL 绑定
    - What we know: `build_chat_model` 不暴露这些参数；langchain BaseChatModel 通常支持构造 kwargs 或 `.bind()`。
    - What's unclear: 各 provider 分支（anthropic/openai/gemini/ollama）对 seed 的支持不一。
    - Recommendation: planner 安排「扩展 `build_chat_model` 加可选 `temperature/top_p/seed` 透传」小任务；seed 不被支持的 provider 记 debug log 静默忽略（幂等主要靠缓存+排列输出，decode 固定是第三道防线）。
+   - **RESOLVED:** 采纳 recommendation——`105-05-PLAN.md` Task 1「build_chat_model 扩展 decode 参数透传」实现可选 `temperature/top_p/seed` 形参（默认 None 零回归面，不支持的 provider 记 `llm_decode_param_ignored` debug log 静默忽略）；Task 2 在 Stage 1 以 `temperature=0.0, top_p=1.0, seed=42` 调用。未走 `.bind()` 路线（provider 支持不统一）。
 2. **快照写入点放 `_h_route`（adapter 外）还是 router 内部回调？**
    - What we know: 事件写入必须经 `_emit_event`（只有编排链有 session）；router 本体被 8 方复用。
    - Recommendation: router 返回结构携带完整 trace 材料（breakdown/stage0 摘要/stage1 redacted 材料），`_h_route` 组装 payload 并 emit——router 保持无 session 依赖。
+   - **RESOLVED:** 采纳 recommendation——快照材料随 `RepoRouteResultV2.snapshot` 携带（`105-03-PLAN.md` Task 1 组装 stage0 材料 + versions；`105-05-PLAN.md` Task 2 补 stage1 redacted 材料），写入点在 `_h_route`：组装完整 payload 后经 `_emit_event(EVENT_REPO_ROUTING)` 落库（`105-07-PLAN.md` Task 1）。router 保持无 session 依赖。
 3. **golden set 首批规模与跨组样本从哪来？**
    - What we know: CONTEXT 要求首条真实用例 + ≥2–3 条跨组样本；弱标签扩样明确 deferred。
    - Recommendation: 首批 10–20 条人工构造（真实事故用例 + 典型仓群），plan 里排一个「样本征集/确认」checkpoint。
+   - **RESOLVED:** 采纳 recommendation 的规模与构造策略——`105-04-PLAN.md` Task 2 人工构造 20 条（golden_main.json 14 条 + golden_holdout.json 6 条封存），首条为真实事故用例 `gk-001-gaosan-tifen`（按 ROUTING-RANKING §2.4 数值示意构造），含 ≥2 条 cross_group=true 样本。偏差说明：不排 checkpoint 任务（autonomous 模式），改为在 105-04 SUMMARY 中标注「真实生产样本（会话 ccd817d9 原文）待人工补充替换合成版本」。
 
 ## Environment Availability
 
