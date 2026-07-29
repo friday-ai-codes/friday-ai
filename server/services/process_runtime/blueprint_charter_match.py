@@ -1,7 +1,7 @@
 """章程分量（`charter_match`）—— 双面路由的「意图面」打分（CHARTER-02，112-03 Task 1）。
 
-**本模块只算章程分量，不碰 `RepoRouterV2`**（DESIGN §13.2 + §5.7 第 4 条：
-`codegraph/services/repo_router_v2.py` 是冻结面，零改动）。能力树是事实面（这个仓
+**本模块只算章程分量，与能力树路由器完全解耦**（DESIGN §13.2 + §5.7 第 4 条：
+`codegraph` 侧的路由器是冻结面，零改动、本模块零引用）。能力树是事实面（这个仓
 现在有什么），章程是意图面（这个仓**应该**承接什么）——两者在
 `blueprint_route.py` 的 adapter 层加权融合，绝不把章程证据塞进路由器内部 prompt。
 
@@ -295,7 +295,7 @@ async def acollect_charter_candidates(
 ) -> list[dict]:
     """章程候选补入清单 —— **高三提分专项 case 的机制解**（ROADMAP SC2 前半）。
 
-    能力树里没有节点的仓不会被 `RepoRouterV2` 召回（onion-learning 的培优领域尚未
+    能力树里没有节点的仓不会被能力树路由器召回（onion-learning 的培优领域尚未
     实现），但章程已写明「这块归我」（`status=planned`）——本函数把这类仓作为**补入
     候选**返回，让它们以 `router_base=0.0` + `charter_match>0` 参与排序，从而不被淘汰。
 
