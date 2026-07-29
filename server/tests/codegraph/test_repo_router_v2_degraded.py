@@ -94,6 +94,35 @@ def _fast_stage1_backoff(settings) -> None:
     settings.REPO_ROUTER_STAGE1_RETRY_BACKOFF_SECONDS = 0.001
 
 
+def _cand(rid: str, score: float) -> dict[str, Any]:
+    """构造一个 Stage 0 候选（分数钉死）——凸组合与最终顺序断言需要精确分差。"""
+    return {
+        "repo_id": rid,
+        "repo_name": rid,
+        "score": score,
+        "breakdown": {"text_relevance": score},
+        "facets": {},
+        "hits": [_hit(f"{rid}-n0", rid, score)],
+        "criticality": None,
+    }
+
+
+def _window(n: int) -> list[dict[str, Any]]:
+    """Stage 0 窗口：``r1..rn`` 按分数降序（LLM 收到的候选顺序即此顺序）。"""
+    return [_cand(f"r{i}", 0.90 - (i - 1) * 0.05) for i in range(1, n + 1)]
+
+
+def _install_stage0_candidates(
+    monkeypatch: pytest.MonkeyPatch, candidates: list[dict[str, Any]]
+) -> None:
+    """把 Stage 0 打分产物钉死为给定候选（绕开六信号打分，分数精确可控）。"""
+    monkeypatch.setattr(
+        RepoRouterV2,
+        "_stage0_candidates",
+        classmethod(lambda cls, node_hits, **kwargs: [dict(c) for c in candidates]),
+    )
+
+
 def _install_stage1_model(monkeypatch: pytest.MonkeyPatch, model: Any) -> None:
     """让 Stage 1 走到 model.ainvoke：patch lazy import 的 build_chat_model seam
     与 aget_claude_code_runtime_config（模型名解析不触 DB）。"""
@@ -828,3 +857,236 @@ async def test_stage1_retry_is_not_delegated_to_langchain(monkeypatch, mock_ares
     await RepoRouterV2.route("高三提分专项需求")
 
     assert captured["max_retries"] == 0
+
+
+# ---------------------------------------------------------------------------
+# 有界重排：K=3 rank-swap 裁剪 + 凸组合写 score_ranked（107-05 Task 2，RELY-05）
+# ---------------------------------------------------------------------------
+
+
+async def _route_with_llm_order(
+    monkeypatch: pytest.MonkeyPatch,
+    candidates: list[dict[str, Any]],
+    llm_order: tuple[str, ...],
+    **route_kwargs: Any,
+) -> Any:
+    """钉死 Stage 0 候选 + 钉死 LLM 排列，跑一次 route。"""
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage0_candidates(monkeypatch, candidates)
+    _install_stage1_model(monkeypatch, _TextModel(_llm_order_json(*llm_order)))
+    return await RepoRouterV2.route("需求文本", **route_kwargs)
+
+
+@pytest.mark.asyncio
+async def test_rank_budget_clamps_tail_promotion(monkeypatch, mock_aresolve_ok) -> None:
+    """LLM 把 Stage 0 第 8 位提到首位 → 裁剪产物里它不早于第 4 位，违规数留痕。
+
+    断言落在 ``clamped_order`` 上而**不是**最终扁平列表：最终列表按凸组合后的
+    ``score_ranked`` 排序，相对 Stage 0 的位移上界是 2K 而非 K。
+    """
+    mock_aresolve_ok()
+    result = await _route_with_llm_order(
+        monkeypatch, _window(8), ("r8", "r1", "r2", "r3", "r4", "r5", "r6", "r7")
+    )
+
+    stage1 = result.snapshot["stage1"]
+    assert stage1["clamped_order"].index("r8") >= 7 - 3
+    assert stage1["rank_budget_violations"] >= 1
+    assert stage1["rank_budget_k"] == 3
+    assert stage1["alpha"] == pytest.approx(0.35)
+
+
+@pytest.mark.asyncio
+async def test_rank_budget_identity_permutation_has_no_violation(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """LLM 排列 == Stage 0 排列 → 违规数 0 且裁剪产物逐字等于 Stage 0 顺序。"""
+    mock_aresolve_ok()
+    order = tuple(f"r{i}" for i in range(1, 9))
+    result = await _route_with_llm_order(monkeypatch, _window(8), order)
+
+    stage1 = result.snapshot["stage1"]
+    assert stage1["rank_budget_violations"] == 0
+    assert stage1["clamped_order"] == list(order)
+
+
+@pytest.mark.asyncio
+async def test_rank_budget_subset_is_not_inflated(monkeypatch, mock_aresolve_ok) -> None:
+    """子集常态：LLM 只返回窗口末三位 → 裁剪产物长度恰 3、不膨胀回全量、违规数不虚高。"""
+    mock_aresolve_ok()
+    result = await _route_with_llm_order(monkeypatch, _window(8), ("r6", "r7", "r8"))
+
+    stage1 = result.snapshot["stage1"]
+    assert stage1["clamped_order"] == ["r6", "r7", "r8"]
+    assert stage1["rank_budget_violations"] == 0
+    assert stage1["llm_returned_count"] == 3
+    assert stage1["stage0_window_count"] == 8
+    # 最终扁平列表只断言**元素集合**恒等（顺序由凸组合决定）。
+    assert {c.repo_id for c in result.candidates} == {"r6", "r7", "r8"}
+
+
+@pytest.mark.asyncio
+async def test_rank_budget_dropped_candidates_promotion_is_observable(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """「丢弃式提升」：只返回窗口末位一个仓即可绕过 K 的字面损害上界。
+
+    ``rank_budget_violations`` 结构上看不到这条路径（子集内位次天然为 0），
+    靠 ``llm_returned_count`` / ``stage0_window_count`` 两个计数事后可识别。
+    """
+    mock_aresolve_ok()
+    result = await _route_with_llm_order(monkeypatch, _window(8), ("r8",))
+
+    stage1 = result.snapshot["stage1"]
+    assert stage1["llm_returned_count"] == 1
+    assert stage1["stage0_window_count"] == 8
+    assert stage1["rank_budget_violations"] == 0
+    assert [c.repo_id for c in result.candidates] == ["r8"]
+
+
+@pytest.mark.asyncio
+async def test_score_ranked_final_order_with_pinned_stage0_margins(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """钉死 Stage 0 分差后断言**算出来的**最终顺序（而非「最终顺序 == LLM 顺序」）。
+
+    r1=0.90 / r2=0.50 / r3=0.40，LLM 排列 [r3,r2,r1]，α=0.35 →
+    score_ranked 为 r3 0.610 / r1 0.585 / r2 0.500 → 最终 [r3, r1, r2]。
+    """
+    mock_aresolve_ok()
+    result = await _route_with_llm_order(
+        monkeypatch,
+        [_cand("r1", 0.90), _cand("r2", 0.50), _cand("r3", 0.40)],
+        ("r3", "r2", "r1"),
+        grouping_repository_ids=[],
+    )
+
+    ranked = {c.repo_id: c.score_ranked for c in result.candidates}
+    assert ranked["r3"] == pytest.approx(0.610, abs=1e-9)
+    assert ranked["r1"] == pytest.approx(0.585, abs=1e-9)
+    assert ranked["r2"] == pytest.approx(0.500, abs=1e-9)
+    assert [c.repo_id for c in result.candidates] == ["r3", "r1", "r2"]
+
+
+@pytest.mark.asyncio
+async def test_llm_fabricated_repo_id_is_dropped(monkeypatch, mock_aresolve_ok) -> None:
+    """LLM 编造窗口外 repo_id → 既不进裁剪产物也不进结果候选。"""
+    mock_aresolve_ok()
+    result = await _route_with_llm_order(
+        monkeypatch, _window(3), ("ghost-repo", "r1", "r2"), grouping_repository_ids=[]
+    )
+
+    stage1 = result.snapshot["stage1"]
+    assert "ghost-repo" not in stage1["clamped_order"]
+    assert stage1["clamped_order"] == ["r1", "r2"]
+    assert "ghost-repo" not in {c.repo_id for c in result.candidates}
+
+
+@pytest.mark.asyncio
+async def test_score_ranked_is_convex_combination(monkeypatch, mock_aresolve_ok) -> None:
+    """凸组合生效：score_ranked == 0.65*score + 0.35*(1 - idx/(n-1))。"""
+    mock_aresolve_ok()
+    result = await _route_with_llm_order(
+        monkeypatch,
+        [_cand("r1", 0.90), _cand("r2", 0.50), _cand("r3", 0.40)],
+        ("r3", "r2", "r1"),
+        grouping_repository_ids=[],
+    )
+
+    clamped = result.snapshot["stage1"]["clamped_order"]
+    n = len(clamped)
+    by_id = {c.repo_id: c for c in result.candidates}
+    for idx, rid in enumerate(clamped):
+        expected = 0.65 * by_id[rid].score + 0.35 * (1.0 - idx / (n - 1))
+        assert by_id[rid].score_ranked == pytest.approx(expected, abs=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_score_and_breakdown_unchanged_by_convex_combination(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """D-3 硬约束：凸组合只写旁路字段，score 与 breakdown 逐键不变、Σ 恒等仍成立。"""
+    import math as _math
+
+    mock_aresolve_ok()
+    window = [_cand("r1", 0.90), _cand("r2", 0.50), _cand("r3", 0.40)]
+
+    with_llm = await _route_with_llm_order(
+        monkeypatch, window, ("r3", "r2", "r1"), grouping_repository_ids=[]
+    )
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage0_candidates(monkeypatch, window)
+    without_llm = await RepoRouterV2.route("需求文本", grouping_repository_ids=[], use_llm=False)
+
+    baseline = {c.repo_id: c for c in without_llm.candidates}
+    for cand in with_llm.candidates:
+        assert cand.score == baseline[cand.repo_id].score
+        assert cand.breakdown == baseline[cand.repo_id].breakdown
+        assert abs(_math.fsum(cand.breakdown.values()) - cand.score) < 1e-9
+        assert "alpha" not in cand.breakdown
+
+
+@pytest.mark.asyncio
+async def test_single_candidate_does_not_divide_by_zero(monkeypatch, mock_aresolve_ok) -> None:
+    """N==1 无重排空间 → 不抛 ZeroDivisionError，旁路分为 None 或等于 score。"""
+    mock_aresolve_ok()
+    result = await _route_with_llm_order(
+        monkeypatch, [_cand("r1", 0.90)], ("r1",), grouping_repository_ids=[]
+    )
+
+    top = result.candidates[0]
+    assert top.score_ranked is None or top.score_ranked == pytest.approx(top.score)
+
+
+@pytest.mark.asyncio
+async def test_degraded_path_leaves_score_ranked_none(monkeypatch, mock_aresolve_ok) -> None:
+    """Stage 1 降级 → α 按 0 处理：全部候选 score_ranked 保持 None（消费方回退 score）。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage0_candidates(monkeypatch, _window(3))
+    _install_stage1_model(monkeypatch, _RaisingModel(RuntimeError("Error code: 400 - bad")))
+
+    result = await RepoRouterV2.route("需求文本", grouping_repository_ids=[])
+
+    assert result.degraded is True
+    assert result.candidates
+    assert all(c.score_ranked is None for c in result.candidates)
+
+
+@pytest.mark.asyncio
+async def test_confidence_is_unaffected_by_convex_combination(
+    monkeypatch, mock_aresolve_ok, settings
+) -> None:
+    """confidence 仍吃 Stage 0 分数列表：α 开关不改变任何候选的分级（RELY-04 不回退）。"""
+    mock_aresolve_ok()
+    window = [_cand("r1", 0.90), _cand("r2", 0.50), _cand("r3", 0.40)]
+
+    settings.REPO_ROUTER_STAGE1_ALPHA = 0.35
+    blended = await _route_with_llm_order(
+        monkeypatch, window, ("r3", "r2", "r1"), grouping_repository_ids=[]
+    )
+    settings.REPO_ROUTER_STAGE1_ALPHA = 0.0
+    plain = await _route_with_llm_order(
+        monkeypatch, window, ("r3", "r2", "r1"), grouping_repository_ids=[]
+    )
+
+    assert {c.repo_id: c.confidence for c in blended.candidates} == {
+        c.repo_id: c.confidence for c in plain.candidates
+    }
+
+
+@pytest.mark.asyncio
+async def test_presentation_tie_break_is_repo_id_ascending(
+    monkeypatch, mock_aresolve_ok, settings
+) -> None:
+    """比较值相等时按 repo_id 升序——排序由 107-03 的 _apply_presentation 唯一承载。"""
+    mock_aresolve_ok()
+    settings.REPO_ROUTER_STAGE1_ALPHA = 0.0
+    result = await _route_with_llm_order(
+        monkeypatch,
+        [_cand("r-z", 0.50), _cand("r-a", 0.50)],
+        ("r-z", "r-a"),
+        grouping_repository_ids=[],
+    )
+
+    assert [c.repo_id for c in result.candidates] == ["r-a", "r-z"]
