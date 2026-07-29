@@ -16,11 +16,12 @@
  */
 import type { ManualOverrideRequestCandidate, RoutingCandidate, RoutingLevel } from '~/types/routing'
 import { useDebounceFn } from '@vueuse/core'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card } from '~/components/ui/card'
 import { Checkbox } from '~/components/ui/checkbox'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { useRoutingStore } from '~/stores/routing'
 
@@ -72,6 +73,70 @@ function variantOf(level: RoutingLevel): 'success' | 'warning' | 'secondary' {
 function labelOf(level: RoutingLevel): string {
   return ({ high: '高', medium: '中', low: '低' } as const)[level]
 }
+
+/**
+ * 分数分解信号名 → 中文标签（ROUTE-07）。未知 key 回退显示原始英文
+ * key——Phase 106 新增信号零前端改动即可展示。
+ */
+const SIGNAL_LABELS: Record<string, string> = {
+  text: '文本相关',
+  breadth: '命中广度',
+  activity: '活跃度',
+}
+
+function signalLabel(key: string): string {
+  return SIGNAL_LABELS[key] ?? key
+}
+
+/** 确定性 confidence 分级依据文案（UI-SPEC Copywriting 原文）。 */
+const CONFIDENCE_TOOLTIPS: Record<RoutingLevel, string> = {
+  high: '高置信：首位分数与领先幅度均超过阈值，由分数确定性推导',
+  medium: '中置信：首位分数达标但领先幅度不足，建议人工确认',
+  low: '低置信：候选分数整体偏低，请人工选择',
+}
+
+function hasBreakdown(c: RoutingCandidate): boolean {
+  return !!c.breakdown && Object.keys(c.breakdown).length > 0
+}
+
+/**
+ * 展开态为组件本地 ref（非手风琴，多候选可同时展开）；
+ * trace 更新（manual_override 写新 trace）后重置为收起。
+ */
+const expandedBreakdowns = ref<Set<string>>(new Set())
+
+function setBreakdownOpen(repoId: string, open: boolean) {
+  const next = new Set(expandedBreakdowns.value)
+  if (open)
+    next.add(repoId)
+  else
+    next.delete(repoId)
+  expandedBreakdowns.value = next
+}
+
+watch(effectiveTraceId, () => {
+  expandedBreakdowns.value = new Set()
+})
+
+// 容差校验（每次 trace 数据变化跑一次）：|Σbreakdown − score| > 1e-6 仅
+// console.warn，不阻断渲染——不变量由后端测试守护，前端不承担校验职责。
+watch(
+  sortedCandidates,
+  (cands) => {
+    for (const c of cands) {
+      if (!hasBreakdown(c))
+        continue
+      const sum = Object.values(c.breakdown!).reduce((acc, v) => acc + v, 0)
+      if (Math.abs(sum - c.score) > 1e-6) {
+        console.warn(
+          '[RoutingDecisionPanel] breakdown 合计与 score 不一致',
+          { repository_id: c.repository_id, sum, score: c.score },
+        )
+      }
+    }
+  },
+  { immediate: true },
+)
 
 /**
  * pendingOverrides 累积当前 debounce 窗口内的勾选变化；
@@ -151,29 +216,69 @@ function onOpenManualSelect() {
           <li
             v-for="c in sortedCandidates"
             :key="c.repository_id"
-            class="flex items-start gap-3 rounded px-1 py-1.5 hover:bg-zinc-50"
+            class="rounded px-1 py-1.5 hover:bg-zinc-50"
           >
-            <Checkbox
-              :model-value="checkedFor(c)"
-              class="mt-0.5"
-              @update:model-value="(v) => onToggle(c.repository_id, v)"
-            />
-            <span class="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
-              {{ c.repository_name }}
-            </span>
-            <Badge :variant="variantOf(c.level)" class="shrink-0">
-              {{ Math.round(c.score * 100) }}% {{ labelOf(c.level) }}
-            </Badge>
-            <Tooltip>
-              <TooltipTrigger as-child>
-                <p class="hidden max-w-[18rem] cursor-help truncate text-xs text-zinc-500 sm:block">
+            <div class="flex items-start gap-3">
+              <Checkbox
+                :model-value="checkedFor(c)"
+                class="mt-0.5"
+                @update:model-value="(v) => onToggle(c.repository_id, v)"
+              />
+              <span class="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+                {{ c.repository_name }}
+              </span>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Badge :variant="variantOf(c.level)" class="shrink-0">
+                    {{ Math.round(c.score * 100) }}% {{ labelOf(c.level) }}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent class="max-w-[24rem] text-xs">
+                  {{ CONFIDENCE_TOOLTIPS[c.level] }}
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <p class="hidden max-w-[18rem] cursor-help truncate text-xs text-zinc-500 sm:block">
+                    {{ c.evidence }}
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent class="max-w-[24rem] text-xs">
                   {{ c.evidence }}
-                </p>
-              </TooltipTrigger>
-              <TooltipContent class="max-w-[24rem] text-xs">
-                {{ c.evidence }}
-              </TooltipContent>
-            </Tooltip>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+
+            <Collapsible
+              v-if="hasBreakdown(c)"
+              :open="expandedBreakdowns.has(c.repository_id)"
+              @update:open="(v) => setBreakdownOpen(c.repository_id, v)"
+            >
+              <CollapsibleTrigger class="flex items-center gap-1 py-1 pl-3 text-xs text-muted-foreground">
+                <span
+                  class="icon-[lucide--chevron-right] size-3 transition-transform"
+                  :class="{ 'rotate-90': expandedBreakdowns.has(c.repository_id) }"
+                />
+                分数分解
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div class="flex flex-col gap-1 py-1 pl-3">
+                  <div
+                    v-for="(value, key) in c.breakdown"
+                    :key="key"
+                    class="flex items-center justify-between gap-2 px-2"
+                  >
+                    <span class="text-xs text-muted-foreground">{{ signalLabel(String(key)) }}</span>
+                    <span class="text-right font-mono text-xs text-foreground">{{ value.toFixed(3) }}</span>
+                  </div>
+                  <div class="border-t border-border/50" />
+                  <div class="flex items-center justify-between gap-2 px-2">
+                    <span class="text-xs text-muted-foreground">合计</span>
+                    <span class="text-right font-mono text-xs font-semibold text-foreground">{{ c.score.toFixed(3) }}</span>
+                  </div>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           </li>
         </ul>
       </TooltipProvider>

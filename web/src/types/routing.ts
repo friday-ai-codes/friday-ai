@@ -17,6 +17,11 @@ export interface RoutingCandidate {
   evidence: string
   selected_by_ai: boolean
   selected_by_user_final: boolean
+  /**
+   * 分数分解（ROUTE-07）：信号名 → 贡献值，Σ值 == score（后端不变量
+   * INV-R1/R3 保证）。legacy 路径 / 历史 trace 缺失，前端静默降级。
+   */
+  breakdown?: Record<string, number>
 }
 
 export interface RoutingDecisionData {
