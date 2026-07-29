@@ -844,6 +844,8 @@ async def test_score_and_breakdown_identical_with_and_without_grouping(monkeypat
     for rid, cand in left.items():
         assert cand.score == right[rid].score
         assert cand.breakdown == right[rid].breakdown
+        # confidence 仍由 Stage 0 分数序列推导，与组别无关
+        assert cand.confidence == right[rid].confidence
         # 旁路排序分本 plan 不写（107-05 才写）→ 两侧同为未重排
         assert cand.score_ranked is None and right[rid].score_ranked is None
 
