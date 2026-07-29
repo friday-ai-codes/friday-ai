@@ -333,3 +333,41 @@ async def test_llm_upgrade_low_to_high_rejected(monkeypatch, mock_aresolve_ok) -
     assert result.candidates[0].repo_id == "repo-b"
     assert result.candidates[0].confidence == "low"
     assert result.auto_selected is False
+
+
+# ---------------------------------------------------------------------------
+# 零候选短路：node_hits 非空但全部缺 repository_id → 不进 Stage 1
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_zero_candidates_short_circuits_before_stage1(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """node_hits 非空但打分核心过滤后零候选 → 提前短路，不发空 prompt 的
+    LLM 调用（IN-04a）。"""
+    mock_aresolve_ok()
+    bad_hits = [
+        {
+            "id": "x0",
+            "score": 0.02,
+            # payload 缺 repository_id → 打分核心过滤 → stage0_candidates 为空
+            "payload": {"node_id": "x0", "repo_name": "ghost", "node_path": "root/能力"},
+        }
+    ]
+    _install_stage0(monkeypatch, bad_hits)
+    build_calls: list[int] = []
+    monkeypatch.setattr(
+        "agents.llm_factory.build_chat_model",
+        lambda *a, **kw: build_calls.append(1),
+    )
+
+    result = await RepoRouterV2.route("需求")
+
+    assert result.router_version == "v2_stage0_only"
+    assert result.degraded is True
+    assert result.candidates == []
+    assert result.auto_selected is False
+    assert result.snapshot["stage1"]["skipped_reason"] == "no_stage0_candidates"
+    # Stage 1 从未构造模型——零 LLM 调用
+    assert build_calls == []
