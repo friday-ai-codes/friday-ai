@@ -228,3 +228,69 @@ deferred: []
 
 _Verified: 2026-07-30_
 _Verifier: gsd-verifier（goal-backward，1268 passed 基线 + 冻结面 git diff + 孤儿扫描）_
+
+---
+
+## Gap Closure
+
+| Gap | 状态 | Commits |
+|-----|------|---------|
+| GAP-1 ⚠️ reroute 的「排除 unsuitable + 补候选重调研」无实现（`excluded` 只写不读、回边空转） | ✅ **FIXED** | `3bd37ee9`（排除消费）/ `d6a78a43`（补候选闭环） |
+
+### 实现要点
+
+1. **`excluded` 有了唯一读取方**（`3bd37ee9`）：`BlueprintResearchAdapter._excluded_repository_ids`
+   读 `stage_state["reroute"]["excluded"]`，`_collect_candidates` 从**两条候选来源**
+   （`routing.candidates` 与确认门 `pending_research`）同时剔除。被排除仓连
+   `RepoResearchTask` 行都不再新建。唯一豁免口是 `allow_repository_ids`，只由**人工显式
+   动作**（`aupgrade_to_deep` 的升级深调研端点）填 —— 自动流程永不重开被排除仓。
+2. **补候选复用双面路由**（`d6a78a43`）：`BlueprintRouteAdapter.route` 增加
+   keyword-only 的 `exclude_repository_ids`（路由器候选与章程补入候选两条来源同时剔除，
+   默认 `None` ⇒ 与首轮调用逐字同行为）；`aadvance_reroute` 判 `reroute` 时先在
+   「排除集 ∪ 已试仓」之外重跑一次真实路由，新候选**追加**进 `routing.candidates` 后才回边
+   —— 回边后 `dispatch` 的增量白名单只为新仓起容器，既有仓结论一行不动。
+3. **补不到就升门**（不空转）：`_arefill_candidates` 返回空（无新候选 / 路由重跑异常）时
+   决策就地由 `reroute` 转 `escalate`，`reason="no_new_candidates"`，带全部现状升确认门，
+   轮次不递增（不白烧一轮）。「绝不静默失败」性质不变。
+4. **排除集累积**：`excluded` 改为「历轮 ∪ 本轮 unsuitable」，历轮被排除仓不会因为
+   「本轮无最新结论」而复活回候选。另新增 `reroute.supplemented`（本轮补入仓）与
+   `escalation.excluded_repository_ids` 供确认门与 115 呈现面自取。
+5. **约束零变更**：`MAX_REROUTE_ROUNDS = 2` 上界、增量派发白名单（`PENDING`/`STALE`）、
+   「不收敛带全部现状升确认门」三项语义逐字未动；`builtin_processes.py`（含
+   `_TECHNICAL_PLAN_STAGES` 与蓝图 stage 表）**零改动** —— handler 早已原样透传
+   `stage_state_update`，闭环全部落在 adapter 层。
+
+### 新增断言清单（8 条机制级，全部可证伪原空转实现）
+
+`tests/services/process_runtime/test_blueprint_research_stage.py`（+3）：
+
+| # | 断言 | 空转实现下的表现 |
+|---|------|-----------------|
+| 1 | `test_excluded_repo_is_never_dispatched_again`：`excluded=[A]` 时 `await_count == 1` 且只派 B，A 无 task 行 | 红（会为 A 起第 2 个容器） |
+| 2 | `test_excluded_repo_skipped_even_when_confirmation_marks_pending`：确认门 `pending_research` 分支同样剔除 | 红 |
+| 3 | `test_manual_upgrade_bypasses_exclusion`：人工升级仍可重开被排除仓（豁免口锁死） | — （护栏，防排除集把人工路径也堵死） |
+
+`tests/services/process_runtime/test_blueprint_reroute.py`（+5）：
+
+| # | 断言 | 空转实现下的表现 |
+|---|------|-----------------|
+| 4 | `test_second_round_dispatch_set_differs_and_excludes_unsuitable_repo`：**第 2 轮派发集合 ≠ 第 1 轮且不含 A**，并断言补候选把排除集传给了路由 | 红（第 2 轮派发集合为空） |
+| 5 | `test_excluded_repo_never_reappears_in_later_rounds`：路由器两轮都把 A 原样召回，A 仍不进补入清单与派发集合；排除集累积为 {A, B} | 红 |
+| 6 | `test_no_new_candidate_escalates_with_full_snapshot`：无新候选 → `exhausted` + `reason="no_new_candidates"` + 每仓 verdict/role/responsibility 快照 + 轮次不递增 | 红（原实现走满两轮空转才升门） |
+| 7 | `test_refill_failure_escalates_instead_of_looping`：补候选依赖抛异常 → 按「补不到」升门，不上抛不空转 | 红 |
+| 8 | `test_refill_never_exceeds_two_rounds`：每轮都补得到新仓时事件序列恒为 `[reroute_needed, reroute_needed, exhausted]`，`count ≤ MAX_REROUTE_ROUNDS`，且达上界后不再多花一次路由重跑 | — （上界回归护栏） |
+
+另有 3 处既有断言按新语义收紧：原「reroute 回边」三例现注入路由替身并额外断言
+`routing.candidates` 只追加不覆盖、`reroute.supplemented` 记录本轮补入仓。
+
+### 回归验证
+
+- `pytest tests/services/process_runtime/ tests/delivery/ tests/subagent/ -q` → **900 passed, 0 failed**
+  （`tests/mcp_tools/` 的 skills submodule 环境问题不在本子集内）
+- 改动文件仅 4 个（2 源 + 2 测试）：`blueprint_research_adapter.py` / `blueprint_route.py` /
+  `test_blueprint_research_stage.py` / `test_blueprint_reroute.py`；九个冻结文件与
+  `builtin_processes.py` 零命中。
+- 改动文件经 `ruff format` + `ruff check --fix`，All checks passed。
+
+**残留**：FLOW-02 的「替代建议」仍无结构化承载字段（`_parse_blueprint_fitness` 不收该键）——
+属 GAP-1 之外的既有 PARTIAL 项，未在本次闭环范围内。
