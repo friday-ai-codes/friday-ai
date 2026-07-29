@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
-current_phase: 111
-current_phase_name: 蓝图底座
-status: ready-to-plan
-stopped_at: "Phase 111 规划全部完成（CONTEXT/RESEARCH/PATTERNS/4 PLANs，plan-checker 通过、1 BLOCKER 已修）。执行 wave 1 派发时被 Cursor 计费阻断（unpaid invoice，三个 executor 未落任何文件，worktree 干净）。恢复：账单解决后重派 wave 1（111-01/02/03 并行）→ wave 2（111-04）→ verifier。"
-last_updated: "2026-07-29T09:30:00.000Z"
-last_activity: 2026-07-29
-last_activity_desc: Milestone v0.20.0 created (parallel worktree with v0.19.0)
+current_phase: 112
+current_phase_name: 规格门与双面路由调研
+status: executing
+stopped_at: "Phase 111 蓝图底座完成并验证通过（4/4 plans，verification 24/24，938 tests 绿，转移表 25/25 边对齐 DESIGN §4.2，冻结面零触碰）。code review 重派中（非阻塞）。下一步：Phase 112 smart discuss → plan → execute。"
+last_updated: "2026-07-29T17:50:00.000Z"
+last_activity: 2026-07-30
+last_activity_desc: Phase 111 complete (verification passed 24/24)
 progress:
   total_phases: 6
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 4
+  completed_plans: 4
+  percent: 17
 ---
 
 # Project State
@@ -24,20 +24,20 @@ progress:
 See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/technical-blueprint/DESIGN.md](./technical-blueprint/DESIGN.md)**（13 节，§12 八项决策已定夺，plan-phase 必读）。
 
 **Core value（v0.20.0，在建）:** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，仓库章程补齐净新增落点知识，飞书式划线澄清多轮收敛，全生命周期可管理，知识库可查可引可导出。
-**Current focus:** Phase 111 — 蓝图底座（schema + 生命周期 + 线程/章程模型 + golden set）
+**Current focus:** Phase 112 — 规格门与双面路由调研（阶段 1：调研 + 确认门 + 章程回灌）
 
 ## Current Position
 
-Phase: 111 (蓝图底座) — NOT STARTED
+Phase: 112 (规格门与双面路由调研) — NOT STARTED
 Plan: —
-Status: Milestone created, ready to plan
-Last activity: 2026-07-29 — v0.20.0 里程碑规划产物落库（REQUIREMENTS/ROADMAP/STATE）
+Status: Phase 111 complete & verified; ready to discuss Phase 112
+Last activity: 2026-07-30 — Phase 111 蓝图底座交付（4/4 plans，verification passed 24/24）
 
 ## Milestone Overview (v0.20.0 — Phases 111–116 — 🟡 PLANNING)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 111 | 蓝图底座（schema + 状态机 + 线程/章程模型 + golden set） | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | Not started |
+| 111 | 蓝图底座（schema + 状态机 + 线程/章程模型 + golden set） | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | ✅ Complete (4/4, passed 24/24) |
 | 112 | 规格门与双面路由调研（阶段 1 + 确认门 + 章程回灌） | FLOW-01/02/03/04, CHARTER-02/03 | Not started |
 | 113 | 分仓方案与融合（阶段 2/3）+ Context Bus | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | Not started |
 | 114 | 审查与澄清收敛（AI 审查 + 线程闭环 + 人工编辑） | FLOW-07, CLAR-02/03/04 | Not started |
@@ -79,6 +79,11 @@ Last activity: 2026-07-29 — v0.20.0 里程碑规划产物落库（REQUIREMENTS
 - [Milestone v0.20.0, 2026-07-29]: 八项设计决策已定夺（DESIGN.md §12）——①蓝图项目级一项目一份活跃蓝图；②indirect 仓默认轻量调研可人工升级；③项目成员皆可确认、确认者自动进评审人名单；④澄清超时保持显式 pending 不自动作答；⑤AI 审查默认与起草同模型档位；⑥golden set 起步即建（含目标仓命中率，首条 case 高三提分专项）；⑦Context Bus 会话级共享上下文（token→会话→项目绑定 + 两档等待恢复 + 环检测）；⑧RepoCharter 仓库章程补意图面知识、双面路由按意图分流加权。
 - [Milestone v0.20.0, 2026-07-29]: Phase 108（DEPTH-01~05）自 v0.19.0 迁入本里程碑，由 blueprint/v1 schema 原生满足；v0.19.0 分支已同步收录（commit `1fd3e60c`），其 109 改以现行 §7 execution_plan 对接执行流。
 - [Milestone v0.20.0, 2026-07-29]: 与 v0.19.0 并行开发的四条边界纪律与两个同步点定版（DESIGN.md §13.2/§13.3），本文件「并行开发」节为执行时唯一对照清单。
+- [Phase 111, 2026-07-30]: 111-01: `validate_blueprint` 对 `schema_version != "blueprint/v1"`（含缺失/未来版本）一律 pass-through，v0/v1 判别唯一收敛在 `delivery/artifacts/builtin_types.py` 的判别分支——未来 blueprint/v2 只改该判别点。
+- [Phase 111, 2026-07-30]: 111-01: `iter_blocks` 的 section_path 约定 = 点分 + `[标识]`（items→id、repo_associations/current_state_analysis→repository_id、affected_features→feature、steps→seq，缺失回退位置下标）；114 重锚定与 115 渲染均按此约定消费，已有测试锁形状。
+- [Phase 111, 2026-07-30]: 111-02: lifecycle 事件写入对 `ConvergenceSessionEvent.session`（非空 FK）做 session 可选处理——无编排会话时只打 structlog（best-effort）；`blueprint_*` 事件常量放独立 frozenset 不进 `ALL_EVENTS`（避免 taxonomy 覆盖性反查失败）。
+- [Phase 111, 2026-07-30]: 111-03: charter 的「AI 不覆盖人工」不变量守卫落在 `charter_service` 层（human_confirmed 后 AI 只能产新 draft）；REST confirm 端点经 service 收口，不直写模型。
+- [Phase 111, 2026-07-30]: 111-04: golden set 与 v0.19.0 路由 golden set 完全分离（`server/tests/fixtures/blueprint_golden/` + `evaluate_blueprint_golden` command），首条 case 为高三提分专项；引用覆盖率/目标仓命中率为纯函数，另三项 DB 统计留接口占位待 112–114 填充数据。
 
 ### Pending Todos
 
@@ -91,6 +96,6 @@ Last activity: 2026-07-29 — v0.20.0 里程碑规划产物落库（REQUIREMENTS
 
 ## Session Continuity
 
-Last session: 2026-07-29 — 设计蓝图收敛（DESIGN.md 13 节）+ 里程碑创建（本次）
-Next step: **`$gsd-plan-phase 111`**（蓝图底座；DESIGN.md §3/§4/§5.7/§6 为该相位直接输入）
-Resume file: 无（干净起点）
+Last session: 2026-07-29/30 — 设计蓝图收敛（DESIGN.md 13 节）+ 里程碑创建 + Phase 111 全量交付（autonomous 模式）
+Next step: **Phase 112 smart discuss → plan → execute**（DESIGN.md §5.2 阶段 1 契约表、§5.4 歧义门、§5.7 双面路由为直接输入；Phase 111 的 RepoCharter/charter_service/blueprint_schema 为可消费底座）
+Resume file: 无（干净接力点：`git log` 中 Phase 111 全部 commit 已入库）
