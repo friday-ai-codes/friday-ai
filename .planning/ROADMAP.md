@@ -60,7 +60,13 @@
   4. `RepoCharter` 可由 AI 从 ai_summary/近期 MR 历史/既有 RepoAssociation 裁决蒸馏出草案，人工 confirm 后生效（source=human_confirmed）；对人工确认过的章程 AI 只能提修订草案、不能直接覆盖。
   5. 蓝图 golden set 离线可跑：含高三提分专项首条 golden case，输出引用覆盖率/目标仓命中率/审查打回率等指标，同输入重复运行结果一致。
 
-**Plans**: TBD
+**Plans**: 4 plans（wave 1: 01/02/03 并行；wave 2: 04）
+
+Plans:
+- [ ] 111-01-PLAN.md — blueprint/v1 六段 jsonschema + block diff + execution_plan 确定性派生 + builtin_types 校验接线（SCHEMA-01/06/07）
+- [ ] 111-02-PLAN.md — Artifact.blueprint_status 11 态 + BlueprintThread/Message/Reviewer 模型 + LifecycleService 守卫/CAS/事件 + 重锚定纯函数（LIFE-01/02/03）
+- [ ] 111-03-PLAN.md — RepoCharter 模型 + AI 起草管道 + charter REST 三端点 + call_source 8 值与 LOGGING-SPEC 登记（CHARTER-01）
+- [ ] 111-04-PLAN.md — blueprint_quality 指标 + 高三提分专项 golden case + evaluate_blueprint_golden command + 全链路集成冒烟（GATE-02）
 
 ### Phase 112: 规格门与双面路由调研（阶段 1：调研与确认门）
 
