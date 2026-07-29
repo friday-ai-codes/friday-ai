@@ -1,23 +1,31 @@
 [
   {
     "id": "gk-001-gaosan-tifen",
-    "_notice": "真实事故用例（会话 ccd817d9 场景合成重写，待人工补充生产原文）：study-app（62 子应用 monorepo）以命中广度碾压 onion-learning。Phase 105 baseline 下 Top-1 预期仍为 study-app（尺寸偏置未修，属预期基线）；该 case 预期由 Phase 106 pivoted normalization 翻转。",
+    "_notice": "真实事故用例（会话 ccd817d9 场景合成重写，待人工补充生产原文）：study-app（62 子应用 monorepo）以命中广度碾压 onion-learning。Phase 105 baseline 下 Top-1 为 study-app（尺寸偏置未修）；Phase 106 已按 pivoted normalization 翻转（106-08）：Top-1 = onion-learning，机制断言见 test_gk001_mechanism_*。repo_meta 数值依据 ROUTING-RANKING §2.4：N_r(study-app)=620、N_r(onion-learning)=30、n_bar=60；dense_cos_max 编码「6 个中等命中 vs 1 个 top 命中」（0.52 vs 0.62）。",
     "query": "高三提分专项：面向高三学生上线提分专项训练——前端学习产品新增专项入口与训练流程，联动课程内容服务与用户学情状态",
     "label_source": "human",
     "cross_group": false,
     "expected_repos": ["onion-learning", "study-course", "study-user-status"],
     "node_hits": [
-      {"score": 0.0164, "payload": {"node_id": "n-001-ol-1", "repository_id": "onion-learning", "repo_name": "onion-learning", "node_path": "学习产品/专项训练/提分专项入口", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0135, "payload": {"node_id": "n-001-sa-1", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/study-home/学习首页/推荐位", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0130, "payload": {"node_id": "n-001-sa-2", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/exam-center/考试中心/成绩单", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0128, "payload": {"node_id": "n-001-sa-3", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/study-plan/学习计划/周计划", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0125, "payload": {"node_id": "n-001-sa-4", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/wrong-book/错题本/错题归档", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0122, "payload": {"node_id": "n-001-sa-5", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/live-class/直播课/课程回放", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0120, "payload": {"node_id": "n-001-sa-6", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/vip-center/会员中心/权益页", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0130, "payload": {"node_id": "n-001-sc-1", "repository_id": "study-course", "repo_name": "study-course", "node_path": "课程服务/专项课程包/课程编排", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0110, "payload": {"node_id": "n-001-sc-2", "repository_id": "study-course", "repo_name": "study-course", "node_path": "课程服务/课程内容/知识点映射", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0118, "payload": {"node_id": "n-001-sus-1", "repository_id": "study-user-status", "repo_name": "study-user-status", "node_path": "学情服务/用户学情状态/能力评估", "facets": {"活跃度": "维护中"}}}
-    ]
+      {"score": 0.0164, "payload": {"node_id": "n-001-ol-1", "repository_id": "onion-learning", "repo_name": "onion-learning", "node_path": "学习产品/专项训练/提分专项入口", "facets": {"业务线/产品线": "学习产品", "技术栈": "Vue / TypeScript", "团队归属": "学习产品团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0135, "payload": {"node_id": "n-001-sa-1", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/study-home/学习首页/推荐位", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0130, "payload": {"node_id": "n-001-sa-2", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/exam-center/考试中心/成绩单", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0128, "payload": {"node_id": "n-001-sa-3", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/study-plan/学习计划/周计划", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0125, "payload": {"node_id": "n-001-sa-4", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/wrong-book/错题本/错题归档", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0122, "payload": {"node_id": "n-001-sa-5", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/live-class/直播课/课程回放", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0120, "payload": {"node_id": "n-001-sa-6", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/vip-center/会员中心/权益页", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0130, "payload": {"node_id": "n-001-sc-1", "repository_id": "study-course", "repo_name": "study-course", "node_path": "课程服务/专项课程包/课程编排", "facets": {"业务线/产品线": "课程内容服务", "技术栈": "Go", "团队归属": "课程服务团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0110, "payload": {"node_id": "n-001-sc-2", "repository_id": "study-course", "repo_name": "study-course", "node_path": "课程服务/课程内容/知识点映射", "facets": {"业务线/产品线": "课程内容服务", "技术栈": "Go", "团队归属": "课程服务团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0118, "payload": {"node_id": "n-001-sus-1", "repository_id": "study-user-status", "repo_name": "study-user-status", "node_path": "学情服务/用户学情状态/能力评估", "facets": {"业务线/产品线": "学情服务", "技术栈": "Go", "团队归属": "学情数据团队", "关键程度": "重要", "活跃度": "维护中"}}}
+    ],
+    "repo_meta": {
+      "onion-learning": {"n_r": 30, "last_commit_at": "2026-07-26T00:00:00+00:00", "dense_cos_max": 0.62, "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}, "stack": {"score": 0.6, "layer": "t1"}}, "criticality_value": "核心"},
+      "study-app": {"n_r": 620, "last_commit_at": "2026-07-27T00:00:00+00:00", "dense_cos_max": 0.52, "facet_scores": {"domain": {"score": 0.6, "layer": "t1"}, "stack": {"score": 0.6, "layer": "t1"}}, "criticality_value": "核心"},
+      "study-course": {"n_r": 45, "last_commit_at": "2026-07-25T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"},
+      "study-user-status": {"n_r": 25, "last_commit_at": "2026-05-15T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-002-feishu-webhook",
@@ -26,12 +34,18 @@
     "cross_group": false,
     "expected_repos": ["friday-server"],
     "node_hits": [
-      {"score": 0.0210, "payload": {"node_id": "n-002-fs-1", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "集成/飞书/事件订阅回调", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0185, "payload": {"node_id": "n-002-fs-2", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "工作流/触发器/webhook 触发", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0170, "payload": {"node_id": "n-002-fs-3", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "集成/飞书/工作项同步", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0160, "payload": {"node_id": "n-002-fs-4", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "工作流/执行引擎/事件入口", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0080, "payload": {"node_id": "n-002-fw-1", "repository_id": "friday-web", "repo_name": "friday-web", "node_path": "控制台/集成设置页", "facets": {"活跃度": "活跃开发"}}}
-    ]
+      {"score": 0.0210, "payload": {"node_id": "n-002-fs-1", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "集成/飞书/事件订阅回调", "facets": {"业务线/产品线": "研发效能平台", "技术栈": "Python", "团队归属": "平台研发团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0185, "payload": {"node_id": "n-002-fs-2", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "工作流/触发器/webhook 触发", "facets": {"业务线/产品线": "研发效能平台", "技术栈": "Python", "团队归属": "平台研发团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0170, "payload": {"node_id": "n-002-fs-3", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "集成/飞书/工作项同步", "facets": {"业务线/产品线": "研发效能平台", "技术栈": "Python", "团队归属": "平台研发团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0160, "payload": {"node_id": "n-002-fs-4", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "工作流/执行引擎/事件入口", "facets": {"业务线/产品线": "研发效能平台", "技术栈": "Python", "团队归属": "平台研发团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0080, "payload": {"node_id": "n-002-fw-1", "repository_id": "friday-web", "repo_name": "friday-web", "node_path": "控制台/集成设置页", "facets": {"业务线/产品线": "研发效能平台", "技术栈": "Vue / TypeScript", "团队归属": "平台研发团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
+    ],
+    "repo_meta": {
+      "friday-server": {"n_r": 120, "last_commit_at": "2026-07-27T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"},
+      "friday-web": {"n_r": 60, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 0.6, "layer": "t1"}}, "criticality_value": "重要"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-003-jwt-refresh",
@@ -40,11 +54,17 @@
     "cross_group": false,
     "expected_repos": ["auth-service"],
     "node_hits": [
-      {"score": 0.0205, "payload": {"node_id": "n-003-as-1", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/JWT/刷新令牌轮换", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0188, "payload": {"node_id": "n-003-as-2", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/JWT/令牌黑名单", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0150, "payload": {"node_id": "n-003-as-3", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/登录/会话管理", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0070, "payload": {"node_id": "n-003-lp-1", "repository_id": "legacy-portal", "repo_name": "legacy-portal", "node_path": "门户/登录页", "facets": {"活跃度": "低频"}}}
-    ]
+      {"score": 0.0205, "payload": {"node_id": "n-003-as-1", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/JWT/刷新令牌轮换", "facets": {"业务线/产品线": "账号与认证", "技术栈": "Go", "团队归属": "平台安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0188, "payload": {"node_id": "n-003-as-2", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/JWT/令牌黑名单", "facets": {"业务线/产品线": "账号与认证", "技术栈": "Go", "团队归属": "平台安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0150, "payload": {"node_id": "n-003-as-3", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/登录/会话管理", "facets": {"业务线/产品线": "账号与认证", "技术栈": "Go", "团队归属": "平台安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0070, "payload": {"node_id": "n-003-lp-1", "repository_id": "legacy-portal", "repo_name": "legacy-portal", "node_path": "门户/登录页", "facets": {"业务线/产品线": "门户", "技术栈": "JavaScript", "团队归属": "门户维护组", "关键程度": "边缘", "活跃度": "低频"}}}
+    ],
+    "repo_meta": {
+      "auth-service": {"n_r": 65, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"},
+      "legacy-portal": {"n_r": 40, "last_commit_at": "2026-01-10T00:00:00+00:00", "facet_scores": {"domain": {"score": 0.6, "layer": "t1"}}, "criticality_value": "边缘"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-004-order-report-ambiguous",
@@ -53,11 +73,17 @@
     "cross_group": false,
     "expected_repos": ["order-center", "report-engine"],
     "node_hits": [
-      {"score": 0.0180, "payload": {"node_id": "n-004-oc-1", "repository_id": "order-center", "repo_name": "order-center", "node_path": "订单/导出/批量导出任务", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0160, "payload": {"node_id": "n-004-oc-2", "repository_id": "order-center", "repo_name": "order-center", "node_path": "订单/查询/多条件筛选", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0175, "payload": {"node_id": "n-004-re-1", "repository_id": "report-engine", "repo_name": "report-engine", "node_path": "报表/下载中心/文件生成", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0158, "payload": {"node_id": "n-004-re-2", "repository_id": "report-engine", "repo_name": "report-engine", "node_path": "报表/模板/导出模板", "facets": {"活跃度": "活跃开发"}}}
-    ]
+      {"score": 0.0180, "payload": {"node_id": "n-004-oc-1", "repository_id": "order-center", "repo_name": "order-center", "node_path": "订单/导出/批量导出任务", "facets": {"业务线/产品线": "交易订单", "技术栈": "Java", "团队归属": "交易团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0160, "payload": {"node_id": "n-004-oc-2", "repository_id": "order-center", "repo_name": "order-center", "node_path": "订单/查询/多条件筛选", "facets": {"业务线/产品线": "交易订单", "技术栈": "Java", "团队归属": "交易团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0175, "payload": {"node_id": "n-004-re-1", "repository_id": "report-engine", "repo_name": "report-engine", "node_path": "报表/下载中心/文件生成", "facets": {"业务线/产品线": "数据报表", "技术栈": "Java", "团队归属": "数据平台团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0158, "payload": {"node_id": "n-004-re-2", "repository_id": "report-engine", "repo_name": "report-engine", "node_path": "报表/模板/导出模板", "facets": {"业务线/产品线": "数据报表", "技术栈": "Java", "团队归属": "数据平台团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
+    ],
+    "repo_meta": {
+      "order-center": {"n_r": 55, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"},
+      "report-engine": {"n_r": 45, "last_commit_at": "2026-07-25T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-005-deprecated-competitor",
@@ -66,14 +92,21 @@
     "cross_group": false,
     "expected_repos": ["push-service"],
     "node_hits": [
-      {"score": 0.0190, "payload": {"node_id": "n-005-nl-1", "repository_id": "notify-legacy", "repo_name": "notify-legacy", "node_path": "通知/渠道配置", "facets": {"活跃度": "疑似废弃"}}},
-      {"score": 0.0140, "payload": {"node_id": "n-005-nl-2", "repository_id": "notify-legacy", "repo_name": "notify-legacy", "node_path": "通知/短信模板", "facets": {"活跃度": "疑似废弃"}}},
-      {"score": 0.0180, "payload": {"node_id": "n-005-ps-1", "repository_id": "push-service", "repo_name": "push-service", "node_path": "推送/渠道管理/多渠道配置", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0150, "payload": {"node_id": "n-005-ps-2", "repository_id": "push-service", "repo_name": "push-service", "node_path": "推送/模板/消息模板管理", "facets": {"活跃度": "活跃开发"}}}
-    ]
+      {"score": 0.0190, "payload": {"node_id": "n-005-nl-1", "repository_id": "notify-legacy", "repo_name": "notify-legacy", "node_path": "通知/渠道配置", "facets": {"业务线/产品线": "消息通知", "技术栈": "PHP", "团队归属": "消息团队", "关键程度": "边缘", "活跃度": "疑似废弃"}}},
+      {"score": 0.0140, "payload": {"node_id": "n-005-nl-2", "repository_id": "notify-legacy", "repo_name": "notify-legacy", "node_path": "通知/短信模板", "facets": {"业务线/产品线": "消息通知", "技术栈": "PHP", "团队归属": "消息团队", "关键程度": "边缘", "活跃度": "疑似废弃"}}},
+      {"score": 0.0180, "payload": {"node_id": "n-005-ps-1", "repository_id": "push-service", "repo_name": "push-service", "node_path": "推送/渠道管理/多渠道配置", "facets": {"业务线/产品线": "消息推送", "技术栈": "Go", "团队归属": "消息团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0150, "payload": {"node_id": "n-005-ps-2", "repository_id": "push-service", "repo_name": "push-service", "node_path": "推送/模板/消息模板管理", "facets": {"业务线/产品线": "消息推送", "技术栈": "Go", "团队归属": "消息团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
+    ],
+    "repo_meta": {
+      "notify-legacy": {"n_r": 35, "last_commit_at": "2024-03-10T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "边缘"},
+      "push-service": {"n_r": 50, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-006-facets-missing",
+    "_notice": "facets 缺失重归一化用例：sync-worker 的 hit facets 与 facet_scores/criticality_value 保持缺失（106-08 受审原则：缺失语义不补齐），domain/stack/team 走权重重归一化。",
     "query": "数据同步定时任务调度与失败重试",
     "label_source": "weak",
     "cross_group": false,
@@ -81,40 +114,59 @@
     "node_hits": [
       {"score": 0.0200, "payload": {"node_id": "n-006-sw-1", "repository_id": "sync-worker", "repo_name": "sync-worker", "node_path": "同步/调度器/定时任务", "facets": {}}},
       {"score": 0.0170, "payload": {"node_id": "n-006-sw-2", "repository_id": "sync-worker", "repo_name": "sync-worker", "node_path": "同步/重试/退避策略", "facets": {}}},
-      {"score": 0.0100, "payload": {"node_id": "n-006-cu-1", "repository_id": "cron-ui", "repo_name": "cron-ui", "node_path": "定时任务/管理界面", "facets": {"活跃度": "维护中"}}}
-    ]
+      {"score": 0.0100, "payload": {"node_id": "n-006-cu-1", "repository_id": "cron-ui", "repo_name": "cron-ui", "node_path": "定时任务/管理界面", "facets": {"业务线/产品线": "定时任务平台", "技术栈": "Vue / TypeScript", "团队归属": "基础架构团队", "关键程度": "一般", "活跃度": "维护中"}}}
+    ],
+    "repo_meta": {
+      "sync-worker": {"n_r": 25, "last_commit_at": "2026-07-26T00:00:00+00:00"},
+      "cron-ui": {"n_r": 20, "last_commit_at": "2026-05-20T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "一般"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-007-monorepo-subapp",
+    "_notice": "monorepo 有时确实是对的：marketing-monorepo（n_r=300 大仓）命中强且密集，pivoted normalization 不得矫枉过正把大仓打死。",
     "query": "营销活动落地页搭建与投放配置",
     "label_source": "human",
     "cross_group": false,
     "expected_repos": ["marketing-monorepo"],
     "node_hits": [
-      {"score": 0.0190, "payload": {"node_id": "n-007-mm-1", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/campaign-landing/落地页搭建器", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0182, "payload": {"node_id": "n-007-mm-2", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/campaign-landing/组件市场", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0175, "payload": {"node_id": "n-007-mm-3", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/ad-delivery/投放配置", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0168, "payload": {"node_id": "n-007-mm-4", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/ad-delivery/人群圈选", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0160, "payload": {"node_id": "n-007-mm-5", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/coupon/优惠券发放", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0152, "payload": {"node_id": "n-007-mm-6", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/growth/增长实验", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0160, "payload": {"node_id": "n-007-cs-1", "repository_id": "campaign-service", "repo_name": "campaign-service", "node_path": "活动服务/活动生命周期", "facets": {"活跃度": "活跃开发"}}}
-    ]
+      {"score": 0.0190, "payload": {"node_id": "n-007-mm-1", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/campaign-landing/落地页搭建器", "facets": {"业务线/产品线": "营销增长", "技术栈": "Vue / TypeScript", "团队归属": "营销前端团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0182, "payload": {"node_id": "n-007-mm-2", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/campaign-landing/组件市场", "facets": {"业务线/产品线": "营销增长", "技术栈": "Vue / TypeScript", "团队归属": "营销前端团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0175, "payload": {"node_id": "n-007-mm-3", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/ad-delivery/投放配置", "facets": {"业务线/产品线": "营销增长", "技术栈": "Vue / TypeScript", "团队归属": "营销前端团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0168, "payload": {"node_id": "n-007-mm-4", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/ad-delivery/人群圈选", "facets": {"业务线/产品线": "营销增长", "技术栈": "Vue / TypeScript", "团队归属": "营销前端团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0160, "payload": {"node_id": "n-007-mm-5", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/coupon/优惠券发放", "facets": {"业务线/产品线": "营销增长", "技术栈": "Vue / TypeScript", "团队归属": "营销前端团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0152, "payload": {"node_id": "n-007-mm-6", "repository_id": "marketing-monorepo", "repo_name": "marketing-monorepo", "node_path": "apps/growth/增长实验", "facets": {"业务线/产品线": "营销增长", "技术栈": "Vue / TypeScript", "团队归属": "营销前端团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0160, "payload": {"node_id": "n-007-cs-1", "repository_id": "campaign-service", "repo_name": "campaign-service", "node_path": "活动服务/活动生命周期", "facets": {"业务线/产品线": "营销活动服务", "技术栈": "Go", "团队归属": "营销后端团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
+    ],
+    "repo_meta": {
+      "marketing-monorepo": {"n_r": 300, "last_commit_at": "2026-07-27T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"},
+      "campaign-service": {"n_r": 45, "last_commit_at": "2026-07-25T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-008-cross-group-auth",
-    "_notice": "cross_group 样本（O-4）：正确答案 auth-service 不在 project_scope 内，供 Phase 107 校准跨组 delta。",
+    "_notice": "cross_group 样本（O-4）：正确答案 auth-service 不在 project_scope 内，供 Phase 107 校准跨组 delta。106-08：edu-content-hub 按查询语义获得 domain/team 匹配（教研内容中台被点名），auth-service 仍须凭文本证据胜出——新信号不与标签打架。",
     "query": "跨团队接入：教研内容中台统一改走平台鉴权中心签发的访问令牌",
     "label_source": "human",
     "cross_group": true,
     "project_scope": ["edu-content-hub"],
     "expected_repos": ["auth-service"],
     "node_hits": [
-      {"score": 0.0210, "payload": {"node_id": "n-008-as-1", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/开放平台/访问令牌签发", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0180, "payload": {"node_id": "n-008-as-2", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/接入方管理/应用凭证", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0165, "payload": {"node_id": "n-008-as-3", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/网关/令牌校验中间件", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0140, "payload": {"node_id": "n-008-ech-1", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/开放接口/内容拉取", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0120, "payload": {"node_id": "n-008-ech-2", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/权限/内容可见性", "facets": {"活跃度": "活跃开发"}}}
-    ]
+      {"score": 0.0210, "payload": {"node_id": "n-008-as-1", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/开放平台/访问令牌签发", "facets": {"业务线/产品线": "账号与认证", "技术栈": "Go", "团队归属": "平台安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0180, "payload": {"node_id": "n-008-as-2", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/接入方管理/应用凭证", "facets": {"业务线/产品线": "账号与认证", "技术栈": "Go", "团队归属": "平台安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0165, "payload": {"node_id": "n-008-as-3", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/网关/令牌校验中间件", "facets": {"业务线/产品线": "账号与认证", "技术栈": "Go", "团队归属": "平台安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0140, "payload": {"node_id": "n-008-ech-1", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/开放接口/内容拉取", "facets": {"业务线/产品线": "教研内容中台", "技术栈": "Java", "团队归属": "教研技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0120, "payload": {"node_id": "n-008-ech-2", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/权限/内容可见性", "facets": {"业务线/产品线": "教研内容中台", "技术栈": "Java", "团队归属": "教研技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
+    ],
+    "repo_meta": {
+      "auth-service": {"n_r": 65, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"},
+      "edu-content-hub": {"n_r": 80, "last_commit_at": "2026-07-25T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}, "team": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-009-cross-group-payment",
@@ -125,10 +177,16 @@
     "project_scope": ["finance-dashboard"],
     "expected_repos": ["payment-gateway"],
     "node_hits": [
-      {"score": 0.0190, "payload": {"node_id": "n-009-pg-1", "repository_id": "payment-gateway", "repo_name": "payment-gateway", "node_path": "支付/回调/异步通知处理", "facets": {"活跃度": "维护中"}}},
-      {"score": 0.0170, "payload": {"node_id": "n-009-pg-2", "repository_id": "payment-gateway", "repo_name": "payment-gateway", "node_path": "支付/对账/账单归档", "facets": {"活跃度": "维护中"}}},
-      {"score": 0.0110, "payload": {"node_id": "n-009-fd-1", "repository_id": "finance-dashboard", "repo_name": "finance-dashboard", "node_path": "财务看板/对账单查询页", "facets": {"活跃度": "活跃开发"}}}
-    ]
+      {"score": 0.0190, "payload": {"node_id": "n-009-pg-1", "repository_id": "payment-gateway", "repo_name": "payment-gateway", "node_path": "支付/回调/异步通知处理", "facets": {"业务线/产品线": "支付网关", "技术栈": "Java", "团队归属": "支付平台团队", "关键程度": "核心", "活跃度": "维护中"}}},
+      {"score": 0.0170, "payload": {"node_id": "n-009-pg-2", "repository_id": "payment-gateway", "repo_name": "payment-gateway", "node_path": "支付/对账/账单归档", "facets": {"业务线/产品线": "支付网关", "技术栈": "Java", "团队归属": "支付平台团队", "关键程度": "核心", "活跃度": "维护中"}}},
+      {"score": 0.0110, "payload": {"node_id": "n-009-fd-1", "repository_id": "finance-dashboard", "repo_name": "finance-dashboard", "node_path": "财务看板/对账单查询页", "facets": {"业务线/产品线": "财务数据", "技术栈": "Vue / TypeScript", "团队归属": "财务数据团队", "关键程度": "一般", "活跃度": "活跃开发"}}}
+    ],
+    "repo_meta": {
+      "payment-gateway": {"n_r": 70, "last_commit_at": "2026-05-15T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"},
+      "finance-dashboard": {"n_r": 30, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 0.6, "layer": "t1"}}, "criticality_value": "一般"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-010-workflow-retry",
@@ -137,11 +195,17 @@
     "cross_group": false,
     "expected_repos": ["friday-server"],
     "node_hits": [
-      {"score": 0.0200, "payload": {"node_id": "n-010-fs-1", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "工作流/执行引擎/节点重试", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0180, "payload": {"node_id": "n-010-fs-2", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "工作流/节点/错误处理配置", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0140, "payload": {"node_id": "n-010-fs-3", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "工作流/调度/退避参数", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0090, "payload": {"node_id": "n-010-fw-1", "repository_id": "friday-web", "repo_name": "friday-web", "node_path": "流程编辑器/节点配置面板", "facets": {"活跃度": "活跃开发"}}}
-    ]
+      {"score": 0.0200, "payload": {"node_id": "n-010-fs-1", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "工作流/执行引擎/节点重试", "facets": {"业务线/产品线": "研发效能平台", "技术栈": "Python", "团队归属": "平台研发团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0180, "payload": {"node_id": "n-010-fs-2", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "工作流/节点/错误处理配置", "facets": {"业务线/产品线": "研发效能平台", "技术栈": "Python", "团队归属": "平台研发团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0140, "payload": {"node_id": "n-010-fs-3", "repository_id": "friday-server", "repo_name": "friday-server", "node_path": "工作流/调度/退避参数", "facets": {"业务线/产品线": "研发效能平台", "技术栈": "Python", "团队归属": "平台研发团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0090, "payload": {"node_id": "n-010-fw-1", "repository_id": "friday-web", "repo_name": "friday-web", "node_path": "流程编辑器/节点配置面板", "facets": {"业务线/产品线": "研发效能平台", "技术栈": "Vue / TypeScript", "团队归属": "平台研发团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
+    ],
+    "repo_meta": {
+      "friday-server": {"n_r": 120, "last_commit_at": "2026-07-27T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"},
+      "friday-web": {"n_r": 60, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 0.6, "layer": "t1"}}, "criticality_value": "重要"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-011-ticket-ambiguous",
@@ -150,41 +214,64 @@
     "cross_group": false,
     "expected_repos": ["ticket-center"],
     "node_hits": [
-      {"score": 0.0100, "payload": {"node_id": "n-011-tc-1", "repository_id": "ticket-center", "repo_name": "ticket-center", "node_path": "工单/流转/状态机", "facets": {"活跃度": "维护中"}}},
-      {"score": 0.0095, "payload": {"node_id": "n-011-hd-1", "repository_id": "helpdesk-ui", "repo_name": "helpdesk-ui", "node_path": "客服台/工单看板页", "facets": {"活跃度": "维护中"}}}
-    ]
+      {"score": 0.0100, "payload": {"node_id": "n-011-tc-1", "repository_id": "ticket-center", "repo_name": "ticket-center", "node_path": "工单/流转/状态机", "facets": {"业务线/产品线": "客服工单", "技术栈": "Java", "团队归属": "客服平台团队", "关键程度": "重要", "活跃度": "维护中"}}},
+      {"score": 0.0095, "payload": {"node_id": "n-011-hd-1", "repository_id": "helpdesk-ui", "repo_name": "helpdesk-ui", "node_path": "客服台/工单看板页", "facets": {"业务线/产品线": "客服工具", "技术栈": "Vue / TypeScript", "团队归属": "客服平台团队", "关键程度": "一般", "活跃度": "维护中"}}}
+    ],
+    "repo_meta": {
+      "ticket-center": {"n_r": 30, "last_commit_at": "2026-06-15T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"},
+      "helpdesk-ui": {"n_r": 25, "last_commit_at": "2026-04-30T00:00:00+00:00", "facet_scores": {"domain": {"score": 0.6, "layer": "t1"}}, "criticality_value": "一般"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-012-deprecated-only-correct",
+    "_notice": "疑似废弃仓是唯一正确答案：活跃度封顶（deprecated_cap）压低但不清零，文本 + domain 证据仍须让 legacy-portal 胜出。",
     "query": "老门户 IE 兼容性修复与静态资源回滚",
     "label_source": "human",
     "cross_group": false,
     "expected_repos": ["legacy-portal"],
     "node_hits": [
-      {"score": 0.0120, "payload": {"node_id": "n-012-lp-1", "repository_id": "legacy-portal", "repo_name": "legacy-portal", "node_path": "门户/浏览器兼容/polyfill", "facets": {"活跃度": "疑似废弃"}}},
-      {"score": 0.0080, "payload": {"node_id": "n-012-lp-2", "repository_id": "legacy-portal", "repo_name": "legacy-portal", "node_path": "门户/静态资源/版本管理", "facets": {"活跃度": "疑似废弃"}}},
-      {"score": 0.0030, "payload": {"node_id": "n-012-mt-1", "repository_id": "misc-tools", "repo_name": "misc-tools", "node_path": "工具集/资源压缩脚本", "facets": {"活跃度": "低频"}}}
-    ]
+      {"score": 0.0120, "payload": {"node_id": "n-012-lp-1", "repository_id": "legacy-portal", "repo_name": "legacy-portal", "node_path": "门户/浏览器兼容/polyfill", "facets": {"业务线/产品线": "门户", "技术栈": "JavaScript", "团队归属": "门户维护组", "关键程度": "边缘", "活跃度": "疑似废弃"}}},
+      {"score": 0.0080, "payload": {"node_id": "n-012-lp-2", "repository_id": "legacy-portal", "repo_name": "legacy-portal", "node_path": "门户/静态资源/版本管理", "facets": {"业务线/产品线": "门户", "技术栈": "JavaScript", "团队归属": "门户维护组", "关键程度": "边缘", "活跃度": "疑似废弃"}}},
+      {"score": 0.0030, "payload": {"node_id": "n-012-mt-1", "repository_id": "misc-tools", "repo_name": "misc-tools", "node_path": "工具集/资源压缩脚本", "facets": {"业务线/产品线": "工具脚本集", "技术栈": "Shell", "团队归属": "效能工具组", "关键程度": "边缘", "活跃度": "低频"}}}
+    ],
+    "repo_meta": {
+      "legacy-portal": {"n_r": 40, "last_commit_at": "2024-06-01T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "边缘"},
+      "misc-tools": {"n_r": 10, "last_commit_at": "2026-01-10T00:00:00+00:00", "criticality_value": "边缘"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-013-partial-recall",
-    "_notice": "构造部分召回：gateway-core 命中弱、被 4 个中间仓挤出 Top-5（recall@5=0.5），使 baseline 指标非平凡。",
+    "_notice": "构造部分召回：gateway-core 命中弱、被 4 个中间仓挤出 Top-5（recall@5=0.5），使 baseline 指标非平凡。106-08：六信号下 domain 匹配不足以补偿 text 弱命中（s_hat=0.30），gateway-core 仍居第 6——部分召回语义保持。",
     "query": "全链路灰度发布配置下发与网关路由规则联动",
     "label_source": "human",
     "cross_group": false,
     "expected_repos": ["config-center", "gateway-core"],
     "node_hits": [
-      {"score": 0.0200, "payload": {"node_id": "n-013-cc-1", "repository_id": "config-center", "repo_name": "config-center", "node_path": "配置中心/灰度发布/配置下发", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0180, "payload": {"node_id": "n-013-cc-2", "repository_id": "config-center", "repo_name": "config-center", "node_path": "配置中心/命名空间/环境隔离", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0150, "payload": {"node_id": "n-013-cc-3", "repository_id": "config-center", "repo_name": "config-center", "node_path": "配置中心/推送/长连接通知", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0140, "payload": {"node_id": "n-013-dc-1", "repository_id": "deploy-console", "repo_name": "deploy-console", "node_path": "发布台/灰度批次管理", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0120, "payload": {"node_id": "n-013-dc-2", "repository_id": "deploy-console", "repo_name": "deploy-console", "node_path": "发布台/发布单流程", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0135, "payload": {"node_id": "n-013-rb-1", "repository_id": "release-bot", "repo_name": "release-bot", "node_path": "发布机器人/审批联动", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0110, "payload": {"node_id": "n-013-rb-2", "repository_id": "release-bot", "repo_name": "release-bot", "node_path": "发布机器人/通知播报", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0130, "payload": {"node_id": "n-013-is-1", "repository_id": "infra-scripts", "repo_name": "infra-scripts", "node_path": "运维脚本/配置同步", "facets": {"活跃度": "维护中"}}},
-      {"score": 0.0125, "payload": {"node_id": "n-013-od-1", "repository_id": "ops-dashboard", "repo_name": "ops-dashboard", "node_path": "运维大盘/发布监控", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0060, "payload": {"node_id": "n-013-gc-1", "repository_id": "gateway-core", "repo_name": "gateway-core", "node_path": "网关/路由规则/灰度分流", "facets": {"活跃度": "维护中"}}}
-    ]
+      {"score": 0.0200, "payload": {"node_id": "n-013-cc-1", "repository_id": "config-center", "repo_name": "config-center", "node_path": "配置中心/灰度发布/配置下发", "facets": {"业务线/产品线": "配置管理", "技术栈": "Go", "团队归属": "基础架构团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0180, "payload": {"node_id": "n-013-cc-2", "repository_id": "config-center", "repo_name": "config-center", "node_path": "配置中心/命名空间/环境隔离", "facets": {"业务线/产品线": "配置管理", "技术栈": "Go", "团队归属": "基础架构团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0150, "payload": {"node_id": "n-013-cc-3", "repository_id": "config-center", "repo_name": "config-center", "node_path": "配置中心/推送/长连接通知", "facets": {"业务线/产品线": "配置管理", "技术栈": "Go", "团队归属": "基础架构团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+      {"score": 0.0140, "payload": {"node_id": "n-013-dc-1", "repository_id": "deploy-console", "repo_name": "deploy-console", "node_path": "发布台/灰度批次管理", "facets": {"业务线/产品线": "发布部署", "技术栈": "Vue / TypeScript", "团队归属": "基础架构团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0120, "payload": {"node_id": "n-013-dc-2", "repository_id": "deploy-console", "repo_name": "deploy-console", "node_path": "发布台/发布单流程", "facets": {"业务线/产品线": "发布部署", "技术栈": "Vue / TypeScript", "团队归属": "基础架构团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0135, "payload": {"node_id": "n-013-rb-1", "repository_id": "release-bot", "repo_name": "release-bot", "node_path": "发布机器人/审批联动", "facets": {"业务线/产品线": "发布协作", "技术栈": "Python", "团队归属": "效能工具组", "关键程度": "一般", "活跃度": "活跃开发"}}},
+      {"score": 0.0110, "payload": {"node_id": "n-013-rb-2", "repository_id": "release-bot", "repo_name": "release-bot", "node_path": "发布机器人/通知播报", "facets": {"业务线/产品线": "发布协作", "技术栈": "Python", "团队归属": "效能工具组", "关键程度": "一般", "活跃度": "活跃开发"}}},
+      {"score": 0.0130, "payload": {"node_id": "n-013-is-1", "repository_id": "infra-scripts", "repo_name": "infra-scripts", "node_path": "运维脚本/配置同步", "facets": {"业务线/产品线": "运维脚本", "技术栈": "Shell", "团队归属": "运维团队", "关键程度": "一般", "活跃度": "维护中"}}},
+      {"score": 0.0125, "payload": {"node_id": "n-013-od-1", "repository_id": "ops-dashboard", "repo_name": "ops-dashboard", "node_path": "运维大盘/发布监控", "facets": {"业务线/产品线": "运维监控", "技术栈": "Vue / TypeScript", "团队归属": "运维团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0060, "payload": {"node_id": "n-013-gc-1", "repository_id": "gateway-core", "repo_name": "gateway-core", "node_path": "网关/路由规则/灰度分流", "facets": {"业务线/产品线": "网关接入", "技术栈": "Go", "团队归属": "基础架构团队", "关键程度": "核心", "活跃度": "维护中"}}}
+    ],
+    "repo_meta": {
+      "config-center": {"n_r": 70, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"},
+      "deploy-console": {"n_r": 55, "last_commit_at": "2026-07-25T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"},
+      "release-bot": {"n_r": 20, "last_commit_at": "2026-07-24T00:00:00+00:00", "facet_scores": {"domain": {"score": 0.6, "layer": "t1"}}, "criticality_value": "一般"},
+      "infra-scripts": {"n_r": 15, "last_commit_at": "2026-04-20T00:00:00+00:00", "criticality_value": "一般"},
+      "ops-dashboard": {"n_r": 40, "last_commit_at": "2026-07-26T00:00:00+00:00", "criticality_value": "重要"},
+      "gateway-core": {"n_r": 90, "last_commit_at": "2026-05-10T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   },
   {
     "id": "gk-014-im-card-callback",
@@ -193,11 +280,17 @@
     "cross_group": false,
     "expected_repos": ["im-bot"],
     "node_hits": [
-      {"score": 0.0190, "payload": {"node_id": "n-014-ib-1", "repository_id": "im-bot", "repo_name": "im-bot", "node_path": "机器人/交互卡片/回调分发", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0170, "payload": {"node_id": "n-014-ib-2", "repository_id": "im-bot", "repo_name": "im-bot", "node_path": "机器人/卡片构建器", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0160, "payload": {"node_id": "n-014-ib-3", "repository_id": "im-bot", "repo_name": "im-bot", "node_path": "机器人/按钮动作/动作路由表", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0120, "payload": {"node_id": "n-014-ib-4", "repository_id": "im-bot", "repo_name": "im-bot", "node_path": "机器人/会话上下文", "facets": {"活跃度": "活跃开发"}}},
-      {"score": 0.0080, "payload": {"node_id": "n-014-oc-1", "repository_id": "ops-console", "repo_name": "ops-console", "node_path": "运营后台/消息推送记录", "facets": {"活跃度": "低频"}}}
-    ]
+      {"score": 0.0190, "payload": {"node_id": "n-014-ib-1", "repository_id": "im-bot", "repo_name": "im-bot", "node_path": "机器人/交互卡片/回调分发", "facets": {"业务线/产品线": "消息机器人", "技术栈": "Python", "团队归属": "协作工具团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0170, "payload": {"node_id": "n-014-ib-2", "repository_id": "im-bot", "repo_name": "im-bot", "node_path": "机器人/卡片构建器", "facets": {"业务线/产品线": "消息机器人", "技术栈": "Python", "团队归属": "协作工具团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0160, "payload": {"node_id": "n-014-ib-3", "repository_id": "im-bot", "repo_name": "im-bot", "node_path": "机器人/按钮动作/动作路由表", "facets": {"业务线/产品线": "消息机器人", "技术栈": "Python", "团队归属": "协作工具团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0120, "payload": {"node_id": "n-014-ib-4", "repository_id": "im-bot", "repo_name": "im-bot", "node_path": "机器人/会话上下文", "facets": {"业务线/产品线": "消息机器人", "技术栈": "Python", "团队归属": "协作工具团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0080, "payload": {"node_id": "n-014-oc-1", "repository_id": "ops-console", "repo_name": "ops-console", "node_path": "运营后台/消息推送记录", "facets": {"业务线/产品线": "运营后台", "技术栈": "Java", "团队归属": "运营支撑团队", "关键程度": "一般", "活跃度": "低频"}}}
+    ],
+    "repo_meta": {
+      "im-bot": {"n_r": 35, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "重要"},
+      "ops-console": {"n_r": 50, "last_commit_at": "2026-01-10T00:00:00+00:00", "criticality_value": "一般"}
+    },
+    "scored_at": "2026-07-29T00:00:00+00:00",
+    "constants": {"n_bar": 60}
   }
 ]

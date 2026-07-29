@@ -1,4 +1,4 @@
-"""仓库路由 golden set 离线评估 harness（Phase 105，ROUTE-08）。
+"""仓库路由 golden set 离线评估 harness（Phase 105 ROUTE-08 / Phase 106-08 六信号扩展）。
 
 指标计算（Recall@5 / MRR@10 / Top-1 / 误自动选中率）+ bootstrap 95% CI +
 逐例 diff——三件套全部是纯函数，供 golden 门禁测试与未来调参脚本复用。
@@ -19,7 +19,17 @@ case 输入形状（与 fixture 对齐）::
         "cross_group": bool,
         "expected_repos": [repo_id, ...],
         "node_hits": [Stage 0 hit 形状: {"score": float, "payload": {...}}, ...],
+        # —— Phase 106 六信号离线评估字段（106-08，全部可选）——
+        # repo_meta 存在 → 新路径（六信号）；缺失 → legacy 三信号（向后兼容）。
+        "repo_meta": {rid: {n_r, last_commit_at, dense_cos_max?, facet_scores?,
+                            criticality_value?}},  # 键契约见 repo_router_scoring
+        "scored_at": str,          # ISO 8601 固定时间锚点（活跃度衰减确定性）
+        "constants": {"n_bar": float, ...},   # 与 DEFAULT_WEIGHT_CONFIG merge
+        "weight_overrides": {signal: float},  # 与 DEFAULT 权重 merge（调参脚本用）
     }
+
+离线评估口径（106-RESEARCH §8 裁决）：T1-only + fixture 内联 facet 匹配分
+（repo_meta.facet_scores 直接给数值）——不依赖 T2/embedding，零网络。
 
 指标定义权威来源：.planning/research/ROUTING-RANKING.md §7.1/§7.2 与
 105-CONTEXT §golden set 与 CI 门禁。
@@ -33,8 +43,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from codegraph.services.repo_router_scoring import (
+    DEFAULT_WEIGHT_CONFIG,
     WEIGHT_SET_VERSION,
     Confidence,
+    ScoredCandidate,
     aggregate_and_score,
     derive_confidence,
 )
@@ -166,6 +178,26 @@ class CaseDiff:
         return self.to_text()
 
 
+def score_case(case: dict[str, Any]) -> list[ScoredCandidate]:
+    """单 case 打分入口——evaluate_cases 与 golden 门禁机制断言共用。
+
+    case 携带 ``repo_meta`` → 新路径（Phase 106 六信号，与 route()/replay 同一
+    纯函数）：weights/constants 以 ``DEFAULT_WEIGHT_CONFIG`` 为底与 case 级
+    ``weight_overrides``/``constants`` merge，时间锚点取 ``scored_at``；
+    不携带 → legacy 三信号路径（Phase 105 口径，向后兼容）。
+    """
+    repo_meta = case.get("repo_meta")
+    if repo_meta is None:
+        return aggregate_and_score(case["node_hits"])
+    return aggregate_and_score(
+        case["node_hits"],
+        weights={**DEFAULT_WEIGHT_CONFIG["weights"], **case.get("weight_overrides", {})},
+        repo_meta=repo_meta,
+        constants={**DEFAULT_WEIGHT_CONFIG["constants"], **case.get("constants", {})},
+        now=case.get("scored_at"),
+    )
+
+
 def _evaluate_one(
     case: dict[str, Any],
     *,
@@ -174,7 +206,7 @@ def _evaluate_one(
     theta_med: float,
 ) -> CaseResult:
     """单 case 评估：调打分核心 → 排序候选 → per-case 指标。"""
-    candidates = aggregate_and_score(case["node_hits"])
+    candidates = score_case(case)
     ranked = [c.repo_id for c in candidates]
     expected = [str(r) for r in case.get("expected_repos", [])]
     expected_set = set(expected)
@@ -355,4 +387,5 @@ __all__ = [
     "bootstrap_ci",
     "diff_reports",
     "evaluate_cases",
+    "score_case",
 ]
