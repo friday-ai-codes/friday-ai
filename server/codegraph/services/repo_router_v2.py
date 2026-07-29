@@ -67,6 +67,8 @@ from codegraph.services.repo_router_ranking import (
     GROUP_IN_PROJECT,
     TRUST_NEEDS_CONFIRMATION,
     annotate_groups,
+    blend_ranked_scores,
+    clamp_llm_permutation,
     clamp_ranking_params,
     classify_degrade_reason,
     decide_block_order,
@@ -1525,6 +1527,9 @@ class RepoRouterV2:
 
         by_id = {c["repo_id"]: c for c in stage0_candidates}
         rank_by_id = {c["repo_id"]: i for i, c in enumerate(stage0_candidates)}
+        # confidence 的输入恒为 **Stage 0 分数列表**，绝不换成凸组合后的旁路分：
+        # 一旦改吃旁路分，LLM 就经 α 重新变成置信度的决策者，直接回退 RELY-04
+        # （Phase 105 刚修完的编排死锁根因）。LLM 只保留「只降不升」这一条影响力。
         sorted_scores = [float(c["score"]) for c in stage0_candidates]
         candidates: list[RepoRouteCandidateV2] = []
         # 消费时对 repo_id 去重（首见保留）：prompt 未禁重复，模型偶发不遵指令
@@ -1573,6 +1578,48 @@ class RepoRouterV2:
             )
         if not candidates:
             return None, {"skipped_reason": "no_valid_candidates_in_llm_output"}
+
+        # ---- 有界重排（RELY-05）：K 裁剪 → 凸组合 → 只写旁路字段 ----
+        # 落点刻意在 parsed 消费循环之后：白名单过滤、去重与 apply_llm_adjustment
+        # 都已完成，此时 candidates 恰为「LLM 返回的合法子集」。
+        _delta, alpha, budget_k = _ranking_conf()
+        stage0_order = [str(c["repo_id"]) for c in stage0_candidates]
+        llm_order = [c.repo_id for c in candidates]
+        # 原样传**全量** stage0_order：base rank 的「被返回子集内相对位次」语义由
+        # clamp_llm_permutation 内部负责。调用侧既不得自己拿子集下标去减全量下标
+        # （LLM 只返回窗口末几位是常态，两个下标域相减会让位移恒大于预算，重排被
+        # 整体丢弃），也不得按全量 stage0_order 把裁剪产物补齐（会引入没有对应
+        # 候选的 repo_id）。
+        clamped_order, rank_budget_violations = clamp_llm_permutation(
+            llm_order, stage0_order, k=budget_k
+        )
+        # 裁剪产物就是返回顺序——不写回去的话 K 预算只是快照里的一行装饰，
+        # 无分组上下文的调用方（_apply_presentation 此时只截断不重排）拿到的
+        # 仍是 LLM 的无界排列。
+        by_rid = {c.repo_id: c for c in candidates}
+        candidates = [by_rid[rid] for rid in clamped_order if rid in by_rid]
+        ranked = blend_ranked_scores(
+            {c.repo_id: c.score for c in candidates}, clamped_order, alpha=alpha
+        )
+        for cand in candidates:
+            # D-3 硬约束：凸组合结果**只**进旁路字段。α·S_llm 不是任何信号的贡献，
+            # 写进主分或分解表会让「分数分解」变成假的，并同时打断三处硬证据——
+            # test_repo_router_v2_meta.py:248/:462 的两条 fsum 恒等断言、
+            # RoutingDecisionPanel.vue 的 1e-6 容差校验、ROUTE-07 的 INV-R3 承诺。
+            cand.score_ranked = ranked.get(cand.repo_id)
+        if rank_budget_violations > 0:
+            try:
+                logger.info(
+                    "repo_router_v2_stage1_rank_budget_clamped",
+                    violations=rank_budget_violations,
+                    k=budget_k,
+                    llm_returned_count=len(clamped_order),
+                    stage0_window_count=len(stage0_order),
+                    category="sampling",
+                    component="repo_router_v2",
+                )
+            except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬
+                pass
         # snapshot stage1 材料：prompt/response 必经 redact_for_ledger 脱敏
         # （T-105-10 Information Disclosure mitigation）；prompt_hash + model_id
         # 与 versions 的 weight_set_version/index_version 合成版本绑定四元组。
@@ -1589,6 +1636,19 @@ class RepoRouterV2:
             # ——回放/排障自包含：「这次是不是重试过、当时预算是多少」不必查配置。
             "attempts": attempts,
             "total_budget_seconds": total_budget_seconds,
+            # 有界重排留痕：K 预算后置条件的**唯一可断言对象**是 clamped_order
+            # ——最终扁平列表可能被 _apply_presentation 按旁路分再排一次，那时相对
+            # Stage 0 的位移上界是 2K 而非 K。
+            "clamped_order": list(clamped_order),
+            "rank_budget_violations": rank_budget_violations,
+            "rank_budget_k": budget_k,
+            "alpha": alpha,
+            # 让「丢弃式提升」可观测：base rank 取子集内相对位次后，LLM 靠**少返回
+            # 候选**拿到的提升不受 K 约束（极端情形：只返回窗口末位那一个仓，它以
+            # 零违规被提到首位），rank_budget_violations 结构上看不到这条路径。
+            # 两个计数落进快照后，「返回数远小于窗口数且违规为 0」可事后识别与告警。
+            "llm_returned_count": len(clamped_order),
+            "stage0_window_count": len(stage0_order),
         }
         return candidates, stage1_meta
 
