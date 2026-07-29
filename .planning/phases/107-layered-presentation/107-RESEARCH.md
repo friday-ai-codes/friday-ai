@@ -966,37 +966,44 @@ def classify_degrade_reason(skipped_reason: str, exc: BaseException | None = Non
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> OQ-1 ~ OQ-5 均已由 `107-CONTEXT.md` 的用户裁决闭合，本节保留原文作为「裁决依据」的研究记录；后续 verify 请以 CONTEXT 的裁决为准。
 
 ### OQ-1（🔴 阻塞级，planner 必须先裁决）：候选范围过滤 vs 分组呈现
 
 - **我们知道的**：`RepoRouterV2.route(repository_ids=[...])` 把 `repository_ids` 作为 Qdrant `filters`（`_stage0_node_search:387-389`）——是**硬过滤**。编排入口（`repo_router_adapter._resolve_repository_ids`）与 chat 入口（`repository_relevance.py:196`）都会传项目/空间内仓。ROUTING-RANKING §8 第 7 步把「分层召回与分组呈现」的收益明确写成「修复 Space 硬过滤漏召回」，且 §7.1 记录 `study-user-status` 曾被 Space 硬过滤完全挡在门外。
 - **不清楚的**：CONTEXT 只锁了「归属判定 + 分组呈现 + delta 置顶」，**没有明确授权放开候选范围过滤**。而不放开的话，global 组恒空、ROUTE-01/02 上线即无效果（Pitfall 2）。
 - **推荐**：把项目关联仓从「过滤条件」改为「分组依据」，`route()` 新增独立参数（如 `project_repo_ids: list[str] | None`）与 `repository_ids` 正交；编排/chat 两个入口改为传 `project_repo_ids=项目仓` + `repository_ids=None`。**这是本 phase 唯一有实际回归风险的改动**（候选构成变化会影响 8 个消费方的实际返回内容），必须：(a) 在 PLAN 里作为独立 task 并写明；(b) 只改 #1/#2 两个入口，#3–#8 行为逐字不变；(c) 用既有 `tests/services/test_repo_router_adapter.py` / `tests/agents/test_repository_relevance_tool.py` 做回归基线。若用户/planner 判断风险过高，退路是「保留过滤 + 分组仅标注 trust」，但需在 VERIFICATION 里如实记录 ROUTE-01 的 global 组在当前范围语义下为空。
+- **RESOLVED：见 CONTEXT D-1** —— 采纳推荐方案：新增 `grouping_repository_ids` 承接项目关联仓、`repository_ids` 硬过滤语义保留；只改编排与 chat 两个入口，配回归守护（落地于 107-03 Task 2 + 107-07）。
 
 ### OQ-2：工作流 60min 订阅超时 vs 澄清 24h 超时的不一致
 
 - **我们知道的**：`plan_research.py:400` 建 `WorkflowEventSubscription(timeout_at=now+60min, timeout_action="fail")`；`check_timeouts` 到期把 NodeExecution/WorkflowExecution 标 `TIMEOUT`，但 `ConvergenceSession` 不动。CONTEXT 的澄清超时默认 24h。
 - **不清楚的**：工作流入口的会话在第 60 分钟就已经"工作流侧失败"了，再等到 24h 才走会话出口，中间 23 小时是个矛盾态（工作流 TIMEOUT + 会话 waiting_clarification）。
 - **推荐**：两条之一——(a) 把订阅 `timeout_at` 对齐澄清超时（改成 `now + CLARIFICATION_TIMEOUT_HOURS`），让工作流与会话同时到期，出口动作由澄清 job 统一驱动；(b) 保留 60min 但把 `timeout_action` 从 `fail` 改为让节点走"带假设继续"的路径。(a) 改动更小且语义一致，**推荐 (a)**，但要注意 60min→24h 会让飞书群卡的有效期变长（用户体验上是好事）。
+- **RESOLVED：见 CONTEXT D-4** —— 采纳 (a) 单一超时口径（订阅与澄清读同一 `CLARIFICATION_TIMEOUT_HOURS`，落地于 107-01 Task 1 / 107-04 Task 3），并额外要求扫描器把「workflow 已 TIMEOUT + 会话仍 waiting_clarification」当作**立即出口条件**做纵深防御（落地于 107-06 Task 2 立即出口 ②）。
 
 ### OQ-3：chat 单题澄清（路径 C）是否纳入超时出口
 
 - **我们知道的**：`ClarificationAnswerView` 走 `chat.ConversationIntentTrace` + LangGraph interrupt 恢复，**完全不碰 `delivery.Clarification`**；已有 `cleanup_waiting_clarification_errors` 命令处理脏数据。
 - **不清楚的**：RELY-02 的表述是「技术方案编排不会无人应答地永久停在澄清阶段」——路径 C 属 chat agent 的协商卡，不是方案编排的 clarify stage。
 - **推荐**：本 phase 出口只做 `delivery.Clarification`（路径 A/B）；路径 C 只在观测上纳入（记一个 gauge/日志"未答协商卡数"），出口留给后续。理由：LangGraph checkpoint 的恢复语义与 stage graph 完全不同，混做会让 PLAN 膨胀且风险不可控。**需在 VERIFICATION 里如实标注该边界**。
+- **RESOLVED：见 CONTEXT D-5** —— 采纳推荐：出口只覆盖 `delivery.Clarification`（路径 A/B），chat 单题澄清只补观测埋点（落地于 107-06 Task 2 的 `chat_clarification_unanswered_observed`）；边界已记入 107-VALIDATION 的 Explicit Scope Boundaries。
 
 ### OQ-4：「未澄清假设」的产出标注落在哪一层
 
 - **我们知道的**：CONTEXT 要求「在产出中显式标注哪些点未澄清」。产出正文由 `architect_merge_adapter` / `merged_plan` / `render_merged_plan_markdown` 生成，而 DEPTH 向改动（`process_runtime` 的 prompt/schema）被冻结（v0.20.0 并行改同批文件）。
 - **不清楚的**：在不改 prompt/schema 的前提下，标注放在哪——`stage_state.clarification_exit`（数据层，前端/文档渲染时读）？还是 `ArtifactVersion.content` 的某个既有可选键？
 - **推荐**：只写 `stage_state.clarification_exit.unclarified_points`（数据层，零 schema 变更），并在 `EVENT_CLARIFICATION_TIMED_OUT` payload 里携带同一份。渲染侧展示留给 Phase 109/110 或 v0.20.0（它们本来就要动产出渲染）。这样既满足"标注可查"，又不碰冻结文件。**planner 需与用户确认这个降级解释是否可接受**。
+- **RESOLVED：见 CONTEXT D-6** —— 采纳推荐：只写 `stage_state.clarification_exit.unclarified_points`（零 schema 变更，落地于 107-06 Task 1），渲染面本 phase 无（DEPTH 冻结）；边界已记入 107-VALIDATION 的 Explicit Scope Boundaries。
 
 ### OQ-5：α=0.35 的取值是否要在本 phase 校准
 
 - **我们知道的**：ROUTING-RANKING §1.3c 建议在 golden 上扫 α ∈ {0, 0.2, 0.35, 0.5}；但离线 harness (`score_case`) **不跑 Stage 1**，α 在离线口径下恒为 0 → **golden set 无法校准 α**。
 - **不清楚的**：α 的取值只能靠生产 A/B 或人工抽检。
 - **推荐**：本 phase 取 CONTEXT 锁定的 0.35 并外置；在 `107-MEASUREMENTS.md` 里如实记录「α 未经数据校准，因离线 harness 结构上不含 Stage 1」，作为已知局限。**不要**为了校准 α 把凸组合塞进离线 harness（会污染 baseline，Pitfall 5 同源）。
+- **RESOLVED：见 CONTEXT D-7** —— 采纳推荐：取锁定值 α=0.35 并外置（落地于 107-01 Task 1），局限写入 107-MEASUREMENTS.md（107-02 Task 2）；离线 harness 一行不改（107-05 assumptions 第 3 条）。
 
 ---
 
