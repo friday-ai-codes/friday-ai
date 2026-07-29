@@ -138,8 +138,8 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 107-01-PLAN.md — 纯函数排序/分组核心（分组标注 + block_order 迟滞 + K 裁剪 + 凸组合 + 降级原因分类 + 参数 clamp）+ 9 个参数外置 + golden cross_group 机制断言（wave 1）
-- [ ] 107-02-PLAN.md — O-6 延迟实测命令（measure_stage1_latency）+ 107-MEASUREMENTS.md（delta 上界 / α 未校准局限 / per-call 不下调理由）（wave 1）
+- [x] 107-01-PLAN.md — 纯函数排序/分组核心（分组标注 + block_order 迟滞 + K 裁剪 + 凸组合 + 降级原因分类 + 参数 clamp）+ 9 个参数外置 + golden cross_group 机制断言（wave 1）
+- [x] 107-02-PLAN.md — O-6 延迟实测命令（measure_stage1_latency）+ 107-MEASUREMENTS.md（delta 上界 / α 未校准局限 / per-call 不下调理由）（wave 1）
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
