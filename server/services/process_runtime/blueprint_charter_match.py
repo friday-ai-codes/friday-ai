@@ -68,6 +68,14 @@ _MIN_SEGMENT_LEN = 2
 _CJK_NGRAM_N = 3
 _CJK_CHAR = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
 
+# n-gram 交集判命中的强度阈值。**单个 3-gram 重合不足以判命中**：中文长句里的通用
+# 3-gram（"相关功"/"的配置"/"服务端"…）在「章程整句」与「需求整句」之间偶然重合的
+# 概率并不低，而命中后果是重的（boundary_hit=-1.0 单条即可把满分 owned 压回 0，且会
+# 污染确认门快照的 violated_boundaries 与 115 呈现面）。取 2 是「假阴性代价 << 假阳性
+# 代价」下的保守值：真命中（如「不承接课程权益鉴权」vs「展示课程内容与权益鉴权状态」）
+# 的重合 n-gram 通常远多于 1 个。
+_MIN_NGRAM_OVERLAP = 2
+
 _VALID_DOMAIN_STATUS = ("implemented", "planned")
 
 
@@ -119,7 +127,8 @@ def _matches(target: Any, query_terms: list[str]) -> bool:
        「改造培优课占位入口」；
     3. token 交集（CJK 取 3-gram）——两侧**都是无分隔符长句**时唯一有效的路径
        （禁区规则「不承接课程权益鉴权」vs 需求「展示课程内容与权益鉴权状态」，
-       片段子串两头都不包含对方，只有 3-gram 交集能判出命中）。
+       片段子串两头都不包含对方，只有 3-gram 交集能判出命中）。**需 ≥
+       `_MIN_NGRAM_OVERLAP` 个 n-gram 重合**：单个通用 3-gram 重合是假阳性主要来源。
     """
     norm_target = _normalize(target)
     if not norm_target:
@@ -136,7 +145,7 @@ def _matches(target: Any, query_terms: list[str]) -> bool:
             return True
         if any(seg in norm_target for seg in norm_term.split(" ") if len(seg) >= _MIN_SEGMENT_LEN):
             return True
-        if target_tokens & _tokens(term):
+        if len(target_tokens & _tokens(term)) >= _MIN_NGRAM_OVERLAP:
             return True
     return False
 
