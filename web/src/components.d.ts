@@ -353,6 +353,7 @@ declare module 'vue' {
     ReplayTimeline: typeof import('./components/execution/replay/ReplayTimeline.vue')['default']
     RepoHashFreshnessCard: typeof import('./components/repository/RepoHashFreshnessCard.vue')['default']
     RepoMultiSelector: typeof import('./components/chat/RepoMultiSelector.vue')['default']
+    RepoRouterWeightSettings: typeof import('./components/settings/RepoRouterWeightSettings.vue')['default']
     RepositoryGraphCard: typeof import('./components/repository/RepositoryGraphCard.vue')['default']
     RepositoryIndexCard: typeof import('./components/repository/RepositoryIndexCard.vue')['default']
     RepositoryKnowledgeHub: typeof import('./components/repository/RepositoryKnowledgeHub.vue')['default']
