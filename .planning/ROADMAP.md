@@ -111,9 +111,9 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 106-04-PLAN.md — O-5 活跃度/facets 覆盖率统计 + N_r 快照写入 + O-2 校准 command + 106-MEASUREMENTS.md（wave 3）
-- [ ] 106-05-PLAN.md — 前端：权重设置区（专用端点）+ RoutingDecisionPanel 新信号中文标签（wave 3）
-- [ ] 106-06-PLAN.md — 路由接线：dense 余弦查询 + repo_meta 组装 + 权重调用时读取 + 快照携带 weight_config/repo_meta/scored_at（wave 3）
+- [x] 106-04-PLAN.md — O-5 活跃度/facets 覆盖率统计 + N_r 快照写入 + O-2 校准 command + 106-MEASUREMENTS.md（wave 3）
+- [x] 106-05-PLAN.md — 前端：权重设置区（专用端点）+ RoutingDecisionPanel 新信号中文标签（wave 3）
+- [x] 106-06-PLAN.md — 路由接线：dense 余弦查询 + repo_meta 组装 + 权重调用时读取 + 快照携带 weight_config/repo_meta/scored_at（wave 3）
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
