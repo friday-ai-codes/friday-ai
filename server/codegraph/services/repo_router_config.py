@@ -18,8 +18,9 @@ loader 回退 ``DEFAULT_WEIGHT_CONFIG`` 深拷贝并记 warning——恶意/错�
 校验口径（106-CONTEXT 裁决）：C_crit 不进加性和，加性权重表为 5 信号且
 **绝对和无须为 1**（相对权重经缺失重归一化生效）——因此不校验 Σw=1，改为：
 (a) 每个权重落在离散网格 ``WEIGHT_GRID``（防过拟合四道闸之一）；
-(b) 文本主导不变量 INV-R2 的相对形式
-    ``fsum(domain, stack, team) <= 0.5 * fsum(全部 5 权重)``；
+(b) 文本主导不变量 INV-R2：``w_text > 0``、``w_text == max(w)``、``Σw > 0``，
+    且相对形式 ``fsum(domain, activity, stack, team) <= 0.5 * fsum(全部 5 权重)``
+    （分子含 activity——research §4 的元数据信号和口径）；
 (c) 常数范围逐项校验。
 CONTEXT ROUTE-06 节的「Σw=1」字面被同文档 ROUTE-04 节的 C_crit 裁决取代。
 
@@ -68,8 +69,11 @@ _GRID_TOL = 1e-9
 _WEIGHT_KEYS = frozenset(
     {SIGNAL_TEXT, SIGNAL_DOMAIN, SIGNAL_ACTIVITY, SIGNAL_STACK, SIGNAL_TEAM}
 )
-# INV-R2 相对形式的分子：元数据三信号。
-_META_WEIGHT_KEYS = (SIGNAL_DOMAIN, SIGNAL_STACK, SIGNAL_TEAM)
+# INV-R2 相对形式的分子：**全部非文本信号**（含 activity）。
+# research §4 的 INV-R2 是「元数据信号权重之和 = 0.45 ≤ 0.5」，0.45 =
+# domain 0.15 + act 0.12 + stack 0.08 + team 0.05 + crit 0.05——漏掉 activity
+# 会显著放宽校验（默认值恰好两种口径都通过，测试看不出来）。
+_META_WEIGHT_KEYS = (SIGNAL_DOMAIN, SIGNAL_ACTIVITY, SIGNAL_STACK, SIGNAL_TEAM)
 
 # N_r 快照缺失/非法时的空形状（106-06 消费方按此形状降级 denom_size=1.0）。
 _EMPTY_NR_SNAPSHOT: dict[str, Any] = {
@@ -116,13 +120,39 @@ def _validate_weights(raw: Any, normalized: dict[str, Any], errors: list[str]) -
         result[key] = value
     if len(result) != len(_WEIGHT_KEYS):
         return
-    # INV-R2 相对形式：元数据权重和 ≤ 0.5×全部权重和（文本主导不变量）。
-    meta_sum = math.fsum(result[key] for key in _META_WEIGHT_KEYS)
+    text_weight = result[SIGNAL_TEXT]
     total_sum = math.fsum(result.values())
+    # 文本主导的硬前提（缺了这两条，「文本证据永远占主导」只是口号）：
+    # - 全 0 权重会让 denom=0 → 全候选 score=0.0、breakdown={} → 排序退化为
+    #   repo_id 字典序、confidence 恒 low → auto_selected 恒 false，正是本里程碑
+    #   要修的「编排卡死」故障，可被一次「合法」的权重保存重新触发；
+    # - text=0 时文本证据完全不进分（loader 的 fail-safe 帮不上——这组值合法）。
+    if total_sum <= _GRID_TOL:
+        errors.append(
+            "weights 全部为 0 非法：会让重归一化分母为 0、全部候选得 0 分且"
+            "置信度恒为 low（编排无法自动推进）"
+        )
+        return
+    if text_weight <= _GRID_TOL:
+        errors.append(
+            f"weights.{SIGNAL_TEXT}={text_weight} 非法：文本证据权重必须 > 0"
+            "（文本主导不变量 INV-R2 的前提）"
+        )
+        return
+    max_weight = max(result.values())
+    if text_weight < max_weight - _GRID_TOL:
+        largest = sorted(k for k, v in result.items() if v >= max_weight - _GRID_TOL)
+        errors.append(
+            f"INV-R2 违反：文本证据权重（{text_weight:.4f}）必须是最大项，"
+            f"当前最大为 {', '.join(largest)}（{max_weight:.4f}）——文本信号必须保持主导"
+        )
+        return
+    # INV-R2 相对形式：非文本信号权重和 ≤ 0.5×全部权重和。
+    meta_sum = math.fsum(result[key] for key in _META_WEIGHT_KEYS)
     if meta_sum > 0.5 * total_sum + _GRID_TOL:
         errors.append(
             "INV-R2 违反：元数据权重相对和"
-            f"（domain+stack+team={meta_sum:.4f}）超过全部权重和的一半"
+            f"（{'+'.join(_META_WEIGHT_KEYS)}={meta_sum:.4f}）超过全部权重和的一半"
             f"（0.5×{total_sum:.4f}={0.5 * total_sum:.4f}）——文本信号必须保持主导"
         )
         return

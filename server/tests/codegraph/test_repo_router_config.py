@@ -120,9 +120,48 @@ class TestValidateWeightConfig:
         assert any("INV-R2" in e for e in errors)
 
     def test_inv_r2_boundary_passes(self):
-        """相对和恰好 ≤ 0.5×总和的合法配置通过（默认配置 0.28/0.95≈0.295）。"""
+        """默认配置通过：非文本权重相对和 0.40/0.95≈0.421 ≤ 0.5（分子含 activity）。"""
         _, errors = validate_weight_config(_make_config())
         assert errors == []
+
+    def test_inv_r2_numerator_includes_activity(self):
+        """MJ-03：INV-R2 分子必须含 activity——否则活跃度可无限放大而不被拦截。
+
+        构造 text=0.55 / activity=0.40 / domain=0.15：漏掉 activity 的旧口径下
+        分子 0.20/1.15≈0.174 通过；含 activity 后 0.55/1.15≈0.478 仍通过——
+        故取 activity=0.55（分子 0.70/1.25=0.56 > 0.5）确保新口径拦得住、
+        且该组值在旧口径下（0.15/1.25=0.12）必然通过。
+        """
+        cfg = _make_config(
+            weights={"text": 0.55, "activity": 0.55, "domain": 0.15, "stack": 0, "team": 0}
+        )
+        _, errors = validate_weight_config(cfg)
+        assert any("INV-R2" in e for e in errors), errors
+
+    def test_all_zero_weights_rejected(self):
+        """MJ-03：全 0 权重必须拒绝——否则 denom=0、全候选 0 分、confidence 恒 low，
+        auto_selected 恒 false（本里程碑要修的编排卡死可被一次合法保存重新触发）。"""
+        cfg = _make_config(
+            weights={"text": 0, "domain": 0, "activity": 0, "stack": 0, "team": 0}
+        )
+        _, errors = validate_weight_config(cfg)
+        assert any("全部为 0" in e for e in errors), errors
+
+    def test_zero_text_weight_rejected(self):
+        """MJ-03：text=0 必须拒绝——文本证据完全不进分与「文本主导」直接相反。"""
+        cfg = _make_config(
+            weights={"text": 0, "domain": 0.05, "activity": 0.55, "stack": 0, "team": 0}
+        )
+        _, errors = validate_weight_config(cfg)
+        assert any("text" in e for e in errors), errors
+
+    def test_text_not_largest_weight_rejected(self):
+        """MJ-03：text 不是最大项 → 拒绝（单个元数据信号不得盖过文本证据）。"""
+        cfg = _make_config(
+            weights={"text": 0.15, "domain": 0.40, "activity": 0, "stack": 0, "team": 0}
+        )
+        _, errors = validate_weight_config(cfg)
+        assert any("最大项" in e for e in errors), errors
 
     @pytest.mark.parametrize(
         ("constants", "needle"),
