@@ -70,7 +70,8 @@ cd server && uv run python manage.py measure_repo_index_stats --activity --write
 - `--write-snapshot` 写读闭环：写入后 `load_nr_snapshot()`（106-02 loader）读回
   `n_r_by_repo`/`n_bar` 与写入一致；`n_bar` = 有索引仓（node_count > 0）节点数的
   `statistics.median`（中位数抗 monorepo 倾斜，ROUTING-RANKING §2.3 N̄ 行）；
-  0 计数仓保留在 `n_r_by_repo` 全表中。
+  0 计数仓**不写入** `n_r_by_repo`（评审 MJ-04 修复：`n_r=0` 会让 pivoted denom 趋零而
+  反向给 breadth 加成，故写入端只写 `node_count > 0`，scorer 侧把 `n_r <= 0` 按缺失处理）。
 - 空库（无任何已索引仓）`--write-snapshot` 拒绝写入（防空快照覆盖有效值，T-106-09）。
 
 命令口径与输出形状可信，生产执行只是换数据源。
