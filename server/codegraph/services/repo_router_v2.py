@@ -21,6 +21,12 @@ Stage 1 可用与不可用两条路径语义一致——Stage 1 失联不再导�
 
 分面信号：节点 payload 的 facets 参与排序——活跃度经枚举映射进加性活跃度项，
 疑似废弃仓库的惩罚为活跃度项封顶（非乘性惩罚，贡献仍可单独拆解展示）。
+
+Stage 1 幂等三件套（ROUTE-09）：(1) 输入哈希缓存——key 绑定 model_id /
+PROMPT_TEMPLATE_VERSION / canonical stage0_input / decode 参数 / index_version，
+命中零 LLM 调用；(2) LLM 只输出排列（有序数组 + 文本字段），禁止数值分数——离散
+低熵输出对 logits 微扰鲁棒；(3) decode 参数全固定（temperature=0/top_p=1/固定
+seed）。Stage 1 调用统一包 use_call_source(AUX_REPO_ROUTER) 作用域。
 """
 
 from __future__ import annotations
@@ -35,7 +41,9 @@ from typing import Any, Literal
 
 import structlog
 from asgiref.sync import sync_to_async
+from django.core.cache import cache
 
+from agents.call_source import CallSource, use_call_source
 from codegraph.services.repo_index_tree import COLLECTION_NAME
 from codegraph.services.repo_router_scoring import (
     WEIGHT_SET_VERSION,
@@ -54,12 +62,23 @@ Confidence = Literal["high", "medium", "low"]
 STAGE0_NODE_K = 50
 STAGE0_REPO_K = 12
 
+# Stage 1 prompt 模板版本（ROUTE-09 幂等三件套）：参与输入哈希缓存 key 与
+# snapshot 的 prompt_hash 版本绑定四元组。system/human prompt 文案（含排列输出
+# 指令）任何变更都必须递增此版本——否则旧模板下缓存的排列会冒充新模板输出。
+PROMPT_TEMPLATE_VERSION = "stage1-permutation-v1"
+
+# Stage 1 固定 decode 参数（幂等第三道防线；主防线是输入哈希缓存 + 排列输出）。
+# temperature=0 / top_p=1 / 固定 seed——候选按 Stage 0 分数降序喂入（固定顺序，
+# 位置偏置恒定可复现，105-03 已保证）。此 dict 参与缓存 key。
+_STAGE1_DECODE_PARAMS: dict[str, Any] = {"temperature": 0.0, "top_p": 1.0, "seed": 42}
+
 # Stage 1 调参从 settings 读（支持环境变量覆盖），取值时机为调用时而非导入时，
 # 便于按供应商速度调整而不必改代码发版。默认见 friday/settings.py。
 _STAGE1_DEFAULTS = {
     "REPO_ROUTER_STAGE1_TIMEOUT_SECONDS": 90.0,
     "REPO_ROUTER_STAGE1_MAX_CANDIDATES": 8,
     "REPO_ROUTER_STAGE1_HITS_PER_REPO": 4,
+    "REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS": 86400,
 }
 
 
@@ -166,11 +185,18 @@ class RepoRouterV2:
         repo_buckets = cls._aggregate_by_repo(node_hits)
 
         if not use_llm:
-            return cls._stage0_only_result(query, node_hits, stage0_candidates, top_k, started)
+            return cls._stage0_only_result(
+                query,
+                node_hits,
+                stage0_candidates,
+                top_k,
+                started,
+                stage1_meta={"skipped_reason": "use_llm_false"},
+            )
 
         # ---- Stage 1: LLM 树推理 ----
         try:
-            llm_candidates = await cls._stage1_llm_reasoning(
+            llm_candidates, stage1_meta = await cls._stage1_llm_reasoning(
                 query, stage0_candidates, repo_buckets, top_k
             )
         except Exception as exc:  # noqa: BLE001 — LLM 任意失败都降级 Stage 0
@@ -183,10 +209,13 @@ class RepoRouterV2:
                 component="repo_router_v2",
             )
             llm_candidates = None
+            stage1_meta = {"skipped_reason": f"stage1_failed:{type(exc).__name__}"}
 
         if not llm_candidates:
             # 降级路径同样产出确定性分级，margin 达标即可 auto_selected（RELY-04 解锁点）。
-            return cls._stage0_only_result(query, node_hits, stage0_candidates, top_k, started)
+            return cls._stage0_only_result(
+                query, node_hits, stage0_candidates, top_k, started, stage1_meta=stage1_meta
+            )
 
         # LLM 只降不升已在 _stage1_llm_reasoning 内应用；auto_selected 由最终
         # （确定性 + LLM 调节后）confidence 驱动——与降级路径语义一致。
@@ -197,7 +226,7 @@ class RepoRouterV2:
             router_version="v2",
             auto_selected=auto_selected,
             degraded=False,
-            snapshot=cls._build_snapshot(query, node_hits, final),
+            snapshot=cls._build_snapshot(query, node_hits, final, stage1_meta=stage1_meta),
         )
         cls._log_scored(result, started)
         return result
@@ -346,11 +375,14 @@ class RepoRouterV2:
         stage0_candidates: list[dict[str, Any]],
         top_k: int,
         started: float,
+        *,
+        stage1_meta: dict[str, Any] | None = None,
     ) -> RepoRouteResultV2:
         """Stage 1 未参与（use_llm=False / 失联降级）的统一出口。
 
         与 v2 路径语义一致：首位确定性 confidence == high → auto_selected=True，
         margin 达标时编排照常自动推进；``degraded=True`` 标记 Stage 1 未参与。
+        ``stage1_meta`` 记录未参与原因（``{"skipped_reason": ...}``）进 snapshot。
         """
         finalized = cls._finalize_stage0(stage0_candidates, top_k)
         result = RepoRouteResultV2(
@@ -358,10 +390,22 @@ class RepoRouterV2:
             router_version="v2_stage0_only",
             auto_selected=bool(finalized) and finalized[0].confidence == "high",
             degraded=True,
-            snapshot=cls._build_snapshot(query, node_hits, finalized),
+            snapshot=cls._build_snapshot(query, node_hits, finalized, stage1_meta=stage1_meta),
         )
         cls._log_scored(result, started)
         return result
+
+    @staticmethod
+    def _index_version(built_at_by_repo: dict[str, str]) -> str:
+        """索引版本口径：参与候选各仓 ``built_at`` 按 repo_id 排序拼接的 sha256。
+
+        重索引（``RepoIndexTreeBuilder.build``）刷新 built_at → 版本变化；
+        同时用于 snapshot.versions 与 Stage 1 缓存 key（key 变化 = 旧缓存自然失效）。
+        """
+        material = "|".join(
+            f"{rid}:{built_at_by_repo[rid]}" for rid in sorted(built_at_by_repo)
+        )
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
     @classmethod
     def _build_snapshot(
@@ -369,12 +413,15 @@ class RepoRouterV2:
         query: str,
         node_hits: list[dict[str, Any]],
         candidates: list[RepoRouteCandidateV2],
+        *,
+        stage1_meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """组装 Stage 0 快照材料（ROUTE-09 数据底座）。
+        """组装快照材料（ROUTE-09 数据底座；落 ConvergenceSessionEvent 由 105-07 处理）。
 
         node_hits 只存重算所需最小字段集（禁存全量 payload——防 payload 无界
-        膨胀）；``index_version`` 为参与候选各仓 ``built_at`` 按 repo_id 排序
-        拼接的 sha256。stage1 材料由 105-05 补充，落库由 105-07 处理。
+        膨胀）。``stage1_meta``：成功路径为脱敏 prompt/response + model_id +
+        prompt_hash + cache_hit（与 weight_set_version/index_version 合成版本
+        绑定四元组）；失联/降级路径为 ``{"skipped_reason": ...}``。
         """
         minimal_hits: list[dict[str, Any]] = []
         for hit in node_hits:
@@ -396,16 +443,22 @@ class RepoRouterV2:
             rid = str(payload.get("repository_id", ""))
             if rid in candidate_ids and rid not in built_at_by_repo:
                 built_at_by_repo[rid] = str(payload.get("built_at", ""))
-        material = "|".join(
-            f"{rid}:{built_at_by_repo[rid]}" for rid in sorted(built_at_by_repo)
-        )
+        stage1 = stage1_meta or {"skipped_reason": "not_run"}
+        versions: dict[str, Any] = {
+            "weight_set_version": WEIGHT_SET_VERSION,
+            "index_version": cls._index_version(built_at_by_repo),
+        }
+        # 版本绑定四元组补齐（Stage 1 参与时）：weight_set_version + index_version
+        # + prompt_hash + model_id。
+        if stage1.get("prompt_hash"):
+            versions["prompt_hash"] = stage1["prompt_hash"]
+        if stage1.get("model_id"):
+            versions["model_id"] = stage1["model_id"]
         return {
             "stage0": {"query": query, "node_hits": minimal_hits},
+            "stage1": stage1,
             "candidates": [c.to_dict() for c in candidates],
-            "versions": {
-                "weight_set_version": WEIGHT_SET_VERSION,
-                "index_version": hashlib.sha256(material.encode("utf-8")).hexdigest(),
-            },
+            "versions": versions,
         }
 
     @classmethod
@@ -430,6 +483,38 @@ class RepoRouterV2:
     # Stage 1
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _canonical_json(obj: Any) -> str:
+        """规范化 JSON 序列化（缓存 key 材料用）：键排序 + 紧凑分隔符 + 保留非 ASCII。"""
+        return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+    @classmethod
+    def _stage1_cache_key(
+        cls,
+        model_id: str,
+        stage0_input: dict[str, Any],
+        decode_params: dict[str, Any],
+        index_version: str,
+    ) -> str:
+        """Stage 1 输入哈希缓存 key（ROUTE-09 幂等三件套之一）。
+
+        key = sha256(model_id ‖ PROMPT_TEMPLATE_VERSION ‖ canonical_json(stage0_input)
+        ‖ canonical_json(decode_params) ‖ index_version)——任一维度变化（换模型 /
+        改 prompt 模板 / 输入不同 / decode 参数变 / 重索引）key 即不同，旧缓存自然
+        失效，无需主动清理（TTL 仅兜底防无界增长）。
+        """
+        key_material = "\x1f".join(
+            [
+                model_id,
+                PROMPT_TEMPLATE_VERSION,
+                cls._canonical_json(stage0_input),
+                cls._canonical_json(decode_params),
+                index_version,
+            ]
+        )
+        digest = hashlib.sha256(key_material.encode("utf-8")).hexdigest()
+        return f"repo_router_v2:stage1:{digest}"
+
     @classmethod
     async def _stage1_llm_reasoning(
         cls,
@@ -437,10 +522,16 @@ class RepoRouterV2:
         stage0_candidates: list[dict[str, Any]],
         repo_buckets: dict[str, list[dict[str, Any]]],
         top_k: int,
-    ) -> list[RepoRouteCandidateV2] | None:
+    ) -> tuple[list[RepoRouteCandidateV2] | None, dict[str, Any]]:
+        """Stage 1 LLM 树推理（返回 ``(candidates, stage1_meta)``）。
+
+        stage1_meta 为 snapshot 的 stage1 材料：成功路径含脱敏 prompt/response +
+        model_id + prompt_hash + cache_hit；跳过路径为 ``{"skipped_reason": ...}``。
+        """
         from langchain_core.messages import HumanMessage, SystemMessage
 
         from agents.llm_factory import build_chat_model
+        from interactions.redaction import redact_for_ledger
         from services.provider_config import (
             ProviderConfigService,
             ProviderMissingError,
@@ -457,7 +548,7 @@ class RepoRouterV2:
                 category="sampling",
                 component="repo_router_v2",
             )
-            return None
+            return None, {"skipped_reason": "provider_missing"}
 
         # 快速模型解析：优先系统设置里 Claude Code 模型映射的 haiku 档（用户可配的"小/快模型"），
         # 回退当前解析凭证的 default_model。
@@ -480,27 +571,36 @@ class RepoRouterV2:
                 category="sampling",
                 component="repo_router_v2",
             )
-            return None
+            return None, {"skipped_reason": "no_model_configured"}
 
         timeout_seconds = float(_stage1_conf("REPO_ROUTER_STAGE1_TIMEOUT_SECONDS"))
         max_candidates = int(_stage1_conf("REPO_ROUTER_STAGE1_MAX_CANDIDATES"))
         hits_per_repo = int(_stage1_conf("REPO_ROUTER_STAGE1_HITS_PER_REPO"))
+        cache_ttl = int(_stage1_conf("REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS"))
 
         # 快速失败即降级：max_retries=0 —— 路由是启发式，超时无需 3× 重试空等
         # （旧行为：langchain 默认 max_retries=2 → 30s×3≈90s 才放弃再回落 Stage 0）。
+        # decode 参数全固定（temperature=0/top_p=1/固定 seed）——幂等第三道防线。
         model = build_chat_model(
             resolved,
             model_name,
             streaming=False,
             timeout_seconds=timeout_seconds,
             max_retries=0,
+            temperature=float(_STAGE1_DECODE_PARAMS["temperature"]),
+            top_p=float(_STAGE1_DECODE_PARAMS["top_p"]),
+            seed=int(_STAGE1_DECODE_PARAMS["seed"]),
         )
 
         # 只把高分候选喂给 LLM：prompt 越短越快，尾部低分候选本就选不中；
         # Stage 0 仍保留完整候选集供降级时使用。
         stage0_candidates = stage0_candidates[:max_candidates]
 
+        # stage0_input：喂给 LLM 的候选材料的结构化源（context_blocks 由此渲染）。
+        # 含 query——同候选不同需求文本是不同输入，缓存 key 必须区分。
+        stage0_input: dict[str, Any] = {"query": query, "candidates": []}
         context_blocks: list[str] = []
+        built_at_by_repo: dict[str, str] = {}
         for idx, c in enumerate(stage0_candidates, 1):
             lines = [f"### 候选 {idx}: {c['repo_name']} (repo_id={c['repo_id']})"]
             facets = {
@@ -509,6 +609,7 @@ class RepoRouterV2:
             }
             if facets:
                 lines.append(f"分面: {json.dumps(facets, ensure_ascii=False)}")
+            input_hits: list[dict[str, Any]] = []
             for hit in c["hits"][:hits_per_repo]:
                 p = hit.get("payload", {})
                 node_path = p.get("node_path", "")
@@ -516,7 +617,19 @@ class RepoRouterV2:
                 sub = p.get("sub_project", "")
                 sub_part = f" [子应用: {sub}]" if sub else ""
                 lines.append(f"- {node_path}{sub_part}: {summary}")
+                input_hits.append(
+                    {
+                        "node_path": str(node_path),
+                        "summary": str(summary),
+                        "sub_project": str(sub),
+                    }
+                )
             context_blocks.append("\n".join(lines))
+            stage0_input["candidates"].append(
+                {"repo_id": c["repo_id"], "facets": facets, "hits": input_hits}
+            )
+            first_payload = (c["hits"][0].get("payload") or {}) if c["hits"] else {}
+            built_at_by_repo[str(c["repo_id"])] = str(first_payload.get("built_at", ""))
 
         system = SystemMessage(
             content=(
@@ -528,7 +641,9 @@ class RepoRouterV2:
                 '"reasoning": "一句中文推理理由（引用命中的能力节点路径）", '
                 '"matched_node_paths": [str]}\n'
                 "规则：\n"
-                "- 按相关度降序，最多输出 " + str(max(top_k, 3)) + " 项，无关候选不要输出\n"
+                "- 按相关度降序排列输出，数组顺序即你的排序结论；"
+                "不要输出任何数值分数字段（如 score / 浮点分值）——排序只用数组顺序表达\n"
+                "- 最多输出 " + str(max(top_k, 3)) + " 项，无关候选不要输出\n"
                 "- 只有当需求明确指向唯一仓库时首位才给 high\n"
                 "- 活跃度=疑似废弃的仓库除非别无选择，否则降级或剔除\n"
                 "- repo_id 必须从候选中选取，禁止编造"
@@ -537,24 +652,69 @@ class RepoRouterV2:
         human = HumanMessage(
             content=f"用户需求：{query}\n\n候选仓库及命中节点：\n\n" + "\n\n".join(context_blocks)
         )
+        prompt_text = str(system.content) + "\n\n" + str(human.content)
+        prompt_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
 
-        # 硬性上限：不管客户端/代理如何处理超时，Stage 1 绝不超过配置的超时值。
-        # 超时抛 TimeoutError → 上层 route() 捕获后降级 Stage 0（0.2s 出结果），
-        # 避免慢模型把整个"仓库分级路由"拖成分钟级。
-        started = time.monotonic()
-        response = await asyncio.wait_for(model.ainvoke([system, human]), timeout=timeout_seconds)
-        from agents.llm_factory import content_to_text
-
-        parsed = cls._parse_llm_json_array(content_to_text(response.content))
-        logger.info(
-            "repo_router_v2_stage1_completed",
-            model=model_name,
-            candidate_count=len(stage0_candidates),
-            parsed_count=len(parsed or []),
-            duration_ms=int((time.monotonic() - started) * 1000),
-            category="sampling",
-            component="repo_router_v2",
+        # ---- 输入哈希缓存（幂等主防线）：命中则零 LLM 调用直接复用排列 ----
+        index_version = cls._index_version(built_at_by_repo)
+        cache_key = cls._stage1_cache_key(
+            model_name, stage0_input, dict(_STAGE1_DECODE_PARAMS), index_version
         )
+        parsed: list[Any] | None = None
+        cache_hit = False
+        try:
+            cached = cache.get(cache_key)
+            if isinstance(cached, list) and cached:
+                parsed = cached
+                cache_hit = True
+                logger.debug(
+                    "repo_router_v2_stage1_cache_hit",
+                    cache_key_prefix=cache_key[:24],
+                    category="sampling",
+                    component="repo_router_v2",
+                )
+        except Exception:  # noqa: BLE001 — 缓存 best-effort，异常吞掉走直调
+            parsed = None
+            cache_hit = False
+
+        response_text = ""
+        if not cache_hit:
+            # 硬性上限：不管客户端/代理如何处理超时，Stage 1 绝不超过配置的超时值。
+            # 超时抛 TimeoutError → 上层 route() 捕获后降级 Stage 0（0.2s 出结果），
+            # 避免慢模型把整个"仓库分级路由"拖成分钟级。
+            # call_source 统一在 router 内部声明作用域——消灭调用方遗漏。
+            started = time.monotonic()
+            with use_call_source(CallSource.AUX_REPO_ROUTER):
+                response = await asyncio.wait_for(
+                    model.ainvoke([system, human]), timeout=timeout_seconds
+                )
+            from agents.llm_factory import content_to_text
+
+            response_text = content_to_text(response.content)
+            parsed = cls._parse_llm_json_array(response_text)
+            # 防模型不遵指令引入浮点分数：排列输出模式下过滤各项的 "score" 键
+            # （候选分数一律来自 Stage 0 归一化分，LLM 数值不采信）。
+            if parsed:
+                parsed = [
+                    {k: v for k, v in item.items() if k != "score"}
+                    if isinstance(item, dict)
+                    else item
+                    for item in parsed
+                ]
+            logger.info(
+                "repo_router_v2_stage1_completed",
+                model=model_name,
+                candidate_count=len(stage0_candidates),
+                parsed_count=len(parsed or []),
+                duration_ms=int((time.monotonic() - started) * 1000),
+                category="sampling",
+                component="repo_router_v2",
+            )
+            if parsed:
+                try:
+                    cache.set(cache_key, parsed, timeout=cache_ttl)
+                except Exception:  # noqa: BLE001 — 缓存写失败不反噬路由
+                    pass
         if not parsed:
             logger.warning(
                 "repo_router_v2_stage1_skipped",
@@ -563,7 +723,7 @@ class RepoRouterV2:
                 category="sampling",
                 component="repo_router_v2",
             )
-            return None
+            return None, {"skipped_reason": "unparsable_llm_output"}
 
         by_id = {c["repo_id"]: c for c in stage0_candidates}
         rank_by_id = {c["repo_id"]: i for i, c in enumerate(stage0_candidates)}
@@ -607,7 +767,19 @@ class RepoRouterV2:
                     breakdown=dict(base.get("breakdown") or {}),
                 )
             )
-        return candidates or None
+        if not candidates:
+            return None, {"skipped_reason": "no_valid_candidates_in_llm_output"}
+        # snapshot stage1 材料：prompt/response 必经 redact_for_ledger 脱敏
+        # （T-105-10 Information Disclosure mitigation）；prompt_hash + model_id
+        # 与 versions 的 weight_set_version/index_version 合成版本绑定四元组。
+        stage1_meta = {
+            "prompt": redact_for_ledger(prompt_text),
+            "response": redact_for_ledger(response_text),
+            "model_id": model_name,
+            "prompt_hash": prompt_hash,
+            "cache_hit": cache_hit,
+        }
+        return candidates, stage1_meta
 
     # ------------------------------------------------------------------
     # 降级与工具
@@ -635,6 +807,7 @@ class RepoRouterV2:
             router_version="v1_fallback",
             auto_selected=False,
             degraded=True,  # Stage 1 未参与（v1 无节点级分数，confidence 保持 low）
+            snapshot={"stage1": {"skipped_reason": "v1_fallback"}},
         )
 
     @classmethod
@@ -689,4 +862,9 @@ class RepoRouterV2:
         return data if isinstance(data, list) else None
 
 
-__all__ = ["RepoRouterV2", "RepoRouteCandidateV2", "RepoRouteResultV2"]
+__all__ = [
+    "PROMPT_TEMPLATE_VERSION",
+    "RepoRouterV2",
+    "RepoRouteCandidateV2",
+    "RepoRouteResultV2",
+]
