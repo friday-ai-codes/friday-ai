@@ -444,9 +444,14 @@ class RepoRouterV2:
             if rid in candidate_ids and rid not in built_at_by_repo:
                 built_at_by_repo[rid] = str(payload.get("built_at", ""))
         stage1 = stage1_meta or {"skipped_reason": "not_run"}
+        # index_version 单一口径（MN-02）：Stage 1 参与时复用其缓存 key 用的
+        # index_version（按喂给 LLM 的候选仓集合计算）——versions 记录的值与
+        # 参与缓存 key 的值恒等，回放门禁/缓存审计可直接交叉比对；Stage 1 未
+        # 参与（无该值）时按最终候选仓集合计算。
         versions: dict[str, Any] = {
             "weight_set_version": WEIGHT_SET_VERSION,
-            "index_version": cls._index_version(built_at_by_repo),
+            "index_version": stage1.get("index_version")
+            or cls._index_version(built_at_by_repo),
         }
         # 版本绑定四元组补齐（Stage 1 参与时）：weight_set_version + index_version
         # + prompt_hash + model_id。
@@ -791,6 +796,9 @@ class RepoRouterV2:
             "model_id": model_name,
             "prompt_hash": prompt_hash,
             "cache_hit": cache_hit,
+            # 参与缓存 key 的 index_version 随 meta 回传——snapshot.versions 复用
+            # 同一值，保证同一次 route 内「index_version」单一口径（MN-02）。
+            "index_version": index_version,
         }
         return candidates, stage1_meta
 

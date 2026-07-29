@@ -260,6 +260,39 @@ def test_cache_key_sensitive_to_index_version() -> None:
 
 
 # ---------------------------------------------------------------------------
+# index_version 单一口径：snapshot.versions 复用 Stage 1 缓存 key 的值
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_snapshot_index_version_matches_stage1_cache_scope(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """snapshot.versions.index_version 与参与 Stage 1 缓存 key 的值恒等（MN-02）。
+
+    fixture 里 Stage 1 喂入 repo-a + repo-b 两仓，但 LLM 只返回 repo-a——
+    最终候选仓集合是 Stage 1 候选仓集合的真子集，两口径的哈希必然不同：
+    versions 必须记录缓存 key 用的那个（Stage 1 口径），否则回放门禁/缓存
+    审计交叉比对时对不上。
+    """
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _hits())
+    model = _CountingModel(_llm_output())
+    _install_stage1_model(monkeypatch, model)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    built_at = "2026-07-29T00:00:00Z"
+    stage1_scope = RepoRouterV2._index_version(
+        {"repo-a": built_at, "repo-b": built_at}
+    )
+    final_scope = RepoRouterV2._index_version({"repo-a": built_at})
+    assert stage1_scope != final_scope  # 两口径确实可分（测试前提自证）
+    assert result.snapshot["versions"]["index_version"] == stage1_scope
+    assert result.snapshot["stage1"]["index_version"] == stage1_scope
+
+
+# ---------------------------------------------------------------------------
 # LLM 输出含数值 score → 过滤（候选分数仍为 Stage 0 归一化分）
 # ---------------------------------------------------------------------------
 
