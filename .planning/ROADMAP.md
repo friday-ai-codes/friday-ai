@@ -143,8 +143,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 107-03-PLAN.md — RepoRouterV2 呈现字段与分组接线：grouping_repository_ids 正交参数 + group/trust/cross_group_note/score_ranked + block_order/degrade_reason + 异常文本脱敏（wave 2）
-- [ ] 107-04-PLAN.md — 澄清必达：发卡 5 条失败路径留痕 + 两个事件常量入 taxonomy + D-4 订阅超时统一口径（wave 2）
+- [x] 107-03-PLAN.md — RepoRouterV2 呈现字段与分组接线：grouping_repository_ids 正交参数 + group/trust/cross_group_note/score_ranked + block_order/degrade_reason + 异常文本脱敏（wave 2）
+- [x] 107-04-PLAN.md — 澄清必达：发卡 5 条失败路径留痕 + 两个事件常量入 taxonomy + D-4 订阅超时统一口径（wave 2）
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
