@@ -440,6 +440,10 @@ class BlueprintResearchAdapter:
             raise
 
         await self.research_service.mark_running(task, subagent_session)
+        # 派发计数自增：`attempt` 只在这一处涨，`_MAX_ATTEMPTS` 上界才真的可触发。
+        # 少了这一步，upgrade-research / reclassify(indirect→direct) /
+        # edit_responsibility({"rerun": true}) 每调一次都能无上限重开 30 分钟调研容器。
+        await self.research_service.bump_attempt(task)
         # 容器动作是用户可归因的调用类事件（观测规范：必须绑定触发用户）
         logger.info(
             "blueprint_repo_research_container_dispatched",
