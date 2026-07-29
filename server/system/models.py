@@ -133,7 +133,9 @@ class SettingKeys:
     LOG_SAMPLING_INITIAL = "log.sampling_initial"  # int：首 N 条全记，默认 50。
     LOG_SAMPLING_RATE = "log.sampling_rate"  # float 0..1：之后按比例记录，默认 0.1。
     LOG_RETENTION_DAYS = "log.retention_days"  # int：保留天数，默认 30（清理在 71-04 消费）。
-    LOG_RETENTION_SIZE = "log.retention_max_rows"  # int：行数上限兜底，默认 1_000_000（71-04 消费）。
+    LOG_RETENTION_SIZE = (
+        "log.retention_max_rows"  # int：行数上限兜底，默认 1_000_000（71-04 消费）。
+    )
 
     # 指标采样与保留（RATE-03，73-03 消费）：与 LOG_RETENTION_* 同款运行时可配。
     # GaugeSample 采样间隔；apscheduler IntervalTrigger 以 settings 启动值为准，
@@ -146,11 +148,17 @@ class SettingKeys:
     # 系统告警引擎运行时配置（ALERT-01/02/03，74-02 评估器 / 74-03 通知 / alert_retention 消费）：
     # 与 LOG_*/METRIC_* 同款运行时可配（SystemSetting + settings_service 60s 缓存 + signals）。
     # 点分命名风格一致；仅常量，无新键迁移。
-    ALERT_EVAL_INTERVAL_SECONDS = "alert.eval_interval_seconds"  # int：评估间隔，默认 60（74-02 apscheduler 启动值）。
-    ALERT_RETENTION_DAYS = "alert.retention_days"  # int：AlertEvent 保留天数，默认 90（告警低频，保留略长）。
+    ALERT_EVAL_INTERVAL_SECONDS = (
+        "alert.eval_interval_seconds"  # int：评估间隔，默认 60（74-02 apscheduler 启动值）。
+    )
+    ALERT_RETENTION_DAYS = (
+        "alert.retention_days"  # int：AlertEvent 保留天数，默认 90（告警低频，保留略长）。
+    )
     ALERT_RETENTION_SIZE = "alert.retention_max_rows"  # int：行数上限兜底，默认 500_000。
     ALERT_EMAIL_ENABLED = "alert.email_enabled"  # bool：邮件通道总开关，默认关（74-03 消费）。
-    ALERT_EMAIL_RECIPIENTS = "alert.email_recipients"  # 收件人（逗号分隔或 JSON 列表，74-03 解析）。
+    ALERT_EMAIL_RECIPIENTS = (
+        "alert.email_recipients"  # 收件人（逗号分隔或 JSON 列表，74-03 解析）。
+    )
     ALERT_FEISHU_CHAT_ID = "alert.feishu_chat_id"  # 系统告警飞书目标群 chat_id。
     ALERT_WEBHOOK_URL = "alert.webhook_url"  # 系统告警 webhook 目标 URL。
 
@@ -161,6 +169,22 @@ class SettingKeys:
     # PR 创建后可选轻量 review 沉淀开关（LOOP-05）。默认关：
     # aget_bool_setting(..., default=False)，开启时结论沉淀为一条 learning case。
     PR_REVIEW_CAPTURE = "learning_case.pr_review_enabled"
+
+    # 技术蓝图规格门与双面路由运行时配置（FLOW-01 / CHARTER-02，v0.20.0 Phase 112）：
+    # 与 LOG_*/ALERT_* 同款点分命名 + JSON 形状注释；仅常量，无新键迁移。
+    # 读取一律经 settings_service 的 get_json_setting / aget_json_setting（非 dict
+    # 或解析失败逐项回默认，绝不反噬编排主流程）。
+    # value 为 JSON：{"threshold": float, "weights": {"goal": float, "boundary": float,
+    # "constraint": float, "acceptance": float}}。未配置时用默认总分阈值 0.20 +
+    # 四维归一权重 goal=0.30 / boundary=0.25 / constraint=0.20 / acceptance=0.25。
+    # 消费方：services/process_runtime/blueprint_spec_gate.py（112-02）。
+    BLUEPRINT_SPEC_GATE_CONFIG = "blueprint.spec_gate.config"
+    # value 为 JSON：{"<intent>": {"router_base": float, "charter_match": float,
+    # "history_match": float}}，intent ∈ greenfield|brownfield|fix。未配置时默认
+    # greenfield 重章程与历史落点（0.40/0.35/0.25）、brownfield 重能力树
+    # （0.60/0.20/0.20）、fix 最重能力树（0.70/0.15/0.15）。
+    # 消费方：services/process_runtime/blueprint_route.py（112-03）。
+    BLUEPRINT_ROUTE_WEIGHTS = "blueprint.route.weights"
 
 
 class CacheVolumeTracker(models.Model):
@@ -538,14 +562,20 @@ class SystemAlertRule(models.Model):
     # 评估窗口秒（时序类指标用；快照类指标忽略）。
     window = models.PositiveIntegerField(default=300, help_text="评估窗口秒（快照类忽略）。")
     # 受控维度 jsonb（空 dict=overall）；禁用户原文，serializer 白名单收口。
-    dimension = models.JSONField(default=dict, blank=True, help_text="受控维度 jsonb（空=overall）。")
+    dimension = models.JSONField(
+        default=dict, blank=True, help_text="受控维度 jsonb（空=overall）。"
+    )
     # 级别 P0/P1/P2。
     severity = models.CharField(max_length=2, help_text="级别 P0/P1/P2。")
     enabled = models.BooleanField(default=True, db_index=True)
     # 通知通道子集（email/feishu/webhook）；空=不通知仅落事件。
-    channels = models.JSONField(default=list, blank=True, help_text="通道子集 email/feishu/webhook；空=仅落事件。")
+    channels = models.JSONField(
+        default=list, blank=True, help_text="通道子集 email/feishu/webhook；空=仅落事件。"
+    )
     # 同事件再次通知的冷却秒数（防抖）；0=不额外冷却。
-    cooldown = models.PositiveIntegerField(default=600, help_text="再次通知冷却秒数（防抖）；0=不冷却。")
+    cooldown = models.PositiveIntegerField(
+        default=600, help_text="再次通知冷却秒数（防抖）；0=不冷却。"
+    )
     # 中文标题模板，支持 {metric}/{current}/{value} 占位，由 74-02 渲染；空则默认拼接。
     title_template = models.CharField(
         max_length=200,
@@ -619,15 +649,21 @@ class AlertEvent(models.Model):
     # 恢复时刻（firing 时 null）。
     ended_at = models.DateTimeField(null=True, blank=True, help_text="恢复时刻（firing 时 null）。")
     # 恢复时回写 ended-started 秒数。
-    duration_s = models.PositiveIntegerField(null=True, blank=True, help_text="持续秒数（恢复时回写）。")
+    duration_s = models.PositiveIntegerField(
+        null=True, blank=True, help_text="持续秒数（恢复时回写）。"
+    )
     # 最近一次评估的当前值（74-02 重复评估时更新）。
     current_value = models.FloatField(null=True, blank=True, help_text="最近一次评估当前值。")
     # 最近一次仍超阈的评估时刻。
     last_seen_at = models.DateTimeField(null=True, blank=True, help_text="最近一次仍超阈评估时刻。")
     # pending/sent/skipped/failed（74-03 回写）。
-    email_sent = models.CharField(max_length=10, default="pending", help_text="邮件状态（74-03 回写）。")
+    email_sent = models.CharField(
+        max_length=10, default="pending", help_text="邮件状态（74-03 回写）。"
+    )
     # 实际成功通知的通道列表（74-03 回写）。
-    notified_channels = models.JSONField(default=list, blank=True, help_text="实际成功通知通道（74-03 回写）。")
+    notified_channels = models.JSONField(
+        default=list, blank=True, help_text="实际成功通知通道（74-03 回写）。"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -652,4 +688,6 @@ class AlertEvent(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"[{self.severity}] {self.title_zh or self.status}@{self.started_at:%Y-%m-%d %H:%M:%S}"
+        return (
+            f"[{self.severity}] {self.title_zh or self.status}@{self.started_at:%Y-%m-%d %H:%M:%S}"
+        )
