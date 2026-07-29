@@ -56,6 +56,8 @@
 - 本相位落 stage 骨架：`intake → decompose → spec_gate(pausable) → route → repo_research(pausable) → reroute → repo_confirmation(pausable)`；`repo_plan / merge` 由 Phase 113 接续注册
 - 状态映射：阶段 0/1 全程蓝图状态 = `researching`；有 open+blocking 线程时派生显示 `needs_clarification`（记 `return_stage`），一律经 `BlueprintLifecycleService`
 - 澄清送达：同步点 1（v0.19.0 Phase 107）未合并前用现有澄清通道（飞书卡片 + chat 路由）兜底，合并后 rebase 对齐；超时保持 pending + 提醒（不自动作答、不判失败）
+- **pause 短路判据（按调研定夺）**：`process_runtime/resume.py` 的 pause 判据绑 `delivery.Clarification`，与蓝图的 `BlueprintThread` 不匹配。**不改 `resume.py`**（避免旧 technical_plan process 回归）——新建 `blueprint_resume.py` 提供蓝图专用续驱：pause 判据查 open+blocking 的 `BlueprintThread`（含 `repo_confirmation` 与 `ai_clarification` 两类），旧 process 零感知
+- **SystemSetting getter 缺口（按调研定夺）**：`settings_service` 缺 async 的 float/json getter，**只新增**两个 async getter（不改既有 getter 行为与签名），供阈值与四维权重读取
 
 ### Claude's Discretion
 - 各 adapter 内部函数切分、prompt 具体措辞、breakdown 字段命名细节、REST 序列化器组织、测试组织结构自行决定，遵循 CONVENTIONS.md 与 Phase 111 已建立的 blueprint_* 模块风格。
