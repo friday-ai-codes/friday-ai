@@ -105,10 +105,13 @@ def build_chat_model(
             temperature）的既有约束优先于此透传。
         top_p: 可选 nucleus sampling 透传（默认 None = 不注入）。reasoning 分支
             同样会剥除（OpenAI o 系列 API 约束）。
-        seed: 可选采样种子透传（默认 None = 不注入）。仅 OpenAI / Ollama 构造
-            支持；其他 Provider（Anthropic / Gemini）不支持时不传并记
-            ``llm_decode_param_ignored`` debug 日志静默忽略——幂等主防线是
-            输入哈希缓存 + 排列输出，decode 固定是第三道防线（105-RESEARCH）。
+        seed: 可选采样种子透传（默认 None = 不注入）。仅 OpenAI Chat
+            Completions / Ollama 构造支持；Anthropic / Gemini 构造无 seed
+            形参，OpenAI Responses API 的 ``Responses.create()`` 同样无 seed
+            形参且 langchain-openai 不剥除该键（透传即客户端 TypeError），
+            这些情形一律不传并记 ``llm_decode_param_ignored`` debug 日志静默
+            忽略——幂等主防线是输入哈希缓存 + 排列输出，decode 固定是第三道
+            防线（105-RESEARCH）。
 
     Returns:
         BaseChatModel 子类实例（ChatAnthropic / ChatOpenAI / ChatGoogleGenerativeAI /
@@ -145,13 +148,16 @@ def build_chat_model(
     if top_p is not None:
         kwargs["top_p"] = top_p
     if seed is not None:
-        # seed 仅 OpenAI（Chat/Responses）与 Ollama 构造支持；Anthropic / Gemini
-        # 构造无 seed 形参，传入会构造失败——不传并 debug 记录，静默忽略。
-        if resolved.provider_type in (
+        # seed 仅 OpenAI Chat Completions 与 Ollama 构造支持；Anthropic / Gemini
+        # 构造无 seed 形参。Responses API（provider_type=OPENAI_RESPONSES 或
+        # extra.use_responses_api=true，两者独立维度都要判）的 Responses.create()
+        # 签名无 seed 也无 **kwargs，且 langchain-openai 组 payload 时不剥除
+        # seed——透传必抛客户端 TypeError（105 评审 MJ-01）。
+        supports_seed = resolved.provider_type in (
             ProviderType.OPENAI_CHAT,
-            ProviderType.OPENAI_RESPONSES,
             ProviderType.OLLAMA,
-        ):
+        ) and not resolved.extra.get("use_responses_api")
+        if supports_seed:
             kwargs["seed"] = seed
         else:
             logger.debug(

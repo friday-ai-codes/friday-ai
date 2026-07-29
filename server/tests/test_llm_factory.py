@@ -420,6 +420,50 @@ def test_seed_ignored_unsupported_provider(monkeypatch: pytest.MonkeyPatch) -> N
     assert captured.get("top_p") == 1.0
 
 
+@pytest.mark.parametrize(
+    "provider_type,extra",
+    [
+        # provider_type 即 Responses；与 use_responses_api 是两个独立维度，都要覆盖
+        (ProviderType.OPENAI_RESPONSES, {}),
+        (ProviderType.OPENAI_RESPONSES, {"use_responses_api": True}),
+        (ProviderType.OPENAI_CHAT, {"use_responses_api": True}),
+    ],
+)
+def test_seed_not_passed_for_responses_api(
+    monkeypatch: pytest.MonkeyPatch, provider_type: ProviderType, extra: dict[str, Any]
+) -> None:
+    """Responses API 凭证不透传 seed（105 评审 MJ-01）。
+
+    openai SDK ``Responses.create()`` 签名无 seed 形参且无 **kwargs，
+    langchain-openai 组 Responses payload 时不剥除 seed——透传即每次调用
+    客户端 TypeError。构造 kwargs 必须不含 seed（temperature/top_p 照传）。
+    """
+    import agents.llm_factory as llm_factory_module
+
+    captured: dict[str, Any] = {}
+    original = llm_factory_module.init_chat_model
+
+    def _capture(model_str: str, **kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return original(model_str, **kwargs)
+
+    monkeypatch.setattr(llm_factory_module, "init_chat_model", _capture)
+    resolved = _make_resolved(provider_type, extra=extra)
+    model = build_chat_model(
+        resolved,
+        "gpt-4o-mini",
+        capabilities=_make_caps(supports_reasoning=False),
+        timeout_seconds=5.0,
+        temperature=0.0,
+        top_p=1.0,
+        seed=42,
+    )
+    assert isinstance(model, BaseChatModel)
+    assert "seed" not in captured
+    assert captured.get("temperature") == 0.0
+    assert captured.get("top_p") == 1.0
+
+
 # ============================================================================
 # api_key SecretStr 脱敏（security mitigation-01/02）
 # ============================================================================
