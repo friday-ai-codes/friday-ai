@@ -51,6 +51,9 @@ __all__ = [
     "EVENT_BLUEPRINT_CONFIRMATION_OPENED",
     "EVENT_BLUEPRINT_CONFIRMATION_ACTION",
     "EVENT_BLUEPRINT_CONFIRMATION_LOCKED",
+    "EVENT_BLUEPRINT_CONTEXT_ENTRY_APPENDED",
+    "EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED",
+    "EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED",
     "BLUEPRINT_EVENTS",
     "ALL_EVENTS",
     "RESERVED_EVENTS",
@@ -159,6 +162,16 @@ EVENT_BLUEPRINT_CONFIRMATION_ACTION: Final[str] = "blueprint.confirmation.action
 # emit: 112-05 仓库集锁定。payload: locked_repository_count/decided_by
 EVENT_BLUEPRINT_CONFIRMATION_LOCKED: Final[str] = "blueprint.confirmation.locked"
 
+# ---- 蓝图上下文总线（v0.20 Phase 113，DESIGN §5.6） ----
+
+# emit: 113-01 总线写入。payload: key/kind/seq/repository_id（**content 正文绝不进 payload**）
+EVENT_BLUEPRINT_CONTEXT_ENTRY_APPENDED: Final[str] = "blueprint.context.entry_appended"
+# emit: 113-01 waiter 登记。payload: from_repository_id/to_key/cycle_detected
+# （供 115 时间线可视化「谁在等谁」）
+EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED: Final[str] = "blueprint.context.waiter_registered"
+# emit: 113-01 waiter 命中/超时清理。payload: satisfied_count/redispatch_repository_ids/reason
+EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED: Final[str] = "blueprint.context.waiter_satisfied"
+
 # 蓝图事件独立集合（不进 ALL_EVENTS，见上方注释）
 BLUEPRINT_EVENTS: Final[frozenset[str]] = frozenset(
     {
@@ -177,6 +190,9 @@ BLUEPRINT_EVENTS: Final[frozenset[str]] = frozenset(
         EVENT_BLUEPRINT_CONFIRMATION_OPENED,
         EVENT_BLUEPRINT_CONFIRMATION_ACTION,
         EVENT_BLUEPRINT_CONFIRMATION_LOCKED,
+        EVENT_BLUEPRINT_CONTEXT_ENTRY_APPENDED,
+        EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED,
+        EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED,
     }
 )
 
