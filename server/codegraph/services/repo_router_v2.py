@@ -737,13 +737,18 @@ class RepoRouterV2:
         rank_by_id = {c["repo_id"]: i for i, c in enumerate(stage0_candidates)}
         sorted_scores = [float(c["score"]) for c in stage0_candidates]
         candidates: list[RepoRouteCandidateV2] = []
+        # 消费时对 repo_id 去重（首见保留）：prompt 未禁重复，模型偶发不遵指令
+        # 输出同仓两次会透传到 trace/快照/前端 v-for key，且被输入哈希缓存固化
+        # 24h 放大——缓存存 parsed 原文，消费统一去重即对两条路径同时生效（MN-01）。
+        seen: set[str] = set()
         for item in parsed:
             if not isinstance(item, dict):
                 continue
             rid = str(item.get("repo_id", ""))
             base = by_id.get(rid)
-            if base is None:
-                continue  # LLM 编造的 repo_id 直接丢弃
+            if base is None or rid in seen:
+                continue  # LLM 编造的 repo_id 或重复项直接丢弃
+            seen.add(rid)
             # LLM confidence 不再直接采信（RELY-04）：先按该候选在 stage0 排序中的
             # 位置算确定性分级，LLM 输出只能降级（apply_llm_adjustment 只降不升）。
             llm_conf_raw = str(item.get("confidence", "")).lower()

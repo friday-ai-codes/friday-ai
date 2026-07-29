@@ -291,6 +291,57 @@ async def test_llm_numeric_score_field_filtered(monkeypatch, mock_aresolve_ok) -
 
 
 # ---------------------------------------------------------------------------
+# LLM 输出重复 repo_id → 去重（首见保留；防缓存把重复固化 24h）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_llm_duplicate_repo_id_deduplicated(monkeypatch, mock_aresolve_ok) -> None:
+    """LLM 输出同仓两次 → 结果只保留首见项，重复项丢弃（MN-01）。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _hits())
+    dup_output = json.dumps(
+        [
+            {
+                "repo_id": "repo-a",
+                "sub_project": "",
+                "confidence": "high",
+                "reasoning": "首见",
+                "matched_node_paths": ["root/能力"],
+            },
+            {
+                "repo_id": "repo-a",
+                "sub_project": "",
+                "confidence": "low",
+                "reasoning": "重复项",
+                "matched_node_paths": [],
+            },
+            {
+                "repo_id": "repo-b",
+                "sub_project": "",
+                "confidence": "medium",
+                "reasoning": "另一仓",
+                "matched_node_paths": [],
+            },
+        ],
+        ensure_ascii=False,
+    )
+    model = _CountingModel(dup_output)
+    _install_stage1_model(monkeypatch, model)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.router_version == "v2"
+    ids = [c.repo_id for c in result.candidates]
+    assert ids == ["repo-a", "repo-b"]
+    # 首见项字段保留（重复项不覆盖也不追加）
+    assert result.candidates[0].reasoning == "首见"
+    # 快照候选同样无重复（前端 v-for :key 依赖）
+    snap_ids = [c["repo_id"] for c in result.snapshot["candidates"]]
+    assert len(snap_ids) == len(set(snap_ids))
+
+
+# ---------------------------------------------------------------------------
 # 缓存后端异常 → best-effort 不反噬路由
 # ---------------------------------------------------------------------------
 
