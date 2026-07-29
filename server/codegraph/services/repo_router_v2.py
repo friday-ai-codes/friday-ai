@@ -250,13 +250,12 @@ class RepoRouterV2:
                 "alias_dict_hash": meta_stats.get("alias_dict_hash"),
                 "embedding_model_id": meta_stats.get("embedding_model_id"),
             }
-            # 只记最终候选仓（≤ STAGE0_REPO_K=12），不记全部分桶仓（Pitfall 5
-            # 体积护栏）；per-repo 独立打分，候选外仓的 meta 不影响候选分数。
-            snapshot_repo_meta: dict[str, Any] | None = {
-                c["repo_id"]: repo_meta[c["repo_id"]]
-                for c in stage0_candidates
-                if c["repo_id"] in repo_meta
-            }
+            # 记**全部分桶仓**的 meta（BL-02 快照自包含）：回放用全量 node_hits
+            # 重算，缺 meta 的仓会同时拿到「S_top 口径漂移 + breadth denom=1.0 +
+            # facet 全缺重归一化」三重缺失红利，分数虚高并挤进比对窗口，让
+            # verify_snapshot_replay 稳定误报。体积护栏作用在 node_hits（每条含
+            # path 等长字段）上，repo_meta 每仓仅 5 个短字段，50 仓不过几 KB。
+            snapshot_repo_meta: dict[str, Any] | None = dict(repo_meta)
         else:
             stage0_candidates = cls._stage0_candidates(node_hits, top_k=STAGE0_REPO_K)
             snapshot_weight_config = None
@@ -772,8 +771,9 @@ class RepoRouterV2:
         - ``weight_config``：本次生效的权重/常数**全值**（含生效 n_bar）+
           weight_set_version + alias_dict_hash + embedding_model_id——回放
           不依赖当时的 SystemSetting；缺省（legacy 打分路径）不写该节。
-        - ``repo_meta``：per-候选仓元数据（≤ STAGE0_REPO_K，Pitfall 5 体积
-          护栏）——T2 余弦与 DB 聚合离线不可重算，以数据形式记录。
+        - ``repo_meta``：**全部分桶仓**的元数据（BL-02 自包含性——回放按全量
+          node_hits 重算，缺 meta 的仓分数会虚高并污染比对窗口）；T2 余弦与
+          DB 聚合离线不可重算，以数据形式记录。体积护栏落在 node_hits 上。
         - ``stage0.scored_at``：打分时间锚点（活跃度衰减重算用）。
         - ``stage0.s_top_source``：本次 S_top 采用的口径（校准余弦 / RRF
           s_hat，per-query 单一标尺，BL-01）——回放与 golden 据此区分口径。

@@ -416,11 +416,8 @@ def _meta_stage0(
         constants=constants,
         now=scored_at,
     )
-    snapshot_repo_meta = {
-        c["repo_id"]: repo_meta[c["repo_id"]]
-        for c in stage0_candidates
-        if c["repo_id"] in repo_meta
-    }
+    # 快照存**全部分桶仓**的 meta（BL-02 自包含性，与 route() 口径一致）。
+    snapshot_repo_meta = dict(repo_meta)
     return stage0_candidates, _snapshot_weight_config(weights, constants), snapshot_repo_meta
 
 
@@ -666,6 +663,84 @@ class TestMultiSignalReplay:
         assert len(payload["repo_meta"]) == 12  # 12 候选 repo_meta 全部随快照
         assert payload["weight_config"]["constants"]["n_bar"] == 60.0
         assert len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) < 64 * 1024
+
+
+class TestSnapshotSelfContainment:
+    """BL-02：快照 repo_meta 必须覆盖全部分桶仓，否则回放漂移 + verify 误报。
+
+    病理复现：录制端只存候选仓 meta 时，回放用全量 node_hits 重算——非候选仓
+    同时拿到「S_top 口径漂移 + breadth denom=1.0 + facet 全缺重归一化」三重
+    缺失红利，分数虚高并挤进按位置的比对窗口，verify 稳定报字段差异（生产库
+    259 个仓、分桶仓数 > STAGE0_REPO_K=12 是常态，不是边角情况）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_snapshot_carries_meta_for_all_bucket_repos(self) -> None:
+        """候选窗口小于分桶仓数时，快照仍带全部分桶仓 meta，回放等值。"""
+        payload = await _emit_payload(_meta_degraded_result(top_k=1))
+
+        # 记录只 1 个候选，但 meta 覆盖全部 3 个分桶仓
+        assert len(payload["candidates"]) == 1
+        assert set(payload["repo_meta"]) == {"r1", "r2", "r3"}
+
+        replayed = replay_route_from_snapshot(payload, **THETA)
+        assert replayed.self_contained is True
+        assert replayed.missing_meta_repo_ids == []
+
+        ok, diff = verify_snapshot_replay(payload, **THETA)
+        assert ok, diff
+
+    @pytest.mark.asyncio
+    async def test_partial_meta_snapshot_is_reported_as_not_self_contained(self) -> None:
+        """BL-02 修复前口径的快照（只存候选仓 meta）→ 明确判「快照不自包含」。
+
+        不再输出误导性的字段差异：缺 meta 的仓被裁剪保持标尺对称，verify 直接
+        指出缺哪些仓（replay 是审计工具，误报比漏报更伤信任度）。
+        """
+        payload = await _emit_payload(_meta_degraded_result(top_k=1))
+        candidate_ids = {c["repo_id"] for c in payload["candidates"]}
+        payload["repo_meta"] = {
+            rid: meta for rid, meta in payload["repo_meta"].items() if rid in candidate_ids
+        }
+
+        replayed = replay_route_from_snapshot(payload, **THETA)
+        assert replayed.self_contained is False
+        assert replayed.missing_meta_repo_ids == ["r2", "r3"]
+        # 裁剪后只对有 meta 的仓打分：缺 meta 的仓不因缺失红利挤进比对窗口
+        assert [c["repo_id"] for c in replayed] == list(candidate_ids)
+
+        ok, diff = verify_snapshot_replay(payload, **THETA)
+        assert not ok
+        assert "快照不自包含" in diff
+        assert "r2" in diff and "r3" in diff
+
+    def test_missing_meta_repo_gets_breadth_bonus_without_trimming(self) -> None:
+        """缺失红利的量级证据（BL-02 根因）：抹掉巨仓的 meta，其分数反而变高。
+
+        构造只隔离 breadth 通道（两版可用信号集合恒为 text+breadth，无 facet、
+        全查询同一 S_top 口径）：巨仓 n_r=620 时 pivoted denom=6.6 压掉广度，
+        meta 缺失时 denom 退化为 1.0 —— 尺寸归一红利凭空长出来。这正是「非候选
+        仓不参与比对」这个口头前提不成立的原因，必须靠快照自包含性防。
+        """
+        hits = [
+            {
+                "id": f"n-{i}",
+                "score": 1.0 - i * 0.01,
+                "payload": {"node_id": f"n-{i}", "repository_id": "monolith"},
+            }
+            for i in range(6)
+        ]
+        meta = {"monolith": {"n_r": 620}}
+        consts = {"n_bar": 60.0}
+        with_meta = repo_router_scoring.aggregate_and_score(
+            hits, repo_meta=meta, constants=consts
+        )[0]
+        without_meta = repo_router_scoring.aggregate_and_score(
+            hits, repo_meta={}, constants=consts
+        )[0]
+        assert set(with_meta.breakdown) == set(without_meta.breakdown)
+        assert without_meta.breakdown["breadth"] > with_meta.breakdown["breadth"]
+        assert without_meta.score > with_meta.score
 
 
 class TestLegacySnapshotFallback:
