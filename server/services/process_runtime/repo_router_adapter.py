@@ -32,6 +32,11 @@ class RepoRouterV2Adapter:
         无 requirement_text（空 query）→ 直接返回空候选（router_version="skipped"），
         不调 RepoRouterV2、不抛。候选范围 repository_ids 按 include_repos → work_item
         所属 project 仓库 → 全库 优先级解析（见 ``_resolve_repository_ids``）。
+
+        ``degraded``（Stage 1 未参与标志，Phase 107 降级 UI 数据底座）随 dict 透传进
+        session.routing；``snapshot``（快照材料）仅供 ``_h_route`` 组 repo.routing
+        事件 payload 用——由 ``_h_route`` 在落 session.routing 前 pop 剔除，
+        **不落库**（session.routing 保持精简，快照细节在 trace 事件里）。
         """
         query = (session.decomposition or {}).get("requirement_text", "")
         if not query:
@@ -53,6 +58,8 @@ class RepoRouterV2Adapter:
             "candidates": candidates,
             "router_version": result.router_version,
             "auto_selected": result.auto_selected,
+            "degraded": result.degraded,
+            "snapshot": result.snapshot,
         }
 
     async def _resolve_repository_ids(self, session: ConvergenceSession) -> list[str] | None:
