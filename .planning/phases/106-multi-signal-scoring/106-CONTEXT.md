@@ -23,7 +23,7 @@
 
 ### 聚合公式与尺寸偏置（ROUTE-03）
 - 聚合结构：MaxP 主干 + pivoted-size-normalized 对数饱和 breadth，**加性**合成（research §2.3 三步：n_eff 软计数 p=2 → pivoted denom `1-b+b·N_r/N̄` b=0.6 → `log1p` 饱和 n_cap=6；`S_text=(1-λ)·S_top+λ·breadth` λ=0.25）。
-- `N̄` 用全仓能力树节点数**中位数**（抗 monorepo 倾斜）；`N_r` 离线取自 repo_index_nodes 计数（105-02 的 measure command 已有计数逻辑可复用）。
+- `N̄` 用全仓能力树节点数**中位数**（抗 monorepo 倾斜）；`N_r` 离线取自 repo_index_nodes 计数（105-02 的 measure command 已有计数逻辑可复用）。N_r/N̄ 快照经 measure command 新增 `--write-snapshot` 写入 SystemSetting，router 走缓存读取（裁决自 106-RESEARCH Open Question 2）。
 - MaxP 主干口径（O-3）：优先用单独 dense 查询取余弦（`using="dense"`，105-MEASUREMENTS 已验证可行）+ affine clip 校准；若实现后延迟/成本不可接受，回退 RRF 分 query-local max 归一，取舍记录进 SUMMARY 与代码注释。
 - 机制级断言：golden set 用例锁机制（`breakdown["study-app"]["breadth"] <= breakdown["onion-learning"]["breadth"]`、跨组样本进 Top-5）而非偶然名次；gk-001（Top-1=onion-learning）翻转后 `GENERATE_GOLDEN=1` 重建 baseline 并核对 Recall@5 不降、误自动选中率 ≤10%。
 - 所有常数（p/b/n_cap/λ/N̄ 快照值）外置，见权重外置节。
@@ -32,7 +32,7 @@
 - 三层匹配：T1 确定性别名词典（facet 值 + 人工同义词表；1.0 精确/别名、0.6 上位类目）→ T2 校准 embedding 余弦（`clip((cos-c_lo)/(c_hi-c_lo),0,1)`，初值 c_lo=0.25/c_hi=0.55，**必须按 O-2 流程实测校准**：200 组负样本 p95→c_lo、30 组正样本 p50→c_hi；`c_hi-c_lo<0.10` 的 facet 放弃 T2 只留 T1）→ T3 LLM 判定**绝不进分数**（只作 Stage 1 解释材料）。
 - 多值 facet 取 **max**（技术栈可用 `0.8·max+0.2·second_max`），绝不 sum/mean（尺寸偏置同构重演）。
 - 缺失信号：**权重重归一化**（`S=Σ w_j·M_j / Σ w_j`，仅对 present 信号），不补 0；全部元数据缺失时退化为纯文本分数。trace/breakdown 记录每个 facet 分数来源层（T1/T2/缺失）。
-- `关键程度` 是静态先验：固定锚点 {核心 1.0/重要 0.7/一般 0.4/边缘 0.15}，权重上限 0.05，且仅作同分带内 tie-break（|S_a-S_b|<0.03 时生效）。`团队归属` 是条件信号：需求文本未提团队时标**不可用**走重归一化，不给 0.5。
+- `关键程度` 是静态先验：**不进加性和**，仅作同分带内 tie-break（|S_a-S_b|<0.03 时按锚点 {核心 1.0/重要 0.7/一般 0.4/边缘 0.15} 决序；值走 trace/breakdown 旁路字段展示，不计入 Σ贡献==总分 的恒等式）——裁决自 research §3.6 与 106-RESEARCH Open Question 1。加性权重表因此为 5 信号（text 0.55/domain 0.15/act 0.12/stack 0.08/team 0.05，相对权重经重归一化生效，绝对和无须为 1）。`团队归属` 是条件信号：需求文本未提团队时标**不可用**走重归一化，不给 0.5。
 - facet 值 embedding 全量缓存（闭集几百条）；换 embedding 模型必须重校准并把模型 id 写进 weight_set_version。
 
 ### 活跃度连续化（ROUTE-05）
