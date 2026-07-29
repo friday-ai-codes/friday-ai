@@ -16,13 +16,16 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
 from orchestration.graph import (
+    _execute_first_run,
     _extract_pending_clarification,
     build_graph,
     route_after_executing,
+    route_after_wait_clarification,
     wait_clarification_node,
 )
 from orchestration.state import RunPhase
@@ -122,12 +125,13 @@ class TestBuildGraph:
         builder = build_graph()
         assert "wait_clarification" in builder.nodes
 
-    def test_wait_clarification_edge_back_to_executing(self) -> None:
-        """resume 后 wait_clarification → executing。"""
-        builder = build_graph()
-        edges = builder.edges
-        # builder.edges 是 set of tuples (start, end)
-        assert ("wait_clarification", "executing") in edges
+    def test_wait_clarification_uses_conditional_route(self) -> None:
+        assert route_after_wait_clarification(  # type: ignore[arg-type]
+            {"phase": RunPhase.EXECUTING.value}
+        ) == "executing"
+        assert route_after_wait_clarification(  # type: ignore[arg-type]
+            {"phase": RunPhase.FINALIZING.value}
+        ) == "finalizing"
 
 
 class TestWaitClarificationNode:
@@ -162,7 +166,7 @@ class TestWaitClarificationNode:
             "pending_clarification": _ask_clarification_payload(),
             "result_metadata": {"already": "kept"},
         }
-        result = await wait_clarification_node(state)  # type: ignore[arg-type]
+        result = await wait_clarification_node(state, {})  # type: ignore[arg-type]
 
         # interrupt payload 含 clarification_id / question / options
         assert captured["interrupt_payload"]["clarification_id"] == "abc123"
@@ -198,6 +202,7 @@ class TestWaitClarificationNode:
 
         result = await wait_clarification_node(  # type: ignore[arg-type]
             {"pending_clarification": _ask_clarification_payload()},
+            {},
         )
         assert result["user_message"] == "我自己写答案：改 X 模块"
 
@@ -212,7 +217,95 @@ class TestWaitClarificationNode:
 
         result = await wait_clarification_node(  # type: ignore[arg-type]
             {"pending_clarification": _ask_clarification_payload()},
+            {},
         )
         assert result["phase"] == RunPhase.EXECUTING.value
         assert result["user_message"] == ""
         assert result["result_metadata"]["inferred_intent"] == {}
+
+    @pytest.mark.asyncio
+    async def test_solution_category_dispatches_without_returning_to_llm(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from orchestration import graph as graph_module
+
+        monkeypatch.setattr(
+            graph_module,
+            "interrupt",
+            lambda _payload: {
+                "clarification_id": "abc123",
+                "selected_option_label": "全部模块",
+                "implies": {"task_category": "feature_solution"},
+            },
+        )
+        dispatch = AsyncMock(
+            return_value={
+                "phase": RunPhase.FINALIZING.value,
+                "final_answer": "请确认方案",
+                "result_metadata": {"session_id": "session-1"},
+            }
+        )
+        monkeypatch.setattr(
+            "agents.feature_solution_dispatch.dispatch_feature_solution",
+            dispatch,
+        )
+
+        result = await wait_clarification_node(  # type: ignore[arg-type]
+            {
+                "run_id": "run-1",
+                "pending_clarification": _ask_clarification_payload(),
+            },
+            {
+                "configurable": {
+                    "conversation_id": "conversation-1",
+                    "bound_project_id": "project-1",
+                    "user_id": "user-1",
+                }
+            },
+        )
+
+        assert result["phase"] == RunPhase.FINALIZING.value
+        assert result["pending_clarification"] == {}
+        dispatch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_first_run_strong_solution_intent_skips_chat_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from orchestration import graph as graph_module
+
+    monkeypatch.setattr(
+        graph_module,
+        "_build_chat_runner",
+        AsyncMock(return_value=(object(), "agent-session")),
+    )
+    run_stream = AsyncMock()
+    monkeypatch.setattr(graph_module, "_run_chat_stream", run_stream)
+    monkeypatch.setattr(graph_module, "_persist_run_phase", AsyncMock())
+    dispatch = AsyncMock(
+        return_value={
+            "phase": RunPhase.FINALIZING.value,
+            "final_answer": "请确认方案",
+        }
+    )
+    monkeypatch.setattr(
+        "agents.feature_solution_dispatch.dispatch_feature_solution",
+        dispatch,
+    )
+
+    result = await _execute_first_run(  # type: ignore[arg-type]
+        {"run_id": "run-1", "user_message": "帮我生成技术方案"},
+        {
+            "configurable": {
+                "conversation_id": "conversation-1",
+                "bound_project_id": "project-1",
+                "user_id": "user-1",
+            }
+        },
+        lambda _event: None,
+    )
+
+    assert result["phase"] == RunPhase.FINALIZING.value
+    run_stream.assert_not_awaited()
+    dispatch.assert_awaited_once()

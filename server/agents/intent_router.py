@@ -18,7 +18,6 @@ import re
 from dataclasses import dataclass
 from typing import Any, Final, Literal
 
-
 # implementation / 硬编码动词词典 —— **不进 Prompt Center**。
 # 词典是代码硬约束，跟测试强耦合；运营层 polish 走 prompt 即可。
 # 添加 / 删除词条必须同步更新 test_intent_router.py 的对应 case。
@@ -66,6 +65,45 @@ _EN_VERB_RE: Final[re.Pattern[str]] = re.compile(
 
 
 IntentConfidence = Literal["high", "low_signal", "ambiguous"]
+TaskCategory = Literal[
+    "coding_change",
+    "needs_clarification",
+    "feature_solution",
+    "full_tech_plan",
+]
+KNOWN_TASK_CATEGORIES: Final[frozenset[str]] = frozenset({
+    "coding_change",
+    "needs_clarification",
+    "feature_solution",
+    "full_tech_plan",
+})
+_SOLUTION_INTENT_RE: Final[re.Pattern[str]] = re.compile(
+    r"(技术方案|整体方案|(?:生成|创建|产出|制定).{0,8}方案|feature\s*list|全部.{0,12}模块)",
+    re.IGNORECASE,
+)
+
+
+def normalize_task_category(raw: Any) -> TaskCategory | None:
+    """把模型产生的 task_category 收口到服务端白名单。"""
+    if not isinstance(raw, str):
+        return None
+    normalized = raw.strip().lower()
+    if normalized not in KNOWN_TASK_CATEGORIES:
+        return None
+    return normalized  # type: ignore[return-value]
+
+
+def classify_solution_intent(
+    message: str | None,
+    *,
+    bound_project_id: Any,
+) -> TaskCategory | None:
+    """识别项目级强方案意图；纯函数且不对弱编码请求作猜测。"""
+    if not bound_project_id or not isinstance(message, str):
+        return None
+    if _SOLUTION_INTENT_RE.search(message.strip()):
+        return "feature_solution"
+    return None
 
 
 @dataclass(frozen=True)
@@ -350,9 +388,13 @@ __all__ = [
     "CONFIDENCE_ABS_GAP_MIN",
     "IntentClassification",
     "IntentConfidence",
+    "TaskCategory",
+    "KNOWN_TASK_CATEGORIES",
     "RelevConfidence",
     "RelevLevel",
     "classify_intent",
+    "classify_solution_intent",
+    "normalize_task_category",
     "evaluate_relev_confidence",
     "build_clarification_from_relev",
 ]

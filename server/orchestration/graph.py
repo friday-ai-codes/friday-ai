@@ -611,6 +611,33 @@ async def _execute_first_run(
     conv_id = cfg.get("conversation_id", "")
     run_id = state.get("run_id", "")
 
+    from agents.feature_solution_dispatch import dispatch_feature_solution
+    from agents.intent_router import classify_solution_intent, normalize_task_category
+
+    inferred = (state.get("result_metadata") or {}).get("inferred_intent") or {}
+    inferred_category = normalize_task_category(
+        inferred.get("task_category") if isinstance(inferred, dict) else None
+    )
+    bound_project_id = cfg.get("bound_project_id", "")
+    solution_category = classify_solution_intent(
+        state.get("user_message", ""),
+        bound_project_id=bound_project_id,
+    )
+    if bound_project_id and (
+        solution_category is not None
+        or inferred_category in {"feature_solution", "full_tech_plan"}
+    ):
+        patch = await dispatch_feature_solution(
+            conversation_id=conv_id,
+            bound_project_id=bound_project_id,
+            user_message=state.get("user_message", ""),
+            initiated_by_user_id=cfg.get("initiated_by_user_id") or cfg.get("user_id") or "system",
+            run_id=run_id,
+            writer=writer,
+        )
+        await _persist_run_phase(run_id, str(patch.get("phase") or RunPhase.ERROR.value))
+        return patch
+
     await _persist_run_phase(run_id, RunPhase.EXECUTING.value)
     writer({"type": PHASE_TRANSITION, "data": {"phase": "executing"}})
 
@@ -912,7 +939,10 @@ async def waiting_node(state: WorkflowState) -> dict[str, Any]:
     }
 
 
-async def wait_clarification_node(state: WorkflowState) -> dict[str, Any]:
+async def wait_clarification_node(
+    state: WorkflowState,
+    config: RunnableConfig,
+) -> dict[str, Any]:
     """等待用户对 ``ask_clarification`` 的回复（implementation）。
 
     interrupt() 暂停 graph，payload 是 ``pending_clarification`` 内容；
@@ -957,6 +987,30 @@ async def wait_clarification_node(state: WorkflowState) -> dict[str, Any]:
         "last_clarification_id": result.get("clarification_id", ""),
     }
 
+    from agents.intent_router import normalize_task_category
+
+    category = normalize_task_category(inferred.get("task_category"))
+    cfg = config.get("configurable", {})
+    bound_project_id = cfg.get("bound_project_id", "")
+    if category in {"feature_solution", "full_tech_plan"} and bound_project_id:
+        from agents.feature_solution_dispatch import dispatch_feature_solution
+
+        patch = await dispatch_feature_solution(
+            conversation_id=cfg.get("conversation_id", ""),
+            bound_project_id=bound_project_id,
+            user_message=reply_text,
+            initiated_by_user_id=cfg.get("initiated_by_user_id") or cfg.get("user_id") or "system",
+            run_id=state.get("run_id", ""),
+        )
+        return {
+            **patch,
+            "pending_clarification": {},
+            "result_metadata": {
+                **new_metadata,
+                **(patch.get("result_metadata") or {}),
+            },
+        }
+
     return {
         "phase": RunPhase.EXECUTING.value,
         "user_message": reply_text,
@@ -997,6 +1051,20 @@ def route_after_executing(state: WorkflowState) -> str:
     return "finalizing"
 
 
+def route_after_wait_clarification(state: WorkflowState) -> str:
+    """方案类 resume 已直驱正式编排时，不再回 executing 重跑 LLM。"""
+    phase = state.get("phase")
+    if phase == RunPhase.EXECUTING.value:
+        return "executing"
+    if phase == RunPhase.WAITING.value:
+        return "waiting"
+    if phase == RunPhase.FINALIZING.value:
+        return "finalizing"
+    if phase == RunPhase.WAITING_CLARIFICATION.value:
+        return "wait_clarification"
+    return END
+
+
 def build_graph() -> StateGraph:
     """构建编排 StateGraph builder。
 
@@ -1017,8 +1085,7 @@ def build_graph() -> StateGraph:
     builder.add_edge("planning", "executing")
     builder.add_conditional_edges("executing", route_after_executing)
     builder.add_edge("waiting", "executing")
-    # resume 后 wait_clarification → executing 让 LLM 看到新 user_message 继续推理
-    builder.add_edge("wait_clarification", "executing")
+    builder.add_conditional_edges("wait_clarification", route_after_wait_clarification)
     builder.add_edge("finalizing", END)
 
     return builder
