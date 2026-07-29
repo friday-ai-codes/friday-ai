@@ -563,3 +563,588 @@ class BlueprintLifecycleService:
                     body=resolution,
                 )
             return True
+
+    # ------------------------------------------------------------------
+    # 确认门动作（Phase 112-05 追加）：五动作 + indirect 升级深调研的单点收口。
+    #
+    # 视图层零 ORM 写（INV-6）：REST 只做透传，action 白名单、角色枚举、快照定位、
+    # 重调研规则表全部在本层。快照（结构化仓库清单）承载在
+    # ``BlueprintThread(kind=repo_confirmation).options``，整段读改写单条线程行。
+    #
+    # **动作不推进 stage**：advance 由视图层的 ``blueprint_resume.aresume_after_gate_action``
+    # 在动作持久化之后触发（confirm 在 alock 之后），本层只落库。
+    # ------------------------------------------------------------------
+
+    async def apply_gate_action(
+        self,
+        artifact: Artifact,
+        *,
+        thread: BlueprintThread,
+        action: str,
+        payload: dict | None = None,
+        acting_user: Any = None,
+        initiated_by_user_id: str = "system",
+        session: Any = None,
+    ) -> dict:
+        """五动作单点收口，返回**形状恒定**的结果 dict。
+
+        Returns:
+            ``{"requires_research": bool, "repository_id": str | None, "thread_id": str,
+            "ready_to_lock": bool, "blocked_reason": str}``——调用方无需判分支。
+
+        重调研规则表（``requires_research`` 的确定判据，SC-4）：
+
+        ==================== ============================================================
+        action               是否重调研
+        ==================== ============================================================
+        ``add_repo``         **是**（新仓无任何 fitness）→ ``create_tasks_for_session``
+        ``remove_repo``      否（只收窄仓库集，既有结论不失效）
+        ``reclassify_role``  仅 ``indirect → direct``（需要容器级 fitness）→ ``mark_stale``
+        ``edit_responsibility`` 仅 ``payload["rerun"] is True``（职责文本变化是否改变调研
+                             范围无法机械判定 → 不猜）→ ``mark_stale``
+        ``confirm``          否（走锁定路径）
+        ==================== ============================================================
+
+        ``requires_research=True`` 的动作**同时**做两件写入，缺一即断链：① 快照该仓打
+        ``pending_research=True``（112-04 的增量 dispatch 从这里读）；② 该仓
+        ``RepoResearchTask`` 落到可派发态（``PENDING`` / ``STALE``，均在 112-04 的
+        ``_DISPATCHABLE_STATUSES`` 内）。两处写入均经 ``ResearchService`` 公开方法。
+
+        非法 ``action`` / 缺 ``repository_id`` / 非法角色 / 仓不在快照内一律
+        ``raise ValueError(<GATE_ERROR_* 码>)``，视图据码分层回 400 / 404。
+        """
+        started = time.monotonic()
+        if action not in GATE_ACTIONS:
+            raise ValueError(GATE_ERROR_UNKNOWN_ACTION)
+        body = payload if isinstance(payload, dict) else {}
+        thread_id = str(getattr(thread, "id", ""))
+        decided_by = str(initiated_by_user_id or "system")
+        result: dict[str, Any] = {
+            "requires_research": False,
+            "repository_id": None,
+            "thread_id": thread_id,
+            "ready_to_lock": False,
+            "blocked_reason": "",
+        }
+
+        if action == "confirm":
+            snapshot = await self._aload_gate_options(thread_id)
+            if not [e for e in snapshot if e.get("removed") is not True]:
+                raise ValueError(GATE_ERROR_EMPTY_SNAPSHOT)
+            if await self.ahas_open_blocking_threads(artifact, kind=ThreadKind.AI_CLARIFICATION):
+                # LIFE-02 同款语义：未决阻塞澄清线程在，确认不予受理（视图回 409）。
+                result["blocked_reason"] = "pending_clarification"
+            else:
+                result["ready_to_lock"] = True
+                await self._arecord_gate_note(
+                    thread, body="用户确认当前仓库集与职责。", author=acting_user
+                )
+            await self._emit_gate_action(
+                session, action=action, repository_id="", thread_id=thread_id
+            )
+            self._log_gate_action(
+                action=action,
+                artifact=artifact,
+                thread_id=thread_id,
+                repository_id="",
+                requires_research=False,
+                initiated_by_user_id=decided_by,
+                started=started,
+                blocked_reason=result["blocked_reason"],
+            )
+            return result
+
+        repository_id = str(body.get("repository_id") or "").strip()
+        if not repository_id:
+            raise ValueError(GATE_ERROR_MISSING_REPOSITORY)
+        result["repository_id"] = repository_id
+
+        role = str(body.get("role") or "").strip().lower()
+        if action == "add_repo" and not role:
+            role = "direct"
+        if action in ("add_repo", "reclassify_role") and role not in GATE_ROLES:
+            raise ValueError(GATE_ERROR_INVALID_ROLE)
+        confidence = str(body.get("confidence") or "").strip().lower() or "low"
+
+        outcome = await self._apply_gate_snapshot_sync(
+            thread_id,
+            action=action,
+            repository_id=repository_id,
+            role=role,
+            responsibility=str(body.get("responsibility") or "")[:_MAX_GATE_TEXT_CHARS],
+            reason=str(body.get("reason") or "")[:_MAX_GATE_REASON_CHARS],
+            confidence=confidence,
+            rerun=body.get("rerun") is True,
+            decided_by=decided_by,
+        )
+        if outcome["error"]:
+            raise ValueError(outcome["error"])
+        requires_research = bool(outcome["requires_research"])
+        result["requires_research"] = requires_research
+
+        if requires_research:
+            # 视图**不同步等容器**：这里只把 task 置为可派发态，容器由续驱经
+            # ``_h_bp_repo_research`` 的增量 dispatch 起（起容器 ≠ 等容器）。
+            await self._aensure_research_dispatchable(
+                session, repository_id, action=action, confidence=confidence
+            )
+
+        await self._arecord_gate_note(
+            thread,
+            body=_gate_note_text(action, repository_id=repository_id, outcome=outcome),
+            author=acting_user,
+        )
+        await self._emit_gate_action(
+            session, action=action, repository_id=repository_id, thread_id=thread_id
+        )
+        self._log_gate_action(
+            action=action,
+            artifact=artifact,
+            thread_id=thread_id,
+            repository_id=repository_id,
+            requires_research=requires_research,
+            initiated_by_user_id=decided_by,
+            started=started,
+            blocked_reason="",
+        )
+        return result
+
+    async def aupgrade_repo_research(
+        self,
+        artifact: Artifact,
+        *,
+        repository_id: str,
+        acting_user: Any = None,
+        initiated_by_user_id: str = "system",
+        session: Any = None,
+    ) -> dict:
+        """第七个动作端点的 service 收口：把 indirect 候选升级为深调研（FLOW-04）。
+
+        快照该仓标 ``pending_research=True`` + ``role_suggestion="direct"`` → 留痕 →
+        emit → 调 112-04 的 ``BlueprintResearchAdapter.aupgrade_to_deep``（lazy import，
+        避免 delivery → process_runtime 的模块级环）。容器不在本方法内等待，后续增量
+        派发由 ``_h_bp_repo_research`` 承担。
+
+        Returns:
+            ``{"upgraded": bool, "repository_id": str}``——``upgraded is False`` 表示依赖
+            不可用（视图回 503）；仓不在快照内 / 门未开一律 ``raise ValueError``（视图回 404）。
+        """
+        started = time.monotonic()
+        repository_id = str(repository_id or "").strip()
+        if not repository_id:
+            raise ValueError(GATE_ERROR_MISSING_REPOSITORY)
+        thread = await self.aload_gate_thread(artifact)
+        if thread is None:
+            raise ValueError(GATE_ERROR_GATE_NOT_OPEN)
+        decided_by = str(initiated_by_user_id or "system")
+
+        outcome = await self._apply_gate_snapshot_sync(
+            str(thread.id),
+            action=GATE_ACTION_UPGRADE_RESEARCH,
+            repository_id=repository_id,
+            role="direct",
+            responsibility="",
+            reason="",
+            confidence="low",
+            rerun=False,
+            decided_by=decided_by,
+        )
+        if outcome["error"]:
+            raise ValueError(outcome["error"])
+
+        await self._arecord_gate_note(
+            thread,
+            body=f"用户将仓库 {repository_id} 升级为深调研。",
+            author=acting_user,
+        )
+        await self._emit_gate_action(
+            session,
+            action=GATE_ACTION_UPGRADE_RESEARCH,
+            repository_id=repository_id,
+            thread_id=str(thread.id),
+        )
+
+        upgraded = False
+        if session is not None:
+            from services.process_runtime.blueprint_research_adapter import (
+                BlueprintResearchAdapter,
+            )
+
+            upgraded = bool(
+                await BlueprintResearchAdapter().aupgrade_to_deep(session, repository_id)
+            )
+        self._log_gate_action(
+            action=GATE_ACTION_UPGRADE_RESEARCH,
+            artifact=artifact,
+            thread_id=str(thread.id),
+            repository_id=repository_id,
+            requires_research=True,
+            initiated_by_user_id=decided_by,
+            started=started,
+            blocked_reason="" if upgraded else "upgrade_unavailable",
+        )
+        return {"upgraded": upgraded, "repository_id": repository_id}
+
+    async def aload_gate_thread(self, artifact: Artifact) -> BlueprintThread | None:
+        """取该蓝图仍在受理中的确认门线程（``open`` / ``answered``），无则 ``None``。"""
+        return await (
+            BlueprintThread.objects.filter(
+                artifact=artifact,
+                kind=ThreadKind.REPO_CONFIRMATION,
+                status__in=[ThreadStatus.OPEN, ThreadStatus.ANSWERED],
+            )
+            .order_by("-created_at")
+            .afirst()
+        )
+
+    async def _aload_gate_options(self, thread_id: str) -> list[dict]:
+        options = await (
+            BlueprintThread.objects.filter(id=thread_id).values_list("options", flat=True).afirst()
+        )
+        if not isinstance(options, list):
+            return []
+        return [item for item in options if isinstance(item, dict)]
+
+    async def _aensure_research_dispatchable(
+        self, session: Any, repository_id: str, *, action: str, confidence: str
+    ) -> None:
+        """让该仓 ``RepoResearchTask`` 落到可派发态（一律经 ``ResearchService`` 公开方法）。
+
+        无 ``session``（调用方未提供会话上下文）时只保留快照标记：标记持久化在库里，
+        下一次续驱仍可闭环，绝不因此抛错让动作失败。
+        """
+        if session is None:
+            logger.warning(
+                "blueprint_gate_research_dispatch_skipped_no_session",
+                category="caller",
+                component="blueprint_lifecycle",
+                repository_id=repository_id,
+                action=action,
+            )
+            return
+        from delivery.services.research_service import ResearchService
+
+        service = ResearchService()
+        task_id = None
+        if action != "add_repo":
+            task_id = await self._afind_research_task_id(session, repository_id)
+        if task_id is None:
+            await service.create_tasks_for_session(
+                session, [{"repository_id": repository_id, "routed_confidence": confidence}]
+            )
+        else:
+            # STALE 已在 112-04 的 _DISPATCHABLE_STATUSES 内；mark_stale 只动已终态 task。
+            await service.mark_stale([task_id])
+
+    @staticmethod
+    @sync_to_async
+    def _afind_research_task_id(session: Any, repository_id: str) -> Any:
+        from delivery.models import RepoResearchTask
+
+        try:
+            return (
+                RepoResearchTask.objects.filter(
+                    session_id=getattr(session, "id", None), repository_id=repository_id
+                )
+                .values_list("id", flat=True)
+                .first()
+            )
+        except Exception:  # noqa: BLE001 — 非法 uuid 等一律按「无 task」处理
+            return None
+
+    @sync_to_async
+    def _apply_gate_snapshot_sync(
+        self,
+        thread_id: str,
+        *,
+        action: str,
+        repository_id: str,
+        role: str,
+        responsibility: str,
+        reason: str,
+        confidence: str,
+        rerun: bool,
+        decided_by: str,
+    ) -> dict:
+        """确认门快照的**唯一 mutator**：整段读改写单条线程行（同事务，避免半截状态）。
+
+        重调研规则表在此单点实现（``requires_research`` 的判据），``reclassify_role``
+        需要「改判前的角色」才能判定，故必须在同一事务内先读后写。
+        """
+        with transaction.atomic():
+            row = BlueprintThread.objects.select_for_update().filter(id=thread_id).first()
+            if row is None:
+                return _gate_outcome(GATE_ERROR_GATE_NOT_OPEN)
+            raw = row.options if isinstance(row.options, list) else []
+            entries = [item for item in raw if isinstance(item, dict)]
+            index = next(
+                (
+                    i
+                    for i, item in enumerate(entries)
+                    if str(item.get("repository_id") or "") == repository_id
+                ),
+                None,
+            )
+
+            if action == "add_repo":
+                repo = _lookup_gate_repository(repository_id)
+                if repo is None:
+                    return _gate_outcome(GATE_ERROR_REPOSITORY_NOT_FOUND)
+                if index is None:
+                    entries.append(
+                        _new_gate_entry(repository_id, getattr(repo, "name", ""), role, confidence)
+                    )
+                    index = len(entries) - 1
+            elif index is None:
+                return _gate_outcome(GATE_ERROR_REPO_NOT_IN_SNAPSHOT)
+
+            entry = entries[index]
+            before = _gate_entry_view(entry)
+            requires_research = False
+
+            if action == "add_repo":
+                entry["role_suggestion"] = role
+                entry["removed"] = False
+                entry["pending_research"] = True
+                entry["confidence"] = entry.get("confidence") or confidence
+                requires_research = True
+            elif action == "remove_repo":
+                entry["removed"] = True
+                entry["remove_reason"] = reason
+                # 仅收窄仓库集：既有结论不失效，不触发重调研。
+                entry["pending_research"] = False
+            elif action == "reclassify_role":
+                previous = str(entry.get("role_suggestion") or "")
+                entry["role_suggestion"] = role
+                # 深调研结论是轻量合成的超集：只有 indirect→direct 需要容器级 fitness。
+                requires_research = previous == "indirect" and role == "direct"
+                if requires_research:
+                    entry["pending_research"] = True
+            elif action == "edit_responsibility":
+                entry["responsibility"] = responsibility
+                # 职责文本是否改变调研范围无法机械判定 → 不猜，只认调用方显式 rerun。
+                requires_research = bool(rerun)
+                if requires_research:
+                    entry["pending_research"] = True
+            else:  # GATE_ACTION_UPGRADE_RESEARCH
+                entry["role_suggestion"] = "direct"
+                entry["pending_research"] = True
+                requires_research = True
+
+            after = _gate_entry_view(entry)
+            actions = entry.get("actions")
+            if not isinstance(actions, list):
+                actions = []
+            actions.append(
+                {
+                    "action": action,
+                    "before": before,
+                    "after": after,
+                    "decided_at": timezone.now().isoformat(),
+                    "decided_by": decided_by,
+                }
+            )
+            entry["actions"] = actions
+            BlueprintThread.objects.filter(id=thread_id).update(
+                options=entries, updated_at=timezone.now()
+            )
+            return _gate_outcome(
+                "", requires_research=requires_research, before=before, after=after
+            )
+
+    async def _arecord_gate_note(
+        self, thread: BlueprintThread, *, body: str, author: Any = None
+    ) -> BlueprintThreadMessage:
+        """确认门留痕消息：**只追加消息、绝不推进线程状态**。
+
+        与 :meth:`record_answer` 的区别是关键：确认门线程必须保持 ``open`` 直到
+        ``confirm`` 收尾——一旦被推到 ``answered``，``ahas_open_blocking_threads``
+        （只认 ``open``）会判为无门，``open_gate`` 就会再开第二条确认门线程，
+        续驱的 pause 判据也会失守。
+        """
+        return await self._append_thread_message_sync(thread, body=str(body or ""), author=author)
+
+    @sync_to_async
+    def _append_thread_message_sync(
+        self, thread: BlueprintThread, *, body: str, author: Any
+    ) -> BlueprintThreadMessage:
+        return BlueprintThreadMessage.objects.create(
+            thread=thread,
+            author_type=ThreadAuthorType.HUMAN,
+            author=author,
+            body=body,
+        )
+
+    async def _emit_gate_action(
+        self, session: Any, *, action: str, repository_id: str, thread_id: str
+    ) -> None:
+        """确认门动作事件（best-effort；payload 只含 action / id，不含职责正文）。"""
+        if session is None:
+            return
+        from delivery.services.event_taxonomy import EVENT_BLUEPRINT_CONFIRMATION_ACTION
+
+        try:
+            await ConvergenceSessionEvent.objects.acreate(
+                session=session,
+                event=EVENT_BLUEPRINT_CONFIRMATION_ACTION,
+                work_item=getattr(session, "work_item_id", None),
+                payload={
+                    "action": action,
+                    "repository_id": repository_id,
+                    "thread_id": thread_id,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 — 观测绝不反噬确认门动作
+            logger.warning(
+                "blueprint_gate_action_event_persist_failed",
+                category="caller",
+                component="blueprint_lifecycle",
+                action=action,
+                error=str(exc),
+            )
+
+    @staticmethod
+    def _log_gate_action(
+        *,
+        action: str,
+        artifact: Artifact,
+        thread_id: str,
+        repository_id: str,
+        requires_research: bool,
+        initiated_by_user_id: str,
+        started: float,
+        blocked_reason: str,
+    ) -> None:
+        logger.info(
+            "blueprint_gate_action_applied",
+            category="caller",
+            component="blueprint_lifecycle",
+            artifact_id=str(getattr(artifact, "id", "")),
+            thread_id=thread_id,
+            action=action,
+            repository_id=repository_id,
+            requires_research=requires_research,
+            blocked_reason=blocked_reason,
+            initiated_by_user_id=initiated_by_user_id,
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 确认门动作常量与纯函数（Phase 112-05 追加；纯追加纪律 → 不改既有 __all__ 行）
+# ══════════════════════════════════════════════════════════════════════════
+
+# 五动作白名单（视图只透传，白名单归一在 service 层，T-112-23）
+GATE_ACTIONS: tuple[str, ...] = (
+    "confirm",
+    "remove_repo",
+    "add_repo",
+    "reclassify_role",
+    "edit_responsibility",
+)
+# 第七个动作端点（upgrade-research）走 aupgrade_repo_research，不进五动作白名单
+GATE_ACTION_UPGRADE_RESEARCH = "upgrade_research"
+GATE_ROLES: tuple[str, ...] = ("direct", "indirect")
+
+# 错误码（视图据码分层回状态码：*_NOT_FOUND / NOT_IN_SNAPSHOT / GATE_NOT_OPEN → 404，其余 400）
+GATE_ERROR_UNKNOWN_ACTION = "unknown_action"
+GATE_ERROR_MISSING_REPOSITORY = "missing_repository_id"
+GATE_ERROR_INVALID_ROLE = "invalid_role"
+GATE_ERROR_EMPTY_SNAPSHOT = "empty_snapshot"
+GATE_ERROR_REPOSITORY_NOT_FOUND = "repository_not_found"
+GATE_ERROR_REPO_NOT_IN_SNAPSHOT = "repository_not_in_snapshot"
+GATE_ERROR_GATE_NOT_OPEN = "gate_not_open"
+
+GATE_NOT_FOUND_ERRORS: frozenset[str] = frozenset(
+    {
+        GATE_ERROR_REPOSITORY_NOT_FOUND,
+        GATE_ERROR_REPO_NOT_IN_SNAPSHOT,
+        GATE_ERROR_GATE_NOT_OPEN,
+    }
+)
+
+_MAX_GATE_TEXT_CHARS = 2000
+_MAX_GATE_REASON_CHARS = 500
+_GATE_ENTRY_VIEW_KEYS = ("role_suggestion", "responsibility", "removed", "pending_research")
+
+__all__ += [
+    "GATE_ACTIONS",
+    "GATE_ACTION_UPGRADE_RESEARCH",
+    "GATE_ROLES",
+    "GATE_NOT_FOUND_ERRORS",
+    "GATE_ERROR_UNKNOWN_ACTION",
+    "GATE_ERROR_MISSING_REPOSITORY",
+    "GATE_ERROR_INVALID_ROLE",
+    "GATE_ERROR_EMPTY_SNAPSHOT",
+    "GATE_ERROR_REPOSITORY_NOT_FOUND",
+    "GATE_ERROR_REPO_NOT_IN_SNAPSHOT",
+    "GATE_ERROR_GATE_NOT_OPEN",
+]
+
+
+def _gate_outcome(
+    error: str,
+    *,
+    requires_research: bool = False,
+    before: dict | None = None,
+    after: dict | None = None,
+) -> dict:
+    return {
+        "error": error,
+        "requires_research": requires_research,
+        "before": before or {},
+        "after": after or {},
+    }
+
+
+def _gate_entry_view(entry: dict) -> dict:
+    """decision_log 的 before/after 视图（只取会被动作改动的四个键，正文按需截断）。"""
+    return {
+        key: (
+            str(entry.get(key) or "")[:_MAX_GATE_REASON_CHARS]
+            if key == "responsibility"
+            else entry.get(key)
+        )
+        for key in _GATE_ENTRY_VIEW_KEYS
+    }
+
+
+def _new_gate_entry(repository_id: str, repository_name: str, role: str, confidence: str) -> dict:
+    """``add_repo`` 的快照占位条目：``fitness`` 留空（尚无任何调研结论）。"""
+    return {
+        "repository_id": repository_id,
+        "repository_name": str(repository_name or ""),
+        "role_suggestion": role,
+        "responsibility": "",
+        "confidence": confidence,
+        "fitness": None,
+        "current_state_summary": "",
+        "routing_evidence": {},
+        "pending_research": True,
+        "removed": False,
+        "actions": [],
+    }
+
+
+def _lookup_gate_repository(repository_id: str) -> Any:
+    """按 id 取仓（非法 uuid / 不存在一律 ``None`` → 视图回 404）。"""
+    from repositories.models import Repository
+
+    try:
+        return Repository.objects.filter(id=repository_id).first()
+    except Exception:  # noqa: BLE001 — 非法 uuid 触发的 ValidationError 一律按「不存在」
+        return None
+
+
+def _gate_note_text(action: str, *, repository_id: str, outcome: dict) -> str:
+    """留痕文案（只含 action 与 id，不回显职责正文——正文已在快照里）。"""
+    after = outcome.get("after") or {}
+    if action == "remove_repo":
+        return f"用户移除仓库 {repository_id}。"
+    if action == "add_repo":
+        return f"用户手动补充仓库 {repository_id}（角色 {after.get('role_suggestion')}），将触发该仓调研。"
+    if action == "reclassify_role":
+        return f"用户将仓库 {repository_id} 改判为 {after.get('role_suggestion')}。"
+    if action == "edit_responsibility":
+        return f"用户修改了仓库 {repository_id} 的职责描述。"
+    return f"用户对仓库 {repository_id} 执行了 {action}。"
