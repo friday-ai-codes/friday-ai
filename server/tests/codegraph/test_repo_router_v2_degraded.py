@@ -371,3 +371,233 @@ async def test_zero_candidates_short_circuits_before_stage1(
     assert result.snapshot["stage1"]["skipped_reason"] == "no_stage0_candidates"
     # Stage 1 从未构造模型——零 LLM 调用
     assert build_calls == []
+
+
+# ---------------------------------------------------------------------------
+# 降级原因闭集 + 上游异常文本脱敏（107-03 Task 3，RELY-03 / T-107-02）
+# ---------------------------------------------------------------------------
+
+
+class _APIConnectionError(Exception):
+    """类型名含 ``Connect`` 的上游异常替身（分类只吃类型名，不吃消息）。"""
+
+
+def _install_no_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """凭证可解析但拿不到任何模型名 → Stage 1 走 no_model_configured 分支。"""
+
+    async def _fake_cc_rt() -> dict[str, str]:
+        return {}
+
+    monkeypatch.setattr("services.provider_config.aget_claude_code_runtime_config", _fake_cc_rt)
+
+
+@pytest.mark.asyncio
+async def test_degrade_reason_timeout(monkeypatch, mock_aresolve_ok, settings) -> None:
+    """超时（真走 asyncio.wait_for）→ degrade_reason == "timeout"。"""
+    mock_aresolve_ok()
+    settings.REPO_ROUTER_STAGE1_TIMEOUT_SECONDS = 0.05
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(monkeypatch, _SlowModel())
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.router_version == "v2_stage0_only"
+    assert result.degraded is True
+    assert result.degrade_reason == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_degrade_reason_upstream_error(monkeypatch, mock_aresolve_ok) -> None:
+    """上游连接类异常（类型名含 Connect）→ degrade_reason == "upstream_error"。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(monkeypatch, _RaisingModel(_APIConnectionError("upstream down")))
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.degrade_reason == "upstream_error"
+
+
+@pytest.mark.asyncio
+async def test_degrade_reason_provider_missing(monkeypatch, mock_aresolve_missing) -> None:
+    """凭证未解析 → degrade_reason == "provider_missing"。"""
+    mock_aresolve_missing()
+    _install_stage0(monkeypatch, _high_margin_hits())
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.degrade_reason == "provider_missing"
+
+
+@pytest.mark.asyncio
+async def test_degrade_reason_no_model_maps_to_provider_missing(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """凭证可解析但无 model 名 → 同样归 "provider_missing"（用户视角同一处置）。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_no_model(monkeypatch)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.snapshot["stage1"]["skipped_reason"] == "no_model_configured"
+    assert result.degrade_reason == "provider_missing"
+
+
+@pytest.mark.asyncio
+async def test_degrade_reason_unparsable(monkeypatch, mock_aresolve_ok) -> None:
+    """LLM 输出不可解析 → degrade_reason == "unparsable"。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(monkeypatch, _TextModel("抱歉，我无法输出 JSON。"))
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.degrade_reason == "unparsable"
+
+
+@pytest.mark.asyncio
+async def test_degrade_reason_no_valid_candidates_maps_to_unparsable(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """LLM 输出合法 JSON 但全是编造 repo_id → 同样归 "unparsable"。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(
+        monkeypatch,
+        _TextModel(json.dumps([{"repo_id": "ghost-repo", "confidence": "high"}])),
+    )
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.snapshot["stage1"]["skipped_reason"] == "no_valid_candidates_in_llm_output"
+    assert result.degrade_reason == "unparsable"
+
+
+@pytest.mark.asyncio
+async def test_degrade_reason_v1_fallback_is_no_node_index(monkeypatch) -> None:
+    """节点索引无命中 → 回落 v1 且 degrade_reason == "no_node_index"。"""
+    _install_stage0(monkeypatch, [])
+
+    async def _fake_v1_route(query: str, top_k: int = 3) -> list[Any]:
+        return []
+
+    monkeypatch.setattr("codegraph.services.repo_router.RepoRouter.route", _fake_v1_route)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.router_version == "v1_fallback"
+    assert result.degraded is True
+    assert result.degrade_reason == "no_node_index"
+
+
+@pytest.mark.asyncio
+async def test_degrade_reason_empty_for_non_user_visible_paths(monkeypatch) -> None:
+    """use_llm=False 与 Stage 0 零候选：degraded 仍 True，但无用户可见降级原因行。"""
+    _install_stage0(monkeypatch, _high_margin_hits())
+
+    result = await RepoRouterV2.route("高三提分专项需求", use_llm=False)
+
+    assert result.degraded is True
+    assert result.degrade_reason == ""
+
+    _install_stage0(
+        monkeypatch,
+        [{"id": "x0", "score": 0.02, "payload": {"node_id": "x0", "repo_name": "ghost"}}],
+    )
+
+    zero = await RepoRouterV2.route("需求", use_llm=False)
+
+    assert zero.candidates == []
+    assert zero.degrade_reason == ""
+
+
+@pytest.mark.asyncio
+async def test_degrade_reason_is_always_in_closed_set(monkeypatch, mock_aresolve_ok) -> None:
+    """任意异常类型下 degrade_reason 恒 ∈ DEGRADE_REASONS | {""}（基数受控）。"""
+    from codegraph.services.repo_router_ranking import DEGRADE_REASONS
+
+    for exc in (
+        TimeoutError("timed out"),
+        _APIConnectionError("connect refused"),
+        ConnectionError("connect failed"),
+        RuntimeError("Error code: 400 - {'error': {'message': 'bad request'}}"),
+        ValueError("weird"),
+    ):
+        mock_aresolve_ok()
+        _install_stage0(monkeypatch, _high_margin_hits())
+        _install_stage1_model(monkeypatch, _RaisingModel(exc))
+
+        result = await RepoRouterV2.route("高三提分专项需求")
+
+        assert result.degrade_reason in DEGRADE_REASONS | {""}
+
+
+@pytest.mark.asyncio
+async def test_redact_upstream_secret_from_snapshot_and_meta(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """上游异常消息含密钥 → 快照与降级留痕均无明文（T-107-02；截断不是脱敏）。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(
+        monkeypatch,
+        _RaisingModel(RuntimeError("401 invalid api key sk-ant-abcdefgh12345678 rejected")),
+    )
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    dumped = json.dumps(result.snapshot, ensure_ascii=False)
+    assert "sk-ant-" not in dumped
+    assert "abcdefgh12345678" not in dumped
+    stage1 = result.snapshot["stage1"]
+    # 脱敏后的排障文本仍在（有可下钻线索，只是无明文密钥）
+    assert "REDACTED" in stage1["error_redacted"]
+    assert stage1["degrade_reason"] == result.degrade_reason
+
+
+@pytest.mark.asyncio
+async def test_redact_meta_load_failure_log_event(monkeypatch) -> None:
+    """repo_meta 组装失败分支的异常文本同样经脱敏（全文件归零，非只改 Stage 1）。
+
+    用 ``capture_logs`` 断言**事件字段本身**已脱敏：它绕过全局
+    ``redact_credentials`` processor，因此证明的是源头脱敏而非兜底脱敏。
+    """
+    from structlog.testing import capture_logs
+
+    _install_stage0(monkeypatch, _high_margin_hits())
+
+    async def _boom(node_hits, query, query_dense, config):
+        raise RuntimeError("meta pipeline exploded with sk-ant-abcdefgh12345678")
+
+    monkeypatch.setattr(RepoRouterV2, "_load_repo_meta", _boom)
+
+    with capture_logs() as events:
+        result = await RepoRouterV2.route("高三提分专项需求", use_llm=False)
+
+    assert result.candidates  # 回退 legacy 三信号，路由仍可用
+    failed = [e for e in events if e.get("event") == "repo_router_meta_load_failed"]
+    assert failed, "meta 组装失败必须留证"
+    assert "sk-ant-" not in json.dumps(failed, ensure_ascii=False, default=str)
+    assert "REDACTED" in failed[0]["error"]
+
+
+@pytest.mark.asyncio
+async def test_redact_stage1_failure_log_event(monkeypatch, mock_aresolve_ok) -> None:
+    """Stage 1 失败日志的 ``error`` 字段在源头脱敏（截断不是脱敏）。"""
+    from structlog.testing import capture_logs
+
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(
+        monkeypatch,
+        _RaisingModel(RuntimeError("401 invalid api key sk-ant-abcdefgh12345678 rejected")),
+    )
+
+    with capture_logs() as events:
+        await RepoRouterV2.route("高三提分专项需求")
+
+    failed = [e for e in events if e.get("event") == "repo_router_v2_stage1_failed"]
+    assert failed
+    assert "sk-ant-" not in json.dumps(failed, ensure_ascii=False, default=str)
+    assert "REDACTED" in failed[0]["error"]
