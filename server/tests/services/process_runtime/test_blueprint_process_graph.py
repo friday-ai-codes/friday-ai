@@ -632,3 +632,28 @@ async def test_resume_after_gate_action_swallows_driver_failure(
     )
 
     assert result.id == session.id, "续驱失败必须返回传入 session，绝不上抛"
+
+
+@pytestmark_db
+@pytest.mark.asyncio
+async def test_resume_refuses_to_drive_non_blueprint_session() -> None:
+    """CR-01 守卫：蓝图 engine 绝不驱动别的 process 的会话（deps 名单对不上会把它打成 FAILED）。"""
+    from services.process_runtime.blueprint_resume import (
+        adrive_blueprint_session_to_pause_or_terminal,
+    )
+
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="route",
+        status=ConvergenceSessionStatus.RUNNING,
+    )
+    advance = AsyncMock()
+    engine = SimpleNamespace(advance=advance, session_service=ConvergenceSessionService())
+
+    result = await adrive_blueprint_session_to_pause_or_terminal(engine, session, max_steps=1)
+
+    assert advance.await_count == 0, "非蓝图会话必须 no-op"
+    assert result.id == session.id
+    fresh = await ConvergenceSession.objects.aget(id=session.id)
+    assert fresh.status == ConvergenceSessionStatus.RUNNING, "no-op 不得把无关会话落终态"

@@ -890,3 +890,66 @@ def test_e2e_resume_failure_keeps_marker_for_next_trigger(
     assert _stage(ctx) == "repo_confirmation", "续驱炸了 → stage 不前进（但动作已落库）"
     assert _task(ctx, repo_c).status == RepoResearchTaskStatus.PENDING
     assert _entry(ctx.artifact, repo_c)["pending_research"] is True
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 11. 跨 process 隔离（CR-01）
+#
+# 蓝图链刻意复用 `technical_plan` 这个 artifact_type，同一 artifact 上可能并存两条
+# 会话。会话解析必须带 `process_type` 条件——否则「最近一条」会取到旧链会话，被蓝图
+# engine 驱动后旧链 handler 取不到 `deps.router`，engine 把那条无关会话落 FAILED。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _make_plan_session(ctx, user) -> ConvergenceSession:
+    """在同一 artifact 上再挂一条**更新的** `technical_plan` 会话（旧链形态）。"""
+    return ConvergenceSession.objects.create(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="route",
+        status=ConvergenceSessionStatus.RUNNING,
+        current_artifact_version_id=ctx.artifact.current_version_id,
+        created_by=user,
+    )
+
+
+def test_gate_action_never_touches_unrelated_technical_plan_session(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """同 artifact 上并存的 `technical_plan` 会话不得被确认门动作触碰（不桩续驱）。"""
+    ctx = _e2e_setup(user, monkeypatch)
+    plan = _make_plan_session(ctx, user)
+
+    resp = authenticated_client.post(
+        REMOVE_URL.format(aid=ctx.artifact.id),
+        {"repository_id": str(ctx.repos[1].id)},
+        format="json",
+    )
+
+    assert resp.status_code == 200
+    fresh_plan = ConvergenceSession.objects.get(id=plan.id)
+    assert fresh_plan.status == ConvergenceSessionStatus.RUNNING, "无关会话被驱成了终态"
+    assert fresh_plan.current_stage == "route", "无关会话的 stage 被推动了"
+    assert fresh_plan.error in (None, {}, "")
+    # 动作确实落在蓝图会话上
+    assert _stage(ctx) == "repo_confirmation"
+    assert _entry(ctx.artifact, ctx.repos[1])["removed"] is True
+
+
+def test_gate_action_404s_when_only_non_blueprint_session_exists(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """没有蓝图会话时明确 404——绝不静默退化成「拿别的 process 的会话」。"""
+    _stub_resume(monkeypatch)
+    ctx = _open_gate(user)
+    plan = _make_plan_session(ctx, user)
+    ConvergenceSession.objects.filter(id=ctx.session.id).delete()
+
+    resp = authenticated_client.post(
+        REMOVE_URL.format(aid=ctx.artifact.id),
+        {"repository_id": str(ctx.repos[1].id)},
+        format="json",
+    )
+
+    assert resp.status_code == 404
+    assert ConvergenceSession.objects.get(id=plan.id).status == ConvergenceSessionStatus.RUNNING
