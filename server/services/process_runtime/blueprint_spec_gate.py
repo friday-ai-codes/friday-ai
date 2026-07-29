@@ -6,8 +6,11 @@
   本 adapter 只返回结果 dict，**stage 转移由 handler 的 ``StageOutcome`` 决定**（engine
   纯度：adapter 不写 session.status / current_stage）。
 - **fail-closed**：打分不可得（LLM 无 model / 响应不可解析 / 内部异常）、蓝图内容校验
-  失败，一律判「需澄清」而非放行。规格门是全链路唯一 fail-closed 点，唯一的放行例外
-  是显式轮数上界，且必须在 ``ambiguity_report.capped`` 留痕（T-112-06）。
+  失败，一律判「需澄清」而非放行。规格门是全链路唯一 fail-closed 点，放行例外**仅两条**
+  且都必须在 ``ambiguity_report.capped`` + ``release_reason`` 留痕（T-112-06）：
+  ``round_cap``（显式轮数上界）与 ``no_new_questions``（超阈值但打分可得、未满歧义、
+  确实问不出新问题）。**打分不可得或满歧义（total ≥ 1.0）时一律不得按「无新问题」放行**
+  ——兜底问题恒为同一条常量，指纹去重会把它整条吃掉，那不是「不歧义」。
 - **INV-6**：澄清线程一律经 ``BlueprintLifecycleService``、蓝图新版本一律经
   ``ArtifactService.add_version``——本文件零 ORM 写（只读查询）。
 - **澄清载体只用 BlueprintThread**（``kind=ai_clarification``、``blocking=True``）：
@@ -71,6 +74,16 @@ _MAX_SPEC_GATE_ROUNDS = 3
 
 # 合法 intent 集合（与 blueprint_schema 的必填枚举同源，只作 adapter 侧沿用值判断）。
 _VALID_INTENTS = ("greenfield", "brownfield", "fix")
+
+# 满歧义（四维全 1.0 的加权总分上界）。到达此值时**任何情况都不得**按「无新问题」放行——
+# 唯一放行例外仍是显式轮数上界（_MAX_SPEC_GATE_ROUNDS，留 capped=True 痕）。
+_MAX_AMBIGUITY_TOTAL = 1.0
+
+# 放行例外的留痕枚举（落 ambiguity_report.release_reason 与 spec_locked 事件）：
+# 下游（114 AI 审查 / 115 呈现面）据此区分「这次放行走的是哪条例外」。
+RELEASE_REASON_UNAMBIGUOUS = ""
+RELEASE_REASON_ROUND_CAP = "round_cap"
+RELEASE_REASON_NO_NEW_QUESTIONS = "no_new_questions"
 
 # 打分不可得时退化的通用规格澄清题（fail-closed：宁可多问一句也不静默放行）。
 _FALLBACK_QUESTION: dict[str, Any] = {
@@ -177,6 +190,7 @@ class BlueprintSpecGateAdapter:
                 prior=prior,
                 round_no=round_no,
                 capped=True,
+                release_reason=RELEASE_REASON_ROUND_CAP,
                 scorer_unavailable=False,
                 started=started,
             )
@@ -199,12 +213,28 @@ class BlueprintSpecGateAdapter:
         above = is_ambiguous(total, config["threshold"])
 
         # 5. 超阈值 → 剔除已答过的同一问题，仍有问题则开阻塞线程挂起。
+        release_reason = RELEASE_REASON_UNAMBIGUOUS
         if above:
             questions = [
                 q
                 for q in scores["questions"]
                 if _fingerprint(q.get("text")) not in prior["fingerprints"]
             ]
+            # 「超阈值 + 无新问题」不等于「不歧义」：打分不可得时兜底问题恒为同一条常量，
+            # 指纹必然命中；满歧义时同理不能靠去重把门开了。两种情形一律重新挂起
+            # （轮数由 _MAX_SPEC_GATE_ROUNDS 兜底，不会无限挂）。
+            if not questions and (scorer_unavailable or total >= _MAX_AMBIGUITY_TOTAL):
+                questions = [dict(q) for q in scores["questions"]] or [dict(_FALLBACK_QUESTION)]
+                logger.warning(
+                    "blueprint_spec_gate_reasked_without_new_questions",
+                    category="caller",
+                    component="process_runtime",
+                    session_id=str(session.id),
+                    artifact_id=str(artifact.id),
+                    weighted_total=total,
+                    scorer_unavailable=scorer_unavailable,
+                    round=round_no,
+                )
             if questions:
                 return await self._open_clarification(
                     session,
@@ -218,12 +248,16 @@ class BlueprintSpecGateAdapter:
                     scorer_unavailable=scorer_unavailable,
                     started=started,
                 )
-            logger.info(
-                "blueprint_spec_gate_questions_already_answered",
+            # 打分可得、未满歧义、但确实问不出新问题 → 这是第二条放行例外，必须留痕。
+            release_reason = RELEASE_REASON_NO_NEW_QUESTIONS
+            logger.warning(
+                "blueprint_spec_gate_released_without_new_questions",
                 category="caller",
                 component="process_runtime",
                 session_id=str(session.id),
                 artifact_id=str(artifact.id),
+                weighted_total=total,
+                threshold=config["threshold"],
                 dropped_question_count=len(scores["questions"]),
             )
 
@@ -235,7 +269,8 @@ class BlueprintSpecGateAdapter:
             scores=scores,
             prior=prior,
             round_no=round_no,
-            capped=False,
+            capped=bool(release_reason),
+            release_reason=release_reason,
             scorer_unavailable=scorer_unavailable,
             config=config,
             total=total,
@@ -278,6 +313,7 @@ class BlueprintSpecGateAdapter:
             total=total,
             resolved_thread_ids=[],
             capped=False,
+            release_reason=RELEASE_REASON_UNAMBIGUOUS,
             scorer_unavailable=scorer_unavailable,
         )
         await self._emit(
@@ -314,6 +350,7 @@ class BlueprintSpecGateAdapter:
         prior: dict[str, Any],
         round_no: int,
         capped: bool,
+        release_reason: str,
         scorer_unavailable: bool,
         config: dict[str, Any] | None = None,
         total: float | None = None,
@@ -338,6 +375,7 @@ class BlueprintSpecGateAdapter:
             total=total,
             resolved_thread_ids=prior["resolved_thread_ids"],
             capped=capped,
+            release_reason=release_reason,
             scorer_unavailable=scorer_unavailable,
         )
         decision_log = self._merge_decision_log(locked.get("decision_log"), prior["entries"])
@@ -370,6 +408,7 @@ class BlueprintSpecGateAdapter:
                     total=total,
                     resolved_thread_ids=prior["resolved_thread_ids"],
                     capped=capped,
+                    release_reason=release_reason,
                     scorer_unavailable=scorer_unavailable,
                 ),
                 round_no,
@@ -389,6 +428,7 @@ class BlueprintSpecGateAdapter:
                 "threshold": config["threshold"],
                 "above_threshold": is_ambiguous(total, config["threshold"]),
                 "capped": capped,
+                "release_reason": release_reason,
                 "scorer_unavailable": scorer_unavailable,
             },
         )
@@ -399,6 +439,8 @@ class BlueprintSpecGateAdapter:
                 "resolved_thread_count": len(prior["resolved_thread_ids"]),
                 "decision_log_count": len(decision_log),
                 "version_no": getattr(version, "version_no", 0),
+                "capped": capped,
+                "release_reason": release_reason,
             },
         )
         logger.info(
@@ -410,6 +452,7 @@ class BlueprintSpecGateAdapter:
             weighted_total=total,
             threshold=config["threshold"],
             capped=capped,
+            release_reason=release_reason,
             scorer_unavailable=scorer_unavailable,
             resolved_thread_count=len(prior["resolved_thread_ids"]),
             decision_log_count=len(decision_log),
@@ -625,6 +668,7 @@ class BlueprintSpecGateAdapter:
         total: float,
         resolved_thread_ids: list[str],
         capped: bool,
+        release_reason: str = RELEASE_REASON_UNAMBIGUOUS,
         scorer_unavailable: bool,
     ) -> dict[str, Any]:
         return {
@@ -634,6 +678,9 @@ class BlueprintSpecGateAdapter:
             "weights": config["weights"],
             "resolved_thread_ids": list(resolved_thread_ids),
             "capped": capped,
+            # 放行例外的具名理由：""=未超阈值的正常放行 / "round_cap"=轮数上界 /
+            # "no_new_questions"=超阈值但问不出新问题。capped 恒等于 bool(release_reason)。
+            "release_reason": release_reason,
             "scorer_unavailable": scorer_unavailable,
         }
 

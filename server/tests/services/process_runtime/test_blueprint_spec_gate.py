@@ -192,9 +192,11 @@ async def test_already_answered_question_is_not_asked_again() -> None:
     assert result["event"] == "spec_locked"
     assert await BlueprintThread.objects.acount() == 1
     content = await _latest_content(artifact)
-    assert content["requirement_spec"]["ambiguity_report"]["resolved_thread_ids"] == [
-        str(thread.id)
-    ]
+    report = content["requirement_spec"]["ambiguity_report"]
+    assert report["resolved_thread_ids"] == [str(thread.id)]
+    # 「超阈值 + 问不出新问题」是第二条放行例外，必须与轮数上界同等留痕
+    assert report["capped"] is True
+    assert report["release_reason"] == "no_new_questions"
     assert [e["question"] for e in content["decision_log"]] == ["目标用户是谁？"]
 
 
@@ -231,8 +233,13 @@ async def test_scorer_unavailable_is_fail_closed() -> None:
     assert thread.blocking is True
 
 
-async def test_scorer_unavailable_flag_survives_into_locked_report() -> None:
-    """打分不可得但问题已被答过 → 放行时 ambiguity_report 仍标 scorer_unavailable。"""
+async def test_scorer_unavailable_never_releases_via_fingerprint_dedup() -> None:
+    """CR-02 核心反向断言：兜底问题被答过后，打分仍不可得 → **不得**放行。
+
+    兜底问题是**固定常量**，答过一次它的指纹必然命中 ``prior["fingerprints"]``；若让指纹
+    过滤把它吃掉，规格门就会在 ``weighted_total=1.0`` 下走「无新问题 ⇒ 无歧义」放行，
+    且 ``capped=False`` 不留痕——那是 fail-closed 的开门洞。
+    """
     artifact = await _make_artifact()
     lifecycle = BlueprintLifecycleService()
     thread = await lifecycle.open_thread(
@@ -250,9 +257,51 @@ async def test_scorer_unavailable_flag_survives_into_locked_report() -> None:
 
     result = await _adapter(scorer=AsyncMock(return_value=None)).run(session)
 
-    assert result["event"] == "spec_locked"
-    content = await _latest_content(artifact)
-    assert content["requirement_spec"]["ambiguity_report"]["scorer_unavailable"] is True
+    assert result["event"] == "needs_clarification", "打分持续不可得绝不放行"
+    assert result["ambiguity"]["scorer_unavailable"] is True
+    assert result["ambiguity"]["weighted_total"] == pytest.approx(1.0)
+    assert await BlueprintThread.objects.acount() == 2, "应重新开一条阻塞线程而不是锁定"
+    assert await ArtifactVersion.objects.filter(artifact=artifact).acount() == 1, "不得落新版本"
+
+
+async def test_two_consecutive_unavailable_rounds_stay_blocked() -> None:
+    """连续两轮 LLM 不可用（中间用户答过一次）→ 仍停在 needs_clarification，未放行。"""
+    artifact = await _make_artifact()
+    session = await _make_session(artifact)
+    adapter = _adapter(scorer=AsyncMock(return_value=None))
+
+    first = await adapter.run(session)
+    assert first["event"] == "needs_clarification"
+
+    lifecycle = BlueprintLifecycleService()
+    thread = await BlueprintThread.objects.aget(id=first["thread_id"])
+    await lifecycle.record_answer(thread, body="目标是提分，范围只做练习页")
+    session.stage_state = first["stage_state"]
+
+    second = await adapter.run(session)
+
+    assert second["event"] == "needs_clarification", "第 2 轮仍不可得 → 绝不放行"
+    assert second["ambiguity"]["capped"] is False
+    assert second["ambiguity"]["release_reason"] == ""
+    assert await ArtifactVersion.objects.filter(artifact=artifact).acount() == 1
+    assert await BlueprintThread.objects.acount() == 2
+
+
+async def test_max_ambiguity_never_releases_even_with_available_scorer() -> None:
+    """满歧义（total=1.0）+ 问题全被答过 → 复述同题重新挂起，绝不当作「无歧义」放行。"""
+    artifact = await _make_artifact()
+    lifecycle = BlueprintLifecycleService()
+    thread = await lifecycle.open_thread(
+        artifact, kind=ThreadKind.AI_CLARIFICATION, blocking=True, question="目标用户是谁？"
+    )
+    await lifecycle.record_answer(thread, body="高三学生")
+    await lifecycle.resolve_thread(thread)
+    session = await _make_session(artifact)
+
+    result = await _adapter(scorer=AsyncMock(return_value=_scores(1.0))).run(session)
+
+    assert result["event"] == "needs_clarification"
+    assert await ArtifactVersion.objects.filter(artifact=artifact).acount() == 1
 
 
 # ---- 轮数上界 ----
@@ -268,7 +317,9 @@ async def test_round_cap_releases_with_capped_flag() -> None:
     assert result["event"] == "spec_locked"
     assert scorer.await_count == 0
     content = await _latest_content(artifact)
-    assert content["requirement_spec"]["ambiguity_report"]["capped"] is True
+    report = content["requirement_spec"]["ambiguity_report"]
+    assert report["capped"] is True
+    assert report["release_reason"] == "round_cap", "两条放行例外必须可区分"
     assert validate_blueprint(content) == (True, None)
 
 
