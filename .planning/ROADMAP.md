@@ -334,8 +334,8 @@ Plans:
 
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
-| 105. 编排解锁与评估标尺 | v0.19.0 | RELY-04, ROUTE-07/08/09 | 0/TBD | Not started | - |
-| 106. 多信号打分函数重构 | v0.19.0 | ROUTE-03/04/05/06 | 0/TBD | Not started | - |
+| 105. 编排解锁与评估标尺 | v0.19.0 | RELY-04, ROUTE-07/08/09 | 7/7 | Implemented（自动化验证 35/35，人工 UAT 3 项挂账） | - |
+| 106. 多信号打分函数重构 | v0.19.0 | ROUTE-03/04/05/06 | 8/8 | Implemented（自动化验证 34/38，人工 UAT 4 项挂账） | - |
 | 107. 分层呈现与链路韧性 | v0.19.0 | ROUTE-01/02, RELY-02/03/05 | 0/TBD | Not started | - |
 | 108. 方案深度 | 移交 v0.20.0 | DEPTH-01~05（随迁） | - | Moved (2026-07-29) | - |
 | 109. 双脊柱合流 | v0.19.0 | SPINE-01/02, RELY-01 | 0/TBD | Not started | - |
