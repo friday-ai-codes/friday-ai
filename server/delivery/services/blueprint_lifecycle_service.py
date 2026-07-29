@@ -666,6 +666,13 @@ class BlueprintLifecycleService:
             raise ValueError(GATE_ERROR_INVALID_ROLE)
         confidence = str(body.get("confidence") or "").strip().lower() or "low"
 
+        if action == "add_repo" and not await self._ais_repo_in_blueprint_scope(
+            session, thread_id, repository_id
+        ):
+            # 越界一律回中性 404（与「仓不存在」同码）：URL 里的 artifact 必须约束 body
+            # 里的 repository_id，否则任意登录用户可把全库任意仓挂进任意蓝图并起容器。
+            raise ValueError(GATE_ERROR_REPOSITORY_NOT_FOUND)
+
         outcome = await self._apply_gate_snapshot_sync(
             thread_id,
             action=action,
@@ -835,6 +842,64 @@ class BlueprintLifecycleService:
         else:
             # STALE 已在 112-04 的 _DISPATCHABLE_STATUSES 内；mark_stale 只动已终态 task。
             await service.mark_stale([task_id])
+
+    async def _ais_repo_in_blueprint_scope(
+        self, session: Any, thread_id: str, repository_id: str
+    ) -> bool:
+        """``add_repo`` 的范围白名单（与 ``blueprint_route._resolve_repository_ids`` 同源）。
+
+        范围来源四条并集：① 路由候选（``stage_state["routing"].candidates``）②
+        显式 ``include_repos``（顶层或 ``blueprint`` 段）③ ``work_item.space`` 的仓集合
+        ④ 确认门快照里已有的仓。**并集为空 → 拒绝**（fail-closed）：范围解析不出来时
+        放行等于没有范围，正是本条要堵的口子。
+        """
+        try:
+            scope = await self._acollect_blueprint_scope_ids(session, thread_id)
+        except Exception as exc:  # noqa: BLE001 — 范围读失败按越界处理（fail-closed）
+            logger.warning(
+                "blueprint_gate_scope_resolve_failed",
+                category="caller",
+                component="blueprint_lifecycle",
+                repository_id=repository_id,
+                error=str(exc),
+            )
+            return False
+        return bool(scope) and str(repository_id) in scope
+
+    @staticmethod
+    @sync_to_async
+    def _acollect_blueprint_scope_ids(session: Any, thread_id: str) -> set[str]:
+        ids: set[str] = set()
+        state = getattr(session, "stage_state", None)
+        if isinstance(state, dict):
+            routing = state.get("routing")
+            if isinstance(routing, dict):
+                for candidate in routing.get("candidates") or []:
+                    if isinstance(candidate, dict) and candidate.get("repository_id"):
+                        ids.add(str(candidate["repository_id"]))
+            includes = list(state.get("include_repos") or [])
+            blueprint_state = state.get("blueprint")
+            if isinstance(blueprint_state, dict):
+                includes += list(blueprint_state.get("include_repos") or [])
+            ids.update(str(item) for item in includes if item)
+
+        work_item_id = getattr(session, "work_item_id", None)
+        if work_item_id is not None:
+            from delivery.models import WorkItem
+
+            work_item = WorkItem.objects.select_related("space").filter(id=work_item_id).first()
+            if work_item is not None and work_item.space is not None:
+                ids.update(
+                    str(rid) for rid in work_item.space.repositories.values_list("id", flat=True)
+                )
+
+        options = (
+            BlueprintThread.objects.filter(id=thread_id).values_list("options", flat=True).first()
+        )
+        for item in options or []:
+            if isinstance(item, dict) and item.get("repository_id"):
+                ids.add(str(item["repository_id"]))
+        return ids
 
     @staticmethod
     @sync_to_async

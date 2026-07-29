@@ -173,6 +173,19 @@ def _open_gate(user, roles: tuple[str, ...] = ("direct", "indirect")) -> SimpleN
     return SimpleNamespace(artifact=artifact, session=session, thread=thread, repos=repos)
 
 
+def _grant_scope(ctx, *repos: Repository) -> None:
+    """把仓纳入本蓝图的范围白名单（``include_repos``，与路由的显式范围同源）。
+
+    ``add_repo`` 的 ``repository_id`` 必须落在蓝图范围内（MJ-01）——生产上范围来自
+    ``work_item.space`` 的仓集合或路由候选；chat 入口的测试用显式 ``include_repos``。
+    """
+    session = ConvergenceSession.objects.get(id=ctx.session.id)
+    state = dict(session.stage_state or {})
+    state["include_repos"] = list(state.get("include_repos") or []) + [str(r.id) for r in repos]
+    ConvergenceSession.objects.filter(id=session.id).update(stage_state=state)
+    ctx.session.stage_state = state
+
+
 def _latest_content(artifact) -> dict:
     return ArtifactVersion.objects.filter(artifact=artifact).order_by("-version_no").first().content
 
@@ -342,6 +355,7 @@ def test_add_repo_requires_research(authenticated_client, user, monkeypatch) -> 
     _stub_resume(monkeypatch)
     ctx = _open_gate(user)
     repo_c = _make_repo()
+    _grant_scope(ctx, repo_c)
 
     resp = authenticated_client.post(
         ADD_URL.format(aid=ctx.artifact.id), {"repository_id": str(repo_c.id)}, format="json"
@@ -352,6 +366,24 @@ def test_add_repo_requires_research(authenticated_client, user, monkeypatch) -> 
     task = RepoResearchTask.objects.get(session=ctx.session, repository=repo_c)
     assert task.status == RepoResearchTaskStatus.PENDING
     assert _entry(ctx.artifact, repo_c)["pending_research"] is True
+
+
+def test_add_repo_outside_blueprint_scope_is_404_and_starts_nothing(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """MJ-01：越界仓一律 404 中性消息——不进快照、不建 task、不起容器、不写章程。"""
+    resume = _stub_resume(monkeypatch)
+    ctx = _open_gate(user)
+    outsider = _make_repo()  # 全库存在，但不在本蓝图范围内
+
+    resp = authenticated_client.post(
+        ADD_URL.format(aid=ctx.artifact.id), {"repository_id": str(outsider.id)}, format="json"
+    )
+
+    assert resp.status_code == 404
+    assert not RepoResearchTask.objects.filter(session=ctx.session, repository=outsider).exists()
+    assert _entry(ctx.artifact, outsider) == {}
+    assert resume.await_count == 0, "越界动作不得触发续驱"
 
 
 def test_add_repo_missing_repository_id_is_400(authenticated_client, user, monkeypatch) -> None:
@@ -440,6 +472,7 @@ def test_each_mutating_endpoint_triggers_resume_once(
     resume = _stub_resume(monkeypatch)
     ctx = _open_gate(user)
     repo_c = _make_repo()
+    _grant_scope(ctx, repo_c)
     url, body = _action_calls(ctx, repo_c)[index]
 
     resp = authenticated_client.post(url.format(aid=ctx.artifact.id), body, format="json")
@@ -494,6 +527,7 @@ def test_resume_failure_does_not_roll_back_action_or_change_status(
     monkeypatch.setattr(_DRIVE_TARGET, AsyncMock(side_effect=RuntimeError("resume boom")))
     ctx = _open_gate(user)
     repo_c = _make_repo()
+    _grant_scope(ctx, repo_c)
     url, body = _action_calls(ctx, repo_c)[index]
 
     resp = authenticated_client.post(url.format(aid=ctx.artifact.id), body, format="json")
@@ -755,6 +789,7 @@ def test_e2e_add_repo_through_rest_reaches_repo_research_and_dispatches_only_new
 ) -> None:
     ctx = _e2e_setup(user, monkeypatch)
     repo_c = _make_repo()
+    _grant_scope(ctx, repo_c)
 
     resp = authenticated_client.post(
         ADD_URL.format(aid=ctx.artifact.id), {"repository_id": str(repo_c.id)}, format="json"
@@ -880,6 +915,7 @@ def test_e2e_resume_failure_keeps_marker_for_next_trigger(
     """续驱失败不反噬（真链路版）：标记与新仓 task 已持久化，下次触发仍可闭环。"""
     ctx = _e2e_setup(user, monkeypatch)
     repo_c = _make_repo()
+    _grant_scope(ctx, repo_c)
     monkeypatch.setattr(_DRIVE_TARGET, AsyncMock(side_effect=RuntimeError("resume boom")))
 
     resp = authenticated_client.post(
