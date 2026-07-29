@@ -8,6 +8,8 @@
 - ``record_partial``：写结构化 §7 ``PartialPlan``（content + content_hash）并置 done。
 - ``retry_task``（RESEARCH-02）：单仓重试隔离——仅复位该 failed task + attempt+1，
   **绝不触碰其他 task / session.status**。
+- ``bump_attempt``：纯派发计数自增（不改 status、不绑 stage 名），供自实现重试上界的
+  调用方（蓝图链 ``repo_research``）记账。
 - ``invalidate_for_repo``（RESEARCH-03）：仓库重索引时把关联 valid PartialPlan 置失效 +
   对应 RepoResearchTask→stale，可重入幂等。
 
@@ -49,9 +51,7 @@ class ResearchService:
         return await self._create_tasks_sync(session, deep_repos)
 
     @sync_to_async
-    def _create_tasks_sync(
-        self, session: Any, deep_repos: list[dict]
-    ) -> list[RepoResearchTask]:
+    def _create_tasks_sync(self, session: Any, deep_repos: list[dict]) -> list[RepoResearchTask]:
         tasks: list[RepoResearchTask] = []
         for item in deep_repos:
             repository_id = item.get("repository_id")
@@ -169,6 +169,29 @@ class ResearchService:
         task.refresh_from_db()
         return task
 
+    async def bump_attempt(self, task: RepoResearchTask) -> int:
+        """派发计数自增（**只动 ``attempt``，不改 status / 不校验 stage**）。
+
+        与 :meth:`retry_task` 的分工：``retry_task`` 是「复位并重试」，硬绑 ``research``
+        stage 名与 failed/stale 前置；本方法只是「这个 task 又被派了一次容器」的记账，
+        供调用方自行实现派发次数上界（蓝图链 stage 名为 ``repo_research``，复用
+        ``retry_task`` 会恒 raise）。返回自增后的 ``attempt``（更新失败返 -1）。
+        """
+        return await self._bump_attempt_sync(task)
+
+    @sync_to_async
+    def _bump_attempt_sync(self, task: RepoResearchTask) -> int:
+        updated = RepoResearchTask.objects.filter(id=task.id).update(
+            attempt=F("attempt") + 1, updated_at=timezone.now()
+        )
+        if updated != 1:
+            return -1
+        attempt = (
+            RepoResearchTask.objects.filter(id=task.id).values_list("attempt", flat=True).first()
+        )
+        task.attempt = int(attempt or 0)
+        return task.attempt
+
     async def mark_stale(self, task_ids: list) -> int:
         """澄清回答后置指定 RepoResearchTask → stale + 其 valid PartialPlan 失效（CLARIFY-01）。
 
@@ -230,15 +253,15 @@ class ResearchService:
         )
         if not task_ids:
             return 0
-        invalidated = PartialPlan.objects.filter(
-            research_task_id__in=task_ids, valid=True
-        ).update(valid=False, invalidated_reason="repo_reindexed")
+        invalidated = PartialPlan.objects.filter(research_task_id__in=task_ids, valid=True).update(
+            valid=False, invalidated_reason="repo_reindexed"
+        )
         if invalidated:
             # 仅把有 valid partial 被失效的 task 置 stale（已 stale 重复 update 幂等无害）
             stale_task_ids = list(
-                PartialPlan.objects.filter(
-                    research_task_id__in=task_ids, valid=False
-                ).values_list("research_task_id", flat=True)
+                PartialPlan.objects.filter(research_task_id__in=task_ids, valid=False).values_list(
+                    "research_task_id", flat=True
+                )
             )
             RepoResearchTask.objects.filter(id__in=stale_task_ids).update(
                 status=RepoResearchTaskStatus.STALE, updated_at=timezone.now()

@@ -487,6 +487,41 @@ async def test_manual_upgrade_bypasses_exclusion() -> None:
     assert dispatcher.await_count == 1
 
 
+@override_settings(FRIDAY_BASE_URL="https://friday.example.com")
+async def test_repeated_manual_upgrade_is_bounded_by_max_attempts() -> None:
+    """MJ-02：人工动作路径同样受派发上界约束——连续三次升级只起 2 个容器。
+
+    ``attempt`` 若不在派发处自增就恒为 0，``_MAX_ATTEMPTS`` 分支恒为假，
+    ``upgrade-research`` / ``reclassify(indirect→direct)`` / ``edit_responsibility(rerun)``
+    每调一次都能无上限重开 30 分钟调研容器（T-112-19 的 DoS 面）。
+    """
+    from services.process_runtime.blueprint_research_adapter import _MAX_ATTEMPTS
+
+    repo = await _make_repo()
+    session = await _make_session(
+        _routing_state(_candidate(repo, role="indirect", confidence="low"))
+    )
+    await _make_online_runner()
+    task = await RepoResearchTask.objects.acreate(
+        session=session, repository=repo, status=RepoResearchTaskStatus.DONE
+    )
+    dispatcher = _FakeDispatcher()
+    adapter = _adapter(dispatcher, charters_loader=AsyncMock(return_value={}))
+    cfg, git = _stub_runtime()
+
+    with cfg, git:
+        for _ in range(3):
+            await adapter.aupgrade_to_deep(session, str(repo.id))
+            # 每轮把容器打回终态，模拟「上一次调研已结束、用户又点了一次升级」
+            await RepoResearchTask.objects.filter(id=task.id).aupdate(
+                status=RepoResearchTaskStatus.DONE
+            )
+
+    assert dispatcher.await_count == _MAX_ATTEMPTS, "派发次数必须被 _MAX_ATTEMPTS 卡住"
+    fresh = await RepoResearchTask.objects.aget(id=task.id)
+    assert fresh.attempt == _MAX_ATTEMPTS
+
+
 @pytest.mark.parametrize(
     "stage_state",
     [{}, {"routing": {}}, {"routing": {"candidates": []}}, {"routing": "not-a-dict"}],
@@ -534,6 +569,7 @@ async def test_upgrade_to_deep_restages_done_light_repo() -> None:
     assert dispatcher.await_count == 1
     await task.arefresh_from_db()
     assert task.status == RepoResearchTaskStatus.RUNNING
+    assert task.attempt == 1, "每次真实派发必须记账，否则 _MAX_ATTEMPTS 是死代码"
 
 
 async def test_upgrade_to_deep_unknown_repo_returns_false() -> None:
