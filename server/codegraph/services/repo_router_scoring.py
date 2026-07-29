@@ -408,12 +408,30 @@ def _facet_signal(meta: dict[str, Any], key: str) -> float | None:
     return _clip01(float(score))
 
 
-def _criticality_value(meta: dict[str, Any]) -> float | None:
-    """关键程度锚点映射：缺失/枚举外 → None。**不进 breakdown**。"""
+def _merge_anchors(overrides: Any) -> dict[str, float]:
+    """关键程度锚点表与默认 merge：缺键补默认，非法档位/值忽略（T-106-02）。
+
+    严格校验（拒绝写入）在 106-02 loader / view 层——本函数只做防御性回退，
+    保证纯函数在任意注入下不抛。
+    """
+    merged: dict[str, float] = dict(DEFAULT_WEIGHT_CONFIG["criticality_anchors"])
+    if isinstance(overrides, dict):
+        for key, value in overrides.items():
+            if isinstance(key, str) and key and _is_number(value):
+                merged[key] = _clip01(float(value))
+    return merged
+
+
+def _criticality_value(meta: dict[str, Any], anchors: dict[str, float]) -> float | None:
+    """关键程度锚点映射：缺失/枚举外 → None。**不进 breakdown**。
+
+    ``anchors`` 由调用方注入（router 从 SystemSetting 配置、replay 从快照
+    ``weight_config.criticality_anchors``）——锚点表是可外置配置项，硬编默认表
+    会让运维改了不生效（配置项存在但是死的，比没有更危险）。
+    """
     raw = meta.get("criticality_value")
     if not isinstance(raw, str):
         return None
-    anchors: dict[str, float] = DEFAULT_WEIGHT_CONFIG["criticality_anchors"]
     return anchors.get(raw)
 
 
@@ -423,6 +441,7 @@ def aggregate_and_score(
     weights: dict[str, float] | None = None,
     repo_meta: dict[str, dict[str, Any]] | None = None,
     constants: dict[str, Any] | None = None,
+    criticality_anchors: dict[str, float] | None = None,
     now: str | None = None,
 ) -> list[ScoredCandidate]:
     """按仓库聚合 node_hits 并产出可拆解加性分数（INV-R1/R3）。
@@ -439,6 +458,8 @@ def aggregate_and_score(
     - ``repo_meta``：per-repo 元数据注入（键契约见模块 docstring）。
     - ``constants``：新路径常数；None → ``DEFAULT_WEIGHT_CONFIG["constants"]``；
       传入时与默认 merge（缺键补默认，非法值回退默认）。
+    - ``criticality_anchors``：关键程度锚点表（tie-break 用），同 merge 语义；
+      None → 默认四档。由调用方从配置/快照注入——外置配置必须真生效（MJ-01）。
     - ``now``：ISO 8601 时间锚点（活跃度衰减用）。禁止函数内读取系统当前时间
       （回放/golden 确定性）；naive 时间戳按 UTC 处理，last_commit_at 同规则。
 
@@ -486,7 +507,9 @@ def aggregate_and_score(
 
     if repo_meta is None:
         return _score_legacy(buckets, _s_hat, weights)
-    return _score_with_meta(buckets, _s_hat, weights, repo_meta, constants, now)
+    return _score_with_meta(
+        buckets, _s_hat, weights, repo_meta, constants, criticality_anchors, now
+    )
 
 
 def _score_legacy(
@@ -540,12 +563,14 @@ def _score_with_meta(
     weights: dict[str, float] | None,
     repo_meta: dict[str, dict[str, Any]],
     constants: dict[str, Any] | None,
+    criticality_anchors: dict[str, float] | None,
     now: str | None,
 ) -> list[ScoredCandidate]:
     """新路径（Phase 106 六信号）：MaxP+breadth 主干 + 元数据三信号 +
     活跃度连续化 + 关键程度同分带 tie-break。"""
     w: dict[str, float] = weights if weights is not None else DEFAULT_WEIGHT_CONFIG["weights"]
     consts = _merge_constants(constants)
+    anchors = _merge_anchors(criticality_anchors)
     now_dt = _parse_iso_utc(now)
     lam = consts["lam"]
     # BL-01：S_top 口径在**进入循环前**按全仓 dense 覆盖情况定一次，循环内
@@ -597,7 +622,7 @@ def _score_with_meta(
                 facets=facets,
                 hits=hits,
                 # 7. 关键程度锚点值（旁路字段，不计入 Σbreakdown==score 恒等式）
-                criticality=_criticality_value(meta),
+                criticality=_criticality_value(meta, anchors),
                 s_top_source=s_top_source,
             )
         )

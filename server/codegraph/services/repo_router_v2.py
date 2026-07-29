@@ -234,18 +234,26 @@ class RepoRouterV2:
 
         if config is not None and repo_meta is not None:
             effective_constants = {**config["constants"], "n_bar": meta_stats.get("n_bar")}
+            # 锚点表也是外置配置（MJ-01）：注入打分核心 + 进快照，否则运维改了
+            # 不生效、回放的 tie-break 顺序也不可复现。
+            effective_anchors = dict(
+                config.get("criticality_anchors")
+                or DEFAULT_WEIGHT_CONFIG["criticality_anchors"]
+            )
             stage0_candidates = cls._stage0_candidates(
                 node_hits,
                 top_k=STAGE0_REPO_K,
                 weights=config["weights"],
                 repo_meta=repo_meta,
                 constants=effective_constants,
+                criticality_anchors=effective_anchors,
                 now=scored_at,
             )
             # 快照携带本次生效全值（回放不依赖当时的 SystemSetting，106-07 消费）。
             snapshot_weight_config: dict[str, Any] | None = {
                 "weights": dict(config["weights"]),
                 "constants": effective_constants,
+                "criticality_anchors": effective_anchors,
                 "weight_set_version": config["weight_set_version"],
                 "alias_dict_hash": meta_stats.get("alias_dict_hash"),
                 "embedding_model_id": meta_stats.get("embedding_model_id"),
@@ -607,6 +615,7 @@ class RepoRouterV2:
         weights: dict[str, float] | None = None,
         repo_meta: dict[str, dict[str, Any]] | None = None,
         constants: dict[str, Any] | None = None,
+        criticality_anchors: dict[str, float] | None = None,
         now: str | None = None,
     ) -> list[dict[str, Any]]:
         """Stage 0 聚合打分薄封装——调纯函数打分核心（105-01 / 106-01）。
@@ -619,7 +628,12 @@ class RepoRouterV2:
         走 legacy 三信号路径；106-06 起 ``route()`` 注入六信号新路径参数。
         """
         scored = aggregate_and_score(
-            node_hits, weights=weights, repo_meta=repo_meta, constants=constants, now=now
+            node_hits,
+            weights=weights,
+            repo_meta=repo_meta,
+            constants=constants,
+            criticality_anchors=criticality_anchors,
+            now=now,
         )
         return [
             {

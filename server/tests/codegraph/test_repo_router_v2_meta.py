@@ -33,7 +33,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from django.core.cache import cache
 
-from codegraph.services.repo_router_scoring import WEIGHT_SET_VERSION
+from codegraph.services.repo_router_scoring import DEFAULT_WEIGHT_CONFIG, WEIGHT_SET_VERSION
 from codegraph.services.repo_router_v2 import STAGE0_REPO_K, RepoRouterV2
 from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
@@ -257,6 +257,8 @@ async def test_full_meta_breakdown_criticality_and_snapshot(monkeypatch) -> None
     wc = snap["weight_config"]
     assert wc["weight_set_version"] == WEIGHT_SET_VERSION
     assert wc["constants"]["n_bar"] == 60.0
+    # 锚点表随快照（MJ-01）：外置锚点若不进快照，回放的 tie-break 顺序不可复现
+    assert wc["criticality_anchors"] == DEFAULT_WEIGHT_CONFIG["criticality_anchors"]
     assert isinstance(wc["alias_dict_hash"], str) and len(wc["alias_dict_hash"]) == 64
     assert wc["embedding_model_id"] == "test-embed-model"
     # repo_meta：记全部分桶仓（BL-02 自包含性——回放按全量 node_hits 重算，

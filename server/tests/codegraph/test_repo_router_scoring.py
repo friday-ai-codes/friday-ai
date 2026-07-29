@@ -733,6 +733,39 @@ class TestCriticalityTieBreak:
             # 绝不进加性和：breakdown 无 criticality 键
             assert "criticality" not in cand.breakdown
 
+    def test_injected_anchors_override_defaults_and_change_order(self):
+        """MJ-01：注入的锚点表真生效——把「边缘」调到最高档即可反转带内顺序。
+
+        锚点表是外置配置（SystemSetting/快照），硬编默认表会让运维改了不生效。
+        """
+        meta = {
+            "aaa": _make_meta(dense_cos_max=0.40, criticality_value="边缘"),
+            "zzz": _make_meta(dense_cos_max=0.40, criticality_value="核心"),
+        }
+        hits = self._pair_hits("aaa", "zzz")
+        default_order = [c.repo_id for c in aggregate_and_score(hits, repo_meta=meta)]
+        assert default_order == ["zzz", "aaa"]
+
+        overridden = aggregate_and_score(
+            hits,
+            repo_meta=meta,
+            criticality_anchors={"边缘": 1.0, "核心": 0.15},
+        )
+        assert [c.repo_id for c in overridden] == ["aaa", "zzz"]
+        assert overridden[0].criticality == 1.0
+        # 只影响 tie-break 旁路，不进加性和（分数与默认锚点一致）
+        assert round(overridden[0].score, 6) == round(overridden[1].score, 6)
+
+    def test_partial_and_invalid_anchors_merge_with_defaults(self):
+        """锚点表 merge 语义：缺档补默认、非法档位/值忽略（trust boundary 不抛）。"""
+        cand = aggregate_and_score(
+            [_make_hit("r1", _RRF_BASE, "n0")],
+            repo_meta={"r1": _make_meta(criticality_value="重要")},
+            criticality_anchors={"核心": 0.9, "重要": "high", 5: 1.0},  # type: ignore[dict-item]
+        )[0]
+        # 「重要」值非法被忽略 → 回退默认 0.7
+        assert cand.criticality == DEFAULT_WEIGHT_CONFIG["criticality_anchors"]["重要"]
+
     def test_unknown_criticality_enum_is_none(self):
         """枚举外值 → criticality=None（不可用，不奖不罚）。"""
         cand = aggregate_and_score(
