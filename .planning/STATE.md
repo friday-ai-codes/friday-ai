@@ -600,3 +600,9 @@ Next: `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义
 - 候选立项输入：`.planning/coding-agent/PROPOSAL.md`（Coding Agent 流水线，V1.2 提案待评审）
 - 把 v0.17.0 遗留的 11 项真实环境人工验证转入运维验收 backlog（目前无承接方）
 - 遗留 housekeeping（非阻断）：`/Users/zaneliu/gsd-workspaces/friday-fastapi-sa/friday-ai` 是 30 天未动的 GSD workspace，其分支 `codex/fastapi-sqlalchemy-migration` 相对 main 已 0 独有提交（工作已并入），可 `git worktree remove` 清理；`worktree-agent-*` 三个分支属另一份与 main 无共同祖先的历史（tip 为 2026-04-30，其提交信息里的 GSD 阶段编号远超本项目最大的 104），worktree 注册已清、分支 ref 待确认后删除
+
+## Deferred Verification
+
+| Phase | State | Resume |
+|-------|-------|--------|
+| 105 | verification_deferred_human（35/35 自动化 must-haves 已过；余 3 项人工：O-1 生产实测回填 / gk-001 真实样本替换 / 前端展开目视） | /gsd-verify-work 105 |
