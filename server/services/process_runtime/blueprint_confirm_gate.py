@@ -75,6 +75,10 @@ _MAX_RESPONSIBILITY_CHARS = 2000
 _MAX_SUMMARY_CHARS = 1000
 _MAX_LIST_ITEMS = 10
 
+# 章程 `owned_domains[].domain` 是**领域名**（会被 score_charter_match 拿去做子串/n-gram
+# 匹配），不是职责正文：超长 domain 与任意需求几乎必然有交集，等于让该仓恒命中。
+_MAX_DOMAIN_CHARS = 40
+
 _VALID_ROLES = ("direct", "indirect")
 _VALID_VERDICTS = ("suitable", "partial", "unsuitable")
 
@@ -960,14 +964,34 @@ def _build_charter_draft(entry: dict[str, Any]) -> dict[str, Any]:
     responsibility = str(entry.get("responsibility") or "").strip()
     if not responsibility:
         return {}
+    domain = _extract_domain_name(entry)
+    if not domain:
+        # 宁可不回灌，也不写一条会污染路由的「领域」：`domain` 会被 `score_charter_match`
+        # 拿去做子串 / n-gram 匹配，把一整段职责正文塞进去等于让该仓对任意需求近乎恒命中
+        # （owned_implemented=1.0），而 ai_draft 对既有 ai_draft 章程是就地生效、无需人工
+        # confirm —— 一次确认门操作就能把这个仓变成「什么需求都归我」。
+        return {}
     role = str(entry.get("role_suggestion") or "")
     return {
         "owned_domains": [
             {
-                "domain": responsibility[:200],
+                "domain": domain,
                 "status": "implemented" if role == "direct" else "planned",
-                "note": f"来自蓝图确认门的人工确认（{repository_name or '本仓'}）",
+                # 职责正文落 note（不参与匹配），领域名才是匹配面
+                "note": f"{responsibility[:500]}（来自蓝图确认门的人工确认"
+                f"{('：' + repository_name) if repository_name else ''}）",
                 "citations": [],
             }
         ]
     }
+
+
+def _extract_domain_name(entry: dict[str, Any]) -> str:
+    """取短领域名：路由证据的 ``matched_domains`` 首项，取不到返空串（调用方不产草案）。"""
+    evidence = entry.get("routing_evidence")
+    domains = evidence.get("matched_domains") if isinstance(evidence, dict) else None
+    for item in domains or []:
+        name = str(item.get("domain", "") if isinstance(item, dict) else item).strip()
+        if name:
+            return name[:_MAX_DOMAIN_CHARS]
+    return ""
