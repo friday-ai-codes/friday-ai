@@ -509,6 +509,35 @@ class TestFacetT2Matcher:
 
 
 @pytest.mark.usefixtures("_clear_local_vec_cache")
+class TestT2EmbedBudget:
+    """MJ-06：单实例（== 单次路由）embedding 次数硬上限，超限静默降级 T1-only。"""
+
+    async def test_budget_caps_embedding_calls_and_degrades_silently(self, monkeypatch):
+        mock = AsyncMock(return_value=_vec_with_cos(0.40))
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+        matcher = FacetT2Matcher(
+            model_id="budget-model", t2_c_lo=0.25, t2_c_hi=0.55, embed_budget=2
+        )
+
+        scores = [await matcher.match(_QUERY_VEC, f"未缓存值-{i}") for i in range(5)]
+
+        assert mock.await_count == 2  # 预算 2 次用尽后不再发请求
+        assert scores[0] is not None and scores[1] is not None
+        assert scores[2:] == [None, None, None]  # 降级 T1-only，不抛异常
+
+    async def test_no_budget_means_unlimited(self, monkeypatch):
+        """离线场景（校准 command）不传预算 → 不限次数。"""
+        mock = AsyncMock(return_value=_vec_with_cos(0.40))
+        monkeypatch.setattr("services.embedding.EmbeddingService.generate_embedding", mock)
+        matcher = FacetT2Matcher(model_id="unlimited-model", t2_c_lo=0.25, t2_c_hi=0.55)
+
+        for i in range(4):
+            assert await matcher.match(_QUERY_VEC, f"另一批未缓存值-{i}") is not None
+
+        assert mock.await_count == 4
+
+
+@pytest.mark.usefixtures("_clear_local_vec_cache")
 class TestWarmFacetVectors:
     async def test_warm_batch_success_count(self, monkeypatch):
         """批量预热：成功条数按可用向量计；预热后 match 零单条 embedding 调用。"""

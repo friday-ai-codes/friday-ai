@@ -53,9 +53,12 @@ from codegraph.services.repo_router_config import (
 )
 from codegraph.services.repo_router_metadata import (
     FACET_CRITICALITY,
+    FACET_DOMAIN,
+    FACET_STACK,
     LAYER_T2,
     FacetT2Matcher,
     resolve_facet_scores,
+    warm_facet_vectors,
 )
 from codegraph.services.repo_router_scoring import (
     DEFAULT_WEIGHT_CONFIG,
@@ -74,6 +77,14 @@ Confidence = Literal["high", "medium", "low"]
 
 STAGE0_NODE_K = 50
 STAGE0_REPO_K = 12
+
+# 仓库级 last_commit 聚合缓存 TTL（MJ-05）：活跃度是天级衰减信号，60s 陈旧
+# 完全可接受；键含候选仓集合，命中即省掉一次 FileIndex 全量聚合。
+_LAST_COMMIT_CACHE_TTL_SECONDS = 60
+
+# 单次路由的 T2 embedding 调用硬上限（MJ-06）：缓存冷启动时逐值串行 embedding
+# 会把 Stage 0 拖到秒级；超限静默降级 T1-only（T2 绝不阻塞路由）。
+STAGE0_T2_EMBED_BUDGET = 16
 
 # Stage 1 prompt 模板版本（ROUTE-09 幂等三件套）：参与输入哈希缓存 key 与
 # snapshot 的 prompt_hash 版本绑定四元组。system/human prompt 文案（含排列输出
@@ -420,12 +431,19 @@ class RepoRouterV2:
         无 FileIndex 行的仓不出现在返回 dict（→ 活跃度走枚举回退，CONTEXT 已锁）。
         sync 实现，调用方经 ``sync_to_async(thread_sensitive=False)`` 包装。
 
+        热路径成本（MJ-05）：聚合覆盖索引 ``idx_repo_last_commit_at``
+        （repositories 迁移 0040）+ 进程内短 TTL 缓存（key 含仓集合）——同一批
+        候选在 TTL 内只算一次聚合。缓存值是「活跃度信号」这类容忍秒级陈旧的
+        数据，过期即重算，无需失效通知。
+
         rid 来自 Qdrant payload（trust boundary，T-106-14 逐字段容错）：
         repository_id 是 UUIDField，payload 混入非 UUID 值会让 ``__in`` 查询抛
-        ValidationError——按「该信号不可用」处理（活跃度枚举回退），不让脏数据
-        杀掉整条 repo_meta 链路；真正的 DB 故障（OperationalError 等）继续上抛
-        由 route() 整体回退兜底。
+        ValidationError。**逐 rid 先过滤合法 UUID**（MN-01）——脏值只让自身的
+        活跃度走枚举回退，不像整体 ``return {}`` 那样让全部候选一起退化；真正的
+        DB 故障（OperationalError 等）继续上抛由 route() 整体回退兜底。
         """
+        import uuid as _uuid
+
         from django.core.exceptions import ValidationError
         from django.db.models import Max
 
@@ -433,18 +451,43 @@ class RepoRouterV2:
 
         if not repository_ids:
             return {}
+        valid_ids: list[str] = []
+        for rid in repository_ids:
+            try:
+                _uuid.UUID(str(rid))
+            except (ValueError, AttributeError, TypeError):
+                continue  # 脏 payload：该仓活跃度走枚举回退，不牵连其他候选
+            valid_ids.append(str(rid))
+        if not valid_ids:
+            return {}
+
+        cache_key = "repo_router_v2:last_commit:" + hashlib.sha256(
+            "|".join(sorted(valid_ids)).encode("utf-8")
+        ).hexdigest()
+        try:
+            cached = cache.get(cache_key)
+            if isinstance(cached, dict):
+                return cached
+        except Exception:  # noqa: BLE001 — 缓存 best-effort，异常吞掉走直算
+            pass
+
         try:
             rows = list(
-                FileIndex.objects.filter(repository_id__in=repository_ids)
+                FileIndex.objects.filter(repository_id__in=valid_ids)
                 .values("repository_id")
                 .annotate(latest=Max("last_commit_authored_at"))
             )
         except (ValidationError, ValueError):
             return {}
-        return {
+        latest_by_repo = {
             str(row["repository_id"]): (row["latest"].isoformat() if row["latest"] else None)
             for row in rows
         }
+        try:
+            cache.set(cache_key, latest_by_repo, timeout=_LAST_COMMIT_CACHE_TTL_SECONDS)
+        except Exception:  # noqa: BLE001 — 写失败不反噬，下次重算
+            pass
+        return latest_by_repo
 
     @classmethod
     async def _load_repo_meta(
@@ -546,9 +589,19 @@ class RepoRouterV2:
                     model_id=str(embedding_model_id or "unknown"),
                     t2_c_lo=constants.get("t2_c_lo"),
                     t2_c_hi=constants.get("t2_c_hi"),
+                    # 单次路由的 embedding 次数硬上限（MJ-06）：超限静默降级 T1-only
+                    embed_budget=STAGE0_T2_EMBED_BUDGET,
                 )
         except Exception:  # noqa: BLE001 — embedding 未配置/读取失败 → 全走 T1
             t2_matcher = None
+
+        # ---- T2 冷启动批量预热（MJ-06）----
+        # 逐仓逐值走 match() 会在缓存冷启动时串行发「候选仓数 × facet 分量数」次
+        # embedding（进程重启 / cache 驱逐 / 换模型都会触发），几十次串行 HTTP 全
+        # 落在 Stage 0。先把本次全部待匹配的 facet 值收齐批量预热一次，随后逐值
+        # 只读缓存。best-effort：预热失败不阻塞（T2 自然降级 T1-only）。
+        if t2_matcher is not None:
+            await warm_facet_vectors(cls._collect_t2_facet_values(buckets, rids), t2_matcher)
 
         repo_meta: dict[str, dict[str, Any]] = {}
         t2_used = False
@@ -605,6 +658,33 @@ class RepoRouterV2:
         except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
             pass
         return repo_meta, meta_stats
+
+    @classmethod
+    def _collect_t2_facet_values(
+        cls,
+        buckets: dict[str, list[dict[str, Any]]],
+        rids: list[str],
+    ) -> list[str]:
+        """收集本次路由**可能走 T2** 的全部 facet 值（批量预热输入，MJ-06）。
+
+        只含 domain / stack 两维（team 恒 T1-only）；技术栈按 "/" 拆分逐值，
+        与 resolver 的匹配粒度一致。去重与无效值过滤由 warm_facet_vectors 负责。
+        """
+        values: list[str] = []
+        for rid in rids:
+            hits = buckets.get(rid) or []
+            if not hits:
+                continue
+            facets = cls._parse_json_field((hits[0].get("payload") or {}).get("facets"), {})
+            if not isinstance(facets, dict):
+                continue
+            domain = facets.get(FACET_DOMAIN)
+            if isinstance(domain, str):
+                values.append(domain)
+            stack = facets.get(FACET_STACK)
+            if isinstance(stack, str):
+                values.extend(part.strip() for part in stack.split("/"))
+        return values
 
     @classmethod
     def _stage0_candidates(
