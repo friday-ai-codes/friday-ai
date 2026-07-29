@@ -28,6 +28,8 @@ __all__ = [
     "EVENT_REPO_RESEARCH_FAILED",
     "EVENT_CLARIFICATION_ASKED",
     "EVENT_CLARIFICATION_ANSWERED",
+    "EVENT_CLARIFICATION_TIMED_OUT",
+    "EVENT_CLARIFICATION_DELIVERY_FAILED",
     "EVENT_FEATURE_CLASSIFIED",
     "EVENT_PLAN_MERGE_STARTED",
     "EVENT_PLAN_MERGE_COMPLETED",
@@ -68,6 +70,19 @@ EVENT_PROCESS_SESSION_FAILED: Final[str] = "process.session.failed"
 # （producer = Plan 03 spec_generation.py，融合通过后逐 SDD 仓 best-effort emit）
 EVENT_SPEC_DRAFTED: Final[str] = "spec.drafted"
 
+# ---- v0.19 澄清韧性（RELY-02）：两者本里程碑内均有真实 emit 点，故计入 ALL_EVENTS ----
+# 澄清轮超时出口。producer = delivery/management/commands/expire_pending_clarifications.py，
+# payload {clarification_id, round_no, exit_action, waited_seconds, unclarified_points}，
+# 其中 exit_action ∈ {"resumed_with_assumptions", "failed_no_answer"}。
+# 为何不复用 clarification.answered：时间线必须能区分「用户答了」与「超时放行」，
+# 混用会让时间线撒谎（正是本里程碑要消灭的行为）。
+EVENT_CLARIFICATION_TIMED_OUT: Final[str] = "clarification.timed_out"
+# 澄清卡送达失败。producer = workflows/nodes/ai/plan_research.py::_send_clarify_card，
+# payload {clarification_id, round_no, channel, reason}，reason 为 5 值受控枚举
+# （no_questions / no_space / no_project / no_chat_id / send_failed）——结构上不含上游
+# 响应体或异常原文（T-107-02 信息泄漏面）。
+EVENT_CLARIFICATION_DELIVERY_FAILED: Final[str] = "clarification.delivery_failed"
+
 # v0.8 wave 编码产出——常量预留（OUT OF SCOPE 本 phase），不计入 ALL_EVENTS
 EVENT_CODING_WAVE_STARTED: Final[str] = "coding.wave.started"
 EVENT_CODING_WAVE_COMPLETED: Final[str] = "coding.wave.completed"
@@ -82,6 +97,8 @@ ALL_EVENTS: Final[frozenset[str]] = frozenset(
         EVENT_REPO_RESEARCH_FAILED,
         EVENT_CLARIFICATION_ASKED,
         EVENT_CLARIFICATION_ANSWERED,
+        EVENT_CLARIFICATION_TIMED_OUT,
+        EVENT_CLARIFICATION_DELIVERY_FAILED,
         EVENT_FEATURE_CLASSIFIED,
         EVENT_PLAN_MERGE_STARTED,
         EVENT_PLAN_MERGE_COMPLETED,
