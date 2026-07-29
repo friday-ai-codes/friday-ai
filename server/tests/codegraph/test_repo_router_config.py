@@ -177,6 +177,14 @@ class TestValidateWeightConfig:
             ({"offset_days": -1}, "offset_days"),
             ({"activity_floor": 2}, "activity_floor"),
             ({"deprecated_cap": -0.2}, "deprecated_cap"),
+            # MN-03：affine clip 校准区间是余弦域，越界值会把 S_top 压成常数
+            # （信号方差趋零），且带宽过窄会挤成 0/1 两极。
+            ({"s_top_c_lo": -5.0}, "s_top_c_lo"),
+            ({"s_top_c_hi": 100.0}, "s_top_c_hi"),
+            ({"t2_c_lo": -0.5}, "t2_c_lo"),
+            ({"t2_c_hi": 2.0}, "t2_c_hi"),
+            ({"s_top_c_lo": 0.30, "s_top_c_hi": 0.32}, "过窄"),
+            ({"t2_c_lo": 0.30, "t2_c_hi": 0.31}, "过窄"),
         ],
     )
     def test_constant_range_violations_rejected(self, constants, needle):

@@ -210,6 +210,39 @@ class TestMarginRule:
             == "medium"
         )
 
+    def test_negative_margin_is_clamped_to_zero(self):
+        """MN-04：输入非严格降序（tie-break 后可能出现）时 margin 不取负值。
+
+        crit_band 量化桶排序让同带内相邻对可能 s1 < s2；负 margin 与「无区分度」
+        同义，不得因符号绕过 θ_margin 闸门。
+        """
+        assert (
+            derive_confidence([0.60, 0.62], theta_abs=0.55, theta_margin=0.08, theta_med=0.35)
+            == "medium"
+        )
+        # θ_margin <= 0 的极端配置下也不得因负 margin 判 high 后又反转语义
+        assert (
+            derive_confidence([0.60, 0.62], theta_abs=0.55, theta_margin=0.0, theta_med=0.35)
+            == "high"
+        )
+
+    def test_tie_break_output_feeds_derive_confidence_safely(self):
+        """MN-04 端到端：带内 criticality 决序后的分数序列喂给 derive_confidence
+        不产生负 margin（首位分数可能略低于次位）。"""
+        meta = {
+            "aaa": _make_meta(dense_cos_max=0.401, criticality_value="边缘"),
+            "zzz": _make_meta(dense_cos_max=0.40, criticality_value="核心"),
+        }
+        hits = [
+            _make_hit("aaa", _RRF_BASE, "aaa-n0"),
+            _make_hit("zzz", _RRF_BASE, "zzz-n0"),
+        ]
+        ranked = aggregate_and_score(hits, repo_meta=meta)
+        scores = [c.score for c in ranked]
+        conf = derive_confidence(scores, theta_abs=0.0, theta_margin=0.0, theta_med=0.0)
+        assert conf == "high"  # margin 被夹到 0 后仍满足 θ_margin=0
+        assert max(0.0, scores[0] - scores[1]) >= 0.0
+
 
 class TestLlmAdjustment:
     @pytest.mark.parametrize(

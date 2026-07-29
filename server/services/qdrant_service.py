@@ -1477,11 +1477,17 @@ class QdrantService:
                 for r in results.points
             ]
         except Exception as e:  # noqa: BLE001 — 失败返回空列表，调用方降级
+            # 异常文本可能带上游响应体（Qdrant UnexpectedResponse 会回显 body），
+            # 手动过一遍脱敏；category/component 按 LOGGING-SPEC 必填项补齐。
+            from common.logging import redact_secrets_in_text
+
             logger.warning(
                 "dense_search_by_name_failed",
                 collection_name=collection_name,
-                error=str(e),
+                error=redact_secrets_in_text(str(e)),
                 error_type=type(e).__name__,
+                category="sampling",
+                component="qdrant",
             )
             return []
 

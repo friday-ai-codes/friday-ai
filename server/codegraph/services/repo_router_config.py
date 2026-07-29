@@ -171,7 +171,17 @@ _CONSTANT_RULES: dict[str, tuple[Any, str]] = {
     "activity_floor": (lambda v: 0.0 <= v <= 1.0, "activity_floor 必须在 [0, 1]"),
     "deprecated_cap": (lambda v: 0.0 <= v <= 1.0, "deprecated_cap 必须在 [0, 1]"),
     "crit_band": (lambda v: 0.0 < v <= 0.1, "crit_band 必须在 (0, 0.1]"),
+    # affine clip 校准区间是**余弦域**，必须落在 [0,1]：写 s_top_c_lo=-5 /
+    # s_top_c_hi=100 只校验 lo<hi 也能通过，之后 (cos+5)/5.55 把所有仓的 S_top
+    # 压到 0.95 附近（信号方差趋零，正是「信号加了没用」的死法）。
+    "s_top_c_lo": (lambda v: 0.0 <= v <= 1.0, "s_top_c_lo 必须在 [0, 1]（余弦域）"),
+    "s_top_c_hi": (lambda v: 0.0 <= v <= 1.0, "s_top_c_hi 必须在 [0, 1]（余弦域）"),
+    "t2_c_lo": (lambda v: 0.0 <= v <= 1.0, "t2_c_lo 必须在 [0, 1]（余弦域）"),
+    "t2_c_hi": (lambda v: 0.0 <= v <= 1.0, "t2_c_hi 必须在 [0, 1]（余弦域）"),
 }
+
+# 校准区间最小带宽：带宽过窄会把校准分挤成 0/1 两极（同样让信号方差趋零）。
+_MIN_CALIBRATION_BAND = 0.05
 
 
 def _validate_constants(raw: Any, normalized: dict[str, Any], errors: list[str]) -> None:
@@ -207,15 +217,20 @@ def _validate_constants(raw: Any, normalized: dict[str, Any], errors: list[str])
             errors.append(f"constants.{key}={value} 非法：{rule[1]}")
             continue
         merged[key] = value
-    # 跨键约束：affine clip 校准区间必须非空（c_lo < c_hi），否则除零/全 clip。
-    if merged["s_top_c_lo"] >= merged["s_top_c_hi"]:
-        errors.append(
-            f"constants.s_top_c_lo={merged['s_top_c_lo']} 必须 < s_top_c_hi={merged['s_top_c_hi']}"
-        )
-    if merged["t2_c_lo"] >= merged["t2_c_hi"]:
-        errors.append(
-            f"constants.t2_c_lo={merged['t2_c_lo']} 必须 < t2_c_hi={merged['t2_c_hi']}"
-        )
+    # 跨键约束：affine clip 校准区间必须非空且带宽足够（否则除零 / 全 clip /
+    # 信号方差趋零）。
+    for prefix in ("s_top", "t2"):
+        lo = merged[f"{prefix}_c_lo"]
+        hi = merged[f"{prefix}_c_hi"]
+        if lo >= hi:
+            errors.append(
+                f"constants.{prefix}_c_lo={lo} 必须 < {prefix}_c_hi={hi}"
+            )
+        elif hi - lo < _MIN_CALIBRATION_BAND - _GRID_TOL:
+            errors.append(
+                f"constants.{prefix}_c_hi - {prefix}_c_lo={hi - lo:.4f} 过窄："
+                f"校准带宽必须 >= {_MIN_CALIBRATION_BAND}（过窄会把校准分挤成两极，信号方差趋零）"
+            )
     if not errors:
         normalized["constants"] = merged
     else:

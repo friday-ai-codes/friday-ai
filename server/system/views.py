@@ -1569,7 +1569,9 @@ class RepoRouterWeightConfigView(APIView):
 
     GET：任意已认证用户（与 ClaudeCodeConfigView 口径一致）——返回当前生效
     配置 + ``is_default``（SystemSetting 行不存在时 true，运维界面总能拿到
-    当前生效配置）。
+    当前生效配置）。**该放开是有意的**：返回体只有排序权重与常数（无凭证、
+    无仓库/需求内容），且「分数分解可解释」要求任何能看路由结果的用户都能
+    对照当前权重理解排序；写入面才收紧到 superuser。
     PUT：仅 superuser（T-106-03）——``validate_weight_config`` 与 loader 共用
     校验单点，失败 400 + 逐条错误；合法则规范化落库。写入后 post_save signal
     （system/signals.py）自动失效 settings_service 60s 缓存——「保存即生效」，
@@ -1592,6 +1594,7 @@ class RepoRouterWeightConfigView(APIView):
 
     async def put(self, request) -> Response:  # type: ignore[no-untyped-def]
         import json as _json
+        import time as _time
 
         from codegraph.services.repo_router_config import validate_weight_config
 
@@ -1601,8 +1604,31 @@ class RepoRouterWeightConfigView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        started = _time.monotonic()
+        try:
+            _viewset_logger.info(
+                "repo_router_weight_config_update_started",
+                category="caller",
+                component="system",
+            )
+        except Exception:
+            pass
+
         normalized, errors = validate_weight_config(request.data)
         if errors:
+            # 校验失败也留痕（只记错误条数与首条，不记配置全文）——否则「谁在
+            # 反复填错」在日志里完全看不到。
+            try:
+                _viewset_logger.warning(
+                    "repo_router_weight_config_update_failed",
+                    error_count=len(errors),
+                    first_error=errors[0][:200],
+                    duration_ms=int((_time.monotonic() - started) * 1000),
+                    category="caller",
+                    component="system",
+                )
+            except Exception:
+                pass
             return Response(
                 {"detail": "权重配置校验失败", "errors": errors},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1623,6 +1649,7 @@ class RepoRouterWeightConfigView(APIView):
             _viewset_logger.info(
                 "repo_router_weight_config_updated",
                 weight_set_version=normalized.get("weight_set_version"),
+                duration_ms=int((_time.monotonic() - started) * 1000),
                 category="caller",
                 component="system",
             )

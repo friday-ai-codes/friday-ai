@@ -87,6 +87,21 @@ class TestMatchT1:
         assert match_t1("升级 django 配置", FACET_STACK, "Go", DEFAULT_ALIAS_DICT) is None
         assert match_t1("补充 tests 覆盖", FACET_STACK, "TypeScript", DEFAULT_ALIAS_DICT) is None
 
+    def test_short_ascii_canonical_needs_context(self):
+        """MN-08：单/双字符 ASCII canonical 不允许裸值命中，只能经别名。
+
+        词边界挡不住「c 端」「C 轮」这类误报（技术栈=C 的仓会拿满分），
+        英文动词 "go" 同理——T1 是确定性层，误报比漏报代价高。
+        """
+        for query in ("c 端用户增长实验", "C 轮融资数据看板", "先 go 一步做灰度"):
+            assert match_t1(query, FACET_STACK, "C", DEFAULT_ALIAS_DICT) is None, query
+            assert match_t1(query, FACET_STACK, "Go", DEFAULT_ALIAS_DICT) is None, query
+        # 带上下文的别名仍然命中（漏报面由别名词典兜住，运维可扩充）
+        assert match_t1("重写 c语言 扩展模块", FACET_STACK, "C", DEFAULT_ALIAS_DICT) == 1.0
+        assert match_t1("golang 服务迁移", FACET_STACK, "Go", DEFAULT_ALIAS_DICT) == 1.0
+        # 三字符及以上的 ASCII canonical 不受影响
+        assert match_t1("升级 rust 版本", FACET_STACK, "Rust", DEFAULT_ALIAS_DICT) == 1.0
+
     def test_overlong_value_returns_none(self):
         """超长 facet 值（>200 字符）→ 直接不可匹配（DoS 护栏）。"""
         long_value = "长" * 201
