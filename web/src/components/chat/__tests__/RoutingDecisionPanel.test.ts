@@ -353,3 +353,265 @@ describe('routingDecisionPanel Phase 106 新信号标签', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// Phase 107-09 Task 2：分区呈现 / Top-3 与 pin-in / 跨组标注 / 迟滞置顶提示
+// （ROUTE-01 / ROUTE-02，UI-SPEC §交互契约 A/B）
+// ---------------------------------------------------------------------------
+
+const IN_PROJECT_LABEL = '本项目关联仓'
+const GLOBAL_LABEL = '全局候选'
+const CROSS_GROUP_SENTENCE = '未关联当前平台，可能涉及跨组协作'
+const PROMOTION_SENTENCE = '更匹配的仓不在本项目关联范围内'
+
+function cand(id: string, extra: Partial<RoutingCandidate> = {}): RoutingCandidate {
+  return {
+    repository_id: id,
+    repository_name: id,
+    score: 0.5,
+    level: 'medium',
+    evidence: `ev-${id}`,
+    selected_by_ai: false,
+    selected_by_user_final: false,
+    ...extra,
+  }
+}
+
+function mountTrace(overrides: Partial<RoutingDecisionData>) {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const store = useRoutingStore()
+  store.upsertTrace({ ...makeTrace(), ...overrides }, 'conv-1')
+  const wrapper = mount(RoutingDecisionPanel, {
+    global: { plugins: [pinia] },
+    props: {
+      traceId: overrides.trace_id ?? 'trace-1',
+      conversationId: 'conv-1',
+      messageId: 'msg-1',
+    },
+  })
+  return { wrapper, store }
+}
+
+/** 默认折叠场景：本项目在前 + 首位高置信（UI-SPEC 默认折叠判定两条同时成立）。 */
+function collapsedGlobalTrace(): Partial<RoutingDecisionData> {
+  return {
+    block_order: ['in_project', 'global'],
+    candidates: [
+      cand('ip-a', { group: 'in_project', score: 0.9, level: 'high' }),
+      cand('gl-a', { group: 'global', score: 0.6 }),
+    ],
+  }
+}
+
+function findButtonWith(
+  wrapper: ReturnType<typeof mountTrace>['wrapper'],
+  text: string,
+) {
+  return wrapper.findAll('button').find(b => b.text().includes(text))
+}
+
+function crossGroupBadges(wrapper: ReturnType<typeof mountTrace>['wrapper']) {
+  return wrapper
+    .findAllComponents({ name: 'Badge' })
+    .filter(b => b.text().includes('跨组'))
+}
+
+describe('routingDecisionPanel 分组分区（ROUTE-01）', () => {
+  it('区顺序严格等于后端 block_order（global 置顶时全局组标题先出现）', () => {
+    const { wrapper } = mountTrace({
+      block_order: ['global', 'in_project'],
+      candidates: [
+        cand('ip-a', { group: 'in_project', score: 0.9, level: 'high' }),
+        cand('gl-a', { group: 'global', score: 0.4 }),
+      ],
+    })
+    const text = wrapper.text()
+    expect(text.indexOf(GLOBAL_LABEL)).toBeGreaterThanOrEqual(0)
+    expect(text.indexOf(IN_PROJECT_LABEL)).toBeGreaterThan(text.indexOf(GLOBAL_LABEL))
+  })
+
+  it('区内按 score_ranked 降序（与 score 顺序相反时以 score_ranked 为准）', () => {
+    const { wrapper } = mountTrace({
+      block_order: ['in_project', 'global'],
+      candidates: [
+        cand('ip-low-rank', { group: 'in_project', score: 0.9, score_ranked: 0.1 }),
+        cand('ip-high-rank', { group: 'in_project', score: 0.2, score_ranked: 0.99 }),
+      ],
+    })
+    const text = wrapper.text()
+    expect(text.indexOf('ip-high-rank')).toBeGreaterThanOrEqual(0)
+    expect(text.indexOf('ip-high-rank')).toBeLessThan(text.indexOf('ip-low-rank'))
+  })
+
+  it('score_ranked 为 null / 缺失 → 回退 score 参与排序（混合不抛）', () => {
+    const { wrapper } = mountTrace({
+      block_order: ['in_project', 'global'],
+      candidates: [
+        cand('ip-mid', { group: 'in_project', score: 0.5, score_ranked: null }),
+        cand('ip-top', { group: 'in_project', score: 0.8 }),
+        cand('ip-bottom', { group: 'in_project', score: 0.1, score_ranked: 0.05 }),
+      ],
+    })
+    const text = wrapper.text()
+    expect(text.indexOf('ip-top')).toBeLessThan(text.indexOf('ip-mid'))
+    expect(text.indexOf('ip-mid')).toBeLessThan(text.indexOf('ip-bottom'))
+  })
+
+  it('本项目在前且首位高置信 → 全局组默认折叠（标题在、候选不可见）', () => {
+    const { wrapper } = mountTrace(collapsedGlobalTrace())
+    expect(wrapper.text()).toContain(GLOBAL_LABEL)
+    expect(wrapper.text()).not.toContain('gl-a')
+  })
+
+  it('本项目首位非高置信 → 全局组默认展开', () => {
+    const { wrapper } = mountTrace({
+      block_order: ['in_project', 'global'],
+      candidates: [
+        cand('ip-a', { group: 'in_project', score: 0.6, level: 'medium' }),
+        cand('gl-a', { group: 'global', score: 0.5 }),
+      ],
+    })
+    expect(wrapper.text()).toContain('gl-a')
+  })
+
+  it('用户手动展开后本地态优先；trace 变化后重算默认态', async () => {
+    const { wrapper, store } = mountTrace(collapsedGlobalTrace())
+    expect(wrapper.text()).not.toContain('gl-a')
+
+    const trigger = findButtonWith(wrapper, GLOBAL_LABEL)
+    expect(trigger).toBeDefined()
+    await trigger!.trigger('click')
+    await nextTick()
+    expect(wrapper.text()).toContain('gl-a')
+
+    // override 写新 trace → effectiveTraceId 变化 → 折叠态回到默认（折叠）
+    store.upsertTrace(
+      { ...makeTrace(), ...collapsedGlobalTrace(), trace_id: 'trace-2' },
+      'conv-1',
+    )
+    await nextTick()
+    expect(wrapper.text()).not.toContain('gl-a')
+  })
+
+  it('Top-3 截断 + 已选候选 pin-in；溢出 trigger 文案与组标题总数', async () => {
+    const { wrapper } = mountTrace({
+      block_order: ['in_project', 'global'],
+      candidates: [
+        cand('ip-1', { group: 'in_project', score: 0.9 }),
+        cand('ip-2', { group: 'in_project', score: 0.8 }),
+        cand('ip-3', { group: 'in_project', score: 0.7 }),
+        cand('ip-4', { group: 'in_project', score: 0.6 }),
+        cand('ip-5', { group: 'in_project', score: 0.5, selected_by_user_final: true }),
+      ],
+    })
+    const text = wrapper.text()
+    // 组标题计数为该组总数（不是可见数）
+    expect(text).toContain(IN_PROJECT_LABEL)
+    expect(text).toContain('（5）')
+    for (const id of ['ip-1', 'ip-2', 'ip-3', 'ip-5'])
+      expect(text).toContain(id)
+    expect(text).not.toContain('ip-4')
+
+    const trigger = findButtonWith(wrapper, '显示其余')
+    expect(trigger?.text()).toContain('显示其余 1 个候选')
+    await trigger!.trigger('click')
+    await nextTick()
+    expect(wrapper.text()).toContain('ip-4')
+    expect(findButtonWith(wrapper, '收起其余候选')).toBeDefined()
+  })
+
+  it('空组不渲染（block_order 长度 2 但全局组 0 条）', () => {
+    const { wrapper } = mountTrace({
+      block_order: ['in_project', 'global'],
+      candidates: [cand('ip-a', { group: 'in_project', score: 0.9, level: 'high' })],
+    })
+    const text = wrapper.text()
+    expect(text).toContain(IN_PROJECT_LABEL)
+    expect(text).not.toContain(GLOBAL_LABEL)
+    expect(text).not.toContain(CROSS_GROUP_SENTENCE)
+  })
+
+  it('block_order 缺失但存在 in_project 候选 → 按 [in_project, global] 启用分组', () => {
+    const { wrapper } = mountTrace({
+      candidates: [
+        cand('ip-a', { group: 'in_project', score: 0.9, level: 'medium' }),
+        cand('gl-a', { group: 'global', score: 0.5 }),
+      ],
+    })
+    const text = wrapper.text()
+    expect(text.indexOf(IN_PROJECT_LABEL)).toBeGreaterThanOrEqual(0)
+    expect(text.indexOf(GLOBAL_LABEL)).toBeGreaterThan(text.indexOf(IN_PROJECT_LABEL))
+  })
+
+  it('block_order 长度 1（无项目上下文）→ 平铺、无组标题与跨组标注', () => {
+    const { wrapper } = mountTrace({
+      block_order: ['global'],
+      candidates: [
+        cand('gl-a', { group: 'global', score: 0.9, level: 'high' }),
+        cand('gl-b', { group: 'global', score: 0.4 }),
+      ],
+    })
+    const text = wrapper.text()
+    expect(text).toContain('gl-a')
+    expect(text).not.toContain(GLOBAL_LABEL)
+    expect(text).not.toContain(CROSS_GROUP_SENTENCE)
+    expect(crossGroupBadges(wrapper).length).toBe(0)
+  })
+
+  it('历史 trace（无 block_order / group / score_ranked）→ 单个平铺 ul、零新增标注', () => {
+    const { wrapper } = mountPanel()
+    const text = wrapper.text()
+    expect(text).not.toContain(IN_PROJECT_LABEL)
+    expect(text).not.toContain(GLOBAL_LABEL)
+    expect(text).not.toContain(CROSS_GROUP_SENTENCE)
+    expect(text).not.toContain(PROMOTION_SENTENCE)
+    expect(crossGroupBadges(wrapper).length).toBe(0)
+    expect(wrapper.findAll('ul').length).toBe(1)
+  })
+})
+
+describe('routingDecisionPanel 跨组标注与置顶提示（ROUTE-02）', () => {
+  it('跨组两层：组级说明句常驻 + 每个全局候选带跨组 Badge（本项目候选无）', () => {
+    const { wrapper } = mountTrace({
+      block_order: ['global', 'in_project'],
+      candidates: [
+        cand('gl-a', { group: 'global', score: 0.9, level: 'high' }),
+        cand('gl-b', { group: 'global', score: 0.8 }),
+        cand('ip-a', { group: 'in_project', score: 0.7 }),
+      ],
+    })
+    expect(wrapper.text()).toContain(CROSS_GROUP_SENTENCE)
+    const badges = crossGroupBadges(wrapper)
+    expect(badges.length).toBe(2)
+    expect(badges[0].attributes('aria-label')).toBe(CROSS_GROUP_SENTENCE)
+  })
+
+  it('缺 group 的候选视为 global（分组启用时也带跨组 Badge）', () => {
+    const { wrapper } = mountTrace({
+      block_order: ['in_project', 'global'],
+      candidates: [
+        cand('ip-a', { group: 'in_project', score: 0.6, level: 'medium' }),
+        cand('unknown-group', { score: 0.5 }),
+      ],
+    })
+    expect(wrapper.text()).toContain(GLOBAL_LABEL)
+    expect(crossGroupBadges(wrapper).length).toBe(1)
+  })
+
+  it('block_order[0]===global → 出现 role=status 置顶提示；in_project 在前则无', () => {
+    const promoted = mountTrace({
+      block_order: ['global', 'in_project'],
+      candidates: [
+        cand('gl-a', { group: 'global', score: 0.9, level: 'high' }),
+        cand('ip-a', { group: 'in_project', score: 0.7 }),
+      ],
+    })
+    expect(promoted.wrapper.text()).toContain(PROMOTION_SENTENCE)
+    expect(promoted.wrapper.find('[role="status"]').exists()).toBe(true)
+
+    const normal = mountTrace(collapsedGlobalTrace())
+    expect(normal.wrapper.text()).not.toContain(PROMOTION_SENTENCE)
+    expect(normal.wrapper.find('[role="status"]').exists()).toBe(false)
+  })
+})
