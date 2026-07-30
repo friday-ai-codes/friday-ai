@@ -9,15 +9,35 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
+from unittest.mock import patch
 
 import pytest
+from asgiref.sync import async_to_sync
+from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 
+from chat.models import CodingPlan, CodingPlanProvenance, Conversation
 from chat.plan_projection_service import (
     _ACTION_TO_CHANGE_TYPE,
+    PlanProjectionError,
+    PlanProjectionService,
     map_merged_plan_to_coding_plan,
 )
+from delivery.models import (
+    Artifact,
+    ArtifactVersion,
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
+    ConvergenceSessionStatus,
+    WorkItem,
+    WorkItemOrigin,
+)
+from projects.models import Space
+
+User = get_user_model()
 
 # ============================================================================
 # Helpers
@@ -251,3 +271,317 @@ def test_mapping_fail_safe_top_level_non_dict_yields_empty_lists(
     assert payload["tech_plan"] == ""
     assert payload["affected_files"] == []
     assert payload["recommended_repository_ids"] == []
+
+
+# ============================================================================
+# 投影 service —— 造数 helper
+# ============================================================================
+
+
+def _make_user(prefix: str = "projection_owner"):
+    return User.objects.create_user(
+        username=f"{prefix}_{uuid.uuid4().hex[:8]}",
+        email=f"{uuid.uuid4().hex[:8]}@projection.local",
+        password="testpass123",
+    )
+
+
+def _make_conversation(user: Any = None) -> Conversation:
+    suffix = uuid.uuid4().hex[:8]
+    space = Space.objects.create(
+        name=f"投影测试空间-{suffix}",
+        feishu_project_key=f"projection-{suffix}",
+    )
+    return Conversation.objects.create(
+        space=space,
+        title="编排会话对应的 chat 对话",
+        created_by=user or _make_user(),
+    )
+
+
+def _make_work_item() -> WorkItem:
+    return WorkItem.objects.create(
+        feishu_project_key=f"pk-{uuid.uuid4().hex[:8]}",
+        work_item_type="story",
+        work_item_id=int(uuid.uuid4().int % 10_000_000),
+        origin=WorkItemOrigin.MANUAL,
+        title="把 A 仓接口改造后同步 B 仓调用方",
+    )
+
+
+def _make_session(conversation: Conversation | None) -> ConvergenceSession:
+    """编排会话；``conversation is None`` 即 workflow / MCP 入口（D-3 的拒绝分支）。"""
+    return ConvergenceSession.objects.create(
+        process_type="technical_plan",
+        entrypoint=(
+            ConvergenceSessionEntrypoint.CHAT
+            if conversation is not None
+            else ConvergenceSessionEntrypoint.WORKFLOW
+        ),
+        current_stage="merge",
+        status=ConvergenceSessionStatus.DONE,
+        conversation_id=conversation.id if conversation is not None else None,
+    )
+
+
+def _make_artifact_version(
+    *,
+    session: ConvergenceSession | None = None,
+    content: dict[str, Any] | None = None,
+    artifact: Artifact | None = None,
+    version_no: int = 1,
+    work_item: WorkItem | None = None,
+) -> ArtifactVersion:
+    """WorkItem → Artifact → ArtifactVersion 一条完整来源链（追溯两跳的造数侧）。"""
+    if artifact is None:
+        artifact = Artifact.objects.create(
+            artifact_type="technical_plan",
+            work_item=work_item or _make_work_item(),
+            title="跨仓改造方案",
+        )
+    version = ArtifactVersion.objects.create(
+        artifact=artifact,
+        version_no=version_no,
+        content=content
+        if content is not None
+        else _content(
+            _task(
+                repository_id=str(uuid.uuid4()),
+                files=[{"path": "src/api.py", "action": "create"}],
+            )
+        ),
+        produced_by_session_id=str(session.id) if session is not None else "",
+    )
+    return version
+
+
+def _project(artifact_version_id: Any, *, initiated_by_user_id: str = "system"):
+    return async_to_sync(PlanProjectionService().aproject)(
+        artifact_version_id=str(artifact_version_id),
+        initiated_by_user_id=initiated_by_user_id,
+    )
+
+
+# ============================================================================
+# conversation —— 只走 chat 入口（裁决 D-3）
+# ============================================================================
+
+
+@pytest.mark.django_db
+def test_conversation_is_resolved_from_convergence_session() -> None:
+    """有 ``conversation_id`` 的编排会话 → 投影落在该 conversation 下（不新建会话）。"""
+    user = _make_user()
+    conversation = _make_conversation(user)
+    version = _make_artifact_version(session=_make_session(conversation))
+    before = Conversation.objects.count()
+
+    plan, created = _project(version.id, initiated_by_user_id=str(user.id))
+
+    assert created is True
+    assert plan.conversation_id == conversation.id
+    assert plan.provenance == CodingPlanProvenance.ORCHESTRATED
+    assert str(plan.source_artifact_version_id) == str(version.id)
+    # 复用既有会话，不凭空建第二个。
+    assert Conversation.objects.count() == before
+
+
+@pytest.mark.django_db
+def test_conversation_absent_raises_requires_chat_entrypoint() -> None:
+    """workflow 入口（``conversation_id`` 为空）→ 稳定机器码拒绝，且**不建合成会话**。"""
+    version = _make_artifact_version(session=_make_session(None))
+    conversations_before = Conversation.objects.count()
+
+    with pytest.raises(PlanProjectionError) as exc_info:
+        _project(version.id)
+
+    assert exc_info.value.code == "projection_requires_chat_entrypoint"
+    # D-3 边界：不猜 space、不建合成会话、不留半成品 plan。
+    assert Conversation.objects.count() == conversations_before
+    assert CodingPlan.objects.filter(source_artifact_version_id=version.id).count() == 0
+
+
+@pytest.mark.django_db
+def test_conversation_link_broken_raises_requires_chat_entrypoint() -> None:
+    """``produced_by_session_id`` 为空 / 指向不存在的会话 → 同一机器码（链断即拒）。"""
+    orphan = _make_artifact_version(session=None)
+    with pytest.raises(PlanProjectionError) as exc_info:
+        _project(orphan.id)
+    assert exc_info.value.code == "projection_requires_chat_entrypoint"
+
+    dangling = _make_artifact_version(session=None)
+    ArtifactVersion.objects.filter(id=dangling.id).update(produced_by_session_id=str(uuid.uuid4()))
+    with pytest.raises(PlanProjectionError) as exc_info:
+        _project(dangling.id)
+    assert exc_info.value.code == "projection_requires_chat_entrypoint"
+
+
+@pytest.mark.django_db
+def test_conversation_lookup_of_unknown_version_raises_not_found() -> None:
+    """来源方案版本不存在 → ``artifact_version_not_found``（fail-closed，无来源不投影）。"""
+    with pytest.raises(PlanProjectionError) as exc_info:
+        _project(uuid.uuid4())
+    assert exc_info.value.code == "artifact_version_not_found"
+
+
+# ============================================================================
+# idempotent —— 同一版本重复投影只产一行
+# ============================================================================
+
+
+@pytest.mark.django_db
+def test_idempotent_projection_returns_same_plan_and_single_row() -> None:
+    version = _make_artifact_version(session=_make_session(_make_conversation()))
+
+    first, first_created = _project(version.id)
+    second, second_created = _project(version.id)
+
+    assert first_created is True
+    assert second_created is False
+    assert first.id == second.id
+    assert CodingPlan.objects.filter(source_artifact_version_id=version.id).count() == 1
+
+
+@pytest.mark.django_db
+def test_idempotent_projection_does_not_rewrite_existing_row() -> None:
+    """第二次投影是**读**不是写：即便 content 被改，已投影的 plan 正文不被改写。"""
+    session = _make_session(_make_conversation())
+    version = _make_artifact_version(session=session)
+    plan, _ = _project(version.id)
+    original_tech_plan = plan.tech_plan
+
+    ArtifactVersion.objects.filter(id=version.id).update(
+        content=_content(
+            _task(repository_id=str(uuid.uuid4()), files=[{"path": "x.py", "action": "delete"}]),
+            title="被篡改的标题",
+        )
+    )
+    again, created = _project(version.id)
+
+    assert created is False
+    assert again.id == plan.id
+    assert again.tech_plan == original_tech_plan
+    assert "被篡改的标题" not in again.tech_plan
+
+
+# ============================================================================
+# concurrent —— 并发只留一行且不向调用方抛异常
+# ============================================================================
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_projection_yields_single_row_without_raising() -> None:
+    """``asyncio.gather`` 并发投影同一版本：两路都拿到同一条 plan，DB 只 1 行。"""
+    version = _make_artifact_version(session=_make_session(_make_conversation()))
+
+    async def _both() -> list[Any]:
+        service = PlanProjectionService()
+        return await asyncio.gather(
+            service.aproject(artifact_version_id=str(version.id)),
+            service.aproject(artifact_version_id=str(version.id)),
+        )
+
+    results = async_to_sync(_both)()
+
+    plan_ids = {str(plan.id) for plan, _created in results}
+    assert len(plan_ids) == 1
+    # 恰好一路是新建（另一路必须表现为幂等命中，而不是第二行）。
+    assert sum(1 for _plan, created in results if created) == 1
+    assert CodingPlan.objects.filter(source_artifact_version_id=version.id).count() == 1
+
+
+@pytest.mark.django_db
+def test_concurrent_integrity_error_degrades_to_idempotent_hit() -> None:
+    """并发落败方分支：``aget_or_create`` 抛 ``IntegrityError`` → 重 ``aget`` 而非 500。
+
+    幂等三件套的第 ③ 件（``except IntegrityError``）在真实并发下才会被 DB 唯一约束
+    触发，用 patch 把该分支变成可确定性覆盖的路径 —— 没有它，落败方会把 500 抛给用户。
+    """
+    version = _make_artifact_version(session=_make_session(_make_conversation()))
+    existing, created = _project(version.id)
+    assert created is True
+
+    with patch.object(
+        CodingPlan.objects,
+        "aget_or_create",
+        side_effect=IntegrityError(
+            "UNIQUE constraint failed: uniq_codingplan_source_artifact_version"
+        ),
+    ):
+        plan, created_again = _project(version.id)
+
+    assert created_again is False
+    assert plan.id == existing.id
+    assert CodingPlan.objects.filter(source_artifact_version_id=version.id).count() == 1
+
+
+# ============================================================================
+# new_version_keeps_old —— 方案更新后旧投影保留（历史可查）
+# ============================================================================
+
+
+@pytest.mark.django_db
+def test_new_version_keeps_old_projection_intact() -> None:
+    conversation = _make_conversation()
+    session = _make_session(conversation)
+    work_item = _make_work_item()
+    v1 = _make_artifact_version(
+        session=session,
+        work_item=work_item,
+        version_no=1,
+        content=_content(
+            _task(repository_id="r1", files=[{"path": "v1.py", "action": "create"}]),
+            title="方案 v1",
+        ),
+    )
+    old_plan, _ = _project(v1.id)
+    old_plan_id, old_tech_plan = old_plan.id, old_plan.tech_plan
+
+    v2 = _make_artifact_version(
+        session=session,
+        artifact=v1.artifact,
+        version_no=2,
+        content=_content(
+            _task(repository_id="r2", files=[{"path": "v2.py", "action": "delete"}]),
+            title="方案 v2",
+        ),
+    )
+    new_plan, new_created = _project(v2.id)
+
+    assert new_created is True
+    assert new_plan.id != old_plan_id
+    assert CodingPlan.objects.filter(source_artifact_version_id__in=[v1.id, v2.id]).count() == 2
+
+    # 旧投影未被改写 —— 历史可查是本用例存在的理由。
+    old_plan.refresh_from_db()
+    assert old_plan.id == old_plan_id
+    assert old_plan.tech_plan == old_tech_plan
+    assert "方案 v1" in old_plan.tech_plan
+    assert "方案 v2" in new_plan.tech_plan
+
+
+# ============================================================================
+# traceability —— 两跳回到需求（不去范式化）
+# ============================================================================
+
+
+@pytest.mark.django_db
+def test_traceability_two_hops_from_plan_to_work_item() -> None:
+    """``CodingPlan.source_artifact_version_id`` → ArtifactVersion → Artifact → WorkItem。
+
+    ``CodingPlan`` 上刻意**不**冗余写 ``work_item``（109-RESEARCH §7 追溯最小完备集），
+    这条用例证明不写也追得到。
+    """
+    work_item = _make_work_item()
+    version = _make_artifact_version(
+        session=_make_session(_make_conversation()), work_item=work_item
+    )
+    plan, _ = _project(version.id)
+
+    # 两跳：plan → ArtifactVersion → Artifact.work_item
+    hop1 = ArtifactVersion.objects.get(id=plan.source_artifact_version_id)
+    hop2 = hop1.artifact.work_item
+
+    assert hop2 is not None
+    assert hop2.id == work_item.id
+    assert hop2.work_item_id == work_item.work_item_id
+    assert hop2.feishu_project_key == work_item.feishu_project_key
