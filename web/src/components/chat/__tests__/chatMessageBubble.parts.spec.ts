@@ -46,8 +46,16 @@ vi.mock('~/components/chat/RoutingDecisionPanel.vue', () => ({
 vi.mock('~/components/chat/TechPlanCard.vue', () => ({
   default: defineComponent({
     name: 'TechPlanCard',
-    props: ['planId', 'sessionId', 'techPlan', 'affectedFiles', 'status', 'isConfirming', 'branchName'],
-    setup: props => () => h('div', { 'data-test': 'tech-plan-card', 'data-status': props.status }),
+    // 109-06：透出 codingPlanId / techPlan / affectedFiles 供三级优先的传参断言。
+    // 卡片内部的解析优先级归 TechPlanCard.spec.ts，本文件只断言 bubble 传了什么。
+    props: ['planId', 'codingPlanId', 'sessionId', 'techPlan', 'affectedFiles', 'status', 'isConfirming', 'branchName'],
+    setup: props => () => h('div', {
+      'data-test': 'tech-plan-card',
+      'data-status': props.status,
+      'data-coding-plan-id': props.codingPlanId ?? '',
+      'data-tech-plan': props.techPlan ?? '',
+      'data-affected-count': String(props.affectedFiles?.length ?? 0),
+    }),
   }),
 }))
 
@@ -556,5 +564,75 @@ describe('chatMessageBubble 编排产出卡片渲染分支', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.find('.tool-detail').exists()).toBe(false)
     expect(wrapper.html()).not.toContain('ArtifactVersion')
+  })
+})
+
+/**
+ * 109-06：codingPlanData 的 tool input 取值降级为**历史消息兜底**（SPINE-02 连带）。
+ *
+ * SPINE-02 已把 tech_plan / affected_files 从 create/update_coding_plan 的 schema
+ * 里删掉，新消息的 input 无此两键。本组用例锁两件事：
+ *   1. 新消息形态下卡片仍渲染、codingPlanId 仍正确传下（正文为空不致崩）；
+ *   2. 历史消息形态下 input 里的正文仍能经 props 传下（这一级不可删）。
+ */
+describe('chatMessageBubble — 109-06 coding plan 正文数据源', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  function codingPlanMessage(
+    input: Record<string, unknown>,
+    result: unknown,
+  ): ConversationMessage {
+    return makeMessage({
+      parts: [
+        {
+          type: 'tool_use',
+          id: 'p1',
+          index: 0,
+          tool_call_id: 'c1',
+          name: 'create_coding_plan',
+          input,
+          status: 'done',
+          result: result as string | undefined,
+        },
+      ],
+    })
+  }
+
+  const PLAN_RESULT = {
+    coding_plan_id: 'plan-uuid-1',
+    status: 'plan_only',
+  }
+
+  it('新消息形态（input 不含 tech_plan / affected_files）→ 卡片仍渲染且 codingPlanId 正确传下', async () => {
+    const wrapper = await mountBubble(
+      codingPlanMessage(
+        { space_id: 's1', conversation_id: 'c1', artifact_version_id: 'av-1' },
+        JSON.stringify(PLAN_RESULT),
+      ),
+    )
+    const card = wrapper.find('[data-test="tech-plan-card"]')
+    expect(card.exists()).toBe(true)
+    expect(card.attributes('data-coding-plan-id')).toBe('plan-uuid-1')
+    // 正文为空是预期（新消息的正文由 runtime / 投影响应承载），卡片不因此崩
+    expect(card.attributes('data-tech-plan')).toBe('')
+    expect(card.attributes('data-affected-count')).toBe('0')
+  })
+
+  it('历史消息形态（input 含 tech_plan / affected_files）→ 正文与影响文件经 props 传下', async () => {
+    const wrapper = await mountBubble(
+      codingPlanMessage(
+        {
+          tech_plan: '# 历史方案正文',
+          affected_files: [{ file_path: 'legacy.py', change_type: 'modify' }],
+        },
+        JSON.stringify(PLAN_RESULT),
+      ),
+    )
+    const card = wrapper.find('[data-test="tech-plan-card"]')
+    expect(card.exists()).toBe(true)
+    expect(card.attributes('data-tech-plan')).toBe('# 历史方案正文')
+    expect(card.attributes('data-affected-count')).toBe('1')
   })
 })
