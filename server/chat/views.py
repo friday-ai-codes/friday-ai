@@ -75,18 +75,15 @@ _BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
 
 
 def _derive_degraded(router_version: str) -> bool:
-    """降级事实的**唯一派生点**（会话 detail 与 manual override 两处 payload 共用）。
+    """降级派生的 view 层别名 —— 实现在 ``chat.models.derive_routing_degraded``。
 
-    CONTEXT 要求「前端不自行推断降级」——把推断放到后端即满足该契约，且无需与
-    ``router_version`` 冗余地再加一列（加列还要回填历史行）。
-
-    ``legacy_hybrid`` 刻意排除：它是 ``router_version`` 的列默认值，代表 v2 完全不可用
-    时的历史聚合路径；把它算作降级会让全部历史 trace 突然出现降级横幅
-    （UI-SPEC backstop 1 的历史兼容要求）。
-
-    新增判定分支时改这一处即可 —— 两处 payload 都不得再写等价的版本字面判定。
+    派生点从本模块搬到 models，是为了让工具实时输出链路（``agents.tools`` 侧）能复用
+    同一个判定而不反向依赖 view 层；两条链路对同一 ``router_version`` 必须给出同一个
+    ``degraded``，否则用户在对话当场与刷新后看到的降级状态会不一致。
     """
-    return router_version in {"v2_stage0_only", "v1_fallback"}
+    from chat.models import derive_routing_degraded
+
+    return derive_routing_degraded(router_version)
 
 
 def _append_feishu_export_record(message, record: dict[str, str]) -> None:

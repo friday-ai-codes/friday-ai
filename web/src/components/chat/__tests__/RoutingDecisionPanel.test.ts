@@ -532,7 +532,7 @@ describe('routingDecisionPanel 分组分区（ROUTE-01）', () => {
     expect(text).not.toContain(CROSS_GROUP_SENTENCE)
   })
 
-  it('block_order 缺失但存在 in_project 候选 → 按 [in_project, global] 启用分组', () => {
+  it('block_order 缺失 → 平铺（判据只看 block_order，不按候选内容猜）', () => {
     const { wrapper } = mountTrace({
       candidates: [
         cand('ip-a', { group: 'in_project', score: 0.9, level: 'medium' }),
@@ -540,8 +540,26 @@ describe('routingDecisionPanel 分组分区（ROUTE-01）', () => {
       ],
     })
     const text = wrapper.text()
-    expect(text.indexOf(IN_PROJECT_LABEL)).toBeGreaterThanOrEqual(0)
-    expect(text.indexOf(GLOBAL_LABEL)).toBeGreaterThan(text.indexOf(IN_PROJECT_LABEL))
+    expect(text).not.toContain(IN_PROJECT_LABEL)
+    expect(text).not.toContain(GLOBAL_LABEL)
+    expect(wrapper.findAll('ul').length).toBe(1)
+  })
+
+  it('本项目组为空但 block_order 长度 2 → 仍启用分组并给出置顶提示', () => {
+    // 这正是旧兜底判据（some(c => c.group === "in_project")）失效的场景：正确仓全在
+    // 跨组时没有任何 in_project 候选，按候选内容猜会关闭分组 —— 「更匹配的仓不在本
+    // 项目关联范围内」这句最有信息量的提示恰好不出现（ROUTE-01/02 落空）。
+    const { wrapper } = mountTrace({
+      block_order: ['global', 'in_project'],
+      candidates: [
+        cand('gl-a', { group: 'global', score: 0.9, level: 'high' }),
+        cand('gl-b', { group: 'global', score: 0.7 }),
+      ],
+    })
+    const text = wrapper.text()
+    expect(text).toContain(GLOBAL_LABEL)
+    expect(text).toContain(PROMOTION_SENTENCE)
+    expect(crossGroupBadges(wrapper).length).toBe(2)
   })
 
   it('block_order 长度 1（无项目上下文）→ 平铺、无组标题与跨组标注', () => {

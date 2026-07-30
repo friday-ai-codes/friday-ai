@@ -7,10 +7,57 @@
  */
 
 import type { RoutingCandidate, RoutingDecisionData } from '~/types/routing'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import process from 'node:process'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatStore } from '~/stores/chat'
 import { useRoutingStore } from '~/stores/routing'
+
+/**
+ * 后端 `RepositoryRelevanceOutput` 的真实 JSON Schema 快照（由
+ * `server/tests/agents/test_repository_relevance_tool.py::test_output_schema_snapshot`
+ * 守门）。
+ *
+ * 工具输出 payload **必须**由它构造，不能手写：手写 payload 时，后端输出模型里根本
+ * 没有 degraded / degrade_reason / block_order / router_version 这四个键也照样全绿，
+ * 而生产里它们恒为 undefined —— 降级横幅与分组分区在对话进行中完全不出现。契约两端
+ * 共用同一份 schema 才能让缺口被测试检出。
+ */
+const SCHEMA_REL_PATH = 'server/tests/agents/fixtures/repository_relevance_output_schema.json'
+
+/** 从 cwd 向上找仓库根（web/ 与 server/ 是兄弟目录），避免依赖 runner 的 cwd。 */
+function resolveSchemaPath(): string {
+  let dir = process.cwd()
+  for (let depth = 0; depth < 6; depth++) {
+    const candidate = resolve(dir, SCHEMA_REL_PATH)
+    if (existsSync(candidate))
+      return candidate
+    const parent = dirname(dir)
+    if (parent === dir)
+      break
+    dir = parent
+  }
+  throw new Error(`未找到后端输出 schema 快照：${SCHEMA_REL_PATH}`)
+}
+
+const OUTPUT_SCHEMA = JSON.parse(
+  readFileSync(resolveSchemaPath(), 'utf-8'),
+) as { properties: Record<string, unknown>, required?: string[] }
+
+/** 按后端输出 schema 的键名构造 tool-output data；schema 里没有的键直接判失败。 */
+function toolOutputData(values: Record<string, unknown>): Record<string, unknown> {
+  const data: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(values)) {
+    expect(
+      Object.keys(OUTPUT_SCHEMA.properties),
+      `后端 RepositoryRelevanceOutput 缺少字段 ${key} —— 前端解析到的将恒为 undefined`,
+    ).toContain(key)
+    data[key] = value
+  }
+  return data
+}
 
 const mockPostManualOverride = vi.fn()
 vi.mock('~/api/routing', () => ({
@@ -290,6 +337,17 @@ describe('chat store 构造 routing trace 时透传降级与分组事实', () =>
     window.localStorage.clear()
   })
 
+  it('后端输出契约含四个结果级字段（缺一即实时链路恒 undefined）', () => {
+    expect(Object.keys(OUTPUT_SCHEMA.properties)).toEqual(
+      expect.arrayContaining([
+        'router_version',
+        'degraded',
+        'degrade_reason',
+        'block_order',
+      ]),
+    )
+  })
+
   it('chat_tool：工具 data 含四键 → 构造的 trace 携带四键', () => {
     const chatStore = useChatStore()
     const routingStore = useRoutingStore()
@@ -318,15 +376,16 @@ describe('chat store 构造 routing trace 时透传降级与分组事实', () =>
         status: 'done',
         result: JSON.stringify({
           output: {
-            data: {
+            data: toolOutputData({
               trace_id: 'trace-tool',
               candidates: groupedCandidates(),
               threshold: 0.5,
+              total_candidates: 2,
               router_version: 'v1_fallback',
               degraded: true,
               degrade_reason: 'upstream_error',
               block_order: ['global', 'in_project'],
-            },
+            }),
           },
         }),
       },

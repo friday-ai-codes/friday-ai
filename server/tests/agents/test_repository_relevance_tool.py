@@ -49,7 +49,10 @@ from agents.tools.repository_relevance import (
     _score_to_level,
     analyze_repository_relevance,
 )
-from agents.tools.schemas.repository_relevance import RepositoryRelevanceInput
+from agents.tools.schemas.repository_relevance import (
+    RepositoryRelevanceInput,
+    RepositoryRelevanceOutput,
+)
 from chat.models import Conversation, RepositoryRoutingTrace
 from projects.models import Space
 from repositories.models import Repository
@@ -152,6 +155,37 @@ async def test_input_schema_snapshot():
     assert actual == expected, (
         f"Schema drift detected. Regenerate fixture if intentional:\n"
         f"diff: expected={expected}\nactual={actual}"
+    )
+
+
+def test_output_schema_snapshot():
+    """输出 schema snapshot —— **与前端契约测试共用同一份 fixture**（BL-02 的契约锚）。
+
+    前端 ``routing.test.ts`` 从同一个文件取键名来构造 tool-output payload。这样后端
+    一旦把某个结果级字段从输出模型里拿掉，后端 snapshot 与前端解析用例会同时打红；
+    在此之前前端是**手写 payload 伪造**这四键的，而后端从不产生那个形状——用例全绿
+    却掩盖了契约缺口（假阳性守护）。
+    """
+    fixture_path = (
+        Path(__file__).parent / "fixtures" / "repository_relevance_output_schema.json"
+    )
+    assert fixture_path.exists()
+    expected = json.loads(fixture_path.read_text(encoding="utf-8"))
+    actual = RepositoryRelevanceOutput.model_json_schema()
+    assert actual == expected, (
+        f"Output schema drift detected. Regenerate fixture if intentional:\n"
+        f"diff: expected={expected}\nactual={actual}"
+    )
+
+
+def test_output_schema_carries_result_level_facts():
+    """输出模型必须含四个结果级事实，且全部带默认值（additive，legacy 形状不变）。"""
+    props = RepositoryRelevanceOutput.model_json_schema()["properties"]
+    assert {"router_version", "degraded", "degrade_reason", "block_order"} <= set(props)
+    # 带默认值 → 不进 required，历史/legacy 构造零破坏
+    required = set(RepositoryRelevanceOutput.model_json_schema().get("required", []))
+    assert not (
+        {"router_version", "degraded", "degrade_reason", "block_order"} & required
     )
 
 
@@ -366,15 +400,15 @@ async def test_deep_analysis_path_writes_trace_with_session(
         session_id=f"as-{uuid.uuid4().hex[:8]}"
     )
 
-    candidates, trace_id = await _analyze_relevance_core(
+    analysis = await _analyze_relevance_core(
         query="deep",
         space_id=str(project.id),
         conversation_id=str(conversation.id),
         triggered_by=RepositoryRoutingTrace.TriggeredBy.DEEP_ANALYSIS_COMPLETION,
         agent_session_id=str(agent_session.id),
     )
-    assert len(candidates) >= 1
-    trace = await RepositoryRoutingTrace.objects.aget(id=trace_id)
+    assert len(analysis.candidates) >= 1
+    trace = await RepositoryRoutingTrace.objects.aget(id=analysis.trace_id)
     assert (
         trace.triggered_by
         == RepositoryRoutingTrace.TriggeredBy.DEEP_ANALYSIS_COMPLETION
@@ -574,11 +608,13 @@ async def test_v2_presentation_fields_mapped_to_pydantic_candidate(
         AsyncMock(return_value=_make_v2_result_with_presentation(repos)),
     )
 
-    candidates, _trace_id = await _analyze_relevance_core(
-        query="presentation mapping",
-        space_id=str(project.id),
-        conversation_id=str(conversation.id),
-    )
+    candidates = (
+        await _analyze_relevance_core(
+            query="presentation mapping",
+            space_id=str(project.id),
+            conversation_id=str(conversation.id),
+        )
+    ).candidates
     assert len(candidates) == 1
     assert candidates[0].group == "global"
     assert candidates[0].trust == "needs_confirmation"
@@ -820,6 +856,112 @@ async def test_trace_write_legacy_path_keeps_column_defaults(
     assert trace.router_version == "legacy_hybrid"
     assert trace.degrade_reason == ""
     assert trace.block_order == []
+
+
+# ---------------------------------------------------------------------------
+# 11. 出参侧接线（BL-02）：结果级四件套必须随 ToolResult.output['data'] 出参
+#
+# 前端在 SSE part_completed 时解析的就是这个 dict。缺任一键 → 该键在生产恒
+# undefined：降级横幅不出现（RELY-03 落空）、block_order 缺失让分组呈现退回平铺
+# （ROUTE-01/02 在「正确仓在跨组」这类最需要分组的查询上恰好不生效）。用户只有刷新
+# 页面或改一次勾选才能看到——也就是在对话进行中完全看不到。
+# ---------------------------------------------------------------------------
+
+
+async def test_tool_output_carries_result_level_facts_from_router(
+    project_with_repos, conversation, monkeypatch
+):
+    """降级 v2 路径：ToolResult data 的四键值 == router 结果值（非默认值）。"""
+    from codegraph.services.repo_router_v2 import RepoRouterV2
+
+    project, repos = project_with_repos
+    monkeypatch.setattr(
+        RepoRouterV2, "route", AsyncMock(return_value=_make_degraded_v2_result(repos))
+    )
+
+    result = await analyze_repository_relevance(
+        query="realtime degrade facts",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    assert result.success is True
+
+    data = result.output["data"]
+    assert {"router_version", "degraded", "degrade_reason", "block_order"} <= set(data)
+    assert data["router_version"] == "v2_stage0_only"
+    assert data["degraded"] is True, "出参未带 degraded → 对话进行中无降级横幅"
+    assert data["degrade_reason"] == "timeout"
+    assert data["block_order"] == ["global", "in_project"], "出参未带 block_order → 前端退回平铺"
+
+
+async def test_tool_output_degraded_matches_detail_payload_derivation(
+    project_with_repos, conversation, monkeypatch
+):
+    """实时出参与 detail payload 共用同一个 degraded 派生点（刷新前后不得不一致）。"""
+    from chat.models import derive_routing_degraded
+    from codegraph.services.repo_router_v2 import RepoRouterV2
+
+    project, repos = project_with_repos
+    monkeypatch.setattr(
+        RepoRouterV2,
+        "route",
+        AsyncMock(return_value=_make_v2_result_with_presentation(repos)),
+    )
+
+    result = await analyze_repository_relevance(
+        query="degraded derivation parity",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    data = result.output["data"]
+    trace = await RepositoryRoutingTrace.objects.aget(id=data["trace_id"])
+    assert data["degraded"] == derive_routing_degraded(trace.router_version)
+    assert data["degraded"] is False  # router_version == "v2" 未降级
+
+
+async def test_tool_output_block_order_matches_persisted_trace(
+    project_with_repos, conversation, monkeypatch
+):
+    """出参 block_order/degrade_reason 与落库 trace 同值（实时链路与刷新后一致）。"""
+    from codegraph.services.repo_router_v2 import RepoRouterV2
+
+    project, repos = project_with_repos
+    monkeypatch.setattr(
+        RepoRouterV2, "route", AsyncMock(return_value=_make_degraded_v2_result(repos))
+    )
+
+    result = await analyze_repository_relevance(
+        query="realtime vs persisted parity",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    data = result.output["data"]
+    trace = await RepositoryRoutingTrace.objects.aget(id=data["trace_id"])
+    assert data["block_order"] == trace.block_order
+    assert data["degrade_reason"] == trace.degrade_reason
+    assert data["router_version"] == trace.router_version
+
+
+async def test_legacy_path_tool_output_keeps_neutral_result_level_facts(
+    project_with_repos, conversation, monkeypatch
+):
+    """legacy 聚合路径出参四键取中性默认值 → 历史渲染不变（无横幅、平铺）。"""
+    project, repos = project_with_repos
+    items_by_repo = {
+        str(repos[0].id): [{"score": 0.8, "payload": {"file_path": "x.py"}}],
+    }
+    _patch_hybrid_search(monkeypatch, _make_rag_result(items_by_repo=items_by_repo))
+
+    result = await analyze_repository_relevance(
+        query="legacy neutral facts",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+    )
+    data = result.output["data"]
+    assert data["router_version"] == "legacy_hybrid"
+    assert data["degraded"] is False
+    assert data["degrade_reason"] == ""
+    assert data["block_order"] == []
 
 
 async def test_legacy_path_trace_candidates_breakdown_empty(
