@@ -25,7 +25,7 @@ from typing import Any
 
 from services.process_runtime.blueprint_repo_waves import match_api
 
-__all__ = ["reconcile_cross_repo_apis"]
+__all__ = ["reconcile_cross_repo_apis", "coverage_gaps"]
 
 # 逐字段比对的契约字段。``direction`` 不在其中：provided / consumed 的分组本身就由它
 # 完成，同一条契约不可能既是 provider 又是 consumer（形状矛盾在 schema 层已排除）。
@@ -115,7 +115,114 @@ def reconcile_cross_repo_apis(blueprint: Any) -> dict:
     return result
 
 
+def coverage_gaps(blueprint: Any) -> list[dict]:
+    """引用覆盖率的**缺口定位**（纯函数，Phase 113-06）：哪些关键结论还没有据。
+
+    与 ``blueprint_quality.citation_coverage`` 是同一枚硬币的两面：那边返回一个 float，
+    这边返回**逐条定位**。遍历口径与 ``blueprint_quality._iter_key_conclusion_citations``
+    **同源三类**（顺序也一致）：
+
+    - ``current_state_analysis[].findings[]``——取 ``finding.citations``；
+    - ``repo_associations[]``（rationale 级）——取 ``rationale.citations``；
+    - ``impact_analysis.affected_features[]``——取 ``feature.citations``。
+
+    遍历实现在本模块**自写**（不 import 受限模块的私有 generator），但顺序与判定逐字
+    同源；两处漂移会让「覆盖率卡住」与「回哪个仓」给出互相矛盾的结论。之所以必须有
+    定位而不只有比率：阈值卡住却不知道回哪个仓 ⇒ 只能整体重融合，单仓证据缺口永远补不上。
+
+    Args:
+        blueprint: **完整蓝图 content dict**（半可信，逐层 ``isinstance`` 防御）。
+
+    Returns:
+        未被引用（``citations`` 非 list 或为空）的条目定位列表，每项恒定三键
+        ``{"section", "index", "repository_id"}``：
+
+        - ``section`` ∈ ``current_state_analysis`` / ``repo_associations`` /
+          ``impact_analysis``；
+        - ``index`` 是该条目在**本 section 遍历序**内的序号（与上面三类遍历同序，
+          故可与覆盖率分母逐条对齐）；
+        - ``repository_id`` 从条目自身或其父条目解析；解析不到填**空串**
+          （调用方据此判「这是融合层缺口而非单仓缺口」）。
+
+        非法输入 / 无缺口 → ``[]``。**绝不抛**（归因失败不该把「未达覆盖率」升级成
+        「整轮失败」）。
+    """
+    gaps: list[dict] = []
+    try:
+        if not isinstance(blueprint, dict):
+            return gaps
+        index = 0
+        for analysis in blueprint.get("current_state_analysis") or []:
+            if not isinstance(analysis, dict):
+                continue
+            repository_id = str(analysis.get("repository_id") or "")
+            for finding in analysis.get("findings") or []:
+                if not isinstance(finding, dict):
+                    continue
+                if not _cited(finding.get("citations")):
+                    _append(
+                        gaps,
+                        {
+                            "section": "current_state_analysis",
+                            "index": index,
+                            "repository_id": repository_id,
+                        },
+                    )
+                index += 1
+
+        index = 0
+        for assoc in blueprint.get("repo_associations") or []:
+            if not isinstance(assoc, dict):
+                continue
+            rationale = assoc.get("rationale")
+            citations = rationale.get("citations") if isinstance(rationale, dict) else None
+            if not _cited(citations):
+                _append(
+                    gaps,
+                    {
+                        "section": "repo_associations",
+                        "index": index,
+                        "repository_id": str(assoc.get("repository_id") or ""),
+                    },
+                )
+            index += 1
+
+        impact = blueprint.get("impact_analysis")
+        features = impact.get("affected_features") if isinstance(impact, dict) else None
+        index = 0
+        for feature in features or []:
+            if not isinstance(feature, dict):
+                continue
+            if not _cited(feature.get("citations")):
+                _append(
+                    gaps,
+                    {
+                        "section": "impact_analysis",
+                        "index": index,
+                        # 受影响功能可能横跨多仓、也可能压根没标仓：取首个，取不到留空串。
+                        "repository_id": _first_repository_id(feature.get("repository_ids")),
+                    },
+                )
+            index += 1
+    except Exception:  # noqa: BLE001 — 归因恒不抛：抛了会把「未达覆盖率」升级成「整轮失败」
+        return gaps
+    return gaps
+
+
 # ── 内部纯函数 ────────────────────────────────────────────────────────────
+
+
+def _cited(value: Any) -> bool:
+    """条目引用判定（与 ``blueprint_quality._cited`` 逐字同源）：非空 list 即已引用。"""
+    return isinstance(value, list) and len(value) > 0
+
+
+def _first_repository_id(values: Any) -> str:
+    for value in values if isinstance(values, list) else []:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
 
 
 def _contract_items(blueprint: Any) -> list[dict]:

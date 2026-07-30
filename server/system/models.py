@@ -185,6 +185,11 @@ class SettingKeys:
     # （0.60/0.20/0.20）、fix 最重能力树（0.70/0.15/0.15）。
     # 消费方：services/process_runtime/blueprint_route.py（112-03）。
     BLUEPRINT_ROUTE_WEIGHTS = "blueprint.route.weights"
+    # value 为 JSON：{"citation_coverage_min": float, "max_merge_rounds": int}。
+    # 未配置时回落模块常量（_DEFAULT_CITATION_COVERAGE_MIN=0.8 / MAX_MERGE_ROUNDS=2）——
+    # 阈值可配是为了「一上线就卡死」时能秒调，而非让配置成为必需项。
+    # 消费方：services/process_runtime/blueprint_merge.py（113）。
+    BLUEPRINT_MERGE_CONFIG = "blueprint.merge.config"
 
 
 class CacheVolumeTracker(models.Model):
