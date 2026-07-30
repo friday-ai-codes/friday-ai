@@ -793,14 +793,15 @@ class Command(BaseCommand):
             schedule="every ~60s",
         )
 
-        # 澄清超时出口扫描（RELY-02）：IntervalTrigger ~10min 扫超期未答澄清轮，按
+        # 澄清超时出口扫描（RELY-02）：IntervalTrigger ~60s 扫超期未答澄清轮，按
         # CLARIFICATION_TIMEOUT_EXIT_ACTION 走「带未澄清假设继续」或「如实失败」。间隔取
-        # settings.CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS（默认 600）启动值。
-        # 新 job 首次上线无历史行、无需清理；**若后续改 trigger 间隔**，会重演上面
-        # poll_repository_updates 记录的坑（旧 job_state 残留旧 trigger），需在生产执行：
+        # settings.CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS（默认 60，与
+        # check_workflow_event_timeouts 对齐以压掉 D-4 的矛盾态窗口）启动值。
+        # **改过 trigger 间隔**：会重演上面 poll_repository_updates 记录的坑（旧
+        # job_state 残留旧 trigger），需在生产执行：
         # DELETE FROM django_apscheduler_djangojob WHERE id='expire_pending_clarifications';
         clarification_expiry_interval = getattr(
-            settings, "CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS", 600
+            settings, "CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS", 60
         )
         scheduler.add_job(
             expire_pending_clarifications_job,
