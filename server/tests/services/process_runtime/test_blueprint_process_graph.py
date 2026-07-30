@@ -1,11 +1,15 @@
-"""technical_blueprint stage graph + 七个 handler + 蓝图续驱判据测试（Phase 112-05 Task 3）。
+"""technical_blueprint stage graph + 九个 handler + 蓝图续驱判据测试（112-05；113-06 扩）。
 
 本文件守以下几件事（第一条最重要）：
 
 1. **既有 technical_plan 链路零扰动**：``_TECHNICAL_PLAN_STAGES`` 的 stage key 集合、每个
    stage 的 ``transitions`` / ``pausable`` / ``wait_status`` 逐字等于字面快照——任何改动即红。
-2. ``technical_blueprint`` 注册项存在：七 stage、``initial_stage == "intake"``、
-   每个 ``StageDef.key`` 等于 dict 键、所有 transition target 合法。
+   113-06 追加两 stage 后另有一条断言：旧链 ``merge.exhausted`` 仍指向 ``STAGE_FAILED``。
+2. ``technical_blueprint`` 注册项存在：九 stage（112 的七个 + 113 的
+   ``repo_plan`` / ``merge``）、``initial_stage == "intake"``、每个 ``StageDef.key`` 等于
+   dict 键、所有 transition target 合法、九个 stage 从 ``intake`` 全部可达。
+2b. ⭐ **蓝图链零 failed 出边**（W3，遍历全图值集合的运行时断言）+ 旧链正向对照
+   （证明 ``STAGE_FAILED`` 可被检出、断言非恒真）。
 3. ``reroute.transitions["exhausted"] == "repo_confirmation"`` 且 ``!= STAGE_FAILED``
    （CONTEXT「绝不静默失败」硬约束）。
 4. ``repo_confirmation.transitions["research_required"] == "repo_research"`` 回边存在，
@@ -58,7 +62,8 @@ from services.process_runtime.registry import (
 )
 from tests.helpers.blueprint_samples import make_blueprint
 
-BLUEPRINT_STAGE_KEYS = {
+# 112-05 注册的前七个 stage（阶段 0/1）——**等价性回归的对象**：113 只允许在其后追加。
+BLUEPRINT_STAGE_KEYS_112 = (
     "intake",
     "decompose",
     "spec_gate",
@@ -66,7 +71,12 @@ BLUEPRINT_STAGE_KEYS = {
     "repo_research",
     "reroute",
     "repo_confirmation",
-}
+)
+
+# 113-06 追加的阶段 2/3。
+BLUEPRINT_STAGE_KEYS_113 = ("repo_plan", "merge")
+
+BLUEPRINT_STAGE_KEYS = set(BLUEPRINT_STAGE_KEYS_112) | set(BLUEPRINT_STAGE_KEYS_113)
 
 # ── technical_plan 冻结快照（改动即红）──────────────────────────────────────
 _TECHNICAL_PLAN_SNAPSHOT: dict[str, dict[str, Any]] = {
@@ -162,12 +172,14 @@ def test_technical_plan_definition_still_registered() -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def test_blueprint_definition_registered_with_seven_stages() -> None:
+def test_blueprint_definition_registered_with_all_stages() -> None:
     definition = get_process_definition("technical_blueprint")
     assert definition is not None
     assert definition.initial_stage == "intake"
     assert definition.artifact_type == "technical_plan"
     assert set(definition.stages) == BLUEPRINT_STAGE_KEYS
+    # 113 是**只加不改**：112 的七个 stage 一个不少（少一个即红）
+    assert set(BLUEPRINT_STAGE_KEYS_112) <= set(definition.stages)
     for key, stage in definition.stages.items():
         assert stage.key == key, f"StageDef.key({stage.key}) 必须等于 dict 键({key})"
 
@@ -202,25 +214,82 @@ def test_research_required_back_edge_exists_and_is_reachable() -> None:
     assert "repo_research" in seen
 
 
-def test_confirmed_edge_points_at_terminal_for_now() -> None:
-    """113 接续点：把该值改为 ``"repo_plan"`` 并追加两个 StageDef 即可（transitions 是数据）。"""
+def test_confirmed_edge_enters_stage_two() -> None:
+    """113 接续点已接续：阶段 1 出口硬门通过 → 阶段 2 分仓方案。"""
     stages = get_process_definition("technical_blueprint").stages
-    assert stages["repo_confirmation"].transitions["confirmed"] == STAGE_DONE
+    assert stages["repo_confirmation"].transitions["confirmed"] == "repo_plan"
+
+
+def test_merge_merged_is_the_114_handoff_point() -> None:
+    """114 接续点：``merge.merged`` 现指 stage 终态，追加 ai_review 时改这一个值即可。"""
+    stages = get_process_definition("technical_blueprint").stages
+    assert stages["merge"].transitions["merged"] == STAGE_DONE
+    # 超界不走单独的 exhausted 出边（handler 把它映射成 merged）；若真有该 event，
+    # 它也绝不许指向 failed 终态。
+    assert stages["merge"].transitions.get("exhausted") != STAGE_FAILED
+    assert stages["repo_plan"].transitions["plan_complete"] == "merge"
+
+
+def test_blueprint_chain_has_no_failed_edge_but_old_chain_still_does() -> None:
+    """⭐ W3：蓝图链**任一** stage 引入 failed 出边即红；旧链仍有 ⇒ 断言非恒真。
+
+    「超界不落 failed」是本相位最容易被后续 plan 悄悄改掉的一条纪律（T-113-37）：
+    它不是某个字面量，而是**整张图的性质**，所以断言写成对全部 transitions 值集合的
+    扫描（与行号 / diff 无关）。配一条正向对照：旧链 ``_TECHNICAL_PLAN_STAGES`` 的
+    ``merge.exhausted`` 仍是 ``STAGE_FAILED`` —— 证明 ``STAGE_FAILED`` 确实可被检出。
+    """
+    blueprint = bp._TECHNICAL_BLUEPRINT_STAGES
+    offenders = [
+        key for key, stage in blueprint.items() if STAGE_FAILED in set(stage.transitions.values())
+    ]
+    assert not offenders, f"蓝图链引入了 failed 出边：{offenders}"
+    assert STAGE_FAILED in set(bp._TECHNICAL_PLAN_STAGES["merge"].transitions.values()), (
+        "正向对照失效：上面那条断言变成恒真了"
+    )
+
+
+def test_old_chain_merge_exhausted_still_lands_failed() -> None:
+    """旧链未被误改：直接 import ``registry.STAGE_FAILED`` 比对，不猜字面量。"""
+    assert bp._TECHNICAL_PLAN_STAGES["merge"].transitions["exhausted"] == STAGE_FAILED
 
 
 def test_pausable_stages_have_legal_wait_status_and_self_loop() -> None:
     stages = get_process_definition("technical_blueprint").stages
     pausable = {key for key, stage in stages.items() if stage.pausable}
-    assert pausable == {"spec_gate", "repo_research", "repo_confirmation"}
+    assert pausable == {"spec_gate", "repo_research", "repo_confirmation", "repo_plan", "merge"}
     for key in pausable:
         stage = stages[key]
         assert stage.wait_status in ("waiting_clarification", "waiting_event")
         assert key in stage.transitions.values(), f"{key} 缺 self-loop 边"
 
 
+def test_every_stage_is_reachable_from_the_initial_stage() -> None:
+    """全图可达性：从 ``intake`` 出发九个 stage 全部可达，且每个出边目标都已定义。
+
+    「登记了未定义的 event 目标」会在运行到那一步时才 ``ValueError`` —— 那时会话已跑了
+    半小时。这条把它提前到 import 期。
+    """
+    definition = get_process_definition("technical_blueprint")
+    stages = definition.stages
+    seen: set[str] = set()
+    frontier = [definition.initial_stage]
+    while frontier:
+        node = frontier.pop()
+        if node in seen or node not in stages:
+            continue
+        seen.add(node)
+        frontier.extend(stages[node].transitions.values())
+    assert seen == BLUEPRINT_STAGE_KEYS, f"不可达 stage：{BLUEPRINT_STAGE_KEYS - seen}"
+    allowed = BLUEPRINT_STAGE_KEYS | {STAGE_DONE, STAGE_FAILED}
+    for key, stage in stages.items():
+        for event, target in stage.transitions.items():
+            assert target in allowed, f"{key}.{event} 指向未定义的 target {target}"
+
+
 def test_handler_count_and_registration_count() -> None:
     source = Path(bp.__file__).read_text(encoding="utf-8")
-    assert len(re.findall(r"^async def _h_bp_", source, re.MULTILINE)) == 7
+    # 7（112-05 阶段 0/1）+ 2（113-06 阶段 2/3）= 9
+    assert len(re.findall(r"^async def _h_bp_", source, re.MULTILINE)) == 9
     assert len(re.findall(r"^register_process_type\(", source, re.MULTILINE)) == 3
 
 
@@ -279,8 +348,27 @@ def test_blueprint_engine_deps_match_handler_getattr_names() -> None:
     assert deps_names == _handler_dep_names(), (
         "deps 名单与 handler getattr 取名漂移 → handler 会恒 pass-through（静默空转）"
     )
+    assert {"repo_plan", "merge"} <= deps_names, "阶段 2/3 的 adapter 未注入即恒 pass-through"
     for name in deps_names:
         assert getattr(engine.deps, name) is not None
+
+
+def test_blueprint_deps_roster_matches_the_factory_docstring() -> None:
+    """P-9 第三方：docstring 名单 == SimpleNamespace 属性名 == handler getattr 取名。
+
+    名单写错不报错、只会永远 pass-through，所以三方必须逐字一致地被断言（docstring 是
+    唯一的人类可读来源，漂移了下一个人就会照错的那份写 handler）。
+    """
+    from services.process_runtime import entrypoint as ep
+
+    doc = build_blueprint_engine.__doc__ or ""
+    deps_names = {name for name in vars(build_blueprint_engine().deps) if not name.startswith("_")}
+    for name in deps_names:
+        assert f"``{name}``" in doc, f"deps 属性 {name} 未登记进 build_blueprint_engine docstring"
+    source = Path(ep.__file__).read_text(encoding="utf-8")
+    factory = source[source.index("def build_blueprint_engine") :]
+    for name in deps_names:
+        assert f"{name}=" in factory
 
 
 def test_two_chains_do_not_pollute_each_other() -> None:
@@ -288,8 +376,15 @@ def test_two_chains_do_not_pollute_each_other() -> None:
     plan_deps = set(vars(build_orchestration_engine().deps))
     assert "confirm_gate" not in plan_deps
     assert "spec_gate" not in plan_deps
+    assert "repo_plan" not in plan_deps
     assert "clarify" not in blueprint_deps
-    assert "merge" not in blueprint_deps
+    assert "classify" not in blueprint_deps
+    assert "router" not in blueprint_deps
+    # ⚠️ `merge` 两条链都有，但是**两个不同的 adapter**：旧链 ArchitectMergeAdapter、
+    # 蓝图链 BlueprintMergeAdapter。同名不同物，所以这里断言类型而不是键的存在性。
+    assert type(build_blueprint_engine().deps.merge) is not type(
+        build_orchestration_engine().deps.merge
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -458,6 +553,9 @@ async def test_confirmation_handler_returns_confirmed_from_adapter() -> None:
         (bp._h_bp_repo_research, "research_complete"),
         (bp._h_bp_reroute, "converged"),
         (bp._h_bp_repo_confirmation, "awaiting_confirmation"),
+        (bp._h_bp_repo_plan, "plan_dispatched"),
+        # D-W4：merge 缺依赖既不自旋（remerge）也不假装成功（merged），停在本 stage 等人。
+        (bp._h_bp_merge, "needs_clarification"),
     ],
 )
 async def test_handlers_pass_through_without_deps(handler: Any, expected: str) -> None:
