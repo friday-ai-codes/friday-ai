@@ -1,7 +1,10 @@
 """「本项目关联仓」解析（D-2 宽口径并集，ROUTE-01/02 的分组依据来源）。
 
 分组依据 = 项目所属 ``Space.repositories`` **∪** 该 Space 下 ``Project`` 的
-``RepoAssociation(status=verified)``。
+``RepoAssociation`` 中 ``status=verified`` 的行。
+
+（此处刻意不写成实例化形态 ``RepoAssociation`` + 紧跟括号——`test_repo_association_inv6_guard`
+的旁路写表扫描按行匹配该形态，文档字符串写成那样会被误判为旁路写入。本模块只读不写。）
 
 为什么取宽口径（107-CONTEXT D-2 裁决）：ROUTE-01/02 的需求原文是「哪些是本平台内
 的」「未关联当前平台，可能涉及跨组协作」——分界线在平台/组级别，而不是单个工作项的
