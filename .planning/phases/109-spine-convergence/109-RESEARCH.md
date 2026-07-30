@@ -611,15 +611,23 @@ constraints = [
 ```
 配套：`server/chat/coding_session_service.py:37-47` 把 active 状态集合抽成 `ACTIVE_STATUSES` 常量并注明"与 `Meta.constraints.unique_active_plan_repo` **字面一致**"，且 import 了 `IntegrityError` 做碰撞降级 `[VERIFIED: coding_session_service.py:24, 37-47]`。
 
-**⇒ 推荐约束形态：**
+**⇒ 推荐约束形态（已订正，见下方 ⚠️）：**
 ```python
 models.UniqueConstraint(
     fields=["source_artifact_version_id"],
-    condition=Q(source_artifact_version_id__isnull=False),   # 徒手草稿该列为 NULL，不参与约束
     name="uniq_codingplan_source_artifact_version",
 )
 ```
-条件约束（partial unique index）是必须的：存量与草稿行该列为 `NULL`，若用无条件唯一约束，SQLite 允许多 NULL 但 **PostgreSQL 与 MySQL 的 NULL 语义/索引行为不一致**，且加 `condition` 后语义自解释。项目双 DB 支持（`psycopg` + `mysqlclient`，`[VERIFIED: STACK.md]`），不要赌 NULL 语义。
+
+> ⚠️ **本节初稿的建议是错的，已订正 —— 不要用 `condition=Q(source_artifact_version_id__isnull=False)`。**
+>
+> 初稿理由（「若用无条件唯一约束，SQLite 允许多 NULL 但 PostgreSQL 与 MySQL 的 NULL 语义/索引行为不一致，不要赌」）方向是**反的**：PostgreSQL / MySQL / SQLite 的唯一索引**都**遵循「NULL 互不相等」，多条 NULL 行在无条件唯一约束下同样可共存。无条件形态无需赌任何 NULL 语义。
+>
+> 而带 `condition` 才是真正的赌，且赌输时**静默**：`django/db/backends/mysql/features.py:48` 是 `supports_partial_indexes = False`，`django/db/backends/base/schema.py:1792-1793` 的 `_unique_supported()` 在 `condition` 非空且后端不支持 partial index 时返回 `False` ⇒ **`AddConstraint` 被跳过，不报错也不告警**。本仓 `server/friday/settings.py:447-458` 明文支持 `mysql://` 与 MariaDB，因此 MySQL 部署上带 `condition` 的约束根本不存在，`aget_or_create` + `except IntegrityError` 的幂等三件套只剩两件。
+>
+> 因此 §10.2 的先例 `unique_active_plan_repo`（`condition=Q(status__in=...)`）**只可照抄"约束 + 常量字面一致 + IntegrityError 降级"这套纪律，不可照抄 `condition` 用法** —— 那条约束在 MySQL 上同样是静默失效的既有技术债，不是要复制的范式。
+>
+> 配套要求：必须有一条读 `connection.introspection.get_constraints` 的测试断言约束在当前后端**确实存在**，否则「约束被静默跳过」与「约束正常」在测试上表现完全一致（多 NULL 共存在无约束时同样通过；幂等用例是顺序调用；并发用例若靠 monkeypatch 强制抛异常则绕过了真实约束）。落点：`109-02` Task 1。
 
 **是否要把 `conversation` 纳入约束？** 不要。同一 `ArtifactVersion` 在两个 conversation 里各投影一份 = 重复编码方案，正是要防的；单列约束更严格也更简单。
 
@@ -815,6 +823,11 @@ class PlanProjectionService:
         *,
         artifact_version_id: str,
         conversation_id: str | None = None,
+        # ⚠️ 已订正：这个带默认值的形态只适用于 109-03（唯一调用方是端点，
+        # 归属由视图 owner gate 保证）。109-05 让 chat @tool 成为第二个调用方后，
+        # 该参数改为 **必填** 的 actor_user_id，且归属判定下移进 service
+        # （不匹配抛 PlanProjectionError(code="artifact_version_forbidden")）。
+        # 带默认值 = 漏传即以 "system" 身份放行，正是要避免的形状。
         initiated_by_user_id: str = "system",
     ) -> tuple["CodingPlan", bool]:
         from chat.models import CodingPlan, CodingPlanProvenance
@@ -937,7 +950,7 @@ def map_merged_plan_to_coding_plan(content: dict) -> dict:
 | §7 MergedPlan → markdown | 新渲染器 | `services.process_runtime.render.render_merged_plan_markdown` `[VERIFIED: render.py:28]` | 已是 MCP delegate 与 ai_plan_research 共享的唯一 helper；已做脱敏纵深（只读结构化字段、不 dump LLM 原文）与 fail-safe |
 | §7 content 合法性校验 | 手写字段检查 | `services.process_runtime.merged_plan.validate_merged_plan` `[VERIFIED: merged_plan.py:44]` | 内部复用 `validate_technical_plan` jsonschema；半可信输入恒不抛 |
 | 取 session 的 canonical content | 自己查 Artifact 链 | `orchestration_delegate._load_canonical` 的模式 `[VERIFIED: orchestration_delegate.py:59-76]` | 已处理 async 裸 lazy-FK + content 非 dict 回退 |
-| 条件唯一约束 | 应用层 lock / select_for_update | `UniqueConstraint(fields=..., condition=Q(...))`，抄 `unique_active_plan_repo` `[VERIFIED: chat/models.py:515-528]` | 同文件先例，含"常量与约束字面一致"的纪律注释 |
+| DB 唯一约束（幂等键） | 应用层 lock / select_for_update | **无条件** `UniqueConstraint(fields=["source_artifact_version_id"])`；只抄 `unique_active_plan_repo` 的**纪律**（常量与约束字面一致 + `IntegrityError` 降级），**不抄它的 `condition`** `[VERIFIED: chat/models.py:515-528]` | 同文件先例；`condition` 会在 MySQL 上被静默跳过，见 §10.2 订正 |
 | 幂等的并发兜底 | 自己写重试循环 | `aget_or_create` + `except IntegrityError` 重 `aget`，抄 `coding_session_service` `[VERIFIED: coding_session_service.py:24]` | Django 内建语义，配 DB 约束后并发安全 |
 | owner 权限门 | 自己写 403 判断 | 抄 `plan.conversation.created_by_id != user.id → 404` `[VERIFIED: views.py:2560-2567]` | 四处一致；404 不泄漏存在性；无 superuser bypass |
 | 工具 schema 漂移守护 | 手写断言 | `tests/agents/test_tool_contracts.py` 的 fixture 字节 diff + `_generate_contract_fixtures.py` 再生成流程 `[VERIFIED]` | 已有"契约升级 = 一次显式提交"的工作流 |
@@ -1052,8 +1065,10 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="codingplan",
             constraint=models.UniqueConstraint(
+                # 无条件：三后端唯一索引均视 NULL 互不相等，草稿行天然不受约束。
+                # 不得加 condition —— MySQL 的 supports_partial_indexes=False 会让
+                # AddConstraint 被静默跳过（详见 §10.2 的订正说明）。
                 fields=["source_artifact_version_id"],
-                condition=Q(source_artifact_version_id__isnull=False),
                 name="uniq_codingplan_source_artifact_version",
             ),
         ),
@@ -1302,25 +1317,31 @@ def _compose_plan_markdown(coding_plan, sessions) -> str:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> 本节 4 个 Open Question 全部已在 `109-CONTEXT.md` 的裁决中收口，逐条指向见各项末尾的 **Resolution** 行。保留原文是为了留下「当时不清楚什么、为何这样裁」的推理链，不代表仍未定。
 
 1. **无 conversation 的编排入口，投影时合成会话的 `space` 从哪来？**
    - 已知：`CodingPlan.conversation` NOT NULL；`Conversation.space` 是 FK（nullable，`chat/models.py:55-57`）；`ConvergenceSession` **没有** `space` FK，只有 `work_item`（nullable）+ `conversation_id`（nullable）；`_create_bridge_session` 的 `project` 参数由 `execution_service._find_project_for_repository(plan.repository_id)` 反查而来 `[VERIFIED: execution_service.py:147-149]`。
    - 不清楚：workflow 入口的编排（`work_item` 非空、无 conversation）该经 `WorkItem → ?` 还是经 `execution_plan[0].repository_id → _find_project_for_repository` 反查 space。
    - **Recommendation:** 本 phase 把投影范围**限定在 chat 入口**（`ConvergenceSession.conversation_id` 非空），workflow / MCP 入口的投影列为后续或按需；这样 SC-1 的用户故事（"用户在编排产出方案后可直接进入执行流"）完整成立，且避开 space 反查的歧义。planner 若要覆盖全入口，需先决定反查规则并在 discuss 阶段确认。
+   - **Resolution → 裁决 D-3（投影只做 chat 入口）**：采纳该建议。无 conversation 的编排入口以稳定机器码 `projection_requires_chat_entrypoint` 显式拒绝，**不建合成会话、不按 repository 反查 space**。落点：`109-03` Task 2 action 第 1 条 + Task 3 的 400 分支；边界记录于 `109-VALIDATION.md §Explicit Scope Boundaries` 第 1 条。
 
 2. **`create_coding_plan` 收窄后，`update_coding_plan` 怎么办？**
    - 已知：`update_coding_plan` 的必填入参同样是 `tech_plan` + `affected_files` `[VERIFIED: coding_tools.py:336]`——它是**同一个徒手创作漏洞的第二个门**。CONTEXT 只点名 `create_coding_plan`。
    - **Recommendation:** SPINE-02 的字面表述是"系统不再存在由对话模型徒手编写方案正文的产出路径"——`update_coding_plan` 让 LLM 能把任意正文写进既有 plan，**同样违反该表述**。建议一并收窄（或改为只接受"重新投影新版本"），并在计划里显式说明这是对 SPINE-02 语义的必要覆盖，而非范围蔓延。若 planner 决定不动它，必须在 VERIFICATION 里如实记录这个残留口子。
+   - **Resolution → 裁决 D-1（两个门一起收窄）**：采纳建议，`update_coding_plan` 一并收窄，语义改为「re-bind 到新的编排方案版本」而非任意改写。落点：`109-05` Task 1 B 节（schema + `PlanProjectionService.arebind`）+ Task 2 A 节的正向不变量对两个工具各断言一次。**无残留口子**，因此 VERIFICATION 无需记录该项。
 
 3. **草稿的"显式确认"用什么载体？**
    - 已知：`CodingSessionsBatchCreateRequestSerializer` 现有 `repository_ids` / `branch_template` / `target_branch` `[VERIFIED: views.py:2645-2649]`。
    - 不清楚：确认标志加成请求体布尔字段（如 `acknowledge_unresearched: true`）还是独立的二次确认端点。
    - **Recommendation:** 请求体布尔字段最简（一次往返、天然幂等、易测）；由 UI-SPEC 决定弹层文案。
+   - **Resolution → 裁决 D-5（载体取请求体布尔字段，不新开端点）**：采纳该建议。字段名 `acknowledge_unresearched`，`default=False`，`provenance != draft` 时被忽略。落点：`109-07` Task 1（serializer + service gate + 机器码 `draft_requires_explicit_confirm`）+ `109-08` Task 2（弹层是该字段 `true` 的唯一来源）。
 
 4. **`start_plan_research` 的 chat 呈现要做到什么程度？**
    - 已知：该工具在前端完全没有呈现（§6.1）。本 phase 的 SC-1 只要求"能进入编码"。Phase 110 才负责阶段进展与时间线。
    - **Recommendation:** 本 phase 只做**最小可操作呈现**——工具标签/图标/摘要三处登记 + 一张带「进入编码」按钮的产出卡片；阶段流式与时间线严格留给 Phase 110，不要在这里开头。
+   - **Resolution → 裁决 D-4（chat 呈现只做最小可操作面）**：采纳该建议。落点：`109-04` Task 2（`OrchestratedPlanCard.vue` +「进入编码」）+ Task 3（`UNGROUPABLE_TOOLS` 与三处工具展示登记）；不渲染方案正文、无进度 UI、无阶段流式/时间线，边界记录于 `109-VALIDATION.md §Explicit Scope Boundaries` 第 2 条，阶段进展留 Phase 110（`109-08 <assumptions>` 第 4 行）。
 
 ---
 
