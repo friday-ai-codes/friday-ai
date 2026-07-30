@@ -25,7 +25,6 @@ from permissions.models import SpaceMembership, SpaceRole
 from projects.models import Space
 from repositories.models import Repository
 
-
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
