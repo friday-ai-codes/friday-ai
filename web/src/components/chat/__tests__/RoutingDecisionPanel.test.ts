@@ -494,7 +494,7 @@ describe('routingDecisionPanel 分组分区（ROUTE-01）', () => {
     expect(wrapper.text()).not.toContain('gl-a')
   })
 
-  it('Top-3 截断 + 已选候选 pin-in；溢出 trigger 文案与组标题总数', async () => {
+  it('每组 Top-3 截断 + 已选候选 pin-in；溢出 trigger 文案与组标题总数', async () => {
     const { wrapper } = mountTrace({
       block_order: ['in_project', 'global'],
       candidates: [

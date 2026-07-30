@@ -14,7 +14,7 @@
  * 视觉：glassmorphism（DESIGN.md）+ shadcn-vue Card/Badge/Tooltip/Checkbox/Button +
  * Tailwind（禁内联样式）。
  */
-import type { ManualOverrideRequestCandidate, RoutingCandidate, RoutingLevel } from '~/types/routing'
+import type { ManualOverrideRequestCandidate, RoutingCandidate, RoutingGroup, RoutingLevel } from '~/types/routing'
 import { useDebounceFn } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
 import { Badge } from '~/components/ui/badge'
@@ -47,18 +47,161 @@ const effectiveTraceId = computed(() => {
 
 const trace = computed(() => routingStore.getTrace(effectiveTraceId.value))
 
-const sortedCandidates = computed<RoutingCandidate[]>(() => {
-  if (!trace.value)
-    return []
-  return [...trace.value.candidates].sort((a, b) => b.score - a.score)
-})
+const allCandidates = computed<RoutingCandidate[]>(() => trace.value?.candidates ?? [])
 
 const levelCounts = computed(() => {
   const counts: Record<RoutingLevel, number> = { high: 0, medium: 0, low: 0 }
-  for (const c of sortedCandidates.value)
+  for (const c of allCandidates.value)
     counts[c.level]++
   return counts
 })
+
+/** 组标题文案（硬编码中文，沿用 SIGNAL_LABELS 惯例，不接 vue-i18n）。 */
+const GROUP_LABELS: Record<RoutingGroup, string> = {
+  in_project: '本项目关联仓',
+  global: '全局候选',
+}
+
+// 跨组说明句与置顶提示句一律取这两个前端常量：后端的自由文本留痕字段不进
+// DOM，避免把上游文本变成渲染面（T-107-06）。文案全部走 {{ }} 插值，组件内
+// 不使用任何原始 HTML 注入指令。
+const CROSS_GROUP_SENTENCE = '未关联当前平台，可能涉及跨组协作'
+const PROMOTION_SENTENCE = '更匹配的仓不在本项目关联范围内'
+
+/** 每组默认可见条数（叠加 pin-in 规则后可超出）。 */
+const VISIBLE_PER_GROUP = 3
+
+interface RoutingBlock {
+  group: RoutingGroup
+  total: number
+  visible: RoutingCandidate[]
+  overflow: RoutingCandidate[]
+}
+
+function groupOf(c: RoutingCandidate): RoutingGroup {
+  return c.group ?? 'global'
+}
+
+/** 排序键：score_ranked 是后端凸组合排序分，缺失 / null 时回退 score。 */
+function rankKey(c: RoutingCandidate): number {
+  return c.score_ranked ?? c.score
+}
+
+function byRankDesc(a: RoutingCandidate, b: RoutingCandidate): number {
+  const delta = rankKey(b) - rankKey(a)
+  if (delta !== 0)
+    return delta
+  // 同分 tie-break 与后端同口径（repository_id 升序），保证渲染顺序稳定
+  return a.repository_id.localeCompare(b.repository_id)
+}
+
+/**
+ * 分组呈现启用判定：`block_order` 长度 2 即启用（后端契约：有项目上下文时
+ * 恒为长度 2，即使某组为空）。长度 1 = 无项目上下文 → 平铺，此时标「跨组」
+ * 反而误导。仅当 `block_order` 完全缺失时才按候选自带的组兜底判定。
+ */
+const groupingEnabled = computed(() => {
+  const order = trace.value?.block_order
+  if (order && order.length === 2)
+    return true
+  if (order && order.length > 0)
+    return false
+  return allCandidates.value.some(c => c.group === 'in_project')
+})
+
+/** 区顺序权威来自后端；前端不重排区。 */
+const blockOrder = computed<RoutingGroup[]>(() => {
+  const order = trace.value?.block_order
+  return order && order.length === 2 ? [...order] : ['in_project', 'global']
+})
+
+/**
+ * 分区结构：区顺序 = block_order，区内按 rankKey 降序，空组不产出。
+ *
+ * 这里**不做**全局重排——曾经的实现按 score 把全部候选重排一次，会覆盖后端
+ * 的分区顺序与 block 置顶决策（107-RESEARCH Pitfall 4）。
+ */
+const groupedBlocks = computed<RoutingBlock[]>(() => {
+  const sorted = [...allCandidates.value].sort(byRankDesc)
+  if (!groupingEnabled.value) {
+    // 平铺分支（历史 trace / 无项目上下文）：单块、不截断、无组标题与标注，
+    // 与今日渲染一致
+    return [{ group: 'global', total: sorted.length, visible: sorted, overflow: [] }]
+  }
+  return blockOrder.value
+    .map((group) => {
+      const members = sorted.filter(c => groupOf(c) === group)
+      const visible: RoutingCandidate[] = []
+      const overflow: RoutingCandidate[] = []
+      members.forEach((c, index) => {
+        // pin-in：已选候选无论排名一律可见——候选行承载 Checkbox，被折叠的
+        // 已选候选无法取消勾选，用户还会看到「勾了的仓不见了」
+        if (index < VISIBLE_PER_GROUP || c.selected_by_ai || c.selected_by_user_final)
+          visible.push(c)
+        else
+          overflow.push(c)
+      })
+      return { group, total: members.length, visible, overflow }
+    })
+    .filter(block => block.total > 0)
+})
+
+function isCrossGroup(c: RoutingCandidate): boolean {
+  return groupingEnabled.value && groupOf(c) === 'global'
+}
+
+/** 迟滞置顶（后端 delta 判定的结果，前端不算 delta）时给出因果解释。 */
+const showPromotionNotice = computed(
+  () => groupingEnabled.value && blockOrder.value[0] === 'global',
+)
+
+/**
+ * 全局组默认折叠判定（纯呈现派生）：本项目在前 + 本项目首位高置信 → 折叠。
+ */
+const defaultGlobalOpen = computed(() => {
+  if (!groupingEnabled.value || blockOrder.value[0] !== 'in_project')
+    return true
+  const inProject = groupedBlocks.value.find(b => b.group === 'in_project')
+  return inProject?.visible[0]?.level !== 'high'
+})
+
+/** null = 跟随默认态；用户点过后本地态优先（trace 变化时置回 null 重算）。 */
+const globalGroupOpenOverride = ref<boolean | null>(null)
+const globalGroupOpen = computed(
+  () => globalGroupOpenOverride.value ?? defaultGlobalOpen.value,
+)
+
+function toggleGlobalGroup() {
+  globalGroupOpenOverride.value = !globalGroupOpen.value
+}
+
+function isBlockOpen(block: RoutingBlock): boolean {
+  if (!groupingEnabled.value || block.group !== 'global')
+    return true
+  return globalGroupOpen.value
+}
+
+/** 组内溢出披露态（本地 ref，不持久化）。 */
+const overflowOpenGroups = ref<Set<RoutingGroup>>(new Set())
+
+function isOverflowOpen(group: RoutingGroup): boolean {
+  return overflowOpenGroups.value.has(group)
+}
+
+function toggleOverflow(group: RoutingGroup) {
+  const next = new Set(overflowOpenGroups.value)
+  if (next.has(group))
+    next.delete(group)
+  else
+    next.add(group)
+  overflowOpenGroups.value = next
+}
+
+function rowsOf(block: RoutingBlock): RoutingCandidate[] {
+  return isOverflowOpen(block.group)
+    ? [...block.visible, ...block.overflow]
+    : block.visible
+}
 
 const collapsed = ref(false)
 
@@ -122,12 +265,16 @@ function setBreakdownOpen(repoId: string, open: boolean) {
 
 watch(effectiveTraceId, () => {
   expandedBreakdowns.value = new Set()
+  // 分组折叠态与溢出披露态同样不跨 trace 保留（override 会写新 trace）
+  globalGroupOpenOverride.value = null
+  overflowOpenGroups.value = new Set()
 })
 
 // 容差校验（每次 trace 数据变化跑一次）：|Σbreakdown − score| > 1e-6 仅
 // console.warn，不阻断渲染——不变量由后端测试守护，前端不承担校验职责。
+// 吃的是扁平化后的**全部**候选（不是分区后的可见集），语义与既有一致。
 watch(
-  sortedCandidates,
+  allCandidates,
   (cands) => {
     for (const c of cands) {
       if (!hasBreakdown(c))
@@ -201,7 +348,7 @@ function onOpenManualSelect() {
       @click="collapsed = !collapsed"
     >
       <span class="inline-flex items-center gap-2">
-        <span>→ 路由决策（{{ sortedCandidates.length }} 个仓库相关）</span>
+        <span>→ 路由决策（{{ allCandidates.length }} 个仓库相关）</span>
         <span class="text-xs text-zinc-500">
           高 {{ levelCounts.high }} · 中 {{ levelCounts.medium }} · 低 {{ levelCounts.low }}
         </span>
@@ -217,76 +364,152 @@ function onOpenManualSelect() {
         <span class="ml-2">阈值 {{ trace.threshold.toFixed(2) }}</span>
       </div>
 
-      <TooltipProvider :delay-duration="200">
-        <ul class="space-y-1.5">
-          <li
-            v-for="c in sortedCandidates"
-            :key="c.repository_id"
-            class="rounded px-1 py-1.5 hover:bg-zinc-50"
-          >
-            <div class="flex items-start gap-3">
-              <Checkbox
-                :model-value="checkedFor(c)"
-                class="mt-0.5"
-                @update:model-value="(v) => onToggle(c.repository_id, v)"
-              />
-              <span class="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
-                {{ c.repository_name }}
-              </span>
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <Badge :variant="variantOf(c.level)" class="shrink-0">
-                    {{ Math.round(c.score * 100) }}% {{ labelOf(c.level) }}
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent class="max-w-[24rem] text-xs">
-                  {{ CONFIDENCE_TOOLTIPS[c.level] }}
-                </TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <p class="hidden max-w-[18rem] cursor-help truncate text-xs text-zinc-500 sm:block">
-                    {{ c.evidence }}
-                  </p>
-                </TooltipTrigger>
-                <TooltipContent class="max-w-[24rem] text-xs">
-                  {{ c.evidence }}
-                </TooltipContent>
-              </Tooltip>
-            </div>
+      <!-- 迟滞置顶提示：与「为什么全局组在前面」的因果相邻（两区之上） -->
+      <div
+        v-if="showPromotionNotice"
+        role="status"
+        class="flex items-start gap-2 rounded-lg border border-teal-500/30 bg-teal-500/5 px-3 py-2.5"
+      >
+        <span class="icon-[lucide--arrow-up-narrow-wide] shrink-0 mt-0.5 text-teal-700" />
+        <p class="text-xs text-teal-700">
+          {{ PROMOTION_SENTENCE }}
+        </p>
+      </div>
 
-            <Collapsible
-              v-if="hasBreakdown(c)"
-              :open="expandedBreakdowns.has(c.repository_id)"
-              @update:open="(v) => setBreakdownOpen(c.repository_id, v)"
-            >
-              <CollapsibleTrigger class="flex items-center gap-1 py-1 pl-3 text-xs text-muted-foreground">
-                <span
-                  class="icon-[lucide--chevron-right] size-3 transition-transform"
-                  :class="{ 'rotate-90': expandedBreakdowns.has(c.repository_id) }"
-                />
-                分数分解
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div class="flex flex-col gap-1 py-1 pl-3">
-                  <div
-                    v-for="(value, key) in c.breakdown"
-                    :key="key"
-                    class="flex items-center justify-between gap-2 px-2"
-                  >
-                    <span class="text-xs text-muted-foreground">{{ signalLabel(String(key)) }}</span>
-                    <span class="text-right font-mono text-xs text-foreground">{{ value.toFixed(3) }}</span>
-                  </div>
-                  <div class="border-t border-border/50" />
-                  <div class="flex items-center justify-between gap-2 px-2">
-                    <span class="text-xs text-muted-foreground">合计</span>
-                    <span class="text-right font-mono text-xs font-semibold text-foreground">{{ c.score.toFixed(3) }}</span>
-                  </div>
+      <TooltipProvider :delay-duration="200">
+        <div
+          v-for="block in groupedBlocks"
+          :key="block.group"
+          class="space-y-1.5"
+        >
+          <!-- 全局组标题：可折叠（原生 button + aria-expanded，chevron 旋转沿用
+               「分数分解」trigger 惯例） -->
+          <button
+            v-if="groupingEnabled && block.group === 'global'"
+            type="button"
+            :aria-expanded="globalGroupOpen"
+            class="flex w-full items-center gap-1 text-left text-xs"
+            @click="toggleGlobalGroup"
+          >
+            <span
+              class="icon-[lucide--chevron-right] size-3 shrink-0 transition-transform"
+              :class="{ 'rotate-90': globalGroupOpen }"
+            />
+            <span class="font-semibold text-foreground">{{ GROUP_LABELS[block.group] }}</span>
+            <span class="text-muted-foreground">（{{ block.total }}）</span>
+          </button>
+          <!-- 本项目组标题：默认可见内容不该需要额外点击，故为纯静态标题 -->
+          <div v-else-if="groupingEnabled" class="text-xs">
+            <span class="font-semibold text-foreground">{{ GROUP_LABELS[block.group] }}</span>
+            <span class="text-muted-foreground">（{{ block.total }}）</span>
+          </div>
+
+          <!-- 跨组标注第一层：组级完整句常驻可见（不依赖 hover，也不随折叠消失） -->
+          <p
+            v-if="groupingEnabled && block.group === 'global'"
+            class="text-xs text-muted-foreground"
+          >
+            {{ CROSS_GROUP_SENTENCE }}
+          </p>
+
+          <template v-if="isBlockOpen(block)">
+            <ul class="space-y-1.5" :class="{ 'pl-3': groupingEnabled }">
+              <li
+                v-for="c in rowsOf(block)"
+                :key="c.repository_id"
+                class="rounded px-1 py-1.5 hover:bg-zinc-50"
+              >
+                <div class="flex items-start gap-3">
+                  <Checkbox
+                    :model-value="checkedFor(c)"
+                    class="mt-0.5"
+                    @update:model-value="(v) => onToggle(c.repository_id, v)"
+                  />
+                  <span class="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+                    {{ c.repository_name }}
+                  </span>
+                  <!-- 跨组标注第二层：候选级紧凑徽标，完整句由 Tooltip 与 aria-label 承载 -->
+                  <Tooltip v-if="isCrossGroup(c)">
+                    <TooltipTrigger as-child>
+                      <Badge variant="info" class="shrink-0" :aria-label="CROSS_GROUP_SENTENCE">
+                        跨组
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent class="max-w-[24rem] text-xs">
+                      {{ CROSS_GROUP_SENTENCE }}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <Badge :variant="variantOf(c.level)" class="shrink-0">
+                        {{ Math.round(c.score * 100) }}% {{ labelOf(c.level) }}
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent class="max-w-[24rem] text-xs">
+                      {{ CONFIDENCE_TOOLTIPS[c.level] }}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <p class="hidden max-w-[18rem] cursor-help truncate text-xs text-zinc-500 sm:block">
+                        {{ c.evidence }}
+                      </p>
+                    </TooltipTrigger>
+                    <TooltipContent class="max-w-[24rem] text-xs">
+                      {{ c.evidence }}
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
-              </CollapsibleContent>
-            </Collapsible>
-          </li>
-        </ul>
+
+                <Collapsible
+                  v-if="hasBreakdown(c)"
+                  :open="expandedBreakdowns.has(c.repository_id)"
+                  @update:open="(v) => setBreakdownOpen(c.repository_id, v)"
+                >
+                  <CollapsibleTrigger class="flex items-center gap-1 py-1 pl-3 text-xs text-muted-foreground">
+                    <span
+                      class="icon-[lucide--chevron-right] size-3 transition-transform"
+                      :class="{ 'rotate-90': expandedBreakdowns.has(c.repository_id) }"
+                    />
+                    分数分解
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div class="flex flex-col gap-1 py-1 pl-3">
+                      <div
+                        v-for="(value, key) in c.breakdown"
+                        :key="key"
+                        class="flex items-center justify-between gap-2 px-2"
+                      >
+                        <span class="text-xs text-muted-foreground">{{ signalLabel(String(key)) }}</span>
+                        <span class="text-right font-mono text-xs text-foreground">{{ value.toFixed(3) }}</span>
+                      </div>
+                      <div class="border-t border-border/50" />
+                      <div class="flex items-center justify-between gap-2 px-2">
+                        <span class="text-xs text-muted-foreground">合计</span>
+                        <span class="text-right font-mono text-xs font-semibold text-foreground">{{ c.score.toFixed(3) }}</span>
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              </li>
+            </ul>
+
+            <!-- 溢出披露：原生 button + aria-expanded，展开的候选按 rank 续在同一列表内 -->
+            <button
+              v-if="block.overflow.length"
+              type="button"
+              :aria-expanded="isOverflowOpen(block.group)"
+              class="flex items-center gap-1 py-1 pl-3 text-xs text-muted-foreground"
+              @click="toggleOverflow(block.group)"
+            >
+              <span
+                class="icon-[lucide--chevron-right] size-3 shrink-0 transition-transform"
+                :class="{ 'rotate-90': isOverflowOpen(block.group) }"
+              />
+              {{ isOverflowOpen(block.group) ? '收起其余候选' : `显示其余 ${block.overflow.length} 个候选` }}
+            </button>
+          </template>
+        </div>
       </TooltipProvider>
 
       <div class="mt-3 flex flex-wrap gap-2">
