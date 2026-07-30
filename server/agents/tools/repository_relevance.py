@@ -210,6 +210,10 @@ async def _analyze_relevance_core(
     # v2 不可用（无树索引/LLM 失败回落 v1_fallback）时走 legacy 聚合。
     router_version = "legacy_hybrid"
     v2_candidates: list[RepositoryRelevanceCandidate] | None = None
+    # 结果级降级/分组事实（107-08）：在 try 之外初始化为列默认值，legacy 路径与 v2
+    # 任意失败回落都落这两个默认值；v2 成功时才被 router 结果覆盖。
+    v2_degrade_reason = ""
+    v2_block_order: list[str] = []
     try:
         from codegraph.services.repo_group_scope import aresolve_grouping_repo_ids
         from codegraph.services.repo_router_v2 import RepoRouterV2
@@ -230,6 +234,8 @@ async def _analyze_relevance_core(
         )
         if v2_result.router_version in ("v2", "v2_stage0_only") and v2_result.candidates:
             router_version = v2_result.router_version
+            v2_degrade_reason = v2_result.degrade_reason
+            v2_block_order = list(v2_result.block_order or [])
             v2_candidates = []
             for c in v2_result.candidates:
                 # 防御性跳过：repo_id 为空的候选无法映射（正常路径不会出现）。
@@ -280,6 +286,12 @@ async def _analyze_relevance_core(
         v2_candidates = None
 
     if v2_candidates is not None:
+        # `[:top_k]` 保留（107-08 对 107-07 遗留边界的裁决）：router 现在按组各取
+        # top_k 后并集（<= 2*top_k），而 top_k 是 LLM 可见的公开参数「返回的相关仓库
+        # 数量上限」——把返回上限悄悄改成 2*top_k 会单方面变更工具契约与
+        # total_candidates 语义。分组呈现不受影响：下面落的 block_order 来自 **router
+        # 结果**而非截断后的候选列表，故「有项目上下文 → 长度恒 2」在 API 边界仍成立，
+        # 被截空的组由前端按「空组不渲染」处理（UI-SPEC covered 11 / §分组呈现）。
         candidates = v2_candidates[:top_k]
         trace = await RepositoryRoutingTrace.objects.acreate(
             agent_session_id=agent_session_id,
@@ -289,6 +301,12 @@ async def _analyze_relevance_core(
             threshold=threshold,
             triggered_by=triggered_by,
             router_version=router_version,
+            # 写入侧接线（RELY-03 / ROUTE-01）：这两个赋值缺失时模型与 payload 测试
+            # 依旧全绿，而生产两列恒为列默认值 —— degraded 虽仍由 router_version 派生
+            # 为 True，但降级原因行永不出现、block_order 恒空使前端永远走平铺，
+            # 分组呈现上线即无效果。值只来自 router 结果，此处不做任何再分类。
+            degrade_reason=v2_degrade_reason,
+            block_order=v2_block_order,
         )
         logger.info(
             "analyze_repository_relevance_trace_written",
@@ -296,6 +314,8 @@ async def _analyze_relevance_core(
             candidate_count=len(candidates),
             triggered_by=triggered_by,
             router_version=router_version,
+            degrade_reason=v2_degrade_reason,
+            block_order=v2_block_order,
             agent_session_id=agent_session_id,
         )
         return candidates, str(trace.id)
@@ -353,6 +373,8 @@ async def _analyze_relevance_core(
     candidates.sort(key=lambda c: c.score, reverse=True)
     candidates = candidates[:top_k]
 
+    # legacy 聚合路径（router_version == "legacy_hybrid"）刻意不传新增两列：这条链没有
+    # 分组事实也没有降级分类，留列默认值（"" / []）即与历史行等价，前端渲染不变。
     trace = await RepositoryRoutingTrace.objects.acreate(
         agent_session_id=agent_session_id,
         conversation_id=conversation_id,
