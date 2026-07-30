@@ -15,6 +15,12 @@
   ``transaction.atomic()`` + ``select_for_update(skip_locked=True)`` 块内**只做同步读、只收集**
   目标；异步引擎重驱在事务外 ``asyncio.run``（Pitfall 9：持锁事务内调异步 ORM 会长事务持锁 /
   跨线程复用连接 / ``SynchronousOnlyOperation``）。
+- **出口必须真的推进**：``transition("clarified")`` 只把会话推到 ``research`` / ``running``，
+  之后没有任何周期任务会扫 ``status=running`` 的会话——只做状态转移等于把「停在
+  ``waiting_clarification``」换成「停在 ``research``」，RELY-02 要的「带未澄清假设**继续推进**」
+  并未达成，而且 ``running`` 在看板上与正常运行不可区分、更难发现。故 resume 出口在事务外
+  复用既有续驱 helper ``adrive_convergence_session_to_pause_or_terminal``（与 ``answer_resume``
+  同源，不新造 engine 工厂）把会话推到重挂起短路点或终态。
 - **best-effort**：单条会话失败只记 ``logger.exception``，其余照常处理，命令退出码恒 0
   （绝不因单条失败打断 scheduler 主循环）。
 - **「未澄清假设」只写会话 ``stage_state``**（D-6）：不改任何受 DEPTH 冻结的渲染文件。
@@ -371,6 +377,9 @@ class Command(BaseCommand):
                     return "noop"
             else:
                 await service.transition(session, "clarified", stage_state=stage_state)
+                # transition 之后必须真的推一步，否则会话停在 research/running 无人驱动
+                # （全仓没有任何周期任务扫 status=running 的 ConvergenceSession）。
+                session = await self._aredrive(session, log)
         except ConcurrentTransitionError:
             # 幂等 no-op：已被并发扫描或用户真实作答推进（CAS 命中 0 行）。
             log.info("clarification_timeout_exit_noop_concurrent", category="sampling")
@@ -386,8 +395,38 @@ class Command(BaseCommand):
             round_no=target["round_no"],
             waited_seconds=exit_marker["waited_seconds"],
             unclarified_count=len(unclarified),
+            # 续驱后的落点：出口是否真的把会话推离中间态，只能靠这两个字段在生产核对
+            # （BL-01 的可观测面：停在 research/running 与推到终态在看板上不可区分）。
+            final_status=str(session.status),
+            final_stage=str(session.current_stage),
         )
         return "exited"
+
+    @staticmethod
+    async def _aredrive(session: ConvergenceSession, log: Any) -> ConvergenceSession:
+        """resume 出口的引擎续驱（事务外）：把会话推到重挂起短路点或终态后返回。
+
+        复用 ``answer_resume`` / ``plan_research`` 同源的 ``build_orchestration_engine`` +
+        ``adrive_convergence_session_to_pause_or_terminal``——**不新造第二个 engine 工厂**。
+        helper 自带 ``waiting_clarification`` / ``waiting_event`` 短路与 ``max_steps`` 保护，
+        不会死循环。
+
+        续驱失败不回退状态（``transition`` 已幂等落地，回退会破坏「单向推进」）：记
+        ``exception`` 后按已出口计，返回续驱前的 session。
+        """
+        try:
+            from services.process_runtime import (
+                adrive_convergence_session_to_pause_or_terminal,
+                build_orchestration_engine,
+            )
+
+            engine = build_orchestration_engine(
+                node_execution_id=str(session.node_execution_id or "")
+            )
+            return await adrive_convergence_session_to_pause_or_terminal(engine, session)
+        except Exception:  # noqa: BLE001 — 续驱 best-effort，绝不打断出口主流程
+            log.exception("clarification_timeout_exit_redrive_failed")
+            return session
 
     @staticmethod
     async def _aemit_timed_out(
