@@ -113,6 +113,42 @@ class RepositoryRelevanceAnalysis:
     block_order: list[str] = field(default_factory=list)
 
 
+def _truncate_by_group_quota(
+    candidates: list[RepositoryRelevanceCandidate], top_k: int
+) -> list[RepositoryRelevanceCandidate]:
+    """把候选截到 ``top_k``，但**每个非空组至少保留 1 条**，其余名额按原顺序补齐。
+
+    输入已按全局 ``score_ranked`` 降序（router 侧 ``_apply_presentation`` 的产物），
+    输出保持该相对顺序不变——只做取舍，不重排。
+
+    为什么不能直接 ``[:top_k]``：全局组分数整体占优时前 ``top_k`` 可能一条
+    ``in_project`` 都不剩，而 ``block_order`` 仍报长度 2，前端启用分组后该分区因
+    ``total == 0`` 被过滤，用户看到的是「分组开着但只有一个区」。
+    """
+    if top_k <= 0 or len(candidates) <= top_k:
+        return list(candidates[: max(top_k, 0)])
+    kept: list[RepositoryRelevanceCandidate] = []
+    seen_groups: set[str] = set()
+    # 第一轮：每个组的最高分候选各占一个名额（输入已排序，首次出现即该组最高分）。
+    for c in candidates:
+        group = c.group or "global"
+        if group not in seen_groups and len(kept) < top_k:
+            seen_groups.add(group)
+            kept.append(c)
+    # 第二轮：剩余名额按全局顺序补齐。
+    kept_ids = {id(c) for c in kept}
+    for c in candidates:
+        if len(kept) >= top_k:
+            break
+        if id(c) not in kept_ids:
+            kept.append(c)
+            kept_ids.add(id(c))
+    # 恢复输入的全局降序（第一轮的配额挑选会打乱相对顺序）。
+    order = {id(c): idx for idx, c in enumerate(candidates)}
+    kept.sort(key=lambda c: order[id(c)])
+    return kept
+
+
 def _score_to_level(score: float) -> Literal["high", "medium", "low"]:
     """三档阈值映射：0.7 / 0.4。"""
     if score >= 0.7:
@@ -309,13 +345,13 @@ async def _analyze_relevance_core(
         v2_candidates = None
 
     if v2_candidates is not None:
-        # `[:top_k]` 保留（107-08 对 107-07 遗留边界的裁决）：router 现在按组各取
-        # top_k 后并集（<= 2*top_k），而 top_k 是 LLM 可见的公开参数「返回的相关仓库
-        # 数量上限」——把返回上限悄悄改成 2*top_k 会单方面变更工具契约与
-        # total_candidates 语义。分组呈现不受影响：下面落的 block_order 来自 **router
-        # 结果**而非截断后的候选列表，故「有项目上下文 → 长度恒 2」在 API 边界仍成立，
-        # 被截空的组由前端按「空组不渲染」处理（UI-SPEC covered 11 / §分组呈现）。
-        candidates = v2_candidates[:top_k]
+        # 返回上限仍是 top_k（它是 LLM 可见的公开参数「返回的相关仓库数量上限」，
+        # 悄悄改成 2*top_k 会单方面变更工具契约与 total_candidates 语义），但截断改为
+        # **按组配额**而非全局前 N：router 按组各取 top_k 后并集并按全局 score_ranked
+        # 排序，全局组分数整体占优时，简单的 `[:top_k]` 会把 in_project 组整组截空，
+        # 而落库的 block_order 来自 router 结果、仍报长度 2 → 前端启用分组却发现该组
+        # total == 0 被过滤掉，ROUTE-01「组内各展示 Top-3」在 top_k 较小时无法保证。
+        candidates = _truncate_by_group_quota(v2_candidates, top_k)
         trace = await RepositoryRoutingTrace.objects.acreate(
             agent_session_id=agent_session_id,
             conversation_id=conversation_id,
