@@ -636,6 +636,50 @@ async def test_self_loop_advances_do_not_overwrite_each_others_stage_state() -> 
 
 @pytestmark_db
 @pytest.mark.asyncio
+async def test_transition_without_a_new_version_keeps_the_artifact_pointer() -> None:
+    """⭐ 不产版本的转移**不得**抹掉 ``session.current_artifact_version``。
+
+    engine 曾把 ``StageOutcome.current_artifact_version``（默认 None）无条件透传给
+    service，而 service 用 ``_UNSET`` 哨兵区分「不改」与「显式置 None」—— 于是每一次
+    不产版本的转移都把指针清成 NULL。后果是所有「按会话指针找 artifact」的判据（蓝图
+    状态映射 / 阻塞线程探测 / 阶段 2 仓集 / 阶段 3 融合基线）在第一次转移后就静默读到
+    None（它们都 best-effort 吞异常，所以一声不响）。
+    """
+    artifact = await _make_artifact()
+    session = await _make_session("route", artifact=artifact)
+    assert session.current_artifact_version_id is not None
+    engine = _engine(route=SimpleNamespace(route=AsyncMock(return_value=_ROUTING_SUMMARY)))
+
+    await engine.advance(session)
+
+    fresh = await ConvergenceSession.objects.aget(id=session.id)
+    assert fresh.current_stage == "repo_research"
+    assert fresh.current_artifact_version_id == artifact.current_version_id, (
+        "handler 没产版本 ⇒ 指针必须原样保留"
+    )
+
+
+@pytestmark_db
+@pytest.mark.asyncio
+async def test_transition_with_a_new_version_advances_the_artifact_pointer() -> None:
+    """反向对照：handler 真产版本时指针必须推进（证明上一条不是把功能关掉了）。"""
+    artifact = await _make_artifact()
+    session = await _make_session("merge", artifact=artifact)
+    newer = await ArtifactService().add_version(artifact, _stage1_blueprint())
+    adapter = SimpleNamespace(
+        merge=AsyncMock(
+            return_value={"validation_status": "passed", "artifact_version_id": str(newer.id)}
+        )
+    )
+
+    await _engine(merge=adapter).advance(session)
+
+    fresh = await ConvergenceSession.objects.aget(id=session.id)
+    assert str(fresh.current_artifact_version_id) == str(newer.id)
+
+
+@pytestmark_db
+@pytest.mark.asyncio
 async def test_adapter_exception_lands_failed_with_stage_name() -> None:
     session = await _make_session("route")
     engine = _engine(route=SimpleNamespace(route=AsyncMock(side_effect=RuntimeError("boom"))))
