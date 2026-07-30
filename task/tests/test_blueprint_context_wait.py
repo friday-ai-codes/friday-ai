@@ -11,7 +11,9 @@
    拉全量 —— 轮询是配额敏感路径）。
 4. **上界夹紧**：`timeout_minutes=99` 被夹到 5（按轮询次数反推）；`-1` 夹到 0 且立即返回（不无限等）。
 5. **向后兼容**：`read_handler is None` → `hit False` + `reason == "tool_unavailable"`，不抛。
-6. **瞬时错误不中断等待**：handler 返回带 `is_error` 的体 → 本轮当未命中继续等。
+6. **瞬时错误不中断等待**：handler 返回带 `is_error` 的体 → 本轮当未命中继续等；但**连续**
+   失败达 3 轮 → 提前回 `reason == "tool_error"`（MN-01：持续不可用不得伪装成 `timeout`，
+   否则 agent 会把「读不到总线」记成「对方没发布契约」这个错误结论）。
 7. `matches_key_pattern` / `literal_prefix` 纯函数。
 8. 🔒 **工厂零改动守护**（延续 113-02）：`_make_knowledge_handler` 参数名元组恒等、白名单 10 项、
    `knowledge_allowed_tools()` 10 条、await 工具的 handler **不是**工厂造的那一个。
@@ -306,6 +308,46 @@ async def test_is_error_body_does_not_abort_wait() -> None:
 
     assert result["hit"] is True
     assert result["polls"] == 2
+
+
+async def test_persistent_is_error_returns_tool_error_not_timeout() -> None:
+    """MN-01：**持续**不可用（配额耗尽 / 401 / 404）必须与「对方还没写」分流。
+
+    连续 3 轮 `is_error` → 提前返回 `reason == "tool_error"`（而不是空转到 deadline 再回
+    `timeout`）：`timeout` 的语义是「记录假设并继续」，用它承载「我读不到总线」会让 agent 把
+    错误的技术结论写进 RepoPlan。仍**不带** `is_error`（约束 ②，不诱导重试）。
+    """
+    clock = _Clock()
+    handler = _ReadHandler({"__is_error__": True})
+
+    result = await await_blueprint_context(
+        handler, "repo:B.api_surface", timeout_minutes=5, _now=clock.now, _sleep=clock.sleep
+    )
+
+    assert result["hit"] is False
+    assert result["reason"] == "tool_error"
+    assert "is_error" not in result
+    # 提前返回省下剩余轮次的配额（5 分钟 / 5s = 60 轮，这里只花 3 轮）。
+    assert result["polls"] == 3
+    assert len(handler.calls) == 3
+
+
+async def test_intermittent_errors_do_not_trigger_tool_error() -> None:
+    """错误不连续（错-好-错-好…）→ 计数被重置，仍等满并回 `timeout`（瞬时抖动不降级）。"""
+    clock = _Clock()
+    handler = _ReadHandler({"__is_error__": True}, _empty(0), {"__is_error__": True}, _empty(0))
+
+    result = await await_blueprint_context(
+        handler,
+        "repo:B.api_surface",
+        timeout_minutes=1,
+        poll_interval_s=20.0,
+        _now=clock.now,
+        _sleep=clock.sleep,
+    )
+
+    assert result["hit"] is False
+    assert result["reason"] == "timeout"
 
 
 async def test_read_handler_exception_does_not_abort_wait() -> None:

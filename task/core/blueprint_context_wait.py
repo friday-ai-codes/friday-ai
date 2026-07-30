@@ -39,6 +39,15 @@ DEFAULT_POLL_INTERVAL_S = 5.0
 # 单轮增量拉取上限（服务端 `_MAX_READ_LIMIT` 同值，避免被静默夹紧后误判「已拉全」）。
 _READ_LIMIT = 200
 
+# 连续「本轮读失败」轮数上界（MN-01）：达到即带 `reason="tool_error"` 提前返回。
+# **瞬时**不可用不该中断等待（服务端抖一下不等于依赖不存在），但**持续**不可用不能和
+# 「对方还没写」共用同一个出口：知识配额耗尽（工厂计数器打满后每轮 `is_error`）、老服务端
+# 未部署该 path（每轮 404）、token 过期（每轮 401）三种情况会把整个 deadline 空转到底，
+# 再回 `reason="timeout"` —— 而 `timeout` 的语义已在工具描述里写死为「记录假设并继续」，
+# agent 于是把「我读不到总线」记成「B 仓没有发布契约」，一个错误的技术结论会被写进 RepoPlan
+# 并一路进融合。提前返回同时省下剩余轮次的配额。
+_MAX_CONSECUTIVE_TOOL_ERRORS = 3
+
 
 def matches_key_pattern(key: str, pattern: str) -> bool:
     """key 匹配：精确 / 单 ``*`` 全匹配 / 尾部 ``*`` 前缀匹配（纯函数）。
@@ -106,6 +115,11 @@ async def await_blueprint_context(
     Returns:
         恒定形状 dict（下游无需判空分支）：``{"hit": bool, "entry"?: dict, "reason"?: str,
         "waited_ms": int, "polls": int, "max_seq": int}``。**任何路径都不含工具错误标记**。
+
+        未命中的 ``reason`` 三值互斥、降级动作不同（MN-01）：``timeout`` = 等满了对方还没写
+        （记录假设并继续）；``tool_error`` = 总线读取**持续**失败（配额 / 401 / 404），此时
+        「对方没写」这个结论**不成立**，应开澄清线程而不是当作事实写进方案；
+        ``tool_unavailable`` = 知识 MCP 整体未挂（约束 ④）。
     """
     now = _now or time.monotonic
     sleep = _sleep or asyncio.sleep
@@ -126,9 +140,29 @@ async def await_blueprint_context(
     deadline = now() + bounded_minutes * 60
     key_prefix = literal_prefix(key_pattern)
     polls = 0
+    consecutive_errors = 0
+
+    def _miss(reason: str) -> dict[str, Any]:
+        """未命中出口（恒定形状 + 一条 finished 日志，绝不带 ``is_error``——约束 ②/⑤）。"""
+        waited_ms = max(int((now() - started_at) * 1000), 0)
+        logger.info(
+            "blueprint_context_await_finished",
+            hit=False,
+            reason=reason,
+            polls=polls,
+            waited_ms=waited_ms,
+        )
+        return {
+            "hit": False,
+            "reason": reason,
+            "waited_ms": waited_ms,
+            "polls": polls,
+            "max_seq": last_seq,
+        }
 
     while now() < deadline:
         polls += 1
+        round_failed = False
         try:
             raw = await read_handler(
                 {
@@ -140,9 +174,21 @@ async def await_blueprint_context(
             )
         except Exception:  # noqa: BLE001 — 单轮读失败当未命中继续等（handler 本已 return-not-raise）
             raw = {}
+            round_failed = True
         # 带工具错误标记的返回体（HTTP 非 200 / 解析失败 / 401）→ 本轮未命中，**不中断等待**：
         # 服务端瞬时不可用不应让长依赖直接降级。
-        body = {} if (isinstance(raw, dict) and raw.get("is_error")) else _parse_handler_body(raw)
+        if isinstance(raw, dict) and raw.get("is_error"):
+            round_failed = True
+            body: dict[str, Any] = {}
+        else:
+            body = _parse_handler_body(raw)
+        # 持续失败与「对方还没写」必须分流（MN-01）：连续失败达上界即带 `tool_error` 返回。
+        if round_failed:
+            consecutive_errors += 1
+            if consecutive_errors >= _MAX_CONSECUTIVE_TOOL_ERRORS:
+                return _miss("tool_error")
+        else:
+            consecutive_errors = 0
         entries = body.get("entries")
         entries = entries if isinstance(entries, list) else []
         # 增量幂等：下一轮从本轮 max_seq 之后拉，绝不重复拉全量（约束 ①，配额敏感）。
@@ -170,18 +216,5 @@ async def await_blueprint_context(
             }
         await sleep(poll_interval_s)
 
-    waited_ms = max(int((now() - started_at) * 1000), 0)
-    logger.info(
-        "blueprint_context_await_finished",
-        hit=False,
-        polls=polls,
-        waited_ms=waited_ms,
-    )
     # 约束 ②：超时是**正常结果**（无 is_error），agent 据此降级而不是重试。
-    return {
-        "hit": False,
-        "reason": "timeout",
-        "waited_ms": waited_ms,
-        "polls": polls,
-        "max_seq": last_seq,
-    }
+    return _miss("timeout")
