@@ -25,6 +25,9 @@
 - **六类机械规则纯函数化**（不交给 LLM，保证可复现与可证伪）：① schema 完整性（`validate_blueprint`）② 引用覆盖（`blueprint_quality`：关键结论必带 citations，无引用的事实性断言 WARNING、关键结论无引用 BLOCKER）③ 角色一致性（每个 direct 仓 ≥1 实现项；indirect 仓 `capabilities_used` 被某实现项或 API 的 data_source 引用；改动 indirect 仓即 BLOCKER）④ API 闭环（`interaction_flows.steps.api_ref` 必指向已声明契约；consumed 的 `data_source.availability=needs_support` 时 `support_repository_id` 必须出现在 repo_associations）⑤ 禁令（不得出现以周为单位排期、不得引入 out_of_scope、不得与 constraints 冲突）⑥ 章程边界（direct 仓实现项违背该仓 `RepoCharter.boundaries` 或落在 `evolution=maintenance_only` 仓，必须有对应 decision_log 支撑，否则 BLOCKER）
 - **仅 goal-backward 一类走 LLM**：对每个 feature_point 逆向核对 acceptance_criteria 是否被实现项与 test_strategy 覆盖、`must_haves.truths` 是否有实现项支撑、`key_links` 两端是否都存在；`call_source` 用 111 已注册的 `blueprint_ai_review`
 - findings 载体复用 `BlueprintThread(kind=ai_review_finding, severity∈{blocker,warning,info}, blocking)`，锚定到 block（section_path 走 111 `iter_blocks` 的「点分 + [标识]」约定）
+- **`open_thread` 加 `severity` 形参（按调研定夺）**：`BlueprintThread.severity` 字段已存在但 `open_thread` 无该形参 → 安全追加 `severity=""` 默认值（零 migration，既有调用方行为不变）
+- **finding 留痕禁用 `record_answer`（按调研坐实 112 教训）**：`record_answer` 在同事务把 `open` 推到 `answered`，会让 `ahas_open_blocking_threads` 判为无门、confirm 守卫误放行、续驱 pause 失守。→ 从私有 `_append_thread_message_sync` **提炼公开的 `append_note`** 供 AI findings 留痕，不改变线程 status
+- **`blocking == (severity == "blocker")` 强制一致（按调研定夺）**：二者不得各写各的，避免「blocker 不阻塞」或「warning 却阻塞」的错配
 - 模型档位与起草**同档**（§12 已定），不强制换模型
 
 ### 有界修订与归因打回
