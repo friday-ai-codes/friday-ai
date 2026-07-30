@@ -125,7 +125,14 @@ Plans:
   3. 人工直接编辑 block 生成新版本（produced_by=human_edit，归属可审计）；后续 AI 修订以人工版本为基线不覆盖人工内容，冲突时开线程询问。
   4. blocking 澄清无人应答时会话停在「需要澄清」显式状态并按配置周期提醒（飞书卡片重推/站内通知），随时作答恢复；不自动作答、不判失败。
 
-**Plans**: TBD
+**Plans**: 5 plans（wave 1: 01；wave 2: 02；wave 3: 03；wave 4: 04；wave 5: 05）
+
+Plans:
+- [ ] 114-01-PLAN.md — 线程底座：open_thread 追加 severity 形参（零 migration，既有调用逐字等价）+ blocking == (severity=="blocker") 不变式强制 + 从 _append_thread_message_sync 提炼公开 append_note（留痕不改状态，record_answer 禁用于 finding）+ confirm 守卫两条判据收敛进 _apply_transition_sync 同一事务的单次 Q 查询消除 TOCTOU（FLOW-07）
+- [ ] 114-02-PLAN.md — 新建 blueprint_review.py：六类机械规则纯函数（前置完整性短路 / schema / 引用覆盖条目级 / 角色一致性 / API 闭环 / 禁令 / 章程边界 + 确认门锁定校验）在无 LLM 下产确定性结论，每类一条构造样例证伪；goal-backward 一类走 LLM（call_source=blueprint_ai_review，不可得 fail-closed 记 warning meta finding）（FLOW-07）
+- [ ] 114-03-PLAN.md — ai_review stage 接入：BlueprintReviewAdapter（findings 批量建线程用 severity 形参与 append_note 留痕、(rule_id, block_id) 去重、有界回退归因仓级回 repo_plan/融合级回 merge ≤2 轮计数存 stage_state["ai_review"]、超界转 pending_review 携未决清单绝不 FAILED）+ builtin_processes 只加第 10 个 stage 与 _h_bp_ai_review 且 merge.merged 改指 ai_review + blueprint_resume 映射表追加一行（删除行 0）（FLOW-07）
+- [ ] 114-04-PLAN.md — 澄清回灌与人工编辑：areanchor_threads 批量重锚定（diff 预筛 + section_path 刷新 + 失锚 orphaned 不删 + 一次 bulk_update）+ block 级 patch ops 经 service 收口产 human_edit 版本（不合法拒绝且不落版本）+ 回灌三步链（改 content → add_version → transition）与 decision_log 物化保 answer 键、decided_at 用作答消息时间戳保幂等 + AI 不覆盖人工（冲突开线程）（CLAR-02, CLAR-03）
+- [ ] 114-05-PLAN.md — 人审端点与收口：新建 blueprint_review_views.py 五端点（GET 快照 / approve 经事务内守卫无 TOCTOU / reject 三步链写 meta.revision_round 首个写入方 / edit-blocks / threads answer 是 record_answer 唯一正当用法）+ reviewer upsert + pending 超时提醒挂载点（周期可配、不自动作答不判失败不新起定时任务）+ blueprint_quality 三项 DB 统计实装（human_edit_volume 用 produced_by_ref__startswith 而非不存在的 created_by_user_id）+ 全量相位门（FLOW-07, CLAR-03, CLAR-04）
 
 ### Phase 115: 前端查看器与知识库（结构化阅读 + 批注 + 管理面）
 
