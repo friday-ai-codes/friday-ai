@@ -17,7 +17,8 @@
 10. **SC-4 端到端证伪线（真实入口，不桩续驱）**：经 REST ``add-repo`` → session 落
     ``repo_research``、新仓建 task 且 dispatcher 恰 await 1 次、已完成仓 task 与
     ``PartialPlan`` 行数逐一不变；``upgrade-research`` / ``reclassify_role``(indirect→direct)
-    同链；``remove_repo`` / ``reclassify_role``(direct→indirect) 不误驱；``confirm`` 推到终态。
+    同链；``remove_repo`` / ``reclassify_role``(direct→indirect) 不误驱；``confirm`` 推进到
+    阶段 2/3（113-06 起 ``confirmed`` 指向 ``repo_plan``，不再直接终态）且**绝不静默落 FAILED**。
 """
 
 from __future__ import annotations
@@ -991,17 +992,30 @@ def test_e2e_upgrade_research_starts_deep_container_for_that_repo_only(
     assert _entry(ctx.artifact, target)["role_suggestion"] == "direct"
 
 
-def test_e2e_confirm_through_rest_drives_session_to_terminal(
+def test_e2e_confirm_through_rest_drives_session_into_stage_two(
     authenticated_client, user, monkeypatch
 ) -> None:
+    """confirm 也接了续驱：会话离开 ``repo_confirmation`` 进入阶段 2/3。
+
+    113-06 把 ``repo_confirmation.confirmed`` 的目标从 ``__done__`` 改成 ``repo_plan``，
+    确认门通过后不再直接终态。本用例因此改断言「**已推进且没有静默失败**」——
+    环境缺 LLM/容器时它会停在 ``repo_plan`` / ``merge`` 等人处置（有阻塞澄清线程），
+    **绝不允许**被推到步数上限落 FAILED（那会把「缺条件」变成「流程失败」）。
+    """
     ctx = _e2e_setup(user, monkeypatch)
 
     resp = authenticated_client.post(CONFIRM_URL.format(aid=ctx.artifact.id))
 
     assert resp.status_code == 200
     fresh = ConvergenceSession.objects.get(id=ctx.session.id)
-    assert fresh.status == ConvergenceSessionStatus.DONE, "confirm 也接了续驱，不停在挂起态"
-    assert ctx.dispatcher.await_count == 0
+    assert fresh.current_stage in ("repo_plan", "merge"), "confirm 未接续到阶段 2/3"
+    assert fresh.status != ConvergenceSessionStatus.FAILED, (
+        "缺 LLM/容器只能停在挂起态等人处置，绝不许静默落 FAILED"
+    )
+    if fresh.status == ConvergenceSessionStatus.WAITING_CLARIFICATION:
+        assert BlueprintThread.objects.filter(
+            artifact=ctx.artifact, blocking=True, status=ThreadStatus.OPEN
+        ).exists(), "停在澄清态必须有阻塞线程，否则续驱会一路 advance 到步数上限"
     content = _latest_content(ctx.artifact)
     assert all(a["confirmed_at_gate"] for a in content["repo_associations"])
 

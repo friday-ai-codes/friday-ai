@@ -521,6 +521,73 @@ async def _abp_has_open_blocking_threads(session: Any) -> bool:
         return False
 
 
+async def _abp_ensure_blocking_clarification(session: Any, *, stage: str, reason: str) -> None:
+    """确保该蓝图上存在 open+blocking 澄清线程（有则不叠开，幂等）。
+
+    ⚠️ **这是「绝不静默失败」的最后一道防线**：``needs_clarification`` 是 self-loop 出边，
+    而续驱 helper 只在「有 open+blocking 线程」时才在 ``waiting_clarification`` 上短路。
+    handler 返回 ``needs_clarification`` 却没有线程 ⇒ 续驱一路 advance 到 ``max_steps``
+    ⇒ 会话被落 ``advance_step_limit`` **FAILED** —— 明明只是「缺条件、等人处置」，却成了
+    流程失败，蓝图成果一起报废。
+
+    ``return_stage`` 传本 stage（B3）：漏传会让人审恢复后退回阶段 1。问题文本只含 stage 名
+    与**枚举化的 reason**，绝不夹带方案正文（T-113-42）。
+    """
+    from delivery.models import BlueprintThread, ThreadKind, ThreadStatus
+    from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+
+    try:
+        artifact = await _abp_load_artifact(session)
+        if artifact is None:
+            return
+        exists = await BlueprintThread.objects.filter(
+            artifact_id=artifact.id, blocking=True, status=ThreadStatus.OPEN
+        ).aexists()
+        if exists:
+            return
+        await BlueprintLifecycleService().open_thread(
+            artifact,
+            kind=ThreadKind.AI_CLARIFICATION,
+            blocking=True,
+            question=(
+                f"自动推进在 {stage} 阶段停下了（原因：{reason or 'unknown'}），"
+                "需要你处置后再继续。"
+            ),
+            initiated_by_user_id=str(getattr(session, "initiated_by_user_id", "") or "")
+            or "system",
+            return_stage=stage,
+        )
+    except Exception as exc:  # noqa: BLE001 — 开不出线程也不上抛（stage 仍停在原地）
+        logger.warning(
+            "blueprint_stage_clarification_open_failed",
+            category="caller",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            stage=stage,
+            initiated_by_user_id=str(getattr(session, "initiated_by_user_id", "") or "")
+            or "system",
+            error=str(exc),
+        )
+
+
+async def _abp_repo_plan_is_stuck(session: Any, result: dict) -> bool:
+    """本轮一个仓也没动、且没有在途调研容器 ⇒ 再 advance 一次也不会有进展。
+
+    ⚠️ ``aall_research_tasks_terminal`` 在此**只作「有无在途容器」的活性探测**，
+    绝不是阶段 2 的完成判据（那条是 ``aall_repo_plans_ready``，读 ``repo_plan`` 段的
+    存在性）—— 两 stage 共用同一 ``RepoResearchTask``，把它当完成判据会被
+    ``mark_stale`` 打成短暂为假（OQ-2）。
+    """
+    from services.process_runtime import aall_research_tasks_terminal
+
+    if int(result.get("dispatched") or 0) or int(result.get("synthesized") or 0):
+        return False
+    try:
+        return bool(await aall_research_tasks_terminal(getattr(session, "id", None)))
+    except Exception:  # noqa: BLE001 — 探测失败按「有在途」处理（宁可多等一轮，不误开线程）
+        return False
+
+
 async def _h_bp_repo_plan(session: Any, engine: Any) -> StageOutcome:
     """repo_plan stage（阶段 2 分仓方案）：按波次派发 direct 容器 / 合成 indirect。
 
@@ -577,8 +644,17 @@ async def _h_bp_repo_plan(session: Any, engine: Any) -> StageOutcome:
 
     if await _abp_has_open_blocking_threads(session):
         event = "needs_clarification"
+    elif ready:
+        event = "plan_complete"
+    elif await _abp_repo_plan_is_stuck(session, result):
+        # 一个仓也没派出去、也没有在途容器、判据又不满足 ⇒ 再 advance 一次结果一样。
+        # 不拦下来的话 `plan_dispatched` self-loop 会被续驱推到步数上限然后落 FAILED。
+        await _abp_ensure_blocking_clarification(
+            session, stage="repo_plan", reason="no_dispatchable_repo_plan"
+        )
+        event = "needs_clarification"
     else:
-        event = "plan_complete" if ready else "plan_dispatched"
+        event = "plan_dispatched"
     # 绝不写半截键：摘要为空时整体不写（半截 `repo_plan` 键会让下游把「没派发」
     # 误当成「派发了但零产出」）。
     return StageOutcome(
@@ -634,6 +710,13 @@ async def _h_bp_merge(session: Any, engine: Any) -> StageOutcome:
     if status == "retry":
         event = "repo_rework" if str(result.get("back_target") or "") == "repo_plan" else "remerge"
         return StageOutcome(event=event, stage_state_update=stage_state_update)
+    # 停在 merge 前先确保有阻塞线程：没有线程的 needs_clarification self-loop 会被续驱
+    # 一路 advance 到步数上限，然后落 FAILED（见 `_abp_ensure_blocking_clarification`）。
+    await _abp_ensure_blocking_clarification(
+        session,
+        stage="merge",
+        reason=str((result.get("report") or {}).get("reason") or status or "merge_incomplete"),
+    )
     return StageOutcome(event="needs_clarification", stage_state_update=stage_state_update)
 
 
