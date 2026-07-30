@@ -209,6 +209,22 @@ class ChatPushSubscription(models.Model):
         return f"ChatPushSubscription({self.user_id}, active={self.is_active})"
 
 
+class CodingPlanProvenance(models.TextChoices):
+    """编码方案来源枚举（RELY-01 双侧标注的唯一载体）。
+
+    形态照抄 `delivery.models.work_item.WorkItemOrigin`：值 snake_case、label 中文。
+
+    - `orchestrated`：经编排（代码调研 + 方案收敛）产出，可信。
+    - `draft`：徒手/应急路径直接创作，未经代码调研。
+
+    界面（`TechPlanCard`）与飞书导出（`_compose_plan_markdown`）都只读 CodingPlan，
+    因此这一列是「未经代码调研」告示的共同瓶颈点。
+    """
+
+    ORCHESTRATED = "orchestrated", "编排产出"
+    DRAFT = "draft", "未经代码调研的草稿"
+
+
 class CodingPlan(models.Model):
     """编码方案 — implementation 拆出的独立领域实体。
 
@@ -262,6 +278,27 @@ class CodingPlan(models.Model):
             "selected_by_user_final=True 的仓库（implementation）。"
         ),
     )
+    # 方案来源标志（RELY-01）。default 必须是 draft：存量 coding_plans 行全部是
+    # SPINE-02 之前徒手创作的产物，标成 orchestrated 等于把历史数据谎报为可信。
+    provenance = models.CharField(
+        max_length=16,
+        choices=CodingPlanProvenance.choices,
+        default=CodingPlanProvenance.DRAFT,
+        db_index=True,
+        verbose_name="方案来源",
+    )
+    source_artifact_version_id = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="来源方案版本",
+        help_text=(
+            "delivery.ArtifactVersion.id 的软引用，兼作编排方案投影的幂等键。"
+            "与已删除的 canonical_plan_id（迁移 0022 加、0031 删）不同：那一列是 "
+            "chat↔delivery 双向耦合的 canonical 软链，本列只记「这份编码方案是从哪个"
+            "方案版本投影来的」留痕，chat 侧不因此反向依赖 delivery。草稿路径不填（NULL）。"
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -270,6 +307,24 @@ class CodingPlan(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["conversation", "-created_at"]),
+        ]
+        # 同一 ArtifactVersion 只允许投影出一份编码方案（SPINE-01 幂等键）。
+        #
+        # ① 必须是**无条件**唯一约束，不得带 condition=Q(...isnull=False)：
+        #    PostgreSQL / MySQL / SQLite 的唯一索引都把 NULL 视为互不相等，草稿行与
+        #    存量行（该列 NULL）天然不受约束限制，无需 condition 即可多行共存；而带
+        #    condition 时 django/db/backends/base/schema.py 的 _unique_supported()
+        #    会因 MySQL supports_partial_indexes = False 返回 False ⇒ AddConstraint
+        #    被**静默跳过**（不报错也不告警），MySQL 部署上约束根本不存在。
+        # ② 按 coding_session_service.py 的既有纪律，本约束名与 service 层幂等分支
+        #    （get_or_create + except IntegrityError）引用的名字字面一致。
+        # 约束不纳入 conversation：同一 ArtifactVersion 在两个 conversation 各投一份
+        # 正是要防的重复。
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_artifact_version_id"],
+                name="uniq_codingplan_source_artifact_version",
+            ),
         ]
         verbose_name = "编码方案"
         verbose_name_plural = "编码方案"
