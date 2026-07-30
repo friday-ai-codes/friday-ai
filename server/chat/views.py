@@ -2594,14 +2594,25 @@ class CodingPlanSessionsBatchCreateView(APIView):
         request=CodingSessionsBatchCreateRequestSerializer,
         responses={
             200: CodingSessionsBatchCreateResponseSerializer,
-            400: {"description": "请求体校验失败"},
+            400: {
+                "description": (
+                    "请求体校验失败；或草稿方案（provenance != orchestrated）未带显式确认 —— "
+                    "响应体为 {code: draft_requires_explicit_confirm, detail: ...}，"
+                    "客户端按 code 分支重试并带 acknowledge_unresearched=true"
+                )
+            },
             403: {"description": "无权访问该 CodingPlan 所属项目"},
             404: {"description": "CodingPlan 不存在"},
         },
         tags=["CodingPlan"],
     )
     async def post(self, request, plan_id):  # type: ignore[override]
-        from chat.coding_session_service import create_sessions_for_plan
+        from chat.coding_session_service import (
+            ERROR_CODE_DRAFT_REQUIRES_CONFIRM,
+            ERROR_DRAFT_REQUIRES_CONFIRM,
+            DraftPlanRequiresConfirmError,
+            create_sessions_for_plan,
+        )
         from permissions.models import SpaceRole
         from permissions.services import PermissionService
 
@@ -2650,12 +2661,27 @@ class CodingPlanSessionsBatchCreateView(APIView):
                 )
 
         # 5) 业务调用
-        result = await create_sessions_for_plan(
-            plan=plan,
-            repository_ids=req_ser.validated_data["repository_ids"],
-            branch_template=req_ser.validated_data.get("branch_template", ""),
-            target_branch=req_ser.validated_data.get("target_branch", ""),
-        )
+        #    草稿 gate（RELY-01）在 service 内、置于权限门之后：先判权限再判草稿，
+        #    否则 400 会让非授权调用方推断出「这个 plan 存在」。
+        try:
+            result = await create_sessions_for_plan(
+                plan=plan,
+                repository_ids=req_ser.validated_data["repository_ids"],
+                branch_template=req_ser.validated_data.get("branch_template", ""),
+                target_branch=req_ser.validated_data.get("target_branch", ""),
+                acknowledge_unresearched=req_ser.validated_data.get(
+                    "acknowledge_unresearched", False
+                ),
+            )
+        except DraftPlanRequiresConfirmError:
+            # 稳定机器码 + 中文文案双键：前端按 code 分支，绝不匹配 detail 文案。
+            return Response(
+                {
+                    "code": ERROR_CODE_DRAFT_REQUIRES_CONFIRM,
+                    "detail": ERROR_DRAFT_REQUIRES_CONFIRM,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # 6) dataclass -> dict -> serializer
         resp_payload: dict[str, Any] = {

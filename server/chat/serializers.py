@@ -653,6 +653,13 @@ class CodingSessionsBatchCreateRequestSerializer(serializers.Serializer):
         max_length=255,
         help_text="PR 目标分支，统一应用到本次 fan-out 的所有仓库；为空时回退默认 develop。",
     )
+    # RELY-01：草稿送编码的显式确认载体（裁决 D-5：请求体布尔字段，不新开端点）。
+    # default 必须是 False —— 设 True 等于让服务端 gate 恒不触发，直接取消 RELY-01。
+    acknowledge_unresearched = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text=("草稿方案（provenance=draft）送编码的显式确认；provenance != draft 时被忽略"),
+    )
 
 
 class _SessionCreatedItemSerializer(serializers.Serializer):
