@@ -66,7 +66,10 @@ const GROUP_LABELS: Record<RoutingGroup, string> = {
 // DOM，避免把上游文本变成渲染面（T-107-06）。文案全部走 {{ }} 插值，组件内
 // 不使用任何原始 HTML 注入指令。
 const CROSS_GROUP_SENTENCE = '未关联当前平台，可能涉及跨组协作'
+// 全局组置顶是后端 delta 迟滞比较的结果 → 「更匹配」暗示了一次比较，成立。
 const PROMOTION_SENTENCE = '更匹配的仓不在本项目关联范围内'
+// 本项目组一条候选都没有时并没有发生比较，也没有被压下去的对比对象 → 换成陈述句。
+const EMPTY_IN_PROJECT_SENTENCE = '本项目关联范围内没有匹配的仓库'
 
 /** 每组默认可见条数（叠加 pin-in 规则后可超出）。 */
 const VISIBLE_PER_GROUP = 3
@@ -157,6 +160,16 @@ function isCrossGroup(c: RoutingCandidate): boolean {
 /** 迟滞置顶（后端 delta 判定的结果，前端不算 delta）时给出因果解释。 */
 const showPromotionNotice = computed(
   () => groupingEnabled.value && blockOrder.value[0] === 'global',
+)
+
+/**
+ * 置顶提示文案：本项目组为空时没有发生比较，也没有对比对象 —— 「更匹配」这个措辞
+ * 会暗示一次并不存在的比较，换成陈述事实的句子。
+ */
+const promotionSentence = computed(() =>
+  allCandidates.value.some(c => groupOf(c) === 'in_project')
+    ? PROMOTION_SENTENCE
+    : EMPTY_IN_PROJECT_SENTENCE,
 )
 
 /**
@@ -446,7 +459,7 @@ function onOpenManualSelect() {
       >
         <span class="icon-[lucide--arrow-up-narrow-wide] shrink-0 mt-0.5 text-teal-700" />
         <p class="text-xs text-teal-700">
-          {{ PROMOTION_SENTENCE }}
+          {{ promotionSentence }}
         </p>
       </div>
 
