@@ -29,6 +29,10 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 __all__ = [
+    "ERROR_ARTIFACT_VERSION_ALREADY_PROJECTED",
+    "ERROR_ARTIFACT_VERSION_FORBIDDEN",
+    "ERROR_ARTIFACT_VERSION_NOT_FOUND",
+    "ERROR_REQUIRES_CHAT_ENTRYPOINT",
     "PlanProjectionError",
     "PlanProjectionService",
     "map_merged_plan_to_coding_plan",
@@ -39,6 +43,11 @@ __all__ = [
 ERROR_ARTIFACT_VERSION_NOT_FOUND = "artifact_version_not_found"
 # 编排会话无 conversation（workflow / MCP 入口）——裁决 D-3：本 phase 投影只做 chat 入口。
 ERROR_REQUIRES_CHAT_ENTRYPOINT = "projection_requires_chat_entrypoint"
+# 归属不匹配：来源方案版本（或被 re-bind 的 plan）不属于 actor 的会话。措辞与
+# 「不存在」一致、端点同样映射 404，不泄漏存在性（T-109-05-04 / T-109-05-07）。
+ERROR_ARTIFACT_VERSION_FORBIDDEN = "artifact_version_forbidden"
+# re-bind 目标版本已被另一条 plan 占用 —— fail-closed，绝不静默改写他人投影。
+ERROR_ARTIFACT_VERSION_ALREADY_PROJECTED = "artifact_version_already_projected"
 
 # §7 ``execution_plan[].files[].action`` → chat ``CodingPlan.affected_files[].change_type``。
 #
@@ -226,6 +235,28 @@ class PlanProjectionService:
             )
         return conversation
 
+    @staticmethod
+    def _assert_owner(conversation: Conversation, actor_user_id: str) -> None:
+        """归属判定 —— **必须在渲染 / 写入任何方案正文之前**调用。
+
+        为什么判定必须在 service 内而不是各调用方：109-03 把 owner gate 放在视图里，
+        `aproject` 自身不判归属；109-05 让 chat ``@tool`` 成为第二个调用方，它的既有
+        校验只查存在性 ⇒ 判定留在调用方就意味着每个新调用方都要重新实现一遍，而工具
+        路径已经漏了一次。
+
+        为什么必须在渲染之前：``arebind`` 会把来源版本的 ``content`` 渲染成
+        ``tech_plan`` 写进调用方自己的 plan —— 判定晚一步就等于**跨会话读取他人完整
+        技术方案正文**（T-109-05-07）。
+
+        措辞与「不存在」一致，不泄漏存在性。
+        """
+        actor = str(actor_user_id or "").strip()
+        if not actor or str(conversation.created_by_id or "") != actor:
+            raise PlanProjectionError(
+                "方案版本不存在或内容非法",
+                code=ERROR_ARTIFACT_VERSION_FORBIDDEN,
+            )
+
     async def aresolve_conversation(self, *, artifact_version_id: Any) -> Conversation:
         """只解析归属会话、**不写库** —— 供端点在投影前做前置 owner 校验。
 
@@ -243,23 +274,24 @@ class PlanProjectionService:
         self,
         *,
         artifact_version_id: str,
-        initiated_by_user_id: str = "system",
+        actor_user_id: str,
     ) -> tuple[CodingPlan, bool]:
         """把 ``ArtifactVersion`` 幂等投影成 ``CodingPlan``，返回 ``(plan, created)``。
 
         Args:
             artifact_version_id: 来源方案版本 id（兼作幂等键）。
-            initiated_by_user_id: 触发用户 id（观测归因）；后台/系统调用记 ``"system"``。
+            actor_user_id: 归属主体 —— **必填、无默认值**。带默认值会让任何漏传的
+                调用方静默获得 ``"system"`` 身份从而绕过归属判定，那正是 109-03 遗留
+                blocker 的成因形状。无触发用户的系统调用方须**显式**传 ``"system"``。
+                观测侧 kv 键名仍是 ``initiated_by_user_id``（取值来自本参数），以符合
+                ``.cursor/rules/observability-logging.mdc``。
 
         Raises:
-            PlanProjectionError: ``code`` 为 ``artifact_version_not_found`` 或
-                ``projection_requires_chat_entrypoint``。
+            PlanProjectionError: ``code`` 为 ``artifact_version_not_found`` /
+                ``projection_requires_chat_entrypoint`` / ``artifact_version_forbidden``。
 
-        归属判定当前**不在** service 内：唯一调用方是投影端点，其视图有 owner gate
-        （前置 + 复核两道）。109-05 让 chat ``@tool`` 成为第二个调用方时，本参数会改为
-        必填的 ``actor_user_id`` 并把归属判定下移进来（机器码
-        ``artifact_version_forbidden``），视图 gate 降为纵深 —— 因此**不要**把
-        「归属由调用方保证」当作本 service 的长期契约。
+        归属判定在本 service 内（``_assert_owner``），工具路径与 HTTP 端点因此共享同
+        一道门；视图侧的 owner gate 保留为纵深，不是替代。
         """
         from chat.models import CodingPlan, CodingPlanProvenance
 
@@ -270,15 +302,18 @@ class PlanProjectionService:
                 category="caller",
                 component="chat",
                 artifact_version_id=str(artifact_version_id),
-                initiated_by_user_id=initiated_by_user_id,
+                initiated_by_user_id=actor_user_id,
             )
         except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
             pass
 
         try:
             av = await self._aload_artifact_version(artifact_version_id)
-            payload = map_merged_plan_to_coding_plan(av.content)
+            # 归属判定必须早于 map_merged_plan_to_coding_plan —— 后者会把他人方案
+            # content 渲染成正文，判定晚一步即构成跨会话读取（T-109-05-07）。
             conversation = await self._aresolve_conversation_of(av)
+            self._assert_owner(conversation, actor_user_id)
+            payload = map_merged_plan_to_coding_plan(av.content)
 
             source_key = str(av.id)
             try:
@@ -337,7 +372,7 @@ class PlanProjectionService:
                 await ingestion.aschedule_ingestion(
                     ingestion.IngestionRequest("coding_plan", str(plan.id), "chat_plan_created"),
                     # 后台摄取任务显式携带触发用户（无触发用户记 "system"）。
-                    initiated_by_user_id=initiated_by_user_id,
+                    initiated_by_user_id=actor_user_id,
                 )
             except Exception:  # noqa: BLE001 — 知识库摄取 best-effort，不反噬投影
                 pass
@@ -358,6 +393,135 @@ class PlanProjectionService:
             pass
 
         return plan, created
+
+    async def arebind(
+        self,
+        *,
+        plan: CodingPlan,
+        artifact_version_id: str,
+        actor_user_id: str,
+    ) -> CodingPlan:
+        """把既有 ``CodingPlan`` 重新指向**另一个**编排方案版本（re-bind，不是任意改写）。
+
+        SPINE-02 裁决 D-1：``update_coding_plan`` 收窄后不再接受方案正文，只能换来源。
+        正文一律由 ``map_merged_plan_to_coding_plan`` 从来源版本渲染。
+
+        Args:
+            plan: 被重新指向的编码方案（调用方已解析出实例）。
+            artifact_version_id: 新的来源方案版本 id。
+            actor_user_id: 归属主体，**必填无默认值**（同 ``aproject``）。
+
+        Raises:
+            PlanProjectionError: ``artifact_version_not_found`` /
+                ``projection_requires_chat_entrypoint`` / ``artifact_version_forbidden``
+                / ``artifact_version_already_projected``。
+        """
+        from chat.models import CodingPlan, CodingPlanProvenance, Conversation
+
+        started = time.perf_counter()
+        try:
+            logger.info(
+                "plan_projection_started",
+                category="caller",
+                component="chat",
+                artifact_version_id=str(artifact_version_id),
+                coding_plan_id=str(plan.id),
+                initiated_by_user_id=actor_user_id,
+                rebind=True,
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+            pass
+
+        try:
+            av = await self._aload_artifact_version(artifact_version_id)
+
+            # ① 来源版本归属：必须早于渲染（跨会话读取他人正文的直接锁）。
+            source_conversation = await self._aresolve_conversation_of(av)
+            self._assert_owner(source_conversation, actor_user_id)
+
+            # ② 被改写 plan 自身的归属：拿他人 plan 当写入目标同样以同一机器码拒绝。
+            plan_conversation = await Conversation.objects.filter(id=plan.conversation_id).afirst()
+            if plan_conversation is None:
+                raise PlanProjectionError(
+                    "方案版本不存在或内容非法",
+                    code=ERROR_ARTIFACT_VERSION_FORBIDDEN,
+                )
+            self._assert_owner(plan_conversation, actor_user_id)
+
+            # ③ 唯一约束前置查询。必须写成 async 形态：同步 ``.exists()`` / 直接对
+            #    queryset 做布尔判定会在 async 上下文抛 SynchronousOnlyOperation。
+            #    这一层不依赖后端能力 —— IntegrityError 兜底的前提是 DB 约束真的存在。
+            if (
+                await CodingPlan.objects.filter(source_artifact_version_id=str(av.id))
+                .exclude(pk=plan.pk)
+                .aexists()
+            ):
+                raise PlanProjectionError(
+                    "该方案版本已被另一条编码方案占用",
+                    code=ERROR_ARTIFACT_VERSION_ALREADY_PROJECTED,
+                )
+
+            payload = map_merged_plan_to_coding_plan(av.content)
+
+            try:
+                # aupdate_plan 负责 tech_plan / affected_files 的原子更新与知识库重摄取。
+                await plan.aupdate_plan(
+                    tech_plan=payload["tech_plan"],
+                    affected_files=payload["affected_files"],
+                )
+                plan.title = payload["title"][:200] or plan.title
+                plan.recommended_repository_ids = payload["recommended_repository_ids"]
+                plan.provenance = CodingPlanProvenance.ORCHESTRATED
+                plan.source_artifact_version_id = av.id
+                await plan.asave(
+                    update_fields=[
+                        "title",
+                        "recommended_repository_ids",
+                        "provenance",
+                        "source_artifact_version_id",
+                        "updated_at",
+                    ]
+                )
+            except IntegrityError as exc:
+                # 前置查询与写入之间的并发窗口 —— 抛同一机器码（fail-closed）。
+                raise PlanProjectionError(
+                    "该方案版本已被另一条编码方案占用",
+                    code=ERROR_ARTIFACT_VERSION_ALREADY_PROJECTED,
+                ) from exc
+        except PlanProjectionError as exc:
+            self._log_failed(
+                started=started,
+                artifact_version_id=artifact_version_id,
+                reason=str(exc),
+                code=exc.code,
+            )
+            raise
+        except Exception as exc:  # noqa: BLE001 — 未预期异常同样留痕后再抛
+            self._log_failed(
+                started=started,
+                artifact_version_id=artifact_version_id,
+                reason=str(exc),
+                code="unexpected_error",
+            )
+            raise
+
+        try:
+            logger.info(
+                "plan_projection_completed",
+                category="caller",
+                component="chat",
+                duration_ms=max(int((time.perf_counter() - started) * 1000), 0),
+                artifact_version_id=str(av.id),
+                coding_plan_id=str(plan.id),
+                created=False,
+                rebound=True,
+                repo_count=len(payload["recommended_repository_ids"]),
+                provenance=plan.provenance,
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+            pass
+
+        return plan
 
     @staticmethod
     def _log_failed(
