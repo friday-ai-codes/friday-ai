@@ -58,6 +58,7 @@ from delivery.models import (
     BlueprintThreadMessage,
     ThreadAuthorType,
     ThreadKind,
+    ThreadSeverity,
     ThreadStatus,
 )
 from delivery.services.event_taxonomy import EVENT_BLUEPRINT_STATUS_TRANSITIONED
@@ -362,6 +363,21 @@ class BlueprintLifecycleService:
             queryset = queryset.filter(kind=kind)
         return await queryset.aexists()
 
+    async def aunresolved_blocker_count(self, artifact: Artifact) -> int:
+        """未决 BLOCKER finding 计数（``kind=ai_review_finding`` 且 ``severity=blocker``
+        且 ``status ∈ {open, answered}`` 的线程数）。
+
+        **仅供报告**（114-03 的 ``unresolved`` 快照、114-05 的人审呈现），**绝不用于
+        confirm 守卫判定**——守卫必须在 ``_apply_transition_sync`` 的 ``transaction.atomic()``
+        内完成（见 :meth:`_has_confirm_blockers_sync`），事务外查一次就是 TOCTOU。
+        """
+        return await BlueprintThread.objects.filter(
+            artifact=artifact,
+            kind=ThreadKind.AI_REVIEW_FINDING,
+            severity=ThreadSeverity.BLOCKER,
+            status__in=[ThreadStatus.OPEN, ThreadStatus.ANSWERED],
+        ).acount()
+
     async def open_thread(
         self,
         artifact: Artifact,
@@ -374,6 +390,7 @@ class BlueprintLifecycleService:
         created_on_version: Any = None,
         anchor: dict | None = None,
         return_stage: str = "",
+        severity: str = "",
     ) -> BlueprintThread:
         """开一条线程并同事务写入首条 AI 提问消息。
 
@@ -382,9 +399,32 @@ class BlueprintLifecycleService:
           线程——那会让 HITL 侧看到一条空白阻塞线程且永远答不了。
         - ``return_stage`` 超 ``max_length=16`` 截断并记 warning（开不出线程 = 规格门
           静默放行，宁可截断也不抛）。
+        - ``severity`` ∈ ``ThreadSeverity.values``（``blocker`` / ``warning`` / ``info``）
+          或空串；非法值 ``raise ValueError``（与 ``kind`` 同款，DB 不写）。
+          ``BlueprintThread.severity`` 字段自 111-02 起已存在，本形参**零 migration**；
+          默认空串使 112/113 现存全部调用逐字等价。
+        - ⭐ **不变式**：``kind == ThreadKind.AI_REVIEW_FINDING`` 时强制
+          ``blocking == (severity == ThreadSeverity.BLOCKER)``——错配即 ``raise ValueError``。
+          理由：``pending_review → confirmed`` 的事务内守卫（``_apply_transition_sync``）
+          只认 ``open + blocking``；若 ``severity=blocker`` 却 ``blocking=False``，带未决
+          BLOCKER 的蓝图会被人审放行；若 ``severity=warning`` 却 ``blocking=True``，警告
+          会把蓝图钉死。两者必须同源。
         """
         if kind not in ThreadKind.values:
             raise ValueError(f"非法线程 kind={kind!r}；合法值={sorted(ThreadKind.values)}")
+
+        sev = str(severity or "")
+        if sev and sev not in ThreadSeverity.values:
+            raise ValueError(
+                f"非法线程 severity={severity!r}；合法值={sorted(ThreadSeverity.values)} 或空串"
+            )
+        if kind == ThreadKind.AI_REVIEW_FINDING and bool(blocking) != (
+            sev == ThreadSeverity.BLOCKER
+        ):
+            raise ValueError(
+                "ai_review_finding 线程必须满足 blocking == (severity == 'blocker')："
+                f"当前 severity={sev!r} blocking={bool(blocking)}"
+            )
 
         stage = str(return_stage or "")
         if len(stage) > _MAX_RETURN_STAGE_CHARS:
@@ -408,6 +448,7 @@ class BlueprintLifecycleService:
             created_on_version=created_on_version,
             anchor=anchor,
             return_stage=stage,
+            severity=sev,
         )
         logger.info(
             "blueprint_thread_opened",
@@ -416,6 +457,7 @@ class BlueprintLifecycleService:
             artifact_id=str(artifact.id),
             kind=kind,
             blocking=bool(blocking),
+            severity=sev,
             initiated_by_user_id=initiated_by_user_id or "system",
             thread_id=str(thread.id),
             option_count=len(options or []),
@@ -495,6 +537,7 @@ class BlueprintLifecycleService:
         created_on_version: Any,
         anchor: dict | None,
         return_stage: str,
+        severity: str,
     ) -> BlueprintThread:
         """线程行 + 首条 AI 消息同事务落库（半截线程不可接受）。"""
         with transaction.atomic():
@@ -503,6 +546,7 @@ class BlueprintLifecycleService:
                 created_on_version=created_on_version,
                 anchor=anchor,
                 kind=kind,
+                severity=severity,
                 blocking=blocking,
                 options=options,
                 status=ThreadStatus.OPEN,
