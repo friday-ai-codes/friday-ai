@@ -38,8 +38,13 @@ export interface RoutingCandidate {
    * INV-R1/R3 保证）。legacy 路径 / 历史 trace 缺失，前端静默降级。
    */
   breakdown?: Record<string, number>
-  /** 归属组（ROUTE-01）；缺失视为 'global'（历史 trace 兼容）。 */
-  group?: RoutingGroup
+  /**
+   * 归属组（ROUTE-01）；缺失**或空串**视为 'global'（历史 trace 兼容）。
+   * 类型带上 `''` 是为了与运行时形状一致 —— 后端 pydantic 字段的默认值就是空串，
+   * 写成 `group?: RoutingGroup` 会让 `c.group ?? 'global'` 这类空串失效的兜底
+   * 在类型层面看起来是安全的。
+   */
+  group?: RoutingGroup | ''
   /** 信任标记；缺失不渲染。 */
   trust?: RoutingTrust
   /**

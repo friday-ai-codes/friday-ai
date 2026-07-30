@@ -605,6 +605,21 @@ describe('routingDecisionPanel 跨组标注与置顶提示（ROUTE-02）', () =>
     expect(badges[0].attributes('aria-label')).toBe(CROSS_GROUP_SENTENCE)
   })
 
+  it('group 为空串的候选视为 global（不得从两个分区同时消失）', () => {
+    // 后端契约里 group 的缺省值就是**空串**，而 `'' ?? "global"` 仍是 `''` —— 用 ??
+    // 兜底时该候选在两个分区的 filter 上都不匹配，一条都不渲染，表头计数却仍把它算进
+    // 总数（「说有 2 个，只列出 1 个」）。
+    const { wrapper } = mountTrace({
+      block_order: ['in_project', 'global'],
+      candidates: [
+        cand('ip-a', { group: 'in_project', score: 0.6, level: 'medium' }),
+        cand('blank-group', { group: '', score: 0.5 }),
+      ],
+    })
+    expect(wrapper.text()).toContain('blank-group')
+    expect(crossGroupBadges(wrapper).length).toBe(1)
+  })
+
   it('缺 group 的候选视为 global（分组启用时也带跨组 Badge）', () => {
     const { wrapper } = mountTrace({
       block_order: ['in_project', 'global'],

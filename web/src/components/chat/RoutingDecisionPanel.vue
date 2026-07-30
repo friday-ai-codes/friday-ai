@@ -78,8 +78,14 @@ interface RoutingBlock {
   overflow: RoutingCandidate[]
 }
 
+/**
+ * 归属组兜底：后端契约是「缺省（**空串**）由前端视为 global」，所以必须用 `||` 而非
+ * `??` —— `'' ?? 'global'` 仍是 `''`，该候选在 in_project 与 global 两个分区的
+ * filter 上都不匹配，于是两个分区都不渲染它，而表头计数仍把它算进总数（「说有 5 个，
+ * 只列出 4 个」）。
+ */
 function groupOf(c: RoutingCandidate): RoutingGroup {
-  return c.group ?? 'global'
+  return c.group || 'global'
 }
 
 /** 排序键：score_ranked 是后端凸组合排序分，缺失 / null 时回退 score。 */
