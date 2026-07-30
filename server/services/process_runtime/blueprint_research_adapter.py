@@ -37,6 +37,10 @@ from delivery.services.event_taxonomy import (
     EVENT_BLUEPRINT_REPO_RESEARCH_STARTED,
     EVENT_BLUEPRINT_REROUTE_TRIGGERED,
 )
+from services.process_runtime.blueprint_repo_plan_schema import (
+    REPO_PLAN_AVAILABILITY,
+    REPO_PLAN_CHANGE_TYPES,
+)
 from services.process_runtime.constants import MAX_REROUTE_ROUNDS as _MAX_REROUTE_ROUNDS
 
 logger = structlog.get_logger(__name__)
@@ -44,6 +48,7 @@ logger = structlog.get_logger(__name__)
 __all__ = [
     "BlueprintResearchAdapter",
     "BLUEPRINT_RESEARCH_SOURCE",
+    "BLUEPRINT_REPO_PLAN_SOURCE",
     "MAX_REROUTE_ROUNDS",
     "decide_reroute",
 ]
@@ -57,6 +62,10 @@ _RESEARCH_TIMEOUT = 30 * 60
 # **必须是新值**：沿用既有方案链的 source 会被它的 §7 PartialPlan handler 抢走并按错误 schema 落库。
 BLUEPRINT_RESEARCH_SOURCE = "blueprint_research"
 _BLUEPRINT_RESEARCH_SOURCE = BLUEPRINT_RESEARCH_SOURCE
+
+# 阶段 2（113-03）拟方案容器的 source。**必须与调研链不同值**：`callbacks._is_blueprint_research`
+# 的唯一路由依据就是这个值，同值会让 plan 产物被调研解析器抢走并因缺 `fitness.verdict` 判失败。
+BLUEPRINT_REPO_PLAN_SOURCE = "blueprint_repo_plan"
 
 # 自实现重试上界。**既有 ResearchService 的单仓重试入口不可复用**：它硬编码断言会话
 # stage 名为 "research"，本相位 stage 名是 repo_research，复用会恒 raise ValueError。
@@ -117,7 +126,12 @@ class BlueprintResearchAdapter:
     # ── 派发主入口 ────────────────────────────────────────────────────────
 
     async def dispatch(
-        self, session: Any, *, force_deep_repository_ids: set[str] | None = None
+        self,
+        session: Any,
+        *,
+        force_deep_repository_ids: set[str] | None = None,
+        mode: str = "research",
+        repository_ids: set[str] | None = None,
     ) -> dict:
         """逐仓派发（**增量**）：返回 `{dispatched, synthesized, degraded, tasks}`。
 
@@ -126,11 +140,22 @@ class BlueprintResearchAdapter:
 
         `force_deep_repository_ids` 让「人工升级为深调研」的仓无论路由期 `role_suggestion`
         是什么都进 deep 桶（否则升级动作会被重新分回 light 桶再合成一遍）。
+
+        **113 扩展点（阶段 2 拟方案）**：`mode="plan"` 只影响四处 —— prompt / `session_id`
+        前缀 / `last_output.source` / `call_source`；分桶规则、metadata 的
+        `env_FRIDAY_TASK_MODE`（恒 `explore`，管 git 写拦截，与调研/拟方案正交）、增量白名单
+        一律不受影响。`mode="research"` 缺省路径与 112 逐字等价（两个既有调用方零改动）。
+        `repository_ids` 非 None 时**跳过 `_collect_candidates`**：阶段 2 的仓集来自确认门
+        锁定的 `repo_associations`，与路由候选面语义已不同（见 `blueprint_repo_plan.py`）。
         """
         started = time.monotonic()
         forced = {str(rid) for rid in (force_deep_repository_ids or set())}
         # `forced` 是人工显式动作（升级深调研端点）——它是排除集的唯一豁免口。
-        candidates = self._collect_candidates(session, allow_repository_ids=forced)
+        candidates = (
+            self._plan_candidates(repository_ids)
+            if repository_ids is not None
+            else self._collect_candidates(session, allow_repository_ids=forced)
+        )
         if not candidates:
             # 形状恒定（下游 handler 无需判空分支）：缺 "routing" 键 / candidates 为空 /
             # 确认门无 pending_research 仓 —— 一律零派发，不抛。
@@ -176,7 +201,10 @@ class BlueprintResearchAdapter:
                 repository_id = str(task.repository_id)
                 if task.status not in _DISPATCHABLE_STATUSES:
                     continue
-                if int(getattr(task, "attempt", 0) or 0) >= _MAX_ATTEMPTS:
+                # plan 模式豁免本上界：`attempt` 是**跨阶段共用**的派发计数（阶段 1 已把它
+                # 涨到 1），沿用会让阶段 2 的第一次重试就撞 `max_attempts_exhausted` 而静默
+                # 降级。阶段 2 的有界重试上界另在回调侧按 `bp-plan-` 容器次数判（≤2 轮）。
+                if mode != "plan" and int(getattr(task, "attempt", 0) or 0) >= _MAX_ATTEMPTS:
                     # 自实现重试上界（见 _MAX_ATTEMPTS）：超限直接判失败，不无限重派容器。
                     await self.research_service.mark_failed(
                         task, {"reason": "max_attempts_exhausted"}
@@ -190,6 +218,7 @@ class BlueprintResearchAdapter:
                         task,
                         candidate=deep_index.get(repository_id) or {},
                         charter=charters.get(repository_id),
+                        mode=mode,
                     ):
                         dispatched += 1
                 except Exception as exc:  # noqa: BLE001 — WR-02 单仓隔离，绝不上抛
@@ -210,6 +239,13 @@ class BlueprintResearchAdapter:
                         },
                     )
                     await self._emit_failed(session, task, "dispatch_failed")
+
+        if mode == "plan":
+            # plan 模式**绝不**走轻量合成：`_synthesize_light_partial` 产出的是调研形状结论，
+            # `record_partial` 落库会把该仓最新 content 换成没有 `repo_plan` 段的一行，阶段 2
+            # 的完成判据永远不满足（无界重合成）。无 runner 时宁可零派发让该仓保持待办，
+            # 由 `BlueprintRepoPlanAdapter` 记 warning（`degraded=True` 已在返回值里可见）。
+            light_index = {}
 
         if light_index:
             light_tasks = await self.research_service.create_tasks_for_session(
@@ -329,6 +365,25 @@ class BlueprintResearchAdapter:
         return collected
 
     @staticmethod
+    def _plan_candidates(repository_ids: set[str] | None) -> dict[str, dict]:
+        """阶段 2 的显式仓集 → 候选形状（113 扩展，**不经排除集与路由候选面**）。
+
+        `role_suggestion` 固定 `direct`：阶段 2 只对 direct 仓起容器（indirect 仓由
+        `BlueprintRepoPlanAdapter` 服务端 LLM 合成，根本不进本入口），所以此处全部进 deep 桶。
+        """
+        return {
+            str(rid): {
+                "repository_id": str(rid),
+                "repository_name": "",
+                "role_suggestion": "direct",
+                "confidence": "",
+                "evidence": {},
+            }
+            for rid in (repository_ids or set())
+            if str(rid or "")
+        }
+
+    @staticmethod
     def _bucket(
         candidates: dict[str, dict], *, forced: set[str]
     ) -> tuple[dict[str, dict], dict[str, dict]]:
@@ -365,7 +420,13 @@ class BlueprintResearchAdapter:
     # ── 深调研派发五步 ────────────────────────────────────────────────────
 
     async def _dispatch_deep_task(
-        self, session: Any, task: Any, *, candidate: dict, charter: dict | None
+        self,
+        session: Any,
+        task: Any,
+        *,
+        candidate: dict,
+        charter: dict | None,
+        mode: str = "research",
     ) -> bool:
         """单仓起独立 `SubAgentSession(PLAN)` 容器：五步顺序即正确性。
 
@@ -387,12 +448,20 @@ class BlueprintResearchAdapter:
             await self._emit_failed(session, task, "missing_git_url")
             return False
 
-        session_id = f"bp-research-{task.id.hex[:12]}-{uuid.uuid4().hex[:6]}"
+        # 113 扩展：阶段 2 换前缀与 source（uuid 后缀保留——stale 重跑会对同一 task 再派发）
+        prefix = "bp-plan" if mode == "plan" else "bp-research"
+        source_value = BLUEPRINT_REPO_PLAN_SOURCE if mode == "plan" else _BLUEPRINT_RESEARCH_SOURCE
+        # 派发用户：113-02 的会话归属校验读 `sub.main_session.user_id`；此处不写 = 那道校验
+        # 永远判 session_not_owned，跨会话越权防线恒失效、总线全链不可用（B1）。
+        dispatch_user = await self._resolve_dispatch_user(session)
+        session_id = f"{prefix}-{task.id.hex[:12]}-{uuid.uuid4().hex[:6]}"
         agent_session = await AgentSession.objects.acreate(
             session_id=f"agent-{session_id}",
             status=AgentSession.Status.RUNNING,
+            # `dispatch_user` 为 None 时字段留空（null=True）——绝不伪造 system 用户提权
+            user=dispatch_user,
             metadata={
-                "source": _BLUEPRINT_RESEARCH_SOURCE,
+                "source": source_value,
                 "blueprint_session_id": str(session.id),
             },
         )
@@ -404,16 +473,16 @@ class BlueprintResearchAdapter:
             status=SubAgentSession.Status.PENDING,
             node_execution_id=self.node_execution_id or None,
             last_output={
-                "source": _BLUEPRINT_RESEARCH_SOURCE,
+                "source": source_value,
                 "blueprint_session_id": str(session.id),
                 "research_task_id": str(task.id),
                 "repository_id": str(task.repository_id),
             },
         )
 
-        prompt = self._build_prompt(session, task, repo, charter, candidate=candidate)
+        prompt = self._build_prompt(session, task, repo, charter, candidate=candidate, mode=mode)
         metadata = await self._build_dispatch_metadata(
-            session, task, repo=repo, subagent_session_id=session_id
+            session, task, repo=repo, subagent_session_id=session_id, mode=mode
         )
 
         dispatch_task = DispatchTask(
@@ -431,7 +500,10 @@ class BlueprintResearchAdapter:
             metadata=metadata,
         )
         try:
-            with use_call_source(CallSource.BLUEPRINT_REPO_RESEARCH):
+            plan_source = CallSource.BLUEPRINT_REPO_PLAN  # 111 已注册，不新增枚举值
+            with use_call_source(
+                plan_source if mode == "plan" else CallSource.BLUEPRINT_REPO_RESEARCH
+            ):
                 await self._get_dispatcher().dispatch(dispatch_task)
         except Exception:
             # dispatch 失败没有终态回调兜底吊销 → 立刻主动吊销刚铸出的 token（避免悬空
@@ -462,7 +534,13 @@ class BlueprintResearchAdapter:
         return True
 
     async def _build_dispatch_metadata(
-        self, session: Any, task: Any, *, repo: Any, subagent_session_id: str
+        self,
+        session: Any,
+        task: Any,
+        *,
+        repo: Any,
+        subagent_session_id: str,
+        mode: str = "research",
     ) -> dict[str, str]:
         """容器 env metadata（逐键 `env_` 前缀；**空值一律不注入该键**）。
 
@@ -483,6 +561,10 @@ class BlueprintResearchAdapter:
             "env_FRIDAY_TASK_MODE": "explore",
             "env_FRIDAY_TASK_TASK_MODE": "explore",
         }
+        if mode == "plan":
+            # 阶段 2 的等待原语靠容器侧有界轮询（113-04），配额上界提到 400 吸收轮询开销；
+            # `mode="research"` 路径**不注入该键**，缺省行为逐字等价 112。
+            metadata["env_FRIDAY_TASK_KNOWLEDGE_QUOTA"] = "400"
         try:
             cc = await aget_claude_code_runtime_config()
             for key, value in (
@@ -551,12 +633,17 @@ class BlueprintResearchAdapter:
         charter: dict | None,
         *,
         candidate: dict,
+        mode: str = "research",
     ) -> str:
         """调研 prompt：需求目标 + 功能点 + 路由证据 + **仓库章程**，并写死输出 JSON 形状。
 
         全部内容取自**服务端权威 session 状态**（不把外部用户原文当执行指令拼接）；
         章程随 prompt 注入 = 不扩容器 MCP 白名单也能让容器看到「这仓该管什么、不该管什么」。
+
+        `mode="plan"`（113 扩展）走 `_build_plan_prompt`；缺省 `research` 的 return 体一字不动。
         """
+        if mode == "plan":
+            return self._build_plan_prompt(session, task, repo, charter, candidate=candidate)
         repo_name = getattr(repo, "name", "") if repo is not None else ""
         spec = _requirement_spec_from_state(session)
         return (
@@ -575,6 +662,91 @@ class BlueprintResearchAdapter:
             "需求相关的现状（已有能力、缺口、约束）\n\n"
             "纪律：citations 必须是你真实读到的文件路径或符号，**不要编造**；判不出适配度就填"
             ' verdict="partial" 并在 reasons 里说明缺什么信息，不要猜。'
+        )
+
+    def _build_plan_prompt(
+        self,
+        session: Any,
+        task: Any,
+        repo: Any,
+        charter: dict | None,
+        *,
+        candidate: dict,
+    ) -> str:
+        """阶段 2 拟方案 prompt（113-03）：锁定职责 + 阶段 1 结论 + RepoPlan 输出契约。
+
+        与调研 prompt 同纪律：全部内容取自**服务端权威 session 状态**，绝不把外部用户原文
+        当执行指令拼进来。总线工具的措辞是**条件式**的（向后兼容 P1）：老镜像没有这两个
+        工具时 agent 记录假设继续跑，不许停下等。
+        """
+        repository_id = str(getattr(task, "repository_id", "") or "")
+        repo_name = getattr(repo, "name", "") if repo is not None else ""
+        spec = _requirement_spec_from_state(session)
+        change_types = "、".join(REPO_PLAN_CHANGE_TYPES)
+        return (
+            f"你正在为仓库「{repo_name}」拟定本次需求的**分仓实现方案**（RepoPlan）。\n"
+            "仓库集与职责已由人工确认门锁定，**不要再讨论该不该改这个仓**。\n\n"
+            f"## 需求目标\n{self._summarize_goal(spec)}\n\n"
+            f"## 功能点\n{self._summarize_feature_points(spec)}\n\n"
+            f"## 本仓被锁定的职责（人工裁决，只读）\n{self._summarize_locked_role(session, repository_id)}\n\n"
+            f"## 阶段 1 对本仓的调研结论（供你续作，不要重复调研）\n"
+            f"{self._summarize_stage1(session, repository_id)}\n\n"
+            f"## 仓库章程\n{self._summarize_charter(charter)}\n\n"
+            "请深入阅读本仓代码后，**只输出一个 JSON 对象**，顶层键为 `repo_plan`，其值字段如下：\n"
+            f'- repository_id: "{repository_id}"；role: "direct" 或 "indirect"\n'
+            "- responsibility: Block[]（沿用上面锁定的职责，不要改写语义）\n"
+            '- current_state: [{"summary": ..., "findings": [{"title", "detail", "citations"}]}]\n'
+            "- impl_items: [{item_id, title, change_type, how, files_touched, depends_on, "
+            "test_strategy, citations}]，其中\n"
+            f"  - change_type ∈ {change_types}\n"
+            "  - depends_on 只能引用**本仓**其他 item_id；跨仓依赖一律走 apis_consumed\n"
+            "- apis_provided: [{name, method, path, request_schema, response_schema, "
+            "description, citations}]\n"
+            "- apis_consumed: 同上，另加 from_repository_id 与\n"
+            "  data_source: {from_service, from_api, fields_needed, availability, "
+            "support_repository_id, notes}\n"
+            f"  - availability ∈ {'、'.join(REPO_PLAN_AVAILABILITY)}，**嵌在 data_source 下"
+            "，不是顶层字段**\n"
+            "  - availability 为 needs_support 时 data_source.support_repository_id **必填**"
+            "（指出哪个仓要配合）\n"
+            "- local_impact: {affected_modules, affected_features, migration_required, notes}\n"
+            "- risks: Block[]\n\n"
+            f"## 跨仓协商（若工具可用）\n"
+            f"若 `report_blueprint_context` / `read_blueprint_context` 工具可用：请把你对外提供的\n"
+            f"接口契约以 `repo:{repository_id}.api_surface` 为 key 写入总线；需要消费其他仓接口时\n"
+            "先 read 总线看对方是否已声明。**若工具不可用，记录假设并继续，不要停下等待。**\n\n"
+            "纪律：citations 必须是你真实读到的文件路径或符号，**不要编造**；判不出就在 risks 里\n"
+            "写清缺什么信息，不要猜。"
+        )
+
+    @staticmethod
+    def _summarize_locked_role(session: Any, repository_id: str) -> str:
+        """确认门快照里本仓的 role / responsibility（`stage_state["confirmation"]`）。"""
+        stage_state = getattr(session, "stage_state", None) or {}
+        if not isinstance(stage_state, dict):
+            return "（无锁定记录，请按调研结论自行判断本仓职责）"
+        for item in _iter_confirmation_repos(stage_state.get("confirmation")):
+            if str(item.get("repository_id") or "") != repository_id:
+                continue
+            role = str(item.get("role") or item.get("role_suggestion") or "") or "unknown"
+            text = _blocks_to_text(item.get("responsibility"))[:_MAX_PROMPT_TEXT_CHARS]
+            return f"- role：{role}\n- responsibility：{text or '（未填）'}"
+        return "（无锁定记录，请按调研结论自行判断本仓职责）"
+
+    @staticmethod
+    def _summarize_stage1(session: Any, repository_id: str) -> str:
+        """阶段 1 结论摘要（`stage_state["repo_research_fitness"]`，只存标量摘要）。"""
+        stage_state = getattr(session, "stage_state", None) or {}
+        fitness = stage_state.get(_FITNESS_STATE_KEY) if isinstance(stage_state, dict) else None
+        item = fitness.get(repository_id) if isinstance(fitness, dict) else None
+        if not isinstance(item, dict):
+            return "（无阶段 1 结论摘要，请直接读代码）"
+        return "\n".join(
+            [
+                f"- fitness.verdict：{item.get('verdict') or 'unknown'}",
+                f"- 阶段 1 role 建议：{item.get('role_suggestion') or 'unknown'}",
+                f"- 阶段 1 任务状态：{item.get('task_status') or 'unknown'}",
+            ]
         )
 
     @staticmethod
