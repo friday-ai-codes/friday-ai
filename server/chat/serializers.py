@@ -673,6 +673,44 @@ class CodingSessionsBatchCreateResponseSerializer(serializers.Serializer):
     failed = _SessionFailedItemSerializer(many=True)
 
 
+# ============================================================================
+# 编排方案版本 → CodingPlan 惰性投影（SPINE-01）
+# ============================================================================
+
+
+class ProjectPlanToCodingRequestSerializer(serializers.Serializer):
+    """POST /api/chat/coding-plans/from-artifact-version/ 请求体。
+
+    **只有 `artifact_version_id` 一个字段**：conversation 由服务端经
+    ``ArtifactVersion.produced_by_session_id → ConvergenceSession.conversation_id``
+    解析。若允许客户端传 ``conversation_id``，就等于允许把他人会话指定为投影落点
+    （IDOR，T-109-03-03）。
+
+    用 ``UUIDField`` 而非 ``CharField`` 做输入校验：非 UUID 字面量在序列化层即 400，
+    不进入 ORM 查询（V5 Input Validation）。
+    """
+
+    artifact_version_id = serializers.UUIDField(help_text="来源编排方案版本 UUID（兼作幂等键）")
+
+
+class ProjectPlanToCodingResponseSerializer(serializers.Serializer):
+    """投影端点响应体（与 109-UI-SPEC 的 ``ProjectPlanToCodingResponse`` 逐字段对齐）。
+
+    响应**直接带方案正文** —— `tech_plan` / `affected_files` / `provenance` 一次给全，
+    前端点「进入编码」后可就地内嵌卡片，不必再拉一次 runtime（UI-SPEC 后端契约要求
+    第 2 条：少一次往返 = 点击到卡片出现之间无空窗，也避免 runtime 刷新时序竞态）。
+    """
+
+    coding_plan_id = serializers.UUIDField()
+    # False = 幂等命中既有投影（同一 ArtifactVersion 重复点击），前端走中性 toast。
+    created = serializers.BooleanField()
+    title = serializers.CharField(allow_blank=True)
+    tech_plan = serializers.CharField(allow_blank=True)
+    affected_files = serializers.JSONField()
+    recommended_repository_ids = serializers.JSONField()
+    provenance = serializers.CharField()
+
+
 class ExportToFeishuSerializer(serializers.Serializer):
     """导出对话消息到飞书文档。"""
 

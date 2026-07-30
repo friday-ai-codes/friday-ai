@@ -136,8 +136,75 @@ def spine_outsider_client(db, spine_outsider) -> APIClient:
     return client
 
 
+@pytest.fixture
+def spine_artifact_version(db, spine_space: Space, spine_user, spine_repos):
+    """编排产出的方案版本（chat 入口）—— 投影端点的来源。
+
+    造的是完整来源链 WorkItem → Artifact → ArtifactVersion + 带 ``conversation_id``
+    的 ``ConvergenceSession``，与投影 service 解析 conversation 的路径一致。
+    """
+    from delivery.models import (
+        Artifact,
+        ArtifactVersion,
+        ConvergenceSession,
+        ConvergenceSessionEntrypoint,
+        ConvergenceSessionStatus,
+        WorkItem,
+        WorkItemOrigin,
+    )
+
+    conversation = Conversation.objects.create(
+        space=spine_space,
+        title="编排产出直连执行流对话",
+        created_by=spine_user,
+    )
+    session = ConvergenceSession.objects.create(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="merge",
+        status=ConvergenceSessionStatus.DONE,
+        conversation_id=conversation.id,
+    )
+    work_item = WorkItem.objects.create(
+        feishu_project_key=f"pk-{uuid.uuid4().hex[:8]}",
+        work_item_type="story",
+        work_item_id=int(uuid.uuid4().int % 10_000_000),
+        origin=WorkItemOrigin.MANUAL,
+        title="双脊柱合流：编排产出直连执行流",
+    )
+    artifact = Artifact.objects.create(
+        artifact_type="technical_plan",
+        work_item=work_item,
+        title="双脊柱合流方案（编排产出）",
+    )
+    return ArtifactVersion.objects.create(
+        artifact=artifact,
+        version_no=1,
+        content={
+            "title": "双脊柱合流方案（编排产出）",
+            "summary": "把 A 仓接口改造后同步 B 仓调用方。",
+            "execution_plan": [
+                {
+                    "id": f"t{i}",
+                    "name": f"改造 {repo.name}",
+                    "repository_id": str(repo.id),
+                    "repository_name": repo.name,
+                    "coding_instruction": f"在 {repo.name} 内实现改造",
+                    "files": [{"path": f"{repo.name}/main.py", "action": "create"}],
+                }
+                for i, repo in enumerate(spine_repos, 1)
+            ],
+        },
+        produced_by_session_id=str(session.id),
+    )
+
+
 def _detail_url(plan_id: object) -> str:
     return reverse("coding-plan-detail", kwargs={"plan_id": str(plan_id)})
+
+
+def _project_url() -> str:
+    return reverse("coding-plan-project-from-artifact-version")
 
 
 def _sessions_url(plan_id: object) -> str:
@@ -243,6 +310,69 @@ def test_spa_coding_chain_four_steps_share_one_plan_id(
         CodingSession.objects.filter(coding_plan_id=plan_id).count()
         == len(sessions_body["created"])
     )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_projected_plan_completes_fanout_and_export(
+    spine_client: APIClient,
+    spine_artifact_version,
+    spine_repos: list[Repository],
+) -> None:
+    """SPINE-01 收口：plan 来源换成**投影端点**，四步依旧全通。
+
+    与上一条护栏的唯一差别是 plan 的来源 —— 那条手工造 ``CodingPlan``，这条打投影端点。
+    两条都绿即证明「投影出一条记录即四步全通」，编排产出无需改执行流即可直连。
+    """
+    project_resp = spine_client.post(
+        _project_url(),
+        data={"artifact_version_id": str(spine_artifact_version.id)},
+        format="json",
+    )
+    assert project_resp.status_code == status.HTTP_200_OK
+    projected = project_resp.json()
+    assert projected["created"] is True
+    assert projected["provenance"] == "orchestrated"
+    plan_id = projected["coding_plan_id"]
+    # 投影响应直接带正文：前端无需二次拉 runtime 即可渲染。
+    assert projected["tech_plan"]
+    assert projected["recommended_repository_ids"] == [str(r.id) for r in spine_repos]
+
+    # ①② 选目标仓 / 配置分支：详情端点以投影出的 plan_id 为锚点。
+    detail_resp = spine_client.get(_detail_url(plan_id))
+    assert detail_resp.status_code == status.HTTP_200_OK
+    assert detail_resp.json()["id"] == plan_id
+
+    # ③ 确认编码：同一个 plan_id fan-out。
+    sessions_resp = spine_client.post(
+        _sessions_url(plan_id),
+        data={
+            "repository_ids": [str(r.id) for r in spine_repos],
+            "branch_template": _BRANCH_TEMPLATE,
+            "target_branch": _TARGET_BRANCH,
+        },
+        format="json",
+    )
+    assert sessions_resp.status_code == status.HTTP_200_OK
+    sessions_body = sessions_resp.json()
+    assert len(sessions_body["created"]) == len(spine_repos)
+    assert sessions_body["failed"] == []
+    for item in sessions_body["created"]:
+        session = CodingSession.objects.get(id=item["session_id"])
+        # 投影出的 plan id 就是执行流的锚点 —— SPINE-01 的核心断言。
+        assert str(session.coding_plan_id) == plan_id
+
+    # ④ 飞书导出：同一个 plan_id。
+    with _patch_feishu_doc_client():
+        export_resp = spine_client.post(
+            _export_url(plan_id),
+            data={"folder_token": "fk_spine"},
+            format="json",
+        )
+    assert export_resp.status_code == status.HTTP_200_OK
+
+    plan = CodingPlan.objects.get(id=plan_id)
+    assert plan.feishu_doc_url == _MOCK_DOC["url"]
+    assert str(plan.source_artifact_version_id) == str(spine_artifact_version.id)
 
 
 @pytest.mark.django_db(transaction=True)
