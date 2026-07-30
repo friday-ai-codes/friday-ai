@@ -771,6 +771,99 @@ async def test_stage1_retry_exhausted_degrades_after_two_attempts(
 
 
 # ---------------------------------------------------------------------------
+# MJ-02：α 对 auto_selected 的影响必须**方向单调**且可观测
+#
+# `auto_selected` 读的是按 score_ranked 排序后的扁平列表首位，所以 α 确实会参与
+# 「是否自动推进」的判定（凸组合的设计后果）。可接受的前提是方向单调安全：
+# confidence == high 只可能出现在 Stage 0 位次 0 上，故 α 只能把 True 变 False
+# （更多人工确认），绝不可能 False→True 让本不该自动推进的场景自动推进。
+# 该单调性此前**无任何断言锁定**，被 α 抑制的场景也无从与「本来就不该自动推进」区分。
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("alpha", [0.0, 0.35, 0.9, 1.0])
+async def test_alpha_never_turns_auto_selected_on(
+    monkeypatch, mock_aresolve_ok, settings, alpha: float
+) -> None:
+    """单调性护栏：任何 α 下 auto_selected 为 True ⟹ α=0 时也为 True（只抑制不误开）。
+
+    输入固定为「LLM 把 Stage 0 第二名排到首位」这一最能翻转顺序的排列；LLM 一律给
+    high（只降不升 → 确定性分级不被 LLM 改动，把变量隔离成只有 α）。α=0 时
+    auto_selected 为 True（Stage 0 首位 high），α 增大只可能把它压成 False。
+    """
+    mock_aresolve_ok()
+    settings.REPO_ROUTER_STAGE1_ALPHA = alpha
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(
+        monkeypatch, _TextModel(_llm_order_json("repo-b", "repo-a", confidence="high"))
+    )
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.router_version == "v2"
+    # 存在 high 候选是 α=0 基线为 True 的充要条件（high 只可能落在 Stage 0 首位）
+    baseline_auto_selected = any(c.confidence == "high" for c in result.candidates)
+    assert baseline_auto_selected is True
+    if result.auto_selected:
+        assert baseline_auto_selected, "α 把 auto_selected 由 False 翻成了 True（方向不单调）"
+
+
+@pytest.mark.asyncio
+async def test_alpha_suppression_is_observable(monkeypatch, mock_aresolve_ok, settings) -> None:
+    """α 把 high 候选挤下首位 → auto_selected=False 且抑制标记为 True（代价可观测）。"""
+    mock_aresolve_ok()
+    settings.REPO_ROUTER_STAGE1_ALPHA = 0.9
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(
+        monkeypatch, _TextModel(_llm_order_json("repo-b", "repo-a", confidence="high"))
+    )
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.candidates[0].repo_id == "repo-b"
+    assert result.candidates[0].confidence != "high"
+    assert result.auto_selected is False
+    assert result.auto_selected_suppressed_by_alpha is True
+
+
+@pytest.mark.asyncio
+async def test_no_suppression_flag_when_alpha_keeps_high_on_top(
+    monkeypatch, mock_aresolve_ok, settings
+) -> None:
+    """α 未改变首位 → 正常自动推进且抑制标记为 False（不误报抑制）。"""
+    mock_aresolve_ok()
+    settings.REPO_ROUTER_STAGE1_ALPHA = 0.35
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(
+        monkeypatch, _TextModel(_llm_order_json("repo-a", "repo-b", confidence="high"))
+    )
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.candidates[0].repo_id == "repo-a"
+    assert result.auto_selected is True
+    assert result.auto_selected_suppressed_by_alpha is False
+
+
+@pytest.mark.asyncio
+async def test_suppression_flag_false_when_nothing_to_suppress(
+    monkeypatch, mock_aresolve_ok, settings
+) -> None:
+    """无 high 候选（本来就不该自动推进）→ 抑制标记必须为 False，二者可区分。"""
+    mock_aresolve_ok()
+    settings.REPO_ROUTER_STAGE1_ALPHA = 0.9
+    _install_stage0(monkeypatch, _low_margin_hits())
+    _install_stage1_model(monkeypatch, _TextModel(_llm_order_json("repo-b", "repo-a")))
+
+    result = await RepoRouterV2.route("模糊需求")
+
+    assert all(c.confidence != "high" for c in result.candidates)
+    assert result.auto_selected is False
+    assert result.auto_selected_suppressed_by_alpha is False
+
+
+# ---------------------------------------------------------------------------
 # MJ-01：**真实 SDK 异常类**下的重试与降级原因
 #
 # 修复前分类只看 `type(exc).__name__` 的子串，而 `APIStatusError` 是 SDK 基类——
