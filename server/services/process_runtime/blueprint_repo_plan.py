@@ -32,6 +32,7 @@ from services.process_runtime.blueprint_repo_plan_schema import (
     REPO_PLAN_AVAILABILITY,
     validate_repo_plan,
 )
+from services.process_runtime.blueprint_repo_waves import build_api_waves
 from services.process_runtime.blueprint_research_adapter import (
     BLUEPRINT_REPO_PLAN_SOURCE,
     BlueprintResearchAdapter,
@@ -57,6 +58,10 @@ STAGE_STATE_KEY = "repo_plan"
 _MAX_ERROR_CHARS = 500
 _MAX_PROMPT_TEXT_CHARS = 2000
 _VALID_ROLES = ("direct", "indirect")
+
+# waiter 超时清理的默认龄期（挂 barrier 续驱路径调用，**不新起定时任务**）。
+# 取值口径：短等待硬上界 5min ⇒ 长等待被清理前至少给足 6 倍余量，避免正常协商被误清。
+DEFAULT_WAITER_MAX_AGE_SECONDS = 30 * 60
 
 
 @runtime_checkable
@@ -187,10 +192,18 @@ class BlueprintRepoPlanAdapter:
     # ── 派发主入口 ────────────────────────────────────────────────────────
 
     async def dispatch_plans(self, session: Any) -> dict:
-        """逐仓拟方案（**增量**）：direct 起容器、indirect 服务端合成。
+        """逐仓拟方案（**增量 + 按波次**）：direct 起容器、indirect 服务端合成。
 
-        返回形状恒定 `{dispatched, synthesized, pending, completed, repositories}`
-        （下游 handler 无需判空分支）。已产出 `repo_plan` 段的仓不重派（T-113-16）。
+        返回形状**恒定五键** `{dispatched, synthesized, pending, completed, repositories}`
+        （113-03 已把它作为契约声明给下游，本 plan 不加键；波次摘要请另调 `aplan_waves`）。
+        已产出 `repo_plan` 段的仓不重派（T-113-16）。
+
+        **波次推进语义（BUS-02 第一道防线）**：每次调用只派发**当前可派发波次**的仓 ——
+        即「按 API provider/consumer 关系分层后，最早那一波里还没产出 `repo_plan` 的仓」。
+        后续波次的仓本轮进 `pending`；前一波产出后 barrier 续驱会再进本函数，此时下一波
+        自然变成「当前波次」被派发。这样 provider 仓先行，consumer 仓开工时契约已在总线上，
+        `await_blueprint_context` 只需兜预排推不出的动态依赖。零依赖输入 ⇒ 全部在 wave 1，
+        与预排前的全并行行为逐字一致。
         """
         started = time.monotonic()
         repos = await self.acollect_locked_repos(session)
@@ -212,6 +225,9 @@ class BlueprintRepoPlanAdapter:
         )
 
         existing = await self.acollect_repo_plans(session)
+        prearrange = await self.aplan_waves(session, repos=repos, plans=existing)
+        waves = prearrange.get("waves") or {}
+        current_wave, dispatchable = _current_wave(waves, completed=set(existing))
         task_map = await self._aload_task_map(getattr(session, "id", None))
         dispatched = 0
         synthesized = 0
@@ -222,6 +238,10 @@ class BlueprintRepoPlanAdapter:
             repository_id = repo["repository_id"]
             if existing.get(repository_id):
                 completed.append(repository_id)
+                continue
+            if dispatchable and repository_id not in dispatchable:
+                # 后续波次：等前一波 provider 仓产出契约后由 barrier 续驱推进（见 docstring）。
+                pending.append(repository_id)
                 continue
             try:
                 if repo.get("role") == "indirect":
@@ -253,6 +273,8 @@ class BlueprintRepoPlanAdapter:
             synthesized=synthesized,
             pending=len(pending),
             completed_count=len(completed),
+            current_wave=current_wave,
+            wave_count=len(waves),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
             category="sampling",
             component="process_runtime",
@@ -264,6 +286,219 @@ class BlueprintRepoPlanAdapter:
             "completed": completed,
             "repositories": [repo["repository_id"] for repo in repos],
         }
+
+    # ── 波次预排（第一道防线：provider 仓先行） ─────────────────────────────
+
+    async def aplan_waves(
+        self, session: Any, *, repos: list[dict] | None = None, plans: dict | None = None
+    ) -> dict:
+        """按 API provider/consumer 关系预排波次；成环立即开 blocking 澄清交人裁决。
+
+        输入优先用已产出的 `repo_plan` 段（`apis_provided` / `apis_consumed` 权威），首轮
+        尚无产物时回落确认门锁定条目自带的接口信息（没有就是空 ⇒ 全并行，零回归）。
+
+        返回 `build_api_waves` 的四键结果**再加** `stage_state_summary`（`{waves, cycle_count,
+        unresolved_count}`）—— 本仓约定 stage_state 由 handler 持久化，adapter 只产出摘要：
+        并行容器高频写单行 JSON 会 lost-update（PLAN prohibitions 明令 waiter 状态不进
+        stage_state，波次摘要同理只走 handler 的单点写）。摘要口径与 `build_stage_state(waves=…)`
+        一致，113-06 直接透传即可。
+        """
+        repos = repos if repos is not None else await self.acollect_locked_repos(session)
+        plans = plans if plans is not None else await self.acollect_repo_plans(session)
+        inputs: dict[str, dict] = {}
+        for repo in repos:
+            repository_id = repo["repository_id"]
+            section = plans.get(repository_id) or {}
+            inputs[repository_id] = {
+                "apis_provided": _api_items(section, repo, "apis_provided"),
+                "apis_consumed": _api_items(section, repo, "apis_consumed"),
+            }
+        result = build_api_waves(inputs)
+        cycles = result.get("cycles") or []
+        if cycles:
+            await self._aopen_cycle_clarification(session, cycles, result.get("edges") or [])
+        logger.info(
+            "blueprint_repo_plan_waves_planned",
+            session_id=str(getattr(session, "id", "")),
+            wave_count=len(result.get("waves") or {}),
+            edge_count=len(result.get("edges") or []),
+            cycle_count=len(cycles),
+            unresolved_count=len(result.get("unresolved_consumed") or []),
+            category="sampling",
+            component="process_runtime",
+        )
+        return {
+            **result,
+            "stage_state_summary": {
+                "waves": {
+                    int(wave): list(ids) for wave, ids in (result.get("waves") or {}).items()
+                },
+                "cycle_count": len(cycles),
+                "unresolved_count": len(result.get("unresolved_consumed") or []),
+            },
+        }
+
+    async def _aopen_cycle_clarification(
+        self, session: Any, cycles: list[list[str]], edges: list[dict]
+    ) -> str:
+        """互等环 → 开一条 blocking 澄清线程交人裁决（**不静默打平波次**）。
+
+        幂等：该 artifact 上已有 OPEN 的 blocking `ai_clarification` 线程时不再叠开 ——
+        会话已被阻塞，重复开线程只会刷 HITL 面板。`return_stage="repo_plan"` 必填（B3）。
+        question 只含仓 id 与 api 名，**不含任何方案正文**。
+        """
+        try:
+            artifact = await self._aload_artifact(getattr(session, "id", None))
+            if artifact is None:
+                logger.warning(
+                    "blueprint_repo_plan_wave_cycle_no_artifact",
+                    session_id=str(getattr(session, "id", "")),
+                    cycle_count=len(cycles),
+                    category="sampling",
+                    component="process_runtime",
+                )
+                return ""
+            if await self._acount_open_blocking_clarifications(artifact.id):
+                return ""
+            cycle_text = "；".join(" ⇄ ".join(cycle) for cycle in cycles)
+            api_text = "、".join(
+                sorted(
+                    {
+                        str(edge.get("api") or "")
+                        for edge in edges
+                        if str(edge.get("api") or "")
+                        and any(str(edge.get("from") or "") in cycle for cycle in cycles)
+                    }
+                )
+            )
+            thread = await self._get_lifecycle_service().open_thread(
+                artifact,
+                kind="ai_clarification",
+                blocking=True,
+                question=(
+                    f"检测到仓库间接口互相等待（成环）：{cycle_text}。"
+                    f"涉及的接口：{api_text or '（未指明）'}。"
+                    "请裁决由哪一侧先定契约（或拆出中间层），否则这些仓无法排出先后顺序。"
+                ),
+                initiated_by_user_id=_initiated_by(session),
+                return_stage="repo_plan",
+            )
+            thread_id = str(getattr(thread, "id", "") or "")
+            logger.info(
+                "blueprint_repo_plan_wave_cycle_clarification_opened",
+                session_id=str(getattr(session, "id", "")),
+                cycle_count=len(cycles),
+                thread_id=thread_id,
+                initiated_by_user_id=_initiated_by(session),
+                category="caller",
+                component="process_runtime",
+            )
+            return thread_id
+        except Exception as exc:  # noqa: BLE001 — 开线程失败不反噬派发主链
+            logger.warning(
+                "blueprint_repo_plan_wave_cycle_clarification_failed",
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+                category="sampling",
+                component="process_runtime",
+            )
+            return ""
+
+    # ── waiter 满足后的自动重派（长等待闭环） ───────────────────────────────
+
+    async def aredispatch_waiting_repos(self, session: Any, repository_ids: list) -> int:
+        """把 `satisfy_waiters` 返回的等待仓重新派发续作，返回真正重派的仓数。
+
+        逐仓 `mark_stale`（WR-01：只有终态 task 能置回可派发白名单）后走
+        `dispatch(session, mode="plan", repository_ids={rid})` 的单仓定向通路 —— 复用 112 的
+        增量派发白名单，已完成仓天然被跳过。prompt 带**上一轮 partial 产物引用**续作
+        （`partial_plan_id` + 已产出的段名），非续作场景该段为空串、prompt 与首轮逐字一致。
+
+        单仓失败只记 warning 并继续（WR-02），**绝不上抛** —— 本方法的调用方是 MCP
+        `report_blueprint_context` 端点，上抛会反噬容器的写入响应。
+        """
+        ids = [str(rid) for rid in (repository_ids or []) if str(rid or "")]
+        if not ids:
+            return 0
+        started = time.monotonic()
+        task_map = await self._aload_task_map(getattr(session, "id", None))
+        redispatched = 0
+        for repository_id in ids:
+            try:
+                task = task_map.get(repository_id)
+                if task is not None and str(task.get("status")) not in (
+                    RepoResearchTaskStatus.PENDING,
+                    RepoResearchTaskStatus.STALE,
+                ):
+                    await self.research_service.mark_stale([task["id"]])
+                resume_hint = await self._aload_resume_hint(
+                    getattr(session, "id", None), repository_id
+                )
+                result = await self.research_adapter.dispatch(
+                    session,
+                    mode="plan",
+                    repository_ids={repository_id},
+                    resume_hints={repository_id: resume_hint} if resume_hint else None,
+                )
+                count = int((result if isinstance(result, dict) else {}).get("dispatched") or 0)
+                redispatched += count
+                # 容器起停是用户可归因的调用类事件（观测规范：必须绑定触发用户）
+                logger.info(
+                    "blueprint_repo_plan_waiter_redispatched",
+                    session_id=str(getattr(session, "id", "")),
+                    repository_id=repository_id,
+                    dispatched=count,
+                    resumed=bool(resume_hint),
+                    initiated_by_user_id=_initiated_by(session),
+                    category="caller",
+                    component="process_runtime",
+                )
+            except Exception as exc:  # noqa: BLE001 — WR-02 单仓隔离，绝不上抛
+                logger.warning(
+                    "blueprint_repo_plan_waiter_redispatch_failed",
+                    session_id=str(getattr(session, "id", "")),
+                    repository_id=repository_id,
+                    error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+                    category="sampling",
+                    component="process_runtime",
+                )
+        logger.info(
+            "blueprint_repo_plan_waiter_redispatch_completed",
+            session_id=str(getattr(session, "id", "")),
+            requested=len(ids),
+            redispatched=redispatched,
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+            category="sampling",
+            component="process_runtime",
+        )
+        return redispatched
+
+    async def aexpire_stale_waiters(
+        self, session: Any, *, max_age_seconds: int = DEFAULT_WAITER_MAX_AGE_SECONDS
+    ) -> list[str]:
+        """清理超龄 waiter 并返回待重派仓清单（委托 `BlueprintContextService.expire_waiters`）。
+
+        **不新起定时任务**（CONTEXT 锁定）：由 barrier 续驱路径（113-06）在每次推进时调用一次，
+        清理出的仓交给 `aredispatch_waiting_repos` 续驱 —— 「等的 key 永远不出现」的仓因此
+        不会永久卡住会话。读失败一律返回 `[]`（观测代码不反噬业务）。
+        """
+        try:
+            from delivery.services.blueprint_context_service import BlueprintContextService
+
+            return await BlueprintContextService().expire_waiters(
+                session=session,
+                max_age_seconds=int(max_age_seconds or 0),
+                initiated_by_user_id=_initiated_by(session),
+            )
+        except Exception as exc:  # noqa: BLE001 — 清理失败不反噬 barrier
+            logger.warning(
+                "blueprint_repo_plan_waiter_expire_failed",
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+                category="sampling",
+                component="process_runtime",
+            )
+            return []
 
     async def _adispatch_direct_plan(self, session: Any, repo: dict, *, task: dict | None) -> int:
         """direct 仓起 plan 容器：先置回可派发态，再复用派发面的 `mode="plan"`。
@@ -439,10 +674,13 @@ class BlueprintRepoPlanAdapter:
         dispatched: list,
         pending: list,
         attempts: dict | None = None,
+        waves: dict | None = None,
     ) -> dict:
         """`stage_state["repo_plan"]` 小摘要：**只存 id 与计数**（单字段 < 2KB，DESIGN §5.6）。
 
         方案正文一律由下游按 `repository_id` 自取 `PartialPlan`，绝不往 `stage_state` 里塞。
+        `waves` 传 `aplan_waves` 结果里的 `stage_state_summary`（`{waves, cycle_count,
+        unresolved_count}`）即可；不传则不写该键（波次是可选摘要，缺失不影响完成判据）。
         """
         ready = sorted(str(rid) for rid, section in (plans or {}).items() if section)
         pending_ids = sorted({str(rid) for rid in (pending or []) if str(rid or "")} - set(ready))
@@ -451,11 +689,21 @@ class BlueprintRepoPlanAdapter:
         }
         for rid in dispatched or []:
             counter.setdefault(str(rid), 1)
-        return {
+        state = {
             "ready_repository_ids": ready,
             "pending_repository_ids": pending_ids,
             "attempts": counter,
         }
+        if isinstance(waves, dict) and waves:
+            state["waves"] = {
+                "waves": {
+                    str(wave): [str(rid) for rid in ids]
+                    for wave, ids in (waves.get("waves") or {}).items()
+                },
+                "cycle_count": int(waves.get("cycle_count") or 0),
+                "unresolved_count": int(waves.get("unresolved_count") or 0),
+            }
+        return state
 
     # ── 澄清线程（唯一入口经 lifecycle service） ────────────────────────────
 
@@ -571,6 +819,51 @@ class BlueprintRepoPlanAdapter:
 
     @staticmethod
     @sync_to_async
+    def _acount_open_blocking_clarifications(artifact_id: Any) -> int:
+        """该 artifact 上 OPEN 的阻塞澄清线程数（幂等守门：已有阻塞就不再叠开）。"""
+        from delivery.models import BlueprintThread, ThreadKind, ThreadStatus
+
+        return BlueprintThread.objects.filter(
+            artifact_id=artifact_id,
+            kind=ThreadKind.AI_CLARIFICATION,
+            blocking=True,
+            status=ThreadStatus.OPEN,
+        ).count()
+
+    @staticmethod
+    @sync_to_async
+    def _aload_resume_hint(session_id: Any, repository_id: str) -> dict:
+        """该仓最新 `PartialPlan` 的续作引用：`{partial_plan_id, produced_keys}`。
+
+        只取 **id 与段名**（不取正文）—— 续作提示进的是容器 prompt，正文由容器自己按
+        partial_plan_id 与总线取回，避免 prompt 膨胀与半可信正文二次拼接。
+        """
+        from delivery.models import PartialPlan, RepoResearchTask
+
+        task_ids = list(
+            RepoResearchTask.objects.filter(
+                session_id=session_id, repository_id=repository_id
+            ).values_list("id", flat=True)
+        )
+        if not task_ids:
+            return {}
+        row = (
+            PartialPlan.objects.filter(research_task_id__in=task_ids)
+            .order_by("-created_at")
+            .values("id", "content")
+            .first()
+        )
+        if not row:
+            return {}
+        content = row.get("content")
+        content = content if isinstance(content, dict) else {}
+        return {
+            "partial_plan_id": str(row["id"]),
+            "produced_keys": sorted(str(key) for key in content if str(key or "")),
+        }
+
+    @staticmethod
+    @sync_to_async
     def _aload_task_map(session_id: Any) -> dict[str, dict]:
         from delivery.models import RepoResearchTask
 
@@ -640,6 +933,37 @@ class BlueprintRepoPlanAdapter:
 # ── 模块级纯函数 ──────────────────────────────────────────────────────────
 
 
+def _api_items(section: Any, repo: dict, key: str) -> list[dict]:
+    """波次预排的输入项：优先已产出 `repo_plan` 段，回落确认门条目自带的接口信息。
+
+    两处都没有就是空 list —— **绝不从 responsibility 文本里猜接口**（猜错会把仓排到错误波次，
+    比全并行更糟）。首轮无产物 ⇒ 全部空 ⇒ 全并行，与预排前行为逐字一致。
+    """
+    for source in (section, repo):
+        if not isinstance(source, dict):
+            continue
+        raw = source.get(key)
+        if isinstance(raw, list):
+            items = [item for item in raw if isinstance(item, dict)]
+            if items:
+                return items
+    return []
+
+
+def _current_wave(waves: dict, *, completed: set[str]) -> tuple[int, set[str]]:
+    """当前可派发波次：最早那一波里**还有仓没产出 `repo_plan`** 的波次。
+
+    Returns:
+        `(wave_no, repository_ids)`；无波次信息时 `(0, set())` —— 调用方据此不做波次门控
+        （退化为全并行，零回归）。
+    """
+    for wave in sorted(int(w) for w in (waves or {})):
+        ids = {str(rid) for rid in (waves.get(wave) or waves.get(str(wave)) or [])}
+        if ids - completed:
+            return wave, ids
+    return 0, set()
+
+
 def _initiated_by(session: Any) -> str:
     """触发用户归因（无触发用户记 `system`，绝不伪造 actor）。"""
     return str(getattr(session, "initiated_by_user_id", "") or "") or "system"
@@ -668,15 +992,20 @@ def _normalize_locked_repos(raw: Any) -> list[dict]:
         if role not in _VALID_ROLES:
             role = "direct"
         fitness = item.get("fitness")
-        repos.append(
-            {
-                "repository_id": repository_id,
-                "repository_name": str(item.get("repository_name") or ""),
-                "role": role,
-                "responsibility": item.get("responsibility"),
-                "fitness": fitness if isinstance(fitness, dict) else {},
-            }
-        )
+        entry = {
+            "repository_id": repository_id,
+            "repository_name": str(item.get("repository_name") or ""),
+            "role": role,
+            "responsibility": item.get("responsibility"),
+            "fitness": fitness if isinstance(fitness, dict) else {},
+        }
+        # 波次预排的**首轮**预估输入：确认门条目若自带接口信息就带上（113-04）。
+        # 没有就不造 —— `_api_items` 会退化为空、全部仓进 wave 1（全并行，零回归）。
+        for api_key in ("apis_provided", "apis_consumed"):
+            raw_api = item.get(api_key)
+            if isinstance(raw_api, list):
+                entry[api_key] = [api for api in raw_api if isinstance(api, dict)]
+        repos.append(entry)
     return repos
 
 

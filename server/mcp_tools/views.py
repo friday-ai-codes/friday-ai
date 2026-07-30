@@ -4313,11 +4313,32 @@ class ReportBlueprintContextView(McpToolView):
                 repository_id=repository_id,
                 initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
             )
+            # 长等待闭环（113-04）：waiter 已在 `satisfy_waiters` 的**同一事务**里置
+            # `superseded`（顺序反了会重复重派、烧容器额度），此处才重派等待仓续作。
+            redispatched = 0
+            if redispatch:
+                try:
+                    # 函数内 lazy import：避开 mcp_tools → process_runtime 的模块级 import 环
+                    from services.process_runtime.blueprint_repo_plan import (
+                        BlueprintRepoPlanAdapter,
+                    )
+
+                    redispatched = await BlueprintRepoPlanAdapter().aredispatch_waiting_repos(
+                        convergence_session, redispatch
+                    )
+                except Exception as exc:  # noqa: BLE001 — best-effort：重派失败绝不反噬 200
+                    logger.warning(
+                        "blueprint_context_redispatch_failed",
+                        error=redact_secrets_in_text(str(exc))[:500],
+                        category="caller",
+                        component="process_runtime",
+                    )
             output_data = {
                 "applied": True,
                 "entry_id": str(entry.id),
                 "seq": entry.seq,
                 "satisfied_waiters": len(redispatch),
+                "redispatched": redispatched,
                 "run_id": str(run.run_id),
             }
             await self._record(
