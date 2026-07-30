@@ -35,7 +35,8 @@ ENDPOINT_BASE = "https://friday.example.com"
 SECRET_PAT = "friday_pat_SECRET123"
 SESSION_ID = "task-session-abc"
 
-EXPECTED_TOOL_NAMES = [
+# 103 建面时的 7 个知识工具（逐名字面量保留：防止扩容顺手删掉既有工具）。
+_LEGACY_TOOL_NAMES = [
     "search_rag_chunks",
     "grep_repository",
     "get_repository_file",
@@ -44,6 +45,12 @@ EXPECTED_TOOL_NAMES = [
     "search_project_context",
     "lookup_project_by_branch",
 ]
+# 113-02 追加的蓝图共享上下文总线两工具（BUS-01）。
+_NEW_113_TOOL_NAMES = [
+    "read_blueprint_context",
+    "report_blueprint_context",
+]
+EXPECTED_TOOL_NAMES = [*_LEGACY_TOOL_NAMES, *_NEW_113_TOOL_NAMES]
 
 
 class _FakeResponse:
@@ -152,7 +159,7 @@ def test_valid_endpoint_builds_server(ok_endpoint: str) -> None:
 
 @pytest.mark.asyncio
 async def test_server_has_exactly_seven_whitelist_tools() -> None:
-    """构建出的 server 工具集恰为 7 个白名单名字。"""
+    """构建出的 server 工具集恰为白名单名字（103 的 7 个 + 113-02 的 2 个）。"""
     config = build_knowledge_mcp_server(ENDPOINT_BASE, SECRET_PAT, SESSION_ID, 200)
     assert config is not None
     assert config["type"] == "sdk"
@@ -162,7 +169,7 @@ async def test_server_has_exactly_seven_whitelist_tools() -> None:
 
 
 def test_knowledge_allowed_tools_naming() -> None:
-    """allowed_tools 为 7 条 mcp__friday-knowledge__{name}。"""
+    """allowed_tools 为 9 条 mcp__friday-knowledge__{name}（顺序即白名单顺序）。"""
     allowed = knowledge_allowed_tools()
     assert allowed == [f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__{name}" for name in EXPECTED_TOOL_NAMES]
 

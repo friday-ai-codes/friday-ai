@@ -232,6 +232,72 @@ KNOWLEDGE_TOOL_SCHEMAS: list[dict[str, Any]] = [
             "required": ["branch_name"],
         },
     },
+    # ---- 蓝图共享上下文总线（BUS-01，Phase 113-02）------------------------
+    # 向后兼容（P1）：本表是 task 侧硬编码白名单、不从服务端下发 ——
+    # 老镜像没有这两项只是不调（天然安全）；新镜像打到未部署这两条 path 的服务端得
+    # 404，由上面 handler 工厂的「非 200 只回显 HTTP code + is_error」约定兜住，
+    # 容器不崩。故本次扩容**无需改动工厂/build/allowed_tools 任何一行**。
+    {
+        "name": "read_blueprint_context",
+        "description": (
+            "读取本次蓝图会话的共享上下文总线：拿到其他并行仓容器已写入的接口契约 / "
+            "现状结论 / 决策。适合「我要消费 B 仓的接口，先看它有没有写出来」类问题。"
+            "支持 since_seq 增量拉取，轮询时务必带上次返回的 max_seq，避免重复拉全量。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key_prefix": {
+                    "type": "string",
+                    "description": "key 前缀过滤，如 `repo:<uuid>.` 或 `contract:`",
+                },
+                "kind": {
+                    "type": "string",
+                    "description": (
+                        "条目类型：finding / api_surface / contract / decision / "
+                        "dependency_claim / question"
+                    ),
+                },
+                "repository_id": {"type": "string", "description": "按产出仓过滤（UUID）"},
+                "since_seq": {
+                    "type": "integer",
+                    "description": "只返回 seq 大于该值的条目（增量拉取，默认 0 = 全量）",
+                },
+                "limit": {"type": "integer", "description": "返回条数上限（默认 50，最大 200）"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "report_blueprint_context",
+        "description": (
+            "向本次蓝图会话的共享上下文总线写入一条结论：你产出的接口契约 / 关键现状 / "
+            "决策，写入后立即对所有并行仓容器可见。"
+            "适合「我定下了对外接口，让等我的仓能继续」场景。"
+            "key 用约定前缀：`repo:{仓UUID}.api_surface` / `contract:{名称}` / `decision:{线程id}`。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "（必填）条目 key，遵循前缀约定"},
+                "kind": {
+                    "type": "string",
+                    "description": (
+                        "（必填）条目类型，六值枚举：finding / api_surface / contract / "
+                        "decision / dependency_claim / question"
+                    ),
+                },
+                "repository_id": {"type": "string", "description": "产出仓 UUID（可选）"},
+                "content": {
+                    "type": "object",
+                    "description": (
+                        "（必填）结论正文 JSON 对象；服务端会递归脱敏，不要写入任何令牌/密钥"
+                    ),
+                },
+            },
+            "required": ["key", "kind", "content"],
+        },
+    },
 ]
 
 
