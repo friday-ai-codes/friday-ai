@@ -396,10 +396,13 @@ REPO_ROUTER_STAGE1_RETRY_BACKOFF_SECONDS = env.float(
 # timeout_at（107-CONTEXT D-4 单一超时口径），消除「工作流已判超时而会话仍停在
 # waiting_clarification」的矛盾态窗口。
 CLARIFICATION_TIMEOUT_HOURS = env.int("CLARIFICATION_TIMEOUT_HOURS", default=24)
-# 过期澄清的扫描频率（秒）。超时默认 24h，分钟级精度足够；10min 也避免与
-# sample_gauges(45s) / evaluate_system_alerts(60s) 争 SQLite 写锁。
+# 过期澄清的扫描频率（秒）。取 60s 与 check_timeouts 对齐：D-4 要求「任何时刻都不得
+# 存在『工作流已判超时而会话仍在等』的窗口」，而工作流侧每 60s 扫一次——两侧频率差一个
+# 数量级时，到期瞬间 check_timeouts 几乎必然先把工作流标 TIMEOUT，随后最多要等一整个
+# 澄清扫描周期会话才出口，这段就是矛盾态窗口（600s → 60s 把它压到 1/10）。
+# 写锁争用不成立：扫描本身是两条索引查询（只读），只有真命中出口目标时才写库。
 CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS = env.int(
-    "CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS", default=600
+    "CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS", default=60
 )
 # 单次扫描的处理上限（防长事务与内存膨胀）。
 CLARIFICATION_EXPIRY_SCAN_LIMIT = env.int("CLARIFICATION_EXPIRY_SCAN_LIMIT", default=200)
