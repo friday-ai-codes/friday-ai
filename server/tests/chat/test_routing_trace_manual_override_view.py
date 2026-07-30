@@ -317,6 +317,26 @@ def test_override_response_returns_degrade_facts(authed_client, degraded_trace, 
     assert body["block_order"] == new_trace.block_order
 
 
+# NULL 不在参数表里：该列是 NOT NULL（default=list），DB 层已挡住。
+@pytest.mark.parametrize(
+    "dirty", [{"a": 1, "b": 2}, "in_project", 42], ids=["dict", "str", "int"]
+)
+def test_override_guards_dirty_block_order(authed_client, degraded_trace, repo, dirty):
+    """MN-08：脏 block_order 不得被 list() 静默转成两元素坏值并写进新 trace。
+
+    `list({"a":1,"b":2})` 得到 `["a","b"]`、`list("ab")` 得到 `["a","b"]`——长度恰为 2，
+    前端据此启用分组，两个分区却都因 `total === 0` 被过滤，结果一个候选都不显示。
+    """
+    RepositoryRoutingTrace.objects.filter(id=degraded_trace.id).update(block_order=dirty)
+
+    resp = _override(authed_client, degraded_trace, repo)
+    assert resp.status_code == 201, resp.content
+
+    body = resp.json()
+    assert body["block_order"] == []
+    assert RepositoryRoutingTrace.objects.get(id=body["trace_id"]).block_order == []
+
+
 def test_override_keeps_candidate_presentation_fields(
     authed_client, degraded_trace, repo
 ):
