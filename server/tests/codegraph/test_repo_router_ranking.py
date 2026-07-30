@@ -283,6 +283,21 @@ def test_blend_does_not_mutate_input() -> None:
     assert stage0 == snapshot
 
 
+def test_blend_ignores_unknown_ids_in_denominator() -> None:
+    """IN-03：不在 stage0_scores 里的 id 先过滤再算 N —— 否则有效候选的 S_llm 被压低。
+
+    ["a", "ghost", "b"] 里 ghost 无对应候选。修复前 n=3 且 b 的 idx=2 →
+    S_llm(b) = 1 - 2/2 = 0；过滤后 n=2、idx=1 → S_llm(b) 同为 0，但 a 之外的中间项
+    （见下方三有效项对照）会明显不同。这里用「与等价的纯净输入完全一致」来锁定。
+    """
+    stage0 = {"a": 0.9, "b": 0.5, "c": 0.3}
+    with_noise = blend_ranked_scores(
+        stage0, ["a", "ghost-1", "b", "ghost-2", "c"], alpha=0.35
+    )
+    clean = blend_ranked_scores(stage0, ["a", "b", "c"], alpha=0.35)
+    assert with_noise == clean
+
+
 # ---------------------------------------------------------------------------
 # classify_degrade_reason（RELY-03，T-107-02）
 # ---------------------------------------------------------------------------
