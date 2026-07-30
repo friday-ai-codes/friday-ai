@@ -14,6 +14,9 @@ reasoning + matched_node_paths。
 LLM 的 confidence 输出只能把确定性分级降级（``apply_llm_adjustment`` 只降
 不升）；``auto_selected`` 由确定性 confidence 驱动（首位最终 high → True），
 Stage 1 可用与不可用两条路径语义一致——Stage 1 失联不再导致编排停摆。
+注意「首位」是按凸组合 ``score_ranked`` 排序后的首位，故 α 会参与 auto_selected
+判定，但方向单调安全（只抑制、不误开），被抑制的场景由
+``auto_selected_suppressed_by_alpha`` 上报——详见 ``route`` 内该变量处的注释。
 
 降级链（结果带 ``degraded`` 标志，Stage 1 未参与时为 True）：
 - LLM 失败/超时 → Stage 0 聚合分数直接出结果（仍优于 v1：节点级检索）
@@ -282,6 +285,11 @@ class RepoRouteResultV2:
     # 用户可见降级原因：`repo_router_ranking.DEGRADE_REASONS` 的 6 值闭集 ∪ `""`
     # （`""` = 无用户可见原因行）。基数受控才能当指标维度用。
     degrade_reason: str = ""
+    # α 抑制了自动推进（MJ-02 的可观测面）：存在 confidence == high 的候选，但凸组合
+    # 排序把另一个候选顶到了首位，于是 auto_selected 由 True 变 False。方向单调安全
+    # （α 只会抑制、不会误开，见 auto_selected 计算处注释），但「本该自动推进却被 α
+    # 静默拦下」与「本来就不该自动推进」在指标上必须能区分，否则无从判断 α 的代价。
+    auto_selected_suppressed_by_alpha: bool = False
 
 
 def _is_retryable_stage1_error(exc: BaseException) -> bool:
@@ -643,13 +651,28 @@ class RepoRouterV2:
             delta=group_delta,
             top_k=top_k,
         )
-        # auto_selected 读**扁平列表首位**（即全局最高分候选）：block ranking 是
-        # 呈现层置顶，不得改变编排是否自动推进——否则组别就间接进了决策路径。
+        # auto_selected 读**扁平列表首位**。这里的首位是按 `score_ranked`（凸组合
+        # `(1-α)·S_final + α·S_llm`）排序后的首位，**不是** Stage 0 最高分候选——所以
+        # α 确实会参与「是否自动推进」的判定，这是凸组合的设计后果，不是不变量。
+        #
+        # 组别不进决策路径这一条仍然成立：`_apply_presentation` 的分区顺序（block
+        # ranking）只影响呈现，`final` 是按同一比较键的全局降序扁平列表，与 block_order
+        # 无关。
+        #
+        # α 的影响方向是**单调安全**的：confidence == high 只可能出现在 Stage 0 位次 0
+        # 上（`_deterministic_confidence`），所以 α 只能把 auto_selected 由 True 变
+        # False（更多人工确认），绝不可能凭空造出 high 让本不该自动推进的场景自动推进。
+        # 该单调性由 `test_repo_router_v2_meta` 的护栏用例锁定；被抑制的场景经
+        # `auto_selected_suppressed_by_alpha` 上报，让代价可观测而非静默。
         auto_selected = bool(final) and final[0].confidence == "high"
+        auto_selected_suppressed = not auto_selected and any(
+            c.confidence == "high" for c in final
+        )
         result = RepoRouteResultV2(
             candidates=final,
             router_version="v2",
             auto_selected=auto_selected,
+            auto_selected_suppressed_by_alpha=auto_selected_suppressed,
             degraded=False,
             snapshot=cls._build_snapshot(
                 query,
@@ -1280,6 +1303,9 @@ class RepoRouterV2:
                 top_score=round(top.score, 6) if top else 0.0,
                 confidence=top.confidence if top else "low",
                 degraded=result.degraded,
+                auto_selected=result.auto_selected,
+                # 「本该自动推进却被 α 静默拦下」必须与「本来就不该自动推进」可区分。
+                auto_selected_suppressed_by_alpha=result.auto_selected_suppressed_by_alpha,
                 weight_set_version=(result.snapshot.get("versions") or {}).get(
                     "weight_set_version"
                 ),
