@@ -137,6 +137,10 @@ class CodingExecutionSpec:
     work_branch: str
     target_branch: str
     affected_files: list[dict[str, Any]]
+    # 该方案未经完整编排调研（`CodingPlan.provenance != orchestrated`），下游容器可据
+    # 此调整策略（本 phase 只保证标志出现在 dispatch payload 里，容器侧消费与否留后续）。
+    # 必须带默认值：frozen dataclass 新增无默认字段会破坏既有构造点。
+    unresearched: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -147,6 +151,7 @@ class CodingExecutionSpec:
             "work_branch": self.work_branch,
             "target_branch": self.target_branch,
             "affected_files": self.affected_files,
+            "unresearched": self.unresearched,
         }
 
 
@@ -183,11 +188,16 @@ async def build_coding_execution_spec(
     """从 CodingSession 固化一次容器执行所需的 repo/branch/files 契约。"""
     affected_files = list(coding_session.affected_files or [])
     coding_plan_id = getattr(coding_session, "coding_plan_id", None)
+    # 允许清单：仅 orchestrated 视为经过调研。历史 session 未迁移（coding_plan_id 为
+    # 空）时取不到来源标志 ⇒ 走保守分支 True，而不是默认「可信」。async 上下文只用
+    # `*_id` 标量与显式查询，不裸访问 lazy FK。
+    unresearched = True
     if coding_plan_id:
         from chat.models import CodingPlan
 
-        plan = await CodingPlan.objects.only("affected_files").aget(id=coding_plan_id)
+        plan = await CodingPlan.objects.only("affected_files", "provenance").aget(id=coding_plan_id)
         affected_files = list(plan.affected_files or [])
+        unresearched = str(plan.provenance or "") != CodingPlanProvenance.ORCHESTRATED
 
     from chat.branch_service import DEFAULT_TARGET_BRANCH
 
@@ -203,6 +213,7 @@ async def build_coding_execution_spec(
         work_branch=coding_session.branch_name,
         target_branch=target_branch,
         affected_files=affected_files,
+        unresearched=unresearched,
     )
 
 

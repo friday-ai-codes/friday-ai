@@ -193,6 +193,117 @@ class TestBuildDispatchMetadata:
 
 
 @pytest.mark.django_db(transaction=True)
+class TestExecutionSpecUnresearchedFlag:
+    """RELY-01 下游携带：执行契约的 ``unresearched`` 标志。
+
+    判定与 fan-out gate / 飞书导出同为**允许清单**：只有 ``provenance == orchestrated``
+    才算经过调研，未知取值与历史未迁移数据一律保守标注。
+    """
+
+    @pytest.fixture
+    def session_for_spec(self, project, repository):
+        from chat.models import Conversation
+
+        conversation = Conversation.objects.create(space=project, title="unresearched 测试")
+        return CodingSession.objects.create(
+            conversation=conversation,
+            repository=repository,
+            tech_plan="## 方案",
+            branch_name="feat20260730.unresearched",
+        )
+
+    async def _spec_for_provenance(self, session, provenance: str):
+        from chat.coding_session_service import build_coding_execution_spec
+        from chat.models import CodingPlan
+
+        plan = await CodingPlan.objects.acreate(
+            conversation=session.conversation,
+            tech_plan="## plan",
+            affected_files=[],
+            provenance=provenance,
+        )
+        session.coding_plan_id = plan.id
+        return await build_coding_execution_spec(session.repository, session)
+
+    @pytest.mark.asyncio
+    async def test_unresearched_true_for_draft_plan(self, session_for_spec):
+        """provenance=draft → 标志为 True，且出现在 as_dict() 里。"""
+        from chat.models import CodingPlanProvenance
+
+        spec = await self._spec_for_provenance(session_for_spec, CodingPlanProvenance.DRAFT)
+
+        assert spec.unresearched is True
+        assert spec.as_dict()["unresearched"] is True
+
+    @pytest.mark.asyncio
+    async def test_unresearched_false_for_orchestrated_plan(self, session_for_spec):
+        """provenance=orchestrated → 标志为 False（唯一免标注的取值）。"""
+        from chat.models import CodingPlanProvenance
+
+        spec = await self._spec_for_provenance(session_for_spec, CodingPlanProvenance.ORCHESTRATED)
+
+        assert spec.unresearched is False
+        assert spec.as_dict()["unresearched"] is False
+
+    @pytest.mark.asyncio
+    async def test_unresearched_true_for_unknown_provenance(self, session_for_spec):
+        """未知 provenance 取值 → True（允许清单的保守分支）。"""
+        spec = await self._spec_for_provenance(session_for_spec, "weird_value")
+
+        assert spec.unresearched is True
+
+    @pytest.mark.asyncio
+    async def test_unresearched_true_for_legacy_session_without_plan(self, session_for_spec):
+        """coding_plan_id 为 None 的历史 session → True 且不抛（取不到来源不等于可信）。"""
+        from chat.coding_session_service import build_coding_execution_spec
+
+        session_for_spec.coding_plan_id = None
+
+        spec = await build_coding_execution_spec(
+            session_for_spec.repository, session_for_spec
+        )
+
+        assert spec.unresearched is True
+
+    @pytest.mark.asyncio
+    async def test_unresearched_flag_present_in_dispatch_payload(self, session_for_spec):
+        """标志确实出现在下发给 Runner/容器的 dispatch payload 里（跨进程边界）。"""
+        from chat.coding_session_service import build_dispatch_metadata
+        from chat.models import CodingPlan, CodingPlanProvenance
+        from repositories.models import GitCredential
+
+        plan = await CodingPlan.objects.acreate(
+            conversation=session_for_spec.conversation,
+            tech_plan="## plan",
+            affected_files=[],
+            provenance=CodingPlanProvenance.DRAFT,
+        )
+        session_for_spec.coding_plan_id = plan.id
+
+        with (
+            patch(
+                "services.provider_config.aget_legacy_anthropic_config",
+                new_callable=AsyncMock,
+                return_value={
+                    "api_key": "test-key",
+                    "base_url": "https://anthropic.example.com",
+                    "default_model": "claude-test",
+                    "small_model": "claude-small",
+                },
+            ),
+            patch("repositories.models.GitCredential") as mock_git_cred_cls,
+        ):
+            mock_git_cred_cls.objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
+            mock_git_cred_cls.DoesNotExist = GitCredential.DoesNotExist
+
+            env_metadata, _repo_url = await build_dispatch_metadata(
+                session_for_spec.repository, session_for_spec
+            )
+
+        assert env_metadata["execution_spec"]["unresearched"] is True
+
+
+@pytest.mark.django_db(transaction=True)
 class TestDispatchCodingTask:
     """dispatch_coding_task 函数集成测试。"""
 
