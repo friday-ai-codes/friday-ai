@@ -30,8 +30,13 @@ def _create_plan(
     title: str = "示例方案",
     tech_plan: str = "## 概要\n\n说明",
     affected_files: list[dict[str, str]] | None = None,
+    provenance: str | None = None,
 ) -> CodingPlan:
-    """异步友好工厂：sync ORM 写入 Space + Conversation + CodingPlan。"""
+    """异步友好工厂：sync ORM 写入 Space + Conversation + CodingPlan。
+
+    ``provenance`` 缺省走 DB default ``draft``（存量真实形态）；显式传值可覆盖，
+    含 choices 之外的未知取值（模型层不做 choices 校验，正是保守分支要防的情形）。
+    """
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
@@ -43,11 +48,13 @@ def _create_plan(
         feishu_app_secret_encrypted="enc_test",
     )
     conversation = Conversation.objects.create(space=project, title="对话-285")
+    extra: dict[str, str] = {} if provenance is None else {"provenance": provenance}
     return CodingPlan.objects.create(
         conversation=conversation,
         title=title,
         tech_plan=tech_plan,
         affected_files=affected_files or [],
+        **extra,
     )
 
 
@@ -315,3 +322,100 @@ async def test_empty_sessions_renders_placeholder_row() -> None:
     content = mock_client.create_document.await_args.kwargs["content"]
     # 多仓表标题下应有一行 — 占位
     assert "| — | — | — | — | — |" in content
+
+
+# ---------------------------------------------------------------------------
+# Test 9-13：RELY-01 草稿「未经代码调研」告示（导出侧，第二出口）
+# ---------------------------------------------------------------------------
+
+# 界面侧（`TechPlanCard` 草稿横幅）文案，逐字取自 109-UI-SPEC §Copywriting Contract。
+# 写成字面量常量而非 import 前端：双侧口径一致性靠这两段字面量锁住 —— 前端常量若变更
+# 而未同步导出侧，下方 test_draft_notice_matches_ui_side_copy 会红。
+_UI_DRAFT_HEADLINE = "本方案未经代码调研"
+_UI_DRAFT_SUBLINE = (
+    "由对话直接生成，未经仓库路由、代码召回与并行调研，文件清单与实现步骤可能不准确。"
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_draft_notice_precedes_tech_plan_body() -> None:
+    """provenance=draft → 告示出现且位于技术方案正文之前。"""
+    from chat.models import CodingPlanProvenance
+
+    body = "## 我的方案正文\n\n步骤一"
+    plan = await _create_plan(tech_plan=body, provenance=CodingPlanProvenance.DRAFT)
+    mock_client = _make_mock_client()
+
+    await export_coding_plan_to_feishu(plan, "folder_T", doc_client=mock_client)
+    content = mock_client.create_document.await_args.kwargs["content"]
+
+    assert _UI_DRAFT_HEADLINE in content
+    # 位置断言：用户读到任何方案内容前先看到「这份东西未经调研」。
+    assert content.index(_UI_DRAFT_HEADLINE) < content.index("## 我的方案正文")
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_orchestrated_plan_has_no_draft_notice() -> None:
+    """provenance=orchestrated → 不含告示主句（唯一免标注的取值）。"""
+    from chat.models import CodingPlanProvenance
+
+    plan = await _create_plan(provenance=CodingPlanProvenance.ORCHESTRATED)
+    mock_client = _make_mock_client()
+
+    await export_coding_plan_to_feishu(plan, "folder_T", doc_client=mock_client)
+    content = mock_client.create_document.await_args.kwargs["content"]
+
+    assert _UI_DRAFT_HEADLINE not in content
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_unknown_provenance_still_gets_draft_notice_and_hides_raw_value() -> None:
+    """未知 provenance 取值 → 仍标注（允许清单），且文档不回显原始取值。"""
+    plan = await _create_plan(provenance="weird_value")
+    mock_client = _make_mock_client()
+
+    await export_coding_plan_to_feishu(plan, "folder_T", doc_client=mock_client)
+    content = mock_client.create_document.await_args.kwargs["content"]
+
+    assert _UI_DRAFT_HEADLINE in content
+    # 上游非受控取值上屏即泄漏面：判定读它，但绝不把它写进文档。
+    assert "weird_value" not in content
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_draft_notice_kept_when_tech_plan_empty() -> None:
+    """空 tech_plan + draft → 告示仍在，且既有「（暂无技术方案文本）」兜底不受影响。"""
+    from chat.models import CodingPlanProvenance
+
+    plan = await _create_plan(tech_plan="", provenance=CodingPlanProvenance.DRAFT)
+    mock_client = _make_mock_client()
+
+    await export_coding_plan_to_feishu(plan, "folder_T", doc_client=mock_client)
+    content = mock_client.create_document.await_args.kwargs["content"]
+
+    assert _UI_DRAFT_HEADLINE in content
+    assert "（暂无技术方案文本）" in content
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_draft_notice_matches_ui_side_copy() -> None:
+    """双侧口径一致：导出文案包含界面侧主句与次行前半段（逐字）。
+
+    导出侧仅在此之上追加一句行动指引 —— 导出物脱离上下文流转，多一句指引值得。
+    """
+    from chat.models import CodingPlanProvenance
+
+    plan = await _create_plan(provenance=CodingPlanProvenance.DRAFT)
+    mock_client = _make_mock_client()
+
+    await export_coding_plan_to_feishu(plan, "folder_T", doc_client=mock_client)
+    content = mock_client.create_document.await_args.kwargs["content"]
+
+    assert _UI_DRAFT_HEADLINE in content
+    assert _UI_DRAFT_SUBLINE in content
+    assert "正式方案请经技术方案编排产出。" in content
