@@ -188,8 +188,8 @@ Plans:
 - [x] 109-02-PLAN.md — `CodingPlan` 加 `provenance` / `source_artifact_version_id` + 条件唯一约束 + additive 迁移 + 双序列化面透出（wave 2）
 - [x] 109-03-PLAN.md — §7 → `CodingPlan` 纯映射 + `PlanProjectionService` 幂等投影 + 惰性投影端点（wave 3）
 - [x] 109-04-PLAN.md — `OrchestratedPlanCard.vue`「进入编码」入口 + 就地交棒 + `UNGROUPABLE_TOOLS` 与工具展示三处登记（wave 4）
-- [ ] 109-05-PLAN.md — `create/update_coding_plan` 两个门一起在 schema 层收窄 + 正向不变量守护 + 11 处影响面同步（wave 5）
-- [ ] 109-06-PLAN.md — `techPlan` 三级优先解析 + `plan_id` 串态守卫 + 空正文占位（wave 5，SPINE-02 前端连带面）
+- [x] 109-05-PLAN.md — `create/update_coding_plan` 两个门一起在 schema 层收窄 + 正向不变量守护 + 11 处影响面同步（wave 5）
+- [x] 109-06-PLAN.md — `techPlan` 三级优先解析 + `plan_id` 串态守卫 + 空正文占位（wave 5，SPINE-02 前端连带面）
 - [ ] 109-07-PLAN.md — 草稿送编码服务端 fail-closed gate + 执行契约携带「未经调研」+ 飞书导出告示（wave 6）
 - [ ] 109-08-PLAN.md — 草稿界面横幅与常驻徽标 + 阻断式确认弹层 + `code` 分支兜底（wave 7）
 
