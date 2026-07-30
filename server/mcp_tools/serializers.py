@@ -697,6 +697,64 @@ class GetFeatureTechPlanRequestSerializer(serializers.Serializer):
     session_id = serializers.UUIDField(required=True)
 
 
+# Blueprint Context Bus 容器读写入参（BUS-01，Phase 113-02）。
+# ⭐ 两个 serializer **都不提供任何会话入参字段**：目标会话一律由 view 从
+# ``X-Friday-Session-Id`` 头解析（``_aresolve_blueprint_session`` 三道校验），
+# 请求体无跨会话入参面 —— 这是「第三道校验（目标条目同会话）」的结构性成立方式。
+_BLUEPRINT_CONTEXT_KINDS = [
+    "finding",
+    "api_surface",
+    "contract",
+    "decision",
+    "dependency_claim",
+    "question",
+]
+
+
+class ReadBlueprintContextRequestSerializer(serializers.Serializer):
+    """蓝图共享上下文总线读取请求（全部可选：无参 = 拉本会话全部 active 条目）。
+
+    ``since_seq`` 支撑容器侧增量轮询（带上次返回的 ``max_seq`` 即可只取新增）；
+    ``limit`` 上界 200 与 ``BlueprintContextService._MAX_READ_LIMIT`` 双重夹紧
+    （T-113-11：防无界 read 拉爆容器上下文）。
+    """
+
+    key_prefix = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=200
+    )
+    kind = serializers.ChoiceField(
+        choices=_BLUEPRINT_CONTEXT_KINDS,
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+    repository_id = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=64
+    )
+    since_seq = serializers.IntegerField(required=False, min_value=0, default=0)
+    limit = serializers.IntegerField(required=False, min_value=1, max_value=200, default=50)
+
+
+class ReportBlueprintContextRequestSerializer(serializers.Serializer):
+    """蓝图共享上下文总线写入请求（写入即对同会话并行容器可见）。
+
+    ``content`` 必须是 JSON 对象（不接受 list/标量）——入库前经
+    ``BlueprintContextService._redact_json`` 递归脱敏，容器传入的凭证不会落库。
+    """
+
+    key = serializers.CharField(required=True, allow_blank=False, max_length=200)
+    kind = serializers.ChoiceField(choices=_BLUEPRINT_CONTEXT_KINDS, required=True)
+    repository_id = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=64
+    )
+    content = serializers.JSONField(required=True)
+
+    def validate(self, attrs: dict) -> dict:
+        if not isinstance(attrs.get("content"), dict):
+            raise serializers.ValidationError("content 必须是 JSON 对象")
+        return attrs
+
+
 # 三个 feature 方案工具共用同一响应形状（FeatureSolutionState.as_dict + run_id）。
 _FEATURE_SOLUTION_RESPONSE_KEYS = [
     "session_id",
@@ -873,5 +931,13 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "get_feature_tech_plan": {
         "request": ["session_id"],
         "response": _FEATURE_SOLUTION_RESPONSE_KEYS,
+    },
+    "read_blueprint_context": {
+        "request": ["key_prefix", "kind", "repository_id", "since_seq", "limit"],
+        "response": ["entries", "count", "max_seq", "error", "run_id"],
+    },
+    "report_blueprint_context": {
+        "request": ["key", "kind", "repository_id", "content"],
+        "response": ["applied", "reason", "entry_id", "seq", "satisfied_waiters", "run_id"],
     },
 }

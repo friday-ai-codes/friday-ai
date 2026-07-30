@@ -11,6 +11,7 @@ from typing import Any
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Max
 from rest_framework import serializers, status
@@ -102,7 +103,9 @@ from .serializers import (
     ImproveCodingPlanRequestSerializer,
     ListRepositoryFilesRequestSerializer,
     LookupProjectByBranchRequestSerializer,
+    ReadBlueprintContextRequestSerializer,
     ReadProjectDocRequestSerializer,
+    ReportBlueprintContextRequestSerializer,
     ReportProjectKnowledgeRequestSerializer,
     ReportProjectStateRequestSerializer,
     ReverseLookupRequestSerializer,
@@ -3979,3 +3982,364 @@ class GetFeatureTechPlanView(_FeatureSolutionViewMixin, McpToolView):
             started_at=started_at,
         )
         return Response(output_data, status=status.HTTP_200_OK)
+
+
+# ============================================================================
+# Blueprint Context Bus 容器读写入口（BUS-01，Phase 113-02）
+# ============================================================================
+
+# 会话隔离必须在本层自建：MCP 鉴权链只到 ``token -> owner(User)``
+# （``access_tokens/authentication.py`` 的 ``return (token.created_by, token)``），
+# **不存在** ``token -> session -> user``；``X-Friday-Session-Id`` 只是关联键、
+# 不是授权凭据（P5）。故跨会话越权的唯一防线就是下面 ``_aresolve_blueprint_session``
+# 的三道校验，全部 fail-closed。
+_BLUEPRINT_PROCESS_TYPE = "technical_blueprint"
+
+# 校验失败码 → HTTP 状态：「有会话但无权」记 403，「找不到会话/未声明会话」记 404。
+# 二者都是**结构化 4xx**，绝不 5xx —— 容器 handler 对非 200 只回显 HTTP code
+# （``knowledge_tools.py:329-340``），5xx 会被吞成「调用失败」文案让 agent 拿不到原因。
+_BLUEPRINT_SESSION_FORBIDDEN_CODES = frozenset(
+    {"session_not_owned", "not_member", "not_blueprint_session"}
+)
+_BLUEPRINT_SESSION_ERROR_DETAIL = {
+    "missing_session_header": "缺少 X-Friday-Session-Id 头，无法解析所属蓝图会话",
+    "session_not_found": "会话不存在或已清理",
+    "session_not_owned": "该会话不属于当前令牌所有者",
+    "not_blueprint_session": "该会话不是蓝图（technical_blueprint）会话",
+    "not_member": "当前令牌所有者不是该项目成员",
+}
+
+
+@sync_to_async
+def _fetch_subagent_session(raw_session_id: str) -> Any:
+    """按 header 里的 session id 取 SubAgentSession（连 ``main_session`` 一次取回）。
+
+    归属校验要读跨表 FK（``main_session.user_id``），必须 ``select_related`` 在同步
+    上下文一次取回 —— 绝不在 async 里触发 lazy-FK（会抛 SynchronousOnlyOperation）。
+    """
+    from subagent.models import SubAgentSession
+
+    return (
+        SubAgentSession.objects.select_related("main_session")
+        .filter(session_id=raw_session_id)
+        .first()
+    )
+
+
+@sync_to_async
+def _fetch_convergence_session(session_id: Any) -> Any:
+    """按 id 取 ConvergenceSession；非法 UUID 等脏值一律当「不存在」（不抛）。"""
+    from delivery.models import ConvergenceSession
+
+    try:
+        return ConvergenceSession.objects.filter(id=session_id).first()
+    except (ValueError, TypeError, DjangoValidationError):
+        return None
+
+
+async def _aresolve_blueprint_project_id(session: Any) -> Any:
+    """从蓝图会话 best-effort 反查项目 id（``ConvergenceSession`` 无 project FK）。
+
+    唯一可靠链路是 ``conversation_id -> Conversation.bound_project_id``（同
+    ``architect_merge_adapter._maybe_bind_plan_to_project``）。反查不到返回 None，
+    表示「本会话未绑项目」—— 此时归属校验（道①）已是完整授权依据，不再叠加成员闸。
+    """
+    conversation_id = getattr(session, "conversation_id", None)
+    if not conversation_id:
+        return None
+    try:
+        from chat.models import Conversation
+
+        row = (
+            await Conversation.objects.filter(id=conversation_id)
+            .values("bound_project_id")
+            .afirst()
+        )
+    except Exception:  # noqa: BLE001 — 反查 best-effort，失败按「未绑项目」处理
+        return None
+    return (row or {}).get("bound_project_id")
+
+
+async def _aassert_blueprint_project_access(project_id: Any, user: Any) -> bool:
+    """项目可见性口径（与 packer 一致）：成员放行；非成员命中 ``public_org`` 放行。"""
+    if await _assert_project_member(project_id, user):
+        return True
+    from initiatives.models import Project, ProjectVisibility
+
+    visibility = (
+        await Project.objects.filter(id=project_id).values_list("visibility", flat=True).afirst()
+    )
+    return visibility == ProjectVisibility.PUBLIC_ORG
+
+
+async def _aresolve_blueprint_session(request: Request) -> tuple[Any, Any, str]:
+    """三道会话校验：header session id → 归属 → 蓝图流程 + 项目成员。
+
+    Returns:
+        ``(convergence_session, subagent_session, error_code)``；``error_code`` 为
+        空串表示三道全过。任一道不过时 ``convergence_session`` 恒为 None，调用方
+        据此拒绝，**绝不放行跨会话读写**。
+
+    三道（缺任一条即拒）：
+
+    1. **归属**：``X-Friday-Session-Id`` → ``SubAgentSession`` →
+       ``main_session.user_id == request.user.id``。``user_id`` 为 None（老会话 /
+       非蓝图派发链）**一律判 ``session_not_owned``（fail-closed）** —— 「字段为空」
+       绝不等于放行，否则跨会话越权的唯一防线形同不存在。
+    2. **流程类型**：``last_output['blueprint_session_id']`` 指向的
+       ``ConvergenceSession.process_type == "technical_blueprint"``，且令牌所有者
+       对该会话所绑项目通过成员/public_org 判定。
+    3. **目标条目同会话**：由两个 view 结构性兜住 —— 读只按解析出的会话过滤、写只
+       往解析出的会话写，且**请求体根本不提供会话入参字段**（无跨会话入参面）。
+    """
+    raw_session_id = str(request.headers.get("X-Friday-Session-Id", "") or "").strip()
+    if not raw_session_id:
+        return None, None, "missing_session_header"
+
+    sub = await _fetch_subagent_session(raw_session_id)
+    if sub is None:
+        return None, None, "session_not_found"
+
+    # 道①归属：main_session 是非空 FK，已随 select_related 取回，读 user_id 是
+    # async 安全标量。空值 fail-closed（数据来源由同 wave 的 113-03 在派发时写入）。
+    owner_id = getattr(sub.main_session, "user_id", None)
+    request_user_id = getattr(request.user, "id", None)
+    if owner_id is None or request_user_id is None or str(owner_id) != str(request_user_id):
+        return None, sub, "session_not_owned"
+
+    blueprint_session_id = (sub.last_output or {}).get("blueprint_session_id")
+    if not blueprint_session_id:
+        return None, sub, "not_blueprint_session"
+
+    convergence_session = await _fetch_convergence_session(blueprint_session_id)
+    if convergence_session is None:
+        return None, sub, "session_not_found"
+
+    # 道②流程类型：防跨 process 污染（technical_plan 等其他流程的容器拿不到蓝图总线）。
+    if str(getattr(convergence_session, "process_type", "")) != _BLUEPRINT_PROCESS_TYPE:
+        return None, sub, "not_blueprint_session"
+
+    project_id = await _aresolve_blueprint_project_id(convergence_session)
+    if project_id is not None and not await _aassert_blueprint_project_access(
+        project_id, request.user
+    ):
+        return None, sub, "not_member"
+
+    return convergence_session, sub, ""
+
+
+def _blueprint_session_error(error_code: str) -> Response:
+    """把校验失败码渲染成统一 4xx 错误信封（绝不 5xx）。"""
+    return error_response(
+        error_code,
+        _BLUEPRINT_SESSION_ERROR_DETAIL.get(error_code, "蓝图会话校验未通过"),
+        status_code=(
+            status.HTTP_403_FORBIDDEN
+            if error_code in _BLUEPRINT_SESSION_FORBIDDEN_CODES
+            else status.HTTP_404_NOT_FOUND
+        ),
+    )
+
+
+class ReadBlueprintContextView(McpToolView):
+    """蓝图共享上下文总线读取（BUS-01）。
+
+    并行仓容器凭任务 token 拉取**本会话**已写入的接口契约 / 现状结论 / 决策，
+    支持 ``since_seq`` 增量拉取（容器侧轮询靠它避免重复拉全量）。
+
+    四道兜底绝不绕过：
+
+    - **三道会话校验 fail-closed**：``_aresolve_blueprint_session`` 缺任一条即
+      403/404 结构化拒绝（T-113-07）。
+    - **跨会话读结构性隔离**：只按解析出的 ``convergence_session`` 过滤，请求体
+      不提供任何会话入参 —— 结构上不可能读到他人会话条目（T-113-08）。
+    - **零裸 ORM**：读经 ``BlueprintContextService.read_entries``（INV-6）。
+    - **绝不 5xx**：拒绝走 4xx 错误信封，内部异常兜底返回 200 + 空结果 +
+      ``error=internal_error``（5xx 会被容器 handler 吞成「调用失败」文案）。
+    """
+
+    tool_name = "read_blueprint_context"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(ReadBlueprintContextRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+        return await self._handle(run, request, input_data, started_at)
+
+    async def _handle(
+        self,
+        run: Any,
+        request: Request,
+        input_data: dict[str, Any],
+        started_at: float,
+    ) -> Response:
+        from delivery.services.blueprint_context_service import BlueprintContextService
+
+        since_seq = int(input_data.get("since_seq") or 0)
+        try:
+            convergence_session, _sub, error_code = await _aresolve_blueprint_session(request)
+            if error_code:
+                await self._record(
+                    run,
+                    input_data=input_data,
+                    output_data={"error_code": error_code},
+                    traces=[],
+                    started_at=started_at,
+                    call_status="error",
+                    error=error_code,
+                )
+                return _blueprint_session_error(error_code)
+
+            entries = await BlueprintContextService().read_entries(
+                session=convergence_session,
+                since_seq=since_seq,
+                key_prefix=str(input_data.get("key_prefix") or ""),
+                kind=str(input_data.get("kind") or ""),
+                repository_id=str(input_data.get("repository_id") or ""),
+                limit=int(input_data.get("limit") or 50),
+            )
+            output_data = {
+                "entries": entries,
+                "count": len(entries),
+                "max_seq": max([int(item.get("seq") or 0) for item in entries] + [since_seq]),
+                "run_id": str(run.run_id),
+            }
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data=output_data,
+                traces=[],
+                started_at=started_at,
+            )
+            return Response(output_data, status=status.HTTP_200_OK)
+        except Exception as exc:  # noqa: BLE001 — 兜底也不 5xx（agent 需要拿到可读结果）
+            logger.warning(
+                "read_blueprint_context_failed",
+                category="sampling",
+                component="blueprint_context",
+                error=redact_secrets_in_text(str(exc))[:500],
+            )
+            return Response(
+                {
+                    "entries": [],
+                    "count": 0,
+                    "max_seq": since_seq,
+                    "error": "internal_error",
+                    "run_id": str(run.run_id),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+
+class ReportBlueprintContextView(McpToolView):
+    """蓝图共享上下文总线写入（BUS-01）。
+
+    容器把自己产出的接口契约 / 关键现状 / 决策写进**本会话**总线，写入即对所有并行
+    仓容器可见（server-authoritative）。
+
+    四道兜底绝不绕过：
+
+    - **三道会话校验 fail-closed**：同 ``ReadBlueprintContextView``（T-113-07）。
+    - **写入目标无入参面**：请求体不含任何会话字段，只能写进解析出的会话 —— 这是
+      「第三道校验（目标条目同会话）」最强的成立方式（伪造无从下手）。
+    - **零裸 ORM + 强制脱敏**：写经 ``BlueprintContextService.append_entry``
+      （INV-6），``content`` 在 service 内递归脱敏后入库；view 与容器侧日志均不记
+      content 正文（T-113-09）。
+    - **绝不 5xx**：拒绝走 4xx 错误信封，内部异常兜底返回 200 + ``applied=false``。
+    """
+
+    tool_name = "report_blueprint_context"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(ReportBlueprintContextRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+        return await self._handle(run, request, input_data, started_at)
+
+    async def _handle(
+        self,
+        run: Any,
+        request: Request,
+        input_data: dict[str, Any],
+        started_at: float,
+    ) -> Response:
+        from delivery.services.blueprint_context_service import BlueprintContextService
+
+        try:
+            convergence_session, sub, error_code = await _aresolve_blueprint_session(request)
+            if error_code:
+                await self._record(
+                    run,
+                    input_data=input_data,
+                    output_data={"error_code": error_code},
+                    traces=[],
+                    started_at=started_at,
+                    call_status="error",
+                    error=error_code,
+                )
+                return _blueprint_session_error(error_code)
+
+            service = BlueprintContextService()
+            key = str(input_data.get("key") or "")
+            repository_id = str(input_data.get("repository_id") or "")
+            entry = await service.append_entry(
+                session=convergence_session,
+                key=key,
+                kind=str(input_data.get("kind") or ""),
+                content=input_data.get("content") or {},
+                repository_id=repository_id,
+                produced_by=str(getattr(sub, "session_id", "") or "container"),
+                initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+            )
+            # 写入即满足在等这个 key 的 waiter：本 plan 只做「置 superseded 并回报计数」。
+            # ⭐ 重派接续点（113-04）：``redispatch`` 就是待重派仓 id 清单，113-04 在此处
+            # 纯追加一次 ``aredispatch_waiting_repos(session, redispatch)`` 调用即可接上，
+            # service 侧判定与置位已同事务幂等，重复调用恒返回 []。
+            redispatch = await service.satisfy_waiters(
+                session=convergence_session,
+                key=key,
+                repository_id=repository_id,
+                initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+            )
+            output_data = {
+                "applied": True,
+                "entry_id": str(entry.id),
+                "seq": entry.seq,
+                "satisfied_waiters": len(redispatch),
+                "run_id": str(run.run_id),
+            }
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data=output_data,
+                traces=[],
+                started_at=started_at,
+            )
+            return Response(output_data, status=status.HTTP_200_OK)
+        except Exception as exc:  # noqa: BLE001 — 兜底也不 5xx（写失败让 agent 可降级）
+            logger.warning(
+                "report_blueprint_context_failed",
+                category="sampling",
+                component="blueprint_context",
+                error=redact_secrets_in_text(str(exc))[:500],
+            )
+            return Response(
+                {
+                    "applied": False,
+                    "reason": "internal_error",
+                    "run_id": str(run.run_id),
+                },
+                status=status.HTTP_200_OK,
+            )

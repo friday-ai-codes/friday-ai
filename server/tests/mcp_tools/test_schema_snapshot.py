@@ -207,4 +207,15 @@ def test_mcp_read_tool_schema_snapshot() -> None:
             "request": ["session_id"],
             "response": _FEATURE_SOLUTION_RESPONSE,
         },
+        # 蓝图共享上下文总线（BUS-01，Phase 113-02）。⭐ request 里**没有任何会话字段**：
+        # 目标会话一律由 view 从 X-Friday-Session-Id 头解析并做三道校验，请求体无跨会话
+        # 入参面。本快照同时充当「不得给这两个工具加 session 入参」的守卫。
+        "read_blueprint_context": {
+            "request": ["key_prefix", "kind", "repository_id", "since_seq", "limit"],
+            "response": ["entries", "count", "max_seq", "error", "run_id"],
+        },
+        "report_blueprint_context": {
+            "request": ["key", "kind", "repository_id", "content"],
+            "response": ["applied", "reason", "entry_id", "seq", "satisfied_waiters", "run_id"],
+        },
     }
