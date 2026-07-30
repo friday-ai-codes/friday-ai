@@ -50,7 +50,10 @@ _NEW_113_TOOL_NAMES = [
     "read_blueprint_context",
     "report_blueprint_context",
 ]
-EXPECTED_TOOL_NAMES = [*_LEGACY_TOOL_NAMES, *_NEW_113_TOOL_NAMES]
+# 113-04 追加的短等待原语（BUS-02）；它的 handler 是自定义包装而非工厂直造，
+# 但仍在白名单与 allowed_tools 里（见 tests/test_blueprint_context_wait.py）。
+_NEW_113_04_TOOL_NAMES = ["await_blueprint_context"]
+EXPECTED_TOOL_NAMES = [*_LEGACY_TOOL_NAMES, *_NEW_113_TOOL_NAMES, *_NEW_113_04_TOOL_NAMES]
 
 
 class _FakeResponse:

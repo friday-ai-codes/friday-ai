@@ -327,7 +327,7 @@ async def test_knowledge_alone_keeps_builtin_tools(monkeypatch, temp_workspace, 
     # 9 个知识工具全部在列（113-02 追加两个蓝图总线工具后 7 → 9）
     for tool in knowledge_allowed_tools():
         assert tool in options.allowed_tools
-    assert len(knowledge_allowed_tools()) == 9
+    assert len(knowledge_allowed_tools()) == 10
 
 
 @pytest.mark.asyncio
