@@ -298,7 +298,52 @@ KNOWLEDGE_TOOL_SCHEMAS: list[dict[str, Any]] = [
             "required": ["key", "kind", "content"],
         },
     },
+    # ---- 短等待原语（BUS-02，Phase 113-04）--------------------------------
+    # ⚠️ 本项**不经公共 handler 工厂发 HTTP**：它的 handler 在 `build_knowledge_mcp_server`
+    # 里被替换成 `blueprint_context_wait.await_blueprint_context` 的包装（复用工厂造出的
+    # read handler 作数据源）。故服务端**没有** `/api/mcp/tools/await_blueprint_context/`
+    # 这条 path，也不需要有。
+    {
+        "name": "await_blueprint_context",
+        "description": (
+            "等待某条共享上下文出现：当你要消费的其他仓接口契约还没写进总线时用它短等"
+            "（默认 3 分钟，最长 5 分钟）。"
+            "命中即返回；超时会返回 hit=false 的正常结果——此时请记录假设并继续"
+            "（可开澄清线程），不要反复重试。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key_pattern": {
+                    "type": "string",
+                    "description": (
+                        "（必填）等待的 key，支持尾部 `*` 通配，如 `repo:<uuid>.api_surface`"
+                    ),
+                },
+                "kind": {
+                    "type": "string",
+                    "description": (
+                        "条目类型（可选）：finding / api_surface / contract / decision / "
+                        "dependency_claim / question"
+                    ),
+                },
+                "since_seq": {
+                    "type": "integer",
+                    "description": "从该 seq 之后开始等（增量，默认 0）",
+                },
+                "timeout_minutes": {
+                    "type": "integer",
+                    "description": "等待上限分钟数，默认 3，最大 5",
+                },
+            },
+            "required": ["key_pattern"],
+        },
+    },
 ]
+
+# 短等待工具名（handler 需要特殊包装，见 `_attach_await_handler`）。
+AWAIT_CONTEXT_TOOL_NAME = "await_blueprint_context"
+READ_CONTEXT_TOOL_NAME = "read_blueprint_context"
 
 
 def _is_valid_knowledge_endpoint(endpoint: str) -> bool:
@@ -437,6 +482,64 @@ def _make_knowledge_handler(
     return handler
 
 
+def _attach_await_handler(
+    sdk_tools: list[SdkMcpTool[dict[str, Any]]],
+) -> list[SdkMcpTool[dict[str, Any]]]:
+    """把 ``await_blueprint_context`` 的 handler 换成「复用 read handler 的有界轮询包装」。
+
+    🔒 公共工厂 ``_make_knowledge_handler`` 一行不改（HTTP 超时常量 / ``quota_counter``
+    计数逻辑 / 不加回调参数三条硬约束）—— await 是唯一需要循环包装的例外，它**不新造 HTTP
+    调用**，只复用同一批工具里已造好的 ``read_blueprint_context`` handler 作数据源，故配额
+    计数、脱敏、非 200 处理全部原样继承。
+
+    超时路径**不带 ``is_error``**（那会诱导 agent 重试而非降级）；参数缺失与兜底异常仍带
+    ``is_error``（RTOOL-04：handler 永不 raise）。
+    """
+    from core.blueprint_context_wait import DEFAULT_TIMEOUT_MINUTES, await_blueprint_context
+
+    read_handler = next(
+        (tool.handler for tool in sdk_tools if tool.name == READ_CONTEXT_TOOL_NAME), None
+    )
+
+    async def await_handler(args: dict[str, Any]) -> dict[str, Any]:
+        args = args if isinstance(args, dict) else {}
+        key_pattern = str(args.get("key_pattern", "") or "").strip()
+        if not key_pattern:
+            return {
+                "content": [
+                    {"type": "text", "text": "await_blueprint_context 缺少 key_pattern 参数"}
+                ],
+                "is_error": True,
+            }
+        try:
+            result = await await_blueprint_context(
+                read_handler,
+                key_pattern,
+                kind=str(args.get("kind", "") or ""),
+                since_seq=int(args.get("since_seq", 0) or 0),
+                timeout_minutes=int(args.get("timeout_minutes", DEFAULT_TIMEOUT_MINUTES) or 0),
+            )
+            return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]}
+        except Exception:  # noqa: BLE001 — 永不冒泡崩容器（RTOOL-04）；不回显异常文本
+            logger.warning("knowledge_tool_await_error", tool=AWAIT_CONTEXT_TOOL_NAME)
+            return {
+                "content": [{"type": "text", "text": "共享上下文等待失败，请基于已有信息继续"}],
+                "is_error": True,
+            }
+
+    return [
+        SdkMcpTool(
+            name=tool.name,
+            description=tool.description,
+            input_schema=tool.input_schema,
+            handler=await_handler,
+        )
+        if tool.name == AWAIT_CONTEXT_TOOL_NAME
+        else tool
+        for tool in sdk_tools
+    ]
+
+
 def build_knowledge_mcp_server(
     endpoint_base: str,
     user_token: str,
@@ -489,6 +592,8 @@ def build_knowledge_mcp_server(
         )
         for schema in KNOWLEDGE_TOOL_SCHEMAS
     ]
+    # await 工具改挂自定义 handler（复用上面造好的 read handler 作数据源，工厂零改动）。
+    sdk_tools = _attach_await_handler(sdk_tools)
 
     logger.info(
         "knowledge_mcp_server_created",
