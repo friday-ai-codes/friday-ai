@@ -34,7 +34,18 @@ _CONFLICT_FIELDS = ("method", "path", "request_schema", "response_schema")
 _NEEDS_SUPPORT = "needs_support"
 
 # 单类结论的上界：对账结果会进澄清问题文本与日志，无界列表会把 HITL 面板刷爆。
+# **只对「一非空就开澄清」的两桶成立**（``conflicts`` / ``missing_support_repos``）：
+# 截断只影响问题文本的详尽度，不影响处置。
 _MAX_FINDINGS = 50
+
+# ``gaps`` 必须与 ``api_contracts`` 的上界对齐（MJ-04）：它**不开澄清**，而是
+# ``blueprint_merge._apply_needs_support`` 的**逐条驱动源** —— 被丢弃的第 51 条起，契约
+# 既不会被标 ``data_source.availability = needs_support``、也不会进 ``missing_support_repos``
+# （那道检查只对已标 needs_support 的条目生效），最终原样落 ``ArtifactVersion``：114/115
+# 按 schema 读到「可用性未标注」等价于默认可用 —— 正是 FLOW-06 明令禁止的「静默拍板」。
+# 200 = ``blueprint_merge._MAX_LIST_ITEMS``（``api_contracts`` 自身的上界），故 consumed 条目
+# 再多也不可能有 gap 被丢弃。**改这两个常量前先确认那侧上界没变。**
+_MAX_GAPS = 200
 
 
 def reconcile_cross_repo_apis(blueprint: Any) -> dict:
@@ -58,7 +69,8 @@ def reconcile_cross_repo_apis(blueprint: Any) -> dict:
 
         - ``gaps``：consumed 契约找不到任何 provider。调用方应据此把该条的
           ``data_source.availability`` 置 ``needs_support`` 并补
-          ``data_source.support_repository_id``（B4）。
+          ``data_source.support_repository_id``（B4）。上界 :data:`_MAX_GAPS` 与
+          ``api_contracts`` 自身上界对齐，**结构上不可能有 gap 被丢弃**（MJ-04）。
         - ``conflicts``：找到 provider 但契约字段不一致，**带双方取值**便于澄清问题直接
           引用。绝不静默取其一。
         - ``missing_support_repos``：该条已标 ``data_source.availability ==
@@ -86,6 +98,8 @@ def reconcile_cross_repo_apis(blueprint: Any) -> dict:
                 _append(
                     result["gaps"],
                     {"repository_id": consumer_id, "api": api_name, "reason": "no_provider"},
+                    # gaps 是 `_apply_needs_support` 的逐条驱动源，界必须覆盖全量契约（MJ-04）
+                    limit=_MAX_GAPS,
                 )
             else:
                 for entry in _field_conflicts(
@@ -327,7 +341,12 @@ def _normalized(field: str, value: Any) -> Any:
     return value
 
 
-def _append(bucket: list[dict], entry: dict) -> None:
-    """有界追加（超出 :data:`_MAX_FINDINGS` 静默丢弃：结论已足够开澄清）。"""
-    if len(bucket) < _MAX_FINDINGS:
+def _append(bucket: list[dict], entry: dict, *, limit: int = _MAX_FINDINGS) -> None:
+    """有界追加。
+
+    ``limit`` 缺省 :data:`_MAX_FINDINGS`（**只用于「一非空就开澄清」的桶**：丢弃只影响问题
+    文本详尽度）。**逐条驱动处置的桶必须显式传更大的界**（``gaps`` 传 :data:`_MAX_GAPS`）——
+    见该常量的注释：那里的丢弃等于静默拍板。
+    """
+    if len(bucket) < limit:
         bucket.append(entry)

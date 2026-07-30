@@ -80,6 +80,39 @@ def test_consumed_without_provider_enters_gaps():
     assert result["conflicts"] == []
 
 
+def test_gaps_are_not_truncated_so_every_contract_stays_actionable():
+    """⭐ MJ-04：60 条无 provider 的 consumed → **60 条 gap 全在**，第 51 条也被标 needs_support。
+
+    `gaps` 不开澄清，它是 `_apply_needs_support` 的逐条驱动源：截到 50 条会让第 51 条起的契约
+    既不标 `data_source.availability = needs_support`、也进不了 `missing_support_repos`
+    （那道检查只认已标 needs_support 的条目），最终原样落版本 —— 114/115 按 schema 读到
+    「可用性未标注」= 默认可用，正是 FLOW-06 禁止的静默拍板。
+    """
+    from services.process_runtime.blueprint_merge import _apply_needs_support
+
+    contracts = [
+        _contract(
+            f"api_c{i}",
+            direction="consumed",
+            repository_id="repo-a",
+            name=f"listThing{i}",
+            path=f"/x/{i}",
+        )
+        for i in range(60)
+    ]
+    blueprint = _blueprint(*contracts)
+
+    result = reconcile_cross_repo_apis(blueprint)
+    assert len(result["gaps"]) == 60, "第 51 条起被丢弃 = 那些契约永远不会被处置"
+
+    applied = _apply_needs_support(blueprint["api_contracts"], result["gaps"], {})
+    assert applied == 60
+    # 逐条可处置：**第 51 条**（下标 50）与最后一条同样带上了可用性标注
+    for index in (0, 50, 59):
+        data_source = blueprint["api_contracts"][index]["data_source"]
+        assert data_source["availability"] == "needs_support"
+
+
 def test_same_repo_self_consumption_is_not_a_provider():
     """同仓自产自消不算跨仓 provider（与波次预排跳过自环同口径）。"""
     blueprint = _blueprint(
