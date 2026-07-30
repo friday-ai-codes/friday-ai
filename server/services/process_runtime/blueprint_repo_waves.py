@@ -7,8 +7,9 @@
 
 三条纪律：
 
-1. **成环不静默打平**：成环的仓如实上报在 `cycles` 里，同时**仍出现在 waves 的最后一波**（不丢仓），
-   由调用方开澄清线程交人裁决。
+1. **成环不静默打平**：成环的仓如实上报在 `cycles` 里，同时**仍出现在 waves 里**（不丢仓），
+   由调用方开澄清线程交人裁决。整个环当一个「超级节点」排一波：环的上游在它之前、环的（传递）
+   下游在它之后（MN-10 —— 把环的依赖边整段剔除会让环的下游被排到环之前，顺序恰好反）。
 2. **找不到 provider 不静默**：写进 `unresolved_consumed`（113-05 的 `needs_support` 前置信号）。
 3. **半可信输入逐字段 `.get` 防御**：输入是容器/LLM 产物，缺键、类型不符一律跳过，绝不抛。
 """
@@ -171,31 +172,67 @@ def _find_cycles(providers_of: dict[str, set[str]]) -> list[list[str]]:
 def _layer(
     nodes: list[str], providers_of: dict[str, set[str]], *, cyclic: set[str]
 ) -> dict[int, list[str]]:
-    """Kahn 分层（wave 从 1 起）；成环的仓统一挂在**最后一波**，绝不丢仓。
+    """Kahn 分层（wave 从 1 起）；成环的仓整体当一个「超级节点」排一波，绝不丢仓。
 
     零依赖输入 → 全部 wave 1（可完全并行，与预排前的行为逐字一致，零回归）。
+
+    **环的下游仍排在环之后**（MN-10）：把成环仓的依赖边整段过滤掉会让「依赖环中某仓」的非环
+    仓落到 wave 1 —— 顺序恰好反了（D 依赖环里的 A，D 却先派发，开工时 A 的契约必然不在总线
+    上，只能退化成 `await` 或长等待退出，第一道防线在这条分支上整体失效，并直接放大「全员长
+    等待」的触发概率）。故按 SCC 缩点的思路分三段：环的上游 → 环 → 环的（传递）下游。
     """
-    remaining = [rid for rid in nodes if rid not in cyclic]
-    pending = {
-        rid: {p for p in providers_of.get(rid, set()) if p not in cyclic} for rid in remaining
-    }
+    if not cyclic:
+        return _kahn(nodes, providers_of, start_wave=1)
+
+    downstream = _downstream_of(nodes, providers_of, cyclic)
+    upstream = [rid for rid in nodes if rid not in cyclic and rid not in downstream]
+    waves = _kahn(upstream, providers_of, start_wave=1)
+    cycle_wave = max(waves) + 1 if waves else 1
+    waves[cycle_wave] = sorted(cyclic)
+    waves.update(_kahn(sorted(downstream), providers_of, start_wave=cycle_wave + 1))
+    return waves
+
+
+def _downstream_of(
+    nodes: list[str], providers_of: dict[str, set[str]], cyclic: set[str]
+) -> set[str]:
+    """（传递）依赖任一成环仓的非环仓集合（不动点迭代，至多 ``len(nodes)`` 轮，绝不无界）。"""
+    downstream: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for rid in nodes:
+            if rid in cyclic or rid in downstream:
+                continue
+            deps = providers_of.get(rid, set())
+            if (deps & cyclic) or (deps & downstream):
+                downstream.add(rid)
+                changed = True
+    return downstream
+
+
+def _kahn(
+    subset: list[str], providers_of: dict[str, set[str]], *, start_wave: int
+) -> dict[int, list[str]]:
+    """对 ``subset`` 做 Kahn 分层，wave 从 ``start_wave`` 起；**子集外的依赖视作已满足**。
+
+    调用方保证子集外的前驱都已排在 ``start_wave`` 之前（上游段无子集外前驱；下游段的子集外
+    前驱只可能是环本身或环的上游），故这里把依赖夹到子集内是安全的。
+    """
+    members = set(subset)
+    pending = {rid: providers_of.get(rid, set()) & members for rid in subset}
     waves: dict[int, list[str]] = {}
     placed: set[str] = set()
-    wave = 1
+    wave = start_wave
     while pending:
         ready = sorted(rid for rid, deps in pending.items() if not (deps - placed))
         if not ready:
-            # 理论不可达（环已剔除）；兜底把剩余仓平铺，绝不无界循环、绝不丢仓。
+            # 理论不可达（环已单独成波）；兜底把剩余仓平铺，绝不无界循环、绝不丢仓。
             waves[wave] = sorted(pending)
-            placed |= set(pending)
-            pending = {}
             break
         waves[wave] = ready
         placed |= set(ready)
         for rid in ready:
             pending.pop(rid, None)
         wave += 1
-    if cyclic:
-        last = max(waves) + 1 if waves else 1
-        waves[last] = sorted(cyclic)
     return waves
