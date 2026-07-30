@@ -821,7 +821,13 @@ const codingPlanData = computed(() => {
   if (!planTool)
     return null
 
-  // tech_plan 和 affected_files 来自 tool input（不在 result 中）
+  // tech_plan 和 affected_files 来自 tool input（不在 result 中）。
+  //
+  // 109-06：SPINE-02 已把这两个入参从 create/update_coding_plan 的 schema 里删掉，
+  // 因此**新消息**的 input 无此两键，这里取值恒为空串 / 空数组 —— 新消息的正文由
+  // runtime.coding_plan 或投影响应承载（见 TechPlanCard 的三级优先解析）。
+  // 🔴 这段取值降级为**历史消息兜底**，但不可删除：SPINE-02 之前的消息里 tech_plan
+  // 仍在 input 里，砍掉这里会让历史会话的方案卡集体变空。
   const input = planTool.input || {}
   const techPlan = (input.tech_plan as string) || ''
   // ：兼容 file_path / path 两种 schema 字段名

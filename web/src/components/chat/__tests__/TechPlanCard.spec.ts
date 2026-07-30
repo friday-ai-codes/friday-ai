@@ -749,3 +749,172 @@ describe('techPlanCard — FEISHU-03 export to feishu button', () => {
     expect(wrapper.find('[aria-label="重新导出"]').exists()).toBe(true)
   })
 })
+
+// ============================================================================
+// 109-06：方案正文 / 影响文件的三级优先解析（SPINE-02 连带面）
+//
+// props（投影响应本地态 + 历史消息 tool input 兜底）> runtime（🔴 过 plan_id
+// 守卫）> 空正文占位。四个分支各至少一条用例，外加串态防护与历史数据零报错。
+// ============================================================================
+
+describe('techPlanCard — 109-06 方案正文三级优先解析', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setActivePinia(createPinia())
+  })
+
+  const PLACEHOLDER = '（暂无方案正文）'
+
+  /** 往 store 写一份 runtime；planId 决定它是否指向本卡。 */
+  function setRuntime(planId: string, extra: Record<string, unknown> = {}) {
+    const store = useChatStore()
+    store.activeCodingPlan = {
+      plan_id: planId,
+      title: '方案',
+      sessions: [],
+      ...extra,
+    } as any
+  }
+
+  it('第 1 级：techPlan prop 非空时优先于 runtime 正文', async () => {
+    setRuntime('plan-1', { tech_plan: '# runtime 的正文' })
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      techPlan: '# props 的正文',
+    })
+    await flushPromises()
+    expect(wrapper.html()).toContain('<div data-test="md"># props 的正文</div>')
+    expect(wrapper.html()).not.toContain('runtime 的正文')
+  })
+
+  it('第 2 级：prop 为空且 runtime.plan_id 匹配时采用 runtime 的 tech_plan / affected_files', async () => {
+    setRuntime('plan-1', {
+      tech_plan: '# runtime 的正文',
+      affected_files: [{ file_path: 'server/app.py', change_type: 'modify' }],
+    })
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      techPlan: '',
+      affectedFiles: [],
+    })
+    await flushPromises()
+    expect(wrapper.html()).toContain('<div data-test="md"># runtime 的正文</div>')
+    expect(wrapper.text()).not.toContain(PLACEHOLDER)
+    // affected_files 同样经 runtime 生效
+    expect(wrapper.text()).toContain('影响文件')
+    expect(wrapper.text()).toContain('server/app.py')
+    expect(wrapper.text()).toContain('modify')
+  })
+
+  // 🔴 串态防护（不可省的守卫）：activeCodingPlan 只指向「对话内最近 CodingPlan」，
+  // 多方案多轮会话里若不过 plan_id 守卫就采用 runtime，会把**新方案的正文渲染到
+  // 旧方案卡上** —— 不报错、不崩，只是内容串了，是最难查的一类缺陷。
+  it('多方案会话不串态：runtime.plan_id 与本卡不匹配时不采用 runtime 正文，落到占位', async () => {
+    setRuntime('other-plan', {
+      tech_plan: '# 别的方案的正文',
+      affected_files: [{ file_path: 'other/leaked.py', change_type: 'add' }],
+    })
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      techPlan: '',
+      affectedFiles: [],
+    })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('别的方案的正文')
+    expect(wrapper.text()).not.toContain('other/leaked.py')
+    expect(wrapper.text()).not.toContain('影响文件')
+    expect(wrapper.text()).toContain(PLACEHOLDER)
+  })
+
+  it('第 3 级：历史消息（runtime 无 tech_plan，正文由 tool input 经 prop 传下）正常渲染且零报错/零 warn', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // 历史 runtime：没有 109 新增的 tech_plan / affected_files / provenance 三个字段
+    setRuntime('plan-1')
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      techPlan: '# 历史 tool input 里的正文',
+      affectedFiles: [{ path: 'legacy.py', change_type: 'add' }],
+    })
+    await flushPromises()
+    expect(wrapper.html()).toContain('<div data-test="md"># 历史 tool input 里的正文</div>')
+    expect(wrapper.text()).toContain('legacy.py')
+    expect(warnSpy).not.toHaveBeenCalled()
+    expect(errorSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+    errorSpy.mockRestore()
+  })
+
+  it('第 4 级：三者皆空 → 渲染占位文案，且不出现空的 .prose 块', async () => {
+    setRuntime('plan-1')
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      techPlan: '',
+      affectedFiles: [],
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain(PLACEHOLDER)
+    expect(wrapper.find('.prose').exists()).toBe(false)
+  })
+
+  it('无 store runtime（activeCodingPlan 为 null）时正文仍走 prop，不抛错', async () => {
+    const store = useChatStore()
+    store.activeCodingPlan = null
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      techPlan: '# 只有 prop',
+    })
+    await flushPromises()
+    expect(wrapper.html()).toContain('<div data-test="md"># 只有 prop</div>')
+  })
+
+  it('历史 runtime 缺 provenance / tech_plan / affected_files 三字段（undefined）→ 挂载与渲染不抛、零 warn', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = useChatStore()
+    store.activeCodingPlan = {
+      plan_id: 'plan-1',
+      title: '历史方案',
+      sessions: [],
+      provenance: undefined,
+      tech_plan: undefined,
+      affected_files: undefined,
+    } as any
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      techPlan: '',
+      affectedFiles: [],
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain(PLACEHOLDER)
+    expect(wrapper.text()).not.toContain('影响文件')
+    expect(warnSpy).not.toHaveBeenCalled()
+    expect(errorSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+    errorSpy.mockRestore()
+  })
+
+  it('折叠态摘要同样读三级优先解析结果（runtime 匹配时取 runtime 正文首行）', async () => {
+    setRuntime('plan-1', { tech_plan: '# runtime 首行\n第二行' })
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      techPlan: '',
+      status: 'running',
+    })
+    await flushPromises()
+    // 非 draft 默认折叠：渲染一行摘要而非完整 markdown
+    expect(wrapper.html()).not.toContain('<div data-test="md">')
+    expect(wrapper.text()).toContain('# runtime 首行')
+  })
+
+  it('折叠态三者皆空时保留既有「（无方案文本）」兜底', async () => {
+    setRuntime('plan-1')
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      techPlan: '',
+      status: 'running',
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('（无方案文本）')
+  })
+})
