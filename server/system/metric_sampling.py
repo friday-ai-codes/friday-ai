@@ -178,11 +178,15 @@ async def sample_gauges() -> dict[str, int]:
                 )
             )
         except Exception as exc:  # noqa: BLE001 — 单块失败只丢该行，绝不吞掉整帧
+            from common.logging import redact_secrets_in_text
+
             logger.warning(
                 "gauge_backlog_clarifications_failed",
                 category="sampling",
                 component="metric_sampling",
-                error=str(exc),
+                # 异常文本一律过脱敏：这里是 DB 异常，部分驱动的 OperationalError
+                # 会把连接串（含口令）回显进 message。
+                error=redact_secrets_in_text(str(exc)),
             )
 
         if rows:

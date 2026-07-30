@@ -386,7 +386,11 @@ class Command(BaseCommand):
             return "noop"
         except ValueError as exc:
             # 会话停在非 clarify stage（stage graph 无该转移）→ 记警告跳过，绝不抛。
-            log.warning("clarification_timeout_exit_unsupported_stage", error=str(exc))
+            # 异常文本统一过脱敏：同一条纪律不因「这条风险低」而开口子。
+            log.warning(
+                "clarification_timeout_exit_unsupported_stage",
+                error=redact_secrets_in_text(str(exc)),
+            )
             return "noop"
 
         await self._aemit_timed_out(service, session, exit_marker)
