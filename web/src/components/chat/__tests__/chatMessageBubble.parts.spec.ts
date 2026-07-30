@@ -51,6 +51,19 @@ vi.mock('~/components/chat/TechPlanCard.vue', () => ({
   }),
 }))
 
+// 109-04：stub 编排产出卡片 —— 本文件断言的是「渲染分支是否被走到」，
+// 卡片自身的投影交互由 OrchestratedPlanCard.spec.ts 覆盖。
+vi.mock('~/components/chat/OrchestratedPlanCard.vue', () => ({
+  default: defineComponent({
+    name: 'OrchestratedPlanCard',
+    props: ['artifactVersionId'],
+    setup: props => () => h('div', {
+      'data-test': 'orchestrated-plan-card',
+      'data-artifact-version-id': props.artifactVersionId,
+    }),
+  }),
+}))
+
 function makeMessage(overrides: Partial<ConversationMessage> = {}): ConversationMessage {
   return {
     id: 'msg-test',
@@ -402,5 +415,146 @@ describe('chatMessageBubble parts rendering ', () => {
 
     // 关键不变量 4：deep_analysis tool_use part 仍能渲染深度分析卡片
     expect(wrapper.find('.da-card').exists()).toBe(true)
+  })
+})
+
+/**
+ * 109-04：编排产出「进入编码」入口的渲染分支（SPINE-01）。
+ *
+ * 两个编排工具走同一判定、同一张卡片；三条渲染条件必须同时成立。
+ */
+describe('chatMessageBubble 编排产出卡片渲染分支', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  const DONE_RESULT = {
+    session_id: 'sess-1',
+    artifact_version_id: 'av-uuid-1',
+    status: 'done',
+    message: '跨仓方案编排已完成，已产出技术方案产物（ArtifactVersion）。',
+  }
+
+  function orchestrationMessage(
+    name: string,
+    result: unknown,
+    status: 'running' | 'done' = 'done',
+  ): ConversationMessage {
+    return makeMessage({
+      parts: [
+        {
+          type: 'tool_use',
+          id: 'p1',
+          index: 0,
+          tool_call_id: 'c1',
+          name,
+          input: { requirement: '打通编排产出到编码执行' },
+          status,
+          result: result as string | undefined,
+        },
+      ],
+    })
+  }
+
+  it.each([
+    'start_plan_research',
+    'start_feature_solution',
+    'mcp__chat-tools__start_plan_research',
+    'mcp__chat-tools__start_feature_solution',
+  ])('%s 终态渲染 OrchestratedPlanCard，并把 artifact_version_id 交给卡片', async (name) => {
+    const wrapper = await mountBubble(
+      orchestrationMessage(name, JSON.stringify(DONE_RESULT)),
+    )
+    const card = wrapper.find('[data-test="orchestrated-plan-card"]')
+    expect(card.exists()).toBe(true)
+    expect(card.attributes('data-artifact-version-id')).toBe('av-uuid-1')
+  })
+
+  it.each(['start_plan_research', 'start_feature_solution'])(
+    // 🔴 静默失守点：若把该工具从 UNGROUPABLE_TOOLS 中移除，它会被 isProcessTool
+    // 归入「分析过程」折叠面板（.tpg）。那条路径不渲染专属卡片 —— 不报错、不崩、
+    // 只是「进入编码」入口彻底不见。本断言就是这个失守点的护栏：
+    // .tpg 出现 / 卡片消失都说明集合被漏改。
+    '%s 在 UNGROUPABLE_TOOLS 内：走单例 tool 分支而非「分析过程」折叠面板',
+    async (name) => {
+      const wrapper = await mountBubble(
+        orchestrationMessage(name, JSON.stringify(DONE_RESULT)),
+      )
+      expect(wrapper.find('.tool-inline').exists()).toBe(true)
+      expect(wrapper.find('.tpg').exists()).toBe(false)
+      expect(wrapper.find('[data-test="orchestrated-plan-card"]').exists()).toBe(true)
+    },
+  )
+
+  it('result 为 dict 形态（历史 chat_runner 路径）同样解析出 artifact_version_id', async () => {
+    const wrapper = await mountBubble(
+      orchestrationMessage('start_plan_research', DONE_RESULT),
+    )
+    const card = wrapper.find('[data-test="orchestrated-plan-card"]')
+    expect(card.exists()).toBe(true)
+    expect(card.attributes('data-artifact-version-id')).toBe('av-uuid-1')
+  })
+
+  it('item.status !== done → 不渲染卡片', async () => {
+    const wrapper = await mountBubble(
+      orchestrationMessage('start_plan_research', JSON.stringify(DONE_RESULT), 'running'),
+    )
+    expect(wrapper.find('[data-test="orchestrated-plan-card"]').exists()).toBe(false)
+  })
+
+  it('result 内 status !== done → 不渲染卡片', async () => {
+    const wrapper = await mountBubble(
+      orchestrationMessage(
+        'start_plan_research',
+        JSON.stringify({ ...DONE_RESULT, status: 'waiting_event' }),
+      ),
+    )
+    expect(wrapper.find('[data-test="orchestrated-plan-card"]').exists()).toBe(false)
+  })
+
+  it.each([
+    ['artifact_version_id 为 null', { ...DONE_RESULT, artifact_version_id: null }],
+    ['artifact_version_id 缺失', { session_id: 'sess-1', status: 'done' }],
+    ['artifact_version_id 为空串', { ...DONE_RESULT, artifact_version_id: '' }],
+  ])('%s → 不渲染卡片、不抛错', async (_label, result) => {
+    const wrapper = await mountBubble(
+      orchestrationMessage('start_plan_research', JSON.stringify(result)),
+    )
+    expect(wrapper.find('[data-test="orchestrated-plan-card"]').exists()).toBe(false)
+    expect(wrapper.find('.tool-inline').exists()).toBe(true)
+  })
+
+  it('编排在途（__blocking_task__ 形态，无 artifact_version_id）→ 零卡片、零进度 UI、不抛错', async () => {
+    const blocking = JSON.stringify({
+      __blocking_task__: true,
+      task_type: 'plan_research',
+      task_id: 'sess-1',
+      session_id: 'sess-1',
+      params: { session_id: 'sess-1' },
+      placeholder: '已发起跨仓方案编排调研（session=sess-1，状态=waiting_event）；深入调研容器运行中。',
+    })
+    const wrapper = await mountBubble(orchestrationMessage('start_plan_research', blocking))
+    expect(wrapper.find('[data-test="orchestrated-plan-card"]').exists()).toBe(false)
+    // 在途摘要取前端常量，后端 placeholder 原文不上屏
+    expect(wrapper.text()).toContain('方案编排调研进行中')
+    expect(wrapper.html()).not.toContain('容器运行中')
+  })
+
+  it('result 解析失败（非 JSON）→ 不渲染卡片、不抛错', async () => {
+    const wrapper = await mountBubble(
+      orchestrationMessage('start_plan_research', 'not-a-json'),
+    )
+    expect(wrapper.find('[data-test="orchestrated-plan-card"]').exists()).toBe(false)
+    expect(wrapper.find('.tool-inline').exists()).toBe(true)
+  })
+
+  it('展开详情不把编排工具的原始 input/output 经 StructuredJsonView 上屏', async () => {
+    const wrapper = await mountBubble(
+      orchestrationMessage('start_plan_research', JSON.stringify(DONE_RESULT)),
+    )
+    await wrapper.find('.tool-pill').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.tool-detail').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('ArtifactVersion')
   })
 })
