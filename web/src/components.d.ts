@@ -294,6 +294,7 @@ declare module 'vue' {
     ObservabilityTabs: typeof import('./components/observability/ObservabilityTabs.vue')['default']
     ObservabilityTimeRange: typeof import('./components/observability/ObservabilityTimeRange.vue')['default']
     OIDCProviderSettings: typeof import('./components/settings/OIDCProviderSettings.vue')['default']
+    OrchestratedPlanCard: typeof import('./components/chat/OrchestratedPlanCard.vue')['default']
     OverrideConfirmDialog: typeof import('./components/workflow/validation/OverrideConfirmDialog.vue')['default']
     OverviewSection: typeof import('./components/project/workbench/OverviewSection.vue')['default']
     OverviewTab: typeof import('./components/project/workbench/OverviewTab.vue')['default']
