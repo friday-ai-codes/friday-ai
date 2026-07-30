@@ -373,6 +373,61 @@ async def test_public_org_non_member_allowed(mcp_client, access_user) -> None:
     assert resp.json()["applied"] is True
 
 
+async def _task_token_client(user, session_id: str):
+    """铸一枚绑定 ``session_id`` 的任务 token（与容器派发面同一入口）并返回带它的 client。"""
+    from rest_framework.test import APIClient
+
+    from access_tokens.services import mint_task_token
+
+    plaintext = await mint_task_token(user, session_id, 600)
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {plaintext}")
+    return client
+
+
+async def test_task_token_cannot_address_another_session_via_header(access_user) -> None:
+    """⭐ 道⓪：A 会话的 token + B 会话的 header → 403 session_not_owned，B 会话 DB 零新增。
+
+    两条会话同属一个 user、且都未绑项目（成员闸整段跳过）—— 正是原实现三道全过的形状。
+    """
+    cs_a = await _make_blueprint_session()
+    cs_b = await _make_blueprint_session()
+    sub_a = await _make_subagent_session(cs_a, owner=access_user)
+    sub_b = await _make_subagent_session(cs_b, owner=access_user)
+
+    client = await _task_token_client(access_user, sub_a.session_id)
+    resp = await sync_to_async(client.post)(
+        _REPORT_URL, _report_payload(), format="json", **_headers(sub_b)
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "session_not_owned"
+    assert await _entry_count(cs_b.id) == 0
+    assert await _entry_count(cs_a.id) == 0
+
+    read = await sync_to_async(client.post)(_READ_URL, {}, format="json", **_headers(sub_b))
+    assert read.status_code == 403
+    assert read.json()["error_code"] == "session_not_owned"
+
+
+async def test_task_token_addresses_its_own_session_without_header(access_user) -> None:
+    """⭐ 道⓪正向：token 自带 session_id 即权威寻址源，header 缺省照样放行（非「全都拒」）。"""
+    cs = await _make_blueprint_session()
+    sub = await _make_subagent_session(cs, owner=access_user)
+
+    client = await _task_token_client(access_user, sub.session_id)
+    resp = await sync_to_async(client.post)(_REPORT_URL, _report_payload(), format="json")
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["applied"] is True
+    assert await _entry_count(cs.id) == 1
+
+    # header 与 token 一致时同样放行（header 只是冗余字段）。
+    again = await sync_to_async(client.post)(
+        _REPORT_URL, _report_payload(key="contract:beta"), format="json", **_headers(sub)
+    )
+    assert again.status_code == 200
+    assert await _entry_count(cs.id) == 2
+
+
 async def test_missing_session_header_rejected(mcp_client, access_user) -> None:
     """缺 X-Friday-Session-Id → 404 missing_session_header（结构化，非 5xx）。"""
     client, _ = mcp_client

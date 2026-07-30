@@ -34,6 +34,7 @@
 - key 约定前缀：`repo:{id}.api_surface` / `contract:{name}` / `decision:{thread_id}` / `dependency:{from}->{to}`
 - 容器实时读写：扩容器知识 MCP 白名单新增 `read_blueprint_context`（支持 key_prefix / kind / repository_id / since_seq 增量拉取）与 `report_blueprint_context`（内容过 `redact_secrets_in_text`）；写入即对所有并行容器可见（server-authoritative）
 - **会话隔离必须 view 层自建（按调研纠偏，重要）**：容器 MCP 鉴权链只到 `token → owner(User)`，**不存在** `token → session → user`；`X-Friday-Session-Id` 仅是关联键、不可信作授权依据。故「只能读写本会话总线」必须在 view 层自建三道校验，缺任一条拒绝（403/404），绝不放行跨会话读写：
+  - ⚠️ **本前提已被 Phase 113 code review（MJ-01）证伪并订正**：`token → session` 的绑定**是现成的** —— `AccessToken` 有 `session_id` 列，`mint_task_token` 按它铸造、按它吊销，`AccessTokenAuthentication` 返回的 `request.auth` 就是那个 `AccessToken`。若只做下面三道，道①的语义退化成「**同一用户的任意会话**」，容器凭同用户另一条蓝图会话的 subagent `session_id` 即可越权读写该会话总线（那条会话未绑项目时成员闸还会被整段跳过）。**订正后的实现**：任务 token 场景以 `auth.session_id` 为权威寻址源（道⓪），`X-Friday-Session-Id` 退化为纯冗余字段（只允许一致或缺省）；非任务 token 才回落 header + owner 归属。另：**会话内的仓间归属**（哪个仓能写 `repo:{id}.*`）不在这三道内，由 CR-01 的服务端权威推导（`RepoResearchTask.subagent_session` 链）单独兜住。
   - ① **归属校验**：header session id 对应的 session 的 `AgentSession.user` == token owner。**前置补齐（plan-checker BLOCKER 1 定夺）**：该字段现状可空且蓝图派发时未赋值，故 **RepoPlan 派发面（113-03）必须在派发时写入 `AgentSession.user = dispatch_user`**，02 的校验才有真实数据来源；两者同 wave 实现，02 的测试可直接造带 user 的 session
   - ② **process 校验**：该 session 关联的 `ConvergenceSession.process_type == "technical_blueprint"`（防跨 process 污染，对齐 112 review CRITICAL 的教训）
   - ③ **条目一致**：目标总线条目的 `convergence_session` 与之一致

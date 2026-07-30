@@ -3996,12 +3996,21 @@ class GetFeatureTechPlanView(_FeatureSolutionViewMixin, McpToolView):
 # Blueprint Context Bus 容器读写入口（BUS-01，Phase 113-02）
 # ============================================================================
 
-# 会话隔离必须在本层自建：MCP 鉴权链只到 ``token -> owner(User)``
-# （``access_tokens/authentication.py`` 的 ``return (token.created_by, token)``），
-# **不存在** ``token -> session -> user``；``X-Friday-Session-Id`` 只是关联键、
-# 不是授权凭据（P5）。故跨会话越权的唯一防线就是下面 ``_aresolve_blueprint_session``
-# 的三道校验，全部 fail-closed。
+# ⚠️ 会话来源订正（MJ-01，推翻 113-RESEARCH-BUS / 113-CONTEXT 的调研前提）：
+# ``token -> session`` 的绑定链**是现成的** —— ``mint_task_token`` 按
+# ``AccessToken(kind="task", session_id=<subagent session_id>)`` 铸造并按它吊销
+# （``access_tokens/services.py``），而 ``AccessTokenAuthentication`` 返回
+# ``(token.created_by, token)``，``request.auth`` 就是那个 ``AccessToken``。
+#
+# 所以任务 token 场景下**权威会话来源是 token 自己的 ``session_id``**，
+# ``X-Friday-Session-Id`` 退化为纯冗余字段：只允许「与之一致」或「缺省」，绝不作寻址依据。
+# 原前提（「只能到 owner」）会让第一道校验的语义退化成「**同一用户的任意会话**」——
+# 容器只要知道同用户另一条蓝图会话的 subagent session_id 就能读写那条会话的总线。
+# 非任务 token（personal PAT 等无会话绑定）才回落 header + owner 归属判定。
 _BLUEPRINT_PROCESS_TYPE = "technical_blueprint"
+
+# 带会话绑定的 token 种类（``AccessToken.kind``）；只有它能提供权威会话来源。
+_TASK_TOKEN_KIND = "task"
 
 # 校验失败码 → HTTP 状态：「有会话但无权」记 403，「找不到会话/未声明会话」记 404。
 # 二者都是**结构化 4xx**，绝不 5xx —— 容器 handler 对非 200 只回显 HTTP code
@@ -4129,27 +4138,49 @@ async def _aassert_blueprint_project_access(project_id: Any, user: Any) -> bool:
 
 
 async def _aresolve_blueprint_session(request: Request) -> tuple[Any, Any, str]:
-    """三道会话校验：header session id → 归属 → 蓝图流程 + 项目成员。
+    """四道会话校验：token 绑定 → 归属 → 蓝图流程 + 项目成员 → 条目同会话。
 
     Returns:
         ``(convergence_session, subagent_session, error_code)``；``error_code`` 为
-        空串表示三道全过。任一道不过时 ``convergence_session`` 恒为 None，调用方
+        空串表示四道全过。任一道不过时 ``convergence_session`` 恒为 None，调用方
         据此拒绝，**绝不放行跨会话读写**。
 
-    三道（缺任一条即拒）：
+    四道（缺任一条即拒）：
 
-    1. **归属**：``X-Friday-Session-Id`` → ``SubAgentSession`` →
+    0. **token 绑定（MJ-01，寻址权威源）**：``request.auth`` 是 ``AccessToken``；
+       ``kind == "task"`` 时它自带 ``session_id``（``mint_task_token`` 在派发时写入，
+       容器改不到），**用它寻址**，``X-Friday-Session-Id`` 只允许一致或缺省，不一致即
+       ``session_not_owned``。少了这道，道①的语义只到「同一用户的任意会话」，容器可用
+       同用户另一条蓝图会话的 session_id 读写那条会话的总线（尤其当那条会话未绑项目、
+       成员闸被整段跳过时，三道全过）。非任务 token 无绑定 → 回落 header（降级路径）。
+    1. **归属**：会话 id → ``SubAgentSession`` →
        ``main_session.user_id == request.user.id``。``user_id`` 为 None（老会话 /
        非蓝图派发链）**一律判 ``session_not_owned``（fail-closed）** —— 「字段为空」
-       绝不等于放行，否则跨会话越权的唯一防线形同不存在。
+       绝不等于放行。
     2. **流程类型**：``last_output['blueprint_session_id']`` 指向的
        ``ConvergenceSession.process_type == "technical_blueprint"``，且令牌所有者
        对该会话所绑项目通过成员/public_org 判定。
     3. **目标条目同会话**：由两个 view 结构性兜住 —— 读只按解析出的会话过滤、写只
        往解析出的会话写，且**请求体根本不提供会话入参字段**（无跨会话入参面）。
+
+    仓归属（会话内的**仓间**越权）不在本函数职责内：见
+    ``ReportBlueprintContextView`` 的 ``_fetch_container_repository_id`` 闸（CR-01）。
     """
-    raw_session_id = str(request.headers.get("X-Friday-Session-Id", "") or "").strip()
-    if not raw_session_id:
+    header_session_id = str(request.headers.get("X-Friday-Session-Id", "") or "").strip()
+
+    # 道⓪：任务 token 自带的会话绑定优先于（可由容器任意构造的）header。
+    auth = getattr(request, "auth", None)
+    bound_session_id = ""
+    if str(getattr(auth, "kind", "") or "") == _TASK_TOKEN_KIND:
+        bound_session_id = str(getattr(auth, "session_id", "") or "").strip()
+
+    if bound_session_id:
+        if header_session_id and header_session_id != bound_session_id:
+            return None, None, "session_not_owned"
+        raw_session_id = bound_session_id
+    elif header_session_id:
+        raw_session_id = header_session_id
+    else:
         return None, None, "missing_session_header"
 
     sub = await _fetch_subagent_session(raw_session_id)
@@ -4205,7 +4236,7 @@ class ReadBlueprintContextView(McpToolView):
 
     四道兜底绝不绕过：
 
-    - **三道会话校验 fail-closed**：``_aresolve_blueprint_session`` 缺任一条即
+    - **四道会话校验 fail-closed**：``_aresolve_blueprint_session`` 缺任一条即
       403/404 结构化拒绝（T-113-07）。
     - **跨会话读结构性隔离**：只按解析出的 ``convergence_session`` 过滤，请求体
       不提供任何会话入参 —— 结构上不可能读到他人会话条目（T-113-08）。
@@ -4301,7 +4332,7 @@ class ReportBlueprintContextView(McpToolView):
 
     五道兜底绝不绕过：
 
-    - **三道会话校验 fail-closed**：同 ``ReadBlueprintContextView``（T-113-07）。
+    - **四道会话校验 fail-closed**：同 ``ReadBlueprintContextView``（T-113-07）。
     - **写入目标无入参面**：请求体不含任何会话字段，只能写进解析出的会话 —— 这是
       「第三道校验（目标条目同会话）」最强的成立方式（伪造无从下手）。
     - **仓归属服务端权威（CR-01）**：``repository_id`` 由
