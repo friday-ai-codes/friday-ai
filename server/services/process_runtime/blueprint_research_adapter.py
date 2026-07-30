@@ -132,6 +132,7 @@ class BlueprintResearchAdapter:
         force_deep_repository_ids: set[str] | None = None,
         mode: str = "research",
         repository_ids: set[str] | None = None,
+        resume_hints: dict[str, dict] | None = None,
     ) -> dict:
         """逐仓派发（**增量**）：返回 `{dispatched, synthesized, degraded, tasks}`。
 
@@ -147,6 +148,10 @@ class BlueprintResearchAdapter:
         一律不受影响。`mode="research"` 缺省路径与 112 逐字等价（两个既有调用方零改动）。
         `repository_ids` 非 None 时**跳过 `_collect_candidates`**：阶段 2 的仓集来自确认门
         锁定的 `repo_associations`，与路由候选面语义已不同（见 `blueprint_repo_plan.py`）。
+
+        **113-04 扩展点**：`resume_hints`（`{repository_id: {partial_plan_id, produced_keys}}`）
+        只在长等待重派时由 `aredispatch_waiting_repos` 传入，往 plan prompt 末尾追加一段续作
+        引用；不传（含全部 research 路径）时该段为**空串**，prompt 与首轮逐字一致（零扰动）。
         """
         started = time.monotonic()
         forced = {str(rid) for rid in (force_deep_repository_ids or set())}
@@ -219,6 +224,7 @@ class BlueprintResearchAdapter:
                         candidate=deep_index.get(repository_id) or {},
                         charter=charters.get(repository_id),
                         mode=mode,
+                        resume_hint=(resume_hints or {}).get(repository_id),
                     ):
                         dispatched += 1
                 except Exception as exc:  # noqa: BLE001 — WR-02 单仓隔离，绝不上抛
@@ -427,6 +433,7 @@ class BlueprintResearchAdapter:
         candidate: dict,
         charter: dict | None,
         mode: str = "research",
+        resume_hint: dict | None = None,
     ) -> bool:
         """单仓起独立 `SubAgentSession(PLAN)` 容器：五步顺序即正确性。
 
@@ -480,7 +487,9 @@ class BlueprintResearchAdapter:
             },
         )
 
-        prompt = self._build_prompt(session, task, repo, charter, candidate=candidate, mode=mode)
+        prompt = self._build_prompt(
+            session, task, repo, charter, candidate=candidate, mode=mode, resume_hint=resume_hint
+        )
         metadata = await self._build_dispatch_metadata(
             session, task, repo=repo, subagent_session_id=session_id, mode=mode
         )
@@ -634,6 +643,7 @@ class BlueprintResearchAdapter:
         *,
         candidate: dict,
         mode: str = "research",
+        resume_hint: dict | None = None,
     ) -> str:
         """调研 prompt：需求目标 + 功能点 + 路由证据 + **仓库章程**，并写死输出 JSON 形状。
 
@@ -643,7 +653,9 @@ class BlueprintResearchAdapter:
         `mode="plan"`（113 扩展）走 `_build_plan_prompt`；缺省 `research` 的 return 体一字不动。
         """
         if mode == "plan":
-            return self._build_plan_prompt(session, task, repo, charter, candidate=candidate)
+            return self._build_plan_prompt(
+                session, task, repo, charter, candidate=candidate, resume_hint=resume_hint
+            )
         repo_name = getattr(repo, "name", "") if repo is not None else ""
         spec = _requirement_spec_from_state(session)
         return (
@@ -672,6 +684,7 @@ class BlueprintResearchAdapter:
         charter: dict | None,
         *,
         candidate: dict,
+        resume_hint: dict | None = None,
     ) -> str:
         """阶段 2 拟方案 prompt（113-03）：锁定职责 + 阶段 1 结论 + RepoPlan 输出契约。
 
@@ -717,6 +730,29 @@ class BlueprintResearchAdapter:
             "先 read 总线看对方是否已声明。**若工具不可用，记录假设并继续，不要停下等待。**\n\n"
             "纪律：citations 必须是你真实读到的文件路径或符号，**不要编造**；判不出就在 risks 里\n"
             "写清缺什么信息，不要猜。"
+            # 长等待重派的续作段（113-04）：非重派场景恒为空串 ⇒ prompt 与首轮逐字一致。
+            f"{self._summarize_resume(resume_hint)}"
+        )
+
+    @staticmethod
+    def _summarize_resume(resume_hint: dict | None) -> str:
+        """长等待重派的续作引用段（无 hint 返回**空串**，首轮 prompt 零扰动）。
+
+        只带 `partial_plan_id` 与已产出的段名 —— 正文由容器自己按 id 与总线取回，
+        避免 prompt 膨胀，也避免半可信正文被二次拼进执行指令。
+        """
+        if not isinstance(resume_hint, dict):
+            return ""
+        partial_plan_id = str(resume_hint.get("partial_plan_id") or "")
+        if not partial_plan_id:
+            return ""
+        produced = [str(key) for key in (resume_hint.get("produced_keys") or []) if str(key or "")]
+        return (
+            "\n\n## 续作（上一轮你因等待其他仓的接口契约而退出）\n"
+            f"- 上一轮的部分产物已保存，partial_plan_id：{partial_plan_id}\n"
+            f"- 已产出的段：{'、'.join(produced) or '（无）'}\n"
+            "- 你等待的条目现已写入总线：请先用 read_blueprint_context 取回，再在上一轮结论\n"
+            "  基础上补全，**不要从零重做**。"
         )
 
     @staticmethod

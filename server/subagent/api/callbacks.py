@@ -2392,6 +2392,95 @@ async def _trigger_blueprint_repo_plan_barrier(blueprint_session) -> None:
     await resume(blueprint_session)
 
 
+# 单次退出最多登记的等待 key 数（半可信输入的上界：容器声明 100 个 key 也不该炸出 100 条 waiter）
+_MAX_WAITING_KEYS = 5
+
+
+async def _ahandle_blueprint_waiting_context(
+    session: SubAgentSession,
+    p: dict[str, Any],
+    task: Any,
+    blueprint_session: Any,
+    log: BoundLogger,
+) -> bool:
+    """长等待退出（BUS-02）：`output.waiting_context` → 登记 waiter 且**不判完成**。
+
+    `waiting_context` 是 output 内与 `fitness` / `repo_plan` **平级**的段，**不新增
+    `last_output.source` 值** —— 四链互斥判定与两个挂载点因此零改动（PLAN prohibitions）。
+
+    三键约定：`keys`（等待的 key 模式清单，必填非空才生效）/ `partial_plan_id`（本轮已产出的
+    部分方案，重派时作续作引用）/ `reason`（人可读原因，脱敏截断后入 waiter 行）。
+
+    处理语义：
+
+    - 逐 key 经 `BlueprintContextService.register_waiter` 登记（环检测在其内部**登记瞬间**完成）；
+    - 任一 key 命中互等环 → **不置 stale、不 dispatch**（澄清线程已由 service 开好，交人裁决）；
+    - 否则把该 task 置回**可派发态**（先 `mark_failed` 落终态再 `mark_stale`——WR-01 只动终态
+      task，见 113-03 Deviation 3），由目标条目写入侧的自动重派驱动续作；
+    - 全程**不落 `repo_plan` 段、不触发 barrier**（该仓未完成，barrier 判据仍为假）。
+
+    Returns:
+        True = 本次回调已按「等待退出」处理完毕，调用方**不再**走 repo_plan 解析与 barrier。
+    """
+    output = p.get("output") or {}
+    waiting = output.get("waiting_context") if isinstance(output, dict) else None
+    if not isinstance(waiting, dict):
+        return False
+    raw_keys = waiting.get("keys")
+    keys = [str(k) for k in raw_keys if str(k or "")] if isinstance(raw_keys, list) else []
+    if not keys:
+        return False
+    if blueprint_session is None:
+        # 反查不到蓝图会话就无处登记 waiter；交回正常路径按「产物缺失」处理，绝不静默吞掉。
+        return False
+
+    from delivery.services import ResearchService
+    from delivery.services.blueprint_context_service import BlueprintContextService
+
+    service = BlueprintContextService()
+    repository_id = str(task.repository_id)
+    partial_plan_id = str(waiting.get("partial_plan_id") or "")
+    reason = redact_secrets_in_text(str(waiting.get("reason") or ""))[:_MAX_CALLBACK_ERROR_CHARS]
+    cycle_detected = False
+    registered = 0
+    for key in keys[:_MAX_WAITING_KEYS]:
+        result = await service.register_waiter(
+            session=blueprint_session,
+            from_repository_id=repository_id,
+            wait_key_pattern=key,
+            partial_plan_id=partial_plan_id,
+            reason=reason,
+            initiated_by_user_id=str(
+                getattr(blueprint_session, "initiated_by_user_id", "") or "system"
+            ),
+        )
+        registered += 1
+        if result.get("cycle_detected"):
+            cycle_detected = True
+
+    if not cycle_detected:
+        research_service = ResearchService()
+        await research_service.mark_failed(
+            task, {"reason": "waiting_context", "detail": reason}
+        )
+        await research_service.mark_stale([task.id])
+
+    log.info(
+        "blueprint_repo_plan_waiting_context_registered",
+        task_id=str(task.id),
+        repository_id=repository_id,
+        waiting_keys=registered,
+        cycle_detected=cycle_detected,
+        has_partial=bool(partial_plan_id),
+        initiated_by_user_id=str(
+            getattr(blueprint_session, "initiated_by_user_id", "") or "system"
+        ),
+        category="caller",
+        component="subagent",
+    )
+    return True
+
+
 async def _handle_blueprint_repo_plan_completion(
     session: SubAgentSession, p: dict[str, Any], log: BoundLogger
 ) -> None:
@@ -2413,6 +2502,10 @@ async def _handle_blueprint_repo_plan_completion(
 
     task, blueprint_session = await _aload_blueprint_plan_task(session)
     if task is None:
+        return
+
+    # 长等待退出（113-04）：解析 repo_plan **之前**先探测 waiting_context 段。
+    if await _ahandle_blueprint_waiting_context(session, p, task, blueprint_session, log):
         return
 
     adapter = BlueprintRepoPlanAdapter()
