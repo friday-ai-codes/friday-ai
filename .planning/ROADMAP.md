@@ -154,11 +154,11 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 107-08-PLAN.md — trace 落库与 API 边界：degrade_reason/block_order 两列 + detail payload 补 4 键 + override 继承回传（wave 4）
+- [x] 107-08-PLAN.md — trace 落库与 API 边界：degrade_reason/block_order 两列 + detail payload 补 4 键 + override 继承回传（wave 4）
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 107-09-PLAN.md — 前端分区渲染 + 跨组两层标注 + 迟滞置顶提示 + 降级横幅与徽标灰化 + override 不丢字段（wave 5）
+- [x] 107-09-PLAN.md — 前端分区渲染 + 跨组两层标注 + 迟滞置顶提示 + 降级横幅与徽标灰化 + override 不丢字段（wave 5）
 
 **UI hint**: yes
 
