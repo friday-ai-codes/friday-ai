@@ -38,7 +38,7 @@ import json
 import uuid
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -54,7 +54,6 @@ from chat.models import Conversation, RepositoryRoutingTrace
 from projects.models import Space
 from repositories.models import Repository
 from services.retrieval.types import LayerSnapshot, RagSearchResult
-
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

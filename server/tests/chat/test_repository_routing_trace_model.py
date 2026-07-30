@@ -23,7 +23,6 @@ from agents.models import AgentSession
 from chat.models import Conversation, RepositoryRoutingTrace
 from projects.models import Space
 
-
 pytestmark = pytest.mark.django_db
 
 

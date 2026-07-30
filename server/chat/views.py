@@ -2742,6 +2742,12 @@ class RoutingTraceManualOverrideView(APIView):
                 c2["selected_by_user_final"] = requested[rid]
             new_candidates.append(c2)
 
+        # 显式继承同一次路由的降级/分组事实（107-08，Pitfall 3 后端半边）：
+        # router_version 的列默认值是 legacy_hybrid，不显式继承的话新行会退化成
+        # legacy_hybrid，_derive_degraded 随之变 False —— 用户改一次勾选，降级横幅与
+        # 分组分区就凭空消失（同一次路由的事实不因用户改勾选而改变）。
+        # 注意：本 acreate 与下面的响应组装都位于上面两道校验（跨用户 owner gate /
+        # 跨项目 has_project_access）之后；新增字段一律不得挪到校验之前读写。
         new_trace = await RepositoryRoutingTrace.objects.acreate(
             agent_session=None,
             conversation_id=original.conversation_id,
@@ -2749,6 +2755,9 @@ class RoutingTraceManualOverrideView(APIView):
             candidates=new_candidates,
             threshold=original.threshold,
             triggered_by=RepositoryRoutingTrace.TriggeredBy.MANUAL_OVERRIDE,
+            router_version=original.router_version,
+            degrade_reason=original.degrade_reason,
+            block_order=list(original.block_order or []),
         )
 
         logger.info(
@@ -2767,6 +2776,12 @@ class RoutingTraceManualOverrideView(APIView):
                 "original_trace_id": str(original.id),
                 "candidates": new_candidates,
                 "triggered_by": new_trace.triggered_by,
+                # 与会话 detail 同一组键、同一个派生点：前端 applyManualOverride 重建
+                # trace 时直接用这 4 键，无需自行推断降级。
+                "router_version": new_trace.router_version,
+                "degraded": _derive_degraded(new_trace.router_version),
+                "degrade_reason": new_trace.degrade_reason,
+                "block_order": new_trace.block_order,
             },
             status=status.HTTP_201_CREATED,
         )
