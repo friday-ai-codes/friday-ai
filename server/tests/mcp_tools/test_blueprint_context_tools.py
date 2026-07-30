@@ -14,6 +14,8 @@
 - ⭐ 绝不 5xx：service 抛异常 → 200 + applied=false；未知工具路径 → 404 而非 500；
 - 入参非法：kind 非枚举 / content 非 object → 400 invalid_params 且 DB 零新增；
 - waiter 顺带满足：report 命中等待 key → satisfied_waiters==1 且该 waiter 行置 superseded；
+- ⭐ CR-01 跨仓伪造反向断言：他仓 `repo:` key 被 403、上报的 `repository_id` 被服务端覆写、
+  无仓绑定的容器写不了任何 `repo:` key、伪造写入不消耗他仓 waiter；
 - 观测留痕：ToolCallRecord + RequestMetric.labels['call_source'] 落到两个新工具名，
   且留痕里不含 content 正文。
 """
@@ -34,11 +36,14 @@ from delivery.models import (
     ContextEntryStatus,
     ConvergenceSession,
     ConvergenceSessionEntrypoint,
+    RepoResearchTask,
+    RepoResearchTaskStatus,
 )
 from delivery.services.blueprint_context_service import BlueprintContextService
 from initiatives.services import ProjectService
 from interactions.models import ToolCallRecord
 from projects.models import Space
+from repositories.models import Repository
 from subagent.models import SubAgentSession
 from system.metric_sink import flush_now
 from system.models import RequestMetric
@@ -68,17 +73,33 @@ async def _make_blueprint_session(
     )
 
 
+async def _make_repo() -> Repository:
+    name = f"r-{uuid.uuid4().hex[:8]}"
+    return await Repository.objects.acreate(
+        name=name,
+        git_url=f"https://example.com/{name}.git",
+        git_platform="github",
+        default_branch="main",
+    )
+
+
 async def _make_subagent_session(
     blueprint_session: ConvergenceSession,
     *,
     owner=None,
     repository_id: str = "",
+    repository: Repository | None = None,
     with_blueprint_link: bool = True,
 ) -> SubAgentSession:
     """造一条派发链上的容器会话。
 
     ⭐ ``owner`` 就是归属校验（道①）的唯一数据来源：写进 ``AgentSession.user``。
     传 None 即模拟「老会话 / 派发未赋值」，用于 fail-closed 断言。
+
+    ⭐ ``repository`` 是**仓归属**（CR-01）的唯一数据来源：经
+    ``RepoResearchTask.subagent_session`` 回填，模拟 ``mark_running`` 的服务端写入。
+    不传即模拟「非 repo_plan 链容器」，用于 `repo:` 前缀 fail-closed 断言。
+    ``repository_id`` 只写进 ``last_output``（容器可篡改面），**不**构成归属。
     """
     sid = f"bp-research-{uuid.uuid4().hex[:12]}"
     agent_session = await AgentSession.objects.acreate(
@@ -90,7 +111,7 @@ async def _make_subagent_session(
     last_output = {"source": "blueprint_repo_research", "repository_id": repository_id}
     if with_blueprint_link:
         last_output["blueprint_session_id"] = str(blueprint_session.id)
-    return await SubAgentSession.objects.acreate(
+    sub = await SubAgentSession.objects.acreate(
         session_id=sid,
         main_session=agent_session,
         repo_url="https://example.com/x.git",
@@ -98,6 +119,14 @@ async def _make_subagent_session(
         status=SubAgentSession.Status.RUNNING,
         last_output=last_output,
     )
+    if repository is not None:
+        await RepoResearchTask.objects.acreate(
+            session=blueprint_session,
+            repository=repository,
+            subagent_session=sub,
+            status=RepoResearchTaskStatus.RUNNING,
+        )
+    return sub
 
 
 async def _make_project(created_by, key: str, *, visibility: str = ""):
@@ -144,10 +173,12 @@ def _headers(sub: SubAgentSession) -> dict:
 
 
 def _report_payload(**overrides) -> dict:
+    """缺省用**非仓前缀** key：仓归属闸（CR-01）只约束 `repo:` 前缀，会话校验类用例
+    不应被仓绑定牵连。需要 `repo:` 前缀的用例显式传 key + 绑仓容器。
+    """
     payload = {
-        "key": "repo:alpha.api_surface",
-        "kind": "api_surface",
-        "repository_id": "alpha",
+        "key": "contract:alpha",
+        "kind": "contract",
         "content": {"endpoint": "/api/x", "method": "GET"},
     }
     payload.update(overrides)
@@ -163,11 +194,16 @@ async def test_report_then_read_visible_to_parallel_container(mcp_client, access
     """一个容器 report → 同会话**另一个** SubAgentSession 的容器 read 即刻可见。"""
     client, _ = mcp_client
     cs = await _make_blueprint_session()
-    writer = await _make_subagent_session(cs, owner=access_user, repository_id="alpha")
-    reader = await _make_subagent_session(cs, owner=access_user, repository_id="beta")
+    repo_alpha = await _make_repo()
+    repo_beta = await _make_repo()
+    writer = await _make_subagent_session(cs, owner=access_user, repository=repo_alpha)
+    reader = await _make_subagent_session(cs, owner=access_user, repository=repo_beta)
 
     resp = await sync_to_async(client.post)(
-        _REPORT_URL, _report_payload(), format="json", **_headers(writer)
+        _REPORT_URL,
+        _report_payload(key=f"repo:{repo_alpha.id}.api_surface", kind="api_surface"),
+        format="json",
+        **_headers(writer),
     )
     assert resp.status_code == 200, resp.content
     body = resp.json()
@@ -180,7 +216,9 @@ async def test_report_then_read_visible_to_parallel_container(mcp_client, access
     read_body = read.json()
     assert read_body["count"] == 1
     assert read_body["max_seq"] == 1
-    assert read_body["entries"][0]["key"] == "repo:alpha.api_surface"
+    assert read_body["entries"][0]["key"] == f"repo:{repo_alpha.id}.api_surface"
+    # 仓归属由服务端权威推导（CR-01）：请求体没传 repository_id，条目照样带上正确的仓。
+    assert read_body["entries"][0]["repository_id"] == str(repo_alpha.id)
     assert read_body["entries"][0]["content"]["endpoint"] == "/api/x"
 
 
@@ -520,25 +558,137 @@ async def test_non_object_content_rejected(mcp_client, access_user) -> None:
 
 
 async def test_report_satisfies_waiter(mcp_client, access_user) -> None:
-    """先登记等 repo:alpha.api_surface 的 waiter → report 该 key 即置 superseded 并回报计数。"""
+    """先登记等 repo:{alpha}.api_surface 的 waiter → report 该 key 即置 superseded 并回报计数。"""
     client, _ = mcp_client
     cs = await _make_blueprint_session()
-    sub = await _make_subagent_session(cs, owner=access_user)
+    repo_alpha = await _make_repo()
+    sub = await _make_subagent_session(cs, owner=access_user, repository=repo_alpha)
 
     waiter = await BlueprintContextService().register_waiter(
         session=cs,
         from_repository_id="beta",
-        wait_key_pattern="repo:alpha.api_surface",
+        wait_key_pattern=f"repo:{repo_alpha.id}.api_surface",
         reason="需要 alpha 的接口面",
     )
     assert waiter["cycle_detected"] is False
 
     resp = await sync_to_async(client.post)(
-        _REPORT_URL, _report_payload(), format="json", **_headers(sub)
+        _REPORT_URL,
+        _report_payload(key=f"repo:{repo_alpha.id}.api_surface", kind="api_surface"),
+        format="json",
+        **_headers(sub),
     )
     assert resp.status_code == 200
     assert resp.json()["satisfied_waiters"] == 1
     assert await _entry_status(waiter["entry_id"]) == ContextEntryStatus.SUPERSEDED
+
+
+# ---------------------------------------------------------------------------
+# 7b. ⭐ CR-01 跨仓伪造（会话内的仓间越权，三道会话校验照不到的类别）
+# ---------------------------------------------------------------------------
+
+
+async def test_cross_repo_key_prefix_rejected(mcp_client, access_user) -> None:
+    """⭐ A 仓容器写 `repo:{B}.api_surface` → 403 key_not_owned 且 DB 零新增。
+
+    不拦下来的话，A 可以伪造 B 的接口契约，第三个仓按 key_prefix / repository_id 读到的
+    就是这条编造条目。
+    """
+    client, _ = mcp_client
+    cs = await _make_blueprint_session()
+    repo_a = await _make_repo()
+    repo_b = await _make_repo()
+    container_a = await _make_subagent_session(cs, owner=access_user, repository=repo_a)
+
+    resp = await sync_to_async(client.post)(
+        _REPORT_URL,
+        _report_payload(key=f"repo:{repo_b.id}.api_surface", kind="api_surface"),
+        format="json",
+        **_headers(container_a),
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "key_not_owned"
+    assert await _entry_count(cs.id) == 0
+
+    # 正向对照（证明这条断言不是「全都拒」）：写自己仓的 key 照常放行。
+    ok = await sync_to_async(client.post)(
+        _REPORT_URL,
+        _report_payload(key=f"repo:{repo_a.id}.api_surface", kind="api_surface"),
+        format="json",
+        **_headers(container_a),
+    )
+    assert ok.status_code == 200
+    assert await _entry_count(cs.id) == 1
+
+
+async def test_reported_repository_id_is_overwritten_by_server(mcp_client, access_user) -> None:
+    """⭐ 上报他仓 `repository_id`（且 key 是非仓前缀，绕过 key 闸）→ 入库值被覆写成本仓。"""
+    client, _ = mcp_client
+    cs = await _make_blueprint_session()
+    repo_a = await _make_repo()
+    repo_b = await _make_repo()
+    container_a = await _make_subagent_session(cs, owner=access_user, repository=repo_a)
+
+    resp = await sync_to_async(client.post)(
+        _REPORT_URL,
+        _report_payload(key="contract:shared", repository_id=str(repo_b.id)),
+        format="json",
+        **_headers(container_a),
+    )
+    assert resp.status_code == 200, resp.content
+
+    rows = await _entries(cs.id)
+    assert len(rows) == 1
+    assert rows[0].repository_id == str(repo_a.id), "repository_id 必须服务端权威覆写"
+    assert rows[0].repository_id != str(repo_b.id)
+
+
+async def test_container_without_repo_binding_cannot_write_repo_key(
+    mcp_client, access_user
+) -> None:
+    """⭐ fail-closed：反查不到本容器的仓 → 任何 `repo:` 前缀写入一律 403（不放行）。"""
+    client, _ = mcp_client
+    cs = await _make_blueprint_session()
+    repo_a = await _make_repo()
+    # 只在 last_output 里声明仓（容器可篡改面），不建权威的 RepoResearchTask 绑定。
+    rogue = await _make_subagent_session(cs, owner=access_user, repository_id=str(repo_a.id))
+
+    resp = await sync_to_async(client.post)(
+        _REPORT_URL,
+        _report_payload(key=f"repo:{repo_a.id}.api_surface", kind="api_surface"),
+        format="json",
+        **_headers(rogue),
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "key_not_owned"
+    assert await _entry_count(cs.id) == 0
+
+
+async def test_forged_key_does_not_consume_other_repo_waiter(mcp_client, access_user) -> None:
+    """⭐ 伪造写入被拒后，真正在等 B 的 waiter **仍 active**（没被误唤醒、没被烧掉）。"""
+    client, _ = mcp_client
+    cs = await _make_blueprint_session()
+    repo_a = await _make_repo()
+    repo_b = await _make_repo()
+    repo_c = await _make_repo()
+    container_a = await _make_subagent_session(cs, owner=access_user, repository=repo_a)
+
+    waiter = await BlueprintContextService().register_waiter(
+        session=cs,
+        from_repository_id=str(repo_c.id),
+        wait_key_pattern=f"repo:{repo_b.id}.api_surface",
+        reason="需要 B 的接口契约",
+    )
+
+    resp = await sync_to_async(client.post)(
+        _REPORT_URL,
+        _report_payload(key=f"repo:{repo_b.id}.api_surface", kind="api_surface"),
+        format="json",
+        **_headers(container_a),
+    )
+    assert resp.status_code == 403
+    # waiter 仍在等真契约：伪造既不置 superseded 也不触发重派。
+    assert await _entry_status(waiter["entry_id"]) == ContextEntryStatus.ACTIVE
 
 
 # ---------------------------------------------------------------------------

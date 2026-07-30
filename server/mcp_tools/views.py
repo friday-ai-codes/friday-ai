@@ -365,9 +365,11 @@ class McpToolView(APIView):
         limit: int,
     ) -> list[str]:
         paths: list[str] = []
-        async for file_path in FileIndex.objects.filter(
-            repository_id=repository_id
-        ).order_by("file_path").values_list("file_path", flat=True):
+        async for file_path in (
+            FileIndex.objects.filter(repository_id=repository_id)
+            .order_by("file_path")
+            .values_list("file_path", flat=True)
+        ):
             paths.append(str(file_path))
             if len(paths) >= limit:
                 break
@@ -404,9 +406,7 @@ class McpToolView(APIView):
         )
         base_branch = repo.base_branch or repo.default_branch
         graph_branch = (
-            effective_branch
-            if effective_branch and effective_branch != base_branch
-            else None
+            effective_branch if effective_branch and effective_branch != base_branch else None
         )
         collection_name = (
             branch_index.collection_name
@@ -577,17 +577,19 @@ class SearchRagChunksView(McpToolView):
                 item_repo_id = str(
                     item.get("repository_id") or (valid_ids[0] if single_target else "")
                 )
-                results.append({
-                    "chunk_id": str(item.get("id") or payload.get("chunk_id", "")),
-                    "repo_id": item_repo_id,
-                    "branch": _branch_for(item_repo_id),
-                    "file_path": payload.get("file_path", ""),
-                    "line_start": payload.get("start_line"),
-                    "line_end": payload.get("end_line"),
-                    "content": payload.get("content", ""),
-                    "score": item.get("score", 0.0),
-                    "language": payload.get("language", ""),
-                })
+                results.append(
+                    {
+                        "chunk_id": str(item.get("id") or payload.get("chunk_id", "")),
+                        "repo_id": item_repo_id,
+                        "branch": _branch_for(item_repo_id),
+                        "file_path": payload.get("file_path", ""),
+                        "line_start": payload.get("start_line"),
+                        "line_end": payload.get("end_line"),
+                        "content": payload.get("content", ""),
+                        "score": item.get("score", 0.0),
+                        "language": payload.get("language", ""),
+                    }
+                )
 
         related_edges = [
             _serialize_neighbor(neighbor)
@@ -723,11 +725,13 @@ class GrepRepositoryView(McpToolView):
             if repo_err is not None:
                 if single_target:
                     return repo_err
-                repo_results.append({
-                    "repository_id": repository_id,
-                    "error_code": "repository_unavailable",
-                    "error": "仓库不存在或尚未建立索引",
-                })
+                repo_results.append(
+                    {
+                        "repository_id": repository_id,
+                        "error_code": "repository_unavailable",
+                        "error": "仓库不存在或尚未建立索引",
+                    }
+                )
                 continue
             assert repo is not None
 
@@ -757,12 +761,14 @@ class GrepRepositoryView(McpToolView):
                     )
                     return _mirror_error_response(exc)
                 # 跨仓检索：单仓失败不毁掉整次调用，记录后继续
-                repo_results.append({
-                    "repository_id": repository_id,
-                    "name": repo.name,
-                    "error_code": exc.code,
-                    "error": exc.detail,
-                })
+                repo_results.append(
+                    {
+                        "repository_id": repository_id,
+                        "name": repo.name,
+                        "error_code": exc.code,
+                        "error": exc.detail,
+                    }
+                )
                 continue
 
             # fail-closed 排除过滤（EXCL-02 / T-22-22）：剔除被排除文件的命中行与计数，
@@ -796,9 +802,7 @@ class GrepRepositoryView(McpToolView):
             any_truncated = any_truncated or bool(entry["truncated"])
             repo_results.append(entry)
 
-            matched_files = sorted(
-                {str(f["file_path"]) for f in result["file_counts"]}
-            )
+            matched_files = sorted({str(f["file_path"]) for f in result["file_counts"]})
             traces.extend(
                 (
                     RetrievalTrace.Kind.FILE,
@@ -904,7 +908,9 @@ class ListRepositoryFilesView(McpToolView):
         page_size = int(input_data.get("page_size", 50))
         file_rows = [
             row
-            async for row in FileIndex.objects.filter(repository_id=repository_id).order_by("file_path")
+            async for row in FileIndex.objects.filter(repository_id=repository_id).order_by(
+                "file_path"
+            )
         ]
         paths = [row.file_path for row in file_rows]
         if requested_path:
@@ -958,7 +964,12 @@ class ListRepositoryFilesView(McpToolView):
             run,
             input_data=input_data,
             output_data=output_data,
-            traces=[(RetrievalTrace.Kind.FILE, {"repository_id": repository_id, "path": requested_path, "total": total})],
+            traces=[
+                (
+                    RetrievalTrace.Kind.FILE,
+                    {"repository_id": repository_id, "path": requested_path, "total": total},
+                )
+            ],
             started_at=started_at,
         )
         return Response(output_data, status=status.HTTP_200_OK)
@@ -1069,7 +1080,8 @@ class GetRepositoryFileView(McpToolView):
         resolved_path = file_path
         if not chunks_raw:
             candidates = [
-                path for path in await _list_indexed_paths(collection_name)
+                path
+                for path in await _list_indexed_paths(collection_name)
                 if path.endswith(file_path)
             ]
             if len(candidates) == 1:
@@ -1145,8 +1157,7 @@ class GetRepositoryFileView(McpToolView):
             resolved_path = file_path
             if text is None:
                 candidates = [
-                    path for path in await list_mirror_paths(snapshot)
-                    if path.endswith(file_path)
+                    path for path in await list_mirror_paths(snapshot) if path.endswith(file_path)
                 ]
                 if len(candidates) == 1:
                     resolved_path = candidates[0]
@@ -1253,11 +1264,15 @@ class FindRelatedChunksView(McpToolView):
         branch_names = ["", graph_branch] if graph_branch else [""]
         if input_data.get("file_path"):
             file_path = str(input_data["file_path"])
-            entry = await ChunkRegistry.objects.filter(
-                repository_id=repository_id,
-                branch_name__in=branch_names,
-                file_path=file_path,
-            ).order_by("branch_name", "chunk_index").afirst()
+            entry = (
+                await ChunkRegistry.objects.filter(
+                    repository_id=repository_id,
+                    branch_name__in=branch_names,
+                    file_path=file_path,
+                )
+                .order_by("branch_name", "chunk_index")
+                .afirst()
+            )
             if entry is None:
                 return error_response(
                     "chunk_not_found",
@@ -1271,12 +1286,16 @@ class FindRelatedChunksView(McpToolView):
             }
 
         symbol_name = str(input_data.get("symbol_name") or "")
-        symbol = await Symbol.objects.filter(
-            repository_id=repository_id,
-            branch_name__in=branch_names,
-            name__iexact=symbol_name,
-            chunk_id__isnull=False,
-        ).order_by("branch_name", "file_path", "start_line").afirst()
+        symbol = (
+            await Symbol.objects.filter(
+                repository_id=repository_id,
+                branch_name__in=branch_names,
+                name__iexact=symbol_name,
+                chunk_id__isnull=False,
+            )
+            .order_by("branch_name", "file_path", "start_line")
+            .afirst()
+        )
         if symbol is None:
             return error_response(
                 "symbol_not_found",
@@ -1591,9 +1610,7 @@ class ExecuteWorkItemRepoTasksView(McpToolView):
                 ),
                 # Phase 103 AGENT-01：ORM User 实例（桥接会话 created_by → mint 任务 token），
                 # 与上面的字符串归因并行不混用。
-                initiating_user=(
-                    request.user if getattr(request.user, "id", None) else None
-                ),
+                initiating_user=(request.user if getattr(request.user, "id", None) else None),
             )
         except WorkItemExecutionError as exc:
             status_map = {
@@ -2050,7 +2067,9 @@ class ImproveCodingPlanView(McpToolView):
         # context_chunks 若提供则以 JSON 行折入第四段（request 键集不变的兑现方式）。
         latest_summary = json.dumps(
             {
-                "title": latest.plan_body.get("title") if isinstance(latest.plan_body, dict) else "",
+                "title": latest.plan_body.get("title")
+                if isinstance(latest.plan_body, dict)
+                else "",
                 "affected_files": latest.affected_files,
                 "steps": latest.steps,
             },
@@ -2305,9 +2324,7 @@ class ExecuteCodingPlanView(McpToolView):
                 timeout_seconds=int(input_data.get("timeout_seconds") or 3600),
                 # Phase 103 AGENT-01：发起用户（PAT 所有者）透传为桥接会话 created_by，
                 # 使 MCP 链 mint 任务级短 TTL token（与 initiated_by_user_id 归因并行不混用）。
-                initiating_user=(
-                    request.user if getattr(request.user, "id", None) else None
-                ),
+                initiating_user=(request.user if getattr(request.user, "id", None) else None),
             )
         except ExecutionDispatchError as exc:
             dispatch_error = str(exc)
@@ -2377,10 +2394,14 @@ class ExecuteCodingPlanView(McpToolView):
                 id=input_data["plan_id"]
             )
         except McpCodingPlan.DoesNotExist:
-            return None, None, error_response(
-                "coding_plan_not_found",
-                "编码方案不存在",
-                status_code=status.HTTP_404_NOT_FOUND,
+            return (
+                None,
+                None,
+                error_response(
+                    "coding_plan_not_found",
+                    "编码方案不存在",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                ),
             )
         if input_data.get("version_id"):
             try:
@@ -2389,18 +2410,26 @@ class ExecuteCodingPlanView(McpToolView):
                     plan=plan,
                 )
             except McpCodingPlanVersion.DoesNotExist:
-                return None, None, error_response(
-                    "coding_plan_version_not_found",
-                    "编码方案版本不存在或不属于该方案",
-                    status_code=status.HTTP_404_NOT_FOUND,
+                return (
+                    None,
+                    None,
+                    error_response(
+                        "coding_plan_version_not_found",
+                        "编码方案版本不存在或不属于该方案",
+                        status_code=status.HTTP_404_NOT_FOUND,
+                    ),
                 )
         else:
             version = await plan.versions.order_by("-version").afirst()
             if version is None:
-                return None, None, error_response(
-                    "coding_plan_version_not_found",
-                    "编码方案没有可执行版本",
-                    status_code=status.HTTP_404_NOT_FOUND,
+                return (
+                    None,
+                    None,
+                    error_response(
+                        "coding_plan_version_not_found",
+                        "编码方案没有可执行版本",
+                        status_code=status.HTTP_404_NOT_FOUND,
+                    ),
                 )
         return plan, version, None
 
@@ -2419,9 +2448,7 @@ class GetCodingExecutionView(McpToolView):
         assert input_data is not None
         started_at = time.perf_counter()
 
-        trace = await McpCodingExecutionTrace.objects.filter(
-            id=input_data["execution_id"]
-        ).afirst()
+        trace = await McpCodingExecutionTrace.objects.filter(id=input_data["execution_id"]).afirst()
         if trace is None:
             return error_response(
                 "execution_not_found",
@@ -2533,9 +2560,11 @@ class SummarizeBranchView(McpToolView):
         input_data: dict[str, Any],
     ) -> tuple[McpCodingExecutionTrace | None, Repository, str, str] | Response:
         if input_data.get("execution_id"):
-            trace = await McpCodingExecutionTrace.objects.select_related("repository").filter(
-                id=input_data["execution_id"]
-            ).afirst()
+            trace = (
+                await McpCodingExecutionTrace.objects.select_related("repository")
+                .filter(id=input_data["execution_id"])
+                .afirst()
+            )
             if trace is None:
                 return error_response(
                     "execution_not_found",
@@ -2664,7 +2693,9 @@ class SearchDeliveryKnowledgeView(McpToolView):
         try:
             as_of = parse_as_of(input_data.get("as_of"))
         except ValueError as exc:
-            return error_response("invalid_params", str(exc), status_code=status.HTTP_400_BAD_REQUEST)
+            return error_response(
+                "invalid_params", str(exc), status_code=status.HTTP_400_BAD_REQUEST
+            )
         started_at = time.perf_counter()
 
         # fail-soft（quick-260723）：向量库不可用/维度漂移等基础设施异常降级为空结果，
@@ -2739,7 +2770,9 @@ class GetEntityTimelineView(McpToolView):
         try:
             as_of = parse_as_of(input_data.get("as_of"))
         except ValueError as exc:
-            return error_response("invalid_params", str(exc), status_code=status.HTTP_400_BAD_REQUEST)
+            return error_response(
+                "invalid_params", str(exc), status_code=status.HTTP_400_BAD_REQUEST
+            )
         started_at = time.perf_counter()
 
         entity_id = input_data["entity_id"]
@@ -2797,7 +2830,9 @@ class GetRelatedEntitiesView(McpToolView):
         try:
             as_of = parse_as_of(input_data.get("as_of"))
         except ValueError as exc:
-            return error_response("invalid_params", str(exc), status_code=status.HTTP_400_BAD_REQUEST)
+            return error_response(
+                "invalid_params", str(exc), status_code=status.HTTP_400_BAD_REQUEST
+            )
         started_at = time.perf_counter()
 
         entity_id = input_data["entity_id"]
@@ -2870,9 +2905,7 @@ class LookupProjectByBranchView(McpToolView):
         if err is not None:
             return err
         assert run is not None
-        input_data, err = await self._validate(
-            LookupProjectByBranchRequestSerializer, request
-        )
+        input_data, err = await self._validate(LookupProjectByBranchRequestSerializer, request)
         if err is not None:
             return err
         assert input_data is not None
@@ -2904,9 +2937,7 @@ class LookupProjectByBranchView(McpToolView):
         work_item_projects: list[Any] = []
         if work_item_id is not None:
             work_item_projects = await self._lookup_projects(work_item_id)
-        binding_projects = await self._lookup_by_branch_binding(
-            branch_name, repository_id
-        )
+        binding_projects = await self._lookup_by_branch_binding(branch_name, repository_id)
 
         # 合并去重（work_item 源优先保留实例；绑定源补充未出现的项目）。
         merged: dict[Any, Any] = {p.id: p for p in work_item_projects}
@@ -2932,14 +2963,15 @@ class LookupProjectByBranchView(McpToolView):
             in_wi = project.id in work_item_ids
             in_binding = project.id in binding_ids
             binding_source = (
-                "both" if in_wi and in_binding
-                else "work_item" if in_wi
-                else "branch_binding" if in_binding
+                "both"
+                if in_wi and in_binding
+                else "work_item"
+                if in_wi
+                else "branch_binding"
+                if in_binding
                 else "repo_association"
             )
-            packed = await pack_project_context(
-                project, request.user, query=branch_name
-            )
+            packed = await pack_project_context(project, request.user, query=branch_name)
             output_data["matched"] = True
             output_data["project"] = _project_summary(project)
             output_data["context"] = packed.text
@@ -2986,9 +3018,7 @@ class LookupProjectByBranchView(McpToolView):
         )
 
     @sync_to_async
-    def _lookup_by_branch_binding(
-        self, branch_name: str, repository_id: Any = None
-    ) -> list[Any]:
+    def _lookup_by_branch_binding(self, branch_name: str, repository_id: Any = None) -> list[Any]:
         """ProjectBranch 显式绑定反查（BIND-02）。
 
         按 ``branch_name`` 查显式绑定项目；传 ``repository_id`` 则追加收窄（跨仓同名分支
@@ -3074,9 +3104,7 @@ async def _resolve_report_project_id(
     branch_name = str(input_data.get("branch_name") or "").strip()
     if not branch_name:
         return None, "branch_unresolved"
-    projects = await _resolve_projects_by_branch(
-        branch_name, input_data.get("repository_id")
-    )
+    projects = await _resolve_projects_by_branch(branch_name, input_data.get("repository_id"))
     if len(projects) == 1:
         pid = projects[0].id
         input_data["project_id"] = pid
@@ -3109,9 +3137,7 @@ class ReportProjectKnowledgeView(McpToolView):
         if err is not None:
             return err
         assert run is not None
-        input_data, err = await self._validate(
-            ReportProjectKnowledgeRequestSerializer, request
-        )
+        input_data, err = await self._validate(ReportProjectKnowledgeRequestSerializer, request)
         if err is not None:
             return err
         assert input_data is not None
@@ -3138,9 +3164,7 @@ class ReportProjectKnowledgeView(McpToolView):
 
         if input_data.get("writeback_mode") == "active":
             # 用户授权 accepted deviation：active 直写。全程 fail-soft 包裹，绝不 5xx/阻断编码。
-            return await self._handle_active_writeback(
-                run, request, input_data, started_at
-            )
+            return await self._handle_active_writeback(run, request, input_data, started_at)
 
         from initiatives.services import MemoryPermissionError, MemoryService
         from services.cursor_writeback import evaluate_writeback_quality
@@ -3178,9 +3202,7 @@ class ReportProjectKnowledgeView(McpToolView):
                 initiated_by_user_id=request.user.id,
             )
         except MemoryPermissionError as exc:
-            return error_response(
-                "forbidden", str(exc), status_code=status.HTTP_403_FORBIDDEN
-            )
+            return error_response("forbidden", str(exc), status_code=status.HTTP_403_FORBIDDEN)
 
         output_data = {
             "accepted": True,
@@ -3236,9 +3258,7 @@ class ReportProjectKnowledgeView(McpToolView):
 
             # 未认证 / request.user 非真实用户 → 静默跳过（_begin 已挡匿名，此处纵深防御）。
             user = request.user
-            if not getattr(user, "is_authenticated", False) or getattr(
-                user, "id", None
-            ) is None:
+            if not getattr(user, "is_authenticated", False) or getattr(user, "id", None) is None:
                 return await _reject("unauthenticated")
 
             # 可选 distill（best-effort，失败回退原文，绝不反噬）。
@@ -3325,9 +3345,7 @@ async def _assert_project_member(project_id: Any, user: Any) -> bool:
     uid = getattr(user, "id", None)
     if uid is None or not getattr(user, "is_authenticated", False):
         return False
-    return await ProjectMember.objects.filter(
-        project_id=project_id, user_id=uid
-    ).aexists()
+    return await ProjectMember.objects.filter(project_id=project_id, user_id=uid).aexists()
 
 
 class ReportProjectStateView(McpToolView):
@@ -3357,9 +3375,7 @@ class ReportProjectStateView(McpToolView):
         if err is not None:
             return err
         assert run is not None
-        input_data, err = await self._validate(
-            ReportProjectStateRequestSerializer, request
-        )
+        input_data, err = await self._validate(ReportProjectStateRequestSerializer, request)
         if err is not None:
             return err
         assert input_data is not None
@@ -3405,9 +3421,7 @@ class ReportProjectStateView(McpToolView):
             user = request.user
 
             # 未认证 / request.user 非真实用户 → 静默跳过（_begin 已挡匿名，此处纵深防御）。
-            if not getattr(user, "is_authenticated", False) or (
-                getattr(user, "id", None) is None
-            ):
+            if not getattr(user, "is_authenticated", False) or (getattr(user, "id", None) is None):
                 return await _finish(_skip("unauthenticated"))
 
             # 成员校验 fail-closed：非成员 / 未绑项目 → 静默跳过（不写、不抛、不阻断编码）。
@@ -3530,9 +3544,7 @@ async def _aget_project(project_id: Any) -> Any:
     """取 initiatives.Project（含 space，供 visibility 读校验）；不存在返回 None。"""
     from initiatives.models import Project
 
-    return (
-        await Project.objects.filter(id=project_id).select_related("space").afirst()
-    )
+    return await Project.objects.filter(id=project_id).select_related("space").afirst()
 
 
 async def _assert_project_readable(project: Any, user: Any) -> bool:
@@ -3553,9 +3565,7 @@ async def _assert_project_readable(project: Any, user: Any) -> bool:
     uid = getattr(user, "id", None)
     if uid is None or not getattr(user, "is_authenticated", False):
         return False
-    is_member = await ProjectMember.objects.filter(
-        project_id=project.id, user_id=uid
-    ).aexists()
+    is_member = await ProjectMember.objects.filter(project_id=project.id, user_id=uid).aexists()
     if is_member:
         return True
     return getattr(project, "visibility", "") == ProjectVisibility.PUBLIC_ORG
@@ -3576,9 +3586,7 @@ class SearchProjectContextView(McpToolView):
         if err is not None:
             return err
         assert run is not None
-        input_data, err = await self._validate(
-            SearchProjectContextRequestSerializer, request
-        )
+        input_data, err = await self._validate(SearchProjectContextRequestSerializer, request)
         if err is not None:
             return err
         assert input_data is not None
@@ -3999,7 +4007,7 @@ _BLUEPRINT_PROCESS_TYPE = "technical_blueprint"
 # 二者都是**结构化 4xx**，绝不 5xx —— 容器 handler 对非 200 只回显 HTTP code
 # （``knowledge_tools.py:329-340``），5xx 会被吞成「调用失败」文案让 agent 拿不到原因。
 _BLUEPRINT_SESSION_FORBIDDEN_CODES = frozenset(
-    {"session_not_owned", "not_member", "not_blueprint_session"}
+    {"session_not_owned", "not_member", "not_blueprint_session", "key_not_owned"}
 )
 _BLUEPRINT_SESSION_ERROR_DETAIL = {
     "missing_session_header": "缺少 X-Friday-Session-Id 头，无法解析所属蓝图会话",
@@ -4007,7 +4015,12 @@ _BLUEPRINT_SESSION_ERROR_DETAIL = {
     "session_not_owned": "该会话不属于当前令牌所有者",
     "not_blueprint_session": "该会话不是蓝图（technical_blueprint）会话",
     "not_member": "当前令牌所有者不是该项目成员",
+    "key_not_owned": "总线 key 声明的仓库不是本容器所属仓库",
 }
+
+# 总线 key 的仓归属前缀（CONTEXT 锁定 `repo:{id}.api_surface`）。`contract:` / `decision:`
+# 等非仓前缀不承载归属语义，不受本闸约束。
+_BLUEPRINT_REPO_KEY_PREFIX = "repo:"
 
 
 @sync_to_async
@@ -4035,6 +4048,49 @@ def _fetch_convergence_session(session_id: Any) -> Any:
         return ConvergenceSession.objects.filter(id=session_id).first()
     except (ValueError, TypeError, DjangoValidationError):
         return None
+
+
+@sync_to_async
+def _fetch_container_repository_id(sub_pk: Any, session_id: Any) -> str:
+    """服务端权威推导「本容器是为哪个仓派发的」（CR-01 的唯一归属依据）。
+
+    权威链只有一条：``RepoResearchTask.subagent_session`` —— 由
+    ``ResearchService.mark_running`` 在派发时回填，容器/runner 触不到。
+
+    **绝不读** ``last_output['repository_id']`` / ``['research_task_id']``：那个 dict 会被
+    ``_handle_progress`` 用 ``parse_progress_payload`` 的结果 merge 覆写，而后者把容器
+    ``details`` 里的任意 scalar 键原样透传（``orchestration/progress_payload.py``）——
+    拿它当归属依据等于把仓归属交给攻击者声明（同 ``callbacks.py`` contract-E1 的教训）。
+
+    反查不到返回空串；调用方据此 **fail-closed** 拒绝 ``repo:`` 前缀写入（非 repo_plan 链
+    的容器不该声明任何仓的接口契约）。
+    """
+    from delivery.models import RepoResearchTask
+
+    if not sub_pk or not session_id:
+        return ""
+    try:
+        return str(
+            RepoResearchTask.objects.filter(subagent_session_id=sub_pk, session_id=session_id)
+            .values_list("repository_id", flat=True)
+            .first()
+            or ""
+        )
+    except (ValueError, TypeError, DjangoValidationError):
+        return ""
+
+
+def _blueprint_key_owned(key: str, own_repository_id: str) -> bool:
+    """``repo:`` 前缀的 key 是否归属本容器的仓（纯函数，非仓前缀一律放行）。
+
+    ``repo:{B}.api_surface`` 是 B 仓接口契约的**发布位**：允许 A 仓容器往那里写等于允许
+    它伪造 B 的接口形状、并顺带消耗真正在等 B 的 waiter（`satisfy_waiters` 按 key 匹配）。
+    """
+    if not key.startswith(_BLUEPRINT_REPO_KEY_PREFIX):
+        return True
+    if not own_repository_id:
+        return False
+    return key.startswith(f"{_BLUEPRINT_REPO_KEY_PREFIX}{own_repository_id}.")
 
 
 async def _aresolve_blueprint_project_id(session: Any) -> Any:
@@ -4243,11 +4299,17 @@ class ReportBlueprintContextView(McpToolView):
     容器把自己产出的接口契约 / 关键现状 / 决策写进**本会话**总线，写入即对所有并行
     仓容器可见（server-authoritative）。
 
-    四道兜底绝不绕过：
+    五道兜底绝不绕过：
 
     - **三道会话校验 fail-closed**：同 ``ReadBlueprintContextView``（T-113-07）。
     - **写入目标无入参面**：请求体不含任何会话字段，只能写进解析出的会话 —— 这是
       「第三道校验（目标条目同会话）」最强的成立方式（伪造无从下手）。
+    - **仓归属服务端权威（CR-01）**：``repository_id`` 由
+      ``_fetch_container_repository_id``（``RepoResearchTask.subagent_session`` 权威链）
+      覆写，请求体上报值一概不采信；``repo:`` 前缀的 ``key`` 必须与该仓一致，否则 403
+      ``key_not_owned``。缺了这道，会话内的**仓间**伪造成立：A 仓容器可写
+      ``repo:{B}.api_surface`` 伪造 B 的接口契约，并顺带把真正在等 B 的 waiter 置
+      ``superseded`` + 触发重派（等待方拿假契约续作、真契约到达时已无 waiter 可命中）。
     - **零裸 ORM + 强制脱敏**：写经 ``BlueprintContextService.append_entry``
       （INV-6），``content`` 在 service 内递归脱敏后入库；view 与容器侧日志均不记
       content 正文（T-113-09）。
@@ -4291,9 +4353,37 @@ class ReportBlueprintContextView(McpToolView):
                 )
                 return _blueprint_session_error(error_code)
 
-            service = BlueprintContextService()
+            # ⭐ CR-01 仓归属闸：`repository_id` 一律服务端权威推导后**覆写**，`repo:` 前缀的
+            # key 必须与之一致。请求体里的 `repository_id` 到此为止只是噪声（与
+            # `blueprint_repo_plan._apply_authoritative_fields` / callbacks 的
+            # `section["repository_id"] = str(task.repository_id)` 同一不变量，总线不破例）。
+            own_repository_id = await _fetch_container_repository_id(
+                getattr(sub, "pk", None), getattr(convergence_session, "id", None)
+            )
             key = str(input_data.get("key") or "")
-            repository_id = str(input_data.get("repository_id") or "")
+            if not _blueprint_key_owned(key, own_repository_id):
+                await self._record(
+                    run,
+                    input_data=input_data,
+                    output_data={"error_code": "key_not_owned"},
+                    traces=[],
+                    started_at=started_at,
+                    call_status="error",
+                    error="key_not_owned",
+                )
+                logger.warning(
+                    "blueprint_context_key_not_owned",
+                    category="caller",
+                    component="blueprint_context",
+                    session_id=str(getattr(convergence_session, "id", "")),
+                    produced_by=str(getattr(sub, "session_id", "") or "container"),
+                    key=key,
+                    initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+                )
+                return _blueprint_session_error("key_not_owned")
+
+            service = BlueprintContextService()
+            repository_id = own_repository_id
             entry = await service.append_entry(
                 session=convergence_session,
                 key=key,

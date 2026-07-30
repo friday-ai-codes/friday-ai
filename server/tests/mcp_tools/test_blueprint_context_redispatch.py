@@ -111,9 +111,13 @@ async def _make_blueprint_session(*, created_by=None) -> ConvergenceSession:
 
 
 async def _make_container_session(
-    blueprint_session: ConvergenceSession, *, owner, repository_id: str = ""
+    blueprint_session: ConvergenceSession, *, owner, repository: Repository
 ) -> SubAgentSession:
-    """派发链上的容器会话（`AgentSession.user` 是 113-02 归属校验的唯一数据来源）。"""
+    """派发链上的容器会话（`AgentSession.user` 是 113-02 归属校验的唯一数据来源）。
+
+    `RepoResearchTask.subagent_session` 绑定模拟 `mark_running` 的服务端回填 —— 它是
+    仓归属（CR-01）的唯一权威链，没有它容器写不了任何 `repo:` 前缀 key。
+    """
     sid = f"bp-plan-{uuid.uuid4().hex[:12]}"
     agent_session = await AgentSession.objects.acreate(
         session_id=f"agent-{sid}",
@@ -121,7 +125,7 @@ async def _make_container_session(
         user=owner,
         metadata={"source": "blueprint_repo_plan"},
     )
-    return await SubAgentSession.objects.acreate(
+    sub = await SubAgentSession.objects.acreate(
         session_id=sid,
         main_session=agent_session,
         repo_url="https://example.com/x.git",
@@ -130,9 +134,17 @@ async def _make_container_session(
         last_output={
             "source": "blueprint_repo_plan",
             "blueprint_session_id": str(blueprint_session.id),
-            "repository_id": repository_id,
+            "repository_id": str(repository.id),
         },
     )
+    task, _ = await sync_to_async(RepoResearchTask.objects.get_or_create)(
+        session=blueprint_session,
+        repository=repository,
+        defaults={"status": RepoResearchTaskStatus.RUNNING},
+    )
+    task.subagent_session = sub
+    await sync_to_async(task.save)(update_fields=["subagent_session", "updated_at"])
+    return sub
 
 
 async def _make_partial_plan(session: ConvergenceSession, repo: Repository) -> PartialPlan:
@@ -167,8 +179,10 @@ async def test_incremental_poll_sees_only_new_entry_after_report(mcp_client, acc
     """A 轮询 read（空）→ B report → A 带 max_seq 再 read：只拿到新增条目。"""
     client, _ = mcp_client
     cs = await _make_blueprint_session(created_by=access_user)
-    waiter_container = await _make_container_session(cs, owner=access_user, repository_id="A")
-    provider_container = await _make_container_session(cs, owner=access_user, repository_id="B")
+    repo_a = await _make_repo()
+    repo_b = await _make_repo()
+    waiter_container = await _make_container_session(cs, owner=access_user, repository=repo_a)
+    provider_container = await _make_container_session(cs, owner=access_user, repository=repo_b)
 
     # 先写一条无关条目，使「第一次 read 非空」也成立（否则空集合无重叠是平凡真）。
     seed = await sync_to_async(client.post)(
@@ -191,9 +205,8 @@ async def test_incremental_poll_sees_only_new_entry_after_report(mcp_client, acc
     report = await sync_to_async(client.post)(
         _REPORT_URL,
         {
-            "key": "repo:B.api_surface",
+            "key": f"repo:{repo_b.id}.api_surface",
             "kind": "api_surface",
-            "repository_id": "B",
             "content": {"name": "listX", "method": "GET", "path": "/x"},
         },
         format="json",
@@ -213,7 +226,7 @@ async def test_incremental_poll_sees_only_new_entry_after_report(mcp_client, acc
     # ⭐ 增量语义成立：两次返回条目集合无重叠（不重复拉全量）。
     assert first_ids and second_ids
     assert first_ids.isdisjoint(second_ids)
-    assert [entry["key"] for entry in second_body["entries"]] == ["repo:B.api_surface"]
+    assert [entry["key"] for entry in second_body["entries"]] == [f"repo:{repo_b.id}.api_surface"]
     assert second_body["entries"][0]["seq"] > cursor
     assert second_body["max_seq"] > cursor
 
@@ -234,9 +247,7 @@ async def test_report_endpoint_redispatches_waiting_repo_with_partial_reference(
     repo_b = await _make_repo()  # provider：本次写入方
     partial = await _make_partial_plan(cs, repo_a)
     await _make_online_runner()
-    provider_container = await _make_container_session(
-        cs, owner=access_user, repository_id=str(repo_b.id)
-    )
+    provider_container = await _make_container_session(cs, owner=access_user, repository=repo_b)
 
     wait_key = f"repo:{repo_b.id}.api_surface"
     waiter = await BlueprintContextService().register_waiter(
@@ -315,9 +326,7 @@ async def test_redispatch_failure_never_breaks_report_response(
     cs = await _make_blueprint_session(created_by=access_user)
     repo_a = await _make_repo()
     repo_b = await _make_repo()
-    provider_container = await _make_container_session(
-        cs, owner=access_user, repository_id=str(repo_b.id)
-    )
+    provider_container = await _make_container_session(cs, owner=access_user, repository=repo_b)
 
     wait_key = f"repo:{repo_b.id}.api_surface"
     waiter = await BlueprintContextService().register_waiter(
@@ -357,11 +366,16 @@ async def test_report_without_waiter_reports_zero_redispatch(mcp_client, access_
     """无 waiter 时不触碰派发面：`redispatched == 0`（键恒在，下游无需判空）。"""
     client, _ = mcp_client
     cs = await _make_blueprint_session(created_by=access_user)
-    container = await _make_container_session(cs, owner=access_user, repository_id="B")
+    repo_b = await _make_repo()
+    container = await _make_container_session(cs, owner=access_user, repository=repo_b)
 
     resp = await sync_to_async(client.post)(
         _REPORT_URL,
-        {"key": "repo:B.api_surface", "kind": "api_surface", "content": {"name": "x"}},
+        {
+            "key": f"repo:{repo_b.id}.api_surface",
+            "kind": "api_surface",
+            "content": {"name": "x"},
+        },
         format="json",
         **_headers(container),
     )
