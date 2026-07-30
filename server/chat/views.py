@@ -74,6 +74,21 @@ logger = structlog.get_logger(__name__)
 _BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
 
 
+def _derive_degraded(router_version: str) -> bool:
+    """降级事实的**唯一派生点**（会话 detail 与 manual override 两处 payload 共用）。
+
+    CONTEXT 要求「前端不自行推断降级」——把推断放到后端即满足该契约，且无需与
+    ``router_version`` 冗余地再加一列（加列还要回填历史行）。
+
+    ``legacy_hybrid`` 刻意排除：它是 ``router_version`` 的列默认值，代表 v2 完全不可用
+    时的历史聚合路径；把它算作降级会让全部历史 trace 突然出现降级横幅
+    （UI-SPEC backstop 1 的历史兼容要求）。
+
+    新增判定分支时改这一处即可 —— 两处 payload 都不得再写等价的版本字面判定。
+    """
+    return router_version in {"v2_stage0_only", "v1_fallback"}
+
+
 def _append_feishu_export_record(message, record: dict[str, str]) -> None:
     """Persist export history on message metadata for refresh-safe recovery."""
     metadata = message.metadata if isinstance(message.metadata, dict) else {}
@@ -542,6 +557,19 @@ class ConversationDetailView(APIView):
                 else [],
                 "threshold": latest_trace.threshold,
                 "triggered_by": latest_trace.triggered_by,
+                # RELY-03 / ROUTE-01（107-08）：这 4 键不出 API 边界的话，降级提示与
+                # 分组分区只活在内存 routingStore 里 —— 刷新页面即消失
+                # （107-RESEARCH §2 第 3 条）。degraded 由后端派生，前端零推断。
+                "router_version": latest_trace.router_version,
+                "degraded": _derive_degraded(latest_trace.router_version),
+                "degrade_reason": latest_trace.degrade_reason,
+                # 与上面 candidates 同款的防御写法：历史脏数据里非 list 时给 []，
+                # 前端据 length 判定分组，拿到非数组会直接抛。
+                "block_order": (
+                    latest_trace.block_order
+                    if isinstance(latest_trace.block_order, list)
+                    else []
+                ),
             }
 
         # 已回复的协商卡（ConversationIntentTrace）—— 刷新 / 切回会话时回显
