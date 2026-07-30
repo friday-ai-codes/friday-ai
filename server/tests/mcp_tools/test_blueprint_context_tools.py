@@ -751,6 +751,68 @@ async def test_forged_key_does_not_consume_other_repo_waiter(mcp_client, access_
 # ---------------------------------------------------------------------------
 
 
+async def test_response_keys_are_declared_in_schema_snapshot(mcp_client, access_user) -> None:
+    """⭐ MN-08：两个工具的**真实响应键** ⊆ `TOOL_SCHEMA_SNAPSHOT` 声明键。
+
+    `test_schema_snapshot.py` 只比「snapshot 与测试内字面量相等」和「键集 == 注册路由集」，
+    **不比 view 的真实响应** —— 113-04 往响应里加 `redispatched` 却没同步 snapshot 就是这样
+    漂过去的。snapshot 是给容器侧/外部客户端看的已发布契约，漂移会让消费方以为键不存在。
+    """
+    from mcp_tools.serializers import TOOL_SCHEMA_SNAPSHOT
+
+    client, _ = mcp_client
+    cs = await _make_blueprint_session()
+    sub = await _make_subagent_session(cs, owner=access_user)
+
+    report = await sync_to_async(client.post)(
+        _REPORT_URL, _report_payload(), format="json", **_headers(sub)
+    )
+    assert report.status_code == 200, report.content
+    read = await sync_to_async(client.post)(_READ_URL, {}, format="json", **_headers(sub))
+    assert read.status_code == 200
+
+    for tool_name, body in (
+        ("report_blueprint_context", report.json()),
+        ("read_blueprint_context", read.json()),
+    ):
+        declared = set(TOOL_SCHEMA_SNAPSHOT[tool_name]["response"])
+        assert set(body) <= declared, (
+            f"{tool_name} 响应键漂出已发布契约：{sorted(set(body) - declared)}"
+        )
+
+
+async def test_deeply_nested_content_rejected_with_4xx(mcp_client, access_user) -> None:
+    """⭐ MN-02：超深嵌套 content → 400 invalid_params（可归因），而非兜底 200 internal_error。
+
+    无界递归会在脱敏/序列化时抛 `RecursionError`（属 `Exception`），被 view 兜底折叠成
+    `{"applied": false, "reason": "internal_error"}` —— 写入方拿不到原因，体积闸也执行不到。
+    """
+    client, _ = mcp_client
+    cs = await _make_blueprint_session()
+    sub = await _make_subagent_session(cs, owner=access_user)
+
+    deep: dict = {"leaf": "x"}
+    for _ in range(200):
+        deep = {"n": deep}
+
+    resp = await sync_to_async(client.post)(
+        _REPORT_URL, _report_payload(content=deep), format="json", **_headers(sub)
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error_code"] == "invalid_params"
+    assert await _entry_count(cs.id) == 0
+
+    # 正常深度照常放行（证明闸不是「一律拒」）
+    ok = await sync_to_async(client.post)(
+        _REPORT_URL,
+        _report_payload(content={"a": {"b": {"c": [1, 2, {"d": "x"}]}}}),
+        format="json",
+        **_headers(sub),
+    )
+    assert ok.status_code == 200
+    assert await _entry_count(cs.id) == 1
+
+
 async def test_observability_records_tool_call_without_content(mcp_client, access_user) -> None:
     """两个新工具各落一条 ToolCallRecord + RequestMetric.labels['call_source']；
 
