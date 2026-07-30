@@ -150,9 +150,10 @@ def build_blueprint_engine(
     工厂」的纪律同调）：``blueprint_resume`` 缺省 engine 时 lazy import 本函数，不再造第二
     个工厂点。
 
-    deps 属性名单与 ``builtin_processes`` 七个 ``_h_bp_*`` handler 的 ``getattr`` 取名
-    **逐字一致**（``spec_gate`` / ``route`` / ``research`` / ``confirm_gate``）——名单漂移会
-    让 handler 恒 pass-through，即「注册了但永远空转」的静默失败。
+    deps 属性名单与 ``builtin_processes`` 九个 ``_h_bp_*`` handler 的 ``getattr`` 取名
+    **逐字一致**（``spec_gate`` / ``route`` / ``research`` / ``confirm_gate`` /
+    ``repo_plan`` / ``merge``）——名单漂移会让 handler 恒 pass-through，即「注册了但永远
+    空转」的静默失败（P-9）。后两个是 113-06 追加的阶段 2/3。
 
     ``node_execution_id`` 仅工作流入口传（调研容器回调 resume 钥匙）。两条链互不污染：
     本工厂不含 technical_plan 的 router/recall/merge/clarify/classify，
@@ -160,6 +161,8 @@ def build_blueprint_engine(
     """
     from delivery.services import ConvergenceSessionService
     from services.process_runtime.blueprint_confirm_gate import BlueprintConfirmGateAdapter
+    from services.process_runtime.blueprint_merge import BlueprintMergeAdapter
+    from services.process_runtime.blueprint_repo_plan import BlueprintRepoPlanAdapter
     from services.process_runtime.blueprint_research_adapter import BlueprintResearchAdapter
     from services.process_runtime.blueprint_route import BlueprintRouteAdapter
     from services.process_runtime.blueprint_spec_gate import BlueprintSpecGateAdapter
@@ -170,6 +173,8 @@ def build_blueprint_engine(
         route=BlueprintRouteAdapter(),
         research=BlueprintResearchAdapter(node_execution_id=node_execution_id),
         confirm_gate=BlueprintConfirmGateAdapter(),
+        repo_plan=BlueprintRepoPlanAdapter(node_execution_id=node_execution_id),
+        merge=BlueprintMergeAdapter(node_execution_id=node_execution_id),
     )
     return ProcessEngine(
         session_service=session_service or ConvergenceSessionService(),
