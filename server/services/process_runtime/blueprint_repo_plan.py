@@ -1,0 +1,789 @@
+"""BlueprintRepoPlanAdapter —— 阶段 2 逐仓分仓方案（Phase 113-03，FLOW-05 / SCHEMA-03）。
+
+五条契约（模块级不变量，改动前先读）：
+
+1. **组合而非继承**：direct 仓起容器复用 `BlueprintResearchAdapter.dispatch(mode="plan")`
+   的派发五步与 metadata 构造；本文件只负责仓集来源、indirect 合成、落库与完成判据。
+2. **INV-6**：`RepoResearchTask` / `PartialPlan` 的写入只经 `ResearchService`；澄清线程只经
+   `BlueprintLifecycleService`。本文件读一律 `values()` / `afirst()`，async 上下文不裸访问
+   lazy-FK。
+3. **WR-02 单仓错误隔离**：任何单仓失败只记 warning + 该仓留待下轮，**绝不上抛** —— 上抛会
+   被 engine 的通用 except 转成整个 session 失败。
+4. **仓集来源是确认门锁定的 `repo_associations`**（最新 `ArtifactVersion`），不复用路由候选面：
+   阶段 2 的 direct/indirect 是人工裁决结果，与路由期的 `role_suggestion` 语义已不同。
+5. **`record_partial` 是整体覆写语义**：写 `repo_plan` 段必须**读-合并-写**（唯一入口
+   `_arecord_repo_plan`）。裸传 `{"repo_plan": ...}` 会让 `acollect_fitness` 读到空 fitness，
+   确认门快照与 `current_state_analysis` 投影全线失血（P-1）。
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from typing import Any, Protocol, runtime_checkable
+
+import structlog
+from asgiref.sync import sync_to_async
+
+from common.logging import redact_secrets_in_text
+from delivery.models import RepoResearchTaskStatus
+from delivery.services import ResearchService
+from services.process_runtime.blueprint_repo_plan_schema import (
+    REPO_PLAN_AVAILABILITY,
+    validate_repo_plan,
+)
+from services.process_runtime.blueprint_research_adapter import (
+    BLUEPRINT_REPO_PLAN_SOURCE,
+    BlueprintResearchAdapter,
+)
+
+logger = structlog.get_logger(__name__)
+
+__all__ = [
+    "BlueprintRepoPlanAdapter",
+    "BLUEPRINT_REPO_PLAN_SOURCE",
+    "MAX_REPO_PLAN_ATTEMPTS",
+    "STAGE_STATE_KEY",
+    "RepoPlanSynthesizer",
+]
+
+# 有界重试上界（CONTEXT：「不合格触发有界重试 ≤2 轮，仍不合格开澄清线程而非静默降级」）。
+# 回调侧按同一常量判 direct 仓的容器重跑次数；本文件用它兜 indirect 仓的 LLM 合成轮次。
+MAX_REPO_PLAN_ATTEMPTS = 2
+
+# `stage_state` 新键（与既有 9 键无冲突）；只存 id / 计数（单字段 < 2KB，DESIGN §5.6）。
+STAGE_STATE_KEY = "repo_plan"
+
+_MAX_ERROR_CHARS = 500
+_MAX_PROMPT_TEXT_CHARS = 2000
+_VALID_ROLES = ("direct", "indirect")
+
+
+@runtime_checkable
+class RepoPlanSynthesizer(Protocol):
+    """indirect 仓的服务端 LLM 合成器协议（测试注替身，生产零参构造）。"""
+
+    async def synthesize(self, session: Any, repo: dict) -> dict: ...
+
+
+class LLMRepoPlanSynthesizer:
+    """默认合成器：provider_config 解析 + chat model + 健壮 JSON 解析。
+
+    照 `architect_merge_adapter.LLMMergedPlanSynthesizer` 的五步骨架（**只读 analog，
+    复制不 import**）：`aresolve` → `build_chat_model` → `use_call_source` → 文本归一 → 解析。
+    解析不出结构就 `raise`，由调用方按有界重试处理（绝不返回半截产物）。
+    """
+
+    async def synthesize(self, session: Any, repo: dict) -> dict:
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from agents.call_source import CallSource, use_call_source
+        from agents.llm_factory import build_chat_model
+        from services.provider_config import ProviderConfigService
+
+        resolved = await ProviderConfigService.aresolve()
+        model_name = (getattr(resolved, "extra", None) or {}).get("default_model", "")
+        if not model_name:
+            raise RuntimeError("no_default_model")
+        model = build_chat_model(resolved, model_name, streaming=False)
+        system = SystemMessage(content=self._system_prompt())
+        human = HumanMessage(content=self._build_prompt(session, repo))
+        # 111 已注册的 call_source，不新增枚举值
+        with use_call_source(CallSource.BLUEPRINT_REPO_PLAN):
+            response = await model.ainvoke([system, human])
+        parsed = _parse_json(_content_to_text(response.content))
+        if parsed is None:
+            raise ValueError("repo_plan_parse_failed")
+        return parsed
+
+    @staticmethod
+    def _system_prompt() -> str:
+        return (
+            "你是软件架构师，正在为一个**间接相关**仓库整理它在本次需求中的能力引用清单。"
+            "该仓预计不需要改动，你的产出用于让其他仓知道能从它这里取什么。只输出 JSON。"
+        )
+
+    @staticmethod
+    def _build_prompt(session: Any, repo: dict) -> str:
+        """由服务端权威状态构造（不把外部用户原文当执行指令拼接）。"""
+        repository_id = str(repo.get("repository_id") or "")
+        responsibility = _blocks_to_text(repo.get("responsibility"))[:_MAX_PROMPT_TEXT_CHARS]
+        fitness = repo.get("fitness") if isinstance(repo.get("fitness"), dict) else {}
+        return (
+            f"仓库 id：{repository_id}\n"
+            f"确认门锁定的职责：{responsibility or '（未填）'}\n"
+            f"阶段 1 适配度结论：{fitness.get('verdict') or 'unknown'}\n\n"
+            "请只输出一个 JSON 对象，顶层键为 `repo_plan`，其值字段：\n"
+            f'- repository_id: "{repository_id}"；role: "indirect"\n'
+            "- responsibility: Block[]（沿用上面锁定的职责）\n"
+            "- apis_provided: [{name, method, path, description, citations}] —— 本仓已能对外"
+            "提供、本次需求可能被消费的能力\n"
+            "- impl_items: []（间接仓默认不改动；确有必要的完善项用 change_type="
+            '"indirect_refine"）\n'
+            "- risks: Block[]（把「无法确认的能力」写成风险，不要编造接口）\n"
+            f"- 如需其他仓配合，写进 apis_consumed[].data_source（availability ∈ "
+            f"{'、'.join(REPO_PLAN_AVAILABILITY)}，needs_support 时必填 support_repository_id）\n"
+        )
+
+
+class BlueprintRepoPlanAdapter:
+    """蓝图 `repo_plan` stage 依赖：仓集 / direct 派发 / indirect 合成 / 落库 / 完成判据。
+
+    依赖全 keyword-only 可注入（测试注 mock，生产零参构造）：
+
+    - `research_service`：`ResearchService` 形状（唯一业务写入面）
+    - `research_adapter`：`BlueprintResearchAdapter` 形状（复用 `dispatch(mode="plan")`）
+    - `synthesizer`：`RepoPlanSynthesizer` 形状（indirect 仓服务端合成）
+    - `lifecycle_service`：`BlueprintLifecycleService` 形状（澄清线程唯一入口）
+    """
+
+    def __init__(
+        self,
+        *,
+        research_service: Any = None,
+        research_adapter: Any = None,
+        synthesizer: Any = None,
+        lifecycle_service: Any = None,
+        node_execution_id: str = "",
+    ) -> None:
+        self.research_service = research_service or ResearchService()
+        self.research_adapter = research_adapter or BlueprintResearchAdapter(
+            node_execution_id=node_execution_id
+        )
+        self.synthesizer = synthesizer or LLMRepoPlanSynthesizer()
+        self._lifecycle_service = lifecycle_service
+        self.node_execution_id = node_execution_id or ""
+
+    # ── 仓集来源（确认门锁定产物） ─────────────────────────────────────────
+
+    async def acollect_locked_repos(self, session: Any) -> list[dict]:
+        """确认门锁定的仓集：`[{repository_id, role, responsibility, fitness}]`。
+
+        基线取 artifact 的**最新** `ArtifactVersion`（`order_by("-version_no")`）而不是会话
+        钉住的那一版 —— 后者只在 handler 显式回填 `StageOutcome` 时才推进，读它会拿到确认门
+        落锁之前的旧内容（112-05 Deviation 3 同源坑）。取不到则回落
+        `stage_state["confirmation"]` 快照；两者都无 → `[]`（上层判「无可拟方案的仓」）。
+        """
+        try:
+            artifact_id = await self._aresolve_artifact_id(getattr(session, "id", None))
+            content = (
+                await self._aload_latest_content(artifact_id) if artifact_id is not None else None
+            )
+            repos = _normalize_locked_repos((content or {}).get("repo_associations"))
+            if repos:
+                return repos
+        except Exception as exc:  # noqa: BLE001 — 读失败回落快照，绝不上抛
+            logger.warning(
+                "blueprint_repo_plan_locked_repos_load_failed",
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+        stage_state = getattr(session, "stage_state", None) or {}
+        snapshot = stage_state.get("confirmation") if isinstance(stage_state, dict) else None
+        return _normalize_locked_repos(_iter_snapshot_repos(snapshot))
+
+    # ── 派发主入口 ────────────────────────────────────────────────────────
+
+    async def dispatch_plans(self, session: Any) -> dict:
+        """逐仓拟方案（**增量**）：direct 起容器、indirect 服务端合成。
+
+        返回形状恒定 `{dispatched, synthesized, pending, completed, repositories}`
+        （下游 handler 无需判空分支）。已产出 `repo_plan` 段的仓不重派（T-113-16）。
+        """
+        started = time.monotonic()
+        repos = await self.acollect_locked_repos(session)
+        if not repos:
+            return {
+                "dispatched": 0,
+                "synthesized": 0,
+                "pending": 0,
+                "completed": [],
+                "repositories": [],
+            }
+
+        logger.info(
+            "blueprint_repo_plan_dispatch_started",
+            session_id=str(getattr(session, "id", "")),
+            repo_count=len(repos),
+            category="sampling",
+            component="process_runtime",
+        )
+
+        existing = await self.acollect_repo_plans(session)
+        task_map = await self._aload_task_map(getattr(session, "id", None))
+        dispatched = 0
+        synthesized = 0
+        completed: list[str] = []
+        pending: list[str] = []
+
+        for repo in repos:
+            repository_id = repo["repository_id"]
+            if existing.get(repository_id):
+                completed.append(repository_id)
+                continue
+            try:
+                if repo.get("role") == "indirect":
+                    if await self._asynthesize_indirect_plan(session, repo):
+                        synthesized += 1
+                        completed.append(repository_id)
+                    else:
+                        pending.append(repository_id)
+                    continue
+                dispatched += await self._adispatch_direct_plan(
+                    session, repo, task=task_map.get(repository_id)
+                )
+                pending.append(repository_id)
+            except Exception as exc:  # noqa: BLE001 — WR-02 单仓隔离，绝不上抛
+                pending.append(repository_id)
+                logger.warning(
+                    "blueprint_repo_plan_dispatch_failed",
+                    session_id=str(getattr(session, "id", "")),
+                    repository_id=repository_id,
+                    error=redact_secrets_in_text(str(exc)),
+                    category="sampling",
+                    component="process_runtime",
+                )
+
+        logger.info(
+            "blueprint_repo_plan_dispatch_completed",
+            session_id=str(getattr(session, "id", "")),
+            dispatched=dispatched,
+            synthesized=synthesized,
+            pending=len(pending),
+            completed_count=len(completed),
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+            category="sampling",
+            component="process_runtime",
+        )
+        return {
+            "dispatched": dispatched,
+            "synthesized": synthesized,
+            "pending": len(pending),
+            "completed": completed,
+            "repositories": [repo["repository_id"] for repo in repos],
+        }
+
+    async def _adispatch_direct_plan(self, session: Any, repo: dict, *, task: dict | None) -> int:
+        """direct 仓起 plan 容器：先置回可派发态，再复用派发面的 `mode="plan"`。
+
+        **必须先 `mark_stale`**：阶段 2 复用阶段 1 的同一 `RepoResearchTask`，而
+        `record_partial` 已把它置 DONE —— 不置 stale 则派发面的可派发白名单判定为终态直接
+        skip，plan 容器永不启动（与 112-04 Deviation 1 同源的静默失效模式）。
+        """
+        repository_id = repo["repository_id"]
+        if task is not None and str(task.get("status")) not in (
+            RepoResearchTaskStatus.PENDING,
+            RepoResearchTaskStatus.STALE,
+        ):
+            await self.research_service.mark_stale([task["id"]])
+        result = await self.research_adapter.dispatch(
+            session, mode="plan", repository_ids={repository_id}
+        )
+        result = result if isinstance(result, dict) else {}
+        dispatched = int(result.get("dispatched") or 0)
+        if result.get("degraded"):
+            # plan 模式不做轻量降级（那会挤掉 repo_plan 段）——无 runner 时该仓保持待办。
+            logger.warning(
+                "blueprint_repo_plan_dispatch_no_runner",
+                session_id=str(getattr(session, "id", "")),
+                repository_id=repository_id,
+                category="sampling",
+                component="process_runtime",
+            )
+        # 容器动作是用户可归因的调用类事件（观测规范：必须绑定触发用户）
+        logger.info(
+            "blueprint_repo_plan_container_dispatched",
+            session_id=str(getattr(session, "id", "")),
+            repository_id=repository_id,
+            dispatched=dispatched,
+            initiated_by_user_id=_initiated_by(session),
+            category="caller",
+            component="process_runtime",
+        )
+        return dispatched
+
+    # ── indirect 仓：服务端 LLM 合成（不起容器） ───────────────────────────
+
+    async def _asynthesize_indirect_plan(self, session: Any, repo: dict) -> bool:
+        """indirect 仓的能力引用清单：与 direct 同形落 `PartialPlan.content.repo_plan`。
+
+        产物过 `validate_repo_plan`；不合格重试至 `MAX_REPO_PLAN_ATTEMPTS`，仍不合格则开
+        blocking 澄清线程并落一份 **degraded 但合法**的最小 repo_plan（`impl_items=[]` +
+        risks 记明缺失原因）——**绝不静默丢弃**（T-113-13）。
+        """
+        repository_id = repo["repository_id"]
+        task = await self._aensure_task(session, repository_id)
+        if task is None:
+            return False
+
+        section: dict | None = None
+        last_error = ""
+        for _attempt in range(MAX_REPO_PLAN_ATTEMPTS + 1):
+            try:
+                raw = await self.synthesizer.synthesize(session, repo)
+            except Exception as exc:  # noqa: BLE001 — 合成失败按「本轮不合格」处理
+                last_error = redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS]
+                continue
+            candidate = _extract_section(raw)
+            candidate = _apply_authoritative_fields(candidate, repo)
+            ok, err = validate_repo_plan(candidate)
+            if ok:
+                section = candidate
+                break
+            last_error = str(err or "")[:_MAX_ERROR_CHARS]
+
+        if section is None:
+            thread_id = await self._aopen_clarification(session, repository_id, last_error)
+            section = _degraded_section(repo, reason=last_error, thread_id=thread_id)
+            ok, err = validate_repo_plan(section)
+            if not ok:
+                # 兜底产物自身非法 = 本文件的 bug；宁可留待下轮也不落非法 content。
+                logger.warning(
+                    "blueprint_repo_plan_degraded_section_invalid",
+                    session_id=str(getattr(session, "id", "")),
+                    repository_id=repository_id,
+                    error=str(err or "")[:_MAX_ERROR_CHARS],
+                    category="sampling",
+                    component="process_runtime",
+                )
+                return False
+
+        await self._arecord_repo_plan(task, section)
+        logger.info(
+            "blueprint_repo_plan_indirect_synthesized",
+            session_id=str(getattr(session, "id", "")),
+            repository_id=repository_id,
+            degraded=bool(last_error),
+            item_count=len(section.get("impl_items") or []),
+            category="sampling",
+            component="process_runtime",
+        )
+        return True
+
+    # ── 落库唯一入口（读-合并-写） ─────────────────────────────────────────
+
+    async def _arecord_repo_plan(self, task: Any, repo_plan_section: dict) -> Any:
+        """写 `repo_plan` 段的**唯一入口**：读最新 content → 浅合并 → `record_partial`。
+
+        ⚠️ 裸传 `{"repo_plan": ...}` 会让 `acollect_fitness` 读到空 fitness —— `record_partial`
+        每次都 `create` 全量新行，而下游只取最新一行，确认门快照与投影全线失血（P-1）。
+        """
+        prev = await self._aload_latest_valid_content(task)
+        content = {**prev, "repo_plan": repo_plan_section}
+        # repository_id 由服务端权威写入，不采信容器/LLM 上报值
+        content["repository_id"] = str(getattr(task, "repository_id", "") or "")
+        return await self.research_service.record_partial(task, content)
+
+    # ── 产物读取与完成判据 ────────────────────────────────────────────────
+
+    async def acollect_repo_plans(self, session: Any) -> dict[str, dict]:
+        """按仓聚合**最新有效**的 `repo_plan` 段：`{repository_id: repo_plan}`。
+
+        一仓多条 `PartialPlan` 按三要素取最新（与 `acollect_fitness` 逐字同口径）：
+        `valid=True` 过滤 + `-created_at` 降序 + 每 `research_task_id` 只取首见。
+        历史行不被覆盖，只是不作为该仓 canonical 产物。
+        """
+        try:
+            return await self._acollect_repo_plans_sync(getattr(session, "id", None))
+        except Exception as exc:  # noqa: BLE001 — 读失败按「无产物」处理（判据保守为未完成）
+            logger.warning(
+                "blueprint_repo_plan_collect_failed",
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+            return {}
+
+    async def aall_repo_plans_ready(self, session: Any) -> bool:
+        """阶段 2 的**自写完成判据**（供 113-06 的 handler 调用）。
+
+        判据 = 锁定仓集里每个仓都有非空 `repo_plan` 段，或该仓 task 已 `failed`（失败仓不
+        阻塞 barrier，由 merge 阶段标未决项）。**只看 `repo_plan` 段存在性 + 失败终态**，
+        不看 `done`/`stale`：阶段 1 与阶段 2 复用同一 task，`done` 在两阶段都出现，而
+        `mark_stale` 会让「全部终态」类判据短暂为假。
+        """
+        repos = await self.acollect_locked_repos(session)
+        if not repos:
+            return True
+        plans = await self.acollect_repo_plans(session)
+        task_map = await self._aload_task_map(getattr(session, "id", None))
+        for repo in repos:
+            repository_id = repo["repository_id"]
+            if plans.get(repository_id):
+                continue
+            task = task_map.get(repository_id) or {}
+            if str(task.get("status")) == RepoResearchTaskStatus.FAILED:
+                continue
+            return False
+        return True
+
+    # ── 单仓定向补调研（复用既有通路，不新建机制） ──────────────────────────
+
+    async def arequest_targeted_research(self, session: Any, repository_id: str) -> bool:
+        """阶段 2 中对某仓发起定向补调研：直接委托既有 `aupgrade_to_deep`。
+
+        内部走 `dispatch(force_deep_repository_ids={rid})`（`mode` 缺省 research），复用
+        112 的增量派发白名单与单仓隔离，**不新建机制**。返回其 bool（False = 未受理）。
+        """
+        return bool(await self.research_adapter.aupgrade_to_deep(session, str(repository_id or "")))
+
+    # ── stage_state 小摘要 ────────────────────────────────────────────────
+
+    def build_stage_state(
+        self,
+        *,
+        plans: dict,
+        dispatched: list,
+        pending: list,
+        attempts: dict | None = None,
+    ) -> dict:
+        """`stage_state["repo_plan"]` 小摘要：**只存 id 与计数**（单字段 < 2KB，DESIGN §5.6）。
+
+        方案正文一律由下游按 `repository_id` 自取 `PartialPlan`，绝不往 `stage_state` 里塞。
+        """
+        ready = sorted(str(rid) for rid, section in (plans or {}).items() if section)
+        pending_ids = sorted({str(rid) for rid in (pending or []) if str(rid or "")} - set(ready))
+        counter = {
+            str(rid): int(count or 0) for rid, count in (attempts or {}).items() if str(rid or "")
+        }
+        for rid in dispatched or []:
+            counter.setdefault(str(rid), 1)
+        return {
+            "ready_repository_ids": ready,
+            "pending_repository_ids": pending_ids,
+            "attempts": counter,
+        }
+
+    # ── 澄清线程（唯一入口经 lifecycle service） ────────────────────────────
+
+    async def _aopen_clarification(self, session: Any, repository_id: str, detail: str) -> str:
+        """开一条阻塞澄清线程；`return_stage` **必填**（B3），否则恢复会退回阶段 1。
+
+        question 只含仓名与缺失字段说明，**不含 content 正文**（半可信正文不进 HITL 面板）。
+        best-effort：开不出线程只记 warning 并返回空串，绝不反噬主链。
+        """
+        try:
+            artifact = await self._aload_artifact(getattr(session, "id", None))
+            if artifact is None:
+                logger.warning(
+                    "blueprint_repo_plan_clarification_no_artifact",
+                    session_id=str(getattr(session, "id", "")),
+                    repository_id=repository_id,
+                    category="sampling",
+                    component="process_runtime",
+                )
+                return ""
+            thread = await self._get_lifecycle_service().open_thread(
+                artifact,
+                kind="ai_clarification",
+                blocking=True,
+                question=(
+                    f"仓库 {repository_id} 的分仓方案连续 {MAX_REPO_PLAN_ATTEMPTS + 1} 次未能"
+                    f"产出合规结构，请补充信息或调整该仓职责。校验失败原因："
+                    f"{str(detail or '')[:_MAX_ERROR_CHARS] or '未知'}"
+                ),
+                initiated_by_user_id=_initiated_by(session),
+                # B3：漏传会让 `blueprint_resume` 无 stage 依据、阶段 2 的澄清恢复退回阶段 1
+                return_stage="repo_plan",
+            )
+            thread_id = str(getattr(thread, "id", "") or "")
+            logger.info(
+                "blueprint_repo_plan_clarification_opened",
+                session_id=str(getattr(session, "id", "")),
+                repository_id=repository_id,
+                thread_id=thread_id,
+                initiated_by_user_id=_initiated_by(session),
+                category="caller",
+                component="process_runtime",
+            )
+            return thread_id
+        except Exception as exc:  # noqa: BLE001 — 开线程失败不反噬主链
+            logger.warning(
+                "blueprint_repo_plan_clarification_failed",
+                session_id=str(getattr(session, "id", "")),
+                repository_id=repository_id,
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+            return ""
+
+    def _get_lifecycle_service(self) -> Any:
+        if self._lifecycle_service is not None:
+            return self._lifecycle_service
+        from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+
+        return BlueprintLifecycleService()
+
+    # ── ORM 只读边界（全部经 sync_to_async / afirst，不裸访问 lazy-FK） ──────
+
+    async def _aensure_task(self, session: Any, repository_id: str) -> Any:
+        """取该仓的 `RepoResearchTask`；缺失则经 service 幂等新建（阶段 2 才纳入的仓）。"""
+        tasks = await self.research_service.create_tasks_for_session(
+            session, [{"repository_id": repository_id, "routed_confidence": ""}]
+        )
+        for task in tasks or []:
+            if str(getattr(task, "repository_id", "")) == str(repository_id):
+                return task
+        return None
+
+    @staticmethod
+    @sync_to_async
+    def _aresolve_artifact_id(session_id: Any) -> Any:
+        """会话 → artifact id（只取标量，async 安全）。"""
+        from delivery.models import ConvergenceSession
+
+        return (
+            ConvergenceSession.objects.filter(id=session_id)
+            .values_list("current_artifact_version__artifact_id", flat=True)
+            .first()
+        )
+
+    @staticmethod
+    async def _aload_latest_content(artifact_id: Any) -> dict | None:
+        """artifact 的**最新**版本 content（`order_by("-version_no")`，绝不读会话钉住的版本）。"""
+        from delivery.models import ArtifactVersion
+
+        row = await (
+            ArtifactVersion.objects.filter(artifact_id=artifact_id)
+            .order_by("-version_no")
+            .values("content")
+            .afirst()
+        )
+        content = (row or {}).get("content")
+        return content if isinstance(content, dict) else {}
+
+    @staticmethod
+    async def _aload_artifact(session_id: Any) -> Any:
+        from delivery.models import Artifact, ConvergenceSession
+
+        artifact_id = await (
+            ConvergenceSession.objects.filter(id=session_id)
+            .values_list("current_artifact_version__artifact_id", flat=True)
+            .afirst()
+        )
+        if not artifact_id:
+            return None
+        return await Artifact.objects.filter(id=artifact_id).afirst()
+
+    @staticmethod
+    @sync_to_async
+    def _aload_task_map(session_id: Any) -> dict[str, dict]:
+        from delivery.models import RepoResearchTask
+
+        rows = RepoResearchTask.objects.filter(session_id=session_id).values(
+            "id", "repository_id", "status", "attempt"
+        )
+        return {
+            str(row["repository_id"]): {
+                "id": row["id"],
+                "status": str(row["status"]),
+                "attempt": int(row["attempt"] or 0),
+            }
+            for row in rows
+        }
+
+    @staticmethod
+    @sync_to_async
+    def _acollect_repo_plans_sync(session_id: Any) -> dict[str, dict]:
+        from delivery.models import PartialPlan, RepoResearchTask
+
+        tasks = dict(
+            RepoResearchTask.objects.filter(session_id=session_id).values_list(
+                "id", "repository_id"
+            )
+        )
+        if not tasks:
+            return {}
+        latest: dict[Any, dict] = {}
+        rows = (
+            PartialPlan.objects.filter(research_task__session_id=session_id, valid=True)
+            .order_by("-created_at")
+            .values("research_task_id", "content")
+        )
+        for row in rows:
+            # 降序取首见即最新（每 task 只取一条）
+            latest.setdefault(row["research_task_id"], row["content"] or {})
+        collected: dict[str, dict] = {}
+        for task_id, repository_id in tasks.items():
+            content = latest.get(task_id) or {}
+            section = content.get("repo_plan") if isinstance(content, dict) else None
+            if isinstance(section, dict) and section:
+                collected[str(repository_id)] = section
+        return collected
+
+    @staticmethod
+    @sync_to_async
+    def _aload_latest_valid_content(task: Any) -> dict:
+        """该 task 最新 content（读-合并-写的「读」）。
+
+        优先 `valid=True` 的最新一行；**全部失效时回落最新的失效行** —— 阶段 2 派发前会
+        `mark_stale` 把阶段 1 的行置 `valid=False`，只认 valid 会让合并基线变空，
+        `repo_plan` 落库时把 112 的 fitness / findings / §7 五键一起吃掉（正是 P-1 要防的）。
+        """
+        from delivery.models import PartialPlan
+
+        for valid_only in (True, False):
+            query = PartialPlan.objects.filter(research_task=task)
+            if valid_only:
+                query = query.filter(valid=True)
+            row = query.order_by("-created_at").values("content").first()
+            content = (row or {}).get("content")
+            if isinstance(content, dict) and content:
+                return content
+        return {}
+
+
+# ── 模块级纯函数 ──────────────────────────────────────────────────────────
+
+
+def _initiated_by(session: Any) -> str:
+    """触发用户归因（无触发用户记 `system`，绝不伪造 actor）。"""
+    return str(getattr(session, "initiated_by_user_id", "") or "") or "system"
+
+
+def _normalize_locked_repos(raw: Any) -> list[dict]:
+    """`repo_associations` / 确认门快照 → `[{repository_id, role, responsibility, fitness}]`。
+
+    半可信输入逐层 `.get` 防御；`role` 非法回落 `direct`（把「要改的仓」误判成「不用改」
+    的代价远高于反过来）。
+    """
+    if not isinstance(raw, list):
+        return []
+    repos: list[dict] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        repository_id = str(item.get("repository_id") or "")
+        if not repository_id or repository_id in seen:
+            continue
+        if item.get("removed") is True:
+            continue
+        seen.add(repository_id)
+        role = str(item.get("role") or item.get("role_suggestion") or "").strip()
+        if role not in _VALID_ROLES:
+            role = "direct"
+        fitness = item.get("fitness")
+        repos.append(
+            {
+                "repository_id": repository_id,
+                "repository_name": str(item.get("repository_name") or ""),
+                "role": role,
+                "responsibility": item.get("responsibility"),
+                "fitness": fitness if isinstance(fitness, dict) else {},
+            }
+        )
+    return repos
+
+
+def _iter_snapshot_repos(snapshot: Any) -> list[dict]:
+    """确认门快照的仓清单（兼容 `{"repos": [...]}` 与裸 list 两种形状）。"""
+    if isinstance(snapshot, dict):
+        for key in ("repos", "repositories", "candidates"):
+            value = snapshot.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        return []
+    if isinstance(snapshot, list):
+        return [item for item in snapshot if isinstance(item, dict)]
+    return []
+
+
+def _extract_section(raw: Any) -> Any:
+    """产物归一：容器/LLM 可能直接给 `repo_plan` 段，也可能包一层同名顶层键。"""
+    if isinstance(raw, dict) and isinstance(raw.get("repo_plan"), dict):
+        return raw["repo_plan"]
+    return raw
+
+
+def _apply_authoritative_fields(section: Any, repo: dict) -> Any:
+    """服务端权威字段覆写：`repository_id` / `role` / `responsibility` 不采信上报值。"""
+    if not isinstance(section, dict):
+        return section
+    merged = {**section}
+    merged["repository_id"] = repo["repository_id"]
+    merged["role"] = repo.get("role") or "direct"
+    responsibility = repo.get("responsibility")
+    if isinstance(responsibility, list) and responsibility:
+        merged["responsibility"] = responsibility
+    return merged
+
+
+def _degraded_section(repo: dict, *, reason: str, thread_id: str) -> dict:
+    """有界重试耗尽后的 **degraded 但合法** 最小 repo_plan（绝不静默丢弃）。"""
+    repository_id = repo["repository_id"]
+    responsibility = repo.get("responsibility")
+    section: dict[str, Any] = {
+        "repository_id": repository_id,
+        "role": repo.get("role") or "indirect",
+        "impl_items": [],
+        "risks": [
+            {
+                "block_id": f"blk_repo_plan_degraded_{repository_id}",
+                "type": "paragraph",
+                "text": (
+                    f"本仓分仓方案未能自动产出合规结构（已重试 {MAX_REPO_PLAN_ATTEMPTS} 轮），"
+                    f"已开阻塞澄清线程等待人工补充。原因：{str(reason or '')[:_MAX_ERROR_CHARS]}"
+                ),
+            }
+        ],
+        "open_question_thread_ids": [thread_id] if thread_id else [],
+    }
+    if isinstance(responsibility, list) and responsibility:
+        section["responsibility"] = responsibility
+    return section
+
+
+def _content_to_text(content: Any) -> str:
+    """把 LLM response.content（str / list[block]）归一化为文本。"""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "".join(parts)
+    return str(content)
+
+
+def _parse_json(text: str) -> dict | None:
+    """健壮解析：取首 `{` 到末 `}`，不 eval；非 dict 返 None。"""
+    candidate = (text or "").strip()
+    if not candidate.startswith("{"):
+        start, end = candidate.find("{"), candidate.rfind("}")
+        if start == -1 or end <= start:
+            return None
+        candidate = candidate[start : end + 1]
+    try:
+        obj = json.loads(candidate)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _blocks_to_text(blocks: Any) -> str:
+    """Block[] → 纯文本（只取 text；prompt 只需语义文本不需渲染）。"""
+    if isinstance(blocks, str):
+        return blocks
+    if not isinstance(blocks, list):
+        return ""
+    parts: list[str] = []
+    for block in blocks:
+        if isinstance(block, str):
+            parts.append(block)
+            continue
+        if not isinstance(block, dict):
+            continue
+        text = block.get("text")
+        if isinstance(text, list):
+            parts.extend(entry for entry in text if isinstance(entry, str) and entry)
+        elif isinstance(text, str) and text:
+            parts.append(text)
+    return "\n".join(parts)
