@@ -53,6 +53,15 @@
 - **`revision_round` 写入路径（按调研定夺）**：它是蓝图 content 的 `meta` 段字段（非模型字段，全仓无写入方）→ 驳回必须走「改 content → `add_version` → `transition`」三步，**不扩 `_apply_transition_sync`**；本相位是它的首个写入方
 - **`merge.merged` 转向变更（按调研定夺）**：`merge` 成功后由原先直转终态改为进入 `ai_review`；接受这一在途会话的行为变更（旧 `technical_plan` process 零感知）
 
+### plan-checker BLOCKER 定夺（2026-07-30，5 条）
+
+- **B1 答案消费必须有生产调用方**：`aapply_thread_answers` 不得是孤儿——在**人审 answer 端点**与 **review 入口**两处显式接线（作答后即消费产新版本），并给 `section_writer` 定**生产实现**（默认 None 不可接受：无人重产段落等于答案不落地）。
+- **B2 必须补 finding 处置通道（消死锁）**：超界转 `pending_review` 后未决 BLOCKER 线程会让 confirm 守卫恒拒 → 人审只能驳回、永不能通过。定夺：五端点**新增 finding 处置端点**（`resolve` / `dismiss`，经 lifecycle 收口、记处置人与理由），并补「超界 → 人工处置 finding → confirm 放行」的端到端用例。禁止靠直调 service 充当证据。
+- **B3 AI 重装路径必须挂重锚定与人工块保护**：打回后 `repo_rework`/`remerge` 重跑 merge 是主要产版本路径，若不处理会**抹掉人工编辑**且线程不重锚。定夺：**不改 `blueprint_merge.py`**（保持只读受限），改在 **114-03 的 `ai_review` 入口/新版本落库后**统一挂：① 调 `areanchor_threads` 批量重锚定；② **人工块保护**——以版本链中 `produced_by_ref` 带 `human_edit:` 的 block_id 为保护集，重装后逐一比对：内容等价则保留人工版本，实质冲突则**开线程询问**（绝不静默覆盖），对齐「AI 不覆盖人工」原则。
+- **B4 提醒需真实周期路径**：GET 快照不是挂载点（无人应答就无请求 → 提醒永不触发）。定夺：挂**既有 apscheduler**（仓库同步轮询已在用，加一个 job，不新起独立定时体系）；判据状态口径明确为 **`needs_clarification`**（对齐 SC-4，不用 `pending_review`）；线程加 `last_reminded_at`（可空 DateTimeField + migration，本相位承载）以支撑「按周期」而非重复轰炸。
+- **B5 规则六补 constraints**：`agoal_backward_review` 签名须纳入 `requirement_spec.constraints`（进 digest），使「与 constraints 冲突」真正可判；若确实只能部分覆盖，须在 PLAN 显式登记降级范围与理由，不得默认落空。
+- **WARNING 一并修**：114-05 由 artifact 反查会话**必须带 `process_type="technical_blueprint"` 过滤**（112 决策，防跨 process 污染）；114-01 的 `BlueprintThreadMessage.objects.create` 计数验收自相矛盾需订正；114-02 的 `_normalize_locked_repos` 行号与 RESEARCH 不符需按实测更正。
+
 ### 观测
 - 审查事件 `blueprint_review_started/completed/failed` 带 `duration_ms`/`category=caller`/`component=process_runtime`；findings 计数与分级分布进事件 payload（**正文不进 payload**）
 - 打回/超界/人审通过驳回记 `caller` 事件并绑定 `initiated_by_user_id`；机械规则逐条判定记 `sampling`
