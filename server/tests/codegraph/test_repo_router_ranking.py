@@ -35,6 +35,7 @@ from codegraph.services.repo_router_ranking import (
     clamp_ranking_params,
     classify_degrade_reason,
     decide_block_order,
+    is_retryable_upstream_failure,
 )
 
 DELTA = 0.15
@@ -334,6 +335,81 @@ def test_classify_degrade_reason_return_is_in_controlled_closed_set() -> None:
     for reason in probes:
         for exc_name in (None, "TimeoutError", "Mystery"):
             assert classify_degrade_reason(reason, exc_type_name=exc_name) in allowed
+
+
+# ---------------------------------------------------------------------------
+# MJ-01：状态码优先的分类与重试判定
+#
+# 只按类名子串匹配对 SDK 具体异常类不成立——`APIStatusError` 是基类，生产抛的永远是
+# `RateLimitError` / `InternalServerError` / `OverloadedError` 这类子类，名字里不含
+# "APIStatus"。修复前：429/500/529 全落 `unknown`（既不重试，用户还只看到「未知原因」），
+# 而 `BadRequestError` 反被判可重试（白烧一次上游调用）。
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("exc_type_name", "status_code", "expected_reason", "expected_retry"),
+    [
+        # 上游抖动的主要形态：分类为 upstream_error 且必须重试
+        ("RateLimitError", 429, "upstream_error", True),
+        ("InternalServerError", 500, "upstream_error", True),
+        ("APIStatusError", 502, "upstream_error", True),
+        ("APIStatusError", 503, "upstream_error", True),
+        ("OverloadedError", 529, "upstream_error", True),
+        # 超时语义（408 请求超时 / 504 网关超时）与纯超时异常
+        ("APITimeoutError", None, "timeout", True),
+        ("APIStatusError", 408, "timeout", True),
+        ("APIStatusError", 504, "timeout", True),
+        # 连接类无状态码 → 类名兜底，可重试
+        ("APIConnectionError", None, "upstream_error", True),
+        # 确定性 4xx：分类仍是「网关错误」，但**不重试**
+        ("BadRequestError", 400, "upstream_error", False),
+        ("AuthenticationError", 401, "upstream_error", False),
+        ("PermissionDeniedError", 403, "upstream_error", False),
+        ("NotFoundError", 404, "upstream_error", False),
+        ("UnprocessableEntityError", 422, "upstream_error", False),
+        # 无状态码的确定性 4xx 也不重试（类名兜底表）
+        ("BadRequestError", None, "upstream_error", False),
+        # 解析/编程错误：未知原因且不重试
+        ("ValueError", None, "unknown", False),
+        ("JSONDecodeError", None, "unknown", False),
+    ],
+)
+def test_upstream_failure_classification_and_retry(
+    exc_type_name: str, status_code: int | None, expected_reason: str, expected_retry: bool
+) -> None:
+    assert (
+        classify_degrade_reason("", exc_type_name=exc_type_name, status_code=status_code)
+        == expected_reason
+    )
+    assert (
+        is_retryable_upstream_failure(exc_type_name=exc_type_name, status_code=status_code)
+        is expected_retry
+    )
+
+
+@pytest.mark.parametrize("status_code", ["", None, "abc", 0, 999, float("nan")])
+def test_non_numeric_status_code_falls_back_to_type_name(status_code: object) -> None:
+    """非法状态码不得让判定抛，也不得夺走类名兜底（fail-safe 纪律）。"""
+    assert (
+        classify_degrade_reason("", exc_type_name="APITimeoutError", status_code=status_code)
+        == "timeout"
+    )
+    assert is_retryable_upstream_failure(
+        exc_type_name="APITimeoutError", status_code=status_code
+    )
+
+
+def test_skipped_reason_map_still_wins_over_status_code() -> None:
+    """内部 skipped_reason 的优先级最高（provider_missing 不因带状态码变成网关错误）。"""
+    assert (
+        classify_degrade_reason("provider_missing", exc_type_name="RateLimitError", status_code=429)
+        == "provider_missing"
+    )
+
+
+def test_retry_judgement_is_false_without_any_signal() -> None:
+    assert is_retryable_upstream_failure() is False
 
 
 def test_degrade_reasons_is_six_valued_frozenset() -> None:

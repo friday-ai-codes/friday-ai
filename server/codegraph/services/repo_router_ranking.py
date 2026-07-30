@@ -51,9 +51,69 @@ _SKIPPED_REASON_MAP: dict[str, str] = {
     "use_llm_false": "",
 }
 
-# 异常类型名 → 枚举的子串匹配表（只吃类型名，不吃异常实例/消息）。
+# ── 上游失败分类：**状态码优先，类名子串只作兜底** ──────────────────────────────
+#
+# 只按类名子串匹配是不成立的：`APIStatusError` 是 openai/anthropic SDK 的**基类**，
+# 生产抛出的永远是子类（`RateLimitError` / `InternalServerError` / `OverloadedError`），
+# 子类名里不含 "APIStatus" —— 429/5xx 这些最该重试的形态会全部落进 `unknown`（既不
+# 重试，用户还只看到「未知原因」），而 `BadRequestError` 反倒因为名字被列进上游表而
+# 被判可重试（白烧一次上游调用）。故有 HTTP 状态码时一律以状态码为准。
+
+# 408 请求超时 / 504 网关超时 → 语义上是「超时」而非泛化的「网关错误」。
+_STATUS_TIMEOUT = frozenset({408, 504})
+# 值得重试的状态码：429 限流、5xx 服务端（含 Anthropic 的 529 Overloaded）、
+# 408 请求超时、425 Too Early。其余 4xx 是确定性失败。
+_STATUS_RETRYABLE = frozenset({408, 425, 429})
+
+# 类名子串表：仅在**取不到状态码**时兜底（连接类/超时类异常本就没有 HTTP 响应）。
 _TIMEOUT_TOKENS = ("Timeout",)
-_UPSTREAM_TOKENS = ("Connect", "APIStatus", "APIError", "HTTPStatus", "BadRequest")
+_UPSTREAM_TOKENS = (
+    "Connect",
+    "APIStatus",
+    "APIError",
+    "HTTPStatus",
+    "RateLimit",
+    "TooManyRequests",
+    "InternalServer",
+    "ServiceUnavailable",
+    "Unavailable",
+    "Overloaded",
+    "BadGateway",
+    # 确定性 4xx：分类上仍是「上游错误」（用户看到「网关错误」是准确的），
+    # 但**不重试** —— 见 _NON_RETRYABLE_TOKENS。
+    "BadRequest",
+    "InvalidRequest",
+    "Authentication",
+    "PermissionDenied",
+    "NotFound",
+    "Unprocessable",
+    "Conflict",
+)
+# 确定性失败（4xx 客户端错误）：重试一次结果一样，只会白白吃掉总预算、多一行
+# ModelUsageRecord，并把用户可见降级推迟一个 RTT。
+_NON_RETRYABLE_TOKENS = (
+    "BadRequest",
+    "InvalidRequest",
+    "Authentication",
+    "PermissionDenied",
+    "NotFound",
+    "Unprocessable",
+    "Conflict",
+)
+# 无状态码时按类名判可重试的兜底表（连接抖动 / 限流 / 服务端不可用）。
+_RETRYABLE_NAME_TOKENS = (
+    "Connect",
+    "APIStatus",
+    "APIError",
+    "HTTPStatus",
+    "RateLimit",
+    "TooManyRequests",
+    "InternalServer",
+    "ServiceUnavailable",
+    "Unavailable",
+    "Overloaded",
+    "BadGateway",
+)
 
 # 参数 clamp 的兜底默认（与 settings 默认一致；非有限值时回退到这里）。
 _DEFAULT_GROUP_DELTA = 0.15
@@ -201,24 +261,73 @@ def blend_ranked_scores(
     return out
 
 
-def classify_degrade_reason(skipped_reason: str, *, exc_type_name: str | None = None) -> str:
+def _normalized_status(status_code: Any) -> int | None:
+    """把状态码规整成合法 HTTP 码；非数值/越界一律 None（绝不抛）。"""
+    try:
+        code = int(status_code)
+    except (TypeError, ValueError):
+        return None
+    return code if 100 <= code <= 599 else None
+
+
+def classify_degrade_reason(
+    skipped_reason: str,
+    *,
+    exc_type_name: str | None = None,
+    status_code: Any = None,
+) -> str:
     """把内部降级原因映射为 6 值受控枚举；非降级路径返回空串。
 
-    只接受 `skipped_reason` 与**异常类型名**两个字符串——结构上无法接收异常实例
+    只接受 `skipped_reason`、**异常类型名**与**数值状态码**——结构上无法接收异常实例
     或异常消息（T-107-02 的脱敏边界：原文脱敏由调用侧用 `redact_secrets_in_text`
     完成后只进事件 payload / 系统日志，绝不流向用户可见字段）。
+
+    判定优先级：`skipped_reason` 映射表 → HTTP 状态码 → 类名子串兜底。状态码优先于
+    类名，因为 SDK 抛的是 `APIStatusError` 的具体子类，类名子串对它们不成立。
 
     返回值恒 ∈ `DEGRADE_REASONS | {""}`。
     """
     mapped = _SKIPPED_REASON_MAP.get(skipped_reason)
     if mapped is not None:
         return mapped
+    code = _normalized_status(status_code)
+    if code is not None:
+        if code in _STATUS_TIMEOUT:
+            return "timeout"
+        if code >= 400:
+            return "upstream_error"
     if exc_type_name:
         if any(token in exc_type_name for token in _TIMEOUT_TOKENS):
             return "timeout"
         if any(token in exc_type_name for token in _UPSTREAM_TOKENS):
             return "upstream_error"
     return "unknown"
+
+
+def is_retryable_upstream_failure(
+    *, exc_type_name: str | None = None, status_code: Any = None
+) -> bool:
+    """上游失败是否值得重试（RELY-05 的「1 次重试」判据，纯函数可穷举）。
+
+    可重试 = 上游抖动：429 限流、5xx 服务端不可用（含 529 Overloaded）、408/425、
+    以及取不到状态码的连接类/超时类异常。
+
+    不可重试 = 确定性失败：4xx 客户端错误（参数错误 / 鉴权 / 权限 / 404 / 422）与
+    解析类错误。重试一次结果一样，只会白烧一次上游调用、多一行 `ModelUsageRecord`，
+    并把用户可见降级推迟一个 RTT。
+
+    有状态码时**只看状态码**：类名子串对 SDK 子类不成立（见模块内常量注释）。
+    """
+    code = _normalized_status(status_code)
+    if code is not None:
+        return code >= 500 or code in _STATUS_RETRYABLE
+    if not exc_type_name:
+        return False
+    if any(token in exc_type_name for token in _NON_RETRYABLE_TOKENS):
+        return False
+    if any(token in exc_type_name for token in _TIMEOUT_TOKENS):
+        return True
+    return any(token in exc_type_name for token in _RETRYABLE_NAME_TOKENS)
 
 
 def _clamp_unit(value: Any, fallback: float) -> float:
@@ -260,4 +369,5 @@ __all__ = [
     "clamp_ranking_params",
     "classify_degrade_reason",
     "decide_block_order",
+    "is_retryable_upstream_failure",
 ]
