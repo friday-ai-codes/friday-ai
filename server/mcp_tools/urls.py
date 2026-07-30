@@ -26,7 +26,9 @@ from .views import (
     ImproveCodingPlanView,
     ListRepositoryFilesView,
     LookupProjectByBranchView,
+    ReadBlueprintContextView,
     ReadProjectDocView,
+    ReportBlueprintContextView,
     ReportProjectKnowledgeView,
     ReportProjectStateView,
     ReverseLookupView,
@@ -123,5 +125,16 @@ urlpatterns = [
         "tools/get_feature_tech_plan/",
         GetFeatureTechPlanView.as_view(),
         name="mcp-tool-get-feature-tech-plan",
+    ),
+    # 蓝图共享上下文总线（BUS-01，Phase 113-02）：容器凭任务 token 会话内读写
+    path(
+        "tools/read_blueprint_context/",
+        ReadBlueprintContextView.as_view(),
+        name="mcp-tool-read-blueprint-context",
+    ),
+    path(
+        "tools/report_blueprint_context/",
+        ReportBlueprintContextView.as_view(),
+        name="mcp-tool-report-blueprint-context",
     ),
 ]
