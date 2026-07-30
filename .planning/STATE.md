@@ -609,3 +609,4 @@ Next: `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义
 |-------|-------|--------|
 | 105 | verification_deferred_human（35/35 自动化 must-haves 已过；余 3 项人工：O-1 生产实测回填 / gk-001 真实样本替换 / 前端展开目视） | /gsd-verify-work 105 |
 | 106 | verification_deferred_human（34/38 自动化 must-haves 已过、0 失败；余 4 项人工：生产 N_r 快照写入 / O-2 校准回填 / dense 口径观测 / 权重设置面目视） | /gsd-verify-work 106 |
+| 107 | verification_deferred_human（87/89 自动化 must-haves 已过、0 gap；余 6 项人工：澄清真机送达 / UI 观感 / O-6 回填 / 出口 dry-run / pending 可见性 / 跨项目仓名可见性判断） | /gsd-verify-work 107 |
