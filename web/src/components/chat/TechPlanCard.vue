@@ -191,6 +191,46 @@ const feishuDocUrl = computed<string>(() => {
   return ''
 })
 
+/**
+ * 方案正文（109-06 · SPINE-02 连带面）。
+ *
+ * 解析优先级（逐字沿用上方 feishuDocUrl 已建立的三级优先与注释纪律）：
+ *   1. props.techPlan —— 这一级同时承载两个来源：投影响应本地态
+ *      （OrchestratedPlanCard 把投影响应直接喂进 props）与**历史消息的 tool
+ *      input 兜底**（ChatMessageBubble 的 codingPlanData.techPlan）。SPINE-02
+ *      收窄 schema 后新消息的 tool input 已无 tech_plan，但这一级不可删 ——
+ *      砍掉它会让 SPINE-02 之前的历史会话方案卡集体变空；
+ *   2. 仅当 store 的 activeCodingPlan.plan_id === 本卡 codingPlanId 时采用其
+ *      tech_plan；
+ *   3. 否则空串（走空正文占位，而不是渲染一个空 prose 块）。
+ *
+ * 🔴 第 2 级的 plan_id 匹配守卫不可省：activeCodingPlan 只指向「对话内最近
+ * CodingPlan」，多轮多方案会话里若不匹配就采用，会把**新方案的正文渲染到旧方案
+ * 卡上** —— 不报错、不崩，只是内容串了，是最难查的一类缺陷。与 feishuDocUrl
+ * 的「不串其它 plan 的已导出态」同一个坑、同一道守卫。
+ */
+const resolvedTechPlan = computed<string>(() => {
+  if (props.techPlan)
+    return props.techPlan
+  const runtime = codingPlanRuntime.value
+  if (runtime && props.codingPlanId && runtime.plan_id === props.codingPlanId)
+    return runtime.tech_plan || ''
+  return ''
+})
+
+/**
+ * 影响文件（109-06）。与 resolvedTechPlan 同形的三级优先，
+ * 第 2 级同样过 `runtime.plan_id === props.codingPlanId` 守卫（理由同上）。
+ */
+const resolvedAffectedFiles = computed<Array<{ file_path?: string, path?: string, change_type: string }>>(() => {
+  if (props.affectedFiles.length > 0)
+    return props.affectedFiles
+  const runtime = codingPlanRuntime.value
+  if (runtime && props.codingPlanId && runtime.plan_id === props.codingPlanId)
+    return runtime.affected_files ?? []
+  return []
+})
+
 function onExportSuccess(
   result: ExportToFeishuResponse | ExportCodingPlanToFeishuResponse,
 ) {
@@ -262,9 +302,12 @@ onMounted(async () => {
 })
 
 watchEffect(() => {
-  if (mdInstance.value && props.techPlan) {
-    renderedPlan.value = mdInstance.value.render(props.techPlan)
-  }
+  if (!mdInstance.value)
+    return
+  // 正文为空时清空渲染结果，避免上一份正文残留在 DOM 上
+  renderedPlan.value = resolvedTechPlan.value
+    ? mdInstance.value.render(resolvedTechPlan.value)
+    : ''
 })
 
 // ---------------------------------------------------------------------------
@@ -374,6 +417,10 @@ const badgeText = computed(() => {
           <div class="h-4 rounded bg-muted/60 w-1/2" />
           <div class="h-4 rounded bg-muted/60 w-2/3" />
         </div>
+        <!-- 109-06：正文为空时渲染一行占位，而不是一个空 prose 块 -->
+        <p v-else-if="!resolvedTechPlan" class="text-xs text-muted-foreground">
+          （暂无方案正文）
+        </p>
         <div v-else class="prose prose-sm max-w-none" v-html="renderedPlan" />
         <div v-if="visibleTargetRepositories.length > 0" class="space-y-1">
           <p class="text-xs text-muted-foreground font-medium">
@@ -390,12 +437,12 @@ const badgeText = computed(() => {
             </Badge>
           </div>
         </div>
-        <div v-if="affectedFiles.length > 0" class="space-y-1">
+        <div v-if="resolvedAffectedFiles.length > 0" class="space-y-1">
           <p class="text-xs text-muted-foreground font-medium">
             影响文件
           </p>
           <div
-            v-for="(file, i) in affectedFiles"
+            v-for="(file, i) in resolvedAffectedFiles"
             :key="i"
             class="text-xs text-muted-foreground flex items-center gap-1"
           >
@@ -648,7 +695,7 @@ const badgeText = computed(() => {
     <!-- 折叠态：一行摘要 -->
     <template v-else>
       <div class="px-4 py-2 text-xs text-muted-foreground truncate">
-        {{ techPlan.split('\n')[0] || '（无方案文本）' }}
+        {{ resolvedTechPlan.split('\n')[0] || '（无方案文本）' }}
       </div>
     </template>
 
