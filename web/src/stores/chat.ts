@@ -510,7 +510,10 @@ export const useChatStore = defineStore('chat', () => {
             upsertClarification({ ...c, conversation_id: id }, id)
         }
       }
-      // hydrate 最新路由 trace，让 RelevanceBadge 等刷新后回显
+      // hydrate 最新路由 trace，让 RelevanceBadge 等刷新后回显。
+      // 契约：整对象透传，**不得**改成显式字段白名单——后端 payload 已含
+      // router_version / degraded / degrade_reason / block_order（107-08 起共 9 键），
+      // 白名单化会让刷新后降级横幅与分组分区消失。
       if (detail.routing_trace?.trace_id)
         routingStore.upsertTrace(detail.routing_trace, id)
       activeCodingSession.value = null
@@ -1269,16 +1272,30 @@ export const useChatStore = defineStore('chat', () => {
           data?: Record<string, unknown>
         }
         const data = (parsed?.output?.data ?? parsed?.data) as
-          | { trace_id?: string, candidates?: unknown[], threshold?: number }
+          | {
+            trace_id?: string
+            candidates?: unknown[]
+            threshold?: number
+            router_version?: string
+            degraded?: boolean
+            degrade_reason?: RoutingDecisionData['degrade_reason']
+            block_order?: RoutingDecisionData['block_order']
+          }
           | undefined
         const traceId = data?.trace_id
         if (data && typeof traceId === 'string') {
+          // 四个 trace 级事实按「有则透传、无则 undefined」写入——不填假值，
+          // 缺字段的历史/legacy 工具输出要保持今日渲染（无横幅、平铺列表）。
           const trace: RoutingDecisionData = {
             trace_id: traceId,
             query: (args.toolInput.query as string) || '',
             candidates: (data.candidates as RoutingDecisionData['candidates']) || [],
             threshold: typeof data.threshold === 'number' ? data.threshold : 0.5,
             triggered_by: 'chat_tool',
+            router_version: typeof data.router_version === 'string' ? data.router_version : undefined,
+            degraded: typeof data.degraded === 'boolean' ? data.degraded : undefined,
+            degrade_reason: data.degrade_reason,
+            block_order: Array.isArray(data.block_order) ? data.block_order : undefined,
           }
           routingStore.upsertTrace(trace, conversationId)
           // 把 trace_id 挂到 streamingMetadata 让 message_complete 时持久化
@@ -1299,6 +1316,9 @@ export const useChatStore = defineStore('chat', () => {
         if (m) {
           const traceId = m[1]
           const candidates = JSON.parse(m[2]) as RoutingDecisionData['candidates']
+          // 该 payload 只有候选数组（候选级 group / trust / score_ranked 随之透传），
+          // 结果级四键在这条链上不存在 → 一律留 undefined，绝不填假值：
+          // 把降级事实填成 false 等于把「未知」谎报成「没降级过」。
           const trace: RoutingDecisionData = {
             trace_id: traceId,
             query: '',

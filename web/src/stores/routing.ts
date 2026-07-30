@@ -71,12 +71,20 @@ export const useRoutingStore = defineStore('routing', () => {
     try {
       const response = await postManualOverride(originalTraceId, { candidates: updated })
       const original = tracesByTraceId.value.get(originalTraceId)
+      // 四个 trace 级事实「响应优先、original 兜底」：同一次路由的降级与分区
+      // 事实不因用户改勾选而改变。不继承的话（本仓此前的行为）用户勾一次
+      // 降级横幅与分组分区就凭空消失（107-RESEARCH Pitfall 3）。
+      // 用 ?? 而非 ||：响应显式给 degraded=false 时不能被 original 的 true 盖回。
       const newTrace: RoutingDecisionData = {
         trace_id: response.trace_id,
         query: original?.query ?? '',
         candidates: response.candidates,
         threshold: original?.threshold ?? 0.5,
         triggered_by: 'manual_override',
+        router_version: response.router_version ?? original?.router_version,
+        degraded: response.degraded ?? original?.degraded,
+        degrade_reason: response.degrade_reason ?? original?.degrade_reason,
+        block_order: response.block_order ?? original?.block_order,
       }
       upsertTrace(newTrace, conversationId)
       return newTrace
