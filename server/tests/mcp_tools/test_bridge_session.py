@@ -24,7 +24,12 @@ import pytest
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 
-from chat.models import CodingPlan, CodingSession, Conversation
+from chat.models import (
+    CodingPlan,
+    CodingPlanProvenance,
+    CodingSession,
+    Conversation,
+)
 from interactions.models import InteractionRun
 from mcp_tools.execution_service import _create_bridge_session
 from mcp_tools.models import McpCodingPlan, McpCodingPlanVersion
@@ -144,3 +149,82 @@ def test_create_bridge_session_builds_three_objects(
         CodingSession.objects.count(),
     )
     assert after == tuple(n + 1 for n in before)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_create_bridge_session_defaults_new_provenance_columns(
+    bridge_space: Space,
+    bridge_plan: McpCodingPlan,
+    bridge_version: McpCodingPlanVersion,
+    bridge_user,
+) -> None:
+    """Phase 109 新增两列不打断桥接：走 DB default，来源留痕为空。
+
+    这两条断言是「MCP 零回归」最直接的锁：桥接用裸 ``objects.create()``，
+    未显式传 ``provenance`` / ``source_artifact_version_id``，只能靠字段
+    ``default`` / ``null=True`` 兜住。锁的是**模型字段形状**（能否被
+    ``objects.create()`` 构造），不是 chat ``@tool`` 的行为 —— 若未来给
+    ``CodingPlan`` 加一列无 default 的必填字段，本用例必红。
+    """
+    _, chat_plan, _ = async_to_sync(_create_bridge_session)(
+        project=bridge_space,
+        plan=bridge_plan,
+        version=bridge_version,
+        branch_name=_BRANCH_NAME,
+        created_by=bridge_user,
+    )
+
+    # 桥接侧未传值 ⇒ 走 DB default draft（MCP 链不经编排方案收敛）
+    assert chat_plan.provenance == CodingPlanProvenance.DRAFT
+    # 桥接不来自 ArtifactVersion 投影，无来源留痕
+    assert chat_plan.source_artifact_version_id is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_create_bridge_session_twice_not_blocked_by_unique_constraint(
+    bridge_space: Space,
+    bridge_repository: Repository,
+    bridge_plan: McpCodingPlan,
+    bridge_version: McpCodingPlanVersion,
+    bridge_user,
+) -> None:
+    """两次桥接均成功 —— 无条件唯一约束不误伤多条 NULL 行。
+
+    ``uniq_codingplan_source_artifact_version`` 是**无条件**唯一约束；
+    PostgreSQL / MySQL / SQLite 的唯一索引都视 NULL 互不相等，因此桥接产出的
+    多条草稿行（该列为 NULL）可共存。本断言锁的是「桥接建出的 plan 该列为 NULL
+    且不撞约束」，与 ``tests/test_coding_plan_model.py`` 的约束存在性断言互补：
+    一条证明约束在挡真值，一条证明约束不挡 NULL。
+    """
+    second_plan = McpCodingPlan.objects.create(
+        run=InteractionRun.objects.create(source="mcp"),
+        repository=bridge_repository,
+        requirement=_PLAN_BODY["requirement"],
+        title="MCP 桥接最小方案（第二份）",
+    )
+    second_version = McpCodingPlanVersion.objects.create(
+        plan=second_plan,
+        run=second_plan.run,
+        version=1,
+        plan_body=_PLAN_BODY,
+        affected_files=[{"file_path": "src/main.py", "change_type": "modify"}],
+    )
+
+    _, first_chat_plan, _ = async_to_sync(_create_bridge_session)(
+        project=bridge_space,
+        plan=bridge_plan,
+        version=bridge_version,
+        branch_name=_BRANCH_NAME,
+        created_by=bridge_user,
+    )
+    _, second_chat_plan, _ = async_to_sync(_create_bridge_session)(
+        project=bridge_space,
+        plan=second_plan,
+        version=second_version,
+        branch_name=_BRANCH_NAME,
+        created_by=bridge_user,
+    )
+
+    assert first_chat_plan.id != second_chat_plan.id
+    assert first_chat_plan.source_artifact_version_id is None
+    assert second_chat_plan.source_artifact_version_id is None
