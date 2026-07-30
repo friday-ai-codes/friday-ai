@@ -363,6 +363,7 @@ const IN_PROJECT_LABEL = '本项目关联仓'
 const GLOBAL_LABEL = '全局候选'
 const CROSS_GROUP_SENTENCE = '未关联当前平台，可能涉及跨组协作'
 const PROMOTION_SENTENCE = '更匹配的仓不在本项目关联范围内'
+const EMPTY_IN_PROJECT_SENTENCE = '本项目关联范围内没有匹配的仓库'
 
 function cand(id: string, extra: Partial<RoutingCandidate> = {}): RoutingCandidate {
   return {
@@ -558,8 +559,18 @@ describe('routingDecisionPanel 分组分区（ROUTE-01）', () => {
     })
     const text = wrapper.text()
     expect(text).toContain(GLOBAL_LABEL)
-    expect(text).toContain(PROMOTION_SENTENCE)
+    expect(wrapper.find('[role="status"]').exists()).toBe(true)
     expect(crossGroupBadges(wrapper).length).toBe(2)
+  })
+
+  it('本项目组为空时置顶提示改用陈述句（没有比较对象就别说「更匹配」）', () => {
+    const { wrapper } = mountTrace({
+      block_order: ['global', 'in_project'],
+      candidates: [cand('gl-a', { group: 'global', score: 0.9, level: 'high' })],
+    })
+    const text = wrapper.text()
+    expect(text).toContain(EMPTY_IN_PROJECT_SENTENCE)
+    expect(text).not.toContain(PROMOTION_SENTENCE)
   })
 
   it('block_order 长度 1（无项目上下文）→ 平铺、无组标题与跨组标注', () => {
