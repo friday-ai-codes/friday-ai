@@ -859,6 +859,119 @@ async def test_trace_write_legacy_path_keeps_column_defaults(
 
 
 # ---------------------------------------------------------------------------
+# 10b. 按组配额截断（MN-03）：top_k 较小时不得把某一组整组截空
+# ---------------------------------------------------------------------------
+
+
+def _cand(rid: str, *, group: str, score: float) -> Any:
+    from agents.tools.schemas.repository_relevance import RepositoryRelevanceCandidate
+
+    return RepositoryRelevanceCandidate(
+        repository_id=rid,
+        repository_name=rid,
+        score=score,
+        level="medium",
+        evidence="ev",
+        selected_by_ai=False,
+        selected_by_user_final=False,
+        group=group,
+        score_ranked=score,
+    )
+
+
+def test_group_quota_truncation_keeps_one_per_group() -> None:
+    """全局组分数整体占优时，in_project 组仍保留至少 1 条（否则分区被前端过滤掉）。"""
+    from agents.tools.repository_relevance import _truncate_by_group_quota
+
+    ordered = [
+        _cand("g1", group="global", score=0.95),
+        _cand("g2", group="global", score=0.9),
+        _cand("g3", group="global", score=0.85),
+        _cand("ip1", group="in_project", score=0.4),
+    ]
+    kept = _truncate_by_group_quota(ordered, 3)
+
+    assert len(kept) == 3
+    assert {c.group for c in kept} == {"global", "in_project"}
+    assert [c.repository_id for c in kept] == ["g1", "g2", "ip1"]
+
+
+def test_group_quota_truncation_preserves_global_descending_order() -> None:
+    """截断只做取舍不重排：输出仍是输入的相对顺序（全局 score_ranked 降序）。"""
+    from agents.tools.repository_relevance import _truncate_by_group_quota
+
+    ordered = [
+        _cand("ip1", group="in_project", score=0.9),
+        _cand("g1", group="global", score=0.8),
+        _cand("ip2", group="in_project", score=0.7),
+    ]
+    kept = _truncate_by_group_quota(ordered, 2)
+
+    assert [c.repository_id for c in kept] == ["ip1", "g1"]
+
+
+def test_group_quota_truncation_is_noop_when_under_budget() -> None:
+    from agents.tools.repository_relevance import _truncate_by_group_quota
+
+    ordered = [_cand("a", group="global", score=0.5)]
+    assert _truncate_by_group_quota(ordered, 5) == ordered
+    assert _truncate_by_group_quota(ordered, 0) == []
+
+
+async def test_tool_truncation_keeps_both_groups_present(
+    project_with_repos, conversation, monkeypatch
+):
+    """经真实工具路径：top_k=2 且全局组占优时，返回结果里两个组都还在。"""
+    from codegraph.services.repo_router_v2 import (
+        RepoRouteCandidateV2,
+        RepoRouteResultV2,
+        RepoRouterV2,
+    )
+
+    project, repos = project_with_repos
+
+    def _v2(rid: str, name: str, group: str, score: float) -> RepoRouteCandidateV2:
+        return RepoRouteCandidateV2(
+            repo_id=rid,
+            repo_name=name,
+            score=score,
+            confidence="medium",
+            reasoning="",
+            group=group,
+            score_ranked=score,
+        )
+
+    monkeypatch.setattr(
+        RepoRouterV2,
+        "route",
+        AsyncMock(
+            return_value=RepoRouteResultV2(
+                candidates=[
+                    _v2("out-1", "外部仓1", "global", 0.95),
+                    _v2("out-2", "外部仓2", "global", 0.9),
+                    _v2(str(repos[0].id), repos[0].name, "in_project", 0.4),
+                ],
+                router_version="v2",
+                auto_selected=False,
+                block_order=["global", "in_project"],
+            )
+        ),
+    )
+
+    result = await analyze_repository_relevance(
+        query="group quota truncation",
+        space_id=str(project.id),
+        conversation_id=str(conversation.id),
+        top_k=2,
+    )
+    data = result.output["data"]
+    assert len(data["candidates"]) == 2
+    assert {c["group"] for c in data["candidates"]} == {"global", "in_project"}
+    # block_order 报长度 2，候选里两个组也都在 —— 前端不会出现「分组开着只有一个区」
+    assert data["block_order"] == ["global", "in_project"]
+
+
+# ---------------------------------------------------------------------------
 # 11. 出参侧接线（BL-02）：结果级四件套必须随 ToolResult.output['data'] 出参
 #
 # 前端在 SSE part_completed 时解析的就是这个 dict。缺任一键 → 该键在生产恒
