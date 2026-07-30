@@ -28,7 +28,7 @@ from typing import Any
 import structlog
 from django.utils import timezone
 
-from chat.models import CodingPlan, CodingSession
+from chat.models import CodingPlan, CodingPlanProvenance, CodingSession
 from services.feishu_doc import (
     FeishuDocAPIError,
     FeishuDocClient,
@@ -46,6 +46,18 @@ __all__ = ["export_coding_plan_to_feishu", "markdown_to_blocks"]
 # CodingSession.Status → 飞书表格中的中文徽章文案。
 # 与 implementation CodingSession.Status 枚举（chat/models.py 中 6 态）一一对应；
 # 缺省时降级为原始 status 字符串，避免 KeyError 中断导出。
+# RELY-01 导出侧「未经代码调研」告示（markdown blockquote）。
+# 主句 `本方案未经代码调研` 与次行前半段与界面侧（`TechPlanCard` 草稿横幅）**逐字一致**，
+# 导出侧仅追加一句行动指引「正式方案请经技术方案编排产出。」—— 导出物脱离上下文流转，
+# 多一句指引值得。双侧口径一致才能让用户在界面与文档间建立同一心智。
+_DRAFT_NOTICE = (
+    "> ⚠️ **本方案未经代码调研**\n"
+    ">\n"
+    "> 由对话直接生成，未经仓库路由、代码召回与并行调研，"
+    "文件清单与实现步骤可能不准确。正式方案请经技术方案编排产出。\n"
+)
+
+
 _STATUS_LABEL: dict[str, str] = {
     CodingSession.Status.DRAFT: "📝 草稿",
     CodingSession.Status.CONFIRMED: "🟢 已确认",
@@ -187,6 +199,13 @@ def _compose_plan_markdown(
     """组装一篇 markdown 字符串供 ``create_document`` 一次性转 block 写入。"""
     parts: list[str] = []
     parts.append(f"# {coding_plan.title or '未命名方案'}\n")
+    # RELY-01：告示置于正文之前 —— 用户在读到任何方案内容前先看到「这份东西未经调研」。
+    # 三条纪律：① 判定只读数据层 `provenance` 字段，绝不匹配正文文案（新增产出路径时
+    # 正文格式不可控，文案判定必然漏标）；② 允许清单 —— 仅 `orchestrated` 免标注，
+    # 未知取值 / 空值一律标注；③ 不把 `provenance` 原始取值写进文档（上游非受控值上屏
+    # 即泄漏面）。
+    if str(coding_plan.provenance or "") != CodingPlanProvenance.ORCHESTRATED:
+        parts.append(_DRAFT_NOTICE)
     parts.append("## 技术方案\n")
     tech_plan = (coding_plan.tech_plan or "").strip()
     if tech_plan:
