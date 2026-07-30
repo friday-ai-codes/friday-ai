@@ -41,6 +41,12 @@ from .conversation_service import (
 )
 from .models import Conversation
 from .permissions import ChatAuthPermission
+from .plan_projection_service import (
+    ERROR_ARTIFACT_VERSION_NOT_FOUND,
+    ERROR_REQUIRES_CHAT_ENTRYPOINT,
+    PlanProjectionError,
+    PlanProjectionService,
+)
 from .serializers import (
     ChatCompletionRequestSerializer,
     ChatCompletionResponseSerializer,
@@ -61,6 +67,8 @@ from .serializers import (
     ModelsRequestSerializer,
     ModelsResponseSerializer,
     PlanClarificationAnswerSerializer,
+    ProjectPlanToCodingRequestSerializer,
+    ProjectPlanToCodingResponseSerializer,
     RoutingTraceManualOverrideSerializer,
     SendMessageSerializer,
     WebPushPublicKeySerializer,
@@ -2664,6 +2672,102 @@ class CodingPlanSessionsBatchCreateView(APIView):
             ],
         }
         resp_ser = CodingSessionsBatchCreateResponseSerializer(data=resp_payload)
+        resp_ser.is_valid(raise_exception=True)
+        return Response(resp_ser.data, status=status.HTTP_200_OK)
+
+
+class CodingPlanProjectFromArtifactVersionView(APIView):
+    """POST /api/chat/coding-plans/from-artifact-version/ —— 编排方案版本惰性投影。
+
+    前端「进入编码」按钮的**唯一后端入口**（SPINE-01）：把 ``delivery.ArtifactVersion``
+    幂等投影成 chat ``CodingPlan``，并把方案正文随响应一次给全。
+
+    错误响应一律带**稳定机器码** ``code``（前端按 ``code`` 分支，绝不按 ``detail``
+    文案匹配）：
+
+    - ``artifact_version_not_found`` → 404，与「非 owner」共用同一措辞，阻断
+      ``artifact_version_id`` 枚举探测（T-109-03-02）。
+    - ``projection_requires_chat_entrypoint`` → 400，编排会话无 conversation
+      （workflow / MCP 入口）时的 D-3 边界。
+    """
+
+    authentication_classes = [OptionalJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    # 「不存在」与「无权限」必须同体同文，任何一处改动都会重新打开枚举探测面。
+    _NOT_FOUND_DETAIL = "CodingPlan not found"
+
+    def _not_found(self) -> Response:
+        return Response(
+            {"code": ERROR_ARTIFACT_VERSION_NOT_FOUND, "detail": self._NOT_FOUND_DETAIL},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    @extend_schema(
+        summary="编排方案版本投影为 CodingPlan（惰性、幂等）",
+        request=ProjectPlanToCodingRequestSerializer,
+        responses={
+            200: ProjectPlanToCodingResponseSerializer,
+            400: {"description": "请求体校验失败，或编排会话无 conversation（须 chat 入口）"},
+            404: {"description": "方案版本不存在或无权访问（同体同文，不泄漏存在性）"},
+        },
+        tags=["CodingPlan"],
+    )
+    async def post(self, request):  # type: ignore[override]
+        req_ser = ProjectPlanToCodingRequestSerializer(data=request.data)
+        req_ser.is_valid(raise_exception=True)
+        artifact_version_id = str(req_ser.validated_data["artifact_version_id"])
+
+        user = request.user
+        service = PlanProjectionService()
+
+        # 1) 前置 owner 校验：先只读解析归属会话再决定是否投影。若把 gate 放到投影
+        #    之后，越权请求会先在他人会话下建出 CodingPlan 再被拒（垃圾对象 + 数据污染）。
+        try:
+            conversation = await service.aresolve_conversation(
+                artifact_version_id=artifact_version_id
+            )
+        except PlanProjectionError as exc:
+            if exc.code == ERROR_REQUIRES_CHAT_ENTRYPOINT:
+                return Response(
+                    {"code": exc.code, "detail": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return self._not_found()
+
+        # owner gate：用 created_by_id 标量避免 async 惰性 FK；无 superuser bypass（ISO-03）。
+        if getattr(user, "is_authenticated", False) and conversation.created_by_id != user.id:
+            return self._not_found()
+
+        # 2) 投影（唯一写入口）
+        try:
+            plan, created = await service.aproject(
+                artifact_version_id=artifact_version_id,
+                initiated_by_user_id=str(user.id),
+            )
+        except PlanProjectionError as exc:
+            if exc.code == ERROR_REQUIRES_CHAT_ENTRYPOINT:
+                return Response(
+                    {"code": exc.code, "detail": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return self._not_found()
+
+        # 3) owner gate 复核（纵深）：投影落点必须仍是请求者自己的会话。
+        if getattr(user, "is_authenticated", False) and plan.conversation_id != conversation.id:
+            return self._not_found()
+
+        resp_ser = ProjectPlanToCodingResponseSerializer(
+            data={
+                "coding_plan_id": str(plan.id),
+                "created": created,
+                "title": plan.title or "",
+                "tech_plan": plan.tech_plan or "",
+                "affected_files": plan.affected_files or [],
+                "recommended_repository_ids": plan.recommended_repository_ids or [],
+                "provenance": plan.provenance,
+            }
+        )
         resp_ser.is_valid(raise_exception=True)
         return Response(resp_ser.data, status=status.HTTP_200_OK)
 

@@ -12,6 +12,7 @@ from .views import (
     ClarificationSkipView,
     CodingPlanDetailView,
     CodingPlanListView,
+    CodingPlanProjectFromArtifactVersionView,
     CodingPlanSessionsBatchCreateView,
     CodingSessionConfirmView,
     CodingSessionDetailView,
@@ -156,6 +157,14 @@ urlpatterns = [
         "coding-plans/",
         CodingPlanListView.as_view(),
         name="coding-plan-list",
+    ),
+    # 编排方案版本惰性投影（SPINE-01，「进入编码」的唯一后端入口）。
+    # 放在 <uuid:plan_id> 之前：from-artifact-version 不是合法 UUID 字面量，Django 的
+    # uuid 转换器本就不会匹配它，但顺序在前让「不冲突」这件事不依赖转换器细节。
+    path(
+        "coding-plans/from-artifact-version/",
+        CodingPlanProjectFromArtifactVersionView.as_view(),
+        name="coding-plan-project-from-artifact-version",
     ),
     path(
         "coding-plans/<uuid:plan_id>/",
