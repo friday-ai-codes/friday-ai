@@ -31,6 +31,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agents.models import AgentSession
+from agents.tools.repository_relevance import RepositoryRelevanceAnalysis
 from agents.tools.schemas.repository_relevance import RepositoryRelevanceCandidate
 from chat.models import Conversation, RepositoryRoutingTrace
 from projects.models import Space
@@ -163,7 +164,9 @@ async def test_chat_deep_analysis_triggers_helper(
             threshold=0.5,
             triggered_by=kwargs["triggered_by"],
         )
-        return [fake_candidate], str(trace.id)
+        return RepositoryRelevanceAnalysis(
+            candidates=[fake_candidate], trace_id=str(trace.id)
+        )
 
     from subagent.api.callbacks import _handle_completed
 
@@ -310,7 +313,9 @@ async def test_ws_completed_path_triggers_cross_repo_relevance(
             threshold=0.5,
             triggered_by=kwargs["triggered_by"],
         )
-        return [fake_candidate], str(trace.id)
+        return RepositoryRelevanceAnalysis(
+            candidates=[fake_candidate], trace_id=str(trace.id)
+        )
 
     payload = {
         "task_id": deep_analysis_subagent.session_id,
@@ -449,7 +454,7 @@ async def test_runner_injected_conversation_id_in_last_output_is_ignored(
             threshold=0.5,
             triggered_by=kwargs["triggered_by"],
         )
-        return [], str(trace.id)
+        return RepositoryRelevanceAnalysis(candidates=[], trace_id=str(trace.id))
 
     payload = {"result_type": "text", "output": {"text": "x"}}
     log = AsyncMock()

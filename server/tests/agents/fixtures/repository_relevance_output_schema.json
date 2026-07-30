@@ -1,0 +1,146 @@
+{
+  "$defs": {
+    "RepositoryRelevanceCandidate": {
+      "properties": {
+        "repository_id": {
+          "title": "Repository Id",
+          "type": "string"
+        },
+        "repository_name": {
+          "title": "Repository Name",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "level": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Level",
+          "type": "string"
+        },
+        "evidence": {
+          "title": "Evidence",
+          "type": "string"
+        },
+        "selected_by_ai": {
+          "title": "Selected By Ai",
+          "type": "boolean"
+        },
+        "selected_by_user_final": {
+          "title": "Selected By User Final",
+          "type": "boolean"
+        },
+        "sub_project": {
+          "default": "",
+          "title": "Sub Project",
+          "type": "string"
+        },
+        "sub_project_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sub Project Paths",
+          "type": "array"
+        },
+        "breakdown": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Breakdown",
+          "type": "object"
+        },
+        "group": {
+          "default": "",
+          "title": "Group",
+          "type": "string"
+        },
+        "trust": {
+          "default": "",
+          "title": "Trust",
+          "type": "string"
+        },
+        "score_ranked": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score Ranked"
+        }
+      },
+      "required": [
+        "repository_id",
+        "repository_name",
+        "score",
+        "level",
+        "evidence",
+        "selected_by_ai",
+        "selected_by_user_final"
+      ],
+      "title": "RepositoryRelevanceCandidate",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/RepositoryRelevanceCandidate"
+      },
+      "title": "Candidates",
+      "type": "array"
+    },
+    "threshold": {
+      "title": "Threshold",
+      "type": "number"
+    },
+    "total_candidates": {
+      "title": "Total Candidates",
+      "type": "integer"
+    },
+    "trace_id": {
+      "title": "Trace Id",
+      "type": "string"
+    },
+    "router_version": {
+      "default": "",
+      "title": "Router Version",
+      "type": "string"
+    },
+    "degraded": {
+      "default": false,
+      "title": "Degraded",
+      "type": "boolean"
+    },
+    "degrade_reason": {
+      "default": "",
+      "title": "Degrade Reason",
+      "type": "string"
+    },
+    "block_order": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Block Order",
+      "type": "array"
+    }
+  },
+  "required": [
+    "candidates",
+    "threshold",
+    "total_candidates",
+    "trace_id"
+  ],
+  "title": "RepositoryRelevanceOutput",
+  "type": "object"
+}

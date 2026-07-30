@@ -58,3 +58,11 @@ class RepositoryRelevanceOutput(BaseModel):
     threshold: float
     total_candidates: int
     trace_id: str
+    # 结果级事实（RELY-03 / ROUTE-01）：与 trace 落库的同一组值，供**实时对话链路**
+    # 直接渲染。缺了这四个字段，降级横幅与分组分区只有在刷新页面（走 detail payload）
+    # 或改一次勾选（走 override 响应）之后才出现——也就是在用户最需要看到的那一刻
+    # （对话进行中）恒不生效。全部带默认值，legacy / 历史输出形状不变。
+    router_version: str = ""
+    degraded: bool = False
+    degrade_reason: str = ""
+    block_order: list[str] = Field(default_factory=list)

@@ -17,10 +17,13 @@ evidence + 是否自动选中。
 为 plan（deep_analysis_completion 路径）预留扩展点：deep_analysis 容器完成
 回调时复用同一段聚合逻辑，仅切换 ``triggered_by`` / ``agent_session_id`` 两参数
 即可。@tool 装饰的 ``analyze_repository_relevance`` 走 chat_tool 默认路径。
+helper 返回 ``RepositoryRelevanceAnalysis``（候选 + trace_id + 四个**结果级事实**），
+调用方按需取用；工具出参把这四件套原样带进 ``ToolResult.output['data']``。
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import structlog
@@ -91,6 +94,25 @@ _TOOL_PARAMETERS: dict[str, Any] = {
 }
 
 
+@dataclass
+class RepositoryRelevanceAnalysis:
+    """一次相关性分析的完整结果（候选 + **结果级事实**）。
+
+    结果级四件套（``router_version`` / ``degraded`` / ``degrade_reason`` /
+    ``block_order``）与 ``RepositoryRoutingTrace`` 落库的是同一组值。它们必须随
+    candidates 一起离开本 helper：只回 ``(candidates, trace_id)`` 的话，工具输出里就
+    没有这四个键，前端在 SSE ``part_completed`` 解析到的恒是 ``undefined``——降级横幅
+    与分组分区在对话进行中完全不出现（BL-02）。
+    """
+
+    candidates: list[RepositoryRelevanceCandidate]
+    trace_id: str
+    router_version: str = "legacy_hybrid"
+    degraded: bool = False
+    degrade_reason: str = ""
+    block_order: list[str] = field(default_factory=list)
+
+
 def _score_to_level(score: float) -> Literal["high", "medium", "low"]:
     """三档阈值映射：0.7 / 0.4。"""
     if score >= 0.7:
@@ -155,7 +177,7 @@ async def _analyze_relevance_core(
     threshold: float = 0.5,
     triggered_by: str | None = None,
     agent_session_id: str | None = None,
-) -> tuple[list[RepositoryRelevanceCandidate], str]:
+) -> RepositoryRelevanceAnalysis:
     """公开 helper：跑相关性聚合 + 写一行 RepositoryRoutingTrace。
 
     复用方：
@@ -167,15 +189,16 @@ async def _analyze_relevance_core(
       ``agent_session_id=main_session.id``。
 
     Returns:
-        ``(candidates, trace_id)`` —— candidates 按 score 倒序，trace_id 是
-        新写入的 ``RepositoryRoutingTrace`` 主键 UUID 字符串。
+        ``RepositoryRelevanceAnalysis`` —— candidates 按 score 倒序，``trace_id`` 是
+        新写入的 ``RepositoryRoutingTrace`` 主键 UUID 字符串，另附四个**结果级事实**
+        （与该 trace 落库的同一组值）供实时链路直接渲染。
 
     Raises:
         ValueError: space / conversation 不存在或空间下无 indexed repo。
     """
     # lazy import 仅针对 Django ORM 模型避免 app registry race；服务类已在
     # 模块顶层 import（测试 monkeypatch 需要从本模块取 HybridSearchService）。
-    from chat.models import Conversation, RepositoryRoutingTrace
+    from chat.models import Conversation, RepositoryRoutingTrace, derive_routing_degraded
     from projects.models import Space
     from repositories.models import Repository
 
@@ -318,7 +341,16 @@ async def _analyze_relevance_core(
             block_order=v2_block_order,
             agent_session_id=agent_session_id,
         )
-        return candidates, str(trace.id)
+        return RepositoryRelevanceAnalysis(
+            candidates=candidates,
+            trace_id=str(trace.id),
+            router_version=router_version,
+            # 与 detail / override 两处 payload 同一个派生点，绝不在工具侧另写一遍
+            # 版本字面判定——两条链路给出不同 degraded 会让「刷新前后降级状态不一致」。
+            degraded=derive_routing_degraded(router_version),
+            degrade_reason=v2_degrade_reason,
+            block_order=list(v2_block_order),
+        )
 
     # ---- legacy 路径：HybridSearchService 多召回（top_k * 5 冗余）+ 按 repo 聚合 ----
     service = HybridSearchService(get_provider())
@@ -394,7 +426,12 @@ async def _analyze_relevance_core(
         agent_session_id=agent_session_id,
     )
 
-    return candidates, str(trace.id)
+    return RepositoryRelevanceAnalysis(
+        candidates=candidates,
+        trace_id=str(trace.id),
+        router_version=router_version,
+        degraded=derive_routing_degraded(router_version),
+    )
 
 
 @tool(
@@ -436,7 +473,7 @@ async def analyze_repository_relevance(
         return ToolResult(success=False, error=str(exc))
 
     try:
-        candidates, trace_id = await _analyze_relevance_core(
+        analysis = await _analyze_relevance_core(
             query=query,
             space_id=space_id,
             conversation_id=conversation_id,
@@ -455,11 +492,17 @@ async def analyze_repository_relevance(
         logger.exception("analyze_repository_relevance_unexpected", error=str(exc))
         return ToolResult(success=False, error=f"Unexpected error: {exc}")
 
+    # 结果级四件套随 data 一并出参：前端 SSE part_completed 解析的就是这个
+    # model_dump()，少一个键就少一个实时可见的能力（BL-02）。
     output_model = RepositoryRelevanceOutput(
-        candidates=candidates,
+        candidates=analysis.candidates,
         threshold=threshold,
-        total_candidates=len(candidates),
-        trace_id=trace_id,
+        total_candidates=len(analysis.candidates),
+        trace_id=analysis.trace_id,
+        router_version=analysis.router_version,
+        degraded=analysis.degraded,
+        degrade_reason=analysis.degrade_reason,
+        block_order=analysis.block_order,
     )
 
     return ToolResult(
@@ -467,11 +510,15 @@ async def analyze_repository_relevance(
         output={
             "data": output_model.model_dump(),
             "metadata": {
-                "searched_repositories": len(candidates),
-                "trace_id": trace_id,
+                "searched_repositories": len(analysis.candidates),
+                "trace_id": analysis.trace_id,
             },
         },
     )
 
 
-__all__ = ["analyze_repository_relevance", "_analyze_relevance_core"]
+__all__ = [
+    "RepositoryRelevanceAnalysis",
+    "_analyze_relevance_core",
+    "analyze_repository_relevance",
+]

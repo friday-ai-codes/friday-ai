@@ -734,6 +734,23 @@ class RepositoryRoutingTrace(models.Model):
         )
 
 
+def derive_routing_degraded(router_version: str) -> bool:
+    """降级事实的**唯一派生点**（会话 detail / manual override / 工具实时输出三处共用）。
+
+    CONTEXT 要求「前端不自行推断降级」——把推断放到后端即满足该契约，且无需与
+    ``router_version`` 冗余地再加一列（加列还要回填历史行）。
+
+    ``legacy_hybrid`` 刻意排除：它是 ``router_version`` 的列默认值，代表 v2 完全不可用
+    时的历史聚合路径；把它算作降级会让全部历史 trace 突然出现降级横幅
+    （UI-SPEC backstop 1 的历史兼容要求）。
+
+    新增判定分支时改这一处即可 —— 任何 payload 都不得再写等价的版本字面判定。
+    放在 models 模块（而非某个 view）是为了让 ``agents.tools`` 这类非 HTTP 消费方也能
+    复用同一个派生点而不反向依赖 view 层。
+    """
+    return router_version in {"v2_stage0_only", "v1_fallback"}
+
+
 class ConversationIntentTrace(models.Model):
     """意图协商时间线（implementation）。
 

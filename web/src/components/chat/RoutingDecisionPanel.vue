@@ -96,18 +96,16 @@ function byRankDesc(a: RoutingCandidate, b: RoutingCandidate): number {
 }
 
 /**
- * 分组呈现启用判定：`block_order` 长度 2 即启用（后端契约：有项目上下文时
- * 恒为长度 2，即使某组为空）。长度 1 = 无项目上下文 → 平铺，此时标「跨组」
- * 反而误导。仅当 `block_order` 完全缺失时才按候选自带的组兜底判定。
+ * 分组呈现启用判定：**唯一依据是后端 `block_order`**——长度 2 即启用（后端契约：
+ * 有项目上下文时恒为长度 2，即使某组为空）。长度 1 = 无项目上下文 → 平铺，此时标
+ * 「跨组」反而误导；缺失（历史 trace / legacy 路径）同样平铺，保持今日渲染。
+ *
+ * 刻意**不**按候选内容兜底：曾用 `some(c => c.group === 'in_project')`，而它恰在最
+ * 需要分组的场景失效——正确仓在跨组、本项目组为空时没有任何候选是 in_project，分组
+ * 被判为关闭，「更匹配的仓不在本项目关联范围内」这句最有信息量的提示反而不出现。
+ * 判据必须与候选内容无关。
  */
-const groupingEnabled = computed(() => {
-  const order = trace.value?.block_order
-  if (order && order.length === 2)
-    return true
-  if (order && order.length > 0)
-    return false
-  return allCandidates.value.some(c => c.group === 'in_project')
-})
+const groupingEnabled = computed(() => trace.value?.block_order?.length === 2)
 
 /** 区顺序权威来自后端；前端不重排区。 */
 const blockOrder = computed<RoutingGroup[]>(() => {
