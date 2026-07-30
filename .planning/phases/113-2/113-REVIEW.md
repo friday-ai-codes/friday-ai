@@ -423,3 +423,62 @@ snapshot 声明 `report_blueprint_context` 的响应键为 `["applied", "reason"
 _Reviewed: 2026-07-30_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: deep_
+
+---
+
+## Fix Log
+
+**修复于：** 2026-07-30 · 分支 `milestone/v0.20.0-blueprint`
+**结论：14 fixed / 1 skipped。** CRITICAL 与全部 MAJOR 已修；MINOR 修 9 条、跳 1 条（MN-09，理由见下）。
+
+> **计数订正：** 正文实际列出 **10** 条 MINOR（MN-01…MN-10），文首摘要的「9 MINOR」少计了一条；
+> 全篇 finding 总数为 **15**（1 + 4 + 10），本 Fix Log 按正文逐条收口。
+
+### CRITICAL
+
+| ID | 结论 | commit | 说明 |
+|---|---|---|---|
+| CR-01 | **fixed** | `45759e8c` | 总线写入的仓归属改服务端权威推导：`repository_id` 一律覆写为反查值、跨仓 `repo:` 前缀 key 拒绝（fail-closed，反查不到即拒 `repo:` 写入），补跨仓伪造负向断言 |
+
+### MAJOR
+
+| ID | 结论 | commit | 说明 |
+|---|---|---|---|
+| MJ-01 | **fixed** | `021c80bf` | 会话寻址改用 token 自带 `session_id` 作权威，`X-Friday-Session-Id` header 退化为冗余字段（不一致即 403）；同步订正「不存在 token → session」的错误前提注释 |
+| MJ-02 | **fixed** | `09a3751d` | 成环分支与非成环分支对称落终态：`mark_failed(reason="waiting_context_cycle")` + `mark_stale`，裁决后该仓可重派；「裁决前不重派」改由显式门控承担，不再靠 task 卡在 RUNNING 物理阻止 |
+| MJ-03 | **fixed** | `09a3751d` | 超龄清理 + 死锁探测增设**可达**挂载点 `callbacks._amaintain_blueprint_waiters`（容器退出瞬间执行）：全波容器都以 `waiting_context` 退出时，先试超龄清理重派（自愈），无仓可清且判定死锁则开 blocking 澄清（可见）。未新起定时任务 |
+| MJ-04 | **fixed** | `4160815d` | `gaps` 上界与 `api_contracts` 的 `_MAX_LIST_ITEMS` 对齐，`_apply_needs_support` 拿到全量、逐条可处置；截断只作用于 HITL 文本，杜绝 `needs_support` 被静默丢弃后原样落版本 |
+
+### MINOR
+
+| ID | 结论 | commit | 说明 |
+|---|---|---|---|
+| MN-01 | **fixed** | `977ba36e` | 连续 3 轮读失败（配额耗尽 / 401 / 404）提前返回 `reason="tool_error"`，不再空转到 deadline 再回 `timeout`；仍不带 `is_error`（约束 ②）。工具 description 按 `timeout` / `tool_error` / `tool_unavailable` 三值分开写降级动作。公共 handler 工厂零改动 |
+| MN-02 | **fixed** | `668f2ae9` | `_redact_json` 加 `depth` 上界（32）超界回落截断标记；`_truncate_content` 的 `json.dumps` 递归失败按「超限」处理，不再让 `RecursionError` 被折叠成不可归因的 `internal_error` |
+| MN-03 | **fixed** | `668f2ae9` | `_normalize_api_contracts` 补 `assoc_ids` 过滤，与 `_normalize_implementation_overview` / `current_state` 对齐，杜绝悬空 `repository_id` 契约过门落版本 |
+| MN-04 | **fixed** | `668f2ae9` | `derive_must_haves` 把 `or ""` 移到条件表达式外，缺 `path` 键的 dict 归一为空串，不再产出字面量路径 `"None"` |
+| MN-05 | **fixed** | `668f2ae9` | `_open_cycle_clarification` 补幂等闸（该 artifact 已有 OPEN blocking 线程则不叠开），与兄弟实现 `blueprint_repo_plan._aopen_cycle_clarification` 同口径 |
+| MN-06 | **fixed** | `09a3751d` | 阻塞线程探测提到 `_abp_mark_drafting` 之前：有 open+blocking 线程时整轮不 mark drafting、不派发，展示态不再与 `needs_clarification` 语义矛盾 |
+| MN-07 | **fixed** | `09a3751d` | `deps.repo_plan` 缺失时与 `_h_bp_merge`（D-W4）对齐：先 `_abp_ensure_blocking_clarification` 再返 `needs_clarification`，不再用 `plan_dispatched` self-loop 静默悬挂；同步更新守护测试期望 |
+| MN-08 | **fixed** | `668f2ae9` | `TOOL_SCHEMA_SNAPSHOT` 补 `redispatched`，并加「view 响应键 ⊆ snapshot 声明键」守卫，让这类契约漂移在源头被拦 |
+| MN-09 | **skipped** | — | **两条建议修法都撞硬约束，不在 MINOR 的风险预算内。** ① 「重派容器带可区分 `session_id` 前缀」要改 `blueprint_research_adapter.py:459` 的 `bp-plan` 前缀生成——该文件属本相位 11 项冻结面（零改动）；② 「`last_output` 里带 `plan_attempt` 由派发侧递增」会把重试预算的判据从「服务端生成、runner 不可篡改的 `session_id` 前缀计数」换成 runner 可经 progress 回调篡改的字段（本仓多处注释明确点名 `last_output` 不可信），是**安全性倒退**——容器可借此获得无界重试。现状影响有界：已参与跨仓协商的仓在首次 schema 不合格时被判超界 → `mark_failed` + 开 blocking 澄清，**不静默降级、人可见可续**。正解需要一张服务端权威的「校验失败次数」承载（如 `RepoResearchTask` 加列或独立计数表），应作为独立小相位处理 |
+| MN-10 | **fixed** | `7cee8db4` | `_layer` 改按 SCC 缩点思路分三段（环的上游 → 环整体一波 → 环的传递下游），依赖环的下游仓不再被排到环之前；补上游 / 直接下游 / 传递下游三条断言 |
+
+### 相位门
+
+`server`: `pytest tests/services/process_runtime/ tests/delivery/ tests/mcp_tools/ tests/subagent/ tests/repositories/`
+→ **1767 passed / 2 skipped / 1 failed（已登记忽略项）**，159s。
+
+- 唯一 failure：`tests/mcp_tools/test_skills_snapshot_guard.py::test_skill_files_discovered` —— `skills/` 子模块未初始化，与本轮改动无关（登记在册）。
+- `test_threaded_concurrent_appends_*` 本轮**未复现** flake。
+
+`task`: `pytest tests/test_blueprint_context_wait.py tests/test_knowledge_tools.py tests/test_blueprint_context_tools_schema.py` → **49 passed**（含工厂零改动守护三条）。
+
+### 冻结纪律（本轮新增两 commit 复核）
+
+- 11 项冻结面零改动 —— 本轮只触 `task/core/blueprint_context_wait.py`、`task/core/knowledge_tools.py`（仅 await 工具 **description** 文案，`_make_knowledge_handler` 工厂本体 / `timeout=60.0` / `quota_counter` / 无 callback 参数一字未动，守护测试三条绿）、`server/services/process_runtime/blueprint_repo_waves.py` 及各自测试。
+- `_TECHNICAL_PLAN_STAGES` / `_ECHO_STAGES` 零触碰；`blueprint_resume.py` 本轮零改动。
+- 提交前对改动文件跑过 `uv run ruff format` + `uv run ruff check --fix`（均 clean）。
+
+_Fixed: 2026-07-30_
+_Fixer: Claude (gsd-code-fixer)_
