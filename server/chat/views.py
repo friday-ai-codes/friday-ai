@@ -86,6 +86,16 @@ def _derive_degraded(router_version: str) -> bool:
     return derive_routing_degraded(router_version)
 
 
+def _safe_block_order(value: object) -> list[str]:
+    """``block_order`` 的形状守卫（detail / override 两处 payload 共用）。
+
+    历史或脏数据行里该列可能是 dict / str：``list(dict)`` 得到键名列表、``list(str)``
+    得到字符列表，被原样写进新 trace 并回给前端后，前端只检查 ``length === 2``——两元素
+    的脏值会让组标题渲染成空、两个分区都因 ``total === 0`` 被过滤，结果一个候选都不显示。
+    """
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
 def _append_feishu_export_record(message, record: dict[str, str]) -> None:
     """Persist export history on message metadata for refresh-safe recovery."""
     metadata = message.metadata if isinstance(message.metadata, dict) else {}
@@ -562,11 +572,7 @@ class ConversationDetailView(APIView):
                 "degrade_reason": latest_trace.degrade_reason,
                 # 与上面 candidates 同款的防御写法：历史脏数据里非 list 时给 []，
                 # 前端据 length 判定分组，拿到非数组会直接抛。
-                "block_order": (
-                    latest_trace.block_order
-                    if isinstance(latest_trace.block_order, list)
-                    else []
-                ),
+                "block_order": _safe_block_order(latest_trace.block_order),
             }
 
         # 已回复的协商卡（ConversationIntentTrace）—— 刷新 / 切回会话时回显
@@ -2754,7 +2760,9 @@ class RoutingTraceManualOverrideView(APIView):
             triggered_by=RepositoryRoutingTrace.TriggeredBy.MANUAL_OVERRIDE,
             router_version=original.router_version,
             degrade_reason=original.degrade_reason,
-            block_order=list(original.block_order or []),
+            # 与 detail 视图同款守卫：脏数据经 list() 会静默变成键名/字符列表并被写进
+            # 新 trace，坏值就此固化。
+            block_order=_safe_block_order(original.block_order),
         )
 
         logger.info(
@@ -2778,7 +2786,7 @@ class RoutingTraceManualOverrideView(APIView):
                 "router_version": new_trace.router_version,
                 "degraded": _derive_degraded(new_trace.router_version),
                 "degrade_reason": new_trace.degrade_reason,
-                "block_order": new_trace.block_order,
+                "block_order": _safe_block_order(new_trace.block_order),
             },
             status=status.HTTP_201_CREATED,
         )
