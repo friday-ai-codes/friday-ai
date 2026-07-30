@@ -48,7 +48,10 @@
 - 冲突语义：**人工内容不被 AI 覆盖**——后续 AI 修订以人工版本为基线，冲突必须开线程询问（镜像 `ProjectContextLink` 的「AI 不覆盖人工」原则）
 - 校验：编辑后仍须过 `validate_blueprint`（含引用完整性与 `data_source` 形状），不合法直接拒绝并回显原因（不落半合法版本）
 - 权限：项目成员皆可编辑（§6.4 已定）；编辑者与人审操作者一并 upsert 进 `BlueprintReviewer` 名单
-- 人审操作端点（通过/驳回带划线评论）属本相位，经 `BlueprintLifecycleService`：通过 → `confirmed`（守卫：无 open+blocking 线程 + 无未解决 BLOCKER）；驳回 → `drafting` 且 `revision_round + 1`
+- 人审操作端点（通过/驳回带划线评论）属本相位，经 `BlueprintLifecycleService`：通过 → `confirmed`；驳回 → `drafting` 且 `revision_round + 1`
+- **confirm 守卫收进事务消除 TOCTOU（按调研定夺）**：「无 open+blocking 线程」与「无未解决 BLOCKER」两条判定必须在**同一事务内**完成（不得先查后转），否则存在竞态窗口；因 `blocking == (severity=="blocker")` 已强制一致，该守卫可收敛为单一查询
+- **`revision_round` 写入路径（按调研定夺）**：它是蓝图 content 的 `meta` 段字段（非模型字段，全仓无写入方）→ 驳回必须走「改 content → `add_version` → `transition`」三步，**不扩 `_apply_transition_sync`**；本相位是它的首个写入方
+- **`merge.merged` 转向变更（按调研定夺）**：`merge` 成功后由原先直转终态改为进入 `ai_review`；接受这一在途会话的行为变更（旧 `technical_plan` process 零感知）
 
 ### 观测
 - 审查事件 `blueprint_review_started/completed/failed` 带 `duration_ms`/`category=caller`/`component=process_runtime`；findings 计数与分级分布进事件 payload（**正文不进 payload**）
