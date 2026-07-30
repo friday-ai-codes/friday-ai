@@ -984,8 +984,18 @@ def map_merged_plan_to_coding_plan(content: dict) -> dict:
 ### Pitfall 4: 投影 chat 之外入口的编排时缺 conversation
 **What goes wrong:** `CodingPlan.conversation` NOT NULL；workflow / MCP 入口的 `ConvergenceSession.conversation_id` 为空 ⇒ 投影抛 `IntegrityError` 或 `None` 传 FK 报错。
 **Why it happens:** chat 入口测试全绿，容易漏掉另两个入口。
-**How to avoid:** 投影 service 的 `_aresolve_conversation` 显式两分支：有 `conversation_id` 则复用；无则按 `_create_bridge_session` 模式建合成会话（`space` 从哪来需明确 —— `ConvergenceSession` 没有 `space` FK，只能经 `conversation_id` 或 `work_item` 反查，**这是一个真实的开放问题，见 Open Questions Q2**）。
-**Warning signs:** 计划里投影 service 的签名只有 `artifact_version_id` 一个参数。
+**How to avoid（已订正，见下方 ⚠️）:** 投影 service 的 conversation 解析走**单一链路 + 显式拒绝**：`ArtifactVersion.produced_by_session_id → ConvergenceSession.conversation_id → Conversation`，三者任一为空/不存在即抛 `PlanProjectionError(code="projection_requires_chat_entrypoint")`。**不建合成会话、不按 repository 反查 space。**
+**Warning signs:** 计划里投影 service 的签名缺 `actor_user_id`（归属判定无从落地），或出现「无 conversation 时建合成会话 / 反查 space」的分支。
+
+> ⚠️ **本节初稿的建议是错的，已订正 —— 不要建合成会话。**
+>
+> 初稿写的是「无 `conversation_id` 则按 `_create_bridge_session` 模式建合成会话」，并把 `space` 来源留成 Open Questions Q2。该建议与后续裁决**相反**：
+>
+> - **CONTEXT 裁决 D-3** 把投影限定为 **chat 入口**（项目工作台无 conversation，投影需建合成会话且 `space` 反查有歧义 ⇒ 该入口整体不做）。
+> - **Open Q1 Resolution** 同向落定：限定范围规避，**不猜 space、不建合成会话**。
+> - **109-03 Task 2 action 第 1 条**据此写死单一链路 + 显式机器码拒绝，其验收还要断言「**不**创建任何 `Conversation`」。
+>
+> 因此本 Pitfall 的靶子已从「忘了给另两个入口建会话」改为「**该拒绝时却悄悄建了合成会话**」—— 后者会绕过裁决 D-3 造出 `space` 归属可疑的孤儿会话，且让「投影限定 chat 入口」这条性质无法被验证。`_create_bridge_session` 仍是 MCP 桥接路径的正确先例，但**不是**投影路径可以照抄的范式。
 
 ### Pitfall 5: 顺序搞反 —— 先收窄 schema 再建投影
 **What goes wrong:** SPA 短暂失去唯一编码入口；用户无法从对话进入编码。
