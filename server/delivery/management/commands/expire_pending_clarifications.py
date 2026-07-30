@@ -38,6 +38,7 @@ import structlog
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from common.logging import redact_secrets_in_text
@@ -301,14 +302,29 @@ class Command(BaseCommand):
         为 NULL、新行可能是 ``delivery_failed``——按它过滤会漏掉全部旧行，见模型 docstring）。
         排序沿用 ``plan_research`` 取 pending 轮的既有范式 ``order_by("round_no", "created_at")``。
         """
-        rows = (
+        # 子题统计用一次聚合而不是每轮两条 exists()：本方法在 atomic +
+        # select_for_update 事务内被逐会话调用，默认 limit 200 时逐轮 exists 最坏是
+        # 400+ 次往返**都在持锁事务里**，持锁时长与 limit 线性相关。
+        rows = list(
             Clarification.objects.filter(session_id=session_id, answered_at__isnull=True)
             .order_by("round_no", "created_at")
-            .values("id", "round_no", "created_at", "container_status")
+            .annotate(
+                child_count=Count("questions"),
+                unanswered_child_count=Count(
+                    "questions", filter=Q(questions__answered_at__isnull=True)
+                ),
+            )
+            .values(
+                "id",
+                "round_no",
+                "created_at",
+                "container_status",
+                "child_count",
+                "unanswered_child_count",
+            )
         )
         for row in rows:
-            children = ClarificationQuestion.objects.filter(clarification_id=row["id"])
-            if children.exists() and not children.filter(answered_at__isnull=True).exists():
+            if row["child_count"] and not row["unanswered_child_count"]:
                 # 子题已全答（容器推进因故未落地）→ 与 ahas_pending 一致视为已答，不出口。
                 continue
             return row
