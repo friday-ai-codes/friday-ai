@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
-current_phase: 113
-current_phase_name: 分仓方案与融合 + Context Bus
+current_phase: 114
+current_phase_name: 审查与澄清收敛
 status: executing
-stopped_at: "Phase 112 阶段 1 完全收尾（5/5 plans，verification 16/17 + GAP-1 闭环 + code review 2 CRITICAL/7 MAJOR/6 MINOR 全修，相位门 1295 passed，冻结面 10 文件 diff 为空）。Phase 113 规划中：CONTEXT + 2 份 RESEARCH + PATTERNS + 6 PLANs 就位，plan-checker 判 REVISE（5 BLOCKER），3 项已定夺入 CONTEXT，修订第 1 轮进行中。"
+stopped_at: "Phase 113 阶段 2/3 + Context Bus 交付并验证通过（6/6 plans，verification 54/54，全量相位门 8286 passed 零新增失败，旧 technical_plan 链零回归，冻结面 11 项 + 容器 handler 工厂零改动）。technical_blueprint 九个 stage 全部注册，需求→六段蓝图链路首次贯通。code review 进行中（非阻塞）。下一步：Phase 114 smart discuss → plan → execute。"
 last_updated: "2026-07-29T22:15:00.000Z"
 last_activity: 2026-07-30
-last_activity_desc: Phase 112 complete (16/17 + gap closure)
+last_activity_desc: Phase 113 complete (passed 54/54)
 progress:
   total_phases: 6
-  completed_phases: 2
-  total_plans: 9
-  completed_plans: 9
-  percent: 33
+  completed_phases: 3
+  total_plans: 15
+  completed_plans: 15
+  percent: 50
 ---
 
 # Project State
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/technical-blueprint/DESIGN.md](./technical-blueprint/DESIGN.md)**（13 节，§12 八项决策已定夺，plan-phase 必读）。
 
 **Core value（v0.20.0，在建）:** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，仓库章程补齐净新增落点知识，飞书式划线澄清多轮收敛，全生命周期可管理，知识库可查可引可导出。
-**Current focus:** Phase 113 — 分仓方案与融合（阶段 2/3）+ Blueprint Context Bus
+**Current focus:** Phase 114 — 审查与澄清收敛（AI 对抗审查 + 线程闭环 + 人工编辑）
 
 ## Current Position
 
-Phase: 113 (分仓方案与融合 + Context Bus) — NOT STARTED
+Phase: 114 (审查与澄清收敛) — NOT STARTED
 Plan: —
-Status: Phase 112 complete & verified (gap closed); ready to discuss Phase 113
-Last activity: 2026-07-30 — Phase 112 阶段 1 交付（5/5 plans，verification 16/17 + GAP-1 闭环）
+Status: Phase 113 complete & verified (54/54); ready to discuss Phase 114
+Last activity: 2026-07-30 — Phase 113 阶段 2/3 + Context Bus 交付（6/6 plans，verification 54/54）
 
 ## Milestone Overview (v0.20.0 — Phases 111–116 — 🟡 PLANNING)
 
@@ -39,7 +39,7 @@ Last activity: 2026-07-30 — Phase 112 阶段 1 交付（5/5 plans，verificati
 |-------|------|--------------|--------|
 | 111 | 蓝图底座（schema + 状态机 + 线程/章程模型 + golden set） | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | ✅ Complete (4/4, passed 24/24) |
 | 112 | 规格门与双面路由调研（阶段 1 + 确认门 + 章程回灌） | FLOW-01/02/03/04, CHARTER-02/03 | ✅ Complete (5/5, 16/17 + gap closed) |
-| 113 | 分仓方案与融合（阶段 2/3）+ Context Bus | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | Not started |
+| 113 | 分仓方案与融合（阶段 2/3）+ Context Bus | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | ✅ Complete (6/6, passed 54/54) |
 | 114 | 审查与澄清收敛（AI 审查 + 线程闭环 + 人工编辑） | FLOW-07, CLAR-02/03/04 | Not started |
 | 115 | 前端查看器与知识库（查看器/批注/tab/终审 UI） | VIEW-01/02/03/04, CLAR-01, FLOW-08 | Not started |
 | 116 | 入口收编与导出（MCP 协议 + 全入口 + 飞书导出 + 图谱物化） | GATE-01, VIEW-05 | Not started |
@@ -88,6 +88,11 @@ Last activity: 2026-07-30 — Phase 112 阶段 1 交付（5/5 plans，verificati
 - [Phase 112, 2026-07-30]: 112-04: fitness/role_suggestion/responsibility/findings 落 `PartialPlan.content`（`RepoResearchTask` 无 report 字段，仅作任务态载体）；dispatch 需 `force_deep_repository_ids` 参数，否则「人工升级深调研」会被重新分回轻量桶静默失效。
 - [Phase 112, 2026-07-30]: 112-05: 确认门动作的续驱触发点在**视图层**（六个改状态端点，confirm 在 alock 之后——塞进 service 会在锁定前空转）；续驱失败只记 caller 事件、REST 仍 2xx、标记留库待下次触发；幂等复用既有 CAS 与 dispatch 白名单，不新造锁。
 - [Phase 112, 2026-07-30]: 112-05: 确认门留痕不可用 `record_answer`（会把门推到 answered 并被重开第二道门）；fitness citations 必须过引用池白名单（否则 confirm 永远锁不上）；`alock` 不可读 session 钉住的版本（会覆盖规格门成果）。
+- [Phase 113, 2026-07-30]: 113-01: 总线 `seq` 会话内单调**锁父 ConvergenceSession 行**分配（不锁子表——`select_for_update` 对空结果集无可靠 gap lock，MySQL/PG 行为不一），`UniqueConstraint(session, seq)` 只作兜底；seq 计算须提取为 `_next_seq` 打桩接缝，否则确定性冲突用例无从证伪。并发证据不得用 `asyncio.gather`（thread_sensitive 串行 + SQLite select_for_update no-op ⇒ 平凡通过）。
+- [Phase 113, 2026-07-30]: 113-01: 总线 `content` 是 JSON dict，必须走自建 `_redact_json` **递归叶子脱敏**；禁止 `redact_secrets_in_text(json.dumps(...))` 再 loads。waiter 落 `kind="dependency_claim"` 行而非 stage_state（并行容器高频写会 lost-update）。
+- [Phase 113, 2026-07-30]: 113-02: 容器 MCP 鉴权只到 `token → owner`，会话隔离必须 view 层自建三道（`sub.main_session.user_id == request.user.id` 空值 fail-closed / `process_type == technical_blueprint` / 条目 session 一致）；三道均经变异验证可触发 403。公共 handler 工厂（`timeout=60.0`/`quota_counter`/无 callback）禁改——配额改由派发时提到 400。
+- [Phase 113, 2026-07-30]: 113-03: plan 模式全走带默认值 keyword-only 参数（缺省逐字等价 112）；`last_output.source` 必须换 `blueprint_repo_plan`（否则被阶段 1 判据抢走并因缺 `fitness.verdict` 判失败）；`env_FRIDAY_TASK_MODE` 保持 `explore`（它管 git 写拦截，与调研/拟方案正交）；重试须「先 mark_failed 再 mark_stale」并豁免跨阶段 `_MAX_ATTEMPTS`。
+- [Phase 113, 2026-07-30]: 113-05: needs_support **只写 `data_source.availability`（`existing|needs_support`）与 `data_source.support_repository_id`**，顶层零残留——111 schema 无顶层 availability，写错位置会让 114/115 读不到而断言仍全绿（假通过）。确定性投影段（repo_associations/current_state_analysis）必须可断言「零起草贡献仍逐字段一致」。
 - [Phase 112 review 修复, 2026-07-30]: **跨 process 污染防线**：确认门 `_aload_session` 必须强制过滤 `process_type="technical_blueprint"`（取不到即 404），且 `adrive_blueprint_session_to_pause_or_terminal` 入口加守卫 no-op——原实现按「最近一条」取会话会把并存的 `technical_plan` 会话用蓝图 engine 驱成 FAILED 而 REST 仍回 2xx（反向断言已证实）。后续任何按 artifact 取会话的代码都必须带 process_type 过滤。
 - [Phase 112 review 修复, 2026-07-30]: **规格门 fail-closed 补洞**：打分不可得或 `total=1.0` 时一律复述原问题重新挂起（兜底问题不参与指纹去重）；「问不出新问题」才放行且必须记 `capped=True` + `release_reason` 区分两条例外路径。
 - [Phase 112, 2026-07-30]: GAP-1 闭环：`reroute.excluded` 必须被候选筛选真实消费（路由候选 + 确认门 pending 两条来源同时剔除，仅人工升级豁免），reroute 轮复用 `blueprint_route(exclude_repository_ids=...)` 补候选、补不到才升门；排除集累积。
@@ -116,6 +121,6 @@ Last activity: 2026-07-30 — Phase 112 阶段 1 交付（5/5 plans，verificati
 
 ## Session Continuity
 
-Last session: 2026-07-29/30 — 设计蓝图收敛（DESIGN.md 13 节）+ 里程碑创建 + Phase 111/112 全量交付（autonomous 模式）
-Next step: **Phase 113 smart discuss → plan → execute**（DESIGN.md §5.2 阶段 2/3 契约、§5.3 RepoPlan schema、§5.6 Blueprint Context Bus 为直接输入；Phase 111 的 schema/lifecycle + Phase 112 的确认门锁定产物为可消费上游）
+Last session: 2026-07-29/30 — 设计蓝图收敛（DESIGN.md 13 节）+ 里程碑创建 + Phase 111/112/113 全量交付（autonomous 模式）
+Next step: **Phase 114 smart discuss → plan → execute**（DESIGN.md §5.5 AI 审查七类规则、§6.1-§6.3 线程回灌与人工编辑、§3.13 decision_log 为直接输入；111 的 schema/lifecycle/anchor + 112 的确认门 + 113 的完整蓝图装配为可消费上游）
 Resume file: 无（干净接力点：Phase 111/112 全部 commit 已入库）

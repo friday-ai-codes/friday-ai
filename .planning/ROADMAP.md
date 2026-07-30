@@ -36,7 +36,7 @@
 
 - [x] **Phase 111: 蓝图底座** - blueprint/v1 schema 强制校验 + 11 态生命周期状态机 + 划线线程/评审人模型 + RepoCharter 章程模型与 AI 起草管道 + execution_plan 确定性派生 + golden set 质量基线（SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02）— completed 2026-07-30（4/4 plans，verification passed 24/24）
 - [x] **Phase 112: 规格门与双面路由调研（阶段 1）** - spec_gate 歧义门与意图分类 + blueprint_route 双面路由（章程/历史落点/能力树融合）+ 逐仓容器 fitness 调研 + reroute 有界循环 + repo_confirmation 硬确认门与章程回灌（FLOW-01/02/03/04, CHARTER-02/03）— completed 2026-07-30（5/5 plans，verification 16/17 + gap closure）
-- [ ] **Phase 113: 分仓方案与融合（阶段 2/3）+ Context Bus** - repo_plan 逐仓方案 + 会话级共享上下文总线（实时读写/等待恢复/环检测）+ merge 融合装配（六段 + 引用强制 + 跨仓 API 对账）（FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03）
+- [x] **Phase 113: 分仓方案与融合（阶段 2/3）+ Context Bus** - repo_plan 逐仓方案 + 会话级共享上下文总线（实时读写/等待恢复/环检测）+ merge 融合装配（六段 + 引用强制 + 跨仓 API 对账）（FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03）— completed 2026-07-30（6/6 plans，verification passed 54/54）
 - [ ] **Phase 114: 审查与澄清收敛** - AI 对抗审查七类规则与归因打回 + 澄清答案回灌产新版本 + 决策记录物化 + pending 语义 + 人工 block 编辑（FLOW-07, CLAR-02/03/04）
 - [ ] **Phase 115: 前端查看器与知识库** - BlueprintViewer 六段结构化渲染与批注层 + 二级引用预览 + 知识库技术方案 tab + 项目关联 + 人审终审 UI（VIEW-01/02/03/04, CLAR-01, FLOW-08）
 - [ ] **Phase 116: 入口收编与导出** - MCP 异步澄清协议 + 全入口统一走蓝图编排 + 飞书导出升级 + 知识图谱物化 + 触点升级（GATE-01, VIEW-05）
@@ -443,7 +443,7 @@ Plans:
 |-------|-----------|--------------|----------------|--------|-----------|
 | 111. 蓝图底座 | v0.20.0 | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | 4/4 | ✅ Complete (passed 24/24) | 2026-07-30 |
 | 112. 规格门与双面路由调研 | v0.20.0 | FLOW-01/02/03/04, CHARTER-02/03 | 5/5 | ✅ Complete (16/17 + gap closed) | 2026-07-30 |
-| 113. 分仓方案与融合 + Context Bus | v0.20.0 | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | 0/TBD | Not started | - |
+| 113. 分仓方案与融合 + Context Bus | v0.20.0 | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | 6/6 | ✅ Complete (passed 54/54) | 2026-07-30 |
 | 114. 审查与澄清收敛 | v0.20.0 | FLOW-07, CLAR-02/03/04 | 0/TBD | Not started | - |
 | 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 0/TBD | Not started | - |
 | 116. 入口收编与导出 | v0.20.0 | GATE-01, VIEW-05 | 0/TBD | Not started | - |
