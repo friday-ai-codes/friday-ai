@@ -569,6 +569,37 @@ async def test_waiting_exit_expires_overdue_waiters_and_redispatches() -> None:
     assert str(repo_a.id) in dispatched_ids
 
 
+async def test_service_cycle_clarification_is_idempotent() -> None:
+    """⭐ MN-05：同一个环再次命中时不叠开线程（对侧 waiter 仍 active，环会被反复命中）。"""
+    repo_a = await _make_repo()
+    repo_b = await _make_repo()
+    session, artifact = await _make_locked_session(_association(repo_a), _association(repo_b))
+    service = BlueprintContextService()
+
+    await service.register_waiter(
+        session=session,
+        from_repository_id=str(repo_a.id),
+        wait_key_pattern=f"repo:{repo_b.id}.api_surface",
+    )
+    first = await service.register_waiter(
+        session=session,
+        from_repository_id=str(repo_b.id),
+        wait_key_pattern=f"repo:{repo_a.id}.api_surface",
+    )
+    assert first["cycle_detected"] is True
+    assert len(await _threads(artifact.id)) == 1
+
+    # B 再登记一次（现实里就是并行容器接连退出）→ 环再次命中，但**不叠开**
+    second = await service.register_waiter(
+        session=session,
+        from_repository_id=str(repo_b.id),
+        wait_key_pattern=f"repo:{repo_a.id}.api_surface",
+    )
+    assert second["cycle_detected"] is True
+    assert second["thread_id"] == ""
+    assert len(await _threads(artifact.id)) == 1, "同一个环把 HITL 面板刷成多条"
+
+
 async def test_wave_cycle_opens_clarification_with_return_stage() -> None:
     """`aplan_waves` 命中互等环 → blocking 澄清线程带 `return_stage="repo_plan"`（B3）。"""
     repo_a = await _make_repo()

@@ -55,6 +55,9 @@ _COMPONENT = "blueprint_context"
 
 # 单条 content 序列化上界：超限截断并置 {"_truncated": True}，防单条巨 JSON 撑爆总线（T-113-03）
 _MAX_CONTENT_BYTES = 32768
+# content 递归深度上界（MN-02）：远低于解释器递归上限，让「过深」在脱敏时被**可归因地**
+# 截断，而不是抛 RecursionError 被兜底折叠成不可归因的 internal_error。
+_MAX_CONTENT_DEPTH = 32
 # read_entries 的硬上界（调用方传再大也夹紧，防无界拉取吃满读取预算）
 _MAX_READ_LIMIT = 200
 _DEFAULT_READ_LIMIT = 50
@@ -66,16 +69,25 @@ _WAITER_KEY_PREFIX = "dependency:"
 _MAX_RETURN_STAGE_CHARS = 16
 
 
-def _redact_json(value: Any) -> Any:
+def _redact_json(value: Any, *, depth: int = 0) -> Any:
     """JSON 递归叶子脱敏（本相位自建：``common.logging`` 只有字符串版，无 JSON 递归版）。
 
     对 ``dict`` 的**键与值**、``list`` / ``tuple`` 的每个元素递归；字符串叶子逐个过
     ``redact_secrets_in_text``；``int`` / ``float`` / ``bool`` / ``None`` 原样返回
     （结构与非字符串叶子必须保真——脱敏不得让 JSON 塌成字符串）。
 
+    **深度有界（MN-02）**：``content`` 是容器上报的半可信 JSON（serializer 只要求它是
+    dict，无深度限制），无界递归在接近解释器上限时抛 ``RecursionError``；那属
+    ``Exception``，会被 view 的兜底吞成 ``{"applied": False, "reason": "internal_error"}``
+    —— 写入方拿不到可归因原因，``_MAX_CONTENT_BYTES`` 那道体积闸也压根执行不到，
+    「脱敏 fail-closed」的安全边界退化成「整条写入 fail-silent」。超界回落与
+    :func:`_truncate_content` **同一口径**的截断标记（结构保真、可归因）。
+
     单点调用失败 **fail-closed**：回落**空串**而不是原文（脱敏是安全边界，宁可丢内容
     也不泄漏），并记 warning 让失败可见。
     """
+    if depth > _MAX_CONTENT_DEPTH:
+        return {"_truncated": True, "_reason": "too_deep"}
     if isinstance(value, str):
         try:
             return redact_secrets_in_text(value)
@@ -89,19 +101,25 @@ def _redact_json(value: Any) -> Any:
             return ""
     if isinstance(value, dict):
         return {
-            (_redact_json(k) if isinstance(k, str) else k): _redact_json(v)
+            (_redact_json(k, depth=depth + 1) if isinstance(k, str) else k): _redact_json(
+                v, depth=depth + 1
+            )
             for k, v in value.items()
         }
     if isinstance(value, (list, tuple)):
-        return [_redact_json(item) for item in value]
+        return [_redact_json(item, depth=depth + 1) for item in value]
     return value
 
 
 def _truncate_content(content: dict) -> dict:
-    """content 序列化超 ``_MAX_CONTENT_BYTES`` 时丢正文、只留截断标记（T-113-03）。"""
+    """content 序列化超 ``_MAX_CONTENT_BYTES`` 时丢正文、只留截断标记（T-113-03）。
+
+    ``json.dumps`` 自身也是无界递归：深嵌套 content 在这里抛 ``RecursionError`` 同样属
+    ``Exception``，故一并按「不可序列化」处理（MN-02，与 :func:`_redact_json` 同口径）。
+    """
     try:
         size = len(json.dumps(content, ensure_ascii=False).encode("utf-8"))
-    except Exception:  # noqa: BLE001 — 不可序列化的 content 一律按超限处理
+    except Exception:  # noqa: BLE001 — 不可序列化 / 过深一律按超限处理（绝不上抛）
         return {"_truncated": True, "_reason": "unserializable"}
     if size <= _MAX_CONTENT_BYTES:
         return content
@@ -695,6 +713,11 @@ class BlueprintContextService:
         ``question`` **只含仓 id 与 key 模式**（无 content 正文）。``return_stage`` 必填
         （B3）：``BlueprintThread.return_stage`` 是澄清恢复目标的持久承载，漏传会让阶段
         2/3 的恢复退回阶段 1；取 ``session.current_stage`` 当时值，不硬编码。
+
+        **幂等闸（MN-05）**：该 artifact 已有 OPEN 的 blocking 线程就不再叠开 —— 与兄弟实现
+        ``blueprint_repo_plan._aopen_cycle_clarification`` 同一口径。成环时只有**自己那条**
+        waiter 被置 ``superseded``、对侧仍 active，所以下一次 ``register_waiter`` 会再命中同一个
+        环；没有这道闸，多容器并行退出时 HITL 面板会被同一个环刷成多条。
         """
         if artifact is None:
             artifact = await self._resolve_artifact(session)
@@ -706,6 +729,8 @@ class BlueprintContextService:
                 session_id=str(session.id),
                 cycle_count=len(cycles),
             )
+            return ""
+        if await self._ahas_open_blocking_thread(artifact.id):
             return ""
         chains = "；".join(" → ".join([*cycle, cycle[0]]) for cycle in cycles)
         question = (
@@ -733,6 +758,16 @@ class BlueprintContextService:
             )
             return ""
         return str(thread.id)
+
+    @staticmethod
+    @sync_to_async
+    def _ahas_open_blocking_thread(artifact_id: Any) -> bool:
+        """该 artifact 上是否已有 OPEN 的 blocking 线程（幂等闸，MN-05）。"""
+        from delivery.models import BlueprintThread, ThreadStatus
+
+        return BlueprintThread.objects.filter(
+            artifact_id=artifact_id, blocking=True, status=ThreadStatus.OPEN
+        ).exists()
 
     @sync_to_async
     def _resolve_artifact(self, session: Any) -> Any:

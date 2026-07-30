@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 from rest_framework import serializers
 
@@ -29,7 +29,9 @@ class SearchRagChunksRequestSerializer(serializers.Serializer):
     query = serializers.CharField(required=True, allow_blank=False, max_length=1000)
     branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
     top_k = serializers.IntegerField(required=False, default=30, min_value=1, max_value=50)
-    max_tokens = serializers.IntegerField(required=False, default=8000, min_value=1, max_value=32000)
+    max_tokens = serializers.IntegerField(
+        required=False, default=8000, min_value=1, max_value=32000
+    )
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
         targets = [str(rid) for rid in cast(list[object], attrs.get("repository_ids") or [])]
@@ -63,7 +65,9 @@ class GetRepositoryFileRequestSerializer(serializers.Serializer):
     repository_id = serializers.UUIDField(required=True)
     file_path = serializers.CharField(required=True, allow_blank=False, max_length=1000)
     branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
-    start_line = serializers.IntegerField(required=False, min_value=1, allow_null=True, default=None)
+    start_line = serializers.IntegerField(
+        required=False, min_value=1, allow_null=True, default=None
+    )
     end_line = serializers.IntegerField(required=False, min_value=1, allow_null=True, default=None)
     max_lines = serializers.IntegerField(required=False, default=500, min_value=1, max_value=2000)
 
@@ -184,7 +188,9 @@ class ReverseLookupRequestSerializer(serializers.Serializer):
     branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
-        has_file_line = bool(str(attrs.get("file_path") or "").strip()) and attrs.get("line") is not None
+        has_file_line = (
+            bool(str(attrs.get("file_path") or "").strip()) and attrs.get("line") is not None
+        )
         has_chunk = bool(attrs.get("chunk_id"))
         if not has_file_line and not has_chunk:
             raise serializers.ValidationError("必须提供 (file_path 且 line) 或 chunk_id")
@@ -295,8 +301,12 @@ class GetCodingExecutionRequestSerializer(serializers.Serializer):
 class SummarizeBranchRequestSerializer(serializers.Serializer):
     execution_id = serializers.UUIDField(required=False, allow_null=True, default=None)
     repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
-    source_branch = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
-    target_branch = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
+    source_branch = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
+    target_branch = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
     max_files = serializers.IntegerField(required=False, default=50, min_value=1, max_value=200)
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
@@ -312,10 +322,16 @@ class SummarizeBranchRequestSerializer(serializers.Serializer):
 class CreateMergeRequestRequestSerializer(serializers.Serializer):
     execution_id = serializers.UUIDField(required=False, allow_null=True, default=None)
     repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
-    source_branch = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
-    target_branch = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
+    source_branch = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
+    target_branch = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
     title = serializers.CharField(required=False, allow_blank=True, default="", max_length=200)
-    description = serializers.CharField(required=False, allow_blank=True, default="", max_length=20000)
+    description = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=20000
+    )
     reviewer_usernames = serializers.ListField(
         child=serializers.CharField(max_length=100),
         required=False,
@@ -337,8 +353,12 @@ class CreateMergeRequestRequestSerializer(serializers.Serializer):
 
 class GetFeishuWorkItemContextRequestSerializer(serializers.Serializer):
     project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
-    project_key = serializers.CharField(required=False, allow_blank=True, default="", max_length=128)
-    work_item_type = serializers.CharField(required=False, allow_blank=False, default="story", max_length=80)
+    project_key = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=128
+    )
+    work_item_type = serializers.CharField(
+        required=False, allow_blank=False, default="story", max_length=80
+    )
     work_item_id = serializers.IntegerField(required=True, min_value=1)
     fields = serializers.ListField(
         child=serializers.CharField(max_length=128),
@@ -386,7 +406,9 @@ class CreateFeishuTechnicalPlanRequestSerializer(serializers.Serializer):
         max_length=20,
     )
     title = serializers.CharField(required=False, allow_blank=True, default="", max_length=240)
-    folder_token = serializers.CharField(required=False, allow_blank=True, default="", max_length=200)
+    folder_token = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=200
+    )
     create_document = serializers.BooleanField(required=False, default=True)
     write_comment = serializers.BooleanField(required=False, default=True)
 
@@ -430,9 +452,15 @@ class ExecuteWorkItemRepoTasksRequestSerializer(serializers.Serializer):
 
 class CreateLearningCaseRequestSerializer(serializers.Serializer):
     technical_plan_id = serializers.UUIDField(required=True)
-    outcome = serializers.CharField(required=False, allow_blank=True, default="unknown", max_length=80)
-    root_cause = serializers.CharField(required=False, allow_blank=True, default="", max_length=5000)
-    solution_notes = serializers.CharField(required=False, allow_blank=True, default="", max_length=10000)
+    outcome = serializers.CharField(
+        required=False, allow_blank=True, default="unknown", max_length=80
+    )
+    root_cause = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=5000
+    )
+    solution_notes = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=10000
+    )
     tests = serializers.ListField(
         child=serializers.CharField(max_length=500),
         required=False,
@@ -506,7 +534,9 @@ class SearchLearningCasesRequestSerializer(serializers.Serializer):
             "query 与全部 hints 拼装后为空时直接返回空结果（向量检索无「无查询返回最新」语义）。"
         ),
     )
-    work_item_type = serializers.CharField(required=False, allow_blank=True, default="", max_length=80)
+    work_item_type = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=80
+    )
     repo_hints = serializers.ListField(
         child=serializers.CharField(max_length=200),
         required=False,
@@ -559,9 +589,7 @@ class ReportProjectKnowledgeRequestSerializer(serializers.Serializer):
     )
     repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
     content = serializers.CharField(required=True, allow_blank=False, max_length=20000)
-    source_conversation_id = serializers.UUIDField(
-        required=False, allow_null=True, default=None
-    )
+    source_conversation_id = serializers.UUIDField(required=False, allow_null=True, default=None)
     writeback_mode = serializers.ChoiceField(
         choices=["draft", "active"], required=False, default="draft"
     )
@@ -698,9 +726,11 @@ class GetFeatureTechPlanRequestSerializer(serializers.Serializer):
 
 
 # Blueprint Context Bus 容器读写入参（BUS-01，Phase 113-02）。
-# ⭐ 两个 serializer **都不提供任何会话入参字段**：目标会话一律由 view 从
-# ``X-Friday-Session-Id`` 头解析（``_aresolve_blueprint_session`` 三道校验），
-# 请求体无跨会话入参面 —— 这是「第三道校验（目标条目同会话）」的结构性成立方式。
+# ⭐ 两个 serializer **都不提供任何会话入参字段**：目标会话一律由 view 解析（任务 token 自带
+# 的 ``session_id`` 为权威源，``X-Friday-Session-Id`` 仅冗余校验，见
+# ``_aresolve_blueprint_session`` 四道校验），请求体无跨会话入参面 —— 这是「第三道校验
+# （目标条目同会话）」的结构性成立方式。``repository_id`` 虽在入参里，但 view 会用服务端
+# 权威值**覆写**它（CR-01），保留只为向后兼容老镜像的请求体。
 _BLUEPRINT_CONTEXT_KINDS = [
     "finding",
     "api_surface",
@@ -709,6 +739,24 @@ _BLUEPRINT_CONTEXT_KINDS = [
     "dependency_claim",
     "question",
 ]
+
+# content 嵌套深度上界（MN-02，与 ``BlueprintContextService._MAX_CONTENT_DEPTH`` 同值）。
+_MAX_CONTENT_DEPTH = 32
+
+
+def _json_depth(value: Any, *, depth: int = 0) -> int:
+    """半可信 JSON 的嵌套深度（**自身有界**：到达上界即停，不会因探测深度而递归爆栈）。"""
+    if depth > _MAX_CONTENT_DEPTH:
+        return depth
+    if isinstance(value, dict):
+        children = list(value.values())
+    elif isinstance(value, list):
+        children = list(value)
+    else:
+        return depth
+    if not children:
+        return depth
+    return max(_json_depth(child, depth=depth + 1) for child in children)
 
 
 class ReadBlueprintContextRequestSerializer(serializers.Serializer):
@@ -719,9 +767,7 @@ class ReadBlueprintContextRequestSerializer(serializers.Serializer):
     （T-113-11：防无界 read 拉爆容器上下文）。
     """
 
-    key_prefix = serializers.CharField(
-        required=False, allow_blank=True, default="", max_length=200
-    )
+    key_prefix = serializers.CharField(required=False, allow_blank=True, default="", max_length=200)
     kind = serializers.ChoiceField(
         choices=_BLUEPRINT_CONTEXT_KINDS,
         required=False,
@@ -750,8 +796,14 @@ class ReportBlueprintContextRequestSerializer(serializers.Serializer):
     content = serializers.JSONField(required=True)
 
     def validate(self, attrs: dict) -> dict:
-        if not isinstance(attrs.get("content"), dict):
+        content = attrs.get("content")
+        if not isinstance(content, dict):
             raise serializers.ValidationError("content 必须是 JSON 对象")
+        # MN-02：深度预检放在 serializer 侧，让「过深」以 **400 invalid_params** 被拒，而不是
+        # 一路走到 service 的无界递归抛 `RecursionError`、再被 view 兜底折叠成不可归因的
+        # 200 + `internal_error`（写入方拿不到原因）。service 侧另有同名深度闸兜底。
+        if _json_depth(content) > _MAX_CONTENT_DEPTH:
+            raise serializers.ValidationError(f"content 嵌套层数超过 {_MAX_CONTENT_DEPTH} 层上限")
         return attrs
 
 
@@ -781,8 +833,26 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
         "response": ["query", "ranked_repos", "total", "run_id"],
     },
     "search_rag_chunks": {
-        "request": ["repository_id", "repository_ids", "all_repositories", "max_repos", "query", "branch", "top_k", "max_tokens"],
-        "response": ["query", "repository_id", "repository_ids", "branch", "results", "related_edges", "total_tokens", "run_id"],
+        "request": [
+            "repository_id",
+            "repository_ids",
+            "all_repositories",
+            "max_repos",
+            "query",
+            "branch",
+            "top_k",
+            "max_tokens",
+        ],
+        "response": [
+            "query",
+            "repository_id",
+            "repository_ids",
+            "branch",
+            "results",
+            "related_edges",
+            "total_tokens",
+            "run_id",
+        ],
     },
     "get_repository": {
         "request": ["repository_id"],
@@ -790,18 +860,73 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     },
     "list_repository_files": {
         "request": ["repository_id", "branch", "path", "recursive", "page", "page_size"],
-        "response": ["repository_id", "branch", "path", "items", "total", "page", "page_size", "run_id"],
+        "response": [
+            "repository_id",
+            "branch",
+            "path",
+            "items",
+            "total",
+            "page",
+            "page_size",
+            "run_id",
+        ],
     },
     "get_repository_file": {
         "request": ["repository_id", "file_path", "branch", "start_line", "end_line", "max_lines"],
-        "response": ["repository_id", "branch", "file_path", "content", "truncated", "total_chunks", "returned_lines", "max_lines", "source", "commit_sha", "total_lines", "run_id"],
+        "response": [
+            "repository_id",
+            "branch",
+            "file_path",
+            "content",
+            "truncated",
+            "total_chunks",
+            "returned_lines",
+            "max_lines",
+            "source",
+            "commit_sha",
+            "total_lines",
+            "run_id",
+        ],
     },
     "grep_repository": {
-        "request": ["repository_id", "repository_ids", "all_repositories", "max_repos", "pattern", "branch", "regex", "case_sensitive", "paths", "include_globs", "exclude_globs", "context_lines", "max_matches", "output_mode", "max_tokens"],
-        "response": ["pattern", "output_mode", "repositories", "total_matches", "truncated", "run_id"],
+        "request": [
+            "repository_id",
+            "repository_ids",
+            "all_repositories",
+            "max_repos",
+            "pattern",
+            "branch",
+            "regex",
+            "case_sensitive",
+            "paths",
+            "include_globs",
+            "exclude_globs",
+            "context_lines",
+            "max_matches",
+            "output_mode",
+            "max_tokens",
+        ],
+        "response": [
+            "pattern",
+            "output_mode",
+            "repositories",
+            "total_matches",
+            "truncated",
+            "run_id",
+        ],
     },
     "find_related_chunks": {
-        "request": ["repository_id", "branch", "chunk_id", "file_path", "symbol_name", "relation_types", "hops", "direction", "limit"],
+        "request": [
+            "repository_id",
+            "branch",
+            "chunk_id",
+            "file_path",
+            "symbol_name",
+            "relation_types",
+            "hops",
+            "direction",
+            "limit",
+        ],
         "response": ["repository_id", "branch", "source", "related_chunks", "run_id"],
     },
     "reverse_lookup_requirements": {
@@ -813,44 +938,208 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
         "response": ["analysis_id", "repository_id", "branch", "analysis", "evidence", "run_id"],
     },
     "create_coding_plan": {
-        "request": ["repository_id", "branch", "requirement", "analysis_id", "context_chunks", "max_steps"],
-        "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "evidence", "run_id", "session_id", "status"],
+        "request": [
+            "repository_id",
+            "branch",
+            "requirement",
+            "analysis_id",
+            "context_chunks",
+            "max_steps",
+        ],
+        "response": [
+            "plan_id",
+            "version_id",
+            "version",
+            "repository_id",
+            "branch",
+            "plan",
+            "evidence",
+            "run_id",
+            "session_id",
+            "status",
+        ],
     },
     "improve_coding_plan": {
         "request": ["plan_id", "feedback", "context_chunks", "max_steps"],
-        "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "change_summary", "risk_delta", "evidence", "run_id", "session_id", "status"],
+        "response": [
+            "plan_id",
+            "version_id",
+            "version",
+            "repository_id",
+            "branch",
+            "plan",
+            "change_summary",
+            "risk_delta",
+            "evidence",
+            "run_id",
+            "session_id",
+            "status",
+        ],
     },
     "execute_coding_plan": {
-        "request": ["plan_id", "version_id", "branch_name", "target_branch", "retry_of_execution_id", "timeout_seconds"],
-        "response": ["execution_id", "plan_id", "version_id", "repository_id", "status", "branch_name", "target_branch", "coding_session_id", "subagent_session_id", "commit_sha", "file_changes", "test_results", "push_result", "last_diff", "runner_logs", "recovery_state", "dispatch_payload", "error", "retry_of_execution_id", "retry_count", "run_id"],
+        "request": [
+            "plan_id",
+            "version_id",
+            "branch_name",
+            "target_branch",
+            "retry_of_execution_id",
+            "timeout_seconds",
+        ],
+        "response": [
+            "execution_id",
+            "plan_id",
+            "version_id",
+            "repository_id",
+            "status",
+            "branch_name",
+            "target_branch",
+            "coding_session_id",
+            "subagent_session_id",
+            "commit_sha",
+            "file_changes",
+            "test_results",
+            "push_result",
+            "last_diff",
+            "runner_logs",
+            "recovery_state",
+            "dispatch_payload",
+            "error",
+            "retry_of_execution_id",
+            "retry_count",
+            "run_id",
+        ],
     },
     "get_coding_execution": {
         "request": ["execution_id"],
-        "response": ["execution_id", "plan_id", "version_id", "repository_id", "status", "branch_name", "target_branch", "coding_session_id", "subagent_session_id", "commit_sha", "file_changes", "test_results", "push_result", "last_diff", "runner_logs", "recovery_state", "dispatch_payload", "error", "retry_of_execution_id", "retry_count", "run_id"],
+        "response": [
+            "execution_id",
+            "plan_id",
+            "version_id",
+            "repository_id",
+            "status",
+            "branch_name",
+            "target_branch",
+            "coding_session_id",
+            "subagent_session_id",
+            "commit_sha",
+            "file_changes",
+            "test_results",
+            "push_result",
+            "last_diff",
+            "runner_logs",
+            "recovery_state",
+            "dispatch_payload",
+            "error",
+            "retry_of_execution_id",
+            "retry_count",
+            "run_id",
+        ],
     },
     "summarize_branch": {
         "request": ["execution_id", "repository_id", "source_branch", "target_branch", "max_files"],
-        "response": ["execution_id", "repository_id", "source_branch", "target_branch", "summary", "mr_draft", "run_id"],
+        "response": [
+            "execution_id",
+            "repository_id",
+            "source_branch",
+            "target_branch",
+            "summary",
+            "mr_draft",
+            "run_id",
+        ],
     },
     "create_merge_request": {
-        "request": ["execution_id", "repository_id", "source_branch", "target_branch", "title", "description", "reviewer_usernames", "remove_source_branch"],
-        "response": ["execution_id", "repository_id", "source_branch", "target_branch", "mr", "execution_status", "run_id"],
+        "request": [
+            "execution_id",
+            "repository_id",
+            "source_branch",
+            "target_branch",
+            "title",
+            "description",
+            "reviewer_usernames",
+            "remove_source_branch",
+        ],
+        "response": [
+            "execution_id",
+            "repository_id",
+            "source_branch",
+            "target_branch",
+            "mr",
+            "execution_status",
+            "run_id",
+        ],
     },
     "get_feishu_work_item_context": {
-        "request": ["project_id", "project_key", "work_item_type", "work_item_id", "fields", "include_comments"],
-        "response": ["context_id", "project_id", "work_item", "relations", "documents", "comments", "context", "status", "run_id"],
+        "request": [
+            "project_id",
+            "project_key",
+            "work_item_type",
+            "work_item_id",
+            "fields",
+            "include_comments",
+        ],
+        "response": [
+            "context_id",
+            "project_id",
+            "work_item",
+            "relations",
+            "documents",
+            "comments",
+            "context",
+            "status",
+            "run_id",
+        ],
     },
     "create_feishu_technical_plan": {
-        "request": ["context_id", "repository_ids", "repo_hints", "context_chunks", "similar_cases", "title", "folder_token", "create_document", "write_comment"],
-        "response": ["technical_plan_id", "context_id", "project_id", "plan", "markdown", "repository_tasks", "evidence", "feishu_document", "comment", "status", "retry_state", "run_id"],
+        "request": [
+            "context_id",
+            "repository_ids",
+            "repo_hints",
+            "context_chunks",
+            "similar_cases",
+            "title",
+            "folder_token",
+            "create_document",
+            "write_comment",
+        ],
+        "response": [
+            "technical_plan_id",
+            "context_id",
+            "project_id",
+            "plan",
+            "markdown",
+            "repository_tasks",
+            "evidence",
+            "feishu_document",
+            "comment",
+            "status",
+            "retry_state",
+            "run_id",
+        ],
     },
     "create_work_item_repo_tasks": {
         "request": ["technical_plan_id"],
         "response": ["technical_plan_id", "tasks", "total", "run_id"],
     },
     "execute_work_item_repo_tasks": {
-        "request": ["technical_plan_id", "task_ids", "create_missing", "dispatch", "create_merge_requests", "write_back", "timeout_seconds", "reviewer_usernames"],
-        "response": ["technical_plan_id", "tasks", "summary", "document_update", "comment", "status", "run_id"],
+        "request": [
+            "technical_plan_id",
+            "task_ids",
+            "create_missing",
+            "dispatch",
+            "create_merge_requests",
+            "write_back",
+            "timeout_seconds",
+            "reviewer_usernames",
+        ],
+        "response": [
+            "technical_plan_id",
+            "tasks",
+            "summary",
+            "document_update",
+            "comment",
+            "status",
+            "run_id",
+        ],
     },
     "create_learning_case": {
         "request": ["technical_plan_id", "outcome", "root_cause", "solution_notes", "tests"],
@@ -937,7 +1226,17 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
         "response": ["entries", "count", "max_seq", "error", "run_id"],
     },
     "report_blueprint_context": {
+        # MN-08：`redispatched` 是 113-04 追加的真实响应键，漏在 snapshot 里会让容器侧 /
+        # 外部客户端按已发布契约以为它不存在（snapshot 是对外契约，不是内部注释）。
+        "response": [
+            "applied",
+            "reason",
+            "entry_id",
+            "seq",
+            "satisfied_waiters",
+            "redispatched",
+            "run_id",
+        ],
         "request": ["key", "kind", "repository_id", "content"],
-        "response": ["applied", "reason", "entry_id", "seq", "satisfied_waiters", "run_id"],
     },
 }

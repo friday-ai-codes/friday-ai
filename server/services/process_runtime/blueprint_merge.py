@@ -635,7 +635,10 @@ def derive_must_haves(
     for item in items:
         provides = str(item.get("title") or item.get("id") or "")[:_MAX_TITLE_CHARS]
         for entry in item.get("files_touched") or []:
-            path = str(entry.get("path") if isinstance(entry, dict) else entry or "").strip()
+            # MN-04：`or ""` 必须在条件表达式**外面** —— 写在里面时 dict 缺 `path` 键会得到
+            # `str(None) == "None"`，非空且过不了 `if not path`，于是产出字面量路径 "None"
+            # 这个垃圾锚点（本函数是 `__all__` 导出的公开纯函数，不能只靠调用方先归一）。
+            path = str((entry.get("path") if isinstance(entry, dict) else entry) or "").strip()
             if not path or path in artifacts:
                 continue
             artifacts[path] = {"path": path, "provides": provides}
@@ -1134,6 +1137,12 @@ def _normalize_api_contracts(raw: Any, inputs: _MergeInputs) -> list[dict]:
     contracts: list[dict] = []
     used_ids: set[str] = set()
     for repository_id in sorted(str(rid) for rid in (inputs.repo_plans or {})):
+        # MN-03：与 `_normalize_implementation_overview` / `current_state` 两段对齐 ——
+        # 确认门之后被移除的仓（`_normalize_locked_repos` 会剔它，但它的旧 `PartialPlan.repo_plan`
+        # 仍在）否则会留下带**悬空 repository_id** 的契约过门落版本，并经 `_api_key_links`
+        # 进 `must_haves.key_links`（`blueprint_schema` 的后置检查不覆盖 `api_contracts`）。
+        if repository_id not in inputs.assoc_ids:
+            continue
         section = (inputs.repo_plans or {}).get(repository_id)
         if not isinstance(section, dict):
             continue
