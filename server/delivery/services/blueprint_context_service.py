@@ -502,6 +502,32 @@ class BlueprintContextService:
             edges.setdefault(source, set()).add(target)
         return find_wait_cycles(edges)
 
+    async def aactive_waiting_repository_ids(self, session: Any) -> set[str]:
+        """仍有 active waiter 的仓集（去重）。
+
+        编排侧的两个用途（均为「显式门控」而非超时兜底）：仍在等的仓本轮不重派（重派由
+        写入侧 ``satisfy_waiters`` 或超龄清理驱动）；「全员都在等」是可判定的死锁形状。
+        读失败返回空集合（观测/门控代码绝不反噬派发主链）。
+        """
+        try:
+            claims = await self._active_claims(session_id=session.id)
+        except Exception as exc:  # noqa: BLE001 — 读失败按「无人在等」处理（宁可多派一轮）
+            logger.warning(
+                "blueprint_context_active_waiters_read_failed",
+                category="sampling",
+                component=_COMPONENT,
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc))[:500],
+            )
+            return set()
+        waiting: set[str] = set()
+        for claim in claims:
+            content = claim.get("content") or {}
+            source = str(content.get("from_repository_id") or claim.get("repository_id") or "")
+            if source:
+                waiting.add(source)
+        return waiting
+
     @sync_to_async
     def _active_claims(self, *, session_id: Any) -> list[dict]:
         """本会话 active waiter 行（只取环检测与匹配需要的列）。"""

@@ -553,7 +553,9 @@ async def test_confirmation_handler_returns_confirmed_from_adapter() -> None:
         (bp._h_bp_repo_research, "research_complete"),
         (bp._h_bp_reroute, "converged"),
         (bp._h_bp_repo_confirmation, "awaiting_confirmation"),
-        (bp._h_bp_repo_plan, "plan_dispatched"),
+        # MN-07：repo_plan 与 merge 同口径 —— 返 `plan_dispatched` 会 self-loop 到
+        # `waiting_event` 却没派出任何容器、也没阻塞线程（静默悬挂）。
+        (bp._h_bp_repo_plan, "needs_clarification"),
         # D-W4：merge 缺依赖既不自旋（remerge）也不假装成功（merged），停在本 stage 等人。
         (bp._h_bp_merge, "needs_clarification"),
     ],
