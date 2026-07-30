@@ -770,6 +770,124 @@ async def test_stage1_retry_exhausted_degrades_after_two_attempts(
     assert model.calls == 2
 
 
+# ---------------------------------------------------------------------------
+# MJ-01：**真实 SDK 异常类**下的重试与降级原因
+#
+# 修复前分类只看 `type(exc).__name__` 的子串，而 `APIStatusError` 是 SDK 基类——
+# 生产抛的 `RateLimitError` / `InternalServerError` 名字里都不含 "APIStatus"，于是
+# 429/5xx 全落 `unknown`（既不重试、用户还只看到「未知原因」），`BadRequestError`
+# 反因名字命中上游表而被重试一次（白烧一次上游调用，与 docstring 直接矛盾）。
+# 用真实异常类（带真实 status_code）钉住修复后的行为。
+# ---------------------------------------------------------------------------
+
+
+def _openai_status_error(kind: str, status: int) -> Exception:
+    """构造带真实 ``status_code`` 的 openai SDK 异常实例。"""
+    import httpx
+    import openai
+
+    request = httpx.Request("POST", "https://api.example.com/v1/chat/completions")
+    response = httpx.Response(status, request=request)
+    return getattr(openai, kind)(f"upstream {status}", response=response, body=None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "status"),
+    [
+        ("RateLimitError", 429),
+        ("InternalServerError", 500),
+        ("InternalServerError", 503),
+        # Anthropic 的 529 Overloaded 同样经 APIStatusError 子类抛出
+        ("InternalServerError", 529),
+    ],
+)
+async def test_stage1_retries_real_429_and_5xx(
+    monkeypatch, mock_aresolve_ok, kind: str, status: int
+) -> None:
+    """429/5xx 真实 SDK 异常 → 重试一次并恢复（修复前这些一次都不重试）。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    model = _FlakyModel(
+        _openai_status_error(kind, status), _llm_order_json("repo-a"), fail_times=1
+    )
+    _install_stage1_model(monkeypatch, model)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert model.calls == 2, f"{kind}({status}) 未被重试"
+    assert result.router_version == "v2"
+    assert result.degraded is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "status"),
+    [
+        ("RateLimitError", 429),
+        ("InternalServerError", 500),
+        ("InternalServerError", 529),
+    ],
+)
+async def test_stage1_429_and_5xx_report_upstream_error_not_unknown(
+    monkeypatch, mock_aresolve_ok, kind: str, status: int
+) -> None:
+    """两次都失败时降级原因是「网关错误」而非「未知原因」（用户看到的就是这行）。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    model = _FlakyModel(_openai_status_error(kind, status), fail_times=2)
+    _install_stage1_model(monkeypatch, model)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.degraded is True
+    assert result.degrade_reason == "upstream_error"
+    assert result.degrade_reason != "unknown"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "status"),
+    [
+        ("BadRequestError", 400),
+        ("AuthenticationError", 401),
+        ("PermissionDeniedError", 403),
+        ("NotFoundError", 404),
+        ("UnprocessableEntityError", 422),
+    ],
+)
+async def test_stage1_does_not_retry_deterministic_4xx(
+    monkeypatch, mock_aresolve_ok, kind: str, status: int
+) -> None:
+    """4xx 确定性失败只调一次上游：重试一次结果一样，只会白烧预算与一行用量记录。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    model = _FlakyModel(_openai_status_error(kind, status), fail_times=2)
+    _install_stage1_model(monkeypatch, model)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert model.calls == 1, f"{kind}({status}) 被重试了 —— 与不可重试判据矛盾"
+    assert result.degraded is True
+    assert result.degrade_reason == "upstream_error"
+
+
+@pytest.mark.asyncio
+async def test_stage1_timeout_status_codes_report_timeout(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """504 网关超时的降级原因是「上游超时」而非泛化的「网关错误」。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    model = _FlakyModel(_openai_status_error("InternalServerError", 504), fail_times=2)
+    _install_stage1_model(monkeypatch, model)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.degrade_reason == "timeout"
+    assert model.calls == 2
+
+
 @pytest.mark.asyncio
 async def test_stage1_budget_exhausted_skips_second_call(
     monkeypatch, mock_aresolve_ok, settings

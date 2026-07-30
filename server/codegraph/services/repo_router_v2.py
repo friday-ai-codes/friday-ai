@@ -72,6 +72,7 @@ from codegraph.services.repo_router_ranking import (
     clamp_ranking_params,
     classify_degrade_reason,
     decide_block_order,
+    is_retryable_upstream_failure,
 )
 from codegraph.services.repo_router_scoring import (
     DEFAULT_WEIGHT_CONFIG,
@@ -284,16 +285,22 @@ class RepoRouteResultV2:
 
 
 def _is_retryable_stage1_error(exc: BaseException) -> bool:
-    """Stage 1 失败是否值得重试——判定只吃**异常类型名**，与降级原因分类同口径。
+    """Stage 1 失败是否值得重试——**优先按 HTTP 状态码**，类名子串只作兜底。
 
-    可重试 = 超时 / 上游连接与 HTTP 状态类（``classify_degrade_reason`` 归为
-    ``timeout`` / ``upstream_error`` 的那两类，子串表在 ``repo_router_ranking``
-    内单一维护）。不可重试类（解析错误、参数错误等确定性失败）直接上抛：重试
-    一次结果一样，只会白白吃掉总预算并把用户可见降级推迟一个 RTT。
+    判据在 ``repo_router_ranking.is_retryable_upstream_failure`` 内单一维护：429/5xx
+    （含 529 Overloaded）与连接/超时类可重试；4xx 客户端错误（参数错误、鉴权、404、
+    422 等确定性失败）直接上抛——重试一次结果一样，只会白白吃掉总预算、多一行
+    ``ModelUsageRecord``，并把用户可见降级推迟一个 RTT。
+
+    不能只看类名：``APIStatusError`` 是 SDK 基类，实际抛的 ``RateLimitError`` /
+    ``InternalServerError`` / ``OverloadedError`` 名字里都不含它，按子串匹配会把最该
+    重试的那批全判成不可重试。
     """
-    return classify_degrade_reason("", exc_type_name=type(exc).__name__) in (
-        "timeout",
-        "upstream_error",
+    from interactions.ledger import parse_upstream_status
+
+    return is_retryable_upstream_failure(
+        exc_type_name=type(exc).__name__,
+        status_code=parse_upstream_status(exc),
     )
 
 
@@ -583,12 +590,18 @@ class RepoRouterV2:
 
         # ---- Stage 1: LLM 树推理 ----
         stage1_exc_type: str | None = None
+        stage1_status_code: int | None = None
         try:
             llm_candidates, stage1_meta = await cls._stage1_llm_reasoning(
                 query, stage0_candidates, repo_buckets, top_k
             )
         except Exception as exc:  # noqa: BLE001 — LLM 任意失败都降级 Stage 0
+            from interactions.ledger import parse_upstream_status
+
             stage1_exc_type = type(exc).__name__
+            # 状态码优先于类名参与降级原因分类：429/5xx 的 SDK 子类名不含 "APIStatus"，
+            # 只按类名会让它们落进「未知原因」（用户看到的就是那行文案）。
+            stage1_status_code = parse_upstream_status(exc)
             # 上游异常 body 可能回显请求内容（prompt 片段 / header 残留），必须先脱敏
             # 再截断——截断不是脱敏。原始 str(exc) 不进任何会回前端的结构。
             error_redacted = redact_secrets_in_text(str(exc))[:200]
@@ -617,6 +630,7 @@ class RepoRouterV2:
                 started,
                 stage1_meta=stage1_meta,
                 exc_type_name=stage1_exc_type,
+                status_code=stage1_status_code,
                 **presentation_extras,
                 **snapshot_extras,
             )
@@ -1088,6 +1102,7 @@ class RepoRouterV2:
         *,
         stage1_meta: dict[str, Any] | None = None,
         exc_type_name: str | None = None,
+        status_code: int | None = None,
         grouping_repository_ids: list[str] | None = None,
         delta: float = 0.0,
         weight_config: dict[str, Any] | None = None,
@@ -1103,13 +1118,16 @@ class RepoRouterV2:
         ``weight_config/repo_meta/scored_at`` 按需透传 ``_build_snapshot``
         （v2_stage0_only 降级路径与 v2 路径共用 Stage 0 打分材料）。
         ``grouping_repository_ids/delta`` 带默认值：既有直调方与测试替身照旧可用
-        （无分组上下文 → 全部 global）。``exc_type_name`` 只吃**异常类型名**（不吃
-        实例/消息，脱敏边界），用于区分 ``timeout`` 与 ``upstream_error``。
+        （无分组上下文 → 全部 global）。``exc_type_name`` / ``status_code`` 只吃**异常
+        类型名与数值状态码**（不吃实例/消息，脱敏边界），用于区分 ``timeout`` 与
+        ``upstream_error``；状态码优先，因为 SDK 抛的是 ``APIStatusError`` 的具体子类。
         """
         # 内部 skipped_reason 保持原字符串不变（快照/排障口径不破），另映射为面向
         # 用户的 6 值闭集枚举；两者同时进快照 stage1 节便于交叉核对。
         degrade_reason = classify_degrade_reason(
-            str((stage1_meta or {}).get("skipped_reason", "")), exc_type_name=exc_type_name
+            str((stage1_meta or {}).get("skipped_reason", "")),
+            exc_type_name=exc_type_name,
+            status_code=status_code,
         )
         if stage1_meta is not None:
             stage1_meta = {**stage1_meta, "degrade_reason": degrade_reason}
@@ -1526,14 +1544,19 @@ class RepoRouterV2:
                             timeout=min(timeout_seconds, remaining),
                         )
                 except Exception as exc:  # noqa: BLE001 — 分类后决定重试还是上抛
+                    # 只取数值上游码，绝不取响应体；分类与重试判定共用同一个码。
+                    upstream_status = parse_upstream_status(exc)
                     await _record_stage1_usage(
                         provider=provider_name,
                         model=model_name,
                         duration_ms=int((time.monotonic() - attempt_started) * 1000),
                         # 短标签枚举而非异常消息（T-107-02：failure_type 不吃自由文本）。
-                        failure_type=classify_degrade_reason("", exc_type_name=type(exc).__name__),
-                        # 只取数值上游码，绝不取响应体。
-                        upstream_status_code=parse_upstream_status(exc),
+                        failure_type=classify_degrade_reason(
+                            "",
+                            exc_type_name=type(exc).__name__,
+                            status_code=upstream_status,
+                        ),
+                        upstream_status_code=upstream_status,
                     )
                     if attempt == 1 or not _is_retryable_stage1_error(exc):
                         raise

@@ -374,8 +374,11 @@ REPO_ROUTER_CONF_THETA_MED = env.float("REPO_ROUTER_CONF_THETA_MED", default=0.3
 # 首调 + 1 次重试**共享**的总延迟上界（秒）。REPO_ROUTER_STAGE1_TIMEOUT_SECONDS
 # 保持 per-call 语义且本 phase 不下调：下调会把原本 70–89s 能成功的调用变成用户
 # 可见的降级，必须先有生产延迟实测再定（见 107-MEASUREMENTS.md）。120 = 90 的
-# per-call 上限 + 退避余量，因此重试只在快速失败（网关错误 / 连接失败）场景生效
-# ——相对今日行为零回归。
+# per-call 上限 + 退避余量，因此重试只在快速失败场景生效——相对今日行为零回归。
+# 「快速失败」的判据按 **HTTP 状态码优先**（见 repo_router_ranking
+# .is_retryable_upstream_failure）：429 限流 / 5xx 服务端不可用（含 529 Overloaded）
+# / 408、504 超时 / 取不到状态码的连接类异常可重试；4xx 客户端错误（参数、鉴权、
+# 404、422）是确定性失败，不重试。
 REPO_ROUTER_STAGE1_TOTAL_BUDGET_SECONDS = env.float(
     "REPO_ROUTER_STAGE1_TOTAL_BUDGET_SECONDS", default=120.0
 )
