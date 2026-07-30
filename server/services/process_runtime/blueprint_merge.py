@@ -22,10 +22,14 @@
 6. **best-effort 不反噬主链**：事件 / 埋点 / 后置 hook 一律 ``except Exception`` 吞掉 +
    warning；异常文本经 ``redact_secrets_in_text`` 截断后才进日志。
 
-**本 plan 的边界**：``validate_blueprint`` 硬门在本文件内（不过就不落版本），但**引用
-覆盖率门 / ``coverage_gaps`` 归因 / 有界回退 / 超界转 STAGE_DONE / SettingKeys 阈值 /
-stage 注册**全部归 113-06。故 :data:`MAX_MERGE_ROUNDS` 与
-:data:`_DEFAULT_CITATION_COVERAGE_MIN` 在此只是模块常量兜底。
+**质量门（113-06 补齐）**：装配后依次过 ``validate_blueprint``（不过就不落版本）与
+**引用覆盖率门**（阈值走 ``SettingKeys.BLUEPRINT_MERGE_CONFIG``，缺配置回落
+:data:`_DEFAULT_CITATION_COVERAGE_MIN`）。覆盖率不达标时按 :func:`decide_back_target`
+归因两档回退（单仓缺口回该仓 ``repo_plan``、融合层缺口重融合），合计上界
+:data:`MAX_MERGE_ROUNDS` 轮；**超界一律 ``validation_status="exhausted"``：仍落版本 +
+带 ``unresolved`` 未决项清单 + 开阻塞澄清线程**，绝不落 failed 类动作（OQ-3——「未达
+覆盖率待人审」不是「流程失败」，蓝图成果不许被丢弃）。stage 注册与出边映射归
+``builtin_processes``。
 """
 
 from __future__ import annotations
@@ -38,9 +42,11 @@ from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 import structlog
+from asgiref.sync import sync_to_async
 
 from common.logging import redact_secrets_in_text
-from services.process_runtime.blueprint_reconcile import reconcile_cross_repo_apis
+from services.process_runtime.blueprint_quality import citation_coverage
+from services.process_runtime.blueprint_reconcile import coverage_gaps, reconcile_cross_repo_apis
 from services.process_runtime.blueprint_repo_waves import build_api_waves
 from services.process_runtime.blueprint_schema import BLUEPRINT_SCHEMA_VERSION, validate_blueprint
 
@@ -59,14 +65,24 @@ __all__ = [
     "project_repo_associations",
     "project_current_state",
     "derive_must_haves",
+    "decide_back_target",
 ]
 
-# 合计重试上界 2 轮（113-CONTEXT）。113-06 会把它接到
-# `SettingKeys.BLUEPRINT_MERGE_CONFIG`；此处是兜底默认，本 plan 不消费它做门控。
+# 合计重试上界 2 轮（113-CONTEXT）。运行时可经
+# `SettingKeys.BLUEPRINT_MERGE_CONFIG` 的 `max_merge_rounds` 覆盖；此处是兜底默认。
 MAX_MERGE_ROUNDS = 2
 
-# 引用覆盖率门阈值的兜底默认（同上：门在 113-06，本文件只定义不消费）。
+# 引用覆盖率门阈值的兜底默认（同上，键 `citation_coverage_min`）。
 _DEFAULT_CITATION_COVERAGE_MIN = 0.8
+
+# 未决项清单的上界：它进 `stage_state`（< 2KB 约定）与澄清问题文本，无界会刷爆 HITL 面板。
+_MAX_UNRESOLVED = 30
+
+# distill 沉淀只收「有长期价值」的三类总线条目（BUS-03）；`finding` / `question` /
+# `dependency_claim` 是会话内过程态，进项目级记忆只会污染它（打包预算 30 条）。
+_DISTILL_KINDS = ("decision", "contract", "api_surface")
+_DISTILL_READ_LIMIT = 200
+_MAX_DISTILL_CHARS = 6000
 
 # `session.stage_state` 内融合阶段的键（handler 单点持久化，回调路径永不触碰计数）。
 STAGE_STATE_KEY = "merge"
@@ -637,6 +653,46 @@ def derive_must_haves(
         "truths": truths[:_MAX_LIST_ITEMS],
         "artifacts": [artifacts[path] for path in sorted(artifacts)],
         "key_links": key_links[:_MAX_LIST_ITEMS],
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 覆盖率门的归因（纯函数：单仓缺口 vs 融合层缺口）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def decide_back_target(gaps: list[dict]) -> dict:
+    """引用覆盖率缺口 → **回退目标归因**（纯函数，零 ORM，可直接单测）。
+
+    输入是 :func:`blueprint_reconcile.coverage_gaps` 的定位清单。两档判定：
+
+    - 有缺口能解析出 ``repository_id`` → 按仓聚合，取**缺口最多**的仓回该仓
+      ``repo_plan``（证据是单仓调研没写够，重融合一万次也补不出来）；同数时按仓 id
+      升序取定（**确定性**：同输入恒得同一归因，可写成断言）。
+    - 全部解析不出仓 → 回 ``merge`` 重融合（缺口在融合层的装配/投影环节）。
+    - 无缺口 → 三键全空（调用方据此知道「没有可归因的缺口」）。
+
+    Returns:
+        恒定三键 ``{"back_target": "repo_plan"|"merge"|"", "back_repository_id": str,
+        "gap_count": int}``。``gap_count`` 是**该归因对应的**缺口数（单仓档是该仓的
+        缺口数，融合档是全部缺口数）。
+    """
+    entries = [gap for gap in (gaps or []) if isinstance(gap, dict)]
+    if not entries:
+        return {"back_target": "", "back_repository_id": "", "gap_count": 0}
+    by_repo: dict[str, int] = {}
+    for gap in entries:
+        repository_id = str(gap.get("repository_id") or "").strip()
+        if repository_id:
+            by_repo[repository_id] = by_repo.get(repository_id, 0) + 1
+    if not by_repo:
+        return {"back_target": "merge", "back_repository_id": "", "gap_count": len(entries)}
+    # 排序键显式化：先按缺口数降序，再按仓 id 升序（同数时结果确定，不随 dict 序漂移）。
+    repository_id, gap_count = sorted(by_repo.items(), key=lambda kv: (-kv[1], kv[0]))[0]
+    return {
+        "back_target": "repo_plan",
+        "back_repository_id": repository_id,
+        "gap_count": gap_count,
     }
 
 
@@ -1481,11 +1537,21 @@ class BlueprintMergeAdapter:
         → ``validate_blueprint`` → ``add_version``。
 
         Returns:
-            ``{"validation_status": "passed"|"failed"|"needs_clarification",
-            "artifact_version_id": str, "attempt": int, "back_target": str,
-            "report": dict, "reconcile": dict, "stage_state": dict}``。
-            ``passed`` 路径的 ``artifact_version_id`` 必非空 —— 113-06 的 ``_h_bp_bp_merge``
-            要用它回填 ``StageOutcome.current_artifact_version``。
+            ``{"validation_status": "passed"|"failed"|"needs_clarification"|"retry"
+            |"exhausted", "artifact_version_id": str, "attempt": int,
+            "back_target": str, "report": dict, "reconcile": dict, "stage_state": dict}``。
+            ``passed`` 路径的 ``artifact_version_id`` 必非空 —— ``_h_bp_merge`` 要用它回填
+            ``StageOutcome.current_artifact_version``。
+
+            覆盖率门新增的两条出口（113-06）在上述七键之外**各追加归因键**：
+
+            - ``{"validation_status": "retry", ...}``：覆盖率未达标且回退轮次未用尽。
+              额外键 ``back_repository_id`` / ``gap_count``；``back_target`` ∈
+              ``repo_plan``（单仓证据缺口）/ ``merge``（融合层缺口）。**不落版本**。
+            - ``{"validation_status": "exhausted", ...}``：轮次用尽。**仍落版本**并额外带
+              ``unresolved``（未决项定位清单）/ ``back_repository_id`` / ``gap_count``，
+              同时开一条 blocking 澄清线程。``_h_bp_merge`` 把它映射到 ``merged``
+              ⇒ stage 终态 done，**绝不**落 failed 终态（OQ-3）。
         """
         started = time.monotonic()
         state = await self._aload_stage_state(session)
@@ -1623,22 +1689,59 @@ class BlueprintMergeAdapter:
                 ),
             )
 
-        try:
-            new_version = await self._get_artifact_service().add_version(
-                artifact,
-                assembled,
-                produced_by_session_id=str(getattr(session, "id", "")),
-                # 轮次进 produced_by_ref：同 content_hash 不翻版本（幂等），但哪一轮产出的
-                # 仍可归因（P-6 残留口 1）。
-                produced_by_ref=f"blueprint_merge#attempt={attempt}",
-            )
-        except Exception as exc:  # noqa: BLE001 — 内容非法转 failed，绝不上抛（graceful）
-            self._log(
-                "blueprint_merge_add_version_failed",
-                session,
-                attempt=attempt,
-                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
-            )
+        # ── 引用覆盖率门（FLOW-06 后半，阈值可配）───────────────────────────
+        # 位置严格在 `validate_blueprint` 之后、`add_version` 之前：schema 非法的产物连
+        # 归因都不该做（缺口清单会指向一份本就非法的文档）。
+        min_ratio, max_rounds = await self._aload_merge_config()
+        coverage = citation_coverage(assembled)
+        exhausted = False
+        gate_gaps: list[dict] = []
+        decision = {"back_target": "", "back_repository_id": "", "gap_count": 0}
+        if coverage < min_ratio:
+            gate_gaps = coverage_gaps(assembled)
+            decision = decide_back_target(gate_gaps)
+            if attempt + 1 <= max_rounds:
+                # 有界回退：**不落版本**（未达覆盖率的中间产物不该进版本历史），
+                # 轮次由本单点递增后整体回写 stage_state。
+                self._log(
+                    "blueprint_merge_coverage_gate_retry",
+                    session,
+                    attempt=attempt + 1,
+                    coverage=round(coverage, 4),
+                    min_ratio=min_ratio,
+                    gap_count=len(gate_gaps),
+                    back_target=decision["back_target"],
+                    level="warning",
+                )
+                return self._result(
+                    "retry",
+                    attempt=attempt + 1,
+                    report={
+                        "coverage": round(coverage, 4),
+                        "min": min_ratio,
+                        # 只带计数与前 N 条**定位**，绝不带结论正文（T-113-42）。
+                        "gaps": len(gate_gaps),
+                        "gap_locations": gate_gaps[:_MAX_UNRESOLVED],
+                    },
+                    reconcile=counts,
+                    back_target=decision["back_target"],
+                    stage_state=_build_stage_state(
+                        state,
+                        attempt=attempt,
+                        status="retry",
+                        degraded=degraded,
+                        counts=counts,
+                        attribution=decision,
+                    ),
+                    extra={
+                        "back_repository_id": decision["back_repository_id"],
+                        "gap_count": decision["gap_count"],
+                    },
+                )
+            exhausted = True
+
+        new_version = await self._aadd_version(session, artifact, assembled, attempt)
+        if new_version is None:
             return self._result(
                 "failed",
                 attempt=attempt,
@@ -1650,6 +1753,61 @@ class BlueprintMergeAdapter:
                 ),
             )
 
+        if exhausted:
+            # ⚠️ 超界出口是 **STAGE_DONE 带未决项**，绝不 failed（OQ-3 / T-113-37）：
+            # 蓝图已成形，只是引用覆盖率没达标 —— 那是「待人审」，不是「流程失败」。
+            # 版本照落（成果不许丢），未决项进 stage_state 快照供 114 接手。
+            unresolved = [dict(gap) for gap in gate_gaps[:_MAX_UNRESOLVED]]
+            thread_id = await self._aopen_coverage_clarification(
+                session,
+                artifact,
+                new_version,
+                coverage=coverage,
+                min_ratio=min_ratio,
+                unresolved=unresolved,
+            )
+            await self._adistill_context_entries(session)
+            self._log(
+                "blueprint_merge_coverage_gate_exhausted",
+                session,
+                attempt=attempt,
+                artifact_version_id=str(new_version.id),
+                coverage=round(coverage, 4),
+                min_ratio=min_ratio,
+                unresolved_count=len(unresolved),
+                thread_id=thread_id,
+                back_target=decision["back_target"],
+                level="warning",
+            )
+            return self._result(
+                "exhausted",
+                attempt=attempt,
+                artifact_version_id=str(new_version.id),
+                report={
+                    "coverage": round(coverage, 4),
+                    "min": min_ratio,
+                    "gaps": len(gate_gaps),
+                    "thread_id": thread_id,
+                },
+                reconcile=counts,
+                back_target=decision["back_target"],
+                stage_state=_build_stage_state(
+                    state,
+                    attempt=attempt,
+                    status="exhausted",
+                    degraded=degraded,
+                    counts=counts,
+                    unresolved=unresolved,
+                    attribution=decision,
+                ),
+                extra={
+                    "unresolved": unresolved,
+                    "back_repository_id": decision["back_repository_id"],
+                    "gap_count": decision["gap_count"],
+                },
+            )
+
+        await self._adistill_context_entries(session)
         self._log(
             "blueprint_merge_completed",
             session,
@@ -1784,7 +1942,181 @@ class BlueprintMergeAdapter:
             )
             return ""
 
+    async def _aopen_coverage_clarification(
+        self,
+        session: Any,
+        artifact: Any,
+        version: Any,
+        *,
+        coverage: float,
+        min_ratio: float,
+        unresolved: list[dict],
+    ) -> str:
+        """超界（引用覆盖率未达标且回退轮次用尽）→ 开一条 blocking 澄清线程带未决项。
+
+        ``return_stage="merge"`` 必填（B3）：漏传会让人审恢复后退回阶段 1，已产出的
+        RepoPlan 与本版蓝图被当成「还没调研」。问题文本只列**段名 + 序号 + 仓 id**
+        （T-113-42：未决项清单绝不夹带结论正文或凭证）。幂等：该 artifact 已有 OPEN
+        blocking 澄清线程时不叠开。
+        """
+        try:
+            if await self._acount_open_blocking(artifact.id):
+                return ""
+            thread = await self._get_lifecycle_service().open_thread(
+                artifact,
+                kind="ai_clarification",
+                blocking=True,
+                question=_coverage_question(coverage, min_ratio, unresolved),
+                initiated_by_user_id=_initiated_by(session),
+                created_on_version=version,
+                return_stage="merge",
+            )
+            return str(thread.id)
+        except Exception as exc:  # noqa: BLE001 — 开不出线程也不上抛（exhausted 出口仍成立）
+            self._log(
+                "blueprint_merge_coverage_clarification_open_failed",
+                session,
+                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+                level="warning",
+            )
+            return ""
+
+    # ── 运行时阈值（只调既有 getter，settings_service 一行不改）─────────────
+
+    async def _aload_merge_config(self) -> tuple[float, int]:
+        """读 ``SettingKeys.BLUEPRINT_MERGE_CONFIG`` → ``(覆盖率下限, 回退轮次上界)``。
+
+        缺配置 / 非 JSON / 缺键 / 值类型错 → **整段回落模块常量**（配置坏了绝不能卡死
+        流水线：覆盖率门是质量门不是可用性门）。读取一律经既有
+        ``settings_service.aget_json_setting``，本 plan 不改 settings_service 一行。
+        """
+        try:
+            from system.models import SettingKeys
+            from system.settings_service import aget_json_setting
+
+            cfg = await aget_json_setting(SettingKeys.BLUEPRINT_MERGE_CONFIG, {}) or {}
+            min_ratio = float(cfg.get("citation_coverage_min", _DEFAULT_CITATION_COVERAGE_MIN))
+            max_rounds = int(cfg.get("max_merge_rounds", MAX_MERGE_ROUNDS))
+            return min_ratio, max_rounds
+        except Exception as exc:  # noqa: BLE001 — 配置坏了回默认，绝不阻断融合
+            self._log(
+                "blueprint_merge_config_load_failed",
+                None,
+                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+                level="warning",
+            )
+            return _DEFAULT_CITATION_COVERAGE_MIN, MAX_MERGE_ROUNDS
+
+    # ── distill 沉淀 hook（BUS-03，best-effort，绝不反噬主链）───────────────
+
+    async def _adistill_context_entries(self, session: Any) -> None:
+        """会话总线里有长期价值的条目 → ``ProjectMemory`` **草案**（人工 confirm 才生效）。
+
+        三条硬纪律：
+
+        1. **只调** ``MemoryDistiller.distill_to_draft``（产 pending 草案）。绝不调
+           ``MemoryService`` 的 active 直写入口（会覆盖人工内容）、人工确认入口
+           （那是人工动作的专属出口）或 IDE hook 精炼入口（它压根不产草案）——
+           三者的反向「零调用」断言见 ``test_blueprint_distill.py``。
+        2. ``proposed_by`` **只取真实 User**（``session.created_by``）；解析不到就
+           **跳过沉淀**，绝不伪造 actor 去绕过 ``distill_to_draft`` 的成员校验。
+           项目归属同理取自总线条目上的 ``project_id``（``ConvergenceSession`` 无
+           project FK），解析不到亦跳过。
+        3. 整段 ``except`` 吞掉：沉淀失败绝不反噬 merge 主链（蓝图已落版本）。
+        """
+        try:
+            from delivery.services.blueprint_context_service import BlueprintContextService
+            from initiatives.services.memory_distill import MemoryDistiller
+
+            service = BlueprintContextService()
+            entries: list[dict] = []
+            for kind in _DISTILL_KINDS:
+                rows = await service.read_entries(
+                    session=session, kind=kind, status="active", limit=_DISTILL_READ_LIMIT
+                )
+                entries.extend(row for row in (rows or []) if isinstance(row, dict))
+            if not entries:
+                return
+            user = await self._aresolve_session_user(session)
+            if user is None:
+                return
+            project_id = await self._aresolve_bus_project_id(session)
+            if not project_id:
+                return
+            text = _distill_text(entries)
+            if not text:
+                return
+            await MemoryDistiller().distill_to_draft(
+                project_id=project_id,
+                conversation_text=text,
+                proposed_by=user,
+                initiated_by_user_id=str(getattr(user, "id", "") or ""),
+            )
+            self._log(
+                "blueprint_context_distill_completed",
+                session,
+                entry_count=len(entries),
+            )
+        except Exception as exc:  # noqa: BLE001 — 沉淀 best-effort，绝不反噬 merge 主链
+            logger.warning(
+                "blueprint_context_distill_failed",
+                category="sampling",
+                component="process_runtime",
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+            )
+
+    @staticmethod
+    @sync_to_async
+    def _aresolve_session_user(session: Any) -> Any:
+        """取 ``session.created_by`` 真实 ``User`` 实例（lazy-FK 必须在 sync 上下文取）。
+
+        与 ``blueprint_research_adapter._resolve_dispatch_user`` 同款（**不 import 私有名**）。
+        为空即返回 ``None``，调用方跳过沉淀 —— 绝不伪造 actor。
+        """
+        return getattr(session, "created_by", None)
+
+    @staticmethod
+    async def _aresolve_bus_project_id(session: Any) -> str:
+        """项目归属取自本会话总线条目上的 ``project_id``（``ConvergenceSession`` 无该列）。
+
+        解析不到返回空串（调用方跳过沉淀，不伪造归属）。
+        """
+        from delivery.models import BlueprintContextEntry
+
+        project_id = await (
+            BlueprintContextEntry.objects.filter(
+                convergence_session_id=getattr(session, "id", None),
+                project_id__isnull=False,
+            )
+            .values_list("project_id", flat=True)
+            .afirst()
+        )
+        return str(project_id or "")
+
     # ── 只读边界与依赖装配（本文件零 ORM 写，INV-6） ────────────────────────
+
+    async def _aadd_version(
+        self, session: Any, artifact: Any, assembled: dict, attempt: int
+    ) -> Any:
+        """落幂等版本；内容非法时返回 ``None``（转 failed，绝不上抛，graceful）。"""
+        try:
+            return await self._get_artifact_service().add_version(
+                artifact,
+                assembled,
+                produced_by_session_id=str(getattr(session, "id", "")),
+                # 轮次进 produced_by_ref：同 content_hash 不翻版本（幂等），但哪一轮产出的
+                # 仍可归因（P-6 残留口 1）。
+                produced_by_ref=f"blueprint_merge#attempt={attempt}",
+            )
+        except Exception as exc:  # noqa: BLE001 — 内容非法转 failed，绝不上抛（graceful）
+            self._log(
+                "blueprint_merge_add_version_failed",
+                session,
+                attempt=attempt,
+                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+            )
+            return None
 
     def _get_artifact_service(self) -> Any:
         if self._artifact_service is None:
@@ -1905,9 +2237,16 @@ class BlueprintMergeAdapter:
         reconcile: dict | None = None,
         stage_state: dict | None = None,
         back_target: str = "",
+        extra: dict | None = None,
     ) -> dict:
-        """**恒定七键**返回（下游 handler 无需判空分支）。"""
-        return {
+        """**恒定七键**返回（下游 handler 无需判空分支）。
+
+        ``extra`` 只在**覆盖率门的两条出口**（``retry`` / ``exhausted``）追加归因键
+        （``back_repository_id`` / ``gap_count`` / ``unresolved``）—— ``passed`` /
+        ``failed`` / ``needs_clarification`` 三条既有出口的键集**逐字未变**（113-05 有一条
+        `set(result) == 七键` 的形状断言守着它）。
+        """
+        result = {
             "validation_status": status,
             "artifact_version_id": artifact_version_id,
             "attempt": attempt,
@@ -1916,6 +2255,9 @@ class BlueprintMergeAdapter:
             "reconcile": reconcile or {"gaps": 0, "conflicts": 0, "missing_support_repos": 0},
             "stage_state": stage_state or {},
         }
+        if extra:
+            result.update(extra)
+        return result
 
     def _emit(self, event: str, session: Any, **payload: Any) -> None:
         """生命周期事件（本 plan 只走 structlog：``event_taxonomy`` 是冻结面，
@@ -1959,18 +2301,32 @@ def _build_stage_state(
     status: str,
     degraded: list[str] | None = None,
     counts: dict | None = None,
+    unresolved: list[dict] | None = None,
+    attribution: dict | None = None,
 ) -> dict:
-    """``{**state, "merge": {...}}`` 浅合并整体回写（只存计数，序列化后 < 2KB）。
+    """``{**state, "merge": {...}}`` 浅合并整体回写（只存计数与定位，序列化后 < 2KB）。
 
-    **adapter 不自己落库**：由 113-06 的 handler 单点持久化（并行路径写单行 JSON 就是
-    lost-update 场景，113-04 已确立该约定）。
+    ⚠️ ``stage_state`` 是**整字典替换**（handler 把本返回值原样落盘）：只写增量会把
+    ``routing`` / ``decomposition`` / ``repo_plan`` 等既有键一起清空。故这里必须
+    ``{**state, ...}`` 浅合并整体产出，形态照 ``aadvance_reroute``。
+
+    **adapter 不自己落库**：由 ``builtin_processes._h_bp_merge`` 单点持久化（并行路径写
+    单行 JSON 就是 lost-update 场景，113-04 已确立该约定；回调路径永不触碰轮次计数）。
+
+    ``unresolved`` / ``last_attribution`` 只在覆盖率门的出口写：前者是超界带给 114 的
+    未决项快照（**只含 section/index/repository_id 标量**，零结论正文），后者是本轮
+    归因结论（回哪个仓 / 重融合）。
     """
-    bucket = {
+    bucket: dict[str, Any] = {
         "count": attempt + 1,
         "status": status,
         "degraded_sections": sorted(degraded or []),
     }
     bucket.update({key: int(value) for key, value in (counts or {}).items()})
+    if unresolved is not None:
+        bucket["unresolved"] = unresolved[:_MAX_UNRESOLVED]
+    if attribution:
+        bucket["last_attribution"] = dict(attribution)
     return {**(state if isinstance(state, dict) else {}), STAGE_STATE_KEY: bucket}
 
 
@@ -2000,6 +2356,45 @@ def _clarification_question(report: dict) -> str:
         + "\n".join(lines)
         + "\n请确认以哪一侧的契约为准，或补充需要一并纳入的协作仓。"
     )
+
+
+def _coverage_question(coverage: float, min_ratio: float, unresolved: list[dict]) -> str:
+    """超界澄清文本：只列**段名 + 序号 + 仓 id**（零结论正文，T-113-42）。"""
+    lines = [
+        f"- {gap.get('section')} 第 {gap.get('index')} 条"
+        + (f"（仓 {gap.get('repository_id')}）" if gap.get("repository_id") else "（未标仓）")
+        for gap in unresolved[:_MAX_UNRESOLVED]
+        if isinstance(gap, dict)
+    ]
+    return (
+        f"蓝图已装配完成并落版本，但引用覆盖率 {coverage:.2f} 未达基线 {min_ratio:.2f}，"
+        "自动补证已用尽回退轮次。以下关键结论仍缺引用证据，需要你确认是补证据还是接受现状：\n"
+        + "\n".join(lines)
+        + "\n（未决项已随本版蓝图记录，后续 AI 审查会一并带上。）"
+    )
+
+
+def _distill_text(entries: list[dict]) -> str:
+    """总线条目 → 供 distill 的会话文本（**有界截断**，只取 key 与结论字段）。
+
+    条目 ``content`` 是半可信 JSON（service 入库时已递归脱敏），这里只取几个结论型字段
+    的字符串化摘要，避免把整份契约 schema 灌进 LLM prompt。
+    """
+    lines: list[str] = []
+    for entry in entries:
+        key = str(entry.get("key") or "").strip()
+        kind = str(entry.get("kind") or "").strip()
+        content = entry.get("content") if isinstance(entry.get("content"), dict) else {}
+        detail = ""
+        for field in ("conclusion", "decision", "summary", "description", "text", "name"):
+            value = content.get(field)
+            if isinstance(value, str) and value.strip():
+                detail = value.strip()
+                break
+        if not detail:
+            detail = _json(content, limit=500)
+        lines.append(f"[{kind}] {key}：{detail}")
+    return "\n".join(lines)[:_MAX_DISTILL_CHARS]
 
 
 def _short_value(value: Any) -> str:
