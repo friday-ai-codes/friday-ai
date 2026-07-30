@@ -771,6 +771,37 @@ async def test_stage1_retry_exhausted_degrades_after_two_attempts(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "key",
+    [
+        "REPO_ROUTER_STAGE1_TIMEOUT_SECONDS",
+        "REPO_ROUTER_STAGE1_MAX_CANDIDATES",
+        "REPO_ROUTER_STAGE1_HITS_PER_REPO",
+        "REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS",
+    ],
+)
+async def test_non_numeric_stage1_config_falls_back_instead_of_degrading(
+    monkeypatch, mock_aresolve_ok, settings, key: str
+) -> None:
+    """MN-07：任一 Stage 1 数值配置写成空串 → 回退默认继续跑，不得静默降级成 unknown。
+
+    修复前这四项是裸 `float()`/`int()`：一个笔误就让每次路由都抛 ValueError → 被
+    route() 的兜底 except 吃掉 → 静默降级 Stage 0，且降级原因报「未知原因」，
+    排查方向被彻底带偏。
+    """
+    mock_aresolve_ok()
+    setattr(settings, key, "")
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(monkeypatch, _TextModel(_llm_order_json("repo-a", "repo-b")))
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.router_version == "v2", f"{key} 非数值导致 Stage 1 整体失效"
+    assert result.degraded is False
+    assert result.degrade_reason == ""
+
+
+@pytest.mark.asyncio
 async def test_no_project_context_path_is_sorted_by_rank_key(
     monkeypatch, mock_aresolve_ok, settings
 ) -> None:

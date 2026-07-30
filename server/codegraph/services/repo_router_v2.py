@@ -152,6 +152,22 @@ def _stage1_seconds(key: str) -> float:
     return value
 
 
+def _stage1_int(key: str, *, minimum: int = 1) -> int:
+    """读取 Stage 1 的整数参数，非数值/非有限/低于下界一律回退默认，**绝不抛**。
+
+    与 ``_stage1_seconds`` 同款 fail-safe：裸 ``int(_stage1_conf(...))`` 时运维把任一项
+    写成 ``""`` 或非数值就抛 ``ValueError``，被 ``route()`` 的兜底 except 吃掉 → 每次
+    路由都静默降级 Stage 0，且降级原因是 ``unknown``（``ValueError`` 不命中任何判据），
+    排查方向被彻底带偏。
+    """
+    fallback = int(_STAGE1_DEFAULTS[key])
+    try:
+        value = int(float(_stage1_conf(key)))
+    except (TypeError, ValueError, OverflowError):
+        return fallback
+    return value if value >= minimum else fallback
+
+
 # confidence θ 阈值默认值（与 friday/settings.py 一致；ROUTING-RANKING §1.3a 初值）。
 _CONF_THETA_DEFAULTS = {
     "REPO_ROUTER_CONF_THETA_ABS": 0.55,
@@ -1419,13 +1435,15 @@ class RepoRouterV2:
         # ModelUsageRecord 的 provider 维度（口径与两个 Runner 的埋点一致）。
         provider_name = str(resolved.provider_type)
 
-        timeout_seconds = float(_stage1_conf("REPO_ROUTER_STAGE1_TIMEOUT_SECONDS"))
+        # 六个配置项统一走 fail-safe 读取（T-107-05）：任一项写成非数值都不得让路由抛，
+        # 否则异常被 route() 的兜底 except 吃掉 → 每次路由静默降级且原因报 unknown。
+        timeout_seconds = _stage1_seconds("REPO_ROUTER_STAGE1_TIMEOUT_SECONDS")
         # 首调与重试**共享**的总延迟上界 + 退避基数（107-01 落的两个 settings 键）。
         total_budget_seconds = _stage1_seconds("REPO_ROUTER_STAGE1_TOTAL_BUDGET_SECONDS")
         backoff_base_seconds = _stage1_seconds("REPO_ROUTER_STAGE1_RETRY_BACKOFF_SECONDS")
-        max_candidates = int(_stage1_conf("REPO_ROUTER_STAGE1_MAX_CANDIDATES"))
-        hits_per_repo = int(_stage1_conf("REPO_ROUTER_STAGE1_HITS_PER_REPO"))
-        cache_ttl = int(_stage1_conf("REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS"))
+        max_candidates = _stage1_int("REPO_ROUTER_STAGE1_MAX_CANDIDATES")
+        hits_per_repo = _stage1_int("REPO_ROUTER_STAGE1_HITS_PER_REPO")
+        cache_ttl = _stage1_int("REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS")
 
         # 快速失败即降级：max_retries=0 —— 路由是启发式，超时无需 3× 重试空等
         # （旧行为：langchain 默认 max_retries=2 → 30s×3≈90s 才放弃再回落 Stage 0）。
