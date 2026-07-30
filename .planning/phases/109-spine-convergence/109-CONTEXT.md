@@ -26,19 +26,29 @@
 ### 编排产出直连执行流（SPINE-01）
 - **衔接方式取「投影」而非改写执行流**：把编排方案版本投影成执行侧对象（chat `CodingPlan`），复用 `create_coding_plan` 既有的执行半边（选仓 / 分支 / 确认编码 / 飞书导出）。理由：执行半边是 SPA 唯一编码入口且 MCP 执行链依赖其桥接行为，重写风险远高于投影。
 - **投影时机取惰性**：用户在方案页显式点「进入编码」时投影，不在编排完成时预建（避免为未被采纳的方案批量建对象）。
-- **幂等键绑定方案版本**（`plan_version_id` 或等价标识，researcher 确认实际字段）：同版本重复投影返回既有对象、不新建；方案版本更新后允许新建投影且**旧投影保留**（历史可查）。
+- **幂等键 = `ArtifactVersion.id`（研究纠正 C-2）**：`TechnicalPlan` / `PlanVersion` 模型**已不存在**，Chassis v2 已泛化为 `delivery.Artifact` / `ArtifactVersion`。同版本重复投影返回既有对象、不新建；版本更新后允许新建投影且**旧投影保留**（历史可查）。
 - 执行流入口接**现行 §7 `execution_plan`**：v0.20.0 蓝图的 `derive_execution` 保证同 schema，合并后执行流无缝换源，深度由 v0.20.0 提供。本 phase 不等蓝图。
+- **好消息（研究结论）**：执行流四步**全部只依赖 chat `CodingPlan.id` 一个锚点**——投影出一条记录即四步全通；且 conversation runtime 返回"对话内最近 CodingPlan"，投影后前端无需新 API 即可取到。
+- **坏消息（研究纠正 C-3）**：编排产出在 SPA 里**目前没有任何可操作呈现面**（`start_plan_research` 返回的 `artifact_version_id` 前端零消费，工具连中文标签都未登记，唯一展示面是项目工作台里只读的 `ArtifactTimeline.vue`）→ **「进入编码」入口必须新建**。
+- **裁决 D-3（OQ-1）：本 phase 投影只做 chat 入口。** 无 conversation 的编排入口（workflow / MCP）投影时缺 `space` 来源（`ConvergenceSession` 无 space FK），反查有歧义；限定 chat 入口后 SC-1 的用户故事即完整成立，其余入口记 deferred。
+- **裁决 D-4（OQ-4）：`start_plan_research` 的 chat 呈现只做最小可操作面。** 阶段流式/时间线严格留给 Phase 110，本 phase 不预建。
+- **易静默失守点（研究提示，须写进验收）**：§7 用 `action: create` 而 chat 用 `change_type: add`——漏转换**不会崩、只会静默显示成 `create`**，测试必须显式断言字段映射。
 
 ### 移除徒手创作路径（SPINE-02，仅在 SPINE-01 成立后执行）
-- **拆分而非删除**：砍掉「由对话模型徒手编写方案正文」的创作半边，**保留**选仓 / 分支 / 确认编码 / 导出的执行半边。`create_coding_plan` 不整体删除（REQUIREMENTS 的 Out of Scope 已明确：实证它是 SPA 唯一编码入口，MCP 执行链亦依赖其桥接）。
-- **MCP 桥接零回归**：MCP 执行链依赖 `create_coding_plan` 创建 chat `CodingPlan` 做桥接的行为**必须零回归**，须有端到端守护测试。
+- **拆分而非删除**：砍掉「由对话模型徒手编写方案正文」的创作半边，**保留**选仓 / 分支 / 确认编码 / 导出的执行半边。不整体删除（REQUIREMENTS 的 Out of Scope 已明确）。
+- **靶子是 chat `@tool`，不是 MCP 端点（研究纠正 C-1）**：仓内有**两个同名但完全无关**的 `create_coding_plan`——chat `@tool`（`agents/tools/coding_tools.py`，SPA 链，**本 phase 的唯一靶子**）与 MCP HTTP 端点（`mcp_tools/views.py:1842`，**早在 Phase 94 已 delegate 到统一编排**，是 SPINE-01 应当照抄的现成先例）。
+- **MCP 桥接零回归的真实含义（研究纠正 C-1 续）**：MCP 执行链**从不调用**那个 chat 工具——桥接由 `mcp_tools/execution_service.py::_create_bridge_session` 用**裸 ORM** 自建 Conversation + CodingPlan + CodingSession。因此要保的是**两个模型的字段形状**：新增字段**必须带 default**，否则裸 `objects.create()` 会直接崩。SPINE-02 对 MCP 的工具行为耦合面实际为零。
+- **裁决 D-1（OQ-2）：`update_coding_plan` 一并收窄。** 它的必填入参同样是 `tech_plan` + `affected_files`，是同一个徒手创作漏洞的**第二个门**；只收窄 create 则模型可改走 update 写正文，SPINE-02 的字面要求（"系统不再存在由对话模型徒手编写方案正文的产出路径"）不成立。两个门一起收窄。
+- **裁决 D-2（研究缺口）：补 schema 漂移守护。** 该工具 schema 目前**没有任何漂移守护**，而 SPINE-02 的核心验收正是"结构上不可能"——必须补一条**正向不变量断言**（创作入参不存在于 schema），否则后人加回入参无人发现。
 - **移除方式在 schema 层而非 prompt 层**：从工具 schema 移除创作入参/能力，使模型在结构上再也无法只凭对话生成方案正文；仅靠 prompt 约束不算达成 SPINE-02。
 - **回归护栏先行**：SPA 与 MCP 两条编码链路的端到端守护测试**先绿再动刀**（这是 SPINE-01 → SPINE-02 顺序约束的具体落法）。
+- **护栏缺口（研究结论，直接决定 wave 划分）**：MCP 侧护栏完整（6 组 delegate 守护 + 执行链 e2e）；**SPA 侧四步各有独立测试，但没有任何一条把「四步都还挂在同一个 `plan_id` 上」这条不变量锁住的端到端用例** → 该测试**必须新写且早于任何 schema 改动**。
 
 ### 草稿标注（RELY-01）
 - 草稿**保留但显式标注**「未经代码调研」，不静默移除（保留应急路径）；标注必须同时出现在**界面与飞书导出物**两侧。
 - 标注载体是**数据层来源标志**（如 `provenance: orchestrated | draft`，命名 planner 定），界面与导出据此渲染，不靠文案硬编码——避免新增产出路径时漏标。
 - **送编码防护**：草稿默认**不可**直接送编码；确需送出必须显式确认，且编码上下文携带「未经调研」标志（下游可据此判断）。
+- **裁决 D-5（OQ-3）：显式确认的载体取「请求体布尔字段」**，不新开独立端点（改动面更小、与既有执行流入口一致）。
 
 ### 幂等与追溯（SC-4）
 - 幂等用 **DB 唯一约束**（方案版本 → 编码计划）+ `get_or_create` 语义，并发安全；不靠应用层查重（并发下会重复）。
