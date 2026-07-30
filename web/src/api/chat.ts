@@ -2,7 +2,7 @@
  * Chat API 服务 - LLM 对话能力
  */
 
-import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ForkConversationRequest, ImagePart } from '~/types/chat'
+import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ForkConversationRequest, ImagePart, ProjectPlanToCodingResponse } from '~/types/chat'
 import type { ClarificationAnswerRequest, ClarificationAnswerResponse, PlanClarificationAnswerRequest } from '~/types/clarification'
 import { del, get, patch, post, upload } from './client'
 
@@ -474,6 +474,22 @@ export async function createSessionsForPlan(
 }
 
 /**
+ * 109-04：把编排产出的方案版本惰性投影为 chat CodingPlan。
+ * POST /api/chat/coding-plans/from-artifact-version/
+ *
+ * 幂等：同一 ArtifactVersion 重复投影只产一行，响应 `created=false` 表示命中既有投影。
+ * 前端只传 `artifact_version_id`，归属判定与字段组装全在服务端（109-03 owner gate）。
+ */
+export async function projectArtifactVersionToCodingPlan(
+  artifactVersionId: string,
+): Promise<ProjectPlanToCodingResponse> {
+  return post<ProjectPlanToCodingResponse>(
+    '/chat/coding-plans/from-artifact-version/',
+    { artifact_version_id: artifactVersionId },
+  )
+}
+
+/**
  * ：提交协商答复。
  * POST /api/chat/clarifications/{clarification_id}/answer/
  *
@@ -557,6 +573,7 @@ export default {
   confirmCodingSession,
   confirmCodingSessionWithBranch,
   createSessionsForPlan,
+  projectArtifactVersionToCodingPlan,
   confirmCommit,
   confirmPR,
   getDiffSummary,

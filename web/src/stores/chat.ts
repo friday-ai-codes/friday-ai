@@ -4,7 +4,7 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, DeepAnalysisSession, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ImagePart, MessagePart, PartCompletedPayload, PartStartedPayload, SSEEvent, StreamTimelineItem, TextPart, ThinkingPart, ToolUsePart } from '~/types/chat'
+import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, DeepAnalysisSession, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ImagePart, MessagePart, PartCompletedPayload, PartStartedPayload, ProjectPlanToCodingResponse, SSEEvent, StreamTimelineItem, TextPart, ThinkingPart, ToolUsePart } from '~/types/chat'
 import type { ClarificationAnswer, ClarificationPayload, PlanClarificationPayload } from '~/types/clarification'
 import type { ProviderType } from '~/types/providerCredential'
 import type { RoutingDecisionData } from '~/types/routing'
@@ -24,6 +24,7 @@ import {
   interruptConversation,
   listConversations,
   patchConversation,
+  projectArtifactVersionToCodingPlan,
 } from '~/api/chat'
 import { ApiError, get as apiGet } from '~/api/client'
 import { getChatPartsProtocol } from '~/composables/useChatPartsProtocol'
@@ -2625,6 +2626,23 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * 109-04：把编排产出的方案版本惰性投影为 chat CodingPlan（SPINE-01 前端半边）。
+   *
+   * 只做三件事：调端点、排一次 runtime polling 让 sessions 状态跟上、原样返回响应。
+   * 刻意**不**手工拼 `activeCodingPlan` —— 前端不得自行构造 CodingPlan 业务字段，
+   * 且手工写入会与 runtime 刷新竞态；卡片的即时数据由投影响应直接喂 props 承担。
+   * 错误不吞，交给组件走 toast。
+   */
+  async function projectPlanToCodingPlan(
+    artifactVersionId: string,
+  ): Promise<ProjectPlanToCodingResponse> {
+    const resp = await projectArtifactVersionToCodingPlan(artifactVersionId)
+    if (currentConversationId.value)
+      scheduleRuntimePoll(currentConversationId.value, 3000)
+    return resp
+  }
+
   // ========================================================================
   // ：协商卡片 actions
   // ========================================================================
@@ -3009,6 +3027,8 @@ export const useChatStore = defineStore('chat', () => {
     closeRepoMultiSelector,
     submitRepoMultiSelector,
     retrySingleRepository,
+    // 109-04：编排产出 → CodingPlan 惰性投影
+    projectPlanToCodingPlan,
     // ：协商卡片状态
     pendingClarifications,
     getClarification,

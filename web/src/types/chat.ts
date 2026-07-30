@@ -629,10 +629,18 @@ export interface CodingPlanSessionRuntime {
 }
 
 /**
+ * 编码方案来源标志（RELY-01）。与后端 CodingPlanProvenance TextChoices 字面对齐。
+ */
+export type CodingPlanProvenance = 'orchestrated' | 'draft'
+
+/**
  * ：对话内最近 CodingPlan + 每仓 session 状态。
  *
  * 扩展：可选 `feishu_doc_token` / `feishu_doc_url`，
  * 来自 backend runtime serializer 或本地 store patch（导出成功后立即可见）。
+ *
+ * 与后端 `ConversationRuntimeCodingPlanSerializer` 手工对齐（无代码生成），
+ * 漏一侧 TS 不会报错，改动任一侧都要同步这里。
  */
 export interface CodingPlanRuntime {
   plan_id: string
@@ -640,4 +648,31 @@ export interface CodingPlanRuntime {
   sessions: CodingPlanSessionRuntime[]
   feishu_doc_token?: string
   feishu_doc_url?: string
+  // ---- [新增 109] ----
+  /**
+   * 来源标志；缺失 / 未知取值 → 保守视为未经调研。
+   *
+   * 类型故意保留 `| string`：后端未来新增取值时前端不该编译失败，而应走保守
+   * 分支（未知取值视为未经调研）。这让「未知取值按保守处理」成为类型层默认，
+   * 而不是依赖每个消费点自觉。
+   */
+  provenance?: CodingPlanProvenance | string | null
+  /** 方案正文。SPINE-02 后前端取正文的权威来源（tool input 仅作历史兜底）。 */
+  tech_plan?: string
+  affected_files?: Array<{ file_path?: string, path?: string, change_type: string }>
+  recommended_repository_ids?: string[]
+  /** 投影来源留痕；前端**不渲染**，仅用于排障与测试断言。 */
+  source_artifact_version_id?: string | null
+}
+
+/** 投影端点响应（惰性投影：点「进入编码」时触发）。 */
+export interface ProjectPlanToCodingResponse {
+  coding_plan_id: string
+  /** false = 幂等命中既有投影（同一 ArtifactVersion 重复点击）。 */
+  created: boolean
+  title: string
+  tech_plan: string
+  affected_files: Array<{ file_path: string, change_type: string }>
+  recommended_repository_ids: string[]
+  provenance: CodingPlanProvenance
 }
