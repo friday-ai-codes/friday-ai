@@ -353,6 +353,51 @@ def test_exit_log_binds_initiated_by_user(stored: str, expected: str) -> None:
 
 
 @override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_initiated_by_user_reaches_downstream_module_logs() -> None:
+    """归因进 contextvars 而非只 logger.bind —— 下游模块自己的 logger 也带得上。
+
+    只 ``logger.bind`` 时返回的是本地 logger：``transition`` / ``_emit_event`` 与引擎
+    续驱里的模块各自 ``structlog.get_logger(__name__)``，拿不到 initiated_by_user_id，
+    「谁触发的」在出口那一条之外全部丢失。
+    """
+    session = _make_session(initiated_by_user_id="u-77")
+    _make_round(session, age_hours=48)
+
+    seen: list[dict] = []
+    structlog.contextvars.clear_contextvars()
+
+    # 在下游模块（ConvergenceSessionService）内部读 contextvars：出口动作执行期间
+    # 该字段必须已在，否则「谁触发的」只在命令自己那一条日志里存在。
+    original = ConvergenceSessionService.transition
+
+    async def _capture(self: Any, sess: Any, event: str, **kwargs: Any) -> Any:
+        seen.append(dict(structlog.contextvars.get_contextvars()))
+        return await original(self, sess, event, **kwargs)
+
+    ConvergenceSessionService.transition = _capture  # type: ignore[method-assign]
+    try:
+        call_command("expire_pending_clarifications")
+    finally:
+        ConvergenceSessionService.transition = original  # type: ignore[method-assign]
+
+    assert seen, "transition 未被调用"
+    assert seen[0].get("initiated_by_user_id") == "u-77"
+    assert seen[0].get("source") == "scheduler"
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
+def test_contextvars_binding_does_not_leak_across_sessions() -> None:
+    """出口动作结束后 contextvars 必须复原（绑定用 with，不污染 scheduler 主循环）。"""
+    structlog.contextvars.clear_contextvars()
+    session = _make_session(initiated_by_user_id="u-88")
+    _make_round(session, age_hours=48)
+
+    call_command("expire_pending_clarifications")
+
+    assert "initiated_by_user_id" not in structlog.contextvars.get_contextvars()
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
 def test_single_session_failure_does_not_block_others(monkeypatch: pytest.MonkeyPatch) -> None:
     """单条会话处理抛异常 → 其余会话仍被处理，命令不抛。"""
     doomed = _make_session()

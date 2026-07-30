@@ -320,11 +320,28 @@ class Command(BaseCommand):
         """单条出口：写 stage_state 标注 + 经 transition 推进 + emit + 归因日志。
 
         返回 ``"exited"``（本次真实推进）或 ``"noop"``（并发已推进 / 会话已消失）。
+
+        触发用户绑定用 ``structlog.contextvars.bound_contextvars`` 包住整个出口动作，
+        而不是只 ``logger.bind``：后者返回的是**本地** logger，只影响本命令自己打的
+        日志；``transition`` / ``_fail`` / ``_emit_event`` 与引擎续驱里的模块各自
+        ``structlog.get_logger(__name__)``，拿不到该字段，`_record_stage1_usage`
+        那类消费方读的也正是 ``get_contextvars()``。
         """
         session = await ConvergenceSession.objects.filter(id=target["session_id"]).afirst()
         if session is None:
             return "noop"
         initiated_by = getattr(session, "initiated_by_user_id", "") or "system"
+        with structlog.contextvars.bound_contextvars(
+            initiated_by_user_id=initiated_by,
+            user_id=initiated_by,
+            source="scheduler",
+        ):
+            return await self._aexit_one_bound(target, session, initiated_by)
+
+    async def _aexit_one_bound(
+        self, target: dict[str, Any], session: ConvergenceSession, initiated_by: str
+    ) -> str:
+        """出口动作本体（调用方已把触发用户绑进 contextvars）。"""
         action = self._exit_action()
         label = _EXIT_LABELS[action]
         unclarified = await self._acollect_unclarified_points(target["clarification_id"])
