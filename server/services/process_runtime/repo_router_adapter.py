@@ -83,11 +83,17 @@ class RepoRouterV2Adapter:
         不过滤、不打分）。硬过滤语义完整保留给 ``include_repos`` 这类明确要限定范围
         的调用方。
 
-        T-107-01 前提：放开硬过滤后结果会含用户所在项目外的仓名。沿用
-        ``mcp_tools/views.py`` 的 ``RouteRepositoriesView`` 与
+        T-107-01 前提：沿用 ``mcp_tools/views.py`` 的 ``RouteRepositoriesView`` 与
         ``repositories/route_views.py`` 两个**已上线**入口的既有判断（二者本来就全库
-        路由、无 per-user 可见性过滤 → 仓名不敏感）；Stage 0 侧不存在按用户过滤的
-        机制，故本改动**不绕过任何现存权限检查、不新增可见性面**。
+        路由、只有 ``IsAuthenticated``、无 per-user/per-space 可见性过滤）；Stage 0 侧
+        不存在按用户过滤的机制，故本改动**不绕过任何现存权限检查**。
+
+        但透出面不止仓名，别按「仓名不敏感」一句带过：跨组候选的 ``evidence`` 里还有
+        命中的**能力树节点路径**、``sub_project`` 子应用名与 LLM 的 ``reasoning``
+        （见 ``agents/tools/repository_relevance.py`` 的 evidence 组装）。对空间成员而言，
+        这是一个从「空间内仓」放宽到「全库」的新元数据面 —— 与既有全库入口同级，但确实
+        比「仓名」更宽。若后续要收窄，现成判据是 ``group == global``，改动面只在
+        evidence 映射那一处。
         """
         include = (session.decomposition or {}).get("include_repos")
         if include:

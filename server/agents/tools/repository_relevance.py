@@ -279,9 +279,12 @@ async def _analyze_relevance_core(
 
         # D-1：空间关联仓从「硬过滤」改为「分组依据」——继续当硬过滤传的话候选集从一
         # 开始就只有空间内仓，global 分区恒空、ROUTE-01/02 上线即无效果（Pitfall 2）。
-        # T-107-01 前提：放开后结果含空间外仓名；沿用 mcp_tools 的 RouteRepositoriesView
-        # 与 repositories/route_views.py 两个已上线全库入口的既有判断（仓名不敏感），
-        # 本改动不新增可见性面、不绕过任何现存权限检查。
+        # T-107-01 前提：沿用 mcp_tools 的 RouteRepositoriesView 与
+        # repositories/route_views.py 两个已上线全库入口的既有判断（二者只有
+        # IsAuthenticated、无 per-user/per-space 过滤）→ 本改动不绕过任何现存权限检查。
+        # 注意透出面不止仓名：下面组装的 evidence 还含跨组仓的能力树节点路径、
+        # sub_project 与 LLM reasoning，对空间成员是一个新的元数据面。要收窄的话，
+        # group == global 是现成判据，改动面只在 evidence 映射那一处。
         grouping_ids = await aresolve_grouping_repo_ids(space_id=space_id)
         v2_result = await RepoRouterV2.route(
             query,
