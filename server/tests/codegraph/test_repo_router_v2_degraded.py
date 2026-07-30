@@ -770,6 +770,33 @@ async def test_stage1_retry_exhausted_degrades_after_two_attempts(
     assert model.calls == 2
 
 
+@pytest.mark.asyncio
+async def test_no_project_context_path_is_sorted_by_rank_key(
+    monkeypatch, mock_aresolve_ok, settings
+) -> None:
+    """MN-02：无分组上下文时也按 score_ranked 排序，「首位 = 最佳」两条路径同口径。
+
+    LLM 把 Stage 0 第二名排到首位，但 α=0.35 下凸组合仍是 repo-a 更高。修复前这条早退
+    分支只截断不排序 → 返回的首位是 LLM 排列首位（repo-b），与有上下文路径口径相反。
+    """
+    mock_aresolve_ok()
+    settings.REPO_ROUTER_STAGE1_ALPHA = 0.35
+    _install_stage0(monkeypatch, _high_margin_hits())
+    _install_stage1_model(
+        monkeypatch, _TextModel(_llm_order_json("repo-b", "repo-a", confidence="high"))
+    )
+
+    # grouping_repository_ids 缺省 = 无项目上下文（MCP / REST 全局入口）
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.block_order == ["global"]
+    ranks = [
+        c.score_ranked if c.score_ranked is not None else c.score for c in result.candidates
+    ]
+    assert ranks == sorted(ranks, reverse=True), "无上下文路径未按 rank key 排序"
+    assert result.candidates[0].repo_id == "repo-a"
+
+
 # ---------------------------------------------------------------------------
 # MJ-02：α 对 auto_selected 的影响必须**方向单调**且可观测
 #

@@ -400,8 +400,8 @@ def _apply_presentation(
     """分组标注 + 组内取 top_k + 全局排序 + 分区顺序（四条 return 出口共用）。
 
     `grouping_repository_ids is None` = 调用方无项目上下文 → 全部记 `global`、
-    分区顺序退化为 `["global"]`，候选列表行为逐字不变（只做 `[:top_k]`，不重排——
-    Stage 1 成功路径的 LLM 排列必须原样保留）。
+    分区顺序退化为 `["global"]`，候选列表按同一个 `_rank_sort_key` 排序后 `[:top_k]`
+    （与有上下文路径同口径，「首位 = 最佳」在两条路径上一致）。
 
     有上下文时按组各取 `top_k` 后并集（ROUTE-01 要求「组内各展示 Top-3」；若维持
     「全局总共 top_k」则 global 组常为 0 条，分组上线即无信息量），并集再按同一个
@@ -425,7 +425,12 @@ def _apply_presentation(
             c.cross_group_note = CROSS_GROUP_NOTE
 
     if project_repo_ids is None:
-        return candidates[:top_k], decide_block_order(
+        # 无项目上下文也按同一个比较键排序：`score_ranked` 在本函数之前就已写好，
+        # 若这里只截断不排序，同一个 API 会出现两种排序口径——有上下文时「首位 = 凸组合
+        # 最高分」，无上下文（MCP / REST / 无 work_item 的编排）时「首位 = LLM 排列首位」。
+        # 「首位 = 最佳」是消费方普遍依赖的隐式契约，且前端还会按同一个 rankKey 重排一次，
+        # 不排序会让后端扁平顺序与前端渲染顺序不一致。
+        return sorted(candidates, key=_rank_sort_key)[:top_k], decide_block_order(
             None, None, delta=delta, has_project_context=False
         )
 
