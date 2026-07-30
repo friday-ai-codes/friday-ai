@@ -366,6 +366,209 @@ async def test_mutual_wait_cycle_opens_blocking_clarification_without_dispatch()
     assert "A 等 B" not in question
 
 
+async def test_cycle_exit_lands_stale_task_and_stays_redispatchable() -> None:
+    """⭐ MJ-02：成环退出后 task 落 **STALE**（可重派态），且澄清关闭后 `dispatch_plans` 能重派。
+
+    原实现成环分支什么都不做 → task 停在 RUNNING → `mark_stale` 按 WR-01 只动终态 task 而
+    跳过它 → 派发面的 DISPATCHABLE 白名单（pending/stale）也跳过该仓 ⇒ 人裁决完澄清后该仓
+    **永远无法重派**，会话静默悬挂，只能改库恢复。
+    """
+    from subagent.api.callbacks import _handle_blueprint_repo_plan_completion
+
+    repo_a = await _make_repo()
+    repo_b = await _make_repo()
+    session, artifact = await _make_locked_session(_association(repo_a), _association(repo_b))
+    await _make_online_runner()
+    task_a = await sync_to_async(RepoResearchTask.objects.create)(
+        session=session, repository=repo_a, status=RepoResearchTaskStatus.RUNNING
+    )
+    sub = await _make_plan_container(session, repo_a, task_a)
+
+    # 先造对侧 waiter（B 等 A），本次 A 等 B 即成环。
+    await BlueprintContextService().register_waiter(
+        session=session,
+        from_repository_id=str(repo_b.id),
+        wait_key_pattern=f"repo:{repo_a.id}.api_surface",
+        reason="B 等 A",
+    )
+
+    dispatcher = _FakeDispatcher()
+    payload = {
+        "output": {
+            "waiting_context": {"keys": [f"repo:{repo_b.id}.api_surface"], "reason": "A 等 B"}
+        }
+    }
+    with patch("runners.dispatcher.get_dispatcher", lambda: dispatcher), _NO_BARRIER:
+        await _handle_blueprint_repo_plan_completion(sub, payload, _log())
+
+    # 环已抛澄清（service 侧），且**不派发**
+    threads = await _threads(artifact.id)
+    assert len(threads) == 1
+    assert threads[0].blocking is True
+    assert dispatcher.await_count == 0
+
+    # ⭐ 关键断言：task 落 STALE 而不是卡在 RUNNING
+    await task_a.arefresh_from_db()
+    assert task_a.status == RepoResearchTaskStatus.STALE
+    assert task_a.error["reason"] == "waiting_context_cycle"
+
+    # ⭐ 反向断言：澄清关闭 + waiter 清空后，派发面能真的重派该仓（不是死仓）
+    await BlueprintContextEntry.objects.filter(
+        convergence_session_id=session.id, kind=ContextEntryKind.DEPENDENCY_CLAIM
+    ).aupdate(status=ContextEntryStatus.SUPERSEDED)
+    research = BlueprintResearchAdapter(
+        dispatcher_factory=lambda: dispatcher, charters_loader=AsyncMock(return_value={})
+    )
+    cfg, git = _stub_runtime()
+    with cfg, git, override_settings(FRIDAY_BASE_URL="https://friday.example.com"):
+        result = await BlueprintRepoPlanAdapter(research_adapter=research).dispatch_plans(session)
+    assert str(repo_a.id) in {
+        row.last_output["repository_id"]
+        async for row in SubAgentSession.objects.filter(
+            session_id__in=[t.session_id for t in dispatcher.tasks]
+        )
+    }
+    assert result["dispatched"] >= 1
+
+
+async def test_active_waiter_blocks_redispatch_of_that_repo() -> None:
+    """⭐ MJ-02 显式门控：仓仍有 active waiter 时 `dispatch_plans` **不重派**它（不烧额度）。"""
+    repo_a = await _make_repo()
+    repo_b = await _make_repo()
+    session, _artifact = await _make_locked_session(_association(repo_a), _association(repo_b))
+    await _make_online_runner()
+    await BlueprintContextService().register_waiter(
+        session=session,
+        from_repository_id=str(repo_a.id),
+        wait_key_pattern=f"repo:{repo_b.id}.api_surface",
+        reason="A 等 B",
+    )
+
+    dispatcher = _FakeDispatcher()
+    research = BlueprintResearchAdapter(
+        dispatcher_factory=lambda: dispatcher, charters_loader=AsyncMock(return_value={})
+    )
+    cfg, git = _stub_runtime()
+    with cfg, git, override_settings(FRIDAY_BASE_URL="https://friday.example.com"):
+        result = await BlueprintRepoPlanAdapter(research_adapter=research).dispatch_plans(session)
+
+    dispatched_ids = {
+        row.last_output["repository_id"]
+        async for row in SubAgentSession.objects.filter(
+            session_id__in=[t.session_id for t in dispatcher.tasks]
+        )
+    }
+    # B（没在等）照常派；A（在等 B）本轮跳过 —— 证明门控不是「全都不派」
+    assert dispatched_ids == {str(repo_b.id)}
+    assert result["dispatched"] == 1
+
+
+async def test_all_repos_waiting_opens_blocking_thread_instead_of_silent_hang() -> None:
+    """⭐ MJ-03：两仓都以 `waiting_context` 退出且 key 永不出现 → 落 open blocking 线程。
+
+    这条路径上**所有容器都已退出** ⇒ 不会再有回调 ⇒ engine 不会再 advance ⇒ 挂在
+    `_h_bp_repo_plan` 里的超龄清理与 stuck 探测都不可达。原实现因此永久停在 `waiting_event`：
+    无澄清线程、无失败、无任何用户可见信号。
+    """
+    from subagent.api.callbacks import _handle_blueprint_repo_plan_completion
+
+    repo_a = await _make_repo()
+    repo_b = await _make_repo()
+    session, artifact = await _make_locked_session(_association(repo_a), _association(repo_b))
+    dispatcher = _FakeDispatcher()
+
+    # 两仓分别等一个**永不出现**的 key（互不成环：等的是第三方 contract:）
+    for repo, other in ((repo_a, "contract:never_a"), (repo_b, "contract:never_b")):
+        task = await sync_to_async(RepoResearchTask.objects.create)(
+            session=session, repository=repo, status=RepoResearchTaskStatus.RUNNING
+        )
+        sub = await _make_plan_container(session, repo, task)
+        payload = {"output": {"waiting_context": {"keys": [other], "reason": "等第三方契约"}}}
+        with patch("runners.dispatcher.get_dispatcher", lambda: dispatcher), _NO_BARRIER:
+            await _handle_blueprint_repo_plan_completion(sub, payload, _log())
+
+    # ⭐ 死锁可见：一条 open blocking 澄清线程，带 return_stage="repo_plan"（B3）
+    threads = await _threads(artifact.id)
+    assert len(threads) == 1, "全员长等待必须留下用户可见的阻塞线程"
+    assert threads[0].blocking is True
+    assert threads[0].return_stage == "repo_plan"
+    question = await _thread_questions(threads[0].id)
+    assert str(repo_a.id) in question and str(repo_b.id) in question
+    assert "等第三方契约" not in question, "澄清文本不得夹带容器上报的自由文本"
+    # 判定过程零派发（不自作主张重派）
+    assert dispatcher.await_count == 0
+
+
+async def test_partial_waiting_does_not_open_deadlock_thread() -> None:
+    """MJ-03 反向：只有一个仓在等、另一个仓的容器仍在途 → **不**开死锁线程（断言非恒真）。"""
+    from subagent.api.callbacks import _handle_blueprint_repo_plan_completion
+
+    repo_a = await _make_repo()
+    repo_b = await _make_repo()
+    session, artifact = await _make_locked_session(_association(repo_a), _association(repo_b))
+    # B 的容器仍 RUNNING
+    await sync_to_async(RepoResearchTask.objects.create)(
+        session=session, repository=repo_b, status=RepoResearchTaskStatus.RUNNING
+    )
+    task_a = await sync_to_async(RepoResearchTask.objects.create)(
+        session=session, repository=repo_a, status=RepoResearchTaskStatus.RUNNING
+    )
+    sub = await _make_plan_container(session, repo_a, task_a)
+
+    payload = {"output": {"waiting_context": {"keys": [f"repo:{repo_b.id}.api_surface"]}}}
+    with _NO_BARRIER:
+        await _handle_blueprint_repo_plan_completion(sub, payload, _log())
+
+    assert await _threads(artifact.id) == []
+
+
+async def test_waiting_exit_expires_overdue_waiters_and_redispatches() -> None:
+    """⭐ MJ-03 自愈路径：容器退出瞬间清一次超龄 waiter 并重派（不新起定时任务）。"""
+    from subagent.api.callbacks import _handle_blueprint_repo_plan_completion
+
+    repo_a = await _make_repo()
+    repo_b = await _make_repo()
+    session, _artifact = await _make_locked_session(_association(repo_a), _association(repo_b))
+    await _make_online_runner()
+
+    # A 的 waiter 早已超龄（回拨 created_at；auto_now_add 需显式 update）
+    overdue = await BlueprintContextService().register_waiter(
+        session=session,
+        from_repository_id=str(repo_a.id),
+        wait_key_pattern="contract:never",
+        reason="等了很久",
+    )
+    await BlueprintContextEntry.objects.filter(id=overdue["entry_id"]).aupdate(
+        created_at=timezone.now() - timezone.timedelta(seconds=7200)
+    )
+
+    task_b = await sync_to_async(RepoResearchTask.objects.create)(
+        session=session, repository=repo_b, status=RepoResearchTaskStatus.RUNNING
+    )
+    sub = await _make_plan_container(session, repo_b, task_b)
+    dispatcher = _FakeDispatcher()
+    payload = {"output": {"waiting_context": {"keys": [f"repo:{repo_a.id}.api_surface"]}}}
+    cfg, git = _stub_runtime()
+    with (
+        patch("runners.dispatcher.get_dispatcher", lambda: dispatcher),
+        cfg,
+        git,
+        override_settings(FRIDAY_BASE_URL="https://friday.example.com"),
+        _NO_BARRIER,
+    ):
+        await _handle_blueprint_repo_plan_completion(sub, payload, _log())
+
+    # 超龄 waiter 被清（置 superseded）并触发 A 的重派
+    assert overdue["entry_id"] not in {str(row.id) for row in await _claims(session.id)}
+    dispatched_ids = {
+        row.last_output["repository_id"]
+        async for row in SubAgentSession.objects.filter(
+            session_id__in=[t.session_id for t in dispatcher.tasks]
+        )
+    }
+    assert str(repo_a.id) in dispatched_ids
+
+
 async def test_wave_cycle_opens_clarification_with_return_stage() -> None:
     """`aplan_waves` 命中互等环 → blocking 澄清线程带 `return_stage="repo_plan"`（B3）。"""
     repo_a = await _make_repo()

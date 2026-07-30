@@ -196,9 +196,7 @@ async def _h_merge(session: Any, engine: Any) -> StageOutcome:
                 "report": result.get("report", {}) if isinstance(result, dict) else {},
             },
         )
-    back_target = (
-        result.get("back_target", "clarify") if isinstance(result, dict) else "clarify"
-    )
+    back_target = result.get("back_target", "clarify") if isinstance(result, dict) else "clarify"
     if back_target == "research":
         return StageOutcome(event="validation_failed_reresearch")
     return StageOutcome(event="validation_failed_reclarify")
@@ -275,9 +273,11 @@ async def _h_echo_draft(session: Any, engine: Any) -> StageOutcome:
     from delivery.services import ArtifactService
 
     raw = (session.stage_state or {}).get("echo_input")
-    content = raw if isinstance(raw, dict) and isinstance(raw.get("message"), str) else {
-        "message": str((raw or {}).get("message", "")) if isinstance(raw, dict) else ""
-    }
+    content = (
+        raw
+        if isinstance(raw, dict) and isinstance(raw.get("message"), str)
+        else {"message": str((raw or {}).get("message", "")) if isinstance(raw, dict) else ""}
+    )
     work_item = None
     if session.work_item_id is not None:
         work_item = await WorkItem.objects.filter(id=session.work_item_id).afirst()
@@ -597,16 +597,35 @@ async def _h_bp_repo_plan(session: Any, engine: Any) -> StageOutcome:
     假，两 stage barrier 同源即互相打断（113-RESEARCH OQ-2）。
 
     **barrier 续驱**：每次进入清一次超龄 waiter 并把清出的仓重派（113-04 只提供方法，
-    挂载点在此）—— 不清的话「等的 key 永远不出现」的仓会永久卡住整个会话。
+    挂载点在此）—— 不清的话「等的 key 永远不出现」的仓会永久卡住整个会话。全波容器都以
+    ``waiting_context`` 退出时本 handler 不可达，那条死路由回调侧的
+    ``callbacks._amaintain_blueprint_waiters`` 兜（MJ-03）。
 
-    ⭐ 进入本 stage 即把蓝图状态转 ``drafting``（B3，经 lifecycle service，幂等 +
+    ⭐ **阻塞线程探测在最前**（MN-06 + MJ-02 门控）：有 open+blocking 线程时整轮**不 mark
+    drafting、不派发**直接返回 ``needs_clarification`` —— ① 先刷 ``drafting`` 再返回
+    ``needs_clarification`` 会让展示态与语义矛盾（用户看到「起草中」，其实在等他回答）；
+    ② 互等环/连续失败已交人裁决，此时重派只会再撞同一个环并烧容器额度，「裁决前不重派」
+    必须是**显式门控**而不是让 task 卡在非终态来物理阻止（MJ-02）。
+
+    ⭐ 通过门控后即把蓝图状态转 ``drafting``（B3，经 lifecycle service，幂等 +
     best-effort）。event 走**三元白名单**，不透传 adapter 的返回值。
+
+    **依赖缺失出口与 ``_h_bp_merge`` 对齐**（MN-07）：``deps.repo_plan`` 缺失时返回
+    ``plan_dispatched`` 会 self-loop 回本 stage 且 ``wait_status="waiting_event"``，但没有
+    任何容器被派出、也没有阻塞线程 ⇒ 会话静默挂在等事件态（正是 ``_h_bp_merge`` 的 D-W4
+    逐条论证否掉的形态）。改为先确保有阻塞线程再返 ``needs_clarification``。
     """
     from services.process_runtime.blueprint_repo_plan import STAGE_STATE_KEY
 
     adapter = getattr(getattr(engine, "deps", None), "repo_plan", None)
     if adapter is None:
-        return StageOutcome(event="plan_dispatched")
+        await _abp_ensure_blocking_clarification(
+            session, stage="repo_plan", reason="deps_unavailable"
+        )
+        return StageOutcome(event="needs_clarification")
+
+    if await _abp_has_open_blocking_threads(session):
+        return StageOutcome(event="needs_clarification")
 
     await _abp_mark_drafting(session)
 

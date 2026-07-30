@@ -447,7 +447,9 @@ def _schedule_chat_plan_resume(session: SubAgentSession, log: BoundLogger) -> No
             engine = build_orchestration_engine()
 
             # e. 先续驱到终态（43-02 同源 helper）
-            plan_session = await adrive_convergence_session_to_pause_or_terminal(engine, plan_session)
+            plan_session = await adrive_convergence_session_to_pause_or_terminal(
+                engine, plan_session
+            )
 
             # e2. 终态守门（WR-02）：adrive 可能在非终态短路返回（clarifying-pending /
             #     researching-在途），此时不构建 BlockingTaskResult、不通知 barrier——否则会以
@@ -1213,9 +1215,7 @@ async def _handle_question(
             from chat.container_suspend_service import ContainerSuspendService
             from chat.models import CodingSession
 
-            coding_session = await CodingSession.objects.filter(
-                subagent_session=session
-            ).afirst()
+            coding_session = await CodingSession.objects.filter(subagent_session=session).afirst()
             if coding_session is None:
                 return  # 非 coding 容器问答（如 workflow chat 提问）→ 不挂起
             initiated_by = await _resolve_initiated_user(session)
@@ -1327,16 +1327,20 @@ def _derive_container_call_source(session: SubAgentSession) -> str:
         derived = CallSource.REPO_VERIFY_CONTAINER
     elif session.task_type == SubAgentSession.TaskType.EXPLORE and source == "chat_deep_analysis":
         derived = CallSource.DEEP_ANALYSIS_CONTAINER
-    elif session.task_type == SubAgentSession.TaskType.PLAN and source == _BLUEPRINT_RESEARCH_SOURCE:
+    elif (
+        session.task_type == SubAgentSession.TaskType.PLAN and source == _BLUEPRINT_RESEARCH_SOURCE
+    ):
         # 蓝图逐仓调研容器（112-04）：不补这条会回退 sdk_agent_task，违反显式 call_source 要求
         derived = CallSource.BLUEPRINT_REPO_RESEARCH
-    elif session.task_type == SubAgentSession.TaskType.PLAN and source == _BLUEPRINT_REPO_PLAN_SOURCE:
+    elif (
+        session.task_type == SubAgentSession.TaskType.PLAN and source == _BLUEPRINT_REPO_PLAN_SOURCE
+    ):
         # 蓝图逐仓拟方案容器（113-03）：与调研链同为 PLAN 任务，靠 source 互斥；不补这条会
         # 回退 sdk_agent_task，plan 链的 token 计量归不到 blueprint_repo_plan 维度
         derived = CallSource.BLUEPRINT_REPO_PLAN
-    elif (
-        session.task_type == SubAgentSession.TaskType.CODING
-        or effective_task_type in ("coding", "coding_commit")
+    elif session.task_type == SubAgentSession.TaskType.CODING or effective_task_type in (
+        "coding",
+        "coding_commit",
     ):
         derived = CallSource.WORKFLOW_CODING_CONTAINER
     else:
@@ -2414,10 +2418,14 @@ async def _ahandle_blueprint_waiting_context(
     处理语义：
 
     - 逐 key 经 `BlueprintContextService.register_waiter` 登记（环检测在其内部**登记瞬间**完成）；
-    - 任一 key 命中互等环 → **不置 stale、不 dispatch**（澄清线程已由 service 开好，交人裁决）；
-    - 否则把该 task 置回**可派发态**（先 `mark_failed` 落终态再 `mark_stale`——WR-01 只动终态
-      task，见 113-03 Deviation 3），由目标条目写入侧的自动重派驱动续作；
-    - 全程**不落 `repo_plan` 段、不触发 barrier**（该仓未完成，barrier 判据仍为假）。
+    - **两条分支都**把该 task 置回可派发态（先 `mark_failed` 落终态再 `mark_stale`——WR-01 只动
+      终态 task，见 113-03 Deviation 3），由目标条目写入侧的自动重派驱动续作。成环分支只是
+      `reason` 不同、**不 dispatch**（澄清线程已由 service 开好，交人裁决）——
+      「裁决前不重派」由 `_h_bp_repo_plan` 的显式门控（先探阻塞线程再派发）与
+      `dispatch_plans` 的 active waiter 门控承担，**绝不**靠把 task 卡在 RUNNING 物理阻止
+      （MJ-02：那会让人裁决后该仓永远无法重派、会话静默悬挂，只能改库恢复）；
+    - **不落 `repo_plan` 段**（该仓未完成）；
+    - 退出瞬间做一次超龄 waiter 清理 + 全员长等待探测（MJ-03，见 `_amaintain_blueprint_waiters`）。
 
     Returns:
         True = 本次回调已按「等待退出」处理完毕，调用方**不再**走 repo_plan 解析与 barrier。
@@ -2458,12 +2466,13 @@ async def _ahandle_blueprint_waiting_context(
         if result.get("cycle_detected"):
             cycle_detected = True
 
-    if not cycle_detected:
-        research_service = ResearchService()
-        await research_service.mark_failed(
-            task, {"reason": "waiting_context", "detail": reason}
-        )
-        await research_service.mark_stale([task.id])
+    # MJ-02：成环与非成环**同样**落终态 + 置 stale（可重派态）。差别只在 reason 与「不重派」。
+    research_service = ResearchService()
+    reason_code = "waiting_context_cycle" if cycle_detected else "waiting_context"
+    await research_service.mark_failed(task, {"reason": reason_code, "detail": reason})
+    await research_service.mark_stale([task.id])
+
+    deadlock_thread_id = await _amaintain_blueprint_waiters(blueprint_session, log)
 
     log.info(
         "blueprint_repo_plan_waiting_context_registered",
@@ -2472,6 +2481,7 @@ async def _ahandle_blueprint_waiting_context(
         waiting_keys=registered,
         cycle_detected=cycle_detected,
         has_partial=bool(partial_plan_id),
+        deadlock_thread_id=deadlock_thread_id,
         initiated_by_user_id=str(
             getattr(blueprint_session, "initiated_by_user_id", "") or "system"
         ),
@@ -2479,6 +2489,48 @@ async def _ahandle_blueprint_waiting_context(
         component="subagent",
     )
     return True
+
+
+async def _amaintain_blueprint_waiters(blueprint_session: Any, log: BoundLogger) -> str:
+    """容器退出瞬间的 waiter 维护（MJ-03 的**可达路径**，best-effort）。
+
+    为什么必须挂在这里而不是只挂 barrier：超龄清理与 stuck 探测都在 `_h_bp_repo_plan` 内，
+    而它只能由 engine advance 驱动，advance 在本链只由容器回调触发。当**本波全部容器都以
+    `waiting_context` 退出**时（互相等对方、或等一个永不出现的 key —— 正是超时兜底该管的
+    场景），容器已全退 ⇒ 回调不再来 ⇒ 不会再 advance ⇒ 清理永不执行 ⇒ 会话永久停在
+    `waiting_event`：无澄清线程、无失败、无任何用户可见信号。
+
+    两步（顺序有意义）：
+
+    1. **超龄清理 + 重派**：清出的仓立刻续作 —— 这条能自愈，优先。
+    2. **全员长等待 → 开阻塞澄清**：无仓可清且判定死锁时，让它**可见**（HITL 面板 +
+       `needs_clarification` 派生态），而不是无声悬挂。
+
+    整段吞异常：waiter 维护绝不把容器回调打成 5xx。返回死锁澄清线程 id（未开则空串）。
+    """
+    if blueprint_session is None:
+        return ""
+    try:
+        from services.process_runtime.blueprint_repo_plan import BlueprintRepoPlanAdapter
+
+        adapter = BlueprintRepoPlanAdapter()
+        expired = await adapter.aexpire_stale_waiters(blueprint_session)
+        if expired:
+            await adapter.aredispatch_waiting_repos(blueprint_session, expired)
+            return ""
+        if not await adapter.aall_locked_repos_waiting(blueprint_session):
+            return ""
+        waiting = sorted(await adapter.aactive_waiting_repository_ids(blueprint_session))
+        return await adapter.aopen_deadlock_clarification(blueprint_session, waiting)
+    except Exception as exc:  # noqa: BLE001 — waiter 维护 best-effort，绝不反噬回调
+        log.warning(
+            "blueprint_repo_plan_waiter_maintenance_failed",
+            session_id=str(getattr(blueprint_session, "id", "")),
+            error=redact_secrets_in_text(str(exc))[:_MAX_CALLBACK_ERROR_CHARS],
+            category="sampling",
+            component="subagent",
+        )
+        return ""
 
 
 async def _handle_blueprint_repo_plan_completion(

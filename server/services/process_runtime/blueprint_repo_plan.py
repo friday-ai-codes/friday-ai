@@ -229,6 +229,10 @@ class BlueprintRepoPlanAdapter:
         waves = prearrange.get("waves") or {}
         current_wave, dispatchable = _current_wave(waves, completed=set(existing))
         task_map = await self._aload_task_map(getattr(session, "id", None))
+        # 显式门控（MJ-02）：仍有 active waiter 的仓本轮不重派 —— 它等的 key 还没上总线，
+        # 现在起容器只会再等一次然后再退出（白烧一份容器额度，同仓还会出现双容器）。
+        # 它的重派由**写入侧** `satisfy_waiters` → `aredispatch_waiting_repos` 或超龄清理驱动。
+        waiting = await self.aactive_waiting_repository_ids(session)
         dispatched = 0
         synthesized = 0
         completed: list[str] = []
@@ -238,6 +242,9 @@ class BlueprintRepoPlanAdapter:
             repository_id = repo["repository_id"]
             if existing.get(repository_id):
                 completed.append(repository_id)
+                continue
+            if repository_id in waiting:
+                pending.append(repository_id)
                 continue
             if dispatchable and repository_id not in dispatchable:
                 # 后续波次：等前一波 provider 仓产出契约后由 barrier 续驱推进（见 docstring）。
@@ -473,14 +480,122 @@ class BlueprintRepoPlanAdapter:
         )
         return redispatched
 
+    async def aactive_waiting_repository_ids(self, session: Any) -> set[str]:
+        """仍有 active waiter 的仓集（委托 `BlueprintContextService`，读失败返回空集合）。"""
+        try:
+            from delivery.services.blueprint_context_service import BlueprintContextService
+
+            return await BlueprintContextService().aactive_waiting_repository_ids(session)
+        except Exception as exc:  # noqa: BLE001 — 门控读失败按「无人在等」处理，不阻塞派发
+            logger.warning(
+                "blueprint_repo_plan_active_waiters_read_failed",
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+                category="sampling",
+                component="process_runtime",
+            )
+            return set()
+
+    async def aall_locked_repos_waiting(self, session: Any) -> bool:
+        """全员长等待判据（MJ-03）：**没有任何容器在途**且每个未完成仓都在等一个 key。
+
+        这是「所有容器都以 `waiting_context` 退出」那条闭合死路的可判定形状：容器都退出了
+        ⇒ 不会再有回调 ⇒ 不会再 advance ⇒ 超龄清理与 stuck 探测都到不了。判 True 的调用方
+        应当**立刻开阻塞澄清**让死锁可见（而不是让会话无声悬挂在 waiting_event）。
+
+        「在途」只算 `pending`/`running`：`stale` 在本相位语义是「等 key 的可重派态」，
+        把它算成在途会让本判据恒为 False（`aall_research_tasks_terminal` 正是这个口径，
+        故**不复用**它）。无锁定仓 / 全部已产出 → False（没有死锁可言）。
+        """
+        repos = await self.acollect_locked_repos(session)
+        if not repos:
+            return False
+        plans = await self.acollect_repo_plans(session)
+        task_map = await self._aload_task_map(getattr(session, "id", None))
+        waiting = await self.aactive_waiting_repository_ids(session)
+        outstanding = 0
+        for repo in repos:
+            repository_id = repo["repository_id"]
+            if plans.get(repository_id):
+                continue
+            status = str((task_map.get(repository_id) or {}).get("status") or "")
+            if status in (RepoResearchTaskStatus.PENDING, RepoResearchTaskStatus.RUNNING):
+                return False  # 还有容器在途/待派，等它回调即可
+            if str(status) == RepoResearchTaskStatus.FAILED:
+                continue  # 失败仓不阻塞 barrier（由 merge 阶段标未决项）
+            if repository_id not in waiting:
+                return False  # 有仓既不在途也不在等 ⇒ 下一轮派发能推进，不是死锁
+            outstanding += 1
+        return outstanding > 0
+
+    async def aopen_deadlock_clarification(self, session: Any, repository_ids: list) -> str:
+        """全员长等待 → 开一条 blocking 澄清让死锁可见（幂等，`return_stage="repo_plan"`）。
+
+        与 `_aopen_cycle_clarification` 同一幂等口径（已有 OPEN blocking 线程就不叠开）。
+        question 只含仓 id 与「都在等待」这一事实，**不含任何 key 正文或方案正文**。
+        """
+        try:
+            artifact = await self._aload_artifact(getattr(session, "id", None))
+            if artifact is None:
+                logger.warning(
+                    "blueprint_repo_plan_deadlock_no_artifact",
+                    session_id=str(getattr(session, "id", "")),
+                    category="sampling",
+                    component="process_runtime",
+                )
+                return ""
+            if await self._acount_open_blocking_clarifications(artifact.id):
+                return ""
+            repo_text = "、".join(
+                sorted(str(rid) for rid in (repository_ids or []) if str(rid or ""))
+            )
+            thread = await self._get_lifecycle_service().open_thread(
+                artifact,
+                kind="ai_clarification",
+                blocking=True,
+                question=(
+                    "本轮所有待拟方案的仓库都在等待其他仓的接口契约，已没有任何容器在跑"
+                    f"（涉及仓库：{repo_text or '（未指明）'}）。"
+                    "请裁决由哪一侧先定契约、或确认某个依赖可以先按假设推进。"
+                ),
+                initiated_by_user_id=_initiated_by(session),
+                return_stage="repo_plan",
+            )
+            thread_id = str(getattr(thread, "id", "") or "")
+            logger.info(
+                "blueprint_repo_plan_all_waiting_clarification_opened",
+                session_id=str(getattr(session, "id", "")),
+                repo_count=len(repository_ids or []),
+                thread_id=thread_id,
+                initiated_by_user_id=_initiated_by(session),
+                category="caller",
+                component="process_runtime",
+            )
+            return thread_id
+        except Exception as exc:  # noqa: BLE001 — 开线程失败不反噬回调主链
+            logger.warning(
+                "blueprint_repo_plan_all_waiting_clarification_failed",
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+                category="sampling",
+                component="process_runtime",
+            )
+            return ""
+
     async def aexpire_stale_waiters(
         self, session: Any, *, max_age_seconds: int = DEFAULT_WAITER_MAX_AGE_SECONDS
     ) -> list[str]:
         """清理超龄 waiter 并返回待重派仓清单（委托 `BlueprintContextService.expire_waiters`）。
 
-        **不新起定时任务**（CONTEXT 锁定）：由 barrier 续驱路径（113-06）在每次推进时调用一次，
-        清理出的仓交给 `aredispatch_waiting_repos` 续驱 —— 「等的 key 永远不出现」的仓因此
-        不会永久卡住会话。读失败一律返回 `[]`（观测代码不反噬业务）。
+        **不新起定时任务**（CONTEXT 锁定）。**两个挂载点**（MJ-03：只挂 barrier 不够）：
+
+        1. barrier 续驱路径（`_h_bp_repo_plan`，113-06）——正常推进时每轮清一次；
+        2. **容器 `waiting_context` 退出的回调路径**（`callbacks._ahandle_blueprint_waiting_context`）
+           ——barrier 只能由 engine advance 驱动，而 advance 在本链只由容器回调触发：当**本波
+           全部容器都以 `waiting_context` 退出**时容器已全退、回调不再来、barrier 因此永不可达，
+           清理挂在它上面等于在最需要它的状态下失效。挂到「退出瞬间」才有可达路径。
+
+        读失败一律返回 `[]`（观测代码不反噬业务）。
         """
         try:
             from delivery.services.blueprint_context_service import BlueprintContextService

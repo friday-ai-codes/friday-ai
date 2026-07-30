@@ -368,12 +368,17 @@ def _repo_plan_double(**overrides: Any) -> SimpleNamespace:
     return SimpleNamespace(**defaults)
 
 
-async def test_repo_plan_handler_passes_through_without_deps():
-    """deps 未注入 / `engine.deps` 整体 None → pass-through（`plan_dispatched`，不自旋）。"""
+async def test_repo_plan_handler_without_deps_stops_for_clarification():
+    """⭐ MN-07：缺依赖与 `_h_bp_merge` 同口径返 `needs_clarification`。
+
+    原实现返 `plan_dispatched`（self-loop 回本 stage + `wait_status="waiting_event"`），
+    但**没有任何容器被派出、也没有阻塞线程** —— 会话静默挂在等事件态，正是 `_h_bp_merge`
+    的 D-W4 逐条论证否掉的形态（「假装推进」）。
+    """
     session = await _stage_session("repo_plan")
     for engine in (_engine(), ProcessEngine(deps=None)):
         outcome = await bp._h_bp_repo_plan(session, engine)
-        assert outcome.event == "plan_dispatched"
+        assert outcome.event == "needs_clarification"
         assert outcome.stage_state_update is None
 
 
@@ -412,6 +417,29 @@ async def test_repo_plan_handler_redispatches_expired_waiters():
     await bp._h_bp_repo_plan(session, _engine(repo_plan=adapter))
     adapter.aredispatch_waiting_repos.assert_awaited_once()
     assert adapter.aredispatch_waiting_repos.await_args.args[1] == ["r9"]
+
+
+async def test_repo_plan_handler_does_not_dispatch_while_blocked(monkeypatch):
+    """⭐ MJ-02 门控 + MN-06：有 open+blocking 线程 → 整轮不 mark drafting、不派发。
+
+    「裁决前不重派」必须是显式门控；靠让 task 卡在 RUNNING 来物理阻止重派会让人裁决后
+    该仓**永远无法重派**。同时展示态不得先被刷成 `drafting`（用户其实在等他回答）。
+    """
+    marked: list[str] = []
+
+    async def _fake_mark(session):
+        marked.append(str(session.id))
+
+    monkeypatch.setattr(bp, "_abp_has_open_blocking_threads", AsyncMock(return_value=True))
+    monkeypatch.setattr(bp, "_abp_mark_drafting", _fake_mark)
+
+    session = await _stage_session("repo_plan")
+    adapter = _repo_plan_double()
+    outcome = await bp._h_bp_repo_plan(session, _engine(repo_plan=adapter))
+
+    assert outcome.event == "needs_clarification"
+    assert adapter.dispatch_plans.await_count == 0, "有阻塞线程仍派发 = 再撞同一个环并烧额度"
+    assert marked == [], "展示态不得在等人回答时被刷成 drafting（MN-06）"
 
 
 async def test_repo_plan_handler_writes_no_half_key_when_summary_is_empty():
