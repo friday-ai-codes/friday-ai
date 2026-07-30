@@ -418,11 +418,23 @@ class ConversationRuntimeCodingPlanSessionSerializer(serializers.Serializer):
 
 
 class ConversationRuntimeCodingPlanSerializer(serializers.Serializer):
-    """对话内最近 CodingPlan + 每仓 session 状态。"""
+    """对话内最近 CodingPlan + 每仓 session 状态。
+
+    只用于 runtime 出参组装（`ConversationService.get_runtime`），无写路径 ——
+    因此所有字段都是 read-only 语义：`provenance` 由服务端唯一写入，客户端不存在
+    可写入口。
+    """
 
     plan_id = serializers.UUIDField()
     title = serializers.CharField(allow_blank=True)
     sessions = ConversationRuntimeCodingPlanSessionSerializer(many=True)
+    # 方案正文与来源标志（Phase 109）：前端 TechPlanCard 直接从 runtime 渲染
+    # 「未经代码调研」告示，无需二次拉详情端点。
+    provenance = serializers.CharField(allow_blank=True, required=False, default="")
+    tech_plan = serializers.CharField(allow_blank=True, required=False, default="")
+    affected_files = serializers.JSONField(required=False)
+    recommended_repository_ids = serializers.JSONField(required=False)
+    source_artifact_version_id = serializers.UUIDField(allow_null=True, required=False)
     feishu_doc_token = serializers.CharField(
         allow_blank=True, required=False, default=""
     )
@@ -569,6 +581,11 @@ class CodingPlanSerializer(serializers.Serializer):
     title = serializers.CharField(read_only=True, allow_blank=True)
     tech_plan = serializers.CharField(read_only=True)
     affected_files = serializers.JSONField(read_only=True)
+    recommended_repository_ids = serializers.JSONField(read_only=True)
+    # 方案来源标志（RELY-01）。read_only 是 Spoofing 缓解：只有投影 service 写
+    # orchestrated，客户端无法把 draft 伪造成可信方案。
+    provenance = serializers.CharField(read_only=True)
+    source_artifact_version_id = serializers.UUIDField(read_only=True, allow_null=True)
     feishu_doc_token = serializers.CharField(read_only=True, allow_blank=True)
     feishu_doc_url = serializers.CharField(read_only=True, allow_blank=True)
     created_at = serializers.DateTimeField(read_only=True)

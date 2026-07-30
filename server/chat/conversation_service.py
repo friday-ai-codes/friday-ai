@@ -2654,6 +2654,18 @@ class ConversationService:
                 "plan_id": str(latest_plan.id),
                 "title": latest_plan.title,
                 "sessions": session_items,
+                # 方案来源与正文（Phase 109）：前端据 provenance 渲染「未经代码调研」
+                # 告示；provenance 只由服务端写，runtime 无写路径。
+                "provenance": latest_plan.provenance,
+                "tech_plan": latest_plan.tech_plan,
+                "affected_files": latest_plan.affected_files or [],
+                "recommended_repository_ids": latest_plan.recommended_repository_ids
+                or [],
+                "source_artifact_version_id": (
+                    str(latest_plan.source_artifact_version_id)
+                    if latest_plan.source_artifact_version_id
+                    else None
+                ),
                 "feishu_doc_token": latest_plan.feishu_doc_token or "",
                 "feishu_doc_url": latest_plan.feishu_doc_url or "",
             }
