@@ -5,7 +5,7 @@
  * Checkbox v-model / debounce manual override / 折叠 / emit 事件。
  */
 
-import type { RoutingCandidate, RoutingDecisionData } from '~/types/routing'
+import type { RoutingCandidate, RoutingDecisionData, RoutingDegradeReason } from '~/types/routing'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -613,5 +613,158 @@ describe('routingDecisionPanel 跨组标注与置顶提示（ROUTE-02）', () =>
     const normal = mountTrace(collapsedGlobalTrace())
     expect(normal.wrapper.text()).not.toContain(PROMOTION_SENTENCE)
     expect(normal.wrapper.find('[role="status"]').exists()).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 107-09 Task 3：降级横幅 / 徽标灰化 / 折叠态徽标 / 原因文案闭集
+// （RELY-03，UI-SPEC §交互契约 C）
+// ---------------------------------------------------------------------------
+
+const DEGRADED_TITLE = '本次未经 LLM 推理，置信度仅供参考'
+
+/** confidence 徽标 = 文案含百分号的那些 Badge（跨组/降级徽标不含）。 */
+function scoreBadges(wrapper: ReturnType<typeof mountTrace>['wrapper']) {
+  return wrapper
+    .findAllComponents({ name: 'Badge' })
+    .filter(b => b.text().includes('%'))
+}
+
+describe('routingDecisionPanel 降级可见（RELY-03）', () => {
+  it('degraded=true → amber 告警条（role=alert / aria-live=polite）含主句', () => {
+    const { wrapper } = mountTrace({ degraded: true })
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.exists()).toBe(true)
+    expect(alert.attributes('aria-live')).toBe('polite')
+    expect(alert.text()).toContain(DEGRADED_TITLE)
+    expect(alert.classes().join(' ')).toContain('amber')
+  })
+
+  it('6 个受控 degrade_reason 各自渲染对应中文次行', () => {
+    const cases: Array<[RoutingDegradeReason, string]> = [
+      ['timeout', '上游超时'],
+      ['upstream_error', '网关错误'],
+      ['provider_missing', '未配置模型'],
+      ['unparsable', '解析失败'],
+      ['no_node_index', '无能力树索引'],
+      ['unknown', '未知原因'],
+    ]
+    for (const [reason, label] of cases) {
+      const { wrapper } = mountTrace({ degraded: true, degrade_reason: reason })
+      expect(wrapper.find('[role="alert"]').text()).toContain(`降级原因：${label}`)
+    }
+  })
+
+  it('degrade_reason 缺失 → 只出主句，不渲染原因次行', () => {
+    const { wrapper } = mountTrace({ degraded: true })
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.text()).toContain(DEGRADED_TITLE)
+    expect(alert.text()).not.toContain('降级原因')
+  })
+
+  it('degrade_reason 为非受控值 → 回退「未知原因」，DOM 不含原始串', () => {
+    const raw = 'APIStatusError: sk-ant-abc123'
+    const { wrapper } = mountTrace({
+      degraded: true,
+      degrade_reason: raw as unknown as RoutingDegradeReason,
+    })
+    expect(wrapper.find('[role="alert"]').text()).toContain('降级原因：未知原因')
+    expect(wrapper.html()).not.toContain('sk-ant-')
+    expect(wrapper.html()).not.toContain('APIStatusError')
+  })
+
+  it('degraded=false / 缺失 → 零提示且徽标不灰化（历史 trace 渲染不变）', () => {
+    for (const degraded of [false, undefined]) {
+      const { wrapper } = mountTrace({ degraded })
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain(DEGRADED_TITLE)
+      expect(scoreBadges(wrapper).some(b => b.props('variant') === 'muted')).toBe(false)
+    }
+  })
+
+  it('degraded=true → 全部 confidence 徽标 variant=muted，百分比仍取 score', () => {
+    const { wrapper } = mountTrace({
+      degraded: true,
+      candidates: [
+        cand('gl-a', { score: 0.9, level: 'high', score_ranked: 0.2 }),
+        cand('gl-b', { score: 0.55, level: 'medium' }),
+        cand('gl-c', { score: 0.2, level: 'low' }),
+      ],
+    })
+    const badges = scoreBadges(wrapper)
+    expect(badges.length).toBe(3)
+    expect(badges.every(b => b.props('variant') === 'muted')).toBe(true)
+    const html = wrapper.html()
+    expect(html).toContain('90% 高')
+    expect(html).toContain('55% 中')
+    expect(html).toContain('20% 低')
+    // score_ranked 只用于排序，不进任何可见文案
+    expect(html).not.toContain('20% 高')
+  })
+
+  it('degraded 切换 confidence Tooltip 文案；未降级沿用既有三句', () => {
+    const degradedVm = mountTrace({ degraded: true }).wrapper.vm as any
+    expect(degradedVm.confidenceTooltip('high')).toContain('本次未经 LLM 推理：')
+    expect(degradedVm.confidenceTooltip('medium')).toContain('请人工确认')
+    expect(degradedVm.confidenceTooltip('low')).toContain('请人工选择')
+
+    const normalVm = mountTrace({ degraded: false }).wrapper.vm as any
+    expect(normalVm.confidenceTooltip('high')).toContain('高置信：首位分数与领先幅度均超过阈值')
+    expect(normalVm.confidenceTooltip('high')).not.toContain('本次未经 LLM 推理')
+  })
+
+  it('面板折叠时标题行仍渲染 Badge warning「降级」', async () => {
+    const { wrapper } = mountTrace({ degraded: true })
+    const degradedBadges = () => wrapper
+      .findAllComponents({ name: 'Badge' })
+      .filter(b => b.text() === '降级')
+    // 展开态由横幅承载，不重复出紧凑徽标
+    expect(degradedBadges().length).toBe(0)
+
+    await wrapper.find('button').trigger('click')
+    await nextTick()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(degradedBadges().length).toBe(1)
+    expect(degradedBadges()[0].props('variant')).toBe('warning')
+  })
+
+  it('degraded 下 level / score / 分数分解合计一律不变', async () => {
+    const { wrapper } = mountTrace({
+      degraded: true,
+      degrade_reason: 'timeout',
+      candidates: [
+        cand('gl-a', {
+          score: 0.875,
+          level: 'high',
+          score_ranked: 0.1,
+          breakdown: { text: 0.5, domain: 0.25, activity: 0.125 },
+        }),
+      ],
+    })
+    expect(wrapper.html()).toContain('88% 高')
+
+    const trigger = wrapper.findAll('button').find(b => b.text().includes('分数分解'))
+    expect(trigger).toBeDefined()
+    await trigger!.trigger('click')
+    await nextTick()
+    const rows = wrapper.findAll('div.justify-between')
+    expect(rows[rows.length - 1].text()).toContain((0.875).toFixed(3))
+  })
+
+  it('降级横幅在 query 行与置顶提示之上（并存时降级在上）', () => {
+    const { wrapper } = mountTrace({
+      degraded: true,
+      degrade_reason: 'timeout',
+      block_order: ['global', 'in_project'],
+      candidates: [
+        cand('gl-a', { group: 'global', score: 0.9, level: 'high' }),
+        cand('ip-a', { group: 'in_project', score: 0.5 }),
+      ],
+    })
+    const text = wrapper.text()
+    expect(text.indexOf(DEGRADED_TITLE)).toBeGreaterThanOrEqual(0)
+    expect(text.indexOf(DEGRADED_TITLE)).toBeLessThan(text.indexOf('query'))
+    expect(text.indexOf(DEGRADED_TITLE)).toBeLessThan(text.indexOf(PROMOTION_SENTENCE))
+    expect(text.indexOf(PROMOTION_SENTENCE)).toBeLessThan(text.indexOf('gl-a'))
   })
 })
