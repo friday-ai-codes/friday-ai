@@ -1000,6 +1000,18 @@ async def _handle_completed(
                 error=str(exc),
             )
 
+    # blueprint_repo_plan 容器完成 → repo_plan 段落 PartialPlan.content（经 service，INV-6，113-03）。
+    # 独立 try/except swallow，绝不让回调失败（与前三链完全对称）。
+    if _is_blueprint_repo_plan(session):
+        try:
+            await _handle_blueprint_repo_plan_completion(session, p, log)
+        except Exception as exc:  # noqa: BLE001 — 永不阻塞 _handle_completed 主流程
+            logger.warning(
+                "blueprint_repo_plan_completion_callback_failed",
+                session_id=session.session_id,
+                error=str(exc),
+            )
+
     # CR-01：续驱调度必须在 _handle_research_completion 之后——它把 RepoResearchTask 翻终态
     # 并将 chat 入口 session researching→merging。若在其之前调度（旧实现），fire-and-forget
     # 的 _resume() 会与 research 完成处理在事件循环 await 点交错，可能在 task 翻终态前读到
@@ -1080,6 +1092,18 @@ async def _handle_failed(
         except Exception as exc:  # noqa: BLE001 — 永不阻塞 _handle_failed 主流程
             logger.warning(
                 "blueprint_research_failure_callback_failed",
+                session_id=session.session_id,
+                error=str(exc),
+            )
+
+    # blueprint_repo_plan 容器失败 → mark_failed + barrier（113-03）。独立 try/except swallow
+    # （失败也是 barrier 终态，不能卡住蓝图续驱）。
+    if _is_blueprint_repo_plan(session):
+        try:
+            await _handle_blueprint_repo_plan_failure(session, p, log)
+        except Exception as exc:  # noqa: BLE001 — 永不阻塞 _handle_failed 主流程
+            logger.warning(
+                "blueprint_repo_plan_failure_callback_failed",
                 session_id=session.session_id,
                 error=str(exc),
             )
@@ -1306,6 +1330,10 @@ def _derive_container_call_source(session: SubAgentSession) -> str:
     elif session.task_type == SubAgentSession.TaskType.PLAN and source == _BLUEPRINT_RESEARCH_SOURCE:
         # 蓝图逐仓调研容器（112-04）：不补这条会回退 sdk_agent_task，违反显式 call_source 要求
         derived = CallSource.BLUEPRINT_REPO_RESEARCH
+    elif session.task_type == SubAgentSession.TaskType.PLAN and source == _BLUEPRINT_REPO_PLAN_SOURCE:
+        # 蓝图逐仓拟方案容器（113-03）：与调研链同为 PLAN 任务，靠 source 互斥；不补这条会
+        # 回退 sdk_agent_task，plan 链的 token 计量归不到 blueprint_repo_plan 维度
+        derived = CallSource.BLUEPRINT_REPO_PLAN
     elif (
         session.task_type == SubAgentSession.TaskType.CODING
         or effective_task_type in ("coding", "coding_commit")
@@ -2241,6 +2269,204 @@ async def _handle_blueprint_research_failure(
         )
     await _trigger_blueprint_research_barrier(blueprint_session)
     log.info("blueprint_research_failure_handled", task_id=str(task.id))
+
+
+# === blueprint_repo_plan 容器回调 → repo_plan 段落 PartialPlan.content（Phase 113-03，FLOW-05） ===
+#
+# PLAN 任务类型的**第四种**用途（前三种：plan_research 落 §7 PartialPlan、repo_verify 落
+# verdict、blueprint_research 落 fitness）。四者靠 ``last_output.source`` 互斥路由，判定条件
+# 不重叠 —— 阶段 2 产物没有 ``fitness.verdict``，若沿用调研链的 source 会被它的解析器抢走
+# 并判「不可解析」（P-4）。业务表写入全部经 ``ResearchService`` / ``BlueprintRepoPlanAdapter``
+# 的读-合并-写入口（INV-6，本段零裸 ORM 写）。
+
+# 派发侧（services/process_runtime/blueprint_research_adapter.py）写入的 source 值
+_BLUEPRINT_REPO_PLAN_SOURCE = "blueprint_repo_plan"
+
+
+def _is_blueprint_repo_plan(session: SubAgentSession) -> bool:
+    """路由判定：PLAN 任务 + last_output.source == blueprint_repo_plan。
+
+    与 ``_is_plan_research`` / ``_is_blueprint_research``（同为 PLAN 任务，靠 source 值区分）
+    以及 ``_is_repo_verify``（task_type 不同）两两互斥。
+    """
+    return (
+        session.task_type == SubAgentSession.TaskType.PLAN
+        and isinstance(session.last_output, dict)
+        and session.last_output.get("source") == _BLUEPRINT_REPO_PLAN_SOURCE
+    )
+
+
+def _parse_blueprint_repo_plan(output: Any) -> tuple[dict[str, Any] | None, str]:
+    """从容器 output 提取 ``repo_plan`` 段并过 jsonschema；返回 ``(section, error)``。
+
+    优先结构化透传（output 已含 ``repo_plan``），否则从 ``output["text"]`` 提 JSON 围栏 /
+    花括号跨度后 ``json.loads``。不合格返回 ``(None, err)`` —— ``err`` 已由
+    ``validate_repo_plan`` 脱敏 + 截断，可直接进 ``mark_failed`` 的 error dict。
+    宁可判不合格触发有界重试，也不把残缺结构落进融合投影数据（T-113-13）。
+    """
+    import json as json_mod
+
+    from services.process_runtime.blueprint_repo_plan_schema import validate_repo_plan
+
+    if not isinstance(output, dict):
+        return None, "output 不是 JSON 对象"
+    raw: dict[str, Any] | None = output if isinstance(output.get("repo_plan"), dict) else None
+    if raw is None:
+        text = str(output.get("text", "") or "")
+        if not text:
+            return None, "output 既无 repo_plan 段也无 text"
+        try:
+            parsed = json_mod.loads(_parse_summary_json(text))
+        except (json_mod.JSONDecodeError, TypeError):
+            return None, "output.text 不是可解析的 JSON"
+        raw = parsed if isinstance(parsed, dict) else None
+    if raw is None:
+        return None, "output.text 解析结果不是 JSON 对象"
+    section = raw.get("repo_plan")
+    if not isinstance(section, dict):
+        return None, "output 缺 repo_plan 段"
+    ok, err = validate_repo_plan(section)
+    if not ok:
+        return None, str(err or "repo_plan 校验失败")
+    return section, ""
+
+
+async def _aload_blueprint_plan_task(session: SubAgentSession):
+    """由 last_output 反查 ``(RepoResearchTask, ConvergenceSession)``（不可用位为 None）。
+
+    与第三链同口径：缺 ``research_task_id`` 或 task 已终态 → ``(None, None)``，调用方 no-op
+    （回调重投递幂等：已落库的 repo_plan 不会被二次覆盖，重试路径也不会被晚到回调再触发）。
+    """
+    from delivery.models import ConvergenceSession, RepoResearchTask, RepoResearchTaskStatus
+
+    lo = session.last_output or {}
+    task_id = lo.get("research_task_id")
+    blueprint_session_id = lo.get("blueprint_session_id")
+    if not task_id:
+        return None, None
+    task = await RepoResearchTask.objects.filter(id=task_id).afirst()
+    if task is None or task.status in (
+        RepoResearchTaskStatus.DONE,
+        RepoResearchTaskStatus.FAILED,
+        RepoResearchTaskStatus.STALE,
+    ):
+        return None, None
+    blueprint_session = None
+    if blueprint_session_id:
+        blueprint_session = await ConvergenceSession.objects.filter(
+            id=blueprint_session_id
+        ).afirst()
+    return task, blueprint_session
+
+
+async def _acount_blueprint_plan_containers(task: Any) -> int:
+    """本 task 已起过的 plan 容器数（``bp-plan-{task.id.hex[:12]}-*`` 计数）。
+
+    有界重试的**唯一计数源**：``RepoResearchTask.attempt`` 是跨阶段共用计数（阶段 1 已占用
+    一次），``stage_state`` 又不能由回调路径写（并行容器 lost-update）。``session_id`` 前缀由
+    派发侧服务端生成、runner 不可篡改，故计数天然单调可信。
+    """
+    prefix = f"bp-plan-{task.id.hex[:12]}"
+    return await SubAgentSession.objects.filter(session_id__startswith=prefix).acount()
+
+
+async def _trigger_blueprint_repo_plan_barrier(blueprint_session) -> None:
+    """阶段 2 barrier（幂等）：用**自写完成判据**（读 repo_plan 段存在性）叫醒续驱器。
+
+    **不复用调研 stage 的「全部 task 终态」判据**：两 stage 共用同一批 task，
+    ``mark_stale`` 会让那条判据短暂为假，而 ``done`` 在两阶段都出现（判不出阶段）。
+    """
+    if blueprint_session is None:
+        return
+    from services.process_runtime.blueprint_repo_plan import BlueprintRepoPlanAdapter
+
+    if not await BlueprintRepoPlanAdapter().aall_repo_plans_ready(blueprint_session):
+        return
+    try:
+        from services.process_runtime import blueprint_resume
+    except ImportError:
+        return
+    resume = getattr(blueprint_resume, "aresume_blueprint_session", None)
+    if resume is None:
+        return
+    await resume(blueprint_session)
+
+
+async def _handle_blueprint_repo_plan_completion(
+    session: SubAgentSession, p: dict[str, Any], log: BoundLogger
+) -> None:
+    """拟方案容器完成 → ``repo_plan`` 段经读-合并-写落 ``PartialPlan.content``。
+
+    校验不合格走**有界重试**：已重试 < ``MAX_REPO_PLAN_ATTEMPTS`` → 先 ``mark_failed`` 落终态
+    （``mark_stale`` 按 WR-01 只动已终态 task）再 ``mark_stale`` 触发重跑，且**不落非法
+    content**；超界 → ``mark_failed({"reason": "repo_plan_invalid"})`` + 开 blocking 澄清线程
+    （**绝不静默降级**）。末尾统一触发 barrier（幂等）。非本链 session 不触发。
+    """
+    if not _is_blueprint_repo_plan(session):
+        return
+
+    from delivery.services import ResearchService
+    from services.process_runtime.blueprint_repo_plan import (
+        MAX_REPO_PLAN_ATTEMPTS,
+        BlueprintRepoPlanAdapter,
+    )
+
+    task, blueprint_session = await _aload_blueprint_plan_task(session)
+    if task is None:
+        return
+
+    adapter = BlueprintRepoPlanAdapter()
+    research_service = ResearchService()
+    section, error = _parse_blueprint_repo_plan(p.get("output") or {})
+
+    if section is not None:
+        # repository_id 由服务端权威写入，不采信容器上报值
+        section["repository_id"] = str(task.repository_id)
+        await adapter.arecord_repo_plan(task, section)
+    else:
+        detail = redact_secrets_in_text(str(error))[:_MAX_CALLBACK_ERROR_CHARS]
+        attempt = max(0, await _acount_blueprint_plan_containers(task) - 1)
+        if attempt < MAX_REPO_PLAN_ATTEMPTS:
+            await research_service.mark_failed(
+                task, {"reason": "repo_plan_invalid_retrying", "detail": detail}
+            )
+            await research_service.mark_stale([task.id])
+        else:
+            await research_service.mark_failed(
+                task, {"reason": "repo_plan_invalid", "detail": detail}
+            )
+            if blueprint_session is not None:
+                await adapter.aopen_clarification(
+                    blueprint_session, str(task.repository_id), detail
+                )
+
+    await _trigger_blueprint_repo_plan_barrier(blueprint_session)
+    log.info(
+        "blueprint_repo_plan_completion_handled",
+        task_id=str(task.id),
+        failed=section is None,
+    )
+
+
+async def _handle_blueprint_repo_plan_failure(
+    session: SubAgentSession, p: dict[str, Any], log: BoundLogger
+) -> None:
+    """拟方案容器失败 → mark_failed(container_failed) + barrier（失败也是终态，不卡续驱）。"""
+    if not _is_blueprint_repo_plan(session):
+        return
+
+    from delivery.services import ResearchService
+
+    task, blueprint_session = await _aload_blueprint_plan_task(session)
+    if task is None:
+        return
+
+    error_detail = redact_secrets_in_text(str(p.get("error", "Unknown error")))[
+        :_MAX_CALLBACK_ERROR_CHARS
+    ]
+    await ResearchService().mark_failed(task, {"reason": "container_failed", "error": error_detail})
+    await _trigger_blueprint_repo_plan_barrier(blueprint_session)
+    log.info("blueprint_repo_plan_failure_handled", task_id=str(task.id))
 
 
 # 处理器映射

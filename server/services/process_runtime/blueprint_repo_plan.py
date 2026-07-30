@@ -12,7 +12,7 @@
 4. **仓集来源是确认门锁定的 `repo_associations`**（最新 `ArtifactVersion`），不复用路由候选面：
    阶段 2 的 direct/indirect 是人工裁决结果，与路由期的 `role_suggestion` 语义已不同。
 5. **`record_partial` 是整体覆写语义**：写 `repo_plan` 段必须**读-合并-写**（唯一入口
-   `_arecord_repo_plan`）。裸传 `{"repo_plan": ...}` 会让 `acollect_fitness` 读到空 fitness，
+   `arecord_repo_plan`）。裸传 `{"repo_plan": ...}` 会让 `acollect_fitness` 读到空 fitness，
    确认门快照与 `current_state_analysis` 投影全线失血（P-1）。
 """
 
@@ -335,7 +335,7 @@ class BlueprintRepoPlanAdapter:
             last_error = str(err or "")[:_MAX_ERROR_CHARS]
 
         if section is None:
-            thread_id = await self._aopen_clarification(session, repository_id, last_error)
+            thread_id = await self.aopen_clarification(session, repository_id, last_error)
             section = _degraded_section(repo, reason=last_error, thread_id=thread_id)
             ok, err = validate_repo_plan(section)
             if not ok:
@@ -350,7 +350,7 @@ class BlueprintRepoPlanAdapter:
                 )
                 return False
 
-        await self._arecord_repo_plan(task, section)
+        await self.arecord_repo_plan(task, section)
         logger.info(
             "blueprint_repo_plan_indirect_synthesized",
             session_id=str(getattr(session, "id", "")),
@@ -364,7 +364,7 @@ class BlueprintRepoPlanAdapter:
 
     # ── 落库唯一入口（读-合并-写） ─────────────────────────────────────────
 
-    async def _arecord_repo_plan(self, task: Any, repo_plan_section: dict) -> Any:
+    async def arecord_repo_plan(self, task: Any, repo_plan_section: dict) -> Any:
         """写 `repo_plan` 段的**唯一入口**：读最新 content → 浅合并 → `record_partial`。
 
         ⚠️ 裸传 `{"repo_plan": ...}` 会让 `acollect_fitness` 读到空 fitness —— `record_partial`
@@ -459,7 +459,7 @@ class BlueprintRepoPlanAdapter:
 
     # ── 澄清线程（唯一入口经 lifecycle service） ────────────────────────────
 
-    async def _aopen_clarification(self, session: Any, repository_id: str, detail: str) -> str:
+    async def aopen_clarification(self, session: Any, repository_id: str, detail: str) -> str:
         """开一条阻塞澄清线程；`return_stage` **必填**（B3），否则恢复会退回阶段 1。
 
         question 只含仓名与缺失字段说明，**不含 content 正文**（半可信正文不进 HITL 面板）。
