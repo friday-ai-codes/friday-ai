@@ -216,22 +216,25 @@ _SEARCH_USAGE_RULES: Final[str] = (
 _CODING_GUIDANCE: Final[str] = (
     "\n编码任务识别：\n"
     "  当用户描述了具体的代码变更需求（如「帮我实现...」「修改...功能」「添加...接口」「重构...」），\n"
-    "  你应该调用 create_coding_plan 工具生成结构化技术方案，而非直接给出代码片段。\n"
-    "  技术方案包含：① 影响文件列表（文件路径 + 变更类型：新增/修改/删除）② 分步实现步骤。\n"
+    "  你应该先经编排链路产出方案版本（start_plan_research / start_feature_solution），\n"
+    "  再调 create_coding_plan 把该版本投影为编码方案，而非直接给出代码片段。\n"
+    "  方案正文由编排链路产出，你不撰写正文 —— create_coding_plan 只接受方案版本 id。\n"
     "  用户确认方案后才会在 Runner 容器中执行编码。\n"
-    "  用户要求调整方案时，调用 update_coding_plan 更新方案内容。\n"
+    "  用户要求换一份方案时，先走编排链路产出新的方案版本，再调 update_coding_plan\n"
+    "  把编码方案重新指向新的方案版本。\n"
     "  不要同时使用 deep_analysis 和 create_coding_plan -- 它们是不同场景：\n"
     "  - deep_analysis：分析理解代码（只读）\n"
-    "  - create_coding_plan：执行代码变更（写入）\n"
+    "  - create_coding_plan：把编排产出的方案版本投影为可执行编码方案（写入）\n"
     "\n"
     # 编码场景前置约束（与 work item 硬 gate 同源）。
     "编码请求的前置约束（coding-plan workflow）：\n"
     "  - 调 create_coding_plan 之前必须有 analyze_repository_relevance 的输出，\n"
     "    且 selected_repository_ids 非空；否则先调 RELEV，再创建方案。\n"
-    "  - 技术方案正文必须显式写出目标仓库名称和目标文件路径，避免用户确认时看不出将修改哪个仓库。\n"
+    "  - 调 create_coding_plan 之前必须已有编排产出的方案版本（artifact_version_id）；\n"
+    "    没有就先调 start_plan_research / start_feature_solution 发起编排。\n"
     "  - 用户表述里只要含「修/改/加/实现/重构/优化/接入/适配」等编码动词，\n"
-    "    就视为编码请求，强制走「相关性分析 → 必要时澄清 → create_coding_plan」三步，\n"
-    "    不允许直接给代码片段或跳过 RELEV。\n"
+    "    就视为编码请求，强制走「相关性分析 → 必要时澄清 → 编排产出方案版本 →\n"
+    "    create_coding_plan」四步，不允许直接给代码片段或跳过 RELEV。\n"
     "  - 如果 analyze_repository_relevance 给出 ≥ 2 个 plausible 仓库且 confidence 接近，\n"
     "    必须先调 ask_clarification 让用户挑后再 create_coding_plan，并把用户选项的\n"
     "    implies.selected_repository_ids 作为 recommended_repository_ids 传入。\n"
@@ -241,7 +244,7 @@ _CODING_GUIDANCE: Final[str] = (
     "  「生成技术方案」时，调用 start_feature_solution，不要用 create_coding_plan。\n"
     "  该工具会判定每个功能点是新增还是改造已有功能，并**强制暂停让用户确认关联仓库**，\n"
     "  确认后产出分仓 + 整体方案（含落点文件与伪代码）。\n"
-    "  - 单个零散需求 → create_coding_plan（编码计划）或 start_plan_research（跨仓方案）。\n"
+    "  - 单个零散需求 → start_plan_research 产出方案版本，再用 create_coding_plan 投影。\n"
     "  - 成批功能点 / 明确要技术方案 → start_feature_solution。\n"
     "  - 确认环节不可跳过：即便仓库路由十分确定也会问一次，这是产品约束。\n"
 )
@@ -406,6 +409,8 @@ async def _build_system_prompt(
         "\n\n本轮检测到编码请求（命中动词：" + verbs_text + "）。硬约束：\n"
         "  - 必须先调用 analyze_repository_relevance 拿到候选仓库 + 置信度；\n"
         "  - 命中分布不明确（confidence=ambiguous）时优先调 ask_clarification；\n"
+        "  - 必须先有编排产出的方案版本（start_plan_research / start_feature_solution）\n"
+        "    才可调 create_coding_plan —— 该工具只投影方案版本，不接受方案正文；\n"
         "  - 上述步骤完成前不允许调 create_coding_plan。\n"
     )
     return base_prompt + hint
@@ -427,6 +432,12 @@ async def _get_tool_names(space_id: str) -> list[str]:
         "search_repository_code",
         "list_space_repositories",
         "get_repository_info",
+        # 编排工具必须与 create_coding_plan 同时挂载：SPINE-02 收窄后
+        # create_coding_plan 必须携带编排产出的 artifact_version_id，只挂 create/update
+        # 会让模型被要求带来源却没有任何工具能产出来源（死路）。一致性由
+        # tests/test_chat_tools.py 的白名单断言守护。
+        "start_plan_research",
+        "start_feature_solution",
         "create_coding_plan",
         "update_coding_plan",
         # 协商工具，所有有索引仓库的项目都暴露给 LLM

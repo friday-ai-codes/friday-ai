@@ -927,8 +927,9 @@ DEEP_ANALYSIS_TIMEOUT = 1800  # 30 分钟
         "cross_repo_relevance —— 结果落 RepositoryRoutingTrace（triggered_by="
         "deep_analysis_completion）+ 写入 AgentSession.metadata['cross_repo_relevance'] "
         "+ 拼到本工具返回 text 末尾 `[cross_repo_relevance:<trace_id>]` 段。"
-        "你在 deep_analysis 之后调 create_coding_plan 时可直接从 metadata 引用 "
-        "recommended_repository_ids，无需再次调 analyze_repository_relevance。"
+        "你在 deep_analysis 之后调 create_coding_plan（把编排产出的方案版本投影为编码方案）"
+        "时可直接从 metadata 引用 recommended_repository_ids，"
+        "无需再次调 analyze_repository_relevance。"
     ),
     category="PROJECT",
     parameters={
