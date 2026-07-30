@@ -2736,6 +2736,9 @@ class CodingPlanProjectFromArtifactVersionView(APIView):
             return self._not_found()
 
         # owner gate：用 created_by_id 标量避免 async 惰性 FK；无 superuser bypass（ISO-03）。
+        # 109-05 起**真正的门在 service**（`aproject` 必填 actor_user_id + 内部
+        # `_assert_owner`，工具路径与本端点共享同一道门）；这里是第二道纵深，保留它是
+        # 为了让越权请求在只读解析阶段就被挡掉、不进入写入口。
         if getattr(user, "is_authenticated", False) and conversation.created_by_id != user.id:
             return self._not_found()
 
@@ -2743,7 +2746,7 @@ class CodingPlanProjectFromArtifactVersionView(APIView):
         try:
             plan, created = await service.aproject(
                 artifact_version_id=artifact_version_id,
-                initiated_by_user_id=str(user.id),
+                actor_user_id=str(user.id),
             )
         except PlanProjectionError as exc:
             if exc.code == ERROR_REQUIRES_CHAT_ENTRYPOINT:
@@ -2751,6 +2754,8 @@ class CodingPlanProjectFromArtifactVersionView(APIView):
                     {"code": exc.code, "detail": str(exc)},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            # artifact_version_not_found 与 artifact_version_forbidden 同形映射 404，
+            # 措辞逐字节一致，不泄漏存在性。
             return self._not_found()
 
         # 3) owner gate 复核（纵深）：投影落点必须仍是请求者自己的会话。
