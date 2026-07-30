@@ -244,18 +244,19 @@ def blend_ranked_scores(
 
     - `N <= 1`（单候选无重排空间）或 `alpha <= 0`（Stage 1 降级）→ 恒等返回
       `S_final` 的副本，兼作除零短路；
-    - `llm_order` 中不在 `stage0_scores` 的 id 被跳过（防御）。
+    - `llm_order` 中不在 `stage0_scores` 的 id **先过滤再计 N 与下标**：把无效 id 也算
+      进 `n` 并占据 `idx` 会让有效候选的 `S_llm` 被系统性压低（防御分支自己引入偏差）。
+      生产路径上两侧同集，故这只影响防御场景，但偏差不该由防御代码制造。
 
     返回值是**旁路取值**：调用方必须写进新字段，绝不覆盖 `score`
     （107-CONTEXT D-3；覆盖会打断两条既有 `Σbreakdown == score` 断言与前端容差校验）。
     """
-    n = len(llm_order)
     out: dict[str, float] = dict(stage0_scores)
+    valid = [rid for rid in llm_order if rid in stage0_scores]
+    n = len(valid)
     if n <= 1 or alpha <= 0.0:
         return out
-    for idx, rid in enumerate(llm_order):
-        if rid not in stage0_scores:
-            continue
+    for idx, rid in enumerate(valid):
         s_llm = 1.0 - idx / (n - 1)
         out[rid] = (1.0 - alpha) * stage0_scores[rid] + alpha * s_llm
     return out
