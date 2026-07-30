@@ -6,7 +6,8 @@
 2. **三层链**：C ← B ← A → 三波各一仓，顺序正确。
 3. **无依赖**：三仓互不引用 → 全在 wave 1（可完全并行，与预排前行为逐字一致）。
 4. **显式 `from_repository_id` 优先**：path 对不上任何 provided 也仍建边（容器自述比形状猜测可信）。
-5. **成环**：A ⇄ B → `cycles` 非空且含 {A, B}，两仓**仍在 waves 里**（放最后一波，不丢仓）。
+5. **成环**：A ⇄ B → `cycles` 非空且含 {A, B}，两仓**仍在 waves 里**（整个环当一个超级节点排一波，
+   不丢仓）；环的上游排在它之前、环的（传递）下游排在它之后（MN-10）。
 6. **无 provider**：谁都不提供的 API → `unresolved_consumed` 有记录且该仓仍进 wave 1
    （113-05 的 `needs_support` 前置信号）。
 7. `match_api` 三例：`(method, path)` 全等 / `name` 全等 / 都不等。
@@ -144,6 +145,61 @@ def test_cycle_repos_are_placed_in_last_wave_after_acyclic_ones() -> None:
     assert result["waves"][1] == ["C"]
     assert result["waves"][2] == ["D"]
     assert result["waves"][3] == ["A", "B"]
+
+
+def test_cycle_downstream_repo_is_ordered_after_the_cycle() -> None:
+    """MN-10：依赖环中某仓的非环仓必须排在**环之后**，绝不因依赖边被剔除而落到 wave 1。
+
+    A ⇄ B 成环，D 消费 A 提供的 `a_api`。剔除环边会让 D 无依赖 → wave 1，而它开工时 A 的契约
+    必然不在总线上（第一道防线在这条分支上整体失效，并放大「全员长等待」的触发概率）。
+    """
+    result = build_api_waves(
+        {
+            "A": {
+                "apis_provided": [_api(name="a_api")],
+                "apis_consumed": [_api(name="b_api")],
+            },
+            "B": {
+                "apis_provided": [_api(name="b_api")],
+                "apis_consumed": [_api(name="a_api")],
+            },
+            "D": {"apis_consumed": [_api(name="a_api")]},
+        }
+    )
+    assert {frozenset(cycle) for cycle in result["cycles"]} == {frozenset({"A", "B"})}
+    assert result["waves"] == {1: ["A", "B"], 2: ["D"]}
+    assert _all_ids(result["waves"]) == {"A", "B", "D"}
+
+
+def test_cycle_transitive_downstream_is_ordered_after_the_cycle() -> None:
+    """传递下游也要排在环之后：E 依赖 D、D 依赖环 → 环 → D → E。"""
+    result = build_api_waves(
+        {
+            "A": {"apis_provided": [_api(name="a_api")], "apis_consumed": [_api(name="b_api")]},
+            "B": {"apis_provided": [_api(name="b_api")], "apis_consumed": [_api(name="a_api")]},
+            "D": {
+                "apis_provided": [_api(name="d_api")],
+                "apis_consumed": [_api(name="a_api")],
+            },
+            "E": {"apis_consumed": [_api(name="d_api")]},
+        }
+    )
+    assert result["waves"] == {1: ["A", "B"], 2: ["D"], 3: ["E"]}
+
+
+def test_cycle_upstream_repo_still_precedes_the_cycle() -> None:
+    """环的上游仍排在环之前：A ⇄ B 且 A 消费 U 提供的 `u_api` → U → 环。"""
+    result = build_api_waves(
+        {
+            "U": {"apis_provided": [_api(name="u_api")]},
+            "A": {
+                "apis_provided": [_api(name="a_api")],
+                "apis_consumed": [_api(name="b_api"), _api(name="u_api")],
+            },
+            "B": {"apis_provided": [_api(name="b_api")], "apis_consumed": [_api(name="a_api")]},
+        }
+    )
+    assert result["waves"] == {1: ["U"], 2: ["A", "B"]}
 
 
 def test_self_consumed_api_does_not_create_self_edge() -> None:
