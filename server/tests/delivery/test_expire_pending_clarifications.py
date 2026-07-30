@@ -1,14 +1,18 @@
 """``expire_pending_clarifications`` 澄清超时出口命令测试（RELY-02，SC-4 后半句）。
 
-覆盖：到期出口（带未澄清假设继续 / 如实失败）、幂等（连跑两次只推进一次只 emit 一次）、
-起算时间取 pending 轮 ``created_at``（刷新会话时间戳不影响到期）、旧行 ``container_status``
-为 NULL 仍被命中、未澄清点结构与脱敏、触发用户归因、单条失败不影响其余、事务纪律
-（``transition`` 调用不在 atomic 块内）；以及边界（未到期 / 已答 / 终态不动）、两条立即出口
-（送达失败 / 工作流已 TIMEOUT）、运维开关（``--dry-run`` / ``--limit`` / ``--session-id``）与
-D-5 的 chat 协商卡「只观测不出口」。
+覆盖：到期出口（带未澄清假设继续 / 如实失败）、**出口后经引擎续驱离开中间态**（BL-01）、
+幂等（连跑两次只推进一次只 emit 一次）、起算时间取 pending 轮 ``created_at``（刷新会话时间戳
+不影响到期）、旧行 ``container_status`` 为 NULL 仍被命中、未澄清点结构与脱敏、触发用户归因、
+单条失败不影响其余、事务纪律（``transition`` 调用不在 atomic 块内）；以及边界（未到期 / 已答 /
+终态不动）、两条立即出口（送达失败 / 工作流已 TIMEOUT）、运维开关（``--dry-run`` / ``--limit`` /
+``--session-id``）与 D-5 的 chat 协商卡「只观测不出口」。
 
 ``transaction=True``：命令内部 ``asyncio.run`` 经独立连接写库，普通 rollback 型
 ``django_db`` 无法覆盖跨连接提交；TransactionTestCase teardown TRUNCATE 全表。
+
+引擎替身：``fake_engine`` 是 autouse fixture —— 真实 ``build_orchestration_engine`` 会注入打
+真实 IO 的 router/research adapters，测试只关心「出口是否真的把会话推离中间态」，故换一个
+一步到终态的假引擎；``adrive_convergence_session_to_pause_or_terminal`` 仍是真实实现。
 """
 
 from __future__ import annotations
@@ -99,20 +103,47 @@ def _timed_out_events(session: ConvergenceSession) -> int:
     return ConvergenceSessionEvent.objects.filter(session_id=session.id, event=_TIMED_OUT).count()
 
 
+class _FakeEngine:
+    """一步到终态的假引擎（只替换 engine，续驱 helper 仍是真实实现）。"""
+
+    def __init__(self) -> None:
+        self.session_service = ConvergenceSessionService()
+        self.advanced: list[str] = []
+
+    async def advance(self, session: Any) -> None:
+        self.advanced.append(str(session.id))
+        await ConvergenceSession.objects.filter(id=session.id).aupdate(
+            status=ConvergenceSessionStatus.DONE, current_stage="done"
+        )
+
+
+@pytest.fixture(autouse=True)
+def fake_engine(monkeypatch: pytest.MonkeyPatch) -> _FakeEngine:
+    """默认把 ``build_orchestration_engine`` 换成假引擎并记录被续驱的会话。"""
+    import services.process_runtime as process_runtime
+
+    engine = _FakeEngine()
+    monkeypatch.setattr(
+        process_runtime, "build_orchestration_engine", lambda **_kw: engine
+    )
+    return engine
+
+
 @override_settings(
     CLARIFICATION_TIMEOUT_HOURS=24,
     CLARIFICATION_TIMEOUT_EXIT_ACTION="resume_with_assumptions",
 )
-def test_expired_round_resumes_with_assumptions() -> None:
-    """到期 pending 轮 → 推进到 research/running，stage_state 落 clarification_exit。"""
+def test_expired_round_resumes_with_assumptions(fake_engine: _FakeEngine) -> None:
+    """到期 pending 轮 → 经 clarified 转移 + 引擎续驱离开 clarify，stage_state 落 clarification_exit。"""
     session = _make_session()
     clar = _make_round(session, age_hours=48)
 
     call_command("expire_pending_clarifications")
 
     reloaded = ConvergenceSession.objects.get(id=session.id)
-    assert reloaded.current_stage == "research"
-    assert reloaded.status == ConvergenceSessionStatus.RUNNING
+    assert fake_engine.advanced == [str(session.id)]
+    assert reloaded.current_stage == "done"
+    assert reloaded.status == ConvergenceSessionStatus.DONE
     marker = reloaded.stage_state["clarification_exit"]
     assert marker["action"] == "resumed_with_assumptions"
     assert marker["clarification_id"] == str(clar.id)
@@ -135,8 +166,98 @@ def test_second_scan_is_idempotent() -> None:
     call_command("expire_pending_clarifications")
 
     reloaded = ConvergenceSession.objects.get(id=session.id)
-    assert reloaded.current_stage == "research"
+    assert reloaded.current_stage == "done"
     assert _timed_out_events(session) == 1
+
+
+# ── BL-01：出口必须真的推进（transition 之后重驱引擎） ──────────────────────────
+
+
+@override_settings(
+    CLARIFICATION_TIMEOUT_HOURS=24,
+    CLARIFICATION_TIMEOUT_EXIT_ACTION="resume_with_assumptions",
+)
+def test_resume_exit_redrives_engine_out_of_intermediate_state(
+    fake_engine: _FakeEngine,
+) -> None:
+    """BL-01 守护：出口后会话不得停在 research/running 中间态。
+
+    修复前 resume 分支只做 ``transition("clarified")``——会话从「停在
+    waiting_clarification」变成「停在 research/running」，而全仓没有任何周期任务扫
+    ``status=running`` 的 ConvergenceSession，卡死只是换了个标签（且 running 在看板上与
+    正常运行不可区分，更难发现）。本用例断言出口后引擎被真实续驱且会话落在终态。
+    """
+    session = _make_session()
+    _make_round(session, age_hours=48)
+
+    call_command("expire_pending_clarifications")
+
+    reloaded = ConvergenceSession.objects.get(id=session.id)
+    assert fake_engine.advanced == [str(session.id)], "出口后未重驱引擎（BL-01 复现）"
+    assert reloaded.current_stage != "research"
+    assert reloaded.status != ConvergenceSessionStatus.RUNNING
+    assert reloaded.status in {
+        ConvergenceSessionStatus.DONE,
+        ConvergenceSessionStatus.FAILED,
+    }
+
+
+@override_settings(
+    CLARIFICATION_TIMEOUT_HOURS=24,
+    CLARIFICATION_TIMEOUT_EXIT_ACTION="resume_with_assumptions",
+)
+def test_exit_log_reports_post_redrive_landing(fake_engine: _FakeEngine) -> None:
+    """出口日志带续驱后的落点（生产核对「是否真的推离中间态」的唯一依据）。"""
+    session = _make_session()
+    _make_round(session, age_hours=48)
+
+    with structlog.testing.capture_logs() as captured:
+        call_command("expire_pending_clarifications")
+
+    exits = [e for e in captured if e.get("event") == "clarification_timeout_exit"]
+    assert exits, f"未记 clarification_timeout_exit 事件；captured={captured}"
+    assert exits[0].get("final_status") == str(ConvergenceSessionStatus.DONE)
+    assert exits[0].get("final_stage") == "done"
+
+
+@override_settings(
+    CLARIFICATION_TIMEOUT_HOURS=24,
+    CLARIFICATION_TIMEOUT_EXIT_ACTION="resume_with_assumptions",
+)
+def test_redrive_failure_does_not_roll_back_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """续驱失败 → 记 exception 后仍按已出口计（transition 已幂等落地，绝不回退状态）。"""
+    import services.process_runtime as process_runtime
+
+    def _boom(**_kw: Any) -> Any:
+        raise RuntimeError("engine build failed")
+
+    monkeypatch.setattr(process_runtime, "build_orchestration_engine", _boom)
+
+    session = _make_session()
+    _make_round(session, age_hours=48)
+
+    with structlog.testing.capture_logs() as captured:
+        call_command("expire_pending_clarifications")
+
+    reloaded = ConvergenceSession.objects.get(id=session.id)
+    assert reloaded.status != ConvergenceSessionStatus.WAITING_CLARIFICATION
+    assert reloaded.stage_state["clarification_exit"]["action"] == "resumed_with_assumptions"
+    assert _timed_out_events(session) == 1
+    assert [
+        e for e in captured if e.get("event") == "clarification_timeout_exit_redrive_failed"
+    ], f"未记续驱失败事件；captured={captured}"
+
+
+@override_settings(CLARIFICATION_TIMEOUT_HOURS=24, CLARIFICATION_TIMEOUT_EXIT_ACTION="fail")
+def test_fail_exit_does_not_redrive(fake_engine: _FakeEngine) -> None:
+    """fail 出口是终态，不得再续驱（续驱只属于 resume 分支）。"""
+    session = _make_session()
+    _make_round(session, age_hours=48)
+
+    call_command("expire_pending_clarifications")
+
+    assert fake_engine.advanced == []
+    assert ConvergenceSession.objects.get(id=session.id).status == ConvergenceSessionStatus.FAILED
 
 
 @override_settings(CLARIFICATION_TIMEOUT_HOURS=24, CLARIFICATION_TIMEOUT_EXIT_ACTION="fail")
@@ -250,7 +371,7 @@ def test_single_session_failure_does_not_block_others(monkeypatch: pytest.Monkey
 
     call_command("expire_pending_clarifications")
 
-    assert ConvergenceSession.objects.get(id=healthy.id).current_stage == "research"
+    assert ConvergenceSession.objects.get(id=healthy.id).current_stage == "done"
     assert (
         ConvergenceSession.objects.get(id=doomed.id).status
         == ConvergenceSessionStatus.WAITING_CLARIFICATION
@@ -288,7 +409,7 @@ def test_start_time_is_round_created_at_not_session_touch() -> None:
 
     call_command("expire_pending_clarifications")
 
-    assert ConvergenceSession.objects.get(id=session.id).current_stage == "research"
+    assert ConvergenceSession.objects.get(id=session.id).current_stage == "done"
 
 
 @override_settings(CLARIFICATION_TIMEOUT_HOURS=24)
@@ -299,7 +420,7 @@ def test_legacy_round_with_null_container_status_is_collected() -> None:
 
     call_command("expire_pending_clarifications")
 
-    assert ConvergenceSession.objects.get(id=session.id).current_stage == "research"
+    assert ConvergenceSession.objects.get(id=session.id).current_stage == "done"
     assert _timed_out_events(session) == 1
 
 
@@ -363,7 +484,7 @@ def test_delivery_failed_round_exits_immediately() -> None:
     call_command("expire_pending_clarifications")
 
     reloaded = ConvergenceSession.objects.get(id=session.id)
-    assert reloaded.current_stage == "research"
+    assert reloaded.current_stage == "done"
     assert reloaded.stage_state["clarification_exit"]["reason"] == "delivery_failed"
     assert _timed_out_events(session) == 1
 
@@ -378,7 +499,7 @@ def test_workflow_timeout_exits_immediately(project: Any) -> None:
     call_command("expire_pending_clarifications")
 
     reloaded = ConvergenceSession.objects.get(id=session.id)
-    assert reloaded.current_stage == "research"
+    assert reloaded.current_stage == "done"
     assert reloaded.stage_state["clarification_exit"]["reason"] == "workflow_timeout"
 
 
@@ -427,7 +548,7 @@ def test_limit_caps_processed_sessions() -> None:
     exited = [
         s
         for s in ConvergenceSession.objects.filter(id__in=[x.id for x in sessions])
-        if s.current_stage == "research"
+        if s.current_stage == "done"
     ]
     assert len(exited) == 1
 
@@ -459,7 +580,7 @@ def test_session_id_targets_single_session() -> None:
 
     call_command("expire_pending_clarifications", "--session-id", str(target.id))
 
-    assert ConvergenceSession.objects.get(id=target.id).current_stage == "research"
+    assert ConvergenceSession.objects.get(id=target.id).current_stage == "done"
     assert (
         ConvergenceSession.objects.get(id=other.id).status
         == ConvergenceSessionStatus.WAITING_CLARIFICATION
