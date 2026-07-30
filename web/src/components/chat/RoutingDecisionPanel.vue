@@ -205,7 +205,41 @@ function rowsOf(block: RoutingBlock): RoutingCandidate[] {
 
 const collapsed = ref(false)
 
-function variantOf(level: RoutingLevel): 'success' | 'warning' | 'secondary' {
+/** 降级是后端算好的事实；前端绝不按 router_version 或候选内容自行推断。 */
+const degraded = computed(() => trace.value?.degraded === true)
+
+const DEGRADED_BANNER_TITLE = '本次未经 LLM 推理，置信度仅供参考'
+
+/** 降级原因受控闭集 → 中文文案（与后端 classify_degrade_reason 字面对齐）。 */
+const DEGRADE_REASON_LABELS: Record<string, string> = {
+  timeout: '上游超时',
+  upstream_error: '网关错误',
+  provider_missing: '未配置模型',
+  unparsable: '解析失败',
+  no_node_index: '无能力树索引',
+  unknown: '未知原因',
+}
+
+// 未命中回退与 signalLabel 刻意相反：signalLabel 回显原始英文 key（新信号零
+// 前端改动即可展示），这里一律回到「未知原因」、绝不回显原始值。原因是降级
+// 原因的上游是异常分类，后端一旦出现闭集外的值（异常名或截断的上游响应体），
+// 回显即成为泄漏面（T-107-02）。
+const UNKNOWN_DEGRADE_REASON_LABEL = '未知原因'
+
+function degradeReasonLabel(key: string): string {
+  return DEGRADE_REASON_LABELS[key] ?? UNKNOWN_DEGRADE_REASON_LABEL
+}
+
+/** 空串表示「不渲染原因次行」（后端未给原因时只出主句）。 */
+const degradeReasonText = computed(() => {
+  const reason = trace.value?.degrade_reason
+  return reason ? degradeReasonLabel(reason) : ''
+})
+
+function variantOf(level: RoutingLevel): 'success' | 'warning' | 'secondary' | 'muted' {
+  // 灰化 = 「这个颜色信号本次不可信」；level 值本身不变
+  if (degraded.value)
+    return 'muted'
   if (level === 'high')
     return 'success'
   if (level === 'medium')
@@ -242,6 +276,17 @@ const CONFIDENCE_TOOLTIPS: Record<RoutingLevel, string> = {
   high: '高置信：首位分数与领先幅度均超过阈值，由分数确定性推导',
   medium: '中置信：首位分数达标但领先幅度不足，建议人工确认',
   low: '低置信：候选分数整体偏低，请人工选择',
+}
+
+/** 降级态覆盖版：分数与分级仍是真实的 Stage 0 事实，只是未经语义校验。 */
+const CONFIDENCE_TOOLTIPS_DEGRADED: Record<RoutingLevel, string> = {
+  high: '本次未经 LLM 推理：分级由检索分数确定性推导，未经语义校验，仅供参考',
+  medium: '本次未经 LLM 推理：首位领先幅度不足且未经语义校验，请人工确认',
+  low: '本次未经 LLM 推理：候选分数整体偏低，请人工选择',
+}
+
+function confidenceTooltip(level: RoutingLevel): string {
+  return degraded.value ? CONFIDENCE_TOOLTIPS_DEGRADED[level] : CONFIDENCE_TOOLTIPS[level]
 }
 
 function hasBreakdown(c: RoutingCandidate): boolean {
@@ -342,23 +387,48 @@ function onOpenManualSelect() {
     v-if="trace"
     class="relative my-2 rounded-md border border-zinc-200 bg-white/60 p-4 backdrop-blur"
   >
-    <button
-      type="button"
-      class="flex w-full items-center justify-between text-left text-sm font-medium text-zinc-800 transition-colors hover:text-zinc-950"
-      @click="collapsed = !collapsed"
-    >
-      <span class="inline-flex items-center gap-2">
-        <span>→ 路由决策（{{ allCandidates.length }} 个仓库相关）</span>
-        <span class="text-xs text-zinc-500">
-          高 {{ levelCounts.high }} · 中 {{ levelCounts.medium }} · 低 {{ levelCounts.low }}
+    <div class="flex w-full items-center gap-2">
+      <button
+        type="button"
+        class="flex flex-1 items-center justify-between text-left text-sm font-medium text-zinc-800 transition-colors hover:text-zinc-950"
+        @click="collapsed = !collapsed"
+      >
+        <span class="inline-flex items-center gap-2">
+          <span>→ 路由决策（{{ allCandidates.length }} 个仓库相关）</span>
+          <span class="text-xs text-zinc-500">
+            高 {{ levelCounts.high }} · 中 {{ levelCounts.medium }} · 低 {{ levelCounts.low }}
+          </span>
         </span>
-      </span>
-      <span class="text-xs text-zinc-400">
-        {{ collapsed ? '展开' : '收起' }}
-      </span>
-    </button>
+        <span class="text-xs text-zinc-400">
+          {{ collapsed ? '展开' : '收起' }}
+        </span>
+      </button>
+      <!-- 折叠也藏不住降级：收起时由这枚紧凑徽标承载该事实 -->
+      <Badge v-if="collapsed && degraded" variant="warning" class="shrink-0">
+        <span class="icon-[lucide--triangle-alert] size-3" />
+        降级
+      </Badge>
+    </div>
 
     <div v-if="!collapsed" class="mt-3 space-y-2">
+      <!-- 降级横幅：位置在候选之前，让用户先看到「置信度本次不可信」 -->
+      <div
+        v-if="degraded"
+        role="alert"
+        aria-live="polite"
+        class="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5"
+      >
+        <span class="icon-[lucide--triangle-alert] shrink-0 mt-0.5 text-amber-500" />
+        <div class="min-w-0 space-y-1">
+          <p class="text-sm font-medium text-foreground">
+            {{ DEGRADED_BANNER_TITLE }}
+          </p>
+          <p v-if="degradeReasonText" class="text-xs text-muted-foreground">
+            降级原因：{{ degradeReasonText }}
+          </p>
+        </div>
+      </div>
+
       <div v-if="trace.query" class="text-xs text-zinc-500">
         query: <span class="text-zinc-700">{{ trace.query }}</span>
         <span class="ml-2">阈值 {{ trace.threshold.toFixed(2) }}</span>
@@ -446,7 +516,7 @@ function onOpenManualSelect() {
                       </Badge>
                     </TooltipTrigger>
                     <TooltipContent class="max-w-[24rem] text-xs">
-                      {{ CONFIDENCE_TOOLTIPS[c.level] }}
+                      {{ confidenceTooltip(c.level) }}
                     </TooltipContent>
                   </Tooltip>
                   <Tooltip>
