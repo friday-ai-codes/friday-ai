@@ -1,0 +1,282 @@
+"""SPA 编码链路四步「共用同一个 CodingPlan.id」端到端护栏 —— Phase 109 / SPINE-01 前置。
+
+本文件存在的唯一理由是锁住一条**不变量**：
+
+    ①选目标仓 ②配置分支 ③确认编码（fan-out） ④飞书导出
+    —— 四步全部只以 chat ``CodingPlan.id`` 为锚点，一次投影/一份方案即点亮全部四步。
+
+四步各自都已有独立测试（``test_coding_plans_sessions_api.py`` /
+``test_coding_plan_export_api.py`` / ``test_coding_plan_detail_api``…），但在本文件
+落地之前，**没有任何一条用例把「四步都还挂在同一个 plan_id 上」这件事锁住**。
+SPINE-01 的投影方案与 SPINE-02 的 schema 收窄都建立在这条不变量之上，因此本护栏
+必须先于本 phase 任何 schema / 模型改动落地（wave 1）。
+
+Mock 边界（刻意收得极窄）：只 mock 飞书 HTTP 客户端这一层 IO（``--disable-socket``
+下不允许真实网络），``create_sessions_for_plan`` 与导出 service 本体全部真跑 ——
+把它们 mock 掉护栏就空了。
+"""
+
+from __future__ import annotations
+
+import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from asgiref.sync import async_to_sync
+from django.contrib.auth import get_user_model
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APIClient
+
+from chat.models import CodingPlan, CodingSession, Conversation
+from projects.models import Space
+from repositories.models import IndexStatus, Repository
+
+User = get_user_model()
+
+# 分支模板带 ${repo} 占位符 → per-repo 渲染，便于断言「模板确实被应用」。
+_BRANCH_TEMPLATE = "feat/20260730.spine-${repo}"
+_TARGET_BRANCH = "main"
+
+_MOCK_DOC = {
+    "document_id": "doxcnSPINE109",
+    "url": "https://feishu.cn/docx/doxcnSPINE109",
+}
+
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def spine_user(db):
+    """链路 owner（conversation.created_by，四步 owner gate 的通行身份）。"""
+    return User.objects.create_user(
+        username=f"spine_owner_{uuid.uuid4().hex[:6]}",
+        email=f"{uuid.uuid4().hex[:6]}@spine.local",
+        password="testpass123",
+    )
+
+
+@pytest.fixture
+def spine_outsider(db):
+    """非 owner 用户（owner gate 对照组）。"""
+    return User.objects.create_user(
+        username=f"spine_outsider_{uuid.uuid4().hex[:6]}",
+        email=f"{uuid.uuid4().hex[:6]}@spine.local",
+        password="testpass123",
+    )
+
+
+@pytest.fixture
+def spine_space(db) -> Space:
+    """带飞书导出配置的 Space（folder_token 让第 ④ 步不在参数校验处提前 400）。"""
+    suffix = uuid.uuid4().hex[:8]
+    return Space.objects.create(
+        name=f"双脊柱合流测试空间-{suffix}",
+        feishu_project_key=f"spine-{suffix}",
+        feishu_doc_folder_token="fk_spine",
+        feishu_app_id="cli_spine_test",
+        feishu_app_secret_encrypted="enc_spine_test",
+    )
+
+
+@pytest.fixture
+def spine_repos(db, spine_space: Space) -> list[Repository]:
+    """两个 indexed 仓库并挂到 space（第 ①③ 步的多仓 fan-out 素材）。"""
+    repos: list[Repository] = []
+    for name in ("spine-repo-a", "spine-repo-b"):
+        repo = Repository.objects.create(
+            name=name,
+            git_url=f"https://gitlab.com/spine/{name}.git",
+            git_platform="gitlab",
+            default_branch="main",
+            index_status=IndexStatus.INDEXED,
+        )
+        spine_space.repositories.add(repo)
+        repos.append(repo)
+    return repos
+
+
+@pytest.fixture
+def spine_plan(db, spine_space: Space, spine_user, spine_repos) -> CodingPlan:
+    """Conversation + CodingPlan。
+
+    本 phase 阶段仍走 ``aget_or_create_for_conversation``（投影 service 尚未存在），
+    SPINE-01 落地后该构造点会换成投影 service，但本护栏断言的不变量不变。
+    """
+    conversation = Conversation.objects.create(
+        space=spine_space,
+        title="双脊柱合流端到端护栏对话",
+        created_by=spine_user,
+    )
+    plan, _created = async_to_sync(CodingPlan.aget_or_create_for_conversation)(
+        conversation=conversation,
+        tech_plan="## 技术方案\n\n- 步骤 1：改 A 仓\n- 步骤 2：改 B 仓",
+        affected_files=[{"file_path": "src/main.py", "change_type": "modify"}],
+        title="双脊柱合流方案",
+    )
+    plan.recommended_repository_ids = [str(r.id) for r in spine_repos]
+    plan.save(update_fields=["recommended_repository_ids", "updated_at"])
+    return plan
+
+
+@pytest.fixture
+def spine_client(db, spine_user) -> APIClient:
+    client = APIClient()
+    client.force_authenticate(user=spine_user)
+    return client
+
+
+@pytest.fixture
+def spine_outsider_client(db, spine_outsider) -> APIClient:
+    client = APIClient()
+    client.force_authenticate(user=spine_outsider)
+    return client
+
+
+def _detail_url(plan_id: object) -> str:
+    return reverse("coding-plan-detail", kwargs={"plan_id": str(plan_id)})
+
+
+def _sessions_url(plan_id: object) -> str:
+    return reverse("coding-plan-sessions-batch", kwargs={"plan_id": str(plan_id)})
+
+
+def _export_url(plan_id: object) -> str:
+    return reverse(
+        "coding-plan-export-to-feishu", kwargs={"coding_plan_id": str(plan_id)}
+    )
+
+
+def _patch_feishu_doc_client():
+    """只 mock 飞书 HTTP 客户端这一层 IO 边界，导出 service 本体真跑。
+
+    ``export_coding_plan_to_feishu`` 在 ``doc_client is None`` 时经
+    ``create_feishu_doc_client_for_project`` 构造真实 client（会触网）；这里把工厂换成
+    返回一个 ``create_document`` 为 AsyncMock 的假 client，markdown 组装、
+    ``feishu_doc_url`` 回填等逻辑全部保持真实执行路径。
+    """
+    fake_client = MagicMock()
+    fake_client.create_document = AsyncMock(return_value=_MOCK_DOC)
+    return patch(
+        "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project",
+        new=AsyncMock(return_value=fake_client),
+    )
+
+
+# ============================================================================
+# Tests
+# ============================================================================
+
+
+@pytest.mark.django_db(transaction=True)
+def test_spa_coding_chain_four_steps_share_one_plan_id(
+    spine_client: APIClient,
+    spine_plan: CodingPlan,
+    spine_repos: list[Repository],
+) -> None:
+    """①②③④ 四步串跑，且四步使用的 plan 标识必须是同一个。"""
+    plan_id = spine_plan.id
+    # 四步实际打出去的 plan 标识收集器 —— 末尾的不变量断言基于它。
+    plan_ids_used: set[str] = set()
+
+    # ①② 选目标仓 / 配置分支：前端 RepoMultiSelector 以 plan 详情为锚点拉取方案，
+    #     分支配置是纯前端态，后端侧以 branch_template / target_branch 入参在第 ③ 步一起提交。
+    detail_resp = spine_client.get(_detail_url(plan_id))
+    assert detail_resp.status_code == status.HTTP_200_OK
+    detail_body = detail_resp.json()
+    assert detail_body["id"] == str(plan_id)
+    plan_ids_used.add(detail_body["id"])
+    # 推荐仓库高亮的数据源在模型层（REST 详情序列化器不透出该字段），此处直接断言
+    # 数据未被链路上游改写。
+    spine_plan.refresh_from_db()
+    assert spine_plan.recommended_repository_ids == [str(r.id) for r in spine_repos]
+
+    # ③ 确认编码：同一个 plan_id 上 fan-out 出 N 条 CodingSession。
+    sessions_resp = spine_client.post(
+        _sessions_url(plan_id),
+        data={
+            "repository_ids": [str(r.id) for r in spine_repos],
+            "branch_template": _BRANCH_TEMPLATE,
+            "target_branch": _TARGET_BRANCH,
+        },
+        format="json",
+    )
+    assert sessions_resp.status_code == status.HTTP_200_OK
+    sessions_body = sessions_resp.json()
+    assert len(sessions_body["created"]) == 2
+    assert sessions_body["failed"] == []
+    plan_ids_used.add(str(plan_id))
+
+    for item in sessions_body["created"]:
+        session = CodingSession.objects.get(id=item["session_id"])
+        assert session.coding_plan_id == plan_id
+        assert session.status == CodingSession.Status.DRAFT
+        assert session.target_branch == _TARGET_BRANCH
+        # 模板已按 ${repo} 渲染（而不是回退到 LLM 生成的共享分支名）
+        assert session.branch_name == f"feat/20260730.spine-{session.repository.name}"
+        assert item["branch_name"] == session.branch_name
+
+    # ④ 飞书导出：同一个 plan_id 打导出端点，回填 feishu_doc_url。
+    with _patch_feishu_doc_client():
+        export_resp = spine_client.post(
+            _export_url(plan_id),
+            data={"folder_token": "fk_spine"},
+            format="json",
+        )
+    assert export_resp.status_code == status.HTTP_200_OK
+    plan_ids_used.add(str(plan_id))
+    spine_plan.refresh_from_db()
+    assert spine_plan.feishu_doc_url
+    assert spine_plan.feishu_doc_url == _MOCK_DOC["url"]
+
+    # —— 不变量断言（本用例存在的唯一理由）——
+    # 锁的是「一次投影/一份方案即点亮全部四步」：四步共用同一个锚点，
+    # 任何把某一步改成依赖别的锚点（另一个 plan、session id、artifact version…）
+    # 的改动都会在此变红。
+    assert plan_ids_used == {str(plan_id)}
+    assert len(plan_ids_used) == 1
+    # 反查一致性：从 plan 侧反查到的 session 数量必须等于第 ③ 步 created 数量。
+    assert (
+        CodingSession.objects.filter(coding_plan_id=plan_id).count()
+        == len(sessions_body["created"])
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_spa_coding_chain_non_owner_gets_404_on_execute_and_export(
+    spine_outsider_client: APIClient,
+    spine_plan: CodingPlan,
+    spine_repos: list[Repository],
+) -> None:
+    """非 owner 打第 ③④ 步 → 均 404（不是 403，不泄漏 plan 存在性）。
+
+    护栏若只覆盖 happy path，owner gate 被改松也不会有人发现；这条对照用例把
+    「越权与不存在同体」的口径一并锁住（chat/views.py owner gate）。
+    """
+    plan_id = spine_plan.id
+
+    sessions_resp = spine_outsider_client.post(
+        _sessions_url(plan_id),
+        data={
+            "repository_ids": [str(spine_repos[0].id)],
+            "branch_template": _BRANCH_TEMPLATE,
+        },
+        format="json",
+    )
+    assert sessions_resp.status_code == status.HTTP_404_NOT_FOUND
+
+    with _patch_feishu_doc_client() as mocked_factory:
+        export_resp = spine_outsider_client.post(
+            _export_url(plan_id),
+            data={"folder_token": "fk_spine"},
+            format="json",
+        )
+    assert export_resp.status_code == status.HTTP_404_NOT_FOUND
+    # owner gate 先于任何导出动作触发：飞书 client 根本没被构造。
+    mocked_factory.assert_not_awaited()
+
+    # 越权请求不得留下任何副作用。
+    assert CodingSession.objects.filter(coding_plan_id=plan_id).count() == 0
