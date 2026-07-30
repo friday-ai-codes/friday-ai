@@ -2,24 +2,144 @@
 
 coding-plan workflow：``create_coding_plan`` 不再创建 ``CodingSession``，
 session 由前端通过 fan-out endpoint
-``POST /api/chat/coding-plans/{plan_id}/sessions/`` 创建。本测试文件断言
-工具新行为（仅产 plan + recommended_repositories）以及 update 工具仍
-能在 session 已存在时同步刷新它们。
+``POST /api/chat/coding-plans/{plan_id}/sessions/`` 创建。
+
+**SPINE-02（Phase 109）**：两个工具的创作半边已在 schema 层砍掉 —— 入参不再有
+``tech_plan`` / ``affected_files``，改为必填 ``artifact_version_id``。因此本文件的
+用例全部按「先造一个编排产出的 ``ArtifactVersion``，再让工具把它投影 / re-bind」
+的形状造数。原有覆盖意图（不产 session、space / repository / conversation 三段校验、
+推荐仓库四种来源、dual-id 兼容键）逐条保留。
+
+分组（``-k`` 选择器）：
+
+- ``reject``：无来源 / 非法来源 / 跨会话的创作尝试一律被拒绝且留痕
+- ``update``：re-bind 成功、版本已被占用、legacy session_id 兼容路径
 """
 
 import uuid
+from typing import Any
 
 import pytest
+import structlog
 from asgiref.sync import sync_to_async
+from django.contrib.auth import get_user_model
+from structlog.testing import capture_logs
 
-from chat.models import CodingPlan, CodingSession, Conversation
+from chat.models import CodingPlan, CodingPlanProvenance, CodingSession, Conversation
+from delivery.models import (
+    Artifact,
+    ArtifactVersion,
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
+    ConvergenceSessionStatus,
+    WorkItem,
+    WorkItemOrigin,
+)
 from repositories.models import Repository
+
+User = get_user_model()
+
+_AUTHORING_REJECTED_EVENT = "coding_plan_authoring_attempt_rejected"
+
+
+# ============================================================================
+# 造数 helper —— 编排来源链（WorkItem → Artifact → ArtifactVersion）
+# ============================================================================
+
+
+def _task(
+    *,
+    repository_id: str = "",
+    files: Any = None,
+    task_id: str = "t1",
+) -> dict[str, Any]:
+    """构造一条 §7 ``execution_plan[]`` task（只填投影映射关心的键）。"""
+    return {
+        "id": task_id,
+        "name": "任务",
+        "repository_id": repository_id,
+        "repository_name": f"repo-{repository_id or 'none'}",
+        "branch_strategy": "feature",
+        "coding_instruction": "实现任务",
+        "files": [] if files is None else files,
+    }
+
+
+def _content(*tasks: dict[str, Any], title: str = "编排产出的技术方案") -> dict[str, Any]:
+    return {
+        "title": title,
+        "summary": "由完整编排链路产出的方案正文。",
+        "execution_plan": list(tasks),
+        "compat_risks": [],
+    }
+
+
+def _mk_artifact_version(
+    *,
+    conversation: Conversation | None,
+    content: Any = None,
+    artifact: Artifact | None = None,
+    version_no: int = 1,
+) -> ArtifactVersion:
+    """造一条完整来源链；``conversation`` 决定投影的归属会话与 owner。"""
+    session = ConvergenceSession.objects.create(
+        process_type="technical_plan",
+        entrypoint=(
+            ConvergenceSessionEntrypoint.CHAT
+            if conversation is not None
+            else ConvergenceSessionEntrypoint.WORKFLOW
+        ),
+        current_stage="merge",
+        status=ConvergenceSessionStatus.DONE,
+        conversation_id=conversation.id if conversation is not None else None,
+    )
+    if artifact is None:
+        artifact = Artifact.objects.create(
+            artifact_type="technical_plan",
+            work_item=WorkItem.objects.create(
+                feishu_project_key=f"pk-{uuid.uuid4().hex[:8]}",
+                work_item_type="story",
+                work_item_id=int(uuid.uuid4().int % 10_000_000),
+                origin=WorkItemOrigin.MANUAL,
+                title="需求标题",
+            ),
+            title="技术方案",
+        )
+    return ArtifactVersion.objects.create(
+        artifact=artifact,
+        version_no=version_no,
+        content=_content(_task(files=[{"path": "src/api.py", "action": "create"}]))
+        if content is None
+        else content,
+        produced_by_session_id=str(session.id),
+    )
+
+
+_amk_artifact_version = sync_to_async(_mk_artifact_version)
 
 
 @pytest.fixture
-def conversation(project):
-    """创建绑定到 project 的测试 Conversation。"""
-    return Conversation.objects.create(space=project, title="测试编码对话")
+def plan_owner(db):
+    """会话归属用户 —— 归属判定下移进投影 service 后，造数必须有明确 owner。"""
+    return User.objects.create_user(
+        username=f"coding_owner_{uuid.uuid4().hex[:8]}",
+        email=f"{uuid.uuid4().hex[:8]}@coding.local",
+        password="testpass123",
+    )
+
+
+@pytest.fixture
+def conversation(project, plan_owner):
+    """创建绑定到 project 的测试 Conversation（带 created_by）。
+
+    ``created_by`` 是必需的：``create_coding_plan`` 取不到请求上下文用户时退回
+    conversation 的创建者作为归属主体，而 service 侧的归属判定**拒绝**空身份。
+    """
+    return Conversation.objects.create(
+        space=project,
+        title="测试编码对话",
+        created_by=plan_owner,
+    )
 
 
 @pytest.fixture
@@ -33,28 +153,41 @@ def other_repository(db):
     )
 
 
+@pytest.fixture
+def as_owner(plan_owner):
+    """把 ``plan_owner`` 绑成当前请求上下文用户。
+
+    ``update_coding_plan`` 的归属主体**只**取请求上下文（plan 定位入参由模型提供，
+    退回「被改写 plan 的会话创建者」等于让攻击者自选身份），因此测 update 路径必须
+    显式绑定上下文。生产侧写入者是 ``common.log_context`` 中间件。
+    """
+    tokens = structlog.contextvars.bind_contextvars(user_id=str(plan_owner.id))
+    yield plan_owner
+    structlog.contextvars.reset_contextvars(**tokens)
+
+
 # ============================================================================
-# create_coding_plan 测试（coding-plan workflow 后行为）
+# create_coding_plan 测试（SPINE-02 收窄后：投影而非撰写）
 # ============================================================================
 
 
 @pytest.mark.django_db(transaction=True)
 class TestCreateCodingPlan:
-    """create_coding_plan @tool 测试 — 工具只产 CodingPlan，不再 acreate session。"""
+    """create_coding_plan @tool 测试 — 工具只把编排产出投影成 CodingPlan。"""
 
     @pytest.mark.asyncio
     async def test_create_coding_plan_success_returns_plan_only(
         self, project, repository, conversation
     ):
-        """传入有效参数 → success=True，返回 plan_id 非空、session_id 为 None。"""
+        """传入有效来源版本 → success=True，返回 plan_id 非空、session_id 为 None。"""
         from agents.tools.coding_tools import create_coding_plan
 
+        version = await _amk_artifact_version(conversation=conversation)
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## 技术方案\n- 修改 main.py",
-            affected_files=[{"path": "src/main.py", "change_type": "modify"}],
+            artifact_version_id=str(version.id),
         )
         assert result.success is True
         assert result.output["coding_plan_id"]
@@ -65,61 +198,126 @@ class TestCreateCodingPlan:
         assert result.output["branch_name"] == ""
 
     @pytest.mark.asyncio
+    async def test_create_coding_plan_payload_key_set_is_frozen(
+        self, project, repository, conversation
+    ):
+        """返回 payload 的 10 个键一个不少 —— 前端 ``codingPlanData`` 与历史消息解析
+        依赖这套键形，删键会静默降级（SPINE-02 只砍创作半边，执行半边键形不变）。"""
+        from agents.tools.coding_tools import create_coding_plan
+
+        version = await _amk_artifact_version(conversation=conversation)
+        result = await create_coding_plan(
+            space_id=str(project.id),
+            conversation_id=str(conversation.id),
+            repository_id=str(repository.id),
+            artifact_version_id=str(version.id),
+        )
+        assert result.success is True
+        assert set(result.output) == {
+            "coding_plan_id",
+            "coding_session_id",
+            "session_id",
+            "repository_id",
+            "repository_name",
+            "status",
+            "branch_name",
+            "recommended_repository_ids",
+            "recommended_repositories",
+            "recommended_source",
+            "message",
+        }
+
+    @pytest.mark.asyncio
     async def test_create_coding_plan_does_not_create_session(
         self, project, repository, conversation
     ):
         """工具不再 acreate CodingSession：调用前后 DB 计数不变。"""
         from agents.tools.coding_tools import create_coding_plan
 
+        version = await _amk_artifact_version(conversation=conversation)
         before = await CodingSession.objects.acount()
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## 方案",
-            affected_files=[{"file_path": "x.py", "change_type": "modify"}],
+            artifact_version_id=str(version.id),
         )
         after = await CodingSession.objects.acount()
         assert result.success is True
         assert before == after  # 工具不再产 session
 
     @pytest.mark.asyncio
-    async def test_create_coding_plan_persists_plan_with_affected_files(
+    async def test_create_coding_plan_persists_projected_body(
         self, project, repository, conversation
     ):
-        """工具会写 CodingPlan，且 affected_files 经过归一化。"""
+        """正文与影响文件一律来自来源版本的渲染结果（工具不接受正文入参）。
+
+        同时锁住 ``action → change_type`` 的枚举映射（``create → add``）——
+        漏做该转换不会崩，只会在界面上静默显示成 ``create``。
+        """
         from agents.tools.coding_tools import create_coding_plan
 
+        version = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(
+                _task(
+                    files=[
+                        {"path": "src/a.py", "action": "create"},
+                        {"path": "src/b.py", "action": "modify"},
+                    ]
+                ),
+                title="投影正文用例",
+            ),
+        )
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## 方案内容",
-            affected_files=[
-                {"path": "src/a.py", "change_type": "add"},
-                {"path": "src/b.py", "change_type": "modify"},
-            ],
+            artifact_version_id=str(version.id),
         )
+        assert result.success is True
         plan = await CodingPlan.objects.aget(id=result.output["coding_plan_id"])
-        assert plan.tech_plan == "## 方案内容"
-        assert len(plan.affected_files) == 2
-        # path → file_path 归一化
-        assert plan.affected_files[0]["file_path"] == "src/a.py"
+        assert "投影正文用例" in plan.tech_plan
+        assert plan.affected_files == [
+            {"file_path": "src/a.py", "change_type": "add"},
+            {"file_path": "src/b.py", "change_type": "modify"},
+        ]
+        # 投影来源可追溯，且 provenance 标记为编排产出（不是徒手撰写）。
+        assert str(plan.source_artifact_version_id) == str(version.id)
+        assert plan.provenance == CodingPlanProvenance.ORCHESTRATED
 
     @pytest.mark.asyncio
-    async def test_create_coding_plan_project_not_found(
-        self, repository, conversation
+    async def test_create_coding_plan_is_idempotent_on_same_source_version(
+        self, project, repository, conversation
     ):
-        """传入不存在的 project_id，返回 success=False。"""
+        """同一来源版本连续投影两次 → 同一条 plan（幂等键是 source_artifact_version_id）。"""
         from agents.tools.coding_tools import create_coding_plan
 
-        fake_id = str(uuid.uuid4())
-        result = await create_coding_plan(
-            space_id=fake_id,
+        version = await _amk_artifact_version(conversation=conversation)
+        kwargs = dict(
+            space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## 方案",
-            affected_files=[],
+            artifact_version_id=str(version.id),
+        )
+        first = await create_coding_plan(**kwargs)
+        second = await create_coding_plan(**kwargs)
+        assert first.success and second.success
+        assert first.output["coding_plan_id"] == second.output["coding_plan_id"]
+        assert first.output["coding_session_id"] is None
+        assert second.output["coding_session_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_create_coding_plan_project_not_found(self, repository, conversation):
+        """传入不存在的 space_id，返回 success=False。"""
+        from agents.tools.coding_tools import create_coding_plan
+
+        version = await _amk_artifact_version(conversation=conversation)
+        result = await create_coding_plan(
+            space_id=str(uuid.uuid4()),
+            conversation_id=str(conversation.id),
+            repository_id=str(repository.id),
+            artifact_version_id=str(version.id),
         )
         assert result.success is False
         assert "not found" in result.error.lower()
@@ -128,34 +326,47 @@ class TestCreateCodingPlan:
     async def test_create_coding_plan_repo_not_in_project(
         self, project, other_repository, conversation
     ):
-        """传入不属于该 project 的 repository_id，返回 success=False。
+        """传入不属于该 space 的 repository_id，返回 success=False。
 
         repository_id 现在 optional，但传入后仍校验 space 归属。
         """
         from agents.tools.coding_tools import create_coding_plan
 
+        version = await _amk_artifact_version(conversation=conversation)
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(other_repository.id),
-            tech_plan="## 方案",
-            affected_files=[],
+            artifact_version_id=str(version.id),
         )
         assert result.success is False
         assert "does not belong" in (result.error or "")
 
     @pytest.mark.asyncio
-    async def test_create_coding_plan_without_repository_id(
-        self, project, conversation
-    ):
+    async def test_create_coding_plan_conversation_not_found(self, project, repository):
+        """传入不存在的 conversation_id，返回 success=False。"""
+        from agents.tools.coding_tools import create_coding_plan
+
+        version = await _amk_artifact_version(conversation=None)
+        result = await create_coding_plan(
+            space_id=str(project.id),
+            conversation_id=str(uuid.uuid4()),
+            repository_id=str(repository.id),
+            artifact_version_id=str(version.id),
+        )
+        assert result.success is False
+        assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_create_coding_plan_without_repository_id(self, project, conversation):
         """coding-plan workflow：repository_id 可省略，工具仍能产生 plan。"""
         from agents.tools.coding_tools import create_coding_plan
 
+        version = await _amk_artifact_version(conversation=conversation)
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
-            tech_plan="## 不传仓库的方案",
-            affected_files=[{"file_path": "any.py", "change_type": "modify"}],
+            artifact_version_id=str(version.id),
         )
         assert result.success is True
         assert result.output["coding_plan_id"]
@@ -176,12 +387,12 @@ class TestCreateCodingPlan:
         # 把 other_repository 也加入 project，让校验通过
         await sync_to_async(project.repositories.add)(other_repository)
 
+        version = await _amk_artifact_version(conversation=conversation)
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## merge",
-            affected_files=[{"file_path": "x.py", "change_type": "modify"}],
+            artifact_version_id=str(version.id),
             recommended_repository_ids=[str(other_repository.id)],
         )
         assert result.success is True
@@ -191,29 +402,119 @@ class TestCreateCodingPlan:
 
 
 # ============================================================================
-# update_coding_plan 测试 — session 由 fixture 显式手建
+# reject —— 无来源 / 非法来源 / 跨会话的创作尝试（SPINE-02 留痕）
 # ============================================================================
 
 
-@pytest.fixture
-def draft_coding_session(conversation, repository):
-    """创建 draft 状态的 CodingSession 供 update 测试使用。
+@pytest.mark.django_db(transaction=True)
+class TestCreateCodingPlanRejectsAuthoring:
+    """schema 层收窄后仍可能被尝试的四种「无正当来源」路径，全部 fail-closed + 留痕。"""
 
-    workflow update 起，session 不再由 create_coding_plan 工具创建，
-    所以测 update 路径时直接在 fixture 里 acreate 一条。
-    """
-    return CodingSession.objects.create(
-        conversation=conversation,
-        repository=repository,
-        tech_plan="## 初始方案",
-        affected_files=[{"file_path": "src/old.py", "change_type": "modify"}],
-        branch_name="coding-test1234",
-    )
+    @pytest.mark.asyncio
+    async def test_reject_missing_artifact_version_id(self, project, repository, conversation):
+        from agents.tools.coding_tools import create_coding_plan
+
+        with capture_logs() as logs:
+            result = await create_coding_plan(
+                space_id=str(project.id),
+                conversation_id=str(conversation.id),
+                repository_id=str(repository.id),
+                artifact_version_id="",
+            )
+        assert result.success is False
+        assert "artifact_version_id" in (result.error or "")
+        assert _AUTHORING_REJECTED_EVENT in [entry.get("event") for entry in logs]
+        assert await CodingPlan.objects.acount() == 0
+
+    @pytest.mark.asyncio
+    async def test_reject_unknown_artifact_version_id(self, project, repository, conversation):
+        from agents.tools.coding_tools import create_coding_plan
+
+        with capture_logs() as logs:
+            result = await create_coding_plan(
+                space_id=str(project.id),
+                conversation_id=str(conversation.id),
+                repository_id=str(repository.id),
+                artifact_version_id=str(uuid.uuid4()),
+            )
+        assert result.success is False
+        assert "artifact_version_not_found" in (result.error or "")
+        rejected = [e for e in logs if e.get("event") == _AUTHORING_REJECTED_EVENT]
+        assert rejected, "无来源尝试必须留痕"
+        assert rejected[0]["category"] == "caller"
+        assert rejected[0]["component"] == "agents"
+        assert await CodingPlan.objects.acount() == 0
+
+    @pytest.mark.asyncio
+    async def test_reject_source_content_is_not_dict(self, project, repository, conversation):
+        """来源版本的 ``content`` 非 dict → 与「不存在」同一机器码（fail-closed）。"""
+        from agents.tools.coding_tools import create_coding_plan
+
+        version = await _amk_artifact_version(
+            conversation=conversation,
+            content="不是 dict 的正文",
+        )
+        with capture_logs() as logs:
+            result = await create_coding_plan(
+                space_id=str(project.id),
+                conversation_id=str(conversation.id),
+                repository_id=str(repository.id),
+                artifact_version_id=str(version.id),
+            )
+        assert result.success is False
+        assert _AUTHORING_REJECTED_EVENT in [entry.get("event") for entry in logs]
+        assert await CodingPlan.objects.acount() == 0
+
+    @pytest.mark.asyncio
+    async def test_reject_cross_conversation_source_without_leaking_body(
+        self, project, repository, conversation, plan_owner
+    ):
+        """工具以 A 会话的来源版本 + B 的用户上下文调用 → 拒绝且 error 不回显他人正文。
+
+        工具路径与 HTTP 端点共享 service 内的同一道归属判定
+        （``artifact_version_forbidden``），这条用例是「工具没有第二条绕行路」的证据。
+        """
+        from agents.tools.coding_tools import create_coding_plan
+
+        secret_title = "用户 A 的机密方案标题"
+        version = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(
+                _task(files=[{"path": "secret/plan.py", "action": "create"}]),
+                title=secret_title,
+            ),
+        )
+        intruder = await sync_to_async(User.objects.create_user)(
+            username=f"intruder_{uuid.uuid4().hex[:8]}",
+            email=f"{uuid.uuid4().hex[:8]}@coding.local",
+            password="testpass123",
+        )
+        tokens = structlog.contextvars.bind_contextvars(user_id=str(intruder.id))
+        try:
+            with capture_logs() as logs:
+                result = await create_coding_plan(
+                    space_id=str(project.id),
+                    conversation_id=str(conversation.id),
+                    repository_id=str(repository.id),
+                    artifact_version_id=str(version.id),
+                )
+        finally:
+            structlog.contextvars.reset_contextvars(**tokens)
+
+        assert result.success is False
+        assert "artifact_version_forbidden" in (result.error or "")
+        assert secret_title not in (result.error or "")
+        assert "secret/plan.py" not in (result.error or "")
+        assert _AUTHORING_REJECTED_EVENT in [entry.get("event") for entry in logs]
+        assert await CodingPlan.objects.acount() == 0
 
 
-def _mk_session_for_plan(
-    *, conversation, repository, plan, status=None, branch_name="manual-test"
-):
+# ============================================================================
+# update —— re-bind 到新的编排方案版本
+# ============================================================================
+
+
+def _mk_session_for_plan(*, conversation, repository, plan, status=None, branch_name="manual-test"):
     """同步辅助：在 plan 上手建一条 CodingSession（替代旧路径里 create_coding_plan
     顺便产 session 的副作用）。"""
     return CodingSession.objects.create(
@@ -227,140 +528,38 @@ def _mk_session_for_plan(
     )
 
 
+@pytest.fixture
+def draft_coding_session(conversation, repository):
+    """创建 draft 状态、**未关联 plan** 的 CodingSession（legacy 兼容路径造数）。"""
+    return CodingSession.objects.create(
+        conversation=conversation,
+        repository=repository,
+        tech_plan="## 初始方案",
+        affected_files=[{"file_path": "src/old.py", "change_type": "modify"}],
+        branch_name="coding-test1234",
+    )
+
+
 @pytest.mark.django_db(transaction=True)
 class TestUpdateCodingPlan:
-    """update_coding_plan @tool 测试（兼容 session_id 旧路径）。"""
+    """update_coding_plan @tool 测试 —— 语义收窄为 re-bind（不接受正文）。"""
 
     @pytest.mark.asyncio
-    async def test_update_coding_plan_success(self, draft_coding_session):
-        """通过旧 session_id 路径更新 draft session，触发 plan 创建并同步字段。"""
-        from agents.tools.coding_tools import update_coding_plan
-
-        result = await update_coding_plan(
-            session_id=str(draft_coding_session.id),
-            tech_plan="## 更新后方案\n- 新步骤",
-            affected_files=[{"path": "src/new.py", "change_type": "add"}],
-        )
-        assert result.success is True
-        assert "coding_plan_id" in result.output
-
-        # 验证数据库（兼容字段同步刷新）
-        await draft_coding_session.arefresh_from_db()
-        assert draft_coding_session.tech_plan == "## 更新后方案\n- 新步骤"
-        assert draft_coding_session.coding_plan_id is not None
-
-    @pytest.mark.asyncio
-    async def test_update_coding_plan_session_not_found(self):
-        """传入不存在的 session_id 返回 error。"""
-        from agents.tools.coding_tools import update_coding_plan
-
-        fake_id = str(uuid.uuid4())
-        result = await update_coding_plan(
-            session_id=fake_id,
-            tech_plan="## 方案",
-            affected_files=[],
-        )
-        assert result.success is False
-        assert "not found" in result.error.lower()
-
-
-# ============================================================================
-# implementation — CodingPlan dual-id + schema 归一化 + 多 session 同步
-# ============================================================================
-
-
-@pytest.mark.django_db(transaction=True)
-class TestPhaseCodingPlanIntegration:
-    """create / update 切换到 CodingPlan 域。
-
-    coding-plan workflow：create 工具不再产 session；update 仍能同步既有
-    session（由 fixture 或本类内 _mk_session_for_plan 手建）。
-    """
-
-    @pytest.mark.asyncio
-    async def test_create_coding_plan_returns_dual_ids(
-        self, project, repository, conversation
+    async def test_update_coding_plan_rebinds_by_plan_id(
+        self, project, repository, conversation, as_owner
     ):
-        """返回 payload 同时含 coding_plan_id 与 session_id alias（coding-plan workflow 后两者都为 None）。"""
-        from agents.tools.coding_tools import create_coding_plan
-
-        result = await create_coding_plan(
-            space_id=str(project.id),
-            conversation_id=str(conversation.id),
-            repository_id=str(repository.id),
-            tech_plan="## dual id 用例",
-            affected_files=[{"file_path": "a.py", "change_type": "add"}],
-        )
-        assert result.success is True
-        assert "coding_plan_id" in result.output
-        assert "coding_session_id" in result.output
-        assert "session_id" in result.output
-        # coding-plan workflow：工具不产 session，两个 alias 都是 None
-        assert result.output["coding_session_id"] is None
-        assert result.output["session_id"] is None
-        assert result.output["coding_session_id"] == result.output["session_id"]
-
-    @pytest.mark.asyncio
-    async def test_create_coding_plan_normalizes_legacy_path_key(
-        self, project, repository, conversation
-    ):
-        """旧 path 入参自动归一化为 file_path，落库到 plan 是 file_path。"""
-        from agents.tools.coding_tools import create_coding_plan
-
-        result = await create_coding_plan(
-            space_id=str(project.id),
-            conversation_id=str(conversation.id),
-            repository_id=str(repository.id),
-            tech_plan="## 归一化用例",
-            affected_files=[{"path": "legacy.py", "change_type": "modify"}],
-        )
-        assert result.success is True
-        plan = await CodingPlan.objects.aget(id=result.output["coding_plan_id"])
-        assert plan.affected_files[0]["file_path"] == "legacy.py"
-        assert "path" not in plan.affected_files[0]
-
-    @pytest.mark.asyncio
-    async def test_create_coding_plan_dedupes_same_tech_plan_in_same_conversation(
-        self, project, repository, conversation
-    ):
-        """同一 conversation 内连续两次相同 tech_plan：plan_id 相同（aget_or_create 幂等）。
-
-        coding-plan workflow：session 不再由工具创建，两次返回的 session_id
-        都是 None；plan 维度的幂等行为保持。
-        """
-        from agents.tools.coding_tools import create_coding_plan
-
-        kwargs = dict(
-            space_id=str(project.id),
-            conversation_id=str(conversation.id),
-            repository_id=str(repository.id),
-            tech_plan="## 完全相同的方案",
-            affected_files=[{"file_path": "a.py", "change_type": "modify"}],
-        )
-        first = await create_coding_plan(**kwargs)
-        second = await create_coding_plan(**kwargs)
-        assert first.success and second.success
-        assert first.output["coding_plan_id"] == second.output["coding_plan_id"]
-        assert first.output["coding_session_id"] is None
-        assert second.output["coding_session_id"] is None
-
-    @pytest.mark.asyncio
-    async def test_update_coding_plan_by_plan_id(
-        self, project, repository, conversation
-    ):
-        """coding_plan_id 直接路由路径：plan 字段更新 + draft session 同步。
-
-        coding-plan workflow：先 create_coding_plan 拿 plan_id，再手建一条
-        draft session 关联 plan，最后用 update_coding_plan 同步两边。
-        """
+        """coding_plan_id 路径：plan 正文换成新版本渲染结果 + draft session 同步。"""
         from agents.tools.coding_tools import create_coding_plan, update_coding_plan
 
+        v1 = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(_task(files=[{"path": "v1.py", "action": "create"}]), title="方案 v1"),
+        )
         created = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## 原方案",
-            affected_files=[{"file_path": "old.py", "change_type": "modify"}],
+            artifact_version_id=str(v1.id),
         )
         plan_id = created.output["coding_plan_id"]
         plan = await CodingPlan.objects.aget(id=plan_id)
@@ -371,79 +570,141 @@ class TestPhaseCodingPlanIntegration:
             plan=plan,
         )
 
+        v2 = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(_task(files=[{"path": "v2.py", "action": "delete"}]), title="方案 v2"),
+        )
         result = await update_coding_plan(
             coding_plan_id=plan_id,
-            tech_plan="## 新方案",
-            affected_files=[{"file_path": "new.py", "change_type": "add"}],
+            artifact_version_id=str(v2.id),
         )
         assert result.success is True
         assert result.output["coding_plan_id"] == plan_id
         assert result.output["synced_sessions_count"] >= 1
 
-        plan_refreshed = await CodingPlan.objects.aget(id=plan_id)
-        assert plan_refreshed.tech_plan == "## 新方案"
-        assert plan_refreshed.affected_files[0]["file_path"] == "new.py"
+        refreshed = await CodingPlan.objects.aget(id=plan_id)
+        assert "方案 v2" in refreshed.tech_plan
+        assert refreshed.affected_files == [{"file_path": "v2.py", "change_type": "delete"}]
+        assert str(refreshed.source_artifact_version_id) == str(v2.id)
+        assert refreshed.provenance == CodingPlanProvenance.ORCHESTRATED
 
         session_refreshed = await CodingSession.objects.aget(id=session.id)
-        assert session_refreshed.tech_plan == "## 新方案"
-        assert session_refreshed.affected_files[0]["file_path"] == "new.py"
+        assert "方案 v2" in session_refreshed.tech_plan
+        assert session_refreshed.affected_files[0]["file_path"] == "v2.py"
+
+    @pytest.mark.asyncio
+    async def test_update_coding_plan_target_version_already_projected(
+        self, project, repository, conversation, as_owner
+    ):
+        """目标版本已被另一条 plan 占用 → fail-closed，两边正文都不被改写。"""
+        from agents.tools.coding_tools import create_coding_plan, update_coding_plan
+
+        v1 = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(_task(files=[{"path": "a.py", "action": "modify"}]), title="方案 A"),
+        )
+        v2 = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(_task(files=[{"path": "b.py", "action": "modify"}]), title="方案 B"),
+        )
+        first = await create_coding_plan(
+            space_id=str(project.id),
+            conversation_id=str(conversation.id),
+            artifact_version_id=str(v1.id),
+        )
+        second = await create_coding_plan(
+            space_id=str(project.id),
+            conversation_id=str(conversation.id),
+            artifact_version_id=str(v2.id),
+        )
+        plan1_id, plan2_id = first.output["coding_plan_id"], second.output["coding_plan_id"]
+        plan1_body = (await CodingPlan.objects.aget(id=plan1_id)).tech_plan
+        plan2_body = (await CodingPlan.objects.aget(id=plan2_id)).tech_plan
+
+        result = await update_coding_plan(
+            coding_plan_id=plan1_id,
+            artifact_version_id=str(v2.id),
+        )
+        assert result.success is False
+        assert "artifact_version_already_projected" in (result.error or "")
+        assert (await CodingPlan.objects.aget(id=plan1_id)).tech_plan == plan1_body
+        assert (await CodingPlan.objects.aget(id=plan2_id)).tech_plan == plan2_body
 
     @pytest.mark.asyncio
     async def test_update_coding_plan_by_legacy_session_id(
-        self, project, repository, conversation
+        self, draft_coding_session, conversation, as_owner
     ):
-        """旧 session_id 路径：自动找到/回填 plan，返回 coding_plan_id。"""
-        from agents.tools.coding_tools import create_coding_plan, update_coding_plan
+        """legacy session_id 路径：自动回填 plan 并 re-bind 到指定来源版本。"""
+        from agents.tools.coding_tools import update_coding_plan
 
-        created = await create_coding_plan(
-            space_id=str(project.id),
-            conversation_id=str(conversation.id),
-            repository_id=str(repository.id),
-            tech_plan="## 旧路径",
-            affected_files=[{"file_path": "x.py", "change_type": "modify"}],
-        )
-        plan_id = created.output["coding_plan_id"]
-        plan = await CodingPlan.objects.aget(id=plan_id)
-        session = await sync_to_async(_mk_session_for_plan)(
+        version = await _amk_artifact_version(
             conversation=conversation,
-            repository=repository,
-            plan=plan,
+            content=_content(
+                _task(files=[{"path": "legacy.py", "action": "modify"}]), title="legacy 路径方案"
+            ),
         )
-
         result = await update_coding_plan(
-            session_id=str(session.id),
-            tech_plan="## 更新后",
-            affected_files=[{"file_path": "y.py", "change_type": "add"}],
+            session_id=str(draft_coding_session.id),
+            artifact_version_id=str(version.id),
         )
         assert result.success is True
         assert "coding_plan_id" in result.output
 
+        await draft_coding_session.arefresh_from_db()
+        assert "legacy 路径方案" in draft_coding_session.tech_plan
+        assert draft_coding_session.coding_plan_id is not None
+
     @pytest.mark.asyncio
-    async def test_update_coding_plan_missing_id_returns_error(self):
-        """两个 id 都不传 → success=False + error 提示。"""
+    async def test_update_coding_plan_session_not_found(self, conversation, as_owner):
+        """传入不存在的 session_id 返回 error。"""
         from agents.tools.coding_tools import update_coding_plan
 
+        version = await _amk_artifact_version(conversation=conversation)
         result = await update_coding_plan(
-            tech_plan="## abc",
-            affected_files=[],
+            session_id=str(uuid.uuid4()),
+            artifact_version_id=str(version.id),
         )
+        assert result.success is False
+        assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_update_coding_plan_missing_id_returns_error(self, conversation, as_owner):
+        """两个 plan 定位 id 都不传 → success=False + error 提示。"""
+        from agents.tools.coding_tools import update_coding_plan
+
+        version = await _amk_artifact_version(conversation=conversation)
+        result = await update_coding_plan(artifact_version_id=str(version.id))
         assert result.success is False
         assert "coding_plan_id" in result.error
         assert "session_id" in result.error
 
     @pytest.mark.asyncio
+    async def test_update_coding_plan_reject_missing_artifact_version_id(
+        self, draft_coding_session, as_owner
+    ):
+        """无来源的 update 尝试同样被拒绝并留痕（``-k reject`` 组）。"""
+        from agents.tools.coding_tools import update_coding_plan
+
+        with capture_logs() as logs:
+            result = await update_coding_plan(
+                session_id=str(draft_coding_session.id),
+                artifact_version_id="",
+            )
+        assert result.success is False
+        assert _AUTHORING_REJECTED_EVENT in [entry.get("event") for entry in logs]
+
+    @pytest.mark.asyncio
     async def test_update_coding_plan_does_not_touch_running_sessions(
-        self, project, repository, conversation
+        self, project, repository, conversation, as_owner
     ):
         """plan 关联 1 draft + 1 running 时，update 只同步 draft，不污染 running。
 
-        (coding_plan, repository) 部分唯一约束限制同时只能
-        1 个 active session；本用例通过创建第二个 Repository 模拟多仓 fan-out
-        让 draft 与 running 落在不同 repo 上，规避 unique_active_plan_repo。
+        ``(coding_plan, repository)`` 部分唯一约束限制同时只能 1 个 active session；
+        本用例通过创建第二个 Repository 模拟多仓 fan-out 让 draft 与 running 落在不同
+        repo 上，规避 unique_active_plan_repo。
         """
         from agents.tools.coding_tools import create_coding_plan, update_coding_plan
 
-        # 第二个仓库（fan-out 模拟）
         repository_b = await sync_to_async(Repository.objects.create)(
             name="Test Repo B",
             git_url="https://gitlab.com/test/repo-b.git",
@@ -452,48 +713,57 @@ class TestPhaseCodingPlanIntegration:
         )
         await sync_to_async(project.repositories.add)(repository_b)
 
+        v1 = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(
+                _task(files=[{"path": "a.py", "action": "modify"}]), title="同方案 fan-out"
+            ),
+        )
         created = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## 同方案 fan-out",
-            affected_files=[{"file_path": "a.py", "change_type": "modify"}],
+            artifact_version_id=str(v1.id),
         )
         plan_id = created.output["coding_plan_id"]
         plan = await CodingPlan.objects.aget(id=plan_id)
-        # repo A 上手建一条 draft session（替代旧路径里工具自动产的）
         draft_session = await sync_to_async(_mk_session_for_plan)(
             conversation=conversation,
             repository=repository,
             plan=plan,
             branch_name="draft-branch",
         )
-        # 在第二个仓库上手工造一个 running session（模拟多仓 fan-out）
         running_session = await CodingSession.objects.acreate(
             conversation=conversation,
             repository=repository_b,
             coding_plan=plan,
-            tech_plan="## 同方案 fan-out",
-            affected_files=[{"file_path": "a.py", "change_type": "modify"}],
+            tech_plan=plan.tech_plan,
+            affected_files=plan.affected_files,
             status=CodingSession.Status.RUNNING,
             branch_name="running-branch",
         )
+        running_body = running_session.tech_plan
 
+        v2 = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(
+                _task(files=[{"path": "b.py", "action": "modify"}]), title="更新后的方案"
+            ),
+        )
         result = await update_coding_plan(
             coding_plan_id=plan_id,
-            tech_plan="## 更新内容",
-            affected_files=[{"file_path": "b.py", "change_type": "modify"}],
+            artifact_version_id=str(v2.id),
         )
         assert result.success is True
         # 只同步了 1 个 draft
         assert result.output["synced_sessions_count"] == 1
 
         draft_refreshed = await CodingSession.objects.aget(id=draft_session.id)
-        assert draft_refreshed.tech_plan == "## 更新内容"
+        assert "更新后的方案" in draft_refreshed.tech_plan
 
         running_refreshed = await CodingSession.objects.aget(id=running_session.id)
         # running 的 deprecated 字段保留旧值不动
-        assert running_refreshed.tech_plan == "## 同方案 fan-out"
+        assert running_refreshed.tech_plan == running_body
 
 
 # ============================================================================
@@ -529,8 +799,7 @@ async def test_chat_runner_get_tool_names_gates_deep_analysis():
         forced = await _get_tool_names("space-1", force_deep_analysis=True)
 
     assert "deep_analysis" not in normal, (
-        "默认模式必须闸住 deep_analysis；当前列表："
-        f"{sorted(normal)}"
+        f"默认模式必须闸住 deep_analysis；当前列表：{sorted(normal)}"
     )
     assert "deep_analysis" in forced
     assert "search_repository_code" in normal  # 普通检索工具仍需暴露
@@ -614,17 +883,15 @@ class TestCreateCodingPlanRecommendedRepos:
         assert "repository_id" not in tool.parameters["required"]
 
     @pytest.mark.asyncio
-    async def test_explicit_ids_are_persisted_to_plan(
-        self, project, repository, conversation
-    ):
+    async def test_explicit_ids_are_persisted_to_plan(self, project, repository, conversation):
         from agents.tools.coding_tools import create_coding_plan
 
+        version = await _amk_artifact_version(conversation=conversation)
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## explicit recs",
-            affected_files=[{"path": "a.py", "change_type": "modify"}],
+            artifact_version_id=str(version.id),
             recommended_repository_ids=[str(repository.id)],
         )
         assert result.success is True
@@ -668,12 +935,12 @@ class TestCreateCodingPlanRecommendedRepos:
             triggered_by=RepositoryRoutingTrace.TriggeredBy.CHAT_TOOL,
         )
 
+        version = await _amk_artifact_version(conversation=conversation)
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## auto-infer",
-            affected_files=[{"path": "x.py", "change_type": "modify"}],
+            artifact_version_id=str(version.id),
         )
         assert result.success is True
         assert result.output["recommended_source"] == "trace_inferred"
@@ -743,12 +1010,12 @@ class TestCreateCodingPlanRecommendedRepos:
             triggered_by=RepositoryRoutingTrace.TriggeredBy.MANUAL_OVERRIDE,
         )
 
+        version = await _amk_artifact_version(conversation=conversation)
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## with manual override",
-            affected_files=[{"path": "x.py", "change_type": "modify"}],
+            artifact_version_id=str(version.id),
         )
         assert result.success is True
         assert result.output["recommended_source"] == "trace_inferred"
@@ -765,12 +1032,16 @@ class TestCreateCodingPlanRecommendedRepos:
         → final_recommended 仅含 primary，recommended_source='primary_repo'。"""
         from agents.tools.coding_tools import create_coding_plan
 
+        version = await _amk_artifact_version(
+            conversation=conversation,
+            # 来源版本不带 repository_id，隔离出「只有 primary 一条来源」的形状
+            content=_content(_task(files=[{"path": "x.py", "action": "modify"}])),
+        )
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## empty rec with primary",
-            affected_files=[{"path": "x.py", "change_type": "modify"}],
+            artifact_version_id=str(version.id),
         )
         assert result.success is True
         assert result.output["recommended_source"] == "primary_repo"
@@ -779,18 +1050,19 @@ class TestCreateCodingPlanRecommendedRepos:
         assert plan.recommended_repository_ids == [str(repository.id)]
 
     @pytest.mark.asyncio
-    async def test_no_trace_no_explicit_no_repository_id_returns_empty(
-        self, project, conversation
-    ):
-        """coding-plan workflow：trace + explicit + repository_id 全空
-        → empty 列表 + recommended_source='empty'。"""
+    async def test_no_trace_no_explicit_no_repository_id_returns_empty(self, project, conversation):
+        """coding-plan workflow：trace + explicit + repository_id 全空，且来源版本
+        本身不带目标仓 → empty 列表 + recommended_source='empty'。"""
         from agents.tools.coding_tools import create_coding_plan
 
+        version = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(_task(files=[{"path": "x.py", "action": "modify"}])),
+        )
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
-            tech_plan="## fully empty",
-            affected_files=[{"path": "x.py", "change_type": "modify"}],
+            artifact_version_id=str(version.id),
         )
         assert result.success is True
         assert result.output["recommended_source"] == "empty"
@@ -799,17 +1071,46 @@ class TestCreateCodingPlanRecommendedRepos:
         assert plan.recommended_repository_ids == []
 
     @pytest.mark.asyncio
+    async def test_projected_repository_ids_are_not_cleared_by_empty_resolution(
+        self, project, conversation
+    ):
+        """trace + explicit + repository_id 全空，但来源版本自带目标仓
+        → **保留**投影聚合出的仓库列表（不用空列表把 fan-out 目标抹掉）。"""
+        from agents.tools.coding_tools import create_coding_plan
+
+        source_repo_id = str(uuid.uuid4())
+        version = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(
+                _task(
+                    repository_id=source_repo_id,
+                    files=[{"path": "x.py", "action": "modify"}],
+                )
+            ),
+        )
+        result = await create_coding_plan(
+            space_id=str(project.id),
+            conversation_id=str(conversation.id),
+            artifact_version_id=str(version.id),
+        )
+        assert result.success is True
+        assert result.output["recommended_source"] == "projected"
+        assert result.output["recommended_repository_ids"] == [source_repo_id]
+        plan = await CodingPlan.objects.aget(id=result.output["coding_plan_id"])
+        assert plan.recommended_repository_ids == [source_repo_id]
+
+    @pytest.mark.asyncio
     async def test_invalid_explicit_id_not_in_space_returns_error(
         self, project, repository, conversation, other_repository
     ):
         from agents.tools.coding_tools import create_coding_plan
 
+        version = await _amk_artifact_version(conversation=conversation)
         result = await create_coding_plan(
             space_id=str(project.id),
             conversation_id=str(conversation.id),
             repository_id=str(repository.id),
-            tech_plan="## invalid",
-            affected_files=[{"path": "x.py", "change_type": "modify"}],
+            artifact_version_id=str(version.id),
             recommended_repository_ids=[str(other_repository.id)],
         )
         assert result.success is False

@@ -1,6 +1,6 @@
 {
-  "affected_files": {
-    "annotation": "list[dict[str, str]]",
+  "artifact_version_id": {
+    "annotation": "str",
     "default": null,
     "kind": "POSITIONAL_OR_KEYWORD"
   },
@@ -20,11 +20,6 @@
     "kind": "POSITIONAL_OR_KEYWORD"
   },
   "space_id": {
-    "annotation": "str",
-    "default": null,
-    "kind": "POSITIONAL_OR_KEYWORD"
-  },
-  "tech_plan": {
     "annotation": "str",
     "default": null,
     "kind": "POSITIONAL_OR_KEYWORD"

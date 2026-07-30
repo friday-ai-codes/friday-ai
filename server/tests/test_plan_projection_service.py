@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import uuid
 from typing import Any
 from unittest.mock import patch
@@ -583,6 +584,182 @@ def test_new_version_keeps_old_projection_intact() -> None:
     assert old_plan.tech_plan == old_tech_plan
     assert "方案 v1" in old_plan.tech_plan
     assert "方案 v2" in new_plan.tech_plan
+
+
+# ============================================================================
+# forbidden —— 归属判定在 service 内（工具路径与端点路径共享同一道门）
+# ============================================================================
+
+
+@pytest.mark.django_db
+def test_forbidden_project_by_non_owner_writes_nothing() -> None:
+    """用户 B 拿用户 A 的方案版本调 ``aproject`` → 拒绝，且拒绝前零写入。
+
+    109-05 之前 gate 只在视图里，``aproject`` 本身不判归属；工具成为第二个调用方后
+    这条用例是「判定确实下移进 service」的直接证据。
+    """
+    conversation_a = _make_conversation()
+    version = _make_artifact_version(session=_make_session(conversation_a))
+    user_b = _make_user("intruder")
+    before = CodingPlan.objects.count()
+
+    with pytest.raises(PlanProjectionError) as exc_info:
+        _project(version.id, actor_user_id=str(user_b.id))
+
+    assert exc_info.value.code == "artifact_version_forbidden"
+    assert CodingPlan.objects.count() == before
+
+
+@pytest.mark.django_db
+def test_forbidden_rebind_does_not_leak_other_users_plan_body() -> None:
+    """用户 B 拿自己的 plan 去 re-bind 用户 A 的方案版本 → 拒绝且**正文未被写入**。
+
+    这条断言是「跨会话读取他人技术方案正文」（T-109-05-07）的直接锁：``arebind`` 会把
+    来源版本的 content 渲染成 ``tech_plan`` 写进调用方自己的 plan —— 归属判定晚于渲染
+    一步，B 就能在自己的 plan 里读到 A 的完整方案。
+    """
+    conversation_a = _make_conversation()
+    version_a = _make_artifact_version(
+        session=_make_session(conversation_a),
+        content=_content(
+            _task(repository_id="ra", files=[{"path": "secret.py", "action": "create"}]),
+            title="用户 A 的机密方案",
+        ),
+    )
+
+    conversation_b = _make_conversation()
+    version_b = _make_artifact_version(session=_make_session(conversation_b))
+    actor_b = str(conversation_b.created_by_id)
+    plan_b, _ = _project(version_b.id, actor_user_id=actor_b)
+    original_tech_plan = plan_b.tech_plan
+
+    with pytest.raises(PlanProjectionError) as exc_info:
+        _rebind(plan_b, version_a.id, actor_user_id=actor_b)
+
+    assert exc_info.value.code == "artifact_version_forbidden"
+    plan_b.refresh_from_db()
+    assert plan_b.tech_plan == original_tech_plan
+    assert "用户 A 的机密方案" not in plan_b.tech_plan
+    assert "secret.py" not in plan_b.tech_plan
+    assert str(plan_b.source_artifact_version_id) == str(version_b.id)
+
+
+@pytest.mark.django_db
+def test_forbidden_rebind_of_other_users_plan() -> None:
+    """用户 B 用自己的方案版本去改写**用户 A 的 plan** → 同一机器码。"""
+    conversation_a = _make_conversation()
+    version_a = _make_artifact_version(session=_make_session(conversation_a))
+    plan_a, _ = _project(version_a.id, actor_user_id=str(conversation_a.created_by_id))
+    original_tech_plan = plan_a.tech_plan
+
+    conversation_b = _make_conversation()
+    version_b = _make_artifact_version(session=_make_session(conversation_b))
+
+    with pytest.raises(PlanProjectionError) as exc_info:
+        _rebind(plan_a, version_b.id, actor_user_id=str(conversation_b.created_by_id))
+
+    assert exc_info.value.code == "artifact_version_forbidden"
+    plan_a.refresh_from_db()
+    assert plan_a.tech_plan == original_tech_plan
+    assert str(plan_a.source_artifact_version_id) == str(version_a.id)
+
+
+@pytest.mark.django_db
+def test_forbidden_actor_cannot_be_sentinel_or_blank() -> None:
+    """空串 / ``"system"`` 哨兵一律拒绝 —— 漏传即放行正是这次收紧要消灭的形状。"""
+    conversation = _make_conversation()
+    version = _make_artifact_version(session=_make_session(conversation))
+
+    for bogus_actor in ("", "   ", "system"):
+        with pytest.raises(PlanProjectionError) as exc_info:
+            _project(version.id, actor_user_id=bogus_actor)
+        assert exc_info.value.code == "artifact_version_forbidden"
+
+
+def test_forbidden_actor_user_id_has_no_default() -> None:
+    """签名层断言：``actor_user_id`` 必填无默认值（带默认值即静默重开绕过口）。"""
+    for method in (PlanProjectionService.aproject, PlanProjectionService.arebind):
+        param = inspect.signature(method).parameters["actor_user_id"]
+        assert param.default is inspect.Parameter.empty, (
+            f"{method.__name__}.actor_user_id 不得有默认值"
+        )
+
+
+# ============================================================================
+# rebind —— 换来源（成功路径与版本已占用）
+# ============================================================================
+
+
+@pytest.mark.django_db
+def test_rebind_switches_source_and_rerenders_body() -> None:
+    conversation = _make_conversation()
+    session = _make_session(conversation)
+    actor = str(conversation.created_by_id)
+    v1 = _make_artifact_version(
+        session=session,
+        content=_content(
+            _task(repository_id="r1", files=[{"path": "v1.py", "action": "create"}]),
+            title="方案 v1",
+        ),
+    )
+    plan, _ = _project(v1.id, actor_user_id=actor)
+
+    v2 = _make_artifact_version(
+        session=session,
+        artifact=v1.artifact,
+        version_no=2,
+        content=_content(
+            _task(repository_id="r2", files=[{"path": "v2.py", "action": "delete"}]),
+            title="方案 v2",
+        ),
+    )
+    rebound = _rebind(plan, v2.id, actor_user_id=actor)
+
+    assert "方案 v2" in rebound.tech_plan
+    assert rebound.affected_files == [{"file_path": "v2.py", "change_type": "delete"}]
+    assert str(rebound.source_artifact_version_id) == str(v2.id)
+    assert rebound.provenance == CodingPlanProvenance.ORCHESTRATED
+    assert rebound.recommended_repository_ids == ["r2"]
+
+
+@pytest.mark.django_db
+def test_rebind_target_version_already_projected_is_fail_closed() -> None:
+    """目标版本已被另一条 plan 占用 → 机器码拒绝，且**两边都不被改写**。"""
+    conversation = _make_conversation()
+    session = _make_session(conversation)
+    actor = str(conversation.created_by_id)
+    v1 = _make_artifact_version(session=session, content=_content(_task(repository_id="r1")))
+    v2 = _make_artifact_version(
+        session=session,
+        artifact=v1.artifact,
+        version_no=2,
+        content=_content(_task(repository_id="r2"), title="已被占用的版本"),
+    )
+    plan1, _ = _project(v1.id, actor_user_id=actor)
+    plan2, _ = _project(v2.id, actor_user_id=actor)
+    plan1_body, plan2_body = plan1.tech_plan, plan2.tech_plan
+
+    with pytest.raises(PlanProjectionError) as exc_info:
+        _rebind(plan1, v2.id, actor_user_id=actor)
+
+    assert exc_info.value.code == "artifact_version_already_projected"
+    plan1.refresh_from_db()
+    plan2.refresh_from_db()
+    assert plan1.tech_plan == plan1_body
+    assert plan2.tech_plan == plan2_body
+    assert str(plan1.source_artifact_version_id) == str(v1.id)
+
+
+@pytest.mark.django_db
+def test_rebind_to_same_version_is_allowed() -> None:
+    """re-bind 到自己已绑定的版本不该被唯一约束前置查询误伤（exclude(pk=self)）。"""
+    conversation = _make_conversation()
+    actor = str(conversation.created_by_id)
+    version = _make_artifact_version(session=_make_session(conversation))
+    plan, _ = _project(version.id, actor_user_id=actor)
+
+    rebound = _rebind(plan, version.id, actor_user_id=actor)
+    assert str(rebound.source_artifact_version_id) == str(version.id)
 
 
 # ============================================================================

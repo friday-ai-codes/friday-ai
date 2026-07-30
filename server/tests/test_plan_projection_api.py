@@ -21,6 +21,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from chat.models import CodingPlan, CodingPlanProvenance, Conversation
+from chat.plan_projection_service import PlanProjectionService
 from delivery.models import (
     Artifact,
     ArtifactVersion,
@@ -258,6 +259,42 @@ def test_projection_by_non_owner_returns_404_without_plan_body(
     assert "tech_plan" not in body
     assert "跨仓改造方案" not in resp.content.decode()
     # 越权请求必须在投影之前被挡住（否则会在他人会话下留垃圾对象）。
+    assert CodingPlan.objects.count() == 0
+
+
+def test_projection_service_gate_still_returns_404_when_view_gate_bypassed(
+    outsider_client: APIClient, artifact_version: ArtifactVersion, outsider: Any
+) -> None:
+    """视图侧 owner gate 被绕过时，service 内的归属判定仍把越权请求挡成 404。
+
+    109-05 把归属判定下移进 ``PlanProjectionService``（工具路径与本端点共享同一道门），
+    视图里的 gate 降级为第二道纵深。本用例伪造只读解析结果让视图 gate 放行，验证真正
+    的门在 service：``artifact_version_forbidden`` 与「不存在」同形映射 404，响应体
+    不含方案正文，且不留下任何投影对象。
+    """
+    from unittest.mock import AsyncMock, patch
+
+    decoy = Conversation.objects.create(
+        space=Space.objects.create(
+            name=f"诱饵空间-{uuid.uuid4().hex[:6]}",
+            feishu_project_key=f"decoy-{uuid.uuid4().hex[:6]}",
+        ),
+        title="让视图 gate 放行的诱饵会话",
+        created_by=outsider,
+    )
+
+    with patch.object(
+        PlanProjectionService,
+        "aresolve_conversation",
+        new=AsyncMock(return_value=decoy),
+    ):
+        resp = _post(outsider_client, artifact_version.id)
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+    body = resp.json()
+    assert body["code"] == "artifact_version_not_found"
+    assert "tech_plan" not in body
+    assert "跨仓改造方案" not in resp.content.decode()
     assert CodingPlan.objects.count() == 0
 
 
