@@ -11,6 +11,7 @@ import { hydrateLegacyMessage } from '~/composables/useMessageParts'
 import { collectRepoNames, relevanceCandidates, repoInitial, toolAction, toolLabel } from '~/composables/useToolDisplay'
 import DeepAnalysisGroup from './DeepAnalysisGroup.vue'
 import DocSummaryCard from './DocSummaryCard.vue'
+import OrchestratedPlanCard from './OrchestratedPlanCard.vue'
 import StructuredJsonView from './StructuredJsonView.vue'
 import TechPlanCard from './TechPlanCard.vue'
 import ToolProcessGroup from './ToolProcessGroup.vue'
@@ -496,7 +497,19 @@ function toggleTool(id: string) {
 // 拥有专属卡片渲染的工具不并入「分析过程」折叠面板：
 //   - deep_analysis → DeepAnalysisGroup（独立 swiper）
 //   - create/update_coding_plan → TechPlanCard（独立交互卡片）
-const UNGROUPABLE_TOOLS = new Set(['deep_analysis', 'create_coding_plan', 'update_coding_plan'])
+//   - start_plan_research / start_feature_solution → OrchestratedPlanCard（109-04）
+//
+// 🔴 静默失守点：专属卡片的渲染分支只存在于 `item.kind === 'tool'` 的单例分支
+// 里。工具漏登记进本集合会被 isProcessTool 归入「分析过程」折叠面板，那条路径
+// 不渲染专属卡片 —— 不报错、不崩，只是入口彻底不见。改动本集合务必同步测试
+// （chatMessageBubble.parts.spec.ts 有显式断言）。
+const UNGROUPABLE_TOOLS = new Set([
+  'deep_analysis',
+  'create_coding_plan',
+  'update_coding_plan',
+  'start_plan_research',
+  'start_feature_solution',
+])
 function isProcessTool(name: string): boolean {
   return !UNGROUPABLE_TOOLS.has(name.replace(/^mcp__[^_]+__/, ''))
 }
@@ -753,6 +766,54 @@ function isCodingPlanTool(name: string): boolean {
   const bare = name.replace(/^mcp__[^_]+__/, '')
   return bare === 'create_coding_plan' || bare === 'update_coding_plan'
 }
+
+/**
+ * 109-04：编排入口工具判定（SPINE-01）。
+ *
+ * 🔴 必须同时覆盖两个工具：`start_plan_research` 与 `start_feature_solution`
+ * 返回体同形，只登记前者会让另一条编排入口继续没有编码入口。
+ */
+function isOrchestrationTool(name: string): boolean {
+  const bare = name.replace(/^mcp__[^_]+__/, '')
+  return bare === 'start_plan_research' || bare === 'start_feature_solution'
+}
+
+/**
+ * 109-04：编排工具终态产出的方案版本 id。
+ *
+ * 仅在 result 解析得 `status === 'done'` 且 `artifact_version_id` 为非空字符串时
+ * 返回数据，否则返回 null —— 编排在途（`__blocking_task__` 形态，无该字段）与
+ * 失败一律不渲染卡片，这是裁决 D-4「在途完全不呈现」的机械抓手。
+ *
+ * 解析沿用 codingPlanData 的防御性双轨：result 可能是 JSON string 也可能是
+ * dict，两种都吃，解析失败返回 null 不抛。
+ */
+const orchestratedPlanData = computed<{ artifactVersionId: string } | null>(() => {
+  const tool = toolCalls.value.find(tc => isOrchestrationTool(tc.name))
+  if (!tool || !tool.result)
+    return null
+
+  const raw: unknown = tool.result
+  let parsed: { status?: string, artifact_version_id?: string | null } | null = null
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw)
+    }
+    catch {
+      parsed = null
+    }
+  }
+  else if (typeof raw === 'object') {
+    parsed = raw as { status?: string, artifact_version_id?: string | null }
+  }
+  if (!parsed || parsed.status !== 'done')
+    return null
+
+  const versionId = parsed.artifact_version_id
+  if (typeof versionId !== 'string' || versionId === '')
+    return null
+  return { artifactVersionId: versionId }
+})
 
 // 从 toolCalls 中提取 coding plan 数据
 const codingPlanData = computed(() => {
@@ -1151,7 +1212,12 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
               :recommended-repository-ids="codingPlanData.targetRepositories.map(r => r.id)"
               @confirm="(_planId, sessionId, branchName, targetBranch) => sessionId && chatStore.handleConfirmCodingSession(sessionId, branchName, targetBranch)"
             />
-            <div v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name)" class="tool-detail">
+            <!-- 109-04：编排产出「进入编码」入口。三条渲染条件同时成立才渲染 -->
+            <OrchestratedPlanCard
+              v-if="isOrchestrationTool(item.name) && item.status === 'done' && orchestratedPlanData"
+              :artifact-version-id="orchestratedPlanData.artifactVersionId"
+            />
+            <div v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name) && !isOrchestrationTool(item.name)" class="tool-detail">
               <div class="tool-detail-section">
                 <span class="tool-detail-label">输入</span>
                 <StructuredJsonView :value="item.input" :tool-name="item.name" kind="input" />

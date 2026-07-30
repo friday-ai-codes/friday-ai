@@ -48,6 +48,9 @@ export const TOOL_LABELS: Record<string, string> = {
   update_coding_plan: '更新方案',
   send_plan_card: '发送方案卡片',
   verify_plan: '校验方案',
+  // 编排入口（109-04）：两个工具返回体同形，同判定同卡片
+  start_plan_research: '方案编排调研',
+  start_feature_solution: '功能方案编排',
   // 交互 / 澄清
   ask_user_question: '询问用户',
   ask_clarification: '澄清提问',
@@ -79,6 +82,8 @@ export const TOOL_ICONS: Record<string, string> = {
   create_feishu_document: 'icon-[lucide--file-plus]',
   get_work_item_detail: 'icon-[lucide--clipboard-list]',
   list_related_work_items: 'icon-[lucide--clipboard-list]',
+  start_plan_research: 'icon-[lucide--workflow]',
+  start_feature_solution: 'icon-[lucide--workflow]',
 }
 
 export function bareName(name: string): string {
@@ -376,6 +381,24 @@ export function toolAction(
         }
       }
       return label
+    }
+    // 编排入口（109-04）：两个工具返回体同形，共用同一段摘要逻辑。
+    // 🔴 三分支文案全取本文件常量，不回显后端 placeholder / message 原文 ——
+    // 后端自由文本只用于留痕与排障，让它上屏成为惯例，下一个产出路径就会带着
+    // LLM 原文上屏。
+    case 'start_plan_research':
+    case 'start_feature_solution': {
+      const parsed = parseResult(result)
+      if (parsed) {
+        if (parsed.status === 'done')
+          return '跨仓方案编排已完成'
+        if (parsed.__blocking_task__)
+          return '方案编排调研进行中'
+      }
+      const requirement = (input?.requirement as string) || ''
+      return requirement
+        ? `编排「${truncate(requirement, 32)}」`
+        : TOOL_LABELS[bare]
     }
     default: {
       const entries = Object.entries(input || {}).slice(0, 2)
