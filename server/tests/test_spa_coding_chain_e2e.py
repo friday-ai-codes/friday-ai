@@ -28,7 +28,12 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from chat.models import CodingPlan, CodingSession, Conversation
+from chat.models import (
+    CodingPlan,
+    CodingPlanProvenance,
+    CodingSession,
+    Conversation,
+)
 from projects.models import Space
 from repositories.models import IndexStatus, Repository
 
@@ -105,6 +110,13 @@ def spine_plan(db, spine_space: Space, spine_user, spine_repos) -> CodingPlan:
 
     本 phase 阶段仍走 ``aget_or_create_for_conversation``（投影 service 尚未存在），
     SPINE-01 落地后该构造点会换成投影 service，但本护栏断言的不变量不变。
+
+    ``provenance`` 显式置为 ``orchestrated``：四步连通性护栏测的是**编排方案的正常
+    路径**（草稿路径由本文件的 ``test_draft_plan_fanout_blocked_without_acknowledge``
+    覆盖）。``aget_or_create_for_conversation`` 走 DB default ``draft``，落 109-07 的
+    草稿 gate 后第 ③ 步会变 400 —— 若在此一律置 orchestrated 而不补草稿用例，这条
+    「ROADMAP 顺序硬约束的唯一物化护栏」就不再覆盖存量方案的真实形态（迁移 default
+    是 ``draft``，存量全是草稿）。两条用例缺一即视为护栏失守。
     """
     conversation = Conversation.objects.create(
         space=spine_space,
@@ -118,7 +130,8 @@ def spine_plan(db, spine_space: Space, spine_user, spine_repos) -> CodingPlan:
         title="双脊柱合流方案",
     )
     plan.recommended_repository_ids = [str(r.id) for r in spine_repos]
-    plan.save(update_fields=["recommended_repository_ids", "updated_at"])
+    plan.provenance = CodingPlanProvenance.ORCHESTRATED
+    plan.save(update_fields=["recommended_repository_ids", "provenance", "updated_at"])
     return plan
 
 
@@ -373,6 +386,52 @@ def test_projected_plan_completes_fanout_and_export(
     plan = CodingPlan.objects.get(id=plan_id)
     assert plan.feishu_doc_url == _MOCK_DOC["url"]
     assert str(plan.source_artifact_version_id) == str(spine_artifact_version.id)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_draft_plan_fanout_blocked_without_acknowledge(
+    spine_client: APIClient,
+    spine_plan: CodingPlan,
+    spine_repos: list[Repository],
+) -> None:
+    """草稿形态（存量方案的真实形态）打第 ③ 步 → 被服务端 gate 拦（RELY-01）。
+
+    存在理由：迁移 ``default="draft"`` ⇒ 线上存量 ``CodingPlan`` 全是草稿。若本文件
+    只留「置为 orchestrated 的四步连通性」一条，护栏就不再覆盖存量真实形态，草稿
+    送编码的 fail-closed 性质可以被静默删掉而这里全绿。
+    """
+    plan_id = spine_plan.id
+    # 显式回落到存量形态（fixture 为四步连通性置了 orchestrated）。
+    CodingPlan.objects.filter(id=plan_id).update(provenance=CodingPlanProvenance.DRAFT)
+
+    sessions_resp = spine_client.post(
+        _sessions_url(plan_id),
+        data={
+            "repository_ids": [str(r.id) for r in spine_repos],
+            "branch_template": _BRANCH_TEMPLATE,
+            "target_branch": _TARGET_BRANCH,
+        },
+        format="json",
+    )
+    assert sessions_resp.status_code == status.HTTP_400_BAD_REQUEST
+    # 前端按稳定机器码分支，绝不匹配 detail 文案。
+    assert sessions_resp.json()["code"] == "draft_requires_explicit_confirm"
+    # fail-closed 的实质：整批拒绝，DB 零写入。
+    assert CodingSession.objects.filter(coding_plan_id=plan_id).count() == 0
+
+    # 显式确认后同一条链路放行 —— 草稿是「有防护的应急路径」，不是被禁用的路径。
+    acked_resp = spine_client.post(
+        _sessions_url(plan_id),
+        data={
+            "repository_ids": [str(r.id) for r in spine_repos],
+            "branch_template": _BRANCH_TEMPLATE,
+            "target_branch": _TARGET_BRANCH,
+            "acknowledge_unresearched": True,
+        },
+        format="json",
+    )
+    assert acked_resp.status_code == status.HTTP_200_OK
+    assert len(acked_resp.json()["created"]) == len(spine_repos)
 
 
 @pytest.mark.django_db(transaction=True)

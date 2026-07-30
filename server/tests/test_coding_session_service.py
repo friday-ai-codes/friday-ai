@@ -537,6 +537,9 @@ class TestCreateSessionsForPlan:
             plan=coding_plan_for_service,
             repository_ids=[r.id for r in three_repos_for_service],
             branch_template="feat20260520.${repo}.feature-x",
+            # fixture 走 DB default provenance=draft ⇒ 被 109-07 草稿 gate 拦。这是
+            # gate 生效的预期连带影响，不是回归；本用例测分支模板渲染，不是 gate。
+            acknowledge_unresearched=True,
         )
         assert len(result.created) == 3
         assert len(result.failed) == 0
@@ -554,6 +557,8 @@ class TestCreateSessionsForPlan:
         result = await create_sessions_for_plan(
             plan=coding_plan_for_service,
             repository_ids=[orphan_repo.id],
+            # 同上：草稿 gate 生效的预期连带影响，本用例测仓库归属校验而非 gate。
+            acknowledge_unresearched=True,
         )
         assert len(result.created) == 0
         assert len(result.failed) == 1
@@ -581,6 +586,8 @@ class TestCreateSessionsForPlan:
             plan=coding_plan_for_service,
             repository_ids=[r.id for r in three_repos_for_service],
             branch_template="feat20260520.${repo}.task",
+            # 同上：草稿 gate 生效的预期连带影响，本用例测 per-repo 事务独立性而非 gate。
+            acknowledge_unresearched=True,
         )
         assert len(result.failed) == 1
         assert result.failed[0].repository_id == repo_a.id
@@ -595,3 +602,57 @@ class TestCreateSessionsForPlan:
             )
         )()
         assert {repo_b.id, repo_c.id} == drafts
+
+    @pytest.mark.asyncio
+    async def test_draft_gate_blocks_direct_service_call_with_zero_writes(
+        self, coding_plan_for_service, three_repos_for_service
+    ) -> None:
+        """service 层直调（完全绕过视图与前端）同样被草稿 gate 拦，且 DB 零写入。
+
+        gate 必须落在 service 内而非视图内：视图只是其中一个调用方（还有工具、工作流
+        节点、脚本）。这条用例是「绕过前端也拒绝」在最内层的证据。
+        """
+        from asgiref.sync import sync_to_async
+
+        from chat.coding_session_service import (
+            ERROR_CODE_DRAFT_REQUIRES_CONFIRM,
+            DraftPlanRequiresConfirmError,
+            create_sessions_for_plan,
+        )
+        from chat.models import CodingSession
+
+        with pytest.raises(DraftPlanRequiresConfirmError) as exc_info:
+            await create_sessions_for_plan(
+                plan=coding_plan_for_service,
+                repository_ids=[r.id for r in three_repos_for_service],
+                branch_template="feat20260730.${repo}.gate",
+            )
+        assert exc_info.value.code == ERROR_CODE_DRAFT_REQUIRES_CONFIRM
+
+        count = await sync_to_async(
+            CodingSession.objects.filter(coding_plan=coding_plan_for_service).count
+        )()
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_draft_gate_ignored_for_orchestrated_plan(
+        self, coding_plan_for_service, three_repos_for_service
+    ) -> None:
+        """provenance=orchestrated 时不带确认也放行（编排方案零摩擦）。"""
+        from asgiref.sync import sync_to_async
+
+        from chat.coding_session_service import create_sessions_for_plan
+        from chat.models import CodingPlan, CodingPlanProvenance
+
+        await sync_to_async(CodingPlan.objects.filter(id=coding_plan_for_service.id).update)(
+            provenance=CodingPlanProvenance.ORCHESTRATED
+        )
+        coding_plan_for_service.provenance = CodingPlanProvenance.ORCHESTRATED
+
+        result = await create_sessions_for_plan(
+            plan=coding_plan_for_service,
+            repository_ids=[r.id for r in three_repos_for_service],
+            branch_template="feat20260730.${repo}.orch",
+        )
+        assert len(result.created) == 3
+        assert result.failed == []
