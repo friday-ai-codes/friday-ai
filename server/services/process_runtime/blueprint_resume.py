@@ -55,6 +55,32 @@ __all__ = [
 # 本 helper 唯一允许驱动的 process 类型（与 builtin_processes 第三次注册同值）。
 BLUEPRINT_PROCESS_TYPE = "technical_blueprint"
 
+# 113 追加（B3）：stage → 蓝图状态映射。**只登记阶段 2/3 两个 stage**——112 注册的前七个
+# stage 不在表内，一律回落 `researching`，与改动前逐字等价（`test_blueprint_status_stage_map`
+# 有七条参数化等价性回归断言背书）。
+#
+# 值用字面量而非 `BlueprintStatus.DRAFTING`：本模块所有 Django 模型 import 都在函数内
+# （lazy），模块级表拿不到那个枚举。字面量与枚举值相等（`BlueprintStatus.DRAFTING ==
+# "drafting"`，TextChoices）由 `test_stage_status_table_matches_enum` 锁死，防漂移。
+_STAGE_BLUEPRINT_STATUS: dict[str, str] = {
+    "repo_plan": "drafting",  # == BlueprintStatus.DRAFTING
+    "merge": "drafting",  # == BlueprintStatus.DRAFTING
+}
+
+
+def _resolve_stage_status(session: Any) -> str:
+    """按 ``current_stage`` 取蓝图状态；未登记的 stage（含前七个与空串）回落 researching。
+
+    为什么必须 stage-aware：阶段 2/3 的会话每次经续驱或澄清恢复都会走
+    :func:`_amap_blueprint_status`，若目标态写死 ``researching``，已产出 RepoPlan 与融合
+    蓝图的会话会被一路拉回「调研中」，而澄清解除后也回到阶段 1 的状态口径 —— 用户看到
+    的是「白干了」，114 拿到的状态也对不上（T-113-43）。
+    """
+    from delivery.models import BlueprintStatus
+
+    stage = str(getattr(session, "current_stage", "") or "")
+    return _STAGE_BLUEPRINT_STATUS.get(stage, BlueprintStatus.RESEARCHING)
+
 
 def _safe_log(event: str, **fields: Any) -> None:
     """best-effort 结构化埋点（观测失败吞掉，绝不反噬业务）。"""
@@ -245,8 +271,13 @@ async def _aload_artifact(session: Any) -> Any:
 
 
 async def _amap_blueprint_status(session: Any) -> None:
-    """蓝图状态映射（CONTEXT 锁定）：阶段 0/1 全程 ``researching``；有 open+blocking
-    线程时派生 ``needs_clarification`` 并带 ``return_status=researching``。
+    """蓝图状态映射（CONTEXT 锁定 + B3）：**按 stage 映射**——112 注册的前七个 stage
+    （阶段 0/1）全程 ``researching``，113 追加的 ``repo_plan`` / ``merge``（阶段 2/3）为
+    ``drafting``；有 open+blocking 线程时派生 ``needs_clarification`` 并带
+    ``return_status`` = 同一映射结果（阶段 2/3 因此恢复回本阶段而非退回阶段 1）。
+
+    目标态由 :func:`_resolve_stage_status` 单点解析；三处取值全部走它，故新增 stage 只需
+    往 :data:`_STAGE_BLUEPRINT_STATUS` 加一行。
 
     一律经 ``BlueprintLifecycleService.transition``（合法性与 CAS 由它保证）；非法边
     /并发冲突一律吞掉——状态映射是展示面，绝不反噬续驱主流程。
@@ -259,16 +290,19 @@ async def _amap_blueprint_status(session: Any) -> None:
         return
     lifecycle = BlueprintLifecycleService()
     initiated_by = str(getattr(session, "initiated_by_user_id", "") or "") or "system"
+    stage_status = _resolve_stage_status(session)
     try:
         blocked = await lifecycle.ahas_open_blocking_threads(artifact)
         if not artifact.blueprint_status:
+            # 状态机入口边只有 `"" → researching`：先补这一跳，再由下面那次 transition
+            # 落到 stage 对应的目标态（阶段 2/3 即 researching → drafting，合法边）。
             await lifecycle.transition(
                 artifact,
                 BlueprintStatus.RESEARCHING,
                 initiated_by_user_id=initiated_by,
                 session=session,
             )
-        target = BlueprintStatus.NEEDS_CLARIFICATION if blocked else BlueprintStatus.RESEARCHING
+        target = BlueprintStatus.NEEDS_CLARIFICATION if blocked else stage_status
         if artifact.blueprint_status == target:
             return
         await lifecycle.transition(
@@ -276,7 +310,7 @@ async def _amap_blueprint_status(session: Any) -> None:
             target,
             initiated_by_user_id=initiated_by,
             session=session,
-            return_status=BlueprintStatus.RESEARCHING if blocked else None,
+            return_status=stage_status if blocked else None,
         )
     except Exception as exc:  # noqa: BLE001 — 映射 best-effort（非法边/并发冲突照常吞掉）
         logger.warning(

@@ -442,6 +442,201 @@ async def _h_bp_repo_confirmation(session: Any, engine: Any) -> StageOutcome:
     return StageOutcome(event=event, stage_state_update=result.get("stage_state") or None)
 
 
+# ── 阶段 2/3 的蓝图状态口径（B3）：进入这两个 stage 即 `drafting` ──────────────
+#
+# 一律经 `BlueprintLifecycleService.transition`（INV-6），**绝不裸改 blueprint_status**。
+# 两个 helper 都是 best-effort：状态映射是展示面，映射失败绝不阻断 stage 推进
+# （与 `blueprint_resume._amap_blueprint_status` 同一纪律）。
+
+
+async def _abp_load_artifact(session: Any) -> Any:
+    """会话钉住的版本 → 其 artifact（无版本指针即 None）。"""
+    from delivery.models import ArtifactVersion
+
+    version_id = getattr(session, "current_artifact_version_id", None)
+    if not version_id:
+        return None
+    version = await (
+        ArtifactVersion.objects.select_related("artifact").filter(id=version_id).afirst()
+    )
+    return getattr(version, "artifact", None)
+
+
+async def _abp_mark_drafting(session: Any) -> None:
+    """把蓝图状态转 ``drafting``（阶段 2/3 的状态口径，B3）；已是该态则跳过（幂等）。
+
+    ``blueprint_status`` 为空串（还没进状态机）时先补一跳 ``researching`` —— 状态机的
+    入口边只有 ``"" → researching``，直接跳 ``drafting`` 是非法边。
+    """
+    from delivery.models import BlueprintStatus
+    from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+
+    try:
+        artifact = await _abp_load_artifact(session)
+        if artifact is None:
+            return
+        current = str(artifact.blueprint_status or "")
+        if current == BlueprintStatus.DRAFTING:
+            return
+        lifecycle = BlueprintLifecycleService()
+        initiated_by = str(getattr(session, "initiated_by_user_id", "") or "") or "system"
+        if not current:
+            await lifecycle.transition(
+                artifact,
+                BlueprintStatus.RESEARCHING,
+                initiated_by_user_id=initiated_by,
+                session=session,
+            )
+        await lifecycle.transition(
+            artifact,
+            BlueprintStatus.DRAFTING,
+            initiated_by_user_id=initiated_by,
+            session=session,
+        )
+    except Exception as exc:  # noqa: BLE001 — 状态映射是展示面，绝不阻断 stage 推进
+        logger.warning(
+            "blueprint_stage_drafting_map_skipped",
+            category="sampling",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            current_stage=str(getattr(session, "current_stage", "")),
+            error=str(exc),
+        )
+
+
+async def _abp_has_open_blocking_threads(session: Any) -> bool:
+    """该会话蓝图是否仍有 open+blocking 线程（决定 stage 是否停在 needs_clarification）。
+
+    探测失败按 **False** 处理（放行推进）：续驱侧 ``blueprint_resume`` 自己有一道
+    fail-closed 的同款探测，这里再 fail-closed 会让 DB 抖动直接把 stage 钉死在澄清态。
+    """
+    from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+
+    try:
+        artifact = await _abp_load_artifact(session)
+        if artifact is None:
+            return False
+        return bool(await BlueprintLifecycleService().ahas_open_blocking_threads(artifact))
+    except Exception:  # noqa: BLE001 — 探测失败放行（续驱侧另有 fail-closed 判据）
+        return False
+
+
+async def _h_bp_repo_plan(session: Any, engine: Any) -> StageOutcome:
+    """repo_plan stage（阶段 2 分仓方案）：按波次派发 direct 容器 / 合成 indirect。
+
+    **自写完成判据**：调 ``adapter.aall_repo_plans_ready``（读各仓 ``PartialPlan`` 有无
+    ``repo_plan`` 段），**绝不复用** ``aall_research_tasks_terminal`` —— 阶段 1 与阶段 2
+    共用同一 ``RepoResearchTask``，派发前的 ``mark_stale`` 会让「全部终态」类判据短暂为
+    假，两 stage barrier 同源即互相打断（113-RESEARCH OQ-2）。
+
+    **barrier 续驱**：每次进入清一次超龄 waiter 并把清出的仓重派（113-04 只提供方法，
+    挂载点在此）—— 不清的话「等的 key 永远不出现」的仓会永久卡住整个会话。
+
+    ⭐ 进入本 stage 即把蓝图状态转 ``drafting``（B3，经 lifecycle service，幂等 +
+    best-effort）。event 走**三元白名单**，不透传 adapter 的返回值。
+    """
+    from services.process_runtime.blueprint_repo_plan import STAGE_STATE_KEY
+
+    adapter = getattr(getattr(engine, "deps", None), "repo_plan", None)
+    if adapter is None:
+        return StageOutcome(event="plan_dispatched")
+
+    await _abp_mark_drafting(session)
+
+    prearrange = await adapter.aplan_waves(session)
+    prearrange = prearrange if isinstance(prearrange, dict) else {}
+    result = await adapter.dispatch_plans(session)
+    result = result if isinstance(result, dict) else {}
+
+    # waiter 回收与重派（best-effort：清理失败不该把 stage 打成 failed）
+    try:
+        expired = await adapter.aexpire_stale_waiters(session)
+        if expired:
+            await adapter.aredispatch_waiting_repos(session, expired)
+    except Exception as exc:  # noqa: BLE001 — waiter 维护不反噬 barrier
+        logger.warning(
+            "blueprint_repo_plan_waiter_maintenance_skipped",
+            category="sampling",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            error=str(exc),
+        )
+
+    plans = await adapter.acollect_repo_plans(session)
+    ready = await adapter.aall_repo_plans_ready(session)
+    completed = set(result.get("completed") or [])
+    # 本轮尚未产出 repo_plan 段的仓：`dispatch_plans` 的 `pending` 是计数不是清单，故由
+    # 「锁定仓集 - 已完成集」推出（`build_stage_state` 内部还会再减去 ready 集）。
+    outstanding = [rid for rid in (result.get("repositories") or []) if rid not in completed]
+    stage_state = adapter.build_stage_state(
+        plans=plans if isinstance(plans, dict) else {},
+        dispatched=outstanding,
+        pending=outstanding,
+        waves=prearrange.get("stage_state_summary"),
+    )
+
+    if await _abp_has_open_blocking_threads(session):
+        event = "needs_clarification"
+    else:
+        event = "plan_complete" if ready else "plan_dispatched"
+    # 绝不写半截键：摘要为空时整体不写（半截 `repo_plan` 键会让下游把「没派发」
+    # 误当成「派发了但零产出」）。
+    return StageOutcome(
+        event=event,
+        stage_state_update={STAGE_STATE_KEY: stage_state} if stage_state else None,
+    )
+
+
+async def _h_bp_merge(session: Any, engine: Any) -> StageOutcome:
+    """merge stage（阶段 3 融合装配）：六段装配 + 强制门 + 归因回退。
+
+    ⭐ **本蓝图链首个回填 ``StageOutcome.current_artifact_version`` 的 handler**（阶段
+    0/1 的 stage 都不产主产物版本）。⭐ 进入即把蓝图状态转 ``drafting``（B3）。
+
+    出边映射是**白名单**（adapter 的 ``validation_status`` 再怪也只能落到已登记 event，
+    否则 engine 直接 ``ValueError``）：
+
+    - ``passed`` / ``exhausted`` → ``merged``（⇒ stage 终态）。**``exhausted`` 也走
+      ``merged``**：超界是「蓝图已成形但引用覆盖率未达标、待人审」，不是流程失败；
+      版本已落、未决项已进 ``stage_state``，绝不落 failed 终态（OQ-3 / T-113-37）。
+    - ``retry`` → ``repo_rework``（单仓证据缺口回该仓 ``repo_plan``）或 ``remerge``。
+    - 其余（``needs_clarification`` / ``failed`` / 未知值）→ ``needs_clarification``，
+      停在本 stage 等澄清或重试。
+
+    **D-W4（登记在案的纪律例外）**：``deps.merge`` 缺失时返回 ``needs_clarification``，
+    而不是像其它 handler 那样返回「本 stage 的良性推进 event」。三条备选的取舍：
+
+    - 返 ``remerge`` → transitions 指回 ``merge`` 自身 ⇒ **引擎自旋**（每次 advance 重进
+      同一 handler、依赖仍缺、永不收敛，且每轮都写事件）。
+    - 返 ``merged`` → 直达 stage 终态 ⇒ **假装成功**：零蓝图产出、
+      ``current_artifact_version`` 为空，却把会话判成完成，114 会拿到空输入 ——
+      这是最坏的静默失败。
+    - 返 ``needs_clarification`` → 停在 ``merge`` 且 ``wait_status =
+      waiting_clarification``，人工可见、可处置、可续驱，语义与「融合能力未就位」一致。
+    """
+    adapter = getattr(getattr(engine, "deps", None), "merge", None)
+    if adapter is None:
+        return StageOutcome(event="needs_clarification")
+
+    await _abp_mark_drafting(session)
+
+    result = await adapter.merge(session)
+    result = result if isinstance(result, dict) else {}
+    status = str(result.get("validation_status") or "")
+    stage_state_update = result.get("stage_state") or None
+
+    if status in ("passed", "exhausted"):
+        return StageOutcome(
+            event="merged",
+            stage_state_update=stage_state_update,
+            current_artifact_version=result.get("artifact_version_id") or None,
+        )
+    if status == "retry":
+        event = "repo_rework" if str(result.get("back_target") or "") == "repo_plan" else "remerge"
+        return StageOutcome(event=event, stage_state_update=stage_state_update)
+    return StageOutcome(event="needs_clarification", stage_state_update=stage_state_update)
+
+
 _TECHNICAL_BLUEPRINT_STAGES = {
     "intake": StageDef(
         key="intake",
@@ -498,9 +693,40 @@ _TECHNICAL_BLUEPRINT_STAGES = {
             # 它与 repo_research → reroute → repo_confirmation 构成确认门的**有界回路**，
             # 边界由 MAX_REROUTE_ROUNDS 与「已完成仓不重派」共同约束。
             "research_required": "repo_research",
-            # 113 接续点：把该值改为 "repo_plan" 并追加两个 StageDef 即可
-            # （transitions 是数据，无需改 engine）。
-            "confirmed": STAGE_DONE,
+            # 113 接续点**已接续**（113-06）：阶段 1 出口硬门通过后进阶段 2 分仓方案。
+            # 下一个接续点在 merge.merged（见该 stage 的注释）。
+            "confirmed": "repo_plan",
+        },
+        pausable=True,
+        wait_status="waiting_clarification",
+    ),
+    # ── 阶段 2/3（Phase 113-06 追加；上面七个 stage 一字未动）──────────────
+    "repo_plan": StageDef(
+        key="repo_plan",
+        handler=_h_bp_repo_plan,
+        transitions={
+            # 波次推进：当前波次派完后 self-loop 挂 waiting_event 等容器回调，
+            # barrier 续驱再进本 handler 时下一波自然变成「当前波次」。
+            "plan_dispatched": "repo_plan",
+            "plan_complete": "merge",
+            # 有 open+blocking 线程时停在本 stage 等人处置（不推进也不失败）。
+            "needs_clarification": "repo_plan",
+        },
+        pausable=True,
+        wait_status="waiting_event",
+    ),
+    "merge": StageDef(
+        key="merge",
+        handler=_h_bp_merge,
+        transitions={
+            # 114 接续点：追加 ai_review stage 时把该值改为 "ai_review" 即可
+            # （transitions 是数据，无需改 engine——与 112-05 留给 113 的形状一致）。
+            # ⚠️ 覆盖率超界也走这条边（handler 把 exhausted 映射成 merged）：超界是
+            # 「待人审」不是「流程失败」，本 stage 的 transitions **不含 failed 出边**。
+            "merged": STAGE_DONE,
+            "repo_rework": "repo_plan",
+            "remerge": "merge",
+            "needs_clarification": "merge",
         },
         pausable=True,
         wait_status="waiting_clarification",
