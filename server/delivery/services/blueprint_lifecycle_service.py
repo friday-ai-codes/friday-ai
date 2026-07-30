@@ -48,6 +48,7 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from delivery.models import (
@@ -227,6 +228,34 @@ class BlueprintLifecycleService:
         )
         return reviewer
 
+    @staticmethod
+    def _has_confirm_blockers_sync(artifact: Artifact) -> bool:
+        """confirm 唯一守卫判据（**必须在 ``_apply_transition_sync`` 的
+        ``transaction.atomic()`` 内调用**）。单次查询用 ``Q`` 覆盖两条：
+
+        ① 任意 ``status=open & blocking=True`` 线程（LIFE-02 原口径，逐字保留）；
+        ② ``kind=ai_review_finding & severity=blocker & status ∈ {open, answered}``
+        （114-CONTEXT 的第二条判据）。
+
+        ②在 ``blocking == (severity=='blocker')`` 不变式成立时是①的子集，此处仍显式
+        写出作为**纵深防御**：万一有旁路（例如误用 ``record_answer``）把 finding 推到
+        ``answered``，①会漏挡而②不会。两条合成一次查询 ⇒ 不引入第二个 check-then-act
+        窗口；事务外调用即 TOCTOU，禁止（报告口径请用
+        :meth:`aunresolved_blocker_count`）。
+        """
+        return (
+            BlueprintThread.objects.filter(artifact=artifact)
+            .filter(
+                Q(status=ThreadStatus.OPEN, blocking=True)
+                | Q(
+                    kind=ThreadKind.AI_REVIEW_FINDING,
+                    severity=ThreadSeverity.BLOCKER,
+                    status__in=[ThreadStatus.OPEN, ThreadStatus.ANSWERED],
+                )
+            )
+            .exists()
+        )
+
     @sync_to_async
     def _apply_transition_sync(
         self,
@@ -239,7 +268,9 @@ class BlueprintLifecycleService:
         """守卫查询 + CAS 原子更新 + 评审人 upsert **同一事务**。
 
         - confirm 守卫（open+blocking 线程）与 CAS 同事务：check-then-act 窗口收敛，
-          期间新建的阻塞线程不再被漏挡（MN-01）。
+          期间新建的阻塞线程不再被漏挡（MN-01）。自 114-01 起为
+          ``_has_confirm_blockers_sync`` 的单次 ``Q`` 查询覆盖两条判据（另一条是未决
+          BLOCKER 审查发现），仍在同一事务内，不引入第二个 check-then-act 窗口。
         - CAS：以 ``blueprint_status == from_status`` 为前置条件（防 TOCTOU）。
           ``Artifact.updated_at`` 是 auto_now 字段，``.update()`` 绕过 auto_now——
           必须显式带上。
@@ -250,14 +281,8 @@ class BlueprintLifecycleService:
         成功后（事务提交）同步内存对象字段。
         """
         with transaction.atomic():
-            if to_status == BlueprintStatus.CONFIRMED:
-                has_open_blocking = BlueprintThread.objects.filter(
-                    artifact=artifact,
-                    status=ThreadStatus.OPEN,
-                    blocking=True,
-                ).exists()
-                if has_open_blocking:
-                    raise ValueError("存在未解决的阻塞澄清线程，蓝图不可确认")
+            if to_status == BlueprintStatus.CONFIRMED and self._has_confirm_blockers_sync(artifact):
+                raise ValueError("存在未解决的阻塞澄清线程或未决 BLOCKER 审查发现，蓝图不可确认")
 
             updated = Artifact.objects.filter(id=artifact.id, blueprint_status=from_status).update(
                 blueprint_status=to_status, updated_at=timezone.now()
@@ -523,6 +548,44 @@ class BlueprintLifecycleService:
             initiated_by_user_id=initiated_by_user_id or "system",
         )
         return thread
+
+    async def append_note(
+        self,
+        thread: BlueprintThread,
+        *,
+        body: str,
+        author: Any = None,
+        author_type: str = ThreadAuthorType.AI,
+        initiated_by_user_id: str = "system",
+    ) -> BlueprintThreadMessage:
+        """线程留痕：**只追加消息，绝不推进线程状态**。
+
+        与 :meth:`record_answer` 的唯一区别，也是本方法存在的全部理由。
+
+        ⛔ **AI 审查 finding 的中间留痕必须用本方法，不得用** :meth:`record_answer`。
+        后果链（112 教训，:meth:`_arecord_gate_note` docstring 已记）：``record_answer``
+        在同事务把 ``open`` 推到 ``answered`` → ``ahas_open_blocking_threads``（只认
+        ``open``）判为无门 → ``pending_review → confirmed`` 的事务内守卫放行（**人审
+        能通过带未决 BLOCKER 的蓝图**）→ ``blueprint_resume`` 的 pause 判据失守，续驱
+        把会话一路 advance 到 ``max_steps`` 后落 FAILED。
+
+        ``author_type`` 默认 ``ai``（审查留痕的主用场景）；确认门留痕经
+        :meth:`_arecord_gate_note` 显式传 ``human``，与 111/112 行为逐字等价。
+        """
+        message = await self._append_thread_message_sync(
+            thread, body=str(body or ""), author=author, author_type=author_type
+        )
+        logger.info(
+            "blueprint_thread_note_appended",
+            category="caller",
+            component="blueprint_lifecycle",
+            thread_id=str(thread.id),
+            kind=thread.kind,
+            severity=thread.severity,
+            author_type=author_type,
+            initiated_by_user_id=initiated_by_user_id or "system",
+        )
+        return message
 
     @sync_to_async
     def _open_thread_sync(
@@ -1093,16 +1156,26 @@ class BlueprintLifecycleService:
         ``confirm`` 收尾——一旦被推到 ``answered``，``ahas_open_blocking_threads``
         （只认 ``open``）会判为无门，``open_gate`` 就会再开第二条确认门线程，
         续驱的 pause 判据也会失守。
+
+        本方法自 114-01 起委托 :meth:`append_note`，行为不变（仍 ``author_type=human``）；
+        **不新增第二条写表路径**。
         """
-        return await self._append_thread_message_sync(thread, body=str(body or ""), author=author)
+        return await self.append_note(
+            thread, body=str(body or ""), author=author, author_type=ThreadAuthorType.HUMAN
+        )
 
     @sync_to_async
     def _append_thread_message_sync(
-        self, thread: BlueprintThread, *, body: str, author: Any
+        self,
+        thread: BlueprintThread,
+        *,
+        body: str,
+        author: Any,
+        author_type: str = ThreadAuthorType.HUMAN,
     ) -> BlueprintThreadMessage:
         return BlueprintThreadMessage.objects.create(
             thread=thread,
-            author_type=ThreadAuthorType.HUMAN,
+            author_type=author_type,
             author=author,
             body=body,
         )
