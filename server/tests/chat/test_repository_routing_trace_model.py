@@ -297,6 +297,110 @@ def test_migration_0032_is_additive_and_reversible():
     )
 
 
+# ---------------------------------------------------------------------------
+# 6. 会话 detail 的 routing_trace payload 契约（107-08 Task 2）
+#
+# 全部经**真实 detail endpoint** 请求断言：直接调函数验不出「刷新页面后降级提示
+# 消失」这条 —— 那条缺陷的现场就在 payload 组装处（107-RESEARCH §2 第 3 条）。
+# ---------------------------------------------------------------------------
+
+_DETAIL_PAYLOAD_KEYS = {
+    "trace_id",
+    "query",
+    "candidates",
+    "threshold",
+    "triggered_by",
+    "router_version",
+    "degraded",
+    "degrade_reason",
+    "block_order",
+}
+
+
+def _detail_routing_trace(conversation):
+    """GET 会话 detail，返回 routing_trace 子 payload（无 trace 时为 None）。"""
+    from rest_framework.test import APIClient
+
+    resp = APIClient().get(f"/api/chat/conversations/{conversation.id}/")
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert "routing_trace" in body, body
+    return body["routing_trace"]
+
+
+def _make_trace(conversation, **kwargs):
+    return RepositoryRoutingTrace.objects.create(
+        conversation=conversation,
+        query=kwargs.pop("query", "detail payload query"),
+        triggered_by=RepositoryRoutingTrace.TriggeredBy.CHAT_TOOL,
+        **kwargs,
+    )
+
+
+def test_detail_payload_exposes_degraded_facts_for_stage0_only(conversation):
+    """v2_stage0_only + timeout → degraded True 且原因与版本原样出 API 边界。"""
+    _make_trace(
+        conversation,
+        router_version="v2_stage0_only",
+        degrade_reason="timeout",
+        block_order=["global", "in_project"],
+    )
+    payload = _detail_routing_trace(conversation)
+    assert payload["router_version"] == "v2_stage0_only"
+    assert payload["degraded"] is True
+    assert payload["degrade_reason"] == "timeout"
+
+
+def test_detail_payload_v1_fallback_is_degraded(conversation):
+    """v1_fallback 同属降级（与 v2_stage0_only 同一闭集）。"""
+    _make_trace(conversation, router_version="v1_fallback")
+    assert _detail_routing_trace(conversation)["degraded"] is True
+
+
+def test_detail_payload_v2_is_not_degraded(conversation):
+    """v2（Stage 1 正常参与）→ degraded False、无原因。"""
+    _make_trace(conversation, router_version="v2")
+    payload = _detail_routing_trace(conversation)
+    assert payload["degraded"] is False
+    assert payload["degrade_reason"] == ""
+
+
+def test_detail_payload_legacy_hybrid_is_not_degraded(conversation):
+    """legacy_hybrid（router_version 的列默认值）**不算**降级。
+
+    算作降级会让全部历史 trace 突然出现降级横幅（UI-SPEC backstop 1 的历史兼容要求）。
+    """
+    trace = _make_trace(conversation)
+    assert trace.router_version == "legacy_hybrid"
+    assert _detail_routing_trace(conversation)["degraded"] is False
+
+
+def test_detail_payload_passes_block_order_through(conversation):
+    """block_order 原样输出（前端按 length === 2 判定是否启用分组呈现）。"""
+    _make_trace(conversation, block_order=["global", "in_project"])
+    assert _detail_routing_trace(conversation)["block_order"] == [
+        "global",
+        "in_project",
+    ]
+
+
+def test_detail_payload_empty_block_order_stays_empty_list(conversation):
+    """无分组上下文（列默认值）→ 输出 []，前端走平铺。"""
+    _make_trace(conversation)
+    assert _detail_routing_trace(conversation)["block_order"] == []
+
+
+def test_detail_payload_key_set_is_exactly_nine(conversation):
+    """键集合恰 9 键（5 既有 + 4 新增）——精确集合断言，防将来漏键或悄悄加键。"""
+    _make_trace(conversation, router_version="v2", block_order=["in_project", "global"])
+    assert set(_detail_routing_trace(conversation)) == _DETAIL_PAYLOAD_KEYS
+
+
+def test_detail_payload_is_none_without_trace(conversation):
+    """无 trace 的会话 → routing_trace 为 None（行为不变）。"""
+    assert _detail_routing_trace(conversation) is None
+
+
 def test_candidate_json_schema_round_trip(conversation, sample_candidate):
     """JSON candidates 写入读取后字段保持齐全（防 Django JSONField 兼容回退）。"""
     trace = RepositoryRoutingTrace.objects.create(
