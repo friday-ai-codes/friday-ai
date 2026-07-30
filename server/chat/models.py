@@ -685,6 +685,26 @@ class RepositoryRoutingTrace(models.Model):
         default="legacy_hybrid",
         help_text="路由实现版本，供 v1/v2 相关度对照分析",
     )
+    # RELY-03 用户可见降级原因（107-08）：6 值受控闭集（timeout / upstream_error /
+    # provider_missing / unparsable / no_node_index / unknown）∪ ""（无可见原因）。
+    # 单列而非塞进 candidates JSON —— 迁移开销小，且「降级原因分布」可直接 SQL 聚合
+    # （candidates 是 list，外层塞不进这个结果级事实）。
+    # 列长 32 本身即形状约束：结构上装不下上游异常原文（T-107-02 的第二道防线，
+    # 第一道是写入侧 classify_degrade_reason 的枚举归一）。
+    degrade_reason = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="用户可见降级原因（6 值闭集 ∪ 空串），供降级原因分布聚合",
+    )
+    # ROUTE-01/02 呈现层区顺序（107-08）：长度 2 = 有项目上下文（即使某组为空），
+    # ["global"] 或空 = 无上下文。消费方（前端 RoutingDecisionPanel）据长度判定是否
+    # 启用分组呈现，这是唯一依据（UI-SPEC covered 11）。该值不进任何排序或打分逻辑。
+    block_order = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='呈现层区顺序，如 ["in_project", "global"]；长度 2 表示有项目上下文',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
