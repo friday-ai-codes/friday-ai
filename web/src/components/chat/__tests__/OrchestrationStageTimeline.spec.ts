@@ -339,15 +339,21 @@ describe('orchestrationStageTimeline · 可访问性', () => {
     expect(wrapper.findAll('[aria-live]')).toHaveLength(1)
   })
 
-  it('步骤行非交互：点击不 emit，行 class 不含 cursor-pointer', async () => {
+  // 两条断言故意拆成两个 it：合成一个的话先失败的那条会挡住另一条，
+  // 「点不动」与「看起来点不动」哪一条真的被守住就成了运气。
+  it('步骤行非交互 ①：行 class 不含 cursor-pointer', () => {
+    seedBucket(SESSION, { snapshot: snapshot({ status: 'running', current_stage: 'recall' }) })
+    const rows = mountTimeline(SESSION).findAll(ROW)
+    expect(rows.length).toBe(6)
+    for (const row of rows)
+      expect(row.classes()).not.toContain('cursor-pointer')
+  })
+
+  it('步骤行非交互 ②：点击任一步骤行都不 emit', async () => {
     seedBucket(SESSION, { snapshot: snapshot({ status: 'running', current_stage: 'recall' }) })
     const wrapper = mountTimeline(SESSION)
 
     const rows = wrapper.findAll(ROW)
-    expect(rows.length).toBe(6)
-    for (const row of rows)
-      expect(row.classes()).not.toContain('cursor-pointer')
-
     await rows[0].trigger('click')
     await rows[2].trigger('click')
     expect(wrapper.findComponent(SubStepTimeline).emitted('stepClick')).toBeUndefined()
