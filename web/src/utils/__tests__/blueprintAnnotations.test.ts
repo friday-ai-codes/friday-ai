@@ -15,6 +15,7 @@ import {
   degradedThreadIds,
   groupThreadsByBlock,
   hasAnchorLocator,
+  isUnresolvedBlocker,
   isValidAnchor,
   offsetInFlatText,
   sidebarGroups,
@@ -323,18 +324,79 @@ describe('groupThreadsByBlock —— 只收 anchored 且有 block_id 的线程',
 })
 
 describe('annotationCounts —— 侧栏三个计数', () => {
-  it('未决 BLOCKER 只数 blocking 的；待澄清只数 ai_clarification', () => {
-    const groups = sidebarGroups([
+  it('待澄清只数 anchored 的 open ai_clarification；失锚计数取失锚组', () => {
+    const list = [
       thread({ thread_id: 'b1', kind: 'ai_review_finding', severity: 'blocker', blocking: true }),
-      thread({ thread_id: 'b2', kind: 'ai_review_finding', severity: 'blocker', blocking: false }),
       thread({ thread_id: 'c1', kind: 'ai_clarification' }),
       thread({ thread_id: 'o1', anchor_status: 'orphaned' }),
-    ], [thread({ thread_id: 'o1', anchor_status: 'orphaned' })])
-    expect(annotationCounts(groups)).toEqual({
+    ]
+    expect(annotationCounts(sidebarGroups(list, [thread({ thread_id: 'o1', anchor_status: 'orphaned' })]), list)).toEqual({
       unresolvedBlocker: 1,
       pendingClarification: 1,
       orphaned: 1,
     })
+  })
+})
+
+/**
+ * ⭐ MJ-03 回归：未决 BLOCKER 的判据必须与后端 confirm 闸**逐字同口径**。
+ *
+ * 后端是三条 AND（`blueprint_lifecycle_service.py:441-446`）：
+ * `kind=ai_review_finding` + `severity=blocker` + `status ∈ {open, answered}`
+ * —— **既不看 `blocking`、也不看 `anchor_status`**。
+ *
+ * 口径不一致的后果不是「数字差一点」：顶栏说「0 条未决」，用户去点「确认」必吃 409。
+ * 信息面在鼓励用户按一个注定失败的按钮。
+ */
+describe('isUnresolvedBlocker —— 与后端 confirm 闸同口径（MJ-03）', () => {
+  const counts = (list: BlueprintThreadDetail[]) =>
+    annotationCounts(sidebarGroups(list), list).unresolvedBlocker
+
+  it('⭐ 失锚（orphaned）的 open BLOCKER 仍然计入 —— 失锚是锚定维度，与挡不挡确认正交', () => {
+    const orphaned = thread({
+      thread_id: 'f1',
+      kind: 'ai_review_finding',
+      severity: 'blocker',
+      status: 'open',
+      blocking: true,
+      anchor_status: 'orphaned',
+    })
+    expect(isUnresolvedBlocker(orphaned)).toBe(true)
+    expect(counts([orphaned])).toBe(1)
+  })
+
+  it('⭐ 已作答（answered）的 BLOCKER 仍然计入 —— 后端把 answered 明确算作未决', () => {
+    const answered = thread({
+      thread_id: 'f2',
+      kind: 'ai_review_finding',
+      severity: 'blocker',
+      status: 'answered',
+    })
+    expect(isUnresolvedBlocker(answered)).toBe(true)
+    expect(counts([answered])).toBe(1)
+  })
+
+  it('blocking=false 的 BLOCKER finding 仍然计入 —— 后端判据里没有这一项', () => {
+    expect(counts([thread({
+      thread_id: 'f3',
+      kind: 'ai_review_finding',
+      severity: 'blocker',
+      status: 'open',
+      blocking: false,
+    })])).toBe(1)
+  })
+
+  it.each([
+    ['已处置（resolved）', { status: 'resolved' as const }],
+    ['已忽略（dismissed）', { status: 'dismissed' as const }],
+    ['非 blocker 严重度', { severity: 'warning' as const }],
+    ['非 finding 通道（澄清）', { kind: 'ai_clarification' as const }],
+    ['非 finding 通道（人工评论）', { kind: 'human_comment' as const }],
+  ])('对照（非恒真）：%s ⇒ 不计入', (_label, overrides) => {
+    const base = { kind: 'ai_review_finding', severity: 'blocker', status: 'open', blocking: true }
+    const one = thread({ thread_id: 'f4', ...base, ...overrides })
+    expect(isUnresolvedBlocker(one)).toBe(false)
+    expect(counts([one])).toBe(0)
   })
 })
 

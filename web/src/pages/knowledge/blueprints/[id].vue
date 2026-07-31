@@ -82,6 +82,7 @@ import { useCitationPreview } from '~/composables/useCitationPreview'
 import { useToast } from '~/composables/useToast'
 import { isBlueprintEditable } from '~/config/blueprintStatus'
 import { useBlueprintViewerStore } from '~/stores/useBlueprintViewerStore'
+import { isUnresolvedBlocker } from '~/utils/blueprintAnnotations'
 
 /** ⭐ 跨段跳转与深链滚动的偏移常量，与 `AnchorNavLayout.scrollTo` 的 88 逐字一致（T-115-58）。 */
 const SCROLL_OFFSET = 88
@@ -267,6 +268,20 @@ const orphanedThreads = computed<BlueprintThreadDetail[]>(
 
 const { activeThreadId, counts, selectThread, findThread } = useBlueprintAnnotations(threads, orphanedThreads)
 
+/**
+ * ⭐ 顶栏的「未决 BLOCKER」取**人审快照的权威字段**（MJ-03）。
+ *
+ * `unresolved_blocker_count` 由后端 confirm 闸的同一个方法产出
+ * （`blueprint_review_views.py:401` ← `blueprint_lifecycle_service.py:441-446`）⇒ 它与
+ * 「点确认会不会吃 409」天然同口径。前端派生（`counts.unresolvedBlocker`）只作快照未就绪时
+ * 的占位，两者判据已统一到 `isUnresolvedBlocker`。
+ *
+ * ⚠️ 用 `??` 而不是 `||`：`0` 是**合法且常见**的权威值，`||` 会把它退回本地派生。
+ */
+const unresolvedBlockerCount = computed(
+  () => snapshotQuery.data.value?.unresolved_blocker_count ?? counts.value.unresolvedBlocker,
+)
+
 const {
   open: previewOpen,
   citation: previewCitation,
@@ -373,6 +388,9 @@ function sectionOfThread(anchor: BlueprintAnchor | null): string {
 /**
  * 段 badge 的色调（§6.1）：未决 BLOCKER → `danger`；open 澄清 → `warning`；
  * 生成中 → `primary`；其余 → `muted`。
+ *
+ * ⭐ 「未决 BLOCKER」走**共用判据** `isUnresolvedBlocker`（MJ-03）：本页曾有两个派生量各写
+ * 一份口径，结果左栏段徽标标红、顶栏计数说 0，在同一个文件里自己跟自己打架。
  */
 const sectionTones = computed<Record<string, NavSection['badgeTone']>>(() => {
   const tones: Record<string, NavSection['badgeTone']> = {}
@@ -382,8 +400,7 @@ const sectionTones = computed<Record<string, NavSection['badgeTone']>>(() => {
     const key = sectionOfThread(thread.anchor)
     if (!key)
       continue
-    const unresolved = thread.status === 'open' || thread.status === 'answered'
-    if (thread.severity === 'blocker' && thread.blocking && unresolved) {
+    if (isUnresolvedBlocker(thread)) {
       tones[key] = 'danger'
       continue
     }
@@ -846,7 +863,7 @@ const sections = computed<NavSection[]>(() => [
     <template v-else>
       <BlueprintViewerHeader
         :doc="docQuery.data.value ?? null"
-        :counts="{ blocker: counts.unresolvedBlocker, clarification: counts.pendingClarification, orphaned: counts.orphaned }"
+        :counts="{ blocker: unresolvedBlockerCount, clarification: counts.pendingClarification, orphaned: counts.orphaned }"
         :versions="versions"
         :current-version-id="docQuery.data.value?.version_id ?? null"
         :readonly="readonly"

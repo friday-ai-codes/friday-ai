@@ -29,7 +29,8 @@ export function useBlueprintAnnotations(
 
   const groups = computed(() => sidebarGroups(threads.value ?? [], orphanedThreads?.value))
   const threadsByBlock = computed(() => groupThreadsByBlock(threads.value ?? []))
-  const counts = computed(() => annotationCounts(groups.value))
+  // ⭐ 未决 BLOCKER 在 `anchored` 过滤之前从全量线程上算（MJ-03），故这里把原始列表也传进去。
+  const counts = computed(() => annotationCounts(groups.value, threads.value ?? []))
 
   /** 侧栏 / 正文点击都走这一个入口，保证选中态只有一处写。 */
   function selectThread(threadId: string | null): void {
