@@ -56,8 +56,9 @@ const localTechPlan = ref('')
 const localAffectedFiles = ref<Array<{ file_path?: string, path?: string, change_type: string }>>([])
 const localRecommendedRepositoryIds = ref<string[]>([])
 /**
- * 投影响应带回的来源标志。本 phase **不渲染**它（尤其不渲染原始取值：上游
- * 非受控值上屏即泄漏面），仅作留痕，供 RELY-01 的草稿标注接线与测试断言。
+ * 投影响应带回的来源标志。**不渲染原始取值**（上游非受控值上屏即泄漏面），
+ * 109-08 起作为 provenance prop 交给内嵌 TechPlanCard 做草稿标注判定 —— 不传
+ * 就会让编排产出的方案落到保守分支、被误挂草稿横幅并多一次确认弹层。
  */
 const localProvenance = ref<CodingPlanProvenance | string | null>(null)
 
@@ -145,6 +146,7 @@ async function handleEnterCoding(): Promise<void> {
       :title="localTitle"
       :tech-plan="localTechPlan"
       :affected-files="localAffectedFiles"
+      :provenance="localProvenance"
       :recommended-repository-ids="localRecommendedRepositoryIds"
       status="draft"
       :is-confirming="false"
