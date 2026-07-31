@@ -631,7 +631,17 @@ def _list_pending_threads(limit: int) -> list:
     ⭐ 判据状态是 ``needs_clarification`` **不是** ``pending_review``（对齐 SC-4
     「blocking 澄清无人应答」）：``pending_review`` 是「等人审决策」，那不是无人应答
     的澄清，提醒它只会制造噪声。``select_related("artifact")`` 防 async 裸 lazy-FK。
+
+    ⭐ **必须显式 ``order_by``**（114-MN-01）：``BlueprintThread.Meta`` 没有 ``ordering``，
+    不排序的 ``[:limit]`` 是无 ``ORDER BY`` 的 ``LIMIT`` —— 返回哪几条由存储层决定，跨
+    版本/跨引擎不稳定。更要命的是**饿死**：提醒过的线程写回 ``last_reminded_at`` 后仍满足
+    过滤条件、仍占着那 ``limit`` 个名额（只是每轮记 ``skipped``），全站未应答的 blocking
+    澄清线程一旦超过上界，排在后面的可能**永远**拿不到一次提醒，而 job 每小时照跑、日志
+    照报 completed —— 失效完全静默。按「最该被提醒的排前面」排序（``last_reminded_at``
+    升序 nulls first，同值再按 ``created_at``）⇒ 已提醒的自然沉底，扫描窗口逐轮滚动。
     """
+    from django.db.models import F
+
     from delivery.models import BlueprintThread
 
     return list(
@@ -639,7 +649,9 @@ def _list_pending_threads(limit: int) -> list:
             artifact__blueprint_status=BlueprintStatus.NEEDS_CLARIFICATION,
             status=ThreadStatus.OPEN,
             blocking=True,
-        ).select_related("artifact")[:limit]
+        )
+        .select_related("artifact")
+        .order_by(F("last_reminded_at").asc(nulls_first=True), "created_at")[:limit]
     )
 
 
