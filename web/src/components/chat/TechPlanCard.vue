@@ -57,6 +57,10 @@ const props = withDefaults(defineProps<{
   // 列表）；不提供时保留旧的 single-session draft 流程（向后兼容
   // ChatMessageBubble 历史调用）。
   codingPlanId?: string | null
+  // 109-08（RELY-01）：方案来源标志。承载投影响应本地态（OrchestratedPlanCard
+  // 把投影响应直接喂进 props）。类型故意含 string 而非收窄成枚举 —— 后端新增
+  // 枚举值时前端要走保守分支（标注），而不是编译失败或静默放行。
+  provenance?: string | null
   availableRepositories?: RepoSelectableItem[]
   repositoryGitUrls?: Record<string, string>
   recommendedRepositoryIds?: string[]
@@ -231,6 +235,48 @@ const resolvedAffectedFiles = computed<Array<{ file_path?: string, path?: string
   return []
 })
 
+/**
+ * 方案来源标志（109-08 · RELY-01 界面侧）。
+ *
+ * 解析优先级与 resolvedTechPlan / resolvedAffectedFiles 同形：
+ *   1. props.provenance —— 投影响应本地态；
+ *   2. 仅当 store 的 activeCodingPlan.plan_id === 本卡 codingPlanId 时采用其
+ *      provenance；
+ *   3. 否则 undefined（走保守分支 ⇒ 标注）。
+ *
+ * 🔴 第 2 级的 plan_id 匹配守卫不可省：runtime.provenance 是 runtime.coding_plan
+ * 的第三个消费点。漏守卫会把**别的方案的来源标志渲染到本卡上** —— 一份草稿因此
+ * 被漏标，是安全性方向的失守（比正文串态更严重：正文串了看得出来，标志串了看不
+ * 出来）。与 feishuDocUrl / resolvedTechPlan 同一个坑、同一道守卫。
+ */
+const resolvedProvenance = computed<string | null | undefined>(() => {
+  if (props.provenance)
+    return props.provenance
+  const runtime = codingPlanRuntime.value
+  if (runtime && props.codingPlanId && runtime.plan_id === props.codingPlanId)
+    return runtime.provenance
+  return undefined
+})
+
+/**
+ * 是否需要标注「未经代码调研」。
+ *
+ * 三条硬性纪律（UI-SPEC §B.1，与服务端 gate / 导出告示同口径）：
+ *   1. 🔴 采**允许清单**而非拒绝清单：只有严格等于 'orchestrated' 才免标注，
+ *      其余（'draft' / 未知取值 / null / undefined / ''）一律标注。写成
+ *      `=== 'draft'` 会让后端任何新增枚举值默认放行。
+ *   2. 🔴 **不靠文案硬编码判定**：只读 provenance 字段，绝不匹配 tech_plan 正文
+ *      里是否含「草稿」「未经调研」等字样 —— 新增产出路径时正文格式不可控，
+ *      文案判定必然漏标。
+ *   3. 🔴 缺字段同样标注且渲染不得报错：实现是**纯字面比较**，不对 undefined
+ *      做属性访问，历史 runtime / 历史消息渲染零报错。
+ *
+ * 失败代价不对称：把 undefined 当可信 = RELY-01 存在的意义被静默取消（一份没
+ * 调研过的方案看起来可信）；当草稿 = 过渡窗口里多挂一条横幅。前者是安全缺陷，
+ * 后者是观感瑕疵。故保守默认。
+ */
+const isUnresearched = computed(() => resolvedProvenance.value !== 'orchestrated')
+
 function onExportSuccess(
   result: ExportToFeishuResponse | ExportCodingPlanToFeishuResponse,
 ) {
@@ -390,18 +436,24 @@ const badgeText = computed(() => {
     >
       <span class="icon-[lucide--file-code] text-primary" />
       <span class="text-sm font-semibold">{{ title || '编码方案' }}</span>
+      <!--
+        109-08：草稿徽标头部常驻（展开与折叠态都渲染），让「未经调研」这条事实
+        不被一次折叠操作藏起来。纯 variant、不加 :class 颜色（DESIGN.md Badge 禁令）。
+      -->
+      <Badge v-if="isUnresearched" variant="warning" class="ml-auto">
+        未经调研
+      </Badge>
       <Badge
         v-if="status !== 'draft'"
         :variant="status === 'failed' ? 'destructive' : 'outline'"
-        class="ml-auto"
-        :class="[badgeClass]"
+        :class="[badgeClass, isUnresearched ? 'ml-1' : 'ml-auto']"
       >
         {{ badgeText }}
       </Badge>
       <span
         class="icon-[lucide--chevron-right] text-xs transition-transform"
         :class="[
-          status === 'draft' ? 'ml-auto' : 'ml-1',
+          !isUnresearched && status === 'draft' ? 'ml-auto' : 'ml-1',
           { 'rotate-90': !collapsed },
         ]"
       />
@@ -411,6 +463,30 @@ const badgeText = computed(() => {
     <template v-if="!collapsed">
       <!-- Markdown + affected_files -->
       <div class="p-4 space-y-3">
+        <!--
+          109-08：草稿告警横幅。位置在方案正文**之前** —— 用户在读到任何方案内容
+          前先看到「这份东西未经调研」。DOM 形状沿用 CommitConfirmCard 的告警条。
+          role="alert" 但**不加** aria-live：横幅随卡片首次渲染出现（非动态插入），
+          aria-live 在此不产生播报价值反而可能重复朗读。
+        -->
+        <div
+          v-if="isUnresearched"
+          class="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5"
+          role="alert"
+          data-test="unresearched-banner"
+        >
+          <div class="flex items-start gap-2">
+            <span class="icon-[lucide--alert-triangle] text-amber-500 shrink-0 mt-0.5" />
+            <div class="space-y-1 min-w-0">
+              <p class="text-sm font-medium text-foreground">
+                本方案未经代码调研
+              </p>
+              <p class="text-xs text-muted-foreground">
+                由对话直接生成，未经仓库路由、代码召回与并行调研，文件清单与实现步骤可能不准确。
+              </p>
+            </div>
+          </div>
+        </div>
         <!-- ：markdown 异步初始化期间的 skeleton 占位 -->
         <div v-if="!mdReady" class="space-y-2 animate-pulse" data-test="md-skeleton">
           <div class="h-4 rounded bg-muted/60 w-3/4" />
