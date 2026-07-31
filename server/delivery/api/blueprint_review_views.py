@@ -616,6 +616,10 @@ class BlueprintReviewThreadAnswerView(APIView):
     回灌结果原样放进响应体的 ``reflow`` 键（含 ``status``），失败/冲突**如实上报**，
     绝不静默。
 
+    ⭐ **状态闸在 ``record_answer`` 之前**（114-MJ-04）：作答会经回灌落新版本，已
+    ``confirmed`` / ``implementing`` / ``archived`` 的蓝图不该被无声改写 ⇒ 越界 400 且
+    DB 一字未动（判据 ``is_blueprint_editable``，与 ``edit-blocks`` 同一张白名单）。
+
     ⛔ **``kind == ai_review_finding`` 一律 400**（114-CR-01）：本端点在 ``record_answer``
     之后**同一请求内**接了回灌，而回灌链落版本成功后会对被消费线程无条件
     ``resolve_thread`` ⇒ 在一条 BLOCKER finding 上回一句任意文本就把它推到终态、解开
@@ -628,13 +632,21 @@ class BlueprintReviewThreadAnswerView(APIView):
 
     async def post(self, request: Any, artifact_id: Any, thread_id: Any) -> Response:
         from delivery.models import ThreadAuthorType, ThreadKind
-        from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+        from delivery.services.blueprint_lifecycle_service import (
+            NOT_EDITABLE_DETAIL,
+            BlueprintLifecycleService,
+            is_blueprint_editable,
+        )
         from services.process_runtime.blueprint_reflow import aapply_thread_answers
 
         started = time.monotonic()
         error, artifact, session = await _aload_action_context(request, artifact_id)
         if error is not None:
             return error
+        # 状态闸在 record_answer **之前**（MJ-04）：作答会经回灌落新版本，已 confirmed 的
+        # 蓝图不该被无声改写。放在写之前 ⇒ 越界时 DB 一字未动。
+        if not is_blueprint_editable(artifact):
+            return Response({"detail": NOT_EDITABLE_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
         thread = await _aload_thread(artifact_id, thread_id)
         if thread is None:
             return Response(_THREAD_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
