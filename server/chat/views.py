@@ -2705,6 +2705,10 @@ class CodingPlanSessionsBatchCreateView(APIView):
                 acknowledge_unresearched=req_ser.validated_data.get(
                     "acknowledge_unresearched", False
                 ),
+                # 109-REVIEW MN-06：草稿 gate 的问责字段走显式通路。本视图手上就有
+                # request.user，不绕 contextvars —— 后者漏绑一次，RELY-01 的审计线
+                # 就会静默退化成 system（这正是 BL-01 暴露的形状）。
+                actor_user_id=resolve_user_id(request),
             )
         except DraftPlanRequiresConfirmError:
             # 稳定机器码 + 中文文案双键：前端按 code 分支，绝不匹配 detail 文案。

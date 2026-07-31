@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 from django.urls import reverse
 from rest_framework import status
+from structlog.testing import capture_logs
 
 from chat.models import CodingPlan, CodingSession, Conversation
 from permissions.models import SpaceMembership, SpaceRole
@@ -90,9 +91,7 @@ class TestCodingPlansSessionsBatchAPI:
     """work item 批量创建 endpoint 全状态码覆盖。"""
 
     def _url(self, plan_id: object) -> str:
-        return reverse(
-            "coding-plan-sessions-batch", kwargs={"plan_id": str(plan_id)}
-        )
+        return reverse("coding-plan-sessions-batch", kwargs={"plan_id": str(plan_id)})
 
     def test_success_all_three_repos_created(
         self,
@@ -183,9 +182,7 @@ class TestCodingPlansSessionsBatchAPI:
         )
         assert resp.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_not_found_when_plan_missing(
-        self, authenticated_client: "APIClient"
-    ) -> None:
+    def test_not_found_when_plan_missing(self, authenticated_client: "APIClient") -> None:
         """plan_id 不存在 → 404。"""
         resp = authenticated_client.post(
             self._url(uuid4()),
@@ -249,9 +246,7 @@ class TestCodingPlansSessionsDraftGate:
     """
 
     def _url(self, plan_id: object) -> str:
-        return reverse(
-            "coding-plan-sessions-batch", kwargs={"plan_id": str(plan_id)}
-        )
+        return reverse("coding-plan-sessions-batch", kwargs={"plan_id": str(plan_id)})
 
     def test_draft_gate_rejects_when_field_absent(
         self,
@@ -372,3 +367,53 @@ class TestCodingPlansSessionsDraftGate:
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert resp.json()["code"] == "draft_requires_explicit_confirm"
         assert CodingSession.objects.filter(coding_plan=coding_plan).count() == 0
+
+    def test_draft_gate_rejection_is_attributed_to_real_user(
+        self,
+        authenticated_client: "APIClient",
+        draft_coding_plan: CodingPlan,
+        three_repos: list[Repository],
+        user,
+    ) -> None:
+        """🔴 109-REVIEW MN-06：拒绝留痕的 ``user_id`` 必须是真实用户而非 ``system``。
+
+        RELY-01 想立的是「谁在什么时候用草稿送了编码」这条审计线；记 ``system`` 等于
+        这条线一条也没记下来（本端点是 REST 写入口，不是无触发用户的系统行为）。
+        """
+        with capture_logs() as logs:
+            resp = authenticated_client.post(
+                self._url(draft_coding_plan.id),
+                data={"repository_ids": [str(r.id) for r in three_repos]},
+                format="json",
+            )
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+        events = [e for e in logs if e.get("event") == "draft_plan_coding_rejected"]
+        assert events, "草稿拒绝必须留痕"
+        assert events[0]["user_id"] == str(user.id)
+        assert events[0]["category"] == "caller"
+        assert events[0]["component"] == "chat"
+
+    def test_draft_gate_confirmation_is_attributed_to_real_user(
+        self,
+        authenticated_client: "APIClient",
+        draft_coding_plan: CodingPlan,
+        three_repos: list[Repository],
+        user,
+    ) -> None:
+        """确认路径同样可追溯 —— 只记拒绝等于「谁签的名」无从查起。"""
+        with capture_logs() as logs:
+            resp = authenticated_client.post(
+                self._url(draft_coding_plan.id),
+                data={
+                    "repository_ids": [str(r.id) for r in three_repos],
+                    "acknowledge_unresearched": True,
+                },
+                format="json",
+            )
+        assert resp.status_code == status.HTTP_200_OK
+
+        events = [e for e in logs if e.get("event") == "draft_plan_coding_confirmed"]
+        assert events, "草稿确认必须留痕"
+        assert events[0]["user_id"] == str(user.id)
+        assert events[0]["repo_count"] == 3

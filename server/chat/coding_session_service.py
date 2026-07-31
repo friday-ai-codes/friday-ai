@@ -103,19 +103,29 @@ def _context_user_id() -> str:
 
 
 def _log_draft_coding_gate(
-    *, event: str, plan_id: str, repo_count: int | None = None, reason: str = ""
+    *,
+    event: str,
+    plan_id: str,
+    repo_count: int | None = None,
+    reason: str = "",
+    actor_user_id: str = "",
 ) -> None:
     """草稿送编码的确认 / 拒绝留痕（best-effort，绝不反噬业务）。
 
     两条路径都要留痕：只记拒绝会让「谁在什么时候用草稿送了编码」不可追溯（RELY-01
     的 Repudiation 面）。字段无凭证、无正文，无脱敏义务。
+
+    ``actor_user_id`` 优先于 contextvars（109-REVIEW MN-06）：fan-out 视图手上就有
+    ``request.user``，显式传比绕一圈 contextvars 更可靠 —— 后者一旦哪个入口漏绑，
+    这条审计线就会静默退化成 ``system``，而它正是「草稿是有防护的应急路径」这个
+    设计里唯一的问责凭据。
     """
     try:
         fields: dict[str, Any] = {
             "category": "caller",
             "component": "chat",
             "coding_plan_id": plan_id,
-            "user_id": _context_user_id(),
+            "user_id": str(actor_user_id or "").strip() or _context_user_id(),
         }
         if repo_count is not None:
             fields["repo_count"] = repo_count
@@ -291,9 +301,7 @@ async def build_dispatch_metadata(
     from services.exclusion import serialize_rules_for_repo
 
     exclude_rules = await serialize_rules_for_repo(str(repository.id))
-    env_metadata["env_FRIDAY_TASK_EXCLUDE_PATTERNS"] = json.dumps(
-        exclude_rules, ensure_ascii=False
-    )
+    env_metadata["env_FRIDAY_TASK_EXCLUDE_PATTERNS"] = json.dumps(exclude_rules, ensure_ascii=False)
 
     # 固定容器 workspace cwd（HOOK-04）：SDK transcript 目录按 cwd realpath 派生，
     # 跨容器 resume 须 cwd 一致才能命中同一 transcript。dispatch 显式下发约定 cwd，
@@ -321,13 +329,11 @@ async def _resolve_project_context_for_dispatch(coding_session: CodingSession) -
     )
 
     try:
-        cs = await (
-            CodingSession.objects.select_related(
-                "conversation",
-                "conversation__bound_project",
-                "conversation__created_by",
-            ).aget(id=coding_session.id)
-        )
+        cs = await CodingSession.objects.select_related(
+            "conversation",
+            "conversation__bound_project",
+            "conversation__created_by",
+        ).aget(id=coding_session.id)
         conversation = cs.conversation
         project = conversation.bound_project
         user = conversation.created_by  # 触发用户（归因）；匿名会话可为 None
@@ -495,7 +501,8 @@ async def dispatch_coding_task(
 
     # 4. 创建 session
     _agent_session, sub_session = await create_sub_session(
-        coding_session, task_type=task_type,
+        coding_session,
+        task_type=task_type,
     )
 
     # 4.5 任务级短 TTL token + 知识端点注入（Phase 103 AGENT-01/02）：
@@ -517,7 +524,9 @@ async def dispatch_coding_task(
             user = await User.objects.filter(id=user_id).afirst()
         if user is not None:
             plaintext = await mint_task_token(
-                user, sub_session.session_id, 3600  # 对齐下方 DispatchTask 硬编码 timeout
+                user,
+                sub_session.session_id,
+                3600,  # 对齐下方 DispatchTask 硬编码 timeout
             )
             env_metadata["env_FRIDAY_TASK_USER_TOKEN"] = plaintext
         # 知识端点（AGENT-02 服务端注入面）：base 不带路径，task 侧自行拼
@@ -679,6 +688,7 @@ async def create_sessions_for_plan(
     branch_template: str = "",
     target_branch: str = "",
     acknowledge_unresearched: bool = False,
+    actor_user_id: str = "",
 ) -> CodingSessionsBatchResult:
     """在已有 CodingPlan 上批量创建 N 个 CodingSession（DRAFT 态）。
 
@@ -688,6 +698,8 @@ async def create_sessions_for_plan(
     ``True`` 视为确认。gate 落在本函数最前面（任何 session 创建之前）而不是视图内 ——
     只在前端/视图做防护等于没做：任何脚本直接调 service 或打端点就能绕过。
     ``provenance == orchestrated`` 时该入参被**忽略**，编排方案零摩擦。
+    ``actor_user_id`` 只用于 gate 留痕的问责字段（不参与任何授权判定，授权在视图层
+    已完成）；调用方取不到触发用户时留空，留痕回退 contextvars / ``system``。
 
     校验链（per repo）：
       1. repository_id 属于 ``plan.conversation.space.repositories``
@@ -710,12 +722,14 @@ async def create_sessions_for_plan(
                 event="draft_plan_coding_rejected",
                 plan_id=str(plan.id),
                 reason=ERROR_CODE_DRAFT_REQUIRES_CONFIRM,
+                actor_user_id=actor_user_id,
             )
             raise DraftPlanRequiresConfirmError()
         _log_draft_coding_gate(
             event="draft_plan_coding_confirmed",
             plan_id=str(plan.id),
             repo_count=len(repository_ids or []),
+            actor_user_id=actor_user_id,
         )
 
     # PR 目标分支：本次 fan-out 统一应用到所有仓库，用户未选时回退默认 develop。
@@ -727,18 +741,13 @@ async def create_sessions_for_plan(
 
     # 1) 一次性拉所有合法 repository（属于 plan.conversation.space）
     project = plan.conversation.space
-    valid_repos = [
-        r
-        async for r in project.repositories.filter(id__in=repository_ids)
-    ]
+    valid_repos = [r async for r in project.repositories.filter(id__in=repository_ids)]
     valid_repo_map = {repo.id: repo for repo in valid_repos}
 
     # 不在项目下的 repo → failed
     for rid in repository_ids:
         if rid not in valid_repo_map:
-            result.failed.append(
-                SessionFailedItem(repository_id=rid, error="仓库不存在或无权访问")
-            )
+            result.failed.append(SessionFailedItem(repository_id=rid, error="仓库不存在或无权访问"))
 
     if not valid_repo_map:
         return result
@@ -755,9 +764,7 @@ async def create_sessions_for_plan(
 
     for rid in list(valid_repo_map.keys()):
         if rid in active_existing_ids:
-            result.failed.append(
-                SessionFailedItem(repository_id=rid, error=ERROR_REPO_ACTIVE_BUSY)
-            )
+            result.failed.append(SessionFailedItem(repository_id=rid, error=ERROR_REPO_ACTIVE_BUSY))
             valid_repo_map.pop(rid, None)
 
     # 生成本次 fan-out 统一默认分支名（多仓共用 {type}/{yymmdd}.{简短中文名}）。
@@ -766,9 +773,7 @@ async def create_sessions_for_plan(
     if not branch_template:
         from chat.branch_service import agenerate_default_branch_name
 
-        shared_branch_name, _bt, _sd = await agenerate_default_branch_name(
-            plan.tech_plan
-        )
+        shared_branch_name, _bt, _sd = await agenerate_default_branch_name(plan.tech_plan)
 
     # 3) 逐仓库创建（独立事务）
     for rid, repo in valid_repo_map.items():
@@ -797,9 +802,7 @@ async def create_sessions_for_plan(
             result.failed.append(
                 SessionFailedItem(
                     repository_id=rid,
-                    error="；".join(validation.errors)
-                    if validation.errors
-                    else "分支名校验失败",
+                    error="；".join(validation.errors) if validation.errors else "分支名校验失败",
                 )
             )
             continue
@@ -824,9 +827,7 @@ async def create_sessions_for_plan(
             session = await _atomic_create()
         except IntegrityError:
             # work item unique 约束兜底（理论上预检后不应到这里，但有竞态保护）
-            result.failed.append(
-                SessionFailedItem(repository_id=rid, error=ERROR_REPO_ACTIVE_BUSY)
-            )
+            result.failed.append(SessionFailedItem(repository_id=rid, error=ERROR_REPO_ACTIVE_BUSY))
             logger.warning(
                 "coding_sessions.batch_failed",
                 plan_id=str(plan.id),
