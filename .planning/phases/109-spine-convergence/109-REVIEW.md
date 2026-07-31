@@ -17,7 +17,7 @@ findings_resolved:
   blocker: 1
   high: 2
   medium: 6
-  low: 0  # 5 条按范围裁定不修，逐条记为已接受债务（见各 fix_note）
+  low: 2  # LO-01 / LO-05 已修（见各 fix_note）；LO-02 / LO-03 / LO-04 记为已接受债务
 fix_commits:
   - ca51bcf7  # BL-01 身份链路（chat SSE 补绑 + 生成器体内重绑）
   - f0b0c07d  # BL-01 工具侧 + MN-04（注入 conversation_id + 写前归属判定）
@@ -205,13 +205,14 @@ findings_index:
     origin: new
     file: web/src/components/chat/TechPlanCard.vue:395
     summary: gate 拒绝后重开的弹层其 promise 无人 await，用户重新勾选并确认后什么都不会发生（死胡同）
-    status: accepted-debt
+    status: fixed
     fix_note: >-
-      按本次 --fix 的范围裁定（只修 BLOCKER/HIGH/MEDIUM）不修，记为已接受债务。
-      处置建议保留评审给的 (a)：不重开弹层、只发 toast，让用户走原入口 —— 改动最小且行为
-      自洽，也不触碰「前端绝不自行产生 acknowledge_unresearched: true」这条不变量（(b) 的
-      重放路径要额外证明不会自行补 true，风险更高）。可达性低：需服务端 gate 与前端判定不
-      一致才会走到。
+      已按方案 (a) 修复（commit 90493e87）：handleDraftGateRejection 只发前端常量 toast，
+      不再 `void openUnresearchedDialog()`。重开得到的 promise 无人 await，用户勾选确认后
+      什么都不会发生，是比不弹更糟的死胡同；改为让用户从原入口重来，行为自洽。
+      不引入重放路径，故「前端绝不自行产生 acknowledge_unresearched: true」不变量未被触碰。
+      原先锁「重新打开弹层」的用例已改为锁 `dialogOpen === 'false'`（断言直接反转旧行为，
+      有区分力）；TechPlanCard.spec 63 passed。
   - id: LO-02
     severity: LOW
     origin: new
@@ -247,11 +248,11 @@ findings_index:
     origin: new
     file: .planning/ROADMAP.md
     summary: ROADMAP 与 109-02 仍写「条件唯一约束」，实现是无条件唯一约束（实现的理由是对的，文档没跟上）
-    status: accepted-debt
+    status: fixed
     fix_note: >-
-      文档口径滞后，范围外（本次只动源码与测试），记为已接受债务。实现侧的理由已写在
-      models.py:311-328 的注释里且比 ROADMAP 更准确，后续评审读代码不会被误导；
-      ROADMAP 措辞订正建议在下一次 planning 文档更新时一并做。
+      已订正（commit 8747f234）：ROADMAP 第 188 行「条件唯一约束」改为「无条件唯一约束」，
+      与实现一致。实现刻意不带 condition —— 带 condition 会在 MySQL 上被 _unique_supported()
+      静默跳过，理由写在 models.py:311-328 的注释里。
 ---
 
 # Phase 109: 代码评审报告
@@ -276,7 +277,9 @@ findings_index:
 | MN-04 | MEDIUM | 已修（写前归属判定，与 BL-01 同提交） | `f0b0c07d` |
 | MN-05 | MEDIUM | 已修（守卫下沉到 runtime 入口） | `7e99d2cf` |
 | MN-06 | MEDIUM | 已修（留痕绑定真实用户） | `3d81cef7` |
-| LO-01 ~ LO-05 | LOW | 已接受债务（逐条理由见 frontmatter `fix_note`） | — |
+| LO-01 | LOW | 已修（90493e87）——gate 拒绝不再重开弹层 | TechPlanCard.spec 63 passed |
+| LO-05 | LOW | 已修（8747f234）——ROADMAP 唯一约束口径订正 | — |
+| LO-02 ~ LO-04 | LOW | 已接受债务（逐条理由见 frontmatter `fix_note`） | — |
 
 **修复后实跑（精确数字）**
 
