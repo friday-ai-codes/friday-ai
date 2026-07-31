@@ -36,11 +36,22 @@
 
 from __future__ import annotations
 
+import json
 import re
+import time
 from typing import Any, Iterator
 
+import structlog
+
+from common.logging import redact_secrets_in_text
 from delivery.services.blueprint_anchor import _block_text
-from services.process_runtime.blueprint_schema import BLUEPRINT_SCHEMA_VERSION, validate_blueprint
+from services.process_runtime.blueprint_schema import (
+    BLUEPRINT_SCHEMA_VERSION,
+    iter_blocks,
+    validate_blueprint,
+)
+
+logger = structlog.get_logger(__name__)
 
 __all__ = [
     "STAGE_STATE_KEY",
@@ -51,6 +62,12 @@ __all__ = [
     "check_schema",
     "check_citations",
     "check_roles",
+    "check_api_closure",
+    "check_prohibitions",
+    "check_charters",
+    "check_gate_lock",
+    "run_mechanical_rules",
+    "agoal_backward_review",
     "normalize_review_findings",
     "finding_dedupe_key",
 ]
@@ -80,6 +97,35 @@ _MAX_SNIPPET_CHARS = 80
 
 # 规则⑤排期禁令：以周为单位的排期（`3 周` / `2 个周` / `week` 大小写不敏感）。
 _WEEK_SCHEDULE_PATTERN = re.compile(r"\d+\s*个?\s*周|\bweeks?\b", re.IGNORECASE)
+
+# 规则④的 direction / availability 枚举字面值（``blueprint_schema.py:522-524`` /
+# ``:555-559`` 实测）。⚠️ direction 只有 provided / consumed 两值——凭印象写成第三个词
+# 会永远匹配不到，规则④就退化成恒通过的装饰品（模块 docstring 第 4 段 (c)）。
+_DIRECTION_PROVIDED = "provided"
+_DIRECTION_CONSUMED = "consumed"
+_NEEDS_SUPPORT = "needs_support"
+
+# 规则⑤ out_of_scope 扫描的**排除段**：``deferred_ideas`` 是「scope 外想法」的正当落位
+# （``blueprint_schema.py:737-740``），扫它必然把每条想法都误报成「引入了 scope 外内容」。
+_DEFERRED_IDEAS_PREFIX = "deferred_ideas"
+
+# 规则⑥ 章程「不该再长新东西」的演进态（``repositories/models.py:1113`` 三选一之二）。
+_FROZEN_EVOLUTIONS = ("maintenance_only", "deprecated")
+
+# ── goal-backward LLM 节上界（prompt 体积与投影裁剪） ─────────────────────
+# constraints 进 digest 的条数与单条文本上界（B5：语义冲突判定的输入）。
+_MAX_CONSTRAINTS = 20
+_MAX_CONSTRAINT_TEXT_CHARS = 300
+# digest 各清单的条数上界（与 blueprint_merge._MAX_LIST_ITEMS 同量级）。
+_MAX_DIGEST_ITEMS = 200
+# 单条标题 / 叙事片段上界。
+_MAX_TITLE_CHARS = 200
+_MAX_NARRATIVE_CHARS = 1000
+# prompt 各分节字符上界（照 blueprint_ambiguity_score._MAX_PROMPT_CHARS）。
+_MAX_PROMPT_CHARS = 6000
+# constraints 缺失时 digest 里的显式标注——**不静默落空**，人能从 digest 与
+# ``constraint_count=0`` 事件同时看出「本轮约束冲突判定未生效」。
+_NO_CONSTRAINTS_NOTICE = "（无约束清单，本项不可判）"
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +357,385 @@ def check_roles(content: Any) -> list[dict]:
     return findings
 
 
+def check_api_closure(content: Any) -> list[dict]:
+    """规则④ API 闭环：两条**纯集合运算**，均 BLOCKER。
+
+    - ``interaction_flows[].steps[].api_ref`` 指向 ``api_contracts[].id`` 之外 →
+      ``api_ref_dangling``（流程引用了不存在的契约，下游派生器会拿它建出无主的调用）；
+    - ``direction == consumed`` 且 ``data_source.availability == needs_support`` 时，
+      ``data_source.support_repository_id`` 缺失或不在 ``repo_associations`` 里 →
+      ``support_repo_missing``（缺协作仓，等于把「要别人配合」写成了「自己能搞定」）。
+
+    ⚠️ ``direction`` 的合法值只有 ``provided`` / ``consumed``
+    （``blueprint_schema.py:522-524``）——凭印象写成别的词会**永远匹配不到**，规则④就变成
+    恒通过的装饰品（Task 3 有一条并列防回归断言）。可用性判定**只读 ``data_source.*``
+    子路径**，顶层同名键即便存在也一概不读（与 ``blueprint_reconcile`` 的 B4 纪律同源：
+    111 schema 里没有那个顶层键，按它判定等于把结论建在幻觉字段上）。
+    """
+    findings: list[dict] = []
+    try:
+        data = content if isinstance(content, dict) else {}
+        contracts = _dict_list(data.get("api_contracts"))
+        contract_ids = {str(item.get("id") or "") for item in contracts}
+        contract_ids.discard("")
+        for flow in _dict_list(data.get("interaction_flows")):
+            flow_key = str(flow.get("id") or "") or "?"
+            for index, step in enumerate(_dict_list(flow.get("steps"))):
+                api_ref = str(step.get("api_ref") or "").strip()
+                if not api_ref or api_ref in contract_ids:
+                    continue
+                seq = step.get("seq")
+                step_key = str(seq) if seq is not None and str(seq) else str(index)
+                _append(
+                    findings,
+                    _finding(
+                        "api_ref_dangling",
+                        SEVERITY_BLOCKER,
+                        section_path=f"interaction_flows[{flow_key}].steps[{step_key}]",
+                        detail="步骤引用的契约 id 不存在于 api_contracts："
+                        f"{api_ref[:_MAX_SNIPPET_CHARS]}",
+                    ),
+                )
+
+        association_ids = _association_ids(data)
+        for index, contract in enumerate(contracts):
+            if _direction(contract) != _DIRECTION_CONSUMED:
+                continue
+            data_source = contract.get("data_source")
+            if not isinstance(data_source, dict):
+                continue
+            if str(data_source.get("availability") or "") != _NEEDS_SUPPORT:
+                continue
+            support_id = str(data_source.get("support_repository_id") or "").strip()
+            if support_id and support_id in association_ids:
+                continue
+            contract_key = str(contract.get("id") or "") or str(index)
+            _append(
+                findings,
+                _finding(
+                    "support_repo_missing",
+                    SEVERITY_BLOCKER,
+                    section_path=f"api_contracts[{contract_key}].data_source",
+                    repository_id=str(contract.get("repository_id") or ""),
+                    detail="consumed 契约已标 needs_support，但 support_repository_id "
+                    "缺失或不在 repo_associations 中（缺协作仓）",
+                ),
+            )
+    except Exception:  # noqa: BLE001 — 半可信输入恒不抛（同 check_preconditions）
+        return findings
+    return findings
+
+
+def check_prohibitions(content: Any) -> list[dict]:
+    """规则⑤ 禁令：排期表述 / out_of_scope 引入 / constraint 引用悬空。
+
+    - **排期禁令**：走查全部 block 文本（``iter_blocks`` + ``_block_text``，口径同源不自
+      写第二套），命中 :data:`_WEEK_SCHEDULE_PATTERN` → ``forbidden_schedule``
+      **BLOCKER**。``detail`` 只带命中片段（≤ :data:`_MAX_SNIPPET_CHARS`）与定位，
+      **绝不贴整块正文**（T-114-10）；
+    - **out_of_scope 引入**：``requirement_spec.boundaries.out_of_scope`` 的词条在 block
+      文本中被包含匹配 → ``out_of_scope_introduced`` **WARNING**（文本包含是弱判据）。
+      扫描**排除 ``deferred_ideas`` 段**——那是 scope 外想法的正当落位，扫它必误报；
+    - **constraint 引用悬空**：``repo_associations[].rationale.constraint_refs``（**唯一
+      已存在的 constraint 引用通道**）减去 ``requirement_spec.constraints[].id`` 非空 →
+      ``constraint_ref_dangling`` **BLOCKER**（纯集合运算）。
+
+    ⭐ **B5 降级范围登记（分工与边界，改动前先读）**：114-CONTEXT 规则⑤的第三条「不得与
+    constraints 冲突」在本模块**只覆盖引用层**——即「引用了不存在的 constraint id」
+    （``constraint_ref_dangling``，纯集合运算、可复现、可单测）。**语义层冲突**（某实现项
+    或 API 契约实质违背某条 ``constraints[].text``）**不做机械判定**：自由文本的语义判定
+    强判 BLOCKER 会产生不可复现的假阳性（A4）。该判定**已下沉到**
+    :func:`agoal_backward_review`——它把 ``requirement_spec.constraints`` 纳入形参与 prompt
+    digest，并要求模型以 ``rule_id="constraint_conflict"`` 回报。LLM 不可得时该层退化为
+    :func:`normalize_review_findings` 产出的 ``goal_backward_unavailable`` warning meta
+    finding。⇒ **规则⑤第三条不落空，且两级降级路径显式可见。**
+    """
+    findings: list[dict] = []
+    try:
+        data = content if isinstance(content, dict) else {}
+        blocks = iter_blocks(data)
+
+        for section_path, block in blocks:
+            text = _block_text(block)
+            if not text:
+                continue
+            match = _WEEK_SCHEDULE_PATTERN.search(text)
+            if match is None:
+                continue
+            _append(
+                findings,
+                _finding(
+                    "forbidden_schedule",
+                    SEVERITY_BLOCKER,
+                    section_path=section_path,
+                    block_id=str(block.get("block_id") or ""),
+                    detail="出现以周为单位的排期表述（禁令）：" + _snippet(text, match.start()),
+                ),
+            )
+
+        terms = _out_of_scope_terms(data)
+        for section_path, block in blocks:
+            if not terms or section_path.startswith(_DEFERRED_IDEAS_PREFIX):
+                continue
+            lowered = _block_text(block).lower()
+            if not lowered:
+                continue
+            for term in terms:
+                if term.lower() not in lowered:
+                    continue
+                _append(
+                    findings,
+                    _finding(
+                        "out_of_scope_introduced",
+                        SEVERITY_WARNING,
+                        section_path=section_path,
+                        block_id=str(block.get("block_id") or ""),
+                        detail="正文出现被 boundaries.out_of_scope 排除的内容"
+                        f"（文本包含匹配，弱判据）：{term[:_MAX_SNIPPET_CHARS]}",
+                    ),
+                )
+
+        constraint_ids = _constraint_ids(data)
+        for assoc in _dict_list(data.get("repo_associations")):
+            repository_id = str(assoc.get("repository_id") or "")
+            rationale = assoc.get("rationale")
+            raw_refs = rationale.get("constraint_refs") if isinstance(rationale, dict) else None
+            refs = {
+                str(ref).strip()
+                for ref in (raw_refs if isinstance(raw_refs, list) else [])
+                if str(ref or "").strip()
+            }
+            for ref in sorted(refs - constraint_ids):
+                _append(
+                    findings,
+                    _finding(
+                        "constraint_ref_dangling",
+                        SEVERITY_BLOCKER,
+                        section_path=(
+                            f"repo_associations[{repository_id or '?'}].rationale.constraint_refs"
+                        ),
+                        repository_id=repository_id,
+                        detail="引用的约束 id 不存在于 requirement_spec.constraints："
+                        f"{ref[:_MAX_SNIPPET_CHARS]}",
+                    ),
+                )
+    except Exception:  # noqa: BLE001 — 半可信输入恒不抛（同 check_preconditions）
+        return findings
+    return findings
+
+
+def check_charters(content: Any, *, charters: dict[str, dict] | None = None) -> list[dict]:
+    """规则⑥ 章程边界：direct 仓落在冻结演进态且无决策记录支撑即 BLOCKER。
+
+    Args:
+        content: 半可信蓝图 content dict。
+        charters: ``blueprint_charter_match.aload_charters`` 的返回
+            （``{repository_id: 章程正式字段}``）。**``None`` / ``{}`` → 整条规则返回
+            ``[]``（跳过，不判 BLOCKER）**：``aload_charters`` 对缺章程的仓**不返回条目**、
+            异常时整体返 ``{}``——章程读失败不该把整份蓝图判成违章。同理，章程 dict 里
+            没有某个仓 = 该仓没有章程 = **跳过该仓**。
+
+    Returns:
+        - ``charter_violation`` **BLOCKER**：direct 仓的 ``evolution ∈
+          {maintenance_only, deprecated}``（该仓不该再长新东西）且 ``decision_log`` 中
+          **无该仓的支撑条目**——要在冻结仓动土，必须有决策记录背书；
+        - ``charter_boundary_risk`` **WARNING**：该仓章程写了明文 ``boundaries[].rule``
+          且本轮无决策记录支撑，提示人审逐条核对是否越界。``rule`` 是自由文本，强判
+          BLOCKER 会产生不可复现的假阳性（A4），语义判定交 LLM 一类。
+
+    ⚠️ **只读正式字段，绝不读 ``draft_content``**（``repositories/models.py`` 的草案字段
+    不生效——AI 生成的章程草案不该反过来约束人）。
+    """
+    findings: list[dict] = []
+    try:
+        if not isinstance(charters, dict) or not charters:
+            return findings
+        data = content if isinstance(content, dict) else {}
+        for assoc in _dict_list(data.get("repo_associations")):
+            repository_id = str(assoc.get("repository_id") or "")
+            if not repository_id:
+                continue
+            if str(assoc.get("role") or "").strip().lower() == "indirect":
+                continue
+            charter = charters.get(repository_id)
+            if not isinstance(charter, dict):
+                continue
+            supported = _has_decision_support(data, repository_id)
+            evolution = str(charter.get("evolution") or "").strip()
+            if evolution in _FROZEN_EVOLUTIONS and not supported:
+                _append(
+                    findings,
+                    _finding(
+                        "charter_violation",
+                        SEVERITY_BLOCKER,
+                        section_path=f"repo_associations[{repository_id}]",
+                        repository_id=repository_id,
+                        detail=f"direct 仓的章程演进态为 {evolution}（不应再承接新增改动），"
+                        "且 decision_log 中没有该仓的决策记录支撑",
+                    ),
+                )
+            if supported:
+                continue
+            for index, rule in enumerate(_charter_boundary_rules(charter)):
+                _append(
+                    findings,
+                    _finding(
+                        "charter_boundary_risk",
+                        SEVERITY_WARNING,
+                        section_path=f"repo_associations[{repository_id}]",
+                        repository_id=repository_id,
+                        detail=f"该仓章程第 {index + 1} 条明文边界需人审逐条核对是否越界"
+                        f"（自由文本，弱判据）：{rule[:_MAX_SNIPPET_CHARS]}",
+                    ),
+                )
+    except Exception:  # noqa: BLE001 — 半可信输入恒不抛（同 check_preconditions）
+        return findings
+    return findings
+
+
+def check_gate_lock(content: Any, *, locked_snapshot: Any = None) -> list[dict]:
+    """确认门锁定校验：偏离 112 阶段 1 锁定的仓库集 / 角色 / 职责即 BLOCKER。
+
+    Args:
+        content: 半可信蓝图 content dict。
+        locked_snapshot: 114-03 传 ``session.stage_state["confirmation"]``（兼容
+            ``{"repos": [...]}`` 与裸 list 两种形状）。为空时**回落**到 content 内
+            ``confirmed_at_gate is True`` 的条目自比对——此时只能检出「锁定条目被整条
+            移除」（自比对的角色/职责必然相等），docstring 明写此降级边界。
+
+    基线投影复用 ``blueprint_repo_plan._normalize_locked_repos``（函数内 lazy import：
+    复用既有投影做对比基线可避免两处口径漂移，lazy 则守住本模块顶层零 ORM 的纪律）。
+
+    Returns:
+        逐条 ``gate_lock_violation`` **BLOCKER**（锁定仓消失 / ``role`` 不一致 /
+        ``responsibility`` 文本不一致），``section_path`` 用稳定锚
+        ``repo_associations[{rid}].responsibility``、``block_id`` 用 112 写入侧的稳定命名
+        ``blk_gate_resp_{rid}``（``blueprint_confirm_gate.py:291-303``）。
+
+    偏离 112 锁定即 BLOCKER——**要变必须重开确认门**，不允许在阶段 3 之后悄悄改仓库集或
+    职责（114-CONTEXT 锁定）。
+    """
+    findings: list[dict] = []
+    try:
+        from services.process_runtime.blueprint_repo_plan import _normalize_locked_repos
+
+        data = content if isinstance(content, dict) else {}
+        baseline = _normalize_locked_repos(_snapshot_repos(locked_snapshot))
+        if not baseline:
+            baseline = _normalize_locked_repos(
+                [
+                    assoc
+                    for assoc in _dict_list(data.get("repo_associations"))
+                    if assoc.get("confirmed_at_gate") is True
+                ]
+            )
+        if not baseline:
+            return findings
+        current = {
+            entry["repository_id"]: entry
+            for entry in _normalize_locked_repos(data.get("repo_associations"))
+        }
+        for entry in sorted(baseline, key=lambda item: item["repository_id"]):
+            repository_id = entry["repository_id"]
+            section_path = f"repo_associations[{repository_id}].responsibility"
+            block_id = f"blk_gate_resp_{repository_id}"
+            actual = current.get(repository_id)
+            if actual is None:
+                _append(
+                    findings,
+                    _finding(
+                        "gate_lock_violation",
+                        SEVERITY_BLOCKER,
+                        section_path=section_path,
+                        block_id=block_id,
+                        repository_id=repository_id,
+                        detail="确认门锁定的仓在当前 repo_associations 中已消失"
+                        "（要移除必须重开确认门）",
+                    ),
+                )
+                continue
+            if str(actual.get("role") or "") != str(entry.get("role") or ""):
+                _append(
+                    findings,
+                    _finding(
+                        "gate_lock_violation",
+                        SEVERITY_BLOCKER,
+                        section_path=section_path,
+                        block_id=block_id,
+                        repository_id=repository_id,
+                        detail=f"角色偏离确认门锁定：锁定 {entry.get('role')}，"
+                        f"当前 {actual.get('role')}",
+                    ),
+                )
+            if (
+                _blocks_text(actual.get("responsibility")).strip()
+                != _blocks_text(entry.get("responsibility")).strip()
+            ):
+                _append(
+                    findings,
+                    _finding(
+                        "gate_lock_violation",
+                        SEVERITY_BLOCKER,
+                        section_path=section_path,
+                        block_id=block_id,
+                        repository_id=repository_id,
+                        detail="职责文本偏离确认门锁定（要改职责必须重开确认门）",
+                    ),
+                )
+    except Exception:  # noqa: BLE001 — 半可信输入恒不抛（同 check_preconditions）
+        return findings
+    return findings
+
+
+def run_mechanical_rules(
+    content: Any, *, charters: dict[str, dict] | None = None, locked_snapshot: Any = None
+) -> list[dict]:
+    """六类机械规则总入口（**无 LLM / 无 DB / 无网络**），返回分级 findings。
+
+    执行顺序（**确定性**：同一输入输出逐字相等，含顺序）：
+
+    0. :func:`check_preconditions`——**非空即 return（短路）**，后七条一律不跑；
+    1. :func:`check_schema` → 2. :func:`check_citations` → 3. :func:`check_roles` →
+       4. :func:`check_api_closure` → 5. :func:`check_prohibitions` →
+       6. :func:`check_charters` → 7. :func:`check_gate_lock`。
+
+    确定性靠两条纪律保证：固定的调用顺序 + 集合运算前一律 ``sorted()``——**禁止依赖
+    dict / set 的迭代顺序**，否则同一蓝图两次审查会给出顺序不同的清单，去重与「第 N 轮
+    仍存在」的比对全部失真。
+
+    Args:
+        content: 半可信蓝图 content dict。
+        charters: 规则⑥的章程字典（``None`` ⇒ 规则⑥跳过，见 :func:`check_charters`）。
+        locked_snapshot: 确认门锁定快照（见 :func:`check_gate_lock`）。
+
+    Returns:
+        finding 六键 dict 列表，条数受 :data:`_MAX_FINDINGS` 约束。**绝不抛**；异常时返回
+        **已积累的结果**（不是空结果——已判出的缺陷不该因后续步骤出错而丢失）。
+    """
+    findings: list[dict] = []
+    try:
+        preconditions = check_preconditions(content)
+        if preconditions:
+            return preconditions
+        for entry in check_schema(content):
+            _append(findings, entry)
+        for entry in check_citations(content):
+            _append(findings, entry)
+        for entry in check_roles(content):
+            _append(findings, entry)
+        for entry in check_api_closure(content):
+            _append(findings, entry)
+        for entry in check_prohibitions(content):
+            _append(findings, entry)
+        for entry in check_charters(content, charters=charters):
+            _append(findings, entry)
+        for entry in check_gate_lock(content, locked_snapshot=locked_snapshot):
+            _append(findings, entry)
+    except Exception:  # noqa: BLE001 — 恒不抛且返回已积累结果（同 blueprint_reconcile:127）
+        return findings
+    return findings
+
+
 # ---------------------------------------------------------------------------
 # finding 归一 / 去重（114-03 落线程、114-05 呈现共用同一形状）
 # ---------------------------------------------------------------------------
@@ -377,6 +802,137 @@ def finding_dedupe_key(finding: Any) -> str:
     rule_id = str(data.get("rule_id") or "")
     anchor = str(data.get("block_id") or "") or str(data.get("section_path") or "")
     return f"{rule_id}|{anchor}"
+
+
+# ---------------------------------------------------------------------------
+# goal-backward LLM 节（**唯一** LLM 一类，best-effort 返 None）
+# ---------------------------------------------------------------------------
+
+
+async def agoal_backward_review(
+    *,
+    feature_points: list[dict[str, Any]],
+    impl_items: list[dict[str, Any]],
+    constraints: Any = None,
+    test_strategy: Any = None,
+    must_haves: Any = None,
+    key_links: Any = None,
+    session_id: str = "",
+) -> list[dict] | None:
+    """goal-backward 逆向核对（**本模块唯一的 LLM 调用点**）；不可得时返回 ``None``。
+
+    逆向核对四件事（114-CONTEXT 锁定）：每个功能点的 ``acceptance_criteria`` 是否被实现项
+    与 ``test_strategy`` 覆盖、``must_haves.truths`` 是否有实现项支撑、``key_links`` 两端是
+    否都存在，以及 ⭐ **逐条核对实现项/契约是否与某条 ``constraints`` 实质冲突**。
+
+    ⭐ **``constraints`` 形参是 B5 的落点**（``requirement_spec.constraints``，弱 schema
+    array，元素 ``{id, text, kind, citations}``）：它使 114-CONTEXT 规则⑤第三条「不得与
+    constraints 冲突」**真正可判**——机械规则只覆盖引用悬空
+    （``constraint_ref_dangling``，见 :func:`check_prohibitions`），**语义冲突在此**，模型
+    以 ``rule_id="constraint_conflict"`` 回报。两条降级路径**均为已登记的降级、都不当作
+    「无冲突」放行**：``constraints`` 缺失 ⇒ digest 里显式写
+    :data:`_NO_CONSTRAINTS_NOTICE` 且 ``*_started`` 事件带 ``constraint_count=0``；LLM
+    不可得 ⇒ :func:`normalize_review_findings` 产 ``goal_backward_unavailable`` warning
+    meta finding。
+
+    **独立 fresh context**：prompt 只喂 :func:`_goal_backward_digest` 的裁剪投影，
+    **不带任何起草 / 融合会话历史**（114-CONTEXT 锁定，降相关性偏差——带着自己的起草上下文
+    去自查，模型倾向于确认而非证伪）。
+
+    Returns:
+        成功 → 经 :func:`normalize_review_findings` 归一的 finding 列表（LLM 原始输出**从不
+        直接进业务**）。``None`` 的语义是 **「goal-backward 一类不可得」**（无默认模型 /
+        响应不可解析 / 调用异常），上游必须 fail-closed，**绝不当作「无问题」放行**；机械
+        六类照常跑，审查不因 LLM 挂掉而空转。本函数 best-effort，**不外抛**。
+    """
+    started = time.monotonic()
+    constraints_digest = _constraints_digest(constraints)
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from agents.call_source import CallSource, use_call_source
+        from agents.llm_factory import build_chat_model
+        from services.provider_config import ProviderConfigService
+
+        logger.info(
+            "blueprint_review_goal_backward_started",
+            category="sampling",
+            component="process_runtime",
+            session_id=session_id,
+            feature_point_count=len(feature_points or []),
+            impl_item_count=len(impl_items or []),
+            # constraint_count=0 是 B5 降级的**可见信号**：本轮约束冲突判定不可判。
+            constraint_count=len(constraints_digest),
+            has_must_haves=bool(must_haves),
+            has_key_links=bool(key_links),
+        )
+
+        resolved = await ProviderConfigService.aresolve()
+        model_name = (getattr(resolved, "extra", None) or {}).get("default_model", "")
+        if not model_name:
+            logger.warning(
+                "blueprint_review_goal_backward_no_default_model",
+                category="sampling",
+                component="process_runtime",
+                session_id=session_id,
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            return None
+
+        model = build_chat_model(resolved, model_name, streaming=False)
+        messages = [
+            SystemMessage(content=_goal_backward_system_prompt()),
+            HumanMessage(
+                content=_goal_backward_digest(
+                    feature_points=feature_points,
+                    impl_items=impl_items,
+                    constraints_digest=constraints_digest,
+                    test_strategy=test_strategy,
+                    must_haves=must_haves,
+                    key_links=key_links,
+                )
+            ),
+        ]
+        with use_call_source(CallSource.BLUEPRINT_AI_REVIEW):
+            response = await model.ainvoke(messages)
+
+        parsed = _parse_object_json(_content_to_text(response.content))
+        duration_ms = round((time.monotonic() - started) * 1000, 2)
+        if parsed is None:
+            logger.warning(
+                "blueprint_review_goal_backward_failed",
+                category="sampling",
+                component="process_runtime",
+                session_id=session_id,
+                reason="unparsable_response",
+                duration_ms=duration_ms,
+            )
+            return None
+
+        findings = normalize_review_findings(parsed.get("findings"))
+        logger.info(
+            "blueprint_review_goal_backward_completed",
+            category="sampling",
+            component="process_runtime",
+            session_id=session_id,
+            finding_count=len(findings),
+            # 只记计数与分级分布——**finding 正文绝不进日志**（T-114-10）。
+            blocker_count=sum(1 for item in findings if item["severity"] == SEVERITY_BLOCKER),
+            warning_count=sum(1 for item in findings if item["severity"] == SEVERITY_WARNING),
+            info_count=sum(1 for item in findings if item["severity"] == SEVERITY_INFO),
+            duration_ms=duration_ms,
+        )
+        return findings
+    except Exception as exc:  # noqa: BLE001 — best-effort：上游按 fail-closed 处理 None
+        logger.warning(
+            "blueprint_review_goal_backward_failed",
+            category="sampling",
+            component="process_runtime",
+            session_id=session_id,
+            error=redact_secrets_in_text(str(exc)),
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
+        return None
 
 
 # ── 内部纯函数 ────────────────────────────────────────────────────────────
@@ -554,3 +1110,295 @@ def _reference_corpus(content: Any) -> str:
             parts.append(str(data_source.get("from_api") or ""))
             parts.append(str(data_source.get("from_service") or ""))
     return "\n".join(parts).lower()
+
+
+def _association_ids(content: Any) -> set[str]:
+    """``repo_associations[].repository_id`` 集合（协作仓白名单）。"""
+    if not isinstance(content, dict):
+        return set()
+    ids = {
+        str(assoc.get("repository_id") or "")
+        for assoc in _dict_list(content.get("repo_associations"))
+    }
+    ids.discard("")
+    return ids
+
+
+def _direction(contract: Any) -> str:
+    """契约方向归一（大小写与首尾空白不敏感）。合法值只有
+    :data:`_DIRECTION_PROVIDED` / :data:`_DIRECTION_CONSUMED`。"""
+    if not isinstance(contract, dict):
+        return ""
+    return str(contract.get("direction") or "").strip().lower()
+
+
+def _snippet(text: str, start: int) -> str:
+    """命中片段：以命中位置为起点取 ≤ :data:`_MAX_SNIPPET_CHARS` 字符。
+
+    **只带片段不带整块正文**——finding 会进线程 body，而 block 文本是半可信内容（可能夹带
+    代码片段/凭证样本），整段搬运等于把正文外泄面放大（T-114-10）。
+    """
+    head = max(start, 0)
+    return str(text or "")[head : head + _MAX_SNIPPET_CHARS].strip()
+
+
+def _out_of_scope_terms(content: Any) -> list[str]:
+    """``requirement_spec.boundaries.out_of_scope`` 归一为词条列表。
+
+    容忍 ``list[str]`` 与 ``list[dict]`` 两种形状（``boundaries`` 是弱 schema object，
+    ``blueprint_schema.py:216-219``）：dict 取 ``text`` / ``name``。
+    """
+    if not isinstance(content, dict):
+        return []
+    spec = content.get("requirement_spec")
+    boundaries = spec.get("boundaries") if isinstance(spec, dict) else None
+    raw = boundaries.get("out_of_scope") if isinstance(boundaries, dict) else None
+    if not isinstance(raw, list):
+        return []
+    terms: list[str] = []
+    for item in raw:
+        if isinstance(item, dict):
+            text = ""
+            for key in ("text", "name", "title"):
+                text = str(item.get(key) or "").strip()
+                if text:
+                    break
+        else:
+            text = str(item or "").strip()
+        if text:
+            terms.append(text)
+    return terms
+
+
+def _constraint_ids(content: Any) -> set[str]:
+    """``requirement_spec.constraints[].id`` 集合（弱 schema array，逐字段 ``.get``）。"""
+    if not isinstance(content, dict):
+        return set()
+    spec = content.get("requirement_spec")
+    raw = spec.get("constraints") if isinstance(spec, dict) else None
+    ids = {str(item.get("id") or "").strip() for item in _dict_list(raw)}
+    ids.discard("")
+    return ids
+
+
+def _has_decision_support(content: Any, repository_id: str) -> bool:
+    """``decision_log`` 中是否有该仓的决策记录支撑（弱 schema，三条判据取或）。
+
+    判据：条目 ``repository_id`` 全等 / ``repository_ids`` 命中 / 文本字段
+    （``question`` / ``answer`` / ``decision`` / ``text``）包含该仓 id 或仓名。
+    ``decision_log`` 是弱 schema array（``blueprint_schema.py:733-736``），逐字段 ``.get``。
+    """
+    if not isinstance(content, dict) or not repository_id:
+        return False
+    names = {repository_id}
+    for assoc in _dict_list(content.get("repo_associations")):
+        if str(assoc.get("repository_id") or "") == repository_id:
+            name = str(assoc.get("repository_name") or "").strip()
+            if name:
+                names.add(name)
+    for entry in _dict_list(content.get("decision_log")):
+        if str(entry.get("repository_id") or "") == repository_id:
+            return True
+        raw_ids = entry.get("repository_ids")
+        if isinstance(raw_ids, list) and repository_id in {str(rid or "") for rid in raw_ids}:
+            return True
+        haystack = " ".join(
+            _blocks_text(entry.get(key)) for key in ("question", "answer", "decision", "text")
+        )
+        if any(name and name in haystack for name in names):
+            return True
+    return False
+
+
+def _charter_boundary_rules(charter: Any) -> list[str]:
+    """章程 ``boundaries[].rule`` 的非空文本列表（``repositories/models.py:1144`` 形状）。
+
+    **只读正式字段**——``draft_content`` 一律不读（草案不生效）。
+    """
+    if not isinstance(charter, dict):
+        return []
+    rules: list[str] = []
+    for item in _dict_list(charter.get("boundaries")):
+        rule = str(item.get("rule") or "").strip()
+        if rule:
+            rules.append(rule)
+    return rules
+
+
+def _snapshot_repos(snapshot: Any) -> Any:
+    """确认门快照的仓清单（兼容 ``{"repos": [...]}`` 与裸 list 两种形状）。"""
+    if isinstance(snapshot, dict):
+        return snapshot.get("repos")
+    if isinstance(snapshot, list):
+        return snapshot
+    return None
+
+
+def _constraints_digest(raw: Any) -> list[dict]:
+    """``requirement_spec.constraints`` → prompt digest 投影（B5 的输入裁剪）。
+
+    每条只取 ``{id, kind, text}``（``text`` 截断至 :data:`_MAX_CONSTRAINT_TEXT_CHARS`），
+    条数上界 :data:`_MAX_CONSTRAINTS`；非 list / 元素非 dict 一律跳过 ⇒ ``None`` 与类型
+    错乱输入返回 ``[]``（**恒不抛**）。空结果即「本轮约束冲突判定不可判」，由
+    :func:`_goal_backward_digest` 显式标注、由 ``constraint_count=0`` 事件可见。
+    """
+    digest: list[dict] = []
+    if not isinstance(raw, list):
+        return digest
+    for item in raw:
+        if len(digest) >= _MAX_CONSTRAINTS:
+            break
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()[:_MAX_CONSTRAINT_TEXT_CHARS]
+        constraint_id = str(item.get("id") or "").strip()
+        if not text and not constraint_id:
+            continue
+        digest.append({"id": constraint_id, "kind": str(item.get("kind") or ""), "text": text})
+    return digest
+
+
+def _goal_backward_system_prompt() -> str:
+    return (
+        "你是资深技术评审。给定一份技术蓝图的**功能点验收标准、实现项、约束清单、验收锚点**，"
+        "做 goal-backward 逆向核对：从「要达成什么」倒推「现在写下的东西够不够」。\n"
+        "逐项核对：\n"
+        "- 覆盖性：每个功能点的验收标准是否都有实现项与测试策略覆盖；缺口回报 "
+        'rule_id="acceptance_uncovered"。\n'
+        "- 锚点支撑：must_haves.truths 每条是否有实现项支撑；缺口回报 "
+        'rule_id="truth_unsupported"。\n'
+        "- 链接完整：key_links 的 from / to 两端是否都在实现项或契约中存在；缺口回报 "
+        'rule_id="key_link_broken"。\n'
+        "- **约束核对**：逐条核对是否有实现项或 API 契约与某条 constraint **实质冲突**；"
+        '冲突回报 rule_id="constraint_conflict"，并在 detail 里引用该 constraint 的 id。\n'
+        "要求：\n"
+        '- 只输出 JSON，形如 {"findings": [{"rule_id": "..", "severity": "blocker|warning|info",'
+        '"section_path": "..", "block_id": "", "repository_id": "", "detail": ".."}]}。\n'
+        "- severity 只用 blocker / warning / info 三值；**判不准就给 warning 并说明缺什么，"
+        "不要猜**——猜错的代价比多提一句大。\n"
+        "- detail 一句话说清「缺什么 / 与什么冲突」，不要复述原文。\n"
+        "- 没有发现问题就返回空数组，**不要编造 finding**。\n"
+        "- 不要输出 JSON 以外的解释性文字。"
+    )
+
+
+def _section(title: str, body: str) -> str:
+    """prompt 分节（各节独立截断，防单节撑爆 prompt）。"""
+    return f"### {title}\n{str(body or '').strip()[:_MAX_PROMPT_CHARS] or '（未提供）'}"
+
+
+def _goal_backward_digest(
+    *,
+    feature_points: Any,
+    impl_items: Any,
+    constraints_digest: list[dict],
+    test_strategy: Any,
+    must_haves: Any,
+    key_links: Any,
+) -> str:
+    """goal-backward 的**裁剪投影** prompt（fresh context：不带任何起草/融合会话历史）。
+
+    投影口径照 ``blueprint_merge._feature_point_digest`` / ``_impl_items_digest``：只搬结构
+    字段与短文本，不把整份蓝图倒进 prompt。``constraints`` 一节为空时写死
+    :data:`_NO_CONSTRAINTS_NOTICE`——**不静默落空**（B5 降级可见）。
+    """
+    fp_lines: list[str] = []
+    for point in _dict_list(feature_points)[:_MAX_DIGEST_ITEMS]:
+        title = str(point.get("title") or "").strip()[:_MAX_TITLE_CHARS]
+        criteria = point.get("acceptance_criteria")
+        criteria_text = (
+            "；".join(str(item).strip() for item in criteria if str(item or "").strip())
+            if isinstance(criteria, list)
+            else ""
+        )
+        line = f"- [{str(point.get('id') or '-')}] {title or '（无标题）'}"
+        if criteria_text:
+            line += f"（验收：{criteria_text}）"
+        fp_lines.append(line)
+
+    item_lines: list[str] = []
+    for item in _dict_list(impl_items)[:_MAX_DIGEST_ITEMS]:
+        item_id = str(item.get("id") or item.get("item_id") or "-")
+        title = str(item.get("title") or "").strip()[:_MAX_TITLE_CHARS]
+        how = _blocks_text(item.get("how"))[:_MAX_NARRATIVE_CHARS]
+        line = (
+            f"- [{item_id}] ({str(item.get('repository_id') or '-')}"
+            f"/{str(item.get('change_type') or '-')}) {title or '（无标题）'}"
+        )
+        if str(item.get("feature_point_id") or ""):
+            line += f" ← {item['feature_point_id']}"
+        if how:
+            line += f"\n  怎么做：{how}"
+        item_lines.append(line)
+
+    constraint_lines = [
+        f"- [{entry['id'] or '-'}] ({entry['kind'] or '-'}) {entry['text']}"
+        for entry in constraints_digest
+    ]
+
+    truths = must_haves.get("truths") if isinstance(must_haves, dict) else must_haves
+    truth_lines = [
+        f"- {str(truth).strip()[:_MAX_TITLE_CHARS]}"
+        for truth in (truths if isinstance(truths, list) else [])
+        if str(truth or "").strip()
+    ][:_MAX_DIGEST_ITEMS]
+
+    raw_links = key_links
+    if raw_links is None and isinstance(must_haves, dict):
+        raw_links = must_haves.get("key_links")
+    link_lines: list[str] = []
+    for link in _dict_list(raw_links)[:_MAX_DIGEST_ITEMS]:
+        link_lines.append(
+            f"- {str(link.get('from') or '-')} → {str(link.get('to') or '-')}"
+            f"（via {str(link.get('via') or '-')}）"
+        )
+
+    sections = [
+        _section("功能点与验收标准", "\n".join(fp_lines)),
+        _section("实现项", "\n".join(item_lines)),
+        _section(
+            "约束清单（逐条核对是否有实现项/契约与之实质冲突）",
+            "\n".join(constraint_lines) or _NO_CONSTRAINTS_NOTICE,
+        ),
+        _section("测试策略", _blocks_text(test_strategy)),
+        _section("验收锚点 truths", "\n".join(truth_lines)),
+        _section("关键链接 key_links", "\n".join(link_lines)),
+    ]
+    return "\n\n".join(sections) + "\n\n请输出 goal-backward 逆向核对结果 JSON。"
+
+
+def _content_to_text(content: Any) -> str:
+    """LangChain ``message.content`` 归一为文本（兼容 str / 分块 list）。
+
+    reasoning 模型（经兼容代理的 deepseek/glm 等）content 为 content_blocks 列表，直接
+    ``str()`` 会得到 Python repr（单引号）致下游 ``json.loads`` 失败——只拼接含 text 的
+    block。口径与 ``blueprint_ambiguity_score._content_to_text`` 同源。
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "".join(parts)
+    return str(content or "")
+
+
+def _parse_object_json(text: str) -> dict[str, Any] | None:
+    """从 LLM 文本中健壮提取顶层 JSON 对象（``` 围栏 + 裸 JSON 双路）。
+
+    非 JSON / 非对象 → ``None``（调用方按 fail-closed 处理），本函数不外抛。
+    """
+    candidates: list[str] = re.findall(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+    candidates.append(text)
+    for block in candidates:
+        try:
+            data = json.loads(block.strip())
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
