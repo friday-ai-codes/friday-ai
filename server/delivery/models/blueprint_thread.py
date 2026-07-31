@@ -111,6 +111,11 @@ class BlueprintThread(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # 114-05（B4）：澄清超时提醒的**周期锚点**。null = 从未提醒过（到期判据回落
+    # `created_at`）。有它才能做到「按周期提醒」而不是每次 job tick 都重复轰炸同一
+    # 条线程。⚠️ 提醒路径用 `bulk_update` 写回本字段，`bulk_update` **绕过 auto_now**
+    # ⇒ 必须同时显式带 `updated_at=timezone.now()`（同 `_apply_transition_sync`）。
+    last_reminded_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "delivery_blueprint_thread"
