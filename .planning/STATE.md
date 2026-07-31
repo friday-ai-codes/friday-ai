@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
 status: executing
-last_updated: "2026-08-01T05:55:00.000Z"
-last_activity: 2026-08-01 -- 115-06 executed
+last_updated: "2026-08-01T06:30:00.000Z"
+last_activity: 2026-08-01 -- 115-07 executed (Phase 115 complete)
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 27
-  completed_plans: 26
-  percent: 70
+  completed_plans: 27
+  percent: 83
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 
 ## Current Position
 
-Phase: 115 (前端查看器与知识库（结构化阅读 + 批注 + 管理面）) — EXECUTING
+Phase: 115 (前端查看器与知识库（结构化阅读 + 批注 + 管理面）) — ⭐ COMPLETE（7 / 7）
 Plan: 7 of 7
-Status: 115-06（查看器路由页 + 知识库 tab + 项目物料卡）已收口——9 个新建组件/页面 + 2 个页面测试（16 例全绿），前端门 vitest **1618 passed / 1 skipped**（基线 1602/1，+16 零回归）、type-check 通过、`eslint .` **111 problems**（与基线逐个相同 ⇒ 零新增）、⭐ `pnpm build` **通过**、源码守卫 6 条全绿（扫描面 36 → **41 文件**）。⭐ **P-4 被物理堵死并经真实变异证明**：十个 `<section id>` 容器无条件渲染、`id` 全是静态字面量、`sections` 恒 10 项、badge 传空串而非 0；给第一段加 `v-if="content"` ⇒ 用例 1 转红（其余八条保持绿）。⭐ **两条错误分档特例落地**：四个主查询 404 整页替换为唯一一句中性文案且不渲染任何蓝图元信息；`blueprint-gate/` 的非 200 **只决定挂载点是否渲染**，用例断言「gate 抛 404 ⇒ 页面正常渲染、无错误态、六个 toast mock 零调用」。六个动作端点按接线契约处理（409 blocked 开解药面板 / reflow 五档都不当失败 / 零乐观更新 + 前缀失效）。⭐ **i18n 缺口一次清零**：`zh-CN.json` 新增 **69 个叶子键（0 删除 0 修改）**，其中 42 个是 115-03/04/05 的回报项，12 个组件的降级渲染已全部换回（优先换回「枚举徽标印英文 token」那一档）。两处宿主追加点删除行 = 0；四个 0.19 归属面 `git diff` 全空；零新增依赖、后端零改动。⭐ 115-07 的确认门面板挂载点（`#gate` / `blueprint-gate-mount`）与 `gateAvailable` 派生已就位，可独立推迟
-Last activity: 2026-08-01 -- 115-06 executed
+Status: ⭐ **115-07（阶段 1 确认门面板）已收口，Phase 115 全相位完成**——2 个新建组件 + 1 处**零删除行**的页面追加 + 22 例组件测试全绿。前端门 vitest **1640 passed / 1 skipped**（基线 1618/1，**+22 零回归**）、type-check 通过、`eslint .` **111 problems**（与基线逐个相同 ⇒ 零新增）、`pnpm build` 通过、源码守卫 6 条全绿（扫描面 41 → **43 文件**）。⭐ **FLOW-03 第一次在 UI 上可达**：112 的 `blueprint-gate/` 八端点此前全仓零前端，现在快照与七个动作全部有界面，用户能确认仓库集与职责并进入 113 的阶段 2。⭐ **「不得据 gate 状态码推断权限」被钉成可证伪事实**：三种 404 的 `detail` 各跑一遍并断言**同一组**结果（面板不存在 / 无错误态 / 六个 toast 零调用），任何按文案分档的实现必有一条转红。七动作统一「一次 POST + `['blueprint','gate',id]` 与 `['blueprint','snapshot',id]` 双失效」、零乐观更新；两条破坏性动作走二次确认（文案逐字照 §16）且「取消 ⇒ 不发 POST」有正反用例。⭐ **「可独立顺延」经实跑验证**：临时分支整体回退本 plan 后，vitest/type-check/build **逐字回到 115-06 基线**，验证后工作区已恢复。相位级收口全绿：§13.2 的四个 0.19 归属面 `git diff` 全空、六个追加点删除行全为 0、`server/` 相位内只含 115-01 的七个文件且零 migration、依赖三件套零行变更。以下为 115-06 的收口记录 ——9 个新建组件/页面 + 2 个页面测试（16 例全绿），前端门 vitest **1618 passed / 1 skipped**（基线 1602/1，+16 零回归）、type-check 通过、`eslint .` **111 problems**（与基线逐个相同 ⇒ 零新增）、⭐ `pnpm build` **通过**、源码守卫 6 条全绿（扫描面 36 → **41 文件**）。⭐ **P-4 被物理堵死并经真实变异证明**：十个 `<section id>` 容器无条件渲染、`id` 全是静态字面量、`sections` 恒 10 项、badge 传空串而非 0；给第一段加 `v-if="content"` ⇒ 用例 1 转红（其余八条保持绿）。⭐ **两条错误分档特例落地**：四个主查询 404 整页替换为唯一一句中性文案且不渲染任何蓝图元信息；`blueprint-gate/` 的非 200 **只决定挂载点是否渲染**，用例断言「gate 抛 404 ⇒ 页面正常渲染、无错误态、六个 toast mock 零调用」。六个动作端点按接线契约处理（409 blocked 开解药面板 / reflow 五档都不当失败 / 零乐观更新 + 前缀失效）。⭐ **i18n 缺口一次清零**：`zh-CN.json` 新增 **69 个叶子键（0 删除 0 修改）**，其中 42 个是 115-03/04/05 的回报项，12 个组件的降级渲染已全部换回（优先换回「枚举徽标印英文 token」那一档）。两处宿主追加点删除行 = 0；四个 0.19 归属面 `git diff` 全空；零新增依赖、后端零改动。⭐ 115-07 的确认门面板挂载点（`#gate` / `blueprint-gate-mount`）与 `gateAvailable` 派生已就位，可独立推迟
+Last activity: 2026-08-01 -- 115-07 executed (Phase 115 complete)
 
 ⭐ **115-03 起开工前必读 `115-02-SUMMARY.md` §14 的五条注意**，其中三条最容易踩：
 
@@ -147,6 +147,9 @@ Last activity: 2026-08-01 -- 115-06 executed
 
 ### Pending Todos
 
+- ⭐ [Phase 115-07 提出 · **既有后端缺口**] **`blueprint-gate/` 八个端点里有七个没有项目范围闸**：实读 `server/delivery/api/blueprint_gate_views.py`，范围闸 helper `_ablueprint_project_id`（`:511`）**只在 `BlueprintRejectedToBoundaryView`（`:385`）里被调用过一次**，其余七个 View 只有 `IsAuthenticated`。⇒ 该链的 404 混合了「门未开启」（绝大多数蓝图绝大多数时间的正常态）/「artifact 不存在」/「无蓝图编排会话」三种语义，**状态码不携带任何权限信息**。115-07 的前端已按 P-10 处理（渲染条件只有「200 与否」一条，⛔ 不进错误分档、不据它推断权限，三种 404 行为一致有并列用例），但**后端的闸本身仍缺**。本相位边界是「只加读面」不修它 ⇒ 顺延为独立工作项（与 Phase 111 的 MN-12「权限口径」一并定夺）
+- ⭐ [Phase 115-07 提出 · 后端小缺口] **`confirm/` 的 409 未下发 `blocked_reason`**：`blueprint_gate_views.py:240`（未决阻塞澄清）与 `:249`（`alock` 拒绝落锁）两处 409 的**响应体里只有 `detail`**，`blocked_reason` 只活在 service 返回值里被视图消费掉了。前端已按机器可读键实现两档分流（`pending_clarification` ⇒ 一键跳侧栏未决组；其余 ⇒ 回显 `detail` + 刷新重试），⛔ **坚持不按中文 `detail` 分支**（那等于把后端文案当协议）。⇒ 后端在这两处 409 的 body 里补一个 `blocked_reason` 键即可让「一键跳未决线程」这档在生产生效；在此之前该档功能降级但语义正确
+- [Phase 115-07 重申 · SC-4 范围收窄] **关联段的「引用了本蓝图 / 关联知识」顺延 Phase 116 的知识图谱物化**（115-05 已首次登记，115-07 相位收口时重申）：当前关联段只呈现本蓝图**引出**的引用与关联项目，反向「被谁引用」需要图谱物化后才有数据源
 - [Phase 111 review 跳过项] **MN-06**：需新增 migration 才能修（详见 `.planning/phases/111-schema/111-REVIEW.md` Fix Log）——留到 112/113 有 migration 批次时一并做，避免为单条 MINOR 单独起 migration
 - [Phase 111 review 跳过项] **MN-12**：属权限口径决策（非实现缺陷），与 115 前端权限呈现一并定夺
 - [Phase 112 review 跳过项] **MN-06**：删除/启用皆属零行为收益的 churn（理由见 `.planning/phases/112-1/112-REVIEW.md` Fix Log）；MJ-06 的 `match_kind` 证据字段一并保留
@@ -194,8 +197,12 @@ Last activity: 2026-08-01 -- 115-06 executed
 
 ## Session Continuity
 
-Last session: 2026-08-01T04:30:00.000Z
-Next step: **Phase 115-06（页面装配）** —— wave 4 的 115-05 已收口，十段组件与四张卡就位，115-06 按 `115-05-SUMMARY.md` §2 的 props/emits 表接线。
+Last session: 2026-08-01T06:30:00.000Z
+Next step: ⭐ **Phase 115 已全相位完成（7 / 7）** —— 下一步是 `/gsd-verify-work`（UAT 清单分散在 115-03…07 各自 SUMMARY 的「UAT 清单」节，115-07 的 9 条是确认门专属）或直接进 **Phase 116**。⚠️ 进 116 前先看 Pending Todos 顶部 115-07 提出的三条（gate 链无项目范围闸 / `confirm` 409 未下发 `blocked_reason` / SC-4 范围收窄）。
+
+⭐ **确认门面板的契约唯一来源是 [`115-07-SUMMARY.md`](./phases/115-ui/115-07-SUMMARY.md)**：两个组件的 **props/emits 逐字**（§3）、⭐ **七动作的端点 → 入参 → 状态码 → toast 映射表**（§4）、**confirm 409 两档与那处后端缺口**（§5）、`add-repo` 复用 `RepositoryPicker` 的接线形状与多选提交顺序（§6）、⭐ **「gate 非 200 ⇒ 不渲染且不报错」的落地方式与三种 404 并列用例名**（§2）、⭐ **可独立顺延性的实跑验证记录**（§9）、**相位级收口报告**（§10）、**UAT 清单 9 条**（§14）。
+
+三条最容易踩：① ⛔ **不得据 `blueprint-gate/` 的状态码做任何权限推断**，它的 404 是正常态；② `rerun` 是 **`edit-responsibility/`** 的入参，**不是** `upgrade-research/` 的（PLAN 与 UI-SPEC 的措辞都写错了，以后端为准）；③ 页面 gate 挂载点的 `v-if="gateAvailable"` 与 `#gate` / `blueprint-gate-mount` 锚点行**一个字都不要改** —— 那是「非 200 不进分档」在 DOM 上的唯一落点，也是 `?panel=gate` 的滚动定位依赖。
 
 ⭐ **段渲染面的契约唯一来源是 [`115-05-SUMMARY.md`](./phases/115-ui/115-05-SUMMARY.md)**：**十段组件的 props/emits 逐字表**（§2，标注哪七段收 `blockCtx`、哪三段不收）、**跨段跳转锚点约定**（§3：`fp-<id>` / `api-<id>`，88px 偏移归页面）、三个最容易做错的点各自的落地形态（§4：`must_haves` 四条约束 / `decision_log` 的 `open-thread` 定夺 / ⭐ SC-4 收窄的证据链）、**四条变异验证证据**（§5）、⚠️ **21 个 i18n 缺口及其三档降级**（§6）、**各段空态规则表**（§7）、**30 个 `data-testid` 清单**（§8）、**UAT 清单 8 条**（§11）。
 

@@ -161,7 +161,7 @@ Plans:
 - [x] 115-04-PLAN.md — 线程侧栏与写路径 + 人审终审 + 版本 diff：四组分组（一律走 sidebarGroups，失锚不二次过滤）+ ⭐ kind 硬分流做在渲染层（finding 卡里根本没有 Composer 节点）+ readonly 是不存在于 DOM 而 finding 处置不受其约束 + 终审 disabled+Tooltip 与二次确认 + ⭐ approve 409 的 unresolved_blocker_thread_ids 逐条可点跳转 + 质量面板三态绝不显示 0 + 版本切换与 block 级 diff（canonical 分类 + diffWords + .diff-* 复制进 scoped）（CLAR-01, FLOW-08, VIEW-01）
 - [x] 115-05-PLAN.md — 十段正文组件（九个 section + 四张卡）：段组件零批注实现一律透传 blockCtx；must_haves 与 decision_log/deferred_ideas 两个特例段不接批注层且组件内写明原因；availability 只从 data_source 读不回落顶层；仓库关联卡直跳仓库页（SC-3）与 unsuitable 替代建议原样展示；⭐ associations 段范围收窄为「本蓝图引用了 + 关联项目」，**反向「被谁引用」顺延 116 知识图谱物化**（knowledge/artifact_associations.py 查的是 initiatives.Artifact 投影的 KnowledgeEntity，拿 delivery.Artifact.id 必然落空，SC-4 已同步收窄）（VIEW-01/02/04）
 - [x] 115-06-PLAN.md — 查看器路由页装配 + 知识库 tab + 项目物料卡：⭐ 十段 <section id> 无条件渲染且 sections 恒 10 项、badge 传 '' 不传 0（P-4/P-18，否则左栏高亮全程失效而看起来只是迟钝）+ AnchorNavLayout 页面直接使用与三栏装配 + 六 query 双向同步与一次性消费 + 404 单一中性文案 + gate 非 200 不进错误分档 + 六个动作端点接线（零乐观更新、409 blocked 开解药面板、reflow 五档不当失败）+ 两处纯追加点（tab 宿主 / 物料面板）+ 全相位前端门（VIEW-01/02/03/04, CLAR-01, FLOW-08）
-- [ ] 115-07-PLAN.md — 确认门面板（⭐ 相对 ROADMAP SC 的范围增量，本相位最后一个可独立顺延 plan，顺延目标 116 且不得丢弃）：消费 112 的 blueprint-gate/ 快照与七动作，渲染条件只有「200 与否」一条（该链八端点里七个无项目范围闸 ⇒ 状态码不携带权限信息，三种 404 行为必须一致）+ 一次 POST + 双 invalidate + pending 行禁用 + confirm 409 的 pending_clarification 一键跳未决线程 + ⭐ 可顺延性实跑验证（回退后前端四道门仍全绿）+ 相位级收口自检（VIEW-01；同时闭 FLOW-03 的界面可达性）
+- [x] 115-07-PLAN.md — 确认门面板（⭐ 相对 ROADMAP SC 的范围增量，本相位最后一个可独立顺延 plan，顺延目标 116 且不得丢弃）：消费 112 的 blueprint-gate/ 快照与七动作，渲染条件只有「200 与否」一条（该链八端点里七个无项目范围闸 ⇒ 状态码不携带权限信息，三种 404 行为必须一致）+ 一次 POST + 双 invalidate + pending 行禁用 + confirm 409 的 pending_clarification 一键跳未决线程 + ⭐ 可顺延性实跑验证（回退后前端四道门仍全绿）+ 相位级收口自检（VIEW-01；同时闭 FLOW-03 的界面可达性）
 
 **UI hint**: yes
 
@@ -468,7 +468,7 @@ Plans:
 | 112. 规格门与双面路由调研 | v0.20.0 | FLOW-01/02/03/04, CHARTER-02/03 | 5/5 | ✅ Complete (16/17 + gap closed) | 2026-07-30 |
 | 113. 分仓方案与融合 + Context Bus | v0.20.0 | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | 6/6 | ✅ Complete (passed 54/54) | 2026-07-30 |
 | 114. 审查与澄清收敛 | v0.20.0 | FLOW-07, CLAR-02/03/04 | 4/5 | 🟡 In Progress (114-01/02/03/04 done, 1263 passed) | - |
-| 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 1/7 | In Progress | 115-01 后端五端点已收口 |
+| 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 7/7 | ✅ Complete (vitest 1640 passed / 1 skipped) | 2026-08-01 |
 | 116. 入口收编与导出 | v0.20.0 | GATE-01, VIEW-05 | 0/TBD | Not started | - |
 
 **Coverage (v0.20.0):** 35/35 需求全部映射，无孤儿、无重复（DEPTH-01~05 自 v0.19.0 Phase 108 迁入，映射见 REQUIREMENTS.md）。

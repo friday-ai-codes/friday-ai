@@ -246,9 +246,20 @@ const picked = ref<string[]>([])
 | `rg "setQueryData\|RepoMultiSelector\|hsl("` 两个新组件 | **零命中** |
 | `git diff RepositoryPicker.vue RepoMultiSelector.vue` | **空输出**（⛔ 未修改被复用组件） |
 
-### 全量后端 pytest
+### ⭐ 全量后端 pytest（相位收口实跑）
 
-本 plan **后端零改动**（上表第四行的 `git diff --name-only server/` 逐字证明：相位内后端改动仅 115-01 的七个文件，本 plan 一个未碰）。相位收口的全量 `uv run pytest tests/ -q` 结果见 §14 附录。
+本 plan **后端零改动**（上表第四行的 `git diff --name-only server/` 逐字证明：相位内后端改动仅 115-01 的七个文件，本 plan 一个未碰）。相位收口仍实跑了全量 `cd server && uv run pytest tests/ -q`（470s）：
+
+```
+1 failed, 8606 passed, 63 skipped, 26 deselected, 1 xfailed
+FAILED tests/mcp_tools/test_skills_snapshot_guard.py::test_skill_files_discovered
+```
+
+| 项 | 基线（8546 passed / 1 failed） | 本次 | 判定 |
+|---|---|---|---|
+| failed | 1 | **1** | ⭐ **零新增失败** |
+| 那条 failed 是谁 | `test_skills_snapshot_guard.py::test_skill_files_discovered` | **同一条** | STATE 已登记的**纯 worktree 环境现象**（断言 `skills/skills/*/SKILL.md` ≥4，而本 worktree 的 `skills/` 是空目录，主检出里有内容），与蓝图相位无关；里程碑收尾在主检出复跑即可 |
+| passed | 8546 | **8606** | +60（相位期间其它 plan 的后端用例增量），零回归 |
 
 ---
 
@@ -380,13 +391,6 @@ const picked = ref<string[]>([])
 
 ---
 
-## 附录：全量后端 pytest
-
-本 plan 后端零改动，全量 `cd server && uv run pytest tests/ -q` 作为**相位收口**在本 plan 收尾运行，
-结果与基线（**8546 passed / 1 failed**）的对比见下方「Self-Check」小节的实跑记录。
-
----
-
 ## Self-Check: PASSED
 
 **创建的 3 个文件全部存在**：`components/blueprint/BlueprintGatePanel.vue` /
@@ -405,3 +409,6 @@ build **通过**，与 115-06 基线**逐字相同**；验证后工作区 `git s
 **边界核算**：§13.2 的四个归属面 `git diff` 全空；六个追加点删除行全为 0；`server/` 相位内只含 115-01 的
 七个文件且零 migration；`makemigrations --check --dry-run` **退出码 0**；依赖三件套 diff **零行**；
 `zh-CN.json` 键集差分 **added 20 / removed 0 / changed 0**；生成物 `components.d.ts` 手工增 **2 行**、零删除。
+
+**全量后端 pytest 实跑**：**8606 passed / 1 failed / 63 skipped**，那条 failed 是 STATE 已登记的 worktree
+环境项（`test_skills_snapshot_guard.py::test_skill_files_discovered`）⇒ **相对基线零新增失败**。
