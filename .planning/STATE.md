@@ -2,7 +2,7 @@
 gsd_state_version: 1.0
 milestone: v0.19.0
 milestone_name: 技术方案可信度
-status: milestone_audit_pending
+status: audited_not_shipped
 stopped_at: v0.19.0 全部相位执行完毕（105/106/107/109/110，108 已移交 v0.20.0）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01，另修一处会让 SPINE-01 头条入口在异步路径上消失的缺陷；Phase 110 七个 plan 全落地，修掉评审 1 HIGH/2 MEDIUM 与验证发现的 GAP-1（前半程失败时间线撒谎）及同根因的脉冲缺席。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。待办：里程碑审计 + 13 项人工验收（109 六项 + 110 七项）。⚠️ 遗留里程碑级缺口见 Blockers/Concerns 首条（RoutingDecisionPanel 无挂载点）。
 last_updated: "2026-07-31T10:04:12.751Z"
 last_activity: 2026-07-31
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
 **Core value（v0.19.0，在建）:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。（方案结构深度 DEPTH-01~05 已移交 v0.20.0 技术方案蓝图，双 worktree 并行开发。）
-**Current focus:** 里程碑审计（全部相位执行完毕）
+**Current focus:** 里程碑审计已出（gaps_found）——放行条件未满足，**未归档、未打 tag**
 
 ## Current Position
 
 Phase: 110（末相位，已完成）
 Plan: 7/7 complete
-Status: v0.19.0 全部相位执行完毕，待里程碑审计与人工验收
+Status: 全部相位执行完毕且已审计；审计判 gaps_found（13 满足 / 4 部分 / 2 未达），四条放行条件未满足，里程碑**未归档**
 Last activity: 2026-07-31 — Phase 110 完成，GAP-1 闭合
 
 ## Milestone Overview (v0.19.0 — Phases 105–110 — 🟢 EXECUTED，待审计)
@@ -420,11 +420,15 @@ None.
 
 [Issues that affect future work]
 
-- 🔴 **`RoutingDecisionPanel` 在 SPA 内无任何挂载点 ⇒ ROUTE-01 / ROUTE-02 / RELY-03 的用户可见半边到不了用户**（v0.19.0 里程碑级缺口，2026-07-31 发现）。该组件（`web/src/components/chat/RoutingDecisionPanel.vue`，24.9KB，功能完整）承载 Phase 107 的分组呈现、跨组标注与降级横幅，但它在 **2026-05-29（commit `29247521`，本里程碑立项之前）被刻意下线**，理由是「与底部澄清卡去重」，并有一条锁测试 `web/src/components/chat/__tests__/partsApiIntegration.spec.ts` 断言它不渲染。后果：Phase 107 把 ROUTE-01/02 与 RELY-03 建在了一个已下线的组件里；`ClarificationCard` / `RepoMultiSelector` 都不带分组与跨组标注，所以里程碑目标「路由基于多维证据分层呈现并可解释」在用户侧并未成立。之所以此前无人发现，是 107 的 VERIFICATION 为 `human_needed` 而「浏览器视觉核对」那条人工项一直未执行。
+- 🔴 **`RoutingDecisionPanel` 在 SPA 内无任何挂载点 ⇒ ROUTE-01 / ROUTE-02 / ROUTE-07 / RELY-03 的用户可见半边到不了用户**（v0.19.0 里程碑级缺口，2026-07-31 发现；里程碑审计把影响范围从 3 条扩到 4 条）。该组件（`web/src/components/chat/RoutingDecisionPanel.vue`，24.9KB，功能完整）承载 Phase 107 的分组呈现、跨组标注与降级横幅，但它在 **2026-05-29（commit `29247521`，本里程碑立项之前）被刻意下线**，理由是「与底部澄清卡去重」，并有一条锁测试 `web/src/components/chat/__tests__/partsApiIntegration.spec.ts` 断言它不渲染。后果：Phase 107 把 ROUTE-01/02 与 RELY-03 建在了一个已下线的组件里；`ClarificationCard` / `RepoMultiSelector` 都不带分组与跨组标注，所以里程碑目标「路由基于多维证据分层呈现并可解释」在用户侧并未成立。
+  **里程碑审计补充：`breakdown` 在整个前端也只有这一个渲染者，因此 ROUTE-07（分数可拆解、用户可展开看每个信号的贡献）的用户半边同样到不了用户** —— 105-06 的分数分解与 106-05 的新信号中文标签都落在这里，不只是 107 一相的问题。用户在对话里实际看到的候选来自 `useToolDisplay.relevanceCandidates`，是扁平的 `{名称, 分数, 等级}`，与开工前没有可感差别。另有两项 UAT（105-UAT #3、107-UAT #2）因面板下线**已无从执行**——它们本该是第一批发现该缺口的人。之所以此前无人发现，是 107 的 VERIFICATION 为 `human_needed` 而「浏览器视觉核对」那条人工项一直未执行。
+  **里程碑审计补充：`breakdown` 在整个前端也只有这一个渲染者，因此 ROUTE-07（分数可拆解、用户可展开看每个信号的贡献）的用户半边同样到不了用户** —— 105-06 的分数分解与 106-05 的新信号中文标签都落在这里，不只是 107 一相的问题。用户在对话里实际看到的候选来自 `useToolDisplay.relevanceCandidates`，是扁平的 `{名称, 分数, 等级}`，与本里程碑开工前没有可感差别。另有两项 UAT（105-UAT #3、107-UAT #2）因面板下线**已无从执行**——它们本该是第一批发现该缺口的人。
   **未在本次自动执行中处置的原因**：是否让该面板复活、以及如何避免与澄清卡的选仓 UI 重复，是一个已被刻意做过的产品决定，不宜由自动流程静默推翻。
   **建议处置**（三选一，需人决定）：① 只恢复「解释」职能（分组/跨组/降级只读呈现），把「改选仓」继续留给澄清卡，重新挂载并撤销那条锁测试；② 把分组与跨组标注下沉进 `RepoMultiSelector`，正式废弃该面板；③ 确认下线是长期决定，则回退 ROUTE-01/02/RELY-03 的需求状态并从里程碑目标中如实剔除。
 
 - ⚠️ **发布轨版本号已超前于 GSD 里程碑轨——下一里程碑不可命名 v0.18.0**。两条轨道相互独立：`.github/workflows/release.yaml` 由 `tags: v*` 触发，`github-actions[bot]` 按 conventional commits 自动生成 changelog 并发 GitHub Release；GSD 里程碑轨由 `$gsd-new-milestone` / `$gsd-complete-milestone` 驱动，最后一个里程碑是 v0.17.0。目前 **`v0.18.0` 已作为 GitHub Release 发布并且是 Latest**（tag 打在 2026-07-24 的 `bc67fe4d9`，内容是 Phase 100–104 的 review 修复 + 07-23/07-24 修复的聚合 changelog，**不对应任何 GSD 里程碑**）。历史上 v0.13.3 / v0.16.4 / v0.16.5 同属这类"只有发布、无对应里程碑"的补丁发布。**立项下一里程碑时必须先 `git tag -l` 或 `gh release list` 核对，选一个未被占用的版本号（如 v0.19.0），否则 complete-milestone 打 annotated tag 会与既有 Release 撞号。**
+
+- 🔴 **`repo_router.nr_snapshot` 从未在生产写入 ⇒ ROUTE-03 承诺的尺寸归一化在生产上静默失效**（v0.19.0 里程碑审计发现，与上一条同属「消费方在线、生产方缺位」这一类接缝）。`_breadth_signal` 只在 `n_r > 0 ∧ n_bar > 0` 时才做 pivoted 归一，而这两个值来自一条只能在生产手动执行的命令（`measure_repo_index_stats --write-snapshot`，登记在 106-UAT #1，至今未执行）；缺失时静默退回 `denom_size=1.0`，也就是 Phase 106 花整相消除的尺寸偏置在生产上根本没启用。**闭合成本极低——在生产实例跑一条命令即可**，且索引重建后需重跑刷新。
 
 - ✅ ~~v0.2.0 follow-up：实时明文 PAT 通道（contextvar）未接入，RemoteTool 链路休眠~~ —
   已于 2026-06-14 接入（commit 8cb50e928）：带 `friday_pat_` Bearer 的手动触发经请求级
