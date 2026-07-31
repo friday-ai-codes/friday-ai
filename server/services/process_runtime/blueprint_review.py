@@ -1402,3 +1402,978 @@ def _parse_object_json(text: str) -> dict[str, Any] | None:
         if isinstance(data, dict):
             return data
     return None
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# stage adapter 节（Phase 114-03 追加；上面 114-02 交付的判定内核一字未动）
+# ══════════════════════════════════════════════════════════════════════════
+#
+# 本节把判定内核接进流程：入口三件接线（人工块保护 → 答案消费 → 批量重锚）→ 跑六类 +
+# goal-backward → findings 批量落分级线程 → 有界回退归因 → 超界携未决清单进人审。
+#
+# 三条贯穿全节的纪律：
+#
+# 1. **INV-6**：线程/状态的写入一律经 ``BlueprintLifecycleService``，adapter 只做**只读**
+#    查询（去重索引）。事件写入一律经 ``ConvergenceSessionService.aemit_event``。
+# 2. **绝不落流程失败**：审查未清是「待人审」不是「流程失败」。本节没有任何一条路径产出
+#    终态失败——超界走 ``exhausted`` 进 ``pending_review``，异常走 ``needs_clarification``
+#    停在本 stage 等人处置。CAS 冲突与非法边同样吞成 ``needs_clarification``。
+# 3. **正文零外泄**：finding 正文只进线程 body（人审面板），**绝不**进 ``stage_state``、
+#    事件 payload 或日志；日志与 payload 只放计数、分级分布与关联键（T-114-20）。
+
+# CONTEXT 锁定的合计 ≤2 轮；可被 ``SettingKeys.BLUEPRINT_REVIEW_CONFIG`` 的
+# ``max_review_rounds`` 覆盖，此处是兜底（配置坏了绝不能卡死流水线）。
+MAX_REVIEW_ROUNDS = 2
+
+# 未决清单上界（对齐 ``blueprint_merge`` 的同名常量）：它进 stage_state（< 2KB 约定）
+# 与人审面板，无界会把两者一起刷爆。
+_MAX_UNRESOLVED = 30
+
+# ``review()`` 的四个出口状态。handler 只据它走**白名单出边**，绝不透传本返回值。
+REVIEW_PASSED = "passed"
+REVIEW_RETRY = "retry"
+REVIEW_EXHAUSTED = "exhausted"
+REVIEW_NEEDS_CLARIFICATION = "needs_clarification"
+
+# 归因回退的**仓级**目标。融合级目标用空串表示（handler 的映射是
+# ``"repo_plan" → repo_rework``、其余 → ``remerge``，与 ``_h_bp_merge`` 逐字同款）——
+# 本模块因此**不出现任何融合桶键的字面量**，「绝不写错桶」这条纪律可被 rg 硬验收。
+BACK_TARGET_REPO_PLAN = "repo_plan"
+BACK_TARGET_REMERGE = ""
+
+# 线程恢复目标（``BlueprintThread.return_stage`` max_length=16，本值 12 字符；
+# ``_CLARIFICATION_RETURN_TARGETS`` 已含它）。
+RETURN_STAGE_AI_REVIEWING = "ai_reviewing"
+
+# 开线程时 question 的 rule_id 前缀 ``[rule_id] 正文``——去重索引靠它从既有线程反查
+# rule_id（``BlueprintThread`` 无 rule_id 字段，anchor 也不该被塞进业务标记）。
+_RULE_ID_TAG = re.compile(r"^\[([A-Za-z0-9_]+)\]")
+
+
+def _round_of(state: Any) -> int:
+    """读 ``stage_state["ai_review"]["round"]``（照 ``blueprint_merge._attempt_of``）。"""
+    bucket = (state or {}).get(STAGE_STATE_KEY) if isinstance(state, dict) else None
+    try:
+        return max(0, int((bucket or {}).get("round", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _bucket_of(state: Any) -> dict:
+    """读本 stage 的 stage_state 桶（缺省空 dict）。"""
+    bucket = (state or {}).get(STAGE_STATE_KEY) if isinstance(state, dict) else None
+    return bucket if isinstance(bucket, dict) else {}
+
+
+def _initiated_by(session: Any) -> str:
+    """触发用户（照 ``blueprint_merge._initiated_by``）：解析不到记 ``system``。"""
+    return (
+        str(getattr(session, "initiated_by_user_id", "") or "")
+        or str(getattr(session, "created_by_id", "") or "")
+        or "system"
+    )
+
+
+def _decide_back_target(blockers: list[dict]) -> dict:
+    """BLOCKER 清单 → **回退目标归因**（纯函数，零 ORM，可直接单测）。
+
+    两档判定（形状照 ``blueprint_merge.decide_back_target`` 的恒定三键）：
+
+    - 全部 BLOCKER 落在**同一个** ``repository_id`` → 回该仓的分仓方案阶段
+      （证据是那一个仓的方案没写对，重跑融合一万次也补不出来）。
+    - 跨仓、或一条也解析不出仓归属 → 回融合阶段重装配（缺陷在融合层）。
+
+    Returns:
+        恒定三键 ``{"back_target": str, "back_repository_id": str, "blocker_count": int}``。
+        ``back_target`` 取 :data:`BACK_TARGET_REPO_PLAN` 或 :data:`BACK_TARGET_REMERGE`
+        （空串 = 融合级）。空输入 → 三键取空/零。
+    """
+    entries = [item for item in (blockers or []) if isinstance(item, dict)]
+    if not entries:
+        return {"back_target": "", "back_repository_id": "", "blocker_count": 0}
+    repositories = sorted({str(item.get("repository_id") or "").strip() for item in entries})
+    if len(repositories) == 1 and repositories[0]:
+        return {
+            "back_target": BACK_TARGET_REPO_PLAN,
+            "back_repository_id": repositories[0],
+            "blocker_count": len(entries),
+        }
+    return {
+        "back_target": BACK_TARGET_REMERGE,
+        "back_repository_id": "",
+        "blocker_count": len(entries),
+    }
+
+
+class BlueprintReviewAdapter:
+    """``ai_review`` stage 的 adapter：判定内核 → 线程 / 状态 / 出边（FLOW-07 执行面）。
+
+    ``review(session)`` 返回**恒定八键**（下游 handler 无需判空分支）::
+
+        {"review_status": "passed"|"retry"|"exhausted"|"needs_clarification",
+         "artifact_version_id": str, "round": int, "back_target": str,
+         "back_repository_id": str, "report": dict, "stage_state": dict,
+         "thread_ids": list[str]}
+
+    出口语义：
+
+    - ``passed``：零 BLOCKER（仅 WARNING/INFO 也算）→ 蓝图转 ``pending_review``，
+      findings 作人审参考，**不打回**。
+    - ``retry``：有 BLOCKER 且轮次未用尽 → 归因打回，蓝图转回 ``drafting``，
+      **回退不落版本**（审查未过的中间产物不进版本历史）。
+    - ``exhausted``：有 BLOCKER 且轮次用尽 → 蓝图转 ``pending_review`` **携未决清单**。
+      ⚠️ **绝不落流程失败**：蓝图已成形，只是审查未清 —— 那是「待人审」。死锁出口由
+      114-05 的 finding 处置端点提供（``resolve`` / ``dismiss`` 让线程离开
+      ``{open, answered}``，confirm 守卫随之放行）。
+    - ``needs_clarification``：入口接线报冲突、基线不可得、或整轮异常 → 停在本 stage
+      等人处置（handler 会先确保有阻塞线程再自环）。
+    """
+
+    def __init__(
+        self,
+        *,
+        artifact_service: Any = None,
+        lifecycle_service: Any = None,
+        session_service: Any = None,
+        node_execution_id: str = "",
+    ) -> None:
+        self._artifact_service = artifact_service
+        self._lifecycle_service = lifecycle_service
+        self._session_service = session_service
+        self.node_execution_id = node_execution_id
+
+    # ── 主入口 ────────────────────────────────────────────────────────────
+
+    async def review(self, session: Any) -> dict:
+        """跑一轮 AI 对抗审查，返回恒定键结果（**绝不上抛**）。
+
+        九步（顺序不可换）：
+
+        0-b. **人工块保护**（B3）→ 0-a. **答案消费**（B1）→ 0-c. **批量重锚**
+        → 1. 读审查基线 → 2. 取轮次与轮上界 → 3. 跑六类 + goal-backward
+        → 4. findings 落线程 → 5. 出口判定与状态转移 → 6. stage_state 回写
+        → 7. 完成事件与 ``duration_ms``。
+
+        ⭐ **前三步必须在读审查基线之前跑完**：否则审的是「答案未回灌、人工块已被抹掉」
+        的旧内容 —— 审查结论会指向一份马上就要被改写的文档。
+        """
+        started = time.monotonic()
+        state = getattr(session, "stage_state", None)
+        state = state if isinstance(state, dict) else {}
+        round_no = _round_of(state)
+        initiated_by = _initiated_by(session)
+        await self._aemit(session, _event("STARTED"), {"round": round_no})
+        try:
+            return await self._areview(
+                session,
+                state=state,
+                round_no=round_no,
+                initiated_by=initiated_by,
+                started=started,
+            )
+        except Exception as exc:  # noqa: BLE001 — 审查异常绝不上抛（上抛 = engine 落终态失败）
+            await self._aemit(session, _event("FAILED"), {"round": round_no})
+            self._log(
+                "blueprint_review_failed",
+                session,
+                level="warning",
+                round=round_no,
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+                error=redact_secrets_in_text(str(exc))[:_MAX_DETAIL_CHARS],
+            )
+            return self._result(
+                REVIEW_NEEDS_CLARIFICATION, round_no=round_no, report={"reason": "review_failed"}
+            )
+
+    async def _areview(
+        self, session: Any, *, state: dict, round_no: int, initiated_by: str, started: float
+    ) -> dict:
+        artifact = await self._aload_artifact(session)
+        if artifact is None:
+            return self._result(
+                REVIEW_NEEDS_CLARIFICATION,
+                round_no=round_no,
+                report={"reason": "artifact_unavailable"},
+            )
+
+        # ── 0-b：人工块保护（B3）─────────────────────────────────────────
+        # 打回后 `repo_rework` / `remerge` 会重跑融合并 `add_version`，那是本相位**主要
+        # 的产版本路径**。融合模块是只读受限面（本 plan 一行不改），所以保护挂在这里 ——
+        # 每次进入 ai_review 都先把版本链里 `produced_by_ref` 带 `human_edit:` 的 block
+        # 逐一比对：等价保留、实质冲突则写回人工版本并开阻塞线程。
+        #
+        # ⚠️ 停等判据看 `status == "conflict"`（等价于 `conflicted` 非空），**不看
+        # `preserved`** —— 后者是前者的**子集**（差集 = 当前态整块缺失、无落位可写回的
+        # 块），拿它当判据会漏掉「块被重装删掉」这一档冲突（114-04 契约明写）。
+        guard_status = "skipped"
+        try:
+            guard = await self._acall_reflow(
+                "arestore_human_blocks", artifact, session=session, initiated_by=initiated_by
+            )
+            guard_status = str(guard.get("status") or "")
+            if guard_status == "conflict":
+                self._log(
+                    "blueprint_review_human_block_conflict",
+                    session,
+                    level="warning",
+                    round=round_no,
+                    conflicted_count=len(guard.get("conflicted") or []),
+                    thread_id=str(guard.get("thread_id") or ""),
+                )
+                return self._result(
+                    REVIEW_NEEDS_CLARIFICATION,
+                    round_no=round_no,
+                    report={"reason": "human_block_conflict"},
+                )
+        except Exception as exc:  # noqa: BLE001 — 保护失败只 warning，不阻断审查
+            guard_status = "error"
+            self._log(
+                "blueprint_review_human_block_guard_skipped",
+                session,
+                level="warning",
+                round=round_no,
+                error=redact_secrets_in_text(str(exc))[:_MAX_DETAIL_CHARS],
+            )
+
+        # ── 0-a：答案消费（B1）──────────────────────────────────────────
+        # 本调用是 `aapply_thread_answers` 的**两个生产调用方之一**（另一个是 114-05 的
+        # answer 端点）。少了它，人在打回轮之间作答的线程永不被消费 ⇒ 答案不落地、
+        # 同一问题会被反复问（T-114-16b）。`section_writer` 不传 ⇒ 走 114-04 的生产实现
+        # `ablock_section_writer`（它**不是** no-op）。
+        reflow_status = "skipped"
+        try:
+            reflow = await self._acall_reflow(
+                "aapply_thread_answers", artifact, session=session, initiated_by=initiated_by
+            )
+            reflow_status = str(reflow.get("status") or "")
+            if reflow_status == "conflict":
+                # 已开阻塞线程等人裁决 ⇒ 不带着待裁决冲突继续审（审一份马上要被改的内容
+                # 只会产出一份马上作废的结论）。
+                self._log(
+                    "blueprint_review_answer_reflow_conflict",
+                    session,
+                    level="warning",
+                    round=round_no,
+                    conflict_block_count=len(reflow.get("conflict_block_ids") or []),
+                    thread_id=str(reflow.get("thread_id") or ""),
+                )
+                return self._result(
+                    REVIEW_NEEDS_CLARIFICATION,
+                    round_no=round_no,
+                    report={"reason": "answer_reflow_conflict"},
+                )
+        except Exception as exc:  # noqa: BLE001 — 回灌失败只 warning，不阻断审查
+            reflow_status = "error"
+            self._log(
+                "blueprint_review_answer_reflow_skipped",
+                session,
+                level="warning",
+                round=round_no,
+                error=redact_secrets_in_text(str(exc))[:_MAX_DETAIL_CHARS],
+            )
+
+        # ── 1：读**最新**版本作审查基线 ─────────────────────────────────
+        # ⛔ 绝不读 `session.current_artifact_version`：融合的 `add_version` 已推进最新版本
+        # 而会话指针只在显式 StageOutcome 里更新，读它会审到旧内容。0-a/0-b 可能刚落了
+        # 新版本，故必须在此**重读**，不得复用入口处的快照。
+        from delivery.models import ArtifactVersion
+
+        version = await (
+            ArtifactVersion.objects.select_related("supersedes")
+            .filter(artifact=artifact)
+            .order_by("-version_no")
+            .afirst()
+        )
+        if version is None or not isinstance(version.content, dict):
+            # fail-closed：读不到基线绝不判通过（判通过 = 带缺陷蓝图静默升人审）。
+            return self._result(
+                REVIEW_NEEDS_CLARIFICATION,
+                round_no=round_no,
+                report={"reason": "baseline_unavailable"},
+            )
+        content = version.content
+
+        # ── 0-c：批量重锚（B3 第二件，判据 = **版本推进**而非「本轮是否产版本」）──
+        anchored_version_id = await self._areanchor_if_advanced(
+            session,
+            artifact,
+            version,
+            state=state,
+            initiated_by=initiated_by,
+        )
+
+        self._log(
+            "blueprint_review_started",
+            session,
+            round=round_no,
+            artifact_version_id=str(version.id),
+            reflow_status=reflow_status,
+            guard_status=guard_status,
+        )
+
+        # ── 2：轮次与轮上界 ─────────────────────────────────────────────
+        max_rounds = await self._aload_review_config()
+
+        # ── 3：跑判定（六类机械规则 + goal-backward 一类）────────────────
+        charters = await self._aload_charters(content)
+        locked_snapshot = state.get("confirmation")
+        mechanical = run_mechanical_rules(
+            content, charters=charters, locked_snapshot=locked_snapshot
+        )
+        # ⚠️ `agoal_backward_review` 返 None 的语义是「该类不可得」而非「无问题」——
+        # `normalize_review_findings(None)` 会产一条 WARNING meta finding（fail-closed）。
+        llm = await self._agoal_backward(content, session)
+        findings = (mechanical + normalize_review_findings(llm))[:_MAX_FINDINGS]
+        blockers = [item for item in findings if item["severity"] == SEVERITY_BLOCKER]
+        warnings = [item for item in findings if item["severity"] == SEVERITY_WARNING]
+        infos = [item for item in findings if item["severity"] == SEVERITY_INFO]
+
+        # ── 4：findings → 分级线程（去重留痕 / 新开 / 消失即收尾）────────
+        landed = await self._aland_findings(
+            session,
+            artifact,
+            version,
+            findings,
+            content=content,
+            round_no=round_no,
+            initiated_by=initiated_by,
+        )
+
+        counts = {
+            "blocker_count": len(blockers),
+            "warning_count": len(warnings),
+            "info_count": len(infos),
+            "thread_count": len(landed),
+        }
+        thread_ids = sorted(landed.values())
+
+        # ── 5：出口判定 + 状态转移（全经 lifecycle）──────────────────────
+        from delivery.models import BlueprintStatus
+
+        if not blockers:
+            # 仅 WARNING/INFO（或全清）→ 直接升人审，**不打回**（CONTEXT 锁定）。
+            ok = await self._atransition(
+                session, artifact, BlueprintStatus.PENDING_REVIEW, initiated_by=initiated_by
+            )
+            status = REVIEW_PASSED if ok else REVIEW_NEEDS_CLARIFICATION
+            bucket = self._bucket(
+                round_no=round_no,
+                status=status,
+                counts=counts,
+                thread_ids=thread_ids,
+                unresolved=[],
+                anchored_version_id=anchored_version_id,
+            )
+            self._log(
+                "blueprint_review_passed",
+                session,
+                round=round_no,
+                artifact_version_id=str(version.id),
+                **counts,
+            )
+            return await self._afinish(
+                session,
+                status,
+                round_no=round_no,
+                artifact_version_id=str(version.id),
+                bucket=bucket,
+                counts=counts,
+                thread_ids=thread_ids,
+                started=started,
+            )
+
+        decision = _decide_back_target(blockers)
+        if round_no + 1 <= max_rounds:
+            # 有界回退：**不落版本**（审查未过的中间产物不进版本历史），轮次单点递增后
+            # 整桶回写本 stage 的桶（**绝不**碰融合桶：那个桶会被融合侧整桶覆盖，
+            # 计数归零 ⇒ 无限打回循环，T-114-14）。
+            ok = await self._atransition(
+                session, artifact, BlueprintStatus.DRAFTING, initiated_by=initiated_by
+            )
+            status = REVIEW_RETRY if ok else REVIEW_NEEDS_CLARIFICATION
+            bucket = self._bucket(
+                round_no=round_no + 1 if ok else round_no,
+                status=status,
+                counts=counts,
+                thread_ids=thread_ids,
+                unresolved=[],
+                anchored_version_id=anchored_version_id,
+                attribution=decision,
+            )
+            self._log(
+                "blueprint_review_retry",
+                session,
+                level="warning",
+                round=round_no + 1,
+                back_target=decision["back_target"],
+                **counts,
+            )
+            return await self._afinish(
+                session,
+                status,
+                round_no=round_no + 1 if ok else round_no,
+                artifact_version_id=str(version.id),
+                bucket=bucket,
+                counts=counts,
+                thread_ids=thread_ids,
+                started=started,
+                back_target=decision["back_target"],
+                back_repository_id=decision["back_repository_id"],
+            )
+
+        # 轮次用尽 → 携未决清单进人审。⚠️ **绝不落流程失败**（同融合侧超界纪律）：
+        # 蓝图已成形，只是审查未清。未决清单只含定位标量、**零正文**。
+        unresolved = self._unresolved(blockers, landed)
+        ok = await self._atransition(
+            session, artifact, BlueprintStatus.PENDING_REVIEW, initiated_by=initiated_by
+        )
+        status = REVIEW_EXHAUSTED if ok else REVIEW_NEEDS_CLARIFICATION
+        bucket = self._bucket(
+            round_no=round_no,
+            status=status,
+            counts=counts,
+            thread_ids=thread_ids,
+            unresolved=unresolved,
+            anchored_version_id=anchored_version_id,
+            attribution=decision,
+        )
+        self._log(
+            "blueprint_review_exhausted",
+            session,
+            level="warning",
+            round=round_no,
+            max_rounds=max_rounds,
+            unresolved_count=len(unresolved),
+            **counts,
+        )
+        return await self._afinish(
+            session,
+            status,
+            round_no=round_no,
+            artifact_version_id=str(version.id),
+            bucket=bucket,
+            counts=counts,
+            thread_ids=thread_ids,
+            started=started,
+            back_target=decision["back_target"],
+            back_repository_id=decision["back_repository_id"],
+            report={"unresolved_count": len(unresolved), "max_rounds": max_rounds},
+        )
+
+    # ── 入口接线（三件全部只调 114-04 的交付，本模块不复制实现）───────────
+
+    async def _acall_reflow(
+        self, name: str, artifact: Any, *, session: Any, initiated_by: str
+    ) -> dict:
+        """调 114-04 的回灌/保护入口（函数内 lazy import，返回值归一成 dict）。"""
+        from services.process_runtime import blueprint_reflow
+
+        handler = getattr(blueprint_reflow, name)
+        result = await handler(
+            artifact,
+            session=session,
+            initiated_by_user_id=initiated_by,
+            artifact_service=self._artifact_service,
+            lifecycle_service=self._lifecycle_service,
+        )
+        return result if isinstance(result, dict) else {}
+
+    async def _areanchor_if_advanced(
+        self, session: Any, artifact: Any, version: Any, *, state: dict, initiated_by: str
+    ) -> str:
+        """版本推进过就批量重锚一次线程，返回本轮之后的 ``anchored_version_id``。
+
+        ⭐ **判据是「版本推进」而不是「本轮是否产版本」**：B3 点名的主路径是
+        ``repo_rework`` / ``remerge`` **重跑融合产的版本** —— 它由融合侧落库，此时若既无
+        已作答线程也无人工块，0-a/0-b 都不产版本；以「本轮是否产版本」为判据会让重锚
+        **永不触发**，线程 anchor 仍指向已消失的 block（115 的批注全部错位/凭空消失，
+        CLAR-02 明令禁止）。故这里**无条件**比对「artifact 当前最新版本」与「上次已重锚
+        版本」，不一致即重锚。
+
+        best-effort：失败只 warning 且**不回写** ``anchored_version_id``（下一轮自然重试），
+        绝不阻断审查。
+        """
+        latest_id = str(version.id)
+        anchored = str(_bucket_of(state).get("anchored_version_id") or "")
+        if anchored == latest_id:
+            return anchored
+        try:
+            previous = getattr(version, "supersedes", None)
+            old_content = getattr(previous, "content", None)
+            if anchored and (previous is None or str(previous.id) != anchored):
+                from delivery.models import ArtifactVersion
+
+                row = await ArtifactVersion.objects.filter(id=anchored).afirst()
+                old_content = getattr(row, "content", None) if row is not None else old_content
+            report = await self._lifecycle().areanchor_threads(
+                artifact,
+                version.content,
+                old_content=old_content if isinstance(old_content, dict) else None,
+                initiated_by_user_id=initiated_by,
+            )
+            report = report if isinstance(report, dict) else {}
+            self._log(
+                "blueprint_review_threads_reanchored",
+                session,
+                artifact_version_id=latest_id,
+                checked=int(report.get("checked") or 0),
+                reanchored=int(report.get("reanchored") or 0),
+                orphaned=int(report.get("orphaned") or 0),
+                skipped=int(report.get("skipped") or 0),
+            )
+            return latest_id
+        except Exception as exc:  # noqa: BLE001 — 重锚失败不阻断审查，下一轮重试
+            self._log(
+                "blueprint_review_reanchor_skipped",
+                session,
+                level="warning",
+                artifact_version_id=latest_id,
+                error=redact_secrets_in_text(str(exc))[:_MAX_DETAIL_CHARS],
+            )
+            return anchored
+
+    # ── 判定输入装配 ──────────────────────────────────────────────────────
+
+    async def _aload_charters(self, content: dict) -> dict[str, dict]:
+        """规则⑥的章程字典（best-effort：读不到返回 ``{}``，规则⑥自动跳过）。"""
+        try:
+            from services.process_runtime.blueprint_charter_match import aload_charters
+
+            ids = [
+                str(assoc.get("repository_id") or "")
+                for assoc in (content.get("repo_associations") or [])
+                if isinstance(assoc, dict)
+            ]
+            return await aload_charters([rid for rid in ids if rid])
+        except Exception:  # noqa: BLE001 — 章程读失败不该把「有缺陷」升级成「整轮失败」
+            return {}
+
+    async def _agoal_backward(self, content: dict, session: Any) -> list[dict] | None:
+        """goal-backward 一类（唯一 LLM 调用点，``call_source`` 已由 114-02 注册）。
+
+        任何异常 → ``None``：调用方会把它归一成 ``goal_backward_unavailable`` WARNING
+        meta finding（fail-closed，**绝不当作「无问题」**）。
+        """
+        try:
+            spec = content.get("requirement_spec")
+            spec = spec if isinstance(spec, dict) else {}
+            overview = content.get("implementation_overview")
+            overview = overview if isinstance(overview, dict) else {}
+            impl_items = _dict_list(overview.get("items"))
+            must_haves = content.get("must_haves")
+            must_haves = must_haves if isinstance(must_haves, dict) else {}
+            return await agoal_backward_review(
+                feature_points=_dict_list(spec.get("feature_points")),
+                impl_items=impl_items,
+                constraints=spec.get("constraints"),
+                test_strategy=[
+                    item.get("test_strategy") for item in impl_items if item.get("test_strategy")
+                ],
+                must_haves=must_haves,
+                key_links=must_haves.get("key_links"),
+                session_id=str(getattr(session, "id", "")),
+            )
+        except Exception:  # noqa: BLE001 — 不可得即 None（下游 fail-closed 成 WARNING）
+            return None
+
+    # ── findings → 线程 ───────────────────────────────────────────────────
+
+    async def _aland_findings(
+        self,
+        session: Any,
+        artifact: Any,
+        version: Any,
+        findings: list[dict],
+        *,
+        content: dict,
+        round_no: int,
+        initiated_by: str,
+    ) -> dict[str, str]:
+        """findings 批量落分级线程，返回 ``{dedupe_key: thread_id}``。
+
+        三条通道（对应 finding 的三种生命周期）：
+
+        - **本轮仍在且已有线程** → :meth:`append_note` 追加「第 N 轮仍存在」留痕。
+          ⛔ 绝不用会把 ``open`` 推到 ``answered`` 的作答通道：那会让
+          ``ahas_open_blocking_threads`` 判为无门 ⇒ 人审能通过带未决 BLOCKER 的蓝图
+          ⇒ 续驱的 pause 判据一并失守（T-114-16，112 教训）。
+        - **本轮新出现** → :meth:`open_thread`（``severity`` 与 ``blocking`` **同源派生**，
+          错配会被 114-01 的不变式 raise）。
+        - **本轮已消失** → :meth:`resolve_thread`（幂等，终态重复调用 no-op）。
+
+        单条失败 best-effort 吞掉（warning + 继续下一条）：绝不让一条 finding 落库失败
+        把整轮审查打成异常。
+        """
+        from delivery.models import ThreadKind
+
+        lifecycle = self._lifecycle()
+        existing = await self._aload_finding_threads(artifact)
+        landed: dict[str, str] = {}
+        for finding in findings:
+            key = finding_dedupe_key(finding)
+            thread = existing.get(key)
+            try:
+                if thread is not None:
+                    await lifecycle.append_note(
+                        thread,
+                        body=f"第 {round_no + 1} 轮仍存在：{finding['detail']}",
+                        initiated_by_user_id=initiated_by,
+                    )
+                    landed[key] = str(thread.id)
+                    continue
+                severity = finding["severity"]
+                opened = await lifecycle.open_thread(
+                    artifact,
+                    kind=ThreadKind.AI_REVIEW_FINDING,
+                    severity=severity,
+                    blocking=(severity == SEVERITY_BLOCKER),
+                    question=f"[{finding['rule_id']}] {finding['detail']}",
+                    anchor={
+                        "section_path": finding["section_path"],
+                        "block_id": finding["block_id"],
+                        "quoted_text": _quoted_text(content, finding["block_id"]),
+                    },
+                    created_on_version=version,
+                    initiated_by_user_id=initiated_by,
+                    return_stage=RETURN_STAGE_AI_REVIEWING,
+                )
+                landed[key] = str(opened.id)
+            except Exception as exc:  # noqa: BLE001 — 单条落库失败不牵连整轮
+                self._log(
+                    "blueprint_review_finding_thread_failed",
+                    session,
+                    level="warning",
+                    rule_id=str(finding.get("rule_id") or ""),
+                    severity=str(finding.get("severity") or ""),
+                    error=redact_secrets_in_text(str(exc))[:_MAX_DETAIL_CHARS],
+                )
+        for key, thread in existing.items():
+            if key in landed:
+                continue
+            try:
+                await lifecycle.resolve_thread(
+                    thread,
+                    resolution="本轮复检已不再命中该规则。",
+                    initiated_by_user_id=initiated_by,
+                )
+            except Exception as exc:  # noqa: BLE001 — 收尾失败不牵连整轮
+                self._log(
+                    "blueprint_review_finding_resolve_failed",
+                    session,
+                    level="warning",
+                    thread_id=str(getattr(thread, "id", "")),
+                    error=redact_secrets_in_text(str(exc))[:_MAX_DETAIL_CHARS],
+                )
+        return landed
+
+    @staticmethod
+    async def _aload_finding_threads(artifact: Any) -> dict[str, Any]:
+        """既有未决 finding 线程的去重索引 ``{dedupe_key: thread}``（**只读**查询）。
+
+        索引键与 :func:`finding_dedupe_key` 同构：``rule_id`` 从首条消息的
+        ``[rule_id]`` 前缀反查（线程模型无 rule_id 字段），定位取
+        ``anchor.block_id or anchor.section_path``。只读查询允许 adapter 直查，
+        **写一律经 service**（INV-6）。
+        """
+        from delivery.models import (
+            BlueprintThread,
+            BlueprintThreadMessage,
+            ThreadKind,
+            ThreadStatus,
+        )
+
+        rows = [
+            row
+            async for row in BlueprintThread.objects.filter(
+                artifact=artifact,
+                kind=ThreadKind.AI_REVIEW_FINDING,
+                status__in=[ThreadStatus.OPEN, ThreadStatus.ANSWERED],
+            ).order_by("created_at")
+        ]
+        if not rows:
+            return {}
+        first_body: dict[str, str] = {}
+        async for message in (
+            BlueprintThreadMessage.objects.filter(thread_id__in=[row.id for row in rows])
+            .order_by("created_at")
+            .values("thread_id", "body")
+        ):
+            first_body.setdefault(str(message["thread_id"]), str(message["body"] or ""))
+        index: dict[str, Any] = {}
+        for row in rows:
+            tag = _RULE_ID_TAG.match(first_body.get(str(row.id), ""))
+            if tag is None:
+                continue
+            anchor = row.anchor if isinstance(row.anchor, dict) else {}
+            locator = str(anchor.get("block_id") or "") or str(anchor.get("section_path") or "")
+            index.setdefault(f"{tag.group(1)}|{locator}", row)
+        return index
+
+    # ── 状态转移（全经 lifecycle；CAS 冲突绝不外泄）────────────────────────
+
+    async def _atransition(
+        self, session: Any, artifact: Any, to_status: str, *, initiated_by: str
+    ) -> bool:
+        """经 lifecycle 转状态；成功 ``True``，任何拒绝/冲突 ``False``（调用方降级）。
+
+        ``ConcurrentBlueprintTransitionError`` 重试一次（先 ``arefresh_from_db`` 取最新
+        DB 态），仍失败或非法边则记 warning 返回 ``False`` —— 调用方把出口降级成
+        ``needs_clarification``，**绝不让 engine 落终态失败**（T-114-21 / P4）。
+        """
+        from delivery.services.blueprint_lifecycle_service import (
+            ConcurrentBlueprintTransitionError,
+        )
+
+        lifecycle = self._lifecycle()
+        for attempt in (0, 1):
+            try:
+                if str(getattr(artifact, "blueprint_status", "") or "") == to_status:
+                    return True  # 幂等：已是目标态（合法边表无自环）
+                await lifecycle.transition(
+                    artifact,
+                    to_status,
+                    initiated_by_user_id=initiated_by,
+                    session=session,
+                )
+                return True
+            except ConcurrentBlueprintTransitionError as exc:
+                if attempt == 0:
+                    try:
+                        await artifact.arefresh_from_db()
+                    except Exception:  # noqa: BLE001 — 重读失败即放弃重试
+                        pass
+                    continue
+                self._log(
+                    "blueprint_review_transition_conflict",
+                    session,
+                    level="warning",
+                    to_status=to_status,
+                    error=redact_secrets_in_text(str(exc))[:_MAX_DETAIL_CHARS],
+                )
+                return False
+            except Exception as exc:  # noqa: BLE001 — 非法边等同样吞成降级出口
+                self._log(
+                    "blueprint_review_transition_rejected",
+                    session,
+                    level="warning",
+                    to_status=to_status,
+                    error=redact_secrets_in_text(str(exc))[:_MAX_DETAIL_CHARS],
+                )
+                return False
+        return False
+
+    # ── 结果 / stage_state / 观测 ─────────────────────────────────────────
+
+    @staticmethod
+    def _unresolved(blockers: list[dict], landed: dict[str, str]) -> list[dict]:
+        """超界出口携带的未决清单：**只含定位六键、零正文**，条数有界。"""
+        rows: list[dict] = []
+        for finding in blockers[:_MAX_UNRESOLVED]:
+            rows.append(
+                {
+                    "rule_id": finding["rule_id"],
+                    "severity": finding["severity"],
+                    "section_path": finding["section_path"],
+                    "block_id": finding["block_id"],
+                    "repository_id": finding["repository_id"],
+                    "thread_id": landed.get(finding_dedupe_key(finding), ""),
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _bucket(
+        *,
+        round_no: int,
+        status: str,
+        counts: dict,
+        thread_ids: list[str],
+        unresolved: list[dict],
+        anchored_version_id: str,
+        attribution: dict | None = None,
+    ) -> dict:
+        """本 stage 的 ``stage_state`` 桶（只存计数 / id / 小摘要，单字段 < 2KB）。
+
+        ⚠️ 返回的是**增量**：engine 的 ``stage_state_update`` 是顶层浅合并，故这里只写
+        自己的桶。**绝不整桶读改写融合侧的桶** —— 融合侧每轮都整桶覆盖它自己那个键，
+        审查轮次塞进去会被抹掉 ⇒ 计数归零 ⇒ 无限打回循环（T-114-14）。
+        """
+        bucket: dict[str, Any] = {
+            "round": round_no,
+            "status": status,
+            "thread_ids": thread_ids[:_MAX_UNRESOLVED],
+            "unresolved": unresolved,
+            "anchored_version_id": anchored_version_id,
+        }
+        bucket.update({key: int(value) for key, value in counts.items()})
+        if attribution:
+            bucket["last_attribution"] = dict(attribution)
+        return {STAGE_STATE_KEY: bucket}
+
+    @staticmethod
+    def _result(
+        status: str,
+        *,
+        round_no: int,
+        artifact_version_id: str = "",
+        back_target: str = "",
+        back_repository_id: str = "",
+        report: dict | None = None,
+        stage_state: dict | None = None,
+        thread_ids: list[str] | None = None,
+    ) -> dict:
+        """**恒定八键**返回（下游 handler 无需判空分支）。"""
+        return {
+            "review_status": status,
+            "artifact_version_id": artifact_version_id,
+            "round": round_no,
+            "back_target": back_target,
+            "back_repository_id": back_repository_id,
+            "report": report or {},
+            "stage_state": stage_state or {},
+            "thread_ids": list(thread_ids or []),
+        }
+
+    async def _afinish(
+        self,
+        session: Any,
+        status: str,
+        *,
+        round_no: int,
+        artifact_version_id: str,
+        bucket: dict,
+        counts: dict,
+        thread_ids: list[str],
+        started: float,
+        back_target: str = "",
+        back_repository_id: str = "",
+        report: dict | None = None,
+    ) -> dict:
+        """收尾：完成事件（payload 只放计数与分级分布）+ ``duration_ms`` 日志 + 恒定结果。"""
+        payload = {"round": round_no, "review_status": status, "back_target": back_target}
+        payload.update(counts)
+        await self._aemit(session, _event("COMPLETED"), payload)
+        self._log(
+            "blueprint_review_completed",
+            session,
+            round=round_no,
+            review_status=status,
+            back_target=back_target,
+            artifact_version_id=artifact_version_id,
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+            **counts,
+        )
+        return self._result(
+            status,
+            round_no=round_no,
+            artifact_version_id=artifact_version_id,
+            back_target=back_target,
+            back_repository_id=back_repository_id,
+            report=report or dict(counts),
+            stage_state=bucket,
+            thread_ids=thread_ids,
+        )
+
+    # ── 依赖解析 / 配置 / 观测 ────────────────────────────────────────────
+
+    def _lifecycle(self) -> Any:
+        if self._lifecycle_service is None:
+            from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+
+            self._lifecycle_service = BlueprintLifecycleService()
+        return self._lifecycle_service
+
+    def _sessions(self) -> Any:
+        if self._session_service is None:
+            from delivery.services import ConvergenceSessionService
+
+            self._session_service = ConvergenceSessionService()
+        return self._session_service
+
+    async def _aload_artifact(self, session: Any) -> Any:
+        """会话钉住的版本 → 其 artifact（无版本指针即 ``None``）。"""
+        from delivery.models import ArtifactVersion
+
+        version_id = getattr(session, "current_artifact_version_id", None)
+        if not version_id:
+            return None
+        row = await (
+            ArtifactVersion.objects.select_related("artifact").filter(id=version_id).afirst()
+        )
+        return getattr(row, "artifact", None)
+
+    async def _aload_review_config(self) -> int:
+        """读 ``SettingKeys.BLUEPRINT_REVIEW_CONFIG`` → 轮次上界。
+
+        缺配置 / 非 JSON / 缺键 / 值类型错 → **整段回落** :data:`MAX_REVIEW_ROUNDS`
+        （配置坏了绝不能卡死流水线：审查是质量门不是可用性门）。读取一律经既有
+        ``settings_service.aget_json_setting``，本 plan 不改 settings_service 一行。
+        """
+        try:
+            from system.models import SettingKeys
+            from system.settings_service import aget_json_setting
+
+            cfg = await aget_json_setting(SettingKeys.BLUEPRINT_REVIEW_CONFIG, {}) or {}
+            return int(cfg.get("max_review_rounds", MAX_REVIEW_ROUNDS))
+        except Exception:  # noqa: BLE001 — 配置坏了回默认，绝不阻断审查
+            return MAX_REVIEW_ROUNDS
+
+    async def _aemit(self, session: Any, event_name: str, payload: dict) -> None:
+        """会话事件 best-effort（观测绝不反噬审查主链；**正文绝不进 payload**）。"""
+        try:
+            await self._sessions().aemit_event(event_name, session, payload)
+        except Exception:  # noqa: BLE001 — 事件失败绝不阻断审查
+            self._log("blueprint_review_event_emit_failed", session, level="warning")
+
+    @staticmethod
+    def _log(event: str, session: Any, *, level: str = "info", **payload: Any) -> None:
+        """结构化事件 best-effort（payload 只含计数与关联键，绝不含蓝图/finding 正文）。"""
+        try:
+            emit = logger.warning if level == "warning" else logger.info
+            emit(
+                event,
+                category="caller",
+                component="process_runtime",
+                session_id=str(getattr(session, "id", "")),
+                initiated_by_user_id=_initiated_by(session),
+                **payload,
+            )
+        except Exception:  # noqa: BLE001 — 观测绝不反噬审查主链
+            pass
+
+
+def _event(suffix: str) -> str:
+    """取 ``blueprint.review.*`` 事件常量（函数内 lazy import，保持顶层零 Django 依赖）。"""
+    from delivery.services import event_taxonomy
+
+    return str(getattr(event_taxonomy, f"EVENT_BLUEPRINT_REVIEW_{suffix}"))
+
+
+def _quoted_text(content: Any, block_id: str) -> str:
+    """finding 锚点的 ``quoted_text``（有界截断）。
+
+    非空是必需的：块被后续版本删掉时，``blueprint_anchor.reanchor`` 只能靠
+    ``quoted_text`` 的相似度模糊重挂；留空会让该线程直接失锚（批注错位，CLAR-02）。
+    """
+    if not block_id:
+        return ""
+    try:
+        for _path, block in iter_blocks(content):
+            if str(block.get("block_id") or "") == block_id:
+                return _block_text(block)[:_MAX_DETAIL_CHARS]
+    except Exception:  # noqa: BLE001 — 取不到就留空（只影响模糊重挂，不影响判定）
+        return ""
+    return ""
+
+
+__all__ += [
+    "BlueprintReviewAdapter",
+    "MAX_REVIEW_ROUNDS",
+    "BACK_TARGET_REPO_PLAN",
+    "BACK_TARGET_REMERGE",
+    "RETURN_STAGE_AI_REVIEWING",
+    "REVIEW_PASSED",
+    "REVIEW_RETRY",
+    "REVIEW_EXHAUSTED",
+    "REVIEW_NEEDS_CLARIFICATION",
+]

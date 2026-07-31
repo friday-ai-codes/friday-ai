@@ -24,6 +24,9 @@ from delivery.services.event_taxonomy import (
     EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
     EVENT_BLUEPRINT_REPO_RESEARCH_STARTED,
     EVENT_BLUEPRINT_REROUTE_TRIGGERED,
+    EVENT_BLUEPRINT_REVIEW_COMPLETED,
+    EVENT_BLUEPRINT_REVIEW_FAILED,
+    EVENT_BLUEPRINT_REVIEW_STARTED,
     EVENT_BLUEPRINT_ROUTE_SCORED,
     EVENT_BLUEPRINT_SPEC_GATE_CLARIFICATION_ASKED,
     EVENT_BLUEPRINT_SPEC_GATE_LOCKED,
@@ -56,6 +59,13 @@ _NEW_113_EVENTS = {
     EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED: "blueprint.context.waiter_satisfied",
 }
 
+# 114-03 新增（emit 点在 BlueprintReviewAdapter；本文件只作集合形状快照）
+_NEW_114_EVENTS = {
+    EVENT_BLUEPRINT_REVIEW_STARTED: "blueprint.review.started",
+    EVENT_BLUEPRINT_REVIEW_COMPLETED: "blueprint.review.completed",
+    EVENT_BLUEPRINT_REVIEW_FAILED: "blueprint.review.failed",
+}
+
 # 111 既有（冻结快照）
 _EXISTING_111_EVENTS = {
     EVENT_BLUEPRINT_STATUS_TRANSITIONED: "blueprint.status.transitioned",
@@ -78,9 +88,14 @@ def test_new_112_events_in_blueprint_events() -> None:
 
 
 def test_blueprint_events_not_in_all_events() -> None:
-    """112 的 11 + 113 的 3 + 既有 4 均不在 ALL_EVENTS（不污染覆盖性反查）。"""
+    """112 的 11 + 113 的 3 + 114 的 3 + 既有 4 均不在 ALL_EVENTS（不污染覆盖性反查）。"""
     assert BLUEPRINT_EVENTS.isdisjoint(ALL_EVENTS)
-    for event in list(_NEW_112_EVENTS) + list(_NEW_113_EVENTS) + list(_EXISTING_111_EVENTS):
+    for event in (
+        list(_NEW_112_EVENTS)
+        + list(_NEW_113_EVENTS)
+        + list(_NEW_114_EVENTS)
+        + list(_EXISTING_111_EVENTS)
+    ):
         assert event not in ALL_EVENTS
 
 
@@ -92,8 +107,13 @@ def test_existing_blueprint_events_frozen() -> None:
 
 
 def test_blueprint_events_shape() -> None:
-    """集合恰好 18 个（111 的 4 + 112 的 11 + 113 的 3）、全 blueprint. 前缀、无重复。"""
-    assert len(BLUEPRINT_EVENTS) == 18
+    """集合恰好 21 个（111 的 4 + 112 的 11 + 113 的 3 + 114-03 的 3）、全 blueprint. 前缀、无重复。"""
+    assert len(BLUEPRINT_EVENTS) == 21
     assert all(event.startswith("blueprint.") for event in BLUEPRINT_EVENTS)
-    declared = list(_NEW_112_EVENTS) + list(_NEW_113_EVENTS) + list(_EXISTING_111_EVENTS)
-    assert len(declared) == len(set(declared)) == 18
+    declared = (
+        list(_NEW_112_EVENTS)
+        + list(_NEW_113_EVENTS)
+        + list(_NEW_114_EVENTS)
+        + list(_EXISTING_111_EVENTS)
+    )
+    assert len(declared) == len(set(declared)) == 21

@@ -190,6 +190,11 @@ class SettingKeys:
     # 阈值可配是为了「一上线就卡死」时能秒调，而非让配置成为必需项。
     # 消费方：services/process_runtime/blueprint_merge.py（113）。
     BLUEPRINT_MERGE_CONFIG = "blueprint.merge.config"
+    # value 为 JSON：{"max_review_rounds": int}。未配置时回落模块常量
+    # （MAX_REVIEW_ROUNDS=2，CONTEXT 锁定的「合计 ≤2 轮」）——轮上界可配是为了
+    # 「一上线就反复打回」时能秒调，而非让配置成为必需项。
+    # 消费方：services/process_runtime/blueprint_review.py（114-03）。
+    BLUEPRINT_REVIEW_CONFIG = "blueprint.review.config"
 
 
 class CacheVolumeTracker(models.Model):
