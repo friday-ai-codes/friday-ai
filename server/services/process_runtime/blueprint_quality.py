@@ -6,9 +6,9 @@ golden set 方法论）。本模块分两节：
 - **纯函数节**（无 IO / 无 ORM / 无 LLM，stdlib only）：``citation_coverage``
   引用覆盖率与 ``target_repo_hit_rate`` 目标仓命中率——``evaluate_blueprint_golden``
   离线评估与 112–116 各相位回归共用的两把可用标尺。
-- **DB 统计接口节**（占位）：AI 打回率 / 人审修改量 / 澄清轮次——数据由 112–114
-  （审查循环 / 人审编辑 / 澄清线程）填充，本相位仅定义签名与口径 docstring；
-  顶层零 ORM import，未来实装时依赖 delivery models 走函数内懒 import。
+- **DB 统计接口节**（**114-05 已实装**）：AI 打回率 / 人审修改量 / 澄清轮次——数据分别
+  来自审查事件 / 人工编辑版本 / 澄清线程（112–114 填充完毕）。顶层仍保持零 ORM import，
+  查询一律走函数内懒 import。
 
 半可信输入（LLM 装配产物 / golden fixture）逐字段 ``.get`` 防御，绝不抛。
 """
@@ -105,6 +105,10 @@ def target_repo_hit_rate(blueprint: dict, expected_direct_repo_names: list[str])
 # ---------------------------------------------------------------------------
 # DB 统计接口节：占位——数据由 112–114 填充，本相位仅定义签名（CONTEXT 锁定）。
 # 实装时按 artifact_id 查 delivery models（函数内懒 import），顶层保持零 ORM。
+# 114-05：三项已实装，纪律照上两行不变（同步签名 + 函数内懒 import + 顶层零 ORM）。
+# ⭐ **无数据一律返回 None 而不是 0**：0 = 「统计到了，值为零」（真实的零打回 / 零人工
+# 修改），None = 「没有数据源可算」。混为一谈会让 evaluate_blueprint_golden 把「这个
+# 蓝图还没跑过审查」当成「零打回」，指标看着漂亮而实际什么都没测。
 # ---------------------------------------------------------------------------
 
 
@@ -112,20 +116,54 @@ def ai_rejection_rate(artifact_id: str) -> float | None:
     """AI 审查打回率：该蓝图被 AI 审查打回的轮次占审查总轮次的比例。
 
     口径：Phase 114 审查循环落地后，按 ConvergenceSessionEvent 的
-    ``blueprint.stage.*`` 事件统计（打回轮次 / ai_reviewing 总轮次）。
-    当前无数据源，返回 ``None`` 表示指标不可用。
+    ``blueprint.review.completed`` 事件统计——分母 = 该蓝图会话上的审查完成事件总数
+    （= 审查总轮次），分子 = 其中 ``payload["review_status"] == "retry"`` 的条数。
+    **分母为 0 返回 ``None``**（无数据 ≠ 零打回）。
     """
-    # TODO(Phase 114): 懒 import delivery models，按 artifact_id 聚合审查事件。
+    try:
+        from delivery.models import ConvergenceSessionEvent
+        from delivery.services.event_taxonomy import EVENT_BLUEPRINT_REVIEW_COMPLETED
+
+        rows = list(
+            ConvergenceSessionEvent.objects.filter(
+                session__current_artifact_version__artifact_id=artifact_id,
+                event=EVENT_BLUEPRINT_REVIEW_COMPLETED,
+            ).values_list("payload", flat=True)
+        )
+        if rows:
+            retried = sum(
+                1
+                for payload in rows
+                if isinstance(payload, dict) and payload.get("review_status") == "retry"
+            )
+            return retried / len(rows)
+    except Exception:  # noqa: BLE001 — 统计异常绝不让离线评估崩
+        _log_stat_failure("ai_rejection_rate", artifact_id)
     return None
 
 
 def human_edit_volume(artifact_id: str) -> int | None:
     """人审修改量：人工编辑产生的 ArtifactVersion 版本数。
 
-    口径：Phase 114 人工 block 编辑链路落地后，按 created_by_user_id 非系统的
-    版本行计数。当前无数据源，返回 ``None`` 表示指标不可用。
+    口径：Phase 114 人工 block 编辑链路落地后，按 ``produced_by_ref`` 以
+    ``"human_edit:"`` 开头的版本行计数（114-04 落的人工归属前缀）。
+
+    ⚠️ **111 原 docstring 写的「按 created_by_user_id 非系统的版本行计数」是已知偏差**：
+    ``ArtifactVersion`` **根本没有那个字段**（``add_version`` 只写 ``produced_by_session_id``
+    与 ``produced_by_ref``），照它写会直接 ``FieldError``；而若「绕开」改成按别的用户字段
+    过滤，指标会恒为零**而测试看起来全绿**。``human_edit:`` 前缀是全仓唯一的人工归属通道。
+
+    三态：该 artifact 一条版本都没有 → ``None``（无数据）；有版本但零人工编辑 → ``0``
+    （真实的「零人工修改」）。
     """
-    # TODO(Phase 114): 懒 import delivery models，按 artifact_id 统计人工版本。
+    try:
+        from delivery.models import ArtifactVersion
+
+        versions = ArtifactVersion.objects.filter(artifact_id=artifact_id)
+        if versions.exists():
+            return versions.filter(produced_by_ref__startswith="human_edit:").count()
+    except Exception:  # noqa: BLE001
+        _log_stat_failure("human_edit_volume", artifact_id)
     return None
 
 
@@ -134,7 +172,31 @@ def clarification_rounds(artifact_id: str) -> int | None:
 
     口径：Phase 112–114 澄清线程写入落地后，按 BlueprintThread /
     BlueprintThreadMessage 统计（每线程一问一答记一轮）。
-    当前无数据源，返回 ``None`` 表示指标不可用。
+    即 ``author_type == "human"`` 的消息数（AI 的提问与复检留痕不计轮次）；该 artifact
+    一条线程都没有 → ``None``（无数据），有线程但无人作答 → ``0``。
     """
-    # TODO(Phase 112–114): 懒 import delivery models，按 artifact_id 统计线程轮次。
+    try:
+        from delivery.models import BlueprintThread, BlueprintThreadMessage, ThreadAuthorType
+
+        if BlueprintThread.objects.filter(artifact_id=artifact_id).exists():
+            return BlueprintThreadMessage.objects.filter(
+                thread__artifact_id=artifact_id,
+                author_type=ThreadAuthorType.HUMAN,
+            ).count()
+    except Exception:  # noqa: BLE001
+        _log_stat_failure("clarification_rounds", artifact_id)
     return None
+
+
+def _log_stat_failure(metric: str, artifact_id: str) -> None:
+    """统计失败只记 warning（best-effort，观测绝不反噬业务）。``artifact_id`` 是关联键、
+    非正文，可安全记录。"""
+    import structlog
+
+    structlog.get_logger(__name__).warning(
+        "blueprint_quality_stat_failed",
+        category="sampling",
+        component="blueprint_quality",
+        metric=metric,
+        artifact_id=str(artifact_id),
+    )
