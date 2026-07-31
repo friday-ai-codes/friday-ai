@@ -6,7 +6,7 @@
  * label 取法照 `~/components/spec/SddSpecStatusBadge.vue`（走 i18n 而非配置里的中文字面量）。
  *
  * ⛔ **颜色全部由 `<Badge variant>` 承载，禁止在 Badge 上用 `:class` 追加颜色类**（UI-SPEC §15）。
- * ⛔ 全程 mustache，零 `v-html`。
+ * ⛔ 全程 mustache 插值，不走任何原始 HTML 注入指令（源码守卫扫描锁死整个扫描面）。
  */
 import type { BlueprintStatusConfig } from '~/config/blueprintStatus'
 import { computed } from 'vue'

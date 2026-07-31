@@ -181,6 +181,9 @@ declare global {
   const useAuthStore: typeof import('./stores/auth').useAuthStore
   const useBase64: typeof import('@vueuse/core').useBase64
   const useBattery: typeof import('@vueuse/core').useBattery
+  const useBlueprintAnnotations: typeof import('./composables/useBlueprintAnnotations').useBlueprintAnnotations
+  const useBlueprintLive: typeof import('./composables/useBlueprintLive').useBlueprintLive
+  const useBlueprintViewerStore: typeof import('./stores/useBlueprintViewerStore').useBlueprintViewerStore
   const useBluetooth: typeof import('@vueuse/core').useBluetooth
   const useBranchValidation: typeof import('./composables/useBranchValidation').useBranchValidation
   const useBreakpoints: typeof import('@vueuse/core').useBreakpoints
@@ -190,6 +193,7 @@ declare global {
   const useChatPartsProtocol: typeof import('./composables/useChatPartsProtocol').useChatPartsProtocol
   const useChatSession: typeof import('./composables/useChatSession').useChatSession
   const useChatStore: typeof import('./stores/chat').useChatStore
+  const useCitationPreview: typeof import('./composables/useCitationPreview').useCitationPreview
   const useClipboard: typeof import('@vueuse/core').useClipboard
   const useClipboardItems: typeof import('@vueuse/core').useClipboardItems
   const useCloned: typeof import('@vueuse/core').useCloned
@@ -401,6 +405,9 @@ declare global {
   export type { Component, Slot, Slots, ComponentPublicInstance, ComputedRef, DirectiveBinding, ExtractDefaultPropTypes, ExtractPropTypes, ExtractPublicPropTypes, InjectionKey, PropType, Ref, ShallowRef, MaybeRef, MaybeRefOrGetter, VNode, WritableComputedRef } from 'vue'
   import('vue')
   // @ts-ignore
+  export type { StageTimelineNode, SectionProgress } from './composables/useBlueprintLive'
+  import('./composables/useBlueprintLive')
+  // @ts-ignore
   export type { ParsedBranchName, ValidationResult } from './composables/useBranchValidation'
   import('./composables/useBranchValidation')
   // @ts-ignore
@@ -409,6 +416,9 @@ declare global {
   // @ts-ignore
   export type { ChatSessionGroups } from './composables/useChatSession'
   import('./composables/useChatSession')
+  // @ts-ignore
+  export type { CitationFallback } from './composables/useCitationPreview'
+  import('./composables/useCitationPreview')
   // @ts-ignore
   export type { UseConfigModelOptions, UseConfigModelReturn } from './composables/useConfigModel'
   import('./composables/useConfigModel')
@@ -484,6 +494,9 @@ declare global {
   // @ts-ignore
   export type { MergedSpaceListItem } from './stores/prompts'
   import('./stores/prompts')
+  // @ts-ignore
+  export type { BlueprintThreadKindFilter } from './stores/useBlueprintViewerStore'
+  import('./stores/useBlueprintViewerStore')
   // @ts-ignore
   export type { NodeExecution, WorkflowDefinitionNode, WorkflowDefinitionEdge, WorkflowDefinition, TimelineNode, TimelineData, WorkflowExecution } from './stores/useExecutionsStore'
   import('./stores/useExecutionsStore')
@@ -678,6 +691,9 @@ declare module 'vue' {
     readonly useAuthStore: UnwrapRef<typeof import('./stores/auth')['useAuthStore']>
     readonly useBase64: UnwrapRef<typeof import('@vueuse/core')['useBase64']>
     readonly useBattery: UnwrapRef<typeof import('@vueuse/core')['useBattery']>
+    readonly useBlueprintAnnotations: UnwrapRef<typeof import('./composables/useBlueprintAnnotations')['useBlueprintAnnotations']>
+    readonly useBlueprintLive: UnwrapRef<typeof import('./composables/useBlueprintLive')['useBlueprintLive']>
+    readonly useBlueprintViewerStore: UnwrapRef<typeof import('./stores/useBlueprintViewerStore')['useBlueprintViewerStore']>
     readonly useBluetooth: UnwrapRef<typeof import('@vueuse/core')['useBluetooth']>
     readonly useBranchValidation: UnwrapRef<typeof import('./composables/useBranchValidation')['useBranchValidation']>
     readonly useBreakpoints: UnwrapRef<typeof import('@vueuse/core')['useBreakpoints']>
@@ -687,6 +703,7 @@ declare module 'vue' {
     readonly useChatPartsProtocol: UnwrapRef<typeof import('./composables/useChatPartsProtocol')['useChatPartsProtocol']>
     readonly useChatSession: UnwrapRef<typeof import('./composables/useChatSession')['useChatSession']>
     readonly useChatStore: UnwrapRef<typeof import('./stores/chat')['useChatStore']>
+    readonly useCitationPreview: UnwrapRef<typeof import('./composables/useCitationPreview')['useCitationPreview']>
     readonly useClipboard: UnwrapRef<typeof import('@vueuse/core')['useClipboard']>
     readonly useClipboardItems: UnwrapRef<typeof import('@vueuse/core')['useClipboardItems']>
     readonly useCloned: UnwrapRef<typeof import('@vueuse/core')['useCloned']>
