@@ -221,7 +221,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 110-04-PLAN.md — 前端契约（五个类型 + SSEEvent 扩 `process_event`）+ store 分桶状态 + 两条链幂等合流（wave 3）
+- [x] 110-04-PLAN.md — 前端契约（五个类型 + SSEEvent 扩 `process_event`）+ store 分桶状态 + 两条链幂等合流（wave 3）
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
