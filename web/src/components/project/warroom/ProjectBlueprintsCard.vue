@@ -28,6 +28,7 @@ import blueprintsApi from '~/api/blueprints'
 import BlueprintStatusBadge from '~/components/blueprint/BlueprintStatusBadge.vue'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import { Badge } from '~/components/ui/badge'
+import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 
 const props = withDefaults(defineProps<{
@@ -54,7 +55,19 @@ const listQuery = useQuery({
 const items = computed(() => listQuery.data.value?.items ?? [])
 const total = computed(() => listQuery.data.value?.total ?? 0)
 
-const hidden = computed(() => props.hideWhenEmpty && !listQuery.isLoading.value && items.value.length === 0)
+/**
+ * ⭐ `hideWhenEmpty` 只对**真的空**生效，⛔ 不对读失败生效（MJ-04）。
+ *
+ * 少了 `&& !listQuery.isError.value` 这一项，一次失败的请求（且 `retry: false`，**不重试**）
+ * 就满足「不在 loading 且 items 为空」⇒ 整张「技术方案蓝图」卡从项目页上**凭空消失**，
+ * 无任何痕迹。宿主 `ProjectMaterialsPanel` 正是传 `hide-when-empty` 的，所以这是默认路径。
+ */
+const hidden = computed(
+  () => props.hideWhenEmpty
+    && !listQuery.isLoading.value
+    && !listQuery.isError.value
+    && items.value.length === 0,
+)
 
 function formatTime(raw: string): string {
   if (!raw)
@@ -81,6 +94,20 @@ function formatTime(raw: string): string {
 
       <div v-if="listQuery.isLoading.value" class="space-y-2">
         <Skeleton v-for="n in 3" :key="n" class="h-10 w-full" />
+      </div>
+
+      <!-- ⭐ 读失败留卡片 + 给重试入口（⛔ 不与空态同形，见 `hidden` 的说明）。 -->
+      <div
+        v-else-if="listQuery.isError.value"
+        class="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground"
+        role="alert"
+        data-testid="project-blueprints-error"
+      >
+        <span class="icon-[lucide--cloud-off] shrink-0" aria-hidden="true" />
+        <span class="min-w-0 flex-1">{{ t('knowledge.blueprints.error.unavailable') }}</span>
+        <Button variant="ghost" size="sm" data-testid="project-blueprints-retry" @click="listQuery.refetch()">
+          {{ t('knowledge.blueprints.error.retry') }}
+        </Button>
       </div>
 
       <ul v-else-if="items.length" class="space-y-1">

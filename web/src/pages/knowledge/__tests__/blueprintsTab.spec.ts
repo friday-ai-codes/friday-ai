@@ -80,6 +80,10 @@ const i18n = createI18n({
             emptyTitle: '没有匹配的技术方案',
             emptyBody: '换个筛选条件，或在项目里发起一次方案编排',
           },
+          error: {
+            unavailable: '暂时读取不到该方案，请稍后重试',
+            retry: '重试',
+          },
         },
       },
     },
@@ -234,5 +238,43 @@ describe('蓝图列表 tab 面板', () => {
     expect(empty.exists()).toBe(true)
     expect(String(empty.props('icon'))).not.toContain('icon-[')
     expect(empty.props('icon')).toBe('lucide--file-x')
+  })
+})
+
+/**
+ * ⭐ MJ-04 回归：读失败与「真的没数据」在界面上必须可分辨。
+ *
+ * 后端已改为聚合失败如实 503，但只改后端不够 —— 前端没有 `isError` 分档时，503 / 400 /
+ * 网络断线一律落进 `v-else` 的空态，显示成「没有匹配的技术方案」。两层各自都「不反噬主
+ * 流程」，合起来就是数据读失败对用户完全不可见。
+ */
+describe('蓝图列表 tab 面板 —— 读失败分档（MJ-04）', () => {
+  it('8. ⭐ 请求失败 ⇒ 出现重试按钮，且⛔ 不出现「没有匹配的技术方案」', async () => {
+    api.listBlueprints.mockRejectedValue(new Error('503 Service Unavailable'))
+    const wrapper = mountPanel()
+    await flush()
+    expect(wrapper.find('[data-testid="blueprint-list-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="blueprint-list-retry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="empty-state-stub"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('没有匹配的技术方案')
+  })
+
+  it('9. 非恒真对照：真的空 ⇒ 仍走空态，⛔ 不出现错误档', async () => {
+    api.listBlueprints.mockResolvedValue(makeResponse([]))
+    const wrapper = mountPanel()
+    await flush()
+    expect(wrapper.find('[data-testid="empty-state-stub"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('没有匹配的技术方案')
+    expect(wrapper.find('[data-testid="blueprint-list-error"]').exists()).toBe(false)
+  })
+
+  it('10. 点重试重新发一次请求', async () => {
+    api.listBlueprints.mockRejectedValue(new Error('boom'))
+    const wrapper = mountPanel()
+    await flush()
+    const before = api.listBlueprints.mock.calls.length
+    await wrapper.find('[data-testid="blueprint-list-retry"]').trigger('click')
+    await flush()
+    expect(api.listBlueprints.mock.calls.length).toBeGreaterThan(before)
   })
 })

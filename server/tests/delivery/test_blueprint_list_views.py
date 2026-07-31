@@ -363,3 +363,78 @@ def test_blueprint_list_excludes_resolved_blockers_from_unresolved(authenticated
     assert item["thread_count"] == 2
     # answered 仍算未决，resolved 不算
     assert item["unresolved_blocker_count"] == 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 10. ⭐ 聚合失败如实 5xx（115-MJ-04）
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_blueprint_list_aggregate_failure_is_503_not_empty_200(
+    authenticated_client, monkeypatch
+) -> None:
+    """⭐ 聚合抛异常 ⇒ **503 + detail**，⛔ 绝不是 200 空结构。
+
+    这条守的是「读失败」与「真的没数据」在 HTTP 层**可分辨**。此前整个 ``_aggregate``
+    （queryset + 可见性过滤 + 行装配 + ``_load_names`` 两次查询，全是**业务主体**）被一个
+    ``except Exception`` 吞成 200 空结构，于是 DB 抖动与「该用户一份蓝图都没有」完全同形，
+    前端只能把两者渲染成同一个「暂无技术方案」。
+
+    ⚠️ 断言里逐字排除 ``items`` / ``total`` 两键：只断状态码不够 —— 若有人「顺手」把空结构
+    也塞进 503 响应体，前端的 ``items.length === 0`` 分支又会把它读成空态。
+    """
+    _make_blueprint_artifact()
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("db connection reset")
+
+    monkeypatch.setattr("delivery.api.blueprint_list_views._aggregate", _boom)
+
+    resp = _list(authenticated_client)
+
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["detail"]
+    assert "items" not in body
+    assert "total" not in body
+
+
+def test_blueprint_list_aggregate_failure_detail_does_not_leak_exception_text(
+    authenticated_client, monkeypatch
+) -> None:
+    """503 的 ``detail`` 是**中性常量**，⛔ 不回显异常原文（可能含连接串或半可信正文）。"""
+    _make_blueprint_artifact()
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("postgres://user:s3cr3t@10.0.0.1:5432/friday 连接失败")
+
+    monkeypatch.setattr("delivery.api.blueprint_list_views._aggregate", _boom)
+
+    detail = _list(authenticated_client).json()["detail"]
+
+    assert "s3cr3t" not in detail
+    assert "postgres" not in detail
+
+
+def test_blueprint_list_observability_failure_never_breaks_the_request(
+    authenticated_client, monkeypatch
+) -> None:
+    """⭐ 反面（非恒真对照）：**埋点**抛异常仍返 200 —— best-effort 只覆盖观测。
+
+    与上面两条合起来钉死 MJ-04 的边界：观测不反噬业务，业务错误也不许被当成观测噪音吞掉。
+    """
+    _make_blueprint_artifact()
+
+    class _BoomLogger:
+        def info(self, *args, **kwargs):
+            raise RuntimeError("log sink down")
+
+        def warning(self, *args, **kwargs):
+            raise RuntimeError("log sink down")
+
+    monkeypatch.setattr("delivery.api.blueprint_list_views.logger", _BoomLogger())
+
+    resp = _list(authenticated_client)
+
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
