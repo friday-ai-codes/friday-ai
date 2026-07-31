@@ -63,6 +63,7 @@
 **Plans**: 4 plans（wave 1: 01/02/03 并行；wave 2: 04）
 
 Plans:
+
 - [x] 111-01-PLAN.md — blueprint/v1 六段 jsonschema + block diff + execution_plan 确定性派生 + builtin_types 校验接线（SCHEMA-01/06/07）
 - [x] 111-02-PLAN.md — Artifact.blueprint_status 11 态 + BlueprintThread/Message/Reviewer 模型 + LifecycleService 守卫/CAS/事件 + 重锚定纯函数（LIFE-01/02/03）
 - [x] 111-03-PLAN.md — RepoCharter 模型 + AI 起草管道 + charter REST 三端点 + call_source 8 值与 LOGGING-SPEC 登记（CHARTER-01）
@@ -84,6 +85,7 @@ Plans:
 **Plans**: 5 plans（wave 1: 01；wave 2: 02/03 并行；wave 3: 04；wave 4: 05）
 
 Plans:
+
 - [ ] 112-01-PLAN.md — feature_points[].intent 必填枚举 + 2 份字面数据同步与 6 个消费测试回归 + SettingKeys 歧义阈值/路由权重两键与 async float/json getter + 112 阶段事件常量（FLOW-01, CHARTER-02 前置）
 - [ ] 112-02-PLAN.md — spec_gate 歧义门：LLM 四维打分（call_source=blueprint_spec_gate）+ 意图分类 + BlueprintThread(ai_clarification, blocking) 澄清回路 + 规格锁定与 decision_log 物化 + 不重复提问（FLOW-01）
 - [ ] 112-03-PLAN.md — blueprint_route 双面路由：RepoRouterV2 原样输出为 router_base + charter_match（owned/planned、boundaries 判负、evolution 降权、章程候选补入）+ history_match（delivery knowledge）+ intent 加权 + breakdown 三分量恒等式（CHARTER-02, FLOW-04）
@@ -106,6 +108,7 @@ Plans:
 **Plans**: 6 plans（wave 1: 01；wave 2: 02/03 并行；wave 3: 04；wave 4: 05；wave 5: 06）
 
 Plans:
+
 - [ ] 113-01-PLAN.md — BlueprintContextEntry 模型 + 0032 migration（三复合索引 + seq 唯一约束）+ BlueprintContextService（锁父行 seq 分配 / JSON 递归脱敏自建 / waiter 登记含环检测 / satisfy 同事务置 superseded）+ 三个 blueprint.context.* 事件（BUS-01/02 数据面）
 - [ ] 113-02-PLAN.md — 容器 MCP 两侧接通：服务端 read_/report_blueprint_context 两 view + **view 层自建三道会话校验**（鉴权链只到 token→owner）+ 全路径非 5xx + task 侧白名单 7→9（公共 handler 工厂零改动）（BUS-01）
 - [ ] 113-03-PLAN.md — RepoPlan 分仓方案：新建 blueprint_repo_plan_schema.py（§5.3 十一字段）+ 派发面 mode="plan" 四扩展点（缺省等价 112）+ BlueprintRepoPlanAdapter（确认门仓集 / direct 派发 / indirect 合成 / 有界重试 / 自写完成判据）+ callbacks 第四链（FLOW-05, SCHEMA-03）
@@ -128,8 +131,9 @@ Plans:
 **Plans**: 5 plans（wave 1: 01；wave 2: 02；wave 3: 03；wave 4: 04；wave 5: 05）
 
 Plans:
-- [ ] 114-01-PLAN.md — 线程底座：open_thread 追加 severity 形参（零 migration，既有调用逐字等价）+ blocking == (severity=="blocker") 不变式强制 + 从 _append_thread_message_sync 提炼公开 append_note（留痕不改状态，record_answer 禁用于 finding）+ confirm 守卫两条判据收敛进 _apply_transition_sync 同一事务的单次 Q 查询消除 TOCTOU（FLOW-07）
-- [ ] 114-02-PLAN.md — 新建 blueprint_review.py：六类机械规则纯函数（前置完整性短路 / schema / 引用覆盖条目级 / 角色一致性 / API 闭环 / 禁令 / 章程边界 + 确认门锁定校验）在无 LLM 下产确定性结论，每类一条构造样例证伪；goal-backward 一类走 LLM（call_source=blueprint_ai_review，签名纳入 requirement_spec.constraints 并进 digest 使「与 constraints 冲突」可判，不可得 fail-closed 记 warning meta finding）（FLOW-07）
+
+- [x] 114-01-PLAN.md — 线程底座：open_thread 追加 severity 形参（零 migration，既有调用逐字等价）+ blocking == (severity=="blocker") 不变式强制 + 从 _append_thread_message_sync 提炼公开 append_note（留痕不改状态，record_answer 禁用于 finding）+ confirm 守卫两条判据收敛进 _apply_transition_sync 同一事务的单次 Q 查询消除 TOCTOU（FLOW-07）
+- [x] 114-02-PLAN.md — 新建 blueprint_review.py：六类机械规则纯函数（前置完整性短路 / schema / 引用覆盖条目级 / 角色一致性 / API 闭环 / 禁令 / 章程边界 + 确认门锁定校验）在无 LLM 下产确定性结论，每类一条构造样例证伪；goal-backward 一类走 LLM（call_source=blueprint_ai_review，签名纳入 requirement_spec.constraints 并进 digest 使「与 constraints 冲突」可判，不可得 fail-closed 记 warning meta finding）（FLOW-07）
 - [ ] 114-04-PLAN.md — 澄清回灌与人工编辑（**wave 3，已提前到 114-03 之前**）：areanchor_threads 批量重锚定（diff 预筛 + section_path 刷新 + 失锚 orphaned 不删 + 一次 bulk_update）+ block 级 patch ops 经 service 收口产 human_edit 版本（不合法拒绝且不落版本）+ 回灌三步链与 decision_log 物化保 answer 键、decided_at 用作答消息时间戳保幂等 + section_writer 生产实现 ablock_section_writer（默认注入，答案真的落地）+ AI 不覆盖人工（回灌冲突开线程）+ 人工块保护入口 acollect_human_block_ids / arestore_human_blocks 供 114-03 接线（CLAR-02, CLAR-03）
 - [ ] 114-03-PLAN.md — ai_review stage 接入（**wave 4**）：入口先接线三件（aapply_thread_answers 消费答案产新版本 / arestore_human_blocks 保护人工块冲突开线程 / areanchor_threads 重锚）再跑判定；BlueprintReviewAdapter（findings 批量建线程用 severity 形参与 append_note 留痕、(rule_id, block_id) 去重、有界回退归因仓级回 repo_plan/融合级回 merge ≤2 轮计数存 stage_state["ai_review"]、超界转 pending_review 携未决清单绝不 FAILED）+ builtin_processes 只加第 10 个 stage 与 _h_bp_ai_review 且 merge.merged 改指 ai_review + blueprint_resume 映射表追加一行（删除行 0）；blueprint_merge.py 零改动（FLOW-07）
 - [ ] 114-05-PLAN.md — 人审端点与收口（**wave 5**）：新建 blueprint_review_views.py 七端点（GET 快照 / approve 经事务内守卫无 TOCTOU / reject 三步链写 meta.revision_round 首个写入方 / edit-blocks / threads answer 是 record_answer 唯一正当用法且同请求内接回灌 / threads resolve + dismiss 为 finding 处置通道解超界死锁）+ reviewer upsert + 澄清超时提醒挂既有 apscheduler 一个 job（判据 needs_clarification + BlueprintThread.last_reminded_at 保周期不重复轰炸，全相位唯一一条 migration）+ blueprint_quality 三项 DB 统计实装（human_edit_volume 用 produced_by_ref__startswith 而非不存在的 created_by_user_id）+ 全量相位门（FLOW-07, CLAR-03, CLAR-04）
@@ -200,6 +204,7 @@ Plans:
 **Plans**: 7 plans
 
 Plans:
+
 - [ ] 105-01-PLAN.md — 纯函数打分核心（加性分解/margin 置信度/只降不升）+ 阈值外置 + 不变量测试（wave 1）
 - [ ] 105-02-PLAN.md — O-1/O-3 实测 command（measure_repo_index_stats）+ 105-MEASUREMENTS.md（wave 1）
 - [ ] 105-03-PLAN.md — RepoRouterV2 接线：去截断/breakdown/degraded/确定性 auto_selected + 三种失联测试 + clarify policy 回归（wave 2）
