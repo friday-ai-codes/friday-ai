@@ -303,6 +303,8 @@ const ERROR_CODE_DRAFT_REQUIRES_CONFIRM = 'draft_requires_explicit_confirm'
 const DRAFT_GATE_REJECTED_MESSAGE = '草稿方案需显式确认后才能送编码'
 
 const unresearchedDialogOpen = ref(false)
+/** 风险确认 Checkbox 的稳定 id —— 供 label 的 for 关联，让读屏播报出确认文案。 */
+const ackCheckboxId = useId()
 /**
  * 必勾状态。组件本地 ref：**不写 store、不入 localStorage、不跨次记忆**，
  * 每次打开弹层重置为 false。
@@ -976,9 +978,18 @@ const badgeText = computed(() => {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div class="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5">
-          <!-- label 包裹 ⇒ 点文字也能勾选 -->
-          <label class="flex items-start gap-2 text-sm">
-            <Checkbox v-model="acknowledged" class="mt-0.5 shrink-0" data-test="ack-checkbox" />
+          <!--
+            label 经 for 关联到 Checkbox 的 id：点文字能勾选，同时读屏能播报出
+            确认文案。仅用 label 包裹时 reka-ui 的 CheckboxRoot 推导不出可访问名，
+            读屏只念「复选框 未勾选」—— 而这是 RELY-01 唯一的人工签名点。
+          -->
+          <label :for="ackCheckboxId" class="flex items-start gap-2 text-sm">
+            <Checkbox
+              :id="ackCheckboxId"
+              v-model="acknowledged"
+              class="mt-0.5 shrink-0"
+              data-test="ack-checkbox"
+            />
             <span>我已了解风险，仍要用该草稿送编码</span>
           </label>
         </div>
