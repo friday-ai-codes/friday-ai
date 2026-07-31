@@ -328,7 +328,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
           data-irreversible="true"
           data-testid="blueprint-migration-irreversible"
         >
-          reversible=false
+          {{ t('knowledge.blueprints.impact.irreversible') }}
         </Badge>
       </div>
     </div>

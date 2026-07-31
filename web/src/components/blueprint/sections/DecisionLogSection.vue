@@ -134,7 +134,7 @@ const deferred = computed(() => {
           @click="emit('open-thread', entry.threadId)"
         >
           <span class="icon-[lucide--message-square-dot]" aria-hidden="true" />
-          <span>{{ t('knowledge.blueprints.annotation.sidebarToggleEmpty') }}</span>
+          <span>{{ t('knowledge.blueprints.decision.gotoThread') }}</span>
         </button>
       </div>
 
@@ -158,10 +158,7 @@ const deferred = computed(() => {
     <Collapsible v-if="deferred.length" data-testid="blueprint-deferred-ideas">
       <CollapsibleTrigger class="flex w-full items-center gap-1.5 rounded-lg py-1 text-left text-xs font-medium text-muted-foreground hover:text-foreground">
         <span class="icon-[lucide--chevron-right]" aria-hidden="true" />
-        <span class="font-mono">deferred_ideas</span>
-        <Badge variant="muted">
-          {{ deferred.length }}
-        </Badge>
+        <span>{{ t('knowledge.blueprints.section.deferredIdeas', { n: deferred.length }) }}</span>
       </CollapsibleTrigger>
       <CollapsibleContent class="pt-1.5">
         <ul class="space-y-1">

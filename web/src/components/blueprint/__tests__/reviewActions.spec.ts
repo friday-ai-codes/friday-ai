@@ -58,6 +58,8 @@ const i18n = createI18n({
             approve: '通过方案',
             reject: '驳回修订',
             disabledReadonly: '当前状态下不可执行该操作',
+            disabledReason: '当前状态为「{status}」，需等待进入待人类审查',
+            rejectKeepAnchor: '保留此划线',
             reviewRound: '第 {n} 轮审查',
             approveTitle: '确认通过该技术方案？',
             approveBody: '通过后蓝图状态变为「已确认」，你将被记入本方案的评审人名单，且蓝图不可再直接改写。',

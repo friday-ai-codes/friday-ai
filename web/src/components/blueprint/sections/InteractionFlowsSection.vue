@@ -87,6 +87,19 @@ function actorVariant(actor: string): 'default' | 'info' | 'secondary' | 'outlin
   return ACTOR_VARIANT[actor] ?? 'outline'
 }
 
+/** `actor` 四档 → 中文名；`service:*` 与未知值回落 schema 原样 token。 */
+const ACTOR_LABEL_KEY: Record<string, string> = {
+  user: 'actorUser',
+  frontend: 'actorFrontend',
+  backend: 'actorBackend',
+  service: 'actorService',
+}
+
+function actorLabel(actor: string): string {
+  const suffix = ACTOR_LABEL_KEY[actor]
+  return suffix ? t(`knowledge.blueprints.flow.${suffix}`) : String(actor ?? '')
+}
+
 /**
  * ⭐ 前端合成的 mermaid 块（后端不会往它上面挂线程 ⇒ 调用点必须传空 `threads`）。
  * 空源码返回 `null`，由模板 `v-if` 判掉。
@@ -192,7 +205,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
                 </TableCell>
                 <TableCell>
                   <Badge :variant="actorVariant(step.actor)" :data-actor="step.actor">
-                    {{ step.actor }}
+                    {{ actorLabel(step.actor) }}
                   </Badge>
                 </TableCell>
                 <TableCell class="text-sm">
@@ -285,7 +298,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
                   </TableCell>
                   <TableCell>
                     <Badge :variant="actorVariant(step?.actor ?? '')" :data-actor="step?.actor ?? ''">
-                      {{ step?.actor ?? '—' }}
+                      {{ step?.actor ? actorLabel(step.actor) : '—' }}
                     </Badge>
                   </TableCell>
                   <TableCell class="text-sm">

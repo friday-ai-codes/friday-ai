@@ -17,9 +17,8 @@
  * `impact_analysis` 三处**全空**时它也显示 100%。此时追加一枚旁注徽标，避免把「没内容」
  * 读成「证据齐备」。
  *
- * ⚠️ i18n 缺口（§13.2 回报而不自补）：`quality.*` 子树没有「无关键结论」这句文案，
- * 旁注退化为用既有的 `sectionEmpty` 键组合出三段名（`本方案未涉及…`）—— 它恰好就是
- * `hasKeyConclusions === false` 的字面含义，且全部走 `t()`。补键后换一处 `t()` 即可。
+ * 旁注文案用 `quality.noKeyConclusions`（「无关键结论」，115-06 补键后换回）；
+ * `title` 上仍挂三段名的完整说明，把「哪三处全空」讲清楚。
  */
 
 import type { BlueprintQuality } from '~/types/blueprint'
@@ -73,8 +72,8 @@ const metrics = computed(() => [
   },
 ])
 
-/** 三段中文名并列，作为「无关键结论」旁注的降级文案（全部来自既有 i18n 键）。 */
-const noKeyConclusionsLabel = computed(() =>
+/** 三段中文名并列，作为旁注徽标的 `title` 详解（说清「哪三处全空」）。 */
+const noKeyConclusionsDetail = computed(() =>
   t('knowledge.blueprints.sectionEmpty', {
     name: [
       t('knowledge.blueprints.section.currentStateAnalysis'),
@@ -105,8 +104,9 @@ const noKeyConclusionsLabel = computed(() =>
           data-testid="blueprint-quality-no-key-conclusions"
           variant="outline"
           class="mt-1.5"
+          :title="noKeyConclusionsDetail"
         >
-          {{ noKeyConclusionsLabel }}
+          {{ t('knowledge.blueprints.quality.noKeyConclusions') }}
         </Badge>
       </div>
 

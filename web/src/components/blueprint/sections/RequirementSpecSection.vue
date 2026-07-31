@@ -73,6 +73,18 @@ function intentVariant(intent: string | undefined): 'success' | 'info' | 'warnin
   return INTENT_VARIANT[intent ?? ''] ?? 'outline'
 }
 
+/** `intent` 三档 → 中文名；未知值回落 schema 原样 token（⛔ 不发明第四档文案）。 */
+const INTENT_LABEL_KEY: Record<string, string> = {
+  greenfield: 'intentGreenfield',
+  brownfield: 'intentBrownfield',
+  fix: 'intentFix',
+}
+
+function intentLabel(intent: string | undefined): string {
+  const suffix = INTENT_LABEL_KEY[intent ?? '']
+  return suffix ? t(`knowledge.blueprints.spec.${suffix}`) : String(intent ?? '')
+}
+
 function forwardThread(threadId: string, allThreadIds: string[]): void {
   emit('thread-click', threadId, allThreadIds)
 }
@@ -88,6 +100,9 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
 
     <template v-else>
       <div v-if="goalBlocks.length" data-field="goal">
+        <p class="mb-1.5 text-xs font-medium text-muted-foreground">
+          {{ t('knowledge.blueprints.section.goal') }}
+        </p>
         <BlueprintBlockList
           :blocks="goalBlocks"
           section-path="requirement_spec.goal"
@@ -104,6 +119,9 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
       </div>
 
       <div v-if="backgroundBlocks.length" data-field="background">
+        <p class="mb-1.5 text-xs font-medium text-muted-foreground">
+          {{ t('knowledge.blueprints.section.background') }}
+        </p>
         <BlueprintBlockList
           :blocks="backgroundBlocks"
           section-path="requirement_spec.background"
@@ -134,7 +152,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
               {{ point.title }}
             </h4>
             <Badge :variant="intentVariant(point.intent)" :data-intent="point.intent">
-              {{ point.intent }}
+              {{ intentLabel(point.intent) }}
             </Badge>
           </div>
 
