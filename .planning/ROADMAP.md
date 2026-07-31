@@ -229,7 +229,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 110-06-PLAN.md — `OrchestrationStageTimeline.vue`：卡片骨架 / 终态收敛一次性 / 单一 live region（wave 5）
+- [x] 110-06-PLAN.md — `OrchestrationStageTimeline.vue`：卡片骨架 / 终态收敛一次性 / 单一 live region（wave 5）
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
