@@ -504,6 +504,46 @@ async def _abp_mark_drafting(session: Any) -> None:
         )
 
 
+async def _abp_mark_ai_reviewing(session: Any) -> None:
+    """把蓝图状态转 ``ai_reviewing``（阶段 4 的状态口径，114-03）；已是该态则跳过（幂等）。
+
+    与 :func:`_abp_mark_drafting` 的差异点：合法边**只有** ``DRAFTING → AI_REVIEWING``
+    （``blueprint_lifecycle_service.py:89-121``），故当前态不是 ``drafting`` 时**先补一跳
+    ``drafting``**（``""`` 时 :func:`_abp_mark_drafting` 内部会再先补 ``researching``），
+    复用它完成全部前置。状态映射是展示面，失败绝不阻断 stage 推进。
+    """
+    from delivery.models import BlueprintStatus
+    from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+
+    try:
+        artifact = await _abp_load_artifact(session)
+        if artifact is None:
+            return
+        if str(artifact.blueprint_status or "") == BlueprintStatus.AI_REVIEWING:
+            return
+        if str(artifact.blueprint_status or "") != BlueprintStatus.DRAFTING:
+            await _abp_mark_drafting(session)
+            await artifact.arefresh_from_db()
+            if str(artifact.blueprint_status or "") != BlueprintStatus.DRAFTING:
+                return
+        await BlueprintLifecycleService().transition(
+            artifact,
+            BlueprintStatus.AI_REVIEWING,
+            initiated_by_user_id=str(getattr(session, "initiated_by_user_id", "") or "")
+            or "system",
+            session=session,
+        )
+    except Exception as exc:  # noqa: BLE001 — 状态映射是展示面，绝不阻断 stage 推进
+        logger.warning(
+            "blueprint_stage_ai_reviewing_map_skipped",
+            category="sampling",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            current_stage=str(getattr(session, "current_stage", "")),
+            error=str(exc),
+        )
+
+
 async def _abp_has_open_blocking_threads(session: Any) -> bool:
     """该会话蓝图是否仍有 open+blocking 线程（决定 stage 是否停在 needs_clarification）。
 
@@ -739,6 +779,72 @@ async def _h_bp_merge(session: Any, engine: Any) -> StageOutcome:
     return StageOutcome(event="needs_clarification", stage_state_update=stage_state_update)
 
 
+async def _h_bp_ai_review(session: Any, engine: Any) -> StageOutcome:
+    """ai_review stage（阶段 4 AI 对抗审查）：判定内核 → 分级线程 → 有界回退 / 升人审。
+
+    ⭐ 进入即把蓝图状态转 ``ai_reviewing``（经 lifecycle，幂等 + best-effort）。
+
+    出边映射是**白名单**（adapter 的 ``review_status`` 再怪也只能落到已登记 event，
+    否则 engine 直接 ``ValueError``）：
+
+    - ``passed`` / ``exhausted`` → ``review_passed`` / ``review_exhausted``（⇒ stage
+      终态）。**``exhausted`` 也走终态**：超界是「蓝图已成形但审查未清、待人审」，不是
+      流程失败；未决清单已进 ``stage_state``，**绝不落 failed 终态**（与 merge 同纪律）。
+    - ``retry`` → ``repo_rework``（仓级 BLOCKER 回该仓 ``repo_plan``）或 ``remerge``。
+    - 其余（``needs_clarification`` / 未知值）→ ``needs_clarification``，停在本 stage。
+
+    **D-W4 同款（依赖缺失出口）**：``deps.review`` 缺失时返回 ``needs_clarification``，
+    而不是本 stage 的良性推进 event。三条备选的取舍：
+
+    - 返 ``needs_clarification`` **但不建线程** → transitions 指回 ``ai_review`` 自身
+      ⇒ **引擎自旋**：续驱每次 advance 重进同一 handler、依赖仍缺，被推到 ``max_steps``
+      后落 FAILED（明明只是「审查能力未就位」，蓝图成果却一起报废）。
+    - 返 ``review_passed`` → 直达 stage 终态 ⇒ **假装成功**：零 findings 落库、蓝图未过
+      审却被判「待人审通过」，人审面板上看不到任何 finding —— 这是最坏的静默失败。
+    - 返 ``needs_clarification`` **且先 ensure 阻塞线程** → 停在 ``ai_review`` 且
+      ``wait_status = waiting_clarification``，人工可见、可处置、可续驱，语义与「审查
+      未完成」一致。**本 handler 取第三条**。
+    """
+    adapter = getattr(getattr(engine, "deps", None), "review", None)
+    if adapter is None:
+        await _abp_ensure_blocking_clarification(
+            session, stage="ai_review", reason="deps_unavailable"
+        )
+        return StageOutcome(event="needs_clarification")
+
+    await _abp_mark_ai_reviewing(session)
+
+    result = await adapter.review(session)
+    result = result if isinstance(result, dict) else {}
+    status = str(result.get("review_status") or "")
+    # 绝不写半截键：stage_state 为空时传 None（半截键会让下游把「没审」误当成「审了但空」）。
+    stage_state_update = result.get("stage_state") or None
+
+    if status == "passed":
+        return StageOutcome(
+            event="review_passed",
+            stage_state_update=stage_state_update,
+            current_artifact_version=result.get("artifact_version_id") or None,
+        )
+    if status == "exhausted":
+        return StageOutcome(
+            event="review_exhausted",
+            stage_state_update=stage_state_update,
+            current_artifact_version=result.get("artifact_version_id") or None,
+        )
+    if status == "retry":
+        event = "repo_rework" if str(result.get("back_target") or "") == "repo_plan" else "remerge"
+        return StageOutcome(event=event, stage_state_update=stage_state_update)
+    # 停在 ai_review 前先确保有阻塞线程：没有线程的 needs_clarification self-loop 会被
+    # 续驱一路 advance 到步数上限，然后落 FAILED（见 `_abp_ensure_blocking_clarification`）。
+    await _abp_ensure_blocking_clarification(
+        session,
+        stage="ai_review",
+        reason=str((result.get("report") or {}).get("reason") or status or "review_incomplete"),
+    )
+    return StageOutcome(event="needs_clarification", stage_state_update=stage_state_update)
+
+
 _TECHNICAL_BLUEPRINT_STAGES = {
     "intake": StageDef(
         key="intake",
@@ -821,14 +927,29 @@ _TECHNICAL_BLUEPRINT_STAGES = {
         key="merge",
         handler=_h_bp_merge,
         transitions={
-            # 114 接续点：追加 ai_review stage 时把该值改为 "ai_review" 即可
+            # 114 接续点**已接续**（114-03）：融合完成先过 AI 对抗审查再升人审
             # （transitions 是数据，无需改 engine——与 112-05 留给 113 的形状一致）。
             # ⚠️ 覆盖率超界也走这条边（handler 把 exhausted 映射成 merged）：超界是
             # 「待人审」不是「流程失败」，本 stage 的 transitions **不含 failed 出边**。
-            "merged": STAGE_DONE,
+            "merged": "ai_review",
             "repo_rework": "repo_plan",
             "remerge": "merge",
             "needs_clarification": "merge",
+        },
+        pausable=True,
+        wait_status="waiting_clarification",
+    ),
+    # ── 阶段 4 AI 对抗审查（Phase 114-03 追加；上面九个 stage 除 merge.merged 一行外一字未动）──
+    "ai_review": StageDef(
+        key="ai_review",
+        handler=_h_bp_ai_review,
+        # ⚠️ **不含 `failed` 出边**——与 `merge` 同纪律：超界是「待人审」不是「流程失败」。
+        transitions={
+            "review_passed": STAGE_DONE,  # 全清 / 仅 WARNING+INFO → pending_review
+            "review_exhausted": STAGE_DONE,  # 超 max_rounds 轮 → pending_review 携未决 BLOCKER
+            "repo_rework": "repo_plan",  # 仓级 BLOCKER 归因打回
+            "remerge": "merge",  # 融合级 BLOCKER 打回
+            "needs_clarification": "ai_review",  # self-loop 等澄清
         },
         pausable=True,
         wait_status="waiting_clarification",
