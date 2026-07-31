@@ -261,6 +261,68 @@ def test_reminder_never_answers_transitions_or_fails_anything() -> None:
     assert ConvergenceSession.objects.get(id=session.id).status != ConvergenceSessionStatus.FAILED
 
 
+def test_scan_window_rolls_so_later_threads_are_never_starved() -> None:
+    """⭐ MN-01 回归：超过 ``limit`` 条到期线程时，扫描窗口必须**滚动**，不能永久饿死后来者。
+
+    ``BlueprintThread.Meta`` 没有 ``ordering``，所以修前那条 ``[:limit]`` 是无 ``ORDER BY``
+    的 ``LIMIT`` —— 返回哪几条由存储层决定。更要命的是**饿死**：被提醒过的线程写回
+    ``last_reminded_at`` 后仍满足过滤条件、仍占着那 ``limit`` 个名额（只是每轮记
+    ``skipped``），一旦未应答的 blocking 澄清线程超过上界，排在后面的可能**永远**拿不到
+    一次提醒，而 job 每小时照跑、日志照报 completed —— 失效完全静默。
+
+    显式按「最该被提醒的排前面」排序（``last_reminded_at`` 升序 nulls first，再
+    ``created_at``）后，已提醒的自然沉底，下一轮窗口让给还没提醒过的。
+    """
+    artifact = _make_artifact()
+    limit = 3
+    threads = [_open_thread(artifact) for _ in range(limit + 2)]
+    for index, thread in enumerate(threads):
+        # 让 created_at 有稳定次序（同时全部到期）
+        BlueprintThread.objects.filter(id=thread.id).update(
+            created_at=timezone.now() - timedelta(hours=100 - index)
+        )
+
+    first = _remind(hours=24, limit=limit)
+    assert first["reminded"] == limit
+    assert first["scanned"] == limit
+
+    # 第二轮：已提醒的沉底 ⇒ 名额让给剩下两条
+    second = _remind(hours=24, limit=limit, now=timezone.now() + timedelta(hours=1))
+    assert second["reminded"] == len(threads) - limit
+
+    # 两轮之后**全部**线程至少被提醒过一次（修前后两条会被永久饿死）
+    assert (
+        BlueprintThread.objects.filter(
+            id__in=[t.id for t in threads], last_reminded_at__isnull=True
+        ).count()
+        == 0
+    )
+
+
+def test_reminded_count_only_counts_threads_whose_anchor_actually_landed(monkeypatch) -> None:
+    """⭐ MN-04 回归：``reminded`` 的口径必须是「锚点已写回」，不是「打算写回」。
+
+    修前 ``counts["reminded"]`` 在 ``_write_reminder_anchors`` **之前**就累加完了，写回抛
+    异常时被外层 ``except`` 接住并原样 ``return`` ⇒ 对运维呈现「本轮提醒了 N 条」，实际是
+    「一条锚点都没落、下一轮会把同样这 N 条再提醒一遍」。
+    """
+    artifact = _make_artifact()
+    thread = _open_thread(artifact)
+    _age(thread, 25)
+
+    monkeypatch.setattr(
+        "delivery.services.blueprint_review_action._write_reminder_anchors",
+        AsyncMock(side_effect=RuntimeError("bulk_update 炸了")),
+    )
+
+    counts = _remind(hours=24)
+
+    # due 如实保留（确实有一条到期），但 reminded 归零——没有任何锚点落库
+    assert counts["due"] == 1
+    assert counts["reminded"] == 0
+    assert _fresh(thread).last_reminded_at is None
+
+
 def test_reminder_task_source_has_no_write_paths() -> None:
     """源码扫描：调度壳里不得出现作答 / 线程收尾 / 状态转移三类写。"""
     src = (SERVER_DIR / _TASKS_REL).read_text(encoding="utf-8")
