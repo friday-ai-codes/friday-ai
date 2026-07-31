@@ -68,6 +68,8 @@ declare module 'vue' {
     BlueprintCitationChip: typeof import('./components/blueprint/BlueprintCitationChip.vue')['default']
     BlueprintErrorState: typeof import('./components/blueprint/BlueprintErrorState.vue')['default']
     BlueprintFindingActions: typeof import('./components/blueprint/BlueprintFindingActions.vue')['default']
+    BlueprintGatePanel: typeof import('./components/blueprint/BlueprintGatePanel.vue')['default']
+    BlueprintGateRepoRow: typeof import('./components/blueprint/BlueprintGateRepoRow.vue')['default']
     BlueprintListCard: typeof import('./components/knowledge/BlueprintListCard.vue')['default']
     BlueprintQualityPanel: typeof import('./components/blueprint/BlueprintQualityPanel.vue')['default']
     BlueprintRejectDialog: typeof import('./components/blueprint/BlueprintRejectDialog.vue')['default']
