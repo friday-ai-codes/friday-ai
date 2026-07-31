@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
 status: executing
-last_updated: "2026-07-31T04:15:00.000Z"
-last_activity: 2026-07-31 -- Phase 114 plan 04 complete (澄清回灌与人工编辑)
+last_updated: "2026-07-31T05:00:00.000Z"
+last_activity: 2026-07-31 -- Phase 114 plan 03 complete (ai_review stage 接线)
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 20
-  completed_plans: 18
-  percent: 53
+  completed_plans: 19
+  percent: 56
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 ## Current Position
 
 Phase: 114 (审查与澄清收敛（AI 对抗审查 + 线程闭环 + 人工编辑）) — EXECUTING
-Plan: 3 of 5 complete（114-01 线程底座 / 114-02 判定内核 / 114-04 回灌与人工编辑；下一个 **114-03 ai_review stage adapter**，其三个接线契约已由 114-04 就位）
+Plan: 4 of 5 complete（114-01 线程底座 / 114-02 判定内核 / 114-04 回灌与人工编辑 / 114-03 ai_review stage 接线；下一个 **114-05 人审端点**，其消费契约见 `114-03-SUMMARY.md`「114-05 接线契约」节）
 Status: Executing Phase 114
-Last activity: 2026-07-31 -- 114-04 交付 areanchor_threads + blueprint_block_edit.py + blueprint_reflow.py（39 例新测试全绿，1228 passed 零回归，零 migration）
+Last activity: 2026-07-31 -- 114-03 交付 BlueprintReviewAdapter + ai_review 第 10 个 stage（34 例新测试 + 三处变异验证，1263 passed 零回归，零 migration，`blueprint_merge.py` 零改动）
 
 ## Milestone Overview (v0.20.0 — Phases 111–116 — 🟡 PLANNING)
 
@@ -97,6 +97,10 @@ Last activity: 2026-07-31 -- 114-04 交付 areanchor_threads + blueprint_block_e
 - [Phase 114, 2026-07-31]: 114-04: **「AI 不覆盖人工」需要两个入口**——回灌侧 `detect_human_conflicts`（交集非空即不落版本、开阻塞线程）挡不住 `repo_rework`/`remerge` 的**重装**路径，后者由 `arestore_human_blocks` 逐块 canonical JSON 比对兜住（人工块写回 + 开线程）。「哪些块是人写的」唯一判据是 `produced_by_ref__startswith="human_edit:"`（`ArtifactVersion` 无 `created_by_user_id`）。
 - [Phase 114, 2026-07-31]: 114-04: `decision_log` 物化**必须保 `answer` 键**（`blueprint_spec_gate._collect_prior_answers:587` 读它），否则「同一问题不再重复问」在审查阶段静默断链；`applied_in_version` 取**基线版本 id**（产出版本 id 写入前不可知），产出版本经 `produced_by_ref == f"ai_review_reflow:{thread_id}"` 反查。
 - [Phase 114, 2026-07-31]: 114-04: `section_writer` 缺省即生产实现 `ablock_section_writer`（**不是 no-op**）——否则答案只进 `decision_log` 而正文永不更新，等于答案不落地；LLM 不可得只让该块原样保留，`decision_log` 与线程收尾照常 ⇒ 答案永不丢失。
+- [Phase 114, 2026-07-31]: 114-03: **审查轮次绝不进融合桶**——`stage_state` 增量只写自己的 `"ai_review"` 键，靠 engine 顶层浅合并落盘；融合侧 `_build_stage_state` 每轮整桶覆盖它自己那个键，轮次塞进去会被抹掉 ⇒ 计数归零 ⇒ 无限打回循环（T-114-14）。任何新增 stage 的 stage_state 写入都必须只写自己的桶。
+- [Phase 114, 2026-07-31]: 114-03: **审查超界是「待人审」不是「流程失败」**——`ai_review` 的 transitions 五条出边不含 failed，超界走 `review_exhausted → STAGE_DONE` + 蓝图 `pending_review` + `unresolved` 六键快照。死锁出口由 114-05 的 finding 处置端点提供（`resolve_thread(dismissed=False/True)` 让线程离开 `{open, answered}`，confirm 守卫随之放行）；⛔ 绝不能用作答通道把 finding 推到 `answered`（既解不开门也污染状态）。
+- [Phase 114, 2026-07-31]: 114-03: **批量重锚的判据是「版本推进」而非「本轮是否产版本」**——B3 点名的主路径是 `repo_rework`/`remerge` 重跑融合产的版本，此时 `arestore_human_blocks` / `aapply_thread_answers` 都不产版本；以「本轮是否产版本」为判据会让重锚永不触发、批注全部错位（CLAR-02）。判据实现为比对 artifact 最新版本 id 与 `stage_state["ai_review"]["anchored_version_id"]`。
+- [Phase 114, 2026-07-31]: 114-03: finding 线程的 `question` **必须**保持 `[{rule_id}] {detail}` 前缀——`BlueprintThread` 无 rule_id 列，去重索引靠首条消息的该前缀反查；改格式会让第 2 轮重开线程、人审侧噪声爆炸。`anchor.quoted_text` 必须非空（`reanchor` 在 block_id 消失且 quoted_text 为空时直接判失锚）。
 - [Phase 111, 2026-07-30]: 111-04: golden set 与 v0.19.0 路由 golden set 完全分离（`server/tests/fixtures/blueprint_golden/` + `evaluate_blueprint_golden` command），首条 case 为高三提分专项；引用覆盖率/目标仓命中率为纯函数，另三项 DB 统计留接口占位待 112–114 填充数据。
 
 ### Pending Todos
@@ -105,7 +109,8 @@ Last activity: 2026-07-31 -- 114-04 交付 areanchor_threads + blueprint_block_e
 - [Phase 111 review 跳过项] **MN-12**：属权限口径决策（非实现缺陷），与 115 前端权限呈现一并定夺
 - [Phase 112 review 跳过项] **MN-06**：删除/启用皆属零行为收益的 churn（理由见 `.planning/phases/112-1/112-REVIEW.md` Fix Log）；MJ-06 的 `match_kind` 证据字段一并保留
 - [Phase 113 review 跳过项] **MN-09 重试计数无服务端权威来源**：两条建议修法均不可取——改 `session_id` 前缀撞冻结面 `research_adapter.py`；改走 `last_output` 是安全倒退（runner 可篡改 → 无界重试）。现状影响有界（卡住时人可见可续），**正解是给服务端加权威计数列**，另起小相位处理（见 `.planning/phases/113-2/113-REVIEW.md` Fix Log）
-- [Phase 114-04 延后项] **`blueprint_lifecycle_service.py:358` 的 `blueprint_transition_event_persist_failed` 缺 `category`/`component`**：111-02（commit `251697a7`）遗留，落在 114-04 追加点之前。114-04 对该文件的配额是「只允许文件尾纯追加、删除行 = 0」，修它会违反硬约束。影响有界（best-effort 事件持久化失败 warning，不进指标聚合），留给下一个正当修改该文件的 plan（114-05）顺带补齐
+- [Phase 114-04 延后项] **`blueprint_lifecycle_service.py:358` 的 `blueprint_transition_event_persist_failed` 缺 `category`/`component`**：111-02（commit `251697a7`）遗留，落在 114-04 追加点之前。114-04 对该文件的配额是「只允许文件尾纯追加、删除行 = 0」，114-03 对该文件的配额是**零改动**，两者都不能修。影响有界（best-effort 事件持久化失败 warning，不进指标聚合），留给 114-05（会正当修改 lifecycle 相关面）顺带补齐
+- [Phase 114-03 环境项] **`tests/mcp_tools/test_skills_snapshot_guard.py::test_skill_files_discovered` 在本 worktree 恒红**：断言 `skills/skills/*/SKILL.md` ≥4，而 worktree 的 `skills/` 是空目录（主检出里有内容）。纯 worktree 环境现象，与蓝图相位无关；里程碑收尾在主检出复跑即可
 - [Phase 112 残留 PARTIAL] **FLOW-02 的「替代建议」无结构化字段**：fitness 的 `reasons` 承载了理由，但 unsuitable 时的「建议改去哪个仓」未落成结构化字段（当前混在自由文本里）。113 若需机器消费该建议再补 schema 字段，否则留到 115 前端呈现时定夺
 
 ### Blockers/Concerns
@@ -125,5 +130,5 @@ Last activity: 2026-07-31 -- 114-04 交付 areanchor_threads + blueprint_block_e
 ## Session Continuity
 
 Last session: 2026-07-29/30 — 设计蓝图收敛（DESIGN.md 13 节）+ 里程碑创建 + Phase 111/112/113 全量交付（autonomous 模式）
-Next step: **114-03（ai_review stage adapter，wave 4）** —— 入口按 `arestore_human_blocks` → `aapply_thread_answers` → 判定内核 的顺序接线，任一返 `conflict` 即停等（已开阻塞线程）；三个契约的逐字签名与 status 语义见 `114-04-SUMMARY.md`「114-03 接线契约」节。原计划入口（历史记录）：**Phase 114 smart discuss → plan → execute**（DESIGN.md §5.5 AI 审查七类规则、§6.1-§6.3 线程回灌与人工编辑、§3.13 decision_log 为直接输入；111 的 schema/lifecycle/anchor + 112 的确认门 + 113 的完整蓝图装配为可消费上游）
+Next step: **114-05（人审端点 + finding 处置 + 唯一 migration）** —— 消费面见 `114-03-SUMMARY.md`「114-05 接线契约」节（七个消费点 + status→event 映射表）；⭐ **必须实现超界死锁出口**：finding 处置端点走 `resolve_thread(dismissed=False/True)` 让线程离开 `{open, answered}`，confirm 守卫随之放行。另需顺带补齐 `blueprint_lifecycle_service.py:358` 的 `category`/`component`（见 Pending Todos）。原计划入口（历史记录）：**Phase 114 smart discuss → plan → execute**（DESIGN.md §5.5 AI 审查七类规则、§6.1-§6.3 线程回灌与人工编辑、§3.13 decision_log 为直接输入；111 的 schema/lifecycle/anchor + 112 的确认门 + 113 的完整蓝图装配为可消费上游）
 Resume file: 无（干净接力点：Phase 111/112 全部 commit 已入库）
