@@ -194,6 +194,9 @@ class SettingKeys:
     # （MAX_REVIEW_ROUNDS=2，CONTEXT 锁定的「合计 ≤2 轮」）——轮上界可配是为了
     # 「一上线就反复打回」时能秒调，而非让配置成为必需项。
     # 消费方：services/process_runtime/blueprint_review.py（114-03）。
+    # 114-05 复用同一键追加 {"pending_reminder_hours": int}：needs_clarification 下
+    # open+blocking 澄清线程的提醒周期（缺配置回落 _DEFAULT_REMINDER_HOURS=24）。
+    # 执行路径：既有 apscheduler 的 remind_blueprint_clarifications job（不新起定时体系）。
     BLUEPRINT_REVIEW_CONFIG = "blueprint.review.config"
 
 
