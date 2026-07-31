@@ -168,7 +168,14 @@ def _load_baseline() -> dict[str, Any]:
 
 
 def test_golden_gate_vs_baseline(timed_report: tuple[EvalReport, float]) -> None:
-    """三规则门禁：Recall@5 不降 / Top-1 允许 1 例波动 / 误自动选中率 <=10%。"""
+    """四规则门禁：Recall@5 不降 / Top-1 允许 1 例波动 / 误自动选中率 <=10% / high 数不塌陷。
+
+    🔴 第四条是里程碑审计补的（v0.19.0-MILESTONE-AUDIT）。前三条对「置信度整体塌陷」
+    完全是盲的——而那正是本里程碑的立项故障：Stage 1 不可靠时 confidence 恒 low ⇒
+    ``auto_selected`` 恒 false ⇒ 编排卡死被降级工具顶替。把 ``derive_confidence``
+    打成恒 ``low`` 后三条规则**全绿**，因为 ``false_auto_select_rate`` 在 high 数为 0
+    时按约定返回 0.0（无 high 不误报），塌陷反而让该指标"变好"。
+    """
     report, _ = timed_report
 
     if _GENERATE_MODE:
@@ -208,6 +215,15 @@ def test_golden_gate_vs_baseline(timed_report: tuple[EvalReport, float]) -> None
     assert report.false_auto_select_rate <= FALSE_AUTO_SELECT_CEILING, (
         f"门禁失败：误自动选中率 {report.false_auto_select_rate:.4f} > "
         f"{FALSE_AUTO_SELECT_CEILING}（编排被错误自动推进的护栏）\n{diff_text}"
+    )
+    # 第四条：high 数不得塌陷。与误自动选中率是一对——后者防「推进得太随便」，
+    # 这条防「一个都不敢推进」。只有塌陷方向进门禁：high 变多可能是真改进，
+    # 由前三条与逐例 diff 把关，不在此拦。
+    assert report.high_conf_count >= baseline["high_conf_count"], (
+        f"门禁失败：high 置信度数塌陷 {baseline['high_conf_count']} -> "
+        f"{report.high_conf_count}（RELY-04 的死锁形态：confidence 恒 low ⇒ "
+        f"auto_selected 恒 false ⇒ 编排卡死。注意此时误自动选中率会因分母为 0 "
+        f"而显示为 0.0，看起来是「变好」）\n{diff_text}"
     )
 
 
