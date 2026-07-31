@@ -11,6 +11,7 @@ import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import MarkdownRenderer from '~/components/execution/MarkdownRenderer.vue'
 import { ARTIFACT_BADGE_CLASS } from '~/components/knowledge/artifactDisplay'
 import BatchIngestPanel from '~/components/knowledge/BatchIngestPanel.vue'
+import BlueprintsTabPanel from '~/components/knowledge/BlueprintsTabPanel.vue'
 import DeliveryDocsTree from '~/components/knowledge/DeliveryDocsTree.vue'
 import EntityDetailToolbar from '~/components/knowledge/EntityDetailToolbar.vue'
 import EntityKindBadge from '~/components/knowledge/EntityKindBadge.vue'
@@ -38,7 +39,11 @@ const route = useRoute()
 const router = useRouter()
 
 type KnowledgeTab = 'overview' | 'tree' | 'ingest' | 'search'
+  | 'blueprints'
 const TABS: KnowledgeTab[] = ['overview', 'tree', 'ingest', 'search']
+// Phase 115 追加点 #1：技术方案 tab。⭐ 用 push 追加而不是改写上面那行 —— 既有行保持
+// 逐字不变；下面那个兜底函数在调用时才读 TABS，新 tab 自动被它认可（⛔ 其实现一行未改）。
+TABS.push('blueprints')
 
 function normalizeTab(value: unknown): KnowledgeTab {
   return TABS.includes(value as KnowledgeTab) ? (value as KnowledgeTab) : 'overview'
@@ -223,6 +228,7 @@ async function openArtifactView(item: KnowledgeSearchResultItem) {
             { value: 'tree', icon: 'icon-[lucide--folder-tree]' },
             { value: 'ingest', icon: 'icon-[lucide--download]' },
             { value: 'search', icon: 'icon-[lucide--search]' },
+            { value: 'blueprints', icon: 'icon-[lucide--file-text]' },
           ] as const)"
           :key="tab.value"
           :value="tab.value"
@@ -232,6 +238,11 @@ async function openArtifactView(item: KnowledgeSearchResultItem) {
           {{ t(`knowledge.tabs.${tab.value}`) }}
         </TabsTrigger>
       </TabsList>
+
+      <!-- 技术方案（Phase 115 追加点 #1，纯追加：tab 兜底函数、?tab= 同步与既有四个 tab 一行未改） -->
+      <TabsContent value="blueprints" class="mt-5">
+        <BlueprintsTabPanel />
+      </TabsContent>
 
       <TabsContent value="overview" class="mt-5">
         <KnowledgeDashboard @navigate="activeTab = $event" />
