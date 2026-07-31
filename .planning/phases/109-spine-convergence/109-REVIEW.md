@@ -1,7 +1,9 @@
 ---
 phase: 109-spine-convergence
 reviewed: 2026-07-31T01:50:00Z
-status: findings
+fixed: 2026-07-31T03:05:00Z
+status: fixed
+fix_mode: autonomous（--fix --auto，BLOCKER/HIGH/MEDIUM 全修，LOW 记为已接受债务）
 depth: standard
 diff_base: 256899d5
 branch: milestone/v0.19.0-plan-trust
@@ -11,11 +13,39 @@ findings:
   high: 2
   medium: 6
   low: 5
+findings_resolved:
+  blocker: 1
+  high: 2
+  medium: 6
+  low: 0  # 5 条按范围裁定不修，逐条记为已接受债务（见各 fix_note）
+fix_commits:
+  - ca51bcf7  # BL-01 身份链路（chat SSE 补绑 + 生成器体内重绑）
+  - f0b0c07d  # BL-01 工具侧 + MN-04（注入 conversation_id + 写前归属判定）
+  - 3d81cef7  # MN-06 草稿 gate 留痕绑定真实用户
+  - fff343ad  # MN-01 MCP 桥接标 orchestrated
+  - 2f6d23a5  # MN-02 arebind 单事务
+  - b21a53ef  # MN-03 UUID 过筛 + space 口径统一
+  - 391eb895  # HI-02 工具结果承载正文与 provenance
+  - 3393b331  # HI-01 投影响应带回仓库名 + 真实组件用例
+  - 7e99d2cf  # MN-05 runtime 守卫下沉到入口
 tests_executed:
   backend: "140 passed（tests/test_coding_tools + test_plan_projection_service + test_plan_projection_api + test_coding_session_service + test_spa_coding_chain_e2e + tests/agents/test_coding_tools_schema_guard + tests/mcp_tools/test_bridge_session + test_coding_plan_exporter）"
   frontend: "115 passed（OrchestratedPlanCard.spec + TechPlanCard.spec + chatMessageBubble.parts.spec + useToolDisplay.spec）；vue-tsc --noEmit 通过"
   lint: "ruff check / ruff format 的全部告警均落在本 phase 未触及的既有代码（chat/services.py、migrations/0014、coding_session_service.py 旧段），109 新增代码零告警"
   probes: "① 按中间件真实绑定（user_id=\"system\"）调 agents.tools.coding_tools._context_user_id() → 返回 ''（BL-01 实测）；② Repository.objects.filter(id__in=['not-a-uuid']) → ValidationError（MN-03 实测）"
+tests_after_fix:
+  backend_targeted: "216 passed（13 个直接相关套件：test_coding_tools / test_plan_projection_service / test_plan_projection_api / test_coding_session_service / test_coding_plans_sessions_api / test_spa_coding_chain_e2e / agents/test_coding_tools_schema_guard / agents/test_tool_contracts / mcp_tools/test_bridge_session / test_coding_plan_exporter / test_log_context_propagation / test_coding_plan_api / test_coding_plan_model）"
+  backend_broad: "610 passed, 20 errors（tests/mcp_tools + tests/chat + tests/agents + knowledge/test_triggers + test_chat_tools + test_conversation_service_prompt_fragments）。20 个 error **全部**落在 tests/mcp_tools/test_grep_repository.py —— 该文件在临时目录跑 git init，受文件系统沙箱限制，与本次改动无关（已按文件名逐条核对：errors 100% 集中在该文件）"
+  frontend: "479 passed / 51 files（CI=true pnpm vitest run --watch=false src/components/chat src/stores src/composables；修复前 468 passed，新增 11 条）"
+  types: "pnpm vue-tsc --noEmit 通过（零输出）"
+  lint: "13 个改动的 .py 文件 ruff check All checks passed + ruff format --check 全部 already formatted；前端 eslint --fix 无残留问题"
+negative_controls:
+  BL-01: "移除 `actor_user_id = _context_user_id() or str(conversation.created_by_id or \"\")` 的第二来源 → TestUpdateCodingPlanActorResolution 的 3 条全红（含 test_update_coding_plan_succeeds_under_production_context_binding）；恢复后 4 passed"
+  MN-04: "单独移除 legacy 分支的 session 会话一致性判定 → test_update_legacy_session_of_another_conversation_writes_nothing 变红（断言 CodingPlan 计数与 session.coding_plan_id 均未被污染）；恢复后绿"
+  MN-02: "把单条 UPDATE 拆回「先写正文、再写来源指针」两次写 → test_rebind_write_failure_leaves_body_and_source_pointer_consistent 变红（AssertionError: 正文已变成 v2）；恢复后 6 passed。用例只掐写 source_artifact_version_id 那一次 UPDATE —— 无差别抛错会让两次写的旧实现碰巧通过"
+  HI-01: "删掉 OrchestratedPlanCard 的 `:available-repositories` / `:target-repositories` 两行 → 新增的 2 条集成用例全红（选仓行 0 个 / 目标仓库徽标区不渲染）；恢复后 13 passed"
+  HI-02: "删掉 ChatMessageBubble 的 `:provenance` 透传 → 2 条用例变红；恢复后 33 passed"
+  MN-05: "移除 codingPlanRuntime 入口的 plan_id 守卫 → 4 条变红（含既有的 3 条串态防护 + 新增的 session 行守卫）；恢复后 63 passed"
 files_reviewed_list:
   - server/agents/intent_router.py
   - server/agents/tools/chat_tools.py
@@ -45,71 +75,183 @@ findings_index:
     origin: new
     file: server/agents/tools/coding_tools.py:433
     summary: update_coding_plan 在生产恒失败——归属主体只取 contextvars user_id，而全仓无任何视图挂 LogContextMixin，该值永远是 "system" 并被 helper 归一为空串
+    status: fixed
+    fix_note: >-
+      两条一起做（评审的两个建议不是二选一，它们各治一半）：① 打通身份链路——
+      ChatStreamView.post 补 rebind_user(resolve_user_id(request))，并在 _stream_events
+      生成器体内重新 bind（中间件的 finally 在 StreamingHttpResponse 构造后就 clear 了，
+      生成器是那之后才被消费的），流结束清理；② 给 update 一条与 create 同强度的退路——
+      新增 chat_runner 闭包注入的 conversation_id，退回该会话的 created_by_id 作为 actor。
+      EoP 防护未被削弱反而加强：conversation_id 由服务端注入、模型不可见不可控，且新增
+      「plan / session 必须属于本次会话」的一致性校验（同时关掉 MN-04 的面）。
+      schema 入参集合扩到 4 个键须在 _ALLOWED_PROPERTIES 显式登记 + 重生成签名 snapshot，
+      这次 review 由本提交承担。测试全组改用 bind_request_context(..., user_id="system")
+      的生产绑定形态调用——手工注入真实 id 正是本缺口逃过 785 行新测试的原因。
   - id: HI-01
     severity: HIGH
     origin: new
     file: web/src/components/chat/OrchestratedPlanCard.vue:142
     summary: 内嵌 TechPlanCard 未传 available-repositories，「进入编码」后的选仓面为空（"未找到匹配的仓库"），SC-1 第一步在界面上不可用；测试用 stub 掩盖
+    status: fixed
+    fix_note: >-
+      按评审建议三步全做：① ProjectPlanToCodingResponseSerializer 加
+      recommended_repositories: [{id, name}]，视图按 plan 所属 space 过滤并复用
+      filter_valid_uuids 过筛（半可信 id 直接喂 ORM 会 500，同 MN-03）；② OrchestratedPlanCard
+      把它同时作为 :available-repositories 与 :target-repositories 传下去；③ spec 改用真实
+      chat store，新增一组**不 stub TechPlanCard**（连真实 RepoMultiSelector 一起挂载，
+      只 stub 到叶子 UI 原语）的集成用例，断言内嵌选仓面渲染出 2 个可勾选行、目标仓库徽标
+      区列出仓库名、正文渲染且不挂草稿横幅。与 UI-SPEC 后端契约要求第 2 条（响应直接给全、
+      不要求前端二次拉取）同一条纪律，无锁定决策冲突。
   - id: HI-02
     severity: HIGH
     origin: new
     file: web/src/components/chat/ChatMessageBubble.vue:1206
     summary: SPINE-02 后非最新 plan 的方案卡正文与 provenance 双双取不到——旧卡显示「（暂无方案正文）」并被误挂「未经代码调研」横幅
+    status: fixed
+    fix_note: >-
+      取评审建议 1（工具结果自带这两个事实）：create_coding_plan / update_coding_plan 的
+      ToolResult 补 tech_plan / affected_files / provenance（都已在手，零额外查询），
+      ChatMessageBubble 从 result 解析并把 provenance 透给 TechPlanCard，正文优先 result
+      再回退 input（历史消息兜底那一级按 UI-SPEC §E 保留不删）。缺 provenance 时原样传
+      undefined，不在 bubble 里补默认值——保守分支的判定权归卡片（不变量 a 不受影响）。
+      未取建议 2（按 plan 拉详情）：多一次往返、且与「响应直接给全」的既定纪律相悖；由于
+      Phase 109 尚未上线，不存在「SPINE-02 之后产生但已非最新」的存量消息，建议 1 已覆盖
+      全部真实数据。若将来出现该形态的历史数据，再按建议 2 补一次挂载期拉取。
+      不变量核对：输出键不是入参，schema 守护（锁入参集合）不受影响，(e) 未被打开。
   - id: MN-01
     severity: MEDIUM
     origin: new
     file: server/mcp_tools/execution_service.py:109
     summary: MCP 桥接建的 chat CodingPlan 落 provenance=draft，编排产出被误标「未经代码调研」，且 dispatch payload 的 unresearched 恒 true
+    status: fixed
+    fix_note: >-
+      _create_bridge_session 显式传 provenance=ORCHESTRATED（该链正文来自
+      McpCodingPlanVersion，而 MCP 的 create_coding_plan 端点自 Phase 94 起 delegate 到统一
+      编排 —— 它就是编排产出）。按评审建议**只改 provenance、不填 source_artifact_version_id**：
+      后者语义是 delivery.ArtifactVersion.id 而非 canonical PlanVersion.id，且带无条件唯一
+      约束，填真值会挡住 MCP 链允许的重复桥接（不变量 f）。test_bridge_session.py:178 把
+      draft 锁成了预期，已翻正为 ORCHESTRATED，并补一条 execution_spec.unresearched is False
+      的下游锁（新契约字段一上线就写反是本条最实的代价）。
   - id: MN-02
     severity: MEDIUM
     origin: new
     file: server/chat/plan_projection_service.py:466
     summary: arebind 非原子——aupdate_plan 先写正文，随后 asave 失败会留下「正文来自新版本、来源指针仍指旧版本」的混合态，且对用户报失败
+    status: fixed
+    fix_note: >-
+      按评审建议做成「单事务 + 会撞唯一约束的列与正文同处一次写」：改用一条
+      CodingPlan.objects.filter(pk=...).update(...) 覆盖 title / recommended_repository_ids /
+      provenance / source_artifact_version_id / tech_plan / affected_files（auto_now 不作用于
+      .update()，显式带 updated_at），事务提交后再把新值同步回内存实例；知识库重摄取移到
+      事务之后、best-effort（原先由 aupdate_plan 内联触发，会把网络 IO 绑进事务），并按
+      observability 规范显式带 initiated_by_user_id。用例只让写 source_artifact_version_id
+      的那一次 UPDATE 抛 IntegrityError —— 无差别抛错会让两次写的旧实现碰巧通过断言，
+      这个粒度是本用例有效性的关键（已用负向对照验证）。
   - id: MN-03
     severity: MEDIUM
     origin: new
     file: server/agents/tools/coding_tools.py:321
     summary: projected 分支把半可信 LLM 产出的 repository_id 直接喂 UUID 查询，非法字面量抛 ValidationError（已实测），投影已落库却报工具失败
+    status: fixed
+    fix_note: >-
+      按评审建议加 UUID 过筛，但提取为 plan_projection_service.filter_valid_uuids 共用
+      （投影端点 HI-01 要用同一道筛子，各写一份必然漂移）。名字回显改按 plan 所属 space
+      过滤，与「LLM 显式传 id」分支同一可见性口径。**final_recommended 仍保留全部合法 id**：
+      用 space 交集覆盖会把跨 space 的 fan-out 目标抹掉，与既有「不用空列表清空投影聚合值」
+      的决策冲突（已有用例
+      test_projected_repository_ids_are_not_cleared_by_empty_resolution 锁住）。
+      补两条用例：含 "not-a-uuid" 时仍 success=True 且只留合法 id；跨 space 仓库不回显名字。
   - id: MN-04
     severity: MEDIUM
     origin: new
     file: server/agents/tools/coding_tools.py:467
     summary: legacy session_id 分支在归属判定之前就建 CodingPlan 并改写他人 CodingSession.coding_plan FK（write-before-authz），当前被 BL-01 挡住、修完即活
+    status: fixed
+    fix_note: >-
+      与 BL-01 同一提交处置（评审已指出「修完 BL-01 立刻变活」，分开提交会有一个瞬间打开
+      这个面）。取评审建议的第二条路径：注入 conversation_id 后，coding_plan_id 与 session_id
+      两个分支都在**任何写之前**校验「属于本次会话」，拒绝措辞与「不存在」逐字一致，不泄漏
+      存在性。用例断言拒绝后 CodingPlan 计数不变、他人 session.coding_plan_id 仍为 None
+      （只断言「拒绝了」会漏掉「数据已被污染」这半边）。
   - id: MN-05
     severity: MEDIUM
     origin: pre-existing-newly-load-bearing
     file: web/src/components/chat/TechPlanCard.vue:106
     summary: sessions / hasSessions / existingActiveRepoIds / visibleTargetRepositories 消费 runtime.coding_plan 但无 plan_id 守卫，投影后轮询窗口内内嵌卡片会显示别的 plan 的 session 行
+    status: fixed
+    fix_note: >-
+      按评审建议把守卫下沉到 codingPlanRuntime 入口，四段重复守卫随之简化（注释保留理由）；
+      不变量 (c)「每个 runtime.coding_plan 消费者都过 plan_id 守卫」由此从「每个消费点自觉」
+      变成结构性保证。codingPlanId 缺省（旧单仓路径）时不设限，向后兼容不破。补两条用例：
+      runtime 指向别的 plan 且带 sessions 时不渲染 session 行、仍渲染内嵌选仓面；runtime 匹配
+      时 session 行照常渲染（守卫不误伤正常路径）。
+      **未采纳**评审的附带建议「把 scheduleRuntimePoll 的 3 秒延迟压到 0」：守卫修好后串态
+      窗口已无用户可见后果，改轮询节奏属行为调整而非缺陷修复，留给后续按实际时序数据决定。
   - id: MN-06
     severity: MEDIUM
     origin: new
     file: server/chat/coding_session_service.py:95
     summary: 草稿 gate 的确认/拒绝留痕 user_id 恒为 system，RELY-01 想立的「谁用草稿送了编码」不可追溯（与 BL-01 同根因）
+    status: fixed
+    fix_note: >-
+      两层都做：根因随 BL-01 修复（chat SSE 已能绑到真实用户）；本处再走一条不依赖
+      contextvars 的显式通路 —— CodingPlanSessionsBatchCreateView 把
+      actor_user_id=resolve_user_id(request) 传进 create_sessions_for_plan，
+      _log_draft_coding_gate 优先用它、取不到才回退 contextvars。显式参数只用于留痕的问责
+      字段，**不参与任何授权判定**（授权在视图层已完成，不变量 d 未被触碰）。补两条用例断言
+      draft_plan_coding_rejected / confirmed 两条事件的 user_id 是真实用户 id 而非 system。
   - id: LO-01
     severity: LOW
     origin: new
     file: web/src/components/chat/TechPlanCard.vue:395
     summary: gate 拒绝后重开的弹层其 promise 无人 await，用户重新勾选并确认后什么都不会发生（死胡同）
+    status: accepted-debt
+    fix_note: >-
+      按本次 --fix 的范围裁定（只修 BLOCKER/HIGH/MEDIUM）不修，记为已接受债务。
+      处置建议保留评审给的 (a)：不重开弹层、只发 toast，让用户走原入口 —— 改动最小且行为
+      自洽，也不触碰「前端绝不自行产生 acknowledge_unresearched: true」这条不变量（(b) 的
+      重放路径要额外证明不会自行补 true，风险更高）。可达性低：需服务端 gate 与前端判定不
+      一致才会走到。
   - id: LO-02
     severity: LOW
     origin: new
     file: web/src/components/chat/ChatMessageBubble.vue:791
     summary: orchestratedPlanData 用 toolCalls.find，同消息内两次编排工具调用时两张卡片都拿第一次的 artifact_version_id
+    status: accepted-debt
+    fix_note: >-
+      范围外，记为已接受债务。形状照抄既有 codingPlanData（同款问题、pre-existing），
+      两处应一并改成按 item 解析，单独改编排这一处会留下不对称。编排工具是阻塞式，
+      同轮多次调用概率低。注：本次 HI-02 让 codingPlanData 多承载了 provenance，
+      一旦真的发生同消息多次调用，串到的东西比修复前更多一项 —— 这提高了后续处置的
+      优先级，但不改变本次的范围裁定。
   - id: LO-03
     severity: LOW
     origin: new
     file: server/agents/tools/coding_tools.py:293
     summary: create_coding_plan 的 conversation_id 已不决定投影落点却仍必填且不校验一致性，跨会话 artifact 会把 plan 建到别的会话下
+    status: accepted-debt
+    fix_note: >-
+      范围外，记为已接受债务。但**本次修复已缩小它的面**：update_coding_plan 侧新增的
+      「plan.conversation_id 必须等于注入的 conversation_id」校验就是评审给 create 的同款
+      纵深复核，create 侧照抄即可（views.py:2790 已有先例）。归属安全性不受影响（跨会话
+      artifact 仍被 service 内的 _assert_owner 挡住，只有本人的跨会话 artifact 会落错会话）。
   - id: LO-04
     severity: LOW
     origin: new
     file: server/feishu/coding_plan_exporter.py:46
     summary: _DRAFT_NOTICE 插在 _STATUS_LABEL 的注释块与定义之间，注释与它描述的常量被隔开
+    status: accepted-debt
+    fix_note: 纯可读性、无行为影响。范围外，记为已接受债务。
   - id: LO-05
     severity: LOW
     origin: new
     file: .planning/ROADMAP.md
     summary: ROADMAP 与 109-02 仍写「条件唯一约束」，实现是无条件唯一约束（实现的理由是对的，文档没跟上）
+    status: accepted-debt
+    fix_note: >-
+      文档口径滞后，范围外（本次只动源码与测试），记为已接受债务。实现侧的理由已写在
+      models.py:311-328 的注释里且比 ROADMAP 更准确，后续评审读代码不会被误导；
+      ROADMAP 措辞订正建议在下一次 planning 文档更新时一并做。
 ---
 
 # Phase 109: 代码评审报告
@@ -117,6 +259,54 @@ findings_index:
 **评审范围:** `256899d5..HEAD` 中 `server/` 与 `web/` 的 22 个在册源码文件（另核对 15 个新增/改动测试文件与 4 个被牵连的既有模块）
 **深度:** standard（逐文件 + 消费方追踪 + 两处运行时实测 + 实跑后端 140 / 前端 115 条相关用例）
 **结论:** `findings` —— 1 个 BLOCKER、2 个 HIGH、6 个 MEDIUM、5 个 LOW
+**修复状态（2026-07-31，autonomous `--fix --auto`）:** BLOCKER / HIGH / MEDIUM **9 条全部已修**（9 个原子提交），5 条 LOW 按范围裁定不修、逐条记为已接受债务
+
+---
+
+## 修复轮次总览（2026-07-31）
+
+| ID | 严重度 | 处置 | 提交 |
+|---|---|---|---|
+| BL-01 | BLOCKER | 已修（身份链路 + 工具侧双管齐下） | `ca51bcf7` `f0b0c07d` |
+| HI-01 | HIGH | 已修（投影响应带回仓库名 + 真实组件用例） | `3393b331` |
+| HI-02 | HIGH | 已修（工具结果承载正文与 provenance） | `391eb895` |
+| MN-01 | MEDIUM | 已修（MCP 桥接标 orchestrated） | `fff343ad` |
+| MN-02 | MEDIUM | 已修（单事务原子写） | `2f6d23a5` |
+| MN-03 | MEDIUM | 已修（UUID 过筛 + space 口径统一） | `b21a53ef` |
+| MN-04 | MEDIUM | 已修（写前归属判定，与 BL-01 同提交） | `f0b0c07d` |
+| MN-05 | MEDIUM | 已修（守卫下沉到 runtime 入口） | `7e99d2cf` |
+| MN-06 | MEDIUM | 已修（留痕绑定真实用户） | `3d81cef7` |
+| LO-01 ~ LO-05 | LOW | 已接受债务（逐条理由见 frontmatter `fix_note`） | — |
+
+**修复后实跑（精确数字）**
+
+- 后端 · 直接相关 13 个套件：**216 passed**。
+- 后端 · 更广扫面（`tests/mcp_tools` + `tests/chat` + `tests/agents` + 3 个单文件）：**610 passed, 20 errors** —— 20 个 error **全部**落在 `tests/mcp_tools/test_grep_repository.py`（临时目录 `git init` 受文件系统沙箱限制，与本次改动无关；已按文件名逐条核对，errors 100% 集中在该文件）。
+- 前端：`CI=true pnpm vitest run --watch=false src/components/chat src/stores src/composables` → **479 passed / 51 files**（修复前 468，新增 11 条）。
+- 类型：`pnpm vue-tsc --noEmit` 通过（零输出）。
+- Lint：13 个改动 `.py` 文件 `ruff check` All checks passed、`ruff format --check` 全部 already formatted。
+
+**负向对照（逐条「破坏自己的修复 → 确认有测试变红 → 还原」）**
+
+| 修复 | 破坏方式 | 变红的测试 | 还原后 |
+|---|---|---|---|
+| BL-01 | 移除 actor 的第二来源（退回只取 contextvars） | `TestUpdateCodingPlanActorResolution` 3 条（含 `..._succeeds_under_production_context_binding`） | 4 passed |
+| MN-04 | 单独移除 legacy 分支的会话一致性判定 | `test_update_legacy_session_of_another_conversation_writes_nothing` | 4 passed |
+| MN-02 | 把单条 UPDATE 拆回「先写正文、再写指针」 | `test_rebind_write_failure_leaves_body_and_source_pointer_consistent` | 6 passed |
+| HI-01 | 删掉 `:available-repositories` / `:target-repositories` | 新增集成用例 2 条 | 13 passed |
+| HI-02 | 删掉 `:provenance` 透传 | 2 条 | 33 passed |
+| MN-05 | 移除 `codingPlanRuntime` 入口守卫 | 4 条（3 条既有串态防护 + 1 条新增 session 守卫） | 63 passed |
+
+**载重不变量复核（修复后逐条仍成立）**
+
+| # | 不变量 | 修复后结论 |
+|---|---|---|
+| a | 草稿检测严格允许清单 | 成立。判定仍是 `resolvedProvenance !== 'orchestrated'`；HI-02 让 provenance 多了一个来源（工具结果），缺字段仍原样传 `undefined` 落保守分支 |
+| b | 前端绝不originate `acknowledge_unresearched: true` | 成立。未触碰 `ensureUnresearchedAcknowledged`；LO-01 刻意不修正是为了不引入重放路径 |
+| c | `runtime.coding_plan` 消费者全部过 `plan_id` 守卫 | **加强**。MN-05 把守卫下沉到入口，从「每个消费点自觉」变成结构性保证 |
+| d | 服务端草稿 gate fail-closed + 机器码 | 成立。MN-06 只加留痕字段，不参与授权判定；gate 位置、`is not True` 判定、`code` 契约均未动 |
+| e | `create/update_coding_plan` 不得回归徒手创作 | 成立。新增的是**输出**键与服务端注入的 `conversation_id`，schema 守护锁的入参集合已显式登记并重生成签名 snapshot |
+| f | MCP 桥接的 CodingPlan 创建继续可用 | 成立。MN-01 只改 `provenance`，不填带唯一约束的来源列，重复桥接用例仍绿 |
 
 ## 摘要
 
