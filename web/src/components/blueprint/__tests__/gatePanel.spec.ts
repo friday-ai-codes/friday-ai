@@ -7,8 +7,9 @@
  *     错误态不存在、六个 toast mock 零调用。这是「⛔ 不靠 `detail` 文本分支判定」（P-10）唯一
  *     形状正确的可证伪判据 —— 一旦有人按文案分档，三条里必然有一条转红。
  *  2. gate 200 ⇒ 面板渲染，仓库行数 == 快照仓库数。
- *  3~9. ⭐ **七个动作各触发一次 POST**，且成功后 `['blueprint','gate',id]` 与
- *     `['blueprint','snapshot',id]` **双失效**（⛔ 零乐观更新）。
+ *  3~9. ⭐ **七个动作各触发一次 POST**，且成功后 `gate` / `snapshot` / `doc` / `threads` /
+ *     `events` **五个查询全部被失效**（MJ-01 回归；⛔ 零乐观更新）。判据是缓存条目的
+ *     `isInvalidated`，⛔ 不是 `invalidateQueries` 的调用次数——后者证明不了覆盖面。
  *  10. ⭐ pending 行禁用 + 「调研中」；非 pending 行可用（正反并列）。
  *  11. ⭐ 存在 pending ⇒ 确认主按钮 `disabled` + Tooltip 文案；无 pending ⇒ 可用。
  *  12/13. ⭐ `confirm/` 409 两档：`blocked_reason === 'pending_clarification'` ⇒ 出现
@@ -347,15 +348,30 @@ function makeReviewSnapshot() {
   }
 }
 
+/**
+ * 确认门动作必须覆盖的**五个**查询 key（MJ-01）。
+ *
+ * ⚠️ `doc` 的尾段是 `versionId ?? 'current'` —— 精确匹配写不全，这正是必须用前缀失效的理由。
+ */
+const COVERED_QUERY_KEYS: readonly (readonly unknown[])[] = [
+  ['blueprint', 'gate', ARTIFACT_ID],
+  ['blueprint', 'snapshot', ARTIFACT_ID],
+  ['blueprint', 'doc', ARTIFACT_ID, 'current'],
+  ['blueprint', 'threads', ARTIFACT_ID],
+  ['blueprint', 'events', ARTIFACT_ID],
+]
+
 function mountPanel(snapshot: Record<string, unknown> = makeGate()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+  // 预置五条缓存，让「有没有被失效」可观测（⛔ 不预置就只能断言调用次数，那证明不了覆盖面）。
+  for (const key of COVERED_QUERY_KEYS)
+    queryClient.setQueryData([...key], {})
   const setQueryDataSpy = vi.spyOn(queryClient, 'setQueryData')
   const wrapper = mount(BlueprintGatePanel, {
     props: { artifactId: ARTIFACT_ID, snapshot: snapshot as never },
     global: { plugins: [i18n, createPinia(), [VueQueryPlugin, { queryClient }]], stubs: PANEL_STUBS },
   })
-  return { wrapper, invalidateSpy, setQueryDataSpy }
+  return { wrapper, setQueryDataSpy, queryClient }
 }
 
 function mountPage() {
@@ -368,10 +384,16 @@ function mountPage() {
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 60))
 
-/** 双失效断言：⛔ 只失效 gate 会让正文停在旧状态。 */
-function expectDoubleInvalidate(invalidateSpy: ReturnType<typeof vi.spyOn>): void {
-  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['blueprint', 'gate', ARTIFACT_ID] })
-  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['blueprint', 'snapshot', ARTIFACT_ID] })
+/**
+ * ⭐ 全域失效断言（MJ-01）：按**缓存条目的 `isInvalidated`** 判覆盖面。
+ *
+ * ⛔ 不断言 `invalidateQueries` 的调用次数或入参 —— 那只能证明「调了几次」，证明不了
+ * 「哪些查询被覆盖」。确认门动作会同时改蓝图状态（`snapshot`）、正文（`doc`）、确认门线程
+ * （`threads`）与阶段事件（`events`），只失效 `gate` + `snapshot` 会让正文停在锁定前那一版。
+ */
+function expectFullInvalidate(queryClient: QueryClient): void {
+  for (const key of COVERED_QUERY_KEYS)
+    expect({ key, invalidated: queryClient.getQueryState([...key])?.isInvalidated }).toEqual({ key, invalidated: true })
 }
 
 beforeEach(() => {
@@ -438,28 +460,28 @@ describe('⭐ gate 非 200 ⇒ 不渲染且不报错（§8.2 例外一 / P-10）
 
 describe('⭐ 七个动作：一次 POST + 双失效（⛔ 零乐观更新）', () => {
   it('3. confirm：二次确认通过后发一次 POST 且双失效', async () => {
-    const { wrapper, invalidateSpy, setQueryDataSpy } = mountPanel()
+    const { wrapper, queryClient, setQueryDataSpy } = mountPanel()
     await flush()
     await wrapper.find('[data-testid="blueprint-gate-confirm"]').trigger('click')
     await flush()
     expect(api.confirmGate).toHaveBeenCalledTimes(1)
     expect(api.confirmGate).toHaveBeenCalledWith(ARTIFACT_ID)
-    expectDoubleInvalidate(invalidateSpy)
+    expectFullInvalidate(queryClient)
     expect(setQueryDataSpy).not.toHaveBeenCalled()
   })
 
   it('4. remove-repo：二次确认通过后发一次 POST 且入参含 repository_id', async () => {
-    const { wrapper, invalidateSpy } = mountPanel()
+    const { wrapper, queryClient } = mountPanel()
     await flush()
     await wrapper.findAll('[data-testid="blueprint-gate-remove-repo"]')[0].trigger('click')
     await flush()
     expect(api.removeRepo).toHaveBeenCalledTimes(1)
     expect(api.removeRepo).toHaveBeenCalledWith(ARTIFACT_ID, { repository_id: 'repo-1' })
-    expectDoubleInvalidate(invalidateSpy)
+    expectFullInvalidate(queryClient)
   })
 
   it('5. add-repo：选中一个仓 ⇒ 一次 POST，成功后选择器清空', async () => {
-    const { wrapper, invalidateSpy } = mountPanel()
+    const { wrapper, queryClient } = mountPanel()
     await flush()
     wrapper.findComponent(RepositoryPickerStub).vm.$emit('update:modelValue', ['repo-9'])
     await flush()
@@ -468,22 +490,22 @@ describe('⭐ 七个动作：一次 POST + 双失效（⛔ 零乐观更新）', 
     expect(api.addRepo).toHaveBeenCalledTimes(1)
     expect(api.addRepo).toHaveBeenCalledWith(ARTIFACT_ID, { repository_id: 'repo-9' })
     expect(wrapper.findComponent(RepositoryPickerStub).props('modelValue')).toEqual([])
-    expectDoubleInvalidate(invalidateSpy)
+    expectFullInvalidate(queryClient)
   })
 
   it('6. reclassify-role：segmented control 即时提交一次 POST', async () => {
-    const { wrapper, invalidateSpy } = mountPanel()
+    const { wrapper, queryClient } = mountPanel()
     await flush()
     // 第一行是 direct ⇒ 点「间接影响」触发改判
     await wrapper.findAll('[data-testid="blueprint-gate-role-indirect"]')[0].trigger('click')
     await flush()
     expect(api.reclassifyRole).toHaveBeenCalledTimes(1)
     expect(api.reclassifyRole).toHaveBeenCalledWith(ARTIFACT_ID, { repository_id: 'repo-1', role: 'indirect' })
-    expectDoubleInvalidate(invalidateSpy)
+    expectFullInvalidate(queryClient)
   })
 
   it('7. edit-responsibility：受控 Dialog 提交一次 POST，入参含文本与 rerun', async () => {
-    const { wrapper, invalidateSpy } = mountPanel()
+    const { wrapper, queryClient } = mountPanel()
     await flush()
     await wrapper.findAll('[data-testid="blueprint-gate-edit-responsibility"]')[0].trigger('click')
     await flush()
@@ -497,11 +519,11 @@ describe('⭐ 七个动作：一次 POST + 双失效（⛔ 零乐观更新）', 
       responsibility: '只做下单主链路',
       rerun: true,
     })
-    expectDoubleInvalidate(invalidateSpy)
+    expectFullInvalidate(queryClient)
   })
 
   it('8. upgrade-research：indirect 行发一次 POST，入参只有 repository_id', async () => {
-    const { wrapper, invalidateSpy } = mountPanel()
+    const { wrapper, queryClient } = mountPanel()
     await flush()
     const buttons = wrapper.findAll('[data-testid="blueprint-gate-upgrade-research"]')
     expect(buttons).toHaveLength(1)
@@ -509,19 +531,19 @@ describe('⭐ 七个动作：一次 POST + 双失效（⛔ 零乐观更新）', 
     await flush()
     expect(api.upgradeResearch).toHaveBeenCalledTimes(1)
     expect(api.upgradeResearch).toHaveBeenCalledWith(ARTIFACT_ID, { repository_id: 'repo-2' })
-    expectDoubleInvalidate(invalidateSpy)
+    expectFullInvalidate(queryClient)
   })
 
   it('9. rejected-to-boundary：存在 rejected 候选时发一次 POST', async () => {
     const snapshot = makeGate({
       repos: [makeRepo(), makeRepo({ repository_id: 'repo-3', removed: true })],
     })
-    const { wrapper, invalidateSpy } = mountPanel(snapshot)
+    const { wrapper, queryClient } = mountPanel(snapshot)
     await flush()
     await wrapper.find('[data-testid="blueprint-gate-rejected-to-boundary"]').trigger('click')
     await flush()
     expect(api.rejectedToBoundary).toHaveBeenCalledTimes(1)
-    expectDoubleInvalidate(invalidateSpy)
+    expectFullInvalidate(queryClient)
   })
 })
 
