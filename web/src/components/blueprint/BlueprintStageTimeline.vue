@@ -18,11 +18,12 @@
  */
 
 import type { BlueprintEvent } from '~/types/blueprint'
+import type { StageState } from '~/utils/blueprintBlocks'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Badge } from '~/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
-import { BLUEPRINT_STAGES, progressKeyForEvent, stageForEvent } from '~/utils/blueprintBlocks'
+import { buildStageTimeline, progressKeyForEvent } from '~/utils/blueprintBlocks'
 
 const props = withDefaults(defineProps<{
   events?: BlueprintEvent[]
@@ -37,8 +38,6 @@ const props = withDefaults(defineProps<{
 })
 
 const { t, te } = useI18n()
-
-type StageState = 'idle' | 'running' | 'done' | 'failed'
 
 const STATE_VARIANT: Record<StageState, 'muted' | 'info' | 'success' | 'destructive'> = {
   idle: 'muted',
@@ -113,51 +112,31 @@ function formatTime(raw: string): string {
   return Number.isNaN(date.getTime()) ? raw : date.toLocaleString('zh-CN', { hour12: false })
 }
 
-const nodes = computed<StageNode[]>(() => {
-  const buckets = new Map<string, BlueprintEvent[]>()
-  for (const event of props.events ?? []) {
-    const stage = stageForEvent(event.event)
-    if (!stage)
-      continue
-    const list = buckets.get(stage) ?? []
-    list.push(event)
-    buckets.set(stage, list)
-  }
-
-  return BLUEPRINT_STAGES.map((stage) => {
-    const list = [...(buckets.get(stage) ?? [])].sort((a, b) =>
-      String(a.ts).localeCompare(String(b.ts)))
-    const latest = list.at(-1)
-    let state: StageState = 'idle'
-    if (latest) {
-      if (latest.event.endsWith('.failed'))
-        state = 'failed'
-      else if (latest.event.endsWith('.completed') || latest.event.endsWith('.locked'))
-        state = 'done'
-      else state = 'running'
-    }
-    else if (stage === props.currentStage) {
-      state = 'running'
-    }
-    return {
-      stage,
-      state,
-      label: t(`knowledge.blueprints.stage.${stage}`),
-      stateLabel: t(`knowledge.blueprints.stage.${STATE_LABEL_KEY[state]}`),
-      events: list.map((event) => {
-        const { fields, skippedKeys } = splitPayload(event.payload)
-        return {
-          id: event.id,
-          event: event.event,
-          label: eventLabel(event),
-          ts: formatTime(event.ts),
-          fields,
-          skippedKeys,
-        }
-      }),
-    }
-  })
-})
+/**
+ * ⭐ 聚合与末态推断**全部委托 `buildStageTimeline`**，本组件只做呈现（MN-01）。
+ *
+ * ⛔ 不在这里重写一份 `buckets` + 后缀判据：那份副本曾与 composable 里的另一份并存并已经
+ * 开始漂移，症状是「修一处、单测绿、界面纹丝不动」。
+ */
+const nodes = computed<StageNode[]>(() =>
+  buildStageTimeline(props.events, props.currentStage, props.currentStatus).map(node => ({
+    stage: node.stage,
+    state: node.state,
+    label: t(`knowledge.blueprints.stage.${node.stage}`),
+    stateLabel: t(`knowledge.blueprints.stage.${STATE_LABEL_KEY[node.state]}`),
+    events: node.events.map((event) => {
+      const { fields, skippedKeys } = splitPayload(event.payload)
+      return {
+        id: event.id,
+        event: event.event,
+        label: eventLabel(event),
+        ts: formatTime(event.ts),
+        fields,
+        skippedKeys,
+      }
+    }),
+  })),
+)
 
 const hasAnyEvent = computed(() => nodes.value.some(node => node.events.length > 0))
 </script>

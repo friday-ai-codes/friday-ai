@@ -18,7 +18,8 @@
  * - `server/delivery/services/event_taxonomy.py:185-208` `BLUEPRINT_EVENTS`（21 个常量）。
  */
 
-import type { BlueprintBlock } from '~/types/blueprint'
+import type { BlueprintBlock, BlueprintEvent } from '~/types/blueprint'
+import { ORCHESTRATION_SETTLED_BLUEPRINT_STATUSES } from '~/config/blueprintStatus'
 
 /** `iterBlocks` 的产出条目：段路径 + 该路径所属的导航段 key + block 本体。 */
 export interface IteratedBlock {
@@ -424,6 +425,106 @@ export function progressKeyForEvent(eventName: string): string {
 /** 事件名 → 阶段；未映射（如 `blueprint.status.transitioned`）返回 `''`。 */
 export function stageForEvent(eventName: string): string {
   return EVENT_STAGE_MAP[eventName] ?? ''
+}
+
+/**
+ * 会话 stage 名 → 时间线节点名的别名表。
+ *
+ * ⚠️ **两侧不是同一套命名**（后端 stage graph 见 `builtin_processes.py:850-960`）：会话侧是
+ * `intake / decompose / spec_gate / route / repo_research / reroute / repo_confirmation /
+ * repo_plan / merge / ai_review`，时间线侧把 `reroute` 并进 `route`、把 `repo_confirmation`
+ * 叫 `confirmation`，并多一个后端根本没有的 `pending_review`。⛔ 不要「统一命名」——两侧
+ * 各有各的既有消费方；漏了这张表的症状是 `indexOf` 返 `-1`、位序推断整条静默失效。
+ */
+const SESSION_STAGE_ALIASES: Record<string, string> = {
+  repo_confirmation: 'confirmation',
+  reroute: 'route',
+}
+
+/** 排在 `spec_gate` 之前的准备 stage：它们意味着一个时间线节点都还没走完。 */
+const PRE_TIMELINE_SESSION_STAGES: ReadonlySet<string> = new Set(['intake', 'decompose'])
+
+/** 会话 `current_stage` 在八节点里的位序；未知 / 尚未进入时间线返回 `-1`。 */
+export function timelineIndexOfSessionStage(sessionStage: string): number {
+  const raw = String(sessionStage ?? '')
+  if (!raw || PRE_TIMELINE_SESSION_STAGES.has(raw))
+    return -1
+  return BLUEPRINT_STAGES.indexOf(SESSION_STAGE_ALIASES[raw] ?? raw)
+}
+
+/** 阶段节点的四态。 */
+export type StageState = 'idle' | 'running' | 'done' | 'failed'
+
+/** 阶段时间线的一个节点。 */
+export interface StageTimelineNode {
+  stage: string
+  state: StageState
+  events: BlueprintEvent[]
+  /** 该 stage 下最新一条事件的 `ts`（无事件为 `''`）。 */
+  latestTs: string
+}
+
+/**
+ * 按 stage 聚合事件并推断八个节点的末态 —— **全相位唯一的一份实现**。
+ *
+ * ⭐ **末态不能只看事件名后缀**：把 `EVENT_STAGE_MAP` 按 stage 摊开会发现 `route` /
+ * `repo_plan` / `merge` 三个阶段的**全部出边**都不以 `.completed` / `.locked` / `.failed`
+ * 结尾（`route.scored` / `reroute.triggered` / `context.entry_appended` /
+ * `context.waiter_registered` / `context.waiter_satisfied`）⇒ 只按后缀判，它们发过任何一条
+ * 事件就永久钉在 `running`：一份早已 confirmed 的蓝图，时间线上仍有三个阶段转圈。
+ *
+ * 通用的 `blueprint.stage.started/.completed/.failed` 三个常量**全仓零 emit 点**
+ * （`event_taxonomy.py:133` 自述「本相位仅定义常量」），所以补不出后端信号，只能用手上已有的
+ * 两个：**会话位序**（走过 `current_stage` 的阶段必然已经走完）与**编排终态**
+ * （`confirmed` / `implementing` / `implemented` / `archived` ⇒ 发过事件的阶段一律收成完成）。
+ *
+ * ⚠️ `.failed` 后缀**优先于**这两条推断：失败的阶段不得被位序收成「完成」。
+ *
+ * @param events 阶段事件（乱序无妨，函数内按 `ts` 排）。
+ * @param currentStage `blueprint/events/` 的 `current_stage`（会话侧命名，走别名表换算）。
+ * @param currentStatus 人审快照的 `current_status`（⛔ 前端不自行推断状态）。
+ */
+export function buildStageTimeline(
+  events: readonly BlueprintEvent[] | undefined,
+  currentStage: string,
+  currentStatus: string,
+): StageTimelineNode[] {
+  const buckets = new Map<string, BlueprintEvent[]>()
+  for (const event of events ?? []) {
+    const stage = stageForEvent(event.event)
+    if (!stage)
+      continue
+    const list = buckets.get(stage) ?? []
+    list.push(event)
+    buckets.set(stage, list)
+  }
+
+  const currentIndex = timelineIndexOfSessionStage(currentStage)
+  const status = String(currentStatus ?? '')
+  const settled = ORCHESTRATION_SETTLED_BLUEPRINT_STATUSES.has(status)
+  const currentNode = currentIndex >= 0 ? BLUEPRINT_STAGES[currentIndex] : ''
+
+  return BLUEPRINT_STAGES.map((stage, index) => {
+    const list = [...(buckets.get(stage) ?? [])].sort((a, b) =>
+      String(a.ts).localeCompare(String(b.ts)))
+    const latest = list.at(-1)
+    let state: StageState = 'idle'
+    if (latest) {
+      if (latest.event.endsWith('.failed'))
+        state = 'failed'
+      else if (latest.event.endsWith('.completed') || latest.event.endsWith('.locked'))
+        state = 'done'
+      else
+        state = 'running'
+      if (state === 'running' && (settled || (currentIndex >= 0 && index < currentIndex)))
+        state = 'done'
+    }
+    else if (!settled && (stage === currentNode || (stage === 'pending_review' && status === 'pending_review'))) {
+      // 无事件的当前阶段仍要点亮；编排已确定走完时不再点亮任何空节点。
+      state = 'running'
+    }
+    return { stage, state, events: list, latestTs: latest?.ts ?? '' }
+  })
 }
 
 /**

@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest'
 import {
   blockText,
   BLUEPRINT_EVENT_NAMES,
+  BLUEPRINT_STAGES,
+  buildStageTimeline,
   canonicalBlockFingerprint,
   classifyBlockDiff,
   itemKey,
@@ -18,6 +20,7 @@ import {
   sectionKeyForEvent,
   stageForEvent,
   summaryText,
+  timelineIndexOfSessionStage,
 } from '../blueprintBlocks'
 
 describe('blockText —— 四分支字段优先级（P-13）', () => {
@@ -395,5 +398,61 @@ describe('summaryText —— 首个非空块的纯文本截断', () => {
     expect(summaryText(undefined)).toBe('')
     expect(summaryText([])).toBe('')
     expect(summaryText([{ block_id: 'a', type: 'paragraph' }])).toBe('')
+  })
+})
+
+describe('buildStageTimeline —— 末态推断（MJ-02）', () => {
+  let seq = 0
+  const ev = (event: string, ts: string) => {
+    seq += 1
+    return { id: `e-${seq}`, event, ts, payload: {} } as never
+  }
+  const stateOf = (nodes: ReturnType<typeof buildStageTimeline>) =>
+    Object.fromEntries(nodes.map(node => [node.stage, node.state]))
+
+  it('⭐ 三个无终态出边的阶段靠位序到达 done（route / repo_plan / merge）', () => {
+    const nodes = buildStageTimeline(
+      [
+        ev('blueprint.route.scored', '2026-08-01T00:00:01Z'),
+        ev('blueprint.context.entry_appended', '2026-08-01T00:00:02Z'),
+        ev('blueprint.context.waiter_satisfied', '2026-08-01T00:00:03Z'),
+      ],
+      'ai_review',
+      'pending_review',
+    )
+    const states = stateOf(nodes)
+    expect([states.route, states.repo_plan, states.merge]).toEqual(['done', 'done', 'done'])
+    // 非恒真对照：位序**之后**的阶段没有事件 ⇒ 不得被判 done
+    expect(states.pending_review).toBe('running')
+  })
+
+  it('编排终态（四值）把发过事件的阶段一律收成 done，failed / superseded 不在其列', () => {
+    const events = [ev('blueprint.route.scored', '2026-08-01T00:00:01Z')]
+    for (const status of ['confirmed', 'implementing', 'implemented', 'archived'])
+      expect(stateOf(buildStageTimeline(events, '', status)).route).toBe('done')
+    // 对照：失败 / 被取代不推断完成，否则等于把失败讲成成功
+    for (const status of ['failed', 'superseded'])
+      expect(stateOf(buildStageTimeline(events, '', status)).route).toBe('running')
+  })
+
+  it('.failed 后缀优先于位序与终态推断', () => {
+    const states = stateOf(buildStageTimeline(
+      [ev('blueprint.repo_research.failed', '2026-08-01T00:00:01Z')],
+      'ai_review',
+      'confirmed',
+    ))
+    expect(states.repo_research).toBe('failed')
+  })
+
+  it('⭐ 会话 stage 名走别名表换算位序（两侧不同名）', () => {
+    expect(timelineIndexOfSessionStage('repo_confirmation')).toBe(BLUEPRINT_STAGES.indexOf('confirmation'))
+    expect(timelineIndexOfSessionStage('reroute')).toBe(BLUEPRINT_STAGES.indexOf('route'))
+    // spec_gate 之前的准备 stage 与未知值一律 -1（位序规则整条不生效，而不是误判成 0）
+    for (const raw of ['intake', 'decompose', '', 'nonsense'])
+      expect(timelineIndexOfSessionStage(raw)).toBe(-1)
+  })
+
+  it('八个节点恒全量返回，顺序与 BLUEPRINT_STAGES 逐字一致', () => {
+    expect(buildStageTimeline(undefined, '', '').map(node => node.stage)).toEqual([...BLUEPRINT_STAGES])
   })
 })
