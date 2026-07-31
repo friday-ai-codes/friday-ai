@@ -233,7 +233,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 110-07-PLAN.md — `PlanResearchLogGroup.vue` 按仓日志组 + `ChatMessageBubble` 挂载与会话绑定 + 集成用例（wave 6）
+- [x] 110-07-PLAN.md — `PlanResearchLogGroup.vue` 按仓日志组 + `ChatMessageBubble` 挂载与会话绑定 + 集成用例（wave 6）
 
 **UI hint**: yes
 
