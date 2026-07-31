@@ -559,3 +559,24 @@ slots:  default                      // 承载 Input / Select / chip 等筛选�
    **已全部兑现**，⛔ 不要再照着它们去改组件结构。
 4. **两个既有 spec 的手写 i18n 键树需要跟着补**：它们刻意不 import `zh-CN.json`，加了新键并在组件里
    用上之后，对应 spec 的最小键树必须同步，否则断言读到的是键名。
+
+---
+
+## Self-Check: PASSED
+
+**创建的 11 个文件全部存在**——`pages/knowledge/blueprints/[id].vue` / 四个查看器骨架组件 /
+`common/FilterBar.vue` / `knowledge/{BlueprintsTabPanel,BlueprintListCard}.vue` /
+`project/warroom/ProjectBlueprintsCard.vue` / 两个 spec，逐个 `[ -f ]` 命中。
+
+**五个实现 commit 全部在 `git log`**：`38f6eb35` / `4665daf2` / `ee1e8dce` / `dff05278` / `9bb23f0f`。
+
+**门禁实跑**：vitest **1618 passed / 1 skipped**（基线 1602 / 1，**+16 零回归**）、type-check
+**exit 0**、`eslint .` **111 problems**（与基线逐个相同 ⇒ 零新增）、`pnpm build` **通过**、
+源码守卫 **6 条全绿**（扫描面 41 文件）。
+
+**变异验证实跑**：给第一个段容器加 `v-if="content"` ⇒ `blueprintViewer.spec` 用例 1 **转红**
+（其余八条保持绿）；还原后 9 例全绿，工作树逐字节干净。
+
+**边界核算**：四个禁改文件与其余零改动清单 `git diff` 全空；两处宿主追加点删除行 = 0；
+`zh-CN.json` 键集差分 added 69 / removed 0 / changed 0；`server/` 零改动；依赖零行变更
+（pnpm 漂移已还原）；生成物 `components.d.ts` 手工按字典序增 4 行、零删除。
