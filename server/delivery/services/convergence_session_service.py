@@ -261,6 +261,69 @@ class ConvergenceSessionService:
         if event_time is not None:
             session.event_time = event_time
 
+    async def areopen_stage(
+        self, session: ConvergenceSession, *, stage: str, reason: str = ""
+    ) -> bool:
+        """把 ``done`` 终态会话复位到 ``stage`` 并置 ``running``；已复位/非终态返回 ``False``。
+
+        **为什么需要它**：stage graph 的出边只能把会话推向终态，没有任何一条边能把
+        ``done`` 拉回运行。而人审驳回的语义恰恰是「请 AI 拿新轮次重跑」——蓝图链的
+        ``ai_review`` 两条收官出边（``review_passed`` / ``review_exhausted``）都落
+        ``__done__``，所以人能点驳回的那一刻会话**必定**已是终态，续驱驱动器与
+        ``engine.advance`` 都对终态直接短路 ⇒ 驳回退化成「版本 +1 + 轮次 +1」的空动作，
+        AI 永远看不到那条驳回理由（114-MJ-01）。
+
+        纪律三条：
+
+        - **只从 ``done`` 复位**。``failed`` 一律不动——失败有首因、要留痕，复位会把
+          「为什么失败」冲掉；重开失败会话是另一个语义，需要显式决策。
+        - **stage 必须在该 process 的 stage graph 里**，否则 ``raise ValueError``
+          （fail-closed：把会话钉到一个不存在的 stage 上 = 每次 advance 都
+          ``ValueError``，比不复位更糟）。
+        - **CAS 以 ``status == done`` 为前置条件**：并发已把会话推走（或已被另一次驳回
+          复位）时影响 0 行 ⇒ 返回 ``False``，绝不盲写覆盖。
+
+        ⛔ 不碰 ``stage_state`` / ``current_artifact_version`` / ``error``：复位只改
+        「会话能不能被驱动」，成果与未决清单原样保留给重跑的那一轮读。
+        """
+        from services.process_runtime.registry import get_process_definition
+
+        definition = get_process_definition(session.process_type)
+        if definition is None:
+            raise ValueError(f"未注册的 process_type={session.process_type!r}")
+        if definition.stage(stage) is None:
+            raise ValueError(
+                f"非法复位目标 stage={stage!r}（process_type={session.process_type}）；"
+                f"该 process 合法 stage={sorted(definition.stages)}"
+            )
+        applied = await self._reopen_stage_sync(session, stage=stage)
+        logger.info(
+            "convergence_session_reopened" if applied else "convergence_session_reopen_noop",
+            category="caller",
+            component="convergence_session_service",
+            session_id=str(session.id),
+            stage=stage,
+            reason=str(reason or ""),
+            status=session.status,
+        )
+        return applied
+
+    @sync_to_async
+    def _reopen_stage_sync(self, session: ConvergenceSession, *, stage: str) -> bool:
+        """以 ``status == done`` 为前置条件的原子复位（同 :meth:`_fail_sync` 的 CAS 纪律）。"""
+        updated = ConvergenceSession.objects.filter(
+            id=session.id, status=ConvergenceSessionStatus.DONE
+        ).update(
+            current_stage=stage,
+            status=ConvergenceSessionStatus.RUNNING,
+            updated_at=timezone.now(),
+        )
+        if updated != 1:
+            return False
+        session.current_stage = stage
+        session.status = ConvergenceSessionStatus.RUNNING
+        return True
+
     async def _fail(self, session: ConvergenceSession, error: Any) -> ConvergenceSession:
         """``fail`` 特判：任意非终态 stage → failed + 落结构化 error。
 

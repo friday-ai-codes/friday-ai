@@ -84,6 +84,9 @@ _COMPONENT = "blueprint_review_action"
 # human_block_restore: 并列，构成 produced_by_ref 四前缀全集）
 REJECT_PREFIX = "blueprint_review_reject:"
 
+# 驳回后会话复位的目标 stage（见 `_areopen_session_for_rework` 的取舍说明）
+_REWORK_STAGE = "merge"
+
 # 提醒周期回落值（配置缺失 / 坏值 / 非正数一律回落到它）
 _DEFAULT_REMINDER_HOURS = 24
 # 单次 job tick 的扫描上界（提醒是 best-effort，绝不为了「扫全」拖垮 scheduler）
@@ -271,8 +274,16 @@ async def areject_blueprint(
        ``ConcurrentBlueprintTransitionError`` → ``conflict``。⚠️ 此时**版本已落**——
        返回体里如实带上 ``version_no`` / ``revision_round``，让端点能把「版本已落但
        状态未转」这一半成功状态告诉用户，**绝不静默**。
-    5. ``comment`` 非空 → 开一条 ``kind=human_comment`` 划线评论线程（``blocking=False``、
+    5. ⭐ **复位终态会话**（``_areopen_session_for_rework``）：``pending_review`` 必由
+       ``ai_review`` 的两条 ``__done__`` 出边到达 ⇒ 驳回时会话必定终态，不复位则续驱
+       与 ``engine.advance`` 双双短路、AI 永远不重跑（114-MJ-01）。best-effort。
+    6. ``comment`` 非空 → 开一条 ``kind=human_comment`` 划线评论线程（``blocking=False``、
        ``severity=""`` ⇒ 不受 114-01 的 finding 不变式约束，也不会把蓝图钉死）。
+
+    ⚠️ ``current_status`` 是**本 service 返回时**的取值。端点在其后还要跑续驱，而续驱的
+    ``_amap_blueprint_status`` 可能据「仍有 open+blocking 线程」把它推成
+    ``needs_clarification`` ⇒ **端点必须在续驱之后重读该字段**，不能直接回传本键，否则
+    前端拿到的状态刷新一下就变（114-MJ-01 第二点）。
     """
     started = time.monotonic()
     from delivery.services import ArtifactService
@@ -340,6 +351,9 @@ async def areject_blueprint(
     result["current_status"] = _current_status(artifact)
 
     if result["status"] == "rejected":
+        # ⭐ 必须在「版本已落 + 轮次已加 + 状态已 drafting」之后才复位会话：复位让会话重新
+        # 可被 advance，早一步就把「状态已 drafting 而轮次未加」的窗口暴露给 AI。
+        await _areopen_session_for_rework(session, initiated_by_user_id=initiated)
         thread_id = await _aopen_reject_comment(
             lifecycle,
             artifact,
@@ -365,6 +379,49 @@ async def areject_blueprint(
         duration_ms=round((time.monotonic() - started) * 1000, 2),
     )
     return result
+
+
+async def _areopen_session_for_rework(session: Any, *, initiated_by_user_id: str) -> bool:
+    """驳回后把**终态**会话复位到融合 stage，让续驱真的能重跑（best-effort）。
+
+    ⭐ **没有这一步驳回就是空动作**：``pending_review`` 只能由 ``ai_review`` 的
+    ``review_passed`` / ``review_exhausted`` 到达，而两条出边都落 ``__done__`` ⇒ 人能点
+    驳回的那一刻会话**必定**是终态，而续驱驱动器（``blueprint_resume`` 的
+    ``while session.status not in terminal``）与 ``engine.advance`` 都对终态直接短路。
+    结果是驳回只做了「版本 +1 + ``revision_round`` +1 + 开一条评论线程」，然后蓝图停在
+    ``drafting``、**没有任何进程会再碰它**，用户写的驳回理由 AI 永远看不到，
+    ``revision_round`` 也永远只会是 1（114-MJ-01）。
+
+    复位目标取 :data:`_REWORK_STAGE`（``merge``）而不是 ``ai_review``：只回审查 stage 等于
+    拿同一份内容再审一遍，必然复现同样的 findings。回 ``merge`` 与 ``ai_review`` 既有的
+    ``remerge`` 出边**同目标**——「重跑融合再重审」在本 stage graph 里已是登记在案的返工
+    路径，不新造语义。人工块保护（B3）挂在审查入口，重跑融合不会覆盖人工编辑。
+
+    ⚠️ 蓝图上仍有 open+blocking 线程时，重跑会在 ``merge``/``ai_review`` 的
+    ``needs_clarification`` self-loop 上停住等人处置——这是**正确**行为：人先处置未决项，
+    处置端点自带续驱，闭环随之继续。
+
+    best-effort：复位失败只记 warning，**绝不反噬已持久化的驳回**（版本与状态都已落库，
+    下一次任意动作续驱时判据仍成立）。
+    """
+    if session is None:
+        return False
+    from delivery.services.convergence_session_service import ConvergenceSessionService
+
+    try:
+        return await ConvergenceSessionService().areopen_stage(
+            session, stage=_REWORK_STAGE, reason="human_reject"
+        )
+    except Exception as exc:  # noqa: BLE001 — 复位失败绝不反噬已落库的驳回
+        logger.warning(
+            "blueprint_review_reject_session_reopen_failed",
+            category="caller",
+            component=_COMPONENT,
+            session_id=str(getattr(session, "id", "")),
+            initiated_by_user_id=initiated_by_user_id or "system",
+            error=_detail(exc),
+        )
+        return False
 
 
 async def _aopen_reject_comment(

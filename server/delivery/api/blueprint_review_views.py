@@ -132,6 +132,24 @@ async def _aload_thread(artifact_id: Any, thread_id: Any) -> Any:
     )
 
 
+async def _acurrent_status(artifact_id: Any) -> str:
+    """**续驱之后**重读蓝图状态（响应体绝不与 DB 打架）。
+
+    service 返回的 ``current_status`` 是它自己那一刻的取值，而端点在其后还要跑续驱——
+    ``blueprint_resume._amap_blueprint_status`` 会据「仍有 open+blocking 线程」把状态推成
+    ``needs_clarification``。直接回传 service 那个值会让前端拿到 ``drafting``、刷新一下
+    变 ``needs_clarification``（114-MJ-01 第二点）。**只读**，不写。
+    """
+    from delivery.models import Artifact
+
+    return str(
+        await Artifact.objects.filter(id=artifact_id)
+        .values_list("blueprint_status", flat=True)
+        .afirst()
+        or ""
+    )
+
+
 async def _alatest_content(artifact: Any) -> dict:
     from delivery.models import ArtifactVersion
 
@@ -366,7 +384,8 @@ class BlueprintReviewApproveView(APIView):
         return Response(
             {
                 "status": result["status"],
-                "current_status": result["current_status"],
+                # 续驱后重读（不用 service 那一刻的快照）：见 `_acurrent_status`
+                "current_status": await _acurrent_status(artifact_id),
                 "artifact_id": str(artifact_id),
             }
         )
@@ -384,6 +403,11 @@ class BlueprintReviewRejectView(APIView):
     顺序是「**先落版本再转状态**」：反过来会留下「状态已 ``drafting`` 而轮次未加」的
     窗口，AI 在该窗口里拿旧轮次重跑，有界回退计数失真。``conflict``（版本已落、状态
     未转）如实回 409 并带上 ``version_no``，绝不静默。
+
+    ⭐ **驳回的回边由 service 侧的会话复位承担**（``_areopen_session_for_rework``）：
+    ``pending_review`` 必由 ``ai_review`` 的两条 ``__done__`` 出边到达 ⇒ 驳回时会话必定
+    终态，只接 ``_aresume`` 不复位等于零 advance（114-MJ-01）。``current_status``
+    **在续驱之后重读**，不回传 service 那一刻的快照。
     """
 
     permission_classes = [IsAuthenticated]
@@ -430,7 +454,8 @@ class BlueprintReviewRejectView(APIView):
                 "version_no": result["version_no"],
                 "revision_round": result["revision_round"],
                 "thread_id": result["thread_id"],
-                "current_status": result["current_status"],
+                # 续驱后重读（不用 service 那一刻的快照）：见 `_acurrent_status`
+                "current_status": await _acurrent_status(artifact_id),
             }
         )
 
