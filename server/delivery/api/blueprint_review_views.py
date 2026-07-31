@@ -1,7 +1,8 @@
 """阶段 4 人审操作面 REST（Phase 114-05，FLOW-07 / CLAR-03 / CLAR-04）。
 
-七个端点（``IsAuthenticated``，与 delivery/repositories 既有 view 同级——「项目成员皆可
-确认/评论/编辑」的低门槛决策），一动作一 View、不发明 ``action`` 分派：
+七个端点（``IsAuthenticated`` **+ 项目范围闸**，见 :func:`_aassert_project_scope`——
+「本项目成员皆可确认/评论/编辑」，项目内不再分角色），一动作一 View、不发明 ``action``
+分派：
 
 - ``GET  artifacts/<uuid>/blueprint-review/``                        —— 只读快照
 - ``POST artifacts/<uuid>/blueprint-review/approve/``                —— 通过 → confirmed
@@ -10,6 +11,12 @@
 - ``POST artifacts/<uuid>/blueprint-review/threads/<uuid>/answer/``  —— 回答澄清 + 回灌
 - ``POST artifacts/<uuid>/blueprint-review/threads/<uuid>/resolve/`` —— finding 已修复
 - ``POST artifacts/<uuid>/blueprint-review/threads/<uuid>/dismiss/`` —— finding 误报忽略
+
+⭐ **授权判据不是「登录了」**（114-MJ-03）：``artifact_id`` 在 URL 里、是调用方可控的
+唯一范围约束，所以每个端点入口都过一道 :func:`_aassert_project_scope`——按蓝图自身
+``meta.project_id`` 反查项目并校验 ``ProjectMember``，**fail-closed**（读不到项目 id 一律
+400）、越权回**中性 404**（不泄露存在性）。没有这道闸，任意登录用户拿到一个 artifact
+UUID 就能确认/驳回/改写别人项目的蓝图——而「确认」与「改写正文」都是不可逆写动作。
 
 **为什么新建文件而不塞进 ``blueprint_gate_views.py``**：后者已有八个 View 与确认门专属
 helper，再塞语义不同的 View 会让「阶段 1 确认门」这个文件同时承担两个门的语义。URL 前缀
@@ -73,6 +80,8 @@ _THREAD_MISSING_DETAIL = {"detail": "线程不存在"}
 _FINDING_NOT_ANSWERABLE_DETAIL = (
     "审查发现不可通过作答通道处置，请走 resolve/（已修复）或 dismiss/（误报忽略）并填写理由"
 )
+# 范围闸 fail-closed 文案（读不到 meta.project_id 一律拒，绝不放行）
+_SCOPE_UNRESOLVED_DETAIL = {"detail": "无法确定该蓝图的项目范围：meta.project_id 缺失或非法"}
 
 # service `status` → 中文 detail（键对齐 blueprint_review_action 与 114-04 的取值）
 _ACTION_ERROR_MESSAGES = {
@@ -208,6 +217,70 @@ async def _aunresolved_blocker_ids(artifact_id: Any) -> list[str]:
     ]
 
 
+# ── 项目范围闸（MJ-03：七端点的授权判据不能只有「登录了」）────────────────────
+
+
+def _is_uuid(value: Any) -> bool:
+    import uuid as _uuid
+
+    try:
+        _uuid.UUID(str(value))
+    except (ValueError, TypeError, AttributeError):
+        return False
+    return True
+
+
+async def _ablueprint_project_id(artifact: Any) -> str:
+    """从蓝图最新版本 ``meta.project_id`` 取项目范围（读不到返空串）。
+
+    口径与 ``blueprint_gate_views._ablueprint_project_id`` 同源（全仓唯一做过范围约束的
+    先例）：**只从蓝图自身推导**，绝不接受请求体里的 ``project_id``——那是攻击者可控的。
+    """
+    content = await _alatest_content(artifact)
+    meta = content.get("meta") if isinstance(content.get("meta"), dict) else None
+    return str((meta or {}).get("project_id") or "")
+
+
+async def _ais_project_member(user: Any, project_id: str) -> bool:
+    """``user`` 是否为该项目成员（判据与 ``chat.conversation_service._is_project_member``
+    同源；``ProjectMember`` 一人一项目一行）。"""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    from initiatives.models import ProjectMember
+
+    return await ProjectMember.objects.filter(project_id=project_id, user=user).aexists()
+
+
+async def _aassert_project_scope(request: Any, artifact: Any) -> Response | None:
+    """七端点共用的范围闸：不在该蓝图所属项目内一律拒（``None`` = 放行）。
+
+    ⭐ **为什么必须有**：七端点原先的授权判据只有「登录了」，而 URL 里的 ``artifact_id``
+    是攻击者可控的唯一范围约束 ⇒ 任意登录用户拿到一个 artifact UUID 就能把别人项目的
+    蓝图推到 ``confirmed``（下游 implementing 链据此启动）、打回并落一条署他名的版本、
+    **改写任意 block 正文**（``produced_by_ref = human_edit:{他的 uid}``，而该前缀正是
+    「人工块保护」的判据源 ⇒ 改完还会被 B3 当成必须保护的人工内容），或处置别人的审查
+    发现（114-MJ-03）。114 是第一次把「确认蓝图」与「改写蓝图正文」这两个**不可逆写
+    动作**放到这张网上，风险量级与阶段 1 的确认门不在一个档位。
+
+    两条纪律：
+
+    - ⚠️ **fail-closed**：读不到 ``meta.project_id``（缺失 / 非 UUID）一律 **400**，绝不
+      放行。否则等于把闸门建在「蓝图恰好写了 project_id」这个可缺失字段上。
+    - **越权回中性 404**（不是 403）：与本模块既有的 ``_ARTIFACT_MISSING_DETAIL`` 同口径
+      ——403 会让未授权者靠状态码枚举出哪些 artifact_id 存在。
+
+    superuser 直通（与 ``permissions.api_permissions.IsProjectMember`` 同口径）。
+    """
+    if getattr(request.user, "is_superuser", False):
+        return None
+    project_id = await _ablueprint_project_id(artifact)
+    if not _is_uuid(project_id):
+        return Response(_SCOPE_UNRESOLVED_DETAIL, status=status.HTTP_400_BAD_REQUEST)
+    if not await _ais_project_member(request.user, project_id):
+        return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
+    return None
+
+
 def _log(event: str, request: Any, artifact_id: Any, started: float, **fields: Any) -> None:
     """端点级 caller 事件（只记标量与关联键；**任何用户正文都不进来**）。"""
     logger.info(
@@ -249,15 +322,18 @@ def _error(action_status: str, detail: str = "", **extra: Any) -> Response:
     return Response(body, status=code)
 
 
-async def _aload_action_context(artifact_id: Any) -> tuple[Any, Any, Any]:
+async def _aload_action_context(request: Any, artifact_id: Any) -> tuple[Any, Any, Any]:
     """``(error_response | None, artifact, session)``。
 
     拿不到蓝图会话**不**直接 404：驳回/编辑/处置这些动作本身只依赖 artifact，会话缺失
-    只意味着「没得续驱」。唯一必需的是 artifact 存在。
+    只意味着「没得续驱」。唯一必需的是 artifact 存在**且请求者在该蓝图所属项目内**。
     """
     artifact = await _aload_artifact(artifact_id)
     if artifact is None:
         return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND), None, None
+    denied = await _aassert_project_scope(request, artifact)
+    if denied is not None:
+        return denied, None, None
     return None, artifact, await _aload_session(artifact_id)
 
 
@@ -286,6 +362,10 @@ class BlueprintReviewSnapshotView(APIView):
         artifact = await _aload_artifact(artifact_id)
         if artifact is None:
             return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
+        # 只读端点同样收范围：快照会吐出 findings 正文与未决清单，非本项目成员不该看见
+        denied = await _aassert_project_scope(request, artifact)
+        if denied is not None:
+            return denied
 
         session = await _aload_session(artifact_id)
         rows = await _load_thread_rows(artifact_id)
@@ -355,7 +435,7 @@ class BlueprintReviewApproveView(APIView):
         from delivery.services.blueprint_review_action import aapprove_blueprint
 
         started = time.monotonic()
-        error, artifact, session = await _aload_action_context(artifact_id)
+        error, artifact, session = await _aload_action_context(request, artifact_id)
         if error is not None:
             return error
 
@@ -416,7 +496,7 @@ class BlueprintReviewRejectView(APIView):
         from delivery.services.blueprint_review_action import areject_blueprint
 
         started = time.monotonic()
-        error, artifact, session = await _aload_action_context(artifact_id)
+        error, artifact, session = await _aload_action_context(request, artifact_id)
         if error is not None:
             return error
 
@@ -479,7 +559,7 @@ class BlueprintReviewEditBlocksView(APIView):
         from delivery.services.blueprint_block_edit import aapply_block_edit
 
         started = time.monotonic()
-        error, artifact, session = await _aload_action_context(artifact_id)
+        error, artifact, session = await _aload_action_context(request, artifact_id)
         if error is not None:
             return error
 
@@ -552,7 +632,7 @@ class BlueprintReviewThreadAnswerView(APIView):
         from services.process_runtime.blueprint_reflow import aapply_thread_answers
 
         started = time.monotonic()
-        error, artifact, session = await _aload_action_context(artifact_id)
+        error, artifact, session = await _aload_action_context(request, artifact_id)
         if error is not None:
             return error
         thread = await _aload_thread(artifact_id, thread_id)
@@ -639,7 +719,7 @@ async def _adispose_view(request: Any, artifact_id: Any, thread_id: Any, *, dism
     from delivery.services.blueprint_review_action import adismiss_finding, aresolve_finding
 
     started = time.monotonic()
-    error, artifact, session = await _aload_action_context(artifact_id)
+    error, artifact, session = await _aload_action_context(request, artifact_id)
     if error is not None:
         return error
     thread = await _aload_thread(artifact_id, thread_id)

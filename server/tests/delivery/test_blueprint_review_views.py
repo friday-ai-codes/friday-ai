@@ -80,9 +80,43 @@ _TEXT_BLOCK = "blk_impl01_how"
 # ── 工厂 ─────────────────────────────────────────────────────────────────────
 
 
-def _make_artifact(status: str = BlueprintStatus.PENDING_REVIEW) -> Artifact:
+_SCOPE_PROJECT_ID = "11111111-1111-1111-1111-111111111111"
+_OTHER_PROJECT_ID = "22222222-2222-2222-2222-222222222222"
+
+
+def _make_project(project_id: str, *, member: Any = None) -> Any:
+    """建一个 ``initiatives.Project``（可选授予成员）——七端点的范围闸判据源。"""
+    from initiatives.models import Project, ProjectMember
+    from projects.models import Space
+
+    project = Project.objects.filter(id=project_id).first()
+    if project is None:
+        space, _ = Space.objects.get_or_create(
+            name=f"space-{project_id[:8]}", defaults={"feishu_project_key": f"k-{project_id[:8]}"}
+        )
+        project = Project.objects.create(id=project_id, space=space, name=f"proj-{project_id[:8]}")
+    if member is not None:
+        ProjectMember.objects.get_or_create(project=project, user=member)
+    return project
+
+
+@pytest.fixture(autouse=True)
+def _project_scope(user) -> Any:
+    """⭐ 七端点已收项目范围闸（MJ-03）⇒ 样例蓝图必须落在测试用户所属的项目里。
+
+    ``meta.project_id`` 是闸门的**唯一**判据源（fail-closed：读不到即 400），所以工厂造
+    的蓝图统一指向 :data:`_SCOPE_PROJECT_ID`，并把 ``user`` 加成该项目成员。
+    """
+    return _make_project(_SCOPE_PROJECT_ID, member=user)
+
+
+def _make_artifact(
+    status: str = BlueprintStatus.PENDING_REVIEW, *, project_id: str = _SCOPE_PROJECT_ID
+) -> Artifact:
+    content = make_blueprint()
+    content["meta"]["project_id"] = project_id
     artifact = async_to_sync(ArtifactService().create)(
-        "technical_plan", make_blueprint(), created_by_user_id="tester"
+        "technical_plan", content, created_by_user_id="tester"
     )
     Artifact.objects.filter(id=artifact.id).update(blueprint_status=status)
     artifact.blueprint_status = status
@@ -180,6 +214,82 @@ def test_review_endpoints_reject_unauthenticated(api_client, name: str, with_thr
     url = reverse(name, args=args)
     resp = api_client.get(url) if name.endswith("snapshot") else api_client.post(url)
     assert resp.status_code in (401, 403)
+
+
+@pytest.mark.parametrize(
+    ("name", "with_thread"),
+    [
+        ("blueprint-review-snapshot", False),
+        ("blueprint-review-approve", False),
+        ("blueprint-review-reject", False),
+        ("blueprint-review-edit-blocks", False),
+        ("blueprint-review-thread-answer", True),
+        ("blueprint-review-thread-resolve", True),
+        ("blueprint-review-thread-dismiss", True),
+    ],
+)
+def test_review_endpoints_reject_non_members_of_the_blueprint_project(
+    authenticated_client, user, monkeypatch, name: str, with_thread: bool
+) -> None:
+    """⭐ MJ-03 回归：只有「登录了」不够——七端点必须按蓝图自身 ``meta.project_id`` 收范围。
+
+    修前 ``artifact_id`` 是唯一范围约束、而它在 URL 里可控 ⇒ 任意登录用户拿到一个
+    artifact UUID 就能把别人项目的蓝图推到 ``confirmed``（下游 implementing 据此启动）、
+    打回并落一条署他名的版本、**改写任意 block 正文**，或处置别人的审查发现。
+
+    越权回**中性 404**（不是 403）：403 会让人靠状态码枚举出哪些 artifact_id 存在。
+    """
+    _stub_resume(monkeypatch)
+    _make_project(_OTHER_PROJECT_ID)  # 存在但 user 不是成员
+    artifact = _make_artifact(project_id=_OTHER_PROJECT_ID)
+    thread = _open_finding(artifact) if with_thread else None
+    before_status = _db_status(artifact)
+    before_versions = _version_count(artifact)
+
+    url = _url(name, artifact, thread)
+    resp = (
+        authenticated_client.get(url)
+        if name.endswith("snapshot")
+        else authenticated_client.post(url, {"reason": "越权", "body": "越权"}, format="json")
+    )
+
+    assert resp.status_code == 404
+    # DB 一字未动
+    assert _db_status(artifact) == before_status
+    assert _version_count(artifact) == before_versions
+    if thread is not None:
+        assert BlueprintThread.objects.get(id=thread.id).status == ThreadStatus.OPEN
+
+
+def test_review_endpoints_fail_closed_when_the_project_scope_is_unresolvable(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """⭐ 范围闸必须 fail-closed：``meta.project_id`` 缺失/非 UUID 一律 400，**绝不放行**。
+
+    否则等于把闸门建在「蓝图恰好写了 project_id」这个可缺失字段上——攻击者只要拿一份
+    没写 project_id 的蓝图就能绕过整道闸。
+    """
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact(project_id="proj-0001")  # 非 UUID（旧样例形状）
+    before = _db_status(artifact)
+
+    resp = authenticated_client.post(_url("blueprint-review-approve", artifact))
+
+    assert resp.status_code == 400
+    assert _db_status(artifact) == before
+
+
+def test_superuser_passes_the_project_scope_gate(admin_user, api_client, monkeypatch) -> None:
+    """超管直通（与 ``permissions.api_permissions.IsProjectMember`` 同口径）——证明闸门
+    不是「一律拒」。"""
+    _stub_resume(monkeypatch)
+    _make_project(_OTHER_PROJECT_ID)
+    artifact = _make_artifact(project_id=_OTHER_PROJECT_ID)
+    api_client.force_authenticate(user=admin_user)
+
+    resp = api_client.get(_url("blueprint-review-snapshot", artifact))
+
+    assert resp.status_code == 200
 
 
 # ═══════════════════════════════════════════════════════════════════════════
