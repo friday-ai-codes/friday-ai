@@ -2,7 +2,7 @@
 
 ## Milestones
 
-- 🟡 **v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 方案够深 + 过程可见）** — Phases 105–110 (planning) — 让技术方案链路真正跑通并可信：编排不再中途卡死被降级工具顶替、路由基于多维证据分层呈现并可解释、方案结构覆盖数据流编排与模块↔仓映射、全过程对用户实时可见 — [requirements](./REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
+- 🟠 **v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 方案够深 + 过程可见）** — Phases 105–110 (executed, audited — **未发布**) — 让技术方案链路真正跑通并可信：编排不再中途卡死被降级工具顶替、路由基于多维证据分层呈现并可解释、方案结构覆盖数据流编排与模块↔仓映射、全过程对用户实时可见 — 全部相位执行完毕（39/39 plans），里程碑审计 **gaps_found**（19 条需求 13 满足 / 4 部分 / 2 未达；ROUTE-01/02 用户侧未达成）见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md)；放行条件未满足故**未归档、未打 tag** — [requirements](./REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
 - ✅ **v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）** — Phases 100–104 (shipped 2026-07-22) — 把多套"知识/经验/沉淀"收敛成统一知识库（单一摄取 + 单一检索），补齐完工沉淀闭环（三链路一致），给编码容器内置 Friday MCP 与 skills — 里程碑审计 tech_debt（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留 11 项真实 Qdrant·飞书·容器·Cursor 端人工验证 + 若干接受/递延债务）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.17.0-ROADMAP.md)
 - ✅ **v0.16.3 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）** — Phases 96–99 (shipped 2026-07-01) — 把项目外部依赖（`Artifact`：PRD/埋点评审/UI 文档等）接入知识总览/搜索/知识树，并与关键词/业务能力/仓库建关联 — 里程碑审计 tech_debt（12/12 需求满足 / integration_ok；遗留真机/浏览器视觉验收 + 既有范围外测试漂移）见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md) — [archive](./milestones/v0.16.3-ROADMAP.md)
 - ✅ **v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）** — Phases 90–95 (shipped 2026-06-28) — 里程碑审计 tech_debt（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留真机·真实 provider·画布视觉端到端验收 + INFO 欠债）见 [audit](./milestones/v0.16.1-MILESTONE-AUDIT.md) — [archive](./milestones/v0.16.1-ROADMAP.md)
@@ -28,7 +28,7 @@
 
 ## Phases
 
-### 🟡 v0.19.0 技术方案可信度 (Phases 105–110，其中 108 已移交 v0.20.0) — PLANNING
+### 🟠 v0.19.0 技术方案可信度 (Phases 105–110，其中 108 已移交 v0.20.0) — EXECUTED / AUDITED（未发布）
 
 **Milestone Goal:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。（方案结构深度 DEPTH-01~05 已于 2026-07-29 移交 v0.20.0 技术方案蓝图里程碑，与本里程碑双 worktree 并行开发。）
 
