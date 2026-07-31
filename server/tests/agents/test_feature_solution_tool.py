@@ -132,6 +132,22 @@ async def test_failed_surfaces_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_failed_result_carries_session_id_for_bubble_binding() -> None:
+    """110-HI-01：失败出口也带 session_id（经 metadata 出网）。
+
+    与上一条分开写：`start_feature_solution` 的失败分支结构上只有一个自由文本 `error`，
+    前端气泡因此绑不到自己那次编排，「失败后重跑」时会改显示新一轮的实时时间线。
+    """
+    state = _state(STATUS_FAILED, error={"message": "融合失败"})
+    with _patch_context(), _patch_service(state):
+        result = await start_feature_solution(
+            space_id=_SPACE, conversation_id=_CONV, feature_list_text="- 功能点 A"
+        )
+
+    assert result.metadata == {"session_id": "33333333-3333-3333-3333-333333333333"}
+
+
+@pytest.mark.asyncio
 async def test_missing_source_without_bound_project_rejected() -> None:
     """既没给文本/分支、会话也没绑项目 → 明确报错并给出可操作提示。"""
     with _patch_context(actor=None, bound_project=None):
