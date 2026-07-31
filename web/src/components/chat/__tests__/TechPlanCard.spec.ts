@@ -11,9 +11,21 @@ import { defineComponent, h, nextTick } from 'vue'
 import TechPlanCard from '~/components/chat/TechPlanCard.vue'
 import { useChatStore } from '~/stores/chat'
 
+// 109-08：toast 改用稳定 spy（原先每次 useToast() 返回新的 vi.fn，无法断言文案）。
+// 既有用例不断言 toast，故此改动对它们无影响。
+const toastSuccessMock = vi.hoisted(() => vi.fn())
+const toastErrorMock = vi.hoisted(() => vi.fn())
 vi.mock('~/composables/useToast', () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn() }),
+  useToast: () => ({ success: toastSuccessMock, error: toastErrorMock }),
 }))
+
+// 109-08：把 fan-out 端点函数替换成 mock，让「请求体里到底有没有
+// acknowledge_unresearched 这个键」可被直接断言（走真实 store action，不 stub 它）。
+const createSessionsForPlanMock = vi.hoisted(() => vi.fn())
+vi.mock('~/api/chat', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('~/api/chat')>()
+  return { ...actual, createSessionsForPlan: createSessionsForPlanMock }
+})
 
 // -- mock markdown-it 单例：直接返回 echo HTML（避免引入 shiki 的重依赖）---
 vi.mock('~/composables/useMarkdownRenderer', () => ({
@@ -989,5 +1001,362 @@ describe('techPlanCard — 109-06 方案正文三级优先解析', () => {
     })
     await flushPromises()
     expect(wrapper.text()).toContain('（无方案文本）')
+  })
+})
+
+// ============================================================================
+// 109-08（RELY-01 界面侧）：草稿标注的允许清单判定 + 送编码显式确认
+//
+// 判定只读 provenance：仅严格等于 'orchestrated' 免标注，其余（'draft' / 未知取值
+// / null / undefined / ''）一律标注。确认闸门覆盖创建态确认与单仓重试两个入口
+// （追加态与创建态共用 handleMultiConfirm，天然覆盖）。
+// ============================================================================
+
+describe('techPlanCard — 109-08 草稿标注与送编码确认', () => {
+  const BANNER = '本方案未经代码调研'
+  const BANNER_SUB = '由对话直接生成，未经仓库路由、代码召回与并行调研，文件清单与实现步骤可能不准确。'
+  const BADGE = '未经调研'
+  const DIALOG_TITLE = '该方案未经代码调研'
+  const ACK_LABEL = '我已了解风险，仍要用该草稿送编码'
+  const GATE_REJECTED = '草稿方案需显式确认后才能送编码'
+
+  const REPOS = [
+    { id: 'r1', name: 'repo-1' },
+    { id: 'r2', name: 'repo-2' },
+  ]
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setActivePinia(createPinia())
+    createSessionsForPlanMock.mockReset()
+    createSessionsForPlanMock.mockResolvedValue({ created: [], failed: [] })
+  })
+
+  /** 头部草稿徽标是否存在（按文案定位，不按 Badge 计数）。 */
+  function hasDraftBadge(wrapper: ReturnType<typeof mountCard>): boolean {
+    return wrapper.findAll('[data-test="badge"]').some(b => b.text() === BADGE)
+  }
+
+  function setRuntime(planId: string, extra: Record<string, unknown> = {}) {
+    const store = useChatStore()
+    store.activeCodingPlan = {
+      plan_id: planId,
+      title: '方案',
+      sessions: [],
+      ...extra,
+    } as any
+  }
+
+  /** 打开确认弹层：点创建态 selector 的「确认编码」。 */
+  async function clickMultiConfirm(wrapper: ReturnType<typeof mountCard>) {
+    await wrapper.find('[data-test="multi-confirm"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+  }
+
+  function dialogOpen(wrapper: ReturnType<typeof mountCard>): string | undefined {
+    return wrapper.find('[data-test="alert-dialog"]').attributes('data-open')
+  }
+
+  async function tickAcknowledge(wrapper: ReturnType<typeof mountCard>) {
+    await wrapper.find('[data-test="ack-checkbox"]').trigger('change')
+    await nextTick()
+  }
+
+  // -------------------------------------------------------------------------
+  // 判定与标注
+  // -------------------------------------------------------------------------
+
+  it('provenance=draft → 草稿横幅与头部徽标都出现', async () => {
+    const wrapper = mountCard({ provenance: 'draft' })
+    await flushPromises()
+    const banner = wrapper.find('[data-test="unresearched-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.attributes('role')).toBe('alert')
+    // 横幅随卡片首次渲染出现（非动态插入）⇒ 不加 aria-live
+    expect(banner.attributes('aria-live')).toBeUndefined()
+    expect(wrapper.text()).toContain(BANNER)
+    expect(wrapper.text()).toContain(BANNER_SUB)
+    expect(hasDraftBadge(wrapper)).toBe(true)
+  })
+
+  it('provenance=orchestrated → 横幅与徽标皆无，且送编码时弹层不出现', async () => {
+    const wrapper = mountCard({
+      provenance: 'orchestrated',
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="unresearched-banner"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain(BANNER)
+    expect(hasDraftBadge(wrapper)).toBe(false)
+
+    await clickMultiConfirm(wrapper)
+    // 零摩擦：弹层永不打开，请求直接发出
+    expect(dialogOpen(wrapper)).toBe('false')
+    expect(createSessionsForPlanMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['空串', ''],
+    ['未知取值', 'weird_value'],
+  ])('provenance 为 %s → 仍渲染草稿横幅（允许清单：非 orchestrated 一律标注）', async (_label, value) => {
+    const wrapper = mountCard({ provenance: value as any })
+    await flushPromises()
+    expect(wrapper.find('[data-test="unresearched-banner"]').exists()).toBe(true)
+    expect(hasDraftBadge(wrapper)).toBe(true)
+  })
+
+  it('未知取值不回显：渲染结果不含 provenance 原始字符串', async () => {
+    const wrapper = mountCard({ provenance: 'weird_value' })
+    await flushPromises()
+    expect(wrapper.find('[data-test="unresearched-banner"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('weird_value')
+    expect(wrapper.html()).not.toContain('weird_value')
+  })
+
+  it('折叠后徽标仍可见（事实不被一次折叠操作藏起来）', async () => {
+    const wrapper = mountCard({ provenance: 'draft', defaultCollapsed: true })
+    await flushPromises()
+    // 折叠态：横幅随展开内容消失，但头部徽标常驻
+    expect(wrapper.find('[data-test="unresearched-banner"]').exists()).toBe(false)
+    expect(hasDraftBadge(wrapper)).toBe(true)
+  })
+
+  // 🔴 串态防护：runtime.provenance 是 runtime.coding_plan 的第三个消费点。
+  // 漏 plan_id 守卫会把别的方案的来源标志渲染到本卡上 —— 一份草稿因此被漏标。
+  it('多方案会话不串 provenance：runtime.plan_id 与本卡不匹配时不采用其 provenance（落到保守分支标注）', async () => {
+    setRuntime('other-plan', { provenance: 'orchestrated' })
+    const wrapper = mountCard({ codingPlanId: 'plan-1' })
+    await flushPromises()
+    expect(wrapper.find('[data-test="unresearched-banner"]').exists()).toBe(true)
+    expect(hasDraftBadge(wrapper)).toBe(true)
+  })
+
+  it('runtime.plan_id 匹配时采用 runtime.provenance（orchestrated ⇒ 免标注）', async () => {
+    setRuntime('plan-1', { provenance: 'orchestrated' })
+    const wrapper = mountCard({ codingPlanId: 'plan-1' })
+    await flushPromises()
+    expect(wrapper.find('[data-test="unresearched-banner"]').exists()).toBe(false)
+    expect(hasDraftBadge(wrapper)).toBe(false)
+  })
+
+  it('历史 runtime 缺 provenance 字段 → 挂载与渲染不抛，console.warn / error 零调用', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    setRuntime('plan-1')
+    const wrapper = mountCard({ codingPlanId: 'plan-1' })
+    await flushPromises()
+    expect(wrapper.find('[data-test="unresearched-banner"]').exists()).toBe(true)
+    expect(warnSpy).not.toHaveBeenCalled()
+    expect(errorSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+    errorSpy.mockRestore()
+  })
+
+  // -------------------------------------------------------------------------
+  // 确认路径
+  // -------------------------------------------------------------------------
+
+  it('草稿路径点确认 → 弹层出现，确认按钮初始 disabled；勾选后启用', async () => {
+    const wrapper = mountCard({
+      provenance: 'draft',
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+    await clickMultiConfirm(wrapper)
+
+    expect(dialogOpen(wrapper)).toBe('true')
+    expect(wrapper.text()).toContain(DIALOG_TITLE)
+    expect(wrapper.text()).toContain(ACK_LABEL)
+    expect(wrapper.text()).toContain('仍要送编码')
+    // 未勾选：不提交、确认按钮 disabled 且带 aria-disabled
+    expect(createSessionsForPlanMock).not.toHaveBeenCalled()
+    const confirmBtn = wrapper.find('[data-test="ack-confirm"]')
+    expect(confirmBtn.attributes('disabled')).toBeDefined()
+    expect(confirmBtn.attributes('aria-disabled')).toBe('true')
+
+    await tickAcknowledge(wrapper)
+    expect(wrapper.find('[data-test="ack-confirm"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-test="ack-confirm"]').attributes('aria-disabled')).toBe('false')
+  })
+
+  it('勾选后确认 → 提交请求体含 acknowledge_unresearched: true', async () => {
+    const wrapper = mountCard({
+      provenance: 'draft',
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+    await clickMultiConfirm(wrapper)
+    await tickAcknowledge(wrapper)
+    await wrapper.find('[data-test="ack-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(createSessionsForPlanMock).toHaveBeenCalledTimes(1)
+    const payload = createSessionsForPlanMock.mock.calls[0][1]
+    expect(payload.acknowledge_unresearched).toBe(true)
+    // 弹层结算后关闭
+    expect(dialogOpen(wrapper)).toBe('false')
+  })
+
+  it('编排路径提交请求体不含 acknowledge_unresearched 键（不发字段，而非发 false）', async () => {
+    const wrapper = mountCard({
+      provenance: 'orchestrated',
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+    await clickMultiConfirm(wrapper)
+
+    expect(createSessionsForPlanMock).toHaveBeenCalledTimes(1)
+    const payload = createSessionsForPlanMock.mock.calls[0][1]
+    expect('acknowledge_unresearched' in payload).toBe(false)
+  })
+
+  it('取消弹层 → 不调任何提交', async () => {
+    const wrapper = mountCard({
+      provenance: 'draft',
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+    await clickMultiConfirm(wrapper)
+    await tickAcknowledge(wrapper)
+    await wrapper.find('[data-test="ack-cancel"]').trigger('click')
+    await flushPromises()
+
+    expect(createSessionsForPlanMock).not.toHaveBeenCalled()
+    expect(dialogOpen(wrapper)).toBe('false')
+  })
+
+  it('esc / 遮罩关闭（update:open=false）等同取消，不提交', async () => {
+    const wrapper = mountCard({
+      provenance: 'draft',
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+    await clickMultiConfirm(wrapper)
+    wrapper.findComponent({ name: 'AlertDialog' }).vm.$emit('update:open', false)
+    await flushPromises()
+
+    expect(createSessionsForPlanMock).not.toHaveBeenCalled()
+  })
+
+  it('弹层每次打开重置勾选（打开→勾选→取消→再打开，按钮回到 disabled）', async () => {
+    const wrapper = mountCard({
+      provenance: 'draft',
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+    await clickMultiConfirm(wrapper)
+    await tickAcknowledge(wrapper)
+    expect(wrapper.find('[data-test="ack-confirm"]').attributes('disabled')).toBeUndefined()
+
+    await wrapper.find('[data-test="ack-cancel"]').trigger('click')
+    await flushPromises()
+
+    await clickMultiConfirm(wrapper)
+    expect(dialogOpen(wrapper)).toBe('true')
+    expect(wrapper.find('[data-test="ack-confirm"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('重试路径同样弹层：确认后 retrySingleRepository 的请求体带 ack', async () => {
+    const store = useChatStore()
+    store.activeCodingPlan = {
+      plan_id: 'plan-1',
+      title: '方案',
+      provenance: 'draft',
+      sessions: [
+        {
+          session_id: 'cs1',
+          repository_id: 'r1',
+          repository_name: 'repo-1',
+          branch_name: 'feat/x',
+          status: 'failed',
+          pr_url: '',
+          commit_sha: '',
+          error_message: 'Runner 离线',
+        },
+      ],
+    } as any
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+
+    await wrapper.find('[data-test="row-retry"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+    // 重试同样创建 session ⇒ 同样过闸门
+    expect(dialogOpen(wrapper)).toBe('true')
+    expect(createSessionsForPlanMock).not.toHaveBeenCalled()
+
+    await tickAcknowledge(wrapper)
+    await wrapper.find('[data-test="ack-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(createSessionsForPlanMock).toHaveBeenCalledTimes(1)
+    const [planId, payload] = createSessionsForPlanMock.mock.calls[0]
+    expect(planId).toBe('plan-1')
+    expect(payload.repository_ids).toEqual(['r1'])
+    expect(payload.acknowledge_unresearched).toBe(true)
+  })
+
+  it('code=draft_requires_explicit_confirm 的拒绝 → 前端常量 toast + 重新打开弹层', async () => {
+    createSessionsForPlanMock.mockRejectedValue(
+      Object.assign(new Error('后端 detail 文案（不应被匹配）'), {
+        status: 400,
+        detail: '后端 detail 文案（不应被匹配）',
+        body: { code: 'draft_requires_explicit_confirm', detail: '后端 detail 文案（不应被匹配）' },
+      }),
+    )
+    const wrapper = mountCard({
+      provenance: 'draft',
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+    await clickMultiConfirm(wrapper)
+    await tickAcknowledge(wrapper)
+    await wrapper.find('[data-test="ack-confirm"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    expect(toastErrorMock).toHaveBeenCalledWith(GATE_REJECTED)
+    // 弹层重新打开，且勾选被重置
+    expect(dialogOpen(wrapper)).toBe('true')
+    expect(wrapper.find('[data-test="ack-confirm"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('其它错误（无 code / 别的 code）→ 沿用既有 toast，不误报为草稿拒绝', async () => {
+    createSessionsForPlanMock.mockRejectedValue(
+      Object.assign(new Error('批量失败：仓库不存在'), {
+        status: 400,
+        body: { code: 'some_other_code', detail: '草稿方案需显式确认后才能送编码' },
+      }),
+    )
+    const wrapper = mountCard({
+      provenance: 'draft',
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+    await clickMultiConfirm(wrapper)
+    await tickAcknowledge(wrapper)
+    await wrapper.find('[data-test="ack-confirm"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    // 🔴 即便 detail 文案与草稿拒绝逐字相同，也不得走草稿分支（按 code 判定）
+    expect(toastErrorMock).toHaveBeenCalledWith('批量失败：仓库不存在')
+    expect(toastErrorMock).not.toHaveBeenCalledWith(GATE_REJECTED)
+    expect(dialogOpen(wrapper)).toBe('false')
   })
 })
