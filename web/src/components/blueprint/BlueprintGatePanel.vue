@@ -27,9 +27,9 @@
  *
  * ## ④ 七个动作的统一范式
  *
- * 一次 POST → 成功 ⇒ 成功 toast + ⭐ **双 invalidate**（`['blueprint','gate',id]` 与
- * `['blueprint','snapshot',id]` —— 确认门动作会同时改蓝图状态与线程）。⛔ 零乐观更新、
- * ⛔ 不预写任何查询缓存、⛔ 不自行推断下一状态。
+ * 一次 POST → 成功 ⇒ 成功 toast + ⭐ **前缀 invalidate**（`['blueprint']` —— 确认门动作会
+ * 同时改蓝图状态、正文、线程与阶段事件，逐个精确 key 必漏，见 `invalidateGate` 的说明）。
+ * ⛔ 零乐观更新、⛔ 不预写任何查询缓存、⛔ 不自行推断下一状态。
  *
  * ⭐ **动作由本面板自持并执行，⛔ 不上抛给页面分发**：七个动作与页面其余六个动作语义独立
  * （它们改的是确认门，不是人审），塞进页面的动作分发器会让页面再长一截；而本面板本就要在
@@ -111,10 +111,21 @@ const hasRejectedCandidates = computed(() => repos.value.some(repo => repo.remov
 
 // ── 动作通道（一次 POST + 双 invalidate；⛔ 零乐观更新）────────────────────────
 
-/** ⭐ 双失效：确认门动作会同时改蓝图状态与线程，只失效 gate 会让正文停在旧状态。 */
+/**
+ * ⭐ 前缀失效（与页面的 `invalidateBlueprint` 同一口径）。
+ *
+ * ⛔ **不得收窄成若干个精确 key**：确认门动作改的不只是门本身 —— `confirm/` 由
+ * `BlueprintConfirmGateAdapter.alock` **落蓝图新版本**（`doc` 过期），四个仓库动作各自接
+ * `aresume_after_gate_action`（`doc` + `events` 过期），确认门线程随动作开合（`threads`
+ * 过期）。而 `doc` 的 `staleTime` 是 30 秒、`confirm` 成功后蓝图落 `confirmed` ⇒ `isLive`
+ * 为假 ⇒ 轮询本来就停了，漏掉的那几个查询**不会自愈**：状态徽标立刻翻成「已确认」，正下方
+ * 的仓库关联段却停在锁定前那一版，读起来就是「确认没生效，再点一次」。
+ *
+ * ⚠️ `doc` 的 key 尾段是 `versionId ?? 'current'`，精确匹配天然写不全 —— 这本身就是必须
+ * 用前缀的理由。本页只有一个 artifact，前缀失效无副作用。
+ */
 function invalidateGate(): void {
-  queryClient.invalidateQueries({ queryKey: ['blueprint', 'gate', props.artifactId] })
-  queryClient.invalidateQueries({ queryKey: ['blueprint', 'snapshot', props.artifactId] })
+  queryClient.invalidateQueries({ queryKey: ['blueprint'] })
 }
 
 /** `confirm/` 409 且带该机器可读键时，展开面板内的解药入口。 */
