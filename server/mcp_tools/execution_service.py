@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from chat.branch_service import generate_default_branch_name, validate_branch_name
 from chat.coding_session_service import dispatch_coding_task
-from chat.models import CodingPlan, CodingSession, Conversation
+from chat.models import CodingPlan, CodingPlanProvenance, CodingSession, Conversation
 from mcp_tools.models import (
     McpCodingExecutionTrace,
     McpCodingPlan,
@@ -80,7 +80,9 @@ def _generate_branch_name(version: McpCodingPlanVersion) -> str:
 
 
 async def _find_project_for_repository(repository_id: uuid.UUID | str) -> Space | None:
-    return await Space.objects.filter(repositories__id=repository_id).order_by("created_at").afirst()
+    return (
+        await Space.objects.filter(repositories__id=repository_id).order_by("created_at").afirst()
+    )
 
 
 async def _create_bridge_session(
@@ -112,6 +114,17 @@ async def _create_bridge_session(
                 tech_plan=tech_plan,
                 affected_files=affected_files,
                 recommended_repository_ids=[str(plan.repository_id)],
+                # 109-REVIEW MN-01：显式标编排产出，不落 DB default `draft`。
+                # 本链的正文来自 McpCodingPlanVersion，而 MCP 的 create_coding_plan
+                # 端点早在 Phase 94 就 delegate 到统一编排（orchestration_delegate
+                # 从 canonical §7 MergedPlan 映射）—— 它**是**编排产出。落 draft 会
+                # 让桥接会话的方案卡挂「未经代码调研」横幅、导出物插草稿告示，且
+                # execution_spec.unresearched 对所有 MCP 执行任务恒为 true。
+                #
+                # 只改 provenance、不填 source_artifact_version_id：后者语义是
+                # delivery.ArtifactVersion.id，而这里手上只有 canonical PlanVersion
+                # 的 id；且该列带无条件唯一约束，填真值会挡住 MCP 链允许的重复桥接。
+                provenance=CodingPlanProvenance.ORCHESTRATED,
             )
             coding_session = CodingSession.objects.create(
                 conversation=conversation,

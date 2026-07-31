@@ -158,13 +158,17 @@ def test_create_bridge_session_defaults_new_provenance_columns(
     bridge_version: McpCodingPlanVersion,
     bridge_user,
 ) -> None:
-    """Phase 109 新增两列不打断桥接：走 DB default，来源留痕为空。
+    """Phase 109 新增两列不打断桥接，且来源标志如实反映「这是编排产出」。
 
-    这两条断言是「MCP 零回归」最直接的锁：桥接用裸 ``objects.create()``，
-    未显式传 ``provenance`` / ``source_artifact_version_id``，只能靠字段
-    ``default`` / ``null=True`` 兜住。锁的是**模型字段形状**（能否被
-    ``objects.create()`` 构造），不是 chat ``@tool`` 的行为 —— 若未来给
-    ``CodingPlan`` 加一列无 default 的必填字段，本用例必红。
+    「MCP 零回归」最直接的锁：桥接用裸 ``objects.create()``，锁的是**模型字段形状**
+    （能否被 ``objects.create()`` 构造）—— 若未来给 ``CodingPlan`` 加一列无 default
+    的必填字段，本用例必红。
+
+    🔴 109-REVIEW MN-01：``provenance`` 断言从 ``DRAFT`` 翻成 ``ORCHESTRATED``。
+    原断言把「漏设标志」锁成了预期：本链的正文来自 ``McpCodingPlanVersion``，而 MCP
+    的 ``create_coding_plan`` 端点早在 Phase 94 就 delegate 到统一编排，语义上就是
+    编排产出。落 ``draft`` 会让桥接会话的方案卡被误挂草稿横幅、导出物插错告示，且
+    每个 MCP 执行任务的 dispatch payload 都带错的 ``unresearched: true``。
     """
     _, chat_plan, _ = async_to_sync(_create_bridge_session)(
         project=bridge_space,
@@ -174,10 +178,39 @@ def test_create_bridge_session_defaults_new_provenance_columns(
         created_by=bridge_user,
     )
 
-    # 桥接侧未传值 ⇒ 走 DB default draft（MCP 链不经编排方案收敛）
-    assert chat_plan.provenance == CodingPlanProvenance.DRAFT
-    # 桥接不来自 ArtifactVersion 投影，无来源留痕
+    assert chat_plan.provenance == CodingPlanProvenance.ORCHESTRATED
+    # 只标 provenance、不填来源列：该列语义是 delivery.ArtifactVersion.id，且带无条件
+    # 唯一约束，填真值会挡住 MCP 链允许的重复桥接。
     assert chat_plan.source_artifact_version_id is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_bridge_execution_spec_is_not_marked_unresearched(
+    bridge_space: Space,
+    bridge_repository: Repository,
+    bridge_plan: McpCodingPlan,
+    bridge_version: McpCodingPlanVersion,
+    bridge_user,
+) -> None:
+    """🔴 109-REVIEW MN-01 的下游锁：MCP 链下发的执行契约不得标「未经调研」。
+
+    ``build_coding_execution_spec`` 按 ``provenance != orchestrated`` 推 ``unresearched``，
+    经 ``env_metadata["execution_spec"]`` 随 dispatch 下发给容器。容器侧本 phase 还没
+    消费这个标志，但它是留给下游「据此调整策略」的契约 —— 写反了一上线就是错的。
+    """
+    from chat.coding_session_service import build_coding_execution_spec
+
+    _, _chat_plan, coding_session = async_to_sync(_create_bridge_session)(
+        project=bridge_space,
+        plan=bridge_plan,
+        version=bridge_version,
+        branch_name=_BRANCH_NAME,
+        created_by=bridge_user,
+    )
+
+    spec = async_to_sync(build_coding_execution_spec)(bridge_repository, coding_session)
+    assert spec.unresearched is False
+    assert spec.as_dict()["unresearched"] is False
 
 
 @pytest.mark.django_db(transaction=True)
