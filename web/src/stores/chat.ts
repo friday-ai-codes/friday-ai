@@ -981,27 +981,50 @@ export const useChatStore = defineStore('chat', () => {
   function applyOrchestrationRuntime(runtime: ConversationRuntime) {
     try {
       const orch = runtime.orchestration
+      // 终态收敛（110-MN-02）：后端刻意没重发 events 与 plan_research_sessions。
+      // 🔴 这里的空是「没有变化」而不是「没有了」——按空值覆盖会让时间线与日志组
+      // 在编排完成后凭空消失。
+      const converged = orch?.converged === true
       if (orch && orch.session_id) {
         const bucket = upsertOrchestrationBucket(orch.session_id)
         // 权威字段整体替换；事件按去重键合并（快照里的事件与 SSE 直播的必然重复）。
         bucket.snapshot = orch
-        bucket.events = mergeOrchestrationEvents(
-          bucket.events,
-          Array.isArray(orch.events) ? orch.events : [],
-        )
-        bucket.eventsTruncated = orch.events_truncated === true
+        if (!converged) {
+          bucket.events = mergeOrchestrationEvents(
+            bucket.events,
+            Array.isArray(orch.events) ? orch.events : [],
+          )
+          bucket.eventsTruncated = orch.events_truncated === true
+        }
         activeOrchestrationSessionId.value = orch.session_id
       }
       // orchestration 为 null / 缺失 ⇒ **保持现有桶不动**。轮询到一半后端降级返回
       // null 时不该把已经拿到的进度抹掉：「没有新信息」不等于「之前的信息作废」。
-      planResearchSessions.value = Array.isArray(runtime.plan_research_sessions)
-        ? runtime.plan_research_sessions
-        : []
+      if (!converged) {
+        planResearchSessions.value = Array.isArray(runtime.plan_research_sessions)
+          ? runtime.plan_research_sessions
+          : []
+      }
       orchestrationRuntimeActive.value = runtime.active === true
     }
     catch {
       // 观测代码绝不反噬业务
     }
+  }
+
+  /**
+   * 收敛令牌（110-MN-02）：本对话已完整持有、且已终态的那个编排会话 id。
+   *
+   * 只有 store 里**确实存过一份终态快照**才发令牌——那份快照必然是带全量 events 与
+   * plan_research_sessions 的那次响应（收敛响应本身不会把 status 从在途改成终态）。
+   * 取不到就发空串，服务端退化成全量，不会漏数据。
+   */
+  function orchestrationSeenToken(): string {
+    const sessionId = activeOrchestrationSessionId.value
+    if (!sessionId)
+      return ''
+    const status = orchestrationSessions.value[sessionId]?.snapshot?.status
+    return status === 'done' || status === 'failed' ? sessionId : ''
   }
 
   /**
@@ -1216,7 +1239,9 @@ export const useChatStore = defineStore('chat', () => {
       return
 
     try {
-      const runtime = await getConversationRuntime(id)
+      // 带上收敛令牌：编排凝固后（用户已点「进入编码」、编码会话还要跑十几分钟）不再
+      // 每 2 秒重收一遍那份逐字相同的事件流与容器日志。
+      const runtime = await getConversationRuntime(id, orchestrationSeenToken())
       // 🔴 必须在 `if (runtime.active)` 分流**之前**：编排终态那一拍 active 恰好
       // 变 false，挂在活跃分支里会让 done / failed 永远到不了 store。
       applyOrchestrationRuntime(runtime)

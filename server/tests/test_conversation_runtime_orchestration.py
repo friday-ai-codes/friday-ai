@@ -108,6 +108,7 @@ def _make_research_container(
     forged_plan_session_id: str | None = None,
     forged_repository_id: str | None = None,
     link_task: bool = True,
+    task_status: str = "done",
 ):
     """建一条 plan_research 调研容器 + 它的服务端权威 `RepoResearchTask`。
 
@@ -132,7 +133,9 @@ def _make_research_container(
         status=AgentSession.Status.RUNNING,
         metadata={"source": "plan_research", "plan_session_id": plan_session_id},
     )
-    task = RepoResearchTask.objects.create(session=plan_session, repository=repository)
+    task = RepoResearchTask.objects.create(
+        session=plan_session, repository=repository, status=task_status
+    )
     last_output: dict[str, Any] = {
         "source": source,
         "plan_session_id": forged_plan_session_id or plan_session_id,
@@ -155,10 +158,12 @@ def _make_research_container(
     return sess
 
 
-async def _runtime(conversation) -> dict[str, Any]:
+async def _runtime(conversation, *, orchestration_seen: str = "") -> dict[str, Any]:
     from chat.conversation_service import ConversationService
 
-    return await ConversationService.get_conversation_runtime(str(conversation.id))
+    return await ConversationService.get_conversation_runtime(
+        str(conversation.id), orchestration_seen=orchestration_seen
+    )
 
 
 # ============================================================================
@@ -204,7 +209,9 @@ class TestOrchestrationSnapshotShape:
             "failure",
             "events",
             "events_truncated",
+            "converged",
         }
+        assert orch["converged"] is False
         assert orch["status"] == "running"
         assert orch["current_stage"] == "routing"
         assert orch["has_classify"] is True
@@ -742,6 +749,200 @@ class TestPlanResearchSessions:
         rows = (await _runtime(conversation))["plan_research_sessions"]
 
         assert [r["logs"] for r in rows] == [[], []]
+
+
+# ============================================================================
+# 终态短路：编排凝固后不再重发全量事件流与容器日志（110-MN-02）
+# ============================================================================
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+class TestOrchestrationTerminalShortCircuit:
+    @staticmethod
+    def _repo(name: str = "alpha"):
+        from repositories.models import Repository
+
+        return Repository.objects.create(
+            name=name,
+            git_url=f"https://gitlab.com/test/{name}.git",
+            git_platform="gitlab",
+            default_branch="main",
+        )
+
+    async def _terminal_session_with_facts(self, conversation, project, *, task_status="done"):
+        """一个 done 会话 + 3 条事件 + 1 个带日志的调研容器。"""
+        session = await sync_to_async(_make_session)(
+            conversation.id, status="done", current_stage="merge"
+        )
+        for i in range(3):
+            await sync_to_async(_make_event)(
+                session, f"evt-{i}", ts=timezone.now() - timedelta(seconds=3 - i)
+            )
+        repo = await sync_to_async(self._repo)()
+        await sync_to_async(_make_research_container)(
+            project,
+            session_id="research-frozen",
+            plan_session=session,
+            repository=repo,
+            logs=[{"type": "text", "content": "调研完成", "ts": 1}],
+            task_status=task_status,
+        )
+        return session
+
+    async def test_matching_token_on_terminal_session_stops_resending_events(
+        self, conversation, project
+    ) -> None:
+        session = await self._terminal_session_with_facts(conversation, project)
+
+        runtime = await _runtime(conversation, orchestration_seen=str(session.id))
+
+        assert runtime["orchestration"]["converged"] is True
+        assert runtime["orchestration"]["events"] == []
+
+    async def test_matching_token_on_terminal_session_stops_resending_logs(
+        self, conversation, project
+    ) -> None:
+        """与上一条分开：两个分支各自短路，合成一条时第一个断言会遮住另一个分支。"""
+        session = await self._terminal_session_with_facts(conversation, project)
+
+        runtime = await _runtime(conversation, orchestration_seen=str(session.id))
+
+        assert runtime["plan_research_sessions"] == []
+
+    async def test_short_circuit_keeps_the_authoritative_fields(
+        self, conversation, project
+    ) -> None:
+        """🔴 短路只省略两份「早已凝固的重复内容」，权威字段照常回。
+
+        少了这条，「converged 时整个 orchestration 回 None」的实现同样能通过上面两条，
+        而那会让前端的阶段指针失去权威来源。
+        """
+        session = await self._terminal_session_with_facts(conversation, project)
+
+        orch = (await _runtime(conversation, orchestration_seen=str(session.id)))["orchestration"]
+
+        assert orch["session_id"] == str(session.id)
+        assert orch["status"] == "done"
+        assert orch["current_stage"] == "merge"
+
+    async def test_no_token_always_returns_the_full_snapshot(self, conversation, project) -> None:
+        """刷新补齐（restoreConversationRuntime 不带令牌）必须永远拿全量。"""
+        await self._terminal_session_with_facts(conversation, project)
+
+        runtime = await _runtime(conversation)
+
+        assert runtime["orchestration"]["converged"] is False
+        assert len(runtime["orchestration"]["events"]) == 3
+        assert [r["session_id"] for r in runtime["plan_research_sessions"]] == ["research-frozen"]
+
+    async def test_token_for_another_session_is_ignored(self, conversation, project) -> None:
+        """令牌不匹配（例如同一对话里又跑了一轮）⇒ 退化成全量，不短路。"""
+        await self._terminal_session_with_facts(conversation, project)
+
+        runtime = await _runtime(
+            conversation, orchestration_seen="0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f"
+        )
+
+        assert runtime["orchestration"]["converged"] is False
+        assert len(runtime["orchestration"]["events"]) == 3
+
+    async def test_running_session_is_never_short_circuited(self, conversation, project) -> None:
+        """会话仍在途 ⇒ 即使令牌命中也必须全量（事件流还在增长）。"""
+        session = await sync_to_async(_make_session)(conversation.id, status="running")
+        await sync_to_async(_make_event)(session, "evt-live", ts=timezone.now())
+
+        runtime = await _runtime(conversation, orchestration_seen=str(session.id))
+
+        assert runtime["orchestration"]["converged"] is False
+        assert len(runtime["orchestration"]["events"]) == 1
+
+    async def test_live_research_container_blocks_the_short_circuit(
+        self, conversation, project
+    ) -> None:
+        """🔴 failed 可能停在 research，那时容器还在写日志 ⇒ 不得短路。
+
+        少了这一条，「只看 session 终态」的实现同样能通过其余用例，而用户会看到日志组
+        停在半截——恰好是本里程碑要消灭的「界面撒谎」。
+        """
+        session = await sync_to_async(_make_session)(
+            conversation.id, status="failed", current_stage="research", error={"reason": "boom"}
+        )
+        await sync_to_async(_make_event)(session, "evt-0", ts=timezone.now())
+        repo = await sync_to_async(self._repo)()
+        await sync_to_async(_make_research_container)(
+            project,
+            session_id="research-still-running",
+            plan_session=session,
+            repository=repo,
+            logs=[{"type": "text", "content": "还在跑", "ts": 1}],
+            task_status="running",
+        )
+
+        runtime = await _runtime(conversation, orchestration_seen=str(session.id))
+
+        assert runtime["orchestration"]["converged"] is False
+        assert [r["session_id"] for r in runtime["plan_research_sessions"]] == [
+            "research-still-running"
+        ]
+
+    async def test_short_circuit_never_touches_the_event_table(
+        self, conversation, project, monkeypatch
+    ) -> None:
+        """🔴 真正的收敛判据：那次查询**根本没发生**，不只是结果被丢掉。
+
+        把事件表查询掐成抛异常——若实现仍去查，orchestration 会被自己的 except 降级成
+        None；短路生效时它拿不到这个雷。
+        """
+        from delivery.models import ConvergenceSessionEvent
+
+        session = await self._terminal_session_with_facts(conversation, project)
+
+        def _boom(*args: Any, **kwargs: Any):
+            raise RuntimeError("event query should not happen after convergence")
+
+        monkeypatch.setattr(ConvergenceSessionEvent.objects, "filter", _boom)
+
+        runtime = await _runtime(conversation, orchestration_seen=str(session.id))
+
+        assert runtime["orchestration"] is not None
+        assert runtime["orchestration"]["converged"] is True
+
+    async def test_degraded_orchestration_branch_never_short_circuits_the_logs(
+        self, conversation, project, monkeypatch
+    ) -> None:
+        """🔴 orchestration 分支降级成 None 时，日志分支必须走全量。
+
+        两个分支靠 `runtime["orchestration"]["converged"]` 联动。若日志分支改看局部变量，
+        「算出 converged 之后 orchestration 才抛」这一拍会同时回「没有编排」与「没有日志」，
+        把前端已有的日志组整个抹掉。
+
+        构造：failed 会话（令牌命中、调研已终态 ⇒ converged 算得出 True），随后让
+        `compress_failure_reason` 抛——它在 converged 判定**之后**才被调用。
+        """
+        from delivery.services import process_event_wire
+
+        session = await sync_to_async(_make_session)(
+            conversation.id, status="failed", current_stage="merge", error={"reason": "boom"}
+        )
+        repo = await sync_to_async(self._repo)()
+        await sync_to_async(_make_research_container)(
+            project,
+            session_id="research-frozen",
+            plan_session=session,
+            repository=repo,
+            logs=[{"type": "text", "content": "调研完成", "ts": 1}],
+        )
+
+        def _boom(*args: Any, **kwargs: Any):
+            raise RuntimeError("compress exploded")
+
+        monkeypatch.setattr(process_event_wire, "compress_failure_reason", _boom)
+
+        runtime = await _runtime(conversation, orchestration_seen=str(session.id))
+
+        assert runtime["orchestration"] is None
+        assert [r["session_id"] for r in runtime["plan_research_sessions"]] == ["research-frozen"]
 
 
 # ============================================================================

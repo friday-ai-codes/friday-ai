@@ -260,6 +260,118 @@ describe('chat store 编排进度（process_event + 运行时快照双链合流�
   })
 
   // ======================================================================
+  // 终态收敛协议（110-MN-02）
+  // ======================================================================
+
+  /** 已经拿到过一份「终态 + 全量」的快照，并且有调研日志在手。 */
+  function seedTerminalSnapshot(
+    store: ReturnType<typeof useChatStore>,
+    orchOverrides: Record<string, unknown> = {},
+  ) {
+    store.applyOrchestrationRuntime(runtimeWith({
+      active: false,
+      orchestration: orchestrationSnapshot({
+        status: 'done',
+        current_stage: 'merge',
+        events: SHARED_EVENTS,
+        ...orchOverrides,
+      }),
+      plan_research_sessions: [
+        { session_id: 'sub-1', plan_session_id: SESSION_A, repository_id: 'repo-1', logs: [] },
+      ],
+    }))
+  }
+
+  it('converged 响应不把 eventsTruncated 冲回 false（空 events 是「没有变化」而不是「没有了」）', () => {
+    // 事件**列表**本身有合并语义天然兜着（merge(existing, []) 恒等），所以只断言
+    // events.length 的用例挡不住任何实现——真正被收敛守卫保护的是随空 events 一起
+    // 回来的 events_truncated=false。
+    const store = useChatStore()
+    seedTerminalSnapshot(store, { events_truncated: true })
+    expect(store.orchestrationSessions[SESSION_A].eventsTruncated).toBe(true)
+
+    store.applyOrchestrationRuntime(runtimeWith({
+      active: true,
+      orchestration: orchestrationSnapshot({
+        status: 'done',
+        current_stage: 'merge',
+        events: [],
+        events_truncated: false,
+        converged: true,
+      }),
+    }))
+
+    expect(store.orchestrationSessions[SESSION_A].eventsTruncated).toBe(true)
+    expect(store.orchestrationSessions[SESSION_A].events).toHaveLength(3)
+  })
+
+  it('converged 响应不清空已有调研日志', () => {
+    // 与上一条分开：两份内容各走一条保留路径，合成一条时第一个断言会遮住另一条。
+    const store = useChatStore()
+    seedTerminalSnapshot(store)
+
+    store.applyOrchestrationRuntime(runtimeWith({
+      active: true,
+      orchestration: orchestrationSnapshot({ status: 'done', converged: true }),
+      // 后端在收敛响应里就是这么回的
+      plan_research_sessions: [],
+    }))
+
+    expect(store.planResearchSessions.map(s => s.session_id)).toEqual(['sub-1'])
+  })
+
+  it('非 converged 响应仍按全量语义整体替换调研日志（收敛保护不得泄漏成永不更新）', () => {
+    const store = useChatStore()
+    seedTerminalSnapshot(store)
+
+    store.applyOrchestrationRuntime(runtimeWith({
+      active: true,
+      orchestration: orchestrationSnapshot({ status: 'running' }),
+      plan_research_sessions: [],
+    }))
+
+    expect(store.planResearchSessions).toEqual([])
+  })
+
+  it('轮询在编排终态后带上收敛令牌，刷新补齐则永远不带', async () => {
+    vi.useFakeTimers()
+    const store = useChatStore()
+    store.currentConversationId = 'conv-1'
+
+    vi.mocked(getConversationRuntime).mockResolvedValue(runtimeWith({
+      active: true,
+      orchestration: orchestrationSnapshot({ status: 'done', current_stage: 'merge' }),
+    }))
+    vi.mocked(getConversationDetail).mockResolvedValue({ messages: [] } as any)
+
+    await store.restoreConversationRuntime('conv-1')
+    // 🔴 刷新补齐这条路径是来拿全量的，带令牌会让它永远补不齐
+    expect(vi.mocked(getConversationRuntime).mock.calls[0][1] ?? '').toBe('')
+
+    await vi.advanceTimersByTimeAsync(2000)
+
+    const pollArgs = vi.mocked(getConversationRuntime).mock.calls.at(-1)
+    expect(pollArgs?.[1]).toBe(SESSION_A)
+  })
+
+  it('编排仍在途时轮询不带令牌（事件流还在增长，短路会把时间线钉死）', async () => {
+    vi.useFakeTimers()
+    const store = useChatStore()
+    store.currentConversationId = 'conv-1'
+
+    vi.mocked(getConversationRuntime).mockResolvedValue(runtimeWith({
+      active: true,
+      orchestration: orchestrationSnapshot({ status: 'running', current_stage: 'research' }),
+    }))
+
+    await store.restoreConversationRuntime('conv-1')
+    await vi.advanceTimersByTimeAsync(2000)
+
+    const pollArgs = vi.mocked(getConversationRuntime).mock.calls.at(-1)
+    expect(pollArgs?.[1] ?? '').toBe('')
+  })
+
+  // ======================================================================
   // 分桶隔离
   // ======================================================================
 

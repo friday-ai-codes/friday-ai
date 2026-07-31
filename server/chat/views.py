@@ -12,7 +12,7 @@ from asgiref.sync import sync_to_async
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse, StreamingHttpResponse
 from django.utils import timezone
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
@@ -1023,6 +1023,19 @@ class ConversationRuntimeView(APIView):
     @extend_schema(
         summary="获取对话运行态",
         description="返回对话当前是否仍在执行，以及最近的深度分析日志/进度快照",
+        parameters=[
+            OpenApiParameter(
+                name="orchestration_seen",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "客户端已完整持有的编排会话 id（收敛令牌）。命中且该会话已终态、"
+                    "其下无在途调研容器时，响应的 orchestration.converged=true，"
+                    "events 与 plan_research_sessions 不重发，客户端保留现有的。"
+                ),
+            ),
+        ],
         responses={200: ConversationRuntimeSerializer},
         tags=["Conversations"],
     )
@@ -1036,7 +1049,13 @@ class ConversationRuntimeView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        runtime = await ConversationService.get_conversation_runtime(str(conversation_id))
+        # 110-MN-02：收敛令牌。客户端声称已完整持有的编排会话 id；命中时服务端只回权威
+        # 字段、不重发早已凝固的事件流与容器日志。缺省 / 猜错只会退化成全量。
+        orchestration_seen = str(request.query_params.get("orchestration_seen") or "")
+        runtime = await ConversationService.get_conversation_runtime(
+            str(conversation_id),
+            orchestration_seen=orchestration_seen,
+        )
         return Response(runtime)
 
 

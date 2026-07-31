@@ -316,6 +316,15 @@ export interface OrchestrationRuntime {
   /** 历史事件（按 `(ts, created_at)` 升序）。截断时保留**最新** N 条并置 `events_truncated`。 */
   events: Array<{ event: string, ts: string, payload: Record<string, unknown> }>
   events_truncated?: boolean
+  /**
+   * 终态收敛（110-MN-02）。`true` 表示本次响应**刻意省略**了 `events` 与
+   * 顶层 `plan_research_sessions` 两份早已凝固的内容——客户端带的收敛令牌命中了一个
+   * 已终态、且其下没有在途调研容器的编排会话。
+   *
+   * 🔴 消费方必须**保留自己已有的**那两份，不得按空值覆盖：这里的空不是「没有」，
+   * 是「没有变化」。缺省 / `false` ⇒ 全量语义，按老路走。
+   */
+  converged?: boolean
 }
 
 /** plan_research 容器会话（**独立字段，绝不混进 `deep_sessions`**）。 */
