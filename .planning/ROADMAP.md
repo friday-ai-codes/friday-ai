@@ -225,7 +225,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 110-05-PLAN.md — `useOrchestrationTimeline` 纯函数：折叠 / 六态状态机 / 七套摘要 / 失败闭集 / 中断态 + 穷举 spec（wave 4）
+- [x] 110-05-PLAN.md — `useOrchestrationTimeline` 纯函数：折叠 / 六态状态机 / 七套摘要 / 失败闭集 / 中断态 + 穷举 spec（wave 4）
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
