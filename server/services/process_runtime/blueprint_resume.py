@@ -65,6 +65,8 @@ BLUEPRINT_PROCESS_TYPE = "technical_blueprint"
 _STAGE_BLUEPRINT_STATUS: dict[str, str] = {
     "repo_plan": "drafting",  # == BlueprintStatus.DRAFTING
     "merge": "drafting",  # == BlueprintStatus.DRAFTING
+    # 114 追加：审查 stage 期间蓝图状态为 `ai_reviewing`（映射表追加，消费方零改动）。
+    "ai_review": "ai_reviewing",  # == BlueprintStatus.AI_REVIEWING
 }
 
 
