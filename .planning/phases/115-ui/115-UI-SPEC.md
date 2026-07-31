@@ -7,7 +7,7 @@ preset: "shadcn-vue（既有 web/components.json）；主题令牌在 web/src/st
 created: 2026-07-31
 requirements: [VIEW-01, VIEW-02, VIEW-03, VIEW-04, CLAR-01, FLOW-08]
 upstream: [".planning/phases/115-ui/115-CONTEXT.md", ".planning/technical-blueprint/DESIGN.md §3/§4.2/§6/§7/§8/§13.2", ".planning/phases/114-ai/114-05-SUMMARY.md", ".planning/phases/114-ai/114-REVIEW.md", ".planning/STATE.md"]
-boundary: "前端 CREATE-ONLY（§13.2 第 4 条）；唯一例外是 web/src/pages/knowledge/index.vue 的 tab 列表纯追加"
+boundary: "前端 CREATE-ONLY（STATE §13.2 第 4 条）；对既有文件只允许**五处纯追加**：(1) web/src/pages/knowledge/index.vue 的 tab 列表；(2) web/src/components/project/warroom/ProjectMaterialsPanel.vue 的分区流追加一行 import + 一处使用；(3) web/src/api/index.ts 的 barrel 导出；(4) web/src/styles/main.css 的 @source inline safelist；(5) web/src/locales/zh-CN.json 的 knowledge 节。五者均为追加，且均不属 STATE §13.2 的 0.19 归属面（TechPlanCard / RoutingDecisionPanel / 执行时间线 / ArtifactTimeline / NodeDataTab 零修改）"
 ---
 
 # Phase 115 — UI 设计契约（结构化查看器 / 批注层 / 知识库管理面 / 人审终审）
@@ -26,12 +26,23 @@ boundary: "前端 CREATE-ONLY（§13.2 第 4 条）；唯一例外是 web/src/pa
 
 | 约束 | 来源 | 本契约的落地 |
 |------|------|-------------|
-| 前端**只新建**组件 | STATE §13.2 第 4 条 | 除 `pages/knowledge/index.vue` 的 tab 纯追加外，本文件不指定任何既有组件的修改 |
-| 不动 `TechPlanCard` / `RoutingDecisionPanel` / 执行时间线 / `ArtifactTimeline` / `NodeDataTab` | §13.2、REQUIREMENTS Out of Scope | 触点升级归 Phase 116（同步点 2 之后），本文件零涉及 |
+| 前端**只新建**组件 | STATE §13.2 第 4 条 | 见下方「五个追加点（穷举）」；除这五处纯追加外，本文件不指定任何既有组件的修改 |
+| 不动 `TechPlanCard` / `RoutingDecisionPanel` / 执行时间线 / `ArtifactTimeline` / `NodeDataTab` | §13.2、REQUIREMENTS Out of Scope | 触点升级归 Phase 116（同步点 2 之后），本文件零涉及；五个追加点无一落在这五个面上 |
+| **block 正文编辑（`edit-blocks/`）不在本相位，顺延 116** | 本文件判定（§0.2 判定 7） | 查看器是**只读 + 批注**面：可作答澄清、可发起选区评论、可处置 finding，**但不提供改写 block 正文的入口**。`edit-blocks/` 端点本相位零调用，`ops` 载荷形状零定义 |
 | 不新建推送通道 | CONTEXT，§13.2 第 3 条 | 实时进展一律「只读事件端点 + 状态驱动轮询」，消费点收敛到**一个** composable `useBlueprintLive.ts` |
 | 不改 `config/status.ts` 的联合类型 | CREATE-ONLY | 11 态配置新建 `config/blueprintStatus.ts`，`StatusConfig` 类型从 `~/config/status` **import 复用**（见 §0.2 判定 3） |
 | 蓝图任何新增读写端点必须挂 `_aassert_project_scope` | 114-REVIEW MJ-03 | §3 五个新端点逐条标注 |
-| 404 中性、不区分「无权限」与「不存在」 | 114-REVIEW MJ-03 | §8.2 只允许**一句**文案，且写成 i18n 单键 |
+| 404 中性、不区分「无权限」与「不存在」 | 114-REVIEW MJ-03 | §8.2 只允许**一句**文案，且写成 i18n 单键（**仅四个查询走该分档**，`blueprint-gate/` 的 404 是正常态，见 §8.2） |
+
+**五个追加点（穷举；任何第六处修改既有文件 = 计划不通过）：**
+
+| # | 文件 | 追加内容 | 属 §13.2 归属面？ |
+|---|------|---------|------------------|
+| 1 | `web/src/pages/knowledge/index.vue` | tab 列表 + 一个 `TabsContent`（§4.2 逐字） | 否 |
+| 2 | `web/src/components/project/warroom/ProjectMaterialsPanel.vue` | 一行 `defineAsyncComponent` import + 一处使用（§12.2） | 否（§13.2 点名的是 `TechPlanCard` / `RoutingDecisionPanel`，物料面板本体不在列） |
+| 3 | `web/src/api/index.ts` | barrel 追加 `export * from './blueprints'` / `'./repositoryChunks'`（§13.8） | 否 |
+| 4 | `web/src/styles/main.css` | 追加 `@source inline(...)` safelist 行（§6.1 / §13.9） | 否 |
+| 5 | `web/src/locales/zh-CN.json` | `knowledge.blueprints.*` 子树 + `knowledge.tabs.blueprints`（§17） | 否 |
 
 ### 0.2 本文件做出的设计判定（CONTEXT 未覆盖，按「最贴合 CONTEXT 决策 + 既有代码库」选定并在此登记）
 
@@ -50,6 +61,8 @@ boundary: "前端 CREATE-ONLY（§13.2 第 4 条）；唯一例外是 web/src/pa
 
 6. **`fitness.verdict == "unsuitable"` 的「替代建议」按 `fitness.reasons` 自由文本原样展示**，不为呈现去改已锁定的 schema（同时定夺 STATE 登记的「Phase 112 残留 PARTIAL / FLOW-02」）。
 
+7. **block 正文编辑顺延 Phase 116。** ROADMAP 的五条 SC 无一涉及「改写 block 正文」；`edit-blocks/` 要的 `ops` 是块级补丁语义（新增/替换/删除 + `human_block_restore` 版本原因），完整实现要引入行内编辑器、脏态管理、并发冲突提示与 `human_edit:` 版本产出链——那是**另一个相位的体量**，硬塞进本相位会挤掉 SC-1/SC-2 的完成度。本相位的写路径穷举为**三条**：澄清/评论作答（`threads/<id>/answer/`）、选区评论建线程（§3.5）、finding 处置（`resolve/` `dismiss/`）+ 终审两动作 + 确认门七动作。**「编辑 block」在本文件中零入口、零 emit、零文案、零端点调用**，并已在 CONTEXT `<deferred>` 登记。
+
 ---
 
 ## 1. Design System
@@ -59,7 +72,7 @@ boundary: "前端 CREATE-ONLY（§13.2 第 4 条）；唯一例外是 web/src/pa
 | Tool | shadcn-vue（已初始化，`web/components.json`）；原语在 `~/components/ui/*` |
 | Preset | 无 preset 字符串；主题令牌定义于 `web/src/styles/main.css` 的 `@theme` 块（Tailwind 4） |
 | Component library | reka-ui。本相位复用：`dialog`（含 `DialogScrollContent`）/ `sheet` / `skeleton` / `tabs` / `badge` / `popover` / `tooltip` / `scroll-area` / `table` / `pagination` / `select` / `input` / `textarea` / `button` / `collapsible` / `separator` / `alert-dialog`（经 `useConfirmDialog`） |
-| 布局原语 | `~/components/layout/PageContainer.vue`、`~/components/layout/AnchorNavLayout.vue`（**六段目录导航直接复用**，`NavSection` 已带 `badge` / `badgeTone` 与 IntersectionObserver 高亮） |
+| 布局原语 | `~/components/layout/PageContainer.vue`、`~/components/layout/AnchorNavLayout.vue`（**十段目录导航由页面直接复用**，`NavSection` 已带 `badge` / `badgeTone` 与 IntersectionObserver 高亮；注意它是**整个两栏布局**：`<div class="flex gap-8">` 包 `<aside class="hidden md:block w-48">` + 默认 slot，不是可嵌套的纯导航子件，见 §5.1 / §13.2） |
 | 图表 / 代码 | `mermaid@^11`（经 `~/components/project/warroom/MermaidDiagram.vue` 复用，自带渲染失败回退源码 + 放大）；CodeMirror（`~/components/codemirror/fridayLightTheme.ts`）只读实例用于代码片段预览 |
 | Diff | `diff` 包（已在依赖）：块级用 `block_id` 集合运算，块内文本用 `diffWords`；视觉范式对齐 `~/components/prompts/PromptVersionDiff.vue` |
 | 浮层定位 | `@floating-ui/vue`（已在依赖）——仅用于选区评论 popover |
@@ -89,7 +102,7 @@ boundary: "前端 CREATE-ONLY（§13.2 第 4 条）；唯一例外是 web/src/pa
 - `12px`（`p-3` / `gap-3` / `space-y-3`）：线程卡、mermaid 容器内边距、diff 行内边距 —— 与 `MermaidDiagram.vue`、`PromptVersionDiff.vue` 既有值一致。
 - `20px`（`px-5` / `py-3.5`）：卡片头与卡片内容内边距 —— `web/DESIGN.md` 明列的标准卡片模式。
 - `44px`：图标-only 触控目标最小尺寸（线程侧栏的折叠箭头、选区 popover 的按钮），保证移动端可点。
-- `88px`：`AnchorNavLayout.scrollTo` 的锚点偏移常量（既有），六段导航跳转沿用，不得另设。
+- `88px`：`AnchorNavLayout.scrollTo` 的锚点偏移常量（既有，`AnchorNavLayout.vue:50`），十段导航跳转与 §7.6 的正文定位一律沿用，不得另设。
 
 ---
 
@@ -111,7 +124,7 @@ interface BlueprintDocumentResponse {
   created_at: string               // ISO8601
   content: BlueprintV1             // schema_version === 'blueprint/v1'
   quality: {
-    citation_coverage: number | null      // 纯函数，0..1
+    citation_coverage: number             // 纯函数，0..1，**恒有值**（`blueprint_quality.py:76` 分母为 0 时返回 1.0，不返回 None）
     ai_rejection_rate: number | null      // 无数据 → null（绝不渲染成 0）
     human_edit_volume: number | null
     clarification_rounds: number | null
@@ -186,10 +199,10 @@ interface BlueprintThreadDetail {
 | 用途 | 端点 / 前端 API | 备注 |
 |------|----------------|------|
 | 版本轨 | `deliveryArtifacts.getArtifactTimeline(artifactId)` | 已含 `version_no` / `produced_by_ref` / `supersedes_id` / `is_current` —— **版本切换器零新端点** |
-| 人审快照 | `GET .../blueprint-review/` | findings 三级分组 / `orphaned_threads` / `unresolved_blocker_thread_ids` / `revision_round` / `current_status` |
-| 人审动作 | `approve/` `reject/` `edit-blocks/` `threads/<id>/answer/` `threads/<id>/resolve/` `threads/<id>/dismiss/` | 状态码映射逐字见 §8 |
+| 人审快照 | `GET .../blueprint-review/` | GET 快照响应键（逐字，`blueprint_review_views.py:385-403`）：`findings`（三级分组）/ `clarifications[]`（`kind == ai_clarification` 的 `_thread_row`）/ `comments[]`（`kind == human_comment`）/ `unresolved[]` / `orphaned_threads[]` / `unresolved_blocker_thread_ids` / `unresolved_blocker_count` / `review_round` / `revision_round` / `current_status`。⚠️ 每个线程条目是 `_thread_row`（`:174`），**不含 `options`、不含任何 `BlueprintThreadMessage`** —— 这正是 §3.4 必须新增的原因 |
+| 人审动作 | `approve/` `reject/` `threads/<id>/answer/` `threads/<id>/resolve/` `threads/<id>/dismiss/` | 状态码映射逐字见 §8。⛔ `edit-blocks/` **本相位零调用**（§0.1 硬边界第 3 条，顺延 116） |
 | 确认门 | `blueprint-gate/` 快照 + 七动作 | `confirm` / `remove-repo` / `add-repo` / `reclassify-role` / `edit-responsibility` / `rejected-to-boundary` / `upgrade-research` |
-| 引用预览 | `knowledgeApi.getEntity` / `GET /api/repositories/<id>/chunk-at/?path=&line=` / `GET /api/repositories/<id>/charter/` | 后两者**前端尚无 API 封装**，本相位在 `api/repositories.ts` 之外新建 `api/repositoryChunks.ts`（CREATE-ONLY） |
+| 引用预览 | `knowledgeApi.getEntity` / `GET /api/repositories/<id>/chunk-at/?path=&line=` / `GET /api/repositories/<id>/charter/` | 后两者**前端尚无 API 封装**，本相位在 `api/repositories.ts` 之外新建 `api/repositoryChunks.ts`（CREATE-ONLY）。⚠️ **`chunk-at` 的错误体键是 `error` 不是 `detail`**（`repositories/chunk_at_views.py`，如 `{"error": "缺少必填参数 path"}`），且 `path` 与 `line` **均为必填** —— `locator` 缺 `line_start` 会稳定 400。故该路径的错误处理**不走** §8.2 的「原样回显 `detail`」，一律走 §10.1 的快照兜底 |
 | 关联区 | `knowledgeApi.getRelated` / `knowledgeApi.getArtifactAssociations` | 蓝图互引与知识关联双向可查（SC-4） |
 
 ### 3.7 TanStack Query queryKey 契约
@@ -218,7 +231,7 @@ interface BlueprintThreadDetail {
 | 文件 | `web/src/pages/knowledge/blueprints/[id].vue` |
 | 路径 | `/knowledge/blueprints/:id`，`:id` = `artifact_id`（UUID） |
 | 类型化 route | `useRoute('/knowledge/blueprints/[id]')` |
-| `definePage` meta | `{ title: 'knowledge.blueprints.pageTitle' }`（与 `pages/knowledge/entities/[id].vue` 同范式，`useHead` 设文档标题） |
+| 页面标题 | **`useHead({ title: t('knowledge.blueprints.pageTitle') })`**（`import { useHead } from '@vueuse/head'`，逐字对齐 `pages/knowledge/entities/[id].vue:4,87`）。⛔ **不得用 `definePage({ meta: { title } })` 承载 i18n key**：`layouts/default.vue:21-25` 把 `route.meta.title` **原样**渲染进 `<h1>`（不过 `t()`），全仓四处 `definePage` 传的都是中文字面量（`notifications/index.vue:17`）；传 key 会让页面 H1 直接印出 `knowledge.blueprints.pageTitle`。本页 H1 由页面自身渲染（蓝图标题），不依赖 `route.meta.title` |
 
 **query 参数（全部可选，与 ref 双向同步 + `normalize*` 兜底，范式抄 `pages/knowledge/index.vue`）:**
 
@@ -229,7 +242,16 @@ interface BlueprintThreadDetail {
 | `diff_mode` | `inline`(默认) \| `split` | diff 呈现形态 |
 | `section` | 段 key（见 §6.1） | 进入后滚动到该段 |
 | `thread` | thread_id (uuid) | 打开线程侧栏并选中该条；窄屏自动展开抽屉 |
-| `panel` | `gate` \| `review` | 直接展开确认门 / 人审面板 |
+| `panel` | `gate` \| `review` | 直接滚动到并展开确认门 / 质量面板（**目标面板缺席时的行为见下** ） |
+
+**`?panel=` 缺席兜底（两个面板都是条件渲染，必须定义）：**
+
+| 值 | 目标存在的条件 | 存在时 | **不存在时** |
+|----|--------------|--------|-------------|
+| `gate` | `GET blueprint-gate/` 返回 200（§11.3） | 滚动到 `BlueprintGatePanel` 并 2s ring 高亮 | **静默忽略**：不滚动、不报错、不弹 toast，仅 `router.replace` 去掉该 query。理由：确认门未开启是绝对多数的正常态（§8.2），为它弹提示等于把正常态渲染成异常 |
+| `review` | `current_status ∈ {pending_review, confirmed}`（§11.2） | 滚动到 `BlueprintQualityPanel` 并 2s ring 高亮 | 滚动到正文顶部 + 一条 `info` toast `t('knowledge.blueprints.review.panelUnavailable')` =「该方案尚未进入人审阶段，暂无审查面板」，随后 `router.replace` 去掉该 query。理由：这是用户拿着旧链接来的**信息缺口**，静默会让人以为页面坏了 |
+
+两种情形均**只消费一次**（`router.replace` 移除 query），刷新不重复触发；与 `?thread=` 的一次性消费同纪律（§7.6）。
 
 **深链格式（对外唯一形态，Phase 116 的入口收编与导出一律指向它）:**
 ```
@@ -245,7 +267,7 @@ interface BlueprintThreadDetail {
 
 | 项 | 值 |
 |----|----|
-| 宿主 | `web/src/pages/knowledge/index.vue`（**本相位唯一被允许修改的既有文件**，且只做纯追加） |
+| 宿主 | `web/src/pages/knowledge/index.vue`（§0.1 五个追加点之 **#1**，只做纯追加） |
 | 追加内容 | `KnowledgeTab` 联合类型加 `'blueprints'`；`TABS` 数组加 `'blueprints'`；`TabsTrigger` 循环数组加 `{ value: 'blueprints', icon: 'icon-[lucide--file-text]' }`；新增一个 `<TabsContent value="blueprints">` 渲染 `<BlueprintsTabPanel />` |
 | 不得改 | `normalizeTab` 实现、`?tab=` 双向同步 watcher、既有四个 tab 的任何一行 |
 | 深链 | `/knowledge?tab=blueprints&bp_status=pending_review&project_id=<uuid>&repository_id=<uuid>&q=<kw>&page=2` |
@@ -274,13 +296,15 @@ query 键取 `bp_status` 而非 `status`，避免与知识库将来可能的通�
 │  标题 · 11 态徽标 · [未决BLOCKER n][待澄清 n][失锚 n] · 版本切换器      │
 │                                            ┊ 阅读区操作 ┊ 终审操作区   │
 ├───────────┬──────────────────────────────────┬───────────────────────┤
-│ 左：六段   │ 中：结构化正文                    │ 右：线程侧栏           │
+│ 左：十段   │ 中：结构化正文                    │ 右：线程侧栏           │
 │ 目录导航   │  BlueprintStageTimeline           │  未决 / 已回答 /       │
-│ (w-48)    │  6 × Section（含骨架/空/错误态）   │  已关闭(折叠) /        │
+│ (w-48)    │  10 × Section（含骨架/空/错误态）  │  已关闭(折叠) /        │
 │ sticky    │  BlueprintGatePanel（条件渲染）    │  失锚批注              │
 │           │  BlueprintQualityPanel（人审态）   │  (w-80)  sticky        │
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
+
+**DOM 归属（逐字，`AnchorNavLayout.vue:72-109` 实测结构）：** `AnchorNavLayout` 本身就是**左栏 + 主区**的两栏容器（`<div class="flex gap-8">` 包 `<aside class="hidden md:block w-48 shrink-0">` 与 `<div class="flex-1 min-w-0 space-y-6"><slot /></div>`），**由页面 `pages/knowledge/blueprints/[id].vue` 直接使用**，不被任何新建组件包裹。第三栏（`w-80` 线程侧栏）**不是** `AnchorNavLayout` 的兄弟节点，而是在其**默认 slot 内**再开一层 `flex gap-6`：左为正文列（`flex-1 min-w-0`），右为 `hidden xl:flex w-80 shrink-0 sticky top-22` 的兄弟节点。这样 `AnchorNavLayout` 的 `md:` 两栏与本页的 `xl:` 三栏正交叠加，无需改动该既有组件一行。
 
 ### 5.2 断点行为
 
@@ -303,30 +327,46 @@ query 键取 `bp_status` 而非 `status`，避免与知识库将来可能的通�
 
 ---
 
-## 6. 六段渲染规则
+## 6. 分段渲染规则（十个导航段）
 
-### 6.1 段 key、导航与顺序（与后端 content 顶层键逐字一致）
+> **与 CONTEXT「六段渲染」措辞的对齐说明**：CONTEXT 与 `blueprint_schema.py` 模块 docstring 里的「六段固定骨架」指的是 `repo_associations` / `current_state_analysis` / `implementation_overview` / `api_contracts` / `impact_analysis` / `interaction_flows` 这**六个仓库维度的正文主段**，不是可导航项的总数。schema 顶层 `required` 实际是 **11 键**（那六段之外另含 `schema_version` / `meta` / `requirement_spec` / **`must_haves`** / `citations`），加上可选的 `decision_log` / `deferred_ideas` / `execution_plan`，`properties` 共 **14 键**。本节按**可导航项**计数，故为十段；下表的「content 顶层键去向总表」对 14 键逐键交代去向，**零遗漏**。
 
-| # | 段 key（导航 key = DOM `id`） | 中文标题 | 图标 | badge |
-|---|------------------------------|---------|------|-------|
-| 0 | `requirement_spec` | 需求规格 | `icon-[lucide--target]` | 功能点数 |
-| 1 | `repo_associations` | 仓库关联 | `icon-[lucide--folder-git-2]` | 仓库数（direct/indirect 分色 tone） |
-| 2 | `current_state_analysis` | 现状分析 | `icon-[lucide--scan-eye]` | findings 数 |
-| 3 | `implementation_overview` | 实现概述 | `icon-[lucide--layers]` | 实现项数 |
-| 4 | `api_contracts` | API 契约 | `icon-[lucide--plug]` | 接口数（needs_support 时 tone=warning） |
-| 5 | `impact_analysis` | 影响范围 | `icon-[lucide--alert-triangle]` | 受影响功能数 |
-| 6 | `interaction_flows` | 交互流程 | `icon-[lucide--workflow]` | 流程数 |
-| 7 | `decision_log` | 决策记录 | `icon-[lucide--gavel]` | 条目数 |
-| 8 | `associations` | 关联 | `icon-[lucide--link]` | 关联数 |
+### 6.1 导航段（10 项：9 个 content 顶层键 + 1 个前端合成段）
+
+| # | 段 key（导航 key = DOM `id`） | 来源 | 中文标题 | 图标 | badge |
+|---|------------------------------|------|---------|------|-------|
+| 0 | `requirement_spec` | content 键（required） | 需求规格 | `icon-[lucide--target]` | 功能点数 |
+| 1 | `repo_associations` | content 键（required） | 仓库关联 | `icon-[lucide--folder-git-2]` | 仓库数（direct/indirect 分色 tone） |
+| 2 | `current_state_analysis` | content 键（required） | 现状分析 | `icon-[lucide--scan-eye]` | findings 数 |
+| 3 | `implementation_overview` | content 键（required） | 实现概述 | `icon-[lucide--layers]` | 实现项数 |
+| 4 | `api_contracts` | content 键（required） | API 契约 | `icon-[lucide--plug]` | 接口数（needs_support 时 tone=warning） |
+| 5 | `impact_analysis` | content 键（required） | 影响范围 | `icon-[lucide--alert-triangle]` | 受影响功能数 |
+| 6 | `interaction_flows` | content 键（required） | 交互流程 | `icon-[lucide--workflow]` | 流程数 |
+| 7 | `must_haves` | content 键（**required**） | 验收锚点 | `icon-[lucide--clipboard-check]` | `truths + artifacts + key_links` 条目总数 |
+| 8 | `decision_log` | content 键（optional） | 决策记录 | `icon-[lucide--gavel]` | 条目数 |
+| 9 | `associations` | **非 content 键 —— 前端合成**（由 `knowledgeApi.getRelated` + `getArtifactAssociations` + 引用池聚合，见 §10.2） | 关联 | `icon-[lucide--link]` | 关联数 |
+
+**content 顶层键去向总表（14 键零遗漏；`blueprint_schema.py` 的 `required` + `properties` 逐字核对）：**
+
+| content 键 | 去向 |
+|-----------|------|
+| `schema_version` | 不渲染；仅前端做 `=== 'blueprint/v1'` 判别，不等则整页降级为「旧版方案」提示（§13.9 的 `''` 态） |
+| `meta` | 不占导航段；`meta.title` / `meta.summary`（Block[]）渲染在**顶栏与正文首屏**，`meta.project_id` 供 §10.2 关联项目 |
+| `requirement_spec` … `interaction_flows`（7 键） | 导航段 0–6 |
+| `must_haves` | 导航段 7（见 §6.9） |
+| `decision_log` | 导航段 8 |
+| `deferred_ideas` | 不占导航段；作为 `decision_log` 段尾的一个**默认折叠** `Collapsible`（组头「本方案明确不做的事（{n}）」）。理由：它是防扩 scope 的重要信号，静默丢弃等于把「已明确不做」变成「没人说过」；但它不值一个独立导航项 |
+| `execution_plan` | **本相位不渲染**（已在 CONTEXT `<deferred>` 登记）：它是确认后确定性派生的执行计划，形状对齐 `technical_plan` schema，其呈现面归属实施链路（116+），在只读评审面渲染它会与 `TechPlanCard`（§13.2 禁区）职责重叠 |
+| `citations` | 不占导航段；作为文档级引用池被 `BlueprintBlock` 的 chip 与 §10.2「本蓝图引用了」消费 |
 
 导航 badge 的 `badgeTone` 规则：该段内**存在未决 BLOCKER 线程** → `danger`；**存在 open 澄清线程** → `warning`；生成中 → `primary`；其余 → `muted`。
 「批注数」以 `AnchorNavLayout` 的 badge 承载，形如 `3`（该段锚定线程总数），tone 按上表。
 
-> 所有新增的 `icon-[lucide--*]` 若为**动态拼接**（如按 `change_type` 取图标），必须在 `main.css` 追加一行 `@source inline(...)`，否则生产构建被 tree-shake 掉。静态写在模板里的图标无需 safelist。
+> **safelist 纪律**：`icon-[lucide--*]` 只要不是模板里的字面量就必须进 `main.css` 的 `@source inline(...)`。两类必须 safelist：(a) 真拼接（如按 `change_type` 取图标）；(b) **`CompactEmptyState.vue` 的 `icon` prop** —— 该组件内部做 `:class="\`icon-[${icon}]\`"`，所以调用方传的是**裸图标名**（`lucide--lock`），拼接发生在组件内，扫描器看不到成品类名。本相位用到的 `lucide--lock` / `lucide--file-x` / `lucide--file-text` **已在 `main.css:13` 的 safelist 中**，新增裸名须补行。
 
 ### 6.2 通用块渲染 —— `BlueprintBlock.vue`（**批注层与引用层的唯一实现点**）
 
-一个 `Block`（DESIGN §3.2，schema 见 `blueprint_schema.py` 的 `$defs.block`）进，一段 DOM 出。**六段各自不重复实现批注与引用**。
+一个 `Block`（DESIGN §3.2，schema 见 `blueprint_schema.py` 的 `$defs.block`）进，一段 DOM 出。**各段一律不重复实现批注与引用**（`must_haves` 段除外——它没有 `block_id`，见 §6.9）。
 
 ```ts
 // props
@@ -343,8 +383,8 @@ query 键取 `bp_status` 而非 `status`，避免与知识库将来可能的通�
   'thread-click': [threadId: string]                       // 正文划线 → 侧栏选中
   'selection-comment': [payload: { blockId, startOffset, endOffset, quotedText }]
   'citation-click': [citationId: string]
-  'edit-block': [blockId: string]                          // readonly 时该入口不渲染
 }
+// ⛔ 无 'edit-block' emit：block 正文编辑不在本相位（§0.1 硬边界第 3 条 / §0.2 判定 7）。
 ```
 
 **DOM 契约（重锚定与测试都依赖它）：**
@@ -465,6 +505,24 @@ chip 是 `<button>`（外链类型除外，那是 `<a target="_blank" rel="noope
    - `note` 为 Block[]，作为该行的展开行（`Collapsible`）。
 4. `alternative_paths`：每条一个 `Collapsible`，标题 = `condition`，内容 = 同构步骤表。
 
+### 6.9 段 7 —— 验收锚点（`MustHavesSection.vue`）
+
+> **为什么必须渲染**：`must_haves` 是 schema 的 **required** 键（`blueprint_schema.py` 顶层 `required` 列表含它），承载 goal-backward 的验收断言（DESIGN §3.12）。人审要回答的核心问题是「这方案做完了怎么算数」——不渲染它，评审人就只能凭实现细节猜验收口径，SC-2 的「看得见、点得到、可处置」在最关键的一段上落空。
+
+三块，纵向排列，段内用 `space-y-4`：
+
+| 子块 | 数据 | 渲染 |
+|------|------|------|
+| `truths[]` | `string[]`（可观察行为断言） | `<ul class="space-y-1.5">`，每条前缀 `icon-[lucide--check] text-primary shrink-0 mt-0.5`，文字 `text-sm leading-relaxed`。**纯文本 mustache** |
+| `artifacts[]` | 对象数组（`path` + `provides`） | 紧凑表（`~/components/ui/table`）：列 = `产物路径` / `提供什么`。`path` 用 `font-mono text-xs`；`provides` 为 `text-sm` |
+| `key_links[]` | 对象数组（`from` / `to` / `via`） | 每条一行：`<from mono chip> → <to mono chip>`，箭头下方 `text-[11px] text-muted-foreground` 显示 `via`。窄屏（`< md`）改为竖排「起点 / 经由 / 终点」三行标签值 |
+
+**关键约束（不得违反）：**
+- **本段不接批注层。** `iter_blocks`（`blueprint_schema.py`）**不走查 `must_haves`** —— 它的三个数组是纯字符串与普通对象，零 `block_id`。因此本段：不渲染 `<mark>`、选区 popover 在本段**不弹**（`selectionchange` 命中本段直接 `return`）、不参与 §9.2 的 block 级 diff（diff 视图中本段整段折叠，组头「验收锚点不参与块级对比」）。
+- **不复用 `BlueprintBlock`**（它的契约前提是有 `block_id`）；本段自渲染，是全文唯一的例外，须在组件内注释写明原因。
+- **三个数组同为空 / 整键缺失**（v0 旧数据无此键）：整段与其导航项**都不渲染**，不出空态卡（对齐 `deferred_ideas` 的处理）。仅**部分**子块为空时，该子块不渲染，其余照渲。
+- 生成中（§8.1）：本段无对应事件（见 §8.1 映射表），回落状态级文案。
+
 ---
 
 ## 7. 批注层机制（CLAR-01，本相位最不能做错的一层）
@@ -528,16 +586,18 @@ chip 是 `<button>`（外链类型除外，那是 `<a target="_blank" rel="noope
 
 底纹一律为对应色相的低透明度叠加（白底上），文字保持 `text-foreground`（`hsl(215 28% 17%)`），保证正文对比度 ≥ 10:1；下划线为 2px `border-bottom`（飞书式）。
 
+下表对比度为 sRGB 相对亮度实算（vs `#ffffff`），四舍五入到两位小数：
+
 | 语义 | 下划线色（≥3:1 vs 白，WCAG 1.4.11 非文本对比） | 底纹 |
 |------|---------------------------------------------|------|
-| `ai_review_finding` · `blocker` | `hsl(0 72% 45%)` ≈ #c62828 · **5.9:1** | `hsl(0 72% 51% / 0.12)` |
-| `ai_review_finding` · `warning` | `hsl(26 90% 37%)` = #b45309（`main.css` 已用于 `.btn-warning:hover`） · **4.6:1** | `hsl(38 92% 50% / 0.12)` |
-| `ai_review_finding` · `info` | `hsl(215 16% 40%)` slate · **6.4:1** | `hsl(215 16% 47% / 0.10)` |
-| `ai_clarification` | `hsl(167 76% 32%)` = `--color-primary-600` #0d9488 · **3.5:1** | `hsl(168 76% 42% / 0.12)` |
-| `human_comment` | `hsl(263 70% 50%)` = #7c3aed（`main.css` 已用于 `.stat-icon-violet`） · **6.5:1** | `hsl(263 70% 50% / 0.10)` |
+| `ai_review_finding` · `blocker` | `hsl(0 72% 45%)` ≈ #c52020 · **5.83:1** | `hsl(0 72% 51% / 0.12)` |
+| `ai_review_finding` · `warning` | `hsl(26 90% 37%)` = #b45309（`main.css` 已用于 `.btn-warning:hover`） · **5.02:1** | `hsl(38 92% 50% / 0.12)` |
+| `ai_review_finding` · `info` | `hsl(215 16% 40%)` slate · **6.08:1** | `hsl(215 16% 47% / 0.10)` |
+| `ai_clarification` | `hsl(167 76% 32%)` = `--color-primary-600` #0d9488 · **3.74:1** | `hsl(168 76% 42% / 0.12)` |
+| `human_comment` | `hsl(263 70% 50%)`（`main.css` 已用于 `.stat-icon-violet`） · **7.24:1** | `hsl(263 70% 50% / 0.10)` |
 | `repo_confirmation` | `hsl(167 76% 32%)` 同澄清 | `hsl(168 76% 42% / 0.12)`，另加 `icon-[lucide--shield-check]` 前缀 |
 
-**⛔ 不使用 `--color-primary` 原值 `hsl(168 76% 42%)`（#14b8a6）作下划线**：它在白底上只有 **2.29:1**，不满足 WCAG 1.4.11 的 3:1 非文本对比。teal 必须降一档到 `--color-primary-600`。同理 amber `hsl(38 92% 50%)`（2.15:1）只能作底纹，不能作描边。
+**⛔ 不使用 `--color-primary` 原值 `hsl(168 76% 42%)`（#14b8a6）作下划线**：它在白底上只有 **2.49:1**，不满足 WCAG 1.4.11 的 3:1 非文本对比。teal 必须降一档到 `--color-primary-600`（3.74:1）。同理 amber `hsl(38 92% 50%)`（**2.14:1**）只能作底纹，不能作描边。
 
 **状态叠加（正交于色相）：**
 
@@ -548,7 +608,7 @@ chip 是 `<button>`（外链类型除外，那是 `<a target="_blank" rel="noope
 | `resolved` | 1px `dotted`，色改 `hsl(215 16% 47%)` | 无 | **默认隐藏**，顶栏「显示已关闭批注」开关打开后可见 |
 | `dismissed` | 同 `resolved` | 无 | 同上 |
 | `orphaned` | —— | —— | 正文不渲染（§7.3） |
-| **选中态**（`activeThreadId` 命中） | 描边加粗到 3px + `outline: 2px solid hsl(168 76% 42% / 0.5); outline-offset: 1px` | 底纹 × 1.4（封顶 0.20） | —— |
+| **选中态**（`activeThreadId` 命中） | 描边加粗到 3px + `outline: 2px solid var(--color-primary-600); outline-offset: 1px`（**不透明** teal-600，3.74:1；⛔ 不用半透明的 `hsl(168 76% 42% / 0.5)`，见 §18.3 焦点环行） | 底纹 × 1.4（封顶 0.20） | —— |
 
 四档色相 + 一档灰，**均取自 `main.css` 既有色值或其暗一档**，不引入新色相 —— 与 `web/DESIGN.md`「禁彩虹卡片」不冲突：这些是**语义色**（严重级/种类的功能编码），不是装饰色，且集中在一个令牌模块内。
 
@@ -565,14 +625,17 @@ chip 是 `<button>`（外链类型除外，那是 `<a target="_blank" rel="noope
 
 ### 7.7 线程侧栏 —— `BlueprintThreadSidebar.vue`
 
-**分组（四组，`Collapsible`，组头带计数）：**
+**分组（四组，`Collapsible`，组头带计数）。四组两两互斥，任一线程恰好落入一组：**
 
-| 组 | 判据 | 默认 |
-|----|------|------|
-| 未决 | `status === 'open'` | 展开 |
-| 已回答 | `status === 'answered'` | 展开 |
-| 已关闭 | `status ∈ {resolved, dismissed}` | 折叠 |
-| 失锚批注 | `anchor_status === 'orphaned'`（**直接取快照的 `orphaned_threads`**，跨越上面三组独立成组） | 折叠，但计数 > 0 时组头标 `variant="warning"` |
+| 组 | 判据 | 数据源 | 默认 |
+|----|------|--------|------|
+| 未决 | `status === 'open'` **&& `anchor_status !== 'orphaned'`** | §3.4 新端点 `threads/` | 展开 |
+| 已回答 | `status === 'answered'` **&& `anchor_status !== 'orphaned'`** | §3.4 新端点 `threads/` | 展开 |
+| 已关闭 | `status ∈ {resolved, dismissed}` **&& `anchor_status !== 'orphaned'`** | §3.4 新端点 `threads/` | 折叠 |
+| 失锚批注 | `anchor_status === 'orphaned'`（**不看 `status`**） | **快照的 `orphaned_threads`**（`blueprint-review/` GET，§3.6） | 折叠，但计数 > 0 时组头标 `variant="warning"` |
+
+⚠️ **前三组的 `&& anchor_status !== 'orphaned'` 不可省。** 失锚是**锚定维度**、`status` 是**处置维度**，两者正交：一条 `open` 的失锚线程同时满足「未决」与「失锚批注」，漏掉这个否定项就会让它在侧栏出现两次、计数重复、`activeThreadId` 选中时两处同时高亮。
+⚠️ **侧栏读两个数据源**：前三组来自 §3.4 的 `threads/`（带多轮消息与 `options`），第四组来自快照的 `orphaned_threads`。两处对同一 `thread_id` 的字段以 `threads/` 为准（它更全）；仅在 `threads/` 尚未就绪时用快照条目占位渲染。
 
 **组内排序**：severity（`blocker` → `warning` → `info` → 无）→ `created_at` 升序。
 
@@ -602,8 +665,9 @@ export function isBlueprintEditable(status: string): boolean { return EDITABLE_B
 
 `isBlueprintEditable(current_status) === false` 时（即 `confirmed` / `implementing` / `implemented` / `archived` / `superseded` / `failed`）：
 
-- **「编辑 block」入口与澄清作答输入框一律不渲染 —— 是「不存在于 DOM」，不是 `disabled`。**
-- 选区 popover 的「发起评论」按钮不渲染。
+- **澄清/评论作答输入框（`BlueprintThreadComposer`）一律不渲染 —— 是「不存在于 DOM」，不是 `disabled`。**
+- **选区 popover 的「发起评论」按钮不渲染**（只留「复制原文」）。
+- 这两处**穷举了**本闸拦下的全部入口 —— 本相位不存在「编辑 block」入口（§0.1 硬边界第 3 条），故无需为它设闸。
 - 在正文顶部渲染一条常驻 `Alert` 条：`t('knowledge.blueprints.readonly.notice')` = 「已确认的蓝图不可直接改写，要改请先驳回」。
 - **finding 处置（resolve/dismiss）不受该闸约束**（后端未对其加状态闸，且那是死锁出口）。
 
@@ -615,28 +679,71 @@ export function isBlueprintEditable(status: string): boolean { return EDITABLE_B
 
 | 态 | 判据 | 呈现 |
 |----|------|------|
-| **首屏加载** | `docQuery.isLoading` | 顶栏骨架（标题条 + 徽标条）+ 左栏 6 条 `Skeleton h-8` + 正文 3 个段骨架。用 `~/components/ui/skeleton` |
-| **生成中（按段增量）** | `current_status ∈ {researching, drafting, ai_reviewing}` 且该段在 content 中缺失/为空数组 | **该段渲染骨架屏 + 一行进度文案；已产出的段立即实渲**（SC-1 字面要求：增量填充，**不做全页 loading**）。进度文案取该段最近一条 `blueprint_*` 事件的中文映射（如 `blueprint.repo_research.started` → 「正在调研 {repository_name}…」），无事件时回落状态文案（「调研中…」/「起草中…」/「AI 审查中…」） |
+| **首屏加载** | `docQuery.isLoading` | 顶栏骨架（标题条 + 徽标条）+ 左栏 **10** 条 `Skeleton h-8` + 正文 3 个段骨架。用 `~/components/ui/skeleton` |
+| **生成中（按段增量）** | `current_status ∈ {researching, drafting, ai_reviewing}` 且该段在 content 中缺失/为空数组 | **该段渲染骨架屏 + 一行进度文案；已产出的段立即实渲**（SC-1 字面要求：增量填充，**不做全页 loading**）。进度文案 = 该段最近一条 `blueprint_*` 事件按**下方映射表**取中文，无映射/无事件时回落状态文案 |
 | **空** | 段存在但条目数为 0，且**不在**生成中状态 | `CompactEmptyState`（复用 `~/components/common/CompactEmptyState.vue`），图标 + 一句「本方案未涉及{段名}」。**不显示「加载失败」**——空是合法结果 |
 | **错误** | 见 §8.2 | `BlueprintErrorState.vue` |
+
+**21 个 `BLUEPRINT_EVENTS` → 段 key 映射（穷举，逐字对齐 `delivery/services/event_taxonomy.py` 的 `BLUEPRINT_EVENTS` frozenset）。**
+`段 key` 列为 `null` 表示该事件**不驱动任何段级进度**（它只喂 §8.4 阶段时间线）；这些事件命中时该段回落**状态级文案**。`sectionProgress` 的形状为 `Record<sectionKey, string>`，一段取其命中事件中 `ts` 最大的一条。
+
+| # | event | 段 key | 进度文案（zh-CN，i18n `knowledge.blueprints.progress.*`） |
+|---|-------|--------|-----------------------------------------------------|
+| 1 | `blueprint.status.transitioned` | `null` | —— |
+| 2 | `blueprint.stage.started` | `null` | —— |
+| 3 | `blueprint.stage.completed` | `null` | —— |
+| 4 | `blueprint.stage.failed` | `null` | —— |
+| 5 | `blueprint.spec_gate.scored` | `requirement_spec` | 「正在评估需求规格完备度…」 |
+| 6 | `blueprint.spec_gate.clarification_asked` | `requirement_spec` | 「已就需求规格提出 {question_count} 个澄清问题，等待作答…」 |
+| 7 | `blueprint.spec_gate.locked` | `requirement_spec`、`decision_log` | 「需求规格已锁定，共沉淀 {decision_log_count} 条决策」 |
+| 8 | `blueprint.route.scored` | `repo_associations` | 「正在评估 {candidate_count} 个候选仓库…」 |
+| 9 | `blueprint.repo_research.started` | `repo_associations`、`current_state_analysis` | 「正在调研 {repository_name}…」 |
+| 10 | `blueprint.repo_research.completed` | `repo_associations`、`current_state_analysis` | 「{repository_name} 调研完成（适配：{fitness_verdict}）」 |
+| 11 | `blueprint.repo_research.failed` | `repo_associations`、`current_state_analysis` | 「{repository_name} 调研未成功（第 {attempt} 次）」 |
+| 12 | `blueprint.reroute.triggered` | `repo_associations` | 「第 {round} 轮重新路由，正在寻找更合适的仓库…」 |
+| 13 | `blueprint.confirmation.opened` | `null` | —— |
+| 14 | `blueprint.confirmation.action` | `null` | —— |
+| 15 | `blueprint.confirmation.locked` | `null` | —— |
+| 16 | `blueprint.context.entry_appended` | `implementation_overview` | 「正在汇总各仓方案片段（已产出 {seq} 条）…」 |
+| 17 | `blueprint.context.waiter_registered` | `api_contracts` | 「跨仓接口对齐中：有仓库在等待 {to_key}…」 |
+| 18 | `blueprint.context.waiter_satisfied` | `api_contracts` | 「跨仓接口已对齐，解除 {satisfied_count} 项等待」 |
+| 19 | `blueprint.review.started` | `null` | —— |
+| 20 | `blueprint.review.completed` | `null` | —— |
+| 21 | `blueprint.review.failed` | `null` | —— |
+
+**为什么 `repo_research.*` 映射两段**：一次容器调研同时产出 `repo_associations[].fitness`（适配判定）与 `current_state_analysis[]`（现状发现），两段在同一时刻都还是空的；只映射一段会让另一段在生成期显示无信息的通用「调研中…」。两段显示同一句文案是刻意的——它们确实在等同一件事。
+
+**为什么 `confirmation.*` 与 `review.*` 映射 `null`**：确认门是**面板**不是正文段（§11.3），映射到任何段都会误导；AI 审查是**跨段**动作（findings 可落在任意段），映射到某一段等于谎报范围。这五个事件由 §8.4 的阶段时间线负责呈现。
+
+**未被任何事件覆盖的段**（`impact_analysis` / `interaction_flows` / `must_haves` / `associations`）一律用状态级回落文案：`researching`→「调研中…」、`drafting`→「起草中…」、`ai_reviewing`→「AI 审查中…」。⛔ 不为它们发明后端并不产出的事件。
 
 段骨架形状（按段差异化，不用统一矩形）：
 - 仓库关联 / API 契约：2 张 `h-40 rounded-xl` 卡骨架（`lg:grid-cols-2`）。
 - 现状分析 / 实现概述：1 条 `h-5 w-40` 组头 + 3 条 `h-16` 行。
 - 影响范围：表头条 + 4 行 `h-9`。
 - 交互流程：1 张 `h-56` 图区 + 表头条 + 3 行。
+- 验收锚点：3 条 `h-4` 断言行 + 表头条 + 2 行 `h-9`。
+- 决策记录 / 关联：3 条 `h-12` 行。
 
 ### 8.2 错误分档（**全部读 `ApiError.status` / `.detail` / `.body`**，`~/api/client.ts` 已提供三者）
 
+> **404 分档的适用范围（先读这条，否则会把正常态渲染成空白页）：** 下表的 404 行**仅适用于四个查询** —— `blueprint/` 正文（§3.1）、`blueprint-review/` 快照、`threads/`（§3.4）、`blueprint/events/`（§3.2）。**`blueprint-gate/` 快照的 404 不在本分档内**，见表下第一条例外。
+
 | 码 | 触发 | 呈现契约 |
 |----|------|---------|
-| **404** | artifact 不存在 **或** 调用者非蓝图所属项目成员 | **一律渲染同一句中性文案**：`t('knowledge.blueprints.error.notFoundOrForbidden')` = 「无权访问或该蓝图不存在」。⛔ **前端不得把 404 翻译成两种文案**（多一句「该蓝图不存在」就把 MJ-03 刻意不泄露存在性的闸门破了）。页面渲染全页 `CompactEmptyState`（图标 `icon-[lucide--lock]`）+「返回知识库」按钮，**不渲染任何蓝图元信息** |
+| **404**（仅四个查询） | artifact 不存在 **或** 调用者非蓝图所属项目成员 | **一律渲染同一句中性文案**：`t('knowledge.blueprints.error.notFoundOrForbidden')` = 「无权访问或该蓝图不存在」。⛔ **前端不得把 404 翻译成两种文案**（多一句「该蓝图不存在」就把 MJ-03 刻意不泄露存在性的闸门破了）。页面渲染全页 `CompactEmptyState`（`icon="lucide--lock"` —— **裸图标名**，该组件内部会拼成 `icon-[lucide--lock]`，见 §6.1 safelist 纪律）+「返回知识库」按钮，**不渲染任何蓝图元信息** |
 | **409 · approve `blocked`** | 存在未决 BLOCKER finding | `Dialog` 形态的「不可确认」面板：一句说明 + **`unresolved_blocker_thread_ids` 逐条渲染成可点击条目**（显示 severity 点 + finding 首行摘要），点击 = 关闭 Dialog → 打开侧栏 → 选中该线程 → 正文滚动定位。⛔ **只显示一句「不可确认」即视为不合格**——那份清单是超界死锁的唯一解药入口（114-05 原话） |
 | **409 · approve `conflict`** | CAS 冲突 / 非法边 | Toast `variant="destructive"` + 回显 `detail` + 「刷新重试」按钮（触发 `invalidateQueries`） |
 | **409 · reject `conflict`** | 版本已落但 CAS 冲突（响应体带 `version_no`） | Toast 回显 `detail` + 「当前版本已到 v{version_no}，请刷新后重试」，并自动 `invalidateQueries(['blueprint'])` |
-| **400** | `invalid` / ops 非法 / body 空 / finding 走 answer / 蓝图不可编辑 | **原样回显后端 `detail`**（`ApiError.detail`），不自行改写；就近渲染（表单内联错误优先于 toast） |
+| **400** | `invalid` / body 空 / finding 走 answer / 蓝图不可编辑 / 蓝图读不到 `meta.project_id` | **原样回显后端 `detail`**（`ApiError.detail`），不自行改写；就近渲染（表单内联错误优先于 toast） |
 | **401 / 403** | 未登录 / 全局禁止 | 交由 `api/client.ts` 既有机制（自动刷新 / `auth:forbidden` 事件），本相位零处理 |
 | **5xx / 网络** | —— | `BlueprintErrorState` 全页 + 「重试」按钮（`refetch()`），文案 `t('knowledge.blueprints.error.unavailable')` |
+
+**例外一：`blueprint-gate/` 快照的 404 = 确认门未开启，是正常态。**
+`blueprint_gate_views.py:53,213` 对「门未开启」返回 **404 `{"detail": "确认门未开启"}`**，这是绝大多数蓝图在绝大多数时间的状态。故：该 404 **只决定 `BlueprintGatePanel` 是否渲染**（不渲染），⛔ **不进上表分档、不触发全页空态、不弹 toast、不写入任何错误态**。同一端点的另外两种 404（`artifact 不存在` / `该 artifact 没有蓝图编排会话`）**同样按「不渲染面板」处理** —— 前端不靠 `detail` 文本分支判定（那等于把后端文案当协议），一律「gate 查询非 200 ⇒ 不渲染 gate 面板」，页面其余部分照常由四个主查询驱动。
+
+**例外二：`chunk-at` / `charter` 的任何失败不进上表。**
+见 §3.6 备注与 §10.1 兜底：`chunk-at` 的错误体键是 `error` 而非 `detail`，回显 `detail` 会得到空串。这两个引用预览端点的失败一律走 §10.1 的「快照兜底」。
 
 **answer 端点的特殊纪律**：无论 `reflow.status` 为何，端点**恒 200**。前端据 `reflow.status` 给差异化 toast，**绝不当作失败**：
 `applied` → 成功 toast「答案已回灌，已产出 v{version_no}」并重取正文；`unchanged`/`noop` → info toast「答案已记录，本次未产生新版本」；`conflict` → warning toast + 列出 `conflict_block_ids`；`failed`/`invalid` → warning toast「答案已保存，回灌未成功，可稍后重试」。
@@ -732,7 +839,10 @@ export function useBlueprintLive(artifactId: Ref<string>, currentStatus: Ref<str
 | `blueprint` / `artifact_version` | §3.1 端点（带 `version_id`） | `CitationBlueprintPreview.vue` | **迷你只读渲染**：只渲染 `meta.title` + `meta.summary` + 被引段的对应块（`readonly`、无批注层、无操作栏）+「打开完整蓝图」 |
 | `work_item` / `feishu_doc` / `url` | 不请求 | —— | 直接 `<a target="_blank" rel="noopener noreferrer">` 新标签打开；Dialog 不弹（chip 本身就是 `<a>`） |
 
-**兜底不留白（强制）**：任何来源取不到（404 / 5xx / 网络）时，**渲染 citation 自带的 `title` / `quote` 快照** + 一行 `text-muted-foreground`「原始来源不可达，以下为引用时的快照」。⛔ 不渲染空白弹窗，不把 Dialog 直接关掉。
+**兜底不留白（强制）**：任何来源**任何非 2xx 响应或网络失败**（含 400 / 404 / 5xx / 超时 / 解析失败）时，**渲染 citation 自带的 `title` / `quote` 快照** + 一行 `text-muted-foreground`「原始来源不可达，以下为引用时的快照」。⛔ 不渲染空白弹窗，不把 Dialog 直接关掉，⛔ 不回显后端错误体。
+
+> **为什么必须是「任何非 2xx」而不是「404 / 5xx / 网络」三档**：`chunk-at` 的 `path` 与 `line` **都是必填**（`repositories/chunk_at_views.py`），而 citation 的 `locator` 里 `line_start` 是**可能缺的**（不是所有 `repo_file` 引用都精确到行）——此时请求稳定 **400**，落在三档之外就会漏进「未处理」路径。同理它的错误体键是 `error` 而非 `detail`，任何试图回显 `detail` 的分支都会得到空串。**兜底以状态码是否 2xx 为唯一判据，不读错误体。**
+> 调用侧纪律：`locator.line_start` 缺失时 `CitationCodePreview` **直接不发请求**，立刻走兜底（省一次注定 400 的往返）。
 
 ### 10.2 「关联」区（SC-4 双向可查）
 
@@ -772,7 +882,7 @@ export function useBlueprintLive(artifactId: Ref<string>, currentStatus: Ref<str
 
 | 指标 | 有值 | `null` |
 |------|------|--------|
-| 引用覆盖率 | `{(v*100).toFixed(1)}%` | 「暂无数据」 |
+| 引用覆盖率 | `{(v*100).toFixed(1)}%` | **不适用** —— 该项类型是 `number`，**恒有值**（§3.1）；分母为 0 时后端返回 `1.0`。故本格永远显示百分比。⚠️ 分母为 0 的「空文档满分」是已知口径陷阱：`current_state_analysis` / `repo_associations` / `impact_analysis` 三处关键结论**全空**时显示 100%，此时本格追加一枚 `<Badge variant="outline">无关键结论</Badge>`，避免把「没内容」读成「证据齐备」 |
 | AI 打回率 | `{(v*100).toFixed(1)}%` | 「暂无数据」 |
 | 人审修改量 | `{v} 次人工编辑` | 「暂无数据」 |
 | 澄清轮次 | `{v} 轮` | 「暂无数据」 |
@@ -784,7 +894,7 @@ export function useBlueprintLive(artifactId: Ref<string>, currentStatus: Ref<str
 > **显式登记这是相对 ROADMAP SC 的范围增量**：112 只交付后端，全仓零前端 ⇒ 不做则 FLOW-03 在 UI 上**不可达**，用户永远走不到 113 的阶段 2，整条链在界面上断在第一关。
 > **范围控制**：若 plan-checker 判定超载，拆成本相位**最后一个可独立顺延的 plan**（顺延目标 116），**不得**混进查看器主干 plan，更**不得**默默丢掉。
 
-渲染条件：`GET blueprint-gate/` 返回 200（门已开）。404「确认门未开启」= 正常态，不渲染面板、不报错。
+渲染条件：`GET blueprint-gate/` 返回 **200**（门已开）。**任何非 200（含三种 404：`确认门未开启` / `artifact 不存在` / `该 artifact 没有蓝图编排会话`）= 不渲染本面板，且不报错、不进 §8.2 分档**（§8.2 例外一逐字）。
 
 面板结构：顶部说明条（「确认仓库集与职责后才进入方案拟定；确认后锁定，后续变更须重开确认门」）+ 仓库行列表（`BlueprintGateRepoRow.vue`）+ 底部主操作。
 
@@ -816,10 +926,10 @@ BlueprintListCard × N（grid gap-3 sm:grid-cols-2 lg:grid-cols-3）
 Pagination（~/components/ui/pagination）
 ```
 
-- 筛选栏复用 `~/components/common/FilterBar.vue`（`web/DESIGN.md` 指定的标准容器），`showClear` 由「是否有任一筛选生效」驱动。
+- 筛选栏：**新建** `~/components/common/FilterBar.vue`，按 `web/DESIGN.md:198-211` 已定义的契约实现 —— `props: { showClear?: boolean }`、`emits: ['clear']`、默认 slot 承载筛选控件（`Input` / `Select` …）。⚠️ **该组件当前不存在**：`web/DESIGN.md` 写了它的契约，但 `web/src/` 下零实现（`rg FilterBar web/src` 零命中）。本相位按既有契约补上，属 CREATE-ONLY 新建、非改造。`showClear` 由「是否有任一筛选生效」驱动。
 - 搜索：输入框当前值与「已提交」查询词分离，**仅回车/点按钮才提交**（抄 `pages/knowledge/index.vue` 的 `queryInput` / `submittedQuery` 范式，避免输入即请求）。
 - 所有筛选与分页与 URL query 双向同步（§4.2），刷新可复现。
-- 加载：`Skeleton h-32 rounded-2xl × 6` 网格。空态：`CompactEmptyState`（图标 `icon-[lucide--file-x]`，标题「没有匹配的技术方案」，描述「换个筛选条件，或在项目里发起一次方案编排」）。
+- 加载：`Skeleton h-32 rounded-2xl × 6` 网格。空态：`CompactEmptyState`（`icon="lucide--file-x"` —— **裸图标名**，组件内部拼 `icon-[...]`，§6.1 safelist 纪律；标题「没有匹配的技术方案」，描述「换个筛选条件，或在项目里发起一次方案编排」）。
 
 **`BlueprintListCard.vue`**（`.card .card-interactive`，整卡是 `RouterLink to="/knowledge/blueprints/{artifact_id}"`）：
 
@@ -836,7 +946,7 @@ Pagination（~/components/ui/pagination）
 
 ### 12.2 项目物料卡 —— `ProjectBlueprintsCard.vue`
 
-- **新建组件**，挂进 `ProjectMaterialsPanel.vue` 的扁平分区流（该文件用 `defineAsyncComponent` 懒加载各分区，追加一行 import + 一处使用 —— 属新增组件而非改造既有组件的语义）。
+- **新建组件**，挂进 `ProjectMaterialsPanel.vue` 的扁平分区流（该文件用 `defineAsyncComponent` 懒加载各分区，追加一行 import + 一处使用）。⚠️ 这是 §0.1 **五个追加点之 #2** —— 对既有文件的纯追加，须在计划里显式列为受影响文件；它不属 STATE §13.2 点名的 0.19 归属面。
 - 只读：列该项目的蓝图（`GET /delivery/blueprints/?project_id={id}`）+ 11 态徽标 + 更新时间 + 跳查看器。
 - 分区头范式沿用该面板既有的 `.flat-section` / `.flat-header` + `section-chip`。
 - 无数据时**整块不渲染**（对齐 `HumanTaskInbox` 的 `hide-when-empty` 习惯，空项目不突兀）。
@@ -849,7 +959,7 @@ Pagination（~/components/ui/pagination）
 
 | 文件 | 职责 | 组合自 |
 |------|------|--------|
-| `web/src/pages/knowledge/blueprints/[id].vue` | 查看器路由页；query↔ref 同步、三栏编排、所有 query 装配、错误分档路由 | `PageContainer`、`AnchorNavLayout`、`ui/sheet`、`ui/skeleton` |
+| `web/src/pages/knowledge/blueprints/[id].vue` | 查看器路由页；`useHead` 设标题、query↔ref 同步、**直接使用 `AnchorNavLayout` 承载十段导航 + 正文**（§5.1 DOM 归属）、在其默认 slot 内再开 `flex gap-6` 挂第三栏、所有 query 装配、错误分档路由 | `PageContainer`、`AnchorNavLayout`、`ui/sheet`、`ui/skeleton` |
 
 ### 13.2 查看器骨架
 
@@ -858,7 +968,7 @@ Pagination（~/components/ui/pagination）
 | `components/blueprint/BlueprintViewerHeader.vue` | `props: { doc, snapshot, counts, versions, readonly, isLive }`；`emits: ['toggle-sidebar','change-version','open-diff','approve','reject','toggle-closed-annotations']` | `ui/badge`、`ui/tooltip`、`ui/separator`、`BlueprintStatusBadge`、`BlueprintVersionSwitcher`、`BlueprintReviewActions` |
 | `components/blueprint/BlueprintStatusBadge.vue` | `props: { status: string, size?: 'sm'\|'md'\|'lg', showIcon?: boolean }` | `ui/badge` + `config/blueprintStatus.ts` |
 | `components/blueprint/BlueprintStageTimeline.vue` | `props: { events, currentStage, currentStatus }` | `ui/collapsible`、`ui/badge` |
-| `components/blueprint/BlueprintSectionNav.vue` | `props: { sections: NavSection[] }`；`emits: ['navigate']`；窄屏渲染 `Select` | `AnchorNavLayout`（≥md）+ `ui/select`（<md） |
+| `components/blueprint/BlueprintSectionNav.vue` | **只负责 `< md` 的段跳转下拉**：`props: { sections: NavSection[], activeId: string }`；`emits: ['navigate']`；容器 `md:hidden sticky top-14 z-20` | `ui/select`。⛔ **不组合 `AnchorNavLayout`**：后者是整个两栏页面布局（`<div class="flex gap-8">` 包 `<aside>` + 默认 slot，`AnchorNavLayout.vue:72-109`），`scrollTo` 是私有函数且零 emit —— 把它嵌进一个只收 `sections` 的组件里，正文将无处安放。`≥md` 的左栏由**页面**直接使用 `AnchorNavLayout` 包裹正文，本组件不参与 |
 | `components/blueprint/BlueprintErrorState.vue` | `props: { status: number, detail: string }`；`emits: ['retry']` | `CompactEmptyState`、`ui/button` |
 
 ### 13.3 内容渲染
@@ -875,7 +985,8 @@ Pagination（~/components/ui/pagination）
 | `components/blueprint/sections/ApiContractsSection.vue` | `props: { contracts, ...blockCtx }` |
 | `components/blueprint/sections/ImpactAnalysisSection.vue` | `props: { impact, ...blockCtx }` |
 | `components/blueprint/sections/InteractionFlowsSection.vue` | `props: { flows, ...blockCtx }` |
-| `components/blueprint/sections/DecisionLogSection.vue` | `props: { decisionLog }`；`emits: ['open-thread']` |
+| `components/blueprint/sections/MustHavesSection.vue` | `props: { mustHaves: { truths: string[], artifacts: any[], key_links: any[] } }`。**不收 `blockCtx`** —— 本段无 `block_id`、不接批注层（§6.9），是全文唯一不走 `BlueprintBlockList` 的正文段 |
+| `components/blueprint/sections/DecisionLogSection.vue` | `props: { decisionLog, deferredIdeas }`；`emits: ['open-thread']`。段尾挂 `deferred_ideas` 的默认折叠 `Collapsible`（§6.1 去向总表） |
 | `components/blueprint/BlueprintAssociationsSection.vue` | `props: { artifactId, citations }` |
 | `components/blueprint/RepoAssociationCard.vue` | `props: { association, ...blockCtx }` |
 | `components/blueprint/ImplementationItemCard.vue` | `props: { item, moduleName, repoName, ...blockCtx }` |
@@ -923,6 +1034,7 @@ Pagination（~/components/ui/pagination）
 
 | 文件 | 说明 |
 |------|------|
+| `components/common/FilterBar.vue` | **契约已在 `web/DESIGN.md:198-211` 定义但仓内零实现**，本相位按该契约新建：`props: { showClear?: boolean }`、`emits: ['clear']`、默认 slot 承载筛选控件。视觉沿用 `web/DESIGN.md` 的筛选区容器规格（`.card` + `p-4` + `flex flex-wrap items-center gap-3`，清除按钮 `variant="ghost" size="sm"` 靠右）。**通用组件，非蓝图专属** —— 放 `common/` 供后续页面复用 |
 | `components/knowledge/BlueprintsTabPanel.vue` | tab 面板：筛选 + 列表 + 分页 |
 | `components/knowledge/BlueprintListCard.vue` | 列表卡 |
 | `components/project/warroom/ProjectBlueprintsCard.vue` | 项目物料只读卡 |
@@ -968,15 +1080,16 @@ Pagination（~/components/ui/pagination）
 
 | Role | Size | Weight | Line Height | Tailwind |
 |------|------|--------|-------------|----------|
-| Label（徽标、元信息、chip、表头） | 12px | 400 / 500 | 1.4 | `text-xs` |
+| Label（徽标、元信息、chip、表头） | 12px | **500** | 1.4 | `text-xs font-medium` |
 | Body（正文 Block、线程消息、卡片内容） | 14px | 400 | **1.6**（长文阅读，`leading-relaxed`） | `text-sm leading-relaxed` |
 | Heading（段标题、卡片标题、面板标题） | 16px | 600 | 1.4 | `text-base font-semibold` |
 | Display（页面 h1 蓝图标题） | 24px | 600 | 1.25 | `text-2xl font-semibold` |
 
-**字重契约 = 400 regular + 600 semibold（两档）。**
+**字重契约 = 两档显式字重：`font-medium`(500) + `font-semibold`(600)。**
+正文（Body）**不写任何字重类**，继承浏览器 normal(400) —— `main.css` 未覆写 `body` 的 `font-weight`，故 400 是基线而非声明档位。500 取自既有系统而非新发明：`.btn` 既有 `font-weight: 500`、`AnchorNavLayout.vue:81` 激活项既有 `font-medium`、其 badge 既有 `font-medium`。
 
 **Exceptions（沿用既有，不得扩散）:**
-- `font-bold`(700) 仅允许出现在**页面 h1**（`pages/knowledge/index.vue` 既有为 `text-2xl font-bold`；蓝图查看器 h1 与之对齐时可用），其余一律 600 封顶。
+- `font-bold`(700)：仅在**页面 h1** 与 `pages/knowledge/index.vue`（既有 `text-2xl font-bold`）对齐时沿用，**为唯一例外，不计入两档契约**，其余一律 600 封顶。
 - Mono 正文：`pseudocode` 块、JSON 示例、diff 行、文件路径 —— 12px `font-mono leading-6`（与 `PromptVersionDiff.vue` 的 `text-xs leading-6` 一致）。
 - `text-[11px]`：仅用于 citation chip 与 mermaid 容器条 —— 与 `MermaidDiagram.vue` / `AnchorNavLayout` badge 既有值一致，不得扩散到正文。
 
@@ -998,7 +1111,7 @@ Pagination（~/components/ui/pagination）
 4. `ai_clarification` / `repo_confirmation` 的划线色（降档到 `--color-primary-600`，§7.5）。
 5. citation chip 的 hover 态描边与文字。
 6. 卡片头图标芯片 `.section-chip`（既有）。
-7. 焦点环 `outline: 2px solid hsl(168 76% 42% / 0.5)`（`main.css` 既有）。
+7. 焦点环。⚠️ 既有实现有**两套**且**都不达标**（实算见 §18.3）：`.btn:focus` 是 `outline: 2px solid transparent` + **双层 box-shadow**（`0 0 0 2px var(--color-background), 0 0 0 4px hsl(168 76% 42% / 0.5)`，`main.css:337-343`）；`.btn:focus-visible` / `.sidebar-s2a-link:focus-visible` / `.card-interactive:focus-visible` 是 `outline: 2px solid hsl(168 76% 42% / 0.5)`（`main.css:200-202,537-541`）。**既有面本相位不改**；但**本相位新增的自定义焦点目标**（`<mark>`、线程卡、citation chip、选区 popover 按钮）一律用**不透明** `--color-primary-600`（3.74:1），不得复制那个 50% 透明值。
 
 **⛔ 不得**给不同段/不同卡片分配不同色相（`web/DESIGN.md`「禁彩虹卡片」）；徽标颜色一律通过 `<Badge variant="...">` 控制，**禁止在 Badge 上用 `:class` 追加颜色类**。
 
@@ -1016,6 +1129,10 @@ Pagination（~/components/ui/pagination）
 | 页面 CTA · 选区评论 | 发起评论 |
 | 页面 CTA · finding 处置 | 已修复 / 误报忽略 |
 | 列表页 CTA | 搜索 |
+| 顶栏 · 侧栏唤起按钮（窄屏） | 「批注 {n}」；`n === 0` 时作「批注」（不显示 0）；`aria-label` 作「查看批注，共 {n} 条」。i18n `knowledge.blueprints.annotation.sidebarToggle` / `.sidebarToggleEmpty` / `.sidebarToggleAria` |
+| 顶栏 · 已关闭批注开关 | 「显示已关闭批注」（`Switch` 标签，§7.5 / §7.7 联动）；开启后附一行 `text-xs text-muted-foreground`「已关闭的批注以灰色点线标注」。i18n `knowledge.blueprints.annotation.showClosed` / `.showClosedHint` |
+| 顶栏 · 侧栏折叠 toggle | `aria-label`「收起批注栏」/「展开批注栏」 |
+| `?panel=review` 目标缺席 | 「该方案尚未进入人审阶段，暂无审查面板」（i18n `review.panelUnavailable`；`?panel=gate` 缺席**静默**，无文案，§4.1） |
 | 空态 · 列表 | 标题「没有匹配的技术方案」／正文「换个筛选条件，或在项目里发起一次方案编排」 |
 | 空态 · 某段无内容 | 「本方案未涉及{段名}」 |
 | 空态 · 无批注 | 标题「暂无批注」／正文「AI 的划线提问与你的评论都会出现在这里；选中正文任意片段即可发起评论」 |
@@ -1053,8 +1170,12 @@ knowledge.blueprints.
   pageTitle / pageDescription
   tabPanel.*        列表页：筛选标签、搜索占位、结果计数、空态
   status.*          11 态中文名（与 config/blueprintStatus.ts 的 label 同源，配置里引 t() key）
-  section.*         九段标题（requirementSpec / repoAssociations / … / associations）
-  block.*           块级：复制、展开全部、语言标签、编辑
+  section.*         十段标题（requirementSpec / repoAssociations / currentStateAnalysis /
+                    implementationOverview / apiContracts / impactAnalysis /
+                    interactionFlows / mustHaves / decisionLog / associations）
+  mustHaves.*       验收锚点段：truths / artifacts / keyLinks 三个子块标题 + 表头（§6.9）
+  progress.*        §8.1 的 21 事件段级进度文案（未映射事件回落 status.* 的生成态文案）
+  block.*           块级：复制、展开全部、语言标签（⛔ 无「编辑」——本相位无该动作）
   repo.*            仓库关联卡：role/fitness/routing/openRepository/supportNeeded
   api.*             API 卡：direction/kind/availability/request/response/dataSource
   impact.*          影响矩阵：kind/level/dataMigration/rollback
@@ -1064,7 +1185,7 @@ knowledge.blueprints.
   finding.*         finding 处置：resolve/dismiss/reasonLabel/reasonRequired
   version.*         版本：切换/原因四前缀/历史版本提示/回到当前
   diff.*            diff：摘要/模式切换/无变化
-  review.*          人审：approve/reject/disabledReason/确认弹窗全文
+  review.*          人审：approve/reject/disabledReason/panelUnavailable/确认弹窗全文
   gate.*            确认门：说明/七动作/pending/锁定确认
   quality.*         四项指标名 + noData
   citation.*        预览：各 source_type 名/open/fallback
@@ -1082,7 +1203,7 @@ knowledge.blueprints.
 
 | 区域 | 契约 |
 |------|------|
-| 六段导航 | `AnchorNavLayout` 的 `<button>` 天然可 Tab；`Enter`/`Space` 跳段。窄屏 `Select` 由 reka-ui 提供完整键盘语义 |
+| 十段导航 | `≥md`：`AnchorNavLayout` 的 `<button>` 天然可 Tab，`Enter`/`Space` 跳段（既有实现，不改）。`<md`：`BlueprintSectionNav` 的 `Select` 由 reka-ui 提供完整键盘语义 |
 | 正文 `<mark>` | `tabindex="0"` + `role="button"` + `Enter`/`Space` 触发；`aria-label` 说明「此处有 {n} 条批注（{kind}）」 |
 | 线程侧栏 | 侧栏根 `role="complementary"` + `aria-label`；分组用 `ui/collapsible`（`aria-expanded` 由 reka-ui 提供）；线程卡为 `<button>`，`↑`/`↓` 在同组内移动焦点，`Esc` 清除 `activeThreadId`（不关闭侧栏） |
 | 侧栏（窄屏 `Sheet`） | reka-ui 提供焦点陷阱与 `Esc` 关闭；关闭后焦点**必须**回到唤起它的顶栏「批注」按钮 |
@@ -1101,11 +1222,11 @@ knowledge.blueprints.
 
 | 项 | 要求 | 落地 |
 |----|------|------|
-| 正文文字 | ≥ 4.5:1（WCAG AA） | `text-foreground` `hsl(215 28% 17%)` on 白 = **14.8:1**；底纹叠加 ≤12% 后仍 > 10:1 |
-| 辅助文字 | ≥ 4.5:1 | `text-muted-foreground` `hsl(215 16% 47%)` on 白 = **4.8:1** ✓（`web/DESIGN.md` 明令「禁止灰到看不见」） |
-| **划线描边** | ≥ **3:1**（WCAG 1.4.11 非文本） | §7.5 逐条标注：5.9 / 4.6 / 6.4 / 3.5 / 6.5 —— **teal-500 与 amber-500 原值不达标，必须降档** |
+| 正文文字 | ≥ 4.5:1（WCAG AA） | `text-foreground` `hsl(215 28% 17%)` on 白 = **14.62:1**；底纹叠加 ≤12% 后仍 > 10:1 |
+| 辅助文字 | ≥ 4.5:1 | `text-muted-foreground` `hsl(215 16% 47%)` on 白 = **4.72:1** ✓（`web/DESIGN.md` 明令「禁止灰到看不见」） |
+| **划线描边** | ≥ **3:1**（WCAG 1.4.11 非文本） | §7.5 逐条实算：5.83 / 5.02 / 6.08 / 3.74 / 7.24 —— **teal-500（2.49:1）与 amber-500（2.14:1）原值不达标，必须降档** |
 | 徽标 | 由 `ui/badge` 既有 variant 保证 | 不覆写 |
-| 焦点环 | 可见且 ≥3:1 | `outline: 2px solid hsl(168 76% 42% / 0.5); outline-offset: 2px`（`main.css` 既有） |
+| **焦点环** | 可见且 ≥ 3:1（WCAG 2.4.11 Focus Appearance / 1.4.11） | ⚠️ **既有实现不达标，本相位不修既有面但不得复制它。** 现状两套：(a) `.btn:focus` = `outline: 2px solid transparent` + 双层 `box-shadow`（`0 0 0 2px var(--color-background), 0 0 0 4px hsl(168 76% 42% / 0.5)`，`main.css:337-343`）；(b) `.btn:focus-visible` / `.sidebar-s2a-link:focus-visible` / `.card-interactive:focus-visible` = `outline: 2px solid hsl(168 76% 42% / 0.5)`（`main.css:200-202,537-541`）。两者的可见色都是 teal-500 **50% alpha**，在白底上合成后仅 **1.59:1** —— **未过 2.4.11**。**契约**：本相位**新增**的任何自定义焦点目标（正文 `<mark>`、线程卡、citation chip、选区 popover 按钮、段跳转下拉）一律用 `outline: 2px solid var(--color-primary-600); outline-offset: 2px`（**不透明**，3.74:1 ✓）。复用 `ui/button` 等既有原语的地方沿用其既有焦点样式，不在本相位改写（属既有面，修复归 a11y 专项） |
 | **不以颜色为唯一信息载体** | 强制 | 批注同时用**线型**编码状态（实线/虚线/点线）；`change_type`、`fitness`、`availability` 徽标一律**图标 + 文字 + 颜色**三重编码 |
 
 ### 18.4 动效
@@ -1139,15 +1260,18 @@ knowledge.blueprints.
 > 来自 CONTEXT `<specifics>`「本相位最容易做错、必须能证伪的三条」，本契约再补五条。
 
 1. **finding 线程的侧栏渲染不出「回复」输入框**。（变异：把 finding 也渲成可回复 ⇒ 用例转红）
-2. **`current_status` 处于可编辑白名单外时，编辑入口与作答框不存在于 DOM**（是不渲染，**不是** `disabled`）。（变异：改成 `disabled` ⇒ 转红）
+2. **`current_status` 处于可编辑白名单外时，澄清/评论作答输入框（`blueprint-thread-composer`）与选区 popover 的「发起评论」按钮均不存在于 DOM**（是不渲染，**不是** `disabled`）；同一用例断言 finding 的处置按钮**仍然存在**（§7.9 末条）。（变异：改成 `disabled` ⇒ 转红；变异：把 finding 处置也一起关掉 ⇒ 转红）
 3. **approve 409 时，`unresolved_blocker_thread_ids` 每一项都渲染成可点跳转的处置入口**。（变异：只渲染一句「不可确认」⇒ 转红）
 4. **404 只有一句文案**：断言组件树里针对 404 的文案节点数 == 1，且 i18n 只有 `error.notFoundOrForbidden` 一个键被用于 404 分支。（变异：加一句「该蓝图不存在」⇒ 转红）
 5. **`orphaned_threads` 直接渲染、不二次过滤**：给一条「无 anchor 的系统线程」和一条「真失锚线程」，断言失锚组条数 == 后端返回的 `orphaned_threads.length`。（变异：前端加 `.filter(t => t.anchor?.block_id)` ⇒ 转红）
 6. **`refetchInterval` 字面量只出现在 `useBlueprintLive.ts`**：源码扫描断言 `web/src/components/blueprint/**` 与 `pages/knowledge/blueprints/**` 对 `refetchInterval` **零命中**。（变异：在组件里直接写轮询 ⇒ 转红）
 7. **质量指标 `null` 渲染「暂无数据」而非 0**：三态并列（`null` / `0` / 正值）各一条用例。（变异：`v ?? 0` ⇒ `null` 用例转红而 `0` 用例仍绿 —— 正是要逮的陷阱形状）
 8. **offset 越界降级 ≠ 失锚**：构造一条 `end_offset > text.length` 的 anchored 线程，断言该块出现整块色条、**且该线程不出现在「失锚批注」组**。（变异：把越界也归入失锚组 ⇒ 转红）
+9. **`must_haves` 必被渲染**：给一份三个子块都非空的 content，断言导航项数 == 10、`#must_haves` 存在、三个子块各自渲染出条目；**且该段内 `[data-testid=blueprint-annotation-mark]` 计数 == 0**（本段不接批注层，§6.9）。（变异：漏渲 `must_haves` ⇒ 转红；变异：给它接上批注层 ⇒ 转红）
+10. **本相位无 block 编辑面**：源码扫描断言 `web/src/components/blueprint/**` 与 `pages/knowledge/blueprints/**` 对 `edit-blocks` 与 `edit-block` **零命中**。（变异：偷偷加回编辑入口 ⇒ 转红）
+11. **失锚线程只出现一次**：构造一条 `status === 'open' && anchor_status === 'orphaned'` 的线程，断言侧栏四组的条目总数 == 线程总数，且该条**只**出现在「失锚批注」组。（变异：去掉前三组的 `&& anchor_status !== 'orphaned'` ⇒ 转红，§7.7）
 
-`data-testid` 命名：一律 `blueprint-` 前缀（`blueprint-block` / `blueprint-annotation-mark` / `blueprint-thread-card` / `blueprint-thread-composer` / `blueprint-finding-actions` / `blueprint-blocked-dialog` / `blueprint-version-switcher` / `blueprint-diff` / `blueprint-review-approve` / `blueprint-review-reject` / `blueprint-gate-panel` / `blueprint-quality-panel` / `blueprint-citation-chip` / `blueprint-citation-preview` / `blueprint-list-card` / `blueprint-error-state`）。
+`data-testid` 命名：一律 `blueprint-` 前缀（`blueprint-block` / `blueprint-must-haves` / `blueprint-annotation-mark` / `blueprint-thread-card` / `blueprint-thread-composer` / `blueprint-finding-actions` / `blueprint-blocked-dialog` / `blueprint-version-switcher` / `blueprint-diff` / `blueprint-review-approve` / `blueprint-review-reject` / `blueprint-gate-panel` / `blueprint-quality-panel` / `blueprint-citation-chip` / `blueprint-citation-preview` / `blueprint-list-card` / `blueprint-error-state`）。
 
 ---
 
@@ -1166,10 +1290,10 @@ knowledge.blueprints.
 
 | 支柱 | 落点 |
 |------|------|
-| Copywriting | §16 全量定稿（含四条破坏性确认全文、404 单一文案、指标无数据文案）；§17 i18n 命名空间 |
-| Visuals | §5 三栏与断点、§6 九段渲染锚定图、§13 组件清单与 props/emits 契约 |
-| Color | §15 60/30/10 + accent 七项穷举；§7.5 批注四色（含 WCAG 1.4.11 实算）；§9.2 diff 二色沿用既有 |
-| Typography | §14 四档字号 + 两档字重 + 三条例外 |
+| Copywriting | §16 全量定稿（含四条破坏性确认全文、404 单一文案、指标无数据文案、批注栏与已关闭批注开关）；§17 i18n 命名空间 |
+| Visuals | §5 三栏与断点 + DOM 归属、§6 十段渲染锚定图（含 content 14 键去向总表）、§13 组件清单与 props/emits 契约 |
+| Color | §15 60/30/10 + accent 七项穷举；§7.5 批注四色（含 WCAG 1.4.11 逐条实算）；§18.3 焦点环既有不达标的登记与新增面契约；§9.2 diff 二色沿用既有 |
+| Typography | §14 四档字号 + 两档显式字重（500/600，正文继承 400）+ 三条例外 |
 | Spacing | §2 八档刻度 + 四条例外（12/20/44/88px） |
 | Registry Safety | §21 零第三方 registry、零新增依赖 |
 

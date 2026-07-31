@@ -135,6 +135,8 @@
 - **澄清提醒的渠道投递**（飞书卡片重推 / 站内通知）→ 通知面，同步点 1 之后；本相位只做「待澄清」状态与计数的界面可感知（STATE Pending Todo：114-05 只落事件与周期锚点，用户收不到实际通知）。
 - **蓝图列表的语义搜索**（向量召回）→ Future；本相位只做标题/摘要精确检索 + 结构化筛选。
 - **确认门七动作若被判超载**：拆为本相位最后一个可独立顺延的 plan（顺延目标 116），但**不得**把它默默丢掉 —— 丢掉等于 FLOW-03 永远无界面。
+- **block 正文编辑（`edit-blocks/` 端点的前端面）** → Phase 116（UI-SPEC §0.1 硬边界第 3 条 / §0.2 判定 7 登记）。ROADMAP 的五条 SC 无一涉及「改写 block 正文」；`edit-blocks/` 的 `ops` 是块级补丁语义，完整实现需要行内编辑器、脏态管理、并发冲突提示与 `human_edit:` 版本产出链，属另一个相位的体量。**本相位的写路径穷举为三条**：澄清/评论作答、选区评论建线程、finding 处置（另加终审两动作与确认门七动作）。上文 Implementation Decisions 里「隐藏『编辑 block』入口」一句因此升级为**该入口本相位根本不存在**（比隐藏更强，同向不冲突）；`readonly` 白名单仍照常约束作答输入框与选区评论入口。
+- **`content.execution_plan` 段的呈现** → 116+。它是确认后确定性派生的执行计划（形状对齐 `technical_plan` schema），呈现面归属实施链路，在只读评审面渲染会与 `TechPlanCard`（§13.2 禁区）职责重叠。UI-SPEC §6.1 的「content 顶层键去向总表」已逐键登记。
 - **母子蓝图编排拆分 / 段级细粒度编辑权限 / golden set 弱标签扩样** → REQUIREMENTS Future Requirements，本相位不碰。
 - **`ConvergenceSessionService.areopen_stage` 的「人审驳回导致会话复位」是否进事件时间线**（114 review 可再议项，需新增 `blueprint.review.session_reopened` 事件常量）→ 同步点 2 后与 0.19 的时间线契约一并定；本相位时间线先不呈现该动作。
 
