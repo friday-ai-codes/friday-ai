@@ -1,10 +1,13 @@
 ---
 phase: 110-process-observability
 verified: 2026-07-31T09:52:00Z
-status: gaps_found
-score: 94/97 must-haves verified
+status: human_needed
+score: 97/97 must-haves verified
+gap_closure: "GAP-1 已闭合（commit ba761025）；同根因的 UI-MN-01 脉冲缺席一并修复（0681b463）"
 overrides_applied: 0
-re_verification: null
+re_verification:
+  previous_status: gaps_found
+  note: "初次判定 gaps_found（GAP-1）。orchestrator 已按 autonomous 模式做一轮 gap closure：快照缺席时用失败事件兜底，快照在场仍以快照为准；补齐「快照有无 × 会话状态」缺维共 4 条用例，并连带修掉同根因的脉冲缺席（另 3 条用例）。负向对照均精确变红后还原。复跑：前端 1622 passed / 202 files，vue-tsc 退出 0。"
 evidence:
   backend_tests: "8204 passed, 61 skipped, 26 deselected, 1 xfailed, 0 failed（`server/.venv/bin/python -m pytest -q -p no:cacheprovider`，全量套件 510.62s；按测试环境说明排除受文件系统沙箱限制的 `tests/services/test_commit_index.py` / `tests/services/test_commit_index_integration.py` / `tests/mcp_tools/test_grep_repository.py` 三个文件）"
   frontend_tests: "1615 passed, 1 skipped / 202 files passed, 1 skipped（`cd web && CI=true pnpm vitest run --watch=false`，14.04s；按要求断言 `Tests N passed` 行而非退出码）"
@@ -13,7 +16,7 @@ evidence:
   lint: "`ruff check` 覆盖 8 个改动后端文件 → `All checks passed!`；`ruff format --check` 仍有 4 个文件待格式化，其中落在 110 新增行上的恰为 LO-02 记录的两处（全角括号注释行、`has_classify` 换行），其余 hunk 逐条核对为既有代码"
   debt_markers: "31 个改动源文件（server/ + web/，含测试）零 TBD / FIXME / XXX / TODO / HACK / PLACEHOLDER"
   verifier_probe: "verifier 自建可执行探针（跑完即删）实测 `buildOrchestrationTimeline`：无快照 + `process.session.failed` 事件 ⇒ `phase='running'` / 标题「正在生成技术方案」 / 失败步渲染为 `running`；同输入加上 `status=failed` 快照 ⇒ `phase='failed'` / 红步 / 「该阶段执行出错」。两条断言式探针均通过，GAP-1 由实测而非评审转述坐实"
-gaps:
+gaps_closed:
   - truth: "SC-3：编排失败时用户能直接看出停在哪一步、原因是什么"
     status: partial
     reason: >-
