@@ -58,6 +58,7 @@ declare module 'vue' {
     BaseModal: typeof import('./components/modal/BaseModal.vue')['default']
     BaseWorkflowNode: typeof import('./components/workflow/editor/nodes/BaseWorkflowNode.vue')['default']
     BatchIngestPanel: typeof import('./components/knowledge/BatchIngestPanel.vue')['default']
+    BlueprintStatusBadge: typeof import('./components/blueprint/BlueprintStatusBadge.vue')['default']
     BranchCombobox: typeof import('./components/repository/BranchCombobox.vue')['default']
     BranchIndexHealthSection: typeof import('./components/repository/BranchIndexHealthSection.vue')['default']
     BranchNode: typeof import('./components/workflow/editor/nodes/BranchNode.vue')['default']
