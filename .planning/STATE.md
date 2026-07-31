@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
 status: executing
-last_updated: "2026-08-01T05:00:00.000Z"
-last_activity: 2026-08-01 -- 115-05 executed
+last_updated: "2026-08-01T05:55:00.000Z"
+last_activity: 2026-08-01 -- 115-06 executed
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 27
-  completed_plans: 25
+  completed_plans: 26
   percent: 70
 ---
 
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 ## Current Position
 
 Phase: 115 (前端查看器与知识库（结构化阅读 + 批注 + 管理面）) — EXECUTING
-Plan: 6 of 7
-Status: 115-05（十个导航段的结构化渲染）已收口——14 个新建组件 + 2 个测试文件（37 例全绿），前端门 vitest **1602 passed / 1 skipped**（基线 1565/1，+37 零回归）、type-check 通过、`eslint .` **111 problems**（与基线逐个相同 ⇒ 零新增）、`eslint src/components/blueprint/` **0 problems**。⭐ 十段全部有渲染实现且**一行批注逻辑都没有重复实现**：十一处块序列一律经 `BlueprintBlockList` 透传 blockCtx；两个零 `block_id` 的特例段（`must_haves` / `decision_log`+`deferred_ideas`）明确不接批注层且组件内写明原因。⭐ `decision_log` 的 `open-thread` 语义定夺为「跳到对应线程」（`thread_id` 存在才渲染入口）；⭐ **SC-4 范围收窄落地**：关联段只做「本蓝图引用了」+「关联项目」，零调用两个必然 404 的反查端点，反向「被谁引用」顺延 Phase 116。三处后端口径在 UI 侧各有一条可被变异逼红的对称防线（`availability` 不回落顶层 / `reversible` 严格判等 / finding 缺引用亮质量信号），**四条真实变异**全部按预期转红且负向对照保持绿。源码守卫扫描面增至 **36 个文件**。⛔ 零既有源文件修改（唯一例外是 unplugin 生成的 `components.d.ts`，+14/−0）、零新增依赖、后端零改动
-Last activity: 2026-08-01 -- 115-05 executed
+Plan: 7 of 7
+Status: 115-06（查看器路由页 + 知识库 tab + 项目物料卡）已收口——9 个新建组件/页面 + 2 个页面测试（16 例全绿），前端门 vitest **1618 passed / 1 skipped**（基线 1602/1，+16 零回归）、type-check 通过、`eslint .` **111 problems**（与基线逐个相同 ⇒ 零新增）、⭐ `pnpm build` **通过**、源码守卫 6 条全绿（扫描面 36 → **41 文件**）。⭐ **P-4 被物理堵死并经真实变异证明**：十个 `<section id>` 容器无条件渲染、`id` 全是静态字面量、`sections` 恒 10 项、badge 传空串而非 0；给第一段加 `v-if="content"` ⇒ 用例 1 转红（其余八条保持绿）。⭐ **两条错误分档特例落地**：四个主查询 404 整页替换为唯一一句中性文案且不渲染任何蓝图元信息；`blueprint-gate/` 的非 200 **只决定挂载点是否渲染**，用例断言「gate 抛 404 ⇒ 页面正常渲染、无错误态、六个 toast mock 零调用」。六个动作端点按接线契约处理（409 blocked 开解药面板 / reflow 五档都不当失败 / 零乐观更新 + 前缀失效）。⭐ **i18n 缺口一次清零**：`zh-CN.json` 新增 **69 个叶子键（0 删除 0 修改）**，其中 42 个是 115-03/04/05 的回报项，12 个组件的降级渲染已全部换回（优先换回「枚举徽标印英文 token」那一档）。两处宿主追加点删除行 = 0；四个 0.19 归属面 `git diff` 全空；零新增依赖、后端零改动。⭐ 115-07 的确认门面板挂载点（`#gate` / `blueprint-gate-mount`）与 `gateAvailable` 派生已就位，可独立推迟
+Last activity: 2026-08-01 -- 115-06 executed
 
 ⭐ **115-03 起开工前必读 `115-02-SUMMARY.md` §14 的五条注意**，其中三条最容易踩：
 
@@ -155,22 +155,26 @@ Last activity: 2026-08-01 -- 115-05 executed
 - [Phase 114-05 有意边界] **提醒只到「记事件 + 写周期锚点」为止，渠道投递未实现**：这是 PLAN 的有意边界（飞书卡片重推/站内通知归 115/116 通知面）。当前运维能从 `blueprint_clarification_reminded` 事件看到「谁该被提醒、几个人、哪条线程」，但**用户收不到实际通知** ⇒ 115/116 接上通知面之前，CLAR-04 的用户可感知价值只兑现一半。收件人名单可经 `BlueprintReviewer` ∪ 蓝图会话发起人复算（⚠️ 反查会话必须带 `process_type="technical_blueprint"` 过滤）
 - [Phase 114-03 环境项] **`tests/mcp_tools/test_skills_snapshot_guard.py::test_skill_files_discovered` 在本 worktree 恒红**：断言 `skills/skills/*/SKILL.md` ≥4，而 worktree 的 `skills/` 是空目录（主检出里有内容）。纯 worktree 环境现象，与蓝图相位无关；里程碑收尾在主检出复跑即可
 - [Phase 112 残留 PARTIAL] **FLOW-02 的「替代建议」无结构化字段**：fitness 的 `reasons` 承载了理由，但 unsuitable 时的「建议改去哪个仓」未落成结构化字段（当前混在自由文本里）。113 若需机器消费该建议再补 schema 字段，否则留到 115 前端呈现时定夺
-- ~~[Phase 114 review 跳过项] **MN-05：`blueprint_quality` 三项 DB 统计零消费方**~~ —— **115-04 已闭**（commit `4ce29602`）：`BlueprintQualityPanel.vue` 是这三项统计的**唯一消费面**，`null` 渲染「暂无数据」**绝不显示 0**，三态并列用例已由变异（把空值合并成零）证明「`null` 用例转红而 `0` 用例仍绿」。评审原建议的「接进 `evaluate_blueprint_golden`」不可行的判断维持不变（golden case 无 `artifact_id`）。⚠️ 剩余接线项：115-06 需把 `hasKeyConclusions`（`current_state_analysis` / `repo_associations` / `impact_analysis` 三处是否至少一处非空）算好传入，否则「空文档满分」的口径陷阱旁注不会出现。原始记录如下 ——
+- ~~[Phase 114 review 跳过项] **MN-05：`blueprint_quality` 三项 DB 统计零消费方**~~ —— **115-04 已闭**（commit `4ce29602`）：`BlueprintQualityPanel.vue` 是这三项统计的**唯一消费面**，`null` 渲染「暂无数据」**绝不显示 0**，三态并列用例已由变异（把空值合并成零）证明「`null` 用例转红而 `0` 用例仍绿」。评审原建议的「接进 `evaluate_blueprint_golden`」不可行的判断维持不变（golden case 无 `artifact_id`）。✅ **剩余接线项已由 115-06 完成**（commit `ee1e8dce`）：页面按 `current_state_analysis` / `repo_associations` / `impact_analysis` 三处是否至少一处非空派生 `hasKeyConclusions` 并传入，「空文档满分」的口径陷阱旁注（`quality.noKeyConclusions`）现已可见。原始记录如下 ——
 - [Phase 114 review 跳过项 · 原文存档] **MN-05：`blueprint_quality` 三项 DB 统计（`ai_rejection_rate` / `human_edit_volume` / `clarification_rounds`）零消费方** —— ⚠️ **115/116 必读**：SUMMARY 的「度量面闭环」只兑现到「口径已实装、可被调用」，**全仓无任何消费点**（既不进离线评估也不进 API / 大盘）。评审建议的「接进 `evaluate_blueprint_golden`」经核实**不可行**：golden case 是静态 JSON fixture（顶层只有 `name/description/blueprint/expected`，**无 `artifact_id`**，DB 里也不存在对应 artifact），而三项统计全部按 `artifact_id` 查 delivery models，且该 command 明写「全程无 DB 写、天然过 `--disable-socket`」——硬接只会得到三个恒 `None` 的键，比不接更糟。**正确消费面是 115/116 的运行时大盘 / 人审面板**（有真实 artifact_id 在手）。已在 `blueprint_quality.py` 的 DB 统计节源码处同步登记。详见 `.planning/phases/114-ai/114-REVIEW.md` Fix Log
 - [Phase 114 review 顺延项] **全仓仍有二十余处 `error=str(exc)` 未脱敏**（`crawl_service` / `work_item_service` / `coding_completion` / `comment_event_service` / `release_service` 等，均早于本纪律）。114 已把**蓝图链九个模块**收口并加了 AST 守卫 `tests/delivery/test_blueprint_log_redaction_guard.py`（新增蓝图模块请加进它的 `_SCANNED_MODULES`）。全仓收口另起独立清理，并可考虑把该守卫的扫描面逐步扩到全仓
 - [Phase 115-02 范围收窄 · P-5] ⭐ **SC-4 的 `associations` 段本相位只做「本蓝图引用了」+「关联项目」**，**「引用了本蓝图 / 关联知识」顺延 Phase 116 的知识图谱物化**。理由：`knowledgeApi.getRelated` / `getArtifactAssociations` 查的是 `initiatives.Artifact` 投影的 KnowledgeEntity（`server/knowledge/artifact_associations.py:75`），而蓝图存在 `delivery.Artifact` ⇒ 拿蓝图 id 去调**必然 404/空**。`web/src/api/blueprints.ts` 与本相位任何文件对这两个符号**零调用**（已加验收断言）。116 做图谱物化时一并补这两块呈现。
 - [Phase 115-02 环境项] **pnpm 10.34.2 会漂移 `web/pnpm-workspace.yaml`**：在本 worktree 跑**任何** `pnpm` 命令（含 `pnpm exec vitest`）都会自动向 `catalogs` 回填缺失条目（`three` / `mermaid` / `wordcloud` / `3d-force-graph` / `medium-zoom` / `@types/*`）。⭐ **115-03 起每个前端 plan 跑完门之后请 `git status` 检查并 `git checkout -- web/pnpm-workspace.yaml` 还原**，否则会被边界核算误判为「新增依赖」。
 - [Phase 115-02 验收脚本缺陷（非实现缺陷）] **计划里 404 竞品键的验收正则 `/notFound$|notExist|forbidden/i` 会误伤获批键本身**——带 `/i` 且 `forbidden` 是子串匹配 ⇒ 把唯一获批的 `notFoundOrForbidden` 判为竞品，脚本恒抛错。修正判据：**先排除获批键再扫竞品**。已用修正版复跑通过（实现无缺陷）。后续 plan 若复用该脚本请一并改正。
-- [Phase 115-03 回报项 · ⭐ 115-06 必接] **仓库章程四分区的小标题缺 i18n 键（4 个）**：`CitationCharterPreview` 需要「仓库定位 / 归属域 / 边界禁区 / 落点偏好」四个标签，而 `knowledge.blueprints.repo.*` 子树里没有，**全仓亦无任何 `charter*` 文案键**（实测只有 `citation.sourceRepoCharter` =「仓库章程」）。i18n 三处追加点已由 115-02 一次做完并对本相位关闭 ⇒ 115-03 按 §13.2 **回报而不自补**，降级为「卡片用既有的『仓库章程』作标题、四个分区不渲染文字小标题，分区身份改由 `data-charter-section="<后端字段名>"` 承载」。建议补 `repo.charterPositioning` / `repo.charterOwnedDomains` / `repo.charterBoundaries` / `repo.charterPlacement`；补齐后只需在 `sections` 计算里加回 `label` 并在模板渲染一行 `<p>`，**无结构改动**。详见 `115-03-SUMMARY.md` §9。
+- ~~[Phase 115-03 回报项] 仓库章程四分区的小标题缺 i18n 键（4 个）~~ —— **115-06 已闭**（commit `38f6eb35`）：`repo.charterPositioning` / `charterOwnedDomains` / `charterBoundaries` / `charterPlacement` 已补，`CitationCharterPreview` 的 `sections` 计算加回 `label` 并渲染一行 `<p>`，`data-charter-section` 身份属性原样保留。
 - [Phase 115-03 环境事实] **happy-dom 20.10.2 的 `createTreeWalker(SHOW_TEXT)` 会把注释节点一并返回**（Vue 的 `<!--v-if-->` 等，`length` 为 0）。**对生产逻辑无影响**（`offsetInFlatText` 累加 0，offset 结果正确；真实浏览器的 `SHOW_TEXT` 本就不含注释），但**测试里不能用「取第一个文本节点」**——会拿到长度 0 的节点、`range.setEnd` 直接 `IndexSizeError`。115-04/05 写选区相关用例时请按内容找文本节点（范式见 `__tests__/BlueprintBlock.spec.ts` 的 `textNodeWith`）。⛔ 不要为此改 `collectTextNodes`（生产行为正确）。
 - [Phase 115-03 视觉待定] **越界降级「整块左色条」的色相目前落在下边框而非左边**：`annotationClass()` 产出的是 `border-bottom` + `bg-*` 字面量类，而运行期拼出来的任意值类名 Tailwind 不会生成规则 ⇒ 无法把它改写成 `border-left`。当前实现是「中性 2px 左描边 + 色相底纹与下边框」，降级身份由 `data-testid="blueprint-block-degraded"` 与计数角标承载。若 UAT 判定需要真正的左侧色条，正解是给 `annotationTokens.ts` 增一个 `annotationBarClass()` 字面量表，⛔ 不在组件里补颜色。
-- [Phase 115-04 回报项 · ⭐ 115-06 必接] **写路径与决策面缺 5 个 i18n 键**：`review.disabledReason`（带状态插值的终审 Tooltip 文案）/ `review.rejectKeepAnchor`（「保留此划线」开关标签）/ `quality.noKeyConclusions`（「无关键结论」旁注）/ `thread.draftCancel`（草稿卡「取消」）/ `diff.mustHavesExcluded`（「验收锚点不参与块级对比」）。i18n 追加点已由 115-02 对本相位关闭 ⇒ 按 §13.2 **回报而不自补**。**五处都有可用降级、功能不缺**（分别用无参 `review.disabledReadonly` + 状态名两段并列 / `annotation.quotedSnapshot` 作开关标签 / `sectionEmpty` 拼三段名 / `Esc` 放弃草稿 / `data-diff-excluded` 属性承载身份）；补键后各只需换一处 `t()` 调用，**无结构改动**。详见 `115-04-SUMMARY.md` §7。
+- ~~[Phase 115-04 回报项] 写路径与决策面缺 5 个 i18n 键~~ —— **115-06 已闭**（commit `38f6eb35`）：`review.disabledReason`（带 `{status}` 插值）/ `review.rejectKeepAnchor` / `quality.noKeyConclusions` / `thread.draftCancel` / `diff.mustHavesExcluded` 已补并全部换回；⭐ **草稿卡补上了可见的「取消」按钮**（`Esc` 放弃草稿仍保留），115-04 的「草稿卡缺可见取消」UAT 项随之关闭。⚠️ `reviewActions.spec.ts` 的手写最小 i18n 键树同步补了两个键 —— 那类 spec 不 import `zh-CN.json`，缺键会让断言读到键名。
 - [Phase 115-04 契约扩展 · 115-06 接线注意] **线程侧栏与线程卡各多两个 prop**：越界降级判据需要**块正文**才能算（`isValidAnchor(anchor, blockText.length)`），线程层拿不到 ⇒ 由持有正文的页面算好，经 `degradedThreadIds`（侧栏）/ `degraded`（卡）传入；草稿卡走 `draft` prop + `create-comment` / `cancel-comment` 两个 emit。`BlueprintCommentDraft` 是 115-03 `SelectionPayload` 的**结构子集**，115-06 可直接把 `SelectionPayload` 传进来。
-- [Phase 115-04 视觉待定 · UAT] **草稿卡目前没有可见的「取消」按钮**（缺文案键，见上条），改为焦点在草稿卡内按 `Esc` 放弃。UAT 时确认这条路径够不够用；补 `thread.draftCancel` 后应改回可见按钮。
-- [Phase 115-05 回报项 · ⭐ 115-06 必接] **段渲染面缺 21 个 i18n 键**（分布：需求规格 goal/background 小标题与 `intent` 三档 / 现状分析综述小标题与 finding `kind` 四档与「缺引用」/ 实现项 `change_type` 四档与「与既有功能如何配合」「测试策略」「wave {n} · {c} 项」/ `api.availabilityUnknown`（未标注）/ `impact.irreversible`（不可逆）/ 交互流程 `actor` 四档 / `repo.rationale`「选仓理由」`repo.capabilitiesUsed`「会被用到的能力」`repo.crossTeam`「跨组协作」`repo.confirmedAtGate` 两档 / `section.deferredIdeas`「本方案明确不做的事（{n}）」/ `decision.gotoThread`「查看对应线程」/ `associations.citedByThis`「本蓝图引用了」）。i18n 追加点已由 115-02 对本相位关闭 ⇒ 按 §13.2 **回报而不自补**。**21 处都有可用降级、功能不缺**，分三档：① 复用语义最近的既有键（含**三处跨子树复用**：`knowledge.entity.associations.capabilities` / `knowledge.relation.REFERENCES` / `projects.workbench.deps.projectsTitle`，补齐本子树键后应换回）；② 不渲染文字小标题、身份交给 `data-field`；③ 枚举/布尔标记渲染 schema 原样 token，颜色由 `variant`、身份由 `data-*` 承载。**③ 档最影响可读性，补键时优先。** 逐条对照表见 `115-05-SUMMARY.md` §6。
+- ~~[Phase 115-04 视觉待定 · UAT] 草稿卡没有可见的「取消」按钮~~ —— **115-06 已闭**：`thread.draftCancel` 已补，草稿卡恢复可见「取消」按钮（`data-testid="blueprint-thread-draft-cancel"`），焦点在草稿卡内按 `Esc` 放弃的路径同时保留。
+- ~~[Phase 115-05 回报项] 段渲染面缺 21 个 i18n 键（33 个键）~~ —— **115-06 已闭**（commit `38f6eb35`）：33 个键全补并逐处换回，**优先换回 ③ 档**（`intent` / finding `kind` / `change_type` / `actor` / `cross_team` / `reversible=false` / `availability` 未标注 —— 这一档此前在界面上直接印英文枚举值）；**三处跨子树借用已全部换回本子树**（关联能力 → `repo.capabilitiesUsed`、引用文档 → `associations.citedByThis`、关联项目 → `associations.relatedProject`）。四档枚举一律保留「未知值回落 schema 原样 token」的分支，`data-*` 身份属性全部原样保留（既有用例按它们定位，零改动）。⚠️ `sections.spec.ts` 的手写 i18n 键树同步补键，并改正了一处硬编码旧降级文案的断言。
 - [Phase 115-05 范围收窄落地 · 承接 115-02 P-5] ⭐ **SC-4 的收窄已在 UI 侧兑现并有用例背书**：`BlueprintAssociationsSection.vue` 只做「本蓝图引用了」（`content.citations` 按 `source_type` 分组统计 + 可点 chip，零端点）+「关联项目」（`RouterLink` 到 `/projects/{projectId}`）；两个必然 404 的反查端点**源码零命中**且有 `toHaveBeenCalledTimes(0)` 的用例。**反向「被谁引用 / 关联知识」顺延 Phase 116 的知识图谱物化**，届时在该组件里补两块即可（现有两块无需重构）。⛔ 执行期不得再把 SC-4 理解成「双向可查」——ROADMAP 的 SC-4 原文与 REQUIREMENTS 的 VIEW-04（PARTIAL）已在 plan 阶段对账完毕。
 - [Phase 115-05 契约扩展 · 115-06 接线注意] **十段容器必须由页面无条件渲染**（P-4）：段内空态已由组件层处理（规则表见 `115-05-SUMMARY.md` §7，其中 `must_haves` 三块同空时**刻意不出空态卡**），页面**不要**再套一层 `v-if` 判空——那正是让 `AnchorNavLayout` 的 mount-only observer 观察不到、左栏高亮静默失效的写法（已有用例覆盖「九段空数据仍渲染内容区」这半边）。另需接住两个跨段跳转锚点：`fp-<feature_point_id>`（需求规格段功能点卡）与 `api-<contract_id>`（API 契约卡根元素），`goto-anchor` 载荷**已是完整 DOM id**，页面只做 88px 偏移 + 2s ring 高亮，⛔ 不要再拼一次前缀。
 - [Phase 115-05 定夺] **`decision_log` 的 `open-thread` 语义 = 「跳转到该决策对应的线程」**（⛔ 不是「在该段发起批注」）：条目带 `thread_id` 才渲染入口按钮（`data-testid="blueprint-decision-goto-thread"`），不带则不渲染。115-06 接住后应完成「开侧栏 → 设 `activeThreadId` → 正文滚动」，与 `BlueprintBlockedDialog` 的 `goto-thread` 同一套处理。
+- [Phase 115-06 订正登记 · P-4 的两处外延] ⭐ **UI-SPEC §6.9 与 §9.2 各订正一处**：① `must_haves` / `decision_log` 无内容时**段容器与导航项仍渲染**，只是段内不出内容；② **diff 视图下十段容器仍在**（段内内容收起、diff 面板渲染在段序列之前），⛔ 不「替换正文区」。两处同源：那个锚点布局件只在 `onMounted` 按 `sections` 逐个 `getElementById`，任何条件渲染都会让 observer 挂不上，且**退出 diff 后不会恢复**（页面无重挂载）。⭐ 后续任何人想给这十段加 `v-if` 之前，请先跑 `blueprintViewer.spec` 用例 1。
+- [Phase 115-06 环境项 · ⭐ 后续前端 plan 必读] **`pnpm build` 会重写 `web/src/components.d.ts` 并顺带裁掉一批与本次无关的既有条目**（本次是 29 条懒加载件）。直接提交等于在生成物里夹带删除，会给别人的分支制造无意义冲突。做法：`git checkout` 还原后**按字典序手工插入自己的那几行**（本次 +4/−0）。`src/typed-router.d.ts` 无此问题（+15/−0，纯追加）。
+- [Phase 115-06 缺件登记] **仓内没有 `ui/alert` 组件**（只有语义完全不同的 `alert-dialog`）。查看器的历史版本与只读提示改用带语义描边的 `div` + `role="status"`（`data-testid` 分别是 `blueprint-history-notice` / `blueprint-readonly-notice`）。⛔ 115-06 未新建 `ui/alert` —— 那是通用设计系统件，形态要与 DESIGN 对齐，超出单个 plan 的边界。若 116 有第三处需要，再按 DESIGN 统一补。
+- [Phase 115-06 验收脚本缺陷（非实现缺陷）] **「组件目录内那个锚点布局件名零命中」这条自 115-05 落地起就已不可能满足**：`MustHavesSection` / `CurrentStateSection` / `RequirementSpecSection` 三个 docstring 在解释「为什么段容器要由页面无条件渲染」时各写了一次它的名字。该条的真实意图是「⛔ 任何组件都不得**包**它」，形状正确的判据是 `rg "<AnchorNavLayout" web/src/components/blueprint/` **零命中**（已实测）。唯一的非注释引用是 `BlueprintSectionNav` 的 `import type { NavSection }` —— 那是类型依赖而非组合。
 - [Phase 115-05 定夺 · 闭 Phase 112 残留] **`fitness.verdict === 'unsuitable'` 时的「替代建议」按 `fitness.reasons` 自由文本原样展示**，⛔ 不补 schema 字段、⛔ 不做结构化解析（UI-SPEC §0.2 判定 6）。前端只是呈现方，为了呈现去改一份已锁定的后端 schema 不划算；真要结构化应在产出侧（114 链路）做。这同时定夺了本表原先登记的「Phase 112 残留 PARTIAL / FLOW-02：替代建议无结构化字段」。
 - [Phase 114 review 可再议] **`ConvergenceSessionService.areopen_stage` 未发 `ConvergenceSessionEvent`**：新事件类型属纯追加、本可做，但 §13.2 把既有事件类型/字段定为 consume-only，且复位已由 `convergence_session_reopened` 结构化日志 + `blueprint_review_rejected` 双重可归因。若 115 的事件时间线希望「人审驳回导致的会话复位」在时间线上可见，需新增一个 `blueprint.review.session_reopened` 事件常量（同步点 2 后与 0.19 的时间线契约一并定）
 
@@ -213,7 +217,7 @@ Next step: **Phase 115-06（页面装配）** —— wave 4 的 115-05 已收口
 
 1. **端点契约有两处收紧**（项目成员闸 → 非成员 404 / 无 `meta.project_id` 400；finding 不可走 answer 通道 + 已确认蓝图不可编辑 → 400），详见上面 Current Position 节。
 2. **`orphaned_threads` 现在只装真失锚线程**（MJ-02），可直接当作「批注错位」清单呈现，不必再自行过滤系统线程。
-3. **两个 115 必须接的缺口**：① **通知面**——澄清提醒只落事件与周期锚点，用户收不到实际通知（仍未接）；② ~~`blueprint_quality` 三项统计零消费方~~ —— **115-04 已闭**（`BlueprintQualityPanel.vue` 是唯一消费面，`null` 绝不显示 0）；剩余接线是 115-06 要把 `hasKeyConclusions` 算好传入。两条均见 Pending Todos。
+3. **两个 115 必须接的缺口**：① **通知面**——澄清提醒只落事件与周期锚点，用户收不到实际通知（仍未接）；② ~~`blueprint_quality` 三项统计零消费方~~ —— **115-04 已闭**（`BlueprintQualityPanel.vue` 是唯一消费面，`null` 绝不显示 0）；剩余接线**已由 115-06 完成**（页面派生 `hasKeyConclusions` 并传入）。两条均见 Pending Todos。
 
 Resume file: 无（干净接力点：Phase 111–114 全部 commit 已入库）
 
@@ -225,3 +229,5 @@ Resume file: 无（干净接力点：Phase 111–114 全部 commit 已入库）
 | Phase 115 P02 | ~180m | 3 tasks | 23 files（+4372/−1），新增 150 例前端用例 |
 | Phase 115 P03 | ~60m | 3 tasks | 11 files 新建 + 1 生成物，新增 43 例前端用例 |
 | Phase 115 P04 | ~90m | 3 tasks | 14 files 新建 + 1 生成物（+2970），新增 58 例前端用例，六条变异验证 |
+| Phase 115 P05 | ~90m | 3 tasks | 16 files 新建 + 1 生成物，新增 37 例前端用例，四条变异验证 |
+| Phase 115 P06 | ~150m | 3 tasks | 11 files 新建 + 8 files 改（i18n 交接 + 两处纯追加），新增 16 例前端用例，一条变异验证 |
