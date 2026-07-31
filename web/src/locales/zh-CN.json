@@ -1,4 +1,7 @@
 {
+  "common": {
+    "clearFilters": "清除筛选"
+  },
   "chat": {
     "clarification": {
       "title": "还需要确认一下",
