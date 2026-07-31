@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.19.0
 milestone_name: 技术方案可信度
-status: verifying
-stopped_at: GSD 记录对齐（`/gsd-fast`）——补 07-24/07-25 ship 后维护期 16 commits 的 last_activity 记录（此前 STATE 停在 07-23）；登记"发布轨 v0.18.0 已占号、里程碑轨止于 v0.17.0"的双轨关系与撞号风险（见 Blockers/Concerns）；MILESTONES.md 手写补回缺失的 v0.11.0 条目（health W018；自动 `--backfill` 产出的模板条目位置与内容均不合格已回滚）；`git worktree prune` 清掉 3 个路径已失效的 locked agent worktree 注册（health W017）。health 复跑：warnings 12→8、repairable 1→0。下一步：`$gsd-new-milestone`（注意版本号避开 v0.18.0）。
+status: milestone_audit_pending
+stopped_at: v0.19.0 全部相位执行完毕（105/106/107/109/110，108 已移交 v0.20.0）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01，另修一处会让 SPINE-01 头条入口在异步路径上消失的缺陷；Phase 110 七个 plan 全落地，修掉评审 1 HIGH/2 MEDIUM 与验证发现的 GAP-1（前半程失败时间线撒谎）及同根因的脉冲缺席。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。待办：里程碑审计 + 13 项人工验收（109 六项 + 110 七项）。⚠️ 遗留里程碑级缺口见 Blockers/Concerns 首条（RoutingDecisionPanel 无挂载点）。
 last_updated: "2026-07-31T10:04:12.751Z"
 last_activity: 2026-07-31
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 39
   completed_plans: 39
-  percent: 83
+  percent: 100
 ---
 
 # Project State
@@ -21,25 +21,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
 **Core value（v0.19.0，在建）:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。（方案结构深度 DEPTH-01~05 已移交 v0.20.0 技术方案蓝图，双 worktree 并行开发。）
-**Current focus:** Phase 110 — 过程可观测
+**Current focus:** 里程碑审计（全部相位执行完毕）
 
 ## Current Position
 
-Phase: 110
-Plan: Not started
-Status: Phase 110 全部 7 个 plan 已完成（7/7 SUMMARY 落盘），待 verify / UAT
-Last activity: 2026-07-31
+Phase: 110（末相位，已完成）
+Plan: 7/7 complete
+Status: v0.19.0 全部相位执行完毕，待里程碑审计与人工验收
+Last activity: 2026-07-31 — Phase 110 完成，GAP-1 闭合
 
-## Milestone Overview (v0.19.0 — Phases 105–110 — 🟡 PLANNING)
+## Milestone Overview (v0.19.0 — Phases 105–110 — 🟢 EXECUTED，待审计)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 105 | 编排解锁与评估标尺（确定性置信度 + 分数可拆解 + golden set 门禁） | RELY-04, ROUTE-07/08/09 | Not started |
-| 106 | 多信号打分函数重构（尺寸偏置 + 元数据入分 + 活跃度连续 + 权重外置） | ROUTE-03/04/05/06 | Not started |
-| 107 | 分层呈现与链路韧性（分组/跨组标注 + 降级可见 + 澄清必达 + Stage 1 有界） | ROUTE-01/02, RELY-02/03/05 | Not started |
+| 105 | 编排解锁与评估标尺（确定性置信度 + 分数可拆解 + golden set 门禁） | RELY-04, ROUTE-07/08/09 | ✅ Complete (7/7, human_needed) |
+| 106 | 多信号打分函数重构（尺寸偏置 + 元数据入分 + 活跃度连续 + 权重外置） | ROUTE-03/04/05/06 | ✅ Complete (8/8, human_needed) |
+| 107 | 分层呈现与链路韧性（分组/跨组标注 + 降级可见 + 澄清必达 + Stage 1 有界） | ROUTE-01/02, RELY-02/03/05 | ✅ Complete (9/9, human_needed) |
 | 108 | ~~方案深度~~ **已移交 v0.20.0 技术方案蓝图（2026-07-29）** | DEPTH-01~05（随迁） | Moved |
-| 109 | 双脊柱合流（编排产出直连执行流 + 移除徒手创作路径） | SPINE-01/02, RELY-01 | Not started |
-| 110 | 过程可观测（阶段流式 + 容器日志 + 阶段时间线） | OBS-01/02/03 | Not started |
+| 109 | 双脊柱合流（编排产出直连执行流 + 移除徒手创作路径） | SPINE-01/02, RELY-01 | ✅ Complete (8/8, human_needed) |
+| 110 | 过程可观测（阶段流式 + 容器日志 + 阶段时间线） | OBS-01/02/03 | ✅ Complete (7/7, human_needed) |
 
 完整需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)（本里程碑 19 条 + Traceability，19/19 映射；DEPTH-01~05 已移交 v0.20.0）；阶段详情见 [ROADMAP.md](./ROADMAP.md)；路由排序设计调研见 [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)。
 
@@ -420,6 +420,10 @@ None.
 
 [Issues that affect future work]
 
+- 🔴 **`RoutingDecisionPanel` 在 SPA 内无任何挂载点 ⇒ ROUTE-01 / ROUTE-02 / RELY-03 的用户可见半边到不了用户**（v0.19.0 里程碑级缺口，2026-07-31 发现）。该组件（`web/src/components/chat/RoutingDecisionPanel.vue`，24.9KB，功能完整）承载 Phase 107 的分组呈现、跨组标注与降级横幅，但它在 **2026-05-29（commit `29247521`，本里程碑立项之前）被刻意下线**，理由是「与底部澄清卡去重」，并有一条锁测试 `web/src/components/chat/__tests__/partsApiIntegration.spec.ts` 断言它不渲染。后果：Phase 107 把 ROUTE-01/02 与 RELY-03 建在了一个已下线的组件里；`ClarificationCard` / `RepoMultiSelector` 都不带分组与跨组标注，所以里程碑目标「路由基于多维证据分层呈现并可解释」在用户侧并未成立。之所以此前无人发现，是 107 的 VERIFICATION 为 `human_needed` 而「浏览器视觉核对」那条人工项一直未执行。
+  **未在本次自动执行中处置的原因**：是否让该面板复活、以及如何避免与澄清卡的选仓 UI 重复，是一个已被刻意做过的产品决定，不宜由自动流程静默推翻。
+  **建议处置**（三选一，需人决定）：① 只恢复「解释」职能（分组/跨组/降级只读呈现），把「改选仓」继续留给澄清卡，重新挂载并撤销那条锁测试；② 把分组与跨组标注下沉进 `RepoMultiSelector`，正式废弃该面板；③ 确认下线是长期决定，则回退 ROUTE-01/02/RELY-03 的需求状态并从里程碑目标中如实剔除。
+
 - ⚠️ **发布轨版本号已超前于 GSD 里程碑轨——下一里程碑不可命名 v0.18.0**。两条轨道相互独立：`.github/workflows/release.yaml` 由 `tags: v*` 触发，`github-actions[bot]` 按 conventional commits 自动生成 changelog 并发 GitHub Release；GSD 里程碑轨由 `$gsd-new-milestone` / `$gsd-complete-milestone` 驱动，最后一个里程碑是 v0.17.0。目前 **`v0.18.0` 已作为 GitHub Release 发布并且是 Latest**（tag 打在 2026-07-24 的 `bc67fe4d9`，内容是 Phase 100–104 的 review 修复 + 07-23/07-24 修复的聚合 changelog，**不对应任何 GSD 里程碑**）。历史上 v0.13.3 / v0.16.4 / v0.16.5 同属这类"只有发布、无对应里程碑"的补丁发布。**立项下一里程碑时必须先 `git tag -l` 或 `gh release list` 核对，选一个未被占用的版本号（如 v0.19.0），否则 complete-milestone 打 annotated tag 会与既有 Release 撞号。**
 
 - ✅ ~~v0.2.0 follow-up：实时明文 PAT 通道（contextvar）未接入，RemoteTool 链路休眠~~ —
@@ -570,7 +574,7 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-07-31T07:28:32.180Z
-Stopped at: GSD 记录对齐（`/gsd-fast`）——补 07-24/07-25 ship 后维护期 16 commits 的 last_activity 记录（此前 STATE 停在 07-23）；登记"发布轨 v0.18.0 已占号、里程碑轨止于 v0.17.0"的双轨关系与撞号风险（见 Blockers/Concerns）；MILESTONES.md 手写补回缺失的 v0.11.0 条目（health W018；自动 `--backfill` 产出的模板条目位置与内容均不合格已回滚）；`git worktree prune` 清掉 3 个路径已失效的 locked agent worktree 注册（health W017）。health 复跑：warnings 12→8、repairable 1→0。下一步：`$gsd-new-milestone`（注意版本号避开 v0.18.0）。
+Stopped at: v0.19.0 全部相位执行完毕（105/106/107/109/110，108 已移交 v0.20.0）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01，另修一处会让 SPINE-01 头条入口在异步路径上消失的缺陷；Phase 110 七个 plan 全落地，修掉评审 1 HIGH/2 MEDIUM 与验证发现的 GAP-1（前半程失败时间线撒谎）及同根因的脉冲缺席。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。待办：里程碑审计 + 13 项人工验收（109 六项 + 110 七项）。⚠️ 遗留里程碑级缺口见 Blockers/Concerns 首条（RoutingDecisionPanel 无挂载点）。
 Earlier: 2026-07-22T08:50:00.000Z — v0.17.0 complete-milestone 归档完成——REQUIREMENTS 19/19 勾选并归档、ROADMAP 快照归档 + 折叠 `<details>`、MILESTONES.md 补条目、audit 移入 milestones/、annotated tag v0.17.0。
 Earlier: 执行 104-03（里程碑四面检索端到端验收）完成——新建自包含 E2E 测试 `server/tests/test_milestone_e2e_learning_case.py`（内存 Qdrant + 确定性 embedding + 双种子区分度），同一条 learning case 四面（Chat 工具 / DeliveryKnowledgeRecallAdapter / MCP view / 容器链同 URL 契约+组合覆盖）均可检索 + MCP 与 Chat top-1 统一排序断言。2 commits（a35d74e7/562f697c）；3 passed + 定向回归 216 passed。**Phase 104 3/3 收官，v0.17.0 全部 18 plans 执行完毕。** 下一步：里程碑审计 → complete-milestone。
 Earlier: 执行 103-04（AGENT-04 工作流上下文对齐）完成——共享 helper 上提 `services/project_context_packer.py`（prepend_project_context / aresolve_project_for_repo_branch / apack_dispatch_context，chat 纯重构改引用零回归，workflow 不 import chat）+ workflow `_resolve_wave_project_contexts` 按 (project, branch) 解析一次逐仓复用（ProjectBranch 反查 + work_item fallback，user=dispatch_user）+ `_run_repo_coding` prompt prepend + env_FRIDAY_TASK_PROJECT_CONTEXT 注入（与 chat 一致，fail-soft 空串 no-op）。2 commits（81956173/113ac520）；新守护测试 6 例 + chat 99 全绿 + dispatch 触点 54 passed 零回归。**Phase 103（编码容器集成）4/4 完成，AGENT-01~04 全部交付。** 下游 → Phase 104（工具面收口，UNIFY-01/02/03）。
