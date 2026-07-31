@@ -54,6 +54,9 @@ __all__ = [
     "EVENT_BLUEPRINT_CONTEXT_ENTRY_APPENDED",
     "EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED",
     "EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED",
+    "EVENT_BLUEPRINT_REVIEW_STARTED",
+    "EVENT_BLUEPRINT_REVIEW_COMPLETED",
+    "EVENT_BLUEPRINT_REVIEW_FAILED",
     "BLUEPRINT_EVENTS",
     "ALL_EVENTS",
     "RESERVED_EVENTS",
@@ -172,6 +175,12 @@ EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED: Final[str] = "blueprint.context.waite
 # emit: 113-01 waiter 命中/超时清理。payload: satisfied_count/redispatch_repository_ids/reason
 EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED: Final[str] = "blueprint.context.waiter_satisfied"
 
+# ---- 蓝图 AI 对抗审查（v0.20 Phase 114-03，FLOW-07） ----
+# 114-03 追加：AI 对抗审查生命周期（payload 只含 findings **计数与分级分布**，正文绝不进 payload）。
+EVENT_BLUEPRINT_REVIEW_STARTED: Final[str] = "blueprint.review.started"
+EVENT_BLUEPRINT_REVIEW_COMPLETED: Final[str] = "blueprint.review.completed"
+EVENT_BLUEPRINT_REVIEW_FAILED: Final[str] = "blueprint.review.failed"
+
 # 蓝图事件独立集合（不进 ALL_EVENTS，见上方注释）
 BLUEPRINT_EVENTS: Final[frozenset[str]] = frozenset(
     {
@@ -193,6 +202,9 @@ BLUEPRINT_EVENTS: Final[frozenset[str]] = frozenset(
         EVENT_BLUEPRINT_CONTEXT_ENTRY_APPENDED,
         EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED,
         EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED,
+        EVENT_BLUEPRINT_REVIEW_STARTED,
+        EVENT_BLUEPRINT_REVIEW_COMPLETED,
+        EVENT_BLUEPRINT_REVIEW_FAILED,
     }
 )
 
