@@ -145,6 +145,32 @@ def artifact_version(db, conversation: Conversation) -> ArtifactVersion:
 
 
 @pytest.fixture
+def space_repositories(db, conversation: Conversation) -> list[Any]:
+    """把 ``_CONTENT`` 里那两个 repository_id 造成 space 下的真实仓库。
+
+    109-REVIEW HI-01：投影响应要回仓库**名字**，没有真实行就只能回空列表——那正是
+    界面上「未找到匹配的仓库」的成因。
+    """
+    from repositories.models import Repository
+
+    repos = []
+    for repo_id, name in (
+        ("11111111-1111-1111-1111-111111111111", "repo-a"),
+        ("22222222-2222-2222-2222-222222222222", "repo-b"),
+    ):
+        repo = Repository.objects.create(
+            id=repo_id,
+            name=name,
+            git_url=f"https://gitlab.com/test/{name}.git",
+            git_platform="gitlab",
+            default_branch="main",
+        )
+        conversation.space.repositories.add(repo)
+        repos.append(repo)
+    return repos
+
+
+@pytest.fixture
 def owner_client(db, owner) -> APIClient:
     client = APIClient()
     client.force_authenticate(user=owner)
@@ -172,9 +198,11 @@ def _post(client: APIClient, artifact_version_id: Any):
 
 
 def test_projection_returns_full_payload(
-    owner_client: APIClient, artifact_version: ArtifactVersion
+    owner_client: APIClient,
+    artifact_version: ArtifactVersion,
+    space_repositories: list[Any],
 ) -> None:
-    """七字段齐全且正文非空 —— 前端可就地内嵌卡片，不必二次拉 runtime。"""
+    """字段齐全且正文非空 —— 前端可就地内嵌卡片，不必二次拉 runtime。"""
     resp = _post(owner_client, artifact_version.id)
 
     assert resp.status_code == status.HTTP_200_OK
@@ -186,6 +214,7 @@ def test_projection_returns_full_payload(
         "tech_plan",
         "affected_files",
         "recommended_repository_ids",
+        "recommended_repositories",
         "provenance",
     }
     assert body["created"] is True
@@ -206,10 +235,44 @@ def test_projection_returns_full_payload(
         "11111111-1111-1111-1111-111111111111",
         "22222222-2222-2222-2222-222222222222",
     ]
+    # 🔴 109-REVIEW HI-01：只回 id 渲染不出任何一行可勾选的仓库 —— 交棒后的选仓面
+    # 会变成「未找到匹配的仓库」，SC-1 的第一步在界面上不成立。
+    assert sorted(r["name"] for r in body["recommended_repositories"]) == [
+        "repo-a",
+        "repo-b",
+    ]
+    for entry in body["recommended_repositories"]:
+        assert set(entry) == {"id", "name"}
 
     plan = CodingPlan.objects.get(id=body["coding_plan_id"])
     assert str(plan.source_artifact_version_id) == str(artifact_version.id)
     assert plan.provenance == CodingPlanProvenance.ORCHESTRATED
+
+
+def test_projection_repository_names_tolerate_missing_and_invalid_ids(
+    owner_client: APIClient, artifact_version: ArtifactVersion
+) -> None:
+    """无对应仓库行 / 非法 id 时只是名字为空，端点不得 500。
+
+    ``recommended_repository_ids`` 来自半可信的 ``execution_plan[].repository_id``：
+    不过筛就把它喂 ``filter(id__in=...)``，一个非 UUID 字面量会抛 ``ValidationError``
+    （同 MN-03）。这里不造 Repository 行，断言退化路径干净。
+    """
+    ArtifactVersion.objects.filter(id=artifact_version.id).update(
+        content={
+            **_CONTENT,
+            "execution_plan": [
+                {**_CONTENT["execution_plan"][0], "repository_id": "not-a-uuid"},
+                _CONTENT["execution_plan"][1],
+            ],
+        }
+    )
+    resp = _post(owner_client, artifact_version.id)
+
+    assert resp.status_code == status.HTTP_200_OK
+    body = resp.json()
+    assert body["recommended_repositories"] == []
+    assert "not-a-uuid" in body["recommended_repository_ids"]
 
 
 def test_projection_requires_authentication(artifact_version: ArtifactVersion) -> None:

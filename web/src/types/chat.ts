@@ -674,5 +674,13 @@ export interface ProjectPlanToCodingResponse {
   tech_plan: string
   affected_files: Array<{ file_path: string, change_type: string }>
   recommended_repository_ids: string[]
+  /**
+   * 推荐仓库的 `{id, name}`（按 plan 所属 space 过滤）。
+   *
+   * 🔴 不能只靠 `recommended_repository_ids`：`RepoMultiSelector` 要用名字渲染每一
+   * 行，只给 id 会让交棒后的选仓面变成「未找到匹配的仓库」——用户既看不到 AI 推荐
+   * 了哪几个仓，也无法勾选或取消。id 与本列表可能不等长（跨 space 的 id 只在前者）。
+   */
+  recommended_repositories: RepoSelectableItem[]
   provenance: CodingPlanProvenance
 }

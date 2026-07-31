@@ -14,7 +14,7 @@
  * 点击到卡片出现之间没有空窗、不依赖刷新时序。`activeCodingPlan` 仍是 sessions
  * 状态的实时来源（TechPlanCard 内部既有行为，不改）。
  */
-import type { CodingPlanProvenance } from '~/types/chat'
+import type { CodingPlanProvenance, RepoSelectableItem } from '~/types/chat'
 import { ref } from 'vue'
 import TechPlanCard from '~/components/chat/TechPlanCard.vue'
 import { Badge } from '~/components/ui/badge'
@@ -56,6 +56,18 @@ const localTechPlan = ref('')
 const localAffectedFiles = ref<Array<{ file_path?: string, path?: string, change_type: string }>>([])
 const localRecommendedRepositoryIds = ref<string[]>([])
 /**
+ * 推荐仓库的 `{id, name}`（109-REVIEW HI-01）。
+ *
+ * 🔴 交棒时必须同时给出 `available-repositories` 与 `target-repositories`，不能只给
+ * `recommended-repository-ids`：两者在 `TechPlanCard` 里都 `withDefaults` 成 `[]`，
+ * 缺了就是——
+ *   ① 内嵌 `RepoMultiSelector` 拿到空列表 ⇒ 只剩「未找到匹配的仓库」，用户在这行
+ *      提示下面点一个不知道选了什么的「确认编码」，且无法取消任何一个推荐仓；
+ *   ② `visibleTargetRepositories` 落到空 ⇒「目标仓库」徽标区整块不渲染。
+ * 即 SC-1 的第一步「选目标仓」在界面上不成立。
+ */
+const localRecommendedRepositories = ref<RepoSelectableItem[]>([])
+/**
  * 投影响应带回的来源标志。**不渲染原始取值**（上游非受控值上屏即泄漏面），
  * 109-08 起作为 provenance prop 交给内嵌 TechPlanCard 做草稿标注判定 —— 不传
  * 就会让编排产出的方案落到保守分支、被误挂草稿横幅并多一次确认弹层。
@@ -75,6 +87,7 @@ async function handleEnterCoding(): Promise<void> {
     localTechPlan.value = resp.tech_plan
     localAffectedFiles.value = resp.affected_files ?? []
     localRecommendedRepositoryIds.value = resp.recommended_repository_ids ?? []
+    localRecommendedRepositories.value = resp.recommended_repositories ?? []
     localProvenance.value = resp.provenance
     // 幂等是系统正确性，不是用户需要理解的异常状态 ⇒ created=false 也走中性
     // success 通道，卡片表现与首次一致。
@@ -148,6 +161,8 @@ async function handleEnterCoding(): Promise<void> {
       :affected-files="localAffectedFiles"
       :provenance="localProvenance"
       :recommended-repository-ids="localRecommendedRepositoryIds"
+      :available-repositories="localRecommendedRepositories"
+      :target-repositories="localRecommendedRepositories"
       status="draft"
       :is-confirming="false"
     />
