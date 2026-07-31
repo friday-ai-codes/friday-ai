@@ -155,7 +155,7 @@ Plans:
 
 Plans:
 
-- [ ] 115-01-PLAN.md — 后端五个只读/轻写端点：蓝图正文（含 quality 三态，闭 MN-05）/ 阶段事件（21 个 BLUEPRINT_EVENTS，无会话回 200 空结构）/ 线程详情 GET（补 options + last_reminded_at + messages）与选区评论 POST（经新 service 收口，INV-6）/ 蓝图列表（ProjectMember 可见集合 + 方案 A 先聚合再切片 + 响应键 current_status 避开 INV-6 守卫 + 五键分页）；五端点照挂 _aassert_project_scope（import 复用，blueprint_review_views.py 零改动）（VIEW-01/03/04, CLAR-01）
+- [x] 115-01-PLAN.md — 后端五个只读/轻写端点：蓝图正文（含 quality 三态，闭 MN-05）/ 阶段事件（21 个 BLUEPRINT_EVENTS，无会话回 200 空结构）/ 线程详情 GET（补 options + last_reminded_at + messages）与选区评论 POST（经新 service 收口，INV-6）/ 蓝图列表（ProjectMember 可见集合 + 方案 A 先聚合再切片 + 响应键 current_status 避开 INV-6 守卫 + 五键分页）；五端点照挂 _aassert_project_scope（import 复用，blueprint_review_views.py 零改动）（VIEW-01/03/04, CLAR-01）
 - [ ] 115-02-PLAN.md — 前端数据层与纯函数地基：happy-dom 能力锁探针 settle A2 + types/api×2/config 12 态/annotationTokens/StatusBadge + utils 两件（blockText 四分支同源 P-13、iterBlocks 13 处 collect、canonical 指纹、区间切分、两段式 offset）+ stores + 三个 composable（唯一轮询消费点 useBlueprintLive：snapshot 走函数式 refetchInterval 读自身 data，doc/events 走 isLive 并**必须配 watch(isLive) 的 refetch 踢动**——函数体读外部 ref 不是被追踪的响应式依赖，缺了它章节进度会静默冻结；配 useBlueprintLive.spec.ts 的 1→2 时序用例）+ 三处纯追加点一次做完（i18n 全量子树 / safelist 12 图标 / api barrel）+ 前端源码扫描守卫 spec（VIEW-01/02/03/04, CLAR-01, FLOW-08）
 - [ ] 115-03-PLAN.md — 块渲染与批注可视层 + 引用二级预览：BlueprintBlock（五类块分发 + <mark> 字符区间 + 越界/table/mermaid 整块降级 + orphaned 正文不渲染 + citation chip，批注与引用的唯一实现点）/ BlueprintBlockList（段级三分支 + 选区侦测唯一落点，同块与跨块分流）/ CitationPreviewDialog + 五个子件（任何失败一律快照兜底且不关弹窗；chunk-at 判据用 usable）；⭐ **代码预览为降级形态（文件路径 + 行号区间 + 引用快照，无源码正文因而无行高亮），源码正文读面顺延 116** —— chunk_lookup 只 select chunk_id/file_path/line_start/line_end/chunk_index，chunk_at_views 返 {path,line,chunks} 不带正文，唯一带 content 的读面是需要 query 的向量搜索，无法按 path+行号区间取，故 SC-3 已同步收窄（VIEW-01/02, CLAR-01）
 - [ ] 115-04-PLAN.md — 线程侧栏与写路径 + 人审终审 + 版本 diff：四组分组（一律走 sidebarGroups，失锚不二次过滤）+ ⭐ kind 硬分流做在渲染层（finding 卡里根本没有 Composer 节点）+ readonly 是不存在于 DOM 而 finding 处置不受其约束 + 终审 disabled+Tooltip 与二次确认 + ⭐ approve 409 的 unresolved_blocker_thread_ids 逐条可点跳转 + 质量面板三态绝不显示 0 + 版本切换与 block 级 diff（canonical 分类 + diffWords + .diff-* 复制进 scoped）（CLAR-01, FLOW-08, VIEW-01）
@@ -468,7 +468,7 @@ Plans:
 | 112. 规格门与双面路由调研 | v0.20.0 | FLOW-01/02/03/04, CHARTER-02/03 | 5/5 | ✅ Complete (16/17 + gap closed) | 2026-07-30 |
 | 113. 分仓方案与融合 + Context Bus | v0.20.0 | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | 6/6 | ✅ Complete (passed 54/54) | 2026-07-30 |
 | 114. 审查与澄清收敛 | v0.20.0 | FLOW-07, CLAR-02/03/04 | 4/5 | 🟡 In Progress (114-01/02/03/04 done, 1263 passed) | - |
-| 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 0/TBD | Not started | - |
+| 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 1/7 | In Progress | 115-01 后端五端点已收口 |
 | 116. 入口收编与导出 | v0.20.0 | GATE-01, VIEW-05 | 0/TBD | Not started | - |
 
 **Coverage (v0.20.0):** 35/35 需求全部映射，无孤儿、无重复（DEPTH-01~05 自 v0.19.0 Phase 108 迁入，映射见 REQUIREMENTS.md）。

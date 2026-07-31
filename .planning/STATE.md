@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
-status: "Phase 114 已收口**且已过 code review 修复**（`114-REVIEW.md` status: fixed，10 fixed / 1 skipped），下一个 **Phase 115 前端查看器与知识库**（消费契约见 `114-05-SUMMARY.md` 的七端点契约表与「Next Phase Readiness」节；⚠️ 契约有两处**收紧**，见下）"
-last_updated: "2026-07-31T07:30:41.519Z"
-last_activity: 2026-07-31
+status: executing
+last_updated: "2026-07-31T12:03:35.640Z"
+last_activity: 2026-07-31 -- 115-01 executed
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 20
-  completed_plans: 20
+  total_plans: 27
+  completed_plans: 21
   percent: 67
 ---
 
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/technical-blueprint/DESIGN.md](./technical-blueprint/DESIGN.md)**（13 节，§12 八项决策已定夺，plan-phase 必读）。
 
 **Core value（v0.20.0，在建）:** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，仓库章程补齐净新增落点知识，飞书式划线澄清多轮收敛，全生命周期可管理，知识库可查可引可导出。
-**Current focus:** Phase 114 — 审查与澄清收敛（AI 对抗审查 + 线程闭环 + 人工编辑）
+**Current focus:** Phase 115 — 前端查看器与知识库（结构化阅读 + 批注 + 管理面）
 
 ## Current Position
 
-Phase: 115
-Plan: Not started
-Status: Phase 114 已收口**且已过 code review 修复**（`114-REVIEW.md` status: fixed，10 fixed / 1 skipped），下一个 **Phase 115 前端查看器与知识库**（消费契约见 `114-05-SUMMARY.md` 的七端点契约表与「Next Phase Readiness」节；⚠️ 契约有两处**收紧**，见下）
-Last activity: 2026-07-31
+Phase: 115 (前端查看器与知识库（结构化阅读 + 批注 + 管理面）) — EXECUTING
+Plan: 2 of 7
+Status: 115-01（后端五端点供数面）已收口并全量后端门通过（8606 passed / 1 failed，唯一失败是 worktree 的 skills 快照守卫环境现象）；下一个 115-02 前端数据层与纯函数地基
+Last activity: 2026-07-31 -- 115-01 executed
 
 ⚠️ **115 需要知道的两处端点契约收紧**（修 CR-01 / MJ-03 / MJ-04 引入，前端必须适配）：
 
@@ -126,6 +126,9 @@ Last activity: 2026-07-31
 - [Phase 114 review 修复, 2026-07-31]: **同一 rule 的不同形态必须由 `rule_id` 区分，不能靠 `section_path`**（MN-03）：`finding_dedupe_key` 优先取 `block_id`，改 `section_path` 根本不改变键；而 `rule_id` 是 `_aload_finding_threads` 唯一能从线程首条消息 `[rule_id]` 前缀反查回来的段，也因此是唯一能让**第二轮**的键仍分得开的载体（给 `_finding` 加 `variant` 键无效——反查不回来）。`gate_lock_violation` 已拆成 `_MISSING`（保留原值）/`_ROLE`/`_RESPONSIBILITY` 三值。
 - [Phase 114 review 修复, 2026-07-31]: **终审态不由续驱驱动**（MN-06）：`blueprint_resume._HUMAN_OWNED_STATUSES`（`pending_review`/`confirmed`/`implementing`/`implemented`/`archived`/`superseded`）在状态映射前短路——这些状态的推进只归人审动作端点与下游 implementing 链。原先 `pending_review` + 未决 BLOCKER 会让映射器每次续驱都白抛一次非法边并刷一条 `blueprint_status_map_skipped`，真故障淹没在噪声里。
 - [Phase 114 review 修复, 2026-07-31]: **周期任务的「已完成」计数与事件必须在写回成功之后才落**（MN-04）；**扫描窗口必须显式排序**（MN-01）——`BlueprintThread.Meta` 无 `ordering`，无 `ORDER BY` 的 `LIMIT` 会让已提醒的线程永久占名额、后来的静默饿死。两条对 115/116 新增的任何「扫描 + 写锚点」周期任务同样适用。
+- [Phase 115-01]: 蓝图列表响应键定为 current_status（避开 INV-6 字段级守卫；ORM 过滤走 _STATUS_FIELD 常量），UI-SPEC §3.3 同步订正
+- [Phase 115-01]: 列表分页体定为 {total, items, page, page_size, has_next} 五键（方案 A 的 Python 侧过滤用不上 DRF 分页 helper），订正 UI-SPEC §3.3 的「DRF 分页体」
+- [Phase 115-01]: 范围闸与中性 404 文案常量一律 import 复用 blueprint_review_views 私有符号（既有文件零改动），使「非成员 404 与不存在 404 逐字相同」结构性成立
 
 ### Pending Todos
 
@@ -157,7 +160,7 @@ Last activity: 2026-07-31
 
 ## Session Continuity
 
-Last session: 2026-07-31 — Phase 114 全量交付（114-01 线程底座 → 114-02 判定内核 → 114-04 回灌与人工编辑 → 114-03 ai_review stage → 114-05 人审端点与度量面收口）+ **code review 修复（10 fixed / 1 skipped，11 个原子 commit）**
+Last session: 2026-07-31T12:03:17.138Z
 Next step: **Phase 115（前端查看器与知识库）** —— 可直接消费 `114-05-SUMMARY.md` 的七端点契约表（URL / `name` / 入参 / 状态码映射 / GET 快照响应键 / answer 的 `reflow` 键 / approve 409 的未决清单形状）与「Next Phase Readiness」节；版本溯源用 `produced_by_ref` 四前缀（`human_edit:` / `ai_review_reflow:` / `human_block_restore:` / `blueprint_review_reject:`）。
 
 ⚠️ **开工前先读三条**：
@@ -167,3 +170,9 @@ Next step: **Phase 115（前端查看器与知识库）** —— 可直接消费
 3. **两个 115 必须接的缺口**：① **通知面**——澄清提醒只落事件与周期锚点，用户收不到实际通知；② **`blueprint_quality` 三项统计零消费方**——口径已实装但无人消费，且**不能**接进 `evaluate_blueprint_golden`（golden case 无 `artifact_id`）。两条均见 Pending Todos。
 
 Resume file: 无（干净接力点：Phase 111–114 全部 commit 已入库）
+
+## Performance Metrics
+
+| Phase | Plan | Duration | Notes |
+|-------|------|----------|-------|
+| Phase 115 P01 | 90m | 3 tasks | 7 files |
