@@ -1,11 +1,14 @@
 ---
 phase: 115-ui
-status: findings
+status: fixed
 reviewed: 2026-08-01
+fixed: 2026-08-01
 findings_total: 7
 critical: 0
 major: 4
 minor: 3
+fixed_count: 6
+skipped_count: 1
 depth: deep
 ---
 
@@ -344,3 +347,126 @@ except Exception as exc:
 _Reviewed: 2026-08-01_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: deep_
+
+## Fix Log
+
+**修复于：** 2026-08-01 · 分支 `milestone/v0.20.0-blueprint`（worktree `v0.20-blueprint`）
+**结论：6 fixed / 1 skipped。** 四条 MAJOR 全修；MINOR 修 2 条、跳 1 条（MN-03，理由见文末）。
+
+MJ-02 / MJ-03 的评审探针已**转成永久回归用例**（不是一次性探针），连同 MJ-01 / MJ-04 / MN-02
+的新用例每条都实测过「修前红 / 修后绿」，逐条证据附在各节之后。**每条主断言都配了非恒真对照**
+——「一律判 done」「一律计数」「永不隐藏」这类同样能让主断言变绿的错误实现都会被拦住。
+
+### MAJOR
+
+| ID | 结论 | commit | 说明 |
+|---|---|---|---|
+| MJ-01 | **fixed** | `2d20b4a9` | `invalidateGate` 收窄的两个精确 key 改回**前缀失效** `['blueprint']`（与页面 `invalidateBlueprint` 同一口径）。`doc` 的 key 尾段是 `versionId ?? 'current'`，精确匹配天然写不全 —— 这本身就是必须用前缀的理由 |
+| MJ-02 | **fixed** | `23b22bff` | 末态改由**会话位序 + 编排终态**推断：走过 `current_stage` 的阶段收 `done`；`confirmed`/`implementing`/`implemented`/`archived` 四态下发过事件的阶段一律 `done`。`.failed` 后缀**优先于**两条推断。聚合与推断收敛为 `blueprintBlocks.buildStageTimeline` 单一实现，组件退化为纯呈现 |
+| MJ-03 | **fixed** | `1e2e25a8` | 顶栏改读人审快照的权威 `unresolved_blocker_count`（由 confirm 闸的**同一个方法**产出，天然同口径；用 `??` 而非 `\|\|`，`0` 是合法权威值）。本地派生降为占位，判据抽成 `isUnresolvedBlocker` 并与同文件里原本就正确的 `sectionTones` 共用一份实现 |
+| MJ-04 | **fixed** | `2f67c2b9` | 后端聚合失败**如实 503 + 中性 detail**（⛔ 不回显异常原文）；埋点另包一层 try/except 保持 best-effort。前端 tab 面板加 `isError` 档、项目卡 `hidden` 加 `&& !isError` 并在卡内给重试入口。零新增 i18n（复用已存在的 `error.unavailable` / `error.retry`） |
+
+**修前红 / 修后绿证据**
+
+- **MJ-01**：七个动作的失效断言从「`invalidateQueries` 被调用过什么入参」改成**按缓存条目
+  `isInvalidated` 判五键覆盖面**（⛔ 不断言调用次数——那不能证明覆盖面，正是这条让原缺陷躲过
+  既有 22 条用例）。只回滚组件时 **7 条转红**，报错逐字指向 `['blueprint','doc',id,'current']`
+  未失效；修后 22/22 全绿。
+- **MJ-02**：新建 `components/blueprint/__tests__/stageTimeline.spec.ts`，逐字复刻评审探针
+  （完整事件流 + `currentStatus='confirmed'` ⇒ 八节点 `running` 数为 **0**、`animate-spin` 为 **0**）。
+  修前 **5 条转红**，实测 `{route, repo_plan, merge}` 三个 `running`，与评审记录一致；修后连同
+  纯函数单测共 81 条全绿。⚠️ 修复中发现评审建议修法里一处**会静默失效的坑**：会话 stage 名与
+  时间线节点名**不同名**（`repo_confirmation` ↔ `confirmation`、`reroute` 并进 `route`），直接
+  `BLUEPRINT_STAGES.indexOf(currentStage)` 在确认门阶段返 `-1`、位序推断整条不生效。已补别名表并
+  单独立断言。另：`current_stage` **不会**取 `__done__`（`transition` 在 `target == STAGE_DONE`
+  时保留 `from_stage`），评审提示的 `-1` 短路来自别名缺失而非 sentinel。
+- **MJ-03**：三条实测复现全部转成用例。修前 **8 条转红**，实测 `orphaned+open ⇒ 0`、
+  `answered ⇒ 0`（后端各算 1），与评审记录逐字一致；另加 `resolved`/`dismissed`/非 blocker/
+  非 finding 四条非恒真对照。页面级另补三条（顶栏取权威值、权威 `0` 不被本地派生覆盖、段徽标
+  与顶栏同口径）。修后 69/69 全绿。
+- **MJ-04**：后端 3 条 —— 503 且**响应体逐字不含 `items` / `total`**（只断状态码不够：若有人把空
+  结构也塞进 503 体，前端 `items.length === 0` 分支又会把它读成空态）、detail 不泄漏异常原文、
+  **埋点抛异常仍 200** 作非恒真对照（钉死「best-effort 只覆盖观测」这条边界）。前端 4 条 ——
+  卡片在失败时仍存在、tab 面板出重试且不出空态、真空仍走空态、`hideWhenEmpty` 真空确实隐藏。
+  修前后端 3 条 + 前端 4 条转红（实测：项目卡整张消失、tab 面板显示「没有匹配的技术方案」），修后全绿。
+
+### MINOR
+
+| ID | 结论 | commit | 说明 |
+|---|---|---|---|
+| MN-01 | **fixed** | `c5bdf8bb` + `94c86be5` | 采纳评审的后一条建议（更贴合本相位「纯函数集中在 utils」的分层）：删掉 composable 里那份零消费方的 `stageTimeline` 与 `StageTimelineNode`，唯一实现落在 `blueprintBlocks.buildStageTimeline`。同源性由 `stageTimeline.spec.ts` 用例 6 锁死（组件渲染出的 `data-state` 与纯函数返回逐节点相同）。第二个 commit 是 `auto-imports.d.ts` 生成物同步 |
+| MN-02 | **fixed** | `bfe81246` | 404 档追加「回到当前版本」出口。判据是**纯结构化**三条 AND（`?version=` 非空 + 正文 404 + 人审快照 200），⛔ 不读 `detail` 文本。⭐ **只加动作不加话**：中性文案一字不改 —— 采纳评审「不新增 404 文案键」的约束，后端零改动 |
+| MN-03 | **skipped** | — | 见下方完整理由 |
+
+**修前红 / 修后绿证据（MN-02）**：`?version=v-gone` + 正文 404 + 快照 200 时按钮出现、点击清掉
+`?version=` 两条修前红；另两条非恒真对照（不带 `version` 的 404、快照也 404 的真无权场景）修前
+即绿——它们本就该绿。修后 17/17 全绿，源码守卫 6/6（**断言 4 未被放宽**：`error.*` 键集未新增）。
+
+### 跳过项的完整理由
+
+#### MN-03（范围闸 400 分支的存在性预言机）—— **skipped**
+
+评审给的判据是「能否在**不破坏既有四条语义契约**的前提下关掉」。**不能**，四条独立理由：
+
+1. **400 本身就是那四条语义之一。** `115-01-PLAN.md:126` 逐字写着「四条语义：superuser 直通 →
+   从最新版本 `meta.project_id` 取范围 → 非 UUID/缺失 **400** fail-closed → 非 `ProjectMember`
+   **中性 404** → 放行返 `None`」，`_aassert_project_scope` 的 docstring 也把 400 标为 fail-closed
+   的标志物。把它并进 404 就是**删掉四条里的一条**，正好落在评审设的那条否决线上。
+2. **这是 114 的面，且 115 明文 🔒 零改动。** `115-01-PLAN.md` 在 `:18` / `:122` / `:220` / `:443`
+   四处要求 `git diff server/delivery/api/blueprint_review_views.py` **输出为空**；115 的两个新 View
+   模块**刻意 import 复用**该符号而不复制，正是为了不让四条语义出现第二个可漂移副本。在本轮修复里
+   改它，等于用一条 MINOR 推翻相位边界。
+3. **改了会给合法用户造出一条新的死路。** 这道闸跑在成员判定**之前** ⇒ 它对**真成员**同样触发。
+   400 在前端走就近渲染并原样回显后端 detail（「无法确定该蓝图的项目范围：meta.project_id 缺失或
+   非法」——这句话足以让管理员知道去修哪份数据）；改成 404 则整页替换成中性「无权访问或该蓝图不
+   存在」且无恢复出口 —— **正是本轮 MN-02 刚修掉的那个形状**。用一条 MINOR 换回另一条 MINOR，净收益为负。
+4. **暴露面窄且已被上界卡死。** 泄露只发生在 `meta.project_id` 缺失/非 UUID 的那一小批蓝图上
+   （历史 `"proj-0001"` 形状）。对**全部形状正常**的蓝图，「非成员 404」与「不存在 404」用的是
+   **同一个常量对象** `_ARTIFACT_MISSING_DETAIL`（本轮复核确认 11 个端点逐字一致），预言机已关闭。
+
+**成本侧**：会翻掉两族参数化用例（`test_doc_endpoints_fail_closed_without_project_id` 覆盖 6 个
+端点、`test_review_endpoints_fail_closed_when_the_project_scope_is_unresolvable` 覆盖 5 个），
+而这些用例断的正是「400 = fail-closed 契约」本身。
+
+**因此按评审自己给的口径判为「设计决策而非缺陷」，登记顺延。** 已写进 `.planning/STATE.md`
+的 Pending Todos 供 Phase 116 与后端授权面一并处置——那时若要动，正确形态是**连同四条语义契约
+一起改版**（含前端 400 档的去向），而不是单点改一行状态码。
+
+### 门禁
+
+| 门 | 结果 |
+|---|---|
+| 后端 `uv run pytest tests/ -q` | **8609 passed / 1 failed**（基线 8606/1，**+3** 为本轮新增）；唯一失败仍是 `test_skills_snapshot_guard`（worktree 环境产物，`skills/` 目录为空，非本轮引入） |
+| `makemigrations --check --dry-run` | **No changes detected**（相位内仍零 migration） |
+| 后端 `ruff check` / `format --check` | 全绿（`All checks passed!` / `2 files already formatted`） |
+| 前端 `pnpm exec vitest run` | **1674 passed / 1 skipped**（基线 1640/1，**+34** 为本轮新增；唯一 skip 仍是既有的 `layouts/__tests__/default.spec.ts:66`） |
+| 前端 `pnpm type-check` | **exit 0** |
+| 前端 `pnpm lint` | **111 problems**（与基线逐字相同）；本轮 20 个改动文件与告警文件集**交集为空** ⇒ 零新增 |
+| 前端 `pnpm build` | 成功。⚠️ 它按既知行为改写 `src/components.d.ts`（**纯删除 29 条**无关项）—— 已 `git checkout` 还原，**未提交**；`pnpm-workspace.yaml` 本轮无 catalog 回填 |
+
+### 硬约束自检
+
+| # | 约束 | 结论 |
+|---|---|---|
+| 1 | §13.2 前端 CREATE-ONLY / 四个零改动组件 | ✓ 本轮改的前端文件**全部是 115 自己新建的**（`git log --diff-filter=A` 逐个核过）；`TechPlanCard` / `RoutingDecisionPanel` / `NodeDataTab` / `ArtifactTimeline` **零改动**；五个追加点本轮一处未动（**含 `zh-CN.json`：零新增 i18n 键**） |
+| 1b | 冻结后端面 | ✓ `repo_router_v2.py` / 六个 legacy `technical_plan` process 文件 / `server/services/process_runtime/**` / `blueprint_review_views.py` / `event_taxonomy.py` **全部零改动**；未新增任何 `ConvergenceSessionEvent` 类型 |
+| 2 | 无新 migration | ✓ `makemigrations --check` 输出 `No changes detected` |
+| 3 | 可观测性 | ✓ 事件名 / `category` / `component` / `duration_ms` 一字未改；`_log_list` 补成 best-effort（`except: pass`）；503 的 detail 是**中性常量**，⛔ 不回显异常原文。⭐ MJ-04 的要点正是**不把 best-effort 延伸到业务**：`_aggregate` 的异常如实 5xx。蓝图正文 / finding 正文 / 澄清文本本轮**未新增任何入日志路径** |
+| 4 | 列表端点保留 `current_status` 与模块常量 ORM 过滤 | ✓ `_STATUS_FIELD` 与响应键一字未动；`test_blueprint_inv6_guard.py` 全绿 |
+| 5 | adrf / `sync_to_async` / INV-6 | ✓ 未新增任何 ORM 调用；View 仍零 ORM 写 |
+| 6 | 零新运行时依赖 / zh-CN | ✓ 未动任何 `package.json` / `pyproject.toml`；注释、docstring、commit message 全中文 |
+
+### 本轮顺带发现（**未修**，已登记 STATE）
+
+- **`redact_secrets_in_text` 不覆盖数据库连接串。** 它只替换 `sk-ant-*` / `sk-*` / `AIza*` /
+  `Bearer *` / PEM 私钥（`common/logging.py:362`）。写 MJ-04 用例时实测：异常文本里的
+  `postgres://user:s3cr3t@10.0.0.1:5432/friday` **原样进了日志**。这不是 115 引入的，也不限于蓝图链
+  —— 全仓 `redact_secrets_in_text(str(exc))` 的调用点都吃这一口径，属**平台级脱敏面**
+  （`common/logging.py` 的 `SENSITIVE_VALUE_PATTERN`），改它要连带回归全部消费方，超出本轮七条
+  findings 的边界，故只登记不修。
+
+---
+
+_Fixed: 2026-08-01_
+_Fixer: Claude (gsd-code-fixer)_
+_Iteration: 1_
