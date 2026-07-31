@@ -393,7 +393,12 @@ describe('isUnresolvedBlocker —— 与后端 confirm 闸同口径（MJ-03）',
     ['非 finding 通道（澄清）', { kind: 'ai_clarification' as const }],
     ['非 finding 通道（人工评论）', { kind: 'human_comment' as const }],
   ])('对照（非恒真）：%s ⇒ 不计入', (_label, overrides) => {
-    const base = { kind: 'ai_review_finding', severity: 'blocker', status: 'open', blocking: true }
+    const base = {
+      kind: 'ai_review_finding',
+      severity: 'blocker',
+      status: 'open',
+      blocking: true,
+    } satisfies Partial<BlueprintThreadDetail>
     const one = thread({ thread_id: 'f4', ...base, ...overrides })
     expect(isUnresolvedBlocker(one)).toBe(false)
     expect(counts([one])).toBe(0)
