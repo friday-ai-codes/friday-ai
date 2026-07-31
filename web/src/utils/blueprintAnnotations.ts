@@ -269,16 +269,51 @@ export function sidebarGroups(
   }
 }
 
-/** 侧栏顶部的三个计数（未决 BLOCKER / 待澄清 / 失锚）。 */
-export function annotationCounts(groups: SidebarGroups): {
+/**
+ * ⭐ 「未决 BLOCKER」的**唯一**判据 —— 逐字对齐后端 confirm 闸
+ * （`blueprint_lifecycle_service.py:441-446` 的三条 AND）。
+ *
+ * ```python
+ * kind=ThreadKind.AI_REVIEW_FINDING,
+ * severity=ThreadSeverity.BLOCKER,
+ * status__in=[ThreadStatus.OPEN, ThreadStatus.ANSWERED],
+ * ```
+ *
+ * ⛔ **不看 `blocking`**：后端判据里没有这一项，加上它会漏掉 `blocking=false` 的 BLOCKER。
+ * ⛔ **不看 `anchor_status`**：失锚是**锚定维度**，与「挡不挡确认」正交 —— 一条锚在某 block
+ * 上的 BLOCKER，只要那个 block 在后续版本里被改到重锚失败就落 `orphaned`，而它的 `status`
+ * 仍是 `open`、**仍然挡 confirm**。
+ *
+ * ⚠️ 因此本判据必须作用在**全量 `threads`** 上，⛔ 不能作用在 `sidebarGroups` 的
+ * `open` 组上 —— 那一组已经先做过 `anchor_status !== 'orphaned'` 过滤。
+ *
+ * 口径漂移的后果不是「数字差一点」：顶栏显示「0 条未决 BLOCKER」，用户去点「确认」必吃 409。
+ * 信息面在鼓励用户按一个注定失败的按钮。⭐ 页面顶栏优先读人审快照的权威字段
+ * `unresolved_blocker_count`，本函数只是快照未就绪时的占位。
+ */
+export function isUnresolvedBlocker(thread: BlueprintThreadDetail | null | undefined): boolean {
+  return thread?.kind === 'ai_review_finding'
+    && thread?.severity === 'blocker'
+    && (thread?.status === 'open' || thread?.status === 'answered')
+}
+
+/**
+ * 侧栏顶部的三个计数（未决 BLOCKER / 待澄清 / 失锚）。
+ *
+ * @param groups 侧栏四组（`pendingClarification` / `orphaned` 是**呈现维度**，按组算）。
+ * @param threads 全量线程 —— `unresolvedBlocker` 必须在 `anchored` 过滤**之前**算。
+ */
+export function annotationCounts(
+  groups: SidebarGroups,
+  threads: readonly BlueprintThreadDetail[],
+): {
   unresolvedBlocker: number
   pendingClarification: number
   orphaned: number
 } {
+  const list = Array.isArray(threads) ? threads : []
   return {
-    unresolvedBlocker: groups.open.filter(
-      thread => thread.severity === 'blocker' && thread.blocking,
-    ).length,
+    unresolvedBlocker: list.filter(isUnresolvedBlocker).length,
     pendingClarification: groups.open.filter(thread => thread.kind === 'ai_clarification').length,
     orphaned: groups.orphaned.length,
   }

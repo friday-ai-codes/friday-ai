@@ -28,6 +28,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import { ApiError } from '~/api/client'
 import BlueprintViewerPage from '~/pages/knowledge/blueprints/[id].vue'
+import { annotationCounts, sidebarGroups } from '~/utils/blueprintAnnotations'
 
 const ARTIFACT_ID = '11111111-1111-1111-1111-111111111111'
 
@@ -385,5 +386,67 @@ describe('蓝图查看器 —— 生成中与历史版本', () => {
     await flush()
     expect(wrapper.find('[data-testid="blueprint-history-notice"]').exists()).toBe(true)
     expect(wrapper.findComponent(SidebarStub).props('readonly')).toBe(true)
+  })
+})
+
+/**
+ * ⭐ MJ-03 回归：顶栏的「未决 BLOCKER」必须与后端 confirm 闸同口径。
+ *
+ * 判据源是人审快照的权威字段 `unresolved_blocker_count`（后端由 confirm 闸的**同一个方法**
+ * 产出）。口径漂移的症状很具体：顶栏说「0 条未决」，用户点「确认」必吃 409 —— 信息面在
+ * 鼓励用户按一个注定失败的按钮。
+ */
+describe('蓝图查看器 —— 顶栏未决 BLOCKER 计数（MJ-03）', () => {
+  /** 前端派生会漏计的两类：失锚的 open BLOCKER、已作答的 BLOCKER。 */
+  function makeBlockerThread(overrides: Record<string, unknown> = {}) {
+    return {
+      thread_id: 'th-blocker',
+      kind: 'ai_review_finding',
+      severity: 'blocker',
+      status: 'open',
+      blocking: true,
+      anchor_status: 'anchored',
+      anchor: { block_id: 'b1', section_path: 'requirement_spec', start_offset: 0, end_offset: 1 },
+      question: '',
+      created_at: '2026-08-01T00:00:00Z',
+      messages: [],
+      ...overrides,
+    }
+  }
+
+  it('10. 顶栏取快照的权威 unresolved_blocker_count，⛔ 不取本地派生', async () => {
+    api.getBlueprintReviewSnapshot.mockResolvedValue(makeSnapshot({ unresolved_blocker_count: 2 }))
+    api.getBlueprintThreads.mockResolvedValue({ threads: [] })
+    const { wrapper } = mountPage()
+    await flush()
+    expect((wrapper.findComponent(HeaderStub).props('counts') as { blocker: number }).blocker).toBe(2)
+  })
+
+  it('11. 权威值为 0 时不被本地派生覆盖（?? 而不是 ||）', async () => {
+    api.getBlueprintReviewSnapshot.mockResolvedValue(makeSnapshot({ unresolved_blocker_count: 0 }))
+    api.getBlueprintThreads.mockResolvedValue({ threads: [makeBlockerThread()] })
+    const { wrapper } = mountPage()
+    await flush()
+    expect((wrapper.findComponent(HeaderStub).props('counts') as { blocker: number }).blocker).toBe(0)
+  })
+
+  it('12. ⭐ 快照未就绪时的本地占位也要算上失锚与已作答的 BLOCKER', () => {
+    // 快照缺席 ⇒ 顶栏落到本地派生。它必须与后端三条 AND 同口径，否则占位期同样在说谎。
+    const list = [
+      makeBlockerThread({ thread_id: 'orphaned', anchor_status: 'orphaned' }),
+      makeBlockerThread({ thread_id: 'answered', status: 'answered' }),
+      // 对照：已处置的 BLOCKER 不计入（证明判据非恒真）
+      makeBlockerThread({ thread_id: 'resolved', status: 'resolved' }),
+    ] as never
+    expect(annotationCounts(sidebarGroups(list), list).unresolvedBlocker).toBe(2)
+  })
+
+  it('13. 段 badge 与顶栏计数同口径：失锚/已作答的 BLOCKER 让所在段标红', async () => {
+    api.getBlueprintReviewSnapshot.mockResolvedValue(makeSnapshot({ unresolved_blocker_count: 1 }))
+    api.getBlueprintThreads.mockResolvedValue({ threads: [makeBlockerThread({ status: 'answered' })] })
+    const { wrapper } = mountPage()
+    await flush()
+    const sections = wrapper.findComponent(AnchorNavLayoutStub).props('sections') as Array<{ id: string, badgeTone: string }>
+    expect(sections.find(section => section.id === 'requirement_spec')?.badgeTone).toBe('danger')
   })
 })
