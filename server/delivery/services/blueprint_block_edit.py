@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import copy
+import time
 from typing import Any, Iterator
 
 import structlog
@@ -39,6 +40,7 @@ __all__ = [
     "REASON_APPLY_FAILED",
     "HARD_REJECT_REASONS",
     "apply_block_ops",
+    "aapply_block_edit",
 ]
 
 OP_REPLACE = "replace"
@@ -199,3 +201,159 @@ def apply_block_ops(content: Any, ops: Any) -> tuple[dict, list[dict]]:
         )
         rejected.append(_reject("", "", REASON_APPLY_FAILED))
         return (copy.deepcopy(content) if isinstance(content, dict) else {}, rejected)
+
+
+def _has_hard_reject(rejected: list[dict]) -> bool:
+    return any(item.get("reason") in HARD_REJECT_REASONS for item in rejected)
+
+
+def _edit_result(
+    status: str,
+    *,
+    version_id: str = "",
+    version_no: int = 0,
+    rejected: list[dict] | None = None,
+    detail: str = "",
+    reanchor: dict | None = None,
+) -> dict:
+    """恒定六键返回（下游无需判空分支）。"""
+    return {
+        "status": status,
+        "version_id": version_id,
+        "version_no": version_no,
+        "rejected": list(rejected or []),
+        "detail": str(detail or "")[:_MAX_DETAIL_CHARS],
+        "reanchor": dict(reanchor or {}),
+    }
+
+
+async def aapply_block_edit(
+    artifact: Any,
+    ops: Any,
+    *,
+    user: Any = None,
+    initiated_by_user_id: str = "system",
+    session_id: str = "",
+    artifact_service: Any = None,
+    lifecycle_service: Any = None,
+) -> dict:
+    """人工 block 编辑的 service 收口（CLAR-03）：**五步固定顺序**，恒定返回键。
+
+    返回 ``{"status", "version_id", "version_no", "rejected", "detail", "reanchor"}``；
+    ``status`` 四值语义：
+
+    ==============  ==========================================================
+    status          语义
+    ==============  ==========================================================
+    ``applied``     patch 合法且内容有实质改动 ⇒ 已落新版本、已重锚定、已 upsert 评审人
+    ``unchanged``   patch 合法但 content_hash 与 current 相同 ⇒ **不翻版本**、不重锚定
+    ``rejected``    patch 结构性硬失败（见 ``rejected[].reason``）⇒ **不落版本**
+    ``invalid``     patch 应用后 content 不过 ``validate_blueprint`` ⇒ **不落版本**，
+                    ``detail`` 为可直接回显的中文错因（已脱敏截断）
+    ==============  ==========================================================
+
+    五步（照 ``blueprint_confirm_gate.alock`` 的固定顺序）：
+
+    1. **读最新版本作基线**（``order_by("-version_no").afirst()``）。⛔ **绝不读**
+       ``session.current_artifact_version``——上游 ``add_version`` 已推进 current，而
+       session 钉住的那一版是旧的，拿它作基线会把 AI 成果覆盖回旧内容
+       （``blueprint_confirm_gate.py:546-550`` 同源坑）。
+    2. :func:`apply_block_ops` 应用 patch；硬失败即返回 ``rejected``、不落版本。
+    3. ⭐ **显式 ``validate_blueprint``**：拿可回显的中文错因（``_format_error`` 已脱敏
+       并截断 500 字符），非法直接返回 ``invalid``，**不落半合法版本**。
+    4. ``add_version(produced_by_ref=f"human_edit:{user_id}")``——``human_edit:`` 前缀是
+       全仓唯一的「这一版是人写的」归属通道（``ArtifactVersion`` 无 ``created_by_user_id``），
+       114-04 的 :func:`blueprint_reflow.acollect_human_block_ids` 与 114-03 的人工块
+       保护都以它为判据。``ArtifactContentInvalid`` fail-closed 成 ``invalid``。
+    5. 落新版本后才：``areanchor_threads``（旧批注重挂新块）→ ``add_reviewer(..., "block_edit")``
+       （编辑者进评审人名单，§6.4）→ 结构化日志。**block 正文绝不进日志**（T-114-27）。
+    """
+    from delivery.models import ArtifactVersion
+    from delivery.services.artifact_service import ArtifactContentInvalid, ArtifactService
+    from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+
+    started = time.monotonic()
+    artifacts = artifact_service or ArtifactService()
+    lifecycle = lifecycle_service or BlueprintLifecycleService()
+
+    base = (
+        await ArtifactVersion.objects.filter(artifact_id=getattr(artifact, "id", None))
+        .order_by("-version_no")
+        .afirst()
+    )
+    if base is None:
+        return _edit_result("invalid", detail="蓝图尚无版本，无法编辑")
+
+    new_content, rejected = apply_block_ops(base.content, ops)
+    if _has_hard_reject(rejected):
+        return _edit_result("rejected", rejected=rejected, detail="patch 存在无法应用的操作")
+
+    from services.process_runtime.blueprint_schema import validate_blueprint
+
+    ok, error = validate_blueprint(new_content)
+    if not ok:
+        return _edit_result("invalid", rejected=rejected, detail=f"编辑后的蓝图不合法：{error}")
+
+    user_id = str(getattr(user, "id", "") or initiated_by_user_id or "system")
+    try:
+        version = await artifacts.add_version(
+            artifact,
+            new_content,
+            produced_by_session_id=str(session_id or ""),
+            produced_by_ref=f"human_edit:{user_id}",
+        )
+    except ArtifactContentInvalid as exc:
+        from common.logging import redact_secrets_in_text
+
+        logger.warning(
+            "blueprint_block_edit_invalid_content",
+            category="caller",
+            component="blueprint_block_edit",
+            artifact_id=str(getattr(artifact, "id", "")),
+            initiated_by_user_id=initiated_by_user_id or "system",
+            error=redact_secrets_in_text(str(exc)),
+        )
+        return _edit_result("invalid", rejected=rejected, detail=redact_secrets_in_text(str(exc)))
+
+    if str(version.id) == str(base.id):
+        # 同 content_hash 复用 current（`_add_version_sync:148-149`）⇒ 版本未翻，
+        # 块序列逐字未变 ⇒ 也不必重锚定。
+        return _edit_result(
+            "unchanged",
+            version_id=str(version.id),
+            version_no=int(version.version_no),
+            rejected=rejected,
+            detail="内容无实质改动，未产生新版本",
+        )
+
+    reanchor_counts = await lifecycle.areanchor_threads(
+        artifact,
+        new_content,
+        old_content=base.content if isinstance(base.content, dict) else None,
+        initiated_by_user_id=initiated_by_user_id or "system",
+    )
+    if user is not None:
+        await lifecycle.add_reviewer(artifact, user, "block_edit")
+
+    logger.info(
+        "blueprint_block_edit_applied",
+        category="caller",
+        component="blueprint_block_edit",
+        artifact_id=str(getattr(artifact, "id", "")),
+        version_no=int(version.version_no),
+        op_count=len(ops) if isinstance(ops, list) else 0,
+        rejected_count=len(rejected),
+        reanchor_checked=reanchor_counts.get("checked", 0),
+        reanchor_reanchored=reanchor_counts.get("reanchored", 0),
+        reanchor_orphaned=reanchor_counts.get("orphaned", 0),
+        reanchor_skipped=reanchor_counts.get("skipped", 0),
+        initiated_by_user_id=initiated_by_user_id or "system",
+        duration_ms=round((time.monotonic() - started) * 1000, 2),
+    )
+    return _edit_result(
+        "applied",
+        version_id=str(version.id),
+        version_no=int(version.version_no),
+        rejected=rejected,
+        reanchor=reanchor_counts,
+    )
