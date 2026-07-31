@@ -103,6 +103,23 @@ export const LIVE_BLUEPRINT_STATUSES: ReadonlySet<string> = new Set([
   'ai_reviewing',
 ])
 
+/**
+ * 编排**已确定走完**的四态（供阶段时间线把发过事件的阶段一律收成「完成」）。
+ *
+ * ⛔ 刻意**不含** `failed` 与 `superseded`：
+ * - `failed` 下把阶段收成「完成」会把失败讲成成功，那正是本集合要避免的反面；
+ * - `superseded` 是「被新版本取代」，它自己那一轮可能根本没跑完，无从推断。
+ *
+ * ⚠️ 这不是「终态」的通用定义，只服务于时间线的末态推断，⛔ 不要拿它当只读闸
+ * （只读闸是 `isBlueprintEditable` 的反面，两者成员刻意不同）。
+ */
+export const ORCHESTRATION_SETTLED_BLUEPRINT_STATUSES: ReadonlySet<string> = new Set([
+  'confirmed',
+  'implementing',
+  'implemented',
+  'archived',
+])
+
 /** 版本原因徽标配置（`produced_by_ref` 前缀 → 徽标），`labelKey` 同样走 i18n。 */
 export interface ProducedByConfig {
   labelKey: string
