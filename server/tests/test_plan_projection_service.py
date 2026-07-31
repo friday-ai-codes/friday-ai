@@ -751,6 +751,66 @@ def test_rebind_target_version_already_projected_is_fail_closed() -> None:
 
 
 @pytest.mark.django_db
+def test_rebind_write_failure_leaves_body_and_source_pointer_consistent() -> None:
+    """🔴 109-REVIEW MN-02：写库失败时正文与来源指针不得分裂。
+
+    原实现是两次独立写、外面没有事务：``aupdate_plan`` 先把**新正文**落库，随后的
+    ``asave``（写来源指针那一步）若失败，就留下「正文来自新版本 Y、指针仍指旧版本 X」
+    的混合态，而工具对用户报的是「什么都没变」。追溯链从此指向一个与正文无关的版本
+    ——不报错、只能靠人肉比对发现。
+
+    本用例让唯一那次写抛 ``IntegrityError``，断言正文、指针、来源标志三者**全部**
+    停在改写前。    断言正文是关键：只断言指针的话，两次写的旧实现照样能过。
+    """
+    conversation = _make_conversation()
+    actor = str(conversation.created_by_id)
+    session = _make_session(conversation)
+    v1 = _make_artifact_version(
+        session=session, content=_content(_task(repository_id="r1"), title="方案 v1")
+    )
+    v2 = _make_artifact_version(
+        session=session,
+        artifact=v1.artifact,
+        version_no=2,
+        content=_content(_task(repository_id="r2"), title="方案 v2"),
+    )
+    plan, _ = _project(v1.id, actor_user_id=actor)
+    body_before = plan.tech_plan
+    files_before = list(plan.affected_files or [])
+
+    original_filter = CodingPlan.objects.filter
+
+    def _fail_on_source_pointer_write(*args: Any, **kwargs: Any):
+        """只让「写来源指针」那一次 UPDATE 撞唯一约束，其余写照常放行。
+
+        🔴 这个粒度是本用例的关键：若无差别地让所有 UPDATE 抛错，两次写的旧实现也会
+        因为第一次写就失败而「碰巧」通过断言 —— 用例就成了摆设。只掐写到
+        ``source_artifact_version_id`` 的那一次，才真正区分得出「一次写」与「先写正文
+        再写指针」。
+        """
+        qs = original_filter(*args, **kwargs)
+        real_update = qs.update
+
+        def _maybe_raise(**fields: Any) -> int:
+            if "source_artifact_version_id" in fields:
+                raise IntegrityError("uniq_codingplan_source_artifact_version")
+            return real_update(**fields)
+
+        qs.update = _maybe_raise  # type: ignore[method-assign]
+        return qs
+
+    with patch.object(CodingPlan.objects, "filter", side_effect=_fail_on_source_pointer_write):
+        with pytest.raises(PlanProjectionError) as exc_info:
+            _rebind(plan, v2.id, actor_user_id=actor)
+
+    assert exc_info.value.code == "artifact_version_already_projected"
+    plan.refresh_from_db()
+    assert plan.tech_plan == body_before
+    assert plan.affected_files == files_before
+    assert str(plan.source_artifact_version_id) == str(v1.id)
+
+
+@pytest.mark.django_db
 def test_rebind_to_same_version_is_allowed() -> None:
     """re-bind 到自己已绑定的版本不该被唯一约束前置查询误伤（exclude(pk=self)）。"""
     conversation = _make_conversation()
