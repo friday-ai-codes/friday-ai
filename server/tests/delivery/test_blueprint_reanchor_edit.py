@@ -214,6 +214,77 @@ async def test_orphaned_thread_is_kept_and_centrally_queryable() -> None:
     assert orphaned == [str(thread.id)]
 
 
+async def test_threads_without_any_locator_are_skipped_not_marked_orphaned() -> None:
+    """⭐ MJ-02 回归：**本来就没 anchor** 的线程不参与重锚，``anchor_status`` 保持原值。
+
+    ``blueprint_anchor.reanchor`` 的第一条分支把「anchor 非 dict / 为空」直接判 orphaned
+    ——那对单条重锚是对的（调用方本该只拿有锚点的线程来问），但批量层取的是该 artifact
+    的**全量线程**。本仓大量线程天然无 anchor：``_abp_ensure_blocking_clarification``
+    开的「自动推进在 X 阶段停下了」线程、112 的规格门/确认门线程、用户没划线时的驳回
+    评论线程、以及无 ``block_id`` 的 finding 线程（anchor 三键全空串）。
+
+    而 ``areanchor_threads`` 挂在**每一条产版本路径**上 ⇒ 修前这些线程必然且持久地被标成
+    ``orphaned``，把 CLAR-02 唯一的呈现面 ``orphaned_threads`` 淹成噪声，真正「块被删掉
+    导致批注错位」的那几条反而找不到。
+    """
+    artifact = await _make_blueprint_artifact()
+    lifecycle = BlueprintLifecycleService()
+    # ① 完全无 anchor（系统线程的典型形状）
+    system_thread = await lifecycle.open_thread(
+        artifact,
+        kind=ThreadKind.AI_CLARIFICATION,
+        blocking=True,
+        question="自动推进在 merge 阶段停下了（原因：deps_unavailable），需要你处置后再继续。",
+    )
+    # ② anchor 是 dict 但三键全空串（114-03 对无 block_id finding 开线程的形状）
+    keyless_thread = await lifecycle.open_thread(
+        artifact,
+        kind=ThreadKind.AI_CLARIFICATION,
+        blocking=False,
+        question="[goal_backward_unavailable] goal-backward 审查未能执行",
+        anchor={"section_path": "", "block_id": "", "quoted_text": ""},
+    )
+    before = {
+        str(system_thread.id): (await _reread(system_thread)).anchor_status,
+        str(keyless_thread.id): (await _reread(keyless_thread)).anchor_status,
+    }
+
+    counts = await BlueprintLifecycleService().areanchor_threads(artifact, _base_content())
+
+    assert counts == {"checked": 2, "reanchored": 0, "orphaned": 0, "skipped": 2}
+    for thread in (system_thread, keyless_thread):
+        fresh = await _reread(thread)
+        assert fresh.anchor_status == before[str(thread.id)]
+    assert (
+        await BlueprintThread.objects.filter(
+            artifact=artifact, anchor_status=ThreadAnchorStatus.ORPHANED
+        ).acount()
+        == 0
+    )
+
+
+async def test_a_thread_with_a_real_but_deleted_anchor_still_becomes_orphaned() -> None:
+    """MJ-02 非恒真对照：**有**锚点却锚不上（块被删且无相似块）⇒ 仍必须落 orphaned。
+
+    与上一条并列——跳过判据只能筛掉「没有可锚定位」的线程，绝不能把「真失锚」一起放过，
+    否则 CLAR-02 的失锚清单就成了恒空。
+    """
+    artifact = await _make_blueprint_artifact()
+    thread = await _open_anchored_thread(artifact, block_id="blk_gone", quoted_text=_UNRELATED)
+    keyless = await BlueprintLifecycleService().open_thread(
+        artifact,
+        kind=ThreadKind.HUMAN_COMMENT,
+        blocking=False,
+        question="没划线的评论",
+    )
+
+    counts = await BlueprintLifecycleService().areanchor_threads(artifact, _base_content())
+
+    assert counts == {"checked": 2, "reanchored": 0, "orphaned": 1, "skipped": 1}
+    assert (await _reread(thread)).anchor_status == ThreadAnchorStatus.ORPHANED
+    assert (await _reread(keyless)).anchor_status != ThreadAnchorStatus.ORPHANED
+
+
 async def test_reanchor_never_mutates_the_anchor_it_receives() -> None:
     """守 4：精确命中分支 ``reanchor`` 返回同一对象 ⇒ 实现必须先拷贝再写 section_path。"""
     artifact = await _make_blueprint_artifact()
