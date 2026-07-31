@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
 status: executing
-last_updated: "2026-07-31T02:50:00.000Z"
-last_activity: 2026-07-31 -- Phase 114 plan 02 complete (审查判定内核)
+last_updated: "2026-07-31T04:15:00.000Z"
+last_activity: 2026-07-31 -- Phase 114 plan 04 complete (澄清回灌与人工编辑)
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 20
-  completed_plans: 17
-  percent: 50
+  completed_plans: 18
+  percent: 53
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 ## Current Position
 
 Phase: 114 (审查与澄清收敛（AI 对抗审查 + 线程闭环 + 人工编辑）) — EXECUTING
-Plan: 2 of 5 complete（114-01 线程底座 / 114-02 判定内核；下一个 114-03 ai_review stage adapter）
+Plan: 3 of 5 complete（114-01 线程底座 / 114-02 判定内核 / 114-04 回灌与人工编辑；下一个 **114-03 ai_review stage adapter**，其三个接线契约已由 114-04 就位）
 Status: Executing Phase 114
-Last activity: 2026-07-31 -- 114-02 交付 blueprint_review.py 判定内核（52 例新测试全绿，1189 passed 零回归）
+Last activity: 2026-07-31 -- 114-04 交付 areanchor_threads + blueprint_block_edit.py + blueprint_reflow.py（39 例新测试全绿，1228 passed 零回归，零 migration）
 
 ## Milestone Overview (v0.20.0 — Phases 111–116 — 🟡 PLANNING)
 
@@ -36,7 +36,7 @@ Last activity: 2026-07-31 -- 114-02 交付 blueprint_review.py 判定内核（52
 | 111 | 蓝图底座（schema + 状态机 + 线程/章程模型 + golden set） | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | ✅ Complete (4/4, passed 24/24) |
 | 112 | 规格门与双面路由调研（阶段 1 + 确认门 + 章程回灌） | FLOW-01/02/03/04, CHARTER-02/03 | ✅ Complete (5/5, 16/17 + gap closed) |
 | 113 | 分仓方案与融合（阶段 2/3）+ Context Bus | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | ✅ Complete (6/6, passed 54/54) |
-| 114 | 审查与澄清收敛（AI 审查 + 线程闭环 + 人工编辑） | FLOW-07, CLAR-02/03/04 | Not started |
+| 114 | 审查与澄清收敛（AI 审查 + 线程闭环 + 人工编辑） | FLOW-07, CLAR-02/03/04 | 🟡 In Progress (3/5 — 01/02/04 done) |
 | 115 | 前端查看器与知识库（查看器/批注/tab/终审 UI） | VIEW-01/02/03/04, CLAR-01, FLOW-08 | Not started |
 | 116 | 入口收编与导出（MCP 协议 + 全入口 + 飞书导出 + 图谱物化） | GATE-01, VIEW-05 | Not started |
 
@@ -92,6 +92,11 @@ Last activity: 2026-07-31 -- 114-02 交付 blueprint_review.py 判定内核（52
 - [Phase 112 review 修复, 2026-07-30]: **跨 process 污染防线**：确认门 `_aload_session` 必须强制过滤 `process_type="technical_blueprint"`（取不到即 404），且 `adrive_blueprint_session_to_pause_or_terminal` 入口加守卫 no-op——原实现按「最近一条」取会话会把并存的 `technical_plan` 会话用蓝图 engine 驱成 FAILED 而 REST 仍回 2xx（反向断言已证实）。后续任何按 artifact 取会话的代码都必须带 process_type 过滤。
 - [Phase 112 review 修复, 2026-07-30]: **规格门 fail-closed 补洞**：打分不可得或 `total=1.0` 时一律复述原问题重新挂起（兜底问题不参与指纹去重）；「问不出新问题」才放行且必须记 `capped=True` + `release_reason` 区分两条例外路径。
 - [Phase 112, 2026-07-30]: GAP-1 闭环：`reroute.excluded` 必须被候选筛选真实消费（路由候选 + 确认门 pending 两条来源同时剔除，仅人工升级豁免），reroute 轮复用 `blueprint_route(exclude_repository_ids=...)` 补候选、补不到才升门；排除集累积。
+- [Phase 114, 2026-07-31]: 114-04: **任何产新版本的路径都必须跟一次 `areanchor_threads`**，否则旧批注错位；基线一律 `order_by("-version_no").afirst()`，绝不读 `session.current_artifact_version`（会把上游成果覆盖回旧内容）。线程行写入唯一通道是 lifecycle service 内的 `bulk_update`（INV-6），adapter / view / 纯函数层只读。
+- [Phase 114, 2026-07-31]: 114-04: **写进 content 的时间戳必须来自可重放的既有数据**（`decision_log.decided_at` 取线程作答消息的 `created_at`）——用 `timezone.now()` 会让 `content_hash` 每次变、每次翻新版本，破坏「同 hash 不翻版本」并把版本历史刷成噪声。同理 `anchor` 不进 `decision_log`（随重锚定漂移）。
+- [Phase 114, 2026-07-31]: 114-04: **「AI 不覆盖人工」需要两个入口**——回灌侧 `detect_human_conflicts`（交集非空即不落版本、开阻塞线程）挡不住 `repo_rework`/`remerge` 的**重装**路径，后者由 `arestore_human_blocks` 逐块 canonical JSON 比对兜住（人工块写回 + 开线程）。「哪些块是人写的」唯一判据是 `produced_by_ref__startswith="human_edit:"`（`ArtifactVersion` 无 `created_by_user_id`）。
+- [Phase 114, 2026-07-31]: 114-04: `decision_log` 物化**必须保 `answer` 键**（`blueprint_spec_gate._collect_prior_answers:587` 读它），否则「同一问题不再重复问」在审查阶段静默断链；`applied_in_version` 取**基线版本 id**（产出版本 id 写入前不可知），产出版本经 `produced_by_ref == f"ai_review_reflow:{thread_id}"` 反查。
+- [Phase 114, 2026-07-31]: 114-04: `section_writer` 缺省即生产实现 `ablock_section_writer`（**不是 no-op**）——否则答案只进 `decision_log` 而正文永不更新，等于答案不落地；LLM 不可得只让该块原样保留，`decision_log` 与线程收尾照常 ⇒ 答案永不丢失。
 - [Phase 111, 2026-07-30]: 111-04: golden set 与 v0.19.0 路由 golden set 完全分离（`server/tests/fixtures/blueprint_golden/` + `evaluate_blueprint_golden` command），首条 case 为高三提分专项；引用覆盖率/目标仓命中率为纯函数，另三项 DB 统计留接口占位待 112–114 填充数据。
 
 ### Pending Todos
@@ -100,6 +105,7 @@ Last activity: 2026-07-31 -- 114-02 交付 blueprint_review.py 判定内核（52
 - [Phase 111 review 跳过项] **MN-12**：属权限口径决策（非实现缺陷），与 115 前端权限呈现一并定夺
 - [Phase 112 review 跳过项] **MN-06**：删除/启用皆属零行为收益的 churn（理由见 `.planning/phases/112-1/112-REVIEW.md` Fix Log）；MJ-06 的 `match_kind` 证据字段一并保留
 - [Phase 113 review 跳过项] **MN-09 重试计数无服务端权威来源**：两条建议修法均不可取——改 `session_id` 前缀撞冻结面 `research_adapter.py`；改走 `last_output` 是安全倒退（runner 可篡改 → 无界重试）。现状影响有界（卡住时人可见可续），**正解是给服务端加权威计数列**，另起小相位处理（见 `.planning/phases/113-2/113-REVIEW.md` Fix Log）
+- [Phase 114-04 延后项] **`blueprint_lifecycle_service.py:358` 的 `blueprint_transition_event_persist_failed` 缺 `category`/`component`**：111-02（commit `251697a7`）遗留，落在 114-04 追加点之前。114-04 对该文件的配额是「只允许文件尾纯追加、删除行 = 0」，修它会违反硬约束。影响有界（best-effort 事件持久化失败 warning，不进指标聚合），留给下一个正当修改该文件的 plan（114-05）顺带补齐
 - [Phase 112 残留 PARTIAL] **FLOW-02 的「替代建议」无结构化字段**：fitness 的 `reasons` 承载了理由，但 unsuitable 时的「建议改去哪个仓」未落成结构化字段（当前混在自由文本里）。113 若需机器消费该建议再补 schema 字段，否则留到 115 前端呈现时定夺
 
 ### Blockers/Concerns
@@ -119,5 +125,5 @@ Last activity: 2026-07-31 -- 114-02 交付 blueprint_review.py 判定内核（52
 ## Session Continuity
 
 Last session: 2026-07-29/30 — 设计蓝图收敛（DESIGN.md 13 节）+ 里程碑创建 + Phase 111/112/113 全量交付（autonomous 模式）
-Next step: **Phase 114 smart discuss → plan → execute**（DESIGN.md §5.5 AI 审查七类规则、§6.1-§6.3 线程回灌与人工编辑、§3.13 decision_log 为直接输入；111 的 schema/lifecycle/anchor + 112 的确认门 + 113 的完整蓝图装配为可消费上游）
+Next step: **114-03（ai_review stage adapter，wave 4）** —— 入口按 `arestore_human_blocks` → `aapply_thread_answers` → 判定内核 的顺序接线，任一返 `conflict` 即停等（已开阻塞线程）；三个契约的逐字签名与 status 语义见 `114-04-SUMMARY.md`「114-03 接线契约」节。原计划入口（历史记录）：**Phase 114 smart discuss → plan → execute**（DESIGN.md §5.5 AI 审查七类规则、§6.1-§6.3 线程回灌与人工编辑、§3.13 decision_log 为直接输入；111 的 schema/lifecycle/anchor + 112 的确认门 + 113 的完整蓝图装配为可消费上游）
 Resume file: 无（干净接力点：Phase 111/112 全部 commit 已入库）

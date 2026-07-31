@@ -134,7 +134,7 @@ Plans:
 
 - [x] 114-01-PLAN.md — 线程底座：open_thread 追加 severity 形参（零 migration，既有调用逐字等价）+ blocking == (severity=="blocker") 不变式强制 + 从 _append_thread_message_sync 提炼公开 append_note（留痕不改状态，record_answer 禁用于 finding）+ confirm 守卫两条判据收敛进 _apply_transition_sync 同一事务的单次 Q 查询消除 TOCTOU（FLOW-07）
 - [x] 114-02-PLAN.md — 新建 blueprint_review.py：六类机械规则纯函数（前置完整性短路 / schema / 引用覆盖条目级 / 角色一致性 / API 闭环 / 禁令 / 章程边界 + 确认门锁定校验）在无 LLM 下产确定性结论，每类一条构造样例证伪；goal-backward 一类走 LLM（call_source=blueprint_ai_review，签名纳入 requirement_spec.constraints 并进 digest 使「与 constraints 冲突」可判，不可得 fail-closed 记 warning meta finding）（FLOW-07）
-- [ ] 114-04-PLAN.md — 澄清回灌与人工编辑（**wave 3，已提前到 114-03 之前**）：areanchor_threads 批量重锚定（diff 预筛 + section_path 刷新 + 失锚 orphaned 不删 + 一次 bulk_update）+ block 级 patch ops 经 service 收口产 human_edit 版本（不合法拒绝且不落版本）+ 回灌三步链与 decision_log 物化保 answer 键、decided_at 用作答消息时间戳保幂等 + section_writer 生产实现 ablock_section_writer（默认注入，答案真的落地）+ AI 不覆盖人工（回灌冲突开线程）+ 人工块保护入口 acollect_human_block_ids / arestore_human_blocks 供 114-03 接线（CLAR-02, CLAR-03）
+- [x] 114-04-PLAN.md — 澄清回灌与人工编辑（**wave 3，已提前到 114-03 之前**）：areanchor_threads 批量重锚定（diff 预筛 + section_path 刷新 + 失锚 orphaned 不删 + 一次 bulk_update）+ block 级 patch ops 经 service 收口产 human_edit 版本（不合法拒绝且不落版本）+ 回灌三步链与 decision_log 物化保 answer 键、decided_at 用作答消息时间戳保幂等 + section_writer 生产实现 ablock_section_writer（默认注入，答案真的落地）+ AI 不覆盖人工（回灌冲突开线程）+ 人工块保护入口 acollect_human_block_ids / arestore_human_blocks 供 114-03 接线（CLAR-02, CLAR-03）
 - [ ] 114-03-PLAN.md — ai_review stage 接入（**wave 4**）：入口先接线三件（aapply_thread_answers 消费答案产新版本 / arestore_human_blocks 保护人工块冲突开线程 / areanchor_threads 重锚）再跑判定；BlueprintReviewAdapter（findings 批量建线程用 severity 形参与 append_note 留痕、(rule_id, block_id) 去重、有界回退归因仓级回 repo_plan/融合级回 merge ≤2 轮计数存 stage_state["ai_review"]、超界转 pending_review 携未决清单绝不 FAILED）+ builtin_processes 只加第 10 个 stage 与 _h_bp_ai_review 且 merge.merged 改指 ai_review + blueprint_resume 映射表追加一行（删除行 0）；blueprint_merge.py 零改动（FLOW-07）
 - [ ] 114-05-PLAN.md — 人审端点与收口（**wave 5**）：新建 blueprint_review_views.py 七端点（GET 快照 / approve 经事务内守卫无 TOCTOU / reject 三步链写 meta.revision_round 首个写入方 / edit-blocks / threads answer 是 record_answer 唯一正当用法且同请求内接回灌 / threads resolve + dismiss 为 finding 处置通道解超界死锁）+ reviewer upsert + 澄清超时提醒挂既有 apscheduler 一个 job（判据 needs_clarification + BlueprintThread.last_reminded_at 保周期不重复轰炸，全相位唯一一条 migration）+ blueprint_quality 三项 DB 统计实装（human_edit_volume 用 produced_by_ref__startswith 而非不存在的 created_by_user_id）+ 全量相位门（FLOW-07, CLAR-03, CLAR-04）
 
@@ -456,7 +456,7 @@ Plans:
 | 111. 蓝图底座 | v0.20.0 | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | 4/4 | ✅ Complete (passed 24/24) | 2026-07-30 |
 | 112. 规格门与双面路由调研 | v0.20.0 | FLOW-01/02/03/04, CHARTER-02/03 | 5/5 | ✅ Complete (16/17 + gap closed) | 2026-07-30 |
 | 113. 分仓方案与融合 + Context Bus | v0.20.0 | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | 6/6 | ✅ Complete (passed 54/54) | 2026-07-30 |
-| 114. 审查与澄清收敛 | v0.20.0 | FLOW-07, CLAR-02/03/04 | 0/TBD | Not started | - |
+| 114. 审查与澄清收敛 | v0.20.0 | FLOW-07, CLAR-02/03/04 | 3/5 | 🟡 In Progress (114-01/02/04 done, 1228 passed) | - |
 | 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 0/TBD | Not started | - |
 | 116. 入口收编与导出 | v0.20.0 | GATE-01, VIEW-05 | 0/TBD | Not started | - |
 
