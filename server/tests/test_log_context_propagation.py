@@ -160,9 +160,7 @@ def _make_view(log_source: Any = None) -> Any:
 
     view = _View()
     if log_source is not None:
-        view.log_source = (
-            log_source.value if isinstance(log_source, LogSource) else log_source
-        )
+        view.log_source = log_source.value if isinstance(log_source, LogSource) else log_source
     return view
 
 
@@ -364,6 +362,47 @@ def test_scheduler_decorator_binds_system() -> None:
     assert seen["ctx"].get("component") == "scheduler"
     # 退出后清理
     assert "source" not in structlog.contextvars.get_contextvars()
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_chat_sse_generator_binds_real_user(monkeypatch: Any) -> None:
+    """🔴 109-REVIEW BL-01：SSE 生成器体内必须拿得到真实触发用户。
+
+    生产时序：``post`` 返回 ``StreamingHttpResponse`` 后中间件的 ``finally`` 立刻
+    ``clear_request_context()``，生成器是在**那之后**才被 ASGI handler 消费的 ⇒ 不在
+    生成器体内重新绑定，流内的一切（含 ``update_coding_plan`` 等按 contextvars 取归属
+    主体的工具）只能看到空上下文。本用例按该时序复现：起跑前先 clear。
+    """
+    import uuid
+
+    from chat.conversation_service import ConversationService
+    from chat.views import ChatStreamView
+
+    seen: dict[str, Any] = {}
+
+    async def _fake_stream(**kwargs: Any):
+        seen["ctx"] = dict(structlog.contextvars.get_contextvars())
+        return
+        yield  # pragma: no cover —— 仅用于让本函数成为 async generator
+
+    monkeypatch.setattr(ConversationService, "send_message_stream", staticmethod(_fake_stream))
+
+    clear_request_context()
+    view = ChatStreamView()
+    async for _chunk in view._stream_events(
+        str(uuid.uuid4()),
+        "写一份方案",
+        "developer",
+        None,
+        metric_user_id="42",
+    ):
+        pass
+
+    assert seen["ctx"].get("user_id") == "42"
+    assert seen["ctx"].get("source") == "chat_sse"
+    # 流结束即请求生命周期终点：清理干净，不泄漏到同 worker 复用的后续任务
+    assert "user_id" not in structlog.contextvars.get_contextvars()
 
 
 @pytest.mark.asyncio

@@ -27,7 +27,13 @@ from chat.multimodal import (
     read_image_bytes,
     store_image_bytes,
 )
-from common.log_context import LogSource, bind_source
+from common.log_context import (
+    LogSource,
+    bind_source,
+    clear_request_context,
+    rebind_user,
+    resolve_user_id,
+)
 from common.request_metrics import arecord_request_metric, classify_error
 from feishu.coding_plan_exporter import export_coding_plan_to_feishu
 from orchestration.checkpointer import get_checkpointer
@@ -1402,6 +1408,12 @@ class ChatStreamView(APIView):
         bind_source(LogSource.CHAT_SSE)
         # 72-02：标注 LLM 调用来源（含 SSE 生成器消费期），与 chat_runner 默认一致、显式更稳。
         set_call_source(CallSource.CHAT)
+        # 109-REVIEW BL-01：补绑真实触发用户。中间件入口只写得下 user_id="system"
+        # 占位（它早于 DRF 认证执行），而 `LogContextMixin` 全仓无视图继承 ⇒ 不补这
+        # 一行，本请求链路上所有按 contextvars 取归属主体的下游（coding_tools 的
+        # update_coding_plan、coding_session_service 的草稿 gate 留痕）永远只能拿到
+        # 哨兵身份。与上面两行同源同处，改动面最小。
+        rebind_user(resolve_user_id(request))
         user_id = (
             str(request.user.id) if getattr(request.user, "is_authenticated", False) else "system"
         )
@@ -1443,6 +1455,21 @@ class ChatStreamView(APIView):
         from orchestration.models import OrchestrationRun
 
         message_id = str(uuid_mod.uuid4())
+
+        # 109-REVIEW BL-01：生成器体内重新绑定用户上下文。
+        #
+        # 🔴 时序：`post` 返回 StreamingHttpResponse 后中间件的 finally 就跑了
+        # `clear_request_context()`，而本生成器是在那之后才被 ASGI handler 消费的
+        # ⇒ post 里 rebind 的 user_id 到不了这里，流内的工具调用（含
+        # `update_coding_plan` 的归属判定）会退化成「取不到用户」。
+        # best-effort：绑定失败绝不打断 SSE。
+        try:
+            structlog.contextvars.bind_contextvars(
+                user_id=metric_user_id or "system",
+                source=LogSource.CHAT_SSE.value,
+            )
+        except Exception:  # noqa: BLE001 — 观测代码绝不反噬业务
+            pass
 
         # 指标埋点（RATE-01 / SLA-04，source=chat_sse）：首个真实 chunk 计 ttft_ms，
         # 生成器结束（finally）记一行总 duration_ms。best-effort，绝不打断 SSE。
@@ -1533,6 +1560,12 @@ class ChatStreamView(APIView):
                 user_id=metric_user_id,
                 labels={"conversation_id": str(conversation_id)},
             )
+            # 生成器消费完毕即本请求生命周期终点：清掉上面补绑的上下文，防止泄漏到
+            # 同 worker 复用的后续任务（与中间件 finally 的 clear 同一条纪律）。
+            try:
+                clear_request_context()
+            except Exception:  # noqa: BLE001 — 观测代码绝不反噬业务
+                pass
 
 
 class ChatInterruptView(APIView):
