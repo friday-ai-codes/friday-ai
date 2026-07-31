@@ -1309,7 +1309,7 @@ describe('techPlanCard — 109-08 草稿标注与送编码确认', () => {
     expect(payload.acknowledge_unresearched).toBe(true)
   })
 
-  it('code=draft_requires_explicit_confirm 的拒绝 → 前端常量 toast + 重新打开弹层', async () => {
+  it('code=draft_requires_explicit_confirm 的拒绝 → 前端常量 toast，弹层不重开（LO-01）', async () => {
     createSessionsForPlanMock.mockRejectedValue(
       Object.assign(new Error('后端 detail 文案（不应被匹配）'), {
         status: 400,
@@ -1330,9 +1330,9 @@ describe('techPlanCard — 109-08 草稿标注与送编码确认', () => {
     await nextTick()
 
     expect(toastErrorMock).toHaveBeenCalledWith(GATE_REJECTED)
-    // 弹层重新打开，且勾选被重置
-    expect(dialogOpen(wrapper)).toBe('true')
-    expect(wrapper.find('[data-test="ack-confirm"]').attributes('disabled')).toBeDefined()
+    // 🔴 不得重开弹层：重开得到的 promise 无人 await，用户勾选确认后什么都不会发生，
+    // 是比不弹更糟的死胡同。让用户从原入口重来。
+    expect(dialogOpen(wrapper)).toBe('false')
   })
 
   it('其它错误（无 code / 别的 code）→ 沿用既有 toast，不误报为草稿拒绝', async () => {
