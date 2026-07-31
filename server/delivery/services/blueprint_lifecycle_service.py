@@ -1239,6 +1239,175 @@ class BlueprintLifecycleService:
             duration_ms=round((time.monotonic() - started) * 1000, 2),
         )
 
+    # ══════════════════════════════════════════════════════════════════════
+    # 批量重锚定（Phase 114-04 追加；受限面纯追加，删除行 0）
+    # ══════════════════════════════════════════════════════════════════════
+
+    async def areanchor_threads(
+        self,
+        artifact: Artifact,
+        new_content: dict,
+        *,
+        old_content: dict | None = None,
+        initiated_by_user_id: str = "system",
+    ) -> dict:
+        """新版本装配/编辑后把该 artifact 全部线程的 anchor 重挂到新 block 序列。
+
+        返回**恒定四键** ``{"checked": int, "reanchored": int, "orphaned": int,
+        "skipped": int}``——下游（114-03 / 114-05 / 115）无需判空分支。
+
+        - **性能防护（P3）**：:func:`blueprint_anchor.reanchor` 对每条线程遍历全部新
+          block 做 ``difflib.SequenceMatcher.ratio()``（准平方级），而本方法挂在**同步
+          请求路径**上（人工编辑 → 产新版本 → 重锚定）。故先用
+          ``diff_blueprint_blocks(old_content, new_content)`` 求出
+          ``added ∪ removed ∪ modified`` 的变动块集合，**只对 anchor.block_id 落在变动
+          集合内（或 block_id 为空 / 已从新内容消失）的线程**走 ``reanchor``，其余计入
+          ``skipped``——把「改一两个块」的常见场景从 O(N×M) 降到 O(1)。
+          ``old_content is None`` 时**退化为全量重锚**（正确性优先于性能）。
+          **不改** ``blueprint_anchor.py``（111 交付，单测锁死 0.85 阈值与同分字典序）。
+        - ⚠️ ``reanchor`` **不更新** ``anchor.section_path``（只改 ``block_id``）。本方法
+          用 ``iter_blocks(new_content)`` 的 path 一并刷新 ``anchor["section_path"]``——
+          115 渲染靠它定位，漏刷会让批注挂在错误的段落标题下。``skipped`` 的线程也刷：
+          块内容没变但段落可能被改名/移位。
+        - **失锚不删**：``anchor_status="orphaned"`` 的线程行原样保留（``anchor`` 内容也
+          逐字保留），``filter(anchor_status="orphaned")`` 可集中查询，供 115 展示
+          「失锚评论」（CLAR-02 明令：批注不得静默消失）。
+        - **一次 ``bulk_update``**：``bulk_update`` / ``.update()`` **绕过 auto_now** ⇒
+          必须显式带 ``updated_at=timezone.now()``（同 :meth:`_apply_transition_sync`
+          的纪律）。
+        - **best-effort**：任何异常 → warning + 返回全零四键，**绝不上抛**——重锚定失败
+          不该让「人工编辑成功」变成 5xx；版本已落库，下一次编辑会再试。
+        - **观测**：anchor 内容与 ``quoted_text`` **绝不进日志**（可能含凭证样本，
+          T-114-27），只记四键计数。
+        """
+        started = time.monotonic()
+        counts = {"checked": 0, "reanchored": 0, "orphaned": 0, "skipped": 0}
+        if not isinstance(new_content, dict):
+            return counts
+        try:
+            counts = await self._reanchor_threads_sync(
+                artifact,
+                new_content,
+                old_content if isinstance(old_content, dict) else None,
+            )
+        except Exception as exc:  # noqa: BLE001 — 重锚定失败绝不反噬「编辑已成功」
+            logger.warning(
+                "blueprint_threads_reanchor_failed",
+                category="caller",
+                component="blueprint_lifecycle",
+                artifact_id=str(getattr(artifact, "id", "")),
+                initiated_by_user_id=initiated_by_user_id or "system",
+                error=str(exc),
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            return {"checked": 0, "reanchored": 0, "orphaned": 0, "skipped": 0}
+        logger.info(
+            "blueprint_threads_reanchored",
+            category="caller",
+            component="blueprint_lifecycle",
+            artifact_id=str(getattr(artifact, "id", "")),
+            checked=counts["checked"],
+            reanchored=counts["reanchored"],
+            orphaned=counts["orphaned"],
+            skipped=counts["skipped"],
+            prefiltered=old_content is not None,
+            initiated_by_user_id=initiated_by_user_id or "system",
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
+        return counts
+
+    @sync_to_async
+    def _reanchor_threads_sync(
+        self, artifact: Artifact, new_content: dict, old_content: dict | None
+    ) -> dict:
+        """重锚定唯一写通道（INV-6）：读全部线程 → 逐条重挂 → 一次 ``bulk_update``。
+
+        ``iter_blocks`` / ``diff_blueprint_blocks`` 在函数内 lazy import：delivery 层不
+        对 ``services.process_runtime`` 形成顶层依赖（后者 ``__init__`` 会 eager import
+        adapter 链）。
+        """
+        from delivery.services.blueprint_anchor import (
+            ANCHOR_STATUS_ANCHORED,
+            reanchor,
+        )
+        from services.process_runtime.blueprint_schema import (
+            diff_blueprint_blocks,
+            iter_blocks,
+        )
+
+        entries = iter_blocks(new_content)
+        blocks = [block for _path, block in entries]
+        path_by_block_id = {
+            str(block.get("block_id")): path for path, block in entries if block.get("block_id")
+        }
+        # None = 不预筛（全量重锚）；set = 只处理落在变动块上的线程。
+        changed: set[str] | None = None
+        if old_content is not None:
+            diff = diff_blueprint_blocks(old_content, new_content)
+            changed = set(diff["added"]) | set(diff["removed"]) | set(diff["modified"])
+
+        counts = {"checked": 0, "reanchored": 0, "orphaned": 0, "skipped": 0}
+        to_update: list[BlueprintThread] = []
+        now = timezone.now()
+        with transaction.atomic():
+            rows = list(
+                BlueprintThread.objects.filter(artifact=artifact).only(
+                    "id", "anchor", "anchor_status"
+                )
+            )
+            for thread in rows:
+                counts["checked"] += 1
+                anchor = thread.anchor
+                block_id = (
+                    str(anchor.get("block_id") or "") if isinstance(anchor, dict) else ""
+                )
+                if (
+                    changed is not None
+                    and block_id
+                    and block_id not in changed
+                    and block_id in path_by_block_id
+                ):
+                    # 块未变且仍在 ⇒ reanchor 必然精确命中且 block_id 不变，跳过它的
+                    # 准平方级扫描；但 section_path 仍需刷新（段落可能被改名/移位）。
+                    counts["skipped"] += 1
+                    fresh_path = path_by_block_id[block_id]
+                    if (
+                        anchor.get("section_path") != fresh_path
+                        or thread.anchor_status != ANCHOR_STATUS_ANCHORED
+                    ):
+                        thread.anchor = dict(anchor, section_path=fresh_path)
+                        thread.anchor_status = ANCHOR_STATUS_ANCHORED
+                        thread.updated_at = now
+                        to_update.append(thread)
+                    continue
+
+                new_anchor, status = reanchor(anchor, blocks)
+                if status == ANCHOR_STATUS_ANCHORED:
+                    counts["reanchored"] += 1
+                    # ⚠️ 精确命中分支 ``reanchor`` 返回的是**同一对象**（111 单测第 1 条
+                    # 契约 ``new_anchor is anchor``）⇒ 直接写 section_path 会原地修改入
+                    # 参 dict，违反第 2 条契约「入参不被原地修改」。必须先拷贝。
+                    resolved = dict(new_anchor)
+                    resolved["section_path"] = path_by_block_id.get(
+                        str(resolved.get("block_id") or ""),
+                        resolved.get("section_path", ""),
+                    )
+                else:
+                    # 失锚：anchor 逐字保留（线程行不删、内容不改，只改 anchor_status）。
+                    counts["orphaned"] += 1
+                    resolved = new_anchor
+                if thread.anchor != resolved or thread.anchor_status != status:
+                    thread.anchor = resolved
+                    thread.anchor_status = status
+                    thread.updated_at = now
+                    to_update.append(thread)
+
+            if to_update:
+                BlueprintThread.objects.bulk_update(
+                    to_update, ["anchor", "anchor_status", "updated_at"]
+                )
+        return counts
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # 确认门动作常量与纯函数（Phase 112-05 追加；纯追加纪律 → 不改既有 __all__ 行）
