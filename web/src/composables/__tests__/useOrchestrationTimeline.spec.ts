@@ -492,6 +492,54 @@ describe('失败', () => {
     ])
   })
 
+  // ── 缺维补齐：快照有无 × 会话状态 ──────────────────────────────────────
+  // GAP-1 就是靠这一维缺失在全绿套件下存活的：前半程（拆分→澄清）走 SSE 直播，
+  // pollConversationRuntime 尚未被调度 ⇒ snapshot 恒为 null，此时若只看快照
+  // status，时间线会一直显示「正在生成技术方案」并把出错那步画成进行中。
+  it('无快照 + process.session.failed ⇒ 判失败，指针那步标红而不是画成进行中', () => {
+    const view = build({
+      snapshot: null,
+      // decomposed 把指针推到 route，随后会话失败 ⇒ 失败落在「路由」
+      events: [makeEvent('decomposed', {}, 1), makeEvent('process.session.failed', {}, 2)],
+    })
+    expect(view.phase).toBe('failed')
+    expect(view.title).toBe(COPY.titleFailed)
+    expect(step(view, '路由')?.status).toBe('failed')
+    // payload 恒为空 dict ⇒ 拿不到 reason_code，如实显示未知原因
+    expect(step(view, '路由')?.summary).toBe(COPY.unknownReason)
+    expect(step(view, '拆分')?.status).toBe('completed')
+    // 失败步之后逐个 pending（不是「不等于 failed」）
+    expect(step(view, '召回')?.status).toBe('pending')
+    expect(step(view, '澄清')?.status).toBe('pending')
+    expect(step(view, '并行调研')?.status).toBe('pending')
+    expect(step(view, '融合')?.status).toBe('pending')
+  })
+
+  it('无快照 + 状态图转移名 fail ⇒ 同样判失败（两个名字都认）', () => {
+    const view = build({
+      snapshot: null,
+      events: [makeEvent('routed', {}, 1), makeEvent('fail', {}, 2)],
+    })
+    expect(view.phase).toBe('failed')
+    expect(step(view, '召回')?.status).toBe('failed')
+  })
+
+  it('快照在场时以快照为准：status=running 不被残留的失败事件翻转', () => {
+    const view = build({
+      snapshot: makeSnapshot({ status: 'running', current_stage: 'research' }),
+      events: [makeEvent('process.session.failed', {}, 1)],
+      runtimeActive: true,
+    })
+    expect(view.phase).not.toBe('failed')
+    expect(view.steps.every(s => s.status !== 'failed')).toBe(true)
+  })
+
+  it('无快照 + 无失败事件 ⇒ 不得凭空判失败', () => {
+    const view = build({ snapshot: null, events: [makeEvent('decomposed', {}, 1)] })
+    expect(view.phase).not.toBe('failed')
+    expect(view.steps.every(s => s.status !== 'failed')).toBe(true)
+  })
+
   it('路由失败 ⇒ 其后各步逐个等于 pending（不是「不等于 failed」）', () => {
     const view = build({
       snapshot: makeSnapshot({
