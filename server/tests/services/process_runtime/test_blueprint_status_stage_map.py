@@ -56,6 +56,8 @@ STAGES_112 = (
     "repo_confirmation",
 )
 STAGES_113 = ("repo_plan", "merge")
+# 114-03 追加的阶段 4——映射到 `ai_reviewing`（与 113 两个 stage 的 `drafting` 不同值）。
+STAGES_114 = ("ai_review",)
 
 
 async def _make_session_with_artifact(stage: str):
@@ -83,11 +85,13 @@ async def _refresh(artifact: Any) -> Any:
 
 
 def test_stage_status_table_matches_enum() -> None:
-    assert set(_STAGE_BLUEPRINT_STATUS) == set(STAGES_113), (
-        "只有阶段 2/3 允许进表；前七 stage 必须靠回落拿 researching"
+    assert set(_STAGE_BLUEPRINT_STATUS) == set(STAGES_113) | set(STAGES_114), (
+        "只有阶段 2/3/4 允许进表；前七 stage 必须靠回落拿 researching"
     )
     for stage in STAGES_113:
         assert _STAGE_BLUEPRINT_STATUS[stage] == BlueprintStatus.DRAFTING
+    for stage in STAGES_114:
+        assert _STAGE_BLUEPRINT_STATUS[stage] == BlueprintStatus.AI_REVIEWING
 
 
 @pytest.mark.parametrize("stage", STAGES_112)

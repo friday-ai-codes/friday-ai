@@ -19,8 +19,8 @@
    `engine.deps` 整体 None / 正常路径落 stage_state 且 ⭐`current_artifact_version`
    非空 / 依赖抛异常经 engine 兜底落 failed 且 `error["stage"]` 正确；外加
    「adapter 返回怪异 validation_status → 映射到白名单内 event」。
-10. **stage 图四跳可达**：`repo_confirmation --confirmed--> repo_plan --plan_complete-->
-    merge --merged--> STAGE_DONE`。
+10. **stage 图五跳可达**：`repo_confirmation --confirmed--> repo_plan --plan_complete-->
+    merge --merged--> ai_review --review_passed--> STAGE_DONE`（114-03 接续后）。
 11. ⭐ **W1 golden set 可量测**：融合产物写成 golden case → `evaluate_blueprint_golden`
     的 report 里 `citation_coverage` 与 `target_repo_hit_rate` 两个指标都能产出；把门槛
     抬到 1.01 则 `CommandError` 且该 case `passed is False`（证明断言非恒真）。
@@ -534,11 +534,13 @@ async def test_handler_exception_lands_failed_with_stage_name(stage: str):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def test_stage_graph_reaches_done_in_four_hops():
+def test_stage_graph_reaches_done_in_five_hops():
     stages = get_process_definition("technical_blueprint").stages
     assert stages["repo_confirmation"].transitions["confirmed"] == "repo_plan"
     assert stages["repo_plan"].transitions["plan_complete"] == "merge"
-    assert stages["merge"].transitions["merged"] == STAGE_DONE
+    # 114-03 已接续：融合完成先过 AI 对抗审查，审查通过/超界才到 stage 终态。
+    assert stages["merge"].transitions["merged"] == "ai_review"
+    assert stages["ai_review"].transitions["review_passed"] == STAGE_DONE
 
 
 # ═══════════════════════════════════════════════════════════════════════════
