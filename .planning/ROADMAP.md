@@ -212,7 +212,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 110-01-PLAN.md — SSE 事件类型 `process_event` + `_emit_event` best-effort fan-out（LangGraph custom writer）+ 出网净化与失败原因闭集（wave 1）
+- [x] 110-01-PLAN.md — SSE 事件类型 `process_event` + `_emit_event` best-effort fan-out（LangGraph custom writer）+ 出网净化与失败原因闭集（wave 1）
 - [ ] 110-02-PLAN.md — `SubStepTimeline` 加性泛化（6 态 / 可选摘要 / 可选角标 / 只读模式 / list 语义）+ 既有用法回归锁（wave 1）
 
 **Wave 2** *(blocked on Wave 1 completion)*
