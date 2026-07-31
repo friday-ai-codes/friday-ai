@@ -52,6 +52,7 @@ import BlueprintAssociationsSection from '~/components/blueprint/BlueprintAssoci
 import BlueprintBlockDiff from '~/components/blueprint/BlueprintBlockDiff.vue'
 import BlueprintBlockedDialog from '~/components/blueprint/BlueprintBlockedDialog.vue'
 import BlueprintErrorState from '~/components/blueprint/BlueprintErrorState.vue'
+import BlueprintGatePanel from '~/components/blueprint/BlueprintGatePanel.vue'
 import BlueprintQualityPanel from '~/components/blueprint/BlueprintQualityPanel.vue'
 import BlueprintRejectDialog from '~/components/blueprint/BlueprintRejectDialog.vue'
 import BlueprintSectionNav from '~/components/blueprint/BlueprintSectionNav.vue'
@@ -526,6 +527,20 @@ function onCitationClick(citationId: string): void {
   const citation = citations.value[citationId]
   if (citation)
     openWithSnapshot(citation)
+}
+
+/**
+ * 115-07：确认门 `confirm/` 409 `pending_clarification` 的解药落点。
+ *
+ * 未决分组本身 `defaultOpen: true`，所以「展开未决组」要做的是**把它露出来**：展开侧栏
+ * （xl 及以上）+ 打开抽屉（窄屏）+ 清掉可能把未决线程滤掉的两个筛选。⛔ 不弹 toast ——
+ * 面板内已有提示与入口，再弹一条只是重复。
+ */
+function onGotoUnresolved(): void {
+  viewerStore.sidebarCollapsed = false
+  viewerStore.resetKindFilters()
+  viewerStore.showClosedAnnotations = false
+  sheetOpen.value = true
 }
 
 // ── 动作端点（⭐ 零乐观更新，一律以响应体 current_status 为准 + 前缀失效）────────────
@@ -1163,6 +1178,19 @@ const sections = computed<NavSection[]>(() => [
                  ⛔ 本 plan 不渲染面板本体（那是 115-07 的所有权），只预留挂载点与滚动锚点；
                  gate 查询非 200 时该挂载点整块不出现，且不产生任何错误态或提示。 -->
             <div v-if="gateAvailable" id="gate" data-testid="blueprint-gate-mount" :class="highlightId === 'gate' ? HIGHLIGHT_CLASS : ''" />
+
+            <!-- 115-07 纯追加：面板作为锚点的**紧邻兄弟节点**渲染。⭐ 上面那行逐字保留 ——
+                 把它改成有子节点的容器就必然产生一行删除（`/>` → `>`），与本 plan 同一条
+                 验收里的「删除行为 0」冲突；`#gate` 与 `blueprint-gate-mount` 是 `?panel=gate`
+                 滚动定位的唯一落点，⛔ 不能动。ring 高亮同样绑在这里，观感与原设计一致。 -->
+            <div v-if="gateAvailable && gateQuery.data.value" :class="highlightId === 'gate' ? HIGHLIGHT_CLASS : ''">
+              <BlueprintGatePanel
+                :artifact-id="artifactId"
+                :snapshot="gateQuery.data.value"
+                :submitting="submitting"
+                @goto-unresolved="onGotoUnresolved"
+              />
+            </div>
 
             <div
               v-if="showQualityPanel && qualityData"
