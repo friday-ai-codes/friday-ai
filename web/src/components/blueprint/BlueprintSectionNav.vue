@@ -2,14 +2,14 @@
 /**
  * 窄屏（`< md`）的段跳转下拉（Phase 115-06，UI-SPEC §5.2）。
  *
- * ## ⛔ 为什么本组件**不**组合 `~/components/layout/AnchorNavLayout.vue`
+ * ## ⛔ 为什么本组件**不**组合 `~/components/layout/` 下那个锚点导航布局件
  *
  * 那个既有件不是「一个导航条」，而是**整个两栏页面布局** —— 它的根是 `<div class="flex gap-8">`，
  * 里面依次是 `<aside class="hidden md:block w-48 shrink-0">`（左栏）与
  * `<div class="flex-1 min-w-0 space-y-6"><slot /></div>`（正文列）。它的滚动函数是私有的，
  * 既不 emit 也不 expose。把它嵌进一个只收 `sections` 的组件里，**正文将无处安放**。
  *
- * ⇒ 分工：`≥ md` 的左栏由**页面**直接使用 `AnchorNavLayout` 承担；本组件只负责 `< md` 那一档，
+ * ⇒ 分工：`≥ md` 的左栏由**页面**直接使用那个布局件承担；本组件只负责 `< md` 那一档，
  * 容器 `md:hidden sticky top-14 z-20`，选中即 emit，滚动由页面统一处理（偏移常量与既有实现一致）。
  *
  * ⭐ **本组件不判断段是否有内容**：十段的容器由页面无条件渲染，`sections` 长度恒为 10；
@@ -27,7 +27,7 @@ import {
 } from '~/components/ui/select'
 
 defineProps<{
-  /** 与页面传给 `AnchorNavLayout` 的**同一个**数组（恒 10 项）。 */
+  /** 与页面传给左栏布局件的**同一个**数组（恒 10 项）。 */
   sections: NavSection[]
   /** 当前段 key；用于回显选中项。 */
   activeId: string
