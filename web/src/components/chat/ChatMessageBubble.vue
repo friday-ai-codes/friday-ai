@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
 import type { ProcessStep } from './ToolProcessGroup.vue'
-import type { ConversationMessage, DeepAnalysisSession, ImagePart, MessagePart, StreamTimelineItem, TextPart, ToolCallData, ToolUsePart } from '~/types/chat'
+import type { ConversationMessage, DeepAnalysisSession, ImagePart, MessagePart, PlanResearchSession, StreamTimelineItem, TextPart, ToolCallData, ToolUsePart } from '~/types/chat'
 import { shallowRef } from 'vue'
 import { Checkbox } from '~/components/ui/checkbox'
 import { useEditImages } from '~/composables/useEditImages'
@@ -12,6 +12,8 @@ import { collectRepoNames, relevanceCandidates, repoInitial, toolAction, toolLab
 import DeepAnalysisGroup from './DeepAnalysisGroup.vue'
 import DocSummaryCard from './DocSummaryCard.vue'
 import OrchestratedPlanCard from './OrchestratedPlanCard.vue'
+import OrchestrationStageTimeline from './OrchestrationStageTimeline.vue'
+import PlanResearchLogGroup from './PlanResearchLogGroup.vue'
 import StructuredJsonView from './StructuredJsonView.vue'
 import TechPlanCard from './TechPlanCard.vue'
 import ToolProcessGroup from './ToolProcessGroup.vue'
@@ -821,6 +823,95 @@ function resolveOrchestratedPlanData(
   return { artifactVersionId: versionId }
 }
 
+/**
+ * 110-07：从编排工具 result 里取编排会话 id。
+ *
+ * 解析沿用 `resolveOrchestratedPlanData` 的防御性双轨（result 可能是 JSON string
+ * 也可能是 dict，两种都吃，失败返回空串不抛）。
+ */
+function resolveOrchestrationSessionId(result: unknown): string {
+  if (!result)
+    return ''
+
+  let parsed: unknown = null
+  if (typeof result === 'string') {
+    try {
+      parsed = JSON.parse(result)
+    }
+    catch {
+      parsed = null
+    }
+  }
+  else if (typeof result === 'object') {
+    parsed = result
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    return ''
+
+  const sessionId = (parsed as { session_id?: unknown }).session_id
+  return typeof sessionId === 'string' ? sessionId : ''
+}
+
+/**
+ * 110-07：本 tool item 绑定的编排会话 id（UI-SPEC §A.7 的绑定顺序）。
+ *
+ * 🔴 顺序是 result 优先、store 兜底，不能反过来：
+ * 在途的五个阶段（拆分 / 路由 / 召回 / 澄清 / 并行调研）全部发生在 tool result
+ * **之前**（tool pill 一路是 `running`），所以只靠解析 result 会让在途期间绑不到
+ * 会话、时间线整段不出现——store 的 `activeOrchestrationSessionId` 是这段时间里
+ * 唯一的来源。但 result 一旦出现（挂起 marker 与终态 result 都带 `session_id`），
+ * 它**明确属于这个气泡**，优先级最高：同一对话里跑第二轮编排时，store 的活跃 id
+ * 已经指向新会话，只有 result 能把第一条气泡钉回它自己那次编排。
+ */
+function orchestrationSessionIdFor(item: ToolItemShape): string {
+  return resolveOrchestrationSessionId(item.result) || chatStore.activeOrchestrationSessionId || ''
+}
+
+/**
+ * 110-07：本条消息里**最后一个**编排 tool item 的 id（无则空串）。
+ *
+ * 异步路径（跨仓调研的常态）上 `waiting → executing` 会二次运行 SDK，同一条消息
+ * 因此累积两条同名编排 tool call：第一条 result 是 `__blocking_task__`，第二条才是
+ * 终态。两者绑定**同一个 session_id**，不加这个判定会让同一份进度渲染两遍。
+ *
+ * 🔴 这不是 `.find` 的复活：它只用于**去重渲染位置**。`OrchestratedPlanCard` 的
+ * **取数**仍严格走 `resolveOrchestratedPlanData(item.result)` 逐条解析（109 载重
+ * 不变量），两件事不要合并——把卡片的渲染条件也改成依赖这个 computed，就等于把
+ * 109 修好的那个「卡片永不渲染」的缺口重新打开。
+ */
+const lastOrchestrationToolItemId = computed(() => {
+  let last = ''
+  for (const item of groupedDisplayItems.value) {
+    if (item.kind === 'tool' && isOrchestrationTool(item.name))
+      last = item.id
+  }
+  return last
+})
+
+/**
+ * 110-07：过滤到**本气泡绑定的那次编排会话**的调研容器（F-21）。
+ *
+ * 🔴 两块新 UI 的「不重复」保护强度并不对等，这层过滤只有日志组需要：
+ * - 时间线取 `orchestrationSessions[sessionId]`，store 按 `session_id` 分桶，
+ *   换一个会话就是换一个桶，**天然自限**；
+ * - 而 `planResearchSessions` 是一个**会话级的扁平数组**，每份 runtime 快照
+ *   **整体替换**它（110-04 全量列表语义），后端又只装本对话**最近一次**编排的容器。
+ *
+ * ⇒ 一段对话里跑两轮编排时，快照里装的是第二轮的容器。若不按 `plan_session_id`
+ * 过滤，第一条编排消息会照样渲染出这一组——用户看到两处「方案调研 · N 个仓库」，
+ * 其中一份挂在了**错误的方案**上。
+ *
+ * `plan_session_id` 由 110-03 在每条 `PlanResearchSession` 上给出
+ * （`= str(ConvergenceSession.id)`），与 `orchestrationSessionIdFor(item)` 同源同值。
+ */
+function planResearchSessionsFor(item: ToolItemShape): PlanResearchSession[] {
+  const sid = orchestrationSessionIdFor(item)
+  if (!sid)
+    return []
+  const sessions = chatStore.planResearchSessions
+  return Array.isArray(sessions) ? sessions.filter(s => s?.plan_session_id === sid) : []
+}
+
 // 从 toolCalls 中提取 coding plan 数据
 const codingPlanData = computed(() => {
   const planTool = toolCalls.value.find(tc => isCodingPlanTool(tc.name))
@@ -1253,6 +1344,26 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
               :available-repositories="codingPlanData.targetRepositories"
               :recommended-repository-ids="codingPlanData.targetRepositories.map(r => r.id)"
               @confirm="(_planId, sessionId, branchName, targetBranch) => sessionId && chatStore.handleConfirmCodingSession(sessionId, branchName, targetBranch)"
+            />
+            <!--
+              110-07：编排在途的阶段时间线。挂在**最后一条**编排 tool item 上，
+              避免同一条消息里的「在途 + 终态」两条 tool call 把同一份进度画两遍。
+              「桶存在 + 至少一条已知事实」两道门在组件内部，此处不重复。
+            -->
+            <OrchestrationStageTimeline
+              v-if="isOrchestrationTool(item.name) && item.id === lastOrchestrationToolItemId && orchestrationSessionIdFor(item)"
+              :session-id="orchestrationSessionIdFor(item)"
+            />
+            <!--
+              110-07：调研容器日志组（每仓一张卡）。
+              🔴 `v-if` 与 `:sessions` 必须是**同一个表达式** —— 用未过滤的
+              `planResearchSessions` 判条件、却传过滤后的数组（或反过来）会造出
+              一个「渲染了一个空组」的形态。
+            -->
+            <PlanResearchLogGroup
+              v-if="isOrchestrationTool(item.name) && item.id === lastOrchestrationToolItemId && planResearchSessionsFor(item).length > 0"
+              :sessions="planResearchSessionsFor(item)"
+              :repo-names="repoNames"
             />
             <!--
               109-04：编排产出「进入编码」入口。三条渲染条件同时成立才渲染。
