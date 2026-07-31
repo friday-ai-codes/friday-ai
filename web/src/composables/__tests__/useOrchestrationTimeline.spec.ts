@@ -739,6 +739,26 @@ describe('终态与计数', () => {
   })
 })
 
+describe('live region · 无证据时不播报', () => {
+  // 一条可识别转移事件都没有、也没有快照时，六步全 pending。此时若播「当前阶段：拆分」，
+  // 说的是一个界面上明明是 pending 的阶段 —— 读屏侧的撒谎。
+  it('pointerIndex === -1 ⇒ liveMessage 为空串，不说出任何阶段名', () => {
+    const view = build({ snapshot: null, events: [] })
+    expect(view.steps.every(s => s.status === 'pending')).toBe(true)
+    expect(view.liveMessage).toBe('')
+  })
+
+  it('不认识的事件名不构成证据 ⇒ 同样不播报', () => {
+    const view = build({ snapshot: null, events: [makeEvent('some_unknown_event', {}, 1)] })
+    expect(view.liveMessage).toBe('')
+  })
+
+  it('一旦有可识别转移事件即恢复播报', () => {
+    const view = build({ snapshot: null, events: [makeEvent('decomposed', {}, 1)] })
+    expect(view.liveMessage).toBe('当前阶段：路由')
+  })
+})
+
 describe('live region', () => {
   it('在途时播报当前阶段标签且不含调研计数', () => {
     const view = build({

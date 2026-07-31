@@ -499,9 +499,10 @@ function buildInner(input: OrchestrationTimelineInput): OrchestrationTimelineVie
     && input?.runtimeActive === true
     && folded.lastTransitionStage !== null
     && !isFailed
-  const shouldPulse = input?.runtimeActive === true
+  const shouldPulse = (
+    input?.runtimeActive === true
     && (status === 'running' || status === 'waiting_clarification' || status === 'waiting_event')
-    || liveWithoutSnapshot
+  ) || liveWithoutSnapshot
 
   const showClassify = snapshot?.has_classify === true || folded.sawClassifyEvent
   const clarifyIndex = STAGE_ORDER.indexOf('clarify')
@@ -559,11 +560,15 @@ function buildInner(input: OrchestrationTimelineInput): OrchestrationTimelineVie
 
   const pointerLabel = STAGE_LABELS[STAGE_ORDER[pointerIndex >= 0 ? pointerIndex : 0]]
   const failLabel = failIndex >= 0 ? STAGE_LABELS[STAGE_ORDER[failIndex]] : pointerLabel
+  // 🔴 一条证据都没有时（pointerIndex === -1）不播报阶段：此时六步全 pending，
+  // 播「当前阶段：拆分」会说出一个界面上明明是 pending 的阶段，是读屏侧的撒谎。
   const liveMessage = phase === 'failed'
     ? COPY.liveFailed(failLabel, failReason ?? COPY.unknownReason)
     : phase === 'done'
       ? COPY.liveDone
-      : COPY.liveRunning(pointerLabel)
+      : pointerIndex >= 0
+        ? COPY.liveRunning(pointerLabel)
+        : ''
 
   return { steps, phase, title, doneCount, totalCount: steps.length, liveMessage }
 }

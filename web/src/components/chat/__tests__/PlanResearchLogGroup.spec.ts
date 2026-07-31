@@ -120,21 +120,83 @@ describe('planResearchLogGroup 渲染契约', () => {
     expect(wrapper.html()).not.toContain('icon-[lucide--layers]')
   })
 
-  it('点组标题折叠整组，卡片消失且 aria-expanded 随之变化', async () => {
-    const wrapper = mountGroup([makeSession()])
+  it('调研在途时展开；全部到终态后按 §C.4 自动收起一次', async () => {
+    const wrapper = mountGroup([makeSession({ status: 'RUNNING' })])
     const toggle = wrapper.find(TOGGLE)
     expect(toggle.attributes('aria-expanded')).toBe('true')
-    expect(toggle.attributes('aria-label')).toBe('收起方案调研日志')
-    expect(wrapper.findAll('.da-card')).toHaveLength(1)
 
-    await toggle.trigger('click')
+    await wrapper.setProps({ sessions: [makeSession({ status: 'COMPLETED' })] })
 
+    // 不收起会让日志组把刚产出的 OrchestratedPlanCard 挤出视口（首张卡日志区最高 22rem）
     expect(toggle.attributes('aria-expanded')).toBe('false')
-    expect(toggle.attributes('aria-label')).toBe('展开方案调研日志')
-    expect(wrapper.findAll('.da-card')).toHaveLength(0)
-    // 🔴 不消失：组标题行仍在，用户随时能再展开（OBS-02 要的是「可查」）
+    // 🔴 不消失：组标题行仍在，用户随时能再展开（OBS-02 要的是「可查」而不只是「可见」）
     expect(wrapper.find(GROUP).exists()).toBe(true)
     expect(wrapper.find(TOGGLE).exists()).toBe(true)
+  })
+
+  it('自动收起只发生一次：用户手动展开后不再被后到的快照抢走', async () => {
+    const wrapper = mountGroup([makeSession({ status: 'RUNNING' })])
+    const toggle = wrapper.find(TOGGLE)
+
+    await wrapper.setProps({ sessions: [makeSession({ status: 'COMPLETED' })] })
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+
+    // 2s 轮询会反复送来同一份终态快照，这里模拟又来一拍
+    await wrapper.setProps({ sessions: [makeSession({ status: 'COMPLETED' })] })
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+  })
+
+  it('历史消息（全部终态）挂载即收起，与时间线的收敛策略一致', () => {
+    const wrapper = mountGroup([makeSession()])
+    expect(wrapper.find(TOGGLE).attributes('aria-expanded')).toBe('false')
+  })
+
+  it('手动点组标题切换展开态', async () => {
+    const wrapper = mountGroup([makeSession({ status: 'RUNNING' })])
+    const toggle = wrapper.find(TOGGLE)
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+  })
+
+  // 🔴 WCAG 2.5.3 Label in Name（Level A）：可访问名称必须**包含**可见文案。
+  // 原实现用 aria-label 整体覆盖了按钮内文本，读屏用户永远听不到有几个仓库。
+  it('可访问名称包含可见的组标题，而不是被展开/收起文案覆盖', async () => {
+    const wrapper = mountGroup([makeSession({ status: 'RUNNING' }), makeSession({
+      session_id: 'sub-2',
+      repository_id: 'repo-2',
+      repository_name: 'other-app',
+      status: 'RUNNING',
+    })])
+    const toggle = wrapper.find(TOGGLE)
+    const visible = '方案调研 · 2 个仓库'
+
+    expect(toggle.text()).toContain(visible)
+    expect(toggle.attributes('aria-label')).toContain(visible)
+    expect(toggle.attributes('aria-label')).toContain('收起方案调研日志')
+
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-label')).toContain(visible)
+    expect(toggle.attributes('aria-label')).toContain('展开方案调研日志')
+  })
+
+  it('aria-controls 在展开与收起两态都指向真实存在的节点', async () => {
+    const wrapper = mountGroup([makeSession({ status: 'RUNNING' })])
+    const toggle = wrapper.find(TOGGLE)
+    const controls = toggle.attributes('aria-controls')
+    expect(controls).toBeTruthy()
+    expect(wrapper.find(`#${controls}`).exists()).toBe(true)
+
+    await toggle.trigger('click')
+    // v-show 而非 v-if：收起态下节点常驻，aria-controls 不悬空
+    expect(wrapper.find(`#${controls}`).exists()).toBe(true)
   })
 
   it.each([
