@@ -60,9 +60,12 @@
 ### VIEW — 前端与知识库
 
 - [ ] **VIEW-01**：用户可打开结构化蓝图查看器：六段导航、结构化渲染（流程图 / 伪代码 / API 卡 / 影响矩阵）、状态徽标与阶段时间线（生成中实时进展）
-- [ ] **VIEW-02**：仓库关联可直接跳转仓库页；引用可在查看器上再弹一层预览（知识实体 / 代码片段 / 其他蓝图 / 章程条目）
+- [ ] **VIEW-02**：仓库关联可直接跳转仓库页；引用可在查看器上再弹一层预览（知识实体 / **代码位置：文件路径 + 行号区间 + 引用快照** / 其他蓝图 / 章程条目）
+  - ⚠️ **Phase 115 范围说明（代码预览为降级形态）**：现有读面拿不到源码正文 —— `chunk_lookup._query_covering_chunks` 只 select `chunk_id/file_path/line_start/line_end/chunk_index`，`chunk_at_views` 返 `{path, line, chunks}` 不带正文；唯一带 `content` 的是 `POST /api/repositories/<id>/search/`（向量搜索，必须给 query、已重排过滤，无法按 path + 行号区间取）。因此 115 交付「路径 + 行号区间 + 引用快照」，**无源码正文亦无行高亮**；源码正文读面（及相应的行高亮）顺延 **Phase 116**，⛔ 115 不新增后端端点。
 - [ ] **VIEW-03**：知识库新增「技术方案」tab：列表、状态 / 项目 / 仓库筛选、搜索、深链直达查看器
-- [ ] **VIEW-04**：蓝图与项目自动关联（项目内生成即挂项目）；蓝图关联的知识 / 上下文 / 其他蓝图互相可查、可引用（互引成图谱边）
+- [ ] **VIEW-04**（**PARTIAL @ Phase 115，剩余部分顺延 Phase 116**）：蓝图与项目自动关联（项目内生成即挂项目）；蓝图关联的知识 / 上下文 / 其他蓝图互相可查、可引用（互引成图谱边）
+  - ✅ **Phase 115 交付**：项目自动关联 + 项目物料面板可见；**正向**可查 —— 本蓝图**引用了**哪些知识实体 / 仓库 / 其它蓝图，逐条可点可跳。
+  - ⏭ **顺延 Phase 116（其 SC-4 知识图谱物化）**：**反向「被谁引用」**与互引成图谱边。原因：`server/knowledge/artifact_associations.py:75` 查的是 `initiatives.Artifact` 投影出的 `KnowledgeEntity`，而蓝图落在 `delivery.Artifact` ⇒ 拿蓝图 id 去调 `getRelated` / `getArtifactAssociations` **必然落空**；图谱边的物化本就归属 116，115 不提前补后端。
 - [ ] **VIEW-05**：蓝图可导出飞书文档（含决策记录附录）；未确认版本在界面与导出物上均显式标注
 
 ### GATE — 入口与质量
@@ -124,9 +127,9 @@
 | CLAR-03 | Phase 114 审查与澄清收敛 | Complete |
 | CLAR-04 | Phase 114 审查与澄清收敛 | Complete |
 | VIEW-01 | Phase 115 前端查看器与知识库 | Pending |
-| VIEW-02 | Phase 115 前端查看器与知识库 | Pending |
+| VIEW-02 | Phase 115 前端查看器与知识库 | Pending（代码预览为降级形态：路径 + 行号区间 + 引用快照；源码正文与行高亮顺延 116） |
 | VIEW-03 | Phase 115 前端查看器与知识库 | Pending |
-| VIEW-04 | Phase 115 前端查看器与知识库 | Pending |
+| VIEW-04 | Phase 115 前端查看器与知识库（正向引用可查）+ Phase 116（反向「被谁引用」与图谱边） | PARTIAL |
 | CLAR-01 | Phase 115 前端查看器与知识库 | Pending |
 | FLOW-08 | Phase 115 前端查看器与知识库 | Pending |
 | GATE-01 | Phase 116 入口收编与导出 | Pending |
