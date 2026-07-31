@@ -336,6 +336,10 @@ function openUnresearchedDialog(): Promise<boolean> {
   })
 }
 
+function handleUnresearchedCancel(): void {
+  settleUnresearchedDialog(false)
+}
+
 function handleUnresearchedConfirm(): void {
   // 双保险：按钮已 disabled，这里再校一次，确保 true 只可能来自用户勾选
   if (!acknowledged.value)
@@ -980,7 +984,8 @@ const badgeText = computed(() => {
           </label>
         </div>
         <AlertDialogFooter>
-          <AlertDialogCancel data-test="ack-cancel">
+          <!-- 显式结算「取消」，不只依赖内置关闭事件（意图更明确，也让取消可测） -->
+          <AlertDialogCancel data-test="ack-cancel" @click="handleUnresearchedCancel">
             取消
           </AlertDialogCancel>
           <!-- 不用 destructive 配色：送编码不销毁数据、不可逆性有限（产出 PR 可关闭） -->
