@@ -517,6 +517,7 @@
         "gotoGate": "前往确认门",
         "draftTitle": "针对选中片段发起评论",
         "draftCancel": "取消",
+        "commentCreated": "评论已提交",
         "draftSubmit": "提交评论"
       },
       "finding": {
@@ -527,6 +528,9 @@
         "reasonRequired": "处置理由不可为空",
         "resolveTitle": "标记该审查发现为已修复",
         "dismissTitle": "标记该审查发现为误报忽略",
+        "resolveSuccess": "已标记为已修复",
+        "dismissSuccess": "已标记为误报忽略",
+        "noopNotice": "该发现此前已有结论，本次未覆盖",
         "confirm": "确认处置"
       },
       "version": {
@@ -570,6 +574,8 @@
         "answerApplied": "答案已回灌，已产出 v{version_no}",
         "answerUnchanged": "答案已记录，本次未产生新版本",
         "answerConflict": "答案已保存，部分块存在冲突需人工确认",
+        "approveSuccess": "已通过，蓝图进入「已确认」",
+        "rejectSuccess": "已驳回，蓝图回到「产出中」（第 {n} 轮修订）",
         "answerFailed": "答案已保存，回灌未成功，可稍后重试"
       },
       "gate": {
