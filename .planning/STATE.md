@@ -2,18 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
-current_phase: 114
-current_phase_name: 审查与澄清收敛
 status: executing
-stopped_at: "【被 Cursor 计费阻断暂停，2026-07-30 14:49】Phase 113 已交付验证（54/54）；其 code review 的 1 CRITICAL + 4 MAJOR 已修完并提交（CR-01 跨仓伪造 45759e8c / MJ-01 会话寻址 021c80bf / MJ-02+03 09a3751d / MJ-04 4160815d / MINOR 批次 668f2ae9，665 passed），**剩余工作：部分 MINOR 未修 + 113-REVIEW.md 的 Fix Log 未写**。Phase 114 规划：CONTEXT/RESEARCH/PATTERNS 就位，PLAN 只写出 01（共需 5 个），planner 被掐断。恢复步骤：① 重派 113 fixer 收尾剩余 MINOR 并写 Fix Log；② 重派 114 planner 续写 PLAN 02-05 并登记 ROADMAP；③ 之后照常 plan-checker → 5 波执行。"
-last_updated: "2026-07-29T22:15:00.000Z"
-last_activity: 2026-07-30
-last_activity_desc: Phase 113 complete (passed 54/54)
+last_updated: "2026-07-31T02:50:00.000Z"
+last_activity: 2026-07-31 -- Phase 114 plan 02 complete (审查判定内核)
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 15
-  completed_plans: 15
+  total_plans: 20
+  completed_plans: 17
   percent: 50
 ---
 
@@ -28,10 +24,10 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 
 ## Current Position
 
-Phase: 114 (审查与澄清收敛) — NOT STARTED
-Plan: —
-Status: Phase 113 complete & verified (54/54); ready to discuss Phase 114
-Last activity: 2026-07-30 — Phase 113 阶段 2/3 + Context Bus 交付（6/6 plans，verification 54/54）
+Phase: 114 (审查与澄清收敛（AI 对抗审查 + 线程闭环 + 人工编辑）) — EXECUTING
+Plan: 2 of 5 complete（114-01 线程底座 / 114-02 判定内核；下一个 114-03 ai_review stage adapter）
+Status: Executing Phase 114
+Last activity: 2026-07-31 -- 114-02 交付 blueprint_review.py 判定内核（52 例新测试全绿，1189 passed 零回归）
 
 ## Milestone Overview (v0.20.0 — Phases 111–116 — 🟡 PLANNING)
 
