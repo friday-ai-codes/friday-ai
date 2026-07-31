@@ -465,6 +465,73 @@ async def test_reflow_never_raises_on_empty_or_failing_inputs() -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# 守 12：⭐ 回灌链绝不消费 ai_review_finding（114-CR-01 回归）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+async def _answered_finding(artifact: Artifact) -> BlueprintThread:
+    """开一条 BLOCKER finding 线程并把它推到 ``answered``（CR-01 的攻击前提）。
+
+    ``record_answer`` 在此**刻意**被用来复现「有人用作答通道碰了 finding」这一前提；
+    被测的不变式是回灌链**即便拿到这样一条线程也绝不消费、绝不 resolve 它**。
+    """
+    from delivery.models import ThreadSeverity
+
+    lifecycle = BlueprintLifecycleService()
+    thread = await lifecycle.open_thread(
+        artifact,
+        kind=ThreadKind.AI_REVIEW_FINDING,
+        severity=ThreadSeverity.BLOCKER,
+        blocking=True,
+        question="[citation_missing] 关键结论缺 citations",
+        anchor={"section_path": "implementation_overview", "block_id": _BLOCK_X},
+    )
+    await lifecycle.record_answer(thread, body="知道了")
+    return thread
+
+
+async def test_reflow_never_consumes_an_explicitly_passed_finding_thread() -> None:
+    """⭐ 显式 ``threads=[finding]`` 也必须被 kind 过滤掉（fail-closed，不靠调用方自觉）。
+
+    这是 CR-01 的核心洞：answer 端点曾把 finding 线程直接交给回灌链，落版本成功后收尾
+    分支无条件 ``resolve_thread`` ⇒ 一条 BLOCKER finding 被推到 ``resolved`` 终态，
+    confirm 守卫两条判据同时失配，approve 白放行——且没有 ``reason``、没有
+    ``[已修复]`` / ``[误报忽略]`` 语义、没有处置人留痕。
+    """
+    artifact = await _make_artifact()
+    finding = await _answered_finding(artifact)
+    before = await _version_count(artifact)
+
+    result = await aapply_thread_answers(artifact, threads=[finding], section_writer=_noop_writer)
+
+    assert result["status"] == "noop"
+    assert await _version_count(artifact) == before
+    # 线程状态逐字不变：既没被消费，也没被冒名处置
+    assert (await BlueprintThread.objects.aget(id=finding.id)).status == ThreadStatus.ANSWERED
+
+
+async def test_reflow_default_queryset_excludes_finding_threads() -> None:
+    """第二入口：``threads=None`` 的默认查询集也不得含 ``ai_review_finding``。
+
+    ai_review 入口 0-a 走的正是这条默认查询集——不堵它，任何以任何方式落到
+    ``answered`` 的 finding 都会在下一轮审查入口被自动 ``resolved`` 掉。
+    **对照**：同一 artifact 上并存的澄清线程仍被正常消费（证明过滤非恒真）。
+    """
+    artifact = await _make_artifact()
+    finding = await _answered_finding(artifact)
+    clarification = await _answered_thread(artifact, block_id=_BLOCK_Y)
+
+    result = await aapply_thread_answers(artifact, section_writer=_noop_writer)
+
+    assert result["status"] == "applied"
+    assert result["thread_ids"] == [str(clarification.id)]
+    assert (await BlueprintThread.objects.aget(id=finding.id)).status == ThreadStatus.ANSWERED
+    assert (await BlueprintThread.objects.aget(id=clarification.id)).status == (
+        ThreadStatus.RESOLVED
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # 守 9：零 ORM 写 + 零 record_answer 源码扫描
 # ══════════════════════════════════════════════════════════════════════════
 
