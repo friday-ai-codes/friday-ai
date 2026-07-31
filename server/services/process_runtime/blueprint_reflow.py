@@ -66,6 +66,7 @@ __all__ = [
     "AI_REVIEW_REFLOW_PREFIX",
     "HUMAN_BLOCK_RESTORE_PREFIX",
     "DECISION_LOG_KEYS",
+    "REFLOW_KINDS",
     "build_decision_entries",
     "merge_decision_log",
     "detect_human_conflicts",
@@ -82,6 +83,16 @@ HUMAN_BLOCK_RESTORE_PREFIX = "human_block_restore:"
 
 # 冲突线程的恢复目标（`BlueprintThread.return_stage` max_length=16，本值 12 字符）
 RETURN_STAGE_AI_REVIEWING = "ai_reviewing"
+
+# ⭐ 回灌链**唯一**允许消费的线程 kind（114-CR-01 收口）。
+#
+# `ai_review_finding` **刻意不在内**：回灌链落版本成功后会对全部被消费线程无条件
+# `resolve_thread`，那是终态、离开 confirm 守卫判据集合。让 finding 进来即等于「在
+# finding 上回一句任意文本」就能解开 confirm 门——而 finding 的处置在设计上必须经
+# `blueprint_review_action._adispose_finding`（强制 `reason`、写 `[已修复]` /
+# `[误报忽略]` 标签与「处置人：{uid}」、`first_action=finding_resolve/dismiss`）。
+# 更根本的一条：回答一条「关键结论缺 citations」的 finding 并不等于补上了 citations。
+REFLOW_KINDS: tuple[str, ...] = (ThreadKind.AI_CLARIFICATION,)
 
 # decision_log 条目键集：规格门形状 `{thread_id, question, answer, decided_at,
 # decided_by}`（`blueprint_spec_gate._merge_decision_log:497-510`）的**超集**，多一个
@@ -494,9 +505,16 @@ async def _aload_thread_payloads(
 ) -> tuple[list, list[dict]]:
     """装配待消费线程与其消息流（只读）。
 
-    ``threads is None`` ⇒ 查该 artifact 上 ``status=answered`` 且
-    ``kind ∈ {ai_clarification, ai_review_finding}`` 的线程；显式传入（含 ``[]``）则
-    原样使用——``threads=[]`` 是「本轮没有要消费的线程」的合法表达，不能被回落成全量查询。
+    ``threads is None`` ⇒ 查该 artifact 上 ``status=answered`` 且 ``kind`` 落在
+    :data:`REFLOW_KINDS` 的线程；显式传入（含 ``[]``）则**同样按 ``kind`` 过滤**——
+    ``threads=[]`` 是「本轮没有要消费的线程」的合法表达，不能被回落成全量查询。
+
+    ⭐ **``kind`` 过滤对显式入参也生效（fail-closed，不依赖调用方自觉）**：回灌链落版本
+    成功后会对全部被消费线程无条件 ``resolve_thread``，而 ``resolved`` 是终态、离开
+    confirm 守卫判据集合。一旦让 ``ai_review_finding`` 进到这里，「在 finding 上回一句
+    任意文本」就等于把一条 BLOCKER 推到终态、放开 confirm 门——绕开 ``reason`` 必填、
+    绕开 ``[已修复]`` / ``[误报忽略]`` 的语义区分、绕开「处置人：{uid}」的归因留痕
+    （114-CR-01）。finding 的处置**只**走 ``aresolve_finding`` / ``adismiss_finding``。
     """
     if threads is None:
         rows = [
@@ -504,11 +522,15 @@ async def _aload_thread_payloads(
             async for row in BlueprintThread.objects.filter(
                 artifact=artifact,
                 status=ThreadStatus.ANSWERED,
-                kind__in=[ThreadKind.AI_CLARIFICATION, ThreadKind.AI_REVIEW_FINDING],
+                kind__in=list(REFLOW_KINDS),
             ).order_by("created_at")
         ]
     else:
-        rows = [row for row in threads if row is not None]
+        rows = [
+            row
+            for row in threads
+            if row is not None and str(getattr(row, "kind", "") or "") in REFLOW_KINDS
+        ]
     if not rows:
         return ([], [])
 

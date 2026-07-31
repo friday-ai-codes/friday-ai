@@ -681,6 +681,52 @@ def test_dispose_404_when_thread_belongs_to_another_artifact(
     assert resp.status_code == 404
 
 
+def test_answer_endpoint_refuses_finding_threads_and_the_confirm_guard_holds(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """⭐ CR-01 回归：作答通道不得成为 finding 的处置通道。
+
+    修前的实测链路是 approve **409** → 对同一条 BLOCKER finding 调 answer 端点答一句
+    「知道了」→ 回灌链落版本后无条件收尾 ⇒ 线程 DB 重读 ``resolved`` → approve **200**。
+    那条路径同时绕开了 ``reason`` 必填、``[已修复]`` / ``[误报忽略]`` 的语义区分、以及
+    「处置人：{uid}」的归因留痕——**AI 的一句「答案已回灌」冒充了人的裁决**。
+
+    ⛔ 处置只走 resolve / dismiss；answer 通道对 finding 一律 400 且不改线程状态。
+    **对照**：同一 artifact 上的澄清线程走 answer 端点仍 200（证明分流非恒真）。
+    """
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact()
+    _make_session(artifact, user)
+    finding = _open_finding(artifact)
+    before = _version_count(artifact)
+
+    assert authenticated_client.post(_url("blueprint-review-approve", artifact)).status_code == 409
+
+    refused = authenticated_client.post(
+        _url("blueprint-review-thread-answer", artifact, finding),
+        {"body": "知道了"},
+        format="json",
+    )
+
+    assert refused.status_code == 400
+    assert BlueprintThread.objects.get(id=finding.id).status == ThreadStatus.OPEN
+    assert _version_count(artifact) == before
+    # 守卫仍满弦：绕不开处置通道
+    assert authenticated_client.post(_url("blueprint-review-approve", artifact)).status_code == 409
+    assert _db_status(artifact) == BlueprintStatus.PENDING_REVIEW
+
+    # 对照：澄清线程仍可正常作答（分流不是「一律 400」）
+    clarification = _open_clarification(artifact)
+    monkeypatch.setattr(_REFLOW_TARGET, AsyncMock(return_value={"status": "noop"}))
+    ok = authenticated_client.post(
+        _url("blueprint-review-thread-answer", artifact, clarification),
+        {"body": "走 JWT"},
+        format="json",
+    )
+    assert ok.status_code == 200
+    assert BlueprintThread.objects.get(id=clarification.id).status == ThreadStatus.ANSWERED
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 12-13. 续驱接线正反 / 失败隔离 / process_type 过滤
 # ═══════════════════════════════════════════════════════════════════════════

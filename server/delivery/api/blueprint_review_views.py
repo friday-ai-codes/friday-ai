@@ -30,6 +30,11 @@ helper，再塞语义不同的 View 会让「阶段 1 确认门」这个文件�
 处置一律走 ``aresolve_finding`` / ``adismiss_finding`` → ``resolve_thread``：作答通道只把
 线程推到 ``answered``，而 ``answered`` 仍在 confirm 守卫判据里，**用它处置根本解不开
 超界死锁**，还会留下「看着已回答其实仍阻塞」的假象。
+⛔ 因此 answer 端点**按 ``kind`` 分流**：``ai_review_finding`` 一律 400（114-CR-01）——
+本端点在作答之后同一请求内接了回灌，而回灌链落版本成功后会无条件 ``resolve_thread``，
+不分流就等于开了一条「回一句话即处置 BLOCKER」的后门（无 ``reason``、无
+``[已修复]``/``[误报忽略]`` 语义、无处置人留痕）。回灌链侧的 ``REFLOW_KINDS`` 是同一条
+不变式的第二道闸（fail-closed，不依赖调用方自觉）。
 
 **续驱接线**：六个改状态/改线程的端点在动作**持久化成功之后**调
 ``blueprint_resume.aresume_after_gate_action``——端点只落库不推进 stage，没有这一步
@@ -63,6 +68,11 @@ _COMPONENT = "blueprint_review_api"
 _ARTIFACT_MISSING_DETAIL = {"detail": "artifact 不存在"}
 _SESSION_MISSING_DETAIL = {"detail": "该 artifact 没有蓝图编排会话"}
 _THREAD_MISSING_DETAIL = {"detail": "线程不存在"}
+# 审查发现不走作答通道（114-CR-01）：作答链会经回灌把线程推到 resolved 终态，
+# 那等于让 AI 的一句「答案已回灌」冒充人的裁决。
+_FINDING_NOT_ANSWERABLE_DETAIL = (
+    "审查发现不可通过作答通道处置，请走 resolve/（已修复）或 dismiss/（误报忽略）并填写理由"
+)
 
 # service `status` → 中文 detail（键对齐 blueprint_review_action 与 114-04 的取值）
 _ACTION_ERROR_MESSAGES = {
@@ -500,12 +510,19 @@ class BlueprintReviewThreadAnswerView(APIView):
     ⚠️ **回灌失败绝不回滚、绝不改响应码**：``record_answer`` 已持久化，端点必须 2xx；
     回灌结果原样放进响应体的 ``reflow`` 键（含 ``status``），失败/冲突**如实上报**，
     绝不静默。
+
+    ⛔ **``kind == ai_review_finding`` 一律 400**（114-CR-01）：本端点在 ``record_answer``
+    之后**同一请求内**接了回灌，而回灌链落版本成功后会对被消费线程无条件
+    ``resolve_thread`` ⇒ 在一条 BLOCKER finding 上回一句任意文本就把它推到终态、解开
+    confirm 门，同时绕开 ``reason`` 必填 / ``[已修复]``-``[误报忽略]`` 的语义区分 /
+    「处置人：{uid}」的归因留痕。finding 只能走 resolve / dismiss。分流在此与回灌链
+    的 ``REFLOW_KINDS`` **双重堵**：端点给可回显的中文错因，回灌链自身 fail-closed。
     """
 
     permission_classes = [IsAuthenticated]
 
     async def post(self, request: Any, artifact_id: Any, thread_id: Any) -> Response:
-        from delivery.models import ThreadAuthorType
+        from delivery.models import ThreadAuthorType, ThreadKind
         from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
         from services.process_runtime.blueprint_reflow import aapply_thread_answers
 
@@ -516,6 +533,11 @@ class BlueprintReviewThreadAnswerView(APIView):
         thread = await _aload_thread(artifact_id, thread_id)
         if thread is None:
             return Response(_THREAD_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
+        if str(getattr(thread, "kind", "") or "") == ThreadKind.AI_REVIEW_FINDING:
+            return Response(
+                {"detail": _FINDING_NOT_ANSWERABLE_DETAIL},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         body = request.data if isinstance(request.data, dict) else {}
         answer = str(body.get("body") or "").strip()
