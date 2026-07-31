@@ -89,12 +89,18 @@ def _make_artifact(status: str = BlueprintStatus.PENDING_REVIEW) -> Artifact:
     return artifact
 
 
-def _make_session(artifact: Artifact, user: Any, *, process_type: str = "technical_blueprint"):
+def _make_session(
+    artifact: Artifact,
+    user: Any,
+    *,
+    process_type: str = "technical_blueprint",
+    status: str = ConvergenceSessionStatus.RUNNING,
+):
     return ConvergenceSession.objects.create(
         process_type=process_type,
         entrypoint=ConvergenceSessionEntrypoint.CHAT,
         current_stage="ai_review",
-        status=ConvergenceSessionStatus.RUNNING,
+        status=status,
         stage_state={"ai_review": {"round": 2, "unresolved": [{"rule_id": "R2"}]}},
         current_artifact_version_id=artifact.current_version_id,
         created_by=user,
@@ -361,6 +367,67 @@ def test_reject_twice_increments_revision_round_exactly_once_each(
     Artifact.objects.filter(id=artifact.id).update(blueprint_status=BlueprintStatus.PENDING_REVIEW)
     assert authenticated_client.post(_url("blueprint-review-reject", artifact)).status_code == 200
     assert _latest_version(artifact).content["meta"]["revision_round"] == 2
+
+
+def test_reject_reopens_a_terminal_session_so_the_ai_can_actually_rerun(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """⭐ MJ-01 回归：驳回必须把终态会话拉回可运行态，否则驳回是空动作。
+
+    ``pending_review`` 只能由 ``ai_review`` 的 ``review_passed`` / ``review_exhausted``
+    到达，而两条出边都落 ``__done__`` ⇒ 人能点驳回的那一刻会话**必定** ``done``，而续驱
+    驱动器第一件事就是终态短路、``engine.advance`` 同样对终态直接 return。修前实测：
+    reject 返 200 但会话仍 ``done / __done__``（零 advance），融合与审查都不会重跑，
+    ``revision_round`` 因此永远只会是 1。
+    """
+    resume = _stub_resume(monkeypatch)
+    artifact = _make_artifact()
+    session = _make_session(artifact, user, status=ConvergenceSessionStatus.DONE)
+
+    resp = authenticated_client.post(
+        _url("blueprint-review-reject", artifact), {"comment": "证据不足"}, format="json"
+    )
+
+    assert resp.status_code == 200
+    fresh = ConvergenceSession.objects.get(id=session.id)
+    assert fresh.status == ConvergenceSessionStatus.RUNNING
+    # 回 merge 而非 ai_review：只回审查等于拿同一份内容再审一遍，必然复现同样的 findings
+    assert fresh.current_stage == "merge"
+    assert resume.await_count == 1
+    # stage_state 原样保留给重跑那一轮读（复位只改「能不能被驱动」）
+    assert fresh.stage_state["ai_review"]["round"] == 2
+
+
+def test_reject_reports_the_status_the_db_actually_lands(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """⭐ MJ-01 第二点：``current_status`` 必须在续驱**之后**重读。
+
+    service 侧取值发生在续驱之前，而续驱的 ``_amap_blueprint_status`` 会因为还有
+    open+blocking 线程把状态推成 ``needs_clarification`` ⇒ 修前前端拿到 ``drafting``、
+    刷新一下变 ``needs_clarification``。这里用「续驱把状态改掉」的桩复现那一步。
+    """
+
+    artifact = _make_artifact()
+    _make_session(artifact, user, status=ConvergenceSessionStatus.DONE)
+
+    async def _resume_maps_status(session: Any, **kwargs: Any) -> None:
+        """模拟 ``_amap_blueprint_status``：有阻塞线程 ⇒ 派生 needs_clarification。"""
+        fresh = await Artifact.objects.aget(id=artifact.id)
+        await BlueprintLifecycleService().transition(
+            fresh,
+            BlueprintStatus.NEEDS_CLARIFICATION,
+            initiated_by_user_id="system",
+            return_status=BlueprintStatus.DRAFTING,
+        )
+
+    monkeypatch.setattr(_RESUME_TARGET, AsyncMock(side_effect=_resume_maps_status))
+
+    resp = authenticated_client.post(_url("blueprint-review-reject", artifact))
+
+    assert resp.status_code == 200
+    assert _db_status(artifact) == BlueprintStatus.NEEDS_CLARIFICATION
+    assert resp.json()["current_status"] == _db_status(artifact)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
