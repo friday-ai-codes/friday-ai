@@ -611,6 +611,101 @@ def test_edit_blocks_applies_then_same_ops_do_not_bump_version(
     assert resume.await_count == 2
 
 
+@pytest.mark.parametrize(
+    "locked_status",
+    [
+        BlueprintStatus.CONFIRMED,
+        BlueprintStatus.IMPLEMENTING,
+        BlueprintStatus.ARCHIVED,
+    ],
+)
+def test_edit_blocks_refuses_to_rewrite_a_locked_blueprint(
+    authenticated_client, user, monkeypatch, locked_status: str
+) -> None:
+    """⭐ MJ-04 回归：``edit-blocks`` 原先根本不碰状态机 ⇒ 已确认的蓝图可被无声改写。
+
+    approve / reject 的合法性由 ``_ALLOWED_TRANSITIONS`` 兜住，但 ``edit-blocks`` 读最新
+    版本 → apply ops → validate → ``add_version`` → 重锚定，**全程不读**
+    ``blueprint_status``。于是一份已 ``confirmed``（甚至 ``implementing`` / ``archived``）
+    的蓝图仍可继续落 ``human_edit:`` 版本，而状态**不变** ⇒ 下游 implementing 链拿到的
+    ``current_version`` 已不是当初被确认的那一版：**「确认」所锚定的内容被事后掉包**且
+    无痕。``human_edit:`` 前缀又是 B3 人工块保护的判据源，保护集还会凭空扩大。
+    """
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact(locked_status)
+    before = _version_count(artifact)
+
+    resp = authenticated_client.post(
+        _url("blueprint-review-edit-blocks", artifact),
+        {
+            "ops": [
+                {
+                    "op": "replace",
+                    "block_id": _TEXT_BLOCK,
+                    "block": {"block_id": _TEXT_BLOCK, "type": "paragraph", "text": "偷改的正文"},
+                }
+            ]
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 400
+    assert _version_count(artifact) == before
+    assert _db_status(artifact) == locked_status
+
+
+def test_answer_refuses_to_reflow_into_a_locked_blueprint(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """MJ-04 的另一半：作答也会经回灌落新版本 ⇒ 同一张白名单，且闸在 ``record_answer`` 前。"""
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact()
+    thread = _open_clarification(artifact)
+    Artifact.objects.filter(id=artifact.id).update(blueprint_status=BlueprintStatus.CONFIRMED)
+    before = _version_count(artifact)
+
+    resp = authenticated_client.post(
+        _url("blueprint-review-thread-answer", artifact, thread), {"body": "偷答"}, format="json"
+    )
+
+    assert resp.status_code == 400
+    assert _version_count(artifact) == before
+    # 闸在写之前 ⇒ 线程状态一字未动（答案没被记下来）
+    assert BlueprintThread.objects.get(id=thread.id).status == ThreadStatus.OPEN
+
+
+def test_edit_blocks_still_works_in_every_editable_status(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """MJ-04 非恒真对照：可编辑态一律放行（闸门不是「一律拒」）。"""
+    _stub_resume(monkeypatch)
+    for editable in (
+        BlueprintStatus.DRAFTING,
+        BlueprintStatus.AI_REVIEWING,
+        BlueprintStatus.NEEDS_CLARIFICATION,
+        BlueprintStatus.PENDING_REVIEW,
+    ):
+        artifact = _make_artifact(editable)
+        resp = authenticated_client.post(
+            _url("blueprint-review-edit-blocks", artifact),
+            {
+                "ops": [
+                    {
+                        "op": "replace",
+                        "block_id": _TEXT_BLOCK,
+                        "block": {
+                            "block_id": _TEXT_BLOCK,
+                            "type": "paragraph",
+                            "text": f"在 {editable} 下的合法编辑",
+                        },
+                    }
+                ]
+            },
+            format="json",
+        )
+        assert resp.status_code == 200, (editable, resp.json())
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 10. threads answer + ⭐ B1 回灌接线
 # ═══════════════════════════════════════════════════════════════════════════

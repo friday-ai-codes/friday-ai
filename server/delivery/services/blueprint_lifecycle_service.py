@@ -67,7 +67,46 @@ from delivery.services.event_taxonomy import EVENT_BLUEPRINT_STATUS_TRANSITIONED
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["BlueprintLifecycleService", "ConcurrentBlueprintTransitionError"]
+__all__ = [
+    "EDITABLE_BLUEPRINT_STATUSES",
+    "BlueprintLifecycleService",
+    "ConcurrentBlueprintTransitionError",
+]
+
+# ⭐ 允许人工改写蓝图正文的状态白名单（114-MJ-04）。
+#
+# ``edit-blocks`` / ``answer`` 这两条人工写路径原先**根本不碰状态机**（读最新版本 →
+# apply ops → validate → add_version → 重锚定，全程不读 ``blueprint_status``），于是一份
+# 已 ``confirmed``（甚至 ``implementing`` / ``archived``）的蓝图仍可被继续落
+# ``human_edit:`` 版本，而蓝图状态**不变** ⇒ 下游 implementing 链拿到的
+# ``current_version`` 已不是当初被确认的那一版——**「确认」所锚定的内容被事后掉包**，
+# 且没有留下需要重新确认的痕迹。``human_edit:`` 前缀同时是 B3 人工块保护的判据源，
+# 事后编辑会让保护集在下一次审查入口凭空扩大。
+#
+# 这与本相位对「AI 不得覆盖人工」的极度小心恰是对称的一面：**人也不该在确认之后无声
+# 覆盖已确认内容**。要在确认后改，必须先驳回（``confirmed → drafting`` 是合法边）并
+# 重新走人审。
+#
+# ``""`` 在内（v0 数据 / 未进状态机的 artifact 不参与本闸门）：把它算作不可编辑会让
+# 升级前建的蓝图突然不可编辑，属行为回退。
+EDITABLE_BLUEPRINT_STATUSES: frozenset[str] = frozenset(
+    {
+        "",
+        BlueprintStatus.RESEARCHING,
+        BlueprintStatus.DRAFTING,
+        BlueprintStatus.AI_REVIEWING,
+        BlueprintStatus.NEEDS_CLARIFICATION,
+        BlueprintStatus.PENDING_REVIEW,
+    }
+)
+
+# 越界时可直接回显的中文错因（端点只映射状态码，文案在 service 侧收口）
+NOT_EDITABLE_DETAIL = "当前蓝图状态不允许改写正文，请先驳回或新建修订"
+
+
+def is_blueprint_editable(artifact: Any) -> bool:
+    """该蓝图当前状态是否允许人工改写正文（判据见 :data:`EDITABLE_BLUEPRINT_STATUSES`）。"""
+    return str(getattr(artifact, "blueprint_status", "") or "") in EDITABLE_BLUEPRINT_STATUSES
 
 
 class ConcurrentBlueprintTransitionError(RuntimeError):

@@ -252,6 +252,13 @@ async def aapply_block_edit(
                     ``detail`` 为可直接回显的中文错因（已脱敏截断）
     ==============  ==========================================================
 
+    ⭐ **第 0 步是状态闸**（``is_blueprint_editable``，114-MJ-04）：本函数原先根本不碰状态
+    机 ⇒ 一份已 ``confirmed``（甚至 ``implementing`` / ``archived``）的蓝图仍可被继续落
+    ``human_edit:`` 版本，而蓝图状态**不变** ⇒ 下游 implementing 链拿到的
+    ``current_version`` 已不是当初被确认的那一版，「确认」所锚定的内容被**事后掉包**且
+    无痕。越界一律 ``invalid``（端点 400、版本数不变），要改必须先驳回
+    （``confirmed → drafting`` 合法边）再重走人审。
+
     五步（照 ``blueprint_confirm_gate.alock`` 的固定顺序）：
 
     1. **读最新版本作基线**（``order_by("-version_no").afirst()``）。⛔ **绝不读**
@@ -270,11 +277,30 @@ async def aapply_block_edit(
     """
     from delivery.models import ArtifactVersion
     from delivery.services.artifact_service import ArtifactContentInvalid, ArtifactService
-    from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+    from delivery.services.blueprint_lifecycle_service import (
+        NOT_EDITABLE_DETAIL,
+        BlueprintLifecycleService,
+        is_blueprint_editable,
+    )
 
     started = time.monotonic()
     artifacts = artifact_service or ArtifactService()
     lifecycle = lifecycle_service or BlueprintLifecycleService()
+
+    if not is_blueprint_editable(artifact):
+        logger.info(
+            "blueprint_block_edit_blocked_by_status",
+            category="caller",
+            component="blueprint_block_edit",
+            artifact_id=str(getattr(artifact, "id", "")),
+            # 键刻意不叫模型字段名：`test_inv6_no_bypass_blueprint_status_field_write` 把
+            # 「字段名 + 等号」形态一律判为旁路写（那条正则正确，用于逮 `**{…}` 绕 CAS）。
+            # 本处只读该字段、从不写它，换个键名即可让守卫保持满弦。
+            current_status=str(getattr(artifact, "blueprint_status", "") or ""),
+            initiated_by_user_id=initiated_by_user_id or "system",
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
+        return _edit_result("invalid", detail=NOT_EDITABLE_DETAIL)
 
     base = (
         await ArtifactVersion.objects.filter(artifact_id=getattr(artifact, "id", None))
