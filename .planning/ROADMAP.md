@@ -207,7 +207,34 @@ Plans:
   3. 前端展示方案生成的阶段时间线；编排失败时用户能直接看出停在哪一步、原因是什么。
   4. 实时进展与 Phase 107 的降级提示复用同一事件源（`ConvergenceSessionEvent`），未新建平行推送通道，同一状态不存在两处各自实现。
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 110-01-PLAN.md — SSE 事件类型 `process_event` + `_emit_event` best-effort fan-out（LangGraph custom writer）+ 出网净化与失败原因闭集（wave 1）
+- [ ] 110-02-PLAN.md — `SubStepTimeline` 加性泛化（6 态 / 可选摘要 / 可选角标 / 只读模式 / list 语义）+ 既有用法回归锁（wave 1）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 110-03-PLAN.md — 运行时快照两个独立分支：`orchestration`（阶段指针 + 事件流 + 失败闭集）与 `plan_research_sessions`（按仓 + 仓库名 + 日志脱敏）（wave 2）
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 110-04-PLAN.md — 前端契约（五个类型 + SSEEvent 扩 `process_event`）+ store 分桶状态 + 两条链幂等合流（wave 3）
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 110-05-PLAN.md — `useOrchestrationTimeline` 纯函数：折叠 / 六态状态机 / 七套摘要 / 失败闭集 / 中断态 + 穷举 spec（wave 4）
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 110-06-PLAN.md — `OrchestrationStageTimeline.vue`：卡片骨架 / 终态收敛一次性 / 单一 live region（wave 5）
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 110-07-PLAN.md — `PlanResearchLogGroup.vue` 按仓日志组 + `ChatMessageBubble` 挂载与会话绑定 + 集成用例（wave 6）
+
 **UI hint**: yes
 
 <details>
