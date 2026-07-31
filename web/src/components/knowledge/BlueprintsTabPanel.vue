@@ -15,6 +15,12 @@
  *
  * 分页体是**五键手写分页**（`{total, items, page, page_size, has_next}`）：过滤发生在 Python
  * 侧而非 queryset 上，DRF 的分页 helper 用不上。
+ *
+ * ## ⭐ 四档渲染：loading / error / 有数据 / 空（⛔ 不许把 error 并进空态）
+ *
+ * `isError` 那一档**不可省**（MJ-04）。没有它，400（手改 URL 传了非 UUID 的 `project_id`）、
+ * 503（列表聚合失败）与网络断线全都落进 `v-else` 的「没有匹配的技术方案」—— 读失败与真的
+ * 没数据在界面上像素级相同，用户只会以为自己筛没了，而不知道该重试。
  */
 
 import type { BlueprintStatus } from '~/types/blueprint'
@@ -269,6 +275,26 @@ function statusLabel(value: string): string {
 
     <div v-if="listQuery.isLoading.value" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <Skeleton v-for="n in 6" :key="n" class="h-32 w-full rounded-2xl" />
+    </div>
+
+    <!--
+      ⭐ 读失败与「真的没数据」必须**分档**（MJ-04）：这一档缺席时，400 / 503 / 网络断线
+      一律落进下面的 `v-else` 空态，显示成「没有匹配的技术方案」—— 用户会以为自己筛没了，
+      而不是「读不到，重试一下」。⚠️ 顺序必须在 `items.length` 之前。
+    -->
+    <div
+      v-else-if="listQuery.isError.value"
+      class="flex flex-col items-center gap-3 rounded-2xl border border-border bg-muted/20 px-6 py-10 text-center"
+      role="alert"
+      data-testid="blueprint-list-error"
+    >
+      <span class="icon-[lucide--cloud-off] text-2xl text-muted-foreground" aria-hidden="true" />
+      <p class="text-sm text-muted-foreground">
+        {{ t('knowledge.blueprints.error.unavailable') }}
+      </p>
+      <Button variant="outline" size="sm" data-testid="blueprint-list-retry" @click="listQuery.refetch()">
+        {{ t('knowledge.blueprints.error.retry') }}
+      </Button>
     </div>
 
     <template v-else-if="items.length">

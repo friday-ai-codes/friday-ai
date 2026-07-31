@@ -25,8 +25,12 @@ tests / migrations）且这是**有意的**（``filter(<字段名>=...)`` 出现
 
 观测：``blueprint_list_read_started`` / ``blueprint_list_read_completed`` 两条 ``caller``
 事件（``component="blueprint_list_api"``），只记参数与计数；⛔ **``?q=`` 只记长度不记内容**
-（T-114-36 的同一条纪律：正文与检索词都不进日志）。聚合整体 try/except 返空结构**不 500**
-——聚合/观测永不反噬请求。
+（T-114-36 的同一条纪律：正文与检索词都不进日志）。
+
+⭐ **「best-effort」只覆盖观测，不覆盖业务**（115-MJ-04）：埋点写不出去一律吞掉；而
+``_aggregate``（queryset + 可见性过滤 + 行装配 + ``_load_names`` 两次查询）是**业务主体**，
+它失败一律 **503 + 中性 detail**，⛔ 绝不返 200 空结构 —— 那会让「读失败」与「真的没数据」
+在 HTTP 层完全同形，前端只能把两者渲染成同一个「暂无技术方案」。
 """
 
 from __future__ import annotations
@@ -49,6 +53,9 @@ _COMPONENT = "blueprint_list_api"
 _DEFAULT_PAGE_SIZE = 20
 _MAX_PAGE_SIZE = 100
 _SUMMARY_MAX_CHARS = 200
+
+# 聚合失败时的中性文案（⛔ 不回显异常原文：那既可能带半可信正文，也可能带连接串）
+_LIST_UNAVAILABLE_DETAIL = "蓝图列表暂时读取不到，请稍后重试"
 
 _EMPTY: dict[str, Any] = {
     "total": 0,
@@ -331,15 +338,23 @@ def _aggregate(
 
 
 def _log_list(event: str, request: Any, started: float, **fields: Any) -> None:
-    """列表端点的 caller 埋点（无单一 ``artifact_id``，故不复用 doc 面那个签名）。"""
-    logger.info(
-        event,
-        category="caller",
-        component=_COMPONENT,
-        initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
-        duration_ms=round((time.monotonic() - started) * 1000, 2),
-        **fields,
-    )
+    """列表端点的 caller 埋点（无单一 ``artifact_id``，故不复用 doc 面那个签名）。
+
+    ⭐ **观测 best-effort**：埋点失败一律吞掉，绝不打断请求。这与聚合失败**如实 503**
+    （见 :class:`BlueprintListView`）是同一条纪律的两面 —— 观测不反噬业务，业务错误也不许
+    伪装成观测噪音被吞掉。
+    """
+    try:
+        logger.info(
+            event,
+            category="caller",
+            component=_COMPONENT,
+            initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+            **fields,
+        )
+    except Exception:  # noqa: BLE001 — 观测永不反噬业务
+        pass
 
 
 class BlueprintListView(APIView):
@@ -415,17 +430,32 @@ class BlueprintListView(APIView):
                 page=page,
                 page_size=page_size,
             )
-        except Exception as exc:  # noqa: BLE001 — 聚合/观测永不反噬请求（返空结构不 500）
-            logger.warning(
-                "blueprint_list_read_failed",
-                category="caller",
-                component=_COMPONENT,
-                initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
-                error_type=type(exc).__name__,
-                error=redact_secrets_in_text(str(exc)),
-                duration_ms=round((time.monotonic() - started) * 1000, 2),
+        except Exception as exc:  # noqa: BLE001 — 观测 best-effort，但**如实 503**（见下）
+            # ⭐ 聚合失败必须让调用方看见，⛔ 不得吞成 200 空结构。
+            #
+            # `.cursor/rules/observability-logging.mdc` 的「best-effort、失败吞掉」约束的是
+            # **观测代码**；这里 try 住的 `_aggregate` 是**业务主体本身**（queryset + 可见性
+            # 过滤 + 行装配 + `_load_names` 两次查询）。把它的异常翻译成「该用户一份蓝图都
+            # 没有」，会让 DB 抖动 / 关联表查询失败与「真的没数据」在 HTTP 层完全同形 ——
+            # 前端两个消费方于是把读失败渲染成「暂无技术方案」，甚至整张卡从项目页消失。
+            #
+            # 观测仍是 best-effort：日志本身另包一层，写不出去也不改变响应。
+            try:
+                logger.warning(
+                    "blueprint_list_read_failed",
+                    category="caller",
+                    component=_COMPONENT,
+                    initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+                    error_type=type(exc).__name__,
+                    error=redact_secrets_in_text(str(exc)),
+                    duration_ms=round((time.monotonic() - started) * 1000, 2),
+                )
+            except Exception:  # noqa: BLE001 — 观测永不反噬业务
+                pass
+            return Response(
+                {"detail": _LIST_UNAVAILABLE_DETAIL},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-            return Response({**_EMPTY, "page": page, "page_size": page_size})
 
         _log_list(
             "blueprint_list_read_completed",
