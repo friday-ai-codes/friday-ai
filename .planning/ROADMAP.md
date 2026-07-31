@@ -151,7 +151,18 @@ Plans:
   4. 知识库「技术方案」tab 支持状态/项目/仓库筛选与搜索、深链直达查看器；项目内生成的蓝图自动挂项目并在项目物料面板可见；蓝图互引与知识关联双向可查。
   5. 人审终审在查看器内完成：通过（评审人署名、状态到已确认）或驳回（带划线评论回产出中、修订轮次 +1）。
 
-**Plans**: TBD
+**Plans**: 7 plans（wave 1: 01；wave 2: 02；wave 3: 03/04 并行；wave 4: 05；wave 5: 06；wave 6: 07）
+
+Plans:
+
+- [ ] 115-01-PLAN.md — 后端五个只读/轻写端点：蓝图正文（含 quality 三态，闭 MN-05）/ 阶段事件（21 个 BLUEPRINT_EVENTS，无会话回 200 空结构）/ 线程详情 GET（补 options + last_reminded_at + messages）与选区评论 POST（经新 service 收口，INV-6）/ 蓝图列表（ProjectMember 可见集合 + 方案 A 先聚合再切片 + 响应键 current_status 避开 INV-6 守卫 + 五键分页）；五端点照挂 _aassert_project_scope（import 复用，blueprint_review_views.py 零改动）（VIEW-01/03/04, CLAR-01）
+- [ ] 115-02-PLAN.md — 前端数据层与纯函数地基：happy-dom 能力锁探针 settle A2 + types/api×2/config 12 态/annotationTokens/StatusBadge + utils 两件（blockText 四分支同源 P-13、iterBlocks 13 处 collect、canonical 指纹、区间切分、两段式 offset）+ stores + 三个 composable（唯一轮询消费点 useBlueprintLive 用函数式 refetchInterval）+ 三处纯追加点一次做完（i18n 全量子树 / safelist 12 图标 / api barrel）+ 前端源码扫描守卫 spec（VIEW-01/02/03/04, CLAR-01, FLOW-08）
+- [ ] 115-03-PLAN.md — 块渲染与批注可视层 + 引用二级预览：BlueprintBlock（五类块分发 + <mark> 字符区间 + 越界/table/mermaid 整块降级 + orphaned 正文不渲染 + citation chip，批注与引用的唯一实现点）/ BlueprintBlockList（段级三分支 + 选区侦测唯一落点，同块与跨块分流）/ CitationPreviewDialog + 五个子件（任何失败一律快照兜底且不关弹窗；代码预览降级为路径+行号+quote，chunk-at 判据用 usable）（VIEW-01/02, CLAR-01）
+- [ ] 115-04-PLAN.md — 线程侧栏与写路径 + 人审终审 + 版本 diff：四组分组（一律走 sidebarGroups，失锚不二次过滤）+ ⭐ kind 硬分流做在渲染层（finding 卡里根本没有 Composer 节点）+ readonly 是不存在于 DOM 而 finding 处置不受其约束 + 终审 disabled+Tooltip 与二次确认 + ⭐ approve 409 的 unresolved_blocker_thread_ids 逐条可点跳转 + 质量面板三态绝不显示 0 + 版本切换与 block 级 diff（canonical 分类 + diffWords + .diff-* 复制进 scoped）（CLAR-01, FLOW-08, VIEW-01）
+- [ ] 115-05-PLAN.md — 十段正文组件（九个 section + 四张卡）：段组件零批注实现一律透传 blockCtx；must_haves 与 decision_log/deferred_ideas 两个特例段不接批注层且组件内写明原因；availability 只从 data_source 读不回落顶层；仓库关联卡直跳仓库页（SC-3）与 unsuitable 替代建议原样展示；⭐ associations 段范围收窄为「本蓝图引用了 + 关联项目」（getArtifactAssociations 对蓝图必然 404，顺延 116）（VIEW-01/02/04）
+- [ ] 115-06-PLAN.md — 查看器路由页装配 + 知识库 tab + 项目物料卡：⭐ 十段 <section id> 无条件渲染且 sections 恒 10 项、badge 传 '' 不传 0（P-4/P-18，否则左栏高亮全程失效而看起来只是迟钝）+ AnchorNavLayout 页面直接使用与三栏装配 + 六 query 双向同步与一次性消费 + 404 单一中性文案 + gate 非 200 不进错误分档 + 六个动作端点接线（零乐观更新、409 blocked 开解药面板、reflow 五档不当失败）+ 两处纯追加点（tab 宿主 / 物料面板）+ 全相位前端门（VIEW-01/02/03/04, CLAR-01, FLOW-08）
+- [ ] 115-07-PLAN.md — 确认门面板（⭐ 相对 ROADMAP SC 的范围增量，本相位最后一个可独立顺延 plan，顺延目标 116 且不得丢弃）：消费 112 的 blueprint-gate/ 快照与七动作，渲染条件只有「200 与否」一条（该链八端点里七个无项目范围闸 ⇒ 状态码不携带权限信息，三种 404 行为必须一致）+ 一次 POST + 双 invalidate + pending 行禁用 + confirm 409 的 pending_clarification 一键跳未决线程 + ⭐ 可顺延性实跑验证（回退后前端四道门仍全绿）+ 相位级收口自检（VIEW-01；同时闭 FLOW-03 的界面可达性）
+
 **UI hint**: yes
 
 ### Phase 116: 入口收编与导出（全入口统一 + MCP 协议 + 飞书导出 + 图谱物化）
