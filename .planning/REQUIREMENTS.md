@@ -41,15 +41,15 @@
 - [ ] **FLOW-04**：仓库关联区分 direct（要编码改动）/ indirect（被依赖调研），各带结构化选仓理由与证据；indirect 默认轻量调研、可人工升级深调研
 - [ ] **FLOW-05**：阶段 2 按锁定职责逐仓拟定分仓方案（RepoPlan），期间可多轮澄清、可发起单仓定向补调研
 - [ ] **FLOW-06**：阶段 3 主 agent 融合装配六段蓝图并做跨仓 API 对账——消费的接口必须找到提供方或显式标注 needs_support，跨仓矛盾抛澄清而非静默拍板
-- [ ] **FLOW-07**：独立 AI 审查代理按七类规则（schema / goal-backward / 引用覆盖 / 角色一致性 / API 闭环 / 禁令 / 章程边界）产出分级 findings；BLOCKER 按归因有界打回（仓级回该仓、融合级回 merge，合计 ≤2 轮）后升人审
+- [x] **FLOW-07**：独立 AI 审查代理按七类规则（schema / goal-backward / 引用覆盖 / 角色一致性 / API 闭环 / 禁令 / 章程边界）产出分级 findings；BLOCKER 按归因有界打回（仓级回该仓、融合级回 merge，合计 ≤2 轮）后升人审
 - [ ] **FLOW-08**：蓝图必经人类终审（通过 / 驳回带划线评论）；驳回回产出中修订并计轮次
 
 ### CLAR — 划线澄清
 
 - [ ] **CLAR-01**：AI 可对蓝图任意位置发起飞书文档式划线提问（带候选选项），用户在查看器中看到划线高亮并可多轮回复；人也可对任意选区主动发起评论
-- [ ] **CLAR-02**：澄清答案回灌产生新版本，线程置 resolved 并物化进决策记录；版本变更后批注按 block 重锚定，失锚线程集中可见、不静默丢失
-- [ ] **CLAR-03**：人类可直接编辑蓝图内容（block 级），编辑生成新版本、归属可审计；人工编辑不被 AI 覆盖，冲突时 AI 必须开线程询问
-- [ ] **CLAR-04**：澄清无人应答保持显式 pending——可提醒、可随时作答恢复；不自动作答、不判失败、绝不无声卡死
+- [x] **CLAR-02**：澄清答案回灌产生新版本，线程置 resolved 并物化进决策记录；版本变更后批注按 block 重锚定，失锚线程集中可见、不静默丢失
+- [x] **CLAR-03**：人类可直接编辑蓝图内容（block 级），编辑生成新版本、归属可审计；人工编辑不被 AI 覆盖，冲突时 AI 必须开线程询问
+- [x] **CLAR-04**：澄清无人应答保持显式 pending——可提醒、可随时作答恢复；不自动作答、不判失败、绝不无声卡死
 
 ### BUS — 共享上下文总线
 
@@ -119,10 +119,10 @@
 | BUS-01 | Phase 113 分仓方案与融合 + Context Bus | Pending |
 | BUS-02 | Phase 113 分仓方案与融合 + Context Bus | Pending |
 | BUS-03 | Phase 113 分仓方案与融合 + Context Bus | Pending |
-| FLOW-07 | Phase 114 审查与澄清收敛 | Pending |
-| CLAR-02 | Phase 114 审查与澄清收敛 | Pending |
-| CLAR-03 | Phase 114 审查与澄清收敛 | Pending |
-| CLAR-04 | Phase 114 审查与澄清收敛 | Pending |
+| FLOW-07 | Phase 114 审查与澄清收敛 | Complete |
+| CLAR-02 | Phase 114 审查与澄清收敛 | Complete |
+| CLAR-03 | Phase 114 审查与澄清收敛 | Complete |
+| CLAR-04 | Phase 114 审查与澄清收敛 | Complete |
 | VIEW-01 | Phase 115 前端查看器与知识库 | Pending |
 | VIEW-02 | Phase 115 前端查看器与知识库 | Pending |
 | VIEW-03 | Phase 115 前端查看器与知识库 | Pending |

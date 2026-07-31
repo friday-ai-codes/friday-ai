@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
-status: executing
-last_updated: "2026-07-31T07:10:00.000Z"
-last_activity: 2026-07-31 -- Phase 114 code review 修复完成（10 fixed / 1 skipped）
+status: "Phase 114 已收口**且已过 code review 修复**（`114-REVIEW.md` status: fixed，10 fixed / 1 skipped），下一个 **Phase 115 前端查看器与知识库**（消费契约见 `114-05-SUMMARY.md` 的七端点契约表与「Next Phase Readiness」节；⚠️ 契约有两处**收紧**，见下）"
+last_updated: "2026-07-31T07:30:41.519Z"
+last_activity: 2026-07-31
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 20
-  completed_plans: 19
-  percent: 56
+  completed_plans: 20
+  percent: 67
 ---
 
 # Project State
@@ -24,14 +24,16 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 
 ## Current Position
 
-Phase: 114 (审查与澄清收敛（AI 对抗审查 + 线程闭环 + 人工编辑）) — ✅ COMPLETE
-Plan: 5 of 5 complete（114-01 线程底座 / 114-02 判定内核 / 114-04 回灌与人工编辑 / 114-03 ai_review stage 接线 / 114-05 人审七端点与度量面收口）
+Phase: 115
+Plan: Not started
 Status: Phase 114 已收口**且已过 code review 修复**（`114-REVIEW.md` status: fixed，10 fixed / 1 skipped），下一个 **Phase 115 前端查看器与知识库**（消费契约见 `114-05-SUMMARY.md` 的七端点契约表与「Next Phase Readiness」节；⚠️ 契约有两处**收紧**，见下）
-Last activity: 2026-07-31 -- Phase 114 code review 修复：1 CRITICAL + 4 MAJOR + 5 MINOR 已修（每条一个原子 commit `fbcdc36d`…`0ae50026`），MN-05 跳过并双处登记。全量 **8546 passed / 1 failed**（净增 39 条永久回归；failure 仍只有 worktree 环境项 `test_skills_snapshot_guard`，零回归）；本轮**零新增 migration**（`makemigrations --check` → No changes detected，仍止于 `delivery/0033`）；11 项冻结面 `--numstat` 逐个零输出
+Last activity: 2026-07-31
 
 ⚠️ **115 需要知道的两处端点契约收紧**（修 CR-01 / MJ-03 / MJ-04 引入，前端必须适配）：
+
 1. **七端点全部要求调用者是蓝图所属项目的成员**（按 `meta.project_id` 反查 `ProjectMember`）：非成员 → **404**（中性，不是 403）；蓝图读不到 `meta.project_id` → **400**。
 2. **`threads/<id>/answer/` 对 `kind == ai_review_finding` 的线程一律 400**，处置必须走 `resolve/` 或 `dismiss/`（带 `reason`）；**`edit-blocks/` 与 `answer/` 在蓝图已 `confirmed`/`implementing`/`implemented`/`archived`/`superseded`/`failed` 时一律 400**，要改先驳回。
+
 另外 `approve/` 与 `reject/` 响应体的 `current_status` 现在是**续驱之后**的真实 DB 值（不再会出现「响应 `drafting`、刷新变 `needs_clarification`」）。
 
 ## Milestone Overview (v0.20.0 — Phases 111–116 — 🟡 PLANNING)
@@ -70,6 +72,7 @@ Last activity: 2026-07-31 -- Phase 114 code review 修复：1 CRITICAL + 4 MAJOR
 - **章程原则**（DESIGN §5.7）：`RepoCharter` 人工确认生效，AI 只可提修订草案；意图分流是权重融合不是硬开关；`charter_match` 进 score breakdown；确认门动作回灌为草案。
 - **权限**：项目成员皆可确认/评论/编辑；确认者自动进 `BlueprintReviewer` 名单；不做段级权限。
   ⭐ **「项目成员」自 114 review 起是真的有闸**（MJ-03）：蓝图七端点按蓝图自身 `meta.project_id` 反查 `initiatives.ProjectMember`，fail-closed + 中性 404 + superuser 直通；范围只从蓝图推导，绝不接受请求体 `project_id`。**新增任何蓝图读写端点都要照挂 `_aassert_project_scope`。**
+
 - **可编辑状态白名单**（114 review MJ-04）：改写蓝图正文的路径（`edit-blocks` / `answer` 回灌）一律过 `blueprint_lifecycle_service.is_blueprint_editable`；已 `confirmed` 及其后的状态**不可无声改写**，要改先驳回（`confirmed → drafting` 合法边）再重走人审——这是「AI 不得覆盖人工」的对称面。
 - **观测规范强制**：新 LLM 调用赋 `call_source`（`blueprint_decompose/spec_gate/repo_research/reroute/repo_plan/merge/ai_review`，LOGGING-SPEC §4.1 先登记）；stage 事件 `blueprint_stage_started/completed/failed` 带 `duration_ms`/`category`/`component`；容器动作绑定 `initiated_by_user_id`；脱敏不可绕过。
 - **既有纪律沿用**：INV-6 单一写入入口（新增 `BlueprintLifecycleService` 等 service 收口）；async ORM 走 `sync_to_async`；i18n 默认中文；观测代码 best-effort 绝不反噬业务。
@@ -158,7 +161,9 @@ Last session: 2026-07-31 — Phase 114 全量交付（114-01 线程底座 → 11
 Next step: **Phase 115（前端查看器与知识库）** —— 可直接消费 `114-05-SUMMARY.md` 的七端点契约表（URL / `name` / 入参 / 状态码映射 / GET 快照响应键 / answer 的 `reflow` 键 / approve 409 的未决清单形状）与「Next Phase Readiness」节；版本溯源用 `produced_by_ref` 四前缀（`human_edit:` / `ai_review_reflow:` / `human_block_restore:` / `blueprint_review_reject:`）。
 
 ⚠️ **开工前先读三条**：
+
 1. **端点契约有两处收紧**（项目成员闸 → 非成员 404 / 无 `meta.project_id` 400；finding 不可走 answer 通道 + 已确认蓝图不可编辑 → 400），详见上面 Current Position 节。
 2. **`orphaned_threads` 现在只装真失锚线程**（MJ-02），可直接当作「批注错位」清单呈现，不必再自行过滤系统线程。
 3. **两个 115 必须接的缺口**：① **通知面**——澄清提醒只落事件与周期锚点，用户收不到实际通知；② **`blueprint_quality` 三项统计零消费方**——口径已实装但无人消费，且**不能**接进 `evaluate_blueprint_golden`（golden case 无 `artifact_id`）。两条均见 Pending Todos。
+
 Resume file: 无（干净接力点：Phase 111–114 全部 commit 已入库）
