@@ -7,7 +7,8 @@
 - 🔴 事件截断**方向**（保留最新 200 条，不是最旧）
 - 🔴 `ts` 序列化与**数据库往返**一致性（前端跨链去重键的唯一依据）
 - 🔴 泄漏面（`failure` 只有闭集 reason_code，原始异常文本不出网）
-- 🔴 归属链（`ConvergenceSession.conversation_id` + `source` 交叉校验）与物理隔离
+- 🔴 归属链（`ConvergenceSession.conversation_id` → `RepoResearchTask` 权威表）与物理隔离：
+  容器能改写自己 `last_output` 里的任意标量键，故归属**不得**建立在那个面上
 """
 
 from __future__ import annotations
@@ -98,33 +99,49 @@ def _make_research_container(
     project,
     *,
     session_id: str,
-    plan_session_id: str,
-    repository_id: str,
+    plan_session,
+    repository,
     logs: list | None = None,
     source: str = "plan_research",
     task_type: str | None = None,
     status: str = "running",
+    forged_plan_session_id: str | None = None,
+    forged_repository_id: str | None = None,
+    link_task: bool = True,
 ):
-    """建一条 plan_research 调研容器（`AgentSession.metadata` 逐字照搬 research_adapter）。"""
+    """建一条 plan_research 调研容器 + 它的服务端权威 `RepoResearchTask`。
+
+    形状逐字照搬 `research_adapter._dispatch_deep_task`：`AgentSession.metadata` 只有
+    `{source, plan_session_id}` 两个键（**没有** conversation_id，F-5），`last_output`
+    带 `{source, plan_session_id, research_task_id, repository_id}` 四个键，
+    `RepoResearchTask.subagent_session` 由 `ResearchService.mark_running` 服务端回填。
+
+    三个测试开关，对应容器唯一能做的三件事：
+    - `forged_plan_session_id` / `forged_repository_id`：容器经 progress 回调改写自己
+      `last_output` 里的归属键（`_merge_output` 对标量键无差别 merge）；
+    - `link_task=False`：根本没有权威 task 链过来（伪造 last_output 却无权威锚点）。
+    """
     from agents.models import AgentSession
+    from delivery.models import RepoResearchTask
     from subagent.models import SubAgentSession
 
+    plan_session_id = str(plan_session.id)
     agent = AgentSession.objects.create(
         session_id=f"agent-{session_id}",
         space=project,
         status=AgentSession.Status.RUNNING,
-        # 🔴 实读形状：只有两个键，**没有** conversation_id（F-5）
         metadata={"source": "plan_research", "plan_session_id": plan_session_id},
     )
+    task = RepoResearchTask.objects.create(session=plan_session, repository=repository)
     last_output: dict[str, Any] = {
         "source": source,
-        "plan_session_id": plan_session_id,
-        "research_task_id": "task-1",
-        "repository_id": repository_id,
+        "plan_session_id": forged_plan_session_id or plan_session_id,
+        "research_task_id": str(task.id),
+        "repository_id": forged_repository_id or str(repository.id),
     }
     if logs is not None:
         last_output["logs"] = logs
-    return SubAgentSession.objects.create(
+    sess = SubAgentSession.objects.create(
         session_id=session_id,
         main_session=agent,
         repo_url="https://gitlab.com/test/x.git",
@@ -132,6 +149,10 @@ def _make_research_container(
         status=status,
         last_output=last_output,
     )
+    if link_task:
+        task.subagent_session = sess
+        task.save(update_fields=["subagent_session", "updated_at"])
+    return sess
 
 
 async def _runtime(conversation) -> dict[str, Any]:
@@ -468,15 +489,15 @@ class TestPlanResearchSessions:
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-aaa",
-            plan_session_id=str(session.id),
-            repository_id=str(repo_a.id),
+            plan_session=session,
+            repository=repo_a,
             logs=[{"type": "text", "content": "clone 完成", "ts": 1}],
         )
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-bbb",
-            plan_session_id=str(session.id),
-            repository_id=str(repo_b.id),
+            plan_session=session,
+            repository=repo_b,
             logs=[
                 {"type": "tool_call", "content": "Read(a.py)", "ts": 2},
                 {"type": "result", "content": "done", "ts": 3},
@@ -510,44 +531,103 @@ class TestPlanResearchSessions:
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-mine",
-            plan_session_id=str(mine.id),
-            repository_id=str(repo_a.id),
+            plan_session=mine,
+            repository=repo_a,
         )
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-theirs",
-            plan_session_id=str(theirs.id),
-            repository_id=str(repo_b.id),
+            plan_session=theirs,
+            repository=repo_b,
         )
 
         rows = (await _runtime(conversation))["plan_research_sessions"]
 
         assert [r["session_id"] for r in rows] == ["research-mine"]
 
-    async def test_source_mismatch_is_rejected_by_cross_check(self, conversation, project) -> None:
-        """🔴 交叉校验：plan_session_id 命中但 source 不是 plan_research ⇒ 不出现。
+    async def test_forged_plan_session_id_without_authoritative_task_is_rejected(
+        self, conversation, other_conversation, project
+    ) -> None:
+        """🔴 110-MN-01：容器把 `last_output.plan_session_id` 改成本会话 ⇒ 仍不出现。
 
-        last_output 是容器回调可写的面，单键匹配等于信任半可信字段的单一取值。
+        `_merge_output` 会把 progress 回调 `details` 里的任意标量键 merge 进 last_output，
+        `plan_session_id` 与 `source` 同处这一个可写面 ⇒ 旧实现的「两键交叉校验」强度等于
+        一个键。归属锚点必须是服务端权威列：这条容器的 `RepoResearchTask` 挂在**别的**
+        ConvergenceSession 上，改写 last_output 不能把它搬过来。
         """
-        session = await sync_to_async(_make_session)(conversation.id)
+        mine = await sync_to_async(_make_session)(conversation.id)
+        theirs = await sync_to_async(_make_session)(other_conversation.id)
         repo_a, repo_b = await sync_to_async(self._two_repos)()
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-ok",
-            plan_session_id=str(session.id),
-            repository_id=str(repo_a.id),
+            plan_session=mine,
+            repository=repo_a,
         )
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-forged",
-            plan_session_id=str(session.id),
-            repository_id=str(repo_b.id),
-            source="something_else",
+            plan_session=theirs,
+            repository=repo_b,
+            forged_plan_session_id=str(mine.id),
         )
 
         rows = (await _runtime(conversation))["plan_research_sessions"]
 
         assert [r["session_id"] for r in rows] == ["research-ok"]
+
+    async def test_container_without_authoritative_task_link_never_appears(
+        self, conversation, project
+    ) -> None:
+        """🔴 权威表没有把 task 链到这个容器 ⇒ 不出现，即使 last_output 三个键全对。
+
+        与上一条分开：那条锚点在「链到别的 session」，这条锚点在「压根没链」——
+        `subagent_session__isnull=False` 这个条件被去掉时只有这条会红。
+        """
+        session = await sync_to_async(_make_session)(conversation.id)
+        repo_a, repo_b = await sync_to_async(self._two_repos)()
+        await sync_to_async(_make_research_container)(
+            project,
+            session_id="research-linked",
+            plan_session=session,
+            repository=repo_a,
+        )
+        await sync_to_async(_make_research_container)(
+            project,
+            session_id="research-unlinked",
+            plan_session=session,
+            repository=repo_b,
+            link_task=False,
+        )
+
+        rows = (await _runtime(conversation))["plan_research_sessions"]
+
+        assert [r["session_id"] for r in rows] == ["research-linked"]
+
+    async def test_forged_repository_id_cannot_relabel_the_repository(
+        self, conversation, project
+    ) -> None:
+        """🔴 110-MN-01 的低配越权：容器改写自己的 repository_id ⇒ 仍按权威列归仓。
+
+        这条不需要猜任何 UUID —— 容器只要把 `last_output.repository_id` 改成另一个仓，
+        旧实现就会用那个值去查名字，用户看到的是「beta 仓的调研日志」而内容来自 alpha。
+        两个方向都断言：只断言「不是 beta」的话，返回空串的实现也会通过。
+        """
+        session = await sync_to_async(_make_session)(conversation.id)
+        repo_a, repo_b = await sync_to_async(self._two_repos)()
+        await sync_to_async(_make_research_container)(
+            project,
+            session_id="research-relabel",
+            plan_session=session,
+            repository=repo_a,
+            forged_repository_id=str(repo_b.id),
+        )
+
+        rows = (await _runtime(conversation))["plan_research_sessions"]
+
+        assert len(rows) == 1
+        assert rows[0]["repository_id"] == str(repo_a.id)
+        assert rows[0]["repository_name"] == "alpha"
 
     async def test_deep_analysis_and_plan_research_are_physically_isolated(
         self, conversation, project
@@ -561,8 +641,8 @@ class TestPlanResearchSessions:
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-only",
-            plan_session_id=str(session.id),
-            repository_id=str(repo_a.id),
+            plan_session=session,
+            repository=repo_a,
         )
 
         def _make_deep() -> None:
@@ -606,8 +686,8 @@ class TestPlanResearchSessions:
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-secret",
-            plan_session_id=str(session.id),
-            repository_id=str(repo_a.id),
+            plan_session=session,
+            repository=repo_a,
             logs=[{"type": "text", "content": f"export KEY={secret}", "ts": 1}],
         )
 
@@ -616,24 +696,29 @@ class TestPlanResearchSessions:
         assert secret not in json.dumps(rows, ensure_ascii=False)
         assert "REDACTED" in rows[0]["logs"][0]["content"]
 
-    async def test_non_uuid_repository_id_never_reaches_the_orm(
+    async def test_garbage_repository_id_in_last_output_never_reaches_the_orm(
         self, conversation, project
     ) -> None:
-        """半可信 repository_id 为 "not-a-uuid" ⇒ 不抛、该条仍返回、repository_name 为空串。"""
+        """`last_output.repository_id` 为 "not-a-uuid" ⇒ 不抛，且该值不进结果。
+
+        改用权威列之后这个半可信值根本不参与查询（旧实现要靠一道 UUID 过筛才不会让
+        `Repository.objects.filter(id__in=['not-a-uuid'])` 抛 ValidationError）。
+        """
         session = await sync_to_async(_make_session)(conversation.id)
+        repo_a, _ = await sync_to_async(self._two_repos)()
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-bad-repo",
-            plan_session_id=str(session.id),
-            repository_id="not-a-uuid",
+            plan_session=session,
+            repository=repo_a,
+            forged_repository_id="not-a-uuid",
         )
 
         rows = (await _runtime(conversation))["plan_research_sessions"]
 
         assert len(rows) == 1
-        assert rows[0]["repository_id"] == "not-a-uuid"
-        # 解析不出**不回填 UUID 串**（前端有自己的兜底文案）
-        assert rows[0]["repository_name"] == ""
+        assert rows[0]["repository_id"] == str(repo_a.id)
+        assert "not-a-uuid" not in json.dumps(rows, ensure_ascii=False)
 
     async def test_missing_or_malformed_logs_degrade_to_empty_list(
         self, conversation, project
@@ -643,14 +728,14 @@ class TestPlanResearchSessions:
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-nolog",
-            plan_session_id=str(session.id),
-            repository_id=str(repo_a.id),
+            plan_session=session,
+            repository=repo_a,
         )
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-badlog",
-            plan_session_id=str(session.id),
-            repository_id=str(repo_b.id),
+            plan_session=session,
+            repository=repo_b,
             logs="这不是 list",  # type: ignore[arg-type]
         )
 
@@ -704,8 +789,8 @@ class TestBranchIsolation:
         await sync_to_async(_make_research_container)(
             project,
             session_id="research-alive",
-            plan_session_id=str(session.id),
-            repository_id=str(repo.id),
+            plan_session=session,
+            repository=repo,
         )
 
         def _boom(*args: Any, **kwargs: Any):
