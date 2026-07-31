@@ -202,8 +202,12 @@ class TestCreateCodingPlan:
     async def test_create_coding_plan_payload_key_set_is_frozen(
         self, project, repository, conversation
     ):
-        """返回 payload 的 10 个键一个不少 —— 前端 ``codingPlanData`` 与历史消息解析
-        依赖这套键形，删键会静默降级（SPINE-02 只砍创作半边，执行半边键形不变）。"""
+        """返回 payload 的键集合一个不少 —— 前端 ``codingPlanData`` 与历史消息解析
+        依赖这套键形，删键会静默降级（SPINE-02 只砍创作半边，执行半边键形不变）。
+
+        109-REVIEW HI-02 起新增 ``tech_plan`` / ``affected_files`` / ``provenance``：
+        它们是**输出**不是入参，schema 守护（``test_coding_tools_schema_guard.py``）
+        锁的是入参集合，因此这三个键不构成 SPINE-02 回退。"""
         from agents.tools.coding_tools import create_coding_plan
 
         version = await _amk_artifact_version(conversation=conversation)
@@ -225,8 +229,14 @@ class TestCreateCodingPlan:
             "recommended_repository_ids",
             "recommended_repositories",
             "recommended_source",
+            "tech_plan",
+            "affected_files",
+            "provenance",
             "message",
         }
+        # 正文与来源标志必须是真值而不是占位空壳（前端据此渲染正文并做草稿判定）
+        assert result.output["tech_plan"]
+        assert result.output["provenance"] == CodingPlanProvenance.ORCHESTRATED
 
     @pytest.mark.asyncio
     async def test_create_coding_plan_does_not_create_session(
@@ -583,6 +593,9 @@ class TestUpdateCodingPlan:
         assert result.success is True
         assert result.output["coding_plan_id"] == plan_id
         assert result.output["synced_sessions_count"] >= 1
+        # 109-REVIEW HI-02：正文与来源标志随结果一并回，前端不必等 runtime 刷新
+        assert "方案 v2" in result.output["tech_plan"]
+        assert result.output["provenance"] == CodingPlanProvenance.ORCHESTRATED
 
         refreshed = await CodingPlan.objects.aget(id=plan_id)
         assert "方案 v2" in refreshed.tech_plan

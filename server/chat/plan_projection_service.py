@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -37,8 +38,29 @@ __all__ = [
     "ERROR_REQUIRES_CHAT_ENTRYPOINT",
     "PlanProjectionError",
     "PlanProjectionService",
+    "filter_valid_uuids",
     "map_merged_plan_to_coding_plan",
 ]
+
+
+def filter_valid_uuids(values: object) -> list[str]:
+    """半可信来源的 id 过筛：非 UUID 字面量直接丢，绝不带进 ORM 查询。
+
+    109-REVIEW MN-03：``recommended_repository_ids`` 由
+    ``map_merged_plan_to_coding_plan`` 从 ``execution_plan[].repository_id`` 聚合，那里
+    只做 ``str(...)`` 不校验形状——「半可信输入恒不抛」的契约只保证**映射层**自己不抛，
+    抛的是消费方。把这些值直接喂 ``filter(id__in=...)``，一个写歪的字面量就会抛
+    ``ValidationError``。本函数是所有消费方共用的那道筛子（工具路径与投影端点各写一份
+    必然漂移）。
+    """
+    out: list[str] = []
+    for value in values if isinstance(values, (list, tuple)) else []:
+        try:
+            out.append(str(uuid.UUID(str(value))))
+        except (ValueError, AttributeError, TypeError):
+            continue
+    return out
+
 
 # 来源方案版本不存在 / content 非法（fail-closed：无来源不投影）。端点映射为 404，
 # 与「非 owner」共用同一措辞，阻断 artifact_version_id 枚举探测（T-109-03-02）。

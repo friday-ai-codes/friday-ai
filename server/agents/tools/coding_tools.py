@@ -42,27 +42,6 @@ def _log_authoring_rejected(*, conversation_id: str, reason: str) -> None:
         pass
 
 
-def _valid_uuids(values: object) -> list[str]:
-    """半可信来源的 id 过筛：非 UUID 字面量直接丢，绝不带进 ORM 查询。
-
-    109-REVIEW MN-03：``recommended_repository_ids`` 的投影来源是
-    ``map_merged_plan_to_coding_plan`` 从 ``execution_plan[].repository_id`` 聚合的
-    值，那里只做 ``str(...)`` 不校验形状（映射层「半可信输入恒不抛」的契约只保证映射
-    层自己不抛）。把它直接喂 ``filter(id__in=...)``，一个写歪的字面量就会抛
-    ``ValidationError`` 一路上穿 ``@tool`` ——而此时投影**已经落库**，用户看到「失败」
-    但 DB 里多了一条 plan。
-    """
-    import uuid as uuid_mod
-
-    out: list[str] = []
-    for value in values if isinstance(values, (list, tuple)) else []:
-        try:
-            out.append(str(uuid_mod.UUID(str(value))))
-        except (ValueError, AttributeError, TypeError):
-            continue
-    return out
-
-
 def _context_user_id() -> str:
     """从请求 / 任务上下文取权威触发用户 id；取不到返回空串。
 
@@ -172,7 +151,11 @@ async def create_coding_plan(
     ``recommended_repository_ids`` 列表（置顶）。**不再用于创建 session。**
     """
     from chat.models import Conversation, RepositoryRoutingTrace
-    from chat.plan_projection_service import PlanProjectionError, PlanProjectionService
+    from chat.plan_projection_service import (
+        PlanProjectionError,
+        PlanProjectionService,
+        filter_valid_uuids,
+    )
     from projects.models import Space
     from repositories.models import Repository
 
@@ -334,7 +317,8 @@ async def create_coding_plan(
             plan.recommended_repository_ids = final_recommended
             await plan.asave(update_fields=["recommended_repository_ids", "updated_at"])
     else:
-        projected_ids = _valid_uuids(plan.recommended_repository_ids)
+        # 半可信来源的 id 过筛与投影端点共用同一道筛子（各写一份必然漂移）。
+        projected_ids = filter_valid_uuids(plan.recommended_repository_ids)
         if projected_ids:
             final_recommended = projected_ids
             # 按 space 过滤，与上方「LLM 显式传 id」分支同一口径 —— 两条分支的可见性
@@ -373,6 +357,15 @@ async def create_coding_plan(
             "recommended_repository_ids": final_recommended,
             "recommended_repositories": recommended_repositories,
             "recommended_source": recommended_source,
+            # 109-REVIEW HI-02：正文与来源标志随工具结果一起给全。
+            # SPINE-02 收窄 schema 后 tool input 里已无 tech_plan，前端方案卡只剩
+            # `runtime.coding_plan` 一条来源，而它的语义是「对话内**最近**一条
+            # CodingPlan」⇒ 会话里一旦有第二份方案，第一张卡就同时丢正文（显示
+            # 「（暂无方案正文）」）和 provenance（落保守分支、被误挂「未经代码调研」）。
+            # 三者都已在手（plan 就是投影返回的实例），零额外查询。
+            "tech_plan": plan.tech_plan or "",
+            "affected_files": list(plan.affected_files or []),
+            "provenance": plan.provenance,
             "message": (
                 f"编排方案已投影为编码方案，plan_id={plan.id}。请在 UI 选择目标仓库后开始编码。"
             ),
@@ -608,6 +601,11 @@ async def update_coding_plan(
         output={
             "coding_plan_id": str(plan.id),
             "synced_sessions_count": synced,
+            # 109-REVIEW HI-02：与 create 同形 —— update 同样渲染 TechPlanCard，
+            # 缺这三个键时它的卡片会走上同一条「无正文 + 误挂草稿横幅」的失效面。
+            "tech_plan": tech_plan or "",
+            "affected_files": list(normalized_files),
+            "provenance": plan.provenance,
             "message": (
                 f"编码方案已重新指向方案版本 {artifact_version_id}（plan_id={plan.id}）；"
                 f"同步刷新了 {synced} 个 draft session 的兼容字段。"
