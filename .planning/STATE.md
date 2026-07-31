@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
 status: executing
-last_updated: "2026-08-01T04:30:00.000Z"
-last_activity: 2026-08-01 -- 115-04 executed
+last_updated: "2026-08-01T05:00:00.000Z"
+last_activity: 2026-08-01 -- 115-05 executed
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 27
-  completed_plans: 24
-  percent: 67
+  completed_plans: 25
+  percent: 70
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 ## Current Position
 
 Phase: 115 (前端查看器与知识库（结构化阅读 + 批注 + 管理面）) — EXECUTING
-Plan: 5 of 7
-Status: 115-04（线程侧栏 / 人审终审 / 版本与 block 级 diff）已收口——11 个新建组件 + 3 个测试文件（58 例全绿），前端门 vitest **1565 passed / 1 skipped**（基线 1507/1，+58 零回归）、type-check 通过、`eslint src/components/blueprint/` **0 problems**（全仓仍是 111 个既有问题，未增未减）。⭐ 本相位**最不能做错的一条**已物理锁死：finding 线程卡里根本没有作答框这个 DOM 节点（渲染层硬分流），并用**六条真实变异**证明 §20 断言 1/2/3/5/7/11 的用例各自会转红。⭐ approve 409 的超界死锁有了唯一正向出口（未决清单逐条可点跳转）；`blueprint_quality` 三项统计有了唯一消费面且 `null` 绝不显示 0（闭 114-REVIEW MN-05）。源码守卫扫描面增至 **22 个文件**。⛔ 零既有源文件修改（唯一例外是 unplugin 生成的 `components.d.ts`，+11/−0）、零新增依赖、后端零改动
-Last activity: 2026-08-01 -- 115-04 executed
+Plan: 6 of 7
+Status: 115-05（十个导航段的结构化渲染）已收口——14 个新建组件 + 2 个测试文件（37 例全绿），前端门 vitest **1602 passed / 1 skipped**（基线 1565/1，+37 零回归）、type-check 通过、`eslint .` **111 problems**（与基线逐个相同 ⇒ 零新增）、`eslint src/components/blueprint/` **0 problems**。⭐ 十段全部有渲染实现且**一行批注逻辑都没有重复实现**：十一处块序列一律经 `BlueprintBlockList` 透传 blockCtx；两个零 `block_id` 的特例段（`must_haves` / `decision_log`+`deferred_ideas`）明确不接批注层且组件内写明原因。⭐ `decision_log` 的 `open-thread` 语义定夺为「跳到对应线程」（`thread_id` 存在才渲染入口）；⭐ **SC-4 范围收窄落地**：关联段只做「本蓝图引用了」+「关联项目」，零调用两个必然 404 的反查端点，反向「被谁引用」顺延 Phase 116。三处后端口径在 UI 侧各有一条可被变异逼红的对称防线（`availability` 不回落顶层 / `reversible` 严格判等 / finding 缺引用亮质量信号），**四条真实变异**全部按预期转红且负向对照保持绿。源码守卫扫描面增至 **36 个文件**。⛔ 零既有源文件修改（唯一例外是 unplugin 生成的 `components.d.ts`，+14/−0）、零新增依赖、后端零改动
+Last activity: 2026-08-01 -- 115-05 executed
 
 ⭐ **115-03 起开工前必读 `115-02-SUMMARY.md` §14 的五条注意**，其中三条最容易踩：
 
@@ -167,6 +167,11 @@ Last activity: 2026-08-01 -- 115-04 executed
 - [Phase 115-04 回报项 · ⭐ 115-06 必接] **写路径与决策面缺 5 个 i18n 键**：`review.disabledReason`（带状态插值的终审 Tooltip 文案）/ `review.rejectKeepAnchor`（「保留此划线」开关标签）/ `quality.noKeyConclusions`（「无关键结论」旁注）/ `thread.draftCancel`（草稿卡「取消」）/ `diff.mustHavesExcluded`（「验收锚点不参与块级对比」）。i18n 追加点已由 115-02 对本相位关闭 ⇒ 按 §13.2 **回报而不自补**。**五处都有可用降级、功能不缺**（分别用无参 `review.disabledReadonly` + 状态名两段并列 / `annotation.quotedSnapshot` 作开关标签 / `sectionEmpty` 拼三段名 / `Esc` 放弃草稿 / `data-diff-excluded` 属性承载身份）；补键后各只需换一处 `t()` 调用，**无结构改动**。详见 `115-04-SUMMARY.md` §7。
 - [Phase 115-04 契约扩展 · 115-06 接线注意] **线程侧栏与线程卡各多两个 prop**：越界降级判据需要**块正文**才能算（`isValidAnchor(anchor, blockText.length)`），线程层拿不到 ⇒ 由持有正文的页面算好，经 `degradedThreadIds`（侧栏）/ `degraded`（卡）传入；草稿卡走 `draft` prop + `create-comment` / `cancel-comment` 两个 emit。`BlueprintCommentDraft` 是 115-03 `SelectionPayload` 的**结构子集**，115-06 可直接把 `SelectionPayload` 传进来。
 - [Phase 115-04 视觉待定 · UAT] **草稿卡目前没有可见的「取消」按钮**（缺文案键，见上条），改为焦点在草稿卡内按 `Esc` 放弃。UAT 时确认这条路径够不够用；补 `thread.draftCancel` 后应改回可见按钮。
+- [Phase 115-05 回报项 · ⭐ 115-06 必接] **段渲染面缺 21 个 i18n 键**（分布：需求规格 goal/background 小标题与 `intent` 三档 / 现状分析综述小标题与 finding `kind` 四档与「缺引用」/ 实现项 `change_type` 四档与「与既有功能如何配合」「测试策略」「wave {n} · {c} 项」/ `api.availabilityUnknown`（未标注）/ `impact.irreversible`（不可逆）/ 交互流程 `actor` 四档 / `repo.rationale`「选仓理由」`repo.capabilitiesUsed`「会被用到的能力」`repo.crossTeam`「跨组协作」`repo.confirmedAtGate` 两档 / `section.deferredIdeas`「本方案明确不做的事（{n}）」/ `decision.gotoThread`「查看对应线程」/ `associations.citedByThis`「本蓝图引用了」）。i18n 追加点已由 115-02 对本相位关闭 ⇒ 按 §13.2 **回报而不自补**。**21 处都有可用降级、功能不缺**，分三档：① 复用语义最近的既有键（含**三处跨子树复用**：`knowledge.entity.associations.capabilities` / `knowledge.relation.REFERENCES` / `projects.workbench.deps.projectsTitle`，补齐本子树键后应换回）；② 不渲染文字小标题、身份交给 `data-field`；③ 枚举/布尔标记渲染 schema 原样 token，颜色由 `variant`、身份由 `data-*` 承载。**③ 档最影响可读性，补键时优先。** 逐条对照表见 `115-05-SUMMARY.md` §6。
+- [Phase 115-05 范围收窄落地 · 承接 115-02 P-5] ⭐ **SC-4 的收窄已在 UI 侧兑现并有用例背书**：`BlueprintAssociationsSection.vue` 只做「本蓝图引用了」（`content.citations` 按 `source_type` 分组统计 + 可点 chip，零端点）+「关联项目」（`RouterLink` 到 `/projects/{projectId}`）；两个必然 404 的反查端点**源码零命中**且有 `toHaveBeenCalledTimes(0)` 的用例。**反向「被谁引用 / 关联知识」顺延 Phase 116 的知识图谱物化**，届时在该组件里补两块即可（现有两块无需重构）。⛔ 执行期不得再把 SC-4 理解成「双向可查」——ROADMAP 的 SC-4 原文与 REQUIREMENTS 的 VIEW-04（PARTIAL）已在 plan 阶段对账完毕。
+- [Phase 115-05 契约扩展 · 115-06 接线注意] **十段容器必须由页面无条件渲染**（P-4）：段内空态已由组件层处理（规则表见 `115-05-SUMMARY.md` §7，其中 `must_haves` 三块同空时**刻意不出空态卡**），页面**不要**再套一层 `v-if` 判空——那正是让 `AnchorNavLayout` 的 mount-only observer 观察不到、左栏高亮静默失效的写法（已有用例覆盖「九段空数据仍渲染内容区」这半边）。另需接住两个跨段跳转锚点：`fp-<feature_point_id>`（需求规格段功能点卡）与 `api-<contract_id>`（API 契约卡根元素），`goto-anchor` 载荷**已是完整 DOM id**，页面只做 88px 偏移 + 2s ring 高亮，⛔ 不要再拼一次前缀。
+- [Phase 115-05 定夺] **`decision_log` 的 `open-thread` 语义 = 「跳转到该决策对应的线程」**（⛔ 不是「在该段发起批注」）：条目带 `thread_id` 才渲染入口按钮（`data-testid="blueprint-decision-goto-thread"`），不带则不渲染。115-06 接住后应完成「开侧栏 → 设 `activeThreadId` → 正文滚动」，与 `BlueprintBlockedDialog` 的 `goto-thread` 同一套处理。
+- [Phase 115-05 定夺 · 闭 Phase 112 残留] **`fitness.verdict === 'unsuitable'` 时的「替代建议」按 `fitness.reasons` 自由文本原样展示**，⛔ 不补 schema 字段、⛔ 不做结构化解析（UI-SPEC §0.2 判定 6）。前端只是呈现方，为了呈现去改一份已锁定的后端 schema 不划算；真要结构化应在产出侧（114 链路）做。这同时定夺了本表原先登记的「Phase 112 残留 PARTIAL / FLOW-02：替代建议无结构化字段」。
 - [Phase 114 review 可再议] **`ConvergenceSessionService.areopen_stage` 未发 `ConvergenceSessionEvent`**：新事件类型属纯追加、本可做，但 §13.2 把既有事件类型/字段定为 consume-only，且复位已由 `convergence_session_reopened` 结构化日志 + `blueprint_review_rejected` 双重可归因。若 115 的事件时间线希望「人审驳回导致的会话复位」在时间线上可见，需新增一个 `blueprint.review.session_reopened` 事件常量（同步点 2 后与 0.19 的时间线契约一并定）
 
 ### Blockers/Concerns
@@ -186,7 +191,11 @@ Last activity: 2026-08-01 -- 115-04 executed
 ## Session Continuity
 
 Last session: 2026-08-01T04:30:00.000Z
-Next step: **Phase 115-05 / 115-06（段组件与页面装配）** —— wave 3 的 115-03 与 115-04 均已收口。
+Next step: **Phase 115-06（页面装配）** —— wave 4 的 115-05 已收口，十段组件与四张卡就位，115-06 按 `115-05-SUMMARY.md` §2 的 props/emits 表接线。
+
+⭐ **段渲染面的契约唯一来源是 [`115-05-SUMMARY.md`](./phases/115-ui/115-05-SUMMARY.md)**：**十段组件的 props/emits 逐字表**（§2，标注哪七段收 `blockCtx`、哪三段不收）、**跨段跳转锚点约定**（§3：`fp-<id>` / `api-<id>`，88px 偏移归页面）、三个最容易做错的点各自的落地形态（§4：`must_haves` 四条约束 / `decision_log` 的 `open-thread` 定夺 / ⭐ SC-4 收窄的证据链）、**四条变异验证证据**（§5）、⚠️ **21 个 i18n 缺口及其三档降级**（§6）、**各段空态规则表**（§7）、**30 个 `data-testid` 清单**（§8）、**UAT 清单 8 条**（§11）。
+
+三条最容易踩：① **十个 `<section id>` 容器与导航项必须无条件渲染**（段内空态组件已处理好）；② `goto-anchor` 载荷已是完整 DOM id，⛔ 别再拼前缀；③ `must_haves` / `decision_log` / `associations` 三段**不收 blockCtx**，传了只会变成无用的 fallthrough attr。
 
 ⭐ **写路径与决策面的契约唯一来源是 [`115-04-SUMMARY.md`](./phases/115-ui/115-04-SUMMARY.md)**：11 个组件的 **props/emits 逐字表**（§2）、⭐ **给 115-06 的六端点接线契约**（§3：以响应体 `current_status` 为准 + 前缀失效重取、⛔ 不做乐观更新；`answer` 的 `reflow.status` **五档 toast 分档表**；approve/reject 的 409 两档与 400/404 处理）、**六条变异验证证据**（§4）、§20 断言 → 用例名映射（§5）、**20 个 `data-testid` 清单**（§6.6）、⚠️ **5 个 i18n 缺口及其降级**（§7）、**UAT 清单 9 条**（§10）。
 
