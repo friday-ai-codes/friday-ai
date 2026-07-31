@@ -100,9 +100,27 @@ const chatStore = useChatStore()
 const { activeCodingPlan, repoMultiSelectorState } = storeToRefs(chatStore)
 const { success: toastSuccess, error: toastError } = useToast()
 
-const codingPlanRuntime = computed<CodingPlanRuntime | null>(
-  () => activeCodingPlan.value,
-)
+/**
+ * 本卡对应的 runtime。
+ *
+ * 🔴 `plan_id` 不匹配一律视为「没有」（109-REVIEW MN-05）：`activeCodingPlan` 的语义
+ * 是「对话内**最近**一条 CodingPlan」，不匹配就采用等于把**别的 plan 的状态**渲染到
+ * 本卡上。守卫下沉到 runtime 入口而不是每个消费点各写一遍——本组件此前已经把同一道
+ * 守卫重复写了四遍（`feishuDocUrl` / `tech_plan` / `affected_files` / `provenance`），
+ * 而 `sessions` 那一支漏了，于是投影后的轮询窗口里内嵌卡片会列出别的 plan 的 session
+ * 行：选仓面因 `hasSessions` 为真而整块不渲染，用户在那些行上点「重试」还会在新 plan
+ * 上建出一条本不该有的 session。加一个消费点就要记得加一次守卫的形状本身就是缺陷。
+ *
+ * `codingPlanId` 缺省（旧 ChatMessageBubble 单仓路径）时不设限，保持向后兼容。
+ */
+const codingPlanRuntime = computed<CodingPlanRuntime | null>(() => {
+  const runtime = activeCodingPlan.value
+  if (!runtime)
+    return null
+  if (props.codingPlanId && runtime.plan_id !== props.codingPlanId)
+    return null
+  return runtime
+})
 const sessions = computed(() => codingPlanRuntime.value?.sessions ?? [])
 const hasSessions = computed(() => sessions.value.length > 0)
 
@@ -202,17 +220,12 @@ const localFeishuDocUrl = ref('')
  *
  * 解析优先级（ 修复 UAT test 3 / 6 串态/丢态）：
  *   1. 本地 localFeishuDocUrl（本卡刚导出成功的兜底，不依赖全局 activeCodingPlan）；
- *   2. 仅当 store 的 activeCodingPlan.plan_id === 本卡 codingPlanId 时采用其值；
- *   3. 否则空串（不串其它 plan 的已导出态）。
+ *   2. codingPlanRuntime（已在入口过 plan_id 守卫，不串其它 plan 的已导出态）；
+ *   3. 否则空串。
  */
-const feishuDocUrl = computed<string>(() => {
-  if (localFeishuDocUrl.value)
-    return localFeishuDocUrl.value
-  const runtime = codingPlanRuntime.value
-  if (runtime && props.codingPlanId && runtime.plan_id === props.codingPlanId)
-    return runtime.feishu_doc_url || ''
-  return ''
-})
+const feishuDocUrl = computed<string>(
+  () => localFeishuDocUrl.value || codingPlanRuntime.value?.feishu_doc_url || '',
+)
 
 /**
  * 方案正文（109-06 · SPINE-02 连带面）。
@@ -221,61 +234,42 @@ const feishuDocUrl = computed<string>(() => {
  *   1. props.techPlan —— 这一级同时承载两个来源：投影响应本地态
  *      （OrchestratedPlanCard 把投影响应直接喂进 props）与**历史消息的 tool
  *      input 兜底**（ChatMessageBubble 的 codingPlanData.techPlan）。SPINE-02
- *      收窄 schema 后新消息的 tool input 已无 tech_plan，但这一级不可删 ——
- *      砍掉它会让 SPINE-02 之前的历史会话方案卡集体变空；
- *   2. 仅当 store 的 activeCodingPlan.plan_id === 本卡 codingPlanId 时采用其
- *      tech_plan；
+ *      收窄 schema 后新消息的 tool input 已无 tech_plan，工具结果（109-REVIEW
+ *      HI-02 起补齐）与投影响应接手承载正文；这一级不可删 —— 砍掉它会让
+ *      SPINE-02 之前的历史会话方案卡集体变空；
+ *   2. codingPlanRuntime（已在入口过 plan_id 守卫）；
  *   3. 否则空串（走空正文占位，而不是渲染一个空 prose 块）。
  *
- * 🔴 第 2 级的 plan_id 匹配守卫不可省：activeCodingPlan 只指向「对话内最近
- * CodingPlan」，多轮多方案会话里若不匹配就采用，会把**新方案的正文渲染到旧方案
- * 卡上** —— 不报错、不崩，只是内容串了，是最难查的一类缺陷。与 feishuDocUrl
- * 的「不串其它 plan 的已导出态」同一个坑、同一道守卫。
+ * 🔴 第 2 级的 plan_id 守卫不可省，理由见 codingPlanRuntime 的注释：多轮多方案
+ * 会话里若不匹配就采用，会把**新方案的正文渲染到旧方案卡上** —— 不报错、不崩，
+ * 只是内容串了，是最难查的一类缺陷。
  */
-const resolvedTechPlan = computed<string>(() => {
-  if (props.techPlan)
-    return props.techPlan
-  const runtime = codingPlanRuntime.value
-  if (runtime && props.codingPlanId && runtime.plan_id === props.codingPlanId)
-    return runtime.tech_plan || ''
-  return ''
-})
+const resolvedTechPlan = computed<string>(
+  () => props.techPlan || codingPlanRuntime.value?.tech_plan || '',
+)
 
-/**
- * 影响文件（109-06）。与 resolvedTechPlan 同形的三级优先，
- * 第 2 级同样过 `runtime.plan_id === props.codingPlanId` 守卫（理由同上）。
- */
+/** 影响文件（109-06）。与 resolvedTechPlan 同形的三级优先。 */
 const resolvedAffectedFiles = computed<Array<{ file_path?: string, path?: string, change_type: string }>>(() => {
   if (props.affectedFiles.length > 0)
     return props.affectedFiles
-  const runtime = codingPlanRuntime.value
-  if (runtime && props.codingPlanId && runtime.plan_id === props.codingPlanId)
-    return runtime.affected_files ?? []
-  return []
+  return codingPlanRuntime.value?.affected_files ?? []
 })
 
 /**
  * 方案来源标志（109-08 · RELY-01 界面侧）。
  *
  * 解析优先级与 resolvedTechPlan / resolvedAffectedFiles 同形：
- *   1. props.provenance —— 投影响应本地态；
- *   2. 仅当 store 的 activeCodingPlan.plan_id === 本卡 codingPlanId 时采用其
- *      provenance；
+ *   1. props.provenance —— 投影响应本地态 / 工具结果（109-REVIEW HI-02）；
+ *   2. codingPlanRuntime（已在入口过 plan_id 守卫）；
  *   3. 否则 undefined（走保守分支 ⇒ 标注）。
  *
- * 🔴 第 2 级的 plan_id 匹配守卫不可省：runtime.provenance 是 runtime.coding_plan
- * 的第三个消费点。漏守卫会把**别的方案的来源标志渲染到本卡上** —— 一份草稿因此
- * 被漏标，是安全性方向的失守（比正文串态更严重：正文串了看得出来，标志串了看不
- * 出来）。与 feishuDocUrl / resolvedTechPlan 同一个坑、同一道守卫。
+ * 🔴 plan_id 守卫在这一支尤其不可省：漏守卫会把**别的方案的来源标志渲染到本卡上**
+ * —— 一份草稿因此被漏标，是安全性方向的失守（比正文串态更严重：正文串了看得出来，
+ * 标志串了看不出来）。
  */
-const resolvedProvenance = computed<string | null | undefined>(() => {
-  if (props.provenance)
-    return props.provenance
-  const runtime = codingPlanRuntime.value
-  if (runtime && props.codingPlanId && runtime.plan_id === props.codingPlanId)
-    return runtime.provenance
-  return undefined
-})
+const resolvedProvenance = computed<string | null | undefined>(
+  () => props.provenance || codingPlanRuntime.value?.provenance,
+)
 
 /**
  * 是否需要标注「未经代码调研」。

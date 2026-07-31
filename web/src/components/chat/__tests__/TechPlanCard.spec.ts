@@ -1360,3 +1360,122 @@ describe('techPlanCard — 109-08 草稿标注与送编码确认', () => {
     expect(dialogOpen(wrapper)).toBe('false')
   })
 })
+
+// ============================================================================
+// 109-REVIEW HI-02 / MN-05：runtime 串态守卫下沉到入口后的行为
+// ============================================================================
+
+describe('techPlanCard — 109-REVIEW 多方案会话的串态防护', () => {
+  const REPOS = [
+    { id: 'r1', name: 'repo-1' },
+    { id: 'r2', name: 'repo-2' },
+  ]
+
+  /** 另一份 plan 的 runtime：带 sessions、带正文、带 provenance —— 全都不该被本卡采用。 */
+  function setOtherPlanRuntime() {
+    const store = useChatStore()
+    store.activeCodingPlan = {
+      plan_id: 'other-plan',
+      title: '别的方案',
+      provenance: 'draft',
+      tech_plan: '# 别的方案的正文',
+      affected_files: [{ file_path: 'other/leaked.py', change_type: 'add' }],
+      sessions: [
+        {
+          session_id: 'cs-other',
+          repository_id: 'r9',
+          repository_name: 'repo-other',
+          branch_name: 'feat/other',
+          status: 'running',
+          pr_url: '',
+          commit_sha: '',
+          error_message: '',
+        },
+      ],
+    } as any
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setActivePinia(createPinia())
+  })
+
+  /**
+   * 🔴 HI-02：编排产出的历史卡片不得被误挂草稿横幅。
+   *
+   * 修复前 `ChatMessageBubble` 不传 `provenance`、正文也只在 tool input 里（SPINE-02
+   * 后为空），于是「非最新那一份 plan」的卡片同时丢正文与来源标志 —— 一次内容丢失
+   * 回归 + 一次 RELY-01 误报。本用例断言：props 拿到这两个事实后，即便 runtime 指向
+   * 别的 plan，卡片也正常。
+   */
+  it('props 带 provenance=orchestrated 与正文时，runtime 指向别的 plan 也不误挂草稿横幅', async () => {
+    setOtherPlanRuntime()
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      provenance: 'orchestrated',
+      techPlan: '# 本卡自己的方案正文',
+      affectedFiles: [{ file_path: 'mine/a.py', change_type: 'add' }],
+    })
+    await flushPromises()
+
+    expect(wrapper.html()).toContain('<div data-test="md"># 本卡自己的方案正文</div>')
+    expect(wrapper.text()).toContain('mine/a.py')
+    expect(wrapper.find('[data-test="unresearched-banner"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="badge"]').some(b => b.text() === '未经调研')).toBe(false)
+    // 别的 plan 的正文 / 来源标志一个都不许渗进来
+    expect(wrapper.text()).not.toContain('别的方案的正文')
+    expect(wrapper.text()).not.toContain('other/leaked.py')
+  })
+
+  /**
+   * 🔴 MN-05：`sessions` 这一支此前没有 plan_id 守卫，而 109 的就地交棒让它开始承重。
+   *
+   * 投影完成后 store 只排了一次 3 秒的 runtime 轮询，那个窗口里 `activeCodingPlan`
+   * 仍指向投影**之前**那份 plan。若那份已有 sessions：`hasSessions` 为真 ⇒ 选仓面
+   * 整块不渲染（用户「进入编码」后什么可操作的东西都没有），卡片列出的还是别的 plan
+   * 的 session 行，在这些行上点「重试」会在新 plan 上建出一条本不该有的 session。
+   */
+  it('runtime 指向别的 plan 且带 sessions 时：不渲染 session 行，仍渲染内嵌选仓面', async () => {
+    setOtherPlanRuntime()
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test="status-row"]')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('repo-other')
+    expect(wrapper.findComponent({ name: 'RepoMultiSelector' }).exists()).toBe(true)
+    expect(wrapper.text()).toContain('选择目标仓库')
+  })
+
+  it('runtime 匹配本卡时 session 行照常渲染（守卫不误伤正常路径）', async () => {
+    const store = useChatStore()
+    store.activeCodingPlan = {
+      plan_id: 'plan-1',
+      title: '本卡方案',
+      sessions: [
+        {
+          session_id: 'cs-mine',
+          repository_id: 'r1',
+          repository_name: 'repo-1',
+          branch_name: 'feat/mine',
+          status: 'running',
+          pr_url: '',
+          commit_sha: '',
+          error_message: '',
+        },
+      ],
+    } as any
+    const wrapper = mountCard({
+      codingPlanId: 'plan-1',
+      availableRepositories: REPOS,
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test="status-row"]')).toHaveLength(1)
+    // 有 sessions ⇒ 走「追加态」，创建态内嵌选仓面（唯一带此标题）不再渲染
+    expect(wrapper.text()).not.toContain('选择目标仓库')
+    expect(wrapper.text()).toContain('目标仓库（1）')
+  })
+})
