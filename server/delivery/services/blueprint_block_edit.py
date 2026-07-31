@@ -192,12 +192,15 @@ def apply_block_ops(content: Any, ops: Any) -> tuple[dict, list[dict]]:
             container.insert(index if position == POSITION_BEFORE else index + 1, payload)
         return (base, rejected)
     except Exception as exc:  # noqa: BLE001 — 半改内容绝不外流，异常一律回落未改动副本
+        from common.logging import redact_secrets_in_text
+
         logger.warning(
             "blueprint_block_ops_apply_failed",
             category="caller",
             component="blueprint_block_edit",
             op_count=len(ops),
-            error=str(exc),
+            # 异常文本兜的是半可信 block 正文（可能夹带凭证样本）⇒ 脱敏不可绕过
+            error=redact_secrets_in_text(str(exc)),
         )
         rejected.append(_reject("", "", REASON_APPLY_FAILED))
         return (copy.deepcopy(content) if isinstance(content, dict) else {}, rejected)

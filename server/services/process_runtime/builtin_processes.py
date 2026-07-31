@@ -18,6 +18,7 @@ from typing import Any
 
 import structlog
 
+from common.logging import redact_secrets_in_text
 from delivery.artifacts.registry import register_artifact_type
 from delivery.services.event_taxonomy import (
     EVENT_FEATURE_CLASSIFIED,
@@ -500,7 +501,7 @@ async def _abp_mark_drafting(session: Any) -> None:
             component="process_runtime",
             session_id=str(getattr(session, "id", "")),
             current_stage=str(getattr(session, "current_stage", "")),
-            error=str(exc),
+            error=redact_secrets_in_text(str(exc)),
         )
 
 
@@ -540,7 +541,7 @@ async def _abp_mark_ai_reviewing(session: Any) -> None:
             component="process_runtime",
             session_id=str(getattr(session, "id", "")),
             current_stage=str(getattr(session, "current_stage", "")),
-            error=str(exc),
+            error=redact_secrets_in_text(str(exc)),
         )
 
 
@@ -606,7 +607,7 @@ async def _abp_ensure_blocking_clarification(session: Any, *, stage: str, reason
             stage=stage,
             initiated_by_user_id=str(getattr(session, "initiated_by_user_id", "") or "")
             or "system",
-            error=str(exc),
+            error=redact_secrets_in_text(str(exc)),
         )
 
 
@@ -685,7 +686,7 @@ async def _h_bp_repo_plan(session: Any, engine: Any) -> StageOutcome:
             category="sampling",
             component="process_runtime",
             session_id=str(getattr(session, "id", "")),
-            error=str(exc),
+            error=redact_secrets_in_text(str(exc)),
         )
 
     plans = await adapter.acollect_repo_plans(session)

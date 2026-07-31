@@ -1033,7 +1033,7 @@ class BlueprintLifecycleService:
                 category="caller",
                 component="blueprint_lifecycle",
                 repository_id=repository_id,
-                error=str(exc),
+                error=redact_secrets_in_text(str(exc)),
             )
             return False
         return bool(scope) and str(repository_id) in scope
@@ -1252,7 +1252,7 @@ class BlueprintLifecycleService:
                 category="caller",
                 component="blueprint_lifecycle",
                 action=action,
-                error=str(exc),
+                error=redact_secrets_in_text(str(exc)),
             )
 
     @staticmethod
@@ -1344,7 +1344,7 @@ class BlueprintLifecycleService:
                 component="blueprint_lifecycle",
                 artifact_id=str(getattr(artifact, "id", "")),
                 initiated_by_user_id=initiated_by_user_id or "system",
-                error=str(exc),
+                error=redact_secrets_in_text(str(exc)),
                 duration_ms=round((time.monotonic() - started) * 1000, 2),
             )
             return {"checked": 0, "reanchored": 0, "orphaned": 0, "skipped": 0}
