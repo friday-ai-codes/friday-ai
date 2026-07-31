@@ -1277,6 +1277,73 @@ class TestCreateCodingPlanRecommendedRepos:
         assert plan.recommended_repository_ids == [source_repo_id]
 
     @pytest.mark.asyncio
+    async def test_projected_ids_with_invalid_uuid_literal_do_not_break_the_tool(
+        self, project, repository, conversation
+    ):
+        """🔴 109-REVIEW MN-03：来源版本里的非法仓库 id 不得把工具打成未处理异常。
+
+        ``execution_plan[].repository_id`` 是 LLM 产物、schema 无强约束。半可信值直接
+        喂 ``filter(id__in=...)`` 会抛 ``ValidationError`` 一路上穿 ``@tool``（装饰器无
+        兜底）——而此时投影**已经落库**，用户看到「失败」但 DB 里多了一条 plan。
+        """
+        from agents.tools.coding_tools import create_coding_plan
+
+        version = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(
+                _task(
+                    repository_id="not-a-uuid",
+                    files=[{"path": "x.py", "action": "modify"}],
+                    task_id="t1",
+                ),
+                _task(
+                    repository_id=str(repository.id),
+                    files=[{"path": "y.py", "action": "modify"}],
+                    task_id="t2",
+                ),
+            ),
+        )
+        result = await create_coding_plan(
+            space_id=str(project.id),
+            conversation_id=str(conversation.id),
+            artifact_version_id=str(version.id),
+        )
+        assert result.success is True
+        assert result.output["recommended_source"] == "projected"
+        # 非法字面量被丢弃，合法 id 保留
+        assert result.output["recommended_repository_ids"] == [str(repository.id)]
+        assert [r["id"] for r in result.output["recommended_repositories"]] == [str(repository.id)]
+
+    @pytest.mark.asyncio
+    async def test_projected_repository_names_are_scoped_to_space(
+        self, project, conversation, other_repository
+    ):
+        """名字回显按 space 过滤，与「LLM 显式传 id」分支同一可见性口径。
+
+        ``recommended_repository_ids`` 仍保留全部合法 id —— 编排来源自带目标仓，用
+        space 交集覆盖等于把跨 space 的 fan-out 目标抹掉。
+        """
+        from agents.tools.coding_tools import create_coding_plan
+
+        version = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(
+                _task(
+                    repository_id=str(other_repository.id),
+                    files=[{"path": "x.py", "action": "modify"}],
+                )
+            ),
+        )
+        result = await create_coding_plan(
+            space_id=str(project.id),
+            conversation_id=str(conversation.id),
+            artifact_version_id=str(version.id),
+        )
+        assert result.success is True
+        assert result.output["recommended_repository_ids"] == [str(other_repository.id)]
+        assert result.output["recommended_repositories"] == []
+
+    @pytest.mark.asyncio
     async def test_invalid_explicit_id_not_in_space_returns_error(
         self, project, repository, conversation, other_repository
     ):

@@ -42,6 +42,27 @@ def _log_authoring_rejected(*, conversation_id: str, reason: str) -> None:
         pass
 
 
+def _valid_uuids(values: object) -> list[str]:
+    """半可信来源的 id 过筛：非 UUID 字面量直接丢，绝不带进 ORM 查询。
+
+    109-REVIEW MN-03：``recommended_repository_ids`` 的投影来源是
+    ``map_merged_plan_to_coding_plan`` 从 ``execution_plan[].repository_id`` 聚合的
+    值，那里只做 ``str(...)`` 不校验形状（映射层「半可信输入恒不抛」的契约只保证映射
+    层自己不抛）。把它直接喂 ``filter(id__in=...)``，一个写歪的字面量就会抛
+    ``ValidationError`` 一路上穿 ``@tool`` ——而此时投影**已经落库**，用户看到「失败」
+    但 DB 里多了一条 plan。
+    """
+    import uuid as uuid_mod
+
+    out: list[str] = []
+    for value in values if isinstance(values, (list, tuple)) else []:
+        try:
+            out.append(str(uuid_mod.UUID(str(value))))
+        except (ValueError, AttributeError, TypeError):
+            continue
+    return out
+
+
 def _context_user_id() -> str:
     """从请求 / 任务上下文取权威触发用户 id；取不到返回空串。
 
@@ -313,12 +334,16 @@ async def create_coding_plan(
             plan.recommended_repository_ids = final_recommended
             await plan.asave(update_fields=["recommended_repository_ids", "updated_at"])
     else:
-        projected_ids = [str(r) for r in (plan.recommended_repository_ids or [])]
+        projected_ids = _valid_uuids(plan.recommended_repository_ids)
         if projected_ids:
             final_recommended = projected_ids
+            # 按 space 过滤，与上方「LLM 显式传 id」分支同一口径 —— 两条分支的可见性
+            # 口径不一致，日后很容易被当成「这里不需要过滤」的先例。
+            # 只影响**名字回显**：final_recommended 保留全部合法 id（编排来源自带目标
+            # 仓，用 space 交集覆盖等于把跨 space 的 fan-out 目标抹掉）。
             recommended_repositories = [
                 {"id": str(r.id), "name": r.name}
-                async for r in Repository.objects.filter(id__in=projected_ids)
+                async for r in project.repositories.filter(id__in=projected_ids)
             ]
             recommended_source = "projected"
 
