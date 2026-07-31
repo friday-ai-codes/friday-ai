@@ -51,6 +51,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from common.logging import redact_secrets_in_text
 from delivery.models import (
     Artifact,
     BlueprintReviewer,
@@ -357,9 +358,11 @@ class BlueprintLifecycleService:
         except Exception as exc:  # noqa: BLE001 — best-effort：事件持久化失败绝不阻断转移
             logger.warning(
                 "blueprint_transition_event_persist_failed",
+                category="caller",
+                component="blueprint_lifecycle",
                 artifact_id=str(artifact.id),
                 to_status=to_status,
-                error=str(exc),
+                error=redact_secrets_in_text(str(exc)),
             )
 
     # ------------------------------------------------------------------
