@@ -155,11 +155,12 @@ def other_repository(db):
 
 @pytest.fixture
 def as_owner(plan_owner):
-    """把 ``plan_owner`` 绑成当前请求上下文用户。
+    """把 ``plan_owner`` 绑成当前请求上下文用户（第一优先来源）。
 
-    ``update_coding_plan`` 的归属主体**只**取请求上下文（plan 定位入参由模型提供，
-    退回「被改写 plan 的会话创建者」等于让攻击者自选身份），因此测 update 路径必须
-    显式绑定上下文。生产侧写入者是 ``common.log_context`` 中间件。
+    归属主体的两个来源：① 请求上下文；② 服务端注入的 ``conversation_id`` 反查会话
+    创建者。本 fixture 只覆盖 ①；② 的可用性由
+    ``TestUpdateCodingPlanActorResolution`` 按生产绑定形态单独锁住（109-REVIEW BL-01：
+    生产里 contextvars 恒为中间件写的 ``"system"`` 占位，只有 ① 时本工具恒失败）。
     """
     tokens = structlog.contextvars.bind_contextvars(user_id=str(plan_owner.id))
     yield plan_owner
@@ -575,6 +576,7 @@ class TestUpdateCodingPlan:
             content=_content(_task(files=[{"path": "v2.py", "action": "delete"}]), title="方案 v2"),
         )
         result = await update_coding_plan(
+            conversation_id=str(conversation.id),
             coding_plan_id=plan_id,
             artifact_version_id=str(v2.id),
         )
@@ -622,6 +624,7 @@ class TestUpdateCodingPlan:
         plan2_body = (await CodingPlan.objects.aget(id=plan2_id)).tech_plan
 
         result = await update_coding_plan(
+            conversation_id=str(conversation.id),
             coding_plan_id=plan1_id,
             artifact_version_id=str(v2.id),
         )
@@ -644,6 +647,7 @@ class TestUpdateCodingPlan:
             ),
         )
         result = await update_coding_plan(
+            conversation_id=str(conversation.id),
             session_id=str(draft_coding_session.id),
             artifact_version_id=str(version.id),
         )
@@ -661,6 +665,7 @@ class TestUpdateCodingPlan:
 
         version = await _amk_artifact_version(conversation=conversation)
         result = await update_coding_plan(
+            conversation_id=str(conversation.id),
             session_id=str(uuid.uuid4()),
             artifact_version_id=str(version.id),
         )
@@ -673,20 +678,24 @@ class TestUpdateCodingPlan:
         from agents.tools.coding_tools import update_coding_plan
 
         version = await _amk_artifact_version(conversation=conversation)
-        result = await update_coding_plan(artifact_version_id=str(version.id))
+        result = await update_coding_plan(
+            conversation_id=str(conversation.id),
+            artifact_version_id=str(version.id),
+        )
         assert result.success is False
         assert "coding_plan_id" in result.error
         assert "session_id" in result.error
 
     @pytest.mark.asyncio
     async def test_update_coding_plan_reject_missing_artifact_version_id(
-        self, draft_coding_session, as_owner
+        self, conversation, draft_coding_session, as_owner
     ):
         """无来源的 update 尝试同样被拒绝并留痕（``-k reject`` 组）。"""
         from agents.tools.coding_tools import update_coding_plan
 
         with capture_logs() as logs:
             result = await update_coding_plan(
+                conversation_id=str(conversation.id),
                 session_id=str(draft_coding_session.id),
                 artifact_version_id="",
             )
@@ -751,6 +760,7 @@ class TestUpdateCodingPlan:
             ),
         )
         result = await update_coding_plan(
+            conversation_id=str(conversation.id),
             coding_plan_id=plan_id,
             artifact_version_id=str(v2.id),
         )
@@ -764,6 +774,173 @@ class TestUpdateCodingPlan:
         running_refreshed = await CodingSession.objects.aget(id=running_session.id)
         # running 的 deprecated 字段保留旧值不动
         assert running_refreshed.tech_plan == running_body
+
+
+# ============================================================================
+# 109-REVIEW BL-01 / MN-04 —— 归属主体解析与会话一致性
+#
+# 🔴 本组用例刻意**不用** `as_owner`（手工 bind_contextvars(user_id=<真实 id>)）。
+# 手工注入让 service 内的归属判定得到很好的覆盖，却掩盖了「生产里这个 contextvar
+# 是什么形状」：`RequestLogContextMiddleware._bind` 写的是硬编码占位
+# `user_id="system"`，真实 id 只由 `rebind_user` 补绑，而 `LogContextMixin` 全仓无
+# 视图继承。BL-01 正是因为整套用例没有一条按生产形态调用而逃过了 785 行新测试。
+# 因此这里一律用 `bind_request_context(..., user_id="system")` 复现真实入口。
+# ============================================================================
+
+
+@pytest.fixture
+def as_production_request_context():
+    """按中间件的**真实绑定形态**建立请求上下文（``user_id="system"`` 占位）。"""
+    from common.log_context import LogSource, bind_request_context, clear_request_context
+
+    bind_request_context(
+        request_id="req-109-review",
+        source=LogSource.REST,
+        trace_id="trace-109-review",
+        user_id="system",
+    )
+    yield
+    clear_request_context()
+
+
+@pytest.mark.django_db(transaction=True)
+class TestUpdateCodingPlanActorResolution:
+    """归属主体在生产绑定形态下必须可解析，且会话一致性必须早于任何写。"""
+
+    def test_context_user_id_still_refuses_system_sentinel(self, as_production_request_context):
+        """哨兵身份绝不被当成真实用户 —— 这条纪律不因 BL-01 的修复而松动。"""
+        from agents.tools.coding_tools import _context_user_id
+
+        assert _context_user_id() == ""
+
+    @pytest.mark.asyncio
+    async def test_update_coding_plan_succeeds_under_production_context_binding(
+        self, project, repository, conversation, as_production_request_context
+    ):
+        """按生产入口形态（contextvars 只有 ``"system"`` 占位）调用 → 仍能 re-bind。
+
+        🔴 这是 BL-01 的回归锁：修复前本用例会拿到「无法确定当前操作用户」早退。
+        """
+        from agents.tools.coding_tools import create_coding_plan, update_coding_plan
+
+        v1 = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(_task(files=[{"path": "v1.py", "action": "create"}]), title="方案 v1"),
+        )
+        created = await create_coding_plan(
+            space_id=str(project.id),
+            conversation_id=str(conversation.id),
+            repository_id=str(repository.id),
+            artifact_version_id=str(v1.id),
+        )
+        assert created.success is True
+
+        v2 = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(_task(files=[{"path": "v2.py", "action": "modify"}]), title="方案 v2"),
+        )
+        result = await update_coding_plan(
+            conversation_id=str(conversation.id),
+            coding_plan_id=created.output["coding_plan_id"],
+            artifact_version_id=str(v2.id),
+        )
+        assert result.success is True, f"生产绑定形态下 update 必须可用，实际：{result.error}"
+        refreshed = await CodingPlan.objects.aget(id=created.output["coding_plan_id"])
+        assert "方案 v2" in refreshed.tech_plan
+
+    @pytest.mark.asyncio
+    async def test_update_rejects_plan_of_another_conversation(
+        self, project, repository, conversation, as_production_request_context
+    ):
+        """模型报他人会话的 coding_plan_id → 拒绝，且被指向的 plan 正文零改动（EoP）。"""
+        from agents.tools.coding_tools import create_coding_plan, update_coding_plan
+
+        victim_version = await _amk_artifact_version(
+            conversation=conversation,
+            content=_content(
+                _task(files=[{"path": "victim.py", "action": "create"}]), title="他人方案"
+            ),
+        )
+        victim = await create_coding_plan(
+            space_id=str(project.id),
+            conversation_id=str(conversation.id),
+            artifact_version_id=str(victim_version.id),
+        )
+        victim_plan_id = victim.output["coding_plan_id"]
+        victim_body = (await CodingPlan.objects.aget(id=victim_plan_id)).tech_plan
+
+        intruder = await sync_to_async(User.objects.create_user)(
+            username=f"intruder_{uuid.uuid4().hex[:8]}",
+            email=f"{uuid.uuid4().hex[:8]}@coding.local",
+            password="testpass123",
+        )
+        attacker_conversation = await Conversation.objects.acreate(
+            space=project,
+            title="入侵者的会话",
+            created_by=intruder,
+        )
+        attacker_version = await _amk_artifact_version(
+            conversation=attacker_conversation,
+            content=_content(
+                _task(files=[{"path": "x.py", "action": "modify"}]), title="入侵者方案"
+            ),
+        )
+
+        with capture_logs() as logs:
+            result = await update_coding_plan(
+                conversation_id=str(attacker_conversation.id),
+                coding_plan_id=victim_plan_id,
+                artifact_version_id=str(attacker_version.id),
+            )
+
+        assert result.success is False
+        # 措辞与「不存在」逐字一致，不泄漏存在性
+        assert result.error == f"CodingPlan not found: {victim_plan_id}"
+        assert _AUTHORING_REJECTED_EVENT in [entry.get("event") for entry in logs]
+        assert (await CodingPlan.objects.aget(id=victim_plan_id)).tech_plan == victim_body
+
+    @pytest.mark.asyncio
+    async def test_update_legacy_session_of_another_conversation_writes_nothing(
+        self, project, repository, conversation, draft_coding_session, as_production_request_context
+    ):
+        """🔴 MN-04：legacy 分支的归属判定必须早于补 FK 的两次写。
+
+        判定晚一步 = 「拒绝了，但已在他人会话下建出 CodingPlan 并改写了他人 session」。
+        """
+        from agents.tools.coding_tools import update_coding_plan
+
+        intruder = await sync_to_async(User.objects.create_user)(
+            username=f"intruder_{uuid.uuid4().hex[:8]}",
+            email=f"{uuid.uuid4().hex[:8]}@coding.local",
+            password="testpass123",
+        )
+        attacker_conversation = await Conversation.objects.acreate(
+            space=project,
+            title="入侵者的会话",
+            created_by=intruder,
+        )
+        attacker_version = await _amk_artifact_version(
+            conversation=attacker_conversation,
+            content=_content(
+                _task(files=[{"path": "x.py", "action": "modify"}]), title="入侵者方案"
+            ),
+        )
+        plans_before = await CodingPlan.objects.acount()
+
+        with capture_logs() as logs:
+            result = await update_coding_plan(
+                conversation_id=str(attacker_conversation.id),
+                session_id=str(draft_coding_session.id),
+                artifact_version_id=str(attacker_version.id),
+            )
+
+        assert result.success is False
+        assert result.error == f"CodingSession not found: {draft_coding_session.id}"
+        assert _AUTHORING_REJECTED_EVENT in [entry.get("event") for entry in logs]
+        # 数据零污染：既没在他人会话下建 plan，也没改写他人 session 的反向 FK
+        assert await CodingPlan.objects.acount() == plans_before
+        await draft_coding_session.arefresh_from_db()
+        assert draft_coding_session.coding_plan_id is None
 
 
 # ============================================================================

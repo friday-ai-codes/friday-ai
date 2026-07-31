@@ -40,6 +40,9 @@ _ALLOWED_PROPERTIES = {
         "recommended_repository_ids",
     },
     "update_coding_plan": {
+        # 109-REVIEW BL-01/MN-04：chat_runner 闭包注入（模型不可见、不可控），既作
+        # 归属主体来源，也用于校验 plan / session 属于本次会话。它不是正文入参。
+        "conversation_id",
         "coding_plan_id",
         "session_id",
         "artifact_version_id",
