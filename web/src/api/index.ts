@@ -8,6 +8,12 @@ export * from './announcements'
 export { default as authApi } from './auth'
 
 export * from './auth'
+// 技术蓝图（Phase 115）：五个只读供数端点 + 人审六端点 + 确认门八端点。
+// ⚠️ 插在 auth 与 chat 之间而非文件末尾：`perfectionist/sort-exports` 会把末尾追加判成
+// 乱序，而对本文件跑 `eslint --fix` 会**重排既有分组**（实测），违反 CREATE-ONLY 的纯追加
+// 纪律 ⇒ 按字典序落位，既零删除行也不新增 lint 问题。
+export { default as blueprintsApi } from './blueprints'
+export * from './blueprints'
 export { default as chatApi } from './chat'
 
 export * from './chat'
@@ -54,6 +60,10 @@ export { default as providerCredentialsApi } from './providerCredentials'
 export * from './providerCredentials'
 
 export * from './repositories'
+
+// 引用二级预览用的既有 REST（chunk-at 反查 / 仓库章程），前端此前无封装。
+export { default as repositoryChunksApi } from './repositoryChunks'
+export * from './repositoryChunks'
 
 export { default as repoTreeApi } from './repoTree'
 export * from './repoTree'
