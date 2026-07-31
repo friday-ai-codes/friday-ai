@@ -70,6 +70,23 @@ _STAGE_BLUEPRINT_STATUS: dict[str, str] = {
 }
 
 
+# ⭐ 「人审/下游拥有」的状态集（114-MN-06）：到了这些状态，蓝图的推进权已交给人审动作端点
+# （approve / reject）与下游 implementing 链，**续驱的状态映射一律短路**。
+#
+# 同样用字面量（本模块所有 Django 模型 import 都在函数内 lazy），等值由
+# `test_human_owned_statuses_match_enum` 锁死。
+_HUMAN_OWNED_STATUSES: frozenset[str] = frozenset(
+    {
+        "pending_review",  # == BlueprintStatus.PENDING_REVIEW
+        "confirmed",  # == BlueprintStatus.CONFIRMED
+        "implementing",  # == BlueprintStatus.IMPLEMENTING
+        "implemented",  # == BlueprintStatus.IMPLEMENTED
+        "archived",  # == BlueprintStatus.ARCHIVED
+        "superseded",  # == BlueprintStatus.SUPERSEDED
+    }
+)
+
+
 def _resolve_stage_status(session: Any) -> str:
     """按 ``current_stage`` 取蓝图状态；未登记的 stage（含前七个与空串）回落 researching。
 
@@ -289,6 +306,24 @@ async def _amap_blueprint_status(session: Any) -> None:
 
     artifact = await _aload_artifact(session)
     if artifact is None:
+        return
+    current = str(getattr(artifact, "blueprint_status", "") or "")
+    if current in _HUMAN_OWNED_STATUSES:
+        # ⭐ 终审态及其后的状态**不由续驱驱动**（114-MN-06）：审查收官后蓝图落
+        # `pending_review`，而未决 BLOCKER finding 让 `ahas_open_blocking_threads` 恒为真
+        # ⇒ target 派生成 `needs_clarification`，但 `_ALLOWED_TRANSITIONS[PENDING_REVIEW]`
+        # 不含它 ⇒ 每一次续驱都白抛一次 ValueError 并吞成 `blueprint_status_map_skipped`。
+        # 行为上无害（状态正确地留在 `pending_review`），但映射器会对一个**完全正常**的状态
+        # 反复报「映射被跳过」，真正的映射故障因此淹没在噪声里。这些状态的推进只归人审动作
+        # 端点（approve / reject）与下游 implementing 链，续驱不该插手。
+        _safe_log(
+            "blueprint_status_map_human_owned",
+            category="sampling",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            artifact_id=str(getattr(artifact, "id", "")),
+            current_status=current,
+        )
         return
     lifecycle = BlueprintLifecycleService()
     initiated_by = str(getattr(session, "initiated_by_user_id", "") or "") or "system"
