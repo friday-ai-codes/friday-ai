@@ -1263,7 +1263,15 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
               v-if="isOrchestrationTool(item.name) && item.status === 'done' && resolveOrchestratedPlanData(item.result)"
               :artifact-version-id="resolveOrchestratedPlanData(item.result)!.artifactVersionId"
             />
-            <div v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name) && !isOrchestrationTool(item.name)" class="tool-detail">
+            <!--
+              编排工具的详情面板只在「卡片已渲染」时才抑制。若无条件按工具名抑制，
+              在途 / 失败态（按裁决 D-4 不渲染卡片）下箭头会转但面板永不出现，
+              整条 pill 变成一个点了没反应的可点元素。
+            -->
+            <div
+              v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name) && !(isOrchestrationTool(item.name) && resolveOrchestratedPlanData(item.result))"
+              class="tool-detail"
+            >
               <div class="tool-detail-section">
                 <span class="tool-detail-label">输入</span>
                 <StructuredJsonView :value="item.input" :tool-name="item.name" kind="input" />
