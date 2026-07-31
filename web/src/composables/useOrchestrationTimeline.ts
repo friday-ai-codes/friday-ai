@@ -223,6 +223,15 @@ interface FoldedEvents {
   classifyPayload: Record<string, unknown> | null
   /** 最后一条**可识别**转移事件指向的 stage；不认识的事件名静默忽略。 */
   lastTransitionStage: OrchestrationStageKey | null
+  /**
+   * 见过会话失败事件。
+   *
+   * 🔴 这是快照缺席时唯一的失败证据。前半程（拆分→澄清）走 SSE 直播，
+   * `pollConversationRuntime` 尚未被调度，桶里的 snapshot 恒为 null——不认这个事件
+   * 就会把出错那一步一直画成进行中、标题一直是「正在生成技术方案」，只有刷新页面
+   * 才自愈。
+   */
+  sawSessionFailed: boolean
 }
 
 function foldEvents(events: OrchestrationTimelineEvent[]): FoldedEvents {
@@ -242,6 +251,7 @@ function foldEvents(events: OrchestrationTimelineEvent[]): FoldedEvents {
     recallPayload: null,
     classifyPayload: null,
     lastTransitionStage: null,
+    sawSessionFailed: false,
   }
 
   const usable = (Array.isArray(events) ? events : [])
@@ -259,6 +269,10 @@ function foldEvents(events: OrchestrationTimelineEvent[]): FoldedEvents {
 
     if (event.startsWith('clarification.'))
       folded.sawClarification = true
+
+    // 两个名字都认：`process.session.failed` 是分类事件，`fail` 是状态图转移名。
+    if (event === 'process.session.failed' || event === 'fail')
+      folded.sawSessionFailed = true
 
     switch (event) {
       case 'repo.routing':
@@ -437,7 +451,14 @@ function buildInner(input: OrchestrationTimelineInput): OrchestrationTimelineVie
   const folded = foldEvents(input?.events ?? [])
 
   const status = typeof snapshot?.status === 'string' ? snapshot.status : null
-  const isFailed = status === 'failed'
+  /**
+   * 🔴 快照缺席时用失败事件兜底。
+   *
+   * 快照在场时**仍以快照为准**（与阶段指针同一条权威顺序），事件不得翻转它；
+   * 只有 `status === null`（前半程 SSE 直播期间，轮询未起）才认事件。不加这一支，
+   * 前半程失败会让时间线一直显示「正在生成技术方案」并把出错那步画成进行中。
+   */
+  const isFailed = status === 'failed' || (status === null && folded.sawSessionFailed)
   const isDone = status === 'done'
 
   // ---- 阶段指针（权威顺序：快照 → 最后一条可识别转移事件 → 无证据） ----
@@ -451,8 +472,11 @@ function buildInner(input: OrchestrationTimelineInput): OrchestrationTimelineVie
   const pointerIndex = pointerStage ? STAGE_ORDER.indexOf(pointerStage) : -1
 
   // ---- 失败落点 ----
+  // 事件兜底路径下 snapshot 为 null ⇒ 前两个来源都空，退到指针 stage：
+  // `process.session.failed` 的 payload 恒为空 dict，拿不到落点，最后一条转移事件
+  // 指向的 stage 就是当时正在跑的那一步。退不出来时不标红任何一步，不猜。
   const failureStage = isFailed
-    ? (asNonEmptyString(snapshot?.failure?.stage) ?? rawStage)
+    ? (asNonEmptyString(snapshot?.failure?.stage) ?? (rawStage || pointerStage || ''))
     : ''
   const failIndex = failureStage ? (STAGE_ORDER as string[]).indexOf(failureStage) : -1
   const failReason = isFailed
