@@ -308,6 +308,7 @@ declare module 'vue' {
     PaginationNext: typeof import('./components/ui/pagination/PaginationNext.vue')['default']
     PaginationPrev: typeof import('./components/ui/pagination/PaginationPrev.vue')['default']
     PinConfirmDialog: typeof import('./components/chat/PinConfirmDialog.vue')['default']
+    PlanResearchLogGroup: typeof import('./components/chat/PlanResearchLogGroup.vue')['default']
     PlaygroundQueryInput: typeof import('./components/codegraph/PlaygroundQueryInput.vue')['default']
     Popover: typeof import('./components/ui/popover/Popover.vue')['default']
     PopoverContent: typeof import('./components/ui/popover/PopoverContent.vue')['default']
