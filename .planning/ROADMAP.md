@@ -217,7 +217,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 110-03-PLAN.md — 运行时快照两个独立分支：`orchestration`（阶段指针 + 事件流 + 失败闭集）与 `plan_research_sessions`（按仓 + 仓库名 + 日志脱敏）（wave 2）
+- [x] 110-03-PLAN.md — 运行时快照两个独立分支：`orchestration`（阶段指针 + 事件流 + 失败闭集）与 `plan_research_sessions`（按仓 + 仓库名 + 日志脱敏）（wave 2）
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
