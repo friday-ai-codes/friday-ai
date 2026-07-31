@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
 status: executing
-last_updated: "2026-07-31T05:00:00.000Z"
-last_activity: 2026-07-31 -- Phase 114 plan 03 complete (ai_review stage 接线)
+last_updated: "2026-07-31T07:10:00.000Z"
+last_activity: 2026-07-31 -- Phase 114 code review 修复完成（10 fixed / 1 skipped）
 progress:
   total_phases: 6
   completed_phases: 3
@@ -26,8 +26,13 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 
 Phase: 114 (审查与澄清收敛（AI 对抗审查 + 线程闭环 + 人工编辑）) — ✅ COMPLETE
 Plan: 5 of 5 complete（114-01 线程底座 / 114-02 判定内核 / 114-04 回灌与人工编辑 / 114-03 ai_review stage 接线 / 114-05 人审七端点与度量面收口）
-Status: Phase 114 已收口，下一个 **Phase 115 前端查看器与知识库**（消费契约见 `114-05-SUMMARY.md` 的七端点契约表与「Next Phase Readiness」节）
-Last activity: 2026-07-31 -- 114-05 交付人审七端点 + finding 处置通道（**超界死锁打通**，经真实 REST 端点端到端证伪）+ 澄清提醒周期路径（既有 apscheduler 一个 job）+ blueprint_quality 三项 DB 统计实装；65 例新测试 + 三处变异验证，全量 8507 passed / 1 failed（仅 worktree 环境项 `test_skills_snapshot_guard`，零新增失败），全相位恰好一条 migration（`delivery/0033`）且 `makemigrations --check` 退出码 0
+Status: Phase 114 已收口**且已过 code review 修复**（`114-REVIEW.md` status: fixed，10 fixed / 1 skipped），下一个 **Phase 115 前端查看器与知识库**（消费契约见 `114-05-SUMMARY.md` 的七端点契约表与「Next Phase Readiness」节；⚠️ 契约有两处**收紧**，见下）
+Last activity: 2026-07-31 -- Phase 114 code review 修复：1 CRITICAL + 4 MAJOR + 5 MINOR 已修（每条一个原子 commit `fbcdc36d`…`0ae50026`），MN-05 跳过并双处登记。全量 **8546 passed / 1 failed**（净增 39 条永久回归；failure 仍只有 worktree 环境项 `test_skills_snapshot_guard`，零回归）；本轮**零新增 migration**（`makemigrations --check` → No changes detected，仍止于 `delivery/0033`）；11 项冻结面 `--numstat` 逐个零输出
+
+⚠️ **115 需要知道的两处端点契约收紧**（修 CR-01 / MJ-03 / MJ-04 引入，前端必须适配）：
+1. **七端点全部要求调用者是蓝图所属项目的成员**（按 `meta.project_id` 反查 `ProjectMember`）：非成员 → **404**（中性，不是 403）；蓝图读不到 `meta.project_id` → **400**。
+2. **`threads/<id>/answer/` 对 `kind == ai_review_finding` 的线程一律 400**，处置必须走 `resolve/` 或 `dismiss/`（带 `reason`）；**`edit-blocks/` 与 `answer/` 在蓝图已 `confirmed`/`implementing`/`implemented`/`archived`/`superseded`/`failed` 时一律 400**，要改先驳回。
+另外 `approve/` 与 `reject/` 响应体的 `current_status` 现在是**续驱之后**的真实 DB 值（不再会出现「响应 `drafting`、刷新变 `needs_clarification`」）。
 
 ## Milestone Overview (v0.20.0 — Phases 111–116 — 🟡 PLANNING)
 
@@ -36,7 +41,7 @@ Last activity: 2026-07-31 -- 114-05 交付人审七端点 + finding 处置通道
 | 111 | 蓝图底座（schema + 状态机 + 线程/章程模型 + golden set） | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | ✅ Complete (4/4, passed 24/24) |
 | 112 | 规格门与双面路由调研（阶段 1 + 确认门 + 章程回灌） | FLOW-01/02/03/04, CHARTER-02/03 | ✅ Complete (5/5, 16/17 + gap closed) |
 | 113 | 分仓方案与融合（阶段 2/3）+ Context Bus | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | ✅ Complete (6/6, passed 54/54) |
-| 114 | 审查与澄清收敛（AI 审查 + 线程闭环 + 人工编辑） | FLOW-07, CLAR-02/03/04 | ✅ Complete (5/5，四条 REQ + 五条 BLOCKER 定夺均有绿色用例背书) |
+| 114 | 审查与澄清收敛（AI 审查 + 线程闭环 + 人工编辑） | FLOW-07, CLAR-02/03/04 | ✅ Complete (5/5，四条 REQ + 五条 BLOCKER 定夺均有绿色用例背书) · ✅ Reviewed & Fixed (10 fixed / 1 skipped) |
 | 115 | 前端查看器与知识库（查看器/批注/tab/终审 UI） | VIEW-01/02/03/04, CLAR-01, FLOW-08 | Not started |
 | 116 | 入口收编与导出（MCP 协议 + 全入口 + 飞书导出 + 图谱物化） | GATE-01, VIEW-05 | Not started |
 
@@ -64,6 +69,8 @@ Last activity: 2026-07-31 -- 114-05 交付人审七端点 + finding 处置通道
 - **HITL 语义**：确认门是硬门（`kind=repo_confirmation` 阻塞线程）；澄清超时保持显式 pending + 提醒，不自动作答不判失败；「需要澄清」是叠加态，记 `return_stage`。
 - **章程原则**（DESIGN §5.7）：`RepoCharter` 人工确认生效，AI 只可提修订草案；意图分流是权重融合不是硬开关；`charter_match` 进 score breakdown；确认门动作回灌为草案。
 - **权限**：项目成员皆可确认/评论/编辑；确认者自动进 `BlueprintReviewer` 名单；不做段级权限。
+  ⭐ **「项目成员」自 114 review 起是真的有闸**（MJ-03）：蓝图七端点按蓝图自身 `meta.project_id` 反查 `initiatives.ProjectMember`，fail-closed + 中性 404 + superuser 直通；范围只从蓝图推导，绝不接受请求体 `project_id`。**新增任何蓝图读写端点都要照挂 `_aassert_project_scope`。**
+- **可编辑状态白名单**（114 review MJ-04）：改写蓝图正文的路径（`edit-blocks` / `answer` 回灌）一律过 `blueprint_lifecycle_service.is_blueprint_editable`；已 `confirmed` 及其后的状态**不可无声改写**，要改先驳回（`confirmed → drafting` 合法边）再重走人审——这是「AI 不得覆盖人工」的对称面。
 - **观测规范强制**：新 LLM 调用赋 `call_source`（`blueprint_decompose/spec_gate/repo_research/reroute/repo_plan/merge/ai_review`，LOGGING-SPEC §4.1 先登记）；stage 事件 `blueprint_stage_started/completed/failed` 带 `duration_ms`/`category`/`component`；容器动作绑定 `initiated_by_user_id`；脱敏不可绕过。
 - **既有纪律沿用**：INV-6 单一写入入口（新增 `BlueprintLifecycleService` 等 service 收口）；async ORM 走 `sync_to_async`；i18n 默认中文；观测代码 best-effort 绝不反噬业务。
 - **Out of Scope 锁定**：改 `repo_router_v2.py`；改旧 technical_plan process 六文件；改 `ConvergenceSessionEvent` 既有契约；TechPlanCard 等 0.19 归属组件（同步点 2 前）；Prompt Center 化；母子蓝图编排拆分；段级权限；审查换模型（档位可配即可）。
@@ -107,6 +114,15 @@ Last activity: 2026-07-31 -- 114-05 交付人审七端点 + finding 处置通道
 - [Phase 114, 2026-07-31]: 114-05: **新增周期任务一律挂既有 apscheduler**（不新起 cron / systemd timer / 第二个 `BackgroundScheduler`），且「tick 间隔」与「业务周期」分层——tick 以启动值为准，业务周期读配置可热改。GET 只读端点是**伪挂载点**（没人来看就没有请求，任务永不触发）。提醒判据状态是 `needs_clarification` 而非 `pending_review`（后者是「等人审决策」，不是「无人应答」）。
 - [Phase 114, 2026-07-31]: 114-05: **新增 DB 统计无数据必须返 `None` 而不是 0**，并把「无数据 / 零值 / 有值」三态写成并列用例——那是逮住「口径写错导致指标恒零而测试全绿」的唯一手段（`human_edit_volume` 的 `created_by_user_id` 偏差就是这么被逮住的：`ArtifactVersion` 无该字段，正解是 `produced_by_ref__startswith="human_edit:"`）。
 - [Phase 111, 2026-07-30]: 111-04: golden set 与 v0.19.0 路由 golden set 完全分离（`server/tests/fixtures/blueprint_golden/` + `evaluate_blueprint_golden` command），首条 case 为高三提分专项；引用覆盖率/目标仓命中率为纯函数，另三项 DB 统计留接口占位待 112–114 填充数据。
+- [Phase 114 review 修复, 2026-07-31]: **⛔ 回灌链绝不消费 `ai_review_finding`（CR-01，115/116 新增作答/回灌入口必须遵守）**：`blueprint_reflow.REFLOW_KINDS` 只含 `ai_clarification`，且**显式传入的 `threads` 也按 kind 过滤**（fail-closed，不依赖调用方自觉）。根因是回灌链落版本成功后会对被消费线程**无条件 `resolve_thread`** ⇒ 让 finding 进来即等于「在 BLOCKER 上回一句任意文本」就解开 confirm 门，绕开 `reason` 必填 / `[已修复]`-`[误报忽略]` 语义 / 「处置人：{uid}」留痕。finding 处置**只**走 `aresolve_finding` / `adismiss_finding`；answer 端点对 finding 一律 400。
+- [Phase 114 review 修复, 2026-07-31]: **stage graph 的出边只能推向终态，没有任何一条边能把 `done` 拉回运行**（MJ-01）。人审驳回因此必须显式复位会话：新增 `ConvergenceSessionService.areopen_stage`（只从 `done` 复位、`failed` 不动以留首因、stage 必须在 stage graph 内、CAS 以 `status==done` 为前置、不碰 `stage_state`/`current_artifact_version`/`error`），`areject_blueprint` 在「版本已落 + 轮次已加 + 状态已 drafting」之后复位到 `merge`（与 `ai_review` 既有 `remerge` 出边同目标，不新造返工语义）。**115/116 若新增「把终态会话拉回运行」的需求，一律复用它，不要各自 update session.status。**
+- [Phase 114 review 修复, 2026-07-31]: **动作端点回传的状态必须在续驱之后重读**（MJ-01 第二点）：service 侧取值发生在续驱之前，而 `_amap_blueprint_status` 会据「仍有 open+blocking 线程」把状态推成 `needs_clarification` ⇒ 直接回传 service 快照会让前端拿到的状态「刷新一下就变」。`blueprint_review_views._acurrent_status` 是该口径的落点。
+- [Phase 114 review 修复, 2026-07-31]: **「没有 anchor」≠「失锚」（MJ-02，115 直接消费 `orphaned_threads`）**：批量重锚前置 `_has_anchor_locator`（`block_id` 或 `quoted_text` 非空），无定位即 `skipped` 且 `anchor_status` 保持原值。`blueprint_anchor.reanchor` 把空 anchor 判 orphaned 是**单条**语义下的正确行为，批量层照搬会把自动推进线程 / 规格门确认门线程 / 无划线的驳回评论 / 无 block_id 的 finding 线程在**每一条产版本路径**上持久标成失锚 ⇒ CLAR-02 的失锚清单被噪声淹没。**115 呈现失锚清单时可以信任「里面都是真失锚」。**
+- [Phase 114 review 修复, 2026-07-31]: **蓝图七端点已收项目范围闸（MJ-03）——115 前端与 116 入口新增蓝图写端点必须照挂**：`blueprint_review_views._aassert_project_scope` = 按蓝图自身 `meta.project_id` 反查 + 校验 `ProjectMember`，**fail-closed**（读不到/非 UUID → 400）、越权回**中性 404**（不泄露存在性）、superuser 直通；范围**只从蓝图推导，绝不接受请求体里的 `project_id`**。⚠️ 同时订正一条既有认知：本仓**有**项目成员概念（`initiatives.ProjectMember` / `permissions.IsProjectMember` / `chat.conversation_service._is_project_member`），关键约束节「项目成员皆可确认/评论/编辑」现在是真的有闸，不再是「全员皆可」。
+- [Phase 114 review 修复, 2026-07-31]: **人不该在确认之后无声覆盖已确认内容（MJ-04）**——与「AI 不得覆盖人工」对称。`blueprint_lifecycle_service.EDITABLE_BLUEPRINT_STATUSES` / `is_blueprint_editable` 是**唯一**判据（含 `""` 以兼容 v0 数据），`edit-blocks` 与 `answer` 双侧收口；越界要改必须先驳回（`confirmed → drafting` 是合法边）再重走人审。理由：`edit-blocks` 原先全程不读 `blueprint_status` ⇒ 已 `confirmed`/`implementing` 的蓝图可继续落 `human_edit:` 版本而状态不变，下游拿到的 `current_version` 已不是当初被确认的那一版（确认锚定的内容被事后掉包且无痕），且 `human_edit:` 前缀是 B3 人工块保护的判据源，保护集会凭空扩大。**115/116 新增任何改写蓝图正文的路径都必须过这道闸。**
+- [Phase 114 review 修复, 2026-07-31]: **同一 rule 的不同形态必须由 `rule_id` 区分，不能靠 `section_path`**（MN-03）：`finding_dedupe_key` 优先取 `block_id`，改 `section_path` 根本不改变键；而 `rule_id` 是 `_aload_finding_threads` 唯一能从线程首条消息 `[rule_id]` 前缀反查回来的段，也因此是唯一能让**第二轮**的键仍分得开的载体（给 `_finding` 加 `variant` 键无效——反查不回来）。`gate_lock_violation` 已拆成 `_MISSING`（保留原值）/`_ROLE`/`_RESPONSIBILITY` 三值。
+- [Phase 114 review 修复, 2026-07-31]: **终审态不由续驱驱动**（MN-06）：`blueprint_resume._HUMAN_OWNED_STATUSES`（`pending_review`/`confirmed`/`implementing`/`implemented`/`archived`/`superseded`）在状态映射前短路——这些状态的推进只归人审动作端点与下游 implementing 链。原先 `pending_review` + 未决 BLOCKER 会让映射器每次续驱都白抛一次非法边并刷一条 `blueprint_status_map_skipped`，真故障淹没在噪声里。
+- [Phase 114 review 修复, 2026-07-31]: **周期任务的「已完成」计数与事件必须在写回成功之后才落**（MN-04）；**扫描窗口必须显式排序**（MN-01）——`BlueprintThread.Meta` 无 `ordering`，无 `ORDER BY` 的 `LIMIT` 会让已提醒的线程永久占名额、后来的静默饿死。两条对 115/116 新增的任何「扫描 + 写锚点」周期任务同样适用。
 
 ### Pending Todos
 
@@ -118,6 +134,9 @@ Last activity: 2026-07-31 -- 114-05 交付人审七端点 + finding 处置通道
 - [Phase 114-05 有意边界] **提醒只到「记事件 + 写周期锚点」为止，渠道投递未实现**：这是 PLAN 的有意边界（飞书卡片重推/站内通知归 115/116 通知面）。当前运维能从 `blueprint_clarification_reminded` 事件看到「谁该被提醒、几个人、哪条线程」，但**用户收不到实际通知** ⇒ 115/116 接上通知面之前，CLAR-04 的用户可感知价值只兑现一半。收件人名单可经 `BlueprintReviewer` ∪ 蓝图会话发起人复算（⚠️ 反查会话必须带 `process_type="technical_blueprint"` 过滤）
 - [Phase 114-03 环境项] **`tests/mcp_tools/test_skills_snapshot_guard.py::test_skill_files_discovered` 在本 worktree 恒红**：断言 `skills/skills/*/SKILL.md` ≥4，而 worktree 的 `skills/` 是空目录（主检出里有内容）。纯 worktree 环境现象，与蓝图相位无关；里程碑收尾在主检出复跑即可
 - [Phase 112 残留 PARTIAL] **FLOW-02 的「替代建议」无结构化字段**：fitness 的 `reasons` 承载了理由，但 unsuitable 时的「建议改去哪个仓」未落成结构化字段（当前混在自由文本里）。113 若需机器消费该建议再补 schema 字段，否则留到 115 前端呈现时定夺
+- [Phase 114 review 跳过项] **MN-05：`blueprint_quality` 三项 DB 统计（`ai_rejection_rate` / `human_edit_volume` / `clarification_rounds`）零消费方** —— ⚠️ **115/116 必读**：SUMMARY 的「度量面闭环」只兑现到「口径已实装、可被调用」，**全仓无任何消费点**（既不进离线评估也不进 API / 大盘）。评审建议的「接进 `evaluate_blueprint_golden`」经核实**不可行**：golden case 是静态 JSON fixture（顶层只有 `name/description/blueprint/expected`，**无 `artifact_id`**，DB 里也不存在对应 artifact），而三项统计全部按 `artifact_id` 查 delivery models，且该 command 明写「全程无 DB 写、天然过 `--disable-socket`」——硬接只会得到三个恒 `None` 的键，比不接更糟。**正确消费面是 115/116 的运行时大盘 / 人审面板**（有真实 artifact_id 在手）。已在 `blueprint_quality.py` 的 DB 统计节源码处同步登记。详见 `.planning/phases/114-ai/114-REVIEW.md` Fix Log
+- [Phase 114 review 顺延项] **全仓仍有二十余处 `error=str(exc)` 未脱敏**（`crawl_service` / `work_item_service` / `coding_completion` / `comment_event_service` / `release_service` 等，均早于本纪律）。114 已把**蓝图链九个模块**收口并加了 AST 守卫 `tests/delivery/test_blueprint_log_redaction_guard.py`（新增蓝图模块请加进它的 `_SCANNED_MODULES`）。全仓收口另起独立清理，并可考虑把该守卫的扫描面逐步扩到全仓
+- [Phase 114 review 可再议] **`ConvergenceSessionService.areopen_stage` 未发 `ConvergenceSessionEvent`**：新事件类型属纯追加、本可做，但 §13.2 把既有事件类型/字段定为 consume-only，且复位已由 `convergence_session_reopened` 结构化日志 + `blueprint_review_rejected` 双重可归因。若 115 的事件时间线希望「人审驳回导致的会话复位」在时间线上可见，需新增一个 `blueprint.review.session_reopened` 事件常量（同步点 2 后与 0.19 的时间线契约一并定）
 
 ### Blockers/Concerns
 
@@ -135,6 +154,11 @@ Last activity: 2026-07-31 -- 114-05 交付人审七端点 + finding 处置通道
 
 ## Session Continuity
 
-Last session: 2026-07-31 — Phase 114 全量交付（114-01 线程底座 → 114-02 判定内核 → 114-04 回灌与人工编辑 → 114-03 ai_review stage → 114-05 人审端点与度量面收口）
-Next step: **Phase 115（前端查看器与知识库）** —— 可直接消费 `114-05-SUMMARY.md` 的七端点契约表（URL / `name` / 入参 / 状态码映射 / GET 快照响应键 / answer 的 `reflow` 键 / approve 409 的未决清单形状）与「Next Phase Readiness」节；版本溯源用 `produced_by_ref` 四前缀（`human_edit:` / `ai_review_reflow:` / `human_block_restore:` / `blueprint_review_reject:`）。⚠️ **115/116 必须接上通知面**：澄清提醒当前只落事件与周期锚点，用户收不到实际通知（见 Pending Todos）。
+Last session: 2026-07-31 — Phase 114 全量交付（114-01 线程底座 → 114-02 判定内核 → 114-04 回灌与人工编辑 → 114-03 ai_review stage → 114-05 人审端点与度量面收口）+ **code review 修复（10 fixed / 1 skipped，11 个原子 commit）**
+Next step: **Phase 115（前端查看器与知识库）** —— 可直接消费 `114-05-SUMMARY.md` 的七端点契约表（URL / `name` / 入参 / 状态码映射 / GET 快照响应键 / answer 的 `reflow` 键 / approve 409 的未决清单形状）与「Next Phase Readiness」节；版本溯源用 `produced_by_ref` 四前缀（`human_edit:` / `ai_review_reflow:` / `human_block_restore:` / `blueprint_review_reject:`）。
+
+⚠️ **开工前先读三条**：
+1. **端点契约有两处收紧**（项目成员闸 → 非成员 404 / 无 `meta.project_id` 400；finding 不可走 answer 通道 + 已确认蓝图不可编辑 → 400），详见上面 Current Position 节。
+2. **`orphaned_threads` 现在只装真失锚线程**（MJ-02），可直接当作「批注错位」清单呈现，不必再自行过滤系统线程。
+3. **两个 115 必须接的缺口**：① **通知面**——澄清提醒只落事件与周期锚点，用户收不到实际通知；② **`blueprint_quality` 三项统计零消费方**——口径已实装但无人消费，且**不能**接进 `evaluate_blueprint_golden`（golden case 无 `artifact_id`）。两条均见 Pending Todos。
 Resume file: 无（干净接力点：Phase 111–114 全部 commit 已入库）
