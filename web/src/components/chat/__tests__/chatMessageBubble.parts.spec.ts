@@ -47,14 +47,17 @@ vi.mock('~/components/chat/TechPlanCard.vue', () => ({
   default: defineComponent({
     name: 'TechPlanCard',
     // 109-06：透出 codingPlanId / techPlan / affectedFiles 供三级优先的传参断言。
-    // 卡片内部的解析优先级归 TechPlanCard.spec.ts，本文件只断言 bubble 传了什么。
-    props: ['planId', 'codingPlanId', 'sessionId', 'techPlan', 'affectedFiles', 'status', 'isConfirming', 'branchName'],
+    // 109-REVIEW HI-02：加透 provenance —— 卡片内部的判定归 TechPlanCard.spec.ts，
+    // 本文件只断言 bubble 到底把什么传下去了（漏传就是 RELY-01 误报的成因）。
+    props: ['planId', 'codingPlanId', 'sessionId', 'techPlan', 'affectedFiles', 'provenance', 'status', 'isConfirming', 'branchName'],
     setup: props => () => h('div', {
       'data-test': 'tech-plan-card',
       'data-status': props.status,
       'data-coding-plan-id': props.codingPlanId ?? '',
       'data-tech-plan': props.techPlan ?? '',
       'data-affected-count': String(props.affectedFiles?.length ?? 0),
+      'data-provenance': props.provenance ?? '',
+      'data-provenance-passed': String(props.provenance !== undefined),
     }),
   }),
 }))
@@ -634,5 +637,67 @@ describe('chatMessageBubble — 109-06 coding plan 正文数据源', () => {
     expect(card.exists()).toBe(true)
     expect(card.attributes('data-tech-plan')).toBe('# 历史方案正文')
     expect(card.attributes('data-affected-count')).toBe('1')
+  })
+
+  /**
+   * 🔴 109-REVIEW HI-02：正文与来源标志改由 **tool result** 承载。
+   *
+   * 修复前这两者对「非最新那一份 plan」的卡片同时取不到 —— input 里没有（SPINE-02
+   * 收窄），runtime 只指向「对话内最近一条 CodingPlan」。用户滚回去看第一份方案，
+   * 正文没了，还多了一条「本方案未经代码调研」——而它明明是编排产出的。这是最普通
+   * 的两方案会话，不是边缘场景。
+   */
+  const PLAN_RESULT_WITH_BODY = {
+    coding_plan_id: 'plan-uuid-1',
+    status: 'plan_only',
+    tech_plan: '# 编排产出的方案正文',
+    affected_files: [
+      { file_path: 'server/a.py', change_type: 'add' },
+      { file_path: 'server/b.py', change_type: 'modify' },
+    ],
+    provenance: 'orchestrated',
+  }
+
+  it('工具结果携带正文 / 影响文件 / provenance → 三者都经 props 传下（不依赖 runtime）', async () => {
+    const wrapper = await mountBubble(
+      codingPlanMessage(
+        { space_id: 's1', conversation_id: 'c1', artifact_version_id: 'av-1' },
+        JSON.stringify(PLAN_RESULT_WITH_BODY),
+      ),
+    )
+    const card = wrapper.find('[data-test="tech-plan-card"]')
+    expect(card.attributes('data-tech-plan')).toBe('# 编排产出的方案正文')
+    expect(card.attributes('data-affected-count')).toBe('2')
+    // 漏传 provenance 会让编排产出落进保守分支、被误挂草稿横幅（RELY-01 误报）
+    expect(card.attributes('data-provenance')).toBe('orchestrated')
+  })
+
+  it('工具结果为 dict（非 JSON string）时同样解析出正文与 provenance', async () => {
+    const wrapper = await mountBubble(
+      codingPlanMessage({ artifact_version_id: 'av-1' }, PLAN_RESULT_WITH_BODY),
+    )
+    const card = wrapper.find('[data-test="tech-plan-card"]')
+    expect(card.attributes('data-tech-plan')).toBe('# 编排产出的方案正文')
+    expect(card.attributes('data-provenance')).toBe('orchestrated')
+  })
+
+  it('结果里缺 provenance → 原样传 undefined，不在此处补默认值（保守分支归卡片判定）', async () => {
+    const wrapper = await mountBubble(
+      codingPlanMessage({ artifact_version_id: 'av-1' }, JSON.stringify(PLAN_RESULT)),
+    )
+    const card = wrapper.find('[data-test="tech-plan-card"]')
+    expect(card.attributes('data-provenance-passed')).toBe('false')
+  })
+
+  it('工具结果有正文时优先于 tool input（新旧两种来源并存的历史消息）', async () => {
+    const wrapper = await mountBubble(
+      codingPlanMessage(
+        { tech_plan: '# 旧 input 正文' },
+        JSON.stringify(PLAN_RESULT_WITH_BODY),
+      ),
+    )
+    expect(
+      wrapper.find('[data-test="tech-plan-card"]').attributes('data-tech-plan'),
+    ).toBe('# 编排产出的方案正文')
   })
 })

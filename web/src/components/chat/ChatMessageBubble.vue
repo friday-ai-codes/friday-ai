@@ -821,17 +821,16 @@ const codingPlanData = computed(() => {
   if (!planTool)
     return null
 
-  // tech_plan 和 affected_files 来自 tool input（不在 result 中）。
+  // tech_plan 和 affected_files 的**历史消息兜底**来源：tool input。
   //
   // 109-06：SPINE-02 已把这两个入参从 create/update_coding_plan 的 schema 里删掉，
-  // 因此**新消息**的 input 无此两键，这里取值恒为空串 / 空数组 —— 新消息的正文由
-  // runtime.coding_plan 或投影响应承载（见 TechPlanCard 的三级优先解析）。
-  // 🔴 这段取值降级为**历史消息兜底**，但不可删除：SPINE-02 之前的消息里 tech_plan
-  // 仍在 input 里，砍掉这里会让历史会话的方案卡集体变空。
+  // 因此**新消息**的 input 无此两键，这里取值恒为空串 / 空数组。
+  // 🔴 这段不可删除：SPINE-02 之前的消息里 tech_plan 仍在 input 里，砍掉这里会让
+  // 历史会话的方案卡集体变空。
   const input = planTool.input || {}
-  const techPlan = (input.tech_plan as string) || ''
+  const inputTechPlan = (input.tech_plan as string) || ''
   // ：兼容 file_path / path 两种 schema 字段名
-  const affectedFiles = (input.affected_files as Array<{ file_path?: string, path?: string, change_type: string }>) || []
+  const inputAffectedFiles = (input.affected_files as Array<{ file_path?: string, path?: string, change_type: string }>) || []
 
   // session_id / status / coding_plan_id 来自 tool result。
   // 防御性双轨：result 在快照(snapshot) / langchain_runner 路径里是 JSON string，
@@ -842,6 +841,16 @@ const codingPlanData = computed(() => {
   let repositoryId = ''
   let repositoryName = ''
   let recommendedRepositories: Array<{ id: string, name: string }> = []
+  // 109-REVIEW HI-02：正文 / 影响文件 / 来源标志改由 **tool result** 承载。
+  //
+  // 修复前这三者对「非最新那一份 plan」的卡片同时取不到：input 里已无正文（SPINE-02
+  // 收窄），而 runtime 的语义是「对话内**最近**一条 CodingPlan」⇒ 会话里一有第二份
+  // 方案，第一张卡就变成「（暂无方案正文）」并被误挂「本方案未经代码调研」横幅——
+  // 一次内容丢失回归 + 一次 RELY-01 误报（误报发生在主路径的常见形态上，用户很快
+  // 就会学会忽略这条横幅，信号自己把自己拆掉了）。
+  let resultTechPlan = ''
+  let resultAffectedFiles: Array<{ file_path?: string, path?: string, change_type: string }> = []
+  let provenance: string | null | undefined
   if (planTool.result) {
     const raw: unknown = planTool.result
     let parsed: {
@@ -851,6 +860,9 @@ const codingPlanData = computed(() => {
       repository_id?: string
       repository_name?: string
       recommended_repositories?: Array<{ id?: string, name?: string }>
+      tech_plan?: string
+      affected_files?: Array<{ file_path?: string, path?: string, change_type: string }>
+      provenance?: string | null
       status?: string
     } | null = null
     if (typeof raw === 'string') {
@@ -875,6 +887,11 @@ const codingPlanData = computed(() => {
             repo?.id && repo?.name ? [{ id: repo.id, name: repo.name }] : [],
           )
         : []
+      resultTechPlan = typeof parsed.tech_plan === 'string' ? parsed.tech_plan : ''
+      resultAffectedFiles = Array.isArray(parsed.affected_files) ? parsed.affected_files : []
+      // 🔴 不做任何归一化 / 兜底取值：`undefined` 必须原样传给 TechPlanCard，让它
+      // 走保守分支（标注）。在这里补一个默认值等于替后端签名。
+      provenance = typeof parsed.provenance === 'string' ? parsed.provenance : undefined
       sessionStatus = parsed.status || 'draft'
       // coding-plan workflow 工具不再产 session，新 status='plan_only' 映射回
       // 'draft' 让 TechPlanCard 走 showInlineSelector 渲染（hasSessions=false 时
@@ -890,7 +907,19 @@ const codingPlanData = computed(() => {
       ? [{ id: repositoryId, name: repositoryName }]
       : []
 
-  return { sessionId, planId, techPlan, affectedFiles, status: sessionStatus, targetRepositories }
+  // 工具结果优先、tool input 兜底：新消息走前者，SPINE-02 之前的历史消息走后者。
+  const techPlan = resultTechPlan || inputTechPlan
+  const affectedFiles = resultAffectedFiles.length > 0 ? resultAffectedFiles : inputAffectedFiles
+
+  return {
+    sessionId,
+    planId,
+    techPlan,
+    affectedFiles,
+    provenance,
+    status: sessionStatus,
+    targetRepositories,
+  }
 })
 
 // 编码方案的实时状态（优先使用 store 中的 activeCodingSession）
@@ -1210,6 +1239,7 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
               :session-id="codingPlanData.sessionId"
               :tech-plan="codingPlanData.techPlan"
               :affected-files="codingPlanData.affectedFiles"
+              :provenance="codingPlanData.provenance"
               :status="codingPlanStatus"
               :is-confirming="codingPlanConfirming"
               :branch-name="codingPlanBranchName"
