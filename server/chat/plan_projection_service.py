@@ -19,8 +19,10 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from asgiref.sync import sync_to_async
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 if TYPE_CHECKING:
     from chat.models import CodingPlan, Conversation
@@ -462,32 +464,49 @@ class PlanProjectionService:
                 )
 
             payload = map_merged_plan_to_coding_plan(av.content)
+            new_title = payload["title"][:200] or plan.title
+
+            # 🔴 109-REVIEW MN-02：正文与来源指针必须一次写完，不得分裂。
+            #
+            # 原实现是两次独立写（`aupdate_plan` 先落新正文，再 `asave` 写来源指针），
+            # 外面没有事务。后一次失败（唯一约束的并发窗口是设计上预期会发生的那种
+            # 失败）会留下「正文=新版本 Y、source_artifact_version_id=旧版本 X」的混
+            # 合态，而工具对用户报的是「什么都没变」——追溯链从此指向一个与正文无关的
+            # 版本，不报错、只能靠人肉比对发现。
+            #
+            # 用 `.update()` 而非 `asave()`：单条 UPDATE 语句，会撞唯一约束的那一列
+            # 与正文在同一次写里，不存在「正文已落、指针未落」的中间态。auto_now 不
+            # 作用于 `.update()`，故显式带 `updated_at`。
+            @sync_to_async
+            def _rebind_atomic() -> None:
+                with transaction.atomic():
+                    CodingPlan.objects.filter(pk=plan.pk).update(
+                        title=new_title,
+                        recommended_repository_ids=payload["recommended_repository_ids"],
+                        provenance=CodingPlanProvenance.ORCHESTRATED,
+                        source_artifact_version_id=av.id,
+                        tech_plan=payload["tech_plan"],
+                        affected_files=payload["affected_files"],
+                        updated_at=timezone.now(),
+                    )
 
             try:
-                # aupdate_plan 负责 tech_plan / affected_files 的原子更新与知识库重摄取。
-                await plan.aupdate_plan(
-                    tech_plan=payload["tech_plan"],
-                    affected_files=payload["affected_files"],
-                )
-                plan.title = payload["title"][:200] or plan.title
-                plan.recommended_repository_ids = payload["recommended_repository_ids"]
-                plan.provenance = CodingPlanProvenance.ORCHESTRATED
-                plan.source_artifact_version_id = av.id
-                await plan.asave(
-                    update_fields=[
-                        "title",
-                        "recommended_repository_ids",
-                        "provenance",
-                        "source_artifact_version_id",
-                        "updated_at",
-                    ]
-                )
+                await _rebind_atomic()
             except IntegrityError as exc:
                 # 前置查询与写入之间的并发窗口 —— 抛同一机器码（fail-closed）。
+                # 单事务保证：走到这里时 DB 里的正文与来源指针都还是改写前的旧值。
                 raise PlanProjectionError(
                     "该方案版本已被另一条编码方案占用",
                     code=ERROR_ARTIFACT_VERSION_ALREADY_PROJECTED,
                 ) from exc
+
+            # 事务已提交，把新值同步回内存实例（调用方直接读 plan.tech_plan）。
+            plan.title = new_title
+            plan.recommended_repository_ids = payload["recommended_repository_ids"]
+            plan.provenance = CodingPlanProvenance.ORCHESTRATED
+            plan.source_artifact_version_id = av.id
+            plan.tech_plan = payload["tech_plan"]
+            plan.affected_files = payload["affected_files"]
         except PlanProjectionError as exc:
             self._log_failed(
                 started=started,
@@ -504,6 +523,19 @@ class PlanProjectionService:
                 code="unexpected_error",
             )
             raise
+
+        # 知识库重摄取移到事务之后（原先由 `aupdate_plan` 内联触发）：摄取是网络 IO，
+        # 留在事务里会把事务时长绑到外部服务上；且它 best-effort —— 摄取失败绝不让
+        # 已提交的 re-bind 变成失败。后台任务显式携带触发用户（无则 "system"）。
+        try:
+            from knowledge import ingestion  # lazy import 防循环
+
+            await ingestion.aschedule_ingestion(
+                ingestion.IngestionRequest("coding_plan", str(plan.id), "chat_plan_updated"),
+                initiated_by_user_id=actor_user_id,
+            )
+        except Exception:  # noqa: BLE001 — 知识库摄取 best-effort，不反噬 re-bind
+            pass
 
         try:
             logger.info(
