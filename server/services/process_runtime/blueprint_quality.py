@@ -109,6 +109,18 @@ def target_repo_hit_rate(blueprint: dict, expected_direct_repo_names: list[str])
 # ⭐ **无数据一律返回 None 而不是 0**：0 = 「统计到了，值为零」（真实的零打回 / 零人工
 # 修改），None = 「没有数据源可算」。混为一谈会让 evaluate_blueprint_golden 把「这个
 # 蓝图还没跑过审查」当成「零打回」，指标看着漂亮而实际什么都没测。
+#
+# ⚠️ **本节三项目前零消费方**（114-MN-05，登记在案，非缺陷）：全仓除自身定义与单测外无
+# 调用点，既不进离线评估也不进任何 API / 大盘。SUMMARY 的「度量面闭环」只兑现到「口径已
+# 实装、可被调用」这一层，**不要**据此以为已有消费面。
+#
+# ⛔ 它们**不能**接进 `evaluate_blueprint_golden`：那条 command 的 golden case 是静态 JSON
+# fixture（顶层只有 name/description/blueprint/expected，**没有 artifact_id**，DB 里也不存在
+# 对应 artifact），而本节三项全部按 `artifact_id` 查 delivery models；且该 command 明写
+# 「全程无 DB 写、天然过 --disable-socket」。硬接的结果只会是三个恒 None 的键——那比不接
+# 更糟（看着有指标，实则永远无数据）。
+# 正确的消费面是 115/116 的运行时大盘 / 人审面板（有真实 artifact_id 在手），见
+# `.planning/STATE.md` 的 Deferred。
 # ---------------------------------------------------------------------------
 
 
