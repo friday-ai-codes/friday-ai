@@ -25,9 +25,9 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 ## Current Position
 
 Phase: 115 (前端查看器与知识库（结构化阅读 + 批注 + 管理面）) — EXECUTING
-Plan: 3 of 7
-Status: 115-02（前端数据层与纯函数地基）已收口——13 个源文件 + 6 个测试文件（150 例全绿）+ 三处零删除行纯追加；前端门 vitest 1464 passed / type-check 通过 / 本 plan 文件零新增 lint 问题。下一个 115-03 起「照契约拼组件」，⭐ **契约逐字见 `115-02-SUMMARY.md` §4–§8**
-Last activity: 2026-08-01 -- 115-02 executed
+Plan: 4 of 7
+Status: 115-03（块渲染 / 批注可视层 / 引用二级预览）已收口——9 个新建组件 + 2 个测试文件（43 例全绿），前端门 vitest **1507 passed / 1 skipped**（基线 1464/1，+43 零回归）、type-check 通过、`eslint src/components/blueprint/` **0 problems**（全仓仍是 111 个既有问题，未增未减）。⭐ **源码守卫扫描面首次非空（11 个文件）**，断言 6/10 从此真正生效。⛔ 零既有源文件修改（唯一例外是 unplugin 生成的 `components.d.ts`，+9/−0）、零新增依赖、后端零改动
+Last activity: 2026-08-01 -- 115-03 executed
 
 ⭐ **115-03 起开工前必读 `115-02-SUMMARY.md` §14 的五条注意**，其中三条最容易踩：
 
@@ -160,6 +160,9 @@ Last activity: 2026-08-01 -- 115-02 executed
 - [Phase 115-02 范围收窄 · P-5] ⭐ **SC-4 的 `associations` 段本相位只做「本蓝图引用了」+「关联项目」**，**「引用了本蓝图 / 关联知识」顺延 Phase 116 的知识图谱物化**。理由：`knowledgeApi.getRelated` / `getArtifactAssociations` 查的是 `initiatives.Artifact` 投影的 KnowledgeEntity（`server/knowledge/artifact_associations.py:75`），而蓝图存在 `delivery.Artifact` ⇒ 拿蓝图 id 去调**必然 404/空**。`web/src/api/blueprints.ts` 与本相位任何文件对这两个符号**零调用**（已加验收断言）。116 做图谱物化时一并补这两块呈现。
 - [Phase 115-02 环境项] **pnpm 10.34.2 会漂移 `web/pnpm-workspace.yaml`**：在本 worktree 跑**任何** `pnpm` 命令（含 `pnpm exec vitest`）都会自动向 `catalogs` 回填缺失条目（`three` / `mermaid` / `wordcloud` / `3d-force-graph` / `medium-zoom` / `@types/*`）。⭐ **115-03 起每个前端 plan 跑完门之后请 `git status` 检查并 `git checkout -- web/pnpm-workspace.yaml` 还原**，否则会被边界核算误判为「新增依赖」。
 - [Phase 115-02 验收脚本缺陷（非实现缺陷）] **计划里 404 竞品键的验收正则 `/notFound$|notExist|forbidden/i` 会误伤获批键本身**——带 `/i` 且 `forbidden` 是子串匹配 ⇒ 把唯一获批的 `notFoundOrForbidden` 判为竞品，脚本恒抛错。修正判据：**先排除获批键再扫竞品**。已用修正版复跑通过（实现无缺陷）。后续 plan 若复用该脚本请一并改正。
+- [Phase 115-03 回报项 · ⭐ 115-06 必接] **仓库章程四分区的小标题缺 i18n 键（4 个）**：`CitationCharterPreview` 需要「仓库定位 / 归属域 / 边界禁区 / 落点偏好」四个标签，而 `knowledge.blueprints.repo.*` 子树里没有，**全仓亦无任何 `charter*` 文案键**（实测只有 `citation.sourceRepoCharter` =「仓库章程」）。i18n 三处追加点已由 115-02 一次做完并对本相位关闭 ⇒ 115-03 按 §13.2 **回报而不自补**，降级为「卡片用既有的『仓库章程』作标题、四个分区不渲染文字小标题，分区身份改由 `data-charter-section="<后端字段名>"` 承载」。建议补 `repo.charterPositioning` / `repo.charterOwnedDomains` / `repo.charterBoundaries` / `repo.charterPlacement`；补齐后只需在 `sections` 计算里加回 `label` 并在模板渲染一行 `<p>`，**无结构改动**。详见 `115-03-SUMMARY.md` §9。
+- [Phase 115-03 环境事实] **happy-dom 20.10.2 的 `createTreeWalker(SHOW_TEXT)` 会把注释节点一并返回**（Vue 的 `<!--v-if-->` 等，`length` 为 0）。**对生产逻辑无影响**（`offsetInFlatText` 累加 0，offset 结果正确；真实浏览器的 `SHOW_TEXT` 本就不含注释），但**测试里不能用「取第一个文本节点」**——会拿到长度 0 的节点、`range.setEnd` 直接 `IndexSizeError`。115-04/05 写选区相关用例时请按内容找文本节点（范式见 `__tests__/BlueprintBlock.spec.ts` 的 `textNodeWith`）。⛔ 不要为此改 `collectTextNodes`（生产行为正确）。
+- [Phase 115-03 视觉待定] **越界降级「整块左色条」的色相目前落在下边框而非左边**：`annotationClass()` 产出的是 `border-bottom` + `bg-*` 字面量类，而运行期拼出来的任意值类名 Tailwind 不会生成规则 ⇒ 无法把它改写成 `border-left`。当前实现是「中性 2px 左描边 + 色相底纹与下边框」，降级身份由 `data-testid="blueprint-block-degraded"` 与计数角标承载。若 UAT 判定需要真正的左侧色条，正解是给 `annotationTokens.ts` 增一个 `annotationBarClass()` 字面量表，⛔ 不在组件里补颜色。
 - [Phase 114 review 可再议] **`ConvergenceSessionService.areopen_stage` 未发 `ConvergenceSessionEvent`**：新事件类型属纯追加、本可做，但 §13.2 把既有事件类型/字段定为 consume-only，且复位已由 `convergence_session_reopened` 结构化日志 + `blueprint_review_rejected` 双重可归因。若 115 的事件时间线希望「人审驳回导致的会话复位」在时间线上可见，需新增一个 `blueprint.review.session_reopened` 事件常量（同步点 2 后与 0.19 的时间线契约一并定）
 
 ### Blockers/Concerns
@@ -178,8 +181,12 @@ Last activity: 2026-08-01 -- 115-02 executed
 
 ## Session Continuity
 
-Last session: 2026-08-01T03:15:00.000Z
-Next step: **Phase 115-03（起「照契约拼组件」）** —— ⭐ **契约唯一来源是 [`115-02-SUMMARY.md`](./phases/115-ui/115-02-SUMMARY.md) 的 §4–§8**：TS 类型与文件路径（§4.1）、`api/blueprints.ts` 19 个函数签名与 `repositoryChunks` 的 `{chunks, usable}`（§4.2/§4.3）、纯函数完整清单并标注**哪两个触 DOM**（§5）、`annotationClass` 签名与全部分档（§6）、12 态配置 / store / 三个 composable 的返回结构（§7）、i18n 顶层键与 safelist 两种 icon 契约（§8）。`useBlueprintLive` 的返回键与 `sectionProgress` 形状见 §3。⛔ **不要回头看 UI-SPEC 的 §3.3 / §3.6 / §7.4 / §8.3 / §10.1**——这五处已被 115-01/115-02 订正，原文过时。
+Last session: 2026-08-01T03:50:00.000Z
+Next step: **Phase 115-05 / 115-06（段组件与页面装配）** —— 115-03 与 115-04 同为 wave 3。⭐ **组件契约唯一来源是 [`115-03-SUMMARY.md`](./phases/115-ui/115-03-SUMMARY.md)**：`BlueprintBlock` / `BlueprintBlockList` 的 props/emits 逐字（§2，含对 UI-SPEC §6.2 的**一处订正 + 两处扩写**）、**DOM 契约表**（§3，115-04/05/06 的组件测试按它定位）、五类块「是否可字符级划线」对照表与三态分档（§4）、**选区侦测完整契约**（§5）、引用预览分发表与兜底判据（§6，含 `CitationCodePreview` 的降级形态与证据链）、**UAT 清单 8 条**（§11）、⚠️ **回报给 115-06 的 4 个 i18n 缺口**（§9，章程四分区小标题）。
+
+三条最容易踩：① `thread-click` 是**两个参数**（`threadId`, `allThreadIds`）；② `SelectionPayload` 从 `BlueprintBlockList.vue` `import type`，⛔ 不各自重写；③ 段组件一律经 `BlueprintBlockList` 透传，⛔ 不再自建第二套划线逻辑与 DOM 标识。
+
+以下仍然有效（来自 115-02）：⭐ **数据层契约唯一来源是 [`115-02-SUMMARY.md`](./phases/115-ui/115-02-SUMMARY.md) 的 §4–§8**：TS 类型与文件路径（§4.1）、`api/blueprints.ts` 19 个函数签名与 `repositoryChunks` 的 `{chunks, usable}`（§4.2/§4.3）、纯函数完整清单并标注**哪两个触 DOM**（§5）、`annotationClass` 签名与全部分档（§6）、12 态配置 / store / 三个 composable 的返回结构（§7）、i18n 顶层键与 safelist 两种 icon 契约（§8）。`useBlueprintLive` 的返回键与 `sectionProgress` 形状见 §3。⛔ **不要回头看 UI-SPEC 的 §3.3 / §3.6 / §7.4 / §8.3 / §10.1**——这五处已被 115-01/115-02 订正，原文过时。
 
 以下仍然有效（来自 114-05）：可消费 `114-05-SUMMARY.md` 的七端点契约表（URL / `name` / 入参 / 状态码映射 / GET 快照响应键 / answer 的 `reflow` 键 / approve 409 的未决清单形状）与「Next Phase Readiness」节；版本溯源用 `produced_by_ref` 四前缀（`human_edit:` / `ai_review_reflow:` / `human_block_restore:` / `blueprint_review_reject:`）。
 
