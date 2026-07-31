@@ -185,7 +185,7 @@ Plans:
 Plans:
 
 - [x] 109-01-PLAN.md — SPA 四步同一 `plan_id` 端到端护栏 + MCP 桥接三对象锁 + 两个 chat `@tool` 签名 fixture baseline（wave 1，零生产改动）
-- [x] 109-02-PLAN.md — `CodingPlan` 加 `provenance` / `source_artifact_version_id` + 条件唯一约束 + additive 迁移 + 双序列化面透出（wave 2）
+- [x] 109-02-PLAN.md — `CodingPlan` 加 `provenance` / `source_artifact_version_id` + 无条件唯一约束 + additive 迁移 + 双序列化面透出（wave 2）
 - [x] 109-03-PLAN.md — §7 → `CodingPlan` 纯映射 + `PlanProjectionService` 幂等投影 + 惰性投影端点（wave 3）
 - [x] 109-04-PLAN.md — `OrchestratedPlanCard.vue`「进入编码」入口 + 就地交棒 + `UNGROUPABLE_TOOLS` 与工具展示三处登记（wave 4）
 - [x] 109-05-PLAN.md — `create/update_coding_plan` 两个门一起在 schema 层收窄 + 正向不变量守护 + 11 处影响面同步（wave 5）
