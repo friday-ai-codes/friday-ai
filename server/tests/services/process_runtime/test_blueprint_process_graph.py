@@ -1,13 +1,17 @@
-"""technical_blueprint stage graph + 九个 handler + 蓝图续驱判据测试（112-05；113-06 扩）。
+"""technical_blueprint stage graph + 十个 handler + 蓝图续驱判据测试（112-05；113-06/114-03 扩）。
 
 本文件守以下几件事（第一条最重要）：
 
 1. **既有 technical_plan 链路零扰动**：``_TECHNICAL_PLAN_STAGES`` 的 stage key 集合、每个
    stage 的 ``transitions`` / ``pausable`` / ``wait_status`` 逐字等于字面快照——任何改动即红。
    113-06 追加两 stage 后另有一条断言：旧链 ``merge.exhausted`` 仍指向 ``STAGE_FAILED``。
-2. ``technical_blueprint`` 注册项存在：九 stage（112 的七个 + 113 的
-   ``repo_plan`` / ``merge``）、``initial_stage == "intake"``、每个 ``StageDef.key`` 等于
-   dict 键、所有 transition target 合法、九个 stage 从 ``intake`` 全部可达。
+2. ``technical_blueprint`` 注册项存在：十 stage（112 的七个 + 113 的
+   ``repo_plan`` / ``merge`` + 114-03 的 ``ai_review``）、``initial_stage == "intake"``、
+   每个 ``StageDef.key`` 等于 dict 键、所有 transition target 合法、十个 stage 从
+   ``intake`` 全部可达。
+2c. ⭐ **114 接续点已接续**：蓝图链 ``merge.merged == "ai_review"``，而旧链
+   ``merge.merged`` 仍是 stage 终态（正反并列，证明只改了蓝图链）；``ai_review`` 的
+   ``review_exhausted`` 指 stage 终态而非 failed 终态。
 2b. ⭐ **蓝图链零 failed 出边**（W3，遍历全图值集合的运行时断言）+ 旧链正向对照
    （证明 ``STAGE_FAILED`` 可被检出、断言非恒真）。
 3. ``reroute.transitions["exhausted"] == "repo_confirmation"`` 且 ``!= STAGE_FAILED``
@@ -76,7 +80,12 @@ BLUEPRINT_STAGE_KEYS_112 = (
 # 113-06 追加的阶段 2/3。
 BLUEPRINT_STAGE_KEYS_113 = ("repo_plan", "merge")
 
-BLUEPRINT_STAGE_KEYS = set(BLUEPRINT_STAGE_KEYS_112) | set(BLUEPRINT_STAGE_KEYS_113)
+# 114-03 追加的阶段 4（AI 对抗审查）。
+BLUEPRINT_STAGE_KEYS_114 = ("ai_review",)
+
+BLUEPRINT_STAGE_KEYS = (
+    set(BLUEPRINT_STAGE_KEYS_112) | set(BLUEPRINT_STAGE_KEYS_113) | set(BLUEPRINT_STAGE_KEYS_114)
+)
 
 # ── technical_plan 冻结快照（改动即红）──────────────────────────────────────
 _TECHNICAL_PLAN_SNAPSHOT: dict[str, dict[str, Any]] = {
@@ -221,13 +230,22 @@ def test_confirmed_edge_enters_stage_two() -> None:
 
 
 def test_merge_merged_is_the_114_handoff_point() -> None:
-    """114 接续点：``merge.merged`` 现指 stage 终态，追加 ai_review 时改这一个值即可。"""
+    """114 接续点**已接续**（114-03）：``merge.merged`` 现指 ``ai_review``。
+
+    配一条**正向对照**：旧 ``technical_plan`` 链的 ``merge.merged`` 仍是 stage 终态 ——
+    证明本 plan 只改了蓝图链那一行，旧链零感知（断言非恒真）。
+    """
     stages = get_process_definition("technical_blueprint").stages
-    assert stages["merge"].transitions["merged"] == STAGE_DONE
+    assert stages["merge"].transitions["merged"] == "ai_review"
+    assert bp._TECHNICAL_PLAN_STAGES["merge"].transitions["merged"] == STAGE_DONE, (
+        "旧 technical_plan 链的 merge.merged 被误改"
+    )
     # 超界不走单独的 exhausted 出边（handler 把它映射成 merged）；若真有该 event，
     # 它也绝不许指向 failed 终态。
     assert stages["merge"].transitions.get("exhausted") != STAGE_FAILED
     assert stages["repo_plan"].transitions["plan_complete"] == "merge"
+    # 审查超界的出口是 stage 终态（携未决清单进人审），**绝不是** failed 终态。
+    assert stages["ai_review"].transitions["review_exhausted"] == STAGE_DONE
 
 
 def test_blueprint_chain_has_no_failed_edge_but_old_chain_still_does() -> None:
@@ -256,7 +274,14 @@ def test_old_chain_merge_exhausted_still_lands_failed() -> None:
 def test_pausable_stages_have_legal_wait_status_and_self_loop() -> None:
     stages = get_process_definition("technical_blueprint").stages
     pausable = {key for key, stage in stages.items() if stage.pausable}
-    assert pausable == {"spec_gate", "repo_research", "repo_confirmation", "repo_plan", "merge"}
+    assert pausable == {
+        "spec_gate",
+        "repo_research",
+        "repo_confirmation",
+        "repo_plan",
+        "merge",
+        "ai_review",
+    }
     for key in pausable:
         stage = stages[key]
         assert stage.wait_status in ("waiting_clarification", "waiting_event")
@@ -288,8 +313,8 @@ def test_every_stage_is_reachable_from_the_initial_stage() -> None:
 
 def test_handler_count_and_registration_count() -> None:
     source = Path(bp.__file__).read_text(encoding="utf-8")
-    # 7（112-05 阶段 0/1）+ 2（113-06 阶段 2/3）= 9
-    assert len(re.findall(r"^async def _h_bp_", source, re.MULTILINE)) == 9
+    # 7（112-05 阶段 0/1）+ 2（113-06 阶段 2/3）+ 1（114-03 阶段 4）= 10
+    assert len(re.findall(r"^async def _h_bp_", source, re.MULTILINE)) == 10
     assert len(re.findall(r"^register_process_type\(", source, re.MULTILINE)) == 3
 
 
@@ -558,6 +583,9 @@ async def test_confirmation_handler_returns_confirmed_from_adapter() -> None:
         (bp._h_bp_repo_plan, "needs_clarification"),
         # D-W4：merge 缺依赖既不自旋（remerge）也不假装成功（merged），停在本 stage 等人。
         (bp._h_bp_merge, "needs_clarification"),
+        # D-W4 同款：审查缺依赖既不自旋也不假装通过（review_passed = 零 finding 落库却
+        # 判「待人审通过」，人审面板上什么都看不到 —— 最坏的静默失败）。
+        (bp._h_bp_ai_review, "needs_clarification"),
     ],
 )
 async def test_handlers_pass_through_without_deps(handler: Any, expected: str) -> None:
