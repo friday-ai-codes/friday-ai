@@ -382,11 +382,16 @@ function isDraftGateRejection(err: unknown): boolean {
   return (body as { code?: unknown }).code === ERROR_CODE_DRAFT_REQUIRES_CONFIRM
 }
 
-/** gate 拒绝的兜底呈现：前端常量 toast + 重新打开弹层让用户走正规确认。 */
+/**
+ * gate 拒绝的兜底呈现：前端常量 toast，不重开弹层。
+ *
+ * 只有「服务端判定为草稿、前端判定为编排」这种不一致才会走到这里，此时弹层本就
+ * 不会在提交前出现。重开弹层会得到一个无人 await 的 promise —— 用户勾选确认后
+ * 什么都不会发生，比不弹更糟。让用户从原入口重来，行为自洽。
+ */
 function handleDraftGateRejection(): void {
   toastError(DRAFT_GATE_REJECTED_MESSAGE)
-  // 不自动补 ack、不静默重放请求：重放需要用户在新弹层里重新勾选。
-  void openUnresearchedDialog()
+  // 不自动补 ack、不静默重放请求：ack 只能由用户在正规弹层里勾选产生。
 }
 
 function onExportSuccess(
