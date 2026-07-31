@@ -497,6 +497,48 @@ describe('chatMessageBubble 编排产出卡片渲染分支', () => {
     },
   )
 
+  it('异步路径：同一消息两条同名编排工具时，卡片挂在带 artifact_version_id 的那条上', async () => {
+    // 跨仓调研的常态路径：waiting → executing 二次运行 SDK，于是同一条消息里
+    // 累积两条 start_plan_research —— 第一条 result 是 __blocking_task__（无
+    // artifact_version_id），第二条才是终态。若解析改回「在 toolCalls 里 find
+    // 第一条」，取到的恒是阻塞态 ⇒ 卡片一张都不渲染，SPINE-01 的「进入编码」
+    // 入口在正常路径上彻底消失（不报错、不崩，只是没有入口）。
+    const wrapper = await mountBubble(makeMessage({
+      parts: [
+        {
+          type: 'tool_use',
+          id: 'p1',
+          index: 0,
+          tool_call_id: 'c1',
+          name: 'start_plan_research',
+          input: { requirement: '打通编排产出到编码执行' },
+          status: 'done',
+          result: JSON.stringify({
+            __blocking_task__: true,
+            task_type: 'plan_research',
+            task_id: 'sess-1',
+            session_id: 'sess-1',
+          }),
+        },
+        {
+          type: 'tool_use',
+          id: 'p2',
+          index: 1,
+          tool_call_id: 'c2',
+          name: 'start_plan_research',
+          input: { session_id: 'sess-1' },
+          status: 'done',
+          result: JSON.stringify(DONE_RESULT),
+        },
+      ],
+    }))
+
+    const cards = wrapper.findAll('[data-test="orchestrated-plan-card"]')
+    // 恰好一张：阻塞态那条不渲染，终态那条渲染
+    expect(cards).toHaveLength(1)
+    expect(cards[0].attributes('data-artifact-version-id')).toBe('av-uuid-1')
+  })
+
   it('result 为 dict 形态（历史 chat_runner 路径）同样解析出 artifact_version_id', async () => {
     const wrapper = await mountBubble(
       orchestrationMessage('start_plan_research', DONE_RESULT),

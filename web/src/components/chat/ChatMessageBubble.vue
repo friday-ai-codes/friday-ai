@@ -785,26 +785,32 @@ function isOrchestrationTool(name: string): boolean {
  * 返回数据，否则返回 null —— 编排在途（`__blocking_task__` 形态，无该字段）与
  * 失败一律不渲染卡片，这是裁决 D-4「在途完全不呈现」的机械抓手。
  *
+ * 🔴 必须按**传入的那一条** tool call 解析，不能在 toolCalls 里 find 第一条编排工具。
+ * 异步路径（跨仓调研的常态）上 `waiting → executing` 会二次运行 SDK，同一条消息里
+ * 因此累积两条同名编排工具：第一条 result 是 `__blocking_task__`（无 artifact_version_id），
+ * 第二条才是 `status === 'done'`。用 find 取到的恒是第一条 ⇒ 卡片永远不渲染，
+ * SPINE-01 的「进入编码」入口在正常路径上直接消失。
+ *
  * 解析沿用 codingPlanData 的防御性双轨：result 可能是 JSON string 也可能是
  * dict，两种都吃，解析失败返回 null 不抛。
  */
-const orchestratedPlanData = computed<{ artifactVersionId: string } | null>(() => {
-  const tool = toolCalls.value.find(tc => isOrchestrationTool(tc.name))
-  if (!tool || !tool.result)
+function resolveOrchestratedPlanData(
+  result: unknown,
+): { artifactVersionId: string } | null {
+  if (!result)
     return null
 
-  const raw: unknown = tool.result
   let parsed: { status?: string, artifact_version_id?: string | null } | null = null
-  if (typeof raw === 'string') {
+  if (typeof result === 'string') {
     try {
-      parsed = JSON.parse(raw)
+      parsed = JSON.parse(result)
     }
     catch {
       parsed = null
     }
   }
-  else if (typeof raw === 'object') {
-    parsed = raw as { status?: string, artifact_version_id?: string | null }
+  else if (typeof result === 'object') {
+    parsed = result as { status?: string, artifact_version_id?: string | null }
   }
   if (!parsed || parsed.status !== 'done')
     return null
@@ -813,7 +819,7 @@ const orchestratedPlanData = computed<{ artifactVersionId: string } | null>(() =
   if (typeof versionId !== 'string' || versionId === '')
     return null
   return { artifactVersionId: versionId }
-})
+}
 
 // 从 toolCalls 中提取 coding plan 数据
 const codingPlanData = computed(() => {
@@ -1248,10 +1254,14 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
               :recommended-repository-ids="codingPlanData.targetRepositories.map(r => r.id)"
               @confirm="(_planId, sessionId, branchName, targetBranch) => sessionId && chatStore.handleConfirmCodingSession(sessionId, branchName, targetBranch)"
             />
-            <!-- 109-04：编排产出「进入编码」入口。三条渲染条件同时成立才渲染 -->
+            <!--
+              109-04：编排产出「进入编码」入口。三条渲染条件同时成立才渲染。
+              🔴 按 item.result 逐条解析——异步路径上同一消息有两条同名编排工具，
+              只有携带 artifact_version_id 的那一条才渲染卡片。
+            -->
             <OrchestratedPlanCard
-              v-if="isOrchestrationTool(item.name) && item.status === 'done' && orchestratedPlanData"
-              :artifact-version-id="orchestratedPlanData.artifactVersionId"
+              v-if="isOrchestrationTool(item.name) && item.status === 'done' && resolveOrchestratedPlanData(item.result)"
+              :artifact-version-id="resolveOrchestratedPlanData(item.result)!.artifactVersionId"
             />
             <div v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name) && !isOrchestrationTool(item.name)" class="tool-detail">
               <div class="tool-detail-section">
