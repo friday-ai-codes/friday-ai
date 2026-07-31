@@ -14,10 +14,12 @@
 import type { ConversationMessage } from '~/types/chat'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 
 import ChatMessageBubble from '~/components/chat/ChatMessageBubble.vue'
+import OrchestrationStageTimeline from '~/components/chat/OrchestrationStageTimeline.vue'
+import { useChatStore } from '~/stores/chat'
 import legacyFixtures from './fixtures/legacy-messages.json'
 
 vi.mock('~/composables/useMarkdownRenderer', () => ({
@@ -741,5 +743,269 @@ describe('chatMessageBubble — 109-06 coding plan 正文数据源', () => {
     expect(
       wrapper.find('[data-test="tech-plan-card"]').attributes('data-tech-plan'),
     ).toBe('# 编排产出的方案正文')
+  })
+})
+
+/**
+ * 110-07：编排在途 UI（阶段时间线 + 调研容器日志组）在气泡上的挂载契约。
+ *
+ * 本组不 stub 两个新组件——「时间线绑到哪个会话」「日志组挂在哪条气泡上」这两件事
+ * 只有在真实组件树上才读得出来。
+ */
+describe('chatMessageBubble — 110-07 编排进度挂载', () => {
+  const TIMELINE = '[data-test="orchestration-stage-timeline"]'
+  const LOG_GROUP = '[data-test="plan-research-log-group"]'
+
+  let store: ReturnType<typeof useChatStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    store = useChatStore()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  /** 让某个会话在 store 里「至少有一条已知事实」，时间线的组件侧门才会放行。 */
+  function seedBucket(sessionId: string, overrides: Record<string, unknown> = {}) {
+    store.orchestrationSessions[sessionId] = {
+      sessionId,
+      snapshot: {
+        session_id: sessionId,
+        status: 'running',
+        current_stage: 'research',
+        has_classify: false,
+        segment_count: 3,
+        failure: null,
+        events: [],
+        events_truncated: false,
+        ...overrides,
+      },
+      events: [],
+      eventsTruncated: false,
+    }
+  }
+
+  function seedResearchSessions(planSessionId: string, repos: Array<[string, string]>) {
+    store.planResearchSessions = repos.map(([id, name], i) => ({
+      session_id: `sub-${planSessionId}-${i}`,
+      plan_session_id: planSessionId,
+      repository_id: id,
+      repository_name: name,
+      status: 'RUNNING',
+      logs: [{ type: 'text', content: `${name} 调研中`, ts: i + 1 }],
+    }))
+  }
+
+  const BLOCKING = (sessionId: string) => JSON.stringify({
+    __blocking_task__: true,
+    task_type: 'plan_research',
+    task_id: sessionId,
+    session_id: sessionId,
+  })
+
+  const TERMINAL = (sessionId: string, artifactVersionId = 'av-uuid-1') => JSON.stringify({
+    session_id: sessionId,
+    artifact_version_id: artifactVersionId,
+    status: 'done',
+  })
+
+  function toolPart(id: string, index: number, result: unknown, status: 'running' | 'done' = 'done') {
+    return {
+      type: 'tool_use' as const,
+      id,
+      index,
+      tool_call_id: `c${index}`,
+      name: 'start_plan_research',
+      input: { requirement: '打通编排产出到编码执行' },
+      status,
+      result: result as string | undefined,
+    }
+  }
+
+  function orchestrationMsg(parts: ReturnType<typeof toolPart>[], id = 'msg-test') {
+    return makeMessage({ id, parts })
+  }
+
+  // ---- 挂载与单次渲染 -----------------------------------------------------
+
+  it('在途编排 tool item + store 有桶 ⇒ 渲染时间线，且不渲染编排产出卡片', async () => {
+    seedBucket('S1')
+    const wrapper = await mountBubble(orchestrationMsg([toolPart('p1', 0, BLOCKING('S1'))]))
+    expect(wrapper.find(TIMELINE).exists()).toBe(true)
+    // 在途无 artifact_version_id ⇒ 裁决 D-4「在途完全不呈现」
+    expect(wrapper.find('[data-test="orchestrated-plan-card"]').exists()).toBe(false)
+  })
+
+  it('同一消息两条同名编排 tool call ⇒ 时间线恰渲染一次，且挂在末条上', async () => {
+    seedBucket('S1')
+    const wrapper = await mountBubble(orchestrationMsg([
+      toolPart('p1', 0, BLOCKING('S1')),
+      toolPart('p2', 1, TERMINAL('S1')),
+    ]))
+    // 🔴 去掉 item.id === lastOrchestrationToolItemId 这个条件，这里会变成 2
+    expect(wrapper.findAll(TIMELINE)).toHaveLength(1)
+
+    const bubbles = wrapper.findAll('.tool-inline')
+    expect(bubbles).toHaveLength(2)
+    expect(bubbles[0].find(TIMELINE).exists()).toBe(false)
+    expect(bubbles[1].find(TIMELINE).exists()).toBe(true)
+  })
+
+  it('per-item 解析回归锁：末条编排 item 在途时，产出卡片仍挂在前面那条终态上', async () => {
+    // 🔴 这条锁的是 plan Task 2 的 🔴 边界：`lastOrchestrationToolItemId` 只准用于
+    // 去重渲染位置，**不准**顺手接进 `OrchestratedPlanCard` 的渲染条件。
+    // 若接了进去，卡片会因为「它不是末条」而消失——和 109 修掉的 `.find` 缺口
+    // 是同一种后果（不报错、不崩，只是「进入编码」入口没了）。
+    seedBucket('S1')
+    const wrapper = await mountBubble(orchestrationMsg([
+      toolPart('p1', 0, TERMINAL('S1')),
+      toolPart('p2', 1, BLOCKING('S1')),
+    ]))
+    const cards = wrapper.findAll('[data-test="orchestrated-plan-card"]')
+    expect(cards).toHaveLength(1)
+    expect(cards[0].attributes('data-artifact-version-id')).toBe('av-uuid-1')
+    // 时间线仍只挂在末条上
+    expect(wrapper.findAll(TIMELINE)).toHaveLength(1)
+  })
+
+  // ---- 会话绑定（§A.7）----------------------------------------------------
+
+  it('result 里的 session_id 优先于 store 的 activeOrchestrationSessionId', async () => {
+    seedBucket('S1')
+    seedBucket('S2')
+    store.activeOrchestrationSessionId = 'S2'
+    const wrapper = await mountBubble(orchestrationMsg([toolPart('p1', 0, BLOCKING('S1'))]))
+    // 两个桶都在 ⇒ 绑错会话时时间线照样渲染，只有 prop 断言分得出对错
+    expect(wrapper.findComponent(OrchestrationStageTimeline).props('sessionId')).toBe('S1')
+  })
+
+  it('result 取不到 session_id（在途早期）⇒ 回退 store 的活跃会话', async () => {
+    seedBucket('S2')
+    store.activeOrchestrationSessionId = 'S2'
+    const wrapper = await mountBubble(
+      orchestrationMsg([toolPart('p1', 0, undefined, 'running')]),
+    )
+    expect(wrapper.findComponent(OrchestrationStageTimeline).props('sessionId')).toBe('S2')
+  })
+
+  it('两级来源都取不到会话 ⇒ 时间线不渲染、不抛错', async () => {
+    seedBucket('S2')
+    store.activeOrchestrationSessionId = null
+    const wrapper = await mountBubble(
+      orchestrationMsg([toolPart('p1', 0, JSON.stringify({ status: 'waiting_event' }), 'running')]),
+    )
+    expect(wrapper.find(TIMELINE).exists()).toBe(false)
+    expect(wrapper.find('.tool-inline').exists()).toBe(true)
+    expect(console.warn).not.toHaveBeenCalled()
+    expect(console.error).not.toHaveBeenCalled()
+  })
+
+  // ---- 调研日志组 ---------------------------------------------------------
+
+  it('调研容器归属本气泡的会话 ⇒ 渲染日志组，且位置早于编排产出卡片', async () => {
+    seedBucket('S1')
+    seedResearchSessions('S1', [['repo-1', 'example-app'], ['repo-2', 'question-bank']])
+    const wrapper = await mountBubble(orchestrationMsg([toolPart('p1', 0, TERMINAL('S1'))]))
+
+    expect(wrapper.find(LOG_GROUP).exists()).toBe(true)
+    expect(wrapper.text()).toContain('方案调研 · 2 个仓库')
+    expect(wrapper.text()).toContain('example-app')
+
+    const html = wrapper.html()
+    const groupIdx = html.indexOf('plan-research-log-group')
+    const cardIdx = html.indexOf('orchestrated-plan-card')
+    expect(groupIdx).toBeGreaterThan(-1)
+    expect(cardIdx).toBeGreaterThan(-1)
+    expect(groupIdx).toBeLessThan(cardIdx)
+  })
+
+  it('store 里没有调研容器 ⇒ 日志组不渲染', async () => {
+    seedBucket('S1')
+    const wrapper = await mountBubble(orchestrationMsg([toolPart('p1', 0, TERMINAL('S1'))]))
+    expect(wrapper.find(LOG_GROUP).exists()).toBe(false)
+  })
+
+  it('planResearchSessions 是会话级扁平数组、被快照整体替换 —— 没有 plan_session_id 过滤就会把第二轮的日志挂到第一条编排消息上', async () => {
+    // 🔴 本组最重要的一条（F-21）。真实形态由两条事实叠加而成：
+    //   ① 后端只装本对话**最近一次** ConvergenceSession 的容器；
+    //   ② 前端每份 runtime 快照**整体替换** planResearchSessions。
+    // ⇒ 一段对话跑两轮编排时，数组里装的全是第二轮（S2）的容器。
+    seedBucket('S1')
+    seedBucket('S2')
+    store.activeOrchestrationSessionId = 'S2'
+    seedResearchSessions('S2', [['repo-9', 'second-round-repo']])
+
+    const firstRound = await mountBubble(
+      orchestrationMsg([toolPart('p1', 0, TERMINAL('S1'))], 'msg-round-1'),
+    )
+    const secondRound = await mountBubble(
+      orchestrationMsg([toolPart('p1', 0, TERMINAL('S2'))], 'msg-round-2'),
+    )
+
+    // 第二轮那条：日志组在
+    expect(secondRound.findAll(LOG_GROUP)).toHaveLength(1)
+    expect(secondRound.text()).toContain('second-round-repo')
+
+    // 🔴 第一轮那条：日志组**不在**。两侧断言缺一不可 ——
+    // 只断言上面那条的话，「完全不过滤」的实现同样为真。
+    expect(firstRound.findAll(LOG_GROUP)).toHaveLength(0)
+    expect(firstRound.text()).not.toContain('方案调研')
+    expect(firstRound.text()).not.toContain('second-round-repo')
+  })
+
+  it('过滤后为空 ⇒ 整组不渲染，不出现一个空的组标题', async () => {
+    seedBucket('S1')
+    seedResearchSessions('S-other', [['repo-1', 'example-app']])
+    const wrapper = await mountBubble(orchestrationMsg([toolPart('p1', 0, TERMINAL('S1'))]))
+    expect(wrapper.find(LOG_GROUP).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('方案调研')
+    expect(wrapper.text()).not.toContain('0 个仓库')
+  })
+
+  // ---- 历史与边界（零回归）-----------------------------------------------
+
+  it('非编排工具的单例 tool item ⇒ 两块都不渲染', async () => {
+    seedBucket('S1')
+    store.activeOrchestrationSessionId = 'S1'
+    seedResearchSessions('S1', [['repo-1', 'example-app']])
+    const wrapper = await mountBubble(makeMessage({
+      parts: [{
+        type: 'tool_use',
+        id: 'p1',
+        index: 0,
+        tool_call_id: 'c1',
+        name: 'create_coding_plan',
+        input: { artifact_version_id: 'av-1' },
+        status: 'done',
+        result: JSON.stringify({ coding_plan_id: 'plan-1', status: 'plan_only' }),
+      }],
+    }))
+    expect(wrapper.find('.tool-inline').exists()).toBe(true)
+    expect(wrapper.find(TIMELINE).exists()).toBe(false)
+    expect(wrapper.find(LOG_GROUP).exists()).toBe(false)
+  })
+
+  it('老会话 / 老后端（store 无桶、无调研容器）⇒ 两块都不渲染且零 console 输出', async () => {
+    const wrapper = await mountBubble(orchestrationMsg([toolPart('p1', 0, TERMINAL('S1'))]))
+    expect(wrapper.find(TIMELINE).exists()).toBe(false)
+    expect(wrapper.find(LOG_GROUP).exists()).toBe(false)
+    // 其余渲染与今日一致：pill 与产出卡片照常
+    expect(wrapper.find('.tool-pill').exists()).toBe(true)
+    expect(wrapper.find('[data-test="orchestrated-plan-card"]').exists()).toBe(true)
+    expect(console.warn).not.toHaveBeenCalled()
+    expect(console.error).not.toHaveBeenCalled()
+  })
+
+  it('107 边界：编排气泡上不出现路由决策面板与降级解释句', async () => {
+    seedBucket('S1')
+    seedResearchSessions('S1', [['repo-1', 'example-app']])
+    const wrapper = await mountBubble(orchestrationMsg([toolPart('p1', 0, BLOCKING('S1'))]))
+    expect(wrapper.find('[data-test="routing-panel"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('未经 LLM 推理')
+    expect(wrapper.text()).not.toContain('置信度')
   })
 })
