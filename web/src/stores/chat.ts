@@ -2561,6 +2561,14 @@ export const useChatStore = defineStore('chat', () => {
     repositoryIds: string[],
     branchTemplate?: string,
     targetBranch?: string,
+    /**
+     * 109-08（RELY-01）：草稿方案送编码的用户显式确认。
+     *
+     * 🔴 只在**用户在确认弹层里勾选后**由组件传 true；本层不设默认值、不缓存、
+     * 不记忆，且仅当它严格等于 true 时才把键放进请求体（undefined / false 一律
+     * 不放键 —— 见下方 payload 组装）。
+     */
+    acknowledgeUnresearched?: boolean,
   ): Promise<{
     createdCount: number
     failedCount: number
@@ -2575,11 +2583,16 @@ export const useChatStore = defineStore('chat', () => {
       throw new Error('planId 缺失')
     repoMultiSelectorState.value.submitting = true
     try {
-      const resp = await createSessionsForPlan(planId, {
+      const payload: Parameters<typeof createSessionsForPlan>[1] = {
         repository_ids: repositoryIds,
         branch_template: branchTemplate,
         target_branch: targetBranch,
-      })
+      }
+      // 🔴 有条件放键（而不是无条件展开）：编排方案零摩擦 —— 不发送该字段而不是
+      // 发 false，这样后端留痕里「带了 ack」就等价于「用户确实确认过」。
+      if (acknowledgeUnresearched === true)
+        payload.acknowledge_unresearched = true
+      const resp = await createSessionsForPlan(planId, payload)
       for (const item of resp.created) {
         const confirmed = await apiConfirmCodingSession(item.session_id)
         activeCodingSession.value = {
@@ -2610,6 +2623,11 @@ export const useChatStore = defineStore('chat', () => {
   async function retrySingleRepository(
     planId: string,
     repositoryId: string,
+    /**
+     * 109-08：原样转发给 submitRepoMultiSelector，本层不补值。重试同样创建
+     * session ⇒ 服务端 gate 会一致地拦，因此确认必须同样来自用户勾选。
+     */
+    acknowledgeUnresearched?: boolean,
   ): Promise<{ createdCount: number, failedCount: number }> {
     const prevState = repoMultiSelectorState.value
     repoMultiSelectorState.value = {
@@ -2619,7 +2637,12 @@ export const useChatStore = defineStore('chat', () => {
       submitting: true,
     }
     try {
-      return await submitRepoMultiSelector([repositoryId])
+      return await submitRepoMultiSelector(
+        [repositoryId],
+        undefined,
+        undefined,
+        acknowledgeUnresearched,
+      )
     }
     finally {
       repoMultiSelectorState.value = prevState

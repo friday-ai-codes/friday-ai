@@ -465,7 +465,19 @@ export async function getDiffSummary(sessionId: string) {
  */
 export async function createSessionsForPlan(
   planId: string,
-  payload: { repository_ids: string[], branch_template?: string, target_branch?: string },
+  payload: {
+    repository_ids: string[]
+    branch_template?: string
+    target_branch?: string
+    /**
+     * 109-08（RELY-01）：草稿方案送编码的用户显式确认。
+     *
+     * 🔴 该值代表一次**用户签名**，只能由用户在确认弹层里勾选后产生。调用方不传
+     * 时**不得注入 false** —— 「不发字段」让后端日志里「带了 ack」等价于「用户
+     * 确实确认过」；本层也绝不给它设默认值、不缓存、不记忆。
+     */
+    acknowledge_unresearched?: boolean
+  },
 ): Promise<CodingSessionsBatchCreateResponse> {
   return post<CodingSessionsBatchCreateResponse>(
     `/chat/coding-plans/${planId}/sessions/`,

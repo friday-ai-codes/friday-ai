@@ -20,8 +20,19 @@ import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import CodingSessionStatusRow from '~/components/chat/CodingSessionStatusRow.vue'
 import ExportConfirmDialog from '~/components/chat/ExportConfirmDialog.vue'
 import RepoMultiSelector from '~/components/chat/RepoMultiSelector.vue'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '~/components/ui/alert-dialog'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import { Checkbox } from '~/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -139,12 +150,17 @@ function openAppendDialog() {
 async function handleMultiConfirm(repoIds: string[]) {
   if (!props.codingPlanId)
     return
+  // 109-08：创建态与追加态共用本函数 ⇒ 两条路径天然都过闸门
+  const gate = await ensureUnresearchedAcknowledged()
+  if (!gate.proceed)
+    return
   try {
     chatStore.openRepoMultiSelector(props.codingPlanId, repoIds)
     const result = await chatStore.submitRepoMultiSelector(
       repoIds,
       normalizedBranchTemplate.value,
       normalizedTargetBranch.value,
+      gate.acknowledge,
     )
     // coding-plan workflow 失败时把第一条 error 文案带进 toast，避免用户得开
     // DevTools 看 response 才知道为什么失败。
@@ -161,7 +177,10 @@ async function handleMultiConfirm(repoIds: string[]) {
     dialogSelectedIds.value = []
   }
   catch (e: any) {
-    toastError(e?.message || '批量创建编码失败')
+    if (isDraftGateRejection(e))
+      handleDraftGateRejection()
+    else
+      toastError(e?.message || '批量创建编码失败')
   }
   finally {
     chatStore.closeRepoMultiSelector()
@@ -277,6 +296,101 @@ const resolvedProvenance = computed<string | null | undefined>(() => {
  */
 const isUnresearched = computed(() => resolvedProvenance.value !== 'orchestrated')
 
+// ---------------------------------------------------------------------------
+// 109-08（RELY-01）：草稿送编码的显式确认闸门
+//
+// 服务端 fail-closed gate（109-07）是唯一真防线，本弹层只是 UX：让用户在送编码
+// **之前**就知道这份方案未经调研，而不是提交后吃一个 400。
+// ---------------------------------------------------------------------------
+
+/** 服务端拒绝的稳定机器码（109-07 契约）。🔴 绝不按 detail 文案分支。 */
+const ERROR_CODE_DRAFT_REQUIRES_CONFIRM = 'draft_requires_explicit_confirm'
+/** gate 拒绝时的提示文案 —— 前端常量，不回显后端 detail。 */
+const DRAFT_GATE_REJECTED_MESSAGE = '草稿方案需显式确认后才能送编码'
+
+const unresearchedDialogOpen = ref(false)
+/**
+ * 必勾状态。组件本地 ref：**不写 store、不入 localStorage、不跨次记忆**，
+ * 每次打开弹层重置为 false。
+ */
+const acknowledged = ref(false)
+/** 当前等待用户决策的 resolve；结算后立即清空，避免悬挂。 */
+let pendingAcknowledgeResolve: ((confirmed: boolean) => void) | null = null
+
+function settleUnresearchedDialog(confirmed: boolean): void {
+  unresearchedDialogOpen.value = false
+  const resolve = pendingAcknowledgeResolve
+  pendingAcknowledgeResolve = null
+  resolve?.(confirmed)
+}
+
+function openUnresearchedDialog(): Promise<boolean> {
+  // 上一次未结算的等待按「取消」结算，防止 promise 悬挂
+  pendingAcknowledgeResolve?.(false)
+  pendingAcknowledgeResolve = null
+  // 🔴 每次打开重置勾选：确认不跨次记忆
+  acknowledged.value = false
+  unresearchedDialogOpen.value = true
+  return new Promise<boolean>((resolve) => {
+    pendingAcknowledgeResolve = resolve
+  })
+}
+
+function handleUnresearchedConfirm(): void {
+  // 双保险：按钮已 disabled，这里再校一次，确保 true 只可能来自用户勾选
+  if (!acknowledged.value)
+    return
+  settleUnresearchedDialog(true)
+}
+
+function onUnresearchedDialogOpenChange(open: boolean): void {
+  unresearchedDialogOpen.value = open
+  if (open)
+    return
+  // 关闭可能来自 Esc / 遮罩 / 取消 / 确认按钮（后者会连带关闭）。用一次微任务让
+  // 同一次点击里的显式确认先结算，避免内置关闭把用户的确认吞成取消。
+  void Promise.resolve().then(() => {
+    if (pendingAcknowledgeResolve)
+      settleUnresearchedDialog(false)
+  })
+}
+
+/**
+ * 送编码前的确认闸门。三条路径（创建态确认 / 追加态确认 / 单仓重试）共用。
+ *
+ * 返回值刻意是三态而非裸布尔：`acknowledge` 只在**用户勾选并确认**的分支上出现，
+ * 且只可能是字面 `true`。编排方案走早退分支 ⇒ 弹层不出现、字段不发送。
+ *
+ * 🔴 不可协商的不变量：`acknowledge_unresearched: true` 只能由用户勾选产生。
+ * 本函数是它在前端的**唯一**产生点 —— 不缓存、不记忆、不因「刚才确认过」而复用。
+ */
+async function ensureUnresearchedAcknowledged(): Promise<{ proceed: boolean, acknowledge?: true }> {
+  if (isUnresearched.value === false)
+    return { proceed: true }
+  const confirmed = await openUnresearchedDialog()
+  return confirmed ? { proceed: true, acknowledge: true } : { proceed: false }
+}
+
+/**
+ * 是否为服务端草稿 gate 的拒绝。
+ *
+ * 🔴 按响应体 `code` 字段判定（ApiError.body），**绝不匹配 detail 文案** ——
+ * 与「标注不靠文案硬编码」同一条纪律：一次后端文案微调就会让文案匹配静默失效。
+ */
+function isDraftGateRejection(err: unknown): boolean {
+  const body = (err as { body?: unknown } | null | undefined)?.body
+  if (!body || typeof body !== 'object')
+    return false
+  return (body as { code?: unknown }).code === ERROR_CODE_DRAFT_REQUIRES_CONFIRM
+}
+
+/** gate 拒绝的兜底呈现：前端常量 toast + 重新打开弹层让用户走正规确认。 */
+function handleDraftGateRejection(): void {
+  toastError(DRAFT_GATE_REJECTED_MESSAGE)
+  // 不自动补 ack、不静默重放请求：重放需要用户在新弹层里重新勾选。
+  void openUnresearchedDialog()
+}
+
 function onExportSuccess(
   result: ExportToFeishuResponse | ExportCodingPlanToFeishuResponse,
 ) {
@@ -300,18 +414,27 @@ async function handleSessionRowRetry(rowSessionId: string) {
   const session = sessions.value.find(s => s.session_id === rowSessionId)
   if (!session || !props.codingPlanId)
     return
+  // 109-08：重试同样**创建** session ⇒ 服务端 gate 会一致地拒绝。若前端因
+  // 「用户之前已确认过」而自行补 true，等于前端替用户签名 ⇒ 重试也走弹层。
+  const gate = await ensureUnresearchedAcknowledged()
+  if (!gate.proceed)
+    return
   try {
-    const result = await chatStore.retrySingleRepository(
-      props.codingPlanId,
-      session.repository_id,
-    )
+    // 🔴 不把 undefined 当第三参显式传入：让「编排方案不发送该字段」在调用点
+    // 也是结构性的，而不是依赖下游把 undefined 过滤掉。
+    const result = gate.acknowledge === true
+      ? await chatStore.retrySingleRepository(props.codingPlanId, session.repository_id, true)
+      : await chatStore.retrySingleRepository(props.codingPlanId, session.repository_id)
     if (result.createdCount > 0)
       toastSuccess('已重新发起编码')
     else
       toastError('重试失败')
   }
   catch (e: any) {
-    toastError(e?.message || '重试失败')
+    if (isDraftGateRejection(e))
+      handleDraftGateRejection()
+    else
+      toastError(e?.message || '重试失败')
   }
 }
 
@@ -380,6 +503,14 @@ watch(() => props.branchName, (newVal) => {
   }
 }, { immediate: true })
 
+/**
+ * legacy 单仓确认（仅 codingPlanId 缺失时可达）。
+ *
+ * 109-08 边界：**不加**草稿确认闸门。理由：此时前端拿不到 provenance（无 plan
+ * 关联）、服务端也无 plan_id 可据以判定；且它确认的是**已存在**的 session，而
+ * 服务端 gate 的落点是 session **创建**。若后续该路径仍有真实流量，需先补 plan
+ * 关联再谈 gate（UI-SPEC §Unresolved #2）。
+ */
 function handleConfirm() {
   const editedBranch = previewBranchName.value || undefined
   emit('confirm', props.planId, props.sessionId, editedBranch, normalizedTargetBranch.value)
@@ -823,6 +954,47 @@ const badgeText = computed(() => {
         />
       </DialogContent>
     </Dialog>
+
+    <!--
+      109-08（RELY-01）：草稿送编码的阻断式确认弹层。
+      用 AlertDialog 而非普通 Dialog（需要焦点陷阱与显式取消）；不复用
+      GlobalConfirmDialog / useConfirmDialog —— 其 ConfirmOptions 无法承载必勾
+      Checkbox，为它加字段会改动一个被 20+ 处复用的全局组件。
+    -->
+    <AlertDialog
+      :open="unresearchedDialogOpen"
+      @update:open="onUnresearchedDialogOpenChange"
+    >
+      <AlertDialogContent data-test="unresearched-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>该方案未经代码调研</AlertDialogTitle>
+          <AlertDialogDescription>
+            它由对话直接生成，未经仓库路由、代码召回与并行调研。继续送编码可能产出偏离预期的改动。建议先经技术方案编排产出正式方案。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div class="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5">
+          <!-- label 包裹 ⇒ 点文字也能勾选 -->
+          <label class="flex items-start gap-2 text-sm">
+            <Checkbox v-model="acknowledged" class="mt-0.5 shrink-0" data-test="ack-checkbox" />
+            <span>我已了解风险，仍要用该草稿送编码</span>
+          </label>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-test="ack-cancel">
+            取消
+          </AlertDialogCancel>
+          <!-- 不用 destructive 配色：送编码不销毁数据、不可逆性有限（产出 PR 可关闭） -->
+          <AlertDialogAction
+            data-test="ack-confirm"
+            :disabled="!acknowledged"
+            :aria-disabled="!acknowledged"
+            @click="handleUnresearchedConfirm"
+          >
+            仍要送编码
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <!-- ：导出技术方案到飞书 -->
     <ExportConfirmDialog

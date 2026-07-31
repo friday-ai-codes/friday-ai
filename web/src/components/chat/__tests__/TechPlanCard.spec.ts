@@ -97,6 +97,61 @@ const StubDialogDescription = defineComponent({
     return () => h('div', { 'data-test': 'dialog-desc' }, slots.default?.())
   },
 })
+// 109-08：草稿确认弹层的 stub 家族。真实 reka-ui AlertDialog 走 Teleport + 焦点
+// 陷阱，断言起来噪音大；stub 保留三件被断言的事实：open 透传、confirm 按钮的
+// disabled 态、cancel/confirm 的点击语义。
+const StubAlertDialog = defineComponent({
+  name: 'AlertDialog',
+  props: ['open'],
+  emits: ['update:open'],
+  setup(props, { slots }) {
+    return () => h('div', {
+      'data-test': 'alert-dialog',
+      'data-open': String(props.open ?? false),
+    }, slots.default?.())
+  },
+})
+const StubAlertDialogAction = defineComponent({
+  name: 'AlertDialogAction',
+  props: ['disabled'],
+  emits: ['click'],
+  setup(props, { slots, emit }) {
+    return () => h('button', {
+      'data-test': 'ack-confirm',
+      'disabled': props.disabled || false,
+      'aria-disabled': String(!!props.disabled),
+      'onClick': () => emit('click'),
+    }, slots.default?.())
+  },
+})
+const StubAlertDialogCancel = defineComponent({
+  name: 'AlertDialogCancel',
+  setup(_, { slots }) {
+    return () => h('button', { 'data-test': 'ack-cancel' }, slots.default?.())
+  },
+})
+const StubCheckbox = defineComponent({
+  name: 'Checkbox',
+  props: ['modelValue'],
+  emits: ['update:modelValue'],
+  setup(props, { emit }) {
+    return () => h('input', {
+      'type': 'checkbox',
+      'data-test': 'ack-checkbox',
+      'checked': !!props.modelValue,
+      'onChange': () => emit('update:modelValue', !props.modelValue),
+    })
+  },
+})
+function makePassthrough(name: string, dataTest: string) {
+  return defineComponent({
+    name,
+    setup(_, { slots }) {
+      return () => h('div', { 'data-test': dataTest }, slots.default?.())
+    },
+  })
+}
+
 const StubRepoMultiSelector = defineComponent({
   name: 'RepoMultiSelector',
   props: ['repositories', 'modelValue', 'disabledIds', 'recommendedIds', 'submitting'],
@@ -164,6 +219,15 @@ const globalStubs = {
   RepoMultiSelector: StubRepoMultiSelector,
   CodingSessionStatusRow: StubCodingSessionStatusRow,
   ExportConfirmDialog: StubExportConfirmDialog,
+  AlertDialog: StubAlertDialog,
+  AlertDialogContent: makePassthrough('AlertDialogContent', 'alert-dialog-content'),
+  AlertDialogHeader: makePassthrough('AlertDialogHeader', 'alert-dialog-header'),
+  AlertDialogTitle: makePassthrough('AlertDialogTitle', 'alert-dialog-title'),
+  AlertDialogDescription: makePassthrough('AlertDialogDescription', 'alert-dialog-desc'),
+  AlertDialogFooter: makePassthrough('AlertDialogFooter', 'alert-dialog-footer'),
+  AlertDialogAction: StubAlertDialogAction,
+  AlertDialogCancel: StubAlertDialogCancel,
+  Checkbox: StubCheckbox,
 }
 
 function mountCard(props: Partial<InstanceType<typeof TechPlanCard>['$props']> = {}) {
@@ -507,6 +571,9 @@ describe('techPlanCard — FAN-04 multi-repo integration', () => {
       codingPlanId: 'plan-1',
       availableRepositories: REPOS,
       repositoryGitUrls: REPO_GIT_URLS,
+      // provenance: 'orchestrated' 是 109-08 草稿闸门生效的预期连带影响，不是回归；
+      // 本用例测的是「确认即提交」，不是闸门（草稿路径由 109-08 新增用例覆盖）。
+      provenance: 'orchestrated',
     })
     await flushPromises()
     const confirmBtn = wrapper.find('[data-test="multi-confirm"]')
@@ -525,6 +592,9 @@ describe('techPlanCard — FAN-04 multi-repo integration', () => {
       codingPlanId: 'plan-1',
       availableRepositories: REPOS,
       repositoryGitUrls: REPO_GIT_URLS,
+      // provenance: 'orchestrated' 是 109-08 草稿闸门生效的预期连带影响，不是回归；
+      // 本用例测的是分支模板实参透传，不是闸门。
+      provenance: 'orchestrated',
     })
     await flushPromises()
 
@@ -564,6 +634,9 @@ describe('techPlanCard — FAN-04 multi-repo integration', () => {
       codingPlanId: 'plan-1',
       availableRepositories: REPOS,
       repositoryGitUrls: REPO_GIT_URLS,
+      // provenance: 'orchestrated' 是 109-08 草稿闸门生效的预期连带影响，不是回归；
+      // 本用例测的是重试实参透传，不是闸门（草稿重试同样弹层，由 109-08 新增用例覆盖）。
+      provenance: 'orchestrated',
     })
     await flushPromises()
     const retryBtn = wrapper.find('[data-test="row-retry"]')
