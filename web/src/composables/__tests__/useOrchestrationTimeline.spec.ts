@@ -540,6 +540,37 @@ describe('失败', () => {
     expect(view.steps.every(s => s.status !== 'failed')).toBe(true)
   })
 
+  // 与 GAP-1 同根因：脉冲原先也只看快照 status，导致真直播的前半程不脉冲、
+  // 2s 轮询的后半程反而脉冲，把「哪一半更实时」表达反了。
+  it('无快照 + runtime 活跃 + 有转移事件 ⇒ 前半程直播时该步脉冲', () => {
+    const view = build({
+      snapshot: null,
+      events: [makeEvent('decomposed', {}, 1)],
+      runtimeActive: true,
+    })
+    // decomposed 把指针推到 route ⇒「路由」是 running 那一步
+    expect(step(view, '路由')?.status).toBe('running')
+    expect(step(view, '路由')?.pulse).toBe(true)
+  })
+
+  it('无快照 + 已失败 ⇒ 无任何步骤脉冲', () => {
+    const view = build({
+      snapshot: null,
+      events: [makeEvent('decomposed', {}, 1), makeEvent('process.session.failed', {}, 2)],
+      runtimeActive: true,
+    })
+    expect(view.steps.every(s => s.pulse !== true)).toBe(true)
+  })
+
+  it('无快照 + runtime 不活跃 ⇒ 无任何步骤脉冲', () => {
+    const view = build({
+      snapshot: null,
+      events: [makeEvent('decomposed', {}, 1)],
+      runtimeActive: false,
+    })
+    expect(view.steps.every(s => s.pulse !== true)).toBe(true)
+  })
+
   it('路由失败 ⇒ 其后各步逐个等于 pending（不是「不等于 failed」）', () => {
     const view = build({
       snapshot: makeSnapshot({

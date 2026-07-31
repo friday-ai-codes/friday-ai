@@ -491,8 +491,17 @@ function buildInner(input: OrchestrationTimelineInput): OrchestrationTimelineVie
   const interrupted = input?.runtimeActive === false && (status === 'running' || status === 'waiting_event')
 
   // ---- 脉冲：只有「确实在动」时才脉冲 ----
+  //
+  // 🔴 与失败态同一个坑：只看快照 status 会让**真直播的前半程不脉冲、2s 轮询的
+  // 后半程反而脉冲**——恰好把「哪一半更实时」表达反了。前半程 snapshot 恒为 null，
+  // 此时只要 runtime 活跃、有事件在来、且未进终态，就是确实在动。
+  const liveWithoutSnapshot = status === null
+    && input?.runtimeActive === true
+    && folded.lastTransitionStage !== null
+    && !isFailed
   const shouldPulse = input?.runtimeActive === true
     && (status === 'running' || status === 'waiting_clarification' || status === 'waiting_event')
+    || liveWithoutSnapshot
 
   const showClassify = snapshot?.has_classify === true || folded.sawClassifyEvent
   const clarifyIndex = STAGE_ORDER.indexOf('clarify')
