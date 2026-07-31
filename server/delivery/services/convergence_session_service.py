@@ -412,11 +412,14 @@ class ConvergenceSessionService:
         try:
             await self._persist_event(event_name, session, payload)
         except Exception as exc:  # noqa: BLE001 — best-effort：事件持久化失败绝不阻断转移
+            from common.logging import redact_secrets_in_text
+
             logger.warning(
                 "convergence_session_event_persist_failed",
                 event_name=event_name,
                 session_id=str(session.id),
-                error=str(exc),
+                # 异常文本可能夹带上游/凭证片段 ⇒ 脱敏不可绕过（同 114-05 Task 0 的口径）
+                error=redact_secrets_in_text(str(exc)),
             )
 
     @sync_to_async
