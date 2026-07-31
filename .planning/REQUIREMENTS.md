@@ -126,11 +126,11 @@
 | CLAR-02 | Phase 114 审查与澄清收敛 | Complete |
 | CLAR-03 | Phase 114 审查与澄清收敛 | Complete |
 | CLAR-04 | Phase 114 审查与澄清收敛 | Complete |
-| VIEW-01 | Phase 115 前端查看器与知识库 | Pending |
+| VIEW-01 | Phase 115 前端查看器与知识库 | Pending（后端供数面已就位 @ 115-01：`blueprint-document` / `blueprint-events`；查看器本体待 115-02+） |
 | VIEW-02 | Phase 115 前端查看器与知识库 | Pending（代码预览为降级形态：路径 + 行号区间 + 引用快照；源码正文与行高亮顺延 116） |
-| VIEW-03 | Phase 115 前端查看器与知识库 | Pending |
+| VIEW-03 | Phase 115 前端查看器与知识库 | Pending（后端供数面已就位 @ 115-01：`blueprint-list` 含筛选与五键分页；tab 本体待 115-06） |
 | VIEW-04 | Phase 115 前端查看器与知识库（正向引用可查）+ Phase 116（反向「被谁引用」与图谱边） | PARTIAL |
-| CLAR-01 | Phase 115 前端查看器与知识库 | Pending |
+| CLAR-01 | Phase 115 前端查看器与知识库 | Pending（后端供数面与写口已就位 @ 115-01：`blueprint-review-threads` GET 多轮 + POST 选区评论；批注层待 115-03/04） |
 | FLOW-08 | Phase 115 前端查看器与知识库 | Pending |
 | GATE-01 | Phase 116 入口收编与导出 | Pending |
 | VIEW-05 | Phase 116 入口收编与导出 | Pending |
