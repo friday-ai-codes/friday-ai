@@ -95,8 +95,20 @@ function mountTimeline(sessionId: string, options: Record<string, any> = {}) {
 }
 
 /** 正文区是否渲染：正文里唯一的东西就是真实的 `SubStepTimeline`。 */
+/**
+ * 正文区对用户是否可见。
+ *
+ * 🔴 判据是**可见性**而不是存在性：正文用 `v-show` 常驻（否则按钮上的 `aria-controls`
+ * 在收起态会指向一个已从 DOM 移除的节点）。若这里退回 `.exists()`，「已折叠」这一组
+ * 断言会全部恒真、把折叠逻辑坏掉也测不出来。
+ */
 function bodyRendered(wrapper: ReturnType<typeof mountTimeline>): boolean {
-  return wrapper.findComponent(SubStepTimeline).exists()
+  const body = wrapper.findComponent(SubStepTimeline)
+  if (!body.exists())
+    return false
+  const host = wrapper.find('[data-test="timeline-toggle"]').attributes('aria-controls')
+  const style = host ? wrapper.find(`[id="${host}"]`).attributes('style') : undefined
+  return !(style ?? '').includes('display: none')
 }
 
 let errorSpy: ReturnType<typeof vi.spyOn>
@@ -316,9 +328,12 @@ describe('orchestrationStageTimeline · 可访问性', () => {
     await toggle.trigger('click')
     expect(wrapper.find(TOGGLE).attributes('aria-expanded')).toBe('false')
     expect(wrapper.find(TOGGLE).attributes('aria-label')).toBe('展开编排进度')
-    // 折叠后按钮**不被卸载**，只有正文区被卸载
+    // 折叠后按钮**不被卸载**
     expect(wrapper.find(TOGGLE).exists()).toBe(true)
-    expect(wrapper.find(`[id="${bodyId}"]`).exists()).toBe(false)
+    // 🔴 正文区也不被卸载：v-show 而非 v-if，否则 aria-controls 在收起态指向一个
+    // 已从 DOM 移除的节点（悬空）。这条断言此前锁的正是那个错误行为。
+    expect(wrapper.find(`[id="${bodyId}"]`).exists()).toBe(true)
+    expect(wrapper.find(`[id="${bodyId}"]`).attributes('style')).toContain('display: none')
   })
 
   it('🔴 失败摘要行有 role=alert，且 aria-live 属性不存在（一个事实播一次）', () => {

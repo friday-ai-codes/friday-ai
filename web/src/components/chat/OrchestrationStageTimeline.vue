@@ -157,7 +157,12 @@ function toggleCollapsed(): void {
       {{ view.liveMessage }}
     </p>
 
-    <div v-if="!collapsed" :id="bodyId" class="px-4 pb-3 pt-1">
+    <!--
+      v-show 而非 v-if：`aria-controls` 必须指向真实存在的节点，而 v-if 在收起态
+      会把它整块摘掉、让按钮上的 aria-controls 悬空。代价是折叠态下 SubStepTimeline
+      仍在渲染树里（六行 DOM），可接受。
+    -->
+    <div v-show="!collapsed" :id="bodyId" class="px-4 pb-3 pt-1">
       <SubStepTimeline :steps="view.steps" :interactive="false" />
     </div>
   </div>

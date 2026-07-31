@@ -47,6 +47,35 @@ const COPY = {
 
 const collapsed = ref(false)
 
+/** 折叠区的 id：供按钮 `aria-controls` 指向，读屏才能建立按钮↔区域的关联。 */
+const listId = useId()
+
+/**
+ * §C.4「整组默认收起」的一次性自动折叠。
+ *
+ * 不收起会让编排完成后的版面变成：时间线自己收敛成一行，紧跟一个**完全展开**的日志组
+ * （首张卡日志区最高 22rem），把刚产出的 `OrchestratedPlanCard` 挤出视口 —— 两块新 UI
+ * 的收敛策略不一致，而契约要求它们一起给结果让位。
+ *
+ * 判据取「所有调研容器都已到终态」而非编排整体终态：本组件只拿得到调研会话，不该为此
+ * 去耦合编排阶段。两个时刻实际紧邻（调研终态 → 融合 → 出卡），且容器一到终态日志就不再
+ * 增长，此时收起没有信息损失。
+ *
+ * 一次性 flag：用户手动展开后不再被抢走（沿用 `OrchestrationStageTimeline.autoCollapsed`
+ * 的同款语义）。
+ */
+const autoCollapsed = ref(false)
+watch(
+  () => props.sessions.length > 0 && props.sessions.every(s => cardStatus(s) === 'done'),
+  (allSettled) => {
+    if (allSettled && !autoCollapsed.value) {
+      autoCollapsed.value = true
+      collapsed.value = true
+    }
+  },
+  { immediate: true },
+)
+
 /**
  * 仓库名解析（§A.4 顺序）：后端解析出的名字 → 会话级映射 → 常量。
  * 🔴 第三级是常量而**不是** `repository_id` —— 裸 UUID 上屏既无信息量又暴露内部标识。
@@ -95,11 +124,18 @@ const cards = computed(() => props.sessions.map((session, index) => ({
 
 <template>
   <div v-if="cards.length > 0" class="mt-2" data-test="plan-research-log-group">
+    <!--
+      🔴 可访问名称必须**包含**可见文案（WCAG 2.5.3 Label in Name，Level A）。
+      reka-ui 无关：这里是原生 button，`aria-label` 会整体覆盖内部文本 ——
+      原先只播报「展开方案调研日志」，读屏用户永远听不到有几个仓库。
+      故把组标题拼在前面，而不是覆盖它；契约的展开/收起文案同时保住。
+    -->
     <button
       type="button"
       class="flex items-center gap-2 px-1 pb-2"
       :aria-expanded="collapsed ? 'false' : 'true'"
-      :aria-label="collapsed ? COPY.expand : COPY.collapse"
+      :aria-label="`${COPY.groupTitle(cards.length)}，${collapsed ? COPY.expand : COPY.collapse}`"
+      :aria-controls="listId"
       data-test="plan-research-log-toggle"
       @click="collapsed = !collapsed"
     >
@@ -107,7 +143,8 @@ const cards = computed(() => props.sessions.map((session, index) => ({
       <span class="text-[11px] font-semibold">{{ COPY.groupTitle(cards.length) }}</span>
     </button>
 
-    <div v-if="!collapsed" class="space-y-2">
+    <!-- v-show 而非 v-if：节点常驻，`aria-controls` 在收起态也指向真实存在的节点 -->
+    <div v-show="!collapsed" :id="listId" class="space-y-2">
       <DeepAnalysisCard
         v-for="card in cards"
         :key="card.key"
