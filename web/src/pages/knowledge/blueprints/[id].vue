@@ -354,6 +354,26 @@ const errorStatus = computed(() => {
 const isFullPageError = computed(
   () => errorStatus.value === 404 || errorStatus.value === 0 || errorStatus.value >= 500,
 )
+
+/**
+ * ⭐ 「失效的 `?version=`」这一档需要一个恢复出口（MN-02）。
+ *
+ * 正文端点对「版本不存在 / 不属于该 artifact」返 404（后端这是对的：带 `artifact_id` 约束
+ * 防跨项目读版本）。但前端分档只看状态码 ⇒ 整页被换成中性 404，而页面上那个
+ * 「回到当前版本」按钮此刻已经跟着整页一起被替换掉了 —— 一个 superseded 清理过的分享链接，
+ * 会让一份**用户完全有权限、当前版本好好的**蓝图变成死路，只能手改 URL 或退回知识库重进。
+ *
+ * ⭐ 判据是**纯结构化**的三条 AND，⛔ 不读 `detail` 文本：
+ * `?version=` 非空（是版本读）+ 正文 404（就是它挂了）+ 人审快照成功（不带 version 参数，
+ * 它 200 就证明权限没问题、蓝图也在）。⚠️ 这不放宽任何存在性防线：中性文案一字不改，
+ * 且这一档的前提本身就是「已经证明有权访问」。
+ */
+const isStaleVersionParam = computed(
+  () => Boolean(versionParam.value)
+    && docQuery.error.value instanceof ApiError
+    && docQuery.error.value.status === 404
+    && snapshotQuery.isSuccess.value,
+)
 const inlineErrorDetail = computed(() => (errorStatus.value === 400 ? (mainError.value?.detail ?? '') : ''))
 
 // ── 导航段（⭐ 恒 10 项）──────────────────────────────────────────────────────
@@ -857,7 +877,9 @@ const sections = computed<NavSection[]>(() => [
       v-if="isFullPageError"
       :status="errorStatus"
       :detail="mainError?.detail ?? ''"
+      :show-back-to-current-version="isStaleVersionParam"
       @retry="refetchAll()"
+      @back-to-current="backToCurrentVersion()"
     />
 
     <template v-else>
