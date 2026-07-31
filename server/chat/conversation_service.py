@@ -2677,6 +2677,7 @@ class ConversationService:
         # 数组里两种语义的东西做二次判别（CONTEXT 既定）。
         try:
             from common.logging import redact_secrets_in_text
+            from delivery.models import RepoResearchTask
 
             if orch_session is None:
                 # 一个判空覆盖两种情形：① 本对话确实没有编排会话；② 上面 orchestration
@@ -2685,60 +2686,62 @@ class ConversationService:
                 # → 静默变成空数组，症状与「后端根本没写日志」逐字相同。显式早退不留暗路。
                 runtime["plan_research_sessions"] = []
             else:
-                # 归属三重条件缺一不可：
-                # - `plan_session_id` 是**权威链**：conversation → ConvergenceSession
-                #   .conversation_id（DB 列，由 start_orchestration 服务端写入，客户端与
-                #   模型层都改不了）→ 本会话下的调研容器。
-                # - `source == "plan_research"` 是**交叉校验**（fail-closed）：last_output
-                #   是容器回调可写的面，只按 plan_session_id 单键匹配等于信任一个半可信字段
-                #   的单一取值；两键同时命中才算数（109 callbacks.py WR-03 范式）。
-                # - `task_type == PLAN` 把 EXPLORE（深度分析）与其它类型挡在外面。
-                # 🔴 **绝不使用 `main_session__metadata__conversation_id`**：plan_research 的
-                # AgentSession.metadata 只有 {source, plan_session_id} 两个键，根本没有
-                # conversation_id（research_adapter.py:177-181 实读）。照抄 deep analysis 的
-                # 谓词会得到一个**恒空且不报错**的查询集——症状与「后端没写日志」完全一致。
-                research_candidates = [
-                    sess
-                    async for sess in SubAgentSession.objects.filter(
-                        task_type=SubAgentSession.TaskType.PLAN,
-                        last_output__source="plan_research",
-                        last_output__plan_session_id=str(orch_session.id),
-                    ).order_by("id")  # 与 repo.research.started 的派发顺序一致，让前端
-                    # 「多仓仅首张展开」是确定性的
-                ]
+                # 🔴 归属锚点全部取**服务端权威列**，不碰容器可写的 last_output（110-MN-01）。
+                #
+                # 旧实现用 `last_output.plan_session_id` + `last_output.source` 两个键，
+                # 并自称「交叉校验（WR-03 范式）」——这个论证不成立：两个键住在同一个 dict
+                # 里，而 `progress_payload._merge_output` 会把 progress 回调 `details` 里的
+                # 任意标量键无差别 merge 进 last_output（保留键只有 progress / coding_progress
+                # 两个）。能改一个的就能同时改两个，两个半可信键的合取强度等于一个。真正的
+                # WR-03（callbacks.py:434-440）校验的是**另一张服务端权威表**。
+                #
+                # 这里直接让 `RepoResearchTask` 当驱动：
+                # - `session_id` / `repository_id` 是 DB 列（服务端建 task 时写，容器改不到）；
+                # - `subagent_session_id` 由 `ResearchService.mark_running` 在派发后服务端回填。
+                # ⇒ 整条绑定链上**没有任何容器可写的键**。last_output 从此只用于取日志内容，
+                # 不再参与归属判定；`repository_id` 也改取权威列——顺手关掉「容器改写自己的
+                # repository_id 就能让日志挂到别的仓库名下」那条不需要猜任何东西的低配越权。
+                #
+                # 附带的语义收紧：stale 重派会把 `subagent_session` 指向新容器，旧容器不再
+                # 出现 ⇒ 每仓恒一张卡（旧实现会把同一仓的历次容器都列出来）。
+                repo_id_by_container: dict[Any, str] = {
+                    row["subagent_session_id"]: str(row["repository_id"])
+                    async for row in RepoResearchTask.objects.filter(
+                        session_id=orch_session.id,
+                        subagent_session__isnull=False,
+                    ).values("subagent_session_id", "repository_id")
+                }
+
+                # `task_type == PLAN` 是真列，作为纵深防御留着（权威表理论上只会链到 PLAN）。
+                # order_by("id") 与派发顺序一致，让前端「多仓仅首张展开」是确定性的。
+                research_candidates = (
+                    [
+                        sess
+                        async for sess in SubAgentSession.objects.filter(
+                            id__in=list(repo_id_by_container.keys()),
+                            task_type=SubAgentSession.TaskType.PLAN,
+                        ).order_by("id")
+                    ]
+                    if repo_id_by_container
+                    else []
+                )
 
                 # repository_name 必须**服务端解析**：前端的 repoNames 只覆盖当前用户可见仓，
-                # 跨组仓在前端解析不出名字（UI-SPEC 后端契约要求 #7）。
-                # 🔴 repository_id 来自容器可写的 last_output，是半可信值 ⇒ 先过 UUID 过筛
-                # 再进 ORM（109-REVIEW MN-03 同一条纪律：Repository.objects.filter(
-                # id__in=['not-a-uuid']) 会抛 ValidationError）。一次批量查，不做 per-session 查。
-                valid_repo_ids: set[str] = set()
-                for sess in research_candidates:
-                    out = sess.last_output if isinstance(sess.last_output, dict) else {}
-                    raw_repo_id = out.get("repository_id") or ""
-                    if not isinstance(raw_repo_id, str) or not raw_repo_id:
-                        continue
-                    try:
-                        UUID(raw_repo_id)
-                    except (ValueError, AttributeError, TypeError):
-                        continue
-                    valid_repo_ids.add(raw_repo_id)
-
+                # 跨组仓在前端解析不出名字（UI-SPEC 后端契约要求 #7）。id 现在全部来自权威列
+                # （恒为合法 UUID），不再需要旧实现那道 UUID 过筛。一次批量查，无 N+1。
                 repo_name_by_id: dict[str, str] = {}
-                if valid_repo_ids:
+                if repo_id_by_container:
                     repo_name_by_id = {
                         str(row["id"]): row["name"]
                         async for row in Repository.objects.filter(
-                            id__in=valid_repo_ids,
+                            id__in=set(repo_id_by_container.values()),
                         ).values("id", "name")
                     }
 
                 research_payload: list[dict[str, Any]] = []
                 for sess in research_candidates:
                     out = sess.last_output if isinstance(sess.last_output, dict) else {}
-                    repo_id = out.get("repository_id") or ""
-                    if not isinstance(repo_id, str):
-                        repo_id = ""
+                    repo_id = repo_id_by_container.get(sess.id, "")
                     raw_logs = out.get("logs")
                     # 🔴 写入侧 `_append_runtime_log` **不脱敏**（source-agnostic 直写容器
                     # stdout），读取面必须补（UI-SPEC 后端契约要求 #6）。type / ts 是受控值
