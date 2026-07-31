@@ -11,6 +11,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import OrchestratedPlanCard from '~/components/chat/OrchestratedPlanCard.vue'
+import { useChatStore } from '~/stores/chat'
 
 const toastSuccess = vi.fn()
 const toastError = vi.fn()
@@ -18,9 +19,17 @@ vi.mock('~/composables/useToast', () => ({
   useToast: () => ({ success: toastSuccess, error: toastError }),
 }))
 
-const projectPlanToCodingPlan = vi.fn()
-vi.mock('~/stores/chat', () => ({
-  useChatStore: () => ({ projectPlanToCodingPlan }),
+// 109-REVIEW HI-01：改用**真实** chat store（只替换投影 action）。
+// 原先整模块 mock 掉 store 让真实 TechPlanCard 根本无法挂载，于是交棒后的选仓面
+// 只能靠 StubTechPlanCard 断言 props 透传——「透传的 props 够不够真实卡片跑完四步」
+// 这件事没有任何用例覆盖，HI-01 的缺口因此在 240 行全绿的 spec 里纹丝不动。
+const projectPlanToCodingPlan = vi.hoisted(() => vi.fn())
+
+// 真实 TechPlanCard 会异步初始化 markdown 渲染器；换成 echo 避免拉 shiki 重依赖。
+vi.mock('~/composables/useMarkdownRenderer', () => ({
+  getMarkdownRenderer: vi.fn(async () => ({
+    render: (raw: string) => `<div data-test="md">${raw}</div>`,
+  })),
 }))
 
 const StubBadge = defineComponent({
@@ -79,6 +88,10 @@ function projectionResponse(overrides: Record<string, unknown> = {}) {
     tech_plan: '# 方案正文',
     affected_files: [{ file_path: 'server/a.py', change_type: 'add' }],
     recommended_repository_ids: ['repo-1', 'repo-2'],
+    recommended_repositories: [
+      { id: 'repo-1', name: 'repo-alpha' },
+      { id: 'repo-2', name: 'repo-beta' },
+    ],
     provenance: 'orchestrated',
     ...overrides,
   }
@@ -100,6 +113,8 @@ function mountCard() {
 beforeEach(() => {
   vi.clearAllMocks()
   setActivePinia(createPinia())
+  // 只替换投影 action，其余走真实 store（真实 TechPlanCard 依赖 storeToRefs）
+  ;(useChatStore() as any).projectPlanToCodingPlan = projectPlanToCodingPlan
 })
 
 describe('orchestratedPlanCard', () => {
@@ -220,6 +235,125 @@ describe('orchestratedPlanCard', () => {
     expect(wrapper.find('[data-test="tech-plan-card"]').exists()).toBe(true)
   })
 
+  it('组件源码零 v-html（新增面不得引入未转义 HTML 渲染）', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/chat/OrchestratedPlanCard.vue'),
+      'utf-8',
+    )
+    const hits = source
+      .split('\n')
+      .filter(line => line.includes('v-html'))
+      .filter((line) => {
+        const trimmed = line.trim()
+        // 过滤注释行，避免注释里提到 v-html 让断言自我失效
+        return !trimmed.startsWith('//')
+          && !trimmed.startsWith('*')
+          && !trimmed.startsWith('<!--')
+      })
+    expect(hits).toEqual([])
+  })
+})
+
+/**
+ * 🔴 109-REVIEW HI-01：交棒**不 stub** TechPlanCard 的集成用例。
+ *
+ * 上面的用例用 StubTechPlanCard 顶掉真实组件，只断言 props 透传——于是「透传的 props
+ * 够不够真实 TechPlanCard 跑完四步」这件事没有任何覆盖。实际缺口是：不传
+ * `available-repositories` / `target-repositories` 时，交棒后的选仓面渲染成空列表
+ * （「未找到匹配的仓库」），用户既看不到 AI 推荐了哪几个仓，也无法勾选或取消，
+ * SC-1 的第一步「选目标仓」在界面上不成立。
+ *
+ * 本组用例挂载真实 TechPlanCard **与真实 RepoMultiSelector**，只 stub 到叶子 UI
+ * 原语为止，断言选仓列表真的渲染出可勾选行。
+ */
+describe('orchestratedPlanCard — 交棒后的真实选仓面（不 stub TechPlanCard）', () => {
+  function passthrough(name: string, dataTest?: string) {
+    return defineComponent({
+      name,
+      setup: (_, { slots }) => () =>
+        h('div', dataTest ? { 'data-test': dataTest } : {}, slots.default?.()),
+    })
+  }
+
+  const leafStubs = {
+    Badge: StubBadge,
+    Button: StubButton,
+    Input: passthrough('Input'),
+    Checkbox: passthrough('Checkbox'),
+    Command: passthrough('Command'),
+    CommandInput: passthrough('CommandInput'),
+    CommandList: passthrough('CommandList'),
+    CommandGroup: passthrough('CommandGroup'),
+    CommandEmpty: passthrough('CommandEmpty', 'command-empty'),
+    CommandItem: passthrough('CommandItem', 'repo-option'),
+    Tooltip: passthrough('Tooltip'),
+    TooltipContent: passthrough('TooltipContent'),
+    TooltipProvider: passthrough('TooltipProvider'),
+    TooltipTrigger: passthrough('TooltipTrigger'),
+    Dialog: passthrough('Dialog'),
+    DialogContent: passthrough('DialogContent'),
+    DialogHeader: passthrough('DialogHeader'),
+    DialogTitle: passthrough('DialogTitle'),
+    DialogDescription: passthrough('DialogDescription'),
+    AlertDialog: passthrough('AlertDialog'),
+    AlertDialogContent: passthrough('AlertDialogContent'),
+    AlertDialogHeader: passthrough('AlertDialogHeader'),
+    AlertDialogTitle: passthrough('AlertDialogTitle'),
+    AlertDialogDescription: passthrough('AlertDialogDescription'),
+    AlertDialogFooter: passthrough('AlertDialogFooter'),
+    AlertDialogAction: passthrough('AlertDialogAction'),
+    AlertDialogCancel: passthrough('AlertDialogCancel'),
+    Select: passthrough('Select'),
+    SelectTrigger: passthrough('SelectTrigger'),
+    SelectContent: passthrough('SelectContent'),
+    SelectItem: passthrough('SelectItem'),
+    SelectValue: passthrough('SelectValue'),
+    CodingSessionStatusRow: passthrough('CodingSessionStatusRow'),
+    ExportConfirmDialog: passthrough('ExportConfirmDialog'),
+  }
+
+  async function projectAndSettle() {
+    projectPlanToCodingPlan.mockResolvedValue(projectionResponse())
+    const wrapper = mount(OrchestratedPlanCard, {
+      props: { artifactVersionId: ARTIFACT_VERSION_ID },
+      global: { stubs: leafStubs },
+    })
+    await wrapper.find('[data-test="enter-coding"]').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('选仓列表渲染出每个推荐仓库的可勾选行（缺 available-repositories 时此处为 0）', async () => {
+    const wrapper = await projectAndSettle()
+
+    // 卡片里有两个 RepoMultiSelector（创建态内嵌 + 追加态 Dialog），取内嵌那个
+    const inlineSelector = wrapper.findAllComponents({ name: 'RepoMultiSelector' })[0]
+    expect(inlineSelector).toBeTruthy()
+    const options = inlineSelector.findAll('[data-test="repo-option"]')
+    expect(options.length).toBe(2)
+    // 行文本还含「AI 推荐」tooltip 文案，故按包含关系断言仓库名
+    expect(options[0].text()).toContain('repo-alpha')
+    expect(options[1].text()).toContain('repo-beta')
+    expect(wrapper.text()).toContain('选择目标仓库')
+  })
+
+  it('「目标仓库」徽标区列出 AI 推荐的仓库名（缺 target-repositories 时整块不渲染）', async () => {
+    const wrapper = await projectAndSettle()
+
+    expect(wrapper.text()).toContain('目标仓库')
+    expect(wrapper.text()).toContain('repo-alpha')
+    expect(wrapper.text()).toContain('repo-beta')
+  })
+
+  it('交棒后正文与来源标志一并生效：渲染方案正文且不挂草稿横幅', async () => {
+    const wrapper = await projectAndSettle()
+
+    expect(wrapper.html()).toContain('<div data-test="md"># 方案正文</div>')
+    expect(wrapper.find('[data-test="unresearched-banner"]').exists()).toBe(false)
+  })
+})
+
+describe('orchestratedPlanCard — 源码纪律', () => {
   it('组件源码零 v-html（新增面不得引入未转义 HTML 渲染）', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/chat/OrchestratedPlanCard.vue'),

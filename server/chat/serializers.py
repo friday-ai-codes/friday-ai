@@ -138,11 +138,15 @@ class CreateConversationSerializer(serializers.Serializer):
     )
     # 项目作战室 P2：绑定项目 + 可见性（shared 守护要求 bound_project 非空，service 层兜底）。
     bound_project_id = serializers.UUIDField(
-        required=False, allow_null=True, default=None,
+        required=False,
+        allow_null=True,
+        default=None,
         help_text="绑定项目聚合根（项目作战室会话；非空则自动加载项目上下文）",
     )
     visibility = serializers.ChoiceField(
-        choices=["personal", "shared"], required=False, default="personal",
+        choices=["personal", "shared"],
+        required=False,
+        default="personal",
         help_text="会话可见性（personal=仅创建者 / shared=项目共享只读）",
     )
 
@@ -162,7 +166,9 @@ class ConversationPatchSerializer(serializers.Serializer):
 
     provider_credential_id = serializers.UUIDField(required=False, allow_null=True)
     model = serializers.CharField(
-        required=False, allow_blank=True, max_length=200,
+        required=False,
+        allow_blank=True,
+        max_length=200,
     )
     title = serializers.CharField(required=False, max_length=500)
     space_id = serializers.UUIDField(required=False, allow_null=True)
@@ -173,7 +179,8 @@ class ConversationPatchSerializer(serializers.Serializer):
     is_archived = serializers.BooleanField(required=False)
     # 项目作战室 P2：可见性互转（个人↔共享，仅创建者；共享→个人语义见 service）。
     visibility = serializers.ChoiceField(
-        choices=["personal", "shared"], required=False,
+        choices=["personal", "shared"],
+        required=False,
     )
 
     def validate_provider_credential_id(self, value):
@@ -435,12 +442,8 @@ class ConversationRuntimeCodingPlanSerializer(serializers.Serializer):
     affected_files = serializers.JSONField(required=False)
     recommended_repository_ids = serializers.JSONField(required=False)
     source_artifact_version_id = serializers.UUIDField(allow_null=True, required=False)
-    feishu_doc_token = serializers.CharField(
-        allow_blank=True, required=False, default=""
-    )
-    feishu_doc_url = serializers.CharField(
-        allow_blank=True, required=False, default=""
-    )
+    feishu_doc_token = serializers.CharField(allow_blank=True, required=False, default="")
+    feishu_doc_url = serializers.CharField(allow_blank=True, required=False, default="")
 
 
 class ConversationRuntimeSerializer(serializers.Serializer):
@@ -461,9 +464,7 @@ class ConversationRuntimeSerializer(serializers.Serializer):
     # 多个深度分析子会话各自独立的日志（前端按会话渲染横向 swiper）
     deep_sessions = ConversationRuntimeDeepSessionSerializer(many=True, required=False)
     # 最近 CodingPlan + 每仓 session 状态
-    coding_plan = ConversationRuntimeCodingPlanSerializer(
-        allow_null=True, required=False
-    )
+    coding_plan = ConversationRuntimeCodingPlanSerializer(allow_null=True, required=False)
     # 流式快照（仅 active=true 时返回）—— 详见 orchestration.graph._StreamingSnapshot
     # 与前端 store streamingPendingText / streamingThinking / streamingToolCalls /
     # streamingNarrations / streamingTimeline 一一对应；用 JSONField pass-through
@@ -556,8 +557,7 @@ class SendMessageSerializer(serializers.Serializer):
             for part in input_parts
         )
         has_image = any(
-            isinstance(part, dict) and part.get("type") == "image"
-            for part in input_parts
+            isinstance(part, dict) and part.get("type") == "image" for part in input_parts
         )
         if not has_text and not has_image:
             raise serializers.ValidationError({"content": "消息内容不能为空"})
@@ -642,8 +642,7 @@ class CodingSessionsBatchCreateRequestSerializer(serializers.Serializer):
         default="",
         max_length=200,
         help_text=(
-            "可选分支模板。支持占位符 ${repo} → repository.name。"
-            "为空时按 CodingPlan title 推断。"
+            "可选分支模板。支持占位符 ${repo} → repository.name。为空时按 CodingPlan title 推断。"
         ),
     )
     target_branch = serializers.CharField(
@@ -715,6 +714,11 @@ class ProjectPlanToCodingResponseSerializer(serializers.Serializer):
     tech_plan = serializers.CharField(allow_blank=True)
     affected_files = serializers.JSONField()
     recommended_repository_ids = serializers.JSONField()
+    # 109-REVIEW HI-01：仓库**名字**必须随投影响应一起回来。只给 id，交棒后的
+    # `TechPlanCard` 渲染不出任何一行可勾选的仓库（`RepoMultiSelector` 需要
+    # `{id, name}`），选仓面会变成「未找到匹配的仓库」——SC-1 的第一步在界面上不成立。
+    # 与「响应直接带正文，不要求前端二次拉取」是同一条纪律，只是当初漏在了仓库这一项。
+    recommended_repositories = serializers.JSONField()
     provenance = serializers.CharField()
 
 
@@ -804,14 +808,14 @@ class ClarificationAnswerSerializer(serializers.Serializer):
         allow_blank=True,
         max_length=64,
         default="",
-        help_text="用户选中的 ClarificationOption.id；可空仅用 freeform 时传 \"\"",
+        help_text='用户选中的 ClarificationOption.id；可空仅用 freeform 时传 ""',
     )
     freeform_text = serializers.CharField(
         required=False,
         allow_blank=True,
         max_length=2000,
         default="",
-        help_text="用户自由输入兜底；可空仅用 selected_option_id 时传 \"\"",
+        help_text='用户自由输入兜底；可空仅用 selected_option_id 时传 ""',
     )
 
     def validate(self, attrs: dict) -> dict:

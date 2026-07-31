@@ -52,6 +52,7 @@ from .plan_projection_service import (
     ERROR_REQUIRES_CHAT_ENTRYPOINT,
     PlanProjectionError,
     PlanProjectionService,
+    filter_valid_uuids,
 )
 from .serializers import (
     ChatCompletionRequestSerializer,
@@ -2777,6 +2778,8 @@ class CodingPlanProjectFromArtifactVersionView(APIView):
         tags=["CodingPlan"],
     )
     async def post(self, request):  # type: ignore[override]
+        from repositories.models import Repository
+
         req_ser = ProjectPlanToCodingRequestSerializer(data=request.data)
         req_ser.is_valid(raise_exception=True)
         artifact_version_id = str(req_ser.validated_data["artifact_version_id"])
@@ -2825,6 +2828,22 @@ class CodingPlanProjectFromArtifactVersionView(APIView):
         if getattr(user, "is_authenticated", False) and plan.conversation_id != conversation.id:
             return self._not_found()
 
+        # 4) 推荐仓库的**名字**随响应一起回（109-REVIEW HI-01）：前端就地内嵌
+        #    TechPlanCard 后要用 {id, name} 渲染选仓列表，只有 id 渲染不出任何一行。
+        #    半可信 id 先过筛（同 MN-03，非 UUID 字面量喂 ORM 会抛 ValidationError）；
+        #    按 plan 所属 space 过滤，口径与工具路径一致。
+        recommended_ids = filter_valid_uuids(plan.recommended_repository_ids)
+        recommended_repositories: list[dict[str, str]] = []
+        if recommended_ids:
+            recommended_repositories = [
+                {"id": str(r.id), "name": r.name}
+                async for r in Repository.objects.filter(
+                    id__in=recommended_ids,
+                    spaces__id=conversation.space_id,
+                    is_deleted=False,
+                )
+            ]
+
         resp_ser = ProjectPlanToCodingResponseSerializer(
             data={
                 "coding_plan_id": str(plan.id),
@@ -2833,6 +2852,7 @@ class CodingPlanProjectFromArtifactVersionView(APIView):
                 "tech_plan": plan.tech_plan or "",
                 "affected_files": plan.affected_files or [],
                 "recommended_repository_ids": plan.recommended_repository_ids or [],
+                "recommended_repositories": recommended_repositories,
                 "provenance": plan.provenance,
             }
         )
