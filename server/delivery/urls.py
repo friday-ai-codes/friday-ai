@@ -20,6 +20,15 @@ from delivery.api.blueprint_gate_views import (
     BlueprintGateUpgradeResearchView,
     BlueprintRejectedToBoundaryView,
 )
+from delivery.api.blueprint_review_views import (
+    BlueprintReviewApproveView,
+    BlueprintReviewEditBlocksView,
+    BlueprintReviewFindingDismissView,
+    BlueprintReviewFindingResolveView,
+    BlueprintReviewRejectView,
+    BlueprintReviewSnapshotView,
+    BlueprintReviewThreadAnswerView,
+)
 from delivery.api.human_task_views import (
     ClarificationAnswerView,
     HumanTaskActionView,
@@ -174,6 +183,45 @@ urlpatterns = [
         "artifacts/<uuid:artifact_id>/blueprint-gate/upgrade-research/",
         BlueprintGateUpgradeResearchView.as_view(),
         name="blueprint-gate-upgrade-research",
+    ),
+    # 阶段 4 人审（114-05，FLOW-07 / CLAR-03 / CLAR-04）：1 个只读快照 + 6 个动作端点
+    # （含 B2 的 finding 处置两端点），前缀 blueprint-review/ 与阶段 1 的 blueprint-gate/
+    # 区分。字面段 threads/ 在 <uuid:thread_id> 之前；三个 threads/<uuid>/<动作>/ 路由的
+    # 动作段互不重叠，与 artifact-timeline 的整段精确匹配同样互不遮挡。
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-review/",
+        BlueprintReviewSnapshotView.as_view(),
+        name="blueprint-review-snapshot",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-review/approve/",
+        BlueprintReviewApproveView.as_view(),
+        name="blueprint-review-approve",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-review/reject/",
+        BlueprintReviewRejectView.as_view(),
+        name="blueprint-review-reject",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-review/edit-blocks/",
+        BlueprintReviewEditBlocksView.as_view(),
+        name="blueprint-review-edit-blocks",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-review/threads/<uuid:thread_id>/answer/",
+        BlueprintReviewThreadAnswerView.as_view(),
+        name="blueprint-review-thread-answer",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-review/threads/<uuid:thread_id>/resolve/",
+        BlueprintReviewFindingResolveView.as_view(),
+        name="blueprint-review-thread-resolve",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-review/threads/<uuid:thread_id>/dismiss/",
+        BlueprintReviewFindingDismissView.as_view(),
+        name="blueprint-review-thread-dismiss",
     ),
     # Human Task Center（P8）：统一待办收件箱（list/open）+ 物化待办动作 + 投影澄清回流。
     # 字面段 clarification/ 必须在 <uuid:task_id> 动作路由之前注册（避免被 uuid 段吞）。
