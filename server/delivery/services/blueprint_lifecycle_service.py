@@ -1272,9 +1272,14 @@ class BlueprintLifecycleService:
           用 ``iter_blocks(new_content)`` 的 path 一并刷新 ``anchor["section_path"]``——
           115 渲染靠它定位，漏刷会让批注挂在错误的段落标题下。``skipped`` 的线程也刷：
           块内容没变但段落可能被改名/移位。
+        - ⭐ **「没有可锚定位」的线程不参与重锚**（:func:`_has_anchor_locator` 为假 ⇒ 计入
+          ``skipped``、``anchor_status`` 保持原值）。``blueprint_anchor.reanchor`` 把空
+          anchor 判为 orphaned 是**单条**语义下的正确行为，但本方法取的是全量线程，
+          照搬会把一堆从来没锚过、也不该锚的系统线程持久标成失锚（114-MJ-02）。
         - **失锚不删**：``anchor_status="orphaned"`` 的线程行原样保留（``anchor`` 内容也
           逐字保留），``filter(anchor_status="orphaned")`` 可集中查询，供 115 展示
-          「失锚评论」（CLAR-02 明令：批注不得静默消失）。
+          「失锚评论」（CLAR-02 明令：批注不得静默消失）。**该清单只装真失锚的线程**
+          （有 ``block_id`` 或 ``quoted_text`` 却锚不上），这是它可用的前提。
         - **一次 ``bulk_update``**：``bulk_update`` / ``.update()`` **绕过 auto_now** ⇒
           必须显式带 ``updated_at=timezone.now()``（同 :meth:`_apply_transition_sync`
           的纪律）。
@@ -1361,9 +1366,19 @@ class BlueprintLifecycleService:
             for thread in rows:
                 counts["checked"] += 1
                 anchor = thread.anchor
-                block_id = (
-                    str(anchor.get("block_id") or "") if isinstance(anchor, dict) else ""
-                )
+                block_id = str(anchor.get("block_id") or "") if isinstance(anchor, dict) else ""
+                if not _has_anchor_locator(anchor):
+                    # ⭐ 「本来就没锚点」≠「失锚」：本方法取的是该 artifact 的**全量线程**，
+                    # 而本仓大量线程天然无 anchor（`_abp_ensure_blocking_clarification` 的
+                    # 自动推进线程、112 规格门/确认门线程、用户没划线时的驳回评论、无
+                    # block_id 的 finding 线程）。`blueprint_anchor.reanchor` 的第一条分支
+                    # 把空 anchor 直接判 orphaned —— 对单条重锚是对的（调用方本该只拿有锚
+                    # 点的线程来问），但批量层若照搬，这些线程会在**每一条产版本路径**上被
+                    # 持久标成 orphaned，把 CLAR-02 唯一的呈现面 `orphaned_threads` 淹成噪
+                    # 声，真正「块被删掉导致批注错位」的那几条反而找不到（114-MJ-02）。
+                    # 不进 reanchor ⇒ anchor 与 anchor_status 都保持原值。
+                    counts["skipped"] += 1
+                    continue
                 if (
                     changed is not None
                     and block_id
@@ -1410,6 +1425,22 @@ class BlueprintLifecycleService:
                     to_update, ["anchor", "anchor_status", "updated_at"]
                 )
         return counts
+
+
+def _has_anchor_locator(anchor: Any) -> bool:
+    """该 anchor 是否**有可用于重锚的定位**（``block_id`` 或 ``quoted_text`` 非空）。
+
+    ``blueprint_anchor.reanchor`` 的两条命中路径分别靠 ``block_id``（精确）与
+    ``quoted_text``（模糊，``difflib`` 相似度 ≥ 阈值）。两者都空时它**无从判断**，只能落
+    orphaned —— 所以批量侧必须先把这类线程筛掉，否则「没锚点」会被系统性地误报成「失锚」。
+
+    判据刻意**不看** ``section_path``：``reanchor`` 从不用它做匹配（它只被批量侧用新
+    ``iter_blocks`` 的 path 刷新），有 path 无 block_id/quoted_text 依然锚不上。
+    ⛔ 不改 ``blueprint_anchor.py``（111 冻结面，单测锁死 0.85 阈值与同分字典序）。
+    """
+    if not isinstance(anchor, dict):
+        return False
+    return bool(str(anchor.get("block_id") or "") or str(anchor.get("quoted_text") or ""))
 
 
 # ══════════════════════════════════════════════════════════════════════════
