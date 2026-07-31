@@ -19,10 +19,8 @@
  * ⛔ **不做乐观更新**：本组件只 emit，状态一律由父层以响应体的 `current_status` 为准写回
  * 并 `invalidateQueries({ queryKey: ['blueprint'] })` 重取（114-REVIEW MJ-01 第二点）。
  *
- * ⚠️ i18n 缺口（§13.2 回报而不自补）：UI-SPEC §11.1 想要的是带状态插值的
- * `review.disabledReason`，而 `zh-CN.json` 里只有无参的 `review.disabledReadonly`。
- * 这里退化为「无参文案 + 状态中文名」两段并列，状态名取自
- * `getBlueprintStatusConfig(status).labelKey`。补键后只需换一处 `t()` 调用。
+ * Tooltip 文案用 UI-SPEC §11.1 要求的带状态插值版本（`review.disabledReason`，115-06 补键后
+ * 换回）；状态中文名取自 `getBlueprintStatusConfig(status).labelKey`，⛔ 不在此写死中文。
  */
 
 import { computed } from 'vue'
@@ -99,7 +97,7 @@ function onReject(): void {
             </span>
           </TooltipTrigger>
           <TooltipContent v-if="!canReview">
-            {{ t('knowledge.blueprints.review.disabledReadonly') }} · {{ statusLabel }}
+            {{ t('knowledge.blueprints.review.disabledReason', { status: statusLabel }) }}
           </TooltipContent>
         </Tooltip>
 
@@ -119,7 +117,7 @@ function onReject(): void {
             </span>
           </TooltipTrigger>
           <TooltipContent v-if="!canReview">
-            {{ t('knowledge.blueprints.review.disabledReadonly') }} · {{ statusLabel }}
+            {{ t('knowledge.blueprints.review.disabledReason', { status: statusLabel }) }}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

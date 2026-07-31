@@ -313,7 +313,7 @@ function setMode(mode: 'inline' | 'split'): void {
       <span class="icon-[lucide--info] text-muted-foreground" aria-hidden="true" />
       <span class="text-xs text-muted-foreground">{{ t('knowledge.blueprints.section.mustHaves') }}</span>
       <Badge variant="muted">
-        {{ t('knowledge.blueprints.diff.sectionUnchanged') }}
+        {{ t('knowledge.blueprints.diff.mustHavesExcluded') }}
       </Badge>
     </div>
   </div>

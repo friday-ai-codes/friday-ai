@@ -29,7 +29,6 @@ import type {
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
-import { Badge } from '~/components/ui/badge'
 import BlueprintBlockList from '../BlueprintBlockList.vue'
 import ImplementationItemCard from '../ImplementationItemCard.vue'
 
@@ -201,10 +200,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
           :data-wave="lane.wave"
           @click="toggleWave(lane.wave)"
         >
-          <span class="font-mono">wave {{ lane.wave }}</span>
-          <Badge variant="muted">
-            {{ lane.count }}
-          </Badge>
+          <span>{{ t('knowledge.blueprints.impl.waveCount', { n: lane.wave, c: lane.count }) }}</span>
         </button>
       </div>
 

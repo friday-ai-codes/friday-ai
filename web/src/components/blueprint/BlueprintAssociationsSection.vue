@@ -99,7 +99,7 @@ const isEmpty = computed(() => !groups.value.length && !hasProject.value)
       <!-- ① 本蓝图引用了：引用池按 source_type 分组统计 + 可点 chip（零端点） -->
       <div v-if="groups.length" class="space-y-2" data-testid="blueprint-associations-citations">
         <p class="text-xs font-medium text-muted-foreground">
-          {{ t('knowledge.relation.REFERENCES') }}
+          {{ t('knowledge.blueprints.associations.citedByThis') }}
         </p>
         <div
           v-for="group in groups"
@@ -129,7 +129,7 @@ const isEmpty = computed(() => !groups.value.length && !hasProject.value)
       <!-- ② 关联项目 -->
       <div v-if="hasProject" class="space-y-1" data-testid="blueprint-associations-project">
         <p class="text-xs font-medium text-muted-foreground">
-          {{ t('projects.workbench.deps.projectsTitle') }}
+          {{ t('knowledge.blueprints.associations.relatedProject') }}
         </p>
         <RouterLink
           :to="`/projects/${projectId}`"

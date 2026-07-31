@@ -184,7 +184,7 @@ function cancelDraft(): void {
 
 /**
  * `↑`/`↓` 只在**同组内**移动焦点；`Esc` 清选中态但**不关闭侧栏**（§18.1）。
- * ⚠️ 焦点在草稿卡内时 `Esc` 改为放弃草稿 —— 草稿卡没有可见的「取消」按钮，
+ * ⚠️ 焦点在草稿卡内时 `Esc` 改为放弃草稿 —— 与草稿卡上的「取消」按钮等效，
  * 因为 `knowledge.blueprints.thread.*` 缺该文案键，而 i18n 追加点已由 115-02 对本相位
  * 关闭（§13.2：回报而不自补，缺口已登记在 115-04-SUMMARY）。
  */
@@ -276,6 +276,14 @@ function onKeydown(event: KeyboardEvent): void {
         :placeholder="t('knowledge.blueprints.thread.composerPlaceholder')"
       />
       <div class="flex items-center justify-end gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="blueprint-thread-draft-cancel"
+          @click="cancelDraft"
+        >
+          {{ t('knowledge.blueprints.thread.draftCancel') }}
+        </Button>
         <Button
           size="sm"
           data-testid="blueprint-thread-draft-submit"

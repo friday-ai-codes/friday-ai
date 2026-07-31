@@ -77,6 +77,19 @@ function kindVariant(kind: string): 'info' | 'warning' | 'destructive' | 'second
   return KIND_VARIANT[kind] ?? 'outline'
 }
 
+/** `kind` 四档 → 中文名；未知值回落 schema 原样 token（⛔ 不发明第五档文案）。 */
+const KIND_LABEL_KEY: Record<string, string> = {
+  capability: 'kindCapability',
+  gap: 'kindGap',
+  risk: 'kindRisk',
+  convention: 'kindConvention',
+}
+
+function kindLabel(kind: string): string {
+  const suffix = KIND_LABEL_KEY[kind]
+  return suffix ? t(`knowledge.blueprints.state.${suffix}`) : String(kind ?? '')
+}
+
 /** ⭐ 质量信号判据：`citations` 缺失或为空数组都算缺引用。 */
 function missingCitations(citationIds: string[] | undefined): boolean {
   return !Array.isArray(citationIds) || citationIds.length === 0
@@ -115,6 +128,9 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
 
         <div class="space-y-4 p-5">
           <div v-if="group.summary?.length" data-field="summary">
+            <p class="mb-1.5 text-xs font-medium text-muted-foreground">
+              {{ t('knowledge.blueprints.section.currentStateSummary') }}
+            </p>
             <BlueprintBlockList
               :blocks="group.summary"
               :section-path="`current_state_analysis[${group.repository_id}].summary`"
@@ -139,7 +155,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
           >
             <div class="flex flex-wrap items-center gap-2">
               <Badge :variant="kindVariant(finding.kind)" :data-kind="finding.kind">
-                {{ finding.kind }}
+                {{ kindLabel(finding.kind) }}
               </Badge>
               <h4 v-if="finding.topic" class="text-sm font-semibold">
                 {{ finding.topic }}
@@ -151,7 +167,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
                 data-missing-citations="true"
                 data-testid="blueprint-finding-missing-citations"
               >
-                {{ t('knowledge.blueprints.citation.empty') }}
+                {{ t('knowledge.blueprints.state.missingCitations') }}
               </Badge>
             </div>
 

@@ -14,8 +14,7 @@
  * 底部常驻提示逐字取自 §16 的 `review.rejectBody`，插值 `n` 传 **`revisionRound + 1`**
  * （提示的是「驳回后将变成第几轮」，不是当前轮次）。
  *
- * ⚠️ i18n 缺口（§13.2 回报而不自补）：「保留此划线」开关缺文案键，退化为用既有的
- * `annotation.quotedSnapshot` 作开关标签（语义是「把这段引文一并带上」）。
+ * 锚点开关的标签用 `review.rejectKeepAnchor`（「保留此划线」，115-06 补键后换回）。
  *
  * 安全：引文与理由全程 Vue mustache + `<pre>`，不使用任何原始 HTML 注入指令。
  */
@@ -139,7 +138,7 @@ function submit(): void {
             v-model="keepAnchor"
             data-testid="blueprint-reject-keep-anchor"
           />
-          <span class="text-xs text-foreground">{{ t('knowledge.blueprints.annotation.quotedSnapshot') }}</span>
+          <span class="text-xs text-foreground">{{ t('knowledge.blueprints.review.rejectKeepAnchor') }}</span>
         </div>
       </div>
 

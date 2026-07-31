@@ -203,7 +203,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
     <Collapsible v-if="rationaleBlocks.length || constraintRefs.length" data-field="rationale">
       <CollapsibleTrigger class="flex w-full items-center gap-1.5 rounded-lg py-1 text-left text-xs font-medium text-muted-foreground hover:text-foreground">
         <span class="icon-[lucide--chevron-right]" aria-hidden="true" />
-        <span>{{ t('knowledge.blueprints.repo.role') }}</span>
+        <span>{{ t('knowledge.blueprints.repo.rationale') }}</span>
       </CollapsibleTrigger>
       <CollapsibleContent class="space-y-2 pt-1.5">
         <BlueprintBlockList
@@ -278,7 +278,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
     <!-- indirect 专属：会被用到的能力 -->
     <div v-if="isIndirect && capabilities.length" data-field="capabilities-used" class="space-y-1">
       <p class="text-xs font-medium text-muted-foreground">
-        {{ t('knowledge.entity.associations.capabilities') }}
+        {{ t('knowledge.blueprints.repo.capabilitiesUsed') }}
       </p>
       <ul class="space-y-1">
         <li
@@ -320,7 +320,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
       <span v-if="routingScore" data-testid="blueprint-repo-routing-score">{{ routingScore }}</span>
       <span v-if="routingConfidence">{{ routingConfidence }}</span>
       <Badge v-if="isCrossTeam" variant="warning" data-cross-team="true">
-        cross_team
+        {{ t('knowledge.blueprints.repo.crossTeam') }}
       </Badge>
     </div>
 
@@ -329,11 +329,11 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
       <span v-if="decidedByKey">{{ t(`knowledge.blueprints.repo.${decidedByKey}`) }}</span>
       <Badge v-if="gateState === 'true'" variant="success" data-confirmed-at-gate="true">
         <span class="icon-[lucide--check]" aria-hidden="true" />
-        {{ t('knowledge.blueprints.thread.kindRepoConfirmation') }}
+        {{ t('knowledge.blueprints.repo.confirmedAtGate') }}
       </Badge>
       <Badge v-else-if="gateState === 'false'" variant="outline" data-confirmed-at-gate="false">
         <span class="icon-[lucide--minus-circle]" aria-hidden="true" />
-        {{ t('knowledge.blueprints.thread.kindRepoConfirmation') }}
+        {{ t('knowledge.blueprints.repo.notConfirmedAtGate') }}
       </Badge>
     </div>
   </div>

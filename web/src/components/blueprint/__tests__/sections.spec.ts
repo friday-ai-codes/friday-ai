@@ -83,7 +83,30 @@ const i18n = createI18n({
             mustHaves: '验收锚点',
             decisionLog: '决策记录',
             associations: '关联',
+            goal: '目标',
+            background: '背景',
+            currentStateSummary: '现状综述',
+            deferredIdeas: '本方案明确不做的事（{n}）',
           },
+          spec: { intentGreenfield: '净新增', intentBrownfield: '存量改造', intentFix: '缺陷修复' },
+          state: {
+            kindCapability: '能力',
+            kindGap: '缺口',
+            kindRisk: '风险',
+            kindConvention: '约定',
+            missingCitations: '缺引用',
+          },
+          impl: {
+            changeTypeCreate: '新建',
+            changeTypeModify: '改动',
+            changeTypeRemove: '删除',
+            changeTypeIndirectRefine: '间接完善',
+            existingIntegration: '与既有功能如何配合',
+            testStrategy: '测试策略',
+            waveCount: 'wave {n} · {c} 项',
+          },
+          decision: { gotoThread: '查看对应线程' },
+          associations: { citedByThis: '本蓝图引用了', relatedProject: '关联项目' },
           repo: {
             role: '关联角色',
             roleDirect: '直接改动',
@@ -101,6 +124,11 @@ const i18n = createI18n({
             decidedByHuman: '人工确认',
             decidedByAi: 'AI 判定',
             empty: '本方案未关联任何仓库',
+            rationale: '选仓理由',
+            capabilitiesUsed: '会被用到的能力',
+            crossTeam: '跨组协作',
+            confirmedAtGate: '已在确认门锁定',
+            notConfirmedAtGate: '未经确认门锁定',
           },
           api: {
             directionProvided: '对外提供',
@@ -113,6 +141,7 @@ const i18n = createI18n({
             dataSourceFrom: '来自 {name}',
             fieldsNeeded: '所需字段',
             consumers: '消费方',
+            availabilityUnknown: '未标注',
             empty: '本方案未涉及接口契约',
           },
           impact: {
@@ -131,6 +160,7 @@ const i18n = createI18n({
             compatRisks: '兼容风险',
             dataMigration: '数据迁移',
             rollback: '回滚方案',
+            irreversible: '不可逆',
             empty: '本方案未评估影响范围',
           },
           flow: {
@@ -143,6 +173,10 @@ const i18n = createI18n({
             dataOut: '输出',
             note: '说明',
             alternativePaths: '备选路径',
+            actorUser: '用户',
+            actorFrontend: '前端',
+            actorBackend: '后端',
+            actorService: '服务',
             empty: '本方案未描述交互流程',
           },
           mustHaves: { colPath: '路径', colProvides: '提供能力' },
@@ -420,7 +454,7 @@ describe('apiContractCard —— ⭐ availability 的读取位置（113-05 决�
     expect(wrapper.find('[data-availability="unknown"]').exists()).toBe(true)
     expect(wrapper.find('[data-availability="existing"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="blueprint-api-support-repo"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('暂无数据')
+    expect(wrapper.text()).toContain('未标注')
   })
 
   it('5c. data_source.availability = existing ⇒ success 徽标（正向对照）', () => {

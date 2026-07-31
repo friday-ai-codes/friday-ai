@@ -253,7 +253,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
           data-availability="unknown"
           data-testid="blueprint-api-availability"
         >
-          {{ t('knowledge.blueprints.quality.noData') }}
+          {{ t('knowledge.blueprints.api.availabilityUnknown') }}
         </Badge>
 
         <RouterLink

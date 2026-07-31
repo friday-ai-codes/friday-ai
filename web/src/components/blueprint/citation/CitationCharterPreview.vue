@@ -9,12 +9,9 @@
  * 后三项在后端是零约束 JSON 字段 ⇒ 类型为 `unknown`，渲染前逐项收窄：字符串数组逐条列出、
  * 其余形状一律 `JSON.stringify` 后走 `<pre>`（全程 mustache，⛔ 不注入 HTML）。
  *
- * ⚠️ **分区小标题本相位缺 i18n 键，故不渲染文字标题**：`knowledge.blueprints.repo.*` 里没有
- * 章程四分区的标签键（全仓亦无 `charter*` 文案键，实测只有 `citation.sourceRepoCharter`
- * =「仓库章程」这一个）。i18n 三处追加点已由 115-02 一次做完并对本相位关闭 ⇒ 按 §13.2
- * **回报而不自补**：分区身份改由 `data-charter-section` 属性承载（供测试与后续接线定位），
- * 卡片整体用既有的「仓库章程」作标题。补齐 4 个键后即可把标题接上，见 115-03-SUMMARY 的
- * 「回报给 115-06 的 i18n 缺口」一节。
+ * 四个分区的小标题走 `knowledge.blueprints.repo.charter*`（115-06 补齐后接回，本组件在
+ * 115-03 阶段曾按 §13.2「回报而不自补」暂时不渲染标题）。分区身份**仍由**
+ * `data-charter-section` 属性承载 —— 测试与后续接线按它定位，⛔ 不按可见文案定位。
  *
  * **兜底**：`getRepositoryCharter` 恒不抛，无章程 / 任何失败返回 `null` ⇒ `CitationFallback`，
  * ⛔ 不关弹窗、⛔ 不回显后端错误体。
@@ -71,10 +68,26 @@ const sections = computed(() => {
   if (!charter)
     return []
   return [
-    { key: 'positioning', lines: toLines(charter.positioning) },
-    { key: 'owned_domains', lines: toLines(charter.owned_domains) },
-    { key: 'boundaries', lines: toLines(charter.boundaries) },
-    { key: 'placement_preferences', lines: toLines(charter.placement_preferences) },
+    {
+      key: 'positioning',
+      label: t('knowledge.blueprints.repo.charterPositioning'),
+      lines: toLines(charter.positioning),
+    },
+    {
+      key: 'owned_domains',
+      label: t('knowledge.blueprints.repo.charterOwnedDomains'),
+      lines: toLines(charter.owned_domains),
+    },
+    {
+      key: 'boundaries',
+      label: t('knowledge.blueprints.repo.charterBoundaries'),
+      lines: toLines(charter.boundaries),
+    },
+    {
+      key: 'placement_preferences',
+      label: t('knowledge.blueprints.repo.charterPlacement'),
+      lines: toLines(charter.placement_preferences),
+    },
   ].filter(section => section.lines.length)
 })
 
@@ -113,6 +126,9 @@ onMounted(() => {
         class="rounded-md border border-border/50 bg-muted/20 p-3 transition-shadow"
         :class="highlighting && section.key === targetSection ? 'ring-2 ring-primary/60' : ''"
       >
+        <p class="mb-1 text-xs font-medium text-foreground">
+          {{ section.label }}
+        </p>
         <ul class="list-disc pl-5 text-sm text-muted-foreground space-y-0.5">
           <li v-for="(line, i) in section.lines" :key="i">
             <pre class="whitespace-pre-wrap font-sans">{{ line }}</pre>

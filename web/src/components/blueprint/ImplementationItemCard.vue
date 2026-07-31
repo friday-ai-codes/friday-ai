@@ -69,7 +69,20 @@ const FILE_ACTION_VARIANT: Record<string, 'success' | 'info' | 'destructive'> = 
   remove: 'destructive',
 }
 
+/** `change_type` 四档 → 中文名；未知值回落 schema 原样 token（⛔ 不发明第五档文案）。 */
+const CHANGE_TYPE_LABEL_KEY: Record<string, string> = {
+  create: 'changeTypeCreate',
+  modify: 'changeTypeModify',
+  remove: 'changeTypeRemove',
+  indirect_refine: 'changeTypeIndirectRefine',
+}
+
 const changeTypeMeta = computed(() => CHANGE_TYPE_META[props.item.change_type] ?? null)
+
+const changeTypeLabel = computed(() => {
+  const suffix = CHANGE_TYPE_LABEL_KEY[props.item.change_type]
+  return suffix ? t(`knowledge.blueprints.impl.${suffix}`) : String(props.item.change_type ?? '')
+})
 
 const howBlocks = computed(() => props.item.how ?? [])
 const testStrategyBlocks = computed(() => props.item.test_strategy ?? [])
@@ -104,10 +117,10 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
     <div class="flex items-start gap-2">
       <Badge v-if="changeTypeMeta" :variant="changeTypeMeta.variant">
         <span :class="`icon-[${changeTypeMeta.icon}]`" aria-hidden="true" />
-        {{ item.change_type }}
+        {{ changeTypeLabel }}
       </Badge>
       <Badge v-else variant="outline">
-        {{ item.change_type }}
+        {{ changeTypeLabel }}
       </Badge>
       <h4 class="min-w-0 flex-1 text-sm font-semibold">
         {{ item.title }}
@@ -145,6 +158,9 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
     </div>
 
     <div v-if="existingIntegrationBlocks.length" data-field="existing-integration">
+      <p class="mb-1.5 text-xs font-medium text-muted-foreground">
+        {{ t('knowledge.blueprints.impl.existingIntegration') }}
+      </p>
       <BlueprintBlockList
         :blocks="existingIntegrationBlocks"
         :section-path="`implementation_overview.items[${item.id}].existing_integration`"
@@ -194,6 +210,9 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
     </div>
 
     <div v-if="testStrategyBlocks.length" data-field="test-strategy">
+      <p class="mb-1.5 text-xs font-medium text-muted-foreground">
+        {{ t('knowledge.blueprints.impl.testStrategy') }}
+      </p>
       <BlueprintBlockList
         :blocks="testStrategyBlocks"
         :section-path="`implementation_overview.items[${item.id}].test_strategy`"
