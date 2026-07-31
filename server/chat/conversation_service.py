@@ -2664,6 +2664,124 @@ class ConversationService:
                     if runtime.get("mode") is None:
                         runtime["mode"] = "deep_analysis"
 
+        # plan_research 调研容器会话（110-03 · OBS-02）——**独立分支、独立字段**。
+        #
+        # OBS-02 的根因是**读取谓词**而非写入：上面 deep analysis 那一支要求
+        # `task_type == EXPLORE` 且 `last_output.source == "chat_deep_analysis"`，而
+        # plan_research 走 `TaskType.PLAN` + `source == "plan_research"`，双重不匹配；
+        # 日志本身早就由 `runners/consumers.py::_append_runtime_log` 写进 last_output.logs。
+        #
+        # 🔴 边界：本分支只写 runtime["plan_research_sessions"]，**绝不** append/extend 到
+        # runtime["deep_sessions"]，也不动顶层 logs / session_id / mode / active ——那些是
+        # deep analysis 与 coding 的语义面，串进去会让既有前端行为漂移，也会逼前端对同一个
+        # 数组里两种语义的东西做二次判别（CONTEXT 既定）。
+        try:
+            from common.logging import redact_secrets_in_text
+
+            if orch_session is None:
+                # 一个判空覆盖两种情形：① 本对话确实没有编排会话；② 上面 orchestration
+                # 分支的 try 在给 orch_session 赋值**之前**就抛了（变量保持预置的 None）。
+                # 第二种若不预置，这里会是 UnboundLocalError → 被本分支自己的 except 吞掉
+                # → 静默变成空数组，症状与「后端根本没写日志」逐字相同。显式早退不留暗路。
+                runtime["plan_research_sessions"] = []
+            else:
+                # 归属三重条件缺一不可：
+                # - `plan_session_id` 是**权威链**：conversation → ConvergenceSession
+                #   .conversation_id（DB 列，由 start_orchestration 服务端写入，客户端与
+                #   模型层都改不了）→ 本会话下的调研容器。
+                # - `source == "plan_research"` 是**交叉校验**（fail-closed）：last_output
+                #   是容器回调可写的面，只按 plan_session_id 单键匹配等于信任一个半可信字段
+                #   的单一取值；两键同时命中才算数（109 callbacks.py WR-03 范式）。
+                # - `task_type == PLAN` 把 EXPLORE（深度分析）与其它类型挡在外面。
+                # 🔴 **绝不使用 `main_session__metadata__conversation_id`**：plan_research 的
+                # AgentSession.metadata 只有 {source, plan_session_id} 两个键，根本没有
+                # conversation_id（research_adapter.py:177-181 实读）。照抄 deep analysis 的
+                # 谓词会得到一个**恒空且不报错**的查询集——症状与「后端没写日志」完全一致。
+                research_candidates = [
+                    sess
+                    async for sess in SubAgentSession.objects.filter(
+                        task_type=SubAgentSession.TaskType.PLAN,
+                        last_output__source="plan_research",
+                        last_output__plan_session_id=str(orch_session.id),
+                    ).order_by("id")  # 与 repo.research.started 的派发顺序一致，让前端
+                    # 「多仓仅首张展开」是确定性的
+                ]
+
+                # repository_name 必须**服务端解析**：前端的 repoNames 只覆盖当前用户可见仓，
+                # 跨组仓在前端解析不出名字（UI-SPEC 后端契约要求 #7）。
+                # 🔴 repository_id 来自容器可写的 last_output，是半可信值 ⇒ 先过 UUID 过筛
+                # 再进 ORM（109-REVIEW MN-03 同一条纪律：Repository.objects.filter(
+                # id__in=['not-a-uuid']) 会抛 ValidationError）。一次批量查，不做 per-session 查。
+                valid_repo_ids: set[str] = set()
+                for sess in research_candidates:
+                    out = sess.last_output if isinstance(sess.last_output, dict) else {}
+                    raw_repo_id = out.get("repository_id") or ""
+                    if not isinstance(raw_repo_id, str) or not raw_repo_id:
+                        continue
+                    try:
+                        UUID(raw_repo_id)
+                    except (ValueError, AttributeError, TypeError):
+                        continue
+                    valid_repo_ids.add(raw_repo_id)
+
+                repo_name_by_id: dict[str, str] = {}
+                if valid_repo_ids:
+                    repo_name_by_id = {
+                        str(row["id"]): row["name"]
+                        async for row in Repository.objects.filter(
+                            id__in=valid_repo_ids,
+                        ).values("id", "name")
+                    }
+
+                research_payload: list[dict[str, Any]] = []
+                for sess in research_candidates:
+                    out = sess.last_output if isinstance(sess.last_output, dict) else {}
+                    repo_id = out.get("repository_id") or ""
+                    if not isinstance(repo_id, str):
+                        repo_id = ""
+                    raw_logs = out.get("logs")
+                    # 🔴 写入侧 `_append_runtime_log` **不脱敏**（source-agnostic 直写容器
+                    # stdout），读取面必须补（UI-SPEC 后端契约要求 #6）。type / ts 是受控值
+                    # 原样透传，只处理自由文本 content。
+                    sess_logs = (
+                        [
+                            {
+                                "type": entry.get("type", ""),
+                                "content": redact_secrets_in_text(
+                                    str(entry.get("content", "")),
+                                ),
+                                "ts": entry.get("ts"),
+                            }
+                            for entry in raw_logs
+                            if isinstance(entry, dict)
+                        ]
+                        if isinstance(raw_logs, list)
+                        else []
+                    )
+                    research_payload.append(
+                        {
+                            "session_id": sess.session_id,
+                            "plan_session_id": str(orch_session.id),
+                            "repository_id": repo_id,
+                            # 解析不出 ⇒ ""（**不回填 UUID 串**，前端有自己的兜底文案）
+                            "repository_name": repo_name_by_id.get(repo_id, ""),
+                            "status": sess.status,
+                            "logs": sess_logs,
+                        }
+                    )
+                runtime["plan_research_sessions"] = research_payload
+        except Exception:
+            # best-effort：本分支失败只让自己回退空数组，绝不反噬 runtime 端点。
+            # 2s 高频轮询面 ⇒ 正常路径零日志，仅异常分支一行 warning。
+            runtime["plan_research_sessions"] = []
+            logger.warning(
+                "conversation_runtime_plan_research_failed",
+                conversation_id=conversation_id,
+                category="sampling",
+                component="chat.conversation",
+                exc_info=True,
+            )
+
         # CodingSession 运行态检测 (implementation)
         from chat.models import CodingSession
 
