@@ -711,6 +711,10 @@ async def aremind_clarification_threads(
     - **到期判据**：``anchor = thread.last_reminded_at or thread.created_at``；
       ``now - anchor >= timedelta(hours=hours)`` 才算 ``due``，否则 ``skipped``。
       ⇒ **同一线程在同一周期内不会被再次提醒**。
+    - ⭐ **``reminded`` 的口径是「周期锚点已写回」**：计数与逐条
+      ``blueprint_clarification_reminded`` 事件都在 ``_write_reminder_anchors`` **成功之后**
+      才落。写回失败时 ``due`` 如实保留、``reminded`` 归零、一条事件都不发——否则运维看到
+      「本轮提醒了 N 条」，实际是「一条锚点都没落、下一轮再提醒同样这 N 条」（114-MN-04）。
     - ``hours`` 形参优先，缺省读配置；``now`` 形参**只为可测**（测试注入推进后的时间，
       不 monkeypatch 全局 ``timezone.now``）。
     - ⛔ **不自动作答、不改蓝图状态、不判失败、不新建线程**：本函数除
@@ -727,6 +731,7 @@ async def aremind_clarification_threads(
         counts["scanned"] = len(threads)
 
         due_rows: list = []
+        recipient_counts: dict[str, int] = {}
         for thread in threads:
             try:
                 anchor = thread.last_reminded_at or thread.created_at
@@ -735,19 +740,8 @@ async def aremind_clarification_threads(
                     continue
                 counts["due"] += 1
                 recipients = await _list_recipients(thread.artifact_id)
-                # ⚠️ 问题正文与 recipients 明细绝不进日志，只记计数。
-                logger.info(
-                    "blueprint_clarification_reminded",
-                    category="caller",
-                    component=_COMPONENT,
-                    thread_id=str(thread.id),
-                    artifact_id=str(thread.artifact_id),
-                    recipient_count=len(recipients),
-                    hours=int(window.total_seconds() // 3600),
-                    initiated_by_user_id=initiated_by_user_id or "system",
-                )
+                recipient_counts[str(thread.id)] = len(recipients)
                 due_rows.append(thread)
-                counts["reminded"] += 1
             except Exception as exc:  # noqa: BLE001 — 单线程异常隔离，绝不阻断整批
                 counts["skipped"] += 1
                 logger.warning(
@@ -759,7 +753,25 @@ async def aremind_clarification_threads(
                 )
 
         if due_rows:
+            # ⭐ 计数与逐条事件都在**锚点写回成功之后**才发（114-MN-04）：写回抛异常时被外层
+            # except 接住并原样 return，若在此之前累加/发事件，对运维呈现的是「本轮提醒了 N
+            # 条」+ N 条 `blueprint_clarification_reminded`，而实际是「一条锚点都没落、下一轮
+            # 会把同样这 N 条再提醒一遍」。写回失败时 `due` 如实保留（确实到期了）、
+            # `reminded` 保持 0，且一条提醒事件都不发。
             await _write_reminder_anchors(due_rows, moment)
+            counts["reminded"] = len(due_rows)
+            for thread in due_rows:
+                # ⚠️ 问题正文与 recipients 明细绝不进日志，只记计数。
+                logger.info(
+                    "blueprint_clarification_reminded",
+                    category="caller",
+                    component=_COMPONENT,
+                    thread_id=str(thread.id),
+                    artifact_id=str(thread.artifact_id),
+                    recipient_count=recipient_counts.get(str(thread.id), 0),
+                    hours=int(window.total_seconds() // 3600),
+                    initiated_by_user_id=initiated_by_user_id or "system",
+                )
     except Exception as exc:  # noqa: BLE001 — 提醒整体 best-effort，绝不上抛
         logger.warning(
             "blueprint_clarification_remind_failed",
