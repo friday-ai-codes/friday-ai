@@ -10,6 +10,11 @@ from delivery.api.artifact_views import (
     ArtifactTimelineView,
     ArtifactVersionDownstreamView,
 )
+from delivery.api.blueprint_doc_views import (
+    BlueprintDocumentView,
+    BlueprintEventsView,
+    BlueprintReviewThreadsView,
+)
 from delivery.api.blueprint_gate_views import (
     BlueprintGateAddRepoView,
     BlueprintGateConfirmView,
@@ -222,6 +227,26 @@ urlpatterns = [
         "artifacts/<uuid:artifact_id>/blueprint-review/threads/<uuid:thread_id>/dismiss/",
         BlueprintReviewFindingDismissView.as_view(),
         name="blueprint-review-thread-dismiss",
+    ),
+    # 115-01 蓝图只读供数面（VIEW-01 / CLAR-01）：正文（含 quality）/ 阶段事件 / 线程详情
+    # 集合（GET 读多轮 + POST 开选区评论，同一集合资源的两个 HTTP 方法，不是 ?action= 分派）。
+    # blueprint/ 与 blueprint/events/ 是两个整段精确匹配，互不遮挡；blueprint-review/threads/
+    # 的字面段 threads/ 与既有 threads/<uuid:thread_id>/<动作>/ 整段不同，按既有纪律**字面段
+    # 写在前面**（保持读者预期一致）。
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint/",
+        BlueprintDocumentView.as_view(),
+        name="blueprint-document",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint/events/",
+        BlueprintEventsView.as_view(),
+        name="blueprint-events",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint-review/threads/",
+        BlueprintReviewThreadsView.as_view(),
+        name="blueprint-review-threads",
     ),
     # Human Task Center（P8）：统一待办收件箱（list/open）+ 物化待办动作 + 投影澄清回流。
     # 字面段 clarification/ 必须在 <uuid:task_id> 动作路由之前注册（避免被 uuid 段吞）。
