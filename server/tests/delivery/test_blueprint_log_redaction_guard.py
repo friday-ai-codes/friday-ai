@@ -26,6 +26,7 @@ _SERVER_DIR = Path(__file__).resolve().parents[2]
 # 蓝图链的日志产出面（114 触及 + 其直接依赖的会话 service）
 _SCANNED_MODULES = (
     "delivery/api/blueprint_doc_views.py",
+    "delivery/api/blueprint_list_views.py",
     "delivery/api/blueprint_review_views.py",
     "delivery/services/blueprint_comment_action.py",
     "delivery/services/blueprint_review_action.py",

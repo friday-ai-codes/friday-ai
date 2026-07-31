@@ -25,6 +25,7 @@ from delivery.api.blueprint_gate_views import (
     BlueprintGateUpgradeResearchView,
     BlueprintRejectedToBoundaryView,
 )
+from delivery.api.blueprint_list_views import BlueprintListView
 from delivery.api.blueprint_review_views import (
     BlueprintReviewApproveView,
     BlueprintReviewEditBlocksView,
@@ -136,6 +137,9 @@ urlpatterns = [
     ),
     # Artifact 版本轨 / 时间线（P7，只读呈现）：list（过滤）/ 版本时间线 / 下游引用聚合
     path("artifacts/", ArtifactListView.as_view(), name="artifact-list"),
+    # 115-01 蓝图列表（VIEW-03/VIEW-04）：**顶层字面段**，不在 artifacts/ 分组内。可见性口径
+    # 与 artifact 级端点不同（先算成员项目集合再过滤，见 blueprint_list_views 模块 docstring）。
+    path("blueprints/", BlueprintListView.as_view(), name="blueprint-list"),
     path(
         "artifacts/<uuid:artifact_id>/",
         ArtifactTimelineView.as_view(),
