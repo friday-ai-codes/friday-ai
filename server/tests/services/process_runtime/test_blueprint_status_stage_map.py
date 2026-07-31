@@ -36,6 +36,7 @@ from delivery.services import ArtifactService
 from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
 from services.process_runtime import blueprint_resume
 from services.process_runtime.blueprint_resume import (
+    _HUMAN_OWNED_STATUSES,
     _STAGE_BLUEPRINT_STATUS,
     _amap_blueprint_status,
     _resolve_stage_status,
@@ -218,6 +219,102 @@ async def test_clarification_on_stage_one_still_returns_to_researching() -> None
     await _amap_blueprint_status(session)
 
     assert (await _refresh(artifact)).blueprint_status == BlueprintStatus.RESEARCHING
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 8. ⭐ 终审态不由续驱驱动（114-MN-06）
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_human_owned_statuses_match_enum() -> None:
+    """字面量防漂移（同 `_STAGE_BLUEPRINT_STATUS` 的纪律）。"""
+    assert _HUMAN_OWNED_STATUSES == {
+        BlueprintStatus.PENDING_REVIEW,
+        BlueprintStatus.CONFIRMED,
+        BlueprintStatus.IMPLEMENTING,
+        BlueprintStatus.IMPLEMENTED,
+        BlueprintStatus.ARCHIVED,
+        BlueprintStatus.SUPERSEDED,
+    }
+    # 续驱仍要驱动的那几个态**不得**进表（否则阶段 2/3/4 的映射会被整体短路）
+    for owned in (
+        BlueprintStatus.RESEARCHING,
+        BlueprintStatus.DRAFTING,
+        BlueprintStatus.AI_REVIEWING,
+        BlueprintStatus.NEEDS_CLARIFICATION,
+    ):
+        assert owned not in _HUMAN_OWNED_STATUSES
+
+
+async def test_pending_review_is_not_remapped_and_logs_no_skip_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """⭐ MN-06 回归：``pending_review`` + 未决 BLOCKER ⇒ 映射必须短路，不再白抛非法边。
+
+    审查收官后蓝图落 ``pending_review``，而未决 BLOCKER finding 让
+    ``ahas_open_blocking_threads`` 恒为真 ⇒ target 派生成 ``needs_clarification``，但
+    ``_ALLOWED_TRANSITIONS[PENDING_REVIEW]`` 不含它 ⇒ 修前**每一次**续驱都会白抛一次
+    ``ValueError`` 并吞成一条 ``blueprint_status_map_skipped`` warning。行为上无害（状态
+    正确地留在 ``pending_review``），但映射器会对一个**完全正常**的状态反复报「映射被
+    跳过」，真正的映射故障因此淹没在噪声里。
+    """
+    session, artifact = await _make_session_with_artifact("ai_review")
+    await _amap_blueprint_status(session)  # "" → researching（入口边）
+    lifecycle = BlueprintLifecycleService()
+    # 走到审查收官的真实终局：researching → drafting → ai_reviewing → pending_review
+    for target in (
+        BlueprintStatus.DRAFTING,
+        BlueprintStatus.AI_REVIEWING,
+        BlueprintStatus.PENDING_REVIEW,
+    ):
+        artifact = await _refresh(artifact)
+        await lifecycle.transition(artifact, target, initiated_by_user_id="system")
+    await lifecycle.open_thread(
+        artifact,
+        kind=ThreadKind.AI_REVIEW_FINDING,
+        severity="blocker",
+        blocking=True,
+        question="[citation_missing] 关键结论缺 citations",
+    )
+
+    calls: list[tuple] = []
+
+    async def _spy_transition(self: Any, *args: Any, **kwargs: Any) -> Any:
+        calls.append((args, kwargs))
+        raise AssertionError("终审态不该被续驱重新映射")
+
+    monkeypatch.setattr(BlueprintLifecycleService, "transition", _spy_transition)
+
+    await _amap_blueprint_status(session)
+
+    assert calls == [], "pending_review 上不该再尝试任何 transition"
+    assert (await _refresh(artifact)).blueprint_status == BlueprintStatus.PENDING_REVIEW
+
+
+@pytest.mark.parametrize("stage", STAGES_113)
+async def test_non_terminal_statuses_are_still_mapped(stage: str) -> None:
+    """非恒真对照：短路只作用于终审态，阶段 2/3 的映射照旧生效。"""
+    session, artifact = await _make_session_with_artifact(stage)
+
+    await _amap_blueprint_status(session)
+
+    assert (await _refresh(artifact)).blueprint_status == _STAGE_BLUEPRINT_STATUS[stage]
+
+
+async def test_ai_reviewing_is_still_mapped_and_not_short_circuited() -> None:
+    """非恒真对照（阶段 4）：``ai_reviewing`` **不在**短路集里，仍会被映射与派生。
+
+    ``drafting → ai_reviewing`` 是唯一入边，故先把蓝图推到 ``drafting`` 再映射。
+    """
+    session, artifact = await _make_session_with_artifact("ai_review")
+    lifecycle = BlueprintLifecycleService()
+    await lifecycle.transition(artifact, BlueprintStatus.RESEARCHING, initiated_by_user_id="system")
+    artifact = await _refresh(artifact)
+    await lifecycle.transition(artifact, BlueprintStatus.DRAFTING, initiated_by_user_id="system")
+
+    await _amap_blueprint_status(session)
+
+    assert (await _refresh(artifact)).blueprint_status == BlueprintStatus.AI_REVIEWING
 
 
 # ═══════════════════════════════════════════════════════════════════════════
