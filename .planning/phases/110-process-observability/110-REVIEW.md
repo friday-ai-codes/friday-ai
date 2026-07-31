@@ -1,7 +1,7 @@
 ---
 phase: 110-process-observability
 reviewed: 2026-07-31T08:10:00Z
-status: findings
+status: fixed
 depth: standard
 diff_base: f3292256
 branch: milestone/v0.19.0-plan-trust
@@ -11,12 +11,32 @@ findings:
   high: 1
   medium: 2
   low: 3
+fixed:
+  blocker: 0
+  high: 1
+  medium: 2
+  low: 0
+accepted_debt:
+  low: 3
+fixed_at: 2026-07-31T08:56:00Z
+fix_mode: "autonomous（--fix --auto，范围 HIGH + MEDIUM；三个 LOW 记为已接受技术债）"
+fix_commits:
+  - "aed7010f fix(110-HI-01): 编排失败气泡绑回自己那次会话，不再改播新一轮进度"
+  - "88bd72db fix(110-MN-01): plan_research 归属改用 RepoResearchTask 权威表，去掉容器可写的绑定键"
+  - "d17abf8f fix(110-MN-02): 编排终态后 2s 轮询不再重发全量事件流与容器日志"
 tests_executed:
   backend: "8186 passed, 61 skipped, 26 deselected, 1 xfailed（tests/ 全量，排除三个沙箱受限文件）—— 与基线逐字一致"
   frontend: "1607 passed / 202 files, 1 skipped（CI=true pnpm vitest run --watch=false）—— 与基线逐字一致"
   types: "pnpm vue-tsc --noEmit 退出码 0，零输出"
   migrations: "manage.py makemigrations --check --dry-run → No changes detected"
   lint: "ruff check 四个改动 .py 文件 All checks passed；ruff format --check 三个文件 would reformat（归属见 LO-02）"
+tests_after_fix:
+  backend: "8204 passed, 61 skipped, 67 deselected, 1 xfailed（tests/ 全量，--deselect 三个沙箱受限文件）—— 较基线 +18，与新增用例数逐条对得上（6 + 1 + 11）"
+  frontend: "1615 passed / 202 files, 1 skipped（CI=true pnpm vitest run --watch=false）—— 较基线 +8（store 5 条 + 气泡 3 条）"
+  types: "pnpm vue-tsc --noEmit 退出码 0，零输出"
+  migrations: "manage.py makemigrations --check --dry-run → No changes detected"
+  lint: "ruff check 改动 .py 文件 All checks passed；ruff format --check 新增/改动测试文件与 chat/views.py 全部 already formatted；conversation_service.py 与 chat_runner.py 的 would reformat 逐 hunk 核对后全部落在既有代码（新增段落零命中），LO-02 的两处仍在（已接受）"
+  eslint: "pnpm eslint 六个改动前端文件 退出码 0"
 files_reviewed_list:
   - server/agents/core/events.py
   - server/chat/conversation_service.py
@@ -36,31 +56,122 @@ findings_index:
     origin: new
     file: web/src/components/chat/ChatMessageBubble.vue:866
     summary: 编排失败的 tool result 结构上不含 session_id，气泡回退到 store 的全局活跃会话——同一对话里「失败后重跑」时，失败那条气泡改显示新一轮的实时时间线，OBS-03 的失败呈现被抹掉，且同一份进度同时出现在两条气泡上
+    status: fixed
+    fix_commit: aed7010f
+    fix_note: >-
+      按建议两条一起做。后端：两个 _map_terminal 的失败分支补
+      metadata={"session_id": ...}，_normalize_tool_result 把 metadata 并进失败体；固定的
+      error / is_error 两键放在**最后**展开，metadata 不得覆写（否则一个工具就能把
+      is_error 翻成 false，评审草案里 metadata 在后是有这个洞的）。前端：兜底限制在
+      item.result 为空（在途）这一种情形，有 result 却绑不到会话时整块不渲染（§A.5 条件 2）。
+      补上评审指出的缺失形状「终态且 result 可解析但缺 session_id」。
+      负向对照四次，每次只掐一处：① 前端退回 `||` 链 → 「终态 result 可解析但缺
+      session_id ⇒ 整块不渲染」变红（1 failed / 50）；② _normalize_tool_result 退回两键 →
+      test_metadata_is_merged_into_the_failure_body 与 test_failure_body_end_to_end_is_bindable
+      变红（2 failed / 6）；③ 拿掉 plan_research 的 metadata →
+      test_failed_terminal_result_has_session_id_in_metadata 与端到端那条变红；④ 拿掉
+      feature_solution 的 metadata → test_failed_result_carries_session_id_for_bubble_binding
+      变红。气泡侧「绑对了」与「没绑成正在跑的那个」拆成两条独立 it，避免第一处失败遮住第二处。
   - id: MN-01
     severity: MEDIUM
     origin: new
     file: server/chat/conversation_service.py:2700
     summary: plan_research 归属谓词自称沿用 WR-03 交叉校验范式，但两个键（plan_session_id / source）同处 last_output 这一个容器可写面，progress 回调可任意写入其中的标量键；真正的 WR-03 是对 RepoResearchTask 这张服务端权威表做交叉验证
+    status: fixed
+    fix_commit: 88bd72db
+    fix_note: >-
+      比评审建议再进一步：不是「先按 last_output 查出来、再拿 research_task_id 交叉过滤」，
+      而是直接让 RepoResearchTask 当驱动——取 (subagent_session_id → repository_id) 映射
+      后按 SubAgentSession 主键 id__in 反查。理由是评审方案里 research_task_id 仍是
+      last_output 上的键（虽然锚点已是权威表，容器仍可把它改成同会话内的兄弟 task），
+      而 subagent_session_id 由 ResearchService.mark_running 服务端回填 ⇒ 整条绑定链上
+      **没有任何容器可写的键**，last_output 从此只用于取日志内容。task_type == PLAN
+      作为纵深防御保留；last_output__source / last_output__plan_session_id 两个谓词删除
+      （留着等于在预测里继续摆半可信键）。repository_id 同步改取权威列，关掉「容器改写
+      自己的 repository_id 就能让日志挂到别的仓库名下」这条不需要猜任何 UUID 的低配越权；
+      由此旧的 UUID 过筛不再需要（权威列恒为合法 UUID）。
+      附带语义收紧（已在代码注释里如实写出）：stale 重派会把 subagent_session 指向新容器
+      ⇒ 每仓恒一张卡，旧实现会把同一仓的历次容器都列出来。
+      测试：`_make_research_container` 改为同时建权威 RepoResearchTask，并加
+      forged_plan_session_id / forged_repository_id / link_task 三个开关（对应容器唯一能做的
+      三件事）；原 test_source_mismatch_is_rejected_by_cross_check 的论证已不成立，替换为三条
+      更强的用例。负向对照两次：① 谓词退回 last_output 双键 → 伪造 plan_session_id、无权威
+      task 链接两条变红（2 failed / 26）；② repository_id 退回 last_output → 伪造
+      repository_id、garbage repository_id 两条变红（2 failed / 26）。两次对照命中的是不相交
+      的用例集，说明两半各有独立抓手。
   - id: MN-02
     severity: MEDIUM
     origin: new
     file: server/chat/conversation_service.py:2504
     summary: 两个新分支在编排早已终态后仍每次 2s 轮询重发全量事件流（最多 200 条，逐条重新净化）与全量容器日志（每仓最多 80 行，逐条重新脱敏），无任何终态短路或增量协议
+    status: fixed
+    fix_commit: d17abf8f
+    fix_note: >-
+      选了评审的第二条（终态短路）而不是第一条（events_after 增量），因为 events_after
+      只覆盖事件分支，而日志分支才是重的那一半（每仓 80 行 × 每行一次
+      redact_secrets_in_text，5 个仓 = 每次轮询 400 次正则替换）；一个令牌同时管住两个分支，
+      收敛后这两处的 DB 往返与 CPU 归零，而不是「少发一点」。
+      协议：runtime 端点新增 orchestration_seen 查询参数（已进 drf-spectacular schema）。
+      收敛三条同时成立才短路——令牌逐字等于本对话最近一次编排会话、会话已终态、
+      **其下没有在途调研容器**。第三条是评审没提但必须有的：failed 可能停在 research，
+      那时容器还在写日志，只看 session 终态会让日志组停在半截（正是本里程碑要消灭的
+      「界面撒谎」）；代价是一次带 (session,status) 索引的 exists()。
+      判定放在编排分支最前，后面每一步都是它要省掉的开销。日志分支的联动判据取
+      **已写进 runtime 的那份快照**而不是局部变量——否则「算出收敛之后编排分支才抛」
+      这一拍会同时回「没有编排」与「没有日志」，把前端已有的日志组整个抹掉。
+      前端：轮询带令牌（仅当 store 里确实存过一份终态快照，那份必然是全量的那次响应），
+      刷新补齐 restoreConversationRuntime 永不带；applyOrchestrationRuntime 在 converged
+      时不覆盖已有事件与日志。顺带按建议给容器会话查询加 .only()。
+      令牌只能让服务端**少**发数据，猜错 / 伪造只会退化成全量，不构成越权面。
+      负向对照五次：① 拿掉「无在途容器」这一条 → test_live_research_container_blocks_the_short_circuit
+      变红（1 failed / 35）；② 整个短路失效 → 事件短路、日志短路、「根本没查事件表」三条变红
+      （3 failed / 35）；③ 日志分支改看局部变量 →
+      test_degraded_orchestration_branch_never_short_circuits_the_logs 变红（1 failed / 35）；
+      ④ 前端 converged 恒 false → eventsTruncated、调研日志两条变红（2 failed / 30）；
+      ⑤ 轮询不带令牌 / 令牌不看终态 → 各自对应的一条变红。
+      对照粒度注记：初版「converged 响应不清空已有事件」只断言 events.length，被对照 ④
+      证明是假锁（mergeOrchestrationEvents(existing, []) 天然恒等，任何实现都通过）；
+      已改为断言 events_truncated 不被冲回 false —— 那才是收敛守卫在事件侧真正保护的东西。
   - id: LO-01
     severity: LOW
     origin: new
     file: web/src/components/execution/dag/SubStepTimeline.vue:104
     summary: 泛化对既有调用方 ExecutionNode 并非「零行为变化」——每个子步骤行新增了原生 title 悬浮提示，失败摘要行新增了 role="alert"
+    status: accepted_debt
+    fix_note: >-
+      本轮范围为 HIGH + MEDIUM，未处理。评审自己倾向的处置是 (a)「接受这两处 a11y 增强、
+      把注释改成如实表述」——它是纯文档改动、零行为影响，与 110-02-SUMMARY 一并修订更合适，
+      不适合塞进一次以行为修复为主题的提交（会让 diff 的意图变浑）。
+      风险评估：两处变化对 ExecutionNode 都是净收益（悬浮状态文本 + 失败行被屏幕阅读器播报），
+      不改变任何功能行为，既有回归用例组仍全绿。留待文档整理或下一次触碰该组件时一并修订。
   - id: LO-02
     severity: LOW
     origin: new
     file: server/chat/conversation_service.py:2518
     summary: 110 新增的后端代码未过 ruff format（两处），与 109 「新增代码零告警」的水位相比是一次回退
+    status: accepted_debt
+    fix_note: >-
+      本轮范围为 HIGH + MEDIUM，未处理；两处仍在（全角括号那行、has_classify 的换行）。
+      本轮**新增**的后端代码已自查为 format-clean：`ruff format --diff conversation_service.py`
+      的 40 个 hunk 逐个核过行号，无一落在本轮新增段落（终态短路判定、权威表归属、
+      converged 键）；chat_runner.py 的唯一 hunk 在 :284，是既有代码。
+      即：本轮没有把 LO-02 的水位继续往下拉，但也没有把它补上。
+      顺带一提，MN-01 的改写恰好覆盖了 has_classify 那处附近的区块但未触及该表达式本身，
+      所以两处的行号相对评审时有位移，修复时应按内容而非行号定位。
   - id: LO-03
     severity: LOW
     origin: pre-existing
     file: server/delivery/services/convergence_session_service.py:316
     summary: _emit_event 的 per-event logger.info 仍在，一次编排数十条 INFO；fan-out 自身合规（debug + sampling），该行是本次直接改动的函数里唯一一条不合规的埋点
+    status: accepted_debt
+    fix_note: >-
+      本轮范围为 HIGH + MEDIUM，未处理。评审自己判定为「可以接受」，且明确记录它是
+      pre-existing、110 没有增加任何事件产出量。改动虽只有一个词（info → debug），
+      但它落在 convergence_session_service 这个编排热路径上，且现有测试里可能有断言
+      日志级别的用例——把它塞进一次以「气泡绑定 / 归属校验 / 轮询收敛」为主题的批次里，
+      收益与风险都与本批次无关。
+      建议按评审给的正确形态单独处置：per-event 降 debug，同时在 create_session 与终态转移
+      两个低频点各留一条 INFO 作为「编排有在跑」的粗粒度信号。
 ---
 
 # Phase 110: 代码评审报告
@@ -68,6 +179,57 @@ findings_index:
 **评审范围:** `f3292256..HEAD` 中在册的 12 个源码文件（另核对 8 个新增/改动测试文件，以及 6 个被牵连但未改动的既有模块：`event_taxonomy` / `research_adapter` / `research_aggregation` / `progress_payload` / `subagent.api.callbacks` / `runners.consumers`）
 **深度:** standard（逐文件 + 双向消费方追踪 + 全量后端与前端实跑 + 类型与迁移核验）
 **结论:** `findings` —— 0 个 BLOCKER、1 个 HIGH、2 个 MEDIUM、3 个 LOW
+
+**修复状态（2026-07-31，autonomous `--fix --auto`）:** HIGH 与两个 MEDIUM 已修复并各自原子提交；
+三个 LOW 记为**已接受技术债**（逐条理由见 frontmatter 的 `fix_note`）。详见下面的「修复记录」。
+
+---
+
+## 修复记录
+
+| ID | 处置 | 提交 | 一句话 |
+|----|------|------|--------|
+| HI-01 | **已修复** | `aed7010f` | 两个编排工具的失败出口补 `metadata={"session_id"}`，`_normalize_tool_result` 并进失败体；前端兜底限制在「还没有 result」这一种在途情形 |
+| MN-01 | **已修复** | `88bd72db` | 归属改由 `RepoResearchTask` 驱动（`subagent_session_id` 是服务端回填的 FK）⇒ 绑定链上没有任何容器可写的键；`repository_id` 同步取权威列 |
+| MN-02 | **已修复** | `d17abf8f` | runtime 端点加 `orchestration_seen` 收敛令牌；终态 + 无在途容器时 `events` 与 `plan_research_sessions` 不重发，`converged=true` 让前端保留现有的 |
+| LO-01 | 已接受 | — | 评审自己倾向的处置是纯注释修订，与 110-02-SUMMARY 一并改更合适 |
+| LO-02 | 已接受 | — | 两处仍在；本轮**新增**代码经逐 hunk 核对为 format-clean，水位未继续下拉 |
+| LO-03 | 已接受 | — | pre-existing 且评审判定「可以接受」；应与「在 create_session / 终态转移补低频 INFO」一并单独处置 |
+
+### 修复后核验（实跑数字，非推断）
+
+| 项 | 基线 | 修复后 |
+|----|------|--------|
+| 后端 `pytest tests/`（排除三个沙箱受限文件） | 8186 passed / 61 skipped | **8204 passed / 61 skipped / 1 xfailed** |
+| 前端 `CI=true pnpm vitest run --watch=false` | 1607 passed / 202 files | **1615 passed / 202 files / 1 skipped** |
+| `pnpm vue-tsc --noEmit` | 退出码 0 | **退出码 0，零输出** |
+| `makemigrations --check --dry-run` | No changes detected | **No changes detected** |
+| `pnpm eslint`（六个改动前端文件） | — | **退出码 0** |
+
+后端 +18 与新增用例数逐条对得上：`test_tool_result_failure_locator.py` 6 条、
+`test_feature_solution_tool.py` +1 条、`test_conversation_runtime_orchestration.py` +11 条
+（新增 14、删除 3：`test_source_mismatch_is_rejected_by_cross_check` 的论证随 MN-01 失效，
+替换为三条更强的用例）。前端 +8 = store 5 条 + 气泡 3 条。
+
+**每个修复都做了负向对照**（掐掉自己的实现、确认有测试变红、再还原），共 11 次，
+逐次命中的用例记在 frontmatter 的 `fix_note` 里。其中一次对照直接改进了用例质量：
+「converged 响应不清空已有事件」初版只断言 `events.length`，被对照证明是假锁
+（`mergeOrchestrationEvents(existing, [])` 天然恒等，任何实现都通过），已改为断言
+`events_truncated` 不被冲回 `false`。
+
+**载重不变量复核（本轮改动未触碰）**：`_emit_event` 仍不抛且 fan-out 的 blanket catch 未动；
+`ts` 去重键两条链仍同为 `row.ts.isoformat()`；仍只有一把筛子且 `summary` 按值类型区分；
+`failure` 仍只组装 `stage` + `reason_code`，闭集未扩；日志组的 `v-if` 与 `:sessions` 仍是
+同一个 `planResearchSessionsFor(item)`；`SubStepTimeline` 零改动；`orchestratedPlanData`
+仍按 `item.result` 逐条解析；`chat/views.py` 只在 runtime 端点加了一个查询参数，
+`_stream_events` 未触碰；`RoutingDecisionPanel` / `DeepAnalysisGroup` / `DeepAnalysisCard`
+仍零改动，`deep_analysis_progress` 未被救活。
+
+**新增可观测面合规**：本轮未新增 LLM 调用（无新 `call_source`）、未新增请求入口
+（`orchestration_seen` 是既有端点的查询参数，既有请求指标自动覆盖）、未新增队列或 webhook。
+新增的收敛判定与权威表查询都在既有 `try/except` 的 best-effort 包裹内，失败只让本分支降级，
+异常分支的那一行 warning 仍带 `category="sampling"` + `component="chat.conversation"`；
+高频轮询面上正常路径**零新增日志**。
 
 ---
 
@@ -97,6 +259,11 @@ findings_index:
 ---
 
 ## HIGH
+
+> **已修复（`aed7010f`）。** 下面保留评审时的原文与论证；实际落地与建议的两点差异：
+> ① `_normalize_tool_result` 里固定的 `error` / `is_error` 两键放在**最后**展开，
+> 而不是像草案那样让 `metadata` 在后——否则一个工具就能把 `is_error` 覆写成 `false`；
+> ② 补的用例按「绑对了」与「没绑成正在跑的那个」拆成两条独立 `it`，避免第一处失败遮住第二处。
 
 ### HI-01：编排失败后重跑，失败那条气泡改显示新一轮的实时时间线
 
@@ -181,6 +348,12 @@ function orchestrationSessionIdFor(item: ToolItemShape): string {
 ---
 
 ## MEDIUM
+
+> **两条均已修复（`88bd72db` / `d17abf8f`）。** 下面保留评审原文；与建议的差异：
+> MN-01 没有停在「按 `research_task_id` 交叉过滤」，而是直接让 `RepoResearchTask` 当驱动
+> 并按 `subagent_session_id`（服务端回填的 FK）反查 —— 那个键容器根本改不到；
+> MN-02 选了第二条（终态短路）而非第一条（`events_after`），因为一个令牌能同时管住
+> 事件与日志两个分支，且额外加了一条评审未提的必要条件「其下没有在途调研容器」。
 
 ### MN-01：plan_research 归属谓词的「交叉校验」两个键同处一个容器可写面
 
@@ -283,6 +456,11 @@ research_candidates = [
 
 ## LOW
 
+> **三条均记为已接受技术债，本轮未处理**（范围限 HIGH + MEDIUM）。逐条理由见
+> frontmatter 的 `fix_note`；简言之：LO-01 的正确处置是纯注释修订（宜与 110-02-SUMMARY 同批），
+> LO-02 的两处仍在但本轮新增代码经逐 hunk 核对为 format-clean，
+> LO-03 应与「在 `create_session` / 终态转移补低频 INFO」一并单独处置。
+
 ### LO-01：`SubStepTimeline` 的泛化对 `ExecutionNode` 不是「零行为变化」
 
 **文件:** `web/src/components/execution/dag/SubStepTimeline.vue:104`、`:132`
@@ -381,3 +559,7 @@ research_candidates = [
 _Reviewed: 2026-07-31T08:10:00Z_
 _Reviewer: gsd-code-reviewer_
 _Depth: standard_
+
+_Fixed: 2026-07-31T08:56:00Z_
+_Fixer: gsd-code-fixer（autonomous `--fix --auto`，范围 HIGH + MEDIUM）_
+_Fix commits: `aed7010f` / `88bd72db` / `d17abf8f`_
