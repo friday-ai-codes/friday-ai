@@ -450,3 +450,53 @@ describe('蓝图查看器 —— 顶栏未决 BLOCKER 计数（MJ-03）', () => 
     expect(sections.find(section => section.id === 'requirement_spec')?.badgeTone).toBe('danger')
   })
 })
+
+/**
+ * ⭐ MN-02 回归：带着失效 `?version=` 时，整页 404 里必须留一条回到当前版本的路。
+ *
+ * 后端对「版本不存在 / 不属于该 artifact」返 404 是对的（带 `artifact_id` 约束防跨项目读
+ * 版本），且与「无权限」共用同一句中性文案也应当保持。缺的是**恢复路径**：页面上那个
+ * 「回到当前版本」按钮此刻已经跟着整页一起被替换掉了，用户只能手改 URL 或退回知识库重进。
+ */
+describe('蓝图查看器 —— 失效 ?version= 的恢复路径（MN-02）', () => {
+  it('14. ⭐ ?version= + 正文 404 + 快照 200 ⇒ 404 页里出现「回到当前版本」', async () => {
+    routeState.query = { version: 'v-gone' }
+    api.getBlueprintDocument.mockRejectedValue(new ApiError(404, '版本不存在'))
+    const { wrapper } = mountPage()
+    await flush()
+    const error = wrapper.find('[data-testid="blueprint-error-state"]')
+    expect(error.exists()).toBe(true)
+    expect(error.attributes('data-status')).toBe('404')
+    expect(wrapper.find('[data-testid="blueprint-error-back-to-current"]').exists()).toBe(true)
+    // ⛔ 中性文案一字不改（存在性防线不因这一档放宽）
+    expect(error.text()).toContain('无权访问或该蓝图不存在')
+  })
+
+  it('15. 点「回到当前版本」清掉 ?version=', async () => {
+    routeState.query = { version: 'v-gone' }
+    api.getBlueprintDocument.mockRejectedValue(new ApiError(404, '版本不存在'))
+    const { wrapper } = mountPage()
+    await flush()
+    await wrapper.find('[data-testid="blueprint-error-back-to-current"]').trigger('click')
+    await flush()
+    const query = routerReplace.mock.calls.at(-1)?.[0]?.query as Record<string, string>
+    expect(query?.version).toBeUndefined()
+  })
+
+  it('16. 非恒真对照：不带 ?version= 的 404 ⇒ ⛔ 没有这个按钮（只有「返回知识库」）', async () => {
+    api.getBlueprintDocument.mockRejectedValue(new ApiError(404, '蓝图不存在'))
+    const { wrapper } = mountPage()
+    await flush()
+    expect(wrapper.find('[data-testid="blueprint-error-state"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="blueprint-error-back-to-current"]').exists()).toBe(false)
+  })
+
+  it('17. 非恒真对照：快照也 404（真的无权/不存在）⇒ ⛔ 没有这个按钮', async () => {
+    routeState.query = { version: 'v-gone' }
+    api.getBlueprintDocument.mockRejectedValue(new ApiError(404, '版本不存在'))
+    api.getBlueprintReviewSnapshot.mockRejectedValue(new ApiError(404, '蓝图不存在'))
+    const { wrapper } = mountPage()
+    await flush()
+    expect(wrapper.find('[data-testid="blueprint-error-back-to-current"]').exists()).toBe(false)
+  })
+})

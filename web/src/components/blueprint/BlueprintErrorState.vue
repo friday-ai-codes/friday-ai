@@ -40,12 +40,26 @@ const props = withDefaults(defineProps<{
   status: number
   /** `ApiError.detail`，只在 400 档原样回显。 */
   detail?: string
+  /**
+   * ⭐ 404 档追加「回到当前版本」出口（MN-02）。
+   *
+   * 只在**判据结构化成立**时由页面置真：`?version=` 非空 且 正文 404 且 人审快照 200 ——
+   * 快照 200 已经证明「有权限、蓝图在」，剩下的唯一解释就是那个版本号不对。
+   * ⛔ 判据不读 `detail` 文本（那等于把后端文案当协议）。
+   *
+   * ⚠️ 这里**不改那句中性文案**：文案一分档，后端刻意做的「不存在 / 无权限逐字相同」防线
+   * 就被差分枚举拆掉了。只加动作，不加话。
+   */
+  showBackToCurrentVersion?: boolean
 }>(), {
   detail: '',
+  showBackToCurrentVersion: false,
 })
 
 const emit = defineEmits<{
-  retry: []
+  'retry': []
+  /** 「回到当前版本」：由页面清掉 `?version=`。 */
+  'back-to-current': []
 }>()
 
 const { t } = useI18n()
@@ -64,6 +78,18 @@ const isInline = computed(() => props.status === 400)
       icon="lucide--lock"
       :title="t('knowledge.blueprints.error.notFoundOrForbidden')"
     >
+      <!-- 带着失效 `?version=` 时的恢复路径：⛔ 否则唯一出口是「返回知识库」，而那正是
+           把用户从一份他完全有权限、当前版本也好好的蓝图上赶走。 -->
+      <Button
+        v-if="showBackToCurrentVersion"
+        variant="outline"
+        size="sm"
+        data-testid="blueprint-error-back-to-current"
+        @click="emit('back-to-current')"
+      >
+        <span class="icon-[lucide--history] mr-1.5" />
+        {{ t('knowledge.blueprints.version.backToCurrent') }}
+      </Button>
       <Button as-child variant="outline" size="sm">
         <RouterLink to="/knowledge">
           {{ t('knowledge.blueprints.error.backToKnowledge') }}
