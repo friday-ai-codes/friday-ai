@@ -5,8 +5,10 @@
  * `new QueryClient({ defaultOptions: { queries: { retry: false } } })` + `VueQueryPlugin`
  * + `vi.mock('~/api/blueprints')`；composable 挂在一个最小宿主组件里以获得 vue-query 的注入上下文。
  *
- * ⛔ 本 spec **只锁轮询启停这一件事**。业务派生（`sectionProgress` / `stageTimeline`）归
- * `utils/__tests__/blueprintBlocks.test.ts` 的纯函数单测，这里不重复。
+ * ⛔ 本 spec **只锁轮询启停这一件事**。业务派生（`sectionProgress`）归
+ * `utils/__tests__/blueprintBlocks.test.ts` 的纯函数单测，这里不重复；阶段时间线的末态推断
+ * 见 `utils/__tests__/blueprintBlocks.test.ts` 与
+ * `components/blueprint/__tests__/stageTimeline.spec.ts`（MN-01 之后本 composable 不再派生它）。
  */
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { flushPromises, mount } from '@vue/test-utils'

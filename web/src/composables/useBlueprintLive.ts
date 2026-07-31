@@ -45,25 +45,10 @@ import { useQuery } from '@tanstack/vue-query'
 import { computed, watch } from 'vue'
 import blueprintsApi from '~/api/blueprints'
 import { LIVE_BLUEPRINT_STATUSES } from '~/config/blueprintStatus'
-import {
-  BLUEPRINT_STAGES,
-  progressKeyForEvent,
-  sectionKeyForEvent,
-  stageForEvent,
-} from '~/utils/blueprintBlocks'
+import { progressKeyForEvent, sectionKeyForEvent } from '~/utils/blueprintBlocks'
 
 /** 轮询间隔（毫秒）。阶段级进展取 5s；日志级的 2s 太密，会把只读评审面变成压测。 */
 const LIVE_REFETCH_MS = 5_000
-
-/** 阶段时间线的一个节点。 */
-export interface StageTimelineNode {
-  stage: string
-  /** 未开始 / 进行中 / 完成 / 失败。 */
-  state: 'idle' | 'running' | 'done' | 'failed'
-  events: BlueprintEvent[]
-  /** 该 stage 下最新一条事件的 `ts`（无事件为 `''`）。 */
-  latestTs: string
-}
 
 /** 某个导航段的进度文案信息（i18n key + 该事件的 payload，插值键缺失时回落无参兜底）。 */
 export interface SectionProgress {
@@ -109,6 +94,11 @@ function resolveProgressKeys(eventName: string, payload: Record<string, unknown>
 
 /**
  * 蓝图查看器的三个实时查询 + 两项派生。
+ *
+ * ⛔ **阶段时间线不在这里派生**：它是 `~/utils/blueprintBlocks` 的纯函数
+ * `buildStageTimeline(events, currentStage, currentStatus)`，由
+ * `components/blueprint/BlueprintStageTimeline.vue` 直接调用。这里曾有过一份零消费方的副本，
+ * 它让「修一处、单测绿、界面纹丝不动」成为可能（MN-01），已删除，⛔ 不要加回来。
  *
  * @param artifactId 蓝图 artifact id（响应式）。
  * @param versionId 可选的历史版本 id；变化会带出新的 `['blueprint','doc',...]` 缓存条目。
@@ -163,36 +153,6 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
   })
 
   const events = computed<BlueprintEvent[]>(() => eventsQuery.data.value?.events ?? [])
-
-  /** 阶段时间线：按 stage 聚合事件，末态由该 stage 内最新事件的语义决定。 */
-  const stageTimeline = computed<StageTimelineNode[]>(() => {
-    const buckets = new Map<string, BlueprintEvent[]>()
-    for (const event of events.value) {
-      const stage = stageForEvent(event.event)
-      if (!stage)
-        continue
-      const list = buckets.get(stage) ?? []
-      list.push(event)
-      buckets.set(stage, list)
-    }
-    return BLUEPRINT_STAGES.map((stage) => {
-      const list = [...(buckets.get(stage) ?? [])].sort((a, b) =>
-        String(a.ts).localeCompare(String(b.ts)))
-      const latest = list.at(-1)
-      let state: StageTimelineNode['state'] = 'idle'
-      if (latest) {
-        if (latest.event.endsWith('.failed'))
-          state = 'failed'
-        else if (latest.event.endsWith('.completed') || latest.event.endsWith('.locked'))
-          state = 'done'
-        else state = 'running'
-      }
-      else if (stage === 'pending_review' && currentStatus.value === 'pending_review') {
-        state = 'running'
-      }
-      return { stage, state, events: list, latestTs: latest?.ts ?? '' }
-    })
-  })
 
   /**
    * 段级进度：`Record<sectionKey, SectionProgress>`，**一段取其命中事件中 `ts` 最大的一条**。
@@ -249,7 +209,6 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
     snapshot: snapshotQuery,
     eventsQuery,
     events,
-    stageTimeline,
     sectionProgress,
     statusProgressKey,
     refetchAll,
