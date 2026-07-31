@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
 status: executing
-last_updated: "2026-07-31T12:03:35.640Z"
-last_activity: 2026-07-31 -- 115-01 executed
+last_updated: "2026-08-01T03:15:00.000Z"
+last_activity: 2026-08-01 -- 115-02 executed
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 27
-  completed_plans: 21
+  completed_plans: 22
   percent: 67
 ---
 
@@ -25,9 +25,15 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 ## Current Position
 
 Phase: 115 (前端查看器与知识库（结构化阅读 + 批注 + 管理面）) — EXECUTING
-Plan: 2 of 7
-Status: 115-01（后端五端点供数面）已收口并全量后端门通过（8606 passed / 1 failed，唯一失败是 worktree 的 skills 快照守卫环境现象）；下一个 115-02 前端数据层与纯函数地基
-Last activity: 2026-07-31 -- 115-01 executed
+Plan: 3 of 7
+Status: 115-02（前端数据层与纯函数地基）已收口——13 个源文件 + 6 个测试文件（150 例全绿）+ 三处零删除行纯追加；前端门 vitest 1464 passed / type-check 通过 / 本 plan 文件零新增 lint 问题。下一个 115-03 起「照契约拼组件」，⭐ **契约逐字见 `115-02-SUMMARY.md` §4–§8**
+Last activity: 2026-08-01 -- 115-02 executed
+
+⭐ **115-03 起开工前必读 `115-02-SUMMARY.md` §14 的五条注意**，其中三条最容易踩：
+
+1. **`refetchInterval` 一个字都不许出现在组件/页面里**（源码守卫 `web/src/__tests__/blueprint-source-guard.spec.ts` 断言 6 会红）——要实时数据就消费 `useBlueprintLive()`。
+2. **`zh-CN.json` / `main.css` / `api/index.ts` 已写全，⛔ 别再改**（全相位只由 115-02 修改，避免五向冲突面）。缺 key/safelist 时先回 SUMMARY §8 核对，大概率是「字面量类名不需要 safelist」或「兜底键在 `statusUnknown` 而非 `status.unknown`」的误判。
+3. **前端 lint 判据是「自己碰的文件零新增问题」**，⛔ 不是 `pnpm lint` 整体退出码为 0——仓库有 **111 个既有 lint 问题**（106 errors / 5 warnings，27 个与蓝图无关的文件），清它超出 115 相位边界。
 
 ⚠️ **115 需要知道的两处端点契约收紧**（修 CR-01 / MJ-03 / MJ-04 引入，前端必须适配）：
 
@@ -129,6 +135,15 @@ Last activity: 2026-07-31 -- 115-01 executed
 - [Phase 115-01]: 蓝图列表响应键定为 current_status（避开 INV-6 字段级守卫；ORM 过滤走 _STATUS_FIELD 常量），UI-SPEC §3.3 同步订正
 - [Phase 115-01]: 列表分页体定为 {total, items, page, page_size, has_next} 五键（方案 A 的 Python 侧过滤用不上 DRF 分页 helper），订正 UI-SPEC §3.3 的「DRF 分页体」
 - [Phase 115-01]: 范围闸与中性 404 文案常量一律 import 复用 blueprint_review_views 私有符号（既有文件零改动），使「非成员 404 与不存在 404 逐字相同」结构性成立
+- [Phase 115-02, 2026-08-01]: **A2 假设 settle：happy-dom 20.10.2 四项能力全部支持**（`createTreeWalker` / `createRange` / `Range.getBoundingClientRect` / `getSelection`，加三项行为探针共七项全 `true`，由 `utils/__tests__/domCapabilities.test.ts` 的 `toMatchInlineSnapshot` 永久锁住）⇒ 批注层 offset 计算走**自动化单测**而非 UAT；**唯一仍归 UAT 的是选区 popover 的落点坐标**（happy-dom 无布局引擎，`getBoundingClientRect` 恒返 0 矩形）。
+- [Phase 115-02, 2026-08-01]: **UI-SPEC §8.3 轮询写法订正为「两形态 + `watch` 踢动」**：自带状态字段的 snapshot 查询读**自身** `query.state.data`；**无状态字段**的 doc/events 查询读外部 `isLive` 并**必须配 `watch(isLive, on => on && refetch())`**。理由：函数式 `refetchInterval` 只在本查询自己的 state 更新时重算，函数体里读外部 ref **不是被追踪的响应式依赖**（`cloneDeepUnref` 不下探函数体）⇒ 无 `watch` 时 doc/events 永不装定时器，症状是**首屏有内容、无报错、快照徽标还在跳，而章节进度冻结在打开那一刻**（P-9 静默假通过）。**已做变异验证：注释掉 `watch` 后用例转红（`expected 1 to be 2`），恢复即绿。** 同时删掉 §8.3 的 `useDocumentVisibility()` 一条（TanStack Query 内建 `refetchIntervalInBackground: false`）。
+- [Phase 115-02, 2026-08-01]: **`refetchInterval` 全相位只允许出现在 `web/src/composables/useBlueprintLive.ts`**（源码扫描守卫锁死）——同步点 2 换 v0.19.0 推送契约时**只改这一个文件**。
+- [Phase 115-02, 2026-08-01]: **UI-SPEC §10.1 chunk-at 判据订正**：可用判据是 `!ok || chunks.length === 0`（**200-空 chunks 也不可用**，后端对「无命中」与「被排除文件」刻意不可区分），⛔ 不是「非 2xx」；判据**封装进返回类型** `{chunks, usable}`，调用点不各自判。其错误体键是 `error` 不是 `detail` ⇒ `ApiError.detail` 会回落成无意义的 `'请求失败'`，⛔ 任何调用点不得回显。
+- [Phase 115-02, 2026-08-01]: **UI-SPEC §3.6/§10.1 代码正文来源订正**：`chunk-at` 的 `chunks[]` **没有代码正文**，全仓也无「按 path + 行区间取源码」的读面 ⇒ `CitationCodePreview` 本相位降级为「文件路径 + 行号区间 + citation `quote` 快照」，⛔ 不引 CodeMirror、⛔ 不新增后端端点（该读面归 Phase 116）。
+- [Phase 115-02, 2026-08-01]: **UI-SPEC §7.4 选区 popover 订正**：用 **`import { PopoverAnchor } from 'reka-ui'`**（已核实 `reka-ui@2.9.10` 的 `dist/index.d.ts` 与 `dist/index.js` 都导出它，**无需降级到 `PopoverTrigger` 方案**）+ 零尺寸虚拟锚点 div；⛔ 不从 `~/components/ui/popover` 导入（该 barrel 只导出 `Popover`/`PopoverContent`/`PopoverTrigger` 三个，给它加导出 = 又一处既有文件修改）。⚠️ 同时订正一条计划认知：**`@floating-ui/dom` 与 `@floating-ui/vue` 在基线就已是 `web/package.json` 的直接依赖**（非本 plan 引入），当前 `web/src/` 对其零引用；纪律照旧 ⛔ 不写 `useFloating`、⛔ 不手搓定位。
+- [Phase 115-02, 2026-08-01]: **`blockText` 按「字段优先级」而非 `block.type` 分派（P-13）**：后端 `_block_text` 完全不看 type，而 schema 对 `text` 无类型约束 ⇒「`type: pseudocode` 且 `text` 非空」完全合法；按 type 分派得到的 offset **仍在合法范围内** ⇒ 不触发降级、不报错、`<mark>` 照渲，**只是圈错了字**。已上双证（fixture 用例 + 源码扫描断言函数体内 `.type` 零命中）。
+- [Phase 115-02, 2026-08-01]: **服务端态一律不进 Pinia**：`doc`/`threads`/`snapshot`/`events`/`timeline`/`gate`/`list` 全走 TanStack Query（key 约定 `['blueprint', <面>, artifactId, …]`，失效走前缀匹配 `invalidateQueries({queryKey:['blueprint']})`）；`useBlueprintViewerStore` 只放 `sidebarCollapsed`/`showClosedAnnotations`/`kindFilters` 三项**用户偏好**并 `useLocalStorage` 持久化。
+- [Phase 115-02, 2026-08-01]: **404 前端只有一个 i18n 键** `knowledge.blueprints.error.notFoundOrForbidden = "无权访问或该蓝图不存在"`，⛔ 不建 `notFound`/`forbidden` 第二个键（后端对「不存在」与「非成员」刻意返回逐字相同的 404，翻成两种文案即被差分枚举破防）；源码守卫同时扫竞品中文字面量。
 
 ### Pending Todos
 
@@ -142,6 +157,9 @@ Last activity: 2026-07-31 -- 115-01 executed
 - [Phase 112 残留 PARTIAL] **FLOW-02 的「替代建议」无结构化字段**：fitness 的 `reasons` 承载了理由，但 unsuitable 时的「建议改去哪个仓」未落成结构化字段（当前混在自由文本里）。113 若需机器消费该建议再补 schema 字段，否则留到 115 前端呈现时定夺
 - [Phase 114 review 跳过项] **MN-05：`blueprint_quality` 三项 DB 统计（`ai_rejection_rate` / `human_edit_volume` / `clarification_rounds`）零消费方** —— ⚠️ **115/116 必读**：SUMMARY 的「度量面闭环」只兑现到「口径已实装、可被调用」，**全仓无任何消费点**（既不进离线评估也不进 API / 大盘）。评审建议的「接进 `evaluate_blueprint_golden`」经核实**不可行**：golden case 是静态 JSON fixture（顶层只有 `name/description/blueprint/expected`，**无 `artifact_id`**，DB 里也不存在对应 artifact），而三项统计全部按 `artifact_id` 查 delivery models，且该 command 明写「全程无 DB 写、天然过 `--disable-socket`」——硬接只会得到三个恒 `None` 的键，比不接更糟。**正确消费面是 115/116 的运行时大盘 / 人审面板**（有真实 artifact_id 在手）。已在 `blueprint_quality.py` 的 DB 统计节源码处同步登记。详见 `.planning/phases/114-ai/114-REVIEW.md` Fix Log
 - [Phase 114 review 顺延项] **全仓仍有二十余处 `error=str(exc)` 未脱敏**（`crawl_service` / `work_item_service` / `coding_completion` / `comment_event_service` / `release_service` 等，均早于本纪律）。114 已把**蓝图链九个模块**收口并加了 AST 守卫 `tests/delivery/test_blueprint_log_redaction_guard.py`（新增蓝图模块请加进它的 `_SCANNED_MODULES`）。全仓收口另起独立清理，并可考虑把该守卫的扫描面逐步扩到全仓
+- [Phase 115-02 范围收窄 · P-5] ⭐ **SC-4 的 `associations` 段本相位只做「本蓝图引用了」+「关联项目」**，**「引用了本蓝图 / 关联知识」顺延 Phase 116 的知识图谱物化**。理由：`knowledgeApi.getRelated` / `getArtifactAssociations` 查的是 `initiatives.Artifact` 投影的 KnowledgeEntity（`server/knowledge/artifact_associations.py:75`），而蓝图存在 `delivery.Artifact` ⇒ 拿蓝图 id 去调**必然 404/空**。`web/src/api/blueprints.ts` 与本相位任何文件对这两个符号**零调用**（已加验收断言）。116 做图谱物化时一并补这两块呈现。
+- [Phase 115-02 环境项] **pnpm 10.34.2 会漂移 `web/pnpm-workspace.yaml`**：在本 worktree 跑**任何** `pnpm` 命令（含 `pnpm exec vitest`）都会自动向 `catalogs` 回填缺失条目（`three` / `mermaid` / `wordcloud` / `3d-force-graph` / `medium-zoom` / `@types/*`）。⭐ **115-03 起每个前端 plan 跑完门之后请 `git status` 检查并 `git checkout -- web/pnpm-workspace.yaml` 还原**，否则会被边界核算误判为「新增依赖」。
+- [Phase 115-02 验收脚本缺陷（非实现缺陷）] **计划里 404 竞品键的验收正则 `/notFound$|notExist|forbidden/i` 会误伤获批键本身**——带 `/i` 且 `forbidden` 是子串匹配 ⇒ 把唯一获批的 `notFoundOrForbidden` 判为竞品，脚本恒抛错。修正判据：**先排除获批键再扫竞品**。已用修正版复跑通过（实现无缺陷）。后续 plan 若复用该脚本请一并改正。
 - [Phase 114 review 可再议] **`ConvergenceSessionService.areopen_stage` 未发 `ConvergenceSessionEvent`**：新事件类型属纯追加、本可做，但 §13.2 把既有事件类型/字段定为 consume-only，且复位已由 `convergence_session_reopened` 结构化日志 + `blueprint_review_rejected` 双重可归因。若 115 的事件时间线希望「人审驳回导致的会话复位」在时间线上可见，需新增一个 `blueprint.review.session_reopened` 事件常量（同步点 2 后与 0.19 的时间线契约一并定）
 
 ### Blockers/Concerns
@@ -160,8 +178,10 @@ Last activity: 2026-07-31 -- 115-01 executed
 
 ## Session Continuity
 
-Last session: 2026-07-31T12:03:17.138Z
-Next step: **Phase 115（前端查看器与知识库）** —— 可直接消费 `114-05-SUMMARY.md` 的七端点契约表（URL / `name` / 入参 / 状态码映射 / GET 快照响应键 / answer 的 `reflow` 键 / approve 409 的未决清单形状）与「Next Phase Readiness」节；版本溯源用 `produced_by_ref` 四前缀（`human_edit:` / `ai_review_reflow:` / `human_block_restore:` / `blueprint_review_reject:`）。
+Last session: 2026-08-01T03:15:00.000Z
+Next step: **Phase 115-03（起「照契约拼组件」）** —— ⭐ **契约唯一来源是 [`115-02-SUMMARY.md`](./phases/115-ui/115-02-SUMMARY.md) 的 §4–§8**：TS 类型与文件路径（§4.1）、`api/blueprints.ts` 19 个函数签名与 `repositoryChunks` 的 `{chunks, usable}`（§4.2/§4.3）、纯函数完整清单并标注**哪两个触 DOM**（§5）、`annotationClass` 签名与全部分档（§6）、12 态配置 / store / 三个 composable 的返回结构（§7）、i18n 顶层键与 safelist 两种 icon 契约（§8）。`useBlueprintLive` 的返回键与 `sectionProgress` 形状见 §3。⛔ **不要回头看 UI-SPEC 的 §3.3 / §3.6 / §7.4 / §8.3 / §10.1**——这五处已被 115-01/115-02 订正，原文过时。
+
+以下仍然有效（来自 114-05）：可消费 `114-05-SUMMARY.md` 的七端点契约表（URL / `name` / 入参 / 状态码映射 / GET 快照响应键 / answer 的 `reflow` 键 / approve 409 的未决清单形状）与「Next Phase Readiness」节；版本溯源用 `produced_by_ref` 四前缀（`human_edit:` / `ai_review_reflow:` / `human_block_restore:` / `blueprint_review_reject:`）。
 
 ⚠️ **开工前先读三条**：
 
@@ -176,3 +196,4 @@ Resume file: 无（干净接力点：Phase 111–114 全部 commit 已入库）
 | Phase | Plan | Duration | Notes |
 |-------|------|----------|-------|
 | Phase 115 P01 | 90m | 3 tasks | 7 files |
+| Phase 115 P02 | ~180m | 3 tasks | 23 files（+4372/−1），新增 150 例前端用例 |
