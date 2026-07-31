@@ -904,6 +904,59 @@ describe('chatMessageBubble — 110-07 编排进度挂载', () => {
     expect(console.error).not.toHaveBeenCalled()
   })
 
+  // ---- 110-HI-01：失败后重跑，失败那条气泡不得改播新一轮 --------------------
+  //
+  // 上面三条绑定用例只覆盖「在途、根本没有 result」这一种取不到会话的形态——那正是
+  // 兜底**应该**生效的一种。真正会出事的是「**终态**、result 可解析但缺 session_id」，
+  // 也就是失败路径 `{"error":…,"is_error":true}` 的形状。下面三条把它锁住。
+
+  /** 编排失败的 tool result 出网形状（`chat_runner._normalize_tool_result` 固化）。 */
+  const FAILED = (sessionId?: string) => JSON.stringify({
+    error: '上游 500：<html>boom</html>',
+    is_error: true,
+    ...(sessionId ? { session_id: sessionId } : {}),
+  })
+
+  /** 第一轮失败（S1） + 第二轮在途（S2，store 的活跃会话指向它）。 */
+  function seedFailedThenRerun() {
+    seedBucket('S1', {
+      status: 'failed',
+      current_stage: 'merge',
+      failure: { stage: 'merge', reason_code: 'merge_validation_exhausted' },
+    })
+    seedBucket('S2', { status: 'running', current_stage: 'route' })
+    store.activeOrchestrationSessionId = 'S2'
+  }
+
+  it('失败终态 result 带 session_id ⇒ 绑回它自己那一轮（S1），不跟随 store 的活跃会话', async () => {
+    seedFailedThenRerun()
+    const wrapper = await mountBubble(orchestrationMsg([toolPart('p1', 0, FAILED('S1'))]))
+
+    expect(wrapper.findComponent(OrchestrationStageTimeline).props('sessionId')).toBe('S1')
+  })
+
+  it('失败气泡显示「方案编排失败」，且全文不含新一轮的「正在生成技术方案」', async () => {
+    // 🔴 与上一条分开写、且**两个方向都断言**：只断言标题为「失败」的话，
+    // 「绑到 S2」的实现在这条上同样会红，但看不出它把别人的进度挂了上来；
+    // 只断言不含在途文案的话，「整块不渲染」的实现会假通过。
+    seedFailedThenRerun()
+    const wrapper = await mountBubble(orchestrationMsg([toolPart('p1', 0, FAILED('S1'))]))
+
+    expect(wrapper.text()).toContain('方案编排失败')
+    expect(wrapper.text()).not.toContain('正在生成技术方案')
+  })
+
+  it('终态 result 可解析但缺 session_id（老后端形状）⇒ 整块不渲染，绝不回退到 store 的活跃会话', async () => {
+    // 兜底只服务「在途还没有 result」。这条形状有 result、只是绑不到会话 ⇒ §A.5 条件 2
+    // 不成立，整块不渲染；回退到 S2 会让失败气泡播新一轮的实时进度。
+    seedFailedThenRerun()
+    const wrapper = await mountBubble(orchestrationMsg([toolPart('p1', 0, FAILED())]))
+
+    expect(wrapper.find(TIMELINE).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('正在生成技术方案')
+    expect(wrapper.find('.tool-inline').exists()).toBe(true)
+  })
+
   // ---- 调研日志组 ---------------------------------------------------------
 
   it('调研容器归属本气泡的会话 ⇒ 渲染日志组，且位置早于编排产出卡片', async () => {

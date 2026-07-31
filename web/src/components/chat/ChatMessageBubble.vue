@@ -862,9 +862,18 @@ function resolveOrchestrationSessionId(result: unknown): string {
  * 唯一的来源。但 result 一旦出现（挂起 marker 与终态 result 都带 `session_id`），
  * 它**明确属于这个气泡**，优先级最高：同一对话里跑第二轮编排时，store 的活跃 id
  * 已经指向新会话，只有 result 能把第一条气泡钉回它自己那次编排。
+ *
+ * 🔴 110-HI-01：store 兜底**只服务「在途、还没有 result」**这一种情形。已经有 result
+ * 却解析不出会话（例如老后端的失败结果 `{"error":…,"is_error":true}`，能 JSON.parse
+ * 但没有 `session_id`），说明它不属于当前活跃编排——宁可整块不渲染（§A.5 条件 2），
+ * 也不能把别人那一轮的进度挂上来：那既抹掉了失败呈现，又让同一份进度同时出现在
+ * 两条气泡上（§A.7 明令要防的形态）。
  */
 function orchestrationSessionIdFor(item: ToolItemShape): string {
-  return resolveOrchestrationSessionId(item.result) || chatStore.activeOrchestrationSessionId || ''
+  const fromResult = resolveOrchestrationSessionId(item.result)
+  if (fromResult)
+    return fromResult
+  return item.result ? '' : (chatStore.activeOrchestrationSessionId || '')
 }
 
 /**

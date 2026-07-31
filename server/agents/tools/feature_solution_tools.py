@@ -199,6 +199,9 @@ async def _map_state(state: Any, conversation_id: str) -> ToolResult:
         return ToolResult(
             success=False,
             error=str(error.get("message") or error.get("reason") or "方案编排失败"),
+            # 110-HI-01：与 plan_research_tools._map_terminal 同一条纪律 —— 失败出口也必须
+            # 带定位键，否则失败气泡只能回退 store 的全局活跃会话，重跑时改播新一轮进度。
+            metadata={"session_id": str(state.session_id)},
         )
 
     return ToolResult(
