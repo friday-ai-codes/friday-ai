@@ -2259,8 +2259,20 @@ class ConversationService:
     @staticmethod
     async def get_conversation_runtime(
         conversation_id: str,
+        *,
+        orchestration_seen: str = "",
     ) -> dict[str, Any]:
-        """返回对话当前运行态 — 从 OrchestrationRun DB 读取真实 phase/status。"""
+        """返回对话当前运行态 — 从 OrchestrationRun DB 读取真实 phase/status。
+
+        Args:
+            conversation_id: 对话 UUID。
+            orchestration_seen: 客户端声称**已完整持有**的编排会话 id（110-MN-02 的收敛
+                令牌）。仅当它逐字等于本对话最近一次编排会话、且该会话已终态、且其下没有
+                在途调研容器时，本次快照才短路：`orchestration.events` 与
+                `plan_research_sessions` 不重发，`orchestration.converged=true` 告诉前端
+                「保留你现有的」。取值只能让服务端**少**发数据，猜错 / 伪造只会退化成全量，
+                不构成越权面。刷新补齐（`restoreConversationRuntime`）不带此参数即拿全量。
+        """
         from datetime import timedelta
 
         from django.utils import timezone
@@ -2475,8 +2487,15 @@ class ConversationService:
         # 吞掉 → 静默降级成空数组，而那个症状与「后端根本没写日志」逐字相同。预置 None
         # + 各支显式判空是唯一不留暗路的写法。
         orch_session: Any = None
+        # 与 orch_session 同一条纪律：预置在 try 之外，异常路径下取值恒定（False = 全量）。
+        orchestration_converged = False
         try:
-            from delivery.models import ConvergenceSession, ConvergenceSessionEvent
+            from delivery.models import (
+                ConvergenceSession,
+                ConvergenceSessionEvent,
+                RepoResearchTask,
+                RepoResearchTaskStatus,
+            )
             from delivery.models.convergence_session import ConvergenceSessionStatus
             from delivery.services.process_event_wire import (
                 compress_failure_reason,
@@ -2493,6 +2512,35 @@ class ConversationService:
                 #（UI-SPEC §E.3：前端不渲染空壳，后端也不该先造出这个壳）。
                 runtime["orchestration"] = None
             else:
+                # 终态短路（110-MN-02）：编排早已 done / failed 之后，这条 2s 轮询没有
+                # 任何收敛机制——`pollConversationRuntime` 的存活条件是「本对话有任何活跃
+                # run」而不是「编排活跃」，所以用户点「进入编码」之后的十几分钟里，每 2 秒
+                # 仍在重查 200 条事件、逐条重新净化、并把每仓 80 行日志逐条重新脱敏后整包
+                # 下发。全是逐字相同的内容。
+                #
+                # 收敛条件三条同时成立才短路，缺一不可：
+                # ① 客户端带的令牌逐字等于本对话最近一次编排会话（换一轮编排即自动失效）；
+                # ② 会话已终态（事件流不会再增长）；
+                # ③ 其下没有在途调研容器 —— `failed` 可能停在 research，那时容器还在写
+                #    日志，短路会让日志组停在半截。这一条只花一次带索引的 exists()，
+                #    换掉的是「整行取回 N 个 last_output 大 JSON + 数百次正则脱敏」。
+                #
+                # 判定放在本分支**最前**：后面每一步（失败原因压制、事件查询、净化）都是
+                # 它要省掉的开销，也让「已算出收敛之后才抛」这一拍可被测试构造出来。
+                if (
+                    orchestration_seen
+                    and orchestration_seen == str(orch_session.id)
+                    and orch_session.status
+                    in {ConvergenceSessionStatus.DONE, ConvergenceSessionStatus.FAILED}
+                ):
+                    orchestration_converged = not await RepoResearchTask.objects.filter(
+                        session_id=orch_session.id,
+                        status__in=[
+                            RepoResearchTaskStatus.PENDING,
+                            RepoResearchTaskStatus.RUNNING,
+                        ],
+                    ).aexists()
+
                 # stage_state 是自由 JSON 袋，形状意外时降级而非抛：decomposition 非
                 # dict ⇒ has_classify=False；segments 非 list ⇒ segment_count=None。
                 decomposition = orch_session.decomposition
@@ -2521,15 +2569,18 @@ class ConversationService:
                 # 摘要，而阶段指针取权威的 current_stage ⇒ 截断只丢摘要精度；反过来保留
                 # 最旧会让时间线**永远停在早期阶段**（UI-SPEC 后端契约要求 #3）。
                 # 多取 1 条（201）只为判断是否截断——比再发一次 .count() 少一次查询。
-                rows = [
-                    row
-                    async for row in ConvergenceSessionEvent.objects.filter(
-                        session_id=orch_session.id,
-                    ).order_by("-ts", "-created_at")[:201]
-                ]
-                events_truncated = len(rows) > 200
-                rows = rows[:200]
-                rows.reverse()
+                rows = []
+                events_truncated = False
+                if not orchestration_converged:
+                    rows = [
+                        row
+                        async for row in ConvergenceSessionEvent.objects.filter(
+                            session_id=orch_session.id,
+                        ).order_by("-ts", "-created_at")[:201]
+                    ]
+                    events_truncated = len(rows) > 200
+                    rows = rows[:200]
+                    rows.reverse()
 
                 runtime["orchestration"] = {
                     "session_id": str(orch_session.id),
@@ -2555,6 +2606,9 @@ class ConversationService:
                         for row in rows
                     ],
                     "events_truncated": events_truncated,
+                    # 🔴 true ⇒ 本次**没有**重发 events，也**没有**重发
+                    # plan_research_sessions；前端保留自己已有的两份，不得按空值覆盖。
+                    "converged": orchestration_converged,
                 }
         except Exception:
             # best-effort：本分支失败只让 orchestration 回退 None，绝不反噬 runtime 端点。
@@ -2685,6 +2739,15 @@ class ConversationService:
                 # 第二种若不预置，这里会是 UnboundLocalError → 被本分支自己的 except 吞掉
                 # → 静默变成空数组，症状与「后端根本没写日志」逐字相同。显式早退不留暗路。
                 runtime["plan_research_sessions"] = []
+            elif isinstance(runtime.get("orchestration"), dict) and runtime["orchestration"].get(
+                "converged"
+            ):
+                # 终态短路（110-MN-02）：日志早已凝固，本次不重发（每仓最多 80 行、逐行
+                # 一次 redact_secrets_in_text，5 个仓 = 每次轮询 400 次正则替换）。
+                # 🔴 判据取**已经写进 runtime 的那份快照**而不是局部变量：orchestration
+                # 分支若在算出 converged 之后才抛，它会回退 None，那时必须走全量——否则
+                # 前端会同时收到「没有编排」与「没有日志」，把已有的日志组整个抹掉。
+                runtime["plan_research_sessions"] = []
             else:
                 # 🔴 归属锚点全部取**服务端权威列**，不碰容器可写的 last_output（110-MN-01）。
                 #
@@ -2720,7 +2783,9 @@ class ConversationService:
                         async for sess in SubAgentSession.objects.filter(
                             id__in=list(repo_id_by_container.keys()),
                             task_type=SubAgentSession.TaskType.PLAN,
-                        ).order_by("id")
+                        )
+                        .only("id", "session_id", "status", "last_output")
+                        .order_by("id")
                     ]
                     if repo_id_by_container
                     else []

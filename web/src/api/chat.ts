@@ -273,9 +273,20 @@ export async function getConversationDetail(id: string): Promise<ConversationDet
 
 /**
  * 获取对话运行态（用于刷新后恢复执行状态）
+ *
+ * @param orchestrationSeen 收敛令牌（110-MN-02）：调用方已完整持有的编排会话 id。
+ *   命中且该会话已终态时，服务端只回权威字段、不重发早已凝固的事件流与容器日志
+ *   （响应里 `orchestration.converged === true`）。**刷新补齐不要带它**——那条路径
+ *   本来就是来拿全量的。
  */
-export async function getConversationRuntime(id: string): Promise<ConversationRuntime> {
-  return get<ConversationRuntime>(`/chat/conversations/${id}/runtime/`)
+export async function getConversationRuntime(
+  id: string,
+  orchestrationSeen = '',
+): Promise<ConversationRuntime> {
+  const qs = orchestrationSeen
+    ? `?orchestration_seen=${encodeURIComponent(orchestrationSeen)}`
+    : ''
+  return get<ConversationRuntime>(`/chat/conversations/${id}/runtime/${qs}`)
 }
 
 /**
