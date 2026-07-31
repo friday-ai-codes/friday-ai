@@ -57,6 +57,10 @@ from services.process_runtime import blueprint_merge
 from services.process_runtime.blueprint_quality import citation_coverage
 from services.process_runtime.blueprint_review import (
     _MAX_FINDINGS,
+    _RULE_ID_TAG,
+    RULE_GATE_LOCK_MISSING,
+    RULE_GATE_LOCK_RESPONSIBILITY,
+    RULE_GATE_LOCK_ROLE,
     SEVERITY_BLOCKER,
     SEVERITY_INFO,
     SEVERITY_WARNING,
@@ -594,31 +598,70 @@ def test_unchanged_repo_associations_pass_gate_lock():
 
 
 @pytest.mark.parametrize(
-    "mutate,reason",
+    "mutate,expected_rule",
     [
-        pytest.param(lambda bp: bp.update({"repo_associations": []}), "removed", id="removed"),
+        pytest.param(
+            lambda bp: bp.update({"repo_associations": []}),
+            RULE_GATE_LOCK_MISSING,
+            id="removed",
+        ),
         pytest.param(
             lambda bp: bp["repo_associations"][0].update({"role": "indirect"}),
-            "role",
+            RULE_GATE_LOCK_ROLE,
             id="role_changed",
         ),
         pytest.param(
             lambda bp: bp["repo_associations"][0].update(
                 {"responsibility": [_block("blk_gate_resp_repo-a", "换了一套完全不同的职责")]}
             ),
-            "responsibility",
+            RULE_GATE_LOCK_RESPONSIBILITY,
             id="responsibility_rewritten",
         ),
     ],
 )
-def test_deviation_from_gate_lock_is_blocker(mutate, reason):
+def test_deviation_from_gate_lock_is_blocker(mutate, expected_rule):
     blueprint = _blueprint()
     mutate(blueprint)
     findings = check_gate_lock(blueprint, locked_snapshot=_locked_snapshot())
-    assert _rule_ids(findings) == ["gate_lock_violation"], (reason, findings)
+    assert _rule_ids(findings) == [expected_rule], findings
     assert findings[0]["severity"] == SEVERITY_BLOCKER
     assert findings[0]["block_id"] == f"blk_gate_resp_{_REPO_ID}"
     assert findings[0]["section_path"] == f"repo_associations[{_REPO_ID}].responsibility"
+
+
+def test_role_and_responsibility_deviations_get_distinct_dedupe_keys():
+    """⭐ MN-03 回归：同一仓角色与职责同时偏离 ⇒ 两条 finding 的幂等键必须不相等。
+
+    三种偏离的 ``section_path`` / ``block_id`` 逐字相同，而 ``finding_dedupe_key``
+    **优先取 ``block_id``** ⇒ 共用 ``rule_id`` 就会把两条折叠成同一个键。后果分两轮：
+
+    - 第一轮：``existing`` 是循环**之前**一次性查好的索引 ⇒ 第二条又开一条内容不同的重复
+      线程，且 ``landed[key]`` 被它覆盖 ⇒ 第一条的 thread_id 从 ``unresolved`` 快照里消失
+      （人审面板上有这条线程，却在未决清单里找不到它）；
+    - 第二轮起：``_aload_finding_threads`` 的 ``index.setdefault`` 只保留其中一条，另一条既
+      拿不到「第 N 轮仍存在」留痕，也**不进「本轮已消失 → resolve」的收尾循环**（它压根
+      不在 ``existing`` 里）—— 一条 ``open + blocking`` 的 BLOCKER 线程从此**永久挡住
+      confirm**，只能靠人工 dismiss 清掉。
+    """
+    blueprint = _blueprint()
+    blueprint["repo_associations"][0].update(
+        {
+            "role": "indirect",
+            "responsibility": [_block("blk_gate_resp_repo-a", "换了一套完全不同的职责")],
+        }
+    )
+
+    findings = check_gate_lock(blueprint, locked_snapshot=_locked_snapshot())
+
+    assert _rule_ids(findings) == [RULE_GATE_LOCK_ROLE, RULE_GATE_LOCK_RESPONSIBILITY]
+    keys = [finding_dedupe_key(item) for item in findings]
+    assert len(set(keys)) == 2, keys
+    # 锚定不受影响：两条仍指向同一个真实块（改 rule_id 而不是 block_id 的理由）
+    assert {item["block_id"] for item in findings} == {f"blk_gate_resp_{_REPO_ID}"}
+    # rule_id 必须能被 `_aload_finding_threads` 的 `[rule_id]` 前缀正则反查回来，
+    # 否则第二轮的键仍然分不开（该正则只接受 [A-Za-z0-9_]+）
+    for item in findings:
+        assert _RULE_ID_TAG.match(f"[{item['rule_id']}] {item['detail']}")
 
 
 def test_gate_lock_falls_back_to_confirmed_at_gate_entries():

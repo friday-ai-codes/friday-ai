@@ -58,6 +58,9 @@ __all__ = [
     "SEVERITY_BLOCKER",
     "SEVERITY_WARNING",
     "SEVERITY_INFO",
+    "RULE_GATE_LOCK_MISSING",
+    "RULE_GATE_LOCK_ROLE",
+    "RULE_GATE_LOCK_RESPONSIBILITY",
     "check_preconditions",
     "check_schema",
     "check_citations",
@@ -83,6 +86,15 @@ SEVERITY_WARNING = "warning"  # == ThreadSeverity.WARNING
 SEVERITY_INFO = "info"  # == ThreadSeverity.INFO
 
 _SEVERITIES = (SEVERITY_BLOCKER, SEVERITY_WARNING, SEVERITY_INFO)
+
+# ⭐ 确认门锁定偏离的三个 rule_id（114-MN-03）：同一个仓可**同时**角色与职责都偏离，而三种
+# 偏离的 `section_path` / `block_id` 逐字相同 ⇒ 必须由 `rule_id` 承担形态区分，否则
+# `finding_dedupe_key` 会把它们折叠成同一个键（后果见 `check_gate_lock` 的 Returns 段）。
+# `rule_id` 是唯一能从线程首条消息的 `[rule_id]` 前缀反查回来的段（`_RULE_ID_TAG`），
+# 因此也是唯一能让**第二轮**的键仍然分得开的载体。
+RULE_GATE_LOCK_MISSING = "gate_lock_violation"  # 锁定仓整条消失（保留原值，兼容既有线程）
+RULE_GATE_LOCK_ROLE = "gate_lock_violation_role"  # role 偏离
+RULE_GATE_LOCK_RESPONSIBILITY = "gate_lock_violation_responsibility"  # responsibility 文本偏离
 
 # 单次审查的 finding 上界：结论会进线程 body 与人审面板，无界列表会把 HITL 刷爆。
 # 截断只影响详尽度，不影响处置——只要有一条 BLOCKER，打回/升人审的结论就已成立。
@@ -607,10 +619,25 @@ def check_gate_lock(content: Any, *, locked_snapshot: Any = None) -> list[dict]:
     复用既有投影做对比基线可避免两处口径漂移，lazy 则守住本模块顶层零 ORM 的纪律）。
 
     Returns:
-        逐条 ``gate_lock_violation`` **BLOCKER**（锁定仓消失 / ``role`` 不一致 /
-        ``responsibility`` 文本不一致），``section_path`` 用稳定锚
+        逐条 **BLOCKER**，``section_path`` 用稳定锚
         ``repo_associations[{rid}].responsibility``、``block_id`` 用 112 写入侧的稳定命名
         ``blk_gate_resp_{rid}``（``blueprint_confirm_gate.py:291-303``）。
+
+        ⭐ **三种偏离各有独立 ``rule_id``**（:data:`RULE_GATE_LOCK_MISSING` /
+        :data:`RULE_GATE_LOCK_ROLE` / :data:`RULE_GATE_LOCK_RESPONSIBILITY`，114-MN-03）：
+        同一个仓可以**同时**角色与职责都偏离，而三者的 ``section_path`` / ``block_id``
+        逐字相同 ⇒ 共用一个 ``rule_id`` 就会让 :func:`finding_dedupe_key` 对它们返回同一个
+        键，后果分两轮：第一轮 ``existing`` 是循环**之前**一次性查好的索引 ⇒ 第二条又开一条
+        内容不同的重复线程，且 ``landed[key]`` 被它覆盖 ⇒ 第一条的 thread_id 从
+        ``unresolved`` 快照里消失（面板上有线程、清单里找不到）；第二轮起
+        ``_aload_finding_threads`` 的 ``index.setdefault`` 只保留其中一条，另一条既拿不到
+        「第 N 轮仍存在」留痕，也**不进「本轮已消失 → resolve」的收尾循环**（它压根不在
+        ``existing`` 里）—— 一条 ``open + blocking`` 的 BLOCKER 线程从此**永久挡住
+        confirm**，只能靠人工 dismiss 清掉。
+        把形态写进 ``rule_id``（而不是 ``section_path``）的理由：``finding_dedupe_key``
+        **优先取 ``block_id``**，改 ``section_path`` 根本不影响键；而 ``rule_id`` 是
+        ``_aload_finding_threads`` 唯一能从线程首条消息 ``[rule_id]`` 前缀反查回来的段，
+        改它才能让两轮的键都真的分开。``block_id`` 不动 ⇒ 锚定仍指向同一个真实块。
 
     偏离 112 锁定即 BLOCKER——**要变必须重开确认门**，不允许在阶段 3 之后悄悄改仓库集或
     职责（114-CONTEXT 锁定）。
@@ -644,7 +671,7 @@ def check_gate_lock(content: Any, *, locked_snapshot: Any = None) -> list[dict]:
                 _append(
                     findings,
                     _finding(
-                        "gate_lock_violation",
+                        RULE_GATE_LOCK_MISSING,
                         SEVERITY_BLOCKER,
                         section_path=section_path,
                         block_id=block_id,
@@ -658,7 +685,7 @@ def check_gate_lock(content: Any, *, locked_snapshot: Any = None) -> list[dict]:
                 _append(
                     findings,
                     _finding(
-                        "gate_lock_violation",
+                        RULE_GATE_LOCK_ROLE,
                         SEVERITY_BLOCKER,
                         section_path=section_path,
                         block_id=block_id,
@@ -674,7 +701,7 @@ def check_gate_lock(content: Any, *, locked_snapshot: Any = None) -> list[dict]:
                 _append(
                     findings,
                     _finding(
-                        "gate_lock_violation",
+                        RULE_GATE_LOCK_RESPONSIBILITY,
                         SEVERITY_BLOCKER,
                         section_path=section_path,
                         block_id=block_id,
