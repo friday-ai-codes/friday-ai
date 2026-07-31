@@ -2374,6 +2374,11 @@ class ConversationService:
             "streaming_snapshot": streaming_snapshot,
             "pending_clarification": None,
             "pending_plan_clarification": None,
+            # ---- [110-03] 编排过程可见性：两个**独立**字段，与 deep_sessions 语义隔离 ----
+            # 预置在字面量里，保证任何路径（含两个新分支各自降级）下键恒存在且类型恒定：
+            # orchestration 恒为 dict | None，plan_research_sessions 恒为 list。
+            "orchestration": None,
+            "plan_research_sessions": [],
         }
 
         # 待回复的澄清（ask_clarification）—— 刷新 / 切回会话时恢复 ClarificationCard。
@@ -2454,6 +2459,114 @@ class ConversationService:
                 exc_info=True,
             )
             runtime["pending_plan_clarification"] = None
+
+        # 编排进度快照（110-03 · OBS-01/OBS-03）——刷新 / 重连后时间线可完整还原。
+        #
+        # 传输分工（110-01 F-1 既定）：`process_event` SSE 只覆盖 decompose → clarify
+        # 五个阶段的秒级直播；research → merge 后半程的容器回调续驱不在任何 graph 运行
+        # 上下文内、没有流可推 ⇒ **这条 2s 轮询快照是后半程唯一的进度来源**，不是兜底。
+        #
+        # 与上面 pending_plan_clarification 分支取的是同一个 ConvergenceSession，故紧邻
+        # 摆放；但 try/except **刻意不合并**——合并会让其中一支的失败连带吞掉另一支。
+        #
+        # 🔴 `orch_session` 由本分支与下面的 plan_research 分支共用，必须在**两个 try
+        # 之外**预置 None：若本 try 在赋值之前就抛（conv_uuid 解析 / DB 连接 / 查询本身
+        # 出错），plan_research 那一支读它会撞 UnboundLocalError → 被它自己的 except
+        # 吞掉 → 静默降级成空数组，而那个症状与「后端根本没写日志」逐字相同。预置 None
+        # + 各支显式判空是唯一不留暗路的写法。
+        orch_session: Any = None
+        try:
+            from delivery.models import ConvergenceSession, ConvergenceSessionEvent
+            from delivery.models.convergence_session import ConvergenceSessionStatus
+            from delivery.services.process_event_wire import (
+                compress_failure_reason,
+                sanitize_process_event_payload,
+            )
+
+            orch_session = (
+                await ConvergenceSession.objects.filter(conversation_id=conv_uuid)
+                .order_by("-created_at")
+                .afirst()
+            )
+            if orch_session is None:
+                # 无编排会话 ⇒ 直接 None，**不**构造一个全 unknown 的空壳
+                #（UI-SPEC §E.3：前端不渲染空壳，后端也不该先造出这个壳）。
+                runtime["orchestration"] = None
+            else:
+                # stage_state 是自由 JSON 袋，形状意外时降级而非抛：decomposition 非
+                # dict ⇒ has_classify=False；segments 非 list ⇒ segment_count=None。
+                decomposition = orch_session.decomposition
+                has_classify = (
+                    isinstance(decomposition, dict)
+                    and decomposition.get("mode") == "feature_list"
+                )
+                segments = (
+                    decomposition.get("segments") if isinstance(decomposition, dict) else None
+                )
+                segment_count = len(segments) if isinstance(segments, list) else None
+
+                failure: dict[str, str] | None = None
+                if orch_session.status == ConvergenceSessionStatus.FAILED:
+                    # 🔴 只有 stage 与 reason_code 两个键。error 的 message / exception /
+                    # report / 任何自由文本一律不进 runtime——原始文本的去处是事件表与
+                    # SystemLogEntry，供 superuser 排障（107-UI-SPEC Unresolved #4 同一
+                    # 条纪律）。compress_failure_reason 的返回值恒 ∈ 7 值闭集，这里**不得**
+                    # 再从 error 里补任何字段。
+                    failure = {
+                        "stage": orch_session.current_stage or "",
+                        "reason_code": compress_failure_reason(orch_session.error),
+                    }
+
+                # 🔴 取**最新** 200 条再反转为升序，不是取最旧 200 条。前端靠折叠事件算
+                # 摘要，而阶段指针取权威的 current_stage ⇒ 截断只丢摘要精度；反过来保留
+                # 最旧会让时间线**永远停在早期阶段**（UI-SPEC 后端契约要求 #3）。
+                # 多取 1 条（201）只为判断是否截断——比再发一次 .count() 少一次查询。
+                rows = [
+                    row
+                    async for row in ConvergenceSessionEvent.objects.filter(
+                        session_id=orch_session.id,
+                    ).order_by("-ts", "-created_at")[:201]
+                ]
+                events_truncated = len(rows) > 200
+                rows = rows[:200]
+                rows.reverse()
+
+                runtime["orchestration"] = {
+                    "session_id": str(orch_session.id),
+                    "status": orch_session.status,
+                    "current_stage": orch_session.current_stage or "",
+                    "has_classify": has_classify,
+                    "segment_count": segment_count,
+                    "failure": failure,
+                    "events": [
+                        {
+                            "event": row.event,
+                            # 🔴 必须是 .isoformat()，与 110-01 fan-out 里
+                            # `envelope["ts"] = row.ts.isoformat()` 逐字符同源——这是前端
+                            # 把 SSE 那条与快照那条认成同一条事件的唯一依据。换成 str() /
+                            # DRF 默认 / 自定义 format 都会让去重失效，症状是计数类摘要
+                            # 成倍虚高（两条链各自看都对，只有合流时才多一倍）。
+                            "ts": row.ts.isoformat(),
+                            # 🔴 与 SSE 出网同一把筛子。两条链净化不一致除了泄漏风险，
+                            # 还会让「同一条事件」在两边形状不同、前端合并出现只在某一
+                            # 条链上存在的分支。快照侧**不另写**一份净化。
+                            "payload": sanitize_process_event_payload(row.payload),
+                        }
+                        for row in rows
+                    ],
+                    "events_truncated": events_truncated,
+                }
+        except Exception:
+            # best-effort：本分支失败只让 orchestration 回退 None，绝不反噬 runtime 端点。
+            # runtime 是 2s 高频轮询面 ⇒ 正常路径零日志，仅异常分支一行 warning。
+            runtime["orchestration"] = None
+            logger.warning(
+                "conversation_runtime_orchestration_failed",
+                conversation_id=conversation_id,
+                category="sampling",
+                component="chat.conversation",
+                exc_info=True,
+            )
 
         # deep_analysis 会话信息（向后兼容 + 多子会话各自独立日志）
         # order_by("-id") 是降序，最新的在最前。收集本对话全部 chat_deep_analysis
