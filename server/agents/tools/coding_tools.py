@@ -368,6 +368,10 @@ async def create_coding_plan(
     parameters={
         "type": "object",
         "properties": {
+            "conversation_id": {
+                "type": "string",
+                "description": "会话 UUID (auto-injected)",
+            },
             "coding_plan_id": {
                 "type": "string",
                 "description": "CodingPlan UUID（coding-plan workflow 起首选）",
@@ -385,10 +389,11 @@ async def create_coding_plan(
             },
         },
         # coding_plan_id / session_id 二选一（在 handler 内校验）
-        "required": ["artifact_version_id"],
+        "required": ["conversation_id", "artifact_version_id"],
     },
 )
 async def update_coding_plan(
+    conversation_id: str,
     artifact_version_id: str,
     coding_plan_id: str = "",
     session_id: str = "",
@@ -397,8 +402,13 @@ async def update_coding_plan(
 
     正文一律经 ``PlanProjectionService.arebind`` 从来源版本渲染 —— 工具与 HTTP 端点
     共用同一 service，也共享 service 内的归属判定（``artifact_version_forbidden``）。
+
+    ``conversation_id`` 是 chat_runner 闭包注入的服务端值（从模型可见 schema 里剔除，
+    见 ``agents/chat_runner.py::_build_tool_specs``），承担两件事：解析归属主体，以及
+    校验「被改写的 plan / session 确实属于本次会话」—— 后者让模型无法通过挑他人的
+    ``coding_plan_id`` / ``session_id`` 自选身份或污染他人数据。
     """
-    from chat.models import CodingPlan, CodingSession
+    from chat.models import CodingPlan, CodingSession, Conversation
     from chat.plan_projection_service import PlanProjectionError, PlanProjectionService
 
     logger.info(
@@ -427,12 +437,26 @@ async def update_coding_plan(
             ),
         )
 
-    # 归属主体只取请求上下文 —— update 的 plan 定位入参（coding_plan_id /
-    # session_id）**由模型提供**，若退回「被改写 plan 的会话创建者」等于让攻击者
-    # 通过挑选他人 plan_id 自选身份（EoP）。取不到即拒绝，绝不用哨兵身份放行。
-    actor_user_id = _context_user_id()
+    try:
+        conversation = await Conversation.objects.aget(id=conversation_id)
+    except Conversation.DoesNotExist:
+        return ToolResult(
+            success=False,
+            error=f"Conversation not found: {conversation_id}",
+        )
+
+    # 归属主体：① 请求上下文（中间件在 DRF 认证后权威写入，SSE 生成器体内重绑）；
+    # ② 退回服务端**注入**的 conversation 的创建者。
+    #
+    # 🔴 为什么退回 conversation 而不是「被改写 plan 的会话创建者」：后者的定位入参
+    # （coding_plan_id / session_id）由模型提供，退回它等于让攻击者挑他人 plan_id 自
+    # 选身份（EoP）。而 conversation_id 是 chat_runner 从模型可见入参里剔除后闭包注入
+    # 的，模型改不了，且 chat SSE 入口本身有 owner gate ⇒ 是真实身份而非哨兵。
+    # 109-REVIEW BL-01：只取 contextvars 会在生产恒空（中间件写的是 "system" 占位），
+    # 让本工具每次调用都早退；补上这条服务端注入的退路后归属强度与 create 一致。
+    actor_user_id = _context_user_id() or str(conversation.created_by_id or "")
     if not actor_user_id:
-        _log_authoring_rejected(conversation_id="", reason="actor_user_unresolved")
+        _log_authoring_rejected(conversation_id=conversation_id, reason="actor_user_unresolved")
         return ToolResult(
             success=False,
             error="无法确定当前操作用户，拒绝改写编码方案。",
@@ -451,12 +475,35 @@ async def update_coding_plan(
                 success=False,
                 error=f"CodingPlan not found: {coding_plan_id}",
             )
+        # 会话一致性：模型报的 plan 必须属于本次注入的会话。措辞与「不存在」逐字一致，
+        # 不泄漏存在性（沿用 service 侧 `_assert_owner` 已建立的纪律）。
+        if str(plan.conversation_id or "") != str(conversation.id):
+            _log_authoring_rejected(
+                conversation_id=conversation_id,
+                reason="artifact_version_forbidden",
+            )
+            return ToolResult(
+                success=False,
+                error=f"CodingPlan not found: {coding_plan_id}",
+            )
     else:
         try:
             session = await CodingSession.objects.select_related(
                 "coding_plan", "conversation"
             ).aget(id=session_id)
         except CodingSession.DoesNotExist:
+            return ToolResult(
+                success=False,
+                error=f"CodingSession not found: {session_id}",
+            )
+        # 🔴 109-REVIEW MN-04：归属判定必须早于下面的 legacy 补 FK 两次写。判定放到
+        # arebind 之后等于「拒绝了，但已经在他人会话下建出 CodingPlan 并改写了他人
+        # CodingSession.coding_plan」——与投影端点刻意用只读前置解析所要避免的形状同款。
+        if str(session.conversation_id or "") != str(conversation.id):
+            _log_authoring_rejected(
+                conversation_id=conversation_id,
+                reason="artifact_version_forbidden",
+            )
             return ToolResult(
                 success=False,
                 error=f"CodingSession not found: {session_id}",
