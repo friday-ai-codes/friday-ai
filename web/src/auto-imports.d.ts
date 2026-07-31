@@ -107,6 +107,7 @@ declare global {
   const onUpdated: typeof import('vue').onUpdated
   const onWatcherCleanup: typeof import('vue').onWatcherCleanup
   const openModal: typeof import('./composables/useModal').openModal
+  const orchestrationEventKey: typeof import('./stores/chat').orchestrationEventKey
   const pausableWatch: typeof import('@vueuse/core').pausableWatch
   const previewText: typeof import('./composables/useDeepAnalysisLog').previewText
   const provide: typeof import('vue').provide
@@ -476,7 +477,7 @@ declare global {
   export type { AnalyticsGrouping } from './stores/analyticsFilters'
   import('./stores/analyticsFilters')
   // @ts-ignore
-  export type { CredentialMissingPayload, ContextExceededPayload } from './stores/chat'
+  export type { CredentialMissingPayload, ContextExceededPayload, OrchestrationEventEntry, OrchestrationBucket } from './stores/chat'
   import('./stores/chat')
   // @ts-ignore
   export type { NotificationWsStatus, FeedItem } from './stores/notifications'
@@ -604,6 +605,7 @@ declare module 'vue' {
     readonly onUpdated: UnwrapRef<typeof import('vue')['onUpdated']>
     readonly onWatcherCleanup: UnwrapRef<typeof import('vue')['onWatcherCleanup']>
     readonly openModal: UnwrapRef<typeof import('./composables/useModal')['openModal']>
+    readonly orchestrationEventKey: UnwrapRef<typeof import('./stores/chat')['orchestrationEventKey']>
     readonly pausableWatch: UnwrapRef<typeof import('@vueuse/core')['pausableWatch']>
     readonly previewText: UnwrapRef<typeof import('./composables/useDeepAnalysisLog')['previewText']>
     readonly provide: UnwrapRef<typeof import('vue')['provide']>
