@@ -88,13 +88,21 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
  * 构建带查询参数的 URL
  */
 function buildUrl(endpoint: string, params?: QueryParams): string {
+  // 🔴 先把 endpoint 自带的 query 拆出来再拼 pathname。
+  // 早先的实现是 `url.pathname = API_BASE + endpoint`，而 `URL.pathname` 的 setter
+  // 会把 `?` 百分号编码成 `%3F` —— 于是 `/x/?token=1` 这类调用点发出去的实际路径是
+  // `/api/x/%3Ftoken=1`，服务端 404。受影响的是所有把 query 写进路径字面量的调用点
+  // （会话运行时轮询的收敛令牌、邀请链接校验）。
+  const [rawPath, rawQuery = ''] = endpoint.split('?')
   // 确保路径以 / 结尾（防止 Django 301 重定向）
-  const normalizedEndpoint = endpoint.endsWith('/') || endpoint.includes('?')
-    ? endpoint
-    : `${endpoint}/`
+  const normalizedPath = rawPath.endsWith('/') ? rawPath : `${rawPath}/`
 
-  const url = new URL(normalizedEndpoint, window.location.origin)
-  url.pathname = `${API_BASE}${normalizedEndpoint}`
+  const url = new URL(`${API_BASE}${normalizedPath}`, window.location.origin)
+
+  if (rawQuery) {
+    for (const [key, value] of new URLSearchParams(rawQuery))
+      url.searchParams.append(key, value)
+  }
 
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
