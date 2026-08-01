@@ -176,6 +176,27 @@ async def adrive_blueprint_session_to_pause_or_terminal(
     return session
 
 
+async def _afeedback_chat_barrier_if_any(session: Any) -> None:
+    """把「谁把会话推到终态」与「谁负责回灌 chat waiter」解耦（116-REVIEW MN-04 ②）。
+
+    回退前 ``_afeedback_chat_blueprint_barrier`` 只挂在**两个容器回调** barrier 上
+    （``_trigger_blueprint_research_barrier`` / ``_trigger_blueprint_repo_plan_barrier``）。
+    那两处都有「非终态就不回灌」的正确守门，但**没有第二条出路**：会话此后若由
+    REST / MCP / 查看器的作答链驱到 ``DONE``，那条链上没有任何一处回灌 ⇒ 对话里的
+    「深入调研容器运行中…」占位**永久停在那里**（115-MJ-02 的同一形状）。
+
+    本函数是全部作答链的**共同出口**上的那一挂。⭐ 多挂几处是幂等安全的：被调的 helper
+    自带 chat 入口守门 + 终态守门 + barrier 去重 —— 非 chat 会话、非终态会话一律原地返回。
+    整段吞异常：⛔ 回灌失败绝不反噬已持久化的门动作。
+    """
+    try:
+        from subagent.api.callbacks import _afeedback_chat_blueprint_barrier
+
+        await _afeedback_chat_blueprint_barrier(session)
+    except Exception:  # noqa: BLE001 — 回灌 best-effort，绝不反噬门动作与续驱
+        pass
+
+
 async def aresume_after_gate_action(
     session: Any, *, initiated_by_user_id: str, engine: Any = None
 ) -> Any:
@@ -186,6 +207,10 @@ async def aresume_after_gate_action(
     兜住，调用方视图不重复包**：异常只记 ``blueprint_gate_resume_failed`` 并返回传入的
     session，绝不上抛让 REST 变 5xx；``pending_research`` 标记与 task 状态都在库里，下一
     次任意确认门动作或容器回调续驱时判据仍成立，不丢事。
+
+    ⭐ advance 之后**必过** :func:`_afeedback_chat_barrier_if_any`（116-REVIEW MN-04 ②）：
+    本函数是全部作答链的共同出口，chat 入口发起的蓝图会话由这条链推到终态时，得有人负责
+    回灌 chat 的 blocking waiter，否则对话里的占位永久停住。
     """
     started = time.perf_counter()
     try:
@@ -193,6 +218,7 @@ async def aresume_after_gate_action(
 
         engine = engine or build_blueprint_engine()
         session = await adrive_blueprint_session_to_pause_or_terminal(engine, session)
+        await _afeedback_chat_barrier_if_any(session)
         _safe_log(
             "blueprint_gate_resume_completed",
             category="caller",

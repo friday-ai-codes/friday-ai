@@ -401,3 +401,157 @@ def test_both_blueprint_barriers_share_one_feedback_helper() -> None:
     )
     assert src.count("async def _afeedback_chat_blueprint_barrier") == 1
     assert src.count("_afeedback_chat_blueprint_barrier") >= 3
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 7. 116-REVIEW MN-04：重挂起留痕 + 作答链的第二条出路
+#
+# 回退前 `_afeedback_chat_blueprint_barrier` 只挂在**两个容器回调** barrier 上。守门本身
+# 是对的（非终态回灌会把 waiter 误解析成失败），但**没有第二条出路**：会话此后若由
+# REST / MCP / 查看器的作答链（`aresume_after_gate_action`）驱到 DONE，那条链上没有任何
+# 一处回灌 ⇒ 对话里的「深入调研容器运行中…」占位永久停在那里（115-MJ-02 的同一形状）。
+# 且这一档比 analog 弱：analog 打了 `chat_plan_resume_resuspended`，蓝图这条是裸 return。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+async def test_resuspended_session_leaves_a_trace_like_the_analog() -> None:
+    """⭐ 重挂起这一档必须留痕（analog 打 ``chat_plan_resume_resuspended``）。"""
+    from structlog.testing import capture_logs
+
+    from delivery.models import ConvergenceSessionStatus
+    from subagent.api.callbacks import _afeedback_chat_blueprint_barrier
+
+    session, _artifact = await _amake_blueprint_session(
+        status=ConvergenceSessionStatus.WAITING_CLARIFICATION
+    )
+
+    task_completed = AsyncMock(return_value=True)
+    with (
+        patch(
+            "orchestration.barrier.get_barrier_manager",
+            return_value=type("M", (), {"task_completed": task_completed})(),
+        ),
+        capture_logs() as cap,
+    ):
+        await _afeedback_chat_blueprint_barrier(session)
+
+    task_completed.assert_not_awaited()
+    events = [e for e in cap if e["event"] == "blueprint_chat_barrier_resuspended"]
+    assert len(events) == 1
+    assert events[0]["category"] == "sampling"
+    assert events[0]["component"] == "subagent"
+    assert events[0]["session_id"] == str(session.id)
+    assert events[0]["status"] == ConvergenceSessionStatus.WAITING_CLARIFICATION
+
+
+@pytest.mark.asyncio
+async def test_terminal_session_leaves_no_resuspend_trace() -> None:
+    """非恒真对照：真的到终态时**不落**这条事件（⛔ 留痕不是无差别刷屏）。"""
+    from structlog.testing import capture_logs
+
+    from delivery.models import ConvergenceSessionStatus
+    from subagent.api.callbacks import _afeedback_chat_blueprint_barrier
+
+    session, _artifact = await _amake_blueprint_session(
+        status=ConvergenceSessionStatus.DONE, blueprint_status="pending_review", thread_kind=None
+    )
+
+    with (
+        patch(
+            "orchestration.barrier.get_barrier_manager",
+            return_value=type("M", (), {"task_completed": AsyncMock(return_value=True)})(),
+        ),
+        capture_logs() as cap,
+    ):
+        await _afeedback_chat_blueprint_barrier(session)
+
+    assert [e for e in cap if e["event"] == "blueprint_chat_barrier_resuspended"] == []
+
+
+@pytest.mark.asyncio
+async def test_answer_chain_is_the_second_exit_that_feeds_the_waiter() -> None:
+    """⭐ 断链二：作答链（``aresume_after_gate_action``）驱到终态时也必须回灌。
+
+    这是全部作答链（REST / MCP / 查看器）的共同出口 —— 回退前它们**一个都不回灌**，
+    对话里的占位永久停住。
+    """
+    from delivery.models import ConvergenceSessionStatus
+    from services.process_runtime.blueprint_resume import aresume_after_gate_action
+
+    session, _artifact = await _amake_blueprint_session(
+        status=ConvergenceSessionStatus.DONE, blueprint_status="pending_review", thread_kind=None
+    )
+
+    task_completed = AsyncMock(return_value=True)
+    with (
+        patch(
+            "services.process_runtime.blueprint_resume."
+            "adrive_blueprint_session_to_pause_or_terminal",
+            AsyncMock(return_value=session),
+        ),
+        patch(
+            "orchestration.barrier.get_barrier_manager",
+            return_value=type("M", (), {"task_completed": task_completed})(),
+        ),
+    ):
+        await aresume_after_gate_action(session, initiated_by_user_id="u-1")
+
+    task_completed.assert_awaited_once()
+    assert task_completed.await_args.args[0] == str(session.id)
+
+
+@pytest.mark.asyncio
+async def test_answer_chain_hook_respects_the_non_chat_guard() -> None:
+    """非恒真对照：非 chat 入口的会话走同一条作答链 ⇒ 仍然不回灌（守门没被绕过）。"""
+    from delivery.models import ConvergenceSessionStatus
+    from services.process_runtime.blueprint_resume import aresume_after_gate_action
+
+    session, _artifact = await _amake_blueprint_session(
+        status=ConvergenceSessionStatus.DONE,
+        entrypoint="workflow",
+        blueprint_status="pending_review",
+        thread_kind=None,
+    )
+
+    task_completed = AsyncMock(return_value=True)
+    with (
+        patch(
+            "services.process_runtime.blueprint_resume."
+            "adrive_blueprint_session_to_pause_or_terminal",
+            AsyncMock(return_value=session),
+        ),
+        patch(
+            "orchestration.barrier.get_barrier_manager",
+            return_value=type("M", (), {"task_completed": task_completed})(),
+        ),
+    ):
+        await aresume_after_gate_action(session, initiated_by_user_id="u-1")
+
+    task_completed.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_answer_chain_hook_never_bites_back_on_the_gate_action() -> None:
+    """⭐ 回灌 best-effort：内部炸了也绝不反噬已持久化的门动作（仍正常返回 session）。"""
+    from delivery.models import ConvergenceSessionStatus
+    from services.process_runtime.blueprint_resume import aresume_after_gate_action
+
+    session, _artifact = await _amake_blueprint_session(
+        status=ConvergenceSessionStatus.DONE, blueprint_status="pending_review", thread_kind=None
+    )
+
+    with (
+        patch(
+            "services.process_runtime.blueprint_resume."
+            "adrive_blueprint_session_to_pause_or_terminal",
+            AsyncMock(return_value=session),
+        ),
+        patch(
+            "subagent.api.callbacks._afeedback_chat_blueprint_barrier",
+            AsyncMock(side_effect=RuntimeError("boom")),
+        ),
+    ):
+        returned = await aresume_after_gate_action(session, initiated_by_user_id="u-1")
+
+    assert str(returned.id) == str(session.id)
