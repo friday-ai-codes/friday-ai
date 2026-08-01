@@ -359,6 +359,9 @@ def test_mcp_read_tool_schema_snapshot() -> None:
                 "status",
                 "retry_state",
                 "run_id",
+                # 116-REVIEW MJ-03：失败原因回传（成功时空串）。
+                "error",
+                "error_stage",
                 # Phase 116-06：mcp 开关切到 `technical_blueprint` 时才出现的三个追加键。
                 "blueprint_artifact_id",
                 "blueprint_current_status",

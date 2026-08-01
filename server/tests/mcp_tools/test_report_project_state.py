@@ -31,9 +31,7 @@ _URL = "/api/mcp/tools/report_project_state/"
 
 
 async def _make_project(created_by, key="rps-board"):
-    space = await sync_to_async(Space.objects.create)(
-        name="S", feishu_project_key=f"{key}-sp"
-    )
+    space = await sync_to_async(Space.objects.create)(name="S", feishu_project_key=f"{key}-sp")
     project, _ = await ProjectService().create(
         space=space, name="P", feishu_project_key=key, created_by=created_by
     )
@@ -42,9 +40,7 @@ async def _make_project(created_by, key="rps-board"):
 
 @sync_to_async
 def _state_apis(project_id) -> list[ProjectStateApi]:
-    return list(
-        ProjectStateApi.objects.filter(project_id=project_id).order_by("path")
-    )
+    return list(ProjectStateApi.objects.filter(project_id=project_id).order_by("path"))
 
 
 @sync_to_async
@@ -198,9 +194,7 @@ async def test_per_item_fail_soft(mcp_client, access_user) -> None:
 async def test_non_member_silent_skip(mcp_client) -> None:
     """非成员 → applied=false reason=not_member，HTTP 200，不写、不抛。"""
     client, _ = mcp_client
-    other = await sync_to_async(User.objects.create_user)(
-        username="rps-other", password="x"
-    )
+    other = await sync_to_async(User.objects.create_user)(username="rps-other", password="x")
     project = await _make_project(other, key="rps-nm")
     resp = await sync_to_async(client.post)(
         _URL,
@@ -243,9 +237,7 @@ async def test_batch_report_schedules_materialization_once(mcp_client, access_us
 
     client, _ = mcp_client
     project = await _make_project(access_user, key="rps-coalesce")
-    doc = await sync_to_async(ProjectDoc.objects.create)(
-        project=project, doc_type=DocType.STATE
-    )
+    doc = await sync_to_async(ProjectDoc.objects.create)(project=project, doc_type=DocType.STATE)
     apis = [{"method": "GET", "path": f"/api/batch/{i}"} for i in range(5)]
     mock_schedule = AsyncMock()
     with patch("knowledge.ingestion.aschedule_ingestion", mock_schedule):

@@ -1158,6 +1158,10 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "status",
             "retry_state",
             "run_id",
+            # 116-REVIEW MJ-03：失败原因回传（成功时为空串）。回退前 `error` / `error_stage`
+            # 只落 `McpWorkItemTechnicalPlan` 行，agent 读的响应体里没有任何解释。
+            "error",
+            "error_stage",
             # Phase 116-06（GATE-01）：⭐ **仅在 mcp 入口开关切到 `technical_blueprint`
             # 时出现**的三个追加键（开关关闭时响应与改动前逐字相同）。它们必须同步进
             # 本快照——`report_blueprint_context` 那条 `redispatched` 的教训逐字适用：
