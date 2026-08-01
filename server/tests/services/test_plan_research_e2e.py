@@ -259,7 +259,13 @@ async def test_research_suspend_resume_reaches_done_via_node_execution() -> None
     )
 
     node = AIPlanResearchNode()
-    node._build_engine = lambda context, session: engine  # type: ignore[assignment]
+    # 116-03：_build_engine 返回 (engine, driver) 二元组；旧链会话配旧 driver。
+    from services.process_runtime import adrive_convergence_session_to_pause_or_terminal
+
+    node._build_engine = lambda context, session: (  # type: ignore[assignment]
+        engine,
+        adrive_convergence_session_to_pause_or_terminal,
+    )
     ctx = _ExecCtx(
         execution_id=str(wf_exec.id),
         node_id=str(wf_node.id),
