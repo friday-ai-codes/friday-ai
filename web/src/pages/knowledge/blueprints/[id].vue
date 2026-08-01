@@ -1208,6 +1208,7 @@ const sections = computed<NavSection[]>(() => [
                   :artifact-id="artifactId"
                   :citations="citations"
                   :project-id="content?.meta?.project_id ?? null"
+                  :knowledge-entity-id="docQuery.data.value?.knowledge_entity_id ?? null"
                   @citation-click="onCitationClick"
                 />
               </template>

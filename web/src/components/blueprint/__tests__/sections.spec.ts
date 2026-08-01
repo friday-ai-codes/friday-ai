@@ -32,6 +32,7 @@ import type {
   BlueprintInteractionFlow,
   BlueprintRepoAssociation,
 } from '~/types/blueprint'
+import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
@@ -50,7 +51,9 @@ import RequirementSpecSection from '~/components/blueprint/sections/RequirementS
 // ⭐ 关联段必须零调用这两个端点（P-5）：mock 出来只为断言「一次都没被调」。
 vi.mock('~/api', () => ({
   knowledgeApi: {
-    getRelated: vi.fn(),
+    // 116-04 起 `getRelated` 是真实调用面（入参逐字断言）⇒ 必须 resolve 出数组，
+    // 否则 TanStack Query 会把 undefined 当非法返回值。
+    getRelated: vi.fn(async () => []),
     getArtifactAssociations: vi.fn(),
   },
   getRelated: vi.fn(),
@@ -106,7 +109,14 @@ const i18n = createI18n({
             waveCount: 'wave {n} · {c} 项',
           },
           decision: { gotoThread: '查看对应线程' },
-          associations: { citedByThis: '本蓝图引用了', relatedProject: '关联项目' },
+          associations: {
+            citedByThis: '本蓝图引用了',
+            relatedProject: '关联项目',
+            referencedBy: '被哪些方案 / 知识引用',
+            referencedByEmpty: '暂时没有其它方案或知识引用本蓝图',
+            relatedKnowledge: '关联知识',
+            relatedKnowledgeEmpty: '暂无已入图的关联知识',
+          },
           repo: {
             role: '关联角色',
             roleDirect: '直接改动',
@@ -212,9 +222,12 @@ const STUBS = {
 // 九个段/卡的 props 形状各不相同，这里只做统一装配；逐段的类型正确性由 `pnpm type-check`
 // 在组件与页面侧保证，测试内不重复一遍类型体操。
 function mountWith(component: any, props: Record<string, unknown>) {
+  // 关联段自 116-04 起用 TanStack Query 发反查请求 ⇒ 必须有 queryClient；
+  // 每次 mount 一个全新实例，避免用例间共享缓存（retry 关掉，失败不重试拖慢用例）。
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return mount(component, {
     props,
-    global: { plugins: [i18n], stubs: STUBS },
+    global: { plugins: [i18n, [VueQueryPlugin, { queryClient }]], stubs: STUBS },
   })
 }
 
@@ -583,17 +596,53 @@ describe('decisionLogSection —— P-14 零约束裸 array', () => {
   })
 })
 
-describe('blueprintAssociationsSection —— ⭐ SC-4 范围收窄（P-5）', () => {
-  it('9a. ⭐ 零关联端点调用：两个必然 404 的端点一次都没被调', () => {
+describe('blueprintAssociationsSection —— ⭐ SC-4 反查（116-04 交付）', () => {
+  it('9a-1. ⭐ getRelated 被真实调用：in/out 两块的入参逐字（relations + maxHops: 1）', () => {
+    vi.mocked(knowledgeApiMock.knowledgeApi.getRelated).mockClear()
     mountWith(BlueprintAssociationsSection, {
       artifactId: 'artifact-1',
       citations: { c1: { citation_id: 'c1', source_type: 'repo_file' } },
       projectId: 'proj-1',
       projectName: '洋葱练习',
+      knowledgeEntityId: 'entity-1',
+    })
+
+    const calls = vi.mocked(knowledgeApiMock.knowledgeApi.getRelated).mock.calls
+    expect(calls).toHaveLength(2)
+    expect(calls).toContainEqual(['entity-1', {
+      direction: 'in',
+      relations: ['REFERENCES'],
+      maxHops: 1,
+    }])
+    expect(calls).toContainEqual(['entity-1', {
+      direction: 'out',
+      relations: ['REFERENCES'],
+      maxHops: 1,
+    }])
+  })
+
+  it('9a-2. ⭐ getArtifactAssociations 仍恒为 0：它查 initiatives.Artifact 投影，对 delivery.Artifact id 依然必然落空（116 改走 getRelated，不是把它修好了）', () => {
+    mountWith(BlueprintAssociationsSection, {
+      artifactId: 'artifact-1',
+      citations: { c1: { citation_id: 'c1', source_type: 'repo_file' } },
+      projectId: 'proj-1',
+      projectName: '洋葱练习',
+      knowledgeEntityId: 'entity-1',
+    })
+
+    expect(knowledgeApiMock.knowledgeApi.getArtifactAssociations).toHaveBeenCalledTimes(0)
+  })
+
+  it('9a-3. knowledgeEntityId 为空 ⇒ 两块都不发请求（证明 enabled 不是摆设）', () => {
+    vi.mocked(knowledgeApiMock.knowledgeApi.getRelated).mockClear()
+    mountWith(BlueprintAssociationsSection, {
+      artifactId: 'artifact-1',
+      citations: { c1: { citation_id: 'c1', source_type: 'repo_file' } },
+      projectId: 'proj-1',
+      knowledgeEntityId: null,
     })
 
     expect(knowledgeApiMock.knowledgeApi.getRelated).toHaveBeenCalledTimes(0)
-    expect(knowledgeApiMock.knowledgeApi.getArtifactAssociations).toHaveBeenCalledTimes(0)
   })
 
   it('9b. 引用池按 source_type 分组统计正确', () => {

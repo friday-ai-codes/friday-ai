@@ -314,7 +314,11 @@
       },
       "associations": {
         "citedByThis": "本蓝图引用了",
-        "relatedProject": "关联项目"
+        "relatedProject": "关联项目",
+        "referencedBy": "被哪些方案 / 知识引用",
+        "referencedByEmpty": "暂时没有其它方案或知识引用本蓝图",
+        "relatedKnowledge": "关联知识",
+        "relatedKnowledgeEmpty": "暂无已入图的关联知识"
       },
       "stage": {
         "title": "编排进展",
