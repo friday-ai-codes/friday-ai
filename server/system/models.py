@@ -198,6 +198,18 @@ class SettingKeys:
     # open+blocking 澄清线程的提醒周期（缺配置回落 _DEFAULT_REMINDER_HOURS=24）。
     # 执行路径：既有 apscheduler 的 remind_blueprint_clarifications job（不新起定时体系）。
     BLUEPRINT_REVIEW_CONFIG = "blueprint.review.config"
+    # value 为 JSON：{"workflow"|"chat"|"mcp"|"feature_list": "technical_plan"|"technical_blueprint"}。
+    # 四个入口各自独立，未配置 / 畸形 / 值域外一律回落 "technical_plan"（安全默认：
+    # 默认切换与旧 process 退役收口顺延同步点 2 后的收尾 plan）。
+    # ⛔ 消费方一律传**字面量** entry（MCP 入口的 session.entrypoint 实测是 "workflow"，
+    # 从 session 反推会让 workflow 键连带把 MCP 一起切走）。
+    # 消费方：services/process_runtime/blueprint_entry_switch.py（116-01）。
+    BLUEPRINT_ENTRY_SWITCH = "blueprint.entry.switch"
+    # value 为 JSON：{"strict"|"balanced"|"assume_more": {"threshold": float, "max_rounds": int}}。
+    # 只管「问不问」不管「问了等不等」——超时语义永远是显式 pending 不自动作答（§12 决策 4）。
+    # 默认档 balanced；未配置时回落 DEFAULT_SPEC_GATE_CONFIG 的 threshold 与 max_rounds=3。
+    # 消费方：services/process_runtime/blueprint_ambiguity_score.py（116-06）。
+    BLUEPRINT_ASSUMPTIONS_TIERS = "blueprint.assumptions_tiers"
 
 
 class CacheVolumeTracker(models.Model):
