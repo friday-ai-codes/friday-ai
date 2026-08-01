@@ -38,16 +38,49 @@ __all__ = [
     "is_ambiguous",
     "aload_spec_gate_config",
     "DEFAULT_SPEC_GATE_CONFIG",
+    "DEFAULT_ASSUMPTIONS_TIERS",
+    "ASSUMPTIONS_TIERS",
 ]
 
 # 歧义四维（DESIGN §5.4）：目标 / 边界 / 约束 / 验收。
 _DIMENSIONS: tuple[str, ...] = ("goal", "boundary", "constraint", "acceptance")
 
 # 兜底默认（与 SettingKeys.BLUEPRINT_SPEC_GATE_CONFIG 注释逐字一致，112-01）。
+#
+# ⭐ ``max_rounds`` 是 **116-06 新增**、且是这个值的**单一事实源**：它原本是
+# ``blueprint_spec_gate._MAX_SPEC_GATE_ROUNDS = 3`` 这个模块级常量（配置里根本没有该键），
+# 档位要能运行时调轮数上界就必须把它配置化。116-06 已**删除**那个常量。
+# ⛔ **绝不反过来写成** ``"max_rounds": blueprint_spec_gate._MAX_SPEC_GATE_ROUNDS`` ——
+# ``blueprint_spec_gate`` 已经从本模块 import，反向取值即**循环 import**，而这里是模块级
+# dict 字面量、没有懒 import 的落点。默认值 ``3`` 与改动前逐字相等 ⇒ 不配置时行为不变。
 DEFAULT_SPEC_GATE_CONFIG: dict[str, Any] = {
     "threshold": 0.20,
     "weights": {"goal": 0.30, "boundary": 0.25, "constraint": 0.20, "acceptance": 0.25},
+    "max_rounds": 3,
 }
+
+# 三档 assumptions 预设（GATE-01，116-06）：配置缺失/畸形时的内置默认。
+#
+# ⭐ **档位只管「问不问」，不管「问了等不等」**：它只覆盖 ``threshold`` 与 ``max_rounds``
+# 两个判定参数，⛔ **绝不跳过 spec_gate stage** —— 那等于原地复活 GATE-01 要消灭的那条
+# 「跳过交互澄清」旧策略。``assume_more`` 档下四维打分**仍然执行**、超阈值**仍然开阻塞
+# 线程**，只是阈值更高、轮数更少（问得更少 ≠ 不问）。超时语义永远是显式 pending 不自动
+# 作答（§12 决策 4，本里程碑不可动）。
+#
+# ⚠️ ``balanced`` 必须与 :data:`DEFAULT_SPEC_GATE_CONFIG` **逐字相等**（默认档零回归）。
+DEFAULT_ASSUMPTIONS_TIERS: dict[str, dict[str, Any]] = {
+    # 更低阈值 = 更爱问，更多轮
+    "strict": {"threshold": 0.10, "max_rounds": 5},
+    # = 现状（默认档）
+    "balanced": {"threshold": 0.20, "max_rounds": 3},
+    # 更高阈值 = 更少问，轮数更少
+    "assume_more": {"threshold": 0.45, "max_rounds": 2},
+}
+ASSUMPTIONS_TIERS: tuple[str, ...] = tuple(DEFAULT_ASSUMPTIONS_TIERS)
+
+# 轮数上界的下界（``max_rounds <= 0`` 会让规格门第 0 轮即 capped 放行 = 恒不澄清，
+# 那正是档位不该能表达的语义 ⇒ 强转后一律 ``max(1, ...)``）。
+_MIN_MAX_ROUNDS = 1
 
 # 缺维/畸形/无依据时的保守分（1.0 = 最歧义 = 必澄清，fail-closed 方向）。
 _CONSERVATIVE_SCORE = 1.0
@@ -236,12 +269,81 @@ def is_ambiguous(total: float, threshold: float) -> bool:
         return True
 
 
-async def aload_spec_gate_config() -> dict[str, Any]:
-    """读运行时阈值与四维权重（``blueprint.spec_gate.config``），逐字段强转 + 兜底。
+def _to_max_rounds(value: Any) -> int | None:
+    """强转轮数上界（``int()`` + 下界 :data:`_MIN_MAX_ROUNDS`）；不可转换返回 ``None``。"""
+    if isinstance(value, bool):
+        return None
+    try:
+        return max(int(value), _MIN_MAX_ROUNDS)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _aload_tier_overrides(tier: str) -> dict[str, Any]:
+    """读某一档的 ``{threshold, max_rounds}`` 覆盖项（畸形/未配置一律回内置预设）。
+
+    ⭐ ``tier`` 是**字符串**而不是 session：本函数与 :func:`aload_spec_gate_config` 都要
+    保持**无 ORM 依赖**（纯配置读取），档位由调用方从 ``stage_state`` 里取好再传进来。
+
+    三层 fail-soft（形状照 ``blueprint_entry_switch.aresolve_entry_process_type``）：
+    档名不在三档内 ⇒ ``{}``（不覆盖）；整段异常 ⇒ 回内置预设 + 一条 warning；
+    ``aget_json_setting`` 只保证外层是 dict ⇒ 逐键强转，不可转换的项**不覆盖**。
+    """
+    preset = copy.deepcopy(DEFAULT_ASSUMPTIONS_TIERS.get(tier) or {})
+    if not preset:
+        logger.warning(
+            "blueprint_assumptions_tier_unknown",
+            category="sampling",
+            component="process_runtime",
+            tier=tier,
+        )
+        return {}
+    try:
+        from system.models import SettingKeys
+        from system.settings_service import aget_json_setting
+
+        raw = await aget_json_setting(
+            SettingKeys.BLUEPRINT_ASSUMPTIONS_TIERS, copy.deepcopy(DEFAULT_ASSUMPTIONS_TIERS)
+        )
+    except Exception:  # noqa: BLE001 — 配置读取绝不反噬编排主流程（⛔ 不带异常文本）
+        logger.warning(
+            "blueprint_assumptions_tiers_load_failed",
+            category="sampling",
+            component="process_runtime",
+            tier=tier,
+            reason="load_failed",
+        )
+        return preset
+
+    entry = raw.get(tier) if isinstance(raw, dict) else None
+    if not isinstance(entry, dict):
+        return preset
+
+    overrides = dict(preset)
+    threshold = _to_score(entry.get("threshold"))
+    if threshold is not None:
+        overrides["threshold"] = threshold
+    max_rounds = _to_max_rounds(entry.get("max_rounds"))
+    if max_rounds is not None:
+        overrides["max_rounds"] = max_rounds
+    return overrides
+
+
+async def aload_spec_gate_config(tier: str = "") -> dict[str, Any]:
+    """读运行时阈值 / 四维权重 / 轮数上界（``blueprint.spec_gate.config``），强转 + 兜底。
 
     任何异常/畸形一律回 :data:`DEFAULT_SPEC_GATE_CONFIG`（绝不外抛、绝不 eval，
     T-112-07）：``threshold`` 经 ``float()`` + clamp ``[0,1]``，``weights`` 非 dict
-    回默认、逐维 ``float()`` 且负值取 0。
+    回默认、逐维 ``float()`` 且负值取 0，``max_rounds`` 经 ``int()`` + 下界 1。
+
+    Args:
+        tier: assumptions 档位（``strict`` / ``balanced`` / ``assume_more``，116-06）。
+            ⭐ **传档位字符串而不是 session** —— 本函数保持无 ORM 依赖。非空时读
+            ``SettingKeys.BLUEPRINT_ASSUMPTIONS_TIERS`` 覆盖 ``threshold`` 与
+            ``max_rounds``；空串 / 未配置 / 畸形 / 档名不在三档内一律**回落 base**
+            ⇒ 不传档位时行为与改动前逐字相同。
+            ⛔ 档位只覆盖这两个判定参数，**绝不跳过 stage**（见
+            :data:`DEFAULT_ASSUMPTIONS_TIERS` 的纪律段）。
     """
     fallback = copy.deepcopy(DEFAULT_SPEC_GATE_CONFIG)
     try:
@@ -252,11 +354,15 @@ async def aload_spec_gate_config() -> dict[str, Any]:
             SettingKeys.BLUEPRINT_SPEC_GATE_CONFIG, copy.deepcopy(DEFAULT_SPEC_GATE_CONFIG)
         )
         if not isinstance(raw, dict):
-            return fallback
+            raw = {}
 
         threshold = _to_score(raw.get("threshold"))
         if threshold is None:
             threshold = float(DEFAULT_SPEC_GATE_CONFIG["threshold"])
+
+        max_rounds = _to_max_rounds(raw.get("max_rounds"))
+        if max_rounds is None:
+            max_rounds = int(DEFAULT_SPEC_GATE_CONFIG["max_rounds"])
 
         raw_weights = raw.get("weights")
         weights: dict[str, float] = {}
@@ -270,7 +376,10 @@ async def aload_spec_gate_config() -> dict[str, Any]:
                 weight = float(DEFAULT_SPEC_GATE_CONFIG["weights"][dim])
             weights[dim] = max(weight, 0.0)
 
-        return {"threshold": threshold, "weights": weights}
+        config = {"threshold": threshold, "weights": weights, "max_rounds": max_rounds}
+        if str(tier or ""):
+            config.update(await _aload_tier_overrides(str(tier)))
+        return config
     except Exception as exc:  # noqa: BLE001 — 配置读取绝不反噬编排主流程
         logger.warning(
             "blueprint_spec_gate_config_load_failed",
@@ -364,12 +473,22 @@ async def ascore_ambiguity(
     constraints: list | None = None,
     prior_context: str = "",
     session_id: str = "",
+    tier: str = "",
 ) -> dict[str, Any] | None:
     """LLM 单调用产出四维歧义分数 + 理由 + 澄清问题；不可用时返回 ``None``。
 
     ``None`` 是「打分不可得」信号——上游规格门据此**判需澄清**（fail-closed），
     绝不当作「不歧义」放行。成功时返回经 :func:`normalize_ambiguity_scores` 归一的
     ``{"dimensions": ..., "questions": [...]}``。本函数 best-effort，不外抛。
+
+    Args:
+        tier: ⭐ **assumptions 档位必须传到这里**（116-06）。本函数体内**自己也读一次**
+            ``aload_spec_gate_config``，紧接着把 ``config["threshold"]`` 打进
+            ``blueprint_ambiguity_score_completed`` 的 ``threshold=`` / ``above_threshold=``
+            —— 那条 sampling 日志正是运维回答「这轮为什么问 / 为什么不问」的依据。
+            不透传档位 ⇒ **日志报的阈值与规格门真正判定用的分叉**，静默且永不报错
+            （留痕撒谎，T-116-53）。⚠️ 本函数**没有** ``session`` 可用（签名里只有原语），
+            所以只能由调用方传 ``tier``——这正是它必须加这个形参的原因。
     """
     started = time.monotonic()
     try:
@@ -431,7 +550,8 @@ async def ascore_ambiguity(
 
         scores = normalize_ambiguity_scores(parsed)
         dimension_scores = {dim: entry["score"] for dim, entry in scores["dimensions"].items()}
-        config = await aload_spec_gate_config()
+        # ⭐ 必须带 tier：否则下面这条日志报的阈值与规格门判定用的分叉（见 docstring）。
+        config = await aload_spec_gate_config(tier=tier)
         total = weighted_total(scores["dimensions"], config["weights"])
         logger.info(
             "blueprint_ambiguity_score_completed",
@@ -440,6 +560,7 @@ async def ascore_ambiguity(
             session_id=session_id,
             dimension_scores=dimension_scores,
             weighted_total=total,
+            assumptions_tier=str(tier or ""),
             threshold=config["threshold"],
             above_threshold=is_ambiguous(total, config["threshold"]),
             question_count=len(scores["questions"]),

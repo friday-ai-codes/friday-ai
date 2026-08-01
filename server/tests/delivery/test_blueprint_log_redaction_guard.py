@@ -35,6 +35,8 @@ _SCANNED_MODULES = (
     "delivery/services/blueprint_block_edit.py",
     "delivery/services/convergence_session_service.py",
     "services/process_runtime/blueprint_intake.py",
+    # Phase 116 GATE-01：蓝图澄清的飞书卡片送达唯一收口（半可信题面 + 上游异常文本）
+    "services/process_runtime/blueprint_notify.py",
     "services/process_runtime/blueprint_reflow.py",
     "services/process_runtime/blueprint_resume.py",
     "services/process_runtime/blueprint_review.py",
