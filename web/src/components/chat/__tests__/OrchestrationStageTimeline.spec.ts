@@ -441,13 +441,22 @@ describe('orchestrationStageTimeline · 零自由文本 / 零泄漏', () => {
     expect(html).not.toContain('FREE_TEXT_ERROR_XYZ')
   })
 
-  it('🔴 degraded=true ⇒ 路由行有 warning 角标，全文不含 107 的降级解释句', () => {
+  /**
+   * §D.1 修订（RELY-03 缺口闭环）。
+   *
+   * 本用例原先断言「全文**不含**降级解释句」——依据是那句话归 `RoutingDecisionPanel`。
+   * 该组件 2026-05-29 起就没有挂载点，而编排链路上没有第二块显示候选与置信度的面，
+   * 于是这条断言实际锁住的是「用户只能看到两个字」。角标标位置、横幅说人话，两者
+   * 现在都在本卡；「候选仓列表 / 分数 / 进入编码」仍然归他处，那半边断言保留。
+   */
+  it('🔴 degraded=true ⇒ 路由行有 warning 角标，且卡内给出降级解释句', () => {
     seedBucket(SESSION, {
       snapshot: snapshot({ status: 'running', current_stage: 'research' }),
       events: [
         event('repo.routing', '2026-01-01T00:00:01Z', {
           candidates: [{ repository_id: 'r-1' }, { repository_id: 'r-2' }],
           degraded: true,
+          degrade_reason: 'timeout',
         }),
       ],
     })
@@ -458,10 +467,47 @@ describe('orchestrationStageTimeline · 零自由文本 / 零泄漏', () => {
     expect(badges[0].text()).toBe('降级')
     expect(badges[0].attributes('data-variant')).toBe('warning')
 
-    const text = wrapper.text()
-    expect(text).not.toContain('未经 LLM 推理')
-    expect(text).not.toContain('置信度')
-    expect(text).not.toContain('进入编码')
+    const banner = wrapper.find('[data-test="timeline-degraded-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.attributes('role')).toBe('alert')
+    expect(banner.text()).toContain('本次未经 LLM 推理，置信度仅供参考')
+    expect(banner.text()).toContain('降级原因：上游超时')
+    // 卡内**只有**这一个 live region（§A.6）：横幅不得再挂 aria-live
+    expect(banner.attributes('aria-live')).toBeUndefined()
+
+    // 归他处的事实仍然不进本卡
+    expect(wrapper.text()).not.toContain('进入编码')
+  })
+
+  it('🔴 degraded 缺席（v1_fallback 之外的普通路径）⇒ 无角标也无横幅', () => {
+    seedBucket(SESSION, {
+      snapshot: snapshot({ status: 'running', current_stage: 'research' }),
+      events: [
+        event('repo.routing', '2026-01-01T00:00:01Z', {
+          candidates: [{ repository_id: 'r-1' }],
+        }),
+      ],
+    })
+    const wrapper = mountTimeline(SESSION)
+    expect(wrapper.findAll('[data-test="badge"]')).toHaveLength(0)
+    expect(wrapper.find('[data-test="timeline-degraded-banner"]').exists()).toBe(false)
+  })
+
+  it('🔴 闭集外的 degrade_reason 回退「未知原因」，绝不回显原始值', () => {
+    seedBucket(SESSION, {
+      snapshot: snapshot({ status: 'running', current_stage: 'research' }),
+      events: [
+        event('repo.routing', '2026-01-01T00:00:01Z', {
+          candidates: [{ repository_id: 'r-1' }],
+          degraded: true,
+          degrade_reason: 'TimeoutError: upstream leaked SECRET_XYZ',
+        }),
+      ],
+    })
+    const banner = mountTimeline(SESSION).find('[data-test="timeline-degraded-banner"]')
+    expect(banner.text()).toContain('降级原因：未知原因')
+    expect(banner.text()).not.toContain('SECRET_XYZ')
+    expect(banner.text()).not.toContain('TimeoutError')
   })
 
   it('组件源码零 v-html', () => {

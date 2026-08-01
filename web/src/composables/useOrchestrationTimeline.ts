@@ -112,6 +112,16 @@ export const COPY = {
   unknownRepo: '未知仓库',
   unknownReason: '未知原因',
   degradedBadge: '降级',
+  /**
+   * 降级解释句（RELY-03）。
+   *
+   * 110 的 §D.1 原本把这句划给别处（当时指 `RoutingDecisionPanel`），本卡只留
+   * 一枚两字角标「只标位置、不做解释」。但那个组件没有挂载点，而编排链路上又
+   * 没有第二块面会显示候选与置信度 —— 于是「降级」这两个字成了用户能拿到的
+   * 全部信息。解释句因此归位到这里：角标标位置，横幅说人话。
+   */
+  degradedTitle: '本次未经 LLM 推理，置信度仅供参考',
+  degradedReason: (label: string) => `降级原因：${label}`,
   interrupted: '进度未知，可能已中断',
   summaryDecompose: (n: number) => `已拆出 ${n} 个需求点`,
   summaryRoute: (n: number) => `命中 ${n} 个候选仓`,
@@ -158,6 +168,33 @@ export interface OrchestrationTimelineView {
   totalCount: number
   /** 单一 live region 的内容。 */
   liveMessage: string
+  /**
+   * 路由降级事实（RELY-03）。后端算好的结论，前端**绝不**按 router_version
+   * 或候选内容自行推断；`repo.routing` payload 缺该键即视为 false。
+   */
+  degraded: boolean
+  /**
+   * 降级原因的中文文案。后端未给原因时为空串（不渲染原因行）；给了闭集外的
+   * 取值时回到「未知原因」，**绝不回显原始值**（上游是异常分类，回显即泄漏面）。
+   */
+  degradeReasonLabel: string
+}
+
+/** 降级原因受控闭集 → 中文文案（与后端 `classify_degrade_reason` 字面对齐）。 */
+const DEGRADE_REASON_LABELS: Record<string, string> = {
+  timeout: '上游超时',
+  upstream_error: '网关错误',
+  provider_missing: '未配置模型',
+  unparsable: '解析失败',
+  no_node_index: '无能力树索引',
+  unknown: '未知原因',
+}
+
+function degradeReasonLabelOf(raw: unknown): string {
+  const key = typeof raw === 'string' ? raw : ''
+  if (!key)
+    return ''
+  return DEGRADE_REASON_LABELS[key] ?? COPY.unknownReason
 }
 
 /**
@@ -433,6 +470,9 @@ function conservativeView(): OrchestrationTimelineView {
     doneCount: 0,
     totalCount: steps.length,
     liveMessage: COPY.liveRunning(STAGE_LABELS[STAGE_ORDER[0]]),
+    // 保守视图不宣称任何降级事实：解析都失败了，此时说「未经 LLM 推理」是编造。
+    degraded: false,
+    degradeReasonLabel: '',
   }
 }
 
@@ -570,5 +610,16 @@ function buildInner(input: OrchestrationTimelineInput): OrchestrationTimelineVie
         ? COPY.liveRunning(pointerLabel)
         : ''
 
-  return { steps, phase, title, doneCount, totalCount: steps.length, liveMessage }
+  return {
+    steps,
+    phase,
+    title,
+    doneCount,
+    totalCount: steps.length,
+    liveMessage,
+    degraded: routingDegraded,
+    degradeReasonLabel: routingDegraded
+      ? degradeReasonLabelOf(folded.routingPayload?.degrade_reason)
+      : '',
+  }
 }

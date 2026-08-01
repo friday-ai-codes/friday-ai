@@ -18,9 +18,15 @@
  * 3. 🔴 **观测代码绝不反噬业务**：整个视图 computed 包 `try/catch`，异常一律降级为
  *    「整块不渲染」。编排跑通比进度可见重要得多。
  *
- * 本组件**不渲染**归属他处的任何事实（§D.1）：降级横幅与它的解释句、confidence 徽标、
- * 候选仓列表与分数、澄清卡本身、方案正文与影响文件。「路由」步行尾那个 `降级` 角标由
- * `SubStepTimeline` 渲染（数据来自 110-05 的 `badge` 字段），本组件不另画。
+ * 本组件**不渲染**归属他处的任何事实（§D.1）：confidence 徽标、候选仓列表与分数、
+ * 澄清卡本身、方案正文与影响文件。「路由」步行尾那个 `降级` 角标由 `SubStepTimeline`
+ * 渲染（数据来自 110-05 的 `badge` 字段），本组件不另画。
+ *
+ * §D.1 的一处**修订**（RELY-03 缺口闭环）：降级横幅与它的解释句原本也在「归属他处」
+ * 这一列，那个「他处」是 `RoutingDecisionPanel` —— 一个 2026-05-29 起就没有挂载点的
+ * 组件。编排链路上不存在第二块显示候选与置信度的面，于是用户能拿到的全部信息就是
+ * 那两个字「降级」。解释句因此归位到本卡：角标标位置，横幅说人话。
+ * 对话工具链路的同一句话由 `RoutingCandidateList` 承载，两条链各有各的宿主，不重复。
  */
 import { computed, ref, useId, watch } from 'vue'
 import SubStepTimeline from '~/components/execution/dag/SubStepTimeline.vue'
@@ -163,6 +169,27 @@ function toggleCollapsed(): void {
       仍在渲染树里（六行 DOM），可接受。
     -->
     <div v-show="!collapsed" :id="bodyId" class="px-4 pb-3 pt-1">
+      <!--
+        降级横幅（RELY-03）。置于步骤之上：先说清「置信度本次不可信」，再让用户
+        看进度。不挂 aria-live —— 本卡的播报归口是上面那个唯一的 live region
+        （§A.6），在这里再加一个会让同一个事实播两次。
+      -->
+      <div
+        v-if="view.degraded"
+        role="alert"
+        class="mb-1 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-2"
+        data-test="timeline-degraded-banner"
+      >
+        <span class="icon-[lucide--triangle-alert] mt-0.5 shrink-0 text-[11px] text-amber-600" />
+        <div class="min-w-0 space-y-0.5">
+          <p class="text-[11px] font-medium text-foreground">
+            {{ COPY.degradedTitle }}
+          </p>
+          <p v-if="view.degradeReasonLabel" class="text-[10px] text-muted-foreground">
+            {{ COPY.degradedReason(view.degradeReasonLabel) }}
+          </p>
+        </div>
+      </div>
       <SubStepTimeline :steps="view.steps" :interactive="false" />
     </div>
   </div>
