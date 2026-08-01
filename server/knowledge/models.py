@@ -120,6 +120,7 @@ def generate_entity_id(kind: str, source_kind: str, source_id: str) -> uuid.UUID
     | mcp_coding_plan      | McpCodingPlan UUID str（kind=tech_plan）               | MCP 编码方案（Phase 100）|
     | mcp_repository_analysis | McpRepositoryAnalysis UUID str（kind=document）     | MCP 仓库分析（Phase 100）|
     | mcp_execution_trace  | McpCodingExecutionTrace UUID str（kind=code_change）   | MCP 执行 trace（Phase 100）|
+    | blueprint            | delivery.Artifact UUID str（kind=tech_plan）           | 技术方案蓝图（Phase 116）|
 
     locked decision（Phase 100 存档）：Chat ``coding_plan`` 与 MCP ``mcp_coding_plan``
     保持**不同实体 + 边显式关联（RELATES_TO / 共享 work_item 锚）**，不做硬去重；

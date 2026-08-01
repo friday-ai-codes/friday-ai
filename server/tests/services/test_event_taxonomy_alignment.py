@@ -111,7 +111,14 @@ def test_no_bare_string_literal_at_emit_sites() -> None:
 
 
 def test_referenced_constants_in_all_events() -> None:
-    """所有 emit 点引用的 EVENT_* 常量值 ∈ ALL_EVENTS（§15 对齐，无漂移）。"""
+    """所有 emit 点引用的 EVENT_* 常量值 ∈ ALL_EVENTS ∪ BLUEPRINT_EVENTS（§15 对齐，无漂移）。
+
+    蓝图事件（v0.20）按 ``event_taxonomy`` 的设计**刻意不进 ALL_EVENTS**（独立
+    ``BLUEPRINT_EVENTS`` 集合，避免 ``test_all_events_each_emitted_by_producer`` 的
+    producer 反查误挂）。它们同样受本守护约束——只是白名单来源是另一个集合，
+    仍然「不能引用任何未登记的事件常量」。
+    """
+    known = set(ALL_EVENTS) | set(taxonomy.BLUEPRINT_EVENTS)
     referenced: set[str] = set()
     for path in _EMIT_FILES:
         if not path.exists():
@@ -122,9 +129,7 @@ def test_referenced_constants_in_all_events() -> None:
                 assert value is not None, f"{path.name} 引用未定义常量 {token}"
                 referenced.add(value)
     assert referenced, "未扫描到任何 EVENT_* 引用"
-    assert referenced <= set(ALL_EVENTS), (
-        f"emit 点引用了 ALL_EVENTS 之外的事件：{referenced - set(ALL_EVENTS)}"
-    )
+    assert referenced <= known, f"emit 点引用了已登记事件之外的事件：{referenced - known}"
 
 
 def test_all_events_each_emitted_by_producer() -> None:

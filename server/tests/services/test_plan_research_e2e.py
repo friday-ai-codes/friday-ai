@@ -43,6 +43,13 @@ from services.process_runtime import (
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
+# ⭐ 同步点 2 收尾：本文件冲着**旧 technical_plan 链**写（旧 stage 图 / MergedPlan content /
+# 旧终态映射）。四个入口开关默认值已翻到 technical_blueprint ⇒ 这里显式 override 回旧链，
+# 把「我要测的是旧链」说出来，而不是继续靠「默认恰好是旧链」隐式到达。
+# 旧链退役后，显式 override 正是它唯一合法的到达方式（见
+# tests/services/process_runtime/test_technical_plan_retirement.py）。
+pytestmark = [pytestmark, pytest.mark.usefixtures("legacy_plan_entry_switch")]
+
 
 def _log() -> Any:
     log = MagicMock()
@@ -259,7 +266,13 @@ async def test_research_suspend_resume_reaches_done_via_node_execution() -> None
     )
 
     node = AIPlanResearchNode()
-    node._build_engine = lambda context, session: engine  # type: ignore[assignment]
+    # 116-03：_build_engine 返回 (engine, driver) 二元组；旧链会话配旧 driver。
+    from services.process_runtime import adrive_convergence_session_to_pause_or_terminal
+
+    node._build_engine = lambda context, session: (  # type: ignore[assignment]
+        engine,
+        adrive_convergence_session_to_pause_or_terminal,
+    )
     ctx = _ExecCtx(
         execution_id=str(wf_exec.id),
         node_id=str(wf_node.id),

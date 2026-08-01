@@ -17,6 +17,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import structlog
+
+logger = structlog.get_logger(__name__)
+
 __all__ = ["adrive_convergence_session_to_pause_or_terminal"]
 
 
@@ -32,7 +36,28 @@ async def adrive_convergence_session_to_pause_or_terminal(
     - ``waiting_clarification`` 且仍有未答 ``Clarification`` → 短路返回（保护澄清 HITL）。
     - ``waiting_event`` 且仍有在途调研 → 短路返回（等下一次容器回调）。
     - advance 步数超过 ``max_steps`` → 经 ``transition(session, "fail")`` 标记失败并返回。
+
+    ⭐ **蓝图会话一律 no-op**（116-01，与 ``blueprint_resume.py:132-143`` 对称）：见函数体
+    首个 if 块的论证。⛔ **只挡蓝图会话** —— 本文件是旧链共享面（``plan_deepen`` 等非蓝图
+    调用方也走它），不得顺手加别的 ``process_type`` 判断。
     """
+    # 函数内懒 import：resume.py 是旧链共享面，⛔ 不在模块级依赖 blueprint_resume。
+    from services.process_runtime.blueprint_resume import BLUEPRINT_PROCESS_TYPE
+
+    if str(getattr(session, "process_type", "")) == BLUEPRINT_PROCESS_TYPE:
+        # 旧续驱器的 waiting_clarification 短路判据是 ClarificationService().ahas_pending，
+        # 对蓝图会话恒 False ⇒ 三个 pausable stage 一个都短路不了，self-loop 会被推到
+        # max_steps 落 advance_step_limit FAILED。宁可 no-op：调用方传错 driver 是 bug，
+        # 不是「该会话该失败」。（116-01，与 blueprint_resume.py:132-143 对称）
+        logger.warning(
+            "wrong_driver_for_blueprint_session",
+            category="caller",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            process_type=str(getattr(session, "process_type", "")),
+        )
+        return session
+
     from delivery.models import ConvergenceSession, ConvergenceSessionStatus
     from delivery.services import ClarificationService
     from services.process_runtime import aall_research_tasks_terminal

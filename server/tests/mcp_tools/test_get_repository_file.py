@@ -15,7 +15,7 @@ def test_get_repository_file_reads_indexed_chunks(
 ) -> None:
     client, _plaintext = mcp_client
     monkeypatch.setattr(
-        "mcp_tools.views._scroll_file_from_collection",
+        "services.repo_file_read._scroll_file_from_collection",
         AsyncMock(
             return_value=[
                 {

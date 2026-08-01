@@ -23,6 +23,15 @@
 @source inline("icon-[lucide--message-circle] icon-[lucide--home] icon-[lucide--git-branch] icon-[lucide--play-circle] icon-[lucide--bar-chart-3] icon-[lucide--scroll-text] icon-[lucide--server] icon-[lucide--users] icon-[lucide--panel-left-close] icon-[lucide--panel-left-open] icon-[lucide--chevrons-up-down] icon-[lucide--user] icon-[lucide--log-out] icon-[lucide--message-square-warning]");
 /* 反馈模块：动态拼接的分类图标（feedbackStyles.ts -> :class），需 safelist */
 @source inline("icon-[lucide--bug] icon-[lucide--circle-help] icon-[lucide--lightbulb] icon-[lucide--tag] icon-[lucide--inbox] icon-[lucide--message-square-warning] icon-[lucide--search] icon-[lucide--rotate-ccw] icon-[lucide--chevron-left] icon-[lucide--chevron-right]");
+/*
+ * 蓝图查看器（Phase 115）：11 态徽标 / change_type / citation source_type /
+ * produced_by_ref 前缀 —— 全部由 getBlueprintStatusConfig 等查表函数在运行期把
+ * **裸图标名**拼成 `icon-[${config.icon}]`，源扫描看不到成品类名，故必须 safelist。
+ * ⚠️ 写在 .vue 源码里的**字面量完整类名**（如 icon-[lucide--target]）不必列入——
+ * Tailwind 的 content 扫描直接命中，缺席不是遗漏。
+ */
+@source inline("icon-[lucide--pen-line] icon-[lucide--hammer] icon-[lucide--check-check] icon-[lucide--archive] icon-[lucide--file-plus] icon-[lucide--file-pen-line] icon-[lucide--file-cog]");
+@source inline("icon-[lucide--book-open] icon-[lucide--scroll-text] icon-[lucide--list-checks] icon-[lucide--user-pen] icon-[lucide--refresh-cw]");
 
 /*
  * Friday AI 配色方案 — Sub2API Teal/Cyan 风格

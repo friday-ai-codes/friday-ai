@@ -720,6 +720,23 @@ class ProjectPlanToCodingResponseSerializer(serializers.Serializer):
     # 与「响应直接带正文，不要求前端二次拉取」是同一条纪律，只是当初漏在了仓库这一项。
     recommended_repositories = serializers.JSONField()
     provenance = serializers.CharField()
+    # ── 同步点 2 收尾：blueprint/v1 三个**纯追加**判别键 ────────────────────────
+    #
+    # ⭐ 为什么必须回给前端：`map_merged_plan_to_coding_plan` 读的是 v0 的
+    # `execution_plan[]` 并走 v0 渲染器，而 blueprint/v1 **没有那个顶层键**（它是
+    # 「确认后确定性派生」的可选段）⇒ 从蓝图版本投影出来的 CodingPlan 的 `tech_plan`
+    # 是一份结构合法而内容为空的壳、`affected_files` 恒 `[]`。前端拿不到判别信息就只能
+    # 把它渲染成「（暂无方案正文）」——把「形态不同」讲成「方案没了」。
+    #
+    # ⛔ **刻意不改那个映射器**：它是旧链投影的唯一实现，改它等于在 chat 侧再造一条
+    # 派生链（工作流侧已有 `blueprint_execution.derive_execution_plan` 这一份权威派生）。
+    # 本次只补判别信息，让前端如实呈现并把用户导向蓝图查看器。
+    #
+    # 三键对 v0 恒为空串（合法取值，不是缺数据）⇒ 既有调用方零破坏。
+    schema_version = serializers.CharField(allow_blank=True)
+    blueprint_artifact_id = serializers.CharField(allow_blank=True)
+    # ⚠️ 键名不是模型字段名（INV-6 字段级守卫）；全仓蓝图响应体统一用 current_status。
+    current_status = serializers.CharField(allow_blank=True)
 
 
 class ExportToFeishuSerializer(serializers.Serializer):

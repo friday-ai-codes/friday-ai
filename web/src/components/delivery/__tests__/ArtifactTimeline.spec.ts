@@ -6,6 +6,10 @@
  *  - 为何变成它：produced_by_ref + supersedes 链（“替换 vN”）。
  *  - 哪些下游产物引用它：选中版本拉下游引用聚合（编码任务 / SDD 规格 / 架构融合）。
  *  - 空态：无交付物显示占位。
+ *
+ * ⭐ 同步点 2 收尾追加 **blueprint/v1 判别**：蓝图与 v0 共用
+ * `artifact_type: 'technical_plan'` ⇒ 两档**正反并列**才算数（只断言蓝图那一档会漏掉
+ * 「两档都当蓝图渲染」的假通过）。
  */
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -21,6 +25,11 @@ vi.mock('~/api/deliveryArtifacts', () => ({
   getArtifactVersionDownstream: (...a: unknown[]) => getArtifactVersionDownstreamMock(...a),
 }))
 
+// 深链走 RouterLink（与 BlueprintListCard / ProjectBlueprintsCard 同一约定）。
+vi.mock('vue-router', () => ({
+  RouterLink: { name: 'RouterLink', props: ['to'], template: '<a :href="to"><slot /></a>' },
+}))
+
 const ArtifactTimeline = (await import('../ArtifactTimeline.vue')).default
 
 function makeArtifact() {
@@ -32,6 +41,9 @@ function makeArtifact() {
     work_item_id: null,
     created_at: '2026-06-20T00:00:00Z',
     updated_at: '2026-06-21T00:00:00Z',
+    // v0 旧方案：两个判别键恒空串（合法取值，不是缺数据）。
+    schema_version: '',
+    current_status: '',
     current_version: {
       id: 'v2',
       version_no: 2,
@@ -74,6 +86,15 @@ function makeTimeline() {
         is_current: false,
       },
     ],
+  }
+}
+
+/** blueprint/v1：与 v0 **同 artifact_type、同标题形态**，只有两个判别键不同。 */
+function makeBlueprint() {
+  return {
+    ...makeArtifact(),
+    schema_version: 'blueprint/v1',
+    current_status: 'pending_review',
   }
 }
 
@@ -160,5 +181,62 @@ describe('artifactTimeline 版本轨', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="artifact-empty"]').exists()).toBe(true)
     expect(getArtifactTimelineMock).not.toHaveBeenCalled()
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 同步点 2 收尾：blueprint/v1 判别（两档正反并列）
+  // ═══════════════════════════════════════════════════════════════════════
+
+  it('⭐ v0 旧方案：不出蓝图徽标、不出告示条、不出深链（逐像素不变）', async () => {
+    const wrapper = mountComp()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="artifact-blueprint-badge-art-1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="artifact-blueprint-notice"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="artifact-blueprint-link"]').exists()).toBe(false)
+    // 既有三问呈现一条不少。
+    expect(wrapper.find('[data-testid="artifact-current"]').exists()).toBe(true)
+  })
+
+  it('⭐ blueprint/v1：出 11 态徽标 + 告示条 + 指向查看器的深链', async () => {
+    listArtifactsMock.mockResolvedValue([makeBlueprint()])
+    getArtifactTimelineMock.mockResolvedValue({ ...makeTimeline(), ...makeBlueprint() })
+    const wrapper = mountComp()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="artifact-blueprint-badge-art-1"]').text()).toBe('待人类审查')
+    const notice = wrapper.find('[data-testid="artifact-blueprint-notice"]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('结构化技术蓝图')
+    expect(wrapper.find('[data-testid="artifact-blueprint-status"]').text()).toBe('待人类审查')
+    expect(wrapper.find('[data-testid="artifact-blueprint-link"]').attributes('href')).toBe(
+      '/knowledge/blueprints/art-1',
+    )
+  })
+
+  it('11 态逐档如实呈现（⛔ 不是「已完成」一档到底）', async () => {
+    for (const [status, label] of [
+      ['researching', '调研中'],
+      ['needs_clarification', '需要澄清'],
+      ['confirmed', '已确认'],
+      ['failed', '已失败'],
+    ] as const) {
+      vi.clearAllMocks()
+      const bp = { ...makeBlueprint(), current_status: status }
+      listArtifactsMock.mockResolvedValue([bp])
+      getArtifactTimelineMock.mockResolvedValue({ ...makeTimeline(), ...bp })
+      getArtifactVersionDownstreamMock.mockResolvedValue(makeDownstream())
+      const wrapper = mountComp()
+      await flushPromises()
+      expect(wrapper.find('[data-testid="artifact-blueprint-status"]').text()).toBe(label)
+    }
+  })
+
+  it('未知 schema_version 一律按 v0 处理（允许清单，⛔ 不是拒绝清单）', async () => {
+    const future = { ...makeBlueprint(), schema_version: 'blueprint/v2' }
+    listArtifactsMock.mockResolvedValue([future])
+    getArtifactTimelineMock.mockResolvedValue({ ...makeTimeline(), ...future })
+    const wrapper = mountComp()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="artifact-blueprint-notice"]').exists()).toBe(false)
   })
 })

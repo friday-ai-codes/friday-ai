@@ -55,7 +55,7 @@ def test_mcp_read_flow_creates_replayable_traces(
         ),
     )
     monkeypatch.setattr(
-        "mcp_tools.views._scroll_file_from_collection",
+        "services.repo_file_read._scroll_file_from_collection",
         AsyncMock(return_value=[{"chunk_index": 0, "content": "x", "start_line": 1, "end_line": 1}]),
     )
 

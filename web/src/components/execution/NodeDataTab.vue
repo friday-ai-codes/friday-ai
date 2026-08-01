@@ -11,11 +11,28 @@ import type { NodeExecution, WorkflowDefinition } from '~/stores/useExecutionsSt
  * - 编辑模式：编辑现有输出 -> 保存（本地） -> 独立放行
  * - Mock 模式：填写自定义数据 -> 提交 Mock
  * - AI 节点默认进入 Mock 模式，真实执行需确认
+ *
+ * ⭐ **blueprint/v1 识别（同步点 2 收尾）**：蓝图链与 v0 旧链**共用同一个 node_type**
+ * （`ai_plan_research`），输出键集又高度相似（都有 `session_id` / `plan` /
+ * `plan_markdown`）⇒ 本抽屉此前把蓝图输出当 v0 渲染，看不出这是一份需要人审的结构化
+ * 蓝图，也看不出它此刻停在 11 态里的哪一态。现按输出体的 `schema_version` 判别
+ * （口径与后端 `builtin_types.py` 逐字相同），命中即在输出区上方加一条告示：形态 +
+ * 状态 + 挂起语义 + 指向查看器的深链。
+ *
+ * 🔴 **v0 逐像素不变**：新增标记全在 `isBlueprintOutput` 之下；v0 输出不带该键
+ * （后端只在蓝图分支写它）⇒ 既有渲染路径一行未改。
  */
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { Button } from '~/components/ui/button'
 import { useDebugDataEditor } from '~/composables/useDebugDataEditor'
 import { checkMissingKeys, getDownstreamVarDeps } from '~/composables/useDownstreamVarCheck'
+import {
+  BLUEPRINT_ATTENTION_STATUSES,
+  blueprintStatusText,
+  blueprintViewerPath,
+  isBlueprintSchemaVersion,
+} from '~/config/blueprintArtifact'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import AISafetyConfirm from './AISafetyConfirm.vue'
 import DownstreamVarWarning from './DownstreamVarWarning.vue'
@@ -47,6 +64,60 @@ const AI_NODE_TYPES = [
 const isAINode = computed(() =>
   AI_NODE_TYPES.includes(props.nodeExecution.node_type as typeof AI_NODE_TYPES[number]),
 )
+
+// ---------------------------------------------------------------------------
+// blueprint/v1 判别与告示（同步点 2 收尾）
+// ---------------------------------------------------------------------------
+
+/** 输出体（非 dict 一律当空对象，历史执行记录零报错）。 */
+const outputRecord = computed<Record<string, any>>(() => {
+  const output = props.nodeExecution.output_data
+  return output && typeof output === 'object' ? output : {}
+})
+
+/**
+ * 本次节点输出是否描述一份 blueprint/v1 蓝图。
+ *
+ * 两处判别源，都只做**严格等值**比较：
+ *   1. `output_data.schema_version` —— 后端在蓝图四个分支恒写的判别键（本次追加）；
+ *   2. `output_data.blueprint_content.schema_version` —— **历史执行记录兜底**：本次
+ *      追加顶层键之前，completed 分支已经把原始 blueprint content 并列保留在这里。
+ *      少了这一级，改动前跑过的蓝图执行在抽屉里仍会被当 v0 渲染。
+ *
+ * 🔴 ⛔ 不按 `artifact_id` / `current_status` 非空反推：它们此刻确实只有蓝图会写，
+ * 但那是巧合而非契约。
+ */
+const isBlueprintOutput = computed(() => {
+  const output = outputRecord.value
+  return (
+    isBlueprintSchemaVersion(output.schema_version)
+    || isBlueprintSchemaVersion(output.blueprint_content?.schema_version)
+  )
+})
+
+/** 蓝图状态（读不到回空串 ⇒ 落「旧版方案」档而不是未知档）。 */
+const blueprintStatus = computed(() => String(outputRecord.value.current_status ?? ''))
+const blueprintArtifactId = computed(() => String(outputRecord.value.artifact_id ?? ''))
+
+/** 状态徽标语气：等人处置用琥珀，其余中性。 */
+const blueprintStatusToneClass = computed(() =>
+  BLUEPRINT_ATTENTION_STATUSES.has(blueprintStatus.value)
+    ? 'bg-amber-500/12 text-amber-600'
+    : 'bg-primary/10 text-primary',
+)
+
+/**
+ * 挂起语义（`kind` → 一句人话）。
+ *
+ * ⭐ `human_review` 这一档是同步点 2 的要害：节点停在这里意味着**蓝图已产出但未过
+ * 人审**，下游编码代理拿不到任何载荷。抽屉上如实讲清楚，才不会被读成「卡住了」。
+ */
+const BLUEPRINT_KIND_TEXT: Record<string, string> = {
+  human_review: '蓝图已产出，正在等待人工终审；通过后工作流才会继续。',
+  clarification: '有待回答的澄清 / 确认，回答后工作流自动继续。',
+  research: '跨仓调研在途，调研回调后工作流自动继续。',
+}
+const blueprintKindText = computed(() => BLUEPRINT_KIND_TEXT[String(outputRecord.value.kind ?? '')] ?? '')
 
 /** "查看原始数据"切换 */
 const showRawOutput = ref(false)
@@ -264,6 +335,39 @@ const jsonFields = computed(() => {
 
     <!-- 输出数据 -->
     <div class="space-y-2">
+      <!--
+        蓝图告示条（同步点 2 收尾）：形态 + 11 态状态 + 挂起语义 + 查看器深链。
+        ⛔ 不复刻蓝图正文 —— 逐段阅读与人审只在查看器里成立。
+      -->
+      <div
+        v-if="isBlueprintOutput"
+        class="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5 space-y-1.5"
+        role="status"
+        data-testid="node-blueprint-notice"
+      >
+        <div class="flex items-center gap-2 text-sm">
+          <span class="icon-[lucide--file-text] text-primary shrink-0" />
+          <span class="font-medium text-foreground">结构化技术蓝图</span>
+          <span
+            class="rounded-full px-2 py-0.5 text-xs font-medium"
+            :class="blueprintStatusToneClass"
+            data-testid="node-blueprint-status"
+          >{{ blueprintStatusText(blueprintStatus) }}</span>
+        </div>
+        <p v-if="blueprintKindText" class="text-xs text-muted-foreground" data-testid="node-blueprint-kind">
+          {{ blueprintKindText }}
+        </p>
+        <RouterLink
+          v-if="blueprintArtifactId"
+          :to="blueprintViewerPath(blueprintArtifactId)"
+          class="text-xs text-primary underline-offset-4 hover:underline inline-flex items-center gap-1"
+          data-testid="node-blueprint-link"
+        >
+          <span class="icon-[lucide--external-link]" />
+          在蓝图查看器中打开
+        </RouterLink>
+      </div>
+
       <div class="flex items-center justify-between gap-2">
         <div class="text-sm font-medium text-foreground">
           输出数据

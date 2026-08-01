@@ -179,6 +179,27 @@ def poll_project_docs_revisions_job():
 
 
 @_with_scheduler_log_context
+def remind_blueprint_clarifications_job():
+    """Job wrapper：蓝图 needs_clarification 的 blocking 澄清线程按周期提醒（CLAR-04，114-05）。
+
+    沿用既有 ``*_job`` + ``run_async_task`` 范式；归因 system（scheduler 上下文）。
+    提醒 **不自动作答、不改蓝图状态、不判失败**——只记 caller 日志并写
+    ``BlueprintThread.last_reminded_at``（同周期内不重复轰炸）。任务体内单线程
+    try/except 隔离，异常不抛回本 wrapper、绝不打断 scheduler 主循环。
+    """
+    from tasks.blueprint_reminder_tasks import aremind_blueprint_clarifications
+
+    log = logger.bind(job="remind_blueprint_clarifications")
+    log.info("job_start")
+
+    try:
+        result = run_async_task(aremind_blueprint_clarifications)
+        log.info("job_complete", result=result)
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
 def calculate_behind_commits_job() -> None:
     """contract：计算 STALE 仓库的 behind_commits 差值并缓存。"""
     from repositories.freshness_service import update_behind_commits_for_stale_repos
@@ -743,6 +764,25 @@ class Command(BaseCommand):
             "job_registered",
             job="poll_project_docs_revisions",
             schedule=f"every {settings.DOC_SYNC_POLL_INTERVAL_SECONDS}s",
+        )
+
+        # 蓝图 blocking 澄清线程的超时提醒（CLAR-04，114-05）。**tick 间隔与提醒周期是两层**：
+        # 这里的 IntervalTrigger 只决定「多久来看一眼」（每小时），真正的提醒周期由任务体内
+        # 的 SettingKeys.BLUEPRINT_REVIEW_CONFIG.pending_reminder_hours 判定（缺配置回落 24h）
+        # —— 分层的好处是热改周期无需重启 scheduler，只有 tick 间隔以启动值为准。
+        # 单实例 max_instances=1 防重叠（同一线程被并行提醒多次）。
+        scheduler.add_job(
+            remind_blueprint_clarifications_job,
+            trigger=IntervalTrigger(hours=1),
+            id="remind_blueprint_clarifications",
+            name="Remind reviewers of unanswered blocking blueprint clarifications",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info(
+            "job_registered",
+            job="remind_blueprint_clarifications",
+            schedule="every 1 hour",
         )
 
         # 计算 STALE 仓库 behind_commits 差值，串联 poll_repository_updates（implementation contract）

@@ -19,6 +19,31 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_blueprint_background_ingest(monkeypatch: pytest.MonkeyPatch) -> None:
+    """拦掉蓝图版本落地触发的**后台**知识图谱摄取（Phase 116 VIEW-04 门控的测试侧代价）。
+
+    ``ArtifactService.create`` / ``add_version`` 落 ``blueprint/v1`` 版本时会
+    ``aschedule_ingestion`` → ``on_commit`` → ``run_in_background``；delivery 包里大量
+    用例经这两个入口写蓝图版本，让后台线程在 **SQLite** 上并发写会撞
+    ``database table is locked``（生产 PostgreSQL 无此问题，是测试库的并发形态差异）。
+
+    ⭐ 只拦 ``source_kind == "blueprint"``，其它 source_kind **原样放行**（既有摄取用例
+    零回归）；门控本身「该投递 / 不该投递」的断言在
+    ``tests/knowledge/test_blueprint_normalizer.py``，不靠本 fixture 承载。
+    """
+    from knowledge import ingestion
+
+    real = ingestion.aschedule_ingestion
+
+    async def _guarded(request, **kwargs):
+        if getattr(request, "source_kind", "") == "blueprint":
+            return None
+        return await real(request, **kwargs)
+
+    monkeypatch.setattr(ingestion, "aschedule_ingestion", _guarded)
+
+
 @pytest.fixture
 def mock_qdrant_client(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """``QdrantService.get_client`` 的 MagicMock seam（非 autouse）。"""

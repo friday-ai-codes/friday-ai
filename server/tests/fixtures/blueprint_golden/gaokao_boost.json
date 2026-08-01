@@ -1,0 +1,637 @@
+{
+  "name": "gaokao_boost",
+  "description": "高三提分专项（DESIGN §5.7 路由试验实证语料）：培优课入口改造（brownfield，onion-learning）+ 专项学习页（greenfield，study-course）+ 专项练习（onion-practice）；study-plan 为 indirect——权益鉴权边界归 study-course（章程决策实证）。",
+  "blueprint": {
+    "schema_version": "blueprint/v1",
+    "meta": {
+      "title": "高三提分专项",
+      "project_id": "2f6f0d5e-8a44-4e6b-9f3c-7d1a5c9b0e42",
+      "summary": [
+        {
+          "block_id": "blk_gb_summary",
+          "type": "paragraph",
+          "text": "高三提分专项跨仓实现蓝图：改造 onion-learning 培优课占位入口、在 study-course 新增专项学习页、在 onion-practice 落专项练习组卷。"
+        }
+      ],
+      "language": "zh-CN",
+      "revision_round": 0
+    },
+    "requirement_spec": {
+      "goal": [
+        {
+          "block_id": "blk_gb_goal",
+          "type": "paragraph",
+          "text": "高三学员可从培优课入口进入专项学习页完成学习并开始专项练习。"
+        }
+      ],
+      "background": [
+        {
+          "block_id": "blk_gb_background",
+          "type": "paragraph",
+          "text": "高三提分专项 feature list（4000 字符验收清单）要求打通入口、学习页与练习三段主链路。"
+        }
+      ],
+      "feature_points": [
+        {
+          "id": "fp_01",
+          "title": "培优课入口改造",
+          "intent": "brownfield",
+          "description": [
+            {
+              "block_id": "blk_gb_fp01_desc",
+              "type": "paragraph",
+              "text": "改造 onion-learning 既有「培优课（即将上线）」占位入口，指向高三提分专项落地页（brownfield）。"
+            }
+          ],
+          "source_ref": "feature_list:gaokao_boost#entry",
+          "acceptance_criteria": ["onion-learning 首页培优课入口点击后跳转专项学习页"]
+        },
+        {
+          "id": "fp_02",
+          "title": "专项学习页",
+          "intent": "greenfield",
+          "description": [
+            {
+              "block_id": "blk_gb_fp02_desc",
+              "type": "paragraph",
+              "text": "在 study-course 新增高三提分专项学习页，展示专项课程内容与权益状态（greenfield 净新增）。"
+            }
+          ],
+          "source_ref": "feature_list:gaokao_boost#study_page",
+          "acceptance_criteria": ["专项学习页 3s 内完成课程内容首屏渲染", "未购学员看到权益引导态"]
+        },
+        {
+          "id": "fp_03",
+          "title": "专项练习",
+          "intent": "greenfield",
+          "description": [
+            {
+              "block_id": "blk_gb_fp03_desc",
+              "type": "paragraph",
+              "text": "onion-practice 提供按高考知识点组卷的专项练习能力，从学习页可直达。"
+            }
+          ],
+          "source_ref": "feature_list:gaokao_boost#practice",
+          "acceptance_criteria": ["学习页点击开始练习后进入按知识点组卷的练习流"]
+        }
+      ],
+      "boundaries": {
+        "in_scope": ["入口改造", "专项学习页", "专项练习组卷"],
+        "out_of_scope": ["批改与讲评", "学习计划打卡玩法改版"]
+      }
+    },
+    "repo_associations": [
+      {
+        "repository_id": "repo-onion-learning",
+        "repository_name": "onion-learning",
+        "role": "direct",
+        "rationale": {
+          "text": [
+            {
+              "block_id": "blk_gb_ra_ol_rationale",
+              "type": "paragraph",
+              "text": "仓内已有「培优课（即将上线）」占位入口 learn-textbook-sync，本需求的入口改造属存量功能页 brownfield 改造，落此仓。",
+              "citations": ["cit_learn_sync_entry"]
+            }
+          ],
+          "citations": ["cit_learn_sync_entry", "cit_ke_learning_app"]
+        },
+        "responsibility": [
+          {
+            "block_id": "blk_gb_ra_ol_resp",
+            "type": "paragraph",
+            "text": "改造培优课占位入口并接通专项学习页跳转。"
+          }
+        ],
+        "fitness": {
+          "verdict": "suitable",
+          "reasons": [
+            {
+              "block_id": "blk_gb_ra_ol_fit",
+              "type": "paragraph",
+              "text": "占位入口与页面路由已就位，改造成本低。"
+            }
+          ],
+          "citations": ["cit_learn_sync_entry"]
+        },
+        "planned_change_summary": [
+          {
+            "block_id": "blk_gb_ra_ol_change",
+            "type": "paragraph",
+            "text": "将占位入口替换为可点击的专项入口并埋点。"
+          }
+        ],
+        "decided_by": "human",
+        "confirmed_at_gate": true
+      },
+      {
+        "repository_id": "repo-study-course",
+        "repository_name": "study-course",
+        "role": "direct",
+        "rationale": {
+          "text": [
+            {
+              "block_id": "blk_gb_ra_sc_rationale",
+              "type": "paragraph",
+              "text": "章程 owned_domains 含「专项课与总复习」，且课程权益鉴权按边界决策归本仓场景鉴权模块；专项学习页为净新增，按章程落点偏好落此仓。",
+              "citations": ["cit_charter_course_domains"]
+            }
+          ],
+          "citations": ["cit_charter_course_domains", "cit_course_special_router"]
+        },
+        "responsibility": [
+          {
+            "block_id": "blk_gb_ra_sc_resp",
+            "type": "paragraph",
+            "text": "承载专项学习页与课程内容/权益鉴权接口。"
+          }
+        ],
+        "fitness": {
+          "verdict": "suitable",
+          "reasons": [
+            {
+              "block_id": "blk_gb_ra_sc_fit",
+              "type": "paragraph",
+              "text": "专项课路由与场景鉴权模块可直接复用。"
+            }
+          ],
+          "citations": ["cit_charter_course_domains"]
+        },
+        "planned_change_summary": [
+          {
+            "block_id": "blk_gb_ra_sc_change",
+            "type": "paragraph",
+            "text": "新增专项学习页模块与课程内容接口。"
+          }
+        ],
+        "decided_by": "human",
+        "confirmed_at_gate": true
+      },
+      {
+        "repository_id": "repo-onion-practice",
+        "repository_name": "onion-practice",
+        "role": "direct",
+        "rationale": {
+          "text": [
+            {
+              "block_id": "blk_gb_ra_op_rationale",
+              "type": "paragraph",
+              "text": "练习域后端已有按知识点组卷能力，专项练习在其上扩展。",
+              "citations": ["cit_practice_module"]
+            }
+          ],
+          "citations": ["cit_practice_module"]
+        },
+        "responsibility": [
+          {
+            "block_id": "blk_gb_ra_op_resp",
+            "type": "paragraph",
+            "text": "提供高考知识点专项组卷与练习流接口。"
+          }
+        ],
+        "fitness": {
+          "verdict": "suitable",
+          "reasons": [
+            {
+              "block_id": "blk_gb_ra_op_fit",
+              "type": "paragraph",
+              "text": "组卷服务与题库模型可复用，只需新增专项筛选维度。"
+            }
+          ],
+          "citations": ["cit_practice_module"]
+        },
+        "planned_change_summary": [
+          {
+            "block_id": "blk_gb_ra_op_change",
+            "type": "paragraph",
+            "text": "新增专项组卷接口并挂接学习页入口。"
+          }
+        ],
+        "decided_by": "ai",
+        "confirmed_at_gate": true
+      },
+      {
+        "repository_id": "repo-study-plan",
+        "repository_name": "study-plan",
+        "role": "indirect",
+        "rationale": {
+          "text": [
+            {
+              "block_id": "blk_gb_ra_sp_rationale",
+              "type": "paragraph",
+              "text": "不选它做 direct 的理由：能力树按「权益鉴权」推理会误报本仓，但团队边界决策是课程权益鉴权归 study-course 场景鉴权模块（章程 boundaries 条目）；本方案仅消费其学习计划任务同步能力，不做改动。",
+              "citations": ["cit_charter_boundary_study_plan"]
+            }
+          ],
+          "citations": ["cit_charter_boundary_study_plan"]
+        },
+        "capabilities_used": [
+          {
+            "name": "学习计划任务同步",
+            "location": "src/api/plan_tasks",
+            "how_used": "专项学习完成后同步学习计划打卡状态"
+          }
+        ],
+        "support_needed": [
+          {
+            "block_id": "blk_gb_ra_sp_support",
+            "type": "paragraph",
+            "text": "确认计划任务同步接口对专项课程类型的兼容性。"
+          }
+        ],
+        "decided_by": "human",
+        "confirmed_at_gate": true
+      }
+    ],
+    "current_state_analysis": [
+      {
+        "repository_id": "repo-onion-learning",
+        "summary": [
+          {
+            "block_id": "blk_gb_cs_ol_summary",
+            "type": "paragraph",
+            "text": "onion-learning 为学习主 App，功能页以静态配置组织。"
+          }
+        ],
+        "findings": [
+          {
+            "id": "cs_ol_01",
+            "topic": "培优课占位入口",
+            "text": [
+              {
+                "block_id": "blk_gb_cs_ol_finding",
+                "type": "paragraph",
+                "text": "仓内存在「培优课（即将上线）」占位入口 learn-textbook-sync——能力树将该 App 抽象为教材同步课程/章节导航，无培优节点，但代码实证入口已就位，可直接改造。",
+                "citations": ["cit_learn_sync_entry"]
+              }
+            ],
+            "kind": "capability",
+            "related_feature_points": ["fp_01"],
+            "citations": ["cit_learn_sync_entry"]
+          }
+        ]
+      },
+      {
+        "repository_id": "repo-study-course",
+        "findings": [
+          {
+            "id": "cs_sc_01",
+            "topic": "专项课承载能力",
+            "text": [
+              {
+                "block_id": "blk_gb_cs_sc_finding",
+                "type": "paragraph",
+                "text": "专项课与总复习模块具备承载专项学习页的路由结构，场景鉴权模块可复用为专项权益判定。",
+                "citations": ["cit_course_special_router"]
+              }
+            ],
+            "kind": "capability",
+            "related_feature_points": ["fp_02"],
+            "citations": ["cit_course_special_router"]
+          }
+        ]
+      },
+      {
+        "repository_id": "repo-onion-practice",
+        "findings": [
+          {
+            "id": "cs_op_01",
+            "topic": "组卷能力现状",
+            "text": [
+              {
+                "block_id": "blk_gb_cs_op_finding",
+                "type": "paragraph",
+                "text": "已有按知识点组卷服务，缺少高考专项筛选维度，需新增专项组卷入口。",
+                "citations": ["cit_practice_module"]
+              }
+            ],
+            "kind": "gap",
+            "related_feature_points": ["fp_03"],
+            "citations": ["cit_practice_module"]
+          }
+        ]
+      },
+      {
+        "repository_id": "repo-study-plan",
+        "findings": [
+          {
+            "id": "cs_sp_01",
+            "topic": "权益鉴权边界",
+            "text": [
+              {
+                "block_id": "blk_gb_cs_sp_finding",
+                "type": "paragraph",
+                "text": "能力树含权益鉴权相关节点，LLM 推理「权益鉴权→study-plan」逻辑自洽但违背团队边界决策——该职责归 study-course，本方案不改动此仓。",
+                "citations": ["cit_charter_boundary_study_plan"]
+              }
+            ],
+            "kind": "convention",
+            "related_feature_points": ["fp_02"],
+            "citations": ["cit_charter_boundary_study_plan"]
+          }
+        ]
+      }
+    ],
+    "implementation_overview": {
+      "requirement_narrative": [
+        {
+          "block_id": "blk_gb_impl_narrative",
+          "type": "paragraph",
+          "text": "study-course 先落专项学习页与内容接口，onion-practice 平行落专项组卷；onion-learning 最后改造入口接通跳转，三段链路合成主流程。"
+        }
+      ],
+      "modules": [
+        {
+          "id": "mod_01",
+          "name": "高三提分专项",
+          "feature_point_ids": ["fp_01", "fp_02", "fp_03"],
+          "repository_ids": ["repo-onion-learning", "repo-study-course", "repo-onion-practice"],
+          "narrative": [
+            {
+              "block_id": "blk_gb_mod01_narrative",
+              "type": "paragraph",
+              "text": "入口（onion-learning）→ 学习页（study-course）→ 练习（onion-practice）构成专项最小闭环。"
+            }
+          ]
+        }
+      ],
+      "items": [
+        {
+          "id": "impl_01",
+          "feature_point_id": "fp_01",
+          "module_id": "mod_01",
+          "repository_id": "repo-onion-learning",
+          "change_type": "modify",
+          "title": "改造培优课占位入口",
+          "how": [
+            {
+              "block_id": "blk_gb_impl01_how",
+              "type": "list",
+              "text": ["将 learn-textbook-sync 占位入口替换为专项入口", "接通专项学习页跳转协议并埋点"]
+            }
+          ],
+          "existing_integration": [
+            {
+              "block_id": "blk_gb_impl01_integration",
+              "type": "paragraph",
+              "text": "复用功能页静态配置的入口注册机制，不改导航框架。"
+            }
+          ],
+          "files_touched": [
+            {"path": "src/pages/learn-textbook-sync/index.vue", "action": "modify", "note": "占位入口改造"}
+          ],
+          "depends_on": ["impl_02"],
+          "wave": 2,
+          "test_strategy": [
+            {
+              "block_id": "blk_gb_impl01_test",
+              "type": "paragraph",
+              "text": "入口点击跳转与埋点上报的端到端用例。"
+            }
+          ],
+          "citations": ["cit_learn_sync_entry"]
+        },
+        {
+          "id": "impl_02",
+          "feature_point_id": "fp_02",
+          "module_id": "mod_01",
+          "repository_id": "repo-study-course",
+          "change_type": "create",
+          "title": "新增专项学习页与内容接口",
+          "how": [
+            {
+              "block_id": "blk_gb_impl02_how",
+              "type": "list",
+              "text": ["新增专项学习页模块（课程内容 + 权益状态）", "场景鉴权模块接入专项权益判定", "提供专项课程内容接口"]
+            }
+          ],
+          "files_touched": [
+            {"path": "src/modules/special/GaokaoBoost.vue", "action": "create", "note": "专项学习页"},
+            {"path": "src/api/special_course.py", "action": "create", "note": "课程内容接口"}
+          ],
+          "depends_on": [],
+          "wave": 1,
+          "test_strategy": [
+            {
+              "block_id": "blk_gb_impl02_test",
+              "type": "paragraph",
+              "text": "已购/未购双态渲染与鉴权分支用例。"
+            }
+          ],
+          "citations": ["cit_charter_course_domains"]
+        },
+        {
+          "id": "impl_03",
+          "feature_point_id": "fp_03",
+          "module_id": "mod_01",
+          "repository_id": "repo-onion-practice",
+          "change_type": "create",
+          "title": "专项组卷接口",
+          "how": [
+            {
+              "block_id": "blk_gb_impl03_how",
+              "type": "paragraph",
+              "text": "在既有组卷服务上新增高考知识点专项筛选维度并暴露组卷接口。"
+            }
+          ],
+          "files_touched": [
+            {"path": "src/api/special_practice.py", "action": "create", "note": "专项组卷入口"}
+          ],
+          "depends_on": [],
+          "wave": 1,
+          "test_strategy": [
+            {
+              "block_id": "blk_gb_impl03_test",
+              "type": "paragraph",
+              "text": "按知识点组卷正确性与空题集降级用例。"
+            }
+          ],
+          "citations": ["cit_practice_module"]
+        }
+      ]
+    },
+    "api_contracts": [
+      {
+        "id": "api_01",
+        "name": "专项课程内容",
+        "kind": "http",
+        "direction": "provided",
+        "repository_id": "repo-study-course",
+        "method": "GET",
+        "path": "/api/course/special/gaokao-boost",
+        "description": [
+          {
+            "block_id": "blk_gb_api01_desc",
+            "type": "paragraph",
+            "text": "返回高三提分专项课程内容与学员权益状态。"
+          }
+        ],
+        "consumers": ["mod_01"],
+        "citations": ["cit_course_special_router"]
+      },
+      {
+        "id": "api_02",
+        "name": "学习计划任务同步",
+        "kind": "http",
+        "direction": "consumed",
+        "repository_id": "repo-study-course",
+        "method": "POST",
+        "path": "/api/plan/tasks/sync",
+        "data_source": {
+          "from_service": "study-plan",
+          "from_api": "POST /api/plan/tasks/sync",
+          "fields_needed": ["task_id", "status"],
+          "availability": "existing",
+          "notes": [
+            {
+              "block_id": "blk_gb_api02_notes",
+              "type": "paragraph",
+              "text": "计划任务同步接口已有，无需 study-plan 新增支持。"
+            }
+          ]
+        }
+      }
+    ],
+    "impact_analysis": {
+      "business_impact": [
+        {
+          "block_id": "blk_gb_impact_business",
+          "type": "paragraph",
+          "text": "培优课入口从占位态转为可用态，学习主 App 首页动线新增专项分支；既有课程学习路径不受影响。"
+        }
+      ],
+      "affected_features": [
+        {
+          "feature": "培优课占位入口",
+          "repository_ids": ["repo-onion-learning"],
+          "kind": "behavior_change",
+          "description": [
+            {
+              "block_id": "blk_gb_impact_feature_desc",
+              "type": "paragraph",
+              "text": "占位入口（不可点击）变为真实跳转入口，需回归首页功能区渲染。"
+            }
+          ],
+          "citations": ["cit_learn_sync_entry"]
+        }
+      ],
+      "regression_scope": [
+        {"area": "onion-learning 首页功能区", "level": "smoke", "reason": "入口配置变更"}
+      ],
+      "rollback_plan": [
+        {
+          "block_id": "blk_gb_impact_rollback",
+          "type": "paragraph",
+          "text": "入口配置回退为占位态即可回滚，学习页与组卷接口无入口自然不可达。"
+        }
+      ]
+    },
+    "interaction_flows": [
+      {
+        "id": "flow_01",
+        "name": "学员进入高三提分专项主路径",
+        "trigger": "学员在 onion-learning 首页点击培优课入口",
+        "steps": [
+          {
+            "seq": 1,
+            "actor": "user",
+            "action": "点击培优课入口",
+            "component": "learn-textbook-sync",
+            "data_out": "跳转 target=gaokao-boost",
+            "note": [
+              {
+                "block_id": "blk_gb_flow01_step1_note",
+                "type": "paragraph",
+                "text": "入口埋点上报点击来源。"
+              }
+            ]
+          },
+          {
+            "seq": 2,
+            "actor": "frontend",
+            "action": "打开专项学习页并请求课程内容",
+            "component": "GaokaoBoost.vue",
+            "api_ref": "api_01",
+            "data_in": "student_id",
+            "data_out": "课程内容 + 权益状态"
+          },
+          {
+            "seq": 3,
+            "actor": "service:onion-practice",
+            "action": "学习页点击开始练习后按知识点组卷",
+            "data_in": "knowledge_point_ids",
+            "data_out": "practice_id"
+          }
+        ],
+        "citations": ["cit_course_special_router"]
+      }
+    ],
+    "must_haves": {
+      "truths": [
+        "学员从 onion-learning 培优课入口可进入 study-course 专项学习页",
+        "专项学习页可直达 onion-practice 按知识点组卷的练习流"
+      ],
+      "artifacts": [
+        {"path": "study-course/src/modules/special/GaokaoBoost.vue", "provides": "专项学习页"},
+        {"path": "onion-practice/src/api/special_practice.py", "provides": "专项组卷接口"}
+      ],
+      "key_links": [
+        {"from": "onion-learning:learn-textbook-sync", "to": "study-course:GaokaoBoost.vue", "via": "入口跳转协议"},
+        {"from": "study-course:GaokaoBoost.vue", "to": "GET /api/course/special/gaokao-boost", "via": "api_01"}
+      ]
+    },
+    "citations": {
+      "cit_learn_sync_entry": {
+        "citation_id": "cit_learn_sync_entry",
+        "source_type": "repo_file",
+        "source_id": "repo-onion-learning:src/pages/learn-textbook-sync/index.vue",
+        "locator": {"file_path": "src/pages/learn-textbook-sync/index.vue", "line_start": 1, "line_end": 40},
+        "quote": "培优课（即将上线）占位入口",
+        "title": "learn-textbook-sync 占位入口"
+      },
+      "cit_course_special_router": {
+        "citation_id": "cit_course_special_router",
+        "source_type": "repo_file",
+        "source_id": "repo-study-course:src/router/special.ts",
+        "locator": {"file_path": "src/router/special.ts", "line_start": 12, "line_end": 58},
+        "quote": "专项课与总复习模块路由注册",
+        "title": "study-course 专项课路由"
+      },
+      "cit_practice_module": {
+        "citation_id": "cit_practice_module",
+        "source_type": "repo_file",
+        "source_id": "repo-onion-practice:src/services/paper_builder.py",
+        "locator": {"file_path": "src/services/paper_builder.py", "line_start": 20, "line_end": 96},
+        "quote": "按知识点组卷服务实现",
+        "title": "onion-practice 组卷服务"
+      },
+      "cit_ke_learning_app": {
+        "citation_id": "cit_ke_learning_app",
+        "source_type": "knowledge_entity",
+        "source_id": "entity-onion-learning-app",
+        "quote": "onion-learning 承载学习主 App 首页与功能页入口",
+        "title": "onion-learning 仓库职责知识条目"
+      },
+      "cit_charter_boundary_study_plan": {
+        "citation_id": "cit_charter_boundary_study_plan",
+        "source_type": "repo_charter",
+        "source_id": "charter:study-plan#boundaries[0]",
+        "quote": "不承接新需求的课程权益鉴权（归 study-course 场景鉴权模块）",
+        "title": "study-plan 章程边界条目"
+      },
+      "cit_charter_course_domains": {
+        "citation_id": "cit_charter_course_domains",
+        "source_type": "repo_charter",
+        "source_id": "charter:study-course#owned_domains[2]",
+        "quote": "专项课与总复习（含重难点培优）为本仓 owned_domains",
+        "title": "study-course 章程职责域条目"
+      }
+    }
+  },
+  "expected": {
+    "direct_repos": ["onion-learning", "study-course", "onion-practice"],
+    "required_feature_point_ids": ["fp_01", "fp_02"],
+    "min_citation_coverage": 0.9,
+    "min_repo_hit_rate": 1.0
+  }
+}

@@ -64,6 +64,8 @@ class ArtifactListSerializer(serializers.ModelSerializer):
 
     work_item_id = serializers.UUIDField(read_only=True, allow_null=True)
     current_version = serializers.SerializerMethodField()
+    schema_version = serializers.SerializerMethodField()
+    current_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Artifact
@@ -76,6 +78,11 @@ class ArtifactListSerializer(serializers.ModelSerializer):
             "current_version",
             "created_at",
             "updated_at",
+            # ⭐ 同步点 2 收尾：两个**纯追加**的判别键，供 `ArtifactTimeline.vue` 分辨
+            # 蓝图与 v0 旧方案（两者共用 artifact_type="technical_plan"，此前在该面上
+            # 长得一模一样）。既有八键一字未动 ⇒ 既有调用方零破坏。
+            "schema_version",
+            "current_status",
         ]
         read_only_fields = fields
 
@@ -86,9 +93,32 @@ class ArtifactListSerializer(serializers.ModelSerializer):
         current = obj.current_version
         if current is None:
             return None
-        return ArtifactVersionTimelineSerializer(
-            current, context=self._version_context(obj)
-        ).data
+        return ArtifactVersionTimelineSerializer(current, context=self._version_context(obj)).data
+
+    def get_schema_version(self, obj: Artifact) -> str:
+        """当前版本 content 的 ``schema_version``（读不到一律空串，⛔ 不是 ``None``）。
+
+        判别口径与 ``delivery/artifacts/builtin_types.py`` 同源：调用方拿它与
+        ``blueprint/v1`` 严格比较即可分辨蓝图与 v0 旧方案。空串是 v0 的**合法取值**
+        而不是错误 —— 升级前建的 artifact content 里本就没有这个键。
+        """
+        current = obj.current_version
+        content = getattr(current, "content", None) if current is not None else None
+        if not isinstance(content, dict):
+            return ""
+        return str(content.get("schema_version") or "")
+
+    def get_current_status(self, obj: Artifact) -> str:
+        """蓝图状态机取值（v0 旧方案恒空串）。
+
+        ⚠️ 键名刻意**不叫模型字段名**：INV-6 的字段级守卫扫全 ``server/`` 的
+        ``['"]<那个字段名>['"]\\s*:`` 形态，响应键用模型字段名即被判旁路写。
+        ``current_status`` 是 114-05 立的既有解法，全仓蓝图响应体统一用它。
+        读法复用 ``blueprint_render.blueprint_status_of``（纯读、零写）。
+        """
+        from services.process_runtime.blueprint_render import blueprint_status_of
+
+        return blueprint_status_of(obj)
 
 
 class ArtifactTimelineSerializer(ArtifactListSerializer):
@@ -113,9 +143,7 @@ class ArtifactTimelineSerializer(ArtifactListSerializer):
     def get_versions(self, obj: Artifact) -> list[dict]:
         ctx = self._version_context(obj)
         # 倒序（最新在前）；versions 已由 view prefetch，这里仅本地排序不触发查询。
-        ordered = sorted(
-            obj.versions.all(), key=lambda v: v.version_no, reverse=True
-        )
+        ordered = sorted(obj.versions.all(), key=lambda v: v.version_no, reverse=True)
         return ArtifactVersionTimelineSerializer(ordered, many=True, context=ctx).data
 
     def get_current_version_markdown(self, obj: Artifact) -> str | None:
@@ -123,6 +151,24 @@ class ArtifactTimelineSerializer(ArtifactListSerializer):
         if current is None:
             return None
         try:
+            # ⭐ P-4 的第二个面：本字段是 SerializerMethodField，``obj`` 是 Artifact ⇒
+            # **拿得到蓝图状态的真实值**，而注册表契约 ``Callable[[dict], str]`` 会把它
+            # 截断（分支只能传空串 = 当作未确认）。蓝图 content 在此绕过注册表直调渲染
+            # 器并传真值——这同时修掉该字段对蓝图恒为 v0 空壳的结构性问题。该字段**已
+            # 上线、已有前端消费者**（ArtifactTimeline.vue），故**只修后端，⛔ 不碰组件**。
+            content = current.content
+            if isinstance(content, dict) and content.get("schema_version"):
+                from services.process_runtime.blueprint_render import (
+                    blueprint_status_of,
+                    render_blueprint_markdown,
+                )
+                from services.process_runtime.blueprint_schema import (
+                    BLUEPRINT_SCHEMA_VERSION,
+                )
+
+                if content.get("schema_version") == BLUEPRINT_SCHEMA_VERSION:
+                    status = blueprint_status_of(obj)
+                    return render_blueprint_markdown(content, blueprint_status=status)
             return render_markdown(obj.artifact_type, current.content)
         except Exception:
             # 渲染 best-effort：失败不反噬时间线呈现。
@@ -172,3 +218,59 @@ class ArchitectMergeRefSerializer(serializers.ModelSerializer):
         model = ArchitectMerge
         fields = ["id", "session_id", "validation_status", "attempt"]
         read_only_fields = fields
+
+
+# ============================================================================
+# 阶段 1 出口确认门（Phase 112-05，FLOW-03）：快照与动作结果只读序列化
+#
+# 快照数据源是确认门线程（``kind=repo_confirmation``）的 ``options``（非模型字段集），
+# 故用 ``serializers.Serializer`` 逐字段声明 —— 全部 ``read_only``：确认门的写入只经
+# ``BlueprintLifecycleService`` / ``BlueprintConfirmGateAdapter``（INV-6），序列化器
+# 绝不作入参校验面（action 白名单与角色枚举归一在 service 层）。
+# ============================================================================
+
+
+class BlueprintGateRepoSerializer(serializers.Serializer):
+    """确认门快照单仓条目（role 建议 / 职责 / fitness 结论 / 现状摘要 / 证据引用）。"""
+
+    repository_id = serializers.CharField(read_only=True)
+    repository_name = serializers.CharField(read_only=True, allow_blank=True)
+    role_suggestion = serializers.CharField(read_only=True, allow_blank=True)
+    responsibility = serializers.CharField(read_only=True, allow_blank=True)
+    confidence = serializers.CharField(read_only=True, allow_blank=True)
+    fitness = serializers.JSONField(read_only=True)
+    current_state_summary = serializers.CharField(read_only=True, allow_blank=True)
+    routing_evidence = serializers.JSONField(read_only=True)
+    task_status = serializers.CharField(read_only=True, allow_blank=True, required=False)
+    pending_research = serializers.BooleanField(read_only=True, required=False)
+    removed = serializers.BooleanField(read_only=True, required=False)
+
+
+class BlueprintGateSnapshotSerializer(serializers.Serializer):
+    """确认门只读快照（GET）：门状态 + 逐仓清单 + 待重调研仓 id。"""
+
+    artifact_id = serializers.CharField(read_only=True)
+    session_id = serializers.CharField(read_only=True, allow_blank=True)
+    thread_id = serializers.CharField(read_only=True, allow_blank=True)
+    thread_status = serializers.CharField(read_only=True, allow_blank=True)
+    current_stage = serializers.CharField(read_only=True, allow_blank=True)
+    repo_count = serializers.IntegerField(read_only=True)
+    pending_research_repository_ids = serializers.ListField(
+        child=serializers.CharField(), read_only=True
+    )
+    repos = BlueprintGateRepoSerializer(many=True, read_only=True)
+
+
+class BlueprintGateActionResultSerializer(serializers.Serializer):
+    """确认门动作结果（POST 五动作 + upgrade-research）：形状恒定，调用方无需判分支。"""
+
+    action = serializers.CharField(read_only=True)
+    repository_id = serializers.CharField(read_only=True, allow_blank=True, allow_null=True)
+    thread_id = serializers.CharField(read_only=True, allow_blank=True)
+    requires_research = serializers.BooleanField(read_only=True)
+    ready_to_lock = serializers.BooleanField(read_only=True)
+    locked = serializers.BooleanField(read_only=True)
+    upgraded = serializers.BooleanField(read_only=True)
+    # 该仓调研本就在途 → 本次升级未重开容器（区别于「刚为你起了深调研」）
+    already_running = serializers.BooleanField(read_only=True, required=False)
+    locked_repo_count = serializers.IntegerField(read_only=True)

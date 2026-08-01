@@ -324,10 +324,10 @@ async def test_knowledge_alone_keeps_builtin_tools(monkeypatch, temp_workspace, 
     # WR-02：全量 builtin 必须在列（Bash/Read/Edit/Write/MultiEdit/Glob/Grep 等）
     for builtin in _BUILTIN_CODING_TOOLS:
         assert builtin in options.allowed_tools, f"builtin {builtin} 不得丢失"
-    # 7 个知识工具全部在列
+    # 9 个知识工具全部在列（113-02 追加两个蓝图总线工具后 7 → 9）
     for tool in knowledge_allowed_tools():
         assert tool in options.allowed_tools
-    assert len(knowledge_allowed_tools()) == 7
+    assert len(knowledge_allowed_tools()) == 10
 
 
 @pytest.mark.asyncio

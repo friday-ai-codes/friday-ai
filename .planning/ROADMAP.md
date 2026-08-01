@@ -2,6 +2,7 @@
 
 ## Milestones
 
+- ✅ **v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）** — Phases 111–116 (shipped 2026-08-02) — 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图 — 里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口；GATE-01 与三道入口接缝因硬依赖同步点 2 判 PARTIAL / 转技术债，同步点 2 已由 2026-08-02 的分支合并满足）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.20.0-ROADMAP.md) · [requirements](./milestones/v0.20.0-REQUIREMENTS.md) · [design](./technical-blueprint/DESIGN.md)
 - ✅ **v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 编排产出直连执行流 + 过程可见）** — Phases 105–110（其中 108 已移交 v0.20.0）(completed 2026-08-02，未打 tag) — 让技术方案链路真正跑通并可信：编排不再中途卡死被降级工具顶替、路由基于多维证据分层呈现并可解释、编排产出直连执行流、全过程对用户实时可见 — 5 相位 39/39 plans；里程碑审计 **tech_debt**（19 条需求 17 满足 / 2 部分（ROUTE-03 生产 `nr_snapshot` 未写入、RELY-02 澄清送达需真实飞书）/ 0 未达；ROUTE 缺口已结构性闭合；遗留 27 项人工验收全未执行）见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.19.0-ROADMAP.md) · [requirements](./milestones/v0.19.0-REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
 - ✅ **v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）** — Phases 100–104 (shipped 2026-07-22) — 把多套"知识/经验/沉淀"收敛成统一知识库（单一摄取 + 单一检索），补齐完工沉淀闭环（三链路一致），给编码容器内置 Friday MCP 与 skills — 里程碑审计 tech_debt（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留 11 项真实 Qdrant·飞书·容器·Cursor 端人工验证 + 若干接受/递延债务）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.17.0-ROADMAP.md)
 - ✅ **v0.16.3 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）** — Phases 96–99 (shipped 2026-07-01) — 把项目外部依赖（`Artifact`：PRD/埋点评审/UI 文档等）接入知识总览/搜索/知识树，并与关键词/业务能力/仓库建关联 — 里程碑审计 tech_debt（12/12 需求满足 / integration_ok；遗留真机/浏览器视觉验收 + 既有范围外测试漂移）见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md) — [archive](./milestones/v0.16.3-ROADMAP.md)
@@ -27,6 +28,23 @@
 > v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号（v0.17.0 止于 Phase 104 → v0.19.0 从 Phase 105 续号）。
 
 ## Phases
+
+<details>
+<summary>✅ v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）(Phases 111–116) — SHIPPED 2026-08-02 — 审计 tech_debt</summary>
+
+- [x] Phase 111: 蓝图底座 (4/4 plans) — `blueprint/v1` 六段 jsonschema 强制 + 11 态生命周期状态机 + 划线线程/评审人模型 + `RepoCharter` 章程与 AI 起草管道 + `execution_plan` 确定性派生 + golden set 质量基线（SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02）— completed 2026-07-30
+- [x] Phase 112: 规格门与双面路由调研 (5/5 plans) — `spec_gate` 歧义门与意图分类 + `blueprint_route` 双面路由（章程/历史落点/能力树三分量可拆解）+ 逐仓容器 fitness 调研 + reroute ≤2 轮 + `repo_confirmation` 硬确认门与章程回灌（FLOW-01/02/03/04, CHARTER-02/03）— completed 2026-07-30
+- [x] Phase 113: 分仓方案与融合 + Context Bus (6/6 plans) — `RepoPlan` 逐仓方案 + 会话级共享上下文总线（实时读写/两档等待恢复/互等环检测）+ `blueprint_merge` 融合装配（六段 + 引用强制 + 跨仓 API 对账）（FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03）— completed 2026-07-30
+- [x] Phase 114: 审查与澄清收敛 (5/5 plans) — AI 对抗审查七类规则与归因有界打回 + 澄清回灌产新版本 + 决策记录物化 + 批注重锚定 + 人工 block 编辑且 AI 不覆盖人工（FLOW-07, CLAR-02/03/04）— completed 2026-07-31
+- [x] Phase 115: 前端查看器与知识库 (7/7 plans) — `BlueprintViewer` 十段结构化渲染与划线批注层 + 版本 diff + 引用二级预览 + 知识库技术方案 tab + 人审终审与确认门面板（VIEW-01/02/03/04, CLAR-01, FLOW-08）— completed 2026-08-01
+- [x] Phase 116: 入口收编与导出 (7/7 plans) — 四入口的蓝图可执行路径与 per-entry 开关 + MCP 异步澄清协议 + 飞书导出与不可关闭的「未经确认」标注 + 知识图谱物化与反查 + 引用预览源码正文（GATE-01 PARTIAL, VIEW-05，并闭合 115 顺延的 VIEW-04 / VIEW-02）— completed 2026-08-01
+- [x] CLAR-03 closure (2026-08-02) — 里程碑审计打回的唯一归档阻塞缺口：查看器补 block 级人工编辑面（后端零改动），审计 status `gaps_found` → `tech_debt`
+
+完整阶段详情见 [milestones/v0.20.0-ROADMAP.md](./milestones/v0.20.0-ROADMAP.md)；需求归档见 [milestones/v0.20.0-REQUIREMENTS.md](./milestones/v0.20.0-REQUIREMENTS.md)；里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口）见 [milestones/v0.20.0-MILESTONE-AUDIT.md](./milestones/v0.20.0-MILESTONE-AUDIT.md)；相位产物归档在 `milestones/v0.20.0-phases/`。
+
+⚠️ **顺延同步点 2 的四件事必须同批做**：翻四个 per-entry 开关默认值 + workflow / feature_list / MCP 三个入口的出口映射重做（审计 §4.1 的 G1/G3/G4）+ `TechPlanCard`/`NodeDataTab`/`ArtifactTimeline` 三处触点升级 + 旧 `technical_plan` process 退役收口。默认开关下三道接缝零生产影响；⛔ 任何一件单独做都会造成回退。**同步点 2（v0.19.0 Phase 109/110 合并）已于 2026-08-02 满足** —— 这四件事状态由「阻塞」转为「解阻塞、待执行」，是下一个动作；台账见 STATE.md Pending Todos。
+
+</details>
 
 <details>
 <summary>✅ v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 编排产出直连执行流 + 过程可见）(Phases 105–110，其中 108 已移交 v0.20.0) — COMPLETE 2026-08-02（未打 tag）— 审计 tech_debt</summary>
@@ -201,9 +219,29 @@
 
 ## Progress
 
-里程碑 v0.1.0–v0.17.0（Phases 1–104）与 **v0.19.0（Phases 105–110）均已交付**。v0.19.0 于 2026-08-02 收口归档——源于一次生产实例的实证排查：用户拿到的技术方案根本不是技术方案流水线产出的，两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`，agent 等不到就绕道 `create_coding_plan` 徒手编了一份。根因链已实测定位（haiku 档误配 → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替），并在 105/107/109 三处切断。收口判定 `tech_debt`：17/19 需求满足，ROUTE-03（生产 `nr_snapshot` 未写入）与 RELY-02（澄清送达需真实飞书）挂账，27 项人工验收全未执行——详见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) §9。
+里程碑 v0.1.0–v0.17.0（Phases 1–104）与 **v0.19.0（Phases 105–110）、v0.20.0（Phases 111–116）均已交付并归档**。两个里程碑于 2026-07-29 起在 `milestone/v0.19.0-plan-trust` 与 `milestone/v0.20.0-blueprint` 双 worktree 并行开发，各自在本分支归档后于 **2026-08-02 合并**——**这次合并即同步点 2**。
 
-**本分支当前无在建里程碑。** v0.20.0「技术方案蓝图」（Phases 111–116）在 `milestone/v0.20.0-blueprint` worktree 上并行开发并已在其分支归档；两条分支合并后再统一处置台账与 v0.20.0 Phase 116 顺延的触点升级（同步点 2）。**未起下一里程碑。**
+**v0.19.0 技术方案可信度**收口于 2026-08-02（未打 tag）——源于一次生产实例的实证排查：用户拿到的技术方案根本不是技术方案流水线产出的，两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`，agent 等不到就绕道 `create_coding_plan` 徒手编了一份。根因链已实测定位（haiku 档误配 → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替），并在 105/107/109 三处切断。收口判定 `tech_debt`：17/19 需求满足，ROUTE-03（生产 `nr_snapshot` 未写入）与 RELY-02（澄清送达需真实飞书）挂账，27 项人工验收全未执行——详见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) §9。
+
+**v0.20.0 技术方案蓝图**于 2026-08-02 归档，判定 `tech_debt`：34/35 需求满足，GATE-01 PARTIAL（四入口 per-entry 开关默认值仍全为 `technical_plan`）——详见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md)。
+
+**⛔ 当前无在建里程碑，下一里程碑尚未立项。** 合并后的下一个动作不是新里程碑，而是执行同步点 2 顺延的四件事（翻 per-entry 开关默认值 + 三个入口出口映射重做 + 三处触点升级 + 旧 `technical_plan` process 退役）——依赖已满足，待执行；台账见 STATE.md Pending Todos。
+
+<details>
+<summary>✅ v0.20.0 进度表（Phases 111–116，34/35 需求已交付 · GATE-01 PARTIAL）</summary>
+
+| Phase | Milestone | Requirements | Plans Complete | Status | Completed |
+|-------|-----------|--------------|----------------|--------|-----------|
+| 111. 蓝图底座 | v0.20.0 | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | 4/4 | ✅ Complete (passed 24/24) | 2026-07-30 |
+| 112. 规格门与双面路由调研 | v0.20.0 | FLOW-01/02/03/04, CHARTER-02/03 | 5/5 | ✅ Complete (16/17 + gap closed) | 2026-07-30 |
+| 113. 分仓方案与融合 + Context Bus | v0.20.0 | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | 6/6 | ✅ Complete (passed 54/54) | 2026-07-30 |
+| 114. 审查与澄清收敛 | v0.20.0 | FLOW-07, CLAR-02/03/04 | 5/5 | ✅ Complete (passed 83/83) | 2026-07-31 |
+| 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 7/7 | ✅ Complete (passed 107/107) | 2026-08-01 |
+| 116. 入口收编与导出 | v0.20.0 | GATE-01, VIEW-05（+ 闭合 VIEW-04、VIEW-02） | 7/7 | ✅ Complete (passed 121/121) | 2026-08-01 |
+
+**Coverage (v0.20.0):** 35/35 需求全部映射，无孤儿、无重复；34 条 Complete、GATE-01 PARTIAL（默认入口切换原硬阻塞同步点 2，该依赖已于 2026-08-02 合并时满足）。里程碑审计 tech_debt 见 [milestones/v0.20.0-MILESTONE-AUDIT.md](./milestones/v0.20.0-MILESTONE-AUDIT.md)；相位产物归档在 `milestones/v0.20.0-phases/`。
+
+</details>
 
 <details>
 <summary>✅ v0.19.0 进度表（Phases 105–110，19/19 需求映射 · 17 Complete / 2 Partial）</summary>
@@ -236,7 +274,7 @@
 
 </details>
 
-**v0.19.0 遗留 27 项人工验收（全未执行）+ 2 条 PARTIAL 需求 + 1 项发布前置交代**见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) §9.3/§9.5——其中 ROUTE-03 只差在生产跑一条 `measure_repo_index_stats --write-snapshot`；v0.17.0 遗留的真实 Qdrant·飞书·容器·Cursor 端人工验证（11 项）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md)；v0.16.3 遗留真机·真实 provider·浏览器视觉验收见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md)；v0.16.1 遗留人工验收（10 项）见 [audit](./milestones/v0.16.1-MILESTONE-AUDIT.md) §4。
+**v0.20.0 遗留的技术债**（同步点 2 的四件事——依赖已满足、待执行 / G1·G3·G4 三道入口接缝 / mcp npm 包漂移四个工具 / Nyquist validation 缺失）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md)；**v0.19.0 遗留 27 项人工验收（全未执行）+ 2 条 PARTIAL 需求 + 1 项发布前置交代**见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) §9.3/§9.5——其中 ROUTE-03 只差在生产跑一条 `measure_repo_index_stats --write-snapshot`；v0.17.0 遗留的真实 Qdrant·飞书·容器·Cursor 端人工验证（11 项）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md)；v0.16.3 遗留真机·真实 provider·浏览器视觉验收见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md)；v0.16.1 遗留人工验收（10 项）见 [audit](./milestones/v0.16.1-MILESTONE-AUDIT.md) §4。
 
 各历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
 
