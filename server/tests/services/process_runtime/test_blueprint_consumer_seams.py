@@ -900,3 +900,85 @@ async def test_answer_chain_reentry_never_bites_back_on_the_gate_action() -> Non
         side_effect=RuntimeError("boom"),
     ):
         await _aresume_workflow_node_if_any(session)  # ⛔ 不抛
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 同步点 2 收尾 · 节点输出的 blueprint/v1 判别键（前端触点 NodeDataTab 消费）
+#
+# ⭐ 为什么需要它：蓝图链与 v0 旧链**共用同一个 node_type**（``ai_plan_research``），
+# 输出键集又高度相似（都有 ``session_id`` / ``plan`` / ``plan_markdown``）⇒ 执行抽屉
+# 此前把蓝图输出当 v0 渲染，看不出这是一份需要人审的结构化蓝图。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_node_schema_version_literal_matches_the_authoritative_constant() -> None:
+    """⭐ 常量对齐：节点里的字面量 == ``blueprint_schema.BLUEPRINT_SCHEMA_VERSION``。
+
+    节点模块的 delivery / process_runtime import 全在函数内（lazy）⇒ 模块级只能写字面量。
+    没有这一条，schema 演进时漏改一处就让前端静默按 v0 渲染新版蓝图。
+    """
+    from services.process_runtime.blueprint_schema import BLUEPRINT_SCHEMA_VERSION
+    from workflows.nodes.ai.plan_research import _BLUEPRINT_SCHEMA_VERSION
+
+    assert _BLUEPRINT_SCHEMA_VERSION == BLUEPRINT_SCHEMA_VERSION
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("blueprint_status", "thread_kind", "session_status_done"),
+    [
+        ("pending_review", None, True),
+        ("needs_clarification", "ai_clarification", False),
+        ("confirmed", None, True),
+        ("failed", None, True),
+        ("drafting", None, True),
+    ],
+)
+async def test_every_blueprint_branch_carries_the_schema_version(
+    blueprint_status: str, thread_kind: str | None, session_status_done: bool
+) -> None:
+    """⭐ 蓝图**五个分档**的输出都带判别键（挂起 / 人审 / 完成 / 失败 / 未审）。
+
+    漏掉任一档，执行抽屉在那一档就退回「当 v0 渲染」—— 而那正是最需要讲清楚的几档
+    （尤其 ``pending_review``：节点停住不是「卡了」，是在等人终审）。
+    """
+    from delivery.models import ConvergenceSessionStatus
+
+    session, _artifact = await _amake_blueprint_session(
+        status=(
+            ConvergenceSessionStatus.DONE
+            if session_status_done
+            else ConvergenceSessionStatus.WAITING_CLARIFICATION
+        ),
+        blueprint_status=blueprint_status,
+        thread_kind=thread_kind,
+    )
+
+    result = await _aexecute_node(session, _ctx())
+
+    assert result.output["schema_version"] == "blueprint/v1", (
+        f"{blueprint_status} 这一档漏了判别键 ⇒ 抽屉退回按 v0 渲染"
+    )
+
+
+def test_v0_branches_never_carry_the_schema_version() -> None:
+    """⭐ 反面：旧链四个分档的源码里**零** ``schema_version`` 写入（v0 输出逐字节不变）。
+
+    只断言蓝图那五档会漏掉「顺手给旧链也加一个」——那会让前端把 v0 方案也渲成蓝图，
+    正是本次判别要避免的相反面。判据用源码扫描：v0 的 ``_map_terminal`` /
+    ``_maybe_suspend`` 两个函数体内不得出现该键名。
+    """
+    import re
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[3] / "workflows/nodes/ai/plan_research.py").read_text(
+        encoding="utf-8"
+    )
+
+    for name in ("async def _map_terminal(self", "async def _maybe_suspend(self"):
+        start = src.index(name)
+        end = src.index("\n    async def ", start + 1)
+        body = src[start:end]
+        assert not re.search(r'"schema_version"', body), (
+            f"{name} 的函数体里出现了判别键 ⇒ v0 输出不再逐字节不变"
+        )

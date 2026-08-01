@@ -811,4 +811,16 @@ export interface ProjectPlanToCodingResponse {
    */
   recommended_repositories: RepoSelectableItem[]
   provenance: CodingPlanProvenance
+  /**
+   * 来源 ArtifactVersion content 的判别字段（同步点 2 收尾追加，v0 恒 `''`）。
+   *
+   * ⭐ blueprint/v1 经 v0 映射器投影出来的 `tech_plan` 是一份**结构合法而内容为空**的
+   * 壳、`affected_files` 恒 `[]`（blueprint/v1 没有 `execution_plan` 顶层键）。前端据本
+   * 键分辨形态，⛔ 不把它渲染成「（暂无方案正文）」。
+   */
+  schema_version: string
+  /** 蓝图 artifact id —— 查看器深链的 `:id`（v0 恒 `''`）。 */
+  blueprint_artifact_id: string
+  /** 蓝图 11 态状态（v0 恒 `''`）。键名与后端一致，非模型字段名。 */
+  current_status: string
 }

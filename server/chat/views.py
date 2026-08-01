@@ -2759,6 +2759,54 @@ class CodingPlanSessionsBatchCreateView(APIView):
         return Response(resp_ser.data, status=status.HTTP_200_OK)
 
 
+async def _aload_blueprint_marks(artifact_version_id: str) -> dict[str, str]:
+    """读来源 ``ArtifactVersion`` 的 blueprint/v1 判别三键（同步点 2 收尾）。
+
+    ⭐ **为什么在端点侧读而不是在投影服务里读**：投影服务是**写入口**（INV-6 关注面），
+    它的职责是「把版本内容映射成 CodingPlan 字段」；判别信息不进 ``CodingPlan`` 任何一
+    列（那需要一次迁移，且会与来源版本失同步）。此处是纯读旁路，只服务本次响应。
+
+    判别口径与 ``delivery/artifacts/builtin_types.py`` 逐字相同：只有 content 的
+    ``schema_version`` 严格等于蓝图常量才回填三键。⚠️ 状态键名不是模型字段名
+    （INV-6 字段级守卫），统一用 ``current_status``；``.values()`` 里的
+    ``artifact__blueprint_status`` 是 ORM 路径而非响应键，形状照
+    ``agents/tools/plan_research_tools.py`` 的既有先例。
+
+    ⛔ 异常一律吞成空三键（best-effort 观测同纪律）：本函数的任何失败都不该把一次
+    **已经成功**的投影变成 500。
+    """
+    empty = {"schema_version": "", "blueprint_artifact_id": "", "current_status": ""}
+    try:
+        from delivery.models import ArtifactVersion
+        from services.process_runtime.blueprint_schema import BLUEPRINT_SCHEMA_VERSION
+
+        row = await (
+            ArtifactVersion.objects.filter(id=artifact_version_id)
+            .values("content", "artifact_id", "artifact__blueprint_status")
+            .afirst()
+        )
+        if not row:
+            return empty
+        content = row.get("content")
+        if not isinstance(content, dict):
+            return empty
+        if content.get("schema_version") != BLUEPRINT_SCHEMA_VERSION:
+            return empty
+        return {
+            "schema_version": BLUEPRINT_SCHEMA_VERSION,
+            "blueprint_artifact_id": str(row.get("artifact_id") or ""),
+            "current_status": str(row.get("artifact__blueprint_status") or ""),
+        }
+    except Exception:  # noqa: BLE001 — 判别信息缺失只降级为「按 v0 渲染」，绝不反噬投影
+        logger.warning(
+            "coding_plan_blueprint_marks_failed",
+            category="sampling",
+            component="chat_plan_projection",
+            artifact_version_id=str(artifact_version_id),
+        )
+        return empty
+
+
 class CodingPlanProjectFromArtifactVersionView(APIView):
     """POST /api/chat/coding-plans/from-artifact-version/ —— 编排方案版本惰性投影。
 
@@ -2863,6 +2911,10 @@ class CodingPlanProjectFromArtifactVersionView(APIView):
                 )
             ]
 
+        # 5) 同步点 2 收尾：来源版本的 blueprint/v1 判别信息随响应一起回。
+        #    ⛔ 纯读、零写、失败不反噬 —— 拿不到就三键留空，前端按 v0 渲染（与改动前一致）。
+        blueprint_marks = await _aload_blueprint_marks(artifact_version_id)
+
         resp_ser = ProjectPlanToCodingResponseSerializer(
             data={
                 "coding_plan_id": str(plan.id),
@@ -2873,6 +2925,7 @@ class CodingPlanProjectFromArtifactVersionView(APIView):
                 "recommended_repository_ids": plan.recommended_repository_ids or [],
                 "recommended_repositories": recommended_repositories,
                 "provenance": plan.provenance,
+                **blueprint_marks,
             }
         )
         resp_ser.is_valid(raise_exception=True)

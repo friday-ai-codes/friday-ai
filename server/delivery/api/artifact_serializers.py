@@ -64,6 +64,8 @@ class ArtifactListSerializer(serializers.ModelSerializer):
 
     work_item_id = serializers.UUIDField(read_only=True, allow_null=True)
     current_version = serializers.SerializerMethodField()
+    schema_version = serializers.SerializerMethodField()
+    current_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Artifact
@@ -76,6 +78,11 @@ class ArtifactListSerializer(serializers.ModelSerializer):
             "current_version",
             "created_at",
             "updated_at",
+            # ⭐ 同步点 2 收尾：两个**纯追加**的判别键，供 `ArtifactTimeline.vue` 分辨
+            # 蓝图与 v0 旧方案（两者共用 artifact_type="technical_plan"，此前在该面上
+            # 长得一模一样）。既有八键一字未动 ⇒ 既有调用方零破坏。
+            "schema_version",
+            "current_status",
         ]
         read_only_fields = fields
 
@@ -87,6 +94,31 @@ class ArtifactListSerializer(serializers.ModelSerializer):
         if current is None:
             return None
         return ArtifactVersionTimelineSerializer(current, context=self._version_context(obj)).data
+
+    def get_schema_version(self, obj: Artifact) -> str:
+        """当前版本 content 的 ``schema_version``（读不到一律空串，⛔ 不是 ``None``）。
+
+        判别口径与 ``delivery/artifacts/builtin_types.py`` 同源：调用方拿它与
+        ``blueprint/v1`` 严格比较即可分辨蓝图与 v0 旧方案。空串是 v0 的**合法取值**
+        而不是错误 —— 升级前建的 artifact content 里本就没有这个键。
+        """
+        current = obj.current_version
+        content = getattr(current, "content", None) if current is not None else None
+        if not isinstance(content, dict):
+            return ""
+        return str(content.get("schema_version") or "")
+
+    def get_current_status(self, obj: Artifact) -> str:
+        """蓝图状态机取值（v0 旧方案恒空串）。
+
+        ⚠️ 键名刻意**不叫模型字段名**：INV-6 的字段级守卫扫全 ``server/`` 的
+        ``['"]<那个字段名>['"]\\s*:`` 形态，响应键用模型字段名即被判旁路写。
+        ``current_status`` 是 114-05 立的既有解法，全仓蓝图响应体统一用它。
+        读法复用 ``blueprint_render.blueprint_status_of``（纯读、零写）。
+        """
+        from services.process_runtime.blueprint_render import blueprint_status_of
+
+        return blueprint_status_of(obj)
 
 
 class ArtifactTimelineSerializer(ArtifactListSerializer):
