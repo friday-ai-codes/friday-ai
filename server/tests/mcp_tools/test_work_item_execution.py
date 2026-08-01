@@ -235,13 +235,9 @@ def test_execute_work_item_repo_tasks_skips_completed_task_with_mr(
     async def _unexpected_call(*args, **kwargs):
         raise AssertionError("completed task should not be dispatched or create another MR")
 
-    monkeypatch.setattr(
-        "mcp_tools.work_item_execution_service.dispatch_execution", _unexpected_call
-    )
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.dispatch_execution", _unexpected_call)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _unexpected_call)
-    monkeypatch.setattr(
-        "mcp_tools.work_item_execution_service.create_merge_request", _unexpected_call
-    )
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _unexpected_call)
 
     response = client.post(
         "/api/mcp/tools/execute_work_item_repo_tasks/",
@@ -351,9 +347,7 @@ def test_execute_work_item_repo_tasks_records_partial_multi_repo_results(
     async def _doc_client(_project):
         return _FakeDocClient()
 
-    monkeypatch.setattr(
-        "mcp_tools.work_item_execution_service.dispatch_execution", _dispatch_execution
-    )
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.dispatch_execution", _dispatch_execution)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.refresh_execution_trace", _refresh)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _summary)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _mr)
@@ -476,9 +470,7 @@ def test_execute_work_item_repo_tasks_reports_partial_when_feishu_writeback_fail
     async def _doc_client(_project):
         return _FailingDocClient()
 
-    monkeypatch.setattr(
-        "mcp_tools.work_item_execution_service.dispatch_execution", _dispatch_execution
-    )
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.dispatch_execution", _dispatch_execution)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.refresh_execution_trace", _refresh)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _summary)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _mr)
@@ -544,13 +536,9 @@ def test_writeback_delegates_to_common_service_and_keeps_partial_flip(
     async def _unexpected_call(*args, **kwargs):
         raise AssertionError("completed task should not be dispatched or create another MR")
 
-    monkeypatch.setattr(
-        "mcp_tools.work_item_execution_service.dispatch_execution", _unexpected_call
-    )
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.dispatch_execution", _unexpected_call)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _unexpected_call)
-    monkeypatch.setattr(
-        "mcp_tools.work_item_execution_service.create_merge_request", _unexpected_call
-    )
+    monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _unexpected_call)
 
     awrite_back_calls: list[dict[str, Any]] = []
 

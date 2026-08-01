@@ -90,7 +90,9 @@ async def test_quality_gate_rejects_duplicate(mcp_client, access_user) -> None:
     client, _ = mcp_client
     project = await _make_project(access_user, key="rpk-dup")
     text = "方案决策：登录态统一走 cookie-JWT 刷新，避免本地存储明文 token 泄漏。"
-    await MemoryService().append(project_id=project.id, content=text, contributor=access_user)
+    await MemoryService().append(
+        project_id=project.id, content=text, contributor=access_user
+    )
     resp = await sync_to_async(client.post)(
         _URL, {"project_id": str(project.id), "content": text}, format="json"
     )
@@ -119,7 +121,9 @@ async def test_redaction_not_bypassable(mcp_client, access_user) -> None:
 
 async def test_non_member_forbidden(mcp_client) -> None:
     client, _ = mcp_client
-    other = await sync_to_async(User.objects.create_user)(username="rpk-other", password="x")
+    other = await sync_to_async(User.objects.create_user)(
+        username="rpk-other", password="x"
+    )
     project = await _make_project(other, key="rpk-nm")
     resp = await sync_to_async(client.post)(
         _URL,
@@ -156,19 +160,25 @@ async def test_attribution_records_token_user(mcp_client, access_user) -> None:
 
 @sync_to_async
 def _active_memory_count(project_id) -> int:
-    return ProjectMemory.objects.filter(project_id=project_id, status="active").count()
+    return ProjectMemory.objects.filter(
+        project_id=project_id, status="active"
+    ).count()
 
 
 @sync_to_async
 def _first_active_memory(project_id):
-    return ProjectMemory.objects.filter(project_id=project_id, status="active").first()
+    return ProjectMemory.objects.filter(
+        project_id=project_id, status="active"
+    ).first()
 
 
 @sync_to_async
 def _research_snapshot(project_id) -> str:
     from initiatives.models import DocType, ProjectDoc
 
-    doc = ProjectDoc.objects.filter(project_id=project_id, doc_type=DocType.RESEARCH).first()
+    doc = ProjectDoc.objects.filter(
+        project_id=project_id, doc_type=DocType.RESEARCH
+    ).first()
     return doc.last_synced_snapshot if doc else ""
 
 
@@ -216,7 +226,9 @@ async def test_active_redaction_not_bypassable(mcp_client, access_user) -> None:
 async def test_active_non_member_silent_skip(mcp_client) -> None:
     """active + 非成员 → accepted=false reason=not_member，HTTP 200，不写不抛。"""
     client, _ = mcp_client
-    other = await sync_to_async(User.objects.create_user)(username="rpk-active-other", password="x")
+    other = await sync_to_async(User.objects.create_user)(
+        username="rpk-active-other", password="x"
+    )
     project = await _make_project(other, key="rpk-active-nm")
     resp = await sync_to_async(client.post)(
         _URL,
@@ -311,7 +323,9 @@ async def _attach_work_item(project, work_item_id: int) -> None:
     await ProjectService().attach_work_item(project_id=project.id, work_item=wi)
 
 
-async def test_branch_name_resolves_project_without_project_id(mcp_client, access_user) -> None:
+async def test_branch_name_resolves_project_without_project_id(
+    mcp_client, access_user
+) -> None:
     """只给 branch_name（无 project_id）→ 按分支反查唯一项目并落草稿。"""
     client, _ = mcp_client
     project = await _make_project(access_user, key="rpk-branch")
@@ -346,7 +360,9 @@ async def test_unresolvable_branch_fail_soft(mcp_client, access_user) -> None:
     assert body["reason"] == "branch_unresolved"
 
 
-async def test_missing_project_id_and_branch_is_validation_error(mcp_client, access_user) -> None:
+async def test_missing_project_id_and_branch_is_validation_error(
+    mcp_client, access_user
+) -> None:
     """既无 project_id 又无 branch_name → 校验失败（400）。"""
     client, _ = mcp_client
     resp = await sync_to_async(client.post)(

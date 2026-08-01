@@ -98,7 +98,9 @@ async def test_happy_single_match_recall_and_trace(mcp_client, access_user) -> N
 
 async def test_unparseable_branch_fail_soft(mcp_client) -> None:
     client, _ = mcp_client
-    resp = await sync_to_async(client.post)(_URL, {"branch_name": "main"}, format="json")
+    resp = await sync_to_async(client.post)(
+        _URL, {"branch_name": "main"}, format="json"
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["matched"] is False
@@ -145,7 +147,9 @@ async def test_non_member_members_only_failclosed_empty_context(mcp_client) -> N
     members_only 项目断言（不弱化 members_only 真·fail-closed 语义）。
     """
     client, _ = mcp_client
-    other = await sync_to_async(User.objects.create_user)(username="other-owner-mo", password="x")
+    other = await sync_to_async(User.objects.create_user)(
+        username="other-owner-mo", password="x"
+    )
     project = await _make_project(other, key="lpb-nm-mo")
     await _set_visibility(project, ProjectVisibility.MEMBERS_ONLY)
     wi = await _make_work_item(3003)
@@ -164,7 +168,9 @@ async def test_non_member_members_only_failclosed_empty_context(mcp_client) -> N
 async def test_non_member_public_org_readable(mcp_client) -> None:
     """public_org 项目 + 非成员触发用户 → WS-02 可读（matched 且 context 非空）。"""
     client, _ = mcp_client
-    other = await sync_to_async(User.objects.create_user)(username="other-owner-po", password="x")
+    other = await sync_to_async(User.objects.create_user)(
+        username="other-owner-po", password="x"
+    )
     project = await _make_project(other, key="lpb-nm-po")
     # 默认 public_org；显式确保。
     await _set_visibility(project, ProjectVisibility.PUBLIC_ORG)
@@ -244,18 +250,12 @@ async def test_cross_repo_multi_binding_fail_soft(mcp_client, access_user):
     branch = "shared/cross-repo-branch"
     svc = ProjectBranchService()
     await svc.bind(
-        project_id=p1.id,
-        repository_id=r1.id,
-        branch_name=branch,
-        actor=access_user,
-        initiated_by_user_id=access_user.id,
+        project_id=p1.id, repository_id=r1.id, branch_name=branch,
+        actor=access_user, initiated_by_user_id=access_user.id,
     )
     await svc.bind(
-        project_id=p2.id,
-        repository_id=r2.id,
-        branch_name=branch,
-        actor=access_user,
-        initiated_by_user_id=access_user.id,
+        project_id=p2.id, repository_id=r2.id, branch_name=branch,
+        actor=access_user, initiated_by_user_id=access_user.id,
     )
 
     resp = await sync_to_async(client.post)(_URL, {"branch_name": branch}, format="json")
@@ -276,18 +276,12 @@ async def test_repository_id_narrows_to_single(mcp_client, access_user):
     branch = "shared/narrow-branch"
     svc = ProjectBranchService()
     await svc.bind(
-        project_id=p1.id,
-        repository_id=r1.id,
-        branch_name=branch,
-        actor=access_user,
-        initiated_by_user_id=access_user.id,
+        project_id=p1.id, repository_id=r1.id, branch_name=branch,
+        actor=access_user, initiated_by_user_id=access_user.id,
     )
     await svc.bind(
-        project_id=p2.id,
-        repository_id=r2.id,
-        branch_name=branch,
-        actor=access_user,
-        initiated_by_user_id=access_user.id,
+        project_id=p2.id, repository_id=r2.id, branch_name=branch,
+        actor=access_user, initiated_by_user_id=access_user.id,
     )
 
     resp = await sync_to_async(client.post)(
