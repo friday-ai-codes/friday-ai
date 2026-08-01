@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import structlog
+
 from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from interactions.models import InteractionRun
 from mcp_tools.learning_case_service import search_learning_cases
@@ -19,6 +21,8 @@ from mcp_tools.models import McpWorkItemContext, McpWorkItemTechnicalPlan
 from mcp_tools.orchestration_delegate import delegate_process_runtime
 from services.feishu import create_feishu_client_for_project
 from services.feishu_doc import FeishuDocAPIError, PermissionDeniedError, RateLimitError
+
+logger = structlog.get_logger(__name__)
 
 
 class TechnicalPlanError(Exception):
@@ -106,6 +110,95 @@ def _str_list(value: Any) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
+def _project_canonical_for_legacy_mapping(content: dict[str, Any]) -> dict[str, Any]:
+    """blueprint/v1 content → 旧响应映射器认得的 v0 投影（同步点 2，审计 §4.1 的 G3）。
+
+    ⭐ **这是 G3 的修法本体**。既有映射链读的是 v0 ``MergedPlan`` 的三个顶层键
+    （``title`` / ``summary`` / ``execution_plan``），而 blueprint/v1 **一个都没有**：
+    标题与摘要在 ``meta`` 下，``execution_plan`` 是「确认后确定性派生」的**可选**段
+    （``blueprint_schema`` ``:741``，required 键表 ``:123-134`` 不含它）。⇒ 直接把
+    blueprint content 喂给 ``_map_execution_plan_to_repository_tasks`` 恒返回 ``[]``：
+    响应的十二键**结构合法、语义为空**，调用方读不出任何一个仓库任务却也拿不到任何错误
+    信号 —— 静默降级。
+
+    做法是**确定性派生**（⛔ 不是补一个空壳）：``implementation_overview.items`` 本就是
+    ``execution_plan`` 的派生源，``blueprint_execution.derive_execution_plan`` 是既有的
+    权威派生器（纯函数、同输入逐字节一致、产物过 ``validate_technical_plan``）——直接复用，
+    ⛔ 本模块不写第二份派生逻辑。
+
+    ⭐ **非 blueprint/v1 恒等返回**：旧链 content 原样穿过，映射链逐字不变（零回归）。
+    """
+    from services.process_runtime.blueprint_execution import derive_execution_plan
+    from services.process_runtime.blueprint_schema import BLUEPRINT_SCHEMA_VERSION
+
+    if not isinstance(content, dict) or content.get("schema_version") != BLUEPRINT_SCHEMA_VERSION:
+        return content if isinstance(content, dict) else {}
+
+    meta = content.get("meta")
+    meta = meta if isinstance(meta, dict) else {}
+    return {
+        "title": str(meta.get("title") or ""),
+        "summary": _blocks_to_plain_text(meta.get("summary")),
+        "execution_plan": derive_execution_plan(content),
+    }
+
+
+def _log_blueprint_payload_projection(
+    delegate: Any,
+    content: dict[str, Any],
+    legacy_view: dict[str, Any],
+    repository_tasks: list[dict[str, Any]],
+) -> None:
+    """蓝图主载荷派生的埋点（**只在蓝图分支落**，best-effort）。
+
+    ⭐ 存在的理由是让「派生出来还是空」这件事**可查**：G3 之所以能跨六个相位不被发现，
+    正是因为空载荷不打任何信号。派生结果为空而蓝图确实有实现项时落 ``warning``（那是
+    真异常：``repo_associations`` 与 ``items`` 的 repository_id 对不上，派生器会整批丢弃）；
+    正常派生落 ``sampling`` 级 info。⛔ 不落任何正文内容，只落计数。
+    """
+    try:
+        if content is legacy_view:  # 旧链恒等穿过 ⇒ 不打蓝图埋点（避免旧链日志噪声）
+            return
+        overview = content.get("implementation_overview")
+        item_count = len((overview or {}).get("items") or []) if isinstance(overview, dict) else 0
+        fields = {
+            "category": "sampling",
+            "component": "mcp_tools",
+            "session_id": str(getattr(getattr(delegate, "session", None), "id", "") or ""),
+            "blueprint_item_count": item_count,
+            "derived_task_count": len(legacy_view.get("execution_plan") or []),
+            "repository_task_count": len(repository_tasks),
+        }
+        if item_count > 0 and not repository_tasks:
+            logger.warning("mcp_blueprint_payload_projection_empty", **fields)
+        else:
+            logger.info("mcp_blueprint_payload_projected", **fields)
+    except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+        pass
+
+
+def _blocks_to_plain_text(blocks: Any) -> str:
+    """Block[] → 纯文本摘要（只取 paragraph/list 的 ``text``，⛔ 不渲染代码/表格）。
+
+    用途仅是把 blueprint ``meta.summary`` 塞进旧响应的 ``summary`` 字符串位；富渲染归
+    ``markdown`` 那一位（走 ``render_blueprint_markdown``），两者不重复。
+    """
+    if not isinstance(blocks, list):
+        return ""
+    parts: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        text = block.get("text")
+        if isinstance(text, list):
+            entries = [str(entry) for entry in text if isinstance(entry, str) and entry]
+            if entries:
+                parts.append("\n".join(f"- {entry}" for entry in entries))
+        elif isinstance(text, str) and text:
+            parts.append(text)
+    return "\n\n".join(parts)
+
+
 def _map_execution_plan_to_repository_tasks(content: dict[str, Any]) -> list[dict[str, Any]]:
     """canonical §7 ``execution_plan[]`` → 旧 ``repository_tasks`` 矩阵形态（外形兼容）。
 
@@ -173,6 +266,7 @@ def _map_plan_payload(
     repository_tasks: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
     similar_cases: list[dict[str, Any]],
+    summary: str | None = None,
 ) -> dict[str, Any]:
     """canonical content → 旧 ``plan`` / ``plan_body`` 外形（WR-02，外形兼容）。
 
@@ -181,8 +275,14 @@ def _map_plan_payload(
     ``repository_tasks`` 的「显式白名单、绝不透传 content 内部键」原则自相矛盾）。本函数把
     canonical 显式映射回旧关键键，保持响应/落库外形兼容；canonical content 仍以独立
     ``canonical_content`` 键保留（不丢信息、可追踪）。
+
+    ``summary``（同步点 2 / G3，**纯追加、缺省 None**）：调用方给定的摘要。blueprint/v1 的
+    摘要在 ``meta.summary``（Block[]）而不是顶层 ``summary``，由调用方经
+    :func:`_project_canonical_for_legacy_mapping` 取好后传进来。⛔ 不传时逐字回退读
+    ``content["summary"]`` ⇒ 旧链行为不变。
     """
-    summary = str(content.get("summary") or "") if isinstance(content, dict) else ""
+    if summary is None:
+        summary = str(content.get("summary") or "") if isinstance(content, dict) else ""
     linked_documents = [
         {
             "document_id": str(doc.get("document_id") or ""),
@@ -436,12 +536,16 @@ async def build_work_item_technical_plan(
     # 116-06（GATE-01）：开关切到蓝图时的三个追加响应键（关闭时为空 dict）。
     blueprint_extras = await _ablueprint_response_extras(delegate)
     content = delegate.content if isinstance(delegate.content, dict) else {}
+    # 同步点 2 / G3：blueprint/v1 先确定性派生成 v0 投影，再走既有映射链（映射器逐字不变；
+    # 旧链 content 恒等穿过 ⇒ 零回归）。⛔ canonical 仍以原始 content 落 canonical_content。
+    legacy_view = _project_canonical_for_legacy_mapping(content)
     # canonical → 旧响应字段显式映射（外形兼容，绝不透传 content 内部键，T-94-03-INFO）。
-    repository_tasks = _map_execution_plan_to_repository_tasks(content)
+    repository_tasks = _map_execution_plan_to_repository_tasks(legacy_view)
+    _log_blueprint_payload_projection(delegate, content, legacy_view, repository_tasks)
     markdown = delegate.markdown or ""
     plan_title = (
         title.strip()
-        or str(content.get("title") or "")
+        or str(legacy_view.get("title") or "")
         or f"{context.name or context.work_item_type} 技术方案"
     )
     evidence = _evidence_from_context(
@@ -458,6 +562,7 @@ async def build_work_item_technical_plan(
         repository_tasks=repository_tasks,
         evidence=evidence,
         similar_cases=effective_similar_cases,
+        summary=str(legacy_view.get("summary") or ""),
     )
 
     # 终态/挂起 → 落库 status 基线（编排在途 partial / 失败 failed），writeback 失败再降级。
