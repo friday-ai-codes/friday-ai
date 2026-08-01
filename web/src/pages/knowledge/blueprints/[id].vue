@@ -971,6 +971,7 @@ const sections = computed<NavSection[]>(() => [
       <BlueprintViewerHeader
         :doc="docQuery.data.value ?? null"
         :counts="{ blocker: unresolvedBlockerCount, clarification: counts.pendingClarification, orphaned: counts.orphaned }"
+        :annotation-total="counts.total"
         :versions="versions"
         :current-version-id="docQuery.data.value?.version_id ?? null"
         :readonly="readonly"
