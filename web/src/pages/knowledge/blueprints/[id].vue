@@ -608,11 +608,31 @@ function onThreadClick(threadId: string): void {
   selectThread(threadId)
 }
 
+/**
+ * ⭐ §18.2 焦点归还：引用预览是**纯受控**弹层（没有 `DialogTrigger`）。
+ *
+ * reka-ui 的自动归还依赖 Trigger，这里没有 ⇒ `onCloseAutoFocus` 会把焦点丢回 `<body>`，
+ * 键盘用户关掉弹层后得从文档顶部重新 Tab 一遍。范式与上面 `Sheet` 那处一致，区别是
+ * 触发元素不是固定的顶栏按钮而是**被点的那一枚 citation chip** ⇒ 必须在开弹层**之前**
+ * 把 `document.activeElement` 记下来。
+ */
+const citationTrigger = ref<HTMLElement | null>(null)
+
 function onCitationClick(citationId: string): void {
   const citation = citations.value[citationId]
-  if (citation)
-    openWithSnapshot(citation)
+  if (!citation)
+    return
+  citationTrigger.value = document.activeElement as HTMLElement | null
+  openWithSnapshot(citation)
 }
+
+watch(previewOpen, (open) => {
+  if (open)
+    return
+  const trigger = citationTrigger.value
+  citationTrigger.value = null
+  nextTick(() => trigger?.focus())
+})
 
 /**
  * 115-07：确认门 `confirm/` 409 `pending_clarification` 的解药落点。

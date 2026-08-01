@@ -186,6 +186,14 @@ const BlockedDialogStub = {
   </div>`,
 }
 
+/** 受控预览弹层：需要能读 `open` 并回抛 `update:open`（M-4 的焦点归还靠它驱动）。 */
+const CitationPreviewStub = {
+  name: 'CitationPreviewDialog',
+  props: ['open', 'citation'],
+  emits: ['update:open'],
+  template: '<div data-testid="citation-preview-stub" />',
+}
+
 const STUBS = {
   PageContainer: { template: '<div><slot /></div>' },
   AnchorNavLayout: AnchorNavLayoutStub,
@@ -198,7 +206,7 @@ const STUBS = {
   BlueprintQualityPanel: true,
   BlueprintRejectDialog: true,
   BlueprintSelectionPopover: true,
-  CitationPreviewDialog: true,
+  CitationPreviewDialog: CitationPreviewStub,
   MermaidDiagram: true,
   RequirementSpecSection: { name: 'RequirementSpecSection', template: '<div data-testid="stub-requirement-spec" />' },
   RepoAssociationsSection: { name: 'RepoAssociationsSection', template: '<div data-testid="stub-repo-associations" />' },
@@ -589,5 +597,83 @@ describe('蓝图查看器 —— 线程侧栏的 xl 断点闸（H-2）', () => {
     await flush()
     expect(wrapper.find('[data-testid="blueprint-sidebar-sheet"]').exists()).toBe(false)
     expect(wrapper.findAll(SIDEBAR)).toHaveLength(1)
+  })
+})
+
+/**
+ * ⭐ UI-REVIEW M-4 回归：引用预览关闭后焦点回到触发它的 citation chip（§18.2）。
+ *
+ * 预览是**纯受控**弹层（没有 `DialogTrigger`）⇒ reka-ui 的自动归还用不上，
+ * `onCloseAutoFocus` 会把焦点丢回 `<body>`，键盘用户关掉弹层后要从文档顶部重新 Tab。
+ */
+describe('蓝图查看器 —— 引用预览的焦点归还（M-4）', () => {
+  const PREVIEW = { name: 'CitationPreviewDialog' } as const
+  const CITED = { name: 'RequirementSpecSection' } as const
+
+  function makeChip(): HTMLButtonElement {
+    const chip = document.createElement('button')
+    chip.setAttribute('data-testid', 'blueprint-citation-chip')
+    document.body.appendChild(chip)
+    return chip
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    api.getBlueprintDocument.mockResolvedValue(makeDoc({
+      content: makeContent({ citations: { 'c-1': { citation_id: 'c-1', source_type: 'knowledge_entity', source_id: 'e-1', title: '知识条目' } } }),
+    }))
+  })
+
+  it('24. ⭐ 关闭预览后焦点回到打开它的那一枚 chip', async () => {
+    const { wrapper } = mountPage()
+    await flush()
+
+    const chip = makeChip()
+    chip.focus()
+    expect(document.activeElement).toBe(chip)
+
+    wrapper.findComponent(CITED).vm.$emit('citation-click', 'c-1')
+    await flush()
+    expect(wrapper.findComponent(PREVIEW).props('open')).toBe(true)
+
+    // 弹层期间焦点被移走（reka-ui 的焦点陷阱在真实环境里就是这么做的）。
+    const elsewhere = document.createElement('button')
+    document.body.appendChild(elsewhere)
+    elsewhere.focus()
+
+    wrapper.findComponent(PREVIEW).vm.$emit('update:open', false)
+    await flush()
+    expect(document.activeElement).toBe(chip)
+  })
+
+  it('25. ⭐ 两枚 chip 各自归还各自那一枚（⛔ 不是记死某个固定元素）', async () => {
+    const { wrapper } = mountPage()
+    await flush()
+
+    const first = makeChip()
+    const second = makeChip()
+
+    for (const chip of [first, second]) {
+      chip.focus()
+      wrapper.findComponent(CITED).vm.$emit('citation-click', 'c-1')
+      await flush()
+      // ⚠️ 必须真的把焦点移走，否则「什么都不做」的实现也能让断言变绿。
+      const elsewhere = document.createElement('button')
+      document.body.appendChild(elsewhere)
+      elsewhere.focus()
+      expect(document.activeElement).not.toBe(chip)
+
+      wrapper.findComponent(PREVIEW).vm.$emit('update:open', false)
+      await flush()
+      expect(document.activeElement).toBe(chip)
+    }
+  })
+
+  it('26. 非恒真对照：池里查不到的 citation ⇒ 弹层不开，也不记触发元素', async () => {
+    const { wrapper } = mountPage()
+    await flush()
+    wrapper.findComponent(CITED).vm.$emit('citation-click', 'c-missing')
+    await flush()
+    expect(wrapper.findComponent(PREVIEW).props('open')).toBe(false)
   })
 })
