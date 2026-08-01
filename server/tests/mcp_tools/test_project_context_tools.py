@@ -41,7 +41,9 @@ def _make_user(username: str):
 
 async def _make_project(created_by, *, key, visibility=ProjectVisibility.PUBLIC_ORG):
     """建 space + project（owner=created_by → ProjectMember），按需设 visibility（夹具直写）。"""
-    space = await sync_to_async(Space.objects.create)(name="S", feishu_project_key=f"{key}-sp")
+    space = await sync_to_async(Space.objects.create)(
+        name="S", feishu_project_key=f"{key}-sp"
+    )
     project, _ = await ProjectService().create(
         space=space, name="P", feishu_project_key=key, created_by=created_by
     )
@@ -94,7 +96,9 @@ async def test_members_only_non_member_search_scope_zero_leak(mcp_client, access
     """members_only + 非成员 → search_project_context 零召回（gate fail-closed）。"""
     client, _ = mcp_client
     owner = await _make_user("mo-search-owner")
-    project = await _make_project(owner, key="mo-search", visibility=ProjectVisibility.MEMBERS_ONLY)
+    project = await _make_project(
+        owner, key="mo-search", visibility=ProjectVisibility.MEMBERS_ONLY
+    )
     resp = await sync_to_async(client.post)(
         _SEARCH_URL, {"project_id": str(project.id), "query": "登录"}, format="json"
     )
@@ -108,12 +112,12 @@ async def test_members_only_non_member_grep_zero_leak(mcp_client, access_user):
     """members_only + 非成员 → grep_project 零结果（不泄漏正文，即便正文含关键词）。"""
     client, _ = mcp_client
     owner = await _make_user("mo-grep-owner")
-    project = await _make_project(owner, key="mo-grep", visibility=ProjectVisibility.MEMBERS_ONLY)
+    project = await _make_project(
+        owner, key="mo-grep", visibility=ProjectVisibility.MEMBERS_ONLY
+    )
     await _add_doc(project, snapshot="机密接口设计 secretpattern 必须仅成员可见")
     await MemoryService().append(
-        project_id=project.id,
-        content="机密记忆 secretpattern",
-        contributor=owner,
+        project_id=project.id, content="机密记忆 secretpattern", contributor=owner,
         _skip_member_check=True,
     )
     resp = await sync_to_async(client.post)(
@@ -129,7 +133,9 @@ async def test_members_only_non_member_read_zero_leak(mcp_client, access_user):
     """members_only + 非成员 → read_project_doc 返回空文档（不泄漏正文/存在性）。"""
     client, _ = mcp_client
     owner = await _make_user("mo-read-owner")
-    project = await _make_project(owner, key="mo-read", visibility=ProjectVisibility.MEMBERS_ONLY)
+    project = await _make_project(
+        owner, key="mo-read", visibility=ProjectVisibility.MEMBERS_ONLY
+    )
     await _add_doc(project, doc_type=DocType.STATE, snapshot="机密状态正文 secretbody")
     resp = await sync_to_async(client.post)(
         _READ_URL, {"project_id": str(project.id), "doc_type": "state"}, format="json"
@@ -150,7 +156,9 @@ async def test_public_org_non_member_grep_readable(mcp_client, access_user):
     """public_org + 非成员 → grep_project 可读（命中 ProjectDoc 正文）。"""
     client, _ = mcp_client
     owner = await _make_user("po-grep-owner")
-    project = await _make_project(owner, key="po-grep", visibility=ProjectVisibility.PUBLIC_ORG)
+    project = await _make_project(
+        owner, key="po-grep", visibility=ProjectVisibility.PUBLIC_ORG
+    )
     await _add_doc(project, snapshot="公开接口 publicmarker 全员可读")
     resp = await sync_to_async(client.post)(
         _GREP_URL, {"project_id": str(project.id), "query": "publicmarker"}, format="json"
@@ -165,7 +173,9 @@ async def test_public_org_non_member_read_readable(mcp_client, access_user):
     """public_org + 非成员 → read_project_doc 可读正文。"""
     client, _ = mcp_client
     owner = await _make_user("po-read-owner")
-    project = await _make_project(owner, key="po-read", visibility=ProjectVisibility.PUBLIC_ORG)
+    project = await _make_project(
+        owner, key="po-read", visibility=ProjectVisibility.PUBLIC_ORG
+    )
     await _add_doc(project, doc_type=DocType.STATE, snapshot="公开状态正文 publicbody")
     resp = await sync_to_async(client.post)(
         _READ_URL, {"project_id": str(project.id), "doc_type": "state"}, format="json"
@@ -193,7 +203,9 @@ async def test_member_members_only_grep_readable(mcp_client, access_user):
 # ---------------------------------------------------------------------------
 
 
-async def test_search_project_context_member_hits_and_trace(mcp_client, access_user, monkeypatch):
+async def test_search_project_context_member_hits_and_trace(
+    mcp_client, access_user, monkeypatch
+):
     """成员调用命中（mock search_similar）→ results/total/run_id + RetrievalTrace 含 duration_ms。"""
     client, _ = mcp_client
     project = await _make_project(access_user, key="sp-hit")
@@ -226,7 +238,9 @@ async def test_search_project_context_member_hits_and_trace(mcp_client, access_u
     assert payload["project_id"] == str(project.id)
 
 
-async def test_search_project_context_recalls_document_kind(mcp_client, access_user, monkeypatch):
+async def test_search_project_context_recalls_document_kind(
+    mcp_client, access_user, monkeypatch
+):
     """CTX-01：search_project_context 读路径纳入 DOCUMENT 召回（物化项目文档可被向量 RAG 返回）。
 
     断言：调用 search_similar 时透传 ``include_document_kind=True``（widen 到 DOCUMENT 实体），
@@ -273,7 +287,9 @@ async def test_search_project_context_missing_query_400(mcp_client, access_user)
 
 async def test_search_project_context_missing_project_id_400(mcp_client, access_user):
     client, _ = mcp_client
-    resp = await sync_to_async(client.post)(_SEARCH_URL, {"query": "q"}, format="json")
+    resp = await sync_to_async(client.post)(
+        _SEARCH_URL, {"query": "q"}, format="json"
+    )
     assert resp.status_code == 400
 
 
@@ -301,9 +317,7 @@ async def test_grep_hits_memory_body(mcp_client, access_user):
     client, _ = mcp_client
     project = await _make_project(access_user, key="grep-mem")
     await MemoryService().append(
-        project_id=project.id,
-        content="记忆要点 grepmemmark",
-        contributor=access_user,
+        project_id=project.id, content="记忆要点 grepmemmark", contributor=access_user,
         _skip_member_check=True,
     )
     resp = await sync_to_async(client.post)(
@@ -330,7 +344,9 @@ async def test_grep_project_not_found_404(mcp_client, access_user):
     assert resp.status_code == 404
 
 
-async def test_read_project_doc_renders_blocks_and_trace(mcp_client, access_user):
+async def test_read_project_doc_renders_blocks_and_trace(
+    mcp_client, access_user
+):
     """read_project_doc 渲染 markdown + blocks（section/editable）+ trace 含 duration_ms。"""
     client, _ = mcp_client
     project = await _make_project(access_user, key="read-doc")
@@ -386,9 +402,7 @@ async def test_retrieval_trace_two_chains_covered(mcp_client, access_user, monke
     client, _ = mcp_client
     project = await _make_project(access_user, key="two-chain")
     await MemoryService().append(
-        project_id=project.id,
-        content="两链召回记忆",
-        contributor=access_user,
+        project_id=project.id, content="两链召回记忆", contributor=access_user,
         _skip_member_check=True,
     )
 

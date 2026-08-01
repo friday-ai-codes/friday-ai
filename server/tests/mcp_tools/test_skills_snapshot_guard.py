@@ -72,7 +72,9 @@ def test_skill_tool_references_subset_of_snapshot() -> None:
         if out_of_bounds:
             violations[str(skill_file.relative_to(REPO_ROOT))] = out_of_bounds
 
-    detail = "\n".join(f"  {path}: {sorted(tokens)}" for path, tokens in sorted(violations.items()))
+    detail = "\n".join(
+        f"  {path}: {sorted(tokens)}" for path, tokens in sorted(violations.items())
+    )
     assert not violations, (
         "skills 文档引用了 snapshot 之外的工具名：要么工具没进 TOOL_SCHEMA_SNAPSHOT，"
         "要么文档写了不存在的工具（P5 文档面漂移）：\n" + detail

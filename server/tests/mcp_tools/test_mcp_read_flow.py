@@ -56,33 +56,20 @@ def test_mcp_read_flow_creates_replayable_traces(
     )
     monkeypatch.setattr(
         "services.repo_file_read._scroll_file_from_collection",
-        AsyncMock(
-            return_value=[{"chunk_index": 0, "content": "x", "start_line": 1, "end_line": 1}]
-        ),
+        AsyncMock(return_value=[{"chunk_index": 0, "content": "x", "start_line": 1, "end_line": 1}]),
     )
 
-    assert (
-        client.post(
-            "/api/mcp/tools/route_repositories/", {"query": "auth"}, format="json"
-        ).status_code
-        == 200
-    )
-    assert (
-        client.post(
-            "/api/mcp/tools/search_rag_chunks/",
-            {"repository_id": str(indexed_repository.id), "query": "auth"},
-            format="json",
-        ).status_code
-        == 200
-    )
-    assert (
-        client.post(
-            "/api/mcp/tools/get_repository_file/",
-            {"repository_id": str(indexed_repository.id), "file_path": "src/main.py"},
-            format="json",
-        ).status_code
-        == 200
-    )
+    assert client.post("/api/mcp/tools/route_repositories/", {"query": "auth"}, format="json").status_code == 200
+    assert client.post(
+        "/api/mcp/tools/search_rag_chunks/",
+        {"repository_id": str(indexed_repository.id), "query": "auth"},
+        format="json",
+    ).status_code == 200
+    assert client.post(
+        "/api/mcp/tools/get_repository_file/",
+        {"repository_id": str(indexed_repository.id), "file_path": "src/main.py"},
+        format="json",
+    ).status_code == 200
 
     assert InteractionRun.objects.filter(source="mcp").count() == 3
     kinds = set(RetrievalTrace.objects.values_list("kind", flat=True))
