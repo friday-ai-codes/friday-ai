@@ -246,14 +246,16 @@ function onKeydown(event: KeyboardEvent): void {
         </button>
       </div>
 
-      <div class="flex items-center gap-2">
+      <!-- ⭐ `<label>` 而不是 `<div>`：`Switch` 上既无 `aria-label` 也无 `id`/`for`，包一层
+           label 才能同时拿到可访问名与「点文字也切换」。写法照顶栏那个同名开关。 -->
+      <label class="flex items-center gap-2">
         <Switch
           data-testid="blueprint-show-closed"
           :model-value="showClosed"
           @update:model-value="emit('update:showClosed', $event)"
         />
         <span class="text-xs text-foreground">{{ t('knowledge.blueprints.annotation.showClosed') }}</span>
-      </div>
+      </label>
       <p class="text-xs text-muted-foreground">
         {{ t('knowledge.blueprints.annotation.showClosedHint') }}
       </p>
