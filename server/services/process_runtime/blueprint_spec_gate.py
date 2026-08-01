@@ -50,6 +50,7 @@ from delivery.services.event_taxonomy import (
     EVENT_BLUEPRINT_SPEC_GATE_SCORED,
 )
 from services.process_runtime.blueprint_ambiguity_score import (
+    ASSUMPTIONS_TIERS,
     aload_spec_gate_config,
     ascore_ambiguity,
     is_ambiguous,
@@ -70,14 +71,22 @@ STAGE_STATE_KEY = "spec_gate"
 
 # 重问上界（镜像 clarify_adapter 的 _MAX_CLARIFY_ROUNDS「达上界带现有信息放行」语义）：
 # 挂死比放行更糟——超界时带 capped 留痕放行，人可在后续阶段继续澄清。
-_MAX_SPEC_GATE_ROUNDS = 3
+#
+# ⭐ 116-06：该上界的**单一事实源**是配置键 ``spec_gate.config.max_rounds``
+# （``blueprint_ambiguity_score.DEFAULT_SPEC_GATE_CONFIG["max_rounds"]`` 是它的兜底默认，
+# 值 3 与改动前的模块级常量逐字相等）。本文件原先那个模块级常量**已删除**——保留它会与
+# 配置形成两份可漂移的默认值，而 assumptions 档位正需要运行时调它。
 
 # 合法 intent 集合（与 blueprint_schema 的必填枚举同源，只作 adapter 侧沿用值判断）。
 _VALID_INTENTS = ("greenfield", "brownfield", "fix")
 
 # 满歧义（四维全 1.0 的加权总分上界）。到达此值时**任何情况都不得**按「无新问题」放行——
-# 唯一放行例外仍是显式轮数上界（_MAX_SPEC_GATE_ROUNDS，留 capped=True 痕）。
+# 唯一放行例外仍是显式轮数上界（配置键 `spec_gate.config.max_rounds`，留 capped=True 痕）。
 _MAX_AMBIGUITY_TOTAL = 1.0
+
+# assumptions 档位在 stage_state 里的落点（⭐ 放 `decomposition` 下：`_current_round` 读的是
+# `stage_state["spec_gate"]["round"]`，两者不冲突；入口在建会话时就把档位写进 decomposition）。
+_TIER_STATE_KEY = "assumptions_tier"
 
 # 放行例外的留痕枚举（落 ambiguity_report.release_reason 与 spec_locked 事件）：
 # 下游（114 AI 审查 / 115 呈现面）据此区分「这次放行走的是哪条例外」。
@@ -131,6 +140,7 @@ class BlueprintSpecGateAdapter:
         """
         started = time.monotonic()
         round_no = self._current_round(session)
+        tier = self._assumptions_tier(session)
 
         version = await self._aload_current_version(session)
         if version is None:
@@ -171,8 +181,13 @@ class BlueprintSpecGateAdapter:
         #    蓝图 decision_log 条目，既进重判 prompt，也给出问题指纹集合。
         prior = await self._collect_prior_answers(artifact, content)
 
+        # ⭐ 配置读取**上提到轮数判定之前**（116-06）：轮数上界改读 `config["max_rounds"]`，
+        # 而判定发生在原先那次读取之前 ⇒ 不上提就拿不到值。同一个 `config` 对象随后复用给
+        # 阈值判定与 `_lock_spec`（⛔ 不再读第二次）。
+        config = await aload_spec_gate_config(tier=tier)
+
         # 3. 轮数上界：达上界带现有信息放行并留痕，绝不无限挂起（镜像 clarify_adapter 兜底）。
-        if round_no >= _MAX_SPEC_GATE_ROUNDS:
+        if round_no >= int(config["max_rounds"]):
             logger.warning(
                 "blueprint_spec_gate_cap_reached",
                 category="caller",
@@ -180,7 +195,8 @@ class BlueprintSpecGateAdapter:
                 session_id=str(session.id),
                 artifact_id=str(artifact.id),
                 round=round_no,
-                max_rounds=_MAX_SPEC_GATE_ROUNDS,
+                assumptions_tier=tier,
+                max_rounds=int(config["max_rounds"]),
             )
             return await self._lock_spec(
                 session,
@@ -192,23 +208,27 @@ class BlueprintSpecGateAdapter:
                 capped=True,
                 release_reason=RELEASE_REASON_ROUND_CAP,
                 scorer_unavailable=False,
+                config=config,
+                tier=tier,
                 started=started,
             )
 
         # 4. 四维打分；不可得即 fail-closed（保守全 1.0 + 一条通用规格澄清题）。
+        # ⭐ `tier=` 必须传下去：scorer 体内**自己也读一次配置**并据它打 sampling 日志的
+        # `threshold` / `above_threshold`，不传即「日志报的阈值 ≠ 判定用的阈值」（T-116-53）。
         scores = await self.scorer(
             goal=self._goal_text(content),
             feature_points=self._feature_points(content),
             constraints=self._constraints(content),
             prior_context=prior["text"],
             session_id=str(session.id),
+            tier=tier,
         )
         scorer_unavailable = not isinstance(scores, dict)
         if scorer_unavailable:
             scores = normalize_ambiguity_scores(None)
             scores["questions"] = [dict(_FALLBACK_QUESTION)]
 
-        config = await aload_spec_gate_config()
         total = weighted_total(scores["dimensions"], config["weights"])
         above = is_ambiguous(total, config["threshold"])
 
@@ -222,7 +242,7 @@ class BlueprintSpecGateAdapter:
             ]
             # 「超阈值 + 无新问题」不等于「不歧义」：打分不可得时兜底问题恒为同一条常量，
             # 指纹必然命中；满歧义时同理不能靠去重把门开了。两种情形一律重新挂起
-            # （轮数由 _MAX_SPEC_GATE_ROUNDS 兜底，不会无限挂）。
+            # （轮数由配置键 `spec_gate.config.max_rounds` 兜底，不会无限挂）。
             if not questions and (scorer_unavailable or total >= _MAX_AMBIGUITY_TOTAL):
                 questions = [dict(q) for q in scores["questions"]] or [dict(_FALLBACK_QUESTION)]
                 logger.warning(
@@ -246,6 +266,7 @@ class BlueprintSpecGateAdapter:
                     total=total,
                     round_no=round_no,
                     scorer_unavailable=scorer_unavailable,
+                    tier=tier,
                     started=started,
                 )
             # 打分可得、未满歧义、但确实问不出新问题 → 这是第二条放行例外，必须留痕。
@@ -274,6 +295,7 @@ class BlueprintSpecGateAdapter:
             scorer_unavailable=scorer_unavailable,
             config=config,
             total=total,
+            tier=tier,
             started=started,
         )
 
@@ -293,6 +315,7 @@ class BlueprintSpecGateAdapter:
         total: float,
         round_no: int,
         scorer_unavailable: bool,
+        tier: str = "",
         started: float,
     ) -> dict[str, Any]:
         """开一条带候选选项与证据引用的阻塞澄清线程并挂起。"""
@@ -315,6 +338,17 @@ class BlueprintSpecGateAdapter:
             capped=False,
             release_reason=RELEASE_REASON_UNAMBIGUOUS,
             scorer_unavailable=scorer_unavailable,
+            tier=tier,
+        )
+        # ⭐ CLAR-04 的另一半：澄清同时推飞书卡片。**唯一接线点**（⛔ 不在四个入口各接一次），
+        # 整段 best-effort 收敛在 blueprint_notify 内 ⇒ 发卡失败绝不反噬挂起。
+        from services.process_runtime.blueprint_notify import anotify_blueprint_clarification
+
+        await anotify_blueprint_clarification(
+            artifact=artifact,
+            session=session,
+            questions=questions,
+            initiated_by_user_id=self._initiated_by(session),
         )
         await self._emit(
             session,
@@ -354,11 +388,16 @@ class BlueprintSpecGateAdapter:
         scorer_unavailable: bool,
         config: dict[str, Any] | None = None,
         total: float | None = None,
+        tier: str = "",
         started: float,
     ) -> dict[str, Any]:
-        """规格锁定：intent 补齐 + ambiguity_report + decision_log 一次性落新蓝图版本。"""
+        """规格锁定：intent 补齐 + ambiguity_report + decision_log 一次性落新蓝图版本。
+
+        ``tier`` 只服务于 ``config is None`` 的兜底分支（调用方通常已把上提读到的
+        ``config`` 一并传下来 ⇒ 那条分支不再触发）与 ``ambiguity_report`` 的留痕。
+        """
         if config is None:
-            config = await aload_spec_gate_config()
+            config = await aload_spec_gate_config(tier=tier)
         if total is None:
             total = weighted_total(scores["dimensions"], config["weights"])
 
@@ -377,6 +416,7 @@ class BlueprintSpecGateAdapter:
             capped=capped,
             release_reason=release_reason,
             scorer_unavailable=scorer_unavailable,
+            tier=tier,
         )
         decision_log = self._merge_decision_log(locked.get("decision_log"), prior["entries"])
         if decision_log:
@@ -410,6 +450,7 @@ class BlueprintSpecGateAdapter:
                     capped=capped,
                     release_reason=release_reason,
                     scorer_unavailable=scorer_unavailable,
+                    tier=tier,
                 ),
                 round_no,
             )
@@ -626,6 +667,20 @@ class BlueprintSpecGateAdapter:
         except (TypeError, ValueError):
             return 0
 
+    def _assumptions_tier(self, session: Any) -> str:
+        """本次会话生效的 assumptions 档位（116-06）；非三档之一一律回 ``""``（默认档）。
+
+        落点是 ``stage_state["decomposition"]["assumptions_tier"]`` —— 入口建会话时写进
+        ``decomposition``，与 ``_current_round`` 读的 ``stage_state["spec_gate"]["round"]``
+        不冲突。⭐ 档位只覆盖 ``threshold`` / ``max_rounds``，⛔ **绝不跳过本 stage**。
+        """
+        state = getattr(session, "stage_state", None)
+        bucket = (state or {}).get("decomposition") if isinstance(state, dict) else None
+        tier = (
+            str((bucket or {}).get(_TIER_STATE_KEY, "") or "") if isinstance(bucket, dict) else ""
+        )
+        return tier if tier in ASSUMPTIONS_TIERS else ""
+
     def _initiated_by(self, session: Any) -> str:
         return str(getattr(session, "created_by_id", "") or "system")
 
@@ -670,12 +725,18 @@ class BlueprintSpecGateAdapter:
         capped: bool,
         release_reason: str = RELEASE_REASON_UNAMBIGUOUS,
         scorer_unavailable: bool,
+        tier: str = "",
     ) -> dict[str, Any]:
         return {
             "dimensions": scores["dimensions"],
             "weighted_total": total,
             "threshold": config["threshold"],
             "weights": config["weights"],
+            # ⭐ 116-06：本轮生效的 assumptions 档位与轮数上界。`_ambiguity_report` 是
+            # `ambiguity_report` 的**唯一装配点** ⇒ 加一次即全链留痕，运维据此回答
+            # 「这轮为什么问 / 为什么不问」时看到的阈值与判定用的必然同源。
+            "assumptions_tier": str(tier or ""),
+            "max_rounds": int(config.get("max_rounds") or 0),
             "resolved_thread_ids": list(resolved_thread_ids),
             "capped": capped,
             # 放行例外的具名理由：""=未超阈值的正常放行 / "round_cap"=轮数上界 /
