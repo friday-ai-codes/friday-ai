@@ -17,18 +17,62 @@ deferred:
 human_verification:
   # ⚠️ 以下三项**均不阻塞任何 SC**（status 仍为 passed）：SC 的可判定内核已由自动化证据
   # 结论性覆盖 —— 缺的是「本机无飞书凭证 / 交互回调等同步点 1」这两类**环境**条件，属 UAT 范畴。
+  #
+  # ⭐ 2026-08-02 复核：Phase 115 的四项 `human_verification` 被判定为**可自动化**（其 why_human
+  # 全是 happy-dom 的能力缺口，换 Chromium 即消解）并已实跑。同一轮复核逐条看了本相位这三项，
+  # 结论**相反：三项都真的不可自动化**，逐条 `not_automatable` 记在下面。
+  #
+  # 判据是一致的：拦路的若是**测试宿主的能力缺口**（无版面引擎 / 无媒体查询 / 组件被 stub），
+  # 换个宿主就能测 ⇒ 可自动化；拦路的若是**被测物本身在环境里不存在**（没有飞书租户凭证、
+  # 没有真实 LLM 与容器），那么把它 mock 掉就等于把被测物换成了 mock 自己 ——
+  # ⛔ 这正是本里程碑连出四次静默假通过的成因，绝不为了勾一个 tick 再造一次。
   - test: "对一份 `pending_review` 状态的真实蓝图点「导出飞书文档」，打开生成的飞书文档"
     expected: "文档首行是「> ⚠️ 未经确认 —— 本方案尚未经人工终审（当前状态：pending_review · 版本 vN）」；六段全量 + 决策记录附录 + 引用脚注均可读；heading / 表格 / 列表版式无结构性丢失"
     why_human: "本机与 CI 均无飞书凭证 ⇒ `create_document` 无法实跑。⭐ **可自动化的两侧都已结论性验证**：markdown 生成侧由 `test_blueprint_render.py` 逐段覆盖（含 `inspect.signature` 参数名恰为 `{content, blueprint_status}`、白名单三态、空串与未知串都出标注、`decision_log` 缺键渲染「—」），端点侧由 `test_blueprint_export_views.py` 覆盖（availability 三 reason / 上游失败 400·502 中性 detail / 导出前后 `ArtifactVersion` 计数不变）。**未验的只有 `markdown_to_blocks` 的转换侧**（`services/feishu_doc.py:1232`，本相位零改动的既有件）—— 116-05 的 PLAN 已把版式定保守（heading ≤3 级、表格不嵌套、脚注用普通列表而非 `[^n]`）以规避该风险面"
     blocking: false
+    not_automatable: confirmed
+    reviewed: 2026-08-02
+    why_not_automatable: |
+      **缺的是飞书租户凭证，不是测试宿主能力。** 被测物是「真实飞书文档里的最终版式」——
+      它由飞书**服务端**对 `markdown_to_blocks` 产出的 block 树的解释决定，本地没有任何东西
+      可以替代那一步。mock 掉 `create_document` 之后剩下的只是「我们发出了什么」，而那一侧
+      （markdown 生成 + 端点行为）**已经被 `test_blueprint_render.py` 与
+      `test_blueprint_export_views.py` 结论性覆盖**，再包一层 e2e 只是把同一批断言换个地方跑。
+      唯一未验的 `markdown_to_blocks` 转换侧（`services/feishu_doc.py:1232`，本相位零改动的
+      既有件）恰恰只有真实租户能证伪。
+      ⇒ 属 v0.19 报告 §7 归的「需要真实飞书 / Git 平台 / Runner」那一类，与 Phase 115 的
+      happy-dom 能力缺口**不同类**。解除条件：一套可用的飞书应用凭证 + 一个测试知识空间。
   - test: "在飞书群里收到蓝图澄清卡片后，点击卡片上的作答按钮"
     expected: "（当前预期）卡片是**通知形态**，点击不产生副作用、不 5xx；作答请走查看器 / REST 人审端点 / MCP `answer_blueprint_clarification` 三条已实装通道"
     why_human: "`action=\"blueprint_clarify_answer\"` 未注册 handler 是**有意设计**（`CardCallbackView` 无匹配即优雅返回，⛔ 不抢占既有路由也不 5xx）；接交互回调等同步点 1（换 107 的送达设施是同一批改动，届时仍只改 `blueprint_notify.py` 一个文件）。送达链本身的每一步早退都已有 `blueprint_clarification_card_skipped` 留痕（MN-03 修复），题面过 `redact_secrets_in_text`，但**真实飞书群里的卡片长什么样**无法自动化"
     blocking: false
+    not_automatable: confirmed
+    reviewed: 2026-08-02
+    why_not_automatable: |
+      **两重环境依赖，都不是宿主能力问题。** ① 被测物是「真实飞书群里渲染出来的卡片」——
+      同样要租户凭证，且卡片的最终外观由飞书客户端渲染，本地无从取证。② 「点击作答按钮」
+      这一交互本身**当前有意不存在**：`action="blueprint_clarify_answer"` 未注册 handler 是
+      设计决定（`CardCallbackView` 无匹配即优雅返回），接交互回调**等同步点 1**。
+      对一个尚未实装的交互写自动化，只能测出「确实没有副作用」，而那一条已由既有用例覆盖。
+      送达链每一步早退的 `blueprint_clarification_card_skipped` 留痕（MN-03 修复）同样已覆盖。
+      ⇒ 解除条件：飞书凭证 + 同步点 1 落地交互回调。届时可自动化的部分是**回调端点的行为**，
+      「卡片长什么样」仍然归人。
   - test: "把某个入口的开关翻到 `technical_blueprint`，在真实环境跑一条端到端需求"
     expected: "会话建成 `technical_blueprint`、intake 落 v1 骨架、spec_gate 按 assumptions 档位开澄清、作答后续驱推进"
     why_human: "自动化已覆盖到「开关翻转后蓝图路径可达 + 六个续驱点两把锁一起换 + intake 三条硬断言 + chat 三条断链」；剩下的是真实 LLM / 真实容器参与的端到端体感，属 UAT。⚠️ **默认仍是 `technical_plan`，本项不是上线前置**"
     blocking: false
+    not_automatable: confirmed
+    reviewed: 2026-08-02
+    why_not_automatable: |
+      **被测物是「真实 LLM 与真实容器参与下这条链跑不跑得通」，mock 掉就没有被测物了。**
+      期望里的每一环都取决于模型的实际产出：intake 能不能落出合规 v1 骨架、spec_gate 按
+      assumptions 档位开出的澄清题**问得对不对**、作答之后续驱**推不推得动**。
+      给这些环节喂固定响应，剩下的就只是「我们的状态机会不会按脚本走」——而那一层
+      （开关翻转后蓝图路径可达 + 六个续驱点两把锁一起换 + intake 三条硬断言 + chat 三条断链）
+      **已经被自动化结论性覆盖**。
+      ⇒ 属 v0.19 报告 §7 归的「需要生产实例 / 真实 Runner」那一类。解除条件：一套配好 AI 供应商
+      与 runner 的真实环境，且默认开关翻到 `technical_blueprint`（当前仍是 `technical_plan`，
+      本项**不是上线前置**）。
 ---
 
 # Phase 116: 入口收编与导出（全入口统一 + MCP 协议 + 飞书导出 + 图谱物化）— Verification Report
