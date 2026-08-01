@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
-status: "⭐ **116-01（分派闸 + per-entry 开关 + gate 范围闸）已收口** —— `PHASE_BASE = 0e208ba93e1318e75bc98b5318f31e754edd608d`。1 个新建源文件 + 4 处既有源文件改造 + 3 个新建测试文件，**零 migration、零新依赖、零新 `CallSource` 枚举、前端零改动**。全量后端门 **8671 passed / 1 failed**（基线 8609/1，**+62 零回归**；唯一失败仍是 `test_skills_snapshot_guard` 这个 worktree 环境产物）。⭐ **Wave 0 探针已实跑并解除 RESEARCH Assumptions A1**：错工厂 + 对的 driver 从 `intake` 驱一条蓝图会话，实测终局逐字为 `current_stage='reroute'` / `status='failed'` / `error={'stage': 'reroute', 'exception': 'AttributeError', 'message': "'ResearchDispatchAdapter' object has no attribute 'aadvance_reroute'"}`，与 §A.3 推演吻合 ⇒ 变异用例 A 的期望值**无需调整**（判据落白名单 b + c）。⚠️ 该结论**只在 wave 1 成立**，116-02 落地后 `intake`/`decompose` 不再 pass-through、落点会前移。⭐ **三条变异各实跑一次真实变异**（删 → 转红 → 恢复 → 转绿），其中变异 C 另跑探针坐实「只换 engine 不换 driver」会把健康会话推成 `advance_step_limit` FAILED（steps 21）。⭐ **116-03 的六个续驱点直接照 `build_engine_for_session` 改**：同步函数、返 `(engine, driver)` 二元组、未知 `process_type` 回落旧链 + 响亮事件、⛔ 绝不透传 `skip_clarification`/`force_confirm` 进蓝图工厂 —— 逐字契约见 SUMMARY。冻结面核算全绿（六个 technical_plan 文件 + `repo_router_v2.py` + `web/` 的 `git diff $PHASE_BASE` 均空），删除行 `entrypoint.py` = 1（上界 2）、`blueprint_gate_views.py` = 2（上界 6）、其余三个受限文件 = 0"
-last_updated: "2026-08-01T07:26:51.712Z"
+status: "⭐ **116-03（四入口的蓝图可执行路径 + chat 三条断链）已收口** —— `PHASE_BASE = 67c7bb5b1e98af7549bda9dda003c8ab9dc4725a`。7 处既有源文件改造 + 2 个新建测试文件（另有 7 个既有测试文件的 mock 边界跟随），**零 migration、零新依赖、零新 stage 名、零新枚举、前端零改动**。全量后端门 **8741 passed / 1 failed**（基线 8691/1，**+50 零回归**；唯一失败仍是 `test_skills_snapshot_guard` 这个 worktree 环境产物）。⭐ **六个续驱点全部经 `build_engine_for_session` 取 (engine, driver)**，`ast` 扫描断言六文件里旧工厂/旧 driver 的直接调用零命中，并用 `initiatives/services/plan_deepen_service.py` 的反向命中证明扫描器非平凡；两处有意不改（`callbacks.py` 的 `_schedule_chat_plan_resume` 对蓝图三重不可达 / `plan_deepen_service.py` 非蓝图入口）各有显式断言登记。⭐ **四个入口按字面量常量查 per-entry 开关**（116-01 的 `ast` 守卫此刻覆盖真实调用点、不再是空扫描），`meta.project_id` 单点经 `blueprint_intake.aresolve_project_id` 推导、推不出即按各自形态如实回错且 DB 零副作用；MCP 分支必过 `_aresolve_project`（P-8 有源码级 + 用例级双防线）。⭐ **chat 三条断链全补**：等澄清的健康会话回**挂起 marker** 而不是「方案编排失败」（判据与 `blueprint_resume` 的 pause 短路同源、⛔ 不传 `kind`、复用既有渲染 marker）；终态按蓝图状态分档且 `pending_review` 算成功；两个蓝图 barrier 经**一个共享 helper** 补上 `entrypoint == CHAT` 回灌（task key 与注册键逐字对齐、整段 best-effort、**删除行 0**）。⭐ **两条反向变异各实跑一次真实变异**（去掉 `_maybe_suspend` 蓝图分流 ⇒ 用例转红 `assert None is not None`；去掉 barrier 回灌调用 ⇒ 用例转红 `Expected mock to have been awaited once. Awaited 0 times.`），恢复后均转绿。⚠️ **开关默认值仍全部 `technical_plan`，本 plan 不翻默认** —— 翻默认阻塞在同步点 2（蓝图 `DONE` = 待人审，而 `_map_terminal` 把 `DONE` 映射成 completed 并喂给下游 `ai_coding`，现在翻会正面违反 RELY-01；该函数一行未改并留了边界注释）。⚠️ **两处跨相位交接**：① MCP 的调用方接线（`technical_plan_service` / `views` 补 `work_item_context=`）与响应键追加三键归 **116-06**（那两个文件在 116-06 的 `files_modified` 里）；② workflow 终态改 HITL 挂起归同步点 2 后的收尾 plan。冻结面核算全绿（六个 technical_plan 文件 + `repo_router_v2.py` + `plan_deepen_service.py` + `web/` 的 `git diff $PHASE_BASE` 均空）"
+last_updated: "2026-08-01T08:26:11.722Z"
 last_activity: 2026-08-01
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 34
-  completed_plans: 29
-  percent: 83
+  completed_plans: 30
+  percent: 88
 ---
 
 # Project State
@@ -25,9 +25,15 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 ## Current Position
 
 Phase: 116 (入口收编与导出（全入口统一 + MCP 协议 + 飞书导出 + 图谱物化）) — EXECUTING
-Plan: 3 of 7
-Status: ⭐ **116-01（分派闸 + per-entry 开关 + gate 范围闸）已收口** —— `PHASE_BASE = 0e208ba93e1318e75bc98b5318f31e754edd608d`。1 个新建源文件 + 4 处既有源文件改造 + 3 个新建测试文件，**零 migration、零新依赖、零新 `CallSource` 枚举、前端零改动**。全量后端门 **8671 passed / 1 failed**（基线 8609/1，**+62 零回归**；唯一失败仍是 `test_skills_snapshot_guard` 这个 worktree 环境产物）。⭐ **Wave 0 探针已实跑并解除 RESEARCH Assumptions A1**：错工厂 + 对的 driver 从 `intake` 驱一条蓝图会话，实测终局逐字为 `current_stage='reroute'` / `status='failed'` / `error={'stage': 'reroute', 'exception': 'AttributeError', 'message': "'ResearchDispatchAdapter' object has no attribute 'aadvance_reroute'"}`，与 §A.3 推演吻合 ⇒ 变异用例 A 的期望值**无需调整**（判据落白名单 b + c）。⚠️ 该结论**只在 wave 1 成立**，116-02 落地后 `intake`/`decompose` 不再 pass-through、落点会前移。⭐ **三条变异各实跑一次真实变异**（删 → 转红 → 恢复 → 转绿），其中变异 C 另跑探针坐实「只换 engine 不换 driver」会把健康会话推成 `advance_step_limit` FAILED（steps 21）。⭐ **116-03 的六个续驱点直接照 `build_engine_for_session` 改**：同步函数、返 `(engine, driver)` 二元组、未知 `process_type` 回落旧链 + 响亮事件、⛔ 绝不透传 `skip_clarification`/`force_confirm` 进蓝图工厂 —— 逐字契约见 SUMMARY。冻结面核算全绿（六个 technical_plan 文件 + `repo_router_v2.py` + `web/` 的 `git diff $PHASE_BASE` 均空），删除行 `entrypoint.py` = 1（上界 2）、`blueprint_gate_views.py` = 2（上界 6）、其余三个受限文件 = 0
+Plan: 4 of 7
+Status: ⭐ **116-03（四入口的蓝图可执行路径 + chat 三条断链）已收口** —— `PHASE_BASE = 67c7bb5b1e98af7549bda9dda003c8ab9dc4725a`。7 处既有源文件改造 + 2 个新建测试文件（另有 7 个既有测试文件的 mock 边界跟随），**零 migration、零新依赖、零新 stage 名、零新枚举、前端零改动**。全量后端门 **8741 passed / 1 failed**（基线 8691/1，**+50 零回归**；唯一失败仍是 `test_skills_snapshot_guard` 这个 worktree 环境产物）。⭐ **六个续驱点全部经 `build_engine_for_session` 取 (engine, driver)**，`ast` 扫描断言六文件里旧工厂/旧 driver 的直接调用零命中，并用 `initiatives/services/plan_deepen_service.py` 的反向命中证明扫描器非平凡；两处有意不改（`callbacks.py` 的 `_schedule_chat_plan_resume` 对蓝图三重不可达 / `plan_deepen_service.py` 非蓝图入口）各有显式断言登记。⭐ **四个入口按字面量常量查 per-entry 开关**（116-01 的 `ast` 守卫此刻覆盖真实调用点、不再是空扫描），`meta.project_id` 单点经 `blueprint_intake.aresolve_project_id` 推导、推不出即按各自形态如实回错且 DB 零副作用；MCP 分支必过 `_aresolve_project`（P-8 有源码级 + 用例级双防线）。⭐ **chat 三条断链全补**：等澄清的健康会话回**挂起 marker** 而不是「方案编排失败」（判据与 `blueprint_resume` 的 pause 短路同源、⛔ 不传 `kind`、复用既有渲染 marker）；终态按蓝图状态分档且 `pending_review` 算成功；两个蓝图 barrier 经**一个共享 helper** 补上 `entrypoint == CHAT` 回灌（task key 与注册键逐字对齐、整段 best-effort、**删除行 0**）。⭐ **两条反向变异各实跑一次真实变异**（去掉 `_maybe_suspend` 蓝图分流 ⇒ 用例转红 `assert None is not None`；去掉 barrier 回灌调用 ⇒ 用例转红 `Expected mock to have been awaited once. Awaited 0 times.`），恢复后均转绿。⚠️ **开关默认值仍全部 `technical_plan`，本 plan 不翻默认** —— 翻默认阻塞在同步点 2（蓝图 `DONE` = 待人审，而 `_map_terminal` 把 `DONE` 映射成 completed 并喂给下游 `ai_coding`，现在翻会正面违反 RELY-01；该函数一行未改并留了边界注释）。⚠️ **两处跨相位交接**：① MCP 的调用方接线（`technical_plan_service` / `views` 补 `work_item_context=`）与响应键追加三键归 **116-06**（那两个文件在 116-06 的 `files_modified` 里）；② workflow 终态改 HITL 挂起归同步点 2 后的收尾 plan。冻结面核算全绿（六个 technical_plan 文件 + `repo_router_v2.py` + `plan_deepen_service.py` + `web/` 的 `git diff $PHASE_BASE` 均空）
 Last activity: 2026-08-01
+
+⚠️ **116-04/05/06 开工前必读 [`116-03-SUMMARY.md`](./phases/116-entry/116-03-SUMMARY.md)**，三条最容易踩：
+
+1. ⭐ **116-06 必须补 MCP 的调用方接线**：`delegate_process_runtime` 已有纯追加的 `work_item_context` 形参与 `DelegateResult.error_detail`，但两个调用方（`mcp_tools/technical_plan_service.py:370`、`mcp_tools/views.py:1925/2107`）**还没传** —— 它们在 116-06 的 `files_modified` 里，116-03 按相位边界纪律不得改。⛔ 不补 = MCP 开关打开时恒走「推不出 project_id ⇒ 拒绝发起」。
+2. ⭐ **开关默认值一律不翻**（四键仍全 `technical_plan`）：`plan_research._map_terminal` 把蓝图的 `DONE`（= 待人审）映射成 completed 并把 plan 喂给下游 `ai_coding`，翻默认 = 让编码代理拿着未经人审的蓝图建分支写代码（T-116-18）。该函数一行未改并留了「同步点 2」边界注释。
+3. ⭐ **chat 挂起 marker 的键集已定**：复用**既有的** `PLAN_CLARIFICATION_RENDER_MARKER`（新 marker 会让蓝图澄清在对话里什么都不渲染），与旧链分支只差两处 —— `clarification_id` 位放 `thread_id`、追加 `artifact_id`；终态响应键用 `current_status`（⛔ INV-6 不允许字面 `blueprint_status` 键）。
 
 ⚠️ **116-02/03/06 开工前必读 [`116-01-SUMMARY.md`](./phases/116-entry/116-01-SUMMARY.md)**，三条最容易踩：
 
@@ -155,6 +161,9 @@ Last activity: 2026-08-01
 - [Phase ?]: 116-02：aresolve_project_id 是四条入口推导链的唯一收口，MCP 分支必过 _aresolve_project 换算 Space→Project（⛔ 绝不透传 space_id，否则该蓝图全部端点恒不可用且无补救入口）
 - [Phase ?]: 116-02：骨架的 schema_version 取自懒 import 的 BLUEPRINT_SCHEMA_VERSION，⛔ 不复制字面量（漏写/写错会让校验器、渲染器、入图门控三条链同时静默降级到 v0）
 - [Phase ?]: 116-02：feature_point id 取确定性位序 fp_{n}，⛔ 不用随机 uuid —— 随机 id 会让每次重跑都翻一个新版本，把版本历史刷成噪声
+- [Phase ?]: 116-03：四入口的蓝图分支一律「早退到独立 helper」而不是 if/else 包住既有调用 —— 旧链代码路径因此一行未动（比行为断言更强的「开关关闭时逐字一致」）
+- [Phase ?]: 116-03：driver 必须与 engine 一起分派，即使调用方自带 engine（answer_resume 的 engine 用调用方的、driver 恒用分派出的；沿用旧 driver 会把健康蓝图会话推成 advance_step_limit FAILED 且零异常）
+- [Phase ?]: 116-03：chat 蓝图挂起判据与 blueprint_resume 的 pause 短路同源（open+blocking BlueprintThread、⛔ 不传 kind、显式 order_by），⛔ 不用对蓝图恒 False 的 ClarificationService.ahas_pending
 
 ### Pending Todos
 
@@ -214,8 +223,8 @@ Last activity: 2026-08-01
 
 ## Session Continuity
 
-Last session: 2026-08-01T07:26:51.707Z
-Next step: ⭐ **Phase 115 已全相位完成（7 / 7），代码评审与修复亦已收口** —— `115-REVIEW.md` 的 7 条 findings：**6 fixed / 1 skipped**（MN-03，理由见 Pending Todos 顶部），frontmatter 已转 `status: fixed`。下一步是 `/gsd-verify-work`（UAT 清单分散在 115-03…07 各自 SUMMARY 的「UAT 清单」节，115-07 的 9 条是确认门专属）或直接进 **Phase 116**。
+Last session: 2026-08-01T08:26:06.429Z
+Next step: ⭐ **Phase 116 已完成 3 / 7 plan（116-01 / 116-02 / 116-03）**。下一步是同 wave 的 **116-04**（SC-4 图谱物化与反查）；其后 116-05（wave 4）、116-06（wave 5，含 116-03 交接过来的 MCP 调用方接线与响应键三键）。⛔ **116-07 是可独立顺延的最后一个 plan**。⚠️ 开关默认值在同步点 2 之前一律不翻。
 
 ⚠️ 进 116 前先看 Pending Todos **顶部五条**：① MN-03 的存在性预言机（与 111-MN-12「权限口径」、115-07「gate 链无范围闸」**三条一并定夺**）；② `redact_secrets_in_text` 不覆盖数据库连接串（平台级，与「全仓 `error=str(exc)` 未脱敏」合并成独立清理相位）；③ **「best-effort」只覆盖观测不覆盖业务**（新增列表/聚合端点必读）；④ **会话 stage 名 ≠ 时间线节点名**（阶段时间线接线必读）；⑤ `confirm` 409 未下发 `blocked_reason`。
 
@@ -260,3 +269,4 @@ Resume file: None
 | Phase 115 P05 | ~90m | 3 tasks | 16 files 新建 + 1 生成物，新增 37 例前端用例，四条变异验证 |
 | Phase 115 P06 | ~150m | 3 tasks | 11 files 新建 + 8 files 改（i18n 交接 + 两处纯追加），新增 16 例前端用例，一条变异验证 |
 | Phase 116-entry P02 | ~2h | 3 tasks | 5 files |
+| Phase 116-entry P03 | ~3h | 3 tasks | 16 files |
