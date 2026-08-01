@@ -137,6 +137,7 @@ declare global {
   const rerankInfo: typeof import('./composables/useToolDisplay').rerankInfo
   const resolveComponent: typeof import('vue').resolveComponent
   const resolveRepoName: typeof import('./composables/useOrchestrationTimeline').resolveRepoName
+  const routingDecisionView: typeof import('./composables/useToolDisplay').routingDecisionView
   const searchedRepoLabel: typeof import('./composables/useToolDisplay').searchedRepoLabel
   const setActivePinia: typeof import('pinia').setActivePinia
   const setMapStoreSuffix: typeof import('pinia').setMapStoreSuffix
@@ -481,7 +482,7 @@ declare global {
   export type { FacetSpec, TableUrlStateOptions } from './composables/useTableUrlState'
   import('./composables/useTableUrlState')
   // @ts-ignore
-  export type { RelevanceCandidate, RerankInfo } from './composables/useToolDisplay'
+  export type { RelevanceCandidate, RoutingBlock, RoutingDecisionView, RerankInfo } from './composables/useToolDisplay'
   import('./composables/useToolDisplay')
   // @ts-ignore
   export type { AnalyticsGrouping } from './stores/analyticsFilters'
@@ -645,6 +646,7 @@ declare module 'vue' {
     readonly rerankInfo: UnwrapRef<typeof import('./composables/useToolDisplay')['rerankInfo']>
     readonly resolveComponent: UnwrapRef<typeof import('vue')['resolveComponent']>
     readonly resolveRepoName: UnwrapRef<typeof import('./composables/useOrchestrationTimeline')['resolveRepoName']>
+    readonly routingDecisionView: UnwrapRef<typeof import('./composables/useToolDisplay')['routingDecisionView']>
     readonly searchedRepoLabel: UnwrapRef<typeof import('./composables/useToolDisplay')['searchedRepoLabel']>
     readonly setActivePinia: UnwrapRef<typeof import('pinia')['setActivePinia']>
     readonly setMapStoreSuffix: UnwrapRef<typeof import('pinia')['setMapStoreSuffix']>
