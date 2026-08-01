@@ -14,19 +14,19 @@
 
 - [x] **RELY-01**：用户拿到的技术方案一定来自完整编排链路；编排未完成时，系统不会用未经调研的草稿冒充正式方案（如仍提供草稿，必须显式标注「未经代码调研」）
 - [ ] **RELY-02**：技术方案编排不会无人应答地永久停在澄清阶段——澄清必达用户、可作答，且超时/失败有明确出口
-- [ ] **RELY-03**：路由降级时用户能看见「本次未经 LLM 推理，置信度仅供参考」，而不是拿到一份看不出问题的全 low 结果
+- [x] **RELY-03**：路由降级时用户能看见「本次未经 LLM 推理，置信度仅供参考」，而不是拿到一份看不出问题的全 low 结果<br/>　　↳ 两条链均已承载：对话工具链在 `RoutingCandidateList.vue:172`（横幅 + 原因次行 + 置信度徽标灰化），编排链在 `OrchestrationStageTimeline.vue:181`（角标标位置、横幅说人话）。同时闭合徽标可见性洞——`v1_fallback` 因 payload 走精简分支而丢 `degraded` 键，已在 `builtin_processes.py:177-179` 补齐。详见 `.planning/phases/ROUTE-GAP-CLOSURE.md`
 - [ ] **RELY-04**：Stage 1 完全失联时，系统仍能给出可用的置信度分级并自动推进——置信度由分数 margin 确定性推导，LLM 判断降为输入而非决策者
 - [ ] **RELY-05**：路由在上游 LLM 抖动或缓慢时仍可用——单次调用有重试与延迟上界，用户不会无限等待
 
 ### ROUTE — 路由质量
 
-- [ ] **ROUTE-01**：路由结果分两组呈现——本项目关联仓一组、全局候选一组，各自排序，用户能一眼看出哪些是本平台内的
-- [ ] **ROUTE-02**：跨组候选带明确标注「未关联当前平台，可能涉及跨组协作」，用户据此判断是否要拉其他团队
+- [x] **ROUTE-01**：路由结果分两组呈现——本项目关联仓一组、全局候选一组，各自排序，用户能一眼看出哪些是本平台内的<br/>　　↳ 组标题与组内计数在 `RoutingCandidateList.vue:202`，区顺序照抄后端 `block_order`、区内按 `score_ranked ?? score` 降序（`useToolDisplay.ts:269-292`）；挂载点 `ToolProcessGroup.vue:229` → `ChatMessageBubble.vue:1312`。详见 `.planning/phases/ROUTE-GAP-CLOSURE.md`
+- [x] **ROUTE-02**：跨组候选带明确标注「未关联当前平台，可能涉及跨组协作」，用户据此判断是否要拉其他团队<br/>　　↳ 组级常驻句 `RoutingCandidateList.vue:211` + 候选级徽标 `:236`（完整句挂 `aria-label`）+ 置顶因果句 `:190`；文案取前端常量，不渲染后端 `cross_group_note` 自由文本
 - [ ] **ROUTE-03**：大而全的单体仓库不再因命中节点多而被系统性高估——同等相关度下小而精的正确仓库能胜出
 - [ ] **ROUTE-04**：业务域、团队归属、技术栈、关键程度等元数据参与排序打分，而不只是给 LLM 看
 - [ ] **ROUTE-05**：仓库维护活跃度以连续量参与打分，而非只有「疑似废弃」一档生效
 - [ ] **ROUTE-06**：运维可在不发版的前提下调整各信号权重
-- [ ] **ROUTE-07**：每个候选的分数可展开到各信号的贡献值，用户与开发者都能看懂它为什么排这个位置
+- [x] **ROUTE-07**：每个候选的分数可展开到各信号的贡献值，用户与开发者都能看懂它为什么排这个位置<br/>　　↳ 用户半边补齐：`RoutingCandidateList.vue:254` 披露开关（默认收起、`aria-expanded`）→ `:271` 逐信号行 + 合计行，六个信号名翻中文、未知 key 回显原文
 - [ ] **ROUTE-08**：路由质量有可回归的验收基线——golden set 覆盖真实用例，权重改动导致的退化能被自动检出
 - [ ] **ROUTE-09**：同样的需求与同样的索引状态，重复路由得到同样的结果与排序
 
@@ -76,20 +76,29 @@
 
 **Coverage: 19/19 — 每条需求恰好映射到一个相位，无孤儿、无重复。（原 24 条中 DEPTH-01~05 已移交 v0.20.0，2026-07-29）**
 
+> **状态列口径说明（2026-08-02）：** `v0.19.0-MILESTONE-AUDIT.md` §6.4 已指出本表状态列口径不
+> 一致（105/106/107 十三条仍为 `Pending`，而审计判定其中多条 SATISFIED）。本次只翻转 ROUTE 缺口
+> 闭环实际闭合的四条（ROUTE-01 / ROUTE-02 / ROUTE-07 / RELY-03），**其余行的口径统一留给
+> `/gsd-complete-milestone` 按审计报告一次性处置**，避免在此埋下第二种不一致。
+>
+> 这四条的证据是**挂载宿主级**自动化断言（从 `ChatMessageBubble` 出发走用户真实点击）+ 5 组
+> 变异验证，不是「组件内有渲染分支」。浏览器目视核对（105-UAT #3 / 107-UAT #2）因面板下线曾
+> 「无从执行」，现已**重新可执行**，但仍未执行、仍记 pending。
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | RELY-04 | Phase 105 编排解锁与评估标尺 | Pending |
-| ROUTE-07 | Phase 105 编排解锁与评估标尺 | Pending |
+| ROUTE-07 | Phase 105 编排解锁与评估标尺 | Complete（ROUTE 缺口闭环） |
 | ROUTE-08 | Phase 105 编排解锁与评估标尺 | Pending |
 | ROUTE-09 | Phase 105 编排解锁与评估标尺 | Pending |
 | ROUTE-03 | Phase 106 多信号打分函数重构 | Pending |
 | ROUTE-04 | Phase 106 多信号打分函数重构 | Pending |
 | ROUTE-05 | Phase 106 多信号打分函数重构 | Pending |
 | ROUTE-06 | Phase 106 多信号打分函数重构 | Pending |
-| ROUTE-01 | Phase 107 分层呈现与链路韧性 | Pending |
-| ROUTE-02 | Phase 107 分层呈现与链路韧性 | Pending |
+| ROUTE-01 | Phase 107 分层呈现与链路韧性 | Complete（ROUTE 缺口闭环） |
+| ROUTE-02 | Phase 107 分层呈现与链路韧性 | Complete（ROUTE 缺口闭环） |
 | RELY-02 | Phase 107 分层呈现与链路韧性 | Pending |
-| RELY-03 | Phase 107 分层呈现与链路韧性 | Pending |
+| RELY-03 | Phase 107 分层呈现与链路韧性 | Complete（ROUTE 缺口闭环） |
 | RELY-05 | Phase 107 分层呈现与链路韧性 | Pending |
 | DEPTH-01 | 移交 v0.20.0 技术方案蓝图 | Moved |
 | DEPTH-02 | 移交 v0.20.0 技术方案蓝图 | Moved |
