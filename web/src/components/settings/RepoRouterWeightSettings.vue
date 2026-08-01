@@ -183,7 +183,12 @@ const validationErrors = computed<string[]>(() => {
   }
 
   for (const f of CONSTANT_FIELDS) {
-    const raw = (constantForm.value[f.key] ?? '').trim()
+    // 🔴 必须先 String() 再 trim：常数输入框是 `type="number"`，Vue 的 vModelText
+    // 对 number 类型的 input 会把 DOM 串**回写成 number**（`castToNumber`），
+    // 于是 `constantForm[key]` 在用户改过之后不再是 string。直接 `.trim()` 会抛
+    // TypeError，而这是一个 computed —— 异常会把整块设置区的渲染打断：保存按钮的
+    // disabled 状态冻在改动前，预校验提示框永远不出现，用户既看不到问题也点不动保存。
+    const raw = String(constantForm.value[f.key] ?? '').trim()
     if (raw === '' || !Number.isFinite(Number(raw)))
       errs.push(`「${f.label}」必须是有效数值`)
   }
