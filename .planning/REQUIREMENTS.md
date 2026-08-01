@@ -64,7 +64,7 @@
   - ⚠️ **Phase 115 范围说明（代码预览为降级形态）**：现有读面拿不到源码正文 —— `chunk_lookup._query_covering_chunks` 只 select `chunk_id/file_path/line_start/line_end/chunk_index`，`chunk_at_views` 返 `{path, line, chunks}` 不带正文；唯一带 `content` 的是 `POST /api/repositories/<id>/search/`（向量搜索，必须给 query、已重排过滤，无法按 path + 行号区间取）。因此 115 交付「路径 + 行号区间 + 引用快照」，**无源码正文亦无行高亮**；⛔ 115 不新增后端端点。
   - ⏭ **顺延目标（Phase 116 planning 阶段细化）**：源码正文读面及行高亮落在 **`.planning/phases/116-entry/116-07-PLAN.md`** —— 本相位**最后一个可独立顺延的 plan**。成本高于原估：`GetRepositoryFileView` 的排除判定 / 镜像读取 / 分支解析 / chunk 拼接回退**全部内联在 View 方法里**，需先下沉成 `services/repo_file_read.py`（会改一个 MCP 面，需回归 `TOOL_SCHEMA_SNAPSHOT` 守门）。⭐ **若 116-07 最终被顺延，必须把本条的顺延目标改写为里程碑收尾的独立工作项，⛔ 不得让「顺延 Phase 116」在 116 结束后仍挂着** —— 该改写义务由 **`116-06-PLAN.md` `<output>` 的相位出口检查**兜底（写在 116-07 自己的验收里会因「顺延=不执行」而永远轮不到执行）。
 - [x] **VIEW-03**：知识库新增「技术方案」tab：列表、状态 / 项目 / 仓库筛选、搜索、深链直达查看器
-- [ ] **VIEW-04**（**PARTIAL @ Phase 115，Phase 116 SC-4 交付后转 Complete**）：蓝图与项目自动关联（项目内生成即挂项目）；蓝图关联的知识 / 上下文 / 其他蓝图互相可查、可引用（互引成图谱边）
+- [x] **VIEW-04**（**Complete @ Phase 116-04**；115 交付正向、116-04 交付反向与图谱边）：蓝图与项目自动关联（项目内生成即挂项目）；蓝图关联的知识 / 上下文 / 其他蓝图互相可查、可引用（互引成图谱边）
   - ✅ **Phase 115 交付**：项目自动关联 + 项目物料面板可见；**正向**可查 —— 本蓝图**引用了**哪些知识实体 / 仓库 / 其它蓝图，逐条可点可跳。
   - ⏭ **Phase 116 计划交付（SC-4，闭合 115 登记的顺延项；⚠️ `116-04-PLAN.md` 执行完成后本条转 ✅ 并把上面的标题改为 Complete）**：`citations` 物化为 `REFERENCES` 边、`meta.project_id` 物化为 `RELATES_TO` 边（投递门控挂 `ArtifactService.create` 与 `add_version` 两处），**反向「被谁引用」可用**。⚠️ **planning 阶段实测订正了 115 的一处判断**：反查不是「零新端点只补换算键」—— `knowledge/related.py` 的 `_DEFAULT_RELATIONS` 不含 `REFERENCES`，且 `KnowledgeRelatedView` 与 `DeliveryKnowledgeSearchService.get_related` 都不透传 `relations` ⇒ 需三处**纯追加**（view 参数白名单 → service 形参 → 前端 `getRelated`）才能让边被遍历到；`116-04-PLAN.md` 已把它列为该 SC 的第一个 task，并要求端到端验收（从被引方 `?direction=in&relations=REFERENCES&max_hops=1` 查回引用方）。
   - ⚠️ `getArtifactAssociations` 仍**必然落空**（它查 `initiatives.Artifact` 投影出的 `KnowledgeEntity`，`server/knowledge/artifact_associations.py:75`）—— 反查改走 `getRelated` + 116 物化的图谱边，前端那条「该端点零调用」的断言**原样保留**。
@@ -133,7 +133,7 @@
 | VIEW-01 | Phase 115 前端查看器与知识库 | Pending（后端供数面已就位 @ 115-01：`blueprint-document` / `blueprint-events`；查看器本体待 115-02+） |
 | VIEW-02 | Phase 115 前端查看器与知识库（降级形态）+ Phase 116 `116-07`（源码正文与行高亮） | Pending（115 交付路径 + 行号区间 + 引用快照；源码正文读面落 `116-07-PLAN.md`，本相位最后一个可独立顺延 plan —— **若顺延须同步改写本行与上文的顺延目标，由 116-06 的相位出口检查兜底**） |
 | VIEW-03 | Phase 115 前端查看器与知识库 | Pending（后端供数面已就位 @ 115-01：`blueprint-list` 含筛选与五键分页；tab 本体待 115-06） |
-| VIEW-04 | Phase 115 前端查看器与知识库（正向引用可查）+ Phase 116（反向「被谁引用」与图谱边） | PARTIAL（115 正向已交付；**116-04 执行完成后转 Complete**） |
+| VIEW-04 | Phase 115 前端查看器与知识库（正向引用可查）+ Phase 116-04（反向「被谁引用」与图谱边） | Complete（116-04：citations 物化成 `REFERENCES` 边 + `?relations=` 三层打通 + 端到端反查用例） |
 | CLAR-01 | Phase 115 前端查看器与知识库 | Pending（后端供数面与写口已就位 @ 115-01：`blueprint-review-threads` GET 多轮 + POST 选区评论；批注层待 115-03/04） |
 | FLOW-08 | Phase 115 前端查看器与知识库 | Complete |
 | GATE-01 | Phase 116（实现路径 + 开关）+ 同步点 2 后收尾（默认切换） | PARTIAL（本行描述的是目标形态，**在 116 执行完成后按实际交付复核**） |
