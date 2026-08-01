@@ -28,6 +28,7 @@ _SCANNED_MODULES = (
     "delivery/api/blueprint_doc_views.py",
     "delivery/api/blueprint_list_views.py",
     "delivery/api/blueprint_review_views.py",
+    "delivery/services/blueprint_answer_action.py",
     "delivery/services/blueprint_comment_action.py",
     "delivery/services/blueprint_review_action.py",
     "delivery/services/blueprint_lifecycle_service.py",
