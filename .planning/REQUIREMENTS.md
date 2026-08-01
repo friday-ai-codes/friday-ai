@@ -61,16 +61,20 @@
 
 - [x] **VIEW-01**：用户可打开结构化蓝图查看器：六段导航、结构化渲染（流程图 / 伪代码 / API 卡 / 影响矩阵）、状态徽标与阶段时间线（生成中实时进展）
 - [x] **VIEW-02**：仓库关联可直接跳转仓库页；引用可在查看器上再弹一层预览（知识实体 / **代码位置：文件路径 + 行号区间 + 引用快照** / 其他蓝图 / 章程条目）
-  - ⚠️ **Phase 115 范围说明（代码预览为降级形态）**：现有读面拿不到源码正文 —— `chunk_lookup._query_covering_chunks` 只 select `chunk_id/file_path/line_start/line_end/chunk_index`，`chunk_at_views` 返 `{path, line, chunks}` 不带正文；唯一带 `content` 的是 `POST /api/repositories/<id>/search/`（向量搜索，必须给 query、已重排过滤，无法按 path + 行号区间取）。因此 115 交付「路径 + 行号区间 + 引用快照」，**无源码正文亦无行高亮**；源码正文读面（及相应的行高亮）顺延 **Phase 116**，⛔ 115 不新增后端端点。
+  - ⚠️ **Phase 115 范围说明（代码预览为降级形态）**：现有读面拿不到源码正文 —— `chunk_lookup._query_covering_chunks` 只 select `chunk_id/file_path/line_start/line_end/chunk_index`，`chunk_at_views` 返 `{path, line, chunks}` 不带正文；唯一带 `content` 的是 `POST /api/repositories/<id>/search/`（向量搜索，必须给 query、已重排过滤，无法按 path + 行号区间取）。因此 115 交付「路径 + 行号区间 + 引用快照」，**无源码正文亦无行高亮**；⛔ 115 不新增后端端点。
+  - ⏭ **顺延目标（Phase 116 planning 阶段细化）**：源码正文读面及行高亮落在 **`.planning/phases/116-entry/116-07-PLAN.md`** —— 本相位**最后一个可独立顺延的 plan**。成本高于原估：`GetRepositoryFileView` 的排除判定 / 镜像读取 / 分支解析 / chunk 拼接回退**全部内联在 View 方法里**，需先下沉成 `services/repo_file_read.py`（会改一个 MCP 面，需回归 `TOOL_SCHEMA_SNAPSHOT` 守门）。⭐ **若 116-07 最终被顺延，必须把本条的顺延目标改写为里程碑收尾的独立工作项，⛔ 不得让「顺延 Phase 116」在 116 结束后仍挂着。**
 - [x] **VIEW-03**：知识库新增「技术方案」tab：列表、状态 / 项目 / 仓库筛选、搜索、深链直达查看器
-- [x] **VIEW-04**（**PARTIAL @ Phase 115，剩余部分顺延 Phase 116**）：蓝图与项目自动关联（项目内生成即挂项目）；蓝图关联的知识 / 上下文 / 其他蓝图互相可查、可引用（互引成图谱边）
+- [x] **VIEW-04**（**Complete @ Phase 115 + Phase 116**）：蓝图与项目自动关联（项目内生成即挂项目）；蓝图关联的知识 / 上下文 / 其他蓝图互相可查、可引用（互引成图谱边）
   - ✅ **Phase 115 交付**：项目自动关联 + 项目物料面板可见；**正向**可查 —— 本蓝图**引用了**哪些知识实体 / 仓库 / 其它蓝图，逐条可点可跳。
-  - ⏭ **顺延 Phase 116（其 SC-4 知识图谱物化）**：**反向「被谁引用」**与互引成图谱边。原因：`server/knowledge/artifact_associations.py:75` 查的是 `initiatives.Artifact` 投影出的 `KnowledgeEntity`，而蓝图落在 `delivery.Artifact` ⇒ 拿蓝图 id 去调 `getRelated` / `getArtifactAssociations` **必然落空**；图谱边的物化本就归属 116，115 不提前补后端。
+  - ✅ **Phase 116 交付（SC-4，闭合 115 登记的顺延项）**：`citations` 物化为 `REFERENCES` 边、`meta.project_id` 物化为 `RELATES_TO` 边（投递门控挂 `ArtifactService.create` 与 `add_version` 两处），**反向「被谁引用」可用**。⚠️ **planning 阶段实测订正了 115 的一处判断**：反查不是「零新端点只补换算键」—— `knowledge/related.py` 的 `_DEFAULT_RELATIONS` 不含 `REFERENCES`，且 `KnowledgeRelatedView` 与 `DeliveryKnowledgeSearchService.get_related` 都不透传 `relations` ⇒ 需三处**纯追加**（view 参数白名单 → service 形参 → 前端 `getRelated`）才能让边被遍历到；`116-04-PLAN.md` 已把它列为该 SC 的第一个 task，并要求端到端验收（从被引方 `?direction=in&relations=REFERENCES&max_hops=1` 查回引用方）。
+  - ⚠️ `getArtifactAssociations` 仍**必然落空**（它查 `initiatives.Artifact` 投影出的 `KnowledgeEntity`，`server/knowledge/artifact_associations.py:75`）—— 反查改走 `getRelated` + 116 物化的图谱边，前端那条「该端点零调用」的断言**原样保留**。
 - [ ] **VIEW-05**：蓝图可导出飞书文档（含决策记录附录）；未确认版本在界面与导出物上均显式标注
 
 ### GATE — 入口与质量
 
-- [ ] **GATE-01**：workflow / chat / MCP / feature list 全入口统一走蓝图编排；MCP 入口支持异步澄清协议（返回 pending、可作答、可续取结果），不再跳过澄清
+- [ ] **GATE-01**（**PARTIAL @ Phase 116，默认切换顺延同步点 2 后的收尾 plan**）：workflow / chat / MCP / feature list 全入口统一走蓝图编排；MCP 入口支持异步澄清协议（返回 pending、可作答、可续取结果），不再跳过澄清
+  - ✅ **Phase 116 交付**：蓝图 intake（建 artifact + seed `blueprint/v1` 骨架 + 功能点拆分接线）+ `build_engine_for_session` 按 `process_type` 分派 engine **与 driver** + 六个续驱点全部改造 + 四个入口**各自的蓝图实现路径**与 per-entry 运行时开关（`SettingKeys.BLUEPRINT_ENTRY_SWITCH`）+ feature list 的 `feature_segments → feature_points` 映射 + chat 两条断链修复（健康挂起不再被报成失败 / barrier 回灌）+ 旧链残余流量可观测（`technical_plan_entry_used` 按独立 `entry_key` 分桶）；**MCP 异步澄清协议全量交付**（两个新工具 + `create_feishu_technical_plan` 追加三键与 `status=partial` + assumptions 三档 + 飞书卡片送达）。
+  - ⏭ **顺延同步点 2 后的收尾 plan**：**把开关默认值翻成 `technical_blueprint`**、旧 `technical_plan`「不再是任何入口默认」的收口、`TechPlanCard` / `NodeDataTab` / `ArtifactTimeline` 三处触点升级、workflow 节点终态由「`DONE` → completed」改为「`confirmed` → completed / `pending_review` → `waiting_event` 人审 HITL 挂起」。⭐ **顺延的是语义前提不是保守**：蓝图 stage graph 的 `ai_review.review_passed → STAGE_DONE` 时 `blueprint_status = pending_review`，即蓝图会话的 `DONE` 语义是「等人审」；而 `AIPlanResearchNode._map_terminal` 把 `DONE` 无条件映射成 completed 并把 plan 喂给下游 `human_approval(plan_feishu)` / `ai_coding` ⇒ 现在翻默认 = 让下游拿着**未经人审的蓝图**去建分支写代码，正面违反 RELY-01。该挂起态的下游消费形态（execution 投影）归 v0.19.0 Phase 109。
 - [ ] **GATE-02**：蓝图 golden set 与质量指标基线建立（引用覆盖率 / AI 打回率 / 人审修改量 / 澄清轮次 / 目标仓命中率，首条 golden case 为高三提分专项），质量退化可被回归检出
 
 ---
@@ -127,12 +131,12 @@
 | CLAR-03 | Phase 114 审查与澄清收敛 | Complete |
 | CLAR-04 | Phase 114 审查与澄清收敛 | Complete |
 | VIEW-01 | Phase 115 前端查看器与知识库 | Pending（后端供数面已就位 @ 115-01：`blueprint-document` / `blueprint-events`；查看器本体待 115-02+） |
-| VIEW-02 | Phase 115 前端查看器与知识库 | Pending（代码预览为降级形态：路径 + 行号区间 + 引用快照；源码正文与行高亮顺延 116） |
+| VIEW-02 | Phase 115 前端查看器与知识库（降级形态）+ Phase 116 `116-07`（源码正文与行高亮） | Pending（115 交付路径 + 行号区间 + 引用快照；源码正文读面落 `116-07-PLAN.md`，本相位最后一个可独立顺延 plan —— **若顺延须同步改写本行与上文的顺延目标**） |
 | VIEW-03 | Phase 115 前端查看器与知识库 | Pending（后端供数面已就位 @ 115-01：`blueprint-list` 含筛选与五键分页；tab 本体待 115-06） |
-| VIEW-04 | Phase 115 前端查看器与知识库（正向引用可查）+ Phase 116（反向「被谁引用」与图谱边） | PARTIAL |
+| VIEW-04 | Phase 115 前端查看器与知识库（正向引用可查）+ Phase 116（反向「被谁引用」与图谱边） | Complete |
 | CLAR-01 | Phase 115 前端查看器与知识库 | Pending（后端供数面与写口已就位 @ 115-01：`blueprint-review-threads` GET 多轮 + POST 选区评论；批注层待 115-03/04） |
 | FLOW-08 | Phase 115 前端查看器与知识库 | Complete |
-| GATE-01 | Phase 116 入口收编与导出 | Pending |
+| GATE-01 | Phase 116（实现路径 + 开关）+ 同步点 2 后收尾（默认切换） | PARTIAL |
 | VIEW-05 | Phase 116 入口收编与导出 | Pending |
 
 **按相位汇总：**

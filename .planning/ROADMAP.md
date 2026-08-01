@@ -172,7 +172,7 @@ Plans:
 **Requirements**: GATE-01, VIEW-05
 **Success Criteria** (what must be TRUE):
 
-  1. workflow `ai_plan_research` 节点、chat `start_plan_research`、MCP `create_feishu_technical_plan`、feature list 链路全部切到 `technical_blueprint` process；旧 `technical_plan` process 进入退役观察（不再是任何入口默认）。
+  1. workflow `ai_plan_research` 节点、chat `start_plan_research`、MCP `create_feishu_technical_plan`、feature list 链路**全部具备走 `technical_blueprint` process 的可执行路径**（蓝图 intake 与功能点拆分接线完成、所有续驱点按 `process_type` 选 adapter），并由 per-entry 运行时开关控制；开关默认仍为 `technical_plan`，**默认切换与旧 process 退役观察顺延同步点 2 后的收尾 plan**（其时为改一个设置默认值 + 触点升级，无新增编排逻辑）。
   2. MCP 入口不再 skip_clarification：立即返回会话与 pending 状态，澄清经新工具可作答、结果可续取；澄清同时推飞书卡片，交互密度按 assumptions 档位可配。
   3. 导出飞书文档包含六段全量 + 决策记录附录；未确认版本在界面与导出物上均带「未经确认」显式标注（对齐 RELY-01 语义）。
   4. 蓝图 citations 物化为知识图谱 REFERENCES 边、项目关联物化为 RELATES_TO 边；知识库反查「本蓝图被哪些方案/知识引用」可用。
