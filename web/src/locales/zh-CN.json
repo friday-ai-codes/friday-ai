@@ -655,6 +655,8 @@
         "sourceWorkItem": "需求工作项",
         "sourceFeishuDoc": "飞书文档",
         "sourceUrl": "外部链接",
+        "sourceText": "当前源码",
+        "sourceTruncated": "内容较长，已截断为前 {n} 行",
         "empty": "本方案没有登记引用"
       },
       "error": {

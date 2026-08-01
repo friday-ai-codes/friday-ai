@@ -15,6 +15,17 @@
  *  5. `quote` 也为空 ⇒ 走 `CompactEmptyState`
  *  6. `CitationBlueprintPreview` 不嵌套第二层弹层，且传给 `BlueprintBlockList` 的
  *     `plainMermaid` 为 `true`、`threads` 为空数组
+ *
+ * ⭐ **116-07 扩写（VIEW-02 的源码正文与行高亮）**：
+ *  8. 有正文 ⇒ 渲染正文与**后端口径的行号**（⛔ 前端不重算行号，否则与后端分叉）
+ *  9. ⭐ **行高亮只落在 citation 的 `locator` 区间**：后端返回 10..15 而 citation 指 12..13 时，
+ *     只有 12/13 带高亮标记（负向对照：其余 4 行明确标 `false`）
+ * 10. 正文 `usable === false`（含 **200-空 `lines`**）⇒ 回落 quote 快照且**不关弹窗**
+ * 11. 正文请求失败 ⇒ 快照兜底且 ⛔ **零回显错误体**（构造含 `internal/path/leak` 的错误体，
+ *     断言它零出现）
+ * 12. `locator.line_start` 缺失 ⇒ **两个请求都不发**
+ * 13. `truncated: true` ⇒ 出现截断提示，⛔ 不当成失败去兜底
+ * 14. `line_end` 缺失 ⇒ 请求区间退化成单行、只高亮那一行
  */
 
 import type { Citation } from '~/types/blueprint'
@@ -33,6 +44,7 @@ import CitationPreviewDialog from '~/components/blueprint/CitationPreviewDialog.
 const api = vi.hoisted(() => ({
   getEntity: vi.fn(),
   getChunkAt: vi.fn(),
+  getRepositoryFileLines: vi.fn(),
   getRepositoryCharter: vi.fn(),
   getBlueprintDocument: vi.fn(),
 }))
@@ -41,6 +53,7 @@ vi.mock('~/api', () => ({
   knowledgeApi: { getEntity: api.getEntity },
   repositoryChunksApi: {
     getChunkAt: api.getChunkAt,
+    getRepositoryFileLines: api.getRepositoryFileLines,
     getRepositoryCharter: api.getRepositoryCharter,
   },
   blueprintsApi: { getBlueprintDocument: api.getBlueprintDocument },
@@ -125,7 +138,33 @@ function mountDialog(citation: Citation, stubChildren = true) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // ⭐ 116-07 的正文读面默认「不可用」⇒ 既有用例照旧走 quote 快照那一支（形状不变）。
+  api.getRepositoryFileLines.mockResolvedValue({ lines: [], truncated: false, usable: false })
 })
+
+/** `file-lines` 的归一返回（`usable` 判据由 API 层封装，组件只消费）。 */
+function fileLinesResult(
+  lines: Array<{ line_no: number, text: string }>,
+  truncated = false,
+) {
+  return { lines, truncated, usable: lines.length > 0 }
+}
+
+function mountCodePreview(
+  locator: Record<string, unknown>,
+  fallback: { title?: string, quote?: string } = { title: '被引来源', quote: '快照内容' },
+) {
+  return mount(CitationCodePreview, {
+    props: { repositoryId: 'repo-1', locator, fallback },
+    global: { plugins: newPlugins(), stubs: DIALOG_STUBS },
+  })
+}
+
+async function settle() {
+  await flushPromises()
+  await new Promise(resolve => setTimeout(resolve, 50))
+  await flushPromises()
+}
 
 describe('citationPreviewDialog —— 九档 source_type 分发', () => {
   it('1a. knowledge_entity ⇒ CitationKnowledgePreview', () => {
@@ -323,6 +362,135 @@ describe('citation 预览 —— ⭐ 三条兜底并列（弹窗保持打开、�
       global: { plugins: newPlugins(), stubs: { CompactEmptyState: true } },
     })
     expect(empty.html()).toContain('compact-empty-state-stub')
+  })
+})
+
+describe('citationCodePreview —— ⭐ 116-07 源码正文与行高亮（VIEW-02）', () => {
+  const chunkHit = {
+    chunks: [{ chunk_id: 'ck-1', file_path: 'src/a.py', line_start: 10, line_end: 42, chunk_index: 0 }],
+    usable: true,
+  }
+
+  it('8. ⭐ 有正文时渲染正文与行号（行号取后端口径，⛔ 不由前端重算）', async () => {
+    api.getChunkAt.mockResolvedValue(chunkHit)
+    api.getRepositoryFileLines.mockResolvedValue(fileLinesResult([
+      { line_no: 12, text: 'def main():' },
+      { line_no: 13, text: '    return 1' },
+      { line_no: 14, text: '' },
+    ]))
+
+    const wrapper = mountCodePreview({ file_path: 'src/a.py', line_start: 12, line_end: 13 })
+    await settle()
+
+    expect(api.getRepositoryFileLines).toHaveBeenCalledTimes(1)
+    expect(api.getRepositoryFileLines).toHaveBeenCalledWith('repo-1', {
+      path: 'src/a.py',
+      lineStart: 12,
+      lineEnd: 13,
+    })
+    const rows = wrapper.findAll('[data-testid="citation-code-line"]')
+    expect(rows).toHaveLength(3)
+    expect(wrapper.find('[data-testid="citation-code-source"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('def main():')
+    // ⭐ 行号逐字来自后端（12/13/14），⛔ 不是从 0 或 1 重新起算
+    expect(rows.map(row => row.attributes('data-line-no'))).toEqual(['12', '13', '14'])
+    expect(wrapper.findComponent(CitationFallback).exists()).toBe(false)
+  })
+
+  it('9. ⭐ 行高亮只落在 citation 区间（后端返回更宽的上下文也不越界）', async () => {
+    api.getChunkAt.mockResolvedValue(chunkHit)
+    api.getRepositoryFileLines.mockResolvedValue(fileLinesResult(
+      [10, 11, 12, 13, 14, 15].map(n => ({ line_no: n, text: `line${n}` })),
+    ))
+
+    const wrapper = mountCodePreview({ file_path: 'src/a.py', line_start: 12, line_end: 13 })
+    await settle()
+
+    const highlighted = wrapper
+      .findAll('[data-citation-highlight="true"]')
+      .map(row => row.attributes('data-line-no'))
+    expect(highlighted).toEqual(['12', '13'])
+    expect(wrapper.findAll('[data-citation-highlight="false"]')).toHaveLength(4)
+  })
+
+  it('10. ⭐ 正文不可用（200-空 lines）⇒ 回落 quote 快照且不关弹窗', async () => {
+    api.getChunkAt.mockResolvedValue(chunkHit)
+    api.getRepositoryFileLines.mockResolvedValue(fileLinesResult([]))
+
+    const wrapper = mountCodePreview(
+      { file_path: 'src/a.py', line_start: 10 },
+      { title: '被引来源', quote: 'def main():\n    pass' },
+    )
+    await settle()
+
+    expect(wrapper.find('[data-testid="citation-code-source"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('引用时的原文快照')
+    expect(wrapper.text()).toContain('def main():')
+    expect(wrapper.emitted('update:open')).toBeUndefined()
+  })
+
+  it('11. ⭐ 正文请求失败 ⇒ 快照兜底且⛔ 零回显错误体（连内部路径片段都不出现）', async () => {
+    api.getChunkAt.mockResolvedValue(chunkHit)
+    // API 层恒不抛；这里模拟它在异常路径上的归一返回（⛔ 组件永远拿不到错误体）
+    api.getRepositoryFileLines.mockRejectedValue(
+      new ApiError(400, '请求失败', { error: '缺少必填参数 path: internal/path/leak' }),
+    )
+
+    const wrapper = mountCodePreview(
+      { file_path: 'src/a.py', line_start: 10 },
+      { title: '被引来源', quote: 'def main():' },
+    )
+    await settle()
+
+    expect(wrapper.find('[data-testid="citation-code-source"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('internal/path/leak')
+    expect(wrapper.text()).not.toContain('缺少必填参数')
+    expect(wrapper.text()).not.toContain('请求失败')
+    expect(wrapper.text()).toContain('def main():')
+  })
+
+  it('12. ⭐ locator.line_start 缺失 ⇒ getRepositoryFileLines 一次都不调', async () => {
+    const wrapper = mountCodePreview({ file_path: 'src/a.py' })
+    await settle()
+
+    expect(api.getRepositoryFileLines).toHaveBeenCalledTimes(0)
+    expect(api.getChunkAt).toHaveBeenCalledTimes(0)
+    expect(wrapper.findComponent(CitationFallback).exists()).toBe(true)
+  })
+
+  it('13. truncated: true ⇒ 出现截断提示（⛔ 不当成失败）', async () => {
+    api.getChunkAt.mockResolvedValue(chunkHit)
+    api.getRepositoryFileLines.mockResolvedValue(fileLinesResult(
+      [10, 11].map(n => ({ line_no: n, text: `line${n}` })),
+      true,
+    ))
+
+    const wrapper = mountCodePreview({ file_path: 'src/a.py', line_start: 10, line_end: 9999 })
+    await settle()
+
+    expect(wrapper.find('[data-testid="citation-code-truncated"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="citation-code-source"]').exists()).toBe(true)
+    expect(wrapper.findComponent(CitationFallback).exists()).toBe(false)
+  })
+
+  it('14. line_end 缺失 ⇒ 请求区间退化成单行、只高亮那一行', async () => {
+    api.getChunkAt.mockResolvedValue(chunkHit)
+    api.getRepositoryFileLines.mockResolvedValue(fileLinesResult(
+      [10, 11].map(n => ({ line_no: n, text: `line${n}` })),
+    ))
+
+    const wrapper = mountCodePreview({ file_path: 'src/a.py', line_start: 10 })
+    await settle()
+
+    expect(api.getRepositoryFileLines).toHaveBeenCalledWith('repo-1', {
+      path: 'src/a.py',
+      lineStart: 10,
+      lineEnd: 10,
+    })
+    const highlighted = wrapper
+      .findAll('[data-citation-highlight="true"]')
+      .map(row => row.attributes('data-line-no'))
+    expect(highlighted).toEqual(['10'])
   })
 })
 
