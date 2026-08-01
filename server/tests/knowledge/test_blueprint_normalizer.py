@@ -623,3 +623,90 @@ async def test_title_is_still_capped_at_500_chars(project) -> None:
 
     assert len(events[0].title) == 500
 
+
+# ---- 12. ⭐ 入图后台任务必须携带发起用户（116-REVIEW MN-02，CTX-02）----
+#
+# `aschedule_ingestion` 的 keyword-only 形参 `initiated_by_user_id` 专门用来让 worker
+# `bind_task_context` 重绑发起用户。仓内已有五个调用点在传它，蓝图这两处回退前都没传
+# ⇒ 「谁触发了这次入图」在图谱侧不可回答（`.cursor/rules/observability-logging.mdc`
+# 「后台任务**必须**显式携带 `initiated_by_user_id`」）。两处**都拿得到**触发用户。
+
+
+async def test_create_carries_the_triggering_user_into_the_background_task(
+    project, monkeypatch
+) -> None:
+    """⭐ ``create`` 的形参里就有 ``created_by_user_id`` ⇒ 必须透传给后台任务。"""
+    from delivery.services import artifact_service as artifact_service_module
+
+    iproject = await sync_to_async(_make_project)(project)
+    scheduled = AsyncMock()
+    monkeypatch.setattr("knowledge.ingestion.aschedule_ingestion", scheduled)
+
+    await artifact_service_module.ArtifactService().create(
+        _ARTIFACT_TYPE,
+        _blueprint_v1_content(iproject.id),
+        title="骨架",
+        created_by_user_id="u-42",
+    )
+
+    assert scheduled.await_args.kwargs["initiated_by_user_id"] == "u-42"
+
+
+async def test_add_version_resolves_the_initiator_from_the_session(project, monkeypatch) -> None:
+    """⭐ ``add_version`` 拿不到 ``created_by_user_id``，经 ``produced_by_session_id`` 反查。"""
+    from delivery.models import ConvergenceSession, ConvergenceSessionEntrypoint
+    from delivery.services import artifact_service as artifact_service_module
+
+    iproject = await sync_to_async(_make_project)(project)
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_blueprint",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        initiated_by_user_id="u-77",
+    )
+    service = artifact_service_module.ArtifactService()
+    artifact = await service.create(_ARTIFACT_TYPE, _blueprint_v1_content(iproject.id))
+
+    scheduled = AsyncMock()
+    monkeypatch.setattr("knowledge.ingestion.aschedule_ingestion", scheduled)
+    await service.add_version(
+        artifact,
+        _blueprint_v1_content(iproject.id, title="改过的标题"),
+        produced_by_session_id=str(session.id),
+    )
+
+    assert scheduled.await_args.kwargs["initiated_by_user_id"] == "u-77"
+
+
+async def test_missing_initiator_is_recorded_as_system_not_blank(project, monkeypatch) -> None:
+    """无触发用户记 ``"system"``（⛔ 不留空串——那让「系统行为」与「漏传」不可区分）。"""
+    from delivery.services import artifact_service as artifact_service_module
+
+    iproject = await sync_to_async(_make_project)(project)
+    scheduled = AsyncMock()
+    monkeypatch.setattr("knowledge.ingestion.aschedule_ingestion", scheduled)
+
+    await artifact_service_module.ArtifactService().create(
+        _ARTIFACT_TYPE, _blueprint_v1_content(iproject.id)
+    )
+
+    assert scheduled.await_args.kwargs["initiated_by_user_id"] == "system"
+
+
+async def test_unresolvable_session_does_not_break_the_ingestion(project, monkeypatch) -> None:
+    """⭐ 归因 best-effort：会话 id 查不到（甚至非法）⇒ 记 system，⛔ 绝不废掉这次入图。"""
+    from delivery.services import artifact_service as artifact_service_module
+
+    iproject = await sync_to_async(_make_project)(project)
+    service = artifact_service_module.ArtifactService()
+    artifact = await service.create(_ARTIFACT_TYPE, _blueprint_v1_content(iproject.id))
+
+    scheduled = AsyncMock()
+    monkeypatch.setattr("knowledge.ingestion.aschedule_ingestion", scheduled)
+    await service.add_version(
+        artifact,
+        _blueprint_v1_content(iproject.id, title="改过的标题"),
+        produced_by_session_id="not-a-uuid-at-all",
+    )
+
+    assert scheduled.await_count == 1, "归因失败绝不能吃掉一次入图"
+    assert scheduled.await_args.kwargs["initiated_by_user_id"] == "system"
