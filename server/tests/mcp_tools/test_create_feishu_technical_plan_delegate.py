@@ -129,11 +129,11 @@ def _patch_delegate_pipeline(monkeypatch: pytest.MonkeyPatch, *, session: Conver
 
     monkeypatch.setattr("services.process_runtime.start_orchestration", _fake_start)
     monkeypatch.setattr(
-        "services.process_runtime.build_orchestration_engine",
+        "services.process_runtime.entrypoint.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
     )
     monkeypatch.setattr(
-        "services.process_runtime.adrive_convergence_session_to_pause_or_terminal",
+        "services.process_runtime.resume.adrive_convergence_session_to_pause_or_terminal",
         _fake_adrive,
     )
 
@@ -238,11 +238,11 @@ async def test_delegate_aggregates_orchestration_model_usage(
 
     monkeypatch.setattr("services.process_runtime.start_orchestration", _fake_start)
     monkeypatch.setattr(
-        "services.process_runtime.build_orchestration_engine",
+        "services.process_runtime.entrypoint.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
     )
     monkeypatch.setattr(
-        "services.process_runtime.adrive_convergence_session_to_pause_or_terminal",
+        "services.process_runtime.resume.adrive_convergence_session_to_pause_or_terminal",
         _fake_adrive,
     )
 
@@ -266,7 +266,7 @@ async def test_delegate_guards_unexpected_exception_as_failed(
 
     monkeypatch.setattr("services.process_runtime.start_orchestration", _boom)
     monkeypatch.setattr(
-        "services.process_runtime.build_orchestration_engine",
+        "services.process_runtime.entrypoint.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
     )
 

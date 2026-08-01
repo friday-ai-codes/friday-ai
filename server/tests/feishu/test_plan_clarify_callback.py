@@ -183,7 +183,10 @@ class TestAnswerBackground:
         with (
             patch(f"{_MOD}._aget_waiting_node", AsyncMock(return_value=ne)),
             patch(f"{_MOD}._acollect_round_questions", AsyncMock(return_value=_QUESTIONS)),
-            patch(f"{_MOD}.build_orchestration_engine", return_value=engine) as mock_build,
+            patch(f"{_MOD}._aresolve_clarification_session", AsyncMock(return_value=None)),
+            patch(
+                f"{_MOD}.build_engine_for_session", return_value=(engine, AsyncMock())
+            ) as mock_build,
             patch(f"{_MOD}.aanswer_round_and_resume", helper),
             patch(f"{_MOD}._send_answered_card_best_effort", AsyncMock()) as mock_card,
             patch(f"{_MOD}.WorkflowEngine", return_value=wf_engine),
@@ -199,7 +202,9 @@ class TestAnswerBackground:
             )
 
         # 据卡片 clarification_id 取轮（不信回调直传 session_id）+ 工作流入口 engine（带 node_execution_id）
-        mock_build.assert_called_once_with(node_execution_id="ne-1")
+        # 116-03：engine 经分派器取（第一实参是据 clarification_id 反查出的会话，
+        # 用来判 process_type）；node_execution_id 仍原样透传。
+        mock_build.assert_called_once_with(None, node_execution_id="ne-1")
         helper.assert_awaited_once()
         call_args = helper.await_args
         assert call_args.args[0] == "c1"
@@ -252,7 +257,8 @@ class TestAnswerBackground:
         with (
             patch(f"{_MOD}._aget_waiting_node", AsyncMock(return_value=ne)),
             patch(f"{_MOD}._acollect_round_questions", AsyncMock(return_value=_QUESTIONS)),
-            patch(f"{_MOD}.build_orchestration_engine", return_value=MagicMock()),
+            patch(f"{_MOD}._aresolve_clarification_session", AsyncMock(return_value=None)),
+            patch(f"{_MOD}.build_engine_for_session", return_value=(MagicMock(), AsyncMock())),
             patch(f"{_MOD}.aanswer_round_and_resume", helper),
             patch(f"{_MOD}.WorkflowEngine", return_value=wf_engine),
         ):

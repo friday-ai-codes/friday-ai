@@ -45,7 +45,14 @@ def _ctx(config: dict | None = None) -> ExecutionContext:
 
 
 def _bind_engine(node: AIPlanResearchNode, engine: ProcessEngine) -> None:
-    node._build_engine = lambda context, session: engine  # type: ignore[assignment]
+    # 116-03：_build_engine 返回 (engine, driver) 二元组（只换 engine 不换 driver 会把健康的
+    # 蓝图会话推成 advance_step_limit FAILED）；旧链会话配旧 driver。
+    from services.process_runtime import adrive_convergence_session_to_pause_or_terminal
+
+    node._build_engine = lambda context, session: (  # type: ignore[assignment]
+        engine,
+        adrive_convergence_session_to_pause_or_terminal,
+    )
 
 
 def _engine(**deps) -> ProcessEngine:

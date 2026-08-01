@@ -180,10 +180,6 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
     async def execute(self, context: ExecutionContext) -> NodeResult:
         """建/恢复 PlanSession → 注入真实 adapters 驱动 engine.advance → 终态/挂起映射。"""
-        from services.process_runtime import (
-            adrive_convergence_session_to_pause_or_terminal,
-        )
-
         log = logger.bind(execution_id=context.execution_id, node_id=context.node_id)
 
         # 1. 建/恢复 session（resume 幂等：从节点持久化输出取 session_id 重取）
@@ -198,15 +194,15 @@ class AIPlanResearchNode(AIAgentBaseNode):
                     next_handle="error",
                 )
 
-        # 2. 注入真实 adapters 构造 engine（可被测试 override）
-        engine = self._build_engine(context, session)
+        # 2. 注入真实 adapters 构造 engine + 取该会话对应的 driver（可被测试 override）
+        engine, adrive = self._build_engine(context, session)
 
         # 3. 复用 43-02 共享续驱 helper（不造两套循环）：advance 至「重挂起短路点」
         #    （clarifying-未答 / researching-在途）或终态 {DONE, FAILED}；step 上限由 helper
         #    内部经 transition(fail) fail-soft 退出。行为等价于原内联循环。
-        session = await adrive_convergence_session_to_pause_or_terminal(
-            engine, session, max_steps=_MAX_ADVANCE_STEPS
-        )
+        #    ⭐ driver 与 engine 一起来自分派器（116-03）：只换 engine 不换 driver 会把健康的
+        #    蓝图会话推到 max_steps 落 advance_step_limit FAILED（116-01 已实测背书）。
+        session = await adrive(engine, session, max_steps=_MAX_ADVANCE_STEPS)
 
         # 4. 入口私有挂起 marker 映射（保留）：helper 短路返回后再判一次，clarifying-pending /
         #    researching-在途 处返回工作流 waiting_event marker。
@@ -347,8 +343,14 @@ class AIPlanResearchNode(AIAgentBaseNode):
     # ===== engine 构造（测试可 override） =====
 
     def _build_engine(self, context: ExecutionContext, session: Any) -> Any:
-        """经共享 helper 注入真实 adapters 构造 engine（生产默认；测试可 monkeypatch override）。"""
-        from services.process_runtime import build_orchestration_engine
+        """经分派器按 ``session.process_type`` 取 ``(engine, driver)`` 二元组（116-03）。
+
+        ⭐ **返回二元组而不是单个 engine 是硬要求**（116-01 契约）：旧 driver 的
+        ``waiting_clarification`` 短路判据是 ``ClarificationService.ahas_pending``，对蓝图
+        会话恒 False ⇒ 只换 engine 不换 driver，健康的蓝图会话会被推到 ``max_steps`` 落
+        ``advance_step_limit`` FAILED。测试可 monkeypatch override（须同样返回二元组）。
+        """
+        from services.process_runtime.entrypoint import build_engine_for_session
 
         # CR-02：把本节点 NodeExecution id 透传给调研 dispatch——每个调研 SubAgentSession
         # 据此关联 node_execution，容器完成回调经既有 _schedule_workflow_resume 重新驱动
@@ -358,7 +360,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
         node_execution = getattr(context, "node_execution", None)
         node_execution_id = str(node_execution.id) if node_execution is not None else ""
 
-        return build_orchestration_engine(node_execution_id=node_execution_id)
+        return build_engine_for_session(session, node_execution_id=node_execution_id)
 
     # ===== 挂起判定 =====
 

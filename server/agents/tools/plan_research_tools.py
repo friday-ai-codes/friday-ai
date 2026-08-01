@@ -98,11 +98,8 @@ async def start_plan_research(
             error="缺少需求文本（requirement_text）",
         )
 
-    from services.process_runtime import (
-        adrive_convergence_session_to_pause_or_terminal,
-        build_orchestration_engine,
-        start_orchestration,
-    )
+    from services.process_runtime import start_orchestration
+    from services.process_runtime.entrypoint import build_engine_for_session
 
     logger.info(
         "start_plan_research_requested",
@@ -129,16 +126,15 @@ async def start_plan_research(
         conversation_id=conversation_id or None,
     )
 
-    # 4. 构建 engine：与工作流节点同一 build_orchestration_engine（无 node_execution_id；
-    #    chat resume 走既有 deep_analysis / clarification 机制，不依赖 node_execution）。
-    engine = build_orchestration_engine()
+    # 4. 构建 engine + driver：与工作流节点同一 build_engine_for_session（engine 与 driver
+    #    一起按 session.process_type 分派，116-03）。无 node_execution_id —— chat resume 走
+    #    既有 deep_analysis / clarification 机制，不依赖 node_execution。
+    engine, adrive = build_engine_for_session(session)
 
     # 5. 复用 43-02 共享续驱 helper（与工作流节点 / 回调消费者同源，不造两套循环）：
     #    advance 至「重挂起短路点」（clarifying-未答 / researching-在途）或终态 {DONE, FAILED}；
     #    step 上限由 helper 内部经 transition(fail) fail-soft 退出。行为等价于原内联循环。
-    session = await adrive_convergence_session_to_pause_or_terminal(
-        engine, session, max_steps=_MAX_ADVANCE_STEPS
-    )
+    session = await adrive(engine, session, max_steps=_MAX_ADVANCE_STEPS)
 
     # 6. 入口私有挂起 marker 映射（保留）：helper 短路返回后再判一次，clarifying-pending /
     #    researching-在途 处复用 chat 既有 HITL 返回挂起 marker（+ register_blocking_task）。

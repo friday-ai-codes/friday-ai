@@ -987,7 +987,10 @@ class TestWorkflowTriggers:
             return result
 
         monkeypatch.setattr(AIPlanResearchNode, "_resolve_session", _resolve_session)
-        monkeypatch.setattr(AIPlanResearchNode, "_build_engine", lambda self, ctx, s: object())
+        # 116-03：_build_engine 返回 (engine, driver) 二元组 —— driver 也来自分派器。
+        monkeypatch.setattr(
+            AIPlanResearchNode, "_build_engine", lambda self, ctx, s: (object(), _drive)
+        )
         monkeypatch.setattr(
             process_runtime, "adrive_convergence_session_to_pause_or_terminal", _drive
         )

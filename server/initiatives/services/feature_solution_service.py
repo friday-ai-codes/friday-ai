@@ -190,7 +190,7 @@ class FeatureSolutionService:
             return await self._abuild_state(session)
 
         resolved_answers = await self._aresolve_answers(clar, answers)
-        engine = self._build_engine()
+        engine, _adrive = self._build_engine(session)
         driven = await aanswer_round_and_resume(clar, resolved_answers, engine=engine)
         session = driven if driven is not None else await self._areload(session.id)
         state = await self._abuild_state(session)
@@ -215,22 +215,23 @@ class FeatureSolutionService:
     # ------------------------------------------------------------------ 内部
 
     @staticmethod
-    def _build_engine() -> Any:
-        """构造带强制确认的编排 engine（feature list 入口专用）。"""
-        from services.process_runtime import build_orchestration_engine
+    def _build_engine(session: Any) -> Any:
+        """按 ``session.process_type`` 取 ``(engine, driver)`` 二元组（116-03 分派器）。
 
-        return build_orchestration_engine(force_confirm=True)
+        ``force_confirm=True`` 照原样传给分派器：它只在旧链分支透传给
+        ``build_orchestration_engine``（注入确定性确认题组装器），蓝图链没有 ``clarify``
+        dep ⇒ 分派器丢弃并落一条 ``blueprint_engine_ignored_legacy_flag``。⇒ 旧链行为逐字
+        不变；蓝图链的「强制确认关联仓」由它自己的 ``repo_confirmation`` 硬门天然承担。
+        """
+        from services.process_runtime.entrypoint import build_engine_for_session
+
+        return build_engine_for_session(session, force_confirm=True)
 
     async def _adrive(self, session: Any) -> Any:
         """续驱到重挂起短路点或终态；异常 fail-soft 返回当前会话（绝不让查询把方案打挂）。"""
-        from services.process_runtime import (
-            adrive_convergence_session_to_pause_or_terminal,
-        )
-
         try:
-            return await adrive_convergence_session_to_pause_or_terminal(
-                self._build_engine(), session
-            )
+            engine, adrive = self._build_engine(session)
+            return await adrive(engine, session)
         except Exception as exc:  # noqa: BLE001 — 续驱失败不阻断查询，下次轮询再试
             logger.warning(
                 "feature_solution_drive_failed",

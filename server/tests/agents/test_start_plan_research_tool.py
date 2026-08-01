@@ -185,7 +185,7 @@ async def test_start_plan_research_drives_to_done_merged_plan(monkeypatch) -> No
     av = await _make_artifact_version()
     engine = _mock_merge_engine(av.id)
     monkeypatch.setattr(
-        "services.process_runtime.build_orchestration_engine",
+        "services.process_runtime.entrypoint.build_orchestration_engine",
         lambda **kw: engine,
     )
 
@@ -237,7 +237,7 @@ async def test_start_plan_research_blank_requirement_fail_closed(monkeypatch, bl
         raise AssertionError("engine must not be built for blank requirement")
 
     monkeypatch.setattr(
-        "services.process_runtime.build_orchestration_engine",
+        "services.process_runtime.entrypoint.build_orchestration_engine",
         _should_not_build,
     )
 
@@ -265,7 +265,7 @@ async def test_start_plan_research_inv2_null_work_item(monkeypatch) -> None:
     repo_b = await _make_repo("repoB")
     engine = _real_merge_engine(str(repo_a.id), str(repo_b.id))
     monkeypatch.setattr(
-        "services.process_runtime.build_orchestration_engine",
+        "services.process_runtime.entrypoint.build_orchestration_engine",
         lambda **kw: engine,
     )
 

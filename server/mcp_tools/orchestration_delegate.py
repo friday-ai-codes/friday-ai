@@ -143,11 +143,8 @@ async def delegate_process_runtime(
     from django.utils import timezone
 
     from delivery.models import ConvergenceSessionStatus
-    from services.process_runtime import (
-        adrive_convergence_session_to_pause_or_terminal,
-        build_orchestration_engine,
-        start_orchestration,
-    )
+    from services.process_runtime import start_orchestration
+    from services.process_runtime.entrypoint import build_engine_for_session
 
     started_at = time.perf_counter()
     start_dt = timezone.now()
@@ -176,8 +173,12 @@ async def delegate_process_runtime(
             include_repos=include_repos,
             extra_evidence=extra_evidence,
         )
-        engine = build_orchestration_engine(skip_clarification=True)
-        session = await adrive_convergence_session_to_pause_or_terminal(engine, session)
+        # ⭐ 116-03：engine 与 driver 一起经分派器按 session.process_type 取。
+        # skip_clarification 照原样传给分派器（它只在旧链分支透传给 build_orchestration_engine；
+        # 蓝图链没有 clarify dep，分派器会丢弃并落一条 blueprint_engine_ignored_legacy_flag）
+        # ⇒ 旧链行为逐字不变，蓝图分支自动免疫。⛔ 不在本调用点判 process_type。
+        engine, adrive = build_engine_for_session(session, skip_clarification=True)
+        session = await adrive(engine, session)
 
         model_usage = await _aggregate_orchestration_usage(start_dt)
         if session.status == ConvergenceSessionStatus.DONE:
