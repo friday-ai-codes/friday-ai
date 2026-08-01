@@ -7,12 +7,20 @@ stopped_at: >
   v0.19.0「技术方案可信度」与 v0.20.0「技术方案蓝图」两个并行里程碑均已归档，并于 2026-08-02
   由 `milestone/v0.20.0-blueprint` 合并 `origin/main` 完成合流 —— **这次合并即 v0.20.0 设计文档
   里的同步点 1 与同步点 2**。v0.19.0：5 相位 39/39 plans，审计 tech_debt（17 满足 / 2 部分 / 0 未达），
-  27 项人工验收全未执行。v0.20.0：6 相位 34/34 plans，审计 tech_debt（34/35 需求，GATE-01 PARTIAL）。
-  两者均未打 tag。**下一步不是立项新里程碑，而是执行同步点 2 顺延的四件事**（见 Operator Next Steps
-  与 Pending Todos 第 2 条），其依赖已由本次合并满足。
-last_updated: "2026-08-02T03:10:00.000Z"
+  27 项人工验收全未执行。v0.20.0：6 相位 34/34 plans，审计 tech_debt。
+  两者均未打 tag。
+
+  ⭐ **同步点 2 顺延的四件事已于 2026-08-02 分两步全部完成** ⇒ **GATE-01 满足**
+  （v0.20.0 35/35 需求）。第一步修三道消费方接缝（G1/G3/G4）与终态映射，第二步升级三处
+  前端触点、把四个入口开关默认翻到 `technical_blueprint`、给旧 `technical_plan` process 收口
+  退役。完整记录 `.planning/SYNC-POINT-2-CLOSURE.md`。
+  ⚠️ **两个里程碑的审计 status 仍是 `tech_debt`**：本次解除的是「入口收编」那一支的债，
+  其余（mcp npm 包漂移 / 蓝图 confirmed 后无下游驱动方 / 开关无运维面 / 相位级条目 /
+  Nyquist 全缺）一条未动，见 `v0.20.0-MILESTONE-AUDIT.md` §14.5。
+  **下一步仍不是立项新里程碑**，而是 Pending Todos 里剩下的独立工作项。
+last_updated: "2026-08-02T05:40:00.000Z"
 last_activity: 2026-08-02
-last_activity_description: v0.19.0 与 v0.20.0 双里程碑归档后合并（同步点 1 + 2）
+last_activity_description: 同步点 2 收尾第二步（三处前端触点 + 翻四个入口开关默认值 + 旧 process 退役）⇒ GATE-01 闭合
 progress:
   total_phases: 11
   completed_phases: 11
@@ -30,14 +38,14 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。
 **v0.19.0 交付的那一层：** 技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。
 **v0.20.0 交付的那一层：** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，飞书式划线澄清多轮收敛，全生命周期可管理、可查可引可导出。
-**Current focus:** ⛔ **无在建里程碑，下一里程碑尚未立项。** 下一个动作是同步点 2 顺延的四件事（翻 per-entry 开关默认值 + 三个入口出口映射重做 + 三处触点升级 + 旧 `technical_plan` process 退役），**依赖已由 2026-08-02 的合并满足、待执行**。
+**Current focus:** ⛔ **无在建里程碑，下一里程碑尚未立项。** ~~下一个动作是同步点 2 顺延的四件事~~ —— **四件事已于 2026-08-02 分两步完成，GATE-01 满足**（见 `.planning/SYNC-POINT-2-CLOSURE.md`）。⇒ 现在真正待办的是 Pending Todos 里剩下的独立工作项，其中**最紧的一条随本次改动上调了优先级**：`BLUEPRINT_ENTRY_SWITCH` 无运维面 —— 默认已翻到蓝图链，要单入口回滚仍得经通用设置 API 裸写 `SystemSetting`。
 
 ## Current Position
 
 Phase: —（v0.19.0 与 v0.20.0 均已归档并合并，无在建里程碑）
 Plan: —
-Status: 两个里程碑均判 `tech_debt`、均未打 tag；同步点 1/2 已达成，顺延工作项待执行
-Last activity: 2026-08-02 — `milestone/v0.20.0-blueprint` 合并 `origin/main`（v0.19.0 归档）完成，`.planning/` 台账合流
+Status: 两个里程碑均判 `tech_debt`、均未打 tag；同步点 1/2 已达成，**同步点 2 的顺延工作项已全部执行完毕**（GATE-01 闭合），其余独立工作项待执行
+Last activity: 2026-08-02 — 同步点 2 收尾第二步：三处前端触点识别 blueprint/v1 + 四个入口开关默认翻 `technical_blueprint` + 旧 `technical_plan` process 退役收口（`789a1c0a` / `39b84961` / `e3184cef`）
 
 > 相位执行期的逐 plan 状态存档（各 plan 的收口记录与「开工前必读」清单）随归档移出本文件 —— 权威副本在 `.planning/milestones/v0.{19,20}.0-phases/<phase>/<plan>-SUMMARY.md`，历史版本在 git。**仍然有效的跨里程碑信息全部保留在下方**：两个里程碑的关键约束/设计底座、Accumulated Context 的 Decisions 与 Pending Todos、Blockers/Concerns、Deferred Items。
 
@@ -60,7 +68,7 @@ Last activity: 2026-08-02 — `milestone/v0.20.0-blueprint` 合并 `origin/main`
 
 - **对方线:** `milestone/v0.19.0-plan-trust`（Phases 105–107 + 109 + 110；108 已移交本里程碑，对方分支已确认收录该决策，commit `1fd3e60c`）。
 - ✅ **同步点 1**（0.19 Phase 107 合并主干，澄清送达/提醒设施对齐）—— **已达成**。⇒ 蓝图澄清卡片的**交互回调**（`blueprint_notify.py` 那一处）从「等同步点 1」转为**待执行**，见 Pending Todos。
-- ✅ **同步点 2**（0.19 Phase 109/110 合并，execution 投影与事件时间线契约就位）—— **已达成**。⇒ 116 的触点升级与默认入口切换从「阻塞」转为**解阻塞、待执行**，见 Pending Todos 第 2 条。
+- ✅ **同步点 2**（0.19 Phase 109/110 合并，execution 投影与事件时间线契约就位）—— **已达成**，且**顺延工作已全部执行完毕**（2026-08-02 两步收尾：三道消费方接缝 + 终态映射 / 三处触点 + 翻默认 + 退役）。⇒ §13.2 的「TechPlanCard 等 0.19 归属组件在同步点 2 前不得动」这条纪律**已解除并已兑现**。记录见 [`SYNC-POINT-2-CLOSURE.md`](./SYNC-POINT-2-CLOSURE.md)。
 - **边界纪律的实测结果**：六个相位跑完与 v0.19.0 **零源码文件交集**，合并冲突只剩 `.planning/` 台账七文件、`server/system/models.py` 与 `server/tests/test_model_usage_call_source.py` 两处同点追加、以及 `repositories` app 的两个 0040 migration 叶子分叉（已由 `0041_merge_20260802_0303.py` 合并）。纪律原文（冻结 `repo_router_v2.py` / 既有 `technical_plan` process 六文件 / `ConvergenceSessionEvent` 既有契约、前端只新建组件、migration 与 rebase 节奏）已随里程碑归档，见 `milestones/v0.20.0-ROADMAP.md` 与 DESIGN §13.2/§13.3。
 
 ## 关键约束 / 设计底座（v0.20.0 技术方案蓝图 — 仍生效）
@@ -541,6 +549,21 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 
 ### Pending Todos
 
+> ⭐⭐⭐⭐⭐ **最新一次变更（2026-08-02，同步点 2 收尾第二步）：本表**唯一被关掉的一条**是
+> 「蓝图默认切换 + 三件事同批」（下方带 `~~删除线~~` 的那条）。四件事全部交付 ⇒ **GATE-01 满足**。
+> ⛔ **其余条目一条未动**：本次改动全部落在 `blueprint_entry_switch` / `builtin_processes` /
+> `entrypoint` / `plan_research` / 两个序列化器与三处前端触点，与它们不相交。
+>
+> ⚠️ **本次上调了一条既有条目的优先级**：`BLUEPRINT_ENTRY_SWITCH` 无运维面（记在里程碑审计的
+> `tech_debt.116-entry`）—— 翻默认之前是「将来会需要」，翻默认之后是「**要回滚时立刻需要**」。
+> ⏭ **本次新增一条刻意收窄**（登记，非缺口）：chat 侧 `map_merged_plan_to_coding_plan` 未接
+> 派生器 ⇒ 蓝图投影出的 `CodingPlan` 内容仍为空，但**不再静默**。
+>
+> ⚠️ 下面几段 `>` 前言是**历次评审轮的历史记录**，其中提到的「① 同步点 2 的默认切换与三处触点
+> 升级」现已作废 —— 以本段与带删除线的那一条为准。
+>
+> ---
+>
 > **合并后的单一清单（2026-08-02）。** 本表在合并 `origin/main`（v0.19.0 归档）时统一过一遍：
 > v0.19.0 侧的 Pending Todos 为空（其遗留全部记在下方 Deferred Items「Acknowledged at v0.19.0 close」，
 > 权威清单不重复搬运，仅在此处交叉引用）；v0.20.0 侧的清单原样保留，**只改两处措辞** ——
@@ -601,12 +624,19 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 > ⭐ **本表已在 116-07（Phase 116 最后一个 plan / v0.20.0 功能面收尾）复核过一遍**：本 plan 解决的条目已划掉，其余保留项均已改写成「里程碑收尾之后的独立工作项」措辞，⛔ 不再有任何一条指向某个已完成的 plan 去接。真正顺延的分别是：① **同步点 2 的默认切换与三处触点升级**（含 `plan_research._map_terminal` 改 HITL 挂起，四件事同批，见下第 2 条）、② **`redact_secrets_in_text` 不覆盖数据库连接串**（平台级，第 4 条）、③ **MN-03 的四语义契约整体改版**（400 分支的存在性预言机，第 3 条）、④ **澄清飞书卡片的交互回调 + apscheduler 周期提醒接线**（等同步点 1）、⑤ **FLOW-02 的「替代建议」补结构化字段**（本次收口新发现的过期指向：原措辞指望 113/115 顺手做，两者都已完成且都没做）。⚠️ 另有一条**平台级观察**记在 116-07-SUMMARY §15：`RepositoryPermission` 是「任意登录用户可读任意存在的仓库」而非仓库级 ACL（`permissions.py` 自承待扩展）—— 非 116-07 引入（每个仓库读面都是这口径、`chunk-at` 甚至更弱），与本表 Phase 111 的 MN-12「权限口径」一并定夺。
 
 - ~~⭐ [Phase 115-03 顺延 · **VIEW-02 的最后一块**] 代码位置引用预览缺源码正文与行高亮~~ —— **116-07 已闭**（commit `2242d4fe` / `9babf666` / `96658922`）：新增 `GET /api/repositories/<id>/file-lines/`，实现下沉进 `services/repo_file_read.aread_repository_file` 这**唯一一份**（与 MCP `get_repository_file` 共享，含 requested + resolved 双复判的 fail-closed 排除判定）；SPA 面把「被排除 / 不存在 / 无镜像」映射成**逐字相同的 200 空**（无存在性预言机），MCP 面的 **404 `file_excluded`** 逐字未改。`CitationCodePreview` 据此渲染正文 + 行号列 + **citation 区间行高亮**，取不到正文回落 quote 快照、⛔ 不关弹窗、⛔ 不回显错误体，⛔ 零新增依赖。`REQUIREMENTS.md` 的 VIEW-02 已转 **Complete**。
-- ⭐⭐ [Phase 116 收口 · **同步点 2 已达成（2026-08-02 合并），本条从「阻塞」转为「解阻塞、待执行」，是合并之后的第一个动作**，⛔ 不属于任何已完成 plan] **蓝图默认切换尚未发生，且必须与三件事同批做**：① 四个 per-entry 开关键仍全为 `technical_plan`（翻默认 = 让编码代理拿着**未经人审**的蓝图去建分支写代码，正面违反 RELY-01）；② **三个入口的出口映射整体重做**（⚠️ **里程碑审计第二轮把这一条从「`_map_terminal` 一行」扩到了实测规模**，见 `v0.20.0-MILESTONE-AUDIT.md` §2.3 / §4.1 的 G1/G3/G4）；③ 三处触点升级与旧 `technical_plan` process 收口退役。⇒ **四件事是同一批改动**，⛔ 任何一件单独做都会造成回退。~~阻塞在 v0.19.0 的同步点 2 合并节奏。~~ —— **同步点 2 已于 2026-08-02 由本次分支合并满足** ⇒ 依赖已解除，四件事待执行。
-  - ⭐ **第 ② 件事的实际范围（⛔ 不是一行）** —— 四个入口里只有 **chat 做对了**（`plan_research_tools._map_terminal_blueprint:474-531` 按 `blueprint_status` 分桶、`pending_review` 计成功），其余三个各要改一处，且改的**不是同一个东西**：
+- ~~⭐⭐ [Phase 116 收口] **蓝图默认切换尚未发生，且必须与三件事同批做**~~ —— ✅ **已闭（2026-08-02，同步点 2 收尾两步）**。
+  - **第一步**（三道消费方接缝 + 终态映射，commit `c5985bdb` / `aa63bcf0` / `dd10cbcb` / `2f002b90` / `1f9048a6`）：G1 workflow 挂起判据换 `BlueprintThread` 并补作答链重入 hook；G3 MCP 主载荷经**既有权威派生器**投影出 `execution_plan`（映射器一行未改）；G4 feature_list 问题来源换 `BlueprintThread`、`confirm` 对蓝图会话如实拒绝；⭐ 终态 `pending_review` 改 `waiting_event` / `kind="human_review"` 且**刻意不产出 `plan` 载荷** —— 那才是 RELY-01 的真闸。记录：[`SYNC-POINT-2-CLOSURE.md`](./SYNC-POINT-2-CLOSURE.md) §1–§9（变异 M1–M6）。
+  - **第二步**（触点 + 翻默认 + 退役，commit `789a1c0a` / `39b84961` / `e3184cef`）：三处触点按 `schema_version` 判别 blueprint/v1（v0 逐像素不变）；四个开关默认翻 `technical_blueprint`（机制与 per-entry 回滚一字未动）；旧 process 退役标记进 `ProcessDefinition.config`（零迁移、程序可查、**保留注册**）。记录：同上 §11–§18（变异 M-A–M-D）。
+  - ⇒ **`REQUIREMENTS.md` GATE-01 转 `[x]` 满足**；里程碑审计的 `partial.GATE-01` 转 closed、`tech_debt.116-entry` 前两条解除，但审计 **`status` 仍为 `tech_debt`**（其余债未清，逐条见审计 §14.5）。
+  - ⚠️ **本次顺带发现并修掉一条原清单未记的形态**：`aget_json_setting` **不与默认值合并** ⇒ 若 fail-soft 硬回旧链，一条 `{"mcp": "technical_plan"}` 会把另外三个入口一起拖回旧链（变异 M-D 实证）。
+  - ⚠️ **本次上调优先级的一条**：下方「`BLUEPRINT_ENTRY_SWITCH` 无运维面」从「将来会需要」变成「**要回滚时立刻需要**」—— 现在回滚一个入口仍得经通用设置 API 裸写 `SystemSetting`。
+  - ⏭ **本次刻意未做（登记，非缺口）**：chat 侧 `map_merged_plan_to_coding_plan` 未接派生器 ⇒ 从蓝图版本投影出的 `CodingPlan` 正文与 `affected_files` 仍为空，只是**不再静默**（卡片如实说明形态并导向查看器，用例显式断言 `affected_files == []`）。要补内容应复用 `blueprint_execution.derive_execution_plan`，属独立工作项。
+  - [原文存档] **蓝图默认切换尚未发生，且必须与三件事同批做**：① 四个 per-entry 开关键仍全为 `technical_plan`（翻默认 = 让编码代理拿着**未经人审**的蓝图去建分支写代码，正面违反 RELY-01）；② **三个入口的出口映射整体重做**（⚠️ **里程碑审计第二轮把这一条从「`_map_terminal` 一行」扩到了实测规模**，见 `v0.20.0-MILESTONE-AUDIT.md` §2.3 / §4.1 的 G1/G3/G4）；③ 三处触点升级与旧 `technical_plan` process 收口退役。⇒ **四件事是同一批改动**，⛔ 任何一件单独做都会造成回退。~~阻塞在 v0.19.0 的同步点 2 合并节奏。~~ —— **同步点 2 已于 2026-08-02 由本次分支合并满足** ⇒ 依赖已解除，四件事待执行。
+  - [原文存档] ⭐ **第 ② 件事的实际范围（⛔ 不是一行）** —— 四个入口里只有 **chat 做对了**（`plan_research_tools._map_terminal_blueprint:474-531` 按 `blueprint_status` 分桶、`pending_review` 计成功），其余三个各要改一处，且改的**不是同一个东西**：
     - **workflow（G1，最重）**：`plan_research._maybe_suspend`（`:468-471`）用旧链模型 `ClarificationService().ahas_pending` 判待答，而蓝图链**从不写 `Clarification` 行**（写的是 `BlueprintThread`）⇒ 停在 `waiting_clarification` 的蓝图会话 `pending=None` → 不发卡 → 不建订阅 → `suspend=None` → 落 `_map_terminal` 非 DONE 分支 → `status=failed`。⇒ 要改的是**挂起判据**，`_map_terminal`（`:626`）那行 `DONE→completed` 只是同一处的第二半。
     - **feature_list（G4）**：`initiatives/services/feature_solution_service.py:485-512` 同为旧链模型，待答问题取自 `ClarificationQuestion` ⇒ 蓝图会话永久 `researching` + 空问题列表 + 该面无解阻手段。⇒ 要改的是**问题来源**。
     - **MCP（G3）**：`orchestration_delegate.py:267-276` 的 `DONE→completed` 无蓝图分支、`_load_canonical` 用 v0 渲染器；`technical_plan_service.py:440` 读 `content["execution_plan"]`，blueprint/v1 无该顶层键 ⇒ `repository_tasks` 恒 `[]`（**响应结构合法而语义为空**的静默降级）。⇒ 要改的是**主载荷映射**。
-  - ⚠️ **顺序上有个比已知风险更早的坑**：真翻 `workflow` 或 `feature_list` 开关后，**第一次澄清就会撞上 G1/G4**（规格门每一次提问、确认硬门每一次停等都会触发），**早于**「未经人审的蓝图被送进 `ai_coding`」这个已登记的风险 —— 后者要等一条会话跑到终态才显形。⇒ 排期与灰度顺序按此估，⛔ 不要按「先翻开关再看终态」的直觉走。
+  - [原文存档 · ⭐ **实测印证**] ⚠️ **顺序上有个比已知风险更早的坑**：真翻 `workflow` 或 `feature_list` 开关后，**第一次澄清就会撞上 G1/G4**（规格门每一次提问、确认硬门每一次停等都会触发），**早于**「未经人审的蓝图被送进 `ai_coding`」这个已登记的风险 —— 后者要等一条会话跑到终态才显形。⇒ 排期与灰度顺序按此估，⛔ 不要按「先翻开关再看终态」的直觉走。
 - ⭐ [归档前收尾新发现 · **跨仓改动，⛔ 不在本里程碑范围内**] **mcp npm 包与服务端工具面漂移四个工具**：`tests/mcp_tools/test_mcp_package_alignment.py` 实测「服务端有、包缺失：`answer_blueprint_clarification` / `get_technical_blueprint` / `read_blueprint_context` / `report_blueprint_context`」。⭐ **这条守卫在 `mcp/` 子模块未 checkout 时 `pytest.skip`** ⇒ **全里程碑从未实跑过**，是归档前收尾初始化子模块时才第一次跑起来并当场转红的（与 `test_skills_snapshot_guard` 那条「守卫在本 worktree 空跑」完全同构 —— 空跑掩盖的不止一条）。四个工具**全部是本里程碑新增**（113-02 两个总线工具 + 116-06 两个澄清工具），而 `mcp/src/tools.ts` 的 `FRIDAY_TOOLS` 是**静态白名单、未知工具直接拒绝** ⇒ **经 npm 包接入的 agent 调不到它们**：服务端端点齐备，客户端不可达。⚠️ 这削弱 GATE-01「MCP 异步澄清协议全量交付」的口径（REST / 服务端侧为真，npm 客户端侧不可达）。⇒ 修法是给 `mcp` 子模块补四个条目**并发版**，那是**另一个仓库**的改动 + 一次发布 ⛔ 不在 v0.20.0 范围内，且本 worktree 明确不动子模块指针。**在它修好之前，后端全量套件的唯一红是这一条**（判据：`git diff` 对 `server/mcp_tools` / `mcp` / `server/tests/mcp_tools` 为空 ⇒ 与本里程碑任何改动无关）
 - ⭐ [Phase 115 review 跳过项 · **MN-03**] **范围闸的 400 分支对「`meta.project_id` 不合法」的那批 artifact 仍构成存在性预言机**（`blueprint_review_views._aassert_project_scope:277-278`；114 引入，115 把暴露面从 7 个端点扩到 11 个，⭐ **116 一次改到位扩到 15 个** —— 116-05 的两个飞书导出端点 +2、116-06 的两个 MCP 工具 +2，两者都是**import 复用同源实现**而不是复制第四份，理由是 MJ-03 的单一实现纪律；⛔ **暴露面变大是已知代价，四语义契约的整体改版仍是独立工作项**）。**判为设计决策而非缺陷、本轮不修**，四条理由：① **400 本身就是那四条语义之一**（`115-01-PLAN.md:126` 逐字列它为 fail-closed 标志物），并进 404 = 删掉四条里的一条；② 这是 **114 的面且 115 明文 🔒 零改动**（PLAN 四处要求 `git diff` 为空，两个新 View 刻意 import 复用而非复制）；③ 该闸跑在**成员判定之前** ⇒ 对**真成员**同样触发，400 在前端就近回显「meta.project_id 缺失或非法」（管理员据此知道去修哪份数据），改 404 则整页替换成中性文案且无恢复出口 —— **正是 115-MN-02 刚修掉的死路形状**；④ 暴露面只限 `meta.project_id` 非 UUID 的那一小批，形状正常的蓝图其「非成员 404」与「不存在 404」用**同一个常量对象**，预言机已关闭。⇒ **正确形态是连同四条语义契约一起改版**（含前端 400 档的去向与两族参数化 `test_*_fail_closed_*` 的重写），⛔ 不是单点改一行状态码。⚠️ **Phase 116 已全部完成且未动它** ⇒ 该改版明确是**里程碑收尾之后的独立工作项**，与本表 Phase 111 的 MN-12「权限口径」一并定夺。⭐ **暴露面计数在 116 收口后维持 15 个端点**：116-07 新增的 `file-lines` 走的是 `repositories` 的仓库读面权限口径（`[IsAuthenticated, RepositoryPermission]` + `aget_object_or_404`），**不经** `_aassert_project_scope` ⇒ ⛔ 不再 +1
 - ⭐ [Phase 116 review 修复轮顺带发现 · **未修** · 本轮新增] **chat 阻塞 waiter 的回灌靠「逐个挂载」维持，没有结构性保证**：`_afeedback_chat_blueprint_barrier` 现在有**三个**挂载点 —— 两个容器回调 barrier（`_trigger_blueprint_research_barrier` / `_trigger_blueprint_repo_plan_barrier`）加上 116-MN-04 新挂的作答链共同出口（`blueprint_resume.aresume_after_gate_action` 收尾）。helper 自带 chat 守门 + 终态守门 + barrier 去重 ⇒ **多挂幂等安全**，本轮也补了「非 chat 入口走同一条链仍不回灌」的守门对照。但「**哪些路径通向终态**」这件事仍是人工清单：以后新增第四条通向终态的路径而忘了挂，症状又是「对话里的占位永久停住、且不抛异常」（115-MJ-02 与 116-MN-04 已经是同一形状的第二次复发）。⇒ **彻底的形态是让终态转移本身发出一个事件、回灌去订阅它**，那要动 `ConvergenceSessionEvent`（§13.2 冻结面，且与 0.19 的时间线契约耦合）⇒ **里程碑收尾之后的独立工作项**，与本表第 21 条「`areopen_stage` 未发事件」**同批定夺**（两条都要新增事件常量，同步点 2 之后一起做才不会来回改契约 —— 同步点 2 已于 2026-08-02 达成，可以做了）
@@ -661,7 +691,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 
 [Issues that affect future work]
 
-- ✅ ~~同步点 1/2 依赖 v0.19.0 的 107 / 109+110 合并主干节奏；116 的入口切换在同步点 2 前不可执行~~ —— **已于 2026-08-02 由 `milestone/v0.20.0-blueprint` 合并 `origin/main` 达成**。两个同步点同时满足；顺延的四件事转入 Pending Todos 第 2 条，状态为「解阻塞、待执行」。
+- ✅ ~~同步点 1/2 依赖 v0.19.0 的 107 / 109+110 合并主干节奏；116 的入口切换在同步点 2 前不可执行~~ —— **已于 2026-08-02 由 `milestone/v0.20.0-blueprint` 合并 `origin/main` 达成**，且**同步点 2 的四件事已在同日两步执行完毕**（GATE-01 闭合，见 `SYNC-POINT-2-CLOSURE.md`）。⚠️ **同步点 1 那半仍有残留**：澄清飞书卡片的**交互回调**尚未接（当前是通知形态，作答走 REST / MCP / 查看器三条通道），见 Pending Todos。
 - ✅ ~~`.planning/` 台账与 0.19 分支在里程碑收尾合并时预期机械冲突~~ —— **已于 2026-08-02 人工合流**：七份 `.planning/` 文件（MILESTONES / PROJECT / REQUIREMENTS / RETROSPECTIVE / ROADMAP / STATE / observability/LOGGING-SPEC）按「两个里程碑的段各自保留、互不覆盖」合并，`REQUIREMENTS.md` 取删除（两侧内容均已在 `milestones/v0.19.0-REQUIREMENTS.md` 与 `milestones/v0.20.0-REQUIREMENTS.md` 归档）。
 
 - ✅ ~~**`RoutingDecisionPanel` 在 SPA 内无任何挂载点 ⇒ ROUTE-01 / ROUTE-02 / ROUTE-07 / RELY-03 的用户可见半边到不了用户**（v0.19.0 唯一的里程碑级 BLOCKER，2026-07-31 由里程碑审计发现并把影响范围从 3 条扩到 4 条）~~ —
@@ -732,7 +762,7 @@ Items acknowledged and deferred at milestone close on 2026-08-02（`gsd-tools qu
 | quick_task | `260611-ghb-workflow-card-uniform` | unknown（v0.20.0 范围外的既有 quick task） |
 | quick_task | `260624-w11-abort-stuck-index-job-962-and-add-2mb-pr` | unknown（v0.20.0 范围外的既有 quick task） |
 
-⚠️ 里程碑级技术债（同步点 2 的四件事 / G1·G3·G4 三道入口接缝 / mcp npm 包漂移 / Nyquist validation 缺失 / 平台级脱敏与权限口径）**不在本表**，权威清单是上方 Pending Todos 与 [milestones/v0.20.0-MILESTONE-AUDIT.md](./milestones/v0.20.0-MILESTONE-AUDIT.md)。
+⚠️ 里程碑级技术债（~~同步点 2 的四件事 / G1·G3·G4 三道入口接缝~~ **已于 2026-08-02 全部闭合** ／ mcp npm 包漂移 / `BLUEPRINT_ENTRY_SWITCH` 无运维面 / 蓝图 confirmed 后无下游驱动方 / Nyquist validation 缺失 / 平台级脱敏与权限口径）**不在本表**，权威清单是上方 Pending Todos 与 [milestones/v0.20.0-MILESTONE-AUDIT.md](./milestones/v0.20.0-MILESTONE-AUDIT.md)。
 
 ### 🔒 Acknowledged at v0.19.0 close（2026-08-02）
 
@@ -891,7 +921,7 @@ Earlier: 执行 92-03（SLOT-02 收官）——新建 clarification_card 原子�
 Earlier: 执行 92-02（插槽后端 SLOT-02 端口暴露半）——ai_plan_research 暴露 clarify(out)/resume(in) 插槽端口（仅声明零运行时改动）+ build_clarification_card action 前缀参数化；91-05（前端 ClarificationCard 多题多选渲染，CLARIFY-04）——扩展 ClarificationCard.vue 按 payload 形态分支：含 questions[] 走 plan 多题轮（single button / multi Checkbox + ⭐推荐默认选中 + 每题自由输入），否则走既有 chat 单题（零回归）；提交聚合 answers[{question_id,selected,freeform_text}] 打 91-04 专路由 postPlanClarificationAnswer → markPlanClarificationAnswered；新增 PlanClarification* 类型 + ConversationRuntime.pending_plan_clarification 透传 + store 独立 pendingPlanClarifications（conversation 维度隔离）+ runtime 回灌 + ChatMessageArea 渲染分支 + chat.clarification i18n（默认中文）+ TDD 守护 spec（真实 zh-CN.json）。6 用例绿、chat/stores 267 无回归、vue-tsc/eslint 干净。**Phase 91 全部完成（5/5）。**
 Earlier: 执行 91-04（会话端 plan 澄清专路由 + runtime 暴露 + 同源续推）；91-03（飞书澄清回调 plan_clarify_ 收答 → 续推 → approve_node 重调度）；91-02（工作流节点发卡 + WorkflowEventSubscription + WR-03 三处 pending 收口）；91-01（共享回流 helper aanswer_round_and_resume + 多轮放开）；90-04（入口无关 ask_clarification helper）；90-03（ClarifyAdapter 接 LLM 多题 + fail-soft + pending 收口）；90-02（ClarificationService 写入入口）；90-01（结构化澄清数据脊柱）。
 Resume file: None
-Next: **执行同步点 2 顺延的四件事，⛔ 不是立项新里程碑** —— 翻四个 per-entry 开关默认值 + workflow / feature_list / MCP 三个入口的出口映射重做（审计 §4.1 的 G1/G3/G4）+ `TechPlanCard`/`NodeDataTab`/`ArtifactTimeline` 三处触点升级 + 旧 `technical_plan` process 退役收口，**四件事同批做**（见 Pending Todos 第 2 条与 Operator Next Steps）。之后若立项新里程碑，**版本号须避开已被发布轨占用的 v0.18.0**（见 Blockers/Concerns），现成候选提案 `coding-agent/PROPOSAL.md`。v0.19.0 遗留见 Deferred Items「Acknowledged at v0.19.0 close」；v0.20.0 遗留见「Acknowledged at v0.20.0 close」与 Pending Todos；v0.17.0 遗留 11 项真实环境人工验证见 `milestones/v0.17.0-MILESTONE-AUDIT.md`；v0.16.1 遗留 10 项见 `milestones/v0.16.1-MILESTONE-AUDIT.md` §4。
+Next: ~~执行同步点 2 顺延的四件事~~ —— ✅ **四件事已于 2026-08-02 分两步全部完成**（三道接缝 + 终态映射 / 三处触点 + 翻默认 + 退役），**GATE-01 闭合**，记录见 `.planning/SYNC-POINT-2-CLOSURE.md`。⇒ **下一步仍不是立项新里程碑**，而是 Pending Todos 里剩下的独立工作项 —— 最紧的一条是 **`BLUEPRINT_ENTRY_SWITCH` 无运维面**（默认已翻到蓝图链，要单入口回滚仍得裸写 `SystemSetting`），其次是 mcp npm 包漂移（跨仓）、`redact_secrets_in_text` 不覆盖数据库连接串（平台级）、115-MN-03 四语义契约改版、Nyquist validation 全缺。之后若立项新里程碑，**版本号须避开已被发布轨占用的 v0.18.0**（见 Blockers/Concerns），现成候选提案 `coding-agent/PROPOSAL.md`。v0.19.0 遗留见 Deferred Items「Acknowledged at v0.19.0 close」；v0.20.0 遗留见「Acknowledged at v0.20.0 close」与 Pending Todos；v0.17.0 遗留 11 项真实环境人工验证见 `milestones/v0.17.0-MILESTONE-AUDIT.md`；v0.16.1 遗留 10 项见 `milestones/v0.16.1-MILESTONE-AUDIT.md` §4。
 
 ⚠️ **两个里程碑归档时的共同口径记录**（供后续对账）：**均未打 git tag** —— 本仓 tag 是发布轨（最新 `v0.18.0`），与 GSD 里程碑号不同轨，且 v0.15.0/v0.16.x/v0.17.0 三个里程碑同样无 tag；在未合并的并行分支上打发布号 tag 会制造假发布点（合并后此判断维持不变）。
 ⚠️ **审计核算改动面时的两个已知环境噪声**：`pnpm build` 重写 `web/src/components.d.ts`、`pnpm` 回填 `web/pnpm-workspace.yaml` 的 catalog ⇒ **请以 `git diff` 为准，⛔ 不要按工作区状态判「新增依赖」**。
