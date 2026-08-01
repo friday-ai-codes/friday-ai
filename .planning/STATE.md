@@ -2,15 +2,17 @@
 gsd_state_version: 1.0
 milestone: v0.19.0
 milestone_name: 技术方案可信度
-status: planning
-last_updated: "2026-07-28T19:20:00.000Z"
-last_activity: 2026-07-28
+status: milestone_archived
+stopped_at: v0.19.0 已收口归档（2026-08-02）。五个在范围内的相位 105/106/107/109/110 全部完成（39/39 plans，108「方案深度」已于 2026-07-29 整相位移交 v0.20.0）；里程碑审计的唯一 BLOCKER（ROUTE-01/02/07 + RELY-03 的用户半边压在零挂载点的 RoutingDecisionPanel 上）已由 ROUTE 缺口闭环结构性消除并经独立复核，审计随之由 gaps_found 改判 tech_debt（17 满足 / 2 部分 / 0 未达）。归档产物：milestones/v0.19.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md + v0.19.0-phases/（含顶层的 ROUTE-GAP-CLOSURE.md）。⚠️ 遗留：27 项人工验收全未执行、ROUTE-03 与 RELY-02 两条 PARTIAL、109-UAT #5 的发布前置交代（见 Deferred Items）。未打 tag、未起下一里程碑。
+last_updated: "2026-08-01T18:35:25.550Z"
+last_activity: 2026-08-02
+last_activity_desc: v0.19.0 里程碑收口归档（审计 gaps_found → tech_debt）
 progress:
-  total_phases: 6
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 5
+  completed_phases: 5
+  total_plans: 39
+  completed_plans: 39
+  percent: 100
 ---
 
 # Project State
@@ -19,30 +21,30 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
-**Core value（v0.19.0，在建）:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，方案结构覆盖数据流编排 / 模块↔仓映射 / 新增改造对照 / 主动澄清，全过程对用户实时可见。
-**Current focus:** v0.19.0 技术方案可信度（Phases 105–110，6 阶段 / 24 需求 RELY·ROUTE·DEPTH·SPINE·OBS）已完成 ROADMAP 与需求映射，**待 `$gsd-plan-phase 105`**。v0.17.0 已于 2026-07-22 shipped（审计 tech_debt，19/19 需求，归档见 `milestones/v0.17.0-*`），遗留 11 项真实环境人工验证 + 接受/递延债务见 [milestones/v0.17.0-MILESTONE-AUDIT.md](./milestones/v0.17.0-MILESTONE-AUDIT.md)。ship 后 07-24/07-25 有一段维护期（16 commits，未走 GSD 流程）。另有现成候选提案 [coding-agent/PROPOSAL.md](./coding-agent/PROPOSAL.md)（V1.2，2026-07-21，「提案待评审未启动」）留作后续里程碑输入。
+**Core value（v0.19.0，已交付）:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。（方案结构深度 DEPTH-01~05 已移交 v0.20.0 技术方案蓝图，双 worktree 并行开发。）
+**Current focus:** 本分支无在建里程碑。下一步是与 `milestone/v0.20.0-blueprint` 合并（同步点 2），而非立项新里程碑。
 
 ## Current Position
 
-Phase: 105 — 编排解锁与评估标尺（not started）
+Phase: —（v0.19.0 已归档，本分支无在建里程碑）
 Plan: —
-Status: Roadmap ready — 待 `$gsd-plan-phase 105`
-Last activity: 2026-07-29 — Completed quick task 260729-emz: task_category router + clarification guard + propose_project_repos
+Status: 里程碑 v0.19.0 已收口归档，审计判定 `tech_debt`；未打 tag、未起下一里程碑
+Last activity: 2026-08-02 — v0.19.0 归档（ROADMAP / REQUIREMENTS / AUDIT / 5 个相位目录 + ROUTE-GAP-CLOSURE.md 入 `milestones/`）
 
-## Milestone Overview (v0.19.0 — Phases 105–110 — 🟡 PLANNING)
+## Milestone Overview (v0.19.0 — Phases 105–110 — ✅ ARCHIVED 2026-08-02，审计 tech_debt)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 105 | 编排解锁与评估标尺（确定性置信度 + 分数可拆解 + golden set 门禁） | RELY-04, ROUTE-07/08/09 | Not started |
-| 106 | 多信号打分函数重构（尺寸偏置 + 元数据入分 + 活跃度连续 + 权重外置） | ROUTE-03/04/05/06 | Not started |
-| 107 | 分层呈现与链路韧性（分组/跨组标注 + 降级可见 + 澄清必达 + Stage 1 有界） | ROUTE-01/02, RELY-02/03/05 | Not started |
-| 108 | 方案深度（业务编排叙事 + 模块↔仓映射 + 新增/改造对照 + 主动澄清） | DEPTH-01~05 | Not started |
-| 109 | 双脊柱合流（编排产出直连执行流 + 移除徒手创作路径） | SPINE-01/02, RELY-01 | Not started |
-| 110 | 过程可观测（阶段流式 + 容器日志 + 阶段时间线） | OBS-01/02/03 | Not started |
+| 105 | 编排解锁与评估标尺（确定性置信度 + 分数可拆解 + golden set 门禁） | RELY-04, ROUTE-07/08/09 | ✅ Complete (7/7, human_needed) |
+| 106 | 多信号打分函数重构（尺寸偏置 + 元数据入分 + 活跃度连续 + 权重外置） | ROUTE-03/04/05/06 | ✅ Complete (8/8, human_needed) |
+| 107 | 分层呈现与链路韧性（分组/跨组标注 + 降级可见 + 澄清必达 + Stage 1 有界） | ROUTE-01/02, RELY-02/03/05 | ✅ Complete (9/9, human_needed) |
+| 108 | ~~方案深度~~ **已移交 v0.20.0 技术方案蓝图（2026-07-29）** | DEPTH-01~05（随迁） | Moved |
+| 109 | 双脊柱合流（编排产出直连执行流 + 移除徒手创作路径） | SPINE-01/02, RELY-01 | ✅ Complete (8/8, human_needed) |
+| 110 | 过程可观测（阶段流式 + 容器日志 + 阶段时间线） | OBS-01/02/03 | ✅ Complete (7/7, human_needed) |
 
-完整需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)（24 条 + Traceability，24/24 映射）；阶段详情见 [ROADMAP.md](./ROADMAP.md)；路由排序设计调研见 [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)。
+完整需求见 [milestones/v0.19.0-REQUIREMENTS.md](./milestones/v0.19.0-REQUIREMENTS.md)（19 条 + Traceability，19/19 映射 · 17 Complete / 2 Partial；DEPTH-01~05 已移交 v0.20.0）；阶段详情见 [milestones/v0.19.0-ROADMAP.md](./milestones/v0.19.0-ROADMAP.md)；审计见 [milestones/v0.19.0-MILESTONE-AUDIT.md](./milestones/v0.19.0-MILESTONE-AUDIT.md)（§9 是收口对账）；ROUTE 缺口闭环报告见 [milestones/v0.19.0-phases/ROUTE-GAP-CLOSURE.md](./milestones/v0.19.0-phases/ROUTE-GAP-CLOSURE.md)；路由排序设计调研见 [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)。
 
-**Execution order（依赖链，线性）:** 105 → 106 → 107 → 108 → 109 → 110。105 是全里程碑枢纽——RELY-04（置信度由分数 margin 确定性推导）是解开死锁的最短路径，同时解除 RELY-02/RELY-03 的压力，也是 ROUTE 组能被正确评估的前提（Stage 1 不可靠时若置信度仍恒 low，任何排序改进都无法体现为 `auto_selected`）；ROUTE-08 的 golden set 是回归门禁而非优化目标，不先建则后续排序改动全是盲改。106 的 ROUTE-03 是路由误选的直接机制（`max_score×(1+0.1×min(hits-1,5))` 结构性偏袒大单体），research 给了可直接落地的替代公式与数值验算。107 的分组呈现要求两组分数可比，必须等 106 定版。108 DEPTH 的价值依赖 RELY 组先成立。109 内部 SPINE-01 严格先于 SPINE-02。110 OBS 最后做，但必须复用 107 已落的事件源。
+**Execution order（依赖链，线性）:** 105 → 106 → 107 → 109 → 110（108 已移交 v0.20.0，107 完成后直接进入 109）。105 是全里程碑枢纽——RELY-04（置信度由分数 margin 确定性推导）是解开死锁的最短路径，同时解除 RELY-02/RELY-03 的压力，也是 ROUTE 组能被正确评估的前提（Stage 1 不可靠时若置信度仍恒 low，任何排序改进都无法体现为 `auto_selected`）；ROUTE-08 的 golden set 是回归门禁而非优化目标，不先建则后续排序改动全是盲改。106 的 ROUTE-03 是路由误选的直接机制（`max_score×(1+0.1×min(hits-1,5))` 结构性偏袒大单体），research 给了可直接落地的替代公式与数值验算。107 的分组呈现要求两组分数可比，必须等 106 定版。109 不再依赖方案深度——以现行 §7 execution_plan 对接执行流（深度由 v0.20.0 蓝图提供，derive_execution 同 schema 无缝换源）；109 内部 SPINE-01 严格先于 SPINE-02。110 OBS 最后做，但必须复用 107 已落的事件源。
 
 **UI 触面:** Phase 107（分组结果与 trust 标注呈现）、Phase 109（TechPlanCard 与选仓/分支执行流）、Phase 110（阶段时间线 + 流式进展）——三者 `/gsd-ui-phase` 应介入。
 
@@ -108,7 +110,7 @@ Last activity: 2026-07-29 — Completed quick task 260729-emz: task_category rou
 | 94 | 入口统一 | UNIFY-01~06 | ✅ Complete (5/5) |
 | 95 | 拆分完善 | DECOMP-01 | ✅ Complete (3/3) |
 
-完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（18 条 + Traceability，100% 映射）。
+完整需求见 [milestones/v0.16.1-REQUIREMENTS.md](./milestones/v0.16.1-REQUIREMENTS.md)（18 条 + Traceability，100% 映射）。
 
 **Execution order（依赖链）:** 90（澄清能力/数据）→ 91（出口面 + resume）→ 92（插槽后端）→ 93（插槽前端）；94（入口统一）依赖 90/91（澄清单一来源），可在 91 后并行；95（拆分完善）相对独立，可收尾推进。**澄清能力/数据必须先于插槽接线与入口统一。**
 
@@ -254,6 +256,8 @@ Last activity: 2026-07-29 — Completed quick task 260729-emz: task_category rou
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail in `.planning/milestones/v0.2.0-ROADMAP.md`.
+
+- [Milestone v0.19.0, 2026-07-29]: **Phase 108（DEPTH-01~05）整体移交 v0.20.0 技术方案蓝图里程碑**——由 blueprint/v1 结构化 schema 原生满足；v0.19.0 执行顺序改为 105→106→107→109→110；109 依赖改为「以现行 §7 execution_plan 对接执行流」。并行边界纪律：本里程碑冻结不做 `process_runtime` 旧 prompt/schema 文件（decompose_segments/research_adapter/architect_merge_adapter/merged_plan/clarify_adapter/render）的 DEPTH 向改动；`ConvergenceSessionEvent` 事件契约由本里程碑（105-07 快照 + 110 时间线）定义，v0.20.0 只新增 `blueprint_*` 类型。详见 main 分支 `.planning/technical-blueprint/DESIGN.md` §11/§13。
 
 - [Phase 101]: 101-03: chat→delivery 反查 seam 走 `ArtifactVersion.content__chat_coding_plan_id` JSON 键（现状无写入方 → 存量零行为变化；禁止重新引入 chat→delivery eager 投影）
 - [Phase 101]: 101-03: workflow write_back 三态守门——缺键（存量）时有 triple 才回写、无 triple debug 静默；显式 True 无 triple 记 writeback_skipped（caller）
@@ -417,7 +421,15 @@ None.
 
 [Issues that affect future work]
 
+- ✅ ~~**`RoutingDecisionPanel` 在 SPA 内无任何挂载点 ⇒ ROUTE-01 / ROUTE-02 / ROUTE-07 / RELY-03 的用户可见半边到不了用户**（v0.19.0 唯一的里程碑级 BLOCKER，2026-07-31 由里程碑审计发现并把影响范围从 3 条扩到 4 条）~~ —
+  **已于 2026-08-02 结构性闭合**，并在归档前经独立复核采纳（审计 §9.1）。走的是建议 ① 的变体：不重新挂载旧面板（它的数据源 `useRoutingStore` 只由对话工具链写入，编排链没有 `trace_id`，挂上去恒渲染空；且它自带 Checkbox 与两个提交按钮，正是当初被去重下线的部分），而是把**只读解释职能**折进活着的候选面 `RoutingCandidateList.vue`（挂在 `ToolProcessGroup.vue:229` →「分析过程 → 仓库分级路由」的 L2 详情区，宿主 `ChatMessageBubble.vue:1312`），并**删除**旧组件与它的 39 条隔离单测。选仓入口仍只有底部澄清卡一个，原锁测试改写为正面断言继续守这条。
+  连带闭合一个此前无人记载的洞：`v1_fallback` 的 snapshot 只有 stage1，落到 `_h_route` 的精简分支而该分支不带 `degraded`，于是「降级」这个事实恰好在**真降级**的那条路径上永不到达用户（`builtin_processes.py:177-179` 补三键，加性、无迁移）。
+  **取证方式的教训已固化**：新用例一条都不单测叶子组件，全部从 `ChatMessageBubble` 宿主出发走用户真实两次点击——把候选面从宿主摘掉即 11 条全灭。此前判绿的正是「组件内有渲染分支 + vitest 结构断言通过」这套装置。报告见 [milestones/v0.19.0-phases/ROUTE-GAP-CLOSURE.md](./milestones/v0.19.0-phases/ROUTE-GAP-CLOSURE.md)。
+  **残留**：`applyManualOverride` 现无生产调用方（原调用方即被删组件），端点与 store action 保留并已在 `stores/routing.ts:1-12` 如实注释。105-UAT #3 与 107-UAT #2 从「无从执行」恢复为「可执行、未执行」。
+
 - ⚠️ **发布轨版本号已超前于 GSD 里程碑轨——下一里程碑不可命名 v0.18.0**。两条轨道相互独立：`.github/workflows/release.yaml` 由 `tags: v*` 触发，`github-actions[bot]` 按 conventional commits 自动生成 changelog 并发 GitHub Release；GSD 里程碑轨由 `$gsd-new-milestone` / `$gsd-complete-milestone` 驱动，最后一个里程碑是 v0.17.0。目前 **`v0.18.0` 已作为 GitHub Release 发布并且是 Latest**（tag 打在 2026-07-24 的 `bc67fe4d9`，内容是 Phase 100–104 的 review 修复 + 07-23/07-24 修复的聚合 changelog，**不对应任何 GSD 里程碑**）。历史上 v0.13.3 / v0.16.4 / v0.16.5 同属这类"只有发布、无对应里程碑"的补丁发布。**立项下一里程碑时必须先 `git tag -l` 或 `gh release list` 核对，选一个未被占用的版本号（如 v0.19.0），否则 complete-milestone 打 annotated tag 会与既有 Release 撞号。**
+
+- 🔴 **`repo_router.nr_snapshot` 从未在生产写入 ⇒ ROUTE-03 承诺的尺寸归一化在生产上静默失效**（v0.19.0 里程碑审计发现，与上一条同属「消费方在线、生产方缺位」这一类接缝；上一条已闭合，**这一条仍然开放**，也是 v0.19.0 归档时 `integration: seams_found` 未能转 `integration_ok` 的唯一原因）。`_breadth_signal` 只在 `n_r > 0 ∧ n_bar > 0` 时才做 pivoted 归一，而这两个值来自一条只能在生产手动执行的命令（`measure_repo_index_stats --write-snapshot`，登记在 106-UAT #1，至今未执行）；缺失时静默退回 `denom_size=1.0`，也就是 Phase 106 花整相消除的尺寸偏置在生产上根本没启用。**闭合成本极低——在生产实例跑一条命令即可**，且索引重建后需重跑刷新。
 
 - ✅ ~~v0.2.0 follow-up：实时明文 PAT 通道（contextvar）未接入，RemoteTool 链路休眠~~ —
   已于 2026-06-14 接入（commit 8cb50e928）：带 `friday_pat_` Bearer 的手动触发经请求级
@@ -456,6 +468,29 @@ None.
 
 Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后分三类：✅ 已解决、
 🔒 需外部系统/全新实例（本地无法闭环）、🖐 纯观感人工验收（可后续浏览器抽验）。
+
+### 🔒 Acknowledged at v0.19.0 close（2026-08-02）
+
+里程碑关闭前审计：19 条需求 **17 满足 / 2 部分 / 0 未达 / 0 BLOCKER**；唯一的里程碑级 BLOCKER 已结构性闭合并经独立复核；`integration` 仍为 `seams_found`（`nr_snapshot` 生产方未运行这道接缝未消除）。`gsd-tools query audit-open` 报 13 项待决（5 相位 UAT + 5 份 human_needed VERIFICATION + 3 个既有 quick task），确认后继续关闭（accept `tech_debt`）。
+
+| Category | Item | Status |
+|----------|------|--------|
+| uat_gap | Phase 105 — O-1 生产实测回填 / gk-001 真实样本替换 / 前端分数分解目视核验 ×3 | deferred（#3 已从「无从执行」恢复为可执行） |
+| uat_gap | Phase 106 — 生产 N_r/N̄ 快照写入 / O-2 余弦校准 / S_top 口径观测 / 权重设置区交互 ×4 | deferred（**#1 载重**，见下 tech_debt 行） |
+| uat_gap | Phase 107 — 澄清必达真机 / 三块 UI 观感 / O-6 分位 / 出口 dry-run / pending 态可见性 / D-1 跨项目仓名可见性判断 ×6 | deferred（**#1、#5 载重**，需真实飞书；#2 已恢复为可执行） |
+| uat_gap | Phase 109 — 编排→PR 真机全链 / 飞书告示 / 浏览器视觉 / lark_md 观感 / 迁移 0033 影响面 / 容器消费策略 ×6 | deferred（**#1 载重**；**#5 是发布前置**，见下） |
+| uat_gap | Phase 110 — SSE 直播 / `plan_session_id` 跨进程相等 / 容器日志 / GAP-1 复验 / 读屏 / live region 节奏 / 空心点辨识度 / 完成后版面 ×8 | deferred（**#1、#2 载重**） |
+| requirement_partial | **ROUTE-03** — 公式已落地，但生产 `measure_repo_index_stats --write-snapshot` 从未执行 ⇒ `denom_size=1.0`，pivoted 尺寸归一化静默禁用 | deferred（**一条命令即可闭合**，索引重建后需重跑） |
+| requirement_partial | **RELY-02** — 超时出口半边成立且是真修复；「澄清必达用户、可作答」半边需真实飞书环境（107-UAT #1），pending 态可见性未确认（107-UAT #5） | deferred（需真实飞书） |
+| release_blocker | **109-UAT #5** — 迁移 0033 让全部存量 `CodingPlan` 落 `provenance=draft`，历史方案卡集体出现「未经代码调研」横幅、送编码各弹一次确认。事实层正确，**上线前必须先向用户交代**否则会被当成故障 | deferred（不阻断归档，阻断发布） |
+| verification_gap | Phases 105/106/107/109/110 五份 VERIFICATION 均为 `human_needed`（非代码缺陷，全部因真实飞书/容器/浏览器环境缺席） | deferred |
+| verification_gap | Phase 110 无 `110-VALIDATION.md`（105/106/107/109 均有），Nyquist 覆盖不完整 | deferred（如需补齐走 `/gsd-validate-phase 110`） |
+| tech_debt | golden 门禁对「置信度整体塌陷」不敏感（审计 §5.2 NC-B：把 `derive_confidence` 打成恒 low，degraded 套件 14 红而门禁全绿，误自动选中率反而更好）。建议补一条「degraded 路径下 `auto_selected` 必须为真」的断言 | deferred（成本极低，建议下个 quick 合入） |
+| tech_debt | 106 的 MN-05（权重设置组件 484 行零单测）/ MN-07（golden 负样本与 fixture 数值来源标注）原写「随 Phase 107 补齐」，107 完成后仍未处置——**递延承诺落空，改为显式挂账** | deferred |
+| tech_debt | 109-LO-01 gate 拒绝后重开的弹层是死胡同；110-UI-MN-02 日志组折叠按钮 `aria-label` 盖掉可见文案（WCAG 2.5.3 Level A）；110-LO-02 两处新增行未过 `ruff format`；105-IN-03 confidence Tooltip 按 rank-1 语义写却展示在所有候选上 | deferred（各为一处小修，建议合入下个 quick） |
+| tech_debt | `applyManualOverride` 现无生产调用方（原调用方即 ROUTE 缺口闭环删除的 `RoutingDecisionPanel`）；端点在线、store action 与其 7 条用例保留，已在 `stores/routing.ts:1-12` 如实注释 | deferred（不留看不出来的悬空 action） |
+| pre_existing | 3 个既有 quick task 未收口：`260610-oug-url-https` / `260611-ghb-workflow-card-uniform` / `260624-w11-abort-stuck-index-job-962-and-add-2mb-pr`（与本里程碑无关） | deferred |
+| pre_existing | 三个文件系统沙箱受限的后端测试（`test_commit_index.py` / `test_commit_index_integration.py` / `test_grep_repository.py`，临时目录 `git init` 被阻断）在闸门中排除，与本里程碑改动无耦合 | deferred |
 
 ### 🔒 Acknowledged at v0.17.0 close（2026-07-22）
 
@@ -566,8 +601,9 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-07-26T00:20:00.000Z
-Stopped at: GSD 记录对齐（`/gsd-fast`）——补 07-24/07-25 ship 后维护期 16 commits 的 last_activity 记录（此前 STATE 停在 07-23）；登记"发布轨 v0.18.0 已占号、里程碑轨止于 v0.17.0"的双轨关系与撞号风险（见 Blockers/Concerns）；MILESTONES.md 手写补回缺失的 v0.11.0 条目（health W018；自动 `--backfill` 产出的模板条目位置与内容均不合格已回滚）；`git worktree prune` 清掉 3 个路径已失效的 locked agent worktree 注册（health W017）。health 复跑：warnings 12→8、repairable 1→0。下一步：`$gsd-new-milestone`（注意版本号避开 v0.18.0）。
+Last session: 2026-08-02T02:29:42+08:00
+Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。
+Earlier: 2026-07-31T07:28:32.180Z — v0.19.0 全部相位执行完毕（105/106/107/109/110）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01；Phase 110 七个 plan 全落地并闭合 GAP-1（前半程失败时间线撒谎）。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。
 Earlier: 2026-07-22T08:50:00.000Z — v0.17.0 complete-milestone 归档完成——REQUIREMENTS 19/19 勾选并归档、ROADMAP 快照归档 + 折叠 `<details>`、MILESTONES.md 补条目、audit 移入 milestones/、annotated tag v0.17.0。
 Earlier: 执行 104-03（里程碑四面检索端到端验收）完成——新建自包含 E2E 测试 `server/tests/test_milestone_e2e_learning_case.py`（内存 Qdrant + 确定性 embedding + 双种子区分度），同一条 learning case 四面（Chat 工具 / DeliveryKnowledgeRecallAdapter / MCP view / 容器链同 URL 契约+组合覆盖）均可检索 + MCP 与 Chat top-1 统一排序断言。2 commits（a35d74e7/562f697c）；3 passed + 定向回归 216 passed。**Phase 104 3/3 收官，v0.17.0 全部 18 plans 执行完毕。** 下一步：里程碑审计 → complete-milestone。
 Earlier: 执行 103-04（AGENT-04 工作流上下文对齐）完成——共享 helper 上提 `services/project_context_packer.py`（prepend_project_context / aresolve_project_for_repo_branch / apack_dispatch_context，chat 纯重构改引用零回归，workflow 不 import chat）+ workflow `_resolve_wave_project_contexts` 按 (project, branch) 解析一次逐仓复用（ProjectBranch 反查 + work_item fallback，user=dispatch_user）+ `_run_repo_coding` prompt prepend + env_FRIDAY_TASK_PROJECT_CONTEXT 注入（与 chat 一致，fail-soft 空串 no-op）。2 commits（81956173/113ac520）；新守护测试 6 例 + chat 99 全绿 + dispatch 触点 54 passed 零回归。**Phase 103（编码容器集成）4/4 完成，AGENT-01~04 全部交付。** 下游 → Phase 104（工具面收口，UNIFY-01/02/03）。
@@ -588,11 +624,30 @@ Earlier: 执行 92-03（SLOT-02 收官）——新建 clarification_card 原子�
 Earlier: 执行 92-02（插槽后端 SLOT-02 端口暴露半）——ai_plan_research 暴露 clarify(out)/resume(in) 插槽端口（仅声明零运行时改动）+ build_clarification_card action 前缀参数化；91-05（前端 ClarificationCard 多题多选渲染，CLARIFY-04）——扩展 ClarificationCard.vue 按 payload 形态分支：含 questions[] 走 plan 多题轮（single button / multi Checkbox + ⭐推荐默认选中 + 每题自由输入），否则走既有 chat 单题（零回归）；提交聚合 answers[{question_id,selected,freeform_text}] 打 91-04 专路由 postPlanClarificationAnswer → markPlanClarificationAnswered；新增 PlanClarification* 类型 + ConversationRuntime.pending_plan_clarification 透传 + store 独立 pendingPlanClarifications（conversation 维度隔离）+ runtime 回灌 + ChatMessageArea 渲染分支 + chat.clarification i18n（默认中文）+ TDD 守护 spec（真实 zh-CN.json）。6 用例绿、chat/stores 267 无回归、vue-tsc/eslint 干净。**Phase 91 全部完成（5/5）。**
 Earlier: 执行 91-04（会话端 plan 澄清专路由 + runtime 暴露 + 同源续推）；91-03（飞书澄清回调 plan_clarify_ 收答 → 续推 → approve_node 重调度）；91-02（工作流节点发卡 + WorkflowEventSubscription + WR-03 三处 pending 收口）；91-01（共享回流 helper aanswer_round_and_resume + 多轮放开）；90-04（入口无关 ask_clarification helper）；90-03（ClarifyAdapter 接 LLM 多题 + fail-soft + pending 收口）；90-02（ClarificationService 写入入口）；90-01（结构化澄清数据脊柱）。
 Resume file: None
-Next: `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）——**版本号须避开已被发布轨占用的 v0.18.0**（见 Blockers/Concerns），现成候选提案 `coding-agent/PROPOSAL.md`；v0.17.0 遗留 11 项真实环境人工验证 + 接受/递延债务见 `milestones/v0.17.0-MILESTONE-AUDIT.md`；v0.16.1 遗留真机/真实 provider/画布视觉端到端验收（10 项）见 `milestones/v0.16.1-MILESTONE-AUDIT.md` §4。
+Next: **与 `milestone/v0.20.0-blueprint` 合并（同步点 2），不是立项新里程碑**——两侧里程碑均已在各自分支归档，合并后统一处置台账（`REQUIREMENTS.md` 的 delete/modify 冲突取删除）与 v0.20.0 Phase 116 顺延的触点升级。之后若立项新里程碑，**版本号须避开已被发布轨占用的 v0.18.0**（见 Blockers/Concerns），现成候选提案 `coding-agent/PROPOSAL.md`。v0.19.0 遗留见本文件 Deferred Items「Acknowledged at v0.19.0 close」；v0.17.0 遗留 11 项真实环境人工验证见 `milestones/v0.17.0-MILESTONE-AUDIT.md`；v0.16.1 遗留 10 项见 `milestones/v0.16.1-MILESTONE-AUDIT.md` §4。
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone — 先 `gh release list` 核对版本号，避开已发布的 v0.18.0
-- 候选立项输入：`.planning/coding-agent/PROPOSAL.md`（Coding Agent 流水线，V1.2 提案待评审）
-- 把 v0.17.0 遗留的 11 项真实环境人工验证转入运维验收 backlog（目前无承接方）
-- 遗留 housekeeping（非阻断）：`/Users/zaneliu/gsd-workspaces/friday-fastapi-sa/friday-ai` 是 30 天未动的 GSD workspace，其分支 `codex/fastapi-sqlalchemy-migration` 相对 main 已 0 独有提交（工作已并入），可 `git worktree remove` 清理；`worktree-agent-*` 三个分支属另一份与 main 无共同祖先的历史（tip 为 2026-04-30，其提交信息里的 GSD 阶段编号远超本项目最大的 104），worktree 注册已清、分支 ref 待确认后删除
+- **下一步不是立项新里程碑，而是合并**：本分支 `milestone/v0.19.0-plan-trust` 与 `milestone/v0.20.0-blueprint` 双 worktree 并行开发、两侧均已在各自分支归档。合并即 v0.20.0 设计文档里的**同步点 2**，其后才做 v0.20.0 Phase 116 顺延的触点升级与默认入口切换（GATE-01 由 PARTIAL 转满足的前置）。
+- **合并时的台账处置**：本分支已按 `/gsd-complete-milestone` 删除 `.planning/REQUIREMENTS.md`（两个里程碑都已归档，无在建需求）；v0.20.0 分支保留了该文件并在文件头注明「v0.19.0 段以对方分支为准」。因此合并会出现 delete/modify 冲突，**正解是取删除**。`MILESTONES.md` / `ROADMAP.md` / `STATE.md` 三份台账两侧各有一段，合并后需人工合成一份（各自的里程碑段互不重叠）。
+- **v0.19.0 归档后的欠条**（详见本文件 Deferred Items「Acknowledged at v0.19.0 close」）：27 项人工验收全未执行；**生产跑一条 `measure_repo_index_stats --write-snapshot` 即可让 ROUTE-03 从 PARTIAL 转满足**；发布前必须先就迁移 0033 的「存量方案卡集体出现『未经代码调研』横幅」向用户交代（109-UAT #5）。
+- **版本号纪律**：本仓 tag 是发布轨（最新 `v0.18.0`，`.github/workflows/release.yaml` 由 `tags: v*` 触发），与 GSD 里程碑轨不同编号。v0.19.0 **刻意未打 tag**——给未合并分支打 tag 会制造假发布点。立项下一里程碑前先 `gh release list` 核对可用版本号。
+- 候选立项输入：`.planning/coding-agent/PROPOSAL.md`（Coding Agent 流水线，V1.2 提案待评审）。
+- 把 v0.17.0 遗留的 11 项真实环境人工验证转入运维验收 backlog（目前无承接方）。
+- 遗留 housekeeping（非阻断）：`/Users/zaneliu/gsd-workspaces/friday-fastapi-sa/friday-ai` 是 30 天未动的 GSD workspace，其分支 `codex/fastapi-sqlalchemy-migration` 相对 main 已 0 独有提交（工作已并入），可 `git worktree remove` 清理；`worktree-agent-*` 三个分支属另一份与 main 无共同祖先的历史（tip 为 2026-04-30），worktree 注册已清、分支 ref 待确认后删除。
+
+## Deferred Verification
+
+| Phase | State | Resume |
+|-------|-------|--------|
+> v0.19.0 已归档（2026-08-02），下列相位目录现位于 `milestones/v0.19.0-phases/`。五项均为
+> `human_needed`，无一因代码缺陷——全部卡在真实飞书 / 真实容器 / 浏览器视觉这三类环境上。
+> 合计 27 项人工验收，逐项清单见 Deferred Items「Acknowledged at v0.19.0 close」。
+
+| Phase | State | Resume |
+|-------|-------|--------|
+| 105 | verification_deferred_human（35/35 自动化 must-haves 已过；余 3 项人工：O-1 生产实测回填 / gk-001 真实样本替换 / 前端分数分解目视——第 3 项因面板下线曾「无从执行」，ROUTE 缺口闭环后已恢复为可执行） | /gsd-verify-work 105 |
+| 106 | verification_deferred_human（34/38 自动化 must-haves 已过、0 失败；余 4 项人工：生产 N_r 快照写入 / O-2 校准回填 / dense 口径观测 / 权重设置面目视——**第 1 项即 ROUTE-03 转满足的唯一前置**） | /gsd-verify-work 106 |
+| 107 | verification_deferred_human（87/89 自动化 must-haves 已过、0 gap；余 6 项人工：澄清真机送达 / UI 观感 / O-6 回填 / 出口 dry-run / pending 可见性 / 跨项目仓名可见性判断——**第 1、5 项即 RELY-02 转满足的前置**；第 2 项已恢复为可执行） | /gsd-verify-work 107 |
+| 109 | verification_deferred_human（余 6 项人工：编排→PR 真机全链 / 飞书告示 / 浏览器视觉 / lark_md 观感 / **迁移 0033 影响面（发布前置）** / 容器消费策略） | /gsd-verify-work 109 |
+| 110 | verification_deferred_human（GAP-1 已在执行期闭合并经审计反向对照确认；余 8 项人工：SSE 直播节奏 / `plan_session_id` 跨进程相等 / 容器日志 / GAP-1 复验 / 读屏 / live region 节奏 / 空心点辨识度 / 完成后版面） | /gsd-verify-work 110 |

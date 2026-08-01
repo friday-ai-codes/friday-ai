@@ -10,7 +10,16 @@ import uuid
 
 import pytest
 
-from chat.models import CodingPlan, CodingSession, Conversation
+from chat.models import (
+    CodingPlan,
+    CodingPlanProvenance,
+    CodingSession,
+    Conversation,
+)
+from chat.serializers import (
+    CodingPlanSerializer,
+    ConversationRuntimeCodingPlanSerializer,
+)
 
 
 @pytest.fixture
@@ -106,6 +115,55 @@ class TestCodingPlanDetailAPI:
         url = f"/api/chat/coding-plans/{uuid.uuid4()}/"
         response = authenticated_client.get(url)
         assert response.status_code == 404
+
+    def test_detail_exposes_provenance_and_source_columns(
+        self, authenticated_client, two_plans
+    ):
+        """详情端点透出 provenance（新建 plan 走 default draft）与投影来源列。"""
+        plan1, _ = two_plans
+        url = f"/api/chat/coding-plans/{plan1.id}/"
+        response = authenticated_client.get(url)
+        assert response.status_code == 200
+        data = response.data
+        assert data["provenance"] == CodingPlanProvenance.DRAFT.value == "draft"
+        assert data["source_artifact_version_id"] is None
+        assert "recommended_repository_ids" in data
+
+
+@pytest.mark.django_db(transaction=True)
+class TestCodingPlanProvenanceNotClientWritable:
+    """T-109-02-01（Spoofing）：客户端不能把 draft 伪造成 orchestrated。"""
+
+    def test_provenance_is_read_only_on_both_serializers(self):
+        """两个序列化面的 provenance 都是 read-only 语义。
+
+        `CodingPlanSerializer` 显式 `read_only=True`；
+        `ConversationRuntimeCodingPlanSerializer` 只用于 runtime 出参组装（无写路径），
+        因此以「字段存在且该序列化器无写入口」为断言口径。
+        """
+        assert CodingPlanSerializer().fields["provenance"].read_only is True
+        assert (
+            CodingPlanSerializer().fields["source_artifact_version_id"].read_only
+            is True
+        )
+        assert "provenance" in ConversationRuntimeCodingPlanSerializer().fields
+
+    def test_write_request_cannot_flip_provenance(
+        self, authenticated_client, two_plans
+    ):
+        """带 provenance=orchestrated 打详情端点无法改写 DB 值。
+
+        该端点只有 GET（写路径走 LLM tool），因此写请求应被拒绝（405/403/404 皆可），
+        关键断言是 DB 里的 provenance 仍为 draft。
+        """
+        plan1, _ = two_plans
+        url = f"/api/chat/coding-plans/{plan1.id}/"
+        response = authenticated_client.patch(
+            url, {"provenance": "orchestrated"}, format="json"
+        )
+        assert response.status_code >= 400
+        plan1.refresh_from_db()
+        assert plan1.provenance == CodingPlanProvenance.DRAFT
 
 
 @pytest.mark.django_db(transaction=True)

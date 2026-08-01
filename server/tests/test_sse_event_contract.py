@@ -20,6 +20,7 @@ from agents.core.events import (
     CONFLICT_CHECK,
     KEEPALIVE,
     PHASE_TRANSITION,
+    PROCESS_EVENT,
     TASK_PROGRESS,
 )
 
@@ -50,10 +51,14 @@ class TestSSEEventTypeContract:
         "part_started",
         "part_delta",
         "part_completed",
+        # Phase 110-01：编排过程事件（ConvergenceSessionEvent 统一信封）。
+        # 前端那半边（web/src/types/chat.ts 的 SSEEvent.type 联合类型）由 110-03 与消费
+        # 同批落地——本契约测试只比对后端常量集，不会因前端未同步而变红。
+        "process_event",
     })
 
     def test_all_event_types_contains_expected(self) -> None:
-        """ALL_EVENT_TYPES 恰好包含 21 种预期事件类型（18 legacy + 3 parts 新增）。"""
+        """ALL_EVENT_TYPES 恰好包含 22 种预期事件类型（18 legacy + 3 parts + 1 编排过程事件）。"""
         assert ALL_EVENT_TYPES == self.EXPECTED_EVENT_TYPES, (
             f"ALL_EVENT_TYPES 与预期不符。\n"
             f"  多余: {ALL_EVENT_TYPES - self.EXPECTED_EVENT_TYPES}\n"
@@ -61,9 +66,9 @@ class TestSSEEventTypeContract:
         )
 
     def test_all_event_types_count(self) -> None:
-        """ALL_EVENT_TYPES 应恰好包含 21 种类型（18 legacy + 3 parts 双轨期新增）。"""
-        assert len(ALL_EVENT_TYPES) == 21, (
-            f"期望 21 种事件类型，实际 {len(ALL_EVENT_TYPES)}: {ALL_EVENT_TYPES}"
+        """ALL_EVENT_TYPES 应恰好包含 22 种类型（18 legacy + 3 parts + 1 编排过程事件）。"""
+        assert len(ALL_EVENT_TYPES) == 22, (
+            f"期望 22 种事件类型，实际 {len(ALL_EVENT_TYPES)}: {ALL_EVENT_TYPES}"
         )
 
     def test_budget_warning_constant(self) -> None:
@@ -97,6 +102,10 @@ class TestSSEEventTypeContract:
     def test_awaiting_pr_review_constant(self) -> None:
         """AWAITING_PR_REVIEW 常量值为 'awaiting_pr_review'。"""
         assert AWAITING_PR_REVIEW == "awaiting_pr_review"
+
+    def test_process_event_constant(self) -> None:
+        """PROCESS_EVENT 常量值为 'process_event'。"""
+        assert PROCESS_EVENT == "process_event"
 
     def test_conflict_check_constant(self) -> None:
         """CONFLICT_CHECK 常量值为 'conflict_check'。"""

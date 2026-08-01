@@ -216,22 +216,25 @@ _SEARCH_USAGE_RULES: Final[str] = (
 _CODING_GUIDANCE: Final[str] = (
     "\n编码任务识别：\n"
     "  当用户描述了具体的代码变更需求（如「帮我实现...」「修改...功能」「添加...接口」「重构...」），\n"
-    "  你应该调用 create_coding_plan 工具生成结构化技术方案，而非直接给出代码片段。\n"
-    "  技术方案包含：① 影响文件列表（文件路径 + 变更类型：新增/修改/删除）② 分步实现步骤。\n"
+    "  你应该先经编排链路产出方案版本（start_plan_research / start_feature_solution），\n"
+    "  再调 create_coding_plan 把该版本投影为编码方案，而非直接给出代码片段。\n"
+    "  方案正文由编排链路产出，你不撰写正文 —— create_coding_plan 只接受方案版本 id。\n"
     "  用户确认方案后才会在 Runner 容器中执行编码。\n"
-    "  用户要求调整方案时，调用 update_coding_plan 更新方案内容。\n"
+    "  用户要求换一份方案时，先走编排链路产出新的方案版本，再调 update_coding_plan\n"
+    "  把编码方案重新指向新的方案版本。\n"
     "  不要同时使用 deep_analysis 和 create_coding_plan -- 它们是不同场景：\n"
     "  - deep_analysis：分析理解代码（只读）\n"
-    "  - create_coding_plan：执行代码变更（写入）\n"
+    "  - create_coding_plan：把编排产出的方案版本投影为可执行编码方案（写入）\n"
     "\n"
     # 编码场景前置约束（与 work item 硬 gate 同源）。
     "编码请求的前置约束（coding-plan workflow）：\n"
     "  - 调 create_coding_plan 之前必须有 analyze_repository_relevance 的输出，\n"
     "    且 selected_repository_ids 非空；否则先调 RELEV，再创建方案。\n"
-    "  - 技术方案正文必须显式写出目标仓库名称和目标文件路径，避免用户确认时看不出将修改哪个仓库。\n"
+    "  - 调 create_coding_plan 之前必须已有编排产出的方案版本（artifact_version_id）；\n"
+    "    没有就先调 start_plan_research / start_feature_solution 发起编排。\n"
     "  - 用户表述里只要含「修/改/加/实现/重构/优化/接入/适配」等编码动词，\n"
-    "    就视为编码请求，强制走「相关性分析 → 必要时澄清 → create_coding_plan」三步，\n"
-    "    不允许直接给代码片段或跳过 RELEV。\n"
+    "    就视为编码请求，强制走「相关性分析 → 必要时澄清 → 编排产出方案版本 →\n"
+    "    create_coding_plan」四步，不允许直接给代码片段或跳过 RELEV。\n"
     "  - 如果 analyze_repository_relevance 给出 ≥ 2 个 plausible 仓库且 confidence 接近，\n"
     "    必须先调 ask_clarification 让用户挑后再 create_coding_plan，并把用户选项的\n"
     "    implies.selected_repository_ids 作为 recommended_repository_ids 传入。\n"
@@ -241,7 +244,7 @@ _CODING_GUIDANCE: Final[str] = (
     "  「生成技术方案」时，调用 start_feature_solution，不要用 create_coding_plan。\n"
     "  该工具会判定每个功能点是新增还是改造已有功能，并**强制暂停让用户确认关联仓库**，\n"
     "  确认后产出分仓 + 整体方案（含落点文件与伪代码）。\n"
-    "  - 单个零散需求 → create_coding_plan（编码计划）或 start_plan_research（跨仓方案）。\n"
+    "  - 单个零散需求 → start_plan_research 产出方案版本，再用 create_coding_plan 投影。\n"
     "  - 成批功能点 / 明确要技术方案 → start_feature_solution。\n"
     "  - 确认环节不可跳过：即便仓库路由十分确定也会问一次，这是产品约束。\n"
 )
@@ -406,6 +409,8 @@ async def _build_system_prompt(
         "\n\n本轮检测到编码请求（命中动词：" + verbs_text + "）。硬约束：\n"
         "  - 必须先调用 analyze_repository_relevance 拿到候选仓库 + 置信度；\n"
         "  - 命中分布不明确（confidence=ambiguous）时优先调 ask_clarification；\n"
+        "  - 必须先有编排产出的方案版本（start_plan_research / start_feature_solution）\n"
+        "    才可调 create_coding_plan —— 该工具只投影方案版本，不接受方案正文；\n"
         "  - 上述步骤完成前不允许调 create_coding_plan。\n"
     )
     return base_prompt + hint
@@ -427,6 +432,12 @@ async def _get_tool_names(space_id: str) -> list[str]:
         "search_repository_code",
         "list_space_repositories",
         "get_repository_info",
+        # 编排工具必须与 create_coding_plan 同时挂载：SPINE-02 收窄后
+        # create_coding_plan 必须携带编排产出的 artifact_version_id，只挂 create/update
+        # 会让模型被要求带来源却没有任何工具能产出来源（死路）。一致性由
+        # tests/test_chat_tools.py 的白名单断言守护。
+        "start_plan_research",
+        "start_feature_solution",
         "create_coding_plan",
         "update_coding_plan",
         # 协商工具，所有有索引仓库的项目都暴露给 LLM
@@ -2248,8 +2259,20 @@ class ConversationService:
     @staticmethod
     async def get_conversation_runtime(
         conversation_id: str,
+        *,
+        orchestration_seen: str = "",
     ) -> dict[str, Any]:
-        """返回对话当前运行态 — 从 OrchestrationRun DB 读取真实 phase/status。"""
+        """返回对话当前运行态 — 从 OrchestrationRun DB 读取真实 phase/status。
+
+        Args:
+            conversation_id: 对话 UUID。
+            orchestration_seen: 客户端声称**已完整持有**的编排会话 id（110-MN-02 的收敛
+                令牌）。仅当它逐字等于本对话最近一次编排会话、且该会话已终态、且其下没有
+                在途调研容器时，本次快照才短路：`orchestration.events` 与
+                `plan_research_sessions` 不重发，`orchestration.converged=true` 告诉前端
+                「保留你现有的」。取值只能让服务端**少**发数据，猜错 / 伪造只会退化成全量，
+                不构成越权面。刷新补齐（`restoreConversationRuntime`）不带此参数即拿全量。
+        """
         from datetime import timedelta
 
         from django.utils import timezone
@@ -2363,6 +2386,11 @@ class ConversationService:
             "streaming_snapshot": streaming_snapshot,
             "pending_clarification": None,
             "pending_plan_clarification": None,
+            # ---- [110-03] 编排过程可见性：两个**独立**字段，与 deep_sessions 语义隔离 ----
+            # 预置在字面量里，保证任何路径（含两个新分支各自降级）下键恒存在且类型恒定：
+            # orchestration 恒为 dict | None，plan_research_sessions 恒为 list。
+            "orchestration": None,
+            "plan_research_sessions": [],
         }
 
         # 待回复的澄清（ask_clarification）—— 刷新 / 切回会话时恢复 ClarificationCard。
@@ -2443,6 +2471,156 @@ class ConversationService:
                 exc_info=True,
             )
             runtime["pending_plan_clarification"] = None
+
+        # 编排进度快照（110-03 · OBS-01/OBS-03）——刷新 / 重连后时间线可完整还原。
+        #
+        # 传输分工（110-01 F-1 既定）：`process_event` SSE 只覆盖 decompose → clarify
+        # 五个阶段的秒级直播；research → merge 后半程的容器回调续驱不在任何 graph 运行
+        # 上下文内、没有流可推 ⇒ **这条 2s 轮询快照是后半程唯一的进度来源**，不是兜底。
+        #
+        # 与上面 pending_plan_clarification 分支取的是同一个 ConvergenceSession，故紧邻
+        # 摆放；但 try/except **刻意不合并**——合并会让其中一支的失败连带吞掉另一支。
+        #
+        # 🔴 `orch_session` 由本分支与下面的 plan_research 分支共用，必须在**两个 try
+        # 之外**预置 None：若本 try 在赋值之前就抛（conv_uuid 解析 / DB 连接 / 查询本身
+        # 出错），plan_research 那一支读它会撞 UnboundLocalError → 被它自己的 except
+        # 吞掉 → 静默降级成空数组，而那个症状与「后端根本没写日志」逐字相同。预置 None
+        # + 各支显式判空是唯一不留暗路的写法。
+        orch_session: Any = None
+        # 与 orch_session 同一条纪律：预置在 try 之外，异常路径下取值恒定（False = 全量）。
+        orchestration_converged = False
+        try:
+            from delivery.models import (
+                ConvergenceSession,
+                ConvergenceSessionEvent,
+                RepoResearchTask,
+                RepoResearchTaskStatus,
+            )
+            from delivery.models.convergence_session import ConvergenceSessionStatus
+            from delivery.services.process_event_wire import (
+                compress_failure_reason,
+                sanitize_process_event_payload,
+            )
+
+            orch_session = (
+                await ConvergenceSession.objects.filter(conversation_id=conv_uuid)
+                .order_by("-created_at")
+                .afirst()
+            )
+            if orch_session is None:
+                # 无编排会话 ⇒ 直接 None，**不**构造一个全 unknown 的空壳
+                #（UI-SPEC §E.3：前端不渲染空壳，后端也不该先造出这个壳）。
+                runtime["orchestration"] = None
+            else:
+                # 终态短路（110-MN-02）：编排早已 done / failed 之后，这条 2s 轮询没有
+                # 任何收敛机制——`pollConversationRuntime` 的存活条件是「本对话有任何活跃
+                # run」而不是「编排活跃」，所以用户点「进入编码」之后的十几分钟里，每 2 秒
+                # 仍在重查 200 条事件、逐条重新净化、并把每仓 80 行日志逐条重新脱敏后整包
+                # 下发。全是逐字相同的内容。
+                #
+                # 收敛条件三条同时成立才短路，缺一不可：
+                # ① 客户端带的令牌逐字等于本对话最近一次编排会话（换一轮编排即自动失效）；
+                # ② 会话已终态（事件流不会再增长）；
+                # ③ 其下没有在途调研容器 —— `failed` 可能停在 research，那时容器还在写
+                #    日志，短路会让日志组停在半截。这一条只花一次带索引的 exists()，
+                #    换掉的是「整行取回 N 个 last_output 大 JSON + 数百次正则脱敏」。
+                #
+                # 判定放在本分支**最前**：后面每一步（失败原因压制、事件查询、净化）都是
+                # 它要省掉的开销，也让「已算出收敛之后才抛」这一拍可被测试构造出来。
+                if (
+                    orchestration_seen
+                    and orchestration_seen == str(orch_session.id)
+                    and orch_session.status
+                    in {ConvergenceSessionStatus.DONE, ConvergenceSessionStatus.FAILED}
+                ):
+                    orchestration_converged = not await RepoResearchTask.objects.filter(
+                        session_id=orch_session.id,
+                        status__in=[
+                            RepoResearchTaskStatus.PENDING,
+                            RepoResearchTaskStatus.RUNNING,
+                        ],
+                    ).aexists()
+
+                # stage_state 是自由 JSON 袋，形状意外时降级而非抛：decomposition 非
+                # dict ⇒ has_classify=False；segments 非 list ⇒ segment_count=None。
+                decomposition = orch_session.decomposition
+                has_classify = (
+                    isinstance(decomposition, dict)
+                    and decomposition.get("mode") == "feature_list"
+                )
+                segments = (
+                    decomposition.get("segments") if isinstance(decomposition, dict) else None
+                )
+                segment_count = len(segments) if isinstance(segments, list) else None
+
+                failure: dict[str, str] | None = None
+                if orch_session.status == ConvergenceSessionStatus.FAILED:
+                    # 🔴 只有 stage 与 reason_code 两个键。error 的 message / exception /
+                    # report / 任何自由文本一律不进 runtime——原始文本的去处是事件表与
+                    # SystemLogEntry，供 superuser 排障（107-UI-SPEC Unresolved #4 同一
+                    # 条纪律）。compress_failure_reason 的返回值恒 ∈ 7 值闭集，这里**不得**
+                    # 再从 error 里补任何字段。
+                    failure = {
+                        "stage": orch_session.current_stage or "",
+                        "reason_code": compress_failure_reason(orch_session.error),
+                    }
+
+                # 🔴 取**最新** 200 条再反转为升序，不是取最旧 200 条。前端靠折叠事件算
+                # 摘要，而阶段指针取权威的 current_stage ⇒ 截断只丢摘要精度；反过来保留
+                # 最旧会让时间线**永远停在早期阶段**（UI-SPEC 后端契约要求 #3）。
+                # 多取 1 条（201）只为判断是否截断——比再发一次 .count() 少一次查询。
+                rows = []
+                events_truncated = False
+                if not orchestration_converged:
+                    rows = [
+                        row
+                        async for row in ConvergenceSessionEvent.objects.filter(
+                            session_id=orch_session.id,
+                        ).order_by("-ts", "-created_at")[:201]
+                    ]
+                    events_truncated = len(rows) > 200
+                    rows = rows[:200]
+                    rows.reverse()
+
+                runtime["orchestration"] = {
+                    "session_id": str(orch_session.id),
+                    "status": orch_session.status,
+                    "current_stage": orch_session.current_stage or "",
+                    "has_classify": has_classify,
+                    "segment_count": segment_count,
+                    "failure": failure,
+                    "events": [
+                        {
+                            "event": row.event,
+                            # 🔴 必须是 .isoformat()，与 110-01 fan-out 里
+                            # `envelope["ts"] = row.ts.isoformat()` 逐字符同源——这是前端
+                            # 把 SSE 那条与快照那条认成同一条事件的唯一依据。换成 str() /
+                            # DRF 默认 / 自定义 format 都会让去重失效，症状是计数类摘要
+                            # 成倍虚高（两条链各自看都对，只有合流时才多一倍）。
+                            "ts": row.ts.isoformat(),
+                            # 🔴 与 SSE 出网同一把筛子。两条链净化不一致除了泄漏风险，
+                            # 还会让「同一条事件」在两边形状不同、前端合并出现只在某一
+                            # 条链上存在的分支。快照侧**不另写**一份净化。
+                            "payload": sanitize_process_event_payload(row.payload),
+                        }
+                        for row in rows
+                    ],
+                    "events_truncated": events_truncated,
+                    # 🔴 true ⇒ 本次**没有**重发 events，也**没有**重发
+                    # plan_research_sessions；前端保留自己已有的两份，不得按空值覆盖。
+                    "converged": orchestration_converged,
+                }
+        except Exception:
+            # best-effort：本分支失败只让 orchestration 回退 None，绝不反噬 runtime 端点。
+            # runtime 是 2s 高频轮询面 ⇒ 正常路径零日志，仅异常分支一行 warning。
+            runtime["orchestration"] = None
+            logger.warning(
+                "conversation_runtime_orchestration_failed",
+                conversation_id=conversation_id,
+                category="sampling",
+                component="chat.conversation",
+                exc_info=True,
+            )
 
         # deep_analysis 会话信息（向后兼容 + 多子会话各自独立日志）
         # order_by("-id") 是降序，最新的在最前。收集本对话全部 chat_deep_analysis
@@ -2539,6 +2717,138 @@ class ConversationService:
                     runtime["status"] = latest_deep_session.status
                     if runtime.get("mode") is None:
                         runtime["mode"] = "deep_analysis"
+
+        # plan_research 调研容器会话（110-03 · OBS-02）——**独立分支、独立字段**。
+        #
+        # OBS-02 的根因是**读取谓词**而非写入：上面 deep analysis 那一支要求
+        # `task_type == EXPLORE` 且 `last_output.source == "chat_deep_analysis"`，而
+        # plan_research 走 `TaskType.PLAN` + `source == "plan_research"`，双重不匹配；
+        # 日志本身早就由 `runners/consumers.py::_append_runtime_log` 写进 last_output.logs。
+        #
+        # 🔴 边界：本分支只写 runtime["plan_research_sessions"]，**绝不** append/extend 到
+        # runtime["deep_sessions"]，也不动顶层 logs / session_id / mode / active ——那些是
+        # deep analysis 与 coding 的语义面，串进去会让既有前端行为漂移，也会逼前端对同一个
+        # 数组里两种语义的东西做二次判别（CONTEXT 既定）。
+        try:
+            from common.logging import redact_secrets_in_text
+            from delivery.models import RepoResearchTask
+
+            if orch_session is None:
+                # 一个判空覆盖两种情形：① 本对话确实没有编排会话；② 上面 orchestration
+                # 分支的 try 在给 orch_session 赋值**之前**就抛了（变量保持预置的 None）。
+                # 第二种若不预置，这里会是 UnboundLocalError → 被本分支自己的 except 吞掉
+                # → 静默变成空数组，症状与「后端根本没写日志」逐字相同。显式早退不留暗路。
+                runtime["plan_research_sessions"] = []
+            elif isinstance(runtime.get("orchestration"), dict) and runtime["orchestration"].get(
+                "converged"
+            ):
+                # 终态短路（110-MN-02）：日志早已凝固，本次不重发（每仓最多 80 行、逐行
+                # 一次 redact_secrets_in_text，5 个仓 = 每次轮询 400 次正则替换）。
+                # 🔴 判据取**已经写进 runtime 的那份快照**而不是局部变量：orchestration
+                # 分支若在算出 converged 之后才抛，它会回退 None，那时必须走全量——否则
+                # 前端会同时收到「没有编排」与「没有日志」，把已有的日志组整个抹掉。
+                runtime["plan_research_sessions"] = []
+            else:
+                # 🔴 归属锚点全部取**服务端权威列**，不碰容器可写的 last_output（110-MN-01）。
+                #
+                # 旧实现用 `last_output.plan_session_id` + `last_output.source` 两个键，
+                # 并自称「交叉校验（WR-03 范式）」——这个论证不成立：两个键住在同一个 dict
+                # 里，而 `progress_payload._merge_output` 会把 progress 回调 `details` 里的
+                # 任意标量键无差别 merge 进 last_output（保留键只有 progress / coding_progress
+                # 两个）。能改一个的就能同时改两个，两个半可信键的合取强度等于一个。真正的
+                # WR-03（callbacks.py:434-440）校验的是**另一张服务端权威表**。
+                #
+                # 这里直接让 `RepoResearchTask` 当驱动：
+                # - `session_id` / `repository_id` 是 DB 列（服务端建 task 时写，容器改不到）；
+                # - `subagent_session_id` 由 `ResearchService.mark_running` 在派发后服务端回填。
+                # ⇒ 整条绑定链上**没有任何容器可写的键**。last_output 从此只用于取日志内容，
+                # 不再参与归属判定；`repository_id` 也改取权威列——顺手关掉「容器改写自己的
+                # repository_id 就能让日志挂到别的仓库名下」那条不需要猜任何东西的低配越权。
+                #
+                # 附带的语义收紧：stale 重派会把 `subagent_session` 指向新容器，旧容器不再
+                # 出现 ⇒ 每仓恒一张卡（旧实现会把同一仓的历次容器都列出来）。
+                repo_id_by_container: dict[Any, str] = {
+                    row["subagent_session_id"]: str(row["repository_id"])
+                    async for row in RepoResearchTask.objects.filter(
+                        session_id=orch_session.id,
+                        subagent_session__isnull=False,
+                    ).values("subagent_session_id", "repository_id")
+                }
+
+                # `task_type == PLAN` 是真列，作为纵深防御留着（权威表理论上只会链到 PLAN）。
+                # order_by("id") 与派发顺序一致，让前端「多仓仅首张展开」是确定性的。
+                research_candidates = (
+                    [
+                        sess
+                        async for sess in SubAgentSession.objects.filter(
+                            id__in=list(repo_id_by_container.keys()),
+                            task_type=SubAgentSession.TaskType.PLAN,
+                        )
+                        .only("id", "session_id", "status", "last_output")
+                        .order_by("id")
+                    ]
+                    if repo_id_by_container
+                    else []
+                )
+
+                # repository_name 必须**服务端解析**：前端的 repoNames 只覆盖当前用户可见仓，
+                # 跨组仓在前端解析不出名字（UI-SPEC 后端契约要求 #7）。id 现在全部来自权威列
+                # （恒为合法 UUID），不再需要旧实现那道 UUID 过筛。一次批量查，无 N+1。
+                repo_name_by_id: dict[str, str] = {}
+                if repo_id_by_container:
+                    repo_name_by_id = {
+                        str(row["id"]): row["name"]
+                        async for row in Repository.objects.filter(
+                            id__in=set(repo_id_by_container.values()),
+                        ).values("id", "name")
+                    }
+
+                research_payload: list[dict[str, Any]] = []
+                for sess in research_candidates:
+                    out = sess.last_output if isinstance(sess.last_output, dict) else {}
+                    repo_id = repo_id_by_container.get(sess.id, "")
+                    raw_logs = out.get("logs")
+                    # 🔴 写入侧 `_append_runtime_log` **不脱敏**（source-agnostic 直写容器
+                    # stdout），读取面必须补（UI-SPEC 后端契约要求 #6）。type / ts 是受控值
+                    # 原样透传，只处理自由文本 content。
+                    sess_logs = (
+                        [
+                            {
+                                "type": entry.get("type", ""),
+                                "content": redact_secrets_in_text(
+                                    str(entry.get("content", "")),
+                                ),
+                                "ts": entry.get("ts"),
+                            }
+                            for entry in raw_logs
+                            if isinstance(entry, dict)
+                        ]
+                        if isinstance(raw_logs, list)
+                        else []
+                    )
+                    research_payload.append(
+                        {
+                            "session_id": sess.session_id,
+                            "plan_session_id": str(orch_session.id),
+                            "repository_id": repo_id,
+                            # 解析不出 ⇒ ""（**不回填 UUID 串**，前端有自己的兜底文案）
+                            "repository_name": repo_name_by_id.get(repo_id, ""),
+                            "status": sess.status,
+                            "logs": sess_logs,
+                        }
+                    )
+                runtime["plan_research_sessions"] = research_payload
+        except Exception:
+            # best-effort：本分支失败只让自己回退空数组，绝不反噬 runtime 端点。
+            # 2s 高频轮询面 ⇒ 正常路径零日志，仅异常分支一行 warning。
+            runtime["plan_research_sessions"] = []
+            logger.warning(
+                "conversation_runtime_plan_research_failed",
+                conversation_id=conversation_id,
+                category="sampling",
+                component="chat.conversation",
+                exc_info=True,
+            )
 
         # CodingSession 运行态检测 (implementation)
         from chat.models import CodingSession
@@ -2654,6 +2964,18 @@ class ConversationService:
                 "plan_id": str(latest_plan.id),
                 "title": latest_plan.title,
                 "sessions": session_items,
+                # 方案来源与正文（Phase 109）：前端据 provenance 渲染「未经代码调研」
+                # 告示；provenance 只由服务端写，runtime 无写路径。
+                "provenance": latest_plan.provenance,
+                "tech_plan": latest_plan.tech_plan,
+                "affected_files": latest_plan.affected_files or [],
+                "recommended_repository_ids": latest_plan.recommended_repository_ids
+                or [],
+                "source_artifact_version_id": (
+                    str(latest_plan.source_artifact_version_id)
+                    if latest_plan.source_artifact_version_id
+                    else None
+                ),
                 "feishu_doc_token": latest_plan.feishu_doc_token or "",
                 "feishu_doc_url": latest_plan.feishu_doc_url or "",
             }

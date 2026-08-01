@@ -12,7 +12,7 @@ from asgiref.sync import sync_to_async
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse, StreamingHttpResponse
 from django.utils import timezone
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
@@ -27,7 +27,13 @@ from chat.multimodal import (
     read_image_bytes,
     store_image_bytes,
 )
-from common.log_context import LogSource, bind_source
+from common.log_context import (
+    LogSource,
+    bind_source,
+    clear_request_context,
+    rebind_user,
+    resolve_user_id,
+)
 from common.request_metrics import arecord_request_metric, classify_error
 from feishu.coding_plan_exporter import export_coding_plan_to_feishu
 from orchestration.checkpointer import get_checkpointer
@@ -41,6 +47,13 @@ from .conversation_service import (
 )
 from .models import Conversation
 from .permissions import ChatAuthPermission
+from .plan_projection_service import (
+    ERROR_ARTIFACT_VERSION_NOT_FOUND,
+    ERROR_REQUIRES_CHAT_ENTRYPOINT,
+    PlanProjectionError,
+    PlanProjectionService,
+    filter_valid_uuids,
+)
 from .serializers import (
     ChatCompletionRequestSerializer,
     ChatCompletionResponseSerializer,
@@ -61,6 +74,8 @@ from .serializers import (
     ModelsRequestSerializer,
     ModelsResponseSerializer,
     PlanClarificationAnswerSerializer,
+    ProjectPlanToCodingRequestSerializer,
+    ProjectPlanToCodingResponseSerializer,
     RoutingTraceManualOverrideSerializer,
     SendMessageSerializer,
     WebPushPublicKeySerializer,
@@ -72,6 +87,28 @@ from .streaming import format_keepalive, format_sse
 
 logger = structlog.get_logger(__name__)
 _BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
+
+
+def _derive_degraded(router_version: str) -> bool:
+    """降级派生的 view 层别名 —— 实现在 ``chat.models.derive_routing_degraded``。
+
+    派生点从本模块搬到 models，是为了让工具实时输出链路（``agents.tools`` 侧）能复用
+    同一个判定而不反向依赖 view 层；两条链路对同一 ``router_version`` 必须给出同一个
+    ``degraded``，否则用户在对话当场与刷新后看到的降级状态会不一致。
+    """
+    from chat.models import derive_routing_degraded
+
+    return derive_routing_degraded(router_version)
+
+
+def _safe_block_order(value: object) -> list[str]:
+    """``block_order`` 的形状守卫（detail / override 两处 payload 共用）。
+
+    历史或脏数据行里该列可能是 dict / str：``list(dict)`` 得到键名列表、``list(str)``
+    得到字符列表，被原样写进新 trace 并回给前端后，前端只检查 ``length === 2``——两元素
+    的脏值会让组标题渲染成空、两个分区都因 ``total === 0`` 被过滤，结果一个候选都不显示。
+    """
+    return [str(item) for item in value] if isinstance(value, list) else []
 
 
 def _append_feishu_export_record(message, record: dict[str, str]) -> None:
@@ -542,6 +579,15 @@ class ConversationDetailView(APIView):
                 else [],
                 "threshold": latest_trace.threshold,
                 "triggered_by": latest_trace.triggered_by,
+                # RELY-03 / ROUTE-01（107-08）：这 4 键不出 API 边界的话，降级提示与
+                # 分组分区只活在内存 routingStore 里 —— 刷新页面即消失
+                # （107-RESEARCH §2 第 3 条）。degraded 由后端派生，前端零推断。
+                "router_version": latest_trace.router_version,
+                "degraded": _derive_degraded(latest_trace.router_version),
+                "degrade_reason": latest_trace.degrade_reason,
+                # 与上面 candidates 同款的防御写法：历史脏数据里非 list 时给 []，
+                # 前端据 length 判定分组，拿到非数组会直接抛。
+                "block_order": _safe_block_order(latest_trace.block_order),
             }
 
         # 已回复的协商卡（ConversationIntentTrace）—— 刷新 / 切回会话时回显
@@ -977,6 +1023,19 @@ class ConversationRuntimeView(APIView):
     @extend_schema(
         summary="获取对话运行态",
         description="返回对话当前是否仍在执行，以及最近的深度分析日志/进度快照",
+        parameters=[
+            OpenApiParameter(
+                name="orchestration_seen",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "客户端已完整持有的编排会话 id（收敛令牌）。命中且该会话已终态、"
+                    "其下无在途调研容器时，响应的 orchestration.converged=true，"
+                    "events 与 plan_research_sessions 不重发，客户端保留现有的。"
+                ),
+            ),
+        ],
         responses={200: ConversationRuntimeSerializer},
         tags=["Conversations"],
     )
@@ -990,7 +1049,13 @@ class ConversationRuntimeView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        runtime = await ConversationService.get_conversation_runtime(str(conversation_id))
+        # 110-MN-02：收敛令牌。客户端声称已完整持有的编排会话 id；命中时服务端只回权威
+        # 字段、不重发早已凝固的事件流与容器日志。缺省 / 猜错只会退化成全量。
+        orchestration_seen = str(request.query_params.get("orchestration_seen") or "")
+        runtime = await ConversationService.get_conversation_runtime(
+            str(conversation_id),
+            orchestration_seen=orchestration_seen,
+        )
         return Response(runtime)
 
 
@@ -1363,6 +1428,12 @@ class ChatStreamView(APIView):
         bind_source(LogSource.CHAT_SSE)
         # 72-02：标注 LLM 调用来源（含 SSE 生成器消费期），与 chat_runner 默认一致、显式更稳。
         set_call_source(CallSource.CHAT)
+        # 109-REVIEW BL-01：补绑真实触发用户。中间件入口只写得下 user_id="system"
+        # 占位（它早于 DRF 认证执行），而 `LogContextMixin` 全仓无视图继承 ⇒ 不补这
+        # 一行，本请求链路上所有按 contextvars 取归属主体的下游（coding_tools 的
+        # update_coding_plan、coding_session_service 的草稿 gate 留痕）永远只能拿到
+        # 哨兵身份。与上面两行同源同处，改动面最小。
+        rebind_user(resolve_user_id(request))
         user_id = (
             str(request.user.id) if getattr(request.user, "is_authenticated", False) else "system"
         )
@@ -1404,6 +1475,21 @@ class ChatStreamView(APIView):
         from orchestration.models import OrchestrationRun
 
         message_id = str(uuid_mod.uuid4())
+
+        # 109-REVIEW BL-01：生成器体内重新绑定用户上下文。
+        #
+        # 🔴 时序：`post` 返回 StreamingHttpResponse 后中间件的 finally 就跑了
+        # `clear_request_context()`，而本生成器是在那之后才被 ASGI handler 消费的
+        # ⇒ post 里 rebind 的 user_id 到不了这里，流内的工具调用（含
+        # `update_coding_plan` 的归属判定）会退化成「取不到用户」。
+        # best-effort：绑定失败绝不打断 SSE。
+        try:
+            structlog.contextvars.bind_contextvars(
+                user_id=metric_user_id or "system",
+                source=LogSource.CHAT_SSE.value,
+            )
+        except Exception:  # noqa: BLE001 — 观测代码绝不反噬业务
+            pass
 
         # 指标埋点（RATE-01 / SLA-04，source=chat_sse）：首个真实 chunk 计 ttft_ms，
         # 生成器结束（finally）记一行总 duration_ms。best-effort，绝不打断 SSE。
@@ -1494,6 +1580,12 @@ class ChatStreamView(APIView):
                 user_id=metric_user_id,
                 labels={"conversation_id": str(conversation_id)},
             )
+            # 生成器消费完毕即本请求生命周期终点：清掉上面补绑的上下文，防止泄漏到
+            # 同 worker 复用的后续任务（与中间件 finally 的 clear 同一条纪律）。
+            try:
+                clear_request_context()
+            except Exception:  # noqa: BLE001 — 观测代码绝不反噬业务
+                pass
 
 
 class ChatInterruptView(APIView):
@@ -2555,14 +2647,25 @@ class CodingPlanSessionsBatchCreateView(APIView):
         request=CodingSessionsBatchCreateRequestSerializer,
         responses={
             200: CodingSessionsBatchCreateResponseSerializer,
-            400: {"description": "请求体校验失败"},
+            400: {
+                "description": (
+                    "请求体校验失败；或草稿方案（provenance != orchestrated）未带显式确认 —— "
+                    "响应体为 {code: draft_requires_explicit_confirm, detail: ...}，"
+                    "客户端按 code 分支重试并带 acknowledge_unresearched=true"
+                )
+            },
             403: {"description": "无权访问该 CodingPlan 所属项目"},
             404: {"description": "CodingPlan 不存在"},
         },
         tags=["CodingPlan"],
     )
     async def post(self, request, plan_id):  # type: ignore[override]
-        from chat.coding_session_service import create_sessions_for_plan
+        from chat.coding_session_service import (
+            ERROR_CODE_DRAFT_REQUIRES_CONFIRM,
+            ERROR_DRAFT_REQUIRES_CONFIRM,
+            DraftPlanRequiresConfirmError,
+            create_sessions_for_plan,
+        )
         from permissions.models import SpaceRole
         from permissions.services import PermissionService
 
@@ -2611,12 +2714,31 @@ class CodingPlanSessionsBatchCreateView(APIView):
                 )
 
         # 5) 业务调用
-        result = await create_sessions_for_plan(
-            plan=plan,
-            repository_ids=req_ser.validated_data["repository_ids"],
-            branch_template=req_ser.validated_data.get("branch_template", ""),
-            target_branch=req_ser.validated_data.get("target_branch", ""),
-        )
+        #    草稿 gate（RELY-01）在 service 内、置于权限门之后：先判权限再判草稿，
+        #    否则 400 会让非授权调用方推断出「这个 plan 存在」。
+        try:
+            result = await create_sessions_for_plan(
+                plan=plan,
+                repository_ids=req_ser.validated_data["repository_ids"],
+                branch_template=req_ser.validated_data.get("branch_template", ""),
+                target_branch=req_ser.validated_data.get("target_branch", ""),
+                acknowledge_unresearched=req_ser.validated_data.get(
+                    "acknowledge_unresearched", False
+                ),
+                # 109-REVIEW MN-06：草稿 gate 的问责字段走显式通路。本视图手上就有
+                # request.user，不绕 contextvars —— 后者漏绑一次，RELY-01 的审计线
+                # 就会静默退化成 system（这正是 BL-01 暴露的形状）。
+                actor_user_id=resolve_user_id(request),
+            )
+        except DraftPlanRequiresConfirmError:
+            # 稳定机器码 + 中文文案双键：前端按 code 分支，绝不匹配 detail 文案。
+            return Response(
+                {
+                    "code": ERROR_CODE_DRAFT_REQUIRES_CONFIRM,
+                    "detail": ERROR_DRAFT_REQUIRES_CONFIRM,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # 6) dataclass -> dict -> serializer
         resp_payload: dict[str, Any] = {
@@ -2633,6 +2755,126 @@ class CodingPlanSessionsBatchCreateView(APIView):
             ],
         }
         resp_ser = CodingSessionsBatchCreateResponseSerializer(data=resp_payload)
+        resp_ser.is_valid(raise_exception=True)
+        return Response(resp_ser.data, status=status.HTTP_200_OK)
+
+
+class CodingPlanProjectFromArtifactVersionView(APIView):
+    """POST /api/chat/coding-plans/from-artifact-version/ —— 编排方案版本惰性投影。
+
+    前端「进入编码」按钮的**唯一后端入口**（SPINE-01）：把 ``delivery.ArtifactVersion``
+    幂等投影成 chat ``CodingPlan``，并把方案正文随响应一次给全。
+
+    错误响应一律带**稳定机器码** ``code``（前端按 ``code`` 分支，绝不按 ``detail``
+    文案匹配）：
+
+    - ``artifact_version_not_found`` → 404，与「非 owner」共用同一措辞，阻断
+      ``artifact_version_id`` 枚举探测（T-109-03-02）。
+    - ``projection_requires_chat_entrypoint`` → 400，编排会话无 conversation
+      （workflow / MCP 入口）时的 D-3 边界。
+    """
+
+    authentication_classes = [OptionalJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    # 「不存在」与「无权限」必须同体同文，任何一处改动都会重新打开枚举探测面。
+    _NOT_FOUND_DETAIL = "CodingPlan not found"
+
+    def _not_found(self) -> Response:
+        return Response(
+            {"code": ERROR_ARTIFACT_VERSION_NOT_FOUND, "detail": self._NOT_FOUND_DETAIL},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    @extend_schema(
+        summary="编排方案版本投影为 CodingPlan（惰性、幂等）",
+        request=ProjectPlanToCodingRequestSerializer,
+        responses={
+            200: ProjectPlanToCodingResponseSerializer,
+            400: {"description": "请求体校验失败，或编排会话无 conversation（须 chat 入口）"},
+            404: {"description": "方案版本不存在或无权访问（同体同文，不泄漏存在性）"},
+        },
+        tags=["CodingPlan"],
+    )
+    async def post(self, request):  # type: ignore[override]
+        from repositories.models import Repository
+
+        req_ser = ProjectPlanToCodingRequestSerializer(data=request.data)
+        req_ser.is_valid(raise_exception=True)
+        artifact_version_id = str(req_ser.validated_data["artifact_version_id"])
+
+        user = request.user
+        service = PlanProjectionService()
+
+        # 1) 前置 owner 校验：先只读解析归属会话再决定是否投影。若把 gate 放到投影
+        #    之后，越权请求会先在他人会话下建出 CodingPlan 再被拒（垃圾对象 + 数据污染）。
+        try:
+            conversation = await service.aresolve_conversation(
+                artifact_version_id=artifact_version_id
+            )
+        except PlanProjectionError as exc:
+            if exc.code == ERROR_REQUIRES_CHAT_ENTRYPOINT:
+                return Response(
+                    {"code": exc.code, "detail": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return self._not_found()
+
+        # owner gate：用 created_by_id 标量避免 async 惰性 FK；无 superuser bypass（ISO-03）。
+        # 109-05 起**真正的门在 service**（`aproject` 必填 actor_user_id + 内部
+        # `_assert_owner`，工具路径与本端点共享同一道门）；这里是第二道纵深，保留它是
+        # 为了让越权请求在只读解析阶段就被挡掉、不进入写入口。
+        if getattr(user, "is_authenticated", False) and conversation.created_by_id != user.id:
+            return self._not_found()
+
+        # 2) 投影（唯一写入口）
+        try:
+            plan, created = await service.aproject(
+                artifact_version_id=artifact_version_id,
+                actor_user_id=str(user.id),
+            )
+        except PlanProjectionError as exc:
+            if exc.code == ERROR_REQUIRES_CHAT_ENTRYPOINT:
+                return Response(
+                    {"code": exc.code, "detail": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            # artifact_version_not_found 与 artifact_version_forbidden 同形映射 404，
+            # 措辞逐字节一致，不泄漏存在性。
+            return self._not_found()
+
+        # 3) owner gate 复核（纵深）：投影落点必须仍是请求者自己的会话。
+        if getattr(user, "is_authenticated", False) and plan.conversation_id != conversation.id:
+            return self._not_found()
+
+        # 4) 推荐仓库的**名字**随响应一起回（109-REVIEW HI-01）：前端就地内嵌
+        #    TechPlanCard 后要用 {id, name} 渲染选仓列表，只有 id 渲染不出任何一行。
+        #    半可信 id 先过筛（同 MN-03，非 UUID 字面量喂 ORM 会抛 ValidationError）；
+        #    按 plan 所属 space 过滤，口径与工具路径一致。
+        recommended_ids = filter_valid_uuids(plan.recommended_repository_ids)
+        recommended_repositories: list[dict[str, str]] = []
+        if recommended_ids:
+            recommended_repositories = [
+                {"id": str(r.id), "name": r.name}
+                async for r in Repository.objects.filter(
+                    id__in=recommended_ids,
+                    spaces__id=conversation.space_id,
+                    is_deleted=False,
+                )
+            ]
+
+        resp_ser = ProjectPlanToCodingResponseSerializer(
+            data={
+                "coding_plan_id": str(plan.id),
+                "created": created,
+                "title": plan.title or "",
+                "tech_plan": plan.tech_plan or "",
+                "affected_files": plan.affected_files or [],
+                "recommended_repository_ids": plan.recommended_repository_ids or [],
+                "recommended_repositories": recommended_repositories,
+                "provenance": plan.provenance,
+            }
+        )
         resp_ser.is_valid(raise_exception=True)
         return Response(resp_ser.data, status=status.HTTP_200_OK)
 
@@ -2714,6 +2956,12 @@ class RoutingTraceManualOverrideView(APIView):
                 c2["selected_by_user_final"] = requested[rid]
             new_candidates.append(c2)
 
+        # 显式继承同一次路由的降级/分组事实（107-08，Pitfall 3 后端半边）：
+        # router_version 的列默认值是 legacy_hybrid，不显式继承的话新行会退化成
+        # legacy_hybrid，_derive_degraded 随之变 False —— 用户改一次勾选，降级横幅与
+        # 分组分区就凭空消失（同一次路由的事实不因用户改勾选而改变）。
+        # 注意：本 acreate 与下面的响应组装都位于上面两道校验（跨用户 owner gate /
+        # 跨项目 has_project_access）之后；新增字段一律不得挪到校验之前读写。
         new_trace = await RepositoryRoutingTrace.objects.acreate(
             agent_session=None,
             conversation_id=original.conversation_id,
@@ -2721,6 +2969,11 @@ class RoutingTraceManualOverrideView(APIView):
             candidates=new_candidates,
             threshold=original.threshold,
             triggered_by=RepositoryRoutingTrace.TriggeredBy.MANUAL_OVERRIDE,
+            router_version=original.router_version,
+            degrade_reason=original.degrade_reason,
+            # 与 detail 视图同款守卫：脏数据经 list() 会静默变成键名/字符列表并被写进
+            # 新 trace，坏值就此固化。
+            block_order=_safe_block_order(original.block_order),
         )
 
         logger.info(
@@ -2739,6 +2992,12 @@ class RoutingTraceManualOverrideView(APIView):
                 "original_trace_id": str(original.id),
                 "candidates": new_candidates,
                 "triggered_by": new_trace.triggered_by,
+                # 与会话 detail 同一组键、同一个派生点：前端 applyManualOverride 重建
+                # trace 时直接用这 4 键，无需自行推断降级。
+                "router_version": new_trace.router_version,
+                "degraded": _derive_degraded(new_trace.router_version),
+                "degrade_reason": new_trace.degrade_reason,
+                "block_order": _safe_block_order(new_trace.block_order),
             },
             status=status.HTTP_201_CREATED,
         )

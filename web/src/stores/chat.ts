@@ -4,7 +4,7 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, DeepAnalysisSession, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ImagePart, MessagePart, PartCompletedPayload, PartStartedPayload, SSEEvent, StreamTimelineItem, TextPart, ThinkingPart, ToolUsePart } from '~/types/chat'
+import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, DeepAnalysisSession, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ImagePart, MessagePart, OrchestrationRuntime, PartCompletedPayload, PartStartedPayload, PlanResearchSession, ProjectPlanToCodingResponse, SSEEvent, StreamTimelineItem, TextPart, ThinkingPart, ToolUsePart } from '~/types/chat'
 import type { ClarificationAnswer, ClarificationPayload, PlanClarificationPayload } from '~/types/clarification'
 import type { ProviderType } from '~/types/providerCredential'
 import type { RoutingDecisionData } from '~/types/routing'
@@ -24,6 +24,7 @@ import {
   interruptConversation,
   listConversations,
   patchConversation,
+  projectArtifactVersionToCodingPlan,
 } from '~/api/chat'
 import { ApiError, get as apiGet } from '~/api/client'
 import { getChatPartsProtocol } from '~/composables/useChatPartsProtocol'
@@ -68,6 +69,90 @@ function friendlyStreamError(e: unknown): string {
     return '连接中断：本轮分析较长导致请求超时或网络中断。可点击重试；若问题涉及很多仓库，建议在提问中指定具体仓库以加快检索。'
   }
   return raw || '发送消息失败'
+}
+
+// ==========================================================================
+// 110：编排进度的双链合流（SSE `process_event` + 2s 运行时快照）
+//
+// 两条链写**同一份** store 状态，组件不知道数据从哪条链来——这是本设计的核心
+// 不变量（110-UI-SPEC §E.1）。store 只存**原材料**（快照权威字段 + 去重后的事件
+// 流）；阶段指针、六态状态机、摘要文案全部由 110-05 的纯函数 composable 从
+// `snapshot + events` 算出，本文件里不出现任何 stage 标签或摘要文案。
+// ==========================================================================
+
+/** 桶内事件条目。`payload` 是半可信结构，消费方必须纯字面防御性读取。 */
+export interface OrchestrationEventEntry {
+  event: string
+  ts: string
+  payload: Record<string, unknown>
+}
+
+/** 按 `session_id` 分桶的编排原材料。 */
+export interface OrchestrationBucket {
+  sessionId: string
+  /** 运行时快照的权威字段；SSE 直播期间（还没有一次快照到达）为 null。 */
+  snapshot: OrchestrationRuntime | null
+  /** 两条链合流后的事件流（按 ts 升序，已去重）。 */
+  events: OrchestrationEventEntry[]
+  eventsTruncated: boolean
+}
+
+/**
+ * 自然键：`repo_id` → `task_id` → `clarification_id` 三选一，都没有则空串。
+ *
+ * payload 形状意外（null / 字符串 / 数组）时一律回退空串，**不做属性访问链**。
+ */
+function orchestrationNaturalKey(payload: unknown): string {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+    return ''
+  const p = payload as Record<string, unknown>
+  const raw = p.repo_id ?? p.task_id ?? p.clarification_id
+  return typeof raw === 'string' || typeof raw === 'number' ? String(raw) : ''
+}
+
+/**
+ * 去重键 = `event` + `ts` + 自然键。
+ *
+ * `ts` 的跨链一致性由后端保证（fan-out 与快照都写落库行的 `row.ts.isoformat()`），
+ * 是「SSE 那条」与「快照那条」被认成同一条事件的依据。自然键这一段是给上游
+ * （110-05）留的能力：计数类摘要按去重自然键集合算（调研完成数按去重 `repo_id`、
+ * 澄清轮次按去重 `clarification_id`），这样即便某天 `ts` 对齐被破坏，这两个计数
+ * 仍然正确；只有无自然键的融合轮次真正依赖 `ts`。
+ */
+export function orchestrationEventKey(e: { event: string, ts: string, payload?: Record<string, unknown> }): string {
+  return `${e.event}|${e.ts}|${orchestrationNaturalKey(e.payload)}`
+}
+
+/**
+ * 按去重键合并两段事件流，再按 `ts` 升序稳定归并。
+ *
+ * SSE 补发与快照补齐必然产生重复；重复投递两次不得让任何计数翻倍。
+ */
+function mergeOrchestrationEvents(
+  existing: OrchestrationEventEntry[],
+  incoming: ReadonlyArray<{ event?: unknown, ts?: unknown, payload?: unknown }>,
+): OrchestrationEventEntry[] {
+  const merged = [...existing]
+  const seen = new Set(existing.map(orchestrationEventKey))
+  for (const raw of incoming) {
+    if (!raw || typeof raw !== 'object')
+      continue
+    const entry: OrchestrationEventEntry = {
+      event: typeof raw.event === 'string' ? raw.event : '',
+      ts: typeof raw.ts === 'string' ? raw.ts : '',
+      // 原样入桶：这里**不**规整 payload，形状意外交给消费方防御性读取。
+      payload: raw.payload as Record<string, unknown>,
+    }
+    if (!entry.event)
+      continue
+    const key = orchestrationEventKey(entry)
+    if (seen.has(key))
+      continue
+    seen.add(key)
+    merged.push(entry)
+  }
+  // Array#sort 稳定：ts 相同的事件保持原有到达 / 快照顺序。
+  return merged.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -127,6 +212,21 @@ export const useChatStore = defineStore('chat', () => {
   // 多个深度分析子会话各自独立的日志（按会话渲染 swiper）
   const deepAnalysisSessions = ref<DeepAnalysisSession[]>([])
   const restoredRuntimeConversationId = ref<string | null>(null)
+
+  // 110：编排进度原材料（SSE 与快照两条链共同写入，见文件头部 mergeOrchestrationEvents）
+  //
+  // 🔴 按 session_id 分桶、绝不互相覆盖：同一对话内先后两次编排，runtime 只带
+  // **最近一次**，历史那条的时间线要能随消息保留其已折叠的终态。
+  const orchestrationSessions = ref<Record<string, OrchestrationBucket>>({})
+  const activeOrchestrationSessionId = ref<string | null>(null)
+  /** 本对话的调研容器会话（**全量列表语义**，每份快照整体替换）。 */
+  const planResearchSessions = ref<PlanResearchSession[]>([])
+  /**
+   * 最近一次快照里的 `runtime.active`。中断判定（UI-SPEC §E.3）需要它，而 store
+   * 此前没有任何地方把这个布尔留下来。**初值 true**：一次快照都还没到达时，不该
+   * 把「还没查过」判成「已中断」。
+   */
+  const orchestrationRuntimeActive = ref(true)
 
   // 编码会话状态
   const activeCodingSession = ref<{
@@ -500,6 +600,9 @@ export const useChatStore = defineStore('chat', () => {
     // 284-UAT.md round 2 Gap）。createNewConversation / resetStreamingState 早已
     // 清空，selectConversation 此前漏调，导致用户切对话时旧卡片残留显示。
     clearAllClarifications()
+    // 110：编排状态的清理点在这里（切换会话），**不是** resetStreamingState ——
+    // 在那里清等于「编排一完成时间线就消失」。
+    clearOrchestrationState()
     try {
       const detail = await getConversationDetail(id)
       messages.value = detail.messages
@@ -510,7 +613,10 @@ export const useChatStore = defineStore('chat', () => {
             upsertClarification({ ...c, conversation_id: id }, id)
         }
       }
-      // hydrate 最新路由 trace，让 RelevanceBadge 等刷新后回显
+      // hydrate 最新路由 trace，让 RelevanceBadge 等刷新后回显。
+      // 契约：整对象透传，**不得**改成显式字段白名单——后端 payload 已含
+      // router_version / degraded / degrade_reason / block_order（107-08 起共 9 键），
+      // 白名单化会让刷新后降级横幅与分组分区消失。
       if (detail.routing_trace?.trace_id)
         routingStore.upsertTrace(detail.routing_trace, id)
       activeCodingSession.value = null
@@ -546,6 +652,7 @@ export const useChatStore = defineStore('chat', () => {
     resetStreamingState()
     // ：清空协商卡片缓存（新对话开始时）
     clearAllClarifications()
+    clearOrchestrationState()
   }
 
   async function removeConversation(id: string) {
@@ -766,6 +873,7 @@ export const useChatStore = defineStore('chat', () => {
     // ：切换 conversation 时清空协商状态防串台
     pendingClarifications.value = new Map()
     pendingPlanClarifications.value = new Map()
+    clearOrchestrationState()
   }
 
   function upsertConversationAtTop(conversation: Conversation) {
@@ -789,6 +897,8 @@ export const useChatStore = defineStore('chat', () => {
     completedConfirmSteps.value = []
     pendingClarifications.value = new Map()
     pendingPlanClarifications.value = new Map()
+    // fork 会切到一个全新会话，编排原材料同样按会话维度清理防串台。
+    clearOrchestrationState()
     isExportSelectMode.value = false
     selectedMessageIds.value = new Set()
     lastFailedContent.value = null
@@ -840,6 +950,94 @@ export const useChatStore = defineStore('chat', () => {
     runtimePollTimer = setTimeout(() => {
       void pollConversationRuntime(id)
     }, delay)
+  }
+
+  function upsertOrchestrationBucket(sessionId: string): OrchestrationBucket {
+    // upsert：只补自己那一个键，**不**整体替换 record，否则同一对话内先后两次
+    // 编排会互相把对方的时间线抹掉。
+    if (!orchestrationSessions.value[sessionId]) {
+      orchestrationSessions.value[sessionId] = {
+        sessionId,
+        snapshot: null,
+        events: [],
+        eventsTruncated: false,
+      }
+    }
+    return orchestrationSessions.value[sessionId]
+  }
+
+  /**
+   * 把运行时快照里的编排进度写进与 SSE **完全相同**的那份分桶状态。
+   *
+   * 🔴 这是一个独立函数，**绝不能**并进 `applyRuntimeSnapshot`，原因有两条且
+   * 互相印证：
+   * ① `applyRuntimeSnapshot` 只在 `runtime.active === true` 时被调用，而编排终态
+   *    那一拍（done / failed）`active` 恰好变 false ⇒ 并进去的话，`done` / `failed`
+   *    这两个最需要被看到的状态永远到不了 store，时间线会永远停在最后一个在途阶段。
+   * ② `applyRuntimeSnapshot` 的第一行就是 `isStreaming.value = true`——它是「恢复
+   *    一次进行中的流」的语义，在非活跃分支调用它会把输入框错误锁住。
+   * 所以本函数在 `runtime.active` 分流**之前**调用一次，一处调用覆盖两条分支。
+   */
+  function applyOrchestrationRuntime(runtime: ConversationRuntime) {
+    try {
+      const orch = runtime.orchestration
+      // 终态收敛（110-MN-02）：后端刻意没重发 events 与 plan_research_sessions。
+      // 🔴 这里的空是「没有变化」而不是「没有了」——按空值覆盖会让时间线与日志组
+      // 在编排完成后凭空消失。
+      const converged = orch?.converged === true
+      if (orch && orch.session_id) {
+        const bucket = upsertOrchestrationBucket(orch.session_id)
+        // 权威字段整体替换；事件按去重键合并（快照里的事件与 SSE 直播的必然重复）。
+        bucket.snapshot = orch
+        if (!converged) {
+          bucket.events = mergeOrchestrationEvents(
+            bucket.events,
+            Array.isArray(orch.events) ? orch.events : [],
+          )
+          bucket.eventsTruncated = orch.events_truncated === true
+        }
+        activeOrchestrationSessionId.value = orch.session_id
+      }
+      // orchestration 为 null / 缺失 ⇒ **保持现有桶不动**。轮询到一半后端降级返回
+      // null 时不该把已经拿到的进度抹掉：「没有新信息」不等于「之前的信息作废」。
+      if (!converged) {
+        planResearchSessions.value = Array.isArray(runtime.plan_research_sessions)
+          ? runtime.plan_research_sessions
+          : []
+      }
+      orchestrationRuntimeActive.value = runtime.active === true
+    }
+    catch {
+      // 观测代码绝不反噬业务
+    }
+  }
+
+  /**
+   * 收敛令牌（110-MN-02）：本对话已完整持有、且已终态的那个编排会话 id。
+   *
+   * 只有 store 里**确实存过一份终态快照**才发令牌——那份快照必然是带全量 events 与
+   * plan_research_sessions 的那次响应（收敛响应本身不会把 status 从在途改成终态）。
+   * 取不到就发空串，服务端退化成全量，不会漏数据。
+   */
+  function orchestrationSeenToken(): string {
+    const sessionId = activeOrchestrationSessionId.value
+    if (!sessionId)
+      return ''
+    const status = orchestrationSessions.value[sessionId]?.snapshot?.status
+    return status === 'done' || status === 'failed' ? sessionId : ''
+  }
+
+  /**
+   * 编排状态的清理点是**切换会话**。
+   *
+   * 🔴 不得在 `resetStreamingState` 里清——它在每次流结束时被调用，在那里清等于
+   * 「编排一完成时间线就消失」，恰好打掉「时间线自身的终态就是完成信号」这条。
+   */
+  function clearOrchestrationState() {
+    orchestrationSessions.value = {}
+    activeOrchestrationSessionId.value = null
+    planResearchSessions.value = []
+    orchestrationRuntimeActive.value = true
   }
 
   function applyRuntimeSnapshot(runtime: ConversationRuntime) {
@@ -1041,7 +1239,12 @@ export const useChatStore = defineStore('chat', () => {
       return
 
     try {
-      const runtime = await getConversationRuntime(id)
+      // 带上收敛令牌：编排凝固后（用户已点「进入编码」、编码会话还要跑十几分钟）不再
+      // 每 2 秒重收一遍那份逐字相同的事件流与容器日志。
+      const runtime = await getConversationRuntime(id, orchestrationSeenToken())
+      // 🔴 必须在 `if (runtime.active)` 分流**之前**：编排终态那一拍 active 恰好
+      // 变 false，挂在活跃分支里会让 done / failed 永远到不了 store。
+      applyOrchestrationRuntime(runtime)
       if (runtime.active) {
         applyRuntimeSnapshot(runtime)
 
@@ -1124,6 +1327,9 @@ export const useChatStore = defineStore('chat', () => {
   async function restoreConversationRuntime(id: string) {
     try {
       const runtime = await getConversationRuntime(id)
+      // 刷新 / 切回会话时补齐编排进度。与 pollConversationRuntime 同理，放在
+      // `runtime.active` 分流之前，两条分支都覆盖。
+      applyOrchestrationRuntime(runtime)
       // 恢复待回复的澄清卡（与 streaming 解耦）：刷新 / 切回会话后仍能答复。
       // 澄清问题不落 Message，只在 checkpoint + ConversationIntentTrace，前端内存
       // pendingClarifications 刷新即丢 —— 这里从 runtime 回灌。
@@ -1250,8 +1456,8 @@ export const useChatStore = defineStore('chat', () => {
    *   (a) analyze_repository_relevance → 直接读 result.output.data；
    *   (b) deep_analysis → 扫 text 末尾 `[cross_repo_relevance:<trace_id>]\n<JSON>` 段。
    *
-   * 同时把 trace_id 写入即将持久化的 streamingMessage metadata，让 RoutingDecisionPanel
-   * 在 message 已渲染时也能反查 trace。
+   * 同时把 trace_id 写入即将持久化的 streamingMessage metadata，让 RelevanceBadge /
+   * RepoMultiSelector 在 message 已渲染时也能反查 trace。
    */
   function maybeParseRoutingTraceFromToolResult(args: {
     toolName: string
@@ -1269,16 +1475,30 @@ export const useChatStore = defineStore('chat', () => {
           data?: Record<string, unknown>
         }
         const data = (parsed?.output?.data ?? parsed?.data) as
-          | { trace_id?: string, candidates?: unknown[], threshold?: number }
+          | {
+            trace_id?: string
+            candidates?: unknown[]
+            threshold?: number
+            router_version?: string
+            degraded?: boolean
+            degrade_reason?: RoutingDecisionData['degrade_reason']
+            block_order?: RoutingDecisionData['block_order']
+          }
           | undefined
         const traceId = data?.trace_id
         if (data && typeof traceId === 'string') {
+          // 四个 trace 级事实按「有则透传、无则 undefined」写入——不填假值，
+          // 缺字段的历史/legacy 工具输出要保持今日渲染（无横幅、平铺列表）。
           const trace: RoutingDecisionData = {
             trace_id: traceId,
             query: (args.toolInput.query as string) || '',
             candidates: (data.candidates as RoutingDecisionData['candidates']) || [],
             threshold: typeof data.threshold === 'number' ? data.threshold : 0.5,
             triggered_by: 'chat_tool',
+            router_version: typeof data.router_version === 'string' ? data.router_version : undefined,
+            degraded: typeof data.degraded === 'boolean' ? data.degraded : undefined,
+            degrade_reason: data.degrade_reason,
+            block_order: Array.isArray(data.block_order) ? data.block_order : undefined,
           }
           routingStore.upsertTrace(trace, conversationId)
           // 把 trace_id 挂到 streamingMetadata 让 message_complete 时持久化
@@ -1299,6 +1519,9 @@ export const useChatStore = defineStore('chat', () => {
         if (m) {
           const traceId = m[1]
           const candidates = JSON.parse(m[2]) as RoutingDecisionData['candidates']
+          // 该 payload 只有候选数组（候选级 group / trust / score_ranked 随之透传），
+          // 结果级四键在这条链上不存在 → 一律留 undefined，绝不填假值：
+          // 把降级事实填成 false 等于把「未知」谎报成「没降级过」。
           const trace: RoutingDecisionData = {
             trace_id: traceId,
             query: '',
@@ -1516,6 +1739,33 @@ export const useChatStore = defineStore('chat', () => {
       case 'part_completed':
         handlePartCompleted(event)
         break
+      case 'process_event': {
+        // 编排统一信封。放在既有 switch 内即自动继承上面两道前置守卫：前台守卫
+        // （后台会话流不写当前 UI）与中断守卫（用户已中断后实时进度不该继续写，
+        // 真实进度仍会由 2s 快照补齐）。**不要**为它开这两道守卫的后门。
+        //
+        // 🔴 不按事件名白名单过滤：后端新增事件而前端未同步时，若在这里丢掉，
+        // 它连到达折叠逻辑的机会都没有；折叠逻辑自己会静默忽略不认识的名字。
+        // 🔴 不解析 payload 的业务字段（除去重用的自然键）：形状意外时原样入桶。
+        try {
+          const sessionId = typeof event.session_id === 'string' ? event.session_id : ''
+          const eventName = typeof event.event === 'string' ? event.event : ''
+          // session_id 或 event 缺失 ⇒ 静默丢弃，不抛、不 warn。
+          if (!sessionId || !eventName)
+            break
+          const bucket = upsertOrchestrationBucket(sessionId)
+          bucket.events = mergeOrchestrationEvents(bucket.events, [{
+            event: eventName,
+            ts: event.ts,
+            payload: event.payload,
+          }])
+          activeOrchestrationSessionId.value = sessionId
+        }
+        catch {
+          // 观测代码绝不反噬业务
+        }
+        break
+      }
       case 'text_delta':
         streamingPendingText.value += event.text || ''
         break
@@ -2540,6 +2790,14 @@ export const useChatStore = defineStore('chat', () => {
     repositoryIds: string[],
     branchTemplate?: string,
     targetBranch?: string,
+    /**
+     * 109-08（RELY-01）：草稿方案送编码的用户显式确认。
+     *
+     * 🔴 只在**用户在确认弹层里勾选后**由组件传 true；本层不设默认值、不缓存、
+     * 不记忆，且仅当它严格等于 true 时才把键放进请求体（undefined / false 一律
+     * 不放键 —— 见下方 payload 组装）。
+     */
+    acknowledgeUnresearched?: boolean,
   ): Promise<{
     createdCount: number
     failedCount: number
@@ -2554,11 +2812,16 @@ export const useChatStore = defineStore('chat', () => {
       throw new Error('planId 缺失')
     repoMultiSelectorState.value.submitting = true
     try {
-      const resp = await createSessionsForPlan(planId, {
+      const payload: Parameters<typeof createSessionsForPlan>[1] = {
         repository_ids: repositoryIds,
         branch_template: branchTemplate,
         target_branch: targetBranch,
-      })
+      }
+      // 🔴 有条件放键（而不是无条件展开）：编排方案零摩擦 —— 不发送该字段而不是
+      // 发 false，这样后端留痕里「带了 ack」就等价于「用户确实确认过」。
+      if (acknowledgeUnresearched === true)
+        payload.acknowledge_unresearched = true
+      const resp = await createSessionsForPlan(planId, payload)
       for (const item of resp.created) {
         const confirmed = await apiConfirmCodingSession(item.session_id)
         activeCodingSession.value = {
@@ -2589,6 +2852,11 @@ export const useChatStore = defineStore('chat', () => {
   async function retrySingleRepository(
     planId: string,
     repositoryId: string,
+    /**
+     * 109-08：原样转发给 submitRepoMultiSelector，本层不补值。重试同样创建
+     * session ⇒ 服务端 gate 会一致地拦，因此确认必须同样来自用户勾选。
+     */
+    acknowledgeUnresearched?: boolean,
   ): Promise<{ createdCount: number, failedCount: number }> {
     const prevState = repoMultiSelectorState.value
     repoMultiSelectorState.value = {
@@ -2598,11 +2866,33 @@ export const useChatStore = defineStore('chat', () => {
       submitting: true,
     }
     try {
-      return await submitRepoMultiSelector([repositoryId])
+      return await submitRepoMultiSelector(
+        [repositoryId],
+        undefined,
+        undefined,
+        acknowledgeUnresearched,
+      )
     }
     finally {
       repoMultiSelectorState.value = prevState
     }
+  }
+
+  /**
+   * 109-04：把编排产出的方案版本惰性投影为 chat CodingPlan（SPINE-01 前端半边）。
+   *
+   * 只做三件事：调端点、排一次 runtime polling 让 sessions 状态跟上、原样返回响应。
+   * 刻意**不**手工拼 `activeCodingPlan` —— 前端不得自行构造 CodingPlan 业务字段，
+   * 且手工写入会与 runtime 刷新竞态；卡片的即时数据由投影响应直接喂 props 承担。
+   * 错误不吞，交给组件走 toast。
+   */
+  async function projectPlanToCodingPlan(
+    artifactVersionId: string,
+  ): Promise<ProjectPlanToCodingResponse> {
+    const resp = await projectArtifactVersionToCodingPlan(artifactVersionId)
+    if (currentConversationId.value)
+      scheduleRuntimePoll(currentConversationId.value, 3000)
+    return resp
   }
 
   // ========================================================================
@@ -2909,6 +3199,14 @@ export const useChatStore = defineStore('chat', () => {
     deepAnalysisSessionId,
     deepAnalysisSessions,
     restoredRuntimeConversationId,
+    // 110：编排进度原材料（SSE + 快照双链合流）
+    //   activeOrchestrationSessionId 供组件绑定会话，orchestrationRuntimeActive
+    //   供中断判定；折叠 / 摘要由 110-05 的纯函数 composable 从桶里算。
+    orchestrationSessions,
+    activeOrchestrationSessionId,
+    planResearchSessions,
+    orchestrationRuntimeActive,
+    applyOrchestrationRuntime,
     currentPhase,
     taskProgress,
     isInterrupting,
@@ -2989,6 +3287,8 @@ export const useChatStore = defineStore('chat', () => {
     closeRepoMultiSelector,
     submitRepoMultiSelector,
     retrySingleRepository,
+    // 109-04：编排产出 → CodingPlan 惰性投影
+    projectPlanToCodingPlan,
     // ：协商卡片状态
     pendingClarifications,
     getClarification,

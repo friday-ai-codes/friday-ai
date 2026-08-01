@@ -8,7 +8,10 @@ import {
   relevanceCandidates,
   repoInitial,
   searchedRepoLabel,
+  TOOL_ICONS,
+  TOOL_LABELS,
   toolAction,
+  toolIcon,
   toolLabel,
 } from '~/composables/useToolDisplay'
 
@@ -93,5 +96,65 @@ describe('useToolDisplay', () => {
   it('repoInitial 取仓库名首字符大写', () => {
     expect(repoInitial('example-app')).toBe('E')
     expect(repoInitial('')).toBe('?')
+  })
+
+  // ---------------------------------------------------------------------------
+  // 109-04：编排工具三处登记（label / icon / action）。缺任一处用户就看不出
+  // 这一步做了什么 —— 摘要会落到 default 分支，产出裸入参串。
+  // ---------------------------------------------------------------------------
+  describe('编排工具登记（start_plan_research / start_feature_solution）', () => {
+    it('label 登记：两个工具各有中文标签（含 mcp__ 前缀形态）', () => {
+      expect(TOOL_LABELS.start_plan_research).toBe('方案编排调研')
+      expect(TOOL_LABELS.start_feature_solution).toBe('功能方案编排')
+      expect(toolLabel('mcp__chat-tools__start_plan_research')).toBe('方案编排调研')
+      expect(toolLabel('start_feature_solution')).toBe('功能方案编排')
+    })
+
+    it('icon 登记：两个工具均为 workflow 图标', () => {
+      expect(TOOL_ICONS.start_plan_research).toBe('icon-[lucide--workflow]')
+      expect(TOOL_ICONS.start_feature_solution).toBe('icon-[lucide--workflow]')
+      expect(toolIcon('mcp__chat-tools__start_feature_solution')).toBe('icon-[lucide--workflow]')
+    })
+
+    it('toolAction 终态分支：status=done → 跨仓方案编排已完成', () => {
+      const done = JSON.stringify({
+        session_id: 's1',
+        artifact_version_id: 'av-1',
+        status: 'done',
+        message: '跨仓方案编排已完成，已产出技术方案产物（ArtifactVersion）。',
+      })
+      expect(toolAction('start_plan_research', { requirement: '做个东西' }, done))
+        .toBe('跨仓方案编排已完成')
+      expect(toolAction('mcp__chat-tools__start_feature_solution', {}, done))
+        .toBe('跨仓方案编排已完成')
+    })
+
+    it('toolAction 在途分支：__blocking_task__ → 方案编排调研进行中，且不回显后端 placeholder', () => {
+      const placeholder = '已发起跨仓方案编排调研（session=s1，状态=waiting_event）；深入调研容器运行中，调研完成后将自动融合并返回 canonical 主方案。'
+      const blocking = JSON.stringify({
+        __blocking_task__: true,
+        task_type: 'plan_research',
+        task_id: 's1',
+        session_id: 's1',
+        params: { session_id: 's1' },
+        placeholder,
+      })
+      for (const name of ['start_plan_research', 'start_feature_solution']) {
+        const action = toolAction(name, { requirement: '做个东西' }, blocking)
+        expect(action).toBe('方案编排调研进行中')
+        // 后端自由文本不得进渲染路径
+        expect(action).not.toContain('已发起')
+        expect(action).not.toContain('容器')
+        expect(action).not.toContain('session=')
+      }
+    })
+
+    it('toolAction 兜底分支：无 result → 回退截断后的需求文本', () => {
+      expect(toolAction('start_plan_research', { requirement: '打通编排产出到编码执行' }))
+        .toBe('编排「打通编排产出到编码执行」')
+      // 需求缺失 → 回退工具标签，而非 default 分支的裸入参串
+      expect(toolAction('start_feature_solution', { space_id: 7 }))
+        .toBe('功能方案编排')
+    })
   })
 })

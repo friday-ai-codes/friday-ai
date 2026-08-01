@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import structlog
@@ -24,6 +25,7 @@ from delivery.services.event_taxonomy import (
     EVENT_KNOWLEDGE_RECALLING,
     EVENT_REPO_ROUTING,
 )
+from interactions.redaction import redact_for_ledger
 from services.process_runtime.engine import StageOutcome
 from services.process_runtime.registry import (
     STAGE_DONE,
@@ -104,15 +106,90 @@ async def _h_decompose(session: Any, engine: Any) -> StageOutcome:
     return StageOutcome(event="decomposed", stage_state_update={"decomposition": decomposition})
 
 
+def _routing_snapshot_payload(
+    routing: dict[str, Any], snapshot: dict[str, Any]
+) -> dict[str, Any]:
+    """组装 repo.routing 完整快照 payload（ROUTE-09，RESEARCH Pattern 3 形状）。
+
+    候选（含 score/breakdown）取自 ``snapshot["candidates"]``（router ``to_dict``
+    产物），stage0/stage1/versions 原样透传；router_version/degraded/auto_selected
+    取自 adapter 精简 dict。整体经 ``redact_for_ledger`` 脱敏后返回（T-105-15）；
+    payload 序列化后 < 64KB 由 snapshot node_hits 最小字段集保证（T-105-16）。
+    """
+    snap_candidates = snapshot.get("candidates") or []
+    payload: dict[str, Any] = {
+        "candidates": [
+            {
+                "repo_id": c.get("repo_id"),
+                "confidence": c.get("confidence"),
+                "score": c.get("score"),
+                "breakdown": c.get("breakdown") or {},
+            }
+            for c in snap_candidates
+            if isinstance(c, dict)
+        ],
+        "router_version": routing.get("router_version", ""),
+        "degraded": bool(routing.get("degraded", False)),
+        # RELY-03：降级**原因**与 degraded 同批出参。少了它，编排链路上的降级提示
+        # 只能说「本次未经 LLM 推理」而说不出为什么——受控闭集里的六个值本身就是
+        # 给用户看的（``classify_degrade_reason``），留在 trace 里等于没有。
+        "degrade_reason": str(routing.get("degrade_reason") or ""),
+        "auto_selected": bool(routing.get("auto_selected", False)),
+        "stage0": snapshot.get("stage0") or {},
+        "stage1": snapshot.get("stage1") or {},
+        "versions": snapshot.get("versions") or {},
+    }
+    # Phase 106 新节（106-07 replay 的回放材料）：weight_config 生效全值 +
+    # per-候选 repo_meta——仅在 router 产出时透传（legacy 快照不加空节），
+    # 同样整体经 redact_for_ledger 脱敏（T-106-15）。
+    for extra_key in ("weight_config", "repo_meta"):
+        if isinstance(snapshot.get(extra_key), dict):
+            payload[extra_key] = snapshot[extra_key]
+    return redact_for_ledger(payload)
+
+
 async def _h_route(session: Any, engine: Any) -> StageOutcome:
-    """路由 stage：调注入 router 取候选仓 → 落 stage_state.routing + emit repo.routing。"""
+    """路由 stage：调注入 router 取候选仓 → 落 stage_state.routing + emit repo.routing。
+
+    快照落盘（ROUTE-09）：router 结果携带 ``snapshot`` 材料（stage0 输入 + 脱敏
+    stage1 材料 + 每候选 breakdown + 版本四元组）时，组装完整快照 payload 经
+    ``_emit_event`` 写入——复用既有 ``repo.routing`` 事件名（event taxonomy 零改动，
+    写入单一入口 INV-6）。snapshot 缺失（skipped / stub router / v1_fallback 无
+    stage0 材料）时保持现状精简 payload（best-effort，绝不阻断编排）。
+    ``snapshot`` 键在 routing 落库前剔除——session.routing 保持精简。
+    """
     result = await engine.deps.router.route(session)
-    candidates = (result.get("candidates") or []) if isinstance(result, dict) else []
-    trace = {
+    routing = result if isinstance(result, dict) else {}
+    # snapshot 仅供组快照 payload——落 stage_state 前 pop 剔除，防 session.routing 膨胀
+    snapshot = routing.pop("snapshot", None)
+    candidates = routing.get("candidates") or []
+    trace: dict[str, Any] = {
         "candidates": [
             {"repo_id": c.get("repo_id"), "confidence": c.get("confidence")} for c in candidates
-        ]
+        ],
+        # RELY-03：降级三键在**精简 payload 上也必须在场**。快照分支的门是
+        # ``snapshot["stage0"]`` 非空，而 v1_fallback 的 snapshot 只有 stage1
+        # （``codegraph/services/repo_router_v2.py:1847``）、skipped 与 stub router
+        # 根本没有 snapshot ——三者全部落到这条精简分支。键缺失时前端的
+        # ``payload.degraded === true`` 恒为假，于是「降级」这个事实恰好在
+        # **真降级**的 v1_fallback 上永不出现。补键而不是让前端按 router_version
+        # 猜：降级是后端算好的事实，前端不推断（与 110-05 的既有纪律一致）。
+        "router_version": str(routing.get("router_version") or ""),
+        "degraded": bool(routing.get("degraded", False)),
+        "degrade_reason": str(routing.get("degrade_reason") or ""),
     }
+    if isinstance(snapshot, dict) and snapshot.get("stage0"):
+        trace = _routing_snapshot_payload(routing, snapshot)
+        try:  # 观测 best-effort（LOGGING-SPEC）：payload 组装完成记大小，绝不反噬编排
+            logger.debug(
+                "repo_router_v2_snapshot_emitted",
+                payload_bytes=len(json.dumps(trace, ensure_ascii=False).encode("utf-8")),
+                degraded=trace.get("degraded", False),
+                category="sampling",
+                component="process_runtime",
+            )
+        except Exception:  # noqa: BLE001
+            pass
     await engine.session_service._emit_event(EVENT_REPO_ROUTING, session, trace)
     return StageOutcome(event="routed", stage_state_update={"routing": result})
 

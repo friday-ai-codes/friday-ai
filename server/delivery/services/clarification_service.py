@@ -223,9 +223,13 @@ class ClarificationService:
     def _maybe_advance_container(self, round_id: Any) -> bool:
         """轮内所有子题都已作答时，把容器 ``container_status`` 推进到 ``answered``（WR-01）。
 
-        幂等：仅当容器仍 ``container_status="pending"`` 且**无任何 ``answered_at IS NULL`` 子题**
-        时条件更新（兼容并发竞答 + 重复作答 no-op）。无子题的旧单题行不经本路径（结构化轮才有
-        子题）。返回是否本次推进到 answered。
+        幂等：仅当容器**自身仍未答**（``answered_at IS NULL``）且**无任何 ``answered_at IS NULL``
+        子题**时条件更新（兼容并发竞答 + 重复作答 no-op）。无子题的旧单题行不经本路径（结构化轮
+        才有子题）。返回是否本次推进到 answered。
+
+        幂等条件锚 ``answered_at`` 而非 ``container_status="pending"``：``container_status`` 是
+        送达/展示态，会取到 ``delivery_failed``（RELY-02）等非 pending 值；锚它会让「卡没送达但
+        用户从会话面答了」的轮永远推不到 answered。pending 的权威字段始终是 ``answered_at``。
         """
         has_unanswered = ClarificationQuestion.objects.filter(
             clarification_id=round_id, answered_at__isnull=True
@@ -237,7 +241,7 @@ class ClarificationService:
             # 防御性：无子题容器不经本路径推进（结构化轮才有子题；空轮已由 create_round
             # 的 WR-02 守护拒建，正常不会出现）。
             return False
-        updated = Clarification.objects.filter(id=round_id, container_status="pending").update(
+        updated = Clarification.objects.filter(id=round_id, answered_at__isnull=True).update(
             container_status="answered", answered_at=timezone.now()
         )
         return updated == 1

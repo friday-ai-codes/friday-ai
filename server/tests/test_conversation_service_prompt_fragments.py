@@ -100,6 +100,8 @@ class TestFragmentRendering:
         prompt = await _build_system_prompt("P1", "proj-1", role="developer")
         assert "编码任务识别：" in prompt
         assert "create_coding_plan" in prompt
+        # 口径是「先编排产出方案版本，再投影」，不是「调工具生成方案」。
+        assert "start_plan_research" in prompt
 
     async def test_force_deep_analysis_spy_only_deep_slug(
         self,
@@ -173,7 +175,24 @@ class TestIntentPriorityFragments:
         assert "调 create_coding_plan 之前必须有 analyze_repository_relevance" in prompt
         assert "编码动词" in prompt
         assert "recommended_repository_ids" in prompt
-        assert "目标仓库名称" in prompt
+        # SPINE-02（109-05）：RELEV gate 之外还有一道「必须先有编排产出的方案版本」
+        # 前置约束 —— 收窄后 create_coding_plan 只投影方案版本，不接受方案正文。
+        assert "编排产出的方案版本" in prompt
+        assert "artifact_version_id" in prompt
+
+    async def test_coding_guidance_no_longer_teaches_model_to_author_plan_body(
+        self,
+        disable_all_chat_slugs: None,
+    ) -> None:
+        """prompt 不再诱导模型徒手撰写方案正文（SPINE-02 的配套文案守护）。
+
+        SPINE-02 的达成手段是 schema 层收窄，本断言只守配套文案不回退 —— 若哪天有人
+        把「技术方案包含：① 影响文件列表 ② 分步实现步骤」这类教模型写正文的表述加回
+        prompt，模型会被引导去构造正文再撞 schema，产生一轮无意义的失败工具调用。
+        """
+        prompt = await _build_system_prompt("P1", "proj-1", role="developer")
+        assert "分步实现步骤" not in prompt
+        assert "方案正文由编排链路产出" in prompt
 
     async def test_force_deep_analysis_does_not_include_intent_priority_block(
         self,

@@ -233,6 +233,115 @@ export interface ConversationRuntimeStreamingSnapshot {
   timeline: StreamTimelineItem[]
 }
 
+// ============================================================================
+// 110：编排过程可观测（process_event SSE 链 + 运行时快照链）
+//
+// 两条链写**同一份** store 状态，组件不区分数据来源——这是本设计的核心不变量
+// （110-UI-SPEC §交互契约 E.1）。下面的类型是这两条链共用的契约面。
+// ============================================================================
+
+/** 编排内部 stage key（与后端 `builtin_processes._TECHNICAL_PLAN_STAGES` 字面对齐，7 值）。 */
+export type OrchestrationStageKey
+  = 'decompose' | 'route' | 'recall' | 'classify' | 'clarify' | 'research' | 'merge'
+
+/**
+ * 时间线单步状态（6 值）。
+ * `skipped` 与 `unknown` 共用同一视觉（空心灰点），靠摘要文案区分。
+ */
+export type OrchestrationStageStatus
+  = 'pending' | 'active' | 'complete' | 'failed' | 'skipped' | 'unknown'
+
+/**
+ * 失败原因闭集（6 值 + 兜底 `unknown`）。**由后端从 `session.error` 压制而来**
+ * （`compress_failure_reason`），前端永远拿不到 `error.message` / `error.exception`
+ * / `error.report`。
+ *
+ * 消费点见 `OrchestrationRuntime.failure.reason_code`，那里故意写成
+ * `OrchestrationFailReason | string`：后端新增取值时前端不该编译失败，而应走
+ * 「未知原因」保守分支。让「未知取值按保守处理」成为类型层默认，而不是依赖每个
+ * 消费点自觉。
+ */
+export type OrchestrationFailReason
+  = 'stage_exception'
+    | 'merge_validation_exhausted'
+    | 'clarification_timeout_no_answer'
+    | 'advance_step_limit'
+    | 'unknown_process_type'
+    | 'unknown_stage'
+    | 'unknown'
+
+/**
+ * chat SSE 新增事件类型 `process_event` 的信封形状。
+ *
+ * 后端 `format_sse` 是 `{"type": event.type, **event.data}` 的**平铺**结构，
+ * 所以信封的键平铺在 `SSEEvent` 顶层；本接口是那一组键的语义定义。
+ *
+ * ⚠️ `session_id` 在 `SSEEvent` 上是复用的既有键：`deep_analysis_progress` 用它
+ * 指 subagent 会话，这里指 `ConvergenceSession`（编排会话）。同名不同义，消费点
+ * 按 `event.type` 区分，**不要**因为想区分语义而在 `SSEEvent` 上再加一个键。
+ */
+export interface ProcessEventEnvelope {
+  type: 'process_event'
+  /** taxonomy 领域事件名或 stage 转移事件名（**开放集**，前端不做白名单过滤）。 */
+  event: string
+  /** ConvergenceSession id。 */
+  session_id: string
+  work_item_id?: string | null
+  /** ISO8601 串。与运行时快照的 `events[].ts` 逐字符同源（后端由落库行回填），是两条链去重的唯一依据。 */
+  ts: string
+  payload: Record<string, unknown>
+  message_id?: string
+  run_id?: string
+}
+
+/** 运行时快照里的编排进度（刷新 / 重连补齐的权威态；与后端 `runtime["orchestration"]` 八键一一对应）。 */
+export interface OrchestrationRuntime {
+  session_id: string
+  /** `ConvergenceSessionStatus` 字面值。 */
+  status: 'created' | 'running' | 'waiting_clarification' | 'waiting_event' | 'done' | 'failed' | string
+  /** 权威阶段指针——折叠事件流得到的指针与它冲突时以它为准。 */
+  current_stage: OrchestrationStageKey | string
+  /** 是否走 feature_list 流程（决定「功能点分类」步是否出现）。 */
+  has_classify: boolean
+  /** 拆分出的需求点条数（事件流里拿不到，只能走快照）。 */
+  segment_count?: number | null
+  /**
+   * 失败事实；仅 `status === 'failed'` 时非空。
+   *
+   * 🔴 只有 `stage` 与 `reason_code` 两个键：后端保证 `error.message` /
+   * `error.exception` / `error.report` **不出网**，前端拿到的永远是枚举值。
+   * 这不是前端选择不渲染，而是**渲染路径上根本没有这个字符串**。
+   */
+  failure?: { stage: OrchestrationStageKey | string, reason_code: OrchestrationFailReason | string } | null
+  /** 历史事件（按 `(ts, created_at)` 升序）。截断时保留**最新** N 条并置 `events_truncated`。 */
+  events: Array<{ event: string, ts: string, payload: Record<string, unknown> }>
+  events_truncated?: boolean
+  /**
+   * 终态收敛（110-MN-02）。`true` 表示本次响应**刻意省略**了 `events` 与
+   * 顶层 `plan_research_sessions` 两份早已凝固的内容——客户端带的收敛令牌命中了一个
+   * 已终态、且其下没有在途调研容器的编排会话。
+   *
+   * 🔴 消费方必须**保留自己已有的**那两份，不得按空值覆盖：这里的空不是「没有」，
+   * 是「没有变化」。缺省 / `false` ⇒ 全量语义，按老路走。
+   */
+  converged?: boolean
+}
+
+/** plan_research 容器会话（**独立字段，绝不混进 `deep_sessions`**）。 */
+export interface PlanResearchSession {
+  /** SubAgentSession.session_id */
+  session_id: string
+  /** 归属的 ConvergenceSession id（绑定键；110-07 按它过滤到具体气泡）。 */
+  plan_session_id: string
+  repository_id: string
+  /** 后端解析的仓库名；解析不出为空串（**后端不回填 UUID**），前端自行兜底。 */
+  repository_name?: string
+  /** SubAgentSession.status（PENDING/RUNNING/COMPLETED/ERROR/…）。 */
+  status?: string
+  /** 与 `DeepAnalysisLog` 逐字同形，可直接喂 `decorateDeepLog`。 */
+  logs: DeepAnalysisLog[]
+}
+
 export interface ConversationRuntime {
   conversation_id: string
   active: boolean
@@ -278,6 +387,14 @@ export interface ConversationRuntime {
       freeform_text?: string
     }>
   } | null
+  /**
+   * ---- [新增 110] ---- 本对话最近一次编排会话的进度快照；无编排 / 老后端时缺失或 null。
+   *
+   * 可选是必需的：老后端与老响应不带这两键，不能让 TS 逼着调用方处理一个不存在的形态。
+   */
+  orchestration?: OrchestrationRuntime | null
+  /** ---- [新增 110] ---- 该编排会话下的调研容器会话（按 repository 一条，全量列表语义）。 */
+  plan_research_sessions?: PlanResearchSession[]
 }
 
 /** 对话详情（含消息列表） */
@@ -313,7 +430,9 @@ export interface CreateConversationParams {
  * 新增事件类型时，两端必须同步更新，并在 test_sse_event_contract.py 中添加验证。
  */
 export interface SSEEvent {
-  type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress' | 'doc_summary' | 'doc_error' | 'coding_progress' | 'coding_complete' | 'coding_failed' | 'awaiting_commit_confirm' | 'awaiting_pr_review' | 'conflict_check' | 'part_started' | 'part_delta' | 'part_completed'
+  // 'process_event' 承载编排的统一信封（ConvergenceSession 的领域事件与 stage 转移
+  // 事件），与 'phase_transition'（LangGraph 的 chat 级阶段）是**两套概念**，不复用。
+  type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress' | 'doc_summary' | 'doc_error' | 'coding_progress' | 'coding_complete' | 'coding_failed' | 'awaiting_commit_confirm' | 'awaiting_pr_review' | 'conflict_check' | 'part_started' | 'part_delta' | 'part_completed' | 'process_event'
   message_id?: string
   run_id?: string
   // part_* 事件 payload（双轨期与旧事件共存）
@@ -414,6 +533,15 @@ export interface SSEEvent {
   // ：支持 file_path / path 两种 schema 兼容期共存
   modified_files?: Array<{ file_path?: string, path?: string, change_type: string }>
   recent_tool_calls?: Array<{ tool: string, summary: string }>
+  // process_event（110）——`format_sse` 平铺后的信封键，语义见 ProcessEventEnvelope。
+  // `session_id` 复用上面 deep_analysis_progress 那个键（同名不同义：那里是 subagent
+  // 会话，这里是 ConvergenceSession），故此处不重复声明。
+  /** taxonomy 领域事件名或 stage 转移事件名（开放集）。 */
+  event?: string
+  work_item_id?: string | null
+  /** ISO8601 串；与运行时快照 `events[].ts` 同源，是两条链去重的依据。 */
+  ts?: string
+  payload?: Record<string, unknown>
 }
 
 /** 用户角色 */
@@ -629,10 +757,18 @@ export interface CodingPlanSessionRuntime {
 }
 
 /**
+ * 编码方案来源标志（RELY-01）。与后端 CodingPlanProvenance TextChoices 字面对齐。
+ */
+export type CodingPlanProvenance = 'orchestrated' | 'draft'
+
+/**
  * ：对话内最近 CodingPlan + 每仓 session 状态。
  *
  * 扩展：可选 `feishu_doc_token` / `feishu_doc_url`，
  * 来自 backend runtime serializer 或本地 store patch（导出成功后立即可见）。
+ *
+ * 与后端 `ConversationRuntimeCodingPlanSerializer` 手工对齐（无代码生成），
+ * 漏一侧 TS 不会报错，改动任一侧都要同步这里。
  */
 export interface CodingPlanRuntime {
   plan_id: string
@@ -640,4 +776,39 @@ export interface CodingPlanRuntime {
   sessions: CodingPlanSessionRuntime[]
   feishu_doc_token?: string
   feishu_doc_url?: string
+  // ---- [新增 109] ----
+  /**
+   * 来源标志；缺失 / 未知取值 → 保守视为未经调研。
+   *
+   * 类型故意保留 `| string`：后端未来新增取值时前端不该编译失败，而应走保守
+   * 分支（未知取值视为未经调研）。这让「未知取值按保守处理」成为类型层默认，
+   * 而不是依赖每个消费点自觉。
+   */
+  provenance?: CodingPlanProvenance | string | null
+  /** 方案正文。SPINE-02 后前端取正文的权威来源（tool input 仅作历史兜底）。 */
+  tech_plan?: string
+  affected_files?: Array<{ file_path?: string, path?: string, change_type: string }>
+  recommended_repository_ids?: string[]
+  /** 投影来源留痕；前端**不渲染**，仅用于排障与测试断言。 */
+  source_artifact_version_id?: string | null
+}
+
+/** 投影端点响应（惰性投影：点「进入编码」时触发）。 */
+export interface ProjectPlanToCodingResponse {
+  coding_plan_id: string
+  /** false = 幂等命中既有投影（同一 ArtifactVersion 重复点击）。 */
+  created: boolean
+  title: string
+  tech_plan: string
+  affected_files: Array<{ file_path: string, change_type: string }>
+  recommended_repository_ids: string[]
+  /**
+   * 推荐仓库的 `{id, name}`（按 plan 所属 space 过滤）。
+   *
+   * 🔴 不能只靠 `recommended_repository_ids`：`RepoMultiSelector` 要用名字渲染每一
+   * 行，只给 id 会让交棒后的选仓面变成「未找到匹配的仓库」——用户既看不到 AI 推荐
+   * 了哪几个仓，也无法勾选或取消。id 与本列表可能不等长（跨 space 的 id 只在前者）。
+   */
+  recommended_repositories: RepoSelectableItem[]
+  provenance: CodingPlanProvenance
 }

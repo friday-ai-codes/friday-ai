@@ -2,7 +2,7 @@
  * 既有专属组件接入 parts API 集成测试。
  *
  * 验证 happy path 在新 parts 路径下 byte-identical：
- *   1. routing trace：tool_use part_completed → store 反查 → RoutingDecisionPanel 展示
+ *   1. routing trace：tool_use part_completed → store 写入 trace
  *   2. TechPlanCard：create_coding_plan tool_use part → codingPlanData 派生 → 卡片渲染
  *   3. DocSummaryCard：metadata.docSummary → 卡片渲染
  *   4. ChatToolCall：part prop 优先级高于平铺字段
@@ -35,14 +35,6 @@ vi.mock('~/components/chat/DocSummaryCard.vue', () => ({
     name: 'DocSummaryCard',
     props: ['type', 'title', 'wordCount', 'preview'],
     setup: props => () => h('div', { 'data-test': 'doc-summary', 'data-title': props.title }),
-  }),
-}))
-
-vi.mock('~/components/chat/RoutingDecisionPanel.vue', () => ({
-  default: defineComponent({
-    name: 'RoutingDecisionPanel',
-    props: ['traceId', 'conversationId', 'messageId'],
-    setup: props => () => h('div', { 'data-test': 'routing-panel', 'data-trace': props.traceId }),
   }),
 }))
 
@@ -175,7 +167,17 @@ describe('fE-04 既有组件接入 parts API', () => {
     expect(card.attributes('data-title')).toBe('产品文档')
   })
 
-  it('4. RoutingDecisionPanel 已下线：即便 routing_trace_id + store 有 trace 也不渲染（与底部澄清卡去重）', async () => {
+  /**
+   * 原「RoutingDecisionPanel 已下线：即便 routing_trace_id + store 有 trace 也不渲染」
+   * 的替代用例。
+   *
+   * 下线的**理由**（选仓与提交只留底部澄清卡一个入口）继续成立并在这里守住；
+   * 变的是取证方式：那个组件已随 ROUTE 缺口闭环一并删除，再断言「一个不存在的
+   * 组件不渲染」是在锁一句废话。现在锁的是真正要防的东西 —— trace 在 store 里
+   * 并不会让气泡长出第二套选仓 UI。解释面（分组 / 跨组 / 分数分解 / 降级）在
+   * 过程面板里，由 routingCandidateSurface.spec.ts 正面覆盖。
+   */
+  it('4. store 有 trace 也不会在气泡里长出第二套选仓 UI（与底部澄清卡去重）', async () => {
     const routingStore = useRoutingStore()
     routingStore.upsertTrace({
       trace_id: 'trace-rendered',
@@ -202,7 +204,13 @@ describe('fE-04 既有组件接入 parts API', () => {
       created_at: '2026-05-21T00:00:00Z',
     }
     const wrapper = await mountBubble(msg)
-    expect(wrapper.find('[data-test="routing-panel"]').exists()).toBe(false)
+
+    // 没有任何按 trace 渲染的选仓面：无勾选框、无「创建编码方案」按钮
+    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('基于这些仓库创建编码方案')
+    expect(wrapper.text()).not.toContain('手动调整选择')
+    // 也不会凭 store 里的 trace 自己画一份候选清单（候选面只由工具出参驱动）
+    expect(wrapper.find('[data-test="routing-candidate-list"]').exists()).toBe(false)
   })
 
   it('5. ChatToolCall part prop 渲染（FE-04 新 props 路径）', () => {

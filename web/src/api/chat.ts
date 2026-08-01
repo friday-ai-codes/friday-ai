@@ -2,7 +2,7 @@
  * Chat API 服务 - LLM 对话能力
  */
 
-import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ForkConversationRequest, ImagePart } from '~/types/chat'
+import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ForkConversationRequest, ImagePart, ProjectPlanToCodingResponse } from '~/types/chat'
 import type { ClarificationAnswerRequest, ClarificationAnswerResponse, PlanClarificationAnswerRequest } from '~/types/clarification'
 import { del, get, patch, post, upload } from './client'
 
@@ -273,9 +273,20 @@ export async function getConversationDetail(id: string): Promise<ConversationDet
 
 /**
  * 获取对话运行态（用于刷新后恢复执行状态）
+ *
+ * @param orchestrationSeen 收敛令牌（110-MN-02）：调用方已完整持有的编排会话 id。
+ *   命中且该会话已终态时，服务端只回权威字段、不重发早已凝固的事件流与容器日志
+ *   （响应里 `orchestration.converged === true`）。**刷新补齐不要带它**——那条路径
+ *   本来就是来拿全量的。
  */
-export async function getConversationRuntime(id: string): Promise<ConversationRuntime> {
-  return get<ConversationRuntime>(`/chat/conversations/${id}/runtime/`)
+export async function getConversationRuntime(
+  id: string,
+  orchestrationSeen = '',
+): Promise<ConversationRuntime> {
+  const qs = orchestrationSeen
+    ? `?orchestration_seen=${encodeURIComponent(orchestrationSeen)}`
+    : ''
+  return get<ConversationRuntime>(`/chat/conversations/${id}/runtime/${qs}`)
 }
 
 /**
@@ -465,11 +476,39 @@ export async function getDiffSummary(sessionId: string) {
  */
 export async function createSessionsForPlan(
   planId: string,
-  payload: { repository_ids: string[], branch_template?: string, target_branch?: string },
+  payload: {
+    repository_ids: string[]
+    branch_template?: string
+    target_branch?: string
+    /**
+     * 109-08（RELY-01）：草稿方案送编码的用户显式确认。
+     *
+     * 🔴 该值代表一次**用户签名**，只能由用户在确认弹层里勾选后产生。调用方不传
+     * 时**不得注入 false** —— 「不发字段」让后端日志里「带了 ack」等价于「用户
+     * 确实确认过」；本层也绝不给它设默认值、不缓存、不记忆。
+     */
+    acknowledge_unresearched?: boolean
+  },
 ): Promise<CodingSessionsBatchCreateResponse> {
   return post<CodingSessionsBatchCreateResponse>(
     `/chat/coding-plans/${planId}/sessions/`,
     payload,
+  )
+}
+
+/**
+ * 109-04：把编排产出的方案版本惰性投影为 chat CodingPlan。
+ * POST /api/chat/coding-plans/from-artifact-version/
+ *
+ * 幂等：同一 ArtifactVersion 重复投影只产一行，响应 `created=false` 表示命中既有投影。
+ * 前端只传 `artifact_version_id`，归属判定与字段组装全在服务端（109-03 owner gate）。
+ */
+export async function projectArtifactVersionToCodingPlan(
+  artifactVersionId: string,
+): Promise<ProjectPlanToCodingResponse> {
+  return post<ProjectPlanToCodingResponse>(
+    '/chat/coding-plans/from-artifact-version/',
+    { artifact_version_id: artifactVersionId },
   )
 }
 
@@ -557,6 +596,7 @@ export default {
   confirmCodingSession,
   confirmCodingSessionWithBranch,
   createSessionsForPlan,
+  projectArtifactVersionToCodingPlan,
   confirmCommit,
   confirmPR,
   getDiffSummary,

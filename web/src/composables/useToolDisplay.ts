@@ -7,9 +7,13 @@
  * - `toolAction`：工具调用 → 一行人类可读摘要；对 search / relevance 等工具
  *   注入「仓库名称」而非裸 UUID（用户诉求 2 / 3）。
  * - `relevanceCandidates`：解析 analyze_repository_relevance 结果里的候选仓库。
+ * - `routingDecisionView`：在候选之上再产出分组 / 跨组 / 降级三层事实
+ *   （ROUTE-01 / ROUTE-02 / ROUTE-07 / RELY-03 的数据层）。
  * - `collectRepoNames`：从一次工具调用里抽取 repository_id → name 贡献，
  *   供上层聚合成会话级 id→name 映射。
  */
+
+import type { RoutingGroup } from '~/types/routing'
 
 export interface RelevanceCandidate {
   id: string
@@ -17,6 +21,16 @@ export interface RelevanceCandidate {
   score: number
   level: 'high' | 'medium' | 'low'
   evidence?: string
+  /**
+   * 归属组（ROUTE-01）。**缺失或空串一律视为 global**——后端 pydantic 字段的
+   * 默认值就是空串，用 `??` 兜底会让空串漏过去，那条候选在两个分区的 filter
+   * 上都不匹配、两个分区都不渲染它，而组计数仍把它算进总数。
+   */
+  group: RoutingGroup
+  /** 分数分解（ROUTE-07）：信号名 → 贡献值，Σ值 == score。缺失为空对象。 */
+  breakdown: Record<string, number>
+  /** 凸组合排序分（旁路字段）：**只参与排序**，不进任何可见文案。 */
+  scoreRanked?: number
 }
 
 /** 工具名 → 中文。覆盖 server/agents/tools 下全部面向对话的工具。 */
@@ -48,6 +62,9 @@ export const TOOL_LABELS: Record<string, string> = {
   update_coding_plan: '更新方案',
   send_plan_card: '发送方案卡片',
   verify_plan: '校验方案',
+  // 编排入口（109-04）：两个工具返回体同形，同判定同卡片
+  start_plan_research: '方案编排调研',
+  start_feature_solution: '功能方案编排',
   // 交互 / 澄清
   ask_user_question: '询问用户',
   ask_clarification: '澄清提问',
@@ -79,6 +96,8 @@ export const TOOL_ICONS: Record<string, string> = {
   create_feishu_document: 'icon-[lucide--file-plus]',
   get_work_item_detail: 'icon-[lucide--clipboard-list]',
   list_related_work_items: 'icon-[lucide--clipboard-list]',
+  start_plan_research: 'icon-[lucide--workflow]',
+  start_feature_solution: 'icon-[lucide--workflow]',
 }
 
 export function bareName(name: string): string {
@@ -115,15 +134,56 @@ function parseResult(result: unknown): Record<string, unknown> | null {
 }
 
 /**
- * 解析 analyze_repository_relevance 结果里的候选仓库（含名称 / 分数 / 等级）。
- * 兼容 `{data:{candidates}}` 与历史的扁平 `{candidates}` 两种形态。
+ * 工具出参的 data 节：兼容 `{output:{data}}`（chat_runner 包一层 ToolResult）、
+ * `{data}` 与历史的扁平顶层三种形态。
+ *
+ * `output.data` 这一层与 `stores/chat.ts` 的 `maybeParseRoutingTraceFromToolResult`
+ * 同口径 —— 两处对同一份 result 解出不同形状会让「store 里有 trace、过程面板里
+ * 没有候选」这种半截状态成为可能。
  */
-export function relevanceCandidates(result: unknown): RelevanceCandidate[] {
+function relevanceDataNode(result: unknown): Record<string, unknown> | null {
   const parsed = parseResult(result)
   if (!parsed)
+    return null
+  const output = parsed.output as Record<string, unknown> | undefined
+  const nested = output?.data as Record<string, unknown> | undefined
+  const flat = parsed.data as Record<string, unknown> | undefined
+  // 优先取**真的带 candidates 的**那一层：`{data:{}}` 这类空壳存在时，原实现会
+  // 回退到顶层去找 candidates，这条兜底必须保留。
+  for (const node of [nested, flat, parsed]) {
+    if (node && Array.isArray(node.candidates))
+      return node
+  }
+  return nested ?? flat ?? parsed
+}
+
+/** 归属组兜底：缺失**或空串**都回到 global（后端默认值就是空串）。 */
+function groupOf(raw: unknown): RoutingGroup {
+  return raw === 'in_project' ? 'in_project' : 'global'
+}
+
+/** 分数分解兜底：只收数值项，非法值整项丢弃（不进渲染面）。 */
+function breakdownOf(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+    return {}
+  const out: Record<string, number> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'number' && Number.isFinite(value))
+      out[key] = value
+  }
+  return out
+}
+
+/**
+ * 解析 analyze_repository_relevance 结果里的候选仓库（含名称 / 分数 / 等级 /
+ * 归属组 / 分数分解）。兼容 `{output:{data:{candidates}}}` / `{data:{candidates}}`
+ * 与历史的扁平 `{candidates}` 三种形态。
+ */
+export function relevanceCandidates(result: unknown): RelevanceCandidate[] {
+  const data = relevanceDataNode(result)
+  if (!data)
     return []
-  const data = (parsed.data as Record<string, unknown> | undefined) ?? parsed
-  const raw = (data.candidates as unknown) ?? (parsed.candidates as unknown)
+  const raw = data.candidates as unknown
   if (!Array.isArray(raw))
     return []
   return raw.flatMap((c): RelevanceCandidate[] => {
@@ -143,8 +203,95 @@ export function relevanceCandidates(result: unknown): RelevanceCandidate[] {
       score: typeof obj.score === 'number' ? obj.score : 0,
       level,
       evidence: typeof obj.evidence === 'string' ? obj.evidence : undefined,
+      group: groupOf(obj.group),
+      breakdown: breakdownOf(obj.breakdown),
+      scoreRanked: typeof obj.score_ranked === 'number' ? obj.score_ranked : undefined,
     }]
   })
+}
+
+/** 一个分区：组标识 + 该组候选（区内已按 rank 降序）。 */
+export interface RoutingBlock {
+  group: RoutingGroup
+  candidates: RelevanceCandidate[]
+}
+
+/**
+ * 路由决策视图（ROUTE-01 / ROUTE-02 / ROUTE-07 / RELY-03 的单一数据层）。
+ *
+ * 承载「分组呈现 / 跨组标注 / 分数分解 / 降级事实」四件事所需的全部派生结论，
+ * 组件只负责把它画出来，不再各自解析一遍 tool result。
+ */
+export interface RoutingDecisionView {
+  /** 是否启用分组呈现。为 false 时 `blocks` 恒为单块平铺。 */
+  grouped: boolean
+  /** 分区（顺序即 `block_order`，空组不产出）。 */
+  blocks: RoutingBlock[]
+  /** 候选总数（含被分进各区的全部候选）。 */
+  total: number
+  /** 全局组被置顶（后端迟滞比较的结果）。 */
+  promoted: boolean
+  /** 置顶时本项目组一条候选都没有 —— 措辞要从「更匹配」换成陈述句。 */
+  inProjectEmpty: boolean
+  /** 降级事实，由后端派生；前端**绝不**按 router_version 或候选内容自行推断。 */
+  degraded: boolean
+  /** 降级原因（受控闭集的键；缺失为空串）。 */
+  degradeReason: string
+}
+
+/** 排序键：`score_ranked` 是后端凸组合排序分，缺失时回退 `score`。 */
+function rankKey(c: RelevanceCandidate): number {
+  return c.scoreRanked ?? c.score
+}
+
+function byRankDesc(a: RelevanceCandidate, b: RelevanceCandidate): number {
+  const delta = rankKey(b) - rankKey(a)
+  if (delta !== 0)
+    return delta
+  // 同分 tie-break 与后端同口径（repository_id 升序），保证渲染顺序稳定
+  return a.id.localeCompare(b.id)
+}
+
+/**
+ * 把一次 analyze_repository_relevance 出参解析成路由决策视图。
+ *
+ * 分组启用的**唯一依据是后端 `block_order`**——长度 2 即启用（后端契约：有项目
+ * 上下文时恒为长度 2，即使某组为空）。长度 1 = 无项目上下文 ⇒ 平铺，此时标「跨组」
+ * 反而误导；缺失（历史结果 / legacy 路径）同样平铺，保持今日渲染。
+ *
+ * 刻意**不**按候选内容兜底：用 `some(c => c.group === 'in_project')` 判定会恰在最
+ * 需要分组的场景失效——正确仓在跨组、本项目组为空时没有任何候选是 in_project，
+ * 分组被判为关闭，「更匹配的仓不在本项目关联范围内」这句最有信息量的提示反而不出现。
+ *
+ * 区内按 rank 降序，**不做全局重排**：按 score 把全部候选重排一次会覆盖后端的分区
+ * 顺序与置顶决策（107-RESEARCH Pitfall 4）。
+ */
+export function routingDecisionView(result: unknown): RoutingDecisionView {
+  const data = relevanceDataNode(result)
+  const candidates = relevanceCandidates(result)
+  const sorted = [...candidates].sort(byRankDesc)
+
+  const rawOrder = data?.block_order
+  const order: RoutingGroup[] = Array.isArray(rawOrder) && rawOrder.length === 2
+    ? (rawOrder.map(groupOf) as RoutingGroup[])
+    : []
+  const grouped = order.length === 2
+
+  const blocks: RoutingBlock[] = grouped
+    ? order
+        .map(group => ({ group, candidates: sorted.filter(c => c.group === group) }))
+        .filter(block => block.candidates.length > 0)
+    : (sorted.length > 0 ? [{ group: 'global' as const, candidates: sorted }] : [])
+
+  return {
+    grouped,
+    blocks,
+    total: sorted.length,
+    promoted: grouped && order[0] === 'global',
+    inProjectEmpty: !sorted.some(c => c.group === 'in_project'),
+    degraded: data?.degraded === true,
+    degradeReason: typeof data?.degrade_reason === 'string' ? data.degrade_reason : '',
+  }
 }
 
 /**
@@ -376,6 +523,24 @@ export function toolAction(
         }
       }
       return label
+    }
+    // 编排入口（109-04）：两个工具返回体同形，共用同一段摘要逻辑。
+    // 🔴 三分支文案全取本文件常量，不回显后端 placeholder / message 原文 ——
+    // 后端自由文本只用于留痕与排障，让它上屏成为惯例，下一个产出路径就会带着
+    // LLM 原文上屏。
+    case 'start_plan_research':
+    case 'start_feature_solution': {
+      const parsed = parseResult(result)
+      if (parsed) {
+        if (parsed.status === 'done')
+          return '跨仓方案编排已完成'
+        if (parsed.__blocking_task__)
+          return '方案编排调研进行中'
+      }
+      const requirement = (input?.requirement as string) || ''
+      return requirement
+        ? `编排「${truncate(requirement, 32)}」`
+        : TOOL_LABELS[bare]
     }
     default: {
       const entries = Object.entries(input || {}).slice(0, 2)
