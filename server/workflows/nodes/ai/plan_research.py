@@ -186,6 +186,10 @@ class AIPlanResearchNode(AIAgentBaseNode):
         session = await self._resolve_session(context)
         if session is None:
             session = await self._create_session(context, log)
+            # 116-03：蓝图分支推不出 meta.project_id ⇒ _create_session 直接回一个失败
+            # NodeResult（⛔ 不建 session、不建 artifact），此处如实透出走 error 出边。
+            if isinstance(session, NodeResult):
+                return session
             if session is None:
                 return NodeResult(
                     status="failed",
@@ -273,8 +277,15 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
         **仅当续推通道（_resolve_session）为空时**才被调用——首次需求来源限定为节点配置
         ``requirement_text`` 与 ``default`` 输入端口回退，绝不与续推 session_id 混用。
+
+        返回值**三态**（116-03）：``ConvergenceSession``（建成）/ ``None``（缺需求，由
+        ``execute`` 映射成既有的 ``missing_requirement`` 失败）/ ``NodeResult``（蓝图分支
+        推不出 ``meta.project_id``，如实回错且**不建 session、不建 artifact**）。
         """
         from services.process_runtime import start_orchestration
+        from services.process_runtime.blueprint_entry_switch import (
+            aresolve_entry_process_type,
+        )
 
         config = context.node_config or {}
         requirement_text = context.render_template(config.get("requirement_text", "") or "")
@@ -287,6 +298,19 @@ class AIPlanResearchNode(AIAgentBaseNode):
         work_item = await self._resolve_work_item(context)
         created_by = await self._get_user(context)
 
+        # 116-03：按 per-entry 运行时开关分派该建哪条 process。
+        # ⛔ 实参必须是**字面量常量**，绝不写 session.entrypoint —— MCP 入口记的 entrypoint
+        # 实测就是 "workflow"（既有约定），反推会让「只打开 workflow 键」把 MCP 一起切走。
+        if await aresolve_entry_process_type("workflow") == "technical_blueprint":
+            return await self._acreate_blueprint_session(
+                context=context,
+                log=log,
+                requirement_text=requirement_text,
+                include_repos=include_repos,
+                work_item=work_item,
+                created_by=created_by,
+            )
+
         # 复用两入口共用的薄 helper（底层 engine 复用、不造两套）；entrypoint 仍为 workflow、
         # decomposition 形态不变 → 行为零变更。
         session = await start_orchestration(
@@ -295,8 +319,69 @@ class AIPlanResearchNode(AIAgentBaseNode):
             work_item=work_item,
             created_by=created_by,
             include_repos=include_repos,
+            entry_key="workflow",
         )
         log.info("plan_research_session_created", session_id=str(session.id))
+        return session
+
+    async def _acreate_blueprint_session(
+        self,
+        *,
+        context: ExecutionContext,
+        log: Any,
+        requirement_text: str,
+        include_repos: list[str],
+        work_item: Any,
+        created_by: Any,
+    ) -> Any:
+        """workflow 入口的蓝图路径：先定 ``meta.project_id``，再建 ``technical_blueprint`` 会话。
+
+        ⭐ **``project_id`` 推不出即拒绝发起**：它是全链范围闸 / 图谱 space 归属 / 导出可用性
+        的唯一来源，写错即三条防线同时失效**且不报错**。故推导失败时回一个 ``error`` 出边的
+        失败 ``NodeResult``（⛔ 不建 session、不建 artifact），detail 取 intake 的中性文案。
+
+        推导链：工作流关联 ``Space`` → ``blueprint_intake.aresolve_project_id``（内部过
+        ``board_split_review._aresolve_project``）。⛔ 本节点不自己写第二份 Space→Project 换算。
+        """
+        from services.process_runtime.blueprint_intake import (
+            BlueprintIntakeRejected,
+            aresolve_project_id,
+        )
+        from services.process_runtime.entrypoint import start_blueprint_orchestration
+        from workflows.nodes.integrations.board_split_review import _resolve_space
+
+        space = await _resolve_space(context)
+        try:
+            project_id = await aresolve_project_id(entry="workflow", space=space)
+        except BlueprintIntakeRejected as exc:
+            log.warning(
+                "plan_research_blueprint_rejected",
+                category="caller",
+                component="plan_research",
+                reason=exc.reason,
+            )
+            return NodeResult(
+                status="failed",
+                error=exc.detail,
+                output={"error_code": "blueprint_project_unresolved"},
+                next_handle="error",
+            )
+
+        session = await start_blueprint_orchestration(
+            entrypoint="workflow",
+            requirement_text=requirement_text,
+            work_item=work_item,
+            created_by=created_by,
+            include_repos=include_repos,
+            project_id=project_id,
+            entry_key="workflow",
+        )
+        log.info(
+            "plan_research_blueprint_session_created",
+            category="caller",
+            component="plan_research",
+            session_id=str(session.id),
+        )
         return session
 
     @staticmethod
@@ -531,6 +616,13 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
     # ===== 终态映射 =====
 
+    # ⭐ 跨相位边界（116-03 明令**不改本函数一行**）：本函数把 ``DONE`` 无条件映射成
+    # ``completed`` 并把 ``plan`` 喂给下游 ``human_approval(plan_feishu)`` / ``ai_coding``，
+    # 而蓝图链的 ``DONE`` 语义是「**等人审**」。⇒ 现在把 workflow 开关翻成
+    # ``technical_blueprint`` 的默认值 = 让编码代理拿着**未经人审**的蓝图去建分支写代码，
+    # 正面违反 RELY-01（T-116-18）。改成「``pending_review`` → ``waiting_event`` 人审 HITL
+    # 挂起」与三处触点升级**归同步点 2 之后的收尾 plan**（下游消费形态由 v0.19.0 Phase 109
+    # 的 execution 投影承担）。这条同时解释了「为什么 workflow / chat 的开关默认不能翻」。
     async def _map_terminal(self, session: Any) -> NodeResult:
         """done → completed（canonical plan_version_id + 内联 §7 MergedPlan content）；
         failed → failed（error_code）。

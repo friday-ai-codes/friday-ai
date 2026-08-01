@@ -253,8 +253,26 @@ class FeatureSolutionService:
         conversation_id: Any = None,
     ) -> Any:
         from services.process_runtime import start_orchestration
+        from services.process_runtime.blueprint_entry_switch import (
+            aresolve_entry_process_type,
+        )
 
         requirement_text = _build_requirement_text(resolved)
+
+        # 116-03：按 per-entry 运行时开关分派。⛔ 实参必须是**字面量常量**，绝不用
+        # session.entrypoint / 本方法收到的 entrypoint（feature list 可从 mcp 与 tool_invoke
+        # 两个 entrypoint 进来，反推会把同一个入口拆成两桶、还会跟 MCP 键串台）。
+        if await aresolve_entry_process_type("feature_list") == "technical_blueprint":
+            return await self._acreate_blueprint_session(
+                resolved=resolved,
+                requirement_text=requirement_text,
+                repository_ids=repository_ids,
+                entrypoint=entrypoint,
+                actor=actor,
+                initiated_by_user_id=initiated_by_user_id,
+                conversation_id=conversation_id,
+            )
+
         return await start_orchestration(
             entrypoint,
             requirement_text,
@@ -270,6 +288,69 @@ class FeatureSolutionService:
                 "module_count": resolved.module_count,
                 "truncated": resolved.truncated,
             },
+            entry_key="feature_list",
+        )
+
+    async def _acreate_blueprint_session(
+        self,
+        *,
+        resolved: Any,
+        requirement_text: str,
+        repository_ids: list[str],
+        entrypoint: str,
+        actor: Any,
+        initiated_by_user_id: Any,
+        conversation_id: Any,
+    ) -> Any:
+        """feature list 入口的蓝图路径：建 ``technical_blueprint`` 会话并把功能点直采过去。
+
+        ⭐ **``feature_segments`` / ``feature_meta`` / ``mode`` 三参数照原样透传**：蓝图链的
+        ``decompose`` stage 直采它们映射成 ``requirement_spec.feature_points``（**零 LLM**、
+        确定性 id ⇒ 重跑不翻版本）。
+
+        ⛔ **不移植 ``force_confirm``**：它注入的是旧链 ``ClarifyAdapter`` 的题目组装器，蓝图
+        链根本没有 ``clarify`` dep；「哪怕路由十分确定也要让用户确认关联仓」这条产品约束在蓝图
+        链由 ``repo_confirmation`` **硬门**天然承担（那是 stage 图上的一条阻塞边，比组装器更强）。
+
+        ⭐ **``project_id`` 推不出即拒绝发起**（⛔ 不建 session、不建 artifact）：``feature_meta``
+        里那个已经是 ``Project.id``，但仍要过 ``aresolve_project_id`` 校验形状与存在性 ——
+        坏 id 落进 ``meta.project_id`` 与推不出一样致命，且**没有补救入口**。
+        """
+        from services.process_runtime.blueprint_intake import (
+            BlueprintIntakeRejected,
+            aresolve_project_id,
+        )
+        from services.process_runtime.entrypoint import start_blueprint_orchestration
+
+        feature_meta = {
+            "project_id": resolved.project_id,
+            "source": resolved.source,
+            "module_count": resolved.module_count,
+            "truncated": resolved.truncated,
+        }
+        try:
+            project_id = await aresolve_project_id(entry="feature_list", feature_meta=feature_meta)
+        except BlueprintIntakeRejected as exc:
+            logger.warning(
+                "feature_solution_blueprint_rejected",
+                category="caller",
+                component=_COMPONENT,
+                reason=exc.reason,
+            )
+            raise FeatureSolutionError("project_unresolved", exc.detail) from exc
+
+        return await start_blueprint_orchestration(
+            entrypoint,
+            requirement_text,
+            created_by=actor if getattr(actor, "id", None) is not None else None,
+            include_repos=[str(r) for r in repository_ids],
+            initiated_by_user_id=str(initiated_by_user_id or ""),
+            conversation_id=conversation_id or None,
+            mode="feature_list",
+            feature_segments=resolved.segments,
+            feature_meta=feature_meta,
+            project_id=project_id,
+            entry_key="feature_list",
         )
 
     async def _aload_session(self, session_id: Any, actor: Any) -> Any:
