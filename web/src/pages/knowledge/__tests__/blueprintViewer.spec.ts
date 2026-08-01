@@ -349,6 +349,30 @@ describe('蓝图查看器 —— 错误分档', () => {
     expect(wrapper.findAll('section[id]')).toHaveLength(0)
   })
 
+  it('3b. ⭐ 5xx ⛔ 不回显后端 detail（L-7）：只出中性文案 + 重试', async () => {
+    api.getBlueprintDocument.mockRejectedValue(
+      new ApiError(503, 'Traceback: /srv/friday/server/delivery/api/blueprint_doc_views.py line 88'),
+    )
+    const { wrapper } = mountPage()
+    await flush()
+    const error = wrapper.find('[data-testid="blueprint-error-state"]')
+    expect(error.exists()).toBe(true)
+    expect(error.text()).toContain('暂时读取不到该方案，请稍后重试')
+    // ⛔ 一个字符的内部路径都不许漏出来。
+    expect(error.text()).not.toContain('Traceback')
+    expect(error.text()).not.toContain('blueprint_doc_views')
+    expect(wrapper.find('[data-testid="blueprint-error-retry"]').exists()).toBe(true)
+  })
+
+  it('3c. 非恒真对照：400 档仍然原样回显 detail（契约要求，⛔ 没被一起关掉）', async () => {
+    api.getBlueprintDocument.mockRejectedValue(
+      new ApiError(400, '无法确定该蓝图的项目范围：meta.project_id 缺失或非法'),
+    )
+    const { wrapper } = mountPage()
+    await flush()
+    expect(wrapper.text()).toContain('无法确定该蓝图的项目范围')
+  })
+
   it('4. ⭐ 确认门 404 ⇒ 页面正常渲染、无错误态、toast 一次都没被调用（例外一 / P-10）', async () => {
     const { wrapper } = mountPage()
     await flush()

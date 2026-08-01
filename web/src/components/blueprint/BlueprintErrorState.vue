@@ -17,7 +17,7 @@
  * |---|---|
  * | `404` | 全页中性空态 + 「返回知识库」（按钮放 `CompactEmptyState` 的默认 slot） |
  * | `400` | 就近渲染，**原样回显** `detail`（⛔ 不自行改写措辞） |
- * | 其余（5xx / 0 网络失败） | 全页空态 + 「重试」，派发 `retry` |
+ * | 其余（5xx / 0 网络失败） | 全页空态 + 「重试」，派发 `retry`；⛔ **不回显 `detail`** |
  * | `401` / `403` | ⛔ 本组件不处理，交给 `~/api/client.ts` 既有的刷新与全局事件机制 |
  *
  * ⚠️ **`CompactEmptyState` 的两条契约**（P-6，抄错就什么都不显示）：它的 `icon` 收**裸名**
@@ -38,7 +38,12 @@ import { Button } from '~/components/ui/button'
 const props = withDefaults(defineProps<{
   /** `ApiError.status`；网络失败等无状态码的情形传 `0`。 */
   status: number
-  /** `ApiError.detail`，只在 400 档原样回显。 */
+  /**
+   * `ApiError.detail`，⭐ **只在 400 档**原样回显。
+   *
+   * ⛔ 5xx 档不回显：§8.2 的 5xx 行只规定 `error.unavailable` 一句，而上游 5xx 的 detail
+   * 可能带栈信息或内部路径（UI-REVIEW L-7）。400 的回显是契约要求的，保留。
+   */
   detail?: string
   /**
    * ⭐ 404 档追加「回到当前版本」出口（MN-02）。
@@ -108,12 +113,12 @@ const isInline = computed(() => props.status === 400)
       <span class="min-w-0 break-words">{{ detail }}</span>
     </div>
 
-    <!-- 5xx / 网络：全页 + 重试 -->
+    <!-- 5xx / 网络：全页 + 重试。⛔ 不回显 `detail`：§8.2 的 5xx 行只规定 `error.unavailable`
+         一句，而上游 5xx 的 detail 可能带栈信息 / 内部路径。 -->
     <CompactEmptyState
       v-else
       icon="lucide--wifi-off"
       :title="t('knowledge.blueprints.error.unavailable')"
-      :description="detail"
     >
       <Button variant="outline" size="sm" data-testid="blueprint-error-retry" @click="emit('retry')">
         <span class="icon-[lucide--refresh-cw] mr-1.5" />
