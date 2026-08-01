@@ -2,7 +2,7 @@
 
 ## Milestones
 
-- ✅ **v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）** — Phases 111–116 (completed 2026-08-01，待与 v0.19.0 合并后归档) — 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图 — 里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 7 道跨相位接缝全 WIRED / 0 gaps；GATE-01 因硬依赖同步点 2 判 PARTIAL）见 [audit](./v0.20.0-MILESTONE-AUDIT.md) — [requirements](./REQUIREMENTS.md) · [design](./technical-blueprint/DESIGN.md)
+- ✅ **v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）** — Phases 111–116 (shipped 2026-08-02) — 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图 — 里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口；GATE-01 与三道入口接缝因硬依赖同步点 2 判 PARTIAL / 转技术债）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.20.0-ROADMAP.md) · [requirements](./milestones/v0.20.0-REQUIREMENTS.md) · [design](./technical-blueprint/DESIGN.md)
 - 🟡 **v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 方案够深 + 过程可见）** — Phases 105–110 (planning) — 让技术方案链路真正跑通并可信：编排不再中途卡死被降级工具顶替、路由基于多维证据分层呈现并可解释、方案结构覆盖数据流编排与模块↔仓映射、全过程对用户实时可见 — [requirements](./REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
 - ✅ **v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）** — Phases 100–104 (shipped 2026-07-22) — 把多套"知识/经验/沉淀"收敛成统一知识库（单一摄取 + 单一检索），补齐完工沉淀闭环（三链路一致），给编码容器内置 Friday MCP 与 skills — 里程碑审计 tech_debt（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留 11 项真实 Qdrant·飞书·容器·Cursor 端人工验证 + 若干接受/递延债务）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.17.0-ROADMAP.md)
 - ✅ **v0.16.3 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）** — Phases 96–99 (shipped 2026-07-01) — 把项目外部依赖（`Artifact`：PRD/埋点评审/UI 文档等）接入知识总览/搜索/知识树，并与关键词/业务能力/仓库建关联 — 里程碑审计 tech_debt（12/12 需求满足 / integration_ok；遗留真机/浏览器视觉验收 + 既有范围外测试漂移）见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md) — [archive](./milestones/v0.16.3-ROADMAP.md)
@@ -28,169 +28,6 @@
 > v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号（v0.17.0 止于 Phase 104 → v0.19.0 从 Phase 105 续号）。
 
 ## Phases
-
-### ✅ v0.20.0 技术方案蓝图 (Phases 111–116) — COMPLETE（六相位全部完成并 verified，里程碑审计 tech_debt，待归档；与 v0.19.0 双 worktree 并行）
-
-**Milestone Goal:** 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段固定骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，仓库章程补齐净新增落点知识，飞书式划线澄清多轮收敛，全生命周期状态可管理，知识库可查、可引用、可导出。
-
-> **设计输入:** [.planning/technical-blueprint/DESIGN.md](./technical-blueprint/DESIGN.md)（13 节，§12 八项决策已定夺）。**并行纪律（§13.2，强制）:** 不改 `repo_router_v2.py`；冻结既有 `technical_plan` process 六文件（流水线全走 `blueprint_*` 新文件，`builtin_processes.py` 仅加注册项）；`ConvergenceSessionEvent` 既有契约只消费不修改（仅新增 `blueprint_*` 事件类型）；前端只新建组件，TechPlanCard/时间线触点升级留到同步点 2 后。DEPTH-01~05 自 v0.19.0 Phase 108 迁入（映射见 REQUIREMENTS.md）。
-
-- [x] **Phase 111: 蓝图底座** - blueprint/v1 schema 强制校验 + 11 态生命周期状态机 + 划线线程/评审人模型 + RepoCharter 章程模型与 AI 起草管道 + execution_plan 确定性派生 + golden set 质量基线（SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02）— completed 2026-07-30（4/4 plans，verification passed 24/24）
-- [x] **Phase 112: 规格门与双面路由调研（阶段 1）** - spec_gate 歧义门与意图分类 + blueprint_route 双面路由（章程/历史落点/能力树融合）+ 逐仓容器 fitness 调研 + reroute 有界循环 + repo_confirmation 硬确认门与章程回灌（FLOW-01/02/03/04, CHARTER-02/03）— completed 2026-07-30（5/5 plans，verification 16/17 + gap closure）
-- [x] **Phase 113: 分仓方案与融合（阶段 2/3）+ Context Bus** - repo_plan 逐仓方案 + 会话级共享上下文总线（实时读写/等待恢复/环检测）+ merge 融合装配（六段 + 引用强制 + 跨仓 API 对账）（FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03）— completed 2026-07-30（6/6 plans，verification passed 54/54）
-- [x] **Phase 114: 审查与澄清收敛** - AI 对抗审查七类规则与归因打回 + 澄清答案回灌产新版本 + 决策记录物化 + pending 语义 + 人工 block 编辑（FLOW-07, CLAR-02/03/04） (completed 2026-07-31)
-- [x] **Phase 115: 前端查看器与知识库** - BlueprintViewer 六段结构化渲染与批注层 + 二级引用预览 + 知识库技术方案 tab + 项目关联 + 人审终审 UI（VIEW-01/02/03/04, CLAR-01, FLOW-08） (completed 2026-07-31)
-- [x] **Phase 116: 入口收编与导出** - MCP 异步澄清协议 + 全入口统一走蓝图编排 + 飞书导出升级 + 知识图谱物化 + 引用预览源码正文（GATE-01, VIEW-05，并闭合 115 顺延的 VIEW-04 / VIEW-02）— completed 2026-08-01（7/7 plans）。⚠️ **触点升级与默认入口切换未做**：硬依赖同步点 2（v0.19.0 Phase 109/110 合并），顺延为里程碑收尾之后的独立工作项 ⇒ GATE-01 保持 PARTIAL
-
-**执行顺序（依赖链）:** 111 → 112 → 113 → 114 → 115 → 116，线性。111 是数据与质量地基（schema/状态机/线程/章程/golden set 全是后续相位的消费对象）；112 先锁规格与仓库集（确认门锁定是 113 分仓方案的输入）；113 产出完整蓝图（114 才有东西可审）；114 收敛审查与澄清闭环（115 才有完整状态与线程可展示）；115 查看器就位后 116 才能做全入口收编（人审终审是收编的前置能力）。**与 v0.19.0 的同步点:** 同步点 1 = 0.19 Phase 107 合并主干（rebase 对齐澄清送达/提醒设施，影响 112/114 的送达通道，未合并前用现有澄清通道兜底）；同步点 2 = 0.19 Phase 109/110 合并（execution 投影与事件时间线契约就位，116 的触点升级与入口切换在其后执行）。
-
-**UI 触面:** Phase 115（查看器/批注层/知识库 tab——`/gsd-ui-phase` 应介入）、Phase 116（TechPlanCard/工作流节点触点接入）。
-
-#### Phase Details (v0.20.0)
-
-### Phase 111: 蓝图底座（schema + 生命周期 + 线程/章程模型 + 质量基线）
-
-**Goal**: 蓝图的一切结构与状态有了权威地基——blueprint/v1 schema 由 jsonschema 强制、11 态生命周期有守卫可追溯、划线线程与评审人模型就位、仓库章程模型与 AI 起草管道可用、execution_plan 可确定性派生、golden set 质量基线建立。
-**Depends on**: Nothing（与 v0.19.0 零文件交集，立即可动工；§13.2 边界纪律全程生效）
-**Requirements**: SCHEMA-01, SCHEMA-06, SCHEMA-07, LIFE-01, LIFE-02, LIFE-03, CHARTER-01, GATE-02
-**Success Criteria** (what must be TRUE):
-
-  1. 构造缺段/缺必填字段的蓝图 JSON 写入被 jsonschema 校验拒绝；六段齐全的样例通过校验落 `ArtifactVersion`（content.schema_version=blueprint/v1），同一蓝图两个版本可产出 block 级 diff（新增/删除/修改块可辨识）。
-  2. 蓝图 11 态转移由 `BlueprintLifecycleService` 单点收口：存在 open+blocking 线程时 confirm 被拒绝；失败/废弃是显式终态且失败可重试；每次转移落 `ConvergenceSessionEvent`（新增 `blueprint_*` 类型，不改既有类型）。
-  3. 任一项目成员执行确认动作后自动进入该蓝图的方案评审人名单，名单可查、可手动增补，署名与时间留痕。
-  4. `RepoCharter` 可由 AI 从 ai_summary/近期 MR 历史/既有 RepoAssociation 裁决蒸馏出草案，人工 confirm 后生效（source=human_confirmed）；对人工确认过的章程 AI 只能提修订草案、不能直接覆盖。
-  5. 蓝图 golden set 离线可跑：含高三提分专项首条 golden case，输出引用覆盖率/目标仓命中率/审查打回率等指标，同输入重复运行结果一致。
-
-**Plans**: 4 plans（wave 1: 01/02/03 并行；wave 2: 04）
-
-Plans:
-
-- [x] 111-01-PLAN.md — blueprint/v1 六段 jsonschema + block diff + execution_plan 确定性派生 + builtin_types 校验接线（SCHEMA-01/06/07）
-- [x] 111-02-PLAN.md — Artifact.blueprint_status 11 态 + BlueprintThread/Message/Reviewer 模型 + LifecycleService 守卫/CAS/事件 + 重锚定纯函数（LIFE-01/02/03）
-- [x] 111-03-PLAN.md — RepoCharter 模型 + AI 起草管道 + charter REST 三端点 + call_source 8 值与 LOGGING-SPEC 登记（CHARTER-01）
-- [x] 111-04-PLAN.md — blueprint_quality 指标 + 高三提分专项 golden case + evaluate_blueprint_golden command + 全链路集成冒烟（GATE-02）
-
-### Phase 112: 规格门与双面路由调研（阶段 1：调研与确认门）
-
-**Goal**: 需求进来先锁规格再定仓——歧义超阈值必澄清、feature_point 带意图分类；路由融合章程/历史落点/能力树三路证据且分数可解释；逐仓容器调研产出 fitness 判定与职责建议；不合适仓有界重路由；出口硬确认门锁定仓库集与职责并回灌章程。
-**Depends on**: Phase 111（schema/线程/章程模型是本相位的读写对象）。软依赖同步点 1（v0.19.0 Phase 107 澄清送达设施；未合并前用现有澄清通道兜底，合并后 rebase 对齐）
-**Requirements**: FLOW-01, FLOW-02, FLOW-03, FLOW-04, CHARTER-02, CHARTER-03
-**Success Criteria** (what must be TRUE):
-
-  1. 需求歧义超阈值时编排停在「需要澄清」并抛出带候选选项与证据的问题，作答后规格锁定且同一问题不再重复问；每个 feature_point 带 greenfield/brownfield/fix 意图标注。
-  2. `blueprint_route` 输出候选带 `charter_match` 分量且分数可拆解；greenfield 功能点上章程 owned(planned) 的仓能进入候选（复现高三提分专项 case：onion-learning 不再因能力树无节点被淘汰）；brownfield 上命中章程禁区的候选被降权，LLM 保留它必须给显式理由。
-  3. 每个候选仓由独立 claude code 容器调研（PLAN 链接通任务 token 与容器知识 MCP），回传 fitness 判定 + role 建议 + 职责描述 + 带 citations 的现状 findings；unsuitable 触发重路由 ≤2 轮，仍不收敛升确认门由用户裁决。
-  4. 确认门展示仓库清单/role/职责/fitness/现状摘要/证据；用户移除仓、手动加仓（触发新仓调研）、改判 role、修改职责均驱动对应重调研；确认后仓库集与职责锁定，后续阶段擅自变更会被 AI 审查判 BLOCKER。
-  5. 确认门动作产生章程修订草案（确认/改判 → owned_domains、移除 → boundaries），人工 confirm 后生效；rejected 路由候选可一键沉淀为章程禁区候选。
-
-**Plans**: 5 plans（wave 1: 01；wave 2: 02/03 并行；wave 3: 04；wave 4: 05）
-
-Plans:
-
-- [x] 112-01-PLAN.md — feature_points[].intent 必填枚举 + 2 份字面数据同步与 6 个消费测试回归 + SettingKeys 歧义阈值/路由权重两键与 async float/json getter + 112 阶段事件常量（FLOW-01, CHARTER-02 前置）
-- [x] 112-02-PLAN.md — spec_gate 歧义门：LLM 四维打分（call_source=blueprint_spec_gate）+ 意图分类 + BlueprintThread(ai_clarification, blocking) 澄清回路 + 规格锁定与 decision_log 物化 + 不重复提问（FLOW-01）
-- [x] 112-03-PLAN.md — blueprint_route 双面路由：RepoRouterV2 原样输出为 router_base + charter_match（owned/planned、boundaries 判负、evolution 降权、章程候选补入）+ history_match（delivery knowledge）+ intent 加权 + breakdown 三分量恒等式（CHARTER-02, FLOW-04）
-- [x] 112-04-PLAN.md — blueprint_research_adapter 逐仓容器调研：fan-out + mint_task_token 与 3 个 env 键接通 + 章程随 prompt 注入 + fitness 落 PartialPlan.content + callbacks 第三条 PLAN 链 + reroute ≤2 轮与超限升确认门（FLOW-02, FLOW-04）
-- [x] 112-05-PLAN.md — repo_confirmation 硬确认门：五动作 REST 经 BlueprintLifecycleService 收口 + 仓库集/职责锁定与 decision_log + 章程回灌 ai_draft 与 rejected 一键沉淀 + technical_blueprint 七 stage 注册 + blueprint_resume 蓝图专用续驱（FLOW-03, CHARTER-03）
-
-### Phase 113: 分仓方案与融合（阶段 2/3）+ Blueprint Context Bus
-
-**Goal**: 确认后的每个仓产出结构化分仓方案，跨仓动态依赖靠会话级上下文总线协商；主 agent 融合装配出六段齐全、引用完备、跨仓 API 对账闭环的完整蓝图。
-**Depends on**: Phase 112（确认门锁定的仓库集与职责是分仓方案的输入）
-**Requirements**: FLOW-05, FLOW-06, SCHEMA-02, SCHEMA-03, SCHEMA-04, SCHEMA-05, BUS-01, BUS-02, BUS-03
-**Success Criteria** (what must be TRUE):
-
-  1. 每个 direct 仓产出 RepoPlan（实现项含 change_type/伪代码/涉及文件/测试策略、提供与消费 API、局部影响、风险），indirect 仓产出能力引用清单；拟定中可抛澄清线程、可发起单仓定向补调研。
-  2. 蓝图容器凭任务 token 实时读写会话上下文总线（全程无分支）；「A 仓等 B 仓接口契约」场景跑通：短等待 await 轮询拿到即继续，长等待以 waiting_context 携带 partial 产物退出、条目就绪后自动重派续作；互相等待环被检测并抛澄清给用户裁决。
-  3. merge 产出的蓝图通过 schema 校验且六段齐全：实现项逐项标 change_type 并映射功能↔模块↔仓库；交互流程覆盖「页面→接口→参数→数据→流向→行为路径」完整叙事；API 段含数据来源与可用性说明。
-  4. 现状 finding/选仓理由/影响判断的引用覆盖率达到基线（golden set 可量测）；consumed API 无 provider 时被标 needs_support 且支持仓出现在仓库关联；跨仓矛盾在融合中抛澄清而非静默拍板。
-  5. 会话结束后有价值的总线条目可经 distill 管道生成项目记忆草案（人工 confirm 生效）。
-
-**Plans**: 6 plans（wave 1: 01；wave 2: 02/03 并行；wave 3: 04；wave 4: 05；wave 5: 06）
-
-Plans:
-
-- [x] 113-01-PLAN.md — BlueprintContextEntry 模型 + 0032 migration（三复合索引 + seq 唯一约束）+ BlueprintContextService（锁父行 seq 分配 / JSON 递归脱敏自建 / waiter 登记含环检测 / satisfy 同事务置 superseded）+ 三个 blueprint.context.* 事件（BUS-01/02 数据面）
-- [x] 113-02-PLAN.md — 容器 MCP 两侧接通：服务端 read_/report_blueprint_context 两 view + **view 层自建三道会话校验**（鉴权链只到 token→owner）+ 全路径非 5xx + task 侧白名单 7→9（公共 handler 工厂零改动）（BUS-01）
-- [x] 113-03-PLAN.md — RepoPlan 分仓方案：新建 blueprint_repo_plan_schema.py（§5.3 十一字段）+ 派发面 mode="plan" 四扩展点（缺省等价 112）+ BlueprintRepoPlanAdapter（确认门仓集 / direct 派发 / indirect 合成 / 有界重试 / 自写完成判据）+ callbacks 第四链（FLOW-05, SCHEMA-03）
-- [x] 113-04-PLAN.md — 等待原语：await_blueprint_context 容器侧有界轮询（超时返正常结果非 is_error）+ waiting_context 退出与自动重派续作 + 波次预排纯函数（provider 先行）+ 互等环抛澄清；三条路径各有可证伪断言（BUS-02）
-- [x] 113-05-PLAN.md — 融合装配：blueprint_reconcile 跨仓 API 对账纯函数 + blueprint_merge（确定性投影含 rationale.citations / 引用池先建后填 / 四段分节 LLM / must_haves 确定性派生 / 幂等落 ArtifactVersion）（FLOW-06, SCHEMA-02/03/04/05）
-- [x] 113-06-PLAN.md — 融合门与 stage 收口：引用覆盖率门（阈值走 SettingKeys.BLUEPRINT_MERGE_CONFIG）+ coverage_gaps 归因 + 有界回退 ≤2 轮 + 超界转 STAGE_DONE 带未决项 + technical_blueprint 追加 repo_plan→merge 两 stage（只加不改）+ distill 沉淀草案（FLOW-06, SCHEMA-02, BUS-03）
-
-### Phase 114: 审查与澄清收敛（AI 对抗审查 + 线程闭环 + 人工编辑）
-
-**Goal**: 蓝图到达人审前先过独立 AI 对抗审查，findings 化为划线线程有界收敛；澄清答案回灌产新版本、决策物化；pending 语义与人工编辑链路闭环。
-**Depends on**: Phase 113（有完整蓝图可审）
-**Requirements**: FLOW-07, CLAR-02, CLAR-03, CLAR-04
-**Success Criteria** (what must be TRUE):
-
-  1. 独立审查代理（fresh context）按七类规则产出分级 findings 并锚定到 block，直接生成划线线程；仓级 BLOCKER 只打回对应仓的 repo_plan、融合级回 merge，合计 ≤2 轮后带未决项升人审；确认门锁定的仓库集/职责被擅自变更、direct 仓实现项违背章程禁区且无决策记录支撑，均判 BLOCKER。
-  2. 澄清作答后由对应阶段代理消费答案产出新版本，线程置 resolved 并记录 applied_in_version，结论物化进蓝图决策记录段；旧版本批注在新版本上按 block_id + quoted_text 重锚定，失锚线程集中可见。
-  3. 人工直接编辑 block 生成新版本（produced_by=human_edit，归属可审计）；后续 AI 修订以人工版本为基线不覆盖人工内容，冲突时开线程询问。
-  4. blocking 澄清无人应答时会话停在「需要澄清」显式状态并按配置周期提醒（飞书卡片重推/站内通知），随时作答恢复；不自动作答、不判失败。
-
-**Plans**: 5 plans（wave 1: 01；wave 2: 02；wave 3: 03；wave 4: 04；wave 5: 05）
-
-Plans:
-
-- [x] 114-01-PLAN.md — 线程底座：open_thread 追加 severity 形参（零 migration，既有调用逐字等价）+ blocking == (severity=="blocker") 不变式强制 + 从 _append_thread_message_sync 提炼公开 append_note（留痕不改状态，record_answer 禁用于 finding）+ confirm 守卫两条判据收敛进 _apply_transition_sync 同一事务的单次 Q 查询消除 TOCTOU（FLOW-07）
-- [x] 114-02-PLAN.md — 新建 blueprint_review.py：六类机械规则纯函数（前置完整性短路 / schema / 引用覆盖条目级 / 角色一致性 / API 闭环 / 禁令 / 章程边界 + 确认门锁定校验）在无 LLM 下产确定性结论，每类一条构造样例证伪；goal-backward 一类走 LLM（call_source=blueprint_ai_review，签名纳入 requirement_spec.constraints 并进 digest 使「与 constraints 冲突」可判，不可得 fail-closed 记 warning meta finding）（FLOW-07）
-- [x] 114-04-PLAN.md — 澄清回灌与人工编辑（**wave 3，已提前到 114-03 之前**）：areanchor_threads 批量重锚定（diff 预筛 + section_path 刷新 + 失锚 orphaned 不删 + 一次 bulk_update）+ block 级 patch ops 经 service 收口产 human_edit 版本（不合法拒绝且不落版本）+ 回灌三步链与 decision_log 物化保 answer 键、decided_at 用作答消息时间戳保幂等 + section_writer 生产实现 ablock_section_writer（默认注入，答案真的落地）+ AI 不覆盖人工（回灌冲突开线程）+ 人工块保护入口 acollect_human_block_ids / arestore_human_blocks 供 114-03 接线（CLAR-02, CLAR-03）
-- [x] 114-03-PLAN.md — ai_review stage 接入（**wave 4**）：入口先接线三件（aapply_thread_answers 消费答案产新版本 / arestore_human_blocks 保护人工块冲突开线程 / areanchor_threads 重锚）再跑判定；BlueprintReviewAdapter（findings 批量建线程用 severity 形参与 append_note 留痕、(rule_id, block_id) 去重、有界回退归因仓级回 repo_plan/融合级回 merge ≤2 轮计数存 stage_state["ai_review"]、超界转 pending_review 携未决清单绝不 FAILED）+ builtin_processes 只加第 10 个 stage 与 _h_bp_ai_review 且 merge.merged 改指 ai_review + blueprint_resume 映射表追加一行（删除行 0）；blueprint_merge.py 零改动（FLOW-07）
-- [x] 114-05-PLAN.md — 人审端点与收口（**wave 5**）：新建 blueprint_review_views.py 七端点（GET 快照 / approve 经事务内守卫无 TOCTOU / reject 三步链写 meta.revision_round 首个写入方 / edit-blocks / threads answer 是 record_answer 唯一正当用法且同请求内接回灌 / threads resolve + dismiss 为 finding 处置通道解超界死锁）+ reviewer upsert + 澄清超时提醒挂既有 apscheduler 一个 job（判据 needs_clarification + BlueprintThread.last_reminded_at 保周期不重复轰炸，全相位唯一一条 migration）+ blueprint_quality 三项 DB 统计实装（human_edit_volume 用 produced_by_ref__startswith 而非不存在的 created_by_user_id）+ 全量相位门（FLOW-07, CLAR-03, CLAR-04）
-
-### Phase 115: 前端查看器与知识库（结构化阅读 + 批注 + 管理面）
-
-**Goal**: 蓝图对人可读、可审、可管理——结构化查看器（六段导航/批注层/版本 diff/阶段时间线）、二级引用预览、知识库技术方案 tab、项目关联展示、人审终审操作全部可用。
-**Depends on**: Phase 114（有完整状态机与线程数据可展示）
-**Requirements**: VIEW-01, VIEW-02, VIEW-03, VIEW-04, CLAR-01, FLOW-08
-**Success Criteria** (what must be TRUE):
-
-  1. 打开蓝图看到六段结构化渲染（交互流程 mermaid/伪代码块/API 契约卡/影响矩阵/仓库关联卡）+ 11 态状态徽标 + 阶段时间线；生成中各段展示实时进展（复用 ConvergenceSessionEvent，不新建推送通道）。
-  2. AI 划线提问以飞书式下划线高亮呈现，点击展开线程侧栏可多轮回复；用户可对任意选区发起评论；版本切换 + block 级 diff 视图可用。
-  3. 引用 chip 点击在查看器上再弹一层预览（知识实体 / **代码位置：文件路径 + 行号区间 + 引用快照** / 其他蓝图 / 章程条目）；仓库关联卡可直接跳转仓库页。
-  4. 知识库「技术方案」tab 支持状态/项目/仓库筛选与搜索、深链直达查看器；项目内生成的蓝图自动挂项目并在项目物料面板可见；蓝图引用的知识/仓库/其它蓝图可查（**反向「被谁引用」随 Phase 116 知识图谱物化交付**）。
-  5. 人审终审在查看器内完成：通过（评审人署名、状态到已确认）或驳回（带划线评论回产出中、修订轮次 +1）。
-
-**Plans**: 7 plans（wave 1: 01；wave 2: 02；wave 3: 03/04 并行；wave 4: 05；wave 5: 06；wave 6: 07）
-
-Plans:
-
-- [x] 115-01-PLAN.md — 后端五个只读/轻写端点：蓝图正文（含 quality 三态，闭 MN-05）/ 阶段事件（21 个 BLUEPRINT_EVENTS，无会话回 200 空结构）/ 线程详情 GET（补 options + last_reminded_at + messages）与选区评论 POST（经新 service 收口，INV-6）/ 蓝图列表（ProjectMember 可见集合 + 方案 A 先聚合再切片 + 响应键 current_status 避开 INV-6 守卫 + 五键分页）；五端点照挂 _aassert_project_scope（import 复用，blueprint_review_views.py 零改动）（VIEW-01/03/04, CLAR-01）
-- [x] 115-02-PLAN.md — 前端数据层与纯函数地基：happy-dom 能力锁探针 settle A2 + types/api×2/config 12 态/annotationTokens/StatusBadge + utils 两件（blockText 四分支同源 P-13、iterBlocks 13 处 collect、canonical 指纹、区间切分、两段式 offset）+ stores + 三个 composable（唯一轮询消费点 useBlueprintLive：snapshot 走函数式 refetchInterval 读自身 data，doc/events 走 isLive 并**必须配 watch(isLive) 的 refetch 踢动**——函数体读外部 ref 不是被追踪的响应式依赖，缺了它章节进度会静默冻结；配 useBlueprintLive.spec.ts 的 1→2 时序用例）+ 三处纯追加点一次做完（i18n 全量子树 / safelist 12 图标 / api barrel）+ 前端源码扫描守卫 spec（VIEW-01/02/03/04, CLAR-01, FLOW-08）
-- [x] 115-03-PLAN.md — 块渲染与批注可视层 + 引用二级预览：BlueprintBlock（五类块分发 + <mark> 字符区间 + 越界/table/mermaid 整块降级 + orphaned 正文不渲染 + citation chip，批注与引用的唯一实现点）/ BlueprintBlockList（段级三分支 + 选区侦测唯一落点，同块与跨块分流）/ CitationPreviewDialog + 五个子件（任何失败一律快照兜底且不关弹窗；chunk-at 判据用 usable）；⭐ **代码预览为降级形态（文件路径 + 行号区间 + 引用快照，无源码正文因而无行高亮），源码正文读面顺延 116** —— chunk_lookup 只 select chunk_id/file_path/line_start/line_end/chunk_index，chunk_at_views 返 {path,line,chunks} 不带正文，唯一带 content 的读面是需要 query 的向量搜索，无法按 path+行号区间取，故 SC-3 已同步收窄（VIEW-01/02, CLAR-01）
-- [x] 115-04-PLAN.md — 线程侧栏与写路径 + 人审终审 + 版本 diff：四组分组（一律走 sidebarGroups，失锚不二次过滤）+ ⭐ kind 硬分流做在渲染层（finding 卡里根本没有 Composer 节点）+ readonly 是不存在于 DOM 而 finding 处置不受其约束 + 终审 disabled+Tooltip 与二次确认 + ⭐ approve 409 的 unresolved_blocker_thread_ids 逐条可点跳转 + 质量面板三态绝不显示 0 + 版本切换与 block 级 diff（canonical 分类 + diffWords + .diff-* 复制进 scoped）（CLAR-01, FLOW-08, VIEW-01）
-- [x] 115-05-PLAN.md — 十段正文组件（九个 section + 四张卡）：段组件零批注实现一律透传 blockCtx；must_haves 与 decision_log/deferred_ideas 两个特例段不接批注层且组件内写明原因；availability 只从 data_source 读不回落顶层；仓库关联卡直跳仓库页（SC-3）与 unsuitable 替代建议原样展示；⭐ associations 段范围收窄为「本蓝图引用了 + 关联项目」，**反向「被谁引用」顺延 116 知识图谱物化**（knowledge/artifact_associations.py 查的是 initiatives.Artifact 投影的 KnowledgeEntity，拿 delivery.Artifact.id 必然落空，SC-4 已同步收窄）（VIEW-01/02/04）
-- [x] 115-06-PLAN.md — 查看器路由页装配 + 知识库 tab + 项目物料卡：⭐ 十段 <section id> 无条件渲染且 sections 恒 10 项、badge 传 '' 不传 0（P-4/P-18，否则左栏高亮全程失效而看起来只是迟钝）+ AnchorNavLayout 页面直接使用与三栏装配 + 六 query 双向同步与一次性消费 + 404 单一中性文案 + gate 非 200 不进错误分档 + 六个动作端点接线（零乐观更新、409 blocked 开解药面板、reflow 五档不当失败）+ 两处纯追加点（tab 宿主 / 物料面板）+ 全相位前端门（VIEW-01/02/03/04, CLAR-01, FLOW-08）
-- [x] 115-07-PLAN.md — 确认门面板（⭐ 相对 ROADMAP SC 的范围增量，本相位最后一个可独立顺延 plan，顺延目标 116 且不得丢弃）：消费 112 的 blueprint-gate/ 快照与七动作，渲染条件只有「200 与否」一条（该链八端点里七个无项目范围闸 ⇒ 状态码不携带权限信息，三种 404 行为必须一致）+ 一次 POST + 双 invalidate + pending 行禁用 + confirm 409 的 pending_clarification 一键跳未决线程 + ⭐ 可顺延性实跑验证（回退后前端四道门仍全绿）+ 相位级收口自检（VIEW-01；同时闭 FLOW-03 的界面可达性）
-
-**UI hint**: yes
-
-### Phase 116: 入口收编与导出（全入口统一 + MCP 协议 + 飞书导出 + 图谱物化）
-
-**Goal**: 全入口统一走蓝图编排、MCP 支持异步澄清、飞书导出升级、引用物化进知识图谱——蓝图成为技术方案的唯一产出形态。
-**Depends on**: Phase 115（人审终审是入口收编的前置能力）。**硬依赖同步点 2**（v0.19.0 Phase 109/110 合并：execution 投影与事件时间线契约就位后，才做 TechPlanCard/工作流节点触点升级与默认入口切换）
-**Requirements**: GATE-01, VIEW-05（并闭合 115 顺延的 VIEW-04、VIEW-02）
-**Success Criteria** (what must be TRUE):
-
-  1. workflow `ai_plan_research` 节点、chat `start_plan_research`、MCP `create_feishu_technical_plan`、feature list 链路**全部具备走 `technical_blueprint` process 的可执行路径**（蓝图 intake 与功能点拆分接线完成、所有续驱点按 `process_type` 选 adapter），并由 per-entry 运行时开关控制；开关默认仍为 `technical_plan`。**本相位已交付旧链残余流量的可观测性**（`technical_plan_entry_used` 按 `entry_key` 分桶 + process 注册表退役注记），**默认切换与旧 process 退役收口顺延同步点 2 后的收尾 plan**（其时为改一个设置默认值 + 三处触点升级 + workflow 节点终态映射改 HITL 挂起）。
-  2. MCP 入口不再 skip_clarification：立即返回会话与 pending 状态，澄清经新工具可作答、结果可续取；澄清同时推飞书卡片，交互密度按 assumptions 档位可配。
-  3. 导出飞书文档包含六段全量 + 决策记录附录；未确认版本在界面与导出物上均带「未经确认」显式标注（对齐 RELY-01 语义）。
-  4. 蓝图 citations 物化为知识图谱 REFERENCES 边、项目关联物化为 RELATES_TO 边；知识库反查「本蓝图被哪些方案/知识引用」可用。
-
-**Plans**: 7 plans（wave 1: 01；wave 2: 02；wave 3: 03/04；wave 4: 05；wave 5: 06；wave 6: 07）
-
-Plans:
-
-- [x] 116-01-PLAN.md — 分派地基与既有写面补闸：build_engine_for_session 按 process_type 同时换 engine **与 driver**（旧 driver 的 ahas_pending 短路对蓝图恒 False，只换 engine 仍会被推到 advance_step_limit）+ 两个同名 dep（research/merge）的类型身份自检挡住 ArchitectMergeAdapter 往蓝图落 v0 content + resume.py 对称守卫 + per-entry 开关 blueprint_entry_switch（⭐ 实参必须是 ast.Constant，MCP 的 entrypoint 实测是 "workflow"）+ 两个 SettingKeys + 旧链退役观察按独立 entry_key 分桶 + blueprint-gate/ 八端点补范围闸（更严变体：两个失败分支同一中性 404）与 confirm 两处 409 补 blocked_reason（GATE-01）
-- [x] 116-02-PLAN.md — 蓝图 intake（SC-1 主体，全仓此前零实现）：blueprint_intake.py 的 11 键最小骨架（⭐ 显式带 schema_version，缺它会让校验器/renderer/入图门控三条链同时静默降级）+ requirement_spec.goal 承载需求原文 + aresolve_project_id 四链唯一收口（⭐ MCP 的 context.space 是 Space FK，必须过 _aresolve_project）+ 推不出即拒绝发起且 DB 零副作用 + start_blueprint_orchestration 纯追加 + _h_bp_intake/_h_bp_decompose 落实（⭐ StageOutcome 必须显式带 current_artifact_version，否则卡死 spec_gate）+ feature_segments 直采零 LLM（GATE-01）
-- [x] 116-03-PLAN.md — 四入口的蓝图可执行路径：六个续驱点全改 build_engine_for_session（含 CONTEXT 未点名但实测为真的 answer_resume:102-103 与 plan_clarify_callback:242，漏改即作答后无人续驱且零异常）+ 四入口按字面量查开关与 project_id 推导 + ⭐ chat 三条断链（等澄清的健康会话不再被报成「方案编排失败」/ 两个蓝图 barrier 补 CHAT 回灌，否则对话永远停在「容器运行中」）+ ast 扫描把「漏改一处」变成机器可逮（GATE-01）
-- [x] 116-04-PLAN.md — SC-4 图谱物化与反查：⭐ 第一个 task 是打通 relations 三层（_DEFAULT_RELATIONS 不含 REFERENCES 且中间两层不透传 ⇒ 边全对、端点 200、页面空白）+ knowledge/sources/blueprint.py normalizer（目标实体存在性预过滤 + 丢弃计数 sampling / 同目标 citation 聚合成一条边 / RELATES_TO 恰好 1 条 / ⛔ 去掉会变成谎言的 first_seen_version_no）+ 门控挂 create 与 add_version 两处（v1 骨架走 create，只挂后者会让新建蓝图查不到）+ knowledge_entity_id 换算键 + 前端补两块且 getArtifactAssociations 的零调用断言原样保留（VIEW-04）
-- [x] 116-05-PLAN.md — SC-3 渲染器与飞书导出：render_blueprint_markdown(content, *, blueprint_status) 三条不变量（必填 keyword-only + 闭合白名单让任何取值都关不掉标注 + ⛔ 零布尔开关，唯一可机器验的形式是 inspect.signature 断言）+ builtin_types 判别分支与 ArtifactTimelineSerializer 蓝图特判（⭐ 两个面都带标注，顺带修掉 current_version_markdown 的结构性空壳）+ 两个导出端点（availability 三判据 / 上游失败 400·502 中性 detail / ⭐ 留痕落 Interaction Ledger，导出前后 ArtifactVersion 计数不变且不进 BLUEPRINT_EVENTS）+ 前端常驻不可关闭横幅与按 availability 隐藏的导出按钮（VIEW-05）
-- [x] 116-06-PLAN.md — SC-2 MCP 异步澄清协议：blueprint_answer_action 抽取（MCP ⛔ 不直写线程 ⛔ 不自调 REST ⇒ 只剩共享 service 一条路；三道闸顺序有源码断言，finding 作答 400 且线程一字未变）+ 两个新工具（寻址键 artifact_id、⛔ 无第三个 list 工具、markdown 走 116-05 renderer）+ create_feishu_technical_plan 追加三键与 status=partial 且同步进 snapshot + ⭐ assumptions 三档（max_rounds 是真实新增且以 DEFAULT_SPEC_GATE_CONFIG 为唯一来源，三处调用点都要带档位否则 ambiguity_report 与 sampling 日志撒谎；assume_more ≠ skip_clarification 有正反并列）+ blueprint_notify 一个文件收敛澄清送达（GATE-01）
-- [x] 116-07-PLAN.md — 代码预览源码正文读面（⭐ 本相位最后一个可独立顺延的 plan，顺延须同步改写 REQUIREMENTS VIEW-02 的顺延目标；**顺延时由 116-06 的相位出口检查兜底**）：先把 GetRepositoryFileView 的排除判定/镜像读取/分支解析/chunk 回退下沉成 services/repo_file_read.py（⛔ 复制一份违反 fail-closed 单一实现纪律，需回归 TOOL_SCHEMA_SNAPSHOT）+ 新增 file-lines 端点取 chunk_at 的中性口径（被排除/不存在/无镜像三者响应体逐字相同的 200 空，⛔ 不取 MCP 的 404 file_excluded）+ 区间超上界截断而非报错 + 前端引用预览升级为带正文与行高亮 + ⭐ 可独立顺延性实跑验证（VIEW-02）
-
-**UI hint**: yes
 
 ### 🟡 v0.19.0 技术方案可信度 (Phases 105–110) — PLANNING
 
@@ -313,6 +150,23 @@ Plans:
 
 **Plans**: TBD
 **UI hint**: yes
+
+<details>
+<summary>✅ v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）(Phases 111–116) — SHIPPED 2026-08-02 — 审计 tech_debt</summary>
+
+- [x] Phase 111: 蓝图底座 (4/4 plans) — `blueprint/v1` 六段 jsonschema 强制 + 11 态生命周期状态机 + 划线线程/评审人模型 + `RepoCharter` 章程与 AI 起草管道 + `execution_plan` 确定性派生 + golden set 质量基线（SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02）— completed 2026-07-30
+- [x] Phase 112: 规格门与双面路由调研 (5/5 plans) — `spec_gate` 歧义门与意图分类 + `blueprint_route` 双面路由（章程/历史落点/能力树三分量可拆解）+ 逐仓容器 fitness 调研 + reroute ≤2 轮 + `repo_confirmation` 硬确认门与章程回灌（FLOW-01/02/03/04, CHARTER-02/03）— completed 2026-07-30
+- [x] Phase 113: 分仓方案与融合 + Context Bus (6/6 plans) — `RepoPlan` 逐仓方案 + 会话级共享上下文总线（实时读写/两档等待恢复/互等环检测）+ `blueprint_merge` 融合装配（六段 + 引用强制 + 跨仓 API 对账）（FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03）— completed 2026-07-30
+- [x] Phase 114: 审查与澄清收敛 (5/5 plans) — AI 对抗审查七类规则与归因有界打回 + 澄清回灌产新版本 + 决策记录物化 + 批注重锚定 + 人工 block 编辑且 AI 不覆盖人工（FLOW-07, CLAR-02/03/04）— completed 2026-07-31
+- [x] Phase 115: 前端查看器与知识库 (7/7 plans) — `BlueprintViewer` 十段结构化渲染与划线批注层 + 版本 diff + 引用二级预览 + 知识库技术方案 tab + 人审终审与确认门面板（VIEW-01/02/03/04, CLAR-01, FLOW-08）— completed 2026-08-01
+- [x] Phase 116: 入口收编与导出 (7/7 plans) — 四入口的蓝图可执行路径与 per-entry 开关 + MCP 异步澄清协议 + 飞书导出与不可关闭的「未经确认」标注 + 知识图谱物化与反查 + 引用预览源码正文（GATE-01 PARTIAL, VIEW-05，并闭合 115 顺延的 VIEW-04 / VIEW-02）— completed 2026-08-01
+- [x] CLAR-03 closure (2026-08-02) — 里程碑审计打回的唯一归档阻塞缺口：查看器补 block 级人工编辑面（后端零改动），审计 status `gaps_found` → `tech_debt`
+
+完整阶段详情见 [milestones/v0.20.0-ROADMAP.md](./milestones/v0.20.0-ROADMAP.md)；需求归档见 [milestones/v0.20.0-REQUIREMENTS.md](./milestones/v0.20.0-REQUIREMENTS.md)；里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口）见 [milestones/v0.20.0-MILESTONE-AUDIT.md](./milestones/v0.20.0-MILESTONE-AUDIT.md)；相位产物归档在 `milestones/v0.20.0-phases/`。
+
+⚠️ **顺延同步点 2（v0.19.0 Phase 109/110 合并）的四件事必须同批做**：翻四个 per-entry 开关默认值 + workflow / feature_list / MCP 三个入口的出口映射重做（审计 §4.1 的 G1/G3/G4）+ `TechPlanCard`/`NodeDataTab`/`ArtifactTimeline` 三处触点升级 + 旧 `technical_plan` process 退役收口。默认开关下三道接缝零生产影响；⛔ 任何一件单独做都会造成回退。
+
+</details>
 
 <details>
 <summary>✅ v0.17.0 统一知识库与全链路联动 (Phases 100–104) — SHIPPED 2026-07-22 — 审计 tech_debt</summary>
@@ -472,20 +326,9 @@ Plans:
 
 ## Progress
 
-**✅ 本分支当前立项：v0.20.0 技术方案蓝图（Phases 111–116，6 阶段 / 35 需求 SCHEMA·LIFE·CHARTER·FLOW·CLAR·BUS·VIEW·GATE）**——设计输入 [technical-blueprint/DESIGN.md](./technical-blueprint/DESIGN.md)，与 v0.19.0（`milestone/v0.19.0-plan-trust` worktree，v0.19.0 侧进度以该分支为准）并行开发。**六个相位全部完成且 verified（34/34 plans）**；里程碑审计判 `tech_debt`（34/35 需求满足，GATE-01 因硬依赖同步点 2 判 PARTIAL），详见 [v0.20.0-MILESTONE-AUDIT.md](./v0.20.0-MILESTONE-AUDIT.md)。**待与 v0.19.0 合并后 `$gsd-complete-milestone`**。
+里程碑 v0.1.0–v0.17.0（Phases 1–104）与 **v0.20.0 技术方案蓝图（Phases 111–116）** 均已交付并归档。**⛔ 下一里程碑尚未立项** —— 它取决于 `milestone/v0.19.0-plan-trust` 的合并（同步点 2）。本分支（`milestone/v0.20.0-blueprint`）尚未与 v0.19.0 合并，合并是独立的后续步骤。
 
-| Phase | Milestone | Requirements | Plans Complete | Status | Completed |
-|-------|-----------|--------------|----------------|--------|-----------|
-| 111. 蓝图底座 | v0.20.0 | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | 4/4 | ✅ Complete (passed 24/24) | 2026-07-30 |
-| 112. 规格门与双面路由调研 | v0.20.0 | FLOW-01/02/03/04, CHARTER-02/03 | 5/5 | ✅ Complete (16/17 + gap closed) | 2026-07-30 |
-| 113. 分仓方案与融合 + Context Bus | v0.20.0 | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | 6/6 | ✅ Complete (passed 54/54) | 2026-07-30 |
-| 114. 审查与澄清收敛 | v0.20.0 | FLOW-07, CLAR-02/03/04 | 5/5 | ✅ Complete (passed 83/83) | 2026-07-31 |
-| 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 7/7 | ✅ Complete (passed 107/107) | 2026-08-01 |
-| 116. 入口收编与导出 | v0.20.0 | GATE-01, VIEW-05（+ 闭合 VIEW-04、VIEW-02） | 7/7 | ✅ Complete (passed 121/121) | 2026-08-01 |
-
-**Coverage (v0.20.0):** 35/35 需求全部映射，无孤儿、无重复（DEPTH-01~05 自 v0.19.0 Phase 108 迁入，映射见 REQUIREMENTS.md）。
-
-里程碑 v0.1.0–v0.17.0（Phases 1–104）均已交付。**🟡 当前立项：v0.19.0 技术方案可信度（Phases 105–110，6 阶段 / 24 需求 RELY·ROUTE·DEPTH·SPINE·OBS）**——源于一次生产实例的实证排查：用户拿到的技术方案根本不是技术方案流水线产出的，两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`，agent 等不到就绕道 `create_coding_plan` 徒手编了一份。根因链已实测定位（haiku 档误配 → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替）。规划与调研已就绪（REQUIREMENTS 24 条 + [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)），**待 `$gsd-plan-phase 105`**。
+**🟡 当前立项：v0.19.0 技术方案可信度（Phases 105–110，6 阶段 / 24 需求 RELY·ROUTE·DEPTH·SPINE·OBS）**——源于一次生产实例的实证排查：用户拿到的技术方案根本不是技术方案流水线产出的，两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`，agent 等不到就绕道 `create_coding_plan` 徒手编了一份。根因链已实测定位（haiku 档误配 → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替）。规划与调研已就绪（REQUIREMENTS 24 条 + [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)），**待 `$gsd-plan-phase 105`**。
 
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
@@ -496,7 +339,23 @@ Plans:
 | 109. 双脊柱合流 | v0.19.0 | SPINE-01/02, RELY-01 | 0/TBD | Not started | - |
 | 110. 过程可观测 | v0.19.0 | OBS-01/02/03 | 0/TBD | Not started | - |
 
-**Coverage (v0.19.0):** 24/24 需求全部映射，无孤儿、无重复。
+**Coverage (v0.19.0):** 24/24 需求全部映射，无孤儿、无重复。⚠️ DEPTH-01~05 已迁入 v0.20.0 并由 `blueprint/v1` schema 原生满足（Phase 108 的实现范围随之收窄，映射见 [milestones/v0.20.0-REQUIREMENTS.md](./milestones/v0.20.0-REQUIREMENTS.md)）。
+
+<details>
+<summary>✅ v0.20.0 进度表（Phases 111–116，34/35 需求已交付 · GATE-01 PARTIAL）</summary>
+
+| Phase | Milestone | Requirements | Plans Complete | Status | Completed |
+|-------|-----------|--------------|----------------|--------|-----------|
+| 111. 蓝图底座 | v0.20.0 | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | 4/4 | ✅ Complete (passed 24/24) | 2026-07-30 |
+| 112. 规格门与双面路由调研 | v0.20.0 | FLOW-01/02/03/04, CHARTER-02/03 | 5/5 | ✅ Complete (16/17 + gap closed) | 2026-07-30 |
+| 113. 分仓方案与融合 + Context Bus | v0.20.0 | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | 6/6 | ✅ Complete (passed 54/54) | 2026-07-30 |
+| 114. 审查与澄清收敛 | v0.20.0 | FLOW-07, CLAR-02/03/04 | 5/5 | ✅ Complete (passed 83/83) | 2026-07-31 |
+| 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 7/7 | ✅ Complete (passed 107/107) | 2026-08-01 |
+| 116. 入口收编与导出 | v0.20.0 | GATE-01, VIEW-05（+ 闭合 VIEW-04、VIEW-02） | 7/7 | ✅ Complete (passed 121/121) | 2026-08-01 |
+
+**Coverage (v0.20.0):** 35/35 需求全部映射，无孤儿、无重复；34 条 Complete、GATE-01 PARTIAL（默认入口切换硬阻塞同步点 2）。里程碑审计 tech_debt 见 [milestones/v0.20.0-MILESTONE-AUDIT.md](./milestones/v0.20.0-MILESTONE-AUDIT.md)；相位产物归档在 `milestones/v0.20.0-phases/`。
+
+</details>
 
 <details>
 <summary>✅ v0.17.0 进度表（Phases 100–104，19/19 需求已交付）</summary>
@@ -513,7 +372,7 @@ Plans:
 
 </details>
 
-v0.17.0 遗留的真实 Qdrant·飞书·容器·Cursor 端人工验证（11 项）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md)；v0.16.3 遗留真机·真实 provider·浏览器视觉验收见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md)；v0.16.1 遗留人工验收（10 项）见 [audit](./milestones/v0.16.1-MILESTONE-AUDIT.md) §4。
+v0.20.0 遗留的技术债（同步点 2 的四件事 / G1·G3·G4 三道入口接缝 / mcp npm 包漂移四个工具 / Nyquist validation 缺失）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md)；v0.17.0 遗留的真实 Qdrant·飞书·容器·Cursor 端人工验证（11 项）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md)；v0.16.3 遗留真机·真实 provider·浏览器视觉验收见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md)；v0.16.1 遗留人工验收（10 项）见 [audit](./milestones/v0.16.1-MILESTONE-AUDIT.md) §4。
 
 各历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
 

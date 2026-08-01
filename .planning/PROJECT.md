@@ -12,7 +12,9 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.16.3 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）（2026-07-01，审计 tech_debt，12/12 需求，Phases 96–99）。里程碑 v0.1.0–v0.16.3（Phases 1–99）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。**当前在建：v0.17.0 统一知识库与全链路联动（Phases 100+，planning）。**
+**Latest shipped:** v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）（2026-08-02，审计 tech_debt，34/35 需求，Phases 111–116）。里程碑 v0.1.0–v0.17.0（Phases 1–104）与 v0.20.0（Phases 111–116）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
+
+**⛔ 下一里程碑尚未立项。** v0.20.0 在 `milestone/v0.20.0-blueprint` worktree 与 v0.19.0 双线并行开发，归档在该分支内完成；**两分支尚未合并**。v0.19.0 技术方案可信度（Phases 105–110，24 条需求）仍是在建里程碑，其合并即 v0.20.0 收尾工作项（默认入口切换等四件事）的同步点 2。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号。
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -28,7 +30,23 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 方案够深 + 过程可见）
+## Latest Milestone: v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）— ✅ SHIPPED 2026-08-02（审计 tech_debt）
+
+> 6 个 Phase（111–116）线性交付，34 plans、34/35 需求满足、6 相位全 verified。设计输入 `.planning/technical-blueprint/DESIGN.md`（13 节，§12 八项决策已定夺）；归档见 `.planning/milestones/v0.20.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` 与 `.planning/milestones/v0.20.0-phases/`。**与 v0.19.0 双 worktree 并行开发，两分支尚未合并。**
+
+**Goal（已达成）:** 把技术方案从「单轮 LLM 产的一份 JSON」升级为「人类可读、AI 可依此完备编码」的**项目级结构化蓝图**——六段固定骨架（仓库关联 / 现状分析 / 实现概述 / API / 影响范围 / 交互流程）每条结论带引用证据，三大编排阶段（调研与确认门 → 分仓方案 → 融合）贯穿仓库确认硬门，仓库章程补齐净新增落点知识，飞书式划线澄清多轮收敛，11 态生命周期可管理，知识库可查、可引用、可导出。
+
+**Delivered features（6 Phase）:**
+- **Phase 111 蓝图底座**：`blueprint/v1` 六段 jsonschema 强制 + block 级 diff + `execution_plan` 确定性派生；11 态生命周期由 `BlueprintLifecycleService` 单点收口 + 划线线程/评审人模型；`RepoCharter` 版本化章程与 AI 起草管道；golden set 质量基线。
+- **Phase 112 规格门与双面路由调研**：`spec_gate` 歧义门与 `feature_point` 意图分类；`blueprint_route` 三分量（`router_base` + `charter_match` + `history_match`）可拆解路由；逐仓容器 fitness 调研 + 有界 reroute；`repo_confirmation` 硬确认门与章程回灌。
+- **Phase 113 分仓方案与融合 + Context Bus**：`RepoPlan` 逐仓结构化方案；会话级共享上下文总线（两档等待恢复 + 互等环检测）；`blueprint_merge` 六段融合 + 跨仓 API 对账 + 引用覆盖率门。
+- **Phase 114 审查与澄清收敛**：独立 AI 对抗审查七类规则与归因有界打回（超界是「待人审」不是「失败」）；澄清回灌产新版本 + 决策物化 + 批注重锚定；人工 block 编辑且 AI 不覆盖人工（两条保护链）。
+- **Phase 115 前端查看器与知识库**：`BlueprintViewer` 十段结构化渲染 + 划线批注层 + 版本 diff + 引用二级预览；知识库「技术方案」tab；人审终审与确认门面板。
+- **Phase 116 入口收编与导出**：按 `process_type` 分派 engine 与 driver + 六个续驱点改造 + 蓝图 intake ⇒ 四入口各自的蓝图可执行路径与 per-entry 开关；MCP 异步澄清协议全量；飞书导出与结构上关不掉的「未经确认」标注；citations 物化为知识图谱边并支持反查。
+
+**⏭ 顺延（硬阻塞同步点 2，⛔ 本里程碑内结构上不可闭合）：** GATE-01 判 PARTIAL——四个 per-entry 开关默认值仍为 `technical_plan`，默认切换必须与「workflow / feature_list / MCP 三个入口的出口映射重做（审计 G1/G3/G4）+ 三处触点升级 + 旧 `technical_plan` process 退役」**同批**完成。⭐ 顺延是**语义前提**不是排期：蓝图的 `DONE` 语义是「等人审」，今天翻默认等于让编码代理拿着未经人审的蓝图去写代码，正面违反 RELY-01。默认开关下三道接缝零生产影响。另有跨仓项：`mcp` npm 包缺本里程碑新增的四个工具（服务端齐备、npm 客户端不可达）。
+
+## Next Milestone（待 v0.19.0 分支合并后推进）: v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 方案够深 + 过程可见）
 
 > 版本号避开发布轨已占用的 v0.18.0（见 STATE.md Blockers）。本里程碑源于一次生产实例（friday.yc345.tv / 10.8.8.153）的实证排查：用户在真实需求「高三提分专项」上拿到的技术方案，**根本不是技术方案流水线产出的**——两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`（`research_tasks=0`、`architect_merges=0`、`artifact=None`），agent 等不到就绕道 `create_coding_plan` 徒手编了一份 1890 字的方案。根因链已实测定位：haiku 档误配 `mimo-v2.5-pro[1m]` → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替。前置的仓库去重与 Space 归属治理已于立项前完成（261→259 仓、7 个团队空间、17 个幽灵点清除），Stage 1 超时外置已单独修复（`1c9ebdff`）。Phases 105+ 续号。
 
@@ -152,9 +170,19 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **飞书原生 CardKit 流式卡片**：机器人对话回复增量更新（CardKit v1 create/send/stream/settle 封装 + schema 2.0 流式卡），替代 PATCH 全量替换，失败降级既有卡片 — v0.11.0 (CARD-01, `server/services/feishu_im.py`)
 - ✓ **工作流自动建群节点**：`CreateGroupChatNode` 建飞书群 + 拉成员（`FeishuIMClient.create_chat` 建群即拉人）+ chat_id 输出 + 可选写回 `WorkItem.feishu_chat_id`（`WorkItemService.awriteback_feishu_chat_id` 单一入口 INV-6，fail-soft 不阻断） — v0.11.0 (GROUP-01)
 
-### Active（v0.17.0 统一知识库与全链路联动）
+- ✓ **结构化蓝图产物（`blueprint/v1`）**：技术方案是六段固定骨架（仓库关联 / 现状分析 / 实现概述 / API / 影响范围 / 交互流程）+ 需求规格 + 验收锚点的结构化蓝图，缺段或必填缺失由 jsonschema 强制拒绝入库；关键结论（选仓理由 / 现状 finding / 影响判断）携带可溯源可预览的引用证据；实现项逐项标 `change_type` 并给出功能↔模块↔仓库映射与依赖波次；`execution_plan` 确定性派生、编码分发链路零改动可消费；项目级一份活跃蓝图、多版本 block 级 diff — v0.20.0 (SCHEMA-01~07, `server/delivery/`)
+- ✓ **蓝图 11 态生命周期 + 评审人**：状态转移由 `BlueprintLifecycleService` 单点收口（守卫 / CAS / 事件），存在未解决的阻塞澄清时不可确认；生成失败或放弃有显式终态且可重试；执行确认的成员自动进入方案评审人名单并署名留痕 — v0.20.0 (LIFE-01/02/03)
+- ✓ **仓库章程与双面路由**：每仓一份版本化 `RepoCharter`（定位 / owned_domains 含 planned / 边界禁区 / 落点偏好 / 演进态），AI 起草、人工确认生效且不被 AI 覆盖；路由按 feature_point 意图分流加权，`score breakdown` 含 `charter_match` 分量且三分量之和恒等于总分；确认门动作回灌章程草案 — v0.20.0 (CHARTER-01/02/03，⛔ 全程未动冻结的 `repo_router_v2.py`)
+- ✓ **三阶段蓝图编排 + 硬确认门**：歧义超阈值先澄清再调研（规格门）；逐仓容器调研产 fitness 判定 + 有界 reroute；**阶段 1 出口是硬确认门**——用户确认仓库集与职责后才进入方案拟定，确认后锁定且擅自变更被 AI 审查判 BLOCKER；阶段 2 逐仓拟定 `RepoPlan`，阶段 3 融合装配并做跨仓 API 对账（无 provider 标 `needs_support`）；独立 AI 审查代理七类规则有界打回后升人审；蓝图必经人类终审 — v0.20.0 (FLOW-01~08)
+- ✓ **划线澄清与人工编辑**：AI 可对蓝图任意位置发起飞书文档式划线提问（带候选选项），用户在查看器中多轮回复、也可对任意选区主动评论；澄清答案回灌产新版本并物化进决策记录，批注按 block 重锚定、失锚线程集中可见；人类可 block 级直接编辑（归属可审计），AI 不覆盖人工、冲突开线程；澄清无人应答保持显式 pending 可提醒可恢复，绝不自动作答或无声卡死 — v0.20.0 (CLAR-01/02/03/04)
+- ✓ **共享上下文总线（Context Bus）**：蓝图容器经任务 token 绑定「会话→项目」作用域实时读写会话级上下文，写入即对并行容器可见；短等待有界轮询、长等待携 partial 产物退出并在条目就绪后自动重派续作，互等环被检测并抛澄清；有沉淀价值的条目可经 distill 进项目记忆 — v0.20.0 (BUS-01/02/03)
+- ✓ **蓝图查看器与知识库**：六段导航 + 结构化渲染（流程图 / 伪代码 / API 卡 / 影响矩阵）+ 状态徽标与阶段时间线实时进展；引用二级预览（知识实体 / 代码位置含源码正文与区间行高亮 / 其他蓝图 / 章程条目）；知识库「技术方案」tab 支持筛选搜索深链；蓝图↔项目↔知识互引成图谱边且反查可用；可导出飞书文档（含决策记录附录），未确认版本在界面与导出物上均带**结构上关不掉**的显式标注 — v0.20.0 (VIEW-01~05)
+- ✓ **蓝图质量基线**：golden set 与质量指标（引用覆盖率 / AI 打回率 / 人审修改量 / 澄清轮次 / 目标仓命中率）建立，首条 case 为「高三提分专项」真实用例，质量退化可被回归检出 — v0.20.0 (GATE-02)
+- ⚠️ **全入口统一走蓝图编排（PARTIAL）**：workflow / chat / MCP / feature list 四入口的蓝图可执行路径与 per-entry 运行时开关已交付、MCP 异步澄清协议全量交付；但**开关默认值仍为 `technical_plan`**，默认切换与三个入口的出口映射重做硬阻塞在同步点 2（v0.19.0 Phase 109/110 合并） — v0.20.0 (GATE-01)
 
-<!-- 本里程碑在建需求（KNOW/LOOP/AGENT/UNIFY 四类），定义见 .planning/REQUIREMENTS.md；完整调研分析见 .planning/knowledge-loop/MILESTONE-PROPOSAL.md。v0.15.0（PROJ 等 38 条）与 v0.16.x 系列均已交付，详见 MILESTONES.md 与 milestones/。以下 v0.15.0 需求清单为历史存档（已全部交付）。 -->
+### Active（v0.19.0 技术方案可信度 — 待分支合并后推进）
+
+<!-- 当前唯一在建需求集是 v0.19.0（RELY/ROUTE/SPINE/OBS 共 24 条，DEPTH-01~05 已迁入 v0.20.0 并由 blueprint/v1 原生满足），定义见 .planning/REQUIREMENTS.md。v0.15.0–v0.17.0 与 v0.20.0 的需求均已交付并归档，详见 MILESTONES.md 与 milestones/。以下 v0.15.0 需求清单为历史存档（已全部交付），保留仅作追溯。 -->
 
 **Phase 76 · 命名腾挪（RENAME）**
 - ☐ **RENAME-01**: 后端 `projects.Project` 重命名为 `Space`，数据零丢失，既有"空间"功能行为零回归
@@ -243,7 +271,8 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - **认证分层**：cookie-JWT（Web）与 friday_pat_ 前缀 PAT（程序化）经前缀闸门各走分支互不吞掉；MCP/工具 HTTP 入口为已认证信任边界（fail-closed）。
 - **Claude Code 与第三方模型**：Claude Code 强制要求 `anthropic` 类型凭证；`AnthropicCredentialSchema` 支持 `base_url` 覆盖兼容端点 → DeepSeek/MiMo/Kimi 以"anthropic 类型 + 自定义 base_url + 指定 model"接入。
 - **前端**：SPA 路由守卫在 `web/src/main.ts` + 各页 `definePage({ meta })`；认证状态在 `web/src/stores/auth.ts`。
-- **测试基线**：后端 ~520 个 `test_*.py`、前端 ~130 个 spec，覆盖较广；薄弱点在 Go runner、容器级 E2E 与个别安全路径（见 CONCERNS.md）。
+- **测试基线（v0.20.0 归档时实测）**：后端 **8986 passed / 1 failed**、前端 **1763 passed / 1 skipped**、`type-check` exit 0、`build` 通过、`makemigrations --check` = No changes detected。唯一失败是 `test_mcp_package_alignment`（`mcp` npm 包缺本里程碑新增的四个工具，跨仓改动）。薄弱点仍在 Go runner、容器级 E2E 与个别安全路径（见 CONCERNS.md）。
+- **已知平台级欠债（跨里程碑）**：`redact_secrets_in_text` 不覆盖数据库连接串（全仓 `redact_secrets_in_text(str(exc))` 调用点同口径）+ 全仓二十余处 `error=str(exc)` 未脱敏 ⇒ 需一个独立清理相位；`RepositoryPermission` 是「任意登录用户可读任意存在的仓库」而非仓库级 ACL。
 
 ## Constraints
 
@@ -305,6 +334,14 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 | 容器知识 MCP 走服务端 HTTP 工具面复用（PAT fail-closed），不直连 Qdrant/DB | 权限/排除文件/脱敏天然继承；env 三要素任一为空整体降级不挂（零回归） | — Pending（v0.17.0） |
 | 派发编码任务铸造任务级短 TTL token（明文不落盘、DB 只存 sha256、终态吊销），显式推翻 PATX-04 搁置 | "机会性 PAT"在 Chat 链与飞书触发 workflow 链拿不到明文 → 容器知识 MCP 三链路覆盖必须派生凭证；PAT-02 底线不破 | — Pending（v0.17.0，AGENT-01） |
 | 容器内置 skills 与 `@friday-ai-codes/skills` 包同源（镜像构建期 COPY + hash 一致性测试），禁止第二份手工物料 | 双源必然漂移；skills 与镜像同 repo 同 release 节奏，重建镜像可接受 | — Pending（v0.17.0，AGENT-03） |
+| 蓝图 canonical 落 `delivery.Artifact` + `ArtifactVersion.content`（`schema_version="blueprint/v1"`），markdown 与 `execution_plan` 都是确定性派生物 | 禁止双轨创作；旧 `MergedPlan` 降为隐式 v0 只读渲染，判别唯一收敛在 `builtin_types.py` 一个分支，未来 v2 只改该点 | ✓ Validated（v0.20.0，Phase 111） |
+| 蓝图流水线全走 `blueprint_*` 新文件，冻结既有 `technical_plan` process 六文件与 `repo_router_v2.py`，`ConvergenceSessionEvent` 既有契约只消费不修改 | 与 v0.19.0 双 worktree 并行开发的边界纪律（DESIGN §13.2）——零文件交集使两条线可同时推进，合并只剩 `.planning/` 三文件的机械冲突 | ✓ Validated（v0.20.0，全里程碑） |
+| 阶段 1 出口设**硬确认门**：用户确认仓库集与职责后才进入方案拟定，确认后锁定 | 选错仓是方案质量的头号系统性风险，且越到后面纠正越贵；确认门同时是章程学习闭环的数据来源（确认/改判/移除各自沉淀草案） | ✓ Validated（v0.20.0，Phase 112） |
+| 跨仓动态依赖走**会话级共享上下文总线**（token→会话→项目绑定 + 两档等待恢复 + 环检测），不靠 prompt 传递 | 并行容器之间的「A 仓等 B 仓接口契约」无法用一次性 prompt 表达；`stage_state` 只存 id/计数/小摘要（单字段 <2KB），正文由子代理自取 | ✓ Validated（v0.20.0，Phase 113） |
+| AI 审查超界是「待人审」而非「流程失败」；finding 处置只走 `resolve`/`dismiss`，⛔ 不走作答通道 | 打回 ≤2 轮后带未决项升人审，绝不落 FAILED；作答通道会把 BLOCKER 推到 `answered` 从而绕开 `reason` 必填与处置留痕，既解不开确认门又污染状态 | ✓ Validated（v0.20.0，Phase 114） |
+| 「AI 不覆盖人工」与「人不无声覆盖已确认内容」是对称的两道闸 | 前者靠回灌侧冲突检测 + 重装侧人工块还原两条链；后者靠 `EDITABLE_BLUEPRINT_STATUSES`——已 `confirmed` 及其后的状态要改必须先驳回再重走人审，否则确认锚定的内容会被事后掉包且无痕 | ✓ Validated（v0.20.0，Phase 114） |
+| 「未经确认」标注做成**结构上关不掉**的东西：必填 keyword-only 参数 + 闭合白名单 + 零布尔开关 | 默认开着的开关迟早会被关掉；唯一可机器验证的形式是 `inspect.signature` 断言，拿不到状态的注册表分支传 `""` 而空串不在白名单 ⇒ fail-safe 当作未确认 | ✓ Validated（v0.20.0，Phase 116，对齐 RELY-01 语义） |
+| 蓝图默认入口切换顺延同步点 2，且必须与三个入口的出口映射重做、三处触点升级、旧 process 退役**同批**做 | 语义前提而非排期：蓝图的 `DONE` 语义是「等人审」，而 `_map_terminal` 把 `DONE` 无条件映射成 completed 并喂给下游 `ai_coding` ⇒ 今天翻默认 = 未经人审的蓝图直送编码代理，正面违反 RELY-01。任何一件单独做都造成回退 | ⚠️ Revisit（v0.20.0 GATE-01 PARTIAL，阻塞于 v0.19.0 Phase 109/110 合并） |
 
 ## Evolution
 
@@ -324,4 +361,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-15 — start milestone v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）*
+*Last updated: 2026-08-02 after v0.20.0 milestone（技术方案蓝图，Phases 111–116，审计 tech_debt）。下一里程碑待 `milestone/v0.19.0-plan-trust` 合并后再立项。*
