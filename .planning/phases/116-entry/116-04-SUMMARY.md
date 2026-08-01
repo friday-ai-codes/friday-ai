@@ -2,6 +2,7 @@
 phase: 116-entry
 plan: 04
 subsystem: knowledge-graph + delivery-artifacts + blueprint-ui
+requirements: [VIEW-04]
 tags: [knowledge-graph, reverse-lookup, normalizer, edge-materialization, observability, view-04]
 requires: ["116-02"]
 provides:

@@ -2,6 +2,7 @@
 phase: 115-ui
 plan: 05
 subsystem: blueprint-section-rendering
+requirements: [VIEW-01, VIEW-02, VIEW-04]
 tags: [frontend, vue3, sections, cards, scope-narrowing, mutation-tested, i18n-gap]
 requires:
   - "115-03：`BlueprintBlockList.vue`（十一处块序列的唯一下游，props/emits 逐字照它）、`BlueprintCitationChip.vue`（关联段的引用 chip）、`SelectionPayload`（`import type` 复用，⛔ 未重写）"

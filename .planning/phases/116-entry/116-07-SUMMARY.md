@@ -2,6 +2,7 @@
 phase: 116-entry
 plan: 07
 subsystem: repo-source-read + citation-preview + mcp-contract
+requirements: [VIEW-02]
 tags: [view-02, fail-closed, existence-oracle, service-extraction, shared-implementation, observability, security]
 requires: ["116-06", "115-03"]
 provides:

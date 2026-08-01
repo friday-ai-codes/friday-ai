@@ -2,6 +2,7 @@
 phase: 115-ui
 plan: 03
 subsystem: blueprint-block-rendering-and-citation-preview
+requirements: [VIEW-01, VIEW-02, CLAR-01]
 tags: [frontend, vue3, annotations, selection, citation-preview, a11y, tanstack-query, degradation]
 requires:
   - "115-02 全部地基：`~/types/blueprint`、`~/utils/blueprintBlocks`（`blockText` / `iterBlocks`）、`~/utils/blueprintAnnotations`（`sliceBlockText` / `isValidAnchor` / `degradedThreadIds` / `anchorRangesForBlock` / `groupThreadsByBlock` / `rangeOffsets`）、`~/components/blueprint/annotationTokens`（`annotationClass` / `pickTopThread` / `MARK_BASE_CLASS`）、`~/api/blueprints`、`~/api/repositoryChunks`（`getChunkAt` 的 `usable`）、i18n `knowledge.blueprints.*`、safelist 12 图标"

@@ -2,6 +2,7 @@
 phase: 115-ui
 plan: 01
 subsystem: delivery-backend
+requirements: [VIEW-01, VIEW-03, VIEW-04, CLAR-01]
 tags: [rest, blueprint, read-api, project-scope, inv6, observability]
 requires:
   - "delivery.api.blueprint_review_views._aassert_project_scope / _aload_artifact / _aload_session / _thread_row / _ARTIFACT_MISSING_DETAIL（114-05，import 复用）"

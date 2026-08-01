@@ -2,6 +2,7 @@
 phase: 115-ui
 plan: 02
 subsystem: blueprint-frontend-foundation
+requirements: [VIEW-01, VIEW-02, VIEW-03, VIEW-04, CLAR-01, FLOW-08]
 tags: [frontend, vue3, tanstack-query, pure-functions, polling, i18n, source-guard, a11y]
 requires:
   - "115-01 五端点契约表（`types/blueprint.ts` 的字段逐字照它，含两处 UI-SPEC §3.3 订正）"

@@ -2,6 +2,7 @@
 phase: 116-entry
 plan: 02
 subsystem: process_runtime + delivery-artifacts
+requirements: [GATE-01]
 tags: [blueprint-intake, artifact-seed, project-scope, feature-points, observability, security]
 requires: ["116-01"]
 provides:
