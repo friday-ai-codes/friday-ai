@@ -25,7 +25,7 @@ import type { BlueprintBlock as BlueprintBlockModel, BlueprintThreadDetail, Cita
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { createI18n } from 'vue-i18n'
-import { annotationClass } from '~/components/blueprint/annotationTokens'
+import { annotationClass, MARK_BASE_CLASS } from '~/components/blueprint/annotationTokens'
 import BlueprintBlock from '~/components/blueprint/BlueprintBlock.vue'
 import BlueprintBlockList from '~/components/blueprint/BlueprintBlockList.vue'
 
@@ -234,6 +234,61 @@ describe('blueprintBlock.vue —— <mark> 切分与属性', () => {
     await wrapper.find(MARK).trigger('keydown.enter')
     await wrapper.find(MARK).trigger('keydown.space')
     expect(wrapper.emitted('thread-click')).toHaveLength(2)
+  })
+})
+
+describe('blueprintBlock.vue —— ⭐ 焦点环（UI-SPEC §18.3 / UI-REVIEW H-1）', () => {
+  /**
+   * happy-dom 无布局引擎 ⇒ ⛔ 不断言渲染几何，只断言类名与结构。
+   * 判据取「`outline-none` 抹掉默认环之后有没有 `focus-visible:` 变体接上」——
+   * 这正是 H-1 的缺陷形状：只抹不补，键盘用户看不见焦点落在哪一段划线上。
+   */
+  const FOCUS_OUTLINE = 'focus-visible:[outline:2px_solid_var(--color-primary-600)]'
+  const FOCUS_OFFSET = 'focus-visible:[outline-offset:2px]'
+
+  it('2e. ⭐ 令牌本身：四色 × 四处置态 × 选中态的每一种组合都带 focus-visible 焦点环', () => {
+    const combos = [
+      annotationClass('ai_review_finding', 'blocker', 'open', false),
+      annotationClass('ai_review_finding', 'warning', 'answered', true),
+      annotationClass('ai_clarification', '', 'open', true),
+      annotationClass('human_comment', '', 'resolved', false),
+      annotationClass('human_comment', '', 'dismissed', true),
+      MARK_BASE_CLASS,
+    ]
+    for (const cls of combos) {
+      expect(cls).toContain(FOCUS_OUTLINE)
+      expect(cls).toContain(FOCUS_OFFSET)
+      // 非恒真对照：默认环仍被压掉（⛔ 不能靠「把 outline-none 删掉」蒙混过关 ——
+      // 那样浏览器默认环与契约环会叠成两圈，且默认环本身不达 3:1）。
+      expect(cls).toContain('outline-none')
+    }
+  })
+
+  it('2f. ⭐ 正文 <mark>（paragraph / list / pseudocode 三种落点）都带焦点环', () => {
+    const blocks: BlueprintBlockModel[] = [
+      makeBlock(),
+      makeBlock({ type: 'list', text: ['第一条目', '第二条目'] }),
+      makeBlock({ type: 'pseudocode', text: null, code: { language: 'python', source: 'def main():' } }),
+    ]
+    for (const block of blocks) {
+      const wrapper = mountBlock({
+        block,
+        threads: [makeThread({ anchor: { block_id: 'b1', start_offset: 0, end_offset: 3 } })],
+      })
+      const mark = wrapper.find(MARK)
+      expect(mark.exists()).toBe(true)
+      expect(mark.attributes('class')).toContain(FOCUS_OUTLINE)
+    }
+  })
+
+  it('2g. ⭐ 整块降级角标（可聚焦 <button>）同样带焦点环', () => {
+    const wrapper = mountBlock({
+      block: makeBlock(),
+      threads: [makeThread({ anchor: { block_id: 'b1', start_offset: 0, end_offset: 999 } })],
+    })
+    const badge = wrapper.find('[data-testid="blueprint-block-degraded"]')
+    expect(badge.exists()).toBe(true)
+    expect(badge.attributes('class')).toContain(FOCUS_OUTLINE)
   })
 })
 

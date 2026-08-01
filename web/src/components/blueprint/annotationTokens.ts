@@ -1,5 +1,6 @@
 /**
- * 批注视觉令牌（Phase 115，UI-SPEC §7.5 的**唯一来源**）。
+ * 批注视觉令牌（Phase 115，UI-SPEC §7.5 的**唯一来源**）；另含 §18.3 的焦点环令牌
+ * `FOCUS_RING_CLASS`（本相位新增可聚焦目标共用一份，⛔ 不在各组件里各写一串）。
  *
  * 形状照 `~/components/knowledge/artifactDisplay.ts`：模块级 `Record` 常量 + 查表函数。
  * ⛔ **批注相关组件内不得再写任何颜色字面量** —— 四色相 × 四处置态 × 选中态的全部组合都
@@ -113,8 +114,20 @@ export function annotationHue(kind: string, severity: string): AnnotationHue {
   return 'info'
 }
 
+/**
+ * 本相位**新增可聚焦目标**的统一焦点环（UI-SPEC §18.3 逐字：`outline: 2px solid
+ * var(--color-primary-600); outline-offset: 2px`，不透明 teal-600，实算 3.74:1 ✓）。
+ *
+ * ⛔ **不得复制既有 `.btn:focus-visible` 的 50% 透明 teal-500**（白底合成后仅 1.59:1，
+ * 未过 WCAG 2.4.11）—— 既有面本相位不修，但新增面不许沿用那个值。
+ *
+ * ⚠️ `outline-none` 必须留在串内：`<mark>` 等元素要压掉浏览器默认环，否则焦点态会叠出两圈。
+ * 压掉之后**必须**有 `focus-visible:` 变体接上，否则键盘用户完全看不到焦点落在哪里。
+ */
+export const FOCUS_RING_CLASS = 'outline-none focus-visible:[outline:2px_solid_var(--color-primary-600)] focus-visible:[outline-offset:2px]'
+
 /** 与批注无关的共享形态（⚠️ 刻意不含任何 `bg-*`，见文件头 docstring）。 */
-const MARK_SHAPE_CLASS = 'text-foreground rounded-sm cursor-pointer align-baseline outline-none'
+const MARK_SHAPE_CLASS = `text-foreground rounded-sm cursor-pointer align-baseline ${FOCUS_RING_CLASS}`
 
 /**
  * `<mark>` 的独立重置类（含黄底重置），供**不经 `annotationClass()`** 的场景使用
