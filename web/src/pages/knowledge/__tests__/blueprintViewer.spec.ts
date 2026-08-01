@@ -28,6 +28,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import { ApiError } from '~/api/client'
 import BlueprintViewerPage from '~/pages/knowledge/blueprints/[id].vue'
+import { useBlueprintViewerStore } from '~/stores/useBlueprintViewerStore'
 import { annotationCounts, sidebarGroups } from '~/utils/blueprintAnnotations'
 
 const ARTIFACT_ID = '11111111-1111-1111-1111-111111111111'
@@ -38,6 +39,7 @@ const {
   toastMocks,
   api,
   timelineApi,
+  media,
 } = vi.hoisted(() => ({
   routeState: {
     params: { id: '11111111-1111-1111-1111-111111111111' } as Record<string, string>,
@@ -66,7 +68,26 @@ const {
     createBlueprintComment: vi.fn(),
   },
   timelineApi: { getArtifactTimeline: vi.fn() },
+  /**
+   * ⭐ `useMediaQuery` 的可控替身（UI-REVIEW H-2）。
+   *
+   * happy-dom 无布局引擎 ⇒ ⛔ 不能靠改视口驱动断点，只能把 `matches` 直接握在手里。
+   * `queries` 记下调用实参，用来把断点字面量钉死在 `xl`（写成 `lg` / `2xl` 即转红）。
+   */
+  media: { matches: false, queries: [] as string[] },
 }))
+
+vi.mock('@vueuse/core', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  const { ref } = await import('vue')
+  return {
+    ...actual,
+    useMediaQuery: (query: string) => {
+      media.queries.push(query)
+      return ref(media.matches)
+    },
+  }
+})
 
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
@@ -190,7 +211,8 @@ const STUBS = {
   DecisionLogSection: true,
   BlueprintAssociationsSection: true,
   ScrollArea: { template: '<div><slot /></div>' },
-  Sheet: { template: '<div><slot /></div>' },
+  // ⭐ 抽屉按 `open` 真实挂载/卸载（reka-ui 的行为）——恒渲染的桩会让「侧栏实例恰好一份」失真。
+  Sheet: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   SheetContent: { template: '<div><slot /></div>' },
   SheetHeader: { template: '<div><slot /></div>' },
   SheetTitle: { template: '<div><slot /></div>' },
@@ -262,6 +284,9 @@ const flush = () => new Promise(resolve => setTimeout(resolve, 60))
 beforeEach(() => {
   vi.clearAllMocks()
   routeState.query = {}
+  // 默认窄屏：与既有用例的断言基线一致（抽屉在 DOM 里）。
+  media.matches = false
+  media.queries = []
   localStorage.clear()
   timelineApi.getArtifactTimeline.mockResolvedValue({ versions: [] })
   api.getBlueprintDocument.mockResolvedValue(makeDoc())
@@ -498,5 +523,71 @@ describe('蓝图查看器 —— 失效 ?version= 的恢复路径（MN-02）', (
     const { wrapper } = mountPage()
     await flush()
     expect(wrapper.find('[data-testid="blueprint-error-back-to-current"]').exists()).toBe(false)
+  })
+})
+
+/**
+ * ⭐ UI-REVIEW H-2 回归：`Sheet` 的 `xl` 断点闸。
+ *
+ * 缺陷形状：常驻侧栏是 `hidden xl:flex`，而抽屉此前**没有任何断点类**，四条程序化路径
+ * （选区发起评论 / 确认门 409 解药 / approve 409 清单跳转 / `?thread=` 深链）又都无条件
+ * 把它置真 ⇒ ≥1280px 下两处**同时**渲染同一个 `BlueprintThreadSidebar`，草稿输入框出现
+ * 两份，而 `draftBody` 是各自组件实例的局部 ref。
+ *
+ * ⚠️ happy-dom 无布局引擎 ⇒ ⛔ 不断言渲染几何。「任一宽度下侧栏恰好一份」由两条**互补**
+ * 断言表达：常驻侧栏带 `hidden`+`xl:flex`（<xl 不可见）、抽屉在 ≥xl **不存在于 DOM**。
+ */
+describe('蓝图查看器 —— 线程侧栏的 xl 断点闸（H-2）', () => {
+  const SIDEBAR = '[data-testid="thread-sidebar-stub"]'
+  const SIDEBAR_COLUMN = '[data-testid="blueprint-sidebar-column"]'
+
+  it('18. ⭐ 断点字面量就是 xl（1280px），⛔ 不是 lg / 2xl', async () => {
+    mountPage()
+    await flush()
+    expect(media.queries).toContain('(min-width: 1280px)')
+  })
+
+  it('19. ⭐ 常驻侧栏用 hidden + xl:flex 互补闸（<xl 一律不可见）', async () => {
+    const { wrapper } = mountPage()
+    await flush()
+    const column = wrapper.find(SIDEBAR_COLUMN)
+    expect(column.exists()).toBe(true)
+    expect(column.classes()).toContain('hidden')
+    expect(column.classes()).toContain('xl:flex')
+  })
+
+  it('20. ⭐ 宽屏 + ?thread= 深链 ⇒ 侧栏实例恰好一份（抽屉不进 DOM）', async () => {
+    media.matches = true
+    routeState.query = { thread: 'th-1' }
+    const { wrapper } = mountPage()
+    await flush()
+    expect(wrapper.findAll(SIDEBAR)).toHaveLength(1)
+    expect(wrapper.find(SIDEBAR_COLUMN).exists()).toBe(true)
+  })
+
+  it('21. ⭐ 宽屏下深链走的是「展开常驻侧栏」而不是「开抽屉」（折叠态被强制展开）', async () => {
+    media.matches = true
+    routeState.query = { thread: 'th-1' }
+    const { wrapper } = mountPage()
+    const store = useBlueprintViewerStore()
+    store.sidebarCollapsed = true
+    await flush()
+    expect(store.sidebarCollapsed).toBe(false)
+    expect(wrapper.findAll(SIDEBAR)).toHaveLength(1)
+  })
+
+  it('22. 非恒真对照：窄屏同一条深链 ⇒ 抽屉照常打开（⛔ 没把功能整个关掉）', async () => {
+    media.matches = false
+    routeState.query = { thread: 'th-1' }
+    const { wrapper } = mountPage()
+    await flush()
+    expect(wrapper.find('[data-testid="blueprint-sidebar-sheet"]').exists()).toBe(true)
+  })
+
+  it('23. 非恒真对照：窄屏未触发任何路径 ⇒ 抽屉不自己弹出来', async () => {
+    const { wrapper } = mountPage()
+    await flush()
+    expect(wrapper.find('[data-testid="blueprint-sidebar-sheet"]').exists()).toBe(false)
+    expect(wrapper.findAll(SIDEBAR)).toHaveLength(1)
   })
 })
