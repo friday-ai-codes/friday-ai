@@ -36,6 +36,27 @@ def _safe_log(event: str, **fields: Any) -> None:
         pass
 
 
+def _technical_plan_retired() -> bool:
+    """旧 technical_plan process 是否已标记退役（同步点 2 收尾）。
+
+    ⭐ 读注册表 ``ProcessDefinition.config`` 而不是在本模块复制第二份标记 ——
+    标记的唯一定义点是 ``builtin_processes.TECHNICAL_PLAN_RETIREMENT``。
+
+    用途只有一个：让 :data:`technical_plan_entry_used` 这条残余流量事件**自带语义**。
+    翻默认之后，落到旧链的每一次调用都是「显式 override 或在途会话续驱」而不是默认，
+    日志里带上这一位，聚合的人不必回去翻代码才知道该怎么读这个读数。
+
+    ⛔ 观测 best-effort：任何异常回 ``False``，绝不反噬建会话。
+    """
+    try:
+        from services.process_runtime.registry import get_process_definition
+
+        definition = get_process_definition("technical_plan")
+        return bool((getattr(definition, "config", None) or {}).get("retired"))
+    except Exception:  # noqa: BLE001 — 观测 best-effort
+        return False
+
+
 def _no_clarify(session: Any) -> tuple[bool, str, list]:
     """no-clarify policy（MCP 单次同步入口注入）：恒判不需澄清，编排直通调研。"""
     return False, "", []
@@ -112,6 +133,9 @@ async def start_orchestration(
     # 旧链退役观察（116-01）：落在 start_orchestration 内部是**唯一**能覆盖全部四个入口
     # 且不碰六个冻结文件的位置（四入口全经它建会话）；⛔ 不在四个入口各打一条（会漏
     # plan_deepen 那类非入口调用方，也会四份漂移）。分桶键是 entry_key 不是 entrypoint。
+    #
+    # ⭐ 同步点 2 收尾起 ``process_retired`` 恒为真：默认已翻到 technical_blueprint ⇒
+    # 走到这里的每一次都是**显式 override 或在途会话续驱**，不再是任何入口的默认。
     _safe_log(
         "technical_plan_entry_used",
         category="caller",
@@ -120,6 +144,7 @@ async def start_orchestration(
         entrypoint=str(entrypoint or ""),
         initiated_by_user_id=str(initiated_by_user_id or "system"),
         session_id=str(getattr(session, "id", "")),
+        process_retired=_technical_plan_retired(),
     )
     return session
 
