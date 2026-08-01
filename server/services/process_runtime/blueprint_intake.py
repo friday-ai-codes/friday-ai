@@ -335,9 +335,9 @@ async def aseed_blueprint_artifact(
 
     三件产出缺一不可：
 
-    1. ``Artifact(artifact_type="technical_plan")`` 经 ``ArtifactService.create`` 建成
-       —— ⛔ **不是那条「加版本」方法**：此刻 artifact 还不存在，``create`` 自己建
-       Artifact + v1 并置 ``current_version``（``artifact_service.py:53-84`` /
+    1. 一条 ``artifact_type = "technical_plan"`` 的交付物经 ``ArtifactService.create``
+       建成 —— ⛔ **不是那条「加版本」方法**：此刻 artifact 还不存在，``create`` 自己建
+       交付物行 + v1 并置 ``current_version``（``artifact_service.py:53-84`` /
        ``:105-115``）。
     2. ``blueprint_status`` 经 ``BlueprintLifecycleService.transition`` 跳到
        ``researching``（状态机入口边只有 ``"" → researching``；形状逐字照
