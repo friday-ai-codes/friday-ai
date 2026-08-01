@@ -133,6 +133,20 @@ describe('blueprint 源码守卫', () => {
     ).toEqual([])
   })
 
+  it('§14 / UI-REVIEW M-6：Heading 档是 text-base，扫描面内零 `text-sm font-semibold`', () => {
+    const found = violations(/text-sm[\w\-[\]/.%]*\s+font-semibold|font-semibold[\w\-[\]/.%]*\s+text-sm/)
+    expect(
+      found,
+      [
+        'UI-SPEC §14 的四档表里 Heading（段标题、卡片标题、面板标题）= `text-base font-semibold`（16px），',
+        'Body = `text-sm`（14px）。写成 `text-sm font-semibold` 会让标题与正文**同号**，',
+        '段与段的边界只剩字重一个维度，长页面的扫读成本明显上升（UI-REVIEW M-6 实测 21 处）。',
+        '怎么修：标题元素改 `text-base font-semibold`；`text-[11px]` / mono / Label 档不动。',
+        `命中：\n${found.join('\n')}`,
+      ].join('\n'),
+    ).toEqual([])
+  })
+
   it('t-115-13：扫描面内零 v-html（批注/正文/quote 是半可信文本）', () => {
     const found = violations(/v-html/)
     expect(

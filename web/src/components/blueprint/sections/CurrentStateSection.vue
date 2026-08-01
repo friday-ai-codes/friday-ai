@@ -118,7 +118,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
       >
         <div class="flex items-center gap-2 border-b border-border/50 px-5 py-3.5">
           <span class="icon-[lucide--folder-git-2] text-primary" aria-hidden="true" />
-          <h3 class="text-sm font-semibold">
+          <h3 class="text-base font-semibold">
             {{ repoLabel(group.repository_id) }}
           </h3>
           <Badge variant="muted">
@@ -157,7 +157,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
               <Badge :variant="kindVariant(finding.kind)" :data-kind="finding.kind">
                 {{ kindLabel(finding.kind) }}
               </Badge>
-              <h4 v-if="finding.topic" class="text-sm font-semibold">
+              <h4 v-if="finding.topic" class="text-base font-semibold">
                 {{ finding.topic }}
               </h4>
               <!-- ⭐ 缺引用是质量信号，⛔ 不隐藏 -->

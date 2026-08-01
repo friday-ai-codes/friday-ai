@@ -145,7 +145,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
           data-testid="blueprint-impl-module"
           :data-module-id="mod.id ?? ''"
         >
-          <h4 class="text-sm font-semibold">
+          <h4 class="text-base font-semibold">
             {{ mod.name || mod.id || '—' }}
           </h4>
 

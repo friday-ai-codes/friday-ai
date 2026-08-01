@@ -161,7 +161,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
       </span>
 
       <span v-if="contract.path" class="min-w-0 flex-1 truncate font-mono text-xs">{{ contract.path }}</span>
-      <span v-else class="min-w-0 flex-1 truncate text-sm font-semibold">{{ contract.name }}</span>
+      <span v-else class="min-w-0 flex-1 truncate text-base font-semibold">{{ contract.name }}</span>
 
       <span v-if="repoName || contract.repository_id" class="shrink-0 text-[11px] text-muted-foreground">
         {{ repoName || contract.repository_id }}

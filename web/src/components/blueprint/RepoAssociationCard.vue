@@ -163,7 +163,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
         {{ association.role }}
       </Badge>
 
-      <span class="text-sm font-semibold flex-1 min-w-0 truncate">{{ repoLabel }}</span>
+      <span class="text-base font-semibold flex-1 min-w-0 truncate">{{ repoLabel }}</span>
 
       <Badge v-if="verdictMeta" :variant="verdictMeta.variant" :data-verdict="verdict">
         {{ t(`knowledge.blueprints.repo.${verdictMeta.labelKey}`) }}

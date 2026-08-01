@@ -50,7 +50,7 @@ const updatedAt = computed(() => {
   >
     <div class="flex items-start gap-2">
       <BlueprintStatusBadge :status="item.current_status" size="sm" class="mt-0.5 shrink-0" />
-      <h3 class="line-clamp-2 min-w-0 flex-1 text-sm font-semibold leading-snug">
+      <h3 class="line-clamp-2 min-w-0 flex-1 text-base font-semibold leading-snug">
         {{ item.title }}
       </h3>
     </div>

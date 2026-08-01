@@ -1069,7 +1069,7 @@ const sections = computed<NavSection[]>(() => [
             <!-- ⭐⭐ 十个段容器：无条件渲染、id 为静态字面量、长度恒为 10（P-4）。
                  骨架 / 进度 / 实渲 / 空态三态全部发生在容器内部。 -->
             <section id="requirement_spec" :class="sectionClass('requirement_spec')" data-testid="blueprint-section-requirement-spec">
-              <h2 class="text-sm font-semibold">
+              <h2 class="text-base font-semibold">
                 {{ labelOf('requirementSpec') }}
               </h2>
               <template v-if="!isDiffMode">
@@ -1096,7 +1096,7 @@ const sections = computed<NavSection[]>(() => [
             </section>
 
             <section id="repo_associations" :class="sectionClass('repo_associations')" data-testid="blueprint-section-repo-associations">
-              <h2 class="text-sm font-semibold">
+              <h2 class="text-base font-semibold">
                 {{ labelOf('repoAssociations') }}
               </h2>
               <template v-if="!isDiffMode">
@@ -1124,7 +1124,7 @@ const sections = computed<NavSection[]>(() => [
             </section>
 
             <section id="current_state_analysis" :class="sectionClass('current_state_analysis')" data-testid="blueprint-section-current-state">
-              <h2 class="text-sm font-semibold">
+              <h2 class="text-base font-semibold">
                 {{ labelOf('currentStateAnalysis') }}
               </h2>
               <template v-if="!isDiffMode">
@@ -1153,7 +1153,7 @@ const sections = computed<NavSection[]>(() => [
             </section>
 
             <section id="implementation_overview" :class="sectionClass('implementation_overview')" data-testid="blueprint-section-implementation-overview">
-              <h2 class="text-sm font-semibold">
+              <h2 class="text-base font-semibold">
                 {{ labelOf('implementationOverview') }}
               </h2>
               <template v-if="!isDiffMode">
@@ -1182,7 +1182,7 @@ const sections = computed<NavSection[]>(() => [
             </section>
 
             <section id="api_contracts" :class="sectionClass('api_contracts')" data-testid="blueprint-section-api-contracts">
-              <h2 class="text-sm font-semibold">
+              <h2 class="text-base font-semibold">
                 {{ labelOf('apiContracts') }}
               </h2>
               <template v-if="!isDiffMode">
@@ -1210,7 +1210,7 @@ const sections = computed<NavSection[]>(() => [
             </section>
 
             <section id="impact_analysis" :class="sectionClass('impact_analysis')" data-testid="blueprint-section-impact-analysis">
-              <h2 class="text-sm font-semibold">
+              <h2 class="text-base font-semibold">
                 {{ labelOf('impactAnalysis') }}
               </h2>
               <template v-if="!isDiffMode">
@@ -1238,7 +1238,7 @@ const sections = computed<NavSection[]>(() => [
             </section>
 
             <section id="interaction_flows" :class="sectionClass('interaction_flows')" data-testid="blueprint-section-interaction-flows">
-              <h2 class="text-sm font-semibold">
+              <h2 class="text-base font-semibold">
                 {{ labelOf('interactionFlows') }}
               </h2>
               <template v-if="!isDiffMode">
@@ -1267,7 +1267,7 @@ const sections = computed<NavSection[]>(() => [
 
             <!-- ⭐ must_haves / decision_log / associations 三段不收 blockCtx（零 block_id 可锚） -->
             <section id="must_haves" :class="sectionClass('must_haves')" data-testid="blueprint-section-must-haves">
-              <h2 class="text-sm font-semibold">
+              <h2 class="text-base font-semibold">
                 {{ labelOf('mustHaves') }}
               </h2>
               <template v-if="!isDiffMode">
@@ -1282,7 +1282,7 @@ const sections = computed<NavSection[]>(() => [
             </section>
 
             <section id="decision_log" :class="sectionClass('decision_log')" data-testid="blueprint-section-decision-log">
-              <h2 class="text-sm font-semibold">
+              <h2 class="text-base font-semibold">
                 {{ labelOf('decisionLog') }}
               </h2>
               <template v-if="!isDiffMode">
@@ -1302,7 +1302,7 @@ const sections = computed<NavSection[]>(() => [
             </section>
 
             <section id="associations" :class="sectionClass('associations')" data-testid="blueprint-section-associations">
-              <h2 class="text-sm font-semibold">
+              <h2 class="text-base font-semibold">
                 {{ labelOf('associations') }}
               </h2>
               <template v-if="!isDiffMode">
