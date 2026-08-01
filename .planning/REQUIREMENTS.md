@@ -49,6 +49,9 @@
 - [x] **CLAR-01**：AI 可对蓝图任意位置发起飞书文档式划线提问（带候选选项），用户在查看器中看到划线高亮并可多轮回复；人也可对任意选区主动发起评论
 - [x] **CLAR-02**：澄清答案回灌产生新版本，线程置 resolved 并物化进决策记录；版本变更后批注按 block 重锚定，失锚线程集中可见、不静默丢失
 - [x] **CLAR-03**：人类可直接编辑蓝图内容（block 级），编辑生成新版本、归属可审计；人工编辑不被 AI 覆盖，冲突时 AI 必须开线程询问
+  - ⚠️ **里程碑审计一度把本条打回缺口（`gaps_found` 的唯一决定性依据）**：后两个分句由 Phase 114 完全交付，但**首句是一条用户能力**，而它在产品面**不可达** —— 后端 `POST .../blueprint-review/edit-blocks/` 已路由并实现，`web/src/api/blueprints.ts` 却无对应函数、`web/src/` 零消费方，且 115 留了一条**主动阻止**该入口出现的源码守卫。缺口精确落在 114（只验后端）与 115（需求清单不含 CLAR-03）两个相位验证范围的**夹缝**里，六份 VERIFICATION 结构性地看不见它。
+  - ✅ **CLAR-03 closure 已闭（2026-08-02）**：选审计 §11 的**路径 (a) 补面**（⛔ 不是路径 (b) 收窄措辞）—— 需求文本一字未改，改的是实现。交付三件、**后端零改动**：① `blueprints.ts` 补 `editBlueprintBlocks` 与三个类型（对齐 `apply_block_ops` 的 op 契约）；② 查看器 block 编辑面（选区浮层「编辑此块」→ `BlueprintBlockEditDialog` → 端点；`applied` / `unchanged` / `400 rejected|invalid` 三档分档，其中 `block_not_found` 单独判为**冲突态**并给刷新出口）；③ 115 那条守卫的自相矛盾注释统一到单一立场并**反转**（现钉「端点路径字面量只许出现在 api 层」，另补一条**正向**断言防该能力被静默删回去）。可达性由 `canEditBlueprintBlock` 收口，白名单成员与后端 `EDITABLE_BLUEPRINT_STATUSES` 逐字对齐 ⇒ **已 `confirmed` 的蓝图拿不到编辑入口**（要改先驳回）。证据与 commit 见 `v0.20.0-MILESTONE-AUDIT.md` §13。
+  - ⏭ **两处刻意收窄（登记，非缺口）**：`insert`（新增块）后端支持而 UI 不给入口 —— 那是「扩写蓝图」而非需求文本说的「编辑内容」，且要前端发明 `block_id` 与落位语义；`table` 块不给编辑入口 —— 其文本坐标系是「单元格扁平后 `\n` 连接」，单框文本编辑压平行列后无法还原成 `rows`（与 115 对 table 强制整块批注的处置同源）。
 - [x] **CLAR-04**：澄清无人应答保持显式 pending——可提醒、可随时作答恢复；不自动作答、不判失败、绝不无声卡死
 
 ### BUS — 共享上下文总线
@@ -128,7 +131,7 @@
 | BUS-03 | Phase 113 分仓方案与融合 + Context Bus | Complete（113-06：distill 管道产项目记忆草案，人工 confirm 生效） |
 | FLOW-07 | Phase 114 审查与澄清收敛 | Complete |
 | CLAR-02 | Phase 114 审查与澄清收敛 | Complete |
-| CLAR-03 | Phase 114 审查与澄清收敛 | Complete |
+| CLAR-03 | Phase 114 审查与澄清收敛（后端）+ CLAR-03 closure（前端 block 编辑面） | Complete（114-04/05：`aapply_block_edit` 落 `human_edit:{user_id}` 版本 + `detect_human_conflicts` 与 `arestore_human_blocks` 两条保护链；⭐ **closure 相位补上首句的用户能力** —— 里程碑审计实测「后端齐备而产品面不可达」并打回缺口，现已交付查看器 block 编辑面，需求措辞一字未改，详见 `v0.20.0-MILESTONE-AUDIT.md` §13） |
 | CLAR-04 | Phase 114 审查与澄清收敛 | Complete |
 | VIEW-01 | Phase 115 前端查看器与知识库 | Complete（115-01 后端供数面 `blueprint-document` / `blueprint-events`；115-02+ 交付 `BlueprintViewer` 六段导航、结构化渲染（流程图 / 伪代码 / API 卡 / 影响矩阵）、状态徽标与阶段时间线；相位 verification 107/107） |
 | VIEW-02 | Phase 115 前端查看器与知识库（降级形态）+ Phase 116 `116-07`（源码正文与行高亮） | **Complete**（115 交付路径 + 行号区间 + 引用快照；⭐ 116-07 补上 `GET /repositories/<id>/file-lines/` 源码正文读面并把 `CitationCodePreview` 升级为真正的代码预览 —— 正文 + 行号列 + citation 区间行高亮，取不到正文回落快照。该 plan **已执行**，「若顺延须改写顺延目标」的逃生条款由此自然消解） |
