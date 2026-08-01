@@ -39,7 +39,14 @@ import type { BlueprintCommentDraft } from '~/components/blueprint/BlueprintThre
 import type { BlueprintVersionEntry } from '~/components/blueprint/BlueprintVersionSwitcher.vue'
 import type { NavSection } from '~/components/layout/AnchorNavLayout.vue'
 import type { BlueprintThreadKindFilter } from '~/stores/useBlueprintViewerStore'
-import type { BlueprintAnchor, BlueprintThreadDetail, Citation } from '~/types/blueprint'
+import type {
+  BlueprintAnchor,
+  BlueprintBlock,
+  BlueprintBlockEditRejection,
+  BlueprintBlockOp,
+  BlueprintThreadDetail,
+  Citation,
+} from '~/types/blueprint'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useMediaQuery } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
@@ -49,9 +56,11 @@ import { useRoute, useRouter } from 'vue-router'
 import blueprintsApi from '~/api/blueprints'
 import { ApiError } from '~/api/client'
 import deliveryArtifactsApi from '~/api/deliveryArtifacts'
+import { canEditBlueprintBlock } from '~/components/blueprint/blockEditOps'
 import BlueprintAssociationsSection from '~/components/blueprint/BlueprintAssociationsSection.vue'
 import BlueprintBlockDiff from '~/components/blueprint/BlueprintBlockDiff.vue'
 import BlueprintBlockedDialog from '~/components/blueprint/BlueprintBlockedDialog.vue'
+import BlueprintBlockEditDialog from '~/components/blueprint/BlueprintBlockEditDialog.vue'
 import BlueprintErrorState from '~/components/blueprint/BlueprintErrorState.vue'
 import BlueprintGatePanel from '~/components/blueprint/BlueprintGatePanel.vue'
 import BlueprintQualityPanel from '~/components/blueprint/BlueprintQualityPanel.vue'
@@ -84,6 +93,7 @@ import { useToast } from '~/composables/useToast'
 import { isBlueprintEditable } from '~/config/blueprintStatus'
 import { useBlueprintViewerStore } from '~/stores/useBlueprintViewerStore'
 import { isUnresolvedBlocker } from '~/utils/blueprintAnnotations'
+import { iterBlocks } from '~/utils/blueprintBlocks'
 
 /** ⭐ 跨段跳转与深链滚动的偏移常量，与 `AnchorNavLayout.scrollTo` 的 88 逐字一致（T-115-58）。 */
 const SCROLL_OFFSET = 88
@@ -858,6 +868,99 @@ async function onCreateComment(body: string, payload: BlueprintCommentDraft | nu
   }
 }
 
+// ── block 级人工编辑（CLAR-03 闭环相位）─────────────────────────────────────────
+
+const editOpen = ref(false)
+const editingBlockId = ref('')
+const editErrorDetail = ref('')
+const editRejected = ref<BlueprintBlockEditRejection[]>([])
+const editConflict = ref(false)
+
+/** 在**当前正文**里按 `block_id` 反查块；查不到返回 `null`（版本已推进 / 块已被删）。 */
+function findBlock(blockId: string): BlueprintBlock | null {
+  if (!blockId)
+    return null
+  return iterBlocks(content.value).find(item => item.block.block_id === blockId)?.block ?? null
+}
+
+const selectedBlock = computed(() => findBlock(selection.value?.blockId ?? ''))
+const editingBlock = computed(() => findBlock(editingBlockId.value))
+
+/**
+ * ⭐ 编辑入口的可达性闸 —— 判据整体下沉到 `canEditBlueprintBlock`（那份纯函数的三个条件与
+ * 上面 `readonly` 的三个条件逐条同构）。为假时「编辑此块」**不存在于 DOM**（§7.9 的
+ * 「不渲染而非 disabled」，与终审两按钮的 `disabled` 形态刻意不同），而 115 已有的
+ * `blueprint-readonly-notice` 只读提示条照常渲染 —— 不可编辑状态下的交代由它承担。
+ */
+const canEditSelection = computed(
+  () => canEditBlueprintBlock(currentStatus.value, selectedBlock.value, {
+    historicalVersion: isHistoricalVersion.value,
+    diffMode: isDiffMode.value,
+  }),
+)
+
+function startBlockEdit(): void {
+  const blockId = selection.value?.blockId ?? ''
+  selection.value = null
+  if (!blockId)
+    return
+  editingBlockId.value = blockId
+  editErrorDetail.value = ''
+  editRejected.value = []
+  editConflict.value = false
+  editOpen.value = true
+}
+
+/** 冲突态的唯一解药：丢掉这次编辑，拿最新正文重来。 */
+function onBlockEditRefresh(): void {
+  editOpen.value = false
+  editConflict.value = false
+  invalidateBlueprint()
+}
+
+/**
+ * 提交 block 编辑。
+ *
+ * 三档：**200 applied** 落新版本（`human_edit:` 归属）；**200 unchanged** 同 hash 未翻版本
+ * （提示语气，⛔ 不当失败）；**400** 就近回显在弹窗里，其中 `rejected` 含 `block_not_found`
+ * 的那一档单独判为**冲突**（基线已被推进），给刷新出口。
+ *
+ * ⛔ 400 时**不关窗**：关掉等于把用户刚写的正文一并丢掉，而这一档恰恰是最需要让人看清
+ * 「哪一条没被应用」的时候。
+ */
+async function onBlockEditSubmit(ops: BlueprintBlockOp[]): Promise<void> {
+  if (submitting.value)
+    return
+  submitting.value = true
+  editErrorDetail.value = ''
+  editRejected.value = []
+  try {
+    const result = await blueprintsApi.editBlueprintBlocks(artifactId.value, { ops })
+    editOpen.value = false
+    if (String(result.status) === 'unchanged')
+      toast.info(t('knowledge.blueprints.edit.unchanged'))
+    else
+      toast.success(t('knowledge.blueprints.edit.applied', { version_no: result.version_no }))
+    invalidateBlueprint()
+  }
+  catch (error) {
+    if (error instanceof ApiError && error.status === 400) {
+      const body = (error.body ?? {}) as Record<string, unknown>
+      const rejected = Array.isArray(body.rejected)
+        ? (body.rejected as BlueprintBlockEditRejection[])
+        : []
+      editRejected.value = rejected
+      editConflict.value = rejected.some(item => String(item?.reason) === 'block_not_found')
+      editErrorDetail.value = editConflict.value ? '' : (error.detail ?? '')
+      return
+    }
+    reportFailure(error)
+  }
+  finally {
+    submitting.value = false
+  }
+}
+
 function onKindFiltersChange(kinds: string[]): void {
   viewerStore.kindFilters = kinds as BlueprintThreadKindFilter[]
 }
@@ -1423,9 +1526,22 @@ const sections = computed<NavSection[]>(() => [
       <BlueprintSelectionPopover
         :rect="selection?.rect ?? null"
         :can-comment="!readonly"
+        :can-edit="canEditSelection"
         @comment="startDraft()"
+        @edit="startBlockEdit()"
         @copy="copySelection()"
         @dismiss="selection = null"
+      />
+
+      <BlueprintBlockEditDialog
+        v-model:open="editOpen"
+        :block="editingBlock"
+        :submitting="submitting"
+        :error-detail="editErrorDetail"
+        :rejected="editRejected"
+        :conflict="editConflict"
+        @submit="onBlockEditSubmit"
+        @refresh="onBlockEditRefresh()"
       />
 
       <BlueprintRejectDialog
