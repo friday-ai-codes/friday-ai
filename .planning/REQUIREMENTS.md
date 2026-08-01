@@ -72,7 +72,7 @@
 
 ### GATE — 入口与质量
 
-- [x] **GATE-01**（**PARTIAL @ Phase 116 —— 116 已全部完成，本条已按实际交付复核；默认切换顺延同步点 2 之后的独立工作项**）：workflow / chat / MCP / feature list 全入口统一走蓝图编排；MCP 入口支持异步澄清协议（返回 pending、可作答、可续取结果），不再跳过澄清
+- [ ] **GATE-01**（**PARTIAL @ Phase 116 —— 116 已全部完成，本条已按实际交付复核；默认切换顺延同步点 2 之后的独立工作项**）：workflow / chat / MCP / feature list 全入口统一走蓝图编排；MCP 入口支持异步澄清协议（返回 pending、可作答、可续取结果），不再跳过澄清
   - ✅ **Phase 116 实际交付（已复核，与下列计划逐条相符）**：蓝图 intake（建 artifact + seed `blueprint/v1` 骨架 + 功能点拆分接线）+ `build_engine_for_session` 按 `process_type` 分派 engine **与 driver** + 六个续驱点全部改造 + 四个入口**各自的蓝图实现路径**与 per-entry 运行时开关（`SettingKeys.BLUEPRINT_ENTRY_SWITCH`）+ feature list 的 `feature_segments → feature_points` 映射 + chat 两条断链修复（健康挂起不再被报成失败 / barrier 回灌）+ 旧链残余流量可观测（`technical_plan_entry_used` 按独立 `entry_key` 分桶）；**MCP 异步澄清协议全量交付**（两个新工具 + `create_feishu_technical_plan` 追加三键与 `status=partial` + assumptions 三档 + 飞书卡片送达）。
   - ⏭ **仍缺：顺延同步点 2 之后的独立工作项（⛔ 不属于任何已完成 plan，Phase 116 已全部完成且未做）**：**把开关默认值翻成 `technical_blueprint`**、旧 `technical_plan`「不再是任何入口默认」的收口、`TechPlanCard` / `NodeDataTab` / `ArtifactTimeline` 三处触点升级、workflow 节点终态由「`DONE` → completed」改为「`confirmed` → completed / `pending_review` → `waiting_event` 人审 HITL 挂起」。⭐ **顺延的是语义前提不是保守**：蓝图 stage graph 的 `ai_review.review_passed → STAGE_DONE` 时 `blueprint_status = pending_review`，即蓝图会话的 `DONE` 语义是「等人审」；而 `AIPlanResearchNode._map_terminal` 把 `DONE` 无条件映射成 completed 并把 plan 喂给下游 `human_approval(plan_feishu)` / `ai_coding` ⇒ 现在翻默认 = 让下游拿着**未经人审的蓝图**去建分支写代码，正面违反 RELY-01。该挂起态的下游消费形态（execution 投影）归 v0.19.0 Phase 109。
 - [x] **GATE-02**：蓝图 golden set 与质量指标基线建立（引用覆盖率 / AI 打回率 / 人审修改量 / 澄清轮次 / 目标仓命中率，首条 golden case 为高三提分专项），质量退化可被回归检出
