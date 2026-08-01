@@ -334,7 +334,49 @@ describe('annotationCounts —— 侧栏三个计数', () => {
       unresolvedBlocker: 1,
       pendingClarification: 1,
       orphaned: 1,
+      total: 3,
     })
+  })
+
+  /**
+   * ⭐ UI-REVIEW M-1：`total` 是**四组之和**，⛔ 不是三个语义计数相加。
+   *
+   * 三个语义计数口径不正交（`unresolvedBlocker` 含失锚、`pendingClarification` 排除失锚），
+   * 相加会**重复计数**失锚的未决 blocker，又**漏计**人工评论 / 已作答 / 已关闭线程。
+   */
+  it('⭐ total == 四组之和：既不重复计失锚 blocker，也不漏计已作答/已关闭/人工评论', () => {
+    const orphanedBlocker = thread({
+      thread_id: 'ob',
+      kind: 'ai_review_finding',
+      severity: 'blocker',
+      status: 'open',
+      anchor_status: 'orphaned',
+    })
+    const list = [
+      orphanedBlocker,
+      thread({ thread_id: 'hc', kind: 'human_comment', status: 'open' }),
+      thread({ thread_id: 'an', kind: 'ai_clarification', status: 'answered' }),
+      thread({ thread_id: 'rs', kind: 'ai_review_finding', severity: 'warning', status: 'resolved' }),
+    ]
+    const groups = sidebarGroups(list, [orphanedBlocker])
+    const result = annotationCounts(groups, list)
+
+    // 四条线程 ⇒ 总数就是 4（每条恰好落进一组）。
+    expect(result.total).toBe(4)
+    // 非恒真对照：老口径（三者相加）会算成 1 + 0 + 1 = 2 —— 与 4 不同才证明这条断言有效。
+    expect(result.unresolvedBlocker + result.pendingClarification + result.orphaned).not.toBe(result.total)
+  })
+
+  it('⭐ total 与侧栏四组条目数逐一对齐（四组互斥且穷尽）', () => {
+    const list = [
+      thread({ thread_id: 'a', status: 'open' }),
+      thread({ thread_id: 'b', status: 'answered' }),
+      thread({ thread_id: 'c', status: 'dismissed' }),
+    ]
+    const groups = sidebarGroups(list)
+    const sum = groups.open.length + groups.answered.length + groups.closed.length + groups.orphaned.length
+    expect(annotationCounts(groups, list).total).toBe(sum)
+    expect(annotationCounts(groups, list).total).toBe(list.length)
   })
 })
 

@@ -49,8 +49,16 @@ import BlueprintVersionSwitcher from './BlueprintVersionSwitcher.vue'
 const props = withDefaults(defineProps<{
   /** 当前展示的正文（含 `meta.title`）；首屏加载时为 `null` ⇒ 标题位出骨架条。 */
   doc?: BlueprintDocumentResponse | null
-  /** 三个计数：未决 BLOCKER / 待澄清 / 失锚。 */
+  /** 三个语义计数：未决 BLOCKER / 待澄清 / 失锚。 */
   counts?: { blocker: number, clarification: number, orphaned: number }
+  /**
+   * 批注**总数**（窄屏「批注 {n}」按钮用）。
+   *
+   * ⭐ 由页面按侧栏四组之和算出（`annotationCounts().total`）。
+   * ⛔ **不得**在本组件里用上面三个语义计数相加冒充 —— 它们口径不正交：失锚的未决 blocker
+   * 会被数两次，而人工评论 / 已作答 / 已关闭线程一条都数不到（UI-REVIEW M-1）。
+   */
+  annotationTotal?: number
   versions?: BlueprintVersionEntry[]
   currentVersionId?: string | null
   /** 只读模式（不可编辑状态 / 历史版本 / diff 视图）⇒ 终审操作区整块不渲染。 */
@@ -69,6 +77,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   doc: null,
   counts: () => ({ blocker: 0, clarification: 0, orphaned: 0 }),
+  annotationTotal: 0,
   versions: () => [],
   currentVersionId: null,
   readonly: false,
@@ -140,11 +149,6 @@ const countBadges = computed(() => {
   }
   return rows
 })
-
-/** 侧栏里可见的批注总数（窄屏按钮的计数，同样 0 时只显示「批注」）。 */
-const annotationTotal = computed(
-  () => props.counts.blocker + props.counts.clarification + props.counts.orphaned,
-)
 
 const sidebarToggleLabel = computed(() =>
   props.sidebarCollapsed

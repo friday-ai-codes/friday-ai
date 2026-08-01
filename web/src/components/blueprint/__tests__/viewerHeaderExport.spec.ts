@@ -184,3 +184,48 @@ describe('飞书导出按钮', () => {
     expect(component).not.toContain('getBlueprintExportAvailability')
   })
 })
+
+/**
+ * ⭐ UI-REVIEW M-1 回归：「批注 {n}」的 n 取页面传入的 `annotationTotal`，
+ * ⛔ **不是**三个语义计数相加。
+ *
+ * 三者口径不正交：`blocker` 含失锚、`clarification` 已排除失锚 ⇒ 相加会重复计数失锚的
+ * 未决 blocker，同时把人工评论 / 已作答 / 已关闭线程一条不落地漏掉。
+ */
+describe('窄屏「批注 {n}」按钮的计数口径（M-1）', () => {
+  const OPEN_BUTTON = '[data-testid="blueprint-header-open-annotations"]'
+
+  it('⭐ 显示的是 annotationTotal，⛔ 不是三个语义计数之和', () => {
+    const wrapper = mountHeader({
+      counts: { blocker: 1, clarification: 1, orphaned: 1 },
+      annotationTotal: 7,
+    })
+    expect(wrapper.find(OPEN_BUTTON).text()).toContain('批注 7')
+    // 非恒真对照：老实现会显示 3。
+    expect(wrapper.find(OPEN_BUTTON).text()).not.toContain('批注 3')
+  })
+
+  it('⭐ 三个语义计数全为 0 但仍有批注（人工评论 / 已关闭）⇒ 按钮照常报数', () => {
+    const wrapper = mountHeader({
+      counts: { blocker: 0, clarification: 0, orphaned: 0 },
+      annotationTotal: 4,
+    })
+    expect(wrapper.find(OPEN_BUTTON).text()).toContain('批注 4')
+  })
+
+  it('总数为 0 ⇒ 只显示「批注」（§16：不显示 0）', () => {
+    const wrapper = mountHeader({
+      counts: { blocker: 3, clarification: 0, orphaned: 0 },
+      annotationTotal: 0,
+    })
+    expect(wrapper.find(OPEN_BUTTON).text().trim()).toBe('批注')
+  })
+
+  it('⛔ 组件源码里不再自算总数（防后人把三者相加塞回来）', () => {
+    const component = readFileSync(
+      resolve(process.cwd(), 'src/components/blueprint/BlueprintViewerHeader.vue'),
+      'utf8',
+    )
+    expect(component).not.toContain('counts.blocker + ')
+  })
+})

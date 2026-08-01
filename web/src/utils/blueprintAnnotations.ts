@@ -298,9 +298,16 @@ export function isUnresolvedBlocker(thread: BlueprintThreadDetail | null | undef
 }
 
 /**
- * 侧栏顶部的三个计数（未决 BLOCKER / 待澄清 / 失锚）。
+ * 侧栏顶部的三个语义计数（未决 BLOCKER / 待澄清 / 失锚）+ 一个批注总数。
  *
- * @param groups 侧栏四组（`pendingClarification` / `orphaned` 是**呈现维度**，按组算）。
+ * ⭐ **`total` 与三个语义计数不是同一维度，⛔ 不能拿三者相加冒充它**（UI-REVIEW M-1）。
+ * 三者的口径彼此**不正交**：`unresolvedBlocker` 刻意作用在全量线程上（含失锚），
+ * `pendingClarification` 取 `groups.open`（已排除失锚），`orphaned` 取失锚组 ⇒ 一条 open
+ * 的失锚 blocker 被数**两次**，而 open 的人工评论、全部 `answered`、全部已关闭线程
+ * **一次都不数**。顶栏「批注 {n}」要的是「侧栏里一共有几条」，那就是**四组之和**
+ * —— 四组互斥且穷尽（§20 断言 11 已把这条钉死），加起来天然无重复无遗漏。
+ *
+ * @param groups 侧栏四组（`pendingClarification` / `orphaned` / `total` 是**呈现维度**，按组算）。
  * @param threads 全量线程 —— `unresolvedBlocker` 必须在 `anchored` 过滤**之前**算。
  */
 export function annotationCounts(
@@ -310,12 +317,14 @@ export function annotationCounts(
   unresolvedBlocker: number
   pendingClarification: number
   orphaned: number
+  total: number
 } {
   const list = Array.isArray(threads) ? threads : []
   return {
     unresolvedBlocker: list.filter(isUnresolvedBlocker).length,
     pendingClarification: groups.open.filter(thread => thread.kind === 'ai_clarification').length,
     orphaned: groups.orphaned.length,
+    total: groups.open.length + groups.answered.length + groups.closed.length + groups.orphaned.length,
   }
 }
 
