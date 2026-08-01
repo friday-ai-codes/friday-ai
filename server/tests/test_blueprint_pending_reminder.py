@@ -346,6 +346,99 @@ def test_reminder_falls_back_to_default_hours_when_config_is_broken(monkeypatch)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 7. ⭐ 周期送达（CLAR-04 的另一半：到期真的推卡片，且同周期内不重推）
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# 114-05 的周期任务此前只写 `last_reminded_at` 锚点、不做任何投递 —— 「按配置周期提醒」
+# 只兑现了「记账」那一半，用户收不到任何通知。116-06 建了送达唯一收口
+# （`blueprint_notify`）但只接了「规格门开线程时的首次送达」，周期这条一直悬着。
+# 下面四条把「到期会推 / 同周期不重推 / 一份蓝图一张卡 / 送达失败不反噬」钉住。
+
+
+def _patch_notify(monkeypatch) -> AsyncMock:
+    """替换送达收口（`_anotify_reminder_cards` 是函数体内 import ⇒ patch 模块属性即生效）。"""
+    sent = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        "services.process_runtime.blueprint_notify.anotify_blueprint_clarification", sent
+    )
+    return sent
+
+
+def test_overdue_thread_actually_pushes_a_clarification_card(monkeypatch) -> None:
+    """⭐ (a) 到期 ⇒ 真的调送达收口，且题面就是线程首条消息的正文。
+
+    ⛔ 这条不是「断言计数为 1」那种可被空实现满足的形状：它断言送达收口**被调用**、
+    收到的 artifact 是本蓝图、questions 里带着真实题面 —— 回退掉接线这一步即转红。
+    """
+    sent = _patch_notify(monkeypatch)
+    artifact = _make_artifact()
+    thread = _open_thread(artifact)
+    _age(thread, 25)
+
+    assert _remind(hours=24)["reminded"] == 1
+
+    assert sent.await_count == 1
+    kwargs = sent.await_args.kwargs
+    assert str(kwargs["artifact"].id) == str(artifact.id)
+    assert [q["text"] for q in kwargs["questions"]] == ["该接口的鉴权走哪套？"]
+
+
+def test_card_is_not_pushed_again_within_the_same_period(monkeypatch) -> None:
+    """⭐ (b) 同周期内不重推；推进一个周期后又推（证明断言非恒真）。
+
+    防轰炸的依据是锚点，而锚点在**送达之前**写回 ⇒ 第二次 tick 该线程根本不进 due，
+    自然也不发第二张卡。最后那段把时间推进 25h 是必须的：没有它，「不重推」这条断言
+    对一个「永远不推」的空实现同样成立。
+    """
+    sent = _patch_notify(monkeypatch)
+    artifact = _make_artifact()
+    thread = _open_thread(artifact)
+    _age(thread, 25)
+
+    assert _remind(hours=24)["reminded"] == 1
+    assert sent.await_count == 1
+
+    # 同一周期内再跑一次 tick：不到期 ⇒ 不重推
+    assert _remind(hours=24) == {"scanned": 1, "due": 0, "reminded": 0, "skipped": 1}
+    assert sent.await_count == 1
+
+    # 推进一个完整周期 ⇒ 又推一次（⇒ 上一条断言不是恒真）
+    assert _remind(hours=24, now=timezone.now() + timedelta(hours=25))["reminded"] == 1
+    assert sent.await_count == 2
+
+
+def test_multiple_due_threads_on_one_blueprint_push_a_single_card(monkeypatch) -> None:
+    """⭐ 一份蓝图上同时到期三条线程只推**一张**卡（N 张卡本身就是重复轰炸）。"""
+    sent = _patch_notify(monkeypatch)
+    artifact = _make_artifact()
+    for thread in [_open_thread(artifact) for _ in range(3)]:
+        _age(thread, 25)
+
+    assert _remind(hours=24)["reminded"] == 3
+
+    assert sent.await_count == 1
+    # 三条题面合并进同一张卡，⛔ 不是丢掉两条
+    assert len(sent.await_args.kwargs["questions"]) == 3
+
+
+def test_delivery_failure_never_rolls_back_the_reminder(monkeypatch) -> None:
+    """⭐ 送达 best-effort：发卡炸了不改四键计数、不回滚锚点、不上抛。
+
+    锚点已落 = 本周期已提醒过 ⇒ 一次 IM 抖动不该让同一批线程每个 tick 重发一次。
+    """
+    monkeypatch.setattr(
+        "services.process_runtime.blueprint_notify.anotify_blueprint_clarification",
+        AsyncMock(side_effect=RuntimeError("飞书炸了")),
+    )
+    artifact = _make_artifact()
+    thread = _open_thread(artifact)
+    _age(thread, 25)
+
+    assert _remind(hours=24) == {"scanned": 1, "due": 1, "reminded": 1, "skipped": 0}
+    assert _fresh(thread).last_reminded_at is not None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 6. 挂载点（源码扫描 + 直调 wrapper；⚠️ 绝不启动真 scheduler）
 # ═══════════════════════════════════════════════════════════════════════════
 

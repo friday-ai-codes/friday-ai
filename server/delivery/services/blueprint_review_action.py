@@ -36,9 +36,13 @@
     ``_DEFAULT_REMINDER_HOURS``）；到期锚点是 ``thread.last_reminded_at or
     thread.created_at``，提醒后写回 ``last_reminded_at`` ⇒ **同周期内不重复轰炸**。
     执行路径挂**既有 apscheduler** 的 ``remind_blueprint_clarifications`` job
-    （⛔ 不新起 cron / systemd timer / 第二个 scheduler 进程）。本模块只产提醒对象名单、
-    记 ``caller`` 日志、写周期锚点；实际渠道投递（飞书卡片重推 / 站内通知）由 115/116
-    的通知面消费，本相位不新建推送通道、不新增事件常量。
+    （⛔ 不新起 cron / systemd timer / 第二个 scheduler 进程）。本模块产提醒对象名单、
+    记 ``caller`` 日志、写周期锚点，并在**锚点写回成功之后**把到期题面交给
+    ``services.process_runtime.blueprint_notify`` 这一个送达收口重推飞书卡片
+    （116-06 落地了「首次送达」，本处补上「周期重推」——CLAR-04 的另一半）。
+    ⛔ 本模块不自建推送通道、不拼卡片、不新增事件常量：同步点 1 换 107 的送达设施时
+    仍然只改 ``blueprint_notify`` 那一个文件。⭐ **送达一律按 artifact 分组**（一份蓝图
+    上同时到期 N 条线程只推一张卡，N 张卡本身就是「重复轰炸」）。
 
 观测：日志只记 ``artifact_id`` / ``thread_id`` / 计数 / ``duration_ms`` 等标量与关联键，
 **评论正文、处置理由正文、澄清问题正文一律不进日志**（T-114-36）；异常文本走
@@ -697,6 +701,96 @@ def _write_reminder_anchors(rows: list, now: Any) -> None:
     BlueprintThread.objects.bulk_update(rows, ["last_reminded_at", "updated_at"])
 
 
+@sync_to_async
+def _first_message_bodies(thread_ids: list) -> dict[str, str]:
+    """到期线程的首条消息正文（一次查询批量取，键为线程 id 字符串）。
+
+    澄清题正文落在 ``BlueprintThreadMessage`` 的首条 AI 消息里（``open_thread`` 与线程行
+    同事务写入），``BlueprintThread`` 本身**没有 question 列** ⇒ 周期重推要拿到题面只能
+    回查它。显式 ``order_by`` 后 ``setdefault`` 取到的即每条线程最早那条消息。
+    """
+    from delivery.models import BlueprintThreadMessage
+
+    bodies: dict[str, str] = {}
+    rows = (
+        BlueprintThreadMessage.objects.filter(thread_id__in=thread_ids)
+        .order_by("thread_id", "created_at")
+        .values_list("thread_id", "body")
+    )
+    for thread_id, body in rows:
+        bodies.setdefault(str(thread_id), str(body or ""))
+    return bodies
+
+
+def _reminder_questions(thread: Any, body: str) -> list[dict[str, Any]]:
+    """把一条到期线程还原成送达用的澄清题列表（纯函数，恒不抛）。
+
+    规格门开线程时把整份 ``questions``（``{text, options, citations}``）**原样**存进
+    ``BlueprintThread.options``（``blueprint_spec_gate._open_clarification`` 的
+    ``options=questions``）⇒ 优先用它，题面与候选选项一并带上。其它来源的线程
+    （确认门 / 无结构化选项的澄清）回落首条消息正文，至少让人知道被问的是什么；
+    两者都取不到就返回空列表（送达侧据此早退并留痕，⛔ 不推一张空卡）。
+    """
+    options = thread.options if isinstance(thread.options, list) else []
+    rows = [
+        item
+        for item in options
+        if isinstance(item, dict) and str(item.get("text") or item.get("question") or "").strip()
+    ]
+    if rows:
+        return rows
+    text = str(body or "").strip()
+    return [{"text": text}] if text else []
+
+
+async def _anotify_reminder_cards(due_rows: list, *, initiated_by_user_id: str) -> int:
+    """把到期线程按蓝图分组重推一次澄清卡片，返回进入送达的蓝图数。
+
+    ⭐ **必须在锚点写回成功之后调用**：送达是体验项，而 ``last_reminded_at`` 是
+    「同周期不重复轰炸」的唯一依据 —— 反过来先发卡再写锚点，一次 IM 抖动就会让同一批
+    线程每个 tick 重发一次，把防轰炸这条不变量直接废掉。
+    ⭐ **按 artifact 分组**：一份蓝图上同时到期 N 条线程只推**一张**卡。
+    整段 best-effort（送达收口自身已恒不抛，这里再包一层兜住取题面的意外）：
+    送达失败绝不反噬提醒计数、绝不打断 scheduler 主循环。
+    """
+    from services.process_runtime.blueprint_notify import anotify_blueprint_clarification
+
+    try:
+        bodies = await _first_message_bodies([row.id for row in due_rows])
+    except Exception:  # noqa: BLE001 — 取不到题面就只用 options，绝不影响提醒
+        bodies = {}
+
+    grouped: dict[str, tuple[Any, list[dict[str, Any]]]] = {}
+    for row in due_rows:
+        questions = _reminder_questions(row, bodies.get(str(row.id), ""))
+        if not questions:
+            continue
+        key = str(row.artifact_id)
+        if key not in grouped:
+            grouped[key] = (row.artifact, [])
+        grouped[key][1].extend(questions)
+
+    notified = 0
+    for artifact, questions in grouped.values():
+        try:
+            await anotify_blueprint_clarification(
+                artifact=artifact,
+                questions=questions,
+                initiated_by_user_id=initiated_by_user_id,
+            )
+            notified += 1
+        except Exception as exc:  # noqa: BLE001 — 送达 best-effort，绝不反噬提醒
+            logger.warning(
+                "blueprint_clarification_remind_notify_failed",
+                category="sampling",
+                component=_COMPONENT,
+                artifact_id=str(getattr(artifact, "id", "")),
+                initiated_by_user_id=initiated_by_user_id or "system",
+                error=_detail(exc),
+            )
+    return notified
+
+
 async def aremind_clarification_threads(
     *,
     hours: int | None = None,
@@ -715,6 +809,9 @@ async def aremind_clarification_threads(
       ``blueprint_clarification_reminded`` 事件都在 ``_write_reminder_anchors`` **成功之后**
       才落。写回失败时 ``due`` 如实保留、``reminded`` 归零、一条事件都不发——否则运维看到
       「本轮提醒了 N 条」，实际是「一条锚点都没落、下一轮再提醒同样这 N 条」（114-MN-04）。
+    - ⭐ **锚点写回之后按 artifact 分组重推一张飞书卡片**（CLAR-04 的送达半边）：走
+      ``blueprint_notify`` 这一个送达收口，整段 best-effort ⇒ 发卡失败不改四键计数、
+      不回滚锚点（锚点已落 = 本周期已提醒过，下一周期才会再推，防轰炸不变量不受影响）。
     - ``hours`` 形参优先，缺省读配置；``now`` 形参**只为可测**（测试注入推进后的时间，
       不 monkeypatch 全局 ``timezone.now``）。
     - ⛔ **不自动作答、不改蓝图状态、不判失败、不新建线程**：本函数除
@@ -724,6 +821,8 @@ async def aremind_clarification_threads(
     """
     started = time.monotonic()
     counts = {"scanned": 0, "due": 0, "reminded": 0, "skipped": 0}
+    # ⛔ 只进日志，不进返回值：四键是对外契约（调度壳与用例都按恒定四键断言）
+    notified_artifacts = 0
     try:
         window = timedelta(hours=hours if hours and hours > 0 else await _aload_reminder_hours())
         moment = now or timezone.now()
@@ -772,6 +871,10 @@ async def aremind_clarification_threads(
                     hours=int(window.total_seconds() // 3600),
                     initiated_by_user_id=initiated_by_user_id or "system",
                 )
+            # ⭐ 送达在锚点写回**之后**（顺序不可换，理由见 `_anotify_reminder_cards`）
+            notified_artifacts = await _anotify_reminder_cards(
+                due_rows, initiated_by_user_id=initiated_by_user_id or "system"
+            )
     except Exception as exc:  # noqa: BLE001 — 提醒整体 best-effort，绝不上抛
         logger.warning(
             "blueprint_clarification_remind_failed",
@@ -788,6 +891,7 @@ async def aremind_clarification_threads(
         component=_COMPONENT,
         initiated_by_user_id=initiated_by_user_id or "system",
         duration_ms=round((time.monotonic() - started) * 1000, 2),
+        notified_artifacts=notified_artifacts,
         **counts,
     )
     return counts
