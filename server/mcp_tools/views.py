@@ -4503,8 +4503,14 @@ class GetTechnicalBlueprintView(McpToolView):
     按 ``artifact_id`` 取蓝图当前状态 + 六段摘要 + markdown + 待澄清清单，**终稿续取
     即用它**（MCP 调用方拿到 ``status="partial"`` 之后轮询本工具取件）。
 
-    五道兜底绝不绕过：
+    六道兜底绝不绕过：
 
+    - ⭐ **``schema_version`` 判别**（116-REVIEW MN-06）：非 ``blueprint/v1`` 的 content
+      （旧链 merge 产出的 v0 ``technical_plan``，``architect_merge_adapter`` 仍在生产）
+      走**与「artifact 不存在」逐字相同**的 404 —— 该 artifact 对本工具而言确实不存在。
+      ⛔ 无条件走蓝图渲染器会回一份「十段全 ``—``、``sections`` 全空、还带未确认水印」的
+      空蓝图，agent 没有任何字段能分辨「这不是蓝图」。⛔ 也不回 ``is_blueprint: false``
+      之类的新键：那会给出一个「这个 id 存在但不是蓝图」的存在性差分。
     - **项目范围闸 fail-closed**：import 复用
       ``blueprint_review_views._aassert_project_scope`` 的**同源实现**（⛔ 不造第四份）
       —— 非成员**中性 404**（与「artifact 不存在」逐字相同，不泄露存在性），读不到
@@ -4563,6 +4569,34 @@ class GetTechnicalBlueprintView(McpToolView):
                 return _blueprint_scope_error(denied)
 
             content = await _alatest_content(artifact)
+            # ⭐ 116-REVIEW MN-06：``schema_version`` 判别 —— ``delivery.Artifact`` 里同时住着
+            # 旧链 merge 产出的 v0 ``technical_plan`` content（``architect_merge_adapter``
+            # 仍在生产）。⛔ 无条件走蓝图渲染器会让 v0 content 的每一段都 ``.get`` 取不到
+            # ⇒ 十段全是 ``—``、``sections`` 六段全空，外加一行「⚠️ 未经确认」：一份**看起来
+            # 渲染成功、实则一无所有**的方案，且 agent 没有任何字段能分辨「这不是蓝图」。
+            # 仓内另外两个渲染入口（``builtin_types`` / ``artifact_serializers``）都先判别
+            # 再分派，本处补齐同款。判别常量与渲染器**同源懒 import**（MN-10：⛔ 不复制
+            # ``"blueprint/v1"`` 字面量，漏改一处就让新版蓝图静默走错分支）。
+            #
+            # ⛔ 回**与「artifact 不存在」逐字相同**的 404：该 artifact 对本工具而言确实不
+            # 存在。⛔ 绝不回 ``is_blueprint: false`` 之类的新键 —— 那会给出一个「这个 id
+            # 存在但不是蓝图」的存在性差分。
+            from services.process_runtime.blueprint_schema import BLUEPRINT_SCHEMA_VERSION
+
+            if content.get("schema_version") != BLUEPRINT_SCHEMA_VERSION:
+                logger.info(
+                    "get_technical_blueprint_not_a_blueprint",
+                    category="sampling",
+                    component="mcp_tools",
+                    artifact_id=artifact_id,
+                    # ⛔ 只记有无与长度，不记 content 任何正文
+                    has_schema_version=bool(content.get("schema_version")),
+                )
+                return error_response(
+                    "not_found",
+                    str(_ARTIFACT_MISSING_DETAIL.get("detail") or ""),
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
             session = await _aload_session(artifact_id)
             version_no = await _alatest_version_no(artifact_id)
             current_status = str(getattr(artifact, "blueprint_status", "") or "")
