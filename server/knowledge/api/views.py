@@ -49,6 +49,33 @@ def _parse_as_of_param(request) -> tuple[object | None, Response | None]:
         return None, Response({"detail": str(exc)}, status=400)
 
 
+def _parse_relations_param(request) -> tuple[list[str] | None, Response | None]:
+    """解析可选 ``?relations=A,B``（Phase 116 VIEW-04）。
+
+    逐项按 ``EdgeRelation.values`` 白名单校验，任一非法即整体 **400**（与
+    ``direction`` 的校验同形）。⭐ 不传 / 传空串一律返回 ``None``——下游
+    ``fetch_related_entities`` 的 ``rels = relations or list(_DEFAULT_RELATIONS)``
+    据此保持既有默认遍历集，既有调用面行为逐字不变。
+
+    ⛔ 不在这里把 ``REFERENCES`` 塞进默认集：``_DEFAULT_RELATIONS`` 是实体详情页
+    的既有默认面，改它等于给所有页面凭空多出一批引用邻居（行为回归）。
+    """
+    from knowledge.models import EdgeRelation
+
+    raw = request.query_params.get("relations") or ""
+    if not raw:
+        return None, None
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    allowed = set(EdgeRelation.values)
+    invalid = [p for p in parts if p not in allowed]
+    if invalid:
+        return None, Response(
+            {"detail": f"relations must be a subset of: {', '.join(sorted(allowed))}"},
+            status=400,
+        )
+    return (parts or None), None
+
+
 async def _entity_visible_metadata(entity_id: uuid.UUID, *, user, as_of=None, include_superseded=False):
     try:
         entity = await KnowledgeEntity.objects.aget(id=entity_id)
@@ -163,6 +190,12 @@ class KnowledgeRelatedView(APIView):
         max_hops = _parse_int_param(request.query_params.get("max_hops"), 2, "max_hops")
         if isinstance(max_hops, Response):
             return max_hops
+        # Phase 116 VIEW-04：可选 ``?relations=A,B`` 缩/换遍历关系集（白名单校验与上面
+        # direction 同形）。⭐ 不传时保持 None ⇒ 下游 ``rels = relations or
+        # list(_DEFAULT_RELATIONS)`` 行为逐字不变（既有实体详情页零回归）。
+        relations, err = _parse_relations_param(request)
+        if err is not None:
+            return err
         meta = await _entity_visible_metadata(entity_id, user=request.user, as_of=as_of)
         if meta is None:
             return Response({"detail": "实体不存在或无权访问"}, status=404)
@@ -171,6 +204,7 @@ class KnowledgeRelatedView(APIView):
             user=request.user,
             direction=direction,
             max_hops=max_hops,
+            relations=relations,
             as_of=as_of,
         )
         return Response(serialize_related(related))
