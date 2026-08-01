@@ -26,6 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from asgiref.sync import sync_to_async
+from structlog.testing import capture_logs
 
 from delivery.models import ConvergenceSession, ConvergenceSessionEntrypoint
 from delivery.services import ArtifactService
@@ -253,13 +254,19 @@ async def test_group_resolution_failure_never_propagates(monkeypatch) -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def _skips(cap: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [e for e in cap if e["event"] == "blueprint_clarification_card_skipped"]
+
+
 async def test_empty_questions_short_circuits(monkeypatch) -> None:
     seams = _Seams(monkeypatch)
     artifact = await _make_artifact()
 
-    await anotify_blueprint_clarification(artifact=artifact, questions=[])
+    with capture_logs() as cap:
+        await anotify_blueprint_clarification(artifact=artifact, questions=[])
 
     seams.send_card.assert_not_awaited()
+    assert [e["reason"] for e in _skips(cap)] == ["no_questions"]
 
 
 async def test_blank_question_text_is_dropped_and_short_circuits(monkeypatch) -> None:
@@ -267,9 +274,11 @@ async def test_blank_question_text_is_dropped_and_short_circuits(monkeypatch) ->
     await _make_project()
     artifact = await _make_artifact()
 
-    await anotify_blueprint_clarification(artifact=artifact, questions=[{"text": "   "}])
+    with capture_logs() as cap:
+        await anotify_blueprint_clarification(artifact=artifact, questions=[{"text": "   "}])
 
     seams.send_card.assert_not_awaited()
+    assert [e["reason"] for e in _skips(cap)] == ["no_questions"]
 
 
 async def test_unresolvable_project_short_circuits(monkeypatch) -> None:
@@ -277,9 +286,11 @@ async def test_unresolvable_project_short_circuits(monkeypatch) -> None:
     seams = _Seams(monkeypatch)
     artifact = await _make_artifact(project_id="66666666-6666-6666-6666-666666666666")
 
-    await anotify_blueprint_clarification(artifact=artifact, questions=_QUESTIONS)
+    with capture_logs() as cap:
+        await anotify_blueprint_clarification(artifact=artifact, questions=_QUESTIONS)
 
     seams.send_card.assert_not_awaited()
+    assert [e["reason"] for e in _skips(cap)] == ["no_project"]
 
 
 async def test_no_recipients_short_circuits(monkeypatch) -> None:
@@ -288,9 +299,123 @@ async def test_no_recipients_short_circuits(monkeypatch) -> None:
     await _make_project()
     artifact = await _make_artifact()
 
-    await anotify_blueprint_clarification(artifact=artifact, questions=_QUESTIONS)
+    with capture_logs() as cap:
+        await anotify_blueprint_clarification(artifact=artifact, questions=_QUESTIONS)
 
     seams.send_card.assert_not_awaited()
+    assert [e["reason"] for e in _skips(cap)] == ["no_recipients"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 5b. ⭐ 早退不等于不留痕（116-REVIEW MN-03）
+#
+# 回退前五条早退全是裸 `return`：卡片没发出去时日志里既看不到
+# `blueprint_clarification_card_sent`，也看不到任何失败记录 —— 运维只能靠「没有 sent
+# 事件」反推，而那与「本来就没开澄清」完全同形。这五条恰恰是生产上最可能命中的。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def test_empty_chat_id_leaves_a_trace(monkeypatch) -> None:
+    """⭐ ``resolve_or_create_group`` 回空 chat_id（项目没建飞书群）⇒ 必须留痕。"""
+    seams = _Seams(monkeypatch, chat_id="")
+    await _make_project()
+    artifact = await _make_artifact()
+    user = await _make_user("notify-initiator")
+    await _make_session(artifact, user)
+
+    with capture_logs() as cap:
+        await anotify_blueprint_clarification(artifact=artifact, questions=_QUESTIONS)
+
+    seams.send_card.assert_not_awaited()
+    skipped = _skips(cap)
+    assert [e["reason"] for e in skipped] == ["no_chat_id"]
+    assert skipped[0]["recipient_count"] == 1
+
+
+async def test_missing_space_leaves_a_trace(monkeypatch) -> None:
+    """project 有但 ``project.space`` 为空 ⇒ 留痕 ``no_space``。"""
+    from unittest.mock import Mock
+
+    seams = _Seams(monkeypatch)
+    artifact = await _make_artifact()
+    monkeypatch.setattr(
+        "services.process_runtime.blueprint_notify._aresolve_project_from_artifact",
+        AsyncMock(return_value=Mock(space=None)),
+    )
+
+    with capture_logs() as cap:
+        await anotify_blueprint_clarification(artifact=artifact, questions=_QUESTIONS)
+
+    seams.send_card.assert_not_awaited()
+    assert [e["reason"] for e in _skips(cap)] == ["no_space"]
+
+
+async def test_every_skip_trace_is_sampling_and_scalar_only(monkeypatch) -> None:
+    """⛔ 留痕仍只记标量：``reason`` / id / 计数 —— 题面正文一个字都不进日志。"""
+    seams = _Seams(monkeypatch)
+    await _make_project()
+    artifact = await _make_artifact()
+
+    with capture_logs() as cap:
+        await anotify_blueprint_clarification(
+            artifact=artifact, questions=[{"text": f"密钥 {_SECRET} 对吗？"}]
+        )
+
+    seams.send_card.assert_not_awaited()
+    event = _skips(cap)[0]
+    assert event["category"] == "sampling"
+    assert event["component"] == "blueprint_notify"
+    assert event["initiated_by_user_id"] == "system"
+    assert "duration_ms" in event
+    payload = str(event)
+    assert _SECRET not in payload
+    assert "密钥" not in payload
+
+
+async def test_happy_path_leaves_no_skip_trace(monkeypatch) -> None:
+    """⭐ 非恒真对照：正路一条 skip 都不落（⛔ 留痕不是无差别刷屏）。"""
+    _Seams(monkeypatch)
+    await _make_project()
+    artifact = await _make_artifact()
+    user = await _make_user("notify-initiator")
+    await _make_session(artifact, user)
+
+    with capture_logs() as cap:
+        await anotify_blueprint_clarification(artifact=artifact, questions=_QUESTIONS)
+
+    assert _skips(cap) == []
+    assert [e for e in cap if e["event"] == "blueprint_clarification_card_sent"]
+
+
+def test_no_bare_early_return_is_left_in_the_send_path() -> None:
+    """⭐ 源码级钉子：主函数体内不得再出现**裸** ``return``（每条早退都得先留痕）。
+
+    ⛔ 这条盯的是「以后新加一条早退忘了留痕」——那正是 MN-03 的复发形态。
+    """
+    tree = ast.parse((_SERVER_DIR / _NOTIFY_REL).read_text(encoding="utf-8"))
+    target = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "anotify_blueprint_clarification"
+    )
+    # 收集嵌套的 _skip 辅助函数体，免得把它自己的语句算进主流程
+    nested = {
+        stmt
+        for helper in ast.walk(target)
+        if isinstance(helper, ast.FunctionDef)
+        for stmt in ast.walk(helper)
+    }
+    bare = [
+        node.lineno
+        for node in ast.walk(target)
+        if isinstance(node, ast.Return) and node.value is None and node not in nested
+    ]
+    lines = (_SERVER_DIR / _NOTIFY_REL).read_text(encoding="utf-8").splitlines()
+    for lineno in bare:
+        # 裸 return 的**上一条语句**必须是 _skip(...)
+        assert "_skip(" in "".join(lines[max(0, lineno - 4) : lineno - 1]), (
+            f"第 {lineno} 行是没有留痕的裸 return（早退不等于不留痕）"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════

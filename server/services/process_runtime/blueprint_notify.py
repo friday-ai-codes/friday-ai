@@ -25,9 +25,17 @@
 **best-effort**：整段 ``try/except`` 只 log，⛔ **失败只记事件绝不反噬挂起** —— 一次 IM
 抖动不该废掉整条澄清（T-116-55）。每一步「取不到就 ``return``」的早退形态。
 
-观测：一条 ``caller`` 事件只记 ``artifact_id`` / ``session_id`` / ``question_count`` /
-``recipient_count`` / ``chat_id`` / ``duration_ms`` —— ⛔ **澄清题正文绝不进日志，只记条数**
-（T-116-54）；题面来自 LLM（半可信），进卡片前逐条过 ``redact_secrets_in_text``。
+观测：成功落一条 ``caller`` 事件 ``blueprint_clarification_card_sent``，只记
+``artifact_id`` / ``session_id`` / ``question_count`` / ``recipient_count`` / ``chat_id`` /
+``duration_ms`` —— ⛔ **澄清题正文绝不进日志，只记条数**（T-116-54）；题面来自 LLM
+（半可信），进卡片前逐条过 ``redact_secrets_in_text``。
+
+⭐ **五条早退各留一条痕**（116-REVIEW MN-03）：``blueprint_clarification_card_skipped``
+（``sampling``）带 ``reason`` ∈ ``{no_questions, no_project, no_space, no_recipients,
+no_chat_id}``。⛔ **早退不等于不留痕** —— 裸 ``return`` 会让「卡片没发出去」在日志里与
+「本来就没开澄清」完全同形，而这五条恰恰是生产上最可能命中的（项目没建飞书群、
+``BlueprintReviewer`` 名单为空且会话 ``created_by`` 为空、``resolve_or_create_group``
+返回空 ``chat_id`` ……）。
 """
 
 from __future__ import annotations
@@ -156,9 +164,30 @@ async def anotify_blueprint_clarification(
     artifact_id = str(getattr(artifact, "id", "") or "")
     session_id = str(getattr(session, "id", "") or "")
     initiated = str(initiated_by_user_id or "") or "system"
+
+    def _skip(reason: str, **kv: Any) -> None:
+        """早退留痕（116-REVIEW MN-03）：⛔ **早退不等于不留痕**。
+
+        回退前五条早退全是裸 ``return`` ⇒ 卡片没发出去时日志里连一条记录都没有：既看不到
+        ``blueprint_clarification_card_sent`` 也看不到任何失败记录，运维只能靠「没有 sent
+        事件」反推，而那与「本来就没开澄清」同形。⛔ 仍然只记标量，题面正文不进日志。
+        """
+        logger.info(
+            "blueprint_clarification_card_skipped",
+            category="sampling",
+            component=_COMPONENT,
+            reason=reason,
+            artifact_id=artifact_id,
+            session_id=session_id,
+            initiated_by_user_id=initiated,
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+            **kv,
+        )
+
     try:
         rows = _normalize_questions(questions)
         if not rows:
+            _skip("no_questions", question_count=0)
             return
 
         project = None
@@ -169,13 +198,16 @@ async def anotify_blueprint_clarification(
         if project is None:
             project = await _aresolve_project_from_artifact(artifact)
         if project is None:
+            _skip("no_project", question_count=len(rows))
             return
         target_space = space if space is not None else getattr(project, "space", None)
         if target_space is None:
+            _skip("no_space", question_count=len(rows))
             return
 
         recipients = await _alist_recipients(artifact_id)
         if not recipients:
+            _skip("no_recipients", question_count=len(rows), recipient_count=0)
             return
 
         from feishu.cards.chat_question_card import build_clarification_card
@@ -188,6 +220,7 @@ async def anotify_blueprint_clarification(
             initiated_by_user_id=initiated,
         )
         if not chat_id:
+            _skip("no_chat_id", question_count=len(rows), recipient_count=len(recipients))
             return
 
         card = build_clarification_card(
