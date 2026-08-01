@@ -22,7 +22,7 @@ SKILL_FILES = sorted(REPO_ROOT.glob("skills/skills/*/SKILL.md"))
 
 # 只认反引号内、MCP 工具名动词前缀开头的 snake_case token
 _TOOL_TOKEN_RE = re.compile(
-    r"`((?:search|create|get|list|execute|improve|analyze|summarize|route|find|grep|read|report|lookup|reverse|update|confirm)_[a-z0-9_]+)`"
+    r"`((?:search|create|get|list|execute|improve|analyze|summarize|route|find|grep|read|report|lookup|reverse|update|confirm|answer)_[a-z0-9_]+)`"
 )
 
 

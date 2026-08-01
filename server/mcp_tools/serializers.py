@@ -807,6 +807,30 @@ class ReportBlueprintContextRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class GetTechnicalBlueprintRequestSerializer(serializers.Serializer):
+    """技术蓝图续取请求（Phase 116-06，GATE-01）。
+
+    ⭐ **寻址键是 ``artifact_id`` 而不是 ``session_id``**：既有 20 个蓝图端点全部以
+    ``artifact_id`` 为一级键并按它挂项目范围闸；且**同一 artifact 上可并存**
+    ``technical_plan`` 与 ``technical_blueprint`` 两条会话——按会话寻址会踩回 112 review
+    的那条 CRITICAL（「按 artifact 取最近一条会话」跨 process 污染）。
+    """
+
+    artifact_id = serializers.CharField(required=True, allow_blank=False, max_length=64)
+
+
+class AnswerBlueprintClarificationRequestSerializer(serializers.Serializer):
+    """蓝图澄清作答请求（Phase 116-06，GATE-01）。
+
+    ``artifact_id`` 可选，仅作二次校验（传了就必须与线程实际归属一致）——范围闸本身
+    一律由 view 从线程反查出的 artifact 推导，⛔ 不信调用方自报的归属。
+    """
+
+    thread_id = serializers.CharField(required=True, allow_blank=False, max_length=64)
+    body = serializers.CharField(required=True, allow_blank=True, trim_whitespace=False)
+    artifact_id = serializers.CharField(required=False, allow_blank=True, default="", max_length=64)
+
+
 # 三个 feature 方案工具共用同一响应形状（FeatureSolutionState.as_dict + run_id）。
 _FEATURE_SOLUTION_RESPONSE_KEYS = [
     "session_id",
@@ -1114,6 +1138,15 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "status",
             "retry_state",
             "run_id",
+            # Phase 116-06（GATE-01）：⭐ **仅在 mcp 入口开关切到 `technical_blueprint`
+            # 时出现**的三个追加键（开关关闭时响应与改动前逐字相同）。它们必须同步进
+            # 本快照——`report_blueprint_context` 那条 `redispatched` 的教训逐字适用：
+            # 漏在 snapshot 里会让容器侧/外部客户端按已发布契约以为它不存在。
+            # ⚠️ 状态键取名 `blueprint_current_status` 而非 `blueprint_status`：后者作为
+            # 响应字典键会命中 INV-6 的 `_RE_FIELD_DICT_KEY`（字段级旁路守卫）。
+            "blueprint_artifact_id",
+            "blueprint_current_status",
+            "pending_clarifications",
         ],
     },
     "create_work_item_repo_tasks": {
@@ -1238,5 +1271,34 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "run_id",
         ],
         "request": ["key", "kind", "repository_id", "content"],
+    },
+    # 蓝图异步澄清协议（GATE-01，Phase 116-06）：MCP 入口不再 skip_clarification ⇒
+    # 立即返回 pending → 经 `answer_blueprint_clarification` 作答 → 用
+    # `get_technical_blueprint` 续取终稿。⛔ **不建第三个 list 工具**：pending 清单内联
+    # 在 `get_technical_blueprint` 的 `pending_clarifications` 里。
+    "get_technical_blueprint": {
+        "request": ["artifact_id"],
+        "response": [
+            "artifact_id",
+            "session_id",
+            "current_status",
+            "title",
+            "version_no",
+            "sections",
+            "markdown",
+            "pending_clarifications",
+            "run_id",
+        ],
+    },
+    "answer_blueprint_clarification": {
+        "request": ["thread_id", "body", "artifact_id"],
+        "response": [
+            "status",
+            "thread_id",
+            "artifact_id",
+            "current_status",
+            "reflow",
+            "run_id",
+        ],
     },
 }

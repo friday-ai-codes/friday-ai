@@ -49,6 +49,56 @@ def _map_status(delegate_status: str) -> McpWorkItemTechnicalPlan.Status:
     return _STATUS_MAP.get(delegate_status, McpWorkItemTechnicalPlan.Status.PARTIAL)
 
 
+async def _ablueprint_response_extras(delegate: Any) -> dict[str, Any]:
+    """mcp 入口开关切到蓝图时的三个追加响应键（GATE-01，Phase 116-06）。
+
+    ⭐ **开关关闭时返回空 dict ⇒ 响应与改动前逐字相同**（既有 12 个键一个不多不少）。
+    ⛔ 开关实参必须是**字面量常量** ``"mcp"``：写成 ``session.entrypoint``（蓝图 MCP 会话
+    的 ``entrypoint`` 是既有约定的 ``"workflow"``）会让打开 workflow 键把 MCP 一起切走
+    （116-01 的 ``ast`` 守卫覆盖本调用点）。
+
+    三键语义：``blueprint_artifact_id``（蓝图 artifact，**后续一切续取/作答的寻址键**）、
+    ``blueprint_current_status``（⚠️ 键名刻意不叫 ``blueprint_status``——那会命中 INV-6 的
+    字段级旁路守卫 ``_RE_FIELD_DICT_KEY``）、``pending_clarifications[]``（待人回答的
+    阻塞线程，形状与 ``get_technical_blueprint`` **共享同一份装配**）。
+
+    整段 ``try/except`` 回空 dict：⭐ 这是**响应装饰**而非业务主体——读不出蓝图侧信息时
+    调用方仍能拿到既有 12 键的完整方案响应，⛔ 绝不因为附加信息读失败而废掉整次调用。
+    """
+    from services.process_runtime.blueprint_entry_switch import aresolve_entry_process_type
+
+    try:
+        if await aresolve_entry_process_type("mcp") != "technical_blueprint":
+            return {}
+        from delivery.models import Artifact, ArtifactVersion
+        from mcp_tools.views import _aload_pending_clarifications
+
+        version_id = getattr(delegate.session, "current_artifact_version_id", None)
+        if not version_id:
+            return {}
+        artifact_id = str(
+            await ArtifactVersion.objects.filter(id=version_id)
+            .values_list("artifact_id", flat=True)
+            .afirst()
+            or ""
+        )
+        if not artifact_id:
+            return {}
+        current_status = str(
+            await Artifact.objects.filter(id=artifact_id)
+            .values_list("blueprint_status", flat=True)
+            .afirst()
+            or ""
+        )
+        return {
+            "blueprint_artifact_id": artifact_id,
+            "blueprint_current_status": current_status,
+            "pending_clarifications": await _aload_pending_clarifications(artifact_id),
+        }
+    except Exception:  # noqa: BLE001 — 响应装饰读失败不废掉既有 12 键的方案响应
+        return {}
+
+
 def _str_list(value: Any) -> list[str]:
     """半可信 LLM 产物 → 去空白后的 ``list[str]``（非 list 恒空 list，防御性）。"""
     if not isinstance(value, list):
@@ -372,7 +422,12 @@ async def build_work_item_technical_plan(
         work_item=work_item,
         include_repos=repository_ids,
         created_by=actor,
+        # 116-06：接上 116-03 交接的 `work_item_context` 形参。⛔ 不传即「推不出
+        # meta.project_id ⇒ 拒绝发起」——mcp 开关打开时蓝图链会**恒不可用**。
+        work_item_context=context,
     )
+    # 116-06（GATE-01）：开关切到蓝图时的三个追加响应键（关闭时为空 dict）。
+    blueprint_extras = await _ablueprint_response_extras(delegate)
     content = delegate.content if isinstance(delegate.content, dict) else {}
     # canonical → 旧响应字段显式映射（外形兼容，绝不透传 content 内部键，T-94-03-INFO）。
     repository_tasks = _map_execution_plan_to_repository_tasks(content)
@@ -408,6 +463,12 @@ async def build_work_item_technical_plan(
         "comment_written": False,
         "failed_stage": "",
     }
+    if blueprint_extras:
+        # ⭐ 蓝图的 DONE 语义是「等人审」而不是「方案已终结」⇒ 对 MCP 调用方一律回
+        # `partial`（既有三态之一，`retry_state` 形态照旧 ⇒ 调用方零破坏），据
+        # `pending_clarifications` 逐条作答、再用 `get_technical_blueprint` 续取终稿。
+        status = McpWorkItemTechnicalPlan.Status.PARTIAL
+        retry_state.update({"retryable": True, "failed_stage": "blueprint_pending"})
     if delegate.status == "partial":
         # 编排挂起（RESEARCHING/CLARIFYING 在途，MCP 无 resume 通路）：调用方据 session_id 续推。
         retry_state.update({"retryable": True, "failed_stage": "orchestration_pending"})
@@ -496,6 +557,9 @@ async def build_work_item_technical_plan(
         "retry_state": retry_state,
         "run_id": str(run.run_id),
         "session_id": str(delegate.session.id),
+        # 116-06：⭐ 纯追加三键，**仅在 mcp 开关切到蓝图时非空**（见
+        # `_ablueprint_response_extras`）；开关关闭时本行展开为零键 ⇒ 响应逐字不变。
+        **blueprint_extras,
     }
     from knowledge import ingestion  # lazy import 防循环
 
