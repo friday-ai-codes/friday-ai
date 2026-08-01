@@ -68,7 +68,7 @@
   - ✅ **Phase 115 交付**：项目自动关联 + 项目物料面板可见；**正向**可查 —— 本蓝图**引用了**哪些知识实体 / 仓库 / 其它蓝图，逐条可点可跳。
   - ⏭ **Phase 116 计划交付（SC-4，闭合 115 登记的顺延项；⚠️ `116-04-PLAN.md` 执行完成后本条转 ✅ 并把上面的标题改为 Complete）**：`citations` 物化为 `REFERENCES` 边、`meta.project_id` 物化为 `RELATES_TO` 边（投递门控挂 `ArtifactService.create` 与 `add_version` 两处），**反向「被谁引用」可用**。⚠️ **planning 阶段实测订正了 115 的一处判断**：反查不是「零新端点只补换算键」—— `knowledge/related.py` 的 `_DEFAULT_RELATIONS` 不含 `REFERENCES`，且 `KnowledgeRelatedView` 与 `DeliveryKnowledgeSearchService.get_related` 都不透传 `relations` ⇒ 需三处**纯追加**（view 参数白名单 → service 形参 → 前端 `getRelated`）才能让边被遍历到；`116-04-PLAN.md` 已把它列为该 SC 的第一个 task，并要求端到端验收（从被引方 `?direction=in&relations=REFERENCES&max_hops=1` 查回引用方）。
   - ⚠️ `getArtifactAssociations` 仍**必然落空**（它查 `initiatives.Artifact` 投影出的 `KnowledgeEntity`，`server/knowledge/artifact_associations.py:75`）—— 反查改走 `getRelated` + 116 物化的图谱边，前端那条「该端点零调用」的断言**原样保留**。
-- [ ] **VIEW-05**：蓝图可导出飞书文档（含决策记录附录）；未确认版本在界面与导出物上均显式标注
+- [x] **VIEW-05**：蓝图可导出飞书文档（含决策记录附录）；未确认版本在界面与导出物上均显式标注
 
 ### GATE — 入口与质量
 
@@ -137,7 +137,7 @@
 | CLAR-01 | Phase 115 前端查看器与知识库 | Pending（后端供数面与写口已就位 @ 115-01：`blueprint-review-threads` GET 多轮 + POST 选区评论；批注层待 115-03/04） |
 | FLOW-08 | Phase 115 前端查看器与知识库 | Complete |
 | GATE-01 | Phase 116（实现路径 + 开关）+ 同步点 2 后收尾（默认切换） | PARTIAL（本行描述的是目标形态，**在 116 执行完成后按实际交付复核**） |
-| VIEW-05 | Phase 116 入口收编与导出 | Pending |
+| VIEW-05 | Phase 116 入口收编与导出 | Complete |
 
 **按相位汇总：**
 
