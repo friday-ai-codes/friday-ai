@@ -73,6 +73,15 @@ const localRecommendedRepositories = ref<RepoSelectableItem[]>([])
  * 就会让编排产出的方案落到保守分支、被误挂草稿横幅并多一次确认弹层。
  */
 const localProvenance = ref<CodingPlanProvenance | string | null>(null)
+/**
+ * 投影响应带回的 blueprint/v1 判别三键（同步点 2 收尾）。
+ *
+ * 🔴 三个一起交棒，缺一不可：只给 `schema_version` 会让卡片认出蓝图却给不出入口；
+ * 只给 `blueprint_artifact_id` 则根本触发不了蓝图分支。缺省空串 ⇒ v0 投影逐字不变。
+ */
+const localSchemaVersion = ref('')
+const localBlueprintArtifactId = ref('')
+const localBlueprintStatus = ref('')
 
 defineExpose({ localProvenance })
 
@@ -89,6 +98,9 @@ async function handleEnterCoding(): Promise<void> {
     localRecommendedRepositoryIds.value = resp.recommended_repository_ids ?? []
     localRecommendedRepositories.value = resp.recommended_repositories ?? []
     localProvenance.value = resp.provenance
+    localSchemaVersion.value = resp.schema_version ?? ''
+    localBlueprintArtifactId.value = resp.blueprint_artifact_id ?? ''
+    localBlueprintStatus.value = resp.current_status ?? ''
     // 幂等是系统正确性，不是用户需要理解的异常状态 ⇒ created=false 也走中性
     // success 通道，卡片表现与首次一致。
     toastSuccess(resp.created ? COPY.toastCreated : COPY.toastReused)
@@ -160,6 +172,9 @@ async function handleEnterCoding(): Promise<void> {
       :tech-plan="localTechPlan"
       :affected-files="localAffectedFiles"
       :provenance="localProvenance"
+      :schema-version="localSchemaVersion"
+      :blueprint-artifact-id="localBlueprintArtifactId"
+      :blueprint-status="localBlueprintStatus"
       :recommended-repository-ids="localRecommendedRepositoryIds"
       :available-repositories="localRecommendedRepositories"
       :target-repositories="localRecommendedRepositories"

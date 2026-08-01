@@ -14,9 +14,20 @@ import type { CodingPlanRuntime, ExportCodingPlanToFeishuResponse, ExportToFeish
  *
  * codingPlanId 未提供时（旧 ChatMessageBubble 单仓路径）保留原 draft 按钮，
  * 向后兼容不破。
+ *
+ * ⭐ **blueprint/v1 识别（同步点 2 收尾）**：从 blueprint/v1 版本投影出来的 CodingPlan，
+ * 正文与影响文件走的是 v0 映射器（读 `execution_plan[]`、渲 v0 markdown），而 blueprint/v1
+ * **没有那个顶层键** ⇒ 本卡此前会渲染出一份**结构合法而内容为空**的旧形态方案：空 prose
+ * 块 + 空影响文件列表，且不给任何错误信号。现按投影响应的 `schema_version` 判别（口径与
+ * 后端 `builtin_types.py` 逐字相同），命中即：如实说明形态、渲 11 态状态徽标、给出指向
+ * 蓝图查看器的深链，⛔ 不再把空正文渲成「（暂无方案正文）」。
+ *
+ * 🔴 **v0 逐像素不变**：三个新 prop 全部可选且默认 `undefined`，`isBlueprint` 是**允许
+ * 清单**（只有严格等于 `blueprint/v1` 才为真）⇒ 历史调用点与 v0 投影一行未改。
  */
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
+import { RouterLink } from 'vue-router'
 import CodingSessionStatusRow from '~/components/chat/CodingSessionStatusRow.vue'
 import ExportConfirmDialog from '~/components/chat/ExportConfirmDialog.vue'
 import RepoMultiSelector from '~/components/chat/RepoMultiSelector.vue'
@@ -45,6 +56,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~
 import { useBranchValidation } from '~/composables/useBranchValidation'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
 import { useToast } from '~/composables/useToast'
+import {
+  BLUEPRINT_ATTENTION_STATUSES,
+  blueprintStatusText,
+  blueprintViewerPath,
+  isBlueprintSchemaVersion,
+} from '~/config/blueprintArtifact'
 import { useChatStore } from '~/stores/chat'
 
 const props = withDefaults(defineProps<{
@@ -76,6 +93,19 @@ const props = withDefaults(defineProps<{
   repositoryGitUrls?: Record<string, string>
   recommendedRepositoryIds?: string[]
   targetRepositories?: RepoSelectableItem[]
+  // ── 同步点 2 收尾：blueprint/v1 三个**纯追加**判别 prop ────────────────────
+  //
+  // 三者都可选、默认 undefined ⇒ 历史调用点（ChatMessageBubble 单仓路径 / v0 投影）
+  // 一行不用改，卡片行为与改动前逐字相同。
+  //
+  // 类型故意含 string 而非收窄成枚举 —— 与 provenance 同一条纪律：后端新增取值时
+  // 前端要走保守分支，而不是编译失败或静默放行。
+  /** 来源 ArtifactVersion content 的 `schema_version`（v0 恒 `''` / 不传）。 */
+  schemaVersion?: string | null
+  /** 蓝图 artifact id —— 查看器深链的 `:id`（拿不到就不渲染深链）。 */
+  blueprintArtifactId?: string | null
+  /** 蓝图 11 态状态（键名与后端响应体一致：`current_status`，非模型字段名）。 */
+  blueprintStatus?: string | null
 }>(), {
   // 显式保留 undefined（Vue 默认会把缺省 Boolean prop coerce 成 false，
   // 那样会破坏 initialCollapsed 的 fallback 判定）
@@ -289,6 +319,45 @@ const resolvedProvenance = computed<string | null | undefined>(
  * 后者是观感瑕疵。故保守默认。
  */
 const isUnresearched = computed(() => resolvedProvenance.value !== 'orchestrated')
+
+// ---------------------------------------------------------------------------
+// 同步点 2 收尾：blueprint/v1 识别
+//
+// 界面文案取 COPY 常量表（沿用本组件家族 OrchestratedPlanCard 的既定惯例，
+// ⛔ 不接 vue-i18n）。状态中文来自 `~/config/blueprintArtifact`，那张表与
+// `zh-CN.json` 之间有一条逐键相等的漂移守卫。
+// ---------------------------------------------------------------------------
+
+const BLUEPRINT_COPY = {
+  badge: '技术蓝图',
+  title: '本方案是一份结构化技术蓝图',
+  description:
+    '它按需求规格、仓库关联、实现概述等分段组织，需在蓝图查看器中逐段审阅、划线提问并完成终审。此处不展示正文。',
+  cta: '打开技术蓝图',
+} as const
+
+/**
+ * 是否为 blueprint/v1 投影。
+ *
+ * 🔴 **允许清单**（与 `isUnresearched` 同一条纪律的正向形态）：只有严格等于
+ * `blueprint/v1` 才走蓝图分支；`undefined` / `''` / 将来的 `blueprint/v2` 一律按 v0
+ * 渲染。失败代价方向正确：多渲一次旧形态只是观感，把未知结构当蓝图渲染则是把真正的
+ * 方案正文藏起来。
+ */
+const isBlueprint = computed(() => isBlueprintSchemaVersion(props.schemaVersion))
+
+/** 蓝图状态（拿不到回空串 ⇒ 落「旧版方案」档而不是未知档）。 */
+const resolvedBlueprintStatus = computed(() => String(props.blueprintStatus ?? ''))
+
+/** 状态徽标语气：等人处置（需要澄清 / 待人类审查）用 warning，其余中性。 */
+const blueprintBadgeVariant = computed(() =>
+  BLUEPRINT_ATTENTION_STATUSES.has(resolvedBlueprintStatus.value) ? 'warning' : 'secondary',
+)
+
+/** 查看器深链（拿不到 artifact id 就不渲染入口，⛔ 不给一个点不开的链接）。 */
+const blueprintHref = computed(() =>
+  props.blueprintArtifactId ? blueprintViewerPath(props.blueprintArtifactId) : '',
+)
 
 // ---------------------------------------------------------------------------
 // 109-08（RELY-01）：草稿送编码的显式确认闸门
@@ -573,6 +642,19 @@ const badgeText = computed(() => {
       <span class="icon-[lucide--file-code] text-primary" />
       <span class="text-sm font-semibold">{{ title || '编码方案' }}</span>
       <!--
+        同步点 2 收尾：蓝图形态 + 11 态状态两枚徽标。
+        🔴 插在标题之后、既有两枚徽标之前 —— 那两枚与 chevron 之间的 `ml-auto` 接力链
+        逐条依赖彼此的渲染条件，插在链中间会让 v0 的排版随之改变。
+      -->
+      <template v-if="isBlueprint">
+        <Badge variant="outline" class="ml-1" data-test="blueprint-badge">
+          {{ BLUEPRINT_COPY.badge }}
+        </Badge>
+        <Badge :variant="blueprintBadgeVariant" class="ml-1" data-test="blueprint-status-badge">
+          {{ blueprintStatusText(resolvedBlueprintStatus) }}
+        </Badge>
+      </template>
+      <!--
         109-08：草稿徽标头部常驻（展开与折叠态都渲染），让「未经调研」这条事实
         不被一次折叠操作藏起来。纯 variant、不加 :class 颜色（DESIGN.md Badge 禁令）。
       -->
@@ -628,6 +710,39 @@ const badgeText = computed(() => {
           <div class="h-4 rounded bg-muted/60 w-3/4" />
           <div class="h-4 rounded bg-muted/60 w-1/2" />
           <div class="h-4 rounded bg-muted/60 w-2/3" />
+        </div>
+        <!--
+          同步点 2 收尾：蓝图**不在此渲染正文**。
+          🔴 这一档必须排在「正文为空 ⇒ 占位」之前：blueprint/v1 经 v0 映射器渲出来的
+          `tech_plan` 是一份结构合法而内容为空的壳，落到那一档就成了「（暂无方案正文）」
+          —— 把「形态不同」讲成「方案没了」，正是本次要消除的静默降级。
+        -->
+        <div
+          v-else-if="isBlueprint"
+          class="p-3 rounded-lg border border-primary/30 bg-primary/5 space-y-2"
+          role="status"
+          data-test="blueprint-notice"
+        >
+          <div class="flex items-start gap-2">
+            <span class="icon-[lucide--file-text] text-primary shrink-0 mt-0.5" />
+            <div class="space-y-1 min-w-0">
+              <p class="text-sm font-medium text-foreground">
+                {{ BLUEPRINT_COPY.title }}
+              </p>
+              <p class="text-xs text-muted-foreground">
+                {{ BLUEPRINT_COPY.description }}
+              </p>
+            </div>
+          </div>
+          <RouterLink
+            v-if="blueprintHref"
+            :to="blueprintHref"
+            class="text-xs text-primary underline-offset-4 hover:underline inline-flex items-center gap-1"
+            data-test="blueprint-link"
+          >
+            <span class="icon-[lucide--external-link]" />
+            {{ BLUEPRINT_COPY.cta }}
+          </RouterLink>
         </div>
         <!-- 109-06：正文为空时渲染一行占位，而不是一个空 prose 块 -->
         <p v-else-if="!resolvedTechPlan" class="text-xs text-muted-foreground">
@@ -906,7 +1021,15 @@ const badgeText = computed(() => {
 
     <!-- 折叠态：一行摘要 -->
     <template v-else>
-      <div class="px-4 py-2 text-xs text-muted-foreground truncate">
+      <!-- 蓝图折叠态同理：摘要取蓝图形态说明，⛔ 不取那份空壳 markdown 的首行 -->
+      <div
+        v-if="isBlueprint"
+        class="px-4 py-2 text-xs text-muted-foreground truncate"
+        data-test="blueprint-collapsed-summary"
+      >
+        {{ BLUEPRINT_COPY.title }}（{{ blueprintStatusText(resolvedBlueprintStatus) }}）
+      </div>
+      <div v-else class="px-4 py-2 text-xs text-muted-foreground truncate">
         {{ resolvedTechPlan.split('\n')[0] || '（无方案文本）' }}
       </div>
     </template>

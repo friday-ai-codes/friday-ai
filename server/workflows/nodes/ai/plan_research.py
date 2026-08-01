@@ -83,6 +83,18 @@ _BLUEPRINT_REVIEWED_STATUSES: Final[frozenset[str]] = frozenset(
 # 确保既有 ``PlanClarifyCallback`` 消费者必不命中它。
 _BLUEPRINT_GATE_EVENT_TYPE: Final[str] = "BlueprintGateCallback"
 
+# ⭐ 蓝图节点输出的**判别键取值**（同步点 2 收尾，前端触点 `NodeDataTab.vue` 消费）。
+#
+# 蓝图与 v0 旧链的节点输出**共用同一个 node_type**（``ai_plan_research``），键集又高度
+# 相似（都有 ``session_id`` / ``plan`` / ``plan_markdown``）⇒ 执行抽屉此前把蓝图输出当
+# v0 渲染，看不出这是一份需要人审的结构化蓝图。本键让判别变成**结构性**的：调用方拿它
+# 与 ``blueprint/v1`` 严格比较即可，口径与 ``delivery/artifacts/builtin_types.py`` 逐字相同。
+#
+# ⛔ 只在**蓝图分支**写这个键 —— v0 四个分支一字未动，输出逐字节不变。
+# 字面量而非 import：本模块 delivery / process_runtime 的 import 全在函数内（lazy）；
+# 等值由 ``tests/workflows/test_plan_research_blueprint_seam.py`` 的常量对齐断言锁死。
+_BLUEPRINT_SCHEMA_VERSION: Final[str] = "blueprint/v1"
+
 
 @register_node
 class AIPlanResearchNode(AIAgentBaseNode):
@@ -615,6 +627,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
                     output={
                         "session_id": str(session.id),
                         "kind": "clarification",
+                        "schema_version": _BLUEPRINT_SCHEMA_VERSION,
                         "artifact_id": observation.artifact_id,
                         # ⛔ INV-6：响应/输出体键名不得出现字面 blueprint_status。
                         "current_status": observation.current_status,
@@ -637,6 +650,9 @@ class AIPlanResearchNode(AIAgentBaseNode):
                     output={
                         "session_id": str(session.id),
                         "kind": "research",
+                        # 这一档的判据虽与旧链同源，输出仍要如实标明是蓝图会话 ——
+                        # 否则「调研在途」的抽屉画面在两条链上完全无法区分。
+                        "schema_version": _BLUEPRINT_SCHEMA_VERSION,
                         "_resume_from_callback": True,
                     },
                 )
@@ -988,6 +1004,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
                 ),
                 output={
                     "session_id": str(session.id),
+                    "schema_version": _BLUEPRINT_SCHEMA_VERSION,
                     "artifact_id": observation.artifact_id,
                     "current_status": current_status,
                     "error_code": "blueprint_session_failed",
@@ -1003,6 +1020,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
                 output={
                     "session_id": str(session.id),
                     "kind": "human_review",
+                    "schema_version": _BLUEPRINT_SCHEMA_VERSION,
                     "artifact_id": observation.artifact_id,
                     "current_status": current_status,
                     "suspension": {
@@ -1038,6 +1056,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
                 status="completed",
                 output={
                     "session_id": str(session.id),
+                    "schema_version": _BLUEPRINT_SCHEMA_VERSION,
                     "artifact_version_id": av_id,
                     "artifact_id": observation.artifact_id,
                     "status": "done",
@@ -1058,6 +1077,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
             ),
             output={
                 "session_id": str(session.id),
+                "schema_version": _BLUEPRINT_SCHEMA_VERSION,
                 "artifact_id": observation.artifact_id,
                 "current_status": current_status,
                 "error_code": "blueprint_unreviewed",

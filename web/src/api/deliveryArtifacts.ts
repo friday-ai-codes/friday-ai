@@ -35,6 +35,21 @@ export interface ArtifactSummary {
   current_version: ArtifactVersionTimelineEntry | null
   created_at: string
   updated_at: string
+  /**
+   * 当前版本 content 的判别字段（同步点 2 收尾追加）。
+   *
+   * ⭐ 蓝图与 v0 旧方案**共用 `artifact_type: 'technical_plan'`**（DESIGN §3.1：不新增
+   * artifact_type，按 `schema_version` 判别）⇒ 在本面上两者此前长得一模一样。
+   * v0 恒 `''`（合法取值，不是缺数据）。
+   */
+  schema_version: string
+  /**
+   * 蓝图状态机取值（11 态之一；v0 旧方案恒 `''`）。
+   *
+   * ⚠️ 键名与后端模型字段名刻意不同（INV-6 字段级守卫），全仓蓝图响应体统一用
+   * `current_status`。
+   */
+  current_status: string
 }
 
 /** Artifact 时间线详情（列表字段 + 全版本时间线 + 当前版本 markdown 摘要）。 */

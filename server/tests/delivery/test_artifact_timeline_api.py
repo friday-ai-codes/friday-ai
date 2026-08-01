@@ -204,20 +204,14 @@ def test_downstream_aggregates_references(authenticated_client) -> None:
     version = artifact.current_version
     repo = _make_repo()
 
-    coding = RepoCodingTask.objects.create(
-        artifact_version=version, repository=repo, wave=0
-    )
+    coding = RepoCodingTask.objects.create(artifact_version=version, repository=repo, wave=0)
     spec = SddSpec.objects.create(artifact_version=version, repository=repo)
     session = ConvergenceSession.objects.create(
         process_type="technical_plan", entrypoint="workflow"
     )
-    merge = ArchitectMerge.objects.create(
-        session=session, merged_artifact_version=version.id
-    )
+    merge = ArchitectMerge.objects.create(session=session, merged_artifact_version=version.id)
 
-    resp = authenticated_client.get(
-        f"/api/delivery/artifact-versions/{version.id}/downstream/"
-    )
+    resp = authenticated_client.get(f"/api/delivery/artifact-versions/{version.id}/downstream/")
     assert resp.status_code == 200
     body = resp.json()
     assert body["artifact_version_id"] == str(version.id)
@@ -231,9 +225,7 @@ def test_downstream_aggregates_references(authenticated_client) -> None:
 def test_downstream_empty_when_no_references(authenticated_client) -> None:
     artifact = _make_artifact_with_versions(version_count=1)
     version = artifact.current_version
-    resp = authenticated_client.get(
-        f"/api/delivery/artifact-versions/{version.id}/downstream/"
-    )
+    resp = authenticated_client.get(f"/api/delivery/artifact-versions/{version.id}/downstream/")
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 0
@@ -241,7 +233,70 @@ def test_downstream_empty_when_no_references(authenticated_client) -> None:
 
 
 def test_downstream_version_not_found_404(authenticated_client) -> None:
-    resp = authenticated_client.get(
-        f"/api/delivery/artifact-versions/{uuid.uuid4()}/downstream/"
-    )
+    resp = authenticated_client.get(f"/api/delivery/artifact-versions/{uuid.uuid4()}/downstream/")
     assert resp.status_code == 404
+
+
+# ---- blueprint/v1 判别两键（同步点 2 收尾） ----
+#
+# ⭐ 蓝图与 v0 旧方案**共用 artifact_type="technical_plan"**（DESIGN §3.1：按
+# content.schema_version 判别，不新增 artifact_type）⇒ 在这个只读面上两者此前长得一模
+# 一样，前端 `ArtifactTimeline.vue` 分不出哪条是带批注与人审的结构化蓝图。两键**纯追加**，
+# 既有八键一字未动。
+
+
+def test_list_marks_a_v0_artifact_with_empty_discriminators(authenticated_client) -> None:
+    """⭐ v0 旧方案：两键**恒空串**（合法取值，⛔ 不是 null / 不是缺键）。
+
+    与下一条**正反并列**：只断言蓝图那一档会漏掉「两档都被标成蓝图」的假通过。
+    """
+    _make_artifact_with_versions()
+    row = authenticated_client.get("/api/delivery/artifacts/").json()[0]
+    assert row["schema_version"] == ""
+    assert row["current_status"] == ""
+
+
+def test_list_marks_a_blueprint_artifact(authenticated_client) -> None:
+    """⭐ blueprint/v1：`schema_version` 与 11 态 `current_status` 如实回。
+
+    ⚠️ 状态键名刻意**不是模型字段名**（INV-6 字段级守卫扫全 server/），全仓蓝图
+    响应体统一用 `current_status`。
+    """
+    artifact = _make_artifact_with_versions()
+    ArtifactVersion.objects.filter(id=artifact.current_version_id).update(
+        content={"schema_version": "blueprint/v1", "meta": {"title": "蓝图"}}
+    )
+    Artifact.objects.filter(id=artifact.id).update(blueprint_status="pending_review")
+
+    row = authenticated_client.get("/api/delivery/artifacts/").json()[0]
+    assert row["schema_version"] == "blueprint/v1"
+    assert row["current_status"] == "pending_review"
+    # 既有八键一个不少（纯追加）。
+    assert {"id", "artifact_type", "title", "status", "work_item_id"} <= set(row)
+
+
+def test_timeline_detail_carries_the_same_two_discriminators(authenticated_client) -> None:
+    """时间线详情继承同两键（详情序列化器派生自列表序列化器，⛔ 不各写一份）。"""
+    artifact = _make_artifact_with_versions()
+    ArtifactVersion.objects.filter(id=artifact.current_version_id).update(
+        content={"schema_version": "blueprint/v1", "meta": {"title": "蓝图"}}
+    )
+    Artifact.objects.filter(id=artifact.id).update(blueprint_status="confirmed")
+
+    body = authenticated_client.get(f"/api/delivery/artifacts/{artifact.id}/").json()
+    assert body["schema_version"] == "blueprint/v1"
+    assert body["current_status"] == "confirmed"
+
+
+def test_discriminator_is_not_derived_from_artifact_type(authenticated_client) -> None:
+    """⛔ 判别只看 content.schema_version：同 artifact_type 的两条必须分得开。"""
+    v0 = _make_artifact_with_versions()
+    bp = _make_artifact_with_versions()
+    ArtifactVersion.objects.filter(id=bp.current_version_id).update(
+        content={"schema_version": "blueprint/v1", "meta": {"title": "蓝图"}}
+    )
+
+    rows = {r["id"]: r for r in authenticated_client.get("/api/delivery/artifacts/").json()}
+    assert rows[str(v0.id)]["artifact_type"] == rows[str(bp.id)]["artifact_type"]
+    assert rows[str(v0.id)]["schema_version"] == ""
+    assert rows[str(bp.id)]["schema_version"] == "blueprint/v1"

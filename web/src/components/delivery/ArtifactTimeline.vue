@@ -5,11 +5,18 @@ import type {
 } from '~/api/deliveryArtifacts'
 import { useQuery } from '@tanstack/vue-query'
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import {
   getArtifactTimeline,
   getArtifactVersionDownstream,
   listArtifacts,
 } from '~/api/deliveryArtifacts'
+import {
+  BLUEPRINT_ATTENTION_STATUSES,
+  blueprintStatusText,
+  blueprintViewerPath,
+  isBlueprintSchemaVersion,
+} from '~/config/blueprintArtifact'
 
 /**
  * ArtifactTimeline —— 交付物版本轨 / 时间线（Chassis v2 · P7，只读呈现）。
@@ -22,6 +29,15 @@ import {
  * 不在画布塞伪节点；按 space / artifact_type / work_item 过滤列出交付物，
  * 选一个看其版本时间线（least-invasive，挂在项目工作台资料面板）。
  * 文案内联中文，避免改动整份 i18n 资源。
+ *
+ * ⭐ **blueprint/v1 分辨（同步点 2 收尾）**：蓝图与 v0 旧方案共用
+ * `artifact_type: 'technical_plan'`，在本面上此前**长得一模一样** —— 用户看到两条同名
+ * 条目却分不清哪条是带批注与人审的结构化蓝图（115-06 §9 登记过的 P-17 重叠）。
+ * 现按响应体的 `schema_version` 判别（口径与后端 `builtin_types.py` 逐字相同）：
+ * 命中蓝图 ⇒ 加一枚 11 态状态徽标 + 一条「在蓝图查看器中打开」的深链。
+ *
+ * 🔴 **v0 逐像素不变**：全部新增标记都在 `v-if="isBlueprint(...)"` 之下，v0 条目的
+ * DOM 与改动前逐字相同（`ArtifactTimeline.spec.ts` 的 v0 用例正反并列锁死这一条）。
  */
 const props = defineProps<{
   /** 按所属空间过滤（项目工作台传 project.space_id）。 */
@@ -112,6 +128,33 @@ function approvalLabel(status: string): string {
       return '无审批'
   }
 }
+
+// ---------------------------------------------------------------------------
+// blueprint/v1 判别（同步点 2 收尾）
+// ---------------------------------------------------------------------------
+
+/**
+ * 该交付物是否为 blueprint/v1。
+ *
+ * 🔴 只认 `schema_version`，⛔ 不按 `artifact_type` / 标题文案 / `current_status` 非空
+ * 反推：前两者对蓝图与 v0 完全相同；后者虽然事实上只有蓝图非空，但那是**巧合而非契约**
+ * （一次后端回填就会让判别翻车）。判别口径与 `builtin_types.py` 同源。
+ */
+function isBlueprint(a: { schema_version?: string } | null | undefined): boolean {
+  return isBlueprintSchemaVersion(a?.schema_version)
+}
+
+/** 当前选中的交付物（供正文区判别；找不到回 null）。 */
+const selectedArtifact = computed<ArtifactSummary | null>(
+  () => artifacts.value.find(a => a.id === selectedArtifactId.value) ?? null,
+)
+
+/** 状态徽标语气：等人处置（需要澄清 / 待人类审查）用琥珀，其余中性。 */
+function statusToneClass(status: string): string {
+  return BLUEPRINT_ATTENTION_STATUSES.has(status)
+    ? 'bg-amber-500/12 text-amber-600'
+    : 'bg-primary/10 text-primary'
+}
 </script>
 
 <template>
@@ -169,6 +212,15 @@ function approvalLabel(status: string): string {
             <span class="icon-[lucide--file-text] shrink-0" />
             {{ a.title || a.artifact_type }}
             <span v-if="a.current_version" class="text-xs opacity-70">v{{ a.current_version.version_no }}</span>
+            <!--
+              蓝图专属：同名同类型的两条条目靠这枚徽标区分（v0 条目不渲染它 ⇒ DOM 不变）。
+            -->
+            <span
+              v-if="isBlueprint(a)"
+              class="rounded-full px-1.5 py-0.5 text-[11px] font-medium"
+              :class="statusToneClass(a.current_status)"
+              :data-testid="`artifact-blueprint-badge-${a.id}`"
+            >{{ blueprintStatusText(a.current_status) }}</span>
           </button>
         </div>
 
@@ -177,6 +229,39 @@ function approvalLabel(status: string): string {
           加载版本时间线…
         </div>
         <template v-else-if="timeline">
+          <!--
+            蓝图告示条（同步点 2 收尾）：说清「这是什么形态」并给出唯一可操作入口。
+            ⛔ 不在这里复刻查看器的任何一段内容 —— 逐段阅读、划线提问、终审都只在
+            查看器里成立，本面复刻一份只会造出第二个半成品阅读面。
+          -->
+          <div
+            v-if="isBlueprint(selectedArtifact)"
+            class="rounded-lg border border-primary/30 bg-primary/5 px-3.5 py-3 space-y-2"
+            role="status"
+            data-testid="artifact-blueprint-notice"
+          >
+            <div class="flex items-center gap-2 text-sm">
+              <span class="icon-[lucide--file-text] text-primary shrink-0" />
+              <span class="font-medium text-foreground">结构化技术蓝图</span>
+              <span
+                class="rounded-full px-2 py-0.5 text-xs font-medium"
+                :class="statusToneClass(selectedArtifact?.current_status ?? '')"
+                data-testid="artifact-blueprint-status"
+              >{{ blueprintStatusText(selectedArtifact?.current_status ?? '') }}</span>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              本交付物是走过蓝图状态机的结构化方案，可逐段审阅、划线提问并完成终审。
+            </p>
+            <RouterLink
+              :to="blueprintViewerPath(selectedArtifactId ?? '')"
+              class="text-xs text-primary underline-offset-4 hover:underline inline-flex items-center gap-1"
+              data-testid="artifact-blueprint-link"
+            >
+              <span class="icon-[lucide--external-link]" />
+              在蓝图查看器中打开
+            </RouterLink>
+          </div>
+
           <!-- 当前最新版本：是什么 -->
           <div
             class="rounded-lg border border-border/50 bg-muted/30 px-3.5 py-3 space-y-1.5"
