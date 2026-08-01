@@ -562,6 +562,11 @@ def _map_terminal(session: Any) -> ToolResult:
     return ToolResult(
         success=False,
         error=str(error.get("message") or error.get("reason") or "plan session failed"),
+        # 110-HI-01：其余四个出口（WAITING_CLARIFICATION / __blocking_task__ / DONE）都在
+        # output 顶层带 session_id，只有失败这条结构上不带 —— 前端气泡因此绑不到自己那次
+        # 编排，会回退到 store 的全局活跃会话。metadata 经 _normalize_tool_result 并进出网
+        # 体，让失败气泡也能钉回它自己那次编排（不含任何自由文本）。
+        metadata={"session_id": str(session.id)},
     )
 
 

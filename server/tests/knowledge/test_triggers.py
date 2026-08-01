@@ -834,6 +834,9 @@ class TestChatTriggers:
             plan=plan,
             repository_ids=[repo.id],
             branch_template="feat20260611.${repo}.ktrigger",
+            # 造数走 DB default provenance=draft ⇒ 被 109-07 草稿 gate 拦。这是 gate
+            # 生效的预期连带影响，不是回归；本用例测的是摄取触发，不是 gate。
+            acknowledge_unresearched=True,
         )
 
         assert len(result.created) == 1
@@ -852,6 +855,8 @@ class TestChatTriggers:
         result = await create_sessions_for_plan(
             plan=plan,
             repository_ids=[uuid.uuid4()],  # 不属于 project 的仓库
+            # 同上：草稿 gate 生效的预期连带影响，本用例测零投递语义而非 gate。
+            acknowledge_unresearched=True,
         )
 
         assert result.created == []

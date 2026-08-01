@@ -55,6 +55,7 @@ def _dump(path: Path, payload: object) -> None:
 def main() -> None:
     django.setup()
 
+    from agents.tools.coding_tools import create_coding_plan, update_coding_plan
     from agents.tools.find_api_callers import find_api_callers
     from agents.tools.find_api_handler import find_api_handler
     from agents.tools.find_related_code import find_related_code
@@ -118,6 +119,16 @@ def main() -> None:
     _dump(
         FIXTURE_DIR / "list_endpoints_input_schema.json",
         ListEndpointsInput.model_json_schema(),
+    )
+
+    # chat @tool 创作入参守护（Phase 109 / SPINE-02 收窄前 baseline）
+    _dump(
+        FIXTURE_DIR / "create_coding_plan_signature.json",
+        _normalize_signature(create_coding_plan),
+    )
+    _dump(
+        FIXTURE_DIR / "update_coding_plan_signature.json",
+        _normalize_signature(update_coding_plan),
     )
 
 

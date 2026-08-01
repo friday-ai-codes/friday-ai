@@ -23,3 +23,6 @@ def test_project_context_line_guides_feature_solution_tool() -> None:
     assert "create_coding_plan" in line
     assert "start_plan_research" in line
     assert "成批功能点" in line or "技术方案" in line
+    # SPINE-02（109-05）：口径是「投影方案版本」而非「生成方案」。
+    assert "投影" in line
+    assert "不生成方案正文" in line

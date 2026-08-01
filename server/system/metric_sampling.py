@@ -18,9 +18,11 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import structlog
+from django.conf import settings
 from django.utils import timezone
 
 logger = structlog.get_logger(__name__)
@@ -36,6 +38,7 @@ _GAUGE_NAMES = frozenset(
         "queue.runner_local",
         "backlog.subagent_active",
         "backlog.background_tasks",
+        "backlog.pending_clarifications",
     }
 )
 
@@ -145,6 +148,46 @@ async def sample_gauges() -> dict[str, int]:
                         labels={},
                     )
                 )
+
+        # 块六：澄清积压（超期未答澄清轮数，RELY-02）。观测规范强制项「新增队列/异步任务：
+        # 积压可被快照采集」——只落在扫描命令自身的汇总日志里不算可采集：趋势查询
+        # （gauge:<name>）与告警阈值都读不到。本块跨 app 查询，独立 try/except 兜底：失败
+        # 只丢这一行，不影响其余块（现有块未各自包裹）。
+        try:
+            from delivery.models import Clarification
+            from delivery.models.convergence_session import ConvergenceSessionStatus
+
+            cutoff = ts - timedelta(hours=getattr(settings, "CLARIFICATION_TIMEOUT_HOURS", 24))
+            backlog_count = await Clarification.objects.filter(
+                answered_at__isnull=True,
+                created_at__lt=cutoff,
+                session__status=ConvergenceSessionStatus.WAITING_CLARIFICATION,
+            ).acount()
+            # 零值也落——与块四「不臆造空噪声」的区别：这里 0 是有意义的观测值「当前无积压」，
+            # 趋势图需要连续 0 值才能定位积压起点；块四跳过是因为源本身 available=False 取不到。
+            # 口径与澄清超时扫描命令的到期判定同源（同一个 CLARIFICATION_TIMEOUT_HOURS + 同一个
+            # answered_at__isnull=True 谓词），但 gauge 只读不写，且不含两条立即出口条件
+            # （送达失败 / 工作流已超时算「矛盾态」而非「等太久」）。
+            # labels 恒空：不落会话或用户维度（受控 labels 纪律，基数会爆）。
+            rows.append(
+                GaugeSample(
+                    ts=ts,
+                    name="backlog.pending_clarifications",
+                    value=float(backlog_count),
+                    labels={},
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — 单块失败只丢该行，绝不吞掉整帧
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "gauge_backlog_clarifications_failed",
+                category="sampling",
+                component="metric_sampling",
+                # 异常文本一律过脱敏：这里是 DB 异常，部分驱动的 OperationalError
+                # 会把连接串（含口令）回显进 message。
+                error=redact_secrets_in_text(str(exc)),
+            )
 
         if rows:
             await GaugeSample.objects.abulk_create(rows)

@@ -8,8 +8,11 @@ IO 边界 mock；done 出口产物经 ArtifactVersion 承载。
 
 from __future__ import annotations
 
+import contextlib
+import json
 import uuid
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -730,3 +733,287 @@ async def test_acollect_round_questions_includes_answered_subquestions() -> None
     assert len(collected) == 2
     assert collected[0]["question"] == "第一题？"
     assert collected[1]["question"] == "第二题？"
+
+
+# ===========================================================================
+# RELY-02：发卡送达失败必留痕（5 条路径 + best-effort 不反噬）
+# ===========================================================================
+
+_EMIT_PATH = "delivery.services.convergence_session_service.ConvergenceSessionService._emit_event"
+_UNSET = object()
+
+
+@contextlib.contextmanager
+def _delivery_env(
+    *,
+    space: Any = _UNSET,
+    project: Any = _UNSET,
+    chat_id: Any = "chat-123",
+    send_side_effect: BaseException | None = None,
+    emit_side_effect: BaseException | None = None,
+):
+    """发卡侧 IO 边界替身：按需制造 5 条送达失败路径，并捕获 emit 调用。"""
+    space_obj = SimpleNamespace(id="s1") if space is _UNSET else space
+    project_obj = SimpleNamespace(id="p1") if project is _UNSET else project
+    im = MagicMock()
+    im.send_card = AsyncMock(side_effect=send_side_effect)
+    proj_svc = MagicMock()
+    proj_svc.resolve_or_create_group = AsyncMock(return_value=chat_id)
+    feishu_cls = MagicMock()
+    feishu_cls.create = AsyncMock(return_value=im)
+    emit = AsyncMock(side_effect=emit_side_effect)
+    acreate = AsyncMock()
+    with (
+        patch(
+            "workflows.nodes.integrations.board_split_review._resolve_space",
+            AsyncMock(return_value=space_obj),
+        ),
+        patch(
+            "workflows.nodes.integrations.board_split_review._aresolve_project",
+            AsyncMock(return_value=project_obj),
+        ),
+        patch("initiatives.services.project_service.ProjectService", return_value=proj_svc),
+        patch("services.feishu_im.FeishuIMService", feishu_cls),
+        patch(_EMIT_PATH, new=emit),
+        patch("workflows.models.execution.WorkflowEventSubscription.objects.acreate", new=acreate),
+    ):
+        yield SimpleNamespace(im=im, emit=emit, acreate=acreate)
+
+
+def _delivery_failed_payloads(emit: AsyncMock) -> list[dict]:
+    """从 emit 替身里筛出送达失败事件的 payload（按事件常量匹配，不认字面量）。"""
+    from delivery.services.event_taxonomy import EVENT_CLARIFICATION_DELIVERY_FAILED
+
+    return [
+        call.args[2]
+        for call in emit.await_args_list
+        if call.args and call.args[0] == EVENT_CLARIFICATION_DELIVERY_FAILED
+    ]
+
+
+async def _pending_round(session: ConvergenceSession) -> Clarification:
+    clar = await Clarification.objects.filter(session_id=session.id).afirst()
+    assert clar is not None
+    return clar
+
+
+async def _seed_round_without_questions() -> tuple[ConvergenceSession, Clarification]:
+    """经 service 建轮后清空子题（制造 no_questions 路径，不旁路 INV-6 写入口）。"""
+    from delivery.models import ClarificationQuestion
+
+    session = await _seed_clarifying_round()
+    clar = await _pending_round(session)
+    await ClarificationQuestion.objects.filter(clarification_id=clar.id).adelete()
+    return session, clar
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reason", "env_kwargs"),
+    [
+        ("no_space", {"space": None}),
+        ("no_project", {"project": None}),
+        ("no_chat_id", {"chat_id": ""}),
+        ("send_failed", {"send_side_effect": RuntimeError("飞书 500")}),
+    ],
+)
+async def test_delivery_failure_path_traced_and_marked(reason: str, env_kwargs: dict) -> None:
+    """4 条非空题失败路径各留痕一次：emit delivery_failed + reason 正确 + 轮标 delivery_failed。"""
+    session = await _seed_clarifying_round()
+    clar = await _pending_round(session)
+    node = AIPlanResearchNode()
+
+    with _delivery_env(**env_kwargs) as env:
+        await node._send_clarify_card(session, _workflow_ctx(), str(clar.id))
+
+    payloads = _delivery_failed_payloads(env.emit)
+    assert len(payloads) == 1
+    assert payloads[0]["reason"] == reason
+    assert payloads[0]["channel"] == "feishu"
+    assert payloads[0]["clarification_id"] == str(clar.id)
+    await clar.arefresh_from_db()
+    assert clar.container_status == "delivery_failed"
+
+
+@pytest.mark.asyncio
+async def test_delivery_failure_no_questions_traced() -> None:
+    """第 5 条路径：整轮无子题 → reason=no_questions，同样留痕 + 标记（不静默 return）。"""
+    session, clar = await _seed_round_without_questions()
+    node = AIPlanResearchNode()
+
+    with _delivery_env() as env:
+        await node._send_clarify_card(session, _workflow_ctx(), str(clar.id))
+
+    payloads = _delivery_failed_payloads(env.emit)
+    assert len(payloads) == 1
+    assert payloads[0]["reason"] == "no_questions"
+    env.im.send_card.assert_not_awaited()
+    await clar.arefresh_from_db()
+    assert clar.container_status == "delivery_failed"
+
+
+@pytest.mark.asyncio
+async def test_delivery_success_leaves_no_failure_trace() -> None:
+    """成功路径零留痕：不 emit delivery_failed、container_status 不被改成 delivery_failed。"""
+    session = await _seed_clarifying_round()
+    clar = await _pending_round(session)
+    node = AIPlanResearchNode()
+
+    with _delivery_env() as env:
+        await node._send_clarify_card(session, _workflow_ctx(), str(clar.id))
+
+    env.im.send_card.assert_awaited_once()
+    assert _delivery_failed_payloads(env.emit) == []
+    await clar.arefresh_from_db()
+    assert clar.container_status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_delivery_failed_payload_excludes_exception_text() -> None:
+    """T-107-02：异常文本（含凭证样本）绝不进事件 payload——payload 只有受控枚举 reason。"""
+    session = await _seed_clarifying_round()
+    clar = await _pending_round(session)
+    node = AIPlanResearchNode()
+
+    with _delivery_env(
+        send_side_effect=RuntimeError("upstream 401 Bearer sk-ant-secret-abc123")
+    ) as env:
+        await node._send_clarify_card(session, _workflow_ctx(), str(clar.id))
+
+    payloads = _delivery_failed_payloads(env.emit)
+    assert len(payloads) == 1
+    serialized = json.dumps(payloads[0], ensure_ascii=False, default=str)
+    assert "sk-ant-" not in serialized
+    assert "Bearer" not in serialized
+    assert set(payloads[0]) == {"clarification_id", "round_no", "channel", "reason"}
+
+
+@pytest.mark.asyncio
+async def test_delivery_trace_failure_does_not_backfire_on_suspension() -> None:
+    """留痕自身失败（emit 抛）→ 发卡不抛、节点仍 waiting_event 且仍建订阅（best-effort）。"""
+    session = await _seed_clarifying_round()
+    node = AIPlanResearchNode()
+
+    with _delivery_env(space=None, emit_side_effect=RuntimeError("事件落库炸了")) as env:
+        result = await node._maybe_suspend(session, _workflow_ctx())
+
+    assert result is not None
+    assert result.status == "waiting_event"
+    assert result.output["kind"] == "clarification"
+    env.acreate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delivery_failed_round_still_counts_as_pending() -> None:
+    """delivery_failed 只是送达标记：该轮仍被 ahas_pending 判 pending（不失去出口）。"""
+    from delivery.services.clarification_service import ClarificationService
+
+    session = await _seed_clarifying_round()
+    clar = await _pending_round(session)
+    node = AIPlanResearchNode()
+
+    with _delivery_env(chat_id=""):
+        await node._send_clarify_card(session, _workflow_ctx(), str(clar.id))
+
+    await clar.arefresh_from_db()
+    assert clar.container_status == "delivery_failed"
+    assert clar.answered_at is None
+    assert await ClarificationService().ahas_pending(session.id) is True
+
+
+@pytest.mark.asyncio
+async def test_delivery_failed_round_can_still_be_answered() -> None:
+    """标记后仍可正常作答：全部子题答完 → 容器 answered_at 落地（容器推进不被新取值卡住）。"""
+    from delivery.models import ClarificationQuestion
+    from delivery.services.clarification_service import ClarificationService
+
+    session = await _seed_clarifying_round()
+    clar = await _pending_round(session)
+    node = AIPlanResearchNode()
+
+    with _delivery_env(chat_id=""):
+        await node._send_clarify_card(session, _workflow_ctx(), str(clar.id))
+
+    answers = [
+        {"question_id": str(qid), "selected": "灰度", "freeform_text": ""}
+        async for qid in ClarificationQuestion.objects.filter(clarification_id=clar.id)
+        .order_by("order")
+        .values_list("id", flat=True)
+    ]
+    await ClarificationService().answer_round(clar.id, answers)
+
+    await clar.arefresh_from_db()
+    assert clar.answered_at is not None
+    assert await ClarificationService().ahas_pending(session.id) is False
+
+
+# ===========================================================================
+# D-4：工作流侧订阅超时与澄清超时读同一配置键（消除矛盾态窗口）
+# ===========================================================================
+
+
+async def _subscribe_kwargs(**env_kwargs) -> tuple[dict, Any]:
+    """挂起一次并返回订阅 acreate 的 kwargs 与调用前时刻。"""
+    from django.utils import timezone
+
+    session = await _seed_clarifying_round()
+    node = AIPlanResearchNode()
+    with _delivery_env(**env_kwargs) as env:
+        before = timezone.now()
+        result = await node._maybe_suspend(session, _workflow_ctx())
+    assert result is not None and result.status == "waiting_event"
+    env.acreate.assert_awaited_once()
+    return env.acreate.await_args.kwargs, before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hours", [1, 3, 24])
+async def test_subscription_timeout_at_follows_clarification_hours(hours: int) -> None:
+    """订阅 timeout_at 距 now 与 CLARIFICATION_TIMEOUT_HOURS 一致（容差 60s）。"""
+    from datetime import timedelta
+
+    from django.test import override_settings
+
+    with override_settings(CLARIFICATION_TIMEOUT_HOURS=hours):
+        kwargs, before = await _subscribe_kwargs()
+
+    delta = kwargs["timeout_at"] - before
+    assert abs(delta - timedelta(hours=hours)) <= timedelta(seconds=60)
+
+
+@pytest.mark.asyncio
+async def test_subscription_timeout_defaults_to_configured_24_hours() -> None:
+    """默认配置（24h）→ 订阅超时约 24 小时，60 分钟写死口径已消失。"""
+    from datetime import timedelta
+
+    kwargs, before = await _subscribe_kwargs()
+
+    delta = kwargs["timeout_at"] - before
+    assert abs(delta - timedelta(hours=24)) <= timedelta(seconds=60)
+    assert delta > timedelta(hours=2)
+
+
+@pytest.mark.asyncio
+async def test_subscription_timeout_falls_back_when_setting_missing() -> None:
+    """配置键缺失 → getattr 兜底 24 小时且不抛。"""
+    from datetime import timedelta
+
+    from django.conf import settings
+    from django.test import override_settings
+
+    with override_settings():
+        del settings.CLARIFICATION_TIMEOUT_HOURS
+        assert not hasattr(settings, "CLARIFICATION_TIMEOUT_HOURS")
+        kwargs, before = await _subscribe_kwargs()
+
+    delta = kwargs["timeout_at"] - before
+    assert abs(delta - timedelta(hours=24)) <= timedelta(seconds=60)
+
+
+@pytest.mark.asyncio
+async def test_subscription_timeout_action_unchanged() -> None:
+    """timeout_action 仍为 fail（工作流引擎语义面不动，会话侧出口由扫描 job 驱动）。"""
+    kwargs, _ = await _subscribe_kwargs()
+
+    assert kwargs["timeout_action"] == "fail"
+    assert kwargs["event_type"] == "PlanClarifyCallback"

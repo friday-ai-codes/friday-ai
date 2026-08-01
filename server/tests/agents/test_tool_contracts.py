@@ -51,6 +51,10 @@ _FIND_API_CALLERS_INPUT_SCHEMA_FIXTURE = FIXTURE_DIR / "find_api_callers_input_s
 _LIST_ENDPOINTS_SIGNATURE_FIXTURE = FIXTURE_DIR / "list_endpoints_signature.json"
 _LIST_ENDPOINTS_INPUT_SCHEMA_FIXTURE = FIXTURE_DIR / "list_endpoints_input_schema.json"
 
+# chat @tool 创作入参漂移守护（Phase 109 / SPINE-02）
+_CREATE_CODING_PLAN_SIGNATURE_FIXTURE = FIXTURE_DIR / "create_coding_plan_signature.json"
+_UPDATE_CODING_PLAN_SIGNATURE_FIXTURE = FIXTURE_DIR / "update_coding_plan_signature.json"
+
 _REGENERATE_HINT = (
     "若变更属预期，请运行 "
     "`cd server && DJANGO_SETTINGS_MODULE=friday.settings uv run python -m "
@@ -255,5 +259,57 @@ def test_list_endpoints_input_schema_snapshot() -> None:
 
     assert actual == expected, (
         "ListEndpointsInput.model_json_schema drifted from fixture baseline. "
+        f"{_REGENERATE_HINT}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# chat @tool 创作入参守护（SPINE-02：移除徒手创作路径）
+# ---------------------------------------------------------------------------
+
+
+def test_create_coding_plan_signature_snapshot() -> None:
+    """``create_coding_plan`` 函数签名 vs fixture 字节级 diff。
+
+    该工具此前**没有任何漂移守护**，而 SPINE-02 的核心验收是"结构上不可能徒手
+    编写方案正文"——没有守护则后人把创作入参加回来无人发现。
+
+    baseline 记录的是 **SPINE-02 收窄前的现状快照**（含 ``tech_plan`` /
+    ``affected_files`` 两个创作入参）。收窄发生时本测试**应当变红**：届时按
+    ``_REGENERATE_HINT`` 显式再生成 fixture + review diff 即视作一次契约升级，
+    与本文件其余 snapshot 用例同一工作流（契约变更 ＝ 一次可 review 的提交）。
+    """
+    from agents.tools.coding_tools import create_coding_plan
+
+    actual = _normalize_signature(create_coding_plan)
+    expected = json.loads(
+        _CREATE_CODING_PLAN_SIGNATURE_FIXTURE.read_text(encoding="utf-8")
+    )
+
+    assert actual == expected, (
+        "create_coding_plan signature drifted from fixture baseline. "
+        f"{_REGENERATE_HINT}"
+    )
+
+
+def test_update_coding_plan_signature_snapshot() -> None:
+    """``update_coding_plan`` 函数签名 vs fixture 字节级 diff。
+
+    ``update_coding_plan`` 的必填入参同样是 ``tech_plan`` + ``affected_files``，
+    是同一个徒手创作漏洞的**第二个门**——只守 create 则模型可改走 update 写正文。
+    因此两个门共用同一套漂移守护。
+
+    与 ``test_create_coding_plan_signature_snapshot`` 同理：baseline 是收窄前的
+    现状快照，收窄时应当变红并走显式再生成流程。
+    """
+    from agents.tools.coding_tools import update_coding_plan
+
+    actual = _normalize_signature(update_coding_plan)
+    expected = json.loads(
+        _UPDATE_CODING_PLAN_SIGNATURE_FIXTURE.read_text(encoding="utf-8")
+    )
+
+    assert actual == expected, (
+        "update_coding_plan signature drifted from fixture baseline. "
         f"{_REGENERATE_HINT}"
     )

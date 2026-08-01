@@ -12,8 +12,10 @@ TOOL_NAME_DISPLAY: dict[str, str] = {
     "get_repository_info": "ℹ️ 获取仓库信息",
     "get_project_overview": "📋 获取项目概览",
     "deep_analysis": "🧠 深度分析",
-    "create_coding_plan": "📝 生成编码方案",
-    "update_coding_plan": "✏️ 更新编码方案",
+    # SPINE-02：工具不再生成方案正文，只把编排产出的方案版本投影为编码方案，
+    # 因此文案与前端「进入编码」口径一致。
+    "create_coding_plan": "📝 进入编码方案",
+    "update_coding_plan": "✏️ 切换编码方案来源",
     "fetch_feishu_document": "📑 读取飞书文档",
 }
 

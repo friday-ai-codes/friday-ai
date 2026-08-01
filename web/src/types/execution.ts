@@ -119,6 +119,31 @@ export interface SubStep {
   completed_at: string | null
 }
 
+/**
+ * 通用竖向时间线 item 契约（SubStepTimeline 的入参单元）。
+ *
+ * 与 `SubStep` 解耦：`SubStep` 带 step_type / step_order / input_data / started_at 等
+ * 工作流执行域字段，编排阶段侧根本没有这些东西。`SubStep` 结构上满足本接口
+ * （status 的 4 值是本接口 6 值的子集），因此 ExecutionNode 的调用点零改动。
+ */
+export interface TimelineStepItem {
+  id: string
+  name: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'unknown'
+  /** 该步的一句话摘要；缺省不渲染摘要行（不是渲染一句「暂无」）。 */
+  summary?: string
+  /** 行尾角标；缺省不渲染。纯 variant，禁止 :class 追加颜色。 */
+  badge?: { text: string, variant: 'warning' | 'info' | 'muted' }
+  /**
+   * running 态是否脉冲。缺省 true = 今日行为逐字不变。
+   * 传 false 时**只去掉 animate-pulse，色值不变** —— 用于「合法等待用户」「会话已终态」
+   * 这类「确实不在动」的进行中步骤：动画讲的是「它正在推进」，不在推进却还在闪是撒谎。
+   */
+  pulse?: boolean
+  /** 既有：failed 时的错误摘要来源，保留以兼容 ExecutionNode。 */
+  output_data?: Record<string, any>
+}
+
 // ============================================================================
 // : 结构化执行日志类型
 // ============================================================================

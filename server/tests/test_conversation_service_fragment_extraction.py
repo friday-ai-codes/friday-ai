@@ -71,6 +71,11 @@ def test_coding_guidance_has_leading_newline() -> None:
     assert _CODING_GUIDANCE.startswith("\n编码任务识别：\n")
     assert "create_coding_plan" in _CODING_GUIDANCE
     assert "update_coding_plan" in _CODING_GUIDANCE
+    # SPINE-02（109-05）：口径改为「编排产出方案版本 → 投影」，两个编排工具都要提名，
+    # 且不再教模型撰写方案正文。
+    assert "start_plan_research" in _CODING_GUIDANCE
+    assert "start_feature_solution" in _CODING_GUIDANCE
+    assert "分步实现步骤" not in _CODING_GUIDANCE
 
 
 def test_ending_rules_three_lines() -> None:

@@ -1,0 +1,22 @@
+{
+  "artifact_version_id": {
+    "annotation": "str",
+    "default": null,
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "coding_plan_id": {
+    "annotation": "str",
+    "default": "''",
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "conversation_id": {
+    "annotation": "str",
+    "default": null,
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "session_id": {
+    "annotation": "str",
+    "default": "''",
+    "kind": "POSITIONAL_OR_KEYWORD"
+  }
+}

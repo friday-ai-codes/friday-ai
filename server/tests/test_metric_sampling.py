@@ -11,9 +11,11 @@ async 写测试用 ``transaction=True``（async ORM 写不跨连接泄漏，per 
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
+from django.test import override_settings
 
 from system import metric_sampling
 from system.models import GaugeSample
@@ -68,9 +70,7 @@ async def test_sample_gauges_flattens_controlled_rows(monkeypatch: pytest.Monkey
     monkeypatch.setattr(
         "system.snapshot_service.collect_concurrency_snapshot", _async(_concurrency_payload())
     )
-    monkeypatch.setattr(
-        "system.snapshot_service.collect_host_snapshot", _async(_host_payload())
-    )
+    monkeypatch.setattr("system.snapshot_service.collect_host_snapshot", _async(_host_payload()))
 
     result = await metric_sampling.sample_gauges()
     assert result["written"] > 0
@@ -85,9 +85,7 @@ async def test_sample_gauges_flattens_controlled_rows(monkeypatch: pytest.Monkey
     assert "backlog.background_tasks" in names
 
     # provider 槽位：in_use=2 落库，in_use=None 凭证跳过（不臆造）。
-    provider_rows = [
-        r async for r in GaugeSample.objects.filter(name="concurrency.provider_slots")
-    ]
+    provider_rows = [r async for r in GaugeSample.objects.filter(name="concurrency.provider_slots")]
     assert len(provider_rows) == 1
     row = provider_rows[0]
     assert row.value == 2.0
@@ -124,17 +122,86 @@ async def test_sample_gauges_flattens_controlled_rows(monkeypatch: pytest.Monkey
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_sample_gauges_skips_unavailable_sources(monkeypatch: pytest.MonkeyPatch) -> None:
-    """源 available=False → 不落该源行（不产 0 噪声）。"""
+    """源 available=False → 不落该源行（不产 0 噪声）。
+
+    澄清积压块不读快照源、恒落一行（0 是有意义的观测值），故断言收窄为「不可用源零行」。
+    """
     concurrency = {"available": False, "error": "boom"}
     host = {"available": False, "error": "boom"}
-    monkeypatch.setattr(
-        "system.snapshot_service.collect_concurrency_snapshot", _async(concurrency)
-    )
+    monkeypatch.setattr("system.snapshot_service.collect_concurrency_snapshot", _async(concurrency))
     monkeypatch.setattr("system.snapshot_service.collect_host_snapshot", _async(host))
 
+    await metric_sampling.sample_gauges()
+
+    names = {name async for name in GaugeSample.objects.values_list("name", flat=True)}
+    assert names == {"backlog.pending_clarifications"}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_sample_gauges_counts_expired_pending_clarifications(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """超期未答澄清轮（会话仍等澄清）计入 backlog.pending_clarifications（RELY-02 积压可采集）。"""
+    monkeypatch.setattr(
+        "system.snapshot_service.collect_concurrency_snapshot", _async(_concurrency_payload())
+    )
+    monkeypatch.setattr("system.snapshot_service.collect_host_snapshot", _async(_host_payload()))
+
+    session = await _waiting_session()
+    await _clarification_round(session, age_hours=48)
+    await _clarification_round(session, age_hours=72)
+    await _clarification_round(session, age_hours=1)
+    await _clarification_round(session, age_hours=96, answered=True)
+
+    with override_settings(CLARIFICATION_TIMEOUT_HOURS=24):
+        await metric_sampling.sample_gauges()
+
+    row = await GaugeSample.objects.aget(name="backlog.pending_clarifications")
+    assert row.value == 2.0
+    assert row.labels == {}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_sample_gauges_writes_zero_backlog_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    """零积压仍落一行 value=0.0（趋势图需要连续 0 值才能定位积压起点）。"""
+    monkeypatch.setattr(
+        "system.snapshot_service.collect_concurrency_snapshot", _async(_concurrency_payload())
+    )
+    monkeypatch.setattr("system.snapshot_service.collect_host_snapshot", _async(_host_payload()))
+
+    await metric_sampling.sample_gauges()
+
+    row = await GaugeSample.objects.aget(name="backlog.pending_clarifications")
+    assert row.value == 0.0
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_sample_gauges_backlog_block_failure_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """积压块抛错 → 只丢这一行，其余块照常落库、written 非 0（块内独立兜底）。"""
+    monkeypatch.setattr(
+        "system.snapshot_service.collect_concurrency_snapshot", _async(_concurrency_payload())
+    )
+    monkeypatch.setattr("system.snapshot_service.collect_host_snapshot", _async(_host_payload()))
+
+    class _BoomManager:
+        def filter(self, *args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("backlog query down")
+
+    class _BoomClarification:
+        objects = _BoomManager()
+
+    monkeypatch.setattr("delivery.models.Clarification", _BoomClarification)
+
     result = await metric_sampling.sample_gauges()
-    assert result["written"] == 0
-    assert await GaugeSample.objects.acount() == 0
+
+    assert result["written"] > 0
+    assert await GaugeSample.objects.filter(name="backlog.pending_clarifications").acount() == 0
+    assert await GaugeSample.objects.filter(name="queue.runner_pending").acount() == 1
 
 
 @pytest.mark.django_db(transaction=True)
@@ -229,3 +296,36 @@ def _async(value: Any):
         return value
 
     return _inner
+
+
+async def _waiting_session() -> Any:
+    """建一个停在 waiting_clarification 的收敛会话（积压口径只算这类会话的轮）。"""
+    from delivery.models import (
+        ConvergenceSession,
+        ConvergenceSessionEntrypoint,
+        ConvergenceSessionStatus,
+    )
+
+    return await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.WORKFLOW,
+        current_stage="clarify",
+        status=ConvergenceSessionStatus.WAITING_CLARIFICATION,
+    )
+
+
+async def _clarification_round(session: Any, *, age_hours: float, answered: bool = False) -> Any:
+    """建一轮澄清并把 ``created_at`` 回拨（``auto_now_add`` 只能经 update 覆盖）。"""
+    from django.utils import timezone
+
+    from delivery.models import Clarification
+
+    clar = await Clarification.objects.acreate(
+        session=session, question="", round_no=1, container_status="pending"
+    )
+    values: dict[str, Any] = {"created_at": timezone.now() - timedelta(hours=age_hours)}
+    if answered:
+        values["answered_at"] = timezone.now()
+        values["container_status"] = "answered"
+    await Clarification.objects.filter(id=clar.id).aupdate(**values)
+    return clar
