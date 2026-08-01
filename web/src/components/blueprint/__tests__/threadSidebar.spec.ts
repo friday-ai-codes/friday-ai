@@ -84,6 +84,7 @@ const i18n = createI18n({
             orphaned: '原文已变更，无法定位',
             quotedSnapshot: '引用时的原文快照',
             sidebarToggleAria: '查看批注，共 {n} 条',
+            sidebarTitle: '批注',
             showClosed: '显示已关闭批注',
             showClosedHint: '已关闭的批注以灰色点线标注',
             emptyTitle: '暂无批注',
@@ -427,5 +428,27 @@ describe('侧栏「显示已关闭批注」开关的可访问名（M-3）', () =
     const label = control.element.closest('label')
     expect(label).not.toBeNull()
     expect(label?.textContent).toContain('显示已关闭批注')
+  })
+})
+
+/**
+ * ⭐ UI-REVIEW L-4：landmark 名必须是**名词短语**。
+ *
+ * `role="complementary"` 的 `aria-label` 原本用了按钮的 `sidebarToggleAria`
+ * （「查看批注，共 N 条」）—— 那是**动作描述**兼计数。读屏按 landmark 列表导航时念的就是
+ * 这个名字，塞进动作与数字只会让每次导航都被读一长串；计数已由各分组 Badge 提供。
+ */
+describe('侧栏 landmark 的可访问名（L-4）', () => {
+  it('12a. ⭐ aria-label 是名词短语「批注」，⛔ 不含动作描述与计数', () => {
+    const wrapper = mountSidebar({ threads: [makeThread(), makeThread({ thread_id: 't-2' })] })
+    const label = wrapper.find('[data-testid="blueprint-thread-sidebar"]').attributes('aria-label')
+    expect(label).toBe('批注')
+    expect(label).not.toContain('查看')
+    expect(label).not.toContain('2')
+  })
+
+  it('12b. 计数为 0 时同名（landmark 名不随内容漂移）', () => {
+    const wrapper = mountSidebar({ threads: [] })
+    expect(wrapper.find('[data-testid="blueprint-thread-sidebar"]').attributes('aria-label')).toBe('批注')
   })
 })

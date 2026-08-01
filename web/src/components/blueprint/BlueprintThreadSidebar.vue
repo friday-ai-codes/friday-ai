@@ -19,7 +19,10 @@
  * ⚠️ 顶部工具条的 `kind` 多选筛选是**用户显式动作**，对四组一视同仁地生效（含失锚组）——
  * 它与上面那条禁令不是一回事：禁的是按**锚点字段**做隐式过滤。
  *
- * a11y（§18.1）：根 `role="complementary"` + `aria-label`；分组用 `ui/collapsible`
+ * a11y（§18.1）：根 `role="complementary"` + `aria-label`。⚠️ landmark 的名字必须是**名词
+ * 短语**（读屏按 landmark 列表导航时念的就是它），⛔ 不能用「查看批注，共 N 条」这种**动作
+ * 描述**兼计数 —— 计数已由各分组 Badge 提供，塞进 landmark 名只会让每次导航都被读一长串。
+ * 分组用 `ui/collapsible`
  * （`aria-expanded` 由 reka-ui 提供）；线程卡的选中区是 `<button>`，`↑`/`↓` 在**同组内**
  * 移动焦点，`Esc` 清 `activeThreadId`（⛔ 不关闭侧栏）。
  */
@@ -222,7 +225,7 @@ function onKeydown(event: KeyboardEvent): void {
   <aside
     data-testid="blueprint-thread-sidebar"
     role="complementary"
-    :aria-label="t('knowledge.blueprints.annotation.sidebarToggleAria', { n: totalCount })"
+    :aria-label="t('knowledge.blueprints.annotation.sidebarTitle')"
     class="flex h-full flex-col gap-3"
     @keydown="onKeydown"
   >
