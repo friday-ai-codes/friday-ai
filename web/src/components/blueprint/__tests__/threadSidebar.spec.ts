@@ -452,3 +452,19 @@ describe('侧栏 landmark 的可访问名（L-4）', () => {
     expect(wrapper.find('[data-testid="blueprint-thread-sidebar"]').attributes('aria-label')).toBe('批注')
   })
 })
+
+/**
+ * ⭐ UI-REVIEW L-8：分组折叠触发器是 §2 的 44px 例外逐字点名的目标
+ * （「线程侧栏的折叠箭头」）——窄屏抽屉里它是实际触控目标。
+ *
+ * ⚠️ happy-dom 无布局引擎 ⇒ ⛔ 不量高度，只断言 `min-h-11` 类在。
+ */
+describe('分组折叠触发器的 44px 触控目标（L-8）', () => {
+  it('13a. ⭐ 每个分组的折叠触发器都带 min-h-11', () => {
+    const wrapper = mountSidebar({ threads: [makeThread()], showClosed: true })
+    const triggers = wrapper.findAll('[data-testid="blueprint-thread-group-trigger"]')
+    expect(triggers.length).toBeGreaterThan(0)
+    for (const trigger of triggers)
+      expect(trigger.attributes('class')).toContain('min-h-11')
+  })
+})
