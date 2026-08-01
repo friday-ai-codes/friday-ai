@@ -15,6 +15,10 @@ from delivery.api.blueprint_doc_views import (
     BlueprintEventsView,
     BlueprintReviewThreadsView,
 )
+from delivery.api.blueprint_export_views import (
+    BlueprintExportAvailabilityView,
+    BlueprintExportFeishuView,
+)
 from delivery.api.blueprint_gate_views import (
     BlueprintGateAddRepoView,
     BlueprintGateConfirmView,
@@ -251,6 +255,19 @@ urlpatterns = [
         "artifacts/<uuid:artifact_id>/blueprint-review/threads/",
         BlueprintReviewThreadsView.as_view(),
         name="blueprint-review-threads",
+    ),
+    # 116-05 蓝图飞书导出（VIEW-05）：blueprint/export-feishu/ 与 .../availability/ 两个
+    # 整段精确匹配；与 115-01 的 blueprint/ 与 blueprint/events/ 互不遮挡，按既有顺序
+    # 纪律**字面段写在前面**（availability/ 在 export-feishu/ 之后另起一整段）。
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint/export-feishu/",
+        BlueprintExportFeishuView.as_view(),
+        name="blueprint-export-feishu",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint/export-feishu/availability/",
+        BlueprintExportAvailabilityView.as_view(),
+        name="blueprint-export-feishu-availability",
     ),
     # Human Task Center（P8）：统一待办收件箱（list/open）+ 物化待办动作 + 投影澄清回流。
     # 字面段 clarification/ 必须在 <uuid:task_id> 动作路由之前注册（避免被 uuid 段吞）。
