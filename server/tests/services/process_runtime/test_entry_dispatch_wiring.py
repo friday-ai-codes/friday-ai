@@ -7,9 +7,12 @@
    ``ast``，``import`` 行不误伤），并用 ``plan_deepen_service.py`` 的**反向命中**证明扫描器
    非平凡。漏改一处的症状是「蓝图会话作答后无人续驱、卡在 waiting_clarification 永不推进
    且零异常」—— 源码扫描是唯一能把它变成机器可逮的形态。
-2. ⭐ **四个入口 × 开关两态**（Task 2）：开关为 ``technical_plan`` ⇒ 走既有
-   ``start_orchestration`` 且实参逐字不变；开关为 ``technical_blueprint`` ⇒ 建出
-   ``process_type == "technical_blueprint"`` 的会话且 ``decomposition.project_id`` 非空。
+2. ⭐ **四个入口 × 开关两态**（Task 2；同步点 2 收尾**翻默认后重写**）：
+   - **默认（零配置）** ⇒ 建出 ``process_type == "technical_blueprint"`` 的会话且
+     ``decomposition.project_id`` 非空 —— 这一档就是「翻了默认之后，一条真实需求确实
+     驱动蓝图链」的端到端证明，⛔ 不靠显式设置蒙混过去；
+   - **显式 override 回 ``technical_plan``** ⇒ 仍逐字走既有 ``start_orchestration``。
+   两向对每个入口都并列存在（参数化「零配置 / 显式蓝图」两态共用同一份断言体）。
 3. ⭐ **``meta.project_id`` 推不出即拒绝发起**：四个入口各自如实回错，且
    ``ConvergenceSession`` / ``Artifact`` 计数与调用前逐字相等（零副作用）。
 4. ⭐ **MCP 的 Space/Project 混淆双防线**（P-8）：``McpWorkItemContext.space`` 必须过
@@ -258,6 +261,20 @@ async def _aset_switch(**entries: str) -> None:
     await sync_to_async(_save_switch)(dict(entries))
 
 
+async def _aapply_switch(entry: str, value: str | None) -> None:
+    """⭐ 参数化「零配置 / 显式蓝图」两态的统一入口。
+
+    ``value is None`` = **什么都不写**（走翻过之后的默认），这一态才是本次收尾要证明的
+    「不配置也确实驱动蓝图链」；写显式值那一态并列存在，用来证明开关本身没被绕过。
+    """
+    if value is not None:
+        await _aset_switch(**{entry: value})
+
+
+# 两态：``None`` = 零配置（新默认）；显式蓝图。两者都必须落到蓝图链。
+_BLUEPRINT_SWITCH_STATES = [None, _BLUEPRINT]
+
+
 async def _amake_project() -> tuple[object, object]:
     """建一条 ``Space`` + 其下的 ``Project``（``_aresolve_project`` 取该 space 首个）。"""
     from initiatives.models import Project
@@ -308,11 +325,16 @@ async def _aworkflow_context(space):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_workflow_entry_old_chain_is_byte_identical() -> None:
-    """⭐ 开关关闭（缺省）⇒ workflow 入口逐字走 ``start_orchestration``、实参一个不改。"""
+async def test_workflow_entry_explicit_rollback_is_byte_identical() -> None:
+    """⭐ 显式回滚到 ``technical_plan`` ⇒ workflow 入口逐字走 ``start_orchestration``。
+
+    翻默认之后这一档要靠**显式 override** 才到达；它证明运维那条「改一个设置值即回退」
+    的路仍然通。
+    """
     from workflows.nodes.ai.plan_research import AIPlanResearchNode
 
     space, _project = await _amake_project()
+    await _aset_switch(workflow=_LEGACY)
     node = AIPlanResearchNode()
     ctx = await _aworkflow_context(space)
 
@@ -325,12 +347,13 @@ async def test_workflow_entry_old_chain_is_byte_identical() -> None:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_workflow_entry_blueprint_switch_creates_blueprint_session() -> None:
-    """开关打开 ⇒ 建 ``technical_blueprint`` 会话且 ``decomposition.project_id`` 非空。"""
+@pytest.mark.parametrize("switch", _BLUEPRINT_SWITCH_STATES)
+async def test_workflow_entry_drives_the_blueprint_chain(switch: str | None) -> None:
+    """⭐ 零配置（新默认）与显式蓝图**两态并列** ⇒ 都建蓝图会话且带 ``project_id``。"""
     from workflows.nodes.ai.plan_research import AIPlanResearchNode
 
     space, project = await _amake_project()
-    await _aset_switch(workflow=_BLUEPRINT)
+    await _aapply_switch("workflow", switch)
 
     node = AIPlanResearchNode()
     session = await node._create_session(await _aworkflow_context(space), MagicMock())
@@ -343,14 +366,17 @@ async def test_workflow_entry_blueprint_switch_creates_blueprint_session() -> No
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_workflow_entry_rejects_when_project_unresolved() -> None:
-    """⭐ 推不出 project_id ⇒ ``NodeResult(next_handle="error")`` 且 **DB 零副作用**。"""
+    """⭐ 推不出 project_id ⇒ ``NodeResult(next_handle="error")`` 且 **DB 零副作用**。
+
+    ⚠️ 翻默认之后这一档**不需要设开关**就会到达 —— 也正因如此它更重要了：默认走蓝图链
+    意味着「推不出项目」从边缘态变成了任何一个未关联项目的工作流都会撞上的正常路径。
+    """
     from delivery.models import Artifact, ConvergenceSession
     from projects.models import Space
     from workflows.nodes.ai.plan_research import AIPlanResearchNode
 
     # 该 space 下**没有任何 Project** ⇒ Space→Project 换算落空。
     empty_space = await Space.objects.acreate(name=f"space-{uuid.uuid4().hex[:6]}")
-    await _aset_switch(workflow=_BLUEPRINT)
     before_sessions = await ConvergenceSession.objects.acount()
     before_artifacts = await Artifact.objects.acount()
 
@@ -375,13 +401,14 @@ async def _amake_conversation(space):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_chat_entry_old_chain_is_byte_identical() -> None:
-    """开关关闭 ⇒ chat 入口建的仍是 ``technical_plan`` / ``entrypoint=chat`` 会话。"""
+async def test_chat_entry_explicit_rollback_is_byte_identical() -> None:
+    """显式回滚 ⇒ chat 入口建的仍是 ``technical_plan`` / ``entrypoint=chat`` 会话。"""
     from agents.tools.plan_research_tools import start_plan_research
     from delivery.models import ConvergenceSession
 
     space, _project = await _amake_project()
     conv = await _amake_conversation(space)
+    await _aset_switch(chat=_LEGACY)
 
     with _stub_runtime():
         result = await start_plan_research(
@@ -399,14 +426,15 @@ async def test_chat_entry_old_chain_is_byte_identical() -> None:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_chat_entry_blueprint_switch_creates_blueprint_session() -> None:
-    """开关打开 ⇒ chat 入口建 ``technical_blueprint`` 会话且带上会话所属项目。"""
+@pytest.mark.parametrize("switch", _BLUEPRINT_SWITCH_STATES)
+async def test_chat_entry_drives_the_blueprint_chain(switch: str | None) -> None:
+    """⭐ 零配置（新默认）与显式蓝图两态并列 ⇒ chat 入口都建蓝图会话且带所属项目。"""
     from agents.tools.plan_research_tools import start_plan_research
     from delivery.models import ConvergenceSession
 
     space, project = await _amake_project()
     conv = await _amake_conversation(space)
-    await _aset_switch(chat=_BLUEPRINT)
+    await _aapply_switch("chat", switch)
 
     with _stub_runtime():
         await start_plan_research(
@@ -431,7 +459,6 @@ async def test_chat_entry_rejects_when_project_unresolved() -> None:
     from delivery.models import Artifact, ConvergenceSession
 
     conv = await Conversation.objects.acreate()
-    await _aset_switch(chat=_BLUEPRINT)
     before_sessions = await ConvergenceSession.objects.acount()
     before_artifacts = await Artifact.objects.acount()
 
@@ -453,9 +480,15 @@ async def test_chat_entry_rejects_when_project_unresolved() -> None:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_mcp_entry_old_chain_is_byte_identical() -> None:
-    """开关关闭 ⇒ MCP delegate 仍建 ``technical_plan`` 且 ``entrypoint="workflow"``（既有约定）。"""
+async def test_mcp_entry_explicit_rollback_is_byte_identical() -> None:
+    """显式回滚 ⇒ MCP delegate 仍建 ``technical_plan`` 且 ``entrypoint="workflow"``（既有约定）。
+
+    ⭐ 这一条同时守住 per-entry 纪律最尖锐的那一面：MCP 记的 ``entrypoint`` 就是
+    ``"workflow"``，只回滚 ``mcp`` 键必须**只**影响 MCP，不能靠 entrypoint 反推。
+    """
     from mcp_tools.orchestration_delegate import delegate_process_runtime
+
+    await _aset_switch(mcp=_LEGACY)
 
     with _stub_runtime():
         result = await delegate_process_runtime(requirement_text="让登录支持双因子")
@@ -466,13 +499,17 @@ async def test_mcp_entry_old_chain_is_byte_identical() -> None:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_mcp_context_resolves_to_project_not_space() -> None:
-    """⭐ P-8 行为防线：``meta.project_id`` 等于 ``Project.id`` 且**不等于** ``Space.id``。"""
+@pytest.mark.parametrize("switch", _BLUEPRINT_SWITCH_STATES)
+async def test_mcp_context_resolves_to_project_not_space(switch: str | None) -> None:
+    """⭐ P-8 行为防线：``meta.project_id`` 等于 ``Project.id`` 且**不等于** ``Space.id``。
+
+    零配置（新默认）与显式蓝图两态并列 —— 翻默认之后前者才是生产实际走的那条。
+    """
     from mcp_tools.orchestration_delegate import delegate_process_runtime
 
     space, project = await _amake_project()
     context = _McpContextStub(space=space)
-    await _aset_switch(mcp=_BLUEPRINT)
+    await _aapply_switch("mcp", switch)
 
     with _stub_runtime():
         result = await delegate_process_runtime(
@@ -493,7 +530,6 @@ async def test_mcp_entry_rejects_when_project_unresolved() -> None:
     from delivery.models import Artifact, ConvergenceSession
     from mcp_tools.orchestration_delegate import delegate_process_runtime
 
-    await _aset_switch(mcp=_BLUEPRINT)
     before_sessions = await ConvergenceSession.objects.acount()
     before_artifacts = await Artifact.objects.acount()
 
@@ -519,13 +555,15 @@ class _McpContextStub:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_feature_list_entry_blueprint_switch_forwards_segments() -> None:
-    """⭐ 开关打开 ⇒ 建蓝图会话且 ``feature_segments`` 原样进 ``decomposition``（供直采）。"""
+@pytest.mark.parametrize("switch", _BLUEPRINT_SWITCH_STATES)
+async def test_feature_list_entry_drives_the_blueprint_chain(switch: str | None) -> None:
+    """⭐ 零配置（新默认）与显式蓝图两态并列 ⇒ 建蓝图会话且 ``feature_segments`` 原样进
+    ``decomposition``（供直采，⛔ 不再走 LLM 拆分）。"""
     from delivery.models import ConvergenceSession
     from initiatives.services.feature_solution_service import FeatureSolutionService
 
     _space, project = await _amake_project()
-    await _aset_switch(feature_list=_BLUEPRINT)
+    await _aapply_switch("feature_list", switch)
 
     segments = [
         {"title": "登录页加双因子开关", "module": "账号", "layer": "frontend"},
@@ -553,11 +591,12 @@ async def test_feature_list_entry_blueprint_switch_forwards_segments() -> None:
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_feature_list_entry_old_chain_is_byte_identical() -> None:
-    """开关关闭 ⇒ feature list 入口仍建 ``technical_plan`` 且三个既有键形态不变。"""
+async def test_feature_list_entry_explicit_rollback_is_byte_identical() -> None:
+    """显式回滚 ⇒ feature list 入口仍建 ``technical_plan`` 且三个既有键形态不变。"""
     from initiatives.services.feature_solution_service import FeatureSolutionService
 
     _space, project = await _amake_project()
+    await _aset_switch(feature_list=_LEGACY)
     resolved = _ResolvedStub(project_id=str(project.id), segments=[{"title": "A"}])
 
     session = await FeatureSolutionService()._acreate_session(
@@ -583,7 +622,6 @@ async def test_feature_list_entry_rejects_when_project_unresolved() -> None:
         FeatureSolutionService,
     )
 
-    await _aset_switch(feature_list=_BLUEPRINT)
     before_sessions = await ConvergenceSession.objects.acount()
     before_artifacts = await Artifact.objects.acount()
     resolved = _ResolvedStub(project_id="", segments=[{"title": "A"}])

@@ -199,8 +199,11 @@ class SettingKeys:
     # 执行路径：既有 apscheduler 的 remind_blueprint_clarifications job（不新起定时体系）。
     BLUEPRINT_REVIEW_CONFIG = "blueprint.review.config"
     # value 为 JSON：{"workflow"|"chat"|"mcp"|"feature_list": "technical_plan"|"technical_blueprint"}。
-    # 四个入口各自独立，未配置 / 畸形 / 值域外一律回落 "technical_plan"（安全默认：
-    # 默认切换与旧 process 退役收口顺延同步点 2 后的收尾 plan）。
+    # 四个入口各自独立；⭐ 默认四键全 "technical_blueprint"（同步点 2 收尾翻的默认，
+    # 前提是 G1/G3/G4 三道消费方接缝与终态映射都已修正）。未配置 / 畸形 / 值域外一律
+    # 回落**该入口的声明默认值**（⛔ 不再硬回 "technical_plan"：那会让降级路径悄悄把
+    # 流量送回已退役的旧链）。
+    # 运维回滚：把某个键显式置成 "technical_plan" 即单入口回退，不需要发布。
     # ⛔ 消费方一律传**字面量** entry（MCP 入口的 session.entrypoint 实测是 "workflow"，
     # 从 session 反推会让 workflow 键连带把 MCP 一起切走）。
     # 消费方：services/process_runtime/blueprint_entry_switch.py（116-01）。

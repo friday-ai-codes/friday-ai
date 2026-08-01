@@ -828,19 +828,25 @@ def test_blueprint_status_literals_match_the_enum() -> None:
     assert BlueprintStatus.PENDING_REVIEW in _BLUEPRINT_PRODUCED_STATUSES
 
 
-def test_entry_switch_defaults_are_untouched() -> None:
-    """⭐ 本次改动**不翻开关**：四个入口默认值必须仍全是 ``technical_plan``。
+def test_entry_switch_defaults_are_flipped_now_that_the_seams_are_fixed() -> None:
+    """⭐ 断言随同步点 2 收尾**翻面**：四个入口默认值现在全是 ``technical_blueprint``。
 
-    翻默认是同步点 2 的**下一步**，且必须在这三道接缝正确之后 —— 先翻就等于把 G1/G4
-    直接暴露给第一次澄清。
+    本条此前锁的是相反的东西 —— 「三道接缝还没修好之前**不许**翻默认，先翻就等于把
+    G1/G4 直接暴露给第一次澄清」。接缝修好了，前提条件成立，默认随之翻过来；这条断言
+    的作用也从「拦住早翻」变成「拦住回退」。
+
+    ⛔ 旧链**不再是任何入口的默认**（退役收口的行为面判据，与
+    ``test_technical_plan_retirement.py`` 的注册面判据并列）。
     """
     from services.process_runtime.blueprint_entry_switch import (
         DEFAULT_ENTRY_SWITCH,
+        PROCESS_TECHNICAL_BLUEPRINT,
         PROCESS_TECHNICAL_PLAN,
     )
 
     assert set(DEFAULT_ENTRY_SWITCH) == {"workflow", "chat", "mcp", "feature_list"}
-    assert set(DEFAULT_ENTRY_SWITCH.values()) == {PROCESS_TECHNICAL_PLAN}
+    assert set(DEFAULT_ENTRY_SWITCH.values()) == {PROCESS_TECHNICAL_BLUEPRINT}
+    assert PROCESS_TECHNICAL_PLAN not in DEFAULT_ENTRY_SWITCH.values()
 
 
 @pytest.mark.asyncio

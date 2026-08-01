@@ -39,6 +39,13 @@ from services.process_runtime import ArchitectMergeAdapter, ProcessEngine
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
+# ⭐ 同步点 2 收尾：本文件冲着**旧 technical_plan 链**写（旧 stage 图 / MergedPlan content /
+# 旧终态映射）。四个入口开关默认值已翻到 technical_blueprint ⇒ 这里显式 override 回旧链，
+# 把「我要测的是旧链」说出来，而不是继续靠「默认恰好是旧链」隐式到达。
+# 旧链退役后，显式 override 正是它唯一合法的到达方式（见
+# tests/services/process_runtime/test_technical_plan_retirement.py）。
+pytestmark = [pytestmark, pytest.mark.usefixtures("legacy_plan_entry_switch")]
+
 
 async def _make_repo(name: str) -> Repository:
     return await Repository.objects.acreate(
@@ -134,7 +141,11 @@ def _mock_merge_engine(av_id: uuid.UUID) -> ProcessEngine:
     clarify.clarify = AsyncMock(return_value={"needs_clarification": False})
     merge = AsyncMock()
     merge.merge = AsyncMock(
-        return_value={"validation_status": "passed", "artifact_version_id": str(av_id), "attempt": 0}
+        return_value={
+            "validation_status": "passed",
+            "artifact_version_id": str(av_id),
+            "attempt": 0,
+        }
     )
     deps = SimpleNamespace(
         router=router, recall=recall, research=research, merge=merge, clarify=clarify
