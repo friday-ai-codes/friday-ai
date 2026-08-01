@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
-status: "⭐ **115-07（阶段 1 确认门面板）已收口，Phase 115 全相位完成**——2 个新建组件 + 1 处**零删除行**的页面追加 + 22 例组件测试全绿。前端门 vitest **1640 passed / 1 skipped**（基线 1618/1，**+22 零回归**）、type-check 通过、`eslint .` **111 problems**（与基线逐个相同 ⇒ 零新增）、`pnpm build` 通过、源码守卫 6 条全绿（扫描面 41 → **43 文件**）。⭐ **FLOW-03 第一次在 UI 上可达**：112 的 `blueprint-gate/` 八端点此前全仓零前端，现在快照与七个动作全部有界面，用户能确认仓库集与职责并进入 113 的阶段 2。⭐ **「不得据 gate 状态码推断权限」被钉成可证伪事实**：三种 404 的 `detail` 各跑一遍并断言**同一组**结果（面板不存在 / 无错误态 / 六个 toast 零调用），任何按文案分档的实现必有一条转红。七动作统一「一次 POST + `['blueprint','gate',id]` 与 `['blueprint','snapshot',id]` 双失效」、零乐观更新；两条破坏性动作走二次确认（文案逐字照 §16）且「取消 ⇒ 不发 POST」有正反用例。⭐ **「可独立顺延」经实跑验证**：临时分支整体回退本 plan 后，vitest/type-check/build **逐字回到 115-06 基线**，验证后工作区已恢复。相位级收口全绿：§13.2 的四个 0.19 归属面 `git diff` 全空、六个追加点删除行全为 0、`server/` 相位内只含 115-01 的七个文件且零 migration、依赖三件套零行变更。以下为 115-06 的收口记录 ——9 个新建组件/页面 + 2 个页面测试（16 例全绿），前端门 vitest **1618 passed / 1 skipped**（基线 1602/1，+16 零回归）、type-check 通过、`eslint .` **111 problems**（与基线逐个相同 ⇒ 零新增）、⭐ `pnpm build` **通过**、源码守卫 6 条全绿（扫描面 36 → **41 文件**）。⭐ **P-4 被物理堵死并经真实变异证明**：十个 `<section id>` 容器无条件渲染、`id` 全是静态字面量、`sections` 恒 10 项、badge 传空串而非 0；给第一段加 `v-if="content"` ⇒ 用例 1 转红（其余八条保持绿）。⭐ **两条错误分档特例落地**：四个主查询 404 整页替换为唯一一句中性文案且不渲染任何蓝图元信息；`blueprint-gate/` 的非 200 **只决定挂载点是否渲染**，用例断言「gate 抛 404 ⇒ 页面正常渲染、无错误态、六个 toast mock 零调用」。六个动作端点按接线契约处理（409 blocked 开解药面板 / reflow 五档都不当失败 / 零乐观更新 + 前缀失效）。⭐ **i18n 缺口一次清零**：`zh-CN.json` 新增 **69 个叶子键（0 删除 0 修改）**，其中 42 个是 115-03/04/05 的回报项，12 个组件的降级渲染已全部换回（优先换回「枚举徽标印英文 token」那一档）。两处宿主追加点删除行 = 0；四个 0.19 归属面 `git diff` 全空；零新增依赖、后端零改动。⭐ 115-07 的确认门面板挂载点（`#gate` / `blueprint-gate-mount`）与 `gateAvailable` 派生已就位，可独立推迟"
-last_updated: "2026-07-31T23:34:52.053Z"
-last_activity: 2026-07-31
+status: "⭐ **116-01（分派闸 + per-entry 开关 + gate 范围闸）已收口** —— PHASE_BASE = 0e208ba93e1318e75bc98b5318f31e754edd608d；全量后端门 8671 passed / 1 failed（基线 8609/1，+62 零回归）；Wave 0 探针已实跑解除 A1、三条变异各实跑一次真实变异；零 migration、前端零改动。116-02/03/06 照 build_engine_for_session 的二元组契约与 entry_key 字面量纪律接线"
+last_updated: "2026-08-01T06:03:37.177Z"
+last_activity: 2026-08-01
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 27
-  completed_plans: 27
-  percent: 83
+  total_plans: 34
+  completed_plans: 28
+  percent: 82
 ---
 
 # Project State
@@ -20,14 +20,20 @@ progress:
 See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/technical-blueprint/DESIGN.md](./technical-blueprint/DESIGN.md)**（13 节，§12 八项决策已定夺，plan-phase 必读）。
 
 **Core value（v0.20.0，在建）:** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，仓库章程补齐净新增落点知识，飞书式划线澄清多轮收敛，全生命周期可管理，知识库可查可引可导出。
-**Current focus:** Phase 115 — 前端查看器与知识库（结构化阅读 + 批注 + 管理面）
+**Current focus:** Phase 116 — 入口收编与导出（全入口统一 + MCP 协议 + 飞书导出 + 图谱物化）
 
 ## Current Position
 
-Phase: 116
-Plan: Not started
-Status: ⭐ **115-07（阶段 1 确认门面板）已收口，Phase 115 全相位完成**——2 个新建组件 + 1 处**零删除行**的页面追加 + 22 例组件测试全绿。前端门 vitest **1640 passed / 1 skipped**（基线 1618/1，**+22 零回归**）、type-check 通过、`eslint .` **111 problems**（与基线逐个相同 ⇒ 零新增）、`pnpm build` 通过、源码守卫 6 条全绿（扫描面 41 → **43 文件**）。⭐ **FLOW-03 第一次在 UI 上可达**：112 的 `blueprint-gate/` 八端点此前全仓零前端，现在快照与七个动作全部有界面，用户能确认仓库集与职责并进入 113 的阶段 2。⭐ **「不得据 gate 状态码推断权限」被钉成可证伪事实**：三种 404 的 `detail` 各跑一遍并断言**同一组**结果（面板不存在 / 无错误态 / 六个 toast 零调用），任何按文案分档的实现必有一条转红。七动作统一「一次 POST + `['blueprint','gate',id]` 与 `['blueprint','snapshot',id]` 双失效」、零乐观更新；两条破坏性动作走二次确认（文案逐字照 §16）且「取消 ⇒ 不发 POST」有正反用例。⭐ **「可独立顺延」经实跑验证**：临时分支整体回退本 plan 后，vitest/type-check/build **逐字回到 115-06 基线**，验证后工作区已恢复。相位级收口全绿：§13.2 的四个 0.19 归属面 `git diff` 全空、六个追加点删除行全为 0、`server/` 相位内只含 115-01 的七个文件且零 migration、依赖三件套零行变更。以下为 115-06 的收口记录 ——9 个新建组件/页面 + 2 个页面测试（16 例全绿），前端门 vitest **1618 passed / 1 skipped**（基线 1602/1，+16 零回归）、type-check 通过、`eslint .` **111 problems**（与基线逐个相同 ⇒ 零新增）、⭐ `pnpm build` **通过**、源码守卫 6 条全绿（扫描面 36 → **41 文件**）。⭐ **P-4 被物理堵死并经真实变异证明**：十个 `<section id>` 容器无条件渲染、`id` 全是静态字面量、`sections` 恒 10 项、badge 传空串而非 0；给第一段加 `v-if="content"` ⇒ 用例 1 转红（其余八条保持绿）。⭐ **两条错误分档特例落地**：四个主查询 404 整页替换为唯一一句中性文案且不渲染任何蓝图元信息；`blueprint-gate/` 的非 200 **只决定挂载点是否渲染**，用例断言「gate 抛 404 ⇒ 页面正常渲染、无错误态、六个 toast mock 零调用」。六个动作端点按接线契约处理（409 blocked 开解药面板 / reflow 五档都不当失败 / 零乐观更新 + 前缀失效）。⭐ **i18n 缺口一次清零**：`zh-CN.json` 新增 **69 个叶子键（0 删除 0 修改）**，其中 42 个是 115-03/04/05 的回报项，12 个组件的降级渲染已全部换回（优先换回「枚举徽标印英文 token」那一档）。两处宿主追加点删除行 = 0；四个 0.19 归属面 `git diff` 全空；零新增依赖、后端零改动。⭐ 115-07 的确认门面板挂载点（`#gate` / `blueprint-gate-mount`）与 `gateAvailable` 派生已就位，可独立推迟
-Last activity: 2026-07-31
+Phase: 116 (入口收编与导出（全入口统一 + MCP 协议 + 飞书导出 + 图谱物化）) — EXECUTING
+Plan: 2 of 7
+Status: ⭐ **116-01（分派闸 + per-entry 开关 + gate 范围闸）已收口** —— `PHASE_BASE = 0e208ba93e1318e75bc98b5318f31e754edd608d`。1 个新建源文件 + 4 处既有源文件改造 + 3 个新建测试文件，**零 migration、零新依赖、零新 `CallSource` 枚举、前端零改动**。全量后端门 **8671 passed / 1 failed**（基线 8609/1，**+62 零回归**；唯一失败仍是 `test_skills_snapshot_guard` 这个 worktree 环境产物）。⭐ **Wave 0 探针已实跑并解除 RESEARCH Assumptions A1**：错工厂 + 对的 driver 从 `intake` 驱一条蓝图会话，实测终局逐字为 `current_stage='reroute'` / `status='failed'` / `error={'stage': 'reroute', 'exception': 'AttributeError', 'message': "'ResearchDispatchAdapter' object has no attribute 'aadvance_reroute'"}`，与 §A.3 推演吻合 ⇒ 变异用例 A 的期望值**无需调整**（判据落白名单 b + c）。⚠️ 该结论**只在 wave 1 成立**，116-02 落地后 `intake`/`decompose` 不再 pass-through、落点会前移。⭐ **三条变异各实跑一次真实变异**（删 → 转红 → 恢复 → 转绿），其中变异 C 另跑探针坐实「只换 engine 不换 driver」会把健康会话推成 `advance_step_limit` FAILED（steps 21）。⭐ **116-03 的六个续驱点直接照 `build_engine_for_session` 改**：同步函数、返 `(engine, driver)` 二元组、未知 `process_type` 回落旧链 + 响亮事件、⛔ 绝不透传 `skip_clarification`/`force_confirm` 进蓝图工厂 —— 逐字契约见 SUMMARY。冻结面核算全绿（六个 technical_plan 文件 + `repo_router_v2.py` + `web/` 的 `git diff $PHASE_BASE` 均空），删除行 `entrypoint.py` = 1（上界 2）、`blueprint_gate_views.py` = 2（上界 6）、其余三个受限文件 = 0
+Last activity: 2026-08-01
+
+⚠️ **116-02/03/06 开工前必读 [`116-01-SUMMARY.md`](./phases/116-entry/116-01-SUMMARY.md)**，三条最容易踩：
+
+1. ⭐ **`build_engine_for_session` 返二元组不是可选项**：旧续驱器的 `waiting_clarification` 短路判据（`ClarificationService().ahas_pending`）对蓝图会话**恒 False**，只换 engine 不换 driver 会把健康会话推到 `max_steps` 落 FAILED（已实测）。
+2. ⭐ **`entry_key` ≠ `entrypoint`，且必须传字面量常量**：MCP 入口传的 `entrypoint` 实测是 `"workflow"`（既有约定）；`ast` 扫描器（两条谓词 + 守护的守护）已就位，116-03 新增调用点自动纳入 —— 写成 `entry_key=session.entrypoint` 或 `aresolve_entry_process_type(session.entrypoint)` 会直接转红。
+3. ⭐ **gate 链与 review 链的范围闸是两套**：gate 用更严变体（两个失败分支同一中性 404），⛔ 不要「统一」成 review 那个带 400 分支的整体闸 —— 那会把 115-MN-03 的暴露面扩到八个端点上。
 
 ⭐ **115-03 起开工前必读 `115-02-SUMMARY.md` §14 的五条注意**，其中三条最容易踩：
 
@@ -50,8 +56,8 @@ Last activity: 2026-07-31
 | 112 | 规格门与双面路由调研（阶段 1 + 确认门 + 章程回灌） | FLOW-01/02/03/04, CHARTER-02/03 | ✅ Complete (5/5, 16/17 + gap closed) |
 | 113 | 分仓方案与融合（阶段 2/3）+ Context Bus | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | ✅ Complete (6/6, passed 54/54) |
 | 114 | 审查与澄清收敛（AI 审查 + 线程闭环 + 人工编辑） | FLOW-07, CLAR-02/03/04 | ✅ Complete (5/5，四条 REQ + 五条 BLOCKER 定夺均有绿色用例背书) · ✅ Reviewed & Fixed (10 fixed / 1 skipped) |
-| 115 | 前端查看器与知识库（查看器/批注/tab/终审 UI） | VIEW-01/02/03/04, CLAR-01, FLOW-08 | Not started |
-| 116 | 入口收编与导出（MCP 协议 + 全入口 + 飞书导出 + 图谱物化） | GATE-01, VIEW-05 | Not started |
+| 115 | 前端查看器与知识库（查看器/批注/tab/终审 UI） | VIEW-01/02/03/04, CLAR-01, FLOW-08 | ✅ Complete (7/7) |
+| 116 | 入口收编与导出（MCP 协议 + 全入口 + 飞书导出 + 图谱物化） | GATE-01, VIEW-05（+ 顺延闭合 VIEW-04、VIEW-02） | 🟡 In progress |
 
 完整需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)（35 条 + Traceability，35/35 映射；DEPTH-01~05 自 v0.19.0 Phase 108 迁入）；阶段详情见 [ROADMAP.md](./ROADMAP.md)。
 
@@ -153,11 +159,13 @@ Last activity: 2026-07-31
 - ⭐ [Phase 115 review 顺带发现 · **未修** · 平台级] **`redact_secrets_in_text` 不覆盖数据库连接串**：它只替换 `sk-ant-*` / `sk-*` / `AIza*` / `Bearer *` / PEM 私钥（`common/logging.py:362` 的 `SENSITIVE_VALUE_PATTERN`）。写 115-MJ-04 用例时**实测**异常文本里的 `postgres://user:s3cr3t@10.0.0.1:5432/friday` **原样进了日志**。不是 115 引入、也不限蓝图链 —— 全仓 `redact_secrets_in_text(str(exc))` 的调用点都吃这一口径。改 `SENSITIVE_VALUE_PATTERN` 要连带回归全部消费方 ⇒ 与本表既有的「全仓二十余处 `error=str(exc)` 未脱敏」清理项**合并成一个独立清理相位**
 - ⭐ [Phase 115 review 定夺 · **116 接线必读**] **「best-effort」只覆盖观测，不覆盖业务**（115-MJ-04 的根因与修法）：`.cursor/rules/observability-logging.mdc` 的「失败吞掉、绝不打断主流程」约束的是**埋点代码**。把业务主体（queryset / 可见性过滤 / 行装配）一并包进 `except Exception` 返 200 空结构，会让「读失败」与「真的没数据」在 HTTP 层完全同形，前端只能把两者渲染成同一个空态。现行形态见 `blueprint_list_views.py`：`_aggregate` 失败**如实 503 + 中性 detail**（⛔ 不回显异常原文），`_log_list` 另包一层 `try/except: pass`。⚠️ **503 响应体逐字不含 `items` / `total`** —— 若把空结构也塞进去，前端 `items.length === 0` 分支又会把它读成空态（有用例钉死）。116 新增任何列表/聚合端点请照此分层
 - ⭐ [Phase 115 review 定夺 · **116 接线必读**] **会话 stage 名与阶段时间线节点名不是同一套**（115-MJ-02 修复中发现，评审建议修法里未提及、直接照抄会静默失效）：后端 stage graph 是 `intake / decompose / spec_gate / route / repo_research / reroute / repo_confirmation / repo_plan / merge / ai_review`（`builtin_processes.py:850-960`），前端 `BLUEPRINT_STAGES` 是 `spec_gate / route / repo_research / **confirmation** / repo_plan / merge / ai_review / **pending_review**`。换算走 `blueprintBlocks.SESSION_STAGE_ALIASES`（`repo_confirmation → confirmation`、`reroute → route`）+ `PRE_TIMELINE_SESSION_STAGES`（`intake` / `decompose` ⇒ `-1`）。漏了别名表的症状是 `indexOf` 返 `-1`、位序推断**整条静默不生效**（确认门阶段的 `route` 继续转圈）。⛔ 不要「统一命名」：两侧各有既有消费方。另一条实证：`current_stage` **不会**取 `__done__` —— `transition` 在 `target == STAGE_DONE` 时保留 `from_stage`（`convergence_session_service.py:172-173`），所以 confirmed 蓝图的 `current_stage` 是 `ai_review`
-- ⭐ [Phase 115-07 提出 · **既有后端缺口**] **`blueprint-gate/` 八个端点里有七个没有项目范围闸**：实读 `server/delivery/api/blueprint_gate_views.py`，范围闸 helper `_ablueprint_project_id`（`:511`）**只在 `BlueprintRejectedToBoundaryView`（`:385`）里被调用过一次**，其余七个 View 只有 `IsAuthenticated`。⇒ 该链的 404 混合了「门未开启」（绝大多数蓝图绝大多数时间的正常态）/「artifact 不存在」/「无蓝图编排会话」三种语义，**状态码不携带任何权限信息**。115-07 的前端已按 P-10 处理（渲染条件只有「200 与否」一条，⛔ 不进错误分档、不据它推断权限，三种 404 行为一致有并列用例），但**后端的闸本身仍缺**。本相位边界是「只加读面」不修它 ⇒ 顺延为独立工作项（与 Phase 111 的 MN-12「权限口径」一并定夺）
-- ⭐ [Phase 115-07 提出 · 后端小缺口] **`confirm/` 的 409 未下发 `blocked_reason`**：`blueprint_gate_views.py:240`（未决阻塞澄清）与 `:249`（`alock` 拒绝落锁）两处 409 的**响应体里只有 `detail`**，`blocked_reason` 只活在 service 返回值里被视图消费掉了。前端已按机器可读键实现两档分流（`pending_clarification` ⇒ 一键跳侧栏未决组；其余 ⇒ 回显 `detail` + 刷新重试），⛔ **坚持不按中文 `detail` 分支**（那等于把后端文案当协议）。⇒ 后端在这两处 409 的 body 里补一个 `blocked_reason` 键即可让「一键跳未决线程」这档在生产生效；在此之前该档功能降级但语义正确
+- ~~⭐ [Phase 115-07 提出 · **既有后端缺口**] **`blueprint-gate/` 八个端点里有七个没有项目范围闸**~~ —— **116-01 已闭**（commit `dd8c0f74`）：新增 `_aassert_gate_scope`（**全文件唯一一份授权判据**），五个改快照动作经 `_aapply_action` 一处挂闸、`snapshot` / `rejected-to-boundary` / `upgrade-research` 三个直挂 ⇒ 八端点全覆盖。⭐ 用**更严变体**：「读不到 `meta.project_id`」与「非项目成员」回**同一个中性 404 常量对象**（`_GATE_NOT_OPEN_DETAIL`）⇒ **零新增存在性暴露面**，由 `assert a.json() == b.json()` 背书；⛔ 刻意**不 import** review 链那个带 400 分支的整体闸（见下面 MN-03 那条）。三条破坏性写（`confirm` / `remove-repo` / `add-repo`）另有「非成员调用后 DB 一字未动」的用例。原文存档如下 ——
+- [原文存档] **`blueprint-gate/` 八个端点里有七个没有项目范围闸**：实读 `server/delivery/api/blueprint_gate_views.py`，范围闸 helper `_ablueprint_project_id`（`:511`）**只在 `BlueprintRejectedToBoundaryView`（`:385`）里被调用过一次**，其余七个 View 只有 `IsAuthenticated`。⇒ 该链的 404 混合了「门未开启」（绝大多数蓝图绝大多数时间的正常态）/「artifact 不存在」/「无蓝图编排会话」三种语义，**状态码不携带任何权限信息**。115-07 的前端已按 P-10 处理（渲染条件只有「200 与否」一条，⛔ 不进错误分档、不据它推断权限，三种 404 行为一致有并列用例），但**后端的闸本身仍缺**。本相位边界是「只加读面」不修它 ⇒ 顺延为独立工作项（与 Phase 111 的 MN-12「权限口径」一并定夺）
+- ~~⭐ [Phase 115-07 提出 · 后端小缺口] **`confirm/` 的 409 未下发 `blocked_reason`**~~ —— **116-01 已闭**（commit `dd8c0f74`）：两处 409 的 body 各补一个 `blocked_reason` 键（未决澄清档为字面量 `"pending_clarification"`，`alock` 拒锁档原样透传 `lock["reason"]`），**前端零改动**即让 115-07 已实现且已有用例的「一键跳未决线程」在生产生效（`gatePanel.spec.ts:577` / `:591` 复跑 22 passed）。原文存档如下 ——
+- [原文存档] **`confirm/` 的 409 未下发 `blocked_reason`**：`blueprint_gate_views.py:240`（未决阻塞澄清）与 `:249`（`alock` 拒绝落锁）两处 409 的**响应体里只有 `detail`**，`blocked_reason` 只活在 service 返回值里被视图消费掉了。前端已按机器可读键实现两档分流（`pending_clarification` ⇒ 一键跳侧栏未决组；其余 ⇒ 回显 `detail` + 刷新重试），⛔ **坚持不按中文 `detail` 分支**（那等于把后端文案当协议）。⇒ 后端在这两处 409 的 body 里补一个 `blocked_reason` 键即可让「一键跳未决线程」这档在生产生效；在此之前该档功能降级但语义正确
 - [Phase 115-07 重申 · SC-4 范围收窄] **关联段的「引用了本蓝图 / 关联知识」顺延 Phase 116 的知识图谱物化**（115-05 已首次登记，115-07 相位收口时重申）：当前关联段只呈现本蓝图**引出**的引用与关联项目，反向「被谁引用」需要图谱物化后才有数据源
 - [Phase 111 review 跳过项] **MN-06**：需新增 migration 才能修（详见 `.planning/phases/111-schema/111-REVIEW.md` Fix Log）——留到 112/113 有 migration 批次时一并做，避免为单条 MINOR 单独起 migration
-- [Phase 111 review 跳过项] **MN-12**：属权限口径决策（非实现缺陷），与 115 前端权限呈现一并定夺
+- ~~[Phase 111 review 跳过项] **MN-12**：属权限口径决策（非实现缺陷），与 115 前端权限呈现一并定夺~~ —— **116-01 结案**。定夺内容：115 已定「**前端不自建权限判断、一律以后端状态码为准；项目成员即全权**」（`blueprint-gate/` 的 404 是正常态，⛔ 不据它推断权限）；116-01 给 gate 链补齐范围闸后，蓝图**全部读写面 20 + 8 = 28 个端点的授权口径统一**为「superuser 直通 / 蓝图 `meta.project_id` 的项目成员放行 / 其余中性 404」。⚠️ **115-MN-03 的存在性预言机整体改版仍是独立工作项**：116-01 用的是**更严变体**（gate 链八端点的两个失败分支回同一中性 404），`_aassert_project_scope` 的 400 分支**一行未动、暴露面未扩大**；那条四语义契约的整体改版（含前端 400 档去向与两族参数化用例重写）仍待独立处理
 - [Phase 112 review 跳过项] **MN-06**：删除/启用皆属零行为收益的 churn（理由见 `.planning/phases/112-1/112-REVIEW.md` Fix Log）；MJ-06 的 `match_kind` 证据字段一并保留
 - [Phase 113 review 跳过项] **MN-09 重试计数无服务端权威来源**：两条建议修法均不可取——改 `session_id` 前缀撞冻结面 `research_adapter.py`；改走 `last_output` 是安全倒退（runner 可篡改 → 无界重试）。现状影响有界（卡住时人可见可续），**正解是给服务端加权威计数列**，另起小相位处理（见 `.planning/phases/113-2/113-REVIEW.md` Fix Log）
 - ~~[Phase 114-04 延后项] `blueprint_lifecycle_service.py:358` 的 `blueprint_transition_event_persist_failed` 缺 `category`/`component`~~ —— **114-05 已修**（commit `6f91f778`，补 `category="caller"` + `component="blueprint_lifecycle"`，并把异常文本改走 `redact_secrets_in_text`）。⚠️ 留一个可再议点：该事件与同函数内的转移事件家族（`component="process_runtime"`）不同组，若 115 观测面希望转移家族共用一个 component，改这一处即可（零行为影响）
