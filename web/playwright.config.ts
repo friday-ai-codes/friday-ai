@@ -30,6 +30,8 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
     headless: true,
+    // 代码库统一用 `data-test`（组件里已有大量该属性），不是 Playwright 默认的 data-testid。
+    testIdAttribute: 'data-test',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off',
