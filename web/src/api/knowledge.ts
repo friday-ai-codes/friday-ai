@@ -192,12 +192,18 @@ export async function getTimeline(
 
 export async function getRelated(
   id: string,
-  options?: { asOf?: string | null, direction?: string, maxHops?: number },
+  /**
+   * `relations`（Phase 116 VIEW-04）：可选的遍历关系集，不传则由后端落回既有默认集
+   * （`HAS_PLAN` / `IMPLEMENTED_BY` / `RELATES_TO`，**不含 `REFERENCES`**）。
+   * ⛔ `maxHops` 默认 2 是既有面的默认，不改；「被谁引用」这类直接引用者查询由调用方显式传 1。
+   */
+  options?: { asOf?: string | null, direction?: string, maxHops?: number, relations?: string[] },
 ) {
   return get<RelatedEntity[]>(`/knowledge/related/${id}/`, {
     ...withAsOf({}, options?.asOf),
     direction: options?.direction ?? 'both',
     max_hops: options?.maxHops ?? 2,
+    relations: options?.relations?.length ? options.relations.join(',') : undefined,
   })
 }
 

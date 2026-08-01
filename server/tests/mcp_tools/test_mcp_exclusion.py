@@ -54,7 +54,7 @@ def test_get_file_mirror_excluded_blocks_no_plaintext(
     """镜像命中被排除文件 → file_excluded，绝不返回 content。"""
     client, _ = mcp_client
     monkeypatch.setattr(
-        "mcp_tools.views.GetRepositoryFileView._read_from_mirror",
+        "services.repo_file_read._aread_from_mirror",
         AsyncMock(return_value=(".env", "SECRET_TOKEN=supersecret\n", _snapshot())),
     )
 
@@ -82,7 +82,7 @@ def test_get_file_mirror_suffix_resolution_cannot_bypass(
     """
     client, _ = mcp_client
     monkeypatch.setattr(
-        "mcp_tools.views.GetRepositoryFileView._read_from_mirror",
+        "services.repo_file_read._aread_from_mirror",
         AsyncMock(return_value=(".env", "SECRET=leak\n", _snapshot())),
     )
 
@@ -108,7 +108,7 @@ def test_get_file_index_fallback_excluded_blocks(
     """镜像不可用回退索引时，被排除文件同样拒读、无 content。"""
     client, _ = mcp_client
     monkeypatch.setattr(
-        "mcp_tools.views._scroll_file_from_collection",
+        "services.repo_file_read._scroll_file_from_collection",
         AsyncMock(
             return_value=[
                 {
@@ -142,7 +142,7 @@ def test_get_file_non_excluded_still_readable(
     """非排除文件不受影响，正常返回内容（防止过度拦截）。"""
     client, _ = mcp_client
     monkeypatch.setattr(
-        "mcp_tools.views._scroll_file_from_collection",
+        "services.repo_file_read._scroll_file_from_collection",
         AsyncMock(
             return_value=[
                 {
@@ -174,7 +174,7 @@ def test_get_file_fail_closed_on_matcher_error(
     """匹配器构造异常 → fail-closed 拒读，不降级返回明文。"""
     client, _ = mcp_client
     monkeypatch.setattr(
-        "mcp_tools.views._scroll_file_from_collection",
+        "services.repo_file_read._scroll_file_from_collection",
         AsyncMock(
             return_value=[
                 {
@@ -188,7 +188,7 @@ def test_get_file_fail_closed_on_matcher_error(
         ),
     )
     monkeypatch.setattr(
-        "mcp_tools.views.build_matcher_for_repo",
+        "services.repo_file_read.build_matcher_for_repo",
         AsyncMock(side_effect=RuntimeError("boom")),
     )
 
@@ -429,7 +429,7 @@ def test_excluded_file_invisible_across_all_mcp_tools(
 
     # 2) get_repository_file（镜像路径）
     monkeypatch.setattr(
-        "mcp_tools.views.GetRepositoryFileView._read_from_mirror",
+        "services.repo_file_read._aread_from_mirror",
         AsyncMock(return_value=(secret_path, secret_content + "\n", _snapshot())),
     )
     file_resp = client.post(

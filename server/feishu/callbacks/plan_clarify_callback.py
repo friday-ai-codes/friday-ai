@@ -39,7 +39,7 @@ from feishu.cards.chat_question_card import build_clarification_answered_card
 from feishu.views import CardCallback, register_card_callback
 from services.feishu_im import create_feishu_im_client_for_project
 from services.process_runtime import aanswer_round_and_resume
-from services.process_runtime.entrypoint import build_orchestration_engine
+from services.process_runtime.entrypoint import build_engine_for_session
 from workflows.engine.scheduler import WorkflowEngine, _run_in_thread
 from workflows.models.execution import (
     ExecutionStatus,
@@ -174,6 +174,22 @@ async def _acollect_round_questions(clarification_id: str) -> list[dict[str, Any
     return rows
 
 
+async def _aresolve_clarification_session(clarification_id: str) -> Any:
+    """据卡片权威 ``clarification_id`` 反查其 ``ConvergenceSession``（116-03，engine 分派用）。
+
+    只用来给 ``build_engine_for_session`` 判 ``process_type``；⛔ 绝不信回调直传的
+    session_id（防伪造，与 :func:`_acollect_round_questions` 同口径）。取不到返 ``None``
+    —— 分派器对 ``None`` 按空 ``process_type`` 回落旧链，与改动前逐字等价。
+    """
+    from delivery.models import Clarification, ConvergenceSession
+
+    row = await Clarification.objects.filter(id=clarification_id).values("session_id").afirst()
+    session_id = (row or {}).get("session_id")
+    if not session_id:
+        return None
+    return await ConvergenceSession.objects.filter(id=session_id).afirst()
+
+
 def _build_answers(questions: list[dict[str, Any]], data: dict[str, Any]) -> list[dict[str, Any]]:
     """按 ``order`` 枚举映射 ``q{i}``/``qt{i}`` → ``answers[]``（WARNING #3 索引↔question_id）。
 
@@ -239,7 +255,13 @@ async def _do_clarify_answer_async(
 
             # ③ 续推（同源 helper，91-01）：写答案 + 续驱 PlanSession；工作流入口 engine 带
             #    node_execution_id（CR-02 调研容器回调 resume 钥匙）。
-            engine = build_orchestration_engine(node_execution_id=str(node_execution.id))
+            #    ⭐ 116-03：engine 经分派器按会话的 process_type 取 —— 蓝图会话的澄清卡也走
+            #    这条回调，用旧链 engine 会让 handler 取不到 deps 而把会话打成 FAILED。
+            #    driver 由 aanswer_round_and_resume 内部同样经分派器选（两把锁一起换）。
+            session = await _aresolve_clarification_session(clarification_id)
+            engine, _adrive = build_engine_for_session(
+                session, node_execution_id=str(node_execution.id)
+            )
             await aanswer_round_and_resume(clarification_id, answers, engine=engine)
 
             # ④ 重调度挂起节点（approve_node，节点重入据 output_data.session_id 续推）。

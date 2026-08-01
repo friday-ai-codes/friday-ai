@@ -232,7 +232,123 @@ KNOWLEDGE_TOOL_SCHEMAS: list[dict[str, Any]] = [
             "required": ["branch_name"],
         },
     },
+    # ---- 蓝图共享上下文总线（BUS-01，Phase 113-02）------------------------
+    # 向后兼容（P1）：本表是 task 侧硬编码白名单、不从服务端下发 ——
+    # 老镜像没有这两项只是不调（天然安全）；新镜像打到未部署这两条 path 的服务端得
+    # 404，由上面 handler 工厂的「非 200 只回显 HTTP code + is_error」约定兜住，
+    # 容器不崩。故本次扩容**无需改动工厂/build/allowed_tools 任何一行**。
+    {
+        "name": "read_blueprint_context",
+        "description": (
+            "读取本次蓝图会话的共享上下文总线：拿到其他并行仓容器已写入的接口契约 / "
+            "现状结论 / 决策。适合「我要消费 B 仓的接口，先看它有没有写出来」类问题。"
+            "支持 since_seq 增量拉取，轮询时务必带上次返回的 max_seq，避免重复拉全量。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key_prefix": {
+                    "type": "string",
+                    "description": "key 前缀过滤，如 `repo:<uuid>.` 或 `contract:`",
+                },
+                "kind": {
+                    "type": "string",
+                    "description": (
+                        "条目类型：finding / api_surface / contract / decision / "
+                        "dependency_claim / question"
+                    ),
+                },
+                "repository_id": {"type": "string", "description": "按产出仓过滤（UUID）"},
+                "since_seq": {
+                    "type": "integer",
+                    "description": "只返回 seq 大于该值的条目（增量拉取，默认 0 = 全量）",
+                },
+                "limit": {"type": "integer", "description": "返回条数上限（默认 50，最大 200）"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "report_blueprint_context",
+        "description": (
+            "向本次蓝图会话的共享上下文总线写入一条结论：你产出的接口契约 / 关键现状 / "
+            "决策，写入后立即对所有并行仓容器可见。"
+            "适合「我定下了对外接口，让等我的仓能继续」场景。"
+            "key 用约定前缀：`repo:{仓UUID}.api_surface` / `contract:{名称}` / `decision:{线程id}`。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "（必填）条目 key，遵循前缀约定"},
+                "kind": {
+                    "type": "string",
+                    "description": (
+                        "（必填）条目类型，六值枚举：finding / api_surface / contract / "
+                        "decision / dependency_claim / question"
+                    ),
+                },
+                "repository_id": {"type": "string", "description": "产出仓 UUID（可选）"},
+                "content": {
+                    "type": "object",
+                    "description": (
+                        "（必填）结论正文 JSON 对象；服务端会递归脱敏，不要写入任何令牌/密钥"
+                    ),
+                },
+            },
+            "required": ["key", "kind", "content"],
+        },
+    },
+    # ---- 短等待原语（BUS-02，Phase 113-04）--------------------------------
+    # ⚠️ 本项**不经公共 handler 工厂发 HTTP**：它的 handler 在 `build_knowledge_mcp_server`
+    # 里被替换成 `blueprint_context_wait.await_blueprint_context` 的包装（复用工厂造出的
+    # read handler 作数据源）。故服务端**没有** `/api/mcp/tools/await_blueprint_context/`
+    # 这条 path，也不需要有。
+    {
+        "name": "await_blueprint_context",
+        "description": (
+            "等待某条共享上下文出现：当你要消费的其他仓接口契约还没写进总线时用它短等"
+            "（默认 3 分钟，最长 5 分钟）。"
+            "命中即返回；未命中一律返回 hit=false 的正常结果（不是工具错误），"
+            "请按 reason 分开降级："
+            "reason=timeout 表示等满了对方仍未发布——记录你的假设并继续；"
+            "reason=tool_error 表示总线读取持续失败（配额耗尽 / 凭证过期 / 服务端不可用），"
+            "此时**不能**据此断定对方没有发布该契约，请开澄清线程说明读不到总线；"
+            "reason=tool_unavailable 表示本次运行没有挂载共享上下文，按无总线流程继续。"
+            "任何 reason 都不要反复重试本工具。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key_pattern": {
+                    "type": "string",
+                    "description": (
+                        "（必填）等待的 key，支持尾部 `*` 通配，如 `repo:<uuid>.api_surface`"
+                    ),
+                },
+                "kind": {
+                    "type": "string",
+                    "description": (
+                        "条目类型（可选）：finding / api_surface / contract / decision / "
+                        "dependency_claim / question"
+                    ),
+                },
+                "since_seq": {
+                    "type": "integer",
+                    "description": "从该 seq 之后开始等（增量，默认 0）",
+                },
+                "timeout_minutes": {
+                    "type": "integer",
+                    "description": "等待上限分钟数，默认 3，最大 5",
+                },
+            },
+            "required": ["key_pattern"],
+        },
+    },
 ]
+
+# 短等待工具名（handler 需要特殊包装，见 `_attach_await_handler`）。
+AWAIT_CONTEXT_TOOL_NAME = "await_blueprint_context"
+READ_CONTEXT_TOOL_NAME = "read_blueprint_context"
 
 
 def _is_valid_knowledge_endpoint(endpoint: str) -> bool:
@@ -371,6 +487,64 @@ def _make_knowledge_handler(
     return handler
 
 
+def _attach_await_handler(
+    sdk_tools: list[SdkMcpTool[dict[str, Any]]],
+) -> list[SdkMcpTool[dict[str, Any]]]:
+    """把 ``await_blueprint_context`` 的 handler 换成「复用 read handler 的有界轮询包装」。
+
+    🔒 公共工厂 ``_make_knowledge_handler`` 一行不改（HTTP 超时常量 / ``quota_counter``
+    计数逻辑 / 不加回调参数三条硬约束）—— await 是唯一需要循环包装的例外，它**不新造 HTTP
+    调用**，只复用同一批工具里已造好的 ``read_blueprint_context`` handler 作数据源，故配额
+    计数、脱敏、非 200 处理全部原样继承。
+
+    超时路径**不带 ``is_error``**（那会诱导 agent 重试而非降级）；参数缺失与兜底异常仍带
+    ``is_error``（RTOOL-04：handler 永不 raise）。
+    """
+    from core.blueprint_context_wait import DEFAULT_TIMEOUT_MINUTES, await_blueprint_context
+
+    read_handler = next(
+        (tool.handler for tool in sdk_tools if tool.name == READ_CONTEXT_TOOL_NAME), None
+    )
+
+    async def await_handler(args: dict[str, Any]) -> dict[str, Any]:
+        args = args if isinstance(args, dict) else {}
+        key_pattern = str(args.get("key_pattern", "") or "").strip()
+        if not key_pattern:
+            return {
+                "content": [
+                    {"type": "text", "text": "await_blueprint_context 缺少 key_pattern 参数"}
+                ],
+                "is_error": True,
+            }
+        try:
+            result = await await_blueprint_context(
+                read_handler,
+                key_pattern,
+                kind=str(args.get("kind", "") or ""),
+                since_seq=int(args.get("since_seq", 0) or 0),
+                timeout_minutes=int(args.get("timeout_minutes", DEFAULT_TIMEOUT_MINUTES) or 0),
+            )
+            return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]}
+        except Exception:  # noqa: BLE001 — 永不冒泡崩容器（RTOOL-04）；不回显异常文本
+            logger.warning("knowledge_tool_await_error", tool=AWAIT_CONTEXT_TOOL_NAME)
+            return {
+                "content": [{"type": "text", "text": "共享上下文等待失败，请基于已有信息继续"}],
+                "is_error": True,
+            }
+
+    return [
+        SdkMcpTool(
+            name=tool.name,
+            description=tool.description,
+            input_schema=tool.input_schema,
+            handler=await_handler,
+        )
+        if tool.name == AWAIT_CONTEXT_TOOL_NAME
+        else tool
+        for tool in sdk_tools
+    ]
+
+
 def build_knowledge_mcp_server(
     endpoint_base: str,
     user_token: str,
@@ -423,6 +597,8 @@ def build_knowledge_mcp_server(
         )
         for schema in KNOWLEDGE_TOOL_SCHEMAS
     ]
+    # await 工具改挂自定义 handler（复用上面造好的 read handler 作数据源，工厂零改动）。
+    sdk_tools = _attach_await_handler(sdk_tools)
 
     logger.info(
         "knowledge_mcp_server_created",

@@ -4,13 +4,15 @@
 ====
 QPS/TPS/TTFT/上游错误统计都按 ``call_source`` 区分维度。本模块提供：
 
-- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（36 值，v0.15.0 Phase 80
+- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（44 值，v0.15.0 Phase 80
   新增 ``memory_distill``，v0.16.0 Phase 86 新增 ``ide_hook_distill``，v0.16.0 Phase 87
   新增 ``board_split``，v0.16.0 Phase 88 新增 ``repo_verify_container`` /
   ``repo_association``，v0.16.0 Phase 89 新增 ``plan_deepen`` / ``plan_revision`` /
   ``branch_naming``，v0.16.1 Phase 90 新增 ``plan_clarification``，v0.16.1 Phase 95
   新增 ``plan_decompose``，v0.17.0 Phase 101 新增 ``learning_case_extraction`` /
-  ``pr_review_capture``，feature list 方案编排新增 ``feature_change_classify``），作为
+  ``pr_review_capture``，feature list 方案编排新增 ``feature_change_classify``，
+  v0.20.0 Phase 111 新增 8 个 ``blueprint_*`` 值——蓝图编排全链路调用点，本相位
+  实际接线 ``blueprint_charter_draft``，其余 7 值供 Phase 112–114 消费），作为
   ``ModelUsageRecord.call_source`` 与各 LLM chokepoint 指标标签的权威取值；任意
   非法字符串经 :meth:`CallSource.normalize` 回退安全默认，杜绝基数失控
   （T-72-02-03 Tampering mitigation）。
@@ -35,7 +37,7 @@ UNKNOWN_CALL_SOURCE = "unknown"
 
 
 class CallSource(str, Enum):
-    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，36 值，权威照抄）。
+    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，44 值，权威照抄）。
 
     取值刻意收敛为有限集合：作为指标/筛选维度时基数可控；任意字符串经
     :meth:`normalize` 回退默认，杜绝外部输入污染 call_source 维度。
@@ -105,6 +107,31 @@ class CallSource(str, Enum):
     # 「改造已有功能」（单轮，best-effort，判不出标 unclear 不猜），供强制确认与
     # 分仓方案落点使用。
     FEATURE_CHANGE_CLASSIFY = "feature_change_classify"
+    # v0.20.0 Phase 112：蓝图需求对齐——LLM 把原始需求拆解为 requirement_spec
+    # feature_points（调用点在 112 落地）。
+    BLUEPRINT_DECOMPOSE = "blueprint_decompose"
+    # v0.20.0 Phase 112：蓝图歧义门 spec_gate——多轮澄清 + feature_point 意图分类
+    # greenfield/brownfield/fix（调用点在 112 落地）。
+    BLUEPRINT_SPEC_GATE = "blueprint_spec_gate"
+    # v0.20.0 Phase 112：蓝图逐仓调研 repo_research——每仓一个容器做 fitness 适配
+    # 判定与职责/现状调研（调用点在 112 落地）。
+    BLUEPRINT_REPO_RESEARCH = "blueprint_repo_research"
+    # v0.20.0 Phase 112：蓝图重路由 reroute——确认门增删仓/改判后有界循环重路由
+    # （调用点在 112 落地）。
+    BLUEPRINT_REROUTE = "blueprint_reroute"
+    # v0.20.0 Phase 113：蓝图分仓方案 repo_plan——per-repo 实现方案深化
+    # （调用点在 113 落地）。
+    BLUEPRINT_REPO_PLAN = "blueprint_repo_plan"
+    # v0.20.0 Phase 113：蓝图融合装配 merge——分仓方案融合为六段 blueprint/v1
+    # （调用点在 113 落地）。
+    BLUEPRINT_MERGE = "blueprint_merge"
+    # v0.20.0 Phase 114：蓝图对抗审查 ai_review——AI 评审员挑刺产 review_finding
+    # 线程（调用点在 114 落地）。
+    BLUEPRINT_AI_REVIEW = "blueprint_ai_review"
+    # v0.20.0 Phase 111：仓库章程 AI 起草——从 ai_summary/facets + MR 历史 +
+    # RepoAssociation 裁决蒸馏章程草案（charter_service，单轮，best-effort，
+    # 本相位唯一实际调用点）。
+    BLUEPRINT_CHARTER_DRAFT = "blueprint_charter_draft"
 
     @classmethod
     def normalize(cls, value: object, default: str = UNKNOWN_CALL_SOURCE) -> str:

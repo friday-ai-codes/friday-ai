@@ -1505,3 +1505,31 @@ def make_remote_tool(db: Any) -> Callable[..., Any]:
         )
 
     return _make
+
+
+@pytest.fixture
+def legacy_plan_entry_switch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """把四个入口开关**显式** override 回旧 ``technical_plan``（同步点 2 收尾）。
+
+    ⭐ **为什么需要它**：同步点 2 收尾把 ``DEFAULT_ENTRY_SWITCH`` 四键从 ``technical_plan``
+    翻到了 ``technical_blueprint``。一批早于本次的用例是**冲着旧链行为写的**（旧链
+    stage 图、``MergedPlan`` content、旧链终态映射……），它们此前靠「默认就是旧链」隐式
+    到达那条链。翻默认之后它们会全部改跑蓝图链 —— 那不是回归，是**测试意图与新默认
+    不再匹配**。用本 fixture 把「我要测的是旧链」这件事**说出来**。
+
+    ⚠️ 这些用例因此测的是「显式 override 路径」——那正是旧链退役后唯一合法的到达方式，
+    与 ``tests/services/process_runtime/test_technical_plan_retirement.py`` 的口径一致。
+
+    实现取 monkeypatch 而不是写真 ``SystemSetting``：四个入口对开关模块的 import 全在
+    函数内（lazy）⇒ patch 模块属性必然生效；且不受 60s 设置缓存与事务边界干扰。
+    **真配置那条路径**由 ``tests/services/process_runtime/test_entry_dispatch_wiring.py``
+    用真 ``SystemSetting`` 覆盖（四个入口 × 两向），⛔ 这里不重复。
+    """
+
+    async def _always_legacy(entry: str) -> str:
+        return "technical_plan"
+
+    monkeypatch.setattr(
+        "services.process_runtime.blueprint_entry_switch.aresolve_entry_process_type",
+        _always_legacy,
+    )

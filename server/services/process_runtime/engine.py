@@ -100,20 +100,26 @@ class ProcessEngine:
             await self.session_service.transition(session, "fail", error=error)
             return session
 
-        merged_state = None
-        if outcome.stage_state_update:
-            merged_state = {**(session.stage_state or {}), **outcome.stage_state_update}
-
+        # 增量交给 service 在写入事务内锁行合并：self-loop 转移（pausable stage 的挂起边）
+        # 下 `current_stage` 的 CAS 对两个并发写者同时成立，在这里用内存里的 `session`
+        # 预合并会让后写者整份覆盖先写者的 stage_state（排除集/确认门标记会被回退）。
         from delivery.services.convergence_session_service import ConcurrentTransitionError
 
+        # ⚠️ `current_artifact_version` **只在本步真产出版本时才传**：service 用 `_UNSET`
+        # 哨兵区分「不改指针」与「显式置 None」，而 `StageOutcome.current_artifact_version`
+        # 默认就是 None —— 无条件透传等于让**每一次**不产版本的转移把
+        # `session.current_artifact_version` 抹成 NULL。后果是下游一切「按会话指针找
+        # artifact」的判据（蓝图状态映射、阻塞线程探测、阶段 2/3 的仓集与融合基线）在第一次
+        # 转移后就全部读到 None，且因为它们都是 best-effort 吞异常的，失效是**静默**的。
+        transition_kwargs: dict[str, Any] = {
+            "stage_state_update": outcome.stage_state_update or None,
+            "error": outcome.error,
+        }
+        if outcome.current_artifact_version is not None:
+            transition_kwargs["current_artifact_version"] = outcome.current_artifact_version
+
         try:
-            await self.session_service.transition(
-                session,
-                outcome.event,
-                stage_state=merged_state,
-                current_artifact_version=outcome.current_artifact_version,
-                error=outcome.error,
-            )
+            await self.session_service.transition(session, outcome.event, **transition_kwargs)
         except ConcurrentTransitionError:
             # 良性并发：barrier/回调侧已推进同一 session（self-loop CAS 命中 0 行）。绝不让其
             # 落到 fail（否则覆盖并发正确推进的状态，属状态损坏）。

@@ -269,6 +269,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/knowledge/blueprints/[id]': RouteRecordInfo<
+      '/knowledge/blueprints/[id]',
+      '/knowledge/blueprints/:id',
+      { id: ParamValue<true> },
+      { id: ParamValue<false> },
+      | never
+    >,
     '/knowledge/entities/[id]': RouteRecordInfo<
       '/knowledge/entities/[id]',
       '/knowledge/entities/:id',
@@ -784,6 +791,14 @@ declare module 'vue-router/auto-routes' {
         | never
       pathParamNames:
         | never
+    }
+    'src/pages/knowledge/blueprints/[id].vue': {
+      routes:
+        | '/knowledge/blueprints/[id]'
+      views:
+        | never
+      pathParamNames:
+        | 'id'
     }
     'src/pages/knowledge/entities/[id].vue': {
       routes:

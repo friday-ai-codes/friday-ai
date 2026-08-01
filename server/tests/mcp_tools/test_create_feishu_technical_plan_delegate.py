@@ -35,6 +35,18 @@ from runners.models import hash_token
 
 pytestmark = pytest.mark.django_db
 
+# ⭐ 同步点 2 收尾：四个入口开关默认值已翻到 technical_blueprint。本文件**两类用例并存** ——
+# 冲着旧 technical_plan 链写的（旧 stage 图 / MergedPlan content / 旧终态映射）与冲着蓝图链
+# 写的（`_switch_mcp_to_blueprint` 那一组，用真 SystemSetting）。
+#
+# ⛔ 因此**不在模块级**挂 `legacy_plan_entry_switch`：它 patch 的是解析函数本身，会把蓝图
+# 那一组的真配置一起吞掉。旧链那几条逐条挂 `@pytest.mark.usefixtures(_LEGACY_CHAIN)`，
+# 把「我要测的是旧链」说出来，而不是继续靠「默认恰好是旧链」隐式到达。旧链退役后，显式
+# override 正是它唯一合法的到达方式（见
+# tests/services/process_runtime/test_technical_plan_retirement.py）。
+_LEGACY_CHAIN = "legacy_plan_entry_switch"
+
+
 # create_feishu_technical_plan 响应外形契约：旧键集合不得缩减（T-94-03-COMPAT snapshot 守护）。
 _LEGACY_OUTPUT_KEYS = {
     "technical_plan_id",
@@ -118,7 +130,9 @@ async def _make_session(
     )
 
 
-def _patch_delegate_pipeline(monkeypatch: pytest.MonkeyPatch, *, session: ConvergenceSession) -> None:
+def _patch_delegate_pipeline(
+    monkeypatch: pytest.MonkeyPatch, *, session: ConvergenceSession
+) -> None:
     """monkeypatch delegate 调用的共享 helper（start/build/adrive）使其返回指定 session。"""
 
     async def _fake_start(*_args: Any, **_kwargs: Any) -> ConvergenceSession:
@@ -129,11 +143,11 @@ def _patch_delegate_pipeline(monkeypatch: pytest.MonkeyPatch, *, session: Conver
 
     monkeypatch.setattr("services.process_runtime.start_orchestration", _fake_start)
     monkeypatch.setattr(
-        "services.process_runtime.build_orchestration_engine",
+        "services.process_runtime.entrypoint.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
     )
     monkeypatch.setattr(
-        "services.process_runtime.adrive_convergence_session_to_pause_or_terminal",
+        "services.process_runtime.resume.adrive_convergence_session_to_pause_or_terminal",
         _fake_adrive,
     )
 
@@ -141,6 +155,7 @@ def _patch_delegate_pipeline(monkeypatch: pytest.MonkeyPatch, *, session: Conver
 # ============================== Task 1: delegate 三态映射 ==============================
 
 
+@pytest.mark.usefixtures(_LEGACY_CHAIN)
 @pytest.mark.asyncio
 async def test_delegate_done_maps_completed_with_canonical_and_markdown(
     monkeypatch: pytest.MonkeyPatch,
@@ -163,6 +178,7 @@ async def test_delegate_done_maps_completed_with_canonical_and_markdown(
     assert "token 边界变更需回归登录态" in result.markdown
 
 
+@pytest.mark.usefixtures(_LEGACY_CHAIN)
 @pytest.mark.asyncio
 async def test_delegate_researching_maps_partial_with_session(
     monkeypatch: pytest.MonkeyPatch,
@@ -199,6 +215,7 @@ async def test_delegate_failed_maps_failed_empty(
     assert result.markdown == ""
 
 
+@pytest.mark.usefixtures(_LEGACY_CHAIN)
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_delegate_aggregates_orchestration_model_usage(
@@ -238,11 +255,11 @@ async def test_delegate_aggregates_orchestration_model_usage(
 
     monkeypatch.setattr("services.process_runtime.start_orchestration", _fake_start)
     monkeypatch.setattr(
-        "services.process_runtime.build_orchestration_engine",
+        "services.process_runtime.entrypoint.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
     )
     monkeypatch.setattr(
-        "services.process_runtime.adrive_convergence_session_to_pause_or_terminal",
+        "services.process_runtime.resume.adrive_convergence_session_to_pause_or_terminal",
         _fake_adrive,
     )
 
@@ -266,7 +283,7 @@ async def test_delegate_guards_unexpected_exception_as_failed(
 
     monkeypatch.setattr("services.process_runtime.start_orchestration", _boom)
     monkeypatch.setattr(
-        "services.process_runtime.build_orchestration_engine",
+        "services.process_runtime.entrypoint.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
     )
 
@@ -342,9 +359,7 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
             repo_name=indexed_repository.name,
         )
 
-    monkeypatch.setattr(
-        "mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate
-    )
+    monkeypatch.setattr("mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate)
 
     response = client.post(
         "/api/mcp/tools/create_feishu_technical_plan/",
@@ -438,9 +453,7 @@ async def test_build_work_item_technical_plan_missing_actor_degrades(
     async def _noop_ingest(_request: Any) -> None:
         return None
 
-    monkeypatch.setattr(
-        "mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate
-    )
+    monkeypatch.setattr("mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate)
     # 避免真实后台 ingestion 线程与测试连接竞争（sqlite table locked）。
     monkeypatch.setattr("knowledge.ingestion.aschedule_ingestion", _noop_ingest)
 
@@ -482,9 +495,7 @@ def test_create_feishu_technical_plan_partial_when_orchestration_suspended(
             repo_name=indexed_repository.name,
         )
 
-    monkeypatch.setattr(
-        "mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate
-    )
+    monkeypatch.setattr("mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate)
 
     response = client.post(
         "/api/mcp/tools/create_feishu_technical_plan/",
@@ -505,6 +516,7 @@ def test_create_feishu_technical_plan_partial_when_orchestration_suspended(
     assert body["retry_state"]["failed_stage"] == "orchestration_pending"
 
 
+@pytest.mark.usefixtures(_LEGACY_CHAIN)
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_mcp_sync_research_reaches_done_via_real_delegate(
@@ -560,9 +572,7 @@ async def test_mcp_sync_research_reaches_done_via_real_delegate(
         "services.process_runtime.DeliveryKnowledgeRecallAdapter", lambda: _FakeRecall()
     )
     monkeypatch.setattr("services.process_runtime.ResearchDispatchAdapter", _FakeResearch)
-    monkeypatch.setattr(
-        "services.process_runtime.ArchitectMergeAdapter", lambda: _merge_factory()
-    )
+    monkeypatch.setattr("services.process_runtime.ArchitectMergeAdapter", lambda: _merge_factory())
 
     from mcp_tools.orchestration_delegate import delegate_process_runtime
 
@@ -578,3 +588,165 @@ async def test_mcp_sync_research_reaches_done_via_real_delegate(
     refreshed = await ConvergenceSession.objects.aget(id=result.session.id)
     assert refreshed.status == ConvergenceSessionStatus.DONE
     assert refreshed.current_artifact_version_id is not None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 116-REVIEW MJ-03：`DelegateResult.error_detail` 必须被消费
+#
+# 116-03 把中性 detail 一路送到了 delegate 边界，但 `technical_plan_service` 的 failed
+# 分支把它整个丢掉了：调用方看到的是「编排未产出 canonical 方案」+ `retryable: True`
+# —— 一句**错的原因**，外加对一次**确定性**失败的错误重试建议。而且 `error` 只落
+# `McpWorkItemTechnicalPlan` 行、不进响应体 ⇒ agent 读到的响应里一个字的解释都没有。
+# ═══════════════════════════════════════════════════════════════════════════
+
+_NEUTRAL_PROJECT_DETAIL = "无法确定该需求所属的项目，请在项目空间内发起或补全项目信息"
+
+
+def _switch_mcp_to_blueprint() -> None:
+    import json as _json
+
+    from system.models import SettingKeys, SystemSetting
+
+    SystemSetting.objects.update_or_create(
+        key=SettingKeys.BLUEPRINT_ENTRY_SWITCH,
+        defaults={"value": _json.dumps({"mcp": "technical_blueprint"})},
+    )
+
+
+@pytest.fixture
+def _clear_blueprint_settings():
+    from django.core.cache import cache
+
+    from system.models import SettingKeys, SystemSetting
+    from system.settings_service import _cache_key
+
+    def _clear() -> None:
+        SystemSetting.objects.filter(key__startswith="blueprint.").delete()
+        cache.delete(_cache_key(SettingKeys.BLUEPRINT_ENTRY_SWITCH))
+
+    _clear()
+    yield
+    _clear()
+
+
+def _post_plan(client: APIClient, context: McpWorkItemContext, repo_id: str) -> Any:
+    return client.post(
+        "/api/mcp/tools/create_feishu_technical_plan/",
+        {
+            "context_id": str(context.id),
+            "repository_ids": [repo_id],
+            "create_document": False,
+            "write_comment": False,
+        },
+        format="json",
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_blueprint_intake_rejection_surfaces_the_neutral_detail_and_is_not_retryable(
+    mcp_client: tuple[APIClient, str],
+    project,
+    indexed_repository,
+    _clear_blueprint_settings,
+) -> None:
+    """⭐ MJ-03 头号断言：mcp 开关开 + 工作项 Space 下无 Project ⇒ 中性 detail 逐字回显。
+
+    这是**确定性**失败（Space→Project 换算不出来，重试一百次结果一样）⇒
+    ``retryable`` 必须是 ``False``，``failed_stage`` 必须指向真实失败环节。
+    """
+    _switch_mcp_to_blueprint()
+    context = _make_context(project)  # 该 Space 下没有任何 initiatives.Project
+
+    response = _post_plan(mcp_client[0], context, str(indexed_repository.id))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "failed"
+    # ① 中性文案逐字回显（⛔ 不再被「编排未产出 canonical 方案」盖掉）
+    assert body["error"] == _NEUTRAL_PROJECT_DETAIL
+    assert body["error_stage"] == "blueprint_intake"
+    # ② 确定性失败 ⛔ 不诱导重试
+    assert body["retry_state"]["retryable"] is False
+    assert body["retry_state"]["failed_stage"] == "blueprint_intake"
+    # ③ 中性纪律：⛔ 不含内部路径 / 异常原文 / 内部标识
+    assert "/" not in body["error"]
+    assert "Traceback" not in body["error"]
+    assert "BlueprintIntakeRejected" not in body["error"]
+    # ④ 落库行与响应体口径一致（⛔ 不再是「库里一句、响应里没有」）
+    artifact = McpWorkItemTechnicalPlan.objects.get(id=body["technical_plan_id"])
+    assert artifact.error == _NEUTRAL_PROJECT_DETAIL
+    assert artifact.error_stage == "blueprint_intake"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_orchestration_ran_but_produced_nothing_stays_retryable(
+    mcp_client: tuple[APIClient, str],
+    project,
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+    _clear_blueprint_settings,
+) -> None:
+    """⭐ 非恒真对照：``error_detail == ""``（编排真跑了但没产出）⇒ 两类失败没被一锅端。
+
+    ``retryable`` 仍为 ``True``、文案仍是既有那句、``failed_stage`` 仍是 ``orchestration``。
+    """
+    context = _make_context(project)
+
+    async def _fake_delegate(**_kwargs: Any) -> Any:
+        return _fake_delegate_result(
+            status="failed",
+            repo_id=str(indexed_repository.id),
+            repo_name=indexed_repository.name,
+        )
+
+    monkeypatch.setattr("mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate)
+
+    response = _post_plan(mcp_client[0], context, str(indexed_repository.id))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "failed"
+    assert body["error"] == "编排未产出 canonical 方案"
+    assert body["error_stage"] == "orchestration"
+    assert body["retry_state"]["retryable"] is True
+    assert body["retry_state"]["failed_stage"] == "orchestration"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_success_path_carries_the_two_keys_as_empty_strings(
+    mcp_client: tuple[APIClient, str],
+    project,
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+    _clear_blueprint_settings,
+) -> None:
+    """成功路零漂移：两个新键恒在但为空串（⛔ 不是「有时有有时没有」的形态）。"""
+    context = _make_context(project)
+
+    async def _fake_delegate(**_kwargs: Any) -> Any:
+        return _fake_delegate_result(
+            status="completed",
+            repo_id=str(indexed_repository.id),
+            repo_name=indexed_repository.name,
+        )
+
+    monkeypatch.setattr("mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate)
+
+    body = _post_plan(mcp_client[0], context, str(indexed_repository.id)).json()
+
+    assert body["status"] == "completed"
+    assert body["error"] == ""
+    assert body["error_stage"] == ""
+    assert body["retry_state"]["retryable"] is False
+
+
+def test_error_detail_now_has_a_production_consumer() -> None:
+    """⭐ 断链的锁：``error_detail`` 在 ``mcp_tools/`` 下必须有**生产**读取方。
+
+    回退前全仓 ``rg``（剔 tests）只找得到 ``orchestration_delegate.py`` 自己的定义与赋值 ——
+    「写了没人读」正是 MJ-03 的形状。
+    """
+    from pathlib import Path
+
+    service_src = Path("mcp_tools/technical_plan_service.py").read_text(encoding="utf-8")
+    assert "error_detail" in service_src, "失败分支必须消费 delegate.error_detail"

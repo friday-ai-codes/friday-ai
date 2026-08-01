@@ -33,6 +33,14 @@ from workflows.nodes.registry import NodeRegistry
 # async ORM 测试用 transaction=True（真实 commit + 表间清理，对齐 test_research_completion_callback）
 pytestmark = pytest.mark.django_db(transaction=True)
 
+# ⭐ 同步点 2 收尾：本文件冲着**旧 technical_plan 链**写（旧 stage 图 / MergedPlan content /
+# 旧终态映射）。四个入口开关默认值已翻到 technical_blueprint ⇒ 这里显式 override 回旧链，
+# 把「我要测的是旧链」说出来，而不是继续靠「默认恰好是旧链」隐式到达。
+# 旧链退役后，显式 override 正是它唯一合法的到达方式（见
+# tests/services/process_runtime/test_technical_plan_retirement.py）。
+pytestmark = [pytestmark, pytest.mark.usefixtures("legacy_plan_entry_switch")]
+
+
 _LLM_GEN = "services.process_runtime.clarify_adapter.agenerate_clarification_questions"
 
 
@@ -48,13 +56,18 @@ def _ctx(config: dict | None = None) -> ExecutionContext:
 
 
 def _bind_engine(node: AIPlanResearchNode, engine: ProcessEngine) -> None:
-    node._build_engine = lambda context, session: engine  # type: ignore[assignment]
+    # 116-03：_build_engine 返回 (engine, driver) 二元组（只换 engine 不换 driver 会把健康的
+    # 蓝图会话推成 advance_step_limit FAILED）；旧链会话配旧 driver。
+    from services.process_runtime import adrive_convergence_session_to_pause_or_terminal
+
+    node._build_engine = lambda context, session: (  # type: ignore[assignment]
+        engine,
+        adrive_convergence_session_to_pause_or_terminal,
+    )
 
 
 def _engine(**deps) -> ProcessEngine:
-    return ProcessEngine(
-        session_service=ConvergenceSessionService(), deps=SimpleNamespace(**deps)
-    )
+    return ProcessEngine(session_service=ConvergenceSessionService(), deps=SimpleNamespace(**deps))
 
 
 async def _make_artifact_version(content: dict) -> ArtifactVersion:
@@ -96,7 +109,11 @@ async def test_drive_to_done_emits_merged_plan_ref() -> None:
     )
     merge = AsyncMock()
     merge.merge = AsyncMock(
-        return_value={"validation_status": "passed", "artifact_version_id": str(av.id), "attempt": 0}
+        return_value={
+            "validation_status": "passed",
+            "artifact_version_id": str(av.id),
+            "attempt": 0,
+        }
     )
 
     engine = _engine(**_full_deps(router=router, recall=None, merge=merge))
@@ -135,12 +152,14 @@ async def test_done_inlines_merged_plan_content_for_downstream() -> None:
     av = await _make_artifact_version(merged_content)
 
     router = AsyncMock()
-    router.route = AsyncMock(
-        return_value={"candidates": [{"repo_id": "r1", "confidence": "high"}]}
-    )
+    router.route = AsyncMock(return_value={"candidates": [{"repo_id": "r1", "confidence": "high"}]})
     merge = AsyncMock()
     merge.merge = AsyncMock(
-        return_value={"validation_status": "passed", "artifact_version_id": str(av.id), "attempt": 0}
+        return_value={
+            "validation_status": "passed",
+            "artifact_version_id": str(av.id),
+            "attempt": 0,
+        }
     )
 
     engine = _engine(**_full_deps(router=router, recall=None, merge=merge))
@@ -229,9 +248,7 @@ async def test_clarifying_suspends_waiting_event() -> None:
     session = await ConvergenceSession.objects.aget(id=result.output["session_id"])
     assert session.status == ConvergenceSessionStatus.WAITING_CLARIFICATION
     assert (
-        await Clarification.objects.filter(
-            session_id=session.id, answered_at__isnull=True
-        ).acount()
+        await Clarification.objects.filter(session_id=session.id, answered_at__isnull=True).acount()
         == 1
     )
     child = await ClarificationQuestion.objects.filter(
@@ -257,8 +274,18 @@ def test_build_clarification_card_carries_clarification_id_and_new_action() -> N
 
     card = build_clarification_card(
         [
-            {"question": "实验组用户？", "type": "single", "options": ["全部", "灰度"], "recommended": "灰度"},
-            {"question": "目标仓库？", "type": "multi", "options": ["api", "web"], "recommended": ["api"]},
+            {
+                "question": "实验组用户？",
+                "type": "single",
+                "options": ["全部", "灰度"],
+                "recommended": "灰度",
+            },
+            {
+                "question": "目标仓库？",
+                "type": "multi",
+                "options": ["api", "web"],
+                "recommended": ["api"],
+            },
         ],
         execution_id="exec-123",
         node_id="node-456",
@@ -357,9 +384,7 @@ def _clarify_send_patches(im: MagicMock, acreate: AsyncMock):
         ),
         patch("initiatives.services.project_service.ProjectService", return_value=proj_svc),
         patch("services.feishu_im.FeishuIMService", feishu_cls),
-        patch(
-            "workflows.models.execution.WorkflowEventSubscription.objects.acreate", new=acreate
-        ),
+        patch("workflows.models.execution.WorkflowEventSubscription.objects.acreate", new=acreate),
     )
 
 
@@ -376,8 +401,18 @@ async def _seed_clarifying_round() -> ConvergenceSession:
     await ClarificationService().create_round(
         session,
         [
-            {"question": "实验组用户？", "type": "single", "options": ["全部", "灰度"], "recommended": "灰度"},
-            {"question": "目标仓库？", "type": "multi", "options": ["api", "web"], "recommended": ["api"]},
+            {
+                "question": "实验组用户？",
+                "type": "single",
+                "options": ["全部", "灰度"],
+                "recommended": "灰度",
+            },
+            {
+                "question": "目标仓库？",
+                "type": "multi",
+                "options": ["api", "web"],
+                "recommended": ["api"],
+            },
         ],
     )
     return session
@@ -437,9 +472,7 @@ async def test_clarify_card_failure_does_not_block_suspension() -> None:
 async def test_failed_terminal_maps_to_node_failed() -> None:
     """merge 限次耗尽 → failed → NodeResult failed + error_code=plan_session_failed。"""
     router = AsyncMock()
-    router.route = AsyncMock(
-        return_value={"candidates": [{"repo_id": "r1", "confidence": "high"}]}
-    )
+    router.route = AsyncMock(return_value={"candidates": [{"repo_id": "r1", "confidence": "high"}]})
     merge = AsyncMock()
     merge.merge = AsyncMock(
         return_value={"validation_status": "failed", "attempt": 1, "report": {}}
@@ -472,9 +505,10 @@ def test_schema_and_registration() -> None:
     cls = NodeRegistry.get("ai_plan_research")
     assert cls is AIPlanResearchNode
     assert cls.validate_config({}) == []
-    assert cls.validate_config(
-        {"requirement_text": "x", "include_repos": ["a"], "work_item_id": ""}
-    ) == []
+    assert (
+        cls.validate_config({"requirement_text": "x", "include_repos": ["a"], "work_item_id": ""})
+        == []
+    )
     props = cls.config_schema["properties"]
     assert {"requirement_text", "include_repos", "work_item_id"} <= set(props)
     input_names = {p.name for p in cls.inputs}
@@ -557,9 +591,7 @@ def test_render_merged_plan_markdown_compat_risks_uses_bullet() -> None:
     """Task 1 Test 3：compat_risks 非空 → 用 `•` 字面项目符号（不用 Markdown `- ` 列表）。"""
     from services.process_runtime import render_merged_plan_markdown
 
-    md = render_merged_plan_markdown(
-        {"title": "T", "compat_risks": ["接口不兼容", "数据迁移风险"]}
-    )
+    md = render_merged_plan_markdown({"title": "T", "compat_risks": ["接口不兼容", "数据迁移风险"]})
     assert "• 接口不兼容" in md
     assert "• 数据迁移风险" in md
     assert "- 接口不兼容" not in md
@@ -614,12 +646,14 @@ async def test_done_output_includes_plan_markdown() -> None:
     av = await _make_artifact_version(merged_content)
 
     router = AsyncMock()
-    router.route = AsyncMock(
-        return_value={"candidates": [{"repo_id": "r1", "confidence": "high"}]}
-    )
+    router.route = AsyncMock(return_value={"candidates": [{"repo_id": "r1", "confidence": "high"}]})
     merge = AsyncMock()
     merge.merge = AsyncMock(
-        return_value={"validation_status": "passed", "artifact_version_id": str(av.id), "attempt": 0}
+        return_value={
+            "validation_status": "passed",
+            "artifact_version_id": str(av.id),
+            "attempt": 0,
+        }
     )
 
     engine = _engine(**_full_deps(router=router, recall=None, merge=merge))
@@ -673,9 +707,7 @@ def test_default_output_schema_declares_plan_markdown() -> None:
 async def test_failed_branch_no_plan_markdown_regression() -> None:
     """Task 2 Test 4：failed 分支零回归——next_handle=error，无 plan_markdown 依赖。"""
     router = AsyncMock()
-    router.route = AsyncMock(
-        return_value={"candidates": [{"repo_id": "r1", "confidence": "high"}]}
-    )
+    router.route = AsyncMock(return_value={"candidates": [{"repo_id": "r1", "confidence": "high"}]})
     merge = AsyncMock()
     merge.merge = AsyncMock(
         return_value={"validation_status": "failed", "attempt": 1, "report": {}}

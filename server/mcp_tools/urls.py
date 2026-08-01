@@ -4,6 +4,7 @@ from django.urls import path
 
 from .views import (
     AnalyzeRepositoryView,
+    AnswerBlueprintClarificationView,
     ConfirmFeatureTechPlanView,
     CreateCodingPlanView,
     CreateFeatureTechPlanView,
@@ -21,12 +22,15 @@ from .views import (
     GetRelatedEntitiesView,
     GetRepositoryFileView,
     GetRepositoryView,
+    GetTechnicalBlueprintView,
     GrepProjectView,
     GrepRepositoryView,
     ImproveCodingPlanView,
     ListRepositoryFilesView,
     LookupProjectByBranchView,
+    ReadBlueprintContextView,
     ReadProjectDocView,
+    ReportBlueprintContextView,
     ReportProjectKnowledgeView,
     ReportProjectStateView,
     ReverseLookupView,
@@ -123,5 +127,28 @@ urlpatterns = [
         "tools/get_feature_tech_plan/",
         GetFeatureTechPlanView.as_view(),
         name="mcp-tool-get-feature-tech-plan",
+    ),
+    # 蓝图共享上下文总线（BUS-01，Phase 113-02）：容器凭任务 token 会话内读写
+    path(
+        "tools/read_blueprint_context/",
+        ReadBlueprintContextView.as_view(),
+        name="mcp-tool-read-blueprint-context",
+    ),
+    path(
+        "tools/report_blueprint_context/",
+        ReportBlueprintContextView.as_view(),
+        name="mcp-tool-report-blueprint-context",
+    ),
+    # 蓝图异步澄清协议（GATE-01，Phase 116-06）：立即返回 pending → 作答 → 续取终稿。
+    # ⛔ 不建第三个 list 工具（pending 清单内联在 get_technical_blueprint 里）。
+    path(
+        "tools/get_technical_blueprint/",
+        GetTechnicalBlueprintView.as_view(),
+        name="mcp-tool-get-technical-blueprint",
+    ),
+    path(
+        "tools/answer_blueprint_clarification/",
+        AnswerBlueprintClarificationView.as_view(),
+        name="mcp-tool-answer-blueprint-clarification",
     ),
 ]

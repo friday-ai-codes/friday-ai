@@ -216,12 +216,20 @@ def test_projection_returns_full_payload(
         "recommended_repository_ids",
         "recommended_repositories",
         "provenance",
+        # 同步点 2 收尾：blueprint/v1 判别三键（v0 恒空串）。
+        "schema_version",
+        "blueprint_artifact_id",
+        "current_status",
     }
     assert body["created"] is True
     assert body["title"] == "跨仓改造方案"
     assert body["tech_plan"]
     assert "跨仓改造方案" in body["tech_plan"]
     assert body["provenance"] == CodingPlanProvenance.ORCHESTRATED
+    # ⭐ v0 来源版本：三键全空串 ⇒ 前端走既有 v0 渲染路径，逐字不变。
+    assert body["schema_version"] == ""
+    assert body["blueprint_artifact_id"] == ""
+    assert body["current_status"] == ""
 
     # create → add 的枚举转换必须在响应里就已完成（前端不做兼容映射，UI-SPEC 第 19 条）。
     assert body["affected_files"] == [
@@ -247,6 +255,36 @@ def test_projection_returns_full_payload(
     plan = CodingPlan.objects.get(id=body["coding_plan_id"])
     assert str(plan.source_artifact_version_id) == str(artifact_version.id)
     assert plan.provenance == CodingPlanProvenance.ORCHESTRATED
+
+
+def test_projection_marks_a_blueprint_source_version(
+    owner_client: APIClient, artifact_version: ArtifactVersion
+) -> None:
+    """⭐ 同步点 2 收尾：来源版本是 blueprint/v1 ⇒ 判别三键如实回填。
+
+    这三键是前端 ``TechPlanCard`` 唯一的判别依据。没有它们，从蓝图版本投影出来的
+    CodingPlan 会被渲染成一份**结构合法而内容为空**的旧形态方案（``tech_plan`` 是 v0
+    渲染器对 blueprint/v1 渲出的壳、``affected_files`` 恒 ``[]``，因为 blueprint/v1
+    没有 ``execution_plan`` 顶层键），且不给任何信号 —— 与审计 §4.1 的 G3 同一形状。
+
+    ⚠️ 与上一条 v0 用例**正反并列**：只断言蓝图这一档会漏掉「两档都回填」的假通过。
+    """
+    ArtifactVersion.objects.filter(id=artifact_version.id).update(
+        content={"schema_version": "blueprint/v1", "meta": {"title": "跨仓改造蓝图"}}
+    )
+    Artifact.objects.filter(id=artifact_version.artifact_id).update(
+        blueprint_status="pending_review"
+    )
+
+    resp = _post(owner_client, artifact_version.id)
+
+    assert resp.status_code == status.HTTP_200_OK
+    body = resp.json()
+    assert body["schema_version"] == "blueprint/v1"
+    assert body["blueprint_artifact_id"] == str(artifact_version.artifact_id)
+    assert body["current_status"] == "pending_review"
+    # v0 映射器对蓝图的产出确实是空的——正因如此前端必须拿到判别信息才不会静默降级。
+    assert body["affected_files"] == []
 
 
 def test_projection_repository_names_tolerate_missing_and_invalid_ids(

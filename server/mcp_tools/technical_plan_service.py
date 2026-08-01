@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import structlog
+
 from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from interactions.models import InteractionRun
 from mcp_tools.learning_case_service import search_learning_cases
@@ -19,6 +21,8 @@ from mcp_tools.models import McpWorkItemContext, McpWorkItemTechnicalPlan
 from mcp_tools.orchestration_delegate import delegate_process_runtime
 from services.feishu import create_feishu_client_for_project
 from services.feishu_doc import FeishuDocAPIError, PermissionDeniedError, RateLimitError
+
+logger = structlog.get_logger(__name__)
 
 
 class TechnicalPlanError(Exception):
@@ -49,11 +53,150 @@ def _map_status(delegate_status: str) -> McpWorkItemTechnicalPlan.Status:
     return _STATUS_MAP.get(delegate_status, McpWorkItemTechnicalPlan.Status.PARTIAL)
 
 
+async def _ablueprint_response_extras(delegate: Any) -> dict[str, Any]:
+    """mcp 入口开关切到蓝图时的三个追加响应键（GATE-01，Phase 116-06）。
+
+    ⭐ **开关关闭时返回空 dict ⇒ 响应与改动前逐字相同**（既有 12 个键一个不多不少）。
+    ⛔ 开关实参必须是**字面量常量** ``"mcp"``：写成 ``session.entrypoint``（蓝图 MCP 会话
+    的 ``entrypoint`` 是既有约定的 ``"workflow"``）会让打开 workflow 键把 MCP 一起切走
+    （116-01 的 ``ast`` 守卫覆盖本调用点）。
+
+    三键语义：``blueprint_artifact_id``（蓝图 artifact，**后续一切续取/作答的寻址键**）、
+    ``blueprint_current_status``（⚠️ 键名刻意不叫 ``blueprint_status``——那会命中 INV-6 的
+    字段级旁路守卫 ``_RE_FIELD_DICT_KEY``）、``pending_clarifications[]``（待人回答的
+    阻塞线程，形状与 ``get_technical_blueprint`` **共享同一份装配**）。
+
+    整段 ``try/except`` 回空 dict：⭐ 这是**响应装饰**而非业务主体——读不出蓝图侧信息时
+    调用方仍能拿到既有 12 键的完整方案响应，⛔ 绝不因为附加信息读失败而废掉整次调用。
+    """
+    from services.process_runtime.blueprint_entry_switch import aresolve_entry_process_type
+
+    try:
+        if await aresolve_entry_process_type("mcp") != "technical_blueprint":
+            return {}
+        from delivery.models import Artifact, ArtifactVersion
+        from mcp_tools.views import _aload_pending_clarifications
+
+        version_id = getattr(delegate.session, "current_artifact_version_id", None)
+        if not version_id:
+            return {}
+        artifact_id = str(
+            await ArtifactVersion.objects.filter(id=version_id)
+            .values_list("artifact_id", flat=True)
+            .afirst()
+            or ""
+        )
+        if not artifact_id:
+            return {}
+        current_status = str(
+            await Artifact.objects.filter(id=artifact_id)
+            .values_list("blueprint_status", flat=True)
+            .afirst()
+            or ""
+        )
+        return {
+            "blueprint_artifact_id": artifact_id,
+            "blueprint_current_status": current_status,
+            "pending_clarifications": await _aload_pending_clarifications(artifact_id),
+        }
+    except Exception:  # noqa: BLE001 — 响应装饰读失败不废掉既有 12 键的方案响应
+        return {}
+
+
 def _str_list(value: Any) -> list[str]:
     """半可信 LLM 产物 → 去空白后的 ``list[str]``（非 list 恒空 list，防御性）。"""
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _project_canonical_for_legacy_mapping(content: dict[str, Any]) -> dict[str, Any]:
+    """blueprint/v1 content → 旧响应映射器认得的 v0 投影（同步点 2，审计 §4.1 的 G3）。
+
+    ⭐ **这是 G3 的修法本体**。既有映射链读的是 v0 ``MergedPlan`` 的三个顶层键
+    （``title`` / ``summary`` / ``execution_plan``），而 blueprint/v1 **一个都没有**：
+    标题与摘要在 ``meta`` 下，``execution_plan`` 是「确认后确定性派生」的**可选**段
+    （``blueprint_schema`` ``:741``，required 键表 ``:123-134`` 不含它）。⇒ 直接把
+    blueprint content 喂给 ``_map_execution_plan_to_repository_tasks`` 恒返回 ``[]``：
+    响应的十二键**结构合法、语义为空**，调用方读不出任何一个仓库任务却也拿不到任何错误
+    信号 —— 静默降级。
+
+    做法是**确定性派生**（⛔ 不是补一个空壳）：``implementation_overview.items`` 本就是
+    ``execution_plan`` 的派生源，``blueprint_execution.derive_execution_plan`` 是既有的
+    权威派生器（纯函数、同输入逐字节一致、产物过 ``validate_technical_plan``）——直接复用，
+    ⛔ 本模块不写第二份派生逻辑。
+
+    ⭐ **非 blueprint/v1 恒等返回**：旧链 content 原样穿过，映射链逐字不变（零回归）。
+    """
+    from services.process_runtime.blueprint_execution import derive_execution_plan
+    from services.process_runtime.blueprint_schema import BLUEPRINT_SCHEMA_VERSION
+
+    if not isinstance(content, dict) or content.get("schema_version") != BLUEPRINT_SCHEMA_VERSION:
+        return content if isinstance(content, dict) else {}
+
+    meta = content.get("meta")
+    meta = meta if isinstance(meta, dict) else {}
+    return {
+        "title": str(meta.get("title") or ""),
+        "summary": _blocks_to_plain_text(meta.get("summary")),
+        "execution_plan": derive_execution_plan(content),
+    }
+
+
+def _log_blueprint_payload_projection(
+    delegate: Any,
+    content: dict[str, Any],
+    legacy_view: dict[str, Any],
+    repository_tasks: list[dict[str, Any]],
+) -> None:
+    """蓝图主载荷派生的埋点（**只在蓝图分支落**，best-effort）。
+
+    ⭐ 存在的理由是让「派生出来还是空」这件事**可查**：G3 之所以能跨六个相位不被发现，
+    正是因为空载荷不打任何信号。派生结果为空而蓝图确实有实现项时落 ``warning``（那是
+    真异常：``repo_associations`` 与 ``items`` 的 repository_id 对不上，派生器会整批丢弃）；
+    正常派生落 ``sampling`` 级 info。⛔ 不落任何正文内容，只落计数。
+    """
+    try:
+        if content is legacy_view:  # 旧链恒等穿过 ⇒ 不打蓝图埋点（避免旧链日志噪声）
+            return
+        overview = content.get("implementation_overview")
+        item_count = len((overview or {}).get("items") or []) if isinstance(overview, dict) else 0
+        fields = {
+            "category": "sampling",
+            "component": "mcp_tools",
+            "session_id": str(getattr(getattr(delegate, "session", None), "id", "") or ""),
+            "blueprint_item_count": item_count,
+            "derived_task_count": len(legacy_view.get("execution_plan") or []),
+            "repository_task_count": len(repository_tasks),
+        }
+        if item_count > 0 and not repository_tasks:
+            logger.warning("mcp_blueprint_payload_projection_empty", **fields)
+        else:
+            logger.info("mcp_blueprint_payload_projected", **fields)
+    except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+        pass
+
+
+def _blocks_to_plain_text(blocks: Any) -> str:
+    """Block[] → 纯文本摘要（只取 paragraph/list 的 ``text``，⛔ 不渲染代码/表格）。
+
+    用途仅是把 blueprint ``meta.summary`` 塞进旧响应的 ``summary`` 字符串位；富渲染归
+    ``markdown`` 那一位（走 ``render_blueprint_markdown``），两者不重复。
+    """
+    if not isinstance(blocks, list):
+        return ""
+    parts: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        text = block.get("text")
+        if isinstance(text, list):
+            entries = [str(entry) for entry in text if isinstance(entry, str) and entry]
+            if entries:
+                parts.append("\n".join(f"- {entry}" for entry in entries))
+        elif isinstance(text, str) and text:
+            parts.append(text)
+    return "\n\n".join(parts)
 
 
 def _map_execution_plan_to_repository_tasks(content: dict[str, Any]) -> list[dict[str, Any]]:
@@ -123,6 +266,7 @@ def _map_plan_payload(
     repository_tasks: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
     similar_cases: list[dict[str, Any]],
+    summary: str | None = None,
 ) -> dict[str, Any]:
     """canonical content → 旧 ``plan`` / ``plan_body`` 外形（WR-02，外形兼容）。
 
@@ -131,8 +275,14 @@ def _map_plan_payload(
     ``repository_tasks`` 的「显式白名单、绝不透传 content 内部键」原则自相矛盾）。本函数把
     canonical 显式映射回旧关键键，保持响应/落库外形兼容；canonical content 仍以独立
     ``canonical_content`` 键保留（不丢信息、可追踪）。
+
+    ``summary``（同步点 2 / G3，**纯追加、缺省 None**）：调用方给定的摘要。blueprint/v1 的
+    摘要在 ``meta.summary``（Block[]）而不是顶层 ``summary``，由调用方经
+    :func:`_project_canonical_for_legacy_mapping` 取好后传进来。⛔ 不传时逐字回退读
+    ``content["summary"]`` ⇒ 旧链行为不变。
     """
-    summary = str(content.get("summary") or "") if isinstance(content, dict) else ""
+    if summary is None:
+        summary = str(content.get("summary") or "") if isinstance(content, dict) else ""
     linked_documents = [
         {
             "document_id": str(doc.get("document_id") or ""),
@@ -339,12 +489,17 @@ async def build_work_item_technical_plan(
     create_document: bool,
     write_comment: bool,
     actor: Any = None,
+    assumptions_tier: str = "",
 ) -> TechnicalPlanResult:
     """delegate 到 ``process_runtime`` 产 canonical 方案 → 映射回旧响应外形 + 落库（UNIFY-03）。
 
     ``actor`` 为发起编排的用户（从 view 透传 request.user，可空）：delegate 经
     ``start_orchestration(created_by=actor)`` 传入，召回 stage 据此作权限 actor；为 None 时
     下游 ``search_similar`` fail-closed 空召回（不泄漏越权数据，T-94-03-ELEV 文档化降级）。
+
+    ``assumptions_tier``（116-REVIEW MJ-02，**纯追加、缺省空串**）：MCP 面向调用方开放的
+    「交互密度」旋钮（``strict`` / ``balanced`` / ``assume_more``），原样透传 delegate。
+    ⭐ **仅在 mcp 开关切到蓝图时生效**；不传 / 旧链一律与改动前逐字相同。
     """
     context = await _resolve_context(context_id)
     effective_similar_cases = similar_cases
@@ -372,14 +527,25 @@ async def build_work_item_technical_plan(
         work_item=work_item,
         include_repos=repository_ids,
         created_by=actor,
+        # 116-06：接上 116-03 交接的 `work_item_context` 形参。⛔ 不传即「推不出
+        # meta.project_id ⇒ 拒绝发起」——mcp 开关打开时蓝图链会**恒不可用**。
+        work_item_context=context,
+        # 116-REVIEW MJ-02：档位从 MCP 请求透传到 stage_state，⇒ spec_gate 真的读得到。
+        assumptions_tier=assumptions_tier,
     )
+    # 116-06（GATE-01）：开关切到蓝图时的三个追加响应键（关闭时为空 dict）。
+    blueprint_extras = await _ablueprint_response_extras(delegate)
     content = delegate.content if isinstance(delegate.content, dict) else {}
+    # 同步点 2 / G3：blueprint/v1 先确定性派生成 v0 投影，再走既有映射链（映射器逐字不变；
+    # 旧链 content 恒等穿过 ⇒ 零回归）。⛔ canonical 仍以原始 content 落 canonical_content。
+    legacy_view = _project_canonical_for_legacy_mapping(content)
     # canonical → 旧响应字段显式映射（外形兼容，绝不透传 content 内部键，T-94-03-INFO）。
-    repository_tasks = _map_execution_plan_to_repository_tasks(content)
+    repository_tasks = _map_execution_plan_to_repository_tasks(legacy_view)
+    _log_blueprint_payload_projection(delegate, content, legacy_view, repository_tasks)
     markdown = delegate.markdown or ""
     plan_title = (
         title.strip()
-        or str(content.get("title") or "")
+        or str(legacy_view.get("title") or "")
         or f"{context.name or context.work_item_type} 技术方案"
     )
     evidence = _evidence_from_context(
@@ -396,6 +562,7 @@ async def build_work_item_technical_plan(
         repository_tasks=repository_tasks,
         evidence=evidence,
         similar_cases=effective_similar_cases,
+        summary=str(legacy_view.get("summary") or ""),
     )
 
     # 终态/挂起 → 落库 status 基线（编排在途 partial / 失败 failed），writeback 失败再降级。
@@ -408,13 +575,27 @@ async def build_work_item_technical_plan(
         "comment_written": False,
         "failed_stage": "",
     }
+    if blueprint_extras:
+        # ⭐ 蓝图的 DONE 语义是「等人审」而不是「方案已终结」⇒ 对 MCP 调用方一律回
+        # `partial`（既有三态之一，`retry_state` 形态照旧 ⇒ 调用方零破坏），据
+        # `pending_clarifications` 逐条作答、再用 `get_technical_blueprint` 续取终稿。
+        status = McpWorkItemTechnicalPlan.Status.PARTIAL
+        retry_state.update({"retryable": True, "failed_stage": "blueprint_pending"})
     if delegate.status == "partial":
         # 编排挂起（RESEARCHING/CLARIFYING 在途，MCP 无 resume 通路）：调用方据 session_id 续推。
         retry_state.update({"retryable": True, "failed_stage": "orchestration_pending"})
     elif delegate.status == "failed":
-        retry_state.update({"retryable": True, "failed_stage": "orchestration"})
-        error_stage = "orchestration"
-        error = "编排未产出 canonical 方案"
+        # ⭐ 116-REVIEW MJ-03：区分「拒绝发起」与「编排跑了但没产出」两类失败。
+        #
+        # `error_detail` 非空 = 蓝图 intake 在**建会话之前**就如实拒绝了（当前唯一来源是
+        # 「推不出 meta.project_id」）。这是**确定性**失败——Space→Project 换算不出来，
+        # 重试一百次结果一样 ⇒ ⛔ 绝不置 `retryable: True` 诱导调用方重试；同时把 116-03
+        # 一路保住的**中性** detail 如实回显（⛔ 不含内部路径 / 异常原文），
+        # ⛔ 不要再用「编排未产出 canonical 方案」这句**错的原因**盖掉它。
+        rejected = bool(str(getattr(delegate, "error_detail", "") or ""))
+        error_stage = "blueprint_intake" if rejected else "orchestration"
+        retry_state.update({"retryable": not rejected, "failed_stage": error_stage})
+        error = str(getattr(delegate, "error_detail", "") or "") or "编排未产出 canonical 方案"
 
     # writeback 仅在编排产出方案（非 failed）时进行（喂 delegate markdown + 映射后矩阵）。
     feishu_document: dict[str, Any] = {"status": "skipped"}
@@ -496,6 +677,15 @@ async def build_work_item_technical_plan(
         "retry_state": retry_state,
         "run_id": str(run.run_id),
         "session_id": str(delegate.session.id),
+        # ⭐ 116-REVIEW MJ-03：失败原因必须**回传**而不是只落 McpWorkItemTechnicalPlan 行。
+        # 回退前 agent 拿到的响应体里一个字的解释都没有（`retry_state` 只有一个布尔），
+        # 而它读的正是响应体。恒写两键（成功时为空串，形态与 feature 方案三工具的 `error`
+        # 键同款）：⛔ 中性文案，不含内部路径 / 异常原文。
+        "error": error,
+        "error_stage": error_stage,
+        # 116-06：⭐ 纯追加三键，**仅在 mcp 开关切到蓝图时非空**（见
+        # `_ablueprint_response_extras`）；开关关闭时本行展开为零键 ⇒ 响应逐字不变。
+        **blueprint_extras,
     }
     from knowledge import ingestion  # lazy import 防循环
 

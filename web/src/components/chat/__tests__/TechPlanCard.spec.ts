@@ -27,6 +27,11 @@ vi.mock('~/api/chat', async (importOriginal) => {
   return { ...actual, createSessionsForPlan: createSessionsForPlanMock }
 })
 
+// 深链走 RouterLink（与三处触点同一约定）。
+vi.mock('vue-router', () => ({
+  RouterLink: { name: 'RouterLink', props: ['to'], template: '<a :href="to"><slot /></a>' },
+}))
+
 // -- mock markdown-it 单例：直接返回 echo HTML（避免引入 shiki 的重依赖）---
 vi.mock('~/composables/useMarkdownRenderer', () => ({
   getMarkdownRenderer: vi.fn(async () => ({
@@ -1477,5 +1482,111 @@ describe('techPlanCard — 109-REVIEW 多方案会话的串态防护', () => {
     // 有 sessions ⇒ 走「追加态」，创建态内嵌选仓面（唯一带此标题）不再渲染
     expect(wrapper.text()).not.toContain('选择目标仓库')
     expect(wrapper.text()).toContain('目标仓库（1）')
+  })
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 同步点 2 收尾：blueprint/v1 识别（v0 与蓝图两档正反并列）
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('techPlanCard —— blueprint/v1 识别', () => {
+  it('⭐ v0 投影：不出蓝图徽标 / 告示条 / 深链，正文照旧渲染（逐像素不变）', async () => {
+    const wrapper = mountCard({ techPlan: '# 登录改造' })
+    await flushPromises()
+    await nextTick()
+
+    expect(wrapper.find('[data-test="blueprint-notice"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="blueprint-link"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('技术蓝图')
+    // 既有正文渲染路径一行未改。
+    expect(wrapper.html()).toContain('<div data-test="md"># 登录改造</div>')
+  })
+
+  it('⭐ 空正文的 v0 投影仍落「（暂无方案正文）」（蓝图那一档不得抢它）', async () => {
+    const wrapper = mountCard({ techPlan: '' })
+    await flushPromises()
+    await nextTick()
+    expect(wrapper.text()).toContain('（暂无方案正文）')
+    expect(wrapper.find('[data-test="blueprint-notice"]').exists()).toBe(false)
+  })
+
+  it('⭐ blueprint/v1：如实说明形态 + 11 态徽标 + 查看器深链，⛔ 不渲染空壳正文', async () => {
+    const wrapper = mountCard({
+      // v0 映射器对 blueprint/v1 渲出来的正是这样一份「结构合法而内容为空」的壳。
+      techPlan: '# \n',
+      schemaVersion: 'blueprint/v1',
+      blueprintArtifactId: 'art-9',
+      blueprintStatus: 'pending_review',
+    })
+    await flushPromises()
+    await nextTick()
+
+    const notice = wrapper.find('[data-test="blueprint-notice"]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('结构化技术蓝图')
+    expect(wrapper.find('[data-test="blueprint-link"]').attributes('href')).toBe(
+      '/knowledge/blueprints/art-9',
+    )
+    // 头部两枚徽标：形态 + 11 态状态。
+    expect(wrapper.text()).toContain('技术蓝图')
+    expect(wrapper.text()).toContain('待人类审查')
+    // ⛔ 空壳正文与「（暂无方案正文）」都不得出现。
+    expect(wrapper.text()).not.toContain('（暂无方案正文）')
+    expect(wrapper.html()).not.toContain('data-test="md"')
+  })
+
+  it('11 态逐档如实呈现', async () => {
+    for (const [status, label] of [
+      ['researching', '调研中'],
+      ['needs_clarification', '需要澄清'],
+      ['confirmed', '已确认'],
+      ['failed', '已失败'],
+    ] as const) {
+      const wrapper = mountCard({
+        schemaVersion: 'blueprint/v1',
+        blueprintArtifactId: 'art-9',
+        blueprintStatus: status,
+      })
+      await flushPromises()
+      expect(wrapper.text()).toContain(label)
+    }
+  })
+
+  it('未知 schema_version 一律按 v0 处理（允许清单，⛔ 不是拒绝清单）', async () => {
+    const wrapper = mountCard({
+      techPlan: '# 登录改造',
+      schemaVersion: 'blueprint/v2',
+      blueprintArtifactId: 'art-9',
+      blueprintStatus: 'pending_review',
+    })
+    await flushPromises()
+    await nextTick()
+    expect(wrapper.find('[data-test="blueprint-notice"]').exists()).toBe(false)
+    expect(wrapper.html()).toContain('<div data-test="md"># 登录改造</div>')
+  })
+
+  it('缺 artifact id 时告示条仍在、深链不渲染（⛔ 不给一个点不开的链接）', async () => {
+    const wrapper = mountCard({
+      schemaVersion: 'blueprint/v1',
+      blueprintStatus: 'drafting',
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="blueprint-notice"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="blueprint-link"]').exists()).toBe(false)
+  })
+
+  it('折叠态摘要取蓝图形态说明，⛔ 不取空壳 markdown 首行', async () => {
+    const wrapper = mountCard({
+      techPlan: '# \n',
+      defaultCollapsed: true,
+      schemaVersion: 'blueprint/v1',
+      blueprintArtifactId: 'art-9',
+      blueprintStatus: 'confirmed',
+    })
+    await flushPromises()
+    const summary = wrapper.find('[data-test="blueprint-collapsed-summary"]')
+    expect(summary.exists()).toBe(true)
+    expect(summary.text()).toContain('已确认')
+    expect(wrapper.text()).not.toContain('（无方案文本）')
   })
 })

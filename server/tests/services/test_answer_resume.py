@@ -2,8 +2,8 @@
 
 覆盖：
 - answer_round 写入子题（selected/freeform）后，adrive 以同源 engine + 解析出的 session 续驱一次。
-- engine 缺省 → 经 build_orchestration_engine() 构造（chat 入口形态）。
-- 显式传入 engine → 直接复用，不再 build_orchestration_engine。
+- engine 缺省 → 经分派器 build_engine_for_session 构造（chat 入口形态）。
+- 显式传入 engine → engine 复用调用方的，但 driver 仍由分派器按 process_type 选（116-03）。
 - 注入 clarification_service → 复用同一实例。
 - answer_round 幂等：重复 answers 安全 no-op，不二次覆盖首答（adrive 仍续驱）。
 - 解析不出 session（session 不存在）→ 直接 return None，adrive 不被调用。
@@ -81,8 +81,15 @@ async def test_answers_then_drives_with_same_engine() -> None:
 
 
 @pytest.mark.asyncio
-async def test_explicit_engine_reused_no_build() -> None:
-    """显式传入 engine → 直接复用，不再调用 build_orchestration_engine。"""
+async def test_explicit_engine_reused_but_driver_still_dispatched() -> None:
+    """显式传入 engine → **engine 复用调用方的**，但 driver 仍由分派器按 process_type 选。
+
+    ⭐ 116-03 起「engine 与 driver 一起换」是硬要求：只换 engine 不换 driver，一条健康的
+    ``technical_blueprint`` 会话会在 ``waiting_clarification`` 处一步都短路不了（旧 driver
+    的判据 ``ClarificationService.ahas_pending`` 对蓝图恒 False），被推到 ``max_steps`` 落
+    ``advance_step_limit`` FAILED 且零异常。⇒ 本用例只断言「engine 用调用方的」，**不再**
+    断言「分派器不被调用」—— 后者与「driver 必须被分派」在实现上互斥。
+    """
     session, clar, q = await _make_round()
     explicit_engine = MagicMock(name="explicit_engine")
     adrive = AsyncMock(return_value=session)
@@ -97,9 +104,10 @@ async def test_explicit_engine_reused_no_build() -> None:
             engine=explicit_engine,
         )
 
-    build.assert_not_called()
     adrive.assert_awaited_once()
+    # engine 是调用方传进来的那个（⛔ 不是分派器构造的那个）
     assert adrive.await_args.args[0] is explicit_engine
+    assert adrive.await_args.args[0] is not build.return_value
 
 
 @pytest.mark.asyncio

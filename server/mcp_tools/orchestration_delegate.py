@@ -46,6 +46,9 @@ class DelegateResult:
     - ``model_usage``：本次编排聚合的模型用量（WR-03，best-effort）。编排 adapters 经
       ``arecord_llm_usage`` 落用量行但不挂 MCP run，故 delegate 把本次驱动窗口内的 token/
       duration 聚合回传，由 MCP view 落到自身 run 维度，避免 token/成本归因回退（空则 ``{}``）。
+    - ``error_detail``（116-03，**纯追加、缺省空串**）：可直接回显给调用方的**中性**失败文案
+      （当前唯一来源是蓝图分支「推不出 ``meta.project_id`` ⇒ 拒绝发起」）。⛔ 不含内部路径 /
+      异常原文。既有调用方不读它 ⇒ 响应外形零破坏；把它接进 MCP 响应体归 **116-06**。
     """
 
     session: Any
@@ -54,6 +57,7 @@ class DelegateResult:
     plan_version_id: str | None
     markdown: str
     model_usage: dict = field(default_factory=dict)
+    error_detail: str = ""
 
 
 async def _load_canonical(session: Any) -> tuple[str | None, dict, str]:
@@ -61,9 +65,15 @@ async def _load_canonical(session: Any) -> tuple[str | None, dict, str]:
 
     用 ``current_plan_version`` 标量 + ``afirst`` 取 ``PlanVersion``；content 非 dict 时回退
     ``{}`` / 空串（防御性，对齐 render/merged_plan fail-safe）。
+
+    ⭐ **蓝图会话换渲染器**（同步点 2 / G3 的 markdown 那一半）：
+    ``render_merged_plan_markdown`` 读的是 v0 ``MergedPlan`` 的顶层键，对 blueprint/v1
+    会渲染出一篇**结构合法而内容为空**的文档 —— 而这篇 markdown 正是写进飞书文档的那份。
+    蓝图走 ``render_blueprint_markdown``（水印由它按 ``blueprint_status`` 无条件加）。
     """
     from delivery.models import ArtifactVersion
     from services.process_runtime import render_merged_plan_markdown
+    from services.process_runtime.blueprint_observation import is_blueprint_session
 
     av_id = (
         str(session.current_artifact_version_id) if session.current_artifact_version_id else None
@@ -73,7 +83,34 @@ async def _load_canonical(session: Any) -> tuple[str | None, dict, str]:
     av = await ArtifactVersion.objects.filter(id=av_id).afirst()
     if av is None or not isinstance(av.content, dict):
         return av_id, {}, ""
+    if is_blueprint_session(session):
+        return av_id, av.content, await _arender_blueprint(session, av.content)
     return av_id, av.content, render_merged_plan_markdown(av.content)
+
+
+async def _arender_blueprint(session: Any, content: dict) -> str:
+    """blueprint/v1 content → markdown（水印按真实 ``blueprint_status`` 渲染）。
+
+    取不到状态时传空串 —— ``render_blueprint_markdown`` 的白名单是**闭合集合**，空串落在
+    集合外 ⇒ 当作「未确认」渲染水印，方向恰好是 fail-safe。整段吞异常回空串：markdown 是
+    响应装饰，⛔ 渲染失败不废掉主载荷（主载荷的正确性由 G3 的派生投影单独保证）。
+    """
+    try:
+        from services.process_runtime.blueprint_observation import (
+            ablueprint_observation,
+            render_observed_blueprint,
+        )
+
+        observation = await ablueprint_observation(session, with_threads=False)
+        return render_observed_blueprint(content, observation.current_status)
+    except Exception:  # noqa: BLE001 — 渲染是装饰，绝不废掉主载荷
+        logger.warning(
+            "mcp_blueprint_markdown_render_failed",
+            category="sampling",
+            component="mcp_tools",
+            session_id=str(getattr(session, "id", "")),
+        )
+        return ""
 
 
 async def _aggregate_orchestration_usage(start_dt: Any) -> dict[str, Any]:
@@ -117,6 +154,55 @@ async def _aggregate_orchestration_usage(start_dt: Any) -> dict[str, Any]:
     }
 
 
+async def _amaybe_start_blueprint_session(
+    *,
+    requirement_text: str,
+    work_item: Any,
+    created_by: Any,
+    include_repos: list[str] | None,
+    extra_evidence: list[dict] | None,
+    work_item_context: Any,
+    assumptions_tier: str = "",
+) -> Any:
+    """``mcp`` 开关切到蓝图时建 ``technical_blueprint`` 会话；否则返回 ``None`` 走旧链。
+
+    ⭐ **``entrypoint`` 实参一字不改**仍是 ``"workflow"``（本模块 ``:4`` / ``:131`` 逐字写明
+    的既有约定，且它进 ``ConvergenceSession.entrypoint`` 列、有既有消费方）；静态身份走
+    ``entry_key="mcp"``。两者是两回事，⛔ 绝不互相代入。
+
+    ⭐ **``project_id`` 必过 ``aresolve_project_id``**（P-8）：⛔ 绝不把
+    ``work_item_context.space_id`` 当 project id 透传。推不出即抛 ``BlueprintIntakeRejected``
+    并**在建会话之前**中止（⛔ 不建 session、不建 artifact），由调用方映射成失败 delegate 结果。
+
+    ⛔ **不透传 ``skip_clarification``**：蓝图链没有 ``clarify`` dep；旧链那条
+    「MCP 单次同步入口跳过交互澄清」的 policy 在蓝图链无对应面，移植它等于原地复活
+    GATE-01 要消灭的「跳过澄清」。
+
+    ``assumptions_tier``（116-REVIEW MJ-02）：调用方指定的 assumptions 档位，原样透传给
+    ``start_blueprint_orchestration``（它按「非空且在三档内才写键」落进 ``stage_state``）。
+    ⭐ 档位只调「问不问的阈值与轮数」，⛔ **绝不跳过 spec_gate stage** —— 那与上一条同源。
+    """
+    from services.process_runtime.blueprint_entry_switch import aresolve_entry_process_type
+    from services.process_runtime.blueprint_intake import aresolve_project_id
+    from services.process_runtime.entrypoint import start_blueprint_orchestration
+
+    if await aresolve_entry_process_type("mcp") != "technical_blueprint":
+        return None
+
+    project_id = await aresolve_project_id(entry="mcp", work_item_context=work_item_context)
+    return await start_blueprint_orchestration(
+        entrypoint="workflow",
+        requirement_text=requirement_text,
+        work_item=work_item,
+        created_by=created_by,
+        include_repos=include_repos,
+        extra_evidence=extra_evidence,
+        project_id=project_id,
+        entry_key="mcp",
+        assumptions_tier=assumptions_tier,
+    )
+
+
 async def delegate_process_runtime(
     *,
     requirement_text: str,
@@ -124,6 +210,8 @@ async def delegate_process_runtime(
     include_repos: list[str] | None = None,
     created_by: Any = None,
     extra_evidence: list[dict] | None = None,
+    work_item_context: Any = None,
+    assumptions_tier: str = "",
 ) -> DelegateResult:
     """delegate 到 ``process_runtime`` 统一编排，产 canonical MergedPlan/PlanVersion。
 
@@ -134,6 +222,19 @@ async def delegate_process_runtime(
     ``extra_evidence``（UNIFY-02）：调用方补充的编排输入证据（如 repository analysis
     summary），原样透传 ``start_orchestration`` 写入 stage_state，merge 阶段消费。
 
+    ``work_item_context``（116-03，**纯追加、缺省 None**）：``McpWorkItemContext``。仅在
+    ``mcp`` 开关切到 ``technical_blueprint`` 时被读，用来推导 ``meta.project_id``。
+    ⭐ **``McpWorkItemContext.space`` 是 ``projects.Space`` FK 不是 Project id**（P-8）：
+    ``technical_plan_service.py:488`` 把 ``space_id`` 当 ``"project_id"`` 键回给调用方，直接
+    透传即落一份「20 个端点恒不可用、图谱恒不入、导出恒不可用」且**没有补救入口**的蓝图。
+    故推导一律经 ``blueprint_intake.aresolve_project_id``（内部过 ``_aresolve_project``），
+    ⛔ 本模块绝不自己把 ``context.space_id`` 当 project id 用。
+    ⚠️ 调用方接线（``technical_plan_service`` / ``views``）与 MCP 响应体追加三键归 **116-06**。
+
+    ``assumptions_tier``（116-REVIEW MJ-02，**纯追加、缺省空串**）：本次会话的 assumptions
+    档位。⭐ **仅在 ``mcp`` 开关切到 ``technical_blueprint`` 时被读**（旧链无此维度）；
+    空串 / 非三档之一一律回落默认档 ⇒ 不传时行为与改动前逐字相同。
+
     终态/挂起映射（mirror ``plan_research._map_terminal``）：
     - ``DONE`` → ``status="completed"``，取 ``PlanVersion.content`` + 渲染 markdown。
     - ``RESEARCHING``/``CLARIFYING``（仍挂起，MCP 无 resume 通路）→ ``status="partial"``，
@@ -143,11 +244,9 @@ async def delegate_process_runtime(
     from django.utils import timezone
 
     from delivery.models import ConvergenceSessionStatus
-    from services.process_runtime import (
-        adrive_convergence_session_to_pause_or_terminal,
-        build_orchestration_engine,
-        start_orchestration,
-    )
+    from services.process_runtime import start_orchestration
+    from services.process_runtime.blueprint_intake import BlueprintIntakeRejected
+    from services.process_runtime.entrypoint import build_engine_for_session
 
     started_at = time.perf_counter()
     start_dt = timezone.now()
@@ -168,16 +267,34 @@ async def delegate_process_runtime(
     # 埋 mcp_plan_delegate_failed），杜绝 MCP 入口 5xx 回退。
     session: Any = None
     try:
-        session = await start_orchestration(
+        # 116-03：按 per-entry 运行时开关分派。⛔ 开关实参必须是**字面量常量** "mcp" ——
+        # ⛔ 绝不写 session.entrypoint / 本模块传给 start_orchestration 的 "workflow"
+        # （见 :4 / :131 docstring：那是既有约定），反推会让打开 workflow 键把 MCP 一起切走。
+        # 蓝图分支在此建会话，旧链分支保持 None ⇒ 下面那次 start_orchestration 逐字不变地执行。
+        session = await _amaybe_start_blueprint_session(
+            requirement_text=requirement_text,
+            work_item=work_item,
+            created_by=created_by,
+            include_repos=include_repos,
+            extra_evidence=extra_evidence,
+            work_item_context=work_item_context,
+            assumptions_tier=assumptions_tier,
+        )
+        session = session or await start_orchestration(
             entrypoint="workflow",
             requirement_text=requirement_text,
             work_item=work_item,
             created_by=created_by,
             include_repos=include_repos,
             extra_evidence=extra_evidence,
+            entry_key="mcp",
         )
-        engine = build_orchestration_engine(skip_clarification=True)
-        session = await adrive_convergence_session_to_pause_or_terminal(engine, session)
+        # ⭐ 116-03：engine 与 driver 一起经分派器按 session.process_type 取。
+        # skip_clarification 照原样传给分派器（它只在旧链分支透传给 build_orchestration_engine；
+        # 蓝图链没有 clarify dep，分派器会丢弃并落一条 blueprint_engine_ignored_legacy_flag）
+        # ⇒ 旧链行为逐字不变，蓝图分支自动免疫。⛔ 不在本调用点判 process_type。
+        engine, adrive = build_engine_for_session(session, skip_clarification=True)
+        session = await adrive(engine, session)
 
         model_usage = await _aggregate_orchestration_usage(start_dt)
         if session.status == ConvergenceSessionStatus.DONE:
@@ -210,6 +327,28 @@ async def delegate_process_runtime(
                 markdown=markdown,
                 model_usage=model_usage,
             )
+    except BlueprintIntakeRejected as exc:
+        # ⭐ 推不出 meta.project_id ⇒ **拒绝发起**（此刻 ⛔ 会话与 artifact 都尚未建立）。
+        # 回中性 detail：⛔ 不含内部路径 / 异常原文。⚠️ 这是**业务失败**，如实回 failed ——
+        # ⛔ 绝不吞成「空方案的 200」（Phase 115 MJ-04：best-effort 只适用于观测）。
+        try:
+            logger.warning(
+                "mcp_plan_delegate_blueprint_rejected",
+                category="caller",
+                component="mcp_tools",
+                reason=exc.reason,
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+            pass
+        result = DelegateResult(
+            session=SimpleNamespace(id=""),
+            status="failed",
+            content={},
+            plan_version_id=None,
+            markdown="",
+            model_usage={},
+            error_detail=exc.detail,
+        )
     except Exception as exc:  # noqa: BLE001 — 异常 → failed 终态对称护栏（IN-03）
         try:
             logger.warning(

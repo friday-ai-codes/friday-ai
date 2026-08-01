@@ -96,7 +96,7 @@ def test_container_get_repository_file_excluded_blocks_no_plaintext(
     """
     client, _ = mcp_client
     monkeypatch.setattr(
-        "mcp_tools.views.GetRepositoryFileView._read_from_mirror",
+        "services.repo_file_read._aread_from_mirror",
         AsyncMock(return_value=(".env", "SECRET_TOKEN=containerleak\n", _snapshot())),
     )
 

@@ -139,8 +139,19 @@ class DeliveryKnowledgeSearchService:
         user,
         direction: str = "both",
         max_hops: int = 2,
+        relations: list[str] | None = None,
         as_of: datetime | None = None,
     ):
+        """图关联遍历。
+
+        ``relations``（Phase 116 VIEW-04）默认 ``None`` ⇒ 透传给
+        ``fetch_related_entities`` 后落回 ``_DEFAULT_RELATIONS``，既有调用点零回归。
+        """
         return await fetch_related_entities(
-            entity_id, user=user, direction=direction, max_hops=max_hops, as_of=as_of
+            entity_id,
+            user=user,
+            direction=direction,
+            max_hops=max_hops,
+            relations=relations,
+            as_of=as_of,
         )

@@ -42,6 +42,27 @@ class ArtifactApprovalStatus(models.TextChoices):
     REJECTED = "rejected", "已驳回"
 
 
+class BlueprintStatus(models.TextChoices):
+    """技术方案蓝图 11 态生命周期（Phase 111，DESIGN §4.2）。
+
+    与 ``ArtifactStatus`` 正交（映射见 DESIGN §4.3）：``status`` 承载通用交付物
+    生命周期，``blueprint_status`` 承载蓝图专属用户可见状态；空串 = 旧 v0 数据
+    不参与状态机。
+    """
+
+    RESEARCHING = "researching", "调研中"
+    DRAFTING = "drafting", "产出中"
+    AI_REVIEWING = "ai_reviewing", "AI 审查中"
+    NEEDS_CLARIFICATION = "needs_clarification", "需要澄清"
+    PENDING_REVIEW = "pending_review", "待人类审查"
+    CONFIRMED = "confirmed", "已确认"
+    IMPLEMENTING = "implementing", "实施中"
+    IMPLEMENTED = "implemented", "实施完成"
+    ARCHIVED = "archived", "已归档"
+    FAILED = "failed", "已失败"
+    SUPERSEDED = "superseded", "已废弃"
+
+
 class Artifact(models.Model):
     """通用交付物操作态实体（事实源）。"""
 
@@ -79,6 +100,16 @@ class Artifact(models.Model):
 
     created_by_user_id = models.CharField(max_length=64, blank=True, default="")
 
+    # 蓝图 11 态（Phase 111）：字段级唯一 writer = BlueprintLifecycleService（INV-6），
+    # 与既有 ArtifactStatus 正交（映射见 DESIGN §4.3）；空串 = 旧 v0 数据不参与状态机。
+    # max_length=32：needs_clarification 长 19 字符，照 16 截断（P5）。
+    blueprint_status = models.CharField(
+        max_length=32,
+        choices=BlueprintStatus.choices,
+        blank=True,
+        default="",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -89,6 +120,7 @@ class Artifact(models.Model):
         indexes = [
             models.Index(fields=["artifact_type", "status"]),
             models.Index(fields=["work_item"]),
+            models.Index(fields=["artifact_type", "blueprint_status"]),
         ]
 
     def __str__(self) -> str:

@@ -4,12 +4,15 @@
 让两入口**同源**调用同一份逻辑（落 CONTEXT「工作流 + 会话同源，不造两套」），薄封装：
 
 1. ``ClarificationService.answer_round``（按题幂等作答 + 定格采纳信号，INV-6 唯一写入入口）。
-2. ``build_orchestration_engine``（engine 缺省时构造，chat 入口形态、无 node_execution_id）。
-3. ``adrive_convergence_session_to_pause_or_terminal``（续驱到重挂起短路点或终态）。
+2. ``build_engine_for_session``（116-03 分派器：按 ``process_type`` **同时**给出 engine 与
+   driver；engine 缺省时取分派出的那个，chat 入口形态、无 ``node_execution_id``）。
+3. 分派出的 driver（旧链 ``resume`` / 蓝图 ``blueprint_resume``）续驱到重挂起短路点或终态。
 
 设计要点：
-- **入口无关**：``engine`` 缺省 = chat 入口（``build_orchestration_engine()``）；工作流入口可
-  传带 ``node_execution_id`` 的 engine 直接复用。**入口私有重调度（节点重入 / chat barrier
+- **入口无关**：``engine`` 缺省 = chat 入口（分派器构造）；工作流入口可
+  传带 ``node_execution_id`` 的 engine 直接复用。⭐ **driver 一律由分派器按会话的
+  ``process_type`` 选**，⛔ 调用方传了 engine 也不沿用旧 driver（两把锁必须一起换，
+  否则蓝图会话落 ``advance_step_limit``）。**入口私有重调度（节点重入 / chat barrier
   回灌 / marker 写入）留各调用方**，本 helper 不碰。
 - **INV-6**：写入只经 ``ClarificationService.answer_round``，helper 内绝不直接写 delivery 表
   （无任何 ORM create / update / save 旁路写）。
@@ -48,12 +51,13 @@ async def aanswer_round_and_resume(
 ) -> Any:
     """对一轮澄清作答并续驱其 ``ConvergenceSession`` 到重挂起短路点或终态后返回该 session。
 
-    入口无关：``engine`` 缺省 = chat 入口（``build_orchestration_engine()``）；工作流入口可传带
+    入口无关：``engine`` 缺省 = chat 入口（由分派器构造）；工作流入口可传带
     ``node_execution_id`` 的 engine 直接复用。``clarification_service`` 缺省 ``ClarificationService()``，
     可注入复用（测试 / 调用方共享实例）。
 
     流程：① ``answer_round`` 按题幂等写入 ``selected/freeform`` 并定格采纳信号；② 由 ``clar.session_id``
-    标量解析 ``ConvergenceSession``（解析不出 → 返回 ``None``）；③ engine 缺省则构造；④ ``adrive`` 续驱返回。
+    标量解析 ``ConvergenceSession``（解析不出 → 返回 ``None``）；③ 经 ``build_engine_for_session``
+    取 ``(engine, driver)``，engine 缺省时用分派出的那个、**driver 恒用分派出的**；④ 续驱返回。
 
     **入口私有重调度（节点重入 / chat barrier 回灌 / marker 写入）留各调用方**，本 helper 不驱动。
     """
@@ -61,8 +65,7 @@ async def aanswer_round_and_resume(
     from delivery.models import ConvergenceSession
     from delivery.services import ClarificationService
 
-    from .entrypoint import build_orchestration_engine
-    from .resume import adrive_convergence_session_to_pause_or_terminal
+    from .entrypoint import build_engine_for_session
 
     started = time.perf_counter()
     _safe_log(
@@ -99,8 +102,14 @@ async def aanswer_round_and_resume(
         )
         return None
 
-    engine = engine or build_orchestration_engine()
-    session = await adrive_convergence_session_to_pause_or_terminal(engine, session)
+    # ⭐ 116-03：engine 与 driver **两处一起**经分派器按 session.process_type 取。
+    # 「调用方传入 engine 时优先用调用方的」这条既有语义保留（engine or dispatched_engine），
+    # 但 **driver 一律由分派器给** —— 沿用旧 driver 会让健康的蓝图会话在
+    # waiting_clarification 处一步都短路不了（旧判据 ClarificationService.ahas_pending 对
+    # 蓝图恒 False），被推到 max_steps 落 advance_step_limit FAILED 且零异常。
+    dispatched_engine, adrive = build_engine_for_session(session)
+    engine = engine or dispatched_engine
+    session = await adrive(engine, session)
 
     _safe_log(
         "answer_round_and_resume_completed",

@@ -1,0 +1,204 @@
+/**
+ * 蓝图相位的源码扫描守卫（Phase 115-02，UI-SPEC §20 断言 4 / 6 / 10）。
+ *
+ * 形态平移自后端 `server/tests/delivery/test_blueprint_inv6_guard.py`：常量正则 + 目录递归
+ * 遍历 + 违规清单聚合 + **断言消息把「为什么存在」和「怎么修」都写进去**（否则后人只会看到
+ * 一行冷冰冰的 assert 失败，根本不知道该往哪儿改）。
+ *
+ * ⚠️ **两个扫描目录在 115-02 阶段几乎是空的**（组件与页面由 115-03…07 陆续落地）：glob 命中
+ * 为空时用例**平凡通过**，后续每个 plan 都要复跑它，逐个把它压实。这是刻意的 —— 守卫先就位，
+ * 才能在第一个违规出现的那一刻拦住，而不是等相位结束回头审。
+ */
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { join, relative, resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+
+/** 扫描面：本相位新增的组件目录与页面目录。 */
+const SCAN_DIRS = ['src/components/blueprint', 'src/pages/knowledge/blueprints'] as const
+
+/** `web/` 根目录（vitest 的 `root` 即 `web/`）。 */
+const WEB_ROOT = resolve(process.cwd())
+
+const SCANNED_EXTENSIONS = ['.vue', '.ts', '.tsx'] as const
+
+interface SourceFile {
+  /** 相对 `web/` 的路径，用于断言消息。 */
+  path: string
+  content: string
+}
+
+function walk(dir: string, acc: SourceFile[]): void {
+  if (!existsSync(dir))
+    return
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry)
+    if (statSync(full).isDirectory()) {
+      // ⛔ 不扫 `__tests__`：测试文件里出现这些 token 是正常的（本文件自己就是例子）。
+      if (entry === '__tests__')
+        continue
+      walk(full, acc)
+      continue
+    }
+    if (SCANNED_EXTENSIONS.some(ext => entry.endsWith(ext)))
+      acc.push({ path: relative(WEB_ROOT, full), content: readFileSync(full, 'utf8') })
+  }
+}
+
+function scanFiles(): SourceFile[] {
+  const files: SourceFile[] = []
+  for (const dir of SCAN_DIRS)
+    walk(resolve(WEB_ROOT, dir), files)
+  return files
+}
+
+/** 逐行找命中，返回 `路径:行号: 行内容` 形式的违规清单。 */
+function violations(pattern: RegExp): string[] {
+  const found: string[] = []
+  for (const file of scanFiles()) {
+    file.content.split('\n').forEach((line, index) => {
+      if (pattern.test(line))
+        found.push(`${file.path}:${index + 1}: ${line.trim()}`)
+    })
+  }
+  return found
+}
+
+describe('blueprint 源码守卫', () => {
+  it('扫描面本身可定位（目录不存在时视为空集合，用例平凡通过）', () => {
+    // 这条不是业务断言，是**给守卫自己上的锁**：如果哪天目录被改名而扫描常量没跟着改，
+    // 上面三条断言会静默变成「扫了 0 个文件所以全绿」。这里把实际扫到的文件数打出来，
+    // 让「扫到 0 个」在 115-03 之后成为可被人眼发现的异常。
+    const files = scanFiles()
+    expect(Array.isArray(files)).toBe(true)
+    for (const dir of SCAN_DIRS)
+      expect(typeof dir).toBe('string')
+  })
+
+  it('§20 断言 6：refetchInterval 只出现在 composables/useBlueprintLive.ts', () => {
+    const found = violations(/refetchInterval/)
+    expect(
+      found,
+      [
+        '轮询只能在 `src/composables/useBlueprintLive.ts` 里发生 —— 它是全相位唯一的轮询消费点。',
+        '这条存在的理由：同步点 2 之后要把 5s 轮询换成 v0.19.0 的推送订阅，那次改动必须只碰一个文件。',
+        '怎么修：把组件里的 `refetchInterval` 删掉，改为消费 `useBlueprintLive()` 返回的查询与派生值。',
+        `命中：\n${found.join('\n')}`,
+      ].join('\n'),
+    ).toEqual([])
+  })
+
+  // ⭐ 原 §20 断言 10「edit-blocks 零命中」已于 CLAR-03 闭环相位**反转**。
+  //
+  // 那条断言当初的「怎么修」写的是「删掉该入口；要改内容走人审驳回再重新产出」—— 那是一句
+  // **反对该能力存在**的设计论证，而同一条断言的上一行又写「顺延 Phase 116」（排期语气）。
+  // 两者不可能同时为真，而 CLAR-03 的需求文本承诺的就是「人类可直接编辑蓝图内容（block 级）」。
+  //
+  // 单一立场（现行）：**block 编辑面已交付**。当初那条设计论证的前提也已不成立 ——
+  // 114-MJ-04 给 `edit-blocks` 加了 `is_blueprint_editable` 状态闸，已 `confirmed` 的蓝图
+  // 一律 400，「要改先驳回」由后端结构性兜住，不再需要靠「前端不给入口」这条软纪律。
+  //
+  // 守卫不删而是换靶子：现在钉的是**端点路径字面量只许出现在 `~/api/blueprints.ts`**。
+  // 组件/页面里手写 URL 会绕开那一层的类型契约与状态码分档注释，是这条链最容易漂移的地方。
+  it('§20 断言 10（已反转）：端点路径字面量只在 api 层，扫描面内零命中', () => {
+    const found = violations(/blueprint-review\/edit-blocks|['"`]\/delivery\/.*edit-blocks/)
+    expect(
+      found,
+      [
+        'block 编辑面**已交付**（CLAR-03），但端点路径只能写在 `src/api/blueprints.ts` 里。',
+        '这条存在的理由：`editBlueprintBlocks` 那一层带着 200/400 分档与 `human_edit:` 归属的',
+        '契约说明；组件里手写一份 URL 就等于绕过它，两边分档迟早各说各话。',
+        '怎么修：改调 `blueprintsApi.editBlueprintBlocks(artifactId, { ops })`。',
+        `命中：\n${found.join('\n')}`,
+      ].join('\n'),
+    ).toEqual([])
+  })
+
+  it('§20 断言 10b：block 编辑面确实存在（⛔ 防这条能力被静默删回去）', () => {
+    // 反向断言：上面那条只说「不许手写 URL」，它在**入口整个消失**时同样平凡通过。
+    // CLAR-03 就是栽在这种「守卫全绿而能力不可达」上的，这里补一条正向的。
+    const files = scanFiles()
+    const hasDialog = files.some(file => file.path.endsWith('BlueprintBlockEditDialog.vue'))
+    const hasCall = files.some(file => file.content.includes('editBlueprintBlocks'))
+    const hasEntry = files.some(file => file.content.includes('blueprint-selection-edit'))
+    expect(
+      [hasDialog, hasCall, hasEntry],
+      [
+        'CLAR-03 首句承诺「人类可直接编辑蓝图内容（block 级）」，该能力必须在产品面可达。',
+        '三个支点：编辑弹窗组件、经 api 层的调用点、选区浮层里的入口按钮。',
+        `实测：dialog=${hasDialog} call=${hasCall} entry=${hasEntry}`,
+      ].join('\n'),
+    ).toEqual([true, true, true])
+  })
+
+  it('§20 断言 4：404 分支只用 error.notFoundOrForbidden 一个 i18n 键', () => {
+    const allowed = new Set(['notFoundOrForbidden', 'blocked', 'conflict', 'conflictVersion', 'unavailable', 'retry', 'refresh', 'backToKnowledge'])
+    const used = new Set<string>()
+    for (const file of scanFiles()) {
+      for (const match of file.content.matchAll(/knowledge\.blueprints\.error\.(\w+)/g))
+        used.add(match[1])
+    }
+    const unexpected = [...used].filter(key => !allowed.has(key))
+    expect(
+      unexpected,
+      [
+        '404 只能有一句中性文案「无权访问或该蓝图不存在」。',
+        '这条存在的理由：后端对「artifact 不存在」与「调用者非项目成员」刻意返回**逐字相同**的',
+        '404（MJ-03 的存在性防线）。前端只要把它翻成两种文案，那道防线就被差分枚举破了。',
+        '怎么修：所有 404 分支统一用 `knowledge.blueprints.error.notFoundOrForbidden`。',
+        `未登记的 error 键：${unexpected.join(', ')}`,
+      ].join('\n'),
+    ).toEqual([])
+  })
+
+  it('§20 断言 4（续）：扫描面内不得出现竞品 404 中文字面量', () => {
+    const found = violations(/该蓝图不存在|蓝图不存在|无权限访问|没有权限访问|方案不存在/)
+    expect(
+      found,
+      [
+        '这几句是「把 404 拆成两种文案」的典型形状，一律不许出现在扫描面里。',
+        '怎么修：改用 `t(\'knowledge.blueprints.error.notFoundOrForbidden\')`。',
+        `命中：\n${found.join('\n')}`,
+      ].join('\n'),
+    ).toEqual([])
+  })
+
+  it('§14 / UI-REVIEW M-6：Heading 档是 text-base，扫描面内零 `text-sm font-semibold`', () => {
+    const found = violations(/text-sm[\w\-[\]/.%]*\s+font-semibold|font-semibold[\w\-[\]/.%]*\s+text-sm/)
+    expect(
+      found,
+      [
+        'UI-SPEC §14 的四档表里 Heading（段标题、卡片标题、面板标题）= `text-base font-semibold`（16px），',
+        'Body = `text-sm`（14px）。写成 `text-sm font-semibold` 会让标题与正文**同号**，',
+        '段与段的边界只剩字重一个维度，长页面的扫读成本明显上升（UI-REVIEW M-6 实测 21 处）。',
+        '怎么修：标题元素改 `text-base font-semibold`；`text-[11px]` / mono / Label 档不动。',
+        `命中：\n${found.join('\n')}`,
+      ].join('\n'),
+    ).toEqual([])
+  })
+
+  it('§15 / UI-REVIEW L-1：扫描面内零裸 Tailwind 调色板色（有令牌就用令牌）', () => {
+    const found = violations(/\b(?:bg|text|border|ring|from|via|to)-(?:amber|emerald|rose|sky|violet|slate|zinc|gray|orange|lime)-\d{2,3}\b/)
+    expect(
+      found,
+      [
+        'UI-SPEC §15：语义色一律走 `main.css` 的 `@theme` 令牌，⛔ 不写裸调色板色。',
+        '历史版本提示条曾用 `border-amber-500/40 bg-amber-500/10`，而 `--color-warning` 就在 `main.css:90`。',
+        '怎么修：换成 `border-warning/40 bg-warning/10` 之类的令牌类；',
+        '批注四色与 diff 二色是**功能编码**，集中在 `annotationTokens.ts` 里写 `hsl()` 字面量，不在此列。',
+        `命中：\n${found.join('\n')}`,
+      ].join('\n'),
+    ).toEqual([])
+  })
+
+  it('t-115-13：扫描面内零 v-html（批注/正文/quote 是半可信文本）', () => {
+    const found = violations(/v-html/)
+    expect(
+      found,
+      [
+        '蓝图正文 / 线程消息 / citation quote 全部是半可信文本，`v-html` = 存储型 XSS。',
+        '怎么修：区间切分函数返回的是结构化数组（`TextSegment[]`），用 `v-for` + mustache 渲染。',
+        `命中：\n${found.join('\n')}`,
+      ].join('\n'),
+    ).toEqual([])
+  })
+})
