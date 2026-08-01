@@ -17,11 +17,23 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 if TYPE_CHECKING:
     from delivery.models import ConvergenceSession
     from services.process_runtime.engine import ProcessEngine
 
+logger = structlog.get_logger(__name__)
+
 __all__ = ["start_orchestration", "build_orchestration_engine"]
+
+
+def _safe_log(event: str, **fields: Any) -> None:
+    """best-effort 结构化埋点（观测失败吞掉，绝不反噬建会话与 engine 构造）。"""
+    try:
+        logger.info(event, **fields)
+    except Exception:  # noqa: BLE001 — 观测 best-effort
+        pass
 
 
 def _no_clarify(session: Any) -> tuple[bool, str, list]:
@@ -43,6 +55,7 @@ async def start_orchestration(
     mode: str = "",
     feature_segments: list[dict] | None = None,
     feature_meta: dict | None = None,
+    entry_key: str = "",
 ) -> ConvergenceSession:
     """按 technical_plan process 的 stage_state 形态建 ``ConvergenceSession``（多入口共用）。
 
@@ -58,6 +71,18 @@ async def start_orchestration(
     非空时 decompose 直接采用、不再走 LLM 拆分；``feature_meta`` 存取数溯源元信息
     （``project_id`` / ``source`` 等，供后续查询做归属校验与展示）。三者均**仅在非空时写键**
     ——不提供时会话形态与既有入口逐字一致。
+
+    ⭐ ``entry_key``（116-01，旧链退役观察）与 ``entrypoint`` **是两回事**，⛔ 绝不互相代入：
+
+    - ``entrypoint`` 进 ``ConvergenceSession.entrypoint`` 列且有既有消费方，取值受
+      ``create_session`` 的既有校验约束；**MCP 入口传的是 ``"workflow"``**
+      （``mcp_tools/orchestration_delegate.py:171-178``，该文件 ``:4`` / ``:131`` 的 docstring
+      逐字写明这是既有约定）。
+    - ``entry_key`` 只服务于「还有谁在走旧链」的退役观察聚合，由调用方按自己的**静态身份**
+      传字面量（``workflow`` / ``chat`` / ``mcp`` / ``feature_list``）。按 ``entrypoint`` 聚合
+      会把 MCP 记进 workflow 桶 —— **静默且永不报错**。默认空串（记为 ``unknown``）是
+      116-03 逐点补齐之前的合法过渡态。字面量纪律由
+      ``tests/services/process_runtime/test_blueprint_entry_switch.py`` 的 ``ast`` 扫描强制。
     """
     from delivery.services import ConvergenceSessionService
 
@@ -74,7 +99,7 @@ async def start_orchestration(
     if feature_meta:
         decomposition["feature_meta"] = feature_meta
 
-    return await ConvergenceSessionService().create_session(
+    session = await ConvergenceSessionService().create_session(
         "technical_plan",
         entrypoint,
         work_item=work_item,
@@ -84,6 +109,19 @@ async def start_orchestration(
         node_execution_id=node_execution_id,
         initiated_by_user_id=initiated_by_user_id,
     )
+    # 旧链退役观察（116-01）：落在 start_orchestration 内部是**唯一**能覆盖全部四个入口
+    # 且不碰六个冻结文件的位置（四入口全经它建会话）；⛔ 不在四个入口各打一条（会漏
+    # plan_deepen 那类非入口调用方，也会四份漂移）。分桶键是 entry_key 不是 entrypoint。
+    _safe_log(
+        "technical_plan_entry_used",
+        category="caller",
+        component="process_runtime",
+        entry_key=str(entry_key or "unknown"),
+        entrypoint=str(entrypoint or ""),
+        initiated_by_user_id=str(initiated_by_user_id or "system"),
+        session_id=str(getattr(session, "id", "")),
+    )
+    return session
 
 
 def build_orchestration_engine(
@@ -187,3 +225,88 @@ def build_blueprint_engine(
 
 # 纯追加纪律（既有 __all__ 行一字不动）：新工厂追加进导出面。
 __all__ += ["build_blueprint_engine"]
+
+
+def build_engine_for_session(
+    session: Any,
+    *,
+    session_service: Any = None,
+    node_execution_id: str = "",
+    skip_clarification: bool = False,
+    force_confirm: bool = False,
+) -> tuple[ProcessEngine, Any]:
+    """按 ``session.process_type`` 同时分派 **engine 与 driver**（Phase 116-01）。
+
+    ⭐ **为什么返回二元组而不是单个 engine（硬要求，⛔ 不得简化）**：旧续驱器
+    ``resume.adrive_convergence_session_to_pause_or_terminal`` 的 ``waiting_clarification``
+    短路判据是 ``ClarificationService().ahas_pending``（``resume.py:53-57``），而蓝图链用的是
+    ``BlueprintThread`` ⇒ 该判据对蓝图会话**恒 False**，三个 pausable stage 一个都短路不了、
+    self-loop 被推到 ``max_steps`` 落 ``advance_step_limit`` **FAILED**（用户看到「方案编排
+    失败」）。**只换 engine 不换 driver 仍然坏** —— 两把锁必须一起换。
+
+    两个 driver 的签名**实测逐字相同** ``(engine, session, *, max_steps: int = 20)``
+    （``resume.py:24-26`` / ``blueprint_resume.py:112-114``）⇒ 调用方直接
+    ``engine, adrive = build_engine_for_session(session)`` /
+    ``session = await adrive(engine, session)``，⛔ 不做参数适配层。
+
+    **同步函数**（两个工厂皆同步、``process_type`` 是已加载字段、零 ORM 访问）：写成 async
+    只会逼六个续驱点多一次 await 且无任何收益。
+
+    分派：
+
+    - ``technical_blueprint`` ⇒ ``(build_blueprint_engine(...), blueprint_resume.adrive_…)``。
+      ⛔ **绝不透传 ``skip_clarification`` / ``force_confirm``**：``build_blueprint_engine``
+      只接 ``session_service`` / ``node_execution_id`` 两个形参（``:144-146``），蓝图链根本
+      没有 ``clarify`` dep；调用方传了非默认值只记一条 ``blueprint_engine_ignored_legacy_flag``
+      —— **响亮而不失败**。
+    - 其余 ⇒ ``(build_orchestration_engine(...), resume.adrive_…)``。``process_type`` 不在
+      ``{technical_plan, echo, ""}`` 内时**不抛**，先记一条
+      ``engine_dispatch_unknown_process_type`` 再按旧链回落：抛异常会让「将来注册了第五个
+      process」的调用直接崩，回落 + 响亮事件既不失联也不误伤。
+    """
+    from services.process_runtime.blueprint_resume import (
+        BLUEPRINT_PROCESS_TYPE,
+        adrive_blueprint_session_to_pause_or_terminal,
+    )
+    from services.process_runtime.resume import adrive_convergence_session_to_pause_or_terminal
+
+    ptype = str(getattr(session, "process_type", "") or "")
+    session_id = str(getattr(session, "id", ""))
+
+    if ptype == BLUEPRINT_PROCESS_TYPE:
+        for flag, value in (
+            ("skip_clarification", skip_clarification),
+            ("force_confirm", force_confirm),
+        ):
+            if value:
+                _safe_log(
+                    "blueprint_engine_ignored_legacy_flag",
+                    category="caller",
+                    component="process_runtime",
+                    session_id=session_id,
+                    flag=flag,
+                )
+        engine = build_blueprint_engine(
+            session_service=session_service, node_execution_id=node_execution_id
+        )
+        return engine, adrive_blueprint_session_to_pause_or_terminal
+
+    if ptype not in ("technical_plan", "echo", ""):
+        _safe_log(
+            "engine_dispatch_unknown_process_type",
+            category="caller",
+            component="process_runtime",
+            session_id=session_id,
+            process_type=ptype,
+        )
+    engine = build_orchestration_engine(
+        session_service=session_service,
+        node_execution_id=node_execution_id,
+        skip_clarification=skip_clarification,
+        force_confirm=force_confirm,
+    )
+    return engine, adrive_convergence_session_to_pause_or_terminal
+
+
+# 纯追加纪律（既有 __all__ 行一字不动）：分派器追加进导出面。
+__all__ += ["build_engine_for_session"]

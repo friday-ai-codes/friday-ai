@@ -372,12 +372,22 @@ async def _h_bp_repo_research(session: Any, engine: Any) -> StageOutcome:
     ``pending_research`` 仓；只派发 ``PENDING`` / ``STALE``，已完成仓不重跑（结论保留）。
     派发后 ``research_dispatched`` self-loop 挂 ``waiting_event`` 等容器回调；全部 task
     终态则 ``research_complete`` 进 reroute。
+
+    ⭐ **deps 类型身份自检（116-01）**：``research`` 是两个工厂唯一同名的两个 dep 之一 ⇒
+    用错工厂时这里拿到的是旧链的 ``ResearchDispatchAdapter``。它有 ``dispatch``、也不抛，
+    会一路穿到 ``reroute`` 撞 ``AttributeError: 'ResearchDispatchAdapter' object has no
+    attribute 'aadvance_reroute'`` 落 FAILED（Wave 0 探针实测）。自检把这条静默污染拦在
+    第一步：``needs_clarification`` 出边 + 阻塞线程，人工可见可处置。
     """
     from services.process_runtime.research_aggregation import aall_research_tasks_terminal
 
     adapter = getattr(getattr(engine, "deps", None), "research", None)
     if adapter is None:
         return StageOutcome(event="research_complete")
+    # 类型身份自检（116-01）：不是蓝图 research adapter ⇒ 落 blueprint_stage_wrong_adapter
+    # + 阻塞线程 + needs_clarification 出边，⛔ 绝不把旧链 adapter 跑起来。
+    if _abp_dep_is_foreign_adapter(adapter, *_BP_RESEARCH_ADAPTER):
+        return await _abp_reject_wrong_adapter(session, adapter, stage="repo_research")
     await adapter.dispatch(session)
     if await aall_research_tasks_terminal(session.id):
         return StageOutcome(event="research_complete")
@@ -611,6 +621,70 @@ async def _abp_ensure_blocking_clarification(session: Any, *, stage: str, reason
         )
 
 
+# ── deps 类型身份自检（116-01，T-116-03）─────────────────────────────────────
+#
+# 两个 engine 工厂的 deps 名单有**两个同名属性**：`research` 与 `merge`
+# （`entrypoint.py:128-137` vs `:173-181`），而十个 `_h_bp_*` 一律 `getattr(..., name, None)`
+# 软取 ⇒ 用错工厂**不会报错**。最坏形态是 `ArchitectMergeAdapter.merge` 经
+# `ArtifactService.create` 往蓝图会话落一份 **v0 形状 content**
+# （`architect_merge_adapter.py:252-259`），把产物指针钉到一份非 `blueprint/v1` 的版本上
+# —— 同时废掉 SC-3 的渲染判别与 SC-4 的入图门控，且全程无异常。
+#
+# ⭐ 判据是**类型身份**（`__module__` + `__name__`）而不是「有没有某个方法」：后者会被
+# 鸭子类型绕过，且 `ResearchDispatchAdapter` 恰好也有 `dispatch`。
+#
+# ⚠️ 判据的作用域**限定在 `services.process_runtime` 自己拥有的类型**：本包内的任何
+# 「不是本 stage 期望的那个 adapter」一律拒（含将来新增的第三个 adapter，比两项黑名单更
+# 严），而包外对象（既有 handler 用例的 `SimpleNamespace` / `AsyncMock` 替身）维持既有
+# pass-through 语义不变 —— 那些用例文件在本相位的 §13.2 边界之外，不得改动。
+_PROCESS_RUNTIME_PKG = "services.process_runtime."
+_BP_RESEARCH_ADAPTER = (
+    "services.process_runtime.blueprint_research_adapter",
+    "BlueprintResearchAdapter",
+)
+_BP_MERGE_ADAPTER = ("services.process_runtime.blueprint_merge", "BlueprintMergeAdapter")
+
+
+def _abp_dep_is(dep: Any, expected_module: str, expected_name: str) -> bool:
+    """dep 的类型身份是否恰为 ``expected_module.expected_name``。
+
+    用 ``type(dep).__module__`` / ``__name__`` 而不是 ``isinstance`` + 顶层 import：本文件
+    的既有纪律是重依赖一律懒 import，991 行的 handler 模块不该为两个自检把两个重型
+    adapter 提到模块级。
+    """
+    cls = type(dep)
+    return (
+        str(getattr(cls, "__module__", "")) == expected_module
+        and str(getattr(cls, "__name__", "")) == expected_name
+    )
+
+
+def _abp_dep_is_foreign_adapter(dep: Any, expected_module: str, expected_name: str) -> bool:
+    """dep 是否是本包里**另一个** adapter（= 调用方用错了 engine 工厂）。"""
+    if dep is None or _abp_dep_is(dep, expected_module, expected_name):
+        return False
+    return str(getattr(type(dep), "__module__", "")).startswith(_PROCESS_RUNTIME_PKG)
+
+
+async def _abp_reject_wrong_adapter(session: Any, dep: Any, *, stage: str) -> StageOutcome:
+    """自检不通过的统一出口：响亮事件 + 阻塞线程 + ``needs_clarification`` 出边。
+
+    ⛔ **绝不把旧链 adapter 跑起来**。事件只记三个标量（``session_id`` / ``stage`` /
+    ``got``）——本文件在 ``test_blueprint_log_redaction_guard._SCANNED_MODULES`` 十二项之内，
+    ⛔ 不得出现任何异常文本实参。
+    """
+    logger.warning(
+        "blueprint_stage_wrong_adapter",
+        category="caller",
+        component="process_runtime",
+        session_id=str(getattr(session, "id", "")),
+        stage=stage,
+        got=type(dep).__name__,
+    )
+    await _abp_ensure_blocking_clarification(session, stage=stage, reason="wrong_adapter")
+    return StageOutcome(event="needs_clarification")
+
+
 async def _abp_repo_plan_is_stuck(session: Any, result: dict) -> bool:
     """本轮一个仓也没动、且没有在途调研容器 ⇒ 再 advance 一次也不会有进展。
 
@@ -749,10 +823,23 @@ async def _h_bp_merge(session: Any, engine: Any) -> StageOutcome:
       这是最坏的静默失败。
     - 返 ``needs_clarification`` → 停在 ``merge`` 且 ``wait_status =
       waiting_clarification``，人工可见、可处置、可续驱，语义与「融合能力未就位」一致。
+
+    ⭐ **deps 类型身份自检（116-01，T-116-03 的唯一手段）**：``merge`` 是两个工厂唯一同名的
+    两个 dep 之二 ⇒ 用错工厂时这里拿到的是 ``ArchitectMergeAdapter``，它的 ``_handle_pass``
+    会经 ``ArtifactService.create(ARTIFACT_TYPE_TECHNICAL_PLAN, merged, ...)``
+    （``architect_merge_adapter.py:252-259``）往**蓝图会话**落一份 v0 形状 content 并回传
+    ``artifact_version_id``，本 handler 据此把 ``current_artifact_version`` 钉到一份非
+    ``blueprint/v1`` 的版本上 —— 同时废掉 SC-3 的渲染判别与 SC-4 的入图门控，且全程无异常。
+    自检是唯一能挡住这条的手段：⛔ **绝不把旧链 adapter 跑起来**。
     """
     adapter = getattr(getattr(engine, "deps", None), "merge", None)
     if adapter is None:
         return StageOutcome(event="needs_clarification")
+    # 类型身份自检（116-01）：不是蓝图 merge adapter ⇒ 落 blueprint_stage_wrong_adapter
+    # + 阻塞线程 + needs_clarification 出边。这是唯一能挡住 ArchitectMergeAdapter 往蓝图
+    # 会话落一份 v0 形状 content 的手段（architect_merge_adapter.py:252-259）。
+    if _abp_dep_is_foreign_adapter(adapter, *_BP_MERGE_ADAPTER):
+        return await _abp_reject_wrong_adapter(session, adapter, stage="merge")
 
     await _abp_mark_drafting(session)
 
@@ -875,6 +962,10 @@ _TECHNICAL_BLUEPRINT_STAGES = {
         transitions={
             "research_dispatched": "repo_research",
             "research_complete": "reroute",
+            # 116-01 追加（deps 类型身份自检的落点）：拿到旧链 adapter 时停在本 stage 等
+            # 人处置。⚠️ 未登记的 event 会让 `transition` 直接 raise ValueError 冲出
+            # engine 的 handler try 块、打穿续驱器与 REST —— 自检必须有登记的出边才成立。
+            "needs_clarification": "repo_research",
         },
         pausable=True,
         wait_status="waiting_event",
@@ -960,6 +1051,10 @@ _TECHNICAL_BLUEPRINT_STAGES = {
 
 # =============================== registration ================================
 
+# ⚠️ 退役观察期（116-01）：旧 process 仍**保留注册** —— 在途会话续驱依赖它，注销即崩。
+# 「不再是任何入口默认」是收口顺延同步点 2 后的收尾 plan 的事，本相位只做观察：当前残余
+# 流量经 `start_orchestration` 内的 `technical_plan_entry_used` 事件（按 entry_key 分桶，
+# ⛔ 不是 entrypoint）可 SQL 聚合。⛔ 六个 technical_plan 冻结文件一行不改。
 register_process_type(
     ProcessDefinition(
         process_type="technical_plan",
