@@ -1391,7 +1391,9 @@ const sections = computed<NavSection[]>(() => [
       <Sheet v-if="!isWide" v-model:open="sheetOpen">
         <SheetContent side="right" class="w-full sm:max-w-md" data-testid="blueprint-sidebar-sheet">
           <SheetHeader>
-            <SheetTitle>{{ t('knowledge.blueprints.annotation.sidebarToggleEmpty') }}</SheetTitle>
+            <!-- ⭐ 用独立的标题键：`sidebarToggleEmpty` 是**按钮**的零计数文案，
+                 复用它会让「改按钮文案」连带改抽屉标题（键语义错位）。 -->
+            <SheetTitle>{{ t('knowledge.blueprints.annotation.sidebarTitle') }}</SheetTitle>
           </SheetHeader>
           <ScrollArea class="h-full">
             <BlueprintThreadSidebar

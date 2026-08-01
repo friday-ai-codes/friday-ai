@@ -494,6 +494,7 @@
         "sidebarToggle": "批注 {n}",
         "sidebarToggleEmpty": "批注",
         "sidebarToggleAria": "查看批注，共 {n} 条",
+        "sidebarTitle": "批注",
         "sidebarCollapse": "收起批注栏",
         "sidebarExpand": "展开批注栏",
         "showClosed": "显示已关闭批注",
