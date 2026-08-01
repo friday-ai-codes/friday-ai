@@ -16,6 +16,29 @@ const props = defineProps<{
 const activeSection = ref<string>(props.sections[0]?.id ?? '')
 let observer: IntersectionObserver | null = null
 
+/**
+ * 观察窗上下沿占视口高度的百分比（`rootMargin` 与位置兜底共用同一对常量，
+ * ⛔ 不要两处各写一个字面量——改了一处忘另一处会让兜底算错死区边界）。
+ * 用整数百分比而不是 0.15 / 0.55：`0.55 * 100` 在浮点下是 55.00000000000001。
+ */
+const BAND_TOP_PERCENT = 15
+const BAND_BOTTOM_PERCENT = 55
+
+/**
+ * 位置兜底：观察窗掐掉了视口上 15% / 下 55%，文档首尾各留了一段谁都不相交的死区。
+ * 取观察窗上沿**之上**最近的那一段；全都在下方（滚到顶部）则回到第一段。
+ */
+function syncByPosition() {
+  const bandTop = window.innerHeight * (BAND_TOP_PERCENT / 100)
+  let candidate = props.sections[0]?.id ?? ''
+  for (const section of props.sections) {
+    const el = document.getElementById(section.id)
+    if (el && el.getBoundingClientRect().top <= bandTop)
+      candidate = section.id
+  }
+  activeSection.value = candidate
+}
+
 onMounted(() => {
   observer = new IntersectionObserver(
     (entries) => {
@@ -24,10 +47,14 @@ onMounted(() => {
         .sort((a, b) => b.intersectionRatio - a.intersectionRatio)
       if (visible.length > 0) {
         activeSection.value = visible[0].target.id
+        return
       }
+      // ⛔ 不能直接 return 保留旧值：滚回顶部时没有任何段与观察窗相交，高亮会冻在离开前
+      // 那一段，导航就在说谎（与「永远停在第一段」是同一类失守，只是方向相反）。
+      syncByPosition()
     },
     {
-      rootMargin: '-15% 0px -55% 0px',
+      rootMargin: `-${BAND_TOP_PERCENT}% 0px -${BAND_BOTTOM_PERCENT}% 0px`,
       threshold: [0, 0.25, 0.5, 0.75, 1],
     },
   )
