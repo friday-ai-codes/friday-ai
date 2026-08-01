@@ -261,6 +261,37 @@ export async function upgradeResearch(
   )
 }
 
+/**
+ * 飞书导出可用性探测（Phase 116-05，VIEW-05）。
+ *
+ * ⭐ **前端据 `available` 隐藏导出按钮**而不是点了才报错：三个 `reason`
+ * （`no_space` / `no_folder_token` / `no_credentials`）只用于排障，⛔ 不做成文案分档。
+ * ⚠️ 本查询的失败**不进错误分档**：它只决定按钮是否渲染，与页面权限判定无关。
+ */
+export async function getBlueprintExportAvailability(
+  artifactId: string,
+): Promise<{ available: boolean, reason: string | null }> {
+  return get<{ available: boolean, reason: string | null }>(
+    `/delivery/artifacts/${artifactId}/blueprint/export-feishu/availability/`,
+  )
+}
+
+/**
+ * 把蓝图导出为一篇飞书云文档（缺省导出最新一版）。
+ *
+ * 状态码分档：200 成功并给可点 `url`；400 配置/权限类（回显中性 `detail`）；
+ * 502 上游不可用（提示稍后重试）。⛔ 后端绝不静默 200 空结构。
+ */
+export async function exportBlueprintToFeishu(
+  artifactId: string,
+  payload: { version_id?: string } = {},
+): Promise<{ document_id: string, url: string, version_no: number, exported_at: string }> {
+  return post<{ document_id: string, url: string, version_no: number, exported_at: string }>(
+    `/delivery/artifacts/${artifactId}/blueprint/export-feishu/`,
+    payload,
+  )
+}
+
 export default {
   getBlueprintDocument,
   getBlueprintEvents,
@@ -281,4 +312,6 @@ export default {
   editResponsibility,
   rejectedToBoundary,
   upgradeResearch,
+  getBlueprintExportAvailability,
+  exportBlueprintToFeishu,
 }
