@@ -396,6 +396,11 @@ REPO_ROUTER_STAGE1_RETRY_BACKOFF_SECONDS = env.float(
 # timeout_at（107-CONTEXT D-4 单一超时口径），消除「工作流已判超时而会话仍停在
 # waiting_clarification」的矛盾态窗口。
 CLARIFICATION_TIMEOUT_HOURS = env.int("CLARIFICATION_TIMEOUT_HOURS", default=24)
+# 蓝图停在 pending_review（等人类终审）时工作流侧的超时兜底（小时）。
+# ⭐ 取值明显长于澄清超时：等一个人回答一道题与等一个人审完一整份技术蓝图不是同一量级，
+# 用同一个 24h 会把正常的评审节奏判成超时。这条订阅**不是唤醒通路**（唤醒走人审动作的
+# aresume_after_gate_action 重入节点），它只保证「等不到人审」不会变成无声的永久挂起。
+BLUEPRINT_REVIEW_TIMEOUT_HOURS = env.int("BLUEPRINT_REVIEW_TIMEOUT_HOURS", default=72)
 # 过期澄清的扫描频率（秒）。取 60s 与 check_timeouts 对齐：D-4 要求「任何时刻都不得
 # 存在『工作流已判超时而会话仍在等』的窗口」，而工作流侧每 60s 扫一次——两侧频率差一个
 # 数量级时，到期瞬间 check_timeouts 几乎必然先把工作流标 TIMEOUT，随后最多要等一整个

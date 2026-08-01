@@ -197,6 +197,58 @@ async def _afeedback_chat_barrier_if_any(session: Any) -> None:
         pass
 
 
+async def _aresume_workflow_node_if_any(session: Any) -> None:
+    """作答链的**工作流侧**第二条出路（同步点 2 / G1 的下半）。
+
+    :func:`_afeedback_chat_barrier_if_any` 管的是 chat 入口的 blocking waiter；工作流入口
+    挂起的是一个 ``NodeExecution``（``AIPlanResearchNode`` 在等澄清 / 等人审时返回
+    ``waiting_event``）。人审 approve / 澄清作答只把**会话**推进了，没有人重新驱动那个
+    挂起的节点 ⇒ 蓝图早已 ``confirmed``，工作流却永远停在 ``waiting_event``。
+
+    做法与容器回调的 ``_schedule_workflow_resume`` 同源（⛔ 不另造调度）：按
+    ``output_data.session_id`` 反查仍在 ``waiting_event`` 的 ``NodeExecution`` → 打
+    ``_resume_from_callback`` 标记 → 经 ``WorkflowEngine._continue_after_node`` 重入。
+    节点重入后自己重新读会话与蓝图状态，因此**幂等**：状态没变就再挂起一次。
+
+    整段吞异常：⛔ 重入失败绝不反噬已持久化的门动作（动作 REST 仍 2xx）。
+    """
+    try:
+        from workflows.engine.scheduler import WorkflowEngine
+        from workflows.models.execution import NodeExecution, NodeExecutionStatus
+
+        node_exec = await (
+            NodeExecution.objects.filter(
+                output_data__session_id=str(getattr(session, "id", "")),
+                status=NodeExecutionStatus.WAITING_EVENT,
+            )
+            .select_related("workflow_execution")
+            .afirst()
+        )
+        if node_exec is None:
+            return
+        output_data = node_exec.output_data or {}
+        output_data["_resume_from_callback"] = True
+        node_exec.output_data = output_data
+        await node_exec.asave(update_fields=["output_data"])
+        await WorkflowEngine()._continue_after_node(node_exec.workflow_execution, node_exec)
+        _safe_log(
+            "blueprint_workflow_node_resumed",
+            category="caller",
+            component="process_runtime",
+            initiated_by_user_id=str(getattr(session, "initiated_by_user_id", "") or "system"),
+            session_id=str(getattr(session, "id", "")),
+            node_execution_id=str(node_exec.id),
+        )
+    except Exception as exc:  # noqa: BLE001 — 重入 best-effort，绝不反噬门动作与续驱
+        logger.warning(
+            "blueprint_workflow_node_resume_failed",
+            category="caller",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            error=redact_secrets_in_text(str(exc)),
+        )
+
+
 async def aresume_after_gate_action(
     session: Any, *, initiated_by_user_id: str, engine: Any = None
 ) -> Any:
@@ -208,9 +260,16 @@ async def aresume_after_gate_action(
     session，绝不上抛让 REST 变 5xx；``pending_research`` 标记与 task 状态都在库里，下一
     次任意确认门动作或容器回调续驱时判据仍成立，不丢事。
 
-    ⭐ advance 之后**必过** :func:`_afeedback_chat_barrier_if_any`（116-REVIEW MN-04 ②）：
-    本函数是全部作答链的共同出口，chat 入口发起的蓝图会话由这条链推到终态时，得有人负责
-    回灌 chat 的 blocking waiter，否则对话里的占位永久停住。
+    ⭐ advance 之后**必过**两个入口侧回环 hook —— 本函数是全部作答链（REST / MCP /
+    查看器）的**共同出口**，两个入口各自的挂起物得有人负责解开：
+
+    - :func:`_afeedback_chat_barrier_if_any`（116-REVIEW MN-04 ②）：回灌 chat 的 blocking
+      waiter，否则对话里的占位永久停住。
+    - :func:`_aresume_workflow_node_if_any`（同步点 2 / G1）：重入工作流那个仍在
+      ``waiting_event`` 的 ``AIPlanResearchNode``，否则蓝图早已 ``confirmed``、工作流却
+      永远停在挂起。
+
+    两者都自带入口守门 + 幂等，非本入口的会话原地返回；都吞异常，⛔ 绝不反噬门动作。
     """
     started = time.perf_counter()
     try:
@@ -219,6 +278,7 @@ async def aresume_after_gate_action(
         engine = engine or build_blueprint_engine()
         session = await adrive_blueprint_session_to_pause_or_terminal(engine, session)
         await _afeedback_chat_barrier_if_any(session)
+        await _aresume_workflow_node_if_any(session)
         _safe_log(
             "blueprint_gate_resume_completed",
             category="caller",
