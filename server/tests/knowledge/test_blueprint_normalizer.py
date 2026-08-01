@@ -573,3 +573,53 @@ def _blueprint_v1_content(project_id, *, title: str = "骨架蓝图") -> dict:
     from services.process_runtime.blueprint_intake import build_skeleton
 
     return build_skeleton(title=title, project_id=str(project_id), goal_text="需求原文")
+
+
+# ---- 11. ⭐ 入图实体的 title 也过脱敏（116-REVIEW MN-01）----
+#
+# `meta.title` 的缺省来源是**需求原文的首行**（`blueprint_intake` 的 `_first_line(goal_text)`）
+# ⇒ 半可信文本。回退前全链只有它没过脱敏：`content` 过了、`payload` 只有标量、日志只记 id
+# 与计数，唯独 title 直通进 `KnowledgeEntity.title`，并显示在知识库搜索结果与「关联知识」
+# 列表里。对照组：同一份 title 在 MCP 侧本就过了脱敏（口径不一致 ⇒ 不是有意豁免）。
+
+
+_LEAKY_TITLE = "排障：调 sk-ant-api03-LEAKYTOKENVALUE 老是 401"
+
+
+async def test_entity_title_is_redacted_like_the_content(project) -> None:
+    """⭐ 需求首行里的凭证不得原样进 ``KnowledgeEntity.title``。"""
+    iproject = await sync_to_async(_make_project)(project)
+    content = _content(iproject.id)
+    content["meta"]["title"] = _LEAKY_TITLE
+    artifact = await sync_to_async(_make_artifact)(content)
+
+    events = await normalize(_request(artifact))
+
+    title = events[0].title
+    assert "sk-ant-api03-LEAKYTOKENVALUE" not in title
+    assert "***REDACTED***" in title
+    # 非凭证部分保持可读（⛔ 不是把整个标题抹掉）
+    assert "排障" in title
+
+
+async def test_clean_title_is_untouched_by_the_redaction(project) -> None:
+    """非恒真对照：不含凭证的标题**逐字不变**（⛔ 脱敏不是无差别改写）。"""
+    iproject = await sync_to_async(_make_project)(project)
+    artifact = await sync_to_async(_make_artifact)(_content(iproject.id))
+
+    events = await normalize(_request(artifact))
+
+    assert events[0].title == "登录改造蓝图"
+
+
+async def test_title_is_still_capped_at_500_chars(project) -> None:
+    """脱敏后仍按 500 截断（⛔ 截断不能被脱敏顺序调整挤掉）。"""
+    iproject = await sync_to_async(_make_project)(project)
+    content = _content(iproject.id)
+    content["meta"]["title"] = "长" * 900
+    artifact = await sync_to_async(_make_artifact)(content)
+
+    events = await normalize(_request(artifact))
+
+    assert len(events[0].title) == 500
+

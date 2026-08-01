@@ -392,7 +392,14 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         origin=EntityOrigin.ARTIFACT,
         source_kind="blueprint",
         source_id=str(artifact_id),
-        title=str(meta.get("title") or artifact.title or "未命名技术蓝图")[:500],
+        # 脱敏不可绕过（116-REVIEW MN-01）：``meta.title`` 缺省取**需求原文的首行**
+        # （``blueprint_intake.aseed_blueprint_artifact`` 的 ``_first_line(goal_text)``），
+        # 是半可信文本 —— 用户把带 token 的排障上下文粘成需求首行，这串就会原样进
+        # ``KnowledgeEntity.title`` 并显示在知识库搜索结果与「关联知识」列表里。
+        # 与同函数的 ``content_text`` 同款过一遍；MCP 侧（``mcp_tools/views.py``）本就这么做。
+        title=redact_secrets_in_text(str(meta.get("title") or artifact.title or "未命名技术蓝图"))[
+            :500
+        ],
         content=content_text,
         payload=payload,
         space_id=str(project.space_id),
