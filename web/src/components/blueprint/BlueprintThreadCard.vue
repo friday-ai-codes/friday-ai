@@ -24,7 +24,9 @@
  * （卡内改为展示引用时的原文快照），⛔ 不 disable 任何动作。
  *
  * a11y（§18.1）：卡片的**选中区**是 `<button data-testid="blueprint-thread-card-select">`
- * （可 Tab、`Enter`/`Space` 选中；侧栏的 `↑`/`↓` 也按它移动焦点）。
+ * （可 Tab、`Enter`/`Space` 选中；侧栏的 `↑`/`↓` 也按它移动焦点）。它是 §18.3 点名的四个
+ * 新增焦点目标之一 ⇒ 焦点环取 `annotationTokens` 里那份共用的 `FOCUS_RING_CLASS`
+ * （不透明 `--color-primary-600`，3.74:1），⛔ 不各写一串、⛔ 不沿用既有那个半透明值。
  * ⚠️ 交互控件（作答框、处置按钮）与长正文（消息列表、引文快照）**放在该 `<button>` 之外**
  * —— 表单控件嵌进 button 是非法 DOM 且点击会连带触发外层按钮；`<ul>` / `<pre>` 也不是
  * button 允许的内容模型。选中区与内容区因此拆成兄弟节点，卡根仍是
@@ -38,6 +40,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import { FOCUS_RING_CLASS } from './annotationTokens'
 import BlueprintFindingActions from './BlueprintFindingActions.vue'
 import BlueprintThreadComposer from './BlueprintThreadComposer.vue'
 
@@ -187,7 +190,8 @@ function onGotoGate(): void {
     <button
       type="button"
       data-testid="blueprint-thread-card-select"
-      class="flex w-full flex-wrap items-center gap-1.5 text-left"
+      class="flex w-full flex-wrap items-center gap-1.5 rounded-md text-left"
+      :class="FOCUS_RING_CLASS"
       :aria-pressed="active"
       @click="onSelect"
     >

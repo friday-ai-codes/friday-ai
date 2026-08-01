@@ -25,9 +25,12 @@
  */
 
 import type { BlueprintThreadDetail } from '~/types/blueprint'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { createI18n } from 'vue-i18n'
+import { FOCUS_RING_CLASS } from '~/components/blueprint/annotationTokens'
 import BlueprintFindingActions from '~/components/blueprint/BlueprintFindingActions.vue'
 import BlueprintSelectionPopover from '~/components/blueprint/BlueprintSelectionPopover.vue'
 import BlueprintThreadCard from '~/components/blueprint/BlueprintThreadCard.vue'
@@ -365,5 +368,47 @@ describe('finding 处置：理由必填且分别打到 resolve / dismiss', () =>
     await wrapper.find('[data-testid="blueprint-finding-reason-input"]').setValue('原话')
     await wrapper.find('[data-testid="blueprint-finding-reason-submit"]').trigger('click')
     expect(wrapper.emitted('resolve')?.[0]?.[1]).toBe('原话')
+  })
+})
+
+/**
+ * ⭐ UI-REVIEW M-2 回归：线程卡选中区是 §18.3 点名的四个新增焦点目标之一。
+ *
+ * 侧栏的 `↑`/`↓` 焦点移动正是围绕这颗按钮设计的，焦点指示必须是契约那道不透明
+ * `--color-primary-600`（3.74:1），⛔ 不是浏览器默认环、⛔ 不是既有那个 1.59:1 的半透明值。
+ *
+ * ⚠️ happy-dom 无布局引擎 ⇒ ⛔ 不断言渲染几何，只断言类名。
+ */
+describe('线程卡选中区的契约焦点环（M-2）', () => {
+  const FOCUS_OUTLINE = 'focus-visible:[outline:2px_solid_var(--color-primary-600)]'
+
+  it('10a. ⭐ 选中区按钮带 §18.3 的焦点环，且默认环仍被压掉', () => {
+    const wrapper = mountCard({ thread: makeThread({ kind: 'ai_clarification' }) })
+    const select = wrapper.find('[data-testid="blueprint-thread-card-select"]')
+    expect(select.exists()).toBe(true)
+    expect(select.attributes('class')).toContain(FOCUS_OUTLINE)
+    expect(select.attributes('class')).toContain('focus-visible:[outline-offset:2px]')
+    expect(select.attributes('class')).toContain('outline-none')
+  })
+
+  it('10b. ⭐ 焦点环与选中态互不吃掉：active 时两者都在', () => {
+    const wrapper = mountCard({ thread: makeThread(), active: true })
+    expect(wrapper.find('[data-testid="blueprint-thread-card"]').attributes('class')).toContain('ring-2')
+    expect(wrapper.find('[data-testid="blueprint-thread-card-select"]').attributes('class')).toContain(FOCUS_OUTLINE)
+  })
+
+  it('10c. ⭐ 三处共用同一份令牌（⛔ 不各写一串会漂移的字面量）', () => {
+    // 单一实现落在 annotationTokens；这里断言三个消费方拿到的是同一个常量对象。
+    expect(FOCUS_RING_CLASS).toContain(FOCUS_OUTLINE)
+    for (const path of [
+      'src/components/blueprint/BlueprintCitationChip.vue',
+      'src/components/blueprint/BlueprintSelectionPopover.vue',
+      'src/components/blueprint/BlueprintThreadCard.vue',
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), path), 'utf8')
+      expect(source).toContain('FOCUS_RING_CLASS')
+      // ⛔ 组件内不得再出现焦点环的颜色字面量。
+      expect(source).not.toContain('focus-visible:[outline:2px_solid')
+    }
   })
 })

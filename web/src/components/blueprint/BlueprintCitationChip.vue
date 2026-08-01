@@ -18,6 +18,7 @@
 import type { Citation, CitationSourceType } from '~/types/blueprint'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { FOCUS_RING_CLASS } from './annotationTokens'
 
 const props = defineProps<{
   citation: Citation
@@ -60,14 +61,8 @@ const SOURCE_LABEL_KEY: Record<CitationSourceType, string> = {
 /** ⭐ 走 `<a>` 直达、**不进二级预览**的三类站外来源。 */
 const EXTERNAL_SOURCE_TYPES = new Set<string>(['work_item', 'feishu_doc', 'url'])
 
-/** 视觉类串逐字照 UI-SPEC §6.2；焦点环见下方 docstring。 */
+/** 视觉类串逐字照 UI-SPEC §6.2；焦点环取 `annotationTokens` 的 `FOCUS_RING_CLASS`（§18.3）。 */
 const CHIP_CLASS = 'inline-flex items-center gap-1 rounded-md border border-border bg-muted/60 px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground hover:border-primary/40 hover:text-primary'
-
-/**
- * 焦点环用**不透明** teal-600（3.74:1）。
- * ⛔ 不复制既有 `.btn:focus-visible` 的 50% 透明 teal-500（实算 1.59:1，未过 WCAG 2.4.11）。
- */
-const CHIP_FOCUS_CLASS = 'outline-none focus-visible:[outline:2px_solid_var(--color-primary-600)] focus-visible:[outline-offset:2px]'
 
 const icon = computed(() => SOURCE_ICON[props.citation.source_type] ?? 'lucide--file-text')
 
@@ -133,7 +128,7 @@ const ariaLabel = computed(() =>
     :href="href"
     target="_blank"
     rel="noopener noreferrer"
-    :class="[CHIP_CLASS, CHIP_FOCUS_CLASS]"
+    :class="[CHIP_CLASS, FOCUS_RING_CLASS]"
     :aria-label="ariaLabel"
     :title="label"
     data-testid="blueprint-citation-chip"
@@ -161,7 +156,7 @@ const ariaLabel = computed(() =>
   <button
     v-else
     type="button"
-    :class="[CHIP_CLASS, CHIP_FOCUS_CLASS]"
+    :class="[CHIP_CLASS, FOCUS_RING_CLASS]"
     :aria-label="ariaLabel"
     :title="label"
     data-testid="blueprint-citation-chip"
