@@ -480,9 +480,17 @@ async def build_work_item_technical_plan(
         # 编排挂起（RESEARCHING/CLARIFYING 在途，MCP 无 resume 通路）：调用方据 session_id 续推。
         retry_state.update({"retryable": True, "failed_stage": "orchestration_pending"})
     elif delegate.status == "failed":
-        retry_state.update({"retryable": True, "failed_stage": "orchestration"})
-        error_stage = "orchestration"
-        error = "编排未产出 canonical 方案"
+        # ⭐ 116-REVIEW MJ-03：区分「拒绝发起」与「编排跑了但没产出」两类失败。
+        #
+        # `error_detail` 非空 = 蓝图 intake 在**建会话之前**就如实拒绝了（当前唯一来源是
+        # 「推不出 meta.project_id」）。这是**确定性**失败——Space→Project 换算不出来，
+        # 重试一百次结果一样 ⇒ ⛔ 绝不置 `retryable: True` 诱导调用方重试；同时把 116-03
+        # 一路保住的**中性** detail 如实回显（⛔ 不含内部路径 / 异常原文），
+        # ⛔ 不要再用「编排未产出 canonical 方案」这句**错的原因**盖掉它。
+        rejected = bool(str(getattr(delegate, "error_detail", "") or ""))
+        error_stage = "blueprint_intake" if rejected else "orchestration"
+        retry_state.update({"retryable": not rejected, "failed_stage": error_stage})
+        error = str(getattr(delegate, "error_detail", "") or "") or "编排未产出 canonical 方案"
 
     # writeback 仅在编排产出方案（非 failed）时进行（喂 delegate markdown + 映射后矩阵）。
     feishu_document: dict[str, Any] = {"status": "skipped"}
@@ -564,6 +572,12 @@ async def build_work_item_technical_plan(
         "retry_state": retry_state,
         "run_id": str(run.run_id),
         "session_id": str(delegate.session.id),
+        # ⭐ 116-REVIEW MJ-03：失败原因必须**回传**而不是只落 McpWorkItemTechnicalPlan 行。
+        # 回退前 agent 拿到的响应体里一个字的解释都没有（`retry_state` 只有一个布尔），
+        # 而它读的正是响应体。恒写两键（成功时为空串，形态与 feature 方案三工具的 `error`
+        # 键同款）：⛔ 中性文案，不含内部路径 / 异常原文。
+        "error": error,
+        "error_stage": error_stage,
         # 116-06：⭐ 纯追加三键，**仅在 mcp 开关切到蓝图时非空**（见
         # `_ablueprint_response_extras`）；开关关闭时本行展开为零键 ⇒ 响应逐字不变。
         **blueprint_extras,

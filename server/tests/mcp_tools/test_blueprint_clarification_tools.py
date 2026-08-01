@@ -276,6 +276,15 @@ def test_create_feishu_technical_plan_only_gained_three_additive_keys() -> None:
     ]
     missing = [key for key in old_response if key not in entry["response"]]
     assert not missing, missing
+    assert [key for key in entry["response"] if key not in old_response] == [
+        # 116-REVIEW MJ-03：失败原因回传（恒在，成功时空串）。
+        "error",
+        "error_stage",
+        # 116-06：仅在 mcp 开关切到蓝图时非空的三键。
+        "blueprint_artifact_id",
+        "blueprint_current_status",
+        "pending_clarifications",
+    ]
     for key in ("blueprint_artifact_id", "blueprint_current_status", "pending_clarifications"):
         assert key in entry["response"], key
 
