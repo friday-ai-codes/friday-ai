@@ -276,10 +276,10 @@ shared feedback helper + barrier key OK
 
 | | 基线（116-02 收口） | 本 plan 收口 | 差异 |
 |---|---|---|---|
-| passed | 8691 | **8740** | **+49** = 21 条 `test_entry_dispatch_wiring.py`（含参数化展开共 34 条 item）+ 16 条 `test_chat_blueprint_entry.py` |
+| passed | 8691 | **8741** | **+50** = 34 条 `test_entry_dispatch_wiring.py`（21 个 `def test_`，参数化展开后 34 条 item）+ 16 条 `test_chat_blueprint_entry.py` |
 | failed | 1 | **1** | **无新增失败** —— 唯一失败仍是 `tests/mcp_tools/test_skills_snapshot_guard.py::test_skill_files_discovered`（本 worktree `skills/` 为空目录的环境产物，P-16，⛔ 不属本相位） |
 
-⚠️ **第一次全量跑出现过第 2 条失败并已确认是排序 flake**：`tests/initiatives/test_memory_mr_api.py::test_draft_confirm_via_api`。单独跑 `tests/initiatives/test_memory_mr_api.py` → **5 passed**；`tests/agents/ tests/initiatives/` 一起跑（本 plan 新增的 `tests/agents/test_chat_blueprint_entry.py` 在它**之前**收集）→ **609 passed**。本 plan 的两个新测试文件按 pytest 收集顺序一个在 `tests/agents/`（之前）、一个在 `tests/services/process_runtime/`（之后），两侧都不构成污染源；该用例与本 plan 触及的七个文件无任何调用关系。复跑结论见文末。
+⚠️ **第一次全量跑出现过第 2 条失败，已三重核实是排序 flake 并在复跑中自行消失**：`tests/initiatives/test_memory_mr_api.py::test_draft_confirm_via_api`。① 单独跑 `tests/initiatives/test_memory_mr_api.py` → **5 passed**；② `tests/agents/ tests/initiatives/` 一起跑（本 plan 新增的 `tests/agents/test_chat_blueprint_entry.py` 在它**之前**收集）→ **609 passed**；③ **原样复跑一次全量** → `1 failed, 8741 passed`，该用例已绿。本 plan 的两个新测试文件按 pytest 收集顺序一个在 `tests/agents/`（之前）、一个在 `tests/services/process_runtime/`（之后），两侧都不构成污染源；该用例与本 plan 触及的七个源文件无任何调用关系。
 
 `ruff check` / `ruff format --check` 对全部触及文件通过。
 
