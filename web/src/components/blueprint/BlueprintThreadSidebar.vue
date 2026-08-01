@@ -317,7 +317,12 @@ function onKeydown(event: KeyboardEvent): void {
         :data-testid="`blueprint-thread-group-${section.key}`"
         :default-open="section.defaultOpen"
       >
-        <CollapsibleTrigger class="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-medium hover:bg-muted/60">
+        <!-- `min-h-11` = §2 的 44px 例外（本行逐字点名「线程侧栏的折叠箭头」）：
+             窄屏抽屉里这是实际触控目标，`py-1.5` 只有 ~30px 高。 -->
+        <CollapsibleTrigger
+          data-testid="blueprint-thread-group-trigger"
+          class="flex min-h-11 w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-medium hover:bg-muted/60"
+        >
           <span class="text-foreground">{{ t(`knowledge.blueprints.thread.${section.labelKey}`) }}</span>
           <Badge :variant="section.isOrphanGroup && section.items.length > 0 ? 'warning' : 'muted'">
             {{ section.items.length }}
