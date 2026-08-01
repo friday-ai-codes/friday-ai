@@ -100,6 +100,7 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `feature_list_parse` | feature list 导入解析（GitLab 文档/粘贴文档 → 结构化 模块→功能点→验收项） | 单轮，best-effort，内容逐字保留原文（补登已漂移枚举） |
 | `learning_case_extraction` | `mcp_tools.learning_case_extraction.aextract_learning_case`（v0.17.0 Phase 101） | 编码完成自动提炼，三链路 MR 已知锚点，单轮，幂等键 session_id，best-effort |
 | `pr_review_capture` | PR 创建成功锚点可选 review 沉淀（v0.17.0 Phase 101） | 默认关（SystemSetting），单轮，结论沉淀为 learning case |
+| `feature_change_classify` | feature list 方案编排的功能点分类与强制仓库确认（`process_runtime`，commit 2e27493c） | 单轮，best-effort（补登已漂移枚举） |
 
 > 埋点位置：`acquire_llm_slot`（QPS/排队/`LLMBusyError`）+ 两个 Runner 的 `astream` 循环（TTFT/TPS/上游错误）+ 各 `ainvoke` 站点。详见 MILESTONE-PROPOSAL §1。
 

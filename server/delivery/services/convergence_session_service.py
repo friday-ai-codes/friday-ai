@@ -26,13 +26,15 @@ import structlog
 from asgiref.sync import sync_to_async
 from django.utils import timezone
 
+from agents.core.events import PROCESS_EVENT
 from delivery.models import (
     ConvergenceSession,
     ConvergenceSessionEntrypoint,
     ConvergenceSessionEvent,
     ConvergenceSessionStatus,
 )
-from delivery.services.event_taxonomy import EVENT_PROCESS_SESSION_FAILED
+from delivery.services.event_taxonomy import EVENT_PROCESS_SESSION_FAILED, build_envelope
+from delivery.services.process_event_wire import sanitize_process_event_payload
 
 logger = structlog.get_logger(__name__)
 
@@ -304,7 +306,13 @@ class ConvergenceSessionService:
     async def _emit_event(
         self, event_name: str, session: ConvergenceSession, payload: dict[str, Any]
     ) -> None:
-        """事件钩子：持久化统一信封行 ``ConvergenceSessionEvent``（best-effort，绝不抛）。"""
+        """事件钩子：持久化统一信封行 ``ConvergenceSessionEvent``（best-effort，绝不抛）。
+
+        Phase 110-01：持久化之后追加一次 best-effort SSE fan-out（chat 入口的秒级直播）。
+        这里是编排事件的**唯一**推送出口（INV-6）——7 个 stage handler 与各 adapter 的
+        emit 点零改动即自动获得推送；挂在各 handler 里则每加一个阶段都要记得补推，是
+        必然漂移的形态。
+        """
         logger.info(
             "convergence_session_event",
             category="sampling",
@@ -313,8 +321,9 @@ class ConvergenceSessionService:
             session_id=str(session.id),
             status=session.status,
         )
+        row = None
         try:
-            await self._persist_event(event_name, session, payload)
+            row = await self._persist_event(event_name, session, payload)
         except Exception as exc:  # noqa: BLE001 — best-effort：事件持久化失败绝不阻断转移
             logger.warning(
                 "convergence_session_event_persist_failed",
@@ -322,12 +331,74 @@ class ConvergenceSessionService:
                 session_id=str(session.id),
                 error=str(exc),
             )
+        # 🔴 落库失败即不推：没有权威 ts 可对齐的事件推出去只会变成一条永远无法被运行时
+        # 快照补齐、也永远无法被前端去重键命中的孤儿事件。
+        if row is not None:
+            await self._fanout_process_event(event_name, session, payload, row)
+
+    async def _fanout_process_event(
+        self,
+        event_name: str,
+        session: ConvergenceSession,
+        payload: dict[str, Any],
+        row: ConvergenceSessionEvent,
+    ) -> None:
+        """把已落库的事件推上当前 chat graph 的 custom 流（best-effort，整体吞异常）。
+
+        取不到 writer 就是**没有推送目标**——workflow / MCP 入口与容器回调续驱（不在任何
+        graph 运行上下文内）三种情形都自动落进静默跳过分支，无需自建注册表、无需把 writer
+        一路透传穿过 engine / adapter。
+        """
+        try:
+            # workflow / MCP 入口无 chat 会话可推：早退（与写库无关，故放在函数体前部）。
+            conversation_id = getattr(session, "conversation_id", None)
+            if not conversation_id:
+                return
+
+            # 函数内 import：不给 delivery 层加一个模块级的 langgraph 依赖。
+            from langgraph.config import get_stream_writer
+
+            writer = get_stream_writer()
+
+            envelope = build_envelope(event_name, session, sanitize_process_event_payload(payload))
+            # 🔴 用落库行的 ts 覆盖 build_envelope 自取的那个：后者是它自己调
+            # timezone.now() 得到的瞬时值，与 ConvergenceSessionEvent.ts 默认值分属两次
+            # 求值（且 _persist_event 有 sync_to_async 线程跳变），必然不等。若不对齐，
+            # 前端按 (event, ts, …) 去重时 SSE 那条与快照那条会被当成两条不同事件，
+            # 调研完成数 / 融合轮次 / 澄清轮次这类计数会成倍虚高——症状看起来像前端算错了。
+            envelope["ts"] = row.ts.isoformat()
+
+            writer({"type": PROCESS_EVENT, "data": envelope})
+
+            # 高频路径（一次编排数十条）：debug + sampling，绝不为每条事件打 INFO。
+            logger.debug(
+                "process_event_fanout",
+                category="sampling",
+                component="convergence_session_service",
+                event_name=event_name,
+                session_id=str(session.id),
+                conversation_id=str(conversation_id),
+            )
+        except Exception:  # noqa: BLE001 — 观测代码绝不反噬业务：编排跑通比进度可见重要
+            # 🔴 必须是 blanket Exception，不得「收紧」成 except RuntimeError：
+            # get_stream_writer() 的实现是 get_config()[CONF][CONFIG_KEY_RUNTIME]，
+            # 「压根没有 runnable context」抛 RuntimeError，而「有 runnable context 但不是
+            # langgraph runtime」（例如一条普通 LangChain runnable 链）抛 KeyError。
+            # 收紧后，后一条路径会把异常放出去、直接打断编排主流程。
+            # 这里也不打 warning：取不到 writer 是正常态（workflow / MCP / 回调续驱三种
+            # 入口都取不到），为它打日志等于给正常路径刷噪音。
+            pass
 
     @sync_to_async
     def _persist_event(
         self, event_name: str, session: ConvergenceSession, payload: dict[str, Any]
-    ) -> None:
-        ConvergenceSessionEvent.objects.create(
+    ) -> ConvergenceSessionEvent:
+        """落库并**返回该行**——出网信封的权威 ts 由它回填（见 ``_fanout_process_event``）。
+
+        注意落库的 ``payload`` 仍是**未净化**的原文：留痕面与出网面是两个面，原文只入
+        事件表供 superuser 排障。
+        """
+        return ConvergenceSessionEvent.objects.create(
             session=session,
             event=event_name,
             work_item=session.work_item_id,

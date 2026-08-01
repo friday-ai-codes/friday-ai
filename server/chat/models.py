@@ -209,6 +209,22 @@ class ChatPushSubscription(models.Model):
         return f"ChatPushSubscription({self.user_id}, active={self.is_active})"
 
 
+class CodingPlanProvenance(models.TextChoices):
+    """编码方案来源枚举（RELY-01 双侧标注的唯一载体）。
+
+    形态照抄 `delivery.models.work_item.WorkItemOrigin`：值 snake_case、label 中文。
+
+    - `orchestrated`：经编排（代码调研 + 方案收敛）产出，可信。
+    - `draft`：徒手/应急路径直接创作，未经代码调研。
+
+    界面（`TechPlanCard`）与飞书导出（`_compose_plan_markdown`）都只读 CodingPlan，
+    因此这一列是「未经代码调研」告示的共同瓶颈点。
+    """
+
+    ORCHESTRATED = "orchestrated", "编排产出"
+    DRAFT = "draft", "未经代码调研的草稿"
+
+
 class CodingPlan(models.Model):
     """编码方案 — implementation 拆出的独立领域实体。
 
@@ -262,6 +278,27 @@ class CodingPlan(models.Model):
             "selected_by_user_final=True 的仓库（implementation）。"
         ),
     )
+    # 方案来源标志（RELY-01）。default 必须是 draft：存量 coding_plans 行全部是
+    # SPINE-02 之前徒手创作的产物，标成 orchestrated 等于把历史数据谎报为可信。
+    provenance = models.CharField(
+        max_length=16,
+        choices=CodingPlanProvenance.choices,
+        default=CodingPlanProvenance.DRAFT,
+        db_index=True,
+        verbose_name="方案来源",
+    )
+    source_artifact_version_id = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="来源方案版本",
+        help_text=(
+            "delivery.ArtifactVersion.id 的软引用，兼作编排方案投影的幂等键。"
+            "与已删除的 canonical_plan_id（迁移 0022 加、0031 删）不同：那一列是 "
+            "chat↔delivery 双向耦合的 canonical 软链，本列只记「这份编码方案是从哪个"
+            "方案版本投影来的」留痕，chat 侧不因此反向依赖 delivery。草稿路径不填（NULL）。"
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -270,6 +307,24 @@ class CodingPlan(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["conversation", "-created_at"]),
+        ]
+        # 同一 ArtifactVersion 只允许投影出一份编码方案（SPINE-01 幂等键）。
+        #
+        # ① 必须是**无条件**唯一约束，不得带 condition=Q(...isnull=False)：
+        #    PostgreSQL / MySQL / SQLite 的唯一索引都把 NULL 视为互不相等，草稿行与
+        #    存量行（该列 NULL）天然不受约束限制，无需 condition 即可多行共存；而带
+        #    condition 时 django/db/backends/base/schema.py 的 _unique_supported()
+        #    会因 MySQL supports_partial_indexes = False 返回 False ⇒ AddConstraint
+        #    被**静默跳过**（不报错也不告警），MySQL 部署上约束根本不存在。
+        # ② 按 coding_session_service.py 的既有纪律，本约束名与 service 层幂等分支
+        #    （get_or_create + except IntegrityError）引用的名字字面一致。
+        # 约束不纳入 conversation：同一 ArtifactVersion 在两个 conversation 各投一份
+        # 正是要防的重复。
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_artifact_version_id"],
+                name="uniq_codingplan_source_artifact_version",
+            ),
         ]
         verbose_name = "编码方案"
         verbose_name_plural = "编码方案"
@@ -685,6 +740,26 @@ class RepositoryRoutingTrace(models.Model):
         default="legacy_hybrid",
         help_text="路由实现版本，供 v1/v2 相关度对照分析",
     )
+    # RELY-03 用户可见降级原因（107-08）：6 值受控闭集（timeout / upstream_error /
+    # provider_missing / unparsable / no_node_index / unknown）∪ ""（无可见原因）。
+    # 单列而非塞进 candidates JSON —— 迁移开销小，且「降级原因分布」可直接 SQL 聚合
+    # （candidates 是 list，外层塞不进这个结果级事实）。
+    # 列长 32 本身即形状约束：结构上装不下上游异常原文（T-107-02 的第二道防线，
+    # 第一道是写入侧 classify_degrade_reason 的枚举归一）。
+    degrade_reason = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="用户可见降级原因（6 值闭集 ∪ 空串），供降级原因分布聚合",
+    )
+    # ROUTE-01/02 呈现层区顺序（107-08）：长度 2 = 有项目上下文（即使某组为空），
+    # ["global"] 或空 = 无上下文。消费方（前端 RoutingDecisionPanel）据长度判定是否
+    # 启用分组呈现，这是唯一依据（UI-SPEC covered 11）。该值不进任何排序或打分逻辑。
+    block_order = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='呈现层区顺序，如 ["in_project", "global"]；长度 2 表示有项目上下文',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -712,6 +787,23 @@ class RepositoryRoutingTrace(models.Model):
             f"RoutingTrace({self.id}, triggered_by={self.triggered_by}, "
             f"candidates={len(self.candidates) if isinstance(self.candidates, list) else 0})"
         )
+
+
+def derive_routing_degraded(router_version: str) -> bool:
+    """降级事实的**唯一派生点**（会话 detail / manual override / 工具实时输出三处共用）。
+
+    CONTEXT 要求「前端不自行推断降级」——把推断放到后端即满足该契约，且无需与
+    ``router_version`` 冗余地再加一列（加列还要回填历史行）。
+
+    ``legacy_hybrid`` 刻意排除：它是 ``router_version`` 的列默认值，代表 v2 完全不可用
+    时的历史聚合路径；把它算作降级会让全部历史 trace 突然出现降级横幅
+    （UI-SPEC backstop 1 的历史兼容要求）。
+
+    新增判定分支时改这一处即可 —— 任何 payload 都不得再写等价的版本字面判定。
+    放在 models 模块（而非某个 view）是为了让 ``agents.tools`` 这类非 HTTP 消费方也能
+    复用同一个派生点而不反向依赖 view 层。
+    """
+    return router_version in {"v2_stage0_only", "v1_fallback"}
 
 
 class ConversationIntentTrace(models.Model):

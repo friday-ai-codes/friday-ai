@@ -35,8 +35,12 @@ class Clarification(models.Model):
     # ── CLARIFY-01「轮次容器」新增字段（全 nullable，旧行不强制回填、不破坏 0016 schema）──
     # 多轮序号（支撑 Phase 91 多轮 resume）；首轮可不填，由 service 写入时按 session 已有轮数派生。
     round_no = models.PositiveIntegerField(null=True, blank=True)
-    # 容器状态 pending/answered/skipped。**严禁命名 status**：避免与 PlanSession.status
-    # 语义混淆、也避免迁移把它误判为状态机字段（状态流转仍只经 PlanSessionService.transition）。
+    # 容器状态 pending/answered/skipped/delivery_failed。**严禁命名 status**：避免与
+    # PlanSession.status 语义混淆、也避免迁移把它误判为状态机字段（状态流转仍只经
+    # PlanSessionService.transition）。
+    # ``delivery_failed``（RELY-02，零迁移新取值）：澄清卡未送达用户。该轮**仍算 pending**
+    # （pending 判定权威字段始终是 ``answered_at``，不看本列），由澄清超时扫描据此做
+    # 「立即出口」而非等满超时——用户根本没看到卡，等下去只是白等。
     container_status = models.CharField(max_length=16, null=True, blank=True)
     # CLARIFY-03 携带：标记本轮澄清源自哪个仓的调研（入口无关 helper 透传）。
     origin_repo = models.CharField(max_length=255, null=True, blank=True)

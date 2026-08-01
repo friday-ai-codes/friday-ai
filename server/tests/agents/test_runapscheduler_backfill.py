@@ -95,12 +95,9 @@ def test_backfill_chunk_edges_job_command_error_reraises(
     misconfigured_events = [
         e
         for e in captured
-        if e.get("event") == "job_misconfigured"
-        and e.get("log_level") == "error"
+        if e.get("event") == "job_misconfigured" and e.get("log_level") == "error"
     ]
-    assert misconfigured_events, (
-        f"CommandError 应走 job_misconfigured 路径；captured={captured}"
-    )
+    assert misconfigured_events, f"CommandError 应走 job_misconfigured 路径；captured={captured}"
 
 
 def test_backfill_chunk_edges_job_systemexit_swallowed(
@@ -121,12 +118,9 @@ def test_backfill_chunk_edges_job_systemexit_swallowed(
     failed_events = [
         e
         for e in captured
-        if e.get("event") == "job_failed_exit_code"
-        and e.get("log_level") == "error"
+        if e.get("event") == "job_failed_exit_code" and e.get("log_level") == "error"
     ]
-    assert failed_events, (
-        f"SystemExit(1) 应走 job_failed_exit_code 路径；captured={captured}"
-    )
+    assert failed_events, f"SystemExit(1) 应走 job_failed_exit_code 路径；captured={captured}"
     assert failed_events[0].get("exit_code") == 1
 
 
@@ -174,14 +168,10 @@ def test_backfill_date_trigger_runs_once() -> None:
     assert isinstance(first_fire, datetime)
 
     second_fire = trigger.get_next_fire_time(first_fire, datetime.now())
-    assert second_fire is None, (
-        "DateTrigger 是单次 trigger；previous_fire_time 非 None 时应返 None"
-    )
+    assert second_fire is None, "DateTrigger 是单次 trigger；previous_fire_time 非 None 时应返 None"
 
 
-def test_scheduler_single_instance_lock(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
-) -> None:
+def test_scheduler_single_instance_lock(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
     """contract 回归：第二份 scheduler 启动时 flock 拒绝。
 
     implementation REVIEW contract 指出多 scheduler 进程会从 DjangoJobStore 拉到同一个
@@ -194,7 +184,9 @@ def test_scheduler_single_instance_lock(
 
     monkeypatch.setattr(mod, "DjangoJobStore", MemoryJobStore)
     monkeypatch.setattr(
-        mod.settings, "APSCHEDULER_LOCK_PATH", str(tmp_path / "scheduler.lock"),
+        mod.settings,
+        "APSCHEDULER_LOCK_PATH",
+        str(tmp_path / "scheduler.lock"),
         raising=False,
     )
 
@@ -206,9 +198,7 @@ def test_scheduler_single_instance_lock(
         cmd = mod.Command()
         with pytest.raises(SystemExit) as exit_info:
             cmd.handle()
-        assert exit_info.value.code == 1, (
-            "contract：lock 被占时 scheduler 应以 SystemExit(1) 退出"
-        )
+        assert exit_info.value.code == 1, "contract：lock 被占时 scheduler 应以 SystemExit(1) 退出"
     finally:
         fcntl.flock(holder_fd, fcntl.LOCK_UN)
         holder_fd.close()
@@ -242,9 +232,7 @@ def test_backfill_date_trigger_is_timezone_aware(
     cmd = mod.Command()
     cmd.handle()
 
-    backfill_job = next(
-        j for j in captured["jobs"] if j.id == "backfill_chunk_edges"
-    )
+    backfill_job = next(j for j in captured["jobs"] if j.id == "backfill_chunk_edges")
     run_date = backfill_job.trigger.run_date
     assert run_date.tzinfo is not None, (
         f"DateTrigger.run_date 必须 timezone-aware；实际 tzinfo={run_date.tzinfo!r}"
@@ -252,3 +240,78 @@ def test_backfill_date_trigger_is_timezone_aware(
     assert backfill_job.misfire_grace_time == 3600, (
         "misfire_grace_time 应为 3600 秒兜底 scheduler 启动慢场景"
     )
+
+
+def test_expire_pending_clarifications_job_calls_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """澄清超时出口 job wrapper 调 ``call_command('expire_pending_clarifications')`` 一次。"""
+    from agents.management.commands.runapscheduler import (
+        expire_pending_clarifications_job,
+    )
+
+    mock_call = MagicMock()
+    monkeypatch.setattr("django.core.management.call_command", mock_call)
+
+    expire_pending_clarifications_job()
+
+    mock_call.assert_called_once_with("expire_pending_clarifications")
+
+
+def test_expire_pending_clarifications_job_swallows_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """命令抛异常 → wrapper 吞掉记 job_error，scheduler 主循环不受影响（RELY-02）。"""
+    from agents.management.commands.runapscheduler import (
+        expire_pending_clarifications_job,
+    )
+
+    monkeypatch.setattr(
+        "django.core.management.call_command",
+        MagicMock(side_effect=RuntimeError("boom")),
+    )
+
+    with structlog.testing.capture_logs() as captured:
+        expire_pending_clarifications_job()
+
+    errors = [
+        e for e in captured if e.get("event") == "job_error" and e.get("log_level") == "error"
+    ]
+    assert errors, f"未捕获 job_error 事件；captured={captured}"
+    assert errors[0].get("job") == "expire_pending_clarifications"
+
+
+def test_scheduler_registers_expire_pending_clarifications_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``expire_pending_clarifications`` 注册为 IntervalTrigger，间隔取配置，max_instances=1。"""
+    from apscheduler.triggers.interval import IntervalTrigger
+    from django.conf import settings
+
+    from agents.management.commands import runapscheduler as mod
+
+    monkeypatch.setattr(mod, "DjangoJobStore", MemoryJobStore)
+
+    captured: dict[str, list[Any]] = {"jobs": []}
+    real_start = BackgroundScheduler.start
+
+    def stop_start(self: BackgroundScheduler, *args: Any, **kwargs: Any) -> None:
+        real_start(self, paused=True)
+        captured["jobs"] = list(self.get_jobs())
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(BackgroundScheduler, "start", stop_start)
+
+    cmd = mod.Command()
+    cmd.handle()
+
+    job_ids = [j.id for j in captured["jobs"]]
+    assert "expire_pending_clarifications" in job_ids, (
+        f"expire_pending_clarifications 未注册到 scheduler；现有 jobs={job_ids}"
+    )
+    job = next(j for j in captured["jobs"] if j.id == "expire_pending_clarifications")
+    assert isinstance(job.trigger, IntervalTrigger)
+    assert job.trigger.interval.total_seconds() == float(
+        settings.CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS
+    )
+    assert job.max_instances == 1

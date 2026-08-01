@@ -602,6 +602,14 @@ class FileIndex(models.Model):
                 fields=["repository", "file_path"],
                 name="idx_repo_file_path",
             ),
+            # 仓库级 last_commit 聚合（Max(last_commit_authored_at) group by
+            # repository）走覆盖索引——路由热路径每次要对候选仓算该聚合，
+            # 只有 (repository, file_path) 索引时退化为按仓前缀扫 + 回表读全行
+            # （数千文件 × 数十仓 = 每次路由十万行量级）。
+            models.Index(
+                fields=["repository", "last_commit_authored_at"],
+                name="idx_repo_last_commit_at",
+            ),
         ]
 
     def __str__(self) -> str:

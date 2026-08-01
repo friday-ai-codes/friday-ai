@@ -31,6 +31,11 @@ _CLARIFICATION_SERVICE = _SERVER_ROOT / "delivery" / "services" / "clarification
 _SPEC_GENERATION = _SERVER_ROOT / "services" / "process_runtime" / "spec_generation.py"
 # Chassis v2：generic ProcessEngine 不再直接 emit stage 事件，recall/route 落到 stage 处理器
 _BUILTIN_PROCESSES = _SERVER_ROOT / "services" / "process_runtime" / "builtin_processes.py"
+# v0.19 澄清韧性 producer：发卡侧送达失败 + 澄清超时扫描命令
+_PLAN_RESEARCH = _SERVER_ROOT / "workflows" / "nodes" / "ai" / "plan_research.py"
+_EXPIRE_CLARIFICATIONS = (
+    _SERVER_ROOT / "delivery" / "management" / "commands" / "expire_pending_clarifications.py"
+)
 
 _EMIT_FILES = [
     _ENGINE,
@@ -41,6 +46,8 @@ _EMIT_FILES = [
     _CLARIFY_ADAPTER,
     _CLARIFICATION_SERVICE,
     _SPEC_GENERATION,
+    _PLAN_RESEARCH,
+    _EXPIRE_CLARIFICATIONS,
 ]
 
 # 事件 → 其 producer 源文件（覆盖性反查；文件不存在 → 跳过该事件，顺序安全）
@@ -57,6 +64,8 @@ _EVENT_PRODUCERS: dict[str, Path] = {
     "process.session.failed": _SESSION_SERVICE,
     "clarification.asked": _CLARIFY_ADAPTER,
     "clarification.answered": _CLARIFICATION_SERVICE,
+    "clarification.delivery_failed": _PLAN_RESEARCH,
+    "clarification.timed_out": _EXPIRE_CLARIFICATIONS,
     "spec.drafted": _SPEC_GENERATION,
 }
 
@@ -125,9 +134,7 @@ def test_all_events_each_emitted_by_producer() -> None:
     """
     # 值 → 常量名（便于在源码里查引用）
     value_to_const = {
-        getattr(taxonomy, name): name
-        for name in dir(taxonomy)
-        if name.startswith("EVENT_")
+        getattr(taxonomy, name): name for name in dir(taxonomy) if name.startswith("EVENT_")
     }
     for event in ALL_EVENTS:
         producer = _EVENT_PRODUCERS.get(event)

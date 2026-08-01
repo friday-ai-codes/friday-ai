@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
 import type { ProcessStep } from './ToolProcessGroup.vue'
-import type { ConversationMessage, DeepAnalysisSession, ImagePart, MessagePart, StreamTimelineItem, TextPart, ToolCallData, ToolUsePart } from '~/types/chat'
+import type { ConversationMessage, DeepAnalysisSession, ImagePart, MessagePart, PlanResearchSession, StreamTimelineItem, TextPart, ToolCallData, ToolUsePart } from '~/types/chat'
 import { shallowRef } from 'vue'
 import { Checkbox } from '~/components/ui/checkbox'
 import { useEditImages } from '~/composables/useEditImages'
@@ -11,6 +11,9 @@ import { hydrateLegacyMessage } from '~/composables/useMessageParts'
 import { collectRepoNames, relevanceCandidates, repoInitial, toolAction, toolLabel } from '~/composables/useToolDisplay'
 import DeepAnalysisGroup from './DeepAnalysisGroup.vue'
 import DocSummaryCard from './DocSummaryCard.vue'
+import OrchestratedPlanCard from './OrchestratedPlanCard.vue'
+import OrchestrationStageTimeline from './OrchestrationStageTimeline.vue'
+import PlanResearchLogGroup from './PlanResearchLogGroup.vue'
 import StructuredJsonView from './StructuredJsonView.vue'
 import TechPlanCard from './TechPlanCard.vue'
 import ToolProcessGroup from './ToolProcessGroup.vue'
@@ -496,7 +499,19 @@ function toggleTool(id: string) {
 // 拥有专属卡片渲染的工具不并入「分析过程」折叠面板：
 //   - deep_analysis → DeepAnalysisGroup（独立 swiper）
 //   - create/update_coding_plan → TechPlanCard（独立交互卡片）
-const UNGROUPABLE_TOOLS = new Set(['deep_analysis', 'create_coding_plan', 'update_coding_plan'])
+//   - start_plan_research / start_feature_solution → OrchestratedPlanCard（109-04）
+//
+// 🔴 静默失守点：专属卡片的渲染分支只存在于 `item.kind === 'tool'` 的单例分支
+// 里。工具漏登记进本集合会被 isProcessTool 归入「分析过程」折叠面板，那条路径
+// 不渲染专属卡片 —— 不报错、不崩，只是入口彻底不见。改动本集合务必同步测试
+// （chatMessageBubble.parts.spec.ts 有显式断言）。
+const UNGROUPABLE_TOOLS = new Set([
+  'deep_analysis',
+  'create_coding_plan',
+  'update_coding_plan',
+  'start_plan_research',
+  'start_feature_solution',
+])
 function isProcessTool(name: string): boolean {
   return !UNGROUPABLE_TOOLS.has(name.replace(/^mcp__[^_]+__/, ''))
 }
@@ -754,17 +769,174 @@ function isCodingPlanTool(name: string): boolean {
   return bare === 'create_coding_plan' || bare === 'update_coding_plan'
 }
 
+/**
+ * 109-04：编排入口工具判定（SPINE-01）。
+ *
+ * 🔴 必须同时覆盖两个工具：`start_plan_research` 与 `start_feature_solution`
+ * 返回体同形，只登记前者会让另一条编排入口继续没有编码入口。
+ */
+function isOrchestrationTool(name: string): boolean {
+  const bare = name.replace(/^mcp__[^_]+__/, '')
+  return bare === 'start_plan_research' || bare === 'start_feature_solution'
+}
+
+/**
+ * 109-04：编排工具终态产出的方案版本 id。
+ *
+ * 仅在 result 解析得 `status === 'done'` 且 `artifact_version_id` 为非空字符串时
+ * 返回数据，否则返回 null —— 编排在途（`__blocking_task__` 形态，无该字段）与
+ * 失败一律不渲染卡片，这是裁决 D-4「在途完全不呈现」的机械抓手。
+ *
+ * 🔴 必须按**传入的那一条** tool call 解析，不能在 toolCalls 里 find 第一条编排工具。
+ * 异步路径（跨仓调研的常态）上 `waiting → executing` 会二次运行 SDK，同一条消息里
+ * 因此累积两条同名编排工具：第一条 result 是 `__blocking_task__`（无 artifact_version_id），
+ * 第二条才是 `status === 'done'`。用 find 取到的恒是第一条 ⇒ 卡片永远不渲染，
+ * SPINE-01 的「进入编码」入口在正常路径上直接消失。
+ *
+ * 解析沿用 codingPlanData 的防御性双轨：result 可能是 JSON string 也可能是
+ * dict，两种都吃，解析失败返回 null 不抛。
+ */
+function resolveOrchestratedPlanData(
+  result: unknown,
+): { artifactVersionId: string } | null {
+  if (!result)
+    return null
+
+  let parsed: { status?: string, artifact_version_id?: string | null } | null = null
+  if (typeof result === 'string') {
+    try {
+      parsed = JSON.parse(result)
+    }
+    catch {
+      parsed = null
+    }
+  }
+  else if (typeof result === 'object') {
+    parsed = result as { status?: string, artifact_version_id?: string | null }
+  }
+  if (!parsed || parsed.status !== 'done')
+    return null
+
+  const versionId = parsed.artifact_version_id
+  if (typeof versionId !== 'string' || versionId === '')
+    return null
+  return { artifactVersionId: versionId }
+}
+
+/**
+ * 110-07：从编排工具 result 里取编排会话 id。
+ *
+ * 解析沿用 `resolveOrchestratedPlanData` 的防御性双轨（result 可能是 JSON string
+ * 也可能是 dict，两种都吃，失败返回空串不抛）。
+ */
+function resolveOrchestrationSessionId(result: unknown): string {
+  if (!result)
+    return ''
+
+  let parsed: unknown = null
+  if (typeof result === 'string') {
+    try {
+      parsed = JSON.parse(result)
+    }
+    catch {
+      parsed = null
+    }
+  }
+  else if (typeof result === 'object') {
+    parsed = result
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    return ''
+
+  const sessionId = (parsed as { session_id?: unknown }).session_id
+  return typeof sessionId === 'string' ? sessionId : ''
+}
+
+/**
+ * 110-07：本 tool item 绑定的编排会话 id（UI-SPEC §A.7 的绑定顺序）。
+ *
+ * 🔴 顺序是 result 优先、store 兜底，不能反过来：
+ * 在途的五个阶段（拆分 / 路由 / 召回 / 澄清 / 并行调研）全部发生在 tool result
+ * **之前**（tool pill 一路是 `running`），所以只靠解析 result 会让在途期间绑不到
+ * 会话、时间线整段不出现——store 的 `activeOrchestrationSessionId` 是这段时间里
+ * 唯一的来源。但 result 一旦出现（挂起 marker 与终态 result 都带 `session_id`），
+ * 它**明确属于这个气泡**，优先级最高：同一对话里跑第二轮编排时，store 的活跃 id
+ * 已经指向新会话，只有 result 能把第一条气泡钉回它自己那次编排。
+ *
+ * 🔴 110-HI-01：store 兜底**只服务「在途、还没有 result」**这一种情形。已经有 result
+ * 却解析不出会话（例如老后端的失败结果 `{"error":…,"is_error":true}`，能 JSON.parse
+ * 但没有 `session_id`），说明它不属于当前活跃编排——宁可整块不渲染（§A.5 条件 2），
+ * 也不能把别人那一轮的进度挂上来：那既抹掉了失败呈现，又让同一份进度同时出现在
+ * 两条气泡上（§A.7 明令要防的形态）。
+ */
+function orchestrationSessionIdFor(item: ToolItemShape): string {
+  const fromResult = resolveOrchestrationSessionId(item.result)
+  if (fromResult)
+    return fromResult
+  return item.result ? '' : (chatStore.activeOrchestrationSessionId || '')
+}
+
+/**
+ * 110-07：本条消息里**最后一个**编排 tool item 的 id（无则空串）。
+ *
+ * 异步路径（跨仓调研的常态）上 `waiting → executing` 会二次运行 SDK，同一条消息
+ * 因此累积两条同名编排 tool call：第一条 result 是 `__blocking_task__`，第二条才是
+ * 终态。两者绑定**同一个 session_id**，不加这个判定会让同一份进度渲染两遍。
+ *
+ * 🔴 这不是 `.find` 的复活：它只用于**去重渲染位置**。`OrchestratedPlanCard` 的
+ * **取数**仍严格走 `resolveOrchestratedPlanData(item.result)` 逐条解析（109 载重
+ * 不变量），两件事不要合并——把卡片的渲染条件也改成依赖这个 computed，就等于把
+ * 109 修好的那个「卡片永不渲染」的缺口重新打开。
+ */
+const lastOrchestrationToolItemId = computed(() => {
+  let last = ''
+  for (const item of groupedDisplayItems.value) {
+    if (item.kind === 'tool' && isOrchestrationTool(item.name))
+      last = item.id
+  }
+  return last
+})
+
+/**
+ * 110-07：过滤到**本气泡绑定的那次编排会话**的调研容器（F-21）。
+ *
+ * 🔴 两块新 UI 的「不重复」保护强度并不对等，这层过滤只有日志组需要：
+ * - 时间线取 `orchestrationSessions[sessionId]`，store 按 `session_id` 分桶，
+ *   换一个会话就是换一个桶，**天然自限**；
+ * - 而 `planResearchSessions` 是一个**会话级的扁平数组**，每份 runtime 快照
+ *   **整体替换**它（110-04 全量列表语义），后端又只装本对话**最近一次**编排的容器。
+ *
+ * ⇒ 一段对话里跑两轮编排时，快照里装的是第二轮的容器。若不按 `plan_session_id`
+ * 过滤，第一条编排消息会照样渲染出这一组——用户看到两处「方案调研 · N 个仓库」，
+ * 其中一份挂在了**错误的方案**上。
+ *
+ * `plan_session_id` 由 110-03 在每条 `PlanResearchSession` 上给出
+ * （`= str(ConvergenceSession.id)`），与 `orchestrationSessionIdFor(item)` 同源同值。
+ */
+function planResearchSessionsFor(item: ToolItemShape): PlanResearchSession[] {
+  const sid = orchestrationSessionIdFor(item)
+  if (!sid)
+    return []
+  const sessions = chatStore.planResearchSessions
+  return Array.isArray(sessions) ? sessions.filter(s => s?.plan_session_id === sid) : []
+}
+
 // 从 toolCalls 中提取 coding plan 数据
 const codingPlanData = computed(() => {
   const planTool = toolCalls.value.find(tc => isCodingPlanTool(tc.name))
   if (!planTool)
     return null
 
-  // tech_plan 和 affected_files 来自 tool input（不在 result 中）
+  // tech_plan 和 affected_files 的**历史消息兜底**来源：tool input。
+  //
+  // 109-06：SPINE-02 已把这两个入参从 create/update_coding_plan 的 schema 里删掉，
+  // 因此**新消息**的 input 无此两键，这里取值恒为空串 / 空数组。
+  // 🔴 这段不可删除：SPINE-02 之前的消息里 tech_plan 仍在 input 里，砍掉这里会让
+  // 历史会话的方案卡集体变空。
   const input = planTool.input || {}
-  const techPlan = (input.tech_plan as string) || ''
+  const inputTechPlan = (input.tech_plan as string) || ''
   // ：兼容 file_path / path 两种 schema 字段名
-  const affectedFiles = (input.affected_files as Array<{ file_path?: string, path?: string, change_type: string }>) || []
+  const inputAffectedFiles = (input.affected_files as Array<{ file_path?: string, path?: string, change_type: string }>) || []
 
   // session_id / status / coding_plan_id 来自 tool result。
   // 防御性双轨：result 在快照(snapshot) / langchain_runner 路径里是 JSON string，
@@ -775,6 +947,16 @@ const codingPlanData = computed(() => {
   let repositoryId = ''
   let repositoryName = ''
   let recommendedRepositories: Array<{ id: string, name: string }> = []
+  // 109-REVIEW HI-02：正文 / 影响文件 / 来源标志改由 **tool result** 承载。
+  //
+  // 修复前这三者对「非最新那一份 plan」的卡片同时取不到：input 里已无正文（SPINE-02
+  // 收窄），而 runtime 的语义是「对话内**最近**一条 CodingPlan」⇒ 会话里一有第二份
+  // 方案，第一张卡就变成「（暂无方案正文）」并被误挂「本方案未经代码调研」横幅——
+  // 一次内容丢失回归 + 一次 RELY-01 误报（误报发生在主路径的常见形态上，用户很快
+  // 就会学会忽略这条横幅，信号自己把自己拆掉了）。
+  let resultTechPlan = ''
+  let resultAffectedFiles: Array<{ file_path?: string, path?: string, change_type: string }> = []
+  let provenance: string | null | undefined
   if (planTool.result) {
     const raw: unknown = planTool.result
     let parsed: {
@@ -784,6 +966,9 @@ const codingPlanData = computed(() => {
       repository_id?: string
       repository_name?: string
       recommended_repositories?: Array<{ id?: string, name?: string }>
+      tech_plan?: string
+      affected_files?: Array<{ file_path?: string, path?: string, change_type: string }>
+      provenance?: string | null
       status?: string
     } | null = null
     if (typeof raw === 'string') {
@@ -808,6 +993,11 @@ const codingPlanData = computed(() => {
             repo?.id && repo?.name ? [{ id: repo.id, name: repo.name }] : [],
           )
         : []
+      resultTechPlan = typeof parsed.tech_plan === 'string' ? parsed.tech_plan : ''
+      resultAffectedFiles = Array.isArray(parsed.affected_files) ? parsed.affected_files : []
+      // 🔴 不做任何归一化 / 兜底取值：`undefined` 必须原样传给 TechPlanCard，让它
+      // 走保守分支（标注）。在这里补一个默认值等于替后端签名。
+      provenance = typeof parsed.provenance === 'string' ? parsed.provenance : undefined
       sessionStatus = parsed.status || 'draft'
       // coding-plan workflow 工具不再产 session，新 status='plan_only' 映射回
       // 'draft' 让 TechPlanCard 走 showInlineSelector 渲染（hasSessions=false 时
@@ -823,7 +1013,19 @@ const codingPlanData = computed(() => {
       ? [{ id: repositoryId, name: repositoryName }]
       : []
 
-  return { sessionId, planId, techPlan, affectedFiles, status: sessionStatus, targetRepositories }
+  // 工具结果优先、tool input 兜底：新消息走前者，SPINE-02 之前的历史消息走后者。
+  const techPlan = resultTechPlan || inputTechPlan
+  const affectedFiles = resultAffectedFiles.length > 0 ? resultAffectedFiles : inputAffectedFiles
+
+  return {
+    sessionId,
+    planId,
+    techPlan,
+    affectedFiles,
+    provenance,
+    status: sessionStatus,
+    targetRepositories,
+  }
 })
 
 // 编码方案的实时状态（优先使用 store 中的 activeCodingSession）
@@ -1143,6 +1345,7 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
               :session-id="codingPlanData.sessionId"
               :tech-plan="codingPlanData.techPlan"
               :affected-files="codingPlanData.affectedFiles"
+              :provenance="codingPlanData.provenance"
               :status="codingPlanStatus"
               :is-confirming="codingPlanConfirming"
               :branch-name="codingPlanBranchName"
@@ -1151,7 +1354,44 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
               :recommended-repository-ids="codingPlanData.targetRepositories.map(r => r.id)"
               @confirm="(_planId, sessionId, branchName, targetBranch) => sessionId && chatStore.handleConfirmCodingSession(sessionId, branchName, targetBranch)"
             />
-            <div v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name)" class="tool-detail">
+            <!--
+              110-07：编排在途的阶段时间线。挂在**最后一条**编排 tool item 上，
+              避免同一条消息里的「在途 + 终态」两条 tool call 把同一份进度画两遍。
+              「桶存在 + 至少一条已知事实」两道门在组件内部，此处不重复。
+            -->
+            <OrchestrationStageTimeline
+              v-if="isOrchestrationTool(item.name) && item.id === lastOrchestrationToolItemId && orchestrationSessionIdFor(item)"
+              :session-id="orchestrationSessionIdFor(item)"
+            />
+            <!--
+              110-07：调研容器日志组（每仓一张卡）。
+              🔴 `v-if` 与 `:sessions` 必须是**同一个表达式** —— 用未过滤的
+              `planResearchSessions` 判条件、却传过滤后的数组（或反过来）会造出
+              一个「渲染了一个空组」的形态。
+            -->
+            <PlanResearchLogGroup
+              v-if="isOrchestrationTool(item.name) && item.id === lastOrchestrationToolItemId && planResearchSessionsFor(item).length > 0"
+              :sessions="planResearchSessionsFor(item)"
+              :repo-names="repoNames"
+            />
+            <!--
+              109-04：编排产出「进入编码」入口。三条渲染条件同时成立才渲染。
+              🔴 按 item.result 逐条解析——异步路径上同一消息有两条同名编排工具，
+              只有携带 artifact_version_id 的那一条才渲染卡片。
+            -->
+            <OrchestratedPlanCard
+              v-if="isOrchestrationTool(item.name) && item.status === 'done' && resolveOrchestratedPlanData(item.result)"
+              :artifact-version-id="resolveOrchestratedPlanData(item.result)!.artifactVersionId"
+            />
+            <!--
+              编排工具的详情面板只在「卡片已渲染」时才抑制。若无条件按工具名抑制，
+              在途 / 失败态（按裁决 D-4 不渲染卡片）下箭头会转但面板永不出现，
+              整条 pill 变成一个点了没反应的可点元素。
+            -->
+            <div
+              v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name) && !(isOrchestrationTool(item.name) && resolveOrchestratedPlanData(item.result))"
+              class="tool-detail"
+            >
               <div class="tool-detail-section">
                 <span class="tool-detail-label">输入</span>
                 <StructuredJsonView :value="item.input" :tool-name="item.name" kind="input" />

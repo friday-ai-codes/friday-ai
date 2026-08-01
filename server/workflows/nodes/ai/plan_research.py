@@ -40,7 +40,7 @@ JSON；本编排路径产出 canonical ``PlanVersion``（``PlanSession.current_p
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Final
 
 import structlog
 
@@ -57,6 +57,12 @@ logger = structlog.get_logger(__name__)
 
 # 驱动循环最大步数（防 advance 不前进死循环，T-41-03-02）
 _MAX_ADVANCE_STEPS = 20
+
+# 澄清卡送达失败原因受控闭集（RELY-02）。事件 payload 只带这几个枚举值，绝不带上游
+# 响应体或异常原文——排障原文只进系统日志（已脱敏），不进可外读的事件 payload。
+_DELIVERY_FAILURE_REASONS: Final[frozenset[str]] = frozenset(
+    {"no_questions", "no_space", "no_project", "no_chat_id", "send_failed"}
+)
 
 
 @register_node
@@ -371,6 +377,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
         """
         from datetime import timedelta
 
+        from django.conf import settings
         from django.utils import timezone
 
         from delivery.models import Clarification, ConvergenceSessionStatus
@@ -395,12 +402,20 @@ class AIPlanResearchNode(AIAgentBaseNode):
                 # CLARIFY-05：仅工作流入口发卡 + 订阅（chat 入口走 91-04 会话出口面）。
                 if context.workflow_execution and context.node_execution:
                     await self._send_clarify_card(session, context, clarification_id)
+                    # D-4 单一超时口径：订阅超时与澄清超时读**同一个**配置键，两侧同时到期。
+                    # 早先这里写死 60 分钟，而澄清侧按 24 小时判超时——第 60 分钟工作流已被
+                    # check_timeouts 标 TIMEOUT，会话却仍停在 waiting_clarification，中间是
+                    # 23 小时的矛盾态窗口（无声卡死的另一半成因）。
+                    # 生产已有的活跃订阅行携带旧 timeout_at，本改动只影响新建订阅；存量行由
+                    # 澄清超时扫描器的「workflow 已 TIMEOUT + 会话仍 waiting_clarification →
+                    # 立即出口」纵深条件兜住。
+                    timeout_hours = getattr(settings, "CLARIFICATION_TIMEOUT_HOURS", 24)
                     await WorkflowEventSubscription.objects.acreate(
                         workflow_execution=context.workflow_execution,
                         node_execution=context.node_execution,
                         event_type="PlanClarifyCallback",
                         project_key=context.workflow_context.get("project_key", ""),
-                        timeout_at=timezone.now() + timedelta(minutes=60),
+                        timeout_at=timezone.now() + timedelta(hours=timeout_hours),
                         timeout_action="fail",
                     )
                 return NodeResult(
@@ -441,6 +456,11 @@ class AIPlanResearchNode(AIAgentBaseNode):
         ``plan_deepen._asend_card``）→ ``FeishuIMService.send_card``。卡片正文经
         ``redact_secrets_in_text`` 脱敏（T-91-02-02）；触发用户带 ``initiated_by_user_id``
         （T-91-02-03）；全程 try/except 失败仅 log（T-91-02-05）。
+
+        RELY-02「澄清必达」：5 条失败路径（无子题 / 无空间 / 无项目 / 无群 / 发送抛）**一条
+        都不静默 return**——各经 ``_amark_delivery_failed`` 记结构化日志 + emit 送达失败事件 +
+        把该轮标 ``delivery_failed``，供澄清超时扫描据此立即出口。静默返回正是「无声卡死」的
+        确切成因之一。
         """
         from delivery.models import Clarification
         from feishu.cards.chat_question_card import build_clarification_card
@@ -460,15 +480,25 @@ class AIPlanResearchNode(AIAgentBaseNode):
         try:
             questions = await self._acollect_round_questions(clarification_id)
             if not questions:
+                await self._amark_delivery_failed(
+                    session, context, clarification_id, "no_questions"
+                )
                 return
             round_meta = await (
                 Clarification.objects.filter(id=clarification_id).values("round_no").afirst()
             )
+            round_no = (round_meta or {}).get("round_no")
             space = await _resolve_space(context)
             if space is None:
+                await self._amark_delivery_failed(
+                    session, context, clarification_id, "no_space", round_no=round_no
+                )
                 return
             project = await _aresolve_project(space)
             if project is None:
+                await self._amark_delivery_failed(
+                    session, context, clarification_id, "no_project", round_no=round_no
+                )
                 return
             initiated_by_user_id = self._resolve_initiator(context)
             chat_id = await ProjectService().resolve_or_create_group(
@@ -477,18 +507,81 @@ class AIPlanResearchNode(AIAgentBaseNode):
                 initiated_by_user_id=initiated_by_user_id,
             )
             if not chat_id:
+                await self._amark_delivery_failed(
+                    session, context, clarification_id, "no_chat_id", round_no=round_no
+                )
                 return
             card = build_clarification_card(
                 questions,
                 execution_id=context.execution_id,
                 node_id=context.node_id,
                 clarification_id=clarification_id,
-                round_no=(round_meta or {}).get("round_no") or 1,
+                round_no=round_no or 1,
             )
             im_service = await FeishuIMService.create(space)
             await im_service.send_card(receive_id=chat_id, receive_id_type="chat_id", card=card)
         except Exception:  # noqa: BLE001 — 发卡 best-effort，绝不反噬挂起
             log.warning("plan_research_clarify_card_failed", session_id=str(session.id))
+            await self._amark_delivery_failed(session, context, clarification_id, "send_failed")
+
+    async def _amark_delivery_failed(
+        self,
+        session: Any,
+        context: ExecutionContext,
+        clarification_id: str,
+        reason: str,
+        *,
+        round_no: int | None = None,
+    ) -> None:
+        """澄清卡送达失败留痕：结构化日志 + 事件 + 该轮 ``container_status`` 标记。
+
+        三件事一次做齐，缺一条就还是「无声卡死」：
+        1. warning 级结构化日志（带触发用户，缺则 ``system``）——排障入口；
+        2. 经 ``ConvergenceSessionService._emit_event`` 落会话事件（事件唯一写入入口，
+           后续时间线复用同一事件源）；payload 只含受控枚举 ``reason``，不含异常原文；
+        3. 把该轮 ``container_status`` 标 ``delivery_failed``——**只写这一列，绝不写
+           ``answered_at``**（写了该轮会被误判为已答，从此永久失去出口）。
+
+        整体 best-effort：留痕自身失败一律吞掉，绝不反噬发卡与节点挂起语义。
+        """
+        try:
+            from delivery.models import Clarification
+            from delivery.services.convergence_session_service import ConvergenceSessionService
+            from delivery.services.event_taxonomy import EVENT_CLARIFICATION_DELIVERY_FAILED
+
+            safe_reason = reason if reason in _DELIVERY_FAILURE_REASONS else "unknown"
+            logger.warning(
+                "clarification_delivery_failed",
+                clarification_id=clarification_id,
+                reason=safe_reason,
+                channel="feishu",
+                session_id=str(getattr(session, "id", "")),
+                execution_id=context.execution_id,
+                node_id=context.node_id,
+                initiated_by_user_id=self._resolve_initiator(context),
+                category="caller",
+                component="plan_research",
+            )
+            if round_no is None:
+                meta = await (
+                    Clarification.objects.filter(id=clarification_id).values("round_no").afirst()
+                )
+                round_no = (meta or {}).get("round_no")
+            await Clarification.objects.filter(id=clarification_id).aupdate(
+                container_status="delivery_failed"
+            )
+            await ConvergenceSessionService()._emit_event(
+                EVENT_CLARIFICATION_DELIVERY_FAILED,
+                session,
+                {
+                    "clarification_id": clarification_id,
+                    "round_no": round_no,
+                    "channel": "feishu",
+                    "reason": safe_reason,
+                },
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬发卡/挂起
+            pass
 
     @staticmethod
     async def _acollect_round_questions(clarification_id: str) -> list[dict[str, Any]]:

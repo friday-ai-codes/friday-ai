@@ -7,16 +7,22 @@
 export {}
 declare global {
   const CHAT_PARTS_PROTOCOL_KEY: typeof import('./composables/useChatPartsProtocol').CHAT_PARTS_PROTOCOL_KEY
+  const COPY: typeof import('./composables/useOrchestrationTimeline').COPY
   const EffectScope: typeof import('vue').EffectScope
+  const FAIL_REASON_LABELS: typeof import('./composables/useOrchestrationTimeline').FAIL_REASON_LABELS
+  const STAGE_LABELS: typeof import('./composables/useOrchestrationTimeline').STAGE_LABELS
+  const STAGE_ORDER: typeof import('./composables/useOrchestrationTimeline').STAGE_ORDER
   const TOOL_ICONS: typeof import('./composables/useToolDisplay').TOOL_ICONS
   const TOOL_LABELS: typeof import('./composables/useToolDisplay').TOOL_LABELS
   const TOOL_LABELS_CN: typeof import('./composables/useDeepAnalysisLog').TOOL_LABELS_CN
+  const TRANSITION_TO_STAGE: typeof import('./composables/useOrchestrationTimeline').TRANSITION_TO_STAGE
   const acceptHMRUpdate: typeof import('pinia').acceptHMRUpdate
   const areTypesCompatible: typeof import('./composables/useSchemaValidation').areTypesCompatible
   const asyncComputed: typeof import('@vueuse/core').asyncComputed
   const attachZoomWithin: typeof import('./composables/useMediumZoom').attachZoomWithin
   const autoResetRef: typeof import('@vueuse/core').autoResetRef
   const bareName: typeof import('./composables/useToolDisplay').bareName
+  const buildOrchestrationTimeline: typeof import('./composables/useOrchestrationTimeline').buildOrchestrationTimeline
   const checkMissingKeys: typeof import('./composables/useDownstreamVarCheck').checkMissingKeys
   const collectRepoNames: typeof import('./composables/useToolDisplay').collectRepoNames
   const computeFreshness: typeof import('./composables/useKnowledgeOverview').computeFreshness
@@ -107,6 +113,7 @@ declare global {
   const onUpdated: typeof import('vue').onUpdated
   const onWatcherCleanup: typeof import('vue').onWatcherCleanup
   const openModal: typeof import('./composables/useModal').openModal
+  const orchestrationEventKey: typeof import('./stores/chat').orchestrationEventKey
   const pausableWatch: typeof import('@vueuse/core').pausableWatch
   const previewText: typeof import('./composables/useDeepAnalysisLog').previewText
   const provide: typeof import('vue').provide
@@ -129,6 +136,8 @@ declare global {
   const repoInitial: typeof import('./composables/useToolDisplay').repoInitial
   const rerankInfo: typeof import('./composables/useToolDisplay').rerankInfo
   const resolveComponent: typeof import('vue').resolveComponent
+  const resolveRepoName: typeof import('./composables/useOrchestrationTimeline').resolveRepoName
+  const routingDecisionView: typeof import('./composables/useToolDisplay').routingDecisionView
   const searchedRepoLabel: typeof import('./composables/useToolDisplay').searchedRepoLabel
   const setActivePinia: typeof import('pinia').setActivePinia
   const setMapStoreSuffix: typeof import('pinia').setMapStoreSuffix
@@ -452,6 +461,9 @@ declare global {
   export type { UseLottieOptions } from './composables/useMotion'
   import('./composables/useMotion')
   // @ts-ignore
+  export type { OrchestrationTimelineEvent, OrchestrationTimelineInput, OrchestrationTimelineView } from './composables/useOrchestrationTimeline'
+  import('./composables/useOrchestrationTimeline')
+  // @ts-ignore
   export type { UsePollingOptions } from './composables/usePolling'
   import('./composables/usePolling')
   // @ts-ignore
@@ -470,13 +482,13 @@ declare global {
   export type { FacetSpec, TableUrlStateOptions } from './composables/useTableUrlState'
   import('./composables/useTableUrlState')
   // @ts-ignore
-  export type { RelevanceCandidate, RerankInfo } from './composables/useToolDisplay'
+  export type { RelevanceCandidate, RoutingBlock, RoutingDecisionView, RerankInfo } from './composables/useToolDisplay'
   import('./composables/useToolDisplay')
   // @ts-ignore
   export type { AnalyticsGrouping } from './stores/analyticsFilters'
   import('./stores/analyticsFilters')
   // @ts-ignore
-  export type { CredentialMissingPayload, ContextExceededPayload } from './stores/chat'
+  export type { CredentialMissingPayload, ContextExceededPayload, OrchestrationEventEntry, OrchestrationBucket } from './stores/chat'
   import('./stores/chat')
   // @ts-ignore
   export type { NotificationWsStatus, FeedItem } from './stores/notifications'
@@ -504,16 +516,22 @@ declare module 'vue' {
   interface GlobalComponents {}
   interface ComponentCustomProperties {
     readonly CHAT_PARTS_PROTOCOL_KEY: UnwrapRef<typeof import('./composables/useChatPartsProtocol')['CHAT_PARTS_PROTOCOL_KEY']>
+    readonly COPY: UnwrapRef<typeof import('./composables/useOrchestrationTimeline')['COPY']>
     readonly EffectScope: UnwrapRef<typeof import('vue')['EffectScope']>
+    readonly FAIL_REASON_LABELS: UnwrapRef<typeof import('./composables/useOrchestrationTimeline')['FAIL_REASON_LABELS']>
+    readonly STAGE_LABELS: UnwrapRef<typeof import('./composables/useOrchestrationTimeline')['STAGE_LABELS']>
+    readonly STAGE_ORDER: UnwrapRef<typeof import('./composables/useOrchestrationTimeline')['STAGE_ORDER']>
     readonly TOOL_ICONS: UnwrapRef<typeof import('./composables/useToolDisplay')['TOOL_ICONS']>
     readonly TOOL_LABELS: UnwrapRef<typeof import('./composables/useToolDisplay')['TOOL_LABELS']>
     readonly TOOL_LABELS_CN: UnwrapRef<typeof import('./composables/useDeepAnalysisLog')['TOOL_LABELS_CN']>
+    readonly TRANSITION_TO_STAGE: UnwrapRef<typeof import('./composables/useOrchestrationTimeline')['TRANSITION_TO_STAGE']>
     readonly acceptHMRUpdate: UnwrapRef<typeof import('pinia')['acceptHMRUpdate']>
     readonly areTypesCompatible: UnwrapRef<typeof import('./composables/useSchemaValidation')['areTypesCompatible']>
     readonly asyncComputed: UnwrapRef<typeof import('@vueuse/core')['asyncComputed']>
     readonly attachZoomWithin: UnwrapRef<typeof import('./composables/useMediumZoom')['attachZoomWithin']>
     readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
     readonly bareName: UnwrapRef<typeof import('./composables/useToolDisplay')['bareName']>
+    readonly buildOrchestrationTimeline: UnwrapRef<typeof import('./composables/useOrchestrationTimeline')['buildOrchestrationTimeline']>
     readonly checkMissingKeys: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['checkMissingKeys']>
     readonly collectRepoNames: UnwrapRef<typeof import('./composables/useToolDisplay')['collectRepoNames']>
     readonly computeFreshness: UnwrapRef<typeof import('./composables/useKnowledgeOverview')['computeFreshness']>
@@ -604,6 +622,7 @@ declare module 'vue' {
     readonly onUpdated: UnwrapRef<typeof import('vue')['onUpdated']>
     readonly onWatcherCleanup: UnwrapRef<typeof import('vue')['onWatcherCleanup']>
     readonly openModal: UnwrapRef<typeof import('./composables/useModal')['openModal']>
+    readonly orchestrationEventKey: UnwrapRef<typeof import('./stores/chat')['orchestrationEventKey']>
     readonly pausableWatch: UnwrapRef<typeof import('@vueuse/core')['pausableWatch']>
     readonly previewText: UnwrapRef<typeof import('./composables/useDeepAnalysisLog')['previewText']>
     readonly provide: UnwrapRef<typeof import('vue')['provide']>
@@ -626,6 +645,8 @@ declare module 'vue' {
     readonly repoInitial: UnwrapRef<typeof import('./composables/useToolDisplay')['repoInitial']>
     readonly rerankInfo: UnwrapRef<typeof import('./composables/useToolDisplay')['rerankInfo']>
     readonly resolveComponent: UnwrapRef<typeof import('vue')['resolveComponent']>
+    readonly resolveRepoName: UnwrapRef<typeof import('./composables/useOrchestrationTimeline')['resolveRepoName']>
+    readonly routingDecisionView: UnwrapRef<typeof import('./composables/useToolDisplay')['routingDecisionView']>
     readonly searchedRepoLabel: UnwrapRef<typeof import('./composables/useToolDisplay')['searchedRepoLabel']>
     readonly setActivePinia: UnwrapRef<typeof import('pinia')['setActivePinia']>
     readonly setMapStoreSuffix: UnwrapRef<typeof import('pinia')['setMapStoreSuffix']>

@@ -1,0 +1,27 @@
+{
+  "artifact_version_id": {
+    "annotation": "str",
+    "default": null,
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "conversation_id": {
+    "annotation": "str",
+    "default": null,
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "recommended_repository_ids": {
+    "annotation": "list[str] | None",
+    "default": "None",
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "repository_id": {
+    "annotation": "str",
+    "default": "''",
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "space_id": {
+    "annotation": "str",
+    "default": null,
+    "kind": "POSITIONAL_OR_KEYWORD"
+  }
+}
