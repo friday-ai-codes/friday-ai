@@ -20,8 +20,9 @@
  *
  * a11y（§18.1）：浮层出现后**焦点不自动抢占**（抢焦点会打断选区），`Tab` 可进入，
  * `Esc` 关闭且**保留选区**（本组件只 emit `dismiss`，⛔ 不去动 `window.getSelection()`）。
- * 按钮触控目标 ≥44px；焦点环用不透明 `--color-primary-600`（3.74:1），
- * ⛔ 不复制既有 `.btn:focus-visible` 的 50% 透明 teal-500（实算 1.59:1，未过 WCAG 2.4.11）。
+ * 按钮触控目标 ≥44px；焦点环取 `annotationTokens` 里那份共用的 `FOCUS_RING_CLASS`
+ * （不透明 `--color-primary-600`，3.74:1），⛔ 不复制既有 `.btn:focus-visible` 的 50%
+ * 透明 teal-500（实算 1.59:1，未过 WCAG 2.4.11）、⛔ 不在组件里再写一串同样的字面量。
  *
  * ⚠️ happy-dom 无布局引擎、`getBoundingClientRect` 恒返 0 矩形 ⇒ **落点坐标归 UAT**；
  * 自动化只测「按钮渲染与否 / 事件派发」。
@@ -32,6 +33,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Button } from '~/components/ui/button'
 import { Popover, PopoverContent } from '~/components/ui/popover'
+import { FOCUS_RING_CLASS } from './annotationTokens'
 
 const props = withDefaults(defineProps<{
   /** 选区矩形；`null` = 无选区 ⇒ 浮层关闭。 */
@@ -49,8 +51,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-
-const FOCUS_CLASS = 'outline-none focus-visible:[outline:2px_solid_var(--color-primary-600)] focus-visible:[outline-offset:2px]'
 
 const isOpen = computed(() => props.rect !== null)
 
@@ -92,7 +92,7 @@ function keepSelection(event: Event): void {
           size="sm"
           variant="ghost"
           data-testid="blueprint-selection-comment"
-          :class="`min-h-11 ${FOCUS_CLASS}`"
+          :class="`min-h-11 ${FOCUS_RING_CLASS}`"
           @click="emit('comment')"
         >
           <span class="icon-[lucide--message-square-plus] mr-1.5" aria-hidden="true" />
@@ -102,7 +102,7 @@ function keepSelection(event: Event): void {
           size="sm"
           variant="ghost"
           data-testid="blueprint-selection-copy"
-          :class="`min-h-11 ${FOCUS_CLASS}`"
+          :class="`min-h-11 ${FOCUS_RING_CLASS}`"
           @click="emit('copy')"
         >
           <span class="icon-[lucide--copy] mr-1.5" aria-hidden="true" />
