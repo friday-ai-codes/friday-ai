@@ -318,15 +318,109 @@ _ECHO_STAGES = {
 
 
 async def _h_bp_intake(session: Any, engine: Any) -> StageOutcome:
-    """intake stage：显式起点。会话建立时入口已把需求写进 ``stage_state``，本 stage 零副作用。"""
+    """intake stage：蓝图链的**生产起点** —— 建初始 ``Artifact`` + ``blueprint/v1`` v1 骨架。
+
+    三件产出（落库全在 ``blueprint_intake.aseed_blueprint_artifact``，handler 只返
+    ``StageOutcome`` —— 纪律②）：``ArtifactService.create`` 建 Artifact + v1 骨架、
+    ``BlueprintLifecycleService`` 把 ``blueprint_status`` 跳 ``researching``（INV-6，形状
+    照 :func:`_abp_mark_drafting`）、版本指针带回会话。
+
+    ⭐ **``current_artifact_version`` 必须显式带回**（``engine.py:108-119``）：engine 只在
+    非 None 时透传（无条件透传会把每次不产版本的转移都把指针抹成 NULL）⇒ handler 不带回
+    就没有第二个人会带 ⇒ ``session.current_artifact_version_id`` 恒 None，
+    ``blueprint_spec_gate._aload_current_version`` 取不到版本即判 ``needs_clarification``
+    + ``blueprint_spec_gate_no_artifact_version`` warning，会话**卡死在 spec_gate**；
+    ``_amap_blueprint_status`` 与两个 ``_aload_artifact`` 同时静默降级。
+
+    **幂等**：会话已有 ``current_artifact_version_id``（重入 / 重放）⇒ 不重复建 artifact，
+    直接把既有指针原样带回。
+
+    ⛔ **本 handler 不抛**：engine 的通用 ``except`` 会把会话落 FAILED、抹掉可诊断信息。
+    ``project_id`` 缺失（正常链路上不可能 —— ``start_blueprint_orchestration`` 已在建会话
+    **之前**挡住）时**不建 artifact**、只落一条 caller 事件并**不带指针**返回，随后
+    spec_gate 会因无版本而判需澄清 —— 那是正确的**可见**失败。
+    """
+    from services.process_runtime.blueprint_intake import aseed_blueprint_artifact
+
+    existing = str(getattr(session, "current_artifact_version_id", "") or "")
+    if existing:
+        return StageOutcome(event="intaken", current_artifact_version=existing)
+
+    decomposition = (session.stage_state or {}).get("decomposition") or {}
+    initiated_by = str(getattr(session, "initiated_by_user_id", "") or "") or "system"
+    project_id = str(decomposition.get("project_id") or "")
+    if project_id:
+        artifact = await aseed_blueprint_artifact(
+            session=session,
+            requirement_text=str(decomposition.get("requirement_text") or ""),
+            project_id=project_id,
+            created_by_user_id=str(getattr(session, "initiated_by_user_id", "") or ""),
+        )
+        return StageOutcome(
+            event="intaken",
+            current_artifact_version=artifact.current_version_id,
+            # stage_state **只写自己的桶**（114-03 纪律：engine 顶层浅合并，写别人的桶会互相覆盖）。
+            stage_state_update={"intake": {"artifact_id": str(artifact.id)}},
+        )
+
+    logger.warning(
+        "blueprint_intake_missing_project",
+        category="caller",
+        component="process_runtime",
+        session_id=str(getattr(session, "id", "")),
+        reason="project_unresolved",
+        initiated_by_user_id=initiated_by,
+    )
+    # ⛔ 不带指针：随后 spec_gate 因无版本判需澄清 —— 那是正确的**可见**失败。
     return StageOutcome(event="intaken")
 
 
 async def _h_bp_decompose(session: Any, engine: Any) -> StageOutcome:
-    """decompose stage：蓝图 ``requirement_spec`` 由入口/规格门装配，本 stage 直通。
+    """decompose stage：把需求拆成 ``requirement_spec.feature_points`` 并落新版本。
 
-    （功能点拆分在 116 入口切换时接线；此处保持零副作用穿过，避免半截 stage_state。）
+    两条路径（实现在 ``blueprint_intake.adecompose_feature_points``）：
+    ``stage_state.decomposition.feature_segments`` 非空 ⇒ **直采、零 LLM**（feature list
+    入口；确定性 id ⇒ 同一 segments 重跑得同一 ``content_hash`` ⇒ ``add_version`` 复用
+    current、**不翻版本**）；否则走 LLM 并复用**已注册**的 ``CallSource.BLUEPRINT_DECOMPOSE``
+    （⛔ 零新增枚举），LLM 不可得 ⇒ **fail-soft** 保留空 ``feature_points`` + warning，
+    ⛔ 不落 FAILED（规格门本就会因信息不足而开澄清，那是正确的下一步）。
+
+    ⭐ **三种分支都显式带回 ``current_artifact_version``**：产了新版本带新版本 id，
+    没产版本带会话**既有**指针。engine 只在非 None 时透传（``engine.py:108-119``），
+    统一带回让「本 stage 之后指针一定指向最新版本」成为可断言的事实，⛔ 不依赖读者去
+    推断哪条分支会不会动指针。
     """
+    from services.process_runtime.blueprint_intake import adecompose_feature_points
+
+    artifact = await _abp_load_artifact(session)
+    if artifact is not None:
+        decomposition = (session.stage_state or {}).get("decomposition") or {}
+        segments = decomposition.get("feature_segments")
+        version = await adecompose_feature_points(
+            session=session,
+            artifact=artifact,
+            requirement_text=str(decomposition.get("requirement_text") or ""),
+            feature_segments=segments if isinstance(segments, list) else None,
+        )
+        if version is None:
+            # 无新版本（直采重跑 / LLM 不可得）：把会话**既有**指针原样带回。
+            return StageOutcome(
+                event="decomposed",
+                current_artifact_version=getattr(session, "current_artifact_version_id", None),
+            )
+        spec = (version.content or {}).get("requirement_spec") or {}
+        return StageOutcome(
+            event="decomposed",
+            current_artifact_version=version.id,
+            stage_state_update={
+                "decompose": {
+                    "point_count": len(spec.get("feature_points") or []),
+                    "version_no": int(version.version_no),
+                }
+            },
+        )
+
+    # intake 未落产物（project_id 缺失分支）⇒ 原样穿过，⛔ 不写半截 stage_state。
     return StageOutcome(event="decomposed")
 
 

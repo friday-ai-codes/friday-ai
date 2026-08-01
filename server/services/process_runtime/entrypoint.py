@@ -310,3 +310,104 @@ def build_engine_for_session(
 
 # 纯追加纪律（既有 __all__ 行一字不动）：分派器追加进导出面。
 __all__ += ["build_engine_for_session"]
+
+
+async def start_blueprint_orchestration(
+    entrypoint: str,
+    requirement_text: str,
+    *,
+    work_item: Any = None,
+    created_by: Any = None,
+    include_repos: list[str] | None = None,
+    conversation_id: Any = None,
+    node_execution_id: Any = None,
+    initiated_by_user_id: str = "",
+    extra_evidence: list[dict] | None = None,
+    mode: str = "",
+    feature_segments: list[dict] | None = None,
+    feature_meta: dict | None = None,
+    entry_key: str = "",
+    project_id: str = "",
+    space: Any = None,
+    conversation: Any = None,
+    work_item_context: Any = None,
+) -> ConvergenceSession:
+    """建一条 ``technical_blueprint`` 会话（Phase 116-02，蓝图链的生产起点）。
+
+    **(a) 与 ``start_orchestration`` 的关系**：本函数是**纯追加的第二个函数**，签名与它
+    逐字对齐（含 ``mode`` / ``feature_segments`` / ``feature_meta`` 三个 feature list 专用
+    参数与 ``entry_key``），只多出 ``project_id`` 与三个推导上下文形参。
+    ⛔ **绝不给 ``start_orchestration`` 加 ``process_type`` 形参** —— 那会让旧链四个入口
+    共享一个可传错的开关，一次误传就把在途会话打去另一条 stage 图。两个函数的唯一实质
+    差异是 ``create_session`` 的第一实参（``technical_blueprint`` vs ``technical_plan``）。
+
+    **(b) ⭐ ``project_id`` 的必填语义**：调用方须传**已解析好的**
+    ``initiatives.Project.id``；为空时本函数经 ``blueprint_intake.aresolve_project_id``
+    兜底解析（四条推导链的唯一收口），**仍解析不出即抛 ``BlueprintIntakeRejected``，
+    且此刻会话尚未建立**（``ConvergenceSession`` / ``Artifact`` 计数与调用前逐字相等）。
+    ⛔ 绝不落一份 ``meta.project_id`` 为空/为 Space id 的蓝图 —— 那份蓝图的**全部 20 个
+    端点恒 400、图谱恒不入、导出恒不可用**，且三条都「安静地什么都没发生」、没有补救入口。
+
+    **(c) 「非空才写键」纪律**（逐字沿用 ``start_orchestration:93-100`` 的五个 ``if``）：
+    ``extra_evidence`` / ``mode`` / ``feature_segments`` / ``feature_meta`` 均**仅在非空时
+    写键** —— 不提供时会话形态与既有入口逐字一致。⭐ 本函数**额外恒写一个键**
+    ``decomposition["project_id"]``：``_h_bp_intake`` 从那里取（handler 拿不到入口上下文）。
+
+    ⛔ **不落 ``start_orchestration`` 那条旧链退役观察事件** —— 它的语义是「还有谁在走
+    旧链」，蓝图会话落它会把聚合读数直接污染反了（本函数存在恰恰意味着**没在**走旧链）。
+    本函数落自己的 ``blueprint_orchestration_started``。
+    """
+    from delivery.services import ConvergenceSessionService
+    from services.process_runtime.blueprint_intake import aresolve_project_id
+
+    resolved_project_id = str(project_id or "").strip()
+    if not resolved_project_id:
+        # 解析失败会抛 BlueprintIntakeRejected —— **发生在建会话之前**，零副作用。
+        resolved_project_id = await aresolve_project_id(
+            entry=str(entry_key or entrypoint or "unknown"),
+            space=space,
+            feature_meta=feature_meta,
+            conversation=conversation,
+            work_item_context=work_item_context,
+        )
+
+    decomposition: dict[str, Any] = {
+        "requirement_text": requirement_text,
+        "include_repos": include_repos or [],
+        # intake handler 的唯一 project_id 来源（handler 拿不到入口上下文）。
+        "project_id": resolved_project_id,
+    }
+    if extra_evidence:
+        decomposition["extra_evidence"] = extra_evidence
+    if mode:
+        decomposition["mode"] = mode
+    if feature_segments:
+        decomposition["feature_segments"] = feature_segments
+    if feature_meta:
+        decomposition["feature_meta"] = feature_meta
+
+    session = await ConvergenceSessionService().create_session(
+        "technical_blueprint",
+        entrypoint,
+        work_item=work_item,
+        stage_state={"decomposition": decomposition},
+        created_by=created_by,
+        conversation_id=conversation_id,
+        node_execution_id=node_execution_id,
+        initiated_by_user_id=initiated_by_user_id,
+    )
+    _safe_log(
+        "blueprint_orchestration_started",
+        category="caller",
+        component="process_runtime",
+        entry_key=str(entry_key or "unknown"),
+        entrypoint=str(entrypoint or ""),
+        project_id=resolved_project_id,
+        session_id=str(getattr(session, "id", "")),
+        initiated_by_user_id=str(initiated_by_user_id or "system"),
+    )
+    return session
+
+
+# 纯追加纪律（既有 __all__ 行一字不动）：蓝图会话工厂追加进导出面。
+__all__ += ["start_blueprint_orchestration"]
