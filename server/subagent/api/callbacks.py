@@ -2175,6 +2175,90 @@ async def _trigger_blueprint_research_barrier(blueprint_session) -> None:
     if resume is None:
         return
     await resume(blueprint_session)
+    await _afeedback_chat_blueprint_barrier(blueprint_session)
+
+
+async def _afeedback_chat_blueprint_barrier(blueprint_session) -> None:
+    """蓝图会话由 chat 入口发起时，把结果回灌 chat 的 blocking task waiter（116-03）。
+
+    与 :func:`_schedule_chat_plan_resume` 的 (f)(g) 两步**对称**：蓝图侧的两个 barrier 此前
+    只做续驱、**不回灌** ⇒ chat 入口切蓝图后，对话永远停在「深入调研容器运行中…」——
+    waiter 永不满足**且不抛异常**（T-116-22）。
+
+    ⭐ **task key 必须是 ``str(session.id)``**，与 ``plan_research_tools`` 注册 blocking task
+    时的 ``{"task_id": str(session.id), "task_type": "plan_research", ...}`` 逐字对齐 ——
+    key 不一致的症状同样是「waiter 永远等不到，且不抛异常」。
+    ⭐ key 一律由服务端从**会话**反查，⛔ 绝不取 runner 上报的 ``last_output`` 里的任何值
+    （T-116-24）。
+
+    ⭐ **蓝图的「成功」判据不能只看 ``ConvergenceSessionStatus.DONE``**：蓝图 ``DONE`` 的语义
+    是「等人审」，对 chat 用户而言方案**已经产出**、那也是成功；只有蓝图状态 ``failed``
+    （或会话 FAILED）才是失败。
+
+    整段 best-effort（``try/except`` 只 log）：⛔ 绝不反噬 barrier 与容器回调。
+    """
+    try:
+        from delivery.models import (
+            ArtifactVersion,
+            ConvergenceSession,
+            ConvergenceSessionEntrypoint,
+            ConvergenceSessionStatus,
+        )
+        from orchestration.barrier import get_barrier_manager
+        from orchestration.contracts import BlockingTaskResult
+
+        # 守门：仅 chat 入口回灌（与 _schedule_chat_plan_resume 的 entrypoint == CHAT 对称）。
+        if str(getattr(blueprint_session, "entrypoint", "")) != str(
+            ConvergenceSessionEntrypoint.CHAT
+        ):
+            return
+
+        # barrier 之后状态已变，重读会话取权威终态。
+        session = await ConvergenceSession.objects.filter(id=blueprint_session.id).afirst()
+        if session is None:
+            return
+        if session.status not in (
+            ConvergenceSessionStatus.DONE,
+            ConvergenceSessionStatus.FAILED,
+        ):
+            # 仍在挂起（等澄清 / 等下一批调研）⇒ 不回灌，否则会以 success=False 提前把 chat
+            # 阻塞任务误解析为失败（与 _schedule_chat_plan_resume 的 e2 守门同口径）。
+            return
+
+        current_status = ""
+        version_id = getattr(session, "current_artifact_version_id", None)
+        if version_id:
+            row = await (
+                ArtifactVersion.objects.filter(id=version_id)
+                .values("artifact__blueprint_status")
+                .afirst()
+            )
+            current_status = str((row or {}).get("artifact__blueprint_status") or "")
+
+        success = session.status == ConvergenceSessionStatus.DONE and current_status != "failed"
+        output_text = str(session.current_artifact_version_id or "") if success else ""
+        result: BlockingTaskResult = {
+            "task_id": str(session.id),
+            "task_type": "plan_research",
+            "success": success,
+            "output": output_text,
+            "error": "" if success else str(session.error or {}),
+        }
+        satisfied = await get_barrier_manager().task_completed(str(session.id), result)
+        logger.info(
+            "blueprint_chat_barrier_notified",
+            category="sampling",
+            component="subagent",
+            session_id=str(session.id),
+            barrier_satisfied=satisfied,
+        )
+    except Exception:  # noqa: BLE001 — 回灌 best-effort，绝不反噬 barrier 与容器回调
+        logger.warning(
+            "blueprint_chat_barrier_feedback_failed",
+            category="sampling",
+            component="subagent",
+            session_id=str(getattr(blueprint_session, "id", "")),
+        )
 
 
 async def _handle_blueprint_research_completion(
@@ -2394,6 +2478,7 @@ async def _trigger_blueprint_repo_plan_barrier(blueprint_session) -> None:
     if resume is None:
         return
     await resume(blueprint_session)
+    await _afeedback_chat_blueprint_barrier(blueprint_session)
 
 
 # 单次退出最多登记的等待 key 数（半可信输入的上界：容器声明 100 个 key 也不该炸出 100 条 waiter）
