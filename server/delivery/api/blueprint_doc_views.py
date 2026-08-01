@@ -4,6 +4,8 @@
 方法、不发明 ``action`` 分派：
 
 - ``GET  artifacts/<uuid>/blueprint/``                 —— 结构化正文 + quality 四项
+  （Phase 116-04 纯追加第 8 键 ``knowledge_entity_id``：SC-4 反查用，前端拿它调
+  ``GET /api/knowledge/related/<它>/?direction=in&relations=REFERENCES&max_hops=1``）
 - ``GET  artifacts/<uuid>/blueprint/events/``          —— 蓝图阶段事件流（21 个常量子集）
 - ``GET  artifacts/<uuid>/blueprint-review/threads/``  —— 线程详情（含 options 与多轮消息）
 - ``POST artifacts/<uuid>/blueprint-review/threads/``  —— 按选区新开 ``human_comment`` 线程
@@ -237,6 +239,9 @@ class BlueprintDocumentView(APIView):
     permission_classes = [IsAuthenticated]
 
     async def get(self, request: Any, artifact_id: Any) -> Response:
+        # INV-3：delivery app ⛔ 不 import knowledge 的模型层；natural key 由拥有它的
+        # normalizer 模块对外暴露派生函数（内部仍走 generate_entity_id 唯一入口）。
+        from knowledge.sources.blueprint import blueprint_entity_id
         from services.process_runtime.blueprint_quality import citation_coverage
 
         started = time.monotonic()
@@ -271,6 +276,10 @@ class BlueprintDocumentView(APIView):
             "created_at": version.created_at.isoformat() if version.created_at else "",
             "content": content,
             "quality": quality,
+            # SC-4 反查用换算键（Phase 116-04）：前端拿它调
+            # ``GET /api/knowledge/related/<它>/?direction=in&relations=REFERENCES&max_hops=1``
+            # 查「被哪些方案/知识引用」。⛔ 不让前端复制 id 派生规则。
+            "knowledge_entity_id": str(blueprint_entity_id(artifact_id)),
         }
         _log(
             "blueprint_document_read",

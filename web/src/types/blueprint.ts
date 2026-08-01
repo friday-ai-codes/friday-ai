@@ -344,6 +344,12 @@ export interface BlueprintDocumentResponse {
   created_at: string
   content: BlueprintV1
   quality: BlueprintQuality
+  /**
+   * 蓝图在交付知识图谱里的实体 id（Phase 116-04 纯追加第 8 键）。
+   * 反查用：`GET /api/knowledge/related/<它>/?direction=in&relations=REFERENCES&max_hops=1`。
+   * ⛔ 前端不复制该 id 的派生规则——后端 `generate_entity_id` 是唯一入口。
+   */
+  knowledge_entity_id: string
 }
 
 // ── 端点 ② 阶段事件 ──────────────────────────────────────────────────────────

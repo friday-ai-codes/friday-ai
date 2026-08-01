@@ -75,7 +75,7 @@ from knowledge.models import (
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["normalize"]
+__all__ = ["blueprint_entity_id", "normalize"]
 
 _COMPONENT = "knowledge"
 # 正文提炼上界：只为 embedding 服务，⛔ 不做全文归档（全文在 ArtifactVersion.content）。
@@ -99,8 +99,14 @@ def _as_uuid(raw: Any) -> uuid.UUID | None:
         return None
 
 
-def _blueprint_entity_id(artifact_id: Any) -> uuid.UUID:
-    """蓝图实体 natural key（``generate_entity_id`` 唯一入口，⛔ 不复刻 id 派生规则）。"""
+def blueprint_entity_id(artifact_id: Any) -> uuid.UUID:
+    """蓝图实体 natural key（``generate_entity_id`` 唯一入口，⛔ 不复刻 id 派生规则）。
+
+    ⭐ **公开**给读侧换算用（``delivery/api/blueprint_doc_views.py`` 的第 8 键）：
+    INV-3 禁止 delivery app 直接 import ``knowledge`` 的模型层，而 natural key 又只能有
+    一份定义 ⇒ 由拥有这条 natural key 的本模块对外暴露一个派生函数
+    （与 ``initiatives.services.knowledge_graph.project_node_id`` 同款分工）。
+    """
     return generate_entity_id(EntityKind.TECH_PLAN, "blueprint", str(artifact_id))
 
 
@@ -166,7 +172,7 @@ async def _aresolve_target_entity_id(citation: dict) -> uuid.UUID | None:
         return generate_entity_id(EntityKind.DOCUMENT, "feishu_document", token)
     if source_type == "blueprint":
         artifact_id = _as_uuid(source_id)
-        return None if artifact_id is None else _blueprint_entity_id(artifact_id)
+        return None if artifact_id is None else blueprint_entity_id(artifact_id)
     if source_type == "artifact_version":
         from delivery.models import ArtifactVersion
 
@@ -178,7 +184,7 @@ async def _aresolve_target_entity_id(citation: dict) -> uuid.UUID | None:
             .values_list("artifact_id", flat=True)
             .afirst()
         )
-        return None if artifact_id is None else _blueprint_entity_id(artifact_id)
+        return None if artifact_id is None else blueprint_entity_id(artifact_id)
     if source_type in ("repo_file", "rag_chunk", "repo_charter"):
         repo_id = _repository_id(citation)
         return None if repo_id is None else repository_node_id(repo_id)
@@ -343,7 +349,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         )
         return []
 
-    entity_id = _blueprint_entity_id(artifact_id)
+    entity_id = blueprint_entity_id(artifact_id)
     # 脱敏不可绕过：半可信正文入图（进 embedding）前先过 redact_secrets_in_text。
     content_text = redact_secrets_in_text(_content_text(content))
     citations = content.get("citations")
