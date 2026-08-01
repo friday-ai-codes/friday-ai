@@ -26,7 +26,7 @@
       字面量），且用例断言的是**落库版本**的 ``content["schema_version"]``。
    b. **``StageOutcome`` 不带 ``current_artifact_version`` ⇒ 会话卡死在 spec_gate**。
       ``engine.py:108-119`` 只在非 None 时透传（无条件透传会把每次不产版本的转移都把
-      指针抹成 NULL）；不传 ⇒ ``session.current_artifact_version_id`` 恒 None ⇒
+      指针抹成 NULL）；不传 ⇒ 会话上那个版本指针字段恒 None ⇒
       ``blueprint_spec_gate`` 取不到版本即判 ``needs_clarification`` +
       ``blueprint_spec_gate_no_artifact_version`` warning。调用方（handler）必须显式带回。
    c. **MCP 的 ``McpWorkItemContext.space`` 是 ``projects.Space`` FK 不是 Project id**
@@ -62,10 +62,13 @@ _COMPONENT = "blueprint_intake"
 __all__ = [
     "GOAL_BLOCK_ID",
     "MINIMAL_BLUEPRINT_SKELETON",
+    "FEATURE_POINT_INTENTS",
+    "DEFAULT_FEATURE_POINT_INTENT",
     "BlueprintIntakeRejected",
     "build_skeleton",
     "aresolve_project_id",
     "aseed_blueprint_artifact",
+    "adecompose_feature_points",
 ]
 
 # 骨架里承载需求原文的那个 block 的 id（`iter_blocks` 走查 `requirement_spec.goal`
@@ -83,6 +86,18 @@ _PROJECT_UNRESOLVED_DETAIL = "无法确定该需求所属的项目，请在项�
 # 到满歧义，第一轮必然开一堆无意义澄清线程）。
 _DEFAULT_TITLE = "未命名技术蓝图"
 _DEFAULT_GOAL_TEXT = "（需求原文缺失，待澄清）"
+
+# `requirement_spec.feature_points[].intent` 的 schema 枚举（`blueprint_schema.py:191-194`）。
+FEATURE_POINT_INTENTS: frozenset[str] = frozenset({"greenfield", "brownfield", "fix"})
+# feature list 直采路径的缺省 intent：feature list 条目的产品语义就是「要做的新功能点」，
+# 真实的 greenfield/brownfield 判定由后续 spec_gate 的意图分类（`BLUEPRINT_SPEC_GATE`）
+# 精化。⛔ 这里不猜、不调 LLM —— 直采路径的全部价值就在于「零 LLM 且重跑不翻版本」。
+DEFAULT_FEATURE_POINT_INTENT = "greenfield"
+
+# 功能点拆分的规模上界（LLM 产出与直采同用；防一次拆出上千条把 content 撑爆）
+_MAX_FEATURE_POINTS = 200
+_MAX_FP_TITLE_CHARS = 200
+_MAX_FP_DESC_CHARS = 1000
 
 
 def _schema_version() -> str:
@@ -396,3 +411,250 @@ async def _amark_researching(artifact: Any, session: Any) -> None:
             artifact_id=str(getattr(artifact, "id", "")),
             error=redact_secrets_in_text(str(exc)),
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 功能点拆分（decompose stage 的落地实现）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def _feature_point_id(index: int) -> str:
+    """⭐ **确定性** feature_point id（``fp_1`` / ``fp_2`` …，按输入顺序）。
+
+    ⛔ **绝不用随机 uuid**：``feature_points`` 有重复 id 校验（``validate_blueprint`` 后置
+    检查 e），而随机 id 会让**每次重跑都翻一个新版本**，把版本历史刷成噪声、diff 视图
+    不可用（T-116-14；114-04 已为时间戳立过同款纪律）。确定性 id ⇒ 同一 segments 重跑得
+    同一份 content ⇒ ``content_hash`` 相等 ⇒ ``add_version`` 复用 current 不翻版本。
+    """
+    return f"fp_{index + 1}"
+
+
+def _normalize_intent(value: Any) -> str:
+    """把任意输入收敛到 schema 枚举内（不在枚举内一律落缺省值，⛔ 不外抛）。"""
+    text = str(value or "").strip().lower()
+    return text if text in FEATURE_POINT_INTENTS else DEFAULT_FEATURE_POINT_INTENT
+
+
+def _points_from_segments(segments: list[dict]) -> list[dict]:
+    """``feature_segments`` → ``requirement_spec.feature_points``（**零 LLM** 直采）。
+
+    映射表（116-03 的 feature list 入口据它传参）：
+
+    ==================  =========================================================
+    segment 字段         feature_point 字段
+    ==================  =========================================================
+    （位序 index）       ``id`` = :func:`_feature_point_id`（``fp_{index+1}``）
+    ``title``            ``title``（截断；空条目整条丢弃 —— schema 要求非空）
+    ``intent`` （可选）  ``intent``（不在枚举内落 :data:`DEFAULT_FEATURE_POINT_INTENT`）
+    ``module``/``layer`` ``description``：一个 paragraph block，``block_id``
+                         = ``fp_{n}_desc_1``（确定性，重跑同值）
+    ==================  =========================================================
+    """
+    points: list[dict] = []
+    for index, segment in enumerate(segments[:_MAX_FEATURE_POINTS]):
+        if not isinstance(segment, dict):
+            continue
+        title = str(segment.get("title") or "").strip()[:_MAX_FP_TITLE_CHARS]
+        if not title:
+            continue
+        point_id = _feature_point_id(len(points))
+        point: dict[str, Any] = {
+            "id": point_id,
+            "title": title,
+            "intent": _normalize_intent(segment.get("intent")),
+        }
+        parts = [
+            str(segment.get(key) or "").strip() for key in ("module", "layer") if segment.get(key)
+        ]
+        if parts:
+            point["description"] = [
+                {
+                    "block_id": f"{point_id}_desc_1",
+                    "type": "paragraph",
+                    "text": " / ".join(parts)[:_MAX_FP_DESC_CHARS],
+                }
+            ]
+        points.append(point)
+    return points
+
+
+def _decompose_system_prompt() -> str:
+    return (
+        "你是技术蓝图的需求拆分助手。用户会给你一段需求原文，请把它拆成互不重叠的功能点。\n"
+        "要求：① 每个功能点是一句可独立验收的能力描述；② 不要发明需求里没有的功能；"
+        "③ intent 三选一：greenfield（净新增）/ brownfield（存量改造）/ fix（缺陷修复），"
+        "判不出就填 greenfield；④ 严格输出 JSON："
+        '{"items": [{"title": "功能点标题", "intent": "greenfield"}]}'
+    )
+
+
+async def _allm_feature_points(session: Any, requirement_text: str) -> list[dict] | None:
+    """LLM 拆分功能点；**任何不可得情形返回 ``None``**（⛔ 不抛、⛔ 不落 FAILED）。
+
+    复用**已注册**的 ``CallSource.BLUEPRINT_DECOMPOSE``（``agents/call_source.py:112``）——
+    ⛔ 零新增枚举（清单锁 ``tests/test_model_usage_call_source.py:77``）。
+    """
+    session_id = str(getattr(session, "id", "") or "")
+    try:
+        import json
+        import re
+
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from agents.call_source import CallSource, use_call_source
+        from agents.llm_factory import build_chat_model
+        from services.provider_config import ProviderConfigService
+
+        resolved = await ProviderConfigService.aresolve()
+        model_name = (getattr(resolved, "extra", None) or {}).get("default_model", "")
+        if not model_name:
+            return None
+
+        model = build_chat_model(resolved, model_name, streaming=False)
+        messages = [
+            SystemMessage(content=_decompose_system_prompt()),
+            HumanMessage(content=f"## 需求原文\n{requirement_text[:_MAX_GOAL_CHARS]}"),
+        ]
+        with use_call_source(CallSource.BLUEPRINT_DECOMPOSE):
+            response = await model.ainvoke(messages)
+
+        raw = getattr(response, "content", "")
+        text = raw if isinstance(raw, str) else str(raw or "")
+        candidates = re.findall(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL) + [text]
+        for block in candidates:
+            try:
+                data = json.loads(block.strip())
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(data, dict) and isinstance(data.get("items"), list):
+                return [item for item in data["items"] if isinstance(item, dict)]
+        return None
+    except Exception as exc:  # noqa: BLE001 — fail-soft：上游抖动绝不废掉整条蓝图
+        logger.warning(
+            "blueprint_decompose_llm_failed",
+            category="sampling",
+            component=_COMPONENT,
+            session_id=session_id,
+            error=redact_secrets_in_text(str(exc)),
+        )
+        return None
+
+
+async def _aload_latest_content(artifact: Any) -> tuple[dict, Any]:
+    """取**最新** ``version_no`` 的 content 与该版本（⛔ 绝不读 ``session`` 钉住的那一版）。
+
+    STATE 114-04 纪律：上游 ``add_version`` 已推进 ``current_version``，而 session 钉住的
+    那一版只在显式 ``StageOutcome`` 里才更新 —— 读 session 那一版会把上游成果覆盖回旧内容。
+    """
+    from delivery.models import ArtifactVersion
+
+    version = await (
+        ArtifactVersion.objects.filter(artifact=artifact).order_by("-version_no").afirst()
+    )
+    content = getattr(version, "content", None)
+    return (copy.deepcopy(content) if isinstance(content, dict) else {}), version
+
+
+async def adecompose_feature_points(
+    *,
+    session: Any,
+    artifact: Any,
+    requirement_text: str,
+    feature_segments: list[dict] | None = None,
+) -> Any:
+    """把需求拆成 ``requirement_spec.feature_points`` 并落新版本；**无变化返 ``None``**。
+
+    两条路径：
+
+    - **(a) ``feature_segments`` 非空 ⇒ 直接映射，⛔ 零 LLM**（feature list 入口）。
+      映射表与确定性 id 规则见 :func:`_points_from_segments` / :func:`_feature_point_id`。
+      重跑得同一份 content ⇒ ``content_hash`` 相等 ⇒ ``add_version`` 复用 current ⇒
+      本函数返 ``None``（无版本噪声）。
+    - **(b) 否则走 LLM**（复用 ``CallSource.BLUEPRINT_DECOMPOSE``，⛔ 零新增枚举）。
+      ⭐ **LLM 不可得 / 解析失败 ⇒ fail-soft**：保留空 ``feature_points``、记一条
+      ``blueprint_decompose_unavailable`` warning，**⛔ 不抛、⛔ 不落 FAILED** —— 规格门
+      本就会因信息不足而开澄清，那才是正确的下一步；一次上游抖动不该废掉整条蓝图。
+
+    Returns:
+        新 ``ArtifactVersion``（本次真的翻了版本）；``None`` = 未产版本（无 artifact /
+        无基线版本 / 内容无实质变化 / 拆不出任何功能点）。
+    """
+    from delivery.services.artifact_service import ArtifactContentInvalid, ArtifactService
+
+    started = time.monotonic()
+    session_id = str(getattr(session, "id", "") or "")
+    if artifact is None:
+        return None
+
+    segments = [s for s in (feature_segments or []) if isinstance(s, dict)]
+    dropped = 0
+    if segments:
+        source = "feature_segments"
+        points = _points_from_segments(segments)
+        dropped = len(segments) - len(points)
+    else:
+        source = "llm"
+        items = await _allm_feature_points(session, str(requirement_text or ""))
+        if items is None:
+            logger.warning(
+                "blueprint_decompose_unavailable",
+                category="caller",
+                component=_COMPONENT,
+                session_id=session_id,
+                artifact_id=str(getattr(artifact, "id", "")),
+                reason="llm_unavailable",
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            return None
+        points = _points_from_segments(items)
+        dropped = len(items) - len(points)
+
+    if not points:
+        return None
+
+    content, base = await _aload_latest_content(artifact)
+    if base is None or not content:
+        return None
+    spec = content.get("requirement_spec")
+    if not isinstance(spec, dict):
+        spec = {}
+        content["requirement_spec"] = spec
+    spec["feature_points"] = points
+
+    try:
+        version = await ArtifactService().add_version(
+            artifact,
+            content,
+            produced_by_session_id=session_id,
+            produced_by_ref="blueprint_decompose",
+        )
+    except ArtifactContentInvalid as exc:
+        # 拆分产出不过 schema ⇒ **不落半合法版本**，保留基线并记 warning（规格门会开澄清）。
+        logger.warning(
+            "blueprint_decompose_invalid_content",
+            category="caller",
+            component=_COMPONENT,
+            session_id=session_id,
+            artifact_id=str(getattr(artifact, "id", "")),
+            error=redact_secrets_in_text(str(exc)),
+        )
+        return None
+
+    if str(version.id) == str(base.id):
+        # `content_hash` 相等 ⇒ `add_version` 返回 current 不翻版本（重跑零版本噪声）。
+        return None
+
+    logger.info(
+        "blueprint_decompose_completed",
+        category="caller",
+        component=_COMPONENT,
+        session_id=session_id,
+        artifact_id=str(getattr(artifact, "id", "")),
+        source=source,
+        point_count=len(points),
+        dropped_count=max(dropped, 0),
+        version_no=int(version.version_no),
+        initiated_by_user_id=str(getattr(session, "initiated_by_user_id", "") or "") or "system",
+        duration_ms=round((time.monotonic() - started) * 1000, 2),
+    )
+    return version
