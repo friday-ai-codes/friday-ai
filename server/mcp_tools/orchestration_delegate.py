@@ -65,9 +65,15 @@ async def _load_canonical(session: Any) -> tuple[str | None, dict, str]:
 
     用 ``current_plan_version`` 标量 + ``afirst`` 取 ``PlanVersion``；content 非 dict 时回退
     ``{}`` / 空串（防御性，对齐 render/merged_plan fail-safe）。
+
+    ⭐ **蓝图会话换渲染器**（同步点 2 / G3 的 markdown 那一半）：
+    ``render_merged_plan_markdown`` 读的是 v0 ``MergedPlan`` 的顶层键，对 blueprint/v1
+    会渲染出一篇**结构合法而内容为空**的文档 —— 而这篇 markdown 正是写进飞书文档的那份。
+    蓝图走 ``render_blueprint_markdown``（水印由它按 ``blueprint_status`` 无条件加）。
     """
     from delivery.models import ArtifactVersion
     from services.process_runtime import render_merged_plan_markdown
+    from services.process_runtime.blueprint_observation import is_blueprint_session
 
     av_id = (
         str(session.current_artifact_version_id) if session.current_artifact_version_id else None
@@ -77,7 +83,34 @@ async def _load_canonical(session: Any) -> tuple[str | None, dict, str]:
     av = await ArtifactVersion.objects.filter(id=av_id).afirst()
     if av is None or not isinstance(av.content, dict):
         return av_id, {}, ""
+    if is_blueprint_session(session):
+        return av_id, av.content, await _arender_blueprint(session, av.content)
     return av_id, av.content, render_merged_plan_markdown(av.content)
+
+
+async def _arender_blueprint(session: Any, content: dict) -> str:
+    """blueprint/v1 content → markdown（水印按真实 ``blueprint_status`` 渲染）。
+
+    取不到状态时传空串 —— ``render_blueprint_markdown`` 的白名单是**闭合集合**，空串落在
+    集合外 ⇒ 当作「未确认」渲染水印，方向恰好是 fail-safe。整段吞异常回空串：markdown 是
+    响应装饰，⛔ 渲染失败不废掉主载荷（主载荷的正确性由 G3 的派生投影单独保证）。
+    """
+    try:
+        from services.process_runtime.blueprint_observation import (
+            ablueprint_observation,
+            render_observed_blueprint,
+        )
+
+        observation = await ablueprint_observation(session, with_threads=False)
+        return render_observed_blueprint(content, observation.current_status)
+    except Exception:  # noqa: BLE001 — 渲染是装饰，绝不废掉主载荷
+        logger.warning(
+            "mcp_blueprint_markdown_render_failed",
+            category="sampling",
+            component="mcp_tools",
+            session_id=str(getattr(session, "id", "")),
+        )
+        return ""
 
 
 async def _aggregate_orchestration_usage(start_dt: Any) -> dict[str, Any]:
