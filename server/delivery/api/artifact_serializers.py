@@ -119,6 +119,24 @@ class ArtifactTimelineSerializer(ArtifactListSerializer):
         if current is None:
             return None
         try:
+            # ⭐ P-4 的第二个面：本字段是 SerializerMethodField，``obj`` 是 Artifact ⇒
+            # **拿得到蓝图状态的真实值**，而注册表契约 ``Callable[[dict], str]`` 会把它
+            # 截断（分支只能传空串 = 当作未确认）。蓝图 content 在此绕过注册表直调渲染
+            # 器并传真值——这同时修掉该字段对蓝图恒为 v0 空壳的结构性问题。该字段**已
+            # 上线、已有前端消费者**（ArtifactTimeline.vue），故**只修后端，⛔ 不碰组件**。
+            content = current.content
+            if isinstance(content, dict) and content.get("schema_version"):
+                from services.process_runtime.blueprint_render import (
+                    blueprint_status_of,
+                    render_blueprint_markdown,
+                )
+                from services.process_runtime.blueprint_schema import (
+                    BLUEPRINT_SCHEMA_VERSION,
+                )
+
+                if content.get("schema_version") == BLUEPRINT_SCHEMA_VERSION:
+                    status = blueprint_status_of(obj)
+                    return render_blueprint_markdown(content, blueprint_status=status)
             return render_markdown(obj.artifact_type, current.content)
         except Exception:
             # 渲染 best-effort：失败不反噬时间线呈现。
