@@ -395,7 +395,12 @@ async def test_h_route_emits_snapshot_payload_and_strips_snapshot_from_routing()
 
 @pytest.mark.asyncio
 async def test_h_route_without_snapshot_keeps_minimal_payload() -> None:
-    """snapshot 缺失（stub router / skipped）→ 优雅降级为现状精简 payload。"""
+    """snapshot 缺失（stub router / skipped）→ 精简 payload（候选只留两键）。
+
+    RELY-03 后：精简不等于把降级事实一起精简掉——``router_version`` /
+    ``degraded`` / ``degrade_reason`` 三键**恒在场**，缺席才是 bug。候选级仍然
+    只有 repo_id / confidence（不带 score / breakdown），这一半保持不变。
+    """
     routing = {
         "candidates": [{"repo_id": "r1", "confidence": "high", "repository_name": "N"}],
         "router_version": "v2",
@@ -405,7 +410,12 @@ async def test_h_route_without_snapshot_keeps_minimal_payload() -> None:
     outcome = await _h_route(SimpleNamespace(id="s1"), engine)
 
     payload = engine.session_service._emit_event.call_args.args[2]
-    assert payload == {"candidates": [{"repo_id": "r1", "confidence": "high"}]}
+    assert payload == {
+        "candidates": [{"repo_id": "r1", "confidence": "high"}],
+        "router_version": "v2",
+        "degraded": False,
+        "degrade_reason": "",
+    }
     assert "snapshot" not in outcome.stage_state_update["routing"]
 
 

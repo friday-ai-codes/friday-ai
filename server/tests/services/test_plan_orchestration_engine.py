@@ -163,7 +163,80 @@ async def test_route_persists_routing_and_emits_event() -> None:
     assert reloaded.routing == routing
     emitted = [call for call in spy.call_args_list if call.args and call.args[0] == "repo.routing"]
     assert len(emitted) == 1
-    assert emitted[0].args[2] == {"candidates": [{"repo_id": "r1", "confidence": "high"}]}
+    assert emitted[0].args[2] == {
+        "candidates": [{"repo_id": "r1", "confidence": "high"}],
+        "router_version": "v2",
+        "degraded": False,
+        "degrade_reason": "",
+    }
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_route_minimal_payload_carries_degrade_facts() -> None:
+    """RELY-03：无 stage0 快照的 v1_fallback 也必须把降级三键发出去。
+
+    这是「降级徽标在真降级时反而不显示」那个洞的回归锚：``_h_route`` 的快照分支
+    要求 ``snapshot["stage0"]`` 非空，而 v1_fallback 的 snapshot 只有 stage1，
+    于是它落到精简分支。精简分支一旦不带 ``degraded``，前端严格判等就恒为假。
+    """
+    session = await _make_session("route")
+    router = AsyncMock()
+    router.route = AsyncMock(
+        return_value={
+            "candidates": [{"repo_id": "r1", "confidence": "low"}],
+            "router_version": "v1_fallback",
+            "degraded": True,
+            "degrade_reason": "upstream_error",
+            # stage0 缺席 ⇒ 走精简分支（与 repo_router_v2 的 v1_fallback 出参同形）
+            "snapshot": {"stage1": {"skipped_reason": "v1_fallback"}},
+        }
+    )
+    engine = ProcessEngine(
+        session_service=ConvergenceSessionService(), deps=SimpleNamespace(router=router)
+    )
+    spy = AsyncMock()
+    engine.session_service._emit_event = spy
+
+    await engine.advance(session)
+
+    emitted = [call for call in spy.call_args_list if call.args and call.args[0] == "repo.routing"]
+    assert len(emitted) == 1
+    payload = emitted[0].args[2]
+    assert payload["degraded"] is True
+    assert payload["degrade_reason"] == "upstream_error"
+    assert payload["router_version"] == "v1_fallback"
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_route_snapshot_payload_carries_degrade_reason() -> None:
+    """RELY-03：快照分支同样带 ``degrade_reason``，解释句才说得出「为什么」。"""
+    session = await _make_session("route")
+    router = AsyncMock()
+    router.route = AsyncMock(
+        return_value={
+            "candidates": [{"repo_id": "r1", "confidence": "medium"}],
+            "router_version": "v2_stage0_only",
+            "degraded": True,
+            "degrade_reason": "timeout",
+            "snapshot": {
+                "stage0": {"query": "q"},
+                "candidates": [{"repo_id": "r1", "score": 0.8, "breakdown": {"text": 0.8}}],
+            },
+        }
+    )
+    engine = ProcessEngine(
+        session_service=ConvergenceSessionService(), deps=SimpleNamespace(router=router)
+    )
+    spy = AsyncMock()
+    engine.session_service._emit_event = spy
+
+    await engine.advance(session)
+
+    payload = [c for c in spy.call_args_list if c.args and c.args[0] == "repo.routing"][0].args[2]
+    assert payload["degraded"] is True
+    assert payload["degrade_reason"] == "timeout"
 
 
 @pytest.mark.django_db

@@ -130,6 +130,10 @@ def _routing_snapshot_payload(
         ],
         "router_version": routing.get("router_version", ""),
         "degraded": bool(routing.get("degraded", False)),
+        # RELY-03：降级**原因**与 degraded 同批出参。少了它，编排链路上的降级提示
+        # 只能说「本次未经 LLM 推理」而说不出为什么——受控闭集里的六个值本身就是
+        # 给用户看的（``classify_degrade_reason``），留在 trace 里等于没有。
+        "degrade_reason": str(routing.get("degrade_reason") or ""),
         "auto_selected": bool(routing.get("auto_selected", False)),
         "stage0": snapshot.get("stage0") or {},
         "stage1": snapshot.get("stage1") or {},
@@ -162,7 +166,17 @@ async def _h_route(session: Any, engine: Any) -> StageOutcome:
     trace: dict[str, Any] = {
         "candidates": [
             {"repo_id": c.get("repo_id"), "confidence": c.get("confidence")} for c in candidates
-        ]
+        ],
+        # RELY-03：降级三键在**精简 payload 上也必须在场**。快照分支的门是
+        # ``snapshot["stage0"]`` 非空，而 v1_fallback 的 snapshot 只有 stage1
+        # （``codegraph/services/repo_router_v2.py:1847``）、skipped 与 stub router
+        # 根本没有 snapshot ——三者全部落到这条精简分支。键缺失时前端的
+        # ``payload.degraded === true`` 恒为假，于是「降级」这个事实恰好在
+        # **真降级**的 v1_fallback 上永不出现。补键而不是让前端按 router_version
+        # 猜：降级是后端算好的事实，前端不推断（与 110-05 的既有纪律一致）。
+        "router_version": str(routing.get("router_version") or ""),
+        "degraded": bool(routing.get("degraded", False)),
+        "degrade_reason": str(routing.get("degrade_reason") or ""),
     }
     if isinstance(snapshot, dict) and snapshot.get("stage0"):
         trace = _routing_snapshot_payload(routing, snapshot)
