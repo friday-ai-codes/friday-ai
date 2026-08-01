@@ -365,6 +365,7 @@ PLAN 的验收脚本写 `server/services/process_runtime/plan_deepen_service.py`
 
 ## Self-Check: PASSED
 
-- 创建文件存在：`server/tests/services/process_runtime/test_entry_dispatch_wiring.py`、`server/tests/agents/test_chat_blueprint_entry.py`。
-- 三个提交 `92ebd207` / `4d4f7396` / `1086dfe2` 均在 `git log` 中。
-- 两个变异备份（`/tmp/mut_a_backup.py` / `/tmp/mut_b_backup.py`）在仓库**之外**，`git status` 无残留临时文件、无一次性探针文件。
+- 创建文件存在：`server/tests/services/process_runtime/test_entry_dispatch_wiring.py`、`server/tests/agents/test_chat_blueprint_entry.py`、`.planning/phases/116-entry/116-03-SUMMARY.md`。
+- 五个提交 `92ebd207`（Task 1）/ `4d4f7396`（Task 2）/ `1086dfe2`（Task 3）/ `1d22997c`（SUMMARY）/ `78a1699c`（STATE + ROADMAP）均在 `git log` 中。
+- 两个变异备份（`/tmp/mut_a_backup.py` / `/tmp/mut_b_backup.py`）在仓库**之外**，`git status` **完全干净**：无残留临时文件、无一次性探针文件。
+- 分支 `milestone/v0.20.0-blueprint`，全程在 worktree `.claude/worktrees/v0.20-blueprint` 内作业，⛔ 未触碰主检出。
