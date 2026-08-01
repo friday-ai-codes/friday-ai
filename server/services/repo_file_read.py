@@ -115,10 +115,15 @@ def _number_lines(
     line_start: int | None,
     line_end: int | None,
 ) -> list[dict[str, Any]]:
-    """把正文行编号成 ``{"line_no", "text"}``（**1-based**，与 citation 的 ``line_start`` 同口径）。
+    """把**连续一段**正文行编号成 ``{"line_no", "text"}``（**1-based**，与 citation 同口径）。
 
-    给了区间时按区间裁剪：镜像路径的切片本就等于区间（裁剪是恒等操作），索引回退路径拿到的是
-    整块 chunk 拼接结果，裁剪把它收窄到调用方真正要的那几行。
+    ⚠️ ``texts`` 必须是从 ``base_line_no`` 起**逐行连续**的一段（镜像路径的切片、或**单个**
+    chunk 的正文）。⛔ 绝不能拿它去编号「多个 chunk 首尾相接的拼接结果」—— 本仓的 chunker
+    既会产出重叠片（``symbol_chunker._split_large`` 默认 ``overlap_lines=5``）也会产出带空洞
+    的合并组（``_merge_small_adjacent`` 允许 ``gap <= 2``），连续假定一旦不成立，就会把别的行
+    的源码贴上被引行的行号（116-REVIEW MJ-01）。多 chunk 场景走 ``_number_chunk_lines``。
+
+    给了区间时按区间裁剪：镜像路径的切片本就等于区间（裁剪是恒等操作）。
     """
     numbered: list[dict[str, Any]] = []
     for offset, text in enumerate(texts):
@@ -129,6 +134,39 @@ def _number_lines(
             continue
         numbered.append({"line_no": line_no, "text": text})
     return numbered
+
+
+def _number_chunk_lines(
+    chunks: list[dict[str, Any]],
+    *,
+    line_start: int | None,
+    line_end: int | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """按**每个 chunk 自身的 ``start_line``** 给索引回退路径的正文编号（116-REVIEW MJ-01）。
+
+    三条纪律：
+
+    1. ⭐ **行号来自 chunk 自己的 ``start_line``**，⛔ 不跨 chunk 连续数 —— chunk 一重叠或
+       有空洞，连续计数就会错位。
+    2. **重叠行按 ``line_no`` 去重**，``setdefault`` ⇒ chunk_index 小的先写者保留（chunks
+       已按 ``chunk_index`` 排序，即取更靠前那一片的正文）。
+    3. ⭐ **先按区间过滤、再按 ``limit`` 截断**（⛔ 顺序不得反过来）—— 反过来会让「区间落在
+       大 chunk 尾部」的请求过滤成空行数组，把「明明能读到」表现成「读不到」。
+
+    空洞由**行号跳变**如实表达（例如 ``[3,4,5,40,41,42]``），⛔ 不把空洞后的行重新编号。
+    """
+    numbered: dict[int, str] = {}
+    for chunk in chunks:
+        start = int(chunk.get("start_line") or 0) or 1
+        for offset, text in enumerate(str(chunk.get("content") or "").splitlines()):
+            line_no = start + offset
+            if line_start is not None and line_no < int(line_start):
+                continue
+            if line_end is not None and line_no > int(line_end):
+                continue
+            numbered.setdefault(line_no, text)
+    return [{"line_no": no, "text": numbered[no]} for no in sorted(numbered)[:limit]]
 
 
 async def _acheck_excluded(repository_id: str, *paths: str, surface: str) -> bool:
@@ -299,7 +337,13 @@ async def aread_repository_file(
 
     ``status`` ∈ ``{"ok", "excluded", "not_found", "unavailable"}``；后三者下 ``content``
     恒为 ``""``、``lines`` 恒为 ``[]``。``lines`` 项形状 ``{"line_no": int, "text": str}``
-    （**1-based**）。
+    （**1-based**，按 ``line_no`` 升序且**不重复**）。
+
+    ⚠️ ``lines`` 与 ``content`` 是**两份产出、两套口径**（116-REVIEW MJ-01）：``content`` 是
+    chunk 正文首尾相接后按 ``max_lines`` 截断的**既有拼接口径**（``truncated`` /
+    ``returned_lines`` / ``total_lines`` 都描述它，⛔ 为 MCP 对外契约锁死）；``lines`` 的行号
+    来自**每个 chunk 自身的 ``start_line``**，⇒ 走索引回退时行号**可能不连续**（chunk 之间
+    有空洞时如实跳变），调用方⛔不得假定 ``lines`` 是一段连续区间。
     """
     started = time.monotonic()
     requested_path = str(path or "")
@@ -429,19 +473,21 @@ async def aread_repository_file(
         if not language:
             language = str(chunk.get("language") or "")
         texts.extend(str(chunk.get("content") or "").splitlines())
+    # ⚠️ ``content`` / ``truncated`` / ``returned_lines`` / ``total_lines`` 描述的是**旧口径的
+    # 拼接产出**（chunk 正文首尾相接后按 limit 截断），⛔ 逐字保持不变 —— 那是
+    # ``get_repository_file`` 的对外契约。``lines`` 是另一份产出，走 chunk 自身行号（MJ-01）。
     truncated = len(texts) > limit
     returned_texts = texts[:limit]
-    base_line_no = int(selected_chunks[0].get("start_line") or 0) or 1 if selected_chunks else 1
     result = _neutral("ok", path=requested_path, line_start=line_start, line_end=line_end)
     result.update(
         {
             "resolved_path": resolved_path,
             "content": "\n".join(returned_texts),
-            "lines": _number_lines(
-                returned_texts,
-                base_line_no=base_line_no,
+            "lines": _number_chunk_lines(
+                selected_chunks,
                 line_start=line_start,
                 line_end=line_end,
+                limit=limit,
             ),
             "truncated": truncated,
             "source": "index",
