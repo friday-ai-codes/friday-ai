@@ -16,22 +16,61 @@ deferred:
 human_verification:
   # ⚠️ 以下四项**均不阻塞任何 SC**（status 仍为 passed）：SC 的可判定内核已由自动化证据结论性覆盖，
   # 这里剩下的是 happy-dom 无版面引擎 / 无真实渲染引擎所致的**视觉抛光面**，属 UAT 范畴。
+  #
+  # ⭐ 2026-08-02 更新：四项的 `why_human` 全部是 happy-dom 的能力缺口，而**不是**真需要人的判断。
+  # Chromium 有版面引擎、真 `getBoundingClientRect`、真 IntersectionObserver、真媒体查询 ⇒ 四条
+  # 理由同时消解。已用 Playwright 从 `/knowledge/blueprints/:id` 真实入口实跑，见各项 `result` /
+  # `covered_by` / `mutation_evidence`。**四项判定核心全部 pass，过程中发现并修复 1 个真实缺陷。**
+  # 每项仍留的 `residual_human` 是**真正需要人眼**的审美判断，⛔ 不因为主体转绿就整条勾掉。
+  # 执行记录：`.planning/UAT-AUTOMATION-REPORT.md` §10。
   - test: "在真实浏览器打开一份含 mermaid 块的蓝图，确认交互流程图正常出图"
     expected: "mermaid 块渲染为 SVG 流程图；空源码时不出现空 `<pre>`"
     why_human: "组件测试一律 `stubs: { MermaidDiagram: true }`（否则要连带 `vue-final-modal` 插件）；`MermaidDiagram.vue` 是 §13.2 冻结的既有件，本相位零改动，自动化只能验到「传对了 `code` prop + 空源码由调用方 `v-if`」这一层"
     blocking: false
+    result: pass
+    verified: 2026-08-02
+    covered_by: "`web/tests/e2e/blueprint-viewer-visual.spec.ts` › `UAT 115-1`（3 例）"
+    evidence: "真 `<svg>` 恰 1 个且有面积（>80×80）、节点文案「库存充足?」出现在 SVG 内部、`path` 连线 >0、出图态下同卡零 `<pre>`、`放大` 入口出现。空源码（缺 `mermaid` 键 / 全空白串）两张卡合计 4 行步骤表照渲而 `<pre>` / `blueprint-block` / `svg` 三者**全 0**。另有非法源码档回退 `<pre>` + 「无法渲染流程图，已展示源码」作**非恒真对照**（证明「零 pre」不是因为 pre 永不渲染）"
+    mutation_evidence: "① `MermaidDiagram.render` 的 `svg.value = out.svg` 改成 `''` ⇒ SVG 计数断言 1→0 转红。② 去掉 `InteractionFlowsSection.mermaidBlocks` 的空源码闸（并让 `BlueprintBlock` 内层 `v-else-if=\"text.trim()\"` 恒真）⇒ **冒出 2 个空 `<pre>`**，`pre` 计数断言转红 —— 即 UAT 原文所防的那个形状"
+    residual_human:
+      - "「放大」全屏弹层（`VueFinalModal`）的内容与可读性未断言：只验了触发按钮存在，未打开弹层"
+      - "复杂真实流程图的**排版观感**（节点是否重叠、连线是否绕、长中文标签是否被截）仍需人眼——自动化只能证明「出了一张有节点有连线的 SVG」"
   - test: "拖选一段正文，观察选区 popover 的落点"
     expected: "popover 贴着选区末端出现，不遮挡被选文本，Esc 关闭且保留选区"
     why_human: "happy-dom 无版面引擎，`Range.prototype.getBoundingClientRect` 返回零矩形（115-02 的 `domCapabilities.test.ts` 能力锁已实测登记）⇒ 屏幕坐标无法自动化断言。**触发与载荷逻辑已自动化覆盖**（同块/跨块分流、offset 两段式计算）"
     blocking: false
+    result: pass（判定核心；「贴着**末端**」一句与实现不符，见 residual_human 第 1 条）
+    verified: 2026-08-02
+    covered_by: "`web/tests/e2e/blueprint-viewer-visual.spec.ts` › `UAT 115-2`（2 例）"
+    evidence: "真鼠标拖选（`mouse.down/move/up`）后选区矩形非零（正是 happy-dom 拿不到的那件东西）；浮层与选区矩形**零交叠**（不遮挡）、竖直缝隙 ∈ [0, 14]px（`side-offset=8` + 子像素余量，即「贴着」）、浮层水平中心与选区中心相差 ≤24px（**锚在选区上**）。Esc 后浮层 `count == 0` 且 `window.getSelection().toString()` **逐字等于**拖选前的文本"
+    mutation_evidence: "① 把 `PopoverAnchor` 的 `anchorStyle` 退化成零矩形（即 happy-dom 的形状）⇒ 浮层飘到选区外 **352px**，「贴着」断言转红 —— 直接证明这一条测的就是 happy-dom 测不到的那个量。② 在 `onOpenChange` 里补一句 `removeAllRanges()` ⇒ Esc 保留选区断言转红。③ 反例登记：去掉 `@close-auto-focus` 的 `preventDefault` **不足以**破坏选区（Chromium 焦点归还不折叠选区）⇒ 该 handler 的选区保护作用未被本层证实"
+    residual_human:
+      - "⚠️ **expected 的「贴着选区末端」与实现不符**：`BlueprintSelectionPopover` 把**整个选区矩形**作为 `PopoverAnchor`、`side=\"top\"` ⇒ 浮层落在选区**正上方居中**，不是选区末端。可判定内核（不遮挡 / 贴着 / 锚在选区上）成立，但「末端」这一措辞要么改 expected 要么改实现——需要人拍板，⛔ 不由测试单方面认定"
+      - "跨行 / 跨段落长选区：`range.getBoundingClientRect()` 取的是并集包围盒 ⇒ 浮层会居中在整块之上。是否可接受属审美判断，未断言"
   - test: "滚动查看器正文，观察左栏十段导航的高亮跟随"
     expected: "高亮随滚动逐段推进，不停在第一段"
     why_human: "`AnchorNavLayout` 的 mount-only IntersectionObserver 需要真实版面。**其前置条件（本相位头号靶子 P-4）已被自动化结论性证明**：十个 `<section>` 的 id 全是静态字面量、无一带 `v-if`/`v-show`（三态渲染全在段内），`sections` 数组是恒 10 项的字面量 ⇒ observer 挂得上"
     blocking: false
+    result: pass（**并发现 + 修复 1 个真实缺陷**，见 found_defect）
+    verified: 2026-08-02
+    covered_by: "`web/tests/e2e/blueprint-viewer-visual.spec.ts` › `UAT 115-3`（2 例）"
+    evidence: "逐段滚动十次，左栏高亮下标实测走出 `[0..9]` 完整序列（非恒真对照：断言的是整条序列相等，「一直是 0」与「卡在某一项」都会转红）。高亮态取两个独立来源（`bg-primary/8` 类名 + 左侧指示条 span）并**互校**，不一致直接抛错而非静默取其一"
+    mutation_evidence: "⭐ 按相位最担心的形状变异：给 `#impact_analysis` 加 `v-if=\"content\"` ⇒ 段容器在断言时**仍在 DOM**（`section[id]` 计数照样 10、点击跳转照常工作），但 mount 那一刻它不在 ⇒ observer 挂不上 ⇒ 第 5 项**永不点亮**，用例报 `段 impact_analysis 未点亮左栏第 5 项` 转红。这正是 P-4 所防的「人肉走查只会觉得高亮有点怪」的缺陷，防线**能真的触发**"
+    found_defect: "⭐ 观察窗 `rootMargin: -15% 0px -55% 0px` 在**文档首尾各留了一段死区**，而回调 `if (visible.length > 0)` 在死区内不更新 ⇒ 滚回顶部时高亮**冻在离开前那一段**（实测：视口 720px 时观察窗 108~324px，而首段起点在 349px）。与 P-4 防的「永远停在第一段」是同一类失守、方向相反。已修：相交集合为空时补一次基于位置的兜底。commit `0fd29f56` `fix(nav):`，四个 `AnchorNavLayout` 使用方同步受益"
+    residual_human:
+      - "只验了「瞬时跳转到某段」与「跳回顶部」两种滚动方式；连续惯性滚动 / 触控板惯性下的**高亮抖动观感**未断言"
   - test: "在 < xl 与 < md 两档窗宽下检查三栏收拢"
     expected: "< xl 线程侧栏收成 Sheet；< md 左栏由 `BlueprintSectionNav` 的 Select 承接"
     why_human: "响应式断点是 CSS 版面行为，happy-dom 不计算媒体查询"
     blocking: false
+    result: pass
+    verified: 2026-08-02
+    covered_by: "`web/tests/e2e/blueprint-viewer-visual.spec.ts` › `UAT 115-4`（4 例）"
+    evidence: "可判定内核 =「任一窗宽下**可见**的线程侧栏实例恰好一份」。≥ xl（1440）：常驻栏可见 + 抽屉**整块不在 DOM**（`v-if=\"!isWide\"`，⛔ 不是藏起来），点顶栏「查看批注」仍是 1 份。< xl（1279 / 1024）：常驻栏在 DOM 但 `hidden`，点「查看批注」开出抽屉 ⇒ 仍是 1 份。宽→窄→宽连续切换全程 ≤1 份。< md（767）：左栏 `aside.w-48 nav` 隐藏、`blueprint-section-nav` 的 Select 可见，且 `scrollWidth - clientWidth ≤ 1`（收拢成立、无横向溢出）；≥ md 两者互换"
+    mutation_evidence: "把常驻侧栏的 `xl:flex` 改成 `lg:flex`（与抽屉的 `isWide` 闸脱钩）⇒ 1024px 下常驻栏与抽屉**同时可见**，「< xl」与「连续切换」两例双双转红"
+    residual_human:
+      - "未展开 `BlueprintSectionNav` 的 Select 下拉并实际跳段：只验了它在 < md 可见、在 ≥ md 隐藏"
+      - "< md 下十段正文的**逐段观感**（表格横向滚动条、API 契约卡在窄屏的可读性）未断言，只验了页面整体无横向溢出"
 ---
 
 # Phase 115: 前端查看器与知识库（结构化阅读 + 批注 + 管理面）— Verification Report
@@ -205,6 +244,26 @@ PLAN frontmatter 声明的全部 requirement ID 与 `REQUIREMENTS.md:146`（「1
 
 ---
 
+## 附录（2026-08-02 追加）：四条视觉 UAT 的浏览器实跑
+
+四项 `why_human` 给的理由**全部是 happy-dom 的能力缺口**，而不是真需要人的判断。Chromium 有版面引擎、真 `getBoundingClientRect`、真 IntersectionObserver、真媒体查询 ⇒ 四条理由同时消解。已用既有 Playwright 护栏（`web/playwright.config.ts`，chromium + 10250 端口 + `page.route` API 替身、不起后端）从 `/knowledge/blueprints/:id` **真实路由入口**实跑，⛔ 全程不挂叶子组件。
+
+| # | UAT | 判定 | 覆盖它的 spec | 变异证据 |
+|---|---|---|---|---|
+| 1 | mermaid 出图 | ✓ PASS | `blueprint-viewer-visual.spec.ts` › `UAT 115-1`（3 例） | `svg.value = ''` ⇒ 转红；去掉调用方空源码闸 ⇒ **冒出 2 个空 `<pre>`** 转红 |
+| 2 | 选区 popover 落点 | ✓ PASS（判定核心） | 同上 › `UAT 115-2`（2 例） | 锚点退化成零矩形 ⇒ 浮层飘出 **352px** 转红；dismiss 时清选区 ⇒ Esc 保留选区转红 |
+| 3 | 左栏高亮跟随滚动 | ✓ PASS（**并修 1 缺陷**） | 同上 › `UAT 115-3`（2 例） | 给 `#impact_analysis` 加 `v-if` ⇒ 第 5 项永不点亮转红（P-4 的缺陷形状） |
+| 4 | 响应式断点 | ✓ PASS | 同上 › `UAT 115-4`（4 例） | 常驻栏 `xl:flex`→`lg:flex` ⇒ 1024px 下两份侧栏同时可见，两例转红 |
+
+**⭐ 新发现并已修复的缺陷（第 3 项）**：`AnchorNavLayout` 的观察窗 `rootMargin: -15% 0px -55% 0px` 在文档首尾各留了一段死区，而回调的 `if (visible.length > 0)` 在死区内不更新 ⇒ **滚回顶部时高亮冻在离开前那一段**（实测视口 720px 时观察窗 108~324px，首段起点 349px）。这与 P-4 防的「永远停在第一段」是同一类失守、方向相反，且四个使用方（蓝图查看器 / 知识实体 / 仓库 / 空间详情）都受影响。修法：相交集合为空时补一次基于位置的兜底。commit `0fd29f56`。
+
+**残留人工项**：四项各自的 `residual_human` 逐条列在 frontmatter 里，⛔ 未因主体转绿而整条勾掉。其中一条需要人拍板：第 2 项 expected 的「popover 贴着选区**末端**」与实现不符 —— 实现把整个选区矩形作为锚点、`side="top"` ⇒ 浮层落在选区**正上方居中**。可判定内核（不遮挡 / 贴着 / 锚在选区上）成立，但措辞与实现二者要改一个。
+
+执行报告见 `.planning/UAT-AUTOMATION-REPORT.md` §10。**本附录不改动上方任何 SC / truths 判定，`status` 与 `score` 保持原值。**
+
+---
+
 _Verified: 2026-08-01_
 _Verifier: Claude (gsd-verifier)_
 _Depth: goal-backward · 对抗性立场（默认未达成，由代码证据反证）_
+_视觉 UAT 子集实跑追加: 2026-08-02_
