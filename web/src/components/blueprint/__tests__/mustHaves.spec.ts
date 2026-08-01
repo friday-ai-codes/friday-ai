@@ -108,6 +108,28 @@ describe('mustHavesSection —— §20 断言 9', () => {
     expect(mountSection({}).find('[data-testid="blueprint-must-haves"]').exists()).toBe(false)
   })
 
+  /**
+   * ⭐ UI-REVIEW M-5：段容器与导航项由页面**无条件**渲染（P-4），段内再什么都不出，
+   * 页面上就只剩一个光秃秃的 `<h2>验收锚点</h2>`。空态文案早已写好却从未被引用。
+   */
+  it.each([
+    ['三块全空', { truths: [], artifacts: [], key_links: [] }],
+    ['整键缺失', null],
+    ['空对象', {}],
+    ['条目全是非法值', { truths: [null, 42], artifacts: [], key_links: [] }],
+  ])('4c. ⭐ %s ⇒ 段内出一行空态文案（⛔ 不是空白）', (_label, input) => {
+    const wrapper = mountSection(input)
+    const empty = wrapper.find('[data-testid="blueprint-must-haves-empty"]')
+    expect(empty.exists()).toBe(true)
+    expect(empty.text()).toBe('本方案未登记验收锚点')
+  })
+
+  it('4d. 非恒真对照：有内容时⛔ 不出空态文案（内容与空态互斥）', () => {
+    const wrapper = mountSection(FULL_MUST_HAVES)
+    expect(wrapper.find('[data-testid="blueprint-must-haves"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="blueprint-must-haves-empty"]').exists()).toBe(false)
+  })
+
   it('5. 部分子块为空 ⇒ 该子块不渲染、其余照渲（正反并列）', () => {
     const wrapper = mountSection({ truths: ['只有断言'], artifacts: [], key_links: [] })
 

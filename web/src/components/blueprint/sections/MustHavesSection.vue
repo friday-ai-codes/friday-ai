@@ -14,8 +14,14 @@
  * **为什么必须渲染**：`must_haves` 是 schema 的 **required** 键，承载 goal-backward 的验收断言。
  * 人审要回答的核心问题是「这方案做完了怎么算数」——不渲染它，评审人只能凭实现细节猜验收口径。
  *
- * ⭐ **空态规则**：三个数组**同为空或整键缺失**（v0 旧数据无此键）⇒ 整段**不渲染任何内容卡**
- * （⛔ 不出空态卡，对齐 `deferred_ideas` 的处理）；仅**部分**子块为空时该子块不渲染、其余照渲。
+ * ⭐ **空态规则**：三个数组**同为空或整键缺失**（v0 旧数据无此键）⇒ 不渲染任何内容卡
+ * （⛔ 不出空态**卡**，对齐 `deferred_ideas` 的处理），改出**一行**说明文案；仅**部分**
+ * 子块为空时该子块不渲染、其余照渲。
+ *
+ * ⚠️ 那一行是 UI-SPEC §6.9「整段与其导航项都不渲染，不出空态卡」被 P-4 订正后的必然结果：
+ * 段容器与导航项已改为**无条件渲染**（否则 `AnchorNavLayout` 的 observer 挂不上），段内再
+ * 什么都不出，页面上就留下一个光秃秃的 `<h2>验收锚点</h2>`，左栏导航项照样可点、点过去
+ * 还是空的。文案键 `mustHaves.empty` 早已写好，此前从未被引用（UI-REVIEW M-5）。
  *
  * **分工边界（P-4，⛔ 不得越界）**：`<section id="must_haves">` 容器与左栏导航项由页面（115-06）
  * **无条件渲染** —— `AnchorNavLayout` 的 IntersectionObserver 只在 mount 时注册，条件渲染段容器
@@ -175,4 +181,10 @@ const hasContent = computed(() => Boolean(truths.value.length || artifacts.value
       </div>
     </div>
   </div>
+
+  <!-- ⭐ 三块全空的空态：⛔ 不是「什么都不渲染」—— 段容器与导航项由页面无条件渲染（P-4），
+       段内不出一句话就只剩一个光秃秃的 <h2>，导航项照样可点、点过去还是空的。 -->
+  <p v-else data-testid="blueprint-must-haves-empty" class="text-sm text-muted-foreground">
+    {{ t('knowledge.blueprints.mustHaves.empty') }}
+  </p>
 </template>
