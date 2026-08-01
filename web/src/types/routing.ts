@@ -2,7 +2,8 @@
  * ：跨仓路由决策类型契约。
  *
  * 与后端 `RepositoryRelevanceOutput` / `RepositoryRoutingTrace` 一一对应，
- * RoutingDecisionPanel / RelevanceBadge / RepoMultiSelector 共享同一份 store。
+ * RelevanceBadge / RepoMultiSelector 共享同一份 store；对话链路上的分组 / 跨组 /
+ * 分数分解 / 降级呈现走 `useToolDisplay.routingDecisionView` 直接解析工具出参。
  */
 
 export type RoutingLevel = 'high' | 'medium' | 'low'

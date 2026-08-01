@@ -9,8 +9,8 @@
  * 优雅降级：store 无对应 conversation trace / repository 不在 candidates →
  * `v-if="candidate"` 整个组件不渲染，避免「无数据」噪声。
  *
- * 与 RoutingDecisionPanel 共享 store；用户在 panel 改勾选 → manual_override
- * 写新 trace → store latestTraceId 更新 → 本组件自动重渲染。
+ * 与 RepoMultiSelector 共享 store；manual_override 写新 trace → store
+ * latestTraceId 更新 → 本组件自动重渲染。
  */
 import type { RoutingLevel } from '~/types/routing'
 import { computed } from 'vue'

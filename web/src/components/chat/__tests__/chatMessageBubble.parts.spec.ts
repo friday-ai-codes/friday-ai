@@ -28,21 +28,13 @@ vi.mock('~/composables/useMarkdownRenderer', () => ({
   })),
 }))
 
-// stub Checkbox / DocSummaryCard / RoutingDecisionPanel / TechPlanCard 避免重依赖
+// stub Checkbox / DocSummaryCard / TechPlanCard 避免重依赖
 vi.mock('~/components/ui/checkbox', () => ({
   Checkbox: defineComponent({ name: 'Checkbox', setup: () => () => h('input', { type: 'checkbox' }) }),
 }))
 
 vi.mock('~/components/chat/DocSummaryCard.vue', () => ({
   default: defineComponent({ name: 'DocSummaryCard', setup: () => () => h('div', { 'data-test': 'doc-summary' }) }),
-}))
-
-vi.mock('~/components/chat/RoutingDecisionPanel.vue', () => ({
-  default: defineComponent({
-    name: 'RoutingDecisionPanel',
-    props: ['traceId', 'conversationId', 'messageId'],
-    setup: () => () => h('div', { 'data-test': 'routing-panel' }),
-  }),
 }))
 
 vi.mock('~/components/chat/TechPlanCard.vue', () => ({

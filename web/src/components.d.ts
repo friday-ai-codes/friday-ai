@@ -366,7 +366,6 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     RoutingCandidateList: typeof import('./components/chat/RoutingCandidateList.vue')['default']
-    RoutingDecisionPanel: typeof import('./components/chat/RoutingDecisionPanel.vue')['default']
     RunnerLogPanel: typeof import('./components/runners/RunnerLogPanel.vue')['default']
     RunningExecutionsBadge: typeof import('./components/workflow/RunningExecutionsBadge.vue')['default']
     RuntimeLogConfigForm: typeof import('./components/observability/RuntimeLogConfigForm.vue')['default']
