@@ -32,6 +32,7 @@ from .index_views import (
     RerankerHealthView,
 )
 from .refresh_remote_head_views import RefreshRemoteHeadView
+from .repo_file_views import RepositoryFileLinesView
 from .reverse_lookup_views import ReverseLookupView
 from .route_views import RepoRouteView
 from .sync_status_views import SyncStatusView
@@ -288,6 +289,12 @@ urlpatterns = [
         "<uuid:repository_id>/chunk-at/",
         ChunkAtView.as_view(),
         name="repository-chunk-at",
+    ),
+    # Plan 116-07：按 path + 行区间读源码正文（VIEW-02），紧随 chunk-at，UUID 通配安全
+    path(
+        "<uuid:repository_id>/file-lines/",
+        RepositoryFileLinesView.as_view(),
+        name="repository-file-lines",
     ),
     # Plan 34-01：片段→需求反查（RREF-01），紧随 chunk-at，UUID 通配安全
     path(
