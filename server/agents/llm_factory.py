@@ -34,7 +34,11 @@ from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
 
 from services.model_capabilities import ModelCapabilities, ModelCapabilitiesEntry
-from services.provider_config import PROVIDER_REGISTRY, ResolvedProviderConfig
+from services.provider_config import (
+    PROVIDER_REGISTRY,
+    ProviderType,
+    ResolvedProviderConfig,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -72,6 +76,9 @@ def build_chat_model(
     reasoning_effort: Literal["low", "medium", "high"] | None = None,
     streaming: bool = True,
     max_retries: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    seed: int | None = None,
 ) -> BaseChatModel:
     """单一工厂入口（contract）：capabilities 驱动 kwargs 分派。
 
@@ -92,6 +99,19 @@ def build_chat_model(
             分支时透传；未命中时不附加（contract / work item）。
         streaming: 是否启用 streaming（大多数场景 True；title_service 单 turn 同步调用
             可 False）。
+        temperature: 可选采样温度透传（默认 None = 不注入，行为与现状一致）。
+            确定性场景（如仓库路由 Stage 1）传 0.0 固定 decode——注意 thinking
+            分支（Anthropic 硬性 temperature=1）与 reasoning 分支（o 系列不接受
+            temperature）的既有约束优先于此透传。
+        top_p: 可选 nucleus sampling 透传（默认 None = 不注入）。reasoning 分支
+            同样会剥除（OpenAI o 系列 API 约束）。
+        seed: 可选采样种子透传（默认 None = 不注入）。仅 OpenAI Chat
+            Completions / Ollama 构造支持；Anthropic / Gemini 构造无 seed
+            形参，OpenAI Responses API 的 ``Responses.create()`` 同样无 seed
+            形参且 langchain-openai 不剥除该键（透传即客户端 TypeError），
+            这些情形一律不传并记 ``llm_decode_param_ignored`` debug 日志静默
+            忽略——幂等主防线是输入哈希缓存 + 排列输出，decode 固定是第三道
+            防线（105-RESEARCH）。
 
     Returns:
         BaseChatModel 子类实例（ChatAnthropic / ChatOpenAI / ChatGoogleGenerativeAI /
@@ -119,6 +139,35 @@ def build_chat_model(
     # 对"快速失败即降级"的短任务（如仓库分级路由 Stage 1）传 0，避免超时后 3× 叠加空等。
     if max_retries is not None:
         kwargs["max_retries"] = max_retries
+
+    # 可选 decode 参数透传（105-05 ROUTE-09）：默认 None = 不注入任何新键（零回归面）。
+    # 注入点刻意放在 thinking / reasoning 分派之前——thinking 的 temperature=1
+    # 硬性要求与 reasoning 的 temperature/top_p 剥除仍按既有约束优先生效。
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    if top_p is not None:
+        kwargs["top_p"] = top_p
+    if seed is not None:
+        # seed 仅 OpenAI Chat Completions 与 Ollama 构造支持；Anthropic / Gemini
+        # 构造无 seed 形参。Responses API（provider_type=OPENAI_RESPONSES 或
+        # extra.use_responses_api=true，两者独立维度都要判）的 Responses.create()
+        # 签名无 seed 也无 **kwargs，且 langchain-openai 组 payload 时不剥除
+        # seed——透传必抛客户端 TypeError（105 评审 MJ-01）。
+        supports_seed = resolved.provider_type in (
+            ProviderType.OPENAI_CHAT,
+            ProviderType.OLLAMA,
+        ) and not resolved.extra.get("use_responses_api")
+        if supports_seed:
+            kwargs["seed"] = seed
+        else:
+            logger.debug(
+                "llm_decode_param_ignored",
+                param="seed",
+                provider_type=str(resolved.provider_type),
+                model=model,
+                category="sampling",
+                component="llm_factory",
+            )
 
     # contract thinking 分派（work item，仅 Anthropic 系列支持）
     if capabilities.supports_thinking and max_thinking_tokens:

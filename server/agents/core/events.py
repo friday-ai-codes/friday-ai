@@ -52,6 +52,14 @@ CODING_FAILED = "coding_failed"
 AWAITING_PR_REVIEW = "awaiting_pr_review"
 CONFLICT_CHECK = "conflict_check"
 
+# 编排过程事件（Phase 110-01，OBS-01）：承载 ConvergenceSessionEvent 的统一信封
+# {event, session_id, work_item_id?, ts, payload}，由 ConvergenceSessionService._emit_event
+# 在持久化之后 best-effort fan-out 到当前 chat graph 的 custom 流。
+# 与 PHASE_TRANSITION 是两套概念：后者是 LangGraph 的 chat 级阶段
+# （executing / waiting / finalizing），前者是编排的 stage key。裁决 D-2 明确不复用——
+# 挤进 phase_transition 会制造「同一通道两种语义」的新债。
+PROCESS_EVENT = "process_event"
+
 # 所有 SSE data 事件类型集合（用于契约测试验证前后端一致性）
 ALL_EVENT_TYPES: frozenset[str] = frozenset({
     TEXT_DELTA,
@@ -76,6 +84,8 @@ ALL_EVENT_TYPES: frozenset[str] = frozenset({
     PART_STARTED,
     PART_DELTA,
     PART_COMPLETED,
+    # Phase 110-01：编排过程事件
+    PROCESS_EVENT,
 })
 
 # 连接级事件类型 — 不走 SSE data 行，通过 SSE 注释行发送

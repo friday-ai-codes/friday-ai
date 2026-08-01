@@ -1,10 +1,21 @@
-"""CodingPlan 模型测试 — 工厂去重 / property 回退 / 异步更新（implementation）。"""
+"""CodingPlan 模型测试 — 工厂去重 / property 回退 / 异步更新（implementation）。
+
+另含 Phase 109 / SPINE-01 的投影幂等键约束断言（见文件末尾两个用例）。
+"""
 
 from __future__ import annotations
 
-import pytest
+import uuid
 
-from chat.models import CodingPlan, CodingSession, Conversation
+import pytest
+from django.db import IntegrityError, connection, transaction
+
+from chat.models import (
+    CodingPlan,
+    CodingPlanProvenance,
+    CodingSession,
+    Conversation,
+)
 
 # ---------------------------------------------------------------------------
 # 辅助 fixture
@@ -191,3 +202,86 @@ async def test_coding_plan_aupdate_plan(conversation):
     loaded = await CodingPlan.objects.aget(id=plan.id)
     assert loaded.tech_plan == "new"
     assert loaded.affected_files == [{"file_path": "new.py", "change_type": "add"}]
+
+
+# ---------------------------------------------------------------------------
+# 投影幂等键：uniq_codingplan_source_artifact_version（Phase 109 / SPINE-01）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_source_artifact_version_unique_constraint_exists_on_backend():
+    """约束在**当前 DB 后端确实存在**（防 AddConstraint 被静默跳过）。
+
+    这条断言存在的唯一理由：`UniqueConstraint` 一旦带 `condition=`，
+    `django/db/backends/base/schema.py::_unique_supported()` 会在
+    `supports_partial_indexes = False` 的后端（MySQL / MariaDB）返回 False ⇒
+    `AddConstraint` 被**静默跳过**，不报错也不告警。没有这条断言，「约束不存在」
+    与「约束存在」在测试上的表现完全一致 —— 多 NULL 行共存在无约束时同样通过，
+    幂等用例是顺序调用而非并发，因此都检不出来。
+
+    按**列集合**而非按名字断言：部分后端会改写约束/索引名。若后端保留了原名，
+    则一并断言该名条目的形状。
+    """
+    with connection.cursor() as cursor:
+        constraints = connection.introspection.get_constraints(
+            cursor, CodingPlan._meta.db_table
+        )
+
+    expected_columns = ["source_artifact_version_id"]
+    matched = {
+        name: meta
+        for name, meta in constraints.items()
+        if meta.get("unique") and list(meta.get("columns") or []) == expected_columns
+    }
+    assert matched, (
+        "coding_plans 表上没有 source_artifact_version_id 的唯一约束 —— "
+        "AddConstraint 可能被后端静默跳过（检查约束是否误加了 condition=）。"
+        f"实得约束：{sorted(constraints)}"
+    )
+
+    named = constraints.get("uniq_codingplan_source_artifact_version")
+    if named is not None:  # 后端保留了原约束名
+        assert named.get("unique") is True
+        assert list(named.get("columns") or []) == expected_columns
+
+
+@pytest.mark.django_db(transaction=True)
+def test_source_artifact_version_constraint_allows_nulls_but_blocks_duplicates(
+    conversation,
+):
+    """无条件唯一约束不误伤 NULL 草稿行，但真值重复会被 DB 挡下。
+
+    与上一条互补：上一条证明约束**存在**，本条证明它挡真值、且不挡 NULL
+    （PostgreSQL / MySQL / SQLite 的唯一索引都把 NULL 视为互不相等，
+    因此无需 `condition` 即可让多条草稿行共存）。
+    """
+    draft_a = CodingPlan.objects.create(
+        conversation=conversation, tech_plan="## 草稿 A", affected_files=[]
+    )
+    draft_b = CodingPlan.objects.create(
+        conversation=conversation, tech_plan="## 草稿 B", affected_files=[]
+    )
+    assert draft_a.source_artifact_version_id is None
+    assert draft_b.source_artifact_version_id is None
+    # 存量与所有既有写入路径都走 DB default
+    assert draft_a.provenance == CodingPlanProvenance.DRAFT
+    assert draft_b.provenance == CodingPlanProvenance.DRAFT
+
+    version_id = uuid.uuid4()
+    CodingPlan.objects.create(
+        conversation=conversation,
+        tech_plan="## 投影 1",
+        affected_files=[],
+        provenance=CodingPlanProvenance.ORCHESTRATED,
+        source_artifact_version_id=version_id,
+    )
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            CodingPlan.objects.create(
+                conversation=conversation,
+                tech_plan="## 投影 2（同一方案版本）",
+                affected_files=[],
+                provenance=CodingPlanProvenance.ORCHESTRATED,
+                source_artifact_version_id=version_id,
+            )

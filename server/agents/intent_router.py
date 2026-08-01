@@ -185,8 +185,8 @@ class RelevConfidence:
         level: ``high_confidence`` / ``low_confidence`` / ``missing``。
         top1_score: top candidate 的 score，工具未调或无 candidates 时 None。
         selected_repository_ids: candidates 中 ``selected_by_user_final=True``
-            的 repository_id；high 置信场景下用作 ``create_coding_plan`` 的
-            ``recommended_repository_ids`` 预填。
+            的 repository_id；high 置信场景下用作 ``create_coding_plan``
+            （把编排产出的方案版本投影为编码方案）的 ``recommended_repository_ids`` 预填。
         plausible_alternatives: 前 5 个 candidates 精简 dict
             (id/name/score/evidence)，用于构造 ask_clarification 选项。
     """

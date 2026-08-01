@@ -17,10 +17,13 @@ evidence + 是否自动选中。
 为 plan（deep_analysis_completion 路径）预留扩展点：deep_analysis 容器完成
 回调时复用同一段聚合逻辑，仅切换 ``triggered_by`` / ``agent_session_id`` 两参数
 即可。@tool 装饰的 ``analyze_repository_relevance`` 走 chat_tool 默认路径。
+helper 返回 ``RepositoryRelevanceAnalysis``（候选 + trace_id + 四个**结果级事实**），
+调用方按需取用；工具出参把这四件套原样带进 ``ToolResult.output['data']``。
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import structlog
@@ -43,8 +46,9 @@ _TOOL_DESCRIPTION = (
     "level（high/medium/low）+ evidence + 是否自动选中。\n"
     "\n"
     "使用时机：用户提出代码理解 / 功能是怎么实现 / 架构梳理 / 跨仓需求 / "
-    "编码方案前 → 调用本工具识别相关仓库 → 用结果指导后续检索或 "
-    "create_coding_plan 的 recommended_repository_ids（自动预填）。\n"
+    "编码方案前 → 调用本工具识别相关仓库 → 用结果指导后续检索，或作为 "
+    "create_coding_plan（把编排产出的方案版本投影为编码方案）的 "
+    "recommended_repository_ids（自动预填）。\n"
     "尤其当问题提到 app、子应用、业务名、中文功能名，或当前仓库只是入口 / "
     "桥接 / 跳转 / SDK 包装时，必须在 search_repository_code 之前调用本工具，"
     "先确认真正实现可能在哪些仓库。\n"
@@ -89,6 +93,61 @@ _TOOL_PARAMETERS: dict[str, Any] = {
     },
     "required": ["query", "space_id", "conversation_id"],
 }
+
+
+@dataclass
+class RepositoryRelevanceAnalysis:
+    """一次相关性分析的完整结果（候选 + **结果级事实**）。
+
+    结果级四件套（``router_version`` / ``degraded`` / ``degrade_reason`` /
+    ``block_order``）与 ``RepositoryRoutingTrace`` 落库的是同一组值。它们必须随
+    candidates 一起离开本 helper：只回 ``(candidates, trace_id)`` 的话，工具输出里就
+    没有这四个键，前端在 SSE ``part_completed`` 解析到的恒是 ``undefined``——降级横幅
+    与分组分区在对话进行中完全不出现（BL-02）。
+    """
+
+    candidates: list[RepositoryRelevanceCandidate]
+    trace_id: str
+    router_version: str = "legacy_hybrid"
+    degraded: bool = False
+    degrade_reason: str = ""
+    block_order: list[str] = field(default_factory=list)
+
+
+def _truncate_by_group_quota(
+    candidates: list[RepositoryRelevanceCandidate], top_k: int
+) -> list[RepositoryRelevanceCandidate]:
+    """把候选截到 ``top_k``，但**每个非空组至少保留 1 条**，其余名额按原顺序补齐。
+
+    输入已按全局 ``score_ranked`` 降序（router 侧 ``_apply_presentation`` 的产物），
+    输出保持该相对顺序不变——只做取舍，不重排。
+
+    为什么不能直接 ``[:top_k]``：全局组分数整体占优时前 ``top_k`` 可能一条
+    ``in_project`` 都不剩，而 ``block_order`` 仍报长度 2，前端启用分组后该分区因
+    ``total == 0`` 被过滤，用户看到的是「分组开着但只有一个区」。
+    """
+    if top_k <= 0 or len(candidates) <= top_k:
+        return list(candidates[: max(top_k, 0)])
+    kept: list[RepositoryRelevanceCandidate] = []
+    seen_groups: set[str] = set()
+    # 第一轮：每个组的最高分候选各占一个名额（输入已排序，首次出现即该组最高分）。
+    for c in candidates:
+        group = c.group or "global"
+        if group not in seen_groups and len(kept) < top_k:
+            seen_groups.add(group)
+            kept.append(c)
+    # 第二轮：剩余名额按全局顺序补齐。
+    kept_ids = {id(c) for c in kept}
+    for c in candidates:
+        if len(kept) >= top_k:
+            break
+        if id(c) not in kept_ids:
+            kept.append(c)
+            kept_ids.add(id(c))
+    # 恢复输入的全局降序（第一轮的配额挑选会打乱相对顺序）。
+    order = {id(c): idx for idx, c in enumerate(candidates)}
+    kept.sort(key=lambda c: order[id(c)])
+    return kept
 
 
 def _score_to_level(score: float) -> Literal["high", "medium", "low"]:
@@ -155,7 +214,7 @@ async def _analyze_relevance_core(
     threshold: float = 0.5,
     triggered_by: str | None = None,
     agent_session_id: str | None = None,
-) -> tuple[list[RepositoryRelevanceCandidate], str]:
+) -> RepositoryRelevanceAnalysis:
     """公开 helper：跑相关性聚合 + 写一行 RepositoryRoutingTrace。
 
     复用方：
@@ -167,15 +226,16 @@ async def _analyze_relevance_core(
       ``agent_session_id=main_session.id``。
 
     Returns:
-        ``(candidates, trace_id)`` —— candidates 按 score 倒序，trace_id 是
-        新写入的 ``RepositoryRoutingTrace`` 主键 UUID 字符串。
+        ``RepositoryRelevanceAnalysis`` —— candidates 按 score 倒序，``trace_id`` 是
+        新写入的 ``RepositoryRoutingTrace`` 主键 UUID 字符串，另附四个**结果级事实**
+        （与该 trace 落库的同一组值）供实时链路直接渲染。
 
     Raises:
         ValueError: space / conversation 不存在或空间下无 indexed repo。
     """
     # lazy import 仅针对 Django ORM 模型避免 app registry race；服务类已在
     # 模块顶层 import（测试 monkeypatch 需要从本模块取 HybridSearchService）。
-    from chat.models import Conversation, RepositoryRoutingTrace
+    from chat.models import Conversation, RepositoryRoutingTrace, derive_routing_degraded
     from projects.models import Space
     from repositories.models import Repository
 
@@ -210,19 +270,45 @@ async def _analyze_relevance_core(
     # v2 不可用（无树索引/LLM 失败回落 v1_fallback）时走 legacy 聚合。
     router_version = "legacy_hybrid"
     v2_candidates: list[RepositoryRelevanceCandidate] | None = None
+    # 结果级降级/分组事实（107-08）：在 try 之外初始化为列默认值，legacy 路径与 v2
+    # 任意失败回落都落这两个默认值；v2 成功时才被 router 结果覆盖。
+    v2_degrade_reason = ""
+    v2_block_order: list[str] = []
     try:
+        from codegraph.services.repo_group_scope import aresolve_grouping_repo_ids
         from codegraph.services.repo_router_v2 import RepoRouterV2
 
+        # D-1：空间关联仓从「硬过滤」改为「分组依据」——继续当硬过滤传的话候选集从一
+        # 开始就只有空间内仓，global 分区恒空、ROUTE-01/02 上线即无效果（Pitfall 2）。
+        # T-107-01 前提：沿用 mcp_tools 的 RouteRepositoriesView 与
+        # repositories/route_views.py 两个已上线全库入口的既有判断（二者只有
+        # IsAuthenticated、无 per-user/per-space 过滤）→ 本改动不绕过任何现存权限检查。
+        # 注意透出面不止仓名：下面组装的 evidence 还含跨组仓的能力树节点路径、
+        # sub_project 与 LLM reasoning，对空间成员是一个新的元数据面。要收窄的话，
+        # group == global 是现成判据，改动面只在 evidence 映射那一处。
+        grouping_ids = await aresolve_grouping_repo_ids(space_id=space_id)
         v2_result = await RepoRouterV2.route(
-            query, top_k=top_k, repository_ids=repo_ids
+            query,
+            top_k=top_k,
+            repository_ids=None,
+            grouping_repository_ids=(
+                None if grouping_ids is None else sorted(grouping_ids)
+            ),
         )
         if v2_result.router_version in ("v2", "v2_stage0_only") and v2_result.candidates:
             router_version = v2_result.router_version
+            v2_degrade_reason = v2_result.degrade_reason
+            v2_block_order = list(v2_result.block_order or [])
             v2_candidates = []
             for c in v2_result.candidates:
-                repo = repo_by_id.get(c.repo_id)
-                if repo is None:
+                # 防御性跳过：repo_id 为空的候选无法映射（正常路径不会出现）。
+                if not c.repo_id:
                     continue
+                repo = repo_by_id.get(c.repo_id)
+                # 跨组候选必然不在 repo_by_id 里（后者只装空间内仓）。此处若沿用旧写法
+                # 「查不到就丢弃」，global 分区会在映射阶段被清空——与硬过滤同一个后果
+                # （Pitfall 2 的第二个入口）。故用候选自带的仓名兜底。
+                repo_name = repo.name if repo is not None else (c.repo_name or c.repo_id)
                 evidence_parts: list[str] = []
                 if c.matched_node_paths:
                     evidence_parts.append(
@@ -239,7 +325,7 @@ async def _analyze_relevance_core(
                 v2_candidates.append(
                     RepositoryRelevanceCandidate(
                         repository_id=c.repo_id,
-                        repository_name=repo.name,
+                        repository_name=repo_name,
                         score=score,
                         level=c.confidence,
                         evidence="；".join(evidence_parts) or f"语义相关度 score={score:.2f}",
@@ -247,6 +333,13 @@ async def _analyze_relevance_core(
                         selected_by_user_final=selected,
                         sub_project=c.sub_project,
                         sub_project_paths=c.sub_project_paths,
+                        # ROUTE-07：v2 候选 breakdown 透传（105-03 后必有该字段），
+                        # 经 trace.candidates JSON 一路可达前端分数分解展开区。
+                        breakdown=dict(c.breakdown or {}),
+                        # ROUTE-01/02：分组事实同路透传（107-03 落的 router 侧字段）。
+                        group=c.group,
+                        trust=c.trust,
+                        score_ranked=c.score_ranked,
                     )
                 )
             if not v2_candidates:
@@ -256,7 +349,13 @@ async def _analyze_relevance_core(
         v2_candidates = None
 
     if v2_candidates is not None:
-        candidates = v2_candidates[:top_k]
+        # 返回上限仍是 top_k（它是 LLM 可见的公开参数「返回的相关仓库数量上限」，
+        # 悄悄改成 2*top_k 会单方面变更工具契约与 total_candidates 语义），但截断改为
+        # **按组配额**而非全局前 N：router 按组各取 top_k 后并集并按全局 score_ranked
+        # 排序，全局组分数整体占优时，简单的 `[:top_k]` 会把 in_project 组整组截空，
+        # 而落库的 block_order 来自 router 结果、仍报长度 2 → 前端启用分组却发现该组
+        # total == 0 被过滤掉，ROUTE-01「组内各展示 Top-3」在 top_k 较小时无法保证。
+        candidates = _truncate_by_group_quota(v2_candidates, top_k)
         trace = await RepositoryRoutingTrace.objects.acreate(
             agent_session_id=agent_session_id,
             conversation_id=conversation_id,
@@ -265,6 +364,12 @@ async def _analyze_relevance_core(
             threshold=threshold,
             triggered_by=triggered_by,
             router_version=router_version,
+            # 写入侧接线（RELY-03 / ROUTE-01）：这两个赋值缺失时模型与 payload 测试
+            # 依旧全绿，而生产两列恒为列默认值 —— degraded 虽仍由 router_version 派生
+            # 为 True，但降级原因行永不出现、block_order 恒空使前端永远走平铺，
+            # 分组呈现上线即无效果。值只来自 router 结果，此处不做任何再分类。
+            degrade_reason=v2_degrade_reason,
+            block_order=v2_block_order,
         )
         logger.info(
             "analyze_repository_relevance_trace_written",
@@ -272,9 +377,20 @@ async def _analyze_relevance_core(
             candidate_count=len(candidates),
             triggered_by=triggered_by,
             router_version=router_version,
+            degrade_reason=v2_degrade_reason,
+            block_order=v2_block_order,
             agent_session_id=agent_session_id,
         )
-        return candidates, str(trace.id)
+        return RepositoryRelevanceAnalysis(
+            candidates=candidates,
+            trace_id=str(trace.id),
+            router_version=router_version,
+            # 与 detail / override 两处 payload 同一个派生点，绝不在工具侧另写一遍
+            # 版本字面判定——两条链路给出不同 degraded 会让「刷新前后降级状态不一致」。
+            degraded=derive_routing_degraded(router_version),
+            degrade_reason=v2_degrade_reason,
+            block_order=list(v2_block_order),
+        )
 
     # ---- legacy 路径：HybridSearchService 多召回（top_k * 5 冗余）+ 按 repo 聚合 ----
     service = HybridSearchService(get_provider())
@@ -329,6 +445,8 @@ async def _analyze_relevance_core(
     candidates.sort(key=lambda c: c.score, reverse=True)
     candidates = candidates[:top_k]
 
+    # legacy 聚合路径（router_version == "legacy_hybrid"）刻意不传新增两列：这条链没有
+    # 分组事实也没有降级分类，留列默认值（"" / []）即与历史行等价，前端渲染不变。
     trace = await RepositoryRoutingTrace.objects.acreate(
         agent_session_id=agent_session_id,
         conversation_id=conversation_id,
@@ -348,7 +466,12 @@ async def _analyze_relevance_core(
         agent_session_id=agent_session_id,
     )
 
-    return candidates, str(trace.id)
+    return RepositoryRelevanceAnalysis(
+        candidates=candidates,
+        trace_id=str(trace.id),
+        router_version=router_version,
+        degraded=derive_routing_degraded(router_version),
+    )
 
 
 @tool(
@@ -390,7 +513,7 @@ async def analyze_repository_relevance(
         return ToolResult(success=False, error=str(exc))
 
     try:
-        candidates, trace_id = await _analyze_relevance_core(
+        analysis = await _analyze_relevance_core(
             query=query,
             space_id=space_id,
             conversation_id=conversation_id,
@@ -409,11 +532,17 @@ async def analyze_repository_relevance(
         logger.exception("analyze_repository_relevance_unexpected", error=str(exc))
         return ToolResult(success=False, error=f"Unexpected error: {exc}")
 
+    # 结果级四件套随 data 一并出参：前端 SSE part_completed 解析的就是这个
+    # model_dump()，少一个键就少一个实时可见的能力（BL-02）。
     output_model = RepositoryRelevanceOutput(
-        candidates=candidates,
+        candidates=analysis.candidates,
         threshold=threshold,
-        total_candidates=len(candidates),
-        trace_id=trace_id,
+        total_candidates=len(analysis.candidates),
+        trace_id=analysis.trace_id,
+        router_version=analysis.router_version,
+        degraded=analysis.degraded,
+        degrade_reason=analysis.degrade_reason,
+        block_order=analysis.block_order,
     )
 
     return ToolResult(
@@ -421,11 +550,15 @@ async def analyze_repository_relevance(
         output={
             "data": output_model.model_dump(),
             "metadata": {
-                "searched_repositories": len(candidates),
-                "trace_id": trace_id,
+                "searched_repositories": len(analysis.candidates),
+                "trace_id": analysis.trace_id,
             },
         },
     )
 
 
-__all__ = ["analyze_repository_relevance", "_analyze_relevance_core"]
+__all__ = [
+    "RepositoryRelevanceAnalysis",
+    "_analyze_relevance_core",
+    "analyze_repository_relevance",
+]

@@ -210,6 +210,19 @@ class SettingKeys:
     # 默认档 balanced；未配置时回落 DEFAULT_SPEC_GATE_CONFIG 的 threshold 与 max_rounds=3。
     # 消费方：services/process_runtime/blueprint_ambiguity_score.py（116-06）。
     BLUEPRINT_ASSUMPTIONS_TIERS = "blueprint.assumptions_tiers"
+    # 仓库路由多信号打分配置（ROUTE-06，v0.19.0 Phase 106）——三键一次定版，
+    # 106-04/05/06 只消费不再改本文件。点分命名沿用 code_index.exclusion.* 先例。
+    # value 为 JSON（权重/常数/锚点/weight_set_version）：写方为
+    # RepoRouterWeightConfigView PUT（106-02），读方为
+    # codegraph.services.repo_router_config.load_weight_config（router 106-06 /
+    # replay 106-07 消费）。
+    REPO_ROUTER_WEIGHT_CONFIG = "repo_router.weight_config"
+    # value 为 JSON：{n_r_by_repo: {rid: int}, n_bar: float|null, generated_at: str}。
+    # 写方为 measure command --write-snapshot（106-04），读方为 load_nr_snapshot（106-06）。
+    REPO_ROUTER_NR_SNAPSHOT = "repo_router.nr_snapshot"
+    # value 为 JSON 别名词典（facet 值 → 同义词/上位类目表）。
+    # 写方为运维/106-03 初始条目，读方为 resolver T1 匹配合并（106-06）。
+    REPO_ROUTER_ALIAS_DICT = "repo_router.alias_dict"
 
 
 class CacheVolumeTracker(models.Model):

@@ -1712,15 +1712,15 @@ async def _update_agent_session_cross_repo_relevance(
         from agents.tools.repository_relevance import _analyze_relevance_core
         from chat.models import RepositoryRoutingTrace
 
-        candidates, trace_id = await _analyze_relevance_core(
+        analysis = await _analyze_relevance_core(
             query=task_description,
             space_id=space_id,
             conversation_id=conversation_id,
             triggered_by=RepositoryRoutingTrace.TriggeredBy.DEEP_ANALYSIS_COMPLETION,
             agent_session_id=str(main_session.id),
         )
-
-        candidates_dump = [c.model_dump() for c in candidates]
+        trace_id = analysis.trace_id
+        candidates_dump = [c.model_dump() for c in analysis.candidates]
 
         # (1) AgentSession.metadata 写入
         metadata = dict(main_session.metadata or {})

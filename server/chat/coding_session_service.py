@@ -23,7 +23,7 @@ import structlog
 from asgiref.sync import sync_to_async
 from django.db import IntegrityError, transaction
 
-from chat.models import CodingSession
+from chat.models import CodingPlanProvenance, CodingSession
 
 if TYPE_CHECKING:
     from chat.models import CodingPlan
@@ -46,6 +46,13 @@ ACTIVE_STATUSES: frozenset[str] = frozenset(
 # 共享 error 文案常量，避免 service / view / 兼容性命令多处硬编码漂移。
 ERROR_REPO_ACTIVE_BUSY = "该仓库已有进行中的编码会话"
 
+# RELY-01 草稿送编码防护（fail-closed 在服务端）。
+# `code` 是给客户端分支用的**稳定机器码**：前端按 code 判定、绝不匹配 detail 文案，
+# 否则一次文案微调就让前端的错误分支静默失效。两个常量放在此处而非 view 内，
+# 避免 service / view / 测试三处各写一份字面量后漂移。
+ERROR_CODE_DRAFT_REQUIRES_CONFIRM = "draft_requires_explicit_confirm"
+ERROR_DRAFT_REQUIRES_CONFIRM = "草稿方案需显式确认后才能送编码"
+
 # 落库脱敏键名单（103 审查 WR-03）：dispatch metadata 中凭证明文键——持久化副本
 # （SubAgentSession.last_output.dispatch.metadata）统一剔除，绝不落 DB。
 # 断连重派时由 runners.consumers._rebuild_dispatch_task 按 ``_redacted_env_keys``
@@ -60,6 +67,75 @@ CREDENTIAL_ENV_KEYS: frozenset[str] = frozenset(
 )
 
 
+class DraftPlanRequiresConfirmError(Exception):
+    """草稿方案未经显式确认就尝试送编码（RELY-01 服务端 gate）。
+
+    由 `create_sessions_for_plan` 在**创建任何 session 之前**抛出，调用方（fan-out
+    视图）据 `code` 映射为 400 响应。异常而非返回值：gate 的语义是「整批拒绝、DB 零
+    写入」，塞进 `CodingSessionsBatchResult.failed` 会让它看起来像 per-repo 失败，
+    调用方可能继续往下走。
+    """
+
+    code = ERROR_CODE_DRAFT_REQUIRES_CONFIRM
+
+    def __init__(self, message: str = ERROR_DRAFT_REQUIRES_CONFIRM) -> None:
+        super().__init__(message)
+
+
+def _plan_requires_unresearched_confirm(plan: CodingPlan) -> bool:
+    """该 plan 送编码是否需要显式确认。
+
+    判定采**允许清单**：只有 `provenance == orchestrated` 免确认，`draft` / 未知取值 /
+    空值一律按需确认。用拒绝清单（`== draft` 才拦）会让任何新增来源枚举值默认放行，
+    与前端保守默认（UI-SPEC §B.1）口径也不一致。
+    """
+    provenance = str(getattr(plan, "provenance", "") or "")
+    return provenance != CodingPlanProvenance.ORCHESTRATED
+
+
+def _context_user_id() -> str:
+    """从请求 / 任务上下文取触发用户 id；取不到记 `system`。"""
+    try:
+        raw = str(structlog.contextvars.get_contextvars().get("user_id") or "").strip()
+    except Exception:  # noqa: BLE001 — 取上下文绝不反噬业务
+        return "system"
+    return raw or "system"
+
+
+def _log_draft_coding_gate(
+    *,
+    event: str,
+    plan_id: str,
+    repo_count: int | None = None,
+    reason: str = "",
+    actor_user_id: str = "",
+) -> None:
+    """草稿送编码的确认 / 拒绝留痕（best-effort，绝不反噬业务）。
+
+    两条路径都要留痕：只记拒绝会让「谁在什么时候用草稿送了编码」不可追溯（RELY-01
+    的 Repudiation 面）。字段无凭证、无正文，无脱敏义务。
+
+    ``actor_user_id`` 优先于 contextvars（109-REVIEW MN-06）：fan-out 视图手上就有
+    ``request.user``，显式传比绕一圈 contextvars 更可靠 —— 后者一旦哪个入口漏绑，
+    这条审计线就会静默退化成 ``system``，而它正是「草稿是有防护的应急路径」这个
+    设计里唯一的问责凭据。
+    """
+    try:
+        fields: dict[str, Any] = {
+            "category": "caller",
+            "component": "chat",
+            "coding_plan_id": plan_id,
+            "user_id": str(actor_user_id or "").strip() or _context_user_id(),
+        }
+        if repo_count is not None:
+            fields["repo_count"] = repo_count
+        if reason:
+            fields["reason"] = reason
+        logger.warning(event, **fields)
+    except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+        pass
+
+
 @dataclass(frozen=True)
 class CodingExecutionSpec:
     """编码任务下发给 Runner/容器的结构化执行契约。"""
@@ -71,6 +147,10 @@ class CodingExecutionSpec:
     work_branch: str
     target_branch: str
     affected_files: list[dict[str, Any]]
+    # 该方案未经完整编排调研（`CodingPlan.provenance != orchestrated`），下游容器可据
+    # 此调整策略（本 phase 只保证标志出现在 dispatch payload 里，容器侧消费与否留后续）。
+    # 必须带默认值：frozen dataclass 新增无默认字段会破坏既有构造点。
+    unresearched: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -81,6 +161,7 @@ class CodingExecutionSpec:
             "work_branch": self.work_branch,
             "target_branch": self.target_branch,
             "affected_files": self.affected_files,
+            "unresearched": self.unresearched,
         }
 
 
@@ -117,11 +198,16 @@ async def build_coding_execution_spec(
     """从 CodingSession 固化一次容器执行所需的 repo/branch/files 契约。"""
     affected_files = list(coding_session.affected_files or [])
     coding_plan_id = getattr(coding_session, "coding_plan_id", None)
+    # 允许清单：仅 orchestrated 视为经过调研。历史 session 未迁移（coding_plan_id 为
+    # 空）时取不到来源标志 ⇒ 走保守分支 True，而不是默认「可信」。async 上下文只用
+    # `*_id` 标量与显式查询，不裸访问 lazy FK。
+    unresearched = True
     if coding_plan_id:
         from chat.models import CodingPlan
 
-        plan = await CodingPlan.objects.only("affected_files").aget(id=coding_plan_id)
+        plan = await CodingPlan.objects.only("affected_files", "provenance").aget(id=coding_plan_id)
         affected_files = list(plan.affected_files or [])
+        unresearched = str(plan.provenance or "") != CodingPlanProvenance.ORCHESTRATED
 
     from chat.branch_service import DEFAULT_TARGET_BRANCH
 
@@ -137,6 +223,7 @@ async def build_coding_execution_spec(
         work_branch=coding_session.branch_name,
         target_branch=target_branch,
         affected_files=affected_files,
+        unresearched=unresearched,
     )
 
 
@@ -214,9 +301,7 @@ async def build_dispatch_metadata(
     from services.exclusion import serialize_rules_for_repo
 
     exclude_rules = await serialize_rules_for_repo(str(repository.id))
-    env_metadata["env_FRIDAY_TASK_EXCLUDE_PATTERNS"] = json.dumps(
-        exclude_rules, ensure_ascii=False
-    )
+    env_metadata["env_FRIDAY_TASK_EXCLUDE_PATTERNS"] = json.dumps(exclude_rules, ensure_ascii=False)
 
     # 固定容器 workspace cwd（HOOK-04）：SDK transcript 目录按 cwd realpath 派生，
     # 跨容器 resume 须 cwd 一致才能命中同一 transcript。dispatch 显式下发约定 cwd，
@@ -244,13 +329,11 @@ async def _resolve_project_context_for_dispatch(coding_session: CodingSession) -
     )
 
     try:
-        cs = await (
-            CodingSession.objects.select_related(
-                "conversation",
-                "conversation__bound_project",
-                "conversation__created_by",
-            ).aget(id=coding_session.id)
-        )
+        cs = await CodingSession.objects.select_related(
+            "conversation",
+            "conversation__bound_project",
+            "conversation__created_by",
+        ).aget(id=coding_session.id)
         conversation = cs.conversation
         project = conversation.bound_project
         user = conversation.created_by  # 触发用户（归因）；匿名会话可为 None
@@ -418,7 +501,8 @@ async def dispatch_coding_task(
 
     # 4. 创建 session
     _agent_session, sub_session = await create_sub_session(
-        coding_session, task_type=task_type,
+        coding_session,
+        task_type=task_type,
     )
 
     # 4.5 任务级短 TTL token + 知识端点注入（Phase 103 AGENT-01/02）：
@@ -440,7 +524,9 @@ async def dispatch_coding_task(
             user = await User.objects.filter(id=user_id).afirst()
         if user is not None:
             plaintext = await mint_task_token(
-                user, sub_session.session_id, 3600  # 对齐下方 DispatchTask 硬编码 timeout
+                user,
+                sub_session.session_id,
+                3600,  # 对齐下方 DispatchTask 硬编码 timeout
             )
             env_metadata["env_FRIDAY_TASK_USER_TOKEN"] = plaintext
         # 知识端点（AGENT-02 服务端注入面）：base 不带路径，task 侧自行拼
@@ -601,10 +687,19 @@ async def create_sessions_for_plan(
     repository_ids: list[UUID],
     branch_template: str = "",
     target_branch: str = "",
+    acknowledge_unresearched: bool = False,
+    actor_user_id: str = "",
 ) -> CodingSessionsBatchResult:
     """在已有 CodingPlan 上批量创建 N 个 CodingSession（DRAFT 态）。
 
     per-repository 独立校验 + 独立 ``transaction.atomic()``，部分失败不阻塞其他仓库。
+
+    **草稿 gate（RELY-01）**：``acknowledge_unresearched`` 默认 ``False``，只有布尔
+    ``True`` 视为确认。gate 落在本函数最前面（任何 session 创建之前）而不是视图内 ——
+    只在前端/视图做防护等于没做：任何脚本直接调 service 或打端点就能绕过。
+    ``provenance == orchestrated`` 时该入参被**忽略**，编排方案零摩擦。
+    ``actor_user_id`` 只用于 gate 留痕的问责字段（不参与任何授权判定，授权在视图层
+    已完成）；调用方取不到触发用户时留空，留痕回退 contextvars / ``system``。
 
     校验链（per repo）：
       1. repository_id 属于 ``plan.conversation.space.repositories``
@@ -620,6 +715,23 @@ async def create_sessions_for_plan(
     """
     from chat.branch_service import DEFAULT_TARGET_BRANCH, validate_branch_name
 
+    # 0) 草稿 gate（RELY-01）—— 必须在任何 session 创建之前，拒绝时 DB 零写入。
+    if _plan_requires_unresearched_confirm(plan):
+        if acknowledge_unresearched is not True:
+            _log_draft_coding_gate(
+                event="draft_plan_coding_rejected",
+                plan_id=str(plan.id),
+                reason=ERROR_CODE_DRAFT_REQUIRES_CONFIRM,
+                actor_user_id=actor_user_id,
+            )
+            raise DraftPlanRequiresConfirmError()
+        _log_draft_coding_gate(
+            event="draft_plan_coding_confirmed",
+            plan_id=str(plan.id),
+            repo_count=len(repository_ids or []),
+            actor_user_id=actor_user_id,
+        )
+
     # PR 目标分支：本次 fan-out 统一应用到所有仓库，用户未选时回退默认 develop。
     resolved_target = (target_branch or "").strip() or DEFAULT_TARGET_BRANCH
 
@@ -629,18 +741,13 @@ async def create_sessions_for_plan(
 
     # 1) 一次性拉所有合法 repository（属于 plan.conversation.space）
     project = plan.conversation.space
-    valid_repos = [
-        r
-        async for r in project.repositories.filter(id__in=repository_ids)
-    ]
+    valid_repos = [r async for r in project.repositories.filter(id__in=repository_ids)]
     valid_repo_map = {repo.id: repo for repo in valid_repos}
 
     # 不在项目下的 repo → failed
     for rid in repository_ids:
         if rid not in valid_repo_map:
-            result.failed.append(
-                SessionFailedItem(repository_id=rid, error="仓库不存在或无权访问")
-            )
+            result.failed.append(SessionFailedItem(repository_id=rid, error="仓库不存在或无权访问"))
 
     if not valid_repo_map:
         return result
@@ -657,9 +764,7 @@ async def create_sessions_for_plan(
 
     for rid in list(valid_repo_map.keys()):
         if rid in active_existing_ids:
-            result.failed.append(
-                SessionFailedItem(repository_id=rid, error=ERROR_REPO_ACTIVE_BUSY)
-            )
+            result.failed.append(SessionFailedItem(repository_id=rid, error=ERROR_REPO_ACTIVE_BUSY))
             valid_repo_map.pop(rid, None)
 
     # 生成本次 fan-out 统一默认分支名（多仓共用 {type}/{yymmdd}.{简短中文名}）。
@@ -668,9 +773,7 @@ async def create_sessions_for_plan(
     if not branch_template:
         from chat.branch_service import agenerate_default_branch_name
 
-        shared_branch_name, _bt, _sd = await agenerate_default_branch_name(
-            plan.tech_plan
-        )
+        shared_branch_name, _bt, _sd = await agenerate_default_branch_name(plan.tech_plan)
 
     # 3) 逐仓库创建（独立事务）
     for rid, repo in valid_repo_map.items():
@@ -699,9 +802,7 @@ async def create_sessions_for_plan(
             result.failed.append(
                 SessionFailedItem(
                     repository_id=rid,
-                    error="；".join(validation.errors)
-                    if validation.errors
-                    else "分支名校验失败",
+                    error="；".join(validation.errors) if validation.errors else "分支名校验失败",
                 )
             )
             continue
@@ -726,9 +827,7 @@ async def create_sessions_for_plan(
             session = await _atomic_create()
         except IntegrityError:
             # work item unique 约束兜底（理论上预检后不应到这里，但有竞态保护）
-            result.failed.append(
-                SessionFailedItem(repository_id=rid, error=ERROR_REPO_ACTIVE_BUSY)
-            )
+            result.failed.append(SessionFailedItem(repository_id=rid, error=ERROR_REPO_ACTIVE_BUSY))
             logger.warning(
                 "coding_sessions.batch_failed",
                 plan_id=str(plan.id),

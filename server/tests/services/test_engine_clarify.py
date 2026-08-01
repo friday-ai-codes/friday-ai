@@ -22,12 +22,15 @@ from delivery.models import (
 )
 from delivery.services import ClarificationService, ConvergenceSessionService
 from services.process_runtime import ClarifyAdapter, ProcessEngine
+from services.process_runtime.clarify_adapter import default_needs_clarification
 
 _LLM_GEN = "services.process_runtime.clarify_adapter.agenerate_clarification_questions"
 
 
 async def _clarify_session(
-    *, routing: dict | None = None, decomposition: dict | None = None,
+    *,
+    routing: dict | None = None,
+    decomposition: dict | None = None,
     entrypoint=ConvergenceSessionEntrypoint.WORKFLOW,
 ) -> ConvergenceSession:
     stage_state: dict = {}
@@ -160,6 +163,49 @@ async def test_default_policy_high_candidate_no_clarification() -> None:
 
     reloaded = await ConvergenceSession.objects.aget(id=session.id)
     assert reloaded.current_stage == "research"
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_default_policy_short_circuits_after_clarification_exit() -> None:
+    """stage_state 有 clarification_exit → policy 恒判不需澄清（超时出口后不得被立刻重挂）。
+
+    短路优先级最高：即使 routing 候选全 low、即使 decomposition 标 ambiguous 也不再追问
+    （出口把 stage 推到 research 后，经 merge 的校验失败回退 clarify 会重跑本 policy，
+    无短路即无限循环）。
+    """
+    session = await _clarify_session(
+        routing={"candidates": [{"repo_id": "r1", "confidence": "low"}]},
+        decomposition={"ambiguous": True, "ambiguous_hint": "需求存在歧义"},
+    )
+    session.stage_state["clarification_exit"] = {
+        "action": "resumed_with_assumptions",
+        "reason": "no_answer_timeout",
+    }
+
+    assert default_needs_clarification(session) == (False, "", [])
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_default_policy_unchanged_without_clarification_exit() -> None:
+    """无 clarification_exit → 三条既有判定规则逐字不变（零回归）。"""
+    all_low = await _clarify_session(
+        routing={"candidates": [{"repo_id": "r1", "confidence": "low"}]},
+    )
+    needs, question, affected = default_needs_clarification(all_low)
+    assert needs is True and question and affected == []
+
+    ambiguous = await _clarify_session(
+        routing={"candidates": [{"repo_id": "r1", "confidence": "high"}]},
+        decomposition={"ambiguous": True, "ambiguous_hint": "需求存在歧义"},
+    )
+    assert default_needs_clarification(ambiguous) == (True, "需求存在歧义", [])
+
+    confident = await _clarify_session(
+        routing={"candidates": [{"repo_id": "r1", "confidence": "high"}]},
+    )
+    assert default_needs_clarification(confident) == (False, "", [])
 
 
 @pytest.mark.django_db
@@ -305,7 +351,9 @@ async def test_multi_round_reclarifies_when_still_insufficient() -> None:
 
     adapter = ClarifyAdapter()
     gen = AsyncMock(
-        return_value=[{"question": "Q2", "type": "single", "options": ["x", "y"], "recommended": "x"}]
+        return_value=[
+            {"question": "Q2", "type": "single", "options": ["x", "y"], "recommended": "x"}
+        ]
     )
     with patch(_LLM_GEN, new=gen):
         result = await adapter.clarify(session)
@@ -347,7 +395,9 @@ async def test_round_cap_reached_continues_without_new_round() -> None:
         await _answered_round(session, question=f"Q{i}")
 
     adapter = ClarifyAdapter()
-    gen = AsyncMock(return_value=[{"question": "不该被调", "type": "single", "options": [], "recommended": ""}])
+    gen = AsyncMock(
+        return_value=[{"question": "不该被调", "type": "single", "options": [], "recommended": ""}]
+    )
     with (
         patch(_LLM_GEN, new=gen),
         patch("services.process_runtime.clarify_adapter.logger") as mock_logger,
@@ -381,3 +431,92 @@ async def test_clarify_pending_uses_ahas_pending() -> None:
     assert result == {"needs_clarification": True, "pending": True}
     assert gen.await_count == 0
     assert await Clarification.objects.filter(session_id=session.id).acount() == 1
+
+
+# ── 105-03 RELY-04：降级路由（Stage 1 失联）的 clarify policy 行为回归 ──────
+#
+# 生产事故链（会话 ccd817d9）：Stage 1 失联 → confidence 恒 low → 无差别澄清/
+# 强制确认 → 编排卡死。confidence 语义修复（确定性 margin 推导）后，policy 代码
+# 零改动自动解锁——以下用例在 policy / adapter 层锁定该行为（RESEARCH Pitfall 1：
+# 只测 router 单元不足以证明编排推进）。
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_default_policy_degraded_routing_high_margin_no_clarification() -> None:
+    """RELY-04：Stage 1 失联降级但 margin 达标（首位确定性 high，router_version=
+    v2_stage0_only）→ default policy 判定无需澄清，编排自动推进。"""
+    session = await _clarify_session(
+        routing={
+            "candidates": [
+                {"repo_id": "r1", "confidence": "high", "repository_name": "R1"},
+                {"repo_id": "r2", "confidence": "low", "repository_name": "R2"},
+            ],
+            "router_version": "v2_stage0_only",
+            "auto_selected": True,
+        },
+    )
+    needs, _question, _affected = default_needs_clarification(session)
+    assert needs is False
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_default_policy_degraded_routing_all_low_still_clarifies() -> None:
+    """RELY-04 边界：降级产物全 low（margin 不达标）→ 仍需澄清——语义未被放松，
+    修复只解锁「margin 达标却被恒 low 卡死」的情形。"""
+    session = await _clarify_session(
+        routing={
+            "candidates": [
+                {"repo_id": "r1", "confidence": "low", "repository_name": "R1"},
+                {"repo_id": "r2", "confidence": "low", "repository_name": "R2"},
+            ],
+            "router_version": "v2_stage0_only",
+            "auto_selected": False,
+        },
+    )
+    needs, question, _affected = default_needs_clarification(session)
+    assert needs is True
+    assert question
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_clarify_adapter_degraded_routing_high_conf_no_forced_confirmation() -> None:
+    """success criterion 1 回归：确定性 confidence=high 时强制确认不再无差别触发。
+
+    非 feature_list 会话（stage_state 无 classification、question_builder 不产题）+
+    routing 首位 confidence="high" → ClarifyAdapter.clarify 返回
+    needs_clarification=False：不建澄清轮（create_round 未被调用）、不 emit
+    clarification.asked——编排自动推进。
+
+    注：feature_list 入口的 build_feature_confirm_questions 强制确认是独立产品约束
+    （「哪怕路由十分确定也必须确认一次」），不属于「无差别触发」范围，本修复不改
+    其行为——本用例用默认 ClarifyAdapter（question_builder=None）。
+    """
+    session = await _clarify_session(
+        routing={
+            "candidates": [
+                {"repo_id": "r1", "confidence": "high", "repository_name": "R1"},
+            ],
+            "router_version": "v2_stage0_only",
+            "auto_selected": True,
+        },
+        decomposition={"requirement_text": "需求文本"},
+    )
+    adapter = ClarifyAdapter()
+    gen = AsyncMock(return_value=[])
+    create_spy = AsyncMock()
+    emit_spy = AsyncMock()
+    with (
+        patch(_LLM_GEN, new=gen),
+        patch("delivery.services.ClarificationService.create_round", new=create_spy),
+        patch("delivery.services.ConvergenceSessionService._emit_event", new=emit_spy),
+    ):
+        result = await adapter.clarify(session)
+
+    assert result == {"needs_clarification": False}
+    assert create_spy.await_count == 0  # 不建澄清轮
+    asked = [c for c in emit_spy.call_args_list if c.args and c.args[0] == "clarification.asked"]
+    assert asked == []  # 不 emit clarification.asked
+    assert gen.await_count == 0  # LLM 生成器也未被触发

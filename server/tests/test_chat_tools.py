@@ -386,8 +386,11 @@ class TestGetToolNames:
     """_get_tool_names 动态工具注入测试。"""
 
     async def test_with_indexed_repo_returns_full_tool_set(self, project):
-        """有已索引仓库的项目返回完整工具集合（implementation 起含
-        ``ask_clarification``，共 9 个工具）。
+        """有已索引仓库的项目返回完整工具集合。
+
+        计数从 9 变为 11：SPINE-02（109-05）给该清单补上 ``start_plan_research`` 与
+        ``start_feature_solution`` —— 收窄后 ``create_coding_plan`` 必须携带编排产出的
+        ``artifact_version_id``，不挂编排工具会让模型陷入「被要求带来源却拿不到来源」。
         """
         from chat.conversation_service import _get_tool_names
 
@@ -397,7 +400,7 @@ class TestGetToolNames:
 
         tool_names = await _get_tool_names(str(project.id))
 
-        assert len(tool_names) == 9
+        assert len(tool_names) == 11
         assert "browse_file_content" in tool_names
         assert "list_space_structure" in tool_names
         assert "get_space_overview" in tool_names
@@ -406,6 +409,9 @@ class TestGetToolNames:
         assert "get_repository_info" in tool_names
         assert "create_coding_plan" in tool_names
         assert "update_coding_plan" in tool_names
+        # 编排工具（create_coding_plan 的来源产出方）
+        assert "start_plan_research" in tool_names
+        assert "start_feature_solution" in tool_names
         # 协商工具
         assert "ask_clarification" in tool_names
 
@@ -417,3 +423,56 @@ class TestGetToolNames:
 
         assert len(tool_names) == 1
         assert "get_space_overview" in tool_names
+
+
+# ============================================================================
+# 两份工具白名单的一致性（SPINE-02 · 109-05 Task 3 A）
+# ============================================================================
+
+_ORCHESTRATION_TOOLS = ("start_plan_research", "start_feature_solution")
+
+
+def _assert_orchestration_tools_accompany_create(tool_names, *, source: str) -> None:
+    """凡挂载 ``create_coding_plan`` 的清单，必须同时挂载两个编排工具。
+
+    这条断言把「两份清单不同步」从靠人记变成靠测试守：SPINE-02 收窄后
+    ``create_coding_plan`` 必填 ``artifact_version_id``，而该 id 只能由编排工具产出。
+    只挂 create/update 就是一条真实的死路（模型被要求带来源却没有任何工具能产出来源）。
+    """
+    names = set(tool_names)
+    if "create_coding_plan" not in names:
+        return
+    for orchestration_tool in _ORCHESTRATION_TOOLS:
+        assert orchestration_tool in names, (
+            f"{source} 挂载了 create_coding_plan 但缺 {orchestration_tool}："
+            "收窄后的 create_coding_plan 必须携带编排产出的 artifact_version_id，"
+            "不挂编排工具会让模型陷入「被要求带来源却拿不到来源」的死路。"
+        )
+
+
+def test_indexed_tool_names_mount_orchestration_with_create_coding_plan():
+    """活路径 ``chat_runner._INDEXED_TOOL_NAMES``。"""
+    from agents.chat_runner import _DEEP_ANALYSIS_TOOL_NAMES, _INDEXED_TOOL_NAMES
+
+    _assert_orchestration_tools_accompany_create(
+        _INDEXED_TOOL_NAMES, source="chat_runner._INDEXED_TOOL_NAMES"
+    )
+    _assert_orchestration_tools_accompany_create(
+        _DEEP_ANALYSIS_TOOL_NAMES, source="chat_runner._DEEP_ANALYSIS_TOOL_NAMES"
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_conversation_service_tool_names_mount_orchestration_with_create(project):
+    """第二份清单 ``conversation_service._get_tool_names``（Pitfall 7 的那一份）。"""
+    from chat.conversation_service import _get_tool_names
+
+    repo = await project.repositories.afirst()
+    repo.index_status = "indexed"
+    await repo.asave()
+
+    tool_names = await _get_tool_names(str(project.id))
+    _assert_orchestration_tools_accompany_create(
+        tool_names, source="conversation_service._get_tool_names"
+    )

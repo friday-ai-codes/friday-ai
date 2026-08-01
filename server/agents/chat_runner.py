@@ -402,7 +402,16 @@ async def _log_tool_call(
 def _normalize_tool_result(result: ToolResult) -> Any:
     if result.success:
         return result.output
-    return {"error": result.error or "未知错误", "is_error": True}
+    # 110-HI-01：失败结果也要带上工具显式给出的**定位键**。
+    #
+    # 失败的 ToolResult 结构上只有一个自由文本 `error`，没有任何 id。编排失败的气泡
+    # 因此绑不到自己那次会话，只能回退 store 的全局活跃会话——同一对话里「失败后重跑」
+    # 时，失败那条气泡会改显示新一轮的实时时间线（OBS-03 的失败呈现被抹掉）。
+    #
+    # `metadata` 是工具显式装配的受控 dict（不含自由文本），把它并进出网体即可让失败
+    # 结果自带 `session_id`。固定两键放在**最后**展开，metadata 不得覆写它们——否则
+    # 一个工具就能把 `is_error` 翻成 false。
+    return {**(result.metadata or {}), "error": result.error or "未知错误", "is_error": True}
 
 
 def _make_part_event(

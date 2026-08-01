@@ -2,8 +2,8 @@
 
 ## Milestones
 
-- ✅ **v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）** — Phases 111–116 (shipped 2026-08-02) — 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图 — 里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口；GATE-01 与三道入口接缝因硬依赖同步点 2 判 PARTIAL / 转技术债）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.20.0-ROADMAP.md) · [requirements](./milestones/v0.20.0-REQUIREMENTS.md) · [design](./technical-blueprint/DESIGN.md)
-- 🟡 **v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 方案够深 + 过程可见）** — Phases 105–110 (planning) — 让技术方案链路真正跑通并可信：编排不再中途卡死被降级工具顶替、路由基于多维证据分层呈现并可解释、方案结构覆盖数据流编排与模块↔仓映射、全过程对用户实时可见 — [requirements](./REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
+- ✅ **v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）** — Phases 111–116 (shipped 2026-08-02) — 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图 — 里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口；GATE-01 与三道入口接缝因硬依赖同步点 2 判 PARTIAL / 转技术债，同步点 2 已由 2026-08-02 的分支合并满足）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.20.0-ROADMAP.md) · [requirements](./milestones/v0.20.0-REQUIREMENTS.md) · [design](./technical-blueprint/DESIGN.md)
+- ✅ **v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 编排产出直连执行流 + 过程可见）** — Phases 105–110（其中 108 已移交 v0.20.0）(completed 2026-08-02，未打 tag) — 让技术方案链路真正跑通并可信：编排不再中途卡死被降级工具顶替、路由基于多维证据分层呈现并可解释、编排产出直连执行流、全过程对用户实时可见 — 5 相位 39/39 plans；里程碑审计 **tech_debt**（19 条需求 17 满足 / 2 部分（ROUTE-03 生产 `nr_snapshot` 未写入、RELY-02 澄清送达需真实飞书）/ 0 未达；ROUTE 缺口已结构性闭合；遗留 27 项人工验收全未执行）见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.19.0-ROADMAP.md) · [requirements](./milestones/v0.19.0-REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
 - ✅ **v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）** — Phases 100–104 (shipped 2026-07-22) — 把多套"知识/经验/沉淀"收敛成统一知识库（单一摄取 + 单一检索），补齐完工沉淀闭环（三链路一致），给编码容器内置 Friday MCP 与 skills — 里程碑审计 tech_debt（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留 11 项真实 Qdrant·飞书·容器·Cursor 端人工验证 + 若干接受/递延债务）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.17.0-ROADMAP.md)
 - ✅ **v0.16.3 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）** — Phases 96–99 (shipped 2026-07-01) — 把项目外部依赖（`Artifact`：PRD/埋点评审/UI 文档等）接入知识总览/搜索/知识树，并与关键词/业务能力/仓库建关联 — 里程碑审计 tech_debt（12/12 需求满足 / integration_ok；遗留真机/浏览器视觉验收 + 既有范围外测试漂移）见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md) — [archive](./milestones/v0.16.3-ROADMAP.md)
 - ✅ **v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）** — Phases 90–95 (shipped 2026-06-28) — 里程碑审计 tech_debt（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留真机·真实 provider·画布视觉端到端验收 + INFO 欠债）见 [audit](./milestones/v0.16.1-MILESTONE-AUDIT.md) — [archive](./milestones/v0.16.1-ROADMAP.md)
@@ -29,128 +29,6 @@
 
 ## Phases
 
-### 🟡 v0.19.0 技术方案可信度 (Phases 105–110) — PLANNING
-
-**Milestone Goal:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，方案结构覆盖数据流编排 / 模块↔仓映射 / 新增改造对照 / 主动澄清，全过程对用户实时可见。
-
-- [ ] **Phase 105: 编排解锁与评估标尺** - 置信度由分数 margin 确定性推导 + 分数可拆解落 trace + 幂等与快照回放 + golden set 回归门禁（RELY-04, ROUTE-07/08/09）
-- [ ] **Phase 106: 多信号打分函数重构** - 消除尺寸偏置 + 元数据信号真正入分 + 活跃度连续化 + 权重外置不发版可调（ROUTE-03/04/05/06）
-- [ ] **Phase 107: 分层呈现与链路韧性** - 本项目/全局两组呈现与跨组标注 + 降级可见 + 澄清必达有出口 + Stage 1 重试与延迟上界（ROUTE-01/02, RELY-02/03/05）
-- [ ] **Phase 108: 方案深度** - 业务流程编排叙事 + 模块↔仓库映射 + 新增/改造对照 + 删除分周计划 + 主动澄清（DEPTH-01~05）
-- [ ] **Phase 109: 双脊柱合流** - 编排产出直连"选仓→分支→确认编码"执行流 + 移除徒手创作路径 + 草稿显式标注（SPINE-01/02, RELY-01）
-- [ ] **Phase 110: 过程可观测** - 编排事件桥接 chat SSE + 调研容器日志可见 + 前端阶段时间线（OBS-01/02/03）
-
-**执行顺序（依赖链）:** 105 → 106 → 107 → 108 → 109 → 110，线性。105 是全里程碑枢纽——RELY-04 是解开死锁的最短路径（Stage 1 不可靠时置信度恒 low → `auto_selected` 恒 false → 编排卡死 → 降级工具顶替），同时解除 RELY-02/RELY-03 的压力，也是 ROUTE 组能被正确评估的前提；ROUTE-08 的 golden set 是回归门禁而非优化目标（research §7.2：10–50 条只能检出大幅退化），不先建则后面每一步排序改动都是盲改。106 的 ROUTE-03 是路由误选的直接机制（现行 `max_score×(1+0.1×min(hits-1,5))` 结构性偏袒大单体），research 给了可直接落地的替代公式与数值验算，风险低收益高故紧随其后。107 的分组呈现要求两组分数可比（同一打分函数、无 group-conditional 项），必须等 106 定版。108 DEPTH 的价值依赖 RELY 组先成立——编排若仍卡死，方案提示词改得再好也一次都用不上。109 内部 SPINE-01 严格先于 SPINE-02（必须先有编排产出直连执行流的替代路径，才能安全砍掉唯一的编码入口）。110 OBS 相对独立放最后，但须复用 107 已落的事件源，不重复建设。
-
-**实测前置分布（research §9 的 6 个开放项，不得留到实现中途才发现）:** O-1 全仓能力树节点数 `N_r` 分布 + O-3 Stage 0 是否可取 dense 余弦 + O-4 golden set 跨组样本 → **Phase 105**；O-2 embedding 余弦校准 + O-5 `last_commit_at` 覆盖率 → **Phase 106**；O-6 Stage 1 延迟压降 → **Phase 107**。
-
-**UI 触面:** Phase 107（分组结果与 trust 标注呈现）、Phase 109（TechPlanCard 与选仓/分支执行流）、Phase 110（阶段时间线 + 流式进展）。
-
-#### Phase Details (v0.19.0)
-
-### Phase 105: 编排解锁与评估标尺（确定性置信度 + 分数可拆解 + golden set 门禁）
-
-**Goal**: 技术方案编排不再因 Stage 1 失联而永久停摆，且此后每一次排序改动都能被客观判定为改进还是退化——置信度由分数 margin 确定性推导，分数可拆解、可复现、可离线回放，golden set 作为 CI 回归门禁就位。
-**Depends on**: Nothing（本里程碑首个 phase。仓库去重与 Space 归属治理已于立项前完成；Stage 1 超时外置已单独修复 `1c9ebdff`）
-**Requirements**: RELY-04, ROUTE-07, ROUTE-08, ROUTE-09
-**Success Criteria** (what must be TRUE):
-
-  1. Stage 1 完全不可用时（网关 400 / 连接错误 / 超时三种情形），用户发起的方案编排仍能拿到 high / medium / low 分级并自动推进到下一阶段，不再恒 low、不再无差别触发强制确认；LLM 的 confidence 只能把边界情况降级，不能把 low 升为 high。
-  2. 用户在路由结果里展开任一候选仓，能看到每个信号的贡献值且各项之和恰等于总分；不存在把多个高分候选压平到同一分的截断（现行 `min(score, 1.0)` 销毁排序信息的行为消失）。
-  3. 同一需求 + 同一索引状态重复路由两次，得到完全相同的候选顺序与分数（Stage 1 可用与不可用两种情形都成立）；从 `ConvergenceSessionEvent` 快照可离线回放出同一结果且全程零网络调用。
-  4. golden set 建成并接入 CI 门禁：含「高三提分专项」首条真实用例与至少 2–3 条「正确答案在跨组」的样本，全量跑完 < 5s；Recall@5 低于基线、Top-1 正确数低于基线−1 或误自动选中率 > 10% 时门禁失败，并输出逐例 diff（哪几条变好、哪几条变坏、变坏那条的分数分解如何变化）。
-  5. Phase 106 的公式定版输入已实测落文档：全仓能力树节点数 `N_r` 分布直方图（p50/p90/p99/max，用于定 `N̄` 与 `b`，O-1）+ Stage 0 返回结构中 dense 余弦是否可得（决定 MaxP 主干用余弦还是 RRF 分，O-3）。
-
-**Plans**: 7 plans
-
-Plans:
-
-- [ ] 105-01-PLAN.md — 纯函数打分核心（加性分解/margin 置信度/只降不升）+ 阈值外置 + 不变量测试（wave 1）
-- [ ] 105-02-PLAN.md — O-1/O-3 实测 command（measure_repo_index_stats）+ 105-MEASUREMENTS.md（wave 1）
-- [ ] 105-03-PLAN.md — RepoRouterV2 接线：去截断/breakdown/degraded/确定性 auto_selected + 三种失联测试 + clarify policy 回归（wave 2）
-- [ ] 105-04-PLAN.md — golden set fixture + 离线评估 harness + CI 门禁进默认 suite（wave 2）
-- [ ] 105-05-PLAN.md — Stage 1 幂等三件套：输入哈希缓存 + 排列输出 + decode 固定 + call_source（wave 3）
-- [ ] 105-06-PLAN.md — 前端最小展开：breakdown 透传 + RoutingDecisionPanel 分数分解 + confidence Tooltip（wave 3）
-- [ ] 105-07-PLAN.md — 快照落 ConvergenceSessionEvent + 离线 replay 零网络同结果（wave 4）
-
-**UI hint**: yes
-
-### Phase 106: 多信号打分函数重构（尺寸偏置 + 元数据入分 + 活跃度连续 + 权重外置）
-
-**Goal**: 路由排序由一个可拆解、无结构性偏袒、不发版可调的多信号打分函数决定——大而全的单体不再因命中节点多而被系统性高估，业务域 / 技术栈 / 团队 / 关键程度 / 活跃度从"算了给 LLM 看"变成真正参与打分。
-**Depends on**: Phase 105（无回归门禁与分数分解则公式改动是盲改；`N_r` 分布与余弦口径是公式定版的直接输入）
-**Requirements**: ROUTE-03, ROUTE-04, ROUTE-05, ROUTE-06
-**Success Criteria** (what must be TRUE):
-
-  1. 「高三提分专项」用例中前端候选 `onion-learning` 排在 `study-app` 之前、后端 `study-course` 与 `study-user-status` 进入 Top-5；断言锁定的是机制（`study-app` 的广度加成不高于 `onion-learning`）而非某组权重下的偶然名次；golden set 门禁通过（Recall@5 不低于基线、误自动选中率 ≤ 10%）。
-  2. 需求文本提到业务域 / 技术栈 / 团队时，对应元数据匹配对最终分数产生可见且可拆解的贡献；仓库该项元数据缺失时该信号被剔除并重归一化，元数据填得不全的仓不因此被系统性压低（"未知"不等于"确认不匹配"）。
-  3. 半年 / 一年 / 两年未提交的仓库，其活跃度得分呈连续递减而非只有「疑似废弃」一档生效；废弃惩罚完全落在活跃度项内并可单独展示，不再以乘性系数污染总分。
-  4. 运维在系统设置里调整任一权重或常数并保存后，下一次路由立即按新值打分且无需发版；每条路由结果记录其所用的权重版本，跨版本结果不被混作同一口径比较。
-  5. 实测前置完成并写入配置说明：embedding 在中文短需求 × facet 值上的余弦校准区间（区分度不足 0.10 的 facet 放弃该通道，O-2）+ `last_commit_at` 的全仓覆盖率与新鲜度（覆盖不足的仓退回枚举映射，O-5）。
-
-**Plans**: TBD
-
-### Phase 107: 分层呈现与链路韧性（分组/跨组标注 + 降级可见 + 澄清必达 + Stage 1 有界）
-
-**Goal**: 用户看到的路由结果分组可信、降级有明确标注，编排在澄清环节与上游抖动下不再无声卡死。
-**Depends on**: Phase 106（两组分数可比的前提是同一套打分函数、无任何 group-conditional 偏移）；Phase 105（RELY-04 解除"置信度恒 low"后，强制确认才不再无差别触发，澄清回路的真实缺陷才暴露得出来）
-**Requirements**: ROUTE-01, ROUTE-02, RELY-02, RELY-03, RELY-05
-**Success Criteria** (what must be TRUE):
-
-  1. 路由结果分「本项目关联仓」与「全局候选」两组呈现、各组内按同一套分数排序，用户能一眼看出哪些是本平台内的；跨组候选带「未关联当前平台，可能涉及跨组协作」标注，用户据此判断是否要拉其他团队。
-  2. 全局组首位显著优于本项目组首位（超过迟滞阈值）时该组被置顶并显式提示「更匹配的仓不在本项目关联范围内」；分数上不存在任何"本项目 +boost"的暗补偿（组别只进呈现与 trust 字段，绝不进分数）。
-  3. 路由走降级路径（Stage 1 不可用 / `v2_stage0_only`）时，用户能看到「本次未经 LLM 推理，置信度仅供参考」的明确提示，而不是拿到一份看不出问题的结果。
-  4. 编排进入澄清后，澄清一定送达用户且可作答；无人应答时有明确超时出口（继续推进或如实失败并说明原因），会话不会再永久停在 `waiting_clarification`。
-  5. Stage 1 单次调用有重试与延迟上界，超出即降级继续，用户不会无限等待；O-6 的延迟压降结论（实测 34–71s 能否压到可接受）已落文档，若压不下来则缓存与快照回放作为主要收益来源已体现在设计中。
-
-**Plans**: TBD
-**UI hint**: yes
-
-### Phase 108: 方案深度（业务编排叙事 + 模块↔仓映射 + 新增/改造对照 + 主动澄清）
-
-**Goal**: 编排产出的技术方案覆盖数据产出与流转、业务流程编排叙事、功能↔模块↔仓库映射、新增/改造逐项对照，并在需求含糊时主动抛出带选项的澄清，而不是带着模糊假设直接出方案。
-**Depends on**: Phase 107（编排能稳定跑完并拿到可信路由结果，方案提示词与 schema 的改动才会被真实用到；编排仍卡死时改提示词一次都用不上）
-**Requirements**: DEPTH-01, DEPTH-02, DEPTH-03, DEPTH-04, DEPTH-05
-**Success Criteria** (what must be TRUE):
-
-  1. 用户拿到的方案能读到完整的业务流程叙事与数据流向：在哪个页面、经哪个接口、传什么参数、拿到什么数据、数据流向哪里、用户有哪几条行为路径。
-  2. 方案给出功能 ↔ 模块 ↔ 仓库的映射关系，用户据此能判断每个仓具体要改什么。
-  3. 方案逐项标注「新增」还是「改造」；改造项写明与既有功能如何配合、影响哪些已交付能力。
-  4. 方案中不再出现以周为单位的分阶段实施计划（自由文本产出的分周计划消失，非模板产物不再泄漏到正文）。
-  5. 需求存在影响方案质量的不确定点时（含 research 阶段已产出却无人消费的 `unclear_features`），系统在第二轮主动抛出澄清并给出候选选项，用户作答后方案据此收敛。
-
-**Plans**: TBD
-
-### Phase 109: 双脊柱合流（编排产出直连执行流 + 移除徒手创作路径）
-
-**Goal**: 编排产出的技术方案可直接进入"选目标仓 → 配置分支 → 确认编码 → 飞书导出"的执行流，系统不再存在由对话模型徒手编写方案正文的产出路径，用户拿到的方案一定来自完整编排链路。
-**Depends on**: Phase 108（先有够深的编排方案，替代徒手创作才不降质）。**Phase 内部顺序硬约束**：SPINE-01 必须先于 SPINE-02——必须先有编排产出直连执行流的替代路径，才能安全砍掉当前 SPA 唯一的编码入口。
-**Requirements**: SPINE-01, SPINE-02, RELY-01
-**Success Criteria** (what must be TRUE):
-
-  1. 用户在编排产出方案后可直接进入选目标仓 → 配置分支 → 确认编码 → 飞书导出，全程无需重新走一遍方案生成。
-  2. 系统不再存在「由对话模型徒手编写方案正文」的产出路径；`create_coding_plan` 的执行半边（选仓 / 分支 / 确认编码 / 导出）保持可用，SPA 与 MCP 两条编码链路零回归（MCP 执行链依赖其创建 chat `CodingPlan` 做桥接的行为不被破坏）。
-  3. 用户拿到的技术方案一定来自完整编排链路；编排未完成时若仍提供草稿，草稿在界面与导出物上均显式标注「未经代码调研」，不会被误当作正式方案送去编码。
-  4. 编排产出投影成执行侧对象的过程幂等：同一方案版本重复投影不产生重复的编码计划。
-
-**Plans**: TBD
-**UI hint**: yes
-
-### Phase 110: 过程可观测（阶段流式 + 容器日志 + 阶段时间线）
-
-**Goal**: 方案生成全过程对用户实时可见——阶段进展与阶段性内容边跑边出、调研容器日志可查、失败停在哪一步一目了然。
-**Depends on**: Phase 109（编排链路已成为唯一方案来源，可观测面才覆盖真实产出路径）。与 Phase 107 有重叠面（都要把编排内部状态暴露给用户），必须复用同一事件源，不重复建设。
-**Requirements**: OBS-01, OBS-02, OBS-03
-**Success Criteria** (what must be TRUE):
-
-  1. 用户发起方案生成后能实时看到阶段进展与阶段性内容（拆分 / 路由 / 召回 / 澄清 / 并行调研 / 融合），而不是长时间静默后一次性吐出结果。
-  2. 方案调研阶段的容器执行日志对用户可见，体验与深度分析一致（不再被来源过滤挡在运行时快照之外）。
-  3. 前端展示方案生成的阶段时间线；编排失败时用户能直接看出停在哪一步、原因是什么。
-  4. 实时进展与 Phase 107 的降级提示复用同一事件源（`ConvergenceSessionEvent`），未新建平行推送通道，同一状态不存在两处各自实现。
-
-**Plans**: TBD
-**UI hint**: yes
-
 <details>
 <summary>✅ v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）(Phases 111–116) — SHIPPED 2026-08-02 — 审计 tech_debt</summary>
 
@@ -164,7 +42,22 @@ Plans:
 
 完整阶段详情见 [milestones/v0.20.0-ROADMAP.md](./milestones/v0.20.0-ROADMAP.md)；需求归档见 [milestones/v0.20.0-REQUIREMENTS.md](./milestones/v0.20.0-REQUIREMENTS.md)；里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口）见 [milestones/v0.20.0-MILESTONE-AUDIT.md](./milestones/v0.20.0-MILESTONE-AUDIT.md)；相位产物归档在 `milestones/v0.20.0-phases/`。
 
-⚠️ **顺延同步点 2（v0.19.0 Phase 109/110 合并）的四件事必须同批做**：翻四个 per-entry 开关默认值 + workflow / feature_list / MCP 三个入口的出口映射重做（审计 §4.1 的 G1/G3/G4）+ `TechPlanCard`/`NodeDataTab`/`ArtifactTimeline` 三处触点升级 + 旧 `technical_plan` process 退役收口。默认开关下三道接缝零生产影响；⛔ 任何一件单独做都会造成回退。
+⚠️ **顺延同步点 2 的四件事必须同批做**：翻四个 per-entry 开关默认值 + workflow / feature_list / MCP 三个入口的出口映射重做（审计 §4.1 的 G1/G3/G4）+ `TechPlanCard`/`NodeDataTab`/`ArtifactTimeline` 三处触点升级 + 旧 `technical_plan` process 退役收口。默认开关下三道接缝零生产影响；⛔ 任何一件单独做都会造成回退。**同步点 2（v0.19.0 Phase 109/110 合并）已于 2026-08-02 满足** —— 这四件事状态由「阻塞」转为「解阻塞、待执行」，是下一个动作；台账见 STATE.md Pending Todos。
+
+</details>
+
+<details>
+<summary>✅ v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 编排产出直连执行流 + 过程可见）(Phases 105–110，其中 108 已移交 v0.20.0) — COMPLETE 2026-08-02（未打 tag）— 审计 tech_debt</summary>
+
+- [x] Phase 105: 编排解锁与评估标尺 (7/7 plans) — 置信度由分数 margin 确定性推导 + 分数可拆解落 trace + Stage 1 幂等与快照零网络回放 + golden set 回归门禁进默认 suite（RELY-04, ROUTE-07/08/09）— completed 2026-07-30
+- [x] Phase 106: 多信号打分函数重构 (8/8 plans) — MaxP + pivoted breadth 消除尺寸偏置 + 域/栈/团队元数据真正入分（缺失重归一化）+ 活跃度指数衰减连续化 + 权重外置不发版可调并绑 `weight_set_version`（ROUTE-03/04/05/06）— completed 2026-07-30
+- [x] Phase 107: 分层呈现与链路韧性 (9/9 plans) — `repo_router_ranking` 六个纯函数（分组/迟滞置顶/裁剪/凸组合/降级原因闭集）+ 关联仓从硬过滤改为分组依据 + Stage 1 有界重试与共享预算 + 澄清超时出口真实续驱（ROUTE-01/02, RELY-02/03/05）— completed 2026-07-31
+- ~~Phase 108: 方案深度~~ — **已移交 v0.20.0 技术方案蓝图**（DEPTH-01~05 由 `blueprint/v1` 结构化 schema 原生满足；移交于 2026-07-29，两个里程碑双 worktree 并行开发）
+- [x] Phase 109: 双脊柱合流 (8/8 plans) — 编排产出经幂等投影直连「选仓→分支→确认编码→导出」四步共用同一 `CodingPlan.id` + schema 层焊死徒手创作路径 + 草稿 fail-closed 与四处一致的「未经代码调研」标注（SPINE-01/02, RELY-01）— completed 2026-07-31
+- [x] Phase 110: 过程可观测 (7/7 plans) — `ConvergenceSessionEvent` 单点 fan-out 接 chat SSE + 运行时快照两个隔离分支（编排 / 调研容器日志）+ 六步阶段时间线与按仓日志组挂上编排气泡（OBS-01/02/03）— completed 2026-07-31
+- [x] ROUTE 缺口闭环 (2026-08-02，横跨 105/107/110) — 审计发现 ROUTE-01/02/07 与 RELY-03 的用户半边全部建在零挂载点的 `RoutingDecisionPanel` 上；解释职能折进活着的候选面 `RoutingCandidateList.vue` 并删除旧组件，另闭合 `v1_fallback` 降级徽标永不显示的后端洞。报告见 [milestones/v0.19.0-phases/ROUTE-GAP-CLOSURE.md](./milestones/v0.19.0-phases/ROUTE-GAP-CLOSURE.md)
+
+完整阶段详情见 [milestones/v0.19.0-ROADMAP.md](./milestones/v0.19.0-ROADMAP.md)；需求归档见 [milestones/v0.19.0-REQUIREMENTS.md](./milestones/v0.19.0-REQUIREMENTS.md)；里程碑审计 tech_debt（19 条需求 17 满足 / 2 部分 / 0 未达 / 0 BLOCKER；`integration: seams_found` —— `nr_snapshot` 生产方未运行这道接缝仍在；遗留 27 项人工验收全未执行）见 [milestones/v0.19.0-MILESTONE-AUDIT.md](./milestones/v0.19.0-MILESTONE-AUDIT.md) §9。
 
 </details>
 
@@ -326,20 +219,13 @@ Plans:
 
 ## Progress
 
-里程碑 v0.1.0–v0.17.0（Phases 1–104）与 **v0.20.0 技术方案蓝图（Phases 111–116）** 均已交付并归档。**⛔ 下一里程碑尚未立项** —— 它取决于 `milestone/v0.19.0-plan-trust` 的合并（同步点 2）。本分支（`milestone/v0.20.0-blueprint`）尚未与 v0.19.0 合并，合并是独立的后续步骤。
+里程碑 v0.1.0–v0.17.0（Phases 1–104）与 **v0.19.0（Phases 105–110）、v0.20.0（Phases 111–116）均已交付并归档**。两个里程碑于 2026-07-29 起在 `milestone/v0.19.0-plan-trust` 与 `milestone/v0.20.0-blueprint` 双 worktree 并行开发，各自在本分支归档后于 **2026-08-02 合并**——**这次合并即同步点 2**。
 
-**🟡 当前立项：v0.19.0 技术方案可信度（Phases 105–110，6 阶段 / 24 需求 RELY·ROUTE·DEPTH·SPINE·OBS）**——源于一次生产实例的实证排查：用户拿到的技术方案根本不是技术方案流水线产出的，两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`，agent 等不到就绕道 `create_coding_plan` 徒手编了一份。根因链已实测定位（haiku 档误配 → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替）。规划与调研已就绪（REQUIREMENTS 24 条 + [research/ROUTING-RANKING.md](./research/ROUTING-RANKING.md)），**待 `$gsd-plan-phase 105`**。
+**v0.19.0 技术方案可信度**收口于 2026-08-02（未打 tag）——源于一次生产实例的实证排查：用户拿到的技术方案根本不是技术方案流水线产出的，两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`，agent 等不到就绕道 `create_coding_plan` 徒手编了一份。根因链已实测定位（haiku 档误配 → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替），并在 105/107/109 三处切断。收口判定 `tech_debt`：17/19 需求满足，ROUTE-03（生产 `nr_snapshot` 未写入）与 RELY-02（澄清送达需真实飞书）挂账，27 项人工验收全未执行——详见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) §9。
 
-| Phase | Milestone | Requirements | Plans Complete | Status | Completed |
-|-------|-----------|--------------|----------------|--------|-----------|
-| 105. 编排解锁与评估标尺 | v0.19.0 | RELY-04, ROUTE-07/08/09 | 0/TBD | Not started | - |
-| 106. 多信号打分函数重构 | v0.19.0 | ROUTE-03/04/05/06 | 0/TBD | Not started | - |
-| 107. 分层呈现与链路韧性 | v0.19.0 | ROUTE-01/02, RELY-02/03/05 | 0/TBD | Not started | - |
-| 108. 方案深度 | v0.19.0 | DEPTH-01~05 | 0/TBD | Not started | - |
-| 109. 双脊柱合流 | v0.19.0 | SPINE-01/02, RELY-01 | 0/TBD | Not started | - |
-| 110. 过程可观测 | v0.19.0 | OBS-01/02/03 | 0/TBD | Not started | - |
+**v0.20.0 技术方案蓝图**于 2026-08-02 归档，判定 `tech_debt`：34/35 需求满足，GATE-01 PARTIAL（四入口 per-entry 开关默认值仍全为 `technical_plan`）——详见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md)。
 
-**Coverage (v0.19.0):** 24/24 需求全部映射，无孤儿、无重复。⚠️ DEPTH-01~05 已迁入 v0.20.0 并由 `blueprint/v1` schema 原生满足（Phase 108 的实现范围随之收窄，映射见 [milestones/v0.20.0-REQUIREMENTS.md](./milestones/v0.20.0-REQUIREMENTS.md)）。
+**⛔ 当前无在建里程碑，下一里程碑尚未立项。** 合并后的下一个动作不是新里程碑，而是执行同步点 2 顺延的四件事（翻 per-entry 开关默认值 + 三个入口出口映射重做 + 三处触点升级 + 旧 `technical_plan` process 退役）——依赖已满足，待执行；台账见 STATE.md Pending Todos。
 
 <details>
 <summary>✅ v0.20.0 进度表（Phases 111–116，34/35 需求已交付 · GATE-01 PARTIAL）</summary>
@@ -353,7 +239,23 @@ Plans:
 | 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 7/7 | ✅ Complete (passed 107/107) | 2026-08-01 |
 | 116. 入口收编与导出 | v0.20.0 | GATE-01, VIEW-05（+ 闭合 VIEW-04、VIEW-02） | 7/7 | ✅ Complete (passed 121/121) | 2026-08-01 |
 
-**Coverage (v0.20.0):** 35/35 需求全部映射，无孤儿、无重复；34 条 Complete、GATE-01 PARTIAL（默认入口切换硬阻塞同步点 2）。里程碑审计 tech_debt 见 [milestones/v0.20.0-MILESTONE-AUDIT.md](./milestones/v0.20.0-MILESTONE-AUDIT.md)；相位产物归档在 `milestones/v0.20.0-phases/`。
+**Coverage (v0.20.0):** 35/35 需求全部映射，无孤儿、无重复；34 条 Complete、GATE-01 PARTIAL（默认入口切换原硬阻塞同步点 2，该依赖已于 2026-08-02 合并时满足）。里程碑审计 tech_debt 见 [milestones/v0.20.0-MILESTONE-AUDIT.md](./milestones/v0.20.0-MILESTONE-AUDIT.md)；相位产物归档在 `milestones/v0.20.0-phases/`。
+
+</details>
+
+<details>
+<summary>✅ v0.19.0 进度表（Phases 105–110，19/19 需求映射 · 17 Complete / 2 Partial）</summary>
+
+| Phase | Milestone | Requirements | Plans Complete | Status | Completed |
+|-------|-----------|--------------|----------------|--------|-----------|
+| 105. 编排解锁与评估标尺 | v0.19.0 | RELY-04, ROUTE-07/08/09 | 7/7 | ✅ Complete（自动化验证 35/35，人工 UAT 3 项挂账） | 2026-07-30 |
+| 106. 多信号打分函数重构 | v0.19.0 | ROUTE-03/04/05/06 | 8/8 | ✅ Complete（自动化验证 34/38，人工 UAT 4 项挂账） | 2026-07-30 |
+| 107. 分层呈现与链路韧性 | v0.19.0 | ROUTE-01/02, RELY-02/03/05 | 9/9 | ✅ Complete（自动化验证 87/89，人工 UAT 6 项挂账） | 2026-07-31 |
+| 108. 方案深度 | 移交 v0.20.0 | DEPTH-01~05（随迁） | - | Moved (2026-07-29) | - |
+| 109. 双脊柱合流 | v0.19.0 | SPINE-01/02, RELY-01 | 8/8 | ✅ Complete（人工 UAT 6 项挂账） | 2026-07-31 |
+| 110. 过程可观测 | v0.19.0 | OBS-01/02/03 | 7/7 | ✅ Complete（GAP-1 已闭合；人工 UAT 8 项挂账） | 2026-07-31 |
+
+**Coverage (v0.19.0):** 19/19 需求全部映射，无孤儿、无重复（DEPTH-01~05 已移交 v0.20.0，不再计入本里程碑）。**收口 17 Complete / 2 Partial（ROUTE-03、RELY-02）/ 0 未达**，里程碑判定 `tech_debt`。需求归档见 [milestones/v0.19.0-REQUIREMENTS.md](./milestones/v0.19.0-REQUIREMENTS.md)。
 
 </details>
 
@@ -372,7 +274,7 @@ Plans:
 
 </details>
 
-v0.20.0 遗留的技术债（同步点 2 的四件事 / G1·G3·G4 三道入口接缝 / mcp npm 包漂移四个工具 / Nyquist validation 缺失）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md)；v0.17.0 遗留的真实 Qdrant·飞书·容器·Cursor 端人工验证（11 项）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md)；v0.16.3 遗留真机·真实 provider·浏览器视觉验收见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md)；v0.16.1 遗留人工验收（10 项）见 [audit](./milestones/v0.16.1-MILESTONE-AUDIT.md) §4。
+**v0.20.0 遗留的技术债**（同步点 2 的四件事——依赖已满足、待执行 / G1·G3·G4 三道入口接缝 / mcp npm 包漂移四个工具 / Nyquist validation 缺失）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md)；**v0.19.0 遗留 27 项人工验收（全未执行）+ 2 条 PARTIAL 需求 + 1 项发布前置交代**见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) §9.3/§9.5——其中 ROUTE-03 只差在生产跑一条 `measure_repo_index_stats --write-snapshot`；v0.17.0 遗留的真实 Qdrant·飞书·容器·Cursor 端人工验证（11 项）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md)；v0.16.3 遗留真机·真实 provider·浏览器视觉验收见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md)；v0.16.1 遗留人工验收（10 项）见 [audit](./milestones/v0.16.1-MILESTONE-AUDIT.md) §4。
 
 各历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
 

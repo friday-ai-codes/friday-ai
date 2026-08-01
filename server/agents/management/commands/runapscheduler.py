@@ -432,6 +432,28 @@ def check_workflow_event_timeouts_job():
 
 
 @_with_scheduler_log_context
+def expire_pending_clarifications_job():
+    """Job wrapper：扫描超期未答澄清并走超时出口（RELY-02）。
+
+    与 ``check_workflow_event_timeouts_job`` 同 ``call_command`` 模式（命令内部自管事务 +
+    事务外 asyncio.run 出口）。归因：本 wrapper 固定 ``user_id="system"``（周期任务无触发
+    用户，符合观测规范），被推进会话的 ``initiated_by_user_id`` 由命令内逐条携带，故
+    「谁的会话被超时放行」始终可查。命令异常被本 wrapper 吞掉记日志，绝不打断 scheduler
+    主循环。
+    """
+    from django.core.management import call_command
+
+    log = logger.bind(job="expire_pending_clarifications")
+    log.info("job_start")
+
+    try:
+        call_command("expire_pending_clarifications")
+        log.info("job_complete")
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
 def backfill_chunk_edges_job() -> None:
     """scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
 
@@ -809,6 +831,30 @@ class Command(BaseCommand):
             "job_registered",
             job="check_workflow_event_timeouts",
             schedule="every ~60s",
+        )
+
+        # 澄清超时出口扫描（RELY-02）：IntervalTrigger ~60s 扫超期未答澄清轮，按
+        # CLARIFICATION_TIMEOUT_EXIT_ACTION 走「带未澄清假设继续」或「如实失败」。间隔取
+        # settings.CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS（默认 60，与
+        # check_workflow_event_timeouts 对齐以压掉 D-4 的矛盾态窗口）启动值。
+        # **改过 trigger 间隔**：会重演上面 poll_repository_updates 记录的坑（旧
+        # job_state 残留旧 trigger），需在生产执行：
+        # DELETE FROM django_apscheduler_djangojob WHERE id='expire_pending_clarifications';
+        clarification_expiry_interval = getattr(
+            settings, "CLARIFICATION_EXPIRY_CHECK_INTERVAL_SECONDS", 60
+        )
+        scheduler.add_job(
+            expire_pending_clarifications_job,
+            trigger=IntervalTrigger(seconds=clarification_expiry_interval),
+            id="expire_pending_clarifications",
+            name="Expire pending clarifications past timeout (resume with assumptions / fail)",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info(
+            "job_registered",
+            job="expire_pending_clarifications",
+            schedule=f"every {clarification_expiry_interval}s",
         )
 
         # implementation ½：scheduler 启动后一次性 backfill ChunkEdge（老仓库

@@ -193,6 +193,117 @@ class TestBuildDispatchMetadata:
 
 
 @pytest.mark.django_db(transaction=True)
+class TestExecutionSpecUnresearchedFlag:
+    """RELY-01 下游携带：执行契约的 ``unresearched`` 标志。
+
+    判定与 fan-out gate / 飞书导出同为**允许清单**：只有 ``provenance == orchestrated``
+    才算经过调研，未知取值与历史未迁移数据一律保守标注。
+    """
+
+    @pytest.fixture
+    def session_for_spec(self, project, repository):
+        from chat.models import Conversation
+
+        conversation = Conversation.objects.create(space=project, title="unresearched 测试")
+        return CodingSession.objects.create(
+            conversation=conversation,
+            repository=repository,
+            tech_plan="## 方案",
+            branch_name="feat20260730.unresearched",
+        )
+
+    async def _spec_for_provenance(self, session, provenance: str):
+        from chat.coding_session_service import build_coding_execution_spec
+        from chat.models import CodingPlan
+
+        plan = await CodingPlan.objects.acreate(
+            conversation=session.conversation,
+            tech_plan="## plan",
+            affected_files=[],
+            provenance=provenance,
+        )
+        session.coding_plan_id = plan.id
+        return await build_coding_execution_spec(session.repository, session)
+
+    @pytest.mark.asyncio
+    async def test_unresearched_true_for_draft_plan(self, session_for_spec):
+        """provenance=draft → 标志为 True，且出现在 as_dict() 里。"""
+        from chat.models import CodingPlanProvenance
+
+        spec = await self._spec_for_provenance(session_for_spec, CodingPlanProvenance.DRAFT)
+
+        assert spec.unresearched is True
+        assert spec.as_dict()["unresearched"] is True
+
+    @pytest.mark.asyncio
+    async def test_unresearched_false_for_orchestrated_plan(self, session_for_spec):
+        """provenance=orchestrated → 标志为 False（唯一免标注的取值）。"""
+        from chat.models import CodingPlanProvenance
+
+        spec = await self._spec_for_provenance(session_for_spec, CodingPlanProvenance.ORCHESTRATED)
+
+        assert spec.unresearched is False
+        assert spec.as_dict()["unresearched"] is False
+
+    @pytest.mark.asyncio
+    async def test_unresearched_true_for_unknown_provenance(self, session_for_spec):
+        """未知 provenance 取值 → True（允许清单的保守分支）。"""
+        spec = await self._spec_for_provenance(session_for_spec, "weird_value")
+
+        assert spec.unresearched is True
+
+    @pytest.mark.asyncio
+    async def test_unresearched_true_for_legacy_session_without_plan(self, session_for_spec):
+        """coding_plan_id 为 None 的历史 session → True 且不抛（取不到来源不等于可信）。"""
+        from chat.coding_session_service import build_coding_execution_spec
+
+        session_for_spec.coding_plan_id = None
+
+        spec = await build_coding_execution_spec(
+            session_for_spec.repository, session_for_spec
+        )
+
+        assert spec.unresearched is True
+
+    @pytest.mark.asyncio
+    async def test_unresearched_flag_present_in_dispatch_payload(self, session_for_spec):
+        """标志确实出现在下发给 Runner/容器的 dispatch payload 里（跨进程边界）。"""
+        from chat.coding_session_service import build_dispatch_metadata
+        from chat.models import CodingPlan, CodingPlanProvenance
+        from repositories.models import GitCredential
+
+        plan = await CodingPlan.objects.acreate(
+            conversation=session_for_spec.conversation,
+            tech_plan="## plan",
+            affected_files=[],
+            provenance=CodingPlanProvenance.DRAFT,
+        )
+        session_for_spec.coding_plan_id = plan.id
+
+        with (
+            patch(
+                "services.provider_config.aget_legacy_anthropic_config",
+                new_callable=AsyncMock,
+                return_value={
+                    "api_key": "test-key",
+                    "base_url": "https://anthropic.example.com",
+                    "default_model": "claude-test",
+                    "small_model": "claude-small",
+                },
+            ),
+            patch("repositories.models.GitCredential") as mock_git_cred_cls,
+        ):
+            mock_git_cred_cls.objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
+            mock_git_cred_cls.DoesNotExist = GitCredential.DoesNotExist
+
+            env_metadata, _repo_url = await build_dispatch_metadata(
+                session_for_spec.repository, session_for_spec
+            )
+
+        assert env_metadata["execution_spec"]["unresearched"] is True
+
+
+@pytest.mark.django_db(transaction=True)
 class TestDispatchCodingTask:
     """dispatch_coding_task 函数集成测试。"""
 
@@ -537,6 +648,9 @@ class TestCreateSessionsForPlan:
             plan=coding_plan_for_service,
             repository_ids=[r.id for r in three_repos_for_service],
             branch_template="feat20260520.${repo}.feature-x",
+            # fixture 走 DB default provenance=draft ⇒ 被 109-07 草稿 gate 拦。这是
+            # gate 生效的预期连带影响，不是回归；本用例测分支模板渲染，不是 gate。
+            acknowledge_unresearched=True,
         )
         assert len(result.created) == 3
         assert len(result.failed) == 0
@@ -554,6 +668,8 @@ class TestCreateSessionsForPlan:
         result = await create_sessions_for_plan(
             plan=coding_plan_for_service,
             repository_ids=[orphan_repo.id],
+            # 同上：草稿 gate 生效的预期连带影响，本用例测仓库归属校验而非 gate。
+            acknowledge_unresearched=True,
         )
         assert len(result.created) == 0
         assert len(result.failed) == 1
@@ -581,6 +697,8 @@ class TestCreateSessionsForPlan:
             plan=coding_plan_for_service,
             repository_ids=[r.id for r in three_repos_for_service],
             branch_template="feat20260520.${repo}.task",
+            # 同上：草稿 gate 生效的预期连带影响，本用例测 per-repo 事务独立性而非 gate。
+            acknowledge_unresearched=True,
         )
         assert len(result.failed) == 1
         assert result.failed[0].repository_id == repo_a.id
@@ -595,3 +713,57 @@ class TestCreateSessionsForPlan:
             )
         )()
         assert {repo_b.id, repo_c.id} == drafts
+
+    @pytest.mark.asyncio
+    async def test_draft_gate_blocks_direct_service_call_with_zero_writes(
+        self, coding_plan_for_service, three_repos_for_service
+    ) -> None:
+        """service 层直调（完全绕过视图与前端）同样被草稿 gate 拦，且 DB 零写入。
+
+        gate 必须落在 service 内而非视图内：视图只是其中一个调用方（还有工具、工作流
+        节点、脚本）。这条用例是「绕过前端也拒绝」在最内层的证据。
+        """
+        from asgiref.sync import sync_to_async
+
+        from chat.coding_session_service import (
+            ERROR_CODE_DRAFT_REQUIRES_CONFIRM,
+            DraftPlanRequiresConfirmError,
+            create_sessions_for_plan,
+        )
+        from chat.models import CodingSession
+
+        with pytest.raises(DraftPlanRequiresConfirmError) as exc_info:
+            await create_sessions_for_plan(
+                plan=coding_plan_for_service,
+                repository_ids=[r.id for r in three_repos_for_service],
+                branch_template="feat20260730.${repo}.gate",
+            )
+        assert exc_info.value.code == ERROR_CODE_DRAFT_REQUIRES_CONFIRM
+
+        count = await sync_to_async(
+            CodingSession.objects.filter(coding_plan=coding_plan_for_service).count
+        )()
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_draft_gate_ignored_for_orchestrated_plan(
+        self, coding_plan_for_service, three_repos_for_service
+    ) -> None:
+        """provenance=orchestrated 时不带确认也放行（编排方案零摩擦）。"""
+        from asgiref.sync import sync_to_async
+
+        from chat.coding_session_service import create_sessions_for_plan
+        from chat.models import CodingPlan, CodingPlanProvenance
+
+        await sync_to_async(CodingPlan.objects.filter(id=coding_plan_for_service.id).update)(
+            provenance=CodingPlanProvenance.ORCHESTRATED
+        )
+        coding_plan_for_service.provenance = CodingPlanProvenance.ORCHESTRATED
+
+        result = await create_sessions_for_plan(
+            plan=coding_plan_for_service,
+            repository_ids=[r.id for r in three_repos_for_service],
+            branch_template="feat20260730.${repo}.orch",
+        )
+        assert len(result.created) == 3
+        assert result.failed == []

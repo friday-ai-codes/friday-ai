@@ -1553,3 +1553,107 @@ class SystemBackupView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response({"detail": "数据库恢复成功"})
+
+
+# ============================================================================
+# 仓库路由多信号权重配置端点（Phase 106-02，ROUTE-06）
+# ============================================================================
+
+
+class RepoRouterWeightConfigView(APIView):
+    """GET/PUT /api/settings/repo-router/weight-config/ —— 仓库路由权重配置。
+
+    专用端点 + 服务端强校验（106-RESEARCH Anti-Pattern：通用 settings PUT
+    无业务校验，权重配置必须走本端点写入；直写 DB 的非法值由
+    ``repo_router_config.load_weight_config`` 二次校验拦截回退默认，T-106-04）。
+
+    GET：任意已认证用户（与 ClaudeCodeConfigView 口径一致）——返回当前生效
+    配置 + ``is_default``（SystemSetting 行不存在时 true，运维界面总能拿到
+    当前生效配置）。**该放开是有意的**：返回体只有排序权重与常数（无凭证、
+    无仓库/需求内容），且「分数分解可解释」要求任何能看路由结果的用户都能
+    对照当前权重理解排序；写入面才收紧到 superuser。
+    PUT：仅 superuser（T-106-03）——``validate_weight_config`` 与 loader 共用
+    校验单点，失败 400 + 逐条错误；合法则规范化落库。写入后 post_save signal
+    （system/signals.py）自动失效 settings_service 60s 缓存——「保存即生效」，
+    无需发版/重启，也无需在此手动处理缓存。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request) -> Response:  # type: ignore[no-untyped-def]
+        from codegraph.services.repo_router_config import load_weight_config
+
+        # 视图层用默认 thread_sensitive=True 包装（与 Django async ORM 同线程
+        # 语义一致）；thread_sensitive=False 的 aload_weight_config 留给
+        # 106-06 router 热路径。
+        config = await sync_to_async(load_weight_config)()
+        is_default = not await SystemSetting.objects.filter(
+            key=SettingKeys.REPO_ROUTER_WEIGHT_CONFIG
+        ).aexists()
+        return Response({**config, "is_default": is_default})
+
+    async def put(self, request) -> Response:  # type: ignore[no-untyped-def]
+        import json as _json
+        import time as _time
+
+        from codegraph.services.repo_router_config import validate_weight_config
+
+        if not request.user.is_superuser:
+            return Response(
+                {"detail": "仅系统管理员可修改仓库路由权重配置"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        started = _time.monotonic()
+        try:
+            _viewset_logger.info(
+                "repo_router_weight_config_update_started",
+                category="caller",
+                component="system",
+            )
+        except Exception:
+            pass
+
+        normalized, errors = validate_weight_config(request.data)
+        if errors:
+            # 校验失败也留痕（只记错误条数与首条，不记配置全文）——否则「谁在
+            # 反复填错」在日志里完全看不到。
+            try:
+                _viewset_logger.warning(
+                    "repo_router_weight_config_update_failed",
+                    error_count=len(errors),
+                    first_error=errors[0][:200],
+                    duration_ms=int((_time.monotonic() - started) * 1000),
+                    category="caller",
+                    component="system",
+                )
+            except Exception:
+                pass
+            return Response(
+                {"detail": "权重配置校验失败", "errors": errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        await SystemSetting.objects.aupdate_or_create(
+            key=SettingKeys.REPO_ROUTER_WEIGHT_CONFIG,
+            defaults={
+                "value": _json.dumps(normalized, ensure_ascii=False),
+                "is_encrypted": False,
+                "description": "仓库路由多信号权重配置（Phase 106）",
+            },
+        )
+
+        # 观测 best-effort（T-106-05）：只记版本号不记配置全文；
+        # 中间件已注入 user_id/request_id，失败绝不反噬写入路径。
+        try:
+            _viewset_logger.info(
+                "repo_router_weight_config_updated",
+                weight_set_version=normalized.get("weight_set_version"),
+                duration_ms=int((_time.monotonic() - started) * 1000),
+                category="caller",
+                component="system",
+            )
+        except Exception:
+            pass
+
+        return Response(normalized)

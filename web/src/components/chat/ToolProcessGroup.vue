@@ -17,10 +17,12 @@ import {
   bareName,
   humanizeDuration,
   relevanceCandidates,
+  routingDecisionView,
   toolAction,
   toolIcon,
   toolLabel,
 } from '~/composables/useToolDisplay'
+import RoutingCandidateList from './RoutingCandidateList.vue'
 import StructuredJsonView from './StructuredJsonView.vue'
 
 export interface ProcessThinkingStep {
@@ -144,11 +146,9 @@ function stepRepoNumber(step: ProcessStep): number | null {
   return props.repoIndex?.get(rid) ?? null
 }
 
-function candidatesOf(step: ProcessToolStep) {
-  return relevanceCandidates(step.result)
-}
-function candNumber(id: string, fallbackIdx: number): number {
-  return props.repoIndex?.get(id) ?? fallbackIdx + 1
+/** 路由决策视图（分组 / 跨组 / 分数分解 / 降级四层事实的单一来源）。 */
+function routingViewOf(step: ProcessStep) {
+  return routingDecisionView(step.kind === 'tool' ? step.result : undefined)
 }
 
 const lastStepText = computed(() => {
@@ -156,8 +156,6 @@ const lastStepText = computed(() => {
     return ''
   return stepText(props.steps[props.steps.length - 1])
 })
-
-const LEVEL_LABEL: Record<string, string> = { high: '高', medium: '中', low: '低' }
 </script>
 
 <template>
@@ -221,17 +219,14 @@ const LEVEL_LABEL: Record<string, string> = { high: '高', medium: '中', low: '
               </p>
 
               <template v-else-if="step.kind === 'tool'">
-                <!-- 相关性分析：编号 + 名称来源式 pill（名称 / 等级 / 分数 / 证据） -->
+                <!--
+                  相关性分析：分组 / 跨组标注 / 分数分解 / 降级横幅
+                  （ROUTE-01 / ROUTE-02 / ROUTE-07 / RELY-03）。
+                  这是这四条需求**唯一**到达用户的渲染面 —— 原承载者
+                  RoutingDecisionPanel 已无挂载点，见该组件头注释。
+                -->
                 <template v-if="isRelevanceStep(step)">
-                  <ul class="tpg-repos">
-                    <li v-for="(c, ci) in candidatesOf(step)" :key="c.id || c.name" class="tpg-repo">
-                      <span class="tpg-num tpg-num--repo">{{ candNumber(c.id, ci) }}</span>
-                      <span class="tpg-repo-name">{{ c.name }}</span>
-                      <span class="tpg-repo-level" :class="`tpg-repo-level--${c.level}`">{{ LEVEL_LABEL[c.level] }}</span>
-                      <span class="tpg-repo-score">{{ c.score.toFixed(2) }}</span>
-                      <span v-if="c.evidence" class="tpg-repo-evidence">{{ c.evidence }}</span>
-                    </li>
-                  </ul>
+                  <RoutingCandidateList :view="routingViewOf(step)" :repo-index="repoIndex" />
                   <div v-if="step.input && Object.keys(step.input).length > 0" class="tpg-detail-section">
                     <span class="tpg-detail-label">输入</span>
                     <StructuredJsonView :value="step.input" :tool-name="step.name" kind="input" />
@@ -460,10 +455,6 @@ const LEVEL_LABEL: Record<string, string> = { high: '高', medium: '中', low: '
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.tpg-num--repo {
-  background: hsl(217 91% 60% / 0.14);
-  color: hsl(217 70% 42%);
-}
 
 /* ---- L2：单步详情 ---- */
 .tpg-detail {
@@ -496,60 +487,6 @@ const LEVEL_LABEL: Record<string, string> = { high: '高', medium: '中', low: '
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: hsl(215 16% 47% / 0.5);
-}
-
-.tpg-repos {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-.tpg-repo {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  padding: 0.3125rem 0.5rem;
-  border-radius: 0.4375rem;
-  border: 1px solid hsl(214 32% 91% / 0.7);
-  background: hsl(0 0% 100% / 0.7);
-}
-.tpg-repo-name {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: hsl(215 28% 22%);
-}
-.tpg-repo-level {
-  font-size: 0.5625rem;
-  font-weight: 700;
-  padding: 0.0625rem 0.375rem;
-  border-radius: 9999px;
-}
-.tpg-repo-level--high {
-  background: hsl(142 71% 45% / 0.14);
-  color: hsl(142 60% 30%);
-}
-.tpg-repo-level--medium {
-  background: hsl(38 92% 50% / 0.14);
-  color: hsl(38 70% 36%);
-}
-.tpg-repo-level--low {
-  background: hsl(215 16% 47% / 0.12);
-  color: hsl(215 16% 45%);
-}
-.tpg-repo-score {
-  font-size: 0.5625rem;
-  font-variant-numeric: tabular-nums;
-  color: hsl(168 70% 32%);
-  font-weight: 700;
-}
-.tpg-repo-evidence {
-  flex-basis: 100%;
-  font-size: 0.625rem;
-  line-height: 1.5;
-  color: hsl(215 16% 48%);
 }
 
 /* dot / spinner */
@@ -603,12 +540,5 @@ const LEVEL_LABEL: Record<string, string> = { high: '高', medium: '中', low: '
 }
 .dark .tpg-row-label {
   color: hsl(215 16% 78%);
-}
-.dark .tpg-repo {
-  background: hsl(220 20% 16% / 0.7);
-  border-color: hsl(214 32% 28% / 0.7);
-}
-.dark .tpg-repo-name {
-  color: hsl(215 16% 82%);
 }
 </style>

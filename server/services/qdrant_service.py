@@ -1437,6 +1437,61 @@ class QdrantService:
         return "Not existing vector name" in msg
 
     @classmethod
+    def dense_search_by_name(
+        cls,
+        collection_name: str,
+        query_dense: list[float],
+        *,
+        top_k: int = 30,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """dense-only 命名向量查询（O-3 口径：返回分即 COSINE 相似度）。
+
+        与 :meth:`hybrid_search_by_name` 同层对称，但只查 ``using="dense"``
+        单路——``FusionQuery(RRF)`` 融合分不回传 per-prefetch 余弦，取余弦
+        必须单独 dense 查询（写法同 ``measure_repo_index_stats._verify_cosine``
+        探针）。repo_router_v2 用它复用已算好的 query_dense 归仓取
+        ``dense_cos_max``（零额外 embedding）。
+
+        失败语义：任何异常（collection 缺失 / 命名向量缺失 / 连接失败）一律
+        返回空列表不抛——调用方按「dense 余弦不可用」降级（S_top 回退 RRF
+        s_hat），路由绝不因该查询失败而中断。
+        """
+        try:
+            client = cls.get_client()
+            query_filter = cls._build_filter(filters)
+            results = client.query_points(
+                collection_name=collection_name,
+                query=query_dense,
+                using="dense",
+                query_filter=query_filter,
+                limit=top_k,
+                with_payload=True,
+            )
+            return [
+                {
+                    "id": str(r.id),
+                    "score": r.score,
+                    "payload": r.payload,
+                }
+                for r in results.points
+            ]
+        except Exception as e:  # noqa: BLE001 — 失败返回空列表，调用方降级
+            # 异常文本可能带上游响应体（Qdrant UnexpectedResponse 会回显 body），
+            # 手动过一遍脱敏；category/component 按 LOGGING-SPEC 必填项补齐。
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "dense_search_by_name_failed",
+                collection_name=collection_name,
+                error=redact_secrets_in_text(str(e)),
+                error_type=type(e).__name__,
+                category="sampling",
+                component="qdrant",
+            )
+            return []
+
+    @classmethod
     def hybrid_search(
         cls,
         repository_id: str,

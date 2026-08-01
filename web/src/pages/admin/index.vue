@@ -7,6 +7,7 @@ import ClaudeCodeConfigPanel from '~/components/providers/ClaudeCodeConfigPanel.
 import ProviderSettings from '~/components/providers/ProviderSettings.vue'
 import GeneralSettings from '~/components/settings/GeneralSettings.vue'
 import OIDCProviderSettings from '~/components/settings/OIDCProviderSettings.vue'
+import RepoRouterWeightSettings from '~/components/settings/RepoRouterWeightSettings.vue'
 import RerankSettings from '~/components/settings/RerankSettings.vue'
 import VectorIndexSettings from '~/components/settings/VectorIndexSettings.vue'
 import { Button } from '~/components/ui/button'
@@ -117,6 +118,7 @@ onMounted(() => {
         <div v-show="activeTab === 'rag'" class="space-y-6">
           <VectorIndexSettings />
           <RerankSettings />
+          <RepoRouterWeightSettings />
         </div>
 
         <!-- Tab: 集成设置 -->
