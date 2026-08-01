@@ -432,3 +432,236 @@ async def test_report_tier_is_empty_string_when_the_session_has_no_tier() -> Non
 
     assert result["ambiguity"]["assumptions_tier"] == ""
     assert result["ambiguity"]["max_rounds"] == 3
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 9. ⭐ 生产写入方（116-REVIEW MJ-02）——档位从 MCP 入口一路写进 stage_state
+#
+# 上面那一整片用例证明的是「**如果**有人把 `assumptions_tier` 写进 `decomposition`，
+# 档位会生效」。MJ-02 指出：生产里**没有那个「如果」**——全仓零写入点，唯一写它的是
+# `_make_session` 这个测试夹具 ⇒ 档位恒为默认、`_aload_tier_overrides` 永不被调用、
+# `SettingKeys.BLUEPRINT_ASSUMPTIONS_TIERS` 的读取路径不可达。
+#
+# 本节补的是那一环：**走真实入口**（MCP delegate）发起，⛔ 不碰 stage_state 一个字，
+# 再用真规格门证明判定结果真的换了。
+# ═══════════════════════════════════════════════════════════════════════════
+
+_DELEGATE_REL = "mcp_tools/orchestration_delegate.py"
+_ENTRYPOINT_REL = "services/process_runtime/entrypoint.py"
+_TP_SERVICE_REL = "mcp_tools/technical_plan_service.py"
+_MCP_VIEWS_REL = "mcp_tools/views.py"
+
+
+def _forwards_kwarg(rel: str, callee: str, kwarg: str) -> bool:
+    """AST：``rel`` 里对 ``callee`` 的调用是否显式带了 ``kwarg=``（⛔ 不用字符串包含判）。"""
+    tree = ast.parse((_SERVER_DIR / rel).read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and (getattr(node.func, "id", "") or getattr(node.func, "attr", "")) == callee
+        ):
+            if any(kw.arg == kwarg for kw in node.keywords or []):
+                return True
+    return False
+
+
+async def _amcp_blueprint_session(tier: str):
+    """走**真实 MCP 入口**建一条蓝图会话（⛔ 全程不碰 ``stage_state``）。
+
+    ``build_engine_for_session`` 换成不推进的替身：本用例只验「入口有没有把档位写进会话」，
+    不驱真链路（真链路会去调 LLM）。
+    """
+    import uuid
+    from unittest.mock import MagicMock, patch
+
+    from initiatives.models import Project
+    from mcp_tools.orchestration_delegate import delegate_process_runtime
+    from projects.models import Space
+    from system.models import SettingKeys, SystemSetting
+
+    space = await Space.objects.acreate(name=f"space-{uuid.uuid4().hex[:6]}")
+    await Project.objects.acreate(space=space, name=f"proj-{uuid.uuid4().hex[:6]}")
+    await sync_to_async(SystemSetting.objects.update_or_create)(
+        key=SettingKeys.BLUEPRINT_ENTRY_SWITCH,
+        defaults={"value": json.dumps({"mcp": "technical_blueprint"})},
+    )
+    context = type("Ctx", (), {"space": space, "space_id": space.id})()
+
+    engine = MagicMock(name="engine")
+    with patch(
+        "services.process_runtime.entrypoint.build_engine_for_session",
+        new=lambda session, **kw: (engine, AsyncMock(return_value=session)),
+    ):
+        result = await delegate_process_runtime(
+            requirement_text="让登录支持双因子",
+            work_item_context=context,
+            assumptions_tier=tier,
+        )
+    return result.session
+
+
+async def _arun_gate_on(session, score: float) -> dict[str, Any]:
+    """给会话挂一份蓝图 artifact 后跑**真规格门**（档位仍只来自会话自己的 stage_state）。
+
+    scorer 的产出**两条对照完全相同**（同一分数、同一条问题）⇒ 判定差异的唯一来源是档位。
+    """
+    artifact = await _make_artifact()
+    session.current_artifact_version_id = artifact.current_version_id
+    await session.asave(update_fields=["current_artifact_version_id"])
+    return await _adapter(scorer=AsyncMock(return_value=_scores(score))).run(session)
+
+
+async def test_mcp_entry_persists_the_tier_into_stage_state() -> None:
+    """⭐ MJ-02 头号断言：经 MCP 入口传档位 ⇒ 会话 ``decomposition`` 里真的有那个键。
+
+    ⛔ 本用例全程不碰 ``stage_state``——这正是回退前缺失的那一环（零生产写入点）。
+    """
+    session = await _amcp_blueprint_session("assume_more")
+
+    assert session.process_type == "technical_blueprint"
+    assert (session.decomposition or {}).get("assumptions_tier") == "assume_more"
+
+
+async def test_tier_from_the_entry_actually_flips_the_gate_decision() -> None:
+    """⭐ 断言 ``config`` 的取值与**判定结果**（⛔ 不只断言 stage_state 里那个字符串）。
+
+    同一个 0.30 分：走入口设成 ``assume_more``（阈值 0.45）⇒ 放行；**并列对照**不传档位
+    （默认 0.20）⇒ 开阻塞线程。两条差异的唯一来源是入口那一个实参。
+    """
+    tiered = await _arun_gate_on(await _amcp_blueprint_session("assume_more"), 0.30)
+
+    assert tiered["event"] == "spec_locked"
+    assert tiered["ambiguity"]["threshold"] == 0.45
+    assert tiered["ambiguity"]["assumptions_tier"] == "assume_more"
+
+    # 非恒真对照：同一入口、同一分数、不传档位 ⇒ 判定相反
+    default = await _arun_gate_on(await _amcp_blueprint_session(""), 0.30)
+
+    assert default["event"] == "needs_clarification"
+    assert default["ambiguity"]["threshold"] == DEFAULT_SPEC_GATE_CONFIG["threshold"]
+
+
+async def test_runtime_setting_key_is_now_reachable_through_the_entry() -> None:
+    """⭐ ``SettingKeys.BLUEPRINT_ASSUMPTIONS_TIERS`` 的读取路径不再不可达。
+
+    运维改这个键 ⇒ 经入口选中该档的会话真的用上新阈值（回退前改它什么都不会发生）。
+    """
+    await _save_tiers({"assume_more": {"threshold": 0.66, "max_rounds": 4}})
+
+    result = await _arun_gate_on(await _amcp_blueprint_session("assume_more"), 0.60)
+
+    assert result["event"] == "spec_locked", "0.60 < 运维配的 0.66 ⇒ 应放行"
+    assert result["ambiguity"]["threshold"] == 0.66
+    assert result["ambiguity"]["max_rounds"] == 4
+
+
+async def test_entry_drops_a_tier_name_outside_the_three() -> None:
+    """非法档名一律**不写键**（⛔ 不留一份读出来还要再丢掉的误导性会话状态）。"""
+    session = await _amcp_blueprint_session("wildly_unknown")
+
+    assert "assumptions_tier" not in (session.decomposition or {})
+
+
+async def test_no_tier_still_means_zero_tier_override_calls() -> None:
+    """⭐ 现状的锁：不做任何配置 ⇒ 档位为 ``""`` 且 ``_aload_tier_overrides`` **零调用**。"""
+    from unittest.mock import patch
+
+    from services.process_runtime.blueprint_spec_gate import BlueprintSpecGateAdapter
+
+    session = await _amcp_blueprint_session("")
+    assert BlueprintSpecGateAdapter()._assumptions_tier(session) == ""
+
+    with patch(
+        "services.process_runtime.blueprint_ambiguity_score._aload_tier_overrides",
+        new=AsyncMock(return_value={}),
+    ) as spy:
+        await aload_spec_gate_config(tier=BlueprintSpecGateAdapter()._assumptions_tier(session))
+
+    spy.assert_not_awaited()
+
+
+def test_the_whole_mcp_chain_forwards_the_tier() -> None:
+    """AST：档位从 view → service → delegate → 会话工厂**每一跳都显式转发**。
+
+    ⛔ 任何一跳漏掉 ``assumptions_tier=`` 就又回到「配了没人读」——这正是 MJ-02 的形状。
+    """
+    hops = [
+        (_MCP_VIEWS_REL, "build_work_item_technical_plan"),
+        (_TP_SERVICE_REL, "delegate_process_runtime"),
+        (_DELEGATE_REL, "_amaybe_start_blueprint_session"),
+        (_DELEGATE_REL, "start_blueprint_orchestration"),
+    ]
+    missing = [
+        (rel, callee)
+        for rel, callee in hops
+        if not _forwards_kwarg(rel, callee, "assumptions_tier")
+    ]
+    assert not missing, ("这几跳没转发 assumptions_tier", missing)
+
+
+def test_entrypoint_is_the_only_production_writer_of_the_state_key() -> None:
+    """⭐ 写入点必须**恰好一处**且在 ``entrypoint.py``（⛔ 不许各入口各写一份）。"""
+    import subprocess
+
+    out = subprocess.run(
+        ["rg", "-l", r'decomposition\["assumptions_tier"\]', "--glob", "*.py", "."],
+        cwd=_SERVER_DIR,
+        capture_output=True,
+        text=True,
+    ).stdout
+    writers = sorted(
+        line.removeprefix("./") for line in out.splitlines() if not line.startswith("./tests/")
+    )
+    assert writers == [_ENTRYPOINT_REL], writers
+
+
+def test_serializer_tier_choices_match_the_single_source_of_truth() -> None:
+    """⭐ ``serializers._ASSUMPTIONS_TIER_CHOICES`` 是字面量副本 ⇒ 这条守卫盯着它别漂。"""
+    from mcp_tools.serializers import (
+        _ASSUMPTIONS_TIER_CHOICES,
+        CreateFeishuTechnicalPlanRequestSerializer,
+    )
+    from services.process_runtime.blueprint_ambiguity_score import ASSUMPTIONS_TIERS
+
+    assert _ASSUMPTIONS_TIER_CHOICES == ASSUMPTIONS_TIERS
+    field = CreateFeishuTechnicalPlanRequestSerializer().fields["assumptions_tier"]
+    assert set(field.choices) == {"", *ASSUMPTIONS_TIERS}
+    assert field.required is False
+
+
+@pytest.mark.parametrize("tier", ["", "strict", "balanced", "assume_more"])
+def test_serializer_accepts_every_legal_tier(tier: str) -> None:
+    from mcp_tools.serializers import CreateFeishuTechnicalPlanRequestSerializer
+
+    serializer = CreateFeishuTechnicalPlanRequestSerializer(
+        data={"context_id": "0f6b0f2e-0000-4000-8000-000000000001", "assumptions_tier": tier}
+    )
+
+    assert serializer.is_valid(), serializer.errors
+    assert serializer.validated_data["assumptions_tier"] == tier
+
+
+def test_serializer_rejects_an_illegal_tier_at_the_boundary() -> None:
+    """非法档名在 MCP 边界即 400（⛔ 不让它一路飘到 stage_state 再被静默丢掉）。"""
+    from mcp_tools.serializers import CreateFeishuTechnicalPlanRequestSerializer
+
+    serializer = CreateFeishuTechnicalPlanRequestSerializer(
+        data={
+            "context_id": "0f6b0f2e-0000-4000-8000-000000000001",
+            "assumptions_tier": "assume_everything",
+        }
+    )
+
+    assert not serializer.is_valid()
+    assert "assumptions_tier" in serializer.errors
+
+
+def test_session_creation_leaves_a_tier_trace() -> None:
+    """会话级留痕：``blueprint_orchestration_started`` 必须带 ``assumptions_tier``。
+
+    档位也进 ``ambiguity_report``，但那要等第一次打分之后才有 —— 建会话时就该能看出
+    这条会话用的是哪一档。
+    """
+    src = (_SERVER_DIR / _ENTRYPOINT_REL).read_text(encoding="utf-8")
+    idx = src.index('"blueprint_orchestration_started"')
+    assert "assumptions_tier=" in src[idx : idx + 800]

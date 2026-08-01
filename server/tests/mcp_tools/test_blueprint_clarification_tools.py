@@ -240,8 +240,26 @@ def test_no_third_list_tool_was_added() -> None:
 
 
 def test_create_feishu_technical_plan_only_gained_three_additive_keys() -> None:
-    """⭐ 既有 12 个响应键 / 9 个请求键**一个不少**，只追加三键（外形兼容纪律）。"""
+    """⭐ 既有 12 个响应键 / 9 个请求键**一个不少**，追加项逐个列名（外形兼容纪律）。
+
+    ⚠️ 116-REVIEW MJ-02 起请求侧多一个 ``assumptions_tier``（可选、缺省空串 ⇒ 不传时请求
+    与改动前逐字相同）。此处**逐个列出**新增键而不是只数个数：数个数只能发现「多了几个」，
+    列名才能发现「换掉了哪个」。
+    """
     entry = TOOL_SCHEMA_SNAPSHOT["create_feishu_technical_plan"]
+    old_request = [
+        "context_id",
+        "repository_ids",
+        "repo_hints",
+        "context_chunks",
+        "similar_cases",
+        "title",
+        "folder_token",
+        "create_document",
+        "write_comment",
+    ]
+    assert [key for key in old_request if key not in entry["request"]] == []
+    assert [key for key in entry["request"] if key not in old_request] == ["assumptions_tier"]
     old_response = [
         "technical_plan_id",
         "context_id",
@@ -258,7 +276,6 @@ def test_create_feishu_technical_plan_only_gained_three_additive_keys() -> None:
     ]
     missing = [key for key in old_response if key not in entry["response"]]
     assert not missing, missing
-    assert len(entry["request"]) == 9
     for key in ("blueprint_artifact_id", "blueprint_current_status", "pending_clarifications"):
         assert key in entry["response"], key
 

@@ -6,6 +6,14 @@ from typing import Any, cast
 
 from rest_framework import serializers
 
+#: assumptions 三档的**字面量副本**（116-REVIEW MJ-02）。单一事实源是
+#: ``services.process_runtime.blueprint_ambiguity_score.ASSUMPTIONS_TIERS``——⛔ 本模块不在
+#: 模块级 import 它：那会把整个 ``services.process_runtime`` 包（含大量 ORM 依赖）拖进
+#: MCP 请求解析这条早加载路径。副本与事实源的一致性由
+#: ``tests/services/process_runtime/test_blueprint_assumptions_tiers.py`` 的守卫断言盯着
+#: （与 ``_SCHEMA_SNAPSHOT`` 的「字面量副本 + 守卫」同款约定）。
+_ASSUMPTIONS_TIER_CHOICES: tuple[str, ...] = ("strict", "balanced", "assume_more")
+
 
 class RouteRepositoriesRequestSerializer(serializers.Serializer):
     query = serializers.CharField(required=True, allow_blank=False, max_length=1000)
@@ -411,6 +419,16 @@ class CreateFeishuTechnicalPlanRequestSerializer(serializers.Serializer):
     )
     create_document = serializers.BooleanField(required=False, default=True)
     write_comment = serializers.BooleanField(required=False, default=True)
+    #: assumptions 档位（116-REVIEW MJ-02）——蓝图规格门的「交互密度」旋钮：
+    #: ``strict`` 更爱问、``balanced`` = 默认档（与不传逐字等价）、``assume_more`` 更少问。
+    #: ⭐ 只调阈值与轮数，⛔ **绝不跳过规格门**（问得更少 ≠ 不问）。
+    #: ⚠️ 仅在 ``mcp`` 入口开关切到 ``technical_blueprint`` 时生效；缺省空串 ⇒ 走默认档。
+    assumptions_tier = serializers.ChoiceField(
+        choices=["", *_ASSUMPTIONS_TIER_CHOICES],
+        required=False,
+        allow_blank=True,
+        default="",
+    )
 
 
 class CreateWorkItemRepoTasksRequestSerializer(serializers.Serializer):
@@ -1124,6 +1142,8 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "folder_token",
             "create_document",
             "write_comment",
+            # 116-REVIEW MJ-02：assumptions 档位（蓝图规格门的交互密度旋钮，缺省空串 = 默认档）。
+            "assumptions_tier",
         ],
         "response": [
             "technical_plan_id",

@@ -389,12 +389,17 @@ async def build_work_item_technical_plan(
     create_document: bool,
     write_comment: bool,
     actor: Any = None,
+    assumptions_tier: str = "",
 ) -> TechnicalPlanResult:
     """delegate 到 ``process_runtime`` 产 canonical 方案 → 映射回旧响应外形 + 落库（UNIFY-03）。
 
     ``actor`` 为发起编排的用户（从 view 透传 request.user，可空）：delegate 经
     ``start_orchestration(created_by=actor)`` 传入，召回 stage 据此作权限 actor；为 None 时
     下游 ``search_similar`` fail-closed 空召回（不泄漏越权数据，T-94-03-ELEV 文档化降级）。
+
+    ``assumptions_tier``（116-REVIEW MJ-02，**纯追加、缺省空串**）：MCP 面向调用方开放的
+    「交互密度」旋钮（``strict`` / ``balanced`` / ``assume_more``），原样透传 delegate。
+    ⭐ **仅在 mcp 开关切到蓝图时生效**；不传 / 旧链一律与改动前逐字相同。
     """
     context = await _resolve_context(context_id)
     effective_similar_cases = similar_cases
@@ -425,6 +430,8 @@ async def build_work_item_technical_plan(
         # 116-06：接上 116-03 交接的 `work_item_context` 形参。⛔ 不传即「推不出
         # meta.project_id ⇒ 拒绝发起」——mcp 开关打开时蓝图链会**恒不可用**。
         work_item_context=context,
+        # 116-REVIEW MJ-02：档位从 MCP 请求透传到 stage_state，⇒ spec_gate 真的读得到。
+        assumptions_tier=assumptions_tier,
     )
     # 116-06（GATE-01）：开关切到蓝图时的三个追加响应键（关闭时为空 dict）。
     blueprint_extras = await _ablueprint_response_extras(delegate)

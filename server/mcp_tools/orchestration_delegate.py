@@ -129,6 +129,7 @@ async def _amaybe_start_blueprint_session(
     include_repos: list[str] | None,
     extra_evidence: list[dict] | None,
     work_item_context: Any,
+    assumptions_tier: str = "",
 ) -> Any:
     """``mcp`` 开关切到蓝图时建 ``technical_blueprint`` 会话；否则返回 ``None`` 走旧链。
 
@@ -143,6 +144,10 @@ async def _amaybe_start_blueprint_session(
     ⛔ **不透传 ``skip_clarification``**：蓝图链没有 ``clarify`` dep；旧链那条
     「MCP 单次同步入口跳过交互澄清」的 policy 在蓝图链无对应面，移植它等于原地复活
     GATE-01 要消灭的「跳过澄清」。
+
+    ``assumptions_tier``（116-REVIEW MJ-02）：调用方指定的 assumptions 档位，原样透传给
+    ``start_blueprint_orchestration``（它按「非空且在三档内才写键」落进 ``stage_state``）。
+    ⭐ 档位只调「问不问的阈值与轮数」，⛔ **绝不跳过 spec_gate stage** —— 那与上一条同源。
     """
     from services.process_runtime.blueprint_entry_switch import aresolve_entry_process_type
     from services.process_runtime.blueprint_intake import aresolve_project_id
@@ -161,6 +166,7 @@ async def _amaybe_start_blueprint_session(
         extra_evidence=extra_evidence,
         project_id=project_id,
         entry_key="mcp",
+        assumptions_tier=assumptions_tier,
     )
 
 
@@ -172,6 +178,7 @@ async def delegate_process_runtime(
     created_by: Any = None,
     extra_evidence: list[dict] | None = None,
     work_item_context: Any = None,
+    assumptions_tier: str = "",
 ) -> DelegateResult:
     """delegate 到 ``process_runtime`` 统一编排，产 canonical MergedPlan/PlanVersion。
 
@@ -190,6 +197,10 @@ async def delegate_process_runtime(
     故推导一律经 ``blueprint_intake.aresolve_project_id``（内部过 ``_aresolve_project``），
     ⛔ 本模块绝不自己把 ``context.space_id`` 当 project id 用。
     ⚠️ 调用方接线（``technical_plan_service`` / ``views``）与 MCP 响应体追加三键归 **116-06**。
+
+    ``assumptions_tier``（116-REVIEW MJ-02，**纯追加、缺省空串**）：本次会话的 assumptions
+    档位。⭐ **仅在 ``mcp`` 开关切到 ``technical_blueprint`` 时被读**（旧链无此维度）；
+    空串 / 非三档之一一律回落默认档 ⇒ 不传时行为与改动前逐字相同。
 
     终态/挂起映射（mirror ``plan_research._map_terminal``）：
     - ``DONE`` → ``status="completed"``，取 ``PlanVersion.content`` + 渲染 markdown。
@@ -234,6 +245,7 @@ async def delegate_process_runtime(
             include_repos=include_repos,
             extra_evidence=extra_evidence,
             work_item_context=work_item_context,
+            assumptions_tier=assumptions_tier,
         )
         session = session or await start_orchestration(
             entrypoint="workflow",
