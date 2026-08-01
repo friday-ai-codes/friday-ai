@@ -75,11 +75,6 @@ _COMPONENT = "blueprint_review_api"
 _ARTIFACT_MISSING_DETAIL = {"detail": "artifact 不存在"}
 _SESSION_MISSING_DETAIL = {"detail": "该 artifact 没有蓝图编排会话"}
 _THREAD_MISSING_DETAIL = {"detail": "线程不存在"}
-# 审查发现不走作答通道（114-CR-01）：作答链会经回灌把线程推到 resolved 终态，
-# 那等于让 AI 的一句「答案已回灌」冒充人的裁决。
-_FINDING_NOT_ANSWERABLE_DETAIL = (
-    "审查发现不可通过作答通道处置，请走 resolve/（已修复）或 dismiss/（误报忽略）并填写理由"
-)
 # 范围闸 fail-closed 文案（读不到 meta.project_id 一律拒，绝不放行）
 _SCOPE_UNRESOLVED_DETAIL = {"detail": "无法确定该蓝图的项目范围：meta.project_id 缺失或非法"}
 
@@ -626,92 +621,68 @@ class BlueprintReviewThreadAnswerView(APIView):
     confirm 门，同时绕开 ``reason`` 必填 / ``[已修复]``-``[误报忽略]`` 的语义区分 /
     「处置人：{uid}」的归因留痕。finding 只能走 resolve / dismiss。分流在此与回灌链
     的 ``REFLOW_KINDS`` **双重堵**：端点给可回显的中文错因，回灌链自身 fail-closed。
+    该 400 文案的**唯一定义**在
+    ``delivery.services.blueprint_answer_action._FINDING_NOT_ANSWERABLE_DETAIL``。
+
+    ⭐ **实现已下沉到 ``blueprint_answer_action.aanswer_thread``（116-06）**，MCP 的
+    ``answer_blueprint_clarification`` 工具共享**同一份**三道闸——⛔ 绝不复刻第二份。
+    本 View 只保留传输层职责：范围闸 → 线程 404 → 取 ``body`` → service ``status`` →
+    HTTP 码映射 → 埋点 → 续驱。**对外契约（状态码 / 响应键集 / ``reflow`` 五档语义 /
+    埋点字段）逐字不变。**
+
+    ⚠️ ``is_blueprint_editable`` 的**前置**调用刻意保留在本 View：service 内那道才是
+    权威的 fail-closed 闸（两个调用方都过），本 View 这一次**只为保住既有响应顺序**
+    ——「蓝图不可编辑」400 原本发生在「线程不存在」404 之前，两者同时成立时的状态码
+    不可漂移。同一个共享谓词调两次，⛔ 不是第二份实现。
     """
 
     permission_classes = [IsAuthenticated]
 
     async def post(self, request: Any, artifact_id: Any, thread_id: Any) -> Response:
-        from delivery.models import ThreadAuthorType, ThreadKind
-        from delivery.services.blueprint_lifecycle_service import (
-            NOT_EDITABLE_DETAIL,
-            BlueprintLifecycleService,
-            is_blueprint_editable,
-        )
-        from services.process_runtime.blueprint_reflow import aapply_thread_answers
+        from delivery.services.blueprint_answer_action import aanswer_thread
+        from delivery.services.blueprint_lifecycle_service import is_blueprint_editable
 
         started = time.monotonic()
         error, artifact, session = await _aload_action_context(request, artifact_id)
         if error is not None:
             return error
-        # 状态闸在 record_answer **之前**（MJ-04）：作答会经回灌落新版本，已 confirmed 的
-        # 蓝图不该被无声改写。放在写之前 ⇒ 越界时 DB 一字未动。
+        # 顺序保真（见类 docstring）：越界 400 原本在线程 404 之前。权威闸在 service 内。
         if not is_blueprint_editable(artifact):
+            from delivery.services.blueprint_lifecycle_service import NOT_EDITABLE_DETAIL
+
             return Response({"detail": NOT_EDITABLE_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
         thread = await _aload_thread(artifact_id, thread_id)
         if thread is None:
             return Response(_THREAD_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
-        if str(getattr(thread, "kind", "") or "") == ThreadKind.AI_REVIEW_FINDING:
-            return Response(
-                {"detail": _FINDING_NOT_ANSWERABLE_DETAIL},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         body = request.data if isinstance(request.data, dict) else {}
-        answer = str(body.get("body") or "").strip()
-        if not answer:
-            return Response({"detail": "回答内容不可为空"}, status=status.HTTP_400_BAD_REQUEST)
-
-        lifecycle = BlueprintLifecycleService()
-        await lifecycle.record_answer(
+        result = await aanswer_thread(
+            artifact,
             thread,
-            body=answer,
-            author=request.user,
-            author_type=ThreadAuthorType.HUMAN,
+            body=str(body.get("body") or ""),
+            user=request.user,
+            session=session,
             initiated_by_user_id=str(request.user.id),
         )
-        try:
-            reflow = await aapply_thread_answers(
-                artifact,
-                threads=[thread],
-                session=session,
-                initiated_by_user_id=str(request.user.id),
-            )
-        except Exception as exc:  # noqa: BLE001 — 作答已持久化：回灌异常不回滚、不回 5xx
-            from common.logging import redact_secrets_in_text
+        # service `status` → HTTP 码（逐字沿用改造前）：`not_answerable` / `invalid`
+        # 与前置的 `not_editable` 同为 400 且不落库 ⇒ 与错误路径原本不打端点埋点一致。
+        if result["status"] != "answered":
+            return Response({"detail": result["detail"]}, status=status.HTTP_400_BAD_REQUEST)
 
-            logger.warning(
-                "blueprint_review_answer_reflow_failed",
-                category="caller",
-                component=_COMPONENT,
-                artifact_id=str(artifact_id),
-                thread_id=str(thread_id),
-                initiated_by_user_id=str(request.user.id),
-                error=redact_secrets_in_text(str(exc)),
-            )
-            reflow = {"status": "failed", "detail": "回灌执行异常，答案已保存"}
-
-        await lifecycle.add_reviewer(artifact, request.user, "thread_answer")
         _log(
             "blueprint_review_thread_answered",
             request,
             artifact_id,
             started,
             thread_id=str(thread_id),
-            reflow_status=str(reflow.get("status") or ""),
+            reflow_status=result["reflow"]["status"],
         )
         await _aresume(session, request)
         return Response(
             {
                 "status": "answered",
                 "thread_id": str(thread_id),
-                "reflow": {
-                    "status": str(reflow.get("status") or ""),
-                    "version_id": str(reflow.get("version_id") or ""),
-                    "version_no": int(reflow.get("version_no") or 0),
-                    "conflict_block_ids": list(reflow.get("conflict_block_ids") or []),
-                    "thread_id": str(reflow.get("thread_id") or ""),
-                    "detail": str(reflow.get("detail") or ""),
-                },
+                "reflow": result["reflow"],
             }
         )
 
