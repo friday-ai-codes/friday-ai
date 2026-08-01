@@ -290,6 +290,177 @@ class TestHappyPathAndTruncation:
         assert body["truncated"] is False
 
 
+# === 11. 索引回退路径的行号坐标系（116-REVIEW MJ-01 的复现固化）===
+
+
+class TestIndexFallbackLineNumbers:
+    """⭐ 索引回退路径的 ``line_no`` **必须来自每个 chunk 自身的 ``start_line``**。
+
+    ⛔ 不许「从首个 chunk 的 ``start_line`` 连续数下去」—— 本仓 chunker 的两条真实形态都会
+    让那个假定失效：``symbol_chunker._split_large`` 默认 ``overlap_lines=5``（相邻子 chunk
+    **重叠**），``_merge_small_adjacent`` 允许 ``gap <= 2`` 的合并组（组内**留空洞**）。
+    连续编号会把**别的行的源码**贴上被引行的行号，而前端 ``CitationCodePreview`` 逐字渲染
+    ``line_no`` 并据它判高亮 ⇒ 高亮框框住的不是被引用的那几行。
+    """
+
+    @staticmethod
+    def _chunk(index: int, start: int, end: int, prefix: str) -> dict[str, Any]:
+        """造一个正文与行号自洽的 chunk：第 ``n`` 行的正文恰为 ``f"{prefix}{n}"``。"""
+        return {
+            "chunk_index": index,
+            "content": "\n".join(f"{prefix}{n}" for n in range(start, end + 1)),
+            "start_line": start,
+            "end_line": end,
+            "language": "python",
+        }
+
+    async def _aread(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        chunks: list[dict[str, Any]],
+        *,
+        line_start: int | None,
+        line_end: int | None,
+        max_lines: int | None = None,
+    ) -> dict[str, Any]:
+        from services.repo_file_read import aread_repository_file
+
+        repo = await Repository.objects.acreate(
+            name="idx-repo",
+            git_url="https://github.com/test/idx.git",
+            git_platform="github",
+            default_branch="main",
+            index_status=IndexStatus.INDEXED,
+        )
+        _patch_mirror(monkeypatch, None)  # ⇒ 强制走 ② Qdrant 索引 chunk 回退
+        monkeypatch.setattr(
+            "services.repo_file_read._scroll_file_from_collection",
+            AsyncMock(return_value=list(chunks)),
+        )
+        monkeypatch.setattr(
+            "services.repo_file_read._list_indexed_paths", AsyncMock(return_value=[])
+        )
+        return await aread_repository_file(
+            str(repo.id),
+            PLAIN_PATH,
+            surface="test",
+            line_start=line_start,
+            line_end=line_end,
+            max_lines=max_lines,
+        )
+
+    @pytest.mark.asyncio
+    async def test_overlapping_chunks_do_not_renumber_or_duplicate_lines(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """形态 A（重叠）：一个大符号被 ``overlap_lines=5`` 切成 100..150 与 146..196。
+
+        请求 148..155 ⇒ 每个 ``line_no`` **只出现一次**且正文恰为 ``f"L{line_no}"``。
+        （回退前实测：151..155 贴的是 L146..L150 的正文，且 L148/L149/L150 被渲染两次。）
+        """
+        result = await self._aread(
+            monkeypatch,
+            [self._chunk(0, 100, 150, "L"), self._chunk(1, 146, 196, "L")],
+            line_start=148,
+            line_end=155,
+        )
+
+        assert result["status"] == "ok"
+        rows = result["lines"]
+        line_nos = [row["line_no"] for row in rows]
+        assert line_nos == sorted(line_nos), "行号必须单调递增"
+        assert len(line_nos) == len(set(line_nos)), f"重叠行未去重：{line_nos}"
+        assert line_nos == list(range(148, 156))
+        for row in rows:
+            assert row["text"] == f"L{row['line_no']}", (
+                f"第 {row['line_no']} 行贴的是 {row['text']!r} 的正文（坐标系错位）"
+            )
+
+    @pytest.mark.asyncio
+    async def test_gap_between_chunks_is_reported_honestly_not_renumbered(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """形态 B（空洞）：chunk 1..5 与 40..44 之间有空洞，请求 3..42。
+
+        ⇒ 行号集合恰为 ``{3,4,5,40,41,42}``：空洞由**行号跳变**如实表达，
+        ⛔ 第 40..42 行的源码绝不能被贴上第 6..8 行的号。
+        （回退前实测：返回 8 行、行号 3..10，第 40..44 行被贴成第 6..10 行。）
+        """
+        result = await self._aread(
+            monkeypatch,
+            [self._chunk(0, 1, 5, "G"), self._chunk(1, 40, 44, "G")],
+            line_start=3,
+            line_end=42,
+        )
+
+        assert result["status"] == "ok"
+        rows = result["lines"]
+        assert [row["line_no"] for row in rows] == [3, 4, 5, 40, 41, 42]
+        assert [row["text"] for row in rows] == ["G3", "G4", "G5", "G40", "G41", "G42"]
+        # ⛔ 空洞里的行号一个都不许凭空出现
+        assert not [row for row in rows if 6 <= row["line_no"] <= 39]
+
+    @pytest.mark.asyncio
+    async def test_single_chunk_covering_range_is_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """⭐ 非恒真对照：单 chunk 覆盖整个区间时，结果与修改前逐字相同（镜像路径同款恒等映射）。"""
+        result = await self._aread(
+            monkeypatch,
+            [self._chunk(0, 1, 20, "S")],
+            line_start=5,
+            line_end=8,
+        )
+
+        assert result["lines"] == [
+            {"line_no": 5, "text": "S5"},
+            {"line_no": 6, "text": "S6"},
+            {"line_no": 7, "text": "S7"},
+            {"line_no": 8, "text": "S8"},
+        ]
+        assert result["truncated"] is False
+
+    @pytest.mark.asyncio
+    async def test_range_in_tail_survives_max_lines_truncation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """次生形态：区间落在超 ``max_lines`` 的 chunk 尾部时，⛔ 不许过滤成空。
+
+        截断必须**发生在区间过滤之后** —— 否则「明明能读到」会表现成「读不到」而落 quote 快照。
+        （回退前实测：``lines`` 为空、``status`` 仍是 ``"ok"``。）
+        """
+        result = await self._aread(
+            monkeypatch,
+            [self._chunk(0, 1, 1000, "T")],
+            line_start=900,
+            line_end=905,
+            max_lines=400,
+        )
+
+        assert result["status"] == "ok"
+        assert [row["line_no"] for row in result["lines"]] == [900, 901, 902, 903, 904, 905]
+        assert [row["text"] for row in result["lines"]] == [f"T{n}" for n in range(900, 906)]
+
+    @pytest.mark.asyncio
+    async def test_mcp_content_concatenation_is_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """⭐ MCP 契约锁：``content`` 仍是 chunk 正文**首尾相接后按 ``max_lines`` 截断**的老口径。
+
+        两份产出共存：``content`` 走旧拼接（``get_repository_file`` 的对外契约不漂移），
+        ``lines`` 走新编号。``truncated`` / ``returned_lines`` / ``total_lines`` 同样描述 ``content``。
+        """
+        chunks = [self._chunk(0, 100, 150, "L"), self._chunk(1, 146, 196, "L")]
+        expected_texts = [line for chunk in chunks for line in str(chunk["content"]).splitlines()]
+
+        result = await self._aread(monkeypatch, chunks, line_start=148, line_end=155, max_lines=60)
+
+        assert result["content"] == "\n".join(expected_texts[:60])
+        assert result["truncated"] is True  # 102 行正文 > 60 行上界
+        assert result["returned_lines"] == 60
+        assert result["total_lines"] == 102
+
+
 # === 9. MCP 面与 SPA 面两个 is_excluded 口径并列 ===
 
 
