@@ -122,7 +122,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
       <Badge v-else variant="outline">
         {{ changeTypeLabel }}
       </Badge>
-      <h4 class="min-w-0 flex-1 text-sm font-semibold">
+      <h4 class="min-w-0 flex-1 text-base font-semibold">
         {{ item.title }}
       </h4>
     </div>

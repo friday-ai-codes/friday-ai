@@ -301,7 +301,7 @@ function onGotoUnresolved(): void {
 <template>
   <section class="card space-y-4 p-4" data-testid="blueprint-gate-panel" :aria-label="t('knowledge.blueprints.gate.title')">
     <header class="space-y-1">
-      <h2 class="text-sm font-semibold">
+      <h2 class="text-base font-semibold">
         {{ t('knowledge.blueprints.gate.title') }}
       </h2>
       <!-- 顶部说明条：仓内没有 `ui/alert`，沿用 115-06 的「语义描边 div + role=status」范式 -->

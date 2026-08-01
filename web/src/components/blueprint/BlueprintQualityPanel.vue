@@ -86,7 +86,7 @@ const noKeyConclusionsDetail = computed(() =>
 
 <template>
   <section data-testid="blueprint-quality-panel" class="space-y-3">
-    <h3 class="text-sm font-semibold text-foreground">
+    <h3 class="text-base font-semibold text-foreground">
       {{ t('knowledge.blueprints.quality.title') }}
     </h3>
 

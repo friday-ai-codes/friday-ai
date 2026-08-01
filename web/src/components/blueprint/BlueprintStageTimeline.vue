@@ -145,7 +145,7 @@ const hasAnyEvent = computed(() => nodes.value.some(node => node.events.length >
   <div class="card" data-testid="blueprint-stage-timeline">
     <div class="flex items-center gap-2 border-b border-border/50 px-5 py-3.5">
       <span class="icon-[lucide--git-commit-horizontal] text-primary" />
-      <h3 class="text-sm font-semibold">
+      <h3 class="text-base font-semibold">
         {{ t('knowledge.blueprints.stage.title') }}
       </h3>
     </div>
