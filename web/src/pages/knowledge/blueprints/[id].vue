@@ -41,6 +41,7 @@ import type { NavSection } from '~/components/layout/AnchorNavLayout.vue'
 import type { BlueprintThreadKindFilter } from '~/stores/useBlueprintViewerStore'
 import type { BlueprintAnchor, BlueprintThreadDetail, Citation } from '~/types/blueprint'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useMediaQuery } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -526,6 +527,14 @@ const sheetOpen = ref(false)
 const selection = ref<SelectionPayload | null>(null)
 const draft = ref<BlueprintCommentDraft | null>(null)
 
+/**
+ * ⭐ `xl` 断点闸（§5.2 逐字：`xl`（≥1280px）三栏、右侧线程侧栏常驻、**`Sheet` 停用**）。
+ *
+ * 字面量与 Tailwind 的 `xl` 同值；⛔ 不另设断点，改这里就得同步改常驻侧栏那行的 `xl:flex`。
+ */
+const XL_MEDIA_QUERY = '(min-width: 1280px)'
+const isWide = useMediaQuery(XL_MEDIA_QUERY)
+
 /** ⭐ §18.1：抽屉关闭后焦点回到唤起它的按钮。 */
 watch(sheetOpen, (open) => {
   if (open)
@@ -535,9 +544,32 @@ watch(sheetOpen, (open) => {
   })
 })
 
-function openAnnotationSheet(): void {
+/**
+ * 露出线程侧栏的**唯一入口**（UI-REVIEW H-2）。
+ *
+ * ⚠️ 四条程序化路径（选区「发起评论」/ 确认门 409 解药 / approve 409 清单跳转 / `?thread=`
+ * 深链）原本各自无条件 `sheetOpen = true`。常驻侧栏是 `hidden xl:flex`、抽屉当时没有任何
+ * 断点闸 ⇒ **≥1280px 下两者同时渲染同一个 `BlueprintThreadSidebar`**：草稿输入框出现两份，
+ * 而 `draftBody` 是各自组件实例的局部 `ref`（`BlueprintThreadSidebar.vue`）—— 用户在其中
+ * 一个里打的字，另一个里是空的。
+ *
+ * 因此宽屏只做一件事：**把常驻侧栏展开**（§5.2「`Sheet` 停用」+「`?thread=` 深链会强制
+ * 展开」）。⛔ 宽屏不开抽屉；抽屉本体也由 `v-if="!isWide"` 从 DOM 上摘掉，任何时刻
+ * 侧栏实例都只有一份。
+ */
+function revealAnnotations(): void {
+  if (isWide.value) {
+    viewerStore.sidebarCollapsed = false
+    return
+  }
   sheetOpen.value = true
 }
+
+/** 窄屏开着抽屉再拉宽 ⇒ 顺手收起，⛔ 否则再拉回窄屏时抽屉会「自己」弹回来。 */
+watch(isWide, (wide) => {
+  if (wide)
+    sheetOpen.value = false
+})
 
 function onSelectionComment(payload: SelectionPayload): void {
   selection.value = payload
@@ -558,7 +590,7 @@ function startDraft(): void {
     quotedText: payload.quotedText,
   }
   selection.value = null
-  sheetOpen.value = true
+  revealAnnotations()
 }
 
 async function copySelection(): Promise<void> {
@@ -593,7 +625,7 @@ function onGotoUnresolved(): void {
   viewerStore.sidebarCollapsed = false
   viewerStore.resetKindFilters()
   viewerStore.showClosedAnnotations = false
-  sheetOpen.value = true
+  revealAnnotations()
 }
 
 // ── 动作端点（⭐ 零乐观更新，一律以响应体 current_status 为准 + 前缀失效）────────────
@@ -812,7 +844,7 @@ function onKindFiltersChange(kinds: string[]): void {
 
 function onGotoBlockedThread(threadId: string): void {
   selectThread(threadId)
-  sheetOpen.value = true
+  revealAnnotations()
   const anchor = findThread(threadId)?.anchor
   nextTick(() => {
     if (anchor?.block_id)
@@ -838,7 +870,7 @@ watch(
     threadConsumed.value = true
     const threadId = threadParam.value
     selectThread(threadId)
-    sheetOpen.value = true
+    revealAnnotations()
     const anchor = findThread(threadId)?.anchor
     nextTick(() => {
       if (anchor?.block_id)
@@ -952,7 +984,7 @@ const sections = computed<NavSection[]>(() => [
         :exporting="exporting"
         @export="onExportToFeishu()"
         @toggle-sidebar="viewerStore.toggleSidebar()"
-        @open-annotations="openAnnotationSheet()"
+        @open-annotations="revealAnnotations()"
         @change-version="versionParam = $event"
         @open-diff="diffParam = $event"
         @approve="onApprove()"
@@ -1332,8 +1364,10 @@ const sections = computed<NavSection[]>(() => [
         </div>
       </AnchorNavLayout>
 
-      <!-- < xl：线程侧栏收成抽屉 -->
-      <Sheet v-model:open="sheetOpen">
+      <!-- ⭐ < xl：线程侧栏收成抽屉。`xl` 及以上抽屉**整块不存在于 DOM**（§5.2「Sheet 停用」）
+           —— 与上面那个 `hidden xl:flex` 的常驻侧栏正好互补，任何宽度下侧栏实例恰好一份。
+           ⛔ 不能只用 `xl:hidden` 把它藏起来：reka-ui 的焦点陷阱会锁进一个不可见容器里。 -->
+      <Sheet v-if="!isWide" v-model:open="sheetOpen">
         <SheetContent side="right" class="w-full sm:max-w-md" data-testid="blueprint-sidebar-sheet">
           <SheetHeader>
             <SheetTitle>{{ t('knowledge.blueprints.annotation.sidebarToggleEmpty') }}</SheetTitle>
