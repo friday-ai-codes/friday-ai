@@ -191,17 +191,26 @@ def test_mcp_never_passes_space_id_as_project_id() -> None:
     assert "space_id" not in src.split("start_blueprint_orchestration")[1][:800]
 
 
-def test_workflow_terminal_mapping_is_out_of_scope_and_annotated() -> None:
-    """⭐ 跨相位边界：``plan_research._map_terminal`` 本 plan **一行未改**且留了边界注释。
+def test_workflow_terminal_mapping_no_longer_hands_unreviewed_blueprints_downstream() -> None:
+    """⭐ 同步点 2 已闭合：蓝图终态**不再**走旧链 ``_map_terminal``（源码级防线）。
 
-    蓝图的 ``DONE`` 语义是「等人审」，而该函数把 ``DONE`` 无条件映射成 ``completed`` 并把
-    ``plan`` 喂给下游 ``ai_coding`` ⇒ 现在翻 workflow 开关的默认值 = 让编码代理拿着**未经
-    人审**的蓝图去建分支写代码（T-116-18，正面违反 RELY-01）。改成 HITL 挂起归同步点 2
-    之后的收尾 plan。
+    本测试此前断言的是**相反**的东西 —— 「``_map_terminal`` 本 plan 一行未改、改法归同步点
+    2 之后」。同步点 2 到了，断言随之翻面：现在要锁死的是「蓝图 ``DONE`` 绝不被当成
+    ``completed`` 交给下游 ``ai_coding``」（T-116-18 / RELY-01）。
+
+    三条源码级不变量：
+    1. 存在独立的蓝图终态分档 ``_amap_terminal_blueprint``（⛔ 不是往旧链函数里插分支）；
+    2. 旧链 ``_map_terminal`` 仍是**两参签名**（既有测试按它做替身，改签名会打断它们）；
+    3. ⭐ ``pending_review`` **不在**「可放行给下游」的状态集合里 —— 那正是等人审那一档。
+
+    行为面的断言见 ``tests/services/process_runtime/test_blueprint_consumer_seams.py``。
     """
+    from workflows.nodes.ai.plan_research import _BLUEPRINT_REVIEWED_STATUSES
+
     src = (_SERVER_DIR / "workflows/nodes/ai/plan_research.py").read_text(encoding="utf-8")
-    idx = src.index("async def _map_terminal")
-    assert "同步点 2" in src[max(0, idx - 900) : idx]
+    assert "async def _amap_terminal_blueprint" in src
+    assert "async def _map_terminal(self, session: Any) -> NodeResult:" in src
+    assert "pending_review" not in _BLUEPRINT_REVIEWED_STATUSES
 
 
 # ═══════════════════════════════════════════════════════════════════════════

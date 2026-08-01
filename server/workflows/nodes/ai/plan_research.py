@@ -64,6 +64,25 @@ _DELIVERY_FAILURE_REASONS: Final[frozenset[str]] = frozenset(
     {"no_questions", "no_space", "no_project", "no_chat_id", "send_failed"}
 )
 
+# ── 蓝图分档用的状态字面量（同步点 2 / G1）─────────────────────────────────────
+#
+# 用字面量而非 ``BlueprintStatus.*``：本模块所有 delivery 模型 import 都在函数内（lazy），
+# 模块级常量拿不到那个枚举（与 ``blueprint_resume`` 同口径）。等值由
+# ``tests/workflows/test_plan_research_blueprint_seam.py`` 的枚举对齐断言锁死。
+_BLUEPRINT_STATUS_NEEDS_CLARIFICATION: Final[str] = "needs_clarification"
+_BLUEPRINT_STATUS_PENDING_REVIEW: Final[str] = "pending_review"
+_BLUEPRINT_STATUS_FAILED: Final[str] = "failed"
+
+# ⭐ 「已过人审」的状态集：只有落在这里面的蓝图才允许沿 default 出边把载荷交给下游
+# ``ai_coding``（RELY-01）。``pending_review`` **刻意不在集合内** —— 那正是「等人审」。
+_BLUEPRINT_REVIEWED_STATUSES: Final[frozenset[str]] = frozenset(
+    {"confirmed", "implementing", "implemented"}
+)
+
+# 蓝图挂起的**超时兜底**订阅事件类型（⛔ 不是唤醒通路，唤醒走作答链重入）。取独立值
+# 确保既有 ``PlanClarifyCallback`` 消费者必不命中它。
+_BLUEPRINT_GATE_EVENT_TYPE: Final[str] = "BlueprintGateCallback"
+
 
 @register_node
 class AIPlanResearchNode(AIAgentBaseNode):
@@ -225,8 +244,16 @@ class AIPlanResearchNode(AIAgentBaseNode):
             )
             return suspend
 
-        # 5. 终态映射
-        result = await self._map_terminal(session)
+        # 5. 终态映射。⭐ 蓝图会话走独立分档（同步点 2）：蓝图的 DONE 语义是「等人审」，
+        #    ``_map_terminal`` 把它当 completed 就等于让编码代理拿着**未经人审**的蓝图去
+        #    建分支写代码，正面违反 RELY-01（T-116-18）。⛔ 分流写在这里而不是插进
+        #    ``_map_terminal``，旧链那条路径因此逐字不变。
+        from services.process_runtime.blueprint_observation import is_blueprint_session
+
+        if is_blueprint_session(session):
+            result = await self._amap_terminal_blueprint(session, context)
+        else:
+            result = await self._map_terminal(session)
 
         # 6. INGEST-01（14-04）：方案产出成功 → 投递统一摄取（只投 ID，零取材）。
         #    Chassis v2 删除 ai_plan_generation 时漏搬了生成侧接线：审批侧
@@ -461,6 +488,16 @@ class AIPlanResearchNode(AIAgentBaseNode):
         CLARIFY-05：工作流入口（有 ``workflow_execution`` / ``node_execution``）在 CLARIFYING
         挂起时发飞书澄清交互卡到项目群 + 建 ``WorkflowEventSubscription(PlanClarifyCallback)``
         超时兜底（mirror ``plan_deepen``）；chat 入口（无 execution）不发卡（走 91-04 会话出口面）。
+
+        ⭐ **蓝图会话先分流到蓝图版判据**（同步点 2，审计 §4.1 的 G1）：下面两个分支里
+        ``waiting_clarification`` 那条是**旧链**判据，对蓝图会话**恒 False 且不抛异常**
+        ——         ``ClarificationService.ahas_pending`` 查的是 ``Clarification`` 行，而蓝图链从不
+        写它（全仓该模型的唯一写入点在 ``clarification_service.py``），
+        蓝图侧写的是 ``BlueprintThread``。⇒ 一条正在等用户回答规格门提问的**健康**会话会
+        穿过这里返回 ``None``，落进 :meth:`_map_terminal` 的非 DONE 分支拿到
+        ``status="failed"`` / ``error_code="plan_session_failed"`` / ``next_handle="error"``：
+        **每一次规格门提问与每一次确认硬门都把工作流判死**。
+        ⛔ 分流写成早返回而不是往下面两个分支里插条件 —— 开关关闭时旧链必须逐字不变。
         """
         from datetime import timedelta
 
@@ -470,7 +507,11 @@ class AIPlanResearchNode(AIAgentBaseNode):
         from delivery.models import Clarification, ConvergenceSessionStatus
         from delivery.services.clarification_service import ClarificationService
         from services.process_runtime import aall_research_tasks_terminal
+        from services.process_runtime.blueprint_observation import is_blueprint_session
         from workflows.models.execution import WorkflowEventSubscription
+
+        if is_blueprint_session(session):
+            return await self._amaybe_suspend_blueprint(session, context)
 
         if session.status == ConvergenceSessionStatus.WAITING_CLARIFICATION:
             # WR-03：存在性判定收口 `ahas_pending`（结构化子题轮不误判：容器 answered_at 仍空
@@ -530,6 +571,123 @@ class AIPlanResearchNode(AIAgentBaseNode):
                     },
                 )
         return None
+
+    # ===== 蓝图挂起判据（同步点 2 / G1；形状照 chat 的 _maybe_suspend_blueprint） =====
+
+    async def _amaybe_suspend_blueprint(
+        self,
+        session: Any,
+        context: ExecutionContext | None,
+        *,
+        force_clarification: bool = False,
+    ) -> NodeResult | None:
+        """蓝图会话的挂起判定（判据与 ``blueprint_resume`` 的 pause 短路**同源**）。
+
+        两档，与 chat 的 ``plan_research_tools._maybe_suspend_blueprint`` 逐档对齐：
+
+        1. ``waiting_clarification`` 且存在 **open + blocking** 的 ``BlueprintThread``
+           （⭐ **不按 ``kind`` 过滤** —— ``ai_clarification`` 与 ``repo_confirmation``
+           两类都算；只认一类会让确认门挂起的会话被判死）⇒ ``waiting_event`` 挂起。
+        2. ``waiting_event`` 且仍有在途调研 ⇒ ``waiting_event`` 挂起。这一档旧链判据
+           （``aall_research_tasks_terminal``）对蓝图**本来就有效**（蓝图确实建
+           ``RepoResearchTask``），故逐字复用、⛔ 不另写一套。
+
+        ``force_clarification``：终态映射的 ``needs_clarification`` 档复用第 1 档
+        （同一份实现，⛔ 不复制第二份线程查询），此时会话 ``status`` 已不是
+        ``waiting_clarification``。
+
+        ⛔ **不发旧链澄清卡**：``build_clarification_card`` 携带的是 ``clarification_id``，
+        回调侧 ``PlanClarifyCallback`` 按它查 ``Clarification`` 行 —— 对蓝图线程发那张卡，
+        用户点了也答不进去（回调查无此行）。蓝图线程的作答面是蓝图确认门 / 审查
+        REST 端点与 MCP 工具，那条链走 ``aresume_after_gate_action`` 回来重入本节点。
+        """
+        from delivery.models import ConvergenceSessionStatus
+        from services.process_runtime import aall_research_tasks_terminal
+        from services.process_runtime.blueprint_observation import ablueprint_observation
+
+        if force_clarification or session.status == ConvergenceSessionStatus.WAITING_CLARIFICATION:
+            observation = await ablueprint_observation(session)
+            if observation.is_blocked:
+                thread = observation.first_thread
+                await self._asubscribe_blueprint_timeout(context, kind="clarification")
+                return NodeResult(
+                    status="waiting_event",
+                    output={
+                        "session_id": str(session.id),
+                        "kind": "clarification",
+                        "artifact_id": observation.artifact_id,
+                        # ⛔ INV-6：响应/输出体键名不得出现字面 blueprint_status。
+                        "current_status": observation.current_status,
+                        "pending_clarifications": observation.threads,
+                        "suspension": {
+                            "type": "ask_user_question",
+                            # 键位与旧链分支逐字一致（消费方零改动）：thread_id 占
+                            # clarification_id 那一位，另以显式 thread_id 键并列。
+                            "clarification_id": thread.get("thread_id", ""),
+                            "thread_id": thread.get("thread_id", ""),
+                            "question": thread.get("question", ""),
+                        },
+                    },
+                )
+
+        if session.status == ConvergenceSessionStatus.WAITING_EVENT:
+            if not await aall_research_tasks_terminal(session.id):
+                return NodeResult(
+                    status="waiting_event",
+                    output={
+                        "session_id": str(session.id),
+                        "kind": "research",
+                        "_resume_from_callback": True,
+                    },
+                )
+        return None
+
+    async def _asubscribe_blueprint_timeout(
+        self, context: ExecutionContext | None, *, kind: str
+    ) -> None:
+        """建蓝图挂起的**超时兜底**订阅（``BlueprintGateCallback``，best-effort）。
+
+        ⭐ 这条订阅**不是唤醒通路**（唤醒走作答链的 ``aresume_after_gate_action`` 重入），
+        它只提供 ``check_timeouts`` 的到期兜底：没有它，一条等不到人回答 / 等不到人审的
+        蓝图工作流会**无声地永久挂着**（没有任何可查询的失败信号）。事件类型取独立值
+        ⇒ 既有 ``PlanClarifyCallback`` 回调消费者必不命中它（那个回调按
+        ``clarification_id`` 查 ``Clarification`` 行，对蓝图线程恒查无）。
+
+        chat 入口（无 ``workflow_execution`` / ``node_execution``）不建订阅。整段吞异常：
+        观测/兜底 best-effort，⛔ 绝不反噬节点挂起本身。
+        """
+        if context is None or not (context.workflow_execution and context.node_execution):
+            return
+        try:
+            from datetime import timedelta
+
+            from django.conf import settings
+            from django.utils import timezone
+
+            from workflows.models.execution import WorkflowEventSubscription
+
+            hours = (
+                getattr(settings, "CLARIFICATION_TIMEOUT_HOURS", 24)
+                if kind == "clarification"
+                else getattr(settings, "BLUEPRINT_REVIEW_TIMEOUT_HOURS", 72)
+            )
+            await WorkflowEventSubscription.objects.acreate(
+                workflow_execution=context.workflow_execution,
+                node_execution=context.node_execution,
+                event_type=_BLUEPRINT_GATE_EVENT_TYPE,
+                project_key=context.workflow_context.get("project_key", ""),
+                timeout_at=timezone.now() + timedelta(hours=hours),
+                timeout_action="fail",
+            )
+        except Exception:  # noqa: BLE001 — 超时兜底 best-effort，绝不反噬挂起语义
+            logger.warning(
+                "plan_research_blueprint_timeout_subscribe_failed",
+                category="sampling",
+                component="plan_research",
+                execution_id=context.execution_id,
+                node_id=context.node_id,
+                kind=kind,
+            )
 
     # ===== CLARIFY-05 发卡（工作流入口，mirror plan_deepen._send_clarify_card） =====
 
@@ -709,13 +867,10 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
     # ===== 终态映射 =====
 
-    # ⭐ 跨相位边界（116-03 明令**不改本函数一行**）：本函数把 ``DONE`` 无条件映射成
-    # ``completed`` 并把 ``plan`` 喂给下游 ``human_approval(plan_feishu)`` / ``ai_coding``，
-    # 而蓝图链的 ``DONE`` 语义是「**等人审**」。⇒ 现在把 workflow 开关翻成
-    # ``technical_blueprint`` 的默认值 = 让编码代理拿着**未经人审**的蓝图去建分支写代码，
-    # 正面违反 RELY-01（T-116-18）。改成「``pending_review`` → ``waiting_event`` 人审 HITL
-    # 挂起」与三处触点升级**归同步点 2 之后的收尾 plan**（下游消费形态由 v0.19.0 Phase 109
-    # 的 execution 投影承担）。这条同时解释了「为什么 workflow / chat 的开关默认不能翻」。
+    # ⭐ 蓝图会话**不走本函数**（同步点 2）：分档在 :meth:`execute` 里按 ``process_type``
+    # 分流到 :meth:`_amap_terminal_blueprint`。分流放在调用点而不是本函数开头，是因为
+    # 蓝图分档需要 ``context``（建人审/澄清的超时兜底订阅），而本函数的两参签名被既有
+    # 测试按替身覆盖 —— 改签名会打断那些替身。本函数因此**逐字未改**。
     async def _map_terminal(self, session: Any) -> NodeResult:
         """done → completed（canonical plan_version_id + 内联 §7 MergedPlan content）；
         failed → failed（error_code）。
@@ -763,6 +918,149 @@ class AIPlanResearchNode(AIAgentBaseNode):
                 "session_id": str(session.id),
                 "error_code": "plan_session_failed",
                 "error": error,
+            },
+            next_handle="error",
+        )
+
+    async def _amap_terminal_blueprint(
+        self, session: Any, context: ExecutionContext | None
+    ) -> NodeResult:
+        """蓝图会话的终态映射：按**蓝图状态**分档（⛔ 不按 ``session.status``）。
+
+        =========================  ==================================================
+        蓝图状态                    NodeResult
+        =========================  ==================================================
+        ``needs_clarification``    ``waiting_event``（挂起等人回答，⛔ 不是失败）
+        ``pending_review``         ⭐ ``waiting_event``（**挂起等人终审**，⛔ 不是完成）
+        ``confirmed`` / 实施中/完成  ``completed`` + 派生的 execution_plan 载荷
+        ``failed``                 ``failed``
+        其余中间态                   ``failed``（``blueprint_unreviewed``）
+        =========================  ==================================================
+
+        ⭐ **``pending_review`` 挂起而不是完成**是本次改动的要害（RELY-01）：蓝图的
+        ``DONE`` 语义是「等人审」（``review_passed → STAGE_DONE`` 把 ``blueprint_status``
+        置成 ``pending_review``），报 ``completed`` 会沿 ``default`` 出边把**未经人审**的
+        蓝图直接交给下游 ``ai_coding`` 建分支写代码。人审动作（approve / reject）经
+        ``aresume_after_gate_action`` 重入本节点：届时状态已是 ``confirmed`` ⇒ 走
+        ``completed`` 那一档，闭环。
+
+        ⭐ **``completed`` 那一档喂下游的是派生后的 technical_plan 形状**：下游
+        ``ai_coding`` / ``human_approval`` 读 ``plan.execution_plan``，而 blueprint/v1
+        **没有**这个顶层必填键（它是「确认后确定性派生」的可选段，见
+        ``blueprint_schema`` ``:741``）。直接内联 blueprint/v1 就是在工作流侧复刻 MCP 那条
+        「结构合法而语义为空」的静默降级（审计 §4.1 的 G3）。故经
+        ``blueprint_execution.derive_execution_plan`` 派生后再内联，
+        原始 blueprint content 以 ``blueprint_content`` 键并列保留（不丢信息）。
+
+        ⭐ **其余中间态如实报失败**（⛔ 与 chat 那档「不报失败」刻意不同，判断依据是
+        下游不同）：chat 只把结果讲给对话里的人看，工作流的 ``completed`` 会把载荷**交给
+        编码代理**。会话到终态而蓝图仍停在 ``researching`` / ``drafting`` 是可诊断异常，
+        此时既不能放行（未经人审）也不能装作还在跑（没有人会再推进它）⇒ 走 ``error``
+        出边如实报错，产物仍在库里可人工续推。
+        """
+        from delivery.models import ArtifactVersion, ConvergenceSessionStatus
+        from services.process_runtime.blueprint_execution import derive_execution_plan
+        from services.process_runtime.blueprint_observation import (
+            ablueprint_observation,
+            blueprint_status_message,
+            render_observed_blueprint,
+        )
+
+        observation = await ablueprint_observation(session, with_threads=False)
+        current_status = observation.current_status
+
+        if current_status == _BLUEPRINT_STATUS_NEEDS_CLARIFICATION:
+            suspend = await self._amaybe_suspend_blueprint(
+                session, context, force_clarification=True
+            )
+            if suspend is not None:
+                return suspend
+
+        if (
+            current_status == _BLUEPRINT_STATUS_FAILED
+            or session.status == ConvergenceSessionStatus.FAILED
+        ):
+            error = session.error if isinstance(session.error, dict) else {}
+            return NodeResult(
+                status="failed",
+                error=str(
+                    error.get("message") or error.get("reason") or "blueprint session failed"
+                ),
+                output={
+                    "session_id": str(session.id),
+                    "artifact_id": observation.artifact_id,
+                    "current_status": current_status,
+                    "error_code": "blueprint_session_failed",
+                    "error": error,
+                },
+                next_handle="error",
+            )
+
+        if current_status == _BLUEPRINT_STATUS_PENDING_REVIEW:
+            await self._asubscribe_blueprint_timeout(context, kind="human_review")
+            return NodeResult(
+                status="waiting_event",
+                output={
+                    "session_id": str(session.id),
+                    "kind": "human_review",
+                    "artifact_id": observation.artifact_id,
+                    "current_status": current_status,
+                    "suspension": {
+                        "type": "await_human_review",
+                        "artifact_id": observation.artifact_id,
+                        "message": blueprint_status_message(current_status),
+                    },
+                },
+            )
+
+        if current_status in _BLUEPRINT_REVIEWED_STATUSES:
+            av_id = (
+                str(session.current_artifact_version_id)
+                if session.current_artifact_version_id
+                else None
+            )
+            blueprint_content: dict[str, Any] = {}
+            plan_content: dict[str, Any] = {}
+            plan_markdown = ""
+            if av_id:
+                av = await ArtifactVersion.objects.filter(id=av_id).afirst()
+                if av is not None and isinstance(av.content, dict):
+                    blueprint_content = av.content
+                    meta = av.content.get("meta")
+                    meta = meta if isinstance(meta, dict) else {}
+                    plan_content = {
+                        "title": str(meta.get("title") or ""),
+                        "execution_plan": derive_execution_plan(av.content),
+                        "artifact_version_id": av_id,
+                    }
+                    plan_markdown = render_observed_blueprint(av.content, current_status)
+            return NodeResult(
+                status="completed",
+                output={
+                    "session_id": str(session.id),
+                    "artifact_version_id": av_id,
+                    "artifact_id": observation.artifact_id,
+                    "status": "done",
+                    "current_status": current_status,
+                    "plan": plan_content,
+                    "plan_markdown": plan_markdown,
+                    # 原始 blueprint/v1 content 并列保留（不丢信息、可追踪）。
+                    "blueprint_content": blueprint_content,
+                },
+                next_handle="default",
+            )
+
+        return NodeResult(
+            status="failed",
+            error=(
+                "技术蓝图未走完人审前的产出流程（当前状态："
+                f"{current_status or '未进入状态机'}），已中止后续编码。"
+            ),
+            output={
+                "session_id": str(session.id),
+                "artifact_id": observation.artifact_id,
+                "current_status": current_status,
+                "error_code": "blueprint_unreviewed",
             },
             next_handle="error",
         )
