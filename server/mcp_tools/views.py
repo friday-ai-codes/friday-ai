@@ -1346,6 +1346,9 @@ class CreateFeishuTechnicalPlanView(McpToolView):
                 create_document=bool(input_data.get("create_document", True)),
                 write_comment=bool(input_data.get("write_comment", True)),
                 actor=actor,
+                # 116-REVIEW MJ-02：assumptions 档位由 serializer 的 ChoiceField 校验过
+                # （非三档之一直接 400），此处只做透传。缺省空串 ⇒ 默认档。
+                assumptions_tier=str(input_data.get("assumptions_tier") or ""),
             )
         except TechnicalPlanError as exc:
             status_map = {

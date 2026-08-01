@@ -331,6 +331,7 @@ async def start_blueprint_orchestration(
     space: Any = None,
     conversation: Any = None,
     work_item_context: Any = None,
+    assumptions_tier: str = "",
 ) -> ConvergenceSession:
     """建一条 ``technical_blueprint`` 会话（Phase 116-02，蓝图链的生产起点）。
 
@@ -353,11 +354,18 @@ async def start_blueprint_orchestration(
     写键** —— 不提供时会话形态与既有入口逐字一致。⭐ 本函数**额外恒写一个键**
     ``decomposition["project_id"]``：``_h_bp_intake`` 从那里取（handler 拿不到入口上下文）。
 
+    **(d) ``assumptions_tier``（116-REVIEW MJ-02）**：本次会话的 assumptions 档位
+    （``strict`` / ``balanced`` / ``assume_more``），⭐ 这是 ``spec_gate`` 读的那个键
+    ``stage_state["decomposition"]["assumptions_tier"]`` 的**唯一生产写入方**。照 (c) 的
+    「非空才写键」纪律：空串 / 不在三档内一律**不写键** ⇒ 不传档位时会话形态与改动前逐字
+    相同、``_assumptions_tier`` 仍返 ``""``、``_aload_tier_overrides`` 仍零调用。
+
     ⛔ **不落 ``start_orchestration`` 那条旧链退役观察事件** —— 它的语义是「还有谁在走
     旧链」，蓝图会话落它会把聚合读数直接污染反了（本函数存在恰恰意味着**没在**走旧链）。
     本函数落自己的 ``blueprint_orchestration_started``。
     """
     from delivery.services import ConvergenceSessionService
+    from services.process_runtime.blueprint_ambiguity_score import ASSUMPTIONS_TIERS
     from services.process_runtime.blueprint_intake import aresolve_project_id
 
     resolved_project_id = str(project_id or "").strip()
@@ -385,6 +393,13 @@ async def start_blueprint_orchestration(
         decomposition["feature_segments"] = feature_segments
     if feature_meta:
         decomposition["feature_meta"] = feature_meta
+    # ⭐ spec_gate 那个键的唯一生产写入方（116-REVIEW MJ-02）。⛔ 档名不在三档内一律不写键 ——
+    # 写一个非法档名进去只会让 `_assumptions_tier` 读出来再丢掉，白留一份误导性会话状态。
+    resolved_tier = str(assumptions_tier or "").strip()
+    if resolved_tier not in ASSUMPTIONS_TIERS:
+        resolved_tier = ""
+    if resolved_tier:
+        decomposition["assumptions_tier"] = resolved_tier
 
     session = await ConvergenceSessionService().create_session(
         "technical_blueprint",
@@ -405,6 +420,9 @@ async def start_blueprint_orchestration(
         project_id=resolved_project_id,
         session_id=str(getattr(session, "id", "")),
         initiated_by_user_id=str(initiated_by_user_id or "system"),
+        # ⭐ 会话级留痕（MJ-02）：档位也进 ambiguity_report，但那要等第一次打分之后才有 ——
+        # 建会话时就该能看出这条会话用的是哪一档（空串 = 默认档 balanced）。
+        assumptions_tier=resolved_tier,
     )
     return session
 

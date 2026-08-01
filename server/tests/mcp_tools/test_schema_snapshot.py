@@ -343,6 +343,8 @@ def test_mcp_read_tool_schema_snapshot() -> None:
                 "folder_token",
                 "create_document",
                 "write_comment",
+                # 116-REVIEW MJ-02：assumptions 档位（缺省空串 = 默认档，行为与改动前逐字相同）。
+                "assumptions_tier",
             ],
             "response": [
                 "technical_plan_id",
