@@ -38,6 +38,8 @@ _SCANNED_MODULES = (
     "services/process_runtime/blueprint_resume.py",
     "services/process_runtime/blueprint_review.py",
     "services/process_runtime/builtin_processes.py",
+    # Phase 116 VIEW-04：蓝图入图 normalizer（半可信正文 + citation 来源进日志的新面）
+    "knowledge/sources/blueprint.py",
 )
 
 # 允许的脱敏出口：两个公共脱敏函数 + 各模块内已收口的脱敏 helper（`_detail` 自身走
