@@ -23,6 +23,12 @@
  * `CitationCodePreview` 本相位**降级为「文件路径 + 行号区间 + citation 自带的 quote 快照」**，
  * 用与 `pseudocode` 块同一套 `<pre class="font-mono">` + 行号渲染。⛔ 不引入任何代码编辑器
  * 内核、⛔ 不新增后端端点——那个读面超出本相位「只加读面」的边界，归属 Phase 116。
+ *
+ * ⭐ **Phase 116-07 后续（该顺延目标已兑现）**：上一段的结论对 115 相位仍然成立，但那个读面
+ * 已由 116-07 补上 —— `getRepositoryFileLines`（`GET /repositories/<id>/file-lines/`）按
+ * `path` + 行区间返回带行号的源码正文行，`CitationCodePreview` 据此升级为真正的代码预览
+ * （正文 + 行高亮）。⛔ 仍然不引任何代码编辑器内核 / 高亮库：呈现沿用 115-03 已建的
+ * `<pre class="font-mono">` + 行号列形态。
  */
 
 import { get } from './client'
@@ -98,6 +104,62 @@ export async function getChunkAt(
   }
 }
 
+/** `file-lines` 返回的单行源码（`line_no` **1-based**，与 citation 的 `line_start` 同口径）。 */
+export interface RepoFileLine {
+  line_no: number
+  text: string
+}
+
+/**
+ * `file-lines` 的归一结果（判据封装在这里，⛔ 调用点不各自判）。
+ *
+ * `usable === false` 覆盖**全部**不可用情形：400（参数缺失 / 非正整数 / `line_end < line_start`）、
+ * 401/403、404（仓不存在）、5xx、网络失败，以及 ⭐ **最容易漏的那一种** —— 200 但 `lines` 为空。
+ * 后端对「文件被排除规则挡掉」/「文件不存在」/「仓库无镜像」三者刻意返回**逐字相同**的 200 空
+ * （不泄漏存在性），⇒ 判据必须是 `!ok || lines.length === 0`，**绝不能是「非 2xx」**（与 115-02
+ * 为 `chunk-at` 立的判据同源）。
+ */
+export interface RepoFileLinesResult {
+  lines: RepoFileLine[]
+  truncated: boolean
+  usable: boolean
+}
+
+/**
+ * 按 `path` + 行区间读源码正文行（Phase 116-07，VIEW-02 的正文与行高亮数据面）。
+ *
+ * ⚠️ 后端 `path` / `line_start` / `line_end` **均为必填**，缺失稳定 400 ⇒ 调用前先确认
+ * citation 的 `locator.line_start` 存在，⛔ 不发注定失败的那次往返。区间超后端硬上限时是
+ * **截断**（`truncated: true`）而不是报错。
+ *
+ * 恒不抛：任何失败都归一成 `{ lines: [], truncated: false, usable: false }`。
+ */
+export async function getRepositoryFileLines(
+  repositoryId: string,
+  params: { path: string, lineStart: number, lineEnd: number, branchName?: string },
+): Promise<RepoFileLinesResult> {
+  const query: Record<string, string> = {
+    path: params.path,
+    line_start: String(params.lineStart),
+    line_end: String(params.lineEnd),
+  }
+  if (params.branchName)
+    query.branch_name = params.branchName
+  try {
+    const data = await get<{ lines: RepoFileLine[], truncated: boolean }>(
+      `/repositories/${repositoryId}/file-lines/`,
+      query,
+    )
+    const lines = Array.isArray(data?.lines) ? data.lines : []
+    // ⭐ 判据是「有没有正文」而不是「请求成不成功」：200 + 空 lines 同样不可用。
+    return { lines, truncated: Boolean(data?.truncated), usable: lines.length > 0 }
+  }
+  catch {
+    // ⛔ 不回显后端错误体（键是 `error`，`ApiError.detail` 只会给出 '请求失败'）。
+    return { lines: [], truncated: false, usable: false }
+  }
+}
+
 /**
  * 取仓库章程；无章程 / 任何失败一律返回 `null`，调用方走 citation 快照兜底。
  *
@@ -114,5 +176,6 @@ export async function getRepositoryCharter(repositoryId: string): Promise<RepoCh
 
 export default {
   getChunkAt,
+  getRepositoryFileLines,
   getRepositoryCharter,
 }
