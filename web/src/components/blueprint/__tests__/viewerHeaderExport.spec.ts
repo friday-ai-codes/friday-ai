@@ -229,3 +229,27 @@ describe('窄屏「批注 {n}」按钮的计数口径（M-1）', () => {
     expect(component).not.toContain('counts.blocker + ')
   })
 })
+
+/**
+ * ⭐ UI-REVIEW L-10：§5.2 的 `< md` 行写的是「计数徽标折成**一行可横向滚动**」。
+ *
+ * 顶栏是 `sticky`，让徽标参与外层 `flex-wrap` 会在窄屏把整条顶栏撑高，
+ * 直接挤压它下方的正文可视区。⚠️ happy-dom 无布局引擎 ⇒ ⛔ 不量高度，只断言类名与结构。
+ */
+describe('窄屏计数徽标不换行（L-10）', () => {
+  const COUNTS = '[data-testid="blueprint-header-counts"]'
+
+  it('三个计数徽标包在同一个 flex-nowrap + overflow-x-auto 容器里', () => {
+    const wrapper = mountHeader({ counts: { blocker: 1, clarification: 2, orphaned: 3 } })
+    const row = wrapper.find(COUNTS)
+    expect(row.exists()).toBe(true)
+    expect(row.classes()).toContain('flex-nowrap')
+    expect(row.classes()).toContain('overflow-x-auto')
+    expect(row.findAll('[data-count]')).toHaveLength(3)
+  })
+
+  it('非恒真对照：三个计数全为 0 ⇒ 容器本身也不渲染（⛔ 不留一条空白横条）', () => {
+    const wrapper = mountHeader({ counts: { blocker: 0, clarification: 0, orphaned: 0 } })
+    expect(wrapper.find(COUNTS).exists()).toBe(false)
+  })
+})

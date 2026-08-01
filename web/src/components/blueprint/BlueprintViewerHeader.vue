@@ -181,16 +181,26 @@ const sidebarToggleLabel = computed(() =>
 
     <BlueprintStatusBadge :status="currentStatus" />
 
-    <!-- 三个计数徽标（⭐ 为 0 的档不出现在 countBadges 里） -->
-    <Badge
-      v-for="badge in countBadges"
-      :key="badge.key"
-      :variant="badge.variant"
-      :data-count="badge.key"
+    <!-- 三个计数徽标（⭐ 为 0 的档不出现在 countBadges 里）。
+         ⭐ 自己包一层 `flex-nowrap overflow-x-auto`：§5.2 的 `< md` 行写的是「计数徽标折成
+         一行可横向滚动」。顶栏是 `sticky`，让徽标参与外层 `flex-wrap` 会在窄屏把整条顶栏
+         撑高，直接挤压它下方的正文可视区。 -->
+    <div
+      v-if="countBadges.length"
+      class="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto"
+      data-testid="blueprint-header-counts"
     >
-      <span :class="badge.icon" />
-      {{ badge.label }}
-    </Badge>
+      <Badge
+        v-for="badge in countBadges"
+        :key="badge.key"
+        :variant="badge.variant"
+        :data-count="badge.key"
+        class="shrink-0 whitespace-nowrap"
+      >
+        <span :class="badge.icon" />
+        {{ badge.label }}
+      </Badge>
+    </div>
 
     <!-- 生成中指示 -->
     <span
