@@ -357,6 +357,10 @@ def test_mcp_read_tool_schema_snapshot() -> None:
                 "status",
                 "retry_state",
                 "run_id",
+                # Phase 116-06：mcp 开关切到 `technical_blueprint` 时才出现的三个追加键。
+                "blueprint_artifact_id",
+                "blueprint_current_status",
+                "pending_clarifications",
             ],
         },
         "create_work_item_repo_tasks": {
@@ -487,6 +491,33 @@ def test_mcp_read_tool_schema_snapshot() -> None:
                 "seq",
                 "satisfied_waiters",
                 "redispatched",
+                "run_id",
+            ],
+        },
+        # 蓝图异步澄清协议（GATE-01，Phase 116-06）：⛔ 无第三个 list 工具，pending
+        # 清单内联在 `get_technical_blueprint` 里；寻址键一律 `artifact_id`。
+        "get_technical_blueprint": {
+            "request": ["artifact_id"],
+            "response": [
+                "artifact_id",
+                "session_id",
+                "current_status",
+                "title",
+                "version_no",
+                "sections",
+                "markdown",
+                "pending_clarifications",
+                "run_id",
+            ],
+        },
+        "answer_blueprint_clarification": {
+            "request": ["thread_id", "body", "artifact_id"],
+            "response": [
+                "status",
+                "thread_id",
+                "artifact_id",
+                "current_status",
+                "reflow",
                 "run_id",
             ],
         },

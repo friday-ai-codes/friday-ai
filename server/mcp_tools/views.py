@@ -81,6 +81,7 @@ from .orchestration_delegate import delegate_process_runtime, map_canonical_to_c
 from .repository_analysis_service import build_repository_analysis, normalize_context_chunks
 from .serializers import (
     AnalyzeRepositoryRequestSerializer,
+    AnswerBlueprintClarificationRequestSerializer,
     ConfirmFeatureTechPlanRequestSerializer,
     CreateCodingPlanRequestSerializer,
     CreateFeatureTechPlanRequestSerializer,
@@ -98,6 +99,7 @@ from .serializers import (
     GetRelatedEntitiesRequestSerializer,
     GetRepositoryFileRequestSerializer,
     GetRepositoryRequestSerializer,
+    GetTechnicalBlueprintRequestSerializer,
     GrepProjectRequestSerializer,
     GrepRepositoryRequestSerializer,
     ImproveCodingPlanRequestSerializer,
@@ -4485,3 +4487,429 @@ class ReportBlueprintContextView(McpToolView):
                 },
                 status=status.HTTP_200_OK,
             )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 蓝图异步澄清协议（GATE-01，Phase 116-06）：MCP 入口不再 skip_clarification
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# 两个工具构成「立即返回 + 轮询取件」的闭环（⛔ 无服务端长轮询、⛔ 无推送 ——
+# MCP 调用方没有可回调地址）：
+#
+# 1. `create_feishu_technical_plan` 开关切到蓝图时立即回 `status="partial"` +
+#    `blueprint_artifact_id` + `pending_clarifications[]`（见 technical_plan_service）；
+# 2. `answer_blueprint_clarification` 逐条作答；
+# 3. `get_technical_blueprint` 续取终稿（六段摘要 + 带「未经确认」标注的 markdown）。
+#
+# ⛔ **不建第三个 list 工具**：pending 清单内联在 `get_technical_blueprint` 里。
+# ⭐ 寻址键一律 `artifact_id`（既有 20 个蓝图端点的一级键；同一 artifact 上可并存
+# `technical_plan` 与 `technical_blueprint` 两条会话，按会话寻址会跨 process 污染）。
+
+# pending 清单读取失败的中性文案（⛔ 不回显内部异常，⛔ 不包成 200 空结构）
+_BLUEPRINT_PENDING_UNAVAILABLE_DETAIL = "待澄清清单暂时不可读，请稍后重试"
+# 六段摘要的段名（blueprint/v1 的六个正文段，⛔ 不塞整份 content）
+_BLUEPRINT_SUMMARY_SECTIONS = (
+    "repo_associations",
+    "current_state_analysis",
+    "implementation_overview",
+    "api_contracts",
+    "impact_analysis",
+    "interaction_flows",
+)
+# pending 清单一次最多回几条（防无界拉爆 agent 上下文，口径同 read_blueprint_context）
+_BLUEPRINT_PENDING_LIMIT = 50
+
+
+def _blueprint_scope_error(denied: Any) -> Response:
+    """REST 范围闸的 ``Response`` → MCP 错误信封（**状态码与 detail 逐字保留**）。
+
+    ⭐ 闸本身 import 复用 ``blueprint_review_views._aassert_project_scope`` 的**同源
+    实现**（⛔ 不造第四份）：非成员一律**中性 404**、读不到 ``meta.project_id`` 一律
+    400 fail-closed。这里只做错误外形转译——MCP 面的错误体是
+    ``{error_code, detail}``，与 REST 的 ``{detail}`` 形状不同。
+    """
+    code = int(getattr(denied, "status_code", status.HTTP_404_NOT_FOUND))
+    detail = ""
+    data = getattr(denied, "data", None)
+    if isinstance(data, dict):
+        detail = str(data.get("detail") or "")
+    return error_response(
+        "not_found" if code == status.HTTP_404_NOT_FOUND else "invalid_params",
+        detail or "artifact 不存在",
+        status_code=code,
+    )
+
+
+def _blueprint_section_summary(content: dict) -> dict[str, Any]:
+    """六段摘要：每段的条目数 + 关键标题（⛔ 绝不回传整份 content）。
+
+    半可信正文逐字段 ``.get`` 防御；标题一律过 ``redact_secrets_in_text``（蓝图正文
+    来自 LLM，同属半可信文本）。
+    """
+    summary: dict[str, Any] = {}
+    for name in _BLUEPRINT_SUMMARY_SECTIONS:
+        node = content.get(name) if isinstance(content, dict) else None
+        if isinstance(node, list):
+            titles = [
+                redact_secrets_in_text(
+                    str(
+                        (item.get("name") or item.get("repository_name") or item.get("id") or "")
+                        if isinstance(item, dict)
+                        else ""
+                    )
+                )[:200]
+                for item in node[:20]
+            ]
+            summary[name] = {"count": len(node), "titles": [t for t in titles if t]}
+        elif isinstance(node, dict):
+            summary[name] = {"count": len(node), "titles": sorted(str(k) for k in node)[:20]}
+        else:
+            summary[name] = {"count": 0, "titles": []}
+    return summary
+
+
+async def _alatest_version_no(artifact_id: Any) -> int:
+    """最新版本号（**只读**；无版本回 0，让调用方能分清「还没产出」与「第 1 版」）。"""
+    from delivery.models import ArtifactVersion
+
+    return int(
+        await ArtifactVersion.objects.filter(artifact_id=artifact_id)
+        .order_by("-version_no")
+        .values_list("version_no", flat=True)
+        .afirst()
+        or 0
+    )
+
+
+async def _aload_pending_clarifications(artifact_id: Any) -> list[dict[str, Any]]:
+    """该 artifact 上仍待人回答的**阻塞**线程（⛔ **不传 ``kind``**）。
+
+    ``ai_clarification`` 与 ``repo_confirmation`` 两类都算——判据与
+    ``blueprint_resume`` 的 pause 短路、``plan_research_tools`` 的挂起 marker 同源。
+    显式 ``order_by("created_at")``：``BlueprintThread.Meta`` 无 ``ordering``，不排序会让
+    「首题」随数据库返回顺序漂移。
+
+    题面来自 LLM ⇒ 逐条过 ``redact_secrets_in_text``。⚠️ 本函数的异常**不吞**：读失败
+    必须让调用方看到 503，⛔ 绝不包成 200 空清单（调用方会读成「没有待澄清」并据此推进）。
+    """
+    from delivery.models import BlueprintThread, BlueprintThreadMessage, ThreadStatus
+
+    rows = [
+        row
+        async for row in BlueprintThread.objects.filter(
+            artifact_id=artifact_id, status=ThreadStatus.OPEN, blocking=True
+        ).order_by("created_at")[:_BLUEPRINT_PENDING_LIMIT]
+    ]
+    if not rows:
+        return []
+    first_body: dict[str, str] = {}
+    async for message in (
+        BlueprintThreadMessage.objects.filter(thread_id__in=[row.id for row in rows])
+        .order_by("thread_id", "created_at")
+        .values("thread_id", "body")
+    ):
+        first_body.setdefault(str(message["thread_id"]), str(message["body"] or ""))
+    return [
+        {
+            "thread_id": str(row.id),
+            "kind": str(row.kind or ""),
+            "question": redact_secrets_in_text(first_body.get(str(row.id), ""))[:2000],
+            "options": list(row.options or []) if isinstance(row.options, list) else [],
+            "created_at": row.created_at.isoformat() if row.created_at else "",
+        }
+        for row in rows
+    ]
+
+
+class GetTechnicalBlueprintView(McpToolView):
+    """技术蓝图续取（GATE-01，Phase 116-06）。
+
+    按 ``artifact_id`` 取蓝图当前状态 + 六段摘要 + markdown + 待澄清清单，**终稿续取
+    即用它**（MCP 调用方拿到 ``status="partial"`` 之后轮询本工具取件）。
+
+    五道兜底绝不绕过：
+
+    - **项目范围闸 fail-closed**：import 复用
+      ``blueprint_review_views._aassert_project_scope`` 的**同源实现**（⛔ 不造第四份）
+      —— 非成员**中性 404**（与「artifact 不存在」逐字相同，不泄露存在性），读不到
+      ``meta.project_id`` 一律 400（T-116-51）。
+    - ⭐ **markdown 走 116-05 的共享 renderer 并传真实状态**：未确认的蓝图经 MCP 取走时
+      **同样带「未经确认」标注**（⛔ 不在 MCP 层拼 markdown、⛔ 不传空串）。
+    - ⭐ **``pending_clarifications`` 读失败如实 503**（T-116-56）：⛔ 绝不包成 200 空
+      结构——调用方 ``len(...) == 0`` 会读成「没有待澄清」并据此推进；503 响应体逐字
+      **不含** ``items`` / ``total``。观测另包一层 best-effort，⭐ **业务主体绝不包进去**。
+    - **半可信正文脱敏**：题面与段落标题一律过 ``redact_secrets_in_text``。
+    - **绝不 5xx**：内部异常兜底走结构化错误信封（5xx 会被容器 handler 吞成
+      「调用失败」文案，agent 拿不到可读结果）。
+    """
+
+    tool_name = "get_technical_blueprint"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(GetTechnicalBlueprintRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+        return await self._handle(run, request, input_data, started_at)
+
+    async def _handle(
+        self,
+        run: Any,
+        request: Request,
+        input_data: dict[str, Any],
+        started_at: float,
+    ) -> Response:
+        from delivery.api.blueprint_review_views import (
+            _ARTIFACT_MISSING_DETAIL,
+            _aassert_project_scope,
+            _alatest_content,
+            _aload_artifact,
+            _aload_session,
+        )
+        from services.process_runtime.blueprint_render import render_blueprint_markdown
+
+        artifact_id = str(input_data.get("artifact_id") or "")
+        try:
+            artifact = await _aload_artifact(artifact_id)
+            if artifact is None:
+                return error_response(
+                    "not_found",
+                    str(_ARTIFACT_MISSING_DETAIL.get("detail") or ""),
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+            denied = await _aassert_project_scope(request, artifact)
+            if denied is not None:
+                return _blueprint_scope_error(denied)
+
+            content = await _alatest_content(artifact)
+            session = await _aload_session(artifact_id)
+            version_no = await _alatest_version_no(artifact_id)
+            current_status = str(getattr(artifact, "blueprint_status", "") or "")
+        except Exception as exc:  # noqa: BLE001 — 绝不 5xx（agent 需要拿到可读结果）
+            logger.warning(
+                "get_technical_blueprint_failed",
+                category="sampling",
+                component="mcp_tools",
+                error=redact_secrets_in_text(str(exc))[:500],
+            )
+            return error_response(
+                "internal_error",
+                "蓝图读取暂时不可用，请稍后重试",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        # ⭐ 业务主体（pending 清单）绝不包进 best-effort：读失败如实 503。
+        try:
+            pending = await _aload_pending_clarifications(artifact_id)
+        except Exception as exc:  # noqa: BLE001 — 如实回错，⛔ 不静默 200 空清单
+            logger.warning(
+                "get_technical_blueprint_pending_unreadable",
+                category="caller",
+                component="mcp_tools",
+                artifact_id=artifact_id,
+                error=redact_secrets_in_text(str(exc))[:500],
+            )
+            return error_response(
+                "pending_unavailable",
+                _BLUEPRINT_PENDING_UNAVAILABLE_DETAIL,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        meta = content.get("meta") if isinstance(content.get("meta"), dict) else {}
+        markdown = render_blueprint_markdown(content, blueprint_status=current_status)
+        output_data = {
+            "artifact_id": artifact_id,
+            "session_id": str(getattr(session, "id", "") or ""),
+            # ⛔ 键名不用模型字段名（INV-6 `_RE_FIELD_DICT_KEY`）：`current_status` 是
+            # 114-05 立的既有解法，115/116 的读侧全部沿用它。
+            "current_status": current_status,
+            "title": redact_secrets_in_text(str(meta.get("title") or ""))[:500],
+            "version_no": version_no,
+            "sections": _blueprint_section_summary(content),
+            "markdown": markdown,
+            "pending_clarifications": pending,
+            "run_id": str(run.run_id),
+        }
+        try:
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data={"artifact_id": artifact_id, "pending_count": len(pending)},
+                traces=[],
+                started_at=started_at,
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+            pass
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class AnswerBlueprintClarificationView(McpToolView):
+    """蓝图澄清作答（GATE-01，Phase 116-06）。
+
+    按 ``thread_id`` 回答一条待澄清线程，并在**同一调用内**把答案回灌成新版本。
+
+    五道兜底绝不绕过：
+
+    - ⭐ **调 ``blueprint_answer_action.aanswer_thread``（唯一实现）**：⛔ 绝不在 MCP 层
+      直写 ``BlueprintThread``（旁路 INV-6）、⛔ 绝不进程内自调 REST。三道闸因此
+      **自动继承**——尤其 ``ai_review_finding`` 一律 400 且线程状态一字未变
+      （114-CR-01 的 MCP 对称面，T-116-48）。
+    - **项目范围闸 fail-closed**：从 ``thread_id`` 反查 artifact 后过同源
+      ``_aassert_project_scope``；线程不存在 / 非成员一律**中性 404**（T-116-51）。
+    - ⭐ **响应必须带 ``reflow``**：否则调用方无法区分「答案记下了但正文没更新」。
+      回灌失败不改 ``status``、不回滚（作答已持久化）。
+    - **作答成功后续驱**：调 ``blueprint_resume.aresume_after_gate_action``（失败隔离
+      已在该 helper 内，⛔ 不重复包 try、⛔ 不因续驱结果改响应码）。
+    - **绝不 5xx**：内部异常兜底走结构化错误信封。
+    """
+
+    tool_name = "answer_blueprint_clarification"
+
+    # service `status` → MCP error_code / HTTP 码（与 REST 面的 400 分档同语义）
+    _ERROR_CODES = {
+        "not_editable": "not_editable",
+        "not_answerable": "not_answerable",
+        "invalid": "invalid_params",
+    }
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(
+            AnswerBlueprintClarificationRequestSerializer, request
+        )
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+        return await self._handle(run, request, input_data, started_at)
+
+    async def _handle(
+        self,
+        run: Any,
+        request: Request,
+        input_data: dict[str, Any],
+        started_at: float,
+    ) -> Response:
+        from delivery.api.blueprint_review_views import (
+            _ARTIFACT_MISSING_DETAIL,
+            _THREAD_MISSING_DETAIL,
+            _aassert_project_scope,
+            _aload_artifact,
+            _aload_session,
+            _aload_thread,
+        )
+        from delivery.services.blueprint_answer_action import aanswer_thread
+
+        thread_id = str(input_data.get("thread_id") or "")
+        claimed_artifact_id = str(input_data.get("artifact_id") or "")
+        thread_missing = error_response(
+            "not_found",
+            str(_THREAD_MISSING_DETAIL.get("detail") or ""),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+        try:
+            artifact_id = await self._aresolve_artifact_id(thread_id)
+            if not artifact_id:
+                return thread_missing
+            # 自报归属只作二次校验（⛔ 范围闸一律按线程实际归属的 artifact 推导）
+            if claimed_artifact_id and claimed_artifact_id != artifact_id:
+                return thread_missing
+
+            artifact = await _aload_artifact(artifact_id)
+            if artifact is None:
+                return error_response(
+                    "not_found",
+                    str(_ARTIFACT_MISSING_DETAIL.get("detail") or ""),
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+            denied = await _aassert_project_scope(request, artifact)
+            if denied is not None:
+                return _blueprint_scope_error(denied)
+
+            thread = await _aload_thread(artifact_id, thread_id)
+            if thread is None:
+                return thread_missing
+            session = await _aload_session(artifact_id)
+
+            result = await aanswer_thread(
+                artifact,
+                thread,
+                body=str(input_data.get("body") or ""),
+                user=request.user,
+                session=session,
+                initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+            )
+        except Exception as exc:  # noqa: BLE001 — 绝不 5xx（agent 需要拿到可读结果）
+            logger.warning(
+                "answer_blueprint_clarification_failed",
+                category="sampling",
+                component="mcp_tools",
+                error=redact_secrets_in_text(str(exc))[:500],
+            )
+            return error_response(
+                "internal_error",
+                "作答暂时不可用，请稍后重试",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        if result["status"] != "answered":
+            return error_response(
+                self._ERROR_CODES.get(result["status"], "invalid_params"),
+                result["detail"],
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        await self._aresume(session, request)
+        output_data = {
+            "status": result["status"],
+            "thread_id": result["thread_id"],
+            "artifact_id": artifact_id,
+            "current_status": result["current_status"],
+            "reflow": result["reflow"],
+            "run_id": str(run.run_id),
+        }
+        try:
+            await self._record(
+                run,
+                input_data={"thread_id": thread_id, "artifact_id": claimed_artifact_id},
+                output_data={
+                    "thread_id": result["thread_id"],
+                    "reflow_status": result["reflow"]["status"],
+                },
+                traces=[],
+                started_at=started_at,
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+            pass
+        return Response(output_data, status=status.HTTP_200_OK)
+
+    @staticmethod
+    async def _aresolve_artifact_id(thread_id: str) -> str:
+        """线程 → 其所属 artifact id（⛔ 只读；查不到返空串 ⇒ 调用方回中性 404）。"""
+        from delivery.models import BlueprintThread
+
+        return str(
+            await BlueprintThread.objects.filter(id=thread_id)
+            .values_list("artifact_id", flat=True)
+            .afirst()
+            or ""
+        )
+
+    @staticmethod
+    async def _aresume(session: Any, request: Request) -> None:
+        """作答持久化之后的续驱（失败隔离已在 helper 内，⛔ 不因续驱结果改响应码）。"""
+        if session is None:
+            return
+        from services.process_runtime import blueprint_resume
+
+        await blueprint_resume.aresume_after_gate_action(
+            session, initiated_by_user_id=str(getattr(request.user, "id", "") or "system")
+        )
