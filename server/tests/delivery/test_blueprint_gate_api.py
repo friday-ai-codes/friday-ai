@@ -76,6 +76,40 @@ _DISPATCHER_TARGET = "runners.dispatcher.get_dispatcher"
 # ── 工厂（sync 测试 + async_to_sync 装配）─────────────────────────────────────
 
 
+# ⭐ 116-01：八端点已收项目范围闸（T-116-01）—— 判据源是蓝图自身的 `meta.project_id`，
+# 读不到 / 非成员一律回同一个中性 404。样例蓝图因此必须落在测试用户所属的项目里
+# （形态照 `test_blueprint_review_views.py:83-110` 的 `_project_scope`，114-05 给人审
+# 七端点补闸时的同款处置）。
+_SCOPE_PROJECT_ID = "33333333-3333-3333-3333-333333333333"
+
+
+def _make_project(project_id: str, *, member: Any = None) -> Any:
+    from initiatives.models import Project, ProjectMember
+    from projects.models import Space
+
+    project = Project.objects.filter(id=project_id).first()
+    if project is None:
+        space, _ = Space.objects.get_or_create(
+            name=f"space-{project_id[:8]}", defaults={"feishu_project_key": f"k-{project_id[:8]}"}
+        )
+        project = Project.objects.create(id=project_id, space=space, name=f"proj-{project_id[:8]}")
+    if member is not None:
+        ProjectMember.objects.get_or_create(project=project, user=member)
+    return project
+
+
+@pytest.fixture(autouse=True)
+def _project_scope(user) -> Any:
+    return _make_project(_SCOPE_PROJECT_ID, member=user)
+
+
+def _grant_membership(project: Any, user: Any) -> None:
+    """把 user 加成该 project 的成员（重指 `meta.project_id` 后仍要过范围闸）。"""
+    from initiatives.models import ProjectMember
+
+    ProjectMember.objects.get_or_create(project=project, user=user)
+
+
 def _stage1_blueprint(**overrides: Any) -> dict[str, Any]:
     """阶段 1 形态蓝图：``implementation_overview.items`` / ``current_state_analysis`` 为空。
 
@@ -83,6 +117,7 @@ def _stage1_blueprint(**overrides: Any) -> dict[str, Any]:
     尚未产出（113 才装配），确认门会整段替换仓库集。
     """
     base: dict[str, Any] = {
+        "meta": {**make_blueprint()["meta"], "project_id": _SCOPE_PROJECT_ID},
         "current_state_analysis": [],
         "implementation_overview": {
             "requirement_narrative": [
@@ -588,8 +623,14 @@ def test_resume_failure_does_not_roll_back_action_or_change_status(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def _bind_blueprint_project(artifact, project) -> None:
-    """把蓝图 ``meta.project_id`` 指向该 project（沉淀端点的项目范围唯一来源）。"""
+def _bind_blueprint_project(artifact, project, *, member: Any = None) -> None:
+    """把蓝图 ``meta.project_id`` 指向该 project（沉淀端点的项目范围唯一来源）。
+
+    ⭐ 116-01：``meta.project_id`` 同时也是范围闸的判据源 ⇒ 重指之后必须把调用方加成新
+    project 的成员，否则会被中性 404 挡在服务之前（那正是补闸要的效果）。
+    """
+    if member is not None:
+        _grant_membership(project, member)
     version = ArtifactVersion.objects.filter(id=artifact.current_version_id).first()
     content = dict(version.content)
     meta = dict(content.get("meta") or {})
@@ -620,7 +661,7 @@ def test_rejected_to_boundary_creates_ai_draft(authenticated_client, user, monke
     ctx = _open_gate(user)
     rejected_repo = _make_repo()
     project = _make_rejected_association(rejected_repo)
-    _bind_blueprint_project(ctx.artifact, project)
+    _bind_blueprint_project(ctx.artifact, project, member=user)
 
     resp = authenticated_client.post(
         REJECTED_URL.format(aid=ctx.artifact.id), {"project_id": str(project.id)}, format="json"
@@ -640,7 +681,7 @@ def test_rejected_to_boundary_never_overwrites_human_confirmed(
     ctx = _open_gate(user)
     rejected_repo = _make_repo()
     project = _make_rejected_association(rejected_repo)
-    _bind_blueprint_project(ctx.artifact, project)
+    _bind_blueprint_project(ctx.artifact, project, member=user)
     confirmed = RepoCharter.objects.create(
         repository=rejected_repo,
         source=RepoCharter.Source.HUMAN_CONFIRMED,
@@ -669,11 +710,17 @@ def test_rejected_to_boundary_never_overwrites_human_confirmed(
 
 
 def test_rejected_to_boundary_requires_scope(authenticated_client, user, monkeypatch) -> None:
+    """⭐ 116-01 起是**中性 404**（更严变体），不再是 400。
+
+    读不到合法 ``meta.project_id`` 与「非该项目成员」回**同一个**响应体 ⇒ 零新增存在性
+    暴露面（``test_blueprint_gate_scope.py`` 有 ``a.json() == b.json()`` 的逐字断言）。
+    仍然「绝不跨项目全表沉淀」——只是拒绝的方式从可区分的 400 换成了不可区分的 404。
+    """
     _stub_resume(monkeypatch)
     ctx = _open_gate(user)
+    _bind_blueprint_project(ctx.artifact, _make_project("44444444-4444-4444-4444-444444444444"))
     resp = authenticated_client.post(REJECTED_URL.format(aid=ctx.artifact.id), {}, format="json")
-    # 样例蓝图的 meta.project_id 不是 UUID → 400（绝不跨项目全表沉淀）
-    assert resp.status_code == 400
+    assert resp.status_code == 404
 
 
 def test_rejected_to_boundary_rejects_foreign_project_id(
@@ -684,7 +731,7 @@ def test_rejected_to_boundary_rejects_foreign_project_id(
     ctx = _open_gate(user)
     own_repo = _make_repo()
     own_project = _make_rejected_association(own_repo)
-    _bind_blueprint_project(ctx.artifact, own_project)
+    _bind_blueprint_project(ctx.artifact, own_project, member=user)
     foreign_repo = _make_repo()
     foreign_project = _make_rejected_association(foreign_repo, "别的项目的候选")
 

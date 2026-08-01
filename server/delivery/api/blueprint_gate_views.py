@@ -38,6 +38,12 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+# ⭐ 只 import 这**一个零件**（成员判据，``blueprint_review_views:244-251``）：
+# ⛔ 不 import 同文件那个整体范围闸（``:254-281``）—— 它的 400 分支是 115-MN-03 判为
+# 「设计决策、本轮不改」的存在性暴露面，import 会把它扩到本文件的八个端点上。本文件的
+# 范围闸用更严变体（两个失败分支同一个中性 404），见 ``_aassert_gate_scope``。
+from delivery.api.blueprint_review_views import _ais_project_member
+
 logger = structlog.get_logger(__name__)
 
 # 错误码 → 中文中性消息（码由 BlueprintLifecycleService 抛出，视图只做映射）
@@ -172,6 +178,11 @@ async def _aapply_action(request: Any, artifact_id: Any, action: str) -> tuple[A
     artifact, session, thread = await _aload_gate_context(artifact_id)
     if artifact is None:
         return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND), {}, None
+    # 项目范围闸（116-01）：装配之后、**任何 service 调用之前**。五个改快照动作（含三条
+    # 破坏性写）经本 helper 一处生效多处，判据仍只有 `_aassert_gate_scope` 一份。
+    scope_error = await _aassert_gate_scope(request, artifact)
+    if scope_error is not None:
+        return scope_error, {}, None
     if thread is None:
         return Response(_GATE_NOT_OPEN_DETAIL, status=status.HTTP_404_NOT_FOUND), {}, None
     if session is None:
@@ -209,6 +220,9 @@ class BlueprintGateSnapshotView(APIView):
         artifact, session, thread = await _aload_gate_context(artifact_id)
         if artifact is None:
             return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
+        scope_error = await _aassert_gate_scope(request, artifact)
+        if scope_error is not None:
+            return scope_error
         if thread is None:
             return Response(_GATE_NOT_OPEN_DETAIL, status=status.HTTP_404_NOT_FOUND)
         return Response(await _aserialize_snapshot(artifact, session, thread))
@@ -237,18 +251,29 @@ class BlueprintGateConfirmView(APIView):
         if error is not None:
             return error
         if result.get("blocked_reason") == "pending_clarification":
-            return Response({"detail": "存在未解决的阻塞澄清线程"}, status=status.HTTP_409_CONFLICT)
+            # 116-01：补机器可读键，让 115-07 已实现且已有用例的「一键跳未决线程」在生产
+            # 生效（gatePanel.spec.ts:577 的那一档）。前端零改动。
+            return Response(
+                {
+                    "detail": "存在未解决的阻塞澄清线程",
+                    "blocked_reason": "pending_clarification",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         if session is None:
             return Response(_GATE_NOT_OPEN_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
         lock = await BlueprintConfirmGateAdapter().alock(session, acting_user=request.user)
         if lock.get("event") != "confirmed":
             # fail-closed：内容非法 / 并发未收敛时不放行、不落 failed，等下一次重试。
+            # 机器可读键原样透传 alock 的 reason（`snapshot_changed` 等），对应
+            # gatePanel.spec.ts:591 的「其余情形只回显 detail」那一档。
             return Response(
                 {
                     "detail": _LOCK_BLOCKED_MESSAGES.get(
                         str(lock.get("reason") or ""), _LOCK_DEFAULT
-                    )
+                    ),
+                    "blocked_reason": str(lock.get("reason") or ""),
                 },
                 status=status.HTTP_409_CONFLICT,
             )
@@ -378,6 +403,11 @@ class BlueprintRejectedToBoundaryView(APIView):
         artifact = await _aload_artifact(artifact_id)
         if artifact is None:
             return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
+        # 项目范围闸（116-01）：本 View 原先是全文件**唯一**调过 `_ablueprint_project_id`
+        # 的地方，但只推导写入范围、**没有成员校验**。授权判据一并收进 helper（全文件一份）。
+        scope_error = await _aassert_gate_scope(request, artifact)
+        if scope_error is not None:
+            return scope_error
         body = request.data if isinstance(request.data, dict) else {}
         # 项目范围**只从蓝图推导**：body 传了就必须与之相等，否则 403——URL 里的 artifact
         # 必须约束写入范围，否则任意登录用户可用任意合法 artifact_id + 任意 project_id
@@ -391,6 +421,8 @@ class BlueprintRejectedToBoundaryView(APIView):
             )
         repository_id = str(body.get("repository_id") or "").strip()
         if not _is_uuid(project_id):
+            # ⚠️ 补闸后这条对普通用户已不可达（`_aassert_gate_scope` 先回中性 404）——
+            # 只剩 superuser 直通后会走到。保留：它是**写入范围**的兜底，不是授权判据。
             return Response(
                 {"detail": "无法确定项目范围：该蓝图未记录 meta.project_id"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -456,6 +488,9 @@ class BlueprintGateUpgradeResearchView(APIView):
         artifact, session, thread = await _aload_gate_context(artifact_id)
         if artifact is None:
             return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
+        scope_error = await _aassert_gate_scope(request, artifact)
+        if scope_error is not None:
+            return scope_error
         if thread is None:
             return Response(_GATE_NOT_OPEN_DETAIL, status=status.HTTP_404_NOT_FOUND)
         if session is None:
@@ -506,6 +541,42 @@ def _is_uuid(value: str) -> bool:
     except (ValueError, TypeError, AttributeError):
         return False
     return True
+
+
+async def _aassert_gate_scope(request: Any, artifact: Any) -> Response | None:
+    """八端点共用的项目范围闸（``None`` = 放行）——115-07 登记的后端缺口（T-116-01）。
+
+    ⭐ **为什么必须有**：修前八个 View 的授权判据只有「登录了」，而 URL 里的 ``artifact_id``
+    是攻击者可控的唯一范围约束 ⇒ 任意登录用户拿到一个 artifact UUID 就能改别人项目的蓝图
+    仓库集与职责 —— 其中 ``confirm`` / ``remove-repo`` / ``add-repo`` 是**破坏性写**
+    （确认锁定后下游 implementing 链据此启动）。
+
+    四条语义（⭐ 与 ``blueprint_review_views`` 那个整体范围闸的**唯一区别**是第二条）：
+
+    1. superuser 直通（与 ``permissions.api_permissions.IsProjectMember`` 同口径）。
+    2. 读不到 / 非 UUID 的 ``meta.project_id`` ⇒ **中性 404**（⭐ 不是 400）。gate 链的 404
+       本就混合三种语义（门未开 / artifact 不存在 / 无蓝图会话），前端（115-07）按「非 200
+       只决定挂载点是否渲染、不进错误分档」实现 ⇒ 回中性 404 **零新增存在性暴露面**。
+       ⛔ 也因此**不 import** ``blueprint_review_views`` 的整体范围闸（``:254-281``）——
+       它的 400 分支正是 115-MN-03 判为「设计决策、本轮不改」的那条暴露面，import 会把它
+       扩到这八个端点上。
+    3. 非项目成员 ⇒ **同一个中性 404 常量对象**（与第 2 条**逐字相同**，这是「零新增存在性
+       暴露面」的唯一可证伪形态；``tests/delivery/test_blueprint_gate_scope.py`` 有
+       ``a.json() == b.json()`` 断言背书）。
+    4. 放行。
+
+    ⭐ **全文件只有这一份授权判据**：五个改快照动作经 ``_aapply_action`` 间接挂闸，
+    ``snapshot`` / ``rejected-to-boundary`` / ``upgrade-research`` 三个不走该 helper 的 View
+    各自直挂。挂载点可以有多处，⛔ 判据不得有第二份。
+    """
+    if getattr(request.user, "is_superuser", False):
+        return None
+    project_id = await _ablueprint_project_id(artifact)
+    if not _is_uuid(project_id):
+        return Response(_GATE_NOT_OPEN_DETAIL, status=status.HTTP_404_NOT_FOUND)
+    if not await _ais_project_member(request.user, project_id):
+        return Response(_GATE_NOT_OPEN_DETAIL, status=status.HTTP_404_NOT_FOUND)
+    return None
 
 
 async def _ablueprint_project_id(artifact: Any) -> str:
