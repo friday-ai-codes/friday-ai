@@ -1,11 +1,14 @@
 ---
 phase: 116-entry
-status: findings
+status: fixed
 reviewed: 2026-08-01
+fixed: 2026-08-01
 findings_total: 9
 critical: 0
 major: 3
 minor: 6
+fixed_count: 9
+skipped_count: 0
 depth: deep
 ---
 
@@ -361,3 +364,134 @@ def _skip(reason: str, **kv) -> None:
 _Reviewed: 2026-08-01_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: deep_
+
+## Fix Log
+
+**修复于：** 2026-08-01 · 分支 `milestone/v0.20.0-blueprint`（worktree `v0.20-blueprint`）
+**结论：9 fixed / 0 skipped。** 三条 MAJOR 全修，六条 MINOR 全修 —— **无跳过项**。
+
+MJ-01 的评审探针已**转成永久回归用例**（`TestIndexFallbackLineNumbers`，不是一次性探针）。
+三条 MAJOR 与 MN-05 / MN-06 每条都实测过「修前红 / 修后绿」，逐条证据附在各节之后；**每条
+主断言都配了非恒真对照**——「一律去重」「一律回 404」「一律回灌」这类同样能让主断言变绿的
+错误实现都会被拦住。**每个 finding 一个原子 commit**，另有一条 `chore` 撤回误伤的格式化。
+
+### MAJOR
+
+| ID | 结论 | commit | 说明 |
+|---|---|---|---|
+| MJ-01 | **fixed** | `9b3db76a` | 新增 `_number_chunk_lines`：行号取自**每个 chunk 自己的 `start_line`**，重叠行按 `line_no` 去重（`setdefault` ⇒ `chunk_index` 小的先写者保留），空洞由**行号跳变**如实表达；且**先按区间过滤、再按 `limit` 截断**，修掉「区间落在大 chunk 尾部时 `lines` 被过滤成空」的次生形态。⭐ MCP 契约零漂移：`content` / `truncated` / `returned_lines` / `total_lines` 仍描述旧拼接口径，逐字未改 —— 两份产出并存 |
+| MJ-02 | **fixed** | `e7d36172` | 采纳评审的形态 **(b) 入口级形参**（CONTEXT 把档位定位为 MCP 面控制交互密度的旋钮）：`create_feishu_technical_plan` 请求键 `assumptions_tier`（`ChoiceField`，非三档之一**边界即 400**）→ view → `build_work_item_technical_plan` → `delegate_process_runtime` → `_amaybe_start_blueprint_session` → `start_blueprint_orchestration`，后者照既有四个 `if` 的「非空才写键」纪律写进 `decomposition`。另补会话级留痕：`blueprint_orchestration_started` 带 `assumptions_tier` |
+| MJ-03 | **fixed** | `fbb7ce9e` | failed 分支按 `error_detail` 是否非空区分两类失败：「拒绝发起」⇒ `failed_stage="blueprint_intake"` + **`retryable=False`**（确定性失败⛔不诱导重试）+ 如实回显中性 detail；「编排跑了但没产出」保持既有 `orchestration` / `True` / 原文案。并把 `error` / `error_stage` **恒写进 `output`**（成功时空串）—— 只改 `retry_state` 不够，agent 读的是响应体 |
+
+**修前红 / 修后绿证据**
+
+- **MJ-01**（评审唯一实测复现的一条）：新用例逐字复刻评审的两个形态。修前 **3 条转红**，报错
+  与评审记录**逐字一致**：`AssertionError: 第 151 行贴的是 'L146' 的正文（坐标系错位）`、
+  `assert [3, 4, 5, 6, 7, 8, ...] == [3, 4, 5, 40, 41, 42]`、尾部截断档 `assert [] == [900..905]`。
+  另两条**非恒真对照**（单 chunk 覆盖整个区间 ⇒ 结果与修改前逐字相同；MCP `content` 拼接锁）
+  **修前即绿**——它们本就该绿，证明新实现没把镜像路径与 MCP 契约那两条也改坏。修后
+  `tests/repositories/` + 三个 MCP 读面文件共 **412 全绿**。
+- **MJ-02**：新增 12 条。核心一条走**真实 MCP delegate 入口**建会话（⛔ 全程不碰 `stage_state`）
+  再跑**真规格门**：同一个 0.30 分，`assume_more` ⇒ `spec_locked`（`threshold` 实测 **0.45**）、
+  不传档位 ⇒ `needs_clarification`（`threshold` 0.20）—— ⭐ 断的是 `config` 的取值与**判定结果**，
+  不是 `stage_state` 里那个字符串（那正是这次漏掉的那一环）。另有：运维改
+  `BLUEPRINT_ASSUMPTIONS_TIERS` 现在真的生效（0.66 档实测放行 0.60）；「不做配置 ⇒ 档位 `""` 且
+  `_aload_tier_overrides` 零调用」的现状锁；AST 断言四跳逐跳转发；`rg` 断言写入点**恰好一处**且在
+  `entrypoint.py`。**变异验证**：把写键那行改成 `if False` ⇒ **3 条转红**。
+- **MJ-03**：新增 4 条。① 真实路径（mcp 开关开 + 工作项 Space 下无 Project）响应体含中性 detail
+  **逐字**、`retryable is False`、⛔ 不含内部路径 / `Traceback` / 异常类名，且**落库行与响应体口径
+  一致**；② **非恒真对照**：`error_detail == ""` ⇒ `retryable` 仍 `True`、文案仍是既有那句
+  （证明没把两类失败一锅端）；③ 成功路两键恒在为空串；④ `error_detail` 有生产消费方的断链锁。
+  **变异验证**：把 `rejected` 恒置 `False` ⇒ ① 转红。
+
+### MINOR
+
+| ID | 结论 | commit | 说明 |
+|---|---|---|---|
+| MN-01 | **fixed** | `a4d7f7f3` | `title=redact_secrets_in_text(...)[:500]`，与同函数 `content` 那行同款；截断仍在脱敏之后。⛔ 未改 `artifact.title`（delivery 侧既有面，不在本相位边界内） |
+| MN-02 | **fixed** | `56df7279` | `_amaybe_schedule_blueprint_ingestion` 纯追加 `initiated_by_user_id` 形参；`create` 传自己形参里的 `created_by_user_id`，`add_version` 经新增的 `_ainitiator_of_session` 按标量 id 反查会话（⛔ 不裸访问 lazy-FK）。取不到一律记 `"system"` ⇒ 「系统行为」与「漏传」不再同形 |
+| MN-03 | **fixed** | `8a569373` | 内嵌 `_skip` 辅助，五条早退各落一条 `sampling` 事件 `blueprint_clarification_card_skipped`，共用 `reason` 枚举（`no_questions` / `no_project` / `no_space` / `no_recipients` / `no_chat_id`）。⛔ 仍只记标量 |
+| MN-04 | **fixed** | `ccd0bfd3` | **两步都做了**（评审把 ② 列为顺延项）：① 重挂起档补 `blueprint_chat_barrier_resuspended`（`sampling`，与 analog 的 `chat_plan_resume_resuspended` 对齐）；② 把回灌 helper 挂到 `blueprint_resume.aresume_after_gate_action` 的收尾 —— 全部作答链的共同出口 |
+| MN-05 | **fixed** | `f7fbc91e` | 顶层门 `!usable` → `!usable && !sourceUsable`，两个数据源各自独立降级；`chunk-at` 此后只驱动 chunk 计数徽标那一行 |
+| MN-06 | **fixed** | `9efcd005` | 补 `schema_version` 判别，非 `blueprint/v1` 走**与「artifact 不存在」逐字相同**的 404。判别常量与渲染器**同源懒 import**（MN-10）。⛔ 未回 `is_blueprint: false` 之类的新键 |
+
+**修前红 / 修后绿证据（MINOR）**
+
+- **MN-03**：既有四条早退用例加断 `reason`；新增六条 —— 空 `chat_id` 与无 `space` 两档留痕、留痕
+  只含标量且**题面一个字都不泄漏**（塞了 `sk-ant-…` 的题面，断言 `_SECRET` 与「密钥」都不在事件里）、
+  **正路零 skip**（非恒真对照，⛔ 留痕不是无差别刷屏），以及一条**源码级钉子**：主函数体内任何裸
+  `return` 之前必须先调 `_skip` —— 盯的是「以后新加一条早退忘了留痕」的复发形态。
+- **MN-04**：五条 —— 重挂起落痕且字段齐全、终态**不落**该事件（非恒真对照）、作答链驱到终态时
+  waiter 被满足、非 chat 入口走同一条链**仍不回灌**（守门没被绕过）、回灌炸了门动作仍正常返回。
+- **MN-05**：**变异验证**——把判据改回 `!usable` ⇒ 新用例 15 转红。另加用例 16 作非恒真对照
+  （两者都不可用时仍落快照，证明没把门整个拆掉）。评审预判要改的用例 2c/4 实测**无需改判据**
+  （它们的 `file-lines` 由 `beforeEach` 默认 `usable=false`，本就落在「两者都不可用」那一档），
+  只补了注释说明新判据。
+- **MN-06**：**变异验证**——把判别改成 `if False` ⇒ 2 条转红。v0 用例刻意给 content 带上
+  `meta.project_id` 让它**通过范围闸**，否则会因为 400 而变成恒真、根本走不到判别那一步。
+
+### 判断调用（评审建议与落地实现的差异，逐条登记）
+
+1. **MJ-01 的空洞形态断言口径**。评审写「返回的 `line_no` 集合恰为 `{40,41,42}`（⛔ 不含 3..5 被
+   错号的那批）」。落地实现返回的是 **`{3,4,5,40,41,42}`**：第 3..5 行的正文确实来自 chunk `1..5`
+   且**编号本来就是对的**（回退前错的是 6..10 那一批，即第 40..44 行被贴上第 6..10 的号）。按
+   任务书「represent gaps honestly rather than silently renumbering」的口径，空洞的诚实表达是
+   **行号跳变**（5 → 40），而不是把合法的 3..5 一并丢掉 —— 丢掉反而会少还给用户三行本可读到的
+   正文。用例同时**显式断言空洞区间 `6..39` 一个行号都不出现**，把评审真正要挡的那批钉死。
+2. **MJ-01 的 `truncated` 未改判据**。评审建议「`truncated` 据过滤**之后**的条数判定」。实现保留
+   `len(texts) > limit`：过滤后的行数恒 ≤ 拼接总行数（去重与过滤都只会变少）⇒ 「行被截断」**蕴含**
+   「正文被截断」，故 `len(texts) > limit` 恰好就是两者的并集，改了反而会让 MCP 的 `truncated`
+   契约漂移。已在源码注释里写明这条推理。
+3. **MJ-02 的 serializer 用字面量副本**。`_ASSUMPTIONS_TIER_CHOICES` 是 `ASSUMPTIONS_TIERS` 的
+   **字面量副本**而非 import：在模块级 import 它会把整个 `services.process_runtime` 包（含大量 ORM
+   依赖）拖进 MCP 请求解析这条早加载路径。副本与事实源的一致性由专门的守卫断言盯着（与
+   `_SCHEMA_SNAPSHOT` 的「字面量副本 + 守卫」是同一款既有约定）。
+4. **MJ-03 的两个新响应键恒写而非条件写**。`error` / `error_stage` **恒在**（成功时空串），⛔ 不做
+   成「有时有有时没有」——后者会让调用方必须先判键存在。形态与 feature 方案三工具既有的 `error`
+   键一致（`test_schema_snapshot._FEATURE_SOLUTION_RESPONSE` 里就有先例）。顺带修好了一个既有
+   缺口：飞书建文档 / 写评论失败时 `error` 同样只落库不回传。
+5. **MN-04 的 ② 一并做了**。评审把「挂到全部作答链的共同出口」列为顺延项。因为该 helper 自带
+   chat 守门 + 终态守门 + barrier 去重（评审自己核实过幂等安全），且缺它正是「对话占位永久停住」
+   的直接成因，故本轮一并落地，并补了「非 chat 入口走同一条链仍不回灌」的守门对照。
+6. **两个契约守卫从「数个数」改成「逐个列名」**。
+   `test_create_feishu_technical_plan_only_gained_three_additive_keys` 原本断 `len(request) == 9`。
+   MJ-02/MJ-03 各追加一个请求键、两个响应键后，改成**逐个列出**新增键：数个数只能发现「多了几个」，
+   列名才能发现「换掉了哪个」——守卫强度是**提高**而不是放宽。
+
+### 门禁
+
+| 门 | 结果 |
+|---|---|
+| 后端 `uv run pytest tests/ -q` | **8980 passed / 1 failed / 63 skipped**（基线 8934/1，**+46** 全为本轮新增用例）；唯一失败仍是 `test_skills_snapshot_guard::test_skill_files_discovered`（worktree 环境产物，本 worktree `skills/` 为空目录，**非本轮引入**）。`test_memory_mr_api` 的一次性乱序 flake 本轮**未复现** |
+| `makemigrations --check --dry-run` | **No changes detected**（相位内仍**零 migration**，未触发约束 4 的备用编号） |
+| 后端 `ruff check` / `format` | 改动文件全绿（`All checks passed!`）。⚠️ 仓内 `mcp_tools/migrations/*` 与两个无关测试文件有**既有** lint 告警，本轮未动 |
+| 前端 `pnpm exec vitest run` | **1706 passed / 1 skipped**（基线 1704/1，**+2** 为本轮新增） |
+| 前端 `pnpm type-check` | **exit 0** |
+| 前端 `pnpm lint` | **111 problems**（与基线**逐字相同**）；两个改动文件单独跑 eslint **零告警** ⇒ 零新增 |
+| 前端 `pnpm build` | 成功。⚠️ 它按既知行为改写 `src/components.d.ts`（**纯删除 29 条**无关项，本轮未新增任何组件 ⇒ 无需手工追加）—— 已 `git checkout` 还原，**未提交**。`pnpm-workspace.yaml` 的 catalog 回填（`@types/three` / `@types/wordcloud` / `3d-force-graph`）同样已还原 |
+| 守卫复跑（约束 3） | **121 passed** —— `test_blueprint_render`（水印结构性不可关闭）、`test_blueprint_inv6_guard` / `test_artifact_inv6_guard`、`test_blueprint_log_redaction_guard`、`test_blueprint_export_views`、`test_repo_file_read_views`（`file-lines` 三态字节同形）全绿 |
+
+### 硬约束自检
+
+| # | 约束 | 结论 |
+|---|---|---|
+| 1 | §13.2 冻结面 | ✓ `git diff --name-only a5d599b8..HEAD` 对 `repo_router_v2` / 六个 legacy `technical_plan` process 文件 / `event_taxonomy`（`ConvergenceSessionEvent`）/ MCP 公共 handler 工厂（`handler_factory`、`knowledge_tools`）/ 四个 0.19 前端组件（`TechPlanCard`、`RoutingDecisionPanel`、`NodeDataTab`、`ArtifactTimeline`）**逐个零命中** |
+| 2 | 四个入口开关仍默认 OLD 链 | ✓ `DEFAULT_ENTRY_SWITCH` **一字未动**；本轮新增的 `assumptions_tier` 是**档位**维度，与「走哪条链」正交，且缺省空串 ⇒ 不传时行为逐字不变。同步点 2 未被触碰 |
+| 3 | 「未经确认」不可关闭 / `file-lines` 三态同形 | ✓ 两者的守卫**均已复跑全绿**（见门禁末行）。MJ-01 只改 `lines` 的编号口径，`_neutral()` 与 `_neutral_payload()` 两个唯一构造入口**一字未动**；MN-06 复用 `_ARTIFACT_MISSING_DETAIL` **同一个常量对象**，⛔ 未新增可区分状态 |
+| 4 | 无新 migration | ✓ `makemigrations --check` 输出 `No changes detected`，未用到 `delivery/0034` |
+| 5 | 可观测性 | ✓ 新增 3 类事件（`blueprint_clarification_card_skipped`、`blueprint_chat_barrier_resuspended`、`get_technical_blueprint_not_a_blueprint`）逐条带 `category` + `component`，早退留痕带 `duration_ms`；MN-02 让入图后台任务**显式携带 `initiated_by_user_id`**（取不到记 `system`）；MN-01 补上全链最后一处未脱敏的半可信文本。⭐ **best-effort 只覆盖观测**：MJ-03 的方向恰恰相反 —— 把被吞掉的**业务**失败原因如实回传，⛔ 未新增任何「业务失败吞成 200/空」的路径。**仓库源码正文**未新增任何入日志路径（MJ-01 只动返回值，`_emit` 一字未改） |
+| 6 | adrf / `sync_to_async` / INV-6 | ✓ 新增的两处 ORM 访问（`_ainitiator_of_session`、MN-06 的判别）都在 `async def` 内走 `a*` API 且**按标量 id 反查**，⛔ 无裸 lazy-FK；两个 INV-6 守卫全绿 |
+| 7 | zh-CN | ✓ 全部 docstring / 注释 / commit message 中文；**零新增 i18n 键**（MN-05 只改渲染门判据，复用既有文案） |
+
+### 本轮顺带发现（**未修**，已登记 STATE）
+
+- **`_afeedback_chat_blueprint_barrier` 目前有三个挂载点**（两个容器回调 + 本轮新增的作答链出口）。
+  helper 自带三重守门与去重 ⇒ 幂等安全，但「哪些路径通向终态」这件事仍靠**逐个挂载**维持，
+  没有结构性保证。彻底的形态是让终态转移本身**发出一个事件**、回灌订阅它 —— 那要动
+  `ConvergenceSessionEvent`（§13.2 冻结面），超出本轮边界，登记顺延。
+
+---
+
+_Fixed: 2026-08-01_
+_Fixer: Claude (gsd-code-fixer)_
+_Iteration: 1_
