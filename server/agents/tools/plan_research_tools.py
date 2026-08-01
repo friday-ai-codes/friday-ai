@@ -99,6 +99,8 @@ async def start_plan_research(
         )
 
     from services.process_runtime import start_orchestration
+    from services.process_runtime.blueprint_entry_switch import aresolve_entry_process_type
+    from services.process_runtime.blueprint_resume import BLUEPRINT_PROCESS_TYPE
     from services.process_runtime.entrypoint import build_engine_for_session
 
     logger.info(
@@ -115,6 +117,16 @@ async def start_plan_research(
     # 2. include_repos best-effort 过滤到属于 space 的仓库 UUID（与工作流节点对称，不做新路由）。
     filtered_repos = await _filter_repos_in_space(space_id, include_repos)
 
+    # 116-03：按 per-entry 运行时开关分派该建哪条 process。⛔ 实参必须是**字面量常量**，
+    # 绝不写 session.entrypoint —— 反推会让「只打开 workflow 键」把 MCP 一起切走。
+    if await aresolve_entry_process_type("chat") == BLUEPRINT_PROCESS_TYPE:
+        return await _astart_blueprint_plan_research(
+            requirement_text=requirement_text,
+            conversation_id=conversation_id,
+            created_by=created_by,
+            include_repos=filtered_repos,
+        )
+
     # 3. 建 session：work_item=None 即 INV-2 自然语言需求显式标记（entrypoint=chat 可追溯）。
     #    conversation_id 软引用会话，供会话列表反查「该会话是否产出 SDD spec」（has_sdd_spec 徽标）。
     session = await start_orchestration(
@@ -124,6 +136,7 @@ async def start_plan_research(
         created_by=created_by,
         include_repos=filtered_repos,
         conversation_id=conversation_id or None,
+        entry_key="chat",
     )
 
     # 4. 构建 engine + driver：与工作流节点同一 build_engine_for_session（engine 与 driver
@@ -149,6 +162,85 @@ async def start_plan_research(
 
     # 7. 终态映射
     return _map_terminal(session)
+
+
+async def _astart_blueprint_plan_research(
+    *,
+    requirement_text: str,
+    conversation_id: str,
+    created_by: Any,
+    include_repos: list[str],
+) -> ToolResult:
+    """chat 入口的蓝图路径：先定 ``meta.project_id``，再建 ``technical_blueprint`` 会话并续驱。
+
+    ⭐ **``project_id`` 推不出即拒绝发起**（⛔ 不建 session、不建 artifact）：它是全链范围闸 /
+    图谱 space 归属 / 导出可用性的唯一来源，写错即三条防线同时失效**且不报错**。推导链是
+    「会话显式绑定的项目 → 否则会话所属空间过 ``_aresolve_project``」，收口在
+    ``blueprint_intake.aresolve_project_id``（⛔ 四个入口不各写一份）。
+
+    ⛔ **绝不透传 ``skip_clarification`` / ``force_confirm``**：蓝图链没有 ``clarify`` dep。
+    """
+    from services.process_runtime.blueprint_intake import (
+        BlueprintIntakeRejected,
+        aresolve_project_id,
+    )
+    from services.process_runtime.entrypoint import (
+        build_engine_for_session,
+        start_blueprint_orchestration,
+    )
+
+    conversation = await _aresolve_conversation(conversation_id)
+    try:
+        project_id = await aresolve_project_id(entry="chat", conversation=conversation)
+    except BlueprintIntakeRejected as exc:
+        logger.warning(
+            "start_plan_research_blueprint_rejected",
+            category="caller",
+            component="plan_research_tools",
+            conversation_id=conversation_id,
+            reason=exc.reason,
+        )
+        return ToolResult(success=False, error=exc.detail)
+
+    session = await start_blueprint_orchestration(
+        entrypoint="chat",
+        requirement_text=requirement_text,
+        work_item=None,
+        created_by=created_by,
+        include_repos=include_repos,
+        conversation_id=conversation_id or None,
+        project_id=project_id,
+        entry_key="chat",
+    )
+    logger.info(
+        "start_plan_research_blueprint_started",
+        category="caller",
+        component="plan_research_tools",
+        session_id=str(session.id),
+        conversation_id=conversation_id,
+    )
+
+    # engine 与 driver 一起来自分派器（⛔ 只换 engine 不换 driver 会落 advance_step_limit）。
+    engine, adrive = build_engine_for_session(session)
+    session = await adrive(engine, session, max_steps=_MAX_ADVANCE_STEPS)
+
+    suspend = await _maybe_suspend(session, conversation_id)
+    if suspend is not None:
+        return suspend
+    return _map_terminal(session)
+
+
+async def _aresolve_conversation(conversation_id: str) -> Any:
+    """按 id 取 ``Conversation`` 对象（``aresolve_project_id`` 的 chat 权威上下文）。
+
+    取不到返 ``None`` —— 推导链随之落空并抛 ``BlueprintIntakeRejected``（fail-closed：
+    ⛔ 宁可拒绝发起，也不落一份 ``meta.project_id`` 为空的蓝图）。
+    """
+    if not conversation_id:
+        return None
+    from chat.models import Conversation
+
+    return await Conversation.objects.filter(id=conversation_id).afirst()
 
 
 async def _resolve_actor(conversation_id: str) -> Any:

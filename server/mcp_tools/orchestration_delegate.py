@@ -46,6 +46,9 @@ class DelegateResult:
     - ``model_usage``：本次编排聚合的模型用量（WR-03，best-effort）。编排 adapters 经
       ``arecord_llm_usage`` 落用量行但不挂 MCP run，故 delegate 把本次驱动窗口内的 token/
       duration 聚合回传，由 MCP view 落到自身 run 维度，避免 token/成本归因回退（空则 ``{}``）。
+    - ``error_detail``（116-03，**纯追加、缺省空串**）：可直接回显给调用方的**中性**失败文案
+      （当前唯一来源是蓝图分支「推不出 ``meta.project_id`` ⇒ 拒绝发起」）。⛔ 不含内部路径 /
+      异常原文。既有调用方不读它 ⇒ 响应外形零破坏；把它接进 MCP 响应体归 **116-06**。
     """
 
     session: Any
@@ -54,6 +57,7 @@ class DelegateResult:
     plan_version_id: str | None
     markdown: str
     model_usage: dict = field(default_factory=dict)
+    error_detail: str = ""
 
 
 async def _load_canonical(session: Any) -> tuple[str | None, dict, str]:
@@ -117,6 +121,49 @@ async def _aggregate_orchestration_usage(start_dt: Any) -> dict[str, Any]:
     }
 
 
+async def _amaybe_start_blueprint_session(
+    *,
+    requirement_text: str,
+    work_item: Any,
+    created_by: Any,
+    include_repos: list[str] | None,
+    extra_evidence: list[dict] | None,
+    work_item_context: Any,
+) -> Any:
+    """``mcp`` 开关切到蓝图时建 ``technical_blueprint`` 会话；否则返回 ``None`` 走旧链。
+
+    ⭐ **``entrypoint`` 实参一字不改**仍是 ``"workflow"``（本模块 ``:4`` / ``:131`` 逐字写明
+    的既有约定，且它进 ``ConvergenceSession.entrypoint`` 列、有既有消费方）；静态身份走
+    ``entry_key="mcp"``。两者是两回事，⛔ 绝不互相代入。
+
+    ⭐ **``project_id`` 必过 ``aresolve_project_id``**（P-8）：⛔ 绝不把
+    ``work_item_context.space_id`` 当 project id 透传。推不出即抛 ``BlueprintIntakeRejected``
+    并**在建会话之前**中止（⛔ 不建 session、不建 artifact），由调用方映射成失败 delegate 结果。
+
+    ⛔ **不透传 ``skip_clarification``**：蓝图链没有 ``clarify`` dep；旧链那条
+    「MCP 单次同步入口跳过交互澄清」的 policy 在蓝图链无对应面，移植它等于原地复活
+    GATE-01 要消灭的「跳过澄清」。
+    """
+    from services.process_runtime.blueprint_entry_switch import aresolve_entry_process_type
+    from services.process_runtime.blueprint_intake import aresolve_project_id
+    from services.process_runtime.entrypoint import start_blueprint_orchestration
+
+    if await aresolve_entry_process_type("mcp") != "technical_blueprint":
+        return None
+
+    project_id = await aresolve_project_id(entry="mcp", work_item_context=work_item_context)
+    return await start_blueprint_orchestration(
+        entrypoint="workflow",
+        requirement_text=requirement_text,
+        work_item=work_item,
+        created_by=created_by,
+        include_repos=include_repos,
+        extra_evidence=extra_evidence,
+        project_id=project_id,
+        entry_key="mcp",
+    )
+
+
 async def delegate_process_runtime(
     *,
     requirement_text: str,
@@ -124,6 +171,7 @@ async def delegate_process_runtime(
     include_repos: list[str] | None = None,
     created_by: Any = None,
     extra_evidence: list[dict] | None = None,
+    work_item_context: Any = None,
 ) -> DelegateResult:
     """delegate 到 ``process_runtime`` 统一编排，产 canonical MergedPlan/PlanVersion。
 
@@ -133,6 +181,15 @@ async def delegate_process_runtime(
 
     ``extra_evidence``（UNIFY-02）：调用方补充的编排输入证据（如 repository analysis
     summary），原样透传 ``start_orchestration`` 写入 stage_state，merge 阶段消费。
+
+    ``work_item_context``（116-03，**纯追加、缺省 None**）：``McpWorkItemContext``。仅在
+    ``mcp`` 开关切到 ``technical_blueprint`` 时被读，用来推导 ``meta.project_id``。
+    ⭐ **``McpWorkItemContext.space`` 是 ``projects.Space`` FK 不是 Project id**（P-8）：
+    ``technical_plan_service.py:488`` 把 ``space_id`` 当 ``"project_id"`` 键回给调用方，直接
+    透传即落一份「20 个端点恒不可用、图谱恒不入、导出恒不可用」且**没有补救入口**的蓝图。
+    故推导一律经 ``blueprint_intake.aresolve_project_id``（内部过 ``_aresolve_project``），
+    ⛔ 本模块绝不自己把 ``context.space_id`` 当 project id 用。
+    ⚠️ 调用方接线（``technical_plan_service`` / ``views``）与 MCP 响应体追加三键归 **116-06**。
 
     终态/挂起映射（mirror ``plan_research._map_terminal``）：
     - ``DONE`` → ``status="completed"``，取 ``PlanVersion.content`` + 渲染 markdown。
@@ -144,6 +201,7 @@ async def delegate_process_runtime(
 
     from delivery.models import ConvergenceSessionStatus
     from services.process_runtime import start_orchestration
+    from services.process_runtime.blueprint_intake import BlueprintIntakeRejected
     from services.process_runtime.entrypoint import build_engine_for_session
 
     started_at = time.perf_counter()
@@ -165,13 +223,26 @@ async def delegate_process_runtime(
     # 埋 mcp_plan_delegate_failed），杜绝 MCP 入口 5xx 回退。
     session: Any = None
     try:
-        session = await start_orchestration(
+        # 116-03：按 per-entry 运行时开关分派。⛔ 开关实参必须是**字面量常量** "mcp" ——
+        # ⛔ 绝不写 session.entrypoint / 本模块传给 start_orchestration 的 "workflow"
+        # （见 :4 / :131 docstring：那是既有约定），反推会让打开 workflow 键把 MCP 一起切走。
+        # 蓝图分支在此建会话，旧链分支保持 None ⇒ 下面那次 start_orchestration 逐字不变地执行。
+        session = await _amaybe_start_blueprint_session(
+            requirement_text=requirement_text,
+            work_item=work_item,
+            created_by=created_by,
+            include_repos=include_repos,
+            extra_evidence=extra_evidence,
+            work_item_context=work_item_context,
+        )
+        session = session or await start_orchestration(
             entrypoint="workflow",
             requirement_text=requirement_text,
             work_item=work_item,
             created_by=created_by,
             include_repos=include_repos,
             extra_evidence=extra_evidence,
+            entry_key="mcp",
         )
         # ⭐ 116-03：engine 与 driver 一起经分派器按 session.process_type 取。
         # skip_clarification 照原样传给分派器（它只在旧链分支透传给 build_orchestration_engine；
@@ -211,6 +282,28 @@ async def delegate_process_runtime(
                 markdown=markdown,
                 model_usage=model_usage,
             )
+    except BlueprintIntakeRejected as exc:
+        # ⭐ 推不出 meta.project_id ⇒ **拒绝发起**（此刻 ⛔ 会话与 artifact 都尚未建立）。
+        # 回中性 detail：⛔ 不含内部路径 / 异常原文。⚠️ 这是**业务失败**，如实回 failed ——
+        # ⛔ 绝不吞成「空方案的 200」（Phase 115 MJ-04：best-effort 只适用于观测）。
+        try:
+            logger.warning(
+                "mcp_plan_delegate_blueprint_rejected",
+                category="caller",
+                component="mcp_tools",
+                reason=exc.reason,
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+            pass
+        result = DelegateResult(
+            session=SimpleNamespace(id=""),
+            status="failed",
+            content={},
+            plan_version_id=None,
+            markdown="",
+            model_usage={},
+            error_detail=exc.detail,
+        )
     except Exception as exc:  # noqa: BLE001 — 异常 → failed 终态对称护栏（IN-03）
         try:
             logger.warning(

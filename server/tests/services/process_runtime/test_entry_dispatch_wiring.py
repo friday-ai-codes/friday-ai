@@ -20,7 +20,10 @@
 from __future__ import annotations
 
 import ast
+import json
+import uuid
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -129,3 +132,475 @@ def test_chat_container_callback_chain_is_untouched_by_design() -> None:
     start = src.index("def _schedule_chat_plan_resume")
     end = src.index("\nasync def ", start + 1)
     assert "build_orchestration_engine" in src[start:end]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 5-6. 四个入口的字面量开关调用点（Task 2）
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.parametrize("rel", list(_ENTRY_FILES))
+def test_entry_resolves_the_switch_with_a_literal_constant(rel: str) -> None:
+    """⭐ 四个入口各有一处 ``aresolve_entry_process_type`` 且实参是**字面量常量**。
+
+    ⛔ 写成 ``session.entrypoint`` 会让「只打开 workflow 键」把 MCP 一起切走 —— MCP 入口
+    给 ``start_orchestration`` 传的 ``entrypoint`` 实测就是 ``"workflow"``（既有约定）。
+    116-01 的 ``ast`` 守卫覆盖同一批文件；这里再按「每个文件至少一处」正面点名。
+    """
+    path = _SERVER_DIR / rel
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    literals: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or _tail_name(node.func) != "aresolve_entry_process_type":
+            continue
+        arg: ast.expr | None = node.args[0] if node.args else None
+        if arg is None:
+            arg = next((kw.value for kw in node.keywords if kw.arg == "entry"), None)
+        assert isinstance(arg, ast.Constant) and isinstance(arg.value, str), (
+            f"{rel}:{node.lineno} 开关实参必须是字面量常量"
+        )
+        literals.append(arg.value)
+    assert literals, f"{rel} 没有查 per-entry 开关"
+
+
+def test_force_confirm_never_leaks_into_the_blueprint_chain() -> None:
+    """⛔ ``force_confirm`` 绝不进 ``start_blueprint_orchestration`` 的实参。
+
+    它注入的是旧链 ``ClarifyAdapter`` 的题目组装器，蓝图链无对应面；「强制确认关联仓」在
+    蓝图链由 ``repo_confirmation`` 硬门天然承担（T-116-26）。
+    """
+    rel = "initiatives/services/feature_solution_service.py"
+    tree = ast.parse((_SERVER_DIR / rel).read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _tail_name(node.func) == "start_blueprint_orchestration":
+            assert not any(kw.arg == "force_confirm" for kw in node.keywords)
+            assert not any(kw.arg == "skip_clarification" for kw in node.keywords)
+
+
+def test_mcp_never_passes_space_id_as_project_id() -> None:
+    """⭐ P-8 源码防线：MCP 分支绝不把 ``context.space_id`` 当 ``project_id`` 透传。
+
+    ``McpWorkItemContext.space`` 是 ``projects.Space`` FK，而
+    ``technical_plan_service.py:488`` 把它当 ``"project_id"`` 键回给调用方 —— 透传即落一份
+    「20 个端点恒不可用、图谱恒不入、导出恒不可用」且没有补救入口的蓝图。
+    """
+    src = (_SERVER_DIR / "mcp_tools/orchestration_delegate.py").read_text(encoding="utf-8")
+    assert "aresolve_project_id" in src
+    assert "project_id=context.space_id" not in src
+    assert "project_id=str(context.space_id)" not in src
+    assert "space_id" not in src.split("start_blueprint_orchestration")[1][:800]
+
+
+def test_workflow_terminal_mapping_is_out_of_scope_and_annotated() -> None:
+    """⭐ 跨相位边界：``plan_research._map_terminal`` 本 plan **一行未改**且留了边界注释。
+
+    蓝图的 ``DONE`` 语义是「等人审」，而该函数把 ``DONE`` 无条件映射成 ``completed`` 并把
+    ``plan`` 喂给下游 ``ai_coding`` ⇒ 现在翻 workflow 开关的默认值 = 让编码代理拿着**未经
+    人审**的蓝图去建分支写代码（T-116-18，正面违反 RELY-01）。改成 HITL 挂起归同步点 2
+    之后的收尾 plan。
+    """
+    src = (_SERVER_DIR / "workflows/nodes/ai/plan_research.py").read_text(encoding="utf-8")
+    idx = src.index("async def _map_terminal")
+    assert "同步点 2" in src[max(0, idx - 900) : idx]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 7+. 行为面：四入口 × 开关两态 / 推不出 project_id ⇒ 零副作用
+# ═══════════════════════════════════════════════════════════════════════════
+
+pytestmark_db = pytest.mark.django_db(transaction=True)
+
+_BLUEPRINT = "technical_blueprint"
+_LEGACY = "technical_plan"
+
+
+def _save_switch(value: dict[str, str]) -> None:
+    from system.models import SettingKeys, SystemSetting
+
+    SystemSetting.objects.update_or_create(
+        key=SettingKeys.BLUEPRINT_ENTRY_SWITCH, defaults={"value": json.dumps(value)}
+    )
+
+
+def _clear_switch() -> None:
+    from django.core.cache import cache
+
+    from system.models import SettingKeys, SystemSetting
+    from system.settings_service import _cache_key
+
+    SystemSetting.objects.filter(key__startswith="blueprint.").delete()
+    cache.delete(_cache_key(SettingKeys.BLUEPRINT_ENTRY_SWITCH))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_switch(request: pytest.FixtureRequest):
+    if request.node.get_closest_marker("django_db") is None:
+        yield
+        return
+    request.getfixturevalue("db")
+    _clear_switch()
+    yield
+    _clear_switch()
+
+
+async def _aset_switch(**entries: str) -> None:
+    from asgiref.sync import sync_to_async
+
+    await sync_to_async(_save_switch)(dict(entries))
+
+
+async def _amake_project() -> tuple[object, object]:
+    """建一条 ``Space`` + 其下的 ``Project``（``_aresolve_project`` 取该 space 首个）。"""
+    from initiatives.models import Project
+    from projects.models import Space
+
+    space = await Space.objects.acreate(name=f"space-{uuid.uuid4().hex[:6]}")
+    project = await Project.objects.acreate(space=space, name=f"proj-{uuid.uuid4().hex[:6]}")
+    return space, project
+
+
+def _stub_runtime():
+    """把 engine 构造 + 两个 driver 换成不推进的替身（本文件只验接线，不驱真链路）。"""
+    engine = MagicMock(name="engine")
+    return patch(
+        "services.process_runtime.entrypoint.build_engine_for_session",
+        new=lambda session, **kw: (engine, AsyncMock(return_value=session)),
+    )
+
+
+# ---------------------------------------------------------------- workflow 入口
+
+
+async def _aworkflow_context(space):
+    """真实 ``Workflow`` / ``WorkflowExecution`` 上的最小 ``ExecutionContext``。
+
+    传一个**其下没有任何 Project 的** Space 即模拟「推不出 project_id」（``_aresolve_project``
+    返 None ⇒ 拒绝发起用例）。
+    """
+    from types import SimpleNamespace
+
+    from workflows.models import Workflow, WorkflowExecution
+
+    workflow = await Workflow.objects.acreate(name="编排工作流", space=space)
+    execution = await WorkflowExecution.objects.acreate(
+        workflow=workflow, space=space, trigger_type="manual"
+    )
+    return SimpleNamespace(
+        node_config={"requirement_text": "让登录支持双因子"},
+        input_data={},
+        execution_id=str(execution.id),
+        node_id="n1",
+        node_execution=None,
+        workflow_execution=execution,
+        workflow_context={},
+        render_template=lambda s: s,
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_workflow_entry_old_chain_is_byte_identical() -> None:
+    """⭐ 开关关闭（缺省）⇒ workflow 入口逐字走 ``start_orchestration``、实参一个不改。"""
+    from workflows.nodes.ai.plan_research import AIPlanResearchNode
+
+    space, _project = await _amake_project()
+    node = AIPlanResearchNode()
+    ctx = await _aworkflow_context(space)
+
+    session = await node._create_session(ctx, MagicMock())
+
+    assert session is not None
+    assert session.process_type == _LEGACY
+    assert session.entrypoint == "workflow"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_workflow_entry_blueprint_switch_creates_blueprint_session() -> None:
+    """开关打开 ⇒ 建 ``technical_blueprint`` 会话且 ``decomposition.project_id`` 非空。"""
+    from workflows.nodes.ai.plan_research import AIPlanResearchNode
+
+    space, project = await _amake_project()
+    await _aset_switch(workflow=_BLUEPRINT)
+
+    node = AIPlanResearchNode()
+    session = await node._create_session(await _aworkflow_context(space), MagicMock())
+
+    assert session.process_type == _BLUEPRINT
+    assert session.entrypoint == "workflow"
+    assert (session.decomposition or {}).get("project_id") == str(project.id)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_workflow_entry_rejects_when_project_unresolved() -> None:
+    """⭐ 推不出 project_id ⇒ ``NodeResult(next_handle="error")`` 且 **DB 零副作用**。"""
+    from delivery.models import Artifact, ConvergenceSession
+    from projects.models import Space
+    from workflows.nodes.ai.plan_research import AIPlanResearchNode
+
+    # 该 space 下**没有任何 Project** ⇒ Space→Project 换算落空。
+    empty_space = await Space.objects.acreate(name=f"space-{uuid.uuid4().hex[:6]}")
+    await _aset_switch(workflow=_BLUEPRINT)
+    before_sessions = await ConvergenceSession.objects.acount()
+    before_artifacts = await Artifact.objects.acount()
+
+    node = AIPlanResearchNode()
+    result = await node._create_session(await _aworkflow_context(empty_space), MagicMock())
+
+    assert result.status == "failed"
+    assert result.next_handle == "error"
+    assert result.error and "/" not in result.error
+    assert await ConvergenceSession.objects.acount() == before_sessions
+    assert await Artifact.objects.acount() == before_artifacts
+
+
+# ---------------------------------------------------------------- chat 入口
+
+
+async def _amake_conversation(space):
+    from chat.models import Conversation
+
+    return await Conversation.objects.acreate(space=space)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_chat_entry_old_chain_is_byte_identical() -> None:
+    """开关关闭 ⇒ chat 入口建的仍是 ``technical_plan`` / ``entrypoint=chat`` 会话。"""
+    from agents.tools.plan_research_tools import start_plan_research
+    from delivery.models import ConvergenceSession
+
+    space, _project = await _amake_project()
+    conv = await _amake_conversation(space)
+
+    with _stub_runtime():
+        result = await start_plan_research(
+            requirement_text="让登录支持双因子",
+            space_id=str(space.id),
+            conversation_id=str(conv.id),
+        )
+
+    session = await ConvergenceSession.objects.filter(conversation_id=conv.id).afirst()
+    assert session is not None
+    assert session.process_type == _LEGACY
+    assert session.entrypoint == "chat"
+    assert result is not None
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_chat_entry_blueprint_switch_creates_blueprint_session() -> None:
+    """开关打开 ⇒ chat 入口建 ``technical_blueprint`` 会话且带上会话所属项目。"""
+    from agents.tools.plan_research_tools import start_plan_research
+    from delivery.models import ConvergenceSession
+
+    space, project = await _amake_project()
+    conv = await _amake_conversation(space)
+    await _aset_switch(chat=_BLUEPRINT)
+
+    with _stub_runtime():
+        await start_plan_research(
+            requirement_text="让登录支持双因子",
+            space_id=str(space.id),
+            conversation_id=str(conv.id),
+        )
+
+    session = await ConvergenceSession.objects.filter(conversation_id=conv.id).afirst()
+    assert session is not None
+    assert session.process_type == _BLUEPRINT
+    assert session.entrypoint == "chat"
+    assert (session.decomposition or {}).get("project_id") == str(project.id)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_chat_entry_rejects_when_project_unresolved() -> None:
+    """⭐ chat 推不出 project_id ⇒ ``ToolResult(success=False)`` 且 DB 零副作用。"""
+    from agents.tools.plan_research_tools import start_plan_research
+    from chat.models import Conversation
+    from delivery.models import Artifact, ConvergenceSession
+
+    conv = await Conversation.objects.acreate()
+    await _aset_switch(chat=_BLUEPRINT)
+    before_sessions = await ConvergenceSession.objects.acount()
+    before_artifacts = await Artifact.objects.acount()
+
+    with _stub_runtime():
+        result = await start_plan_research(
+            requirement_text="让登录支持双因子",
+            space_id="",
+            conversation_id=str(conv.id),
+        )
+
+    assert result.success is False
+    assert result.error and "/" not in result.error
+    assert await ConvergenceSession.objects.acount() == before_sessions
+    assert await Artifact.objects.acount() == before_artifacts
+
+
+# ---------------------------------------------------------------- MCP 入口
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_mcp_entry_old_chain_is_byte_identical() -> None:
+    """开关关闭 ⇒ MCP delegate 仍建 ``technical_plan`` 且 ``entrypoint="workflow"``（既有约定）。"""
+    from mcp_tools.orchestration_delegate import delegate_process_runtime
+
+    with _stub_runtime():
+        result = await delegate_process_runtime(requirement_text="让登录支持双因子")
+
+    assert result.session.process_type == _LEGACY
+    assert result.session.entrypoint == "workflow"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_mcp_context_resolves_to_project_not_space() -> None:
+    """⭐ P-8 行为防线：``meta.project_id`` 等于 ``Project.id`` 且**不等于** ``Space.id``。"""
+    from mcp_tools.orchestration_delegate import delegate_process_runtime
+
+    space, project = await _amake_project()
+    context = _McpContextStub(space=space)
+    await _aset_switch(mcp=_BLUEPRINT)
+
+    with _stub_runtime():
+        result = await delegate_process_runtime(
+            requirement_text="让登录支持双因子", work_item_context=context
+        )
+
+    session = result.session
+    resolved = (session.decomposition or {}).get("project_id")
+    assert session.process_type == _BLUEPRINT
+    assert resolved == str(project.id)
+    assert resolved != str(space.id), "⛔ 透传 space_id 即落一份 20 个端点恒不可用的蓝图"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_mcp_entry_rejects_when_project_unresolved() -> None:
+    """⭐ MCP 推不出 project_id ⇒ ``status="failed"`` + 中性 detail，且 DB 零副作用。"""
+    from delivery.models import Artifact, ConvergenceSession
+    from mcp_tools.orchestration_delegate import delegate_process_runtime
+
+    await _aset_switch(mcp=_BLUEPRINT)
+    before_sessions = await ConvergenceSession.objects.acount()
+    before_artifacts = await Artifact.objects.acount()
+
+    with _stub_runtime():
+        result = await delegate_process_runtime(requirement_text="让登录支持双因子")
+
+    assert result.status == "failed"
+    assert result.error_detail and "/" not in result.error_detail
+    assert await ConvergenceSession.objects.acount() == before_sessions
+    assert await Artifact.objects.acount() == before_artifacts
+
+
+class _McpContextStub:
+    """``McpWorkItemContext`` 的最小替身（只有 ``space`` / ``space_id`` 两个位被读）。"""
+
+    def __init__(self, *, space) -> None:
+        self.space = space
+        self.space_id = getattr(space, "id", None)
+
+
+# ---------------------------------------------------------------- feature list 入口
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_feature_list_entry_blueprint_switch_forwards_segments() -> None:
+    """⭐ 开关打开 ⇒ 建蓝图会话且 ``feature_segments`` 原样进 ``decomposition``（供直采）。"""
+    from delivery.models import ConvergenceSession
+    from initiatives.services.feature_solution_service import FeatureSolutionService
+
+    _space, project = await _amake_project()
+    await _aset_switch(feature_list=_BLUEPRINT)
+
+    segments = [
+        {"title": "登录页加双因子开关", "module": "账号", "layer": "frontend"},
+        {"title": "签发 TOTP 密钥", "module": "账号", "layer": "backend"},
+        {"title": "补校验中间件", "module": "账号", "layer": "backend"},
+    ]
+    resolved = _ResolvedStub(project_id=str(project.id), segments=segments)
+
+    session = await FeatureSolutionService()._acreate_session(
+        resolved=resolved,
+        repository_ids=[],
+        entrypoint="mcp",
+        actor=None,
+        initiated_by_user_id="",
+        conversation_id=None,
+    )
+    session = await ConvergenceSession.objects.aget(id=session.id)
+
+    assert session.process_type == _BLUEPRINT
+    decomposition = session.decomposition or {}
+    assert decomposition.get("project_id") == str(project.id)
+    assert len(decomposition.get("feature_segments") or []) == 3
+    assert decomposition.get("mode") == "feature_list"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_feature_list_entry_old_chain_is_byte_identical() -> None:
+    """开关关闭 ⇒ feature list 入口仍建 ``technical_plan`` 且三个既有键形态不变。"""
+    from initiatives.services.feature_solution_service import FeatureSolutionService
+
+    _space, project = await _amake_project()
+    resolved = _ResolvedStub(project_id=str(project.id), segments=[{"title": "A"}])
+
+    session = await FeatureSolutionService()._acreate_session(
+        resolved=resolved,
+        repository_ids=[],
+        entrypoint="mcp",
+        actor=None,
+        initiated_by_user_id="",
+        conversation_id=None,
+    )
+
+    assert session.process_type == _LEGACY
+    assert (session.decomposition or {}).get("mode") == "feature_list"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_feature_list_entry_rejects_when_project_unresolved() -> None:
+    """⭐ feature list 推不出 project_id ⇒ ``FeatureSolutionError`` 且 DB 零副作用。"""
+    from delivery.models import Artifact, ConvergenceSession
+    from initiatives.services.feature_solution_service import (
+        FeatureSolutionError,
+        FeatureSolutionService,
+    )
+
+    await _aset_switch(feature_list=_BLUEPRINT)
+    before_sessions = await ConvergenceSession.objects.acount()
+    before_artifacts = await Artifact.objects.acount()
+    resolved = _ResolvedStub(project_id="", segments=[{"title": "A"}])
+
+    with pytest.raises(FeatureSolutionError) as exc_info:
+        await FeatureSolutionService()._acreate_session(
+            resolved=resolved,
+            repository_ids=[],
+            entrypoint="mcp",
+            actor=None,
+            initiated_by_user_id="",
+            conversation_id=None,
+        )
+
+    assert "/" not in exc_info.value.detail
+    assert await ConvergenceSession.objects.acount() == before_sessions
+    assert await Artifact.objects.acount() == before_artifacts
+
+
+class _ResolvedStub:
+    """``aresolve_feature_source`` 结果的最小替身（``_acreate_session`` 只读这几个位）。"""
+
+    def __init__(self, *, project_id: str, segments: list[dict]) -> None:
+        self.project_id = project_id
+        self.segments = segments
+        self.source = "feature_tree"
+        self.module_count = 1
+        self.truncated = False
+        self.project = None
