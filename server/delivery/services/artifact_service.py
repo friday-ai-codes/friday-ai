@@ -47,6 +47,27 @@ def _content_hash(content: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+async def _amaybe_schedule_blueprint_ingestion(
+    artifact_id: Any, content: Any, *, trigger: str
+) -> None:
+    """content 是 ``blueprint/v1`` 时投递知识图谱摄取（Phase 116 VIEW-04）。
+
+    ⛔ **不包 try**：``aschedule_ingestion`` 内部已吞异常（``knowledge/ingestion.py:118``），
+    在这里重复兜底会掩盖「normalizer 注册漏行」这类**应当响亮**的错误。
+
+    判别常量懒 import 自 schema 模块（MN-10：⛔ 不复制 ``"blueprint/v1"`` 字面量）；
+    非蓝图 content（旧链 merge / echo / 其它 artifact_type）走这条判别是零影响的 no-op。
+    """
+    from knowledge.ingestion import IngestionRequest, aschedule_ingestion
+    from services.process_runtime.blueprint_schema import BLUEPRINT_SCHEMA_VERSION
+
+    if not isinstance(content, dict):
+        return
+    if content.get("schema_version") != BLUEPRINT_SCHEMA_VERSION:
+        return
+    await aschedule_ingestion(IngestionRequest("blueprint", str(artifact_id), trigger))
+
+
 class ArtifactService:
     """通用交付物唯一写入入口。"""
 
@@ -80,6 +101,11 @@ class ArtifactService:
             component="artifact_service",
             artifact_id=str(artifact.id),
             artifact_type=artifact_type,
+        )
+        # P-10：intake 建的 v1 骨架走本方法**不经 add_version** ⇒ 只在 add_version 挂门控的话
+        # 「新建蓝图 → 立刻查图谱 → 空」会被当 bug 反复排查。两处对称挂同一条判别。
+        await _amaybe_schedule_blueprint_ingestion(
+            artifact.id, content, trigger="blueprint_version_created"
         )
         return artifact
 
@@ -128,9 +154,17 @@ class ArtifactService:
             raise ArtifactContentInvalid(
                 f"{artifact.artifact_type} content 校验失败：{err}"
             )
+        # ⭐ 先记下调用前的 current 版本：``_add_version_sync`` 在 content_hash 相等时
+        # ``return current``（版本没翻）⇒ 不比对就投递的话，每次无变化的重复写入都会白跑
+        # 一次 normalizer + 一次后台任务。
+        previous_version_id = artifact.current_version_id
         version = await self._add_version_sync(
             artifact, content, _content_hash(content), produced_by_session_id, produced_by_ref
         )
+        if str(getattr(version, "id", "")) != str(previous_version_id or ""):
+            await _amaybe_schedule_blueprint_ingestion(
+                artifact.id, content, trigger="blueprint_version_created"
+            )
         return version
 
     @sync_to_async

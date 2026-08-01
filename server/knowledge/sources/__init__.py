@@ -39,6 +39,9 @@ _NORMALIZERS: dict[str, str] = {
     "mcp_coding_plan": "knowledge.sources.mcp_coding_plan",
     "mcp_repository_analysis": "knowledge.sources.mcp_repository_analysis",
     "mcp_execution_trace": "knowledge.sources.mcp_execution_trace",
+    # Phase 116 VIEW-04：蓝图（delivery.Artifact 的 blueprint/v1 content）→ tech_plan 实体
+    # + citations/项目关联物化（REFERENCES / RELATES_TO 出边），支撑「被谁引用」反查。
+    "blueprint": "knowledge.sources.blueprint",
 }
 
 
