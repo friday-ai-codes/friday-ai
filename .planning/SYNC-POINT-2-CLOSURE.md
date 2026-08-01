@@ -374,3 +374,323 @@ M3 的结果值得单记：它证明「`pending_review` 不在放行集合」这
 4. **对账**：`REQUIREMENTS.md` GATE-01 状态、审计 `§4.1` 三张判定表与 `tech_debt.116-entry`、
    `STATE.md` Pending Todo 第 1 条 —— 本次**刻意未动**，由后续那一步一并改，避免出现「接缝已修但
    开关未翻」的中间态在三份文档里各写一个版本。
+
+---
+---
+
+# 同步点 2 收尾（第二步）
+
+**基线**：`25b66d85`（第一步的五个 commit 已在树上）　**分支**：`milestone/v0.20.0-blueprint`
+**范围**：§10 里列的**剩余三件** —— ① 三处前端触点升级 ② 翻四个入口开关默认值
+③ 旧 `technical_plan` process 退役收口。**GATE-01 就此闭合。**
+
+> 三件必须同批做，理由在第一步 §10 已登记：翻默认之前，触点会把蓝图渲染成空壳、旧链的
+> 退役状态也无从谈起；翻默认之后再补触点，则中间那段时间生产界面是坏的。
+
+---
+
+## 11. Part 1 · 三处前端触点识别 blueprint/v1
+
+### 11.1 为什么这三处此前一定是错的
+
+三个组件都早于 Phase 115，都只懂 v0 `technical_plan` 形态。而蓝图**刻意不新增
+`artifact_type`**（DESIGN §3.1：按 `content.schema_version` 判别）⇒ 在这三处的数据面上，
+蓝图与 v0 **长得一模一样**：
+
+| 触点 | 蓝图与 v0 共用什么 | 此前的实际呈现 |
+|---|---|---|
+| `ArtifactTimeline` | 同 `artifact_type="technical_plan"`、同标题形态 | 两条同名条目并列，用户分不出哪条是带批注与人审的蓝图（115-06 §9 登记的 P-17 重叠） |
+| `NodeDataTab` | 同 `node_type="ai_plan_research"`，输出同有 `session_id` / `plan` / `plan_markdown` | 蓝图挂在 `pending_review` 时抽屉画面与 v0「跑完了」几乎一样，看不出是**在等人终审** |
+| `TechPlanCard` | 同一个 `CodingPlan` 投影 | `map_merged_plan_to_coding_plan` 读 v0 的 `execution_plan[]`、走 v0 渲染器，而 blueprint/v1 **没有那个顶层键** ⇒ `tech_plan` 是一份结构合法而内容为空的壳、`affected_files` 恒 `[]` ⇒ 卡片渲染出「（暂无方案正文）」 |
+
+⭐ 第三条与审计 §4.1 的 **G3 是同一形状**：结构合法、语义为空、零错误信号。
+
+### 11.2 判别与文案收在一处
+
+新增 `web/src/config/blueprintArtifact.ts`（纯配置，无组件依赖）：
+
+| 位置 | 内容 |
+|---|---|
+| `web/src/config/blueprintArtifact.ts:25` | `BLUEPRINT_SCHEMA_VERSION = 'blueprint/v1'` |
+| `:34` | `isBlueprintSchemaVersion` —— **允许清单**：只有严格等于才为真，`undefined` / `''` / 将来的 `blueprint/v2` 一律按 v0 |
+| `:44` | `BLUEPRINT_STATUS_TEXT` —— 12 档中文（11 态 + `''` 旧版方案） |
+| `:63` | `blueprintStatusText`（`''` 命中「旧版方案」而非未知兜底） |
+| `:73` | `BLUEPRINT_ATTENTION_STATUSES`（`needs_clarification` / `pending_review` ⇒ 徽标用琥珀） |
+| `:83` | `blueprintViewerPath` —— 三处共用，查看器路由改名只改一处 |
+
+> **判断记录（为什么不复用 `~/config/blueprintStatus.ts`）**：那张表存的是 **i18n key**，
+> 服务 115 相位的新页面；三处触点**都不接 vue-i18n**（`ArtifactTimeline` docstring 逐字
+> 写了「文案内联中文，避免改动整份 i18n 资源」，`TechPlanCard` 家族有 `COPY` 常量表的
+> 既定惯例）。强行合并等于逼一边改掉自己的既定约定。取**两份定义 + 一条漂移守卫**，
+> 形状与第一步 §5 给 `_BLUEPRINT_STATUS_MESSAGES` 用的同一招 ——
+> `config/__tests__/blueprintArtifact.spec.ts` 逐键断言它与 `zh-CN.json` 的
+> `knowledge.blueprints.status.*` **逐字相等**，且键集与 `BLUEPRINT_STATUS_CONFIG` 一致。
+
+### 11.3 三处触点的落点
+
+| 触点 | 判别 | 呈现 |
+|---|---|---|
+| `ArtifactTimeline.vue:143` `isBlueprint()` | 响应体 `schema_version` | 切换 tab 上一枚 11 态徽标（`:222`）；正文区一条告示 + 深链（`:241` / `:258`） |
+| `NodeDataTab.vue:90` `isBlueprintOutput` | `output_data.schema_version`，另**兜底**读 `output_data.blueprint_content.schema_version` | 输出区上方告示（`:346`）+ 11 态徽标（`:354`）+ **挂起语义**一句话（`:357`）+ 深链（`:364`） |
+| `TechPlanCard.vue:347` `isBlueprint` | 新 prop `schemaVersion` | 头部两枚徽标（形态 + 状态，`:653`）；正文区**换成**蓝图告示 + 深链（`:724` / `:741`）；折叠态摘要也换（`:1028`） |
+
+⭐ `NodeDataTab` 的**兜底那一级不可省**：本次追加顶层 `schema_version` 之前，completed 分支
+已经把原始 blueprint content 并列保留在 `blueprint_content` 里 ⇒ 少了这一级，改动前跑过的
+蓝图执行记录在抽屉里仍会被当 v0 渲染。
+
+⭐ `TechPlanCard` 的蓝图档**必须排在「正文为空 ⇒ 占位」之前**：否则那份空壳落到
+「（暂无方案正文）」，把「形态不同」讲成「方案没了」—— 正是本次要消除的静默降级。
+
+### 11.4 供数面三处**纯追加**（零迁移）
+
+| 位置 | 追加内容 |
+|---|---|
+| `server/delivery/api/artifact_serializers.py:67/98/111` | `ArtifactListSerializer` 加 `schema_version` / `current_status` 两个 `SerializerMethodField`（详情序列化器派生自它，⛔ 不各写一份）。既有八键一字未动 |
+| `server/chat/serializers.py:736-738` + `server/chat/views.py:2762/2916` | 投影响应加 `schema_version` / `blueprint_artifact_id` / `current_status`；读侧是新的 `_aload_blueprint_marks`（纯读、异常吞成空三键、⛔ 绝不把一次已成功的投影变成 500） |
+| `server/workflows/nodes/ai/plan_research.py:96` + `:630/655/1007/1023/1059/1080` | 蓝图**五个分档**的输出加 `schema_version`；常量 `_BLUEPRINT_SCHEMA_VERSION` 与 `blueprint_schema.BLUEPRINT_SCHEMA_VERSION` 有对齐守卫 |
+
+⛔ **`map_merged_plan_to_coding_plan` 一行未改**（判断记录）：它是旧链投影的唯一实现，改它
+等于在 chat 侧再造一条派生链（工作流侧已有 `blueprint_execution.derive_execution_plan`
+这一份权威派生）。本次只补**判别信息**，让前端如实呈现并把用户导向查看器。⚠️ 这意味着
+「从蓝图版本投影出来的 CodingPlan 内容仍是空的」这一条**依然成立**，只是不再静默 ——
+测试 `test_projection_marks_a_blueprint_source_version` 显式断言 `affected_files == []`
+并把理由写在用例里。真要让它有内容，得在 chat 侧接派生器，那是独立工作项。
+
+⚠️ **INV-6**：两处响应键名都用 `current_status` 而**不是**模型字段名 —— 字段级守卫扫全
+`server/` 的 `['"]<那个字段名>['"]\s*:` 形态。这是 114-05 立的既有解法，全仓统一。
+
+### 11.5 v0 逐像素不变
+
+三处的全部新增标记都在判别之下；判别是允许清单 ⇒ v0（`schema_version` 为 `''` / 缺键）
+一律走原路径。证据：
+
+- `ArtifactTimeline.spec.ts` 既有 6 条 v0 用例**一字未改即通过**；
+- 新增 v0 反向用例逐条断言三个蓝图 testid **不存在**；
+- `TechPlanCard.spec.ts` 既有 63 条全绿；新增用例断言 v0 空正文仍落「（暂无方案正文）」
+  （蓝图那一档不得抢它）；
+- 后端 `test_v0_branches_never_carry_the_schema_version` 用源码扫描锁死 v0 的
+  `_map_terminal` / `_maybe_suspend` 两个函数体内**零** `schema_version` 写入。
+
+---
+
+## 12. Part 2 · 四个入口开关默认值翻到 `technical_blueprint`
+
+### 12.1 翻的是哪四行
+
+`server/services/process_runtime/blueprint_entry_switch.py:72-77`：四键从
+`PROCESS_TECHNICAL_PLAN` 翻成 `PROCESS_TECHNICAL_BLUEPRINT`。
+
+**开关机制一字未动**：`aresolve_entry_process_type` 的签名、`entry_key` 字面量常量纪律与
+它的 `ast` 扫描守卫、per-entry `SystemSetting` override —— 全部原样。运维把某个键显式置成
+`"technical_plan"` 仍然精确、单入口、免发布地回退。
+
+### 12.2 ⭐ fail-soft 落点从「硬写旧链」改成「该入口的声明默认值」
+
+三条 fail-soft 分支（读设置整段异常 / 外层非 dict / 内层值域外）此前都 `return
+PROCESS_TECHNICAL_PLAN`。默认值本来就是它的时候，这两种写法读起来一样；**翻默认之后就不
+一样了**。
+
+改为 `_default_for(entry)`（`:80`）。**这不是洁癖，是必需的** —— 变异实测（M-D，见 §14）
+暴露出一个远比「抖动回落」严重的形态：
+
+> `aget_json_setting` **原样回落库的那个 dict、不与默认值做合并**
+> （`system/settings_service.py:139-153`）。运维只写要 override 的那一两个键（**正常做法**）
+> 时，其余入口在解析里读到的是「没有这个键」⇒ 落进内层值域外那一档。若那一档硬回旧链，
+> 一条 `{"mcp": "technical_plan"}` 就把 **workflow / chat / feature_list 三个入口一起拖回
+> 旧链** —— per-entry 独立性当场失效，而且没有任何信号。
+
+顺带修掉同一处的观测噪声：**「该键缺席」≠「配置非法」**（`:169`）。缺席是绝大多数请求的
+正常态，此前会逐次落一条 `blueprint_entry_switch_invalid_value` **warning**；现在缺席静默
+取默认，真写了值域外的值才落事件。两向由
+`test_an_absent_key_is_silent_not_an_invalid_value_event` /
+`test_an_illegal_value_does_emit_the_invalid_value_event` **并列**锁死。
+
+**未知 entry 仍回旧链**（唯一保留旧链的分支，`_default_for` 的 `.get` 兜底）：它不是入口、
+没有声明默认值，且**不构成「某个入口的默认」**，与退役这条不冲突；生产不可达（`ast` 扫描
+强制字面量常量），走到那里意味着调用方有 bug。
+
+### 12.3 四个入口 × 两向的端到端证明
+
+`tests/services/process_runtime/test_entry_dispatch_wiring.py` 重写：每个入口的蓝图向
+**参数化成两态** —— `None`（**零配置 = 新默认**）与显式 `technical_blueprint`：
+
+| 入口 | 零配置驱动蓝图链 | 显式回滚仍走旧链 |
+|---|---|---|
+| workflow | `test_workflow_entry_drives_the_blueprint_chain[None]` | `test_workflow_entry_explicit_rollback_is_byte_identical` |
+| chat | `test_chat_entry_drives_the_blueprint_chain[None]` | `test_chat_entry_explicit_rollback_is_byte_identical` |
+| mcp | `test_mcp_context_resolves_to_project_not_space[None]` | `test_mcp_entry_explicit_rollback_is_byte_identical` |
+| feature_list | `test_feature_list_entry_drives_the_blueprint_chain[None]` | `test_feature_list_entry_explicit_rollback_is_byte_identical` |
+
+零配置那一态断言的是「建出 `process_type == "technical_blueprint"` 的会话且
+`decomposition.project_id` 非空」——**一条真实需求确实驱动蓝图链**，⛔ 不靠显式设置蒙混。
+
+开关单测另补：单入口回滚 / 双入口回滚（同一份配置里两向并列）/ 显式蓝图 == 默认。
+
+### 12.4 ⭐ 翻默认的实际爆炸半径：18 个既有用例
+
+全量跑出 **18 个新失败**（外加已知的 `test_mcp_package_alignment`），分布在 6 个模块。
+逐条看过：**全部是「冲着旧链行为写的用例，此前靠『默认恰好是旧链』隐式到达那条链」**，
+不是回归。
+
+处置：新增 `tests/conftest.py::legacy_plan_entry_switch` fixture，把「我要测的是旧链」
+**说出来**。这些用例因此测的是**显式 override 路径** —— 旧链退役后唯一合法的到达方式，
+与 §13 的口径一致。
+
+| 模块 | 条数 | 挂法 |
+|---|---|---|
+| `tests/workflows/test_plan_research_node.py` | 6 | 模块级 `pytestmark` |
+| `tests/mcp_tools/test_create_feishu_technical_plan_delegate.py` | 4 | ⭐ **逐条挂**（见下） |
+| `tests/mcp_tools/test_feature_tech_plan_tools.py` | 4 | 模块级 |
+| `tests/agents/test_start_plan_research_tool.py` | 2 | 模块级 |
+| `tests/services/test_plan_research_e2e.py` | 1 | 模块级 |
+| `tests/services/test_process_runtime_extra_evidence.py` | 1 | 模块级 |
+
+> **判断记录（为什么 MCP delegate 那个模块要逐条挂）**：它**两类用例并存** —— 旧链那几条，
+> 与冲着蓝图链写的那一组（`_switch_mcp_to_blueprint()`，用真 `SystemSetting`）。fixture
+> patch 的是解析函数本身，模块级挂会把蓝图那一组的真配置**一起吞掉**。第一次就是这么挂的，
+> `test_blueprint_intake_rejection_surfaces_the_neutral_detail_and_is_not_retryable` 当场转红
+> —— 那条红是对的，已改成逐条挂。
+>
+> fixture 取 monkeypatch 而不是写真 `SystemSetting`：四个入口对开关模块的 import 全在函数内
+> （lazy）⇒ patch 模块属性必然生效，且不受 60s 设置缓存与事务边界干扰。**真配置那条路径**
+> 由 `test_entry_dispatch_wiring.py` 用真 `SystemSetting` 覆盖（四入口 × 两向），⛔ 不重复。
+
+---
+
+## 13. Part 3 · 旧 `technical_plan` process 退役收口
+
+### 13.1 退役在本仓的定义（三条缺一不可）
+
+1. **不再是任何入口的默认** —— `DEFAULT_ENTRY_SWITCH` 四键无它（Part 2 已成立）；
+2. **注册仍在，且写明了为什么还在** —— 在途会话续驱与显式回滚 override 都要它，注销即崩；
+3. **状态是程序可查的**，不是只写在注释里。
+
+⛔ **退役 ≠ 注销 ≠ 删除**：六个 technical_plan 冻结文件（`decompose_segments` /
+`research_adapter` / `architect_merge_adapter` / `merged_plan` / `clarify_adapter` /
+`render`）**一行不改**。
+
+### 13.2 落点
+
+| 位置 | 内容 |
+|---|---|
+| `server/services/process_runtime/builtin_processes.py:1241` | `TECHNICAL_PLAN_RETIREMENT` 五键：`retired` / `retired_in="v0.20.0"` / `successor="technical_blueprint"` / `retained_reason` / `residual_traffic_event` |
+| `:1257` | 经既有 `ProcessDefinition.config` 字段挂进注册（**零迁移**）⇒ `get_process_definition("technical_plan").config` 即可读 |
+| `server/services/process_runtime/entrypoint.py:39` | `_technical_plan_retired()` —— 从注册表**读**那一份标记，⛔ 不复制第二份 |
+| `:147` | `technical_plan_entry_used` 事件补 `process_retired` |
+
+`retained_reason` 把「为什么还留着注册」写进**数据**，而不是注释 —— 避免下一个人把它当残留
+顺手清理掉，那会同时打断在途会话与回滚通路。
+
+`process_retired` 让残余流量的读数**自带语义**：翻默认之后落到旧链的每一次都是**显式
+override 或在途会话续驱**，聚合的人不必回去翻代码才知道这个读数该怎么读。
+
+### 13.3 守卫
+
+`tests/services/process_runtime/test_technical_plan_retirement.py`（9 条）：
+
+- 注册面：五键齐全 + **继任者没有这个标记**（反面对照，证明它不是人人都有的装饰）；
+- 行为面：`test_no_entry_defaults_to_the_retired_process` 把「退役」与「翻默认」**钉在一起**
+  —— 只标不翻 = 挂个牌子说退役而流量照旧；只翻不标 = 下一个人看不出这条链的处境；
+- `test_residual_traffic_is_an_explicit_override_not_a_default` —— 「残余流量是 override」
+  这句话的**可执行**形态：不配置 ⇒ 四个入口一个都不落旧链；显式写才落；
+- `test_the_retirement_flag_is_read_from_the_registry_not_recopied` —— 观测侧读注册表那一份；
+- 退役 ≠ 删除：六个冻结文件逐个 `exists()` + stage 图 handler 全部可调用
+  （「注册还在但 handler 被摘空」是最坏的中间态：不报未注册，而是安静空转到
+  `advance_step_limit`）。
+
+---
+
+## 14. 变异证据（本步四条）
+
+| # | 变异 | 红的用例 | 关键输出 |
+|---|---|---|---|
+| **M-A** | `ArtifactTimeline.isBlueprint` 改用**朴素判据** `artifact_type === 'technical_plan'` | 2 | `expected true to be false` —— v0 条目被当成蓝图；「未知 schema 按 v0」那条同时红 |
+| **M-B** | 删掉 `TechPlanCard` 正文区的蓝图分档（`v-else-if="isBlueprint"` → `false`） | 2 | `expected false to be true` —— 告示条消失，蓝图退回渲染空壳 |
+| **M-C** | `DEFAULT_ENTRY_SWITCH` 四键**回退**成 `technical_plan` | **29** | ⭐ 四个入口的 `[None]`（零配置）变体全红、`[technical_blueprint]`（显式）变体全绿 —— 精确证明**驱动蓝图链的是翻过的默认**，不是显式设置 |
+| **M-D** | `_default_for` 硬写回 `PROCESS_TECHNICAL_PLAN` | 9 | ⭐ 除 6 条 fail-soft 用例外，**`test_per_entry_rollback_only_affects_the_configured_entry` 一并转红** —— 这就是 §12.2 那个「一条 `{"mcp": ...}` 把另外三个入口一起拖回旧链」的实证，也是把 fail-soft 落点改掉的**决定性理由** |
+
+每次变异后均 `git checkout --` / 备份还原，还原后复跑全绿。
+
+⭐ M-C 与 M-D 的组合值得单记：M-C 证明「默认翻了」，M-D 证明「翻了之后**在真实配置形态下
+仍然成立**」。只做 M-C 会漏掉 M-D 那个洞 —— 而那个洞的表现是「运维回滚一个入口，四个一起
+回退」，静默且完全符合直觉之外。
+
+---
+
+## 15. 回归与验收（本步）
+
+| 项 | 结果 |
+|---|---|
+| `uv run pytest tests/ -q` | **9813 passed / 61 skipped / 1 failed**（本步开工前实测基线 9781 passed / 1 failed）⇒ **+32 例，零回归** |
+| 唯一失败 `tests/mcp_tools/test_mcp_package_alignment.py` | **已知基线失败**（`mcp` npm 包是独立仓 / submodule，缺本里程碑新增的四个工具）。⛔ 不在本次范围，与第一步同一条 |
+| `uv run python manage.py makemigrations --check --dry-run` | `No changes detected` ⇒ **零新增迁移** |
+| `ruff check` / `ruff format --check`（全部改动文件） | 通过 |
+| `pnpm exec vitest run` | **2095 passed / 1 skipped**（基线 2053 / 1）⇒ **+42 例，零回归** |
+| `pnpm type-check` | **exit 0** |
+| `pnpm lint` | **111 problems**（与基线**逐个相同** ⇒ 触点文件零新增；中途出现过 2 条 `perfectionist/sort-imports`，已改正） |
+| `pnpm build` | 通过 |
+| 生成物 `web/src/components.d.ts` | ⚠️ `pnpm build` 又一次顺带裁掉 29 条既有条目（115-06 Deviation 6 预警过的现象）。本次**无新增组件** ⇒ 直接 `git checkout --` 还原，最终 diff 为空 |
+| `web/package.json` / `pnpm-lock.yaml` / `pnpm-workspace.yaml` | **零行变更**（本次未出现 catalog 回填） |
+| 六个 technical_plan 冻结文件 + `codegraph/services/repo_router_v2.py` + MCP 共享 handler factory | `git diff 25b66d85 -- <path>` **全空** |
+| `ConvergenceSessionEvent` | **零新增类型**（本步全是读侧、判别与配置） |
+
+---
+
+## 16. 判断记录（本步）
+
+1. **fail-soft 落点从硬写旧链改成 `_default_for`，超出「翻四个字面量」的字面范围。**
+   不改的话，一条正常的单入口回滚配置会把另外三个入口一起拖回旧链（M-D 实证），
+   「翻了默认」这件事在最常见的运维配置形态下根本不成立。同时把「该键缺席」从
+   `invalid_value` 里拆出来，否则未配置入口每次编排都刷一条 warning。
+
+2. **未知 entry 保留回旧链。** 它不是入口、没有声明默认值，因此不构成「某个入口的默认」，
+   与退役不冲突；把一个身份不明的调用方送进需要 `project_id` 的蓝图链只会换一种失败形态。
+   这条差异写进了 `_default_for` 的 docstring 与用例名。
+
+3. **18 个既有用例显式 override 回旧链，而不是改写它们的断言。** 它们测的是旧链的
+   stage 图与 content 形态，那些行为**没有变**；变的只是「怎么到达那条链」。改断言等于
+   丢掉旧链的回归覆盖 —— 而旧链恰恰还要为在途会话服务。
+
+4. **MCP delegate 模块逐条挂而非模块级挂。** 该模块两类用例并存，模块级 patch 会吞掉蓝图
+   那一组的真配置（第一次就这么挂并当场转红）。
+
+5. **⛔ 不改 `map_merged_plan_to_coding_plan`。** 从蓝图版本投影出来的 CodingPlan 内容
+   仍然是空的 —— 本次让这件事**不再静默**（前端如实说明 + 导向查看器 + 用例显式断言
+   `affected_files == []` 并写明理由），但**没有**在 chat 侧接第二条派生链。真要补内容，
+   应复用 `blueprint_execution.derive_execution_plan`，那是独立工作项。
+
+6. **三处触点不接 vue-i18n，另立一张中文表 + 漂移守卫。** 理由见 §11.2；形状与第一步 §5
+   给 `_BLUEPRINT_STATUS_MESSAGES` 用的同一招。
+
+7. **`NodeDataTab` 不把 `ai_plan_research` 加进 `AI_NODE_TYPES`。** 那会顺带改变 **v0**
+   执行记录的渲染（markdown 智能渲染 + 模式切换按钮），违反「v0 逐像素不变」。蓝图那一档
+   只加告示条，⛔ 不动既有渲染分支。
+
+8. **退役标记落 `ProcessDefinition.config` 而不是新加字段/新加迁移。** 既有字段、零迁移、
+   程序可查，三者同时满足；`retained_reason` 进数据是为了防「顺手清理」。
+
+---
+
+## 17. 提交（本步）
+
+| commit | 内容 |
+|---|---|
+| `789a1c0a` | `feat(blueprint): 三处前端触点识别 blueprint/v1 并导向蓝图查看器` |
+| `39b84961` | `feat(blueprint): 四个入口开关默认值翻到 technical_blueprint` |
+| `e3184cef` | `chore(blueprint): 旧 technical_plan process 标记退役并收口` |
+
+对账（`REQUIREMENTS.md` / `MILESTONE-AUDIT.md` / `STATE.md`）单独一个 commit。
+
+---
+
+## 18. GATE-01 状态
+
+**满足。** 第一步（三道接缝 + 终态映射）与本步（触点 + 翻默认 + 退役）合起来，
+`REQUIREMENTS.md` 里 GATE-01 那条 ⏭ 清单的四项**全部交付**：
+
+| 原 ⏭ 项 | 落点 |
+|---|---|
+| 把开关默认值翻成 `technical_blueprint` | §12（`blueprint_entry_switch.py:72-77`） |
+| 旧 `technical_plan`「不再是任何入口默认」的收口 | §13（`builtin_processes.py:1241/1257`） |
+| `TechPlanCard` / `NodeDataTab` / `ArtifactTimeline` 三处触点升级 | §11 |
+| workflow 节点终态改人审 HITL 挂起 | **第一步 §2** 已交付（`_amap_terminal_blueprint`） |
