@@ -35,6 +35,18 @@ from runners.models import hash_token
 
 pytestmark = pytest.mark.django_db
 
+# ⭐ 同步点 2 收尾：四个入口开关默认值已翻到 technical_blueprint。本文件**两类用例并存** ——
+# 冲着旧 technical_plan 链写的（旧 stage 图 / MergedPlan content / 旧终态映射）与冲着蓝图链
+# 写的（`_switch_mcp_to_blueprint` 那一组，用真 SystemSetting）。
+#
+# ⛔ 因此**不在模块级**挂 `legacy_plan_entry_switch`：它 patch 的是解析函数本身，会把蓝图
+# 那一组的真配置一起吞掉。旧链那几条逐条挂 `@pytest.mark.usefixtures(_LEGACY_CHAIN)`，
+# 把「我要测的是旧链」说出来，而不是继续靠「默认恰好是旧链」隐式到达。旧链退役后，显式
+# override 正是它唯一合法的到达方式（见
+# tests/services/process_runtime/test_technical_plan_retirement.py）。
+_LEGACY_CHAIN = "legacy_plan_entry_switch"
+
+
 # create_feishu_technical_plan 响应外形契约：旧键集合不得缩减（T-94-03-COMPAT snapshot 守护）。
 _LEGACY_OUTPUT_KEYS = {
     "technical_plan_id",
@@ -143,6 +155,7 @@ def _patch_delegate_pipeline(
 # ============================== Task 1: delegate 三态映射 ==============================
 
 
+@pytest.mark.usefixtures(_LEGACY_CHAIN)
 @pytest.mark.asyncio
 async def test_delegate_done_maps_completed_with_canonical_and_markdown(
     monkeypatch: pytest.MonkeyPatch,
@@ -165,6 +178,7 @@ async def test_delegate_done_maps_completed_with_canonical_and_markdown(
     assert "token 边界变更需回归登录态" in result.markdown
 
 
+@pytest.mark.usefixtures(_LEGACY_CHAIN)
 @pytest.mark.asyncio
 async def test_delegate_researching_maps_partial_with_session(
     monkeypatch: pytest.MonkeyPatch,
@@ -201,6 +215,7 @@ async def test_delegate_failed_maps_failed_empty(
     assert result.markdown == ""
 
 
+@pytest.mark.usefixtures(_LEGACY_CHAIN)
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_delegate_aggregates_orchestration_model_usage(
@@ -501,6 +516,7 @@ def test_create_feishu_technical_plan_partial_when_orchestration_suspended(
     assert body["retry_state"]["failed_stage"] == "orchestration_pending"
 
 
+@pytest.mark.usefixtures(_LEGACY_CHAIN)
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_mcp_sync_research_reaches_done_via_real_delegate(
