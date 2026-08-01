@@ -2223,6 +2223,17 @@ async def _afeedback_chat_blueprint_barrier(blueprint_session) -> None:
         ):
             # 仍在挂起（等澄清 / 等下一批调研）⇒ 不回灌，否则会以 success=False 提前把 chat
             # 阻塞任务误解析为失败（与 _schedule_chat_plan_resume 的 e2 守门同口径）。
+            #
+            # ⭐ 116-REVIEW MN-04：这一档必须留痕（analog 打的是 chat_plan_resume_resuspended）。
+            # 裸 return 会让排障时连「它到过这里并决定不回灌」都看不出来 —— 而这一档正是
+            # 「对话里的占位停住了」的第一现场。
+            logger.info(
+                "blueprint_chat_barrier_resuspended",
+                category="sampling",
+                component="subagent",
+                session_id=str(session.id),
+                status=str(session.status),
+            )
             return
 
         current_status = ""
