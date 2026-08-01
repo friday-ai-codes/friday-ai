@@ -20,7 +20,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from agents.tools.chat_tools import _list_indexed_paths, _scroll_file_from_collection
 from code_relations.models import ChunkRegistry
 from codegraph.models import Symbol
 from common.authentication import CookieJWTAuthentication
@@ -46,12 +45,11 @@ from repositories.models import FileIndex, IndexStatus, Repository
 from services.branch_utils import resolve_branch_for_query
 from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
 from services.qdrant_service import QdrantService
+from services.repo_file_read import aread_repository_file
 from services.repo_mirror import (
     MirrorError,
     ensure_mirror_commit,
     grep_mirror,
-    list_mirror_paths,
-    read_mirror_file,
 )
 
 from .errors import error_response
@@ -201,26 +199,6 @@ def _mirror_error_response(exc: MirrorError) -> Response:
         exc.detail,
         status_code=_MIRROR_ERROR_STATUS.get(exc.code, status.HTTP_400_BAD_REQUEST),
     )
-
-
-_EXT_LANG_MAP = {
-    "py": "python",
-    "js": "javascript",
-    "jsx": "javascript",
-    "ts": "typescript",
-    "tsx": "typescript",
-    "go": "go",
-    "css": "css",
-    "html": "html",
-    "json": "json",
-    "vue": "vue",
-    "md": "markdown",
-}
-
-
-def _language_from_path(file_path: str) -> str:
-    ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
-    return _EXT_LANG_MAP.get(ext, "")
 
 
 def _traces_from_evidence(evidence: Iterable[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
@@ -983,33 +961,16 @@ class GetRepositoryFileView(McpToolView):
     优先走本地 bare 镜像（git show，行号精确、内容全量、source="git"）；
     镜像不可用（未启用 / fetch 失败 / 文件不在快照中）时回退 Qdrant 索引
     chunk 拼接路径（source="index"），保持旧行为不回退。
+
+    ⭐ **读取实现已下沉到 ``services/repo_file_read.aread_repository_file``（116-07）**：
+    排除判定（requested + resolved 双复判，T-22-21）/ 镜像读取 / 索引 chunk 拼接回退
+    只有那一份实现，SPA 的引用预览读面（``file-lines/``）共享它，⛔ 不存在第二份排除判定。
+    本 View 只负责把中性结果**映射回本工具的既有对外契约** —— 响应键集、``file_excluded``
+    的 404 与文案、``file_not_found`` 的 404 与文案**一字未改**。⛔ 两个调用面的错误口径
+    不得互相污染：本面是「显式告知已排除」，SPA 面是「被排除 / 不存在 / 无镜像统一 200 空」。
     """
 
     tool_name = "get_repository_file"
-
-    async def _excluded_response(
-        self,
-        repository_id: str,
-        *paths: str,
-    ) -> Response | None:
-        """对 requested / resolved 路径做 fail-closed 排除判定；命中 → 「已排除」错误。
-
-        resolved_path 必须复判（防后缀解析绕过，T-22-21）。命中绝不返回任何 content。
-        """
-        matcher = await _exclusion_matcher(repository_id)
-        for path in paths:
-            if path and matcher.is_excluded(str(path)):
-                log_exclusion_blocked(
-                    surface="get_repository_file",
-                    repository_id=repository_id,
-                    rel_path=str(path),
-                )
-                return error_response(
-                    "file_excluded",
-                    "文件已被排除策略屏蔽",
-                    status_code=status.HTTP_404_NOT_FOUND,
-                )
-        return None
 
     async def post(self, request: Request) -> Response:
         run, err = await self._begin(request)
@@ -1036,105 +997,48 @@ class GetRepositoryFileView(McpToolView):
         max_lines = int(input_data.get("max_lines", 500))
         branch_label = graph_branch or (repo.base_branch or repo.default_branch)
 
-        mirror_hit = await self._read_from_mirror(
-            repository_id, input_data.get("branch"), file_path
+        # ⭐ repo / collection_name 预解析后传入：本面的 repository_not_found 404 与
+        # repository_not_indexed 400 两个既有错误码由基类方法给出，⛔ 不搬进 service。
+        result = await aread_repository_file(
+            repository_id,
+            file_path,
+            branch_name=str(input_data.get("branch") or ""),
+            surface="get_repository_file",
+            line_start=start_line,
+            line_end=end_line,
+            max_lines=max_lines,
+            repo=repo,
+            collection_name=collection_name,
         )
-        if mirror_hit is not None:
-            resolved_path, full_text, snapshot = mirror_hit
-            excluded = await self._excluded_response(repository_id, file_path, resolved_path)
-            if excluded is not None:
-                return excluded
-            all_lines = full_text.splitlines()
-            total_lines = len(all_lines)
-            slice_start = int(start_line) - 1 if start_line is not None else 0
-            slice_end = int(end_line) if end_line is not None else total_lines
-            selected_lines = all_lines[slice_start:slice_end]
-            truncated = len(selected_lines) > max_lines
-            returned_lines = selected_lines[:max_lines]
-            output_data = {
-                "repository_id": repository_id,
-                "branch": branch_label,
-                "file_path": resolved_path,
-                "requested_file_path": file_path,
-                "line_start": start_line,
-                "line_end": end_line,
-                "language": _language_from_path(resolved_path),
-                "content": "\n".join(returned_lines),
-                "truncated": truncated,
-                "total_chunks": 0,
-                "returned_lines": len(returned_lines),
-                "max_lines": max_lines,
-                "source": "git",
-                "commit_sha": snapshot.commit_sha,
-                "total_lines": total_lines,
-                "run_id": str(run.run_id),
-            }
-            await self._record(
-                run,
-                input_data=input_data,
-                output_data=output_data,
-                traces=[(RetrievalTrace.Kind.FILE, output_data)],
-                started_at=started_at,
+        if result["status"] == "excluded":
+            return error_response(
+                "file_excluded",
+                "文件已被排除策略屏蔽",
+                status_code=status.HTTP_404_NOT_FOUND,
             )
-            return Response(output_data, status=status.HTTP_200_OK)
-
-        chunks_raw = await _scroll_file_from_collection(collection_name, file_path)
-        resolved_path = file_path
-        if not chunks_raw:
-            candidates = [
-                path
-                for path in await _list_indexed_paths(collection_name)
-                if path.endswith(file_path)
-            ]
-            if len(candidates) == 1:
-                resolved_path = candidates[0]
-                chunks_raw = await _scroll_file_from_collection(collection_name, resolved_path)
-        if not chunks_raw:
+        if result["status"] != "ok":
             return error_response(
                 "file_not_found",
                 f"索引中找不到文件: {file_path}",
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        excluded = await self._excluded_response(repository_id, file_path, resolved_path)
-        if excluded is not None:
-            return excluded
-
-        chunks_raw.sort(key=lambda chunk: chunk.get("chunk_index", 0))
-        selected: list[dict[str, Any]] = []
-        for chunk in chunks_raw:
-            chunk_start = chunk.get("start_line", 0) or 0
-            chunk_end = chunk.get("end_line", float("inf")) or float("inf")
-            if start_line is not None and chunk_end < int(start_line):
-                continue
-            if end_line is not None and chunk_start > int(end_line):
-                continue
-            selected.append(chunk)
-
-        lines: list[str] = []
-        language = ""
-        for chunk in selected:
-            if not language:
-                language = str(chunk.get("language") or "")
-            lines.extend(str(chunk.get("content") or "").splitlines())
-        truncated = len(lines) > max_lines
-        returned_lines = lines[:max_lines]
         output_data = {
             "repository_id": repository_id,
             "branch": branch_label,
-            "file_path": resolved_path,
+            "file_path": result["resolved_path"],
             "requested_file_path": file_path,
             "line_start": start_line,
             "line_end": end_line,
-            "language": language,
-            "content": "\n".join(returned_lines),
-            "truncated": truncated,
-            "total_chunks": len(chunks_raw),
-            "returned_lines": len(returned_lines),
+            "language": result["language"],
+            "content": result["content"],
+            "truncated": result["truncated"],
+            "total_chunks": result["total_chunks"],
+            "returned_lines": result["returned_lines"],
             "max_lines": max_lines,
-            "source": "index",
-            "commit_sha": "",
-            "total_lines": len(lines),
+            "source": result["source"],
+            "commit_sha": result["commit_sha"],
+            "total_lines": result["total_lines"],
             "run_id": str(run.run_id),
         }
         await self._record(
@@ -1145,37 +1049,6 @@ class GetRepositoryFileView(McpToolView):
             started_at=started_at,
         )
         return Response(output_data, status=status.HTTP_200_OK)
-
-    async def _read_from_mirror(
-        self,
-        repository_id: str,
-        branch: str | None,
-        file_path: str,
-    ) -> tuple[str, str, Any] | None:
-        """尝试从本地镜像读文件；任何不可用情形返回 None 走索引回退。"""
-        try:
-            snapshot = await ensure_mirror_commit(repository_id, branch)
-            text = await read_mirror_file(snapshot, file_path)
-            resolved_path = file_path
-            if text is None:
-                candidates = [
-                    path for path in await list_mirror_paths(snapshot) if path.endswith(file_path)
-                ]
-                if len(candidates) == 1:
-                    resolved_path = candidates[0]
-                    text = await read_mirror_file(snapshot, resolved_path)
-            if text is None:
-                return None
-            return resolved_path, text, snapshot
-        except MirrorError as exc:
-            logger.info(
-                "repo_mirror_file_fallback_index",
-                repository_id=repository_id,
-                file_path=file_path,
-                code=exc.code,
-                detail=exc.detail,
-            )
-            return None
 
 
 class FindRelatedChunksView(McpToolView):
