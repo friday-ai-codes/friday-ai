@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.20.0
 milestone_name: 技术方案蓝图
-status: "⭐ **116-01（分派闸 + per-entry 开关 + gate 范围闸）已收口** —— PHASE_BASE = 0e208ba93e1318e75bc98b5318f31e754edd608d；全量后端门 8671 passed / 1 failed（基线 8609/1，+62 零回归）；Wave 0 探针已实跑解除 A1、三条变异各实跑一次真实变异；零 migration、前端零改动。116-02/03/06 照 build_engine_for_session 的二元组契约与 entry_key 字面量纪律接线"
-last_updated: "2026-08-01T06:03:37.177Z"
+status: "⭐ **116-01（分派闸 + per-entry 开关 + gate 范围闸）已收口** —— `PHASE_BASE = 0e208ba93e1318e75bc98b5318f31e754edd608d`。1 个新建源文件 + 4 处既有源文件改造 + 3 个新建测试文件，**零 migration、零新依赖、零新 `CallSource` 枚举、前端零改动**。全量后端门 **8671 passed / 1 failed**（基线 8609/1，**+62 零回归**；唯一失败仍是 `test_skills_snapshot_guard` 这个 worktree 环境产物）。⭐ **Wave 0 探针已实跑并解除 RESEARCH Assumptions A1**：错工厂 + 对的 driver 从 `intake` 驱一条蓝图会话，实测终局逐字为 `current_stage='reroute'` / `status='failed'` / `error={'stage': 'reroute', 'exception': 'AttributeError', 'message': "'ResearchDispatchAdapter' object has no attribute 'aadvance_reroute'"}`，与 §A.3 推演吻合 ⇒ 变异用例 A 的期望值**无需调整**（判据落白名单 b + c）。⚠️ 该结论**只在 wave 1 成立**，116-02 落地后 `intake`/`decompose` 不再 pass-through、落点会前移。⭐ **三条变异各实跑一次真实变异**（删 → 转红 → 恢复 → 转绿），其中变异 C 另跑探针坐实「只换 engine 不换 driver」会把健康会话推成 `advance_step_limit` FAILED（steps 21）。⭐ **116-03 的六个续驱点直接照 `build_engine_for_session` 改**：同步函数、返 `(engine, driver)` 二元组、未知 `process_type` 回落旧链 + 响亮事件、⛔ 绝不透传 `skip_clarification`/`force_confirm` 进蓝图工厂 —— 逐字契约见 SUMMARY。冻结面核算全绿（六个 technical_plan 文件 + `repo_router_v2.py` + `web/` 的 `git diff $PHASE_BASE` 均空），删除行 `entrypoint.py` = 1（上界 2）、`blueprint_gate_views.py` = 2（上界 6）、其余三个受限文件 = 0"
+last_updated: "2026-08-01T07:26:51.712Z"
 last_activity: 2026-08-01
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 34
-  completed_plans: 28
-  percent: 82
+  completed_plans: 29
+  percent: 83
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md；本里程碑权威设计输入：**[.planning/techni
 ## Current Position
 
 Phase: 116 (入口收编与导出（全入口统一 + MCP 协议 + 飞书导出 + 图谱物化）) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: ⭐ **116-01（分派闸 + per-entry 开关 + gate 范围闸）已收口** —— `PHASE_BASE = 0e208ba93e1318e75bc98b5318f31e754edd608d`。1 个新建源文件 + 4 处既有源文件改造 + 3 个新建测试文件，**零 migration、零新依赖、零新 `CallSource` 枚举、前端零改动**。全量后端门 **8671 passed / 1 failed**（基线 8609/1，**+62 零回归**；唯一失败仍是 `test_skills_snapshot_guard` 这个 worktree 环境产物）。⭐ **Wave 0 探针已实跑并解除 RESEARCH Assumptions A1**：错工厂 + 对的 driver 从 `intake` 驱一条蓝图会话，实测终局逐字为 `current_stage='reroute'` / `status='failed'` / `error={'stage': 'reroute', 'exception': 'AttributeError', 'message': "'ResearchDispatchAdapter' object has no attribute 'aadvance_reroute'"}`，与 §A.3 推演吻合 ⇒ 变异用例 A 的期望值**无需调整**（判据落白名单 b + c）。⚠️ 该结论**只在 wave 1 成立**，116-02 落地后 `intake`/`decompose` 不再 pass-through、落点会前移。⭐ **三条变异各实跑一次真实变异**（删 → 转红 → 恢复 → 转绿），其中变异 C 另跑探针坐实「只换 engine 不换 driver」会把健康会话推成 `advance_step_limit` FAILED（steps 21）。⭐ **116-03 的六个续驱点直接照 `build_engine_for_session` 改**：同步函数、返 `(engine, driver)` 二元组、未知 `process_type` 回落旧链 + 响亮事件、⛔ 绝不透传 `skip_clarification`/`force_confirm` 进蓝图工厂 —— 逐字契约见 SUMMARY。冻结面核算全绿（六个 technical_plan 文件 + `repo_router_v2.py` + `web/` 的 `git diff $PHASE_BASE` 均空），删除行 `entrypoint.py` = 1（上界 2）、`blueprint_gate_views.py` = 2（上界 6）、其余三个受限文件 = 0
 Last activity: 2026-08-01
 
@@ -152,6 +152,9 @@ Last activity: 2026-08-01
 - [Phase 115-02, 2026-08-01]: **404 前端只有一个 i18n 键** `knowledge.blueprints.error.notFoundOrForbidden = "无权访问或该蓝图不存在"`，⛔ 不建 `notFound`/`forbidden` 第二个键（后端对「不存在」与「非成员」刻意返回逐字相同的 404，翻成两种文案即被差分枚举破防）；源码守卫同时扫竞品中文字面量。⭐ **115 review MN-02 补充**：确实需要给某一档 404 加恢复路径时，**只加动作不加话** —— 判据必须纯结构化（如「`?version=` 非空 + 正文 404 + 人审快照 200」三条 AND，⛔ 不读 `detail` 文本），文案一字不改，存在性防线因此不受影响。
 - [Phase 115 review, 2026-08-01]: **前缀失效是蓝图面唯一被接受的失效口径**（MJ-01）。任何组件想收窄成若干个精确 key 之前请先数：确认门动作同时改 `gate` / `snapshot` / `doc` / `threads` / `events` **五个**查询，而 `doc` 的 key 尾段是 `versionId ?? 'current'` —— **精确匹配天然写不全**。⛔ 失效面的用例不许断言 `invalidateQueries` 的调用次数或入参（那证明不了覆盖面，正是原缺陷躲过 22 条既有用例的原因），判据一律是**缓存条目的 `isInvalidated`**。
 - [Phase 115 review, 2026-08-01]: **凡后端已下发权威计数，前端一律以它为准**（MJ-03）。人审快照的 `unresolved_blocker_count` 由 confirm 闸的**同一个方法**产出 ⇒ 与「点确认会不会吃 409」天然同口径；前端派生只作快照未就绪时的占位，且判据必须与后端逐字对齐（`kind=ai_review_finding` + `severity=blocker` + `status ∈ {open, answered}`，⛔ **不看 `blocking`、不看 `anchor_status`**，且要在 `anchored` 过滤**之前**从全量 `threads` 上算）。唯一实现是 `blueprintAnnotations.isUnresolvedBlocker`，`annotationCounts` 与页面 `sectionTones` 共用它。⚠️ 取权威值用 `??` 不是 `||`：`0` 是合法且常见的权威值。
+- [Phase ?]: 116-02：aresolve_project_id 是四条入口推导链的唯一收口，MCP 分支必过 _aresolve_project 换算 Space→Project（⛔ 绝不透传 space_id，否则该蓝图全部端点恒不可用且无补救入口）
+- [Phase ?]: 116-02：骨架的 schema_version 取自懒 import 的 BLUEPRINT_SCHEMA_VERSION，⛔ 不复制字面量（漏写/写错会让校验器、渲染器、入图门控三条链同时静默降级到 v0）
+- [Phase ?]: 116-02：feature_point id 取确定性位序 fp_{n}，⛔ 不用随机 uuid —— 随机 id 会让每次重跑都翻一个新版本，把版本历史刷成噪声
 
 ### Pending Todos
 
@@ -211,7 +214,7 @@ Last activity: 2026-08-01
 
 ## Session Continuity
 
-Last session: 2026-08-01T07:20:00.000Z
+Last session: 2026-08-01T07:26:51.707Z
 Next step: ⭐ **Phase 115 已全相位完成（7 / 7），代码评审与修复亦已收口** —— `115-REVIEW.md` 的 7 条 findings：**6 fixed / 1 skipped**（MN-03，理由见 Pending Todos 顶部），frontmatter 已转 `status: fixed`。下一步是 `/gsd-verify-work`（UAT 清单分散在 115-03…07 各自 SUMMARY 的「UAT 清单」节，115-07 的 9 条是确认门专属）或直接进 **Phase 116**。
 
 ⚠️ 进 116 前先看 Pending Todos **顶部五条**：① MN-03 的存在性预言机（与 111-MN-12「权限口径」、115-07「gate 链无范围闸」**三条一并定夺**）；② `redact_secrets_in_text` 不覆盖数据库连接串（平台级，与「全仓 `error=str(exc)` 未脱敏」合并成独立清理相位）；③ **「best-effort」只覆盖观测不覆盖业务**（新增列表/聚合端点必读）；④ **会话 stage 名 ≠ 时间线节点名**（阶段时间线接线必读）；⑤ `confirm` 409 未下发 `blocked_reason`。
@@ -244,7 +247,7 @@ Next step: ⭐ **Phase 115 已全相位完成（7 / 7），代码评审与修复
 2. **`orphaned_threads` 现在只装真失锚线程**（MJ-02），可直接当作「批注错位」清单呈现，不必再自行过滤系统线程。
 3. **两个 115 必须接的缺口**：① **通知面**——澄清提醒只落事件与周期锚点，用户收不到实际通知（仍未接）；② ~~`blueprint_quality` 三项统计零消费方~~ —— **115-04 已闭**（`BlueprintQualityPanel.vue` 是唯一消费面，`null` 绝不显示 0）；剩余接线**已由 115-06 完成**（页面派生 `hasKeyConclusions` 并传入）。两条均见 Pending Todos。
 
-Resume file: 无（干净接力点：Phase 111–114 全部 commit 已入库）
+Resume file: None
 
 ## Performance Metrics
 
@@ -256,3 +259,4 @@ Resume file: 无（干净接力点：Phase 111–114 全部 commit 已入库）
 | Phase 115 P04 | ~90m | 3 tasks | 14 files 新建 + 1 生成物（+2970），新增 58 例前端用例，六条变异验证 |
 | Phase 115 P05 | ~90m | 3 tasks | 16 files 新建 + 1 生成物，新增 37 例前端用例，四条变异验证 |
 | Phase 115 P06 | ~150m | 3 tasks | 11 files 新建 + 8 files 改（i18n 交接 + 两处纯追加），新增 16 例前端用例，一条变异验证 |
+| Phase 116-entry P02 | ~2h | 3 tasks | 5 files |
