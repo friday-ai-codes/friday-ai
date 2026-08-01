@@ -2,6 +2,7 @@
 
 ## Milestones
 
+- ✅ **v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）** — Phases 111–116 (completed 2026-08-01，待与 v0.19.0 合并后归档) — 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图 — 里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 7 道跨相位接缝全 WIRED / 0 gaps；GATE-01 因硬依赖同步点 2 判 PARTIAL）见 [audit](./v0.20.0-MILESTONE-AUDIT.md) — [requirements](./REQUIREMENTS.md) · [design](./technical-blueprint/DESIGN.md)
 - 🟡 **v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 方案够深 + 过程可见）** — Phases 105–110 (planning) — 让技术方案链路真正跑通并可信：编排不再中途卡死被降级工具顶替、路由基于多维证据分层呈现并可解释、方案结构覆盖数据流编排与模块↔仓映射、全过程对用户实时可见 — [requirements](./REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
 - ✅ **v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）** — Phases 100–104 (shipped 2026-07-22) — 把多套"知识/经验/沉淀"收敛成统一知识库（单一摄取 + 单一检索），补齐完工沉淀闭环（三链路一致），给编码容器内置 Friday MCP 与 skills — 里程碑审计 tech_debt（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留 11 项真实 Qdrant·飞书·容器·Cursor 端人工验证 + 若干接受/递延债务）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.17.0-ROADMAP.md)
 - ✅ **v0.16.3 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）** — Phases 96–99 (shipped 2026-07-01) — 把项目外部依赖（`Artifact`：PRD/埋点评审/UI 文档等）接入知识总览/搜索/知识树，并与关键词/业务能力/仓库建关联 — 里程碑审计 tech_debt（12/12 需求满足 / integration_ok；遗留真机/浏览器视觉验收 + 既有范围外测试漂移）见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md) — [archive](./milestones/v0.16.3-ROADMAP.md)
@@ -28,7 +29,7 @@
 
 ## Phases
 
-### 🟡 v0.20.0 技术方案蓝图 (Phases 111–116) — PLANNING（与 v0.19.0 双 worktree 并行）
+### ✅ v0.20.0 技术方案蓝图 (Phases 111–116) — COMPLETE（六相位全部完成并 verified，里程碑审计 tech_debt，待归档；与 v0.19.0 双 worktree 并行）
 
 **Milestone Goal:** 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段固定骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，仓库章程补齐净新增落点知识，飞书式划线澄清多轮收敛，全生命周期状态可管理，知识库可查、可引用、可导出。
 
@@ -86,11 +87,11 @@ Plans:
 
 Plans:
 
-- [ ] 112-01-PLAN.md — feature_points[].intent 必填枚举 + 2 份字面数据同步与 6 个消费测试回归 + SettingKeys 歧义阈值/路由权重两键与 async float/json getter + 112 阶段事件常量（FLOW-01, CHARTER-02 前置）
-- [ ] 112-02-PLAN.md — spec_gate 歧义门：LLM 四维打分（call_source=blueprint_spec_gate）+ 意图分类 + BlueprintThread(ai_clarification, blocking) 澄清回路 + 规格锁定与 decision_log 物化 + 不重复提问（FLOW-01）
-- [ ] 112-03-PLAN.md — blueprint_route 双面路由：RepoRouterV2 原样输出为 router_base + charter_match（owned/planned、boundaries 判负、evolution 降权、章程候选补入）+ history_match（delivery knowledge）+ intent 加权 + breakdown 三分量恒等式（CHARTER-02, FLOW-04）
-- [ ] 112-04-PLAN.md — blueprint_research_adapter 逐仓容器调研：fan-out + mint_task_token 与 3 个 env 键接通 + 章程随 prompt 注入 + fitness 落 PartialPlan.content + callbacks 第三条 PLAN 链 + reroute ≤2 轮与超限升确认门（FLOW-02, FLOW-04）
-- [ ] 112-05-PLAN.md — repo_confirmation 硬确认门：五动作 REST 经 BlueprintLifecycleService 收口 + 仓库集/职责锁定与 decision_log + 章程回灌 ai_draft 与 rejected 一键沉淀 + technical_blueprint 七 stage 注册 + blueprint_resume 蓝图专用续驱（FLOW-03, CHARTER-03）
+- [x] 112-01-PLAN.md — feature_points[].intent 必填枚举 + 2 份字面数据同步与 6 个消费测试回归 + SettingKeys 歧义阈值/路由权重两键与 async float/json getter + 112 阶段事件常量（FLOW-01, CHARTER-02 前置）
+- [x] 112-02-PLAN.md — spec_gate 歧义门：LLM 四维打分（call_source=blueprint_spec_gate）+ 意图分类 + BlueprintThread(ai_clarification, blocking) 澄清回路 + 规格锁定与 decision_log 物化 + 不重复提问（FLOW-01）
+- [x] 112-03-PLAN.md — blueprint_route 双面路由：RepoRouterV2 原样输出为 router_base + charter_match（owned/planned、boundaries 判负、evolution 降权、章程候选补入）+ history_match（delivery knowledge）+ intent 加权 + breakdown 三分量恒等式（CHARTER-02, FLOW-04）
+- [x] 112-04-PLAN.md — blueprint_research_adapter 逐仓容器调研：fan-out + mint_task_token 与 3 个 env 键接通 + 章程随 prompt 注入 + fitness 落 PartialPlan.content + callbacks 第三条 PLAN 链 + reroute ≤2 轮与超限升确认门（FLOW-02, FLOW-04）
+- [x] 112-05-PLAN.md — repo_confirmation 硬确认门：五动作 REST 经 BlueprintLifecycleService 收口 + 仓库集/职责锁定与 decision_log + 章程回灌 ai_draft 与 rejected 一键沉淀 + technical_blueprint 七 stage 注册 + blueprint_resume 蓝图专用续驱（FLOW-03, CHARTER-03）
 
 ### Phase 113: 分仓方案与融合（阶段 2/3）+ Blueprint Context Bus
 
@@ -109,12 +110,12 @@ Plans:
 
 Plans:
 
-- [ ] 113-01-PLAN.md — BlueprintContextEntry 模型 + 0032 migration（三复合索引 + seq 唯一约束）+ BlueprintContextService（锁父行 seq 分配 / JSON 递归脱敏自建 / waiter 登记含环检测 / satisfy 同事务置 superseded）+ 三个 blueprint.context.* 事件（BUS-01/02 数据面）
-- [ ] 113-02-PLAN.md — 容器 MCP 两侧接通：服务端 read_/report_blueprint_context 两 view + **view 层自建三道会话校验**（鉴权链只到 token→owner）+ 全路径非 5xx + task 侧白名单 7→9（公共 handler 工厂零改动）（BUS-01）
-- [ ] 113-03-PLAN.md — RepoPlan 分仓方案：新建 blueprint_repo_plan_schema.py（§5.3 十一字段）+ 派发面 mode="plan" 四扩展点（缺省等价 112）+ BlueprintRepoPlanAdapter（确认门仓集 / direct 派发 / indirect 合成 / 有界重试 / 自写完成判据）+ callbacks 第四链（FLOW-05, SCHEMA-03）
-- [ ] 113-04-PLAN.md — 等待原语：await_blueprint_context 容器侧有界轮询（超时返正常结果非 is_error）+ waiting_context 退出与自动重派续作 + 波次预排纯函数（provider 先行）+ 互等环抛澄清；三条路径各有可证伪断言（BUS-02）
-- [ ] 113-05-PLAN.md — 融合装配：blueprint_reconcile 跨仓 API 对账纯函数 + blueprint_merge（确定性投影含 rationale.citations / 引用池先建后填 / 四段分节 LLM / must_haves 确定性派生 / 幂等落 ArtifactVersion）（FLOW-06, SCHEMA-02/03/04/05）
-- [ ] 113-06-PLAN.md — 融合门与 stage 收口：引用覆盖率门（阈值走 SettingKeys.BLUEPRINT_MERGE_CONFIG）+ coverage_gaps 归因 + 有界回退 ≤2 轮 + 超界转 STAGE_DONE 带未决项 + technical_blueprint 追加 repo_plan→merge 两 stage（只加不改）+ distill 沉淀草案（FLOW-06, SCHEMA-02, BUS-03）
+- [x] 113-01-PLAN.md — BlueprintContextEntry 模型 + 0032 migration（三复合索引 + seq 唯一约束）+ BlueprintContextService（锁父行 seq 分配 / JSON 递归脱敏自建 / waiter 登记含环检测 / satisfy 同事务置 superseded）+ 三个 blueprint.context.* 事件（BUS-01/02 数据面）
+- [x] 113-02-PLAN.md — 容器 MCP 两侧接通：服务端 read_/report_blueprint_context 两 view + **view 层自建三道会话校验**（鉴权链只到 token→owner）+ 全路径非 5xx + task 侧白名单 7→9（公共 handler 工厂零改动）（BUS-01）
+- [x] 113-03-PLAN.md — RepoPlan 分仓方案：新建 blueprint_repo_plan_schema.py（§5.3 十一字段）+ 派发面 mode="plan" 四扩展点（缺省等价 112）+ BlueprintRepoPlanAdapter（确认门仓集 / direct 派发 / indirect 合成 / 有界重试 / 自写完成判据）+ callbacks 第四链（FLOW-05, SCHEMA-03）
+- [x] 113-04-PLAN.md — 等待原语：await_blueprint_context 容器侧有界轮询（超时返正常结果非 is_error）+ waiting_context 退出与自动重派续作 + 波次预排纯函数（provider 先行）+ 互等环抛澄清；三条路径各有可证伪断言（BUS-02）
+- [x] 113-05-PLAN.md — 融合装配：blueprint_reconcile 跨仓 API 对账纯函数 + blueprint_merge（确定性投影含 rationale.citations / 引用池先建后填 / 四段分节 LLM / must_haves 确定性派生 / 幂等落 ArtifactVersion）（FLOW-06, SCHEMA-02/03/04/05）
+- [x] 113-06-PLAN.md — 融合门与 stage 收口：引用覆盖率门（阈值走 SettingKeys.BLUEPRINT_MERGE_CONFIG）+ coverage_gaps 归因 + 有界回退 ≤2 轮 + 超界转 STAGE_DONE 带未决项 + technical_blueprint 追加 repo_plan→merge 两 stage（只加不改）+ distill 沉淀草案（FLOW-06, SCHEMA-02, BUS-03）
 
 ### Phase 114: 审查与澄清收敛（AI 对抗审查 + 线程闭环 + 人工编辑）
 
@@ -471,16 +472,16 @@ Plans:
 
 ## Progress
 
-**🟡 本分支当前立项：v0.20.0 技术方案蓝图（Phases 111–116，6 阶段 / 35 需求 SCHEMA·LIFE·CHARTER·FLOW·CLAR·BUS·VIEW·GATE）**——设计输入 [technical-blueprint/DESIGN.md](./technical-blueprint/DESIGN.md)，与 v0.19.0（`milestone/v0.19.0-plan-trust` worktree，v0.19.0 侧进度以该分支为准）并行开发。**待 `$gsd-plan-phase 111`**。
+**✅ 本分支当前立项：v0.20.0 技术方案蓝图（Phases 111–116，6 阶段 / 35 需求 SCHEMA·LIFE·CHARTER·FLOW·CLAR·BUS·VIEW·GATE）**——设计输入 [technical-blueprint/DESIGN.md](./technical-blueprint/DESIGN.md)，与 v0.19.0（`milestone/v0.19.0-plan-trust` worktree，v0.19.0 侧进度以该分支为准）并行开发。**六个相位全部完成且 verified（34/34 plans）**；里程碑审计判 `tech_debt`（34/35 需求满足，GATE-01 因硬依赖同步点 2 判 PARTIAL），详见 [v0.20.0-MILESTONE-AUDIT.md](./v0.20.0-MILESTONE-AUDIT.md)。**待与 v0.19.0 合并后 `$gsd-complete-milestone`**。
 
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
 | 111. 蓝图底座 | v0.20.0 | SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02 | 4/4 | ✅ Complete (passed 24/24) | 2026-07-30 |
 | 112. 规格门与双面路由调研 | v0.20.0 | FLOW-01/02/03/04, CHARTER-02/03 | 5/5 | ✅ Complete (16/17 + gap closed) | 2026-07-30 |
 | 113. 分仓方案与融合 + Context Bus | v0.20.0 | FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03 | 6/6 | ✅ Complete (passed 54/54) | 2026-07-30 |
-| 114. 审查与澄清收敛 | v0.20.0 | FLOW-07, CLAR-02/03/04 | 4/5 | 🟡 In Progress (114-01/02/03/04 done, 1263 passed) | - |
-| 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 7/7 | ✅ Complete (vitest 1640 passed / 1 skipped) | 2026-08-01 |
-| 116. 入口收编与导出 | v0.20.0 | GATE-01, VIEW-05 | 0/TBD | Not started | - |
+| 114. 审查与澄清收敛 | v0.20.0 | FLOW-07, CLAR-02/03/04 | 5/5 | ✅ Complete (passed 83/83) | 2026-07-31 |
+| 115. 前端查看器与知识库 | v0.20.0 | VIEW-01/02/03/04, CLAR-01, FLOW-08 | 7/7 | ✅ Complete (passed 107/107) | 2026-08-01 |
+| 116. 入口收编与导出 | v0.20.0 | GATE-01, VIEW-05（+ 闭合 VIEW-04、VIEW-02） | 7/7 | ✅ Complete (passed 121/121) | 2026-08-01 |
 
 **Coverage (v0.20.0):** 35/35 需求全部映射，无孤儿、无重复（DEPTH-01~05 自 v0.19.0 Phase 108 迁入，映射见 REQUIREMENTS.md）。
 
