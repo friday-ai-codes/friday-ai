@@ -1,9 +1,13 @@
 /**
  * ：跨仓路由决策状态管理（pinia setup-style）。
  *
- * RoutingDecisionPanel / RelevanceBadge / RepoMultiSelector / TechPlanCard
- * 共享同一份 store —— 用户在 RoutingDecisionPanel 改勾选 → manual_override
- * 写新行 trace → store latestTraceId 更新 → 所有徽章 / 选择器自动重渲染。
+ * RelevanceBadge / RepoMultiSelector / TechPlanCard 共享同一份 store —— 勾选变化
+ * → manual_override 写新行 trace → store latestTraceId 更新 → 所有徽章 / 选择器
+ * 自动重渲染。
+ *
+ * `applyManualOverride` 目前**没有生产调用方**：原调用方 `RoutingDecisionPanel`
+ * 已随 ROUTE 缺口闭环删除，选仓入口统一收在底部澄清卡。保留该 action 与它的用例
+ * 是因为 `POST /override/` 端点仍在线、契约仍需守住；如需再开选仓面，接这里即可。
  */
 
 import type { ManualOverrideRequestCandidate, RoutingDecisionData } from '~/types/routing'

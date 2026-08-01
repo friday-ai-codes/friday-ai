@@ -32,9 +32,6 @@ vi.mock('~/components/ui/checkbox', () => ({
 vi.mock('~/components/chat/DocSummaryCard.vue', () => ({
   default: defineComponent({ name: 'DocSummaryCard', setup: () => () => h('div') }),
 }))
-vi.mock('~/components/chat/RoutingDecisionPanel.vue', () => ({
-  default: defineComponent({ name: 'RoutingDecisionPanel', setup: () => () => h('div', { 'data-test': 'routing-panel' }) }),
-}))
 vi.mock('~/components/chat/TechPlanCard.vue', () => ({
   default: defineComponent({ name: 'TechPlanCard', setup: () => () => h('div', { 'data-test': 'tech-plan' }) }),
 }))

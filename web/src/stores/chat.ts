@@ -1456,8 +1456,8 @@ export const useChatStore = defineStore('chat', () => {
    *   (a) analyze_repository_relevance → 直接读 result.output.data；
    *   (b) deep_analysis → 扫 text 末尾 `[cross_repo_relevance:<trace_id>]\n<JSON>` 段。
    *
-   * 同时把 trace_id 写入即将持久化的 streamingMessage metadata，让 RoutingDecisionPanel
-   * 在 message 已渲染时也能反查 trace。
+   * 同时把 trace_id 写入即将持久化的 streamingMessage metadata，让 RelevanceBadge /
+   * RepoMultiSelector 在 message 已渲染时也能反查 trace。
    */
   function maybeParseRoutingTraceFromToolResult(args: {
     toolName: string
