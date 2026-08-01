@@ -375,9 +375,13 @@ usable = ok && lines.length > 0
 
 ## 11. 边界、冻结面与删除行核算
 
-### `git diff $PHASE_BASE --name-only`（源码，13 个）
+### `git diff $PHASE_BASE --name-only`（源码，**14** 个）
 
-PLAN 声明的 9 个 + 4 个 MCP 测试文件（偏离④，全部是 patch 落点重指）+ 收口 fix 的 1 个守卫文件（commit 4）。
+- **9 个** —— PLAN 声明的 `files_modified` 全集；
+- **+4 个** —— `server/tests/mcp_tools/` 下的既有用例，全部是 patch 落点重指（偏离④）；
+- **+1 个** —— `server/tests/delivery/test_blueprint_log_redaction_guard.py`，收口 fix（commit 4，§9）。
+
+⚠️ 三个实现 commit（`2242d4fe`..`96658922`）的footprint 是前 **13** 个；第 14 个由 commit 4 引入。§12 的可独立顺延性论证按 **4 个 commit** 为单位。
 
 ### 冻结面（全部 `git diff $PHASE_BASE -- <file>` 为 **0 行**）
 
