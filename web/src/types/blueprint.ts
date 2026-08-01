@@ -599,6 +599,49 @@ export interface BlueprintFindingActionResponse {
   thread_id: string
 }
 
+/**
+ * block 级人工编辑的单条 op（CLAR-03）。
+ *
+ * 形状逐字对齐后端 `delivery/services/blueprint_block_edit.apply_block_ops`：
+ * `insert` 用 `block_id` 作**锚点**、`position` 缺省 `after`；`replace` 的 `block.block_id`
+ * 一律以路径上的原 id 为准（前端传不一致的 id 只换来一条提示级 `block_id_immutable`）。
+ */
+export interface BlueprintBlockOp {
+  op: 'replace' | 'insert' | 'delete'
+  block_id: string
+  block?: BlueprintBlock
+  position?: 'before' | 'after'
+}
+
+/**
+ * 被拒条目。
+ *
+ * `reason` 六值：`unknown_op` / `block_not_found` / `missing_block` / `missing_block_id`
+ * 为**硬失败**（整批不落版本、端点 400）；`block_id_immutable` 是**提示级**（随成功结果
+ * 一并回显）；`apply_failed` 是整体兜底。
+ */
+export interface BlueprintBlockEditRejection {
+  op: string
+  block_id: string
+  reason: string
+}
+
+/**
+ * `POST .../blueprint-review/edit-blocks/` 的 **200** 响应。
+ *
+ * `status` 只可能是 `applied`（已落新版本）或 `unchanged`（同 content_hash 未翻版本，
+ * 重放安全）—— `rejected` / `invalid` 两档由端点映射成 **400**，经 `ApiError.body` 取
+ * `detail` 与 `rejected`，⛔ 不会走到这个类型上。
+ */
+export interface BlueprintBlockEditResponse {
+  status: string
+  version_id: string
+  version_no: number
+  rejected: BlueprintBlockEditRejection[]
+  /** 重锚定恒定四键 `{checked, reanchored, orphaned, skipped}`（best-effort，可能全零）。 */
+  reanchor: Record<string, number>
+}
+
 // ── 复用端点：确认门快照与八动作 ──────────────────────────────────────────────
 
 /** 确认门快照的单仓条目。 */

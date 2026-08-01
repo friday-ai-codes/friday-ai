@@ -16,7 +16,9 @@
  * artifact id 去调**必然 404 或空**。「引用了本蓝图 / 关联知识」这半个能力本相位**范围收窄**，
  * 顺延 Phase 116 的知识图谱物化；本相位的「关联」段只做「本蓝图引用了」+「关联项目」。
  *
- * ⛔ **不封装人审那个「块级批量改写」端点**：本相位无 block 正文编辑面（顺延 116），零调用点。
+ * ⭐ **块级人工改写端点已封装**（`editBlueprintBlocks`，CLAR-03 闭环相位补入）：查看器的
+ * block 编辑面经它落 `human_edit:{user_id}` 版本。115 当初把它排除在外是因为该相位不做正文
+ * 编辑面；那条顺延现已兑现，说明见 `.planning/v0.20.0-MILESTONE-AUDIT.md`「CLAR-03 闭环」。
  *
  * 观测：全部端点后端侧已记 caller 事件（含 GET —— 谁读过哪份蓝图必须有痕），前端不重复上报；
  * ⛔ 任何调用点不得把蓝图正文 / 批注正文 / citation quote 写进 `console` 或埋点。
@@ -25,6 +27,8 @@
 import type {
   BlueprintAnswerResponse,
   BlueprintApproveResponse,
+  BlueprintBlockEditResponse,
+  BlueprintBlockOp,
   BlueprintBoundaryDraftResult,
   BlueprintDocumentResponse,
   BlueprintEventsResponse,
@@ -171,6 +175,31 @@ export async function dismissFinding(
   )
 }
 
+/**
+ * 人工直接改写 block 正文（CLAR-03）。
+ *
+ * ⭐ **归属可审计**：成功版本的 `produced_by_ref == "human_edit:{user_id}"`，这是全仓唯一
+ * 的「这一版是人写的」通道（`ArtifactVersion` 无 `created_by_user_id`），也是 AI 侧
+ * `arestore_human_blocks` 人工块保护集的判据源 —— 换句话说，**经本函数落的版本才受
+ * 「AI 不得覆盖人工」那条保护链庇护**。
+ *
+ * 状态码分档：
+ * - **200** `status ∈ {applied, unchanged}` —— 前者已落新版本并重锚定，后者同 content_hash
+ *   未翻版本（重放安全，⛔ 不是失败）。
+ * - **400** `status ∈ {rejected, invalid}` —— 载荷结构性不可应用 / 编辑后不过 schema /
+ *   蓝图当前状态不在可编辑白名单。三者**都不落版本**；`ApiError.body.rejected` 逐条给出
+ *   `reason`，其中 `block_not_found` 意味着基线已被推进（并发冲突），解药是刷新重来。
+ */
+export async function editBlueprintBlocks(
+  artifactId: string,
+  payload: { ops: BlueprintBlockOp[] },
+): Promise<BlueprintBlockEditResponse> {
+  return post<BlueprintBlockEditResponse>(
+    `/delivery/artifacts/${artifactId}/blueprint-review/edit-blocks/`,
+    payload,
+  )
+}
+
 // ── 确认门（复用 112-05 的八端点）────────────────────────────────────────────
 
 /**
@@ -304,6 +333,7 @@ export default {
   answerThread,
   resolveFinding,
   dismissFinding,
+  editBlueprintBlocks,
   getBlueprintGate,
   confirmGate,
   removeRepo,
