@@ -107,9 +107,7 @@ async def _h_decompose(session: Any, engine: Any) -> StageOutcome:
     return StageOutcome(event="decomposed", stage_state_update={"decomposition": decomposition})
 
 
-def _routing_snapshot_payload(
-    routing: dict[str, Any], snapshot: dict[str, Any]
-) -> dict[str, Any]:
+def _routing_snapshot_payload(routing: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
     """组装 repo.routing 完整快照 payload（ROUTE-09，RESEARCH Pattern 3 形状）。
 
     候选（含 score/breakdown）取自 ``snapshot["candidates"]``（router ``to_dict``
@@ -1222,16 +1220,41 @@ _TECHNICAL_BLUEPRINT_STAGES = {
 
 # =============================== registration ================================
 
-# ⚠️ 退役观察期（116-01）：旧 process 仍**保留注册** —— 在途会话续驱依赖它，注销即崩。
-# 「不再是任何入口默认」是收口顺延同步点 2 后的收尾 plan 的事，本相位只做观察：当前残余
-# 流量经 `start_orchestration` 内的 `technical_plan_entry_used` 事件（按 entry_key 分桶，
-# ⛔ 不是 entrypoint）可 SQL 聚合。⛔ 六个 technical_plan 冻结文件一行不改。
+# ⭐ 旧 technical_plan process 的**退役标记**（同步点 2 收尾）。
+#
+# 116-01 落地时这里只是「退役观察期」的一段注释：旧链仍是四个入口的默认，本相位只
+# 靠 `technical_plan_entry_used` 事件（按 entry_key 分桶，⛔ 不是 entrypoint）观察残余
+# 流量。收口条件在同步点 2 才具备，现已兑现 —— `DEFAULT_ENTRY_SWITCH` 四键全部翻到
+# `technical_blueprint`，**旧链不再是任何入口的默认**。
+#
+# ⛔ **退役 ≠ 注销**：定义仍然注册，且必须注册 ——
+#   - 在途会话（升级前建的 `process_type="technical_plan"` 行）靠它续驱，注销即崩；
+#   - 运维可把 `blueprint.entry.switch` 的某个键显式置成 `"technical_plan"` 做单入口
+#     回滚，那条路径也要它在。
+# 换句话说：**此后落到这条 process 上的流量一律是显式 override，不是任何默认。**
+#
+# ⛔ 六个 technical_plan 冻结文件（decompose_segments / research_adapter /
+# architect_merge_adapter / merged_plan / clarify_adapter / render）一行不改。
+#
+# 本标记进 `ProcessDefinition.config`（既有字段，零迁移）⇒ 「它退役了」这件事**可被程序
+# 查到**，而不是只写在注释里：`get_process_definition("technical_plan").config` 即可读。
+TECHNICAL_PLAN_RETIREMENT: dict[str, Any] = {
+    "retired": True,
+    "retired_in": "v0.20.0",
+    "successor": "technical_blueprint",
+    # 为什么保留注册（写进数据，避免下一个人「顺手清理」）。
+    "retained_reason": "in_flight_sessions_and_explicit_rollback_override",
+    # 残余流量的观察口径（116-01 落的埋点，按 entry_key 分桶）。
+    "residual_traffic_event": "technical_plan_entry_used",
+}
+
 register_process_type(
     ProcessDefinition(
         process_type="technical_plan",
         artifact_type="technical_plan",
         initial_stage="decompose",
         stages=_TECHNICAL_PLAN_STAGES,
+        config=TECHNICAL_PLAN_RETIREMENT,
     )
 )
 
