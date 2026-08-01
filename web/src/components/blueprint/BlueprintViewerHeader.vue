@@ -165,7 +165,7 @@ const sidebarToggleLabel = computed(() =>
     <!-- ⭐ 「未经确认」常驻横幅：⛔ 无关闭控件、⛔ 无 dismiss —— 白名单外一律渲染 -->
     <div
       v-if="unconfirmed"
-      class="flex w-full items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
+      class="flex w-full items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
       role="status"
       data-testid="blueprint-unconfirmed-banner"
     >

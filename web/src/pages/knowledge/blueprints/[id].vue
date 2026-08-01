@@ -1030,7 +1030,7 @@ const sections = computed<NavSection[]>(() => [
             <!-- 历史版本：常驻只读提示 -->
             <div
               v-if="isHistoricalVersion"
-              class="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
+              class="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
               role="status"
               data-testid="blueprint-history-notice"
             >

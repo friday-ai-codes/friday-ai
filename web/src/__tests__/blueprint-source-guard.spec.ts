@@ -147,6 +147,20 @@ describe('blueprint 源码守卫', () => {
     ).toEqual([])
   })
 
+  it('§15 / UI-REVIEW L-1：扫描面内零裸 Tailwind 调色板色（有令牌就用令牌）', () => {
+    const found = violations(/\b(?:bg|text|border|ring|from|via|to)-(?:amber|emerald|rose|sky|violet|slate|zinc|gray|orange|lime)-\d{2,3}\b/)
+    expect(
+      found,
+      [
+        'UI-SPEC §15：语义色一律走 `main.css` 的 `@theme` 令牌，⛔ 不写裸调色板色。',
+        '历史版本提示条曾用 `border-amber-500/40 bg-amber-500/10`，而 `--color-warning` 就在 `main.css:90`。',
+        '怎么修：换成 `border-warning/40 bg-warning/10` 之类的令牌类；',
+        '批注四色与 diff 二色是**功能编码**，集中在 `annotationTokens.ts` 里写 `hsl()` 字面量，不在此列。',
+        `命中：\n${found.join('\n')}`,
+      ].join('\n'),
+    ).toEqual([])
+  })
+
   it('t-115-13：扫描面内零 v-html（批注/正文/quote 是半可信文本）', () => {
     const found = violations(/v-html/)
     expect(
