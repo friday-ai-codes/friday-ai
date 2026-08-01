@@ -48,6 +48,20 @@ STATUS_RESEARCHING = "researching"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 
+# ── 蓝图分档用的状态字面量（同步点 2 / G4）───────────────────────────────────
+#
+# 用字面量而非 ``BlueprintStatus.*``：本模块所有 delivery 模型 import 都在函数内（lazy）。
+# 等值由 ``tests/initiatives/test_feature_solution_blueprint_seam.py`` 的枚举对齐断言锁死。
+_BLUEPRINT_STATUS_FAILED = "failed"
+
+# 「蓝图已产出」的状态集 ⇒ 对外报 ``completed``（产物可读）。``pending_review`` 在集合内：
+# 对 feature list 这一面而言方案**确实已产出**，「还没过人审」由 ``current_status`` 如实
+# 标明（与 chat 的 pending_review = 成功 + 等人审同口径）。⛔ 与工作流入口不同：那边的
+# ``completed`` 会把载荷交给编码代理，故那边 pending_review 必须挂起（RELY-01）。
+_BLUEPRINT_PRODUCED_STATUSES = frozenset(
+    {"pending_review", "confirmed", "implementing", "implemented"}
+)
+
 
 class FeatureSolutionError(Exception):
     """可恢复的编排前置错误（携机器可读 code 供 MCP 映射 HTTP 状态）。"""
@@ -76,6 +90,10 @@ class FeatureSolutionState:
     markdown: str = ""
     artifact_version_id: str = ""
     error: dict[str, Any] = field(default_factory=dict)
+    # 蓝图链专属的两个**纯追加**键（旧链恒为空串 ⇒ 既有调用方零破坏）。
+    # ``current_status``：⛔ 键名刻意不叫 blueprint_status（INV-6 字段级旁路守卫）。
+    current_status: str = ""
+    artifact_id: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -93,6 +111,8 @@ class FeatureSolutionState:
             "markdown": self.markdown,
             "artifact_version_id": self.artifact_version_id,
             "error": self.error,
+            "current_status": self.current_status,
+            "artifact_id": self.artifact_id,
         }
 
 
@@ -172,12 +192,34 @@ class FeatureSolutionService:
 
         ``answers`` 形如 ``[{question_id, selected, freeform_text}]``。允许 answers 为空
         （表示「全部按推荐执行」）——此时用各题 recommended 自动作答，否则会话会一直挂着。
+
+        ⭐ **蓝图会话在此如实拒绝**（同步点 2 / G4）：本方法作答的是旧链的
+        ``Clarification`` 轮，蓝图的待答问题是 ``BlueprintThread``，两者不是一回事。
+        不拒绝的话会落进下面「没有待答轮 ⇒ 续驱后原样返回」那条分支 —— 调用方拿到一个
+        **200 且状态没变**的响应，读成「答复已收下」，实际上一个字都没写进去
+        （Phase 115 MJ-04 的同一形状：静默降级比失败更糟）。蓝图线程的作答面是
+        ``answer_blueprint_clarification`` MCP 工具与蓝图确认门 / 审查 REST 端点。
         """
         from delivery.models import Clarification
         from services.process_runtime import aanswer_round_and_resume
+        from services.process_runtime.blueprint_observation import is_blueprint_session
 
         started = time.perf_counter()
         session = await self._aload_session(session_id, actor)
+
+        if is_blueprint_session(session):
+            logger.warning(
+                "feature_solution_confirm_rejected_for_blueprint",
+                category="caller",
+                component=_COMPONENT,
+                session_id=str(session.id),
+                reason="blueprint_thread_answer_required",
+            )
+            raise FeatureSolutionError(
+                "blueprint_thread_answer_required",
+                "该会话为技术蓝图会话，待答问题是蓝图澄清线程；"
+                "请用蓝图澄清作答接口按 thread_id 逐条回答，本接口不受理。",
+            )
 
         clar = (
             await Clarification.objects.filter(session_id=session.id, answered_at__isnull=True)
@@ -462,8 +504,16 @@ class FeatureSolutionService:
         return resolved
 
     async def _abuild_state(self, session: Any, *, resolved: Any = None) -> FeatureSolutionState:
-        """会话 → 对外状态快照（含待确认题 / 分类 / 方案产物）。"""
+        """会话 → 对外状态快照（含待确认题 / 分类 / 方案产物）。
+
+        ⭐ **蓝图会话先分流**（同步点 2，审计 §4.1 的 G4）：下面那段是**旧链形态** ——
+        待答问题取自 ``ClarificationQuestion``（旧链子题模型），而蓝图链的待答问题挂在
+        ``BlueprintThread`` 上。⇒ 一条阻塞在规格门 / 确认门上的蓝图会话在本面**永久显示
+        ``researching``、问题列表恒空**，调用方看不到要答什么、也就无从解阻。
+        ⛔ 分流写成早返回 —— 开关关闭时旧链这段逐字不变。
+        """
         from delivery.models import ConvergenceSessionStatus
+        from services.process_runtime.blueprint_observation import is_blueprint_session
 
         meta = (session.decomposition or {}).get("feature_meta") or {}
         state = FeatureSolutionState(
@@ -481,6 +531,10 @@ class FeatureSolutionService:
             state.truncated = resolved.truncated
         else:
             state.feature_count = len((session.decomposition or {}).get("feature_segments") or [])
+
+        if is_blueprint_session(session):
+            await self._aapply_blueprint_state(session, state)
+            return state
 
         if session.status == ConvergenceSessionStatus.FAILED:
             state.status = STATUS_FAILED
@@ -528,6 +582,95 @@ class FeatureSolutionService:
             for row in rows
         ]
         return questions, str(rows[0].clarification_id)
+
+    # ── 蓝图分档（同步点 2 / G4；形状照 chat 的 _map_terminal_blueprint）──────────
+
+    async def _aapply_blueprint_state(self, session: Any, state: FeatureSolutionState) -> None:
+        """蓝图会话 → 对外状态快照（按**蓝图状态**分档，⛔ 不按 ``session.status``）。
+
+        ⭐ **对外四态闭集一字不扩**（``awaiting_confirmation`` / ``researching`` /
+        ``completed`` / ``failed``）—— 调用方（MCP 工具、对话 agent tool、前端）都按这四个
+        值分支，加第五个值等于让所有调用方同时回退。蓝图特有的信息用**纯追加**的两个键
+        携带：``current_status``（⛔ 键名不叫 ``blueprint_status``，那会命中 INV-6 的字段级
+        旁路守卫）与 ``artifact_id``（后续续取 / 作答的寻址键）。
+
+        分档：
+
+        =========================  ==========================================
+        蓝图状态                    对外状态
+        =========================  ==========================================
+        有 open+blocking 线程        ``awaiting_confirmation`` + 问题清单
+        ``failed`` / 会话 FAILED     ``failed``
+        ``pending_review``          ``completed``（已产出，``current_status`` 标明等人审）
+        ``confirmed`` / 实施中/完成   ``completed``
+        其余中间态                    ``researching``
+        =========================  ==========================================
+
+        ⭐ **线程档优先于一切**：``needs_clarification`` 与「会话已 DONE 但仍有未决
+        BLOCKER finding」都落这一档 —— 有东西要人回答时，先把问题给出去。
+        """
+        from delivery.models import ConvergenceSessionStatus
+        from services.process_runtime.blueprint_observation import ablueprint_observation
+
+        observation = await ablueprint_observation(session)
+        state.artifact_id = observation.artifact_id
+        state.current_status = observation.current_status
+
+        if observation.is_blocked:
+            state.status = STATUS_AWAITING_CONFIRMATION
+            # 键集与旧链问题项对齐（``question_id`` 位放 ``thread_id``），调用方零改动即可
+            # 渲染；``thread_id`` 另以显式键并列，供蓝图作答端点寻址。
+            state.questions = [
+                {
+                    "question_id": thread.get("thread_id", ""),
+                    "thread_id": thread.get("thread_id", ""),
+                    "question": thread.get("question", ""),
+                    "type": "text",
+                    "options": thread.get("options", []),
+                    "recommended": [],
+                    "kind": thread.get("kind", ""),
+                }
+                for thread in observation.threads
+            ]
+            state.clarification_id = observation.first_thread.get("thread_id", "")
+            return
+
+        if (
+            observation.current_status == _BLUEPRINT_STATUS_FAILED
+            or session.status == ConvergenceSessionStatus.FAILED
+        ):
+            state.status = STATUS_FAILED
+            state.error = session.error or {}
+            return
+
+        if observation.current_status in _BLUEPRINT_PRODUCED_STATUSES:
+            state.status = STATUS_COMPLETED
+            await self._aattach_blueprint_plan(session, state)
+            return
+
+        state.status = STATUS_RESEARCHING
+
+    @staticmethod
+    async def _aattach_blueprint_plan(session: Any, state: FeatureSolutionState) -> None:
+        """蓝图产物 → ``plan`` / ``markdown``（⛔ 不复用 v0 的 feature_solution 渲染器）。
+
+        ``render_feature_solution_markdown`` 读的是 v0 ``MergedPlan`` 的顶层键，对
+        blueprint/v1 会渲染出一篇**结构合法而内容为空**的文档。蓝图走它自己的渲染器
+        （水印由渲染器按 ``blueprint_status`` 无条件加，未确认时首行即标注）。
+        """
+        from delivery.models import ArtifactVersion
+        from services.process_runtime.blueprint_observation import render_observed_blueprint
+
+        version_id = getattr(session, "current_artifact_version_id", None)
+        if not version_id:
+            return
+        version = await ArtifactVersion.objects.filter(id=version_id).afirst()
+        if version is None:
+            return
+        state.artifact_version_id = str(version.id)
+        content = version.content if isinstance(version.content, dict) else {}
+        state.plan = content
+        state.markdown = render_observed_blueprint(content, state.current_status)
 
     @staticmethod
     async def _aattach_plan(session: Any, state: FeatureSolutionState) -> None:
