@@ -39,7 +39,7 @@
 - [x] **Phase 113: 分仓方案与融合（阶段 2/3）+ Context Bus** - repo_plan 逐仓方案 + 会话级共享上下文总线（实时读写/等待恢复/环检测）+ merge 融合装配（六段 + 引用强制 + 跨仓 API 对账）（FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03）— completed 2026-07-30（6/6 plans，verification passed 54/54）
 - [x] **Phase 114: 审查与澄清收敛** - AI 对抗审查七类规则与归因打回 + 澄清答案回灌产新版本 + 决策记录物化 + pending 语义 + 人工 block 编辑（FLOW-07, CLAR-02/03/04） (completed 2026-07-31)
 - [x] **Phase 115: 前端查看器与知识库** - BlueprintViewer 六段结构化渲染与批注层 + 二级引用预览 + 知识库技术方案 tab + 项目关联 + 人审终审 UI（VIEW-01/02/03/04, CLAR-01, FLOW-08） (completed 2026-07-31)
-- [ ] **Phase 116: 入口收编与导出** - MCP 异步澄清协议 + 全入口统一走蓝图编排 + 飞书导出升级 + 知识图谱物化 + 触点升级（GATE-01, VIEW-05）
+- [x] **Phase 116: 入口收编与导出** - MCP 异步澄清协议 + 全入口统一走蓝图编排 + 飞书导出升级 + 知识图谱物化 + 引用预览源码正文（GATE-01, VIEW-05，并闭合 115 顺延的 VIEW-04 / VIEW-02）— completed 2026-08-01（7/7 plans）。⚠️ **触点升级与默认入口切换未做**：硬依赖同步点 2（v0.19.0 Phase 109/110 合并），顺延为里程碑收尾之后的独立工作项 ⇒ GATE-01 保持 PARTIAL
 
 **执行顺序（依赖链）:** 111 → 112 → 113 → 114 → 115 → 116，线性。111 是数据与质量地基（schema/状态机/线程/章程/golden set 全是后续相位的消费对象）；112 先锁规格与仓库集（确认门锁定是 113 分仓方案的输入）；113 产出完整蓝图（114 才有东西可审）；114 收敛审查与澄清闭环（115 才有完整状态与线程可展示）；115 查看器就位后 116 才能做全入口收编（人审终审是收编的前置能力）。**与 v0.19.0 的同步点:** 同步点 1 = 0.19 Phase 107 合并主干（rebase 对齐澄清送达/提醒设施，影响 112/114 的送达通道，未合并前用现有澄清通道兜底）；同步点 2 = 0.19 Phase 109/110 合并（execution 投影与事件时间线契约就位，116 的触点升级与入口切换在其后执行）。
 
@@ -187,7 +187,7 @@ Plans:
 - [x] 116-04-PLAN.md — SC-4 图谱物化与反查：⭐ 第一个 task 是打通 relations 三层（_DEFAULT_RELATIONS 不含 REFERENCES 且中间两层不透传 ⇒ 边全对、端点 200、页面空白）+ knowledge/sources/blueprint.py normalizer（目标实体存在性预过滤 + 丢弃计数 sampling / 同目标 citation 聚合成一条边 / RELATES_TO 恰好 1 条 / ⛔ 去掉会变成谎言的 first_seen_version_no）+ 门控挂 create 与 add_version 两处（v1 骨架走 create，只挂后者会让新建蓝图查不到）+ knowledge_entity_id 换算键 + 前端补两块且 getArtifactAssociations 的零调用断言原样保留（VIEW-04）
 - [x] 116-05-PLAN.md — SC-3 渲染器与飞书导出：render_blueprint_markdown(content, *, blueprint_status) 三条不变量（必填 keyword-only + 闭合白名单让任何取值都关不掉标注 + ⛔ 零布尔开关，唯一可机器验的形式是 inspect.signature 断言）+ builtin_types 判别分支与 ArtifactTimelineSerializer 蓝图特判（⭐ 两个面都带标注，顺带修掉 current_version_markdown 的结构性空壳）+ 两个导出端点（availability 三判据 / 上游失败 400·502 中性 detail / ⭐ 留痕落 Interaction Ledger，导出前后 ArtifactVersion 计数不变且不进 BLUEPRINT_EVENTS）+ 前端常驻不可关闭横幅与按 availability 隐藏的导出按钮（VIEW-05）
 - [x] 116-06-PLAN.md — SC-2 MCP 异步澄清协议：blueprint_answer_action 抽取（MCP ⛔ 不直写线程 ⛔ 不自调 REST ⇒ 只剩共享 service 一条路；三道闸顺序有源码断言，finding 作答 400 且线程一字未变）+ 两个新工具（寻址键 artifact_id、⛔ 无第三个 list 工具、markdown 走 116-05 renderer）+ create_feishu_technical_plan 追加三键与 status=partial 且同步进 snapshot + ⭐ assumptions 三档（max_rounds 是真实新增且以 DEFAULT_SPEC_GATE_CONFIG 为唯一来源，三处调用点都要带档位否则 ambiguity_report 与 sampling 日志撒谎；assume_more ≠ skip_clarification 有正反并列）+ blueprint_notify 一个文件收敛澄清送达（GATE-01）
-- [ ] 116-07-PLAN.md — 代码预览源码正文读面（⭐ 本相位最后一个可独立顺延的 plan，顺延须同步改写 REQUIREMENTS VIEW-02 的顺延目标；**顺延时由 116-06 的相位出口检查兜底**）：先把 GetRepositoryFileView 的排除判定/镜像读取/分支解析/chunk 回退下沉成 services/repo_file_read.py（⛔ 复制一份违反 fail-closed 单一实现纪律，需回归 TOOL_SCHEMA_SNAPSHOT）+ 新增 file-lines 端点取 chunk_at 的中性口径（被排除/不存在/无镜像三者响应体逐字相同的 200 空，⛔ 不取 MCP 的 404 file_excluded）+ 区间超上界截断而非报错 + 前端引用预览升级为带正文与行高亮 + ⭐ 可独立顺延性实跑验证（VIEW-02）
+- [x] 116-07-PLAN.md — 代码预览源码正文读面（⭐ 本相位最后一个可独立顺延的 plan，顺延须同步改写 REQUIREMENTS VIEW-02 的顺延目标；**顺延时由 116-06 的相位出口检查兜底**）：先把 GetRepositoryFileView 的排除判定/镜像读取/分支解析/chunk 回退下沉成 services/repo_file_read.py（⛔ 复制一份违反 fail-closed 单一实现纪律，需回归 TOOL_SCHEMA_SNAPSHOT）+ 新增 file-lines 端点取 chunk_at 的中性口径（被排除/不存在/无镜像三者响应体逐字相同的 200 空，⛔ 不取 MCP 的 404 file_excluded）+ 区间超上界截断而非报错 + 前端引用预览升级为带正文与行高亮 + ⭐ 可独立顺延性实跑验证（VIEW-02）
 
 **UI hint**: yes
 
