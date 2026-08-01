@@ -2,10 +2,12 @@
 phase: 115
 slug: ui
 doc: UI-REVIEW
-status: advisory
+status: fixed
 blocking: false
 audited: 2026-08-01
 auditor: gsd-ui-auditor
+fixed: 2026-08-01
+fixer: "Claude (gsd-code-fixer)"
 baseline: ".planning/phases/115-ui/115-UI-SPEC.md（22 节，经 ui-checker BLOCK 轮订正后的committed 版）"
 diff_range: "88da0d21..HEAD -- web/"
 method: code-only
@@ -20,11 +22,24 @@ scores:
   registry_safety: 4
   overall: 19
   max: 24
+scores_after_fix:
+  copywriting: 3
+  visuals: 4
+  color: 4
+  typography: 4
+  spacing: 4
+  registry_safety: 4
+  overall: 23
+  max: 24
 findings:
   high: 2
   medium: 6
   low: 11
+fix_result:
+  fixed: 13
+  skipped: 4
 clean_pillars: [spacing, registry_safety]
+clean_pillars_after_fix: [visuals, color, typography, spacing, registry_safety]
 lint_new_problems: 0
 ---
 
@@ -296,3 +311,202 @@ UI-SPEC §14 的四档表里 Heading（段标题、卡片标题、面板标题�
 `web/src/utils/{blueprintBlocks,blueprintAnnotations}.ts`、`web/src/config/blueprintStatus.ts`、
 `web/src/composables/{useBlueprintLive,useBlueprintAnnotations,useCitationPreview}.ts`、
 `web/src/stores/useBlueprintViewerStore.ts`、`web/src/locales/zh-CN.json`、`web/src/styles/main.css`
+
+## Fix Log
+
+**修复于：** 2026-08-01 · 分支 `milestone/v0.20.0-blueprint`（worktree `v0.20-blueprint`）
+**结论：13 fixed / 4 skipped。** 两条 HIGH 全修、六条 MEDIUM 全修、十一条 LOW 修 7 跳 4。
+**总分 19 → 23 / 24**（Typography 2→4、Visuals 3→4、Color 3→4；Copywriting 维持 3，理由见文末）。
+
+⚠️ **先核实再动手**：本报告是 code-only 产出，且 Phase 116 在审计之后又落了十余个 commit
+（`8c1a54d4` 为修复起点），**报告里的行号普遍已漂移**。每条 findings 都按内容重新定位并
+复核过，其中**一条与实测不符**：L-9 说 `flow.steps` 是死键，实际 `flow.steps` 在
+`InteractionFlowsSection.vue:174,201` 与 `blueprintBlocks.ts:221` 有命中 —— 但那是**数据字段
+访问**（`flow.steps` 数组）不是 i18n 键，i18n 键侧的结论仍成立。另有一处报告未覆盖：
+`BlueprintViewerHeader.vue` 的「未经确认」横幅（116-05 新增，不在审计 diff 范围内）
+与 L-1 是**同一处违规**，已一并修掉，判断记录在 L-1 行。
+
+**每条都配了非恒真对照**——「一律加焦点环」「一律不开抽屉」「一律回显 detail」这类同样能让
+主断言变绿的错误实现都会被拦住。新增 **38 条**用例（1706 → 1744）。
+
+### HIGH
+
+| ID | 结论 | commit | 说明 |
+|---|---|---|---|
+| H-1 | **fixed** | `42fce716` | §18.3 的不透明 `--color-primary-600`（3.74:1）抽成 `FOCUS_RING_CLASS` 并入 `MARK_SHAPE_CLASS` ⇒ 四种 `<mark>` 落点与整块降级 `<button>` 一并生效。选中态 `ACTIVE_OUTLINE_CLASS` 是常态 outline、焦点环是 `focus-visible:` 变体，同元素上后者优先级更高，两者不互相吃掉 |
+| H-2 | **fixed** | `4dd132bb` | 四条程序化路径收敛成唯一入口 `revealAnnotations()`：宽屏只展开常驻侧栏（§5.2「`Sheet` 停用」+「`?thread=` 深链强制展开」），窄屏才开抽屉；抽屉本体再加 `v-if="!isWide"` 从 DOM 摘掉 |
+
+**修前红 / 修后绿证据**
+
+- **H-1**：`BlueprintBlock.spec.ts` 新增三条 —— 令牌全组合（四色 × 四处置态 × 选中态）、
+  三种 `<mark>` 落点（paragraph / list / pseudocode）、整块降级角标。只回滚
+  `annotationTokens.ts` 时 **3 条转红**；修后 30/30。每条都带「`outline-none` 仍在」的
+  非恒真对照 —— ⛔ 防止靠**删掉** `outline-none` 蒙混（那样浏览器默认环会与契约环叠成
+  两圈，且默认环本身不达 3:1）。
+- **H-2**：⚠️ **评审建议的 `xl:hidden` 单独用是不够的**（判断记录）：`SheetContent` 被
+  `display:none` 之后 reka-ui 的**焦点陷阱会锁进一个不可见容器**，`sheetOpen` 也仍为
+  `true`，两个侧栏实例的 `draftBody` 分叉问题一个都没解决 —— 只是把第二份藏起来。
+  故取「JS 闸为主（`useMediaQuery('(min-width: 1280px)')`）+ `v-if` 摘 DOM」，⛔ 没有再叠
+  一个用不上的 `xl:hidden`（本仓自己立的规矩：零消费的接口是死接口）。
+  另补一条 `watch(isWide)`：拉宽时收起抽屉，否则再拉回窄屏抽屉会「自己」弹出来。
+  新增六条用例，只回滚页面时 **3 条转红**：宽屏深链后侧栏实例数实测 **2**（与评审记录一致）。
+  ⚠️ happy-dom 无布局引擎 ⇒ 「任一宽度恰好一份」由两条**互补**断言表达：常驻侧栏带
+  `hidden`+`xl:flex`（<xl 不可见，类断言）、抽屉在 ≥xl **不存在于 DOM**（结构断言）。
+  另把 `Sheet` 桩从「恒渲染」改成「按 `open` 挂载/卸载」（reka-ui 的真实行为），
+  否则实例计数从一开始就失真。断点字面量 `1280` 由一条独立用例钉死（写成 `lg`/`2xl` 即转红）。
+
+### MEDIUM
+
+| ID | 结论 | commit | 说明 |
+|---|---|---|---|
+| M-1 | **fixed** | `3d1a0798` | `annotationCounts` 增出 `total` = 侧栏四组之和（四组互斥且穷尽，§20 断言 11 已钉死），顶栏改收 `annotationTotal` prop；三个语义徽标口径**一字不动**（它们各自是对的） |
+| M-2 | **fixed** | `48caf6ae` | 采纳评审建议把焦点环收敛成 `annotationTokens.FOCUS_RING_CLASS` 单一实现，`BlueprintCitationChip` / `BlueprintSelectionPopover` 原本各写一串的同值字面量一并改为消费它 |
+| M-3 | **fixed** | `7ab58976` | `<div>` → `<label>`，照抄顶栏同名开关的写法 |
+| M-4 | **fixed** | `ce34e71f` | 在**开弹层之前**记 `document.activeElement`，`watch(previewOpen)` 关闭时 `nextTick` 归还。⚠️ 按次记录而不是写死选择器 —— 触发元素是被点的**那一枚** chip |
+| M-5 | **fixed** | `a912bc55` | 补 `v-else` 一行文案接上 `mustHaves.empty`（⛔ 仍不出空态**卡**，与 `deferred_ideas` 的处理一致）；零新增 i18n 键 |
+| M-6 | **fixed** | `6d89f4b2` | 21 处 `text-sm font-semibold` → `text-base font-semibold`；`text-[11px]` / mono / Label 档一律不动，字号与字重档数不变 |
+
+**修前红 / 修后绿证据**
+
+- **M-1**：`total` 落进既有纯函数而不是页面里现算 —— 判据单一实现。用例带**非恒真对照**：
+  同一组数据下 `unresolvedBlocker + pendingClarification + orphaned` 实测 **2**、`total` **4**，
+  两者不相等才证明断言有效（老口径把失锚 blocker 数两次、把人工评论/已作答/已关闭全漏掉）。
+  另加两条源码守卫：组件源码不再出现 `counts.blocker + `。
+- **M-4**：修前红 2 / 修后绿 26。⚠️ 第一版「两枚 chip 各自归还」的用例**修前即绿** ——
+  漏了「真的把焦点移走」这一步，「什么都不做」也能过。已补 `expect(activeElement).not.toBe(chip)`
+  的中途断言后转红。这条记下来：焦点类断言必须先制造焦点位移。
+- **M-5**：§6.9 原文是「整段与其导航项都不渲染，不出空态卡」，但那半句已被 **P-4 订正**
+  （段容器与导航项改为无条件渲染，否则 `AnchorNavLayout` 的 observer 挂不上）⇒ 「不出空态卡」
+  留在原地就变成「只剩一个 `<h2>`」。⛔ 本次**没有**改成空态卡，只补一行文案，
+  既有用例 4a/4b（`blueprint-must-haves` 内容卡不存在）**未被放宽**，仍全绿。
+- **M-6**：守卫挂进既有 `blueprint-source-guard.spec.ts`（扫描面内 `text-sm font-semibold`
+  零命中），只回滚组件时转红。21 处与评审计数逐字一致。
+
+### LOW
+
+| ID | 结论 | commit | 说明 |
+|---|---|---|---|
+| L-1 | **fixed** | `d01e12ef` | 换成 `border-warning/40 bg-warning/10`。⭐ 顺带把 116-05 加进顶栏的「未经确认」横幅一并改掉（同相位创建的文件、同一处违规，留一半反而制造不一致）。两个色值实算几乎逐位相同 ⇒ **零视觉变化的纪律修正**。另加一条源码守卫：扫描面内零裸调色板色 |
+| L-2 | **skipped** | — | 见下方理由 |
+| L-3 | **fixed** | `fea56bdf` | 新增 `annotation.sidebarTitle`（i18n 追加点，纯追加一个键，文案「批注」不变） |
+| L-4 | **fixed** | `1ae4ec88` | landmark 名改用 L-3 刚加的静态键（零新增键）；计数已由各分组 Badge 提供 |
+| L-5 | **skipped** | — | 见下方理由 |
+| L-6 | **fixed** | `780a5f59` | 新增 `quality.noKeyConclusionsDetail`，把「分母为 0 ⇒ 这里的 100% 不算数」讲明白，⛔ 不再复用空态串 |
+| L-7 | **fixed** | `835b945b` | 5xx 档去掉 `:description`；400 档的回显是契约要求的，保留（有非恒真对照钉死） |
+| L-8 | **fixed** | `d74d35c1` | `CollapsibleTrigger` 加 `min-h-11`，并补一个 `data-testid`（此前无可定位标记） |
+| L-9 | **skipped** | — | 见下方理由 |
+| L-10 | **fixed** | `c0085fdb` | 三个徽标包一层 `flex min-w-0 flex-nowrap overflow-x-auto`，徽标加 `shrink-0 whitespace-nowrap`（⛔ 均非颜色类，Badge 的 variant 口径不动） |
+| L-11 | **skipped** | — | 见下方理由 |
+
+### 跳过项的完整理由
+
+#### L-2（`Separator` 与 `border-l` 两条平行竖线）—— **skipped**
+
+**这不是实现缺陷，是契约自身的冗余，评审自己也这么写。** §11.1 逐字要求：「与左侧阅读/编辑
+动作之间用 `Separator`（`~/components/ui/separator`）+ `ml-auto` 隔开，**容器 `pl-4 border-l
+border-border`**」—— 两者都点名了，`BlueprintReviewActions.vue:77-78` 是**忠实实现**。
+
+删掉其中一条 = 单方面偏离一条写死的契约条款。本轮的定位是「按契约修实现」，⛔ 不是
+「按观感改契约」；正确形态是**在 §11.1 上改掉那半句**（选定留 `border-l` 还是留
+`Separator`），再让实现跟上 —— 那是一次契约修订，应当与 UI-SPEC 的下一次订正同批走，
+而不是在一条 LOW 的修复里悄悄推翻。已登记进 `.planning/STATE.md`。
+
+**成本侧**：改动本身只有两行（删 `<Separator>` + 删 import），⛔ 不是「太难所以不做」。
+
+#### L-5（质量面板指标丢单位）—— **skipped**
+
+评审给了两条并列改法，本轮取**后者**（「在 §11.2 上登记这处刻意简化」），三条理由：
+
+1. **metric-card 形态本身已经承载了单位。** 四个格子一律「标签在上、大数在下」，标签写的是
+   「人工编辑量」「澄清轮次」。把 §11.2 的 `{v} 次人工编辑` 塞进那个 `text-2xl font-semibold`
+   的数值位，读出来是「人工编辑量 / **12 次人工编辑**」—— 标签与值互相复述。
+2. **会破坏 §14 的 Display 档。** 数值位是 24px，「12 次人工编辑」在 `sm:grid-cols-2` 的窄格
+   里必然换行，四个格子高度参差 —— 为了补一个已在标签里的单位，牺牲的是这一排的对齐。
+3. **评审自己判它是 LOW 且给了这条出路**，措辞是「metric-card 形态下…本身是常见范式，
+   故仅列为 LOW」。这属于评审口径里的「设计决策而非缺陷」。
+
+⇒ 按评审给的第二条改法**登记为刻意简化**，已写进 `.planning/STATE.md`（下次修订 UI-SPEC
+时把 §11.2 那两格的期望值改成「标签携带单位、值为裸数字」）。
+
+#### L-9（7 个死 i18n 键）—— **skipped**
+
+1. **零用户可见影响、零运行时代价。** 它们不渲染、不参与打包体积的有意义部分，
+   属纯清洁度项 —— 而本轮每一条 commit 都要付「改动面」的账。
+2. **其中两条不是「垃圾」，是有价值的缺口标记。** `review.disabledReadonly`（只读态下终审
+   按钮的禁用原因）与 `viewer.highlightJump`（命中高亮后的跳转提示）命名的都是契约描述过、
+   实现尚未接上的**affordance**。删掉它们等于把「这里还缺一句话」这条信息一起删掉；
+   而把它们**接上**属于新增交互，远超一条 LOW 的边界。
+3. **删除本身也不是零风险。** `review.disabledReadonly` / `repo.fitnessReasons` 目前活在
+   两个 spec 的 i18n fixture 里，删主文件会留下悬空 fixture；真要删得连测试一起清。
+4. ⚠️ **评审这条的证据有一处不准**：`flow.steps` 在 `InteractionFlowsSection.vue:174,201` 与
+   `blueprintBlocks.ts:221` 有命中 —— 那是**数据字段**访问不是 i18n 键，结论侥幸仍成立，
+   但说明这份清单是文本匹配得来的，逐条删除前需要再核一遍。
+
+⇒ 登记进 `.planning/STATE.md`，与「接上那两个 affordance」一并定夺。
+（`mustHaves.empty` 不在此列 —— 它已由 M-5 接上消费方。）
+
+#### L-11（`useCitationPreview` 的零消费分支）—— **skipped**
+
+**这条的两个改法都不是「小改动」，是架构取舍。**
+
+- **改法 A「删掉未消费的分支」**：`openCitation` / `loading` / `data` / `fallback` / `close` 全删之后，
+  `openWithSnapshot` 里的 `snapshotOf` 与 `CitationFallback` 接口也跟着失去意义，composable
+  塌缩成 4 行的 `{ open, citation }` 包装 —— 而 §13.8 给它的职责是「预览弹层的开关**与
+  citation 装配**」，且它的 docstring 里那段「⭐ 兜底不留白（强制）：任何非 2xx 一律走快照兜底，
+  ⛔ 不关弹窗、⛔ 不渲染空白弹窗、⛔ 不回显后端错误体」是 §10.1 的**契约原文**。
+  删掉它等于把契约的一处落地实现删掉，只留下五个子件里各自的副本。
+- **改法 B「把子件取数收编进来」**：要把 `CitationCodePreview` / `CitationKnowledgePreview` /
+  `CitationCharterPreview` / `CitationBlueprintPreview` 四个子件的取数（各自不同的端点、
+  各自不同的兜底判据，其中 `CitationCodePreview` 还是 116-07 刚做的双数据源）搬进页面层。
+  那是一次跨五个文件的重构，且会翻掉 `citationPreview.spec.ts` 里 20 余条按子件组织的用例。
+
+⇒ 两条路都超出一条 LOW 的边界（也超出本轮「按 punch list 逐条落手」的定位）。
+登记进 `.planning/STATE.md`：**正确时机是 §13.8 下一次修订**，那时一并定夺「装配职责归
+composable 还是归子件」，⛔ 不是单点删几个 `return` 键。
+
+### 支柱重新评分
+
+| 支柱 | 审计 | 修后 | 依据 |
+|------|:----:|:----:|------|
+| 1. Copywriting | 3 | **3** | `mustHaves.empty` 已接（M-5）、三处 key 复用错位全改（L-3 / L-4 / L-6）；但 L-5 的单位与 L-9 的死键**按登记方式收口而非修掉** ⇒ ⛔ 不给自己涨这一分 |
+| 2. Visuals | 3 | **4** | 该支柱被点名的两条（`Sheet` 缺 `xl` 闸 / `must_haves` 空态是光秃秃的标题）**全修**，各有修前红证据 |
+| 3. Color | 3 | **4** | 「唯一污点」已消除，且加了源码守卫锁死；顺带把 116 的同款违规一并清了 |
+| 4. Typography | 2 | **4** | 唯一被点名的问题（21 处 Heading 矮一档）**全修**；字号档数（4）与字重档数（2+1 例外）本来就合规 ⇒ 无残留 |
+| 5. Spacing | 4 | **4** | 无发现，维持；L-8 另把 44px 例外的最后一处落地补齐 |
+| 6. Registry Safety | 4 | **4** | 无发现，维持；本轮**零新增运行时依赖**（`@vueuse/core` 的 `useMediaQuery` 取自既有依赖） |
+
+**总分 19 → 23 / 24。**
+
+### 门禁
+
+| 门 | 结果 |
+|---|---|
+| 前端 `pnpm exec vitest run` | **1744 passed / 1 skipped**（基线 1706/1，**+38** 全为本轮新增；唯一 skip 仍是既有的 `layouts/__tests__/default.spec.ts`） |
+| 前端 `pnpm type-check` | **exit 0** |
+| 前端 `pnpm lint` | **111 problems**（与基线逐字相同）；本轮 30 个改动文件与 27 个告警文件**交集为空**（`comm -12` 实测）⇒ 零新增 |
+| 前端 `pnpm build` | 成功。⚠️ 它按既知行为改写 `src/components.d.ts`（**纯删除 29 条**无关项）—— 已 `git checkout` 还原，**未提交**；`pnpm-workspace.yaml` 本轮无 catalog 回填 |
+| 后端 | **未触碰**：`git diff --name-only 8c1a54d4..HEAD` 的 30 个文件**全部在 `web/src/` 下**，`server/` 零改动 ⇒ 无需复跑（基线 8980 passed / 1 failed，那 1 条是 worktree 环境产物 `test_skills_snapshot_guard`） |
+
+### 硬约束自检
+
+| # | 约束 | 结论 |
+|---|---|---|
+| 1 | §13.2 前端 CREATE-ONLY / 四个零改动组件 | ✓ 改动的 30 个文件里，`web/src/locales/zh-CN.json` 是**五个追加点之一且只追加了 2 个键**（`annotation.sidebarTitle` / `quality.noKeyConclusionsDetail`，⛔ 零删除、零修改既有键）；其余 29 个**全部是 115/116 自己新建的**。`TechPlanCard` / `RoutingDecisionPanel` / `NodeDataTab` / `ArtifactTimeline` **零改动**（`git diff` 实测无输出） |
+| 2 | 不弱化已锁定的形状 | ✓ **十段 `<section>` 恒渲染 + 静态字面量 id**（用例 1「loading 时 section[id] == 10」未被放宽，仍绿）；**finding 不可达作答通道**（`threadSidebar.spec.ts` 断言 1a/1c 未动，仍绿）；**「未经确认」横幅结构性不可关闭**（本轮只改它的**颜色类**，`v-if="unconfirmed"` 与「横幅内零按钮」用例一字未动）；**未决 BLOCKER 仍取快照权威字段**（M-1 只加 `total`，⛔ 没碰 `unresolvedBlockerCount` 那条 `??` 链，用例 10/11 仍绿） |
+| 3 | 零新增运行时依赖 / 技术栈不变 | ✓ `package.json` / `pnpm-workspace.yaml` 一字未动；`useMediaQuery` 取自既有 `@vueuse/core` |
+| 4 | 只用设计令牌 | ✓ L-1 把最后两处裸调色板色换成 `--color-warning` 并加守卫；批注四色与 diff 二色仍**只**在 `annotationTokens.ts` / `.diff-*`；焦点环由三处各写一串**收敛成单一令牌**（M-2） |
+| 5 | zh-CN | ✓ 新增注释 / docstring / commit message 全中文；两个新 i18n 键均走 `t()` |
+
+### 本轮顺带发现（**未修**，已登记 STATE）
+
+- **`ui/badge` 的 `warning` variant 自己也绕开了 `--color-warning`**：
+  `components/ui/badge/index.ts:19` 写的是 `bg-amber-500/10 text-amber-700`，而
+  `--color-warning: hsl(38 92% 50%)` 在 `main.css:90` **全仓零消费方**（L-1 修完后才有两处）。
+  两个色值实算几乎相同 ⇒ 当下无视觉后果，但「令牌定义了却没人用、大家各写调色板色」这条
+  是全站级的 —— `ui/badge` 是**既有共享原语**，不在本相位 CREATE-ONLY 边界内，故只登记不改。
+
+---
+
+_Fixed: 2026-08-01_
+_Fixer: Claude (gsd-code-fixer)_
+_Scope: 13 fixed / 4 skipped · 19 → 23 / 24_
