@@ -730,3 +730,102 @@ class _FakeDelegate:
 
     def __init__(self, version_id: Any) -> None:
         self.session = type("_S", (), {"current_artifact_version_id": version_id})()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 13. ⭐ get_technical_blueprint 的 schema_version 判别（116-REVIEW MN-06）
+#
+# delivery.Artifact 里同时住着旧链 merge 产出的 v0 technical_plan content
+# （architect_merge_adapter 仍在生产）。回退前本工具对任意 artifact 都无条件走蓝图渲染器
+# ⇒ v0 content 的每一段都 .get 取不到：十段全是「—」、sections 六段全空，外加一行
+# 「⚠️ 未经确认」。agent 拿到的是一份**看起来渲染成功、实则一无所有**的方案，且没有任何
+# 字段能让它分辨「这不是蓝图」。仓内另外两个渲染入口都先判别再分派，MCP 这一处没有。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _make_v0_artifact(*, project_id: str = _SCOPE_PROJECT_ID) -> Artifact:
+    """造一份**旧链 v0** ``technical_plan`` artifact（⛔ 无 ``schema_version``）。
+
+    刻意带上 ``meta.project_id`` 让它**通过范围闸** —— 否则用例会因为 400 而变成恒真，
+    根本走不到判别那一步。
+    """
+    content = {
+        "title": "旧链 v0 方案",
+        "summary": "架构融合产出的旧外形",
+        "execution_plan": [],
+        "meta": {"project_id": project_id},
+    }
+    return async_to_sync(ArtifactService().create)(
+        "technical_plan", content, created_by_user_id="tester"
+    )
+
+
+def test_v0_artifact_is_indistinguishable_from_a_missing_one(mcp_client, access_user) -> None:
+    """⭐ v0 content ⇒ 404 且响应体与「artifact 不存在」**逐字相同**。
+
+    ⛔ 不新增 ``is_blueprint: false`` 之类的键：那会给出一个「这个 id 存在但不是蓝图」的
+    存在性差分。该 artifact 对本工具而言确实不存在。
+    """
+    client, _ = mcp_client
+    v0 = _make_v0_artifact()
+
+    v0_resp = client.post(_GET_URL, {"artifact_id": str(v0.id)}, format="json")
+    missing_resp = client.post(_GET_URL, {"artifact_id": str(uuid.uuid4())}, format="json")
+
+    assert v0_resp.status_code == missing_resp.status_code == 404
+    assert v0_resp.json() == missing_resp.json(), "⛔ 两者必须逐字不可区分"
+
+
+def test_v0_artifact_never_yields_a_watermarked_empty_blueprint(mcp_client, access_user) -> None:
+    """⭐ 回退前的症状：一份十段全「—」、sections 全空、却带「未经确认」水印的空蓝图。"""
+    client, _ = mcp_client
+    v0 = _make_v0_artifact()
+
+    body = client.post(_GET_URL, {"artifact_id": str(v0.id)}, format="json").json()
+
+    assert "markdown" not in body
+    assert "sections" not in body
+    assert "未经确认" not in json.dumps(body, ensure_ascii=False)
+
+
+def test_v1_artifact_is_the_reverse_control(mcp_client, access_user) -> None:
+    """⭐ 非恒真对照：``blueprint/v1`` ⇒ 200 且照常渲染（⛔ 判别没写反、没把蓝图也挡掉）。"""
+    client, _ = mcp_client
+    artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW)
+    _make_session(artifact, access_user)
+
+    resp = client.post(_GET_URL, {"artifact_id": str(artifact.id)}, format="json")
+
+    assert resp.status_code == 200
+    assert resp.json()["markdown"]
+    assert set(resp.json()) == set(TOOL_SCHEMA_SNAPSHOT["get_technical_blueprint"]["response"])
+
+
+def test_the_discriminator_does_not_copy_the_schema_version_literal() -> None:
+    """⛔ MN-10：判别常量必须与渲染器同源懒 import（复制字面量 ⇒ schema 演进时漏改）。
+
+    AST 断言（⛔ 不做文本包含判：注释里出现该字面量是允许的，**代码里**不行）：
+    ``mcp_tools/views.py`` 的所有字符串**常量**中不得出现 ``"blueprint/v1"``。
+    """
+    import ast
+    from pathlib import Path
+
+    src = Path("mcp_tools/views.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    literals = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value == "blueprint/v1"
+    ]
+    assert literals == [], ("schema_version 字面量被复制进代码", literals)
+    # 判别处确实用了懒 import 来的那个常量
+    assert (
+        "BLUEPRINT_SCHEMA_VERSION"
+        in src[
+            max(0, src.index("get_technical_blueprint_not_a_blueprint") - 1200) : src.index(
+                "get_technical_blueprint_not_a_blueprint"
+            )
+        ]
+    )
