@@ -13,8 +13,9 @@
 5. **早退**：空 questions / 无 project / 无收件人 ⇒ 各自早退且 ``send_card`` 零调用。
 6. ⛔ **题面正文不进日志**：AST 断言日志 kwarg 里没有 ``question`` / ``questions`` 原文实参。
 
-⭐ 另外守**收敛法自述**：模块 docstring 写明「同步点 1 之后只改这一个文件」，且
-``anotify_blueprint_clarification`` 在生产代码里**只有一处接线**（⛔ 不在四个入口各接一次）。
+⭐ 另外守**收敛法自述**：模块 docstring 写明「同步点 1 之后只改这一个文件」，且送达收口在
+生产代码里的接线点恰为 CLAR-04 的**两个半边** —— 规格门开线程时的首次送达（116-06）与
+apscheduler 周期提醒的到期重推（归档前收尾）（⛔ 仍不在四个入口各接一次）。
 """
 
 from __future__ import annotations
@@ -455,8 +456,20 @@ def test_module_declares_the_single_file_convergence_promise() -> None:
             )
 
 
-def test_there_is_exactly_one_production_wiring_point() -> None:
-    """⭐ 一处接线不是四处：一个定义 + 一个 import + 一处调用。"""
+def test_wiring_points_are_exactly_the_two_clar04_halves() -> None:
+    """⭐ 接线是 CLAR-04 的**两个半边**，不是四个入口各接一次。
+
+    白名单恰为两条，各自「一个 import + 一处调用」：
+
+    1. ``blueprint_spec_gate`` —— 开出阻塞澄清线程时的**首次送达**（116-06）。
+    2. ``blueprint_review_action`` —— apscheduler 周期提醒的**到期重推**（归档前收尾）。
+       114-05 那条周期任务此前只写 ``last_reminded_at`` 锚点、不投递，用户收不到任何
+       通知 ⇒ CLAR-04「按配置周期提醒」只兑现了「记账」那一半。
+
+    ⛔ **这条白名单只增这一次，且仍是逐字路径**：加第三条之前请先确认它不是「在某个入口
+    上又接了一次」—— 那正是本断言从一开始要拦的形态（送达细节必须留在收口模块里，
+    同步点 1 换 107 的送达设施时仍然只改那一个文件）。
+    """
     hits: list[str] = []
     for path in _SERVER_DIR.rglob("*.py"):
         rel = path.relative_to(_SERVER_DIR).as_posix()
@@ -466,14 +479,15 @@ def test_there_is_exactly_one_production_wiring_point() -> None:
         hits.extend([rel] * text.count("anotify_blueprint_clarification"))
 
     callers = sorted({rel for rel in hits if rel != _NOTIFY_REL})
-    assert callers == ["services/process_runtime/blueprint_spec_gate.py"], (
-        "⛔ 不在四个入口各接一次：生产代码里只允许 spec_gate 这一处调用方",
+    assert callers == [
+        "delivery/services/blueprint_review_action.py",
+        "services/process_runtime/blueprint_spec_gate.py",
+    ], (
+        "⛔ 不在四个入口各接一次：生产代码里只允许「首次送达 + 周期重推」两处调用方",
         callers,
     )
-    assert hits.count("services/process_runtime/blueprint_spec_gate.py") == 2, (
-        "唯一调用方里也只允许「一个 import + 一处调用」",
-        hits,
-    )
+    for rel in callers:
+        assert hits.count(rel) == 2, (f"{rel} 里也只允许「一个 import + 一处调用」", hits)
 
 
 def test_redaction_helper_is_used() -> None:
