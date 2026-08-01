@@ -2,6 +2,7 @@
 phase: 116-entry
 plan: 01
 subsystem: process_runtime + delivery-api
+requirements: [GATE-01]
 tags: [engine-dispatch, entry-switch, gate-scope, observability, security]
 requires: []
 provides:

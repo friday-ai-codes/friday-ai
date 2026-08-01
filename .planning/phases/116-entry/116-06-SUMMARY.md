@@ -2,6 +2,7 @@
 phase: 116-entry
 plan: 06
 subsystem: mcp-protocol + blueprint-answer + spec-gate + feishu-delivery
+requirements: [GATE-01]
 tags: [gate-01, mcp-tools, shared-service, fail-closed, assumptions-tiers, observability, security]
 requires: ["116-02", "116-03", "116-05"]
 provides:

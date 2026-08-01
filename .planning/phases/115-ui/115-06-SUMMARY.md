@@ -2,6 +2,7 @@
 phase: 115-ui
 plan: 06
 subsystem: blueprint-viewer-page-and-entries
+requirements: [VIEW-01, VIEW-02, VIEW-03, VIEW-04, CLAR-01, FLOW-08]
 tags: [frontend, vue3, routing, anchor-nav, error-grading, i18n-handoff, mutation-tested, append-only]
 requires:
   - "115-02 地基：`~/types/blueprint`、`~/api/blueprints`、`~/api/deliveryArtifacts`、`~/config/blueprintStatus`、`~/utils/blueprintBlocks`、`~/stores/useBlueprintViewerStore`、`~/composables/{useBlueprintLive,useBlueprintAnnotations,useCitationPreview}`、i18n 子树、源码守卫 spec"

@@ -2,6 +2,7 @@
 phase: 116-entry
 plan: 05
 subsystem: delivery-artifacts + blueprint-render + feishu-export + blueprint-ui
+requirements: [VIEW-05]
 tags: [blueprint, markdown-render, feishu-export, watermark, observability, view-05]
 requires: ["116-04"]
 provides:

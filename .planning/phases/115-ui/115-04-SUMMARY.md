@@ -2,6 +2,7 @@
 phase: 115-ui
 plan: 04
 subsystem: blueprint-threads-review-and-diff
+requirements: [CLAR-01, FLOW-08, VIEW-01]
 tags: [frontend, vue3, annotations, human-review, diff, a11y, i18n-gap, mutation-tested]
 requires:
   - "115-02 全部地基：`~/utils/blueprintAnnotations` 的 `sidebarGroups`、`~/utils/blueprintBlocks` 的 `classifyBlockDiff` / `iterBlocks` / `blockText`、`~/config/blueprintStatus` 的 `getBlueprintStatusConfig` / `producedByReason`、`~/types/blueprint` 全量契约、i18n `knowledge.blueprints.*`"

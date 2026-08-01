@@ -2,6 +2,7 @@
 phase: 116-entry
 plan: 03
 subsystem: process_runtime + entry-wiring + chat
+requirements: [GATE-01]
 tags: [entry-switch, engine-dispatch, project-scope, chat-hitl, barrier-feedback, observability, security]
 requires: ["116-01", "116-02"]
 provides:

@@ -2,6 +2,7 @@
 phase: 115-ui
 plan: 07
 subsystem: blueprint-confirmation-gate-ui
+requirements: [VIEW-01]
 tags: [frontend, vue3, mutation-tested, append-only, deferrable-tail, scope-increment, no-permission-inference]
 requires:
   - "112-05：`blueprint-gate/` 八端点（快照 + 七动作），本 plan 只消费、⛔ 后端零改动"
