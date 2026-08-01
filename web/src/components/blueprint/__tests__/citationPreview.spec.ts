@@ -266,7 +266,9 @@ describe('citation 预览 —— ⭐ 三条兜底并列（弹窗保持打开、�
     expect(wrapper.props('open')).toBe(true)
   })
 
-  it('2c. ⭐ chunk-at 返回 200-空 chunks（usable=false）⇒ CitationFallback（P-3 最常见的一档）', async () => {
+  it('2c. ⭐ chunk-at 与 file-lines **都**不可用 ⇒ CitationFallback（P-3 最常见的一档）', async () => {
+    // ⚠️ 116-REVIEW MN-05 起判据是**两个数据源的并集**：只有 chunk-at 空**并且** file-lines
+    // 也读不到正文才落快照（`beforeEach` 里 file-lines 默认 usable=false）。
     api.getChunkAt.mockResolvedValue({ chunks: [], usable: false })
 
     const wrapper = mount(CitationCodePreview, {
@@ -329,6 +331,7 @@ describe('citation 预览 —— ⭐ 三条兜底并列（弹窗保持打开、�
   })
 
   it('4. ⛔ 不回显后端错误体（chunk-at 的错误体键是 error，通用键会回落成无意义文案）', async () => {
+    // 两个数据源都不可用（file-lines 由 `beforeEach` 默认 usable=false）⇒ 落快照（MN-05）。
     api.getChunkAt.mockRejectedValue(
       new ApiError(400, '请求失败', { error: '缺少必填参数 path' }),
     )
@@ -471,6 +474,51 @@ describe('citationCodePreview —— ⭐ 116-07 源码正文与行高亮（VIEW-
     expect(wrapper.find('[data-testid="citation-code-truncated"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="citation-code-source"]').exists()).toBe(true)
     expect(wrapper.findComponent(CitationFallback).exists()).toBe(false)
+  })
+
+  it('15. ⭐ chunk-at 不可用但 file-lines 有正文 ⇒ 仍渲染源码正文（116-REVIEW MN-05）', async () => {
+    // 两个数据源回退前是**串联**的：`chunk-at` 不可用即整块落快照，`file-lines` 根本没机会
+    // 参与。而这可达且不罕见 —— `chunk-at` 依赖 Qdrant 索引命中，`file-lines` 的首选路径却
+    // 是本地 bare 镜像 ⇒「镜像有、索引里没有 / 被索引排除」的文件会让 VIEW-02 的核心交付
+    // 在一整类文件上静默不可达，症状与「这个引用本来就没源码」完全同形。
+    api.getChunkAt.mockResolvedValue({ chunks: [], usable: false })
+    api.getRepositoryFileLines.mockResolvedValue(fileLinesResult([
+      { line_no: 12, text: 'def main():' },
+      { line_no: 13, text: '    return 1' },
+    ]))
+
+    const wrapper = mountCodePreview(
+      { file_path: 'src/a.py', line_start: 12, line_end: 13 },
+      { title: '被引来源', quote: '这是旧快照' },
+    )
+    await settle()
+
+    expect(wrapper.findComponent(CitationFallback).exists()).toBe(false)
+    expect(wrapper.find('[data-testid="citation-code-source"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('def main():')
+    // 行高亮照常工作（两个数据源解耦后 file-lines 独立驱动正文块）
+    expect(
+      wrapper.findAll('[data-citation-highlight="true"]').map(r => r.attributes('data-line-no')),
+    ).toEqual(['12', '13'])
+    // ⭐ chunk-at 此后只驱动 chunk 计数徽标那一行 ⇒ 它不可用时该徽标不出现
+    expect(wrapper.text()).not.toContain('共 2 个片段')
+    // 路径与行号区间回落 citation 的 locator（primaryChunk 为空）
+    expect(wrapper.find('[data-testid="citation-code-path"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('第 12–13 行')
+  })
+
+  it('16. 非恒真对照：两个数据源都不可用时仍然落快照（⛔ 没把门整个拆掉）', async () => {
+    api.getChunkAt.mockResolvedValue({ chunks: [], usable: false })
+    api.getRepositoryFileLines.mockResolvedValue(fileLinesResult([]))
+
+    const wrapper = mountCodePreview(
+      { file_path: 'src/a.py', line_start: 12, line_end: 13 },
+      { title: '被引来源', quote: '这是旧快照' },
+    )
+    await settle()
+
+    expect(wrapper.findComponent(CitationFallback).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="citation-code-source"]').exists()).toBe(false)
   })
 
   it('14. line_end 缺失 ⇒ 请求区间退化成单行、只高亮那一行', async () => {

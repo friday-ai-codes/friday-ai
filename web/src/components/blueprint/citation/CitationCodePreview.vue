@@ -24,6 +24,10 @@
  * `locator.line_start` 缺失时**两个请求都不发** —— 后端行号参数均为必填，发出去也是注定
  * 失败的往返。
  *
+ * ⭐ **两个数据源各自独立降级，⛔ 不串联**（116-REVIEW MN-05）：顶层只在**两者都**不可用时
+ * 落 `CitationFallback`。`chunk-at` 此后只驱动 chunk 计数徽标那一行，`file-lines` 单独驱动
+ * 源码正文块 —— 「索引里没有但镜像里有」的文件仍然能看到正文与行高亮。
+ *
  * ⛔ 任何分支都不回显后端错误体（会泄露内部路径与参数校验细节，T-115-23）；⛔ 任何失败都
  * 只降级、**不关弹窗**（115-03 立的既有纪律）。
  */
@@ -161,8 +165,16 @@ function isCited(lineNo: number): boolean {
   <div class="space-y-3">
     <Skeleton v-if="previewLoading" class="h-24 w-full" />
 
+    <!--
+      ⭐ 顶层渲染门看**两个数据源的并集**（116-REVIEW MN-05）：⛔ 不能只挂 `chunk-at` 的
+      `usable` —— 那让两个数据源**串联**，`chunk-at` 不可用即整块落快照、`file-lines`
+      根本没机会参与。而这可达且不罕见：`chunk-at` 依赖 Qdrant 索引命中，`file-lines` 的
+      首选路径却是本地 bare 镜像 ⇒ 一个「镜像有、索引里没有 / 被索引排除」的文件会让
+      VIEW-02 的核心交付（源码正文 + 行高亮）在**一整类文件上**静默不可达，而症状（落快照）
+      与「这个引用本来就没源码」完全同形。
+    -->
     <CitationFallback
-      v-else-if="!usable"
+      v-else-if="!usable && !sourceUsable"
       :title="fallback?.title"
       :quote="fallback?.quote"
     />
