@@ -14,6 +14,20 @@
  *    同理 —— 一个灰色的 `0` 只会让人误以为「有一项待处理」。
  * 3. ⛔ **零颜色字面量**：语义色一律走 `Badge` 的 `variant`，⛔ 不在 `Badge` 上用 `:class` 追加颜色类。
  *
+ * ## ⭐ 「未经确认」常驻横幅（Phase 116-05，VIEW-05）
+ *
+ * 判据是 `CONFIRMED_STATUSES` 这个**闭合白名单**，三个字面量与后端
+ * `server/services/process_runtime/blueprint_render.py` 的 `_SUPPRESS_WATERMARK_STATUSES`
+ * **逐字对齐**（两侧各有一条变异用例：去掉任一成员即转红）。白名单**之外**的一切取值
+ * ——含空串与未知串——都渲染横幅。
+ *
+ * ⛔ **横幅不可关闭、不做 dismiss**：这是 RELY-01 在界面上的唯一落点，标注一丢，未经人审
+ * 的方案就以正式方案的面貌流通。把开关物理删掉，而不是默认开着。
+ *
+ * ⭐ **导出按钮按 availability「隐藏」而不是 disabled**：不可用时按钮**不存在于 DOM**，
+ * 用户不会反复点、反复失败。本组件**只 emit 不发请求**（115-04 立的纪律）——availability
+ * 查询与导出 mutation 都归页面。
+ *
  * ⚠️ **与 PLAN 的两处签名差异**（登记在 115-06-SUMMARY 的 Deviations）：
  * - 删掉 PLAN 列的 `snapshot` prop —— 顶栏需要的 `currentStatus` / `revisionRound` / 三个计数
  *   都由页面派生后单独传入，快照原件在这里没有消费者（沿用 115-03 订正一「零消费的接口是死接口」）。
@@ -49,6 +63,9 @@ const props = withDefaults(defineProps<{
   currentStatus?: string
   revisionRound?: number
   submitting?: boolean
+  /** 飞书导出可用性（页面查 availability 后传入）；⛔ 非 `true` 一律不渲染导出按钮。 */
+  exportAvailable?: boolean
+  exporting?: boolean
 }>(), {
   doc: null,
   counts: () => ({ blocker: 0, clarification: 0, orphaned: 0 }),
@@ -61,6 +78,8 @@ const props = withDefaults(defineProps<{
   currentStatus: '',
   revisionRound: 0,
   submitting: false,
+  exportAvailable: false,
+  exporting: false,
 })
 
 const emit = defineEmits<{
@@ -71,7 +90,22 @@ const emit = defineEmits<{
   'approve': []
   'reject': []
   'toggle-closed-annotations': [value: boolean]
+  'export': []
 }>()
+
+/**
+ * ⭐ 抑制「未经确认」横幅的**闭合白名单**。
+ *
+ * 三个字面量与后端 `blueprint_render._SUPPRESS_WATERMARK_STATUSES` 逐字相同。
+ * ⛔ 这是白名单不是黑名单：**集合之外的一切取值都出横幅**（含空串、含未知串）——
+ * 新增一个蓝图状态时默认「未确认」，方向是 fail-safe 的。
+ */
+const CONFIRMED_STATUSES = ['confirmed', 'implementing', 'implemented'] as const
+
+/** 常驻横幅的唯一判据；⛔ 无 dismiss、无 localStorage、无开关。 */
+const unconfirmed = computed(
+  () => !(CONFIRMED_STATUSES as readonly string[]).includes(props.currentStatus),
+)
 
 const { t } = useI18n()
 
@@ -124,6 +158,17 @@ const sidebarToggleLabel = computed(() =>
     class="card sticky top-0 z-30 flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3"
     data-testid="blueprint-viewer-header"
   >
+    <!-- ⭐ 「未经确认」常驻横幅：⛔ 无关闭控件、⛔ 无 dismiss —— 白名单外一律渲染 -->
+    <div
+      v-if="unconfirmed"
+      class="flex w-full items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
+      role="status"
+      data-testid="blueprint-unconfirmed-banner"
+    >
+      <span class="icon-[lucide--alert-triangle]" aria-hidden="true" />
+      <span>{{ t('knowledge.blueprints.export.unconfirmedBanner') }}</span>
+    </div>
+
     <!-- 标题：与知识库主页 H1 同款字号（§14 的唯一例外） -->
     <h1 v-if="title" class="min-w-0 max-w-full truncate text-2xl font-bold tracking-tight">
       {{ title }}
@@ -198,6 +243,19 @@ const sidebarToggleLabel = computed(() =>
       {{ annotationTotal > 0
         ? t('knowledge.blueprints.annotation.sidebarToggle', { n: annotationTotal })
         : t('knowledge.blueprints.annotation.sidebarToggleEmpty') }}
+    </Button>
+
+    <!-- ⭐ 导出按钮：availability 非 true ⇒ **不渲染**（⛔ 不是 disabled + tooltip）；只 emit -->
+    <Button
+      v-if="exportAvailable"
+      variant="outline"
+      size="sm"
+      :disabled="exporting"
+      data-testid="blueprint-header-export"
+      @click="emit('export')"
+    >
+      <span class="icon-[lucide--file-up] mr-1.5" />
+      {{ t('knowledge.blueprints.export.action') }}
     </Button>
 
     <!-- ⭐ 终审操作区：可用性判断、二次确认与 Tooltip 全在 115-04 的组件里，本组件只透传 -->

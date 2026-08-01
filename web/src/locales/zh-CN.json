@@ -341,6 +341,13 @@
         "sectionNavLabel": "跳转到段落",
         "highlightJump": "已定位到目标位置"
       },
+      "export": {
+        "unconfirmedBanner": "未经确认 —— 本方案尚未经人工终审，导出物同样会带此标注",
+        "action": "导出到飞书",
+        "success": "已导出到飞书文档",
+        "openDoc": "打开文档",
+        "unavailable": "飞书文档服务暂时不可用，请稍后重试"
+      },
       "mustHaves": {
         "truths": "可观察行为断言",
         "artifacts": "必须存在的产物",

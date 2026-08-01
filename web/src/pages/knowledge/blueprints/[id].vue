@@ -251,6 +251,22 @@ const diffBaseQuery = useQuery({
   retry: false,
 })
 
+/**
+ * 飞书导出可用性（Phase 116-05，VIEW-05）。
+ *
+ * ⭐ 与 `gateQuery` 同款例外：**它的任何非 200 都不进错误分档** —— 只决定导出按钮是否
+ * 渲染，⛔ 不弹 toast、⛔ 不影响四个主查询驱动的页面状态。
+ */
+const exportAvailabilityQuery = useQuery({
+  queryKey: computed(() => ['blueprint', 'export-availability', artifactId.value]),
+  queryFn: () => blueprintsApi.getBlueprintExportAvailability(artifactId.value),
+  enabled: computed(() => Boolean(artifactId.value)),
+  staleTime: 30_000,
+  retry: false,
+})
+
+const exportAvailable = computed(() => exportAvailabilityQuery.data.value?.available === true)
+
 const content = computed(() => docQuery.data.value?.content ?? null)
 
 const threads = computed<BlueprintThreadDetail[]>(() => threadsQuery.data.value?.threads ?? [])
@@ -663,6 +679,43 @@ async function onRejectSubmit(payload: BlueprintRejectPayload): Promise<void> {
 }
 
 /**
+ * 导出到飞书（Phase 116-05，VIEW-05）。
+ *
+ * 三档分档：**200** 成功并给一个可点的文档链接；**400** 原样回显后端中性 `detail`
+ * （配置/权限类，重试也不会好）；**502** 上游暂不可用，提示稍后重试。
+ *
+ * ⛔ **零乐观更新**；⛔ **不 invalidate `['blueprint']` 前缀** —— 导出不改任何蓝图状态，
+ * 失效等于白刷五个查询。
+ */
+const exporting = ref(false)
+
+async function onExportToFeishu(): Promise<void> {
+  if (exporting.value)
+    return
+  exporting.value = true
+  try {
+    const result = await blueprintsApi.exportBlueprintToFeishu(artifactId.value)
+    toast.toast.success(t('knowledge.blueprints.export.success'), {
+      description: result.url,
+      action: {
+        label: t('knowledge.blueprints.export.openDoc'),
+        onClick: () => window.open(result.url, '_blank', 'noopener'),
+      },
+    })
+  }
+  catch (error) {
+    if (error instanceof ApiError && error.status === 400) {
+      toast.error(error.detail)
+      return
+    }
+    toast.error(t('knowledge.blueprints.export.unavailable'))
+  }
+  finally {
+    exporting.value = false
+  }
+}
+
+/**
  * 回复澄清 / 评论线程。
  *
  * ⭐ 端点**恒 200**，`reflow.status` 只决定语气：`applied` 成功 / `unchanged` · `noop` 提示 /
@@ -895,6 +948,9 @@ const sections = computed<NavSection[]>(() => [
         :current-status="currentStatus"
         :revision-round="snapshotQuery.data.value?.revision_round ?? 0"
         :submitting="submitting"
+        :export-available="exportAvailable"
+        :exporting="exporting"
+        @export="onExportToFeishu()"
         @toggle-sidebar="viewerStore.toggleSidebar()"
         @open-annotations="openAnnotationSheet()"
         @change-version="versionParam = $event"
