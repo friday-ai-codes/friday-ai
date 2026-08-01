@@ -506,6 +506,7 @@
         "countOrphaned": "失锚 {n}",
         "selection": {
           "comment": "发起评论",
+          "edit": "编辑此块",
           "copy": "复制原文"
         }
       },
@@ -547,6 +548,21 @@
         "dismissSuccess": "已标记为误报忽略",
         "noopNotice": "该发现此前已有结论，本次未覆盖",
         "confirm": "确认处置"
+      },
+      "edit": {
+        "title": "编辑本块正文",
+        "body": "保存后生成一个新版本，并记为你的人工编辑；后续 AI 改写不会覆盖它，冲突时会开线程来问你",
+        "placeholder": "写入本块的正文…",
+        "save": "保存并生成新版本",
+        "delete": "删除本块",
+        "deleteTitle": "删除本块",
+        "deleteBody": "删除后挂在本块上的批注会失去锚点（仍可在「失锚批注」里查看，但不再指向正文）。该操作会生成一个新版本，无法原地撤销。",
+        "deleteConfirm": "确认删除",
+        "unsupported": "本块是表格，暂不支持在此直接编辑正文",
+        "applied": "已保存，当前版本 v{version_no}",
+        "unchanged": "正文无实质改动，未生成新版本",
+        "conflictNotice": "方案正文在你编辑期间已被更新，这次修改基于的已不是最新版本，未生成新版本",
+        "conflictRefresh": "刷新后重试"
       },
       "version": {
         "switch": "切换版本",
