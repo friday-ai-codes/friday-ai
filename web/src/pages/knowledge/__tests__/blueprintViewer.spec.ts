@@ -21,6 +21,8 @@
  * `zh-CN.json`）。⭐ 任何可能间接渲染时序图的组件一律 stub。
  */
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
@@ -129,7 +131,7 @@ const i18n = createI18n({
             fallbackResearching: '调研中…',
             fallbackAiReviewing: 'AI 审查中…',
           },
-          annotation: { sidebarToggleEmpty: '批注', crossBlock: '评论只能针对同一段落内的文字，请缩小选区' },
+          annotation: { sidebarTitle: '批注', sidebarToggleEmpty: '批注', crossBlock: '评论只能针对同一段落内的文字，请缩小选区' },
           version: { historyNotice: '正在查看历史版本 v{n}，操作已禁用', backToCurrent: '回到当前版本' },
           readonly: { notice: '已确认的蓝图不可直接改写，要改请先驳回' },
           review: {
@@ -590,6 +592,17 @@ describe('蓝图查看器 —— 线程侧栏的 xl 断点闸（H-2）', () => {
     const { wrapper } = mountPage()
     await flush()
     expect(wrapper.find('[data-testid="blueprint-sidebar-sheet"]').exists()).toBe(true)
+  })
+
+  it('22b. 抽屉标题用独立的 sidebarTitle 键，⛔ 不复用按钮的零计数文案（L-3）', async () => {
+    media.matches = false
+    routeState.query = { thread: 'th-1' }
+    const { wrapper } = mountPage()
+    await flush()
+    expect(wrapper.find('[data-testid="blueprint-sidebar-sheet"]').text()).toContain('批注')
+    const page = readFileSync(resolve(process.cwd(), 'src/pages/knowledge/blueprints/[id].vue'), 'utf8')
+    expect(page).toContain('annotation.sidebarTitle')
+    expect(page).not.toContain('annotation.sidebarToggleEmpty')
   })
 
   it('23. 非恒真对照：窄屏未触发任何路径 ⇒ 抽屉不自己弹出来', async () => {
