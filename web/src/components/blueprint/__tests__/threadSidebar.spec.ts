@@ -412,3 +412,20 @@ describe('线程卡选中区的契约焦点环（M-2）', () => {
     }
   })
 })
+
+/**
+ * ⭐ UI-REVIEW M-3 回归：「显示已关闭批注」开关的可访问名。
+ *
+ * `Switch` 上既无 `aria-label` 也无 `id`/`for`，外层若是 `<div>`，读屏念出来就是一个
+ * **无名 switch**，而且点文字不切换。顶栏那个同名开关的写法（`<label>` 包住）是对的。
+ */
+describe('侧栏「显示已关闭批注」开关的可访问名（M-3）', () => {
+  it('11a. ⭐ 开关与文案包在同一个 <label> 里（⛔ 不是裸 div）', () => {
+    const wrapper = mountSidebar({ threads: [makeThread()] })
+    const control = wrapper.find('[data-testid="blueprint-show-closed"]')
+    expect(control.exists()).toBe(true)
+    const label = control.element.closest('label')
+    expect(label).not.toBeNull()
+    expect(label?.textContent).toContain('显示已关闭批注')
+  })
+})
