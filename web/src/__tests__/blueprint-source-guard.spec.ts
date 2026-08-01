@@ -87,18 +87,47 @@ describe('blueprint 源码守卫', () => {
     ).toEqual([])
   })
 
-  it('§20 断言 10：edit-block / edit-blocks / editBlocks 零命中', () => {
-    const found = violations(/edit-blocks?|editBlocks/)
+  // ⭐ 原 §20 断言 10「edit-blocks 零命中」已于 CLAR-03 闭环相位**反转**。
+  //
+  // 那条断言当初的「怎么修」写的是「删掉该入口；要改内容走人审驳回再重新产出」—— 那是一句
+  // **反对该能力存在**的设计论证，而同一条断言的上一行又写「顺延 Phase 116」（排期语气）。
+  // 两者不可能同时为真，而 CLAR-03 的需求文本承诺的就是「人类可直接编辑蓝图内容（block 级）」。
+  //
+  // 单一立场（现行）：**block 编辑面已交付**。当初那条设计论证的前提也已不成立 ——
+  // 114-MJ-04 给 `edit-blocks` 加了 `is_blueprint_editable` 状态闸，已 `confirmed` 的蓝图
+  // 一律 400，「要改先驳回」由后端结构性兜住，不再需要靠「前端不给入口」这条软纪律。
+  //
+  // 守卫不删而是换靶子：现在钉的是**端点路径字面量只许出现在 `~/api/blueprints.ts`**。
+  // 组件/页面里手写 URL 会绕开那一层的类型契约与状态码分档注释，是这条链最容易漂移的地方。
+  it('§20 断言 10（已反转）：端点路径字面量只在 api 层，扫描面内零命中', () => {
+    const found = violations(/blueprint-review\/edit-blocks|['"`]\/delivery\/.*edit-blocks/)
     expect(
       found,
       [
-        '本相位**没有** block 正文编辑面（UI-SPEC §0.1 硬边界第 3 条），顺延 Phase 116。',
-        '这条存在的理由：`edit-blocks/` 端点会落新版本并改写人工块保护集，在只读评审面开这个',
-        '入口等于绕过「要改先驳回」的纪律。',
-        '怎么修：删掉该入口；确实需要改内容时走人审驳回（`reject/`）再重新产出。',
+        'block 编辑面**已交付**（CLAR-03），但端点路径只能写在 `src/api/blueprints.ts` 里。',
+        '这条存在的理由：`editBlueprintBlocks` 那一层带着 200/400 分档与 `human_edit:` 归属的',
+        '契约说明；组件里手写一份 URL 就等于绕过它，两边分档迟早各说各话。',
+        '怎么修：改调 `blueprintsApi.editBlueprintBlocks(artifactId, { ops })`。',
         `命中：\n${found.join('\n')}`,
       ].join('\n'),
     ).toEqual([])
+  })
+
+  it('§20 断言 10b：block 编辑面确实存在（⛔ 防这条能力被静默删回去）', () => {
+    // 反向断言：上面那条只说「不许手写 URL」，它在**入口整个消失**时同样平凡通过。
+    // CLAR-03 就是栽在这种「守卫全绿而能力不可达」上的，这里补一条正向的。
+    const files = scanFiles()
+    const hasDialog = files.some(file => file.path.endsWith('BlueprintBlockEditDialog.vue'))
+    const hasCall = files.some(file => file.content.includes('editBlueprintBlocks'))
+    const hasEntry = files.some(file => file.content.includes('blueprint-selection-edit'))
+    expect(
+      [hasDialog, hasCall, hasEntry],
+      [
+        'CLAR-03 首句承诺「人类可直接编辑蓝图内容（block 级）」，该能力必须在产品面可达。',
+        '三个支点：编辑弹窗组件、经 api 层的调用点、选区浮层里的入口按钮。',
+        `实测：dialog=${hasDialog} call=${hasCall} entry=${hasEntry}`,
+      ].join('\n'),
+    ).toEqual([true, true, true])
   })
 
   it('§20 断言 4：404 分支只用 error.notFoundOrForbidden 一个 i18n 键', () => {
