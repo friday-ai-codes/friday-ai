@@ -72,15 +72,14 @@ const metrics = computed(() => [
   },
 ])
 
-/** 三段中文名并列，作为旁注徽标的 `title` 详解（说清「哪三处全空」）。 */
+/**
+ * 旁注徽标的 `title` 详解（说清「哪三处全空」**以及为什么这会让 100% 失真**）。
+ *
+ * ⚠️ 原先复用空态串 `sectionEmpty` ⇒ 渲染成「本方案未涉及现状分析 / 仓库关联 / 影响范围」，
+ * 作为解释性 tooltip 读起来像在**陈述事实**而不是解释指标口径（UI-REVIEW L-6）。
+ */
 const noKeyConclusionsDetail = computed(() =>
-  t('knowledge.blueprints.sectionEmpty', {
-    name: [
-      t('knowledge.blueprints.section.currentStateAnalysis'),
-      t('knowledge.blueprints.section.repoAssociations'),
-      t('knowledge.blueprints.section.impactAnalysis'),
-    ].join(' / '),
-  }),
+  t('knowledge.blueprints.quality.noKeyConclusionsDetail'),
 )
 </script>
 

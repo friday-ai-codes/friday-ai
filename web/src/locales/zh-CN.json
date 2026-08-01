@@ -639,6 +639,7 @@
         "clarificationRounds": "澄清轮次",
         "noData": "暂无数据",
         "noKeyConclusions": "无关键结论",
+        "noKeyConclusionsDetail": "现状分析 / 仓库关联 / 影响范围三处均为空，覆盖率的分母为 0 ⇒ 此处的 100% 不代表证据齐备",
         "title": "方案质量"
       },
       "citation": {

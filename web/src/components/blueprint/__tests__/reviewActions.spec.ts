@@ -77,6 +77,8 @@ const i18n = createI18n({
             humanEditVolume: '人工编辑量',
             clarificationRounds: '澄清轮次',
             noData: '暂无数据',
+            noKeyConclusions: '无关键结论',
+            noKeyConclusionsDetail: '现状分析 / 仓库关联 / 影响范围三处均为空，覆盖率的分母为 0 ⇒ 此处的 100% 不代表证据齐备',
           },
           annotation: { quotedSnapshot: '引用时的原文快照' },
           diff: { baseline: '基线版本' },
@@ -252,6 +254,19 @@ describe('⭐ §20 断言 7：质量指标三态并列（null / 0 / 正值）', 
     expect(warned.find('[data-testid="blueprint-quality-no-key-conclusions"]').exists()).toBe(true)
     const clean = mountWith(BlueprintQualityPanel, { quality: { ...base, citation_coverage: 1 }, hasKeyConclusions: true })
     expect(clean.find('[data-testid="blueprint-quality-no-key-conclusions"]').exists()).toBe(false)
+  })
+
+  /**
+   * ⭐ UI-REVIEW L-6：旁注徽标的 `title` 是**解释指标口径**，⛔ 不是复述空态。
+   *
+   * 原先复用空态串 `sectionEmpty` ⇒ 渲染成「本方案未涉及现状分析 / …」，读起来像在陈述
+   * 事实而不是在解释「为什么这里的 100% 不算数」。
+   */
+  it('5c. ⭐ 旁注徽标的 title 讲清口径（⛔ 不复用空态串）', () => {
+    const wrapper = mountWith(BlueprintQualityPanel, { quality: { ...base, citation_coverage: 1 }, hasKeyConclusions: false })
+    const title = wrapper.find('[data-testid="blueprint-quality-no-key-conclusions"]').attributes('title') ?? ''
+    expect(title).toContain('分母为 0')
+    expect(title).not.toContain('本方案未涉及')
   })
 })
 
