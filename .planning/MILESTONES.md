@@ -1,5 +1,28 @@
 # Milestones
 
+## v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 编排产出直连执行流 + 过程可见） (Completed: 2026-08-02，未打 tag)
+
+**Phases completed:** 5 phases (105/106/107/109/110，原 108「方案深度」已于 2026-07-29 整相位移交 v0.20.0), 39 plans, 101 tasks；19/19 需求映射，收口 **17 满足 / 2 部分 / 0 未达**；里程碑审计 **tech_debt**（唯一里程碑级 BLOCKER 已结构性闭合并经独立复核；遗留 ROUTE-03「生产 `nr_snapshot` 未写入」+ RELY-02「澄清送达需真实飞书」两条 PARTIAL 与 **27 项人工验收全未执行**）见 [milestones/v0.19.0-MILESTONE-AUDIT.md](./milestones/v0.19.0-MILESTONE-AUDIT.md)
+
+立项动因是一次生产事故的实证排查：用户拿到的「技术方案」根本不是技术方案流水线产出的——两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`，agent 等不到就绕道 `create_coding_plan` 徒手编了一份。根因链实测定位为 haiku 档误配 → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替。本里程碑在三处切断这条链，并把路由从「一个不可解释的分数」做成可拆解、可回归、可复现的多信号函数。
+
+**Key accomplishments:**
+
+- **编排解锁与评估标尺（Phase 105）**：置信度改由分数 margin **确定性推导**（`S(1)>=θ_abs ∧ margin>=θ_margin`），LLM 降为只降不升的输入而非决策者——Stage 1 三种失联形态下编排仍能分级并自动推进（反向对照：把 `derive_confidence` 短路为恒 `low` 即复现事故形态，degraded 套件 14 红）；分数去截断、逐信号 `breakdown` 严格满足 `Σ == score` 并落 trace；Stage 1 幂等由系统层保证（输入哈希缓存 + LLM 只输出排列 + decode 固定 + 稳定 tie-break）；14 条 golden set（含事故用例与跨组样本）+ 三规则回归门禁进默认 pytest suite，快照可零网络离线回放。
+- **多信号打分函数重构（Phase 106）**：三信号扩为六信号纯函数——MaxP + pivoted-size-normalized 对数饱和 breadth 消除大单体的尺寸偏置、业务域/技术栈/团队元数据**真正入分**（缺失走权重重归一化而非补 0，「未知 ≠ 不匹配」）、活跃度改指数衰减连续量且废弃惩罚封顶在活跃度项内不再乘性污染总分；权重与十个常数外置为单个 `SystemSetting` JSON 键，专用端点 + 校验单点 + 管理页操作面，改完下一次路由即生效且结果绑定 `weight_set_version`。
+- **分层呈现与链路韧性（Phase 107）**：新增零 Django 依赖的 `repo_router_ranking` 六个纯函数（分组标注 / delta 迟滞置顶 / rank-swap 预算裁剪 / 凸组合 / 降级原因 6 值闭集 / 参数 clamp）；入口把项目关联仓从**硬过滤**改为独立的 `grouping_repository_ids` **分组依据**，`global` 分区从此不再恒空；Stage 1 改为首调 + 1 次重试共享同一 `budget_deadline` 的有界调用；新增 `expire_pending_clarifications` 超时出口（CAS 幂等 + 真实续驱 + 无条件注册的 60s job），会话不再永久停在 `waiting_clarification`。
+- **双脊柱合流（Phase 109）**：编排产出经幂等投影 service 直连「选目标仓 → 配置分支 → 确认编码 → 飞书导出」，四步共用同一 `CodingPlan.id` 有 e2e 护栏；在 **schema 层**删掉 `create/update_coding_plan` 的 `tech_plan` / `affected_files` 创作入参改为必填 `artifact_version_id`——「由对话模型徒手编写方案正文」这条路径被键集合枚举式断言焊死；草稿方案服务端 fail-closed（未显式确认整批拒绝、DB 零写入），界面横幅 + 常驻徽标 + 阻断弹层 + 飞书导出告示四处一致标注「未经代码调研」。
+- **过程可观测（Phase 110）**：只写不读的 `ConvergenceSessionEvent` 接上 chat SSE（`_emit_event` 单点 best-effort fan-out，stage handler 零改动即获推送），运行时快照新增 `orchestration` 与 `plan_research_sessions` 两个物理隔离分支让刷新/重连可完整还原、调研容器日志走出「读取时被谓词过滤掉」的坑；六步阶段时间线 + 按仓日志组挂上编排气泡，执行期自查出并闭合 GAP-1（前半程失败时时间线撒谎）。
+- **ROUTE 缺口闭环（2026-08-02，横跨 105/107/110）**：里程碑审计发现 ROUTE-01 / ROUTE-02 / ROUTE-07 / RELY-03 四条需求的用户可见半边全部建在 `RoutingDecisionPanel` 上，而该组件自 2026-05-29 起在 SPA 内**零挂载点**且有锁测试断言其不渲染。处置是把解释职能折进活着的候选面（`RoutingCandidateList.vue`，挂在「分析过程 → 仓库分级路由」的 L2 详情区）并**删除**旧组件与它的 39 条隔离单测；同时闭合一个此前无人发现的洞——`v1_fallback` 的 snapshot 只有 stage1，落到精简分支而该分支不带 `degraded`，于是降级徽标恰好在**真降级**的那条路径上永不显示（后端补三键，加性无迁移）。取证方式刻意改为**从 `ChatMessageBubble` 宿主出发走用户真实两次点击**：把候选面从宿主摘掉即 11 条用例全灭。
+
+**质量基线（收口实跑）：** 后端 8206 passed / 61 skipped / 1 xfailed；前端 1604 passed（1630 − 39 删除的死组件单测 + 13 新增，精确对账）/ 202 files；`vue-tsc --noEmit` 退出 0；`pnpm lint` 111 problems（较基线 −1，新增问题文件 0）；`pnpm build` 通过；`makemigrations --check` 无变更。审计期与闭环期共执行 7 组反向/变异对照（改坏 → 跑测 → 还原 → 确认工作区干净）。
+
+**Known deferred items at close:** **27 项人工验收全部 pending**（105:3 / 106:4 / 107:6 / 109:6 / 110:8），其中 5 项载重——107-UAT #1 澄清必达真机、107-UAT #5 pending 态可见性、109-UAT #1 编排→PR 真机全链、110-UAT #1 SSE 直播节奏、110-UAT #2 `plan_session_id` 跨进程相等——是里程碑目标第 1/3/4 分句仅存的端到端证据。两条 PARTIAL：ROUTE-03（生产 `measure_repo_index_stats --write-snapshot` 从未执行 ⇒ 尺寸归一化静默禁用，一条命令即可闭合）、RELY-02（澄清送达半边需真实飞书环境）。发布前置：109-UAT #5——迁移 0033 会让全部存量 `CodingPlan` 落 `provenance=draft`、历史方案卡集体出现「未经代码调研」横幅，**必须先向用户交代**否则会被当成故障。其余债务见审计 §6.1/§6.2 与 §9.3。
+
+**What's next:** 本里程碑与 v0.20.0「技术方案蓝图」双 worktree 并行开发，v0.20.0 已在其分支归档。两条分支合并后再统一处置台账与 v0.20.0 Phase 116 顺延的触点升级（同步点 2）。**未起下一里程碑，未打 tag**（本仓 tag 是发布轨，最新 `v0.18.0`，与 GSD 里程碑不同编号；给未合并分支打 tag 会制造假发布点）。
+
+---
+
 ## v0.17.0 统一知识库与全链路联动 (Shipped: 2026-07-22)
 
 **Phases completed:** 5 phases (100–104), 18 plans；19/19 需求（KNOW-01~06 / LOOP-01~05 / AGENT-01~04 / UNIFY-01~04）；里程碑审计 **tech_debt**（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留 11 项真实 Qdrant·飞书·容器·Cursor 端人工验证 + 若干接受/递延债务）见 [milestones/v0.17.0-MILESTONE-AUDIT.md](./milestones/v0.17.0-MILESTONE-AUDIT.md)
