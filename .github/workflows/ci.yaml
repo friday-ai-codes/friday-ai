@@ -80,8 +80,17 @@ jobs:
         run: uv run ruff check .
       # 默认 addopts 即 SQLite 且 `-m 'not ... and not postgres_queue'`，
       # 无需显式 -m；该步骤即"SQLite 默认路径不受影响"的零回归门禁。
+      #
+      # 失败时把 short summary 的 FAILED/ERROR 行转为 ::error:: 注解：注解经
+      # check-runs 公开 API 可读，无需仓库登录即可定位失败用例（完整日志需要
+      # actions:read 权限，排查 CI-only flaky 时反而不如注解可达）。
       - name: Pytest (SQLite 默认路径)
-        run: uv run pytest
+        run: |
+          set -o pipefail
+          uv run pytest 2>&1 | tee pytest-output.log || {
+            grep -E '^(FAILED|ERROR) ' pytest-output.log | head -50 | sed 's/^/::error::/'
+            exit 1
+          }
 
   postgres-queue:
     name: postgres-queue (durable Postgres)
