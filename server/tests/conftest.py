@@ -49,6 +49,73 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 # ============================================================================
+# SQLite 测试库：文件库 + busy timeout（消除 database table is locked flaky 类）
+# ============================================================================
+
+
+@pytest.fixture(scope="session")
+def django_db_modify_db_settings(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """把 SQLite 测试库从共享缓存内存库切成临时文件库，并放宽 busy timeout。
+
+    Django 对 SQLite 的测试库默认用 ``file:memorydb_default?mode=memory&cache=shared``：
+    共享缓存下多连接（测试请求线程 vs background_runner / durable 等后台线程）并发
+    读写同一张表会**立刻**抛 SQLITE_LOCKED（``database table is locked``），busy
+    timeout 对该错误无效 —— 这正是 server-ci 间歇红的根因（先后击中
+    ``test_project_api::test_illegal_status_transition_returns_400`` 与
+    ``test_spa_coding_chain_e2e`` 两处，均为「请求触发后台线程写库」的并发面）。
+
+    文件库走正常锁协议：并发冲突退化为 SQLITE_BUSY，由 busy timeout 等待重试吸收，
+    这一类 flaky 整体消除。非 SQLite（本地 .env 指 Postgres）路径零影响。
+    """
+    from django.conf import settings
+
+    db = settings.DATABASES["default"]
+    if "sqlite3" not in db["ENGINE"]:
+        return
+    tmp_dir = tmp_path_factory.mktemp("sqlite-test-db")
+    db.setdefault("TEST", {})["NAME"] = str(tmp_dir / "test_friday.sqlite3")
+    db.setdefault("OPTIONS", {})["timeout"] = 20
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _sqlite_file_test_db_ignores_close_in_atomic():
+    """文件测试库：atomic 块内的 ``close()`` 沿用内存库「忽略」语义。
+
+    Django 的 sqlite backend 对内存库会忽略 ``close()``（防止连接关闭销毁整库），
+    被测代码里的 ``close_old_connections()``（resumable / durable / 图构建对账等
+    后台维护路径）在旧内存测试库下对主连接事实上是 no-op。切文件库后它会真正
+    关闭 pytest-django 事务包装持有的连接 → 下一次查询
+    ``Cannot operate on a closed database``。
+
+    只挡 ``in_atomic_block``（即测试事务包装中的主连接）这一种情况：后台 worker
+    线程的连接不在 atomic 块内、照常真实关闭 —— 它们恰恰依赖 close 后重连来切换
+    到测试库（一刀切 no-op 会让 worker 卡在会话初始化时指向的非测试库上）。
+    生产（非测试）路径不经过本 fixture。
+    """
+    from django.conf import settings
+
+    if "sqlite3" not in settings.DATABASES["default"]["ENGINE"]:
+        yield
+        return
+
+    from django.db.backends.sqlite3.base import DatabaseWrapper
+
+    orig_close = DatabaseWrapper.close
+
+    def _close_unless_in_atomic(self):
+        if self.in_atomic_block:
+            self.validate_thread_sharing()
+            return
+        orig_close(self)
+
+    DatabaseWrapper.close = _close_unless_in_atomic
+    try:
+        yield
+    finally:
+        DatabaseWrapper.close = orig_close
+
+
+# ============================================================================
 # Cache Cleanup — 防止 throttle 等缓存在测试间泄漏
 # ============================================================================
 
