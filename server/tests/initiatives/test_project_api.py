@@ -43,6 +43,22 @@ def outsider(db) -> object:
     return User.objects.create_user(username="api_outsider", password="x")
 
 
+@pytest.fixture(autouse=True)
+def _no_workspace_provision(monkeypatch: pytest.MonkeyPatch) -> None:
+    """挡掉建项目触发的后台工作区 provision 派发（CI flaky 根因）。
+
+    本模块只守护 REST 权限/CRUD/状态机，provision 与断言无关；但它经
+    background_runner 独立线程（独立 DB 连接）写 ProjectDoc，与测试的后续请求
+    并发写共享内存 SQLite 会偶发 ``database table is locked``（server-ci 上
+    ``test_illegal_status_transition_returns_400`` 的间歇失败即此）。provision
+    自身行为由 tests/initiatives 的 workspace 专项测试覆盖，这里直接 no-op。
+    """
+    monkeypatch.setattr(
+        "initiatives.services.project_doc_service.ProjectDocService.provision_dispatch",
+        lambda self, project_id, initiated_by_user_id=None: None,
+    )
+
+
 def _client(user) -> APIClient:
     c = APIClient()
     c.force_authenticate(user=user)
