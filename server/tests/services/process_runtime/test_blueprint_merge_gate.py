@@ -536,7 +536,9 @@ async def test_handler_exception_lands_failed_with_stage_name(stage: str):
 
 def test_stage_graph_reaches_done_in_five_hops():
     stages = get_process_definition("technical_blueprint").stages
-    assert stages["repo_confirmation"].transitions["confirmed"] == "repo_plan"
+    # 116 重排：确认门通过先过规格门（带调研上下文的澄清），spec_locked 才进阶段 2。
+    assert stages["repo_confirmation"].transitions["confirmed"] == "spec_gate"
+    assert stages["spec_gate"].transitions["spec_locked"] == "repo_plan"
     assert stages["repo_plan"].transitions["plan_complete"] == "merge"
     # 114-03 已接续：融合完成先过 AI 对抗审查，审查通过/超界才到 stage 终态。
     assert stages["merge"].transitions["merged"] == "ai_review"

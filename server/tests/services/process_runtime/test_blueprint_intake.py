@@ -442,7 +442,8 @@ async def test_decompose_handler_carries_pointer_when_nothing_changed() -> None:
 
     session = await _drive_one_step(session)  # decompose：直采落 v2
 
-    assert session.current_stage == "spec_gate"
+    # 116 重排：拆解后直接进路由调研，规格门挪到确认门之后
+    assert session.current_stage == "route"
     assert session.current_artifact_version_id is not None
     assert session.current_artifact_version_id != pointer_before
     version = await ArtifactVersion.objects.aget(id=session.current_artifact_version_id)
