@@ -19,6 +19,7 @@ from procrastinate.contrib.django import app
 from durable.queues import (
     QUEUE_BLUEPRINT,
     QUEUE_CRAWL_INGEST,
+    QUEUE_DISPATCH,
     QUEUE_DOC_SYNC,
     QUEUE_FEATURE_PARSE,
     QUEUE_GRAPH,
@@ -236,6 +237,33 @@ async def durable_blueprint_resume(
     )
 
 
+@app.task(name="durable_runner_dispatch", queue=QUEUE_DISPATCH)
+async def durable_runner_dispatch(
+    *,
+    session_id: str,
+    attempt: int = 0,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """runner 派发 durable 任务（procrastinate 包壳，委托共用任务体）。
+
+    显式 ``name="durable_runner_dispatch"`` 与 ``backends.defer`` 的裸名查找同源；
+    payload 仅 ``session_id`` / ``attempt``（凭证 / prompt 正文一律不进 payload——
+    任务体从 ``last_output["dispatch"]`` 快照重建并从权威源 rehydrate 凭证）。
+    入队点 ``lock=dispatch-{session_id}``（同 session 派发串行，任务体的状态守卫
+    判据因此无并发窗口）、⛔ 不带 ``idempotency_key``——同 session 的合法重派发
+    （rejected 重排 / 断连恢复 / stranded 扫描）不能被 todo 去重吃掉，防重的职责在
+    任务体状态守卫（终态 / active assignment → no-op）。
+    ``initiated_by_user_id``（CTX-02）显式形参消费 payload 同名键并转发给任务体。
+    """
+    from durable.tasks_impl import run_runner_dispatch
+
+    return await run_runner_dispatch(
+        session_id=session_id,
+        attempt=attempt,
+        initiated_by_user_id=initiated_by_user_id,
+    )
+
+
 @app.task(name="durable_ping", queue=QUEUE_MAINTENANCE)
 async def durable_ping(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """最小可 defer 的烟囱 / 测试任务。
@@ -260,10 +288,12 @@ async def recover_stranded_repo_summaries(context: Any, timestamp: int) -> int:
     与 ``retry_stalled_durable_jobs`` 同模式（``@app.periodic`` + ``queueing_lock``
     单例：DB 保证每周期只 defer 一份、todo 唯一不堆积，多副本 worker 天然单例）。
 
-    缺口背景：index/graph 重启不丢（durable），但 summary/coding 走
-    ``TaskDispatcher`` 进程内存队列，server/runner 重启即丢、``SubAgentSession``
-    永卡 pending。本周期任务把搁浅的 **repo_summary**（只读、可安全重试）重新派发；
-    coding 不在此自动重派（避免重复推 commit），详见 ``recover_stranded_summaries``。
+    缺口背景（31u 后已收窄）：派发链已 durable 化（``QUEUE_DISPATCH`` + re-defer
+    backoff + 任务体状态守卫），coding 在内的所有 task_type 的重派由
+    ``arecover_stranded_dispatch_sessions``（apscheduler 保险丝）统一覆盖——守卫
+    （终态 / active assignment → no-op）防重复容器 / 重复 commit。本周期任务保留
+    repo_summary 维度的业务收敛（旧会话标 TIMEOUT + 起新会话刷新仓库状态），
+    详见 ``recover_stranded_summaries``。
     """
     from repositories.summary_service import recover_stranded_summaries
 

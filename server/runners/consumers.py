@@ -43,6 +43,10 @@ _TERMINAL_STATUSES = {"completed", "error", "timeout", "cancelled"}
 # 断连超时（秒）：5 分钟后未重连则标记任务失败
 DISCONNECT_TIMEOUT = 300
 
+# rejected 重派上限（31u）：累计拒绝达该值即落终态 error（退避曲线 5*2**n 封顶 300s，
+# 约 20+ 分钟窗口后放弃），杜绝对持续拒绝的 runner 热循环。
+_REJECT_REDISPATCH_LIMIT = 8
+
 
 HELLO_TIMEOUT = 10
 
@@ -147,10 +151,8 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         # 旧容器还活着的任务再起第二个容器（历史 non-fast-forward 冲突的根因）。
         running_tasks = payload.get("running_tasks") or []
         await self._recover_pending_tasks(running_tasks=running_tasks)
-        # 触发分发器检查待分发队列
-        from runners.dispatcher import get_dispatcher
-
-        await get_dispatcher().on_runner_online(self.runner.id)
+        # 31u：不再需要「上线触发 drain」——pending 的 durable 派发 job 在下一个
+        # run_at 到点自动重试（退避封顶 300s），runner 上线后至多等一个退避周期。
 
     async def _handle_heartbeat(self, content):
         payload = content.get("payload", {})
@@ -241,9 +243,8 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         )
         await self._update_assignment_status(task_id, "completed")
         await _alog_runner_event(self.runner.id, "task_completed", {"task_id": task_id})
-        # ：完成即释放一个并发槽位并续派内存队列，
-        # 使批量派发（如几百个 repo_summary）随空槽连续消费、逐个跑完。
-        await self._free_runner_slot_and_drain()
+        # 完成即释放一个并发槽位（续派由 durable re-defer backoff 接管，见 _free_runner_slot）。
+        await self._free_runner_slot()
 
     async def _handle_task_failed(self, content):
         payload = content.get("payload", {})
@@ -260,8 +261,8 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         await _alog_runner_event(
             self.runner.id, "task_failed", {"task_id": task_id, "error": payload.get("error", "")}
         )
-        # ：失败同样释放并发槽位并续派内存队列（与完成路径对称）。
-        await self._free_runner_slot_and_drain()
+        # 失败同样释放并发槽位（与完成路径对称）。
+        await self._free_runner_slot()
 
     async def _handle_task_question(self, content):
         payload = content.get("payload", {})
@@ -317,16 +318,105 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         _forward_task_progress(task_id, payload)
 
     async def _handle_task_rejected(self, content):
+        """runner 拒绝任务 → 标记 assignment rejected 后经 durable 队列**退避**重派。
+
+        31u：内存重排（``on_task_rejected``）退役。重派带与「无可用 runner」同一条退避
+        曲线（5 * 2**reject_count，封顶 300s），且累计拒绝达 ``_REJECT_REDISPATCH_LIMIT``
+        （约 20+ 分钟退避窗口）即不再重派——把 session 落终态 error + 吊销任务 token +
+        发结构化告警事件，杜绝对着一个持续拒绝的 runner 热循环。
+        入队失败只记 warning（session 仍 PENDING 且有快照，stranded 恢复扫描会捡起来）。
+        """
         payload = content.get("payload", {})
         task_id = payload.get("task_id", "")
         reason = payload.get("reason", "")
         logger.info("task_rejected", runner=str(self.runner.id), task_id=task_id, reason=reason)
-        dispatch_task = await self._rebuild_dispatch_task(task_id)
-        if dispatch_task:
-            from runners.dispatcher import get_dispatcher
-
-            await get_dispatcher().on_task_rejected(task_id, dispatch_task)
+        # 先标记 rejected：使 assignment 退出 active 集（重派守卫不再拦），且本次计入
+        # reject_count（含刚标记的这条）。
         await self._update_assignment_status(task_id, "rejected")
+
+        from runners.models import RunnerTaskAssignment
+
+        # "rejected" 是 _update_assignment_status 既有的存量字面值（choices 之外经
+        # aupdate 直写，历史行为），此处按同字面值统计。
+        reject_count = await RunnerTaskAssignment.objects.filter(
+            session__session_id=task_id, status="rejected"
+        ).acount()
+
+        if reject_count >= _REJECT_REDISPATCH_LIMIT:
+            await self._afail_session_after_reject_exhausted(task_id, reason, reject_count)
+            return
+
+        from datetime import timedelta as _timedelta
+
+        delay = min(5 * (2**reject_count), 300)
+        run_at = timezone.now() + _timedelta(seconds=delay)
+        try:
+            from durable.queues import QUEUE_DISPATCH
+            from durable.service import DurableTaskService
+
+            await DurableTaskService.defer(
+                "durable_runner_dispatch",
+                {"session_id": task_id, "attempt": 0},
+                queue=QUEUE_DISPATCH,
+                lock=f"dispatch-{task_id}",
+                run_at=run_at,
+                initiated_by_user_id="system",
+            )
+            logger.info(
+                "runner_dispatch_rejected_requeued",
+                category="sampling",
+                component="runners",
+                session_id=task_id,
+                runner_id=str(self.runner.id),
+                reject_count=reject_count,
+                delay_s=delay,
+            )
+        except Exception:  # noqa: BLE001 — 入队失败不反噬 WS 消息处理；恢复扫描兜底
+            logger.warning(
+                "runner_dispatch_rejected_requeue_failed",
+                category="caller",
+                component="runners",
+                initiated_by_user_id="system",
+                session_id=task_id,
+                exc_info=True,
+            )
+
+    async def _afail_session_after_reject_exhausted(
+        self, task_id: str, reason: str, reject_count: int
+    ) -> None:
+        """rejected 重派超限：session 落终态 error + 吊销任务 token + 结构化告警。"""
+        from common.logging import redact_secrets_in_text
+        from subagent.models import SubAgentSession
+
+        session = await SubAgentSession.objects.filter(session_id=task_id).afirst()
+        if session is not None and session.status not in _TERMINAL_STATUSES:
+            error_msg = redact_secrets_in_text(
+                f"runner 连续拒绝 {reject_count} 次，派发终止（最后拒绝原因：{reason or '未知'}）"
+            )
+            try:
+                await session.amark_failed(error=error_msg)
+            except Exception:  # noqa: BLE001 — 收敛失败不阻断 WS 消息处理
+                logger.warning(
+                    "reject_exhausted_session_converge_failed",
+                    session_id=task_id,
+                    exc_info=True,
+                )
+            # 复用 dispatch_coding_task 失败路径的吊销语义（有 token 则吊销，无则幂等 0）。
+            try:
+                from access_tokens.services import arevoke_task_tokens
+
+                await arevoke_task_tokens(task_id)
+            except Exception:  # noqa: BLE001 — best-effort，失败由 TTL 自过期兜底
+                pass
+        logger.warning(
+            "runner_dispatch_rejected_exhausted",
+            category="caller",
+            component="runners",
+            initiated_by_user_id="system",
+            session_id=task_id,
+            reject_count=reject_count,
+            runner_id=str(self.runner.id),
+        )
 
     async def _handle_tool_call(self, content):
         payload = content.get("payload", {})
@@ -616,7 +706,14 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         )
 
     async def _rebuild_dispatch_task(self, session_id: str):
-        from runners.dispatcher import DispatchTask
+        """断连恢复重建：委托 dispatcher 模块级共享实现（31u，⛔ 不留拷贝）。
+
+        凭证重解析（Git token / API key 从权威源补回；USER_TOKEN 按
+        ``task_token_user_id`` 重铸——31u 起重派容器也能挂上知识工具）由共享的
+        ``_rehydrate_dispatch_credentials`` 承担。``require_snapshot=False``：历史行
+        （无 dispatch 快照）沿用 session 字段兜底重建的既有行为。
+        """
+        from runners.dispatcher import arebuild_dispatch_task_from_session
         from runners.models import RunnerTaskAssignment
 
         assignment = (
@@ -628,89 +725,11 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         )
         if not assignment or not assignment.session:
             return None
-        session = assignment.session
-        last_output = session.last_output if isinstance(session.last_output, dict) else {}
-        dispatch_payload = last_output.get("dispatch")
-        dispatch = dispatch_payload if isinstance(dispatch_payload, dict) else {}
-        metadata = await self._rehydrate_dispatch_credentials(
-            dict(dispatch.get("metadata") or {}), session.session_id
+        return await arebuild_dispatch_task_from_session(
+            assignment.session,
+            fallback_tags=list(self.runner.tags),
+            require_snapshot=False,
         )
-        return DispatchTask(
-            task_id=session.session_id,
-            task_type=str(dispatch.get("task_type") or last_output.get("task_type") or "coding"),
-            tags=list(dispatch.get("tags") or self.runner.tags),
-            image="",
-            repo_url=str(dispatch.get("repo_url") or session.repo_url or ""),
-            branch=str(dispatch.get("branch") or ""),
-            target_branch=str(dispatch.get("target_branch") or ""),
-            prompt=str(dispatch.get("prompt") or ""),
-            timeout=int(dispatch.get("timeout") or 600),
-            node_execution_id=str(dispatch.get("node_execution_id") or ""),
-            session_id=session.session_id,
-            metadata=metadata,
-        )
-
-    async def _rehydrate_dispatch_credentials(
-        self, metadata: dict, session_id: str
-    ) -> dict:
-        """重派前从权威源补回落库时剔除的凭证键（103 审查 WR-03）。
-
-        落库副本（last_output.dispatch.metadata）统一剔除 CREDENTIAL_ENV_KEYS 凭证
-        明文键，剔除清单记在 ``_redacted_env_keys`` 标记里（见 chat/
-        coding_session_service.py 落库处）。断连重建按标记重解析：
-
-        - env_FRIDAY_TASK_GIT_ACCESS_TOKEN：repository_id → ``aresolve_git_token``
-          （与首派同一权威源），保证重派 clone 行为与首派一致。
-        - env_FRIDAY_TASK_CLAUDE_API_KEY：``aget_claude_code_runtime_config``
-          （provider 配置权威源）。
-        - env_FRIDAY_TASK_USER_TOKEN：**不重铸**——短 TTL token 生命周期绑定首派，
-          重派容器降级不挂知识工具（fail-soft，与 user 不可解析降级语义一致）。
-
-        best-effort：任一重解析失败只记 warning 跳过该键（重派容器对应能力降级），
-        绝不阻断重建主流程。无标记（历史行 / workflow 链不落 dispatch）→ 原样返回。
-        """
-        redacted = metadata.pop("_redacted_env_keys", None)
-        if not redacted:
-            return metadata
-        if "env_FRIDAY_TASK_GIT_ACCESS_TOKEN" in redacted and metadata.get("repository_id"):
-            try:
-                from repositories.models import Repository
-                from services.git_credentials import aresolve_git_token
-
-                repository = await Repository.objects.filter(
-                    id=metadata["repository_id"]
-                ).afirst()
-                token = await aresolve_git_token(repository) if repository else ""
-                if token:
-                    metadata["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] = token
-            except Exception as exc:  # noqa: BLE001 — best-effort，失败降级不阻断重建
-                logger.warning(
-                    "dispatch_credential_rehydrate_failed",
-                    session_id=session_id,
-                    key="git_access_token",
-                    error_type=type(exc).__name__,
-                    initiated_by_user_id="system",
-                    category="caller",
-                    component="runners",
-                )
-        if "env_FRIDAY_TASK_CLAUDE_API_KEY" in redacted:
-            try:
-                from services.provider_config import aget_claude_code_runtime_config
-
-                cc = await aget_claude_code_runtime_config()
-                if cc.get("api_key"):
-                    metadata["env_FRIDAY_TASK_CLAUDE_API_KEY"] = cc["api_key"]
-            except Exception as exc:  # noqa: BLE001 — best-effort，失败降级不阻断重建
-                logger.warning(
-                    "dispatch_credential_rehydrate_failed",
-                    session_id=session_id,
-                    key="claude_api_key",
-                    error_type=type(exc).__name__,
-                    initiated_by_user_id="system",
-                    category="caller",
-                    component="runners",
-                )
-        return metadata
 
     async def _update_assignment_status(self, session_id: str, status: str) -> None:
         from runners.models import RunnerTaskAssignment
@@ -722,26 +741,24 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
             runner=self.runner, session__session_id=session_id, status__in=["assigned", "running"]
         ).aupdate(**updates)
 
-    async def _free_runner_slot_and_drain(self) -> None:
-        """任务终态后释放一个并发槽位 + 续派内存待派发队列（）。
+    async def _free_runner_slot(self) -> None:
+        """任务终态后释放一个并发槽位。
 
-        - 服务端立即把 ``Runner.current_tasks`` 减 1（下限 0），不必等 30s 后的下一次
-          心跳，使刚释放的槽位对 ``_try_assign`` 即时可见；心跳上报的绝对值随后会
-          权威校正任何漂移。
-        - 调 ``dispatcher.drain_pending()`` 把队列里等待的任务分配到现在的空槽。
+        服务端立即把 ``Runner.current_tasks`` 减 1（下限 0），不必等 30s 后的下一次
+        心跳，使刚释放的槽位对 ``_try_assign`` 即时可见；心跳上报的绝对值随后会
+        权威校正任何漂移。
 
-        修复批量 repo_summary/PageIndex 派发"只跑前 N 个、其余卡死"的问题。
+        31u：续派由 durable re-defer backoff 接管（等待中的派发 job 在下一个 run_at
+        到点自动重试，最长等一个退避周期 ≤300s），不再依赖槽位释放事件触发 drain。
         """
         from django.db import models as db_models
         from django.db.models.functions import Greatest
 
-        from runners.dispatcher import get_dispatcher
         from runners.models import Runner
 
         await Runner.objects.filter(id=self.runner.id).aupdate(
             current_tasks=Greatest(db_models.F("current_tasks") - 1, db_models.Value(0)),
         )
-        await get_dispatcher().drain_pending()
 
     async def _update_channel_name(self, channel_name: str):
         self.runner.channel_name = channel_name

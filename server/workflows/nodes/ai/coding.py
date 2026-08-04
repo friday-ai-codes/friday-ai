@@ -1938,6 +1938,10 @@ class AICodingNode(SubStepMixin, BaseNode):
                 dispatch_user, session_id, config.get("timeout_seconds", 1800)
             )
             tools_env["env_FRIDAY_TASK_USER_TOKEN"] = plaintext
+            # 31u：**非敏感**发起用户 id 随派发快照落库（不是凭证）。派发经 durable 队列后
+            # 任务体只按 redacted 快照重建，rehydrate 据此键重铸 USER_TOKEN——不落则
+            # workflow 编码容器首派就挂不上知识工具（回归）。
+            tools_env["task_token_user_id"] = str(dispatch_user.id)
 
         # 排除规则下传（Phase 22-04 / EXCL-02 容器读取面，T-22-13/14）：与 chat 派发路径
         # 一致地无条件注入有效排除规则（即便仅 builtin），容器侧 clone 后据此物理删除被排除

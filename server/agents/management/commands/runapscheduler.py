@@ -222,6 +222,29 @@ def recover_stalled_blueprint_sessions_job():
 
 
 @_with_scheduler_log_context
+def recover_stranded_dispatch_sessions_job():
+    """Job wrapper：滞留派发会话的周期兜底恢复（31u 任务队列完整化收尾）。
+
+    捡「in-process fallback 重启丢 job / 入队后 job 链意外中断」留下的待派发会话
+    （PENDING + 有 dispatch 快照 + 15 分钟无进展）重新入队 durable 派发任务。
+    procrastinate 路径的「无 runner 等待」已被派发任务体 re-defer backoff 全覆盖，
+    本 job 是保险丝定位（与 recover_stalled_blueprint_sessions 同构）。幂等由派发
+    任务体状态守卫承担（终态 / active assignment → no-op，编码任务也安全纳入）。
+    任务体自带整体兜底，异常不抛回本 wrapper、绝不打断 scheduler 主循环。
+    """
+    from tasks.dispatch_recovery_tasks import arecover_stranded_dispatch_sessions_task
+
+    log = logger.bind(job="recover_stranded_dispatch_sessions")
+    log.info("job_start")
+
+    try:
+        result = run_async_task(arecover_stranded_dispatch_sessions_task)
+        log.info("job_complete", result=result)
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
 def calculate_behind_commits_job() -> None:
     """contract：计算 STALE 仓库的 behind_commits 差值并缓存。"""
     from repositories.freshness_service import update_behind_commits_for_stale_repos
@@ -820,6 +843,23 @@ class Command(BaseCommand):
         logger.info(
             "job_registered",
             job="recover_stalled_blueprint_sessions",
+            schedule="every 10 minutes",
+        )
+
+        # 滞留派发会话兜底恢复（31u）：每 10 分钟看一眼。捡 in-process fallback 重启
+        # 丢 job / job 链意外中断留下的待派发会话重新入队；幂等由派发任务体状态守卫
+        # 承担（tick 频率不影响语义）。
+        scheduler.add_job(
+            recover_stranded_dispatch_sessions_job,
+            trigger=IntervalTrigger(minutes=10),
+            id="recover_stranded_dispatch_sessions",
+            name="Recover pending dispatches stranded by lost durable jobs",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info(
+            "job_registered",
+            job="recover_stranded_dispatch_sessions",
             schedule="every 10 minutes",
         )
 

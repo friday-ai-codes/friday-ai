@@ -693,6 +693,10 @@ class BlueprintResearchAdapter:
             metadata["env_FRIDAY_TASK_USER_TOKEN"] = await mint_task_token(
                 dispatch_user, subagent_session_id, _RESEARCH_TIMEOUT
             )
+            # 31u：**非敏感**发起用户 id 随派发快照落库（不是凭证）。派发经 durable 队列后
+            # 任务体只按 redacted 快照重建，rehydrate 据此键重铸 USER_TOKEN——不落则
+            # 调研容器首派就挂不上知识工具（回归）。
+            metadata["task_token_user_id"] = str(dispatch_user.id)
         return metadata
 
     # ── prompt 构造（服务端权威状态 + 章程注入） ───────────────────────────

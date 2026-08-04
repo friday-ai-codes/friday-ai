@@ -510,8 +510,11 @@ async def recover_stranded_summaries(limit: int = _RECOVER_MAX_PER_SWEEP) -> int
 
     安全边界
     ========
-    - **只覆盖 repo_summary**（只读分析，可安全无限重试）；**coding 不在此自动重派**
-      —— coding 会建分支 / 推 commit，盲目重试可能产生重复提交，必须人工介入。
+    - **只覆盖 repo_summary 维度的业务收敛**（旧会话标 TIMEOUT + 起新会话刷新仓库
+      状态）。coding 在内的通用派发重派（31u 起）由
+      ``runners.dispatcher.arecover_stranded_dispatch_sessions``（apscheduler 保险丝）
+      统一覆盖——幂等由 durable 派发任务体的状态守卫（终态 / active assignment →
+      no-op）承担，防重复容器 / 重复 commit，不再以「防重复提交」为由排除 coding。
     - 幂等：① ``dispatcher._has_active_assignment`` 防同会话重复派发；② 每仓只取最新
       一条、重派前把该仓所有未终态旧会话标 TIMEOUT，再起新会话（updated_at 刷新，下个
       周期 ``_STRANDED_MINUTES`` 内不会再被触碰）；③ 调用方周期任务自身 queueing_lock
