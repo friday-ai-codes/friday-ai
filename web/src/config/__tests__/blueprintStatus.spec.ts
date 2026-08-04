@@ -108,7 +108,9 @@ describe('isBlueprintEditable —— 白名单内外各三条', () => {
 
 describe('lIVE_BLUEPRINT_STATUSES —— 轮询三态', () => {
   it('恰好三态，且 pending_review 与终态不在内', () => {
-    expect([...LIVE_BLUEPRINT_STATUSES].sort()).toEqual(['ai_reviewing', 'drafting', 'researching'])
+    // 116 续驱队列化：needs_clarification 也轮询——作答后状态推进发生在 worker，
+    // 页面靠轮询看到下一个状态。
+    expect([...LIVE_BLUEPRINT_STATUSES].sort()).toEqual(['ai_reviewing', 'drafting', 'needs_clarification', 'researching'])
     for (const status of ['pending_review', 'confirmed', 'implemented', 'archived', 'failed', 'superseded', ''])
       expect(LIVE_BLUEPRINT_STATUSES.has(status)).toBe(false)
   })

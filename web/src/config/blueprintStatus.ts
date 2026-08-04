@@ -92,15 +92,20 @@ export function isBlueprintEditable(status: string): boolean {
 }
 
 /**
- * 轮询开启的三个「生成中」状态（供 `~/composables/useBlueprintLive` 消费）。
+ * 轮询开启的「进行中」状态（供 `~/composables/useBlueprintLive` 消费）。
  *
  * ⛔ **不在 composable 里另写一份**：轮询判据只能有一个来源。进入 `pending_review` 与任一
  * 终态即自动停。
+ *
+ * ⭐ `needs_clarification` 也在集合内（116 续驱队列化）：作答/门动作端点改为「已受理」
+ * 语义，状态推进发生在 durable worker 里——作答后页面必须靠轮询看到 worker 驱出的
+ * 下一个状态，否则会停在旧状态直到手动刷新。
  */
 export const LIVE_BLUEPRINT_STATUSES: ReadonlySet<string> = new Set([
   'researching',
   'drafting',
   'ai_reviewing',
+  'needs_clarification',
 ])
 
 /**

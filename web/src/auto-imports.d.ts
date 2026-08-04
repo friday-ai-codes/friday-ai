@@ -807,6 +807,7 @@ declare module 'vue' {
     readonly useMemoize: UnwrapRef<typeof import('@vueuse/core')['useMemoize']>
     readonly useMemory: UnwrapRef<typeof import('@vueuse/core')['useMemory']>
     readonly useMessageParts: UnwrapRef<typeof import('./composables/useMessageParts')['useMessageParts']>
+    readonly useMobileSidebar: UnwrapRef<typeof import('./composables/useMobileSidebar')['useMobileSidebar']>
     readonly useModal: UnwrapRef<typeof import('./composables/useModal')['useModal']>
     readonly useModel: UnwrapRef<typeof import('vue')['useModel']>
     readonly useMounted: UnwrapRef<typeof import('@vueuse/core')['useMounted']>
