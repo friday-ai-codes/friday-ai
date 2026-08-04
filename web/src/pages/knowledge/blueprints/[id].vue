@@ -48,9 +48,9 @@ import type {
   Citation,
 } from '~/types/blueprint'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { useMediaQuery } from '@vueuse/core'
+import { useMediaQuery, useWindowScroll } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import blueprintsApi from '~/api/blueprints'
@@ -95,8 +95,21 @@ import { useBlueprintViewerStore } from '~/stores/useBlueprintViewerStore'
 import { isUnresolvedBlocker } from '~/utils/blueprintAnnotations'
 import { iterBlocks } from '~/utils/blueprintBlocks'
 
-/** ⭐ 跨段跳转与深链滚动的偏移常量，与 `AnchorNavLayout.scrollTo` 的 88 逐字一致（T-115-58）。 */
-const SCROLL_OFFSET = 88
+/**
+ * 跨段跳转与深链滚动偏移的**兜底**常量（页面与 `AnchorNavLayout` 共用 `measureScrollOffset`
+ * 这一个来源，本值只在 sticky 头量不到时生效）。
+ *
+ * ⭐ 不再用静态 88：顶栏是 `sticky` 且带「未经确认」警示横幅时实测高约 136px，静态偏移
+ * 会让每次锚点跳转都把段标题埋进头下 ~48px。
+ */
+const SCROLL_OFFSET_FALLBACK = 88
+
+/** 运行时量 sticky 顶栏实际高度 + 12px 呼吸位；量不到回落常量。 */
+function measureScrollOffset(): number {
+  const header = document.querySelector<HTMLElement>('[data-testid="blueprint-viewer-header"]')
+  const height = header?.offsetHeight ?? 0
+  return height > 0 ? height + 12 : SCROLL_OFFSET_FALLBACK
+}
 /** 命中目标后的 ring 高亮时长（毫秒）。 */
 const HIGHLIGHT_MS = 2000
 /** 命中高亮的类名（字面量 ⇒ Tailwind content 扫描直接命中，⛔ 无需 safelist）。 */
@@ -503,14 +516,14 @@ function skeletonOf(key: string): string[] {
 
 const highlightId = ref('')
 
-/** ⭐ 页面统一处理跨段跳转：偏移 88 与 `AnchorNavLayout` 一致，⛔ 段组件内零滚动实现。 */
+/** ⭐ 页面统一处理跨段跳转：偏移与 `AnchorNavLayout` 共用 `measureScrollOffset`，⛔ 段组件内零滚动实现。 */
 function scrollToDom(domId: string): void {
   if (!domId)
     return
   const el = document.getElementById(domId)
   if (!el)
     return
-  window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - SCROLL_OFFSET, behavior: 'smooth' })
+  window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - measureScrollOffset(), behavior: 'smooth' })
   highlightId.value = domId
   setTimeout(() => {
     if (highlightId.value === domId)
@@ -583,6 +596,10 @@ watch(isWide, (wide) => {
 
 function onSelectionComment(payload: SelectionPayload): void {
   selection.value = payload
+  // ⭐ 键盘路径（block 内「对此块评论」）：popover 是鼠标形态的浮层，键盘焦点进不去 ——
+  // 直接进入草稿卡（与 popover 里点「发起评论」殊途同归）。
+  if (payload.viaKeyboard)
+    startDraft()
 }
 
 function onCrossBlockSelection(): void {
@@ -1036,10 +1053,67 @@ watch(
   { immediate: true },
 )
 
-onMounted(() => {
-  if (sectionParam.value)
-    nextTick(() => scrollToDom(sectionParam.value))
-})
+/**
+ * ⭐ `?section=` 深链的定位时机 = **正文数据落地之后**（一次性消费）。
+ *
+ * 原先只在 `onMounted` 定位一次：那一刻十段还是骨架高度，目标段可能在 3 万像素外，
+ * 数据到位后内容膨胀而滚动不重做 ⇒ 深链实测永远停在顶部、静默失效。
+ * `immediate: true` 覆盖「数据已在缓存、挂载即 success」的情形；rAF 让重排先完成。
+ */
+const sectionScrolled = ref(false)
+watch(
+  [() => docQuery.isSuccess.value, sectionParam],
+  () => {
+    if (sectionScrolled.value || !sectionParam.value || !docQuery.isSuccess.value)
+      return
+    sectionScrolled.value = true
+    const target = sectionParam.value
+    nextTick(() => requestAnimationFrame(() => scrollToDom(target)))
+  },
+  { immediate: true },
+)
+
+// ── 浮动导航：长文档的返回顶部 + 未决批注巡航 ─────────────────────────────────
+
+const { y: windowScrollY } = useWindowScroll()
+/** 滚过约 1.5 屏才出现，避免短文档上常驻一个没用的按钮。 */
+const showBackTop = computed(() => windowScrollY.value > 1200)
+
+function scrollBackToTop(): void {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+/** 未决（open）且未失锚的线程 —— 巡航目标集合。 */
+const openThreads = computed(
+  () => threads.value.filter(thread => thread.status === 'open' && thread.anchor_status !== 'orphaned'),
+)
+
+/**
+ * 跳到当前滚动位置之下的第一条未决批注（到底后回绕到第一条）。
+ * 全部未决线程都无锚（如规格门系统线程）时退化为「选中 + 展开侧栏」。
+ */
+function gotoNextOpenThread(): void {
+  const rows = openThreads.value
+  if (!rows.length)
+    return
+  const positioned = rows
+    .map((thread) => {
+      const blockId = thread.anchor?.block_id
+      const el = blockId ? document.getElementById(`blk-${blockId}`) : null
+      return el ? { thread, top: el.getBoundingClientRect().top + window.scrollY } : null
+    })
+    .filter((row): row is { thread: BlueprintThreadDetail, top: number } => row !== null)
+    .sort((a, b) => a.top - b.top)
+  const cursor = window.scrollY + measureScrollOffset() + 1
+  const next = positioned.find(row => row.top > cursor) ?? positioned[0]
+  if (next) {
+    selectThread(next.thread.thread_id)
+    scrollToDom(`blk-${next.thread.anchor!.block_id}`)
+    return
+  }
+  selectThread(rows[0].thread_id)
+  revealAnnotations()
+}
 
 const hasKeyConclusions = computed(() => {
   const body = content.value
@@ -1123,8 +1197,9 @@ const sections = computed<NavSection[]>(() => [
       />
 
       <!-- ⭐ AnchorNavLayout 由页面直接使用（它本身就是「左栏 + 正文」的两栏布局），
-           第三栏在它的默认 slot 内再开一层 flex —— 这样既有组件一行都不用改。 -->
-      <AnchorNavLayout :sections="sections">
+           第三栏在它的默认 slot 内再开一层 flex —— 这样既有组件一行都不用改。
+           偏移与页面 scrollToDom 共用 measureScrollOffset（sticky 头随横幅变高）。 -->
+      <AnchorNavLayout :sections="sections" :scroll-offset="measureScrollOffset">
         <div class="flex gap-6">
           <div class="min-w-0 flex-1 space-y-6">
             <!-- 400：就近渲染，原样回显后端 detail -->
@@ -1462,7 +1537,8 @@ const sections = computed<NavSection[]>(() => [
             class="sticky top-22 hidden max-h-[calc(100vh-6rem)] w-80 shrink-0 xl:flex"
             data-testid="blueprint-sidebar-column"
           >
-            <ScrollArea class="w-full">
+            <!-- ⭐ card 容器：侧栏与页面其它区块同语言（此前裸浮在渐变背景上，无容器感） -->
+            <ScrollArea class="card w-full p-4">
               <BlueprintThreadSidebar
                 :threads="threads"
                 :orphaned-threads="orphanedThreads"
@@ -1559,6 +1635,33 @@ const sections = computed<NavSection[]>(() => [
       />
 
       <CitationPreviewDialog v-model:open="previewOpen" :citation="previewCitation" />
+
+      <!-- 浮动导航：38 屏长文档的位置感与未决项巡航（P1 修复） -->
+      <div class="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+        <Button
+          v-if="openThreads.length && !isDiffMode"
+          variant="outline"
+          size="sm"
+          class="shadow-card"
+          data-testid="blueprint-goto-next-open"
+          @click="gotoNextOpenThread()"
+        >
+          <span class="icon-[lucide--corner-right-down] mr-1.5" aria-hidden="true" />
+          {{ t('knowledge.blueprints.viewer.nextOpen', { n: openThreads.length }) }}
+        </Button>
+        <Button
+          v-show="showBackTop"
+          variant="outline"
+          size="icon-sm"
+          class="shadow-card"
+          :aria-label="t('knowledge.blueprints.viewer.backToTop')"
+          :title="t('knowledge.blueprints.viewer.backToTop')"
+          data-testid="blueprint-back-to-top"
+          @click="scrollBackToTop()"
+        >
+          <span class="icon-[lucide--arrow-up]" aria-hidden="true" />
+        </Button>
+      </div>
     </template>
   </PageContainer>
 </template>

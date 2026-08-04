@@ -13,7 +13,23 @@ function ensureInit() {
   const dark = document.documentElement.classList.contains('dark')
   mermaid.initialize({
     startOnLoad: false,
-    theme: dark ? 'dark' : 'default',
+    // ⭐ 亮色走 base + teal 变量：default 主题的紫色系与全站「只用 teal 强调」冲突（DESIGN.md）
+    theme: dark ? 'dark' : 'base',
+    themeVariables: dark
+      ? undefined
+      : {
+          primaryColor: '#f0fdfa', // teal-50 节点底
+          primaryTextColor: '#134e4a', // teal-900 节点文字
+          primaryBorderColor: '#14b8a6', // teal-500 节点边
+          lineColor: '#64748b', // slate-500 连线
+          actorBkg: '#f0fdfa',
+          actorBorder: '#14b8a6',
+          labelBoxBkgColor: '#f0fdfa',
+          labelBoxBorderColor: '#14b8a6',
+          noteBkgColor: '#fefce8', // 便签保持柔和黄
+          noteBorderColor: '#d4d4a8',
+          fontFamily: 'inherit',
+        },
     securityLevel: 'strict',
     flowchart: { useMaxWidth: true, htmlLabels: true },
   })

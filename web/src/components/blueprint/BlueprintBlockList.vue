@@ -22,8 +22,10 @@
 import type { BlueprintBlock as BlueprintBlockModel, BlueprintThreadDetail, Citation } from '~/types/blueprint'
 import { useDebounceFn } from '@vueuse/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Skeleton } from '~/components/ui/skeleton'
 import { groupThreadsByBlock, rangeOffsets } from '~/utils/blueprintAnnotations'
+import { blockText } from '~/utils/blueprintBlocks'
 import BlueprintBlock from './BlueprintBlock.vue'
 
 /**
@@ -38,6 +40,8 @@ export interface SelectionPayload {
   endOffset: number
   quotedText: string
   rect: DOMRect
+  /** ⭐ 键盘路径（block 内「对此块评论」按钮）：页面据此跳过 popover、直接开草稿卡。 */
+  viaKeyboard?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -72,6 +76,8 @@ const emit = defineEmits<{
   'selection-comment': [payload: SelectionPayload]
   'cross-block-selection': []
 }>()
+
+const { t } = useI18n()
 
 /** `quoted_text` 上限：超出截断（⛔ 不整段回传，后端 anchor 只存快照）。 */
 const QUOTED_TEXT_LIMIT = 500
@@ -148,6 +154,25 @@ function detectSelection(): void {
 
 const onSelectionChange = useDebounceFn(detectSelection, SELECTION_DEBOUNCE_MS)
 
+/**
+ * ⭐ 键盘评论入口的载荷装配：整块作为选区（offset 覆盖全文），坐标系与拖选路径同源
+ * （`blockText` 扁平串）⇒ 后端锚点校验与重锚逻辑零差别。
+ */
+function onCommentBlock(block: BlueprintBlockModel): void {
+  const flat = blockText(block)
+  if (!block.block_id || !flat)
+    return
+  const el = rootEl.value?.querySelector(`[data-block-id="${block.block_id}"]`)
+  emit('selection-comment', {
+    blockId: block.block_id,
+    startOffset: 0,
+    endOffset: flat.length,
+    quotedText: flat.slice(0, QUOTED_TEXT_LIMIT),
+    rect: el ? el.getBoundingClientRect() : new DOMRect(),
+    viaKeyboard: true,
+  })
+}
+
 onMounted(() => {
   document.addEventListener('selectionchange', onSelectionChange)
 })
@@ -166,20 +191,39 @@ onUnmounted(() => {
 
     <slot v-else-if="!blocks.length" />
 
-    <BlueprintBlock
+    <!-- ⭐ 包装层承载键盘评论入口：按钮必须在 `[data-block-id]` **之外** ——
+         块内多出的文本节点会污染 `rangeOffsets` 的扁平坐标系，让拖选 offset 整体偏移。 -->
+    <div
       v-for="block in blocks"
       v-else
       :key="block.block_id"
-      :block="block"
-      :section-path="sectionPath"
-      :threads="threadsFor(block.block_id)"
-      :citations="citations"
-      :readonly="readonly"
-      :active-thread-id="activeThreadId"
-      :show-closed="showClosed"
-      :plain-mermaid="plainMermaid"
-      @thread-click="(threadId, allThreadIds) => emit('thread-click', threadId, allThreadIds)"
-      @citation-click="emit('citation-click', $event)"
-    />
+      class="relative"
+    >
+      <!-- 键盘评论入口（skip-link 模式）：视觉隐藏，Tab 聚焦时浮现；
+           鼠标用户仍走拖选 popover，两条路径殊途同归到同一个草稿卡。readonly 时不存在于 DOM。 -->
+      <button
+        v-if="!readonly"
+        type="button"
+        class="sr-only focus:not-sr-only focus:absolute focus:-top-1 focus:right-0 focus:z-10 focus:inline-flex focus:items-center focus:gap-1 focus:rounded-md focus:border focus:border-border focus:bg-background focus:px-2 focus:py-1 focus:text-xs focus:text-foreground focus:shadow-card"
+        data-testid="blueprint-block-comment-kb"
+        @click="onCommentBlock(block)"
+      >
+        <span class="icon-[lucide--message-square-plus]" aria-hidden="true" />
+        {{ t('knowledge.blueprints.annotation.commentBlock') }}
+      </button>
+
+      <BlueprintBlock
+        :block="block"
+        :section-path="sectionPath"
+        :threads="threadsFor(block.block_id)"
+        :citations="citations"
+        :readonly="readonly"
+        :active-thread-id="activeThreadId"
+        :show-closed="showClosed"
+        :plain-mermaid="plainMermaid"
+        @thread-click="(threadId, allThreadIds) => emit('thread-click', threadId, allThreadIds)"
+        @citation-click="emit('citation-click', $event)"
+      />
+    </div>
   </div>
 </template>

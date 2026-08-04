@@ -11,6 +11,11 @@ export interface NavSection {
 
 const props = defineProps<{
   sections: NavSection[]
+  /**
+   * 滚动定位偏移（像素），点击时求值 —— 页面的 sticky 头高度可能随内容（如警示横幅）
+   * 变化，静态常量会把段标题埋进头下。缺省沿用既有 88。
+   */
+  scrollOffset?: () => number
 }>()
 
 const activeSection = ref<string>(props.sections[0]?.id ?? '')
@@ -74,7 +79,7 @@ function scrollTo(id: string) {
   const el = document.getElementById(id)
   if (!el)
     return
-  const offset = 88
+  const offset = props.scrollOffset?.() ?? 88
   const top = el.getBoundingClientRect().top + window.scrollY - offset
   window.scrollTo({ top, behavior: 'smooth' })
 }

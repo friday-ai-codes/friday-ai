@@ -78,10 +78,16 @@ function formatTime(raw: string): string {
 </script>
 
 <template>
-  <section v-if="!hidden" class="flat-section" data-testid="project-blueprints-card">
-    <header class="flat-header">
+  <!-- ⭐ 样式必须走全局 `card` 模式（同面板的 HumanTaskInbox / ArtifactTimeline 同款）：
+       `flat-section` / `flat-header` 只存在于宿主 ProjectMaterialsPanel 的 **scoped** 样式里，
+       scoped CSS 不会作用到子组件内部 ⇒ 在这里用它们等于裸 DOM 无样式（头部图标/标题/徽标
+       各占一行的破版就是这么来的）。 -->
+  <section v-if="!hidden" class="card" data-testid="project-blueprints-card">
+    <header class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2.5">
       <span class="section-chip"><span class="icon-[lucide--file-text]" /></span>
-      <h3>{{ t('knowledge.blueprints.pageTitle') }}</h3>
+      <h2 class="text-sm font-semibold text-foreground">
+        {{ t('knowledge.blueprints.pageTitle') }}
+      </h2>
       <Badge v-if="total > 0" variant="muted">
         {{ total }}
       </Badge>
@@ -119,8 +125,8 @@ function formatTime(raw: string): string {
             :data-artifact-id="item.artifact_id"
           >
             <BlueprintStatusBadge :status="item.current_status" size="sm" class="shrink-0" />
-            <span class="min-w-0 flex-1 truncate text-sm">{{ item.title }}</span>
-            <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+            <span class="min-w-0 flex-1 truncate text-sm" :title="item.title">{{ item.title }}</span>
+            <span class="shrink-0 text-xs tabular-nums text-muted-foreground">
               {{ formatTime(item.updated_at) }}
             </span>
           </RouterLink>
