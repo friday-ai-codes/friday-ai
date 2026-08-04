@@ -64,3 +64,6 @@ docs/.vitepress/cache/
 # 历史上 .claude/worktrees/v0.10-audit 被误当 gitlink 提交且不在 .gitmodules 里，
 # 导致 CI 一旦 checkout submodules 就 fatal: No url found for submodule path。
 .claude/worktrees/
+
+# Go 运行器本地编译产物（48MB Mach-O，由 runner/Makefile 构建；二进制绝不进 git 历史）
+runner/friday-runner
