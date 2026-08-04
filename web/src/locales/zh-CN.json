@@ -322,6 +322,11 @@
       },
       "stage": {
         "title": "编排进展",
+        "summaryCurrent": "当前阶段：{label}",
+        "summaryDone": "编排已完成",
+        "summaryFailed": "{label}未成功",
+        "expand": "展开编排进展",
+        "collapse": "收起编排进展",
         "empty": "尚未开始编排",
         "spec_gate": "需求规格门",
         "route": "仓库路由",
@@ -339,7 +344,9 @@
       "viewer": {
         "live": "实时更新中",
         "sectionNavLabel": "跳转到段落",
-        "highlightJump": "已定位到目标位置"
+        "highlightJump": "已定位到目标位置",
+        "backToTop": "返回顶部",
+        "nextOpen": "下一条未决（{n}）"
       },
       "export": {
         "unconfirmedBanner": "未经确认 —— 本方案尚未经人工终审，导出物同样会带此标注",
@@ -366,7 +373,7 @@
         "stageFailed": "阶段未成功",
         "specGateScored": "正在评估需求规格完备度…",
         "specGateClarificationAsked": "已就需求规格提出 {question_count} 个澄清问题，等待作答…",
-        "specGateClarificationAskedGeneric": "已就需求规格提出澄清问题，等待作答…",
+        "specGateClarificationAskedGeneric": "已就需求规格提出澄清问题",
         "specGateLocked": "需求规格已锁定，共沉淀 {decision_log_count} 条决策",
         "specGateLockedGeneric": "需求规格已锁定",
         "routeScored": "正在评估 {candidate_count} 个候选仓库…",
@@ -501,6 +508,10 @@
         "showClosedHint": "已关闭的批注以灰色点线标注",
         "emptyTitle": "暂无批注",
         "emptyBody": "AI 的划线提问与你的评论都会出现在这里；选中正文任意片段即可发起评论",
+        "commentBlock": "对此块评论",
+        "emptyClosedTitle": "没有待处理的批注",
+        "emptyClosedBody": "有 {n} 条已关闭批注被隐藏",
+        "emptyClosedAction": "显示已关闭批注",
         "countBlocker": "未决阻塞 {n}",
         "countClarification": "待澄清 {n}",
         "countOrphaned": "失锚 {n}",

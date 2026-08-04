@@ -158,129 +158,138 @@ const sidebarToggleLabel = computed(() =>
 </script>
 
 <template>
+  <!-- ⭐ 三段式顶栏（116 视觉整改）：警示细条 → 身份行（标题+状态 ｜ 终审） → 工具行。
+       此前全部控件平铺在一个 flex-wrap 里，标题、开关、按钮混排换行、终审键被挤到
+       第三行右下角 —— 层次全无。testid / props / emits 逐一保留，只动布局。 -->
   <div
-    class="card sticky top-0 z-30 flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3"
+    class="card sticky top-0 z-30 overflow-hidden"
     data-testid="blueprint-viewer-header"
   >
-    <!-- ⭐ 「未经确认」常驻横幅：⛔ 无关闭控件、⛔ 无 dismiss —— 白名单外一律渲染 -->
+    <!-- ① 「未经确认」常驻警示：贴卡片顶边的细条（⛔ 无关闭控件、⛔ 无 dismiss） -->
     <div
       v-if="unconfirmed"
-      class="flex w-full items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
+      class="flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-5 py-1.5 text-xs text-amber-800"
       role="status"
       data-testid="blueprint-unconfirmed-banner"
     >
-      <span class="icon-[lucide--alert-triangle]" aria-hidden="true" />
-      <span>{{ t('knowledge.blueprints.export.unconfirmedBanner') }}</span>
+      <span class="icon-[lucide--alert-triangle] shrink-0" aria-hidden="true" />
+      <span class="min-w-0 truncate">{{ t('knowledge.blueprints.export.unconfirmedBanner') }}</span>
     </div>
 
-    <!-- 标题：与知识库主页 H1 同款字号（§14 的唯一例外） -->
-    <h1 v-if="title" class="min-w-0 max-w-full truncate text-2xl font-bold tracking-tight">
-      {{ title }}
-    </h1>
-    <div v-else class="h-7 w-56 animate-pulse rounded-md bg-muted" aria-hidden="true" />
+    <!-- ② 身份行：标题 + 状态 + 生成中（左）｜ 终审决策（右，恒在第一行） -->
+    <div class="flex items-center gap-3 px-5 pt-3 pb-1.5">
+      <h1 v-if="title" class="min-w-0 flex-1 truncate text-xl font-bold tracking-tight">
+        {{ title }}
+      </h1>
+      <div v-else class="h-7 w-56 flex-1 animate-pulse rounded-md bg-muted" aria-hidden="true" />
 
-    <BlueprintStatusBadge :status="currentStatus" />
+      <BlueprintStatusBadge :status="currentStatus" class="shrink-0" />
 
-    <!-- 三个计数徽标（⭐ 为 0 的档不出现在 countBadges 里）。
-         ⭐ 自己包一层 `flex-nowrap overflow-x-auto`：§5.2 的 `< md` 行写的是「计数徽标折成
-         一行可横向滚动」。顶栏是 `sticky`，让徽标参与外层 `flex-wrap` 会在窄屏把整条顶栏
-         撑高，直接挤压它下方的正文可视区。 -->
-    <div
-      v-if="countBadges.length"
-      class="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto"
-      data-testid="blueprint-header-counts"
-    >
-      <Badge
-        v-for="badge in countBadges"
-        :key="badge.key"
-        :variant="badge.variant"
-        :data-count="badge.key"
-        class="shrink-0 whitespace-nowrap"
+      <!-- 生成中指示 -->
+      <span
+        v-if="isLive"
+        class="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
+        aria-live="polite"
+        data-testid="blueprint-viewer-live"
       >
-        <span :class="badge.icon" />
-        {{ badge.label }}
-      </Badge>
+        <span class="icon-[lucide--loader-2] animate-spin" />
+        {{ t('knowledge.blueprints.viewer.live') }}
+      </span>
+
+      <!-- ⭐ 终审操作区：可用性判断、二次确认与 Tooltip 全在 115-04 的组件里，本组件只透传 -->
+      <div v-if="!readonly" class="flex shrink-0 items-center">
+        <BlueprintReviewActions
+          :current-status="currentStatus"
+          :revision-round="revisionRound"
+          :submitting="submitting"
+          @approve="emit('approve')"
+          @reject="emit('reject')"
+        />
+      </div>
     </div>
 
-    <!-- 生成中指示 -->
-    <span
-      v-if="isLive"
-      class="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-      aria-live="polite"
-      data-testid="blueprint-viewer-live"
-    >
-      <span class="icon-[lucide--loader-2] animate-spin" />
-      {{ t('knowledge.blueprints.viewer.live') }}
-    </span>
-
-    <BlueprintVersionSwitcher
-      :versions="versions"
-      :current-version-id="currentVersionId"
-      @change="emit('change-version', $event)"
-      @compare="emit('open-diff', $event)"
-    />
-
-    <!-- 阅读区开关 -->
-    <label class="inline-flex items-center gap-2 text-xs text-muted-foreground">
-      <Switch
-        :model-value="showClosed"
-        data-testid="blueprint-header-show-closed"
-        @update:model-value="emit('toggle-closed-annotations', $event)"
+    <!-- ③ 工具行：版本与计数（左）· 阅读开关 / 批注 / 导出（右），muted 弱化不与身份行抢焦点 -->
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 pb-2.5 pt-1">
+      <BlueprintVersionSwitcher
+        :versions="versions"
+        :current-version-id="currentVersionId"
+        @change="emit('change-version', $event)"
+        @compare="emit('open-diff', $event)"
       />
-      <span>
-        {{ t('knowledge.blueprints.annotation.showClosed') }}
-      </span>
-    </label>
 
-    <Button
-      variant="ghost"
-      size="sm"
-      class="hidden xl:inline-flex"
-      :aria-label="sidebarToggleLabel"
-      :title="sidebarToggleLabel"
-      data-testid="blueprint-header-sidebar-toggle"
-      @click="emit('toggle-sidebar')"
-    >
-      <span :class="sidebarCollapsed ? 'icon-[lucide--panel-left-open]' : 'icon-[lucide--panel-left-close]'" />
-    </Button>
+      <!-- 三个计数徽标（⭐ 为 0 的档不出现在 countBadges 里）。
+           ⭐ 自己包一层 `flex-nowrap overflow-x-auto`：窄屏折成一行可横向滚动，
+           不让徽标参与外层换行把 sticky 顶栏撑高。 -->
+      <div
+        v-if="countBadges.length"
+        class="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto"
+        data-testid="blueprint-header-counts"
+      >
+        <Badge
+          v-for="badge in countBadges"
+          :key="badge.key"
+          :variant="badge.variant"
+          :data-count="badge.key"
+          class="shrink-0 whitespace-nowrap"
+        >
+          <span :class="badge.icon" aria-hidden="true" />
+          {{ badge.label }}
+        </Badge>
+      </div>
 
-    <!-- 窄屏：唤起批注抽屉 -->
-    <Button
-      variant="outline"
-      size="sm"
-      class="xl:hidden"
-      :aria-label="t('knowledge.blueprints.annotation.sidebarToggleAria', { n: annotationTotal })"
-      data-testid="blueprint-header-open-annotations"
-      @click="emit('open-annotations')"
-    >
-      <span class="icon-[lucide--messages-square] mr-1.5" />
-      {{ annotationTotal > 0
-        ? t('knowledge.blueprints.annotation.sidebarToggle', { n: annotationTotal })
-        : t('knowledge.blueprints.annotation.sidebarToggleEmpty') }}
-    </Button>
+      <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
+        <!-- 阅读区开关 -->
+        <label class="inline-flex items-center gap-2 text-xs text-muted-foreground">
+          <Switch
+            :model-value="showClosed"
+            data-testid="blueprint-header-show-closed"
+            @update:model-value="emit('toggle-closed-annotations', $event)"
+          />
+          <span>
+            {{ t('knowledge.blueprints.annotation.showClosed') }}
+          </span>
+        </label>
 
-    <!-- ⭐ 导出按钮：availability 非 true ⇒ **不渲染**（⛔ 不是 disabled + tooltip）；只 emit -->
-    <Button
-      v-if="exportAvailable"
-      variant="outline"
-      size="sm"
-      :disabled="exporting"
-      data-testid="blueprint-header-export"
-      @click="emit('export')"
-    >
-      <span class="icon-[lucide--file-up] mr-1.5" />
-      {{ t('knowledge.blueprints.export.action') }}
-    </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          class="hidden xl:inline-flex"
+          :aria-label="sidebarToggleLabel"
+          :title="sidebarToggleLabel"
+          data-testid="blueprint-header-sidebar-toggle"
+          @click="emit('toggle-sidebar')"
+        >
+          <span :class="sidebarCollapsed ? 'icon-[lucide--panel-left-open]' : 'icon-[lucide--panel-left-close]'" />
+        </Button>
 
-    <!-- ⭐ 终审操作区：可用性判断、二次确认与 Tooltip 全在 115-04 的组件里，本组件只透传 -->
-    <div v-if="!readonly" class="ml-auto flex items-center">
-      <BlueprintReviewActions
-        :current-status="currentStatus"
-        :revision-round="revisionRound"
-        :submitting="submitting"
-        @approve="emit('approve')"
-        @reject="emit('reject')"
-      />
+        <!-- 窄屏：唤起批注抽屉 -->
+        <Button
+          variant="outline"
+          size="sm"
+          class="xl:hidden"
+          :aria-label="t('knowledge.blueprints.annotation.sidebarToggleAria', { n: annotationTotal })"
+          data-testid="blueprint-header-open-annotations"
+          @click="emit('open-annotations')"
+        >
+          <span class="icon-[lucide--messages-square] mr-1.5" />
+          {{ annotationTotal > 0
+            ? t('knowledge.blueprints.annotation.sidebarToggle', { n: annotationTotal })
+            : t('knowledge.blueprints.annotation.sidebarToggleEmpty') }}
+        </Button>
+
+        <!-- ⭐ 导出按钮：availability 非 true ⇒ **不渲染**（⛔ 不是 disabled + tooltip）；只 emit -->
+        <Button
+          v-if="exportAvailable"
+          variant="outline"
+          size="sm"
+          :disabled="exporting"
+          data-testid="blueprint-header-export"
+          @click="emit('export')"
+        >
+          <span class="icon-[lucide--file-up] mr-1.5" />
+          {{ t('knowledge.blueprints.export.action') }}
+        </Button>
+      </div>
     </div>
   </div>
 </template>

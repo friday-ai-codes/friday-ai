@@ -119,6 +119,12 @@ const isFinding = computed(() => props.thread.kind === 'ai_review_finding')
 
 const isOrphaned = computed(() => props.thread.anchor_status === 'orphaned')
 
+/** 已有结论的线程（resolved / dismissed）不再渲染作答框 —— 对着已关闭的问题挂一个
+ * 输入框只会诱导无意义的追答（116 视觉整改；后端虽允许追加消息，但那不是主路径）。 */
+const isClosed = computed(
+  () => props.thread.status === 'resolved' || props.thread.status === 'dismissed',
+)
+
 const kindLabel = computed(() =>
   t(`knowledge.blueprints.thread.${KIND_LABEL_KEY[props.thread.kind] ?? 'kindHumanComment'}`),
 )
@@ -204,7 +210,7 @@ function onGotoGate(): void {
       <Badge :variant="statusVariant">
         {{ statusLabel }}
       </Badge>
-      <span class="ml-auto text-[11px] text-muted-foreground">{{ formatTime(thread.created_at) }}</span>
+      <span class="ml-auto text-xs text-muted-foreground">{{ formatTime(thread.created_at) }}</span>
     </button>
 
     <!-- 失锚：原文已变更，只能给引用时的快照 -->
@@ -217,7 +223,7 @@ function onGotoGate(): void {
     </p>
 
     <div v-if="quotedText" class="rounded-lg bg-muted/50 px-2.5 py-1.5">
-      <p class="text-[11px] text-muted-foreground">
+      <p class="text-xs text-muted-foreground">
         {{ t('knowledge.blueprints.annotation.quotedSnapshot') }}
       </p>
       <pre class="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">{{ quotedText }}</pre>
@@ -231,7 +237,7 @@ function onGotoGate(): void {
         data-testid="blueprint-thread-message"
         class="space-y-0.5"
       >
-        <div class="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Badge :variant="message.author_type === 'ai' ? 'info' : 'secondary'">
             {{ authorLabel(message.author_type, message.author_display) }}
           </Badge>
@@ -241,7 +247,7 @@ function onGotoGate(): void {
       </li>
     </ul>
 
-    <p v-if="thread.last_reminded_at" class="text-[11px] text-muted-foreground">
+    <p v-if="thread.last_reminded_at" class="text-xs text-muted-foreground">
       {{ t('knowledge.blueprints.thread.reminded', { time: formatTime(thread.last_reminded_at) }) }}
     </p>
 
@@ -256,7 +262,7 @@ function onGotoGate(): void {
     </div>
     <div v-else class="space-y-2 pt-0.5">
       <BlueprintThreadComposer
-        v-if="!readonly"
+        v-if="!readonly && !isClosed"
         :options="thread.options"
         :submitting="submitting"
         @submit="onAnswer"
