@@ -24,6 +24,8 @@ QUEUE_MAINTENANCE = "maintenance"
 QUEUE_DOC_SYNC = "doc_sync"
 # feature list 异步解析（父任务出模块 + fan-out 逐模块并发解析；lock=featparse-slot-{k} 控并发）
 QUEUE_FEATURE_PARSE = "feature_parse"
+# 蓝图编排续驱（作答/确认门动作后的状态机驱动；lock=blueprint-resume-{session_id} 同会话串行）
+QUEUE_BLUEPRINT = "blueprint"
 
 # 全部已声明队列的汇总，供注册 / 校验 / worker 启动参数等场景遍历。
 ALL_QUEUES: tuple[str, ...] = (
@@ -35,6 +37,7 @@ ALL_QUEUES: tuple[str, ...] = (
     QUEUE_MAINTENANCE,
     QUEUE_DOC_SYNC,
     QUEUE_FEATURE_PARSE,
+    QUEUE_BLUEPRINT,
 )
 
 __all__ = [
@@ -46,5 +49,6 @@ __all__ = [
     "QUEUE_MAINTENANCE",
     "QUEUE_DOC_SYNC",
     "QUEUE_FEATURE_PARSE",
+    "QUEUE_BLUEPRINT",
     "ALL_QUEUES",
 ]

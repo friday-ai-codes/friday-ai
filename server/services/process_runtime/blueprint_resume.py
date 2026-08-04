@@ -36,7 +36,6 @@ CAS 条件对两个并发写者同时成立，去重不生效——``stage_state
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any
 
@@ -52,6 +51,7 @@ __all__ = [
     "arecover_stalled_blueprint_sessions",
     "aresume_after_gate_action",
     "aresume_blueprint_session",
+    "arun_blueprint_resume",
 ]
 
 # 本 helper 唯一允许驱动的 process 类型（与 builtin_processes 第三次注册同值）。
@@ -251,19 +251,11 @@ async def _aresume_workflow_node_if_any(session: Any) -> None:
         )
 
 
-async def aresume_after_gate_action(
-    session: Any, *, initiated_by_user_id: str, engine: Any = None
-) -> Any:
-    """确认门动作端点的续驱入口（**best-effort，失败绝不反噬已持久化的动作**）。
+async def arun_blueprint_resume(session_id: str, *, initiated_by_user_id: str = "system") -> dict:
+    """续驱任务体：驱动会话到挂起点/终态 + 两个入口回灌 hook 的**共同出口**（恒不抛）。
 
-    调用方是 ``delivery/api/blueprint_gate_views.py`` 的六个改状态动作端点：动作端点只
-    落库不推进 stage，本函数负责那一步 advance。整段 ``try/except`` 全兜——**helper 自己
-    兜住，调用方视图不重复包**：异常只记 ``blueprint_gate_resume_failed`` 并返回传入的
-    session，绝不上抛让 REST 变 5xx；``pending_research`` 标记与 task 状态都在库里，下一
-    次任意确认门动作或容器回调续驱时判据仍成立，不丢事。
-
-    ⭐ advance 之后**必过**两个入口侧回环 hook —— 本函数是全部作答链（REST / MCP /
-    查看器）的**共同出口**，两个入口各自的挂起物得有人负责解开：
+    由 durable worker（``durable.tasks_impl.run_blueprint_resume``）与恢复扫描共用。
+    ⭐ advance 之后**必过**两个入口侧回环 hook：
 
     - :func:`_afeedback_chat_barrier_if_any`（116-REVIEW MN-04 ②）：回灌 chat 的 blocking
       waiter，否则对话里的占位永久停住。
@@ -271,107 +263,125 @@ async def aresume_after_gate_action(
       ``waiting_event`` 的 ``AIPlanResearchNode``，否则蓝图早已 ``confirmed``、工作流却
       永远停在挂起。
 
-    两者都自带入口守门 + 幂等，非本入口的会话原地返回；都吞异常，⛔ 绝不反噬门动作。
-
-    ⭐ **抗请求取消**（116 事故修复）：本函数通常在 HTTP 请求内被 await，而续驱中途可能
-    有数十秒的 LLM 调用 —— 客户端断开 / 进程收尾会把请求协程连同续驱一起取消，留下
-    「线程已答完、会话永远停在 waiting_clarification」的僵尸（实测正是这么产生的）。
-    因此正常路径保持内联（响应语义零变化），**仅在被取消时**把一个全新的续驱协程
-    移交给 ``background_runner`` 的常驻线程继续跑；进程直接死亡的情形由
-    :func:`arecover_stalled_blueprint_sessions` 的周期扫描兜底。
+    两者都自带入口守门 + 幂等，非本入口的会话原地返回；都吞异常。驱动失败只记
+    warning 并如实返回 —— 状态都在库里，下一次动作或恢复扫描重试时判据仍成立。
     """
     started = time.perf_counter()
+    result = {
+        "resolved": False,
+        "session_id": session_id,
+        "session_status": "",
+        "current_stage": "",
+    }
     try:
+        from delivery.models import ConvergenceSession
+
         from .entrypoint import build_blueprint_engine
 
-        engine = engine or build_blueprint_engine()
+        session = await ConvergenceSession.objects.filter(id=session_id).afirst()
+        if session is None:
+            return result
+        engine = build_blueprint_engine()
         session = await adrive_blueprint_session_to_pause_or_terminal(engine, session)
         await _afeedback_chat_barrier_if_any(session)
         await _aresume_workflow_node_if_any(session)
+        result.update(
+            resolved=True,
+            session_status=str(getattr(session, "status", "")),
+            current_stage=str(getattr(session, "current_stage", "")),
+        )
         _safe_log(
-            "blueprint_gate_resume_completed",
+            "blueprint_resume_job_completed",
             category="caller",
             component="process_runtime",
             initiated_by_user_id=initiated_by_user_id or "system",
-            session_id=str(getattr(session, "id", "")),
-            session_status=str(getattr(session, "status", "")),
-            current_stage=str(getattr(session, "current_stage", "")),
+            session_id=session_id,
+            session_status=result["session_status"],
+            current_stage=result["current_stage"],
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
-        return session
-    except asyncio.CancelledError:
-        # 请求被取消：续驱以**全新协程**（按 id 重取会话、重建 engine）移交后台线程 ——
-        # ⛔ 不能续用本协程/本事件循环：请求结束后 asgiref 的 CurrentThreadExecutor 已关，
-        # 任何 sync_to_async 都会炸（background_runner 模块头有同一教训的完整记录）。
-        _adetach_resume(str(getattr(session, "id", "")), initiated_by_user_id=initiated_by_user_id)
-        raise
-    except Exception as exc:  # noqa: BLE001 — 续驱失败绝不反噬动作（动作已持久化）
+        return result
+    except Exception as exc:  # noqa: BLE001 — 任务体恒不抛：状态在库里，可由下次触发重试
+        logger.warning(
+            "blueprint_resume_job_failed",
+            category="caller",
+            component="process_runtime",
+            initiated_by_user_id=initiated_by_user_id or "system",
+            session_id=session_id,
+            error=redact_secrets_in_text(str(exc)),
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        return result
+
+
+async def aresume_after_gate_action(
+    session: Any, *, initiated_by_user_id: str, engine: Any = None
+) -> Any:
+    """确认门/作答动作端点的续驱入口：**只入队，不在请求内驱动**（116 队列化）。
+
+    调用方是 ``blueprint_gate_views`` 的六个改状态动作端点与作答/驳回/处置链：动作端点
+    落库后调本函数，本函数把一个 ``durable_blueprint_resume`` 任务扔进 durable 队列即返回
+    ——「已受理」语义。驱动全在 worker（Postgres 路径由 procrastinate 持久化，重启后接着
+    跑；SQLite dev 走 in-process fallback + 周期恢复扫描兜底）。这替代了旧的请求内联驱动：
+    续驱中途的长 LLM 调用不再可能被客户端断开 / 进程收尾连根取消（僵尸会话的根因）。
+
+    入队带 ``lock=blueprint-resume-{session_id}``（同会话串行驱动）、⛔ 不带
+    ``idempotency_key``（去重会吃掉「驱动进行中又来一次人工动作」的触发；并发驱动本就由
+    CAS + pause 短路兜底）。入队失败只记 warning 并返回传入的 session，绝不上抛让 REST
+    变 5xx —— 状态都在库里，恢复扫描会捡起来。
+
+    ``engine`` 形参仅供测试注入直驱路径（确定性断言用）：非 None 时内联驱动 + 过两个
+    回灌 hook，语义与任务体一致；生产调用方从不传。
+    """
+    session_id = str(getattr(session, "id", "") or "")
+
+    if engine is not None:
+        # 测试直驱路径：不入队，同步驱完（与 arun_blueprint_resume 同一组合）。
+        try:
+            fresh = await adrive_blueprint_session_to_pause_or_terminal(engine, session)
+            await _afeedback_chat_barrier_if_any(fresh)
+            await _aresume_workflow_node_if_any(fresh)
+            return fresh
+        except Exception as exc:  # noqa: BLE001 — 与队列路径同语义：失败不反噬动作
+            logger.warning(
+                "blueprint_gate_resume_failed",
+                category="caller",
+                component="process_runtime",
+                initiated_by_user_id=initiated_by_user_id or "system",
+                session_id=session_id,
+                error=redact_secrets_in_text(str(exc)),
+            )
+            return session
+
+    try:
+        from durable.queues import QUEUE_BLUEPRINT
+        from durable.service import DurableTaskService
+
+        job_id = await DurableTaskService.defer(
+            "durable_blueprint_resume",
+            {"session_id": session_id},
+            queue=QUEUE_BLUEPRINT,
+            lock=f"blueprint-resume-{session_id}",
+            initiated_by_user_id=initiated_by_user_id or "system",
+        )
+        _safe_log(
+            "blueprint_resume_enqueued",
+            category="caller",
+            component="process_runtime",
+            initiated_by_user_id=initiated_by_user_id or "system",
+            session_id=session_id,
+            job_id=str(job_id),
+        )
+    except Exception as exc:  # noqa: BLE001 — 入队失败绝不反噬动作（动作已持久化）
         logger.warning(
             "blueprint_gate_resume_failed",
             category="caller",
             component="process_runtime",
             initiated_by_user_id=initiated_by_user_id or "system",
-            session_id=str(getattr(session, "id", "")),
-            error=redact_secrets_in_text(str(exc)),
-            duration_ms=round((time.perf_counter() - started) * 1000, 2),
-        )
-        return session
-
-
-def _adetach_resume(session_id: str, *, initiated_by_user_id: str) -> None:
-    """请求被取消时的续驱移交：在后台常驻线程上跑一个**全新**的续驱协程（best-effort）。
-
-    协程体自己按 id 重取会话、重建 engine —— 与被取消的那次调用零共享对象（跨事件循环
-    共享 coroutine / ORM 惰性代理都是雷）。移交失败只记 warning：还有周期恢复扫描兜底。
-    """
-    if not session_id:
-        return
-
-    async def _drive_fresh() -> None:
-        from delivery.models import ConvergenceSession
-
-        from .entrypoint import build_blueprint_engine
-
-        fresh = await ConvergenceSession.objects.filter(id=session_id).afirst()
-        if fresh is None:
-            return
-        engine = build_blueprint_engine()
-        fresh = await adrive_blueprint_session_to_pause_or_terminal(engine, fresh)
-        await _afeedback_chat_barrier_if_any(fresh)
-        await _aresume_workflow_node_if_any(fresh)
-        _safe_log(
-            "blueprint_gate_resume_detached_completed",
-            category="caller",
-            component="process_runtime",
-            initiated_by_user_id=initiated_by_user_id or "system",
-            session_id=session_id,
-            session_status=str(getattr(fresh, "status", "")),
-            current_stage=str(getattr(fresh, "current_stage", "")),
-        )
-
-    try:
-        from services.background_runner import run_in_background
-
-        run_in_background(
-            lambda: _drive_fresh(),
-            name=f"blueprint-resume-detached-{session_id}",
-            initiated_by_user_id=initiated_by_user_id or "system",
-        )
-        _safe_log(
-            "blueprint_gate_resume_detached",
-            category="caller",
-            component="process_runtime",
-            initiated_by_user_id=initiated_by_user_id or "system",
-            session_id=session_id,
-        )
-    except Exception as exc:  # noqa: BLE001 — 移交 best-effort，周期恢复扫描仍会兜底
-        logger.warning(
-            "blueprint_gate_resume_detach_failed",
-            category="caller",
-            component="process_runtime",
             session_id=session_id,
             error=redact_secrets_in_text(str(exc)),
         )
+    return session
 
 
 # ── 僵尸会话周期恢复（116 事故修复的另一半）─────────────────────────────────
@@ -506,36 +516,56 @@ async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0
 async def aresume_blueprint_session(session: Any, *, engine: Any = None) -> Any:
     """调研 fan-out barrier 的续驱入口（112-04 的接线契约，函数名即契约）。
 
-    全部 ``RepoResearchTask`` 终态后由 ``subagent/api/callbacks.py`` 的 barrier 调用；
-    与 :func:`aresume_after_gate_action` 同为 best-effort（回调链绝不能因续驱异常
-    把容器回调打成 5xx）。
+    全部 ``RepoResearchTask`` 终态后由 ``subagent/api/callbacks.py`` 的 barrier 调用。
+    116 队列化后与 :func:`aresume_after_gate_action` 同款：**只入队，不在回调请求内驱动**
+    （回调链绝不能因续驱异常/被杀丢掉推进）。``engine`` 形参仅供测试注入直驱路径。
     """
-    started = time.perf_counter()
-    try:
-        from .entrypoint import build_blueprint_engine
+    session_id = str(getattr(session, "id", "") or "")
+    initiated = str(getattr(session, "initiated_by_user_id", "") or "") or "system"
 
-        engine = engine or build_blueprint_engine()
-        session = await adrive_blueprint_session_to_pause_or_terminal(engine, session)
+    if engine is not None:
+        # 测试直驱路径：同步驱完（barrier 链没有 chat/workflow 回灌职责之外的差异，
+        # 两个 hook 由任务体统一承担，这里保持旧契约只驱动）。
+        try:
+            return await adrive_blueprint_session_to_pause_or_terminal(engine, session)
+        except Exception as exc:  # noqa: BLE001 — 回调链 best-effort
+            logger.warning(
+                "blueprint_barrier_resume_failed",
+                category="caller",
+                component="process_runtime",
+                session_id=session_id,
+                error=redact_secrets_in_text(str(exc)),
+            )
+            return session
+
+    try:
+        from durable.queues import QUEUE_BLUEPRINT
+        from durable.service import DurableTaskService
+
+        job_id = await DurableTaskService.defer(
+            "durable_blueprint_resume",
+            {"session_id": session_id},
+            queue=QUEUE_BLUEPRINT,
+            lock=f"blueprint-resume-{session_id}",
+            initiated_by_user_id=initiated,
+        )
         _safe_log(
-            "blueprint_barrier_resume_completed",
+            "blueprint_resume_enqueued",
             category="caller",
             component="process_runtime",
-            initiated_by_user_id=str(getattr(session, "initiated_by_user_id", "") or "system"),
-            session_id=str(getattr(session, "id", "")),
-            session_status=str(getattr(session, "status", "")),
-            current_stage=str(getattr(session, "current_stage", "")),
-            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            initiated_by_user_id=initiated,
+            session_id=session_id,
+            job_id=str(job_id),
         )
-        return session
-    except Exception as exc:  # noqa: BLE001 — 回调链 best-effort
+    except Exception as exc:  # noqa: BLE001 — 回调链 best-effort，恢复扫描兜底
         logger.warning(
             "blueprint_barrier_resume_failed",
             category="caller",
             component="process_runtime",
-            session_id=str(getattr(session, "id", "")),
+            session_id=session_id,
             error=redact_secrets_in_text(str(exc)),
         )
-        return session
+    return session
 
 
 # ── pause 判据与蓝图状态映射（均 best-effort，绝不反噬续驱）────────────────────

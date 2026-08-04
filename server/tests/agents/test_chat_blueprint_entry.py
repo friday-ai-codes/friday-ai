@@ -471,13 +471,14 @@ async def test_terminal_session_leaves_no_resuspend_trace() -> None:
 
 @pytest.mark.asyncio
 async def test_answer_chain_is_the_second_exit_that_feeds_the_waiter() -> None:
-    """⭐ 断链二：作答链（``aresume_after_gate_action``）驱到终态时也必须回灌。
+    """⭐ 断链二：作答链的共同出口驱到终态时也必须回灌。
 
-    这是全部作答链（REST / MCP / 查看器）的共同出口 —— 回退前它们**一个都不回灌**，
-    对话里的占位永久停住。
+    116 队列化后，全部作答链（REST / MCP / 查看器）的共同出口是 worker 任务体
+    ``arun_blueprint_resume``（端点侧的 ``aresume_after_gate_action`` 只入队）——
+    回退前这条链**一处都不回灌**，对话里的占位永久停住。
     """
     from delivery.models import ConvergenceSessionStatus
-    from services.process_runtime.blueprint_resume import aresume_after_gate_action
+    from services.process_runtime.blueprint_resume import arun_blueprint_resume
 
     session, _artifact = await _amake_blueprint_session(
         status=ConvergenceSessionStatus.DONE, blueprint_status="pending_review", thread_kind=None
@@ -495,7 +496,7 @@ async def test_answer_chain_is_the_second_exit_that_feeds_the_waiter() -> None:
             return_value=type("M", (), {"task_completed": task_completed})(),
         ),
     ):
-        await aresume_after_gate_action(session, initiated_by_user_id="u-1")
+        await arun_blueprint_resume(str(session.id), initiated_by_user_id="u-1")
 
     task_completed.assert_awaited_once()
     assert task_completed.await_args.args[0] == str(session.id)
@@ -505,7 +506,7 @@ async def test_answer_chain_is_the_second_exit_that_feeds_the_waiter() -> None:
 async def test_answer_chain_hook_respects_the_non_chat_guard() -> None:
     """非恒真对照：非 chat 入口的会话走同一条作答链 ⇒ 仍然不回灌（守门没被绕过）。"""
     from delivery.models import ConvergenceSessionStatus
-    from services.process_runtime.blueprint_resume import aresume_after_gate_action
+    from services.process_runtime.blueprint_resume import arun_blueprint_resume
 
     session, _artifact = await _amake_blueprint_session(
         status=ConvergenceSessionStatus.DONE,
@@ -526,16 +527,16 @@ async def test_answer_chain_hook_respects_the_non_chat_guard() -> None:
             return_value=type("M", (), {"task_completed": task_completed})(),
         ),
     ):
-        await aresume_after_gate_action(session, initiated_by_user_id="u-1")
+        await arun_blueprint_resume(str(session.id), initiated_by_user_id="u-1")
 
     task_completed.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_answer_chain_hook_never_bites_back_on_the_gate_action() -> None:
-    """⭐ 回灌 best-effort：内部炸了也绝不反噬已持久化的门动作（仍正常返回 session）。"""
+    """⭐ 回灌 best-effort：内部炸了也绝不反噬续驱任务体（仍正常完成并返回结果）。"""
     from delivery.models import ConvergenceSessionStatus
-    from services.process_runtime.blueprint_resume import aresume_after_gate_action
+    from services.process_runtime.blueprint_resume import arun_blueprint_resume
 
     session, _artifact = await _amake_blueprint_session(
         status=ConvergenceSessionStatus.DONE, blueprint_status="pending_review", thread_kind=None
@@ -552,6 +553,7 @@ async def test_answer_chain_hook_never_bites_back_on_the_gate_action() -> None:
             AsyncMock(side_effect=RuntimeError("boom")),
         ),
     ):
-        returned = await aresume_after_gate_action(session, initiated_by_user_id="u-1")
+        result = await arun_blueprint_resume(str(session.id), initiated_by_user_id="u-1")
 
-    assert str(returned.id) == str(session.id)
+    assert result["resolved"] is True
+    assert result["session_id"] == str(session.id)
