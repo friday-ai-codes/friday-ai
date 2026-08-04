@@ -57,7 +57,7 @@ Plan: —
 Status: 15 条需求中 14 条完全交付、1 条（LIVE-04 的「推送」）部分交付——落的是增量轮询而非推送通道，已在 REQUIREMENTS.md 与 ROADMAP.md 显式登记
 遗留工作项: ① 蓝图推送通道（WS consumer 或 artifact 级 SSE，`useBlueprintLive.ts` 是唯一切换点，LIVE-04 的未达半边）；② 人工验收（真实飞书卡片重推 / 真实容器 resume / 浏览器视觉走查）；③ 未打 tag（与 v0.19.0、v0.20.0 一致）。逐条证据见 [milestones/v0.21.0-VERIFICATION.md](./milestones/v0.21.0-VERIFICATION.md)
 Status: 两个里程碑均判 `tech_debt`、均未打 tag；同步点 1/2 已达成，**同步点 2 的顺延工作项已全部执行完毕**（GATE-01 闭合），其余独立工作项待执行
-Last activity: 2026-08-02 — 同步点 2 收尾第二步：三处前端触点识别 blueprint/v1 + 四个入口开关默认翻 `technical_blueprint` + 旧 `technical_plan` process 退役收口（`789a1c0a` / `39b84961` / `e3184cef`）
+Last activity: 2026-08-05 — Completed quick task 260805-31u: 任务队列完整化——runner 派发持久化（durable QUEUE_DISPATCH 取代 TaskDispatcher 内存队列）与编排首驱入队（`b0834f7d` / `9af919fc` / `adb1f801`）
 
 > 相位执行期的逐 plan 状态存档（各 plan 的收口记录与「开工前必读」清单）随归档移出本文件 —— 权威副本在 `.planning/milestones/v0.{19,20}.0-phases/<phase>/<plan>-SUMMARY.md`，历史版本在 git。**仍然有效的跨里程碑信息全部保留在下方**：两个里程碑的关键约束/设计底座、Accumulated Context 的 Decisions 与 Pending Todos、Blockers/Concerns、Deferred Items。
 
@@ -757,6 +757,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 | 260727-het | 新增 friday-routing 技能：把「仓库路由 / 架构落点判定」从 friday-solution 的服务端三段式黑盒里拆出来，做成纯 agent 驱动的独立技能——自编排 15 个原子 MCP 检索工具做七阶段系统性调研（索引健康度 → 候选仓收敛 → 落点下钻 → 跨仓依赖 → 影响面与历史 → 置信度定级与批量澄清 → report_project_knowledge 沉淀），唯一产物是七列路由矩阵（功能点/目标仓库含 monorepo 子应用/落点文件/new·modify·unclear/证据/置信度/风险与跨仓依赖）；无证据一律降级 unclear，澄清必须批量+带具体选项+标推荐项；7 处接入面同步、技能计数 6→7，README 补齐 260726-uid 漏掉的 friday-solution 行 | 2026-07-27 | b02bf9ce | [260727-het-friday-routing-feature-list-prd](./quick/260727-het-friday-routing-feature-list-prd/) |
 | 260728-ppb | 修复「生成技术方案」不走 start_feature_solution：生产 Prompt Center `chat.coding_guidance`/`chat.strategy.default` body 漂移致指引从未注入；0011 幂等 resync + `check_builtin_prompt_drift` 运维命令 + 项目级对话指引补方案工具 | 2026-07-28 | 4e205236 | [260728-ppb-start-feature-solution](./quick/260728-ppb-start-feature-solution/) |
 | 260729-emz | 技术方案第二批：服务端 task_category 兜底直驱 FeatureSolutionService + 拦截项目方案范围 ask_clarification + propose_project_repos 运维命令 | 2026-07-29 | f50884f0 | [260729-emz-task-category-ask-clarification](./quick/260729-emz-task-category-ask-clarification/) |
+| 260805-31u | 任务队列完整化：TaskDispatcher 内存队列改造为 durable 派发任务（QUEUE_DISPATCH，redacted 快照落库 + defer、状态守卫幂等、5s→300s 退避、rejected 8 次落终态+告警、apscheduler 保险丝）+ workflow 蓝图首驱入队（defer durable_blueprint_resume，MCP 同步契约保持内联）；验证 passed 7/7，回归 2604 全绿 | 2026-08-05 | b0834f7d / 9af919fc / adb1f801 | [260805-31u-runner](./quick/260805-31u-runner/) |
 
 ## Deferred Items
 
