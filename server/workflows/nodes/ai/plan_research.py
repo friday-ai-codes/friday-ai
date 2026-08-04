@@ -234,6 +234,13 @@ class AIPlanResearchNode(AIAgentBaseNode):
                     output={"error_code": "missing_requirement"},
                     next_handle="error",
                 )
+            # 31u 首驱入队：**仅对本次新建的蓝图会话**跳过内联 adrive——首驱在请求 /
+            # 引擎线程内联跑，进程被杀即丢推进（116 队列化收尾）。resume 路径（上方
+            # _resolve_session 命中）与旧链 start_orchestration 分支逐字不动。
+            # 入队失败降级为 None → 继续走下方内联驱动，保证不比现状差。
+            enqueued = await self._amaybe_enqueue_blueprint_first_drive(session, context, log)
+            if enqueued is not None:
+                return enqueued
 
         # 2. 注入真实 adapters 构造 engine + 取该会话对应的 driver（可被测试 override）
         engine, adrive = self._build_engine(context, session)
@@ -428,6 +435,86 @@ class AIPlanResearchNode(AIAgentBaseNode):
             session_id=str(session.id),
         )
         return session
+
+    async def _amaybe_enqueue_blueprint_first_drive(
+        self, session: Any, context: ExecutionContext, log: Any
+    ) -> NodeResult | None:
+        """蓝图首驱入队（31u）：新建蓝图会话的首次驱动 defer 给 durable worker。
+
+        仅 workflow 入口的**新建蓝图会话**走本分支（调用点已限定在 ``_create_session``
+        成功之后）。两条明确排除（⛔ 不迁）：
+
+        - **chat 入口**（``plan_research_tools.py``）：用户在等流式同步反馈，首驱入队
+          会把对话变成无内容的空等；
+        - **旧链 technical_plan**（上方 ``start_orchestration`` 分支）：调用方主动续驱、
+          entry_key 退役观察中，且 ``durable_blueprint_resume`` 任务体对非 blueprint
+          process 本就 no-op——没有可复用的队列化任务。
+
+        入队与回灌闭环：defer 既有 ``durable_blueprint_resume``（复用 QUEUE_BLUEPRINT、
+        ``lock=blueprint-resume-{session_id}``、⛔ 无 ``idempotency_key``——与
+        ``aresume_after_gate_action`` 的入队形参逐字同构），本节点返回 ``waiting_event``
+        且 ``output_data["session_id"]`` 即接通续推钥匙（``_resolve_session``）与任务体
+        回灌（``_aresume_workflow_node_if_any`` 按 ``output_data__session_id`` +
+        WAITING_EVENT 反查重入；节点重入后自己重新驱动 / 判挂起，本输出随后被正确的
+        suspension 载荷覆盖）。
+
+        ⚠️ **已知竞态与三层兜底**（⛔ 不为此发明新调度机制）：worker 驱完时引擎可能
+        尚未把本 NodeExecution 持久化为 WAITING_EVENT ⇒ 那一次回灌 miss。兜底三层：
+        ① 用户作答 / 确认门动作链（``aresume_after_gate_action``）重入；
+        ② ``arecover_stalled_blueprint_sessions`` 15 分钟保险丝（对每条扫描候选重跑
+        两个回灌 hook）；③ 下方超时订阅到期出口（``check_timeouts`` 兜底，没有它，
+        回灌全 miss 的极端情形会无声永久挂起）。
+
+        Returns:
+            ``NodeResult(waiting_event)``（已入队）或 ``None``（非蓝图会话 / 入队失败
+            降级——调用方继续内联 ``adrive``，保证不比现状差）。
+        """
+        from services.process_runtime.blueprint_observation import is_blueprint_session
+
+        if not is_blueprint_session(session):
+            return None
+
+        initiated_by_user_id = self._resolve_initiator(context)
+        try:
+            from durable.queues import QUEUE_BLUEPRINT
+            from durable.service import DurableTaskService
+
+            job_id = await DurableTaskService.defer(
+                "durable_blueprint_resume",
+                {"session_id": str(session.id)},
+                queue=QUEUE_BLUEPRINT,
+                lock=f"blueprint-resume-{session.id}",
+                initiated_by_user_id=initiated_by_user_id,
+            )
+        except Exception:  # noqa: BLE001 — 入队失败降级为内联驱动（不比现状差）
+            log.warning(
+                "plan_research_first_drive_enqueue_failed",
+                category="caller",
+                component="plan_research",
+                initiated_by_user_id=initiated_by_user_id,
+                session_id=str(session.id),
+            )
+            return None
+
+        logger.info(
+            "plan_research_first_drive_enqueued",
+            category="caller",
+            component="plan_research",
+            initiated_by_user_id=initiated_by_user_id,
+            session_id=str(session.id),
+            job_id=str(job_id),
+        )
+        # 超时兜底订阅（上述第 ③ 层）：与澄清挂起同一配置键 / 同一到期出口。
+        await self._asubscribe_blueprint_timeout(context, kind="clarification")
+        return NodeResult(
+            status="waiting_event",
+            output={
+                "session_id": str(session.id),
+                # "clarification"/"research" 之外的新受控值：驱动尚未开始，只是已受理。
+                "kind": "enqueued",
+                "schema_version": _BLUEPRINT_SCHEMA_VERSION,
+            },
+        )
 
     @staticmethod
     def _requirement_from_input(context: ExecutionContext) -> str:
