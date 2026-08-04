@@ -12,6 +12,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '~/components/ui/tooltip'
+import { useMobileSidebar } from '~/composables/useMobileSidebar'
 import { usePermission } from '~/composables/usePermission'
 import { useAuthStore } from '~/stores/auth'
 import { useNotificationsStore } from '~/stores/notifications'
@@ -74,12 +75,22 @@ async function loadChangelog(open: boolean) {
   }
 }
 
-// 收缩状态持久化到 localStorage
-const isCollapsed = useLocalStorage('sidebar-collapsed', false)
+// 收缩偏好持久化到 localStorage；⭐ 实际收缩态只在 lg+ 生效 ——
+// `< lg` 的 off-canvas 面板恒为全宽形态（w-64 + 文字标签），图标轨道在手机上没有意义。
+const collapsedPref = useLocalStorage('sidebar-collapsed', false)
+const isDesktop = useMediaQuery('(min-width: 1024px)')
+const isCollapsed = computed(() => collapsedPref.value && isDesktop.value)
 
 function toggleCollapse() {
-  isCollapsed.value = !isCollapsed.value
+  collapsedPref.value = !collapsedPref.value
 }
+
+// `< lg` off-canvas 开合：路由跳转后自动收起（点导航项即视为完成选择）
+const { mobileOpen, close: closeMobileSidebar } = useMobileSidebar()
+const currentRoute = useRoute()
+watch(() => currentRoute.fullPath, () => {
+  mobileOpen.value = false
+})
 
 // ==================== 导航 ====================
 // AI 对话作为一级导航入口（会话列表在 /chat 页面内部展示，
@@ -126,9 +137,25 @@ async function handleLogout() {
 
 <template>
   <TooltipProvider :delay-duration="300">
+    <!-- `< lg` 遮罩：off-canvas 打开时点击关闭 -->
+    <Transition name="sidebar-backdrop">
+      <div
+        v-if="mobileOpen"
+        class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+        aria-hidden="true"
+        @click="closeMobileSidebar"
+      />
+    </Transition>
+
+    <!-- ⭐ 响应式双形态：`lg+` 维持原 sticky 双宽度侧栏；`< lg` 变为 fixed off-canvas
+         （固定 w-64，忽略收缩态），未打开时 -translate-x-full 移出视口 ——
+         否则 390px 下侧栏占掉 3/4 宽，所有页面内容被挤成细条。 -->
     <aside
-      class="sidebar-s2a sticky top-0 flex flex-col h-screen shrink-0 transition-all duration-300 ease-in-out"
-      :class="isCollapsed ? 'w-[72px]' : 'w-64'"
+      class="sidebar-s2a fixed inset-y-0 left-0 z-50 flex flex-col h-screen w-64 transition-transform duration-300 ease-in-out lg:sticky lg:top-0 lg:z-auto lg:shrink-0 lg:translate-x-0 lg:transition-all"
+      :class="[
+        mobileOpen ? 'translate-x-0' : '-translate-x-full',
+        isCollapsed ? 'lg:w-[72px]' : 'lg:w-64',
+      ]"
     >
       <!-- ==================== 顶部：Logo + 收缩按钮 ==================== -->
       <div
@@ -401,6 +428,16 @@ async function handleLogout() {
 </template>
 
 <style scoped>
+/* `< lg` off-canvas 遮罩淡入淡出 */
+.sidebar-backdrop-enter-active,
+.sidebar-backdrop-leave-active {
+  transition: opacity 0.2s ease;
+}
+.sidebar-backdrop-enter-from,
+.sidebar-backdrop-leave-to {
+  opacity: 0;
+}
+
 /* ==================== 版本 changelog 悬浮内容（v-html 渲染，需 :deep） ==================== */
 .changelog-content :deep(h1),
 .changelog-content :deep(h2),

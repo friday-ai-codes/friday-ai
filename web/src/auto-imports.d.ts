@@ -284,6 +284,7 @@ declare global {
   const useMemoize: typeof import('@vueuse/core').useMemoize
   const useMemory: typeof import('@vueuse/core').useMemory
   const useMessageParts: typeof import('./composables/useMessageParts').useMessageParts
+  const useMobileSidebar: typeof import('./composables/useMobileSidebar').useMobileSidebar
   const useModal: typeof import('./composables/useModal').useModal
   const useModel: typeof import('vue').useModel
   const useMounted: typeof import('@vueuse/core').useMounted

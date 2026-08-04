@@ -5,6 +5,7 @@ import GitHubStarButton from '~/components/layout/GitHubStarButton.vue'
 import SystemHealthPopover from '~/components/layout/SystemHealthPopover.vue'
 import NotificationBell from '~/components/notifications/NotificationBell.vue'
 import { Toaster } from '~/components/ui/sonner'
+import { useMobileSidebar } from '~/composables/useMobileSidebar'
 import { useNotificationsStore } from '~/stores/notifications'
 
 // WebSocket 实时监控：保留自动连接逻辑；状态展示由 SystemHealthPopover 聚合
@@ -17,6 +18,9 @@ onMounted(() => {
 })
 
 const route = useRoute()
+
+// `< lg` 全局侧栏收成 off-canvas，各 header 左侧渲染汉堡按钮唤起
+const { open: openMobileSidebar } = useMobileSidebar()
 
 // 从 route.meta 获取页面标题
 const pageTitle = computed(() => {
@@ -38,7 +42,16 @@ const isProjectWorkspace = computed(() => /^\/projects\/[^/]+$/.test(route.path)
     <Transition name="mode-content" mode="out-in">
       <!-- Chat 路由：锁定视口高度，页面内部各自滚动（会话列表 / 消息区），
            顶部条与输入框固定不随页面滚动 -->
-      <div v-if="route.path === '/chat'" key="content-chat" class="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div v-if="route.path === '/chat'" key="content-chat" class="relative flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        <!-- chat 分支无全局顶栏：`< lg` 用悬浮汉堡唤起 off-canvas 侧栏 -->
+        <button
+          type="button"
+          class="absolute left-3 top-3 z-30 rounded-lg border border-border/60 bg-background/90 p-2 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground lg:hidden"
+          aria-label="打开导航"
+          @click="openMobileSidebar"
+        >
+          <span class="icon-[lucide--menu] text-lg" />
+        </button>
         <RouterView />
       </div>
 
@@ -49,11 +62,21 @@ const isProjectWorkspace = computed(() => /^\/projects\/[^/]+$/.test(route.path)
         class="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background"
       >
         <header class="header-glass shrink-0 z-40 h-16">
-          <div class="flex h-full items-center justify-end px-6 gap-3">
-            <GitHubStarButton />
-            <FeedbackHeaderButton />
-            <NotificationBell />
-            <SystemHealthPopover />
+          <div class="flex h-full items-center px-4 lg:px-6 gap-3">
+            <button
+              type="button"
+              class="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors lg:hidden"
+              aria-label="打开导航"
+              @click="openMobileSidebar"
+            >
+              <span class="icon-[lucide--menu] text-lg" />
+            </button>
+            <div class="ml-auto flex items-center gap-3">
+              <GitHubStarButton />
+              <FeedbackHeaderButton />
+              <NotificationBell />
+              <SystemHealthPopover />
+            </div>
           </div>
         </header>
         <main class="flex-1 min-h-0 overflow-hidden bg-mesh-gradient">
@@ -64,13 +87,21 @@ const isProjectWorkspace = computed(() => /^\/projects\/[^/]+$/.test(route.path)
       <!-- 工作台路由 -->
       <div v-else key="content-friday" class="flex-1 flex flex-col min-w-0 bg-gray-50">
         <header class="header-glass sticky top-0 z-40 h-16">
-          <div class="flex h-full items-center justify-between px-6">
-            <div>
-              <h1 v-if="pageTitle" class="text-lg font-semibold text-foreground">
+          <div class="flex h-full items-center justify-between px-4 lg:px-6 gap-2">
+            <div class="flex min-w-0 items-center gap-2">
+              <button
+                type="button"
+                class="shrink-0 rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors lg:hidden"
+                aria-label="打开导航"
+                @click="openMobileSidebar"
+              >
+                <span class="icon-[lucide--menu] text-lg" />
+              </button>
+              <h1 v-if="pageTitle" class="truncate text-lg font-semibold text-foreground">
                 {{ pageTitle }}
               </h1>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex shrink-0 items-center gap-3">
               <GitHubStarButton />
               <FeedbackHeaderButton />
               <NotificationBell />
@@ -79,7 +110,7 @@ const isProjectWorkspace = computed(() => /^\/projects\/[^/]+$/.test(route.path)
           </div>
         </header>
 
-        <main class="flex-1 p-6 bg-mesh-gradient">
+        <main class="flex-1 p-4 sm:p-6 bg-mesh-gradient">
           <RouterView />
         </main>
       </div>
