@@ -293,6 +293,14 @@ async def delegate_process_runtime(
         # skip_clarification 照原样传给分派器（它只在旧链分支透传给 build_orchestration_engine；
         # 蓝图链没有 clarify dep，分派器会丢弃并落一条 blueprint_engine_ignored_legacy_flag）
         # ⇒ 旧链行为逐字不变，蓝图分支自动免疫。⛔ 不在本调用点判 process_type。
+        #
+        # ⛔ 首驱不入队（116 收尾评估结论，31u）：本入口是同步契约——调用方
+        # （technical_plan_service / MCP views）在同一次调用内消费
+        # DelegateResult(completed/partial/failed) 与 content/markdown/model_usage，
+        # partial 的既定语义即「MCP 无 resume 通路」；首驱改 defer 会让所有响应退化为
+        # 无 content 的 partial，等价于破坏同步契约。蓝图链的容错由确认门动作链
+        # （aresume_after_gate_action）与恢复扫描（arecover_stalled_blueprint_sessions）
+        # 承担，本入口保持内联驱动。
         engine, adrive = build_engine_for_session(session, skip_clarification=True)
         session = await adrive(engine, session)
 
