@@ -36,6 +36,7 @@ CAS 条件对两个并发写者同时成立，去重不生效——``stage_state
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -48,6 +49,7 @@ logger = structlog.get_logger(__name__)
 __all__ = [
     "BLUEPRINT_PROCESS_TYPE",
     "adrive_blueprint_session_to_pause_or_terminal",
+    "arecover_stalled_blueprint_sessions",
     "aresume_after_gate_action",
     "aresume_blueprint_session",
 ]
@@ -270,6 +272,13 @@ async def aresume_after_gate_action(
       永远停在挂起。
 
     两者都自带入口守门 + 幂等，非本入口的会话原地返回；都吞异常，⛔ 绝不反噬门动作。
+
+    ⭐ **抗请求取消**（116 事故修复）：本函数通常在 HTTP 请求内被 await，而续驱中途可能
+    有数十秒的 LLM 调用 —— 客户端断开 / 进程收尾会把请求协程连同续驱一起取消，留下
+    「线程已答完、会话永远停在 waiting_clarification」的僵尸（实测正是这么产生的）。
+    因此正常路径保持内联（响应语义零变化），**仅在被取消时**把一个全新的续驱协程
+    移交给 ``background_runner`` 的常驻线程继续跑；进程直接死亡的情形由
+    :func:`arecover_stalled_blueprint_sessions` 的周期扫描兜底。
     """
     started = time.perf_counter()
     try:
@@ -290,6 +299,12 @@ async def aresume_after_gate_action(
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
         return session
+    except asyncio.CancelledError:
+        # 请求被取消：续驱以**全新协程**（按 id 重取会话、重建 engine）移交后台线程 ——
+        # ⛔ 不能续用本协程/本事件循环：请求结束后 asgiref 的 CurrentThreadExecutor 已关，
+        # 任何 sync_to_async 都会炸（background_runner 模块头有同一教训的完整记录）。
+        _adetach_resume(str(getattr(session, "id", "")), initiated_by_user_id=initiated_by_user_id)
+        raise
     except Exception as exc:  # noqa: BLE001 — 续驱失败绝不反噬动作（动作已持久化）
         logger.warning(
             "blueprint_gate_resume_failed",
@@ -301,6 +316,191 @@ async def aresume_after_gate_action(
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
         return session
+
+
+def _adetach_resume(session_id: str, *, initiated_by_user_id: str) -> None:
+    """请求被取消时的续驱移交：在后台常驻线程上跑一个**全新**的续驱协程（best-effort）。
+
+    协程体自己按 id 重取会话、重建 engine —— 与被取消的那次调用零共享对象（跨事件循环
+    共享 coroutine / ORM 惰性代理都是雷）。移交失败只记 warning：还有周期恢复扫描兜底。
+    """
+    if not session_id:
+        return
+
+    async def _drive_fresh() -> None:
+        from delivery.models import ConvergenceSession
+
+        from .entrypoint import build_blueprint_engine
+
+        fresh = await ConvergenceSession.objects.filter(id=session_id).afirst()
+        if fresh is None:
+            return
+        engine = build_blueprint_engine()
+        fresh = await adrive_blueprint_session_to_pause_or_terminal(engine, fresh)
+        await _afeedback_chat_barrier_if_any(fresh)
+        await _aresume_workflow_node_if_any(fresh)
+        _safe_log(
+            "blueprint_gate_resume_detached_completed",
+            category="caller",
+            component="process_runtime",
+            initiated_by_user_id=initiated_by_user_id or "system",
+            session_id=session_id,
+            session_status=str(getattr(fresh, "status", "")),
+            current_stage=str(getattr(fresh, "current_stage", "")),
+        )
+
+    try:
+        from services.background_runner import run_in_background
+
+        run_in_background(
+            lambda: _drive_fresh(),
+            name=f"blueprint-resume-detached-{session_id}",
+            initiated_by_user_id=initiated_by_user_id or "system",
+        )
+        _safe_log(
+            "blueprint_gate_resume_detached",
+            category="caller",
+            component="process_runtime",
+            initiated_by_user_id=initiated_by_user_id or "system",
+            session_id=session_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — 移交 best-effort，周期恢复扫描仍会兜底
+        logger.warning(
+            "blueprint_gate_resume_detach_failed",
+            category="caller",
+            component="process_runtime",
+            session_id=session_id,
+            error=redact_secrets_in_text(str(exc)),
+        )
+
+
+# ── 僵尸会话周期恢复（116 事故修复的另一半）─────────────────────────────────
+
+# 挂起态（waiting_*）与 created 的滞留判定窗口；RUNNING 用更长窗口 ——
+# 单个 stage 内的多轮 LLM 调用可能持续十几分钟，误判「卡死」重驱会双跑。
+_STALL_WAITING_MINUTES = 15
+_STALL_RUNNING_MINUTES = 60
+# 单次扫描上界：恢复是兜底不是主路径，绝不为「扫全」拖垮 scheduler tick。
+_RECOVERY_BATCH_LIMIT = 20
+
+
+async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0) -> dict:
+    """周期扫描并重驱滞留的蓝图会话（僵尸恢复），返回恒定四键计数。
+
+    僵尸的成因：续驱在 HTTP 请求 / 进程内跑，进程重启（dev 热重载、部署）或请求被杀
+    会让「线程已答完 / 调研已全部终态」的会话永远停在挂起态 —— 没有任何回调会再碰它。
+
+    判据与动作：
+
+    - 扫描面：``process_type=technical_blueprint`` 且 ``status ∉ {done, failed}``、
+      ``updated_at`` 早于滞留窗口（挂起态 15 分钟 / RUNNING 60 分钟）的会话，按最旧
+      优先取 :data:`_RECOVERY_BATCH_LIMIT` 条。
+    - **人审接管的蓝图一律跳过**（``pending_review`` 及之后，:data:`_HUMAN_OWNED_STATUSES`）：
+      这些蓝图的推进权归 approve / reject 端点，重驱会在人审面上凭空开澄清线程。
+    - 其余逐条经 :func:`adrive_blueprint_session_to_pause_or_terminal` 重驱 —— 驱动器
+      自带 pause 短路：仍在合法等待（有 open+blocking 线程 / 调研在途）的会话第一步
+      就原地返回，**不会**被误推进；真僵尸则继续走到下一个挂起点或终态。
+    - 单条 try/except 隔离 + 整体兜底，绝不打断 scheduler；归因 ``system``。
+
+    Returns:
+        ``{"scanned": n, "skipped_human_owned": n, "recovered": n, "unchanged": n}``——
+        ``recovered`` 口径 = 重驱后 ``(status, current_stage)`` 发生了变化。
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from delivery.models import ConvergenceSession, ConvergenceSessionStatus
+
+    started = time.perf_counter()
+    counts = {"scanned": 0, "skipped_human_owned": 0, "recovered": 0, "unchanged": 0}
+    try:
+        from .entrypoint import build_blueprint_engine
+
+        moment = now or timezone.now()
+        waiting_before = moment - timedelta(minutes=_STALL_WAITING_MINUTES)
+        running_before = moment - timedelta(minutes=_STALL_RUNNING_MINUTES)
+        batch = max(int(limit or 0), 0) or _RECOVERY_BATCH_LIMIT
+
+        candidates = [
+            row
+            async for row in ConvergenceSession.objects.filter(
+                process_type=BLUEPRINT_PROCESS_TYPE,
+                updated_at__lt=waiting_before,
+            )
+            .exclude(status__in=[ConvergenceSessionStatus.DONE, ConvergenceSessionStatus.FAILED])
+            .order_by("updated_at")[: batch * 2]
+        ]
+
+        engine = None
+        for session in candidates:
+            if counts["scanned"] >= batch:
+                break
+            # RUNNING 用更长窗口：advance 单步内的长 LLM 调用不算卡死。
+            if (
+                session.status == ConvergenceSessionStatus.RUNNING
+                and session.updated_at > running_before
+            ):
+                continue
+            counts["scanned"] += 1
+            try:
+                artifact = await _aload_artifact(session)
+                if (
+                    artifact is not None
+                    and str(getattr(artifact, "blueprint_status", "") or "")
+                    in _HUMAN_OWNED_STATUSES
+                ):
+                    counts["skipped_human_owned"] += 1
+                    continue
+                before = (str(session.status), str(session.current_stage))
+                engine = engine or build_blueprint_engine()
+                fresh = await adrive_blueprint_session_to_pause_or_terminal(engine, session)
+                await _afeedback_chat_barrier_if_any(fresh)
+                await _aresume_workflow_node_if_any(fresh)
+                after = (str(fresh.status), str(fresh.current_stage))
+                if after != before:
+                    counts["recovered"] += 1
+                    logger.info(
+                        "blueprint_session_recovered",
+                        category="caller",
+                        component="process_runtime",
+                        initiated_by_user_id="system",
+                        session_id=str(session.id),
+                        from_status=before[0],
+                        from_stage=before[1],
+                        to_status=after[0],
+                        to_stage=after[1],
+                    )
+                else:
+                    counts["unchanged"] += 1
+            except Exception as exc:  # noqa: BLE001 — 单条隔离，绝不打断整批
+                counts["unchanged"] += 1
+                logger.warning(
+                    "blueprint_session_recover_failed",
+                    category="caller",
+                    component="process_runtime",
+                    session_id=str(getattr(session, "id", "")),
+                    error=redact_secrets_in_text(str(exc)),
+                )
+    except Exception as exc:  # noqa: BLE001 — 恢复整体 best-effort，绝不上抛
+        logger.warning(
+            "blueprint_session_recovery_failed",
+            category="caller",
+            component="process_runtime",
+            initiated_by_user_id="system",
+            error=redact_secrets_in_text(str(exc)),
+        )
+        return counts
+
+    logger.info(
+        "blueprint_session_recovery_tick",
+        category="caller",
+        component="process_runtime",
+        initiated_by_user_id="system",
+        duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        **counts,
+    )
+    return counts
 
 
 async def aresume_blueprint_session(session: Any, *, engine: Any = None) -> Any:

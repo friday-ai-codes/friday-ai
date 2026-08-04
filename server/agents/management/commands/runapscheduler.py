@@ -200,6 +200,28 @@ def remind_blueprint_clarifications_job():
 
 
 @_with_scheduler_log_context
+def recover_stalled_blueprint_sessions_job():
+    """Job wrapper：滞留蓝图会话的周期兜底恢复（116 事故修复）。
+
+    捡「进程重启 / 请求被杀导致续驱丢失」留下的僵尸会话（线程已答完却永远停在
+    ``waiting_clarification`` 等挂起态）。判据与动作全在
+    ``blueprint_resume.arecover_stalled_blueprint_sessions``：人审接管的蓝图一律跳过、
+    合法等待中的会话由驱动器 pause 短路原地放回。任务体自带整体兜底，异常不抛回
+    本 wrapper、绝不打断 scheduler 主循环。
+    """
+    from tasks.blueprint_recovery_tasks import arecover_stalled_blueprint_sessions_task
+
+    log = logger.bind(job="recover_stalled_blueprint_sessions")
+    log.info("job_start")
+
+    try:
+        result = run_async_task(arecover_stalled_blueprint_sessions_task)
+        log.info("job_complete", result=result)
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
 def calculate_behind_commits_job() -> None:
     """contract：计算 STALE 仓库的 behind_commits 差值并缓存。"""
     from repositories.freshness_service import update_behind_commits_for_stale_repos
@@ -783,6 +805,22 @@ class Command(BaseCommand):
             "job_registered",
             job="remind_blueprint_clarifications",
             schedule="every 1 hour",
+        )
+
+        # 滞留蓝图会话兜底恢复（116 事故修复）：每 10 分钟看一眼。真僵尸重驱到下一个
+        # 挂起点，合法等待中的会话由驱动器 pause 短路原地放回（tick 频率不影响语义）。
+        scheduler.add_job(
+            recover_stalled_blueprint_sessions_job,
+            trigger=IntervalTrigger(minutes=10),
+            id="recover_stalled_blueprint_sessions",
+            name="Recover blueprint sessions stranded by lost resumes",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info(
+            "job_registered",
+            job="recover_stalled_blueprint_sessions",
+            schedule="every 10 minutes",
         )
 
         # 计算 STALE 仓库 behind_commits 差值，串联 poll_repository_updates（implementation contract）
