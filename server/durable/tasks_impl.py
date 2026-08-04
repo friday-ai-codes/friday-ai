@@ -43,9 +43,7 @@ async def run_index(
     from services.indexer import clone_and_index_repository
 
     with bind_task_context(user_id=initiated_by_user_id, source="durable"):
-        return await clone_and_index_repository(
-            repository_id, history_id=history_id, branch=branch
-        )
+        return await clone_and_index_repository(repository_id, history_id=history_id, branch=branch)
 
 
 async def run_graph(
@@ -105,9 +103,7 @@ async def run_crawl_ingest(
         @sync_to_async
         def _load_active_runs() -> list[IngestRun]:
             # list() 强制求值脱离异步上下文；后续仅读已加载的标量属性（无隐式同步查询）。
-            return list(
-                IngestRun.objects.filter(batch_id=batch_id, status__in=active_statuses)
-            )
+            return list(IngestRun.objects.filter(batch_id=batch_id, status__in=active_statuses))
 
         runs = await _load_active_runs()
         if not runs:
@@ -458,9 +454,7 @@ async def run_page_index(
         current = await CorpusTreeService.compute_source_hash()
         baseline = await CorpusTreeService.get_active_source_hash()
         if baseline is not None and baseline == current:
-            logger.info(
-                "durable_page_index_skipped", target_id=target_id, reason="hash_unchanged"
-            )
+            logger.info("durable_page_index_skipped", target_id=target_id, reason="hash_unchanged")
             return {"status": "skipped", "reason": "hash_unchanged", "target_id": target_id}
 
         result = await CorpusTreeService.build_full()
@@ -474,3 +468,27 @@ async def run_page_index(
             "target_id": target_id,
             "source_hash": result.get("source_hash", current),
         }
+
+
+async def run_blueprint_resume(
+    *,
+    session_id: str,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """蓝图编排续驱任务体（116 队列化）：把会话驱动到下一个挂起点或终态。
+
+    作答 / 确认门动作端点只落库 + 入队本任务（「已受理」语义）——驱动不再在 HTTP
+    请求内跑，请求被杀 / 进程重启不再能吞掉续驱（Postgres 路径由 procrastinate 持久化，
+    重启后 worker 接着跑；in-process fallback 配合周期恢复扫描兜底）。
+
+    委托 ``services.process_runtime.blueprint_resume.arun_blueprint_resume``（驱动 +
+    chat barrier / 工作流节点两个入口回灌 hook 的共同出口）。任务体自身恒不抛：
+    驱动失败记 warning 并如实返回，交给下一次动作或恢复扫描重试，⛔ 不进 procrastinate
+    的自动重试（蓝图 stage 内含 LLM 调用，盲目重试代价高且驱动本身幂等可续）。
+    """
+    from services.process_runtime.blueprint_resume import arun_blueprint_resume
+
+    with bind_task_context(user_id=initiated_by_user_id, source="durable"):
+        return await arun_blueprint_resume(
+            session_id, initiated_by_user_id=initiated_by_user_id or "system"
+        )

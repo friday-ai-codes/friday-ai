@@ -17,6 +17,7 @@ import structlog
 from procrastinate.contrib.django import app
 
 from durable.queues import (
+    QUEUE_BLUEPRINT,
     QUEUE_CRAWL_INGEST,
     QUEUE_DOC_SYNC,
     QUEUE_FEATURE_PARSE,
@@ -209,6 +210,28 @@ async def feature_list_parse_module(
         draft_id=draft_id,
         module_index=module_index,
         attempt=attempt,
+        initiated_by_user_id=initiated_by_user_id,
+    )
+
+
+@app.task(name="durable_blueprint_resume", queue=QUEUE_BLUEPRINT)
+async def durable_blueprint_resume(
+    *,
+    session_id: str,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """蓝图编排续驱 durable 任务（procrastinate 包壳，委托共用任务体）。
+
+    显式 ``name="durable_blueprint_resume"`` 与 ``backends.defer`` 的裸名查找同源；
+    payload 仅 ``session_id``（澄清正文 / 方案内容一律不进 payload）。入队点带
+    ``lock=blueprint-resume-{session_id}``：同会话的多次动作串行驱动（doing 并发锁），
+    ⛔ 不带 ``idempotency_key``——去重会吃掉「驱动进行中又来一次人工动作」的触发。
+    ``initiated_by_user_id``（CTX-02）显式形参消费 payload 同名键并转发给任务体。
+    """
+    from durable.tasks_impl import run_blueprint_resume
+
+    return await run_blueprint_resume(
+        session_id=session_id,
         initiated_by_user_id=initiated_by_user_id,
     )
 

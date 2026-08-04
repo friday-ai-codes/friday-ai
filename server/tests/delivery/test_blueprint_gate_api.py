@@ -73,6 +73,17 @@ _DRIVE_TARGET = (
 _DISPATCHER_TARGET = "runners.dispatcher.get_dispatcher"
 
 
+def _drain_background() -> None:
+    """排空 durable in-process 后台任务（116 队列化：续驱在 worker 跑，e2e 断言前必须等它）。
+
+    ⚠️ 必须在 monkeypatch 作用域内调用 —— 否则被桩掉的 driver 会在补丁撤销后才执行，
+    真实驱动跑起来污染下一个用例。
+    """
+    from services.background_runner import wait_for_pending
+
+    wait_for_pending(timeout=30.0)
+
+
 # ── 工厂（sync 测试 + async_to_sync 装配）─────────────────────────────────────
 
 
@@ -101,6 +112,22 @@ def _make_project(project_id: str, *, member: Any = None) -> Any:
 @pytest.fixture(autouse=True)
 def _project_scope(user) -> Any:
     return _make_project(_SCOPE_PROJECT_ID, member=user)
+
+
+@pytest.fixture(autouse=True)
+def _inprocess_durable(monkeypatch) -> None:
+    """116 队列化：续驱经 durable 队列。测试库是 Postgres 时 auto 判定会路由到
+    procrastinate 真队列，而测试进程没有 worker 消费 ⇒ 强制 in-process 后端
+    （background_runner 立即执行 + ``_drain_background`` 可排空）。
+
+    teardown 再排空一次：后台任务若晚于 monkeypatch 撤销才执行，会以**真实实现**
+    跑起来污染下一个用例。
+    """
+    from durable import service
+
+    monkeypatch.setattr(service, "use_procrastinate_backend", lambda: False)
+    yield
+    _drain_background()
 
 
 def _grant_membership(project: Any, user: Any) -> None:
@@ -601,6 +628,7 @@ def test_resume_failure_does_not_roll_back_action_or_change_status(
     url, body = _action_calls(ctx, repo_c)[index]
 
     resp = authenticated_client.post(url.format(aid=ctx.artifact.id), body, format="json")
+    _drain_background()
 
     assert 200 <= resp.status_code < 300, "续驱失败绝不改动作响应码"
     if url == ADD_URL:
@@ -939,6 +967,7 @@ def test_e2e_add_repo_through_rest_reaches_repo_research_and_dispatches_only_new
     resp = authenticated_client.post(
         ADD_URL.format(aid=ctx.artifact.id), {"repository_id": str(repo_c.id)}, format="json"
     )
+    _drain_background()
 
     assert resp.status_code == 200
     # ① 确实走了 research_required 回边（证明续驱在生产路径上被触发）
@@ -967,6 +996,7 @@ def test_e2e_reclassify_indirect_to_direct_reaches_repo_research(
         {"repository_id": str(target.id), "role": "direct"},
         format="json",
     )
+    _drain_background()
 
     assert resp.status_code == 200
     assert resp.json()["requires_research"] is True
@@ -1053,6 +1083,7 @@ def test_e2e_confirm_through_rest_drives_session_into_stage_two(
     ctx = _e2e_setup(user, monkeypatch)
 
     resp = authenticated_client.post(CONFIRM_URL.format(aid=ctx.artifact.id))
+    _drain_background()
 
     assert resp.status_code == 200
     fresh = ConvergenceSession.objects.get(id=ctx.session.id)
@@ -1083,6 +1114,7 @@ def test_e2e_resume_failure_keeps_marker_for_next_trigger(
     resp = authenticated_client.post(
         ADD_URL.format(aid=ctx.artifact.id), {"repository_id": str(repo_c.id)}, format="json"
     )
+    _drain_background()
 
     assert resp.status_code == 200
     assert _stage(ctx) == "repo_confirmation", "续驱炸了 → stage 不前进（但动作已落库）"
