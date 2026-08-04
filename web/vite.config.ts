@@ -100,6 +100,8 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 10240,
     strictPort: true,
+    // 允许任意 Host 访问（如通过内网代理域名 spider 等访问 dev server）
+    allowedHosts: true,
     open: true,
     watch: usePolling
       ? {
