@@ -502,8 +502,9 @@ async def _h_bp_decompose(session: Any, engine: Any) -> StageOutcome:
 async def _h_bp_spec_gate(session: Any, engine: Any) -> StageOutcome:
     """spec_gate stage：跑 112-02 的规格门 adapter，按其 ``event`` 决定转移。
 
+    ⭐ 116 重排后位于 ``repo_confirmation`` 之后：澄清带着调研结论问。
     ``needs_clarification`` → self-loop 挂起（``waiting_clarification``）；
-    ``spec_locked`` → 进 route。deps 未注入时 pass-through 放行（不把未接线当成需澄清）。
+    ``spec_locked`` → 进 repo_plan。deps 未注入时 pass-through 放行（不把未接线当成需澄清）。
     """
     adapter = getattr(getattr(engine, "deps", None), "spec_gate", None)
     if adapter is None:
@@ -1108,15 +1109,21 @@ _TECHNICAL_BLUEPRINT_STAGES = {
         handler=_h_bp_intake,
         transitions={"intaken": "decompose"},
     ),
+    # ⭐ 流程重排（116 用户裁定）：拆解后**直接进路由调研**，规格门（澄清）挪到
+    # 仓库集确认门**之后** —— 澄清带着调研结论问（而不是两眼一抹黑先问一轮），
+    # 用户在确认门修正完仓库集、答完澄清才进入分仓方案。
+    # 依赖上是安全的：路由只吃 feature_points[].intent，而 decompose 两条路径都已写入
+    # 合法枚举值（`blueprint_intake._normalize_intent`），不需要规格门先跑。
     "decompose": StageDef(
         key="decompose",
         handler=_h_bp_decompose,
-        transitions={"decomposed": "spec_gate"},
+        transitions={"decomposed": "route"},
     ),
+    # 规格门现位于 repo_confirmation → repo_plan 之间（定义顺序不影响 engine，仅为可读性）。
     "spec_gate": StageDef(
         key="spec_gate",
         handler=_h_bp_spec_gate,
-        transitions={"spec_locked": "route", "needs_clarification": "spec_gate"},
+        transitions={"spec_locked": "repo_plan", "needs_clarification": "spec_gate"},
         pausable=True,
         wait_status="waiting_clarification",
     ),
@@ -1162,9 +1169,9 @@ _TECHNICAL_BLUEPRINT_STAGES = {
             # 它与 repo_research → reroute → repo_confirmation 构成确认门的**有界回路**，
             # 边界由 MAX_REROUTE_ROUNDS 与「已完成仓不重派」共同约束。
             "research_required": "repo_research",
-            # 113 接续点**已接续**（113-06）：阶段 1 出口硬门通过后进阶段 2 分仓方案。
-            # 下一个接续点在 merge.merged（见该 stage 的注释）。
-            "confirmed": "repo_plan",
+            # ⭐ 116 重排：确认门通过后先过规格门（带调研上下文的澄清），
+            # spec_locked 才进阶段 2 分仓方案。下一个接续点在 merge.merged。
+            "confirmed": "spec_gate",
         },
         pausable=True,
         wait_status="waiting_clarification",

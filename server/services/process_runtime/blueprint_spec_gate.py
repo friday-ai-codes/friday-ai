@@ -216,11 +216,16 @@ class BlueprintSpecGateAdapter:
         # 4. 四维打分；不可得即 fail-closed（保守全 1.0 + 一条通用规格澄清题）。
         # ⭐ `tier=` 必须传下去：scorer 体内**自己也读一次配置**并据它打 sampling 日志的
         # `threshold` / `above_threshold`，不传即「日志报的阈值 ≠ 判定用的阈值」（T-116-53）。
+        # ⭐ 116 重排后规格门位于确认门之后：把已锁定的仓库集与调研结论（fitness）拼进
+        # prior_context —— 澄清问题应带着调研证据问，而不是两眼一抹黑。
+        prior_context = "\n".join(
+            part for part in (prior["text"], self._repo_research_context(content)) if part
+        )
         scores = await self.scorer(
             goal=self._goal_text(content),
             feature_points=self._feature_points(content),
             constraints=self._constraints(content),
-            prior_context=prior["text"],
+            prior_context=prior_context,
             session_id=str(session.id),
             tier=tier,
         )
@@ -698,6 +703,40 @@ class BlueprintSpecGateAdapter:
         spec = content.get("requirement_spec")
         constraints = spec.get("constraints") if isinstance(spec, dict) else None
         return list(constraints) if isinstance(constraints, list) else []
+
+    def _repo_research_context(self, content: dict[str, Any]) -> str:
+        """确认门锁定后落在正文里的仓库集与调研结论 → 喂 scorer 的紧凑摘要（恒不抛）。
+
+        116 重排后本 gate 位于确认门之后，``repo_associations``（含 fitness verdict 与
+        reasons 首块）此时已在当前版本正文里。重排前的旧会话（尚未路由）该键为空 ⇒
+        返回空串，行为与改动前逐字一致。
+        """
+        try:
+            rows = content.get("repo_associations")
+            if not isinstance(rows, list) or not rows:
+                return ""
+            lines: list[str] = []
+            for row in rows[:20]:
+                if not isinstance(row, dict):
+                    continue
+                name = str(row.get("repository_name") or row.get("repository_id") or "").strip()
+                if not name:
+                    continue
+                fitness = row.get("fitness") if isinstance(row.get("fitness"), dict) else {}
+                verdict = str(fitness.get("verdict") or "").strip()
+                reason = self._blocks_to_text(fitness.get("reasons")).splitlines()
+                head = reason[0].strip() if reason else ""
+                parts = [name]
+                if verdict:
+                    parts.append(f"结论 {verdict}")
+                if head:
+                    parts.append(head[:120])
+                lines.append("- " + "：".join(parts[:1]) + ("（" + "；".join(parts[1:]) + "）" if len(parts) > 1 else ""))
+            if not lines:
+                return ""
+            return "已确认的仓库集与调研结论：\n" + "\n".join(lines)
+        except Exception:  # noqa: BLE001 — 上下文装配 best-effort，绝不反噬打分主流程
+            return ""
 
     @staticmethod
     def _blocks_to_text(blocks: Any) -> str:

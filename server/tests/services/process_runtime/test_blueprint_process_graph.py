@@ -224,9 +224,15 @@ def test_research_required_back_edge_exists_and_is_reachable() -> None:
 
 
 def test_confirmed_edge_enters_stage_two() -> None:
-    """113 接续点已接续：阶段 1 出口硬门通过 → 阶段 2 分仓方案。"""
+    """116 重排：确认门通过先过规格门（带调研上下文的澄清），``spec_locked`` 才进阶段 2。
+
+    用户裁定的新顺序：拆解 → 路由调研 → 仓库集确认门（人修正仓库集）→ 规格门（澄清）
+    → 分仓方案。规格门不再是流程入口的第一道闸。
+    """
     stages = get_process_definition("technical_blueprint").stages
-    assert stages["repo_confirmation"].transitions["confirmed"] == "repo_plan"
+    assert stages["decompose"].transitions["decomposed"] == "route"
+    assert stages["repo_confirmation"].transitions["confirmed"] == "spec_gate"
+    assert stages["spec_gate"].transitions["spec_locked"] == "repo_plan"
 
 
 def test_merge_merged_is_the_114_handoff_point() -> None:

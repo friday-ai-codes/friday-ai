@@ -1042,11 +1042,12 @@ def test_e2e_upgrade_research_starts_deep_container_for_that_repo_only(
 def test_e2e_confirm_through_rest_drives_session_into_stage_two(
     authenticated_client, user, monkeypatch
 ) -> None:
-    """confirm 也接了续驱：会话离开 ``repo_confirmation`` 进入阶段 2/3。
+    """confirm 也接了续驱：会话离开 ``repo_confirmation`` 向后推进。
 
-    113-06 把 ``repo_confirmation.confirmed`` 的目标从 ``__done__`` 改成 ``repo_plan``，
-    确认门通过后不再直接终态。本用例因此改断言「**已推进且没有静默失败**」——
-    环境缺 LLM/容器时它会停在 ``repo_plan`` / ``merge`` 等人处置（有阻塞澄清线程），
+    116 重排后 ``repo_confirmation.confirmed`` 的目标是 ``spec_gate``（带调研上下文的
+    澄清门），``spec_locked`` 才进阶段 2/3。本用例断言「**已推进且没有静默失败**」——
+    测试环境缺 LLM 时规格门 fail-closed 开兜底澄清、停在 ``spec_gate``；LLM 可得且
+    无歧义时会一路到 ``repo_plan`` / ``merge``。两种停点都合法，
     **绝不允许**被推到步数上限落 FAILED（那会把「缺条件」变成「流程失败」）。
     """
     ctx = _e2e_setup(user, monkeypatch)
@@ -1055,7 +1056,10 @@ def test_e2e_confirm_through_rest_drives_session_into_stage_two(
 
     assert resp.status_code == 200
     fresh = ConvergenceSession.objects.get(id=ctx.session.id)
-    assert fresh.current_stage in ("repo_plan", "merge"), "confirm 未接续到阶段 2/3"
+    assert fresh.current_stage in ("spec_gate", "repo_plan", "merge"), (
+        "confirm 未接续离开确认门"
+    )
+    assert fresh.current_stage != "repo_confirmation"
     assert fresh.status != ConvergenceSessionStatus.FAILED, (
         "缺 LLM/容器只能停在挂起态等人处置，绝不许静默落 FAILED"
     )
