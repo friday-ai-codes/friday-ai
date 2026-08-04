@@ -53,18 +53,11 @@ ERROR_REPO_ACTIVE_BUSY = "该仓库已有进行中的编码会话"
 ERROR_CODE_DRAFT_REQUIRES_CONFIRM = "draft_requires_explicit_confirm"
 ERROR_DRAFT_REQUIRES_CONFIRM = "草稿方案需显式确认后才能送编码"
 
-# 落库脱敏键名单（103 审查 WR-03）：dispatch metadata 中凭证明文键——持久化副本
-# （SubAgentSession.last_output.dispatch.metadata）统一剔除，绝不落 DB。
-# 断连重派时由 runners.consumers._rebuild_dispatch_task 按 ``_redacted_env_keys``
-# 标记从权威源重解析补回（Git token / API key），USER_TOKEN 不重铸（容器降级不挂
-# 知识工具，fail-soft）。
-CREDENTIAL_ENV_KEYS: frozenset[str] = frozenset(
-    {
-        "env_FRIDAY_TASK_USER_TOKEN",
-        "env_FRIDAY_TASK_GIT_ACCESS_TOKEN",
-        "env_FRIDAY_TASK_CLAUDE_API_KEY",
-    }
-)
+# 落库脱敏键名单（103 审查 WR-03）：31u 起唯一定义点迁到 ``runners.dispatcher``
+# （快照剔除与重建 rehydrate 同处一模块），此处保留同名 re-export 维持既有
+# ``from chat.coding_session_service import CREDENTIAL_ENV_KEYS`` 调用方零改动。
+# chat→runners 方向 import 无循环（runners.dispatcher 顶层不 import chat）。
+from runners.dispatcher import CREDENTIAL_ENV_KEYS  # noqa: E402, F401  — re-export
 
 
 class DraftPlanRequiresConfirmError(Exception):
@@ -529,6 +522,10 @@ async def dispatch_coding_task(
                 3600,  # 对齐下方 DispatchTask 硬编码 timeout
             )
             env_metadata["env_FRIDAY_TASK_USER_TOKEN"] = plaintext
+            # 31u：**非敏感**的发起用户 id 随快照落库（不是凭证）。派发经 durable 队列后
+            # 任务体只按快照重建，rehydrate 据此键重铸 USER_TOKEN——不落则首派容器
+            # 挂不上知识工具（回归）。断连重派路径同样受益。
+            env_metadata["task_token_user_id"] = str(user.id)
         # 知识端点（AGENT-02 服务端注入面）：base 不带路径，task 侧自行拼
         # /api/mcp/tools/{name}/；空 FRIDAY_BASE_URL 不注入（镜像 workflow tools_env 契约）。
         knowledge_base = getattr(settings, "FRIDAY_BASE_URL", "").rstrip("/")
@@ -573,30 +570,16 @@ async def dispatch_coding_task(
     last_output = sub_session.last_output if isinstance(sub_session.last_output, dict) else {}
     # 泄漏防线（Phase 103 T-103-01 / 审查 WR-03）：落库副本统一剔除 CREDENTIAL_ENV_KEYS
     # 全部凭证明文键（任务 token / Git token / API key）——last_output 是持久化数据，
-    # 凭证明文绝不落盘（PAT-02 同族纪律）。内存中的 dispatch_task.metadata 保持完整，
-    # 首派容器行为不变。runner 断连重建（consumers._rebuild_dispatch_task）按
-    # ``_redacted_env_keys`` 标记重解析补回 Git token / API key（权威源：
-    # aresolve_git_token / provider 配置）；env_FRIDAY_TASK_USER_TOKEN 不重铸 →
-    # 重派容器降级不挂知识工具（fail-soft，与 user 不可解析降级语义一致）。
-    redacted_env_keys = sorted(CREDENTIAL_ENV_KEYS & dispatch_task.metadata.keys())
-    persisted_metadata = {
-        k: v for k, v in dispatch_task.metadata.items() if k not in CREDENTIAL_ENV_KEYS
-    }
-    if redacted_env_keys:
-        persisted_metadata["_redacted_env_keys"] = redacted_env_keys
+    # 凭证明文绝不落盘（PAT-02 同族纪律）。剔除逻辑统一走 dispatcher 的
+    # ``build_dispatch_snapshot``（31u：⛔ 不留两份剔除逻辑）。重建（durable 首派任务体 /
+    # runner 断连恢复）按 ``_redacted_env_keys`` 标记重解析补回 Git token / API key
+    # （权威源：aresolve_git_token / provider 配置）；USER_TOKEN 按上方落库的
+    # ``task_token_user_id`` 重铸补回。
+    from runners.dispatcher import build_dispatch_snapshot
+
     sub_session.last_output = {
         **last_output,
-        "dispatch": {
-            "task_type": dispatch_task.task_type,
-            "tags": dispatch_task.tags,
-            "repo_url": dispatch_task.repo_url,
-            "branch": dispatch_task.branch,
-            "target_branch": dispatch_task.target_branch,
-            "prompt": dispatch_task.prompt,
-            "timeout": dispatch_task.timeout,
-            "node_execution_id": dispatch_task.node_execution_id,
-            "metadata": persisted_metadata,
-        },
+        "dispatch": build_dispatch_snapshot(dispatch_task),
     }
     await sub_session.asave(update_fields=["last_output", "updated_at"])
 

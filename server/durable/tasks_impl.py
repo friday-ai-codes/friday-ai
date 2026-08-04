@@ -470,6 +470,138 @@ async def run_page_index(
         }
 
 
+# runner 派发 re-defer 退避：5s 起步、指数翻倍、300s 封顶。
+_DISPATCH_BACKOFF_BASE = 5
+_DISPATCH_BACKOFF_CAP = 300
+
+
+def _dispatch_backoff_seconds(attempt: int) -> int:
+    """无 runner / 无空槽时的 re-defer 退避秒数（5 * 2**attempt，封顶 300s）。"""
+    try:
+        current = max(0, int(attempt))
+    except (TypeError, ValueError):
+        current = 0
+    return min(_DISPATCH_BACKOFF_BASE * (2**current), _DISPATCH_BACKOFF_CAP)
+
+
+async def run_runner_dispatch(
+    *,
+    session_id: str,
+    attempt: int = 0,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """runner 派发任务体（31u）：可靠地发起一次派发（守卫 + 快照重建 + 标签匹配 + 退避）。
+
+    形状照 ``run_blueprint_resume``：``bind_task_context(source="durable")``、恒不抛、
+    异常文本过 ``redact_secrets_in_text``。语义四步：
+
+    1. **幂等守卫（状态检查而不是禁止重派）**：session 查无 → skipped(not_found)；
+       终态（completed/error/timeout/cancelled）→ skipped(terminal)；已有
+       assigned/running assignment → skipped(active_assignment)——已在跑 / 已派出时
+       绝不起第二个容器（防重复 push commit）。守卫 + 入队点 ``lock=dispatch-{session_id}``
+       同会话串行，使判据无并发窗口。
+    2. 从 ``last_output["dispatch"]`` 快照重建 DispatchTask（凭证由
+       ``_rehydrate_dispatch_credentials`` 从权威源重解析 / 重铸）；快照缺失 →
+       skipped(no_snapshot) + warning（理论不可达：``dispatch()`` 先持久化后入队）。
+    3. ``_try_assign``：成功 → dispatched；失败（无匹配 runner / 无空槽）→ **re-defer
+       backoff**（attempt+1 + run_at，5s 起步 300s 封顶）→ requeued。⛔ 不设 attempt
+       上限——链条由守卫终结（session 终态 / 被取消后下一跳 no-op），300s 封顶的
+       空转成本可忽略。
+    4. 观测：终跳记 ``runner_dispatch_job_completed``（caller）；re-defer 那跳记
+       ``runner_dispatch_requeued``（sampling——周期性 tick 不刷 caller 面）；失败兜底
+       ``runner_dispatch_job_failed``（warning，error 已脱敏）。
+    """
+    import time
+
+    from common.logging import redact_secrets_in_text
+
+    started = time.perf_counter()
+    with bind_task_context(user_id=initiated_by_user_id, source="durable"):
+        try:
+            from runners.dispatcher import (
+                TERMINAL_SESSION_STATUSES,
+                arebuild_dispatch_task_from_session,
+                get_dispatcher,
+            )
+            from subagent.models import SubAgentSession
+
+            dispatcher = get_dispatcher()
+            session = await SubAgentSession.objects.filter(session_id=session_id).afirst()
+            if session is None:
+                result: dict[str, Any] = {"status": "skipped", "reason": "not_found"}
+            elif str(session.status) in TERMINAL_SESSION_STATUSES:
+                result = {"status": "skipped", "reason": "terminal"}
+            elif await dispatcher._has_active_assignment(session_id):
+                result = {"status": "skipped", "reason": "active_assignment"}
+            else:
+                task = await arebuild_dispatch_task_from_session(session)
+                if task is None:
+                    logger.warning(
+                        "runner_dispatch_snapshot_missing",
+                        category="caller",
+                        component="runners",
+                        initiated_by_user_id=initiated_by_user_id or "system",
+                        session_id=session_id,
+                    )
+                    result = {"status": "skipped", "reason": "no_snapshot"}
+                elif await dispatcher._try_assign(task):
+                    result = {"status": "dispatched"}
+                else:
+                    # 无匹配 runner / 无空槽 → 按退避 re-defer；runner 恢复后到点自动派出。
+                    import datetime
+
+                    from durable.queues import QUEUE_DISPATCH
+                    from durable.service import DurableTaskService
+
+                    delay = _dispatch_backoff_seconds(attempt)
+                    run_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+                        seconds=delay
+                    )
+                    await DurableTaskService.defer(
+                        "durable_runner_dispatch",
+                        {"session_id": session_id, "attempt": attempt + 1},
+                        queue=QUEUE_DISPATCH,
+                        lock=f"dispatch-{session_id}",
+                        run_at=run_at,
+                        initiated_by_user_id=initiated_by_user_id,
+                    )
+                    logger.info(
+                        "runner_dispatch_requeued",
+                        category="sampling",
+                        component="runners",
+                        session_id=session_id,
+                        attempt=attempt + 1,
+                        delay_s=delay,
+                    )
+                    return {"status": "requeued", "attempt": attempt + 1}
+
+            logger.info(
+                "runner_dispatch_job_completed",
+                category="caller",
+                component="runners",
+                initiated_by_user_id=initiated_by_user_id or "system",
+                session_id=session_id,
+                task_type=str(getattr(session, "task_type", "") or ""),
+                status=result["status"],
+                reason=result.get("reason", ""),
+                attempt=attempt,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+            return result
+        except Exception as exc:  # noqa: BLE001 — 任务体恒不抛：状态在库里，可由重派/恢复扫描重试
+            logger.warning(
+                "runner_dispatch_job_failed",
+                category="caller",
+                component="runners",
+                initiated_by_user_id=initiated_by_user_id or "system",
+                session_id=session_id,
+                attempt=attempt,
+                error=redact_secrets_in_text(str(exc)),
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+            return {"status": "failed", "session_id": session_id}
+
+
 async def run_blueprint_resume(
     *,
     session_id: str,
