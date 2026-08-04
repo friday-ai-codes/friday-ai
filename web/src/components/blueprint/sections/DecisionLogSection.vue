@@ -52,22 +52,23 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-/** 缺键占位符（⛔ 不渲染 `undefined`）。 */
+/** 标题缺键占位符（仅 `question` 用；其余缺键字段**整行省略**，⛔ 不渲染成串裸「—」）。 */
 const PLACEHOLDER = '—'
 
+/** 缺键返回空串，模板据此 `v-if` 省略该字段 —— 成串的「—」看起来像渲染事故。 */
 function text(bag: Record<string, unknown>, key: string): string {
   const value = bag[key]
   if (typeof value === 'string' && value)
     return value
   if (typeof value === 'number' && Number.isFinite(value))
     return String(value)
-  return PLACEHOLDER
+  return ''
 }
 
-/** 时间格式化：非法值原样显示（⛔ 不抛、⛔ 不吞成空）。 */
+/** 时间格式化：非法值原样显示（⛔ 不抛）；缺失返回空串由模板省略。 */
 function formatTime(raw: unknown): string {
   if (typeof raw !== 'string' || !raw)
-    return PLACEHOLDER
+    return ''
   const date = new Date(raw)
   if (Number.isNaN(date.getTime()))
     return raw
@@ -82,8 +83,8 @@ const decisions = computed(() => {
     return {
       key: `${index}`,
       threadId,
-      question: text(item, 'question'),
-      // ⭐ `answer` 是唯一有下游消费方的键，必须显式渲染。
+      question: text(item, 'question') || PLACEHOLDER,
+      // ⭐ `answer` 是唯一有下游消费方的键，有值必须显式渲染（缺值整行省略）。
       answer: text(item, 'answer'),
       decision: text(item, 'decision'),
       decidedBy: text(item, 'decided_by'),
@@ -138,16 +139,19 @@ const deferred = computed(() => {
         </button>
       </div>
 
-      <p class="text-sm leading-relaxed text-muted-foreground" data-field="answer">
+      <p v-if="entry.answer" class="text-sm leading-relaxed text-muted-foreground" data-field="answer">
         {{ entry.answer }}
       </p>
 
-      <div class="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-        <Badge variant="outline" data-field="decision">
+      <div
+        v-if="entry.decision || entry.decidedBy || entry.decidedAt || entry.appliedInVersion"
+        class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+      >
+        <Badge v-if="entry.decision" variant="outline" data-field="decision">
           {{ entry.decision }}
         </Badge>
-        <span data-field="decided-by">{{ entry.decidedBy }}</span>
-        <span data-field="decided-at">{{ entry.decidedAt }}</span>
+        <span v-if="entry.decidedBy" data-field="decided-by">{{ entry.decidedBy }}</span>
+        <span v-if="entry.decidedAt" data-field="decided-at">{{ entry.decidedAt }}</span>
         <Badge v-if="entry.appliedInVersion" variant="muted" data-field="applied-in-version">
           {{ entry.appliedInVersion }}
         </Badge>

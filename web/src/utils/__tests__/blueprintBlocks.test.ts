@@ -435,6 +435,26 @@ describe('buildStageTimeline —— 末态推断（MJ-02）', () => {
       expect(stateOf(buildStageTimeline(events, '', status)).route).toBe('running')
   })
 
+  it('⭐ pending_review 收敛前序 running 阶段（续驱中断留下的僵尸会话不得让规格门永远转圈）', () => {
+    // 实测形状：会话事件流停在 clarification_asked（作答后的续驱被进程重启打断），
+    // 蓝图却已由后续链路推到 pending_review ⇒ 规格门必须收成 done，而不是挂着「等待作答」。
+    const states = stateOf(buildStageTimeline(
+      [ev('blueprint.spec_gate.clarification_asked', '2026-08-01T00:00:01Z')],
+      'spec_gate',
+      'pending_review',
+    ))
+    expect(states.spec_gate).toBe('done')
+    // 「待人类审查」节点本身仍点亮为进行中（等的是人，不是机器）
+    expect(states.pending_review).toBe('running')
+    // 非恒真对照：仍在等澄清（needs_clarification）时规格门必须保持 running
+    const waiting = stateOf(buildStageTimeline(
+      [ev('blueprint.spec_gate.clarification_asked', '2026-08-01T00:00:02Z')],
+      'spec_gate',
+      'needs_clarification',
+    ))
+    expect(waiting.spec_gate).toBe('running')
+  })
+
   it('.failed 后缀优先于位序与终态推断', () => {
     const states = stateOf(buildStageTimeline(
       [ev('blueprint.repo_research.failed', '2026-08-01T00:00:01Z')],

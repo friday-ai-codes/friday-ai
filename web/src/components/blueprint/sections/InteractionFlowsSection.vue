@@ -149,9 +149,9 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
         :data-flow-id="flow.id"
       >
         <div class="flex flex-wrap items-center gap-2">
-          <h4 class="text-base font-semibold">
+          <h3 class="text-base font-semibold">
             {{ flow.name }}
-          </h4>
+          </h3>
           <span v-if="flow.trigger" class="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <span class="icon-[lucide--mouse-pointer-click]" aria-hidden="true" />
             <span>{{ t('knowledge.blueprints.flow.trigger') }}: {{ flow.trigger }}</span>

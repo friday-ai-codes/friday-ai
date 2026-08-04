@@ -145,9 +145,9 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
           data-testid="blueprint-impl-module"
           :data-module-id="mod.id ?? ''"
         >
-          <h4 class="text-base font-semibold">
+          <h3 class="text-base font-semibold">
             {{ mod.name || mod.id || '—' }}
-          </h4>
+          </h3>
 
           <div v-if="mod.feature_point_ids?.length" class="flex flex-wrap gap-1">
             <button

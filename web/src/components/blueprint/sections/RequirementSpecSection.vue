@@ -148,9 +148,9 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
         >
           <div class="flex items-start gap-2">
             <span class="font-mono text-[11px] text-muted-foreground shrink-0 mt-0.5">{{ point.id }}</span>
-            <h4 class="text-base font-semibold flex-1 min-w-0">
+            <h3 class="text-base font-semibold flex-1 min-w-0">
               {{ point.title }}
-            </h4>
+            </h3>
             <Badge :variant="intentVariant(point.intent)" :data-intent="point.intent">
               {{ intentLabel(point.intent) }}
             </Badge>

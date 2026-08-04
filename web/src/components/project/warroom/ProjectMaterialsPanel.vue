@@ -28,8 +28,9 @@ const DocsSection = defineAsyncComponent(() => import('~/components/project/work
 const DependenciesSection = defineAsyncComponent(() => import('~/components/project/workbench/DependenciesSection.vue'))
 const ArtifactTimeline = defineAsyncComponent(() => import('~/components/delivery/ArtifactTimeline.vue'))
 const HumanTaskInbox = defineAsyncComponent(() => import('~/components/delivery/HumanTaskInbox.vue'))
-// Phase 115 追加点 #2：技术方案蓝图卡。⭐ 排在既有「交付物版本轨」之前 —— 蓝图与旧
-// technical_plan 共用同一 artifact_type，两块条目会重叠，让更新的形态先被看到（P-17）。
+// Phase 115 追加点 #2：技术方案蓝图卡。⭐ 排在 FeatureBoard 与「交付物版本轨」之前 ——
+// 蓝图与旧 technical_plan 共用同一 artifact_type，两块条目会重叠，让更新的形态先被看到
+// （P-17）；且蓝图是「待审/在产」的高时效资料，须排在静态清单类分区前面。
 const ProjectBlueprintsCard = defineAsyncComponent(() => import('./ProjectBlueprintsCard.vue'))
 </script>
 
@@ -54,6 +55,11 @@ const ProjectBlueprintsCard = defineAsyncComponent(() => import('./ProjectBluepr
       <!-- 统一人类待办收件箱（P8）：按项目过滤，无待办则不渲染（空项目不突兀） -->
       <HumanTaskInbox :project-id="project.id" hide-when-empty />
 
+      <!-- 技术方案蓝图卡：排在 FeatureBoard（feature list）之前——蓝图是「待审/在产」的
+           高时效资料，比静态的功能点清单更需要先被看到（与旧 technical_plan 版本轨的
+           区分策略见 ProjectBlueprintsCard 头注）。 -->
+      <ProjectBlueprintsCard :project-id="project.id" hide-when-empty />
+
       <FeatureBoard :project-id="project.id" :can-manage="canManage" />
 
       <!-- 工作项（裸组件，套扁平分区头） -->
@@ -73,8 +79,6 @@ const ProjectBlueprintsCard = defineAsyncComponent(() => import('./ProjectBluepr
       <ContextLinksCard :project-id="project.id" :can-manage="canManage" />
 
       <ProjectGalaxyCard :project-id="project.id" />
-
-      <ProjectBlueprintsCard :project-id="project.id" hide-when-empty />
 
       <!-- 交付物版本轨 / 时间线（P7，只读）：按项目空间过滤技术方案产物 -->
       <ArtifactTimeline :space-id="project.space_id" artifact-type="technical_plan" />

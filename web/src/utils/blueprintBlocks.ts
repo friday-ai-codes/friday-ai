@@ -392,12 +392,15 @@ const EVENT_STAGE_MAP: Record<string, string> = {
   'blueprint.review.failed': 'ai_review',
 }
 
-/** 阶段时间线的节点顺序（八节点）。 */
+/** 阶段时间线的节点顺序（八节点）。
+ *
+ * ⭐ 与后端 `builtin_processes._TECHNICAL_BLUEPRINT_STAGES` 的转移图同序（116 重排）：
+ * 拆解后先路由调研，规格门（澄清）在仓库集确认门**之后**、分仓方案之前。 */
 export const BLUEPRINT_STAGES: readonly string[] = [
-  'spec_gate',
   'route',
   'repo_research',
   'confirmation',
+  'spec_gate',
   'repo_plan',
   'merge',
   'ai_review',
@@ -502,6 +505,14 @@ export function buildStageTimeline(
   const currentIndex = timelineIndexOfSessionStage(currentStage)
   const status = String(currentStatus ?? '')
   const settled = ORCHESTRATION_SETTLED_BLUEPRINT_STATUSES.has(status)
+  // ⭐ `pending_review` 同样收敛前序阶段：它只能由 ai_review 的两条 __done__ 出边到达，
+  // 走到这一步时前面的机器阶段必然都已跑完。不加这一条的症状（实测）：作答后的续驱被
+  // 进程重启 / 请求取消打断，会话事件流永远停在 `spec_gate.clarification_asked`，而蓝图
+  // 已由后续链路推到 `pending_review` ⇒ 「需求规格门」在一份等人终审的蓝图上永远转圈，
+  // 文案还挂着「等待作答」——而那条澄清早已被回答并 resolved。
+  // ⛔ 不把它并进 ORCHESTRATION_SETTLED 集合：该集合另有消费方（空节点不点亮），而
+  // `pending_review` 下「待人类审查」节点本身仍需点亮为进行中。
+  const collapseRunning = settled || status === 'pending_review'
   const currentNode = currentIndex >= 0 ? BLUEPRINT_STAGES[currentIndex] : ''
 
   return BLUEPRINT_STAGES.map((stage, index) => {
@@ -516,7 +527,7 @@ export function buildStageTimeline(
         state = 'done'
       else
         state = 'running'
-      if (state === 'running' && (settled || (currentIndex >= 0 && index < currentIndex)))
+      if (state === 'running' && (collapseRunning || (currentIndex >= 0 && index < currentIndex)))
         state = 'done'
     }
     else if (!settled && (stage === currentNode || (stage === 'pending_review' && status === 'pending_review'))) {
