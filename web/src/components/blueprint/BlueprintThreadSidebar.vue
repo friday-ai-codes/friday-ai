@@ -113,6 +113,18 @@ function matchesKindFilter(thread: BlueprintThreadDetail): boolean {
   return props.kindFilters.length === 0 || props.kindFilters.includes(thread.kind)
 }
 
+/** 各 kind 的线程数（全量口径，供筛选 chips 显示计数；0 计数的 chip 弱化但仍可点）。 */
+const kindCounts = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {}
+  for (const thread of props.threads)
+    counts[thread.kind] = (counts[thread.kind] ?? 0) + 1
+  for (const thread of props.orphanedThreads) {
+    if (!props.threads.some(row => row.thread_id === thread.thread_id))
+      counts[thread.kind] = (counts[thread.kind] ?? 0) + 1
+  }
+  return counts
+})
+
 function applyKindFilter(list: readonly BlueprintThreadDetail[]): BlueprintThreadDetail[] {
   return (Array.isArray(list) ? list : []).filter(matchesKindFilter)
 }
@@ -151,10 +163,18 @@ const sections = computed<SidebarSection[]>(() => {
   const all: SidebarSection[] = [
     { key: 'open', labelKey: 'groupOpen', defaultOpen: true, isOrphanGroup: false, isClosedGroup: false, items: value.open },
     { key: 'answered', labelKey: 'groupAnswered', defaultOpen: true, isOrphanGroup: false, isClosedGroup: false, items: value.answered },
-    { key: 'closed', labelKey: 'groupClosed', defaultOpen: false, isOrphanGroup: false, isClosedGroup: true, items: value.closed },
+    // ⭐ 已关闭组默认展开：它只在用户显式打开「显示已关闭批注」后才渲染 ——
+    // 人都主动要看了还折叠着，等于让人多点一次（116 视觉整改）。
+    { key: 'closed', labelKey: 'groupClosed', defaultOpen: true, isOrphanGroup: false, isClosedGroup: true, items: value.closed },
     { key: 'orphaned', labelKey: 'groupOrphaned', defaultOpen: false, isOrphanGroup: true, isClosedGroup: false, items: value.orphaned },
   ]
-  return props.showClosed ? all : all.filter(section => !section.isClosedGroup)
+  return all.filter((section) => {
+    if (section.isClosedGroup && !props.showClosed)
+      return false
+    // ⭐ 空组整行不渲染（一排「0」徽标是纯噪音）。唯一例外是失锚组 ——
+    // §20 断言 5 / CLAR-02 要求它恒在（空态给「没有失锚批注」的专门交代，绝不静默消失）。
+    return section.items.length > 0 || section.isOrphanGroup
+  })
 })
 
 const totalCount = computed(() =>
@@ -162,6 +182,15 @@ const totalCount = computed(() =>
 )
 
 const isEmpty = computed(() => totalCount.value === 0)
+
+/**
+ * ⭐ 空态但存在被隐藏的已关闭批注（115 评审 P1 的另一半）：顶栏「批注 {n}」按四组总和
+ * 计数（含已关闭），而侧栏默认滤掉已关闭组 —— 不交代这 n 条去了哪，就是「批注 1 →
+ * 点开 → 空的」的自相矛盾。此时空态必须说明有几条被隐藏并给一键开关。
+ */
+const hiddenClosedCount = computed(
+  () => (props.showClosed ? 0 : groups.value.closed.length),
+)
 
 const canDraft = computed(() => props.draft !== null && !props.readonly)
 const isDraftEmpty = computed(() => draftBody.value.trim().length === 0)
@@ -229,8 +258,8 @@ function onKeydown(event: KeyboardEvent): void {
     class="flex h-full flex-col gap-3"
     @keydown="onKeydown"
   >
-    <!-- 顶部工具条：kind 多选 chips + 显示已关闭批注 -->
-    <div class="space-y-2">
+    <!-- 顶部工具条：kind 筛选 chips（带计数）+ 显示已关闭批注，底部细分隔线与内容区分层 -->
+    <div class="space-y-2.5 border-b border-border/50 pb-3">
       <div class="flex flex-wrap gap-1.5">
         <button
           v-for="chip in KIND_CHIPS"
@@ -239,13 +268,18 @@ function onKeydown(event: KeyboardEvent): void {
           data-testid="blueprint-kind-chip"
           :data-kind="chip.kind"
           :aria-pressed="kindFilters.includes(chip.kind)"
-          class="rounded-full border px-2.5 py-1 text-xs transition-colors"
+          class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors"
           :class="kindFilters.includes(chip.kind)
-            ? 'border-primary bg-primary/10 text-primary'
-            : 'border-border/60 text-muted-foreground hover:bg-muted'"
+            ? 'bg-primary/10 font-medium text-primary ring-1 ring-primary/30'
+            : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
           @click="toggleKind(chip.kind)"
         >
-          {{ t(`knowledge.blueprints.thread.${chip.labelKey}`) }}
+          <span>{{ t(`knowledge.blueprints.thread.${chip.labelKey}`) }}</span>
+          <span
+            v-if="kindCounts[chip.kind]"
+            class="tabular-nums"
+            :class="kindFilters.includes(chip.kind) ? 'text-primary/70' : 'text-muted-foreground/70'"
+          >{{ kindCounts[chip.kind] }}</span>
         </button>
       </div>
 
@@ -259,7 +293,8 @@ function onKeydown(event: KeyboardEvent): void {
         />
         <span class="text-xs text-foreground">{{ t('knowledge.blueprints.annotation.showClosed') }}</span>
       </label>
-      <p class="text-xs text-muted-foreground">
+      <!-- 灰色点线的图例说明只在开关打开、点线真的会出现时展示（渐进披露） -->
+      <p v-if="showClosed" class="text-xs text-muted-foreground">
         {{ t('knowledge.blueprints.annotation.showClosedHint') }}
       </p>
     </div>
@@ -300,9 +335,35 @@ function onKeydown(event: KeyboardEvent): void {
       </div>
     </div>
 
-    <!-- 空态：四组皆空 -->
+    <!-- 空态（有隐藏的已关闭批注）：交代去向 + 一键显示，⛔ 不与「真的空」同形 -->
+    <div
+      v-if="isEmpty && hiddenClosedCount > 0"
+      class="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-border/70 bg-muted/10 px-4 py-6 text-center"
+      data-testid="blueprint-thread-empty-closed"
+    >
+      <span class="mb-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/10">
+        <span class="icon-[lucide--check] text-base text-emerald-600" aria-hidden="true" />
+      </span>
+      <p class="text-sm font-medium text-foreground">
+        {{ t('knowledge.blueprints.annotation.emptyClosedTitle') }}
+      </p>
+      <p class="text-xs text-muted-foreground">
+        {{ t('knowledge.blueprints.annotation.emptyClosedBody', { n: hiddenClosedCount }) }}
+      </p>
+      <Button
+        size="sm"
+        variant="ghost"
+        class="mt-1 text-primary"
+        data-testid="blueprint-thread-show-closed-action"
+        @click="emit('update:showClosed', true)"
+      >
+        {{ t('knowledge.blueprints.annotation.emptyClosedAction') }}
+      </Button>
+    </div>
+
+    <!-- 空态：四组皆空且无隐藏项 -->
     <CompactEmptyState
-      v-if="isEmpty"
+      v-else-if="isEmpty"
       data-testid="blueprint-thread-empty"
       icon="lucide--messages-square"
       :title="t('knowledge.blueprints.annotation.emptyTitle')"
@@ -321,12 +382,19 @@ function onKeydown(event: KeyboardEvent): void {
              窄屏抽屉里这是实际触控目标，`py-1.5` 只有 ~30px 高。 -->
         <CollapsibleTrigger
           data-testid="blueprint-thread-group-trigger"
-          class="flex min-h-11 w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-medium hover:bg-muted/60"
+          class="group flex min-h-11 w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-medium hover:bg-muted/60"
         >
-          <span class="text-foreground">{{ t(`knowledge.blueprints.thread.${section.labelKey}`) }}</span>
-          <Badge :variant="section.isOrphanGroup && section.items.length > 0 ? 'warning' : 'muted'">
+          <span :class="section.items.length > 0 ? 'text-foreground' : 'text-muted-foreground'">
+            {{ t(`knowledge.blueprints.thread.${section.labelKey}`) }}
+          </span>
+          <!-- ⭐ 0 不出徽标（灰色的 0 会被读成「有一项待办」，与顶栏计数同一条纪律） -->
+          <Badge v-if="section.items.length > 0" :variant="section.isOrphanGroup ? 'warning' : 'muted'">
             {{ section.items.length }}
           </Badge>
+          <span
+            class="icon-[lucide--chevron-down] ml-auto shrink-0 text-muted-foreground/70 transition-transform group-data-[state=closed]:-rotate-90"
+            aria-hidden="true"
+          />
         </CollapsibleTrigger>
         <CollapsibleContent class="space-y-2 pt-1.5">
           <p

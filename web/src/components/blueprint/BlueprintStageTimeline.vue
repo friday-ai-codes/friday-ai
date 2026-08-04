@@ -88,7 +88,10 @@ function eventLabel(event: BlueprintEvent): string {
   return te(key) ? t(key, (event.payload ?? {}) as Record<string, unknown>) : event.event
 }
 
-/** ⭐ 只留标量：`typeof` 三档之外一律不渲染值。 */
+/** ⭐ 只留标量：`typeof` 三档之外一律不渲染值。
+ *
+ * ⭐ `*_id` 键（thread_id / artifact_id / trace_id…）一律不渲染：整串 UUID 对评审人是
+ * 纯噪音（116 视觉整改），排障要关联键去日志与 API 里查，不靠界面回显。 */
 function splitPayload(payload: Record<string, unknown> | undefined): {
   fields: ScalarField[]
   skippedKeys: string[]
@@ -96,6 +99,8 @@ function splitPayload(payload: Record<string, unknown> | undefined): {
   const fields: ScalarField[] = []
   const skippedKeys: string[] = []
   for (const [key, value] of Object.entries(payload ?? {})) {
+    if (key === 'id' || key.endsWith('_id'))
+      continue
     const kind = typeof value
     if (kind === 'string' || kind === 'number' || kind === 'boolean')
       fields.push({ key, value: String(value) })
@@ -139,79 +144,110 @@ const nodes = computed<StageNode[]>(() =>
 )
 
 const hasAnyEvent = computed(() => nodes.value.some(node => node.events.length > 0))
+
+/**
+ * ⭐ 默认折叠为单行摘要（115 评审 P1）：对 `pending_review` 及之后的蓝图，这张八节点卡
+ * 7/8 是历史记录，却占据整个首屏、把评审对象正文挤到折叠线以下。只有编排**仍在跑**
+ * （生成三态 / 等澄清）时才默认展开 —— 那时它才是用户此刻最关心的东西。
+ */
+const LIVE_EXPANDED_STATUSES = new Set(['researching', 'drafting', 'ai_reviewing', 'needs_clarification'])
+const defaultOpen = computed(() => LIVE_EXPANDED_STATUSES.has(props.currentStatus))
+
+/** 折叠态的单行摘要：失败 > 进行中 > 全部完成。 */
+const summary = computed(() => {
+  const failed = nodes.value.find(node => node.state === 'failed')
+  if (failed)
+    return { text: t('knowledge.blueprints.stage.summaryFailed', { label: failed.label }), variant: 'destructive' as const }
+  const running = nodes.value.find(node => node.state === 'running')
+  if (running)
+    return { text: t('knowledge.blueprints.stage.summaryCurrent', { label: running.label }), variant: 'info' as const }
+  if (nodes.value.some(node => node.state === 'done'))
+    return { text: t('knowledge.blueprints.stage.summaryDone'), variant: 'success' as const }
+  return null
+})
 </script>
 
 <template>
-  <div class="card" data-testid="blueprint-stage-timeline">
-    <div class="flex items-center gap-2 border-b border-border/50 px-5 py-3.5">
-      <span class="icon-[lucide--git-commit-horizontal] text-primary" />
-      <h3 class="text-base font-semibold">
+  <!-- ⭐ 折叠外壳：编排结束后默认收成单行摘要，不再占据首屏（h2 修复 h1→h3 跳级） -->
+  <Collapsible class="card" data-testid="blueprint-stage-timeline" :default-open="defaultOpen">
+    <CollapsibleTrigger
+      class="flex w-full items-center gap-2 px-5 py-3.5 text-left transition-colors hover:bg-muted/30"
+      data-testid="blueprint-stage-timeline-trigger"
+    >
+      <span class="icon-[lucide--git-commit-horizontal] text-primary" aria-hidden="true" />
+      <h2 class="text-base font-semibold">
         {{ t('knowledge.blueprints.stage.title') }}
-      </h3>
-    </div>
+      </h2>
+      <Badge v-if="summary" :variant="summary.variant" data-testid="blueprint-stage-summary">
+        {{ summary.text }}
+      </Badge>
+      <span class="icon-[lucide--chevron-down] ml-auto shrink-0 text-muted-foreground" aria-hidden="true" />
+    </CollapsibleTrigger>
 
-    <div class="p-5">
-      <p v-if="!hasAnyEvent" class="flex items-center gap-2 text-sm text-muted-foreground">
-        <span class="icon-[lucide--info]" />
-        {{ t('knowledge.blueprints.stage.empty') }}
-      </p>
+    <CollapsibleContent>
+      <div class="border-t border-border/50 p-5">
+        <p v-if="!hasAnyEvent" class="flex items-center gap-2 text-sm text-muted-foreground">
+          <span class="icon-[lucide--info]" />
+          {{ t('knowledge.blueprints.stage.empty') }}
+        </p>
 
-      <ol v-else class="space-y-2">
-        <li v-for="node in nodes" :key="node.stage" :data-stage="node.stage" :data-state="node.state">
-          <Collapsible :disabled="node.events.length === 0">
-            <CollapsibleTrigger
-              class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent"
-              :disabled="node.events.length === 0"
-            >
-              <span
-                v-if="node.state === 'running'"
-                class="icon-[lucide--loader-2] shrink-0 animate-spin text-base"
-              />
-              <span v-else-if="node.state === 'done'" class="icon-[lucide--check-circle] shrink-0 text-base" />
-              <span v-else-if="node.state === 'failed'" class="icon-[lucide--x-circle] shrink-0 text-base" />
-              <span v-else class="icon-[lucide--circle] shrink-0 text-base opacity-40" />
-              <span class="min-w-0 flex-1 truncate text-sm">{{ node.label }}</span>
-              <Badge :variant="STATE_VARIANT[node.state]">
-                {{ node.stateLabel }}
-              </Badge>
-              <span
-                v-if="node.events.length"
-                class="icon-[lucide--chevron-down] shrink-0 text-muted-foreground"
-              />
-            </CollapsibleTrigger>
+        <ol v-else class="space-y-2">
+          <li v-for="node in nodes" :key="node.stage" :data-stage="node.stage" :data-state="node.state">
+            <Collapsible :disabled="node.events.length === 0">
+              <CollapsibleTrigger
+                class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent"
+                :disabled="node.events.length === 0"
+              >
+                <span
+                  v-if="node.state === 'running'"
+                  class="icon-[lucide--loader-2] shrink-0 animate-spin text-base"
+                />
+                <span v-else-if="node.state === 'done'" class="icon-[lucide--check-circle] shrink-0 text-base" />
+                <span v-else-if="node.state === 'failed'" class="icon-[lucide--x-circle] shrink-0 text-base" />
+                <span v-else class="icon-[lucide--circle] shrink-0 text-base opacity-40" />
+                <span class="min-w-0 flex-1 truncate text-sm">{{ node.label }}</span>
+                <Badge :variant="STATE_VARIANT[node.state]">
+                  {{ node.stateLabel }}
+                </Badge>
+                <span
+                  v-if="node.events.length"
+                  class="icon-[lucide--chevron-down] shrink-0 text-muted-foreground"
+                />
+              </CollapsibleTrigger>
 
-            <CollapsibleContent>
-              <ul class="mt-1 space-y-1.5 border-l border-border/60 pl-5">
-                <li
-                  v-for="row in node.events"
-                  :key="row.id"
-                  class="text-xs"
-                  data-testid="blueprint-stage-event"
-                  :data-event="row.event"
-                >
-                  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span class="font-medium text-foreground">{{ row.label }}</span>
-                    <span class="tabular-nums text-muted-foreground">{{ row.ts }}</span>
-                  </div>
-                  <dl v-if="row.fields.length" class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-muted-foreground">
-                    <div v-for="field in row.fields" :key="field.key" class="inline-flex gap-1">
-                      <dt class="font-mono">
-                        {{ field.key }}
-                      </dt>
-                      <dd class="break-all">
-                        {{ field.value }}
-                      </dd>
+              <CollapsibleContent>
+                <ul class="mt-1 space-y-1.5 border-l border-border/60 pl-5">
+                  <li
+                    v-for="row in node.events"
+                    :key="row.id"
+                    class="text-xs"
+                    data-testid="blueprint-stage-event"
+                    :data-event="row.event"
+                  >
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span class="font-medium text-foreground">{{ row.label }}</span>
+                      <span class="tabular-nums text-muted-foreground">{{ row.ts }}</span>
                     </div>
-                  </dl>
-                  <p v-if="row.skippedKeys.length" class="mt-0.5 font-mono text-[11px] text-muted-foreground/70">
-                    {{ row.skippedKeys.join(' · ') }}
-                  </p>
-                </li>
-              </ul>
-            </CollapsibleContent>
-          </Collapsible>
-        </li>
-      </ol>
-    </div>
-  </div>
+                    <dl v-if="row.fields.length" class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-muted-foreground">
+                      <div v-for="field in row.fields" :key="field.key" class="inline-flex gap-1">
+                        <dt class="font-mono">
+                          {{ field.key }}
+                        </dt>
+                        <dd class="break-all">
+                          {{ field.value }}
+                        </dd>
+                      </div>
+                    </dl>
+                    <p v-if="row.skippedKeys.length" class="mt-0.5 font-mono text-[11px] text-muted-foreground/70">
+                      {{ row.skippedKeys.join(' · ') }}
+                    </p>
+                  </li>
+                </ul>
+              </CollapsibleContent>
+            </Collapsible>
+          </li>
+        </ol>
+      </div>
+    </CollapsibleContent>
+  </Collapsible>
 </template>

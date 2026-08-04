@@ -39,6 +39,8 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const body = ref('')
+/** 是否碰过输入框：空值红色校验只在用户输入过又清空后出现，⛔ 不在初始态就红一片。 */
+const touched = ref(false)
 
 /** 逐项防御式取值：`label` 缺失时退回 `value`，两者都空的条目直接丢弃。 */
 const normalizedOptions = computed(() =>
@@ -98,10 +100,11 @@ function submit(): void {
       data-testid="blueprint-thread-composer-input"
       class="min-h-20 text-sm"
       :placeholder="placeholder || t('knowledge.blueprints.thread.composerPlaceholder')"
+      @input="touched = true"
     />
 
     <div class="flex items-center justify-between gap-2">
-      <p v-if="isEmpty" class="text-xs text-destructive">
+      <p v-if="touched && isEmpty" class="text-xs text-destructive">
         {{ t('knowledge.blueprints.thread.composerEmpty') }}
       </p>
       <span v-else />
