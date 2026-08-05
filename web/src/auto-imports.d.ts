@@ -508,9 +508,6 @@ declare global {
   export type { MergedSpaceListItem } from './stores/prompts'
   import('./stores/prompts')
   // @ts-ignore
-  export type { BlueprintThreadKindFilter } from './stores/useBlueprintViewerStore'
-  import('./stores/useBlueprintViewerStore')
-  // @ts-ignore
   export type { NodeExecution, WorkflowDefinitionNode, WorkflowDefinitionEdge, WorkflowDefinition, TimelineNode, TimelineData, WorkflowExecution } from './stores/useExecutionsStore'
   import('./stores/useExecutionsStore')
   // @ts-ignore

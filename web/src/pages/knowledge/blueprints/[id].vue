@@ -38,7 +38,6 @@ import type { BlueprintRejectPayload } from '~/components/blueprint/BlueprintRej
 import type { BlueprintCommentDraft } from '~/components/blueprint/BlueprintThreadSidebar.vue'
 import type { BlueprintVersionEntry } from '~/components/blueprint/BlueprintVersionSwitcher.vue'
 import type { NavSection } from '~/components/layout/AnchorNavLayout.vue'
-import type { BlueprintThreadKindFilter } from '~/stores/useBlueprintViewerStore'
 import type {
   BlueprintAnchor,
   BlueprintBlock,
@@ -680,13 +679,13 @@ watch(previewOpen, (open) => {
 /**
  * 115-07：确认门 `confirm/` 409 `pending_clarification` 的解药落点。
  *
- * 未决分组本身 `defaultOpen: true`，所以「展开未决组」要做的是**把它露出来**：展开侧栏
- * （xl 及以上）+ 打开抽屉（窄屏）+ 清掉可能把未决线程滤掉的两个筛选。⛔ 不弹 toast ——
+ * kind 分组恒 `defaultOpen`，所以「展开未决组」要做的是**把它露出来**：展开侧栏
+ * （xl 及以上）+ 打开抽屉（窄屏）+ 关掉已关闭批注的显示（降噪，未决条目恒排各组最前）。
+ * kind 筛选 chips 已随按 kind 分组废弃，无需再清 kind 筛选。⛔ 不弹 toast ——
  * 面板内已有提示与入口，再弹一条只是重复。
  */
 function onGotoUnresolved(): void {
   viewerStore.sidebarCollapsed = false
-  viewerStore.resetKindFilters()
   viewerStore.showClosedAnnotations = false
   revealAnnotations()
 }
@@ -997,10 +996,6 @@ async function onBlockEditSubmit(ops: BlueprintBlockOp[]): Promise<void> {
   finally {
     submitting.value = false
   }
-}
-
-function onKindFiltersChange(kinds: string[]): void {
-  viewerStore.kindFilters = kinds as BlueprintThreadKindFilter[]
 }
 
 function onGotoBlockedThread(threadId: string): void {
@@ -1571,7 +1566,6 @@ const sections = computed<NavSection[]>(() => [
                 :active-thread-id="activeThreadId"
                 :readonly="readonly"
                 :show-closed="viewerStore.showClosedAnnotations"
-                :kind-filters="viewerStore.kindFilters"
                 :gate-available="gateAvailable"
                 :submitting="submitting"
                 :draft="draft"
@@ -1582,7 +1576,6 @@ const sections = computed<NavSection[]>(() => [
                 @goto-gate="scrollToDom('gate')"
                 @create-comment="onCreateComment"
                 @cancel-comment="draft = null"
-                @update:kind-filters="onKindFiltersChange"
                 @update:show-closed="viewerStore.showClosedAnnotations = $event"
               />
             </ScrollArea>
@@ -1607,7 +1600,6 @@ const sections = computed<NavSection[]>(() => [
               :active-thread-id="activeThreadId"
               :readonly="readonly"
               :show-closed="viewerStore.showClosedAnnotations"
-              :kind-filters="viewerStore.kindFilters"
               :gate-available="gateAvailable"
               :submitting="submitting"
               :draft="draft"
@@ -1618,7 +1610,6 @@ const sections = computed<NavSection[]>(() => [
               @goto-gate="scrollToDom('gate')"
               @create-comment="onCreateComment"
               @cancel-comment="draft = null"
-              @update:kind-filters="onKindFiltersChange"
               @update:show-closed="viewerStore.showClosedAnnotations = $event"
             />
           </ScrollArea>
