@@ -483,8 +483,14 @@ class BlueprintReviewApproveView(APIView):
 class BlueprintReviewRejectView(APIView):
     """POST .../blueprint-review/reject/ —— 驳回 → ``drafting`` 且 ``revision_round + 1``。
 
-    入参 ``{comment?, anchor?}``：``comment`` 非空时额外开一条 ``human_comment``
-    划线评论线程（``blocking=False`` ⇒ 不会把蓝图钉死）。
+    入参 ``{comment?, anchor?, rework_scope?, rework_repository_ids?}``：``comment`` 非空时
+    额外开一条 ``human_comment`` 划线评论线程（``blocking=False`` ⇒ 不会把蓝图钉死）。
+
+    **``rework_scope``（120，REDO-01）** 决定会话复位到哪个 stage —— 即「这次打回要重跑
+    到哪一步」：``review``（只重审）/ ``merge``（重融合，**默认**，与改动前等价）/
+    ``repos``（重跑 ``rework_repository_ids`` 指定的仓）/ ``full``（回路由重新调研）。
+    ⚠️ 非法值**回落默认**而不是 400：把驳回打成 400 会让人审卡在一份已经不能通过的蓝图上；
+    响应体如实回传归一后的 ``rework_scope``，用户看得到系统实际走了哪条路。
 
     顺序是「**先落版本再转状态**」：反过来会留下「状态已 ``drafting`` 而轮次未加」的
     窗口，AI 在该窗口里拿旧轮次重跑，有界回退计数失真。``conflict``（版本已落、状态
@@ -508,6 +514,7 @@ class BlueprintReviewRejectView(APIView):
 
         body = request.data if isinstance(request.data, dict) else {}
         anchor = body.get("anchor")
+        repository_ids = body.get("rework_repository_ids")
         result = await areject_blueprint(
             artifact,
             user=request.user,
@@ -515,6 +522,8 @@ class BlueprintReviewRejectView(APIView):
             anchor=anchor if isinstance(anchor, dict) else None,
             initiated_by_user_id=str(request.user.id),
             session=session,
+            rework_scope=str(body.get("rework_scope") or ""),
+            rework_repository_ids=repository_ids if isinstance(repository_ids, list) else None,
         )
         _log(
             "blueprint_review_reject_requested",
@@ -523,6 +532,8 @@ class BlueprintReviewRejectView(APIView):
             started,
             status=result["status"],
             version_no=result["version_no"],
+            rework_scope=result["rework_scope"],
+            reworked_repository_count=result["reworked_repository_count"],
         )
         if result["status"] != "rejected":
             return _error(
@@ -542,6 +553,10 @@ class BlueprintReviewRejectView(APIView):
                 "thread_id": result["thread_id"],
                 # 续驱后重读（不用 service 那一刻的快照）：见 `_acurrent_status`
                 "current_status": await _acurrent_status(artifact_id),
+                # 120（REDO-01）：**归一后**的重跑范围与被失效的仓数，让前端能如实回显
+                # 「这次重跑做了什么」（传了非法 scope 时回落值也在这里体现）。
+                "rework_scope": result["rework_scope"],
+                "reworked_repository_count": result["reworked_repository_count"],
             }
         )
 

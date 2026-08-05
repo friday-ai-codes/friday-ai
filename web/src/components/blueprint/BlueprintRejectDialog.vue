@@ -41,6 +41,9 @@ export interface BlueprintRejectAnchor {
   quotedText: string
 }
 
+/** 重跑范围（Phase 120，REDO-01）：与后端 `_REWORK_SCOPE_STAGES` 的键**逐字同集**。 */
+export type BlueprintReworkScope = 'review' | 'merge' | 'repos' | 'full'
+
 export interface BlueprintRejectPayload {
   comment: string
   anchor?: {
@@ -49,6 +52,10 @@ export interface BlueprintRejectPayload {
     end_offset: number
     quoted_text: string
   }
+  /** 缺省由后端回落 `merge`（改动前的唯一路径）⇒ 不传即旧行为。 */
+  rework_scope?: BlueprintReworkScope
+  /** 仅 `repos` 范围有意义；其它范围一律不传。 */
+  rework_repository_ids?: string[]
 }
 
 const props = withDefaults(defineProps<{
@@ -58,10 +65,17 @@ const props = withDefaults(defineProps<{
   /** 用户此前的选区；存在时弹窗顶部显示引文预览与「一并带上」开关。 */
   presetAnchor?: BlueprintRejectAnchor | null
   submitting?: boolean
+  /**
+   * 可选的仓库清单（`repos` 范围的勾选源，取自蓝图 `repo_associations`）。
+   * 为空时**不渲染** `repos` 选项 —— 给不出可勾的仓还留着这个范围，只会让人选完发现
+   * 什么都没重跑。
+   */
+  repositories?: Array<{ id: string, name: string }>
 }>(), {
   revisionRound: 0,
   presetAnchor: null,
   submitting: false,
+  repositories: () => [],
 })
 
 const emit = defineEmits<{
@@ -75,16 +89,46 @@ const comment = ref('')
 const keepAnchor = ref(true)
 const commentInput = ref<InstanceType<typeof Textarea> | null>(null)
 
+/**
+ * 重跑范围（REDO-01）。默认 `merge` = 改动前的唯一路径 ⇒ 不改变既有肌肉记忆。
+ *
+ * ⚠️ 选 `repos` 但一个仓都没勾 ⇒ 不可提交：那等于「重跑指定仓，但没指定」，后端会
+ * 零失效空转到 merge，用户以为点了却什么都没重跑（比报错更糟）。
+ */
+const scope = ref<BlueprintReworkScope>('merge')
+const selectedRepositoryIds = ref<string[]>([])
+
+const scopeOptions = computed(() => {
+  const rows: BlueprintReworkScope[] = ['review', 'merge', 'full']
+  // 有仓可勾才给 `repos`（见 props.repositories 注释）
+  return props.repositories.length > 0 ? ['review', 'merge', 'repos', 'full'] as BlueprintReworkScope[] : rows
+})
+
 /** 空 / 纯空格一律不可提交。 */
 const isCommentEmpty = computed(() => comment.value.trim().length === 0)
-const canSubmit = computed(() => !isCommentEmpty.value && !props.submitting)
+const needsRepoSelection = computed(
+  () => scope.value === 'repos' && selectedRepositoryIds.value.length === 0,
+)
+const canSubmit = computed(
+  () => !isCommentEmpty.value && !needsRepoSelection.value && !props.submitting,
+)
 
 watch(() => props.open, (value) => {
   if (value) {
     comment.value = ''
     keepAnchor.value = true
+    scope.value = 'merge'
+    selectedRepositoryIds.value = []
   }
 })
+
+function toggleRepository(id: string): void {
+  const next = new Set(selectedRepositoryIds.value)
+  if (next.has(id))
+    next.delete(id)
+  else next.add(id)
+  selectedRepositoryIds.value = [...next]
+}
 
 function setOpen(value: boolean): void {
   emit('update:open', value)
@@ -104,7 +148,12 @@ function submit(): void {
   if (!canSubmit.value)
     return
   const anchor = props.presetAnchor
-  const payload: BlueprintRejectPayload = { comment: comment.value.trim() }
+  const payload: BlueprintRejectPayload = {
+    comment: comment.value.trim(),
+    rework_scope: scope.value,
+  }
+  if (scope.value === 'repos')
+    payload.rework_repository_ids = [...selectedRepositoryIds.value]
   if (anchor && keepAnchor.value) {
     payload.anchor = {
       block_id: anchor.blockId,
@@ -152,6 +201,52 @@ function submit(): void {
       <p v-if="isCommentEmpty" class="text-xs text-destructive">
         {{ t('knowledge.blueprints.review.rejectReasonRequired') }}
       </p>
+
+      <!-- ⭐ 重跑范围（REDO-01）：打回不只有一种返工。默认 merge = 改动前的唯一路径。 -->
+      <fieldset class="space-y-1.5" data-testid="blueprint-reject-scope">
+        <legend class="text-xs font-medium text-muted-foreground">
+          {{ t('knowledge.blueprints.review.reworkScopeLabel') }}
+        </legend>
+        <label
+          v-for="option in scopeOptions"
+          :key="option"
+          class="flex cursor-pointer items-start gap-2 rounded-lg px-1 py-0.5 text-sm hover:bg-muted/40"
+        >
+          <input
+            v-model="scope"
+            type="radio"
+            :value="option"
+            :data-scope="option"
+            class="mt-1"
+          >
+          <span class="min-w-0">
+            <span class="block">{{ t(`knowledge.blueprints.review.reworkScope.${option}`) }}</span>
+            <span class="block text-xs text-muted-foreground">
+              {{ t(`knowledge.blueprints.review.reworkScopeHint.${option}`) }}
+            </span>
+          </span>
+        </label>
+
+        <!-- repos 范围：勾选要重跑的仓（一个都不勾则不可提交，理由见 needsRepoSelection） -->
+        <div v-if="scope === 'repos'" class="ml-6 space-y-1" data-testid="blueprint-reject-repos">
+          <label
+            v-for="repo in repositories"
+            :key="repo.id"
+            class="flex cursor-pointer items-center gap-2 text-sm"
+          >
+            <input
+              type="checkbox"
+              :value="repo.id"
+              :checked="selectedRepositoryIds.includes(repo.id)"
+              @change="toggleRepository(repo.id)"
+            >
+            <span class="min-w-0 truncate">{{ repo.name || repo.id.slice(0, 8) }}</span>
+          </label>
+          <p v-if="needsRepoSelection" class="text-xs text-destructive">
+            {{ t('knowledge.blueprints.review.reworkScopeRepoRequired') }}
+          </p>
+        </div>
+      </fieldset>
 
       <DialogFooter>
         <Button

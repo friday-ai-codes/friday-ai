@@ -99,6 +99,23 @@ REJECT_PREFIX = "blueprint_review_reject:"
 # 驳回后会话复位的目标 stage（见 `_areopen_session_for_rework` 的取舍说明）
 _REWORK_STAGE = "merge"
 
+# 117/120（REDO-01）：**重跑范围** → 复位目标 stage。
+#
+# 改动前驳回只有一种返工路径（固定回 `merge`）：重跑融合再重审。它对「结论写错了」够用，
+# 但对另外三类打回无能为力 —— 「审查漏了东西，内容没问题」只需重审；「某个仓的分仓方案
+# 不对」要重跑那个仓；「选仓就选错了」得回到路由重新调研。用户只能反复驳回、每次都拿到
+# 同一种返工。
+#
+# ⭐ 四个值都必须是 `technical_blueprint` stage graph 里**真实存在**的 stage：
+# `areopen_stage` 对不存在的 stage fail-closed raise（把会话钉在幽灵 stage 上比不复位更糟）。
+_REWORK_SCOPE_STAGES: dict[str, str] = {
+    "review": "ai_review",  # 只重审：同一份内容再过一遍审查规则
+    "merge": _REWORK_STAGE,  # 重融合（默认，与改动前逐字等价）
+    "repos": "repo_plan",  # 重跑指定仓的分仓方案
+    "full": "route",  # 完整重做：回到路由与逐仓调研
+}
+_DEFAULT_REWORK_SCOPE = "merge"
+
 # 提醒周期回落值（配置缺失 / 坏值 / 非正数一律回落到它）
 _DEFAULT_REMINDER_HOURS = 24
 # 117（WAIT-01）：提醒次数上限回落值。达到上限的线程落 `expired_at` 并**退出扫描面**，
@@ -273,6 +290,8 @@ async def areject_blueprint(
     anchor: Any = None,
     initiated_by_user_id: str = "system",
     session: Any = None,
+    rework_scope: str = _DEFAULT_REWORK_SCOPE,
+    rework_repository_ids: Any = None,
     artifact_service: Any = None,
     lifecycle_service: Any = None,
 ) -> dict:
@@ -318,6 +337,10 @@ async def areject_blueprint(
         "thread_id": "",
         "detail": "",
         "current_status": _current_status(artifact),
+        # 120（REDO-01）：实际生效的重跑范围与被失效的仓数（非 repos 范围恒 0）。
+        # ⭐ 如实回传**归一后**的值：传了非法 scope 时用户得知道系统实际做了什么。
+        "rework_scope": _DEFAULT_REWORK_SCOPE,
+        "reworked_repository_count": 0,
     }
 
     base = await _alatest_version(artifact)
@@ -371,7 +394,18 @@ async def areject_blueprint(
     if result["status"] == "rejected":
         # ⭐ 必须在「版本已落 + 轮次已加 + 状态已 drafting」之后才复位会话：复位让会话重新
         # 可被 advance，早一步就把「状态已 drafting 而轮次未加」的窗口暴露给 AI。
-        await _areopen_session_for_rework(session, initiated_by_user_id=initiated)
+        scope = _resolve_rework_scope(rework_scope)
+        result["rework_scope"] = scope
+        if scope == "repos":
+            # 只有「重跑指定仓」需要先失效那几个仓的产出：不失效的话
+            # `aall_repo_plans_ready` 仍为真、dispatch 认为该仓已完成 ⇒ 复位到
+            # repo_plan 也不会重跑任何仓，驳回又变成空动作。
+            result["reworked_repository_count"] = await _ainvalidate_repo_plans(
+                session, rework_repository_ids, initiated_by_user_id=initiated
+            )
+        await _areopen_session_for_rework(
+            session, initiated_by_user_id=initiated, stage=_REWORK_SCOPE_STAGES[scope]
+        )
         thread_id = await _aopen_reject_comment(
             lifecycle,
             artifact,
@@ -399,8 +433,79 @@ async def areject_blueprint(
     return result
 
 
-async def _areopen_session_for_rework(session: Any, *, initiated_by_user_id: str) -> bool:
-    """驳回后把**终态**会话复位到融合 stage，让续驱真的能重跑（best-effort）。
+def _resolve_rework_scope(raw: Any) -> str:
+    """重跑范围归一（纯函数，恒不抛）：未知/空值回落 :data:`_DEFAULT_REWORK_SCOPE`。
+
+    ⚠️ **不 raise**：范围是个可选入参，写错了退回「重融合」这个既有默认行为是安全的
+    （它是改动前的唯一路径），而把驳回整体打成 400 会让人审卡在一份已经不能通过的蓝图上。
+    端点侧仍会把归一后的值如实回传，用户看得到系统实际选了哪条路。
+    """
+    return (
+        str(raw or "").strip().lower()
+        if str(raw or "").strip().lower() in _REWORK_SCOPE_STAGES
+        else _DEFAULT_REWORK_SCOPE
+    )
+
+
+async def _ainvalidate_repo_plans(
+    session: Any, repository_ids: Any, *, initiated_by_user_id: str
+) -> int:
+    """把指定仓的分仓方案置失效，让它们在复位后被重新拟定（REDO-01 的 ``repos`` 范围）。
+
+    ⭐ **走既有 ``ResearchService.mark_stale``**（INV-6：``PartialPlan`` / ``RepoResearchTask``
+    的唯一写口）：它把 task 置 ``stale`` 并让 valid 的 ``PartialPlan`` 失效，而
+    ``ResearchDispatchAdapter`` 的可派发集合含 ``stale`` ⇒ 复位到 ``repo_plan`` 后这些仓
+    自然被重派。⛔ 不在本模块裸写那两张表。
+
+    ⚠️ ``mark_stale`` **只动已终态的 task**（在途容器让它自然跑完，否则同仓双容器 + 结果
+    被丢弃，见该方法的 WR-01 说明）⇒ 返回值可能小于传入仓数，这是正确行为。
+
+    ``repository_ids`` 为空 ⇒ 返回 0 且不写任何库：语义是「没指定要重跑哪个仓」，此时复位
+    到 ``repo_plan`` 本身就是无害的空转（所有仓都已完成 ⇒ 直接进 merge）。
+    整段 best-effort：失效失败绝不反噬已落库的驳回。
+    """
+    ids = [str(rid) for rid in (repository_ids or []) if str(rid or "").strip()]
+    if not ids or session is None:
+        return 0
+    try:
+        from delivery.models import RepoResearchTask
+        from delivery.services import ResearchService
+
+        task_ids = [
+            str(tid)
+            async for tid in RepoResearchTask.objects.filter(
+                session_id=getattr(session, "id", None), repository_id__in=ids
+            ).values_list("id", flat=True)
+        ]
+        if not task_ids:
+            return 0
+        invalidated = await ResearchService().mark_stale(task_ids)
+        logger.info(
+            "blueprint_rework_repo_plans_invalidated",
+            category="caller",
+            component=_COMPONENT,
+            session_id=str(getattr(session, "id", "")),
+            requested_repository_count=len(ids),
+            invalidated_partial_count=int(invalidated or 0),
+            initiated_by_user_id=initiated_by_user_id or "system",
+        )
+        return int(invalidated or 0)
+    except Exception as exc:  # noqa: BLE001 — 失效失败绝不反噬已落库的驳回
+        logger.warning(
+            "blueprint_rework_repo_plans_invalidate_failed",
+            category="caller",
+            component=_COMPONENT,
+            session_id=str(getattr(session, "id", "")),
+            initiated_by_user_id=initiated_by_user_id or "system",
+            error=_detail(exc),
+        )
+        return 0
+
+
+async def _areopen_session_for_rework(
+    session: Any, *, initiated_by_user_id: str, stage: str = _REWORK_STAGE
+) -> bool:
+    """驳回后把**终态**会话复位到 ``stage``，让续驱真的能重跑（best-effort）。
 
     ⭐ **没有这一步驳回就是空动作**：``pending_review`` 只能由 ``ai_review`` 的
     ``review_passed`` / ``review_exhausted`` 到达，而两条出边都落 ``__done__`` ⇒ 人能点
@@ -410,10 +515,14 @@ async def _areopen_session_for_rework(session: Any, *, initiated_by_user_id: str
     ``drafting``、**没有任何进程会再碰它**，用户写的驳回理由 AI 永远看不到，
     ``revision_round`` 也永远只会是 1（114-MJ-01）。
 
-    复位目标取 :data:`_REWORK_STAGE`（``merge``）而不是 ``ai_review``：只回审查 stage 等于
-    拿同一份内容再审一遍，必然复现同样的 findings。回 ``merge`` 与 ``ai_review`` 既有的
+    复位目标**默认** :data:`_REWORK_STAGE`（``merge``）而不是 ``ai_review``：只回审查 stage
+    等于拿同一份内容再审一遍，必然复现同样的 findings。回 ``merge`` 与 ``ai_review`` 既有的
     ``remerge`` 出边**同目标**——「重跑融合再重审」在本 stage graph 里已是登记在案的返工
     路径，不新造语义。人工块保护（B3）挂在审查入口，重跑融合不会覆盖人工编辑。
+
+    120（REDO-01）起 ``stage`` 由调用方按**重跑范围**给（:data:`_REWORK_SCOPE_STAGES`），
+    默认值保持 ``merge`` ⇒ 不传时与改动前逐字等价。⭐ 四个目标都是 stage graph 里真实存在
+    的 stage，越界由 ``areopen_stage`` 自身 fail-closed 拦住。
 
     ⚠️ 蓝图上仍有 open+blocking 线程时，重跑会在 ``merge``/``ai_review`` 的
     ``needs_clarification`` self-loop 上停住等人处置——这是**正确**行为：人先处置未决项，
@@ -428,7 +537,7 @@ async def _areopen_session_for_rework(session: Any, *, initiated_by_user_id: str
 
     try:
         return await ConvergenceSessionService().areopen_stage(
-            session, stage=_REWORK_STAGE, reason="human_reject"
+            session, stage=stage, reason="human_reject"
         )
     except Exception as exc:  # noqa: BLE001 — 复位失败绝不反噬已落库的驳回
         logger.warning(

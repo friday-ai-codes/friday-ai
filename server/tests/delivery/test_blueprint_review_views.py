@@ -1100,3 +1100,163 @@ def test_end_to_end_edit_reject_approve_never_silently_fails_the_session(
     assert authenticated_client.post(_url("blueprint-review-approve", artifact)).status_code == 200
     assert _db_status(artifact) == BlueprintStatus.CONFIRMED
     assert ConvergenceSession.objects.get(id=session.id).status != ConvergenceSessionStatus.FAILED
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 13. ⭐ 重跑范围（Phase 120，REDO-01）
+#
+# 改动前驳回只有一条返工路径（固定回 `merge`）：对「审查漏了东西」「某个仓的方案不对」
+# 「选仓就选错了」三类打回都无能为力，用户只能反复驳回、每次拿到同一种返工。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.parametrize(
+    ("scope", "expected_stage"),
+    [
+        ("review", "ai_review"),
+        ("merge", "merge"),
+        ("repos", "repo_plan"),
+        ("full", "route"),
+    ],
+)
+def test_reject_reopens_the_session_at_the_requested_scope(
+    authenticated_client, user, monkeypatch, scope: str, expected_stage: str
+) -> None:
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact()
+    session = _make_session(artifact, user, status=ConvergenceSessionStatus.DONE)
+
+    resp = authenticated_client.post(
+        _url("blueprint-review-reject", artifact),
+        {"comment": "打回", "rework_scope": scope},
+        format="json",
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["rework_scope"] == scope
+    session.refresh_from_db()
+    assert session.current_stage == expected_stage
+    assert session.status == ConvergenceSessionStatus.RUNNING
+
+
+def test_reject_without_scope_keeps_the_legacy_merge_behaviour(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """⭐ 不传 scope ⇒ 与改动前逐字等价（回 merge）。这是兼容性的正向对照。"""
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact()
+    session = _make_session(artifact, user, status=ConvergenceSessionStatus.DONE)
+
+    resp = authenticated_client.post(
+        _url("blueprint-review-reject", artifact), {"comment": "打回"}, format="json"
+    )
+
+    assert resp.json()["rework_scope"] == "merge"
+    session.refresh_from_db()
+    assert session.current_stage == "merge"
+
+
+def test_reject_with_unknown_scope_falls_back_instead_of_400(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """⭐ 非法 scope 回落默认而**不是** 400：把驳回打成 400 会让人审卡在一份不能通过的蓝图上。
+
+    响应体如实回传归一后的值 ⇒ 用户看得到系统实际走了哪条路。
+    """
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact()
+    session = _make_session(artifact, user, status=ConvergenceSessionStatus.DONE)
+
+    resp = authenticated_client.post(
+        _url("blueprint-review-reject", artifact),
+        {"comment": "打回", "rework_scope": "回到侏罗纪"},
+        format="json",
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["rework_scope"] == "merge"
+    session.refresh_from_db()
+    assert session.current_stage == "merge"
+
+
+def test_reject_repos_scope_invalidates_only_the_named_repo_plans(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """⭐ ``repos`` 范围必须让指定仓的产出失效——否则 `aall_repo_plans_ready` 仍为真、
+    复位到 `repo_plan` 也不会重跑任何仓，驳回又变成空动作。"""
+    from delivery.models import PartialPlan, RepoResearchTask, RepoResearchTaskStatus
+    from repositories.models import Repository
+
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact()
+    session = _make_session(artifact, user, status=ConvergenceSessionStatus.DONE)
+
+    targets = {}
+    for name in ("wanted", "untouched"):
+        repo = Repository.objects.create(
+            name=f"repo-{name}",
+            git_url=f"https://example.com/{name}.git",
+            git_platform="github",
+            default_branch="main",
+        )
+        task = RepoResearchTask.objects.create(
+            session=session, repository=repo, status=RepoResearchTaskStatus.DONE
+        )
+        plan = PartialPlan.objects.create(
+            research_task=task, content={"repo_plan": {"x": 1}}, valid=True
+        )
+        targets[name] = (repo, task, plan)
+
+    resp = authenticated_client.post(
+        _url("blueprint-review-reject", artifact),
+        {
+            "comment": "这个仓的方案不对",
+            "rework_scope": "repos",
+            "rework_repository_ids": [str(targets["wanted"][0].id)],
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["reworked_repository_count"] == 1
+    targets["wanted"][2].refresh_from_db()
+    targets["wanted"][1].refresh_from_db()
+    assert targets["wanted"][2].valid is False
+    assert targets["wanted"][1].status == RepoResearchTaskStatus.STALE
+    # ⭐ 未点名的仓一字不动（证明上面那条断言不是「全部失效」）
+    targets["untouched"][2].refresh_from_db()
+    targets["untouched"][1].refresh_from_db()
+    assert targets["untouched"][2].valid is True
+    assert targets["untouched"][1].status == RepoResearchTaskStatus.DONE
+
+
+def test_reject_repos_scope_without_ids_invalidates_nothing(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """未指定仓 ⇒ 零失效、零写库（复位到 repo_plan 后所有仓已完成 ⇒ 直接进 merge，无害空转）。"""
+    from delivery.models import PartialPlan, RepoResearchTask, RepoResearchTaskStatus
+    from repositories.models import Repository
+
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact()
+    session = _make_session(artifact, user, status=ConvergenceSessionStatus.DONE)
+    repo = Repository.objects.create(
+        name="repo-solo",
+        git_url="https://example.com/solo.git",
+        git_platform="github",
+        default_branch="main",
+    )
+    task = RepoResearchTask.objects.create(
+        session=session, repository=repo, status=RepoResearchTaskStatus.DONE
+    )
+    plan = PartialPlan.objects.create(research_task=task, content={"repo_plan": {}}, valid=True)
+
+    resp = authenticated_client.post(
+        _url("blueprint-review-reject", artifact),
+        {"comment": "打回", "rework_scope": "repos"},
+        format="json",
+    )
+
+    assert resp.json()["reworked_repository_count"] == 0
+    plan.refresh_from_db()
+    assert plan.valid is True
