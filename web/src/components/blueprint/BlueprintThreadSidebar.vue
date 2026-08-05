@@ -5,7 +5,8 @@
  * ⭐ **分组判据不在本组件里** —— 一律调纯函数 `sidebarKindGroups(threads, orphanedThreads)`
  * （`~/utils/blueprintAnnotations`）：按 `kind` 分四组（AI 提问 / AI 审查 / 人工评论 / 确认门），
  * 组内 `open` → `answered` → closed，再按 severity → `created_at`。判据只此一份实现，
- * ⛔ 组件内不自写。分组本身取代了此前的 kind 筛选 chips（已删），「显示已关闭批注」开关不变。
+ * ⛔ 组件内不自写。分组本身取代了此前的 kind 筛选 chips（已删）；「显示已关闭批注」开关
+ * 只保留顶栏一处（BlueprintViewerHeader），侧栏不再重复渲染。
  *
  * ⭐ **两个数据源，`threads/` 为准**（§7.7）：`threads/` 带多轮消息与 `options`，人审快照的
  * `orphaned_threads` 只在 `threads/` 尚未就绪时占位渲染。同一 `thread_id` 在两处都出现时以
@@ -30,7 +31,6 @@ import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
-import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
 import { sidebarKindGroups } from '~/utils/blueprintAnnotations'
 import BlueprintThreadCard from './BlueprintThreadCard.vue'
@@ -222,23 +222,13 @@ function onKeydown(event: KeyboardEvent): void {
     class="flex h-full flex-col gap-3"
     @keydown="onKeydown"
   >
-    <!-- 顶部工具条：显示已关闭批注开关，底部细分隔线与内容区分层（kind 筛选 chips 已随按 kind 分组废弃） -->
-    <div class="space-y-2.5 border-b border-border/50 pb-3">
-      <!-- ⭐ `<label>` 而不是 `<div>`：`Switch` 上既无 `aria-label` 也无 `id`/`for`，包一层
-           label 才能同时拿到可访问名与「点文字也切换」。写法照顶栏那个同名开关。 -->
-      <label class="flex items-center gap-2">
-        <Switch
-          data-testid="blueprint-show-closed"
-          :model-value="showClosed"
-          @update:model-value="emit('update:showClosed', $event)"
-        />
-        <span class="text-xs text-foreground">{{ t('knowledge.blueprints.annotation.showClosed') }}</span>
-      </label>
-      <!-- 灰色点线的图例说明只在开关打开、点线真的会出现时展示（渐进披露） -->
-      <p v-if="showClosed" class="text-xs text-muted-foreground">
-        {{ t('knowledge.blueprints.annotation.showClosedHint') }}
-      </p>
-    </div>
+    <!-- ⛔ 侧栏内不再放「显示已关闭批注」开关 —— 顶栏工具条已有同名开关（BlueprintViewerHeader），
+         两处并存会出现两个联动的 Switch（用户实测点名的重复）。`showClosed` 状态仍由父层传入，
+         空态里的一键「显示」按钮保留（那是上下文动作，不是常驻开关）。
+         点线图例提示只在开关打开时展示（渐进披露）。 -->
+    <p v-if="showClosed" class="border-b border-border/50 pb-3 text-xs text-muted-foreground">
+      {{ t('knowledge.blueprints.annotation.showClosedHint') }}
+    </p>
 
     <!-- 选区草稿卡：readonly 时不渲染 -->
     <div
