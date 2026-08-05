@@ -2119,6 +2119,59 @@ def _blueprint_findings(value: Any) -> list[dict[str, Any]]:
     return findings
 
 
+async def _apersist_subagent_sdk_session(
+    session: SubAgentSession, p: dict[str, Any], log: BoundLogger
+) -> None:
+    """把容器上报的 SDK 会话落到 ``SubAgentSession``（Phase 120，REDO-03）。
+
+    ⭐ **这是「每仓可带原始上下文 resume」的唯一留痕点**：容器是 ephemeral 的，transcript
+    随容器销毁；不落库，重跑就只能从结论（``PartialPlan`` / 上下文总线）重建，拿不到
+    「上一次是怎么分析的」。回调 serializer 早就在收 ``sdk_session_id`` / ``sdk_transcript``
+    这两个字段，此前只有编码链（``CodingSession``）落库，蓝图链一直丢掉。
+
+    ⚠️ transcript 超 :data:`MAX_SDK_TRANSCRIPT_CHARS` 则**两个字段一起放弃**（照
+    ``_persist_sdk_session`` 的既有取舍）：只留 id 无法 resume，却会让下游误以为「有上下文
+    可续」而跳过语义重建。整段吞异常 —— 留痕失败绝不反噬容器结论落库。
+    """
+    from django.utils import timezone
+
+    sdk_session_id = str(p.get("sdk_session_id") or "")
+    sdk_transcript = str(p.get("sdk_transcript") or "")
+    if not sdk_session_id:
+        return
+    if sdk_transcript and len(sdk_transcript) > MAX_SDK_TRANSCRIPT_CHARS:
+        log.warning(
+            "subagent_sdk_transcript_oversize_dropped",
+            subagent_session_id=str(session.id),
+            size=len(sdk_transcript),
+            cap=MAX_SDK_TRANSCRIPT_CHARS,
+            category="sampling",
+            component="subagent",
+        )
+        return
+    try:
+        session.sdk_session_id = sdk_session_id
+        session.sdk_transcript = sdk_transcript
+        session.sdk_session_saved_at = timezone.now()
+        await session.asave(
+            update_fields=[
+                "sdk_session_id",
+                "sdk_transcript",
+                "sdk_session_saved_at",
+                "updated_at",
+            ]
+        )
+        log.info(
+            "subagent_sdk_session_persisted",
+            subagent_session_id=str(session.id),
+            has_transcript=bool(sdk_transcript),
+            category="sampling",
+            component="subagent",
+        )
+    except Exception:  # noqa: BLE001 — 留痕 best-effort，绝不反噬结论落库
+        pass
+
+
 async def _aload_blueprint_research_task(session: SubAgentSession):
     """由 last_output 反查 ``(RepoResearchTask, ConvergenceSession)``（不可用位为 None）。
 
@@ -2293,6 +2346,10 @@ async def _handle_blueprint_research_completion(
     task, blueprint_session = await _aload_blueprint_research_task(session)
     if task is None:
         return
+
+    # 120（REDO-03）：先留痕再落结论 —— 结论落库会把 task 推到终态，之后本函数的重投递
+    # 会在上面那个守门处早退，transcript 就再没有机会落库了。
+    await _apersist_subagent_sdk_session(session, p, log)
 
     research_service = ResearchService()
     session_service = ConvergenceSessionService()
@@ -2651,6 +2708,10 @@ async def _handle_blueprint_repo_plan_completion(
     task, blueprint_session = await _aload_blueprint_plan_task(session)
     if task is None:
         return
+
+    # 120（REDO-03）：留痕在最前 —— 长等待退出与有界重试都会改 task 状态并提前 return，
+    # 放后面等于「恰好在需要续跑的那几条路径上」丢掉 transcript。
+    await _apersist_subagent_sdk_session(session, p, log)
 
     # 长等待退出（113-04）：解析 repo_plan **之前**先探测 waiting_context 段。
     if await _ahandle_blueprint_waiting_context(session, p, task, blueprint_session, log):

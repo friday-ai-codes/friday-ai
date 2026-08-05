@@ -156,6 +156,34 @@ class SubAgentSession(models.Model):
     # 失败原因（Phase 新增）
     failure_reason = models.TextField(blank=True, default="", verbose_name="失败原因")
 
+    # ── SDK 会话留痕（Phase 120，REDO-03）───────────────────────────────────
+    #
+    # ⭐ **为什么在这里而不是只在 CodingSession**：容器内的 agent 对话 transcript（jsonl）
+    # 落库 + `resume` 续跑此前**只接了编码链**（`chat.CodingSession` 有这两列），而蓝图的
+    # 逐仓调研 / 分仓方案跑的是同一套容器、走 `SubAgentSession`，却没有留痕位 ⇒ 每仓重跑
+    # 只能从结论（`PartialPlan` / `BlueprintContextEntry`）重建，拿不到「上一次是怎么想的」。
+    # `SubAgentSession` 是**所有**容器执行的通用会话模型，留痕位放这里对三条链都成立。
+    #
+    # ⚠️ `CodingSession` 那两列**保持原样、不迁移不废弃**：编码链的 resume 还叠了
+    # `SessionStore`（Redis 镜像）与 cwd 一致性校验，与本处的「同仓续跑」不是同一套判据。
+    # 两处各自独立，⛔ 不要为了「统一」把编码链切过来。
+    sdk_session_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        verbose_name="SDK 会话 ID",
+        help_text="容器内 agent SDK 的会话 id；re-dispatch 时注入 resume 续跑",
+    )
+    sdk_transcript = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="SDK 会话 transcript",
+        help_text="jsonl 原文（容器 ephemeral，落库才能跨容器续跑）；超上限则丢弃只留 id",
+    )
+    sdk_session_saved_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="SDK 会话留痕时间"
+    )
+
     class Meta:
         indexes = [
             models.Index(fields=["main_session", "task_type"]),

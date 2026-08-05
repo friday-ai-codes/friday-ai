@@ -67,32 +67,49 @@ def build_resume_dispatch_env(
         )
         return {}
 
-    byte_len = len(transcript.encode("utf-8"))
+    env = build_resume_env(sid, transcript, owner_id=str(coding_session.id))
+    if env:
+        logger.info(
+            "resume_dispatch_env_built",
+            coding_session_id=str(coding_session.id),
+            sdk_session_id=sid,
+            chunks=env.get("env_FRIDAY_TASK_RESUME_TRANSCRIPT_CHUNKS"),
+        )
+    return env
+
+
+def build_resume_env(sdk_session_id: str, transcript: str, *, owner_id: str = "") -> dict[str, str]:
+    """把 ``(session_id, transcript)`` 折成分片 resume env（**纯函数，零模型依赖**）。
+
+    Phase 120 从 :func:`build_resume_dispatch_env` 抽出：蓝图的逐仓调研 / 分仓方案容器同样
+    要 resume，但它们的留痕在 ``SubAgentSession`` 上、没有 ``CodingSession`` 也没有
+    ``SessionStore`` 镜像 ⇒ 需要一个不绑那两者的入口。⛔ **分片规则只能有这一份**：
+    容器侧 ``core.sdk_sessions.write_transcript`` 按 ``_CHUNKS`` + ``_{i}`` 重组，两处漂移
+    即还原出半份 transcript（比没有 resume 更糟——agent 会拿着截断的历史继续推理）。
+
+    空 id / 空 transcript / 超 :data:`MAX_RESUME_TRANSCRIPT_BYTES` ⇒ 返回空 dict
+    （默认安全：容器无 resume 标记即全新执行，自动回退语义重建）。
+    """
+    sid = str(sdk_session_id or "").strip()
+    text = transcript or ""
+    if not sid or not text:
+        return {}
+
+    byte_len = len(text.encode("utf-8"))
     if byte_len > MAX_RESUME_TRANSCRIPT_BYTES:
         logger.warning(
             "resume_transcript_too_large_skip",
-            coding_session_id=str(coding_session.id),
+            owner_id=owner_id,
             bytes=byte_len,
             cap=MAX_RESUME_TRANSCRIPT_BYTES,
         )
         return {}
 
-    chunks = [
-        transcript[i : i + RESUME_CHUNK_CHARS]
-        for i in range(0, len(transcript), RESUME_CHUNK_CHARS)
-    ]
+    chunks = [text[i : i + RESUME_CHUNK_CHARS] for i in range(0, len(text), RESUME_CHUNK_CHARS)]
     env: dict[str, str] = {
         "env_FRIDAY_TASK_RESUME_SESSION_ID": sid,
         "env_FRIDAY_TASK_RESUME_TRANSCRIPT_CHUNKS": str(len(chunks)),
     }
     for i, chunk in enumerate(chunks):
         env[f"env_FRIDAY_TASK_RESUME_TRANSCRIPT_{i}"] = chunk
-
-    logger.info(
-        "resume_dispatch_env_built",
-        coding_session_id=str(coding_session.id),
-        sdk_session_id=sid,
-        chunks=len(chunks),
-        bytes=byte_len,
-    )
     return env
