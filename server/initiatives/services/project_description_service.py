@@ -91,9 +91,7 @@ class ProjectDescriptionService:
     def _aget_project(self, project_id: Any) -> Any:
         from initiatives.models import Project
 
-        return (
-            Project.objects.select_related("space").filter(id=project_id).first()
-        )
+        return Project.objects.select_related("space").filter(id=project_id).first()
 
     async def _afeature_names(self, project_id: Any) -> list[str]:
         tree = await FeatureListService().build_tree(project_id)
@@ -118,18 +116,28 @@ class ProjectDescriptionService:
 
         messages = [
             SystemMessage(content=_SYSTEM_PROMPT),
-            HumanMessage(content=f"项目「{getattr(project, 'name', '') or '未命名'}」功能清单：\n{outline}"),
+            HumanMessage(
+                content=f"项目「{getattr(project, 'name', '') or '未命名'}」功能清单：\n{outline}"
+            ),
         ]
         start = perf_counter()
         ttft_ms: int | None = None
         try:
             with use_call_source(CallSource.BOARD_SPLIT):
-                chat_model = build_chat_model(
-                    result, model, max_output_tokens=256, streaming=False
-                )
+                chat_model = build_chat_model(result, model, max_output_tokens=256, streaming=False)
                 ai_msg = await chat_model.ainvoke(messages)
             ttft_ms = int((perf_counter() - start) * 1000)
         except Exception as exc:  # noqa: BLE001
+            # ⛔ 不能静默吞：此前这里不落任何日志，线上排障只能靠本地复现才定位到
+            # 网关 usage 解析 TypeError（用户看到的是「未配置 AI Provider」误导提示）。
+            logger.warning(
+                "project_description_llm_failed",
+                model=model,
+                provider=str(getattr(result, "provider_type", "")),
+                error=redact_secrets_in_text(str(exc))[:500],
+                category="caller",
+                component=_COMPONENT,
+            )
             await self._record_usage(
                 result, model, ttft_ms=None, upstream_status_code=parse_upstream_status(exc)
             )
@@ -182,9 +190,7 @@ class ProjectDescriptionService:
                 ttft_ms=ttft_ms,
                 duration_ms=duration_ms,
                 upstream_status_code=upstream_status_code,
-                failure_type=str(upstream_status_code)
-                if upstream_status_code is not None
-                else "",
+                failure_type=str(upstream_status_code) if upstream_status_code is not None else "",
                 source="initiatives",
             )
         except Exception:  # noqa: BLE001 — 观测绝不反噬主流程
