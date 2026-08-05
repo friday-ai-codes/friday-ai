@@ -21,6 +21,15 @@ from core.exceptions import ExploreModeForbiddenError
 
 logger = structlog.get_logger()
 
+# ⭐ 工具自身写入工作区的暂存目录（**唯一清单**，`core.runner` 的洁净度校验 import 同一份）：
+# - ``.friday``：Friday 运行时暂存（usage.json / answer.json 问答协议）
+# - ``.claude``：agent SDK 自己写的状态/设置目录
+#
+# 两者都不是用户改动，却都会让 explore 模式的「工作区必须干净」校验失败 —— 实测一整批
+# 调研容器因 `?? .claude/` 全部报 workspace 错误，整条蓝图编排停在 repo_research 等不到
+# 回调。新增工具目录时只改这里，⛔ 不在校验侧另写一份字面量。
+TOOL_SCRATCH_DIRS: tuple[str, ...] = (".friday", ".claude")
+
 
 class GitOperations:
     """Handle Git operations for task execution.
@@ -125,11 +134,15 @@ class GitOperations:
         log.info("Git setup complete", branch=self.config.git_branch)
 
     def _ensure_friday_scratch_excluded(self) -> None:
-        """把 ``.friday/`` 追加进本地 ``.git/info/exclude``（best-effort）。
+        """把工具自身的暂存目录追加进本地 ``.git/info/exclude``（best-effort）。
 
         info/exclude 是仓库本地忽略规则，不改用户仓库自身的 ``.gitignore``，最小侵入。
-        排除后 ``.friday/``（Friday 运行时暂存：usage.json / answer.json 等）不再出现在
-        ``git status``、也不会被 ``git add -A`` 误纳入。失败仅告警，绝不中断 setup。
+        排除后这些目录不再出现在 ``git status``、也不会被 ``git add -A`` 误纳入。
+        失败仅告警，绝不中断 setup。
+
+        排除清单见 :data:`TOOL_SCRATCH_DIRS` —— ⭐ ``.claude/`` 与 ``.friday/`` 必须同时在内：
+        实测 explore 任务因 ``?? .claude/``（agent SDK 自己写的状态目录）整批失败，
+        而调研失败会让整条蓝图编排停在 ``repo_research`` 等不到回调。
         """
         if self.repo is None:
             return
@@ -137,12 +150,16 @@ class GitOperations:
             exclude_file = Path(self.repo.git_dir) / "info" / "exclude"
             exclude_file.parent.mkdir(parents=True, exist_ok=True)
             existing = exclude_file.read_text() if exclude_file.exists() else ""
-            if ".friday/" in existing.split():
+            present = set(existing.split())
+            missing = [f"{name}/" for name in TOOL_SCRATCH_DIRS if f"{name}/" not in present]
+            if not missing:
                 return
             prefix = "" if (not existing or existing.endswith("\n")) else "\n"
             with exclude_file.open("a") as fh:
-                fh.write(f"{prefix}.friday/\n")
-            logger.info("friday_scratch_excluded", task_id=self.config.task_id)
+                fh.write(prefix + "".join(f"{entry}\n" for entry in missing))
+            logger.info(
+                "friday_scratch_excluded", task_id=self.config.task_id, entries=missing
+            )
         except Exception as exc:  # noqa: BLE001 — 排除失败不应中断 setup（clean 检查侧有兜底）
             logger.warning(
                 "friday_scratch_exclude_failed",

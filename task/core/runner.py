@@ -59,18 +59,17 @@ _GIT_IDENTITY_ENV = {
     "GIT_COMMITTER_EMAIL": "ai@friday.codes",
 }
 
-# Friday 运行时暂存目录（写入工作区的 usage.json / answer.json 问答协议），
-# 属 Friday 自身产物而非用户改动，不应触发 explore 模式洁净度校验失败。
-_FRIDAY_SCRATCH_DIR = ".friday"
-
-
 def _filter_friday_scratch(status_output: str) -> str:
-    """从 ``git status --porcelain`` 输出中剔除 Friday 自己的 ``.friday/`` 暂存目录。
+    """从 ``git status --porcelain`` 输出中剔除工具自身的暂存目录。
 
-    正常已在 setup 阶段写入 ``.git/info/exclude``（见 GitOperations），此处为兜底：
-    即便 exclude 因故未生效，explore 洁净度校验也不会把 Friday 自身产物误判为用户改动。
-    保留其余所有条目（含真实的未跟踪 / 已修改文件），逐行按 porcelain v1 解析路径。
+    清单是 ``git_ops.operations.TOOL_SCRATCH_DIRS``（``.friday`` / ``.claude``）——
+    与 setup 阶段写 ``.git/info/exclude`` 的那份**同源**，⛔ 不在此另写字面量。
+    本函数是兜底：即便 exclude 因故未生效（如镜像内代码旧于修复），explore 洁净度
+    校验也不会把工具产物误判为用户改动。保留其余所有条目（含真实的未跟踪 / 已修改
+    文件），逐行按 porcelain v1 解析路径。
     """
+    from git_ops.operations import TOOL_SCRATCH_DIRS
+
     kept: list[str] = []
     for line in status_output.splitlines():
         if not line.strip():
@@ -81,7 +80,7 @@ def _filter_friday_scratch(status_output: str) -> str:
             path = path[1:-1]
         if " -> " in path:  # 重命名/复制：取目标路径判断
             path = path.split(" -> ", 1)[1].strip().strip('"')
-        if path == _FRIDAY_SCRATCH_DIR or path.startswith(f"{_FRIDAY_SCRATCH_DIR}/"):
+        if any(path == name or path.startswith(f"{name}/") for name in TOOL_SCRATCH_DIRS):
             continue
         kept.append(line)
     return "\n".join(kept)

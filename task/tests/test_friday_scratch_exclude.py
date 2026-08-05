@@ -53,14 +53,30 @@ def test_friday_scratch_added_to_git_exclude(ops_with_real_repo, tmp_path):
     assert ".friday" not in status
 
 
+def test_claude_scratch_added_to_git_exclude(ops_with_real_repo, tmp_path):
+    """⭐ agent SDK 的 .claude/ 也必须进 exclude（线上一整批调研容器因它失败）。"""
+    ops_with_real_repo._ensure_friday_scratch_excluded()
+
+    exclude_file = Path(ops_with_real_repo.repo.git_dir) / "info" / "exclude"
+    assert ".claude/" in exclude_file.read_text().split()
+
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "settings.local.json").write_text("{}")
+
+    status = ops_with_real_repo.repo.git.status("--porcelain")
+    assert ".claude" not in status
+
+
 def test_friday_scratch_exclude_idempotent(ops_with_real_repo):
-    """重复调用不重复写入 .friday/ 条目。"""
+    """重复调用不重复写入条目（两个工具目录各只一行）。"""
     ops_with_real_repo._ensure_friday_scratch_excluded()
     ops_with_real_repo._ensure_friday_scratch_excluded()
 
     exclude_file = Path(ops_with_real_repo.repo.git_dir) / "info" / "exclude"
-    lines = [line for line in exclude_file.read_text().splitlines() if line.strip() == ".friday/"]
-    assert len(lines) == 1
+    written = exclude_file.read_text().splitlines()
+    for entry in (".friday/", ".claude/"):
+        assert len([line for line in written if line.strip() == entry]) == 1
 
 
 def test_friday_scratch_exclude_noop_without_repo(mock_config):
