@@ -229,3 +229,71 @@ def test_build_resume_env_rejects_empty_inputs_and_oversize() -> None:
     assert build_resume_env("", "abc") == {}
     assert build_resume_env("sdk", "") == {}
     assert build_resume_env("sdk", "z" * (MAX_RESUME_TRANSCRIPT_BYTES + 1)) == {}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 7. ⭐ 返工带人审反馈进 agent 输入（REDO-02）
+#
+# 驳回本来就会把理由落成 human_comment 线程、把 revision_round +1，但融合起草**从来没读过
+# 它们** ⇒ 会话被复位、AI 重跑，拿到的输入与上一轮一模一样，大概率产出一模一样的方案，
+# 用户写的意见石沉大海。这正是「打回重做」体感失灵的根因。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_first_round_prompt_is_byte_identical_to_before() -> None:
+    """⭐ 首轮零扰动：无反馈时 system 串与改动前逐字相同（兼容性的正向对照）。"""
+    from services.process_runtime.blueprint_merge import _prompt_parts
+
+    plain = _prompt_parts(("SYS", "HUMAN"))
+    assert plain == {"system": "SYS", "human": "HUMAN"}
+
+    class _Inputs:
+        human_feedback = ""
+
+    assert _prompt_parts(("SYS", "HUMAN"), _Inputs()) == plain
+
+
+def test_rework_prompt_carries_round_and_every_comment() -> None:
+    from services.process_runtime.blueprint_merge import _format_human_feedback, _prompt_parts
+
+    feedback = _format_human_feedback(
+        revision_round=2, comments=["接口契约与现状不符", "缺少回滚设计"]
+    )
+
+    assert "第 2 轮" in feedback
+    assert "接口契约与现状不符" in feedback
+    assert "缺少回滚设计" in feedback
+    # ⭐ 必须明确要求「不要原样重复上一版」——否则模型倾向于复述已有结论
+    assert "不要原样重复" in feedback
+
+    class _Inputs:
+        human_feedback = feedback
+
+    assert _prompt_parts(("SYS", "HUMAN"), _Inputs())["system"].startswith("SYS\n\n")
+    assert "缺少回滚设计" in _prompt_parts(("SYS", "HUMAN"), _Inputs())["system"]
+
+
+def test_feedback_is_bounded_and_truncated() -> None:
+    """REDO-04：条数与单条长度都有界——评论是半可信自由文本，无界拼接会挤掉真正的证据。"""
+    from services.process_runtime.blueprint_merge import (
+        _MAX_FEEDBACK_CHARS,
+        _MAX_FEEDBACK_ITEMS,
+        _format_human_feedback,
+    )
+
+    feedback = _format_human_feedback(
+        revision_round=1,
+        comments=[f"意见{index}" for index in range(_MAX_FEEDBACK_ITEMS + 5)]
+        + ["超长" * _MAX_FEEDBACK_CHARS],
+    )
+
+    assert f"{_MAX_FEEDBACK_ITEMS}. " in feedback
+    assert f"{_MAX_FEEDBACK_ITEMS + 1}. " not in feedback
+    assert len(feedback) < _MAX_FEEDBACK_CHARS * (_MAX_FEEDBACK_ITEMS + 2)
+
+
+def test_feedback_is_empty_on_a_pristine_first_round() -> None:
+    from services.process_runtime.blueprint_merge import _format_human_feedback
+
+    assert _format_human_feedback(revision_round=0, comments=[]) == ""
+    assert _format_human_feedback(revision_round=0, comments=["  ", ""]) == ""
