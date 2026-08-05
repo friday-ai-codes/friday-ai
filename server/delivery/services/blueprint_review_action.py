@@ -44,6 +44,14 @@
     仍然只改 ``blueprint_notify`` 那一个文件。⭐ **送达一律按 artifact 分组**（一份蓝图
     上同时到期 N 条线程只推一张卡，N 张卡本身就是「重复轰炸」）。
 
+**提醒有界（Phase 117，WAIT-01）**
+    上面那套「不判失败」此前被实现成了**无限轰炸**：写回 ``last_reminded_at`` 的线程仍满足
+    扫描条件，每过一个周期再推一张卡，没人管的澄清可以推到世界末日。117 给它加上界——
+    ``reminder_count`` 计数、达到 ``pending_reminder_max`` 落 ``expired_at`` 并退出扫描面。
+    ⛔ **到期不改 ``ThreadStatus`` / ``blocking`` / 蓝图状态**：那三样是 confirm 守卫与续驱
+    pause 判据的输入，动它们等于让超时自动放行未决澄清（CLAR-04 明令禁止）。到期的语义
+    只有两条：不再催、以及让「等了多久 / 还等不等」在人审面上显式可见（WAIT-03）。
+
 观测：日志只记 ``artifact_id`` / ``thread_id`` / 计数 / ``duration_ms`` 等标量与关联键，
 **评论正文、处置理由正文、澄清问题正文一律不进日志**（T-114-36）；异常文本走
 ``redact_secrets_in_text``。
@@ -93,6 +101,12 @@ _REWORK_STAGE = "merge"
 
 # 提醒周期回落值（配置缺失 / 坏值 / 非正数一律回落到它）
 _DEFAULT_REMINDER_HOURS = 24
+# 117（WAIT-01）：提醒次数上限回落值。达到上限的线程落 `expired_at` 并**退出扫描面**，
+# 提醒因此有界 —— 改动前它是无界的：`last_reminded_at` 写回后线程仍满足过滤条件，
+# 每过一个周期就再推一张卡，一条没人管的澄清可以推到世界末日（CLAR-04 的「不判失败」
+# 被实现成了「无限轰炸」）。⛔ 到期**不动** `status` / `blocking` / 蓝图状态，理由见
+# `BlueprintThread.expired_at` 的字段注释。
+_DEFAULT_REMINDER_MAX = 3
 # 单次 job tick 的扫描上界（提醒是 best-effort，绝不为了「扫全」拖垮 scheduler）
 _DEFAULT_SCAN_LIMIT = 100
 _MAX_DETAIL_CHARS = 500
@@ -628,6 +642,26 @@ async def _aload_reminder_hours() -> int:
     return hours if hours > 0 else _DEFAULT_REMINDER_HOURS
 
 
+async def _aload_reminder_max() -> int:
+    """读 ``BLUEPRINT_REVIEW_CONFIG.pending_reminder_max``（提醒次数上限，WAIT-01）。
+
+    同 :func:`_aload_reminder_hours` 的容错口径：缺配置 / 非 JSON / 缺键 / 值类型错 /
+    非正数 ⇒ 回落 :data:`_DEFAULT_REMINDER_MAX`。
+
+    ⚠️ **上限不接受 0 关闭**：0 会让每条线程在第一次到期时立刻 expired、一次提醒都不发，
+    那不是「关闭到期」而是「关闭提醒」，与配置名的语义相反。要放宽只能把数值调大。
+    """
+    try:
+        from system.models import SettingKeys
+        from system.settings_service import aget_json_setting
+
+        cfg = await aget_json_setting(SettingKeys.BLUEPRINT_REVIEW_CONFIG, {}) or {}
+        value = int(cfg.get("pending_reminder_max", _DEFAULT_REMINDER_MAX))
+    except Exception:  # noqa: BLE001 — 配置读失败一律回落常量
+        return _DEFAULT_REMINDER_MAX
+    return value if value > 0 else _DEFAULT_REMINDER_MAX
+
+
 @sync_to_async
 def _list_pending_threads(limit: int) -> list:
     """``needs_clarification`` 蓝图上的 ``open + blocking`` 线程（只读）。
@@ -653,6 +687,9 @@ def _list_pending_threads(limit: int) -> list:
             artifact__blueprint_status=BlueprintStatus.NEEDS_CLARIFICATION,
             status=ThreadStatus.OPEN,
             blocking=True,
+            # 117（WAIT-01）：已到期线程退出扫描面 ⇒ 提醒有界。⛔ 它们**仍是** open+blocking
+            # （confirm 守卫与续驱 pause 判据照旧拦着），只是不再收提醒。
+            expired_at__isnull=True,
         )
         .select_related("artifact")
         .order_by(F("last_reminded_at").asc(nulls_first=True), "created_at")[:limit]
@@ -686,19 +723,34 @@ def _list_recipients(artifact_id: Any) -> list[str]:
 
 
 @sync_to_async
-def _write_reminder_anchors(rows: list, now: Any) -> None:
-    """一次 ``bulk_update`` 写回周期锚点。
+def _write_reminder_anchors(rows: list, now: Any, *, reminder_max: int) -> list:
+    """一次 ``bulk_update`` 写回周期锚点 + 提醒计数 + 到期时刻；返回本轮**新到期**的行。
 
     ⚠️ ``bulk_update`` **绕过 auto_now** ⇒ 必须显式带 ``updated_at``，否则 DB 里的
     ``updated_at`` 会永远停在上一次普通 save 的时刻（同 ``_apply_transition_sync``
     与 114-04 ``_reanchor_threads_sync`` 的既有纪律）。
+
+    ⭐ **计数与到期在同一批写回**（WAIT-01）：分两次写会留下「锚点已落、计数未加」的窗口，
+    进程在窗口内挂掉就等于白提醒一轮 —— 而计数是「提醒有界」的唯一依据，少加一次就多推
+    一张卡。本轮把 ``reminder_count`` 递增后达到 ``reminder_max`` 的行同时置 ``expired_at``，
+    它们**下一轮起退出扫描面**（见 :func:`_list_pending_threads`）。
+
+    ⛔ 到期行的 ``status`` / ``blocking`` 一字不动：到期只停提醒、不放行未决澄清。
     """
     from delivery.models import BlueprintThread
 
+    newly_expired: list = []
     for row in rows:
         row.last_reminded_at = now
+        row.reminder_count = int(row.reminder_count or 0) + 1
+        if row.reminder_count >= reminder_max and row.expired_at is None:
+            row.expired_at = now
+            newly_expired.append(row)
         row.updated_at = now
-    BlueprintThread.objects.bulk_update(rows, ["last_reminded_at", "updated_at"])
+    BlueprintThread.objects.bulk_update(
+        rows, ["last_reminded_at", "reminder_count", "expired_at", "updated_at"]
+    )
+    return newly_expired
 
 
 @sync_to_async
@@ -798,7 +850,8 @@ async def aremind_clarification_threads(
     limit: int = _DEFAULT_SCAN_LIMIT,
     initiated_by_user_id: str = "system",
 ) -> dict:
-    """按周期提醒未应答的 blocking 澄清线程。恒定四键 ``{scanned, due, reminded, skipped}``。
+    """按周期提醒未应答的 blocking 澄清线程。恒定五键
+    ``{scanned, due, reminded, skipped, expired}``（117 起第五键 ``expired``）。
 
     - **扫描面**：``blueprint_status == needs_clarification`` 的 artifact 上
       ``status=open & blocking=True`` 的线程。
@@ -812,19 +865,27 @@ async def aremind_clarification_threads(
     - ⭐ **锚点写回之后按 artifact 分组重推一张飞书卡片**（CLAR-04 的送达半边）：走
       ``blueprint_notify`` 这一个送达收口，整段 best-effort ⇒ 发卡失败不改四键计数、
       不回滚锚点（锚点已落 = 本周期已提醒过，下一周期才会再推，防轰炸不变量不受影响）。
+    - ⭐ **提醒有界（117，WAIT-01）**：每轮提醒把 ``reminder_count`` +1，达到
+      ``BLUEPRINT_REVIEW_CONFIG.pending_reminder_max``（缺配置回落
+      :data:`_DEFAULT_REMINDER_MAX`）即落 ``expired_at`` 并计入返回值 ``expired``，
+      该线程**下一轮起退出扫描面**、不再收提醒。⛔ 到期**不动** ``status`` / ``blocking``
+      / 蓝图状态 —— 它只是「不再催了」，不是「算你同意了」；人随时作答，闭环照旧由作答
+      端点续驱（CLAR-04 的「不自动作答、不判失败」因此仍然成立）。
     - ``hours`` 形参优先，缺省读配置；``now`` 形参**只为可测**（测试注入推进后的时间，
       不 monkeypatch 全局 ``timezone.now``）。
     - ⛔ **不自动作答、不改蓝图状态、不判失败、不新建线程**：本函数除
-      ``last_reminded_at`` / ``updated_at`` 外**零写**。
+      ``last_reminded_at`` / ``reminder_count`` / ``expired_at`` / ``updated_at``
+      外**零写**。
     - 单线程失败 ``try/except`` 隔离；整体再包一层 → warning + 返回已积累计数
       （提醒失败绝不反噬人审、绝不打断 scheduler 主循环）。
     """
     started = time.monotonic()
-    counts = {"scanned": 0, "due": 0, "reminded": 0, "skipped": 0}
-    # ⛔ 只进日志，不进返回值：四键是对外契约（调度壳与用例都按恒定四键断言）
+    counts = {"scanned": 0, "due": 0, "reminded": 0, "skipped": 0, "expired": 0}
+    # ⛔ 只进日志，不进返回值：五键是对外契约（调度壳与用例都按恒定键集断言）
     notified_artifacts = 0
     try:
         window = timedelta(hours=hours if hours and hours > 0 else await _aload_reminder_hours())
+        reminder_max = await _aload_reminder_max()
         moment = now or timezone.now()
         threads = await _list_pending_threads(max(int(limit or 0), 0) or _DEFAULT_SCAN_LIMIT)
         counts["scanned"] = len(threads)
@@ -857,8 +918,24 @@ async def aremind_clarification_threads(
             # 条」+ N 条 `blueprint_clarification_reminded`，而实际是「一条锚点都没落、下一轮
             # 会把同样这 N 条再提醒一遍」。写回失败时 `due` 如实保留（确实到期了）、
             # `reminded` 保持 0，且一条提醒事件都不发。
-            await _write_reminder_anchors(due_rows, moment)
+            newly_expired = await _write_reminder_anchors(
+                due_rows, moment, reminder_max=reminder_max
+            )
             counts["reminded"] = len(due_rows)
+            counts["expired"] = len(newly_expired)
+            for thread in newly_expired:
+                # ⭐ 到期是**运维要能看见的事**（WAIT-01）：一条 caller 事件带线程/蓝图关联键
+                # 与提醒次数，⛔ 澄清正文不进日志。
+                logger.info(
+                    "blueprint_clarification_expired",
+                    category="caller",
+                    component=_COMPONENT,
+                    thread_id=str(thread.id),
+                    artifact_id=str(thread.artifact_id),
+                    reminder_count=int(thread.reminder_count or 0),
+                    reminder_max=reminder_max,
+                    initiated_by_user_id=initiated_by_user_id or "system",
+                )
             for thread in due_rows:
                 # ⚠️ 问题正文与 recipients 明细绝不进日志，只记计数。
                 logger.info(

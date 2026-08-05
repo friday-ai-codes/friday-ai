@@ -139,6 +139,29 @@ const statusVariant = computed(() => STATUS_VARIANT[props.thread.status] ?? 'out
 
 const quotedText = computed(() => String(props.thread.anchor?.quoted_text ?? ''))
 
+/**
+ * 等待态（Phase 117，WAIT-03）。
+ *
+ * ⭐ **「已到期」不是线程状态**：后端到期只停提醒，`status` 仍是 `open`、`blocking` 仍为
+ * true（否则超时就等于自动放行未决澄清）。所以这里把它渲染成一个**独立徽标 + 说明**，
+ * ⛔ 不塞进 `STATUS_LABEL_KEY` 那张表 —— 混进状态标签会让人以为这条已经处置完了。
+ *
+ * 未决线程才展示等待信息：已作答/已关闭的线程「等了多久」没有意义。
+ */
+const isExpired = computed(() => Boolean(props.thread.expired_at) && props.thread.status === 'open')
+
+const reminderCount = computed(() => Number(props.thread.reminder_count ?? 0))
+
+/** 等待天数（向下取整；不足一天不展示，避免出现「已等待 0 天」）。 */
+const waitingDays = computed(() => {
+  if (isClosed.value || props.thread.status === 'answered')
+    return 0
+  const created = new Date(props.thread.created_at).getTime()
+  if (Number.isNaN(created))
+    return 0
+  return Math.floor((Date.now() - created) / 86400000)
+})
+
 /** 确认门线程才给「前往确认门」入口，且面板必须存在（目标面板归 115-07）。 */
 const showGateLink = computed(() =>
   props.thread.kind === 'repo_confirmation' && props.gateAvailable,
@@ -210,6 +233,11 @@ function onGotoGate(): void {
       <Badge :variant="statusVariant">
         {{ statusLabel }}
       </Badge>
+      <!-- ⭐ 到期徽标与状态徽标并列而非替换（到期 ≠ 已处置，见 isExpired 注释） -->
+      <Badge v-if="isExpired" variant="muted" data-testid="blueprint-thread-expired-badge">
+        <span class="icon-[lucide--bell-off] mr-1" aria-hidden="true" />
+        {{ t('knowledge.blueprints.thread.expiredBadge') }}
+      </Badge>
       <span class="ml-auto text-xs text-muted-foreground">{{ formatTime(thread.created_at) }}</span>
     </button>
 
@@ -247,8 +275,28 @@ function onGotoGate(): void {
       </li>
     </ul>
 
-    <p v-if="thread.last_reminded_at" class="text-xs text-muted-foreground">
-      {{ t('knowledge.blueprints.thread.reminded', { time: formatTime(thread.last_reminded_at) }) }}
+    <!-- 等待态一行（WAIT-03）：等了多久 · 催过几次 · 上次何时 -->
+    <p
+      v-if="waitingDays > 0 || thread.last_reminded_at"
+      class="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground"
+      data-testid="blueprint-thread-waiting"
+    >
+      <span v-if="waitingDays > 0">{{ t('knowledge.blueprints.thread.waitingSince', { days: waitingDays }) }}</span>
+      <span v-if="waitingDays > 0 && thread.last_reminded_at" aria-hidden="true">·</span>
+      <span v-if="thread.last_reminded_at">
+        {{ reminderCount > 0
+          ? t('knowledge.blueprints.thread.remindedWithCount', { n: reminderCount, time: formatTime(thread.last_reminded_at) })
+          : t('knowledge.blueprints.thread.reminded', { time: formatTime(thread.last_reminded_at) }) }}
+      </span>
+    </p>
+
+    <!-- ⭐ 到期说明：明确「不再提醒 ≠ 已解决」，并告知仍可回复 -->
+    <p
+      v-if="isExpired"
+      class="rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs text-muted-foreground"
+      data-testid="blueprint-thread-expired-hint"
+    >
+      {{ t('knowledge.blueprints.thread.expiredHint', { n: reminderCount }) }}
     </p>
 
     <!-- ⭐ 动作区：按 kind 硬分流，两条分支物理互斥 -->
