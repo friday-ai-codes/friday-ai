@@ -113,18 +113,40 @@ class TestCheckWorkspaceClean:
         assert result is True
 
     @pytest.mark.asyncio
+    async def test_only_claude_scratch_is_clean(self, mock_task_runner, mock_log):
+        """⭐ 仅有 agent SDK 的 .claude/ 状态目录时应视为干净（返回 True）。
+
+        复现线上事故：一整批调研容器报「Explore 模式结束后工作区存在未提交变更:
+        ?? .claude/」全部失败，整条蓝图编排停在 repo_research 等不到回调。
+        `.claude/` 是 agent SDK 自己写的，与 `.friday/` 同为工具产物。
+        """
+        mock_task_runner.git_ops.repo.git.status.return_value = "?? .claude/"
+        result = await mock_task_runner._check_workspace_clean(mock_log)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_both_tool_scratch_dirs_are_clean(self, mock_task_runner, mock_log):
+        """两个工具目录（含其下文件）同时出现也视为干净。"""
+        mock_task_runner.git_ops.repo.git.status.return_value = (
+            "?? .claude/settings.local.json\n?? .friday/usage.json"
+        )
+        result = await mock_task_runner._check_workspace_clean(mock_log)
+        assert result is True
+
+    @pytest.mark.asyncio
     async def test_friday_scratch_mixed_with_real_change_is_dirty(
         self, mock_task_runner, mock_log
     ):
-        """混入真实用户改动时仍判脏（返回 False），且报错里不含被过滤的 .friday/。"""
+        """混入真实用户改动时仍判脏（返回 False），且报错里不含被过滤的工具目录。"""
         mock_task_runner.git_ops.repo.git.status.return_value = (
-            "?? .friday/usage.json\n M src/main.py"
+            "?? .friday/usage.json\n?? .claude/settings.local.json\n M src/main.py"
         )
         result = await mock_task_runner._check_workspace_clean(mock_log)
         assert result is False
         error_msg = mock_task_runner.callback.report_error.call_args[0][0]
         assert "src/main.py" in error_msg
         assert ".friday/" not in error_msg
+        assert ".claude/" not in error_msg
 
     @pytest.mark.asyncio
     async def test_repo_none_returns_true(self, mock_task_runner, mock_log):
