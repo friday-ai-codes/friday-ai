@@ -346,7 +346,10 @@
         "sectionNavLabel": "跳转到段落",
         "highlightJump": "已定位到目标位置",
         "backToTop": "返回顶部",
-        "nextOpen": "下一条未决（{n}）"
+        "nextOpen": "下一条未决（{n}）",
+        "projectCrumb": "所属项目",
+        "projectCrumbAria": "返回所属项目 {name}",
+        "projectUnnamed": "未命名项目"
       },
       "export": {
         "unconfirmedBanner": "未经确认 —— 本方案尚未经人工终审，导出物同样会带此标注",
@@ -540,6 +543,10 @@
         "composerEmpty": "回复内容不可为空",
         "optionsHint": "可直接选用下列候选答案，选中后仍可改写",
         "reminded": "上次提醒：{time}",
+        "remindedWithCount": "已提醒 {n} 次 · 上次 {time}",
+        "waitingSince": "已等待 {days} 天",
+        "expiredBadge": "已到期",
+        "expiredHint": "已提醒 {n} 次仍无人应答，系统不再提醒；该问题仍未解决，随时可以回复。",
         "authorAi": "AI",
         "gotoGate": "前往确认门",
         "draftTitle": "针对选中片段发起评论",

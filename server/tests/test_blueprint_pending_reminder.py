@@ -117,7 +117,7 @@ def test_overdue_thread_is_reminded_and_anchor_is_written_back() -> None:
 
     counts = _remind(hours=24)
 
-    assert counts == {"scanned": 1, "due": 1, "reminded": 1, "skipped": 0}
+    assert counts == {"scanned": 1, "due": 1, "reminded": 1, "skipped": 0, "expired": 0}
     fresh = _fresh(thread)
     assert fresh.last_reminded_at is not None
     # bulk_update 绕过 auto_now：漏显式带 updated_at 这条即红
@@ -134,12 +134,112 @@ def test_second_run_in_the_same_period_never_re_reminds(monkeypatch) -> None:
     anchor = _fresh(thread).last_reminded_at
 
     again = _remind(hours=24)
-    assert again == {"scanned": 1, "due": 0, "reminded": 0, "skipped": 1}
+    assert again == {"scanned": 1, "due": 0, "reminded": 0, "skipped": 1, "expired": 0}
     assert _fresh(thread).last_reminded_at == anchor
 
     later = _remind(hours=24, now=timezone.now() + timedelta(hours=25))
     assert later["reminded"] == 1
     assert _fresh(thread).last_reminded_at > anchor
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 2.5 ⭐ 提醒有界（Phase 117，WAIT-01）
+#
+# 改动前提醒是**无界**的：写回锚点的线程仍满足扫描条件，每过一个周期再推一张卡，
+# 没人管的澄清可以推到世界末日。117 加上界：`reminder_count` 达到
+# `pending_reminder_max` 即落 `expired_at` 并退出扫描面。
+#
+# ⛔ 这四条一并锁死「到期不等于放行」：`status` / `blocking` / 蓝图状态一字不动 ——
+# 一旦哪次改动为了「到期」去动它们，confirm 守卫与续驱 pause 判据就会把未决澄清
+# 当成已处置放过去（CLAR-04 明令禁止的「自动作答」）。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _remind_until_expired(thread: BlueprintThread, *, reminder_max: int) -> list[dict]:
+    """按周期推进时间反复提醒，直到该线程到期；返回每轮计数。"""
+    rounds: list[dict] = []
+    for i in range(reminder_max):
+        moment = timezone.now() + timedelta(hours=25 * (i + 1))
+        rounds.append(_remind(hours=24, now=moment))
+    return rounds
+
+
+def test_reminders_are_bounded_and_thread_expires_at_the_configured_max() -> None:
+    artifact = _make_artifact()
+    thread = _open_thread(artifact)
+    _age(thread, 25)
+
+    rounds = _remind_until_expired(thread, reminder_max=3)
+
+    # 前两轮只提醒不到期，第三轮（达到默认上限 3）落 expired
+    assert [r["reminded"] for r in rounds] == [1, 1, 1]
+    assert [r["expired"] for r in rounds] == [0, 0, 1]
+
+    fresh = _fresh(thread)
+    assert fresh.reminder_count == 3
+    assert fresh.expired_at is not None
+
+
+def test_expired_thread_leaves_the_scan_face_and_is_never_reminded_again() -> None:
+    """⭐ 有界的真正含义：到期后**再也不进扫描面**（scanned 归零，不是 skipped）。"""
+    artifact = _make_artifact()
+    thread = _open_thread(artifact)
+    _age(thread, 25)
+    _remind_until_expired(thread, reminder_max=3)
+    anchor = _fresh(thread).last_reminded_at
+
+    later = _remind(hours=24, now=timezone.now() + timedelta(hours=500))
+
+    assert later == {"scanned": 0, "due": 0, "reminded": 0, "skipped": 0, "expired": 0}
+    assert _fresh(thread).last_reminded_at == anchor
+    assert _fresh(thread).reminder_count == 3
+
+
+def test_expiry_never_answers_unblocks_or_transitions_anything() -> None:
+    """⛔ 到期 ≠ 放行：线程仍 open+blocking、消息数不变、蓝图状态不变。"""
+    artifact = _make_artifact()
+    thread = _open_thread(artifact)
+    _age(thread, 25)
+    messages_before = BlueprintThreadMessage.objects.filter(thread_id=thread.id).count()
+
+    _remind_until_expired(thread, reminder_max=3)
+
+    fresh = _fresh(thread)
+    assert fresh.status == ThreadStatus.OPEN
+    assert fresh.blocking is True
+    assert BlueprintThreadMessage.objects.filter(thread_id=thread.id).count() == messages_before
+    assert (
+        Artifact.objects.get(id=artifact.id).blueprint_status == BlueprintStatus.NEEDS_CLARIFICATION
+    )
+
+
+def test_expiry_max_is_configurable_and_broken_config_falls_back(monkeypatch) -> None:
+    """上限读 ``BLUEPRINT_REVIEW_CONFIG.pending_reminder_max``；坏值/非正数回落默认 3。"""
+    from delivery.services import blueprint_review_action as mod
+
+    async def _cfg_one(*_a, **_kw):
+        return {"pending_reminder_max": 1}
+
+    monkeypatch.setattr("system.settings_service.aget_json_setting", _cfg_one)
+    artifact = _make_artifact()
+    thread = _open_thread(artifact)
+    _age(thread, 25)
+
+    first = _remind(hours=24, now=timezone.now() + timedelta(hours=25))
+    assert first["expired"] == 1, "上限 1 ⇒ 第一次提醒即到期"
+    assert _fresh(thread).reminder_count == 1
+
+    async def _cfg_broken(*_a, **_kw):
+        return {"pending_reminder_max": "不是数字"}
+
+    monkeypatch.setattr("system.settings_service.aget_json_setting", _cfg_broken)
+    assert async_to_sync(mod._aload_reminder_max)() == 3
+
+    async def _cfg_zero(*_a, **_kw):
+        return {"pending_reminder_max": 0}
+
+    monkeypatch.setattr("system.settings_service.aget_json_setting", _cfg_zero)
+    assert async_to_sync(mod._aload_reminder_max)() == 3, "0 不是「关闭到期」而是坏值 ⇒ 回落"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -153,7 +253,7 @@ def test_scan_targets_needs_clarification_not_pending_review() -> None:
     _age(thread, 25)
 
     Artifact.objects.filter(id=artifact.id).update(blueprint_status=BlueprintStatus.PENDING_REVIEW)
-    assert _remind(hours=24) == {"scanned": 0, "due": 0, "reminded": 0, "skipped": 0}
+    assert _remind(hours=24) == {"scanned": 0, "due": 0, "reminded": 0, "skipped": 0, "expired": 0}
 
     Artifact.objects.filter(id=artifact.id).update(
         blueprint_status=BlueprintStatus.NEEDS_CLARIFICATION
@@ -177,7 +277,13 @@ def test_answered_or_non_blocking_threads_are_out_of_scope(mutate, label: str) -
     _age(thread, 25)
     mutate(thread)
 
-    assert _remind(hours=24) == {"scanned": 0, "due": 0, "reminded": 0, "skipped": 0}, label
+    assert _remind(hours=24) == {
+        "scanned": 0,
+        "due": 0,
+        "reminded": 0,
+        "skipped": 0,
+        "expired": 0,
+    }, label
 
 
 def test_not_yet_due_thread_is_skipped_not_reminded() -> None:
@@ -187,7 +293,7 @@ def test_not_yet_due_thread_is_skipped_not_reminded() -> None:
 
     counts = _remind(hours=24)
 
-    assert counts == {"scanned": 1, "due": 0, "reminded": 0, "skipped": 1}
+    assert counts == {"scanned": 1, "due": 0, "reminded": 0, "skipped": 1, "expired": 0}
     assert _fresh(thread).last_reminded_at is None
 
 
@@ -399,7 +505,7 @@ def test_card_is_not_pushed_again_within_the_same_period(monkeypatch) -> None:
     assert sent.await_count == 1
 
     # 同一周期内再跑一次 tick：不到期 ⇒ 不重推
-    assert _remind(hours=24) == {"scanned": 1, "due": 0, "reminded": 0, "skipped": 1}
+    assert _remind(hours=24) == {"scanned": 1, "due": 0, "reminded": 0, "skipped": 1, "expired": 0}
     assert sent.await_count == 1
 
     # 推进一个完整周期 ⇒ 又推一次（⇒ 上一条断言不是恒真）
@@ -434,7 +540,7 @@ def test_delivery_failure_never_rolls_back_the_reminder(monkeypatch) -> None:
     thread = _open_thread(artifact)
     _age(thread, 25)
 
-    assert _remind(hours=24) == {"scanned": 1, "due": 1, "reminded": 1, "skipped": 0}
+    assert _remind(hours=24) == {"scanned": 1, "due": 1, "reminded": 1, "skipped": 0, "expired": 0}
     assert _fresh(thread).last_reminded_at is not None
 
 
@@ -464,7 +570,7 @@ def test_reminder_job_wrapper_calls_the_task_body(monkeypatch) -> None:
 
     async def _fake() -> dict:
         called.append(1)
-        return {"scanned": 0, "due": 0, "reminded": 0, "skipped": 0}
+        return {"scanned": 0, "due": 0, "reminded": 0, "skipped": 0, "expired": 0}
 
     monkeypatch.setattr("tasks.blueprint_reminder_tasks.aremind_blueprint_clarifications", _fake)
     runapscheduler.remind_blueprint_clarifications_job()
@@ -497,4 +603,5 @@ def test_task_shell_never_raises_even_when_service_explodes(monkeypatch) -> None
         "due": 0,
         "reminded": 0,
         "skipped": 0,
+        "expired": 0,
     }

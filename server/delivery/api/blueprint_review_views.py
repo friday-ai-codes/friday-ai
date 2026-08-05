@@ -167,7 +167,13 @@ async def _alatest_content(artifact: Any) -> dict:
 
 
 def _thread_row(thread: Any) -> dict:
-    """线程 → 快照条目。**带 ``thread_id``**：前端据此直接调处置/作答端点。"""
+    """线程 → 快照条目。**带 ``thread_id``**：前端据此直接调处置/作答端点。
+
+    Phase 117（WAIT-03）纯追加三个等待态标量：``reminder_count`` / ``last_reminded_at`` /
+    ``expired_at``。有了它们，人审面才能回答「这条等了多久、催过几次、还催不催」——
+    此前只有 ``created_at``，「已到期不再提醒」这件事在界面上完全不可见，用户看到的仍是
+    一条与刚开出来的澄清长得一模一样的 open 线程。⛔ 三者都是标量/时间戳，不含正文。
+    """
     return {
         "thread_id": str(thread.id),
         "kind": str(thread.kind or ""),
@@ -178,6 +184,11 @@ def _thread_row(thread: Any) -> dict:
         "anchor": thread.anchor if isinstance(thread.anchor, dict) else None,
         "return_stage": str(thread.return_stage or ""),
         "created_at": thread.created_at.isoformat() if thread.created_at else "",
+        "reminder_count": int(getattr(thread, "reminder_count", 0) or 0),
+        "last_reminded_at": thread.last_reminded_at.isoformat()
+        if getattr(thread, "last_reminded_at", None)
+        else "",
+        "expired_at": thread.expired_at.isoformat() if getattr(thread, "expired_at", None) else "",
     }
 
 

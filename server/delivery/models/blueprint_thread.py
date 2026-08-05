@@ -116,6 +116,19 @@ class BlueprintThread(models.Model):
     # 条线程。⚠️ 提醒路径用 `bulk_update` 写回本字段，`bulk_update` **绕过 auto_now**
     # ⇒ 必须同时显式带 `updated_at=timezone.now()`（同 `_apply_transition_sync`）。
     last_reminded_at = models.DateTimeField(null=True, blank=True)
+    # 117（WAIT-01）：已发出的提醒次数。与 `last_reminded_at` 同一次 `bulk_update` 写回
+    # （同样绕过 auto_now ⇒ 同批必带 `updated_at`）。它是「提醒有上限」的唯一计数依据 ——
+    # 只看 `last_reminded_at` 无法区分「提醒过 1 次」与「提醒过 20 次」。
+    reminder_count = models.PositiveIntegerField(default=0)
+    # 117（WAIT-01）：提醒到上限后的**显式到期时刻**。null = 未到期。
+    #
+    # ⭐ 到期**不是**线程状态、也不改蓝图状态：`ThreadStatus.OPEN` 与 `blocking` 一律保持
+    # 原样，因为「人还没处置」这个事实没有变，而 `open+blocking` 正是 confirm 守卫与续驱
+    # pause 判据读的东西 —— 一旦为了「到期」去动它们，等于让超时**自动放行**未决澄清，
+    # 与 CLAR-04「不自动作答、不判失败」直接冲突。本字段的全部语义是：① 停止无限重推提醒
+    # （扫描面排除已到期线程）；② 让「等了多久、还等不等」在人审面上显式可见（WAIT-03）。
+    # 人随时可以作答/处置，闭环照旧由作答端点续驱。
+    expired_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "delivery_blueprint_thread"

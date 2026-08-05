@@ -10,6 +10,10 @@
 定夺是「pending 超时保持 pending + 按可配周期提醒」——自动作答会把 AI 的猜测冒充成
 人的决策写进 ``decision_log``，判失败则会把「还没人来看」误报成「流程坏了」。
 
+**但提醒本身有界（Phase 117，WAIT-01）**：达到 ``pending_reminder_max`` 的线程落
+``expired_at`` 后退出扫描面、不再收提醒（计入返回值第五键 ``expired``）。到期
+⛔ **不改线程状态、不改蓝图状态** —— 只是「不再催」，未决澄清照旧阻塞 confirm。
+
 **分层**：业务逻辑（扫描面 / 到期判据 / 提醒对象名单 / 周期锚点写回）全在
 ``delivery.services.blueprint_review_action.aremind_clarification_threads``；本模块只是
 调度壳，照 ``tasks/doc_sync_poll.py`` 范式保住「service 管业务、tasks 管调度」的分层。
@@ -33,7 +37,8 @@ _COMPONENT = "blueprint_reminder"
 async def aremind_blueprint_clarifications() -> dict[str, int]:
     """扫描 ``needs_clarification`` 蓝图上到期的 blocking 澄清线程并提醒。
 
-    返回 ``{"scanned": n, "due": n, "reminded": n, "skipped": n}``（恒定四键）。
+    返回 ``{"scanned": n, "due": n, "reminded": n, "skipped": n, "expired": n}``
+    （恒定五键；``expired`` 是 117 追加的「本轮新到期线程数」）。
     """
     try:
         from delivery.services.blueprint_review_action import aremind_clarification_threads
@@ -49,4 +54,4 @@ async def aremind_blueprint_clarifications() -> dict[str, int]:
             initiated_by_user_id="system",
             error=redact_secrets_in_text(str(exc)),
         )
-        return {"scanned": 0, "due": 0, "reminded": 0, "skipped": 0}
+        return {"scanned": 0, "due": 0, "reminded": 0, "skipped": 0, "expired": 0}

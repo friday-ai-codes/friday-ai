@@ -662,3 +662,70 @@ def test_doc_views_reuse_the_project_scope_gate_by_import() -> None:
     assert "async def _ablueprint_project_id" not in src
     # 四端点各调一次（threads 的 get/post 各算一次）
     assert src.count("await _aassert_project_scope(") == 4
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 13. ⭐ detail 顶层项目归属（Phase 117，LINK-02）
+#
+# 归属的权威位置是 `content.meta.project_id`（Artifact 无 project FK）。117 让 detail
+# **顶层**直接给出 id + 名字，口径与列表端点一致 —— 此前消费方得自己从正文里挖，且拿不到
+# 名字，查看器的回跳链接只能显示一串 uuid。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_document_exposes_project_id_and_name_at_top_level(authenticated_client) -> None:
+    artifact = _make_artifact()
+    project = _make_project(_SCOPE_PROJECT_ID)
+
+    body = authenticated_client.get(_url("blueprint-document", artifact)).json()
+
+    assert body["project_id"] == _SCOPE_PROJECT_ID
+    assert body["project_name"] == project.name
+    # ⭐ 权威位置照旧在正文里（顶层键是派生口径，不是搬家）
+    assert body["content"]["meta"]["project_id"] == _SCOPE_PROJECT_ID
+
+
+def test_document_project_name_is_empty_when_project_row_is_gone(authenticated_client) -> None:
+    """⭐ 归属指向一个查不到的项目时：id **照实回传**、name 留空。
+
+    如实暴露「指向不存在的项目」比静默抹掉归属更可诊断（前端据此回落占位文案，链接仍可用）。
+    """
+    from initiatives.models import Project
+
+    artifact = _make_artifact()
+    # 只删项目行，蓝图正文里的 meta.project_id 保持不变
+    scope = Project.objects.get(id=_SCOPE_PROJECT_ID)
+    # 范围闸要过 ⇒ 用 superuser 读（成员表随项目一起删）
+    from django.contrib.auth import get_user_model
+
+    from initiatives.models import ProjectMember
+
+    admin = get_user_model().objects.create_superuser(username="root-117", password="x")
+    ProjectMember.objects.filter(project=scope).delete()
+    Project.objects.filter(id=_SCOPE_PROJECT_ID).delete()
+    authenticated_client.force_authenticate(user=admin)
+
+    body = authenticated_client.get(_url("blueprint-document", artifact)).json()
+
+    assert body["project_id"] == _SCOPE_PROJECT_ID
+    assert body["project_name"] == ""
+
+
+def test_thread_rows_expose_waiting_state_scalars(authenticated_client) -> None:
+    """⭐ WAIT-03：线程条目带 ``reminder_count`` / ``last_reminded_at`` / ``expired_at``。
+
+    没有这三个标量，「已到期不再提醒」在界面上与一条刚开出来的 open 线程长得一模一样。
+    """
+    artifact = _make_artifact()
+    thread = _open_comment(artifact)
+    moment = timezone.now()
+    BlueprintThread.objects.filter(id=thread.id).update(
+        reminder_count=3, last_reminded_at=moment, expired_at=moment
+    )
+
+    rows = authenticated_client.get(_url("blueprint-review-threads", artifact)).json()["threads"]
+    row = next(item for item in rows if item["thread_id"] == str(thread.id))
+
+    assert row["reminder_count"] == 3
+    assert row["last_reminded_at"]
+    assert row["expired_at"]
