@@ -1,23 +1,19 @@
 <script setup lang="ts">
 /**
- * 线程侧栏（Phase 115-04，UI-SPEC §7.7 / §7.9 / §18.1）。
+ * 线程侧栏（Phase 115-04，UI-SPEC §7.7 / §7.9 / §18.1；quick-260806-2c2 改为按 kind 分组）。
  *
- * ⭐ **四组判据不在本组件里** —— 一律调 115-02 的纯函数 `sidebarGroups(threads, orphanedThreads)`
- * （`~/utils/blueprintAnnotations`）。理由：前三组除了看 `status`，还必须带上「排除失锚」的
- * 否定项；失锚是**锚定维度**、`status` 是**处置维度**，两者正交。漏掉那个否定项会让一条未决
- * 的失锚线程在侧栏出现两次、计数重复、选中时两处同时高亮（§20 断言 11）。判据只此一份实现，
- * ⛔ 组件内不自写。
+ * ⭐ **分组判据不在本组件里** —— 一律调纯函数 `sidebarKindGroups(threads, orphanedThreads)`
+ * （`~/utils/blueprintAnnotations`）：按 `kind` 分四组（AI 提问 / AI 审查 / 人工评论 / 确认门），
+ * 组内 `open` → `answered` → closed，再按 severity → `created_at`。判据只此一份实现，
+ * ⛔ 组件内不自写。分组本身取代了此前的 kind 筛选 chips（已删），「显示已关闭批注」开关不变。
  *
- * ⭐ **两个数据源，`threads/` 为准**（§7.7）：前三组来自 §3.4 的 `threads/`（带多轮消息与
- * `options`），第四组来自人审快照的 `orphaned_threads`。同一 `thread_id` 在两处都出现时以
- * `threads/` 的字段为准（它更全），仅在 `threads/` 尚未就绪时用快照条目占位渲染。
+ * ⭐ **两个数据源，`threads/` 为准**（§7.7）：`threads/` 带多轮消息与 `options`，人审快照的
+ * `orphaned_threads` 只在 `threads/` 尚未就绪时占位渲染。同一 `thread_id` 在两处都出现时以
+ * `threads/` 的字段为准（它更全）。
  *
- * ⭐ **失锚组直接渲染，⛔ 前端不再按锚点二次过滤**（114-REVIEW MJ-02）：后端的
- * `_has_anchor_locator` 已前置，快照里只有真失锚；前端再按 `anchor.block_id` 滤一遍，
- * 只会把真失锚也滤掉（§20 断言 5 专门逮这个）。
- *
- * ⚠️ 顶部工具条的 `kind` 多选筛选是**用户显式动作**，对四组一视同仁地生效（含失锚组）——
- * 它与上面那条禁令不是一回事：禁的是按**锚点字段**做隐式过滤。
+ * ⭐ **失锚线程并入各自 kind 组**，不再有专属失锚组与其空态：失锚是锚定维度，卡片上的
+ * 失锚标记由 `BlueprintThreadCard` 承载。快照的 `orphaned_threads` 仍直接渲染，⛔ 前端不按
+ * 锚点二次过滤（114-REVIEW MJ-02：后端 `_has_anchor_locator` 已前置，快照里只有真失锚）。
  *
  * a11y（§18.1）：根 `role="complementary"` + `aria-label`。⚠️ landmark 的名字必须是**名词
  * 短语**（读屏按 landmark 列表导航时念的就是它），⛔ 不能用「查看批注，共 N 条」这种**动作
@@ -36,7 +32,7 @@ import { Button } from '~/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
-import { sidebarGroups } from '~/utils/blueprintAnnotations'
+import { sidebarKindGroups } from '~/utils/blueprintAnnotations'
 import BlueprintThreadCard from './BlueprintThreadCard.vue'
 
 /**
@@ -60,10 +56,8 @@ const props = withDefaults(defineProps<{
   activeThreadId?: string | null
   /** 可编辑闸；为 `true` 时作答框与草稿卡都不存在于 DOM（§7.9）。 */
   readonly?: boolean
-  /** 「显示已关闭批注」开关；关闭时不渲染「已关闭」组。 */
+  /** 「显示已关闭批注」开关；关闭时各 kind 组内不渲染 closed 条目。 */
   showClosed?: boolean
-  /** `kind` 多选筛选；**空数组 = 不筛选**（⛔ 不用 `null` 表达全选，避免两种空态）。 */
-  kindFilters?: string[]
   /** 越界降级线程 id 集合（判据需要块正文 ⇒ 由持有正文的父层算好传入）。 */
   degradedThreadIds?: string[]
   /** 确认门面板是否存在；缺席时线程卡不渲染「前往确认门」链接。 */
@@ -77,7 +71,6 @@ const props = withDefaults(defineProps<{
   activeThreadId: null,
   readonly: false,
   showClosed: false,
-  kindFilters: () => [],
   degradedThreadIds: () => [],
   gateAvailable: false,
   submitting: false,
@@ -92,42 +85,12 @@ const emit = defineEmits<{
   'goto-gate': [threadId: string]
   'create-comment': [body: string, draft: BlueprintCommentDraft | null]
   'cancel-comment': []
-  'update:kindFilters': [kinds: string[]]
   'update:showClosed': [value: boolean]
 }>()
 
 const { t } = useI18n()
 
-/** 四类 `kind` 的筛选 chips（顺序即 §7.7 的「AI 提问 / AI 审查 / 人工评论 / 确认门」）。 */
-const KIND_CHIPS: ReadonlyArray<{ kind: BlueprintThreadKind, labelKey: string }> = [
-  { kind: 'ai_clarification', labelKey: 'kindAiClarification' },
-  { kind: 'ai_review_finding', labelKey: 'kindAiReviewFinding' },
-  { kind: 'human_comment', labelKey: 'kindHumanComment' },
-  { kind: 'repo_confirmation', labelKey: 'kindRepoConfirmation' },
-]
-
 const draftBody = ref('')
-
-/** 空数组 = 全选。 */
-function matchesKindFilter(thread: BlueprintThreadDetail): boolean {
-  return props.kindFilters.length === 0 || props.kindFilters.includes(thread.kind)
-}
-
-/** 各 kind 的线程数（全量口径，供筛选 chips 显示计数；0 计数的 chip 弱化但仍可点）。 */
-const kindCounts = computed<Record<string, number>>(() => {
-  const counts: Record<string, number> = {}
-  for (const thread of props.threads)
-    counts[thread.kind] = (counts[thread.kind] ?? 0) + 1
-  for (const thread of props.orphanedThreads) {
-    if (!props.threads.some(row => row.thread_id === thread.thread_id))
-      counts[thread.kind] = (counts[thread.kind] ?? 0) + 1
-  }
-  return counts
-})
-
-function applyKindFilter(list: readonly BlueprintThreadDetail[]): BlueprintThreadDetail[] {
-  return (Array.isArray(list) ? list : []).filter(matchesKindFilter)
-}
 
 /**
  * ⭐ 两数据源合并：同一 `thread_id` 以 `threads/` 的条目为准（它带多轮消息与 `options`），
@@ -140,41 +103,43 @@ const mergedOrphaned = computed<BlueprintThreadDetail[]>(() => {
   return props.orphanedThreads.map(snapshot => byId.get(snapshot.thread_id) ?? snapshot)
 })
 
-const visibleThreads = computed(() => applyKindFilter(props.threads))
-const visibleOrphaned = computed(() => applyKindFilter(mergedOrphaned.value))
-
-/** ⭐ 四组判据的唯一实现在 115-02 的纯函数里。 */
-const groups = computed(() => sidebarGroups(visibleThreads.value, visibleOrphaned.value))
+/** ⭐ 分组判据的唯一实现在纯函数 `sidebarKindGroups` 里（含去重与组内排序）。 */
+const groups = computed(() => sidebarKindGroups(props.threads, mergedOrphaned.value))
 
 const degradedSet = computed(() => new Set(props.degradedThreadIds))
 
 interface SidebarSection {
-  key: 'open' | 'answered' | 'closed' | 'orphaned'
+  key: BlueprintThreadKind
   labelKey: string
-  defaultOpen: boolean
-  /** ⭐ 失锚组的身份标记做成字段，模板里⛔ 不写锚定态字面量比较（判据只归 `sidebarGroups`）。 */
-  isOrphanGroup: boolean
-  isClosedGroup: boolean
   items: BlueprintThreadDetail[]
 }
 
+/** 四组固定顺序（§7.7 的「AI 提问 / AI 审查 / 人工评论 / 确认门」），i18n 前缀 `knowledge.blueprints.thread.`。 */
+const SECTION_DEFS: ReadonlyArray<{ key: BlueprintThreadKind, labelKey: string }> = [
+  { key: 'ai_clarification', labelKey: 'kindAiClarification' },
+  { key: 'ai_review_finding', labelKey: 'kindAiReviewFinding' },
+  { key: 'human_comment', labelKey: 'kindHumanComment' },
+  { key: 'repo_confirmation', labelKey: 'kindRepoConfirmation' },
+]
+
+function isClosedThread(thread: BlueprintThreadDetail): boolean {
+  return thread.status === 'resolved' || thread.status === 'dismissed'
+}
+
 const sections = computed<SidebarSection[]>(() => {
-  const value = groups.value
-  const all: SidebarSection[] = [
-    { key: 'open', labelKey: 'groupOpen', defaultOpen: true, isOrphanGroup: false, isClosedGroup: false, items: value.open },
-    { key: 'answered', labelKey: 'groupAnswered', defaultOpen: true, isOrphanGroup: false, isClosedGroup: false, items: value.answered },
-    // ⭐ 已关闭组默认展开：它只在用户显式打开「显示已关闭批注」后才渲染 ——
-    // 人都主动要看了还折叠着，等于让人多点一次（116 视觉整改）。
-    { key: 'closed', labelKey: 'groupClosed', defaultOpen: true, isOrphanGroup: false, isClosedGroup: true, items: value.closed },
-    { key: 'orphaned', labelKey: 'groupOrphaned', defaultOpen: false, isOrphanGroup: true, isClosedGroup: false, items: value.orphaned },
-  ]
-  return all.filter((section) => {
-    if (section.isClosedGroup && !props.showClosed)
-      return false
-    // ⭐ 空组整行不渲染（一排「0」徽标是纯噪音）。唯一例外是失锚组 ——
-    // §20 断言 5 / CLAR-02 要求它恒在（空态给「没有失锚批注」的专门交代，绝不静默消失）。
-    return section.items.length > 0 || section.isOrphanGroup
-  })
+  return SECTION_DEFS
+    .map(def => ({
+      key: def.key,
+      labelKey: def.labelKey,
+      // ⭐ closed 的显隐是本组件「显示已关闭批注」开关的职责，⛔ 不进纯函数：
+      // hiddenClosedCount 还要靠同一份未过滤产物计数，进了纯函数就得跑两遍分组。
+      items: props.showClosed
+        ? groups.value[def.key]
+        : groups.value[def.key].filter(thread => !isClosedThread(thread)),
+    }))
+    // ⭐ 空组整块（含标题行）不渲染 —— 分组本身取代筛选，一排空组是纯噪音。
+    // 失锚组恒在的旧例外已随失锚组一并废弃（失锚线程并入各自 kind 组）。
+    .filter(section => section.items.length > 0)
 })
 
 const totalCount = computed(() =>
@@ -184,23 +149,22 @@ const totalCount = computed(() =>
 const isEmpty = computed(() => totalCount.value === 0)
 
 /**
- * ⭐ 空态但存在被隐藏的已关闭批注（115 评审 P1 的另一半）：顶栏「批注 {n}」按四组总和
- * 计数（含已关闭），而侧栏默认滤掉已关闭组 —— 不交代这 n 条去了哪，就是「批注 1 →
+ * ⭐ 空态但存在被隐藏的已关闭批注（115 评审 P1 的另一半）：顶栏「批注 {n}」按全量
+ * 计数（含已关闭），而侧栏默认滤掉 closed 条目 —— 不交代这 n 条去了哪，就是「批注 1 →
  * 点开 → 空的」的自相矛盾。此时空态必须说明有几条被隐藏并给一键开关。
+ * 口径：合并去重后的全量线程（`sidebarKindGroups` 的未过滤产物）里数 closed。
  */
-const hiddenClosedCount = computed(
-  () => (props.showClosed ? 0 : groups.value.closed.length),
-)
+const hiddenClosedCount = computed(() => {
+  if (props.showClosed)
+    return 0
+  return SECTION_DEFS.reduce(
+    (sum, def) => sum + groups.value[def.key].filter(isClosedThread).length,
+    0,
+  )
+})
 
 const canDraft = computed(() => props.draft !== null && !props.readonly)
 const isDraftEmpty = computed(() => draftBody.value.trim().length === 0)
-
-function toggleKind(kind: string): void {
-  const next = props.kindFilters.includes(kind)
-    ? props.kindFilters.filter(item => item !== kind)
-    : [...props.kindFilters, kind]
-  emit('update:kindFilters', next)
-}
 
 function submitDraft(): void {
   if (isDraftEmpty.value || props.submitting)
@@ -258,31 +222,8 @@ function onKeydown(event: KeyboardEvent): void {
     class="flex h-full flex-col gap-3"
     @keydown="onKeydown"
   >
-    <!-- 顶部工具条：kind 筛选 chips（带计数）+ 显示已关闭批注，底部细分隔线与内容区分层 -->
+    <!-- 顶部工具条：显示已关闭批注开关，底部细分隔线与内容区分层（kind 筛选 chips 已随按 kind 分组废弃） -->
     <div class="space-y-2.5 border-b border-border/50 pb-3">
-      <div class="flex flex-wrap gap-1.5">
-        <button
-          v-for="chip in KIND_CHIPS"
-          :key="chip.kind"
-          type="button"
-          data-testid="blueprint-kind-chip"
-          :data-kind="chip.kind"
-          :aria-pressed="kindFilters.includes(chip.kind)"
-          class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors"
-          :class="kindFilters.includes(chip.kind)
-            ? 'bg-primary/10 font-medium text-primary ring-1 ring-primary/30'
-            : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
-          @click="toggleKind(chip.kind)"
-        >
-          <span>{{ t(`knowledge.blueprints.thread.${chip.labelKey}`) }}</span>
-          <span
-            v-if="kindCounts[chip.kind]"
-            class="tabular-nums"
-            :class="kindFilters.includes(chip.kind) ? 'text-primary/70' : 'text-muted-foreground/70'"
-          >{{ kindCounts[chip.kind] }}</span>
-        </button>
-      </div>
-
       <!-- ⭐ `<label>` 而不是 `<div>`：`Switch` 上既无 `aria-label` 也无 `id`/`for`，包一层
            label 才能同时拿到可访问名与「点文字也切换」。写法照顶栏那个同名开关。 -->
       <label class="flex items-center gap-2">
@@ -376,7 +317,7 @@ function onKeydown(event: KeyboardEvent): void {
         :key="section.key"
         :data-group-key="section.key"
         :data-testid="`blueprint-thread-group-${section.key}`"
-        :default-open="section.defaultOpen"
+        :default-open="true"
       >
         <!-- `min-h-11` = §2 的 44px 例外（本行逐字点名「线程侧栏的折叠箭头」）：
              窄屏抽屉里这是实际触控目标，`py-1.5` 只有 ~30px 高。 -->
@@ -384,11 +325,12 @@ function onKeydown(event: KeyboardEvent): void {
           data-testid="blueprint-thread-group-trigger"
           class="group flex min-h-11 w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-medium hover:bg-muted/60"
         >
-          <span :class="section.items.length > 0 ? 'text-foreground' : 'text-muted-foreground'">
+          <span class="text-foreground">
             {{ t(`knowledge.blueprints.thread.${section.labelKey}`) }}
           </span>
-          <!-- ⭐ 0 不出徽标（灰色的 0 会被读成「有一项待办」，与顶栏计数同一条纪律） -->
-          <Badge v-if="section.items.length > 0" :variant="section.isOrphanGroup ? 'warning' : 'muted'">
+          <!-- ⭐ 0 不出徽标（灰色的 0 会被读成「有一项待办」，与顶栏计数同一条纪律）；
+               空组本就不渲染 ⇒ 恒显示，variant 统一 muted -->
+          <Badge v-if="section.items.length > 0" variant="muted">
             {{ section.items.length }}
           </Badge>
           <span
@@ -397,12 +339,6 @@ function onKeydown(event: KeyboardEvent): void {
           />
         </CollapsibleTrigger>
         <CollapsibleContent class="space-y-2 pt-1.5">
-          <p
-            v-if="section.isOrphanGroup && section.items.length === 0"
-            class="px-1 text-xs text-muted-foreground"
-          >
-            {{ t('knowledge.blueprints.thread.groupOrphanedEmpty') }}
-          </p>
           <BlueprintThreadCard
             v-for="thread in section.items"
             :key="thread.thread_id"
