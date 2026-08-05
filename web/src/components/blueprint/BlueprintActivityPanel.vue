@@ -22,8 +22,10 @@
 
 import type { BlueprintEvent } from '~/types/blueprint'
 import type { RepoPlanProgressRow } from '~/utils/blueprintActivity'
+import { useQuery } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { repositoriesApi } from '~/api/repositories'
 import { Badge } from '~/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { buildRepoPlanProgress, buildRouteFitness } from '~/utils/blueprintActivity'
@@ -61,9 +63,36 @@ function percent(total: number | null): string {
   return total === null ? '' : `${(total * 100).toFixed(2)}%`
 }
 
-/** 仓名缺失时回落短 id：这里的主体是仓，没有名字也得让人分得清是哪一行。 */
+/**
+ * ⭐ 仓名兜底解析：事件 payload 的 `repository_name` 是 Phase 118 之后才带的，
+ * 旧部署产生的历史事件只有裸 id —— 裸 id 对用户不可读，缺名时按 id 从仓库列表接口补全。
+ * 只在真的有行缺名字时才发这一次请求（enabled 闸），列表全站低频变动，5 分钟 staleTime 足够。
+ */
+const needsNameLookup = computed(() =>
+  [...fitnessRows.value, ...repoRows.value].some(row => row.repositoryId && !row.repositoryName),
+)
+const reposQuery = useQuery({
+  queryKey: ['repositories', 'list'],
+  queryFn: () => repositoriesApi.list(),
+  enabled: needsNameLookup,
+  staleTime: 5 * 60_000,
+})
+const repoNameById = computed<Map<string, string>>(() => {
+  const map = new Map<string, string>()
+  for (const repo of reposQuery.data.value ?? [])
+    map.set(String(repo.id), repo.name)
+  return map
+})
+
+/** 仓名三级回落：payload 名 → 仓库列表补全 → 短 id（没有名字也得让人分得清是哪一行）。 */
 function repoLabel(name: string, id: string): string {
-  return name || (id ? `${id.slice(0, 8)}…` : t('knowledge.blueprints.activity.repoUnknown'))
+  const resolved = name || repoNameById.value.get(id) || ''
+  return resolved || (id ? `${id.slice(0, 8)}…` : t('knowledge.blueprints.activity.repoUnknown'))
+}
+
+/** 仓库详情页地址（新窗口跳转用）；无 id 返回空串 ⇒ 模板渲染纯文本。 */
+function repoHref(id: string): string {
+  return id ? `/repositories/${id}` : ''
 }
 </script>
 
@@ -103,7 +132,18 @@ function repoLabel(name: string, id: string): string {
               :data-repository-id="row.repositoryId"
             >
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span class="min-w-0 truncate text-sm font-medium">
+                <!-- ⭐ 仓名可点：新窗口打开仓库详情页（有 id 才是链接，纯展示行保持 span） -->
+                <a
+                  v-if="repoHref(row.repositoryId)"
+                  :href="repoHref(row.repositoryId)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="min-w-0 truncate text-sm font-medium hover:text-primary hover:underline"
+                  data-testid="blueprint-activity-repo-link"
+                >
+                  {{ repoLabel(row.repositoryName, row.repositoryId) }}
+                </a>
+                <span v-else class="min-w-0 truncate text-sm font-medium">
                   {{ repoLabel(row.repositoryName, row.repositoryId) }}
                 </span>
                 <Badge v-if="row.roleSuggestion" variant="secondary">
@@ -172,7 +212,17 @@ function repoLabel(name: string, id: string): string {
               />
               <span v-else class="icon-[lucide--hourglass] shrink-0 text-base" aria-hidden="true" />
 
-              <span class="min-w-0 truncate text-sm">
+              <a
+                v-if="repoHref(row.repositoryId)"
+                :href="repoHref(row.repositoryId)"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="min-w-0 truncate text-sm hover:text-primary hover:underline"
+                data-testid="blueprint-activity-repo-link"
+              >
+                {{ repoLabel(row.repositoryName, row.repositoryId) }}
+              </a>
+              <span v-else class="min-w-0 truncate text-sm">
                 {{ repoLabel(row.repositoryName, row.repositoryId) }}
               </span>
               <Badge :variant="REPO_STATE_VARIANT[row.state]">

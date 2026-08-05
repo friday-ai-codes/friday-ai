@@ -11,10 +11,20 @@
  */
 
 import type { BlueprintEvent } from '~/types/blueprint'
+import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import BlueprintActivityPanel from '~/components/blueprint/BlueprintActivityPanel.vue'
+
+// ⭐ 仓名兜底解析的接口 mock：旧事件缺 repository_name 时组件会拉仓库列表补全。
+vi.mock('~/api/repositories', () => ({
+  repositoriesApi: {
+    list: vi.fn().mockResolvedValue([
+      { id: 'ec433b88-2e6a-422c-8073-1b4612e373c1', name: '解析出的仓库名' },
+    ]),
+  },
+}))
 
 const PANEL = '[data-testid="blueprint-activity-panel"]'
 const FITNESS = '[data-testid="blueprint-activity-fitness"]'
@@ -60,10 +70,20 @@ function event(name: string, payload: Record<string, unknown>, ts = '2026-08-05T
 }
 
 function mountPanel(events: BlueprintEvent[], isLive = true) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   return mount(BlueprintActivityPanel, {
     props: { events, isLive },
-    global: { plugins: [i18n] },
+    global: { plugins: [i18n, [VueQueryPlugin, { queryClient }]] },
   })
+}
+
+/** 等 useQuery 的 promise 落定（mock 是同步 resolve，两个微任务足够）。 */
+async function flushQueries(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
 }
 
 describe('blueprintActivityPanel', () => {
@@ -146,6 +166,36 @@ describe('blueprintActivityPanel', () => {
     const text = wrapper.find(REPOS).text()
     expect(text).toContain('01234567…')
     expect(text).not.toContain('0123456789abcdef-long-uuid')
+  })
+
+  it('⭐ 旧事件缺仓名 ⇒ 按 id 从仓库列表补全成可读名字', async () => {
+    const wrapper = mountPanel([
+      event('blueprint.route.scored', {
+        candidates: [{ repository_id: 'ec433b88-2e6a-422c-8073-1b4612e373c1', total: 0.3479 }],
+      }),
+    ])
+    await flushQueries()
+    await wrapper.vm.$nextTick()
+
+    const text = wrapper.find(FITNESS).text()
+    expect(text).toContain('解析出的仓库名')
+    expect(text).not.toContain('ec433b88…')
+  })
+
+  it('⭐ 仓名是新窗口链接，指向仓库详情页', () => {
+    const wrapper = mountPanel([
+      event('blueprint.route.scored', {
+        candidates: [{ repository_id: 'r1', repository_name: '高中数学仓', total: 0.5 }],
+      }),
+      event('blueprint.repo_plan.repo_started', { repository_id: 'r2', repository_name: 'B 仓', wave: 1 }, '2026-08-05T02:00:00+00:00'),
+    ])
+
+    const links = wrapper.findAll('[data-testid="blueprint-activity-repo-link"]')
+    expect(links).toHaveLength(2)
+    expect(links[0].attributes('href')).toBe('/repositories/r1')
+    expect(links[0].attributes('target')).toBe('_blank')
+    expect(links[0].attributes('rel')).toContain('noopener')
+    expect(links[1].attributes('href')).toBe('/repositories/r2')
   })
 
   it('isLive 驱动默认展开态', () => {
