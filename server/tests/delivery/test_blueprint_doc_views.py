@@ -729,3 +729,70 @@ def test_thread_rows_expose_waiting_state_scalars(authenticated_client) -> None:
     assert row["reminder_count"] == 3
     assert row["last_reminded_at"]
     assert row["expired_at"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 14. ⭐ 事件流增量拉取与上界（Phase 118，LIVE-04）
+#
+# 活动级事件让单次编排的事件量上一个量级，而消费方是每几秒轮询的查看器 —— 不增量就是
+# 每轮把整条历史重传一遍。两个参数都可选，**不传时行为逐字不变**。
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_events_since_ts_returns_only_newer_events(authenticated_client, user) -> None:
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    now = timezone.now()
+    old_ts = now - timezone.timedelta(minutes=10)
+    _emit(session, EVENT_BLUEPRINT_STAGE_STARTED, ts=old_ts)
+    _emit(session, EVENT_BLUEPRINT_STAGE_COMPLETED, ts=now)
+
+    body = authenticated_client.get(
+        _url("blueprint-events", artifact), {"since_ts": old_ts.isoformat()}
+    ).json()
+
+    # ⭐ 严格大于：等于边界那条**不再重发**（前端上一轮已经收到了）
+    assert [row["event"] for row in body["events"]] == [EVENT_BLUEPRINT_STAGE_COMPLETED]
+
+
+def test_events_without_since_ts_still_returns_everything(authenticated_client, user) -> None:
+    """默认行为逐字不变的正向对照（证明上面那条断言非恒真）。"""
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    now = timezone.now()
+    _emit(session, EVENT_BLUEPRINT_STAGE_STARTED, ts=now - timezone.timedelta(minutes=10))
+    _emit(session, EVENT_BLUEPRINT_STAGE_COMPLETED, ts=now)
+
+    body = authenticated_client.get(_url("blueprint-events", artifact)).json()
+
+    assert len(body["events"]) == 2
+
+
+def test_events_invalid_since_ts_falls_back_to_full_stream(authenticated_client, user) -> None:
+    """⭐ 坏时间戳**回落全量**而不是 400：它是纯优化参数，不该把「看进度」打成错误页。"""
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    _emit(session, EVENT_BLUEPRINT_STAGE_STARTED, ts=timezone.now())
+
+    body = authenticated_client.get(
+        _url("blueprint-events", artifact), {"since_ts": "not-a-timestamp"}
+    ).json()
+
+    assert len(body["events"]) == 1
+
+
+def test_events_limit_is_clamped_not_rejected(authenticated_client, user) -> None:
+    """``limit`` 夹紧到 ``[1, 500]``：传 0 / 负数 / 超大 / 非数字都不报错。"""
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    now = timezone.now()
+    for index in range(3):
+        _emit(session, EVENT_BLUEPRINT_STAGE_STARTED, ts=now + timezone.timedelta(seconds=index))
+
+    url = _url("blueprint-events", artifact)
+    assert len(authenticated_client.get(url, {"limit": "1"}).json()["events"]) == 1
+    # 0 / 负数 → 夹到 1；非数字与超大 → 回落上界（三条事件全出）
+    assert len(authenticated_client.get(url, {"limit": "0"}).json()["events"]) == 1
+    assert len(authenticated_client.get(url, {"limit": "-5"}).json()["events"]) == 1
+    assert len(authenticated_client.get(url, {"limit": "99999"}).json()["events"]) == 3
+    assert len(authenticated_client.get(url, {"limit": "abc"}).json()["events"]) == 3

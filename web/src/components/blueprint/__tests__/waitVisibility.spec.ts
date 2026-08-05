@@ -98,7 +98,8 @@ const RouterLinkStub = {
 
 function mountHeader(doc: Record<string, unknown> | null) {
   return mount(BlueprintViewerHeader, {
-    props: { currentStatus: 'pending_review', doc },
+    // 用例刻意造**缺键 / 多余键**的 doc（旧数据、脏数据分支）⇒ 断言用不完整对象是必要的
+    props: { currentStatus: 'pending_review', doc: doc as never },
     global: { plugins: [i18n], stubs: { RouterLink: RouterLinkStub } },
   })
 }
