@@ -739,6 +739,41 @@ class _MergeInputs:
     requirement_spec: dict
     cite_map: dict
     assoc_ids: frozenset
+    # 120（REDO-02）：人审反馈（打回理由 / 划线评论 / 修订轮次）。默认空串 = 首轮，
+    # prompt 与改动前逐字一致（零扰动）。
+    human_feedback: str = ""
+
+
+# 人审反馈装进 prompt 的上界（120，REDO-02/04）：评论正文是半可信自由文本，无界拼接会
+# 撑爆上下文窗口并挤掉真正的证据。⭐ 只取最近若干条、逐条截断。
+_MAX_FEEDBACK_ITEMS = 10
+_MAX_FEEDBACK_CHARS = 600
+
+
+def _format_human_feedback(*, revision_round: int, comments: list[str]) -> str:
+    """人审反馈 → prompt 片段（**纯函数，恒不抛**）。无反馈返回空串。
+
+    为什么必须有这一段（REDO-02）：驳回本来就会把理由落成 ``human_comment`` 线程、把
+    ``meta.revision_round`` +1，但**融合起草从来没有读过它们** —— 会话被复位、AI 重跑，
+    拿到的却是与上一轮**一模一样**的输入 ⇒ 大概率产出一模一样的方案，用户写的意见石沉大海。
+    这正是「打回重做」在体感上失灵的根因。
+
+    ⛔ 只放人类写的话与轮次，⛔ 不放 AI 自己上一轮的产物摘要：那份内容已经在 repo_plans /
+    current_state 里，重复喂只会稀释反馈的权重。
+    """
+    rows = [str(text or "").strip()[:_MAX_FEEDBACK_CHARS] for text in comments or []]
+    rows = [row for row in rows if row][:_MAX_FEEDBACK_ITEMS]
+    if not rows and revision_round <= 0:
+        return ""
+    lines = [
+        "⚠️ 这是**返工重跑**（人工已驳回上一版），必须按下面的意见修正，"
+        "⛔ 不要原样重复上一版的结论：",
+        f"- 当前修订轮次：第 {max(int(revision_round or 0), 1)} 轮",
+    ]
+    if rows:
+        lines.append("- 人工审查意见（逐条都要在本轮方案里有回应）：")
+        lines.extend(f"  {index}. {row}" for index, row in enumerate(rows, start=1))
+    return "\n".join(lines)
 
 
 def _cross_repo_section(waves: dict) -> str:
@@ -927,9 +962,19 @@ def _impact_analysis_prompt(inputs: _MergeInputs) -> tuple[str, str]:
     return _SYSTEM_BASE, human
 
 
-def _prompt_parts(prompt: tuple[str, str]) -> dict:
-    """``(system, human)`` → 起草器入参（system 与 human 分离，照 analog L119-164）。"""
+def _prompt_parts(prompt: tuple[str, str], inputs: Any = None) -> dict:
+    """``(system, human)`` → 起草器入参（system 与 human 分离，照 analog L119-164）。
+
+    120（REDO-02）：人审反馈**统一在这里**追加到 system 串尾 —— 六段起草共用这一个装配
+    出口，改这一处等于六段全覆盖。⛔ 不逐段去改那六个 ``_xxx_prompt`` 纯函数（六份副本
+    必然漂移，且它们的单测是按逐字 prompt 断言的）。
+
+    ``inputs`` 缺省 / 无 ``human_feedback`` ⇒ 返回值与改动前**逐字一致**（首轮零扰动）。
+    """
     system, human = prompt
+    feedback = str(getattr(inputs, "human_feedback", "") or "")
+    if feedback:
+        system = f"{system}\n\n{feedback}"
     return {"system": system, "human": human}
 
 
@@ -1613,6 +1658,8 @@ class BlueprintMergeAdapter:
             requirement_spec=requirement_spec,
             cite_map=cite_map,
             assoc_ids=assoc_ids,
+            # 120（REDO-02）：返工轮才有值；首轮为空串 ⇒ prompt 与改动前逐字一致
+            human_feedback=await self._acollect_human_feedback(session, baseline),
         )
         sections, degraded = await self._adraft_sections(session, inputs)
         if len(degraded) == len(MERGE_SECTIONS):
@@ -1866,11 +1913,72 @@ class BlueprintMergeAdapter:
                 )
         return sections, degraded
 
+    async def _acollect_human_feedback(self, session: Any, baseline: dict) -> str:
+        """收集本轮返工要带上的人审反馈（REDO-02），整段吞异常返回空串。
+
+        取两样东西：``meta.revision_round``（返工轮次，驳回时 +1）与该蓝图上**未关闭的**
+        ``human_comment`` 线程正文（人工评论与驳回理由都落这个 kind）。
+
+        ⭐ **只取 open / answered**：已 ``resolved`` / ``dismissed`` 的意见是上一轮已经处置
+        过的，再喂给 AI 会让它反复修改早已定案的内容。
+        ⛔ 不取 ``ai_review_finding``：那是 AI 自己上一轮的审查结论，审查阶段会重新跑一遍，
+        提前塞进起草输入等于让它照着旧结论自我实现。
+
+        best-effort：读失败返回空串（退化成改动前的「不带反馈重跑」，绝不阻断融合）。
+        """
+        try:
+            from delivery.models import BlueprintThread, ThreadKind, ThreadStatus
+
+            meta = baseline.get("meta") if isinstance(baseline.get("meta"), dict) else {}
+            revision_round = meta.get("revision_round")
+            revision_round = (
+                int(revision_round)
+                if isinstance(revision_round, int) and not isinstance(revision_round, bool)
+                else 0
+            )
+            artifact_id = await self._aresolve_artifact_id(session)
+            comments: list[str] = []
+            if artifact_id:
+                comments = [
+                    str(body or "")
+                    async for body in BlueprintThread.objects.filter(
+                        artifact_id=artifact_id,
+                        kind=ThreadKind.HUMAN_COMMENT,
+                        status__in=[ThreadStatus.OPEN, ThreadStatus.ANSWERED],
+                    )
+                    .order_by("-created_at")
+                    .values_list("messages__body", flat=True)[:_MAX_FEEDBACK_ITEMS]
+                ]
+            return _format_human_feedback(revision_round=revision_round, comments=comments)
+        except Exception as exc:  # noqa: BLE001 — 反馈收集 best-effort，绝不阻断融合
+            logger.warning(
+                "blueprint_merge_human_feedback_collect_failed",
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+                category="sampling",
+                component="process_runtime",
+            )
+            return ""
+
+    async def _aresolve_artifact_id(self, session: Any) -> str:
+        """由会话指针反查 artifact id（⛔ 不访问 lazy-FK，async 上下文会抛）。"""
+        from delivery.models import ArtifactVersion
+
+        version_id = getattr(session, "current_artifact_version_id", None)
+        if not version_id:
+            return ""
+        artifact_id = (
+            await ArtifactVersion.objects.filter(id=version_id)
+            .values_list("artifact_id", flat=True)
+            .afirst()
+        )
+        return str(artifact_id or "")
+
     async def _adraft_implementation_overview(self, session: Any, inputs: _MergeInputs) -> dict:
         """实现概述段（SCHEMA-03）：一次调用只产这一段。"""
         from agents.call_source import CallSource, use_call_source
 
-        parts = _prompt_parts(_implementation_overview_prompt(inputs))
+        parts = _prompt_parts(_implementation_overview_prompt(inputs), inputs)
         with use_call_source(CallSource.BLUEPRINT_MERGE):
             payload = await self.synthesizer.draft(
                 section=SECTION_IMPLEMENTATION_OVERVIEW, prompt_parts=parts
@@ -1883,7 +1991,7 @@ class BlueprintMergeAdapter:
         """API 段（SCHEMA-05）：一次调用只产这一段。"""
         from agents.call_source import CallSource, use_call_source
 
-        parts = _prompt_parts(_api_contracts_prompt(inputs))
+        parts = _prompt_parts(_api_contracts_prompt(inputs), inputs)
         with use_call_source(CallSource.BLUEPRINT_MERGE):
             payload = await self.synthesizer.draft(
                 section=SECTION_API_CONTRACTS, prompt_parts=parts
@@ -1894,7 +2002,7 @@ class BlueprintMergeAdapter:
         """交互流程段（SCHEMA-04）：一次调用只产这一段。"""
         from agents.call_source import CallSource, use_call_source
 
-        parts = _prompt_parts(_interaction_flows_prompt(inputs))
+        parts = _prompt_parts(_interaction_flows_prompt(inputs), inputs)
         with use_call_source(CallSource.BLUEPRINT_MERGE):
             payload = await self.synthesizer.draft(
                 section=SECTION_INTERACTION_FLOWS, prompt_parts=parts
@@ -1907,7 +2015,7 @@ class BlueprintMergeAdapter:
         """影响范围段：一次调用只产这一段。"""
         from agents.call_source import CallSource, use_call_source
 
-        parts = _prompt_parts(_impact_analysis_prompt(inputs))
+        parts = _prompt_parts(_impact_analysis_prompt(inputs), inputs)
         with use_call_source(CallSource.BLUEPRINT_MERGE):
             payload = await self.synthesizer.draft(
                 section=SECTION_IMPACT_ANALYSIS, prompt_parts=parts
