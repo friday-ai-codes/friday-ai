@@ -1494,7 +1494,8 @@ const sections = computed<NavSection[]>(() => [
                   v-else
                   :artifact-id="artifactId"
                   :citations="citations"
-                  :project-id="content?.meta?.project_id ?? null"
+                  :project-id="docQuery.data.value?.project_id ?? content?.meta?.project_id ?? null"
+                  :project-name="docQuery.data.value?.project_name ?? ''"
                   :knowledge-entity-id="docQuery.data.value?.knowledge_entity_id ?? null"
                   @citation-click="onCitationClick"
                 />

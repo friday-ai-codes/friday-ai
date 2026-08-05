@@ -120,6 +120,24 @@ const { t } = useI18n()
 
 const title = computed(() => props.doc?.content?.meta?.title ?? '')
 
+/**
+ * 所属项目回跳（Phase 117，LINK-01）。
+ *
+ * ⭐ 顶栏是这条能力的落点，**不是**页尾关联段：后者要滚到最底才看见，回跳等于不可达。
+ * id 优先取 detail 的顶层 `project_id`（LINK-02 后端已解析好），回落 `content.meta.project_id`
+ * ——归属的**权威位置**始终是后者，顶层键只是替消费方挖好的口径。
+ *
+ * ⛔ 无归属时整块不渲染（不出灰按钮、不出 `#` 死链）：蓝图可以尚未绑项目，那是正常态。
+ * 项目行查不到导致 `project_name` 为空时用「未命名项目」占位，**绝不回落成 UUID** —— 一串
+ * uuid 对人没有信息量，而链接本身仍然可用。
+ */
+const projectId = computed(
+  () => props.doc?.project_id || props.doc?.content?.meta?.project_id || '',
+)
+const projectName = computed(
+  () => props.doc?.project_name?.trim() || t('knowledge.blueprints.viewer.projectUnnamed'),
+)
+
 /** 三个计数徽标；⭐ 值为 0 的档**不进这张表**（§16：不显示 0）。 */
 const countBadges = computed(() => {
   const rows: Array<{ key: string, label: string, variant: 'destructive' | 'warning' | 'muted', icon: string }> = []
@@ -176,12 +194,26 @@ const sidebarToggleLabel = computed(() =>
       <span class="min-w-0 truncate">{{ t('knowledge.blueprints.export.unconfirmedBanner') }}</span>
     </div>
 
-    <!-- ② 身份行：标题 + 状态 + 生成中（左）｜ 终审决策（右，恒在第一行） -->
+    <!-- ② 身份行：所属项目面包屑 + 标题 + 状态 + 生成中（左）｜ 终审决策（右，恒在第一行） -->
     <div class="flex items-center gap-3 px-5 pt-3 pb-1.5">
-      <h1 v-if="title" class="min-w-0 flex-1 truncate text-xl font-bold tracking-tight">
-        {{ title }}
-      </h1>
-      <div v-else class="h-7 w-56 flex-1 animate-pulse rounded-md bg-muted" aria-hidden="true" />
+      <div class="min-w-0 flex-1">
+        <!-- ⭐ 面包屑与标题同栏堆叠（text-xs，不新增整行）：sticky 顶栏的高度是稀缺资源 -->
+        <RouterLink
+          v-if="projectId"
+          :to="`/projects/${projectId}`"
+          class="inline-flex max-w-full items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground hover:underline"
+          :aria-label="t('knowledge.blueprints.viewer.projectCrumbAria', { name: projectName })"
+          data-testid="blueprint-header-project-crumb"
+        >
+          <span class="icon-[lucide--folder-open] shrink-0" aria-hidden="true" />
+          <span class="truncate">{{ projectName }}</span>
+        </RouterLink>
+
+        <h1 v-if="title" class="truncate text-xl font-bold tracking-tight">
+          {{ title }}
+        </h1>
+        <div v-else class="h-7 w-56 animate-pulse rounded-md bg-muted" aria-hidden="true" />
+      </div>
 
       <BlueprintStatusBadge :status="currentStatus" class="shrink-0" />
 

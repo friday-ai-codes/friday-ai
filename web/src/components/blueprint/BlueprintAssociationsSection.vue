@@ -251,7 +251,9 @@ const isEmpty = computed(
           data-testid="blueprint-associations-project-link"
         >
           <span class="icon-[lucide--external-link]" aria-hidden="true" />
-          <span>{{ projectName || projectId }}</span>
+          <!-- ⛔ 不回落成 projectId：一串 uuid 对人零信息量（Phase 117 起页面必传 project-name，
+               取自 detail 顶层 project_name；项目行查不到时用「未命名项目」占位） -->
+          <span>{{ projectName || t('knowledge.blueprints.viewer.projectUnnamed') }}</span>
         </RouterLink>
       </div>
     </template>

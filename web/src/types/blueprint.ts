@@ -350,6 +350,13 @@ export interface BlueprintDocumentResponse {
    * ⛔ 前端不复制该 id 的派生规则——后端 `generate_entity_id` 是唯一入口。
    */
   knowledge_entity_id: string
+  /**
+   * 所属项目 id（Phase 117 纯追加，LINK-02）。归属权威在 `content.meta.project_id`，
+   * 本键是后端替消费方挖好的顶层口径，与列表端点一致；无归属时为 `null`。
+   */
+  project_id: string | null
+  /** 所属项目名。项目已删或脏数据时为空串（此时 `project_id` 仍照实回传）。 */
+  project_name: string
 }
 
 // ── 端点 ② 阶段事件 ──────────────────────────────────────────────────────────
@@ -429,6 +436,10 @@ export interface BlueprintThreadDetail {
   options: Array<{ label?: string, value?: string, note?: string }>
   /** 从未提醒 → `null`。 */
   last_reminded_at: string | null
+  /** 已发出的提醒次数（Phase 117，WAIT-03）。 */
+  reminder_count?: number
+  /** 提醒到上限后的显式到期时刻；未到期 → `''` / 缺省。到期**不等于**线程已处置。 */
+  expired_at?: string | null
   /** 按 `created_at` 升序。 */
   messages: BlueprintThreadMessage[]
 }
@@ -530,6 +541,17 @@ export interface BlueprintThreadRow {
   anchor: BlueprintAnchor | null
   return_stage: string
   created_at: string
+  /** 已发出的提醒次数（Phase 117，WAIT-03）。 */
+  reminder_count: number
+  /** 最近一次提醒时刻；从未提醒 → `''`（⚠️ 空串不是 null，与 `BlueprintThreadDetail` 不同）。 */
+  last_reminded_at: string
+  /**
+   * 提醒到上限后的显式到期时刻；未到期 → `''`。
+   *
+   * ⚠️ 到期**不改** `status`/`blocking` —— 一条 `expired_at` 非空的线程仍是 `open` 且仍阻塞
+   * confirm。它的含义只有「系统不再催了」，⛔ 不要据此把线程当作已处置。
+   */
+  expired_at: string
 }
 
 /** `GET .../blueprint-review/` —— 人审只读快照（十键）。 */
