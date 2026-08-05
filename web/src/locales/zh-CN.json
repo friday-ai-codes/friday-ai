@@ -644,6 +644,20 @@
         "rejectBody": "驳回后蓝图回到「产出中」，修订轮次将变为 {n}。请写明驳回理由（必填）。",
         "rejectReasonPlaceholder": "写明驳回理由（必填）",
         "rejectReasonRequired": "驳回理由不可为空",
+        "reworkScopeLabel": "这次打回要重跑到哪一步",
+        "reworkScope": {
+          "review": "仅重新审查",
+          "merge": "重新融合方案",
+          "repos": "重跑指定仓库",
+          "full": "完整重做"
+        },
+        "reworkScopeHint": {
+          "review": "内容不动，只让 AI 按审查规则再过一遍",
+          "merge": "重新装配六段蓝图并重审（默认）",
+          "repos": "让选中的仓重新拟定分仓方案，其它仓的产出保留",
+          "full": "回到仓库路由与逐仓调研，从头重新分析"
+        },
+        "reworkScopeRepoRequired": "请至少选择一个要重跑的仓库",
         "rejectConfirm": "确认驳回",
         "answerApplied": "答案已回灌，已产出 v{version_no}",
         "answerUnchanged": "答案已记录，本次未产生新版本",

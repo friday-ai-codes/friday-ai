@@ -592,6 +592,13 @@ export interface BlueprintRejectResponse {
   revision_round: number
   thread_id: string
   current_status: BlueprintStatus
+  /**
+   * **归一后**的重跑范围（Phase 120）。⚠️ 可能与请求里传的不同 —— 后端对非法值回落
+   * `merge` 而不是 400，回显必须用这个值，⛔ 不要回显请求里那个。
+   */
+  rework_scope: string
+  /** `repos` 范围下被失效（将被重跑）的仓数；其它范围恒 0。 */
+  reworked_repository_count: number
 }
 
 /**

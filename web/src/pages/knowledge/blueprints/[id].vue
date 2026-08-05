@@ -57,9 +57,9 @@ import blueprintsApi from '~/api/blueprints'
 import { ApiError } from '~/api/client'
 import deliveryArtifactsApi from '~/api/deliveryArtifacts'
 import { canEditBlueprintBlock } from '~/components/blueprint/blockEditOps'
+import BlueprintActivityPanel from '~/components/blueprint/BlueprintActivityPanel.vue'
 import BlueprintAssociationsSection from '~/components/blueprint/BlueprintAssociationsSection.vue'
 import BlueprintBlockDiff from '~/components/blueprint/BlueprintBlockDiff.vue'
-import BlueprintActivityPanel from '~/components/blueprint/BlueprintActivityPanel.vue'
 import BlueprintBlockedDialog from '~/components/blueprint/BlueprintBlockedDialog.vue'
 import BlueprintBlockEditDialog from '~/components/blueprint/BlueprintBlockEditDialog.vue'
 import BlueprintErrorState from '~/components/blueprint/BlueprintErrorState.vue'
@@ -331,6 +331,21 @@ const {
 
 const versions = computed<BlueprintVersionEntry[]>(
   () => (timelineQuery.data.value?.versions ?? []) as BlueprintVersionEntry[],
+)
+
+/**
+ * 驳回弹窗「重跑指定仓」的可选清单（Phase 120，REDO-01）。
+ *
+ * 源是蓝图正文的 `repo_associations` —— 那正是「这份方案涉及哪些仓」的权威位置。
+ * ⛔ 不用 `indirect` 仓：它们没有分仓方案可重跑（只是被依赖调研），列出来会让人勾了没反应。
+ */
+const reworkRepositories = computed<Array<{ id: string, name: string }>>(() =>
+  (content.value?.repo_associations ?? [])
+    .filter(association => association.repository_id && association.role !== 'indirect')
+    .map(association => ({
+      id: association.repository_id,
+      name: association.repository_name || association.repository_id,
+    })),
 )
 
 const repoNames = computed<Record<string, string>>(() => {
@@ -741,7 +756,12 @@ async function onRejectSubmit(payload: BlueprintRejectPayload): Promise<void> {
   try {
     const result = await blueprintsApi.rejectBlueprint(artifactId.value, payload)
     rejectOpen.value = false
-    toast.success(t('knowledge.blueprints.review.rejectSuccess', { n: result.revision_round }))
+    // ⭐ 回显用**响应体**的 rework_scope，⛔ 不用请求里那个：后端对非法值回落 merge，
+    // 回显请求值会告诉用户「已完整重做」而实际只重跑了融合。
+    toast.success(
+      `${t('knowledge.blueprints.review.rejectSuccess', { n: result.revision_round })} · ${
+        t(`knowledge.blueprints.review.reworkScope.${result.rework_scope}`)}`,
+    )
     invalidateBlueprint()
   }
   catch (error) {
@@ -1630,6 +1650,7 @@ const sections = computed<NavSection[]>(() => [
         v-model:open="rejectOpen"
         :revision-round="snapshotQuery.data.value?.revision_round ?? 0"
         :submitting="submitting"
+        :repositories="reworkRepositories"
         @submit="onRejectSubmit"
       />
 

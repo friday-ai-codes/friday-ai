@@ -145,10 +145,20 @@ export async function approveBlueprint(artifactId: string): Promise<BlueprintApp
   )
 }
 
-/** 人审驳回（`comment` 是驳回理由，必填由 UI 层保证；成功后先落新版本再转状态）。 */
+/**
+ * 人审驳回（`comment` 是驳回理由，必填由 UI 层保证；成功后先落新版本再转状态）。
+ *
+ * `rework_scope`（Phase 120）决定这次打回重跑到哪一步；不传由后端回落 `merge`（改动前的
+ * 唯一路径）。`rework_repository_ids` 仅 `repos` 范围有意义。
+ */
 export async function rejectBlueprint(
   artifactId: string,
-  payload: { comment?: string, anchor?: Record<string, unknown> } = {},
+  payload: {
+    comment?: string
+    anchor?: Record<string, unknown>
+    rework_scope?: string
+    rework_repository_ids?: string[]
+  } = {},
 ): Promise<BlueprintRejectResponse> {
   return post<BlueprintRejectResponse>(
     `/delivery/artifacts/${artifactId}/blueprint-review/reject/`,

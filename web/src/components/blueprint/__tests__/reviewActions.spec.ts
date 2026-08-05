@@ -69,6 +69,20 @@ const i18n = createI18n({
             rejectReasonPlaceholder: '写明驳回理由（必填）',
             rejectReasonRequired: '驳回理由不可为空',
             rejectConfirm: '确认驳回',
+            reworkScopeLabel: '这次打回要重跑到哪一步',
+            reworkScope: {
+              review: '仅重新审查',
+              merge: '重新融合方案',
+              repos: '重跑指定仓库',
+              full: '完整重做',
+            },
+            reworkScopeHint: {
+              review: '内容不动',
+              merge: '重新装配六段蓝图并重审（默认）',
+              repos: '让选中的仓重新拟定分仓方案',
+              full: '回到仓库路由与逐仓调研',
+            },
+            reworkScopeRepoRequired: '请至少选择一个要重跑的仓库',
           },
           quality: {
             title: '方案质量',
@@ -290,7 +304,7 @@ describe('驳回弹窗：comment 必填 + 可选携带划线', () => {
     expect(wrapper.text()).toContain('修订轮次将变为 3')
     await wrapper.find('[data-testid="blueprint-reject-comment"]').setValue('  方案缺少回滚设计  ')
     await wrapper.find('[data-testid="blueprint-reject-submit"]').trigger('click')
-    expect(wrapper.emitted('submit')?.[0]).toEqual([{ comment: '方案缺少回滚设计' }])
+    expect(wrapper.emitted('submit')?.[0]).toEqual([{ comment: '方案缺少回滚设计', rework_scope: 'merge' }])
   })
 
   it('6d. presetAnchor 存在且保留开关为开 ⇒ 载荷含 anchor', async () => {
@@ -299,6 +313,8 @@ describe('驳回弹窗：comment 必填 + 可选携带划线', () => {
     await wrapper.find('[data-testid="blueprint-reject-submit"]').trigger('click')
     expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({
       comment: '这段有问题',
+      // 120 起载荷恒带 rework_scope（默认 merge = 改动前的唯一返工路径）
+      rework_scope: 'merge',
       anchor: { block_id: 'b1', start_offset: 0, end_offset: 4, quoted_text: '这一段' },
     })
   })
@@ -308,6 +324,72 @@ describe('驳回弹窗：comment 必填 + 可选携带划线', () => {
     await wrapper.find('[data-testid="blueprint-reject-keep-anchor"]').trigger('click')
     await wrapper.find('[data-testid="blueprint-reject-comment"]').setValue('这段有问题')
     await wrapper.find('[data-testid="blueprint-reject-submit"]').trigger('click')
-    expect(wrapper.emitted('submit')?.[0]).toEqual([{ comment: '这段有问题' }])
+    expect(wrapper.emitted('submit')?.[0]).toEqual([{ comment: '这段有问题', rework_scope: 'merge' }])
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ⭐ 重跑范围（Phase 120，REDO-01）
+//
+// 改动前驳回只有一条返工路径（固定重跑融合）。守四件事：默认值不变（兼容）、四个范围
+// 都能选出、repos 范围必须勾仓才可提交、无仓可勾时不给 repos 选项。
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('驳回弹窗：重跑范围', () => {
+  const repositories = [
+    { id: 'r1', name: '高中数学仓' },
+    { id: 'r2', name: '题库仓' },
+  ]
+
+  async function fillComment(wrapper: ReturnType<typeof mountWith>) {
+    await wrapper.find('[data-testid="blueprint-reject-comment"]').setValue('打回理由')
+  }
+
+  it('⭐ 默认 merge：与改动前的唯一返工路径一致', async () => {
+    const wrapper = mountWith(BlueprintRejectDialog, { open: true, repositories })
+    await fillComment(wrapper)
+    await wrapper.find('[data-testid="blueprint-reject-submit"]').trigger('click')
+
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({ rework_scope: 'merge' })
+  })
+
+  it('选 full ⇒ 载荷带 full，且不带仓库清单', async () => {
+    const wrapper = mountWith(BlueprintRejectDialog, { open: true, repositories })
+    await fillComment(wrapper)
+    await wrapper.find('[data-scope="full"]').setValue(true)
+    await wrapper.find('[data-testid="blueprint-reject-submit"]').trigger('click')
+
+    const payload = wrapper.emitted('submit')?.[0]?.[0] as Record<string, unknown>
+    expect(payload.rework_scope).toBe('full')
+    expect(payload.rework_repository_ids).toBeUndefined()
+  })
+
+  it('⭐ 选 repos 但一个仓都没勾 ⇒ 不可提交（否则后端零失效空转，用户以为重跑了）', async () => {
+    const wrapper = mountWith(BlueprintRejectDialog, { open: true, repositories })
+    await fillComment(wrapper)
+    await wrapper.find('[data-scope="repos"]').setValue(true)
+
+    expect(wrapper.find('[data-testid="blueprint-reject-submit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('请至少选择一个要重跑的仓库')
+  })
+
+  it('选 repos 并勾一个仓 ⇒ 可提交且载荷带该仓 id', async () => {
+    const wrapper = mountWith(BlueprintRejectDialog, { open: true, repositories })
+    await fillComment(wrapper)
+    await wrapper.find('[data-scope="repos"]').setValue(true)
+    await wrapper.findAll('[data-testid="blueprint-reject-repos"] input')[0].setValue(true)
+    await wrapper.find('[data-testid="blueprint-reject-submit"]').trigger('click')
+
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({
+      rework_scope: 'repos',
+      rework_repository_ids: ['r1'],
+    })
+  })
+
+  it('⭐ 无仓可勾 ⇒ 不渲染 repos 选项（给不出可勾的仓还留着它只会让人白选）', () => {
+    const wrapper = mountWith(BlueprintRejectDialog, { open: true, repositories: [] })
+
+    expect(wrapper.find('[data-scope="repos"]').exists()).toBe(false)
+    expect(wrapper.find('[data-scope="merge"]').exists()).toBe(true)
   })
 })
