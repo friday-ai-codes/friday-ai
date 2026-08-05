@@ -493,6 +493,9 @@ class BlueprintResearchAdapter:
         metadata = await self._build_dispatch_metadata(
             session, task, repo=repo, subagent_session_id=session_id, mode=mode
         )
+        # 120（REDO-03）：同仓上一次容器的 agent 会话可续 ⇒ 注入 resume 分片，让重跑**接着
+        # 上次的分析继续**而不是从零重新读一遍仓库。取不到就是空 dict，容器全新执行（默认安全）。
+        metadata.update(await self._aresume_env(task))
 
         dispatch_task = DispatchTask(
             task_id=session_id,
@@ -541,6 +544,66 @@ class BlueprintResearchAdapter:
         )
         await self._emit_started(session, task)
         return True
+
+    async def _aresume_env(self, task: Any) -> dict[str, str]:
+        """同仓上一次容器的 resume 分片 env（Phase 120，REDO-03）；无可续上下文返回 ``{}``。
+
+        判据：**同一 ``repository_id``、同一蓝图会话**下最近一条带 ``sdk_transcript`` 的
+        ``SubAgentSession``。为什么按仓而不是按 task：``mark_stale`` 重跑复用同一条
+        ``RepoResearchTask``（``attempt`` 递增），而每次派发都新建一条 ``SubAgentSession``
+        ⇒ 上一轮的留痕挂在**上一条** SubAgentSession 上，按 task 反查拿不到。
+
+        ⛔ **不跨蓝图会话取**：另一份蓝图对同一个仓的调研上下文是另一个需求的推理过程，
+        续到本轮里会让 agent 拿着无关结论继续（比没有 resume 更糟）。
+        ⛔ 分片规则不在这里重写：一律走 ``chat.sdk_resume.build_resume_env``（容器侧按
+        ``_CHUNKS`` + ``_{i}`` 重组，两处漂移会还原出半份 transcript）。
+
+        整段吞异常：resume 是加速项，取不到就全新执行，绝不阻断派发。
+        """
+        try:
+            from chat.sdk_resume import build_resume_env
+            from subagent.models import SubAgentSession as _SubAgentSession
+
+            repository_id = str(getattr(task, "repository_id", "") or "")
+            blueprint_session_id = str(getattr(task, "session_id", "") or "")
+            if not repository_id or not blueprint_session_id:
+                return {}
+            previous = (
+                await _SubAgentSession.objects.filter(
+                    last_output__repository_id=repository_id,
+                    last_output__blueprint_session_id=blueprint_session_id,
+                )
+                .exclude(sdk_transcript="")
+                .order_by("-sdk_session_saved_at")
+                .afirst()
+            )
+            if previous is None:
+                return {}
+            env = build_resume_env(
+                previous.sdk_session_id,
+                previous.sdk_transcript,
+                owner_id=str(previous.id),
+            )
+            if env:
+                logger.info(
+                    "blueprint_research_resume_env_injected",
+                    session_id=blueprint_session_id,
+                    repository_id=repository_id,
+                    previous_subagent_session_id=str(previous.id),
+                    chunks=env.get("env_FRIDAY_TASK_RESUME_TRANSCRIPT_CHUNKS"),
+                    category="caller",
+                    component="process_runtime",
+                )
+            return env
+        except Exception as exc:  # noqa: BLE001 — resume 是加速项，绝不阻断派发
+            logger.warning(
+                "blueprint_research_resume_env_failed",
+                repository_id=str(getattr(task, "repository_id", "") or ""),
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+            return {}
 
     async def _build_dispatch_metadata(
         self,
