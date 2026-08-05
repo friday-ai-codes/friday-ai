@@ -60,6 +60,7 @@ declare module 'vue' {
     BaseModal: typeof import('./components/modal/BaseModal.vue')['default']
     BaseWorkflowNode: typeof import('./components/workflow/editor/nodes/BaseWorkflowNode.vue')['default']
     BatchIngestPanel: typeof import('./components/knowledge/BatchIngestPanel.vue')['default']
+    BlueprintActivityPanel: typeof import('./components/blueprint/BlueprintActivityPanel.vue')['default']
     BlueprintAssociationsSection: typeof import('./components/blueprint/BlueprintAssociationsSection.vue')['default']
     BlueprintBlock: typeof import('./components/blueprint/BlueprintBlock.vue')['default']
     BlueprintBlockDiff: typeof import('./components/blueprint/BlueprintBlockDiff.vue')['default']
