@@ -5,7 +5,9 @@
 
 - ``GET  artifacts/<uuid>/blueprint/``                 —— 结构化正文 + quality 四项
   （Phase 116-04 纯追加第 8 键 ``knowledge_entity_id``：SC-4 反查用，前端拿它调
-  ``GET /api/knowledge/related/<它>/?direction=in&relations=REFERENCES&max_hops=1``）
+  ``GET /api/knowledge/related/<它>/?direction=in&relations=REFERENCES&max_hops=1``；
+  Phase 117 纯追加 ``project_id`` / ``project_name``：LINK-02 的顶层归属，口径与列表端点
+  ``blueprint_list_views`` 一致，⛔ 消费方不再自行从 ``content.meta`` 挖）
 - ``GET  artifacts/<uuid>/blueprint/events/``          —— 蓝图阶段事件流（21 个常量子集）
 - ``GET  artifacts/<uuid>/blueprint-review/threads/``  —— 线程详情（含 options 与多轮消息）
 - ``POST artifacts/<uuid>/blueprint-review/threads/``  —— 按选区新开 ``human_comment`` 线程
@@ -97,6 +99,34 @@ async def _aload_version(artifact_id: Any, version_id: Any = None) -> Any:
     if version_id:
         return await queryset.filter(id=version_id).afirst()
     return await queryset.order_by("-version_no").afirst()
+
+
+@sync_to_async
+def _resolve_project(content: Any) -> dict:
+    """从版本正文 ``meta.project_id`` 解析项目归属，返回恒定两键 ``{project_id, project_name}``。
+
+    LINK-02：项目归属的权威位置是 ``ArtifactVersion.content.meta.project_id``（JSON 软引用，
+    ``Artifact`` 无 project FK）。detail 端点此前只把它埋在 ``content`` 里，消费方得自己挖，
+    且拿不到项目名 ⇒ 查看器的回跳链接文案只能回落 UUID。这里补齐**顶层**两键，口径与列表
+    端点 ``blueprint_list_views._list_row`` 逐字一致（``project_id`` 空则 ``None``、
+    ``project_name`` 空则 ``""``），让两个面对同一事实只有一种形状。
+
+    ⛔ **不新增 FK、不双写**：范围闸（``_aassert_project_scope``）仍以 ``meta.project_id``
+    为唯一判据，本函数只做展示面解析。项目行查不到（已删/脏数据）时 **project_id 照实回传、
+    name 留空**——把「归属指向一个不存在的项目」如实暴露，比静默抹掉归属更可诊断。
+    """
+    from initiatives.models import Project
+
+    meta = content.get("meta") if isinstance(content, dict) else None
+    project_id = str((meta or {}).get("project_id") or "") if isinstance(meta, dict) else ""
+    if not project_id or not _is_uuid(project_id):
+        return {"project_id": None, "project_name": ""}
+    name = (
+        Project.objects.filter(id=project_id).values_list("name", flat=True).first()
+        if project_id
+        else None
+    )
+    return {"project_id": project_id, "project_name": str(name or "")}
 
 
 @sync_to_async
@@ -280,6 +310,8 @@ class BlueprintDocumentView(APIView):
             # ``GET /api/knowledge/related/<它>/?direction=in&relations=REFERENCES&max_hops=1``
             # 查「被哪些方案/知识引用」。⛔ 不让前端复制 id 派生规则。
             "knowledge_entity_id": str(blueprint_entity_id(artifact_id)),
+            # LINK-02（Phase 117）：顶层项目归属，口径与列表端点一致，供查看器顶栏回跳。
+            **await _resolve_project(content),
         }
         _log(
             "blueprint_document_read",
