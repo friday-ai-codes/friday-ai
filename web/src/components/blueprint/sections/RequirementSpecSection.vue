@@ -88,6 +88,14 @@ function intentLabel(intent: string | undefined): string {
 function forwardThread(threadId: string, allThreadIds: string[]): void {
   emit('thread-click', threadId, allThreadIds)
 }
+
+/**
+ * 标题剥掉行首的 markdown 标题记号（`#### 功能点 B：…`）——上游机械拆解器（旧版）
+ * 没剥干净时的防御性兜底；正常标题原样返回。⛔ 只剥行首，不动标题内部的 `#`。
+ */
+function cleanTitle(title: string): string {
+  return String(title ?? '').replace(/^#{1,6}\s+/, '')
+}
 </script>
 
 <template>
@@ -137,19 +145,21 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
         />
       </div>
 
-      <div v-if="featurePoints.length" class="space-y-3" data-field="feature-points">
+      <!-- ⭐ 紧凑卡：多数功能点只有「标题 + 一行所属模块」（详情常整段留在 goal，机械拆解
+           不下放），按信息量收窄内边距与字号；卡片仍是批注锚点与 `fp-<id>` 跳转落点，⛔ 不删。 -->
+      <div v-if="featurePoints.length" class="space-y-1.5" data-field="feature-points">
         <div
           v-for="point in featurePoints"
           :id="`fp-${point.id}`"
           :key="point.id"
-          class="card p-4 space-y-2"
+          class="card px-3 py-2 space-y-1"
           data-testid="blueprint-feature-point"
           :data-feature-point-id="point.id"
         >
           <div class="flex items-start gap-2">
             <span class="font-mono text-[11px] text-muted-foreground shrink-0 mt-0.5">{{ point.id }}</span>
-            <h3 class="text-base font-semibold flex-1 min-w-0">
-              {{ point.title }}
+            <h3 class="text-sm font-semibold flex-1 min-w-0">
+              {{ cleanTitle(point.title) }}
             </h3>
             <Badge :variant="intentVariant(point.intent)" :data-intent="point.intent">
               {{ intentLabel(point.intent) }}
