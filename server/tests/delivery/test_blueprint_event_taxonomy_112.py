@@ -20,13 +20,19 @@ from delivery.services.event_taxonomy import (
     EVENT_BLUEPRINT_CONTEXT_ENTRY_APPENDED,
     EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED,
     EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED,
+    EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED,
+    EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED,
+    EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED,
     EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED,
     EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
     EVENT_BLUEPRINT_REPO_RESEARCH_STARTED,
     EVENT_BLUEPRINT_REROUTE_TRIGGERED,
+    EVENT_BLUEPRINT_RETRIEVAL_COMPLETED,
     EVENT_BLUEPRINT_REVIEW_COMPLETED,
     EVENT_BLUEPRINT_REVIEW_FAILED,
     EVENT_BLUEPRINT_REVIEW_STARTED,
+    EVENT_BLUEPRINT_ROUTE_PLAN_DRAFTED,
+    EVENT_BLUEPRINT_ROUTE_RECALLED,
     EVENT_BLUEPRINT_ROUTE_SCORED,
     EVENT_BLUEPRINT_SPEC_GATE_CLARIFICATION_ASKED,
     EVENT_BLUEPRINT_SPEC_GATE_LOCKED,
@@ -65,6 +71,25 @@ _NEW_114_EVENTS = {
     EVENT_BLUEPRINT_REVIEW_COMPLETED: "blueprint.review.completed",
     EVENT_BLUEPRINT_REVIEW_FAILED: "blueprint.review.failed",
 }
+
+# 118 活动流（LIVE-02/03）：字面值冻结快照 —— 前端 EVENT_SECTION_MAP / 活动流文案按串匹配，
+# 改名即静默失效（时间线照样渲染，只是新事件永不命中）。
+_NEW_118_EVENTS = {
+    EVENT_BLUEPRINT_ROUTE_RECALLED: "blueprint.route.recalled",
+    EVENT_BLUEPRINT_ROUTE_PLAN_DRAFTED: "blueprint.route.plan_drafted",
+    EVENT_BLUEPRINT_RETRIEVAL_COMPLETED: "blueprint.retrieval.completed",
+    EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED: "blueprint.repo_plan.repo_started",
+    EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED: "blueprint.repo_plan.repo_completed",
+    EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED: "blueprint.repo_plan.wave_advanced",
+}
+
+
+def test_new_118_activity_events_are_frozen_and_registered() -> None:
+    """118 六个活动事件：字面值未漂移且都在 ``BLUEPRINT_EVENTS`` 里（否则事件接口滤掉它们）。"""
+    for actual, expected in _NEW_118_EVENTS.items():
+        assert actual == expected
+        assert actual in BLUEPRINT_EVENTS
+
 
 # 111 既有（冻结快照）
 _EXISTING_111_EVENTS = {
@@ -107,13 +132,18 @@ def test_existing_blueprint_events_frozen() -> None:
 
 
 def test_blueprint_events_shape() -> None:
-    """集合恰好 21 个（111 的 4 + 112 的 11 + 113 的 3 + 114-03 的 3）、全 blueprint. 前缀、无重复。"""
-    assert len(BLUEPRINT_EVENTS) == 21
+    """集合恰好 27 个、全 ``blueprint.`` 前缀、无重复。
+
+    构成：111 的 4 + 112 的 11 + 113 的 3 + 114-03 的 3 + **118 活动流的 6**
+    （路由召回/初步方案、检索命中、分仓每仓起止、波次推进）。
+    """
+    assert len(BLUEPRINT_EVENTS) == 27
     assert all(event.startswith("blueprint.") for event in BLUEPRINT_EVENTS)
     declared = (
         list(_NEW_112_EVENTS)
         + list(_NEW_113_EVENTS)
         + list(_NEW_114_EVENTS)
+        + list(_NEW_118_EVENTS)
         + list(_EXISTING_111_EVENTS)
     )
-    assert len(declared) == len(set(declared)) == 21
+    assert len(declared) == len(set(declared)) == 27

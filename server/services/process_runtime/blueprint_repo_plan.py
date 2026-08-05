@@ -262,6 +262,16 @@ class BlueprintRepoPlanAdapter:
                     session, repo, task=task_map.get(repository_id)
                 )
                 pending.append(repository_id)
+                # 118（LIVE-03）：每仓派发即发一条活动事件 —— 分仓阶段此前前端只能靠
+                # `context.entry_appended` 间接猜「谁在跑」，波次与每仓位置全在 stage_state
+                # 里而 events 接口不暴露。best-effort，绝不反噬派发。
+                await self._aemit_repo_activity(
+                    session,
+                    started_event=True,
+                    repository_id=repository_id,
+                    repository_name=str(repo.get("repository_name") or ""),
+                    wave=current_wave,
+                )
             except Exception as exc:  # noqa: BLE001 — WR-02 单仓隔离，绝不上抛
                 pending.append(repository_id)
                 logger.warning(
@@ -273,6 +283,13 @@ class BlueprintRepoPlanAdapter:
                     component="process_runtime",
                 )
 
+        # 118（LIVE-03）：波次推进可见（第几波 / 共几波 / 本波几个仓）
+        await self._aemit_wave_advanced(
+            session,
+            wave=current_wave,
+            total_waves=len(waves),
+            repository_count=len(dispatchable or []),
+        )
         logger.info(
             "blueprint_repo_plan_dispatch_completed",
             session_id=str(getattr(session, "id", "")),
@@ -724,7 +741,94 @@ class BlueprintRepoPlanAdapter:
         content = {**prev, "repo_plan": repo_plan_section}
         # repository_id 由服务端权威写入，不采信容器/LLM 上报值
         content["repository_id"] = str(getattr(task, "repository_id", "") or "")
-        return await self.research_service.record_partial(task, content)
+        partial = await self.research_service.record_partial(task, content)
+        # 118（LIVE-03）：该仓分仓方案落库即可见（产出了多少实现项 / 多少接口契约）
+        await self._aemit_repo_plan_completed(task, repo_plan_section)
+        return partial
+
+    # ── 活动流埋点（118，LIVE-03；均 best-effort，绝不反噬业务）──────────────
+
+    async def _aemit_repo_activity(
+        self,
+        session: Any,
+        *,
+        started_event: bool,
+        repository_id: str,
+        repository_name: str,
+        wave: Any,
+    ) -> None:
+        try:
+            from delivery.services.convergence_session_service import ConvergenceSessionService
+            from delivery.services.event_taxonomy import (
+                EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED,
+            )
+
+            if not started_event:
+                return
+            await ConvergenceSessionService().aemit_event(
+                EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED,
+                session,
+                {
+                    "repository_id": str(repository_id or ""),
+                    "repository_name": repository_name,
+                    "wave": wave,
+                },
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort
+            pass
+
+    async def _aemit_wave_advanced(
+        self, session: Any, *, wave: Any, total_waves: int, repository_count: int
+    ) -> None:
+        try:
+            from delivery.services.convergence_session_service import ConvergenceSessionService
+            from delivery.services.event_taxonomy import (
+                EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED,
+            )
+
+            await ConvergenceSessionService().aemit_event(
+                EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED,
+                session,
+                {
+                    "wave": wave,
+                    "total_waves": int(total_waves or 0),
+                    "repository_count": int(repository_count or 0),
+                },
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort
+            pass
+
+    async def _aemit_repo_plan_completed(self, task: Any, repo_plan_section: Any) -> None:
+        """该仓分仓方案落库 → `blueprint.repo_plan.repo_completed`（只带计数，⛔ 不带方案正文）。
+
+        会话经 ``task.session_id`` 反查（本方法的入参只有 task）：⛔ 不访问 lazy-FK
+        ``task.session``，那在 async 上下文里会抛 ``SynchronousOnlyOperation``。
+        """
+        try:
+            from delivery.models import ConvergenceSession
+            from delivery.services.convergence_session_service import ConvergenceSessionService
+            from delivery.services.event_taxonomy import (
+                EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED,
+            )
+
+            session_id = getattr(task, "session_id", None)
+            if not session_id:
+                return
+            session = await ConvergenceSession.objects.filter(id=session_id).afirst()
+            if session is None:
+                return
+            section = repo_plan_section if isinstance(repo_plan_section, dict) else {}
+            await ConvergenceSessionService().aemit_event(
+                EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED,
+                session,
+                {
+                    "repository_id": str(getattr(task, "repository_id", "") or ""),
+                    "item_count": len(section.get("implementation_items") or []),
+                    "api_count": len(section.get("api_contracts") or []),
+                },
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort
+            pass
 
     # ── 产物读取与完成判据 ────────────────────────────────────────────────
 

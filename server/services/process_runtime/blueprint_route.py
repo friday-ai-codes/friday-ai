@@ -538,6 +538,18 @@ class BlueprintRouteAdapter:
             repository_ids=repository_ids,
         )
         raw_candidates.extend(supplements)
+        # 118（LIVE-02）：召回一完成就发一条活动事件——打分/调研可能要跑好几十秒，
+        # 在此之前用户此前看到的只有一个转圈。⛔ best-effort，绝不反噬路由。
+        await self._emit_recalled(
+            session,
+            candidate_count=len(raw_candidates),
+            router_candidate_count=len(raw_candidates) - len(supplements),
+            charter_supplement_count=len(supplements),
+            scope_repository_count=len(repository_ids or []),
+            router_version=router_version,
+            intent=intent,
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
         if not raw_candidates:
             # 路由器与章程都没给出候选：透传真实 router_version（不谎报 "skipped"，
             # 「跑了但没召回」与「没跑」对 115 排障是两件事）
@@ -810,8 +822,26 @@ class BlueprintRouteAdapter:
                 }
             )
 
+    async def _emit_recalled(self, session, **fields) -> None:
+        """写 `blueprint.route.recalled`（118，LIVE-02）：召回规模与来源构成，整段吞异常。"""
+        try:
+            from delivery.services.convergence_session_service import ConvergenceSessionService
+            from delivery.services.event_taxonomy import EVENT_BLUEPRINT_ROUTE_RECALLED
+
+            await ConvergenceSessionService().aemit_event(
+                EVENT_BLUEPRINT_ROUTE_RECALLED, session, dict(fields)
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬路由主流程
+            pass
+
     async def _emit_scored(self, session, summary: dict) -> None:
-        """写 `blueprint.route.scored` 事件（供 115 展开），整段吞异常。"""
+        """写 `blueprint.route.scored` 事件（供 115 展开），整段吞异常。
+
+        118 起每个候选**补齐 ``repository_name`` / ``confidence`` / ``role_suggestion``**：
+        前端进度文案本来就按 ``repository_name`` 插值，而此前 payload 只有
+        ``repository_id`` ⇒ 文案一路退化成无参兜底（「正在调研…」而不是「正在调研 xxx 仓」）。
+        补的都是标量/枚举，不触碰 INV-5。
+        """
         try:
             from delivery.services.convergence_session_service import ConvergenceSessionService
             from delivery.services.event_taxonomy import EVENT_BLUEPRINT_ROUTE_SCORED
@@ -827,6 +857,9 @@ class BlueprintRouteAdapter:
                 "candidates": [
                     {
                         "repository_id": c["repository_id"],
+                        "repository_name": c.get("repository_name", ""),
+                        "confidence": c.get("confidence", ""),
+                        "role_suggestion": c.get("role_suggestion", ""),
                         "total": c["total"],
                         "router_base": c["breakdown"]["router_base"],
                         "charter_match": c["breakdown"]["charter_match"],
@@ -837,6 +870,57 @@ class BlueprintRouteAdapter:
             }
             await ConvergenceSessionService().aemit_event(
                 EVENT_BLUEPRINT_ROUTE_SCORED, session, payload
+            )
+            await self._emit_plan_drafted(session, summary)
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬路由主流程
+            pass
+
+    async def _emit_plan_drafted(self, session, summary: dict) -> None:
+        """写 `blueprint.route.plan_drafted`（118，LIVE-02）：初步仓库路由方案。
+
+        与 ``route.scored`` 的分工：scored 是**打分明细**（三分量与权重），本事件是**结论**
+        ——每个仓建议承担什么角色、凭什么证据（命中的能力树节点数 / 章程域数 / 触碰的边界数
+        / 引用 id）。前端据此在路由阶段直接展示「仓 1、仓 2、仓 3」的初步方案，而不必等
+        确认门开出来才第一次看到仓库集。
+
+        ⛔ **不带 `reasoning` 自由文本**：路由理由的正文归蓝图 content 的
+        ``repo_associations[].reason``（查看器已渲染）与 citation 池，事件流只给指针。
+        """
+        try:
+            from delivery.services.convergence_session_service import ConvergenceSessionService
+            from delivery.services.event_taxonomy import EVENT_BLUEPRINT_ROUTE_PLAN_DRAFTED
+
+            citation_ids_by_repo: dict[str, list[str]] = {}
+            for citation in summary.get("citations") or []:
+                if not isinstance(citation, dict):
+                    continue
+                source_id = str(citation.get("source_id") or "")
+                citation_id = str(citation.get("citation_id") or "")
+                if source_id and citation_id:
+                    citation_ids_by_repo.setdefault(source_id, []).append(citation_id)
+
+            repositories = []
+            for candidate in summary.get("candidates") or []:
+                evidence = candidate.get("evidence") or {}
+                repository_id = str(candidate.get("repository_id") or "")
+                repositories.append(
+                    {
+                        "repository_id": repository_id,
+                        "repository_name": str(candidate.get("repository_name") or ""),
+                        "role_suggestion": str(candidate.get("role_suggestion") or ""),
+                        "confidence": str(candidate.get("confidence") or ""),
+                        "total": candidate.get("total"),
+                        "matched_node_path_count": len(evidence.get("matched_node_paths") or []),
+                        "matched_domain_count": len(evidence.get("matched_domains") or []),
+                        "violated_boundary_count": len(evidence.get("violated_boundaries") or []),
+                        "citation_ids": citation_ids_by_repo.get(repository_id, []),
+                    }
+                )
+
+            await ConvergenceSessionService().aemit_event(
+                EVENT_BLUEPRINT_ROUTE_PLAN_DRAFTED,
+                session,
+                {"repository_count": len(repositories), "repositories": repositories},
             )
         except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬路由主流程
             pass
