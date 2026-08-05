@@ -8,11 +8,12 @@
  *  2. ⭐ §20 断言 2（三条并列）—— `readonly: true` 时 (a) 作答框不存在于 DOM（⛔ 不是
  *     disabled）、(b) 选区浮层的「发起评论」不存在、(c) **finding 处置仍然存在**。
  *     （变异一：改成 disabled ⇒ 2a 转红；变异二：把 finding 处置也关掉 ⇒ 2c 转红）
- *  3. ⭐ §20 断言 5 —— `orphanedThreads` 传两条（一条无 anchor 的系统线程 + 一条真失锚），
- *     失锚组条数 == `orphanedThreads.length`。（变异：加 `.filter(t => t.anchor?.block_id)` ⇒ 转红）
- *  4. ⭐ §20 断言 11 —— 一条 `open` 且 `orphaned` 的线程：四组条目总数 == 线程总数，
- *     且它**只**出现在失锚组。（变异：去掉前三组的排除失锚否定项 ⇒ 转红）
- *  5. 组内排序：`blocker` 在 `warning` 之前；同 severity 按 `created_at` 升序。
+ *  3. ⭐ §20 断言 5（kind 分组口径）—— `orphanedThreads` 不被二次过滤：失锚线程按各自
+ *     kind 落组，全侧栏卡片总数 == 传入总数。（变异：加 `.filter(t => t.anchor?.block_id)` ⇒ 转红）
+ *  4. ⭐ §20 断言 11（kind 分组口径）—— 同 id 线程只在其 kind 组出现一次，全量卡片数 ==
+ *     线程总数（去重口径由 `sidebarKindGroups` 承载）；空 kind 组整块（含标题行）不渲染。
+ *  5. 组内排序：open → answered → closed；同 status 内 `blocker` 在 `warning` 之前、
+ *     同 severity 按 `created_at` 升序。
  *  6. `options` 候选：两个合法条目 ⇒ 渲染两个可点选项且点选填入输入框；非法形状 ⇒ 不渲染且不抛。
  *  7. `author_display` 为空串的消息正常渲染不抛。
  *  8. 失锚线程仍可处置：失锚的 `human_comment` 在 `readonly: false` 时仍渲染作答框。
@@ -46,11 +47,6 @@ const i18n = createI18n({
       knowledge: {
         blueprints: {
           thread: {
-            groupOpen: '未决',
-            groupAnswered: '已回答',
-            groupClosed: '已关闭',
-            groupOrphaned: '失锚批注',
-            groupOrphanedEmpty: '没有失锚批注',
             kindAiClarification: 'AI 提问',
             kindAiReviewFinding: 'AI 审查',
             kindHumanComment: '人工评论',
@@ -204,19 +200,20 @@ describe('⭐ §20 断言 2：readonly 是「不存在于 DOM」而 finding 处�
   })
 })
 
-describe('⭐ §20 断言 5 / 11：失锚组直接渲染、失锚线程只出现一次', () => {
-  it('5. orphanedThreads 直接渲染不二次过滤（含一条无 anchor 的系统线程）', () => {
+describe('⭐ §20 断言 5 / 11（kind 分组口径）：失锚线程按 kind 落组且只出现一次', () => {
+  it('5. orphanedThreads 不二次过滤：失锚线程按各自 kind 落组，卡片总数 == 传入总数', () => {
     const orphanedThreads = [
-      makeThread({ thread_id: 'o1', anchor: null, anchor_status: 'orphaned', status: 'open' }),
-      makeThread({ thread_id: 'o2', anchor: { block_id: 'b9', start_offset: 0, end_offset: 2 }, anchor_status: 'orphaned', status: 'answered' }),
+      makeThread({ thread_id: 'o1', kind: 'human_comment', anchor: null, anchor_status: 'orphaned', status: 'open' }),
+      makeThread({ thread_id: 'o2', kind: 'ai_clarification', anchor: { block_id: 'b9', start_offset: 0, end_offset: 2 }, anchor_status: 'orphaned', status: 'answered' }),
     ]
     const wrapper = mountSidebar({ threads: [], orphanedThreads })
-    const group = wrapper.find('[data-testid="blueprint-thread-group-orphaned"]')
-    expect(group.exists()).toBe(true)
-    expect(group.findAll('[data-testid="blueprint-thread-card"]')).toHaveLength(orphanedThreads.length)
+    const humanGroup = wrapper.find('[data-testid="blueprint-thread-group-human_comment"]')
+    expect(humanGroup.exists()).toBe(true)
+    expect(humanGroup.findAll('[data-thread-id="o1"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-testid="blueprint-thread-card"]')).toHaveLength(orphanedThreads.length)
   })
 
-  it('11. open 且 orphaned 的线程：四组总数 == 线程总数，且只在失锚组', () => {
+  it('11. 同 id 的 open 且 orphaned 线程：只在其 kind 组出现一次，全量卡片数 == 线程总数', () => {
     const orphan = makeThread({ thread_id: 'dup', anchor_status: 'orphaned', status: 'open' })
     const normal = makeThread({ thread_id: 'plain', status: 'open' })
     const wrapper = mountSidebar({
@@ -224,46 +221,68 @@ describe('⭐ §20 断言 5 / 11：失锚组直接渲染、失锚线程只出现
       orphanedThreads: [orphan],
       showClosed: true,
     })
-    // 四组条目总数 == 线程总数（2），⛔ 不是 3
+    // 全量卡片数 == 线程总数（2），⛔ 不是 3（去重口径由 sidebarKindGroups 承载）
     expect(wrapper.findAll('[data-testid="blueprint-thread-card"]')).toHaveLength(2)
-    const openGroup = wrapper.find('[data-testid="blueprint-thread-group-open"]')
-    const orphanGroup = wrapper.find('[data-testid="blueprint-thread-group-orphaned"]')
-    expect(openGroup.findAll('[data-thread-id="dup"]')).toHaveLength(0)
-    expect(orphanGroup.findAll('[data-thread-id="dup"]')).toHaveLength(1)
-    expect(openGroup.findAll('[data-thread-id="plain"]')).toHaveLength(1)
+    const kindGroup = wrapper.find('[data-testid="blueprint-thread-group-human_comment"]')
+    expect(kindGroup.findAll('[data-thread-id="dup"]')).toHaveLength(1)
+    expect(kindGroup.findAll('[data-thread-id="plain"]')).toHaveLength(1)
   })
 
-  it('11b. 失锚组为空时给专门空态而不是通用空态', () => {
-    const wrapper = mountSidebar({ threads: [makeThread()], orphanedThreads: [] })
-    expect(wrapper.find('[data-testid="blueprint-thread-group-orphaned"]').text()).toContain('没有失锚批注')
+  it('11b. 无任何线程的 kind 组整块（含标题行）不渲染', () => {
+    const wrapper = mountSidebar({
+      threads: [makeThread({ kind: 'ai_clarification' })],
+      orphanedThreads: [],
+    })
+    expect(wrapper.find('[data-testid="blueprint-thread-group-ai_clarification"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="blueprint-thread-group-ai_review_finding"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="blueprint-thread-group-human_comment"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="blueprint-thread-group-repo_confirmation"]').exists()).toBe(false)
+    // 标题行随空组一并不存在：全侧栏只剩非空那一组的触发器
+    expect(wrapper.findAll('[data-testid="blueprint-thread-group-trigger"]')).toHaveLength(1)
   })
 })
 
-describe('侧栏分组、排序与筛选', () => {
-  it('5b. 组内排序：blocker 在 warning 之前，同 severity 按 created_at 升序', () => {
+describe('侧栏分组与排序（kind 分组口径）', () => {
+  it('5b. 组内排序：open(blocker) → open(warning) → answered → closed', () => {
     const threads = [
-      makeThread({ thread_id: 'w1', severity: 'warning', created_at: '2026-08-01T00:00:00Z' }),
-      makeThread({ thread_id: 'b2', severity: 'blocker', created_at: '2026-08-02T00:00:00Z' }),
-      makeThread({ thread_id: 'b1', severity: 'blocker', created_at: '2026-08-01T00:00:00Z' }),
+      makeThread({ thread_id: 'cl', status: 'resolved', created_at: '2026-08-01T00:00:00Z' }),
+      makeThread({ thread_id: 'an', status: 'answered', created_at: '2026-08-01T00:00:00Z' }),
+      makeThread({ thread_id: 'w1', status: 'open', severity: 'warning', created_at: '2026-08-01T00:00:00Z' }),
+      makeThread({ thread_id: 'b2', status: 'open', severity: 'blocker', created_at: '2026-08-02T00:00:00Z' }),
+      makeThread({ thread_id: 'b1', status: 'open', severity: 'blocker', created_at: '2026-08-01T00:00:00Z' }),
     ]
-    const wrapper = mountSidebar({ threads, orphanedThreads: [] })
-    const ids = wrapper.find('[data-testid="blueprint-thread-group-open"]')
+    const wrapper = mountSidebar({ threads, orphanedThreads: [], showClosed: true })
+    const ids = wrapper.find('[data-testid="blueprint-thread-group-human_comment"]')
       .findAll('[data-testid="blueprint-thread-card"]')
       .map(card => card.attributes('data-thread-id'))
-    expect(ids).toEqual(['b1', 'b2', 'w1'])
+    expect(ids).toEqual(['b1', 'b2', 'w1', 'an', 'cl'])
   })
 
-  it('5c. showClosed 关闭时不渲染「已关闭」组，打开时渲染', () => {
+  it('5c. showClosed 关闭时 closed 线程不出现在其 kind 组（组因此为空则整块不渲染），打开后出现', () => {
     const closed = makeThread({ thread_id: 'c1', status: 'resolved' })
     const hidden = mountSidebar({ threads: [closed], orphanedThreads: [], showClosed: false })
-    expect(hidden.find('[data-testid="blueprint-thread-group-closed"]').exists()).toBe(false)
+    expect(hidden.find('[data-testid="blueprint-thread-group-human_comment"]').exists()).toBe(false)
     const shown = mountSidebar({ threads: [closed], orphanedThreads: [], showClosed: true })
-    expect(shown.find('[data-testid="blueprint-thread-group-closed"]').exists()).toBe(true)
+    const group = shown.find('[data-testid="blueprint-thread-group-human_comment"]')
+    expect(group.exists()).toBe(true)
+    expect(group.findAll('[data-thread-id="c1"]')).toHaveLength(1)
   })
 
   it('5d. 四组皆空 ⇒ 渲染空态', () => {
     const wrapper = mountSidebar({ threads: [], orphanedThreads: [] })
     expect(wrapper.text()).toContain('暂无批注')
+  })
+
+  it('5e. 分组顺序固定：AI 提问 → AI 审查 → 人工评论 → 确认门', () => {
+    const threads = [
+      makeThread({ thread_id: 'k3', kind: 'human_comment' }),
+      makeThread({ thread_id: 'k4', kind: 'repo_confirmation' }),
+      makeThread({ thread_id: 'k1', kind: 'ai_clarification' }),
+      makeThread({ thread_id: 'k2', kind: 'ai_review_finding' }),
+    ]
+    const wrapper = mountSidebar({ threads, orphanedThreads: [] })
+    const order = wrapper.findAll('[data-group-key]').map(group => group.attributes('data-group-key'))
+    expect(order).toEqual(['ai_clarification', 'ai_review_finding', 'human_comment', 'repo_confirmation'])
   })
 })
 

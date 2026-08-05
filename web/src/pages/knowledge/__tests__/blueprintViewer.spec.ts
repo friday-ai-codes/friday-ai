@@ -175,7 +175,7 @@ const HeaderStub = {
 
 const SidebarStub = {
   name: 'BlueprintThreadSidebar',
-  props: ['threads', 'orphanedThreads', 'activeThreadId', 'readonly', 'showClosed', 'kindFilters', 'gateAvailable', 'submitting', 'draft'],
+  props: ['threads', 'orphanedThreads', 'activeThreadId', 'readonly', 'showClosed', 'gateAvailable', 'submitting', 'draft'],
   emits: ['select', 'answer', 'resolve', 'dismiss', 'goto-gate', 'create-comment', 'cancel-comment'],
   template: '<div data-testid="thread-sidebar-stub" />',
 }
