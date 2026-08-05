@@ -69,6 +69,10 @@ _VERSION_MISSING_DETAIL = {"detail": "版本不存在或不属于该 artifact"}
 _VERSION_INVALID_DETAIL = {"detail": "version_id 格式无效（需为 UUID）"}
 _EMPTY_BODY_DETAIL = {"detail": "评论内容不可为空"}
 
+# 事件流单次返回上界（118）：活动级事件让单次编排的事件量上一个量级，无界返回会让
+# 轮询把整条历史反复搬运。⭐ 上界**夹紧**而不是报错：消费方传再大也只拿这么多。
+_MAX_EVENT_LIMIT = 500
+
 
 # ── 只读装配 helper（视图零 ORM 写；读路径允许直查）──────────────────────────
 
@@ -81,6 +85,38 @@ def _is_uuid(value: Any) -> bool:
     except (ValueError, TypeError, AttributeError):
         return False
     return True
+
+
+def _parse_since_ts(raw: Any) -> Any:
+    """``?since_ts=`` → aware datetime；缺省/非法一律 ``None``（= 全量，⛔ 不 400）。
+
+    朴素时间（无时区）按 UTC 补齐：``USE_TZ=True`` 下拿裸 naive 去比 ``ts`` 会抛
+    ``RuntimeWarning`` 并按本地时区隐式解释，跨时区部署会漏推或重推一整段事件。
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    from django.utils import timezone as dj_timezone
+    from django.utils.dateparse import parse_datetime
+
+    try:
+        moment = parse_datetime(text)
+    except (TypeError, ValueError):
+        return None
+    if moment is None:
+        return None
+    return (
+        moment if dj_timezone.is_aware(moment) else dj_timezone.make_aware(moment, dj_timezone.utc)
+    )
+
+
+def _parse_event_limit(raw: Any) -> int:
+    """``?limit=`` → ``[1, _MAX_EVENT_LIMIT]``；缺省/非法回落 ``_MAX_EVENT_LIMIT``。"""
+    try:
+        value = int(str(raw or "").strip() or _MAX_EVENT_LIMIT)
+    except (TypeError, ValueError):
+        return _MAX_EVENT_LIMIT
+    return max(1, min(value, _MAX_EVENT_LIMIT))
 
 
 async def _aload_version(artifact_id: Any, version_id: Any = None) -> Any:
@@ -330,10 +366,22 @@ class BlueprintDocumentView(APIView):
 
 
 class BlueprintEventsView(APIView):
-    """GET .../blueprint/events/ —— 蓝图阶段事件流（只读）。
+    """GET .../blueprint/events/ —— 蓝图阶段与活动事件流（只读）。
 
-    只出 ``BLUEPRINT_EVENTS`` 这 21 个常量的子集、按 ``ts`` **显式升序**、``payload``
-    原样透传。
+    只出 ``BLUEPRINT_EVENTS`` 常量的子集、按 ``ts`` **显式升序**、``payload`` 原样透传。
+
+    **增量拉取与上界（Phase 118，LIVE-04）**
+
+    ``?since_ts=<ISO8601>`` 只回该时刻**之后**的事件；``?limit=<n>`` 夹在
+    ``[1, _MAX_EVENT_LIMIT]``。为什么必须有：118 起事件流多了「活动级」事件（路由召回、
+    每仓分仓方案、检索命中），一次编排的事件量从几十条量级涨到几百条 —— 而消费方是**每
+    几秒轮询一次的查看器**，全量重取等于每轮把整条历史再传一遍。增量后正常轮询只搬新增
+    的那几条。
+    ⭐ **两个参数都可选且默认行为逐字不变**（不传 = 全量升序，保住既有消费方与用例）。
+    ⚠️ ``since_ts`` 是**严格大于**：等于边界会把上一轮已收到的最后一条重复推给前端，
+    前端按 ``(event, ts)`` 去重是有的，但让服务端少发一条比让前端多滤一条更省。
+    非法 ``since_ts`` **回落全量**而不是 400：它是个纯优化参数，因为一个坏时间戳把
+    「看进度」整条链路打成错误页不值得。
 
     ⭐ **无会话回 200 空结构，⛔ 绝不 404**：会话不存在是**正常态**（蓝图还没跑过编排）。
     404 会被前端的 404 分档吞成全页中性空态 ⇒ 生成中的蓝图看起来像「无权限」。
@@ -371,12 +419,14 @@ class BlueprintEventsView(APIView):
 
         # `.order_by("ts")` **显式**覆盖 `Meta.ordering = ["created_at"]`：`ts` 允许 emit 端
         # 传入 ⇒ 与 `created_at` 可以不同；显式 order 同时走上 `(session, ts)` 索引。
-        events = [
-            _event_row(row)
-            async for row in ConvergenceSessionEvent.objects.filter(
-                session_id=session.id, event__in=sorted(BLUEPRINT_EVENTS)
-            ).order_by("ts")
-        ]
+        queryset = ConvergenceSessionEvent.objects.filter(
+            session_id=session.id, event__in=sorted(BLUEPRINT_EVENTS)
+        )
+        since_ts = _parse_since_ts(request.query_params.get("since_ts"))
+        if since_ts is not None:
+            queryset = queryset.filter(ts__gt=since_ts)
+        limit = _parse_event_limit(request.query_params.get("limit"))
+        events = [_event_row(row) async for row in queryset.order_by("ts")[:limit]]
         payload = {
             "session_id": str(getattr(session, "id", "") or ""),
             "current_stage": str(getattr(session, "current_stage", "") or ""),
@@ -389,6 +439,7 @@ class BlueprintEventsView(APIView):
             started,
             has_session=True,
             event_count=len(events),
+            incremental=since_ts is not None,
         )
         return Response(payload)
 

@@ -60,9 +60,26 @@ export async function getBlueprintDocument(
 
 // ── ② 阶段事件 ──────────────────────────────────────────────────────────────
 
-/** 取蓝图阶段事件流（无编排会话时是 200 空结构，⛔ 不是错误态）。 */
-export async function getBlueprintEvents(artifactId: string): Promise<BlueprintEventsResponse> {
-  return get<BlueprintEventsResponse>(`/delivery/artifacts/${artifactId}/blueprint/events/`)
+/**
+ * 取蓝图阶段与活动事件流（无编排会话时是 200 空结构，⛔ 不是错误态）。
+ *
+ * `since_ts`（Phase 118）是**增量拉取**：只回该时刻之后的事件。活动级事件让单次编排的
+ * 事件量上一个量级，而消费方是每几秒轮询的查看器 —— 不增量就是每轮把整条历史重传一遍。
+ * 后端对非法 `since_ts` 回落全量（纯优化参数，不因坏时间戳把看进度打成错误页）。
+ */
+export async function getBlueprintEvents(
+  artifactId: string,
+  params: { since_ts?: string, limit?: number } = {},
+): Promise<BlueprintEventsResponse> {
+  const query: Record<string, string> = {}
+  if (params.since_ts)
+    query.since_ts = params.since_ts
+  if (params.limit)
+    query.limit = String(params.limit)
+  return get<BlueprintEventsResponse>(
+    `/delivery/artifacts/${artifactId}/blueprint/events/`,
+    query,
+  )
 }
 
 // ── ③④ 线程详情 + 选区评论 ─────────────────────────────────────────────────

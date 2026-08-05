@@ -42,7 +42,7 @@
 import type { Ref } from 'vue'
 import type { BlueprintEvent } from '~/types/blueprint'
 import { useQuery } from '@tanstack/vue-query'
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import blueprintsApi from '~/api/blueprints'
 import { LIVE_BLUEPRINT_STATUSES } from '~/config/blueprintStatus'
 import { progressKeyForEvent, sectionKeyForEvent } from '~/utils/blueprintBlocks'
@@ -135,9 +135,55 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
     refetchInterval: () => (isLive.value ? LIVE_REFETCH_MS : false),
   })
 
+  /**
+   * ⭐ 事件累积器（Phase 118，LIVE-04）：轮询改**增量**后单次响应只含新增事件，
+   * 因此完整事件流必须在客户端累积，⛔ 不能再直接读 `eventsQuery.data.events`。
+   *
+   * 去重键是 `(event, ts)` —— 与 chat 侧 `process_event` 合流用的同一口径。`since_ts`
+   * 是严格大于，正常路径不会重复；但**手动 `refetchAll()` 会重新全量拉**（它把游标清空，
+   * 否则动作端点 2xx 后拉不到早于游标的补洞事件），那一次必然与已累积的重叠。
+   */
+  const eventLog = ref<BlueprintEvent[]>([])
+  const seenKeys = ref<Set<string>>(new Set())
+  /** 增量游标 = 已累积事件里最大的 `ts`；为空表示下一次全量拉。 */
+  const cursorTs = ref('')
+
+  function resetEventLog(): void {
+    eventLog.value = []
+    seenKeys.value = new Set()
+    cursorTs.value = ''
+  }
+
+  function mergeEvents(incoming: BlueprintEvent[]): void {
+    if (incoming.length === 0)
+      return
+    const merged = eventLog.value.slice()
+    for (const event of incoming) {
+      const key = `${event.event}|${event.ts}`
+      if (seenKeys.value.has(key))
+        continue
+      seenKeys.value.add(key)
+      merged.push(event)
+      if (String(event.ts) > cursorTs.value)
+        cursorTs.value = String(event.ts)
+    }
+    // 按 ts 升序（后端已升序，但增量批次之间仍要保序；ISO8601 可字典序比较）
+    merged.sort((a, b) => String(a.ts).localeCompare(String(b.ts)))
+    eventLog.value = merged
+  }
+
+  // 切换 artifact 必须清空累积器：不清会把上一份蓝图的事件混进这一份的时间线。
+  watch(artifactId, resetEventLog)
+
   const eventsQuery = useQuery({
     queryKey: computed(() => ['blueprint', 'events', artifactId.value]),
-    queryFn: () => blueprintsApi.getBlueprintEvents(artifactId.value),
+    queryFn: async () => {
+      const response = await blueprintsApi.getBlueprintEvents(artifactId.value, {
+        since_ts: cursorTs.value || undefined,
+      })
+      mergeEvents(response.events ?? [])
+      return response
+    },
     enabled: computed(() => Boolean(artifactId.value)),
     staleTime: 0,
     refetchInterval: () => (isLive.value ? LIVE_REFETCH_MS : false),
@@ -152,7 +198,8 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
     }
   })
 
-  const events = computed<BlueprintEvent[]>(() => eventsQuery.data.value?.events ?? [])
+  /** 完整事件流（累积器）。⛔ 不读 `eventsQuery.data.events` —— 增量后那只是最后一批。 */
+  const events = computed<BlueprintEvent[]>(() => eventLog.value)
 
   /**
    * 段级进度：`Record<sectionKey, SectionProgress>`，**一段取其命中事件中 `ts` 最大的一条**。
@@ -199,6 +246,9 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
   function refetchAll(): void {
     snapshotQuery.refetch()
     docQuery.refetch()
+    // ⭐ 清游标再拉：动作端点 2xx 后可能有**早于游标**的事件（并发 emit / ts 由 emit 端
+    // 传入 ⇒ 不保证单调）。增量拉会永久漏掉它们，而手动重取本就是「把一切拉齐」的语义。
+    cursorTs.value = ''
     eventsQuery.refetch()
   }
 
