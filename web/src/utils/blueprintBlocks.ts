@@ -344,6 +344,14 @@ const EVENT_SECTION_MAP: Record<string, string[]> = {
   'blueprint.review.started': [],
   'blueprint.review.completed': [],
   'blueprint.review.failed': [],
+  // 118 活动流（LIVE-02/03）
+  'blueprint.route.recalled': ['repo_associations'],
+  'blueprint.route.plan_drafted': ['repo_associations'],
+  // 检索命中是跨段的过程证据，映射到某一段等于谎报范围 ⇒ 只喂时间线与活动流
+  'blueprint.retrieval.completed': [],
+  'blueprint.repo_plan.repo_started': ['implementation_overview'],
+  'blueprint.repo_plan.repo_completed': ['implementation_overview'],
+  'blueprint.repo_plan.wave_advanced': ['implementation_overview'],
 }
 
 /** 事件名 → i18n 进度文案 key 尾段（`knowledge.blueprints.progress.<尾段>`）。 */
@@ -369,6 +377,15 @@ const EVENT_PROGRESS_KEY: Record<string, string> = {
   'blueprint.review.started': 'reviewStarted',
   'blueprint.review.completed': 'reviewCompleted',
   'blueprint.review.failed': 'reviewFailed',
+  // 118 活动流：⭐ 这六条**刻意不配 `<key>Generic` 兜底文案** —— `eventLabel` 一旦发现
+  // Generic 存在就优先用它（见 BlueprintStageTimeline.eventLabel），叙事插值会被无参兜底
+  // 顶掉。活动流的价值全在那几个数字上，兜底等于把它抹平成一句废话。
+  'blueprint.route.recalled': 'routeRecalled',
+  'blueprint.route.plan_drafted': 'routePlanDrafted',
+  'blueprint.retrieval.completed': 'retrievalCompleted',
+  'blueprint.repo_plan.repo_started': 'repoPlanRepoStarted',
+  'blueprint.repo_plan.repo_completed': 'repoPlanRepoCompleted',
+  'blueprint.repo_plan.wave_advanced': 'repoPlanWaveAdvanced',
 }
 
 /** 事件名 → 阶段（供阶段时间线聚合成八个节点）。 */
@@ -390,6 +407,16 @@ const EVENT_STAGE_MAP: Record<string, string> = {
   'blueprint.review.started': 'ai_review',
   'blueprint.review.completed': 'ai_review',
   'blueprint.review.failed': 'ai_review',
+  // 118 活动流。⭐ `repo_plan.repo_completed` / `repo_started` 的后缀是 `_completed` /
+  // `_started` 而**不是** `.completed` / `.started` ⇒ `buildStageTimeline` 的后缀判据
+  // 不会把「一个仓产出完了」误判成「分仓阶段跑完了」。⛔ 重命名这两个事件前先看那条判据
+  // （`test_blueprint_event_taxonomy_112` 与 blueprintBlocks 的用例各有一条守它）。
+  'blueprint.route.recalled': 'route',
+  'blueprint.route.plan_drafted': 'route',
+  'blueprint.retrieval.completed': 'route',
+  'blueprint.repo_plan.repo_started': 'repo_plan',
+  'blueprint.repo_plan.repo_completed': 'repo_plan',
+  'blueprint.repo_plan.wave_advanced': 'repo_plan',
 }
 
 /** 阶段时间线的节点顺序（八节点）。

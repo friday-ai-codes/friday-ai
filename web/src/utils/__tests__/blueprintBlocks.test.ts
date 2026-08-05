@@ -290,7 +290,7 @@ describe('classifyBlockDiff —— 三分类 + 按段分组', () => {
   })
 })
 
-describe('sectionKeyForEvent —— 21 事件穷举（UI-SPEC §8.1 逐行）', () => {
+describe('sectionKeyForEvent —— 27 事件穷举（UI-SPEC §8.1 逐行 + 118 活动流）', () => {
   const CASES: Array<[string, string[]]> = [
     ['blueprint.status.transitioned', []],
     ['blueprint.stage.started', []],
@@ -313,10 +313,17 @@ describe('sectionKeyForEvent —— 21 事件穷举（UI-SPEC §8.1 逐行）', 
     ['blueprint.review.started', []],
     ['blueprint.review.completed', []],
     ['blueprint.review.failed', []],
+    // Phase 118 活动流六条（LIVE-02/03）：检索命中是跨段过程证据 ⇒ 不驱动任何段
+    ['blueprint.route.recalled', ['repo_associations']],
+    ['blueprint.route.plan_drafted', ['repo_associations']],
+    ['blueprint.retrieval.completed', []],
+    ['blueprint.repo_plan.repo_started', ['implementation_overview']],
+    ['blueprint.repo_plan.repo_completed', ['implementation_overview']],
+    ['blueprint.repo_plan.wave_advanced', ['implementation_overview']],
   ]
 
-  it('恰好 21 个事件被登记（与后端 BLUEPRINT_EVENTS 同集）', () => {
-    expect(BLUEPRINT_EVENT_NAMES).toHaveLength(21)
+  it('恰好 27 个事件被登记（与后端 BLUEPRINT_EVENTS 同集）', () => {
+    expect(BLUEPRINT_EVENT_NAMES).toHaveLength(27)
     expect(new Set(BLUEPRINT_EVENT_NAMES)).toEqual(new Set(CASES.map(([name]) => name)))
   })
 
@@ -326,8 +333,9 @@ describe('sectionKeyForEvent —— 21 事件穷举（UI-SPEC §8.1 逐行）', 
 
   it('恰好 5 个事件映射空数组（确认门三条 + 审查三条 + 状态/阶段四条里的…按表核算）', () => {
     const empty = CASES.filter(([, sections]) => sections.length === 0).map(([name]) => name)
-    // 四条状态/阶段 + 三条确认门 + 三条审查 = 10 条不驱动段级进度，只喂阶段时间线。
-    expect(empty).toHaveLength(10)
+    // 四条状态/阶段 + 三条确认门 + 三条审查 + 118 的检索命中（跨段过程证据，映射到
+    // 某一段等于谎报范围）= 11 条不驱动段级进度，只喂阶段时间线与过程分析面板。
+    expect(empty).toHaveLength(11)
   })
 
   it('两个事件映射两段（repo_research 三条 + spec_gate.locked）', () => {
