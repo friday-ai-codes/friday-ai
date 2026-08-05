@@ -126,6 +126,14 @@ def build_chat_model(
 
     prefix = PROVIDER_REGISTRY[resolved.provider_type].langchain_prefix  # contract
 
+    # Anthropic 兼容网关返回 null 计费字段会让 langchain-anthropic 的 usage 解析
+    # TypeError、拖垮整个调用（内容本身是好的）。构造前应用幂等补丁兜底
+    # （lazy：只在真的构造 anthropic 模型时 import langchain_anthropic）。
+    if prefix == "anthropic":
+        from core.patches import patch_langchain_anthropic_usage_metadata
+
+        patch_langchain_anthropic_usage_metadata()
+
     kwargs: dict[str, Any] = {
         "api_key": SecretStr(resolved.api_key),  # contract 防泄漏（work item）
         "timeout": timeout_seconds,  # contract（work item）
@@ -191,9 +199,7 @@ def build_chat_model(
         )
 
     # contract reasoning 分派（work item）—— capabilities + 正则双重检测
-    is_reasoning = capabilities.supports_reasoning or bool(
-        _REASONING_MODEL_PATTERN.match(model)
-    )
+    is_reasoning = capabilities.supports_reasoning or bool(_REASONING_MODEL_PATTERN.match(model))
     if is_reasoning:
         # reasoning model 不接受 temperature / top_p（OpenAI o 系列 API 约束）
         kwargs.pop("temperature", None)
@@ -208,10 +214,7 @@ def build_chat_model(
         )
 
     # contract max_output_tokens 校验 + 默认（work item）
-    if (
-        max_output_tokens is not None
-        and max_output_tokens > capabilities.max_output_tokens
-    ):
+    if max_output_tokens is not None and max_output_tokens > capabilities.max_output_tokens:
         raise ValueError(
             f"max_output_tokens {max_output_tokens} exceeds model limit "
             f"{capabilities.max_output_tokens} "
