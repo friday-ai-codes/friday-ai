@@ -2,6 +2,7 @@
 
 ## Milestones
 
+- 🚧 **v0.21.0 蓝图过程可见与返工闭环（反向关联 + 门到期 + 按阶段 agent 活动流 + 带原始上下文重跑）** — Phases 117–120 (started 2026-08-05) — 让蓝图的「生成过程」与「返工过程」都对人可见可控：阶段级实时活动流取代笼统转圈、分仓每仓进度与方案可见、人审可选重跑范围且续跑带原始 agent 上下文、HITL 门不再无限静默悬挂 — [requirements](./REQUIREMENTS.md)
 - ✅ **v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）** — Phases 111–116 (shipped 2026-08-02) — 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图 — 里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口；GATE-01 与三道入口接缝因硬依赖同步点 2 判 PARTIAL / 转技术债，同步点 2 已由 2026-08-02 的分支合并满足）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.20.0-ROADMAP.md) · [requirements](./milestones/v0.20.0-REQUIREMENTS.md) · [design](./technical-blueprint/DESIGN.md)
 - ✅ **v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 编排产出直连执行流 + 过程可见）** — Phases 105–110（其中 108 已移交 v0.20.0）(completed 2026-08-02，未打 tag) — 让技术方案链路真正跑通并可信：编排不再中途卡死被降级工具顶替、路由基于多维证据分层呈现并可解释、编排产出直连执行流、全过程对用户实时可见 — 5 相位 39/39 plans；里程碑审计 **tech_debt**（19 条需求 17 满足 / 2 部分（ROUTE-03 生产 `nr_snapshot` 未写入、RELY-02 澄清送达需真实飞书）/ 0 未达；ROUTE 缺口已结构性闭合；遗留 27 项人工验收全未执行）见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.19.0-ROADMAP.md) · [requirements](./milestones/v0.19.0-REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
 - ✅ **v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）** — Phases 100–104 (shipped 2026-07-22) — 把多套"知识/经验/沉淀"收敛成统一知识库（单一摄取 + 单一检索），补齐完工沉淀闭环（三链路一致），给编码容器内置 Friday MCP 与 skills — 里程碑审计 tech_debt（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留 11 项真实 Qdrant·飞书·容器·Cursor 端人工验证 + 若干接受/递延债务）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.17.0-ROADMAP.md)
@@ -28,6 +29,15 @@
 > v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号（v0.17.0 止于 Phase 104 → v0.19.0 从 Phase 105 续号）。
 
 ## Phases
+
+### 🚧 v0.21.0 蓝图过程可见与返工闭环 (Phases 117–120) — IN PROGRESS
+
+- [ ] Phase 117: 归属可达与门到期（LINK-01/02, WAIT-01/02/03）— 蓝图 detail 顶层项目字段 + 查看器顶栏归属面包屑；澄清/确认门可配置到期策略（提醒到上限 → 显式到期态 + 通知，人可随时恢复）；等待态呈现「等谁/等多久/下次提醒」；落库状态机与队列续驱加回归锁
+- [ ] Phase 118: 活动流事件契约与推送（LIVE-02/04/05）— `event_taxonomy` 增活动级事件（路由召回与分项打分、逐仓调研活动、`repo_plan` 每仓起止与波次）走 `aemit_event` 单一出口 + `sanitize_process_event_payload`；`RetrievalTrace` 召回标量上屏 API；蓝图页推送通道（替代 5s 轮询，`useBlueprintLive` 为唯一切换点）+ 历史回放；高频步骤采样聚合
+- [ ] Phase 119: 阶段活动流与分仓进度 UI（LIVE-01/03）— `BlueprintStageTimeline` 每阶段节点下挂活动流；路由阶段展示召回/命中/历史落点/适配度分项与总分/初步路由方案；分仓阶段按仓卡片展示执行位置、依赖等待、波次与该仓分仓方案；修 `repository_name` 缺失导致的进度文案退化
+- [ ] Phase 120: 重跑范围与每仓 resume（REDO-01~05）— 驳回可选重跑范围（仅重审 / 重融合 / 重跑指定仓 / 完整重做）；重跑注入人审上下文（打回理由 + 批注评论 + 上一版差异 + 轮次）；`SubAgentSession` / `RepoResearchTask` 接入 jsonl transcript 落库与 `resume` 续跑（复用编码链既有设施）；有界 + 脱敏 + 人工块保护
+
+需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)。**执行顺序（依赖链）:** 117（独立，可先落）→ 118（事件与推送底座）→ 119（消费 118 的契约）→ 120（重跑，复用 118 的事件面做过程可见）。
 
 <details>
 <summary>✅ v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）(Phases 111–116) — SHIPPED 2026-08-02 — 审计 tech_debt</summary>

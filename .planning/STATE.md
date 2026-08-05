@@ -1,9 +1,18 @@
 ---
 gsd_state_version: 1.0
-milestone: none
-milestone_name: —（v0.19.0 与 v0.20.0 均已归档，无在建里程碑）
-status: no_active_milestone
+milestone: v0.21.0
+milestone_name: 蓝图过程可见与返工闭环（反向关联 + 门到期 + 按阶段 agent 活动流 + 带原始上下文重跑）
+status: in_progress
+current_phase: 117
 stopped_at: >
+  ⭐ **v0.21.0「蓝图过程可见与返工闭环」已于 2026-08-05 立项**（Phases 117–120，需求见
+  `.planning/REQUIREMENTS.md`）。立项动机是 v0.20.0 交付后用户在查看器上提的四点：蓝图
+  反向跳不回项目、HITL 门无到期策略（编排本身已是落库状态机 + durable 队列，不占资源，
+  但可无限静默悬挂）、过程只有阶段级标量而看不到 agent 在做什么（尤其路由打分过程与
+  分仓每仓进度）、驳回重跑范围固定且拿不到原始 agent 会话上下文（容器侧 jsonl transcript
+  设施已存在但只接了编码链）。执行顺序 117 → 118 → 119 → 120。
+
+  以下是上一批里程碑的收尾记录（仍有效）：
   v0.19.0「技术方案可信度」与 v0.20.0「技术方案蓝图」两个并行里程碑均已归档，并于 2026-08-02
   由 `milestone/v0.20.0-blueprint` 合并 `origin/main` 完成合流 —— **这次合并即 v0.20.0 设计文档
   里的同步点 1 与同步点 2**。v0.19.0：5 相位 39/39 plans，审计 tech_debt（17 满足 / 2 部分 / 0 未达），
@@ -18,15 +27,15 @@ stopped_at: >
   其余（mcp npm 包漂移 / 蓝图 confirmed 后无下游驱动方 / 开关无运维面 / 相位级条目 /
   Nyquist 全缺）一条未动，见 `v0.20.0-MILESTONE-AUDIT.md` §14.5。
   **下一步仍不是立项新里程碑**，而是 Pending Todos 里剩下的独立工作项。
-last_updated: "2026-08-02T05:40:00.000Z"
-last_activity: 2026-08-02
-last_activity_description: 同步点 2 收尾第二步（三处前端触点 + 翻四个入口开关默认值 + 旧 process 退役）⇒ GATE-01 闭合
+last_updated: "2026-08-05T09:00:00.000Z"
+last_activity: 2026-08-05
+last_activity_description: v0.21.0 立项（Phases 117–120：归属可达与门到期 / 活动流事件与推送 / 阶段活动流与分仓进度 UI / 重跑范围与每仓 resume）
 progress:
-  total_phases: 11
-  completed_phases: 11
-  total_plans: 73
-  completed_plans: 73
-  percent: 100
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -42,7 +51,8 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 ## Current Position
 
-Phase: —（v0.19.0 与 v0.20.0 均已归档并合并，无在建里程碑）
+Milestone: v0.21.0 蓝图过程可见与返工闭环（Phases 117–120，started 2026-08-05）
+Phase: 117 归属可达与门到期（LINK-01/02, WAIT-01/02/03）
 Plan: —
 Status: 两个里程碑均判 `tech_debt`、均未打 tag；同步点 1/2 已达成，**同步点 2 的顺延工作项已全部执行完毕**（GATE-01 闭合），其余独立工作项待执行
 Last activity: 2026-08-02 — 同步点 2 收尾第二步：三处前端触点识别 blueprint/v1 + 四个入口开关默认翻 `technical_blueprint` + 旧 `technical_plan` process 退役收口（`789a1c0a` / `39b84961` / `e3184cef`）
