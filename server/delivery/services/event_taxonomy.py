@@ -56,6 +56,12 @@ __all__ = [
     "EVENT_BLUEPRINT_CONTEXT_ENTRY_APPENDED",
     "EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED",
     "EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED",
+    "EVENT_BLUEPRINT_ROUTE_RECALLED",
+    "EVENT_BLUEPRINT_ROUTE_PLAN_DRAFTED",
+    "EVENT_BLUEPRINT_RETRIEVAL_COMPLETED",
+    "EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED",
+    "EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED",
+    "EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED",
     "EVENT_BLUEPRINT_REVIEW_STARTED",
     "EVENT_BLUEPRINT_REVIEW_COMPLETED",
     "EVENT_BLUEPRINT_REVIEW_FAILED",
@@ -192,6 +198,36 @@ EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED: Final[str] = "blueprint.context.waite
 # emit: 113-01 waiter 命中/超时清理。payload: satisfied_count/redispatch_repository_ids/reason
 EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED: Final[str] = "blueprint.context.waiter_satisfied"
 
+# ---- 蓝图阶段活动流（v0.21 Phase 118，LIVE-02/04/05） ----
+#
+# 为什么要这一组：改动前蓝图页只有「阶段级」事件，用户看到的是一个笼统的「生成中」——
+# 路由到底召回了多少仓、凭什么给出 79.87% 的适配度、分仓阶段每个仓跑到哪了，全都不可见。
+# 这一组补的正是「agent 此刻在做什么」这一层。
+#
+# ⭐ **载荷纪律不变（INV-5）**：只放**标量、枚举、计数、id 与引用 id**，前端据它们用 i18n
+# 组装叙事文案（既有 `progressTextOf` 就是这个模式）。⛔ 模型推理原文 / 澄清题面 / 方案正文
+# 一律不进 payload —— 那些正文本来就在蓝图 content 与线程里，查看器已能渲染，复制一份到
+# 事件流只会带来脱敏风险与体积膨胀。
+# ⭐ **高频步骤按采样类记录**（`category="sampling"`），逐条 tool call 不上事件流。
+
+# emit: 118 路由召回完成（打分之前）。payload: candidate_count/router_candidate_count/
+# charter_supplement_count/scope_repository_count/router_version/intent/duration_ms
+EVENT_BLUEPRINT_ROUTE_RECALLED: Final[str] = "blueprint.route.recalled"
+# emit: 118 初步仓库路由方案（打分之后、确认门之前）。payload: repositories[] 每项
+# {repository_id, repository_name, role_suggestion, confidence, total,
+#  matched_node_path_count, matched_domain_count, violated_boundary_count, citation_ids[]}
+# ⇒ 前端据此展示「仓 1 建议承接哪些能力、适配度多少、证据指向哪」。
+EVENT_BLUEPRINT_ROUTE_PLAN_DRAFTED: Final[str] = "blueprint.route.plan_drafted"
+# emit: 118 检索/召回留痕上屏（RetrievalTrace 的标量镜像）。payload: scope/hit_count/
+# top_score/duration_ms/tier —— ⛔ 召回**正文**不进 payload（正文归 RetrievalTrace 表）
+EVENT_BLUEPRINT_RETRIEVAL_COMPLETED: Final[str] = "blueprint.retrieval.completed"
+# emit: 118 分仓方案逐仓起止（阶段 2 每仓可见）。payload: repository_id/repository_name/wave
+EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED: Final[str] = "blueprint.repo_plan.repo_started"
+# 同上 + item_count/api_count/duration_ms
+EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED: Final[str] = "blueprint.repo_plan.repo_completed"
+# emit: 118 波次推进。payload: wave/total_waves/repository_count
+EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED: Final[str] = "blueprint.repo_plan.wave_advanced"
+
 # ---- 蓝图 AI 对抗审查（v0.20 Phase 114-03，FLOW-07） ----
 # 114-03 追加：AI 对抗审查生命周期（payload 只含 findings **计数与分级分布**，正文绝不进 payload）。
 EVENT_BLUEPRINT_REVIEW_STARTED: Final[str] = "blueprint.review.started"
@@ -219,6 +255,13 @@ BLUEPRINT_EVENTS: Final[frozenset[str]] = frozenset(
         EVENT_BLUEPRINT_CONTEXT_ENTRY_APPENDED,
         EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED,
         EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED,
+        # 118 活动流（LIVE-02/04/05）
+        EVENT_BLUEPRINT_ROUTE_RECALLED,
+        EVENT_BLUEPRINT_ROUTE_PLAN_DRAFTED,
+        EVENT_BLUEPRINT_RETRIEVAL_COMPLETED,
+        EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED,
+        EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED,
+        EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED,
         EVENT_BLUEPRINT_REVIEW_STARTED,
         EVENT_BLUEPRINT_REVIEW_COMPLETED,
         EVENT_BLUEPRINT_REVIEW_FAILED,

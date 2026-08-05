@@ -211,5 +211,31 @@ async def _record_trace(
             user_id=str(actor.id) if actor is not None else None,
             source="process_runtime",
         )
+        # 118（LIVE-02）：把同一批标量镜像到会话事件流，让「历史落点召回了什么」在蓝图页
+        # 可见。RetrievalTrace 本身**没有前端消费方**（它是留痕面），而活动流要的就是这几个
+        # 数：命中条数、最高分、耗时。⛔ 召回正文仍只在 RetrievalTrace 里。
+        await _aemit_retrieval_event(
+            session,
+            hit_count=result_count,
+            top_score=max(scores) if scores else 0,
+            duration_ms=duration_ms,
+            matched_repository_count=len(result.hit_counts or {}),
+        )
     except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬路由主流程
+        pass
+
+
+async def _aemit_retrieval_event(session, **fields) -> None:
+    """写 `blueprint.retrieval.completed`（118）。独立函数 + 独立 try：埋点失败不能让
+    上面那条 RetrievalTrace 也一起丢（两者是两个不同的观测面）。"""
+    try:
+        from delivery.services.convergence_session_service import ConvergenceSessionService
+        from delivery.services.event_taxonomy import EVENT_BLUEPRINT_RETRIEVAL_COMPLETED
+
+        await ConvergenceSessionService().aemit_event(
+            EVENT_BLUEPRINT_RETRIEVAL_COMPLETED,
+            session,
+            {"scope": "route_history", **dict(fields)},
+        )
+    except Exception:  # noqa: BLE001 — 观测 best-effort
         pass
