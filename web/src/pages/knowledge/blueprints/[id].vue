@@ -59,6 +59,7 @@ import deliveryArtifactsApi from '~/api/deliveryArtifacts'
 import { canEditBlueprintBlock } from '~/components/blueprint/blockEditOps'
 import BlueprintAssociationsSection from '~/components/blueprint/BlueprintAssociationsSection.vue'
 import BlueprintBlockDiff from '~/components/blueprint/BlueprintBlockDiff.vue'
+import BlueprintActivityPanel from '~/components/blueprint/BlueprintActivityPanel.vue'
 import BlueprintBlockedDialog from '~/components/blueprint/BlueprintBlockedDialog.vue'
 import BlueprintBlockEditDialog from '~/components/blueprint/BlueprintBlockEditDialog.vue'
 import BlueprintErrorState from '~/components/blueprint/BlueprintErrorState.vue'
@@ -1234,6 +1235,10 @@ const sections = computed<NavSection[]>(() => [
               :current-stage="eventsQuery.data.value?.current_stage ?? ''"
               :current-status="currentStatus"
             />
+
+            <!-- 过程分析（119）：路由适配度与分仓每仓进度。两张视图都空时组件整块不渲染，
+                 所以这里⛔不加 v-if —— 空态判据只能有一份，在组件里。 -->
+            <BlueprintActivityPanel :events="events" :is-live="isLive" />
 
             <!-- diff 视图：批注层与全部写动作关闭（readonly 已置真） -->
             <BlueprintBlockDiff

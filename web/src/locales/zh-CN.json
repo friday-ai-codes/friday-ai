@@ -341,6 +341,25 @@
         "stateDone": "已完成",
         "stateFailed": "未成功"
       },
+      "activity": {
+        "title": "过程分析",
+        "repoCount": "{n} 个仓",
+        "fitnessTitle": "仓库适配度与路由依据",
+        "repoPlanTitle": "分仓方案进度",
+        "component": {
+          "charter_match": "章程契合",
+          "history_match": "历史落点",
+          "router_base": "能力匹配"
+        },
+        "evidence": "命中能力树 {nodes} 处 · 章程域 {domains} 个 · 引用 {citations} 条",
+        "boundaryHit": "触碰边界禁区 {n} 处",
+        "repoStateRunning": "拟定中",
+        "repoStateDone": "已产出",
+        "repoStateWaiting": "等待依赖",
+        "wave": "第 {n} 波",
+        "repoOutput": "{items} 项实现 · {apis} 条接口",
+        "repoUnknown": "未知仓库"
+      },
       "viewer": {
         "live": "实时更新中",
         "sectionNavLabel": "跳转到段落",
@@ -370,6 +389,12 @@
         "empty": "本方案未登记验收锚点"
       },
       "progress": {
+        "routeRecalled": "已召回 {candidate_count} 个候选仓（路由器 {router_candidate_count} 个 + 章程补入 {charter_supplement_count} 个，范围 {scope_repository_count} 仓）",
+        "routePlanDrafted": "已产出初步仓库路由方案，覆盖 {repository_count} 个仓",
+        "retrievalCompleted": "历史落点召回 {hit_count} 条（最高分 {top_score}，命中 {matched_repository_count} 仓）",
+        "repoPlanRepoStarted": "第 {wave} 波：{repository_name} 开始拟定分仓方案…",
+        "repoPlanRepoCompleted": "分仓方案已产出：{item_count} 项实现、{api_count} 条接口契约",
+        "repoPlanWaveAdvanced": "分仓方案进入第 {wave}/{total_waves} 波，本波 {repository_count} 个仓",
         "statusTransitioned": "方案状态已更新",
         "stageStarted": "新阶段已开始",
         "stageCompleted": "阶段已完成",
