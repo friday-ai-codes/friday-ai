@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.21.0
 milestone_name: 蓝图过程可见与返工闭环（反向关联 + 门到期 + 按阶段 agent 活动流 + 带原始上下文重跑）
 status: in_progress
-current_phase: 117
+current_phase: 120
 stopped_at: >
   ⭐ **v0.21.0「蓝图过程可见与返工闭环」已于 2026-08-05 立项**（Phases 117–120，需求见
   `.planning/REQUIREMENTS.md`）。立项动机是 v0.20.0 交付后用户在查看器上提的四点：蓝图
@@ -29,13 +29,13 @@ stopped_at: >
   **下一步仍不是立项新里程碑**，而是 Pending Todos 里剩下的独立工作项。
 last_updated: "2026-08-05T09:00:00.000Z"
 last_activity: 2026-08-05
-last_activity_description: v0.21.0 立项（Phases 117–120：归属可达与门到期 / 活动流事件与推送 / 阶段活动流与分仓进度 UI / 重跑范围与每仓 resume）
+last_activity_description: v0.21.0 四相位执行完毕（117 归属可达+门到期 / 118 活动流事件+增量拉取 / 119 过程分析面板 / 120 重跑范围+人审反馈注入+每仓 transcript resume）；LIVE-04 的推送通道部分交付
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 4
   total_plans: 0
   completed_plans: 0
-  percent: 0
+  percent: 100
 ---
 
 # Project State
@@ -52,8 +52,10 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 ## Current Position
 
 Milestone: v0.21.0 蓝图过程可见与返工闭环（Phases 117–120，started 2026-08-05）
-Phase: 117 归属可达与门到期（LINK-01/02, WAIT-01/02/03）
+Phase: 117–120 全部已执行（2026-08-05）
 Plan: —
+Status: 15 条需求中 14 条完全交付、1 条（LIVE-04 的「推送」）部分交付——落的是增量轮询而非推送通道，已在 REQUIREMENTS.md 与 ROADMAP.md 显式登记
+遗留工作项: ① 蓝图推送通道（WS consumer 或 artifact 级 SSE，`useBlueprintLive.ts` 是唯一切换点）；② 本里程碑尚未做 verify / 审计 / 打 tag
 Status: 两个里程碑均判 `tech_debt`、均未打 tag；同步点 1/2 已达成，**同步点 2 的顺延工作项已全部执行完毕**（GATE-01 闭合），其余独立工作项待执行
 Last activity: 2026-08-02 — 同步点 2 收尾第二步：三处前端触点识别 blueprint/v1 + 四个入口开关默认翻 `technical_blueprint` + 旧 `technical_plan` process 退役收口（`789a1c0a` / `39b84961` / `e3184cef`）
 
