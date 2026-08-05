@@ -221,17 +221,20 @@ export function anchorRangesForBlock(
 
 const SEVERITY_ORDER: readonly string[] = ['blocker', 'warning', 'info', '']
 
+/** severity（blocker → warning → info → 无）→ `created_at` 升序的组内比较器（唯一实现）。 */
+function compareBySeverityThenCreated(a: BlueprintThreadDetail, b: BlueprintThreadDetail): number {
+  const rank = (s: string) => {
+    const index = SEVERITY_ORDER.indexOf(s)
+    return index === -1 ? SEVERITY_ORDER.length : index
+  }
+  const bySeverity = rank(a.severity) - rank(b.severity)
+  if (bySeverity !== 0)
+    return bySeverity
+  return String(a.created_at).localeCompare(String(b.created_at))
+}
+
 function sortInGroup(threads: BlueprintThreadDetail[]): BlueprintThreadDetail[] {
-  return [...threads].sort((a, b) => {
-    const rank = (s: string) => {
-      const index = SEVERITY_ORDER.indexOf(s)
-      return index === -1 ? SEVERITY_ORDER.length : index
-    }
-    const bySeverity = rank(a.severity) - rank(b.severity)
-    if (bySeverity !== 0)
-      return bySeverity
-    return String(a.created_at).localeCompare(String(b.created_at))
-  })
+  return [...threads].sort(compareBySeverityThenCreated)
 }
 
 /**
@@ -266,6 +269,79 @@ export function sidebarGroups(
       anchored.filter(thread => thread.status === 'resolved' || thread.status === 'dismissed'),
     ),
     orphaned: sortInGroup(orphaned),
+  }
+}
+
+/** 侧栏按 `kind` 分的四组（key 恰为 `BlueprintThreadKind` 的四个取值）。 */
+export interface SidebarKindGroups {
+  ai_clarification: BlueprintThreadDetail[]
+  ai_review_finding: BlueprintThreadDetail[]
+  human_comment: BlueprintThreadDetail[]
+  repo_confirmation: BlueprintThreadDetail[]
+}
+
+/** kind 组内的 status 序：未决在前、已答复次之、已关闭最后（其余防御性垫底）。 */
+const STATUS_RANK: Record<string, number> = {
+  open: 0,
+  answered: 1,
+  resolved: 2,
+  dismissed: 2,
+}
+
+/** kind 组内排序：status（open → answered → closed）→ severity → `created_at`（复用组内比较器）。 */
+function sortInKindGroup(threads: BlueprintThreadDetail[]): BlueprintThreadDetail[] {
+  return [...threads].sort((a, b) => {
+    const byStatus = (STATUS_RANK[a.status] ?? 3) - (STATUS_RANK[b.status] ?? 3)
+    if (byStatus !== 0)
+      return byStatus
+    return compareBySeverityThenCreated(a, b)
+  })
+}
+
+/**
+ * 侧栏按 `kind` 分四组（AI 提问 / AI 审查 / 人工评论 / 确认门）。
+ *
+ * ⭐ **kind 是呈现维度**：分组本身取代了此前的 kind 筛选 chips —— 用户要「没回答的问题
+ * 统一到 AI 提问栏里」，所以组内排序把 `open` 排最前（status → severity → created_at）。
+ *
+ * ⭐ **失锚线程并入各自 kind 组**，不再有专属的失锚组：失锚是锚定维度，卡片上的失锚
+ * 标记由 `BlueprintThreadCard` 承载，分组只看 `kind`。数据合并口径沿用 `sidebarGroups`：
+ * `orphanedThreads` 为 `undefined` 时按 `anchor_status` 从 `threads` 派生；两份来源按
+ * `thread_id` 去重（orphaned 列表出现过的 id 从 anchored 里剔除），任一线程只进一次。
+ *
+ * ⛔ **closed（resolved/dismissed）的显隐不是本函数职责**：「显示已关闭批注」是组件的
+ * 开关行为，本函数恒返回全量，调用方自行过滤 —— 这样隐藏计数（hiddenClosedCount）
+ * 也能从同一份产物里算出来，不必再跑一遍分组。
+ */
+export function sidebarKindGroups(
+  threads: readonly BlueprintThreadDetail[],
+  orphanedThreads?: readonly BlueprintThreadDetail[],
+): SidebarKindGroups {
+  const list = Array.isArray(threads) ? threads : []
+  const orphaned = orphanedThreads === undefined
+    ? list.filter(thread => thread?.anchor_status === 'orphaned')
+    : [...orphanedThreads]
+  const orphanedIds = new Set(orphaned.map(thread => thread?.thread_id))
+  const anchored = list.filter(
+    thread => thread?.anchor_status !== 'orphaned' && !orphanedIds.has(thread?.thread_id),
+  )
+
+  const groups: SidebarKindGroups = {
+    ai_clarification: [],
+    ai_review_finding: [],
+    human_comment: [],
+    repo_confirmation: [],
+  }
+  for (const thread of [...anchored, ...orphaned]) {
+    // kind 不在四个枚举内的线程丢弃（防御性，现状不会出现）。
+    const bucket = (groups as Record<string, BlueprintThreadDetail[] | undefined>)[thread?.kind]
+    bucket?.push(thread)
+  }
+  return {
+    ai_clarification: sortInKindGroup(groups.ai_clarification),
+    ai_review_finding: sortInKindGroup(groups.ai_review_finding),
+    human_comment: sortInKindGroup(groups.human_comment),
+    repo_confirmation: sortInKindGroup(groups.repo_confirmation),
   }
 }
 

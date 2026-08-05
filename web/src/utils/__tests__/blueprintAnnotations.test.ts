@@ -19,6 +19,7 @@ import {
   isValidAnchor,
   offsetInFlatText,
   sidebarGroups,
+  sidebarKindGroups,
   sliceBlockText,
 } from '../blueprintAnnotations'
 
@@ -297,6 +298,87 @@ describe('sidebarGroups —— 四组互斥 + P-7 三态不混（三条并列）
   it('非数组入参恒不抛', () => {
     const groups = sidebarGroups(null as unknown as BlueprintThreadDetail[])
     expect(groups).toEqual({ open: [], answered: [], closed: [], orphaned: [] })
+  })
+})
+
+describe('sidebarKindGroups —— 按 kind 分四组 + status→severity→created_at 排序', () => {
+  it('四 kind 各一条 ⇒ 各组恰一条', () => {
+    const list = [
+      thread({ thread_id: 'k1', kind: 'ai_clarification' }),
+      thread({ thread_id: 'k2', kind: 'ai_review_finding' }),
+      thread({ thread_id: 'k3', kind: 'human_comment' }),
+      thread({ thread_id: 'k4', kind: 'repo_confirmation' }),
+    ]
+    const groups = sidebarKindGroups(list, [])
+    expect(groups.ai_clarification.map(t => t.thread_id)).toEqual(['k1'])
+    expect(groups.ai_review_finding.map(t => t.thread_id)).toEqual(['k2'])
+    expect(groups.human_comment.map(t => t.thread_id)).toEqual(['k3'])
+    expect(groups.repo_confirmation.map(t => t.thread_id)).toEqual(['k4'])
+  })
+
+  it('只有部分 kind 时其余组为空数组', () => {
+    const groups = sidebarKindGroups([thread({ thread_id: 'only', kind: 'human_comment' })], [])
+    expect(groups.human_comment).toHaveLength(1)
+    expect(groups.ai_clarification).toEqual([])
+    expect(groups.ai_review_finding).toEqual([])
+    expect(groups.repo_confirmation).toEqual([])
+  })
+
+  it('⭐ 排序：open 恒在 answered 前（即便 answered 创建更早），closed 排最后', () => {
+    const list = [
+      thread({ thread_id: 'ans', status: 'answered', created_at: '2026-01-01T00:00:00Z' }),
+      thread({ thread_id: 'dis', status: 'dismissed', created_at: '2026-01-01T00:00:00Z' }),
+      thread({ thread_id: 'opn', status: 'open', created_at: '2026-06-01T00:00:00Z' }),
+      thread({ thread_id: 'res', status: 'resolved', created_at: '2026-01-02T00:00:00Z' }),
+    ]
+    expect(sidebarKindGroups(list, []).ai_clarification.map(t => t.thread_id)).toEqual([
+      'opn',
+      'ans',
+      'dis',
+      'res',
+    ])
+  })
+
+  it('同 status 内：blocker 排 warning 前，同 severity 按 created_at 升序', () => {
+    const list = [
+      thread({ thread_id: 'w1', kind: 'ai_review_finding', status: 'open', severity: 'warning', created_at: '2026-01-01T00:00:00Z' }),
+      thread({ thread_id: 'b2', kind: 'ai_review_finding', status: 'open', severity: 'blocker', created_at: '2026-01-02T00:00:00Z' }),
+      thread({ thread_id: 'b1', kind: 'ai_review_finding', status: 'open', severity: 'blocker', created_at: '2026-01-01T00:00:00Z' }),
+    ]
+    expect(sidebarKindGroups(list, []).ai_review_finding.map(t => t.thread_id)).toEqual([
+      'b1',
+      'b2',
+      'w1',
+    ])
+  })
+
+  it('⭐ 失锚并组：失锚线程进自己的 kind 组，且同 id 全量只出现一次（threads 里不另占坑）', () => {
+    const orphan = thread({ thread_id: 'orph', kind: 'ai_clarification', status: 'open', anchor_status: 'orphaned' })
+    const groups = sidebarKindGroups([orphan, thread({ thread_id: 'plain', kind: 'human_comment' })], [orphan])
+    expect(groups.ai_clarification.map(t => t.thread_id)).toEqual(['orph'])
+    const total = groups.ai_clarification.length + groups.ai_review_finding.length
+      + groups.human_comment.length + groups.repo_confirmation.length
+    expect(total).toBe(2)
+  })
+
+  it('orphanedThreads 为 undefined 时从 threads 按 anchor_status 派生', () => {
+    const list = [
+      thread({ thread_id: 'x', kind: 'ai_review_finding', anchor_status: 'orphaned' }),
+      thread({ thread_id: 'y', kind: 'ai_review_finding' }),
+    ]
+    const groups = sidebarKindGroups(list)
+    expect(groups.ai_review_finding.map(t => t.thread_id).sort()).toEqual(['x', 'y'])
+    expect(groups.ai_review_finding).toHaveLength(2)
+  })
+
+  it('非数组入参恒不抛，四组皆空数组', () => {
+    const groups = sidebarKindGroups(null as unknown as BlueprintThreadDetail[])
+    expect(groups).toEqual({
+      ai_clarification: [],
+      ai_review_finding: [],
+      human_comment: [],
+      repo_confirmation: [],
+    })
   })
 })
 
