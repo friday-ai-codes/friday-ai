@@ -59,11 +59,27 @@ const i18n = createI18n({
             composerSubmit: '提交回复',
             composerEmpty: '回复内容不可为空',
             optionsHint: '可直接选用下列候选答案，选中后仍可改写',
+            wizardProgress: '第 {i} / {n} 题',
+            wizardOther: '其他',
+            wizardOtherPlaceholder: '写下你的自定义回答…',
+            wizardNext: '下一题',
+            wizardPrev: '上一题',
+            wizardSubmitAll: '提交全部回答',
+            recommended: '推荐',
+            wizardHasRecommended: '含推荐答案',
+            relatedFeaturePoints: '相关功能点（点击查看）',
             reminded: '上次提醒：{time}',
             authorAi: 'AI',
             gotoGate: '前往确认门',
             draftTitle: '针对选中片段发起评论',
             draftSubmit: '提交评论',
+            groupOpen: '未决',
+            groupAnswered: '已回答',
+            groupClosed: '已关闭',
+            rule: {
+              acceptance_uncovered: '验收标准未覆盖',
+              gate_lock_violation_role: '偏离锁定·角色',
+            },
           },
           finding: {
             resolve: '已修复',
@@ -311,6 +327,84 @@ describe('作答框：options 候选与必填校验', () => {
     expect(wrapper.find('[data-testid="blueprint-thread-composer"]').exists()).toBe(true)
   })
 
+  it('6d. 结构化 questions ⇒ 渲染逐步向导而非旧 composer', () => {
+    const wrapper = mountCard({
+      thread: makeThread({
+        kind: 'ai_clarification',
+        options: [
+          {
+            text: '弱网重连后倒计时如何恢复？',
+            options: ['从中断处续计', '整轮重置'],
+            recommended: '从中断处续计',
+            related_feature_points: ['fp_27'],
+          },
+          {
+            text: '本期是否包含激励发放？',
+            options: ['包含', '不包含'],
+          },
+        ],
+        messages: [
+          {
+            id: 'm1',
+            author_type: 'ai',
+            author_user_id: null,
+            author_display: '',
+            body: '1. 弱网…\n2. 激励…',
+            created_at: '2026-08-01T00:00:00Z',
+          },
+        ],
+      }),
+      readonly: false,
+      featurePointTitles: { fp_27: '倒计时中断恢复' },
+    })
+    expect(wrapper.find('[data-testid="blueprint-clarification-wizard"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="blueprint-thread-composer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="blueprint-clarification-progress"]').text()).toContain('1')
+    expect(wrapper.find('[data-testid="blueprint-clarification-question"]').text()).toContain('弱网重连')
+    // 首条 AI 编号题面被隐藏
+    expect(wrapper.findAll('[data-testid="blueprint-thread-message"]')).toHaveLength(0)
+    expect(wrapper.find('[data-testid="blueprint-clarification-fp-chip"]').text()).toContain('倒计时中断恢复')
+  })
+
+  it('6e. 向导：选选项 → 下一题 → 选其他填写 → 整包提交', async () => {
+    const wrapper = mountCard({
+      thread: makeThread({
+        kind: 'ai_clarification',
+        options: [
+          { text: '问题一', options: ['A', 'B'], recommended: 'A' },
+          { text: '问题二', options: ['X', 'Y'] },
+        ],
+      }),
+      readonly: false,
+    })
+    const opts = wrapper.findAll('[data-testid="blueprint-clarification-option"]')
+    await opts[0].trigger('click')
+    await wrapper.find('[data-testid="blueprint-clarification-next"]').trigger('click')
+    expect(wrapper.find('[data-testid="blueprint-clarification-question"]').text()).toBe('问题二')
+    await wrapper.find('[data-testid="blueprint-clarification-other"]').trigger('click')
+    await wrapper.find('[data-testid="blueprint-clarification-other-input"]').setValue('自定义答案')
+    await wrapper.find('[data-testid="blueprint-clarification-next"]').trigger('click')
+    expect(wrapper.emitted('answer')?.[0]).toEqual([
+      't1',
+      '1. 问题一\n→ A\n\n2. 问题二\n→ 自定义答案',
+    ])
+  })
+
+  it('6f. 功能点 chip 点击 emit goto-anchor', async () => {
+    const wrapper = mountCard({
+      thread: makeThread({
+        kind: 'ai_clarification',
+        options: [
+          { text: '关于恢复', options: ['续计'], related_feature_points: ['fp_28'] },
+        ],
+      }),
+      readonly: false,
+      featurePointTitles: { fp_28: '弱网续计' },
+    })
+    await wrapper.find('[data-testid="blueprint-clarification-fp-chip"]').trigger('click')
+    expect(wrapper.emitted('goto-anchor')?.[0]).toEqual(['fp-fp_28'])
+  })
+
   it('6c. 空 / 纯空格不可提交，填入后 emit answer 且载荷已 trim', async () => {
     const wrapper = mountCard({ thread: makeThread({ kind: 'human_comment' }), readonly: false })
     const submit = wrapper.find('[data-testid="blueprint-thread-composer-submit"]')
@@ -341,6 +435,60 @@ describe('作答框：options 候选与必填校验', () => {
     })
     expect(wrapper.find('[data-testid="blueprint-thread-orphaned"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="blueprint-thread-composer"]').exists()).toBe(true)
+  })
+})
+
+describe('⭐ AI 审查 finding 的 rule_id 前缀汉化（quick-260806-vqh）', () => {
+  function findingThread(bodies: string[]): BlueprintThreadDetail {
+    return makeThread({
+      kind: 'ai_review_finding',
+      severity: 'warning',
+      messages: bodies.map((body, index) => ({
+        id: `m${index}`,
+        author_type: 'ai' as const,
+        author_user_id: null,
+        author_display: '',
+        body,
+        created_at: '2026-08-01T00:00:00Z',
+      })),
+    })
+  }
+
+  it('10a. 已知 rule_id ⇒ 中文标签徽标，可读正文里不再有裸 id', () => {
+    const wrapper = mountCard({
+      thread: findingThread(['[acceptance_uncovered] 当前节点轻高亮引导未见独立测试策略']),
+      readonly: false,
+    })
+    const rule = wrapper.find('[data-testid="blueprint-thread-message-rule"]')
+    expect(rule.exists()).toBe(true)
+    expect(rule.text()).toBe('验收标准未覆盖')
+    // 原始 id 只留在 title 里供排障，⛔ 不出现在可读文本
+    expect(rule.attributes('title')).toBe('acceptance_uncovered')
+    expect(wrapper.text()).not.toContain('acceptance_uncovered')
+    expect(wrapper.text()).toContain('当前节点轻高亮引导未见独立测试策略')
+  })
+
+  it('10b. 未知 rule_id ⇒ 回落原始 id（⛔ 不吞掉分类）', () => {
+    const wrapper = mountCard({
+      thread: findingThread(['[brand_new_rule] 后端新增了一条规则']),
+      readonly: false,
+    })
+    expect(wrapper.find('[data-testid="blueprint-thread-message-rule"]').text()).toBe(
+      'brand_new_rule',
+    )
+  })
+
+  it('10c. ⭐ 无前缀消息不渲染徽标，中文前缀原样保留', () => {
+    const wrapper = mountCard({
+      thread: findingThread([
+        '第 2 轮仍存在：功能点C无独立测试策略',
+        '[已修复] 人审复核：该缺口已补齐',
+      ]),
+      readonly: false,
+    })
+    expect(wrapper.findAll('[data-testid="blueprint-thread-message-rule"]')).toHaveLength(0)
+    expect(wrapper.text()).toContain('第 2 轮仍存在：功能点C无独立测试策略')
+    expect(wrapper.text()).toContain('[已修复] 人审复核：该缺口已补齐')
   })
 })
 

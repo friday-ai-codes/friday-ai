@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '~/components/ui/dialog'
+import { isKnownFindingRule, parseFindingBody } from '~/utils/blueprintFindingRules'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -74,7 +75,13 @@ const items = computed<BlockedItem[]>(() =>
   props.threadIds.map((threadId) => {
     const thread = props.threads.find(item => item.thread_id === threadId)
     const severity = thread?.severity ?? 'blocker'
-    const body = thread?.messages?.[0]?.body ?? ''
+    // ⭐ 先剥 `[rule_id]` 前缀再截断：那个 snake_case 标记能吃掉 40 字摘要的一半，
+    // 剩下的半句话不足以让人判断该处置哪条（quick-260806-vqh）。已知规则换成中文标签。
+    const { ruleId, text } = parseFindingBody(thread?.messages?.[0]?.body ?? '')
+    const label = isKnownFindingRule(ruleId)
+      ? t(`knowledge.blueprints.thread.rule.${ruleId}`)
+      : ruleId
+    const body = label && text ? `${label}：${text}` : label || text
     return {
       threadId,
       severity,
