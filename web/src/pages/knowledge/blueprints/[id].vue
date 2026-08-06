@@ -11,10 +11,10 @@
  *
  * ## ② ⭐ 十段容器无条件渲染（本页头号靶子，P-4）
  *
- * `AnchorNavLayout` 只在 `onMounted` 那一刻按 `props.sections` 逐个 `getElementById`
- * （`AnchorNavLayout.vue:19-40`），**既没有 `watch(() => props.sections)` 也没有
+ * 段导航（`BlueprintSectionNav`，随头部吸顶的横条）只在 `onMounted` 那一刻按
+ * `props.sections` 逐个 `getElementById`，**既没有 `watch(() => props.sections)` 也没有
  * `MutationObserver`**。若十段写成 `v-if="doc"`，mount 那一刻 DOM 里一个段都没有 ⇒
- * IntersectionObserver **一个也挂不上** ⇒ **左栏高亮永远停在第一段，而点击跳转照常工作**
+ * IntersectionObserver **一个也挂不上** ⇒ **导航高亮永远停在第一段，而点击跳转照常工作**
  * （`scrollTo` 是点击时才查 DOM）—— 人肉自测只会觉得「高亮有点怪」，根本不会当成缺陷。
  *
  * 因此本页的硬约束是：**十个 `<section id="…">` 恒渲染、`sections` 数组长度恒为 10**，
@@ -43,31 +43,34 @@ import type {
   BlueprintBlock,
   BlueprintBlockEditRejection,
   BlueprintBlockOp,
+  BlueprintFeaturePoint,
   BlueprintThreadDetail,
   Citation,
 } from '~/types/blueprint'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { useMediaQuery, useWindowScroll } from '@vueuse/core'
+import { useMediaQuery, useResizeObserver, useWindowScroll } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import blueprintsApi from '~/api/blueprints'
 import { ApiError } from '~/api/client'
 import deliveryArtifactsApi from '~/api/deliveryArtifacts'
 import { canEditBlueprintBlock } from '~/components/blueprint/blockEditOps'
-import BlueprintActivityPanel from '~/components/blueprint/BlueprintActivityPanel.vue'
 import BlueprintAssociationsSection from '~/components/blueprint/BlueprintAssociationsSection.vue'
 import BlueprintBlockDiff from '~/components/blueprint/BlueprintBlockDiff.vue'
 import BlueprintBlockedDialog from '~/components/blueprint/BlueprintBlockedDialog.vue'
 import BlueprintBlockEditDialog from '~/components/blueprint/BlueprintBlockEditDialog.vue'
+import BlueprintBlockList from '~/components/blueprint/BlueprintBlockList.vue'
+import BlueprintCommentPopover from '~/components/blueprint/BlueprintCommentPopover.vue'
 import BlueprintErrorState from '~/components/blueprint/BlueprintErrorState.vue'
 import BlueprintGatePanel from '~/components/blueprint/BlueprintGatePanel.vue'
 import BlueprintQualityPanel from '~/components/blueprint/BlueprintQualityPanel.vue'
 import BlueprintRejectDialog from '~/components/blueprint/BlueprintRejectDialog.vue'
+import BlueprintResearchDrawer from '~/components/blueprint/BlueprintResearchDrawer.vue'
 import BlueprintSectionNav from '~/components/blueprint/BlueprintSectionNav.vue'
 import BlueprintSelectionPopover from '~/components/blueprint/BlueprintSelectionPopover.vue'
-import BlueprintStageTimeline from '~/components/blueprint/BlueprintStageTimeline.vue'
+import BlueprintStageStepper from '~/components/blueprint/BlueprintStageStepper.vue'
 import BlueprintThreadSidebar from '~/components/blueprint/BlueprintThreadSidebar.vue'
 import BlueprintViewerHeader from '~/components/blueprint/BlueprintViewerHeader.vue'
 import CitationPreviewDialog from '~/components/blueprint/CitationPreviewDialog.vue'
@@ -80,8 +83,8 @@ import InteractionFlowsSection from '~/components/blueprint/sections/Interaction
 import MustHavesSection from '~/components/blueprint/sections/MustHavesSection.vue'
 import RepoAssociationsSection from '~/components/blueprint/sections/RepoAssociationsSection.vue'
 import RequirementSpecSection from '~/components/blueprint/sections/RequirementSpecSection.vue'
-import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { ScrollArea } from '~/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '~/components/ui/sheet'
@@ -110,10 +113,38 @@ function measureScrollOffset(): number {
   const height = header?.offsetHeight ?? 0
   return height > 0 ? height + 12 : SCROLL_OFFSET_FALLBACK
 }
+
+// ── 侧栏吸顶偏移（quick-260806-tsb）────────────────────────────────────────────
+//
+// ⭐ 旧值是静态 `top-22`（88px），而 sticky 顶栏带段导航/警示横幅时实测 130px+ ⇒
+// 侧栏顶部（含容器上圆角与第一张卡）整个滑进头部底下 —— 用户点名的「圆角没展示全」。
+// 与 `measureScrollOffset` 同源：实测头高 + 12px 呼吸位，头高变化由 ResizeObserver 跟随。
+
+const viewerHeaderEl = ref<HTMLElement | null>(null)
+const sidebarTopOffset = ref(SCROLL_OFFSET_FALLBACK)
+
+function syncSidebarTopOffset(): void {
+  sidebarTopOffset.value = measureScrollOffset()
+}
+
+onMounted(() => {
+  viewerHeaderEl.value = document.querySelector<HTMLElement>('[data-testid="blueprint-viewer-header"]')
+  syncSidebarTopOffset()
+})
+
+useResizeObserver(viewerHeaderEl, syncSidebarTopOffset)
+
+/** 侧栏列的 sticky 定位与视口内可用高（16px = 底部呼吸位）。 */
+const sidebarStickyStyle = computed(() => ({
+  top: `${sidebarTopOffset.value}px`,
+  maxHeight: `calc(100vh - ${sidebarTopOffset.value + 16}px)`,
+}))
 /** 命中目标后的 ring 高亮时长（毫秒）。 */
 const HIGHLIGHT_MS = 2000
-/** 命中高亮的类名（字面量 ⇒ Tailwind content 扫描直接命中，⛔ 无需 safelist）。 */
-const HIGHLIGHT_CLASS = 'rounded-xl ring-2 ring-primary/60'
+/** 命中高亮的类名（字面量 ⇒ Tailwind content 扫描直接命中，⛔ 无需 safelist）。
+ *  ⭐ ring-offset：段容器自身零 padding，环若贴着内容边界画会像内容顶死在框上；
+ *  offset 8px + 背景色填充让环与内容之间有呼吸边距（quick-260806-r7z）。 */
+const HIGHLIGHT_CLASS = 'rounded-xl ring-2 ring-primary/60 ring-offset-8 ring-offset-background'
 
 /** 十个段 key —— 顺序即导航顺序，长度恒为 10。 */
 const SECTION_KEYS = [
@@ -207,9 +238,46 @@ function normalizePanel(raw: unknown): '' | 'gate' | 'review' {
 const versionParam = useQueryParam('version', normalizeId)
 const diffParam = useQueryParam('diff', normalizeId)
 const diffModeParam = useQueryParam('diff_mode', normalizeDiffMode)
-const sectionParam = useQueryParam('section', normalizeSection)
 const threadParam = useQueryParam('thread', normalizeId)
 const panelParam = useQueryParam('panel', normalizePanel)
+
+/**
+ * ⭐ 段落定位走 **URL hash**（`#requirement_spec`）而非 query（quick-260806：段落是页面内
+ * 锚点，hash 是它的语义正解；query 留给版本 / diff / 线程这类会改变数据请求的参数）。
+ *
+ * 与 `useQueryParam` 同款双向同步；写回用 `router.replace` 保留既有 query。
+ * 兼容存量分享链接：`?section=` 仍被读取（仅初始化时消费一次并从 query 摘掉）。
+ */
+const sectionParam = ref(
+  normalizeSection(String(route.hash || '').replace(/^#/, ''))
+  || normalizeSection(route.query.section),
+) as Ref<string>
+
+watch(() => route.hash, (raw) => {
+  const next = normalizeSection(String(raw || '').replace(/^#/, ''))
+  if (next && next !== sectionParam.value)
+    sectionParam.value = next
+})
+
+// ⭐ 写回用 history.replaceState 而非 router.replace：router 导航会触发全局
+// scrollBehavior 的 hash 定位（静态 offset 80），与页面自己的精确滚动
+// （measureScrollOffset，随警示横幅动态变高）打架产生二次滚动。replaceState 只改
+// 地址栏；浏览器前进/后退与外部直链仍走 router，享受原生 hash 定位。
+watch(sectionParam, (value) => {
+  const url = new URL(window.location.href)
+  const nextHash = value ? `#${value}` : ''
+  if (url.hash === nextHash)
+    return
+  url.hash = nextHash
+  window.history.replaceState(window.history.state, '', url)
+})
+
+// 存量 `?section=` 链接的一次性迁移：消费进 sectionParam 后把 query 键摘掉。
+if (route.query.section !== undefined) {
+  const query = { ...(route.query as Record<string, string>) }
+  delete query.section
+  router.replace({ query, hash: sectionParam.value ? `#${sectionParam.value}` : '' })
+}
 
 const diffMode = computed<'inline' | 'split'>(() => (diffModeParam.value === 'split' ? 'split' : 'inline'))
 const isDiffMode = computed(() => Boolean(diffParam.value))
@@ -218,18 +286,30 @@ const isDiffMode = computed(() => Boolean(diffParam.value))
 
 const versionId = computed(() => versionParam.value || undefined)
 
-/** ⭐ doc / snapshot / events 三个实时查询全在这里，页面**不再单独建**。 */
+/** ⭐ doc / snapshot / events / stages 四个实时查询全在这里，页面**不再单独建**。 */
 const {
   isLive,
   currentStatus,
   doc: docQuery,
   snapshot: snapshotQuery,
   eventsQuery,
+  stagesQuery,
   events,
   sectionProgress,
   statusProgressKey,
   refetchAll,
 } = useBlueprintLive(artifactId, versionId)
+
+/**
+ * 节点快照（stage_state 分片 + 重跑面 + 版本谱系）。
+ *
+ * ⭐ 与 gate 查询同款例外：**它的任何失败都不进错误分档** —— 查询失败只让 stepper 的
+ * 状态分片/重跑面降级不渲染、版本树为空，事件驱动的节点状态照常（events 是主查询）。
+ */
+const stagesData = computed(() => stagesQuery.data.value ?? null)
+
+/** 版本树切换器的供数（带 `version_label` 的谱系清单）。 */
+const stageVersions = computed(() => stagesData.value?.versions ?? [])
 
 const threadsQuery = useQuery({
   queryKey: computed(() => ['blueprint', 'threads', artifactId.value]),
@@ -357,6 +437,36 @@ const repoNames = computed<Record<string, string>>(() => {
 })
 
 const citations = computed<Record<string, Citation>>(() => content.value?.citations ?? {})
+
+/** 执行摘要（`meta.summary`）：融合阶段起草的人读导读；旧版本可能没有，空时整卡不渲染。 */
+const summaryBlocks = computed(() => content.value?.meta?.summary ?? [])
+
+/** 功能点 id → 标题；澄清向导 chip 展示用（缺标题时回退 id）。 */
+const featurePointTitles = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {}
+  for (const point of content.value?.requirement_spec?.feature_points ?? []) {
+    const id = String(point?.id ?? '').trim()
+    if (!id)
+      continue
+    map[id] = String(point?.title ?? '').trim() || id
+  }
+  return map
+})
+
+/**
+ * 功能点 id → 完整功能点；现状分析与实现概述的 `BlueprintFeaturePointChip` 靠它出
+ * 悬浮预览（标题 + intent + 验收要点）。索引不存在的 id 让 chip 自行降级成「只有 id」，
+ * ⛔ 不在这里过滤 —— 悄悄少一个 chip 比一个没标题的 chip 更难排查。
+ */
+const featurePointIndex = computed<Record<string, BlueprintFeaturePoint>>(() => {
+  const map: Record<string, BlueprintFeaturePoint> = {}
+  for (const point of content.value?.requirement_spec?.feature_points ?? []) {
+    const id = String(point?.id ?? '').trim()
+    if (id)
+      map[id] = point
+  }
+  return map
+})
 
 const isHistoricalVersion = computed(() => {
   const doc = docQuery.data.value
@@ -562,8 +672,27 @@ function onNavigateSection(key: string): void {
 // ── 侧栏 / 抽屉 / 选区 ────────────────────────────────────────────────────────
 
 const sheetOpen = ref(false)
+/** 按仓调研明细抽屉；由 stepper 的 `view-research` 打开。 */
+const researchDrawerOpen = ref(false)
 const selection = ref<SelectionPayload | null>(null)
-const draft = ref<BlueprintCommentDraft | null>(null)
+
+// ── 划线评论就地浮层（quick-260806-j1z，交互对齐飞书文档）───────────────────────
+//
+// 「发起评论」不再把草稿塞进右侧栏，而是在选区下方浮出评论输入卡；
+// 点击正文划线在划线旁浮出线程卡。两者互斥（同一浮层组件的两种模式）。
+const inlineDraft = ref<SelectionPayload | null>(null)
+const inlineThreadId = ref<string | null>(null)
+const inlineThreadRect = ref<DOMRect | null>(null)
+
+const inlineThread = computed(() =>
+  inlineThreadId.value ? findThread(inlineThreadId.value) ?? null : null,
+)
+
+function closeInlineThread(): void {
+  inlineThreadId.value = null
+  inlineThreadRect.value = null
+  selectThread(null)
+}
 
 /**
  * ⭐ `xl` 断点闸（§5.2 逐字：`xl`（≥1280px）三栏、右侧线程侧栏常驻、**`Sheet` 停用**）。
@@ -625,14 +754,11 @@ function startDraft(): void {
   const payload = selection.value
   if (!payload)
     return
-  draft.value = {
-    blockId: payload.blockId,
-    startOffset: payload.startOffset,
-    endOffset: payload.endOffset,
-    quotedText: payload.quotedText,
-  }
+  // ⭐ 飞书式就地输入卡（quick-260806-j1z）：草稿不再进右侧栏，⛔ 不再 revealAnnotations。
+  inlineThreadId.value = null
+  inlineThreadRect.value = null
+  inlineDraft.value = payload
   selection.value = null
-  revealAnnotations()
 }
 
 async function copySelection(): Promise<void> {
@@ -646,8 +772,46 @@ async function copySelection(): Promise<void> {
   }
 }
 
+/**
+ * 点击正文划线 ⇒ 在划线旁就地浮出线程卡（quick-260806-j1z，飞书文档式）。
+ *
+ * 矩形取该线程**第一枚** `<mark>`；整块降级（角标）没有 mark ⇒ 回退锚点块矩形；
+ * 两者都取不到（如失锚）⇒ 退回旧行为（拉开侧栏看）。侧栏选中态仍同步（selectThread）。
+ */
 function onThreadClick(threadId: string): void {
   selectThread(threadId)
+  inlineDraft.value = null
+  const mark = document.querySelector(
+    `[data-testid="blueprint-annotation-mark"][data-thread-id="${threadId}"]`,
+  )
+  if (mark) {
+    inlineThreadRect.value = mark.getBoundingClientRect()
+    inlineThreadId.value = threadId
+    return
+  }
+  const anchor = findThread(threadId)?.anchor
+  const blockEl = anchor?.block_id ? document.getElementById(`blk-${anchor.block_id}`) : null
+  if (blockEl) {
+    inlineThreadRect.value = blockEl.getBoundingClientRect()
+    inlineThreadId.value = threadId
+    return
+  }
+  revealAnnotations()
+}
+
+/** 就地输入卡提交：复用 onCreateComment，成功才关卡（失败保留已输入内容）。 */
+async function onInlineCommentSubmit(body: string): Promise<void> {
+  const payload = inlineDraft.value
+  if (!payload)
+    return
+  const ok = await onCreateComment(body, {
+    blockId: payload.blockId,
+    startOffset: payload.startOffset,
+    endOffset: payload.endOffset,
+    quotedText: payload.quotedText,
+  })
+  if (ok)
+    inlineDraft.value = null
 }
 
 /**
@@ -778,6 +942,40 @@ async function onRejectSubmit(payload: BlueprintRejectPayload): Promise<void> {
 }
 
 /**
+ * 带指令重跑某个流程节点（quick-260806 节点重跑）。
+ *
+ * `stage` 已由 stepper 映射成**后端 stage key**（confirmation → repo_confirmation）。
+ * 三档：**200 accepted** 提示新轮次并前缀失效（stepper 随 stages/snapshot 重取自动进入
+ * 运行态）；**400 / 409** 原样回显后端 `detail`（409 额外失效以拉齐并发后的最新态）。
+ * ⛔ 零乐观更新 —— 与其余动作端点同一纪律。
+ */
+async function onStageRerun(payload: { stage: string, instruction: string }): Promise<void> {
+  if (submitting.value)
+    return
+  submitting.value = true
+  try {
+    const result = await blueprintsApi.rerunBlueprintStage(artifactId.value, {
+      stage: payload.stage,
+      instruction: payload.instruction || undefined,
+    })
+    toast.success(t('knowledge.blueprints.rerun.accepted', { label: result.run_label }))
+    invalidateBlueprint()
+  }
+  catch (error) {
+    if (error instanceof ApiError && (error.status === 400 || error.status === 409)) {
+      toast.error(error.detail)
+      if (error.status === 409)
+        invalidateBlueprint()
+      return
+    }
+    reportFailure(error)
+  }
+  finally {
+    submitting.value = false
+  }
+}
+
+/**
  * 导出到飞书（Phase 116-05，VIEW-05）。
  *
  * 三档分档：**200** 成功并给一个可点的文档链接；**400** 原样回显后端中性 `detail`
@@ -877,9 +1075,10 @@ async function onFindingAction(kind: 'resolve' | 'dismiss', threadId: string, re
   }
 }
 
-async function onCreateComment(body: string, payload: BlueprintCommentDraft | null): Promise<void> {
+/** 返回是否创建成功（就地输入卡据此决定关卡还是保留已输入内容）。 */
+async function onCreateComment(body: string, payload: BlueprintCommentDraft | null): Promise<boolean> {
   if (submitting.value)
-    return
+    return false
   submitting.value = true
   try {
     await blueprintsApi.createBlueprintComment(artifactId.value, {
@@ -893,12 +1092,13 @@ async function onCreateComment(body: string, payload: BlueprintCommentDraft | nu
           }
         : undefined,
     })
-    draft.value = null
     toast.success(t('knowledge.blueprints.thread.commentCreated'))
     invalidateBlueprint()
+    return true
   }
   catch (error) {
     reportFailure(error)
+    return false
   }
   finally {
     submitting.value = false
@@ -1008,9 +1208,28 @@ function onGotoBlockedThread(threadId: string): void {
   })
 }
 
+/**
+ * 一次 `router.replace` 批量摘掉多个 query 键。
+ *
+ * ⚠️ **⛔ 不要改成逐个写 param ref**：每个 ref 的 watcher 各自 `router.replace({
+ * ...route.query })`，而 `replace` 是异步的 —— 同一 tick 里第二次写会拿**旧** query
+ * 合并，把第一次清掉的键原样带回来（「退出 diff」点了没反应的根因）。批量清除只发
+ * 一次导航，各 ref 由 `route.query` 的反向 watcher 自然同步。
+ */
+function clearQueryParams(...keys: string[]): void {
+  const query = { ...(route.query as Record<string, string>) }
+  for (const key of keys)
+    delete query[key]
+  router.replace({ query })
+}
+
 function backToCurrentVersion(): void {
-  versionParam.value = ''
-  diffParam.value = ''
+  clearQueryParams('version', 'diff', 'diff_mode')
+}
+
+/** 退出 diff 模式：只清 `?diff=` 族（`?version=` 保留——用户可能正查看某个历史版本）。 */
+function exitDiffMode(): void {
+  clearQueryParams('diff', 'diff_mode')
 }
 
 // ── 深链的一次性消费（§4.1）────────────────────────────────────────────────────
@@ -1169,7 +1388,9 @@ const sections = computed<NavSection[]>(() => [
 </script>
 
 <template>
-  <PageContainer>
+  <!-- ⭐ fluid：三栏工作台（左导航 + 正文 + 批注栏）固定开销 ~560px，默认 1400 封顶
+       会把正文读写区压到 700px 以下（quick-260806 布局整改）。 -->
+  <PageContainer fluid>
     <!-- ⭐ 404 / 5xx：整页替换，且不渲染任何蓝图元信息 -->
     <BlueprintErrorState
       v-if="isFullPageError"
@@ -1186,6 +1407,7 @@ const sections = computed<NavSection[]>(() => [
         :counts="{ blocker: unresolvedBlockerCount, clarification: counts.pendingClarification, orphaned: counts.orphaned }"
         :annotation-total="counts.total"
         :versions="versions"
+        :stage-versions="stageVersions"
         :current-version-id="docQuery.data.value?.version_id ?? null"
         :readonly="readonly"
         :is-live="isLive"
@@ -1204,26 +1426,48 @@ const sections = computed<NavSection[]>(() => [
         @approve="onApprove()"
         @reject="rejectOpen = true"
         @toggle-closed-annotations="viewerStore.showClosedAnnotations = $event"
-      />
+      >
+        <!-- ⭐ 段导航随头部同卡吸顶（quick-260806 布局整改：左栏纵向导航 → 头部横向导航，
+             正文列拿回 ~200px）。滚动跟随高亮由组件内 observer 承担，页面只处理跳转。 -->
+        <template #nav>
+          <BlueprintSectionNav
+            :sections="sections"
+            :active-id="activeSectionId"
+            @navigate="onNavigateSection"
+          />
+        </template>
+      </BlueprintViewerHeader>
 
-      <BlueprintSectionNav
-        :sections="sections"
-        :active-id="activeSectionId"
-        @navigate="onNavigateSection"
-      />
-
-      <!-- ⭐ AnchorNavLayout 由页面直接使用（它本身就是「左栏 + 正文」的两栏布局），
-           第三栏在它的默认 slot 内再开一层 flex —— 这样既有组件一行都不用改。
-           偏移与页面 scrollToDom 共用 measureScrollOffset（sticky 头随横幅变高）。 -->
-      <AnchorNavLayout :sections="sections" :scroll-offset="measureScrollOffset">
+      <!-- 正文两栏：中栏正文 + 右批注栏（左栏段导航已并入头部横条）。
+           偏移与页面 scrollToDom 共用 measureScrollOffset（sticky 头随横幅/导航条变高）。 -->
+      <div>
         <div class="flex gap-6">
           <div class="min-w-0 flex-1 space-y-6">
             <!-- 400：就近渲染，原样回显后端 detail -->
             <BlueprintErrorState v-if="inlineErrorDetail" :status="400" :detail="inlineErrorDetail" />
 
             <!-- 历史版本：常驻只读提示 -->
+            <!-- ⭐ diff 模式横幅：进入 diff 后**唯一**的退出入口（quick-260806 实测反馈：
+                 只能进不能出）。优先于历史版本横幅 —— diff 才是当前视图的主语义。 -->
             <div
-              v-if="isHistoricalVersion"
+              v-if="isDiffMode"
+              class="flex flex-wrap items-center gap-2 rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-sm"
+              role="status"
+              data-testid="blueprint-diff-notice"
+            >
+              <span class="icon-[lucide--git-compare]" aria-hidden="true" />
+              <span>{{ t('knowledge.blueprints.diff.notice', {
+                base: diffBaseQuery.data.value?.version_no ?? '…',
+                target: docQuery.data.value?.version_no ?? '…',
+              }) }}</span>
+              <Button variant="outline" size="sm" data-testid="blueprint-exit-diff" @click="exitDiffMode()">
+                <span class="icon-[lucide--x] mr-1" aria-hidden="true" />
+                {{ t('knowledge.blueprints.diff.exit') }}
+              </Button>
+            </div>
+
+            <div
+              v-else-if="isHistoricalVersion"
               class="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
               role="status"
               data-testid="blueprint-history-notice"
@@ -1245,15 +1489,61 @@ const sections = computed<NavSection[]>(() => [
               <span>{{ t('knowledge.blueprints.readonly.notice') }}</span>
             </div>
 
-            <BlueprintStageTimeline
+            <!-- ⭐ 横向节点进度 stepper（quick-260806）：替换原「阶段时间线 + 阶段全景」两块
+                 纵向面板 —— 八节点状态 / 节点详情 / stage_state 分片 / 带指令重跑收进一个组件。
+                 `current-stage` / `current-status` 与旧时间线传同一对值：阶段状态推断委托
+                 同一个 buildStageTimeline，喂不同入参会让两处对同一阶段给出不同状态。 -->
+            <BlueprintStageStepper
               :events="events"
               :current-stage="eventsQuery.data.value?.current_stage ?? ''"
               :current-status="currentStatus"
+              :stages="stagesData"
+              :submitting="submitting"
+              @rerun="onStageRerun"
+              @view-research="researchDrawerOpen = true"
             />
 
-            <!-- 过程分析（119）：路由适配度与分仓每仓进度。两张视图都空时组件整块不渲染，
-                 所以这里⛔不加 v-if —— 空态判据只能有一份，在组件里。 -->
-            <BlueprintActivityPanel :events="events" :is-live="isLive" />
+            <!-- ⭐ 确认门（阶段 1 澄清）挂在正文**顶部**而非页尾：它是当前阻塞整条链的
+                 待办动作，「跟哪些仓库关联」必须首屏可见（quick-260806 视觉整改：原先挂在
+                 十段之后，离首屏 3 万像素，用户只能从侧栏问答卡猜内容）。
+                 挂载条件仍只有一条：gate 查询 200；`#gate` 与 `blueprint-gate-mount` 是
+                 `?panel=gate` 深链与侧栏「前往确认门」的滚动落点，随面板一起搬家。 -->
+            <div v-if="gateAvailable" id="gate" data-testid="blueprint-gate-mount" :class="highlightId === 'gate' ? HIGHLIGHT_CLASS : ''" />
+
+            <div v-if="gateAvailable && gateQuery.data.value" :class="highlightId === 'gate' ? HIGHLIGHT_CLASS : ''">
+              <BlueprintGatePanel
+                :artifact-id="artifactId"
+                :snapshot="gateQuery.data.value"
+                :submitting="submitting"
+                @goto-unresolved="onGotoUnresolved"
+              />
+            </div>
+
+            <!-- ⭐ 方案摘要（meta.summary）：融合阶段起草的 300~500 字人读导读，置于正文
+                 十段之前（结论先行）。diff 视图下不渲染；旧版本无摘要时整卡缺席。 -->
+            <div
+              v-if="!isDiffMode && summaryBlocks.length"
+              class="card px-4 py-3.5"
+              data-testid="blueprint-meta-summary"
+            >
+              <p class="mb-1.5 text-xs font-medium text-muted-foreground">
+                {{ t('knowledge.blueprints.viewer.summaryTitle') }}
+              </p>
+              <BlueprintBlockList
+                class="max-w-208"
+                :blocks="summaryBlocks"
+                section-path="meta.summary"
+                :threads="threads"
+                :citations="citations"
+                :readonly="readonly"
+                :active-thread-id="activeThreadId"
+                :show-closed="viewerStore.showClosedAnnotations"
+                @thread-click="onThreadClick"
+                @citation-click="onCitationClick"
+                @selection-comment="onSelectionComment"
+                @cross-block-selection="onCrossBlockSelection"
+              />
+            </div>
 
             <!-- diff 视图：批注层与全部写动作关闭（readonly 已置真） -->
             <BlueprintBlockDiff
@@ -1336,6 +1626,7 @@ const sections = computed<NavSection[]>(() => [
                   v-else
                   :analysis="content?.current_state_analysis ?? []"
                   :repo-names="repoNames"
+                  :feature-points="featurePointIndex"
                   :threads="threads"
                   :citations="citations"
                   :readonly="readonly"
@@ -1365,6 +1656,7 @@ const sections = computed<NavSection[]>(() => [
                   v-else
                   :overview="content?.implementation_overview ?? null"
                   :repo-names="repoNames"
+                  :feature-points="featurePointIndex"
                   :threads="threads"
                   :citations="citations"
                   :readonly="readonly"
@@ -1522,24 +1814,6 @@ const sections = computed<NavSection[]>(() => [
               </template>
             </section>
 
-            <!-- gate-panel-mount：115-07 在此挂确认门面板，挂载条件 = `gateQuery` 成功且返回 200。
-                 ⛔ 本 plan 不渲染面板本体（那是 115-07 的所有权），只预留挂载点与滚动锚点；
-                 gate 查询非 200 时该挂载点整块不出现，且不产生任何错误态或提示。 -->
-            <div v-if="gateAvailable" id="gate" data-testid="blueprint-gate-mount" :class="highlightId === 'gate' ? HIGHLIGHT_CLASS : ''" />
-
-            <!-- 115-07 纯追加：面板作为锚点的**紧邻兄弟节点**渲染。⭐ 上面那行逐字保留 ——
-                 把它改成有子节点的容器就必然产生一行删除（`/>` → `>`），与本 plan 同一条
-                 验收里的「删除行为 0」冲突；`#gate` 与 `blueprint-gate-mount` 是 `?panel=gate`
-                 滚动定位的唯一落点，⛔ 不能动。ring 高亮同样绑在这里，观感与原设计一致。 -->
-            <div v-if="gateAvailable && gateQuery.data.value" :class="highlightId === 'gate' ? HIGHLIGHT_CLASS : ''">
-              <BlueprintGatePanel
-                :artifact-id="artifactId"
-                :snapshot="gateQuery.data.value"
-                :submitting="submitting"
-                @goto-unresolved="onGotoUnresolved"
-              />
-            </div>
-
             <div
               v-if="showQualityPanel && qualityData"
               id="blueprint-quality"
@@ -1552,36 +1826,67 @@ const sections = computed<NavSection[]>(() => [
             </div>
           </div>
 
-          <!-- 第三栏：xl 及以上常驻，可由顶栏折叠 -->
+          <!-- 第三栏：xl 及以上常驻，可由顶栏折叠。
+               ⭐ 宽度随视口升档（336 → 384）：这一栏装的是全页最密的多轮问答文本，
+               320px 再扣两层卡片内边距只剩 ~270px 行宽，是「越往右越挤」的主因。
+               ⭐ 吸顶偏移随头部实测高度（sidebarStickyStyle），⛔ 不再写静态 top-22 ——
+               头部带段导航/横幅时静态值会把侧栏顶部埋进头下（圆角被裁的根因）。 -->
           <aside
             v-if="!viewerStore.sidebarCollapsed"
-            class="sticky top-22 hidden max-h-[calc(100vh-6rem)] w-80 shrink-0 xl:flex"
+            class="sticky hidden w-84 shrink-0 xl:flex 2xl:w-96"
+            :style="sidebarStickyStyle"
             data-testid="blueprint-sidebar-column"
           >
-            <!-- ⭐ card 容器：侧栏与页面其它区块同语言（此前裸浮在渐变背景上，无容器感） -->
-            <ScrollArea class="card w-full p-4">
-              <BlueprintThreadSidebar
-                :threads="threads"
-                :orphaned-threads="orphanedThreads"
-                :active-thread-id="activeThreadId"
-                :readonly="readonly"
-                :show-closed="viewerStore.showClosedAnnotations"
-                :gate-available="gateAvailable"
-                :submitting="submitting"
-                :draft="draft"
-                @select="selectThread"
-                @answer="onAnswer"
-                @resolve="onResolve"
-                @dismiss="onDismiss"
-                @goto-gate="scrollToDom('gate')"
-                @create-comment="onCreateComment"
-                @cancel-comment="draft = null"
-                @update:show-closed="viewerStore.showClosedAnnotations = $event"
-              />
-            </ScrollArea>
+            <!-- ⭐ card 容器 = 面板头（常驻，不随滚动）+ 滚动正文；
+                 内容 padding 收在 BlueprintThreadSidebar 里（分组吸顶头要全出血）。 -->
+            <div class="card flex min-h-0 w-full flex-col overflow-hidden">
+              <div class="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 py-1.5 pr-1.5 pl-3.5">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="icon-[lucide--messages-square] shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <!-- ⭐ 面板标题走 §14 Heading 档（text-base font-semibold）：写成 text-sm
+                       会与正文同号，源码守卫（UI-REVIEW M-6）锁死该组合。 -->
+                  <span class="text-base font-semibold text-foreground">
+                    {{ t('knowledge.blueprints.annotation.sidebarTitle') }}
+                  </span>
+                  <Badge v-if="counts.total > 0" variant="muted">
+                    {{ counts.total }}
+                  </Badge>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  :aria-label="t('knowledge.blueprints.annotation.sidebarCollapse')"
+                  :title="t('knowledge.blueprints.annotation.sidebarCollapse')"
+                  data-testid="blueprint-sidebar-panel-collapse"
+                  @click="viewerStore.toggleSidebar()"
+                >
+                  <span class="icon-[lucide--panel-right-close] text-muted-foreground" aria-hidden="true" />
+                </Button>
+              </div>
+              <ScrollArea class="min-h-0 flex-1">
+                <BlueprintThreadSidebar
+                  :threads="threads"
+                  :orphaned-threads="orphanedThreads"
+                  :active-thread-id="activeThreadId"
+                  :readonly="readonly"
+                  :show-closed="viewerStore.showClosedAnnotations"
+                  :gate-available="gateAvailable"
+                  :submitting="submitting"
+                  :feature-point-titles="featurePointTitles"
+                  @select="selectThread"
+                  @answer="onAnswer"
+                  @resolve="onResolve"
+                  @dismiss="onDismiss"
+                  @goto-gate="scrollToDom('gate')"
+                  @goto-anchor="onGotoAnchor"
+                  @create-comment="onCreateComment"
+                  @update:show-closed="viewerStore.showClosedAnnotations = $event"
+                />
+              </ScrollArea>
+            </div>
           </aside>
         </div>
-      </AnchorNavLayout>
+      </div>
 
       <!-- ⭐ < xl：线程侧栏收成抽屉。`xl` 及以上抽屉**整块不存在于 DOM**（§5.2「Sheet 停用」）
            —— 与上面那个 `hidden xl:flex` 的常驻侧栏正好互补，任何宽度下侧栏实例恰好一份。
@@ -1602,19 +1907,25 @@ const sections = computed<NavSection[]>(() => [
               :show-closed="viewerStore.showClosedAnnotations"
               :gate-available="gateAvailable"
               :submitting="submitting"
-              :draft="draft"
+              :feature-point-titles="featurePointTitles"
               @select="selectThread"
               @answer="onAnswer"
               @resolve="onResolve"
               @dismiss="onDismiss"
               @goto-gate="scrollToDom('gate')"
+              @goto-anchor="onGotoAnchor"
               @create-comment="onCreateComment"
-              @cancel-comment="draft = null"
               @update:show-closed="viewerStore.showClosedAnnotations = $event"
             />
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      <!-- 按仓调研明细：结论 + agent 过程日志。⛔ 不进 5s 轮询，抽屉打开才取数。 -->
+      <BlueprintResearchDrawer
+        v-model:open="researchDrawerOpen"
+        :artifact-id="artifactId"
+      />
 
       <BlueprintSelectionPopover
         :rect="selection?.rect ?? null"
@@ -1624,6 +1935,31 @@ const sections = computed<NavSection[]>(() => [
         @edit="startBlockEdit()"
         @copy="copySelection()"
         @dismiss="selection = null"
+      />
+
+      <!-- ⭐ 飞书式就地浮层（quick-260806-j1z）：draft 输入卡 / thread 线程卡二选一 -->
+      <BlueprintCommentPopover
+        v-if="inlineDraft"
+        :rect="inlineDraft.rect"
+        :quoted-text="inlineDraft.quotedText"
+        :submitting="submitting"
+        @submit="onInlineCommentSubmit"
+        @close="inlineDraft = null"
+      />
+      <BlueprintCommentPopover
+        v-else-if="inlineThread && inlineThreadRect"
+        :rect="inlineThreadRect"
+        :thread="inlineThread"
+        :readonly="readonly"
+        :submitting="submitting"
+        :gate-available="gateAvailable"
+        :feature-point-titles="featurePointTitles"
+        @close="closeInlineThread"
+        @answer="onAnswer"
+        @resolve="onResolve"
+        @dismiss="onDismiss"
+        @goto-gate="scrollToDom('gate')"
+        @goto-anchor="onGotoAnchor"
       />
 
       <BlueprintBlockEditDialog

@@ -362,6 +362,10 @@ export interface BlueprintDocumentResponse {
    * ⭐ 优先于 `content.meta.title`；旧数据无需 DB 回填。
    */
   display_title: string
+  /**
+   * 版本谱系标签（quick-260806 节点重跑）。空串 = 旧数据未打标 ⇒ 展示回落 `v{version_no}`。
+   */
+  version_label?: string
 }
 
 // ── 端点 ② 阶段事件 ──────────────────────────────────────────────────────────
@@ -391,6 +395,117 @@ export interface BlueprintEventsResponse {
   session_id: string
   current_stage: string
   events: BlueprintEvent[]
+}
+
+// ── 端点：按仓调研明细（结论 + agent 过程日志）────────────────────────────────
+
+/**
+ * 一条容器过程日志。
+ *
+ * `type` 与后端 `_TASK_LOG_PREFIXES` 的值域一致（`text` / `tool_call` / `tool_result` /
+ * `block` / `result` / `system` / `message` / `progress` / `error`）。⛔ 不收窄成联合
+ * 类型：容器侧新增前缀时，收窄会让新类型在这一层被 TS 挡掉而不是原样透出。
+ */
+export interface BlueprintRunLog {
+  type: string
+  /** 已在服务端过 `redact_secrets_in_text`，⛔ 前端不得再拼接明文。 */
+  content: string
+  ts: string
+}
+
+/** 一次容器运行（同一个仓可能有多次：阶段一调研、阶段二分仓、以及各自的重试）。 */
+export interface BlueprintResearchRun {
+  session_id: string
+  /** `research`（阶段一调研）/ `repo_plan`（阶段二分仓）；识别不出为空串。 */
+  stage: string
+  status: string
+  started_at: string
+  completed_at: string
+  logs: BlueprintRunLog[]
+  /**
+   * ⚠️ 为真表示这条运行只剩 `last_output` 的尾窗（存量会话，全量表建立之前跑的），
+   * 看到的**不是全程**。UI 必须显式标出，否则会被误读成「agent 只做了这几步」。
+   */
+  logs_truncated_tail: boolean
+}
+
+/** 单个仓库的调研结论与过程。`conclusion` 是 `PartialPlan.content`，键由产出侧自定。 */
+export interface BlueprintResearchRepo {
+  repository_id: string
+  repository_name: string
+  status: string
+  attempt: number
+  error: Record<string, unknown>
+  conclusion: Record<string, unknown>
+  runs: BlueprintResearchRun[]
+}
+
+/** `GET .../blueprint/research-detail/`；无会话时同为 200 空结构。 */
+export interface BlueprintResearchDetailResponse {
+  session_id: string
+  repositories: BlueprintResearchRepo[]
+}
+
+// ── 端点：节点面（stages GET + rerun POST，quick-260806 节点重跑）──────────────
+
+/**
+ * 单个 stage 的节点快照条目。
+ *
+ * ⚠️ `state` 是该 stage 的 `stage_state` 分片，键由各 adapter 自定、**schema 层零保证**：
+ * 消费方一律做成可读的键值 / 折叠 JSON 展示，⛔ 不得假设内部形状、⛔ 不整页倾倒大 JSON。
+ */
+export interface BlueprintStageEntry {
+  /** 后端 stage key（`intake|decompose|route|repo_research|repo_confirmation|spec_gate|repo_plan|merge|ai_review`）。 */
+  key: string
+  /** 该 stage 的 stage_state 分片；无会话 / 尚未产出时为 `{}`。 */
+  state: Record<string, unknown>
+}
+
+/** 带指令重跑的标记（当前 / 历史共用同一形状）。 */
+export interface BlueprintStageRerunMarker {
+  stage: string
+  instruction: string
+  run_label: string
+  requested_by: string
+  requested_at: string
+}
+
+/** 版本谱系条目（版本树切换器的供数；`version_label` 空串 = 旧数据回落 `v{version_no}`）。 */
+export interface BlueprintStageVersionRow {
+  version_id: string
+  version_no: number
+  version_label: string
+  produced_by_ref: string
+  created_at: string
+  is_current: boolean
+}
+
+/**
+ * `GET .../blueprint/stages/`。
+ *
+ * ⭐ **无会话时是 200 空结构**（`session_id: ''`、各 stage 的 `state` 为 `{}`），
+ * `versions` 仍有效 —— ⛔ 不是错误态，版本树照常可用。
+ */
+export interface BlueprintStagesResponse {
+  session_id: string
+  current_stage: string
+  session_status: string
+  run_label: string
+  stage_rerun: BlueprintStageRerunMarker | null
+  stage_rerun_history: BlueprintStageRerunMarker[]
+  /** 可重跑的**后端 stage key** 集合（UI 节点 key 需先经映射，如 confirmation → repo_confirmation）。 */
+  rerunnable_stages: string[]
+  stages: BlueprintStageEntry[]
+  versions: BlueprintStageVersionRow[]
+}
+
+/** `POST .../blueprint/stages/rerun/` 的 200 响应；400 / 409 走 `ApiError.detail`。 */
+export interface BlueprintStageRerunResponse {
+  status: string
+  run_label: string
+  stage: string
+  detail: string
+  session_status: string
 }
 
 // ── 端点 ③④ 线程详情与选区评论 ───────────────────────────────────────────────
@@ -434,11 +549,15 @@ export interface BlueprintThreadDetail {
   return_stage: string
   created_at: string
   /**
-   * 澄清线程的候选答案。
-   * ⚠️ 后端字段是 `JSONField(default=list)` **无 schema 校验**：非 list 已在后端归一成
-   * `[]`、非 dict 条目已丢弃，但每个键仍需可选链。
+   * 双形态（后端 `JSONField` **无 schema 校验**）：
+   * - 规格门结构化澄清：`{ text, options: string[], recommended?, related_feature_points?, citations? }`
+   * - 扁平候选答案：`{ label?, value?, note? }`（旧 composer 点选填入）
+   * 前端用 `isStructuredClarificationQuestions` 分流。
    */
-  options: Array<{ label?: string, value?: string, note?: string }>
+  options: Array<
+    | { text?: string, question?: string, options?: string[], recommended?: string, related_feature_points?: string[], citations?: string[] }
+    | { label?: string, value?: string, note?: string }
+  >
   /** 从未提醒 → `null`。 */
   last_reminded_at: string | null
   /** 已发出的提醒次数（Phase 117，WAIT-03）。 */

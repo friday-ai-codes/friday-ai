@@ -360,6 +360,52 @@
         "stateDone": "已完成",
         "stateFailed": "未成功"
       },
+      "stepper": {
+        "title": "编排进度",
+        "runLabel": "轮次 {label}",
+        "nodeAria": "查看「{label}」节点详情",
+        "duration": "耗时 {d}",
+        "stateTitle": "节点状态数据",
+        "eventsEmpty": "该节点暂无事件",
+        "prev": "上一步",
+        "next": "下一步"
+      },
+      "rerun": {
+        "title": "带指令重跑",
+        "placeholder": "补充一段话，让 AI 带着它重跑这个环节…",
+        "submit": "重跑该环节",
+        "accepted": "已受理：该环节将以轮次 {label} 重跑",
+        "historyTitle": "重跑历史",
+        "fullTitle": "整篇重新生成",
+        "fullHint": "从需求拆分起整篇重做，产出新的大版本（如 v2）；历史版本全部保留。",
+        "fullPlaceholder": "补充需求变更或修正说明，AI 会带着它整篇重新生成…",
+        "fullSubmit": "整篇重新生成"
+      },
+      "research": {
+        "title": "调研明细",
+        "description": "每个仓库的调研结论，以及 AI 在容器里逐步调用了哪些工具、读了哪些代码",
+        "entry": "查看调研明细",
+        "empty": "本蓝图还没有仓库调研记录",
+        "noRuns": "该仓无容器执行记录（indirect 仓由服务端规则合成，不起容器）",
+        "findingsTitle": "调研结论",
+        "findingCount": "{n} 条结论",
+        "truncatedTail": "这条运行是全量留痕上线前跑的，只保留了最近 80 步，看到的不是全程",
+        "stage": {
+          "research": "阶段一 · 仓库调研",
+          "repo_plan": "阶段二 · 分仓方案"
+        },
+        "logType": {
+          "text": "叙述",
+          "tool_call": "工具调用",
+          "tool_result": "工具结果",
+          "block": "消息块",
+          "result": "运行结果",
+          "system": "系统",
+          "message": "消息",
+          "progress": "进度",
+          "error": "错误"
+        }
+      },
       "activity": {
         "title": "阶段全景",
         "repoCount": "{n} 个仓",
@@ -803,10 +849,14 @@
         "reasonAiGenerated": "AI 产出",
         "historyNotice": "正在查看历史版本 v{n}，操作已禁用",
         "backToCurrent": "回到当前版本",
-        "empty": "暂无版本记录"
+        "empty": "暂无版本记录",
+        "treeRoot": "谱系 {label}",
+        "groupToggle": "展开组内 {n} 个版本"
       },
       "diff": {
         "summary": "v{a} 对比 v{b}：新增 {added} 块、删除 {removed} 块、修改 {modified} 块",
+        "notice": "正在对比 v{base} 与 v{target}，操作已禁用",
+        "exit": "退出对比",
         "modeInline": "单栏对照",
         "modeSplit": "左右并排",
         "baseline": "基线版本",
