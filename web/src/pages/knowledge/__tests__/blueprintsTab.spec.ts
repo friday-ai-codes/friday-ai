@@ -123,7 +123,7 @@ const STUBS = {
 function makeItem(overrides: Partial<BlueprintListItem> = {}): BlueprintListItem {
   return {
     artifact_id: 'aaaa-1111',
-    title: '订单履约链路重构',
+    title: '履约中台 - 技术方案 - 2026-08-01 10:00',
     summary: '把履约链路拆成三段',
     current_status: 'pending_review',
     project_id: 'p-1',
@@ -133,6 +133,7 @@ function makeItem(overrides: Partial<BlueprintListItem> = {}): BlueprintListItem
     unresolved_blocker_count: 0,
     revision_round: 1,
     current_version_no: 4,
+    created_at: '2026-08-01T02:00:00Z',
     updated_at: '2026-08-01T02:00:00Z',
     ...overrides,
   } as BlueprintListItem
@@ -191,6 +192,18 @@ describe('蓝图列表 tab 面板', () => {
     const badge = withBlocker.find('[data-testid="blueprint-list-blocker"]')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toContain('2')
+  })
+
+  it('3b. 列表时间精确到分钟（YYYY-MM-DD HH:mm），不含秒', async () => {
+    api.listBlueprints.mockResolvedValue(makeResponse([
+      makeItem({ created_at: '2026-08-06T01:33:45.123Z' }),
+    ]))
+    const wrapper = mountPanel()
+    await flush()
+    const time = wrapper.find('[data-testid="blueprint-list-time"]')
+    expect(time.exists()).toBe(true)
+    expect(time.text()).toBe('2026-08-06 09:33')
+    expect(time.text()).not.toMatch(/:\d{2}:\d{2}/)
   })
 
   it('4. 改筛选 ⇒ 写回 URL 且含 bp_status，并保留既有的 tab', async () => {

@@ -112,4 +112,34 @@ describe('项目蓝图卡 —— 读失败不得让卡片消失（MJ-04）', () 
     await flush()
     expect(api.listBlueprints.mock.calls.length).toBeGreaterThan(before)
   })
+
+  it('5. 列表时间精确到分钟（YYYY-MM-DD HH:mm），不含秒', async () => {
+    api.listBlueprints.mockResolvedValue({
+      total: 1,
+      items: [{
+        artifact_id: 'a-1',
+        title: '履约中台 - 技术方案 - 2026-08-06 09:33',
+        summary: '',
+        current_status: 'pending_review',
+        project_id: 'p-1',
+        project_name: '履约中台',
+        repositories: [],
+        thread_count: 0,
+        unresolved_blocker_count: 0,
+        revision_round: 0,
+        current_version_no: 1,
+        created_at: '2026-08-06T01:33:45.123Z',
+        updated_at: '2026-08-06T01:33:45.123Z',
+      }],
+      page: 1,
+      page_size: 5,
+      has_next: false,
+    })
+    const wrapper = mountCard(false)
+    await flush()
+    const time = wrapper.find('[data-testid="project-blueprint-time"]')
+    expect(time.exists()).toBe(true)
+    expect(time.text()).toBe('2026-08-06 09:33')
+    expect(time.text()).not.toMatch(/:\d{2}:\d{2}/)
+  })
 })

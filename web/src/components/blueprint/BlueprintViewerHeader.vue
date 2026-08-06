@@ -42,6 +42,7 @@ import { useI18n } from 'vue-i18n'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Switch } from '~/components/ui/switch'
+import { formatBlueprintTitle } from '~/utils/blueprintTitle'
 import BlueprintReviewActions from './BlueprintReviewActions.vue'
 import BlueprintStatusBadge from './BlueprintStatusBadge.vue'
 import BlueprintVersionSwitcher from './BlueprintVersionSwitcher.vue'
@@ -118,7 +119,21 @@ const unconfirmed = computed(
 
 const { t } = useI18n()
 
-const title = computed(() => props.doc?.content?.meta?.title ?? '')
+/**
+ * 顶栏标题：优先 `display_title`（服务端派生），再本地派生，最后回落 meta.title。
+ * ⛔ 不再直接把旧的 meta.title（需求首行）当主标题。
+ */
+const title = computed(() => {
+  const doc = props.doc
+  if (!doc)
+    return ''
+  const display = (doc.display_title || '').trim()
+  if (display)
+    return display
+  if (doc.created_at)
+    return formatBlueprintTitle(doc.project_name, doc.created_at)
+  return doc.content?.meta?.title ?? ''
+})
 
 /**
  * 所属项目回跳（Phase 117，LINK-01）。

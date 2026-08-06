@@ -357,6 +357,11 @@ export interface BlueprintDocumentResponse {
   project_id: string | null
   /** 所属项目名。项目已删或脏数据时为空串（此时 `project_id` 仍照实回传）。 */
   project_name: string
+  /**
+   * 展示标题派生（与列表 title 同口径：`{项目名} - 技术方案 - YYYY-MM-DD HH:mm`）。
+   * ⭐ 优先于 `content.meta.title`；旧数据无需 DB 回填。
+   */
+  display_title: string
 }
 
 // ── 端点 ② 阶段事件 ──────────────────────────────────────────────────────────
@@ -493,6 +498,8 @@ export interface BlueprintListItem {
   unresolved_blocker_count: number
   revision_round: number
   current_version_no: number
+  /** Artifact 创建时间（ISO8601）；列表排序与展示标题时间戳的权威来源。 */
+  created_at: string
   updated_at: string
 }
 

@@ -193,19 +193,26 @@ def _list_row(artifact: Any, content: Any, names: dict[str, dict[str, str]]) -> 
 
     ⚠️ **本函数内零查库**：项目名与仓库名由调用方**批量**取好后以 dict 传入，行循环里逐条
     查就是 N+1。
+
+    ⭐ ``title`` **始终派生**（``{项目名} - 技术方案 - YYYY-MM-DD HH:mm``），不直接回 DB
+    原标题——旧数据在展示层统一口径，无需 migration 回填。
     """
+    from services.process_runtime.blueprint_title import format_blueprint_title
+
     meta = _meta(content)
     project_id = str(meta.get("project_id") or "")
+    project_name = names.get("projects", {}).get(project_id, "")
     revision_round = meta.get("revision_round")
     version = getattr(artifact, "current_version", None)
+    created_at = getattr(artifact, "created_at", None)
     return {
         "artifact_id": str(artifact.id),
-        "title": str(getattr(artifact, "title", "") or ""),
+        "title": format_blueprint_title(project_name, created_at),
         "summary": _summary_text(content),
         # ⭐ 响应键是 current_status 不是模型字段名（P-1，与 INV-6 守卫互为双保险）
         "current_status": str(getattr(artifact, _STATUS_FIELD, "") or ""),
         "project_id": project_id or None,
-        "project_name": names.get("projects", {}).get(project_id, ""),
+        "project_name": project_name,
         "repositories": _repo_rows(content, names.get("repositories", {})),
         "thread_count": int(getattr(artifact, "thread_count", 0) or 0),
         "unresolved_blocker_count": int(getattr(artifact, "unresolved_blocker_count", 0) or 0),
@@ -213,6 +220,7 @@ def _list_row(artifact: Any, content: Any, names: dict[str, dict[str, str]]) -> 
         if isinstance(revision_round, int) and not isinstance(revision_round, bool)
         else 0,
         "current_version_no": int(getattr(version, "version_no", 0) or 0),
+        "created_at": created_at.isoformat() if created_at else "",
         "updated_at": artifact.updated_at.isoformat() if artifact.updated_at else "",
     }
 
@@ -284,7 +292,7 @@ def _aggregate(
                 distinct=True,
             ),
         )
-        .order_by("-updated_at")
+        .order_by("-created_at")
     )
     status_filter = filters.get("status") or None
     if status_filter:
