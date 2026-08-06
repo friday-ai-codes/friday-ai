@@ -300,8 +300,10 @@ function onDegradedActivate(): void {
       {{ degradedThreads.length }}
     </button>
 
-    <!-- ① paragraph -->
-    <p v-if="block.type === 'paragraph'" class="text-sm leading-relaxed">
+    <!-- ① paragraph。`whitespace-pre-line` 保住块内换行：机械 intake 可能把整段
+         多行原文塞进一个 paragraph 块（如 requirement_spec.goal），默认 HTML 折叠
+         换行会渲染成一面无结构的文字墙。只影响展示，不改文本内容，批注 offset 坐标系不受影响。 -->
+    <p v-if="block.type === 'paragraph'" class="text-sm leading-relaxed whitespace-pre-line">
       <template v-for="(seg, i) in paragraphSegments" :key="i">
         <mark
           v-if="seg.mark"

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { Project, ProjectListFilters, ProjectStatus } from '~/api/projects'
+import type { BadgeVariants } from '~/components/ui/badge'
 import type { Space } from '~/types'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { refDebounced, useLocalStorage } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { computed, markRaw, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -15,7 +17,7 @@ import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateProjectModal from '~/components/project/CreateProjectModal.vue'
 import ProjectSearchPanel from '~/components/project/ProjectSearchPanel.vue'
 import { Avatar, AvatarFallback } from '~/components/ui/avatar'
-import { Badge, type BadgeVariants } from '~/components/ui/badge'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Checkbox } from '~/components/ui/checkbox'
 import { Input } from '~/components/ui/input'
@@ -27,7 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select'
-import { refDebounced, useLocalStorage } from '@vueuse/core'
 import { useAuthStore } from '~/stores/auth'
 
 const { t } = useI18n()
@@ -57,6 +58,16 @@ const { data: spaces } = useQuery({
   queryFn: () => spacesApi.list(),
 })
 const spaceOptions = computed<Space[]>(() => spaces.value ?? [])
+
+// 自愈：localStorage 记忆的空间可能已不存在（空间被删 / 切换了数据库实例）。
+// 拿旧 ID 去过滤只会得到一个「看起来数据全丢了」的空列表——空间清单就绪后
+// 校验一次，失配即回落「全部」。（与 chat.vue 对 chat-space-id 的自愈同一口径）
+watch(spaceOptions, (options) => {
+  if (!options.length || spaceFilter.value === ALL)
+    return
+  if (!options.some(space => String(space.id) === spaceFilter.value))
+    spaceFilter.value = ALL
+}, { immediate: true })
 
 const filters = computed<ProjectListFilters>(() => {
   const f: ProjectListFilters = {}
