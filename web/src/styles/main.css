@@ -30,7 +30,7 @@
  * ⚠️ 写在 .vue 源码里的**字面量完整类名**（如 icon-[lucide--target]）不必列入——
  * Tailwind 的 content 扫描直接命中，缺席不是遗漏。
  */
-@source inline("icon-[lucide--pen-line] icon-[lucide--hammer] icon-[lucide--check-check] icon-[lucide--archive] icon-[lucide--file-plus] icon-[lucide--file-pen-line] icon-[lucide--file-cog]");
+@source inline("icon-[lucide--pen-line] icon-[lucide--hammer] icon-[lucide--check-check] icon-[lucide--archive] icon-[lucide--file-plus] icon-[lucide--file-pen-line] icon-[lucide--file-x] icon-[lucide--file-cog]");
 @source inline("icon-[lucide--book-open] icon-[lucide--scroll-text] icon-[lucide--list-checks] icon-[lucide--user-pen] icon-[lucide--refresh-cw]");
 
 /*
@@ -89,6 +89,11 @@
   --color-success-foreground: hsl(0 0% 100%);
   --color-warning: hsl(38 92% 50%);
   --color-warning-foreground: hsl(0 0% 100%);
+
+  /* 浅色底上的强调文字档（*-foreground 是深色底上的白字，浅底 tint 上不可用）：
+     success/warning 本色在白底上只有 2–3:1，小号文字必须用这两档加深色。 */
+  --color-success-emphasis: hsl(163 94% 24%); /* emerald-700 #047857 */
+  --color-warning-emphasis: hsl(26 90% 31%); /* amber-800 #92400e */
 
   /* Sub2API 风格扩展 */
   --color-primary-600: hsl(167 76% 32%); /* #0d9488 teal-600 */

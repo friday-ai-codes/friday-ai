@@ -33,6 +33,7 @@ import { Button } from '~/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { Textarea } from '~/components/ui/textarea'
 import { sidebarKindGroups } from '~/utils/blueprintAnnotations'
+import { KIND_DOT_CLASS } from './annotationTokens'
 import BlueprintThreadCard from './BlueprintThreadCard.vue'
 
 /**
@@ -65,6 +66,8 @@ const props = withDefaults(defineProps<{
   submitting?: boolean
   /** 选区草稿：非空时侧栏顶部插入一张草稿卡。 */
   draft?: BlueprintCommentDraft | null
+  /** 功能点 id → 标题；透传给澄清向导 chip。 */
+  featurePointTitles?: Record<string, string>
 }>(), {
   threads: () => [],
   orphanedThreads: () => [],
@@ -75,6 +78,7 @@ const props = withDefaults(defineProps<{
   gateAvailable: false,
   submitting: false,
   draft: null,
+  featurePointTitles: () => ({}),
 })
 
 const emit = defineEmits<{
@@ -83,6 +87,7 @@ const emit = defineEmits<{
   'resolve': [threadId: string, reason: string]
   'dismiss': [threadId: string, reason: string]
   'goto-gate': [threadId: string]
+  'goto-anchor': [domId: string]
   'create-comment': [body: string, draft: BlueprintCommentDraft | null]
   'cancel-comment': []
   'update:showClosed': [value: boolean]
@@ -121,6 +126,19 @@ const SECTION_DEFS: ReadonlyArray<{ key: BlueprintThreadKind, labelKey: string }
   { key: 'human_comment', labelKey: 'kindHumanComment' },
   { key: 'repo_confirmation', labelKey: 'kindRepoConfirmation' },
 ]
+
+/**
+ * 分组头的 kind 色点（quick-260806-tsb）：与批注下划线的色相档对齐
+ * （`annotationTokens.annotationHue`：澄清/确认门 teal、人工评论 violet；审查组混合
+ * severity，取警示色 amber 作组级指征）。仅作装饰，`aria-hidden`。
+ * ⭐ 色值字面量收在 `annotationTokens.KIND_DOT_CLASS`（源码守卫 §15：组件内零裸调色板色）。
+ */
+const SECTION_DOT_CLASS: Record<BlueprintThreadKind, string> = {
+  ai_clarification: KIND_DOT_CLASS.ai_clarification,
+  ai_review_finding: KIND_DOT_CLASS.ai_review_finding,
+  human_comment: KIND_DOT_CLASS.human_comment,
+  repo_confirmation: KIND_DOT_CLASS.repo_confirmation,
+}
 
 function isClosedThread(thread: BlueprintThreadDetail): boolean {
   return thread.status === 'resolved' || thread.status === 'dismissed'
@@ -215,20 +233,18 @@ function onKeydown(event: KeyboardEvent): void {
 </script>
 
 <template>
+  <!-- ⭐ 水平内边距收在本组件（px-3），分组吸顶头用 -mx-3 全出血盖住滚动内容
+       （quick-260806-tsb）。⛔ 父层不要再包一层水平 padding，否则出血算不平。 -->
   <aside
     data-testid="blueprint-thread-sidebar"
     role="complementary"
     :aria-label="t('knowledge.blueprints.annotation.sidebarTitle')"
-    class="flex h-full flex-col gap-3"
+    class="flex h-full flex-col gap-3 px-3 pt-3 pb-3"
     @keydown="onKeydown"
   >
-    <!-- ⛔ 侧栏内不再放「显示已关闭批注」开关 —— 顶栏工具条已有同名开关（BlueprintViewerHeader），
-         两处并存会出现两个联动的 Switch（用户实测点名的重复）。`showClosed` 状态仍由父层传入，
-         空态里的一键「显示」按钮保留（那是上下文动作，不是常驻开关）。
-         点线图例提示只在开关打开时展示（渐进披露）。 -->
-    <p v-if="showClosed" class="border-b border-border/50 pb-3 text-xs text-muted-foreground">
-      {{ t('knowledge.blueprints.annotation.showClosedHint') }}
-    </p>
+    <!-- ⛔ 侧栏内不再放「显示已关闭批注」开关 —— 顶栏工具条已有同名开关（BlueprintViewerHeader）。
+         点线图例提示已删（quick-260806 视觉整改：占首行且被容器圆角裁切，图例信息由
+         卡片上的「已关闭」状态徽标自解释）。 -->
 
     <!-- 选区草稿卡：readonly 时不渲染 -->
     <div
@@ -272,8 +288,8 @@ function onKeydown(event: KeyboardEvent): void {
       class="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-border/70 bg-muted/10 px-4 py-6 text-center"
       data-testid="blueprint-thread-empty-closed"
     >
-      <span class="mb-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/10">
-        <span class="icon-[lucide--check] text-base text-emerald-600" aria-hidden="true" />
+      <span class="mb-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-success/10">
+        <span class="icon-[lucide--check] text-base text-success-emphasis" aria-hidden="true" />
       </span>
       <p class="text-sm font-medium text-foreground">
         {{ t('knowledge.blueprints.annotation.emptyClosedTitle') }}
@@ -301,7 +317,9 @@ function onKeydown(event: KeyboardEvent): void {
       :description="t('knowledge.blueprints.annotation.emptyBody')"
     />
 
-    <div v-else class="space-y-2 overflow-y-auto">
+    <!-- ⛔ 这里不再套 overflow-y-auto：滚动统一交给外层 ScrollArea / Sheet 的滚动容器，
+         嵌套滚动会让吸顶分组头 stick 到错误的 scrollport 上。 -->
+    <div v-else>
       <Collapsible
         v-for="section in sections"
         :key="section.key"
@@ -309,12 +327,15 @@ function onKeydown(event: KeyboardEvent): void {
         :data-testid="`blueprint-thread-group-${section.key}`"
         :default-open="true"
       >
-        <!-- `min-h-11` = §2 的 44px 例外（本行逐字点名「线程侧栏的折叠箭头」）：
-             窄屏抽屉里这是实际触控目标，`py-1.5` 只有 ~30px 高。 -->
+        <!-- ⭐ 分组头吸顶（quick-260806-tsb，用户点名「AI 提问要 sticky」）：
+             `-mx-3` 全出血盖满滚动容器宽度、不透明 bg-card ⇒ 卡片从其下滑过不透底。
+             `min-h-11` = §2 的 44px 例外（本行逐字点名「线程侧栏的折叠箭头」）：
+             窄屏抽屉里这是实际触控目标。 -->
         <CollapsibleTrigger
           data-testid="blueprint-thread-group-trigger"
-          class="group flex min-h-11 w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-medium hover:bg-muted/60"
+          class="group sticky top-0 z-10 -mx-3 flex min-h-11 w-[calc(100%+1.5rem)] items-center gap-2 border-b border-border/50 bg-card px-4 py-2 text-left text-[13px] font-semibold transition-colors hover:bg-muted/40"
         >
+          <span class="size-1.5 shrink-0 rounded-full" :class="SECTION_DOT_CLASS[section.key]" aria-hidden="true" />
           <span class="text-foreground">
             {{ t(`knowledge.blueprints.thread.${section.labelKey}`) }}
           </span>
@@ -324,11 +345,11 @@ function onKeydown(event: KeyboardEvent): void {
             {{ section.items.length }}
           </Badge>
           <span
-            class="icon-[lucide--chevron-down] ml-auto shrink-0 text-muted-foreground/70 transition-transform group-data-[state=closed]:-rotate-90"
+            class="icon-[lucide--chevron-down] ml-auto shrink-0 text-muted-foreground/60 transition-transform group-data-[state=closed]:-rotate-90"
             aria-hidden="true"
           />
         </CollapsibleTrigger>
-        <CollapsibleContent class="space-y-2 pt-1.5">
+        <CollapsibleContent class="space-y-2.5 pt-2.5 pb-3">
           <BlueprintThreadCard
             v-for="thread in section.items"
             :key="thread.thread_id"
@@ -338,11 +359,14 @@ function onKeydown(event: KeyboardEvent): void {
             :submitting="submitting"
             :degraded="degradedSet.has(thread.thread_id)"
             :gate-available="gateAvailable"
+            :feature-point-titles="featurePointTitles"
+            :show-kind="false"
             @select="emit('select', $event)"
             @answer="(id, body) => emit('answer', id, body)"
             @resolve="(id, reason) => emit('resolve', id, reason)"
             @dismiss="(id, reason) => emit('dismiss', id, reason)"
             @goto-gate="emit('goto-gate', $event)"
+            @goto-anchor="emit('goto-anchor', $event)"
           />
         </CollapsibleContent>
       </Collapsible>

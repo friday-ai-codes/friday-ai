@@ -53,8 +53,8 @@ import blueprintsApi from '~/api/blueprints'
 import { ApiError } from '~/api/client'
 import { repositoriesApi } from '~/api/repositories'
 import BlueprintGateRepoRow from '~/components/blueprint/BlueprintGateRepoRow.vue'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Separator } from '~/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import RepositoryPicker from '~/components/workflow/RepositoryPicker.vue'
 import { useConfirmDialog } from '~/composables/useConfirmDialog'
@@ -99,6 +99,21 @@ function isPending(repo: BlueprintGateRepo): boolean {
 
 /** ⭐ 存在待调研仓 ⇒ 确认主按钮禁用（回显后端 `_LOCK_BLOCKED_MESSAGES` 的语义）。 */
 const hasPending = computed(() => pendingIds.value.size > 0)
+
+// ── 头部摘要（quick-260806 视觉整改：面板挪到正文顶部后，「跟哪些仓关联」要一眼可读）────
+
+/** 参与本方案的仓（快照里 `removed === true` 的仓不计入摘要，它们只是沉淀候选）。 */
+const activeRepos = computed(() => repos.value.filter(repo => repo.removed !== true))
+
+const directCount = computed(
+  () => activeRepos.value.filter(repo => String(repo.role_suggestion) === 'direct').length,
+)
+
+const indirectCount = computed(
+  () => activeRepos.value.filter(repo => String(repo.role_suggestion) === 'indirect').length,
+)
+
+const pendingCount = computed(() => pendingIds.value.size)
 
 /**
  * rejected 沉淀的候选是否存在。
@@ -299,84 +314,118 @@ function onGotoUnresolved(): void {
 </script>
 
 <template>
-  <section class="card space-y-4 p-4" data-testid="blueprint-gate-panel" :aria-label="t('knowledge.blueprints.gate.title')">
-    <header class="space-y-1">
-      <h2 class="text-base font-semibold">
-        {{ t('knowledge.blueprints.gate.title') }}
-      </h2>
-      <!-- 顶部说明条：仓内没有 `ui/alert`，沿用 115-06 的「语义描边 div + role=status」范式 -->
-      <div class="rounded-lg border border-border bg-muted/40 p-2 text-xs text-muted-foreground" role="status">
-        {{ t('knowledge.blueprints.gate.notice') }}
+  <!-- ⭐ 行动卡形态（quick-260806 视觉整改）：面板挂在正文顶部，是当前阻塞整条链的待办 ——
+       主题色 hairline 描边 + 着色头部把它与普通内容卡区分开；摘要行让「跟哪些仓关联」
+       不用滚动即可读全。⛔ 不用粗色条 / 不加阴影，停留在既有扁平卡片语言里。 -->
+  <section
+    class="overflow-hidden rounded-xl border border-primary/30 bg-card"
+    data-testid="blueprint-gate-panel"
+    :aria-label="t('knowledge.blueprints.gate.title')"
+  >
+    <header class="flex items-start gap-3 border-b border-primary/15 bg-primary/5 px-4 py-3.5">
+      <span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true">
+        <span class="icon-[lucide--folder-git-2] text-lg" />
+      </span>
+      <div class="min-w-0 flex-1 space-y-1.5">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-base font-semibold leading-6">
+            {{ t('knowledge.blueprints.gate.title') }}
+          </h2>
+          <Badge variant="warning">
+            {{ t('knowledge.blueprints.gate.statusPending') }}
+          </Badge>
+        </div>
+        <!-- 一眼摘要：共 N 仓 · 直接改动 x · 间接影响 y（· 调研中 z） -->
+        <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-testid="blueprint-gate-summary">
+          <span class="font-medium text-foreground">
+            {{ t('knowledge.blueprints.gate.summaryTotal', { n: activeRepos.length }) }}
+          </span>
+          <span v-if="directCount > 0" class="inline-flex items-center gap-1.5 text-muted-foreground">
+            <span class="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+            {{ t('knowledge.blueprints.gate.summaryDirect', { n: directCount }) }}
+          </span>
+          <span v-if="indirectCount > 0" class="inline-flex items-center gap-1.5 text-muted-foreground">
+            <span class="size-1.5 rounded-full border border-primary/50" aria-hidden="true" />
+            {{ t('knowledge.blueprints.gate.summaryIndirect', { n: indirectCount }) }}
+          </span>
+          <span v-if="pendingCount > 0" class="inline-flex items-center gap-1 text-muted-foreground" aria-live="polite">
+            <span class="icon-[lucide--loader-2] size-3 animate-spin" aria-hidden="true" />
+            {{ t('knowledge.blueprints.gate.summaryResearching', { n: pendingCount }) }}
+          </span>
+        </p>
+        <p class="text-xs leading-5 text-muted-foreground" role="status">
+          {{ t('knowledge.blueprints.gate.notice') }}
+        </p>
       </div>
     </header>
 
-    <!-- 仓库行列表 -->
-    <div v-if="repos.length" class="space-y-2">
-      <BlueprintGateRepoRow
-        v-for="repo in repos"
-        :key="repo.repository_id"
-        :repo="repo"
-        :pending="isPending(repo)"
-        :submitting="busy"
-        @remove="onRemove"
-        @reclassify="onReclassify"
-        @edit-responsibility="onEditResponsibility"
-        @upgrade-research="onUpgradeResearch"
-      />
-    </div>
-    <p v-else class="text-xs text-muted-foreground" data-testid="blueprint-gate-empty">
-      {{ t('knowledge.blueprints.repo.empty') }}
-    </p>
-
-    <Separator />
-
-    <!-- 添加仓库：复用既有仓库选择器（多选） -->
-    <div class="space-y-2" data-testid="blueprint-gate-add-repo">
-      <p class="text-xs font-medium">
-        {{ t('knowledge.blueprints.gate.addRepo') }}
+    <div class="space-y-4 p-4">
+      <!-- 仓库行列表 -->
+      <div v-if="repos.length" class="space-y-2">
+        <BlueprintGateRepoRow
+          v-for="repo in repos"
+          :key="repo.repository_id"
+          :repo="repo"
+          :pending="isPending(repo)"
+          :submitting="busy"
+          @remove="onRemove"
+          @reclassify="onReclassify"
+          @edit-responsibility="onEditResponsibility"
+          @upgrade-research="onUpgradeResearch"
+        />
+      </div>
+      <p v-else class="text-xs text-muted-foreground" data-testid="blueprint-gate-empty">
+        {{ t('knowledge.blueprints.repo.empty') }}
       </p>
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="min-w-0 flex-1">
-          <RepositoryPicker
-            v-model="picked"
-            :repositories="repositoryOptions"
-            :placeholder="t('knowledge.blueprints.gate.addRepoPlaceholder')"
-          />
+
+      <!-- 添加仓库：复用既有仓库选择器（多选） -->
+      <div class="space-y-2" data-testid="blueprint-gate-add-repo">
+        <p class="text-xs font-medium">
+          {{ t('knowledge.blueprints.gate.addRepo') }}
+        </p>
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="min-w-0 flex-1">
+            <RepositoryPicker
+              v-model="picked"
+              :repositories="repositoryOptions"
+              :placeholder="t('knowledge.blueprints.gate.addRepoPlaceholder')"
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            :disabled="!picked.length || busy"
+            data-testid="blueprint-gate-add-repo-submit"
+            @click="onAddRepos"
+          >
+            {{ t('knowledge.blueprints.gate.addRepoSubmit') }}
+          </Button>
         </div>
+      </div>
+
+      <!-- ⭐ confirm 409 `pending_clarification` 的解药入口 -->
+      <div
+        v-if="clarificationBlocked"
+        class="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 p-2 text-xs"
+        role="status"
+        data-testid="blueprint-gate-clarification-blocked"
+      >
+        <span>{{ t('knowledge.blueprints.gate.unresolvedClarification') }}</span>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          :disabled="!picked.length || busy"
-          data-testid="blueprint-gate-add-repo-submit"
-          @click="onAddRepos"
+          data-testid="blueprint-gate-goto-unresolved"
+          @click="onGotoUnresolved"
         >
-          {{ t('knowledge.blueprints.gate.addRepoSubmit') }}
+          {{ t('knowledge.blueprints.gate.gotoUnresolved') }}
         </Button>
       </div>
     </div>
 
-    <!-- ⭐ confirm 409 `pending_clarification` 的解药入口 -->
-    <div
-      v-if="clarificationBlocked"
-      class="flex flex-wrap items-center gap-2 rounded-lg border border-border p-2 text-xs"
-      role="status"
-      data-testid="blueprint-gate-clarification-blocked"
-    >
-      <span>{{ t('knowledge.blueprints.gate.unresolvedClarification') }}</span>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        data-testid="blueprint-gate-goto-unresolved"
-        @click="onGotoUnresolved"
-      >
-        {{ t('knowledge.blueprints.gate.gotoUnresolved') }}
-      </Button>
-    </div>
-
     <!-- 底部动作条：次级动作在左、确认主按钮在右 -->
-    <div class="flex flex-wrap items-center gap-2">
+    <footer class="flex flex-wrap items-center gap-2 border-t border-border/70 bg-muted/20 px-4 py-3">
       <Button
         v-if="hasRejectedCandidates"
         type="button"
@@ -409,6 +458,6 @@ function onGotoUnresolved(): void {
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-    </div>
+    </footer>
   </section>
 </template>

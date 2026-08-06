@@ -21,11 +21,24 @@
  */
 
 import type { SelectionPayload } from '../BlueprintBlockList.vue'
-import type { BlueprintRequirementSpec, BlueprintThreadDetail, Citation } from '~/types/blueprint'
+import type {
+  BlueprintFeaturePoint,
+  BlueprintRequirementSpec,
+  BlueprintThreadDetail,
+  Citation,
+} from '~/types/blueprint'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import { Badge } from '~/components/ui/badge'
+import { blockText } from '~/utils/blueprintBlocks'
+import {
+  cleanFeaturePointTitle,
+  intentLabelKeyOf,
+  intentVariantOf,
+  matchFeaturePointsToRenderedLines,
+} from '~/utils/blueprintFeaturePoints'
+import { buildMarkdownRender, isMarkdownishText } from '~/utils/blueprintMarkdownLite'
 import BlueprintBlockList from '../BlueprintBlockList.vue'
 
 const props = withDefaults(defineProps<{
@@ -54,13 +67,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-/** `intent` 三档 → 徽标 variant（⛔ 不发明第四档：未知值退 `outline`）。 */
-const INTENT_VARIANT: Record<string, 'success' | 'info' | 'warning'> = {
-  greenfield: 'success',
-  brownfield: 'info',
-  fix: 'warning',
-}
-
 const goalBlocks = computed(() => props.spec?.goal ?? [])
 const backgroundBlocks = computed(() => props.spec?.background ?? [])
 const featurePoints = computed(() => props.spec?.feature_points ?? [])
@@ -69,32 +75,93 @@ const isEmpty = computed(
   () => !goalBlocks.value.length && !backgroundBlocks.value.length && !featurePoints.value.length,
 )
 
-function intentVariant(intent: string | undefined): 'success' | 'info' | 'warning' | 'outline' {
-  return INTENT_VARIANT[intent ?? ''] ?? 'outline'
+// ── 功能点内联标签 + 兜底索引（quick-260806：功能点分散进目标正文）────────────────
+//
+// goal 正文本就完整包含各模块与验收细节 ⇒ 功能点标签**内联到正文对应行的行尾**
+// （`BlueprintBlock` 的零文本节点标签，承载 `fp-<id>` 锚点），不再在下方整表聚合。
+// 只有**没能在正文里定位到标题行**的功能点才落进下方兜底索引（锚点不能丢：现状分析/
+// 实现概述/澄清向导的 goto-anchor 都指向 `fp-<id>`）。
+
+/** 已内联进 goal 正文的功能点 id（与 BlueprintBlock 同一匹配器，输入同源 ⇒ 结果一致）。 */
+const inlineTaggedIds = computed(() => {
+  const ids = new Set<string>()
+  for (const block of goalBlocks.value) {
+    if (block?.type !== 'paragraph')
+      continue
+    const flat = blockText(block)
+    if (!isMarkdownishText(flat))
+      continue
+    const model = buildMarkdownRender(flat)
+    for (const tag of matchFeaturePointsToRenderedLines(
+      model.rendered,
+      model.lines,
+      featurePoints.value,
+    ).values())
+      ids.add(tag.pointId)
+  }
+  return ids
+})
+
+/** 兜底索引：只列没内联进正文的点（通常为空 ⇒ 整块不渲染）。 */
+const unmatchedPoints = computed(() =>
+  featurePoints.value.filter(point => !inlineTaggedIds.value.has(point.id)),
+)
+
+/** intent 计数摘要（按 schema 三档出现顺序稳定输出，count 为 0 的档不出现）。 */
+const intentSummary = computed(() => {
+  const counts = new Map<string, number>()
+  for (const point of featurePoints.value)
+    counts.set(point.intent, (counts.get(point.intent) ?? 0) + 1)
+  return ['greenfield', 'brownfield', 'fix']
+    .filter(intent => counts.has(intent))
+    .map(intent => ({ intent, count: counts.get(intent)! }))
+})
+
+/**
+ * 功能点所属模块标签：取 description 首个非空文本行，且仅当它以「模块」开头才视为
+ * 模块标签（机械拆解器把「模块 N：xxx」放进 description 首块）。判不出归入无标签组，
+ * ⛔ 不把任意长描述当组头。
+ */
+function moduleLabelOf(point: BlueprintFeaturePoint): string {
+  for (const block of point.description ?? []) {
+    // `BlueprintBlock.text` 是 `unknown`（块形态由 kind 决定，schema 不收窄）⇒ 两种形态都收。
+    const raw = Array.isArray(block?.text) ? block.text.join(' ') : String(block?.text ?? '')
+    const line = raw.trim()
+    if (line)
+      return line.startsWith('模块') ? line : ''
+  }
+  return ''
 }
 
-/** `intent` 三档 → 中文名；未知值回落 schema 原样 token（⛔ 不发明第四档文案）。 */
-const INTENT_LABEL_KEY: Record<string, string> = {
-  greenfield: 'intentGreenfield',
-  brownfield: 'intentBrownfield',
-  fix: 'intentFix',
-}
+/** 兜底索引按模块归组（保持首次出现顺序）；无标签组 label 为空串、组头不渲染。 */
+const moduleGroups = computed(() => {
+  const groups: Array<{ label: string, points: typeof featurePoints.value }> = []
+  const byLabel = new Map<string, { label: string, points: typeof featurePoints.value }>()
+  for (const point of unmatchedPoints.value) {
+    const label = moduleLabelOf(point)
+    let group = byLabel.get(label)
+    if (!group) {
+      group = { label, points: [] }
+      byLabel.set(label, group)
+      groups.push(group)
+    }
+    group.points.push(point)
+  }
+  return groups
+})
+
+/** `intent` 口径（variant / 中文名 / 标题记号剥离）统一走 `utils/blueprintFeaturePoints`。 */
+const intentVariant = intentVariantOf
 
 function intentLabel(intent: string | undefined): string {
-  const suffix = INTENT_LABEL_KEY[intent ?? '']
+  const suffix = intentLabelKeyOf(intent)
   return suffix ? t(`knowledge.blueprints.spec.${suffix}`) : String(intent ?? '')
 }
 
+const cleanTitle = cleanFeaturePointTitle
+
 function forwardThread(threadId: string, allThreadIds: string[]): void {
   emit('thread-click', threadId, allThreadIds)
-}
-
-/**
- * 标题剥掉行首的 markdown 标题记号（`#### 功能点 B：…`）——上游机械拆解器（旧版）
- * 没剥干净时的防御性兜底；正常标题原样返回。⛔ 只剥行首，不动标题内部的 `#`。
- */
-function cleanTitle(title: string): string {
-  return String(title ?? '').replace(/^#{1,6}\s+/, '')
 }
 </script>
 
@@ -107,69 +174,38 @@ function cleanTitle(title: string): string {
     />
 
     <template v-else>
-      <div v-if="goalBlocks.length" data-field="goal">
-        <p class="mb-1.5 text-xs font-medium text-muted-foreground">
-          {{ t('knowledge.blueprints.section.goal') }}
-        </p>
-        <BlueprintBlockList
-          :blocks="goalBlocks"
-          section-path="requirement_spec.goal"
-          :threads="threads"
-          :citations="citations"
-          :readonly="readonly"
-          :active-thread-id="activeThreadId"
-          :show-closed="showClosed"
-          @thread-click="forwardThread"
-          @citation-click="emit('citation-click', $event)"
-          @selection-comment="emit('selection-comment', $event)"
-          @cross-block-selection="emit('cross-block-selection')"
-        />
-      </div>
-
-      <div v-if="backgroundBlocks.length" data-field="background">
-        <p class="mb-1.5 text-xs font-medium text-muted-foreground">
-          {{ t('knowledge.blueprints.section.background') }}
-        </p>
-        <BlueprintBlockList
-          :blocks="backgroundBlocks"
-          section-path="requirement_spec.background"
-          :threads="threads"
-          :citations="citations"
-          :readonly="readonly"
-          :active-thread-id="activeThreadId"
-          :show-closed="showClosed"
-          @thread-click="forwardThread"
-          @citation-click="emit('citation-click', $event)"
-          @selection-comment="emit('selection-comment', $event)"
-          @cross-block-selection="emit('cross-block-selection')"
-        />
-      </div>
-
-      <!-- ⭐ 紧凑卡：多数功能点只有「标题 + 一行所属模块」（详情常整段留在 goal，机械拆解
-           不下放），按信息量收窄内边距与字号；卡片仍是批注锚点与 `fp-<id>` 跳转落点，⛔ 不删。 -->
-      <div v-if="featurePoints.length" class="space-y-1.5" data-field="feature-points">
-        <div
-          v-for="point in featurePoints"
-          :id="`fp-${point.id}`"
-          :key="point.id"
-          class="card px-3 py-2 space-y-1"
-          data-testid="blueprint-feature-point"
-          :data-feature-point-id="point.id"
+      <!-- ⭐ quick-260806 视觉整改：目标正文与功能点状态**合并进同一张卡** ——
+           goal 里已含各模块与验收细节，功能点不再逐个铺大卡重复展示，收敛为
+           「摘要头计数 + 按模块归组的单行状态索引」。 -->
+      <div class="card overflow-hidden" data-field="requirement-spec-card">
+        <!-- 摘要头：本需求共几个功能点、各状态几个，一眼建立与下方索引的关联 -->
+        <header
+          v-if="featurePoints.length"
+          class="flex flex-wrap items-center gap-2 border-b border-border/70 bg-muted/20 px-4 py-2.5"
+          data-testid="blueprint-spec-summary"
         >
-          <div class="flex items-start gap-2">
-            <span class="font-mono text-[11px] text-muted-foreground shrink-0 mt-0.5">{{ point.id }}</span>
-            <h3 class="text-sm font-semibold flex-1 min-w-0">
-              {{ cleanTitle(point.title) }}
-            </h3>
-            <Badge :variant="intentVariant(point.intent)" :data-intent="point.intent">
-              {{ intentLabel(point.intent) }}
-            </Badge>
-          </div>
+          <span class="text-sm font-medium">
+            {{ t('knowledge.blueprints.spec.pointsTotal', { n: featurePoints.length }) }}
+          </span>
+          <Badge
+            v-for="row in intentSummary"
+            :key="row.intent"
+            :variant="intentVariant(row.intent)"
+            :data-intent="row.intent"
+          >
+            {{ intentLabel(row.intent) }} {{ row.count }}
+          </Badge>
+        </header>
 
+        <!-- ⭐ 长文阅读面控行长：正文限 52rem（≈52 汉字/行）。max-w 不改文本节点，
+             批注 offset 坐标系不受影响。 -->
+        <div v-if="goalBlocks.length" data-field="goal" class="px-4 py-3.5">
+          <!-- ⭐ feature-points 只传给 goal：功能点标签内联到正文对应标题行的行尾 -->
           <BlueprintBlockList
-            v-if="point.description?.length"
-            :blocks="point.description"
-            :section-path="`requirement_spec.feature_points[${point.id}].description`"
+            class="max-w-208"
+            :blocks="goalBlocks"
+            :feature-points="featurePoints"
+            section-path="requirement_spec.goal"
             :threads="threads"
             :citations="citations"
             :readonly="readonly"
@@ -180,6 +216,63 @@ function cleanTitle(title: string): string {
             @selection-comment="emit('selection-comment', $event)"
             @cross-block-selection="emit('cross-block-selection')"
           />
+        </div>
+
+        <div v-if="backgroundBlocks.length" data-field="background" class="border-t border-border/70 px-4 py-3.5">
+          <p class="mb-1.5 text-xs font-medium text-muted-foreground">
+            {{ t('knowledge.blueprints.section.background') }}
+          </p>
+          <BlueprintBlockList
+            class="max-w-208"
+            :blocks="backgroundBlocks"
+            section-path="requirement_spec.background"
+            :threads="threads"
+            :citations="citations"
+            :readonly="readonly"
+            :active-thread-id="activeThreadId"
+            :show-closed="showClosed"
+            @thread-click="forwardThread"
+            @citation-click="emit('citation-click', $event)"
+            @selection-comment="emit('selection-comment', $event)"
+            @cross-block-selection="emit('cross-block-selection')"
+          />
+        </div>
+
+        <!-- ⭐ 兜底索引：只列**没能内联进正文**的功能点（标题行在 goal 里定位失败的少数派；
+             `fp-<id>` 锚点不能丢——跨段 goto-anchor 的落点）。全部内联成功时整块不渲染。 -->
+        <div
+          v-if="unmatchedPoints.length"
+          class="border-t border-border/70 px-4 py-3.5"
+          data-field="feature-points"
+        >
+          <p class="mb-2 text-xs font-medium text-muted-foreground">
+            {{ t('knowledge.blueprints.spec.pointsIndexUnmatched') }}
+          </p>
+          <div class="space-y-3">
+            <div v-for="group in moduleGroups" :key="group.label || '_ungrouped'">
+              <p v-if="group.label" class="mb-1 text-xs font-semibold text-foreground/75">
+                {{ group.label }}
+              </p>
+              <div class="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+                <div
+                  v-for="point in group.points"
+                  :id="`fp-${point.id}`"
+                  :key="point.id"
+                  class="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 scroll-mt-24 hover:bg-muted/40"
+                  data-testid="blueprint-feature-point"
+                  :data-feature-point-id="point.id"
+                >
+                  <span class="w-11 shrink-0 font-mono text-[11px] text-muted-foreground">{{ point.id }}</span>
+                  <span class="min-w-0 flex-1 truncate text-sm" :title="cleanTitle(point.title)">
+                    {{ cleanTitle(point.title) }}
+                  </span>
+                  <Badge :variant="intentVariant(point.intent)" :data-intent="point.intent" class="shrink-0">
+                    {{ intentLabel(point.intent) }}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </template>

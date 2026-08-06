@@ -19,13 +19,14 @@
  * **安全**：本组件不渲染任何来自后端的富文本，正文一律下沉给 `BlueprintBlock`（全程 mustache）。
  */
 
-import type { BlueprintBlock as BlueprintBlockModel, BlueprintThreadDetail, Citation } from '~/types/blueprint'
+import type { BlueprintBlock as BlueprintBlockModel, BlueprintFeaturePoint, BlueprintThreadDetail, Citation } from '~/types/blueprint'
 import { useDebounceFn } from '@vueuse/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Skeleton } from '~/components/ui/skeleton'
 import { groupThreadsByBlock, rangeOffsets } from '~/utils/blueprintAnnotations'
 import { blockText } from '~/utils/blueprintBlocks'
+import { buildMarkdownRender, isMarkdownishText } from '~/utils/blueprintMarkdownLite'
 import BlueprintBlock from './BlueprintBlock.vue'
 
 /**
@@ -57,6 +58,8 @@ const props = withDefaults(defineProps<{
   plainMermaid?: boolean
   /** 骨架条数（默认 3 条 `h-16`）。 */
   skeletonRows?: number
+  /** 功能点内联标签（quick-260806）：只有需求规格 goal 的列表传，透传给块组件。 */
+  featurePoints?: BlueprintFeaturePoint[]
 }>(), {
   blocks: () => [],
   sectionPath: '',
@@ -68,6 +71,7 @@ const props = withDefaults(defineProps<{
   loading: false,
   plainMermaid: false,
   skeletonRows: 3,
+  featurePoints: () => [],
 })
 
 const emit = defineEmits<{
@@ -143,11 +147,35 @@ function detectSelection(): void {
   if (!blockId || !offsets)
     return
 
+  let startOffset = offsets.start
+  let endOffset = offsets.end
+  let quotedText = selection.toString().slice(0, QUOTED_TEXT_LIMIT)
+
+  // ⭐ markdown 预览块的坐标换算（quick-260806-gfk v3）：该分支 DOM 里是**渲染文本**
+  // （记号已删除），`rangeOffsets` 算出的是渲染偏移 ⇒ 经同一 `buildMarkdownRender`
+  // 映射回**源偏移**再上报（anchor 坐标系始终是源文本）；`quoted_text` 也从源文本切
+  // —— 后端 `reanchor` 的模糊匹配语料是带记号的源文本。
+  const block = (props.blocks ?? []).find(item => item.block_id === blockId)
+  if (block && block.type === 'paragraph') {
+    const flat = blockText(block)
+    if (isMarkdownishText(flat)) {
+      const model = buildMarkdownRender(flat)
+      const srcStart = model.toSource(startOffset)
+      // 末端按「最后一个字符」映射再 +1：直接映射结束边界会把紧邻的被删记号卷进区间。
+      const srcEnd = endOffset > startOffset ? model.toSource(endOffset - 1) + 1 : srcStart
+      if (srcStart >= srcEnd)
+        return
+      startOffset = srcStart
+      endOffset = srcEnd
+      quotedText = flat.slice(srcStart, srcEnd).slice(0, QUOTED_TEXT_LIMIT)
+    }
+  }
+
   emit('selection-comment', {
     blockId,
-    startOffset: offsets.start,
-    endOffset: offsets.end,
-    quotedText: selection.toString().slice(0, QUOTED_TEXT_LIMIT),
+    startOffset,
+    endOffset,
+    quotedText,
     rect: range.getBoundingClientRect(),
   })
 }
@@ -221,6 +249,7 @@ onUnmounted(() => {
         :active-thread-id="activeThreadId"
         :show-closed="showClosed"
         :plain-mermaid="plainMermaid"
+        :feature-points="featurePoints"
         @thread-click="(threadId, allThreadIds) => emit('thread-click', threadId, allThreadIds)"
         @citation-click="emit('citation-click', $event)"
       />

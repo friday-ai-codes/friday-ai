@@ -2,8 +2,8 @@
 /**
  * 人审终审操作区（Phase 115-04，FLOW-08，UI-SPEC §11.1 / §16）。
  *
- * **防误触第一层 = 视觉分离**：本组件是顶栏**最右侧**的独立区块，与左侧阅读动作之间用
- * `Separator` + `ml-auto` 隔开，容器 `pl-4 border-l border-border`。
+ * **防误触第一层 = 视觉分离**：本组件是顶栏**最右侧**的独立区块，与左侧阅读动作之间由
+ * `ml-auto` 推开 + 容器 `pl-4 border-l border-border` 一条 hairline 分隔。
  *
  * **防误触第二层 = 二次确认**：
  * - **通过**走 `useConfirmDialog().confirm(...)`（无输入框，文案逐字取自 §16 的三个 i18n 键），
@@ -27,7 +27,6 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Separator } from '~/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { useConfirmDialog } from '~/composables/useConfirmDialog'
 import { getBlueprintStatusConfig } from '~/config/blueprintStatus'
@@ -74,7 +73,8 @@ function onReject(): void {
 
 <template>
   <div class="flex items-center gap-2">
-    <Separator orientation="vertical" class="h-6" />
+    <!-- 与左侧内容的分隔只用容器 border-l 这一条 hairline（quick-260806 视觉整改：
+         此前 Separator 组件与 border-l 并存，渲染成紧挨着的两条竖线）。 -->
     <div class="ml-auto flex items-center gap-2 border-l border-border pl-4">
       <Badge v-if="revisionRound > 0" variant="muted">
         {{ t('knowledge.blueprints.review.reviewRound', { n: revisionRound }) }}

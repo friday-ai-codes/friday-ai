@@ -7,6 +7,7 @@
  * 3. `canonicalBlockFingerprint` 的递归键排序（No Analog #6）。
  */
 import { describe, expect, it } from 'vitest'
+import zhCN from '~/locales/zh-CN.json'
 import {
   blockText,
   BLUEPRINT_EVENT_NAMES,
@@ -17,6 +18,7 @@ import {
   itemKey,
   iterBlocks,
   progressKeyForEvent,
+  resolveProgressKeys,
   sectionKeyForEvent,
   stageForEvent,
   summaryText,
@@ -290,7 +292,7 @@ describe('classifyBlockDiff —— 三分类 + 按段分组', () => {
   })
 })
 
-describe('sectionKeyForEvent —— 27 事件穷举（UI-SPEC §8.1 逐行 + 118 活动流）', () => {
+describe('sectionKeyForEvent —— 28 事件穷举（UI-SPEC §8.1 逐行 + 118 活动流 + quick-260806 repo_failed）', () => {
   const CASES: Array<[string, string[]]> = [
     ['blueprint.status.transitioned', []],
     ['blueprint.stage.started', []],
@@ -319,11 +321,13 @@ describe('sectionKeyForEvent —— 27 事件穷举（UI-SPEC §8.1 逐行 + 118
     ['blueprint.retrieval.completed', []],
     ['blueprint.repo_plan.repo_started', ['implementation_overview']],
     ['blueprint.repo_plan.repo_completed', ['implementation_overview']],
+    // quick-260806：started/completed/failed 三元补齐（emit 点在派发漏斗与回调失败分支）
+    ['blueprint.repo_plan.repo_failed', ['implementation_overview']],
     ['blueprint.repo_plan.wave_advanced', ['implementation_overview']],
   ]
 
-  it('恰好 27 个事件被登记（与后端 BLUEPRINT_EVENTS 同集）', () => {
-    expect(BLUEPRINT_EVENT_NAMES).toHaveLength(27)
+  it('恰好 28 个事件被登记（与后端 BLUEPRINT_EVENTS 同集）', () => {
+    expect(BLUEPRINT_EVENT_NAMES).toHaveLength(28)
     expect(new Set(BLUEPRINT_EVENT_NAMES)).toEqual(new Set(CASES.map(([name]) => name)))
   })
 
@@ -359,6 +363,74 @@ describe('sectionKeyForEvent —— 27 事件穷举（UI-SPEC §8.1 逐行 + 118
     for (const name of BLUEPRINT_EVENT_NAMES)
       expect(progressKeyForEvent(name)).toMatch(/^knowledge\.blueprints\.progress\./)
     expect(progressKeyForEvent('blueprint.unknown.event')).toBe('')
+  })
+})
+
+describe('resolveProgressKeys —— 插值完整性与判别式变体', () => {
+  const PROGRESS = 'knowledge.blueprints.progress'
+
+  it('插值键齐全 ⇒ 用带数字的具体文案', () => {
+    expect(
+      resolveProgressKeys('blueprint.repo_plan.repo_completed', { item_count: 3, api_count: 4 }),
+    ).toEqual({
+      key: `${PROGRESS}.repoPlanRepoCompleted`,
+      fallbackKey: `${PROGRESS}.repoPlanRepoCompletedGeneric`,
+    })
+  })
+
+  it('⭐ 插值键缺失 ⇒ 回落无参兜底，而**不是**渲染出「 项实现、 条接口契约」这种残句', () => {
+    // 这是线上真实故障的形状：payload 只有 repository_id，两个计数键根本不在。
+    expect(
+      resolveProgressKeys('blueprint.repo_plan.repo_completed', { repository_id: 'r-1' }).key,
+    ).toBe(`${PROGRESS}.repoPlanRepoCompletedGeneric`)
+  })
+
+  it('⭐ 计数为 0 是**有效值**，不该被当成缺失（0 项实现是事实，不是没数据）', () => {
+    expect(
+      resolveProgressKeys('blueprint.repo_plan.repo_completed', { item_count: 0, api_count: 0 }).key,
+    ).toBe(`${PROGRESS}.repoPlanRepoCompleted`)
+  })
+
+  it('⭐ waiter_satisfied 按 reason 分文案：expired 绝不说成「已对齐」', () => {
+    const expired = resolveProgressKeys('blueprint.context.waiter_satisfied', {
+      reason: 'expired',
+      satisfied_count: 2,
+    })
+    const available = resolveProgressKeys('blueprint.context.waiter_satisfied', {
+      reason: 'key_available',
+      satisfied_count: 2,
+    })
+    expect(expired.key).toBe(`${PROGRESS}.contextWaiterSatisfied_expired`)
+    expect(available.key).toBe(`${PROGRESS}.contextWaiterSatisfied_key_available`)
+    expect(expired.key).not.toBe(available.key)
+  })
+
+  it('未映射事件两键皆空（调用方回落事件原名）', () => {
+    expect(resolveProgressKeys('blueprint.unknown.event', {})).toEqual({ key: '', fallbackKey: '' })
+  })
+
+  it('payload 为 undefined 不抛错，回落无参兜底', () => {
+    expect(resolveProgressKeys('blueprint.route.scored', undefined).key).toBe(
+      `${PROGRESS}.routeScoredGeneric`,
+    )
+  })
+
+  /**
+   * ⭐ 本用例是**防复发的主锁**：只要有人加一条带 `{占位符}` 的进度文案却忘了配
+   * `Generic` 兜底，payload 一缺键就会上屏残句。让它在 CI 里挂，而不是在用户界面上挂。
+   */
+  it('⭐ 每条登记了必需插值键的文案，都必须有 Generic 兜底且兜底本身无占位符', () => {
+    const progress = (zhCN as any).knowledge.blueprints.progress as Record<string, string>
+    const withParams = Object.keys(progress).filter(
+      key => !key.endsWith('Generic') && /\{[a-z_]+\}/i.test(progress[key]),
+    )
+    expect(withParams.length).toBeGreaterThan(0)
+    for (const key of withParams) {
+      // 判别式变体（`xxx_expired`）共享基名的 Generic，不各配一份。
+      const base = key.includes('_') ? key.slice(0, key.indexOf('_')) : key
+      expect(progress[`${base}Generic`], `${key} 缺 ${base}Generic 兜底`).toBeTruthy()
+      expect(progress[`${base}Generic`]).not.toMatch(/\{[a-z_]+\}/i)
+    }
   })
 })
 

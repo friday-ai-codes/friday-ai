@@ -91,7 +91,14 @@ const i18n = createI18n({
             currentStateSummary: '现状综述',
             deferredIdeas: '本方案明确不做的事（{n}）',
           },
-          spec: { intentGreenfield: '净新增', intentBrownfield: '存量改造', intentFix: '缺陷修复' },
+          spec: {
+            intentGreenfield: '净新增',
+            intentBrownfield: '存量改造',
+            intentFix: '缺陷修复',
+            acceptanceCriteria: '验收要点',
+            acceptanceRest: '还有 {n} 条验收要点',
+            gotoFeaturePoint: '点击跳到需求规格里的该功能点',
+          },
           state: {
             kindCapability: '能力',
             kindGap: '缺口',
@@ -106,6 +113,22 @@ const i18n = createI18n({
             changeTypeIndirectRefine: '间接完善',
             existingIntegration: '与既有功能如何配合',
             testStrategy: '测试策略',
+            how: '怎么做',
+            filesTouched: '涉及文件（{n}）',
+            filesTouchedRepo: '仓库 {repo} 内的相对路径',
+            repoLabel: '仓库',
+            modulesTitle: '功能模块',
+            modulesTotal: '共 {n} 个',
+            itemsTitle: '实现项',
+            itemsTotal: '共 {n} 项',
+            itemsFiltered: '显示 {n} / {total} 项',
+            itemCount: '{n} 项实现',
+            coveredFeaturePoints: '覆盖功能点',
+            moduleItemsToggle: '展开本模块的 {n} 项实现',
+            deliversFeaturePoint: '兑现功能点',
+            dependsOn: '依赖',
+            waveShort: 'wave {n}',
+            waveAll: '全部',
             waveCount: 'wave {n} · {c} 项',
           },
           decision: { gotoThread: '查看对应线程' },
@@ -669,5 +692,158 @@ describe('blueprintAssociationsSection —— ⭐ SC-4 反查（116-04 交付）
     expect(without.find('[data-testid="blueprint-associations-project"]').exists()).toBe(false)
     expect(withProject.find('[data-testid="blueprint-associations-project-link"]').attributes('href')).toBe('/projects/proj-1')
     expect(withProject.text()).toContain('洋葱练习')
+  })
+})
+
+describe('实现概述 —— ⭐ 功能点 ← 模块 → 实现项 三层连通（quick-260806-fpx）', () => {
+  const FEATURE_POINTS = {
+    fp_1: {
+      id: 'fp_1',
+      title: '入口与课程包权益鉴权',
+      intent: 'brownfield' as const,
+      acceptance_criteria: ['无权益不渲染入口', '置灰态不展示购买引导'],
+    },
+    fp_2: { id: 'fp_2', title: '题型图谱页', intent: 'greenfield' as const },
+  }
+
+  function makeOverview() {
+    return {
+      requirement_narrative: [BLOCK],
+      modules: [{
+        id: 'mod_1',
+        name: '入口与课程包权益鉴权',
+        feature_point_ids: ['fp_1', 'fp_2'],
+        repository_ids: ['repo-1'],
+        narrative: [BLOCK],
+      }],
+      items: [
+        {
+          id: 'impl_1',
+          feature_point_id: 'fp_1',
+          module_id: 'mod_1',
+          repository_id: 'repo-1',
+          change_type: 'modify' as const,
+          title: '改造 SpecialCard 入口',
+          wave: 1,
+          depends_on: ['impl_2'],
+          how: [BLOCK],
+        },
+        {
+          id: 'impl_2',
+          feature_point_id: 'fp_2',
+          module_id: 'mod_1',
+          repository_id: 'repo-1',
+          change_type: 'create' as const,
+          title: '新建题型图谱页',
+          wave: 2,
+          how: [BLOCK],
+        },
+      ],
+    }
+  }
+
+  function mountOverview(props: Record<string, unknown> = {}) {
+    return mountWith(ImplementationOverviewSection, {
+      overview: makeOverview(),
+      featurePoints: FEATURE_POINTS,
+      repoNames: { 'repo-1': 'onion-learning' },
+      ...BLOCK_CTX,
+      ...props,
+    })
+  }
+
+  it('11a. 模块卡挂 mod-<id> 锚点，实现项卡的模块 chip 跳得回来', async () => {
+    const wrapper = mountOverview()
+
+    expect(wrapper.find('#mod-mod_1').exists()).toBe(true)
+    await wrapper.find('[data-testid="blueprint-impl-module-link"]').trigger('click')
+    expect(wrapper.emitted('goto-anchor')?.[0]).toEqual(['mod-mod_1'])
+  })
+
+  it('11b. ⭐ 实现项卡渲染 feature_point_id（schema 必填项，整改前从未渲染）且带标题', async () => {
+    const wrapper = mountOverview()
+    const chip = wrapper.find('#impl-impl_1 [data-testid="blueprint-feature-point-chip"]')
+
+    expect(chip.exists()).toBe(true)
+    // 索引命中 ⇒ 出标题而不只是一个 fp_1
+    expect(chip.text()).toContain('入口与课程包权益鉴权')
+    await chip.trigger('click')
+    expect(wrapper.emitted('goto-anchor')?.[0]).toEqual(['fp-fp_1'])
+  })
+
+  it('11c. 功能点索引缺项 ⇒ chip 降级成只有 id，⛔ 不消失（悄悄少一个更难排查）', () => {
+    const wrapper = mountOverview({ featurePoints: {} })
+    const chip = wrapper.find('#impl-impl_1 [data-testid="blueprint-feature-point-chip"]')
+
+    expect(chip.exists()).toBe(true)
+    expect(chip.text()).toContain('fp_1')
+    expect(wrapper.find('[data-testid="blueprint-feature-point-preview"]').exists()).toBe(false)
+  })
+
+  it('11d. 模块卡列出本模块的实现项，点一条跳 impl-<id>', async () => {
+    const wrapper = mountOverview()
+    const links = wrapper.findAll('[data-testid="blueprint-module-item-link"]')
+
+    expect(links).toHaveLength(2)
+    await links[1].trigger('click')
+    expect(wrapper.emitted('goto-anchor')?.[0]).toEqual(['impl-impl_2'])
+  })
+
+  it('11e. ⭐ T-fpx-01 波次筛选把目标筛掉时，跳转前自动清筛选（否则滚向不存在的锚点，静默失败）', async () => {
+    const wrapper = mountOverview()
+
+    await wrapper.find('[data-testid="blueprint-wave-chip"][data-wave="1"]').trigger('click')
+    expect(wrapper.find('#impl-impl_2').exists()).toBe(false)
+
+    const link = wrapper
+      .findAll('[data-testid="blueprint-module-item-link"]')
+      .find(node => node.attributes('data-impl-id') === 'impl_2')!
+    await link.trigger('click')
+
+    expect(wrapper.emitted('goto-anchor')?.at(-1)).toEqual(['impl-impl_2'])
+    expect(wrapper.find('#impl-impl_2').exists()).toBe(true)
+  })
+
+  it('11f. depends_on chip 跳 impl-<dep>，同样走筛选自解', async () => {
+    const wrapper = mountOverview()
+
+    await wrapper.find('[data-testid="blueprint-wave-chip"][data-wave="1"]').trigger('click')
+    await wrapper.find('#impl-impl_1 [data-testid="blueprint-impl-depends-on"]').trigger('click')
+
+    expect(wrapper.emitted('goto-anchor')?.at(-1)).toEqual(['impl-impl_2'])
+    expect(wrapper.find('#impl-impl_2').exists()).toBe(true)
+  })
+
+  it('11g. 「全部」是显式复位入口，⛔ 复位不只藏在「再点一次当前波次」这个不可见约定里', async () => {
+    const wrapper = mountOverview()
+
+    await wrapper.find('[data-testid="blueprint-wave-chip"][data-wave="2"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="blueprint-impl-item"]')).toHaveLength(1)
+
+    await wrapper.find('[data-testid="blueprint-wave-chip-all"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="blueprint-impl-item"]')).toHaveLength(2)
+  })
+
+  it('11h. ⭐ 仓库归属显式可见：元信息带「仓库」字样，涉及文件标注仓内相对路径，动作徽标中文', () => {
+    const overview = makeOverview()
+    const withFiles = {
+      ...overview.items[0],
+      files_touched: [{ path: 'apps/learn-textbook-sync/src/x.ts', action: 'edit' }],
+    }
+    const wrapper = mountOverview({ overview: { ...overview, items: [withFiles, overview.items[1]] } })
+
+    const repoChip = wrapper.find('#impl-impl_1 [data-testid="blueprint-impl-repo"]')
+    expect(repoChip.exists()).toBe(true)
+    expect(repoChip.text()).toContain('仓库')
+    expect(repoChip.text()).toContain('onion-learning')
+
+    const filesRepo = wrapper.find('#impl-impl_1 [data-testid="blueprint-impl-files-repo"]')
+    expect(filesRepo.exists()).toBe(true)
+    expect(filesRepo.text()).toContain('onion-learning')
+
+    // 动作徽标中文化：LLM 吐的同义 token（edit）归一成「改动」
+    const fileRow = wrapper.find('#impl-impl_1 [data-testid="blueprint-impl-file"]')
+    expect(fileRow.text()).toContain('改动')
+    expect(fileRow.text()).not.toContain('edit')
   })
 })

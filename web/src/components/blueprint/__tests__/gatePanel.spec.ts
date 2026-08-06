@@ -239,7 +239,6 @@ const PAGE_STUBS = {
   BlueprintThreadSidebar: { name: 'BlueprintThreadSidebar', props: ['gateAvailable'], template: '<div data-testid="thread-sidebar-stub" />' },
   BlueprintBlockedDialog: true,
   BlueprintSectionNav: true,
-  BlueprintStageTimeline: true,
   BlueprintBlockDiff: true,
   BlueprintQualityPanel: true,
   BlueprintRejectDialog: true,

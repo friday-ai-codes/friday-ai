@@ -133,6 +133,50 @@ describe('blueprintBlock.vue —— 五类块渲染', () => {
     expect(wrapper.text()).toContain(DEFAULT_TEXT)
   })
 
+  it('1a-rich. markdown-ish paragraph 走预览分支：记号删除、标题分级、textContent === 渲染文本', () => {
+    const source = '## 模块 1: 入口\n- 验收: **当** 用户进入 **时**\n\n#### 功能点 A\n普通行'
+    const rendered = '模块 1: 入口\n验收: 当 用户进入 时\n\n功能点 A\n普通行'
+    const wrapper = mountBlock({ block: makeBlock({ text: source }) })
+    const rich = wrapper.find('[data-testid="blueprint-markdown-lite"]')
+    expect(rich.exists()).toBe(true)
+    // ⭐ 坐标系不变式：DOM 文本节点扁平拼接 === buildMarkdownRender 的渲染文本
+    //    （选区经 toSource 映射回源坐标，见 BlueprintBlockList.detectSelection）。
+    expect(rich.element.textContent).toBe(rendered)
+    expect(rich.element.textContent).not.toContain('#')
+    expect(rich.element.textContent).not.toContain('**')
+    expect(rich.find('[data-md-line="h2"]').exists()).toBe(true)
+    expect(rich.find('[data-md-line="h4"]').exists()).toBe(true)
+    expect(rich.find('[data-md-line="bullet"]').exists()).toBe(true)
+    // 普通短段落不受影响
+    const plain = mountBlock({ block: makeBlock() })
+    expect(plain.find('[data-testid="blueprint-markdown-lite"]').exists()).toBe(false)
+    expect(plain.find('p').exists()).toBe(true)
+  })
+
+  it('1a-rich-mark. 源坐标 anchor 经映射后 <mark> 圈对渲染文本', () => {
+    const source = '## 标题\n- 条目一\n- 条目二'
+    // 源 offset 3..5 = '标题'；渲染文本 '标题\n条目一\n条目二' 上应圈到同两个字。
+    const wrapper = mountBlock({
+      block: makeBlock({ text: source }),
+      threads: [makeThread({ anchor: { block_id: 'b1', start_offset: 3, end_offset: 5 } })],
+    })
+    const marks = wrapper.findAll(MARK)
+    expect(marks.length).toBeGreaterThan(0)
+    expect(marks.map(m => m.text()).join('')).toBe('标题')
+    expect(
+      wrapper.find('[data-testid="blueprint-markdown-lite"]').element.textContent,
+    ).toBe('标题\n条目一\n条目二')
+  })
+
+  it('1a-rich-taskbox. 任务框渲染为图标元素（无文本节点），字符不再出现', () => {
+    const source = '- 验收：- [ ] **当** 进入 **时** 展示\n- [x] 已完成项'
+    const wrapper = mountBlock({ block: makeBlock({ text: source }) })
+    const rich = wrapper.find('[data-testid="blueprint-markdown-lite"]')
+    expect(rich.element.textContent).not.toContain('[ ]')
+    expect(rich.element.textContent).not.toContain('[x]')
+    expect(rich.findAll('[data-testid="blueprint-md-taskbox"]').length).toBe(2)
+  })
+
   it('1b. list 渲染 <ul>，<li> 数 == 条目数（offset 坐标系是 \\n 连接的扁平串）', () => {
     const wrapper = mountBlock({
       block: makeBlock({ type: 'list', text: ['第一条', '第二条', '第三条'] }),

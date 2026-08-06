@@ -37,16 +37,16 @@ const VIEWER_URL = `/knowledge/blueprints/${BLUEPRINT_ARTIFACT_ID}`
 
 /** `xl` 断点（Tailwind 默认 1280px）—— 与页面 `isWide` 的媒体查询字面量同值。 */
 const XL = 1280
-/** `md` 断点（Tailwind 默认 768px）—— 左栏 `hidden md:block` 的分界。 */
+/** `md` 断点（Tailwind 默认 768px）—— 段导航「Select ↔ 横向 chips」的分界。 */
 const MD = 768
 
 /**
- * `AnchorNavLayout` 左栏的 CSS 作用域。
+ * 段导航横条（头部 nav 插槽内的 chip 条）的 CSS 作用域。
  *
- * ⚠️ 必须带 `.w-48`：全局 `AppSidebar` 也是 `<aside><nav>` 结构（`w-64` / `w-[72px]`），
- * 裸 `aside nav` 会先命中它，段导航的断言就变成在断全局侧栏。
+ * 布局整改（quick-260806）后左栏 `AnchorNavLayout` 不再被本页使用：段导航是
+ * 随头部吸顶的横向 chip 条（`≥ md`），窄屏收成 Select 下拉。
  */
-const ANCHOR_NAV = 'aside.w-48 nav'
+const ANCHOR_NAV = '[data-testid="blueprint-section-nav-chips"]'
 
 interface ViewerOptions {
   /** 覆盖正文 `content`（默认十段齐全、`interaction_flows[0].mermaid` 是合法流程图）。 */
@@ -72,6 +72,22 @@ async function openViewer(page: Page, options: ViewerOptions = {}): Promise<void
     }
     if (path.endsWith('/blueprint/events')) {
       await fulfillJson(route, blueprintEvents())
+      return true
+    }
+    // 节点快照（quick-260806 stepper）：无会话的 200 空结构 —— stepper 只按事件推状态，
+    // 重跑面与版本树在本套视觉用例里不参与断言。
+    if (path.endsWith('/blueprint/stages')) {
+      await fulfillJson(route, {
+        session_id: '',
+        current_stage: '',
+        session_status: '',
+        run_label: '1',
+        stage_rerun: null,
+        stage_rerun_history: [],
+        rerunnable_stages: [],
+        stages: [],
+        versions: [],
+      })
       return true
     }
     if (path.endsWith('/blueprint-review/threads')) {
@@ -262,7 +278,7 @@ test.describe('UAT 115-2 选区 popover 的落点与 Esc 行为', () => {
 /**
  * 左栏当前高亮项的下标。
  *
- * 判据取 `AnchorNavLayout` 高亮态独有的 `bg-primary/8`；同时校验那根左侧指示条
+ * 判据取段导航高亮态独有的 `bg-primary/8`；同时校验那根指示条
  * （`v-if="activeSection === section.id"` 的绝对定位 span）与它同项 —— 两个来源不一致
  * 说明高亮态被改成了两套判定，直接抛错而不是静默取其一。
  */
@@ -289,7 +305,7 @@ async function scrollSectionIntoView(page: Page, sectionId: string): Promise<voi
   }, sectionId)
 }
 
-test.describe('UAT 115-3 左栏十段导航高亮跟随滚动', () => {
+test.describe('UAT 115-3 十段导航高亮跟随滚动', () => {
   test('十段全部挂上 observer：逐段滚动时高亮逐段推进，⛔ 不停在第一段', async ({ page }) => {
     await openViewer(page)
 
@@ -346,8 +362,11 @@ test.describe('UAT 115-4 三栏在 xl / md 两档断点下的收拢', () => {
     await expect(page.locator('[data-testid="blueprint-sidebar-sheet"]')).toHaveCount(0)
     expect(await visibleSidebarCount(page)).toBe(1)
 
-    // 顶栏「查看批注」在宽屏只展开常驻栏，⛔ 不会再开出第二份。
-    await page.locator('[data-testid="blueprint-header-open-annotations"]').click()
+    // ⭐ 宽屏的批注入口是顶栏折叠开关（「查看批注」按钮 `xl:hidden`，只服务窄屏抽屉）。
+    //    收起 → 常驻栏整块摘除；再展开 → 恢复恰好一份，⛔ 任何时刻不出现第二份。
+    await page.locator('[data-testid="blueprint-header-sidebar-toggle"]').click()
+    expect(await visibleSidebarCount(page)).toBe(0)
+    await page.locator('[data-testid="blueprint-header-sidebar-toggle"]').click()
     expect(await visibleSidebarCount(page)).toBe(1)
   })
 
@@ -369,7 +388,6 @@ test.describe('UAT 115-4 三栏在 xl / md 两档断点下的收拢', () => {
   test('断点两侧连续切换：宽 → 窄 → 宽，可见侧栏实例始终不超过一份', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await openViewer(page)
-    await page.locator('[data-testid="blueprint-header-open-annotations"]').click()
     expect(await visibleSidebarCount(page)).toBe(1)
 
     // 拉窄：常驻栏收起；页面 `watch(isWide)` 会顺手收掉抽屉 ⇒ 不会「自己弹回来」。
@@ -388,23 +406,23 @@ test.describe('UAT 115-4 三栏在 xl / md 两档断点下的收拢', () => {
     expect(await visibleSidebarCount(page)).toBe(1)
   })
 
-  test('< md：左栏十段导航收起，由 BlueprintSectionNav 的 Select 承接（恰好一份段导航）', async ({ page }) => {
+  test('< md：段导航收成 Select 下拉，≥ md 换横向 chips（两档互斥、恰好一份段导航）', async ({ page }) => {
     await page.setViewportSize({ width: MD - 1, height: 900 })
     await openViewer(page)
 
     await expect(page.locator(ANCHOR_NAV)).toBeHidden()
-    await expect(page.locator('[data-testid="blueprint-section-nav"]')).toBeVisible()
+    await expect(page.locator('[data-testid="blueprint-section-nav-select"]')).toBeVisible()
 
-    // ⭐「收拢」的可判定内核：收拢不成立时三栏会把正文顶出视口宽度，产生横向滚动条。
+    // ⭐「收拢」的可判定内核：收拢不成立时多栏会把正文顶出视口宽度，产生横向滚动条。
     const overflow = await page.evaluate(() => {
       const el = document.documentElement
       return el.scrollWidth - el.clientWidth
     })
     expect(overflow).toBeLessThanOrEqual(1)
 
-    // 对照：≥ md 时两者互换，⛔ 不会同时在场。
+    // 对照：≥ md 时两档互换，⛔ 不会同时在场。
     await page.setViewportSize({ width: 1024, height: 900 })
     await expect(page.locator(ANCHOR_NAV)).toBeVisible()
-    await expect(page.locator('[data-testid="blueprint-section-nav"]')).toBeHidden()
+    await expect(page.locator('[data-testid="blueprint-section-nav-select"]')).toBeHidden()
   })
 })

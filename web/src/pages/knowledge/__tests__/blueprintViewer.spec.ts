@@ -59,6 +59,8 @@ const {
   api: {
     getBlueprintDocument: vi.fn(),
     getBlueprintEvents: vi.fn(),
+    getBlueprintStages: vi.fn(),
+    rerunBlueprintStage: vi.fn(),
     getBlueprintThreads: vi.fn(),
     getBlueprintReviewSnapshot: vi.fn(),
     getBlueprintGate: vi.fn(),
@@ -133,6 +135,7 @@ const i18n = createI18n({
           },
           annotation: { sidebarTitle: '批注', sidebarToggleEmpty: '批注', crossBlock: '评论只能针对同一段落内的文字，请缩小选区' },
           version: { historyNotice: '正在查看历史版本 v{n}，操作已禁用', backToCurrent: '回到当前版本' },
+          diff: { notice: '正在对比 v{base} 与 v{target}，操作已禁用', exit: '退出对比' },
           readonly: { notice: '已确认的蓝图不可直接改写，要改请先驳回' },
           review: {
             approveSuccess: '已通过，蓝图进入「已确认」',
@@ -144,6 +147,7 @@ const i18n = createI18n({
             panelUnavailable: '该方案尚未进入人审阶段，暂无审查面板',
           },
           finding: { resolveSuccess: '已标记为已修复', dismissSuccess: '已标记为误报忽略', noopNotice: '该发现此前已有结论' },
+          rerun: { accepted: '已受理：该环节将以轮次 {label} 重跑' },
           thread: { commentCreated: '评论已提交' },
           error: {
             notFoundOrForbidden: '无权访问或该蓝图不存在',
@@ -159,18 +163,20 @@ const i18n = createI18n({
   },
 })
 
-/** ⭐ 保留 `sections` prop 以便断言（AnchorNavLayout 在测试里必被 stub）。 */
-const AnchorNavLayoutStub = {
-  name: 'AnchorNavLayout',
-  props: ['sections'],
-  template: '<div data-testid="anchor-nav-stub"><slot /></div>',
+/** ⭐ 保留 `sections` prop 以便断言（段导航在测试里必被 stub；恒 10 项的断言经它读取）。 */
+const SectionNavStub = {
+  name: 'BlueprintSectionNav',
+  props: ['sections', 'activeId'],
+  emits: ['navigate'],
+  template: '<div data-testid="section-nav-stub" />',
 }
 
 const HeaderStub = {
   name: 'BlueprintViewerHeader',
-  props: ['doc', 'counts', 'versions', 'currentVersionId', 'readonly', 'isLive', 'showClosed', 'sidebarCollapsed', 'currentStatus', 'revisionRound', 'submitting'],
+  props: ['doc', 'counts', 'versions', 'stageVersions', 'currentVersionId', 'readonly', 'isLive', 'showClosed', 'sidebarCollapsed', 'currentStatus', 'revisionRound', 'submitting'],
   emits: ['toggle-sidebar', 'open-annotations', 'change-version', 'open-diff', 'approve', 'reject', 'toggle-closed-annotations'],
-  template: '<div data-testid="viewer-header-stub" />',
+  // ⭐ 段导航经头部 nav 插槽渲染（布局整改后），stub 必须透出插槽否则断言目标不存在。
+  template: '<div data-testid="viewer-header-stub"><slot name="nav" /></div>',
 }
 
 const SidebarStub = {
@@ -188,6 +194,14 @@ const BlockedDialogStub = {
   </div>`,
 }
 
+/** 节点 stepper：保留 props 以便断言供数，emits `rerun` 驱动页面的重跑动作接线。 */
+const StepperStub = {
+  name: 'BlueprintStageStepper',
+  props: ['events', 'currentStage', 'currentStatus', 'stages', 'submitting'],
+  emits: ['rerun'],
+  template: '<div data-testid="stage-stepper-stub" />',
+}
+
 /** 受控预览弹层：需要能读 `open` 并回抛 `update:open`（M-4 的焦点归还靠它驱动）。 */
 const CitationPreviewStub = {
   name: 'CitationPreviewDialog',
@@ -198,16 +212,16 @@ const CitationPreviewStub = {
 
 const STUBS = {
   PageContainer: { template: '<div><slot /></div>' },
-  AnchorNavLayout: AnchorNavLayoutStub,
   BlueprintViewerHeader: HeaderStub,
   BlueprintThreadSidebar: SidebarStub,
   BlueprintBlockedDialog: BlockedDialogStub,
-  BlueprintSectionNav: true,
-  BlueprintStageTimeline: true,
+  BlueprintSectionNav: SectionNavStub,
+  BlueprintStageStepper: StepperStub,
   BlueprintBlockDiff: true,
   BlueprintQualityPanel: true,
   BlueprintRejectDialog: true,
   BlueprintSelectionPopover: true,
+  BlueprintCommentPopover: true,
   CitationPreviewDialog: CitationPreviewStub,
   MermaidDiagram: true,
   RequirementSpecSection: { name: 'RequirementSpecSection', template: '<div data-testid="stub-requirement-spec" />' },
@@ -262,6 +276,23 @@ function makeDoc(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function makeStages(overrides: Record<string, unknown> = {}) {
+  return {
+    session_id: 's-1',
+    current_stage: 'repo_plan',
+    session_status: 'running',
+    run_label: '1',
+    stage_rerun: null,
+    stage_rerun_history: [],
+    rerunnable_stages: ['ai_review', 'decompose', 'merge', 'repo_confirmation', 'repo_plan', 'repo_research', 'route', 'spec_gate'],
+    stages: [],
+    versions: [
+      { version_id: 'v-1', version_no: 3, version_label: '1', produced_by_ref: 'blueprint_merge', created_at: '2026-08-01T00:00:00Z', is_current: true },
+    ],
+    ...overrides,
+  }
+}
+
 function makeSnapshot(overrides: Record<string, unknown> = {}) {
   return {
     artifact_id: ARTIFACT_ID,
@@ -305,6 +336,7 @@ beforeEach(() => {
   timelineApi.getArtifactTimeline.mockResolvedValue({ versions: [] })
   api.getBlueprintDocument.mockResolvedValue(makeDoc())
   api.getBlueprintEvents.mockResolvedValue({ session_id: 's-1', current_stage: 'pending_review', events: [] })
+  api.getBlueprintStages.mockResolvedValue(makeStages())
   api.getBlueprintThreads.mockResolvedValue({ threads: [] })
   api.getBlueprintReviewSnapshot.mockResolvedValue(makeSnapshot())
   api.getBlueprintGate.mockRejectedValue(new ApiError(404, '确认门未开启'))
@@ -320,7 +352,7 @@ describe('蓝图查看器 —— ⭐ 十段容器无条件渲染（P-4）', () =
   it('2. sections 恒 10 项，且零批注的段 badge === \'\'（⛔ 不是 0）', async () => {
     const { wrapper } = mountPage()
     await flush()
-    const sections = wrapper.findComponent(AnchorNavLayoutStub).props('sections') as Array<{ id: string, badge: unknown }>
+    const sections = wrapper.findComponent(SectionNavStub).props('sections') as Array<{ id: string, badge: unknown }>
     expect(sections).toHaveLength(10)
     // 有内容的段照常出数字…
     expect(sections.find(section => section.id === 'requirement_spec')?.badge).toBe('1')
@@ -509,7 +541,7 @@ describe('蓝图查看器 —— 顶栏未决 BLOCKER 计数（MJ-03）', () => 
     api.getBlueprintThreads.mockResolvedValue({ threads: [makeBlockerThread({ status: 'answered' })] })
     const { wrapper } = mountPage()
     await flush()
-    const sections = wrapper.findComponent(AnchorNavLayoutStub).props('sections') as Array<{ id: string, badgeTone: string }>
+    const sections = wrapper.findComponent(SectionNavStub).props('sections') as Array<{ id: string, badgeTone: string }>
     expect(sections.find(section => section.id === 'requirement_spec')?.badgeTone).toBe('danger')
   })
 })
@@ -719,6 +751,64 @@ describe('蓝图查看器 —— 引用预览的焦点归还（M-4）', () => {
   })
 })
 
+/**
+ * ⭐ 节点重跑接线（quick-260806）：stepper 只 emit，POST / toast / 失效全在页面。
+ *
+ * 判据与其余动作端点同一纪律：零乐观更新、成功后前缀失效；400/409 原样回显后端 detail。
+ */
+describe('蓝图查看器 —— 节点 stepper 与重跑接线', () => {
+  it('27. stepper 收到 stages 供数，顶栏收到版本谱系（版本树的供数根）', async () => {
+    const { wrapper } = mountPage()
+    await flush()
+    const stages = wrapper.findComponent(StepperStub).props('stages') as { session_id: string }
+    expect(stages.session_id).toBe('s-1')
+    const stageVersions = wrapper.findComponent(HeaderStub).props('stageVersions') as unknown[]
+    expect(stageVersions).toHaveLength(1)
+  })
+
+  it('28. ⭐ rerun emit ⇒ 调 rerun API、成功 toast、前缀失效（零 setQueryData）', async () => {
+    api.rerunBlueprintStage.mockResolvedValue({ status: 'accepted', run_label: '1.2', stage: 'route', detail: '', session_status: 'running' })
+    const { wrapper, invalidateSpy, setQueryDataSpy } = mountPage()
+    await flush()
+    invalidateSpy.mockClear()
+    wrapper.findComponent(StepperStub).vm.$emit('rerun', { stage: 'route', instruction: '优先考虑复用既有网关' })
+    await flush()
+    expect(api.rerunBlueprintStage).toHaveBeenCalledWith(ARTIFACT_ID, { stage: 'route', instruction: '优先考虑复用既有网关' })
+    expect(toastMocks.success).toHaveBeenCalledWith('已受理：该环节将以轮次 1.2 重跑')
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['blueprint'] })
+    expect(setQueryDataSpy).not.toHaveBeenCalled()
+  })
+
+  it('29. 409 并发冲突 ⇒ 原样回显后端 detail 并失效重取', async () => {
+    api.rerunBlueprintStage.mockRejectedValue(new ApiError(409, '会话仍在运行，稍后再试'))
+    const { wrapper, invalidateSpy } = mountPage()
+    await flush()
+    invalidateSpy.mockClear()
+    wrapper.findComponent(StepperStub).vm.$emit('rerun', { stage: 'route', instruction: '' })
+    await flush()
+    expect(toastMocks.error).toHaveBeenCalledWith('会话仍在运行，稍后再试')
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['blueprint'] })
+  })
+
+  it('30. 400 非法 stage ⇒ 原样回显后端 detail（⛔ 不换中性文案）', async () => {
+    api.rerunBlueprintStage.mockRejectedValue(new ApiError(400, '不支持重跑该环节'))
+    const { wrapper } = mountPage()
+    await flush()
+    wrapper.findComponent(StepperStub).vm.$emit('rerun', { stage: 'intake', instruction: '' })
+    await flush()
+    expect(toastMocks.error).toHaveBeenCalledWith('不支持重跑该环节')
+  })
+
+  it('31. ⭐ stages 查询失败 ⇒ 不进错误分档：页面正常渲染、stepper 拿到 null 降级', async () => {
+    api.getBlueprintStages.mockRejectedValue(new ApiError(500, '内部错误'))
+    const { wrapper } = mountPage()
+    await flush()
+    expect(wrapper.find('[data-testid="blueprint-error-state"]').exists()).toBe(false)
+    expect(wrapper.findAll('section[id]')).toHaveLength(10)
+    expect(wrapper.findComponent(StepperStub).props('stages')).toBeNull()
+  })
+})
+
 describe('蓝图查看器顶栏 —— display_title 派生标题', () => {
   it('优先展示 display_title，而非旧 meta.title', async () => {
     const { default: BlueprintViewerHeader } = await import('~/components/blueprint/BlueprintViewerHeader.vue')
@@ -745,5 +835,45 @@ describe('蓝图查看器顶栏 —— display_title 派生标题', () => {
     })
     expect(wrapper.find('h1').text()).toBe('履约中台 - 技术方案 - 2026-08-01 08:00')
     expect(wrapper.find('h1').text()).not.toBe('订单履约链路重构')
+  })
+})
+
+/**
+ * ⭐ diff 模式的进入/退出闭环（quick-260806 实测反馈：只能进不能出）。
+ *
+ * 进入：`?diff=<baseVersionId>` ⇒ 顶部出对比横幅（这是**唯一**退出入口）。
+ * 退出：点「退出对比」⇒ `router.replace` 的 query 里 `diff` / `diff_mode` 双双清掉，
+ * `version` 保留（用户可能正查看某个历史版本）。
+ */
+describe('diff 模式的进入与退出', () => {
+  const NOTICE = '[data-testid="blueprint-diff-notice"]'
+  const EXIT = '[data-testid="blueprint-exit-diff"]'
+
+  it('⭐ ?diff= 进入 diff 模式：对比横幅与退出按钮渲染', async () => {
+    routeState.query = { diff: 'v-base' }
+    const { wrapper } = mountPage()
+    await flush()
+    expect(wrapper.find(NOTICE).exists()).toBe(true)
+    expect(wrapper.find(EXIT).exists()).toBe(true)
+    // 历史版本横幅让位（diff 才是当前视图的主语义）
+    expect(wrapper.find('[data-testid="blueprint-history-notice"]').exists()).toBe(false)
+  })
+
+  it('⭐ 点「退出对比」：diff 与 diff_mode 双清、version 保留', async () => {
+    routeState.query = { diff: 'v-base', diff_mode: 'split', version: 'v-hist' }
+    const { wrapper } = mountPage()
+    await flush()
+    await wrapper.find(EXIT).trigger('click')
+    await flush()
+    const query = routerReplace.mock.calls.at(-1)?.[0]?.query as Record<string, string>
+    expect(query?.diff).toBeUndefined()
+    expect(query?.diff_mode).toBeUndefined()
+    expect(query?.version).toBe('v-hist')
+  })
+
+  it('非恒真对照：不带 ?diff= ⇒ 无对比横幅', async () => {
+    const { wrapper } = mountPage()
+    await flush()
+    expect(wrapper.find(NOTICE).exists()).toBe(false)
   })
 })

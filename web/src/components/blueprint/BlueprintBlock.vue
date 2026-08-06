@@ -25,8 +25,9 @@
  * ⚠️ mermaid 空源码必须由**调用方 `v-if`** 判空 —— 组件自身会渲一个空 `<pre>` 且无提示。
  */
 
-import type { BlueprintBlock as BlueprintBlockModel, BlueprintThreadDetail, Citation } from '~/types/blueprint'
+import type { BlueprintBlock as BlueprintBlockModel, BlueprintFeaturePoint, BlueprintThreadDetail, Citation } from '~/types/blueprint'
 import type { TextSegment } from '~/utils/blueprintAnnotations'
+import type { InlineStyleKind, MarkdownLineKind, MarkdownLineMeta } from '~/utils/blueprintMarkdownLite'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MermaidDiagram from '~/components/project/warroom/MermaidDiagram.vue'
@@ -38,6 +39,11 @@ import {
   sliceBlockText,
 } from '~/utils/blueprintAnnotations'
 import { blockText } from '~/utils/blueprintBlocks'
+import {
+  intentLabelKeyOf,
+  matchFeaturePointsToRenderedLines,
+} from '~/utils/blueprintFeaturePoints'
+import { buildMarkdownRender, isMarkdownishText } from '~/utils/blueprintMarkdownLite'
 import { annotationClass, MARK_BASE_CLASS, pickTopThread } from './annotationTokens'
 import BlueprintCitationChip from './BlueprintCitationChip.vue'
 
@@ -63,6 +69,13 @@ const props = withDefaults(defineProps<{
    * 在 Dialog 内点放大会叠放竞争（P-12 次生，T-115-26）。
    */
   plainMermaid?: boolean
+  /**
+   * 功能点内联标签（quick-260806：功能点分散进目标正文，只有需求规格的 goal 块传）。
+   * 匹配到的行在行尾渲染 `fp_<id> · 状态` 小标签并挂 `fp-<id>` 跳转锚点。
+   * ⭐ 标签是**零文本节点**元素（文字走 CSS `content: attr(...)` 伪元素）——
+   * 与任务框替代物同一条纪律：不污染 `rangeOffsets` 的扁平选区坐标系。
+   */
+  featurePoints?: BlueprintFeaturePoint[]
 }>(), {
   sectionPath: '',
   threads: () => [],
@@ -71,6 +84,7 @@ const props = withDefaults(defineProps<{
   activeThreadId: null,
   showClosed: false,
   plainMermaid: false,
+  featurePoints: () => [],
 })
 
 const emit = defineEmits<{
@@ -208,6 +222,160 @@ const segments = computed<TextSegment[]>(() =>
 
 const paragraphSegments = computed(() => segments.value.map(decorate))
 
+// ── markdown 预览渲染（quick-260806-gfk v3：渲染映射）──────────────────────────
+//
+// 机械 intake 会把整段 feature-list markdown 塞进一个 paragraph 块（如
+// requirement_spec.goal），裸渲染是一面带 `##`/`- [ ]`/`**` 记号的文字墙。
+//
+// ⭐ 本分支 DOM 里只放**渲染文本**（记号已删除）：`buildMarkdownRender` 维护
+// 「源 ↔ 渲染」保留区间映射 ——
+// - 批注锚点（源坐标）经 `toRendered` 换算后在渲染文本上切 `<mark>`；
+// - 选区（DOM 即渲染坐标）由 `BlueprintBlockList` 经 `toSource` 换算回源坐标上报；
+// - 勾选框/圆点等视觉替代物是 iconify 元素 / 伪元素（**不产生文本节点**，
+//   不污染 `rangeOffsets` 的扁平坐标系）。
+// 行尾 `\n` 保留在行 div 末段文本节点里（块级末行分隔被浏览器丢弃，视觉无副作用）。
+
+const renderModel = computed(() =>
+  props.block.type === 'paragraph' && isMarkdownishText(text.value)
+    ? buildMarkdownRender(text.value)
+    : null,
+)
+
+// ── 功能点内联标签（quick-260806：功能点分散进目标正文）─────────────────────────
+//
+// 匹配到功能点标题的行在行尾出一枚 `fp_<id> · 状态` 小标签，并承载 `fp-<id>` 跳转锚点
+// （现状分析/实现概述/澄清向导的 goto-anchor 落点）。⭐ 标签零文本节点：文字全部走
+// CSS `content: attr(...)` 伪元素（与任务框替代物同款纪律），选区坐标系不受影响。
+
+/** 行起点（渲染坐标）→ 功能点标签。只有 goal 块会拿到非空 `featurePoints`。 */
+const fpTagByLineStart = computed(() => {
+  const model = renderModel.value
+  if (!model || !props.featurePoints.length)
+    return new Map<number, { pointId: string, intent: string, title: string }>()
+  return matchFeaturePointsToRenderedLines(model.rendered, model.lines, props.featurePoints)
+})
+
+function fpIntentLabel(intent: string): string {
+  const suffix = intentLabelKeyOf(intent)
+  return suffix ? t(`knowledge.blueprints.spec.${suffix}`) : intent
+}
+
+/** 渲染文本上的可见样式（记号已删除，只剩 dim / bold / code）。 */
+const INLINE_STYLE_CLS: Partial<Record<InlineStyleKind, string>> = {
+  dim: 'text-muted-foreground/70',
+  bold: 'font-semibold text-foreground',
+  code: 'rounded bg-muted/70 px-1 font-mono text-[12px]',
+}
+
+/** 任务框替代物（iconify 元素，无文本节点）。 */
+const GLYPH_CLS: Record<string, string> = {
+  'taskbox': 'icon-[lucide--square] mr-1 translate-y-[2px] text-[14px] text-muted-foreground/50',
+  'taskbox-checked': 'icon-[lucide--square-check-big] mr-1 translate-y-[2px] text-[14px] text-primary/70',
+}
+
+// 标题两档 16/15px、正文 14px（§14：Heading 档不与 Body 同号，M-6）。
+const LINE_CLS: Record<MarkdownLineKind, string> = {
+  h1: 'mt-4 first:mt-0 text-base font-semibold leading-6 text-foreground',
+  h2: 'mt-4 first:mt-0 text-base font-semibold leading-6 text-foreground',
+  h3: 'mt-3 first:mt-0 text-[15px] font-semibold leading-6 text-foreground',
+  h4: 'mt-3 first:mt-0 text-[15px] font-semibold leading-6 text-foreground',
+  task: '',
+  bullet: 'before:mr-2 before:inline-block before:size-1 before:translate-y-[-3px] before:rounded-full before:bg-muted-foreground/60 before:content-[\'\']',
+  ordered: '',
+  blank: 'h-2',
+  plain: '',
+}
+
+interface RichAtom extends RenderSegment {
+  styleCls: string
+  /** 原子前插入的视觉替代物（任务框删除点）。 */
+  glyphBefore: string
+}
+
+interface RichLine {
+  meta: MarkdownLineMeta
+  atoms: RichAtom[]
+}
+
+/** 缩进用 padding 承载（前导空格在 normal white-space 下折叠）。 */
+function lineIndentStyle(meta: MarkdownLineMeta): Record<string, string> {
+  if (meta.kind !== 'task' && meta.kind !== 'bullet' && meta.kind !== 'ordered')
+    return {}
+  return { paddingLeft: `${8 + meta.depth * 16}px` }
+}
+
+/**
+ * 渲染空间的原子切分：批注（映射后）∪ 行 ∪ 样式 ∪ 替代物插入点。
+ * 批注合法性仍按**源坐标**判（`isValidAnchor` + 越界整块降级逻辑不变），
+ * 合法者映射到渲染坐标；完全落在被删记号里的（映射后空区间）不渲染 mark。
+ */
+const richLines = computed<RichLine[]>(() => {
+  const model = renderModel.value
+  if (!model || !model.rendered)
+    return []
+
+  const mappedRanges = ranges.value
+    .filter(range => isValidAnchor(range, text.value.length))
+    .map(range => ({
+      threadId: range.threadId,
+      start: model.toRendered(range.start),
+      end: model.toRendered(range.end),
+    }))
+    .filter(range => range.start < range.end)
+
+  const renderedSegments = sliceBlockText(model.rendered, mappedRanges)
+  const segRanges: Array<{ start: number, end: number, threadIds: string[] }> = []
+  let pos = 0
+  for (const segment of renderedSegments) {
+    segRanges.push({ start: pos, end: pos + segment.text.length, threadIds: segment.threadIds })
+    pos += segment.text.length
+  }
+
+  const cuts = new Set<number>([0, model.rendered.length])
+  for (const range of segRanges) {
+    cuts.add(range.start)
+    cuts.add(range.end)
+  }
+  for (const line of model.lines) {
+    cuts.add(line.start)
+    cuts.add(line.end)
+  }
+  for (const style of model.styles) {
+    cuts.add(style.start)
+    cuts.add(style.end)
+  }
+  for (const glyph of model.glyphs)
+    cuts.add(glyph.rendOffset)
+  const sorted = [...cuts].sort((a, b) => a - b)
+
+  const glyphAt = new Map<number, string>()
+  for (const glyph of model.glyphs)
+    glyphAt.set(glyph.rendOffset, glyph.glyph)
+
+  const lines: RichLine[] = model.lines.map(meta => ({ meta, atoms: [] }))
+  let lineIdx = 0
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const from = sorted[i]
+    const to = sorted[i + 1]
+    if (from >= to)
+      continue
+    while (lineIdx < lines.length - 1 && from >= lines[lineIdx].meta.end)
+      lineIdx += 1
+    const segment = segRanges.find(range => range.start <= from && range.end >= to)
+    const style = model.styles.find(range => range.start <= from && range.end >= to)
+    const base = decorate({
+      text: model.rendered.slice(from, to),
+      threadIds: segment?.threadIds ?? [],
+    })
+    lines[lineIdx].atoms.push({
+      ...base,
+      styleCls: (style && INLINE_STYLE_CLS[style.style]) || '',
+      glyphBefore: glyphAt.get(from) ?? '',
+    })
+  }
+  return lines
+})
+
 /**
  * 按 `\n` 把切分段还原成行。
  *
@@ -300,10 +468,66 @@ function onDegradedActivate(): void {
       {{ degradedThreads.length }}
     </button>
 
+    <!-- ⓪ paragraph 的 markdown 预览分支：DOM 只放**渲染文本**（## / ** / - [ ] 已删除），
+         批注锚点经源↔渲染映射切 mark，选区由 BlockList 映射回源坐标（同一映射，同源实现）。 -->
+    <div
+      v-if="renderModel"
+      data-testid="blueprint-markdown-lite"
+      class="text-sm leading-relaxed"
+    >
+      <div
+        v-for="(line, li) in richLines"
+        :key="li"
+        :class="LINE_CLS[line.meta.kind]"
+        :style="lineIndentStyle(line.meta)"
+        :data-md-line="line.meta.kind"
+      >
+        <template v-for="(seg, i) in line.atoms" :key="i">
+          <!-- 任务框替代物：iconify 元素无文本节点，不污染选区坐标系 -->
+          <span
+            v-if="seg.glyphBefore"
+            :class="GLYPH_CLS[seg.glyphBefore]"
+            data-testid="blueprint-md-taskbox"
+            aria-hidden="true"
+          />
+          <mark
+            v-if="seg.mark"
+            :data-thread-id="seg.topThreadId"
+            :data-severity="seg.severity"
+            :data-thread-status="seg.status"
+            :class="[seg.cls, seg.styleCls]"
+            role="button"
+            tabindex="0"
+            :aria-label="seg.label"
+            :title="seg.label"
+            data-testid="blueprint-annotation-mark"
+            @click="onSegmentActivate(seg)"
+            @keydown.enter.prevent="onSegmentActivate(seg)"
+            @keydown.space.prevent="onSegmentActivate(seg)"
+          >{{ seg.text }}</mark>
+          <span v-else :class="seg.styleCls">{{ seg.text }}</span>
+        </template>
+        <!-- 功能点内联标签：零文本节点（文字走伪元素），承载 fp-<id> 跳转锚点。
+             不可选中、不参与选区坐标系（与任务框替代物同款纪律）。 -->
+        <span
+          v-if="fpTagByLineStart.get(line.meta.start)"
+          :id="`fp-${fpTagByLineStart.get(line.meta.start)!.pointId}`"
+          class="bp-fp-tag scroll-mt-24"
+          :data-fp-id="fpTagByLineStart.get(line.meta.start)!.pointId"
+          :data-fp-intent="fpTagByLineStart.get(line.meta.start)!.intent"
+          :data-fp-intent-label="fpIntentLabel(fpTagByLineStart.get(line.meta.start)!.intent)"
+          :data-feature-point-id="fpTagByLineStart.get(line.meta.start)!.pointId"
+          data-testid="blueprint-feature-point"
+          role="note"
+          :aria-label="`${fpTagByLineStart.get(line.meta.start)!.pointId} ${fpIntentLabel(fpTagByLineStart.get(line.meta.start)!.intent)}`"
+        />
+      </div>
+    </div>
+
     <!-- ① paragraph。`whitespace-pre-line` 保住块内换行：机械 intake 可能把整段
          多行原文塞进一个 paragraph 块（如 requirement_spec.goal），默认 HTML 折叠
          换行会渲染成一面无结构的文字墙。只影响展示，不改文本内容，批注 offset 坐标系不受影响。 -->
-    <p v-if="block.type === 'paragraph'" class="text-sm leading-relaxed whitespace-pre-line">
+    <p v-else-if="block.type === 'paragraph'" class="text-sm leading-relaxed whitespace-pre-line">
       <template v-for="(seg, i) in paragraphSegments" :key="i">
         <mark
           v-if="seg.mark"
@@ -411,3 +635,60 @@ function onDegradedActivate(): void {
     </div>
   </div>
 </template>
+
+<style scoped>
+/*
+ * 功能点内联标签（quick-260806）：文字**只**经 `content: attr(...)` 伪元素渲染 ——
+ * 元素零文本节点，`collectTextNodes` 走不到它，批注选区的扁平坐标系不受污染。
+ * 配色对齐 Badge 三档：greenfield→success(emerald) / brownfield→info(teal) / fix→warning(amber)。
+ */
+.bp-fp-tag {
+  display: inline-flex;
+  margin-left: 8px;
+  vertical-align: 1px;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.bp-fp-tag::before {
+  content: attr(data-fp-id);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--color-border);
+  border-right: none;
+  border-radius: 5px 0 0 5px;
+  color: var(--color-muted-foreground);
+  background: var(--color-background);
+}
+
+.bp-fp-tag::after {
+  content: attr(data-fp-intent-label);
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 0 5px 5px 0;
+  color: var(--color-muted-foreground);
+  background: var(--color-muted);
+}
+
+.bp-fp-tag[data-fp-intent='greenfield']::after {
+  color: var(--color-success-emphasis);
+  background: color-mix(in srgb, var(--color-success) 10%, transparent);
+  border-color: color-mix(in srgb, var(--color-success) 25%, transparent);
+}
+
+.bp-fp-tag[data-fp-intent='brownfield']::after {
+  color: var(--color-primary-600);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+.bp-fp-tag[data-fp-intent='fix']::after {
+  color: var(--color-warning-emphasis);
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-warning) 30%, transparent);
+}
+</style>
