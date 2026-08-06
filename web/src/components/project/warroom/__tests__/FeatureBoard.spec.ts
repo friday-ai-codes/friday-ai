@@ -73,6 +73,31 @@ describe('featureBoard（P1）', () => {
     expect(dots[0].attributes('class')).toContain('rounded-full')
   })
 
+  it('节点名剥掉 markdown 标记后只展示文字', async () => {
+    // 功能点名按行号从原文裁剪，历史数据整行带着 `#### ` / `- [ ] ` 进来。
+    getFeatureListMock.mockResolvedValue([
+      {
+        kind: 'module',
+        name: '## 模块 3: 单题型学习页',
+        children: [
+          {
+            kind: 'feature',
+            name: '#### 功能点 A：页面结构与 4 节点',
+            state: 'todo',
+            children: [{ kind: 'acceptance', name: '- [ ] **当** 进入题型时' }],
+          },
+        ],
+      },
+    ])
+    const wrapper = mountComp()
+    await flushPromises()
+    const text = wrapper.text()
+    expect(text).not.toContain('#')
+    expect(text).not.toContain('**')
+    expect(text).toContain('模块 3: 单题型学习页')
+    expect(text).toContain('功能点 A：页面结构与 4 节点')
+  })
+
   it('空态渲染真实 zh-CN 文案', async () => {
     getFeatureListMock.mockResolvedValue([])
     const wrapper = mountComp()

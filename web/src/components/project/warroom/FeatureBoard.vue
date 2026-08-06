@@ -193,7 +193,7 @@ const isEmpty = computed(() => totalFeatures.value === 0 && modules.value.length
           <CollapsibleTrigger class="group flex w-full items-center gap-2 px-3 py-2.5 text-left">
             <span class="icon-[lucide--chevron-right] text-xs text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
             <span class="icon-[lucide--folder] text-primary" />
-            <span class="text-sm font-medium text-foreground truncate"><InlineMarkdown :text="mod.name" /></span>
+            <span class="text-sm font-medium text-foreground truncate"><InlineMarkdown plain :text="mod.name" /></span>
             <span class="ml-auto text-xs text-muted-foreground shrink-0 tabular-nums">
               {{ moduleFeatures(mod).length }}
             </span>
@@ -220,7 +220,7 @@ const isEmpty = computed(() => totalFeatures.value === 0 && modules.value.length
                     :title="feat.status_display_name || t(`projects.workbench.feature.state.${normalizeState(feat.state)}`)"
                     data-testid="feature-state-dot"
                   />
-                  <span class="text-sm text-foreground truncate"><InlineMarkdown :text="feat.name" /></span>
+                  <span class="text-sm text-foreground truncate"><InlineMarkdown plain :text="feat.name" /></span>
                 </CollapsibleTrigger>
                 <span class="text-[11px] text-muted-foreground shrink-0 tabular-nums">
                   {{ t('projects.warroom.feature.acceptanceCount', { n: featureAcceptance(feat).length }) }}
@@ -245,7 +245,7 @@ const isEmpty = computed(() => totalFeatures.value === 0 && modules.value.length
                     class="flex items-center gap-2 py-1 text-xs"
                   >
                     <span class="icon-[lucide--check] text-emerald-500/70" />
-                    <span class="truncate text-foreground/80"><InlineMarkdown :text="acc.name" /></span>
+                    <span class="truncate text-foreground/80"><InlineMarkdown plain :text="acc.name" /></span>
                   </li>
                 </ul>
               </CollapsibleContent>
