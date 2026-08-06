@@ -13,6 +13,7 @@ from delivery.api.artifact_views import (
 from delivery.api.blueprint_doc_views import (
     BlueprintDocumentView,
     BlueprintEventsView,
+    BlueprintResearchDetailView,
     BlueprintReviewThreadsView,
 )
 from delivery.api.blueprint_export_views import (
@@ -38,6 +39,10 @@ from delivery.api.blueprint_review_views import (
     BlueprintReviewRejectView,
     BlueprintReviewSnapshotView,
     BlueprintReviewThreadAnswerView,
+)
+from delivery.api.blueprint_stage_views import (
+    BlueprintStageRerunView,
+    BlueprintStagesView,
 )
 from delivery.api.human_task_views import (
     ClarificationAnswerView,
@@ -250,6 +255,24 @@ urlpatterns = [
         "artifacts/<uuid:artifact_id>/blueprint/events/",
         BlueprintEventsView.as_view(),
         name="blueprint-events",
+    ),
+    # 按仓调研明细（结论 + agent 过程日志）：整段精确匹配，与 blueprint/ 族互不遮挡。
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint/research-detail/",
+        BlueprintResearchDetailView.as_view(),
+        name="blueprint-research-detail",
+    ),
+    # quick 260806 节点重跑 + 横向进度：stages/（节点快照）与 stages/rerun/（带指令重跑）
+    # 两个整段精确匹配，与既有 blueprint/ 族互不遮挡。
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint/stages/",
+        BlueprintStagesView.as_view(),
+        name="blueprint-stages",
+    ),
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint/stages/rerun/",
+        BlueprintStageRerunView.as_view(),
+        name="blueprint-stage-rerun",
     ),
     path(
         "artifacts/<uuid:artifact_id>/blueprint-review/threads/",

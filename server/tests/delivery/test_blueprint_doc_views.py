@@ -88,6 +88,7 @@ _TEXT_BLOCK = "blk_impl01_how"
 _ENDPOINTS = [
     ("blueprint-document", "get"),
     ("blueprint-events", "get"),
+    ("blueprint-research-detail", "get"),
     ("blueprint-review-threads", "get"),
     ("blueprint-review-threads", "post"),
 ]
@@ -660,8 +661,8 @@ def test_doc_views_reuse_the_project_scope_gate_by_import() -> None:
     assert "async def _aassert_project_scope" not in src
     assert "async def _ais_project_member" not in src
     assert "async def _ablueprint_project_id" not in src
-    # 四端点各调一次（threads 的 get/post 各算一次）
-    assert src.count("await _aassert_project_scope(") == 4
+    # 五端点各调一次（threads 的 get/post 各算一次；research-detail 是第五个）
+    assert src.count("await _aassert_project_scope(") == 5
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -816,3 +817,209 @@ def test_events_limit_is_clamped_not_rejected(authenticated_client, user) -> Non
     assert len(authenticated_client.get(url, {"limit": "-5"}).json()["events"]) == 1
     assert len(authenticated_client.get(url, {"limit": "99999"}).json()["events"]) == 3
     assert len(authenticated_client.get(url, {"limit": "abc"}).json()["events"]) == 3
+
+
+# ── 14. 按仓调研明细（结论 + agent 过程日志）──────────────────────────────────
+#
+# 守四件事：
+# 1. ⭐ **不走 `task.subagent_session` 外键**：阶段 2 派发会把它覆写成 `bp-plan-*`，顺着
+#    外键读会让阶段 1 的调研全程凭空消失。造「一个 task 两次运行」的形态验证两段都在。
+# 2. ⭐ **全量表优先、尾窗回落**：有 `SubAgentRuntimeLog` 就用它（且 `logs_truncated_tail`
+#    为 False）；存量会话只有 `last_output["logs"]` 时回落并**标记为真**。
+# 3. ⭐ **脱敏不可绕过**：工具结果里夹带的 key 出不来（本端点是全仓第一个把仓库文件内容
+#    送到浏览器的读面）。
+# 4. 无会话 / 无调研任务回 200 空结构，⛔ 不是 404。
+
+
+def _make_repo(name: str = "backend/study-course") -> Any:
+    from repositories.models import Repository
+
+    return Repository.objects.create(name=name, git_url=f"https://example.com/{name}.git")
+
+
+def _make_research_task(session: ConvergenceSession, repo: Any, **kwargs: Any) -> Any:
+    from delivery.models.research_task import RepoResearchTask
+
+    return RepoResearchTask.objects.create(session=session, repository=repo, **kwargs)
+
+
+def _make_run(task: Any, prefix: str, *, logs: list[tuple[str, str]] | None = None) -> Any:
+    """造一次容器运行。``session_id`` 必须带 ``task.id.hex[:12]`` —— 端点靠它反查。"""
+    from agents.models import AgentSession
+    from subagent.models import SubAgentRuntimeLog, SubAgentSession
+
+    main = AgentSession.objects.create(session_id=f"agent-{uuid.uuid4().hex[:16]}")
+    run = SubAgentSession.objects.create(
+        session_id=f"{prefix}-{task.id.hex[:12]}-{uuid.uuid4().hex[:6]}",
+        main_session=main,
+        repo_url="https://example.com/r.git",
+        task_type="plan",
+        status="completed",
+    )
+    for log_type, content in logs or []:
+        SubAgentRuntimeLog.objects.create(session=run, log_type=log_type, content=content)
+    return run
+
+
+def test_research_detail_returns_200_empty_structure_without_a_session(
+    authenticated_client,
+) -> None:
+    artifact = _make_artifact()
+    body = authenticated_client.get(_url("blueprint-research-detail", artifact)).json()
+    assert body == {"session_id": "", "repositories": []}
+
+
+def test_research_detail_covers_both_stages_despite_the_overwritten_fk(
+    authenticated_client, user
+) -> None:
+    """⭐ 阶段 2 覆写 ``subagent_session`` 后，阶段 1 的运行仍必须出现在明细里。"""
+    from delivery.models.research_task import PartialPlan
+
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    repo = _make_repo()
+    task = _make_research_task(session, repo, status="done", routed_confidence="high")
+
+    research_run = _make_run(task, "bp-research", logs=[("text", "先并行探索关键文件")])
+    plan_run = _make_run(task, "bp-plan", logs=[("tool_call", 'Read({"path": "a.py"})')])
+    # 复刻线上形态：外键指向**最后一次**派发（阶段 2），阶段 1 只能靠 session_id 反查。
+    task.subagent_session = plan_run
+    task.save(update_fields=["subagent_session"])
+
+    PartialPlan.objects.create(
+        research_task=task,
+        content={"fitness": {"verdict": "partial"}, "findings": [{"id": "f1", "text": "结论一"}]},
+    )
+
+    body = authenticated_client.get(_url("blueprint-research-detail", artifact)).json()
+
+    assert len(body["repositories"]) == 1
+    row = body["repositories"][0]
+    assert row["repository_name"] == "backend/study-course"
+    assert row["conclusion"]["fitness"]["verdict"] == "partial"
+    assert [f["id"] for f in row["conclusion"]["findings"]] == ["f1"]
+
+    stages = {run["stage"]: run for run in row["runs"]}
+    assert set(stages) == {"research", "repo_plan"}, "阶段 1 的运行不得因外键被覆写而消失"
+    assert stages["research"]["session_id"] == research_run.session_id
+    assert stages["research"]["logs"][0]["content"] == "先并行探索关键文件"
+    assert stages["repo_plan"]["logs"][0]["type"] == "tool_call"
+
+
+def test_research_detail_prefers_the_full_log_table_over_the_tail_window(
+    authenticated_client, user
+) -> None:
+    """全量表有行 ⇒ 用它且不标截断；只有尾窗 ⇒ 回落并**标记**（⛔ 不谎称是全程）。"""
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+
+    full_task = _make_research_task(session, _make_repo("with-full"), status="done")
+    _make_run(full_task, "bp-research", logs=[("text", "全量表里的一步")])
+
+    legacy_task = _make_research_task(session, _make_repo("legacy-only"), status="done")
+    legacy_run = _make_run(legacy_task, "bp-research")
+    legacy_run.last_output = {"logs": [{"type": "text", "content": "尾窗里的一步", "ts": 1}]}
+    legacy_run.save(update_fields=["last_output"])
+
+    rows = {
+        row["repository_name"]: row
+        for row in authenticated_client.get(_url("blueprint-research-detail", artifact)).json()[
+            "repositories"
+        ]
+    }
+
+    full_run = rows["with-full"]["runs"][0]
+    assert full_run["logs"][0]["content"] == "全量表里的一步"
+    assert full_run["logs_truncated_tail"] is False
+
+    tail_run = rows["legacy-only"]["runs"][0]
+    assert tail_run["logs"][0]["content"] == "尾窗里的一步"
+    assert tail_run["logs_truncated_tail"] is True, "存量尾窗必须标出来，否则被误读成全程"
+
+
+def test_research_detail_redacts_secrets_in_tool_results(authenticated_client, user) -> None:
+    """⭐ 工具结果 = 仓库文件内容 ⇒ 凭证一旦夹在里面就会随读面外泄。"""
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    task = _make_research_task(session, _make_repo("with-secret"), status="done")
+    _make_run(
+        task,
+        "bp-research",
+        logs=[("tool_result", "ok tu_1 ANTHROPIC_API_KEY=sk-ant-abcdef0123456789")],
+    )
+
+    body = authenticated_client.get(_url("blueprint-research-detail", artifact)).json()
+    content = body["repositories"][0]["runs"][0]["logs"][0]["content"]
+
+    assert "sk-ant-abcdef0123456789" not in content
+    assert "REDACTED" in content
+
+
+def test_research_detail_log_limit_is_clamped_not_rejected(authenticated_client, user) -> None:
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    task = _make_research_task(session, _make_repo("many-logs"), status="done")
+    _make_run(task, "bp-research", logs=[("text", f"第 {i} 步") for i in range(5)])
+
+    url = _url("blueprint-research-detail", artifact)
+
+    def _log_count(params: dict) -> int:
+        body = authenticated_client.get(url, params).json()
+        return len(body["repositories"][0]["runs"][0]["logs"])
+
+    assert _log_count({"log_limit": "2"}) == 2
+    # ⭐ 取的是**最早** N 条：砍掉开头等于把推理链的前提砍了
+    body = authenticated_client.get(url, {"log_limit": "2"}).json()
+    assert body["repositories"][0]["runs"][0]["logs"][0]["content"] == "第 0 步"
+    assert _log_count({"log_limit": "0"}) == 1
+    assert _log_count({"log_limit": "abc"}) == 5
+
+
+def test_research_detail_drops_encrypted_thinking_noise(authenticated_client, user) -> None:
+    """⭐ Anthropic 加密推理签名不是「思考」。
+
+    容器侧此前 `thinking or signature` 回落，把 `EoMFCnEIEBAB…` 这串 base64 当思考打了出来。
+    容器侧已修，但**存量会话里躺着一堆** —— 读面必须一并滤掉：它们既不可读，又会占掉
+    `log_limit` 的额度把真步骤挤出窗口。⛔ 明文思考（同样以 `[思考]` 开头）必须留下。
+    """
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    task = _make_research_task(session, _make_repo("noisy"), status="done")
+    _make_run(
+        task,
+        "bp-research",
+        logs=[
+            ("text", "[思考] EoMFCnEIEBABGAIqQEVySBpDl8GTtfS3UG1JqdyGqH06zVnnMn5Yi1IM3cha"),
+            ("text", "[思考] 我先读一下路由证据再决定看哪些文件"),
+            ("tool_call", 'Read({"file_path": "a.py"})'),
+        ],
+    )
+
+    body = authenticated_client.get(_url("blueprint-research-detail", artifact)).json()
+    contents = [log["content"] for log in body["repositories"][0]["runs"][0]["logs"]]
+
+    assert not any("EoMFCnEIEBAB" in text for text in contents), "加密签名必须滤掉"
+    assert "[思考] 我先读一下路由证据再决定看哪些文件" in contents, "⛔ 明文思考不得被连坐"
+    assert any("file_path" in text for text in contents)
+
+
+def test_research_detail_keeps_container_workspace_paths_readable(
+    authenticated_client, user
+) -> None:
+    """⭐ 容器工作目录名不得被脱敏正则误伤。
+
+    `/tmp/friday-ta|sk-|bp-research-…` 里的 `task-` 正好凑成 `sk-` + 20 个合法字符，
+    加 `\\b` 词边界前整条路径会被打成 `/tmp/friday-ta***REDACTED***/…` —— 而「agent 读了
+    哪个文件」正是过程明细的核心信息。
+    """
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    task = _make_research_task(session, _make_repo("path-repo"), status="done")
+    workspace = "/tmp/friday-task-bp-research-1010fd702d68-84b3cd-_5otn4fd/AGENTS.md"
+    _make_run(task, "bp-research", logs=[("tool_call", f'Read({{"file_path": "{workspace}"}})')])
+
+    body = authenticated_client.get(_url("blueprint-research-detail", artifact)).json()
+    content = body["repositories"][0]["runs"][0]["logs"][0]["content"]
+
+    assert workspace in content
+    assert "REDACTED" not in content
