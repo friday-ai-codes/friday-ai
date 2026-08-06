@@ -583,3 +583,108 @@ async def test_aseed_default_title_is_derived_format() -> None:
     )
     custom = await Artifact.objects.aget(id=custom.id)
     assert custom.title == "调用方自带标题"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# supersede：新蓝图创建时把同项目旧活跃蓝图标 superseded（quick 260806-sif）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+@sync_to_async
+def _make_old_blueprint(project_id: str, status: str) -> Any:
+    """直接 ORM 预置一份「旧蓝图」（tests 豁免 INV-6）：artifact + v1 content 带 meta.project_id。"""
+    artifact = Artifact.objects.create(artifact_type="technical_plan", blueprint_status=status)
+    content = build_skeleton(title="旧蓝图", project_id=project_id, goal_text="旧需求")
+    version = ArtifactVersion.objects.create(artifact=artifact, version_no=1, content=content)
+    artifact.current_version = version
+    artifact.save(update_fields=["current_version"])
+    return artifact
+
+
+async def _seed_new_blueprint() -> Any:
+    """走真实会话 + aseed（supersede 挂在 seed 内部，直调即触发）。"""
+    from services.process_runtime.blueprint_intake import aseed_blueprint_artifact
+
+    session = await start_blueprint_orchestration(
+        ConvergenceSessionEntrypoint.CHAT,
+        _REQUIREMENT,
+        project_id=_PROJECT_ID,
+        entry_key="chat",
+    )
+    return await aseed_blueprint_artifact(
+        session=session, requirement_text=_REQUIREMENT, project_id=_PROJECT_ID
+    )
+
+
+async def test_seed_supersedes_same_project_active_blueprints() -> None:
+    """同项目 researching / pending_review 旧蓝图 → seed 后 DB 重读均为 superseded。"""
+    await _make_project()
+    old_a = await _make_old_blueprint(_PROJECT_ID, BlueprintStatus.RESEARCHING)
+    old_b = await _make_old_blueprint(_PROJECT_ID, BlueprintStatus.PENDING_REVIEW)
+
+    artifact = await _seed_new_blueprint()
+
+    assert (
+        await Artifact.objects.aget(id=old_a.id)
+    ).blueprint_status == BlueprintStatus.SUPERSEDED
+    assert (
+        await Artifact.objects.aget(id=old_b.id)
+    ).blueprint_status == BlueprintStatus.SUPERSEDED
+    # 新蓝图自身不受影响，仍在 researching
+    assert (
+        await Artifact.objects.aget(id=artifact.id)
+    ).blueprint_status == BlueprintStatus.RESEARCHING
+
+
+async def test_seed_skips_statuses_without_superseded_edge() -> None:
+    """ai_reviewing 无 → superseded 合法边 ⇒ 不被动（仍 ai_reviewing）。"""
+    await _make_project()
+    old = await _make_old_blueprint(_PROJECT_ID, BlueprintStatus.AI_REVIEWING)
+
+    await _seed_new_blueprint()
+
+    assert (
+        await Artifact.objects.aget(id=old.id)
+    ).blueprint_status == BlueprintStatus.AI_REVIEWING
+
+
+async def test_seed_leaves_other_project_blueprints_untouched() -> None:
+    """不同 project_id 的活跃蓝图不被动（meta.project_id 精确比对）。"""
+    await _make_project()
+    other = await _make_old_blueprint(str(uuid.uuid4()), BlueprintStatus.RESEARCHING)
+
+    await _seed_new_blueprint()
+
+    assert (
+        await Artifact.objects.aget(id=other.id)
+    ).blueprint_status == BlueprintStatus.RESEARCHING
+
+
+async def test_seed_supersede_failure_does_not_block_creation() -> None:
+    """supersede 转移抛异常（best-effort 吞掉）⇒ 新蓝图仍创建成功且落 researching。
+
+    side_effect 按 ``to_status`` 判别：只让 SUPERSEDED 那次爆，⛔ 别把 seed 自身
+    跳 researching 的那次转移也弄挂。
+    """
+    from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+
+    await _make_project()
+    old = await _make_old_blueprint(_PROJECT_ID, BlueprintStatus.RESEARCHING)
+
+    real_transition = BlueprintLifecycleService.transition
+
+    async def _boom(self: Any, artifact: Any, to_status: str, **kwargs: Any) -> Any:
+        if to_status == BlueprintStatus.SUPERSEDED:
+            raise RuntimeError("supersede boom")
+        return await real_transition(self, artifact, to_status, **kwargs)
+
+    with patch.object(BlueprintLifecycleService, "transition", _boom):
+        artifact = await _seed_new_blueprint()
+
+    fresh = await Artifact.objects.aget(id=artifact.id)
+    assert fresh.blueprint_status == BlueprintStatus.RESEARCHING
+    assert str(fresh.current_version_id)
+    # 转移失败被吞掉：旧蓝图状态原样
+    assert (
+        await Artifact.objects.aget(id=old.id)
+    ).blueprint_status == BlueprintStatus.RESEARCHING

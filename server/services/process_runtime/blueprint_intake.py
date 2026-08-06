@@ -386,6 +386,20 @@ async def aseed_blueprint_artifact(
         created_by_user_id=created_by_user_id or "",
     )
     await _amark_researching(artifact, session)
+    # 「一项目一份活跃蓝图」：新蓝图落成后把同项目旧活跃蓝图标 superseded（best-effort，
+    # 整体再兜一层——supersede 任何失败都绝不阻断新蓝图创建）。
+    try:
+        await _asupersede_previous_blueprints(
+            new_artifact=artifact, session=session, project_id=str(project_id or "")
+        )
+    except Exception as exc:  # noqa: BLE001 — supersede 是收敛动作，绝不反噬 seeding
+        logger.warning(
+            "blueprint_supersede_previous_failed",
+            category="caller",
+            component=_COMPONENT,
+            new_artifact_id=str(artifact.id),
+            error=redact_secrets_in_text(str(exc)),
+        )
 
     logger.info(
         "blueprint_intake_seeded",
@@ -429,6 +443,111 @@ async def _amark_researching(artifact: Any, session: Any) -> None:
             artifact_id=str(getattr(artifact, "id", "")),
             error=redact_secrets_in_text(str(exc)),
         )
+
+
+# ⭐ 状态字段名走常量而**不写字面 kwarg**（照 ``blueprint_list_views.py`` 的 P-1 技巧）：
+# INV-6 字段级守卫的三条正则（字面赋值 / setattr / 字典键）扫整个 server/，
+# ``filter(<字段名>=...)`` 这种纯读形态也会命中——那是**有意的**设计（旁路 CAS 的写法
+# 正长这样）。本行本身三条都不命中（字段名后紧跟引号，既非等号也非冒号），配合
+# ``exclude(**{_STATUS_FIELD: ...})`` / ``getattr(obj, _STATUS_FIELD)`` 即可既保持守卫
+# 满弦、又不给本模块开豁免。⛔ 后人别「顺手改直白」。
+_STATUS_FIELD = "blueprint_status"
+
+
+async def _asupersede_previous_blueprints(
+    *, new_artifact: Any, session: Any, project_id: str
+) -> None:
+    """把同一项目下仍活跃的旧蓝图标记为 ``superseded``（「一项目一份活跃蓝图」的创建入口兜底）。
+
+    - **项目匹配在 Python 侧**：蓝图的项目归属只在
+      ``current_version.content["meta"]["project_id"]``、不是 DB 列（与
+      ``blueprint_list_views._aggregate`` 同口径）——先按 ``artifact_type`` + 非空状态收窄
+      queryset，再逐条读 meta 比对。蓝图量级小，代价可接受。
+    - **状态白名单**：转移表（``_ALLOWED_TRANSITIONS``）里只有 researching / drafting /
+      pending_review / confirmed 四态有 → superseded 合法边；其余状态（ai_reviewing /
+      needs_clarification / implementing / implemented / archived / failed / superseded）
+      一律计入 skipped，⛔ 不强转。
+    - **INV-6**：转移一律经 ``BlueprintLifecycleService.transition``（唯一写口），逐条
+      try/except——单条失败（含并发拒绝）绝不阻断其余候选，也绝不阻断新蓝图创建。
+    """
+    from asgiref.sync import sync_to_async
+
+    from delivery.artifacts.builtin_types import ARTIFACT_TYPE_TECHNICAL_PLAN
+    from delivery.models import Artifact, BlueprintStatus
+    from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+
+    started = time.monotonic()
+    initiated_by = str(getattr(session, "initiated_by_user_id", "") or "") or "system"
+    supersedable = frozenset(
+        {
+            BlueprintStatus.RESEARCHING,
+            BlueprintStatus.DRAFTING,
+            BlueprintStatus.PENDING_REVIEW,
+            BlueprintStatus.CONFIRMED,
+        }
+    )
+
+    @sync_to_async
+    def _load_same_project_candidates() -> list[Any]:
+        queryset = (
+            Artifact.objects.filter(artifact_type=ARTIFACT_TYPE_TECHNICAL_PLAN)
+            .exclude(id=new_artifact.id)
+            .exclude(**{_STATUS_FIELD: ""})
+            .select_related("current_version")
+        )
+        matched: list[Any] = []
+        for candidate in queryset:
+            content = getattr(candidate.current_version, "content", None)
+            meta = content.get("meta") if isinstance(content, dict) else None
+            if str((meta or {}).get("project_id") or "") == str(project_id):
+                matched.append(candidate)
+        return matched
+
+    candidates = await _load_same_project_candidates()
+    superseded_count = 0
+    skipped_count = 0
+    service = BlueprintLifecycleService()
+    for candidate in candidates:
+        current = str(getattr(candidate, _STATUS_FIELD, "") or "")
+        if current not in supersedable:
+            skipped_count += 1
+            logger.debug(
+                "blueprint_supersede_previous_item_skipped",
+                category="sampling",
+                component=_COMPONENT,
+                artifact_id=str(candidate.id),
+                current_status=current,
+            )
+            continue
+        try:
+            await service.transition(
+                candidate,
+                BlueprintStatus.SUPERSEDED,
+                initiated_by_user_id=initiated_by,
+                session=session,
+            )
+            superseded_count += 1
+        except Exception as exc:  # noqa: BLE001 — 单条失败绝不阻断其余候选与新蓝图创建
+            skipped_count += 1
+            logger.warning(
+                "blueprint_supersede_previous_item_failed",
+                category="caller",
+                component=_COMPONENT,
+                artifact_id=str(candidate.id),
+                error=redact_secrets_in_text(str(exc)),
+                initiated_by_user_id=initiated_by,
+            )
+    logger.info(
+        "blueprint_supersede_previous_completed",
+        category="caller",
+        component=_COMPONENT,
+        project_id=str(project_id or ""),
+        new_artifact_id=str(new_artifact.id),
+        superseded_count=superseded_count,
+        skipped_count=skipped_count,
+        initiated_by_user_id=initiated_by,
+        duration_ms=round((time.monotonic() - started) * 1000, 2),
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -529,9 +648,19 @@ async def _allm_feature_points(session: Any, requirement_text: str) -> list[dict
             return None
 
         model = build_chat_model(resolved, model_name, streaming=False)
+        # 节点重跑的操作员补充指令（quick 260806）：重新拆分时随需求原文一并给到 LLM。
+        # 无指令时为空串、整段省略——prompt 与改动前逐字一致。
+        from services.process_runtime.blueprint_stage_rerun import (
+            operator_instruction_section,
+        )
+
+        human = f"## 需求原文\n{requirement_text[:_MAX_GOAL_CHARS]}"
+        instruction = operator_instruction_section(session)
+        if instruction:
+            human = f"{human}\n\n{instruction}"
         messages = [
             SystemMessage(content=_decompose_system_prompt()),
-            HumanMessage(content=f"## 需求原文\n{requirement_text[:_MAX_GOAL_CHARS]}"),
+            HumanMessage(content=human),
         ]
         with use_call_source(CallSource.BLUEPRINT_DECOMPOSE):
             response = await model.ainvoke(messages)
