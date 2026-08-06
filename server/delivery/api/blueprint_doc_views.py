@@ -38,6 +38,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -117,6 +118,15 @@ def _parse_event_limit(raw: Any) -> int:
     except (TypeError, ValueError):
         return _MAX_EVENT_LIMIT
     return max(1, min(value, _MAX_EVENT_LIMIT))
+
+
+def _parse_run_log_limit(raw: Any) -> int:
+    """``?log_limit=`` → ``[1, _MAX_RUN_LOGS]``；缺省/非法回落 ``_MAX_RUN_LOGS``。"""
+    try:
+        value = int(str(raw or "").strip() or _MAX_RUN_LOGS)
+    except (TypeError, ValueError):
+        return _MAX_RUN_LOGS
+    return max(1, min(value, _MAX_RUN_LOGS))
 
 
 async def _aload_version(artifact_id: Any, version_id: Any = None) -> Any:
@@ -345,6 +355,8 @@ class BlueprintDocumentView(APIView):
         payload = {
             "version_id": str(version.id),
             "version_no": int(getattr(version, "version_no", 0) or 0),
+            # 谱系标签（quick 260806）：空串 = 旧数据，前端回落 v{version_no}。
+            "version_label": str(getattr(version, "version_label", "") or ""),
             "is_current": is_current,
             "produced_by_ref": str(getattr(version, "produced_by_ref", "") or ""),
             "created_at": version.created_at.isoformat() if version.created_at else "",
@@ -452,6 +464,199 @@ class BlueprintEventsView(APIView):
             incremental=since_ts is not None,
         )
         return Response(payload)
+
+
+# ── 2b. 按仓调研明细（结论 + agent 过程日志）──────────────────────────────────
+
+
+# 单次容器运行返回的日志上界。⭐ 取的是**最早 N 条**而不是最近 N 条：过程明细是拿来
+# 复盘「它当初怎么一步步走到这个结论」的，砍掉开头等于把推理链的前提砍了。
+_MAX_RUN_LOGS = 400
+
+# 单条日志正文上界。工具结果里常是整段文件内容，容器侧已截过一次，这里再兜一道
+# （历史行是在旧截断口径下落的，长度不受容器侧新常量约束）。
+_MAX_LOG_CONTENT_CHARS = 4000
+
+# 容器会话 id 的阶段前缀，与 ``blueprint_research_adapter._dispatch_deep_task`` 的
+# ``f"{prefix}-{task.id.hex[:12]}-{uuid4}"` 命名逐字对应。
+_RUN_STAGE_PREFIXES = {"bp-research": "research", "bp-plan": "repo_plan"}
+
+
+def _run_stage_of(session_id: str) -> str:
+    for prefix, stage in _RUN_STAGE_PREFIXES.items():
+        if session_id.startswith(f"{prefix}-"):
+            return stage
+    return ""
+
+
+# Anthropic 加密推理签名的形态：``[思考] `` + 一长串 base64（``EoMFCnEIEBAB…``）。
+# 容器侧已停止打印它（只取明文 ``thinking``），但**存量会话里躺着一堆** —— 它们既不可读，
+# 又会占掉 ``log_limit`` 的额度把真步骤挤出去 ⇒ 读面直接滤掉。
+# ⛔ 不用「以 `[思考]` 开头」当判据：明文思考也是这个前缀，那样会把真内容一起滤掉。
+_ENCRYPTED_THINKING = re.compile(r"^\[思考\]\s*[A-Za-z0-9+/=]{40,}\s*$")
+
+
+def _is_noise(log_type: str, content: str) -> bool:
+    return log_type == "text" and bool(_ENCRYPTED_THINKING.match(content or ""))
+
+
+def _log_row(log_type: str, content: str, ts: Any) -> dict:
+    """单条过程日志 → 响应行（⭐ 脱敏不可绕过）。
+
+    ``redact_secrets_in_text`` 与 chat 侧 ``plan_research_sessions`` 用的是同一个纯函数
+    （``server/chat/conversation_service.py``）—— ⛔ 两处口径不得分叉。这里尤其要紧：
+    本端点是全仓**第一个**把工具**结果**（= 仓库文件内容）送到浏览器的读面，凭证一旦
+    夹在被读的文件里就会随之外泄。
+    """
+    from common.logging import redact_secrets_in_text
+
+    text = redact_secrets_in_text(str(content or ""))
+    return {
+        "type": str(log_type or ""),
+        "content": text[:_MAX_LOG_CONTENT_CHARS],
+        "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts or ""),
+    }
+
+
+@sync_to_async
+def _aload_research_detail(session_id: Any, log_limit: int) -> list[dict]:
+    """按仓装配「结论 + 每次容器运行的过程日志」。
+
+    ⭐ **不走 ``task.subagent_session`` 外键**：那个字段是 ``mark_running`` 每次派发都
+    覆写的「最近一次」，阶段 2（分仓）派发后就把阶段 1（调研）的会话指针冲掉了 ⇒ 顺着
+    外键读只能拿到分仓那半程，调研全程在界面上凭空消失。会话 id 里嵌了
+    ``task.id.hex[:12]``，按前缀反查才能把一个仓的**每一次**运行都收全（含重试）。
+    """
+    from django.db.models import Q
+
+    from delivery.models.research_task import PartialPlan, RepoResearchTask
+    from subagent.models import SubAgentRuntimeLog, SubAgentSession
+
+    tasks = list(
+        RepoResearchTask.objects.filter(session_id=session_id)
+        .select_related("repository")
+        .order_by("created_at")
+    )
+    if not tasks:
+        return []
+
+    plans = {
+        plan.research_task_id: plan.content
+        for plan in PartialPlan.objects.filter(research_task__in=tasks, valid=True).order_by(
+            "created_at"
+        )
+    }
+
+    rows: list[dict] = []
+    for task in tasks:
+        marker = task.id.hex[:12]
+        runs_qs = SubAgentSession.objects.filter(
+            Q(session_id__startswith=f"bp-research-{marker}-")
+            | Q(session_id__startswith=f"bp-plan-{marker}-")
+        ).order_by("created_at")
+
+        runs: list[dict] = []
+        for run in runs_qs:
+            # ⚠️ 先滤噪音再切片：反过来会让加密签名占掉 `log_limit` 的额度，
+            # 把真步骤挤到窗口外（存量会话里这类行能占到两成）。
+            logs = [
+                _log_row(row.log_type, row.content, row.ts)
+                for row in SubAgentRuntimeLog.objects.filter(session=run).order_by("id")
+                if not _is_noise(row.log_type, row.content)
+            ][:log_limit]
+            # 回落尾窗：``SubAgentRuntimeLog`` 是本次新建的，存量会话只在
+            # ``last_output["logs"]`` 里有最近 80 条。⛔ 不因为没有全量就返回空——
+            # 存量蓝图的过程明细正是用户最想看的那份。
+            truncated_tail = False
+            if not logs:
+                output = run.last_output if isinstance(run.last_output, dict) else {}
+                raw = output.get("logs")
+                if isinstance(raw, list):
+                    logs = [
+                        _log_row(item.get("type"), item.get("content"), item.get("ts"))
+                        for item in raw
+                        if isinstance(item, dict)
+                        and not _is_noise(
+                            str(item.get("type") or ""), str(item.get("content") or "")
+                        )
+                    ][:log_limit]
+                    truncated_tail = bool(logs)
+            runs.append(
+                {
+                    "session_id": run.session_id,
+                    "stage": _run_stage_of(run.session_id),
+                    "status": str(run.status or ""),
+                    "started_at": run.started_at.isoformat() if run.started_at else "",
+                    "completed_at": run.completed_at.isoformat() if run.completed_at else "",
+                    "logs": logs,
+                    # ⚠️ 显式告诉前端「你看到的不是全程」：存量会话只剩尾窗 80 条，
+                    # 不标出来会让人以为 agent 真的只做了这几步。
+                    "logs_truncated_tail": truncated_tail,
+                }
+            )
+
+        rows.append(
+            {
+                "repository_id": str(task.repository_id),
+                "repository_name": str(getattr(task.repository, "name", "") or ""),
+                "status": str(task.status or ""),
+                "attempt": int(task.attempt or 0),
+                "error": task.error if isinstance(task.error, dict) else {},
+                "conclusion": plans.get(task.id) or {},
+                "runs": runs,
+            }
+        )
+    return rows
+
+
+class BlueprintResearchDetailView(APIView):
+    """GET .../blueprint/research-detail/ —— 按仓的调研结论与 agent 过程明细（只读）。
+
+    补的是 v0.21.0 LIVE-01/LIVE-03 的缺口：事件流只有阶段级标量（``findings_count``、
+    ``verdict``），看不到「哪个仓、得出了什么结论、agent 一步步调了哪些工具读了哪些
+    代码」。这些数据本就落在库里（``PartialPlan.content`` + 容器运行日志），此前**没有
+    任何读面**把它们送到蓝图查看器。
+
+    ⭐ **LIVE-05 的边界在这里落实**：返回工具调用、工具结果与 agent 的自然语言叙述
+    （都是可归因的过程证据），**不返回模型私有推理原文** —— 容器侧已不再打印
+    ThinkingBlock 的加密 ``signature``，明文 thinking 本就取不到。所有正文出口过
+    :func:`_log_row` 的脱敏。
+
+    ``?log_limit=`` 夹在 ``[1, _MAX_RUN_LOGS]``，取每次运行的**最早** N 条。
+
+    ⭐ **无会话 / 无调研任务一律 200 空结构，⛔ 绝不 404**：与 ``blueprint/events/``
+    同款理由 —— 还没跑到调研阶段是正常态，404 会被前端吞成「无权限」。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request: Any, artifact_id: Any) -> Response:
+        started = time.monotonic()
+        artifact = await _aload_artifact(artifact_id)
+        if artifact is None:
+            return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
+        denied = await _aassert_project_scope(request, artifact)
+        if denied is not None:
+            return denied
+
+        session = await _aload_session(artifact_id)
+        if session is None:
+            _log("blueprint_research_detail_read", request, artifact_id, started, repo_count=0)
+            return Response({"session_id": "", "repositories": []})
+
+        log_limit = _parse_run_log_limit(request.query_params.get("log_limit"))
+        repositories = await _aload_research_detail(session.id, log_limit)
+        _log(
+            "blueprint_research_detail_read",
+            request,
+            artifact_id,
+            started,
+            repo_count=len(repositories),
+            run_count=sum(len(row["runs"]) for row in repositories),
+        )
+        return Response(
+            {"session_id": str(getattr(session, "id", "") or ""), "repositories": repositories}
+        )
 
 
 # ── 3-4. 线程详情集合（GET 读多轮 / POST 开选区评论）─────────────────────────
