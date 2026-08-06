@@ -109,6 +109,52 @@ def _join_ids(value: Any) -> str:
     return "、".join(items) if items else _EMPTY
 
 
+# ── 仓名解析（⛔ 零 DB：映射从 content 自身派生）────────────────────────────
+
+
+def _repo_names(associations: list) -> dict[str, str]:
+    """``repo_associations`` → ``{repository_id: 仓名}``。
+
+    ⭐ **仓名的权威位置就在 content 里**（``repo_associations[].repository_name`` 是 schema
+    必填项），所以渲染器无需查 ``Repository`` 表就能把散落各段的 ``repository_id`` 渲染成
+    人读的仓名 —— 这一点很要紧：渲染器是**纯函数**，注册表契约
+    ``ContentRenderer = Callable[[dict], str]`` 也不给它 DB 会话。
+
+    ⛔ **不为仓名给** :func:`render_blueprint_markdown` **加参数**：签名断言（用例 §1）要求
+    参数名集合恰为 ``{content, blueprint_status}``，那是「未经确认」标注不可关闭的唯一机器
+    验形式。映射从 content 派生既守住该不变量，又不引入第二个真相源。
+
+    空仓名**不入表** ⇒ :func:`_repo_label` 自然回落 id（融合期 ``repository_name`` 缺失会被
+    回落成 id 写进快照，两条路径落点一致）。
+    """
+    names: dict[str, str] = {}
+    for item in associations:
+        item = _dict(item)
+        repository_id = str(item.get("repository_id") or "").strip()
+        name = str(item.get("repository_name") or "").strip()
+        if repository_id and name:
+            names[repository_id] = name
+    return names
+
+
+def _repo_label(value: Any, names: dict[str, str]) -> str:
+    """仓库 id → 仓名；解析不到**回落 id**，⛔ 不留白也⛔ 不吞掉这一维信息。
+
+    回落方向与前端各 section 的 ``repoNames[id] || id`` 逐字同口径（`[id].vue:418`）——
+    两侧分叉会让同一份方案在页面与导出物上指向不同的仓。
+    """
+    repository_id = str(value or "").strip()
+    if not repository_id:
+        return _EMPTY
+    return names.get(repository_id) or repository_id
+
+
+def _join_repos(value: Any, names: dict[str, str]) -> str:
+    """仓库 id 列表 → 顿号连接的仓名（`_join_ids` 的解析版）。"""
+    labels = [_repo_label(item, names) for item in _list(value) if str(item or "").strip()]
+    return "、".join(labels) if labels else _EMPTY
+
+
 def _render_blocks(blocks: Any) -> str:
     """block_list → 段落文本（逐块一段，空列表落占位符）。"""
     paragraphs = [_block_text(block).strip() for block in _list(blocks) if isinstance(block, dict)]
@@ -266,13 +312,13 @@ def _section_repo_associations(associations: list, pool: dict) -> list[str]:
     return parts
 
 
-def _section_current_state(analysis: list, pool: dict) -> list[str]:
+def _section_current_state(analysis: list, pool: dict, names: dict[str, str]) -> list[str]:
     parts = ["## 现状分析\n"]
     if not analysis:
         parts.append(_EMPTY + "\n")
     for entry in analysis:
         entry = _dict(entry)
-        parts.append(f"### 仓库 {_text(entry.get('repository_id'))}\n")
+        parts.append(f"### 仓库 {_repo_label(entry.get('repository_id'), names)}\n")
         parts.append(_render_blocks(entry.get("summary")) + "\n")
         rows = []
         for finding in _list(entry.get("findings")):
@@ -290,7 +336,7 @@ def _section_current_state(analysis: list, pool: dict) -> list[str]:
     return parts
 
 
-def _section_implementation(overview: dict, pool: dict) -> list[str]:
+def _section_implementation(overview: dict, pool: dict, names: dict[str, str]) -> list[str]:
     parts = ["## 实现概述\n", "### 需求叙事\n"]
     parts.append(_render_blocks(overview.get("requirement_narrative")) + "\n")
     parts.append("### 功能模块\n")
@@ -302,7 +348,7 @@ def _section_implementation(overview: dict, pool: dict) -> list[str]:
                 _cell(module.get("id")),
                 _cell(module.get("name")),
                 _cell(_join_ids(module.get("feature_point_ids"))),
-                _cell(_join_ids(module.get("repository_ids"))),
+                _cell(_join_repos(module.get("repository_ids"), names)),
             ]
         )
     parts.append(_build_table(["模块 id", "模块名", "覆盖功能点", "涉及仓库"], module_rows))
@@ -316,7 +362,7 @@ def _section_implementation(overview: dict, pool: dict) -> list[str]:
                 _cell(item.get("id")),
                 _cell(item.get("title")),
                 _cell(item.get("feature_point_id")),
-                _cell(item.get("repository_id")),
+                _cell(_repo_label(item.get("repository_id"), names)),
                 _cell(item.get("change_type")),
                 _cell(item.get("wave")),
             ]
@@ -340,7 +386,7 @@ def _section_implementation(overview: dict, pool: dict) -> list[str]:
     return parts
 
 
-def _section_api_contracts(contracts: list, pool: dict) -> list[str]:
+def _section_api_contracts(contracts: list, pool: dict, names: dict[str, str]) -> list[str]:
     parts = ["## API 契约\n"]
     rows = []
     details: list[str] = []
@@ -354,7 +400,7 @@ def _section_api_contracts(contracts: list, pool: dict) -> list[str]:
                 _cell(contract.get("direction")),
                 _cell(contract.get("method")),
                 _cell(contract.get("path")),
-                _cell(contract.get("repository_id")),
+                _cell(_repo_label(contract.get("repository_id"), names)),
             ]
         )
         description = _render_blocks(contract.get("description"))
@@ -372,7 +418,7 @@ def _section_api_contracts(contracts: list, pool: dict) -> list[str]:
     return parts
 
 
-def _section_impact(impact: dict, pool: dict) -> list[str]:
+def _section_impact(impact: dict, pool: dict, names: dict[str, str]) -> list[str]:
     parts = ["## 影响范围\n", "### 业务影响\n"]
     parts.append(_render_blocks(impact.get("business_impact")) + "\n")
     parts.append("### 受影响功能\n")
@@ -383,7 +429,7 @@ def _section_impact(impact: dict, pool: dict) -> list[str]:
             [
                 _cell(feature.get("feature")),
                 _cell(feature.get("kind")),
-                _cell(_join_ids(feature.get("repository_ids"))),
+                _cell(_join_repos(feature.get("repository_ids"), names)),
                 _cell(_render_blocks(feature.get("description"))),
             ]
         )
@@ -531,12 +577,17 @@ def render_blueprint_markdown(content: dict, *, blueprint_status: str) -> str:
         parts.append("## 执行摘要\n")
         parts.append(summary + "\n")
 
+    associations = _list(data.get("repo_associations"))
+    # 仓名映射先于四个引用仓库的段落建好：它们各自只有 `repository_id`，没有这张表就只能
+    # 把 UUID 直接印进导出物（现状分析的三级标题、实现项/功能模块/API 契约/影响范围四张表）。
+    names = _repo_names(associations)
+
     parts.extend(_section_requirement_spec(_dict(data.get("requirement_spec")), pool))
-    parts.extend(_section_repo_associations(_list(data.get("repo_associations")), pool))
-    parts.extend(_section_current_state(_list(data.get("current_state_analysis")), pool))
-    parts.extend(_section_implementation(_dict(data.get("implementation_overview")), pool))
-    parts.extend(_section_api_contracts(_list(data.get("api_contracts")), pool))
-    parts.extend(_section_impact(_dict(data.get("impact_analysis")), pool))
+    parts.extend(_section_repo_associations(associations, pool))
+    parts.extend(_section_current_state(_list(data.get("current_state_analysis")), pool, names))
+    parts.extend(_section_implementation(_dict(data.get("implementation_overview")), pool, names))
+    parts.extend(_section_api_contracts(_list(data.get("api_contracts")), pool, names))
+    parts.extend(_section_impact(_dict(data.get("impact_analysis")), pool, names))
     parts.extend(_section_interaction_flows(_list(data.get("interaction_flows")), pool))
     parts.extend(_section_must_haves(_dict(data.get("must_haves")), pool))
     parts.extend(_section_decision_log(_list(data.get("decision_log"))))

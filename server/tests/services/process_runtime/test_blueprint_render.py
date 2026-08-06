@@ -40,6 +40,11 @@ _RENDER_MODULE = (
     Path(__file__).resolve().parents[3] / "services/process_runtime/blueprint_render.py"
 )
 
+# ⭐ 真实 UUID 形态（⛔ 不用 "r-1" 这种短 id）：仓名解析回归靠「UUID 不出现在渲染结果里」
+# 断言，短 id 会与正文里的普通 token 混淆，让断言失去分辨力。
+_REPO_ID = "3f0f0c4e-3d0e-4c31-9a1b-2b7c9d5e8a10"
+_REPO_NAME = "friday-server"
+
 
 def _block(block_id: str, text: str) -> dict:
     return {"block_id": block_id, "type": "paragraph", "text": text}
@@ -65,15 +70,15 @@ def _content(**overrides) -> dict:
         },
         "repo_associations": [
             {
-                "repository_id": "r-1",
-                "repository_name": "friday-server",
+                "repository_id": _REPO_ID,
+                "repository_name": _REPO_NAME,
                 "role": "direct",
                 "responsibility": [_block("b3", "提供导出端点")],
             }
         ],
         "current_state_analysis": [
             {
-                "repository_id": "r-1",
+                "repository_id": _REPO_ID,
                 "summary": [_block("b4", "已有飞书文档 client")],
                 "findings": [
                     {
@@ -87,12 +92,12 @@ def _content(**overrides) -> dict:
         ],
         "implementation_overview": {
             "requirement_narrative": [_block("b6", "渲染器 + 端点两步")],
-            "modules": [{"id": "mod_1", "name": "导出模块", "repository_ids": ["r-1"]}],
+            "modules": [{"id": "mod_1", "name": "导出模块", "repository_ids": [_REPO_ID]}],
             "items": [
                 {
                     "id": "impl_1",
                     "feature_point_id": "fp_1",
-                    "repository_id": "r-1",
+                    "repository_id": _REPO_ID,
                     "change_type": "create",
                     "title": "新建渲染器",
                     "how": [_block("b7", "十段全量渲染")],
@@ -108,12 +113,19 @@ def _content(**overrides) -> dict:
                 "direction": "provided",
                 "method": "POST",
                 "path": "/blueprint/export-feishu/",
+                "repository_id": _REPO_ID,
                 "description": [_block("b8", "返回文档 id 与 url")],
             }
         ],
         "impact_analysis": {
             "business_impact": [_block("b9", "评审可直接分享文档")],
-            "affected_features": [{"feature": "时间线摘要", "kind": "behavior_change"}],
+            "affected_features": [
+                {
+                    "feature": "时间线摘要",
+                    "kind": "behavior_change",
+                    "repository_ids": [_REPO_ID],
+                }
+            ],
         },
         "interaction_flows": [
             {
@@ -418,3 +430,66 @@ def test_timeline_serializer_passes_the_real_status(status: str, expects_waterma
     assert "## 需求规格" in markdown
     assert "## 交互流程" in markdown
     assert (_WATERMARK_TOKEN in markdown) is expects_watermark
+
+
+# ── 11. 仓库引用渲染成仓名（⛔ 全篇不漏 UUID）────────────────────────────────
+
+
+def test_repository_references_render_names_never_raw_ids() -> None:
+    """⭐ 只有「仓库关联」那一段自带 ``repository_name``，其余四段只有 ``repository_id``。
+
+    渲染器从 ``repo_associations`` 建映射把它们解析成仓名 —— 缺了这一步，导出物、
+    ``current_version_markdown`` 与 MCP ``get_technical_blueprint``（三者共用本渲染器）
+    会把 UUID 直接印给评审人看。
+    """
+    rendered = render_blueprint_markdown(_content(), blueprint_status="confirmed")
+
+    assert _REPO_ID not in rendered, "⛔ 全篇不得出现裸仓库 UUID"
+    assert f"### 仓库 {_REPO_NAME}" in rendered, "现状分析三级标题"
+
+    # 四张带仓库列的表都落仓名（cell 两侧有空格 ⇒ 用 | 包起来断言，⛔ 不与正文误配）。
+    assert rendered.count(f"| {_REPO_NAME} |") >= 4, "模块 / 实现项 / API 契约 / 影响范围"
+
+
+def test_repository_label_falls_back_to_id_when_name_is_missing() -> None:
+    """关联表缺仓名时回落 id —— 与前端 ``repoNames[id] || id`` 同口径，⛔ 不留白。"""
+    content = _content()
+    content["repo_associations"][0]["repository_name"] = ""
+
+    rendered = render_blueprint_markdown(content, blueprint_status="confirmed")
+
+    assert f"### 仓库 {_REPO_ID}" in rendered
+    assert _REPO_NAME not in rendered
+
+
+def test_repository_reference_outside_associations_falls_back_to_id() -> None:
+    """引用了未登记在关联表里的仓 ⇒ 回落该仓自己的 id，⛔ 不串到别的仓名上。"""
+    stranger = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f"
+    content = _content()
+    content["implementation_overview"]["items"][0]["repository_id"] = stranger
+
+    rendered = render_blueprint_markdown(content, blueprint_status="confirmed")
+
+    assert f"| {stranger} |" in rendered
+    # 其余引用点仍解析成仓名（映射没被这条陌生引用带偏）。
+    assert f"### 仓库 {_REPO_NAME}" in rendered
+
+
+def test_repository_ids_list_renders_all_names_joined() -> None:
+    """多仓列表逐个解析（``_join_repos``），⛔ 不是整段回落。"""
+    second_id = "5d6e7f80-1a2b-4c3d-9e8f-7a6b5c4d3e2f"
+    content = _content()
+    content["repo_associations"].append(
+        {
+            "repository_id": second_id,
+            "repository_name": "friday-web",
+            "role": "indirect",
+            "responsibility": [_block("b10", "消费导出按钮")],
+        }
+    )
+    content["implementation_overview"]["modules"][0]["repository_ids"] = [_REPO_ID, second_id]
+
+    rendered = render_blueprint_markdown(content, blueprint_status="confirmed")
+
+    assert f"| {_REPO_NAME}、friday-web |" in rendered
+    assert second_id not in rendered
