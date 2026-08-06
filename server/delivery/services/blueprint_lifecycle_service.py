@@ -252,6 +252,22 @@ class BlueprintLifecycleService:
             session=session,
             started=started,
         )
+        if to_status == BlueprintStatus.CONFIRMED:
+            # quick 260806-sif：确认后把 provided HTTP 契约回流项目 API 清单。
+            # best-effort：回流任何失败绝不反噬「确认已成功」——状态已 CAS 落库。
+            try:
+                await self._async_state_apis_on_confirm(
+                    artifact, initiated_by_user_id=initiated_by_user_id
+                )
+            except Exception as exc:  # noqa: BLE001 — 回流 best-effort，绝不阻断确认动作
+                logger.warning(
+                    "blueprint_confirm_state_api_sync_failed",
+                    category="caller",
+                    component="blueprint_lifecycle",
+                    artifact_id=str(artifact.id),
+                    error=redact_secrets_in_text(str(exc)),
+                    initiated_by_user_id=initiated_by_user_id,
+                )
         return artifact
 
     async def add_reviewer(
@@ -403,6 +419,86 @@ class BlueprintLifecycleService:
                 to_status=to_status,
                 error=redact_secrets_in_text(str(exc)),
             )
+
+    async def _async_state_apis_on_confirm(
+        self, artifact: Artifact, *, initiated_by_user_id: str
+    ) -> None:
+        """确认后把 ``api_contracts`` 中 provided 的 HTTP 契约回流项目 API 清单
+        （quick 260806-sif：设计态 API 由蓝图派生，项目侧不再手工誊抄）。
+
+        - **重读 content**：⛔ 不信内存对象上可能过期的 ``current_version``。
+        - **只取** ``direction == "provided"`` 且 ``kind == "http"`` 且 method/path 均非空
+          的条目——consumed（调别人的）与非 HTTP（event/mq/rpc）不属于「本项目对外 API」。
+        - **写入经 ``ProjectDocService.upsert_state_api``**（INV-6 收口，含审计与飞书
+          push 调度）：get_or_create 语义，已存在同 (method, path) 条目**不覆盖**（现状
+          条目优先、重复确认幂等）。循环内 ``defer_materialize=True``，结束后合并调度一次
+          物化（102-REVIEW MED-01 的批量纪律）。
+        - **观测**：只记计数标量与关联键；契约正文（description blocks / 示例 / schema）
+          绝不进日志。调用点已兜底 try/except——本方法内异常照常上抛给它。
+        """
+        started = time.monotonic()
+        fresh = await Artifact.objects.select_related("current_version").aget(id=artifact.id)
+        content = getattr(fresh.current_version, "content", None)
+        if not isinstance(content, dict):
+            return
+        meta = content.get("meta")
+        project_id = str((meta if isinstance(meta, dict) else {}).get("project_id") or "")
+        if not project_id:
+            logger.warning(
+                "blueprint_confirm_state_api_sync_failed",
+                category="caller",
+                component="blueprint_lifecycle",
+                artifact_id=str(artifact.id),
+                reason="project_id_missing",
+                initiated_by_user_id=initiated_by_user_id,
+            )
+            return
+
+        contracts = [
+            contract
+            for contract in (content.get("api_contracts") or [])
+            if isinstance(contract, dict)
+            and str(contract.get("direction") or "") == "provided"
+            and str(contract.get("kind") or "") == "http"
+            and str(contract.get("method") or "").strip()
+            and str(contract.get("path") or "").strip()
+        ]
+
+        # 函数体内 lazy import：避免 delivery → initiatives 顶层依赖环。
+        from initiatives.models.project_state_api import ApiSource, ApiStatus
+        from initiatives.services.project_doc_service import ProjectDocService
+
+        doc_service = ProjectDocService()
+        synced_count = 0
+        skipped_count = 0
+        for contract in contracts:
+            _api, created = await doc_service.upsert_state_api(
+                project_id=project_id,
+                method=str(contract.get("method") or "").strip(),
+                path=str(contract.get("path") or "").strip(),
+                description=str(contract.get("name") or ""),
+                status=ApiStatus.PLANNED,
+                source=ApiSource.AGENT,
+                initiated_by_user_id=initiated_by_user_id,
+                defer_materialize=True,
+            )
+            if created:
+                synced_count += 1
+            else:
+                skipped_count += 1
+        if contracts:
+            await doc_service.schedule_state_materialization(project_id, initiated_by_user_id)
+        logger.info(
+            "blueprint_confirm_state_api_synced",
+            category="caller",
+            component="blueprint_lifecycle",
+            artifact_id=str(artifact.id),
+            project_id=project_id,
+            synced_count=synced_count,
+            skipped_count=skipped_count,
+            initiated_by_user_id=initiated_by_user_id,
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
 
     # ------------------------------------------------------------------
     # 线程写入（Phase 112-02 追加）：BlueprintThread / Message 的唯一 writer。
