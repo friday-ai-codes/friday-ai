@@ -15,9 +15,7 @@ from common.request_metrics import arecord_request_metric
 logger = structlog.get_logger()
 
 
-async def _record_runner_ws_metric(
-    *, event: str, connected_at: float | None = None
-) -> None:
+async def _record_runner_ws_metric(*, event: str, connected_at: float | None = None) -> None:
     """为 Runner WS connect/disconnect 记一行 RequestMetric（best-effort）。"""
     try:
         duration_ms = (
@@ -36,6 +34,7 @@ async def _record_runner_ws_metric(
         )
     except Exception:  # noqa: BLE001 — WS 指标绝不反噬业务
         pass
+
 
 # 终态集合
 _TERMINAL_STATUSES = {"completed", "error", "timeout", "cancelled"}
@@ -111,7 +110,10 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
             if self._hello_received:
                 await self._mark_offline()
                 await _broadcast_monitor_event(
-                    self.channel_layer, "runner.status_changed", self.runner.id, {"status": "offline"}
+                    self.channel_layer,
+                    "runner.status_changed",
+                    self.runner.id,
+                    {"status": "offline"},
                 )
                 await _alog_runner_event(self.runner.id, "disconnected")
                 _schedule_disconnect_timeout(self.runner.id)
@@ -306,7 +308,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
                 await _append_runtime_log(
                     task_id=task_id,
                     log_type=log_type,
-                    content=message[len(prefix):].strip(),
+                    content=message[len(prefix) :].strip(),
                 )
                 break
         _forward_task_log(task_id, message)
@@ -551,6 +553,56 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
 
             await _update_agent_session_cross_repo_relevance(session, payload)
 
+        # 与 HTTP callback handler 对齐 —— 四条容器链的完成处理（plan_research /
+        # repo_verify / blueprint_research / blueprint_repo_plan）。历史上 WS 路径
+        # 全部缺失：结果只经 WS 送达时，RepoResearchTask / RepoVerifyTask 等业务表
+        # 永远停在 running、fan-out 屏障永不触发，蓝图/方案编排 waiting_event 卡死
+        # （2026-08-05 线上事故根因之一）。各自独立 try/except swallow、内部幂等
+        # （任务已终态即 no-op），且必须在续驱调度之前 await（CR-01 顺序约束）。
+        from subagent.api.callbacks import (
+            _handle_blueprint_repo_plan_completion,
+            _handle_blueprint_research_completion,
+            _handle_repo_verify_completion,
+            _handle_research_completion,
+            _is_blueprint_repo_plan,
+            _is_blueprint_research,
+        )
+
+        try:
+            await _handle_research_completion(session, payload, log)
+        except Exception as exc:  # noqa: BLE001 — 永不阻塞 WS 消息处理
+            logger.warning(
+                "research_completion_ws_failed",
+                session_id=session.session_id,
+                error=str(exc),
+            )
+        try:
+            await _handle_repo_verify_completion(session, payload, log)
+        except Exception as exc:  # noqa: BLE001 — 永不阻塞 WS 消息处理
+            logger.warning(
+                "repo_verify_completion_ws_failed",
+                session_id=session.session_id,
+                error=str(exc),
+            )
+        if _is_blueprint_research(session):
+            try:
+                await _handle_blueprint_research_completion(session, payload, log)
+            except Exception as exc:  # noqa: BLE001 — 永不阻塞 WS 消息处理
+                logger.warning(
+                    "blueprint_research_completion_ws_failed",
+                    session_id=session.session_id,
+                    error=str(exc),
+                )
+        if _is_blueprint_repo_plan(session):
+            try:
+                await _handle_blueprint_repo_plan_completion(session, payload, log)
+            except Exception as exc:  # noqa: BLE001 — 永不阻塞 WS 消息处理
+                logger.warning(
+                    "blueprint_repo_plan_completion_ws_failed",
+                    session_id=session.session_id,
+                    error=str(exc),
+                )
+
         _schedule_workflow_resume(session, log)
         _schedule_agent_session_resume(session, log)
         log.info("task_completed_via_ws")
@@ -602,11 +654,13 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
             logs: list[dict[str, Any]] = last_output.get("logs", [])
             if not isinstance(logs, list):
                 logs = []
-            logs.append({
-                "type": "error",
-                "content": error_msg,
-                "ts": timezone.now().timestamp(),
-            })
+            logs.append(
+                {
+                    "type": "error",
+                    "content": error_msg,
+                    "ts": timezone.now().timestamp(),
+                }
+            )
             last_output["logs"] = logs
             session.last_output = last_output
             await session.asave(update_fields=["last_output", "updated_at"])
@@ -621,6 +675,55 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         # _update_coding_session_on_fail 内部 try/except graph resume 异常会降级
         # 为 amark_failed，所以即便 graph 不存在也安全。
         await _update_coding_session_on_fail(session, error_msg)
+
+        # 与 HTTP callback handler 对齐 —— 四条容器链的失败传播（plan_research /
+        # repo_verify / blueprint_research / blueprint_repo_plan）。历史上 WS 路径
+        # 全部缺失：失败只经 WS 送达时会话被翻终态、后续投递又被上面的终态守卫拦掉，
+        # RepoResearchTask 永远停在 running、屏障永不触发，蓝图卡死在 repo_research
+        # （2026-08-05 线上事故根因）。失败也是屏障终态，必须在续驱调度之前 await。
+        from subagent.api.callbacks import (
+            _handle_blueprint_repo_plan_failure,
+            _handle_blueprint_research_failure,
+            _handle_repo_verify_failure,
+            _handle_research_failure,
+            _is_blueprint_repo_plan,
+            _is_blueprint_research,
+        )
+
+        try:
+            await _handle_research_failure(session, payload, log)
+        except Exception as exc:  # noqa: BLE001 — 永不阻塞 WS 消息处理
+            logger.warning(
+                "research_failure_ws_failed",
+                session_id=session.session_id,
+                error=str(exc),
+            )
+        try:
+            await _handle_repo_verify_failure(session, payload, log)
+        except Exception as exc:  # noqa: BLE001 — 永不阻塞 WS 消息处理
+            logger.warning(
+                "repo_verify_failure_ws_failed",
+                session_id=session.session_id,
+                error=str(exc),
+            )
+        if _is_blueprint_research(session):
+            try:
+                await _handle_blueprint_research_failure(session, payload, log)
+            except Exception as exc:  # noqa: BLE001 — 永不阻塞 WS 消息处理
+                logger.warning(
+                    "blueprint_research_failure_ws_failed",
+                    session_id=session.session_id,
+                    error=str(exc),
+                )
+        if _is_blueprint_repo_plan(session):
+            try:
+                await _handle_blueprint_repo_plan_failure(session, payload, log)
+            except Exception as exc:  # noqa: BLE001 — 永不阻塞 WS 消息处理
+                logger.warning(
+                    "blueprint_repo_plan_failure_ws_failed",
+                    session_id=session.session_id,
+                    error=str(exc),
+                )
 
         _schedule_workflow_resume(session, log)
         _schedule_agent_session_resume(session, log)
@@ -969,7 +1072,7 @@ def _forward_task_log(task_id: str, message: str) -> None:
 
     for prefix, log_type in _TASK_LOG_PREFIXES.items():
         if message.startswith(prefix):
-            content = message[len(prefix):].strip()
+            content = message[len(prefix) :].strip()
             push_event(task_id, {"log_type": log_type, "content": content})
             return
 
@@ -978,10 +1081,13 @@ def _forward_task_progress(task_id: str, payload: dict) -> None:
     """将 task.progress 推送到深度分析注册表。"""
     from agents.tools.deep_analysis_registry import push_event
 
-    push_event(task_id, {
-        "log_type": "progress",
-        "content": payload.get("message", ""),
-    })
+    push_event(
+        task_id,
+        {
+            "log_type": "progress",
+            "content": payload.get("message", ""),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1027,9 +1133,11 @@ class MonitorConsumer(AsyncJsonWebsocketConsumer):
         if access_token:
             try:
                 from rest_framework_simplejwt.tokens import AccessToken
+
                 token = AccessToken(access_token)
                 user_id = token["sub"]
                 from django.contrib.auth import get_user_model
+
                 await get_user_model().objects.aget(id=user_id)
                 self.authenticated = True
                 await self.channel_layer.group_add(MONITOR_GROUP, self.channel_name)
