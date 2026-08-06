@@ -25,7 +25,9 @@ from claude_agent_sdk import (
     SdkMcpTool,
     SystemMessage,
     TextBlock,
+    ToolResultBlock,
     ToolUseBlock,
+    UserMessage,
     create_sdk_mcp_server,
     query,
 )
@@ -291,6 +293,44 @@ def _is_transient_claude_error(error: Exception) -> bool:
     return any(marker in message for marker in _CLAUDE_TRANSIENT_ERROR_MARKERS)
 
 
+# 工具入参上界。原值 300 会把 `get_repository_file(repository_id=…, file_path=…)` 这类
+# 调用的 `file_path` 截没——而「读了哪个文件」正是过程明细最要紧的一维。
+_MAX_TOOL_INPUT_CHARS = 2000
+
+# 工具**结果**上界。结果里常是整段文件内容，全量打进 stdout 会把日志刷爆；这里只留
+# 开头一段够判断「读到的是不是想要的东西」，完整内容仍在容器工作区里。
+_MAX_TOOL_RESULT_CHARS = 1200
+
+
+def _iter_blocks(content: Any) -> list[Any]:
+    """`UserMessage.content` 可能是纯字符串或 block 列表，统一成列表。"""
+    return content if isinstance(content, list) else []
+
+
+def _tool_result_preview(content: Any) -> str:
+    """工具结果 → 单行预览（截断并折掉换行）。
+
+    ``ToolResultBlock.content`` 有三态：``str`` / ``list[dict]``（多模态分片）/ ``None``。
+    列表态只取 ``text`` 字段拼接——图片等二进制分片对文本日志没有意义。
+    """
+    if content is None:
+        return "(空)"
+    if isinstance(content, list):
+        parts = [
+            str(item.get("text", ""))
+            for item in content
+            if isinstance(item, dict) and item.get("text")
+        ]
+        text = "\n".join(parts)
+    else:
+        text = str(content)
+    total = len(text)
+    preview = text[:_MAX_TOOL_RESULT_CHARS].replace("\n", "\\n")
+    if total > _MAX_TOOL_RESULT_CHARS:
+        preview += f"…（共 {total} 字符）"
+    return preview
+
+
 class ClaudeRunner:
     """Run Claude Agent SDK for AI-powered development."""
 
@@ -552,7 +592,12 @@ class ClaudeRunner:
                 # 出口是白名单级策略而非仅 prompt 约束——即使 knowledge/remote 同时
                 # 挂载导致 builtin 并入，disallowed 优先级更高仍兜底。
                 disallowed_tools=[
-                    "Write", "Edit", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch",
+                    "Write",
+                    "Edit",
+                    "MultiEdit",
+                    "NotebookEdit",
+                    "WebFetch",
+                    "WebSearch",
                 ],
             )
         except Exception as exc:  # noqa: BLE001
@@ -749,18 +794,34 @@ class ClaudeRunner:
                                     preview = block.text[:500]
                                     print(f"[task:text] {preview}", flush=True)
                                 elif isinstance(block, ToolUseBlock):
-                                    tool_input = json.dumps(block.input, ensure_ascii=False)[:300]
+                                    tool_input = json.dumps(block.input, ensure_ascii=False)[
+                                        :_MAX_TOOL_INPUT_CHARS
+                                    ]
                                     print(f"[task:tool] {block.name}({tool_input})", flush=True)
                                 else:
-                                    # ThinkingBlock 等：尝试提取 thinking 内容，否则只打印类型名
+                                    # ThinkingBlock 等：只在拿到**明文** thinking 时打印。
+                                    # ⛔ 绝不回落 `signature` —— 那是 Anthropic 对推理内容的
+                                    # 加密签名（形如 `EoMFCnEIEBAB…` 的 base64），当作「思考」
+                                    # 打出来是纯噪音，还会挤占日志上限把真步骤顶掉。
                                     block_type = type(block).__name__
-                                    thinking = getattr(block, "thinking", "") or getattr(
-                                        block, "signature", ""
-                                    )
+                                    thinking = str(getattr(block, "thinking", "") or "").strip()
                                     if thinking:
                                         print(f"[task:text] [思考] {thinking[:500]}", flush=True)
                                     else:
                                         print(f"[task:block] {block_type}", flush=True)
+                        elif isinstance(message, UserMessage):
+                            # ⭐ 工具**结果**（SDK 把它裹在 UserMessage 里回传）。此前整条
+                            # UserMessage 被跳过 ⇒ 过程明细只看得到「调用了什么」、看不到
+                            # 「读回来什么」，排障时最关键的一半信息是缺的。
+                            for block in _iter_blocks(message.content):
+                                if not isinstance(block, ToolResultBlock):
+                                    continue
+                                flag = "error" if block.is_error else "ok"
+                                preview = _tool_result_preview(block.content)
+                                print(
+                                    f"[task:tool_result] {flag} {block.tool_use_id} {preview}",
+                                    flush=True,
+                                )
                         elif isinstance(message, SystemMessage):
                             subtype = getattr(message, "subtype", "")
                             # 过滤掉无意义的 system 子类型
@@ -775,9 +836,7 @@ class ClaudeRunner:
                                 f"[task:result] session={session_id} cost=${total_cost}", flush=True
                             )
                         else:
-                            # 跳过 UserMessage 等 SDK 内部消息，它们对用户无意义
-                            if msg_type != "UserMessage":
-                                print(f"[task:msg] {msg_type}", flush=True)
+                            print(f"[task:msg] {msg_type}", flush=True)
                     if first_token_at is not None:
                         ttft_ms = max(int((first_token_at - attempt_start) * 1000), 0)
                     break
