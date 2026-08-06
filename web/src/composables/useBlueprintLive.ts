@@ -45,7 +45,7 @@ import { useQuery } from '@tanstack/vue-query'
 import { computed, ref, watch } from 'vue'
 import blueprintsApi from '~/api/blueprints'
 import { LIVE_BLUEPRINT_STATUSES } from '~/config/blueprintStatus'
-import { progressKeyForEvent, sectionKeyForEvent } from '~/utils/blueprintBlocks'
+import { resolveProgressKeys, sectionKeyForEvent } from '~/utils/blueprintBlocks'
 
 /** 轮询间隔（毫秒）。阶段级进展取 5s；日志级的 2s 太密，会把只读评审面变成压测。 */
 const LIVE_REFETCH_MS = 5_000
@@ -60,44 +60,16 @@ export interface SectionProgress {
   ts: string
 }
 
-/** 带插值的进度文案所需的键（缺任一即回落无参兜底，P-8：payload 的键 schema 层零保证）。 */
-const PROGRESS_PARAMS: Record<string, string[]> = {
-  specGateClarificationAsked: ['question_count'],
-  specGateLocked: ['decision_log_count'],
-  routeScored: ['candidate_count'],
-  repoResearchStarted: ['repository_name'],
-  repoResearchCompleted: ['repository_name', 'fitness_verdict'],
-  repoResearchFailed: ['repository_name', 'attempt'],
-  rerouteTriggered: ['round'],
-  contextEntryAppended: ['seq'],
-  contextWaiterRegistered: ['to_key'],
-  contextWaiterSatisfied: ['satisfied_count'],
-}
-
-function resolveProgressKeys(eventName: string, payload: Record<string, unknown>): {
-  key: string
-  fallbackKey: string
-} {
-  const key = progressKeyForEvent(eventName)
-  if (!key)
-    return { key: '', fallbackKey: '' }
-  const suffix = key.split('.').pop() ?? ''
-  const required = PROGRESS_PARAMS[suffix]
-  if (!required)
-    return { key, fallbackKey: key }
-  const generic = `${key}Generic`
-  const complete = required.every(
-    name => payload?.[name] !== undefined && payload?.[name] !== null && payload?.[name] !== '',
-  )
-  return { key: complete ? key : generic, fallbackKey: generic }
-}
+// 取键逻辑（插值完整性 + 判别式变体）已收敛到 `blueprintBlocks.resolveProgressKeys` ——
+// 活动流全景要用同一份，两处各判一遍必然漂移成「同一事件文案不一致」。
 
 /**
  * 蓝图查看器的三个实时查询 + 两项派生。
  *
  * ⛔ **阶段时间线不在这里派生**：它是 `~/utils/blueprintBlocks` 的纯函数
  * `buildStageTimeline(events, currentStage, currentStatus)`，由
- * `components/blueprint/BlueprintStageTimeline.vue` 直接调用。这里曾有过一份零消费方的副本，
+ * `components/blueprint/BlueprintStageStepper.vue`（经 `buildStagePanorama`）间接调用。
+ * 这里曾有过一份零消费方的副本，
  * 它让「修一处、单测绿、界面纹丝不动」成为可能（MN-01），已删除，⛔ 不要加回来。
  *
  * @param artifactId 蓝图 artifact id（响应式）。
@@ -189,12 +161,27 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
     refetchInterval: () => (isLive.value ? LIVE_REFETCH_MS : false),
   })
 
-  // ⭐ 启动保证：非活跃 → 活跃的那一刻踢一次 refetch，让 doc/events 的间隔函数重算并装上
-  // 定时器。⛔ 不得删除（见文件头的「为什么写法不一样」）。
+  /**
+   * 节点快照（quick-260806 节点重跑）：stage_state 分片 + 重跑标记/历史 + 版本谱系。
+   *
+   * enabled / refetch 策略与 events 完全同款：响应体没有蓝图状态字段 ⇒ 只能读外部
+   * `isLive`，启动保证同样落在下面那条 `watch(isLive)` 的 refetch 踢动上。
+   */
+  const stagesQuery = useQuery({
+    queryKey: computed(() => ['blueprint', 'stages', artifactId.value]),
+    queryFn: () => blueprintsApi.getBlueprintStages(artifactId.value),
+    enabled: computed(() => Boolean(artifactId.value)),
+    staleTime: 0,
+    refetchInterval: () => (isLive.value ? LIVE_REFETCH_MS : false),
+  })
+
+  // ⭐ 启动保证：非活跃 → 活跃的那一刻踢一次 refetch，让 doc/events/stages 的间隔函数重算
+  // 并装上定时器。⛔ 不得删除（见文件头的「为什么写法不一样」）。
   watch(isLive, (on) => {
     if (on) {
       docQuery.refetch()
       eventsQuery.refetch()
+      stagesQuery.refetch()
     }
   })
 
@@ -242,10 +229,11 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
     }
   })
 
-  /** 手动重取三者（动作端点 2xx 后由调用方触发，与 `invalidateQueries` 二选一）。 */
+  /** 手动重取全部实时查询（动作端点 2xx 后由调用方触发，与 `invalidateQueries` 二选一）。 */
   function refetchAll(): void {
     snapshotQuery.refetch()
     docQuery.refetch()
+    stagesQuery.refetch()
     // ⭐ 清游标再拉：动作端点 2xx 后可能有**早于游标**的事件（并发 emit / ts 由 emit 端
     // 传入 ⇒ 不保证单调）。增量拉会永久漏掉它们，而手动重取本就是「把一切拉齐」的语义。
     cursorTs.value = ''
@@ -258,6 +246,7 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
     doc: docQuery,
     snapshot: snapshotQuery,
     eventsQuery,
+    stagesQuery,
     events,
     sectionProgress,
     statusProgressKey,

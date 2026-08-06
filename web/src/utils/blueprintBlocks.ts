@@ -351,6 +351,7 @@ const EVENT_SECTION_MAP: Record<string, string[]> = {
   'blueprint.retrieval.completed': [],
   'blueprint.repo_plan.repo_started': ['implementation_overview'],
   'blueprint.repo_plan.repo_completed': ['implementation_overview'],
+  'blueprint.repo_plan.repo_failed': ['implementation_overview'],
   'blueprint.repo_plan.wave_advanced': ['implementation_overview'],
 }
 
@@ -378,13 +379,14 @@ const EVENT_PROGRESS_KEY: Record<string, string> = {
   'blueprint.review.completed': 'reviewCompleted',
   'blueprint.review.failed': 'reviewFailed',
   // 118 活动流：⭐ 这六条**刻意不配 `<key>Generic` 兜底文案** —— `eventLabel` 一旦发现
-  // Generic 存在就优先用它（见 BlueprintStageTimeline.eventLabel），叙事插值会被无参兜底
+  // Generic 存在就优先用它（见 BlueprintStageStepper.eventLabel），叙事插值会被无参兜底
   // 顶掉。活动流的价值全在那几个数字上，兜底等于把它抹平成一句废话。
   'blueprint.route.recalled': 'routeRecalled',
   'blueprint.route.plan_drafted': 'routePlanDrafted',
   'blueprint.retrieval.completed': 'retrievalCompleted',
   'blueprint.repo_plan.repo_started': 'repoPlanRepoStarted',
   'blueprint.repo_plan.repo_completed': 'repoPlanRepoCompleted',
+  'blueprint.repo_plan.repo_failed': 'repoPlanRepoFailed',
   'blueprint.repo_plan.wave_advanced': 'repoPlanWaveAdvanced',
 }
 
@@ -416,13 +418,16 @@ const EVENT_STAGE_MAP: Record<string, string> = {
   'blueprint.retrieval.completed': 'route',
   'blueprint.repo_plan.repo_started': 'repo_plan',
   'blueprint.repo_plan.repo_completed': 'repo_plan',
+  'blueprint.repo_plan.repo_failed': 'repo_plan',
   'blueprint.repo_plan.wave_advanced': 'repo_plan',
 }
 
-/** 阶段时间线的节点顺序（八节点）。
+/**
+ * 阶段时间线的节点顺序（八节点）。
  *
  * ⭐ 与后端 `builtin_processes._TECHNICAL_BLUEPRINT_STAGES` 的转移图同序（116 重排）：
- * 拆解后先路由调研，规格门（澄清）在仓库集确认门**之后**、分仓方案之前。 */
+ * 拆解后先路由调研，规格门（澄清）在仓库集确认门**之后**、分仓方案之前。
+ */
 export const BLUEPRINT_STAGES: readonly string[] = [
   'route',
   'repo_research',
@@ -450,6 +455,93 @@ export function sectionKeyForEvent(eventName: string): string[] {
 export function progressKeyForEvent(eventName: string): string {
   const suffix = EVENT_PROGRESS_KEY[eventName]
   return suffix ? `knowledge.blueprints.progress.${suffix}` : ''
+}
+
+/**
+ * 带插值的进度文案所需的 payload 键（缺任一即回落无参兜底）。
+ *
+ * ⚠️ **新增带 `{占位符}` 的进度文案必须在这里登记**（P-8：payload 的键 schema 层零保证）。
+ * 漏登记的后果不是报错而是**静默出残句**：`t()` 把缺失的具名参数渲染成空串，于是
+ * 「分仓方案已产出：{item_count} 项实现」上屏成「分仓方案已产出： 项实现」——句子还在、
+ * 数字没了，看起来像埋点丢数据，实际是文案选错了分支。
+ */
+const PROGRESS_PARAMS: Record<string, readonly string[]> = {
+  specGateClarificationAsked: ['question_count'],
+  specGateLocked: ['decision_log_count'],
+  routeScored: ['candidate_count'],
+  repoResearchStarted: ['repository_name'],
+  repoResearchCompleted: ['repository_name', 'fitness_verdict'],
+  repoResearchFailed: ['repository_name', 'attempt'],
+  rerouteTriggered: ['round'],
+  contextEntryAppended: ['seq'],
+  contextWaiterRegistered: ['to_key'],
+  contextWaiterSatisfied: ['satisfied_count'],
+  // 118 活动流：这六条此前漏登记 —— 它们的文案全都带插值。
+  // ⚠️ 要列**文案里出现的每一个**占位符，不是只列「最重要那个」：漏列的那个照样渲染成空。
+  routeRecalled: [
+    'candidate_count',
+    'router_candidate_count',
+    'charter_supplement_count',
+    'scope_repository_count',
+  ],
+  routePlanDrafted: ['repository_count'],
+  retrievalCompleted: ['hit_count', 'top_score', 'matched_repository_count'],
+  // quick-260806：started 事件改由派发漏斗发射，payload 带 repository_name、不再带 wave
+  // （波次叙事归 wave_advanced）；failed 是同批新增的三元补齐事件。
+  repoPlanRepoStarted: ['repository_name'],
+  repoPlanRepoCompleted: ['item_count', 'api_count'],
+  repoPlanRepoFailed: ['error'],
+  repoPlanWaveAdvanced: ['wave', 'total_waves', 'repository_count'],
+}
+
+/**
+ * 同一事件按 payload 判别式分文案：`<key>_<判别值>` 配了就优先用它。
+ *
+ * 为什么需要：`context.waiter_satisfied` 一个事件名承载**两种相反的事实** ——
+ * `reason="key_available"` 是「契约上总线，等待正常解除」，`reason="expired"` 是
+ * 「等超时了，强行放行」。两者都说成「跨仓接口已对齐」是实质误导：后者接口根本没等到。
+ */
+const PROGRESS_VARIANT_BY: Record<string, string> = {
+  contextWaiterSatisfied: 'reason',
+}
+
+/**
+ * 事件 + payload → 实际该用的进度文案 key（含判别式分支与无参兜底）。
+ *
+ * ⭐ **进度文案取键的唯一入口**：活动流全景、段级进度头、时间线都必须走它。各处自行
+ * `te(generic) ? generic : key` 地判过一遍，就会出现「同一条事件在两个面板上文案不一样」
+ * 这种没人能解释的差异。
+ *
+ * Returns:
+ *   `{key, fallbackKey}`；`key` 是首选（可能是判别式变体或无参兜底），`fallbackKey`
+ *   恒为无参兜底。未映射事件两者皆 `''`。
+ */
+export function resolveProgressKeys(
+  eventName: string,
+  payload: Record<string, unknown> | undefined,
+): { key: string, fallbackKey: string } {
+  const base = progressKeyForEvent(eventName)
+  if (!base)
+    return { key: '', fallbackKey: '' }
+  const suffix = base.split('.').pop() ?? ''
+  const generic = `${base}Generic`
+
+  const discriminator = PROGRESS_VARIANT_BY[suffix]
+  const variantValue = discriminator ? payload?.[discriminator] : undefined
+  const variant = typeof variantValue === 'string' && variantValue ? `${base}_${variantValue}` : ''
+
+  const required = PROGRESS_PARAMS[suffix]
+  const complete
+    = !required
+      || required.every((name) => {
+        const value = payload?.[name]
+        return value !== undefined && value !== null && value !== ''
+      })
+
+  // 变体优先（它自带完整语义），其次按插值完整性在具体文案 / 无参兜底之间选。
+  if (variant)
+    return { key: variant, fallbackKey: generic }
+  return { key: complete ? base : generic, fallbackKey: generic }
 }
 
 /** 事件名 → 阶段；未映射（如 `blueprint.status.transitioned`）返回 `''`。 */
@@ -554,6 +646,20 @@ export function buildStageTimeline(
         state = 'done'
       else
         state = 'running'
+      // ⭐ `repo_research.started/.completed/.failed` 是**每仓**事件（四仓并行调研会各发
+      // 一对），后缀判据在「第一个仓完成、其余仓还在跑」时会把整个调研阶段误判成 done
+      // （用户实测点名：2/4 完成时时间线已显示「已完成」）。改用计数判据：started 数 >
+      // 终态（completed+failed）数 ⇒ 仍在调研中。`repo_plan` 的每仓事件后缀是 `_completed`
+      // 天然绕开后缀判据，无需同款处理（见 EVENT_STAGE_MAP 的注释）。
+      // （本分支内 state 恒非 idle —— latest 存在时上面三支必落其一，无需再判。）
+      if (stage === 'repo_research') {
+        const startedCount = list.filter(e => e.event === 'blueprint.repo_research.started').length
+        const terminalCount = list.filter(
+          e => e.event === 'blueprint.repo_research.completed' || e.event === 'blueprint.repo_research.failed',
+        ).length
+        if (startedCount > 0 && terminalCount < startedCount)
+          state = 'running'
+      }
       if (state === 'running' && (collapseRunning || (currentIndex >= 0 && index < currentIndex)))
         state = 'done'
     }

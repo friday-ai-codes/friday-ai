@@ -314,6 +314,8 @@
         "testStrategy": "测试策略",
         "how": "怎么做",
         "filesTouched": "涉及文件（{n}）",
+        "filesTouchedRepo": "仓库 {repo} 内的相对路径",
+        "repoLabel": "仓库",
         "modulesTitle": "功能模块",
         "modulesTotal": "共 {n} 个",
         "itemsTitle": "实现项",

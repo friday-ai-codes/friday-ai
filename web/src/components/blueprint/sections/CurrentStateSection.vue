@@ -23,16 +23,24 @@
  */
 
 import type { SelectionPayload } from '../BlueprintBlockList.vue'
-import type { BlueprintCurrentStateAnalysis, BlueprintThreadDetail, Citation } from '~/types/blueprint'
+import type {
+  BlueprintCurrentStateAnalysis,
+  BlueprintFeaturePoint,
+  BlueprintThreadDetail,
+  Citation,
+} from '~/types/blueprint'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import { Badge } from '~/components/ui/badge'
 import BlueprintBlockList from '../BlueprintBlockList.vue'
+import BlueprintFeaturePointChip from '../BlueprintFeaturePointChip.vue'
 
 const props = withDefaults(defineProps<{
   analysis?: BlueprintCurrentStateAnalysis[]
   repoNames?: Record<string, string>
+  /** 功能点索引（id → 完整功能点），供 chip 出悬浮预览；缺项只降级成「id 无标题」。 */
+  featurePoints?: Record<string, BlueprintFeaturePoint>
   /** —— 以下五项是 blockCtx，原样透传给 `BlueprintBlockList` —— */
   threads?: BlueprintThreadDetail[]
   citations?: Record<string, Citation>
@@ -42,6 +50,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   analysis: () => [],
   repoNames: () => ({}),
+  featurePoints: () => ({}),
   threads: () => [],
   citations: () => ({}),
   readonly: false,
@@ -186,17 +195,15 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
               @cross-block-selection="emit('cross-block-selection')"
             />
 
-            <div v-if="finding.related_feature_points?.length" class="flex flex-wrap gap-1">
-              <button
+            <div v-if="finding.related_feature_points?.length" class="flex flex-wrap gap-1.5">
+              <BlueprintFeaturePointChip
                 v-for="fp in finding.related_feature_points"
                 :key="fp"
-                type="button"
-                class="rounded-md border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:border-primary/40 hover:text-primary"
-                data-testid="blueprint-feature-point-chip"
-                @click="emit('goto-anchor', `fp-${fp}`)"
-              >
-                {{ fp }}
-              </button>
+                :point-id="fp"
+                :point="featurePoints[fp] ?? null"
+                show-title
+                @goto-anchor="emit('goto-anchor', $event)"
+              />
             </div>
           </div>
         </div>

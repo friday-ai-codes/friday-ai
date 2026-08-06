@@ -36,7 +36,7 @@
  */
 
 import type { BlueprintVersionEntry } from './BlueprintVersionSwitcher.vue'
-import type { BlueprintDocumentResponse } from '~/types/blueprint'
+import type { BlueprintDocumentResponse, BlueprintStageVersionRow } from '~/types/blueprint'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Badge } from '~/components/ui/badge'
@@ -46,6 +46,7 @@ import { formatBlueprintTitle } from '~/utils/blueprintTitle'
 import BlueprintReviewActions from './BlueprintReviewActions.vue'
 import BlueprintStatusBadge from './BlueprintStatusBadge.vue'
 import BlueprintVersionSwitcher from './BlueprintVersionSwitcher.vue'
+import BlueprintVersionTree from './BlueprintVersionTree.vue'
 
 const props = withDefaults(defineProps<{
   /** 当前展示的正文（含 `meta.title`）；首屏加载时为 `null` ⇒ 标题位出骨架条。 */
@@ -61,6 +62,11 @@ const props = withDefaults(defineProps<{
    */
   annotationTotal?: number
   versions?: BlueprintVersionEntry[]
+  /**
+   * 版本谱系清单（stages API 的 `versions[]`，带 `version_label`）。
+   * 非空时渲染**版本树**切换器（谱系视角）；平铺切换器保留 —— diff 基线入口在它身上。
+   */
+  stageVersions?: BlueprintStageVersionRow[]
   currentVersionId?: string | null
   /** 只读模式（不可编辑状态 / 历史版本 / diff 视图）⇒ 终审操作区整块不渲染。 */
   readonly?: boolean
@@ -80,6 +86,7 @@ const props = withDefaults(defineProps<{
   counts: () => ({ blocker: 0, clarification: 0, orphaned: 0 }),
   annotationTotal: 0,
   versions: () => [],
+  stageVersions: () => [],
   currentVersionId: null,
   readonly: false,
   isLive: false,
@@ -201,7 +208,7 @@ const sidebarToggleLabel = computed(() =>
     <!-- ① 「未经确认」常驻警示：贴卡片顶边的细条（⛔ 无关闭控件、⛔ 无 dismiss） -->
     <div
       v-if="unconfirmed"
-      class="flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-5 py-1.5 text-xs text-amber-800"
+      class="flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-5 py-1.5 text-xs text-warning-emphasis"
       role="status"
       data-testid="blueprint-unconfirmed-banner"
     >
@@ -257,7 +264,18 @@ const sidebarToggleLabel = computed(() =>
 
     <!-- ③ 工具行：版本与计数（左）· 阅读开关 / 批注 / 导出（右），muted 弱化不与身份行抢焦点 -->
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 pb-2.5 pt-1">
+      <!-- ⭐ 版本入口只有一个（quick-260806 实测反馈：两个「v10」下拉并排是重复噪音）：
+           谱系树承载切换 + 谱系分组 + 逐版本 diff 基线；旧平铺切换器只在 stages 供数
+           缺席（查询失败降级）时回落渲染，任何时刻只有其一在 DOM。 -->
+      <BlueprintVersionTree
+        v-if="stageVersions.length"
+        :versions="stageVersions"
+        :current-version-id="currentVersionId"
+        @change="emit('change-version', $event)"
+        @compare="emit('open-diff', $event)"
+      />
       <BlueprintVersionSwitcher
+        v-else
         :versions="versions"
         :current-version-id="currentVersionId"
         @change="emit('change-version', $event)"
@@ -297,7 +315,11 @@ const sidebarToggleLabel = computed(() =>
           </span>
         </label>
 
+        <!-- 宽屏收起入口：仅侧栏展开时渲染（收起动作）。⭐ 收起后的**恢复入口**换成下面
+             那个带文字的「批注 (n)」按钮 —— 只剩一个无文字 ghost 图标时用户根本找不到
+             （quick-260806 实测反馈：「隐藏了就展示不出来了」）。 -->
         <Button
+          v-if="!sidebarCollapsed"
           variant="ghost"
           size="sm"
           class="hidden xl:inline-flex"
@@ -306,14 +328,15 @@ const sidebarToggleLabel = computed(() =>
           data-testid="blueprint-header-sidebar-toggle"
           @click="emit('toggle-sidebar')"
         >
-          <span :class="sidebarCollapsed ? 'icon-[lucide--panel-left-open]' : 'icon-[lucide--panel-left-close]'" />
+          <span class="icon-[lucide--panel-left-close]" />
         </Button>
 
-        <!-- 窄屏：唤起批注抽屉 -->
+        <!-- 批注入口：窄屏恒在（唤起抽屉）；宽屏在侧栏收起时出现（重新展开侧栏）。
+             页面层的 open-annotations（revealAnnotations）已按断点分派这两种行为。 -->
         <Button
           variant="outline"
           size="sm"
-          class="xl:hidden"
+          :class="sidebarCollapsed ? '' : 'xl:hidden'"
           :aria-label="t('knowledge.blueprints.annotation.sidebarToggleAria', { n: annotationTotal })"
           data-testid="blueprint-header-open-annotations"
           @click="emit('open-annotations')"
@@ -337,6 +360,12 @@ const sidebarToggleLabel = computed(() =>
           {{ t('knowledge.blueprints.export.action') }}
         </Button>
       </div>
+    </div>
+
+    <!-- ④ 段导航条（页面经 nav 插槽注入）：与头部同卡吸顶，页面量 header 高度做锚点
+         偏移时天然把本条算入（quick-260806 布局整改：左栏纵向导航 → 头部横向导航）。 -->
+    <div v-if="$slots.nav" class="border-t border-border/50 px-3 py-1.5">
+      <slot name="nav" />
     </div>
   </div>
 </template>

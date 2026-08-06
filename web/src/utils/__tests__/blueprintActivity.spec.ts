@@ -1,5 +1,8 @@
 /**
- * 活动流派生的纯函数测试（Phase 119，LIVE-02/03）。
+ * 活动流 / 阶段全景派生的纯函数测试（Phase 119 + 全景化改造）。
+ *
+ * 除下列八条，另守阶段全景三组：`describeEventPayload` 的标量/复合键分流与半可信容错、
+ * `buildStagePanorama` 的八节点恒定与归属、固定路由判定与摘要事实的「缺失不显示成 0」。
  *
  * 守八件事：
  *  1. ⭐ 路由适配度按 `route.scored` + `route.plan_drafted` 合成，按总分降序。
@@ -15,7 +18,13 @@
 
 import type { BlueprintEvent } from '~/types/blueprint'
 import { describe, expect, it } from 'vitest'
-import { buildRepoPlanProgress, buildRouteFitness } from '~/utils/blueprintActivity'
+import {
+  buildRepoPlanProgress,
+  buildRouteFitness,
+  buildStagePanorama,
+  describeEventPayload,
+  PANORAMA_STAGES,
+} from '~/utils/blueprintActivity'
 
 function event(name: string, payload: Record<string, unknown>, ts: string): BlueprintEvent {
   return { id: `${name}-${ts}`, event: name, payload, ts }
@@ -161,5 +170,156 @@ describe('buildRepoPlanProgress', () => {
   it('空事件流 ⇒ []', () => {
     expect(buildRepoPlanProgress([])).toEqual([])
     expect(buildRepoPlanProgress(undefined)).toEqual([])
+  })
+})
+
+describe('describeEventPayload', () => {
+  it('⭐ 标量与复合键分流：数组/对象被展开成可读行，⛔ 不只留键名', () => {
+    const { fields, groups } = describeEventPayload({
+      candidate_count: 2,
+      router_version: 'repo_router_v2',
+      auto_selected: true,
+      weights_used: { charter: 0.4, history: 0.3 },
+      candidates: [
+        { repository_id: 'r1', repository_name: '数学仓', total: 0.8 },
+        { repository_id: 'r2', repository_name: '语文仓', total: 0.42 },
+      ],
+    })
+
+    expect(fields).toEqual([
+      { key: 'candidate_count', value: '2' },
+      { key: 'router_version', value: 'repo_router_v2' },
+      { key: 'auto_selected', value: 'true' },
+    ])
+
+    const byKey = new Map(groups.map(group => [group.key, group]))
+    expect(byKey.get('weights_used')?.lines).toEqual(['charter=0.400', 'history=0.300'])
+    const candidates = byKey.get('candidates')
+    expect(candidates?.count).toBe(2)
+    expect(candidates?.lines[0]).toBe('repository_id=r1 · repository_name=数学仓 · total=0.800')
+  })
+
+  it('小数保留 3 位、整数原样（打分类字段全是 0–1 小数）', () => {
+    const { fields } = describeEventPayload({ total: 1, score: 0.7987 })
+    expect(fields).toEqual([
+      { key: 'total', value: '1' },
+      { key: 'score', value: '0.799' },
+    ])
+  })
+
+  it('⚠️ 半可信 payload：null/空数组/空对象一律不产生行，且不抛', () => {
+    const { fields, groups } = describeEventPayload({
+      ok: 1,
+      nothing: null,
+      missing: undefined,
+      emptyList: [],
+      emptyObject: {},
+      blank: '',
+    })
+
+    expect(fields).toEqual([{ key: 'ok', value: '1' }])
+    expect(groups).toEqual([])
+    expect(() => describeEventPayload(undefined)).not.toThrow()
+  })
+
+  it('超长数组只展开前若干项并标记截断', () => {
+    const { groups } = describeEventPayload({
+      items: Array.from({ length: 30 }, (_, index) => ({ id: `it_${index}` })),
+    })
+
+    expect(groups[0].count).toBe(30)
+    expect(groups[0].lines).toHaveLength(12)
+    expect(groups[0].truncated).toBe(true)
+  })
+
+  it('原始 JSON 可序列化输出（透明度兜底）', () => {
+    expect(describeEventPayload({ item_count: 7 }).raw).toContain('"item_count": 7')
+  })
+})
+
+describe('buildStagePanorama', () => {
+  it('⭐ 恒返八个节点，顺序与阶段时间线同源', () => {
+    const nodes = buildStagePanorama([], '', '')
+    expect(nodes.map(node => node.stage)).toEqual([...PANORAMA_STAGES])
+    expect(nodes.map(node => node.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+    expect(nodes.every(node => node.events.length === 0)).toBe(true)
+  })
+
+  it('事件归到所属阶段，路由适配度与分仓进度各归其位', () => {
+    const nodes = buildStagePanorama([
+      event('blueprint.route.scored', {
+        candidate_count: 1,
+        candidates: [{ repository_id: 'r1', repository_name: '数学仓', total: 0.8 }],
+      }, T1),
+      event('blueprint.repo_plan.repo_started', { repository_id: 'r1', repository_name: '数学仓', wave: 1 }, T2),
+      event('blueprint.repo_plan.repo_completed', { repository_id: 'r1', item_count: 5, api_count: 3 }, T3),
+    ], '', '')
+
+    const byStage = new Map(nodes.map(node => [node.stage, node]))
+    expect(byStage.get('route')?.events.map(row => row.event)).toEqual(['blueprint.route.scored'])
+    expect(byStage.get('route')?.fitness).toHaveLength(1)
+    // ⭐ 适配度只挂路由阶段、分仓进度只挂分仓阶段 —— ⛔ 不在每张卡上重复渲染同一张表
+    expect(byStage.get('route')?.repos).toEqual([])
+    expect(byStage.get('repo_plan')?.repos).toHaveLength(1)
+    expect(byStage.get('repo_plan')?.fitness).toEqual([])
+    expect(byStage.get('repo_plan')?.repos[0].itemCount).toBe(5)
+  })
+
+  it('⭐ 固定路由：两条事件任一带 project_binding 即判定，且只标在路由阶段', () => {
+    const nodes = buildStagePanorama([
+      event('blueprint.route.plan_drafted', { router_version: 'project_binding', repositories: [] }, T1),
+      event('blueprint.repo_plan.repo_started', { repository_id: 'r1', wave: 1 }, T2),
+    ], '', '')
+
+    const byStage = new Map(nodes.map(node => [node.stage, node]))
+    expect(byStage.get('route')?.pinnedRoute).toBe(true)
+    expect(byStage.get('repo_plan')?.pinnedRoute).toBe(false)
+  })
+
+  it('自动路由 ⇒ pinnedRoute 为 false', () => {
+    const nodes = buildStagePanorama([
+      event('blueprint.route.scored', { router_version: 'repo_router_v2', candidates: [] }, T1),
+    ], '', '')
+
+    expect(nodes.find(node => node.stage === 'route')?.pinnedRoute).toBe(false)
+  })
+
+  it('耗时取该阶段首末事件间隔；单条事件无耗时', () => {
+    const single = buildStagePanorama([
+      event('blueprint.review.started', { round: 1 }, T1),
+    ], '', '')
+    expect(single.find(node => node.stage === 'ai_review')?.durationMs).toBe(null)
+
+    const spanned = buildStagePanorama([
+      event('blueprint.review.started', { round: 1 }, T1),
+      event('blueprint.review.completed', { round: 1, review_status: 'passed' }, T2),
+    ], '', '')
+    // T1 → T2 恰好一小时
+    expect(spanned.find(node => node.stage === 'ai_review')?.durationMs).toBe(3_600_000)
+  })
+
+  it('摘要事实只出非空项（⛔ 缺失不显示成 0）', () => {
+    const nodes = buildStagePanorama([
+      event('blueprint.repo_plan.repo_started', { repository_id: 'r1', wave: 1 }, T1),
+      event('blueprint.repo_plan.repo_completed', { repository_id: 'r1', item_count: 2, api_count: 1 }, T2),
+    ], '', '')
+
+    const facts = nodes.find(node => node.stage === 'repo_plan')?.facts ?? []
+    expect(facts).toContainEqual({ key: 'repoPlanProgress', value: '1/1' })
+    // 没发过 wave_advanced ⇒ 不出波次行
+    expect(facts.some(fact => fact.key === 'waveProgress')).toBe(false)
+  })
+
+  it('调研阶段摘要给「完成/派发」进度与失败数', () => {
+    const nodes = buildStagePanorama([
+      event('blueprint.repo_research.started', { repository_id: 'a' }, T1),
+      event('blueprint.repo_research.started', { repository_id: 'b' }, T1),
+      event('blueprint.repo_research.completed', { repository_id: 'a' }, T2),
+      event('blueprint.repo_research.failed', { repository_id: 'b', error_kind: 'timeout' }, T2),
+    ], '', '')
+
+    const node = nodes.find(item => item.stage === 'repo_research')
+    expect(node?.facts).toContainEqual({ key: 'researchProgress', value: '1/2' })
+    expect(node?.facts).toContainEqual({ key: 'researchFailed', value: '1' })
   })
 })

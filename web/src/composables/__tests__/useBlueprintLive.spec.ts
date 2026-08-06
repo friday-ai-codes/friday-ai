@@ -8,7 +8,7 @@
  * ⛔ 本 spec **只锁轮询启停这一件事**。业务派生（`sectionProgress`）归
  * `utils/__tests__/blueprintBlocks.test.ts` 的纯函数单测，这里不重复；阶段时间线的末态推断
  * 见 `utils/__tests__/blueprintBlocks.test.ts` 与
- * `components/blueprint/__tests__/stageTimeline.spec.ts`（MN-01 之后本 composable 不再派生它）。
+ * `components/blueprint/__tests__/stageStepper.spec.ts`（MN-01 之后本 composable 不再派生它）。
  */
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -21,6 +21,7 @@ vi.mock('~/api/blueprints', () => ({
     getBlueprintReviewSnapshot: vi.fn(),
     getBlueprintDocument: vi.fn(),
     getBlueprintEvents: vi.fn(),
+    getBlueprintStages: vi.fn(),
   },
 }))
 
@@ -39,6 +40,17 @@ const DOC = {
   quality: { citation_coverage: 1, ai_rejection_rate: null, human_edit_volume: 0, clarification_rounds: null },
 }
 const EVENTS = { session_id: 's1', current_stage: 'drafting', events: [] }
+const STAGES = {
+  session_id: 's1',
+  current_stage: 'drafting',
+  session_status: 'running',
+  run_label: '1',
+  stage_rerun: null,
+  stage_rerun_history: [],
+  rerunnable_stages: [],
+  stages: [],
+  versions: [],
+}
 
 function mountHost() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -67,12 +79,17 @@ function eventCalls(): number {
   return vi.mocked(blueprintsApi.getBlueprintEvents).mock.calls.length
 }
 
+function stageCalls(): number {
+  return vi.mocked(blueprintsApi.getBlueprintStages).mock.calls.length
+}
+
 describe('useBlueprintLive —— 轮询启停', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
     vi.mocked(blueprintsApi.getBlueprintDocument).mockResolvedValue(DOC as never)
     vi.mocked(blueprintsApi.getBlueprintEvents).mockResolvedValue(EVENTS as never)
+    vi.mocked(blueprintsApi.getBlueprintStages).mockResolvedValue(STAGES as never)
   })
 
   afterEach(() => {
@@ -107,11 +124,13 @@ describe('useBlueprintLive —— 轮询启停', () => {
     //    响应式依赖，那条 watch 是它们从「永不装定时器」里被救出来的唯一途径（P-9）。
     expect(docCalls()).toBe(2)
     expect(eventCalls()).toBe(2)
+    expect(stageCalls()).toBe(2)
 
-    // 踢动之后链条自持：再过一个 5s 窗口，doc/events 继续增长。
+    // 踢动之后链条自持：再过一个 5s 窗口，doc/events/stages 继续增长。
     await advance(LIVE_INTERVAL_MS)
     expect(docCalls()).toBeGreaterThan(2)
     expect(eventCalls()).toBeGreaterThan(2)
+    expect(stageCalls()).toBeGreaterThan(2)
   })
 
   it('活跃 → 终态：doc/events 的调用次数不再增长', async () => {
@@ -129,11 +148,13 @@ describe('useBlueprintLive —— 轮询启停', () => {
 
     const docBefore = docCalls()
     const eventsBefore = eventCalls()
+    const stagesBefore = stageCalls()
 
-    // 再过两个 5s 窗口：终态下三者都应停住。
+    // 再过两个 5s 窗口：终态下全部实时查询都应停住。
     await advance(LIVE_INTERVAL_MS * 2)
     expect(docCalls()).toBe(docBefore)
     expect(eventCalls()).toBe(eventsBefore)
+    expect(stageCalls()).toBe(stagesBefore)
   })
 
   it('一直非活跃则完全不轮询（防止 watch 被写成无条件 refetch）', async () => {
@@ -148,5 +169,6 @@ describe('useBlueprintLive —— 轮询启停', () => {
     expect(blueprintsApi.getBlueprintReviewSnapshot).toHaveBeenCalledTimes(1)
     expect(docCalls()).toBe(1)
     expect(eventCalls()).toBe(1)
+    expect(stageCalls()).toBe(1)
   })
 })

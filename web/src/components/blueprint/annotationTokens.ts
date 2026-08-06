@@ -115,6 +115,22 @@ export function annotationHue(kind: string, severity: string): AnnotationHue {
 }
 
 /**
+ * 侧栏分组头的 kind 色点（quick-260806-tsb）：与批注下划线的色相档取同一批 `hsl()` 字面量
+ * （澄清 teal、人工评论 violet；审查组混合 severity 取警示 amber 作组级指征；确认门取 sky
+ * 与其余三档拉开）。
+ *
+ * ⭐ 落在本模块而不是组件里：批注功能色的 `hsl()` 字面量**只许集中在这里**（源码守卫
+ * §15 对扫描面内的裸 Tailwind 调色板色零容忍，`annotationTokens.ts` 是唯一豁免区）。
+ * 仅作装饰，调用方需配 `aria-hidden`。
+ */
+export const KIND_DOT_CLASS: Record<string, string> = {
+  ai_clarification: 'bg-[hsl(168_76%_42%)]',
+  ai_review_finding: 'bg-[hsl(38_92%_50%)]',
+  human_comment: 'bg-[hsl(263_70%_50%)]',
+  repo_confirmation: 'bg-[hsl(199_89%_48%)]',
+}
+
+/**
  * 本相位**新增可聚焦目标**的统一焦点环（UI-SPEC §18.3 逐字：`outline: 2px solid
  * var(--color-primary-600); outline-offset: 2px`，不透明 teal-600，实算 3.74:1 ✓）。
  *
@@ -126,8 +142,11 @@ export function annotationHue(kind: string, severity: string): AnnotationHue {
  */
 export const FOCUS_RING_CLASS = 'outline-none focus-visible:[outline:2px_solid_var(--color-primary-600)] focus-visible:[outline-offset:2px]'
 
-/** 与批注无关的共享形态（⚠️ 刻意不含任何 `bg-*`，见文件头 docstring）。 */
-const MARK_SHAPE_CLASS = `text-foreground rounded-sm cursor-pointer align-baseline ${FOCUS_RING_CLASS}`
+/**
+ * 与批注无关的共享形态（⚠️ 刻意不含任何 `bg-*`，见文件头 docstring）。
+ *  `transition-colors`：hover/选中态底纹加深的过渡（飞书文档划线手感，quick-260806-j1z）。
+ */
+const MARK_SHAPE_CLASS = `text-foreground rounded-sm cursor-pointer align-baseline transition-colors duration-150 ${FOCUS_RING_CLASS}`
 
 /**
  * `<mark>` 的独立重置类（含黄底重置），供**不经 `annotationClass()`** 的场景使用
@@ -148,51 +167,51 @@ const ACTIVE_OUTLINE_CLASS = '[outline:2px_solid_hsl(167_76%_32%)] [outline-offs
 const HUE_CLASS: Record<AnnotationHue, Record<'open' | 'answered', { normal: string, active: string }>> = {
   blocker: {
     open: {
-      normal: '[border-bottom:2px_solid_hsl(0_72%_45%)] bg-[hsl(0_72%_51%/0.12)]',
+      normal: '[border-bottom:2px_solid_hsl(0_72%_45%)] bg-[hsl(0_72%_51%/0.12)] hover:bg-[hsl(0_72%_51%/0.168)]',
       active: '[border-bottom:3px_solid_hsl(0_72%_45%)] bg-[hsl(0_72%_51%/0.168)]',
     },
     answered: {
-      normal: '[border-bottom:2px_dashed_hsl(0_72%_45%)] bg-[hsl(0_72%_51%/0.072)]',
+      normal: '[border-bottom:2px_dashed_hsl(0_72%_45%)] bg-[hsl(0_72%_51%/0.072)] hover:bg-[hsl(0_72%_51%/0.101)]',
       active: '[border-bottom:3px_dashed_hsl(0_72%_45%)] bg-[hsl(0_72%_51%/0.101)]',
     },
   },
   warning: {
     open: {
-      normal: '[border-bottom:2px_solid_hsl(26_90%_37%)] bg-[hsl(38_92%_50%/0.12)]',
+      normal: '[border-bottom:2px_solid_hsl(26_90%_37%)] bg-[hsl(38_92%_50%/0.12)] hover:bg-[hsl(38_92%_50%/0.168)]',
       active: '[border-bottom:3px_solid_hsl(26_90%_37%)] bg-[hsl(38_92%_50%/0.168)]',
     },
     answered: {
-      normal: '[border-bottom:2px_dashed_hsl(26_90%_37%)] bg-[hsl(38_92%_50%/0.072)]',
+      normal: '[border-bottom:2px_dashed_hsl(26_90%_37%)] bg-[hsl(38_92%_50%/0.072)] hover:bg-[hsl(38_92%_50%/0.101)]',
       active: '[border-bottom:3px_dashed_hsl(26_90%_37%)] bg-[hsl(38_92%_50%/0.101)]',
     },
   },
   info: {
     open: {
-      normal: '[border-bottom:2px_solid_hsl(215_16%_40%)] bg-[hsl(215_16%_47%/0.10)]',
+      normal: '[border-bottom:2px_solid_hsl(215_16%_40%)] bg-[hsl(215_16%_47%/0.10)] hover:bg-[hsl(215_16%_47%/0.14)]',
       active: '[border-bottom:3px_solid_hsl(215_16%_40%)] bg-[hsl(215_16%_47%/0.14)]',
     },
     answered: {
-      normal: '[border-bottom:2px_dashed_hsl(215_16%_40%)] bg-[hsl(215_16%_47%/0.06)]',
+      normal: '[border-bottom:2px_dashed_hsl(215_16%_40%)] bg-[hsl(215_16%_47%/0.06)] hover:bg-[hsl(215_16%_47%/0.084)]',
       active: '[border-bottom:3px_dashed_hsl(215_16%_40%)] bg-[hsl(215_16%_47%/0.084)]',
     },
   },
   teal: {
     open: {
-      normal: '[border-bottom:2px_solid_hsl(167_76%_32%)] bg-[hsl(168_76%_42%/0.12)]',
+      normal: '[border-bottom:2px_solid_hsl(167_76%_32%)] bg-[hsl(168_76%_42%/0.12)] hover:bg-[hsl(168_76%_42%/0.168)]',
       active: '[border-bottom:3px_solid_hsl(167_76%_32%)] bg-[hsl(168_76%_42%/0.168)]',
     },
     answered: {
-      normal: '[border-bottom:2px_dashed_hsl(167_76%_32%)] bg-[hsl(168_76%_42%/0.072)]',
+      normal: '[border-bottom:2px_dashed_hsl(167_76%_32%)] bg-[hsl(168_76%_42%/0.072)] hover:bg-[hsl(168_76%_42%/0.101)]',
       active: '[border-bottom:3px_dashed_hsl(167_76%_32%)] bg-[hsl(168_76%_42%/0.101)]',
     },
   },
   violet: {
     open: {
-      normal: '[border-bottom:2px_solid_hsl(263_70%_50%)] bg-[hsl(263_70%_50%/0.10)]',
+      normal: '[border-bottom:2px_solid_hsl(263_70%_50%)] bg-[hsl(263_70%_50%/0.10)] hover:bg-[hsl(263_70%_50%/0.14)]',
       active: '[border-bottom:3px_solid_hsl(263_70%_50%)] bg-[hsl(263_70%_50%/0.14)]',
     },
     answered: {
-      normal: '[border-bottom:2px_dashed_hsl(263_70%_50%)] bg-[hsl(263_70%_50%/0.06)]',
+      normal: '[border-bottom:2px_dashed_hsl(263_70%_50%)] bg-[hsl(263_70%_50%/0.06)] hover:bg-[hsl(263_70%_50%/0.084)]',
       active: '[border-bottom:3px_dashed_hsl(263_70%_50%)] bg-[hsl(263_70%_50%/0.084)]',
     },
   },

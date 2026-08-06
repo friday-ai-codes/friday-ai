@@ -231,6 +231,35 @@ describe('窄屏「批注 {n}」按钮的计数口径（M-1）', () => {
 })
 
 /**
+ * ⭐ 侧栏收起后的恢复入口（quick-260806 实测反馈：「隐藏了就展示不出来了」）。
+ *
+ * 收起后唯一的恢复入口若只是一个无文字的 ghost 图标按钮，用户根本找不到。约定：
+ * - 展开态：ghost 收起按钮在（xl+），「批注」按钮只在窄屏（`xl:hidden`）；
+ * - 收起态：ghost 收起按钮**从 DOM 摘掉**，「批注」按钮全宽可见（无 `xl:hidden`），
+ *   点击 emit `open-annotations` —— 页面层 revealAnnotations 会在宽屏把侧栏展开。
+ */
+describe('侧栏收起后的恢复入口', () => {
+  const TOGGLE = '[data-testid="blueprint-header-sidebar-toggle"]'
+  const OPEN_BUTTON = '[data-testid="blueprint-header-open-annotations"]'
+
+  it('展开态：ghost 收起按钮在，「批注」按钮仅窄屏（xl:hidden）', () => {
+    const wrapper = mountHeader({ sidebarCollapsed: false })
+    expect(wrapper.find(TOGGLE).exists()).toBe(true)
+    expect(wrapper.find(OPEN_BUTTON).classes()).toContain('xl:hidden')
+  })
+
+  it('⭐ 收起态：ghost 按钮摘掉，「批注」按钮全宽可见且点击 emit open-annotations', async () => {
+    const wrapper = mountHeader({ sidebarCollapsed: true, annotationTotal: 3 })
+    expect(wrapper.find(TOGGLE).exists()).toBe(false)
+    const button = wrapper.find(OPEN_BUTTON)
+    expect(button.classes()).not.toContain('xl:hidden')
+    expect(button.text()).toContain('批注 3')
+    await button.trigger('click')
+    expect(wrapper.emitted('open-annotations')).toHaveLength(1)
+  })
+})
+
+/**
  * ⭐ UI-REVIEW L-10：§5.2 的 `< md` 行写的是「计数徽标折成**一行可横向滚动**」。
  *
  * 顶栏是 `sticky`，让徽标参与外层 `flex-wrap` 会在窄屏把整条顶栏撑高，
