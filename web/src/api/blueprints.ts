@@ -37,7 +37,10 @@ import type {
   BlueprintGateSnapshot,
   BlueprintListResponse,
   BlueprintRejectResponse,
+  BlueprintResearchDetailResponse,
   BlueprintReviewSnapshot,
+  BlueprintStageRerunResponse,
+  BlueprintStagesResponse,
   BlueprintThreadsResponse,
   CreateBlueprintCommentPayload,
   CreateBlueprintCommentResponse,
@@ -79,6 +82,55 @@ export async function getBlueprintEvents(
   return get<BlueprintEventsResponse>(
     `/delivery/artifacts/${artifactId}/blueprint/events/`,
     query,
+  )
+}
+
+/**
+ * 取按仓的调研结论与 agent 过程明细（无编排会话时是 200 空结构，⛔ 不是错误态）。
+ *
+ * 与 `getBlueprintEvents` 的分工：事件流是**阶段级标量**（`findings_count` / `verdict`），
+ * 本端点是**过程与结论正文**（agent 调了哪些工具、读回什么、每仓得出哪些 findings）。
+ * 载荷比事件流重得多 ⇒ ⛔ 不进 5s 轮询，只在抽屉打开时按需取。
+ */
+export async function getBlueprintResearchDetail(
+  artifactId: string,
+  params: { log_limit?: number } = {},
+): Promise<BlueprintResearchDetailResponse> {
+  const query: Record<string, string> = {}
+  if (params.log_limit)
+    query.log_limit = String(params.log_limit)
+  return get<BlueprintResearchDetailResponse>(
+    `/delivery/artifacts/${artifactId}/blueprint/research-detail/`,
+    query,
+  )
+}
+
+// ── 节点面：stages GET + 带指令重跑 POST（quick-260806 节点重跑）───────────────
+
+/**
+ * 取按 stage 聚合的节点快照（stage_state 分片 + 重跑标记/历史 + 版本谱系）。
+ *
+ * ⭐ 无会话时是 200 空结构（`session_id: ''`、各 `state` 为 `{}`），`versions` 仍有效，
+ * ⛔ 不是错误态 —— 与 `getBlueprintEvents` 同款语义。
+ */
+export async function getBlueprintStages(artifactId: string): Promise<BlueprintStagesResponse> {
+  return get<BlueprintStagesResponse>(`/delivery/artifacts/${artifactId}/blueprint/stages/`)
+}
+
+/**
+ * 带操作员指令重跑某个 stage。
+ *
+ * 状态码分档：**200** `status: accepted`（响应带新 `run_label`）；**400** 非法 stage / 无会话；
+ * **409** 并发冲突（会话仍在跑）。400 / 409 一律经 `ApiError.detail` 原样回显。
+ * ⚠️ `stage` 收的是**后端 stage key**（UI 节点 `confirmation` 需先映射成 `repo_confirmation`）。
+ */
+export async function rerunBlueprintStage(
+  artifactId: string,
+  payload: { stage: string, instruction?: string },
+): Promise<BlueprintStageRerunResponse> {
+  return post<BlueprintStageRerunResponse>(
+    `/delivery/artifacts/${artifactId}/blueprint/stages/rerun/`,
+    payload,
   )
 }
 
@@ -351,6 +403,8 @@ export async function exportBlueprintToFeishu(
 export default {
   getBlueprintDocument,
   getBlueprintEvents,
+  getBlueprintStages,
+  rerunBlueprintStage,
   getBlueprintThreads,
   createBlueprintComment,
   listBlueprints,
