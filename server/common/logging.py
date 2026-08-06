@@ -33,12 +33,19 @@ SENSITIVE_KEY_PATTERN = re.compile(
 )
 
 # 敏感值模式（字段名不命中时兜底）—— 覆盖常见 LLM Provider 凭证 + Bearer + PEM 私钥
+#
+# ⚠️ ``sk-`` 两支前置 ``\b``（词边界）：⛔ 不加会命中**单词内部**的 ``sk-``。真实误伤：
+# 容器工作目录名 ``/tmp/friday-task-bp-research-…`` 里的 ``ta|sk-|bp-research-…`` 正好凑成
+# 「``sk-`` + 20 个合法字符」，整条路径被打成 ``/tmp/friday-ta***REDACTED***/AGENTS.md``
+# —— 而「agent 读了哪个文件」正是过程明细的核心信息。
+# ⭐ ``\b`` 只**收窄**匹配到「词首的 sk-」，凭证的真实出现位置（行首 / 空格 / 引号 / ``=``
+# / ``:`` 之后）一律仍在边界上 ⇒ 脱敏强度不降。
 SENSITIVE_VALUE_PATTERN = re.compile(
-    r"(?:sk-ant-[A-Za-z0-9_\-]{10,}"      # Anthropic: sk-ant-...
-    r"|sk-[A-Za-z0-9_\-]{20,}"             # OpenAI: sk-... (>= 20 字符避免误伤短字符串)
-    r"|AIza[A-Za-z0-9_\-]{20,}"            # Google: AIza...
-    r"|Bearer\s+[A-Za-z0-9._\-]{20,}"      # Bearer token
-    r"|friday_pat_[A-Za-z0-9_\-]{20,}"     # Friday Access Token: friday_pat_... (implementation)
+    r"(?:\bsk-ant-[A-Za-z0-9_\-]{10,}"  # Anthropic: sk-ant-...
+    r"|\bsk-[A-Za-z0-9_\-]{20,}"  # OpenAI: sk-... (>= 20 字符避免误伤短字符串)
+    r"|AIza[A-Za-z0-9_\-]{20,}"  # Google: AIza...
+    r"|Bearer\s+[A-Za-z0-9._\-]{20,}"  # Bearer token
+    r"|friday_pat_[A-Za-z0-9_\-]{20,}"  # Friday Access Token: friday_pat_... (implementation)
     r"|-----BEGIN\s+(?:RSA\s+|EC\s+)?PRIVATE\s+KEY-----[\s\S]+?"
     r"-----END\s+(?:RSA\s+|EC\s+)?PRIVATE\s+KEY-----)"
 )
@@ -88,11 +95,37 @@ def redact_credentials(
 # 否则留空（不强行污染维度）。存量事件渐进迁移，72+ 增量补全。
 _KNOWN_COMPONENTS = frozenset(
     {
-        "auth", "accounts", "mcp", "chat", "orchestration", "workflows", "compat",
-        "repositories", "indexing", "codegraph", "rag", "knowledge", "delivery",
-        "agents", "llm", "providers", "subagent", "runners", "task", "feishu",
-        "webhook", "durable", "scheduler", "system", "settings", "notifications",
-        "audit", "access_tokens", "health", "metrics", "logging",
+        "auth",
+        "accounts",
+        "mcp",
+        "chat",
+        "orchestration",
+        "workflows",
+        "compat",
+        "repositories",
+        "indexing",
+        "codegraph",
+        "rag",
+        "knowledge",
+        "delivery",
+        "agents",
+        "llm",
+        "providers",
+        "subagent",
+        "runners",
+        "task",
+        "feishu",
+        "webhook",
+        "durable",
+        "scheduler",
+        "system",
+        "settings",
+        "notifications",
+        "audit",
+        "access_tokens",
+        "health",
+        "metrics",
+        "logging",
     }
 )
 
@@ -134,9 +167,7 @@ def annotate_category_component(
     category/component。纯元字段，不引入用户输入原文（脱敏链路不受影响）。
     """
     if not event_dict.get("component"):
-        logger_name = str(
-            event_dict.get("logger") or event_dict.get("logger_name") or ""
-        )
+        logger_name = str(event_dict.get("logger") or event_dict.get("logger_name") or "")
         comp = _infer_component(logger_name)
         if comp:
             event_dict["component"] = comp
@@ -271,9 +302,7 @@ def enqueue_system_log(
     try:
         from system.log_sink import enqueue_system_log as _sink_enqueue
 
-        logger_name = str(
-            event_dict.get("logger") or event_dict.get("logger_name") or ""
-        )
+        logger_name = str(event_dict.get("logger") or event_dict.get("logger_name") or "")
         # 优先用 annotate_category_component 注入的 component，缺省回退首段推断。
         component = str(event_dict.get("component") or "") or _infer_component(logger_name)
         level = str(event_dict.get("level") or method_name or "info")
@@ -392,10 +421,10 @@ def _resolve_env_structlog_level() -> int:
     UI 卡顿）。生产排错时可以临时设 ``FRIDAY_STRUCTLOG_LEVEL=DEBUG``。
     """
     raw = (
-        os.environ.get("FRIDAY_STRUCTLOG_LEVEL")
-        or os.environ.get("DJANGO_LOG_LEVEL")
-        or ""
-    ).strip().upper()
+        (os.environ.get("FRIDAY_STRUCTLOG_LEVEL") or os.environ.get("DJANGO_LOG_LEVEL") or "")
+        .strip()
+        .upper()
+    )
     return _STRUCTLOG_LEVEL_NAMES.get(raw, logging.INFO)
 
 
@@ -494,9 +523,7 @@ def configure_structlog() -> None:
 # === Sentry before_send pure function（本 phase 仅预留 + 单测；implementation+ 接入时使用）===
 
 
-def sentry_before_send(
-    event: dict[str, Any], hint: dict[str, Any]
-) -> dict[str, Any] | None:
+def sentry_before_send(event: dict[str, Any], hint: dict[str, Any]) -> dict[str, Any] | None:
     """Sentry SDK before_send hook（本 phase 仅预留 + 契约测试；不引入 sentry-sdk 依赖）。
 
     过滤：
