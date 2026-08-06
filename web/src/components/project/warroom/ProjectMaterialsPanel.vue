@@ -26,11 +26,9 @@ function onAddFeatureList() {
 
 const DocsSection = defineAsyncComponent(() => import('~/components/project/workbench/DocsSection.vue'))
 const DependenciesSection = defineAsyncComponent(() => import('~/components/project/workbench/DependenciesSection.vue'))
-const ArtifactTimeline = defineAsyncComponent(() => import('~/components/delivery/ArtifactTimeline.vue'))
 const HumanTaskInbox = defineAsyncComponent(() => import('~/components/delivery/HumanTaskInbox.vue'))
-// Phase 115 追加点 #2：技术方案蓝图卡。⭐ 排在 FeatureBoard 与「交付物版本轨」之前 ——
-// 蓝图与旧 technical_plan 共用同一 artifact_type，两块条目会重叠，让更新的形态先被看到
-// （P-17）；且蓝图是「待审/在产」的高时效资料，须排在静态清单类分区前面。
+// Phase 115 追加点 #2：技术方案蓝图卡。⭐ 蓝图是「待审/在产」的高时效资料，
+// 排在 FeatureBoard 等静态清单类分区前面，让最需要关注的内容先被看到。
 const ProjectBlueprintsCard = defineAsyncComponent(() => import('./ProjectBlueprintsCard.vue'))
 </script>
 
@@ -56,8 +54,7 @@ const ProjectBlueprintsCard = defineAsyncComponent(() => import('./ProjectBluepr
       <HumanTaskInbox :project-id="project.id" hide-when-empty />
 
       <!-- 技术方案蓝图卡：排在 FeatureBoard（feature list）之前——蓝图是「待审/在产」的
-           高时效资料，比静态的功能点清单更需要先被看到（与旧 technical_plan 版本轨的
-           区分策略见 ProjectBlueprintsCard 头注）。 -->
+           高时效资料，比静态的功能点清单更需要先被看到。 -->
       <ProjectBlueprintsCard :project-id="project.id" hide-when-empty />
 
       <FeatureBoard :project-id="project.id" :can-manage="canManage" />
@@ -79,9 +76,6 @@ const ProjectBlueprintsCard = defineAsyncComponent(() => import('./ProjectBluepr
       <ContextLinksCard :project-id="project.id" :can-manage="canManage" />
 
       <ProjectGalaxyCard :project-id="project.id" />
-
-      <!-- 交付物版本轨 / 时间线（P7，只读）：按项目空间过滤技术方案产物 -->
-      <ArtifactTimeline :space-id="project.space_id" artifact-type="technical_plan" />
 
       <DocsSection :project-id="project.id" />
 
