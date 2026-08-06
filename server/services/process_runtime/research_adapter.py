@@ -198,6 +198,11 @@ class ResearchDispatchAdapter:
 
         prompt = self._build_research_prompt(session, task, repo)
         metadata = await self._build_dispatch_metadata(repo)
+        # 固定路由（repo binding pin）：项目手动绑定了该仓的分支时按绑定分支调研，
+        # 否则沿用仓库默认分支。
+        from services.process_runtime.repo_binding_pin import apinned_branch_for
+
+        pinned_branch = await apinned_branch_for(session, task.repository_id)
 
         dispatch_task = DispatchTask(
             task_id=session_id,
@@ -205,7 +210,7 @@ class ResearchDispatchAdapter:
             tags=[],
             image="",
             repo_url=metadata.pop("_repo_url", repo_url) or repo_url,
-            branch=getattr(repo, "default_branch", "") or "main",
+            branch=pinned_branch or getattr(repo, "default_branch", "") or "main",
             target_branch="",
             prompt=prompt,
             timeout=_RESEARCH_TIMEOUT,

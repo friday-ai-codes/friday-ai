@@ -496,6 +496,11 @@ class BlueprintResearchAdapter:
         # 120（REDO-03）：同仓上一次容器的 agent 会话可续 ⇒ 注入 resume 分片，让重跑**接着
         # 上次的分析继续**而不是从零重新读一遍仓库。取不到就是空 dict，容器全新执行（默认安全）。
         metadata.update(await self._aresume_env(task))
+        # 固定路由（repo binding pin）：项目手动绑定了该仓的分支时按绑定分支调研，
+        # 否则沿用仓库默认分支。
+        from services.process_runtime.repo_binding_pin import apinned_branch_for
+
+        pinned_branch = await apinned_branch_for(session, task.repository_id)
 
         dispatch_task = DispatchTask(
             task_id=session_id,
@@ -503,7 +508,7 @@ class BlueprintResearchAdapter:
             tags=[],
             image="",
             repo_url=metadata.pop("_repo_url", repo_url) or repo_url,
-            branch=getattr(repo, "default_branch", "") or "main",
+            branch=pinned_branch or getattr(repo, "default_branch", "") or "main",
             target_branch="",
             prompt=prompt,
             timeout=_RESEARCH_TIMEOUT,

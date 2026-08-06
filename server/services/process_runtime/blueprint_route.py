@@ -508,6 +508,28 @@ class BlueprintRouteAdapter:
             # 空需求短路：不调路由器、不打库；形状与正常路径完全一致（下游无需判空分支）
             return self._empty_result(intent="", weights_used={})
 
+        # 固定路由（repo binding pin）：项目已在项目级手动绑定仓库+分支时，人工关联即
+        # 最终裁决——跳过能力树检索与 LLM 路由，候选集就是绑定仓（尊重 reroute 的排除集，
+        # ⛔ 绑定项目**不补新仓**：固定的意义正是仓库集不随重路由漂移）。
+        pinned = await self._aresolve_pinned(session, excluded=excluded)
+        if pinned is not None:
+            summary = self._pinned_summary(
+                pinned,
+                intent=intent,
+                weights_used=_weights_for(weights, intent),
+            )
+            await self._emit_scored(session, summary)
+            logger.info(
+                "blueprint_route_pinned_by_project_binding",
+                session_id=str(getattr(session, "id", "")),
+                candidate_count=len(summary["candidates"]),
+                excluded_count=len(excluded),
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+                category="sampling",
+                component="process_runtime",
+            )
+            return summary
+
         repository_ids = await self._resolve_repository_ids(session)
         router = self._resolve_router()
         result = await router.route(
@@ -644,6 +666,65 @@ class BlueprintRouteAdapter:
         return summary
 
     # ── 内部步骤（各自 best-effort，单个依赖失败不拖垮路由） ──────────────
+
+    async def _aresolve_pinned(self, session, *, excluded: set[str]) -> list[dict] | None:
+        """解析项目手动绑定的固定候选（repo binding pin）。
+
+        Returns:
+            ``None`` = 项目无手动绑定 → 走既有自动路由；
+            ``list``（可为空）= 项目有绑定 → 固定路由短路。空列表出现在 reroute 排除集
+            覆盖了全部绑定仓时——固定项目**不补新仓**，补候选为空由确认门升人裁决。
+        """
+        from services.process_runtime.repo_binding_pin import asession_pinned_bindings
+
+        bindings = await asession_pinned_bindings(session)
+        if not bindings:
+            return None
+        return [b for b in bindings if b["repository_id"] not in excluded]
+
+    @staticmethod
+    def _pinned_summary(pinned: list[dict], *, intent: str, weights_used: dict) -> dict:
+        """把固定绑定映射为 112-03 契约摘要（形状与自动路由逐键一致，下游零改动）。
+
+        绑定仓一律 ``confidence="high"`` / ``role_suggestion="direct"``（人工关联即
+        最高置信，全部深调研）；分量恒 ``router_base=1.0``、章程/历史 0（未参与打分，
+        breakdown 如实反映「没跑」而不是伪造分数）。
+        """
+        from services.process_runtime.repo_binding_pin import PINNED_ROUTER_VERSION
+
+        candidates = [
+            {
+                "repository_id": b["repository_id"],
+                "repository_name": b["repository_name"],
+                "confidence": "high",
+                "total": 1.0,
+                "breakdown": {"router_base": 1.0, "charter_match": 0.0, "history_match": 0.0},
+                "evidence": _normalize_evidence(
+                    {
+                        "router_version": PINNED_ROUTER_VERSION,
+                        "auto_selected": True,
+                        "confidence": "high",
+                        "reasoning": (
+                            f"项目已手动绑定该仓库（分支 {b['branch_name']}），"
+                            "按人工关联结果固定路由，未经自动仓库路由"
+                        ),
+                    }
+                ),
+                "role_suggestion": "direct",
+                "pinned_branch": b["branch_name"],
+            }
+            for b in pinned
+        ]
+        return {
+            "router_version": PINNED_ROUTER_VERSION,
+            "auto_selected": True,
+            "intent": intent,
+            "weights_used": weights_used,
+            "charter_supplement_count": 0,
+            "unjustified_boundary_hit_count": 0,
+            "candidates": candidates,
+            "citations": [],
+        }
 
     @staticmethod
     def _empty_result(*, intent: str, weights_used: dict, router_version: str = "skipped") -> dict:
