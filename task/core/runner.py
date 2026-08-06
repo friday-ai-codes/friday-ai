@@ -264,6 +264,29 @@ class TaskRunner:
         if not await self._check_workspace_clean(log):
             return 1
 
+        # ⭐ 分析产物必须显式随 completed 帧上报（与 plan / repo_summary 模式同款契约）：
+        # server 端蓝图调研 / 拟方案回调（subagent/api/callbacks._parse_blueprint_repo_plan
+        # 等）只认 `output.text`——不上报时 server 收到的只有 runner 的容器退出通知，
+        # 全部解析为空、任务被判 failed（实测四仓调研/拟方案全灭的根因）。
+        #
+        # resume 支撑（同 execute 模式，runner.py 的 _run_execute_mode）：蓝图调研/拟方案
+        # 容器全部跑 explore 模式，SDK 会话 transcript 不随 completed 帧上传的话，
+        # `SubAgentSession` 留痕恒空、`_aresume_env` 永远查不到可续会话 ⇒ 同仓重派
+        # （长等待/澄清后续跑）只能全新执行。读失败仅丢续跑能力，不影响产物上报。
+        sdk_session_id = str(result.get("session_id") or "")
+        sdk_transcript = ""
+        if sdk_session_id:
+            from core.sdk_sessions import read_transcript
+
+            sdk_transcript = read_transcript(sdk_session_id, str(self.git_ops.get_workspace_path()))
+
+        await self.callback.report_completed(
+            output={"text": str(result.get("output", "") or ""), "task_type": "explore"},
+            result_type="text",
+            sdk_session_id=sdk_session_id,
+            sdk_transcript=sdk_transcript,
+        )
+
         log.info("Explore mode completed successfully")
         return 0
 
