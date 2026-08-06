@@ -116,13 +116,18 @@ describe('lIVE_BLUEPRINT_STATUSES —— 轮询三态', () => {
   })
 })
 
-describe('producedByReason —— 四前缀 + AI 产出兜底共五档', () => {
-  it('登记了四个前缀', () => {
+describe('producedByReason —— 九前缀 + AI 产出兜底共十档', () => {
+  it('登记了九个前缀（四个人为动作 + 五个编排阶段）', () => {
     expect(PRODUCED_BY_PREFIXES.map(([prefix]) => prefix)).toEqual([
       'human_edit:',
       'ai_review_reflow:',
       'human_block_restore:',
       'blueprint_review_reject:',
+      'blueprint_intake',
+      'blueprint_decompose',
+      'blueprint_spec_gate',
+      'blueprint_confirm_gate',
+      'blueprint_merge',
     ])
   })
 
@@ -131,6 +136,11 @@ describe('producedByReason —— 四前缀 + AI 产出兜底共五档', () => {
     ['ai_review_reflow:thread-1', 'reasonAiReviewReflow', 'lucide--refresh-cw', 'info'],
     ['human_block_restore:b-1', 'reasonHumanBlockRestore', 'lucide--shield', 'warning'],
     ['blueprint_review_reject:r-1', 'reasonBlueprintReviewReject', 'lucide--undo-2', 'destructive'],
+    ['blueprint_intake', 'reasonIntake', 'lucide--inbox', 'muted'],
+    ['blueprint_decompose', 'reasonDecompose', 'lucide--list-tree', 'muted'],
+    ['blueprint_spec_gate', 'reasonSpecGate', 'lucide--message-circle-question', 'info'],
+    ['blueprint_confirm_gate', 'reasonConfirmGate', 'lucide--check-square', 'info'],
+    ['blueprint_merge#attempt=2', 'reasonMerge', 'lucide--merge', 'info'],
     ['stage:merge', 'reasonAiGenerated', 'lucide--sparkles', 'muted'],
   ])('produced_by_ref %j → %s', (ref, labelSuffix, icon, variant) => {
     const config = producedByReason(ref)

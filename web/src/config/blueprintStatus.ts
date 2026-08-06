@@ -133,15 +133,24 @@ export interface ProducedByConfig {
 }
 
 /**
- * `produced_by_ref` 的四前缀映射（UI-SPEC §9.1）。
+ * `produced_by_ref` 的前缀映射（UI-SPEC §9.1）。
  *
  * 与后端落版本时写入的前缀同步：`human_edit:` 同时是 B3 人工块保护的判据源。
+ * 后五档是编排流水线各阶段的机械/AI 产物（`blueprint_intake.aseed_blueprint_artifact`
+ * 等落库点写入）——不细分时全部落「AI 产出」兜底档，用户会看到「一秒钟建了两个
+ * 同名版本」而分不清各自是什么（用户实测点名）。
+ * ⚠️ 匹配按 startsWith 顺序：`blueprint_` 系放在带冒号的四档之后，避免误吞。
  */
 export const PRODUCED_BY_PREFIXES: ReadonlyArray<[string, ProducedByConfig]> = [
   ['human_edit:', { labelKey: 'knowledge.blueprints.version.reasonHumanEdit', icon: 'lucide--user-pen', variant: 'secondary' }],
   ['ai_review_reflow:', { labelKey: 'knowledge.blueprints.version.reasonAiReviewReflow', icon: 'lucide--refresh-cw', variant: 'info' }],
   ['human_block_restore:', { labelKey: 'knowledge.blueprints.version.reasonHumanBlockRestore', icon: 'lucide--shield', variant: 'warning' }],
   ['blueprint_review_reject:', { labelKey: 'knowledge.blueprints.version.reasonBlueprintReviewReject', icon: 'lucide--undo-2', variant: 'destructive' }],
+  ['blueprint_intake', { labelKey: 'knowledge.blueprints.version.reasonIntake', icon: 'lucide--inbox', variant: 'muted' }],
+  ['blueprint_decompose', { labelKey: 'knowledge.blueprints.version.reasonDecompose', icon: 'lucide--list-tree', variant: 'muted' }],
+  ['blueprint_spec_gate', { labelKey: 'knowledge.blueprints.version.reasonSpecGate', icon: 'lucide--message-circle-question', variant: 'info' }],
+  ['blueprint_confirm_gate', { labelKey: 'knowledge.blueprints.version.reasonConfirmGate', icon: 'lucide--check-square', variant: 'info' }],
+  ['blueprint_merge', { labelKey: 'knowledge.blueprints.version.reasonMerge', icon: 'lucide--merge', variant: 'info' }],
 ]
 
 /** 四前缀都不命中时的第五档：AI 产出。 */
