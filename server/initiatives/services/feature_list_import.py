@@ -106,6 +106,7 @@ async def aget_parse_budget(project_id: Any) -> dict[str, Any]:
     model = legacy.get("default_model") or _MODEL_FALLBACK
     return compute_parse_budget(str(resolved.provider_type), model)
 
+
 # 行号裁剪 prompt：模型只返回「结构 + 行号范围」，不复制原文 → 输出与文档大小解耦、不被截断；
 # 验收项内容由系统按行号从原文裁剪，保证逐字一致。功能点名为短标题，可直接给出原文。
 _SYSTEM_PROMPT = (
@@ -121,8 +122,8 @@ _SYSTEM_PROMPT = (
     "功能点之前）；无则省略或空数组。\n"
     "6. 行号必须是输入中真实出现的行号。仅输出一个 JSON 对象，无任何前后缀/解释/代码块标记。\n"
     "7. JSON 结构："
-    "{\"modules\":[{\"module\":\"模块名\",\"summary_lines\":[5,20],\"features\":"
-    "[{\"name\":\"功能点名\",\"feature_lines\":[21,60],\"acceptance_lines\":[[50,55]]}]}]}。\n"
+    '{"modules":[{"module":"模块名","summary_lines":[5,20],"features":'
+    '[{"name":"功能点名","feature_lines":[21,60],"acceptance_lines":[[50,55]]}]}]}。\n'
     "8. 无法识别模块时用「未分组」。"
 )
 
@@ -132,7 +133,7 @@ _DETAIL_SYSTEM_PROMPT = (
     "把它拆成若干有序段落 sections，便于前端分层展示。\n"
     "强约束（必须遵守）：\n"
     "1. **逐字保留原文**，不改写/不翻译/不润色/不补充；只做结构切分与归类。\n"
-    "2. 每个 section = {\"title\":\"小标题\",\"type\":\"text|list|mermaid\",\"content\":...}：\n"
+    '2. 每个 section = {"title":"小标题","type":"text|list|mermaid","content":...}：\n'
     "   - type=text：content 为字符串（多段用换行）；\n"
     "   - type=list：content 为字符串数组（如验收项、业务规则逐条）；\n"
     "   - type=mermaid：content 为 mermaid 流程图源码字符串（flowchart/graph 等，逐字照搬）。\n"
@@ -140,7 +141,7 @@ _DETAIL_SYSTEM_PROMPT = (
     "「验收项」等）；没有明确标题时自拟简短贴切的标题。**不要固定字段**，原文有什么就切什么。\n"
     "4. 识别到流程图（mermaid 代码，常以 flowchart/graph/sequenceDiagram 开头）必须单列为"
     " type=mermaid 的 section，content 为其源码（去掉 ``` 围栏，保留图本身）。\n"
-    "5. 仅输出一个 JSON 对象：{\"sections\":[...]}，无任何前后缀/解释/代码块标记。"
+    '5. 仅输出一个 JSON 对象：{"sections":[...]}，无任何前后缀/解释/代码块标记。'
 )
 # Step 2 输出仍较小（结构 + 原文切片），单功能点正文有限，输出额度取期望值即可。
 _DETAIL_DESIRED_OUTPUT_TOKENS = 8000
@@ -153,7 +154,7 @@ _MODULES_ONLY_SYSTEM_PROMPT = (
     "你是需求结构解析器。输入是**带行号的文档**（每行形如「123|内容」）。"
     "**只识别模块层级，不要解析功能点**。\n"
     "强约束：\n"
-    "1. 仅输出一个 JSON 对象：{\"modules\":[{\"module\":\"模块名\",\"lines\":[起始行号,结束行号]}]}。\n"
+    '1. 仅输出一个 JSON 对象：{"modules":[{"module":"模块名","lines":[起始行号,结束行号]}]}。\n'
     "2. lines 指向该模块**完整区间**（从模块标题行到下一个模块标题之前；最后一个模块到文末）。\n"
     "3. 模块名取标题原文（简短、逐字）。行号必须是输入中真实出现的行号。\n"
     "4. 无任何前后缀/解释/代码块标记。无法识别模块时用「未分组」。"
@@ -167,8 +168,8 @@ _MODULE_FEATURES_SYSTEM_PROMPT = (
     "2. name 取功能点标题原文（简短、逐字）。\n"
     "3. feature_lines=[起始行号,结束行号] 指向功能点完整正文区间。\n"
     "4. acceptance_lines=若干 [起始行号,结束行号] 指向验收项原文行；无则空数组。\n"
-    "5. 行号必须是输入中真实出现的行号。仅输出 {\"features\":[{\"name\":\"\",\"feature_lines\":[s,e],"
-    "\"acceptance_lines\":[[s,e]]}]}，无任何前后缀/解释/代码块标记。"
+    '5. 行号必须是输入中真实出现的行号。仅输出 {"features":[{"name":"","feature_lines":[s,e],'
+    '"acceptance_lines":[[s,e]]}]}，无任何前后缀/解释/代码块标记。'
 )
 
 
@@ -300,7 +301,7 @@ def _salvage_truncated_modules(text: str) -> list[Any] | None:
     m = re.search(r'"modules"\s*:\s*\[', text)
     if not m:
         return None
-    objs = _extract_complete_objects(text[m.end():])
+    objs = _extract_complete_objects(text[m.end() :])
     salvaged: list[Any] = []
     for obj in objs:
         try:
@@ -308,6 +309,38 @@ def _salvage_truncated_modules(text: str) -> list[Any] | None:
         except (ValueError, TypeError):
             continue
     return salvaged or None
+
+
+# 节点名的 markdown 块级前缀：引用 + 标题 / 列表项（含任务框），可叠加故整体重复匹配。
+_NAME_BLOCK_PREFIX_RE = re.compile(
+    r"^[ \t]*(?:>[ \t]*)*(?:#{1,6}[ \t]+|(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)"
+)
+_NAME_EMPHASIS_RE = re.compile(r"(\*\*|__|~~)(.+?)\1")
+_NAME_LINK_RE = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+_NAME_CODE_RE = re.compile(r"`+([^`]+)`+")
+
+
+def _clean_node_name(raw: str) -> str:
+    """剥掉功能点/模块名上的 markdown 标记，只留文字。
+
+    ``name_line`` 路径是**按行号从原文裁剪**的，整行连着 ``#### `` / ``- [ ] `` 这类块级
+    前缀一起进来；这些标记对树节点名没有意义，展示层也无从渲染（行内渲染不认块级语法）。
+    ⛔ 只清洗**名称**：验收项与 ``source`` 原文仍逐字保留（解析契约要求可回溯原文）。
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    # 前缀可叠加（如 `> - [ ] 标题`），逐层剥到不再匹配为止。
+    while True:
+        stripped = _NAME_BLOCK_PREFIX_RE.sub("", text, count=1)
+        if stripped == text:
+            break
+        text = stripped
+    text = _NAME_LINK_RE.sub(r"\1", text)
+    text = _NAME_EMPHASIS_RE.sub(r"\2", text)
+    text = _NAME_CODE_RE.sub(r"\1", text)
+    # 名称恒为单行展示，折叠换行与连续空白。
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _number_lines(text: str) -> tuple[list[str], str]:
@@ -351,9 +384,7 @@ def _loads_modules_raw(raw: str) -> list[Any] | None:
     return modules if isinstance(modules, list) else None
 
 
-def _materialize_modules(
-    raw_modules: list[Any], lines: list[str]
-) -> list[dict[str, Any]] | None:
+def _materialize_modules(raw_modules: list[Any], lines: list[str]) -> list[dict[str, Any]] | None:
     """把 LLM 返回的「结构 + 行号范围」物化为 modules 树：验收项按行号从原文裁剪。
 
     兼容三种功能点表达：``acceptance_lines``（行号范围，优先裁剪）/ ``acceptance``（文本，回退）；
@@ -363,7 +394,7 @@ def _materialize_modules(
     for mod in raw_modules:
         if not isinstance(mod, dict):
             continue
-        module_name = str(mod.get("module") or "未分组").strip() or "未分组"
+        module_name = _clean_node_name(mod.get("module")) or "未分组"
         module_summary = _slice_span(lines, mod.get("summary_lines"))
         features = _materialize_features(mod.get("features") or [], lines)
         if features:
@@ -374,17 +405,15 @@ def _materialize_modules(
     return out or None
 
 
-def _materialize_features(
-    raw_feats: list[Any], lines: list[str]
-) -> list[dict[str, Any]]:
+def _materialize_features(raw_feats: list[Any], lines: list[str]) -> list[dict[str, Any]]:
     """把 LLM 返回的功能点（行号范围）物化为 ``[{name, acceptance, source}]``（验收项/原文按行裁剪）。"""
     features: list[dict[str, Any]] = []
     for feat in raw_feats or []:
         if not isinstance(feat, dict):
             continue
-        name = str(feat.get("name") or "").strip()
+        name = _clean_node_name(feat.get("name"))
         if not name and feat.get("name_line") is not None:
-            name = _slice_lines(lines, feat["name_line"], feat["name_line"])
+            name = _clean_node_name(_slice_lines(lines, feat["name_line"], feat["name_line"]))
         if not name:
             continue
         acceptance: list[str] = []
@@ -400,9 +429,7 @@ def _materialize_features(
                 if sliced:
                     acceptance.append(sliced)
         else:
-            acceptance = [
-                str(a).strip() for a in (feat.get("acceptance") or []) if str(a).strip()
-            ]
+            acceptance = [str(a).strip() for a in (feat.get("acceptance") or []) if str(a).strip()]
         # 功能点整段原文（供 Step 2 按需结构化为 sections）。
         source = _slice_span(lines, feat.get("feature_lines"))
         feat_out: dict[str, Any] = {"name": name, "acceptance": acceptance}
@@ -429,17 +456,15 @@ def _parse_modules_json(raw: str) -> list[dict[str, Any]] | None:
     for mod in modules:
         if not isinstance(mod, dict):
             continue
-        module_name = str(mod.get("module") or "未分组").strip() or "未分组"
+        module_name = _clean_node_name(mod.get("module")) or "未分组"
         features: list[dict[str, Any]] = []
         for feat in mod.get("features") or []:
             if not isinstance(feat, dict):
                 continue
-            name = str(feat.get("name") or "").strip()
+            name = _clean_node_name(feat.get("name"))
             if not name:
                 continue
-            acceptance = [
-                str(a).strip() for a in (feat.get("acceptance") or []) if str(a).strip()
-            ]
+            acceptance = [str(a).strip() for a in (feat.get("acceptance") or []) if str(a).strip()]
             features.append({"name": name, "acceptance": acceptance})
         if features:
             out.append({"module": module_name, "features": features})
@@ -578,7 +603,7 @@ def _loads_features_raw(raw: str) -> list[Any] | None:
         m = re.search(r'"features"\s*:\s*\[', raw)
         feats = None
         if m:
-            objs = _extract_complete_objects(raw[m.end():])
+            objs = _extract_complete_objects(raw[m.end() :])
             salvaged: list[Any] = []
             for obj in objs:
                 try:
@@ -626,9 +651,7 @@ async def _ainvoke_parse_llm(
         ttft_ms = int((perf_counter() - start) * 1000)
     except Exception as exc:  # noqa: BLE001 — 转可读错误，不反噬
         upstream = parse_upstream_status(exc)
-        await _record_usage(
-            resolved, model, ttft_ms=None, upstream_status_code=upstream
-        )
+        await _record_usage(resolved, model, ttft_ms=None, upstream_status_code=upstream)
         logger.warning(
             f"{log_event}_failed",
             project_id=str(project_id),
@@ -664,9 +687,7 @@ async def _ainvoke_parse_llm(
     return str(content or ""), lines, truncated
 
 
-async def agenerate_module_outline(
-    project_id: Any, text: str
-) -> list[dict[str, Any]]:
+async def agenerate_module_outline(project_id: Any, text: str) -> list[dict[str, Any]]:
     """Step 0：只解析**模块层级**，返回 ``[{module, line_start, line_end}]``。
 
     输出极小（模块再多也不截断）；行区间供前端切片后逐模块再发起 Step 1 功能点解析。
@@ -682,7 +703,7 @@ async def agenerate_module_outline(
     for mod in raw or []:
         if not isinstance(mod, dict):
             continue
-        name = str(mod.get("module") or "未分组").strip() or "未分组"
+        name = _clean_node_name(mod.get("module")) or "未分组"
         span = mod.get("lines")
         if isinstance(span, (list, tuple)) and len(span) >= 2:
             try:
@@ -708,9 +729,7 @@ async def agenerate_module_outline(
     return out
 
 
-async def agenerate_module_features(
-    project_id: Any, module_text: str
-) -> list[dict[str, Any]]:
+async def agenerate_module_features(project_id: Any, module_text: str) -> list[dict[str, Any]]:
     """Step 1：解析**单个模块切片**下的功能点，返回 ``[{name, acceptance, source}]``。
 
     输入受单模块体量约束、输出不截断。无 Provider / LLM 失败抛 :class:`FeatureListParseError`；
@@ -786,9 +805,7 @@ def _loads_sections_raw(raw: str) -> Any:
         return None
 
 
-async def agenerate_feature_detail_sections(
-    project_id: Any, source: str
-) -> list[dict[str, Any]]:
+async def agenerate_feature_detail_sections(project_id: Any, source: str) -> list[dict[str, Any]]:
     """Step 2：把**单个功能点/模块的原文**结构化为柔性 sections（按需调用）。
 
     best-effort：无 Provider / LLM 失败 / 解析失败 → 返回空列表（前端回退展示原文），绝不反噬。
@@ -808,7 +825,9 @@ async def agenerate_feature_detail_sections(
     model = legacy.get("default_model") or _MODEL_FALLBACK
     caps_out = min(
         _DETAIL_DESIRED_OUTPUT_TOKENS,
-        ModelCapabilities.get(str(resolved.provider_type), strip_context_suffix(model)).max_output_tokens,
+        ModelCapabilities.get(
+            str(resolved.provider_type), strip_context_suffix(model)
+        ).max_output_tokens,
     )
     messages = [
         SystemMessage(content=_DETAIL_SYSTEM_PROMPT),
@@ -822,9 +841,7 @@ async def agenerate_feature_detail_sections(
             )
             ai_msg = await chat_model.ainvoke(messages)
     except Exception as exc:  # noqa: BLE001 — 详情 best-effort，失败回退原文
-        await _record_usage(
-            resolved, model, upstream_status_code=parse_upstream_status(exc)
-        )
+        await _record_usage(resolved, model, upstream_status_code=parse_upstream_status(exc))
         logger.warning(
             "feature_detail_parse_failed",
             project_id=str(project_id),
