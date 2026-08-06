@@ -1107,6 +1107,11 @@ class BlueprintResearchAdapter:
             fitness = fitness if isinstance(fitness, dict) else {}
             collected[str(task["repository_id"])] = {
                 "verdict": str(fitness.get("verdict") or ""),
+                # ⭐ 适配理由必须带上：确认门快照与蓝图 `repo_associations[].fitness.reasons`
+                # 的唯一来源就是这里——此前只聚合三标量，「适配判定」在快照/锁定/蓝图全程
+                # 为空（查看器折叠区展开无内容）。reroute 判定与 stage_state 摘要只挑标量键，
+                # 不受本键影响。
+                "reasons": fitness.get("reasons") if isinstance(fitness.get("reasons"), list) else [],
                 "role_suggestion": str(content.get("role_suggestion") or "")
                 if isinstance(content, dict)
                 else "",

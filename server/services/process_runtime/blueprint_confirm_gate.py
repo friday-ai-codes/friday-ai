@@ -851,6 +851,18 @@ def _build_snapshot_entry(
     if role not in _VALID_ROLES:
         role = "direct"
     verdict = str(conclusion.get("verdict") or "").strip().lower()
+    # ⭐ 适配理由随快照携带（此前写死 []）：调研容器产出的 `fitness.reasons` 是
+    # 「适配判定」折叠区的唯一正文来源——快照丢掉它，锁定（`_clean_fitness`）与蓝图
+    # 投影（`blueprint_merge._project_fitness`）就只剩 verdict 徽标、正文恒空。
+    # 字符串条目截断防快照（BlueprintThread.options）膨胀；block 形状条目原样保留
+    # （`_clean_fitness` 在锁定时统一收敛成 block_list）。
+    reasons_raw = conclusion.get("reasons") if isinstance(conclusion.get("reasons"), list) else []
+    reasons: list[Any] = []
+    for reason in reasons_raw[:_MAX_LIST_ITEMS]:
+        if isinstance(reason, dict) and reason.get("block_id"):
+            reasons.append(reason)
+        elif str(reason or "").strip():
+            reasons.append(str(reason).strip()[:_MAX_SUMMARY_CHARS])
     return {
         "repository_id": repository_id,
         "repository_name": str(candidate.get("repository_name") or ""),
@@ -859,7 +871,7 @@ def _build_snapshot_entry(
         "confidence": str(candidate.get("confidence") or ""),
         "fitness": {
             "verdict": verdict if verdict in _VALID_VERDICTS else "",
-            "reasons": [],
+            "reasons": reasons,
             "citations": [],
         },
         "current_state_summary": _summarize_findings(conclusion.get("findings")),

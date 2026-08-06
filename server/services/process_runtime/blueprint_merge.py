@@ -501,6 +501,13 @@ def _project_rationale(assoc: dict, repository_id: str, cite_map: dict, fitness:
 
     citations 取「源条目 ``rationale.citations`` ∪ ``fitness.citations``」并集：确认门只
     落了后者，不并进来这类条目就永远不被算作「有据」。
+
+    ⭐ ``text`` **只认源条目自带的 ``rationale.text``，⛔ 不再拿 ``responsibility`` /
+    ``fitness.reasons`` 兜底**：上游（确认门锁定产物）至今不产 ``rationale.text``，兜底
+    的结果是「选仓理由」与「本仓职责」在查看器里一字不差地重复（用户实测反馈）；
+    fitness.reasons 兜底则与「适配判定」折叠区重复。schema 对 ``rationale.text`` 无
+    minItems，留空数组合法——前端（``RepoAssociationCard``）对空 text 整块不渲染，
+    markdown 渲染器落空单元格。citations 并集逻辑（P-8 覆盖率分子）不受影响。
     """
     source = assoc.get("rationale") if isinstance(assoc.get("rationale"), dict) else {}
     citations = _map_citations(source.get("citations"), cite_map)
@@ -508,7 +515,7 @@ def _project_rationale(assoc: dict, repository_id: str, cite_map: dict, fitness:
         if citation_id not in citations:
             citations.append(citation_id)
     text = _as_block_list(
-        source.get("text") or assoc.get("responsibility") or (fitness.get("reasons") or []),
+        source.get("text"),
         block_id=f"blk_bp_rationale_{_short(repository_id)}",
     )
     rationale: dict[str, Any] = {"text": text, "citations": citations}
