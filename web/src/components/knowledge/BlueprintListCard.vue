@@ -18,6 +18,7 @@ import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import BlueprintStatusBadge from '~/components/blueprint/BlueprintStatusBadge.vue'
 import { Badge } from '~/components/ui/badge'
+import { formatBlueprintListTime } from '~/utils/blueprintTitle'
 
 const props = defineProps<{
   item: BlueprintListItem
@@ -31,14 +32,10 @@ const { t } = useI18n()
 const visibleRepos = computed(() => props.item.repositories?.slice(0, REPO_CHIP_LIMIT) ?? [])
 const extraRepoCount = computed(() => Math.max(0, (props.item.repositories?.length ?? 0) - REPO_CHIP_LIMIT))
 
-/** 仓内无共享的相对时间工具，统一退化为本地化绝对时间（沿用 115-04 的同款处理）。 */
-const updatedAt = computed(() => {
-  const raw = props.item.updated_at
-  if (!raw)
-    return ''
-  const date = new Date(raw)
-  return Number.isNaN(date.getTime()) ? raw : date.toLocaleString('zh-CN', { hour12: false })
-})
+/** 优先 created_at；无则回落 updated_at。固定到分钟，不含秒。 */
+const listTime = computed(() =>
+  formatBlueprintListTime(props.item.created_at || props.item.updated_at),
+)
 </script>
 
 <template>
@@ -98,7 +95,11 @@ const updatedAt = computed(() => {
       >
         {{ t('knowledge.blueprints.tabPanel.blockerCount', { n: item.unresolved_blocker_count }) }}
       </Badge>
-      <span v-if="updatedAt" class="ml-auto tabular-nums">{{ updatedAt }}</span>
+      <span
+        v-if="listTime"
+        class="ml-auto tabular-nums"
+        data-testid="blueprint-list-time"
+      >{{ listTime }}</span>
     </div>
   </RouterLink>
 </template>

@@ -215,7 +215,9 @@ def test_blueprint_list_item_uses_current_status_key(authenticated_client) -> No
 
 def test_blueprint_list_item_exposes_the_full_contract(authenticated_client) -> None:
     """条目键集逐字对齐前端契约（115-02 起的 TS 接口照它写）。"""
-    _make_blueprint_artifact(repository_id=_REPO_ID)
+    from services.process_runtime.blueprint_title import format_blueprint_title
+
+    artifact = _make_blueprint_artifact(repository_id=_REPO_ID)
 
     item = _list(authenticated_client).json()["items"][0]
 
@@ -231,16 +233,37 @@ def test_blueprint_list_item_exposes_the_full_contract(authenticated_client) -> 
         "unresolved_blocker_count",
         "revision_round",
         "current_version_no",
+        "created_at",
         "updated_at",
     }
-    assert item["title"] == "蓝图标题"
+    # ⭐ title 始终派生，即使 DB 仍是旧「需求首行」式标题
+    assert item["title"] == format_blueprint_title(item["project_name"], artifact.created_at)
+    assert " - 技术方案 - " in item["title"]
     assert item["summary"] == "执行摘要正文"
     assert item["project_id"] == _SCOPE_PROJECT_ID
     assert item["project_name"] == "proj-11111111"
     assert item["revision_round"] == 0
     assert item["current_version_no"] == 1
+    assert item["created_at"]
     # 仓库名取不到（库里没有该 Repository 行）时回落 content 快照名，⛔ 不丢行
     assert {"id": _REPO_ID, "name": "onion-practice", "role": "direct"} in item["repositories"]
+
+
+def test_blueprint_list_orders_by_created_at_desc(authenticated_client) -> None:
+    """两份蓝图不同 created_at ⇒ items 按创建时间倒序（最新在上）。"""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    older = _make_blueprint_artifact(title="旧方案")
+    newer = _make_blueprint_artifact(title="新方案")
+    now = timezone.now()
+    Artifact.objects.filter(id=older.id).update(created_at=now - timedelta(hours=2))
+    Artifact.objects.filter(id=newer.id).update(created_at=now - timedelta(minutes=5))
+
+    body = _list(authenticated_client).json()
+
+    assert [item["artifact_id"] for item in body["items"]] == [str(newer.id), str(older.id)]
 
 
 # ═══════════════════════════════════════════════════════════════════════════

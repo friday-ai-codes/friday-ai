@@ -30,6 +30,7 @@ import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
+import { formatBlueprintListTime } from '~/utils/blueprintTitle'
 
 const props = withDefaults(defineProps<{
   projectId: string
@@ -69,11 +70,8 @@ const hidden = computed(
     && items.value.length === 0,
 )
 
-function formatTime(raw: string): string {
-  if (!raw)
-    return ''
-  const date = new Date(raw)
-  return Number.isNaN(date.getTime()) ? raw : date.toLocaleString('zh-CN', { hour12: false })
+function formatTime(item: { created_at?: string, updated_at: string }): string {
+  return formatBlueprintListTime(item.created_at || item.updated_at)
 }
 </script>
 
@@ -126,8 +124,11 @@ function formatTime(raw: string): string {
           >
             <BlueprintStatusBadge :status="item.current_status" size="sm" class="shrink-0" />
             <span class="min-w-0 flex-1 truncate text-sm" :title="item.title">{{ item.title }}</span>
-            <span class="shrink-0 text-xs tabular-nums text-muted-foreground">
-              {{ formatTime(item.updated_at) }}
+            <span
+              class="shrink-0 text-xs tabular-nums text-muted-foreground"
+              data-testid="project-blueprint-time"
+            >
+              {{ formatTime(item) }}
             </span>
           </RouterLink>
         </li>

@@ -685,6 +685,26 @@ def test_document_exposes_project_id_and_name_at_top_level(authenticated_client)
     assert body["content"]["meta"]["project_id"] == _SCOPE_PROJECT_ID
 
 
+def test_document_exposes_display_title_derived_from_project_and_created_at(
+    authenticated_client,
+) -> None:
+    """⭐ display_title 派生；content.meta.title 可与之不同（旧数据无需回填）。"""
+    from services.process_runtime.blueprint_title import format_blueprint_title
+
+    artifact = _make_artifact()
+    project = _make_project(_SCOPE_PROJECT_ID)
+    # 故意保持 DB / meta 旧标题，展示层必须仍派生
+    Artifact.objects.filter(id=artifact.id).update(title="需求首行旧标题")
+
+    body = authenticated_client.get(_url("blueprint-document", artifact)).json()
+    artifact.refresh_from_db()
+
+    assert body["display_title"] == format_blueprint_title(project.name, artifact.created_at)
+    assert " - 技术方案 - " in body["display_title"]
+    # meta.title 仍是样本骨架里的值，可与 display_title 不同
+    assert body["content"]["meta"]["title"] != body["display_title"]
+
+
 def test_document_project_name_is_empty_when_project_row_is_gone(authenticated_client) -> None:
     """⭐ 归属指向一个查不到的项目时：id **照实回传**、name 留空。
 

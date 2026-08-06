@@ -325,6 +325,8 @@ class BlueprintDocumentView(APIView):
         if version is None:
             return Response(_VERSION_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
+        from services.process_runtime.blueprint_title import format_blueprint_title
+
         content = version.content if isinstance(version.content, dict) else {}
         # quality 装配段：`citation_coverage` 是同步纯函数（入参 content dict，分母为 0 → 1.0，
         # 恒有值）；后三项经 `_collect_db_quality` 一次性算完并 **原样透传 None**。
@@ -333,6 +335,12 @@ class BlueprintDocumentView(APIView):
 
         is_current = bool(
             artifact.current_version_id and str(artifact.current_version_id) == str(version.id)
+        )
+        project = await _resolve_project(content)
+        # 展示派生标题（与列表端点同口径）；⛔ 不改写 content.meta.title，旧数据无需回填。
+        display_title = format_blueprint_title(
+            project.get("project_name"),
+            getattr(artifact, "created_at", None),
         )
         payload = {
             "version_id": str(version.id),
@@ -347,7 +355,9 @@ class BlueprintDocumentView(APIView):
             # 查「被哪些方案/知识引用」。⛔ 不让前端复制 id 派生规则。
             "knowledge_entity_id": str(blueprint_entity_id(artifact_id)),
             # LINK-02（Phase 117）：顶层项目归属，口径与列表端点一致，供查看器顶栏回跳。
-            **await _resolve_project(content),
+            **project,
+            # 展示标题派生（quick 260806-d9y）：纯追加，不覆盖 meta.title。
+            "display_title": display_title,
         }
         _log(
             "blueprint_document_read",

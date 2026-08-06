@@ -537,3 +537,49 @@ async def test_feature_meta_project_is_used_directly() -> None:
     )
 
     assert resolved == _PROJECT_ID
+
+
+async def test_aseed_default_title_is_derived_format() -> None:
+    """缺省 title →「{项目名} - 技术方案 - YYYY-MM-DD HH:mm」；显式 title 仍尊重调用方。"""
+    from services.process_runtime.blueprint_intake import aseed_blueprint_artifact
+    from services.process_runtime.blueprint_title import format_blueprint_title
+
+    project = await _make_project()
+    session = await start_blueprint_orchestration(
+        ConvergenceSessionEntrypoint.CHAT,
+        _REQUIREMENT,
+        project_id=_PROJECT_ID,
+        entry_key="chat",
+    )
+    # start 已建会话；这里直接 aseed 测缺省标题（不依赖 intake stage handler 传 title）
+    artifact = await aseed_blueprint_artifact(
+        session=session,
+        requirement_text=_REQUIREMENT,
+        project_id=_PROJECT_ID,
+        title="",
+    )
+    artifact = await Artifact.objects.aget(id=artifact.id)
+    version = await ArtifactVersion.objects.aget(id=artifact.current_version_id)
+
+    expected = format_blueprint_title(project.name, artifact.created_at)
+    assert artifact.title == expected
+    assert version.content["meta"]["title"] == expected
+    assert " - 技术方案 - " in artifact.title
+    # 需求首行不得再当缺省标题
+    assert artifact.title != _REQUIREMENT.splitlines()[0]
+
+    # 显式非空 title 仍尊重
+    session2 = await start_blueprint_orchestration(
+        ConvergenceSessionEntrypoint.CHAT,
+        "另一条需求",
+        project_id=_PROJECT_ID,
+        entry_key="chat",
+    )
+    custom = await aseed_blueprint_artifact(
+        session=session2,
+        requirement_text="另一条需求",
+        project_id=_PROJECT_ID,
+        title="调用方自带标题",
+    )
+    custom = await Artifact.objects.aget(id=custom.id)
+    assert custom.title == "调用方自带标题"

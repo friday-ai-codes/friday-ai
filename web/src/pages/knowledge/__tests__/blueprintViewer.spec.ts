@@ -254,6 +254,10 @@ function makeDoc(overrides: Record<string, unknown> = {}) {
     created_at: '2026-08-01T00:00:00Z',
     content: makeContent(),
     quality: { citation_coverage: 1, ai_rejection_rate: null, human_edit_volume: null, clarification_rounds: null },
+    knowledge_entity_id: 'ke-1',
+    project_id: 'p-1',
+    project_name: '履约中台',
+    display_title: '履约中台 - 技术方案 - 2026-08-01 08:00',
     ...overrides,
   }
 }
@@ -712,5 +716,34 @@ describe('蓝图查看器 —— 引用预览的焦点归还（M-4）', () => {
     wrapper.findComponent(CITED).vm.$emit('citation-click', 'c-missing')
     await flush()
     expect(wrapper.findComponent(PREVIEW).props('open')).toBe(false)
+  })
+})
+
+describe('蓝图查看器顶栏 —— display_title 派生标题', () => {
+  it('优先展示 display_title，而非旧 meta.title', async () => {
+    const { default: BlueprintViewerHeader } = await import('~/components/blueprint/BlueprintViewerHeader.vue')
+    const wrapper = mount(BlueprintViewerHeader, {
+      props: {
+        doc: makeDoc({
+          display_title: '履约中台 - 技术方案 - 2026-08-01 08:00',
+          content: makeContent({ meta: { title: '订单履约链路重构', project_id: 'p-1' } }),
+        }) as any,
+        currentStatus: 'pending_review',
+      },
+      global: {
+        plugins: [i18n],
+        stubs: {
+          RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
+          BlueprintReviewActions: true,
+          BlueprintStatusBadge: true,
+          BlueprintVersionSwitcher: true,
+          Badge: true,
+          Button: true,
+          Switch: true,
+        },
+      },
+    })
+    expect(wrapper.find('h1').text()).toBe('履约中台 - 技术方案 - 2026-08-01 08:00')
+    expect(wrapper.find('h1').text()).not.toBe('订单履约链路重构')
   })
 })

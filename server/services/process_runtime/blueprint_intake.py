@@ -76,7 +76,8 @@ __all__ = [
 GOAL_BLOCK_ID = "bp_goal_1"
 
 # 截断上界：title 进 `Artifact.title`（max_length=500），goal 正文是半可信输入。
-_MAX_TITLE_CHARS = 120
+# 缺省标题为「{项目名} - 技术方案 - YYYY-MM-DD HH:mm」，200 足以容纳长项目名且不裁掉时间后缀。
+_MAX_TITLE_CHARS = 200
 _MAX_GOAL_CHARS = 4000
 # 推不出 project_id 时回给四个入口的**中性** detail（⛔ 不含内部路径/异常原文）
 _PROJECT_UNRESOLVED_DETAIL = "无法确定该需求所属的项目，请在项目空间内发起或补全项目信息"
@@ -352,11 +353,28 @@ async def aseed_blueprint_artifact(
     """
     from delivery.artifacts.builtin_types import ARTIFACT_TYPE_TECHNICAL_PLAN
     from delivery.services.artifact_service import ArtifactService
+    from django.utils import timezone
+
+    from services.process_runtime.blueprint_title import format_blueprint_title
 
     started = time.monotonic()
     goal_text = str(requirement_text or "")
-    # title 缺省取需求原文**首行**截断（`build_skeleton` 内再按 `_MAX_TITLE_CHARS` 收口）。
-    resolved_title = str(title or "").strip() or _first_line(goal_text)
+    # 显式非空 title 仍尊重调用方；缺省改为「{项目名} - 技术方案 - YYYY-MM-DD HH:mm」。
+    explicit = str(title or "").strip()
+    if explicit:
+        resolved_title = explicit
+    else:
+        project_name = ""
+        try:
+            from initiatives.models import Project
+
+            project_name = str(
+                await Project.objects.filter(id=project_id).values_list("name", flat=True).afirst()
+                or ""
+            )
+        except Exception:  # noqa: BLE001 — 查名失败不阻断 seeding，前缀回落「未关联项目」
+            project_name = ""
+        resolved_title = format_blueprint_title(project_name, timezone.now())
     content = build_skeleton(title=resolved_title, project_id=project_id, goal_text=goal_text)
 
     artifact = await ArtifactService().create(
