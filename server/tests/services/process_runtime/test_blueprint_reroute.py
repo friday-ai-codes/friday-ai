@@ -212,11 +212,18 @@ async def _apply(session, result: dict) -> None:
     await session.asave(update_fields=["stage_state"])
 
 
-async def _make_partial(task, *, verdict: str, valid: bool = True, responsibility: str = "职责"):
+async def _make_partial(
+    task,
+    *,
+    verdict: str,
+    valid: bool = True,
+    responsibility: str = "职责",
+    reasons: list | None = None,
+):
     return await sync_to_async(PartialPlan.objects.create)(
         research_task=task,
         content={
-            "fitness": {"verdict": verdict, "reasons": [], "citations": []},
+            "fitness": {"verdict": verdict, "reasons": reasons or [], "citations": []},
             "role_suggestion": "direct",
             "responsibility": responsibility,
             "findings": [],
@@ -242,6 +249,37 @@ async def test_collect_fitness_takes_latest_valid_row() -> None:
     assert fitness[str(repo.id)]["verdict"] == "partial"
     assert fitness[str(repo.id)]["responsibility"] == "最新职责"
     assert fitness[str(repo.id)]["task_status"] == RepoResearchTaskStatus.DONE
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_collect_fitness_carries_reasons() -> None:
+    """⭐ 适配理由随聚合携带：`fitness.reasons` 是确认门快照与蓝图「适配判定」正文的
+    唯一来源——只聚合三标量会让该区在快照/锁定/蓝图全程为空（用户实测反馈）。"""
+    session = await _make_session()
+    repo = await _make_repo()
+    task = await _make_task(session, repo)
+    await _make_partial(
+        task, verdict="partial", reasons=["复用 exam/single 组件即可承载", "缺倒计时组件需新增"]
+    )
+
+    fitness = await BlueprintResearchAdapter().acollect_fitness(session)
+    assert fitness[str(repo.id)]["reasons"] == [
+        "复用 exam/single 组件即可承载",
+        "缺倒计时组件需新增",
+    ]
+
+    # 反面：fitness.reasons 非 list（半可信容器产物）→ 收敛为空数组，不上抛
+    session2 = await _make_session()
+    repo2 = await _make_repo()
+    task2 = await _make_task(session2, repo2)
+    await sync_to_async(PartialPlan.objects.create)(
+        research_task=task2,
+        content={"fitness": {"verdict": "partial", "reasons": "不是列表"}, "findings": []},
+        valid=True,
+    )
+    fitness2 = await BlueprintResearchAdapter().acollect_fitness(session2)
+    assert fitness2[str(repo2.id)]["reasons"] == []
 
 
 @pytest.mark.django_db(transaction=True)
