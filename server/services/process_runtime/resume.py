@@ -58,6 +58,21 @@ async def adrive_convergence_session_to_pause_or_terminal(
         )
         return session
 
+    from services.process_runtime.drive_lease import asession_drive_lease
+
+    # ⭐ 租约包住**整个循环**而不是逐步获取：逐步获取会在两步之间留出空隙，别的驱动器正好
+    # 挤进来接着推，于是同一会话被两个驱动器交替推进（比并发跑同一步更难排查）。
+    # 循环里的 `engine.advance` 会命中租约的可重入分支，不会自己再抢一次。
+    async with asession_drive_lease(getattr(session, "id", None), reason="drive_loop") as ok:
+        if not ok:
+            # 别人正在驱动同一会话：本次原地返回。⛔ 这不是错误路径 —— 多入口触发续驱是
+            # 常态（回调 barrier / 动作端点 / 僵尸扫描），谁抢到谁推进即可。
+            return session
+        return await _adrive_locked(engine, session, max_steps=max_steps)
+
+
+async def _adrive_locked(engine: Any, session: Any, *, max_steps: int) -> Any:
+    """续驱循环本体：调用方**必须**已持有会话驱动租约。"""
     from delivery.models import ConvergenceSession, ConvergenceSessionStatus
     from delivery.services import ClarificationService
     from services.process_runtime import aall_research_tasks_terminal

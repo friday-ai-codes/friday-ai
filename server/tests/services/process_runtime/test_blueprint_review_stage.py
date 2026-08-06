@@ -364,6 +364,44 @@ async def test_warning_only_finding_passes_on_the_first_round(monkeypatch) -> No
     assert (await _refresh(artifact)).blueprint_status == BlueprintStatus.PENDING_REVIEW
 
 
+@pytest.mark.parametrize(
+    ("findings", "expected_status"),
+    [
+        ([_finding(severity=SEVERITY_WARNING)], "passed"),
+        ([_finding()], "retry"),
+    ],
+)
+async def test_started_and_completed_report_the_same_round_number(
+    monkeypatch, findings: list, expected_status: str
+) -> None:
+    """⭐ 同一轮的 started 与 completed 必须报**同一个** 1-based 轮次号。
+
+    事件里的 `round` 是给人看的「第几轮」，而 `stage_state` 里的 `round_no` 是 0-based 的
+    有界重试计数器。两者曾被混用 ⇒ started 报 0、completed 报 1，界面上像是漏了一轮；
+    而且三条出口还各报各的（retry 报递增后的下一轮、passed/exhausted 报当前轮）。
+    """
+    session, _artifact = await _make_session()
+    _stub_rules(monkeypatch, findings, llm=[])
+    adapter = BlueprintReviewAdapter()
+
+    emitted: list[tuple[str, dict]] = []
+
+    async def _record(_session: object, event: str, payload: dict) -> None:
+        emitted.append((event, payload))
+
+    adapter._aemit = _record  # type: ignore[method-assign]
+
+    result = await adapter.review(session)
+    assert result["review_status"] == expected_status
+
+    rounds = {event: payload.get("round") for event, payload in emitted}
+    assert set(rounds) == {"blueprint.review.started", "blueprint.review.completed"}
+    assert rounds["blueprint.review.started"] == 1, "首轮对人应显示「第 1 轮」而不是第 0 轮"
+    assert rounds["blueprint.review.completed"] == rounds["blueprint.review.started"], (
+        f"同一轮的起止报了两个轮次号：{rounds}"
+    )
+
+
 async def test_decide_back_target_has_two_tiers() -> None:
     """归因两档：全部 BLOCKER 同仓 → 回该仓；跨仓 / 无归属 → 回融合重装。"""
     same = _decide_back_target([_finding(), _finding(rule_id="role_mismatch")])

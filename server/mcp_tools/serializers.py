@@ -849,6 +849,119 @@ class AnswerBlueprintClarificationRequestSerializer(serializers.Serializer):
     artifact_id = serializers.CharField(required=False, allow_blank=True, default="", max_length=64)
 
 
+# ── 蓝图环节单跑（stage sandbox）工具（.planning/quick/20260806-blueprint-stage-runner）──
+
+
+class RouteBlueprintReposRequestSerializer(serializers.Serializer):
+    """三分量蓝图路由单跑请求（区别于粗版 ``route_repositories``：含章程/历史融合与 pin）。
+
+    ``requirement_text`` 与 ``requirement_spec`` 至少给一个；``ignore_pin=True`` 跳过项目
+    手动绑定的固定路由短路（对比「人工绑定 vs 自动路由」的能力测试口）。
+    """
+
+    requirement_text = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=8000
+    )
+    requirement_spec = serializers.JSONField(required=False, allow_null=True, default=None)
+    project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    include_repository_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=50,
+    )
+    exclude_repository_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=50,
+    )
+    ignore_pin = serializers.BooleanField(required=False, default=False)
+    top_k = serializers.IntegerField(required=False, default=5, min_value=1, max_value=10)
+
+    def validate(self, attrs: dict) -> dict:
+        spec = attrs.get("requirement_spec")
+        if spec is not None and not isinstance(spec, dict):
+            raise serializers.ValidationError("requirement_spec 须为 JSON 对象")
+        if not str(attrs.get("requirement_text") or "").strip() and not spec:
+            raise serializers.ValidationError("requirement_text 与 requirement_spec 至少提供一个")
+        return attrs
+
+
+class GenerateRequirementSpecRequestSerializer(serializers.Serializer):
+    """需求规格单跑请求：拆功能点 + intent 补齐 + 四维歧义打分（零落库）。"""
+
+    requirement_text = serializers.CharField(
+        required=True, allow_blank=False, max_length=20000
+    )
+    # 直采功能点（每项 {"title", "intent"?, "module"?, "layer"?}）：非空即跳过 LLM 拆分。
+    feature_points = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=200,
+    )
+    prior_context = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=8000
+    )
+    assumptions_tier = serializers.ChoiceField(
+        choices=["strict", "balanced", "assume_more"],
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+    classify_intents = serializers.BooleanField(required=False, default=True)
+
+
+class StartRepoResearchRequestSerializer(serializers.Serializer):
+    """沙箱调研发起请求：对显式仓库集跑蓝图调研链（direct 容器深调研 / indirect 轻量合成）。"""
+
+    requirement_text = serializers.CharField(
+        required=True, allow_blank=False, max_length=20000
+    )
+    requirement_spec = serializers.JSONField(required=False, allow_null=True, default=None)
+    project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    # 每项 {"repository_id", "role"?: direct|indirect, "confidence"?: high|medium|low}
+    repositories = serializers.ListField(
+        child=serializers.DictField(),
+        required=True,
+        allow_empty=False,
+        max_length=10,
+    )
+
+    def validate_requirement_spec(self, value: object) -> object:
+        if value is not None and not isinstance(value, dict):
+            raise serializers.ValidationError("requirement_spec 须为 JSON 对象")
+        return value
+
+
+class GetRepoResearchRequestSerializer(serializers.Serializer):
+    """沙箱调研结果轮询请求（仅限会话创建者，非本人中性 404）。"""
+
+    session_id = serializers.UUIDField(required=True)
+
+
+class ApplyRepoAssociationRequestSerializer(serializers.Serializer):
+    """采纳写回请求：把选定仓库集 bind/unbind 到项目（``ProjectBranch(source=manual)``）。
+
+    这是 stage 单跑家族**唯一**的写回路径——路由/调研结果永远只是提案，写回由用户显式
+    调用本工具决定（`ProjectBranchService` 成员 fail-closed + 审计）。
+    """
+
+    project_id = serializers.UUIDField(required=True)
+    action = serializers.ChoiceField(choices=["bind", "unbind"], required=False, default="bind")
+    # 每项 {"repository_id", "branch_name"?}；branch_name 缺省取仓库默认分支。
+    bindings = serializers.ListField(
+        child=serializers.DictField(),
+        required=True,
+        allow_empty=False,
+        max_length=20,
+    )
+
+
 # 三个 feature 方案工具共用同一响应形状（FeatureSolutionState.as_dict + run_id）。
 _FEATURE_SOLUTION_RESPONSE_KEYS = [
     "session_id",
@@ -1324,5 +1437,52 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "reflow",
             "run_id",
         ],
+    },
+    # ── 蓝图环节单跑（stage sandbox）家族：route / spec / research 单跑 + 显式采纳写回。
+    # 前四个是 dry-run / 只读提案面；`apply_repo_association` 是家族里唯一写回路径。
+    "route_blueprint_repos": {
+        "request": [
+            "requirement_text",
+            "requirement_spec",
+            "project_id",
+            "include_repository_ids",
+            "exclude_repository_ids",
+            "ignore_pin",
+            "top_k",
+        ],
+        # 与 stage_state["routing"] 契约（112-03 顶层 8 键）逐键同形 + run_id。
+        "response": [
+            "router_version",
+            "auto_selected",
+            "intent",
+            "weights_used",
+            "charter_supplement_count",
+            "unjustified_boundary_hit_count",
+            "candidates",
+            "citations",
+            "run_id",
+        ],
+    },
+    "generate_requirement_spec": {
+        "request": [
+            "requirement_text",
+            "feature_points",
+            "prior_context",
+            "assumptions_tier",
+            "classify_intents",
+        ],
+        "response": ["requirement_spec", "ambiguity", "source", "run_id"],
+    },
+    "start_repo_research": {
+        "request": ["requirement_text", "requirement_spec", "project_id", "repositories"],
+        "response": ["session_id", "dispatched", "synthesized", "degraded", "tasks", "run_id"],
+    },
+    "get_repo_research": {
+        "request": ["session_id"],
+        "response": ["session_id", "all_terminal", "tasks", "run_id"],
+    },
+    "apply_repo_association": {
+        "request": ["project_id", "action", "bindings"],
+        "response": ["project_id", "action", "results", "run_id"],
     },
 }

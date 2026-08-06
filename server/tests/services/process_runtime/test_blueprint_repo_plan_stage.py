@@ -262,6 +262,127 @@ async def test_direct_plan_dispatch_uses_plan_prefix_quota_and_source() -> None:
 
 
 @override_settings(FRIDAY_BASE_URL="https://friday.example.com")
+async def test_plan_prompt_carries_full_requirement_and_stage1_context() -> None:
+    """plan prompt「有什么就都给」：需求规格全量段（背景/验收标准/测试用例/边界/约束）+
+    阶段 1 完整结论（responsibility + findings，含 mark_stale 置 invalid 后的回落取数）。"""
+    user = await _make_user()
+    repo = await _make_repo()
+    spec = {
+        "goal": [{"block_id": "b1", "type": "paragraph", "text": "上线学习报告导出"}],
+        "background": [{"block_id": "b0", "type": "paragraph", "text": "运营侧长期依赖人工导表"}],
+        "feature_points": [
+            {
+                "id": "fp_01",
+                "title": "报告导出",
+                "intent": "greenfield",
+                "description": [{"block_id": "b2", "type": "paragraph", "text": "支持导出 PDF"}],
+                "acceptance_criteria": ["导出的 PDF 包含学习时长汇总"],
+                "test_cases": [
+                    {
+                        "name": "空数据导出",
+                        "given_when_then": "无学习记录时导出应返回提示而非空文件",
+                    }
+                ],
+            }
+        ],
+        "boundaries": {"in_scope": ["Web 端"], "out_of_scope": ["移动端 App"]},
+        "constraints": [{"id": "c1", "kind": "tech", "text": "必须复用既有导出服务"}],
+    }
+    session, _artifact = await _make_locked_session(
+        _association(repo, role="direct"),
+        user=user,
+        stage_state={"blueprint": {"requirement_spec": spec}},
+    )
+    # 阶段 1 结论（含 findings）——dispatch_plans 会先 mark_stale 把这行置 invalid，
+    # prompt 仍须取到完整结论（valid 优先、失效行回落）。
+    task = await RepoResearchTask.objects.acreate(
+        session=session, repository=repo, status=RepoResearchTaskStatus.DONE
+    )
+    await PartialPlan.objects.acreate(
+        research_task=task,
+        content={
+            "repository_id": str(repo.id),
+            "fitness": {"verdict": "suitable", "reasons": [], "citations": []},
+            "role_suggestion": "direct",
+            "responsibility": "承接导出接口与 PDF 渲染",
+            "findings": [
+                {
+                    "title": "已有导出框架",
+                    "detail": "services/export 已支持 CSV 导出",
+                    "citations": ["services/export.py"],
+                }
+            ],
+        },
+        content_hash="h" * 8,
+        valid=True,
+    )
+    await _make_online_runner()
+    dispatcher = _FakeDispatcher()
+    research = BlueprintResearchAdapter(
+        dispatcher_factory=lambda: dispatcher, charters_loader=AsyncMock(return_value={})
+    )
+    cfg, git = _stub_runtime()
+
+    with cfg, git:
+        await _plan_adapter(research_adapter=research).dispatch_plans(session)
+
+    assert dispatcher.await_count == 1
+    prompt = dispatcher.tasks[0].prompt
+    # 需求规格全量段
+    assert "上线学习报告导出" in prompt
+    assert "运营侧长期依赖人工导表" in prompt
+    assert "导出的 PDF 包含学习时长汇总" in prompt  # 验收标准
+    assert "无学习记录时导出应返回提示而非空文件" in prompt  # 测试用例
+    assert "移动端 App" in prompt  # 范围边界
+    assert "必须复用既有导出服务" in prompt  # 约束
+    # 阶段 1 完整结论（不再只有三个标量）
+    assert "承接导出接口与 PDF 渲染" in prompt
+    assert "已有导出框架" in prompt
+    assert "services/export.py" in prompt
+    # test_strategy 必须结合验收标准/测试用例的显式指令
+    assert "test_strategy 必须结合" in prompt
+    # 确认门锁定职责仍在
+    assert "职责" in prompt
+
+
+async def test_indirect_synthesizer_prompt_includes_requirement_context() -> None:
+    """indirect 仓的服务端 LLM 合成 prompt 与容器 prompt 同源带完整需求上下文。"""
+    from types import SimpleNamespace
+
+    from services.process_runtime.blueprint_repo_plan import LLMRepoPlanSynthesizer
+
+    session = SimpleNamespace(
+        stage_state={
+            "blueprint": {
+                "requirement_spec": {
+                    "goal": [{"block_id": "b1", "type": "paragraph", "text": "上线学习报告导出"}],
+                    "feature_points": [
+                        {
+                            "id": "fp_01",
+                            "title": "报告导出",
+                            "intent": "greenfield",
+                            "acceptance_criteria": ["导出的 PDF 包含学习时长汇总"],
+                        }
+                    ],
+                }
+            }
+        }
+    )
+    prompt = LLMRepoPlanSynthesizer._build_prompt(
+        session,
+        {
+            "repository_id": "rid-1",
+            "responsibility": [{"block_id": "b", "type": "paragraph", "text": "提供用户数据"}],
+            "fitness": {"verdict": "partial"},
+        },
+    )
+    assert "上线学习报告导出" in prompt
+    assert "导出的 PDF 包含学习时长汇总" in prompt
+    assert "提供用户数据" in prompt
+    assert "rid-1" in prompt
+
+
+@override_settings(FRIDAY_BASE_URL="https://friday.example.com")
 async def test_research_mode_default_is_byte_equivalent_and_binds_user() -> None:
     """⭐ mode 缺省等价性（112 零回归）+ ⭐ B1 在 research 路径同样成立。"""
     user = await _make_user()
@@ -549,6 +670,55 @@ async def test_targeted_research_delegates_to_upgrade_to_deep() -> None:
         )
         is False
     )
+
+
+async def test_repo_completed_event_counts_read_the_real_repo_plan_keys() -> None:
+    """⭐ 回归守卫：`repo_plan.repo_completed` 的计数必须读 RepoPlan 段的**真实字段名**。
+
+    曾误读蓝图顶层的 ``implementation_items`` / ``api_contracts`` —— RepoPlan 段里根本没有
+    这两个键（实现项是 ``impl_items``、接口分 ``apis_provided`` / ``apis_consumed``）⇒ 两个
+    计数恒为 0，界面上每个仓都是「0 项实现 · 0 条接口」，用户点名过这条。
+
+    ⛔ 这里断言的是**非零**：只要还有人把键名改回顶层口径，本测试立刻红。
+    """
+    repo = await _make_repo()
+    session, _artifact = await _make_locked_session(_association(repo, role="direct"))
+    task = await RepoResearchTask.objects.acreate(
+        session=session, repository=repo, status=RepoResearchTaskStatus.DONE
+    )
+
+    section = _repo_plan_section(str(repo.id))
+    section["impl_items"] = [
+        {"item_id": f"it_{i}", "title": "改动", "change_type": "modify", "how": "改一处"}
+        for i in range(3)
+    ]
+    section["apis_provided"] = [{"name": "GET /a"}, {"name": "GET /b"}]
+    section["apis_consumed"] = [{"name": "GET /c", "from_repository_id": "other"}]
+    section["current_state"] = [{"summary": "现状", "findings": []}]
+    section["risks"] = [{"block_id": "blk_risk", "type": "paragraph", "text": "风险"}]
+    section["open_question_thread_ids"] = ["th_1"]
+
+    with patch(
+        "delivery.services.convergence_session_service.ConvergenceSessionService.aemit_event",
+        new=AsyncMock(),
+    ) as emit:
+        await _plan_adapter().arecord_repo_plan(task, section)
+
+    completed = [
+        call for call in emit.call_args_list if call.args[0] == "blueprint.repo_plan.repo_completed"
+    ]
+    assert len(completed) == 1
+    payload = completed[0].args[2]
+    assert payload["item_count"] == 3
+    # 供需两侧合计（前端既有消费方按 `api_count` 显示「N 条接口」）
+    assert payload["api_count"] == 3
+    assert payload["api_provided_count"] == 2
+    assert payload["api_consumed_count"] == 1
+    assert payload["role"] == "direct"
+    assert payload["current_state_count"] == 1
+    assert payload["risk_count"] == 1
+    assert payload["open_question_count"] == 1
+    assert payload["repository_id"] == str(repo.id)
 
 
 async def test_stage_state_summary_is_ids_and_counts_only() -> None:

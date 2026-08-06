@@ -526,4 +526,58 @@ def test_mcp_read_tool_schema_snapshot() -> None:
                 "run_id",
             ],
         },
+        # 蓝图环节单跑（stage sandbox）家族：前四个是 dry-run / 只读提案面，
+        # `apply_repo_association` 是唯一采纳写回路径（本快照同时充当「不得给
+        # dry-run 工具偷偷加写回参数」的守卫）。
+        "route_blueprint_repos": {
+            "request": [
+                "requirement_text",
+                "requirement_spec",
+                "project_id",
+                "include_repository_ids",
+                "exclude_repository_ids",
+                "ignore_pin",
+                "top_k",
+            ],
+            "response": [
+                "router_version",
+                "auto_selected",
+                "intent",
+                "weights_used",
+                "charter_supplement_count",
+                "unjustified_boundary_hit_count",
+                "candidates",
+                "citations",
+                "run_id",
+            ],
+        },
+        "generate_requirement_spec": {
+            "request": [
+                "requirement_text",
+                "feature_points",
+                "prior_context",
+                "assumptions_tier",
+                "classify_intents",
+            ],
+            "response": ["requirement_spec", "ambiguity", "source", "run_id"],
+        },
+        "start_repo_research": {
+            "request": ["requirement_text", "requirement_spec", "project_id", "repositories"],
+            "response": [
+                "session_id",
+                "dispatched",
+                "synthesized",
+                "degraded",
+                "tasks",
+                "run_id",
+            ],
+        },
+        "get_repo_research": {
+            "request": ["session_id"],
+            "response": ["session_id", "all_terminal", "tasks", "run_id"],
+        },
+        "apply_repo_association": {
+            "request": ["project_id", "action", "bindings"],
+            "response": ["project_id", "action", "results", "run_id"],
+        },
     }

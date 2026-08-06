@@ -80,6 +80,7 @@ from .repository_analysis_service import build_repository_analysis, normalize_co
 from .serializers import (
     AnalyzeRepositoryRequestSerializer,
     AnswerBlueprintClarificationRequestSerializer,
+    ApplyRepoAssociationRequestSerializer,
     ConfirmFeatureTechPlanRequestSerializer,
     CreateCodingPlanRequestSerializer,
     CreateFeatureTechPlanRequestSerializer,
@@ -90,11 +91,13 @@ from .serializers import (
     ExecuteCodingPlanRequestSerializer,
     ExecuteWorkItemRepoTasksRequestSerializer,
     FindRelatedChunksRequestSerializer,
+    GenerateRequirementSpecRequestSerializer,
     GetCodingExecutionRequestSerializer,
     GetEntityTimelineRequestSerializer,
     GetFeatureTechPlanRequestSerializer,
     GetFeishuWorkItemContextRequestSerializer,
     GetRelatedEntitiesRequestSerializer,
+    GetRepoResearchRequestSerializer,
     GetRepositoryFileRequestSerializer,
     GetRepositoryRequestSerializer,
     GetTechnicalBlueprintRequestSerializer,
@@ -109,11 +112,13 @@ from .serializers import (
     ReportProjectKnowledgeRequestSerializer,
     ReportProjectStateRequestSerializer,
     ReverseLookupRequestSerializer,
+    RouteBlueprintReposRequestSerializer,
     RouteRepositoriesRequestSerializer,
     SearchDeliveryKnowledgeRequestSerializer,
     SearchLearningCasesRequestSerializer,
     SearchProjectContextRequestSerializer,
     SearchRagChunksRequestSerializer,
+    StartRepoResearchRequestSerializer,
     SummarizeBranchRequestSerializer,
 )
 from .technical_plan_service import TechnicalPlanError, build_work_item_technical_plan
@@ -4823,3 +4828,340 @@ class AnswerBlueprintClarificationView(McpToolView):
         await blueprint_resume.aresume_after_gate_action(
             session, initiated_by_user_id=str(getattr(request.user, "id", "") or "system")
         )
+
+
+# ═══════════════ 蓝图环节单跑（stage sandbox）家族（20260806 stage runner） ═══════════════
+#
+# 设计契约见 `.planning/quick/20260806-blueprint-stage-runner/DESIGN.md`：
+# 路由 / 规格 / 调研三个环节都能基于「上游产物 JSON」单独触发；前四个工具是 dry-run /
+# 只读提案面，`apply_repo_association` 是家族里**唯一**的写回路径（是否替换项目关联仓库
+# 由用户显式裁决，绝不自动写回）。
+
+
+class RouteBlueprintReposView(McpToolView):
+    """三分量蓝图路由单跑（dry-run）：能力树 + 章程 + 历史融合，与正式编排同源 adapter。
+
+    与既有粗版 ``route_repositories``（裸 ``RepoRouterV2``）的差异：本工具走
+    ``BlueprintRouteAdapter``，含章程/历史分量、breakdown 证据与项目固定路由（pin）语义；
+    ``ignore_pin=true`` 可绕过项目手动绑定短路，对比「人工绑定 vs 自动路由」。零落库。
+    """
+
+    tool_name = "route_blueprint_repos"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(RouteBlueprintReposRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from services.process_runtime.stage_sandbox import arun_route_stage
+
+        spec = input_data.get("requirement_spec")
+        summary = await arun_route_stage(
+            requirement_spec=spec if isinstance(spec, dict) else None,
+            requirement_text=str(input_data.get("requirement_text") or ""),
+            project_id=str(input_data.get("project_id") or ""),
+            include_repository_ids=[
+                str(r) for r in (input_data.get("include_repository_ids") or [])
+            ],
+            exclude_repository_ids=[
+                str(r) for r in (input_data.get("exclude_repository_ids") or [])
+            ],
+            ignore_pin=bool(input_data.get("ignore_pin")),
+            top_k=int(input_data.get("top_k") or 5),
+            initiated_by_user_id=str(request.user.id),
+        )
+        output_data = {**summary, "run_id": str(run.run_id)}
+        traces = [
+            (
+                RetrievalTrace.Kind.ROUTING,
+                {
+                    "repository_id": c.get("repository_id"),
+                    "repository_name": c.get("repository_name"),
+                    "confidence": c.get("confidence"),
+                    "role_suggestion": c.get("role_suggestion"),
+                    "total": c.get("total"),
+                    "breakdown": c.get("breakdown") or {},
+                },
+            )
+            for c in (summary.get("candidates") or [])
+            if isinstance(c, dict)
+        ]
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class GenerateRequirementSpecView(McpToolView):
+    """需求规格单跑（dry-run）：拆功能点 + intent 补齐 + 四维歧义打分。
+
+    单跑没有澄清线程 —— 歧义报告与澄清问题直接返回给调用方，由调用方决定是否补答
+    后重跑（``prior_context`` 传已答结论）。零落库。
+    """
+
+    tool_name = "generate_requirement_spec"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(GenerateRequirementSpecRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from services.process_runtime.stage_sandbox import arun_spec_stage
+
+        result = await arun_spec_stage(
+            requirement_text=str(input_data["requirement_text"]),
+            feature_points=list(input_data.get("feature_points") or []),
+            prior_context=str(input_data.get("prior_context") or ""),
+            assumptions_tier=str(input_data.get("assumptions_tier") or ""),
+            classify_intents=bool(input_data.get("classify_intents", True)),
+            initiated_by_user_id=str(request.user.id),
+        )
+        output_data = {**result, "run_id": str(run.run_id)}
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=[],
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class StartRepoResearchView(McpToolView):
+    """沙箱调研发起：对显式仓库集复用蓝图调研派发链（容器深调研 / 轻量合成）。
+
+    建一条 ``process_type=blueprint_stage_sandbox`` 的真实会话挂任务与产物；蓝图续驱
+    与恢复扫描都按 process_type 过滤，不会驱动它。结果用 ``get_repo_research`` 轮询。
+    """
+
+    tool_name = "start_repo_research"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(StartRepoResearchRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from services.process_runtime.stage_sandbox import astart_research_sandbox
+
+        spec = input_data.get("requirement_spec")
+        try:
+            result = await astart_research_sandbox(
+                requirement_text=str(input_data["requirement_text"]),
+                requirement_spec=spec if isinstance(spec, dict) else None,
+                project_id=str(input_data.get("project_id") or ""),
+                repositories=list(input_data.get("repositories") or []),
+                created_by=request.user,
+                initiated_by_user_id=str(request.user.id),
+            )
+        except ValueError as exc:
+            return error_response(
+                "invalid_params", str(exc), status_code=status.HTTP_400_BAD_REQUEST
+            )
+        output_data = {**result, "run_id": str(run.run_id)}
+        await self._record_agent_decision(
+            run,
+            action="repo_research_sandbox_started",
+            payload={
+                "session_id": result["session_id"],
+                "dispatched": result["dispatched"],
+                "synthesized": result["synthesized"],
+                "degraded": result["degraded"],
+            },
+        )
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=[],
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class GetRepoResearchView(McpToolView):
+    """沙箱调研结果轮询：任务状态 + 最新 valid §7 调研结论（仅限会话创建者，中性 404）。"""
+
+    tool_name = "get_repo_research"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(GetRepoResearchRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from services.process_runtime.stage_sandbox import aget_research_sandbox
+
+        result = await aget_research_sandbox(
+            session_id=str(input_data["session_id"]), user=request.user
+        )
+        if result is None:
+            return error_response(
+                "not_found", "调研会话不存在", status_code=status.HTTP_404_NOT_FOUND
+            )
+        output_data = {**result, "run_id": str(run.run_id)}
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data={
+                "session_id": result["session_id"],
+                "all_terminal": result["all_terminal"],
+                "task_count": len(result["tasks"]),
+            },
+            traces=[],
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class ApplyRepoAssociationView(McpToolView):
+    """采纳写回：把选定仓库集 bind/unbind 到项目（``ProjectBranch(source=manual)``）。
+
+    stage 单跑家族**唯一**的写回路径 —— 路由/调研结果永远只是提案，用户看过之后显式
+    调本工具才落项目关联。写入经 ``ProjectBranchService``（成员 fail-closed + 审计），
+    单仓错误隔离（一仓失败不拖垮整批），非项目成员整体 403。
+    """
+
+    tool_name = "apply_repo_association"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(ApplyRepoAssociationRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from initiatives.services.project_branch_service import (
+            ProjectBranchError,
+            ProjectBranchPermissionError,
+            ProjectBranchService,
+        )
+
+        project_id = str(input_data["project_id"])
+        action = str(input_data.get("action") or "bind")
+        service = ProjectBranchService()
+        results: list[dict[str, Any]] = []
+        try:
+            for item in input_data.get("bindings") or []:
+                if not isinstance(item, dict):
+                    continue
+                repository_id = str(item.get("repository_id") or "")
+                branch_name = str(item.get("branch_name") or "").strip()
+                entry: dict[str, Any] = {
+                    "repository_id": repository_id,
+                    "branch_name": branch_name,
+                    "ok": False,
+                }
+                results.append(entry)
+                if not self._is_uuid(repository_id):
+                    entry["error"] = "repository_id 非法"
+                    continue
+                if not branch_name:
+                    branch_name = await self._adefault_branch(repository_id)
+                    entry["branch_name"] = branch_name
+                if not branch_name:
+                    entry["error"] = "仓库不存在或无默认分支"
+                    continue
+                try:
+                    if action == "unbind":
+                        removed = await service.unbind(
+                            project_id=project_id,
+                            repository_id=repository_id,
+                            branch_name=branch_name,
+                            actor=request.user,
+                            initiated_by_user_id=str(request.user.id),
+                        )
+                        entry["ok"] = True
+                        entry["removed"] = bool(removed)
+                    else:
+                        await service.bind(
+                            project_id=project_id,
+                            repository_id=repository_id,
+                            branch_name=branch_name,
+                            actor=request.user,
+                            initiated_by_user_id=str(request.user.id),
+                        )
+                        entry["ok"] = True
+                except ProjectBranchPermissionError:
+                    raise
+                except ProjectBranchError as exc:
+                    entry["error"] = str(exc)
+                except Exception as exc:  # noqa: BLE001 — 单仓错误隔离，绝不拖垮整批
+                    entry["error"] = redact_secrets_in_text(str(exc))[:300]
+        except ProjectBranchPermissionError:
+            return error_response(
+                "permission_denied",
+                "仅项目成员可绑定/解绑分支",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        output_data = {
+            "project_id": project_id,
+            "action": action,
+            "results": results,
+            "run_id": str(run.run_id),
+        }
+        await self._record_agent_decision(
+            run,
+            action="repo_association_applied",
+            payload={
+                "project_id": project_id,
+                "action": action,
+                "total": len(results),
+                "succeeded": sum(1 for r in results if r.get("ok")),
+            },
+        )
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=[],
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+    @staticmethod
+    def _is_uuid(value: str) -> bool:
+        try:
+            uuid.UUID(value)
+            return True
+        except (ValueError, TypeError, AttributeError):
+            return False
+
+    @staticmethod
+    async def _adefault_branch(repository_id: str) -> str:
+        """branch_name 缺省取仓库默认分支（仓库不存在返空串 ⇒ 调用方按单仓错误处理）。"""
+        repo = await Repository.objects.filter(id=repository_id, is_deleted=False).afirst()
+        if repo is None:
+            return ""
+        return str(repo.default_branch or repo.base_branch or "")

@@ -36,6 +36,7 @@ from services.process_runtime.blueprint_repo_waves import build_api_waves
 from services.process_runtime.blueprint_research_adapter import (
     BLUEPRINT_REPO_PLAN_SOURCE,
     BlueprintResearchAdapter,
+    summarize_requirement_context,
 )
 
 logger = structlog.get_logger(__name__)
@@ -110,11 +111,18 @@ class LLMRepoPlanSynthesizer:
 
     @staticmethod
     def _build_prompt(session: Any, repo: dict) -> str:
-        """由服务端权威状态构造（不把外部用户原文当执行指令拼接）。"""
+        """由服务端权威状态构造（不把外部用户原文当执行指令拼接）。
+
+        需求上下文与调研/拟方案容器同源（`summarize_requirement_context`）：indirect 仓
+        虽不改动，但「别的仓会向它要什么能力」只有对照完整需求（含验收标准/测试用例）
+        才判断得出来。
+        """
         repository_id = str(repo.get("repository_id") or "")
         responsibility = _blocks_to_text(repo.get("responsibility"))[:_MAX_PROMPT_TEXT_CHARS]
         fitness = repo.get("fitness") if isinstance(repo.get("fitness"), dict) else {}
         return (
+            f"{summarize_requirement_context(session)}\n\n"
+            f"## 本仓信息\n"
             f"仓库 id：{repository_id}\n"
             f"确认门锁定的职责：{responsibility or '（未填）'}\n"
             f"阶段 1 适配度结论：{fitness.get('verdict') or 'unknown'}\n\n"
@@ -262,16 +270,9 @@ class BlueprintRepoPlanAdapter:
                     session, repo, task=task_map.get(repository_id)
                 )
                 pending.append(repository_id)
-                # 118（LIVE-03）：每仓派发即发一条活动事件 —— 分仓阶段此前前端只能靠
-                # `context.entry_appended` 间接猜「谁在跑」，波次与每仓位置全在 stage_state
-                # 里而 events 接口不暴露。best-effort，绝不反噬派发。
-                await self._aemit_repo_activity(
-                    session,
-                    started_event=True,
-                    repository_id=repository_id,
-                    repository_name=str(repo.get("repository_name") or ""),
-                    wave=current_wave,
-                )
+                # 每仓 `repo_plan.repo_started` 事件由派发漏斗（research_adapter.dispatch 的
+                # mode 分流）发射（quick-260806 观测整改）：此前这里与漏斗各发一条 ——
+                # stage 路径双发、绕过本 handler 的重派路径（waiter 重派 / 手动单仓）零痕迹。
             except Exception as exc:  # noqa: BLE001 — WR-02 单仓隔离，绝不上抛
                 pending.append(repository_id)
                 logger.warning(
@@ -284,12 +285,18 @@ class BlueprintRepoPlanAdapter:
                 )
 
         # 118（LIVE-03）：波次推进可见（第几波 / 共几波 / 本波几个仓）
-        await self._aemit_wave_advanced(
-            session,
-            wave=current_wave,
-            total_waves=len(waves),
-            repository_count=len(dispatchable or []),
-        )
+        #
+        # ⚠️ 只在**真有波次可派**时发：`_current_wave` 在「所有波次都已产出」时按约定返回
+        # `(0, set())`，那是一次 no-op 续驱（barrier 每收一个容器回调都会再进本函数）。
+        # 无条件发会在活动流里堆一串「进入第 0/N 波，本波 0 个仓」——用户读到的是
+        # 「波次算错了」，其实是「这一趟什么都没派」。⛔ 不要为了「事件连续」而发空事件。
+        if dispatchable:
+            await self._aemit_wave_advanced(
+                session,
+                wave=current_wave,
+                total_waves=len(waves),
+                repository_count=len(dispatchable),
+            )
         logger.info(
             "blueprint_repo_plan_dispatch_completed",
             session_id=str(getattr(session, "id", "")),
@@ -747,35 +754,8 @@ class BlueprintRepoPlanAdapter:
         return partial
 
     # ── 活动流埋点（118，LIVE-03；均 best-effort，绝不反噬业务）──────────────
-
-    async def _aemit_repo_activity(
-        self,
-        session: Any,
-        *,
-        started_event: bool,
-        repository_id: str,
-        repository_name: str,
-        wave: Any,
-    ) -> None:
-        try:
-            from delivery.services.convergence_session_service import ConvergenceSessionService
-            from delivery.services.event_taxonomy import (
-                EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED,
-            )
-
-            if not started_event:
-                return
-            await ConvergenceSessionService().aemit_event(
-                EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED,
-                session,
-                {
-                    "repository_id": str(repository_id or ""),
-                    "repository_name": repository_name,
-                    "wave": wave,
-                },
-            )
-        except Exception:  # noqa: BLE001 — 观测 best-effort
-            pass
+    # ⭐ 每仓 `repo_plan.repo_started` 的发射点已收敛到派发漏斗
+    # （blueprint_research_adapter._emit_started 的 mode 分流），本文件不再发射。
 
     async def _aemit_wave_advanced(
         self, session: Any, *, wave: Any, total_waves: int, repository_count: int
@@ -803,6 +783,11 @@ class BlueprintRepoPlanAdapter:
 
         会话经 ``task.session_id`` 反查（本方法的入参只有 task）：⛔ 不访问 lazy-FK
         ``task.session``，那在 async 上下文里会抛 ``SynchronousOnlyOperation``。
+
+        ⚠️ 计数键**必须**取 ``blueprint_repo_plan_schema`` 的真实字段名：本段是 RepoPlan
+        中间产物，实现项叫 ``impl_items``、接口分 ``apis_provided`` / ``apis_consumed``。
+        曾误读蓝图顶层的 ``implementation_items`` / ``api_contracts``（RepoPlan 段里**根本
+        不存在**这两个键）⇒ 两个计数恒为 0，界面上每个仓都是「0 项实现 · 0 条接口」。
         """
         try:
             from delivery.models import ConvergenceSession
@@ -818,13 +803,23 @@ class BlueprintRepoPlanAdapter:
             if session is None:
                 return
             section = repo_plan_section if isinstance(repo_plan_section, dict) else {}
+            provided = section.get("apis_provided") or []
+            consumed = section.get("apis_consumed") or []
             await ConvergenceSessionService().aemit_event(
                 EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED,
                 session,
                 {
                     "repository_id": str(getattr(task, "repository_id", "") or ""),
-                    "item_count": len(section.get("implementation_items") or []),
-                    "api_count": len(section.get("api_contracts") or []),
+                    "role": str(section.get("role") or ""),
+                    "item_count": len(section.get("impl_items") or []),
+                    # `api_count` 保持「本仓涉及的接口契约总数」口径（前端既有消费方按它显示），
+                    # 供需两侧再各给一个分项，让「提供 3 条 / 消费 1 条」可核对。
+                    "api_count": len(provided) + len(consumed),
+                    "api_provided_count": len(provided),
+                    "api_consumed_count": len(consumed),
+                    "current_state_count": len(section.get("current_state") or []),
+                    "risk_count": len(section.get("risks") or []),
+                    "open_question_count": len(section.get("open_question_thread_ids") or []),
                 },
             )
         except Exception:  # noqa: BLE001 — 观测 best-effort

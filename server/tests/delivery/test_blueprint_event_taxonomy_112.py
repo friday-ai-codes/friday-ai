@@ -21,6 +21,7 @@ from delivery.services.event_taxonomy import (
     EVENT_BLUEPRINT_CONTEXT_WAITER_REGISTERED,
     EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED,
     EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED,
+    EVENT_BLUEPRINT_REPO_PLAN_REPO_FAILED,
     EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED,
     EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED,
     EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED,
@@ -39,6 +40,7 @@ from delivery.services.event_taxonomy import (
     EVENT_BLUEPRINT_SPEC_GATE_SCORED,
     EVENT_BLUEPRINT_STAGE_COMPLETED,
     EVENT_BLUEPRINT_STAGE_FAILED,
+    EVENT_BLUEPRINT_STAGE_RERUN_REQUESTED,
     EVENT_BLUEPRINT_STAGE_STARTED,
     EVENT_BLUEPRINT_STATUS_TRANSITIONED,
 )
@@ -91,6 +93,25 @@ def test_new_118_activity_events_are_frozen_and_registered() -> None:
         assert actual in BLUEPRINT_EVENTS
 
 
+# quick-260806 补：分仓每仓失败事件（started/completed/failed 三元补齐）+
+# 节点重跑请求事件（带操作员指令重跑某 stage；payload 只记标量，指令正文不进 payload）。
+# emit 点：派发漏斗（blueprint_research_adapter._emit_failed 的 mode 分流）+
+# 回调失败分支（callbacks._aemit_blueprint_repo_plan_failed）+
+# 重跑服务（blueprint_stage_rerun.arerun_blueprint_stage）。
+# ⚠️ 后缀 `_failed` 不是 `.failed`——见 event_taxonomy 常量旁注释。
+_NEW_QUICK_260806_EVENTS = {
+    EVENT_BLUEPRINT_REPO_PLAN_REPO_FAILED: "blueprint.repo_plan.repo_failed",
+    EVENT_BLUEPRINT_STAGE_RERUN_REQUESTED: "blueprint.stage.rerun_requested",
+}
+
+
+def test_repo_plan_repo_failed_event_frozen_and_registered() -> None:
+    """`repo_plan.repo_failed`：字面值冻结且 ∈ BLUEPRINT_EVENTS（前端三张映射表按串匹配）。"""
+    for actual, expected in _NEW_QUICK_260806_EVENTS.items():
+        assert actual == expected
+        assert actual in BLUEPRINT_EVENTS
+
+
 # 111 既有（冻结快照）
 _EXISTING_111_EVENTS = {
     EVENT_BLUEPRINT_STATUS_TRANSITIONED: "blueprint.status.transitioned",
@@ -132,18 +153,20 @@ def test_existing_blueprint_events_frozen() -> None:
 
 
 def test_blueprint_events_shape() -> None:
-    """集合恰好 27 个、全 ``blueprint.`` 前缀、无重复。
+    """集合恰好 29 个、全 ``blueprint.`` 前缀、无重复。
 
     构成：111 的 4 + 112 的 11 + 113 的 3 + 114-03 的 3 + **118 活动流的 6**
-    （路由召回/初步方案、检索命中、分仓每仓起止、波次推进）。
+    （路由召回/初步方案、检索命中、分仓每仓起止、波次推进）+ quick-260806 的 2
+    （分仓每仓失败三元补齐 + 节点重跑请求）。
     """
-    assert len(BLUEPRINT_EVENTS) == 27
+    assert len(BLUEPRINT_EVENTS) == 29
     assert all(event.startswith("blueprint.") for event in BLUEPRINT_EVENTS)
     declared = (
         list(_NEW_112_EVENTS)
         + list(_NEW_113_EVENTS)
         + list(_NEW_114_EVENTS)
         + list(_NEW_118_EVENTS)
+        + list(_NEW_QUICK_260806_EVENTS)
         + list(_EXISTING_111_EVENTS)
     )
-    assert len(declared) == len(set(declared)) == 27
+    assert len(declared) == len(set(declared)) == 29

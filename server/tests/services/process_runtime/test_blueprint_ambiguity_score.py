@@ -143,15 +143,74 @@ def test_normalize_questions_capped_and_filtered() -> None:
     questions = normalize_ambiguity_scores(payload)["questions"]
     assert len(questions) == 5
     assert all(q["text"] for q in questions)
-    assert questions[0] == {"text": "q0", "options": [], "citations": []}
+    assert questions[0] == {
+        "text": "q0",
+        "options": [],
+        "citations": [],
+        "related_feature_points": [],
+        "recommended": "",
+    }
 
 
 def test_normalize_questions_whitelist_drops_unknown_keys() -> None:
     payload = _full_payload(0.3)
     payload["questions"] = [{"text": "q", "options": "not-a-list", "evil": "x", "citations": None}]
     assert normalize_ambiguity_scores(payload)["questions"] == [
-        {"text": "q", "options": [], "citations": []}
+        {
+            "text": "q",
+            "options": [],
+            "citations": [],
+            "related_feature_points": [],
+            "recommended": "",
+        }
     ]
+
+
+def test_normalize_questions_keeps_related_and_valid_recommended() -> None:
+    payload = _full_payload(0.3)
+    payload["questions"] = [
+        {
+            "text": "弱网重连后倒计时如何恢复？",
+            "options": ["从中断处续计", "整轮重置", "人工确认后再计"],
+            "recommended": "从中断处续计",
+            "related_feature_points": ["fp_27", "fp_28", "", "  "],
+            "citations": ["cit_1"],
+            "evil": "drop-me",
+        }
+    ]
+    assert normalize_ambiguity_scores(payload)["questions"] == [
+        {
+            "text": "弱网重连后倒计时如何恢复？",
+            "options": ["从中断处续计", "整轮重置", "人工确认后再计"],
+            "citations": ["cit_1"],
+            "related_feature_points": ["fp_27", "fp_28"],
+            "recommended": "从中断处续计",
+        }
+    ]
+
+
+def test_normalize_questions_drops_recommended_not_in_options() -> None:
+    payload = _full_payload(0.3)
+    payload["questions"] = [
+        {
+            "text": "q",
+            "options": ["A", "B"],
+            "recommended": "C",
+            "related_feature_points": "not-a-list",
+        }
+    ]
+    assert normalize_ambiguity_scores(payload)["questions"][0]["recommended"] == ""
+    assert normalize_ambiguity_scores(payload)["questions"][0]["related_feature_points"] == []
+
+
+def test_system_prompt_requires_human_language_and_related_fps() -> None:
+    from services.process_runtime.blueprint_ambiguity_score import _system_prompt
+
+    prompt = _system_prompt()
+    assert "口语化中文" in prompt
+    assert "related_feature_points" in prompt
+    assert "禁止" in prompt and "fp_27" in prompt
+    assert "recommended" in prompt
 
 
 # ── 纯函数：weighted_total / is_ambiguous ─────────────────────────────────

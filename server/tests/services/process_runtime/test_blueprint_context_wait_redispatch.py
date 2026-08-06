@@ -699,6 +699,40 @@ async def test_dispatch_plans_only_dispatches_current_wave() -> None:
 
 
 @override_settings(FRIDAY_BASE_URL="https://friday.example.com")
+async def test_noop_dispatch_pass_emits_no_wave_advanced() -> None:
+    """⭐ 所有仓都已产出 ⇒ 这一趟什么都没派 ⇒ **一条 `wave_advanced` 都不发**。
+
+    `_current_wave` 在「无波次可派」时按约定返回 `(0, set())`。barrier 每收一个容器回调都会
+    再进 `dispatch_plans`，无条件发事件会在活动流里堆一串「进入第 0/N 波，本波 0 个仓」——
+    用户读到的是「波次算错了」，其实是「这趟是空转」。
+    """
+    repo_a = await _make_repo()
+    session, _artifact = await _make_locked_session(_association(repo_a))
+    await _make_online_runner()
+    adapter = BlueprintRepoPlanAdapter(
+        research_adapter=BlueprintResearchAdapter(
+            dispatcher_factory=_FakeDispatcher, charters_loader=AsyncMock(return_value={})
+        )
+    )
+    await _record_repo_plan(session, repo_a)
+
+    waves: list[dict] = []
+
+    async def _record(_session: object, **kwargs: object) -> None:
+        waves.append(dict(kwargs))
+
+    adapter._aemit_wave_advanced = _record  # type: ignore[method-assign]
+
+    cfg, git = _stub_runtime()
+    with cfg, git:
+        result = await adapter.dispatch_plans(session)
+
+    assert result["dispatched"] == 0
+    assert result["completed"] == [str(repo_a.id)]
+    assert waves == [], f"空转不该发波次事件，实际发了 {waves}"
+
+
+@override_settings(FRIDAY_BASE_URL="https://friday.example.com")
 async def test_no_api_info_keeps_full_parallel_dispatch() -> None:
     """无接口信息（首轮常态）→ 全部在 wave 1，两仓同轮派发（预排前行为零回归）。"""
     repo_a = await _make_repo()

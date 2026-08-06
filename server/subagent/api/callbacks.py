@@ -2462,7 +2462,10 @@ def _parse_blueprint_repo_plan(output: Any) -> tuple[dict[str, Any] | None, str]
     """
     import json as json_mod
 
-    from services.process_runtime.blueprint_repo_plan_schema import validate_repo_plan
+    from services.process_runtime.blueprint_repo_plan_schema import (
+        coerce_repo_plan_shapes,
+        validate_repo_plan,
+    )
 
     if not isinstance(output, dict):
         return None, "output 不是 JSON 对象"
@@ -2481,6 +2484,8 @@ def _parse_blueprint_repo_plan(output: Any) -> tuple[dict[str, Any] | None, str]
     section = raw.get("repo_plan")
     if not isinstance(section, dict):
         return None, "output 缺 repo_plan 段"
+    # 校验前先吸收常见形状漂移（字符串 affected_features → 对象），减少纯形状问题的整轮重跑
+    section = coerce_repo_plan_shapes(section)
     ok, err = validate_repo_plan(section)
     if not ok:
         return None, str(err or "repo_plan 校验失败")
@@ -2524,6 +2529,31 @@ async def _acount_blueprint_plan_containers(task: Any) -> int:
     """
     prefix = f"bp-plan-{task.id.hex[:12]}"
     return await SubAgentSession.objects.filter(session_id__startswith=prefix).acount()
+
+
+async def _aemit_blueprint_repo_plan_failed(blueprint_session, task, reason: str) -> None:
+    """分仓容器/产物失败的活动流事件（quick-260806 观测整改，best-effort）。
+
+    此前失败只落 task.error 与系统日志，过程明细零痕迹——用户看到的是「一直在拟定」
+    然后凭空升级澄清。payload 只带标量 reason（机器可读），⛔ 校验详情正文不进事件。
+    """
+    if blueprint_session is None or task is None:
+        return
+    try:
+        from delivery.services.convergence_session_service import ConvergenceSessionService
+        from delivery.services.event_taxonomy import EVENT_BLUEPRINT_REPO_PLAN_REPO_FAILED
+
+        await ConvergenceSessionService().aemit_event(
+            EVENT_BLUEPRINT_REPO_PLAN_REPO_FAILED,
+            blueprint_session,
+            {
+                "repository_id": str(task.repository_id),
+                "task_id": str(task.id),
+                "error": reason,
+            },
+        )
+    except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬回调主流程
+        pass
 
 
 async def _trigger_blueprint_repo_plan_barrier(blueprint_session) -> None:
@@ -2733,10 +2763,14 @@ async def _handle_blueprint_repo_plan_completion(
                 task, {"reason": "repo_plan_invalid_retrying", "detail": detail}
             )
             await research_service.mark_stale([task.id])
+            await _aemit_blueprint_repo_plan_failed(
+                blueprint_session, task, "repo_plan_invalid_retrying"
+            )
         else:
             await research_service.mark_failed(
                 task, {"reason": "repo_plan_invalid", "detail": detail}
             )
+            await _aemit_blueprint_repo_plan_failed(blueprint_session, task, "repo_plan_invalid")
             if blueprint_session is not None:
                 await adapter.aopen_clarification(
                     blueprint_session, str(task.repository_id), detail
@@ -2767,6 +2801,7 @@ async def _handle_blueprint_repo_plan_failure(
         :_MAX_CALLBACK_ERROR_CHARS
     ]
     await ResearchService().mark_failed(task, {"reason": "container_failed", "error": error_detail})
+    await _aemit_blueprint_repo_plan_failed(blueprint_session, task, "container_failed")
     await _trigger_blueprint_repo_plan_barrier(blueprint_session)
     log.info("blueprint_repo_plan_failure_handled", task_id=str(task.id))
 

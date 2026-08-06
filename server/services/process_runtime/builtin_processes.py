@@ -484,6 +484,10 @@ async def _h_bp_decompose(session: Any, engine: Any) -> StageOutcome:
                 current_artifact_version=getattr(session, "current_artifact_version_id", None),
             )
         spec = (version.content or {}).get("requirement_spec") or {}
+        # ⭐ 把 requirement_spec 快照同步挂进 stage_state 顶层：调研/拟方案容器的 prompt
+        # 经 `_requirement_spec_from_state`（blueprint_research_adapter）读的就是这里——
+        # 只写计数不写本体时，容器 prompt 的「需求目标/功能点」恒为（无），agent 只能盲评
+        # （实测四仓调研全返 partial + 空结论）。规格门锁定后会用澄清后的规格覆盖本快照。
         return StageOutcome(
             event="decomposed",
             current_artifact_version=version.id,
@@ -491,7 +495,8 @@ async def _h_bp_decompose(session: Any, engine: Any) -> StageOutcome:
                 "decompose": {
                     "point_count": len(spec.get("feature_points") or []),
                     "version_no": int(version.version_no),
-                }
+                },
+                **({"requirement_spec": spec} if spec else {}),
             },
         )
 

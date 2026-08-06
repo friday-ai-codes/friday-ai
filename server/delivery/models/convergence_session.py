@@ -111,6 +111,18 @@ class ConvergenceSession(models.Model):
     # 观测：触发用户 id 字符串（后台任务/外部触发归因，无则 "system"）
     initiated_by_user_id = models.CharField(max_length=64, blank=True, default="")
 
+    # ── 驱动租约（同一会话同时只允许一个驱动者跑 stage handler）──────────────
+    #
+    # 为什么要落在**列**上而不是内存锁或 stage_state 里：驱动者分散在多个入口（durable
+    # worker、容器回调 barrier、动作端点、僵尸会话扫描），跨进程/跨副本，进程内的
+    # asyncio.Lock 拦不住；而 `stage_state` 会被各 stage handler 整桶覆写，租约放进去会被
+    # 无声抹掉。列 + 单条 UPDATE 的 CAS 是唯一对所有入口都成立的判据。
+    #
+    # ⚠️ `drive_lease_until` 是**自愈用的兜底过期时间**，不是「驱动最多跑这么久」：持有者
+    # 崩溃/被杀时租约靠它过期，否则会话永久卡死。正常释放走 finally。
+    drive_lease_owner = models.CharField(max_length=64, blank=True, default="")
+    drive_lease_until = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     event_time = models.DateTimeField(null=True, blank=True)
@@ -123,6 +135,8 @@ class ConvergenceSession(models.Model):
             models.Index(fields=["status"]),
             models.Index(fields=["process_type", "status"]),
             models.Index(fields=["work_item", "status"]),
+            # 抢占 SQL 的 WHERE 走 (id, drive_lease_until)，id 已是主键，这条只为过期扫描。
+            models.Index(fields=["drive_lease_until"]),
         ]
         ordering = ["-created_at"]
 

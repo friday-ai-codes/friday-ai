@@ -314,6 +314,59 @@ def _check_needs_support(content: dict) -> str | None:
     return None
 
 
+def coerce_repo_plan_shapes(content: Any) -> Any:
+    """校验前的宽容归一化：吸收 LLM 产物的常见形状漂移（原地修改并返回）。
+
+    只收敛**机械可判**的两类实测漂移，⛔ 不做任何语义补全，未知形状原样保留交给
+    jsonschema 报错（宁可重试不猜）：
+
+    1. ``local_impact.affected_features`` 写成字符串数组（schema 要求
+       ``[{name, citations}]``）——字符串项包装为 ``{"name": s}``。
+    2. Block[] 字段（``responsibility`` / ``risks``）的项缺 ``block_id`` 或写成裸字符串
+       ——``block_id`` 是内部锚点标识（确认门产物形如 ``blk_gate_resp_*``），可安全合成；
+       裸字符串包装为 paragraph 块。
+    """
+    try:
+        if not isinstance(content, dict):
+            return content
+        impact = content.get("local_impact")
+        if isinstance(impact, dict):
+            features = impact.get("affected_features")
+            if isinstance(features, list):
+                impact["affected_features"] = [
+                    {"name": item} if isinstance(item, str) else item for item in features
+                ]
+        rid = str(content.get("repository_id") or "x")[:8]
+        for field in ("responsibility", "risks"):
+            blocks = content.get(field)
+            if not isinstance(blocks, list):
+                continue
+            coerced: list[Any] = []
+            for index, item in enumerate(blocks):
+                if isinstance(item, str):
+                    item = {"type": "paragraph", "text": item}
+                if isinstance(item, dict) and not str(item.get("block_id") or ""):
+                    item = {**item, "block_id": f"blk_plan_{field}_{rid}_{index}"}
+                coerced.append(item)
+            content[field] = coerced
+        # 3. api 契约的 request_schema / response_schema 写成字符串（schema 要求 object）
+        #    ——字符串是模型对「字段清单」的自然写法，包装为 {"description": s} 保语义。
+        for field in ("apis_provided", "apis_consumed"):
+            apis = content.get(field)
+            if not isinstance(apis, list):
+                continue
+            for api in apis:
+                if not isinstance(api, dict):
+                    continue
+                for key in ("request_schema", "response_schema"):
+                    value = api.get(key)
+                    if isinstance(value, str):
+                        api[key] = {"description": value}
+    except Exception:  # noqa: BLE001 — 归一化 best-effort，绝不反噬校验主流程
+        pass
+    return content
+
+
 def validate_repo_plan(content: Any) -> tuple[bool, str | None]:
     """校验 repo_plan 段：jsonschema 结构 + 两条后置检查。
 
