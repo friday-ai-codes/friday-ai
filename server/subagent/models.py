@@ -211,7 +211,9 @@ class SubAgentSession(models.Model):
         self.container_id = container_id
         self.container_name = container_name
         self.started_at = timezone.now()
-        self.save(update_fields=["status", "container_id", "container_name", "started_at", "updated_at"])
+        self.save(
+            update_fields=["status", "container_id", "container_name", "started_at", "updated_at"]
+        )
 
     async def amark_running(self, container_id: str, container_name: str) -> None:
         """标记为运行中（async 版本）"""
@@ -219,7 +221,9 @@ class SubAgentSession(models.Model):
         self.container_id = container_id
         self.container_name = container_name
         self.started_at = timezone.now()
-        await self.asave(update_fields=["status", "container_id", "container_name", "started_at", "updated_at"])
+        await self.asave(
+            update_fields=["status", "container_id", "container_name", "started_at", "updated_at"]
+        )
 
     def mark_completed(self) -> None:
         """标记为已完成。"""
@@ -522,6 +526,50 @@ class ActionLog(models.Model):
 
     def __str__(self) -> str:
         return f"ActionLog({self.session.session_id}, {self.action_type}, seq={self.sequence})"
+
+
+class SubAgentRuntimeLog(models.Model):
+    """容器运行日志的 **append-only 全量留痕**。
+
+    ⭐ **它是 ``SubAgentSession.last_output["logs"]`` 的旁路，不是替代**：那个 JSON 数组
+    仍保留最近 ``_MAX_RUNTIME_LOGS`` 条，供既有四个消费方（chat runtime / finalize /
+    仓库摘要 / MCP 编码 trace）原样读取 —— ⛔ 那个契约一个字不动。
+
+    分表的理由是**写放大**：``_append_runtime_log`` 每来一行就把整个 ``last_output``
+    读-改-写一遍；接上工具结果后单会话日志量要涨一个量级，继续整包重写会把一次调研
+    的写入量推到几十 MB。本表一行一条 INSERT，且能按 ``(session, id)`` 索引分页。
+
+    ⚠️ **顺序以自增 ``id`` 为准，不是 ``ts``**：容器 stdout 在同一毫秒内可连出多行，
+    按时间排序会让工具调用与它的结果错位。
+
+    保留策略沿用 :class:`ActionLog` 的口径——随会话 ``CASCADE``，⛔ 不单设清理任务
+    （过程留痕的价值正在于事后追溯，定时删掉等于把排障窗口关上）。
+    """
+
+    session = models.ForeignKey(
+        SubAgentSession,
+        on_delete=models.CASCADE,
+        related_name="runtime_logs",
+        verbose_name="关联会话",
+    )
+
+    # 与 `_TASK_LOG_PREFIXES` 的值域一致（text / tool_call / tool_result / block /
+    # result / system / message / progress / error）。⛔ 不做 choices 约束：前缀集合在
+    # 容器侧演进，收窄成枚举会让新类型在落库这一层被静默丢弃。
+    log_type = models.CharField(max_length=32, verbose_name="日志类型")
+
+    content = models.TextField(blank=True, verbose_name="内容")
+
+    ts = models.DateTimeField(auto_now_add=True, verbose_name="记录时间")
+
+    class Meta:
+        indexes = [models.Index(fields=["session", "id"])]
+        ordering = ["id"]
+        verbose_name = "容器运行日志"
+        verbose_name_plural = "容器运行日志"
+
+    def __str__(self) -> str:
+        return f"SubAgentRuntimeLog({self.session_id}, {self.log_type})"
 
 
 class TokenUsage(models.Model):

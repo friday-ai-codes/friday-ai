@@ -3,7 +3,6 @@
 import asyncio
 import time
 import uuid
-from typing import Any
 
 import structlog
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -648,22 +647,10 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         except Exception:  # noqa: BLE001 — best-effort，失败由 TTL 自过期兜底
             pass
 
-        # 将错误信息写入 last_output.logs，供前端深度分析卡片展示
-        last_output = session.last_output or {}
-        if isinstance(last_output, dict):
-            logs: list[dict[str, Any]] = last_output.get("logs", [])
-            if not isinstance(logs, list):
-                logs = []
-            logs.append(
-                {
-                    "type": "error",
-                    "content": error_msg,
-                    "ts": timezone.now().timestamp(),
-                }
-            )
-            last_output["logs"] = logs
-            session.last_output = last_output
-            await session.asave(update_fields=["last_output", "updated_at"])
+        # 失败原因走与普通日志**同一条**落库通道：既进 append-only 全量表，也进尾窗。
+        # ⚠️ 此前这里是就地 append —— 既绕开了尾窗上界（失败会话的 logs 可无限增长），
+        # 也把 ts 写成了**秒**而其余行是毫秒，前端按同一字段格式化时会错到 1970 年。
+        await _append_runtime_log(task_id=session.session_id, log_type="error", content=error_msg)
 
         await _send_failure_notification(session, error_msg)
         if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
@@ -1033,21 +1020,40 @@ async def _handle_disconnect_timeout(runner_id: uuid.UUID) -> None:
 _TASK_LOG_PREFIXES = {
     "[task:text]": "text",
     "[task:tool]": "tool_call",
+    # 工具**结果**：容器侧此前整条 UserMessage 被跳过 ⇒ 过程明细只有「调用了什么」、
+    # 没有「读回来什么」。⚠️ 两侧前缀必须同步，这里漏一条即整行不匹配任何前缀被丢弃。
+    "[task:tool_result]": "tool_result",
     "[task:block]": "block",
     "[task:result]": "result",
     "[task:system]": "system",
     "[task:msg]": "message",
 }
 
+# ``last_output["logs"]`` 的尾窗上界。⛔ 不抬高：那是个每来一行就整包重写的 JSONField，
+# 放大后写入量随条数平方增长。全量留痕改由 append-only 的 ``SubAgentRuntimeLog`` 承担，
+# 本窗口只服务既有四个消费方「看最近发生了什么」的用途。
 _MAX_RUNTIME_LOGS = 80
 
 
 async def _append_runtime_log(task_id: str, log_type: str, content: str) -> None:
-    from subagent.models import SubAgentSession
+    """双写：``SubAgentRuntimeLog`` 全量 + ``last_output["logs"]`` 最近 80 条尾窗。
+
+    两者职责不同，⛔ 不要合并：尾窗是既有消费方的现成契约（chat runtime / finalize /
+    仓库摘要 / MCP trace 都直接读它），全量表才是过程明细面板与事后排障的依据。
+    """
+    from subagent.models import SubAgentRuntimeLog, SubAgentSession
 
     session = await SubAgentSession.objects.filter(session_id=task_id).afirst()
     if not session:
         return
+
+    # 全量表先写：它是 INSERT，失败不该拖累尾窗；反之尾窗写坏也不该让全量缺行。
+    try:
+        await SubAgentRuntimeLog.objects.acreate(
+            session=session, log_type=log_type, content=content
+        )
+    except Exception:  # noqa: BLE001 — 留痕 best-effort，绝不反噬容器日志主链
+        logger.warning("runtime_log_persist_failed", session_id=task_id, category="sampling")
 
     output = session.last_output or {}
     logs = output.get("logs")
