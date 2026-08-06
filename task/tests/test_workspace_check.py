@@ -24,6 +24,7 @@ def mock_task_runner(mock_explore_config):
         mock_cb = MagicMock()
         mock_cb.report_error = AsyncMock()
         mock_cb.report_started = AsyncMock()
+        mock_cb.report_completed = AsyncMock()
         mock_cb_cls.return_value = mock_cb
 
         runner = TaskRunner(mock_explore_config)
