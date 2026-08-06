@@ -100,6 +100,8 @@ _FALLBACK_QUESTION: dict[str, Any] = {
     "（明确不做什么）、关键约束（性能/兼容/依赖方）、验收标准中仍不明确的部分。",
     "options": [],
     "citations": [],
+    "related_feature_points": [],
+    "recommended": "",
 }
 
 
@@ -159,7 +161,17 @@ class BlueprintSpecGateAdapter:
             )
 
         artifact = version.artifact
-        content = version.content if isinstance(version.content, dict) else {}
+        # ⭐ 打分与锁定基线取 artifact 的**最新**版本而非 session 钉住的那一版（镜像
+        # 确认门 alock 的同款修复，见 blueprint_confirm_gate.py:546-549）：确认门锁定与
+        # 澄清回灌（ai_review_reflow）都推进 artifact 的 current_version，而
+        # session.current_artifact_version 只在显式 StageOutcome 里才更新——按钉住版本
+        # 作基线，放行锁定会把确认门写入的 repo_associations 与回灌成果整体回滚
+        # （实测：v3-v6 的 repo_associations=4 被 v7 清零，下游分仓无仓可派、融合全空、
+        # AI 审查 blocker 死循环）。scorer 的仓库集上下文（_repo_research_context）同样
+        # 依赖最新正文，故在 run() 入口统一换基线，不只修锁定路径。
+        latest = await self._aload_latest_version(artifact.id)
+        base = latest if latest is not None else version
+        content = base.content if isinstance(base.content, dict) else {}
 
         # 1. pending 短路：已有 open+blocking 澄清线程 → 保持挂起，不再打分、不重复提问。
         if await self.lifecycle.ahas_open_blocking_threads(
@@ -218,8 +230,18 @@ class BlueprintSpecGateAdapter:
         # `threshold` / `above_threshold`，不传即「日志报的阈值 ≠ 判定用的阈值」（T-116-53）。
         # ⭐ 116 重排后规格门位于确认门之后：把已锁定的仓库集与调研结论（fitness）拼进
         # prior_context —— 澄清问题应带着调研证据问，而不是两眼一抹黑。
+        # 节点重跑的操作员补充指令（quick 260806）：拼进打分 prior_context——重跑规格门时
+        # 指令是「已知信息」，缺它会把用户刚说清楚的事再问一遍。无指令时零扰动。
+        from services.process_runtime.blueprint_stage_rerun import operator_instruction_section
+
         prior_context = "\n".join(
-            part for part in (prior["text"], self._repo_research_context(content)) if part
+            part
+            for part in (
+                prior["text"],
+                self._repo_research_context(content),
+                operator_instruction_section(session),
+            )
+            if part
         )
         scores = await self.scorer(
             goal=self._goal_text(content),
@@ -505,7 +527,12 @@ class BlueprintSpecGateAdapter:
             round=round_no,
             duration_ms=round((time.monotonic() - started) * 1000, 2),
         )
-        return self._result("spec_locked", None, spec["ambiguity_report"], round_no)
+        result = self._result("spec_locked", None, spec["ambiguity_report"], round_no)
+        # ⭐ 用锁定后的规格刷新 stage_state 顶层的 requirement_spec 快照（decompose 首写）：
+        # 下游 repo_plan / 调研容器的 prompt 经 `_requirement_spec_from_state` 读 stage_state，
+        # 不刷新会让分仓方案拿到澄清前的旧规格。
+        result["stage_state"]["requirement_spec"] = spec
+        return result
 
     async def _apply_intents(self, spec: dict[str, Any], *, session_id: str) -> None:
         """给每个 feature_point 补 ``intent``：已有合法值 > 分类器 > 保守值 brownfield。
@@ -566,6 +593,13 @@ class BlueprintSpecGateAdapter:
             return None
         return await (
             ArtifactVersion.objects.select_related("artifact").filter(id=version_id).afirst()
+        )
+
+    @staticmethod
+    async def _aload_latest_version(artifact_id: Any) -> Any:
+        """取 artifact 的最新版本（与确认门 `_aload_latest_version` 同款，作打分/锁定基线）。"""
+        return await (
+            ArtifactVersion.objects.filter(artifact_id=artifact_id).order_by("-version_no").afirst()
         )
 
     async def _collect_prior_answers(

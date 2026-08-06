@@ -845,6 +845,7 @@ async def agoal_backward_review(
     must_haves: Any = None,
     key_links: Any = None,
     session_id: str = "",
+    operator_instruction: str = "",
 ) -> list[dict] | None:
     """goal-backward 逆向核对（**本模块唯一的 LLM 调用点**）；不可得时返回 ``None``。
 
@@ -907,18 +908,23 @@ async def agoal_backward_review(
             return None
 
         model = build_chat_model(resolved, model_name, streaming=False)
+        digest = _goal_backward_digest(
+            feature_points=feature_points,
+            impl_items=impl_items,
+            constraints_digest=constraints_digest,
+            test_strategy=test_strategy,
+            must_haves=must_haves,
+            key_links=key_links,
+        )
+        # 节点重跑的操作员补充指令（quick 260806）：重审时作为审查重点提示。
+        # 无指令时为空串、digest 与改动前逐字一致（fresh context 纪律不受影响——
+        # 指令是人给的审查要求，不是起草会话历史）。
+        note = str(operator_instruction or "").strip()
+        if note:
+            digest = f"{digest}\n\n### 操作员补充指令（本轮审查须重点核对）\n{note[:_MAX_PROMPT_CHARS]}"
         messages = [
             SystemMessage(content=_goal_backward_system_prompt()),
-            HumanMessage(
-                content=_goal_backward_digest(
-                    feature_points=feature_points,
-                    impl_items=impl_items,
-                    constraints_digest=constraints_digest,
-                    test_strategy=test_strategy,
-                    must_haves=must_haves,
-                    key_links=key_links,
-                )
-            ),
+            HumanMessage(content=digest),
         ]
         with use_call_source(CallSource.BLUEPRINT_AI_REVIEW):
             response = await model.ainvoke(messages)
@@ -1589,7 +1595,11 @@ class BlueprintReviewAdapter:
         state = state if isinstance(state, dict) else {}
         round_no = _round_of(state)
         initiated_by = _initiated_by(session)
-        await self._aemit(session, _event("STARTED"), {"round": round_no})
+        # ⚠️ 事件里的 `round` 是**给人看的 1-based「第几轮」**，与 `stage_state` 里 0-based 的
+        # 重试计数器 `round_no` 不是一回事。曾经两者混用 ⇒ 同一轮的 started 显示「轮次 0」、
+        # completed 显示「轮次 1」，界面上像是漏了一轮。⛔ 不要把这里改成裸 `round_no`：
+        # 计数器语义归计数器（`_bucket` / `_result` 用它判有界重试，T-114-14），展示归展示。
+        await self._aemit(session, _event("STARTED"), {"round": round_no + 1})
         try:
             return await self._areview(
                 session,
@@ -1599,7 +1609,7 @@ class BlueprintReviewAdapter:
                 started=started,
             )
         except Exception as exc:  # noqa: BLE001 — 审查异常绝不上抛（上抛 = engine 落终态失败）
-            await self._aemit(session, _event("FAILED"), {"round": round_no})
+            await self._aemit(session, _event("FAILED"), {"round": round_no + 1})
             self._log(
                 "blueprint_review_failed",
                 session,
@@ -1802,6 +1812,7 @@ class BlueprintReviewAdapter:
                 session,
                 status,
                 round_no=round_no,
+                emitted_round=round_no + 1,
                 artifact_version_id=str(version.id),
                 bucket=bucket,
                 counts=counts,
@@ -1839,6 +1850,7 @@ class BlueprintReviewAdapter:
                 session,
                 status,
                 round_no=round_no + 1 if ok else round_no,
+                emitted_round=round_no + 1,
                 artifact_version_id=str(version.id),
                 bucket=bucket,
                 counts=counts,
@@ -1877,6 +1889,7 @@ class BlueprintReviewAdapter:
             session,
             status,
             round_no=round_no,
+            emitted_round=round_no + 1,
             artifact_version_id=str(version.id),
             bucket=bucket,
             counts=counts,
@@ -1982,6 +1995,8 @@ class BlueprintReviewAdapter:
         meta finding（fail-closed，**绝不当作「无问题」**）。
         """
         try:
+            from services.process_runtime.blueprint_stage_rerun import operator_instruction
+
             spec = content.get("requirement_spec")
             spec = spec if isinstance(spec, dict) else {}
             overview = content.get("implementation_overview")
@@ -1999,6 +2014,7 @@ class BlueprintReviewAdapter:
                 must_haves=must_haves,
                 key_links=must_haves.get("key_links"),
                 session_id=str(getattr(session, "id", "")),
+                operator_instruction=operator_instruction(session),
             )
         except Exception:  # noqa: BLE001 — 不可得即 None（下游 fail-closed 成 WARNING）
             return None
@@ -2267,6 +2283,7 @@ class BlueprintReviewAdapter:
         status: str,
         *,
         round_no: int,
+        emitted_round: int,
         artifact_version_id: str,
         bucket: dict,
         counts: dict,
@@ -2276,8 +2293,18 @@ class BlueprintReviewAdapter:
         back_repository_id: str = "",
         report: dict | None = None,
     ) -> dict:
-        """收尾：完成事件（payload 只放计数与分级分布）+ ``duration_ms`` 日志 + 恒定结果。"""
-        payload = {"round": round_no, "review_status": status, "back_target": back_target}
+        """收尾：完成事件（payload 只放计数与分级分布）+ ``duration_ms`` 日志 + 恒定结果。
+
+        ``round_no`` 与 ``emitted_round`` **是两个东西，不能互相代入**：
+
+        - ``round_no``：0-based 重试计数器，进 ``_result`` 与 ``stage_state`` 桶。retry 出口
+          传的是**已递增**的下一轮号（有界重试判据靠它，T-114-14）。
+        - ``emitted_round``：1-based「刚跑完的是第几轮」，**只**进事件 payload 给人看。
+
+        混用的后果是三条出口各报各的：retry 报下一轮号、passed/exhausted 报当前轮号，
+        于是同一轮的 started 和 completed 在界面上显示成两个数。
+        """
+        payload = {"round": emitted_round, "review_status": status, "back_target": back_target}
         payload.update(counts)
         await self._aemit(session, _event("COMPLETED"), payload)
         self._log(

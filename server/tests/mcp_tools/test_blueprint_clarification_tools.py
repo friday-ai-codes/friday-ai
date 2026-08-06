@@ -228,13 +228,18 @@ def test_both_new_tools_are_registered_in_the_schema_snapshot() -> None:
 
 
 def test_no_third_list_tool_was_added() -> None:
-    """⛔ pending 清单内联在 ``get_technical_blueprint`` 里，⛔ 不建第三个 list 工具。"""
+    """⛔ pending 清单内联在 ``get_technical_blueprint`` 里，⛔ 不建第三个 list 工具。
+
+    豁免项都不是澄清清单工具：``read/report_blueprint_context`` 是容器内共享总线；
+    ``route_blueprint_repos`` 是路由环节单跑（stage sandbox，20260806），与澄清协议无关。
+    """
     assert "pending_clarifications" in TOOL_SCHEMA_SNAPSHOT["get_technical_blueprint"]["response"]
     blueprint_tools = {
         name
         for name in TOOL_SCHEMA_SNAPSHOT
         if "blueprint" in name
-        and name not in ("read_blueprint_context", "report_blueprint_context")
+        and name
+        not in ("read_blueprint_context", "report_blueprint_context", "route_blueprint_repos")
     }
     assert blueprint_tools == {"get_technical_blueprint", "answer_blueprint_clarification"}
 

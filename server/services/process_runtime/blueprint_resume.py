@@ -125,12 +125,6 @@ async def adrive_blueprint_session_to_pause_or_terminal(
     - ``waiting_event`` 且仍有在途调研 → 短路返回（等下一次容器回调）。
     - advance 步数超 ``max_steps`` → 经 ``transition(session, "fail")`` 标记失败并返回。
     """
-    from delivery.models import ConvergenceSession, ConvergenceSessionStatus
-    from services.process_runtime import aall_research_tasks_terminal
-    from services.process_runtime.blueprint_confirm_gate import (
-        acollect_pending_research_repos,
-    )
-
     if str(getattr(session, "process_type", "")) != BLUEPRINT_PROCESS_TYPE:
         # 蓝图 engine 的 deps 只有 spec_gate/route/research/confirm_gate；用它驱别的 process
         # 会让旧链 handler 取不到 deps.router 抛异常，engine 随后把那条无关会话落 FAILED。
@@ -143,6 +137,30 @@ async def adrive_blueprint_session_to_pause_or_terminal(
             process_type=str(getattr(session, "process_type", "")),
         )
         return session
+
+    from services.process_runtime.drive_lease import asession_drive_lease
+
+    # ⭐ 租约包住**整个循环**而不是逐步获取：逐步获取会在两步之间留出空隙，别的驱动器正好
+    # 挤进来接着推。蓝图链的驱动者尤其多（durable 续驱 job / 两个容器回调 barrier / 确认门
+    # 与作答端点 / 僵尸会话扫描），且 barrier 是**电平判据**——「所有仓都产出了吗」一旦为真
+    # 就恒为真，于是每个后到的回调都会再入队一次续驱。
+    # 循环里的 `engine.advance` 会命中租约的可重入分支，不会自己再抢一次。
+    async with asession_drive_lease(getattr(session, "id", None), reason="blueprint_drive") as ok:
+        if not ok:
+            # 别人正在驱动同一会话：本次原地返回。⛔ 这不是错误路径，也**不要**在这里
+            # 重试等待——等的那几分钟里持有者早就把活干完了，等醒了只会再干一遍。
+            await _amap_blueprint_status(session)
+            return session
+        return await _adrive_blueprint_locked(engine, session, max_steps=max_steps)
+
+
+async def _adrive_blueprint_locked(engine: Any, session: Any, *, max_steps: int) -> Any:
+    """蓝图续驱循环本体：调用方**必须**已持有会话驱动租约。"""
+    from delivery.models import ConvergenceSession, ConvergenceSessionStatus
+    from services.process_runtime import aall_research_tasks_terminal
+    from services.process_runtime.blueprint_confirm_gate import (
+        acollect_pending_research_repos,
+    )
 
     terminal = {ConvergenceSessionStatus.DONE, ConvergenceSessionStatus.FAILED}
     steps = 0

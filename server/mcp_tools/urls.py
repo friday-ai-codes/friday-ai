@@ -5,6 +5,7 @@ from django.urls import path
 from .views import (
     AnalyzeRepositoryView,
     AnswerBlueprintClarificationView,
+    ApplyRepoAssociationView,
     ConfirmFeatureTechPlanView,
     CreateCodingPlanView,
     CreateFeatureTechPlanView,
@@ -15,11 +16,13 @@ from .views import (
     ExecuteCodingPlanView,
     ExecuteWorkItemRepoTasksView,
     FindRelatedChunksView,
+    GenerateRequirementSpecView,
     GetCodingExecutionView,
     GetEntityTimelineView,
     GetFeatureTechPlanView,
     GetFeishuWorkItemContextView,
     GetRelatedEntitiesView,
+    GetRepoResearchView,
     GetRepositoryFileView,
     GetRepositoryView,
     GetTechnicalBlueprintView,
@@ -34,11 +37,13 @@ from .views import (
     ReportProjectKnowledgeView,
     ReportProjectStateView,
     ReverseLookupView,
+    RouteBlueprintReposView,
     RouteRepositoriesView,
     SearchDeliveryKnowledgeView,
     SearchLearningCasesView,
     SearchProjectContextView,
     SearchRagChunksView,
+    StartRepoResearchView,
     SummarizeBranchView,
 )
 
@@ -150,5 +155,32 @@ urlpatterns = [
         "tools/answer_blueprint_clarification/",
         AnswerBlueprintClarificationView.as_view(),
         name="mcp-tool-answer-blueprint-clarification",
+    ),
+    # 蓝图环节单跑（stage sandbox）家族：路由 / 规格 / 调研可基于上游产物单独触发；
+    # 前四个为 dry-run / 只读提案面，apply_repo_association 是唯一的采纳写回路径。
+    path(
+        "tools/route_blueprint_repos/",
+        RouteBlueprintReposView.as_view(),
+        name="mcp-tool-route-blueprint-repos",
+    ),
+    path(
+        "tools/generate_requirement_spec/",
+        GenerateRequirementSpecView.as_view(),
+        name="mcp-tool-generate-requirement-spec",
+    ),
+    path(
+        "tools/start_repo_research/",
+        StartRepoResearchView.as_view(),
+        name="mcp-tool-start-repo-research",
+    ),
+    path(
+        "tools/get_repo_research/",
+        GetRepoResearchView.as_view(),
+        name="mcp-tool-get-repo-research",
+    ),
+    path(
+        "tools/apply_repo_association/",
+        ApplyRepoAssociationView.as_view(),
+        name="mcp-tool-apply-repo-association",
     ),
 ]

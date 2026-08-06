@@ -45,6 +45,31 @@ def _content_hash(content: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _session_run_label(produced_by_session_id: str) -> str:
+    """会话当前谱系标签（``stage_state["stage_rerun"]["run_label"]``），查不到回空串。
+
+    节点重跑（quick 260806）把新谱系标签写在会话 ``stage_state`` 上；此后该会话产出的
+    每个版本都属于这条谱系。**同步函数**：仅供 ``_create_sync`` / ``_add_version_sync``
+    在写入事务内调用。整段吞异常——谱系标签是展示面，绝不因它废掉一次落版本。
+    """
+    session_id = str(produced_by_session_id or "").strip()
+    if not session_id:
+        return ""
+    try:
+        from delivery.models import ConvergenceSession
+
+        stage_state = (
+            ConvergenceSession.objects.filter(id=session_id)
+            .values_list("stage_state", flat=True)
+            .first()
+        )
+        marker = (stage_state or {}).get("stage_rerun") if isinstance(stage_state, dict) else None
+        label = str((marker or {}).get("run_label") or "") if isinstance(marker, dict) else ""
+        return label[:64]
+    except Exception:  # noqa: BLE001 — 谱系标签 best-effort，绝不反噬落版本
+        return ""
+
+
 async def _amaybe_schedule_blueprint_ingestion(
     artifact_id: Any, content: Any, *, trigger: str, initiated_by_user_id: str = ""
 ) -> None:
@@ -167,6 +192,8 @@ class ArtifactService:
                 content_hash=_content_hash(content),
                 produced_by_session_id=produced_by_session_id or "",
                 produced_by_ref=produced_by_ref or "",
+                # 首版谱系恒 "1"（会话带重跑标记时随标记——理论上首版不会有）。
+                version_label=_session_run_label(produced_by_session_id) or "1",
             )
             artifact.current_version = v1
             artifact.save(update_fields=["current_version", "updated_at"])
@@ -216,6 +243,11 @@ class ArtifactService:
             if current is not None and current.content_hash == new_hash:
                 return current
             next_version = (current.version_no + 1) if current is not None else 1
+            # 谱系标签（quick 260806）：会话带重跑标记 ⇒ 新版本属于重跑谱系；否则继承
+            # 当前版本的谱系（人工编辑 / 驳回 bump 都留在同一条谱系上）。空串回落 "1"。
+            label = _session_run_label(produced_by_session_id)
+            if not label:
+                label = str(getattr(current, "version_label", "") or "") or "1"
             new_version = ArtifactVersion.objects.create(
                 artifact=artifact,
                 version_no=next_version,
@@ -224,6 +256,7 @@ class ArtifactService:
                 content_hash=new_hash,
                 produced_by_session_id=produced_by_session_id or "",
                 produced_by_ref=produced_by_ref or "",
+                version_label=label,
             )
             artifact.current_version = new_version
             artifact.save(update_fields=["current_version", "updated_at"])

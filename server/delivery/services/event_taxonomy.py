@@ -61,10 +61,12 @@ __all__ = [
     "EVENT_BLUEPRINT_RETRIEVAL_COMPLETED",
     "EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED",
     "EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED",
+    "EVENT_BLUEPRINT_REPO_PLAN_REPO_FAILED",
     "EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED",
     "EVENT_BLUEPRINT_REVIEW_STARTED",
     "EVENT_BLUEPRINT_REVIEW_COMPLETED",
     "EVENT_BLUEPRINT_REVIEW_FAILED",
+    "EVENT_BLUEPRINT_STAGE_RERUN_REQUESTED",
     "BLUEPRINT_EVENTS",
     "ALL_EVENTS",
     "RESERVED_EVENTS",
@@ -213,10 +215,14 @@ EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED: Final[str] = "blueprint.context.waiter
 # emit: 118 路由召回完成（打分之前）。payload: candidate_count/router_candidate_count/
 # charter_supplement_count/scope_repository_count/router_version/intent/duration_ms
 EVENT_BLUEPRINT_ROUTE_RECALLED: Final[str] = "blueprint.route.recalled"
-# emit: 118 初步仓库路由方案（打分之后、确认门之前）。payload: repositories[] 每项
-# {repository_id, repository_name, role_suggestion, confidence, total,
-#  matched_node_path_count, matched_domain_count, violated_boundary_count, citation_ids[]}
+# emit: 118 初步仓库路由方案（打分之后、确认门之前）。payload: repository_count/
+# router_version + repositories[] 每项 {repository_id, repository_name, role_suggestion,
+#  confidence, total, matched_node_path_count, matched_domain_count,
+#  violated_boundary_count, citation_ids[], pinned_branch}
 # ⇒ 前端据此展示「仓 1 建议承接哪些能力、适配度多少、证据指向哪」。
+# ⭐ `router_version == "project_binding"`（`repo_binding_pin.PINNED_ROUTER_VERSION`）时是
+# **固定路由**：候选来自项目手动绑定，自动打分整段没跑 ⇒ total 恒 1.0、章程/历史分量与
+# 各项证据计数恒 0。前端**必须**据此标注「固定路由」，否则那张全 0 的证据表看起来像 bug。
 EVENT_BLUEPRINT_ROUTE_PLAN_DRAFTED: Final[str] = "blueprint.route.plan_drafted"
 # emit: 118 检索/召回留痕上屏（RetrievalTrace 的标量镜像）。payload: scope/hit_count/
 # top_score/duration_ms/tier —— ⛔ 召回**正文**不进 payload（正文归 RetrievalTrace 表）
@@ -225,6 +231,11 @@ EVENT_BLUEPRINT_RETRIEVAL_COMPLETED: Final[str] = "blueprint.retrieval.completed
 EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED: Final[str] = "blueprint.repo_plan.repo_started"
 # 同上 + item_count/api_count/duration_ms
 EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED: Final[str] = "blueprint.repo_plan.repo_completed"
+# emit: quick-260806 补齐 started/completed/failed 三元（派发漏斗按 mode 分流 + 回调失败分支）。
+# payload: repository_id/task_id/error（error 是机器可读 reason，⛔ 校验详情正文不进 payload）。
+# ⚠️ 后缀是 `_failed` 不是 `.failed`——与 `repo_started`/`repo_completed` 同款约定，
+# 前端 `buildStageTimeline` 的 `.failed` 后缀判据不会把「单仓失败」误判成「分仓阶段失败」。
+EVENT_BLUEPRINT_REPO_PLAN_REPO_FAILED: Final[str] = "blueprint.repo_plan.repo_failed"
 # emit: 118 波次推进。payload: wave/total_waves/repository_count
 EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED: Final[str] = "blueprint.repo_plan.wave_advanced"
 
@@ -233,6 +244,11 @@ EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED: Final[str] = "blueprint.repo_plan.wave_
 EVENT_BLUEPRINT_REVIEW_STARTED: Final[str] = "blueprint.review.started"
 EVENT_BLUEPRINT_REVIEW_COMPLETED: Final[str] = "blueprint.review.completed"
 EVENT_BLUEPRINT_REVIEW_FAILED: Final[str] = "blueprint.review.failed"
+
+# ---- 蓝图节点重跑（quick 260806）----
+# emit: blueprint_stage_rerun 服务。payload 只记标量：stage / run_label /
+# instruction_len / initiated_by_user_id —— **操作员指令正文不进 payload**。
+EVENT_BLUEPRINT_STAGE_RERUN_REQUESTED: Final[str] = "blueprint.stage.rerun_requested"
 
 # 蓝图事件独立集合（不进 ALL_EVENTS，见上方注释）
 BLUEPRINT_EVENTS: Final[frozenset[str]] = frozenset(
@@ -261,10 +277,13 @@ BLUEPRINT_EVENTS: Final[frozenset[str]] = frozenset(
         EVENT_BLUEPRINT_RETRIEVAL_COMPLETED,
         EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED,
         EVENT_BLUEPRINT_REPO_PLAN_REPO_COMPLETED,
+        EVENT_BLUEPRINT_REPO_PLAN_REPO_FAILED,
         EVENT_BLUEPRINT_REPO_PLAN_WAVE_ADVANCED,
         EVENT_BLUEPRINT_REVIEW_STARTED,
         EVENT_BLUEPRINT_REVIEW_COMPLETED,
         EVENT_BLUEPRINT_REVIEW_FAILED,
+        # 节点重跑（quick 260806）
+        EVENT_BLUEPRINT_STAGE_RERUN_REQUESTED,
     }
 )
 

@@ -643,7 +643,8 @@ async def test_indirect_candidate_synthesized_without_container() -> None:
 
 @override_settings(FRIDAY_BASE_URL="https://friday.example.com")
 async def test_charter_injected_into_prompt() -> None:
-    """prompt 含该仓 positioning / owned_domains 关键字（章程随 prompt 注入的证据）。"""
+    """prompt 含该仓 positioning / owned_domains 关键字（章程随 prompt 注入的证据），
+    且需求规格「有什么就都给」：背景 / 验收标准 / 测试用例 / 范围边界 / 约束一并入 prompt。"""
     user = await _make_user()
     repo = await _make_repo("onion-learning")
     await sync_to_async(RepoCharter.objects.create)(
@@ -657,14 +658,21 @@ async def test_charter_injected_into_prompt() -> None:
     )
     spec = {
         "goal": [{"block_id": "b1", "type": "paragraph", "text": "高三学员进入专项学习页"}],
+        "background": [{"block_id": "b0", "type": "paragraph", "text": "现有学习页只覆盖初中学段"}],
         "feature_points": [
             {
                 "id": "fp_01",
                 "title": "专项学习页",
                 "intent": "greenfield",
                 "description": [{"block_id": "b2", "type": "paragraph", "text": "新增学习页"}],
+                "acceptance_criteria": ["进入页面 1 秒内展示专项列表"],
+                "test_cases": [
+                    {"name": "未购课学员", "given_when_then": "未购课学员进入时应引导购课"}
+                ],
             }
         ],
+        "boundaries": {"in_scope": ["高三学员"], "out_of_scope": ["初中学段沿用旧页"]},
+        "constraints": [{"id": "c1", "kind": "compliance", "text": "不得展示未审核内容"}],
     }
     session = await _make_session(_routing_state(_candidate(repo), spec=spec), user=user)
     await _make_online_runner()
@@ -682,6 +690,12 @@ async def test_charter_injected_into_prompt() -> None:
     assert "高三学员进入专项学习页" in prompt
     assert "专项学习页" in prompt
     assert "fitness" in prompt and "role_suggestion" in prompt
+    # 需求规格全量段：背景 / 验收标准 / 测试用例 / 范围边界 / 约束
+    assert "现有学习页只覆盖初中学段" in prompt
+    assert "进入页面 1 秒内展示专项列表" in prompt
+    assert "未购课学员进入时应引导购课" in prompt
+    assert "初中学段沿用旧页" in prompt
+    assert "不得展示未审核内容" in prompt
 
 
 @override_settings(FRIDAY_BASE_URL="https://friday.example.com")

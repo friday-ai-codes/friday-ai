@@ -489,17 +489,34 @@ class BlueprintRouteAdapter:
 
         return RepoRouterV2
 
-    async def route(self, session, *, exclude_repository_ids: set[str] | None = None) -> dict:
+    async def route(
+        self,
+        session,
+        *,
+        exclude_repository_ids: set[str] | None = None,
+        ignore_pin: bool = False,
+    ) -> dict:
         """双面路由主入口，返回 `stage_state["routing"]` 契约摘要（顶层 8 键）。
 
         `exclude_repository_ids` 供 reroute 轮**补候选**复用本入口：被判 `unsuitable`
         的仓与已试过的仓一律排除在外，路由器候选与章程补入候选**两条来源同时剔除**，
         使重路由真的能取到「排除集之外的新仓」。默认 `None` ⇒ 与首轮调用逐字同行为。
+
+        `ignore_pin`（stage 单跑层专用）：`True` 时跳过项目手动绑定的固定路由短路，
+        走完整三分量自动路由——供「对比人工绑定 vs 自动路由」的能力测试用。
+        缺省 `False` ⇒ 正式编排调用点行为逐字不变。
         """
         started = time.monotonic()
         excluded = {str(rid) for rid in (exclude_repository_ids or set()) if str(rid or "")}
         requirement_spec = await self._aresolve_requirement_spec(session)
         query_terms = _collect_query_terms(requirement_spec)
+        # 节点重跑的操作员补充指令（quick 260806）：拼进路由 query，参与能力树检索与
+        # 章程/历史命中判定——「带着这段话重新路由」的落点。无指令时零扰动。
+        from services.process_runtime.blueprint_stage_rerun import operator_instruction
+
+        instruction = operator_instruction(session)
+        if instruction:
+            query_terms = [*query_terms, instruction]
         query = "\n".join(query_terms)[:_MAX_QUERY_CHARS]
         intent = _resolve_dominant_intent(requirement_spec)
         weights = await aload_route_weights()
@@ -511,7 +528,7 @@ class BlueprintRouteAdapter:
         # 固定路由（repo binding pin）：项目已在项目级手动绑定仓库+分支时，人工关联即
         # 最终裁决——跳过能力树检索与 LLM 路由，候选集就是绑定仓（尊重 reroute 的排除集，
         # ⛔ 绑定项目**不补新仓**：固定的意义正是仓库集不随重路由漂移）。
-        pinned = await self._aresolve_pinned(session, excluded=excluded)
+        pinned = None if ignore_pin else await self._aresolve_pinned(session, excluded=excluded)
         if pinned is not None:
             summary = self._pinned_summary(
                 pinned,
@@ -995,13 +1012,22 @@ class BlueprintRouteAdapter:
                         "matched_domain_count": len(evidence.get("matched_domains") or []),
                         "violated_boundary_count": len(evidence.get("violated_boundaries") or []),
                         "citation_ids": citation_ids_by_repo.get(repository_id, []),
+                        # 固定路由时带上绑定分支：它是「这个仓凭什么在这里」的**唯一**证据
+                        # （自动路由的证据计数在固定路由下必然全 0，见下方 router_version）。
+                        "pinned_branch": str(candidate.get("pinned_branch") or ""),
                     }
                 )
 
             await ConvergenceSessionService().aemit_event(
                 EVENT_BLUEPRINT_ROUTE_PLAN_DRAFTED,
                 session,
-                {"repository_count": len(repositories), "repositories": repositories},
+                {
+                    "repository_count": len(repositories),
+                    # ⭐ `project_binding` ⇒ 固定路由（打分没跑，全 0 证据是事实而非缺陷）。
+                    # 前端据此标注来源，⛔ 不要让用户把「没跑」误读成「跑出来是 0 分」。
+                    "router_version": str(summary.get("router_version") or ""),
+                    "repositories": repositories,
+                },
             )
         except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬路由主流程
             pass

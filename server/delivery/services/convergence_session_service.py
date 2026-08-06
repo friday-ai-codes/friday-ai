@@ -326,6 +326,92 @@ class ConvergenceSessionService:
         session.status = ConvergenceSessionStatus.RUNNING
         return True
 
+    async def arewind_to_stage(
+        self,
+        session: ConvergenceSession,
+        *,
+        stage: str,
+        stage_state_update: dict | None = None,
+        reason: str = "",
+    ) -> bool:
+        """把会话从**任意状态**回卷到 ``stage`` 并置 ``running``（节点重跑，quick 260806）。
+
+        与 :meth:`areopen_stage` 的差异：后者只服务「人审驳回一个 done 会话」，本方法服务
+        「带操作员指令重跑某个节点」——会话可能停在 ``waiting_clarification`` /
+        ``waiting_event`` / ``failed`` / ``done`` 任意状态，重跑语义都成立。
+
+        纪律：
+
+        - **stage 必须在该 process 的 stage graph 里**，否则 ``raise ValueError``
+          （fail-closed，同 :meth:`areopen_stage`）。
+        - **CAS 以「行 (status, current_stage) == 内存快照」为前置条件**：并发驱动者刚推进
+          了会话时影响 0 行 ⇒ 返回 ``False``，调用方重读后重试或放弃，绝不盲写覆盖。
+        - ``stage_state_update`` 在**同一事务内锁行合并**（同 :meth:`_apply_transition_sync`
+          的纪律）：重跑标记（操作员指令 / 谱系标签）与回卷必须原子落地，分两次写会留下
+          「已回卷但没带指令」的窗口。
+        - ⛔ 不碰 ``current_artifact_version`` / ``error``：产物指针与失败首因原样保留。
+        """
+        from services.process_runtime.registry import get_process_definition
+
+        definition = get_process_definition(session.process_type)
+        if definition is None:
+            raise ValueError(f"未注册的 process_type={session.process_type!r}")
+        if definition.stage(stage) is None:
+            raise ValueError(
+                f"非法回卷目标 stage={stage!r}（process_type={session.process_type}）；"
+                f"该 process 合法 stage={sorted(definition.stages)}"
+            )
+        applied = await self._rewind_stage_sync(
+            session, stage=stage, stage_state_update=stage_state_update
+        )
+        logger.info(
+            "convergence_session_rewound" if applied else "convergence_session_rewind_noop",
+            category="caller",
+            component="convergence_session_service",
+            session_id=str(session.id),
+            stage=stage,
+            reason=str(reason or ""),
+            status=session.status,
+        )
+        return applied
+
+    @sync_to_async
+    def _rewind_stage_sync(
+        self,
+        session: ConvergenceSession,
+        *,
+        stage: str,
+        stage_state_update: dict | None,
+    ) -> bool:
+        """以「行 (status, current_stage) == 内存快照」为前置条件的原子回卷。"""
+        from_status = session.status
+        from_stage = session.current_stage
+        update_values: dict[str, Any] = {
+            "current_stage": stage,
+            "status": ConvergenceSessionStatus.RUNNING,
+            "updated_at": timezone.now(),
+        }
+        with transaction.atomic():
+            if stage_state_update:
+                current = (
+                    ConvergenceSession.objects.select_for_update()
+                    .filter(id=session.id)
+                    .values_list("stage_state", flat=True)
+                    .first()
+                )
+                base = current if isinstance(current, dict) else {}
+                update_values["stage_state"] = {**base, **stage_state_update}
+            updated = ConvergenceSession.objects.filter(
+                id=session.id, status=from_status, current_stage=from_stage
+            ).update(**update_values)
+        if updated != 1:
+            return False
+        session.current_stage = stage
+        session.status = ConvergenceSessionStatus.RUNNING
+        if "stage_state" in update_values:
+            session.stage_state = update_values["stage_state"]
+        return True
+
     async def _fail(self, session: ConvergenceSession, error: Any) -> ConvergenceSession:
         """``fail`` 特判：任意非终态 stage → failed + 落结构化 error。
 

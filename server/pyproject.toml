@@ -42,6 +42,9 @@ dependencies = [
     "tree-sitter-html>=0.21.0",
     "tree-sitter-json>=0.21.0",
     "claude-agent-sdk>=0.1.58,<0.2",
+    # claude-agent-sdk 只声明 mcp>=0.1.0，但它的 create_sdk_mcp_server 依赖
+    # mcp 1.x lowlevel Server 的 @server.list_tools() 装饰器——mcp 2.0 已移除该 API。
+    "mcp>=1.25.0,<2",
     "jinja2>=3.1.6,<4.0",
     # Type checking
     "mypy>=1.14.0",

@@ -62,11 +62,27 @@ class ProcessEngine:
         终态（done/failed）直接返回。handler 内不可恢复异常 → 经 transition 落 ``fail``
         （结构化 error 含 stage/异常类型/消息）。**例外**：``NotImplementedError`` 原样上抛
         （开发期显式暴露未接入 stage）。
+
+        ⭐ **整个 handler 跑在会话驱动租约里**（``drive_lease``）：抢不到就原地返回，说明
+        别的驱动者正在推进同一会话。下面 ``ConcurrentTransitionError`` 那段只保护**写回**
+        的一瞬间，保护不了 handler 本体——而 handler 本体才是花钱的地方（分钟级 LLM 调用、
+        批量开线程）。缺了租约，多入口并发续驱会让同一份活被完整地干 N 遍，写回却只有一份
+        生效；曾观测到 AI 审查被并发跑 7 遍。⛔ 不要因为「反正 CAS 拦得住」而摘掉它：CAS 拦
+        的是状态损坏，租约省的是重复劳动，两者不可互相替代。
         """
-        from services.process_runtime.registry import get_process_definition
+        from services.process_runtime.drive_lease import asession_drive_lease
 
         if session.status in _TERMINAL:
             return session
+
+        async with asession_drive_lease(getattr(session, "id", None), reason="advance") as ok:
+            if not ok:
+                return session
+            return await self._aadvance_locked(session)
+
+    async def _aadvance_locked(self, session: Any) -> Any:
+        """``advance`` 的本体：调用方**必须**已持有会话驱动租约。"""
+        from services.process_runtime.registry import get_process_definition
 
         definition = get_process_definition(session.process_type)
         if definition is None:

@@ -656,17 +656,25 @@ class BlueprintContextService:
             initiated_by_user_id=str(initiated_by_user_id or "system"),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
         )
-        await self._emit(
-            EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED,
-            session,
-            {
-                "key": "",
-                "satisfied_count": len(repository_ids),
-                "redispatch_repository_ids": repository_ids,
-                "reason": "expired",
-                "initiated_by_user_id": str(initiated_by_user_id or "system"),
-            },
-        )
+        # ⚠️ 空清理不发事件：本方法挂在 barrier 续驱路径上，**每次续驱都会调**，而绝大多数
+        # 时候没有超龄 waiter。无条件发会在活动流里堆一串
+        # `{key: "", satisfied_count: 0, redispatch_repository_ids: []}` —— 用户点开「原始
+        # 数据」看到的是一条全空 payload，只能理解成「埋点坏了」。排障需要的「清理跑过了」
+        # 这一事实已由上面的 `blueprint_context_waiters_expired` 日志承担。
+        if repository_ids:
+            await self._emit(
+                EVENT_BLUEPRINT_CONTEXT_WAITER_SATISFIED,
+                session,
+                {
+                    # `key` 恒空是**语义**而非缺字段：超龄清理是按 `created_at` 扫全表，
+                    # 不针对某个 key（key 命中路径在 `satisfy_waiters`，那条带真 key）。
+                    "key": "",
+                    "satisfied_count": len(repository_ids),
+                    "redispatch_repository_ids": repository_ids,
+                    "reason": "expired",
+                    "initiated_by_user_id": str(initiated_by_user_id or "system"),
+                },
+            )
         return repository_ids
 
     @sync_to_async

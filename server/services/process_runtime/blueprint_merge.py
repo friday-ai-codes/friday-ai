@@ -45,6 +45,10 @@ import structlog
 from asgiref.sync import sync_to_async
 
 from common.logging import redact_secrets_in_text
+from services.process_runtime.blueprint_prompt_style import (
+    HUMAN_WRITING_SUMMARY_GUIDE,
+    MARKDOWN_LITE_WRITING_GUIDE,
+)
 from services.process_runtime.blueprint_quality import citation_coverage
 from services.process_runtime.blueprint_reconcile import coverage_gaps, reconcile_cross_repo_apis
 from services.process_runtime.blueprint_repo_waves import build_api_waves
@@ -916,6 +920,9 @@ def _implementation_overview_prompt(inputs: _MergeInputs) -> tuple[str, str]:
         "其中 items 只用于把各仓实现项**映射**到功能点与模块（feature_point_id 必须取自上面"
         "的功能点 id 列表），不要新增实现项。Block 形如 "
         '{"block_id","type":"paragraph","text"}。\n'
+        "正文约定覆盖 `implementation_overview.requirement_narrative` 与 "
+        "`implementation_overview.modules[].narrative`。\n\n"
+        f"{MARKDOWN_LITE_WRITING_GUIDE}\n"
     )
     return _SYSTEM_BASE, human
 
@@ -967,6 +974,41 @@ def _impact_analysis_prompt(inputs: _MergeInputs) -> tuple[str, str]:
         "citations 只能取自上面列出的证据串，取不到就留空数组——**不要编造引用**。\n"
     )
     return _SYSTEM_BASE, human
+
+
+def _meta_summary_prompt(inputs: _MergeInputs, implementation_overview: dict) -> tuple[str, str]:
+    """执行摘要（``meta.summary``）：面向人的 300~500 字导读。
+
+    语言质量规则以 prompt 资产注入（``HUMAN_WRITING_SUMMARY_GUIDE``，取自开源 skill
+    「活人感写作」蒸馏版）——服务端 LLM 调用没有 Agent Skill 加载机制，skill 蒸馏进
+    prompt 是既有形态（与 ``MARKDOWN_LITE_WRITING_GUIDE`` 同款落位）。
+    """
+    goal_text = _blocks_to_text((inputs.requirement_spec or {}).get("goal"))[:1500]
+    repo_lines: list[str] = []
+    for assoc in inputs.associations or []:
+        name = str(assoc.get("repository_name") or assoc.get("repository_id") or "")
+        role = str(assoc.get("role") or "")
+        responsibility = _blocks_to_text(assoc.get("responsibility"))[:120]
+        repo_lines.append(f"- {name}（{role}）：{responsibility}")
+    items = (implementation_overview or {}).get("items") or []
+    titles = [str(item.get("title") or "") for item in items if isinstance(item, dict)][:40]
+    system = (
+        "你是技术方案的撰稿人，为一份跨仓技术蓝图写开篇执行摘要，读者是评审它的工程师"
+        "与业务负责人。只输出 JSON，不要任何解释；不要编造材料里没有的内容。\n\n"
+        f"{HUMAN_WRITING_SUMMARY_GUIDE}"
+    )
+    human = (
+        f"需求目标（节选）：\n{goal_text}\n\n"
+        f"参与仓库与职责：\n" + "\n".join(repo_lines) + "\n\n"
+        f"实现项标题清单：\n{_json(titles)}\n\n"
+        '请输出 {"summary": ["第一段", "第二段", "第三段"]}。\n'
+        "硬性要求：全文 300~500 个汉字，超过 500 字即不合格；每段不超过 170 字。"
+        "摘要是导读不是复述，细节留给正文，只保留读者决定「要不要往下读、重点看哪」"
+        "所需的信息。第一段说清这份方案解决什么需求、交付给谁用；第二段说清各仓分别"
+        "动什么、彼此怎么衔接；第三段给出改动量级与最需要评审人注意的风险或决策。"
+        "全部用陈述句正文，不要标题、列表、加粗与引用标记。"
+    )
+    return system, human
 
 
 def _prompt_parts(prompt: tuple[str, str], inputs: Any = None) -> dict:
@@ -1687,11 +1729,20 @@ class BlueprintMergeAdapter:
             implementation_overview=sections[SECTION_IMPLEMENTATION_OVERVIEW],
             api_contracts=sections[SECTION_API_CONTRACTS],
         )
+        # ⭐ 执行摘要（meta.summary）：schema 早已预留该键（导出渲染器也已支持在标题后
+        # 输出），此前从未有人填。best-effort：拿不到摘要不影响落版本。
+        meta = self._project_meta(session, baseline, requirement_spec)
+        summary_blocks = await self._adraft_meta_summary(
+            session, inputs, sections[SECTION_IMPLEMENTATION_OVERVIEW]
+        )
+        if summary_blocks:
+            meta["summary"] = summary_blocks
+
         assembled: dict[str, Any] = {
             # import 常量而非字面量：schema 里是 const，写错即整份非法；写成缺失则会被
             # 当成隐式 v0 pass-through（那是「假通过」，六段再完美也不落蓝图版本）。
             "schema_version": BLUEPRINT_SCHEMA_VERSION,
-            "meta": self._project_meta(session, baseline, requirement_spec),
+            "meta": meta,
             "requirement_spec": requirement_spec,
             "repo_associations": associations,
             "current_state_analysis": current_state,
@@ -1956,7 +2007,17 @@ class BlueprintMergeAdapter:
                     .order_by("-created_at")
                     .values_list("messages__body", flat=True)[:_MAX_FEEDBACK_ITEMS]
                 ]
-            return _format_human_feedback(revision_round=revision_round, comments=comments)
+            feedback = _format_human_feedback(revision_round=revision_round, comments=comments)
+            # 节点重跑的操作员补充指令（quick 260806）：与人审反馈同通道进六段起草的
+            # system 串尾（`_prompt_parts` 单点装配）。无指令时零扰动。
+            from services.process_runtime.blueprint_stage_rerun import (
+                operator_instruction_section,
+            )
+
+            instruction = operator_instruction_section(session)
+            if instruction:
+                feedback = f"{feedback}\n\n{instruction}" if feedback else instruction
+            return feedback
         except Exception as exc:  # noqa: BLE001 — 反馈收集 best-effort，绝不阻断融合
             logger.warning(
                 "blueprint_merge_human_feedback_collect_failed",
@@ -2030,6 +2091,41 @@ class BlueprintMergeAdapter:
         return _normalize_impact_analysis(
             _extract_section(payload, SECTION_IMPACT_ANALYSIS), inputs
         )
+
+    async def _adraft_meta_summary(
+        self, session: Any, inputs: _MergeInputs, implementation_overview: dict
+    ) -> list[dict]:
+        """执行摘要（``meta.summary``）：**best-effort**，失败返回空数组。
+
+        摘要是给人的导读，不参与机器对账（无引用要求、不进 must_haves 验收）⇒
+        ⛔ 不进降级清单、不触发失败门，拿不到时蓝图照常落版本。
+        """
+        started = time.monotonic()
+        from agents.call_source import CallSource, use_call_source
+
+        try:
+            parts = _prompt_parts(_meta_summary_prompt(inputs, implementation_overview), inputs)
+            with use_call_source(CallSource.BLUEPRINT_MERGE):
+                payload = await self.synthesizer.draft(section="meta_summary", prompt_parts=parts)
+            blocks = _as_block_list(
+                payload.get("summary") if isinstance(payload, dict) else None,
+                block_id="blk_bp_summary",
+            )
+            self._log(
+                "blueprint_merge_summary_drafted",
+                session,
+                block_count=len(blocks),
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            return blocks
+        except Exception as exc:  # noqa: BLE001 — 摘要缺席不反噬融合主流程
+            self._log(
+                "blueprint_merge_summary_draft_failed",
+                session,
+                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            return []
 
     # ── 澄清线程（矛盾绝不静默拍板） ────────────────────────────────────────
 

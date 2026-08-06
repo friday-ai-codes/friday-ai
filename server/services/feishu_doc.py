@@ -873,6 +873,10 @@ class FeishuDocClient:
                         document_id, group["data"], headers, client,
                     )
 
+    # 飞书 docx children 接口单次写入的块数上限（实测 99992402
+    # `field_violations: children the max len is 50`）；长文档必须分批追加。
+    _CHILDREN_BATCH_LIMIT = 50
+
     async def _write_regular_blocks(
         self,
         document_id: str,
@@ -880,24 +884,34 @@ class FeishuDocClient:
         headers: dict[str, str],
         client: Any,
     ) -> None:
-        """Write regular (non-table) blocks via children API."""
-        response = await client.post(
-            f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/children",
-            headers=headers,
-            json={"children": blocks, "index": -1},
-        )
-        data = response.json()
-        if data.get("code") != 0:
-            logger.error(
-                "feishu_write_blocks_failed",
-                document_id=document_id,
-                error_code=data.get("code"),
-                error_msg=data.get("msg"),
-                error_data=data,
+        """Write regular (non-table) blocks via children API.
+
+        ⭐ 按 :data:`_CHILDREN_BATCH_LIMIT` 分批：children 单请求最多 50 块，超限整个
+        请求被 99992402 拒绝（文档已创建但空白）。`index=-1` 追加 + 顺序串行 ⇒ 批间
+        顺序与原文一致。任一批失败即抛（前面批次已落文档，错误信息如实交代写入中断）。
+        """
+        for start in range(0, len(blocks), self._CHILDREN_BATCH_LIMIT):
+            batch = blocks[start : start + self._CHILDREN_BATCH_LIMIT]
+            response = await client.post(
+                f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/children",
+                headers=headers,
+                json={"children": batch, "index": -1},
             )
-            raise FeishuDocAPIError(
-                f"文档已创建但内容写入失败: {data.get('msg', 'Unknown error')} (code={data.get('code')})"
-            )
+            data = response.json()
+            if data.get("code") != 0:
+                logger.error(
+                    "feishu_write_blocks_failed",
+                    document_id=document_id,
+                    error_code=data.get("code"),
+                    error_msg=data.get("msg"),
+                    error_data=data,
+                    batch_start=start,
+                    batch_size=len(batch),
+                    total_blocks=len(blocks),
+                )
+                raise FeishuDocAPIError(
+                    f"文档已创建但内容写入失败: {data.get('msg', 'Unknown error')} (code={data.get('code')})"
+                )
 
     async def _write_table_via_descendants(
         self,

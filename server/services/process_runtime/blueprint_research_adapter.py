@@ -33,10 +33,13 @@ from common.logging import redact_secrets_in_text
 from delivery.models import RepoResearchTaskStatus
 from delivery.services import ConvergenceSessionService, ResearchService
 from delivery.services.event_taxonomy import (
+    EVENT_BLUEPRINT_REPO_PLAN_REPO_FAILED,
+    EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED,
     EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
     EVENT_BLUEPRINT_REPO_RESEARCH_STARTED,
     EVENT_BLUEPRINT_REROUTE_TRIGGERED,
 )
+from services.process_runtime.blueprint_prompt_style import MARKDOWN_LITE_WRITING_GUIDE
 from services.process_runtime.blueprint_repo_plan_schema import (
     REPO_PLAN_AVAILABILITY,
     REPO_PLAN_CHANGE_TYPES,
@@ -51,6 +54,7 @@ __all__ = [
     "BLUEPRINT_REPO_PLAN_SOURCE",
     "MAX_REROUTE_ROUNDS",
     "decide_reroute",
+    "summarize_requirement_context",
 ]
 
 # runner 在线判定窗口（秒）—— 3 倍心跳，与既有容器链一致
@@ -81,6 +85,8 @@ _DEEP_CONFIDENCE = frozenset({"high", "medium"})
 
 _MAX_PROMPT_TEXT_CHARS = 2000
 _MAX_LIST_ITEMS = 10
+# 单条验收标准 / 测试用例 / 约束 / 调研发现的截断上界（防单条长文撑爆 prompt）
+_MAX_ITEM_TEXT_CHARS = 300
 
 # 重路由轮次上界：定义下沉到零依赖的 `constants` 模块，本文件与 `builtin_processes`
 # 都从那里读同一个数值（后者不必再为一个数字 import 本重型模块）。此处保留再导出，
@@ -194,6 +200,14 @@ class BlueprintResearchAdapter:
                 deep_index = {}
 
         charters = await self._aload_charters(list(candidates.keys()))
+        # plan 模式：阶段 1 的完整结论（responsibility + findings）随 prompt 下发，让拟方案
+        # 容器真的能「续作」而不是只拿三个标量。⛔ 不走 acollect_fitness：阶段 2 派发前
+        # mark_stale 已把阶段 1 的 PartialPlan 置 valid=False，只认 valid 会恒拿空。
+        stage1_map: dict[str, dict] = {}
+        if mode == "plan" and deep_index:
+            stage1_map = await self._aload_stage1_conclusions(
+                getattr(session, "id", None), list(deep_index.keys())
+            )
         task_ids: list[str] = []
         dispatched = 0
         synthesized = 0
@@ -225,6 +239,7 @@ class BlueprintResearchAdapter:
                         charter=charters.get(repository_id),
                         mode=mode,
                         resume_hint=(resume_hints or {}).get(repository_id),
+                        stage1=stage1_map.get(repository_id),
                     ):
                         dispatched += 1
                 except Exception as exc:  # noqa: BLE001 — WR-02 单仓隔离，绝不上抛
@@ -244,7 +259,7 @@ class BlueprintResearchAdapter:
                             "error": redact_secrets_in_text(str(exc)),
                         },
                     )
-                    await self._emit_failed(session, task, "dispatch_failed")
+                    await self._emit_failed(session, task, "dispatch_failed", mode=mode)
 
         if mode == "plan":
             # plan 模式**绝不**走轻量合成：`_synthesize_light_partial` 产出的是调研形状结论，
@@ -434,6 +449,7 @@ class BlueprintResearchAdapter:
         charter: dict | None,
         mode: str = "research",
         resume_hint: dict | None = None,
+        stage1: dict | None = None,
     ) -> bool:
         """单仓起独立 `SubAgentSession(PLAN)` 容器：五步顺序即正确性。
 
@@ -452,7 +468,7 @@ class BlueprintResearchAdapter:
         repo_url = getattr(repo, "git_url", "") if repo is not None else ""
         if not repo_url:
             await self.research_service.mark_failed(task, {"reason": "missing_git_url"})
-            await self._emit_failed(session, task, "missing_git_url")
+            await self._emit_failed(session, task, "missing_git_url", mode=mode)
             return False
 
         # 113 扩展：阶段 2 换前缀与 source（uuid 后缀保留——stale 重跑会对同一 task 再派发）
@@ -488,7 +504,14 @@ class BlueprintResearchAdapter:
         )
 
         prompt = self._build_prompt(
-            session, task, repo, charter, candidate=candidate, mode=mode, resume_hint=resume_hint
+            session,
+            task,
+            repo,
+            charter,
+            candidate=candidate,
+            mode=mode,
+            resume_hint=resume_hint,
+            stage1=stage1,
         )
         metadata = await self._build_dispatch_metadata(
             session, task, repo=repo, subagent_session_id=session_id, mode=mode
@@ -547,7 +570,12 @@ class BlueprintResearchAdapter:
             category="caller",
             component="process_runtime",
         )
-        await self._emit_started(session, task)
+        await self._emit_started(
+            session,
+            task,
+            mode=mode,
+            repository_name=str((candidate or {}).get("repository_name") or ""),
+        )
         return True
 
     async def _aresume_env(self, task: Any) -> dict[str, str]:
@@ -716,24 +744,31 @@ class BlueprintResearchAdapter:
         candidate: dict,
         mode: str = "research",
         resume_hint: dict | None = None,
+        stage1: dict | None = None,
     ) -> str:
-        """调研 prompt：需求目标 + 功能点 + 路由证据 + **仓库章程**，并写死输出 JSON 形状。
+        """调研 prompt：完整需求规格 + 路由证据 + **仓库章程**，并写死输出 JSON 形状。
 
         全部内容取自**服务端权威 session 状态**（不把外部用户原文当执行指令拼接）；
         章程随 prompt 注入 = 不扩容器 MCP 白名单也能让容器看到「这仓该管什么、不该管什么」。
+        需求规格「有什么就都给」：goal / background / 功能点（含验收标准与测试用例）/
+        范围边界 / 约束，统一经 `summarize_requirement_context`（逐段截断防膨胀）。
 
-        `mode="plan"`（113 扩展）走 `_build_plan_prompt`；缺省 `research` 的 return 体一字不动。
+        `mode="plan"`（113 扩展）走 `_build_plan_prompt`。
         """
         if mode == "plan":
             return self._build_plan_prompt(
-                session, task, repo, charter, candidate=candidate, resume_hint=resume_hint
+                session,
+                task,
+                repo,
+                charter,
+                candidate=candidate,
+                resume_hint=resume_hint,
+                stage1=stage1,
             )
         repo_name = getattr(repo, "name", "") if repo is not None else ""
-        spec = _requirement_spec_from_state(session)
         return (
             f"你正在为仓库「{repo_name}」评估它与本次需求的适配度（fitness）并调研现状。\n\n"
-            f"## 需求目标\n{self._summarize_goal(spec)}\n\n"
-            f"## 功能点\n{self._summarize_feature_points(spec)}\n\n"
+            f"{summarize_requirement_context(session)}\n\n"
             f"## 路由证据（服务端已算，供你核对，不要盲信）\n"
             f"{self._summarize_route_evidence(candidate)}\n\n"
             f"## 仓库章程\n{self._summarize_charter(charter)}\n\n"
@@ -743,7 +778,8 @@ class BlueprintResearchAdapter:
             '- role_suggestion: "direct"（需要改动本仓）或 "indirect"（只需了解/被依赖）\n'
             "- responsibility: 一段话说明本仓在这次需求里承担什么职责\n"
             '- findings: [{"title": ..., "detail": ..., "citations": [...]}]，逐条描述与本次'
-            "需求相关的现状（已有能力、缺口、约束）\n\n"
+            "需求相关的现状（已有能力、缺口、约束）；若功能点带验收标准/测试用例，"
+            "请对照说明本仓现状能否支撑\n\n"
             "纪律：citations 必须是你真实读到的文件路径或符号，**不要编造**；判不出适配度就填"
             ' verdict="partial" 并在 reasons 里说明缺什么信息，不要猜。'
         )
@@ -757,25 +793,27 @@ class BlueprintResearchAdapter:
         *,
         candidate: dict,
         resume_hint: dict | None = None,
+        stage1: dict | None = None,
     ) -> str:
-        """阶段 2 拟方案 prompt（113-03）：锁定职责 + 阶段 1 结论 + RepoPlan 输出契约。
+        """阶段 2 拟方案 prompt（113-03）：锁定职责 + 阶段 1 完整结论 + RepoPlan 输出契约。
 
         与调研 prompt 同纪律：全部内容取自**服务端权威 session 状态**，绝不把外部用户原文
         当执行指令拼进来。总线工具的措辞是**条件式**的（向后兼容 P1）：老镜像没有这两个
         工具时 agent 记录假设继续跑，不许停下等。
+
+        `stage1` 是派发面按仓预取的阶段 1 完整结论（verdict / responsibility / findings），
+        缺失时回落 `stage_state["repo_research_fitness"]` 的三标量摘要。
         """
         repository_id = str(getattr(task, "repository_id", "") or "")
         repo_name = getattr(repo, "name", "") if repo is not None else ""
-        spec = _requirement_spec_from_state(session)
         change_types = "、".join(REPO_PLAN_CHANGE_TYPES)
         return (
             f"你正在为仓库「{repo_name}」拟定本次需求的**分仓实现方案**（RepoPlan）。\n"
             "仓库集与职责已由人工确认门锁定，**不要再讨论该不该改这个仓**。\n\n"
-            f"## 需求目标\n{self._summarize_goal(spec)}\n\n"
-            f"## 功能点\n{self._summarize_feature_points(spec)}\n\n"
+            f"{summarize_requirement_context(session)}\n\n"
             f"## 本仓被锁定的职责（人工裁决，只读）\n{self._summarize_locked_role(session, repository_id)}\n\n"
             f"## 阶段 1 对本仓的调研结论（供你续作，不要重复调研）\n"
-            f"{self._summarize_stage1(session, repository_id)}\n\n"
+            f"{self._summarize_stage1(session, repository_id, stage1=stage1)}\n\n"
             f"## 仓库章程\n{self._summarize_charter(charter)}\n\n"
             "请深入阅读本仓代码后，**只输出一个 JSON 对象**，顶层键为 `repo_plan`，其值字段如下：\n"
             f'- repository_id: "{repository_id}"；role: "direct" 或 "indirect"\n'
@@ -785,6 +823,8 @@ class BlueprintResearchAdapter:
             "test_strategy, citations}]，其中\n"
             f"  - change_type ∈ {change_types}\n"
             "  - depends_on 只能引用**本仓**其他 item_id；跨仓依赖一律走 apis_consumed\n"
+            "  - test_strategy 必须结合上面功能点的验收标准与测试用例，写明用什么测试"
+            "证明该项达成（缺验收标准时自行给出可验证判据）\n"
             "- apis_provided: [{name, method, path, request_schema, response_schema, "
             "description, citations}]\n"
             "- apis_consumed: 同上，另加 from_repository_id 与\n"
@@ -795,7 +835,11 @@ class BlueprintResearchAdapter:
             "  - availability 为 needs_support 时 data_source.support_repository_id **必填**"
             "（指出哪个仓要配合）\n"
             "- local_impact: {affected_modules, affected_features, migration_required, notes}\n"
+            "  - affected_features 是**对象数组**：[{name, citations}]，⛔ 不要写成字符串数组\n"
             "- risks: Block[]\n\n"
+            "正文约定覆盖 `current_state[].summary`、`current_state[].findings[].detail`、"
+            "`impl_items[].how`，以及其他以 `paragraph` Block 输出的正文。\n\n"
+            f"{MARKDOWN_LITE_WRITING_GUIDE}\n\n"
             f"## 跨仓协商（若工具可用）\n"
             f"若 `report_blueprint_context` / `read_blueprint_context` 工具可用：请把你对外提供的\n"
             f"接口契约以 `repo:{repository_id}.api_surface` 为 key 写入总线；需要消费其他仓接口时\n"
@@ -842,37 +886,37 @@ class BlueprintResearchAdapter:
         return "（无锁定记录，请按调研结论自行判断本仓职责）"
 
     @staticmethod
-    def _summarize_stage1(session: Any, repository_id: str) -> str:
-        """阶段 1 结论摘要（`stage_state["repo_research_fitness"]`，只存标量摘要）。"""
-        stage_state = getattr(session, "stage_state", None) or {}
-        fitness = stage_state.get(_FITNESS_STATE_KEY) if isinstance(stage_state, dict) else None
-        item = fitness.get(repository_id) if isinstance(fitness, dict) else None
-        if not isinstance(item, dict):
+    def _summarize_stage1(session: Any, repository_id: str, *, stage1: dict | None = None) -> str:
+        """阶段 1 结论：优先用派发面预取的完整结论（responsibility + findings），
+        缺失时回落 `stage_state["repo_research_fitness"]` 的三标量摘要。"""
+        item = stage1 if isinstance(stage1, dict) and stage1 else None
+        if item is None:
+            stage_state = getattr(session, "stage_state", None) or {}
+            fitness = stage_state.get(_FITNESS_STATE_KEY) if isinstance(stage_state, dict) else None
+            fallback = fitness.get(repository_id) if isinstance(fitness, dict) else None
+            item = fallback if isinstance(fallback, dict) else None
+        if item is None:
             return "（无阶段 1 结论摘要，请直接读代码）"
-        return "\n".join(
-            [
-                f"- fitness.verdict：{item.get('verdict') or 'unknown'}",
-                f"- 阶段 1 role 建议：{item.get('role_suggestion') or 'unknown'}",
-                f"- 阶段 1 任务状态：{item.get('task_status') or 'unknown'}",
-            ]
-        )
-
-    @staticmethod
-    def _summarize_goal(spec: dict) -> str:
-        text = _blocks_to_text(spec.get("goal"))
-        return text[:_MAX_PROMPT_TEXT_CHARS] or "（无）"
-
-    @staticmethod
-    def _summarize_feature_points(spec: dict) -> str:
-        lines: list[str] = []
-        for point in (spec.get("feature_points") or [])[:_MAX_LIST_ITEMS]:
-            if not isinstance(point, dict):
-                continue
-            title = str(point.get("title") or "").strip()
-            intent = str(point.get("intent") or "").strip()
-            detail = _blocks_to_text(point.get("description"))[:500]
-            lines.append(f"- [{intent or 'unknown'}] {title}：{detail}")
-        return "\n".join(lines) or "（无）"
+        lines = [
+            f"- fitness.verdict：{item.get('verdict') or 'unknown'}",
+            f"- 阶段 1 role 建议：{item.get('role_suggestion') or 'unknown'}",
+            f"- 阶段 1 任务状态：{item.get('task_status') or 'unknown'}",
+        ]
+        responsibility = str(item.get("responsibility") or "").strip()[:_MAX_PROMPT_TEXT_CHARS]
+        if responsibility:
+            lines.append(f"- 阶段 1 职责结论：{responsibility}")
+        findings = [f for f in (item.get("findings") or []) if isinstance(f, dict)]
+        if findings:
+            lines.append("- 阶段 1 调研发现：")
+            for finding in findings[:_MAX_LIST_ITEMS]:
+                title = str(finding.get("title") or "").strip()[:120]
+                detail = str(finding.get("detail") or "").strip()[:_MAX_ITEM_TEXT_CHARS]
+                entry = f"  - {title or '（未命名）'}：{detail}"
+                citations = _join([str(c) for c in (finding.get("citations") or [])])
+                if citations:
+                    entry += f"（证据：{citations}）"
+                lines.append(entry)
+        return "\n".join(lines)
 
     @staticmethod
     def _summarize_route_evidence(candidate: dict) -> str:
@@ -1123,6 +1167,70 @@ class BlueprintResearchAdapter:
             }
         return collected
 
+    async def _aload_stage1_conclusions(
+        self, session_id: Any, repository_ids: list[str]
+    ) -> dict[str, dict]:
+        """plan 派发前按仓预取阶段 1 完整结论（best-effort，读失败返回 `{}`）。
+
+        与 `acollect_fitness` 的差别：**不硬过滤 `valid=True`** —— 阶段 2 派发前
+        `mark_stale` 已把阶段 1 的 `PartialPlan` 置 `valid=False`，只认 valid 会恒拿空
+        （与 `blueprint_repo_plan._aload_latest_valid_content` 的 P-1 教训同源）。
+        每仓优先取最新 valid 行，没有再回落最新失效行。
+        """
+        try:
+            return await self._aload_stage1_conclusions_sync(session_id, repository_ids)
+        except Exception as exc:  # noqa: BLE001 — 阶段 1 结论是增强项，读失败不阻断派发
+            logger.warning(
+                "blueprint_repo_plan_stage1_load_failed",
+                session_id=str(session_id or ""),
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+            return {}
+
+    @staticmethod
+    @sync_to_async
+    def _aload_stage1_conclusions_sync(
+        session_id: Any, repository_ids: list[str]
+    ) -> dict[str, dict]:
+        from delivery.models import PartialPlan, RepoResearchTask
+
+        wanted = {str(rid) for rid in repository_ids or [] if str(rid or "")}
+        if not wanted:
+            return {}
+        tasks = {
+            row["id"]: {"repository_id": str(row["repository_id"]), "status": str(row["status"])}
+            for row in RepoResearchTask.objects.filter(session_id=session_id).values(
+                "id", "repository_id", "status"
+            )
+            if str(row["repository_id"]) in wanted
+        }
+        if not tasks:
+            return {}
+        latest: dict[str, dict] = {}
+        rows = (
+            PartialPlan.objects.filter(research_task_id__in=list(tasks))
+            # valid 行优先（True > False），同 valid 取最新
+            .order_by("research_task_id", "-valid", "-created_at")
+            .values("research_task_id", "content")
+        )
+        for row in rows:
+            task = tasks[row["research_task_id"]]
+            repository_id = task["repository_id"]
+            if repository_id in latest:
+                continue
+            content = row["content"] if isinstance(row["content"], dict) else {}
+            fitness = content.get("fitness") if isinstance(content.get("fitness"), dict) else {}
+            latest[repository_id] = {
+                "verdict": str(fitness.get("verdict") or ""),
+                "role_suggestion": str(content.get("role_suggestion") or ""),
+                "responsibility": str(content.get("responsibility") or ""),
+                "findings": content.get("findings") or [],
+                "task_status": task["status"],
+            }
+        return latest
+
     async def aadvance_reroute(self, session: Any) -> dict:
         """barrier 收敛后的**单点串行**判定与轮次递增（P3 lost-update 的唯一缓解手段）。
 
@@ -1326,7 +1434,29 @@ class BlueprintResearchAdapter:
 
     # ── 事件与外部依赖（各自 best-effort） ────────────────────────────────
 
-    async def _emit_started(self, session: Any, task: Any) -> None:
+    async def _emit_started(
+        self, session: Any, task: Any, *, mode: str = "research", repository_name: str = ""
+    ) -> None:
+        """派发起点事件**按 mode 分流**（quick-260806 观测整改）。
+
+        本方法是所有容器派发（首轮 / stale 重派 / 手动单仓重派）的唯一事件出口。此前
+        不分 mode 恒发 `repo_research.started`：过程明细把拟方案容器显示成「正在调研
+        相关仓库…」，一次全链重跑会看到十几条「调研」，而分仓阶段自己的
+        `repo_plan.repo_started`（118 设计）只在 stage handler 路径发、绕过 handler 的
+        重派路径完全无痕。事件归属收敛到本漏斗后，stage handler 侧的重复发射已删除。
+        """
+        if mode == "plan":
+            await self._emit(
+                EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED,
+                session,
+                {
+                    "repository_id": str(task.repository_id),
+                    "repository_name": repository_name,
+                    "task_id": str(task.id),
+                    "routed_confidence": task.routed_confidence or "",
+                },
+            )
+            return
         await self._emit(
             EVENT_BLUEPRINT_REPO_RESEARCH_STARTED,
             session,
@@ -1337,9 +1467,14 @@ class BlueprintResearchAdapter:
             },
         )
 
-    async def _emit_failed(self, session: Any, task: Any, reason: str) -> None:
+    async def _emit_failed(
+        self, session: Any, task: Any, reason: str, *, mode: str = "research"
+    ) -> None:
+        """派发失败事件与 started 同款分流（plan → `repo_plan.repo_failed`）。"""
         await self._emit(
-            EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
+            EVENT_BLUEPRINT_REPO_PLAN_REPO_FAILED
+            if mode == "plan"
+            else EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
             session,
             {
                 "repository_id": str(task.repository_id),
@@ -1496,6 +1631,136 @@ def _iter_confirmation_repos(confirmation: Any) -> list[dict]:
     if isinstance(confirmation, list):
         return [item for item in confirmation if isinstance(item, dict)]
     return []
+
+
+def summarize_requirement_context(session: Any) -> str:
+    """需求规格的完整 prompt 上下文（「有什么就都给」，供三处共用、上下文同源）。
+
+    固定两段：需求目标 + 功能点（含每条功能点的验收标准与测试用例）；条件段：需求背景 /
+    范围边界 / 约束 —— 规格里存在才输出，缺失整段省略（prompt 不出现空标题）。
+    每段独立截断（`_MAX_PROMPT_TEXT_CHARS` / `_MAX_ITEM_TEXT_CHARS` / `_MAX_LIST_ITEMS`），
+    防单段长文撑爆 prompt。调用方：调研容器 prompt、拟方案容器 prompt、indirect 仓的
+    服务端 LLM 合成（`blueprint_repo_plan.LLMRepoPlanSynthesizer`）。
+    """
+    spec = _requirement_spec_from_state(session)
+    sections = [f"## 需求目标\n{_summarize_goal(spec)}"]
+    background = _blocks_to_text(spec.get("background"))[:_MAX_PROMPT_TEXT_CHARS]
+    if background:
+        sections.append(f"## 需求背景\n{background}")
+    sections.append(f"## 功能点（含验收标准与测试用例）\n{_summarize_feature_points(spec)}")
+    boundaries = _summarize_boundaries(spec)
+    if boundaries:
+        sections.append(f"## 范围边界\n{boundaries}")
+    constraints = _summarize_constraints(spec)
+    if constraints:
+        sections.append(f"## 约束\n{constraints}")
+    # 节点重跑的操作员补充指令（quick 260806）：无指令时为空串、整段省略——prompt 与
+    # 改动前逐字一致（零扰动）。本函数是调研/拟方案/indirect 合成三处的共用上下文入口，
+    # 挂这一处即三处全覆盖。
+    from services.process_runtime.blueprint_stage_rerun import operator_instruction_section
+
+    instruction = operator_instruction_section(session)
+    if instruction:
+        sections.append(instruction)
+    return "\n\n".join(sections)
+
+
+def _summarize_goal(spec: dict) -> str:
+    text = _blocks_to_text(spec.get("goal"))
+    return text[:_MAX_PROMPT_TEXT_CHARS] or "（无）"
+
+
+def _summarize_feature_points(spec: dict) -> str:
+    """功能点清单：标题/意图/描述 + **验收标准与测试用例**（有则逐条带上）。"""
+    lines: list[str] = []
+    for point in (spec.get("feature_points") or [])[:_MAX_LIST_ITEMS]:
+        if not isinstance(point, dict):
+            continue
+        title = str(point.get("title") or "").strip()
+        intent = str(point.get("intent") or "").strip()
+        detail = _blocks_to_text(point.get("description"))[:500]
+        lines.append(f"- [{intent or 'unknown'}] {title}：{detail}")
+        for criterion in _string_items(point.get("acceptance_criteria")):
+            lines.append(f"  - 验收标准：{criterion}")
+        for case in _test_case_items(point.get("test_cases")):
+            lines.append(f"  - 测试用例：{case}")
+    return "\n".join(lines) or "（无）"
+
+
+def _summarize_boundaries(spec: dict) -> str:
+    """范围边界（in_scope / out_of_scope），缺失返回空串（调用方整段省略）。"""
+    boundaries = spec.get("boundaries")
+    if not isinstance(boundaries, dict):
+        return ""
+    lines: list[str] = []
+    for key, label in (("in_scope", "范围内"), ("out_of_scope", "范围外")):
+        raw = boundaries.get(key)
+        entries = raw if isinstance(raw, list) else ([raw] if raw else [])
+        for entry in entries[:_MAX_LIST_ITEMS]:
+            text = _entry_text(entry)
+            if text:
+                lines.append(f"- {label}：{text}")
+    return "\n".join(lines)
+
+
+def _summarize_constraints(spec: dict) -> str:
+    """约束清单（id/text/kind 形状或裸字符串），缺失返回空串。"""
+    lines: list[str] = []
+    for item in (spec.get("constraints") or [])[:_MAX_LIST_ITEMS]:
+        if isinstance(item, dict):
+            text = str(item.get("text") or "").strip() or _entry_text(item.get("description"))
+            kind = str(item.get("kind") or "").strip()
+            if text:
+                prefix = f"[{kind}] " if kind else ""
+                lines.append(f"- {prefix}{text[:_MAX_ITEM_TEXT_CHARS]}")
+        else:
+            text = _entry_text(item)
+            if text:
+                lines.append(f"- {text}")
+    return "\n".join(lines)
+
+
+def _string_items(raw: Any) -> list[str]:
+    """字符串清单归一（验收标准等）：非 list 返空，逐条 strip + 截断。"""
+    if not isinstance(raw, list):
+        return []
+    items: list[str] = []
+    for entry in raw[:_MAX_LIST_ITEMS]:
+        text = _entry_text(entry)
+        if text:
+            items.append(text)
+    return items
+
+
+def _test_case_items(raw: Any) -> list[str]:
+    """测试用例归一：dict（name + given_when_then）与裸字符串两种形状都收。"""
+    if not isinstance(raw, list):
+        return []
+    items: list[str] = []
+    for entry in raw[:_MAX_LIST_ITEMS]:
+        if isinstance(entry, dict):
+            name = str(entry.get("name") or "").strip()
+            gwt = entry.get("given_when_then")
+            gwt_text = (_blocks_to_text(gwt) if isinstance(gwt, list) else str(gwt or "")).strip()
+            text = " — ".join(part for part in (name, gwt_text) if part)
+        else:
+            text = _entry_text(entry)
+        if text:
+            items.append(text[:_MAX_ITEM_TEXT_CHARS])
+    return items
+
+
+def _entry_text(entry: Any) -> str:
+    """半可信条目 → 截断纯文本：str 直取；dict 取 text（含 Block 形状）；其余弃。"""
+    if isinstance(entry, str):
+        return entry.strip()[:_MAX_ITEM_TEXT_CHARS]
+    if isinstance(entry, dict):
+        text = entry.get("text")
+        if isinstance(text, str):
+            return text.strip()[:_MAX_ITEM_TEXT_CHARS]
+        if isinstance(text, list):
+            return _blocks_to_text([entry]).strip()[:_MAX_ITEM_TEXT_CHARS]
+    return ""
 
 
 def _requirement_spec_from_state(session: Any) -> dict:

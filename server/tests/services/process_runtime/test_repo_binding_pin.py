@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from asgiref.sync import sync_to_async
@@ -257,6 +257,38 @@ async def test_blueprint_adapter_pins_and_skips_router() -> None:
     assert cand["confidence"] == "high"
     assert cand["pinned_branch"] == "feature/new"
     assert cand["evidence"]["router_version"] == PINNED_ROUTER_VERSION
+
+
+async def test_pinned_route_plan_drafted_carries_router_version_and_branch() -> None:
+    """⭐ 固定路由必须**在事件里自证身份**：`route.plan_drafted` 带 `router_version` 与
+    `pinned_branch`。
+
+    为什么这是硬要求：固定路由下自动打分整段没跑 ⇒ `total` 恒 1.0、章程/历史分量与全部证据
+    计数恒 0。前端的阶段全景只能从 `router_version == "project_binding"` 判断「这是没跑」
+    而不是「跑出来是 0」——缺了这个键，那张全 0 的适配度表在用户眼里就是数据链路坏了。
+    """
+    ctx = await _make_project_with_bindings()
+    session = await _make_blueprint_session(ctx["project_id"])
+
+    with patch(
+        "delivery.services.convergence_session_service.ConvergenceSessionService.aemit_event",
+        new=AsyncMock(),
+    ) as emit:
+        await BlueprintRouteAdapter(router=SimpleNamespace(route=AsyncMock())).route(session)
+
+    drafted = [
+        call for call in emit.call_args_list if call.args[0] == "blueprint.route.plan_drafted"
+    ]
+    assert len(drafted) == 1
+    payload = drafted[0].args[2]
+    assert payload["router_version"] == PINNED_ROUTER_VERSION
+    assert payload["repository_count"] == 2
+    by_repo = {row["repository_id"]: row for row in payload["repositories"]}
+    assert by_repo[ctx["repo_a"]]["pinned_branch"] == "feature/new"
+
+    # scored 侧同样带 router_version（前端两条事件任一命中即可判定固定路由）
+    scored = [call for call in emit.call_args_list if call.args[0] == "blueprint.route.scored"]
+    assert scored and scored[0].args[2]["router_version"] == PINNED_ROUTER_VERSION
 
 
 async def test_blueprint_adapter_pin_respects_exclusions() -> None:

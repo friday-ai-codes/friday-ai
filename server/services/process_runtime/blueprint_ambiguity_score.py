@@ -92,6 +92,7 @@ _MAX_QUESTIONS = 5
 _MAX_QUESTION_CHARS = 300
 _MAX_OPTIONS_PER_QUESTION = 8
 _MAX_CITATIONS_PER_QUESTION = 8
+_MAX_RELATED_FEATURE_POINTS = 8
 # prompt 各分节字符上界（控体积；需求正文可能很长）。
 _MAX_PROMPT_CHARS = 6000
 # 无理由时补的占位（让 ambiguity_report 里「为什么判歧义」不留空白）。
@@ -155,7 +156,11 @@ def _parse_object_json(text: str) -> dict[str, Any] | None:
 
 
 def _normalize_questions(raw: Any) -> list[dict[str, Any]]:
-    """澄清问题白名单归一：只留 ``{text, options, citations}``，空 text 整项丢弃。"""
+    """澄清问题白名单归一：只留 ``{text, options, citations, related_feature_points,
+    recommended}``，空 text 整项丢弃。
+
+    ``recommended`` 必须落在 ``options`` 内，否则置空（防 LLM 幻觉推荐项）。
+    """
     if not isinstance(raw, list):
         return []
     questions: list[dict[str, Any]] = []
@@ -179,7 +184,24 @@ def _normalize_questions(raw: Any) -> list[dict[str, Any]]:
             for cid in (raw_citations if isinstance(raw_citations, list) else [])
             if str(cid).strip()
         ][:_MAX_CITATIONS_PER_QUESTION]
-        questions.append({"text": text, "options": options, "citations": citations})
+        raw_related = item.get("related_feature_points")
+        related = [
+            str(fp).strip()
+            for fp in (raw_related if isinstance(raw_related, list) else [])
+            if str(fp).strip()
+        ][:_MAX_RELATED_FEATURE_POINTS]
+        recommended = str(item.get("recommended", "") or "").strip()[:_MAX_QUESTION_CHARS]
+        if recommended not in options:
+            recommended = ""
+        questions.append(
+            {
+                "text": text,
+                "options": options,
+                "citations": citations,
+                "related_feature_points": related,
+                "recommended": recommended,
+            }
+        )
     return questions
 
 
@@ -193,8 +215,9 @@ def normalize_ambiguity_scores(data: Any) -> dict[str, Any]:
     - ``reason`` 截断 300 字符；**理由为空的维一律落保守值 1.0 + 占位理由**——判定
       失去依据就降级（镜像 ``feature_classify`` 的 modify 无证据回落 unclear），
       降级方向朝「需澄清」而非「放行」。
-    - ``questions`` 按白名单 ``{text, options, citations}`` 归一，空 ``text`` 整项丢弃、
-      条数截断到 5。
+    - ``questions`` 按白名单
+      ``{text, options, citations, related_feature_points, recommended}`` 归一，空
+      ``text`` 整项丢弃、条数截断到 5；非法 ``recommended``（不在 options 内）置空。
     - 输入非 dict（含 ``None``）→ 全维保守值 + 空问题清单。
     """
     payload = data if isinstance(data, dict) else {}
@@ -391,6 +414,8 @@ async def aload_spec_gate_config(tier: str = "") -> dict[str, Any]:
 
 
 def _system_prompt() -> str:
+    from services.process_runtime.blueprint_prompt_style import LEADER_GOAL_DISCIPLINE
+
     return (
         "你是资深需求分析师。给定一份需求的目标、功能点与已知约束，从四个维度评估它的"
         "**歧义程度**（0=完全清晰可直接进技术调研，1=严重歧义无法开工），并给出需要向"
@@ -400,16 +425,23 @@ def _system_prompt() -> str:
         "- boundary：范围边界是否清楚（做什么 / 明确不做什么）。\n"
         "- constraint：技术/业务/合规约束是否明确（性能、兼容、时间、依赖方）。\n"
         "- acceptance：验收标准是否可机械验证。\n"
+        f"\n{LEADER_GOAL_DISCIPLINE}\n\n"
         "要求：\n"
         '- 只输出 JSON，形如 {"dimensions": {"goal": {"score": 0.0, "reason": ".."},'
         '"boundary": {...}, "constraint": {...}, "acceptance": {...}},'
-        '"questions": [{"text": "..", "options": ["候选A", "候选B"], "citations": ["cit_x"]}]}。\n'
+        '"questions": [{"text": "..", "options": ["候选A", "候选B"],'
+        '"recommended": "候选A", "related_feature_points": ["fp_1"],'
+        '"citations": ["cit_x"]}]}。\n'
         "- 每个维度都必须给 score 与 reason；**reason 必须说明缺什么，不得留空**"
         "（留空的维度会被按最高歧义处理）。\n"
         "- **判不出就给高分并说明缺什么，不要猜**——猜错的代价比多问一句大。\n"
         "- questions 只针对真正挡住开工的歧义，每题尽量给 2-4 个候选选项（options）"
-        "让人一键选；citations 逐字取自输入中出现过的引用 id，没有就给空数组，"
-        "严禁编造。\n"
+        "让人一键选，并给 **recommended**（必须是 options 之一，标出你更倾向的答案）；"
+        "citations 逐字取自输入中出现过的引用 id，没有就给空数组，严禁编造。\n"
+        "- **题面必须用人能直接理解的口语化中文**写清业务语境；**禁止**只写或主要依赖"
+        "功能点 id（如「fp_27/fp_28 的恢复行为是什么？」）——应写成功能点**标题**"
+        "（如「『倒计时中断恢复』在弱网重连后如何表现？」），并把对应 id 放进"
+        "related_feature_points，便于界面跳转查看。\n"
         f"- questions 最多 {_MAX_QUESTIONS} 条，按阻塞程度降序。\n"
         "- 不要输出 JSON 以外的解释性文字。"
     )

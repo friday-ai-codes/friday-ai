@@ -351,10 +351,10 @@ async def aseed_blueprint_artifact(
     ``ArtifactContentInvalid``** ⇒ 骨架形状错会**响亮失败**而不是静默落一份坏 content。
     ⛔ **不要在外面包 try 吞掉它**（那正是 P-2 那类静默降级的温床）。
     """
-    from delivery.artifacts.builtin_types import ARTIFACT_TYPE_TECHNICAL_PLAN
-    from delivery.services.artifact_service import ArtifactService
     from django.utils import timezone
 
+    from delivery.artifacts.builtin_types import ARTIFACT_TYPE_TECHNICAL_PLAN
+    from delivery.services.artifact_service import ArtifactService
     from services.process_runtime.blueprint_title import format_blueprint_title
 
     started = time.monotonic()

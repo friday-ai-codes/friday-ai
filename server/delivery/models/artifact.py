@@ -146,6 +146,12 @@ class ArtifactVersion(models.Model):
         on_delete=models.SET_NULL,
         related_name="superseded_by",
     )
+    # 谱系标签（quick 260806 节点重跑）：用户可见的版本树标号（"1" / "2" / "2.1" / "2.2.1"）。
+    # 与 version_no 正交——version_no 是单调存储序（唯一约束/排序基础），version_label 是
+    # 「这版属于哪条生成谱系」：整篇重新生成 = major 递增，基于某谱系的节点级重跑 = 追加
+    # 子段（由 blueprint_stage_rerun 在会话 stage_state 上决定，ArtifactService 落版本时
+    # 盖章）。空串 = 旧数据 / 非蓝图 artifact，前端回落展示 v{version_no}。
+    version_label = models.CharField(max_length=64, blank=True, default="")
     content = models.JSONField(default=dict)
     # sha256 hex；内容相等不翻版本（由 service 本地计算）。
     content_hash = models.CharField(max_length=64, blank=True, default="")

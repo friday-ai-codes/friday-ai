@@ -169,8 +169,11 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     BlueprintStatus.IMPLEMENTED: {BlueprintStatus.ARCHIVED},
     # failed → researching 人工重试（LIFE-03）
     BlueprintStatus.FAILED: {BlueprintStatus.RESEARCHING},
+    # 归档不再是死终态（quick 260806 节点重跑）：归档版本本身永久只读（ArtifactVersion
+    # 行不可变、带 version_label 谱系标签留档），但需求变更时允许基于归档蓝图**迭代新版本**
+    # —— 节点重跑把状态拉回 drafting，产出的是新 ArtifactVersion，里程碑版本原样保留。
+    BlueprintStatus.ARCHIVED: {BlueprintStatus.DRAFTING},
     # 显式终态：无出边（LIFE-03）
-    BlueprintStatus.ARCHIVED: set(),
     BlueprintStatus.SUPERSEDED: set(),
 }
 

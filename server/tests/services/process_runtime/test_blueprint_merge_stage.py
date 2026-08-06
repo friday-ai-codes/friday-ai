@@ -393,13 +393,14 @@ async def test_projection_sections_are_complete_without_any_drafted_content():
     assert result["validation_status"] == "passed", result
     content = await _landed_content(result)
 
-    # 起草器被问过四次，但一个字都没贡献
+    # 起草器被问过五次（四段正文 + best-effort 执行摘要），但一个字都没贡献
     assert sorted(synthesizer.calls) == sorted(
         [
             SECTION_API_CONTRACTS,
             SECTION_IMPACT_ANALYSIS,
             SECTION_IMPLEMENTATION_OVERVIEW,
             SECTION_INTERACTION_FLOWS,
+            "meta_summary",
         ]
     )
 
@@ -582,16 +583,18 @@ async def test_sections_are_drafted_one_call_each():
     _result, synthesizer = await _run_merge(
         session, plans={rid: _repo_plan(rid)}, sections=_drafted_sections(rid)
     )
-    assert len(synthesizer.calls) == 4
+    # 四个正文分节 + 执行摘要（meta_summary，best-effort 第五次调用）各一次
+    assert len(synthesizer.calls) == 5
     assert set(synthesizer.calls) == {
         SECTION_IMPLEMENTATION_OVERVIEW,
         SECTION_API_CONTRACTS,
         SECTION_INTERACTION_FLOWS,
         SECTION_IMPACT_ANALYSIS,
+        "meta_summary",
     }
     # system 与 human 分离，且 prompt 不是同一份巨文本
     assert all(set(parts) == {"system", "human"} for parts in synthesizer.prompts)
-    assert len({parts["human"] for parts in synthesizer.prompts}) == 4
+    assert len({parts["human"] for parts in synthesizer.prompts}) == 5
 
 
 # ── 7. ⭐ 单段失败降级为过 schema 的最小合法结构（W2） ──────────────────────

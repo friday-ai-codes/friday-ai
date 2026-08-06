@@ -313,11 +313,28 @@ async def test_expire_waiters_clears_stale_claims() -> None:
         created_at=timezone.now() - timedelta(hours=2)
     )
 
+    emitted: list[tuple[str, dict]] = []
+
+    async def _record(event: str, _session: object, payload: dict) -> None:
+        emitted.append((event, payload))
+
+    service._emit = _record  # type: ignore[method-assign]
+
     expired = await service.expire_waiters(session=session, max_age_seconds=60)
     assert expired == ["A"]
     entry = await BlueprintContextEntry.objects.aget(id=registered["entry_id"])
     assert entry.status == ContextEntryStatus.SUPERSEDED
     assert await service.expire_waiters(session=session, max_age_seconds=60) == []
+
+    # ⭐ 真清理发一条（带 reason=expired，供前端与「已对齐」区分文案）；
+    # ⭐ **空清理一条都不发** —— 本方法挂在 barrier 续驱路径上、每次续驱都调，无条件发会在
+    # 活动流里堆一串 `satisfied_count=0` + 空 payload 的事件，用户只能理解成埋点坏了。
+    assert len(emitted) == 1, f"空清理不该发事件，实际发了 {len(emitted)} 条"
+    event, payload = emitted[0]
+    assert event == "blueprint.context.waiter_satisfied"
+    assert payload["reason"] == "expired"
+    assert payload["satisfied_count"] == 1
+    assert payload["redispatch_repository_ids"] == ["A"]
 
 
 # ---- 9. fail-loud 与观测 ----
