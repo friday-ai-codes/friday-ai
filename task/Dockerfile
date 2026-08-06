@@ -11,13 +11,24 @@ RUN apk add --no-cache \
     libffi-dev
 
 WORKDIR /app
-COPY pyproject.toml ./
+
+# 先复制依赖声明以利用 Docker 层缓存
+COPY pyproject.toml uv.lock ./
+
+# 依赖必须从 uv.lock 安装：直接 pip install . 会按上游声明的开区间重新解析，
+# 曾因此把 mcp 装成与 claude-agent-sdk 不兼容的 2.x（见 pyproject.toml 的 mcp 上界注释）。
+RUN pip install --no-cache-dir uv \
+    && uv export --frozen --no-dev --no-hashes --no-emit-project -o requirements.txt \
+    && uv pip install --system --no-cache -r requirements.txt
+
+# 再复制全部源码并安装项目本身（不重装依赖）
 COPY cli/ ./cli/
 COPY core/ ./core/
 COPY git_ops/ ./git_ops/
 COPY integrations/ ./integrations/
 
-RUN pip install --no-cache-dir -e . \
+RUN uv pip install --system --no-cache --no-deps . \
+    && pip uninstall -y uv 2>/dev/null || true \
     && pip uninstall -y pip setuptools wheel 2>/dev/null || true
 
 # Stage 2: Runtime image
