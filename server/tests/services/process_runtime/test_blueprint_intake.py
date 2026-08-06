@@ -624,12 +624,8 @@ async def test_seed_supersedes_same_project_active_blueprints() -> None:
 
     artifact = await _seed_new_blueprint()
 
-    assert (
-        await Artifact.objects.aget(id=old_a.id)
-    ).blueprint_status == BlueprintStatus.SUPERSEDED
-    assert (
-        await Artifact.objects.aget(id=old_b.id)
-    ).blueprint_status == BlueprintStatus.SUPERSEDED
+    assert (await Artifact.objects.aget(id=old_a.id)).blueprint_status == BlueprintStatus.SUPERSEDED
+    assert (await Artifact.objects.aget(id=old_b.id)).blueprint_status == BlueprintStatus.SUPERSEDED
     # 新蓝图自身不受影响，仍在 researching
     assert (
         await Artifact.objects.aget(id=artifact.id)
@@ -643,9 +639,7 @@ async def test_seed_skips_statuses_without_superseded_edge() -> None:
 
     await _seed_new_blueprint()
 
-    assert (
-        await Artifact.objects.aget(id=old.id)
-    ).blueprint_status == BlueprintStatus.AI_REVIEWING
+    assert (await Artifact.objects.aget(id=old.id)).blueprint_status == BlueprintStatus.AI_REVIEWING
 
 
 async def test_seed_leaves_other_project_blueprints_untouched() -> None:
@@ -685,6 +679,4 @@ async def test_seed_supersede_failure_does_not_block_creation() -> None:
     assert fresh.blueprint_status == BlueprintStatus.RESEARCHING
     assert str(fresh.current_version_id)
     # 转移失败被吞掉：旧蓝图状态原样
-    assert (
-        await Artifact.objects.aget(id=old.id)
-    ).blueprint_status == BlueprintStatus.RESEARCHING
+    assert (await Artifact.objects.aget(id=old.id)).blueprint_status == BlueprintStatus.RESEARCHING
