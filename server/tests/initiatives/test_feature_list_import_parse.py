@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from initiatives.services.feature_list_import import (
     _MAX_DOC_CHARS,
+    _clean_node_name,
     _extract_complete_objects,
     _materialize_modules,
     _normalize_sections,
@@ -33,6 +36,43 @@ def test_materialize_slices_source_and_summary() -> None:
     assert feat["name"] == "功能点X"
     assert feat["source"] == "功能点X标题\n功能描述正文\n验收：a"
     assert feat["acceptance"] == ["验收：a"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("#### 功能点 A：页面结构与 4 节点", "功能点 A：页面结构与 4 节点"),
+        ("## 模块 3: 单题型学习页", "模块 3: 单题型学习页"),
+        ("- [ ] **功能点 B**：4 节点解锁", "功能点 B：4 节点解锁"),
+        ("> - 引用里的列表项", "引用里的列表项"),
+        ("1. `代码名` 与 [链接](https://x.dev)", "代码名 与 链接"),
+        ("纯文字标题", "纯文字标题"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_clean_node_name_strips_markdown_marks(raw: object, expected: str) -> None:
+    # 节点名来自逐行裁剪，块级前缀（标题/列表/引用）与行内标记都不该进树。
+    assert _clean_node_name(raw) == expected
+
+
+def test_materialize_features_cleans_name_sliced_from_line() -> None:
+    # name_line 路径按行裁原文，整行连着 `#### ` 一起进来——名字要剥、原文要留。
+    doc = "#### 功能点 A：页面结构\n正文一行\n- [ ] 当进入页面时展示 4 节点"
+    lines = doc.split("\n")
+    raw = [
+        {
+            "module": "### 模块 3: 单题型学习页",
+            "features": [{"name_line": 1, "feature_lines": [1, 3], "acceptance_lines": [[3, 3]]}],
+        }
+    ]
+    out = _materialize_modules(raw, lines)
+    assert out and out[0]["module"] == "模块 3: 单题型学习页"
+    feat = out[0]["features"][0]
+    assert feat["name"] == "功能点 A：页面结构"
+    # 验收项与 source 仍逐字保留（解析契约：内容可回溯原文）。
+    assert feat["acceptance"] == ["- [ ] 当进入页面时展示 4 节点"]
+    assert feat["source"].startswith("#### 功能点 A：页面结构")
 
 
 def test_normalize_sections_types_and_dropping() -> None:
@@ -144,7 +184,10 @@ def test_materialize_modules_slices_acceptance_by_lines() -> None:
             "features": [
                 {
                     "name": "入口位置",
-                    "acceptance": ["验收项一：当持有权限时展示入口", "验收项二：样式与其他入口一致"],
+                    "acceptance": [
+                        "验收项一：当持有权限时展示入口",
+                        "验收项二：样式与其他入口一致",
+                    ],
                 }
             ],
         }
