@@ -57,7 +57,7 @@ Plan: —
 Status: 15 条需求中 14 条完全交付、1 条（LIVE-04 的「推送」）部分交付——落的是增量轮询而非推送通道，已在 REQUIREMENTS.md 与 ROADMAP.md 显式登记
 遗留工作项: ① 蓝图推送通道（WS consumer 或 artifact 级 SSE，`useBlueprintLive.ts` 是唯一切换点，LIVE-04 的未达半边）；② 人工验收（真实飞书卡片重推 / 真实容器 resume / 浏览器视觉走查）；③ 未打 tag（与 v0.19.0、v0.20.0 一致）。逐条证据见 [milestones/v0.21.0-VERIFICATION.md](./milestones/v0.21.0-VERIFICATION.md)
 Status: 两个里程碑均判 `tech_debt`、均未打 tag；同步点 1/2 已达成，**同步点 2 的顺延工作项已全部执行完毕**（GATE-01 闭合），其余独立工作项待执行
-Last activity: 2026-08-06 — Completed quick task 260806-sif: 项目页与技术方案职责收敛（移除交付物版本轨区块、新蓝图 supersede 同项目旧活跃蓝图、confirmed 后 provided HTTP 契约回流项目 API 清单）
+Last activity: 2026-08-07 — Completed quick task 260807-1s3: explore 容器 completed 帧携带 SDK 会话 transcript，打通分仓方案同仓重派的 claude resume 续跑（task 镜像已重建）
 
 > 相位执行期的逐 plan 状态存档（各 plan 的收口记录与「开工前必读」清单）随归档移出本文件 —— 权威副本在 `.planning/milestones/v0.{19,20}.0-phases/<phase>/<plan>-SUMMARY.md`，历史版本在 git。**仍然有效的跨里程碑信息全部保留在下方**：两个里程碑的关键约束/设计底座、Accumulated Context 的 Decisions 与 Pending Todos、Blockers/Concerns、Deferred Items。
 
@@ -767,6 +767,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 | 260806-s8k | 蓝图 markdown 渲染器把仓库渲染成仓名而非 UUID：从 `repo_associations` 建 id→仓名映射（⛔ 不加参数，签名断言守住「未经确认」标注不可关闭；⛔ 零 DB），覆盖现状分析标题 + 实现项/功能模块/API 契约/影响范围四张表；一处修复同时生效于飞书导出、`current_version_markdown` 与 MCP `get_technical_blueprint`。真实蓝图实测漏 UUID 行数 39→0，39 单测全绿 | 2026-08-06 | (pending) | [260806-s8k-markdown-uuid](./quick/260806-s8k-markdown-uuid/) |
 | 260806-vqh | AI 审查 finding 的 `[rule_id]` 前缀汉化：22 条规则中文标签 + 展示层剥前缀渲染成徽标（⛔ 不动后端那行——`BlueprintThread` 无 rule_id 字段，跨轮去重靠 `_RULE_ID_TAG` 从首条消息反查，改中文会让 BLOCKER 永久挡住 confirm，114-MN-03 事故形态）；未知 id 回落原样、中文前缀不误剥；历史线程零迁移生效。真实数据 45 条带前缀消息全部命中标签，565 单测全绿 | 2026-08-06 | (pending) | [260806-vqh-ai-finding-rule-id](./quick/260806-vqh-ai-finding-rule-id/) |
 | 260806-sif | 项目页与技术方案职责收敛：① 项目资料面板移除「交付物版本轨」区块（蓝图卡成项目侧唯一技术方案入口，ArtifactTimeline 组件保留给知识库页）；② 新蓝图创建时把同项目旧活跃蓝图（researching/drafting/pending_review/confirmed 四态）经 lifecycle service 标 superseded（best-effort，「一项目一份活跃蓝图」创建入口兜底）；③ 蓝图 confirmed 后把 api_contracts 中 provided+http 契约回流 ProjectStateApi（planned/agent，get_or_create 不覆盖现状条目，defer_materialize 批量物化）；73 单测全绿 | 2026-08-06 | c6472382 / 98cb93c9 / b46710a9 | [260806-sif-supersede-api-api](./quick/260806-sif-supersede-api-api/) |
+| 260807-1s3 | 分仓方案 claude resume 闭环最后一块：explore 模式容器（蓝图调研/拟方案全走它）completed 帧此前不带 sdk_session_id/sdk_transcript ⇒ SubAgentSession 留痕恒空、`_aresume_env` 永远查不到可续会话——现照 execute 模式同款上传 transcript；服务端留痕/注入/容器还原（Phase 120）零改动即闭环。顺带修 explore completed 帧在途 hunk 留下的红测（fixture 缺 report_completed AsyncMock）。task 270 单测全绿，`make build-task` 已重建镜像 | 2026-08-07 | c8b0b9d2 | [260807-1s3-explore-sdk-transcript-resume](./quick/260807-1s3-explore-sdk-transcript-resume/) |
 
 ## Deferred Items
 
