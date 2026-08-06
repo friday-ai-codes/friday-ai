@@ -43,6 +43,12 @@ class RepoRouterV2Adapter:
         if not query:
             return {"candidates": [], "router_version": "skipped", "auto_selected": False}
 
+        # 固定路由（repo binding pin）：项目已在项目级手动绑定仓库+分支 → 人工关联即
+        # 最终裁决，跳过 RepoRouterV2（检索 + LLM），候选集就是绑定仓。
+        pinned = await self._aresolve_pinned(session)
+        if pinned is not None:
+            return pinned
+
         repository_ids = await self._resolve_repository_ids(session)
         grouping_repository_ids = await self._resolve_grouping_repository_ids(session)
         result = await RepoRouterV2.route(
@@ -72,6 +78,46 @@ class RepoRouterV2Adapter:
             "block_order": result.block_order,
             "degrade_reason": result.degrade_reason,
             "snapshot": result.snapshot,
+        }
+
+    async def _aresolve_pinned(self, session: ConvergenceSession) -> dict | None:
+        """项目手动绑定的固定路由结果（无绑定返回 ``None`` → 走既有自动路由）。
+
+        绑定仓一律 ``confidence="high"`` / ``group=in_project`` / ``trust=trusted``
+        （人工关联即最高置信）；``router_version="project_binding"`` 标识本次未经
+        自动路由，``auto_selected=True``（无需人工再选仓）。无 snapshot 键——
+        固定路由没有 stage0/stage1 材料，``_h_route`` 走精简 payload 分支。
+        """
+        from codegraph.services.repo_router_ranking import (
+            GROUP_GLOBAL,
+            GROUP_IN_PROJECT,
+            TRUST_TRUSTED,
+        )
+        from services.process_runtime.repo_binding_pin import (
+            PINNED_ROUTER_VERSION,
+            asession_pinned_bindings,
+        )
+
+        bindings = await asession_pinned_bindings(session)
+        if not bindings:
+            return None
+        return {
+            "candidates": [
+                {
+                    "repo_id": b["repository_id"],
+                    "confidence": "high",
+                    "repository_name": b["repository_name"],
+                    "group": GROUP_IN_PROJECT,
+                    "trust": TRUST_TRUSTED,
+                    "pinned_branch": b["branch_name"],
+                }
+                for b in bindings
+            ],
+            "router_version": PINNED_ROUTER_VERSION,
+            "auto_selected": True,
+            "degraded": False,
+            "block_order": [GROUP_IN_PROJECT, GROUP_GLOBAL],
+            "degrade_reason": "",
         }
 
     async def _resolve_repository_ids(self, session: ConvergenceSession) -> list[str] | None:
