@@ -41,4 +41,3 @@ docs/
 # Misc
 *.log
 .DS_Store
-uv.lock
