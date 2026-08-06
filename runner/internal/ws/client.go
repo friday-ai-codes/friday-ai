@@ -226,6 +226,11 @@ func connectAndServe(ctx context.Context, cfg Config, cb CallbackService, queue 
 	}
 	defer c.CloseNow()
 
+	// coder/websocket 默认读取上限 32KB；task.dispatch 帧携带完整 prompt（需求全文 +
+	// 调研结论 + 章程），大需求下轻松超限 —— 超限时库直接断连（"message too big"），
+	// 该任务派发静默丢失且触发整条连接重连（实测：同一大仓的分仓派发 100% 丢失）。
+	c.SetReadLimit(64 << 20)
+
 	hello := NewRequest(TypeRunnerHello, map[string]any{
 		"name": cfg.Name, "version": cfg.Version, "concurrent": cfg.Concurrent,
 		// 重连时上报仍在跑的任务，server 据此跳过重派发（避免重复容器）。
