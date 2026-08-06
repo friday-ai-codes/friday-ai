@@ -334,8 +334,9 @@ export function sidebarKindGroups(
   }
   for (const thread of [...anchored, ...orphaned]) {
     // kind 不在四个枚举内的线程丢弃（防御性，现状不会出现）。
-    const bucket = (groups as Record<string, BlueprintThreadDetail[] | undefined>)[thread?.kind]
-    bucket?.push(thread)
+    const kind = thread?.kind as keyof SidebarKindGroups
+    if (kind in groups)
+      groups[kind].push(thread)
   }
   return {
     ai_clarification: sortInKindGroup(groups.ai_clarification),
