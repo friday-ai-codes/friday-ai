@@ -57,7 +57,7 @@ Plan: —
 Status: 15 条需求中 14 条完全交付、1 条（LIVE-04 的「推送」）部分交付——落的是增量轮询而非推送通道，已在 REQUIREMENTS.md 与 ROADMAP.md 显式登记
 遗留工作项: ① 蓝图推送通道（WS consumer 或 artifact 级 SSE，`useBlueprintLive.ts` 是唯一切换点，LIVE-04 的未达半边）；② 人工验收（真实飞书卡片重推 / 真实容器 resume / 浏览器视觉走查）；③ 未打 tag（与 v0.19.0、v0.20.0 一致）。逐条证据见 [milestones/v0.21.0-VERIFICATION.md](./milestones/v0.21.0-VERIFICATION.md)
 Status: 两个里程碑均判 `tech_debt`、均未打 tag；同步点 1/2 已达成，**同步点 2 的顺延工作项已全部执行完毕**（GATE-01 闭合），其余独立工作项待执行
-Last activity: 2026-08-06 — Completed quick task 260806-s8k: 蓝图 markdown 渲染器把仓库渲染成仓名而非 UUID（导出/时间线/MCP 三面共用同一渲染器，一处修复三处生效）
+Last activity: 2026-08-06 — Completed quick task 260806-vqh: AI 审查 finding 的 `[rule_id]` 前缀汉化成中文标签（展示层剥离，后端机器索引不动）
 
 > 相位执行期的逐 plan 状态存档（各 plan 的收口记录与「开工前必读」清单）随归档移出本文件 —— 权威副本在 `.planning/milestones/v0.{19,20}.0-phases/<phase>/<plan>-SUMMARY.md`，历史版本在 git。**仍然有效的跨里程碑信息全部保留在下方**：两个里程碑的关键约束/设计底座、Accumulated Context 的 Decisions 与 Pending Todos、Blockers/Concerns、Deferred Items。
 
@@ -765,6 +765,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 | 260806-r7z | 蓝图查看页段落跳转/gate/质量卡的 2s 命中高亮环加 ring-offset-8 + 背景色填充，环与内容之间留出呼吸边距（原先环贴内容边界，标题像顶死在框上）；30 条页面单测全绿 | 2026-08-06 | (pending) | [260806-r7z-ring-offset](./quick/260806-r7z-ring-offset/) |
 | 260806-tsb | 蓝图批注侧栏视觉整改：吸顶偏移改为实测头高（修圆角被头部盖住）、card 内加常驻面板头（标题+计数+收起）、「AI 提问」等分组头 sticky 吸顶带 kind 色点、线程卡重设计（组内隐藏 kind 徽标、去「未分级」、紧凑时间戳、13px/leading-6 行高、左色条引文与答案）；328 单测 + 11 条视觉 e2e 全绿 | 2026-08-06 | (pending) | [260806-tsb-thread-sidebar-restyle](./quick/260806-tsb-thread-sidebar-restyle/) |
 | 260806-s8k | 蓝图 markdown 渲染器把仓库渲染成仓名而非 UUID：从 `repo_associations` 建 id→仓名映射（⛔ 不加参数，签名断言守住「未经确认」标注不可关闭；⛔ 零 DB），覆盖现状分析标题 + 实现项/功能模块/API 契约/影响范围四张表；一处修复同时生效于飞书导出、`current_version_markdown` 与 MCP `get_technical_blueprint`。真实蓝图实测漏 UUID 行数 39→0，39 单测全绿 | 2026-08-06 | (pending) | [260806-s8k-markdown-uuid](./quick/260806-s8k-markdown-uuid/) |
+| 260806-vqh | AI 审查 finding 的 `[rule_id]` 前缀汉化：22 条规则中文标签 + 展示层剥前缀渲染成徽标（⛔ 不动后端那行——`BlueprintThread` 无 rule_id 字段，跨轮去重靠 `_RULE_ID_TAG` 从首条消息反查，改中文会让 BLOCKER 永久挡住 confirm，114-MN-03 事故形态）；未知 id 回落原样、中文前缀不误剥；历史线程零迁移生效。真实数据 45 条带前缀消息全部命中标签，565 单测全绿 | 2026-08-06 | (pending) | [260806-vqh-ai-finding-rule-id](./quick/260806-vqh-ai-finding-rule-id/) |
 
 ## Deferred Items
 
