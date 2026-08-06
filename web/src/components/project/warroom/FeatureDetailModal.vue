@@ -96,7 +96,7 @@ const STATE_LABEL: Record<string, string> = {
       </span>
       <div class="min-w-0 flex-1">
         <h2 class="text-base font-semibold text-foreground break-words">
-          <InlineMarkdown :text="node.name" />
+          <InlineMarkdown plain :text="node.name" />
         </h2>
         <p class="text-xs text-muted-foreground">
           {{ node.module_normalized ? `${node.module_normalized} · ` : '' }}功能点详情
