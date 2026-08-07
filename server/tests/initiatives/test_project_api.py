@@ -154,6 +154,69 @@ def test_illegal_status_transition_returns_400(space, space_admin) -> None:
     assert resp.status_code == 400
 
 
+def test_list_ordered_newest_first_and_plain_array(space, space_admin) -> None:
+    """不带 limit：保持数组响应（既有调用方零改动），按 created_at 倒序。"""
+    client = _client(space_admin)
+    for i in range(3):
+        client.post(
+            "/api/projects/",
+            {"space_id": str(space.id), "name": f"P{i}", "feishu_project_key": f"order-k{i}"},
+            format="json",
+        )
+    resp = client.get("/api/projects/")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body, list)
+    created = [p["created_at"] for p in body]
+    assert created == sorted(created, reverse=True)
+
+
+def test_list_with_limit_returns_paginated_envelope(space, space_admin) -> None:
+    """带 limit：返回 {results, total, limit, offset} 分页包，切片与总数正确。"""
+    client = _client(space_admin)
+    for i in range(5):
+        client.post(
+            "/api/projects/",
+            {"space_id": str(space.id), "name": f"PG{i}", "feishu_project_key": f"page-k{i}"},
+            format="json",
+        )
+    resp = client.get("/api/projects/", {"limit": "2", "offset": "0"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 5
+    assert body["limit"] == 2
+    assert body["offset"] == 0
+    assert len(body["results"]) == 2
+    # 倒序：第一页第一条是最后创建的
+    assert body["results"][0]["name"] == "PG4"
+
+    # 翻页无重叠、无遗漏
+    resp2 = client.get("/api/projects/", {"limit": "2", "offset": "2"})
+    ids_page1 = {p["id"] for p in body["results"]}
+    ids_page2 = {p["id"] for p in resp2.json()["results"]}
+    assert not (ids_page1 & ids_page2)
+
+    # 越过末尾：results 为空但 total 不变
+    resp3 = client.get("/api/projects/", {"limit": "2", "offset": "10"})
+    assert resp3.json()["results"] == []
+    assert resp3.json()["total"] == 5
+
+
+def test_list_pagination_params_are_sanitized(space, space_admin) -> None:
+    """非法 limit/offset 回退默认值而非 500。"""
+    client = _client(space_admin)
+    client.post(
+        "/api/projects/",
+        {"space_id": str(space.id), "name": "S", "feishu_project_key": "san-k"},
+        format="json",
+    )
+    resp = client.get("/api/projects/", {"limit": "abc", "offset": "-3"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["limit"] == 24
+    assert body["offset"] == 0
+
+
 def test_add_member_via_api(space, space_admin) -> None:
     client = _client(space_admin)
     pid = client.post(
