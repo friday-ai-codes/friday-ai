@@ -76,6 +76,20 @@ export const TOOL_LABELS: Record<string, string> = {
   get_work_item_detail: '需求详情',
   list_related_work_items: '关联需求',
   add_work_item_comment: '添加需求评论',
+  // 交付知识库 / 学习案例（knowledge）
+  search_delivery_knowledge: '交付知识检索',
+  get_entity_timeline: '实体时间线',
+  get_related_entities: '关联实体',
+  search_learning_cases: '学习案例检索',
+  search_project_context: '项目上下文检索',
+  read_project_doc: '读取项目文档',
+  // 功能清单 / 仓库关联
+  split_feature_list_to_boards: '拆分功能清单',
+  save_project_feature_list: '保存功能清单',
+  associate_repos: '关联仓库',
+  // 方案结构化提交
+  submit_technical_plan: '提交技术方案',
+  request_clarification: '澄清提问',
 }
 
 /** 工具名 → 对应的 lucide 图标（process 列表里每行左侧的语义图标）。 */
@@ -98,6 +112,12 @@ export const TOOL_ICONS: Record<string, string> = {
   list_related_work_items: 'icon-[lucide--clipboard-list]',
   start_plan_research: 'icon-[lucide--workflow]',
   start_feature_solution: 'icon-[lucide--workflow]',
+  search_delivery_knowledge: 'icon-[lucide--library]',
+  get_entity_timeline: 'icon-[lucide--history]',
+  get_related_entities: 'icon-[lucide--network]',
+  search_learning_cases: 'icon-[lucide--graduation-cap]',
+  search_project_context: 'icon-[lucide--search]',
+  read_project_doc: 'icon-[lucide--file-text]',
 }
 
 export function bareName(name: string): string {
@@ -541,6 +561,33 @@ export function toolAction(
       return requirement
         ? `编排「${truncate(requirement, 32)}」`
         : TOOL_LABELS[bare]
+    }
+    // 交付知识库 / 学习案例 / 项目上下文：统一「检索『query』· 命中 N 条」
+    case 'search_delivery_knowledge':
+    case 'search_learning_cases':
+    case 'search_project_context': {
+      const q = (input?.query as string) || ''
+      const parsed = parseResult(result)
+      const output = (parsed?.output as Record<string, unknown> | undefined) ?? parsed
+      const total = typeof output?.total === 'number' ? output.total : null
+      const base = q ? `检索「${truncate(q, 32)}」` : TOOL_LABELS[bare]
+      return total !== null ? `${base} · 命中 ${total} 条` : base
+    }
+    case 'get_entity_timeline': {
+      const eid = String(input?.entity_id ?? '')
+      const short = eid.length > 8 ? `${eid.slice(0, 8)}…` : eid
+      const suffix = input?.include_superseded === true ? '（含已取代版本）' : ''
+      return short ? `查询实体 ${short} 的演进时间线${suffix}` : `查询实体演进时间线${suffix}`
+    }
+    case 'get_related_entities': {
+      const eid = String(input?.entity_id ?? '')
+      const short = eid.length > 8 ? `${eid.slice(0, 8)}…` : eid
+      const hops = typeof input?.max_hops === 'number' ? `（${input.max_hops} 跳内）` : ''
+      return short ? `查询实体 ${short} 的关联实体${hops}` : `查询关联实体${hops}`
+    }
+    case 'read_project_doc': {
+      const docType = (input?.doc_type as string) || ''
+      return docType ? `读取工作区文档：${docType}` : '读取项目文档'
     }
     default: {
       const entries = Object.entries(input || {}).slice(0, 2)
