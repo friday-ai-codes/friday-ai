@@ -21,7 +21,7 @@ vi.mock('~/stores/auth', () => ({
 
 const listMock = vi.fn()
 vi.mock('~/api/projects', () => ({
-  projectsApi: { list: (...a: unknown[]) => listMock(...a) },
+  projectsApi: { listPaged: (...a: unknown[]) => listMock(...a) },
 }))
 vi.mock('~/api/spaces', () => ({
   default: { list: vi.fn().mockResolvedValue([{ id: 's1', name: '空间一' }]) },
@@ -41,6 +41,11 @@ vi.mock('~/api', () => ({
 }))
 
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhCN as any } })
+
+/** 包装成后端分页包（listPaged 响应形状）。 */
+function makePage(results: Record<string, unknown>[], total = results.length) {
+  return { results, total, limit: 24, offset: 0 }
+}
 
 function makeProject(overrides: Record<string, unknown> = {}) {
   return {
@@ -83,7 +88,7 @@ describe('/projects 项目列表页', () => {
   })
 
   it('渲染筛选栏与创建入口（真实 zh-CN 文案）', async () => {
-    listMock.mockResolvedValue([makeProject()])
+    listMock.mockResolvedValue(makePage([makeProject()]))
     const wrapper = mountPage()
     await flushPromises()
     const text = wrapper.text()
@@ -94,7 +99,7 @@ describe('/projects 项目列表页', () => {
   })
 
   it('数据渲染项目卡片', async () => {
-    listMock.mockResolvedValue([makeProject(), makeProject({ id: 'p2', name: '支付重构' })])
+    listMock.mockResolvedValue(makePage([makeProject(), makeProject({ id: 'p2', name: '支付重构' })]))
     const wrapper = mountPage()
     await flushPromises()
     const cards = wrapper.findAll('[data-testid="project-card"]')
@@ -106,7 +111,7 @@ describe('/projects 项目列表页', () => {
   })
 
   it('空态渲染引导文案', async () => {
-    listMock.mockResolvedValue([])
+    listMock.mockResolvedValue(makePage([]))
     const wrapper = mountPage()
     await flushPromises()
     expect(wrapper.text()).toContain(zhCN.projects.empty)
@@ -122,7 +127,7 @@ describe('/projects 项目列表页', () => {
 
   it('localStorage 记忆的所选空间驱动列表查询（space_id 生效）', async () => {
     localStorage.setItem('projects-selected-space', 's1')
-    listMock.mockResolvedValue([makeProject()])
+    listMock.mockResolvedValue(makePage([makeProject()]))
     mountPage()
     await flushPromises()
     expect(listMock).toHaveBeenCalled()
@@ -131,7 +136,7 @@ describe('/projects 项目列表页', () => {
   })
 
   it('无记忆时默认全部空间（filters 不含 space_id）', async () => {
-    listMock.mockResolvedValue([makeProject()])
+    listMock.mockResolvedValue(makePage([makeProject()]))
     mountPage()
     await flushPromises()
     expect(listMock).toHaveBeenCalled()
@@ -140,7 +145,7 @@ describe('/projects 项目列表页', () => {
   })
 
   it('状态筛选控件渲染（按状态筛选入口存在）', async () => {
-    listMock.mockResolvedValue([makeProject()])
+    listMock.mockResolvedValue(makePage([makeProject()]))
     const wrapper = mountPage()
     await flushPromises()
     // 状态筛选 trigger 以真实 zh-CN aria-label 暴露
@@ -149,7 +154,7 @@ describe('/projects 项目列表页', () => {
   })
 
   it('成员筛选：勾选「仅我参与」驱动 filters.member', async () => {
-    listMock.mockResolvedValue([makeProject()])
+    listMock.mockResolvedValue(makePage([makeProject()]))
     const wrapper = mountPage()
     await flushPromises()
     // reka-ui Checkbox 渲染为 button[role=checkbox]，点击切换 v-model。
@@ -161,8 +166,24 @@ describe('/projects 项目列表页', () => {
     expect(calledFilters).toMatchObject({ member: 'u1' })
   })
 
+  it('无限滚动：还有下一页时渲染加载哨兵，单页装完则不渲染', async () => {
+    // total=30 > 已加载 1 条 → 有下一页，哨兵挂载
+    listMock.mockResolvedValue(makePage([makeProject()], 30))
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="load-more-sentinel"]').exists()).toBe(true)
+    wrapper.unmount()
+
+    // total=1 全部装完 → 无下一页，哨兵不挂载
+    listMock.mockResolvedValue(makePage([makeProject()], 1))
+    const wrapper2 = mountPage()
+    await flushPromises()
+    expect(wrapper2.find('[data-testid="load-more-sentinel"]').exists()).toBe(false)
+    wrapper2.unmount()
+  })
+
   it('全局搜索：展开面板、搜索结果渲染并标注 repo/project 定位', async () => {
-    listMock.mockResolvedValue([makeProject()])
+    listMock.mockResolvedValue(makePage([makeProject()]))
     searchMock.mockResolvedValue([
       { text: '命中：登录鉴权改造方案', score: 0.92, locator: '仓库 auth-svc / 登录重构' },
     ])
@@ -194,7 +215,7 @@ describe('/projects 项目列表页', () => {
   })
 
   it('全局搜索：无结果落空态文案「没有匹配的内容」', async () => {
-    listMock.mockResolvedValue([makeProject()])
+    listMock.mockResolvedValue(makePage([makeProject()]))
     searchMock.mockResolvedValue([])
     const wrapper = mountPage()
     await flushPromises()

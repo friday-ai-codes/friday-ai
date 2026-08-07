@@ -57,6 +57,27 @@ export interface ProjectListFilters {
   q?: string
 }
 
+/** 分页响应包（请求带 limit 时后端返回；供无限滚动按需加载）。 */
+export interface ProjectPage {
+  results: Project[]
+  total: number
+  limit: number
+  offset: number
+}
+
+function filterParams(filters: ProjectListFilters): Record<string, string> {
+  const params: Record<string, string> = {}
+  if (filters.space_id)
+    params.space_id = filters.space_id
+  if (filters.status)
+    params.status = filters.status
+  if (filters.member)
+    params.member = filters.member
+  if (filters.q)
+    params.q = filters.q
+  return params
+}
+
 /** 项目关联工作项摘要（COMPOSE-01/02）。 */
 export interface ProjectWorkItem {
   id: string
@@ -118,18 +139,19 @@ export interface ProjectRepoLink {
 
 export const projectsApi = {
   /** 列出对当前用户可见的项目（支持 space_id/status/member/q 筛选）。 */
-  list: (filters: ProjectListFilters = {}): Promise<Project[]> => {
-    const params: Record<string, string> = {}
-    if (filters.space_id)
-      params.space_id = filters.space_id
-    if (filters.status)
-      params.status = filters.status
-    if (filters.member)
-      params.member = filters.member
-    if (filters.q)
-      params.q = filters.q
-    return get<Project[]>('/projects/', params)
-  },
+  list: (filters: ProjectListFilters = {}): Promise<Project[]> =>
+    get<Project[]>('/projects/', filterParams(filters)),
+
+  /** 分页列出项目（created_at 倒序；供列表页无限滚动按需加载）。 */
+  listPaged: (
+    filters: ProjectListFilters = {},
+    page: { limit: number, offset: number },
+  ): Promise<ProjectPage> =>
+    get<ProjectPage>('/projects/', {
+      ...filterParams(filters),
+      limit: String(page.limit),
+      offset: String(page.offset),
+    }),
 
   /** 项目详情。 */
   get: (id: string): Promise<Project> => get<Project>(`/projects/${id}/`),

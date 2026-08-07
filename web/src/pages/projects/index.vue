@@ -2,8 +2,8 @@
 import type { Project, ProjectListFilters, ProjectStatus } from '~/api/projects'
 import type { BadgeVariants } from '~/components/ui/badge'
 import type { Space } from '~/types'
-import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { refDebounced, useLocalStorage } from '@vueuse/core'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/vue-query'
+import { refDebounced, useIntersectionObserver, useLocalStorage } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { computed, markRaw, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -82,12 +82,40 @@ const filters = computed<ProjectListFilters>(() => {
   return f
 })
 
-const { data, isLoading, isError, refetch } = useQuery({
+// 无限滚动分页：后端 created_at 倒序 + limit/offset 分页包，滚近底部自动加载下一页。
+const PAGE_SIZE = 24
+
+const {
+  data,
+  isLoading,
+  isError,
+  refetch,
+  fetchNextPage,
+  hasNextPage,
+  isFetchingNextPage,
+} = useInfiniteQuery({
   queryKey: ['projects', filters],
-  queryFn: () => projectsApi.list(filters.value),
+  queryFn: ({ pageParam }) =>
+    projectsApi.listPaged(filters.value, { limit: PAGE_SIZE, offset: pageParam }),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => {
+    const next = lastPage.offset + lastPage.results.length
+    return next < lastPage.total ? next : undefined
+  },
 })
 
-const projects = computed<Project[]>(() => data.value ?? [])
+const projects = computed<Project[]>(() => data.value?.pages.flatMap(p => p.results) ?? [])
+
+// 哨兵进入视口（含 400px 预取余量）即拉下一页，实现"无感"按需加载。
+const loadMoreRef = ref<HTMLElement | null>(null)
+useIntersectionObserver(
+  loadMoreRef,
+  ([entry]) => {
+    if (entry?.isIntersecting && hasNextPage.value && !isFetchingNextPage.value)
+      fetchNextPage()
+  },
+  { rootMargin: '400px 0px' },
+)
 const isEmpty = computed(() => projects.value.length === 0)
 const isFiltered = computed(() =>
   spaceFilter.value !== ALL
@@ -233,7 +261,7 @@ async function openCreate() {
       @action="openCreate"
     />
 
-    <!-- 项目卡片网格 -->
+    <!-- 项目卡片网格（无限滚动：滚近底部哨兵自动加载下一页） -->
     <div v-else class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
       <RouterLink
         v-for="p in projects"
@@ -287,6 +315,19 @@ async function openCreate() {
           </span>
         </div>
       </RouterLink>
+    </div>
+
+    <!-- 加载哨兵：hasNextPage 时挂载，进入视口触发 fetchNextPage -->
+    <div
+      v-if="!isLoading && !isError && hasNextPage"
+      ref="loadMoreRef"
+      data-testid="load-more-sentinel"
+      class="flex items-center justify-center h-12"
+    >
+      <span
+        v-if="isFetchingNextPage"
+        class="icon-[lucide--loader-2] animate-spin text-muted-foreground"
+      />
     </div>
   </PageContainer>
 </template>
