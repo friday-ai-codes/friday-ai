@@ -124,6 +124,11 @@ class ProjectListCreateView(APIView):
 
         可选筛选 query 参数（additive，缺省 = 现状）：``space_id`` / ``status`` /
         ``member``(user_id) / ``q``(名称/描述关键词)。
+
+        可选分页（additive）：带 ``limit``（1..100）时返回
+        ``{results, total, limit, offset}`` 分页包，供前端无限滚动按需加载；
+        不带 ``limit`` 保持原始数组响应，既有调用方零改动。
+        统一按 ``created_at`` 倒序（越新越靠前）。
         """
         user = request.user
         filters = {
@@ -132,19 +137,42 @@ class ProjectListCreateView(APIView):
             "member": request.query_params.get("member") or "",
             "q": (request.query_params.get("q") or "").strip(),
         }
+        limit_raw = request.query_params.get("limit") or ""
+        if limit_raw:
+            limit = self._parse_int(limit_raw, default=24, lo=1, hi=100)
+            offset = self._parse_int(
+                request.query_params.get("offset") or "", default=0, lo=0
+            )
+            projects, total = await self._list_visible_page(user, filters, limit, offset)
+            data = await sync_to_async(
+                lambda: ProjectSerializer(projects, many=True).data
+            )()
+            return Response(
+                {"results": data, "total": total, "limit": limit, "offset": offset}
+            )
         projects = await self._list_visible(user, filters)
         data = await sync_to_async(
             lambda: ProjectSerializer(projects, many=True).data
         )()
         return Response(data)
 
-    @sync_to_async
-    def _list_visible(self, user, filters: dict[str, str]) -> list[Project]:
+    @staticmethod
+    def _parse_int(raw: str, *, default: int, lo: int, hi: int | None = None) -> int:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return default
+        if value < lo:
+            return lo
+        if hi is not None and value > hi:
+            return hi
+        return value
+
+    def _visible_qs(self, user, filters: dict[str, str]):
+        """可见性 + 筛选 queryset；显式倒序（join + distinct 下不依赖模型默认排序）。"""
         from django.db.models import Q
 
         qs = Project.objects.select_related("space").prefetch_related("members")
-        if not user.is_authenticated:
-            return []
         if not user.is_superuser:
             # Space 成员可见 OR 项目成员可见
             qs = qs.filter(
@@ -160,7 +188,23 @@ class ProjectListCreateView(APIView):
         if filters.get("q"):
             q = filters["q"]
             qs = qs.filter(Q(name__icontains=q) | Q(description__icontains=q))
-        return list(qs.distinct())
+        return qs.distinct().order_by("-created_at")
+
+    @sync_to_async
+    def _list_visible(self, user, filters: dict[str, str]) -> list[Project]:
+        if not user.is_authenticated:
+            return []
+        return list(self._visible_qs(user, filters))
+
+    @sync_to_async
+    def _list_visible_page(
+        self, user, filters: dict[str, str], limit: int, offset: int
+    ) -> tuple[list[Project], int]:
+        if not user.is_authenticated:
+            return [], 0
+        qs = self._visible_qs(user, filters)
+        total = qs.count()
+        return list(qs[offset : offset + limit]), total
 
     async def post(self, request):
         """创建项目（PROJ-05）。需所属 Space admin+ 权限；(space, feishu_project_key) 幂等。"""
