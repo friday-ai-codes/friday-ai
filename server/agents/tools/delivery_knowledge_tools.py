@@ -148,6 +148,10 @@ async def search_delivery_knowledge(
             entity_kinds=validated.entity_kinds or None,
             as_of=as_of_dt,
             include_superseded=validated.include_superseded,
+            # KDEP-02 同款取舍（knowledge/api/views.py 先例）：工件/物化文档/上线记录是
+            # kind=document 实体，不开此 flag 在本工具永远召不回。权限不放宽——recall 仍受
+            # allowed_project_ids/allowed_repository_ids 收口。
+            include_document_kind=True,
         )
     except Exception as exc:
         logger.exception("delivery_knowledge_search_failed", error=str(exc))

@@ -156,6 +156,9 @@ class DeliveryKnowledgeSearchNode(BaseNode):
                 entity_kinds=entity_kinds,
                 as_of=as_of,
                 include_superseded=bool(config.get("include_superseded")),
+                # KDEP-02 同款取舍：工件/物化文档/上线记录是 kind=document 实体，
+                # 不开此 flag 在本节点永远召不回。权限不放宽。
+                include_document_kind=True,
             )
             serialized = serialize_search_results(results)
             formatted = format_search_results_markdown(results, as_of=as_of)
