@@ -1425,11 +1425,18 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
       </div>
 
       <!--
-        流式但 displayParts 为空 → 显示打字光标占位。
+        流式但 displayParts 为空 → 显示「正在思考」占位。
+        这段空档在上游开始下发内容前可长达数秒，一个孤零零的闪烁光标观感等同卡死。
+        触发条件不依赖任何后端事件，因此 SSE 一通（~130ms）占位就在；
+        首个 thinking / text part 到达后 groupedDisplayItems 非空，占位自动让位。
         正文 markdown 已经由上方 parts-flow 中 text part 直接渲染（顶层 ai-prose），
         不再需要独立的 ai-prose 块。
       -->
-      <div v-if="isStreaming && !suppressTypingCursor && groupedDisplayItems.length === 0" class="flex items-center py-2">
+      <div v-if="isStreaming && !suppressTypingCursor && groupedDisplayItems.length === 0" class="thinking-placeholder">
+        <span class="thinking-icon animate-pulse">
+          <span class="icon-[lucide--sparkles] text-[10px]" />
+        </span>
+        <span class="thinking-placeholder-text">正在思考</span>
         <span class="typing-cursor" />
       </div>
       <span v-else-if="isStreaming && !suppressTypingCursor" class="typing-cursor" />
@@ -2238,6 +2245,17 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
 }
 
 /* ============ Typing Cursor ============ */
+.thinking-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0;
+}
+.thinking-placeholder-text {
+  font-size: 0.8125rem;
+  color: hsl(215 16% 47%);
+}
+
 .typing-cursor {
   display: inline-block;
   width: 2px;
