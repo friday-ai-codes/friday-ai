@@ -165,6 +165,39 @@ async def test_arun_route_stage_accepts_upstream_spec() -> None:
     assert session.stage_state["requirement_spec"] == _spec()
 
 
+# ── stub session 的发起用户（历史分量按 created_by 做权限 fail-closed）──────
+
+
+async def test_stub_session_exposes_created_by_from_initiated_user() -> None:
+    """``initiated_by_user_id`` 必须能经 ``session.created_by`` 解析成真实 User。
+
+    历史分量读的是 ``session.created_by``；stub 曾不定义该属性 ⇒ AttributeError 被
+    调用方宽 except 吞成 ``retrieval_error``——「没有发起用户」伪装成「检索出错」，
+    把 ``no_acting_user`` 这个专门的降级取值架空。
+    """
+    user = await _make_user("sandbox-actor")
+    adapter = _RecordingRouteAdapter()
+    await arun_route_stage(
+        requirement_text="登录页改造",
+        initiated_by_user_id=str(user.id),
+        route_adapter=adapter,
+    )
+    session = adapter.calls[0]["session"]
+    assert str(session.created_by_id) == str(user.id)
+    resolved = await sync_to_async(lambda: session.created_by)()
+    assert resolved is not None
+    assert str(resolved.id) == str(user.id)
+
+
+async def test_stub_session_created_by_is_none_without_initiated_user() -> None:
+    """无发起用户 → created_by 为 None（落 no_acting_user），绝不伪造 actor 提权。"""
+    adapter = _RecordingRouteAdapter()
+    await arun_route_stage(requirement_text="登录页改造", route_adapter=adapter)
+    session = adapter.calls[0]["session"]
+    assert session.created_by_id is None
+    assert await sync_to_async(lambda: session.created_by)() is None
+
+
 # ── spec 单跑 ──────────────────────────────────────────────────────────────
 
 
