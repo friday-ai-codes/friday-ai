@@ -651,6 +651,20 @@ const groupedDisplayItems = computed<PartsDisplayItem[]>(() => {
   return out
 })
 
+/**
+ * 流式期间是否已有可见内容。
+ *
+ * 不能直接用 `groupedDisplayItems.length === 0`：流式兜底路径
+ * （`chatStore.streamingParts` 还空着时）会由 `hydrateLegacyMessage` 合成一条
+ * `text=''` 的 text part，于是长度恒 ≥ 1 —— 等待期实际渲染的是一个空 ai-prose
+ * 加一个裸光标，而不是任何「空」分支。空 text part 必须不算内容。
+ */
+const hasVisibleContent = computed(() =>
+  groupedDisplayItems.value.some(
+    item => item.kind !== 'text' || (item.part.text || '').trim().length > 0,
+  ),
+)
+
 // 答案底部「引用仓库」图例 → 过程面板的跳转联动（结论 ↔ 证据闭环）。
 const firstProcessGroupKey = computed(() => {
   const node = groupedDisplayItems.value.find(i => i.kind === 'process-group')
@@ -1428,11 +1442,11 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
         流式但 displayParts 为空 → 显示「正在思考」占位。
         这段空档在上游开始下发内容前可长达数秒，一个孤零零的闪烁光标观感等同卡死。
         触发条件不依赖任何后端事件，因此 SSE 一通（~130ms）占位就在；
-        首个 thinking / text part 到达后 groupedDisplayItems 非空，占位自动让位。
+        首个 thinking / text part 到达后 hasVisibleContent 为真，占位自动让位。
         正文 markdown 已经由上方 parts-flow 中 text part 直接渲染（顶层 ai-prose），
         不再需要独立的 ai-prose 块。
       -->
-      <div v-if="isStreaming && !suppressTypingCursor && groupedDisplayItems.length === 0" class="thinking-placeholder">
+      <div v-if="isStreaming && !suppressTypingCursor && !hasVisibleContent" class="thinking-placeholder">
         <span class="thinking-icon animate-pulse">
           <span class="icon-[lucide--sparkles] text-[10px]" />
         </span>
