@@ -8,14 +8,17 @@ https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
 """
 
 import os
-import sys
 
-# Add server directory to sys.path for multiprocessing spawn compatibility
-# This is needed because uvicorn --reload uses multiprocessing on macOS
-server_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if server_dir not in sys.path:
-    sys.path.insert(0, server_dir)
-# Also set PYTHONPATH env var so subprocess spawns inherit it
+# `server/` 置顶（导入 friday 包时已执行一次，这里显式调用是为可读性）。
+# 旧写法是 `if server_dir not in sys.path`——editable 安装的 .pth 早已把它加在末尾，
+# 该条件恒假 ⇒ 从不置顶，靠 uvicorn 的 cwd 恰好是 server/ 才没出事。
+from friday.path_guard import SERVER_DIR, ensure_server_dir_first
+
+ensure_server_dir_first()
+
+# PYTHONPATH 另有其用：uvicorn --reload 在 macOS 走 multiprocessing spawn，
+# 子进程不继承父进程的 sys.path，只能靠环境变量传递。
+server_dir = SERVER_DIR
 if os.environ.get("PYTHONPATH"):
     if server_dir not in os.environ["PYTHONPATH"]:
         os.environ["PYTHONPATH"] = f"{server_dir}:{os.environ['PYTHONPATH']}"

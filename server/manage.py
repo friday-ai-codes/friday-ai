@@ -4,16 +4,15 @@
 import os
 import sys
 
-# 确保项目根（server/）在 sys.path 最前：site-packages 里存在第三方 `workflows`
-# 包（llama-index-workflows）与本项目的 `workflows` app 同名，若 server/ 不在最前会
-# 被其遮蔽，导致 `workflows.schemas` 等子模块 ModuleNotFoundError。显式置顶以防御任意
-# 启动方式（脚本 / 非 server 工作目录调用）下的包名冲突。
-_SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
-if sys.path and sys.path[0] != _SERVER_DIR:
-    sys.path.insert(0, _SERVER_DIR)
+# `server/` 置顶守卫（第三方 `workflows` 包遮蔽本项目 app，原因见 friday/path_guard.py）。
+# 单一实现在 friday.path_guard，此处显式调用只为「最早时机」——导入 friday 包本身
+# 也会触发同一守卫。
+from friday.path_guard import ensure_server_dir_first
+
+ensure_server_dir_first()
 
 # django-stubs monkeypatch for type checking
-import django_stubs_ext
+import django_stubs_ext  # noqa: E402 — 必须在 sys.path 守卫之后
 
 django_stubs_ext.monkeypatch()
 
