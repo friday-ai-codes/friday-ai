@@ -50,9 +50,16 @@ const props = withDefaults(defineProps<{
   groupId?: string
   /** 外部递增此值即触发展开 + 高亮闪烁（答案图例点击跳转）。 */
   expandSignal?: number
-}>(), { defaultExpanded: false })
+}>(), { defaultExpanded: true })
 
 const expanded = ref(props.defaultExpanded)
+/**
+ * 行级折叠状态按步骤类型分开记账：
+ * - thinking 行默认展开，`collapsedRows` 记录**被手动收起**的 id
+ *   （不能用「展开集合」——步骤是流式追加的，后到的行不在集合里会退回收起）。
+ * - tool 行沿用默认收起，`expandedRows` 记录被手动展开的 id。
+ */
+const collapsedRows = ref<Set<string>>(new Set())
 const expandedRows = ref<Set<string>>(new Set())
 const flashing = ref(false)
 
@@ -96,11 +103,17 @@ function toggleContainer() {
   userToggled.value = true
   expanded.value = !expanded.value
 }
-function toggleRow(id: string) {
-  if (expandedRows.value.has(id))
-    expandedRows.value.delete(id)
+function rowExpanded(step: ProcessStep): boolean {
+  if (step.kind === 'thinking')
+    return !collapsedRows.value.has(step.id)
+  return expandedRows.value.has(step.id)
+}
+function toggleRow(step: ProcessStep) {
+  const bucket = step.kind === 'thinking' ? collapsedRows : expandedRows
+  if (bucket.value.has(step.id))
+    bucket.value.delete(step.id)
   else
-    expandedRows.value.add(id)
+    bucket.value.add(step.id)
 }
 
 const headerTitle = computed(() => (isRunning.value ? '分析中' : '分析过程'))
@@ -128,8 +141,9 @@ function isRelevanceStep(step: ProcessStep): boolean {
   return step.kind === 'tool' && bareName(step.name) === 'analyze_repository_relevance'
 }
 function rowExpandable(step: ProcessStep): boolean {
+  // 思考行恒可切换：行头只是 90 字符单行摘要，短思考同样需要能看到全文。
   if (step.kind === 'thinking')
-    return step.text.trim().length > 90 || step.text.includes('\n')
+    return true
   if (isRelevanceStep(step) && relevanceCandidates(step.result).length > 0)
     return true
   const hasInput = !!(step.input && Object.keys(step.input).length > 0)
@@ -186,14 +200,14 @@ const lastStepText = computed(() => {
             v-for="step in steps"
             :key="step.id"
             class="tpg-row"
-            :class="[`tpg-row--${step.kind}`, { 'is-open': expandedRows.has(step.id) }]"
+            :class="[`tpg-row--${step.kind}`, { 'is-open': rowExpanded(step) }]"
           >
             <button
               type="button"
               class="tpg-row-head"
               :class="{ 'is-interactive': rowExpandable(step) }"
               :disabled="!rowExpandable(step)"
-              @click="rowExpandable(step) && toggleRow(step.id)"
+              @click="rowExpandable(step) && toggleRow(step)"
             >
               <span class="tpg-row-rail">
                 <span
@@ -208,11 +222,11 @@ const lastStepText = computed(() => {
               <span
                 v-if="rowExpandable(step)"
                 class="icon-[lucide--chevron-right] tpg-row-caret"
-                :class="expandedRows.has(step.id) ? 'rotate-90' : ''"
+                :class="rowExpanded(step) ? 'rotate-90' : ''"
               />
             </button>
 
-            <div v-if="expandedRows.has(step.id)" class="tpg-detail">
+            <div v-if="rowExpanded(step)" class="tpg-detail">
               <!-- 思考全文 -->
               <p v-if="step.kind === 'thinking'" class="tpg-thinking">
                 {{ step.text.trim() }}
@@ -361,8 +375,6 @@ const lastStepText = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-height: 26rem;
-  overflow-y: auto;
 }
 
 .tpg-row {
