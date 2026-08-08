@@ -33,7 +33,11 @@ from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
 
-from services.model_capabilities import ModelCapabilities, ModelCapabilitiesEntry
+from services.model_capabilities import (
+    ModelCapabilities,
+    ModelCapabilitiesEntry,
+    strip_context_suffix,
+)
 from services.provider_config import (
     PROVIDER_REGISTRY,
     ProviderType,
@@ -121,6 +125,12 @@ def build_chat_model(
         ValueError: max_output_tokens 超过 capabilities.max_output_tokens 时同步抛出
             （含关键字 "exceeds model limit"，provider / model 信息冗余日志）。
     """
+    # `[1m]` 这类上下文窗口声明后缀是 **Claude Code 容器侧**语法（容器内由 Claude Code
+    # 自行解析），上游网关不认识它——带后缀直发必 model_not_found。容器 env 注入
+    # （`env_FRIDAY_TASK_CLAUDE_MODEL`）不经过本工厂，后缀在那条路径上照常保留。
+    # 剥在入口而非各调用点：本函数是所有直连 SDK 调用的单一出口，漏一处就复发。
+    model = strip_context_suffix(model)
+
     if capabilities is None:
         capabilities = ModelCapabilities.get(str(resolved.provider_type), model)
 

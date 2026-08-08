@@ -482,6 +482,41 @@ def test_secretstr_wrapping() -> None:
     assert plaintext_key not in str(model)
 
 
+# ============================================================================
+# Claude Code `[1m]` 上下文声明后缀（直连 SDK 必须剥离）
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    "provider_type,model,expected,attr",
+    [
+        (ProviderType.ANTHROPIC, "claude-opus-4-8[1m]", "claude-opus-4-8", "model"),
+        (ProviderType.ANTHROPIC, "deepseek-v4-pro[1M]", "deepseek-v4-pro", "model"),
+        (ProviderType.OPENAI_CHAT, "gpt-4o-mini[1m]", "gpt-4o-mini", "model_name"),
+        (ProviderType.ANTHROPIC, "claude-sonnet-4[200K]", "claude-sonnet-4", "model"),
+    ],
+)
+def test_context_suffix_stripped_before_upstream(
+    provider_type: ProviderType, model: str, expected: str, attr: str
+) -> None:
+    """`[1m]` 是 Claude Code 的容器侧上下文声明语法，网关不认识它。
+
+    该后缀只在 `env_FRIDAY_TASK_CLAUDE_MODEL`（容器内由 Claude Code 自行解析）有意义；
+    直连 SDK 的模型 ID 必须是剥后缀的基础名，否则网关回 model_not_found。
+    线上实测：三档映射配成 `claude-opus-4-8[1m]` 后，仓库路由 Stage 1 每次 503 → 静默降级。
+    """
+    resolved = _make_resolved(provider_type)
+    built = build_chat_model(resolved, model, timeout_seconds=5.0)
+    assert getattr(built, attr) == expected
+
+
+def test_context_suffix_absent_is_untouched() -> None:
+    """无后缀的模型名逐字不变（剥离逻辑不得误伤正常名字）。"""
+    resolved = _make_resolved(ProviderType.ANTHROPIC)
+    built = build_chat_model(resolved, "claude-sonnet-4-5-20250929", timeout_seconds=5.0)
+    assert built.model == "claude-sonnet-4-5-20250929"
+
+
 def test_no_api_key_leak_in_exception() -> None:
     """work item + security mitigation-01：max_output_tokens 超限异常消息不含 api_key 明文。"""
     plaintext_key = "sk-ant-real-secret-key-work item-LEAK"
