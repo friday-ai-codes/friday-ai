@@ -308,6 +308,34 @@ class RepoRouteResultV2:
     auto_selected_suppressed_by_alpha: bool = False
 
 
+def _is_decode_param_rejection(exc: BaseException) -> bool:
+    """上游 400 是否在拒绝 **decode 参数本身**（而非 prompt / 鉴权等真客户端错误）。
+
+    网关模型目录常年变动（同一实例上就有 81 个模型），「哪个模型不收 temperature」
+    没法靠 fixture 枚举——枚举必然滞后，且新模型上架当天就静默降级。故按上游回执
+    判定：400 且消息点名了某个 decode 参数，即认定该模型不接受这些参数，调用方据此
+    丢掉 decode 参数重试一次。
+
+    判据刻意收紧到「400 + 点名参数 + 拒绝性措辞」三者同时成立：只匹配参数名会把
+    「prompt 里恰好出现 temperature 一词」的业务性 400 误判成可重试。
+    """
+    from interactions.ledger import parse_upstream_status
+
+    status = parse_upstream_status(exc)
+    text = str(exc).lower()
+    if status is not None:
+        if status != 400:
+            return False
+    elif "400" not in text:
+        return False
+    if not any(name in text for name in _STAGE1_DECODE_PARAMS):
+        return False
+    return any(
+        word in text
+        for word in ("deprecated", "unsupported", "not supported", "unrecognized", "invalid")
+    )
+
+
 def _is_retryable_stage1_error(exc: BaseException) -> bool:
     """Stage 1 失败是否值得重试——**优先按 HTTP 状态码**，类名子串只作兜底。
 
@@ -1448,16 +1476,27 @@ class RepoRouterV2:
         # 快速失败即降级：max_retries=0 —— 路由是启发式，超时无需 3× 重试空等
         # （旧行为：langchain 默认 max_retries=2 → 30s×3≈90s 才放弃再回落 Stage 0）。
         # decode 参数全固定（temperature=0/top_p=1/固定 seed）——幂等第三道防线。
-        model = build_chat_model(
-            resolved,
-            model_name,
-            streaming=False,
-            timeout_seconds=timeout_seconds,
-            max_retries=0,
-            temperature=float(_STAGE1_DECODE_PARAMS["temperature"]),
-            top_p=float(_STAGE1_DECODE_PARAMS["top_p"]),
-            seed=int(_STAGE1_DECODE_PARAMS["seed"]),
-        )
+        def _build_stage1_model(*, with_decode_params: bool) -> Any:
+            """构造 Stage 1 模型；``with_decode_params=False`` 用于上游拒收 decode 参数后重建。"""
+            decode = (
+                {
+                    "temperature": float(_STAGE1_DECODE_PARAMS["temperature"]),
+                    "top_p": float(_STAGE1_DECODE_PARAMS["top_p"]),
+                    "seed": int(_STAGE1_DECODE_PARAMS["seed"]),
+                }
+                if with_decode_params
+                else {}
+            )
+            return build_chat_model(
+                resolved,
+                model_name,
+                streaming=False,
+                timeout_seconds=timeout_seconds,
+                max_retries=0,
+                **decode,
+            )
+
+        model = _build_stage1_model(with_decode_params=True)
 
         # 只把高分候选喂给 LLM：prompt 越短越快，尾部低分候选本就选不中；
         # Stage 0 仍保留完整候选集供降级时使用。
@@ -1567,6 +1606,9 @@ class RepoRouterV2:
             # 首调与重试共享同一截止时刻——循环外取一次，预算耗尽即刻降级。
             budget_deadline = started + total_budget_seconds
             response: Any = None
+            # 上游拒收 decode 参数后已重建过模型：只允许降级一次，避免与普通重试
+            # 共用预算时出现「丢参数 → 再丢一次」的空转。
+            decode_params_dropped = False
             for attempt in range(2):
                 remaining = budget_deadline - time.monotonic()
                 if remaining <= 0:
@@ -1607,6 +1649,29 @@ class RepoRouterV2:
                         ),
                         upstream_status_code=upstream_status,
                     )
+                    # decode 参数被拒：这是**可自愈**的 400——丢掉固定 decode 参数重建
+                    # 模型重试一次。幂等主防线是输入哈希缓存 + 排列输出，decode 固定只是
+                    # 第三道防线（105-RESEARCH），丢掉它远好过整个 Stage 1 静默降级。
+                    # 限定首次尝试：末轮 `continue` 会让循环耗尽而 response 仍为 None，
+                    # 后续 `response.content` 直接 AttributeError。
+                    if (
+                        attempt == 0
+                        and not decode_params_dropped
+                        and _is_decode_param_rejection(exc)
+                    ):
+                        decode_params_dropped = True
+                        model = _build_stage1_model(with_decode_params=False)
+                        try:
+                            logger.warning(
+                                "repo_router_v2_stage1_decode_params_dropped",
+                                model=model_name,
+                                error=redact_secrets_in_text(str(exc))[:200],
+                                category="sampling",
+                                component="repo_router_v2",
+                            )
+                        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬
+                            pass
+                        continue
                     if attempt == 1 or not _is_retryable_stage1_error(exc):
                         raise
                     try:

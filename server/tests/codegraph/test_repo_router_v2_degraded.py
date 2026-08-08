@@ -932,6 +932,102 @@ async def test_suppression_flag_false_when_nothing_to_suppress(
 # ---------------------------------------------------------------------------
 
 
+def _install_stage1_multi_build(
+    monkeypatch: pytest.MonkeyPatch, model: Any
+) -> list[dict[str, Any]]:
+    """同 ``_install_stage1_model``，但记录**每一次** build_chat_model 的 kwargs。
+
+    decode 参数回退会重建模型，断言点正是「第二次构造不再带 temperature/top_p/seed」。
+    """
+    builds: list[dict[str, Any]] = []
+
+    async def _fake_cc_rt() -> dict[str, str]:
+        return {"haiku_model": "fake-haiku"}
+
+    def _build(*_args: Any, **kwargs: Any) -> Any:
+        builds.append(kwargs)
+        return model
+
+    monkeypatch.setattr("services.provider_config.aget_claude_code_runtime_config", _fake_cc_rt)
+    monkeypatch.setattr("agents.llm_factory.build_chat_model", _build)
+    return builds
+
+
+def _decode_rejection_error() -> Exception:
+    """复刻线上回执：网关 400 + 点名 temperature 已弃用。"""
+    import httpx
+    import openai
+
+    request = httpx.Request("POST", "https://api.example.com/v1/messages")
+    response = httpx.Response(400, request=request)
+    return openai.BadRequestError(
+        "Error code: 400 - {'error': {'message': "
+        "'The request is invalid: `temperature` is deprecated for this model.'}}",
+        response=response,
+        body=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_stage1_drops_decode_params_when_upstream_rejects(
+    monkeypatch, mock_aresolve_ok
+) -> None:
+    """上游 400 拒收 decode 参数 → 丢参重建重试一次 → Stage 1 成功、**不降级**。
+
+    线上实测：网关模型 `claude-opus-4-8` 回「`temperature` is deprecated for this
+    model」。400 属不可重试类，修复前直接上抛 → Stage 1 每次静默降级 Stage 0。
+    """
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    model = _FlakyModel(_decode_rejection_error(), _llm_order_json("repo-a"), fail_times=1)
+    builds = _install_stage1_multi_build(monkeypatch, model)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.router_version == "v2"
+    assert result.degraded is False
+    # 恰好重建一次：首建带 decode 参数，重建不带
+    assert len(builds) == 2
+    assert builds[0]["temperature"] == 0.0
+    assert builds[0]["top_p"] == 1.0
+    assert builds[0]["seed"] == 42
+    for param in ("temperature", "top_p", "seed"):
+        assert param not in builds[1]
+    assert model.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_stage1_decode_rejection_only_retried_once(monkeypatch, mock_aresolve_ok) -> None:
+    """丢参后仍失败 → 正常降级，不无限重建（重试硬上界仍是 2 次调用）。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    model = _FlakyModel(_decode_rejection_error(), fail_times=99)
+    builds = _install_stage1_multi_build(monkeypatch, model)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.router_version == "v2_stage0_only"
+    assert result.degraded is True
+    assert len(builds) == 2
+    assert model.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_stage1_non_decode_400_still_raises(monkeypatch, mock_aresolve_ok) -> None:
+    """普通 400（未点名 decode 参数）仍按不可重试处理——不得被回退分支误吞。"""
+    mock_aresolve_ok()
+    _install_stage0(monkeypatch, _high_margin_hits())
+    model = _FlakyModel(_openai_status_error("BadRequestError", 400), fail_times=99)
+    builds = _install_stage1_multi_build(monkeypatch, model)
+
+    result = await RepoRouterV2.route("高三提分专项需求")
+
+    assert result.router_version == "v2_stage0_only"
+    # 只构造一次、只调一次：没有触发丢参重建
+    assert len(builds) == 1
+    assert model.calls == 1
+
+
 def _openai_status_error(kind: str, status: int) -> Exception:
     """构造带真实 ``status_code`` 的 openai SDK 异常实例。"""
     import httpx
