@@ -77,6 +77,30 @@ describe('chat store - parts dispatch ', () => {
     expect((store.streamingParts[0] as { text: string }).text).toBe('你好世界')
   })
 
+  it('2b. thinking part 的多次 part_delta 实时累加为拼接全文', () => {
+    // 前端数据层必须在思考文本还在流的时候就把它拼进 streamingParts —— 渲染层的
+    // 「默认展开、全文可见」全靠这一步；只在 part_completed 时才落全文的实现，
+    // 会让思考过程整段延迟到收尾才出现。
+    setProtocol('new')
+    const store = useChatStore()
+    store._dispatchSSE({
+      type: 'part_started',
+      index: 0,
+      part: { id: 'p_th', index: 0, type: 'thinking', state: 'streaming', text: '' },
+    })
+    for (const text of ['先确认', '索引状态，', '再枚举候选仓库'])
+      store._dispatchSSE({ type: 'part_delta', index: 0, delta_type: 'text_append', text })
+
+    expect(store.streamingParts.length).toBe(1)
+    expect(store.streamingParts[0].type).toBe('thinking')
+    expect((store.streamingParts[0] as { text: string }).text).toBe('先确认索引状态，再枚举候选仓库')
+    // 收尾前就已是全文（state 仍是 streaming）
+    expect((store.streamingParts[0] as { state: string }).state).toBe('streaming')
+
+    store._dispatchSSE({ type: 'part_completed', index: 0, part: { index: 0, state: 'done' } })
+    expect((store.streamingParts[0] as { text: string }).text).toBe('先确认索引状态，再枚举候选仓库')
+  })
+
   it('3. part_completed 标记 text part state=done', () => {
     setProtocol('new')
     const store = useChatStore()

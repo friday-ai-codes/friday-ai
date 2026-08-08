@@ -182,6 +182,55 @@ describe('chatMessageBubble parts rendering ', () => {
     expect(wrapper.html()).toContain('用户想要分析跨仓代码')
   })
 
+  it('4b. 长思考（含换行、>80 字符）默认全文可见，无首行预览截断', async () => {
+    // 🔴 这条锁的是「默认展开」而不只是「能展开」：旧实现在这种形态下渲染的是
+    // 首行 80 字符 + 省略号，第二行连同后半段一起不见 —— 不报错、不崩，
+    // 只是思考过程实际上没上屏。
+    const firstLine = `用户想要分析跨仓代码，${'需要先确认索引状态'.repeat(10)}`
+    const longText = `${firstLine}\n第二行：接着枚举候选仓库并逐个打分`
+    const wrapper = await mountBubble(makeMessage({
+      parts: [{ type: 'thinking', id: 'p1', index: 0, text: longText, state: 'done' }],
+    }))
+
+    const html = wrapper.html()
+    expect(html).not.toContain('timeline-step-text--preview')
+    expect(html).not.toContain('…')
+    // 全文两行都在 DOM 里
+    expect(wrapper.find('.timeline-step--thinking').text()).toContain(firstLine)
+    expect(wrapper.text()).toContain('第二行：接着枚举候选仓库并逐个打分')
+  })
+
+  it('4c. 用户点击思考块可手动收起（默认展开不等于不能收起）', async () => {
+    const wrapper = await mountBubble(makeMessage({
+      parts: [{ type: 'thinking', id: 'p1', index: 0, text: '先看看索引状态', state: 'done' }],
+    }))
+    const step = wrapper.find('.timeline-step--thinking')
+    expect(step.text()).toContain('先看看索引状态')
+
+    await step.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.timeline-step--thinking').text()).not.toContain('先看看索引状态')
+  })
+
+  it('4d. 流式且尚无任何 part ⇒ 渲染「正在思考」占位而非裸光标', async () => {
+    // 占位不依赖后端事件：SSE 一通就在，首个 part 到达即自动让位。
+    const wrapper = await mountBubble(makeMessage({ parts: [] }), { isStreaming: true })
+    expect(wrapper.find('.thinking-placeholder').exists()).toBe(true)
+    expect(wrapper.text()).toContain('正在思考')
+  })
+
+  it('4e. 首个 thinking part 到达后占位让位给思考正文 + 行尾光标', async () => {
+    // 流式期间正文来自 store 的 streamingParts（不是 message.parts）。
+    const store = useChatStore()
+    store.streamingParts = [
+      { type: 'thinking', id: 'p1', index: 0, text: '开始分析', state: 'streaming' },
+    ]
+    const wrapper = await mountBubble(makeMessage({ parts: [] }), { isStreaming: true })
+    expect(wrapper.find('.thinking-placeholder').exists()).toBe(false)
+    expect(wrapper.find('.timeline-step--thinking').text()).toContain('开始分析')
+    expect(wrapper.find('.typing-cursor').exists()).toBe(true)
+  })
+
   it('5. deep_analysis tool_use 渲染深度分析卡片（按会话日志）', async () => {
     const msg = makeMessage({
       parts: [
