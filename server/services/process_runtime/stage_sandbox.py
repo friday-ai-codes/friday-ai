@@ -127,11 +127,36 @@ class SandboxSession:
         self.work_item_id = None
         self.current_artifact_version_id = None
         self.initiated_by_user_id = str(initiated_by_user_id or "")
-        self.created_by_id = None
+        # 与 `created_by` 同源：多个 `_initiated_by` helper 在 `initiated_by_user_id`
+        # 为空时回退读这个键，两者指向同一人才不会自相矛盾。
+        self.created_by_id = self.initiated_by_user_id or None
+        self._created_by_resolved = False
+        self._created_by: Any = None
 
     @property
     def decomposition(self) -> dict:
         return (self.stage_state or {}).get("decomposition") or {}
+
+    @property
+    def created_by(self) -> Any:
+        """发起用户实体——历史分量按它做 fail-closed 权限检索。
+
+        单跑入口只收得到 `initiated_by_user_id`（字符串），而消费方读的是
+        `session.created_by`。stub 不定义该属性时属性访问直接 AttributeError，
+        被调用方的宽 `except` 吞成 `retrieval_error`——「压根没有发起用户」于是
+        伪装成「检索出错」，把 `no_acting_user` 这个专门的降级取值架空了。
+
+        解析不到一律返回 None（落 `no_acting_user`），绝不伪造 actor 提权。
+        与真实模型的 lazy FK 同样是同步 ORM，调用方照旧经 `sync_to_async` 取。
+        """
+        if self._created_by_resolved:
+            return self._created_by
+        self._created_by_resolved = True
+        if self.created_by_id:
+            from django.contrib.auth import get_user_model
+
+            self._created_by = get_user_model().objects.filter(id=self.created_by_id).first()
+        return self._created_by
 
 
 # ── 共用 helper ───────────────────────────────────────────────────────────
