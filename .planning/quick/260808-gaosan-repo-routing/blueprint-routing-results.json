@@ -1,0 +1,1279 @@
+{
+  "subject": "高三提分专项",
+  "top_k": 5,
+  "total_ms": 49006,
+  "results": [
+    {
+      "module": "模块 1：高中数学全部功能页入口与权益展示",
+      "duration_ms": 17587,
+      "spec_points": 3,
+      "router_version": "v2",
+      "auto_selected": false,
+      "intent": "brownfield",
+      "weights_used": {
+        "router_base": 0.6,
+        "charter_match": 0.2,
+        "history_match": 0.2
+      },
+      "charter_supplement_count": 0,
+      "unjustified_boundary_hit_count": 0,
+      "candidates": [
+        {
+          "repository_id": "89d51f5a-6d07-4f40-b7e8-767b4642086f",
+          "repository_name": "frontend/activity-page",
+          "confidence": "low",
+          "total": 0.5261231478916123,
+          "breakdown": {
+            "router_base": 0.5261231478916123,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "命中'学科复习直播'与高中数学活动页，但偏活动页，与功能页入口关联较弱",
+            "matched_node_paths": [
+              "直播相关 > 学科复习直播"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "5fd6dc33-f82e-46c9-b8be-adea160d07c9",
+          "repository_name": "backend/video-support",
+          "confidence": "low",
+          "total": 0.5008634672598151,
+          "breakdown": {
+            "router_base": 0.5008634672598151,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "命中'弹幕权限与曝光控制'含课程包/学段曝光鉴权逻辑，可参考但活跃度低频且业务方向偏弹幕",
+            "matched_node_paths": [
+              "弹幕客户端 > 弹幕权限与曝光控制"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "47991a7f-c8e4-4da6-b42c-2ce81d8b137f",
+          "repository_name": "study-course",
+          "confidence": "medium",
+          "total": 0.4324606167317319,
+          "breakdown": {
+            "router_base": 0.4324606167317319,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "命中'专项课与总复习/专项课列表与详情'，课程包权益鉴权（功能点B）及培优课体系数据可能由该服务提供",
+            "matched_node_paths": [
+              "study-course 服务 > 专项课与总复习 > 专项课列表与详情",
+              "study-course 服务 > 专项课与总复习 > 重难点培优"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "050e49b2-633a-44ad-96e8-9262546756db",
+          "repository_name": "frontend/onion-learning",
+          "confidence": "medium",
+          "total": 0.3016483014809198,
+          "breakdown": {
+            "router_base": 0.3016483014809198,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "命中'学段年级映射'，属活跃开发的移动端H5，最可能承载「高中数学全部功能页」入口展示与排序、点击跳转等前端逻辑",
+            "matched_node_paths": [
+              "基础能力库 > 基础配置与共享库 > 学段年级映射"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        }
+      ],
+      "citations": []
+    },
+    {
+      "module": "模块 3：单题型学习页与 4 节点解锁",
+      "duration_ms": 18929,
+      "spec_points": 5,
+      "router_version": "v2",
+      "auto_selected": false,
+      "intent": "brownfield",
+      "weights_used": {
+        "router_base": 0.6,
+        "charter_match": 0.2,
+        "history_match": 0.2
+      },
+      "charter_supplement_count": 0,
+      "unjustified_boundary_hit_count": 0,
+      "candidates": [
+        {
+          "repository_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repository_name": "backend/study-user-status",
+          "confidence": "low",
+          "total": 0.5344810835128021,
+          "breakdown": {
+            "router_base": 0.5344810835128021,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "命中『精准学 AI>章节列表与图谱浏览（含掌握度元数据）』与『章节诊断』，可支撑掌握度与真题诊断状态数据，但为后端服务且需求主体是前端学习页",
+            "matched_node_paths": [
+              "精准学 AI > 章节诊断",
+              "精准学 AI > 章节列表与图谱浏览"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repository_name": "study-practice",
+          "confidence": "low",
+          "total": 0.3852159953905136,
+          "breakdown": {
+            "router_base": 0.3852159953905136,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "命中『专项突破与中考>本省高频考题（章节树+完成进度+推题作答）』与专项练习进度状态，可能承载专项学习状态数据，但为后端且题型场景不完全对应",
+            "matched_node_paths": [
+              "study-practice 学习练习服务 > 专项突破与中考 > 本省高频考题"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repository_name": "frontend/primary_school_study",
+          "confidence": "low",
+          "total": 0.3220561538267151,
+          "breakdown": {
+            "router_base": 0.3220561538267151,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "命中『课程管理>学习模块导航（按顺序解锁并路由）』与『测评与报告>学习报告生成（S/A/B/C掌握度评级）』贴合节点解锁与掌握度展示，但该库疑似废弃且面向小学，与高三专项不符",
+            "matched_node_paths": [
+              "课程管理 > 学习模块导航",
+              "测评与报告 > 学习报告生成"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        }
+      ],
+      "citations": []
+    },
+    {
+      "module": "模块 4：真题检测",
+      "duration_ms": 18411,
+      "spec_points": 9,
+      "router_version": "v2",
+      "auto_selected": false,
+      "intent": "brownfield",
+      "weights_used": {
+        "router_base": 0.6,
+        "charter_match": 0.2,
+        "history_match": 0.2
+      },
+      "charter_supplement_count": 0,
+      "unjustified_boundary_hit_count": 0,
+      "candidates": [
+        {
+          "repository_id": "f15a3b55-f885-48ec-92e7-bcdb0cf60126",
+          "repository_name": "backend/devices-study-room",
+          "confidence": "low",
+          "total": 0.507051861047169,
+          "breakdown": {
+            "router_base": 0.507051861047169,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "自适应答题流程与推荐下一题逻辑与真题逐题提交推进相关，但为硬件业务线，相关度较低",
+            "matched_node_paths": [
+              "AI 精准学习 > 章节诊断与答题"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repository_name": "backend/study-user-status",
+          "confidence": "medium",
+          "total": 0.4409133741045997,
+          "breakdown": {
+            "router_base": 0.4409133741045997,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "真题诊断结果记录、掌握度口径、推题与答题记录等后端逻辑命中精准学AI章节诊断与答题记录能力",
+            "matched_node_paths": [
+              "精准学 AI > 章节诊断",
+              "精准学 AI > 推题与答题记录"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repository_name": "study-practice",
+          "confidence": "low",
+          "total": 0.39702496522804975,
+          "breakdown": {
+            "router_base": 0.39702496522804975,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "多题合并诊断、试卷作答报告、断点续做与中途恢复等场景与试卷作答与报告、期末诊断能力相关",
+            "matched_node_paths": [
+              "study-practice 学习练习服务 > 试卷与诊断 > 试卷作答与报告",
+              "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "050e49b2-633a-44ad-96e8-9262546756db",
+          "repository_name": "frontend/onion-learning",
+          "confidence": "medium",
+          "total": 0.3566483014809198,
+          "breakdown": {
+            "router_base": 0.3566483014809198,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "需求为高三提分专项前端页面（做题组件复用、倒计时浮层、返回、掌握程度浮层、各类弹窗），命中前端移动端H5、K12在线教育学段（含高中）能力，是唯一活跃的前端页面仓库",
+            "matched_node_paths": [
+              "基础能力库 > 基础配置与共享库 > 学段年级映射"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        }
+      ],
+      "citations": []
+    },
+    {
+      "module": "模块 5：知识卡片",
+      "duration_ms": 14246,
+      "spec_points": 3,
+      "router_version": "v2_stage0_only",
+      "auto_selected": false,
+      "intent": "brownfield",
+      "weights_used": {
+        "router_base": 0.6,
+        "charter_match": 0.2,
+        "history_match": 0.2
+      },
+      "charter_supplement_count": 0,
+      "unjustified_boundary_hit_count": 0,
+      "candidates": [
+        {
+          "repository_id": "fdb8212e-82ff-42f2-934d-37ba49929a42",
+          "repository_name": "frontend/docx2problem",
+          "confidence": "medium",
+          "total": 0.47078750743388625,
+          "breakdown": {
+            "router_base": 0.47078750743388625,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2_stage0_only",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "命中能力节点: DOM 对象解析 > 选择题选项解析",
+            "matched_node_paths": [
+              "DOM 对象解析 > 选择题选项解析"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "6049b9ac-6fb9-4be0-af47-f3fcc73f5d89",
+          "repository_name": "frontend/study-app-native",
+          "confidence": "medium",
+          "total": 0.4617191730019783,
+          "breakdown": {
+            "router_base": 0.4617191730019783,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2_stage0_only",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "命中能力节点: 首页（home） > 课程复习卡片与视频播放",
+            "matched_node_paths": [
+              "首页（home） > 课程复习卡片与视频播放"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repository_name": "frontend/primary_school_study",
+          "confidence": "medium",
+          "total": 0.38308379223785904,
+          "breakdown": {
+            "router_base": 0.38308379223785904,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2_stage0_only",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "命中能力节点: 学习流程 > 笔记总结复习; 测评与报告 > 学习报告生成",
+            "matched_node_paths": [
+              "学习流程 > 笔记总结复习",
+              "测评与报告 > 学习报告生成"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "cf19acc3-6cf3-4729-a3fa-3685a3f15e36",
+          "repository_name": "frontend/new-course-builder-client",
+          "confidence": "medium",
+          "total": 0.3778398664655609,
+          "breakdown": {
+            "router_base": 0.3778398664655609,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2_stage0_only",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "命中能力节点: 专项内容管理 > 记忆模块与背诵管理; 专项内容管理; 专项内容管理 > 精测点管理",
+            "matched_node_paths": [
+              "专项内容管理 > 记忆模块与背诵管理",
+              "专项内容管理",
+              "专项内容管理 > 精测点管理"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "f97085ed-30a5-4eea-89e7-4079f0e04151",
+          "repository_name": "backend/training-camp",
+          "confidence": "medium",
+          "total": 0.35694397729956207,
+          "breakdown": {
+            "router_base": 0.35694397729956207,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2_stage0_only",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "命中能力节点: 渠道管理 > 渠道等级与类型配置",
+            "matched_node_paths": [
+              "渠道管理 > 渠道等级与类型配置"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        }
+      ],
+      "citations": []
+    },
+    {
+      "module": "模块 6：视频讲解与答疑",
+      "duration_ms": 14143,
+      "spec_points": 4,
+      "router_version": "v2",
+      "auto_selected": false,
+      "intent": "brownfield",
+      "weights_used": {
+        "router_base": 0.6,
+        "charter_match": 0.2,
+        "history_match": 0.2
+      },
+      "charter_supplement_count": 0,
+      "unjustified_boundary_hit_count": 0,
+      "candidates": [
+        {
+          "repository_id": "90a23dd0-39f9-4829-9af7-7bc5dfc33267",
+          "repository_name": "backend/live-space",
+          "confidence": "low",
+          "total": 0.3722682307354779,
+          "breakdown": {
+            "router_base": 0.3722682307354779,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "命中「视频与互动课件 > 互动点配置」，与播放器视频互动相关，但疑似废弃且不需改造播放器，仅作参考",
+            "matched_node_paths": [
+              "视频与互动课件 > 互动点配置"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repository_name": "backend/study-user-status",
+          "confidence": "medium",
+          "total": 0.3473821770030337,
+          "breakdown": {
+            "router_base": 0.3473821770030337,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "命中「精准学 AI > 知识点视频学习」（视频完成状态上报）与「推题与答题记录」（同型题解锁与流转），契合功能点C视频完成解锁、D进度上报及看讲解入口播放CB知识点视频",
+            "matched_node_paths": [
+              "精准学 AI > 知识点视频学习",
+              "精准学 AI > 推题与答题记录",
+              "精准学 AI"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "cee27ee1-cc73-4937-9a9e-730edd6c93b2",
+          "repository_name": "onion-practice",
+          "confidence": "medium",
+          "total": 0.33714797705668115,
+          "breakdown": {
+            "router_base": 0.33714797705668115,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "命中「多场景练习路由（变式讲解等场景）」，为C端学生练习/讲解前端入口，可能承载题型讲解播放器与答疑场景接入",
+            "matched_node_paths": [
+              "应用入口 (apps) > Group A 应用 > 多场景练习路由",
+              "应用入口 (apps) > Group A 应用"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        }
+      ],
+      "citations": []
+    },
+    {
+      "module": "模块 7：同型题检验",
+      "duration_ms": 12632,
+      "spec_points": 3,
+      "router_version": "v2_stage0_only",
+      "auto_selected": true,
+      "intent": "brownfield",
+      "weights_used": {
+        "router_base": 0.6,
+        "charter_match": 0.2,
+        "history_match": 0.2
+      },
+      "charter_supplement_count": 0,
+      "unjustified_boundary_hit_count": 0,
+      "candidates": [
+        {
+          "repository_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repository_name": "backend/study-user-status",
+          "confidence": "high",
+          "total": 0.5300215419540575,
+          "breakdown": {
+            "router_base": 0.5300215419540575,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2_stage0_only",
+            "auto_selected": true,
+            "confidence": "high",
+            "reasoning": "命中能力节点: 精准学 AI > 推题与答题记录; 总复习一轮练习 > 总复习推题与答题; 精准学 AI",
+            "matched_node_paths": [
+              "精准学 AI > 推题与答题记录",
+              "总复习一轮练习 > 总复习推题与答题",
+              "精准学 AI"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "direct"
+        },
+        {
+          "repository_id": "fdb8212e-82ff-42f2-934d-37ba49929a42",
+          "repository_name": "frontend/docx2problem",
+          "confidence": "medium",
+          "total": 0.4751428511975434,
+          "breakdown": {
+            "router_base": 0.4751428511975434,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2_stage0_only",
+            "auto_selected": true,
+            "confidence": "medium",
+            "reasoning": "命中能力节点: DOM 对象解析 > 选择题选项解析; DOM 对象解析; 主入口与解析管道 > 试题结构化输出",
+            "matched_node_paths": [
+              "DOM 对象解析 > 选择题选项解析",
+              "DOM 对象解析",
+              "主入口与解析管道 > 试题结构化输出"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "76985d6b-95ae-43ad-a32e-7961484b1a96",
+          "repository_name": "backend/coursetex",
+          "confidence": "medium",
+          "total": 0.3748171327922667,
+          "breakdown": {
+            "router_base": 0.3748171327922667,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2_stage0_only",
+            "auto_selected": true,
+            "confidence": "medium",
+            "reasoning": "命中能力节点: 文档转换模块（trans） > 习题类型智能识别",
+            "matched_node_paths": [
+              "文档转换模块（trans） > 习题类型智能识别"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "8182f504-6cff-45ec-abb7-0a68e17834dc",
+          "repository_name": "backend/paperdoc",
+          "confidence": "medium",
+          "total": 0.36498870952006424,
+          "breakdown": {
+            "router_base": 0.36498870952006424,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2_stage0_only",
+            "auto_selected": true,
+            "confidence": "medium",
+            "reasoning": "命中能力节点: 题型排版打印机 > 选择题排版",
+            "matched_node_paths": [
+              "题型排版打印机 > 选择题排版"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "a0e0dd95-4a24-46e1-9f5b-3a768dd45ea4",
+          "repository_name": "frontend/list-view",
+          "confidence": "medium",
+          "total": 0.34740880484968245,
+          "breakdown": {
+            "router_base": 0.34740880484968245,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2_stage0_only",
+            "auto_selected": true,
+            "confidence": "medium",
+            "reasoning": "命中能力节点: list-view（Vue 2.7 适配器） > Vue 2.7 虚拟滚动适配层; example（Vue 2.7 示例应用）; list-view（Vue 2.7 适配器）",
+            "matched_node_paths": [
+              "list-view（Vue 2.7 适配器） > Vue 2.7 虚拟滚动适配层",
+              "example（Vue 2.7 示例应用）",
+              "list-view（Vue 2.7 适配器）"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        }
+      ],
+      "citations": []
+    },
+    {
+      "module": "模块 8：完成页与学习结果反馈",
+      "duration_ms": 13728,
+      "spec_points": 7,
+      "router_version": "v2",
+      "auto_selected": false,
+      "intent": "brownfield",
+      "weights_used": {
+        "router_base": 0.6,
+        "charter_match": 0.2,
+        "history_match": 0.2
+      },
+      "charter_supplement_count": 0,
+      "unjustified_boundary_hit_count": 0,
+      "candidates": [
+        {
+          "repository_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repository_name": "backend/study-user-status",
+          "confidence": "medium",
+          "total": 0.5390050127391692,
+          "breakdown": {
+            "router_base": 0.5390050127391692,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "同型题答题结果、真题诊断结果与作答进度清空/重开涉及答题记录管理，命中『精准学 AI > 推题与答题记录』『章节诊断』",
+            "matched_node_paths": [
+              "精准学 AI > 推题与答题记录",
+              "精准学 AI > 章节诊断"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repository_name": "frontend/primary_school_study",
+          "confidence": "low",
+          "total": 0.32330574781537547,
+          "breakdown": {
+            "router_base": 0.32330574781537547,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "完成页、退出保护弹窗与掌握度评级前端能力高度吻合，但仓库疑似废弃且面向小学生，仅作参考",
+            "matched_node_paths": [
+              "通用UI组件 > 完成奖励页",
+              "测评与报告 > 考试退出保护",
+              "测评与报告 > 学习报告生成"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repository_name": "backend/study-flow",
+          "confidence": "medium",
+          "total": 0.3095203206534971,
+          "breakdown": {
+            "router_base": 0.3095203206534971,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "完成页学习结果反馈、掌握程度写入与历史最佳统计属于学习主流程/学情报告，命中『学情报告与推荐 > 知识点完成率统计与推荐』与『学习主流程 > 课后练习与答题』",
+            "matched_node_paths": [
+              "学习主流程 > 课后练习与答题",
+              "学情报告与推荐 > 知识点完成率统计与推荐"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        }
+      ],
+      "citations": []
+    },
+    {
+      "module": "模块 9：学习进度与掌握程度（跨页面状态）",
+      "duration_ms": 17160,
+      "spec_points": 8,
+      "router_version": "v2",
+      "auto_selected": false,
+      "intent": "brownfield",
+      "weights_used": {
+        "router_base": 0.6,
+        "charter_match": 0.2,
+        "history_match": 0.2
+      },
+      "charter_supplement_count": 0,
+      "unjustified_boundary_hit_count": 0,
+      "candidates": [
+        {
+          "repository_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repository_name": "study-practice",
+          "confidence": "low",
+          "total": 0.5164180174197015,
+          "breakdown": {
+            "router_base": 0.5164180174197015,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "命中「试卷与诊断 > 期末诊断与变式复习（进度状态更新）」，涉及进度状态但非题型掌握程度口径",
+            "matched_node_paths": [
+              "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repository_name": "backend/study-user-status",
+          "confidence": "medium",
+          "total": 0.45320080182190325,
+          "breakdown": {
+            "router_base": 0.45320080182190325,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "需求为精准学AI的题型学习进度、掌握程度与图谱页状态，命中「精准学 AI > 章节列表与图谱浏览（含掌握度元数据）」及「推题与答题记录」，最契合",
+            "matched_node_paths": [
+              "精准学 AI",
+              "精准学 AI > 章节列表与图谱浏览",
+              "精准学 AI > 推题与答题记录"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "f15a3b55-f885-48ec-92e7-bcdb0cf60126",
+          "repository_name": "backend/devices-study-room",
+          "confidence": "medium",
+          "total": 0.333414095205691,
+          "breakdown": {
+            "router_base": 0.333414095205691,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "命中「AI 精准学习 > 知识图谱与掌握度分析」及「学习报告与结果查询」，涉及掌握度分级与学习报告，但服务对象为硬件端",
+            "matched_node_paths": [
+              "AI 精准学习 > 知识图谱与掌握度分析",
+              "AI 精准学习 > 学习报告与结果查询"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "1ad81903-ca17-46b7-a546-c101d505b9c3",
+          "repository_name": "backend/devices-learn",
+          "confidence": "low",
+          "total": 0.32959979035780873,
+          "breakdown": {
+            "router_base": 0.32959979035780873,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "命中「成绩报告与知识点掌握」，含知识点进度与复习，但活跃度低且偏诊断考试",
+            "matched_node_paths": [
+              "诊断考试系统 > 成绩报告与知识点掌握"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        }
+      ],
+      "citations": []
+    },
+    {
+      "module": "模块 10：新手引导",
+      "duration_ms": 16354,
+      "spec_points": 3,
+      "router_version": "v2",
+      "auto_selected": false,
+      "intent": "brownfield",
+      "weights_used": {
+        "router_base": 0.6,
+        "charter_match": 0.2,
+        "history_match": 0.2
+      },
+      "charter_supplement_count": 0,
+      "unjustified_boundary_hit_count": 0,
+      "candidates": [
+        {
+          "repository_id": "e783eef5-2936-47f2-85d5-a22e984b021f",
+          "repository_name": "backend/study-task",
+          "confidence": "low",
+          "total": 0.42514196683272243,
+          "breakdown": {
+            "router_base": 0.42514196683272243,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "触发引导按用户维度记录已关闭状态可能涉及'业务逻辑层 > 用户学习引导卡片'的引导数据生成",
+            "matched_node_paths": [
+              "业务逻辑层（Biz） > 用户学习引导卡片"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repository_name": "backend/study-user-status",
+          "confidence": "medium",
+          "total": 0.38887137453526455,
+          "breakdown": {
+            "router_base": 0.38887137453526455,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "重复学习的4节点解锁、真题首次诊断结果、同型题重做与掌握度更新命中'精准学 AI > 推题与答题记录'及'章节诊断'",
+            "matched_node_paths": [
+              "精准学 AI > 推题与答题记录",
+              "精准学 AI > 章节诊断"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repository_name": "study-practice",
+          "confidence": "low",
+          "total": 0.38542924743552737,
+          "breakdown": {
+            "router_base": 0.38542924743552737,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "low",
+            "reasoning": "重学与掌握度按历史最佳更新、诊断后复习流程与'试卷与诊断 > 期末诊断与变式复习'相关",
+            "matched_node_paths": [
+              "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        },
+        {
+          "repository_id": "cee27ee1-cc73-4937-9a9e-730edd6c93b2",
+          "repository_name": "onion-practice",
+          "confidence": "medium",
+          "total": 0.31300096831022584,
+          "breakdown": {
+            "router_base": 0.31300096831022584,
+            "charter_match": 0.0,
+            "history_match": 0.0
+          },
+          "evidence": {
+            "router_version": "v2",
+            "auto_selected": false,
+            "confidence": "medium",
+            "reasoning": "新手引导蒙层+气泡、题型图谱页/学习页交互均为移动端H5前端能力，命中'应用入口(apps)'的C端学生学习应用",
+            "matched_node_paths": [
+              "应用入口 (apps)"
+            ],
+            "charter_source": "",
+            "charter_version": 0,
+            "matched_domains": [],
+            "violated_boundaries": [],
+            "penalty_reasons": [
+              "no_charter"
+            ],
+            "history_match_unavailable": "",
+            "boundary_override_reason": "",
+            "unjustified_boundary_hit": false
+          },
+          "role_suggestion": "indirect"
+        }
+      ],
+      "citations": []
+    }
+  ]
+}

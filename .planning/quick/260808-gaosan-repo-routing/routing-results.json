@@ -1,0 +1,4256 @@
+{
+  "subject": "高三提分专项",
+  "top_k": 5,
+  "total_ms": 30712,
+  "results": [
+    {
+      "key": "1A",
+      "module": "1 高中数学全部功能页入口与权益展示",
+      "point": "入口位置与排序",
+      "query": "高三提分专项｜模块1「高中数学全部功能页入口与权益展示」｜功能点：入口位置与排序。功能描述：在 App 首页切换到「高中」学段、「数学」学科后，在「高中数学全部功能页」的「培优课」模块内展示「极速提分营」入口，固定排在「专项突破」右侧。 UI 设计意图：入口样式与现有培优课功能入口保持一致，让用户感知它是培优课体系下的一个常规功能入口，降低理解成本。 业务规则与约束： 在「培优课」模块内，系统应将「极速提分营」展示在「专项突破」入口的右侧。 入口名称固定为「极速提分营」。 影响范围：仅在「高中数学全部功能页」新增入口；不影响其他学段/学科对应的全部功能页，不改动培优课其他入口。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 598,
+      "candidates": [
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.7097,
+          "confidence": "medium",
+          "reasoning": "study-app 是活跃的C端移动端H5学习应用，承载学段/学科切换及功能页入口展示，命中「业务应用 (apps/)」与「学段/年级选择器」，最可能承载高中数学全部功能页的入口新增",
+          "sub_project": "业务应用 (apps/)",
+          "sub_project_paths": [
+            "apps"
+          ],
+          "matched_node_paths": [
+            "业务应用 (apps/) > AI 助学 > AI 对话辅导",
+            "公共组件 (components/) > 通用 UI 组件 > 选择器与表单体系",
+            "业务工具链 (utils/) > 全局基础与安全 > 全局基础工具库"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.029837,
+            "activity": 0.118786,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.8113
+        },
+        {
+          "repo_id": "e45002e0-f945-463c-b827-cd9e482096e4",
+          "repo_name": "backend/devices-learn-resource",
+          "score": 0.4681,
+          "confidence": "medium",
+          "reasoning": "该服务负责「专项课入口列表」等学习首页资源，极速提分营入口的数据配置与排序可能由此后端提供",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "学习首页资源 > 试炼场与专项课入口"
+          ],
+          "breakdown": {
+            "text": 0.065476,
+            "breadth": 0.046041,
+            "activity": 0.118786,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4793
+        },
+        {
+          "repo_id": "47991a7f-c8e4-4da6-b42c-2ce81d8b137f",
+          "repo_name": "study-course",
+          "score": 0.5988,
+          "confidence": "low",
+          "reasoning": "命中「专项课与总复习 > 重难点培优/专项课列表」，培优课模块的课程数据可能来源于此，但入口展示非其职责",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-course 服务 > 专项课与总复习 > 重难点培优",
+            "study-course 服务 > 专项课与总复习 > 专项课列表与详情"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.049847,
+            "activity": 0.127803,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3892
+        }
+      ]
+    },
+    {
+      "key": "1B",
+      "module": "1 高中数学全部功能页入口与权益展示",
+      "point": "课程包权益鉴权",
+      "query": "高三提分专项｜模块1「高中数学全部功能页入口与权益展示」｜功能点：课程包权益鉴权。功能描述：入口是否展示由「高三暑期数学提分专项」课程包权限决定；持有该课程包权限的用户展示入口，无权限用户不展示。 交互逻辑：当 用户进入「高中数学全部功能页」 时，系统应校验当前用户是否持有「高三暑期数学提分专项」课程包权限，命中则展示入口，未命中则不展示。 业务规则与约束： 在 用户无该课程包权限 下，系统应不展示该入口，且不展示置灰入口、不展示购买引导。 数据流转：权益判断依据用户在「高三暑期数学提分专项」课程包上的持有状态，数据来源于现有课程权益体系，专项不另建权益规则。 影响范围：账号注册、登录、设备规则沿用现有 App 规则，本模块不改动。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 604,
+      "candidates": [
+        {
+          "repo_id": "e45002e0-f945-463c-b827-cd9e482096e4",
+          "repo_name": "backend/devices-learn-resource",
+          "score": 0.5684,
+          "confidence": "medium",
+          "reasoning": "命中「课程权益校验>专项课权益校验」及「学习首页资源>试炼场与专项课入口」，正是根据专项课权益决定入口展示的核心逻辑",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程权益校验 > 专项课权益校验",
+            "学习首页资源 > 试炼场与专项课入口"
+          ],
+          "breakdown": {
+            "text": 0.152778,
+            "breadth": 0.059046,
+            "activity": 0.118786,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7195
+        },
+        {
+          "repo_id": "47991a7f-c8e4-4da6-b42c-2ce81d8b137f",
+          "repo_name": "study-course",
+          "score": 0.5285,
+          "confidence": "medium",
+          "reasoning": "命中「专项课与总复习>专项课列表与详情」，提供用户拥有专项课数据，是权益判断的数据来源",
+          "sub_project": "study-course 服务",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-course 服务 > 专项课与总复习 > 专项课列表与详情"
+          ],
+          "breakdown": {
+            "text": 0.114583,
+            "breadth": 0.04836,
+            "activity": 0.127803,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5769
+        },
+        {
+          "repo_id": "89d51f5a-6d07-4f40-b7e8-767b4642086f",
+          "repo_name": "frontend/activity-page",
+          "score": 0.8774,
+          "confidence": "low",
+          "reasoning": "命中「学科复习直播>高中数学」及「VIP会员」相关页，可能涉及高中数学入口展示，但更偏活动页",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "直播相关 > 学科复习直播",
+            "VIP会员 > VIP换课"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.045149,
+            "activity": 0.11833,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5703
+        },
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.5335,
+          "confidence": "low",
+          "reasoning": "活跃的C端学习H5，命中「社交登录与VIP权益」相关业务组件，可能承载功能页入口展示前端",
+          "sub_project": "公共组件 (components/)",
+          "sub_project_paths": [
+            "components/Chat",
+            "components/CommunityGroup",
+            "components/LoginModal",
+            "components/YCSwitch",
+            "components/newUserOneDayVip"
+          ],
+          "matched_node_paths": [
+            "公共组件 (components/) > 业务组件 > 社交登录与 VIP 权益"
+          ],
+          "breakdown": {
+            "text": 0.130952,
+            "breadth": 0.028186,
+            "activity": 0.118786,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4634
+        }
+      ]
+    },
+    {
+      "key": "1C",
+      "module": "1 高中数学全部功能页入口与权益展示",
+      "point": "入口点击跳转",
+      "query": "高三提分专项｜模块1「高中数学全部功能页入口与权益展示」｜功能点：入口点击跳转。交互逻辑：当 用户点击「极速提分营」入口 时，系统应进入功能主页 / 题型图谱页（模块 2）。 业务规则与约束：进入功能主页后的默认定位（恢复上次退出位置 / 首章顶部）由模块 2 定义。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 599,
+      "candidates": [
+        {
+          "repo_id": "89d51f5a-6d07-4f40-b7e8-767b4642086f",
+          "repo_name": "frontend/activity-page",
+          "score": 0.8778,
+          "confidence": "medium",
+          "reasoning": "需求是高中数学功能页入口与权益展示的移动端H5，命中「季节与主题活动>开学季与高考活动」及「直播相关>学科复习直播（高中数学）」，最契合C端提分营入口页",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "季节与主题活动 > 开学季与高考活动",
+            "直播相关 > 学科复习直播"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.0456,
+            "activity": 0.11833,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.9206
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.7397,
+          "confidence": "low",
+          "reasoning": "模块2题型图谱页对应「精准学AI>章节列表与图谱浏览」，但本模块仅负责入口跳转，跳转后逻辑由模块2定义",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 章节列表与图谱浏览"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.065074,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4808
+        }
+      ]
+    },
+    {
+      "key": "2A",
+      "module": "2 功能主页 / 题型图谱",
+      "point": "当前章内滚动结构",
+      "query": "高三提分专项｜模块2「功能主页 / 题型图谱」｜功能点：当前章内滚动结构。功能描述：右侧滚动区按当前章组织，章内顺序固定为「章导学视频卡 → 当前章各小节题型列表 → 章总结视频卡」；滚动到章总结视频即为当前章内容结束，不连续滚动到下一章。 数据流转：章、小节、知识点结构取 CB 真实结构；章导学/章总结视频取章级配置表的章头部/章尾部视频 ID 与文案。 业务规则与约束： 在 当前章展示态 下，系统应按\"章导学视频 → 小节题型列表 → 章总结视频\"的固定顺序排列内容。 如果 某章未配置章导学或章总结视频，那么 系统应隐藏对应视频卡并记录配置异常，不影响其余内容展示。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 596,
+      "candidates": [
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.5859,
+          "confidence": "medium",
+          "reasoning": "需求为C端学生功能主页题型图谱的滚动结构与视频卡渲染，属前端展示逻辑，命中「课程浏览与章节导航」，且活跃开发",
+          "sub_project": "业务应用 (apps/)",
+          "sub_project_paths": [
+            "apps/chapterList",
+            "apps/courses"
+          ],
+          "matched_node_paths": [
+            "业务应用 (apps/) > 课程与知识 > 课程浏览与章节导航"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.028186,
+            "activity": 0.118786,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7308
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.5786,
+          "confidence": "medium",
+          "reasoning": "章内小节题型列表与章级视频聚合需后端提供，命中「章节详情平铺 > 章节平铺节点聚合」和「章节列表与图谱浏览」",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "章节详情平铺 > 章节平铺节点聚合",
+            "精准学 AI > 章节列表与图谱浏览"
+          ],
+          "breakdown": {
+            "text": 0.130952,
+            "breadth": 0.078529,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6094
+        },
+        {
+          "repo_id": "cf19acc3-6cf3-4729-a3fa-3685a3f15e36",
+          "repo_name": "frontend/new-course-builder-client",
+          "score": 0.8614,
+          "confidence": "low",
+          "reasoning": "章头部/章尾部视频与文案的配置若需运营侧维护可能涉及专项课程管理，命中「专项课程管理」",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程管理 > 专项课程管理"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.047411,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5599
+        },
+        {
+          "repo_id": "e45002e0-f945-463c-b827-cd9e482096e4",
+          "repo_name": "backend/devices-learn-resource",
+          "score": 0.5859,
+          "confidence": "low",
+          "reasoning": "CB真实章节结构由此服务提供，命中「课程资源管理 > 课程章节树查询」，活跃开发",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程资源管理 > 课程章节树查询"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.046041,
+            "activity": 0.118786,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4975
+        }
+      ]
+    },
+    {
+      "key": "2B",
+      "module": "2 功能主页 / 题型图谱",
+      "point": "章切换（左侧入口 + 独立弹窗）",
+      "query": "高三提分专项｜模块2「功能主页 / 题型图谱」｜功能点：章切换（左侧入口 + 独立弹窗）。功能描述：章切换入口放在左侧小节目录上方，展示当前章名称与「切换」按钮；点击后弹出独立章切换弹窗（页面蒙层、左上标题「章切换」、右上关闭、章列表纵向排列、底部「确认」）。 交互逻辑： 当 用户在章切换弹窗中选择某一章并点击「确认」时，系统应切换到该章，并优先定位到该章上次离开时记录的位置。 如果 被切换到的章没有上次离开位置记录，那么 系统应定位到该章顶部。 当 用户点击弹窗关闭按钮或点击蒙层 时，系统应关闭弹窗并保留当前章不变。 影响范围：章切换只改变右侧展示的当前章与左侧小节目录；不清除其他章已产生的学习进度与掌握度。",
+      "router_version": "v2_stage0_only",
+      "degraded": true,
+      "degrade_reason": "unparsable",
+      "auto_selected": false,
+      "duration_ms": 13982,
+      "candidates": [
+        {
+          "repo_id": "b56e4a38-a3ff-4c6a-9ecf-c45d62321b56",
+          "repo_name": "frontend/primary-ui",
+          "score": 0.7985,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 对话框组件 > 对话框确认与取消操作; 对话框组件",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "对话框组件 > 对话框确认与取消操作",
+            "对话框组件"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.077963,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "49c32669-0063-49d5-9555-38e22a16fff7",
+          "repo_name": "frontend/institution-1v1",
+          "score": 0.7718,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 互动课堂 > 章节导航与课程流转; 互动课堂",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "互动课堂 > 章节导航与课程流转",
+            "互动课堂"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.051253,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "47991a7f-c8e4-4da6-b42c-2ce81d8b137f",
+          "repo_name": "study-course",
+          "score": 0.6372,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: study-course 服务 > 学习首页与用户学习; study-course 服务 > 学习首页与用户学习 > 学习首页教材展示",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-course 服务 > 学习首页与用户学习",
+            "study-course 服务 > 学习首页与用户学习 > 学习首页教材展示"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.042461,
+            "activity": 0.127803,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repo_name": "frontend/primary_school_study",
+          "score": 0.6176,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 课程管理 > 学习模块导航; 测评与报告 > 考试退出保护; 通用UI组件",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程管理 > 学习模块导航",
+            "测评与报告 > 考试退出保护",
+            "通用UI组件"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.049849,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "0306fb16-f903-4a22-a36e-378b1b601431",
+          "repo_name": "backend/ai-cr",
+          "score": 0.5918,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 飞书消息通知",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "飞书消息通知"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.055342,
+            "activity": 0.069551,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        }
+      ]
+    },
+    {
+      "key": "2C",
+      "module": "2 功能主页 / 题型图谱",
+      "point": "左侧单层小节目录与定位",
+      "query": "高三提分专项｜模块2「功能主页 / 题型图谱」｜功能点：左侧单层小节目录与定位。功能描述：左侧为单层小节目录，顶部是当前章 +「切换」按钮，下方展示当前章下的小节列表；点击某小节后右侧滚动区定位到对应小节。 交互逻辑：当 用户点击左侧某小节 时，系统应将右侧滚动区定位到该小节起始位置。 业务规则与约束：目录只展示当前章的小节（单层，不展开多级）。",
+      "router_version": "v2_stage0_only",
+      "degraded": true,
+      "degrade_reason": "unparsable",
+      "auto_selected": false,
+      "duration_ms": 9842,
+      "candidates": [
+        {
+          "repo_id": "24f8ed39-f253-44f0-b87b-6301d3cfb1ad",
+          "repo_name": "frontend/mobileui",
+          "score": 0.7955,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 导航与布局组件演示; 基础 UI 组件演示",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "导航与布局组件演示",
+            "基础 UI 组件演示"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.07491,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "49c32669-0063-49d5-9555-38e22a16fff7",
+          "repo_name": "frontend/institution-1v1",
+          "score": 0.7756,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 互动课堂 > 章节导航与课程流转; 互动课堂",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "互动课堂 > 章节导航与课程流转",
+            "互动课堂"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.055093,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "b56e4a38-a3ff-4c6a-9ecf-c45d62321b56",
+          "repo_name": "frontend/primary-ui",
+          "score": 0.6406,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 对话框组件 > 对话框确认与取消操作",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "对话框组件 > 对话框确认与取消操作"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.072858,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repo_name": "frontend/primary_school_study",
+          "score": 0.6196,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 课程管理 > 学习模块导航; 学习流程 > 视频播放控制; 课程管理",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程管理 > 学习模块导航",
+            "学习流程 > 视频播放控制",
+            "课程管理"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.051859,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "c89aeedf-79e2-4f5b-a3f7-7ac9aa4e37c2",
+          "repo_name": "backend/study-statistics",
+          "score": 0.5564,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 微信公众号绑定 > 多账号切换",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "微信公众号绑定 > 多账号切换"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.033871,
+            "activity": 0.101438,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        }
+      ]
+    },
+    {
+      "key": "2D",
+      "module": "2 功能主页 / 题型图谱",
+      "point": "题型卡片与亮点标签",
+      "query": "高三提分专项｜模块2「功能主页 / 题型图谱」｜功能点：题型卡片与亮点标签。功能描述：题型卡片展示题型名、亮点标签、学习进度条与（满格时的）掌握程度标签，右侧固定「去学习」按钮。题型卡片在数据上对应一个 CB 知识点，题型名取知识点名称。 UI 设计意图：亮点标签用于突出题型的高考价值与适配分数段；高亮亮点标签需与普通亮点标签有明显视觉区分，用于强调核心卖点。 业务规则与约束： 亮点标签来自知识点配置，包含「近三年考察 x 次」「高考占分 x 分」「90分以下 / 90分以上」等；同一题型可配 0 个或多个高亮标签。 在 题型无任何亮点标签 下，系统应隐藏标签区域。 当 题型卡片或「去学习」按钮被点击 时，系统应进入单题型学习页（模块 3）。 学习进度条使用中性进度色，仅表达流程进度，不表征作答对错。 在 学习进度达 100% 下，系统应在进度条之外独立展示掌握程度标签（完全掌握 / 初步掌握 / 未掌握）；进度 0%-75% 时仅展示进度条。 影响范围：进度与掌握程度的计算口径见模块 9；本模块只负责展示。",
+      "router_version": "v2_stage0_only",
+      "degraded": true,
+      "degrade_reason": "unparsable",
+      "auto_selected": false,
+      "duration_ms": 11664,
+      "candidates": [
+        {
+          "repo_id": "8b075889-cc4c-41b1-90f4-e265978b19e8",
+          "repo_name": "backend/route-analyzer",
+          "score": 0.8679,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 路由导入与同步 > 路径标准化引擎; Koa中间件; Koa中间件 > 路由收集与OpenAPI导出",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "路由导入与同步 > 路径标准化引擎",
+            "Koa中间件",
+            "Koa中间件 > 路由收集与OpenAPI导出"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.042328,
+            "activity": 0.111689,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "cf19acc3-6cf3-4729-a3fa-3685a3f15e36",
+          "repo_name": "frontend/new-course-builder-client",
+          "score": 0.8644,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 专项内容管理; 教学标签与知识图谱 > 课程内容标签管理; 教学标签与知识图谱",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "专项内容管理",
+            "教学标签与知识图谱 > 课程内容标签管理",
+            "教学标签与知识图谱"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.050441,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "90317825-5003-47a7-a9cc-7d6f1c101313",
+          "repo_name": "frontend/vocation-problem-app",
+          "score": 0.6305,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 练习模式包 > 基础练习模式 > 考试答题卡模式; 做题 UI 组件库; 做题 UI 组件库 > 做题业务组件 > 答题进度与答题卡",
+          "sub_project": "练习模式包",
+          "sub_project_paths": [
+            "packages/mode"
+          ],
+          "matched_node_paths": [
+            "练习模式包 > 基础练习模式 > 考试答题卡模式",
+            "做题 UI 组件库",
+            "做题 UI 组件库 > 做题业务组件 > 答题进度与答题卡"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.056089,
+            "activity": 0.013333,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "a03c67fd-5bf9-4ffa-8f64-893037895e4f",
+          "repo_name": "frontend/onion-web-ui",
+          "score": 0.6002,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: UI 组件库; UI 组件库 > 排版与操作组件; UI 组件库 > 排版与操作组件 > 操作按钮",
+          "sub_project": "UI 组件库",
+          "sub_project_paths": [
+            "packages/ui"
+          ],
+          "matched_node_paths": [
+            "UI 组件库",
+            "UI 组件库 > 排版与操作组件",
+            "UI 组件库 > 排版与操作组件 > 操作按钮"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.063536,
+            "activity": 0.051904,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        },
+        {
+          "repo_id": "53e242f5-0dd2-4b35-8980-3f8f0b901867",
+          "repo_name": "backend/cb-organization",
+          "score": 0.598,
+          "confidence": "medium",
+          "reasoning": "命中能力节点: 课程层级结构 > 模块管理; 课程层级结构",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程层级结构 > 模块管理",
+            "课程层级结构"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.047964,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": null
+        }
+      ]
+    },
+    {
+      "key": "2E",
+      "module": "2 功能主页 / 题型图谱",
+      "point": "成绩分层筛选",
+      "query": "高三提分专项｜模块2「功能主页 / 题型图谱」｜功能点：成绩分层筛选。功能描述：「选择当前成绩」提供「90分以下」「90分以上」两个互斥选项，用于按分层标签过滤题型。 交互逻辑： 默认两个选项均未选中，此时展示全部题型。 当 用户点击某选项 时，系统应仅展示带该分层标签的题型，且两个选项互斥。 当 用户点击已选中的选项 时，系统应取消选择并恢复展示全部题型。 业务规则与约束： 在 某题型同时带「90分以下 / 90分以上」两个标签 下，只要满足当前筛选标签即展示。 筛选后停留在当前小节，不重置滚动位置。 成绩筛选参与退出位置记录；用户离开后再次进入功能主页时，筛选状态应按上次离开时的状态恢复。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 331,
+      "candidates": [
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.8582,
+          "confidence": "medium",
+          "reasoning": "命中「试卷与诊断 > 试卷浏览与筛选」，成绩分层标签过滤题型属于C端学生学习练习服务的多维筛选逻辑，且服务对象与业务线高度匹配",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 试卷浏览与筛选"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.044197,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.8582
+        }
+      ]
+    },
+    {
+      "key": "2F",
+      "module": "2 功能主页 / 题型图谱",
+      "point": "章导学 / 章总结视频卡",
+      "query": "高三提分专项｜模块2「功能主页 / 题型图谱」｜功能点：章导学 / 章总结视频卡。功能描述：章导学视频卡展示在当前章第一个小节前，标题「{章名}·导学视频」、文案「高考平均占分 xx 分，2 分钟看懂考察内容」、按钮「看视频」；章总结视频卡展示在当前章最后一个小节后，按钮同为「看视频」。 交互逻辑：当 用户点击视频卡或「看视频」时，系统应进入对应视频播放。 数据流转：视频资源与卡片文案取章级配置（章头部/章尾部视频 ID 与 Msg）；播放器形态（纯视频或通用知识点播放器）由技术方案按视频资源形态确定，不影响交互。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 204,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.6125,
+          "confidence": "medium",
+          "reasoning": "章级视频卡文案与视频ID属章级资源聚合，命中「章节详情平铺 > 章节平铺节点聚合」聚合知识点视频等子资源，最贴合数据流转来源",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "章节详情平铺 > 章节平铺节点聚合",
+            "精准学 AI > 章节列表与图谱浏览"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.060124,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7481
+        },
+        {
+          "repo_id": "cf19acc3-6cf3-4729-a3fa-3685a3f15e36",
+          "repo_name": "frontend/new-course-builder-client",
+          "score": 0.8572,
+          "confidence": "low",
+          "reasoning": "章级视频与文案配置可能需在B端专项内容管理配置，命中「专项内容管理」",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "专项内容管理"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.043174,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6738
+        },
+        {
+          "repo_id": "6049b9ac-6fb9-4be0-af47-f3fcc73f5d89",
+          "repo_name": "frontend/study-app-native",
+          "score": 0.5404,
+          "confidence": "low",
+          "reasoning": "命中「首页 > 课程复习卡片与视频播放」的卡片点击跳转视频播放交互，但仓库疑似废弃故降级",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "首页（home） > 课程复习卡片与视频播放"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.066754,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5846
+        },
+        {
+          "repo_id": "a03c67fd-5bf9-4ffa-8f64-893037895e4f",
+          "repo_name": "frontend/onion-web-ui",
+          "score": 0.8146,
+          "confidence": "low",
+          "reasoning": "视频卡的标题/按钮UI可复用「排版与操作组件」，但仅为通用组件低频维护",
+          "sub_project": "UI 组件库",
+          "sub_project_paths": [
+            "packages/ui"
+          ],
+          "matched_node_paths": [
+            "UI 组件库 > 排版与操作组件"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.048762,
+            "activity": 0.051904,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5295
+        }
+      ]
+    },
+    {
+      "key": "2G",
+      "module": "2 功能主页 / 题型图谱",
+      "point": "退出位置记录与恢复",
+      "query": "高三提分专项｜模块2「功能主页 / 题型图谱」｜功能点：退出位置记录与恢复。功能描述：用户离开功能主页时记录当前章、当前小节、右侧滚动位置和当前成绩筛选；下次进入优先恢复到上次退出位置与上次成绩筛选状态。 交互逻辑： 当 用户离开功能主页 时，系统应记录当前章、当前小节、右侧滚动位置和当前成绩筛选。 当 用户再次进入功能主页且存在记录 时，系统应恢复到上次退出位置，并恢复上次成绩筛选状态。 如果 无退出记录，那么 系统应默认定位到第一个章的顶部位置。 数据流转：位置记录按用户维度保存，包含当前章、当前小节、右侧滚动位置和成绩筛选状态。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 14861,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.5185,
+          "confidence": "medium",
+          "reasoning": "需求涉及题型图谱主页的章节浏览与成绩筛选状态，命中「精准学AI>章节列表与图谱浏览」和「图谱查询」，位置/筛选记录可在此服务扩展",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 章节列表与图谱浏览",
+            "知识点内容图谱 > 图谱查询"
+          ],
+          "breakdown": {
+            "text": 0.083333,
+            "breadth": 0.066047,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.687
+        },
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.5345,
+          "confidence": "medium",
+          "reasoning": "退出位置记录与恢复类似「知识点续播定位」的断点续学能力，活跃开发，可承载按用户维度的位置状态存储",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "知识点状态管理 > 知识点续播定位"
+          ],
+          "breakdown": {
+            "text": 0.130952,
+            "breadth": 0.052829,
+            "activity": 0.112986,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5808
+        },
+        {
+          "repo_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repo_name": "frontend/primary_school_study",
+          "score": 0.768,
+          "confidence": "low",
+          "reasoning": "前端H5含学习行为埋点与模块导航，可实现离开记录/进入恢复交互，但疑似废弃故降级",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "状态管理与埋点 > 学习行为埋点",
+            "课程管理 > 学习模块导航"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.047446,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4992
+        },
+        {
+          "repo_id": "47991a7f-c8e4-4da6-b42c-2ce81d8b137f",
+          "repo_name": "study-course",
+          "score": 0.5043,
+          "confidence": "low",
+          "reasoning": "「学习首页与用户学习」管理首页展示与用户学习进度，可能承接主页退出位置恢复逻辑",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-course 服务 > 学习首页与用户学习"
+          ],
+          "breakdown": {
+            "text": 0.101852,
+            "breadth": 0.036856,
+            "activity": 0.127803,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4445
+        }
+      ]
+    },
+    {
+      "key": "2H",
+      "module": "2 功能主页 / 题型图谱",
+      "point": "返回",
+      "query": "高三提分专项｜模块2「功能主页 / 题型图谱」｜功能点：返回。交互逻辑：当 用户点击左上角返回 时，系统应回到高中数学全部功能页。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 671,
+      "candidates": [
+        {
+          "repo_id": "6049b9ac-6fb9-4be0-af47-f3fcc73f5d89",
+          "repo_name": "frontend/study-app-native",
+          "score": 0.7042,
+          "confidence": "medium",
+          "reasoning": "命中「首页（home）>左侧导航菜单与关闭操作」的返回图标与关闭页面逻辑，与题型图谱主页返回功能高度契合，但仓库疑似废弃",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "首页（home） > 左侧导航菜单与关闭操作",
+            "首页（home）"
+          ],
+          "breakdown": {
+            "text": 0.375,
+            "breadth": 0.084787,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.8078
+        },
+        {
+          "repo_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repo_name": "frontend/primary_school_study",
+          "score": 0.7681,
+          "confidence": "low",
+          "reasoning": "命中「通用UI组件>导航栏组件」带返回箭头的顶部导航，但服务对象为小学生且疑似废弃",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "通用UI组件 > 导航栏组件"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.047582,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6743
+        },
+        {
+          "repo_id": "89d51f5a-6d07-4f40-b7e8-767b4642086f",
+          "repo_name": "frontend/activity-page",
+          "score": 0.5984,
+          "confidence": "low",
+          "reasoning": "活跃开发且命中「基础设施与工具层>页面导航与分享」，可承载高中数学功能页返回跳转",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "基础设施与工具层 > 页面导航与分享",
+            "直播相关 > 学科复习直播"
+          ],
+          "breakdown": {
+            "text": 0.1875,
+            "breadth": 0.037014,
+            "activity": 0.11833,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.389
+        }
+      ]
+    },
+    {
+      "key": "3A",
+      "module": "3 单题型学习页与 4 节点解锁",
+      "point": "页面结构与 4 节点",
+      "query": "高三提分专项｜模块3「单题型学习页与 4 节点解锁」｜功能点：页面结构与 4 节点。功能描述：页面展示题型名与 4 个固定节点，每个节点含主标题与副标题：做真题/高考原题找漏洞、补知识/梳理必会要点、看讲解/精学题型解法、做同型题/做对才算掌握。 数据流转：题型名取功能主页所选题型对应的 CB 知识点名称；4 节点解锁状态与右上角掌握度取本专项学习状态数据。 业务规则与约束：4 节点的名称、副标题、排列顺序固定，不随题型变化。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 208,
+      "candidates": [
+        {
+          "repo_id": "050e49b2-633a-44ad-96e8-9262546756db",
+          "repo_name": "frontend/onion-learning",
+          "score": 0.5944,
+          "confidence": "medium",
+          "reasoning": "需求是C端学生的移动端H5单题型学习页面结构与4节点解锁展示，与前端移动端学习应用最匹配（命中『基础能力库』学段年级映射，属于该前端仓库）",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "基础能力库 > 基础配置与共享库 > 学段年级映射"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.027722,
+            "activity": 0.127803,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7364
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.7291,
+          "confidence": "medium",
+          "reasoning": "节点解锁状态与掌握度取自专项学习状态数据，与学习用户状态服务的推题答题记录/学习状态管理相关",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "总复习一轮练习 > 总复习推题与答题"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.054492,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6489
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.8695,
+          "confidence": "low",
+          "reasoning": "专项提分与真题/同型题练习涉及学习练习服务（命中『专项突破与中考』『高频错题』），可能承载做真题/做同型题节点数据",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 专项突破与中考 > 本省高频考题",
+            "study-practice 学习练习服务 > 高频错题"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.055501,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5652
+        }
+      ]
+    },
+    {
+      "key": "3B",
+      "module": "3 单题型学习页与 4 节点解锁",
+      "point": "4 节点解锁状态机",
+      "query": "高三提分专项｜模块3「单题型学习页与 4 节点解锁」｜功能点：4 节点解锁状态机。功能描述：节点解锁随真题诊断结果与节点完成情况推进，控制各节点可进入性。完整规则如下表： 节点\t首次进入初始态\t解锁前置\t节点完成条件 做真题\t已解锁\t进入题型后默认可进入\t本轮真题诊断结束（全部答对或任意答错） 补知识\t待解锁\t真题未全做对后解锁；真题全对后作为可选补学节点解锁\t在知识卡片页点击「继续」 看讲解\t待解锁\t真题全对后直接解锁；或补知识完成后解锁\t播放器触发视频播放完成 做同型题\t待解锁\t真题全对后即解锁（二选一弹窗或返回学习页直接点击）；真题未全做对路径下视频完成后解锁\t2 道同型题均提交完成并进入完成页 交互逻辑： 当 真题诊断结果为全部答对 时，系统应同时解锁补知识、看讲解、做同型题 3 个节点，用户可在二选一弹窗直接进入，也可返回学习页直接点击任意已解锁节点（含直接进入做同型题）。 当 真题诊断结果为未全做对 时，系统应解锁补知识节点（看讲解、做同型题仍待解锁）；知识卡片完成后解锁看讲解，视频完成后解锁做同型题。 当 用户点击已解锁节点 时，系统应进入对应页面；当 用户点击待解锁节点 时，系统应提示「完成前置环节后解锁」。 业务规则与约束： 节点完成后仍展示为「已解锁」态，不新增「已完成」视觉态（理由：真题全对可跳过知识卡片/视频，已完成态会让被跳过的可选节点产生歧义）。 已解锁节点可反复进入；中途退出后回到学习页仍可重新进入该节点或其他已解锁节点。 影响范围",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 208,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.7652,
+          "confidence": "medium",
+          "reasoning": "节点解锁依赖真题诊断结果与同型题完成情况的服务端状态，命中「精准学 AI > 章节诊断」与「推题与答题记录」，可承载解锁状态机后端逻辑",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 章节诊断",
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.090542,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7599
+        },
+        {
+          "repo_id": "050e49b2-633a-44ad-96e8-9262546756db",
+          "repo_name": "frontend/onion-learning",
+          "score": 0.5944,
+          "confidence": "medium",
+          "reasoning": "需求为高三提分C端学习页的4节点解锁状态机与交互逻辑，属前端移动端H5学习页范畴，命中「基础能力库」学习类前端仓库",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "基础能力库 > 基础配置与共享库 > 学段年级映射"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.027722,
+            "activity": 0.127803,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7364
+        },
+        {
+          "repo_id": "f15a3b55-f885-48ec-92e7-bcdb0cf60126",
+          "repo_name": "backend/devices-study-room",
+          "score": 0.8451,
+          "confidence": "low",
+          "reasoning": "真题诊断答题流程命中「章节诊断与答题」，可能提供做真题节点诊断结果数据支撑",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "AI 精准学习 > 章节诊断与答题"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.036856,
+            "activity": 0.11212,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6368
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.5655,
+          "confidence": "low",
+          "reasoning": "涉及真题诊断进度状态更新与知识点补充习题、变式题复习，命中「试卷与诊断」与「知识点补充习题」，可能承载节点完成条件流转",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习",
+            "study-practice 学习练习服务 > 教材同步练习 > 知识点补充习题"
+          ],
+          "breakdown": {
+            "text": 0.130952,
+            "breadth": 0.07885,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5425
+        },
+        {
+          "repo_id": "b6a0bd10-715e-4527-8697-0b6d6bf4a636",
+          "repo_name": "frontend/player",
+          "score": 0.5068,
+          "confidence": "low",
+          "reasoning": "看讲解节点依赖视频播放完成事件触发解锁，命中移动端播放器生命周期，但活跃度低，仅作事件对接候选",
+          "sub_project": "yc-mobile-player-vue",
+          "sub_project_paths": [
+            "packages/yc-mobile-player-vue"
+          ],
+          "matched_node_paths": [
+            "yc-mobile-player-vue",
+            "yc-mobile-player-vue > Vue 组件封装 > 移动端 Vue 播放器生命周期管理"
+          ],
+          "breakdown": {
+            "text": 0.083333,
+            "breadth": 0.084201,
+            "activity": 0.083672,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3294
+        }
+      ]
+    },
+    {
+      "key": "3C",
+      "module": "3 单题型学习页与 4 节点解锁",
+      "point": "当前节点轻高亮引导",
+      "query": "高三提分专项｜模块3「单题型学习页与 4 节点解锁」｜功能点：当前节点轻高亮引导。功能描述：在题型首次完成前（进度未达 100%），在所有已解锁节点中，按「做真题 → 补知识 → 看讲解 → 做同型题」固定顺序，对顺序最后一个已解锁节点加一圈轻微黄色外描边作为继续学习的引导。 UI 设计意图：轻高亮仅为视觉引导，需克制——不展示「推荐」文字/标签/角标、不放大卡片、不改变卡片内容。 业务规则与约束： 在 题型首次完成前 下，系统应对顺序最后一个已解锁节点展示轻高亮（如首次进入轻高亮做真题；真题未全做对后轻高亮补知识；视频完成解锁同型题后轻高亮做同型题）。 轻高亮不是节点业务状态，不改变解锁/完成/点击规则，其他已解锁节点仍可正常进入。 在 题型首次完成同型题、进度达 100% 后 下，系统应取消所有节点轻高亮；后续重学不再展示轻高亮。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 7022,
+      "candidates": [
+        {
+          "repo_id": "050e49b2-633a-44ad-96e8-9262546756db",
+          "repo_name": "frontend/onion-learning",
+          "score": 0.5027,
+          "confidence": "medium",
+          "reasoning": "需求为移动端 H5 单题型学习页的四节点解锁与当前节点轻高亮视觉引导，属于C端学生学习页前端交互，与 onion-learning（K12 移动端H5，活跃开发）最匹配。",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "共享 UI 组件库 > 表单与选择组件 > 反馈收集弹窗"
+          ],
+          "breakdown": {
+            "text": 0.091667,
+            "breadth": 0.027722,
+            "activity": 0.127803,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5027
+        }
+      ]
+    },
+    {
+      "key": "3D",
+      "module": "3 单题型学习页与 4 节点解锁",
+      "point": "掌握程度浮层",
+      "query": "高三提分专项｜模块3「单题型学习页与 4 节点解锁」｜功能点：掌握程度浮层。功能描述：题型已有掌握度时，页面右上方展示当前题型掌握程度，取该题型已刷新的掌握度结果，与功能主页保持一致。 业务规则与约束：在 题型已有掌握度 下，系统应在右上方展示文案，按掌握度映射为「完全掌握本题型 / 初步掌握本题型 / 未掌握本题型」；展示的是历史最佳掌握程度（口径见模块 9）。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 206,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.7331,
+          "confidence": "medium",
+          "reasoning": "题型掌握程度浮层需读取题型掌握度元数据，命中「精准学 AI > 章节列表与图谱浏览」中节点掌握度及「推题与答题记录」按题型推荐能力，与单题型学习页最契合",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 章节列表与图谱浏览",
+            "精准学 AI > 推题与答题记录"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.058431,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.8265
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.8741,
+          "confidence": "low",
+          "reasoning": "该服务处理专项练习与错题进度，可能涉及题型练习进度，但无明确掌握度浮层能力，命中「专项突破与中考」较弱",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 专项突破与中考 > 本省高频考题"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.060145,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7432
+        },
+        {
+          "repo_id": "8915639a-a47d-44db-b272-0192bc5565cb",
+          "repo_name": "backend/study-data-center",
+          "score": 0.5569,
+          "confidence": "low",
+          "reasoning": "掌握度历史口径可能依赖统计计数缓存，但活跃度低频且无直接掌握度能力，仅弱相关",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "缓存层 > 统计计数器缓存"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.051837,
+            "activity": 0.083995,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.362
+        }
+      ]
+    },
+    {
+      "key": "3E",
+      "module": "3 单题型学习页与 4 节点解锁",
+      "point": "返回",
+      "query": "高三提分专项｜模块3「单题型学习页与 4 节点解锁」｜功能点：返回。交互逻辑：当 用户点击左上角返回 时，系统应回到功能主页，并保留原章节、小节和滚动位置。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 194,
+      "candidates": [
+        {
+          "repo_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repo_name": "frontend/primary_school_study",
+          "score": 0.7955,
+          "confidence": "medium",
+          "reasoning": "命中「通用UI组件>导航栏组件」（带返回箭头）与「课程管理>学习模块导航」（单题型学习页与节点解锁），返回主页并保留位置属前端交互，但该仓库疑似废弃需注意",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "通用UI组件 > 导航栏组件",
+            "课程管理 > 学习模块导航"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.074901,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.867
+        },
+        {
+          "repo_id": "49c32669-0063-49d5-9555-38e22a16fff7",
+          "repo_name": "frontend/institution-1v1",
+          "score": 0.5461,
+          "confidence": "low",
+          "reasoning": "命中「互动课堂>章节导航与课程流转」，涉及章节切换与导航，但服务对象为教师且疑似废弃，相关度较弱",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "互动课堂 > 章节导航与课程流转"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.054745,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.355
+        }
+      ]
+    },
+    {
+      "key": "4A",
+      "module": "4 真题检测",
+      "point": "复用端内做题组件",
+      "query": "高三提分专项｜模块4「真题检测」｜功能点：复用端内做题组件。功能描述：真题检测页完全复用端内做题组件，本专项不改造做题组件、不新增额外按钮，仅按配置项使用，并在提交结果回调上叠加业务弹窗。 业务规则与约束： 标题区域使用习题组件默认标题区，展示题序「题目1」「题目2」。 题目标签展示年份、试卷来源（如「2025」「新高考 I 卷」）。 题干、选项、答案、解析按现有做题组件正常展示；答题进度使用默认单题节点式进度；习题反馈组件配置为关闭。 答题模式为常规一题一提交：用户选择答案后「提交」可点击，提交后展示答案与解析。 工具栏右上角展示草稿、收藏，收藏按端内做题组件能力处理。 数据流转：真题习题 ID 取知识点级配置（逗号分隔，1-2 道）；题干/选项/答案/解析/年份/试卷来源/难度标签取端内题目系统。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 216,
+      "candidates": [
+        {
+          "repo_id": "90317825-5003-47a7-a9cc-7d6f1c101313",
+          "repo_name": "frontend/vocation-problem-app",
+          "score": 0.7702,
+          "confidence": "medium",
+          "reasoning": "需求核心是复用端内做题组件并叠加提交结果回调弹窗，命中「做题 UI 组件库 > 做题业务组件」及「做题核心引擎 > 题目截图与反馈（草稿/反馈）」，但该仓库疑似废弃故降级",
+          "sub_project": "做题 UI 组件库",
+          "sub_project_paths": [
+            "packages/ui",
+            "packages/ui-dimension",
+            "packages/ui-govrnmt",
+            "packages/ui-landscape",
+            "packages/ui-teacher"
+          ],
+          "matched_node_paths": [
+            "做题 UI 组件库 > 做题业务组件",
+            "练习模式包 > 基础练习模式 > 考试答题卡模式",
+            "做题核心引擎 > 题目截图与反馈"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.042945,
+            "activity": 0.013333,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.8506
+        },
+        {
+          "repo_id": "7ad39cb3-bd22-4eba-803f-8ae8d76a6379",
+          "repo_name": "backend/crs-m2",
+          "score": 0.7139,
+          "confidence": "low",
+          "reasoning": "题干/选项/答案/解析/年份/试卷来源标签取端内题目系统，命中「习题详情查询」「习题标签格式化」，但本专项主要为前端复用，后端改动概率低",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程资源查询服务 > 习题管理 > 习题详情查询",
+            "课程资源查询服务 > 习题管理 > 习题标签格式化"
+          ],
+          "breakdown": {
+            "text": 0.414683,
+            "breadth": 0.054812,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4641
+        }
+      ]
+    },
+    {
+      "key": "4B",
+      "module": "4 真题检测",
+      "point": "难度倒计时",
+      "query": "高三提分专项｜模块4「真题检测」｜功能点：难度倒计时。功能描述：真题检测页配置习题组件的倒计时组件，倒计时开始时长由当前题目难度标签映射。映射规则： 题目难度标签\t倒计时时长 0\t不展示倒计时组件 交互逻辑： 当 用户进入某真题 时，系统应按该题难度标签展示对应倒计时并开始倒数；难度标签为 0 时不展示倒计时。 当 用户答对前一题点击「继续」进入下一题 时，系统应按下一题难度重新开始该题倒计时。 业务规则与约束： 当 倒计时归零 时，系统应使时间停留在「00:00」，且不自动提交、不弹出提示、不禁止继续作答、不改变提交按钮状态，用户仍按正常流程作答提交。 如果 题目难度标签为空或不是 0/55/65/75/85/95，那么 系统应按 75 档展示 8 分钟倒计时并记录配置异常，不阻断作答。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 212,
+      "candidates": [
+        {
+          "repo_id": "90317825-5003-47a7-a9cc-7d6f1c101313",
+          "repo_name": "frontend/vocation-problem-app",
+          "score": 0.7826,
+          "confidence": "medium",
+          "reasoning": "需求为真题检测页习题组件配置难度映射倒计时，与该库的做题业务组件及答题相关组件最贴合（做题 UI 组件库 > 做题业务组件），但仓库疑似废弃需谨慎",
+          "sub_project": "做题 UI 组件库",
+          "sub_project_paths": [
+            "packages/ui",
+            "packages/ui-dimension",
+            "packages/ui-govrnmt",
+            "packages/ui-landscape",
+            "packages/ui-teacher"
+          ],
+          "matched_node_paths": [
+            "做题 UI 组件库 > 做题业务组件 > 答题进度与答题卡",
+            "练习模式包 > 基础练习模式 > 考试答题卡模式"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.055372,
+            "activity": 0.013333,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.8587
+        },
+        {
+          "repo_id": "49c32669-0063-49d5-9555-38e22a16fff7",
+          "repo_name": "frontend/institution-1v1",
+          "score": 0.6262,
+          "confidence": "low",
+          "reasoning": "个人答题模式含倒计时与答题结果展示，具备题目倒计时能力（互动课堂 > 个人答题模式），但业务线为1v1在线教育且疑似废弃",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "互动课堂 > 个人答题模式",
+            "互动课堂 > 视频内嵌计时器"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.058461,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4071
+        }
+      ]
+    },
+    {
+      "key": "4C",
+      "module": "4 真题检测",
+      "point": "多题合并诊断结果",
+      "query": "高三提分专项｜模块4「真题检测」｜功能点：多题合并诊断结果。功能描述：用户必须完成该题型配置的全部真题后才生成本次真题诊断结果；全部正确记为「答对」，任意一道答错记为「没答对」。 交互逻辑：当 用户提交一题并查看答案/解析后点击「继续」时，无论该题对错，系统应进入下一题；当 最后一道真题完成 时，系统应按整体结果弹出全对弹窗或未全做对弹窗。 业务规则与约束： 在 全部真题答对 下，整体记为「答对」。 在 任意一道答错 下，整体记为「没答对」。 真题诊断结果只记录首次结果（口径见模块 9），用于完成页首次文案与首次真题答题情况展示。 如果 题型仅配置 1 道真题，那么 系统应以该 1 道结果作为整体诊断结果。 数据流转：错题本——用户提交答错时按端内做题组件规则自动进入端内错题本。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 216,
+      "candidates": [
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.6445,
+          "confidence": "medium",
+          "reasoning": "需求属真题检测的多题合并诊断结果与错题自动流转，命中「试卷与诊断」及「高频错题>错题练习与回顾」，是诊断结果聚合与逐题作答的核心后端",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断",
+            "study-practice 学习练习服务 > 高频错题 > 错题练习与回顾"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.059709,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7689
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.7314,
+          "confidence": "medium",
+          "reasoning": "命中「章节诊断」逐题推送答题并获取诊断结果、「推题与答题记录」提交答案查看结果解析，与逐题继续及整体结果口径相关",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 章节诊断",
+            "精准学 AI > 推题与答题记录"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.056761,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7087
+        },
+        {
+          "repo_id": "f15a3b55-f885-48ec-92e7-bcdb0cf60126",
+          "repo_name": "backend/devices-study-room",
+          "score": 0.8451,
+          "confidence": "low",
+          "reasoning": "命中「章节诊断与答题」提交答案→下一题自适应流程，与逐题继续逻辑相关但业务线为硬件",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "AI 精准学习 > 章节诊断与答题"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.036856,
+            "activity": 0.11212,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5493
+        },
+        {
+          "repo_id": "050e49b2-633a-44ad-96e8-9262546756db",
+          "repo_name": "frontend/onion-learning",
+          "score": 0.5639,
+          "confidence": "medium",
+          "reasoning": "真题完成后的弹窗与错题本自动收录属前端练习交互，命中「练习应用>AI 错题本」",
+          "sub_project": "练习应用",
+          "sub_project_paths": [
+            "apps/practice-ai-wrong-book"
+          ],
+          "matched_node_paths": [
+            "练习应用 > AI 错题本"
+          ],
+          "breakdown": {
+            "text": 0.152778,
+            "breadth": 0.027722,
+            "activity": 0.127803,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4832
+        }
+      ]
+    },
+    {
+      "key": "4D",
+      "module": "4 真题检测",
+      "point": "真题全部做对弹窗",
+      "query": "高三提分专项｜模块4「真题检测」｜功能点：真题全部做对弹窗。功能描述：真题全部提交、答案全部正确，且用户查看答案/解析后点击做题组件「继续」按钮时，居中弹出二选一弹窗（不在提交瞬间弹出）。真题检测页不展示「完成」按钮，最后一道题提交后的推进按钮仍为「继续」。弹窗文案「太棒了！都答对了，接下来你想怎么学？可以看视频再巩固一下知识点和解题思路，也可以直接去做同型题检验哦。」 交互逻辑： 当 用户点击「看视频」时，系统应进入视频讲解页（模块 6）。 当 用户点击「做同型题」时，系统应进入同型题检验页（模块 7）。 当 用户点击关闭键关闭弹窗 时，系统应停留在真题页答案/解析状态；此时补知识、看讲解、做同型题 3 节点均已解锁，用户可回单题型学习页直接推进（含直接进入做同型题）。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 208,
+      "candidates": [
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.6151,
+          "confidence": "medium",
+          "reasoning": "命中「教材同步练习>知识点补充习题」的拉题、答题、解析页与完成情况查询能力，最贴近真题检测提交/查看解析后推进及节点解锁逻辑",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 教材同步练习 > 知识点补充习题",
+            "study-practice 学习练习服务 > 专项突破与中考 > 本省高频考题"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.076097,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7498
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.751,
+          "confidence": "medium",
+          "reasoning": "命中「精准学AI>推题与答题记录」的提交答案、查看结果解析及同型题/变式题推荐，与看视频/做同型题的模块跳转闭环相关",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI",
+            "精准学 AI > 章节诊断"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.076362,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6631
+        },
+        {
+          "repo_id": "f15a3b55-f885-48ec-92e7-bcdb0cf60126",
+          "repo_name": "backend/devices-study-room",
+          "score": 0.8453,
+          "confidence": "low",
+          "reasoning": "命中「章节诊断与答题」的提交答案→推荐下一题流程，与真题检测答题推进有一定相关但偏硬件端",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "AI 精准学习 > 章节诊断与答题",
+            "AI 精准学习 > 学习报告与结果查询"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.03706,
+            "activity": 0.11212,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5494
+        }
+      ]
+    },
+    {
+      "key": "4E",
+      "module": "4 真题检测",
+      "point": "真题未全做对引导弹窗",
+      "query": "高三提分专项｜模块4「真题检测」｜功能点：真题未全做对引导弹窗。功能描述：真题全部提交、存在答错，且用户查看答案/解析后点击「继续」按钮时，系统先将知识卡片节点解锁为可进入状态，再居中弹出单按钮引导弹窗。弹窗标题「这次真题已经帮你找到了漏洞」、正文「先补知识，再看讲解，会更容易把这类题学明白。」、主按钮「去补知识」。 交互逻辑： 当 未全做对引导弹窗展示时，知识卡片节点应已经处于已解锁状态。 当 用户点击「去补知识」时，系统应直接进入知识卡片页（模块 5）。 当 用户点击关闭键 时，系统应停留在真题页答案/解析状态，用户可稍后从单题型学习页推进。 业务规则与约束：该弹窗只承担引导后续学习的作用，不展示题号结果列表。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 193,
+      "candidates": [
+        {
+          "repo_id": "cee27ee1-cc73-4937-9a9e-730edd6c93b2",
+          "repo_name": "onion-practice",
+          "score": 0.5217,
+          "confidence": "medium",
+          "reasoning": "真题检测的答题、查看答案解析后点击「继续」及引导弹窗均属前端练习流程，命中「练习模式>单题模式」的提交/继续操作与判题交互",
+          "sub_project": "练习模式 (packages/mode)",
+          "sub_project_paths": [
+            "packages/mode"
+          ],
+          "matched_node_paths": [
+            "练习模式 (packages/mode) > 单题模式 (single)"
+          ],
+          "breakdown": {
+            "text": 0.114583,
+            "breadth": 0.033199,
+            "activity": 0.11833,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6891
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.8822,
+          "confidence": "low",
+          "reasoning": "知识卡片节点解锁可能涉及「知识点内容图谱>图谱查询」的节点状态，但弹窗UI不在此后端",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "知识点内容图谱 > 图谱查询"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.054834,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5735
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.5713,
+          "confidence": "low",
+          "reasoning": "涉及答错题目的后续补知识引导，与「高频错题>错题练习与回顾」的攻克薄弱知识点场景相关，但弹窗为前端交互",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 高频错题 > 错题练习与回顾"
+          ],
+          "breakdown": {
+            "text": 0.130952,
+            "breadth": 0.084728,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5464
+        }
+      ]
+    },
+    {
+      "key": "4F",
+      "module": "4 真题检测",
+      "point": "中途退出与恢复",
+      "query": "高三提分专项｜模块4「真题检测」｜功能点：中途退出与恢复。交互逻辑：当 用户中途点击左上角返回 时，系统应复用习题页通用阻断弹窗；用户取消退出则留在当前题目，确认退出则离开做题页。 业务规则与约束：在 用户确认退出且尚未完成整个真题诊断 下，系统应清空本轮真题作答进度，下次从第 1 道真题重新开始（即使第 1 道已答对）。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 414,
+      "candidates": [
+        {
+          "repo_id": "90317825-5003-47a7-a9cc-7d6f1c101313",
+          "repo_name": "frontend/vocation-problem-app",
+          "score": 0.7713,
+          "confidence": "medium",
+          "reasoning": "命中『做题管理>退出挽留与确认弹窗』通用阻断弹窗，且『练习引擎』支持断点续作/进度管理，完全对应中途退出与恢复及清空进度重开需求",
+          "sub_project": "主应用",
+          "sub_project_paths": [
+            "src/App.tsx",
+            "src/hooks",
+            "src/pages"
+          ],
+          "matched_node_paths": [
+            "主应用 > 做题管理 > 退出挽留与确认弹窗",
+            "做题核心引擎 > 练习引擎",
+            "做题核心引擎 > 埋点与 API > 埋点事件上报"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.044106,
+            "activity": 0.013333,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.8514
+        },
+        {
+          "repo_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repo_name": "frontend/primary_school_study",
+          "score": 0.6108,
+          "confidence": "low",
+          "reasoning": "命中『测评与报告>考试退出保护』退出确认弹窗，但面向小学生K12，与高三提分场景不符",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "测评与报告 > 考试退出保护"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.04305,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.397
+        }
+      ]
+    },
+    {
+      "key": "5A",
+      "module": "5 知识卡片",
+      "point": "大图 + 缩略图展示与切换",
+      "query": "高三提分专项｜模块5「知识卡片」｜功能点：大图 + 缩略图展示与切换。功能描述：页面上方展示当前选中的知识卡片大图，下方展示该题型全部知识卡片缩略图；进入时默认选中第 1 张，缩略图 1 展示选中态。 交互逻辑：当 用户点击下方任意缩略图 时，系统应将上方大图切换为对应卡片，并把该缩略图置为选中态。 业务规则与约束： 缩略图只负责切换，不直接触发图片放大。 知识卡片图片为 16:9 横版（建议素材 1280×720 或同等比例），前端按图片原比例展示，最多 5 张。 数据流转：知识卡片图片取知识点级配置的「补知识图片链接」（逗号分隔，最多 5 张）。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 209,
+      "candidates": [
+        {
+          "repo_id": "cf19acc3-6cf3-4729-a3fa-3685a3f15e36",
+          "repo_name": "frontend/new-course-builder-client",
+          "score": 0.5261,
+          "confidence": "medium",
+          "reasoning": "该需求是高三提分专项的『知识卡片』模块配置与展示，命中『专项内容管理>记忆模块与背诵管理』，且为活跃开发的K12教育后台，最贴近专项内容功能开发",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "专项内容管理 > 记忆模块与背诵管理"
+          ],
+          "breakdown": {
+            "text": 0.130952,
+            "breadth": 0.039472,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.692
+        },
+        {
+          "repo_id": "214e6e18-60fa-4aee-981d-34937ddd0f51",
+          "repo_name": "frontend/visual_component",
+          "score": 0.774,
+          "confidence": "low",
+          "reasoning": "命中『课程大纲组件>年级选择与大纲图片展示』（含默认选中第一个、图片切换展示逻辑），交互形态相似但业务线为在线教育H5且疑似废弃",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程大纲组件 > 年级选择与大纲图片展示",
+            "课程详情组件 > 详情图片列表展示"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.071244,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6781
+        },
+        {
+          "repo_id": "90317825-5003-47a7-a9cc-7d6f1c101313",
+          "repo_name": "frontend/vocation-problem-app",
+          "score": 0.496,
+          "confidence": "low",
+          "reasoning": "命中『图片查看与渲染』的图片浏览翻页能力，但属职业教育做题且疑似废弃，与知识卡片缩略图切换匹配度弱",
+          "sub_project": "做题 UI 组件库",
+          "sub_project_paths": [
+            "packages/ui",
+            "packages/ui-dimension",
+            "packages/ui-govrnmt",
+            "packages/ui-landscape",
+            "packages/ui-teacher"
+          ],
+          "matched_node_paths": [
+            "做题 UI 组件库 > 基础 UI 组件 > 图片查看与渲染"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.043798,
+            "activity": 0.013333,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3224
+        }
+      ]
+    },
+    {
+      "key": "5B",
+      "module": "5 知识卡片",
+      "point": "图片放大查看",
+      "query": "高三提分专项｜模块5「知识卡片」｜功能点：图片放大查看。交互逻辑： 当 用户点击上方大图 时，系统应复用习题组件的图片查看能力进入全屏放大，支持双指放大、双指缩小。 当 图片处于全屏放大状态且用户再次点击图片或点击任意位置 时，系统应收起图片回到知识卡片页。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 242,
+      "candidates": [
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.7114,
+          "confidence": "medium",
+          "reasoning": "活跃开发的在线教育H5，具备PhotoSwipe图片预览能力（业务工具链>截图与图像处理），与知识卡片全屏放大手势缩放需求高度契合",
+          "sub_project": "业务应用 (apps/)",
+          "sub_project_paths": [
+            "apps/aiAccurate",
+            "apps/aiClass",
+            "apps/bookChapter",
+            "apps/engLearningAnalysis",
+            "apps/errorJudge"
+          ],
+          "matched_node_paths": [
+            "业务工具链 (utils/) > 任务与媒体工具 > 截图与图像处理",
+            "业务应用 (apps/) > AI 助学"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.031488,
+            "activity": 0.118786,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.8124
+        },
+        {
+          "repo_id": "90317825-5003-47a7-a9cc-7d6f1c101313",
+          "repo_name": "frontend/vocation-problem-app",
+          "score": 0.7642,
+          "confidence": "medium",
+          "reasoning": "需求明确要复用习题组件的图片查看能力（图片放大、手势操作），命中做题UI组件库>图片查看与渲染，但仓库疑似废弃需降级",
+          "sub_project": "做题 UI 组件库",
+          "sub_project_paths": [
+            "packages/ui",
+            "packages/ui-dimension",
+            "packages/ui-govrnmt",
+            "packages/ui-landscape",
+            "packages/ui-teacher"
+          ],
+          "matched_node_paths": [
+            "做题 UI 组件库 > 基础 UI 组件 > 图片查看与渲染"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.03694,
+            "activity": 0.013333,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.73
+        },
+        {
+          "repo_id": "050e49b2-633a-44ad-96e8-9262546756db",
+          "repo_name": "frontend/onion-learning",
+          "score": 0.4903,
+          "confidence": "low",
+          "reasoning": "共享UI组件库>诗歌卡片轮播支持图片放大与全屏卡片翻页，与知识卡片放大交互相似可复用",
+          "sub_project": "共享 UI 组件库",
+          "sub_project_paths": [
+            "components/PoemSwiper"
+          ],
+          "matched_node_paths": [
+            "共享 UI 组件库 > 展示与辅助组件 > 诗歌卡片轮播"
+          ],
+          "breakdown": {
+            "text": 0.039855,
+            "breadth": 0.067063,
+            "activity": 0.127803,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4353
+        },
+        {
+          "repo_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repo_name": "frontend/primary_school_study",
+          "score": 0.6262,
+          "confidence": "low",
+          "reasoning": "学习流程>笔记总结复习以滑动卡片展示知识点，与知识卡片模块业务相近，但仓库疑似废弃",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "学习流程 > 笔记总结复习"
+          ],
+          "breakdown": {
+            "text": 0.320833,
+            "breadth": 0.043189,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4071
+        }
+      ]
+    },
+    {
+      "key": "5C",
+      "module": "5 知识卡片",
+      "point": "继续与节点完成",
+      "query": "高三提分专项｜模块5「知识卡片」｜功能点：继续与节点完成。交互逻辑：当 用户点击右下角常驻「继续」时，系统应将知识卡片节点记为学习完成，并直接跳转进入视频播放器页（模块 6）。 业务规则与约束： 当 用户点击左上角返回直接退出 时，系统应不记录知识卡片节点完成；再次进入从知识卡片页初始位置开始。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 207,
+      "candidates": [
+        {
+          "repo_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repo_name": "frontend/primary_school_study",
+          "score": 0.5854,
+          "confidence": "medium",
+          "reasoning": "命中「学习流程>笔记总结复习（滑动卡片知识点）」「课程管理>学习模块导航（按顺序解锁路由到视频等子页面）」，与知识卡片节点完成后跳转视频播放器的模块导航流程高度契合",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "学习流程 > 笔记总结复习",
+            "课程管理 > 学习模块导航",
+            "学习流程 > 视频播放控制"
+          ],
+          "breakdown": {
+            "text": 0.25463,
+            "breadth": 0.068502,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7305
+        },
+        {
+          "repo_id": "64749ceb-fbdd-4200-8bb0-ec798bdac1a0",
+          "repo_name": "frontend/onion-player",
+          "score": 0.7561,
+          "confidence": "low",
+          "reasoning": "命中「互动功能>知识点片段导航」及视频内互动的继续学习恢复播放逻辑，涉及视频播放器页（模块6），但仓库疑似废弃",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "互动功能 > 知识点片段导航与收藏",
+            "互动功能 > 视频内图片互动"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.053313,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6665
+        },
+        {
+          "repo_id": "e783eef5-2936-47f2-85d5-a22e984b021f",
+          "repo_name": "backend/study-task",
+          "score": 0.6322,
+          "confidence": "low",
+          "reasoning": "命中「业务逻辑层>用户学习引导卡片（继续学习聚合）」，可能承载节点学习完成状态记录，但与知识卡片节点完成的直接匹配度较弱",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "业务逻辑层（Biz） > 用户学习引导卡片"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.047361,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4109
+        }
+      ]
+    },
+    {
+      "key": "6A",
+      "module": "6 视频讲解与答疑",
+      "point": "复用通用知识点播放器",
+      "query": "高三提分专项｜模块6「视频讲解与答疑」｜功能点：复用通用知识点播放器。功能描述：复用端内通用知识点播放器页面，倍速、清晰度、弹幕、AI 私教、只讲干货、选片段等能力均按通用播放器能力保留。 数据流转：从「看讲解」节点进入时，播放该题型对应 CB 知识点的视频内容；题型讲解播放器保留 AI 答疑、倍速等学习工具。 业务规则与约束：本专项通过题型对应的 CB 知识点进入播放器，其余产品功能沿用现有通用能力，不改造播放器。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 233,
+      "candidates": [
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.8694,
+          "confidence": "medium",
+          "reasoning": "命中「学习工具与服务>视频播放器」及「AI 助学>AI 对话辅导」，本专项复用端内通用知识点播放器、AI 私教、倍速等能力正是该 C 端 H5 学习应用职责",
+          "sub_project": "业务应用 (apps/)",
+          "sub_project_paths": [
+            "apps/aiAccurate",
+            "apps/aiClass",
+            "apps/learn-AIChat",
+            "apps/learn-aiPreview",
+            "apps/nav-aiTeacherB"
+          ],
+          "matched_node_paths": [
+            "业务应用 (apps/) > 学习工具与服务 > 视频播放器",
+            "业务应用 (apps/) > AI 助学 > AI 对话辅导",
+            "业务工具链 (utils/) > 任务与媒体工具 > 视频播放能力"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.036682,
+            "activity": 0.118786,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.9151
+        },
+        {
+          "repo_id": "e45002e0-f945-463c-b827-cd9e482096e4",
+          "repo_name": "backend/devices-learn-resource",
+          "score": 0.54,
+          "confidence": "low",
+          "reasoning": "命中「课程资源管理>视频播放地址获取」，若需按 CB 知识点提供视频播放地址可能涉及，但需求明确不改造播放器",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程资源管理 > 视频播放地址获取",
+            "课程资源管理"
+          ],
+          "breakdown": {
+            "text": 0.130952,
+            "breadth": 0.052441,
+            "activity": 0.118786,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.351
+        }
+      ]
+    },
+    {
+      "key": "6B",
+      "module": "6 视频讲解与答疑",
+      "point": "答疑链路接入",
+      "query": "高三提分专项｜模块6「视频讲解与答疑」｜功能点：答疑链路接入。功能描述：答疑区复用端内现有答疑能力，并复用高中其他培优课的人工答疑链路。 交互逻辑：当 用户从播放器进入答疑并提问 时，系统应按当前知识点和课包归属将问题进入人工答疑后台。 业务规则与约束：该链路为现成能力，本专项通过配置接入，无需新增开发。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 270,
+      "candidates": [
+        {
+          "repo_id": "050e49b2-633a-44ad-96e8-9262546756db",
+          "repo_name": "frontend/onion-learning",
+          "score": 0.6475,
+          "confidence": "medium",
+          "reasoning": "命中'学习内容应用>AI视频答疑>视频AI答疑对话'，与从播放器进入答疑提问的交互高度吻合，且为活跃开发",
+          "sub_project": "学习内容应用",
+          "sub_project_paths": [
+            "apps/ai-summarize"
+          ],
+          "matched_node_paths": [
+            "学习内容应用 > AI 视频答疑",
+            "学习内容应用 > AI 视频答疑 > 视频 AI 答疑对话"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.035,
+            "activity": 0.127803,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7709
+        },
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.5887,
+          "confidence": "low",
+          "reasoning": "命中'业务应用>AI助学>AI对话辅导'，具备端内答疑能力，可能承载答疑链路配置接入",
+          "sub_project": "业务应用 (apps/)",
+          "sub_project_paths": [
+            "apps/aiAccurate",
+            "apps/aiClass",
+            "apps/learn-AIChat",
+            "apps/learn-aiPreview",
+            "apps/nav-aiTeacherB"
+          ],
+          "matched_node_paths": [
+            "业务应用 (apps/) > AI 助学 > AI 对话辅导",
+            "业务应用 (apps/) > AI 助学"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.03099,
+            "activity": 0.118786,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5576
+        },
+        {
+          "repo_id": "c82d124d-6de6-4d81-bb58-8dd3c657a876",
+          "repo_name": "backend/teacher-ai-class",
+          "score": 0.5317,
+          "confidence": "low",
+          "reasoning": "命中'学生学习流程'中的AI问答互动与视频播放能力，涉及知识点/课包归属的答疑后台可能相关",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "学生学习流程",
+            "视频播放"
+          ],
+          "breakdown": {
+            "text": 0.101852,
+            "breadth": 0.058645,
+            "activity": 0.115627,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3456
+        }
+      ]
+    },
+    {
+      "key": "6C",
+      "module": "6 视频讲解与答疑",
+      "point": "播放完成解锁与流转",
+      "query": "高三提分专项｜模块6「视频讲解与答疑」｜功能点：播放完成解锁与流转。交互逻辑：当 播放器触发播放完成 时，系统应先将视频节点记为完成、解锁同型题节点，再自动进入同型题检验页（模块 7）。 业务规则与约束： 只有播放器触发播放完成才将视频节点记为完成；播放到一半未完成时进度仍停留在上一已完成节点（口径见模块 9）。 如果 用户在播放完成与自动跳转之间退出，那么 返回单题型学习页时同型题节点应保持已解锁。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 15226,
+      "candidates": [
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.855,
+          "confidence": "medium",
+          "reasoning": "命中「学习主流程>视频观看与进度记录」的完成状态判定及「学习主流程」核心链路，符合播放完成记完成、解锁同型题并流转的业务规则",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "学习主流程 > 视频观看与进度记录",
+            "学习主流程"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.045897,
+            "activity": 0.112986,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.9057
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.5086,
+          "confidence": "medium",
+          "reasoning": "命中「精准学 AI>推题与答题记录」的按母题/节点推荐同型题能力，与解锁同型题节点、进入同型题检验相关",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录"
+          ],
+          "breakdown": {
+            "text": 0.065476,
+            "breadth": 0.07407,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5931
+        },
+        {
+          "repo_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repo_name": "frontend/primary_school_study",
+          "score": 0.6198,
+          "confidence": "low",
+          "reasoning": "命中「学习模块导航」的按顺序解锁与路由能力，但为疑似废弃且服务小学生，降级处理",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程管理 > 学习模块导航",
+            "学习流程 > 视频播放控制"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.05198,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5778
+        },
+        {
+          "repo_id": "5d02d5bf-6be1-4399-8bff-b255338b680d",
+          "repo_name": "backend/middle2-learn",
+          "score": 0.527,
+          "confidence": "low",
+          "reasoning": "命中「子任务解锁与快速通道」的顺序解锁及视频进度记录，但疑似废弃且面向中学不同产品线，降级",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程任务管理 > 子任务解锁与快速通道",
+            "视频与学习记录"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.053353,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.43
+        },
+        {
+          "repo_id": "64749ceb-fbdd-4200-8bb0-ec798bdac1a0",
+          "repo_name": "frontend/onion-player",
+          "score": 0.4913,
+          "confidence": "low",
+          "reasoning": "命中「互动功能」视频播放交互能力，但为播放器组件层且疑似废弃，与完成解锁流转的业务编排关联弱",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "互动功能"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.063555,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3194
+        }
+      ]
+    },
+    {
+      "key": "6D",
+      "module": "6 视频讲解与答疑",
+      "point": "中途退出与续播",
+      "query": "高三提分专项｜模块6「视频讲解与答疑」｜功能点：中途退出与续播。交互逻辑：当 用户中途退出视频 时，系统应复用端内通用知识点播放器的退出阻断弹窗并保存当前视频学习进度；再次进入时定位到上次退出位置继续播放。 业务规则与约束：中途退出（未播放完成）不解锁同型题节点。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 202,
+      "candidates": [
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.5218,
+          "confidence": "medium",
+          "reasoning": "命中『学习主流程 > 视频观看与进度记录』支持续播、『知识点状态管理 > 知识点续播定位』断点续学，且为活跃开发，最贴合中途退出保存进度与再次续播的需求",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "学习主流程 > 视频观看与进度记录",
+            "知识点状态管理 > 知识点续播定位"
+          ],
+          "breakdown": {
+            "text": 0.091667,
+            "breadth": 0.07941,
+            "activity": 0.112986,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6892
+        },
+        {
+          "repo_id": "5d02d5bf-6be1-4399-8bff-b255338b680d",
+          "repo_name": "backend/middle2-learn",
+          "score": 0.5227,
+          "confidence": "medium",
+          "reasoning": "命中『视频与学习记录』断点续播及『子任务解锁』能力，契合进度保存与节点解锁约束，但疑似废弃降级",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "视频与学习记录",
+            "课程任务管理 > 子任务解锁与快速通道"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.049089,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5731
+        },
+        {
+          "repo_id": "64749ceb-fbdd-4200-8bb0-ec798bdac1a0",
+          "repo_name": "frontend/onion-player",
+          "score": 0.6079,
+          "confidence": "low",
+          "reasoning": "作为端内通用知识点播放器组件（『互动功能 > 知识点片段导航』），退出阻断弹窗与续播定位可能涉及前端播放器，但疑似废弃",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "互动功能 > 知识点片段导航与收藏"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.057869,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5118
+        },
+        {
+          "repo_id": "2757713d-6cc4-42a4-ab21-be5a099a0b78",
+          "repo_name": "backend/basic-resource",
+          "score": 0.5143,
+          "confidence": "low",
+          "reasoning": "命中『视频管理 > 视频交互层』，若续播涉及视频资源交互配置可能相关，活跃开发",
+          "sub_project": "basic-resource",
+          "sub_project_paths": [
+            "internal/video"
+          ],
+          "matched_node_paths": [
+            "basic-resource > 视频管理 > 视频交互层"
+          ],
+          "breakdown": {
+            "text": 0.114583,
+            "breadth": 0.043616,
+            "activity": 0.11833,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3343
+        }
+      ]
+    },
+    {
+      "key": "7A",
+      "module": "7 同型题检验",
+      "point": "复用做题组件与题目配置",
+      "query": "高三提分专项｜模块7「同型题检验」｜功能点：复用做题组件与题目配置。功能描述：复用端内做题组件的题干、提交、答案解析、错题本、收藏等基础能力；同型题固定 2 道，标题区展示「题目1」「题目2」。同型题检验页不配置倒计时组件。 数据流转：同型题习题 ID 取知识点级配置（逗号分隔，固定 2 道）；题干/选项/答案/解析取端内题目系统。 业务规则与约束： 如果 任一题目缺失或下线导致取不到 2 道题，那么 系统应展示端内通用加载失败状态并记录异常，本轮无法进入完成页；本专项不兼容仅 1 道同型题的情况。 同型题支持进入端内错题本，也支持收藏，按端内做题组件既有能力处理。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 188,
+      "candidates": [
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.6582,
+          "confidence": "medium",
+          "reasoning": "命中『study-practice 学习练习服务>错题练习与回顾』及变式题复习，同型题检验属专项做题+错题/收藏能力，最贴近本需求",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 高频错题 > 错题练习与回顾",
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.073384,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7778
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.882,
+          "confidence": "medium",
+          "reasoning": "命中『精准学 AI>推题与答题记录』的同型题/变式题推荐与提交解析，与同型题固定取题、答题解析数据流吻合",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.054608,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7483
+        },
+        {
+          "repo_id": "7ad39cb3-bd22-4eba-803f-8ae8d76a6379",
+          "repo_name": "backend/crs-m2",
+          "score": 0.6044,
+          "confidence": "low",
+          "reasoning": "命中『习题管理>习题详情查询』可提供题干/选项/答案/解析，但仓库疑似废弃，仅作备选",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "课程资源查询服务 > 习题管理 > 习题详情查询"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.054421,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3929
+        }
+      ]
+    },
+    {
+      "key": "7B",
+      "module": "7 同型题检验",
+      "point": "作答提交与完成流转",
+      "query": "高三提分专项｜模块7「同型题检验」｜功能点：作答提交与完成流转。交互逻辑： 当 用户提交某道同型题 时，系统应展示答案/解析；用户点击「继续」进入下一道。 当 第 2 道同型题提交并展示答案/解析后用户点击「继续/完成」推进按钮 时，系统应进入完成页（模块 8）。 业务规则与约束：完成页不在提交瞬间跳转，确保用户先看到同型题的答案与解析（尤其做错的题目）。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 200,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.7379,
+          "confidence": "medium",
+          "reasoning": "命中「精准学 AI > 推题与答题记录」，负责按母题推荐同型题、提交答案并查看结果解析，最契合高三提分同型题检验的提交与解析流转",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.063263,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.8296
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.4919,
+          "confidence": "low",
+          "reasoning": "命中「试卷作答与报告」逐题提交与完成后报告，具备提交-完成流转能力但非同型题专项",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 试卷作答与报告"
+          ],
+          "breakdown": {
+            "text": 0.083333,
+            "breadth": 0.052962,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5531
+        },
+        {
+          "repo_id": "90317825-5003-47a7-a9cc-7d6f1c101313",
+          "repo_name": "frontend/vocation-problem-app",
+          "score": 0.765,
+          "confidence": "low",
+          "reasoning": "命中「练习引擎」的提交答案与页面跳转生命周期，但属职业教育且疑似废弃",
+          "sub_project": "做题核心引擎",
+          "sub_project_paths": [
+            "packages/core"
+          ],
+          "matched_node_paths": [
+            "做题核心引擎 > 练习引擎",
+            "主应用 > 做题管理 > 练习提交与结果处理"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.037767,
+            "activity": 0.013333,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4972
+        },
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.5421,
+          "confidence": "low",
+          "reasoning": "命中「变式题提交与进度」，处理变式题提交与完成进度跟踪，与同型题流转相近",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "变式题训练与纠错 > 变式题提交与进度"
+          ],
+          "breakdown": {
+            "text": 0.130952,
+            "breadth": 0.060415,
+            "activity": 0.112986,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4691
+        }
+      ]
+    },
+    {
+      "key": "7C",
+      "module": "7 同型题检验",
+      "point": "中途退出与恢复",
+      "query": "高三提分专项｜模块7「同型题检验」｜功能点：中途退出与恢复。交互逻辑：当 用户中途点击左上角返回 时，系统应复用习题页通用阻断弹窗；取消退出则留在当前题目，确认退出则离开做题页。 业务规则与约束：在 用户确认退出且尚未完成 2 道题 下，系统应清空本轮两道题的作答进度，下次从第 1 道同型题重新开始（即使第 1 道已提交）。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 210,
+      "candidates": [
+        {
+          "repo_id": "90317825-5003-47a7-a9cc-7d6f1c101313",
+          "repo_name": "frontend/vocation-problem-app",
+          "score": 0.7725,
+          "confidence": "medium",
+          "reasoning": "命中'做题管理>退出挽留与确认弹窗'及'做题核心引擎>练习引擎'（断点续作/提交），完整匹配中途退出阻断弹窗与作答进度恢复逻辑",
+          "sub_project": "主应用",
+          "sub_project_paths": [
+            "src/App.tsx",
+            "src/hooks",
+            "src/pages"
+          ],
+          "matched_node_paths": [
+            "主应用 > 做题管理 > 退出挽留与确认弹窗",
+            "做题核心引擎 > 练习引擎",
+            "做题核心引擎 > 埋点与 API > 埋点事件上报"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.045251,
+            "activity": 0.013333,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.8521
+        },
+        {
+          "repo_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repo_name": "frontend/primary_school_study",
+          "score": 0.6108,
+          "confidence": "low",
+          "reasoning": "命中'测评与报告>考试退出保护'退出确认弹窗逻辑相似，但服务对象为小学生且疑似废弃",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "测评与报告 > 考试退出保护"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.04305,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.572
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.6566,
+          "confidence": "low",
+          "reasoning": "命中'精准学 AI>推题与答题记录'的同型题与答题记录，可能涉及后端进度清空，但退出交互属前端职责",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.058362,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4268
+        }
+      ]
+    },
+    {
+      "key": "8A",
+      "module": "8 完成页与学习结果反馈",
+      "point": "左栏学习结果展示",
+      "query": "高三提分专项｜模块8「完成页与学习结果反馈」｜功能点：左栏学习结果展示。功能描述：左栏展示当前题型名称、近三年高考平均考察次数、高考平均占分、真题答题情况、同型题答题情况。 数据流转：题型名称取 CB 知识点名称；高考平均占分、近三年高考平均考察次数取该知识点亮点标签的前两个（顺序由录入保证固定：第 1 个=高考占分，第 2 个=考察频次）；真题答题情况取该题型首次真题诊断结果；同型题答题情况取本次同型题提交结果。 业务规则与约束： 在 用户首次完成该题型学习流程 下，系统应展示首次真题答题情况；首次真题结果只记录一次，后续重复进入「做真题」不覆盖。 在 后续重复学习/复习 下，系统应不展示历史真题答题情况，仅展示本次同型题答题情况。 真题答题情况仅展示做对/做错结果。 如果 题型仅配置 1 道真题，那么 完成页应展示该 1 道真题的结果。 同型题答题情况展示题号「1」「2」与作答结果：做对用绿色状态、做错用红色状态；结果项不可点击、不跳转做题详情。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": true,
+      "duration_ms": 206,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.8968,
+          "confidence": "high",
+          "reasoning": "命中「精准学 AI > 推题与答题记录」，完成页需读取首次真题诊断结果与本次同型题作答结果，属该服务的答题记录与结果管理能力",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.06944,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.9329
+        },
+        {
+          "repo_id": "f15a3b55-f885-48ec-92e7-bcdb0cf60126",
+          "repo_name": "backend/devices-study-room",
+          "score": 0.6174,
+          "confidence": "medium",
+          "reasoning": "命中「AI 精准学习 > 学习报告与结果查询」，完成页学习结果反馈与正确率/答题详情展示与其相关",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "AI 精准学习 > 学习报告与结果查询",
+            "AI 精准学习 > 章节诊断与答题"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.038295,
+            "activity": 0.11212,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5763
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.6023,
+          "confidence": "low",
+          "reasoning": "命中「试卷作答与报告」，完成页报告展示逻辑相近，但缺少同型题/首次真题特有语义",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 试卷作答与报告"
+          ],
+          "breakdown": {
+            "text": 0.152778,
+            "breadth": 0.093823,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3915
+        }
+      ]
+    },
+    {
+      "key": "8B",
+      "module": "8 完成页与学习结果反馈",
+      "point": "右栏老师反馈文案矩阵",
+      "query": "高三提分专项｜模块8「完成页与学习结果反馈」｜功能点：右栏老师反馈文案矩阵。功能描述：右栏展示老师反馈文案。首次完成按「首次真题结果 × 同型题结果」匹配 6 组文案；复习完成按「本次同型题结果」匹配 3 组复习文案。 业务规则与约束： 首次真题结果判定：全部真题正确=答对；任意一道提交错误=没答对。 文案变量：【题型】取当前题型名称；【高考平均占分x分】取当前知识点第 1 个亮点标签（高考占分标签，顺序由录入保证）。 首次完成文案矩阵（6 组）： 首次真题结果\t同型题结果\t文案要点 第一次答对\t2/2 做对\t第一次就拿下，同型题全对，掌握扎实 第一次答对\t1/2 做对\t第一次答对，同型题拿下一道，手感已有 第一次答对\t0/2 做对\t第一次答对但同型题卡住，建议回看讲解 第一次没答对\t2/2 做对\t第一次没做出，学完同型题全拿下，最大收获 第一次没答对\t1/2 做对\t第一次没做出，同型题拿下一道，再巩固一次 第一次没答对\t0/2 做对\t题型还硬，但走完全流程，建议回头再过一遍 复习完成文案（3 组）： 本次同型题结果\t文案要点 2/2 做对\t状态很稳，解法已掌握扎实 1/2 做对\t拿下一道，复盘错题、稳住细节 0/2 做对\t关键步骤需重新巩固，建议回看讲解再检验 完整文案以 PRD V1.6「完成页老师反馈文案矩阵」为准。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 243,
+      "candidates": [
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.6701,
+          "confidence": "medium",
+          "reasoning": "完成页学习结果反馈与同型题/真题结果判定属于练习作答报告范畴（试卷作答与报告、期末诊断与变式复习），最贴合完成页反馈文案逻辑",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 试卷作答与报告",
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.085268,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7856
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.8969,
+          "confidence": "medium",
+          "reasoning": "真题与同型题答题记录、结果解析由此服务管理，文案矩阵需依赖首次真题与同型题作答结果判定",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "总复习一轮练习 > 总复习推题与答题"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.069514,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.758
+        },
+        {
+          "repo_id": "562da281-9ff0-4887-a44e-9306b1de49b4",
+          "repo_name": "backend/teacher-evaluate",
+          "score": 0.5053,
+          "confidence": "low",
+          "reasoning": "涉及逐题正确率与结果分析，可能承担完成页老师反馈的结果统计部分",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "测评统计报告 > 试卷结构与逐题分析"
+          ],
+          "breakdown": {
+            "text": 0.101852,
+            "breadth": 0.052669,
+            "activity": 0.112986,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3284
+        }
+      ]
+    },
+    {
+      "key": "8C",
+      "module": "8 完成页与学习结果反馈",
+      "point": "掌握程度展示差异",
+      "query": "高三提分专项｜模块8「完成页与学习结果反馈」｜功能点：掌握程度展示差异。业务规则与约束： 在 完成页 下，系统应展示本次同型题结果对应的本次掌握程度。 在 功能主页与单题型学习页 下，系统应展示该题型历史最佳掌握程度（口径见模块 9）。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 210,
+      "candidates": [
+        {
+          "repo_id": "f15a3b55-f885-48ec-92e7-bcdb0cf60126",
+          "repo_name": "backend/devices-study-room",
+          "score": 0.8453,
+          "confidence": "medium",
+          "reasoning": "命中「AI 精准学习 > 学习报告与结果查询」，可承载完成页学习结果反馈与掌握程度概览。",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "AI 精准学习 > 学习报告与结果查询",
+            "AI 精准学习 > 章节诊断与答题"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.037078,
+            "activity": 0.11212,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.812
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.6166,
+          "confidence": "medium",
+          "reasoning": "命中「精准学 AI > 推题与答题记录」与「精准学 AI」，高三提分同型题推荐/答题结果与掌握程度口径正是其核心闭环，最契合完成页与主页掌握程度展示。",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.064153,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7508
+        },
+        {
+          "repo_id": "1ad81903-ca17-46b7-a546-c101d505b9c3",
+          "repo_name": "backend/devices-learn",
+          "score": 0.5858,
+          "confidence": "low",
+          "reasoning": "命中「诊断考试系统 > 成绩报告与知识点掌握」，涉及知识点掌握进度展示，但偏诊断考试且活跃度低。",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "诊断考试系统 > 成绩报告与知识点掌握"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.042257,
+            "activity": 0.07658,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5558
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.7091,
+          "confidence": "low",
+          "reasoning": "命中「试卷作答与报告」，完成后生成报告能力相关，但为试卷诊断场景非同型题掌握程度。",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 试卷作答与报告"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.047849,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5484
+        },
+        {
+          "repo_id": "8915639a-a47d-44db-b272-0192bc5565cb",
+          "repo_name": "backend/study-data-center",
+          "score": 0.6792,
+          "confidence": "low",
+          "reasoning": "命中「统计计数器缓存」，历史最佳掌握程度口径可能依赖其累计正确数统计。",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "缓存层 > 统计计数器缓存"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.051837,
+            "activity": 0.083995,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4415
+        }
+      ]
+    },
+    {
+      "key": "8D",
+      "module": "8 完成页与学习结果反馈",
+      "point": "两个返回出口与状态刷新",
+      "query": "高三提分专项｜模块8「完成页与学习结果反馈」｜功能点：两个返回出口与状态刷新。交互逻辑： 当 用户点击左上角返回 时，系统应返回单题型学习页，并刷新 4 个节点状态与右上角掌握度。 当 用户点击右下角「返回功能主页」时，系统应返回功能主页，定位到用户进入该题型前所在的位置，并刷新该题型掌握度为最新历史最佳掌握程度。 业务规则与约束：用户完成 2 道同型题后，功能主页与单题型学习页均应展示最新历史最佳掌握程度，不得出现完成后返回仍展示旧掌握程度的情况（写入时机由技术方案确定）。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 14276,
+      "candidates": [
+        {
+          "repo_id": "4fb81ab0-f701-4435-b5c9-cfdbabfe31e3",
+          "repo_name": "frontend/primary_school_study",
+          "score": 0.7651,
+          "confidence": "medium",
+          "reasoning": "完成页与返回操作按钮属前端，命中「通用UI组件 > 完成奖励页」，但仓库疑似废弃故降级",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "通用UI组件 > 完成奖励页"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.044499,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7306
+        },
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.5408,
+          "confidence": "medium",
+          "reasoning": "掌握度/完成率的写入与刷新（历史最佳掌握程度）应由后端学习流程服务处理，命中「学情报告与推荐 > 知识点完成率统计与推荐」，且为活跃开发",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "学情报告与推荐 > 知识点完成率统计与推荐",
+            "学习主流程 > 课后练习与答题"
+          ],
+          "breakdown": {
+            "text": 0.114583,
+            "breadth": 0.075433,
+            "activity": 0.112986,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7015
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.7373,
+          "confidence": "low",
+          "reasoning": "同型题答题结果与掌握度记录可能涉及此服务，命中「精准学 AI > 推题与答题记录」",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.062678,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5959
+        },
+        {
+          "repo_id": "db59d694-ab1b-4ca5-b3d6-6966ebfb862b",
+          "repo_name": "backend/teacher-ee-demo",
+          "score": 0.5203,
+          "confidence": "low",
+          "reasoning": "结果页与状态查询相关，命中「学生学习 > 学习结果与状态查询」，但疑似废弃",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "学生学习 > 学习结果与状态查询"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.046692,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3382
+        }
+      ]
+    },
+    {
+      "key": "9A",
+      "module": "9 学习进度与掌握程度（跨页面状态）",
+      "point": "学习进度计算",
+      "query": "高三提分专项｜模块9「学习进度与掌握程度（跨页面状态）」｜功能点：学习进度计算。功能描述：学习进度只表达用户在当前题型学习流程中走到了哪一步，不表达作答对错与掌握好坏。 业务规则与约束： 进度按已完成节点位置计算：未开始=0%；完成真题=25%；完成知识卡片=50%；完成视频=75%；完成同型题=100%。 在 真题全对跳过知识卡片并完成视频 下，进度直接为 75%；在 真题全对直接完成同型题 下，进度直接为 100%；可选节点被跳过时，后续节点完成后按后续节点对应进度更新。 在 节点进行中（未完成）下，整体进度停留在上一个已完成节点；如视频播放到一半进度仍停留上一节点，播放完成后更新为 75%。 数据流转：进度按题型维度记录，取该题型历史最高，重复进入或重学过程中不回退（如已达 100% 的题型再次进入做真题，进度仍保持 100%）。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 197,
+      "candidates": [
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.5249,
+          "confidence": "medium",
+          "reasoning": "study-flow 明确管理知识点完成状态、续播进度与章节小节进度查询，与按节点位置（真题/知识卡片/视频/同型题）计算学习流程进度高度契合，命中「知识点状态管理」「章节小节进度查询」。",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "知识点状态管理",
+            "知识点状态管理 > 知识点分数计算",
+            "教材与课程树管理 > 章节小节进度查询",
+            "学情报告与推荐 > 知识点完成率统计与推荐"
+          ],
+          "breakdown": {
+            "text": 0.091667,
+            "breadth": 0.082425,
+            "activity": 0.112986,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6912
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.6838,
+          "confidence": "medium",
+          "reasoning": "study-user-status 承载 C 端学习状态与精准学闭环（同型题/变式题/视频学习），与题型维度进度记录相关，命中「精准学 AI」相关节点。",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI",
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI > 章节列表与图谱浏览"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.085548,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6195
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.8647,
+          "confidence": "low",
+          "reasoning": "study-practice 有练习进度与试卷断点续做能力，但其进度偏作答/诊断维度，非纯流程节点进度，相关度较低。",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 试卷作答与报告",
+            "study-practice 学习练习服务 > 高频错题 > 错题浏览与进度"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.05075,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5621
+        }
+      ]
+    },
+    {
+      "key": "9B",
+      "module": "9 学习进度与掌握程度（跨页面状态）",
+      "point": "学习状态映射",
+      "query": "高三提分专项｜模块9「学习进度与掌握程度（跨页面状态）」｜功能点：学习状态映射。业务规则与约束：在 进度为 0% 下为未学习；在 进度 25%-75% 下为学习中；在 完成同型题、进度达 100% 下为已完成。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 209,
+      "candidates": [
+        {
+          "repo_id": "873e942f-833a-4650-9cf7-2701d7ca3de2",
+          "repo_name": "backend/study-plan",
+          "score": 0.6266,
+          "confidence": "medium",
+          "reasoning": "命中『学习流水与统计>补学与学习状态』，直接管理内容颗粒的学习完成状态映射，且活跃开发，最契合未学习/学习中/已完成状态映射需求",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "学习流水与统计 > 补学与学习状态"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.046692,
+            "activity": 0.112986,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7573
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.6161,
+          "confidence": "medium",
+          "reasoning": "命中『精准学 AI』含同型题/变式题推荐与答题、章节诊断，需求中『完成同型题达100%』与其能力关联",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI",
+            "精准学 AI > 推题与答题记录"
+          ],
+          "breakdown": {
+            "text": 0.152778,
+            "breadth": 0.094259,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6338
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.7395,
+          "confidence": "medium",
+          "reasoning": "命中『试卷与诊断>期末诊断与变式复习』含未开始/诊断中/复习中/已完成状态跟踪，与进度状态映射类似",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+          ],
+          "breakdown": {
+            "text": 0.324653,
+            "breadth": 0.059209,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5974
+        },
+        {
+          "repo_id": "e0354d01-df3b-4010-b947-98c19a6c86e2",
+          "repo_name": "backend/API-Auto",
+          "score": 0.754,
+          "confidence": "low",
+          "reasoning": "命中『学习进度与课程』含完成状态查询，但仓库疑似废弃，降级备选",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "学生端业务接口 > 学习进度与课程"
+          ],
+          "breakdown": {
+            "text": 0.503049,
+            "breadth": 0.060742,
+            "activity": 0.007317,
+            "domain": 0.182927
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4901
+        }
+      ]
+    },
+    {
+      "key": "9C",
+      "module": "9 学习进度与掌握程度（跨页面状态）",
+      "point": "掌握程度判定与生成时机",
+      "query": "高三提分专项｜模块9「学习进度与掌握程度（跨页面状态）」｜功能点：掌握程度判定与生成时机。功能描述：掌握程度仅以同型题 2 道结果为准，与真题作答无关。 业务规则与约束： 2/2 做对=完全掌握；1/2 做对=初步掌握；0/2 做对=未掌握。 在 仅完成 2 道同型题后 下，系统才生成本次掌握程度；真题、知识卡片、视频环节均不生成掌握程度。 在 题型图谱页学习进度达 100% 下，系统才在进度条之外独立展示掌握程度标签。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 188,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.9028,
+          "confidence": "medium",
+          "reasoning": "命中『精准学 AI > 推题与答题记录』与『章节诊断』，同型题/变式题答题记录与掌握程度判定属于该用户学习状态服务",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI > 章节诊断"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.075383,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.9368
+        },
+        {
+          "repo_id": "f15a3b55-f885-48ec-92e7-bcdb0cf60126",
+          "repo_name": "backend/devices-study-room",
+          "score": 0.588,
+          "confidence": "medium",
+          "reasoning": "命中『知识图谱与掌握度分析』（灵活运用/基本掌握/薄弱/未掌握），与掌握程度判定语义高度相关，但为硬件端服务",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "AI 精准学习 > 知识图谱与掌握度分析",
+            "AI 精准学习 > 章节诊断与答题"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.054763,
+            "activity": 0.11212,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6155
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.6459,
+          "confidence": "low",
+          "reasoning": "命中『试卷与诊断』及练习进度状态跟踪，涉及做题结果与进度，但偏错题/期末诊断而非同型题掌握判定",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.061041,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5365
+        },
+        {
+          "repo_id": "74fe1643-3a05-44a7-9a97-effb68672317",
+          "repo_name": "backend/learn-2",
+          "score": 0.5055,
+          "confidence": "low",
+          "reasoning": "命中『变式练习』与『练习答题』完成状态判定，但仓库疑似废弃，降级处理",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "变式练习",
+            "练习答题"
+          ],
+          "breakdown": {
+            "text": 0.152778,
+            "breadth": 0.108252,
+            "activity": 0.006667,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3286
+        }
+      ]
+    },
+    {
+      "key": "9D",
+      "module": "9 学习进度与掌握程度（跨页面状态）",
+      "point": "历史最佳掌握程度",
+      "query": "高三提分专项｜模块9「学习进度与掌握程度（跨页面状态）」｜功能点：历史最佳掌握程度。功能描述：功能主页与单题型学习页展示该题型历史最佳掌握程度，完成页展示本次掌握程度。 业务规则与约束： 历史最佳按「完全掌握 > 初步掌握 > 未掌握」的优先级取最高一次结果。 当 用户完成 2 道同型题后 时，系统应将功能主页与单题型学习页刷新为最新历史最佳掌握程度，不得出现完成后返回仍展示旧值的情况（写入时机由技术方案确定）。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 191,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.6625,
+          "confidence": "medium",
+          "reasoning": "精准学AI提供同型题推荐与答题记录及节点掌握度元数据，历史最佳掌握程度的读写与刷新最契合此服务（命中『精准学 AI > 推题与答题记录』『章节列表与图谱浏览-掌握度』）",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI > 章节列表与图谱浏览",
+            "精准学 AI"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.064289,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.7806
+        },
+        {
+          "repo_id": "f15a3b55-f885-48ec-92e7-bcdb0cf60126",
+          "repo_name": "backend/devices-study-room",
+          "score": 0.5789,
+          "confidence": "medium",
+          "reasoning": "该服务有掌握度分析（完全掌握/基本掌握/未掌握）与自适应答题流程，可能承载掌握程度计算（命中『知识图谱与掌握度分析』）",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "AI 精准学习 > 知识图谱与掌握度分析",
+            "AI 精准学习 > 章节诊断与答题"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.045707,
+            "activity": 0.11212,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6096
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.8745,
+          "confidence": "low",
+          "reasoning": "学习练习服务含记忆练习进度与做题结果报告，可能涉及练习进度状态（命中『记忆练习进度』）",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 快背与记忆练习 > 记忆练习进度"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.060467,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5684
+        },
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.5489,
+          "confidence": "low",
+          "reasoning": "活跃开发的学情报告服务记录知识点完成率与统计，可能涉及掌握程度状态记录（命中『知识点完成率统计与推荐』）",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "学情报告与推荐 > 知识点完成率统计与推荐"
+          ],
+          "breakdown": {
+            "text": 0.152778,
+            "breadth": 0.045378,
+            "activity": 0.112986,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4735
+        }
+      ]
+    },
+    {
+      "key": "9E",
+      "module": "9 学习进度与掌握程度（跨页面状态）",
+      "point": "重复学习",
+      "query": "高三提分专项｜模块9「学习进度与掌握程度（跨页面状态）」｜功能点：重复学习。业务规则与约束： 任意已解锁节点均可重新进入学习；已完成题型再次进入仍按 4 节点解锁规则进入对应节点。 重学路径：补知识完成进入视频，视频完成自动进入同型题，只有完成同型题后才生成本次完成页。 真题结果只取首次诊断结果，不因后续重做而覆盖。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 243,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.8971,
+          "confidence": "medium",
+          "reasoning": "需求聚焦跨页面学习进度与掌握程度状态管理及4节点解锁重学闭环，与该服务的『精准学 AI』补知识→视频→同型题→章节诊断闭环高度吻合，重复学习按节点解锁进入及首次诊断结果保留最契合此仓库",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI",
+            "精准学 AI > 章节诊断",
+            "精准学 AI > 推题与答题记录"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.069694,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.9331
+        },
+        {
+          "repo_id": "f15a3b55-f885-48ec-92e7-bcdb0cf60126",
+          "repo_name": "backend/devices-study-room",
+          "score": 0.5224,
+          "confidence": "medium",
+          "reasoning": "『AI 精准学习 > 知识图谱与掌握度分析』及自适应答题流程涉及掌握度与节点解锁状态，可能承载重学掌握程度逻辑，但服务对象含硬件端，次于C端学生主服务",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "AI 精准学习 > 知识图谱与掌握度分析",
+            "AI 精准学习 > 章节诊断与答题"
+          ],
+          "breakdown": {
+            "text": 0.130952,
+            "breadth": 0.04158,
+            "activity": 0.11212,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5729
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.7191,
+          "confidence": "low",
+          "reasoning": "『试卷与诊断 > 期末诊断与变式复习』含诊断进度状态与知识点触发更新，涉及练习进度跟踪，但侧重错题与变式复习，与重学节点解锁规则关联较弱",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.057886,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4674
+        },
+        {
+          "repo_id": "1ad81903-ca17-46b7-a546-c101d505b9c3",
+          "repo_name": "backend/devices-learn",
+          "score": 0.537,
+          "confidence": "medium",
+          "reasoning": "『诊断考试系统 > 试卷进度与重做』直接涉及重做与进度状态，与重复学习及首次诊断结果保留规则相关，但活跃度低频且偏诊断考试而非学习闭环",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "诊断考试系统 > 试卷进度与重做",
+            "诊断考试系统 > 成绩报告与知识点掌握"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.039355,
+            "activity": 0.07658,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.4657
+        }
+      ]
+    },
+    {
+      "key": "10A",
+      "module": "10 新手引导",
+      "point": "触发与频次",
+      "query": "高三提分专项｜模块10「新手引导」｜功能点：触发与频次。功能描述：用户首次进入对应页面时自动出现引导；引导只展示一句气泡文案，不提供「跳过」「完成」「我知道了」等按钮。用户点击页面任意位置后关闭蒙层，并按用户维度记录为已关闭状态。全流程仅 2 处引导：题型图谱页 1 步、单题型学习页 1 步。 UI 设计意图：采用蒙层 + 高亮目标元素 + 一句气泡文案的轻提示形式，克制不打断；其余页面（知识卡片/视频/同型题/完成页等）自解释，不再单独引导。 业务规则与约束： 当 用户首次进入题型图谱页或单题型学习页 时，系统应自动展示对应引导。 当 引导蒙层展示后用户点击页面任意位置 时，系统应关闭蒙层，并按用户维度记录该引导已关闭，后续进入不再触发。 引导不提供独立按钮；具体视觉样式与蒙层交互以后续 UED 新手引导设计稿为准。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 195,
+      "candidates": [
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.5043,
+          "confidence": "medium",
+          "reasoning": "需求为前端页面蒙层+气泡引导（题型图谱页、单题型学习页）的触发与用户维度已关闭记录，命中「业务组件>激励弹窗与引导」及「业务工具链>功能锁与新用户引导」，前端H5活跃开发最匹配",
+          "sub_project": "公共组件 (components/)",
+          "sub_project_paths": [
+            "components/AboutSoulOfScholarHelpModal",
+            "components/IncentiveExplanationModal",
+            "components/Power",
+            "components/ResultBadge",
+            "components/SeasonGuide"
+          ],
+          "matched_node_paths": [
+            "公共组件 (components/) > 业务组件 > 激励弹窗与引导",
+            "业务工具链 (utils/) > 全局基础与安全 > 功能锁与新用户引导"
+          ],
+          "breakdown": {
+            "text": 0.091667,
+            "breadth": 0.038316,
+            "activity": 0.118786,
+            "domain": 0.166667,
+            "stack": 0.088889
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6778
+        },
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.8561,
+          "confidence": "low",
+          "reasoning": "命中「用户互动与通知」弹窗触达能力，可作为引导展示后端支撑候选，但非首次进入页面引导专项",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "用户互动与通知",
+            "学情报告与推荐 > 新用户推荐引导"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.046958,
+            "activity": 0.112986,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6731
+        },
+        {
+          "repo_id": "8b4b8b03-dd9b-490b-9f4e-baeec0f624ee",
+          "repo_name": "backend/operation",
+          "score": 0.6492,
+          "confidence": "low",
+          "reasoning": "若引导需服务端控制曝光与频次，可命中「弹窗管理>弹窗曝光与频次控制」，但轻提示引导通常前端记录，关联较弱",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "弹窗管理 > 弹窗曝光与频次控制"
+          ],
+          "breakdown": {
+            "text": 0.229167,
+            "breadth": 0.074757,
+            "activity": 0.107469,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.6553
+        },
+        {
+          "repo_id": "e783eef5-2936-47f2-85d5-a22e984b021f",
+          "repo_name": "backend/study-task",
+          "score": 0.5863,
+          "confidence": "low",
+          "reasoning": "命中「用户学习引导卡片」，涉及注册天数等引导数据生成，但形态为卡片而非页面蒙层气泡，相关度低",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "业务逻辑层（Biz） > 用户学习引导卡片"
+          ],
+          "breakdown": {
+            "text": 0.183333,
+            "breadth": 0.047361,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.3811
+        }
+      ]
+    },
+    {
+      "key": "10B",
+      "module": "10 新手引导",
+      "point": "引导内容",
+      "query": "高三提分专项｜模块10「新手引导」｜功能点：引导内容。功能描述： 引导一（题型图谱页，高亮题型卡片）：传达\"每张卡片是一道高考高频题型，进度与掌握程度随学习更新，做对同型题才算拿下\"。 引导二（单题型学习页，高亮整条 4 节点闯关地图）：一次讲清流程与核心理念\"做真题→补知识→看讲解→做同型题，做错是帮你找漏洞，把同型题做对就拿下\"。 业务规则与约束：引导文案为示意，最终文案可由 PM 微调；引导二已合并原\"做真题=找漏洞\"的单独引导。",
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "duration_ms": 13207,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.5647,
+          "confidence": "medium",
+          "reasoning": "命中『精准学 AI > 章节列表与图谱浏览』与『推题与答题记录（同型题/掌握度）』，与题型图谱页、同型题掌握程度理念高度契合",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "精准学 AI > 章节列表与图谱浏览",
+            "精准学 AI > 推题与答题记录"
+          ],
+          "breakdown": {
+            "text": 0.101852,
+            "breadth": 0.093732,
+            "activity": 0.131295,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.717
+        },
+        {
+          "repo_id": "e783eef5-2936-47f2-85d5-a22e984b021f",
+          "repo_name": "backend/study-task",
+          "score": 0.5558,
+          "confidence": "medium",
+          "reasoning": "命中『业务逻辑层 > 用户学习引导卡片』，直接负责生成用户引导数据，与新手引导内容相关",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "业务逻辑层（Biz） > 用户学习引导卡片"
+          ],
+          "breakdown": {
+            "text": 0.152778,
+            "breadth": 0.047361,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5946
+        },
+        {
+          "repo_id": "f15a3b55-f885-48ec-92e7-bcdb0cf60126",
+          "repo_name": "backend/devices-study-room",
+          "score": 0.6923,
+          "confidence": "low",
+          "reasoning": "命中『AI 精准学习 > 章节诊断与答题』的做真题→找漏洞闯关流程，与引导二的4节点流程理念相关但为硬件业务线",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "AI 精准学习 > 章节诊断与答题"
+          ],
+          "breakdown": {
+            "text": 0.305556,
+            "breadth": 0.036856,
+            "activity": 0.11212,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5667
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.8635,
+          "confidence": "low",
+          "reasoning": "命中『高频错题 > 错题浏览与进度』，与题型进度/掌握程度更新有一定关联，但非引导文案主体",
+          "sub_project": "",
+          "sub_project_paths": [],
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 高频错题 > 错题浏览与进度"
+          ],
+          "breakdown": {
+            "text": 0.458333,
+            "breadth": 0.049501,
+            "activity": 0.117875,
+            "domain": 0.166667,
+            "stack": 0.071111
+          },
+          "criticality": 0.15,
+          "group": "global",
+          "trust": "needs_confirmation",
+          "cross_group_note": "",
+          "score_ranked": 0.5613
+        }
+      ]
+    }
+  ]
+}
