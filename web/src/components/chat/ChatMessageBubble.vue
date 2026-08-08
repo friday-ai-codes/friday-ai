@@ -251,7 +251,9 @@ const thinkingText = computed(() => {
 const hasThinking = computed(() => !!thinkingText.value)
 const thinkingStartTime = ref<number | null>(null)
 const thinkingDuration = ref(0)
-const showThinking = ref(!!props.isStreaming)
+// 思考过程默认展开：思考文本是「AI 正在干什么」的唯一实时反馈，
+// 藏在折叠块里等于没有。用户仍可点击表头手动收起。
+const showThinking = ref(true)
 
 watch(() => props.streamingThinking, (val) => {
   if (val && !thinkingStartTime.value)
@@ -262,7 +264,7 @@ watch(() => props.isStreaming, (streaming) => {
     thinkingDuration.value = Math.round((Date.now() - thinkingStartTime.value) / 1000)
 })
 watch(() => props.message.id, () => {
-  showThinking.value = !!props.isStreaming
+  showThinking.value = true
 })
 
 const messageStatus = computed(() => {
@@ -668,22 +670,20 @@ async function jumpToProcess() {
   el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
-// 单条 thinking item 的展开状态（默认收起，仅显示首行预览）
-const expandedThinking = ref<Set<string>>(new Set())
+/**
+ * 单条 thinking item 的折叠状态：Set 记录的是**被用户手动收起**的 id，
+ * 未登记即为展开。语义必须是「收起集合」而非「展开集合」—— parts 是流式
+ * 增长的，用展开集合的话后到的 part 不在集合里会退回收起态。
+ */
+const collapsedThinking = ref<Set<string>>(new Set())
+function isThinkingExpanded(id: string): boolean {
+  return !collapsedThinking.value.has(id)
+}
 function toggleThinking(id: string) {
-  if (expandedThinking.value.has(id))
-    expandedThinking.value.delete(id)
+  if (collapsedThinking.value.has(id))
+    collapsedThinking.value.delete(id)
   else
-    expandedThinking.value.add(id)
-}
-function thinkingPreview(text: string): string {
-  const trimmed = text.trim()
-  const firstLine = trimmed.split('\n')[0] || ''
-  return firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine
-}
-function thinkingIsMultiline(text: string): boolean {
-  const trimmed = text.trim()
-  return trimmed.includes('\n') || trimmed.length > 80
+    collapsedThinking.value.add(id)
 }
 
 // 深度分析实时日志（旧 flat 数组，仅作回退用）
@@ -1279,27 +1279,23 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
             v-html="renderedPartHtml[item.part.id] || ''"
           />
 
-          <!-- thinking part：默认显示首行预览，多行/超长时点开看全文 -->
+          <!-- thinking part：默认展开全文，无预览截断；点击整块可手动收起 -->
           <div
             v-else-if="item.kind === 'thinking'"
-            class="timeline-step timeline-step--thinking"
-            :class="{ 'is-expandable': thinkingIsMultiline(item.text), 'is-expanded': expandedThinking.has(item.id) }"
-            @click="thinkingIsMultiline(item.text) && toggleThinking(item.id)"
+            class="timeline-step timeline-step--thinking is-expandable"
+            :class="{ 'is-expanded': isThinkingExpanded(item.id) }"
+            @click="toggleThinking(item.id)"
           >
             <div class="timeline-step-label">
               <span class="icon-[lucide--sparkles] text-[10px]" />
               思考
               <span
-                v-if="thinkingIsMultiline(item.text)"
                 class="icon-[lucide--chevron-right] ml-auto text-[10px] text-muted-foreground/50 transition-transform duration-150"
-                :class="expandedThinking.has(item.id) ? 'rotate-90' : ''"
+                :class="isThinkingExpanded(item.id) ? 'rotate-90' : ''"
               />
             </div>
-            <div v-if="expandedThinking.has(item.id) || !thinkingIsMultiline(item.text)" class="timeline-step-text">
+            <div v-if="isThinkingExpanded(item.id)" class="timeline-step-text">
               {{ item.text.trim() }}
-            </div>
-            <div v-else class="timeline-step-text timeline-step-text--preview">
-              {{ thinkingPreview(item.text) }}
             </div>
           </div>
 
@@ -1316,7 +1312,7 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
             :repo-index="repoIndexById"
             :group-id="item._key"
             :expand-signal="processJump"
-            :default-expanded="!!isStreaming"
+            :default-expanded="true"
           />
 
           <!-- 深度分析组：单个直显，多个 → 横向 swiper（各子代理独立日志） -->
@@ -1942,14 +1938,6 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
   white-space: pre-wrap;
   word-break: break-word;
 }
-.timeline-step-text--preview {
-  /* 收起态首行预览：单行省略 + 颜色弱化 */
-  color: hsl(215 16% 50% / 0.85);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* ============ Tool Flow — 行内 pill ============ */
 .tool-flow {
   display: flex;
@@ -2086,8 +2074,6 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
   color: hsl(215 16% 35%);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 30rem;
-  overflow-y: auto;
 }
 
 /* ============ Prose ============ */
