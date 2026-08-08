@@ -884,6 +884,10 @@ class ChatAnthropicRunner:
                 # 72-02：本 turn 流式计时锚点（首 chunk = TTFT / 整 turn = duration）。
                 _turn_start = perf_counter()
                 _ttft_ms: int | None = None
+                # 本 turn 的思考块观测：部分网关会开 thinking 块却把文本整段抹掉，
+                # 只转发 signature。两个计数器用于在 turn 收尾判定这种情形。
+                _thinking_block_seen = False
+                _thinking_chars = 0
 
                 # 每 turn 进入 astream 前做前置 budget check。
                 # messages 会随 ToolMessage 累积增长，必须每轮 check，不能只 turn 0 check
@@ -958,10 +962,12 @@ class ChatAnthropicRunner:
                                 text=text,
                             )
                         elif block_type in {"reasoning", "thinking"}:
+                            _thinking_block_seen = True
                             reasoning = (
                                 block.get("reasoning") or block.get("thinking") or block.get("text")
                             )
                             if reasoning:
+                                _thinking_chars += len(str(reasoning))
                                 part_id, part_idx, is_new = collector.append_thinking(
                                     str(reasoning)
                                 )
@@ -995,6 +1001,23 @@ class ChatAnthropicRunner:
                                     delta_type="text_append",
                                     text=str(reasoning),
                                 )
+
+                # 上游开了 thinking 块却一个字符都没下发（网关抹掉思考文本，只转发
+                # signature）。turn 收尾记一次即可，不进 chunk 循环以免刷屏；
+                # 只记长度不记内容，best-effort 吞异常，绝不反噬流式主链。
+                if _thinking_block_seen and _thinking_chars == 0:
+                    try:
+                        logger.info(
+                            "chat_thinking_text_empty",
+                            category="sampling",
+                            component="chat_runner",
+                            model=self._config.model,
+                            provider=str(self._config.provider_type),
+                            session_id=self._config.session_id,
+                            duration_ms=int((perf_counter() - _turn_start) * 1000),
+                        )
+                    except Exception:  # noqa: BLE001 — 观测绝不反噬 LLM
+                        pass
 
                 if full_message is None:
                     continue
