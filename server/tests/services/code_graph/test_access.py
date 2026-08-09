@@ -29,12 +29,120 @@ from services.code_graph.access import (
 )
 from services.code_graph.model import GraphAccessDenied, GraphNotIndexed
 
+# ── 121-05-T2：装配阶段 exclusion 过滤（GRAPH-04 的真正落点） ────────────────
+
+
+def _assemble(repository, branch: str = ""):
+    """按仓库当前的真实 exclusion 规则装配图。
+
+    ⚠️ matcher 由**调用方**解析并注入——``loader`` 是纯装配层，自身不做规则解析
+    （真实链路里这一步由 ``cache.py`` 承担，一次取图只解析一次）。
+    """
+    import networkx as nx
+
+    from services.code_graph.loader import _load_symbol_nodes
+
+    matcher, _fingerprint = build_matcher_and_fingerprint(str(repository.id))
+    graph = nx.MultiDiGraph()
+    index = _load_symbol_nodes(
+        graph,
+        repository_id=str(repository.id),
+        branch=branch,
+        is_excluded=make_path_exclusion_memo(matcher),
+    )
+    return graph, index
+
 
 # 121-VALIDATION.md 121-05-T2：命中 exclusion 的符号不在节点集，
 # 其邻接边一并消失（装配阶段过滤，不是输出阶段过滤）。
-@pytest.mark.skip(reason="stub：由 Plan 121-05 实现")
-def test_exclusion_hides_symbols_and_edges() -> None:
-    pass
+@pytest.mark.django_db
+def test_exclusion_hides_symbols_and_edges(
+    indexed_repo, symbols_factory, call_edges_factory, exclusion_rule_factory
+) -> None:
+    """被排除文件的符号不进节点集，其邻接边随之整条消失。"""
+    exclusion_rule_factory("secret/*")
+
+    caller = symbols_factory("caller", "src/ok.py")
+    callee = symbols_factory("callee", "secret/.env.py")
+    call_edges_factory(caller, callee)
+
+    graph, index = _assemble(indexed_repo)
+
+    # 过滤发生在**装配阶段**：被排除符号的 id 根本没进过节点集。
+    assert str(callee.id) not in graph.nodes
+    assert str(callee.id) not in index.node_ids
+    # 未被排除的一端仍在（不是把整张图连坐掉）。
+    assert str(caller.id) in graph.nodes
+    # 邻接边一并消失：任一端点不在节点集内 ⇒ 整条边丢弃。
+    assert graph.number_of_edges() == 0
+
+
+@pytest.mark.django_db
+def test_exclusion_covers_unnormalizable_paths(indexed_repo, symbols_factory) -> None:
+    """路径归一失败（``..`` 越界 / 绝对路径）一律视为排除，fail-closed。"""
+    inside = symbols_factory("inside", "src/ok.py")
+    escaped = symbols_factory("escaped", "../outside/x.py")
+    absolute = symbols_factory("absolute", "/etc/shadow.py")
+
+    graph, _index = _assemble(indexed_repo)
+
+    assert str(inside.id) in graph.nodes
+    assert str(escaped.id) not in graph.nodes
+    assert str(absolute.id) not in graph.nodes
+
+
+@pytest.mark.django_db
+def test_exclusion_file_count_is_deduped_by_file(
+    indexed_repo, symbols_factory, exclusion_rule_factory
+) -> None:
+    """``excluded_file_count`` 数的是**去重文件数**，不是被丢弃的符号数。"""
+    exclusion_rule_factory("secret/*")
+
+    for line in range(1, 4):
+        symbols_factory("s", "secret/a.py", start_line=line, end_line=line + 1)
+    symbols_factory("s", "secret/b.py")
+    symbols_factory("ok", "src/ok.py")
+
+    graph, index = _assemble(indexed_repo)
+
+    assert index.excluded_file_count == 2  # secret/a.py + secret/b.py
+    assert index.dropped_symbol_count == 4  # 3 + 1 个符号行
+    assert len(graph.nodes) == 1
+
+
+@pytest.mark.django_db
+def test_exclusion_audit_does_not_spam_per_symbol(
+    indexed_repo, exclusion_rule_factory
+) -> None:
+    """同一个被排除文件下 200 个符号，INFO 级审计埋点总共只打一次。
+
+    装配循环是 10 万级迭代，per-item 的 INFO 会直接打爆 stdout 与日志落库队列
+    （``.cursor/rules/observability-logging.mdc`` 的级别纪律点名过同款事故）。
+    """
+    from codegraph.models import Symbol
+
+    exclusion_rule_factory("secret/*")
+    Symbol.objects.bulk_create(
+        [
+            Symbol(
+                repository=indexed_repo,
+                branch_name="",
+                name=f"s{i}",
+                symbol_type="FUNCTION",
+                file_path="secret/big.py",
+                start_line=i,
+                end_line=i + 1,
+            )
+            for i in range(200)
+        ]
+    )
+
+    with mock.patch("services.exclusion.log_exclusion_blocked") as blocked_spy:
+        graph, index = _assemble(indexed_repo)
+
+    assert index.dropped_symbol_count == 200
+    assert len(graph.nodes) == 0
+    assert blocked_spy.call_count == 1
 
 
 # ── 121-03-T1：仓库可读性单一校验点 ────────────────────────────────────────
