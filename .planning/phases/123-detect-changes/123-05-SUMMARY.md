@@ -71,7 +71,7 @@ completed: 2026-08-09
 1. **Task 1: 双面同源哨兵（成功 + 硬错误）** - `fa6eb600` (test)
 2. **Task 2: D-27 漂移 7→8 记账 + VALIDATION 收口** - `14010fae` (docs)
 
-**Plan metadata:** docs commit（本 SUMMARY + STATE/ROADMAP/REQUIREMENTS）
+**Plan metadata:** `72796bc6` (docs: complete plan)
 
 ## Files Created/Modified
 
