@@ -111,7 +111,7 @@ Plans:
 
 **Wave 1** *(blocked on Wave 0 completion)*
 
-- [ ] 122-02-PLAN.md — W1 `symbol_resolve.py`：uid 优先 + 重名候选列表（D-19）+ barrel docstring 记 D-28 边界
+- [x] 122-02-PLAN.md — W1 `symbol_resolve.py`：uid 优先 + 重名候选列表（D-19）+ barrel docstring 记 D-28 边界
 - [ ] 122-03-PLAN.md — W1 `impact.py` 内核：分层反向 BFS + path-min 置信度 + 确定性风险四级（含 D-29 封顶）+ 截断纪律
 - [ ] 122-04-PLAN.md — W1 `trace.py` 内核：置信度视图上的有向最短路 + 等长多解声明 + 显式无路径结构
 
