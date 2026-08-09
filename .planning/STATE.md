@@ -29,8 +29,8 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 Phase: 122 (impact / trace 工具面) — 🚧 IN PROGRESS (121 verified passed 4/4, code review 20 findings 处理完毕)
 Plan: 7 of 10
-Status: 122-05 complete — 壳层共用编排原语已落地（`fetch_graph_for_tool` 种子与深度必传 + GraphError 逐类翻译 + staleness/降级声明 + ORM 候选 signature 补取；AST 观测契约扫描面扩到包外兄弟模块，变异测试实跑证明守护有效）。下一步进 122-06 跨仓一跳
-Last activity: 2026-08-09 — 122-05 完成：`tests/services/code_graph` 111 → 117 passed / 6 skipped，`test_staleness.py` / `test_symbol_resolve.py` 零 skip，`test_impact_shell.py` 剩 1 skip（归 122-07），零新增失败
+Status: 122-06 complete — 跨仓一跳已落地（`collect_cross_repo_impact`：CrossRepoApiCall ORM + 对端 `fetch_graph_for_tool`；三种显式条目成功 / REDACTED_REPOSITORY / unavailable_reason；挂进 `_SIBLING_GUARDED_MODULES`）。⚠ D-26：四分支全靠合成数据，未经真实数据验证。下一步进 122-07 壳层编排
+Last activity: 2026-08-09 — 122-06 完成：`tests/services/code_graph` 117 → 122 passed / 1 skipped，`test_cross_repo_hop.py` 零 skip，`test_impact.py` 10 passed，零新增失败
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
 
