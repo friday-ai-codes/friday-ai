@@ -468,13 +468,13 @@ job_id = await DurableTaskService.defer(
 | A3 | graph rename 半边 = 定义点 + 一跳 incoming callers（predecessors）足够 v1 | Technical Approach | 漏 import/别名引用 → 靠 text_search 兜底 |
 | A4 | installer 动态扫目录，但引导文案写死「7 个」须手改 | Skills | 用户文档过时但不阻断 hash 验收 |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 > 以下均已按 Claude's Discretion 给出默认；规划可直接采用，无需再问用户。
 
-1. **Process 与 community 失败时序** — 默认：community 成功返回路径 enqueue；raise 不 enqueue。补偿：同 enqueue helper 可被管理命令/重试调用。
-2. **list 默认排序** — `cross_community` 优先，其次 `name`/`process_key`。
-3. **npm bump** — Deferred；验收不依赖 publish。
+1. **Process 与 community 失败时序** — RESOLVED: community 成功返回路径 enqueue；raise 不 enqueue。补偿：同 enqueue helper 可被管理命令/重试调用。
+2. **list 默认排序** — RESOLVED: `cross_community` 优先，其次 `name`/`process_key`。
+3. **npm bump** — RESOLVED: Deferred；验收不依赖 publish。
 
 ## Environment Availability
 
@@ -519,6 +519,7 @@ job_id = await DurableTaskService.defer(
 - `server/tests/services/code_graph/test_process_enqueue.py`
 - `server/tests/services/code_graph/test_rename_preview.py`
 - `server/tests/services/code_graph/test_affected_processes.py`
+- `server/tests/services/code_graph/test_process_query.py`
 - `server/tests/services/code_graph/test_frozen_surface_126.py`
 - `skills/skills/friday-impact/SKILL.md`（+ optional references）
 - `skills/skills/friday-refactoring/SKILL.md`（+ optional references）
@@ -564,7 +565,7 @@ job_id = await DurableTaskService.defer(
 | EXEC-01 | BFS 四硬闸 + 环/async 标注 + ProcessTrace 落库 | unit | `uv run pytest tests/services/code_graph/test_process_trace.py -q` | ❌ Wave 0 |
 | EXEC-01 | 模型字段 / unique_together / 无 Endpoint FK | unit | `uv run pytest tests/codegraph/test_process_trace_model.py -q` | ❌ Wave 0 |
 | EXEC-02 | intra/cross/unknown 分类 | unit | 同上 process_trace 社区用例 | ❌ Wave 0 |
-| EXEC-02 | MCP/对话 list+get 走共享编排 | unit/api | schema snapshot + thin shell tests | ❌ Wave 0 |
+| EXEC-02 | MCP/对话 list+get 走共享编排 | unit/api | `uv run pytest tests/services/code_graph/test_process_query.py tests/mcp_tools/test_schema_snapshot.py -q` | ❌ Wave 0 |
 | EXEC-03 | assemble 回填 impact/detect_changes | unit | `uv run pytest tests/services/code_graph/test_affected_processes.py -q` | ❌ Wave 0 |
 | EXEC-03 | impact_report 执行流段 / 无占位句 | unit | `uv run pytest tests/services/code_graph/test_impact_report.py -q` | ✅ 扩展 |
 | RENAME-01 | 双源合并、confidence、applied=false、exclusion | unit | `uv run pytest tests/services/code_graph/test_rename_preview.py -q` | ❌ Wave 0 |
@@ -584,6 +585,7 @@ job_id = await DurableTaskService.defer(
 - [ ] `tests/services/code_graph/test_process_trace.py` — BFS 硬闸
 - [ ] `tests/services/code_graph/test_process_enqueue.py` — QUEUE_GRAPH lock
 - [ ] `tests/services/code_graph/test_affected_processes.py` — EXEC-03
+- [ ] `tests/services/code_graph/test_process_query.py` — EXEC-02 list/get 共享编排 + MCP/agents 薄壳 call-through
 - [ ] `tests/services/code_graph/test_rename_preview.py` — RENAME-01
 - [ ] `tests/services/code_graph/test_frozen_surface_126.py` — D-16
 - [ ] 扩展 `test_impact_report.py` / `test_skills_injection.py` / knowledge 白名单计数 / schema snapshot
