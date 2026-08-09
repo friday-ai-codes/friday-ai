@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, cast
 
 from rest_framework import serializers
+
+# compare / base_ref 安全形态：与 ``services.repo_mirror._SAFE_REF_RE`` 同形字面量副本，
+# 避免 serializers 早加载路径拖入 mirror 子系统。另允许完整 40 位 sha。
+_SAFE_COMPARE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/@+-]{0,254}$")
+_FULL_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 #: assumptions 三档的**字面量副本**（116-REVIEW MJ-02）。单一事实源是
 #: ``services.process_runtime.blueprint_ambiguity_score.ASSUMPTIONS_TIERS``——⛔ 本模块不在
@@ -210,6 +216,47 @@ class ImpactAnalysisRequestSerializer(serializers.Serializer):
         has_name = bool(str(attrs.get("symbol") or "").strip())
         if has_id == has_name:
             raise serializers.ValidationError("必须且只能提供 symbol_id 或 symbol 之一")
+        return attrs
+
+
+class DetectChangesRequestSerializer(serializers.Serializer):
+    """``detect_changes`` 请求契约（Phase 123 DIFF-01/02 / D-02）。
+
+    ⛔ 不含 ``branch`` 图 overlay 字段——交叠坐标锁定索引水位（D-01）；
+    ``compare`` 为 head，``base_ref`` 仅声明透出，不改 diff 左端。
+    """
+
+    repository_id = serializers.UUIDField(required=True)
+    compare = serializers.CharField(required=True, allow_blank=False, max_length=255)
+    base_ref = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, default=None
+    )
+    # T-123-DOS：上下界与 impact_analysis 同表
+    max_depth = serializers.IntegerField(default=3, min_value=1, max_value=3)
+    min_confidence = serializers.FloatField(default=1.0, min_value=0.0, max_value=1.0)
+    include_low_confidence = serializers.BooleanField(default=False)
+    limit = serializers.IntegerField(default=200, min_value=1, max_value=200)
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        compare = str(attrs.get("compare") or "").strip()
+        if not compare:
+            raise serializers.ValidationError({"compare": "compare 不能为空"})
+        if ".." in compare or any(ord(c) < 32 for c in compare):
+            raise serializers.ValidationError({"compare": "compare 含非法字符"})
+        if not (_SAFE_COMPARE_RE.match(compare) or _FULL_SHA_RE.match(compare)):
+            raise serializers.ValidationError({"compare": "compare 格式非法"})
+        attrs["compare"] = compare
+
+        raw_base = attrs.get("base_ref")
+        if raw_base is None or str(raw_base).strip() == "":
+            attrs["base_ref"] = None
+        else:
+            base_ref = str(raw_base).strip()
+            if ".." in base_ref or any(ord(c) < 32 for c in base_ref):
+                raise serializers.ValidationError({"base_ref": "base_ref 含非法字符"})
+            if not _SAFE_COMPARE_RE.match(base_ref):
+                raise serializers.ValidationError({"base_ref": "base_ref 格式非法"})
+            attrs["base_ref"] = base_ref
         return attrs
 
 
@@ -1170,6 +1217,34 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "risk_inputs",
             "summary",
             "cross_repo",
+            "affected_processes",
+            "staleness",
+            "graph",
+            "error_code",
+            "error",
+            "run_id",
+        ],
+    },
+    "detect_changes": {
+        "request": [
+            "repository_id",
+            "compare",
+            "base_ref",
+            "max_depth",
+            "min_confidence",
+            "include_low_confidence",
+            "limit",
+        ],
+        "response": [
+            "ok",
+            "tool",
+            "repository_id",
+            "diff_base_sha",
+            "diff_head_sha",
+            "base_ref",
+            "files",
+            "impacts",
+            "summary",
             "affected_processes",
             "staleness",
             "graph",
