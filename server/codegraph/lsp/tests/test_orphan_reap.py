@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import psutil
 import pytest
 
 
@@ -21,35 +22,48 @@ def test_reap_orphan_lsp_processes_counts_and_best_effort(
     """
     from codegraph.lsp import orphan_reap
 
-    live = SimpleNamespace(pid=100, info=lambda: {"pid": 100, "name": "gopls", "cmdline": ["gopls"], "ppid": 1})
+    live = SimpleNamespace(
+        pid=100,
+        info={
+            "pid": 100,
+            "name": "gopls",
+            "cmdline": ["gopls"],
+            "ppid": 1,
+        },
+        terminate=MagicMock(),
+        kill=MagicMock(),
+        wait=MagicMock(),
+    )
     orphan = SimpleNamespace(
         pid=200,
-        info=lambda: {
+        info={
             "pid": 200,
             "name": "gopls",
             "cmdline": ["gopls", "-mode=stdio"],
             "ppid": 99999,
         },
         terminate=MagicMock(),
-        wait=MagicMock(side_effect=orphan_reap.psutil.TimeoutExpired(1) if hasattr(orphan_reap, "psutil") else Exception("timeout")),
         kill=MagicMock(),
+        wait=MagicMock(side_effect=psutil.TimeoutExpired(seconds=1)),
     )
-    # Prefer TimeoutExpired from real psutil once imported inside module under test.
-    import psutil
-
-    orphan.wait = MagicMock(side_effect=psutil.TimeoutExpired(seconds=1))
-
     noisy = SimpleNamespace(
         pid=300,
-        info=lambda: {"pid": 300, "name": "python", "cmdline": ["python", "manage.py"], "ppid": 1},
+        info={
+            "pid": 300,
+            "name": "python",
+            "cmdline": ["python", "manage.py"],
+            "ppid": 1,
+        },
         terminate=MagicMock(),
         kill=MagicMock(),
+        wait=MagicMock(),
     )
     raising = SimpleNamespace(
         pid=400,
         info=MagicMock(side_effect=RuntimeError("boom")),
         terminate=MagicMock(),
         kill=MagicMock(),
+        wait=MagicMock(),
     )
 
     monkeypatch.setattr(
@@ -57,7 +71,6 @@ def test_reap_orphan_lsp_processes_counts_and_best_effort(
         "process_iter",
         lambda attrs=None: [live, orphan, noisy, raising],
     )
-    # Parent of orphan is gone → orphan heuristic.
     monkeypatch.setattr(
         orphan_reap.psutil,
         "pid_exists",
@@ -68,6 +81,7 @@ def test_reap_orphan_lsp_processes_counts_and_best_effort(
     assert count == 1
     orphan.terminate.assert_called_once()
     orphan.kill.assert_called_once()
+    live.terminate.assert_not_called()
     noisy.terminate.assert_not_called()
 
     # Best-effort: process_iter itself exploding must not raise.
@@ -90,6 +104,5 @@ def test_supervisor_stop_invoked_on_index_path_finally() -> None:
     init_text = init_src.read_text(encoding="utf-8")
     assert "reap_orphan" in pool_text or "orphan_reap" in pool_text
     assert "reap_orphan" in init_text or "orphan_reap" in init_text
-    # stop 仍在生产清理路径上
     assert ".stop" in pool_text or "sup.stop" in pool_text
     assert "supervisor.stop" in init_text or ".stop" in init_text
