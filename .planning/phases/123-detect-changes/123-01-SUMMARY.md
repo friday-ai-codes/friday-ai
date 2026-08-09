@@ -72,7 +72,7 @@ Each task was committed atomically (TDD):
 3. **Task 2 RED: detect_changes failing tests** - `cfd9caf8` (test)
 4. **Task 2 GREEN: detect_changes pure kernel** - `680617f4` (feat)
 
-**Plan metadata:** see final docs commit after this SUMMARY
+**Plan metadata:** `a4913b2f` (docs: complete plan)
 
 ## Files Created/Modified
 
