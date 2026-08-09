@@ -61,7 +61,7 @@
 
 ### 4.1 LLM/AI 调用来源枚举（`call_source` 标签，必须带）
 
-QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM 调用点必须赋一个 `call_source`。**权威定义是 `server/agents/call_source.py` 的 `CallSource` 枚举，当前 44 值**（v0.19.0 补登 `feature_change_classify`，v0.20.0 新增 8 个 `blueprint_*`），下表与之逐条对齐：
+QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM 调用点必须赋一个 `call_source`。**权威定义是 `server/agents/call_source.py` 的 `CallSource` 枚举，当前 45 值**（v0.19.0 补登 `feature_change_classify`，v0.20.0 新增 8 个 `blueprint_*`，Phase 125 新增 `module_summary`），下表与之逐条对齐：
 
 | call_source | 入口 | 备注 |
 |-------------|------|------|
@@ -109,6 +109,7 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `blueprint_merge` | 蓝图融合装配（v0.20.0 Phase 111 注册） | 分仓方案 → 六段 blueprint/v1；调用点在 113 落地 |
 | `blueprint_ai_review` | 蓝图对抗审查（v0.20.0 Phase 111 注册） | AI 评审员产 review_finding 线程；调用点在 114 落地 |
 | `blueprint_charter_draft` | `repositories.services.charter_service.adraft_charter`（v0.20.0 Phase 111） | 仓库章程 AI 起草：ai_summary/facets + MR 历史 + RepoAssociation 裁决三源蒸馏，单轮，best-effort |
+| `module_summary` | `services.code_graph.module_summary`（Phase 125 仓社区模块摘要） | 仓社区模块摘要，单轮，best-effort |
 
 > 埋点位置：`acquire_llm_slot`（QPS/排队/`LLMBusyError`）+ 两个 Runner 的 `astream` 循环（TTFT/TPS/上游错误）+ 各 `ainvoke` 站点。详见 MILESTONE-PROPOSAL §1。
 

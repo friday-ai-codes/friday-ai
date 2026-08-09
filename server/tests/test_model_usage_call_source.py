@@ -82,6 +82,8 @@ _EXPECTED_CALL_SOURCES = {
     "blueprint_merge",
     "blueprint_ai_review",
     "blueprint_charter_draft",
+    # Phase 125：仓社区模块摘要（LOGGING-SPEC §4.1 已同步登记）
+    "module_summary",
 }
 
 
@@ -105,10 +107,11 @@ class TestCallSourceEnum:
         新增蓝图链 8 值（``blueprint_decompose`` / ``blueprint_spec_gate`` /
         ``blueprint_repo_research`` / ``blueprint_reroute`` / ``blueprint_repo_plan`` /
         ``blueprint_merge`` / ``blueprint_ai_review`` / ``blueprint_charter_draft``）
-        与 ``feature_change_classify`` 后升至 44 值。
+        与 ``feature_change_classify`` 后升至 44 值；Phase 125 新增
+        ``module_summary`` 后升至 45 值。
         """
         assert {member.value for member in CallSource} == _EXPECTED_CALL_SOURCES
-        assert len(_EXPECTED_CALL_SOURCES) == 44
+        assert len(_EXPECTED_CALL_SOURCES) == 45
 
     def test_normalize_valid_value(self) -> None:
         assert CallSource.normalize("chat") == "chat"
