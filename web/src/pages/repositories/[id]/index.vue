@@ -12,6 +12,7 @@ import CredentialModal from '~/components/repository/CredentialModal.vue'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import ExclusionRulesPanel from '~/components/repository/ExclusionRulesPanel.vue'
 import ReconcilePanel from '~/components/repository/ReconcilePanel.vue'
+import RepoCharterSection from '~/components/repository/RepoCharterSection.vue'
 import RepositoryKnowledgeHub from '~/components/repository/RepositoryKnowledgeHub.vue'
 import SddMethodologyBadge from '~/components/repository/SddMethodologyBadge.vue'
 import SensitiveSuggestionsPanel from '~/components/repository/SensitiveSuggestionsPanel.vue'
@@ -274,6 +275,7 @@ async function handleCredentialSaved() {
 
 const sections = ref<NavSection[]>([
   { id: 'basic-info', label: '基本信息', icon: 'icon-[lucide--info]' },
+  { id: 'charter', label: '仓库章程', icon: 'icon-[lucide--scroll-text]' },
   { id: 'knowledge-base', label: '知识库', icon: 'icon-[lucide--layers]' },
   { id: 'linked-projects', label: '关联空间', icon: 'icon-[lucide--folder]' },
   { id: 'credential', label: '凭证配置', icon: 'icon-[lucide--key]' },
@@ -478,6 +480,10 @@ function copyUrl() {
           </div>
 
           <AISummarySection :repository-id="repository.id" />
+
+          <section id="charter" class="scroll-mt-22">
+            <RepoCharterSection :repository-id="repository.id" />
+          </section>
 
           <!-- 关联空间 -->
           <div id="linked-projects" class="card scroll-mt-22">

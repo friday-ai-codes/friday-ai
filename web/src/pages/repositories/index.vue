@@ -240,7 +240,7 @@ async function openCreateRepository() {
   const { open } = useModal<string>({
     component: markRaw(CreateRepositoryModal),
     onConfirm: (repositoryId) => {
-      router.push(`/repositories/${repositoryId}`)
+      router.push(`/repositories/${repositoryId}#charter`)
     },
   })
   await open()
