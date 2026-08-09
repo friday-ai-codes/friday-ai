@@ -78,12 +78,23 @@ from services.code_graph import (
     GraphNotIndexed,
     get_graph_service,
 )
+from services.code_graph.symbol_resolve import (
+    CANDIDATE_LIMIT,
+    SymbolCandidate,
+    SymbolResolution,
+)
 
 logger = structlog.get_logger(__name__)
 
 # 事件名常量（形态对齐包内 ``cache.py`` / ``access.py``）。
 # ⚠️ 前缀不得缩写：``code_graph_`` 是观测契约的强制前缀，扫描面已含本文件。
 _EVENT_GRAPH_FETCHED: Final[str] = "code_graph_tool_graph_fetched"
+_EVENT_CANDIDATES_RESOLVED: Final[str] = "code_graph_tool_candidates_resolved"
+
+# 候选条目上 ``signature`` 的字符上限（D-17 的 token 纪律）。``Symbol.signature`` 是
+# TextField、可长达数 KB，一次 20 条候选原样吐出去就能吃掉几千 token，而 agent 消歧只
+# 需要看个大概形状。超出时截断并补省略号，让「这条被截过」肉眼可见。
+CANDIDATE_SIGNATURE_MAX_CHARS: Final[int] = 200
 
 # ``异常类 → (error_code, 面向 agent 的文案)``。形态照本仓唯一的同类先例
 # ``mcp_tools/views.py::_MIRROR_ERROR_STATUS``（异常码 → HTTP 码的字面量表）。
@@ -105,10 +116,13 @@ GRAPH_ERROR_MESSAGES: Final[Mapping[type[GraphError], tuple[str, str]]] = {
 }
 
 __all__ = [
+    "CANDIDATE_SIGNATURE_MAX_CHARS",
     "GRAPH_ERROR_MESSAGES",
     "degradation_payload",
     "fetch_graph_for_tool",
     "graph_error_to_tool_error",
+    "resolution_to_payload",
+    "resolve_symbol_candidates",
     "staleness_payload",
 ]
 
@@ -147,6 +161,29 @@ def _log_graph_fetched(
             degraded=degraded,
             seed_count=seed_count,
             depth=depth,
+            duration_ms=duration_ms,
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
+
+
+def _log_candidates_resolved(
+    *, total_candidates: int, truncated: bool, by_uid: bool, duration_ms: float
+) -> None:
+    """ORM 侧符号解析的结构化埋点。
+
+    🚨 **只记计数与两个布尔量，⛔ 不记符号名、不记 ``file_path``、不逐候选打日志**
+    （威胁登记 T-122-exclusion 回流 / T-122-日志放大）。符号名与路径是本函数唯一的外泄
+    面；重名是 19.3% 的主路径，逐候选打日志等于按候选数放大日志量。
+    """
+    try:
+        logger.debug(
+            _EVENT_CANDIDATES_RESOLVED,
+            component="code_graph",
+            category="sampling",
+            total_candidates=total_candidates,
+            truncated=truncated,
+            by_uid=by_uid,
             duration_ms=duration_ms,
         )
     except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
@@ -354,4 +391,204 @@ def degradation_payload(meta: GraphMeta) -> dict[str, Any]:
         "edge_count": meta.edge_count,
         "excluded_file_count": meta.excluded_file_count,
         "declarations": declarations,
+    }
+
+
+def _truncate_signature(raw: str) -> str:
+    """把 ``Symbol.signature`` 截到 :data:`CANDIDATE_SIGNATURE_MAX_CHARS`。
+
+    超出时补一个省略号，让「这条被截过」在渲染结果里肉眼可见——静默截断会让 agent 以为
+    自己看到的是完整签名，进而按一个残缺的形参表做判断。
+    """
+    text = (raw or "").strip()
+    if len(text) <= CANDIDATE_SIGNATURE_MAX_CHARS:
+        return text
+    return text[:CANDIDATE_SIGNATURE_MAX_CHARS] + "…"
+
+
+async def resolve_symbol_candidates(
+    *,
+    repository_id: str,
+    branch_names: Sequence[str],
+    symbol_id: str | None = None,
+    name: str | None = None,
+    file_path: str | None = None,
+    symbol_type: str | None = None,
+) -> SymbolResolution:
+    """在 **ORM** 上定位符号：uid 优先，重名给带 ``signature`` 的候选列表（D-19）。
+
+    这是「图内定位」的**前置**一半，回答的是「取图**之前**，我该拿哪个 ``symbol_id``
+    当种子」——D-24 的鸡生蛋问题：解析需要图，取图需要种子，所以第一遍解析只能在 ORM
+    上做。图内那一半由 122-02 的 ``resolve_symbol_in_graph`` 承担，两者返回同一个
+    :class:`~services.code_graph.symbol_resolve.SymbolResolution` 契约。
+
+    :param repository_id: 仓库主键。
+    :param branch_names: 分支口径，形如 ``["", graph_branch]``（overlay 语义：feature
+        分支图 = base 全量 + 分支增量）。``""`` = base，与 ``Symbol.branch_name`` 同口径。
+    :param symbol_id: 符号 uid。**给了就只走这条路**：只确认这一行存在且归属本仓，
+        ⛔ 绝不在落空时退化去按名字搜——那会让「带 uid 回来」这个消歧闭环失去意义。
+    :param name: 符号名，大小写敏感精确匹配。
+    :param file_path: 可选收窄——相等，或卡在 ``/`` 边界上的路径后缀。
+    :param symbol_type: 可选收窄——大小写不敏感（各产出器口径不一，不该让调用方猜）。
+
+    🚨 ⛔ **任何路径下都不取第一条**。生产 distinct ``(repository_id, name)`` 有 202,661
+    组，其中 39,031 组（**19.3%**）非唯一，``(repo, file, name)`` 三元组仍有 24,312 组
+    冲突——候选列表是**主路径**而不是异常兜底。本仓的反面教材是
+    ``mcp_tools/views.py::FindRelatedChunksView._resolve_source_chunk``：它对重名
+    ``.afirst()`` 静默取第一个，正是 D-19 明令禁止的形态，有一条 AST 断言守着本函数
+    不重蹈覆辙。
+
+    预算：先 ``acount()`` 拿未截断总数，再只物化前 :data:`CANDIDATE_LIMIT` 条
+    （威胁登记 T-122-遍历 DoS）。⛔ 不物化全量候选——热点名字可能对应上千行。
+    """
+    # ORM 模型与查询原语一律**函数体内 lazy import**（与
+    # ``tests/services/code_graph/conftest.py`` 同款约定）：``services`` 包可能在 Django
+    # app loading 早期被 import，模块级触发模型导入会炸在应用注册表上。
+    from django.core.exceptions import ValidationError
+    from django.db.models import Q
+
+    from codegraph.models import Symbol
+
+    started = time.perf_counter()
+
+    if symbol_id:
+        try:
+            exists = await Symbol.objects.filter(
+                id=symbol_id, repository_id=repository_id
+            ).aexists()
+        except (ValidationError, ValueError, TypeError):
+            # uid 来自 agent，是不可信入参：非法 UUID 当作「没有这个符号」，
+            # ⛔ 不冒泡成 500，也 ⛔ 不退化去按名字搜。
+            exists = False
+        _log_candidates_resolved(
+            total_candidates=1 if exists else 0,
+            truncated=False,
+            by_uid=True,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        return SymbolResolution(
+            resolved=symbol_id if exists else None,
+            candidates=(),
+            total_candidates=1 if exists else 0,
+            truncated=False,
+            query=symbol_id,
+        )
+
+    if not name:
+        return SymbolResolution(
+            resolved=None, candidates=(), total_candidates=0, truncated=False, query=""
+        )
+
+    queryset = Symbol.objects.filter(
+        repository_id=repository_id,
+        branch_name__in=list(branch_names),
+        name=name,
+    )
+    if symbol_type:
+        queryset = queryset.filter(symbol_type__iexact=symbol_type.strip())
+    if file_path:
+        wanted = file_path.strip().lstrip("./")
+        if wanted:
+            # 后缀匹配卡在 ``/`` 边界上：裸 ``endswith`` 会让 ``r.go`` 匹上 ``user.go``，
+            # 「收窄参数反而放进不相干的符号」比不支持后缀更糟（同 symbol_resolve 口径）。
+            queryset = queryset.filter(
+                Q(file_path=wanted) | Q(file_path__endswith=f"/{wanted}")
+            )
+    # 稳定排序：第三项 ``id`` 不是凑数——生产 24,312 组同文件同名符号在前两项上完全打平，
+    # 少了它，同一次查询在两个 worker 上可能给出不同的前 20 条。
+    queryset = queryset.order_by("file_path", "start_line", "id")
+
+    total = await queryset.acount()
+    if total == 0:
+        _log_candidates_resolved(
+            total_candidates=0,
+            truncated=False,
+            by_uid=False,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        return SymbolResolution(
+            resolved=None, candidates=(), total_candidates=0, truncated=False, query=name
+        )
+
+    # ``signature`` 与其余五列由**同一次**查询取出：图节点属性里没有它
+    # （``loader.py:354-356`` 刻意不取 TextField），再回一次 ORM 就是白白多一趟。
+    rows = [
+        row
+        async for row in queryset.values_list(
+            "id", "name", "symbol_type", "file_path", "start_line", "signature"
+        )[:CANDIDATE_LIMIT]
+    ]
+
+    if total == 1:
+        _log_candidates_resolved(
+            total_candidates=1,
+            truncated=False,
+            by_uid=False,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        # 唯一命中不构造候选列表，与 ``SymbolResolution`` 的不变式一致：
+        # ``resolved`` 非空 ⇒ 候选必空。
+        return SymbolResolution(
+            resolved=str(rows[0][0]),
+            candidates=(),
+            total_candidates=1,
+            truncated=False,
+            query=name,
+        )
+
+    candidates = tuple(
+        SymbolCandidate(
+            symbol_id=str(row[0]),
+            name=str(row[1] or ""),
+            symbol_type=str(row[2] or ""),
+            file_path=str(row[3] or ""),
+            start_line=int(row[4] or 0),
+            signature=_truncate_signature(str(row[5] or "")),
+        )
+        for row in rows
+    )
+    _log_candidates_resolved(
+        total_candidates=total,
+        truncated=total > CANDIDATE_LIMIT,
+        by_uid=False,
+        duration_ms=round((time.perf_counter() - started) * 1000, 2),
+    )
+    return SymbolResolution(
+        resolved=None,
+        candidates=candidates,
+        total_candidates=total,
+        truncated=total > CANDIDATE_LIMIT,
+        query=name,
+    )
+
+
+def resolution_to_payload(resolution: SymbolResolution) -> dict[str, Any]:
+    """把 :class:`SymbolResolution` 摊成两个壳共用的 dict 形态。
+
+    ``hint`` 在歧义时给出**可执行**的下一步（带 uid 回来，或补 ``file_path`` /
+    ``symbol_type`` 收窄），而不是一句「符号不唯一」就把球踢回去——RESEARCH Pitfall 2 §4
+    要求「能一次收敛就不要往返两轮」，指引写清楚才有可能一轮收敛。
+    """
+    ambiguous = bool(resolution.candidates)
+    return {
+        "resolved": resolution.resolved,
+        "ambiguous": ambiguous,
+        "candidates": [
+            {
+                "symbol_id": candidate.symbol_id,
+                "name": candidate.name,
+                "symbol_type": candidate.symbol_type,
+                "file_path": candidate.file_path,
+                "start_line": candidate.start_line,
+                "signature": candidate.signature,
+            }
+            for candidate in resolution.candidates
+        ],
+        "total_candidates": resolution.total_candidates,
+        "truncated": resolution.truncated,
+        "hint": (
+            "符号名不唯一；请带 symbol_id 重试，或补 file_path / symbol_type 收窄"
+            if ambiguous
+            else ""
+        ),
     }
