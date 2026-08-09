@@ -92,6 +92,59 @@ RUN chmod +x /app/entrypoint.sh
 # Create data directory
 RUN mkdir -p /app/data
 
+# =============================================================================
+# Phase 127 / D-01 / D-11：Semgrep CLI（独立 /opt/semgrep）+ Node 22 + volar/tsdk
+# + Go/gopls —— 必须在切换非 root 用户之前安装，ENV PATH 全局可见。
+# ⛔ 禁止把 semgrep 写进 pyproject.toml / uv.lock。
+# 镜像体积预估 +400–550MB（真实 docker images 待 CI 测）。
+# =============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# 1) Semgrep CE ≥1.172.0 — 独立 tool dir，不进 server venv
+RUN pip install --no-cache-dir uv \
+    && uv tool install --default-index https://pypi.org/simple semgrep==1.172.0 \
+        --install-dir /opt/semgrep
+
+ENV SEMGREP_BIN=/opt/semgrep/bin/semgrep
+ENV PATH="/opt/semgrep/bin:${PATH}"
+
+# 2) Node 22 LTS + @vue/language-server + typescript（discover_tsdk 经 npm root -g）
+ARG NODE_VERSION=22.17.0
+RUN ARCH="$(dpkg --print-architecture)" \
+    && case "$ARCH" in \
+         amd64) NODE_ARCH=x64 ;; \
+         arm64) NODE_ARCH=arm64 ;; \
+         *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+        | tar -xJ -C /usr/local --strip-components=1 \
+    && npm install -g "@vue/language-server@3.3.9" "typescript@7.0.2"
+
+# 3) Go toolchain + gopls v0.23.x → /usr/local
+ARG GO_VERSION=1.24.5
+RUN ARCH="$(dpkg --print-architecture)" \
+    && case "$ARCH" in \
+         amd64) GO_ARCH=amd64 ;; \
+         arm64) GO_ARCH=arm64 ;; \
+         *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \
+        | tar -C /usr/local -xz \
+    && GOBIN=/usr/local/bin /usr/local/go/bin/go install golang.org/x/tools/gopls@v0.23.0
+
+ENV PATH="/usr/local/go/bin:/opt/semgrep/bin:${PATH}"
+ENV GOTOOLCHAIN=local
+
+# 构建探针：缺失则 build fail（root；二进制对 friday PATH 可达）
+RUN semgrep --version \
+    && node -v \
+    && command -v vue-language-server \
+    && go version \
+    && gopls version
+
 # 设置目录权限并切换到非 root 用户
 RUN chown -R friday:friday /app
 USER friday
