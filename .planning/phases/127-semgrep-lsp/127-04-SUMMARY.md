@@ -74,9 +74,9 @@ completed: 2026-08-10
 Each task was committed atomically (TDD RED→GREEN):
 
 1. **Task 1: security_scan_report helper** - `3b149299` (test RED; parallel `505f83c3` superseding draft) + `6f294939` (feat GREEN)
-2. **Task 2: dual hang-points + async MR patch** - `9a45052d` (test RED) + `2a25631a` (feat GREEN)
+2. **Task 2: dual hang-points + async MR patch** - `9a45052d` (test RED) + `2a25631a` (feat GREEN) + `662fe63e` (fix: dedupe patch helpers)
 
-**Plan metadata:** `2829d254` (docs: complete plan)
+**Plan metadata:** `2829d254` (docs: complete plan); `f2aa80d4` (docs: note metadata hash)
 
 ## Files Created/Modified
 
@@ -115,9 +115,17 @@ Each task was committed atomically (TDD RED→GREEN):
 - **Verification:** coding hang-point tests green
 - **Committed in:** `2a25631a`
 
+**3. [Rule 1 - Bug] Duplicate patch helpers after parallel merge**
+- **Found during:** Task 2 closeout
+- **Issue:** `security_scan_report.py` contained two `patch_mr_security_scan_section` / `_load_findings_for_mr` definitions
+- **Fix:** Collapse to a single fail-soft patch path with `branch_name` fallback
+- **Files modified:** `server/services/code_graph/security_scan_report.py`
+- **Verification:** AST duplicate check empty; 10/10 tests green
+- **Committed in:** `662fe63e`
+
 ---
 
-**Total deviations:** 2 auto-fixed (1 blocking/coordination, 1 correctness)
+**Total deviations:** 3 auto-fixed (1 blocking/coordination, 1 correctness, 1 bug)
 **Impact on plan:** No scope creep; D-04/D-06..D-09 closed as planned.
 
 ## Issues Encountered
