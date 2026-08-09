@@ -72,7 +72,7 @@ completed: 2026-08-09
 2. **Task 2: 注册/白名单 + 用例** - `c429f84b` (feat)
 3. **mypy hops 收窄** - `5c9caa72` (fix)
 
-**Plan metadata:** (docs commit after this SUMMARY)
+**Plan metadata:** `e274e9b1` (docs: complete plan)
 
 ## Files Created/Modified
 
