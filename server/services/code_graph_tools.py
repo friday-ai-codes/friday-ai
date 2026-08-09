@@ -117,6 +117,9 @@ _EVENT_LIST_PROCESSES_FAILED: Final[str] = "list_processes_failed"
 _EVENT_GET_PROCESS_STARTED: Final[str] = "get_process_started"
 _EVENT_GET_PROCESS_COMPLETED: Final[str] = "get_process_completed"
 _EVENT_GET_PROCESS_FAILED: Final[str] = "get_process_failed"
+_EVENT_RENAME_PREVIEW_STARTED: Final[str] = "rename_preview_started"
+_EVENT_RENAME_PREVIEW_COMPLETED: Final[str] = "rename_preview_completed"
+_EVENT_RENAME_PREVIEW_FAILED: Final[str] = "rename_preview_failed"
 
 _DEFAULT_PROCESS_LIST_LIMIT: Final[int] = 50
 _MAX_PROCESS_LIST_LIMIT: Final[int] = 200
@@ -177,6 +180,7 @@ __all__ = [
     "run_get_process",
     "run_impact",
     "run_list_processes",
+    "run_rename_preview",
     "run_trace",
     "staleness_payload",
     "tool_trace_payload",
@@ -1843,6 +1847,309 @@ async def run_get_process(
             "tool": "get_process",
             "repository_id": repository_id,
         }
+
+
+async def run_rename_preview(
+    *,
+    repository_id: str,
+    repo: Any,
+    graph_branch: str | None,
+    user: Any,
+    new_name: str,
+    symbol_id: str | None = None,
+    symbol: str | None = None,
+    file_path: str | None = None,
+    symbol_type: str | None = None,
+    context_lines: int | None = None,
+) -> dict[str, Any]:
+    """只读改名预览的**唯一**编排入口（D-09/D-10/D-11）——MCP / 对话 / knowledge 共用。
+
+    双源：图定义点 + 一跳 callers；文本半边经 ``grep_mirror`` + exclusion fail-closed。
+    ``applied`` 恒为 ``False``。消歧 / 未找到 → ``ok=False``，⛔ 不伪装零引用成功信封。
+    ``GraphError``（含未索引）原样上抛给壳层翻译。
+    """
+    from services.code_graph.rename_preview import (
+        COVERAGE_LIMITATIONS,
+        clamp_context_lines,
+        collect_graph_edit_sites,
+        merge_dual_source_edits,
+    )
+    from services.repo_mirror import MirrorError, ensure_mirror_commit, grep_mirror
+
+    started = time.perf_counter()
+    repository_id = str(repository_id)
+    new_name_s = str(new_name or "").strip()
+    ctx_lines = clamp_context_lines(context_lines)
+    query = _query_descriptor(
+        symbol_id=symbol_id,
+        symbol=symbol,
+        file_path=file_path,
+        symbol_type=symbol_type,
+    )
+
+    def _duration_ms() -> float:
+        return round((time.perf_counter() - started) * 1000, 2)
+
+    try:
+        logger.info(
+            _EVENT_RENAME_PREVIEW_STARTED,
+            component="code_graph",
+            category="caller",
+            repository_id=repository_id,
+            has_symbol_id=bool(symbol_id),
+            context_lines=ctx_lines,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    if not new_name_s:
+        try:
+            logger.info(
+                _EVENT_RENAME_PREVIEW_FAILED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                error_code="invalid_new_name",
+                error="new_name 不能为空",
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "ok": False,
+            "error_code": "invalid_new_name",
+            "error": "new_name 不能为空",
+            "tool": "rename_preview",
+            "applied": False,
+            "coverage_limitations": COVERAGE_LIMITATIONS,
+            "query": query,
+        }
+
+    # ⓪ ACL 闸在 ORM 解析之前（与 run_impact 同构）
+    await _code_graph_access().ensure_repository_readable(user, repository_id)
+
+    branch_names = ["", graph_branch] if graph_branch else [""]
+    resolution = await resolve_symbol_candidates(
+        repository_id=repository_id,
+        branch_names=branch_names,
+        symbol_id=symbol_id,
+        name=symbol,
+        file_path=file_path,
+        symbol_type=symbol_type,
+    )
+    if resolution.total_candidates == 0:
+        try:
+            logger.info(
+                _EVENT_RENAME_PREVIEW_FAILED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                error_code="symbol_not_found",
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "ok": False,
+            "error_code": "symbol_not_found",
+            "error": "未找到匹配的符号；请检查符号名 / symbol_id / file_path",
+            "tool": "rename_preview",
+            "applied": False,
+            "coverage_limitations": COVERAGE_LIMITATIONS,
+            "query": query,
+        }
+    if resolution.candidates:
+        try:
+            logger.info(
+                _EVENT_RENAME_PREVIEW_FAILED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                error_code="ambiguous_symbol",
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "ok": False,
+            "error_code": "ambiguous_symbol",
+            "error": "符号名不唯一；请带 symbol_id 重试，或补 file_path / symbol_type 收窄",
+            "tool": "rename_preview",
+            "applied": False,
+            "coverage_limitations": COVERAGE_LIMITATIONS,
+            "query": query,
+            **resolution_to_payload(resolution),
+        }
+
+    sid = resolution.resolved
+    assert sid is not None
+
+    # GraphError（含未索引）原样上抛——壳层翻译（D-03）
+    graph = await fetch_graph_for_tool(
+        repository_id,
+        graph_branch or "",
+        user=user,
+        seed_symbol_ids=[sid],
+        depth=1,
+        include_low_confidence=False,
+    )
+    in_graph = resolve_symbol_in_graph(graph.graph, symbol_id=sid)
+    if in_graph.resolved is None:
+        try:
+            logger.info(
+                _EVENT_RENAME_PREVIEW_FAILED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                error_code="symbol_not_found",
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "ok": False,
+            "error_code": "symbol_not_found",
+            "error": "未找到匹配的符号；请检查符号名 / symbol_id / file_path",
+            "tool": "rename_preview",
+            "applied": False,
+            "coverage_limitations": COVERAGE_LIMITATIONS,
+            "query": query,
+        }
+
+    seed = _seed_from_graph(graph.graph, sid)
+    old_name = str(seed.get("name") or symbol or "").strip()
+    if not old_name:
+        return {
+            "ok": False,
+            "error_code": "symbol_not_found",
+            "error": "符号名为空，无法预览改名",
+            "tool": "rename_preview",
+            "applied": False,
+            "coverage_limitations": COVERAGE_LIMITATIONS,
+            "query": query,
+        }
+
+    graph_sites = collect_graph_edit_sites(graph.graph, sid)
+    matcher = await _exclusion_matcher_for_repo(repository_id)
+    graph_sites = [
+        s for s in graph_sites if not matcher.is_excluded(str(s.get("file_path") or ""))
+    ]
+
+    text_matches: list[dict[str, Any]] = []
+    text_truncated = False
+    try:
+        snapshot = await ensure_mirror_commit(repository_id, graph_branch)
+        grep_result = await grep_mirror(
+            snapshot,
+            pattern=old_name,
+            regex=False,
+            case_sensitive=True,
+            context_lines=ctx_lines,
+            max_matches=200,
+        )
+        raw_matches = list(grep_result.get("matches") or [])
+        text_truncated = bool(grep_result.get("truncated"))
+        text_matches = [
+            m
+            for m in raw_matches
+            if isinstance(m, Mapping)
+            and not matcher.is_excluded(str(m.get("file_path") or ""))
+        ]
+        if len(text_matches) != len(raw_matches):
+            try:
+                from services.exclusion import log_exclusion_blocked
+
+                log_exclusion_blocked(
+                    surface="rename_preview",
+                    repository_id=repository_id,
+                    rel_path="",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+    except MirrorError as exc:
+        try:
+            logger.info(
+                _EVENT_RENAME_PREVIEW_FAILED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                error_code=exc.code,
+                error=redact_secrets_in_text(exc.detail)[:500],
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "ok": False,
+            "error_code": exc.code,
+            "error": redact_secrets_in_text(exc.detail)[:500],
+            "tool": "rename_preview",
+            "applied": False,
+            "coverage_limitations": COVERAGE_LIMITATIONS,
+            "query": query,
+            "symbol": {
+                "symbol_id": sid,
+                "name": old_name,
+                "new_name": new_name_s,
+            },
+        }
+
+    merged = merge_dual_source_edits(
+        graph_sites=graph_sites,
+        text_matches=text_matches,
+        old_name=old_name,
+        new_name=new_name_s,
+    )
+    # 硬锁：成功路径也强制 applied=false
+    merged["applied"] = False
+
+    degradation = degradation_payload(graph.meta)
+    if text_truncated:
+        degradation = {
+            **degradation,
+            "text_search_truncated": True,
+        }
+
+    result = {
+        "ok": True,
+        "tool": "rename_preview",
+        "applied": False,
+        "coverage_limitations": merged["coverage_limitations"],
+        "repository_id": repository_id,
+        "branch": _branch_label(repo, graph_branch),
+        "symbol": {
+            "symbol_id": sid,
+            "name": old_name,
+            "new_name": new_name_s,
+            "file_path": seed.get("file_path", ""),
+            "symbol_type": seed.get("symbol_type", ""),
+            "start_line": seed.get("start_line", 0),
+        },
+        "files": merged["files"],
+        "summary": merged["summary"],
+        "query": {
+            **query,
+            "new_name": new_name_s,
+            "context_lines": ctx_lines,
+        },
+        "staleness": await staleness_payload(repo),
+        "graph": degradation,
+    }
+    try:
+        logger.info(
+            _EVENT_RENAME_PREVIEW_COMPLETED,
+            component="code_graph",
+            category="caller",
+            repository_id=repository_id,
+            total_edits=int(merged["summary"].get("total_edits") or 0),
+            files_affected=int(merged["summary"].get("files_affected") or 0),
+            graph_edits=int(merged["summary"].get("graph_edits") or 0),
+            text_search_edits=int(merged["summary"].get("text_search_edits") or 0),
+            duration_ms=_duration_ms(),
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return result
 
 
 # ---------------------------------------------------------------------------
