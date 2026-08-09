@@ -70,7 +70,7 @@ Each task was committed atomically (TDD for Task 1):
 2. **Task 1 GREEN: run_detect_changes** - `1b7dcf6b` (feat)
 3. **Task 2: tool_trace_payload detect_changes** - `11d5f749` (feat)
 
-**Plan metadata:** _(see final docs commit hash below / git log)_
+**Plan metadata:** `02f30fa9` (docs: complete plan)
 
 ## Files Created/Modified
 
