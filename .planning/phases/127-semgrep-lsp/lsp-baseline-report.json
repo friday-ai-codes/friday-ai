@@ -1,0 +1,127 @@
+{
+  "phase": "127-semgrep-lsp",
+  "plan": "127-05",
+  "generated_at": "2026-08-09T22:37:31Z",
+  "settings_defaults_unchanged": {
+    "VOLAR_BACKEND_ENABLED": false,
+    "GOPLS_BACKEND_ENABLED": false
+  },
+  "binaries": {
+    "node_available": true,
+    "node_reason": "ok",
+    "go_available": false,
+    "go_reason": "gopls binary 未在 PATH（建议 go install golang.org/x/tools/gopls@latest）",
+    "vue_language_server": true,
+    "gopls_on_path": false
+  },
+  "before": {
+    "mode": "tree_sitter",
+    "kill_switch": {
+      "VOLAR_BACKEND_ENABLED": false,
+      "GOPLS_BACKEND_ENABLED": false
+    },
+    "quality_counts": {
+      "Symbol": 562465,
+      "Endpoint": 6014,
+      "CallEdge": 1585137,
+      "ApiWrapper": 0,
+      "ApiCallSite": 0,
+      "CrossRepoApiCall": 0
+    },
+    "repos": {
+      "vue": {
+        "label": "vue_ts",
+        "repo": null,
+        "present": false,
+        "enumerate_ms": null,
+        "file_count": 0
+      },
+      "go": {
+        "label": "go",
+        "repo": null,
+        "present": false,
+        "enumerate_ms": null,
+        "file_count": 0
+      }
+    },
+    "index_wall_cold_ms": null,
+    "index_wall_warm_ms": null,
+    "lsp_cold_start_ms": null,
+    "notes": [
+      "before 侧使用当前 ORM 计数作基线快照；完整索引差分需在目标仓重跑索引后对比。",
+      "已知方言：gopls vs tree-sitter 在 gin endpoint 路径上可能有差分（见 test_go_extractor）。"
+    ]
+  },
+  "after": {
+    "mode": "lsp_probe",
+    "kill_switch_temp_env": {
+      "VOLAR_BACKEND_ENABLED": true,
+      "GOPLS_BACKEND_ENABLED": true
+    },
+    "skipped": false,
+    "binaries": {
+      "node_available": true,
+      "node_reason": "ok",
+      "go_available": false,
+      "go_reason": "gopls binary 未在 PATH（建议 go install golang.org/x/tools/gopls@latest）",
+      "vue_language_server": true,
+      "gopls_on_path": false
+    },
+    "quality_counts": {
+      "Symbol": 562465,
+      "Endpoint": 6014,
+      "CallEdge": 1585137,
+      "ApiWrapper": 0,
+      "ApiCallSite": 0,
+      "CrossRepoApiCall": 0
+    },
+    "repos": {
+      "vue": {
+        "label": "vue_ts",
+        "repo": null,
+        "present": false,
+        "enumerate_ms": null,
+        "file_count": 0
+      },
+      "go": {
+        "label": "go",
+        "repo": null,
+        "present": false,
+        "enumerate_ms": null,
+        "file_count": 0
+      }
+    },
+    "index_wall_cold_ms": null,
+    "index_wall_warm_ms": null,
+    "lsp_cold_start_ms": null,
+    "delta_vs_tree_sitter": {
+      "Symbol": null,
+      "Endpoint": null,
+      "CallEdge": null,
+      "ApiWrapper": null,
+      "ApiCallSite": null,
+      "CrossRepoApiCall": null
+    },
+    "fallback_count": 0,
+    "orphan_reaped": 0,
+    "oom_or_timeout": false,
+    "notes": [
+      "本命令不改 settings 默认字面量（D-12/D-16）；after 仅为测量意图快照。",
+      "完整冷/热索引墙钟需对接 indexer；此处保留字段供复跑填充。"
+    ]
+  },
+  "stability": {
+    "probe_fallback_possible": true,
+    "orphan_reap_wired": true
+  },
+  "d16_gate": {
+    "quality_no_catastrophic_regression": null,
+    "latency_memory_acceptable": null,
+    "recommend_flip_defaults": false,
+    "rationale": "缺完整 before/after 索引差分或二进制 skip → 保持 VOLAR_BACKEND_ENABLED/GOPLS_BACKEND_ENABLED 默认 False（D-16）。不得以镜像已装好为唯一理由翻默认。"
+  },
+  "env_snapshot": {
+    "VOLAR_BACKEND_ENABLED": null,
+    "GOPLS_BACKEND_ENABLED": null
+  }
+}
