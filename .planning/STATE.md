@@ -4,7 +4,7 @@ milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
 status: executing
 stopped_at: Completed 126-03-PLAN.md
-last_updated: "2026-08-09T21:30:46.804Z"
+last_updated: "2026-08-09T21:31:00.188Z"
 last_activity: 2026-08-09 -- Phase 126 execution started
 progress:
   total_phases: 7
@@ -351,6 +351,7 @@ Last activity: 2026-08-09 -- Phase 126 execution started
 | Phase 126 P01 | 8min | 2 tasks | 8 files |
 | Phase 126 P02 | 6min | 3 tasks | 11 files |
 | Phase 126 P03 | 8min | 3 tasks | 14 files |
+| Phase 126 P04 | 5min | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -667,6 +668,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 126]: QUEUE_GRAPH process:{repo}:{branch} chained after community success
 - [Phase 126]: 126-03: assemble_affected_processes single dialect; dual orchestrator fill
 - [Phase 126]: 126-03: D-27 npm mcp drift 8→10 (list_processes + get_process)
+- [Phase 126]: rename_preview dual-source graph+grep_mirror; applied always false
+- [Phase 126]: D-27 npm mcp drift +1 rename_preview (10→11); submodule untouched
 
 ### Pending Todos
 
