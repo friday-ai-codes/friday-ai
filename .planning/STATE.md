@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-status: executing
-stopped_at: Completed 124-02-PLAN.md
-last_updated: "2026-08-09T19:42:06.951Z"
-last_activity: 2026-08-09 -- Completed 124-00 Wave 0 test skeleton
+status: verifying
+stopped_at: Completed 124-03-PLAN.md
+last_updated: "2026-08-09T19:47:06.738Z"
+last_activity: 2026-08-09 -- Completed 124-02 shared impact_report formatter
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 30
-  completed_plans: 29
-  percent: 43
+  completed_plans: 30
+  percent: 57
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 Phase: 124 (coding-chain) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-09 -- Completed 124-02 shared impact_report formatter
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
@@ -343,6 +343,7 @@ Last activity: 2026-08-09 -- Completed 124-02 shared impact_report formatter
 | Phase 124 P00 | 2min | 2 tasks | 5 files |
 | Phase 124 P01 | 2min | 2 tasks | 8 files |
 | Phase 124 P02 | 3min | 2 tasks | 3 files |
+| Phase 124 P03 | 3min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -639,6 +640,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 124]: D-05: build_impact_report_section sole render entry consuming run_detect_changes
 - [Phase 124]: D-10/D-08/D-13: IMPACT_REPORT timeout 30s + max_chars 10240; no kill-switch
 - [Phase 124]: T-124-02: sanitize Traceback/paths in impact_report_failed error field
+- [Phase 124]: D-06: AICodingNode + MCP create_merge_request + create_mr_for_task share build_impact_report_section
+- [Phase 124]: D-09: outer try/except at MR shells; impact never blocks create_merge_request
+- [Phase 124]: T-124-05: view passes request.user; work_item passes initiating_user for ACL
 
 ### Pending Todos
 
@@ -1006,8 +1010,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-09T19:42:06.937Z
-Stopped at: Completed 124-02-PLAN.md
+Last session: 2026-08-09T19:47:06.724Z
+Stopped at: Completed 124-03-PLAN.md
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。
 Earlier: 2026-07-31T07:28:32.180Z — v0.19.0 全部相位执行完毕（105/106/107/109/110）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01；Phase 110 七个 plan 全落地并闭合 GAP-1（前半程失败时间线撒谎）。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。

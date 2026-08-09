@@ -32,7 +32,7 @@
 - [x] **DIFF-01**: 用户/agent 对分支 diff（base 锚定 `last_indexed_commit_sha`，保证与 Symbol 行号同源）执行 detect_changes，获得受影响符号清单（changeType / 行数 / file:line）与批量 impact 结果
 - [x] **DIFF-02**: detect_changes 支持 compare + base_ref 场景（MR diff）；文件重命名被识别、不产生误报
 - [x] **DIFF-03**: 编码任务容器在提交前可经既有 MCP PAT 白名单调用 detect_changes 自查（受影响清单进提交决策）
-- [ ] **DIFF-04**: MR 描述自动附影响面报告（Changes / Affected / Risk / Recommendations 四段结构），fail-soft 不阻断建 MR 主流程
+- [x] **DIFF-04**: MR 描述自动附影响面报告（Changes / Affected / Risk / Recommendations 四段结构），fail-soft 不阻断建 MR 主流程
 
 ### MOD — 社区检测与模块摘要
 
@@ -108,7 +108,7 @@
 | DIFF-01 | Phase 123 | Complete |
 | DIFF-02 | Phase 123 | Complete |
 | DIFF-03 | Phase 124 | Complete |
-| DIFF-04 | Phase 124 | Pending |
+| DIFF-04 | Phase 124 | Complete |
 | MOD-01 | Phase 125 | Pending |
 | MOD-02 | Phase 125 | Pending |
 | MOD-03 | Phase 125 | Pending |
