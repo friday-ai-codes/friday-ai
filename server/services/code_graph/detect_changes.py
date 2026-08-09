@@ -344,13 +344,21 @@ def detect_affected_symbols(
                         symbols, hunk.old_start, hunk.old_count
                     ):
                         hit_uids.add(sym.uid)
+                # 有内容 hunk 但未命中任何符号：仅文件级 renamed，不整文件灌种子
+                if not hit_uids:
+                    files_out.append(
+                        {
+                            "path": new_key or old_key,
+                            "change_type": ChangeType.RENAMED.value,
+                            "old_path": old_key,
+                            "new_path": new_key,
+                            "symbols": [],
+                            "file_summary": {"changeType": ChangeType.RENAMED.value},
+                        }
+                    )
+                    continue
                 formatting = is_formatting_only(all_old, all_new)
-                # 未命中任何符号但有 rename：仍映射全部旧路径符号
-                targets = (
-                    [s for s in symbols if s.uid in hit_uids]
-                    if hit_uids
-                    else list(symbols)
-                )
+                targets = [s for s in symbols if s.uid in hit_uids]
                 for sym in targets:
                     lines_changed = sum(
                         hunk.old_count
