@@ -21,7 +21,11 @@
 
 from __future__ import annotations
 
-__all__ = ["acollect_upstream_artifacts", "render_upstream_artifacts_section"]
+__all__ = [
+    "acollect_upstream_artifacts",
+    "render_upstream_artifacts_section",
+    "render_module_summaries_section",
+]
 
 # 注入端显式上限（兑现 artifact_extraction docstring「无界展开由注入端截断」承诺，T-45-02）：
 # 每桶（OpenAPI / API 契约）最多渲染前 N 条，超出折叠为「… (+M more)」省略行，
@@ -29,6 +33,9 @@ __all__ = ["acollect_upstream_artifacts", "render_upstream_artifacts_section"]
 _MAX_FILES_PER_BUCKET = 50
 # 单条内联字符串最大长度（防超长路径撑爆 prompt）。
 _MAX_INLINE_LEN = 200
+# Phase 125 / MOD-04：调研 prompt 模块摘要段预算（D-16 / T-125-04）
+_DEFAULT_MODULE_SUMMARY_MAX_CHARS = 2000
+_DEFAULT_MODULE_SUMMARY_MAX_ITEMS = 5
 
 
 def _safe_inline(value: object, *, max_len: int = _MAX_INLINE_LEN) -> str:
@@ -109,3 +116,97 @@ def render_upstream_artifacts_section(artifacts: list[dict]) -> str:
         if changed is not None:
             lines.append(f"- 变更文件数: {changed}")
     return "\n".join(lines)
+
+
+def render_module_summaries_section(
+    summaries: list[dict] | None,
+    *,
+    query: str = "",
+    max_chars: int = _DEFAULT_MODULE_SUMMARY_MAX_CHARS,
+    max_items: int = _DEFAULT_MODULE_SUMMARY_MAX_ITEMS,
+) -> str:
+    """渲染「## 模块摘要」段；空 list / None → ``""``（空段守卫，D-16）。
+
+    纪律：query↔摘要相关度排序 → 先到为准截断（``max_items`` 或 ``max_chars``）→
+    超限注明 truncated。半可信字段过 :func:`_safe_inline`；不内联原始 summary JSON。
+
+    Args:
+        summaries: 仓级模块摘要 dict 列表（``community_key`` / ``text`` /
+            ``responsibility`` / 可选 ``relevance``）。
+        query: 用于相关度重排的查询文本。
+        max_chars: 段内字符预算（不含标题与 truncated 标注）。
+        max_items: 最多保留社区条数。
+
+    Returns:
+        Markdown 段；无有效摘要时 ``""``。
+    """
+    if not summaries:
+        return ""
+
+    from services.module_summary_signal import score_summary_relevance
+
+    scored: list[tuple[float, dict]] = []
+    for item in summaries:
+        if not isinstance(item, dict):
+            continue
+        responsibility = str(item.get("responsibility") or "").strip()
+        text = str(item.get("text") or "").strip()
+        if not responsibility and not text:
+            continue
+        raw_rel = item.get("relevance")
+        try:
+            rel = float(raw_rel) if raw_rel is not None else 0.0
+        except (TypeError, ValueError):
+            rel = 0.0
+        if rel <= 0.0 and query:
+            rel = score_summary_relevance(query, f"{responsibility} {text}")
+        scored.append((rel, item))
+
+    if not scored:
+        return ""
+
+    scored.sort(key=lambda pair: (-pair[0], str(pair[1].get("community_key") or "")))
+    limit_items = max(0, int(max_items or 0))
+    budget = max(0, int(max_chars or 0))
+    selected: list[dict] = []
+    used = 0
+    truncated = False
+
+    for _, item in scored:
+        if limit_items and len(selected) >= limit_items:
+            truncated = True
+            break
+        key = _safe_inline(item.get("community_key") or "community", max_len=64)
+        body = str(item.get("text") or "").strip()
+        if body.startswith("## 模块摘要"):
+            body = body[len("## 模块摘要") :].lstrip("\n")
+        if not body:
+            resp = _safe_inline(item.get("responsibility") or "", max_len=400)
+            body = f"### 职责\n{resp}" if resp else ""
+        if not body:
+            continue
+        chunk = f"### {key}\n{body}".strip()
+        # 预算按「段正文」计量；超限则停（本条不纳入）
+        if budget and selected and used + len(chunk) + 2 > budget:
+            truncated = True
+            break
+        if budget and not selected and len(chunk) > budget:
+            chunk = chunk[:budget].rstrip() + "…"
+            truncated = True
+            selected.append({"_chunk": chunk})
+            used = len(chunk)
+            break
+        if selected:
+            used += 2
+        selected.append({"_chunk": chunk})
+        used += len(chunk)
+
+    if not selected:
+        return ""
+
+    lines = ["## 模块摘要", ""]
+    lines.extend(entry["_chunk"] for entry in selected)
+    if truncated:
+        lines.append("")
+        lines.append("（truncated：已按相关度截断，未注入全部社区摘要）")
+    return "\n".join(lines).strip()
