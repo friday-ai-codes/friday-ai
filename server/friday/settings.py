@@ -903,10 +903,21 @@ CODE_GRAPH_MAX_GRAPH_BYTES: int = env.int(
     "CODE_GRAPH_MAX_GRAPH_BYTES", default=256 * 1024 * 1024
 )
 # single-flight 等待者的最长阻塞时长：同键并发请求中只有首个真正建图，其余等待同一
-# 结果。10 万符号级仓库冷建图纯 CPU 约 2 秒、20 万级约 4 秒（不含 ORM 取数），120 秒
-# 留足余量又能防等待者被永久挂住。
+# 结果。10 万符号级仓库冷建图纯 CPU 约 2 秒、20 万级约 4 秒（不含 ORM 取数）。
+#
+# 🚨 **这个值是「等待者占住执行器线程的上界」，不只是一个超时**。等待用的
+# ``inflight.event.wait(timeout)`` 是纯阻塞调用，跑在 ``sync_to_async`` 派发的执行器
+# 线程上：请求链路上 Django 的 ASGI handler 为每个请求开 ``ThreadSensitiveContext``，
+# 影响限于该请求自身；但**不经过请求的调用方**（channels consumer、background_runner、
+# durable worker）落在全局 ``SyncToAsync.single_thread_executor`` 上——那是**进程唯一
+# 一条**线程，一个等待者卡在那里，本进程所有其它非请求 ``sync_to_async`` 工作全部排队。
+# 不是死锁（领头永远在 finally 里 set），但是一次可观的头阻塞。
+#
+# 取 **30 秒**：对最坏冷建（20 万符号约 4 秒）已有 7 倍余量，而更长的上界只在「领头被
+# 硬杀、连 finally 都没跑到」这种本就该**快速失败**的场景里才会被用满——那正是要缩短
+# 头阻塞的场景，不是要延长等待的场景。调大本值前请先读上面这段。
 CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS: int = env.int(
-    "CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS", default=120
+    "CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS", default=30
 )
 # ⛔ 刻意不新增「边构建 in-flight 超时」配置项：该判据直接复用上方的
 # GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES（同一语义——超时的 RUNNING 行视为孤儿、不算在
