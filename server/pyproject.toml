@@ -87,6 +87,11 @@ dependencies = [
     # 跨进程/跨副本共享缓存后端（CACHES → Redis）；复用上面 pin 的 redis-py 5.x。
     "django-redis>=5.4,<6",
     "procrastinate[django]>=3.8.1,<3.9",
+    # 内存图服务（services/code_graph/）的图对象。networkx 原本只作为 llama-index 的
+    # 传递依赖存在于 uv.lock:2371，应用代码零直接声明——上游一旦不再传递就会在运行期
+    # ImportError，故提升为直接依赖。不锁死 ==3.6.1：3.x 内 MultiDiGraph / BFS API 稳定，
+    # 锁死会与 llama-index 的版本解析冲突。
+    "networkx>=3.6,<4",
 ]
 
 [build-system]
