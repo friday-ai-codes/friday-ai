@@ -43,7 +43,7 @@ patterns-established:
   - "GraphError → _GRAPH_ERROR_STATUS + graph_error_to_tool_error，不透 details"
   - "mcp_tools 测试重置 GraphService 用 importlib，避免上层直连内部子模块 AST 红线"
 
-requirements-completed: [IMPACT-06]
+requirements-completed: []  # IMPACT-06 需 MCP+对话双面；122-08 只交 MCP，⛔ 不勾 Complete（归 122-10）
 
 # Metrics
 duration: 17min
@@ -117,9 +117,15 @@ completed: 2026-08-09
 - **Files modified:** `server/tests/mcp_tools/test_impact_trace_tools.py`
 - **Committed in:** `5bdd1586`
 
+**4. [Rule 2 - Critical] 撤回过早勾选 IMPACT-06 Complete**
+- **Found during:** 收尾（对照 critical_decisions / IMPACT-06 文案「MCP + 对话双面」）
+- **Issue:** frontmatter `requirements: [IMPACT-06]` 触发 mark-complete，但对话壳归 122-09、Complete 归 122-10
+- **Fix:** REQUIREMENTS.md 还原为 Pending；SUMMARY `requirements-completed` 置空
+- **Files modified:** `.planning/REQUIREMENTS.md`、`122-08-SUMMARY.md`
+
 ---
 
-**Total deviations:** 3 auto-fixed (1 missing critical, 2 blocking)
+**Total deviations:** 4 auto-fixed (2 missing critical, 2 blocking)
 **Impact on plan:** 全部为正确性/可测性必需，无范围膨胀。
 
 ## Issues Encountered
