@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import inspect
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -23,8 +24,11 @@ from services.code_graph.model import (
     BARE_NAME_BLACKLIST,
     LOW_RESOLUTION_THRESHOLD,
     REDACTED_REPOSITORY,
+    ChunkEvidence,
+    CodeGraph,
     EdgeConfidence,
     EdgeKind,
+    GraphMeta,
     confidence_score,
     derive_reason,
 )
@@ -145,3 +149,111 @@ def test_thresholds_and_redaction_literal() -> None:
     # 121-09 的 barrel 会导出它；这里先钉死字面量，避免缺失要到两个 wave
     # 之后才在 __all__ 长度校验上暴雷。
     assert REDACTED_REPOSITORY == "redacted_repository"
+
+
+def _make_meta(**overrides: object) -> GraphMeta:
+    """构造一个全字段填满的 GraphMeta（缺字段会在这里就报错，正是我们要的）。"""
+    defaults: dict[str, object] = {
+        "repository_id": "repo-1",
+        "branch": "",
+        "node_count": 3,
+        "edge_count": 2,
+        "estimated_bytes": 3 * 640 + 2 * 560,
+        "resolution_rate": 0.9,
+        "low_resolution": False,
+        "partial_edges": False,
+        "partial_reason": "",
+        "degraded": "",
+        "cross_repo_unresolved_count": 0,
+        "cross_repo_branch_unfiltered": False,
+        "excluded_file_count": 0,
+        "built_signature": "deadbeef",
+        "built_at": datetime(2026, 8, 9, tzinfo=UTC),
+    }
+    defaults.update(overrides)
+    return GraphMeta(**defaults)  # type: ignore[arg-type]
+
+
+def test_value_objects_are_frozen_and_slotted() -> None:
+    """三个值对象都是 frozen + slots：缓存里的同一张图不能被上层就地改写。"""
+    evidence = ChunkEvidence(
+        source_chunk_id="c1",
+        target_chunk_id="c2",
+        edge_type="imports",
+        weight=0.5,
+        target_repository_id=None,
+    )
+    meta = _make_meta()
+    graph = CodeGraph(meta=meta, graph=object())  # type: ignore[arg-type]
+
+    for instance in (evidence, meta, graph):
+        assert hasattr(type(instance), "__slots__")
+        assert not hasattr(instance, "__dict__")
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        evidence.weight = 1.0  # type: ignore[misc]
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        meta.partial_edges = True  # type: ignore[misc]
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        graph.meta = meta  # type: ignore[misc]
+
+
+def test_graph_meta_carries_all_declared_markers() -> None:
+    """GraphMeta 的 15 个字段是契约；少一个上层就少一条可信度声明。"""
+    field_names = [f.name for f in dataclasses.fields(GraphMeta)]
+    assert set(field_names) == {
+        "repository_id",
+        "branch",
+        "node_count",
+        "edge_count",
+        "estimated_bytes",
+        "resolution_rate",
+        "low_resolution",
+        "partial_edges",
+        "partial_reason",
+        "degraded",
+        "cross_repo_unresolved_count",
+        "cross_repo_branch_unfiltered",
+        "excluded_file_count",
+        "built_signature",
+        "built_at",
+    }
+    assert len(field_names) == 15
+
+    # 四个标记字段必填、无默认值——漏透出要在 review 暴露，而不是静默取默认。
+    marker_fields = {
+        f.name: f
+        for f in dataclasses.fields(GraphMeta)
+        if f.name
+        in {"partial_edges", "degraded", "low_resolution", "cross_repo_unresolved_count"}
+    }
+    assert len(marker_fields) == 4
+    for f in marker_fields.values():
+        assert f.default is dataclasses.MISSING
+        assert f.default_factory is dataclasses.MISSING
+
+
+def test_chunk_evidence_is_a_side_channel_not_edges() -> None:
+    """chunk 证据面按 symbol_id 索引、值为 tuple，且默认是空 Mapping 不是 list。"""
+    evidence_field = {f.name: f for f in dataclasses.fields(CodeGraph)}["chunk_evidence"]
+    assert evidence_field.type == "Mapping[str, tuple[ChunkEvidence, ...]]"
+    assert evidence_field.default_factory is dict
+
+    graph = CodeGraph(meta=_make_meta(), graph=object())  # type: ignore[arg-type]
+    assert graph.chunk_evidence == {}
+    assert not isinstance(graph.chunk_evidence, list)
+
+    # Pitfall 2 的纪律必须有代码内留痕。
+    doc = ChunkEvidence.__doc__ or ""
+    assert "不进图的边集" in doc
+
+    # D-01 同理：CodeGraph docstring 要写清为什么是 MultiDiGraph。
+    graph_doc = CodeGraph.__doc__ or ""
+    assert "MultiDiGraph" in graph_doc
+    assert "DiGraph" in graph_doc
+
+
+def test_model_module_has_no_django_dependency() -> None:
+    """契约层零 Django、零 ORM：Django app loading 之前即可 import。"""
+    source = Path(model.__file__).read_text(encoding="utf-8")
+    assert "django" not in source
