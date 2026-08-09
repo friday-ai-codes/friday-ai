@@ -713,9 +713,17 @@ def _load_cross_repo_edges(
     价值。丢弃 + 如实计数则让 Phase 122 能在输出里声明「另有 N 条跨仓边无法定位」，
     把"不知道"诚实地表达成"不知道"。
 
+    🚨 **每一侧只在它确实属于本仓时才解析**（按行上的 ``call_site__repository_id`` /
+    ``endpoint__repository_id`` 判定）。⛔ **不得**拿对端仓的 ``(file_path, name)`` 去
+    撞本仓的 :attr:`_SymbolNodeIndex.by_file_and_name`：那张索引里只有**本仓**符号，
+    而微服务仓之间路径与 handler 命名高度同构，撞上就会在两个本仓符号之间造出一条
+    **伪造的** ``cross_repo`` 边——还带着原值 ``match_confidence`` 的高可信度标签、
+    默认参与扩散、且 ``unresolved_count`` 不会 +1，上层完全无从打折。
+
     **对端仓的符号不在本图内**：本相位**不做多仓合并大图**（CONTEXT Area 1），跨仓
-    impact 由 Phase 122 通过「按需再取对端仓的图」组合。因此一条边的两端里，只有落在
-    本仓的那一侧可能解析成功；对端侧用同一张索引尝试，查不到即整条边丢弃。
+    impact 由 Phase 122 通过「按需再取对端仓的图」组合。因此一条边的两端里，只有**两端
+    都在本仓**的那些行才可能建成边；只要有一侧落在别的仓，这条边就整条丢弃并计数
+    （D-05：丢弃 + 如实计数，⛔ 绝不建虚拟节点）。
 
     :returns: 装配与丢弃的计数（喂 ``GraphMeta``）。
     """
@@ -750,12 +758,14 @@ def _load_cross_repo_edges(
         .iterator(chunk_size=_CROSS_REPO_CHUNK_SIZE)
     )
 
+    local_repository_id = str(repository_id)
+
     for (
-        _call_site_repository_id,
+        call_site_repository_id,
         caller_file,
         caller_function,
         call_line_number,
-        _endpoint_repository_id,
+        endpoint_repository_id,
         endpoint_file_path,
         handler_name,
         _http_method,  # 取列保持与 RESEARCH §Code Examples 1 的查询形状一致；
@@ -763,11 +773,27 @@ def _load_cross_repo_edges(
         _endpoint_branch_name,  # ⚠️ ApiCallSite 侧**没有** branch_name，见下方说明。
         match_confidence,
     ) in rows:
-        caller_node = _resolve_by_file_and_name(
-            by_file_and_name, caller_file, caller_function, normalize_rel_path
+        # 🚨 **每一侧只在它确实属于本仓时才解析**。``by_file_and_name`` 里装的全是
+        #    **本仓**符号，拿对端仓的 ``(file_path, name)`` 去撞这张索引就是在凭同名
+        #    造边：微服务仓之间路径与 handler 命名高度同构（``internal/handler/user.go``
+        #    + ``GetUser``、``src/api/views.py`` + ``order_create``），一旦撞上就会在
+        #    两个**本仓**符号之间加一条 ``cross_repo`` 边。这条伪造边比裸名假阳性更难
+        #    发现：它带着原值 ``match_confidence`` 这种高可信度标签、本档还默认参与
+        #    扩散，而 ``unresolved_count`` **不会** +1（它"解析成功"了），上层因此拿不
+        #    到任何可用来打折的信号。
+        caller_node = (
+            _resolve_by_file_and_name(
+                by_file_and_name, caller_file, caller_function, normalize_rel_path
+            )
+            if str(call_site_repository_id) == local_repository_id
+            else None
         )
-        callee_node = _resolve_by_file_and_name(
-            by_file_and_name, endpoint_file_path, handler_name, normalize_rel_path
+        callee_node = (
+            _resolve_by_file_and_name(
+                by_file_and_name, endpoint_file_path, handler_name, normalize_rel_path
+            )
+            if str(endpoint_repository_id) == local_repository_id
+            else None
         )
         if caller_node is None or callee_node is None:
             unresolved_count += 1
