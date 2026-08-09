@@ -492,11 +492,11 @@ def test_estimate_bytes_is_pure() -> None:
         estimate_graph_bytes,
     )
 
-    # 2026-08-09 由 Plan 121-10 的最大仓实测复校：640/560 → 760/720
-    # （study-app 实测 706 B/节点、665 B/边，原值让估算低于实测常驻）。
-    assert (NODE_COST_BYTES, EDGE_COST_BYTES) == (760, 720)
+    # 2026-08-09 由 Plan 121-10 的生产库最大仓实测复校：640/560 → 800/680
+    # （backend/teacher-ai-class 实测 733 B/节点、626 B/边，原值让估算低于实测常驻）。
+    assert (NODE_COST_BYTES, EDGE_COST_BYTES) == (800, 680)
 
-    expected = 100 * 760 + 300 * 720
+    expected = 100 * 800 + 300 * 680
     assert estimate_graph_bytes(100, 300) == expected
     # 连调三次结果逐字节相同（无内部状态、无随机、无时间依赖）。
     assert [estimate_graph_bytes(100, 300) for _ in range(3)] == [expected] * 3
@@ -515,9 +515,9 @@ def test_estimate_bytes_is_pure() -> None:
 # 121-VALIDATION.md 121-07-T1（预算算术自洽性）：估算函数与 settings 默认值必须
 # 讲同一套算术，否则 CODE_GRAPH_MAX_GRAPH_BYTES 的注释就是一句无人校验的散文。
 def test_estimate_bytes_matches_budget_arithmetic() -> None:
-    """锁死「单仓约 11 万符号触顶」这条容量结论。
+    """锁死「单仓约 8.6 万符号触顶」这条容量结论。
 
-    settings 注释写的是 ``n × (760 + 2.4×720) = n × 2488``、``256MB → 约 11 万符号``。
+    settings 注释写的是 ``n × (800 + 3.4×680) = n × 3112``、``256MB → 约 8.6 万符号``。
     这条断言让「有人改了常数却没改预算默认值（或反之）」当场变红——两者漂移的后果是
     准入判据放行的图比预算能装下的更大，OOM 保护静默失效。
     """
@@ -526,14 +526,14 @@ def test_estimate_bytes_matches_budget_arithmetic() -> None:
     from services.code_graph.cache import estimate_graph_bytes
 
     max_graph_bytes = int(settings.CODE_GRAPH_MAX_GRAPH_BYTES)
-    # 2026-08-09 Plan 121-10 实测复校（假设 A2）：本仓**准入口径**（``CallEdge`` 原始
-    # 行数 / ``Symbol`` 行数，正是 ``_estimate_admission`` 用的那个口径）实测
-    # 2.40:1，RESEARCH 原假设的 3:1 偏高。⚠️ 入图口径只有 0.35:1（解析率低导致绝大
-    # 多数边不入图），但准入判据看不到那个数，所以这里必须用准入口径——用入图口径会
-    # 让这条断言在守一个准入判据根本不会算出来的数。
-    ratio = estimate_graph_bytes(110_000, int(2.4 * 110_000)) / max_graph_bytes
+    # 2026-08-09 Plan 121-10 生产实测复校（假设 A2）：**准入口径**（``CallEdge`` 原始
+    # 行数 / ``Symbol`` 行数，正是 ``_estimate_admission`` 用的那个口径）实测 3.40:1。
+    # ⚠️ 入图口径只有 0.73:1（解析率低导致绝大多数边不入图），但准入判据看不到那个
+    # 数，所以这里必须用准入口径——用入图口径会让这条断言去守一个准入判据根本不会
+    # 算出来的数。触顶符号数随之从 11 万降到 8.6 万。
+    ratio = estimate_graph_bytes(86_000, int(3.4 * 86_000)) / max_graph_bytes
     assert 0.9 <= ratio <= 1.1, (
-        f"11 万符号的估算值与 CODE_GRAPH_MAX_GRAPH_BYTES 已漂移（比值 {ratio:.3f}）"
+        f"8.6 万符号的估算值与 CODE_GRAPH_MAX_GRAPH_BYTES 已漂移（比值 {ratio:.3f}）"
     )
 
 

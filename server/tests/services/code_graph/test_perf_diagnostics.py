@@ -20,31 +20,46 @@
 
 ⚠️ 不加 ``-s`` 时 pytest 会吞掉 ``print``，用例通过了也看不到数据表。
 
-为什么内存测量必须开子进程
-==========================
-pytest 进程已经 import 了 Django + langchain + llama-index 等一大票依赖，堆上留着
-**几百 MB 已驻留但已释放**的空闲页。在这样的进程里建一张 167MB 的图，分配器直接
-复用那些页，RSS 只涨 36MB —— 首轮实测正是如此（rss/tracemalloc = 0.215，一个物理
-上不可能的比值）。RSS 增量在胖进程里是**下界**，而下界恰好是不安全的那个方向。
+为什么一切都在子进程里做
+========================
+**两个理由，缺一条都不成立。**
 
-所以每次测量都 fork 一个干净的 ``sys.executable`` 子进程（:data:`_MEASURE_SCRIPT`，
-零 Django、只 import networkx），在其中：
+① **RSS 在胖进程里量不准**。pytest 进程已经 import 了 Django + langchain +
+   llama-index 等一大票依赖，堆上留着几百 MB 已驻留但已释放的空闲页。在这样的进程里
+   建一张 167MB 的图，分配器直接复用那些页，RSS 只涨 36MB —— 首轮实测正是如此
+   （rss/tracemalloc = 0.215，一个物理上不可能的比值）。RSS 增量在胖进程里是**下界**，
+   而下界恰好是不安全的那个方向（会把「常数够用」判成真）。
+② **pytest 进程连不上生产库**。``addopts`` 带 ``--disable-socket``，而本仓生产库是
+   TCP 上的 PostgreSQL；且 pytest-django 已经把 ``settings.DATABASES`` 改指向**空的
+   测试库**。真实数据只能在子进程里用 ``DATABASE_URL`` 直连才拿得到。
+   🚨 连接串**只经环境变量继承**传给子进程，⛔ 绝不写进 argv（argv 会出现在 ``ps``
+   的输出里，等于把库密码摊在进程列表上）。
+
+子进程（:data:`_DIAGNOSTIC_SCRIPT`，零 Django，只 import networkx / psycopg）里：
 
 ① **两趟测**：第一趟只量 RSS 与耗时，第二趟才开 tracemalloc —— tracemalloc 要为
    每次分配存 traceback，开着它量 RSS 得到的是「图 + tracemalloc 账本」。
-② **行数据全程流式**（生成器 / sqlite 游标，与 ``loader`` 的 ``.iterator()`` 同形），
+② **行数据全程流式**（生成器 / 服务端游标，与 ``loader`` 的 ``.iterator()`` 同形），
    不预先物化成 list：物化会在测量窗口里多出几十 MB 临时行，把 RSS 增量顶高。
 ③ **节点-only 与 full 各测一次**，据此把总量拆成「每节点成本」与「每边成本」——
    一个总数没法回答「该上调哪个常数」。
 
+数据源（三级回落，输出里注明用的是哪一级）
+==========================================
+1. **生产 PostgreSQL**（``DATABASE_URL``）—— 真正的「本仓最大仓」在这里。
+2. **只读 sqlite dev 快照**（``settings.DATA_DIR / "friday.db"``）—— 无 ``DATABASE_URL``
+   或连不上时的回落。⚠️ 这份快照可能**远旧于**生产库，输出会标明。
+3. **合成图** —— 前两者都没有时。解析率分布在这一级直接 ``skip``：那一项的全部价值
+   就在真实分布，⛔ 不用合成数字顶替。
+
 🚨 输出纪律（威胁登记 T-121-诊断数据泄密）：表里只有**仓库名、计数、比率与扩展名**
-——⛔ 不打印 ``file_path`` 明细，不打印符号名。
+——⛔ 不打印 ``file_path`` 明细，不打印符号名，不打印连接串。
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -73,7 +88,7 @@ _LANGUAGE_EXTENSIONS = (".py", ".go", ".ts", ".tsx", ".js", ".vue")
 # 子进程测量脚本（零 Django，只 import networkx）
 # ---------------------------------------------------------------------------
 
-_MEASURE_SCRIPT = r"""
+_DIAGNOSTIC_SCRIPT = r"""
 import gc
 import json
 import os
@@ -132,34 +147,75 @@ def _synthetic_edges(node_count, edge_count):
         )
 
 
-def _sqlite_nodes(conn, repository_id):
-    for row in conn.execute(
-        "SELECT id, name, symbol_type, file_path, start_line, end_line "
-        "FROM codegraph_symbol WHERE repository_id = ? AND branch_name = ''",
-        (repository_id,),
-    ):
+_NODE_SQL = (
+    "SELECT id, name, symbol_type, file_path, start_line, end_line "
+    "FROM codegraph_symbol WHERE repository_id = {p} AND branch_name = ''"
+)
+# 与 loader 同口径：只取**解析边**（裸名边默认不装载）。
+_EDGE_SQL = (
+    "SELECT caller_symbol_id, callee_symbol_id, line_number "
+    "FROM codegraph_calledge WHERE repository_id = {p} AND branch_name = '' "
+    "AND caller_symbol_id IS NOT NULL AND callee_symbol_id IS NOT NULL"
+)
+
+
+def _pg_connect():
+    import psycopg
+
+    # 🚨 连接串只从环境变量取，⛔ 不经 argv（argv 会出现在 ps 输出里）。
+    return psycopg.connect(os.environ["DATABASE_URL"])
+
+
+def _sqlite_rows(conn, sql, repository_id):
+    for row in conn.execute(sql.format(p="?"), (repository_id,)):
+        yield row
+
+
+def _pg_rows(conn, sql, repository_id, name):
+    # 服务端游标：10 万级行数下必须流式，一次性 fetchall 会在测量窗口里
+    # 多出几十 MB 临时行，把 RSS 增量顶高。
+    cursor = conn.cursor(name=name)
+    cursor.itersize = 5000
+    cursor.execute(sql.format(p="%s::uuid"), (repository_id,))
+    try:
+        yield from cursor
+    finally:
+        cursor.close()
+
+
+def _node_tuples(rows):
+    for row in rows:
         yield (str(row[0]), row[1], row[2], row[3], row[4], row[5])
 
 
-def _sqlite_edges(conn, repository_id):
-    for row in conn.execute(
-        "SELECT caller_symbol_id, callee_symbol_id, line_number "
-        "FROM codegraph_calledge WHERE repository_id = ? AND branch_name = '' "
-        "AND caller_symbol_id IS NOT NULL AND callee_symbol_id IS NOT NULL",
-        (repository_id,),
-    ):
+def _edge_tuples(rows):
+    for row in rows:
         yield (str(row[0]), str(row[1]), row[2])
 
 
-def _assemble(spec, nx):
-    conn = None
+def _open_source(spec):
+    # 返回 (conn, node_iter, edge_iter)；合成源没有连接，conn 为 None。
     if spec["kind"] == "sqlite":
         conn = sqlite3.connect("file:%s?mode=ro" % spec["db"], uri=True)
-        node_iter = _sqlite_nodes(conn, spec["repo"])
-        edge_iter = _sqlite_edges(conn, spec["repo"])
-    else:
-        node_iter = _synthetic_nodes(spec["nodes"])
-        edge_iter = _synthetic_edges(spec["nodes"], spec["edges"])
+        return (
+            conn,
+            _node_tuples(_sqlite_rows(conn, _NODE_SQL, spec["repo"])),
+            _edge_tuples(_sqlite_rows(conn, _EDGE_SQL, spec["repo"])),
+        )
+    if spec["kind"] == "pg":
+        conn = _pg_connect()
+        return (
+            conn,
+            _node_tuples(_pg_rows(conn, _NODE_SQL, spec["repo"], "diag_nodes")),
+            _edge_tuples(_pg_rows(conn, _EDGE_SQL, spec["repo"], "diag_edges")),
+        )
+    return None, _synthetic_nodes(spec["nodes"]), _synthetic_edges(
+        spec["nodes"], spec["edges"]
+    )
+
+
+def _assemble(spec, nx):
+    conn, node_iter, edge_iter = _open_source(spec)
 
     graph = nx.MultiDiGraph()
     started = time.perf_counter()
@@ -190,8 +246,116 @@ def _assemble(spec, nx):
     )
 
 
+def _probe(spec):
+    # Symbol 行数最多的仓库 + 它的**原始** CallEdge 行数（准入估算用的就是这个口径）。
+    if spec["kind"] == "pg":
+        conn = _pg_connect()
+        cast = "%s::uuid"
+    else:
+        conn = sqlite3.connect("file:%s?mode=ro" % spec["db"], uri=True)
+        cast = "?"
+    try:
+        top = conn.execute(
+            "SELECT s.repository_id, COALESCE(r.name, '<unknown>'), COUNT(*) AS n "
+            "FROM codegraph_symbol s "
+            "LEFT JOIN repositories r ON r.id = s.repository_id "
+            "WHERE s.branch_name = '' GROUP BY s.repository_id, r.name "
+            "ORDER BY n DESC LIMIT 1"
+        ).fetchone()
+        if top is None or not top[2]:
+            return None
+        raw_edges = conn.execute(
+            "SELECT COUNT(*) FROM codegraph_calledge "
+            "WHERE repository_id = " + cast + " AND branch_name = ''",
+            (str(top[0]),),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    return {
+        "repo": str(top[0]),
+        "name": str(top[1]),
+        "symbols": int(top[2]),
+        "raw_edges": int(raw_edges),
+    }
+
+
+def _survey(spec):
+    # per repo / per extension 的解析率**原始计数**。
+    # 只回 resolved / bare 的计数，比率一律由父进程用 _resolution_rate 算
+    # —— 口径函数必须只有一份，否则这份统计就解释不了 loader 的行为。
+    # 扩展名清单由 spec 传入（父进程的 _LANGUAGE_EXTENSIONS），两侧不会各列一套。
+    extensions = tuple(spec["extensions"])
+    if spec["kind"] == "pg":
+        conn = _pg_connect()
+        indexed_sql = (
+            "SELECT id, name FROM repositories WHERE index_status = 'indexed'"
+        )
+        cast = "%s::uuid"
+    else:
+        conn = sqlite3.connect("file:%s?mode=ro" % spec["db"], uri=True)
+        indexed_sql = (
+            "SELECT id, name FROM repositories WHERE index_status = 'indexed'"
+        )
+        cast = "?"
+
+    def _bucket(caller_file):
+        lowered = (caller_file or "").lower()
+        for ext in extensions:
+            if lowered.endswith(ext):
+                return ext
+        return "other"
+
+    per_repo = []
+    per_ext = {}
+    try:
+        for repository_id, name in conn.execute(indexed_sql).fetchall():
+            symbols = conn.execute(
+                "SELECT COUNT(*) FROM codegraph_symbol "
+                "WHERE repository_id = " + cast + " AND branch_name = ''",
+                (str(repository_id),),
+            ).fetchone()[0]
+            # 按 caller_file 聚合而不是逐行拉：百万级边逐行传回来毫无必要，
+            # 而 (file, 是否解析) 的聚合行数是文件数量级。
+            resolved = bare = 0
+            for caller_file, total, resolved_n in conn.execute(
+                "SELECT caller_file, COUNT(*), COUNT(callee_symbol_id) "
+                "FROM codegraph_calledge "
+                "WHERE repository_id = " + cast + " AND branch_name = '' "
+                "GROUP BY caller_file",
+                (str(repository_id),),
+            ).fetchall():
+                bucket = per_ext.setdefault(
+                    _bucket(caller_file), {"resolved": 0, "bare": 0}
+                )
+                resolved += resolved_n
+                bare += total - resolved_n
+                bucket["resolved"] += resolved_n
+                bucket["bare"] += total - resolved_n
+            if resolved + bare == 0:
+                continue
+            per_repo.append(
+                {
+                    "name": str(name or "<unknown>"),
+                    "symbols": int(symbols),
+                    "resolved": int(resolved),
+                    "bare": int(bare),
+                }
+            )
+    finally:
+        conn.close()
+    return {"per_repo": per_repo, "per_ext": per_ext}
+
+
 def main():
     spec = json.loads(sys.argv[1])
+    mode = spec.get("mode", "measure")
+    if mode == "probe":
+        json.dump(_probe(spec), sys.stdout)
+        return
+    if mode == "survey":
+        json.dump(_survey(spec), sys.stdout)
+        return
+
     import networkx as nx
 
     gc.collect()
@@ -239,28 +403,38 @@ main()
 """
 
 
-def _measure(spec: dict[str, Any]) -> dict[str, Any]:
-    """在干净子进程里测一张图，返回子进程吐出的 JSON。"""
+def _run_child(spec: dict[str, Any]) -> Any:
+    """在干净子进程里跑一次诊断，返回它吐出的 JSON。
+
+    ⚠️ ``check=False`` + 显式报错：子进程连不上库（没有 ``DATABASE_URL`` / 库没起）
+    是**预期内的回落条件**，不是用例失败，由调用方决定降级到下一级数据源。
+    """
     done = subprocess.run(
-        [sys.executable, "-c", _MEASURE_SCRIPT, json.dumps(spec)],
+        [sys.executable, "-c", _DIAGNOSTIC_SCRIPT, json.dumps(spec)],
         capture_output=True,
         text=True,
         timeout=_SUBPROCESS_TIMEOUT_SECONDS,
-        check=True,
+        check=False,
     )
+    if done.returncode != 0:
+        raise RuntimeError(
+            f"诊断子进程退出码 {done.returncode}；stderr 末尾："
+            f"{done.stderr.strip()[-400:]}"
+        )
     return json.loads(done.stdout.strip().splitlines()[-1])
 
 
 # ---------------------------------------------------------------------------
-# 数据源探测（ORM → 只读 dev 库 → 合成）
+# 数据源探测（生产 PostgreSQL → 只读 sqlite dev 快照 → 合成）
 # ---------------------------------------------------------------------------
 
 
 def _dev_sqlite_path() -> Path | None:
-    """本地开发库文件路径（存在才返回）。
+    """本地 sqlite dev 快照的路径（存在才返回）。
 
-    pytest 连的是**空的测试库**，真实索引数据在开发库里；诊断要的恰恰是真实数据，
-    所以额外探这一级。⛔ 一律 ``mode=ro`` 打开，本文件不写任何一个字节。
+    ⚠️ 这份文件可能**远旧于**生产库（本次执行中它就落后生产库一个数量级：最大仓
+    11k 符号 vs 生产 31k），只作为拿不到 ``DATABASE_URL`` 时的回落。
+    ⛔ 一律 ``mode=ro`` 打开，本文件不写任何一个字节。
     """
     from django.conf import settings
 
@@ -268,68 +442,26 @@ def _dev_sqlite_path() -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-def _sqlite_ro(path: Path) -> sqlite3.Connection:
-    return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+def _has_production_dsn() -> bool:
+    """``DATABASE_URL`` 是否可用。
 
-
-def _orm_largest_repo() -> tuple[str, str, int] | None:
-    """ORM 侧 ``Symbol`` 行数最多的仓库 ``(repository_id, name, symbol_count)``。
-
-    真实部署里跑本文件时走这条；pytest 的空测试库上返回 ``None``，回落到只读 dev 库。
+    settings 在 import 时已 ``env.read_env`` 过，连接串因此在 ``os.environ`` 里，
+    会被子进程继承 —— 本函数只判断有没有，⛔ 不返回、不打印它的值。
     """
-    try:
-        from django.db.models import Count
-
-        from codegraph.models import Symbol
-        from repositories.models import Repository
-
-        top = (
-            Symbol.objects.filter(branch_name="")
-            .values("repository_id")
-            .annotate(n=Count("id"))
-            .order_by("-n")
-            .first()
-        )
-        if not top or not top["n"]:
-            return None
-        name = (
-            Repository.objects.filter(id=top["repository_id"])
-            .values_list("name", flat=True)
-            .first()
-            or "<unknown>"
-        )
-        return str(top["repository_id"]), name, int(top["n"])
-    except Exception:  # noqa: BLE001 — 空库 / 无 db fixture 都算「这一级没有数据」
-        return None
+    return bool(os.environ.get("DATABASE_URL"))
 
 
-def _sqlite_largest_repo(conn: sqlite3.Connection) -> tuple[str, str, int] | None:
-    row = conn.execute(
-        """
-        SELECT s.repository_id, COALESCE(r.name, '<unknown>'), COUNT(*) AS n
-        FROM codegraph_symbol s
-        LEFT JOIN repositories r ON r.id = s.repository_id
-        WHERE s.branch_name = ''
-        GROUP BY s.repository_id
-        ORDER BY n DESC
-        LIMIT 1
-        """
-    ).fetchone()
-    if row is None or not row[2]:
-        return None
-    return str(row[0]), str(row[1]), int(row[2])
+def _resolve_source() -> tuple[dict[str, Any], str] | None:
+    """按「生产库 → sqlite 快照」的顺序定位真实数据源。
 
-
-def _sqlite_raw_edge_count(path: Path, repository_id: str) -> int:
-    """该仓 base 分支的**全部** ``CallEdge`` 行数（准入估算用的正是这个口径）。"""
-    with _sqlite_ro(path) as conn:
-        return int(
-            conn.execute(
-                "SELECT COUNT(*) FROM codegraph_calledge "
-                "WHERE repository_id = ? AND branch_name = ''",
-                (repository_id,),
-            ).fetchone()[0]
-        )
+    :returns: ``(spec 片段, 人类可读的数据源名)``；两级都没有时 ``None``。
+    """
+    if _has_production_dsn():
+        return {"kind": "pg"}, "生产 PostgreSQL"
+    dev_db = _dev_sqlite_path()
+    if dev_db is not None:
+        return {"kind": "sqlite", "db": str(dev_db)}, f"只读 sqlite 快照({dev_db.name})"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -373,37 +505,22 @@ def test_largest_repo_memory_calibration() -> None:
     datasets: list[tuple[str, dict[str, Any]]] = []
     notes: list[str] = []
 
-    real = _orm_largest_repo()
-    dev_db = None
-    raw_edge_count: int | None = None
-    if real is None:
-        dev_db = _dev_sqlite_path()
-        if dev_db is not None:
-            with _sqlite_ro(dev_db) as conn:
-                real = _sqlite_largest_repo(conn)
-            if real is not None:
-                raw_edge_count = _sqlite_raw_edge_count(dev_db, real[0])
-                datasets.append(
-                    (
-                        f"real:{real[1]}",
-                        {"kind": "sqlite", "db": str(dev_db), "repo": real[0]},
-                    )
-                )
-    else:  # pragma: no cover — 只有真实部署库跑本文件时才走到
-        from codegraph.models import CallEdge
-
-        raw_edge_count = CallEdge.objects.filter(
-            repository_id=real[0], branch_name=""
-        ).count()
-        notes.append(
-            "ORM 侧探到真实数据，但本用例的测量在无 Django 的子进程内进行，"
-            "ORM 数据源需要 sqlite 直连才能测；本次仅记录其计数，未做内存测量。"
-        )
+    resolved = _resolve_source()
+    largest: dict[str, Any] | None = None
+    source_name = "（无）"
+    if resolved is not None:
+        source_spec, source_name = resolved
+        largest = _run_child({**source_spec, "mode": "probe"})
+        if largest is not None:
+            datasets.append(
+                (f"real:{largest['name']}", {**source_spec, "repo": largest["repo"]})
+            )
 
     if not datasets:
         notes.append(
-            "未从只读 dev 库探测到含符号数据的真实仓库；真实仓一行属于"
-            "「未测量」而非「测得为 0」，⛔ 不以合成数字冒充实测。"
+            "未探测到任何含符号数据的真实仓库（既无 `DATABASE_URL`，只读 sqlite 快照"
+            "也为空）；真实仓一行属于「未测量」而非「测得为 0」，"
+            "⛔ 不以合成数字冒充实测。"
         )
 
     datasets.append(
@@ -415,15 +532,15 @@ def test_largest_repo_memory_calibration() -> None:
 
     results: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     for label, spec in datasets:
-        nodes_only = _measure({**spec, "with_edges": False})
-        full = _measure({**spec, "with_edges": True})
+        nodes_only = _run_child({**spec, "mode": "measure", "with_edges": False})
+        full = _run_child({**spec, "mode": "measure", "with_edges": True})
         results.append((label, nodes_only, full))
 
     lines = [
         "",
         "### 121-10 Task 1：内存实测（干净子进程 / tracemalloc retained vs RSS retained）",
         "",
-        f"平台 {sys.platform} / Python {sys.version.split()[0]} / "
+        f"数据源 {source_name} / 平台 {sys.platform} / Python {sys.version.split()[0]} / "
         f"当前常数 NODE_COST_BYTES={NODE_COST_BYTES} EDGE_COST_BYTES={EDGE_COST_BYTES}",
         "",
         "| graph | nodes | edges | edge:node | tracemalloc MB | tm peak MB | rss MB | "
@@ -461,17 +578,17 @@ def test_largest_repo_memory_calibration() -> None:
             f"{parts['per_edge']:.0f} | {EDGE_COST_BYTES} |"
         )
 
-    if real is not None and raw_edge_count is not None:
-        graph_edges = results[0][2]["edge_count"] if results[0][0].startswith("real") else 0
-        graph_nodes = results[0][2]["node_count"] if results[0][0].startswith("real") else 1
+    if largest is not None:
+        real_full = results[0][2]
         lines.extend(
             [
                 "",
                 "**假设 A2（边:节点 = 3:1）复校** —— 本仓两个口径的比值不同，两个都要记："
-                f"准入估算口径（`CallEdge` 原始行数 / `Symbol` 行数）= "
-                f"{raw_edge_count / max(real[2], 1):.2f}:1；"
+                f"准入估算口径（`CallEdge` 原始行数 {largest['raw_edges']:,} / "
+                f"`Symbol` 行数 {largest['symbols']:,}）= "
+                f"{largest['raw_edges'] / max(largest['symbols'], 1):.2f}:1；"
                 f"实际入图口径（解析边且两端都在节点集内）= "
-                f"{graph_edges / max(graph_nodes, 1):.2f}:1。"
+                f"{real_full['edge_count'] / max(real_full['node_count'], 1):.2f}:1。"
                 "准入判据用的是**前者**，因此它对实际入图规模是**高估**（安全方向）。",
             ]
         )
@@ -512,15 +629,6 @@ def test_largest_repo_memory_calibration() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _extension_of(caller_file: str | None) -> str:
-    """``caller_file`` 的语言近似分桶。⚠️ 扩展名近似，不是真实语言标注。"""
-    lowered = (caller_file or "").lower()
-    for ext in _LANGUAGE_EXTENSIONS:
-        if lowered.endswith(ext):
-            return ext
-    return "other"
-
-
 def _resolution_rate(resolved: int, bare: int) -> float:
     """与 ``loader._CallEdgeStats.resolution_rate`` **逐字同口径**。
 
@@ -545,52 +653,28 @@ def _percentile(sorted_values: list[float], fraction: float) -> float:
     )
 
 
-def _sqlite_resolution_survey(
-    path: Path,
+def _resolution_survey(
+    source_spec: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, int]]]:
-    """只读 dev 库的 per-repo 与 per-extension 解析率统计。"""
-    per_repo: list[dict[str, Any]] = []
-    per_ext: dict[str, dict[str, int]] = {}
-    with _sqlite_ro(path) as conn:
-        indexed = conn.execute(
-            "SELECT id, name FROM repositories WHERE index_status = 'indexed'"
-        ).fetchall()
-        for repository_id, name in indexed:
-            symbols = int(
-                conn.execute(
-                    "SELECT COUNT(*) FROM codegraph_symbol "
-                    "WHERE repository_id = ? AND branch_name = ''",
-                    (repository_id,),
-                ).fetchone()[0]
-            )
-            resolved, bare = 0, 0
-            for caller_file, callee_symbol_id in conn.execute(
-                "SELECT caller_file, callee_symbol_id FROM codegraph_calledge "
-                "WHERE repository_id = ? AND branch_name = ''",
-                (repository_id,),
-            ):
-                bucket = per_ext.setdefault(
-                    _extension_of(caller_file), {"resolved": 0, "bare": 0}
-                )
-                if callee_symbol_id is None:
-                    bare += 1
-                    bucket["bare"] += 1
-                else:
-                    resolved += 1
-                    bucket["resolved"] += 1
-            if resolved + bare == 0:
-                continue
-            per_repo.append(
-                {
-                    "name": name or "<unknown>",
-                    "symbols": symbols,
-                    "resolved": resolved,
-                    "bare": bare,
-                    "rate": _resolution_rate(resolved, bare),
-                }
-            )
+    """真实数据源上的 per-repo / per-extension 解析率统计。
+
+    子进程只回 ``resolved`` / ``bare`` 的**原始计数**，比率一律在这里用
+    :func:`_resolution_rate` 算 —— 口径函数只有一份，两侧不可能各算一套。
+    """
+    payload = _run_child(
+        {
+            **source_spec,
+            "mode": "survey",
+            # 扩展名清单从这里下发，子进程不另列一套。
+            "extensions": list(_LANGUAGE_EXTENSIONS),
+        }
+    )
+    per_repo = [
+        {**item, "rate": _resolution_rate(item["resolved"], item["bare"])}
+        for item in payload["per_repo"]
+    ]
     per_repo.sort(key=lambda item: item["rate"])
-    return per_repo, per_ext
+    return per_repo, payload["per_ext"]
 
 
 @pytest.mark.perf
@@ -629,18 +713,18 @@ def test_callee_symbol_resolution_rate_survey(
     )
 
     # ── 真实分布 ────────────────────────────────────────────────────────────
-    dev_db = _dev_sqlite_path()
-    if dev_db is None:
+    resolved_source = _resolve_source()
+    if resolved_source is None:
         pytest.skip(
-            "无真实索引数据可统计（pytest 连的是空测试库，且未找到本地 dev 库 "
-            "data/friday.db）。解析率分布的全部价值在真实数据，⛔ 不用合成数据顶替。"
+            "无真实索引数据可统计（pytest 连的是空测试库，既无 DATABASE_URL 也无本地 "
+            "sqlite 快照）。解析率分布的全部价值在真实数据，⛔ 不用合成数据顶替。"
         )
 
-    per_repo, per_ext = _sqlite_resolution_survey(dev_db)
+    source_spec, source_name = resolved_source
+    per_repo, per_ext = _resolution_survey(source_spec)
     if not per_repo:
         pytest.skip(
-            f"本地 dev 库 {dev_db.name} 中没有任何含 CallEdge 的已索引仓库；"
-            "⛔ 不编造分布数据。"
+            f"{source_name} 中没有任何含 CallEdge 的已索引仓库；⛔ 不编造分布数据。"
         )
 
     rates = sorted(item["rate"] for item in per_repo)
@@ -649,7 +733,7 @@ def test_callee_symbol_resolution_rate_survey(
 
     lines = [
         "",
-        "### 121-10 Task 2：callee_symbol 解析率分布（只读 dev 库，base 分支）",
+        f"### 121-10 Task 2：callee_symbol 解析率分布（{source_name}，base 分支）",
         "",
         "| repository | symbols | call_edges | resolved | bare_name | rate |",
         "|---|---|---|---|---|---|",

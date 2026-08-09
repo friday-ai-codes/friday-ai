@@ -103,21 +103,27 @@ _DEFAULT_SUBGRAPH_DEPTH: Final[int] = 2
 # 解释器开销，真实 RSS 通常更高；比值显著 > 1 时需要再上调。
 #
 # 2026-08-09 **已按本仓最大仓复校**（Plan 121-10，交付物
-# ``tests/services/code_graph/test_perf_diagnostics.py::test_largest_repo_memory_calibration``，
-# 干净子进程 / macOS arm64 / CPython 3.14.2 / networkx 3.6.1）：
-#   - 最大仓 study-app（11,180 节点 / 3,930 入图边）：实测 **706 B/节点、665 B/边**，
-#     原常数 640/560 让线性估算 8.92MB 低于实测常驻 10.03MB —— 准入判据会放行装不下
-#     的图，正是威胁登记 T-121-OOM 的形状。
-#   - 100k/300k 合成参照图：实测 668 B/节点、413 B/边，``rss/tracemalloc = 1.099``
+# ``tests/services/code_graph/test_perf_diagnostics.py::test_largest_repo_memory_calibration``；
+# 数据源为**生产 PostgreSQL**、测量在干净子进程内 / macOS arm64 / CPython 3.14.2 /
+# networkx 3.6.1）：
+#   - 最大仓 backend/teacher-ai-class（30,632 节点 / 22,385 入图边）：实测
+#     **733 B/节点、626 B/边**。原常数 640/560 会把这张图估成 30.5MB，而实测常驻
+#     34.78MB —— 准入判据放行一张比预算认知更大的图，正是威胁登记 T-121-OOM 的形状。
+#   - 100k/300k 合成参照图：实测 668 B/节点、413 B/边，``rss/tracemalloc = 1.081``
 #     （< 1.15 的上调判据，故**不再叠加** RSS 系数；假设 A1 到此闭环：RSS 确实高于
 #     tracemalloc，但幅度在 10% 量级，不是数量级）。
-#   - 取两组测量的**逐项最大值**（706 / 665）× 1.05 安全裕度并向上取整：
-#     NODE_COST 640 → **760**，EDGE_COST 560 → **720**。真实数据的每项成本都高于合成
+#   - 取两组测量的**逐项最大值**（733 / 626）× 1.05 安全裕度并向上取整：
+#     NODE_COST 640 → **800**，EDGE_COST 560 → **680**。真实数据的每项成本都高于合成
 #     数据，因为属性字符串（``file_path`` / ``name``）在真实仓里长得多，而合成数据的
-#     短字符串会系统性低估——这正是「必须在本仓复校」的理由。
+#     短字符串会系统性低估——这正是「必须在本仓复校、不能照抄研究数字」的理由。
+#   - 最终裕度（800/733 = 1.091、680/626 = 1.086）**双双高于** RSS 系数 1.081，
+#     所以估算值同时也覆盖得住 RSS，不必再单独为 RSS 留一层。
+# ⚠️ 连带结论：单图触顶点从「约 11 万符号」下调到 **约 8.6 万**（算术见
+#    ``friday/settings.py`` 的 CODE_GRAPH_* 注释）。当前生产最大仓才 3 万符号，
+#    这条收紧暂时不会让任何仓走降级路径。
 # 🔁 复校口径若要重跑：``cd server && uv run pytest -m perf tests/services/code_graph/ -s``。
-NODE_COST_BYTES: Final[int] = 760  # 本仓实测 706（study-app）× 1.05 ≈ 741，取整到 760 更保守
-EDGE_COST_BYTES: Final[int] = 720  # 本仓实测 665（study-app）× 1.05 ≈ 698，取整到 720 更保守
+NODE_COST_BYTES: Final[int] = 800  # 生产实测 733 × 1.05 ≈ 770，取整到 800 更保守
+EDGE_COST_BYTES: Final[int] = 680  # 生产实测 626 × 1.05 ≈ 658，取整到 680 更保守
 
 # ⛔ 两个「优化」已被本仓实测**证伪**，别再花预算试：
 #   - 字符串驻留 ``file_path``：只省 6.3MB / 4%，不值得为此加一层池化代码。
