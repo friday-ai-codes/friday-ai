@@ -2241,8 +2241,17 @@ class AICodingNode(SubStepMixin, BaseNode):
                 base_ref=resolved_target,
             )
             body = append_impact_report(body, section)
-        except Exception:  # noqa: BLE001 — 最后兜底；helper 内应已吞
-            pass
+        except Exception as exc:  # noqa: BLE001 — 最后兜底；helper 内应已吞
+            try:
+                logger.warning(
+                    "impact_report_shell_failed",
+                    component="workflows",
+                    category="caller",
+                    repository_id=str(getattr(repository, "id", "") or ""),
+                    error=str(exc)[:200],
+                )
+            except Exception:  # noqa: BLE001 — 观测永不反噬
+                pass
 
         request = MRCreateRequest(
             source_branch=branch_name,
