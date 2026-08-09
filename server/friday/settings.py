@@ -878,6 +878,37 @@ GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES: int = env.int(
     "GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES", default=30
 )
 
+# 内存图服务（services/code_graph/）的字节预算。图对象不落盘、按 (repo, branch)
+# 缓存在**单个 worker 进程内存**里，故预算必须显式约束，否则大仓一次冷建图就能把
+# worker 打 OOM。
+#
+# 预算算术（常数标定见 121-RESEARCH.md §Byte Estimation，MultiDiGraph / UUID 字符串
+# 节点键 / networkx 3.6.1 实测）：NODE_COST=640 字节、EDGE_COST=560 字节，本仓典型
+# 边:节点 ≈ 3:1 → 单图约 n × (640 + 3×560) = n × 2320 字节。据此：
+#   - CODE_GRAPH_MAX_GRAPH_BYTES = 256MB → 单仓约 11 万符号即触顶，超过则不进缓存、
+#     改走「按需子图」降级路径（返回值带 degraded 标记，由上层工具透出）。
+#   - CODE_GRAPH_CACHE_MAX_BYTES = 512MB → 只装得下约 2 张接近上限的大图（或若干中
+#     小图），超出按 LRU 逐出。
+#   - ⚠️ 这是 **per worker** 预算，不是全进程/全机预算：4 个 worker 最坏 2GB 常驻。
+#     运维扩 worker 数时必须同步下调本值，否则物理内存按倍数放大。
+# 默认值取保守侧，待 Plan 121-10 的「本仓最大仓内存实测」交付物出数后复校
+# （tracemalloc 不含 arena 碎片，真实 RSS 通常更高）。
+CODE_GRAPH_CACHE_MAX_BYTES: int = env.int(
+    "CODE_GRAPH_CACHE_MAX_BYTES", default=512 * 1024 * 1024
+)
+CODE_GRAPH_MAX_GRAPH_BYTES: int = env.int(
+    "CODE_GRAPH_MAX_GRAPH_BYTES", default=256 * 1024 * 1024
+)
+# single-flight 等待者的最长阻塞时长：同键并发请求中只有首个真正建图，其余等待同一
+# 结果。10 万符号级仓库冷建图纯 CPU 约 2 秒、20 万级约 4 秒（不含 ORM 取数），120 秒
+# 留足余量又能防等待者被永久挂住。
+CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS: int = env.int(
+    "CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS", default=120
+)
+# ⛔ 刻意不新增「边构建 in-flight 超时」配置项：该判据直接复用上方的
+# GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES（同一语义——超时的 RUNNING 行视为孤儿、不算在
+# 途），避免两个阈值漂移导致「孤儿已被回收但图服务仍判在途」的长鸣降级。
+
 # HybridSearchService 编排器 RAG/图谱 token 预算比例（per contract）。
 # 默认 0.6 表示 RAG 占 60%、图谱 enrichment 占 40%。
 # 越界 [<0.1 | >0.9] 由 `HybridBudget.from_settings()` clamp 到边界 + structlog warning。
