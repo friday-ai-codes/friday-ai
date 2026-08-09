@@ -174,7 +174,9 @@ async def test_diff_base_pinned_to_last_indexed(
         )
 
     assert result["ok"] is True
-    assert ensure_calls[0]["branch"] is None  # base pin: no branch
+    # base pin: ensure_mirror_sha(indexed)，禁止 ensure_mirror_commit 分支 tip 回退
+    assert ensure_calls[0].get("sha") == indexed_repo.last_indexed_commit_sha
+    assert "branch" not in ensure_calls[0]
     assert diff_calls[0][0].commit_sha == indexed_repo.last_indexed_commit_sha
     assert result["diff_base_sha"] == indexed_repo.last_indexed_commit_sha
 
@@ -222,7 +224,8 @@ async def test_base_ref_declarative_only(
     assert result["ok"] is True
     assert result["base_ref"] == "origin/develop"
     assert diff_calls[0][0].commit_sha == indexed_repo.last_indexed_commit_sha
-    assert ensure_calls[0]["branch"] is None
+    assert ensure_calls[0].get("sha") == indexed_repo.last_indexed_commit_sha
+    assert "branch" not in ensure_calls[0]
 
 
 @pytest.mark.django_db(transaction=True)
