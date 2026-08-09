@@ -349,17 +349,21 @@ def test_module_level_caller_edge_dropped(
 def test_resolution_rate_and_low_resolution_flag(
     indexed_repo, symbols_factory, call_edges_factory
 ) -> None:
-    """``resolution_rate`` 按全部落库边统计，且与 ``include_low_confidence`` 无关。"""
+    """``resolution_rate`` 按全部落库边统计，且与 ``include_low_confidence`` 无关。
+
+    ⚠️ 阈值于 2026-08-09 由 Plan 121-10 的本仓分布校准为 **0.10**（原 0.6 命中 6/6 个
+    仓库、永远触发）；本用例的两组比例随之改为跨在 0.10 两侧，⛔ 不是「把断言改成能
+    通过」——0.05 与 0.5 分别落在阈值下方与上方，考的仍是同一条边界。
+    """
     caller = symbols_factory("caller", "src/a.py")
     targets = [
         symbols_factory(f"t{i}", "src/b.py", start_line=10 * i + 1, end_line=10 * i + 5)
-        for i in range(4)
+        for i in range(2)
     ]
 
-    # 2 条解析边 + 3 条裸名边 ⇒ 0.4 < 0.6 阈值。
-    for target in targets[:2]:
-        call_edges_factory(caller, target)
-    for i in range(3):
+    # 1 条解析边 + 19 条裸名边 ⇒ 0.05 < 0.10 阈值。
+    call_edges_factory(caller, targets[0])
+    for i in range(19):
         call_edges_factory(
             caller, None, callee_name=f"missing{i}", callee_file="src/z.py"
         )
@@ -367,16 +371,13 @@ def test_resolution_rate_and_low_resolution_flag(
     closed = _assemble(indexed_repo)
     opened = _assemble(indexed_repo, include_low_confidence=True)
 
-    assert closed.meta.resolution_rate == pytest.approx(0.4)
+    assert closed.meta.resolution_rate == pytest.approx(0.05)
     assert closed.meta.low_resolution is True
     # 🚨 开关不得影响解析率——否则关掉裸名时解析率恒为 1.0，变成一个假信号。
-    assert opened.meta.resolution_rate == pytest.approx(0.4)
+    assert opened.meta.resolution_rate == pytest.approx(0.05)
     assert opened.meta.low_resolution is True
 
-    # 补足到 4 解析 + 1 裸名的另一组：0.8 ≥ 阈值。
-    other = symbols_factory("other", "src/c.py")
-    for target in targets[2:]:
-        call_edges_factory(other, target)
+    # 删到只剩 1 解析 + 1 裸名：0.5 ≥ 阈值。
     from codegraph.models import CallEdge
 
     CallEdge.objects.filter(callee_symbol__isnull=True).exclude(
@@ -384,7 +385,7 @@ def test_resolution_rate_and_low_resolution_flag(
     ).delete()
 
     result = _assemble(indexed_repo)
-    assert result.meta.resolution_rate == pytest.approx(0.8)
+    assert result.meta.resolution_rate == pytest.approx(0.5)
     assert result.meta.low_resolution is False
 
 
