@@ -1,4 +1,5 @@
-"""内存符号图的**存储层** —— 字节估算、字节预算 LRU 与进程内单例（Phase 121，GRAPH-03）。
+"""内存符号图的**存储层 + 取图入口** —— 字节预算 LRU、签名复校、半新图防护与
+single-flight（Phase 121，GRAPH-01/02/03）。
 
 问题背景
 ========
@@ -23,9 +24,11 @@
    算一致、谁来失效，都是新问题。多 worker 各持一份是**已知且接受**的代价，靠
    ``CODE_GRAPH_CACHE_MAX_BYTES`` 这条 per-worker 预算约束住上界（4 worker 最坏 4×）。
 
-② **全同步，锁内绝不 await**（121-CONTEXT D-04 / RESEARCH Pitfall 7）。本模块的方法
-   一律是同步方法，异步外壳由 Plan 121-08 用一次 ``sync_to_async`` 包在外面。「持锁」
-   与「await」在物理上不可能重叠，是这条分层最省心的性质。
+② **临界区全同步，锁内绝不 await**（121-CONTEXT D-04 / RESEARCH Pitfall 7）。整条取图
+   链路（解析 exclusion → 算签名 → 判在途 → 命中或重建 → 准入或降级 → 记账入缓存）
+   是一个同步函数 :meth:`GraphService._get_graph_sync`，由 :meth:`GraphService.get_graph`
+   用**唯一一次** ``sync_to_async`` 包在外面。本模块因此只有那**一个** ``async def``，
+   其余方法一律同步——「持锁」与「await」在物理上不可能重叠，是这条分层最省心的性质。
 
 ③ **锁原语一律 ``threading``，⛔ 不用 ``asyncio.Lock`` / ``asyncio.Event``**。本仓同时
    存在三类 event loop（ASGI 主循环、``services/background_runner.py`` 的常驻 daemon
@@ -33,21 +36,28 @@
    :class:`GraphService` 是**进程级**单例、会被三者共用；``asyncio`` 原语绑定创建它的
    loop，跨 loop 使用直接 ``RuntimeError``（D-04 / Pitfall 8）。
 
-④ **本模块只做存储侧**。签名复校、in-flight 闸门、single-flight、准入与降级全部是
-   Plan 121-08 的编排职责；⛔ 本 plan 交付的部分**不 import** ``loader.py``，也**不
-   import** ``signature.py``。
+④ **存储侧与编排侧分层清楚**。存储侧（``estimate_graph_bytes`` / :class:`_Entry` /
+   ``_put`` / ``_evict_until_within_budget``）只认字节数，不知道图从哪来；编排侧
+   （:meth:`GraphService.get_graph` / :meth:`GraphService._get_graph_sync`）只通过
+   ``access`` / ``signature`` / ``loader`` 三个模块的公开函数取事实。⛔ 本模块内
+   **不另写**任何一份可读性判据、在途判据或 exclusion 判定——那样迟早会与唯一事实源
+   漂移（尤其是 in-flight：121-CONTEXT D-03 记过一次「照字面读 ``PENDING``」的翻车）。
 """
 
 from __future__ import annotations
 
 import threading
+import time
 from collections import OrderedDict
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Final
 
 import structlog
+from asgiref.sync import sync_to_async
 
+from services.code_graph import access, loader, signature
 from services.code_graph.model import CodeGraph
 
 logger = structlog.get_logger(__name__)
@@ -121,6 +131,112 @@ def estimate_graph_bytes(node_count: int, edge_count: int) -> int:
 
 
 # =============================================================================
+# 编排侧埋点
+# =============================================================================
+#
+# 每个事件各成一个函数、事件名常量直接写在 ``logger.*`` 的**第一个位置实参**上，
+# ⛔ 不抽 ``_emit(event, **kw)`` 转发器（理由见上方常量段）。观测 best-effort ——
+# 任何异常吞掉，绝不反噬取图主流程。
+
+
+def _initiated_by(user: Any | None) -> str:
+    """取触发用户标识；无触发用户（后台/预热路径）记 ``system``（LOGGING-SPEC §3）。
+
+    与 ``access.py`` 的同名私有助手同形。刻意各写一份而不是跨模块 import 私有名：
+    两处都只有四行，而 import 私有名会把 ``access`` 的内部约定变成 ``cache`` 的
+    公开依赖。
+    """
+    if user is None:
+        return "system"
+    user_id = getattr(user, "id", None) or getattr(user, "pk", None)
+    return str(user_id) if user_id is not None else "system"
+
+
+def _log_stale_watermark(
+    *, repository_id: str, branch: str, cached_signature: str, current_signature: str
+) -> None:
+    """签名不一致导致条目被丢弃。
+
+    低频（只在真的失效时发），INFO 可接受。🚨 **只记签名前 12 位**：签名的明文
+    分量里含水位 sha、两条轨的行 id 与状态、以及 exclusion 规则指纹，全量落日志
+    等于把仓库内部状态摊开（威胁登记 T-121-异常泄密）。前缀足够人工比对「是不是
+    同一个签名」，这正是排障时唯一需要的信息。
+    """
+    try:
+        logger.info(
+            _EVENT_STALE_WATERMARK,
+            component="code_graph",
+            category="sampling",
+            repository_id=repository_id,
+            branch=branch or "-",
+            cached_signature=cached_signature[:12],
+            current_signature=current_signature[:12],
+            reason="signature_mismatch",
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
+
+
+def _log_build_started(
+    *, repository_id: str, branch: str, initiated_by_user_id: str
+) -> None:
+    """装配开始。取 DEBUG —— 每次未命中都发，INFO 会违反级别纪律。"""
+    try:
+        logger.debug(
+            _EVENT_BUILD_STARTED,
+            component="code_graph",
+            category="sampling",
+            repository_id=repository_id,
+            branch=branch or "-",
+            initiated_by_user_id=initiated_by_user_id,
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
+
+
+def _log_build_completed(
+    *,
+    repository_id: str,
+    branch: str,
+    duration_ms: float,
+    node_count: int,
+    edge_count: int,
+    estimated_bytes: int,
+    resolution_rate: float,
+    partial_edges: bool,
+    degraded: str,
+    cross_repo_unresolved_count: int,
+    cached: bool,
+    initiated_by_user_id: str,
+) -> None:
+    """装配完成。INFO：一次一图的低频关键生命周期事件，且规范强制带 ``duration_ms``。
+
+    kv 里同时带 ``partial_edges`` / ``degraded``，是为了让「这张图为什么不可全信」
+    在日志里能直接答出来——否则排障要回头翻三个模块的 DEBUG 事件拼。
+    """
+    try:
+        logger.info(
+            _EVENT_BUILD_COMPLETED,
+            component="code_graph",
+            category="sampling",
+            repository_id=repository_id,
+            branch=branch or "-",
+            duration_ms=duration_ms,
+            node_count=node_count,
+            edge_count=edge_count,
+            estimated_bytes=estimated_bytes,
+            resolution_rate=resolution_rate,
+            partial_edges=partial_edges,
+            degraded=degraded,
+            cross_repo_unresolved_count=cross_repo_unresolved_count,
+            cached=cached,
+            initiated_by_user_id=initiated_by_user_id,
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
+
+
+# =============================================================================
 # 字节预算 LRU
 # =============================================================================
 
@@ -157,9 +273,9 @@ class GraphService:
     ``RLock`` 而非 ``Lock``，因为 Plan 121-08 的编排路径会在同一线程内嵌套进入
     （取图 → 未命中 → 装配 → 回写），``Lock`` 在那里会自死锁。
 
-    ⛔ 本类**全部方法均为同步**，不含任何 ``await``：异步外壳由 Plan 121-08 用一次
-    ``sync_to_async`` 包在外面，「持锁」与「await」因此在物理上不可能重叠
-    （121-CONTEXT D-04 / RESEARCH Pitfall 7）。
+    ⛔ 除 :meth:`get_graph` 这**唯一一个** async 外壳外，本类全部方法均为同步、不含任何
+    ``await``：外壳只做「校验 + 一次 ``sync_to_async``」，其余一切在同步侧完成，
+    「持锁」与「await」因此在物理上不可能重叠（121-CONTEXT D-04 / RESEARCH Pitfall 7）。
     """
 
     def __init__(self, max_bytes: int, max_graph_bytes: int) -> None:
@@ -248,6 +364,221 @@ class GraphService:
                 "total_bytes": self._total_bytes,
                 "max_bytes": self._max_bytes,
             }
+
+    # ── 取图入口（GRAPH-01/02/03 在同一条链路上收口） ────────────────────────
+
+    async def get_graph(
+        self,
+        repository_id: str,
+        branch: str = "",
+        *,
+        user: Any | None = None,
+        include_low_confidence: bool = False,
+        seed_symbol_ids: Sequence[str] | None = None,
+        depth: int | None = None,
+    ) -> CodeGraph:
+        """取一张 ``(repository, branch)`` 的内存符号图（全仓唯一的图访问入口）。
+
+        本方法只做两件事：**每次调用都跑一遍可读性校验**，然后把整条取图链路交给
+        一次 ``sync_to_async``。
+
+        🚨 ``ensure_repository_readable`` 绝不因缓存命中而跳过。缓存键是
+        ``(repository_id, branch)``，键本身不带用户维度——命中即返回意味着任何拿得到
+        ``repository_id`` 的调用方都能读到别人建好的图，跨仓串图与 ACL 撤销滞后就都成了
+        真（威胁登记 T-121-串图）。⛔ **不要**为了「命中更快」把这一行挪进未命中分支：
+        它是这条链路上唯一的权限防线，而它的成本只是一次带主键索引的单行取值。
+
+        .. note::
+           **``thread_sensitive=True`` 的代价（如实记录，不传该参数就是取这个默认值）**：
+           ``sync_to_async`` 默认把同步体排到**同一个**执行器线程上，与全仓其余 ORM
+           调用共用。这意味着一次 2–4 秒的大图装配会阻塞该执行器上排在后面的其他 ORM
+           工作。之所以仍取默认值而不是 ``thread_sensitive=False``：本仓的 sync ORM 调用
+           一律跑在 Django 主线程（先例见 ``code_relations/lifecycle.py`` L52–55 的注释
+           ——避免 SQLite 多线程写锁竞争），单独把图服务放到新线程会破坏这条一致性。
+
+           阻塞风险靠**三层缓解**收敛，而不是靠换参数：① single-flight 让同一 key 的 N
+           个并发请求只装配一次；② LRU 让建过的图不再重建；③ 超预算大仓走按需子图
+           ——第三层才是大仓的真正防线，因为前两层只降频次、不降单次时长。
+
+        :param repository_id: 仓库主键。
+        :param branch: ``""`` = base 分支（与 ``Symbol.branch_name`` 同口径）。
+        :param user: 触发用户；``None`` 表示后台/系统路径，埋点记 ``system``。
+        :param include_low_confidence: 是否装载裸名边（默认否）。
+        :param seed_symbol_ids: 非空时走**按需子图**路径——⛔ 既不查缓存也不进缓存
+            （子图内容依赖种子与深度，而缓存键里没有这两维；把种子塞进键会让缓存
+            退化成一次一建）。
+        :param depth: 调用方随后要在图上走的跳数，仅子图路径使用（缺省 2）。
+        :raises GraphAccessDenied: 仓库不可读，或 exclusion matcher 构造失败（fail-closed）。
+        :raises GraphNotIndexed: 仓库尚未建立索引（⛔ 不返回空图）。
+        """
+        await access.ensure_repository_readable(user, repository_id)
+        return await sync_to_async(self._get_graph_sync)(
+            str(repository_id),
+            branch,
+            include_low_confidence,
+            tuple(seed_symbol_ids) if seed_symbol_ids else (),
+            depth,
+            _initiated_by(user),
+        )
+
+    def _get_graph_sync(
+        self,
+        repository_id: str,
+        branch: str,
+        include_low_confidence: bool,
+        seed_symbol_ids: tuple[str, ...],
+        depth: int | None,
+        user_id: str,
+    ) -> CodeGraph:
+        """全同步：锁、ORM、networkx 装配都在这里，不存在 await-under-lock 的可能。
+
+        **步骤顺序是契约，不是实现细节**：
+
+        ③ 解析 exclusion（本次调用内**只此一次**，随后向下注入）
+        ④ 算复合签名
+        ⑤ 判边构建是否在途 —— 🚨 **在命中返回之前**
+        ⑥ 命中判定（签名一致 **且** 不在途才算命中）
+        ⑦ 签名不一致 → 驱逐条目并走重建
+
+        ⑤ 与 ⑥ 的先后是 GRAPH-02 的全部要害，详见步骤 ⑤ 处的注释。
+        """
+        key: CacheKey = (repository_id, branch)
+
+        # ③ exclusion 规则**本次调用只解析编译一次**，随后作为关键字参数注入 loader。
+        #    ⛔ 绝不让 loader 自己再调一次 ``build_matcher_and_fingerprint``：那是一次
+        #    ``_resolve_effective_specs`` 的 DB 读 + 该仓全部 glob/regex 重新编译
+        #    （``services/exclusion.py`` L157–207），而这条同步路径**吃不到**
+        #    ``build_matcher_for_repo`` 的 60s ``_matcher_cache``，省不掉。跨调用的复用由
+        #    ``access.py`` 自带的 TTL memo 负责，本层只保证「一次调用一次解析」。
+        #    fail-closed：构造失败在 access 侧就抛 GraphAccessDenied，这里不兜。
+        matcher, exclusion_fingerprint = access.build_matcher_and_fingerprint(
+            repository_id
+        )
+
+        # ④ 复合签名：水位 ‖ 两条边构建轨 ‖ 计数 ‖ exclusion 规则指纹。
+        current_sig = signature.compute_signature(
+            repository_id, branch, exclusion_fingerprint=exclusion_fingerprint
+        )
+
+        # ⑤ 🚨 in-flight 闸门**必须**在命中返回之前跑，位置不可调整。
+        #    要挡的恰恰是「签名分量尚未推进、但边正在写入」这个窗口：此时签名会
+        #    **恰好一致**，若先返回命中就永远走不到这一步，GRAPH-02 的保证等于零。
+        #    签名比对与在途判定是两道**独立**的闸，不是同一道闸的两种写法——前者答
+        #    「数据变了吗」，后者答「现在正在写吗」。
+        #    ⛔ 不要为了「命中更快」把这一行挪进未命中分支。
+        in_flight, in_flight_reason = signature.detect_edge_build_in_flight(
+            repository_id, branch
+        )
+
+        # 子图路径既不查缓存也不进缓存（种子与深度无法进缓存键，见 get_graph 文档）。
+        if not seed_symbol_ids:
+            with self._lock:
+                entry = self._cache.get(key)
+                if entry is not None:
+                    if entry.built_signature != current_sig:
+                        # ⑦ 签名不一致：条目已被证伪，移除并扣账后重建。
+                        self._cache.pop(key, None)
+                        self._total_bytes -= entry.estimated_bytes
+                        _log_stale_watermark(
+                            repository_id=repository_id,
+                            branch=branch,
+                            cached_signature=entry.built_signature,
+                            current_signature=current_sig,
+                        )
+                    elif not in_flight:
+                        # ⑥ 命中：签名一致 **且** 不在途。
+                        self._get_entry(key)
+                        return entry.graph
+                    # 签名一致但在途 → 落到下面的重建路径。此处**只绕过、不驱逐**：
+                    # 该条目本身没有被证伪，边构建完成后签名自然会推进并触发正常替换；
+                    # 驱逐只会白白丢掉一份可能马上又要用的图。
+
+        return self._build_graph(
+            key=key,
+            repository_id=repository_id,
+            branch=branch,
+            include_low_confidence=include_low_confidence,
+            seed_symbol_ids=seed_symbol_ids,
+            depth=depth,
+            matcher=matcher,
+            exclusion_fingerprint=exclusion_fingerprint,
+            current_sig=current_sig,
+            in_flight=in_flight,
+            in_flight_reason=in_flight_reason,
+            user_id=user_id,
+        )
+
+    def _build_graph(
+        self,
+        *,
+        key: CacheKey,
+        repository_id: str,
+        branch: str,
+        include_low_confidence: bool,
+        seed_symbol_ids: tuple[str, ...],
+        depth: int | None,
+        matcher: Any,
+        exclusion_fingerprint: str,
+        current_sig: str,
+        in_flight: bool,
+        in_flight_reason: str,
+        user_id: str,
+    ) -> CodeGraph:
+        """装配一张图并按规则决定是否入缓存。**不得在持锁状态下调用**（装配 2–4 秒）。"""
+        started = time.perf_counter()
+        _log_build_started(
+            repository_id=repository_id, branch=branch, initiated_by_user_id=user_id
+        )
+
+        graph = loader.load_graph(
+            repository_id,
+            branch,
+            matcher=matcher,
+            exclusion_fingerprint=exclusion_fingerprint,
+            include_low_confidence=include_low_confidence,
+        )
+
+        # 记账用**实际** node/edge 计数重算（准入侧用的是 COUNT 估算，两者可能因
+        # exclusion 过滤而不同）；同一个数必须同时写进 GraphMeta 与 _Entry，否则
+        # LRU 记的与元数据声明的对不上（121-07 handoff 点名的那条）。
+        estimated_bytes = estimate_graph_bytes(
+            graph.graph.number_of_nodes(), graph.graph.number_of_edges()
+        )
+        result = replace(
+            graph,
+            meta=replace(
+                graph.meta,
+                estimated_bytes=estimated_bytes,
+                built_signature=current_sig,
+            ),
+        )
+
+        with self._lock:
+            self._put(
+                key,
+                _Entry(
+                    graph=result,
+                    estimated_bytes=estimated_bytes,
+                    built_signature=current_sig,
+                    built_at=result.meta.built_at,
+                ),
+            )
+
+        _log_build_completed(
+            repository_id=repository_id,
+            branch=branch,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            node_count=result.meta.node_count,
+            edge_count=result.meta.edge_count,
+            estimated_bytes=estimated_bytes,
+            resolution_rate=result.meta.resolution_rate,
+            partial_edges=result.meta.partial_edges,
+            degraded=result.meta.degraded,
+            cross_repo_unresolved_count=result.meta.cross_repo_unresolved_count,
+            cached=True,
+            initiated_by_user_id=user_id,
+        )
+        return result
 
 
 # =============================================================================
