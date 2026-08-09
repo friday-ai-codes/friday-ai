@@ -54,8 +54,8 @@
 ### TAINT — Semgrep 安全门禁
 
 - [x] **TAINT-01**: MR 流程可触发 Semgrep diff-aware 扫描（`--baseline-commit` 取 merge-base），只报本次 MR 新增 finding；Semgrep 以独立 CLI/venv 形态集成，不进 server Python 依赖树
-- [ ] **TAINT-02**: finding 带 severity 分级进 MR 描述/评论；门禁默认报告不阻断（advisory 起步）；`nosemgrep` 误报通道生效
-- [ ] **TAINT-03**: 门禁文案如实声明 CE 版函数内 taint 边界（不虚假承诺跨函数/跨文件）；Pro 能力经 `SEMGREP_APP_TOKEN` opt-in
+- [x] **TAINT-02**: finding 带 severity 分级进 MR 描述/评论；门禁默认报告不阻断（advisory 起步）；`nosemgrep` 误报通道生效
+- [x] **TAINT-03**: 门禁文案如实声明 CE 版函数内 taint 边界（不虚假承诺跨函数/跨文件）；Pro 能力经 `SEMGREP_APP_TOKEN` opt-in
 
 ### LSP — 解析精度
 
@@ -119,8 +119,8 @@
 | RENAME-01 | Phase 126 | Complete |
 | SKILL-01 | Phase 126 | Complete |
 | TAINT-01 | Phase 127 | Complete |
-| TAINT-02 | Phase 127 | Pending |
-| TAINT-03 | Phase 127 | Pending |
+| TAINT-02 | Phase 127 | Complete |
+| TAINT-03 | Phase 127 | Complete |
 | LSP-01 | Phase 127 | Pending |
 
 **Coverage:** 27/27 mapped（GRAPH 4 / IMPACT 6 / DIFF 4 / MOD 4 / EXEC 3 / RENAME 1 / TAINT 3 / LSP 1 / SKILL 1）— 无孤儿、无重复。
