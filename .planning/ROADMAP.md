@@ -150,7 +150,7 @@ Plans:
   2. compare + base_ref 场景（MR diff）可用；文件重命名被识别（`git diff -M`），纯 rename PR 不产生满屏误报
   3. 输出带索引 staleness 声明（as_of commit），索引落后时 agent 能看到并自行判断可信度
 
-**Plans**: 2/6 plans executed（6 waves，W0–W5；线性依赖以锁定 MCP↔对话 schema 同表）
+**Plans**: 5/6 plans executed（6 waves，W0–W5；线性依赖以锁定 MCP↔对话 schema 同表）
 
 Plans:
 **Wave 0**

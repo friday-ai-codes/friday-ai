@@ -73,7 +73,7 @@ Each task was committed atomically:
 1. **Task 1: DetectChangesToolInput + @tool 薄壳** - `d474edb8` (feat)
 2. **Task 2: 导出、白名单与注册测** - `cc8c2366` (feat)
 
-**Plan metadata:** (docs commit via gsd-tools)
+**Plan metadata:** `058151d4` (docs: complete plan)
 
 ## Files Created/Modified
 
