@@ -350,7 +350,10 @@ _EVENT_PREFIX = "code_graph_"
 # 🚨 规矩：**谁新建包外兄弟模块，谁在同一个 plan 里把它加进来**（122-06 加
 # ``code_graph_cross_repo.py``）。⛔ 不要提前登记还不存在的文件——存在性断言会在两个
 # wave 之间一直红着。
-_SIBLING_GUARDED_MODULES: tuple[str, ...] = ("code_graph_tools.py",)
+_SIBLING_GUARDED_MODULES: tuple[str, ...] = (
+    "code_graph_tools.py",
+    "code_graph_cross_repo.py",
+)
 
 
 def _module_string_constants(tree: ast.Module) -> dict[str, str]:
