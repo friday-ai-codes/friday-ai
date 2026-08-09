@@ -32,6 +32,26 @@ FK 走 attname（``caller_symbol_id``）避免隐式 JOIN。
 
 ③ **分支语义是 overlay**：``""`` 是 base 全量，feature 分支只写增量行。取数必须
    ``branch_name__in=["", branch]``，去重键取**整文件**（D-06）。
+
+④ 🚨 **matcher 与 exclusion 指纹一律由 ``cache.py`` 解析并向下注入，loader 是纯
+   装配层、不做规则解析**。⛔ 本模块**绝不**调用
+   ``access.build_matcher_and_fingerprint`` —— ``cache.py`` 在一次取图里已经解析过
+   一遍，loader 再调一次就是同一次请求内重复做「``_resolve_effective_specs`` 的 DB
+   读 + 该仓全部 glob/regex 重新编译」（``services/exclusion.py:157-207``），而且这条
+   同步路径**不经过** ``build_matcher_for_repo`` 的 60s ``_matcher_cache``，省不掉。
+   跨调用的复用由 ``access.py`` 自带的 TTL memo 负责。
+
+⑤ **exclusion 过滤发生在装配阶段，不是输出阶段**（GRAPH-04 的真正落点）：命中排除
+   的 ``Symbol.file_path`` 对应的节点**根本不进节点集**，建边时任一端点不在
+   :attr:`_SymbolNodeIndex.node_ids` 内即**整条边丢弃**——被排除节点连同其所有邻接
+   边一并消失。输出阶段裁剪挡不住计数、深度分组这类旁路泄漏。
+   ⛔ 判定本身一律走 ``services/exclusion.py``（全仓唯一事实源），本模块**不自写**
+   任何 glob/regex 匹配：那边内含 ReDoS 静态拒绝、global 规则大小写不敏感、basename
+   兜底匹配、运行期异常 fail-closed 四层语义，重写必漏。
+
+⑥ **装配循环是 10 万级迭代，循环内零 per-item 日志**。``exclusion.blocked``（INFO）
+   由 ``make_path_exclusion_memo`` 的闭包按「每个新的被排除 ``file_path`` 至多一次」
+   控制；本模块只在装配结束后补一条 DEBUG 汇总事件。
 """
 
 from __future__ import annotations
@@ -44,6 +64,10 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+# 事件名常量（形态对齐 ``access.py`` / ``signature.py`` / ``codegraph/lsp/volar_pool.py``）。
+# ⚠️ 前缀不得缩写：``graph_build_*`` 已被 ``services/graph_builder.py`` 占用。
+_EVENT_EXCLUSION_APPLIED: Final[str] = "code_graph_exclusion_applied"
+
 # ORM 批量取数的游标批大小（Postgres 上走服务端游标）。与 RESEARCH §Code Examples 1
 # 给出的形状一致；不做成 settings —— 它是取数实现细节，不是运维旋钮。
 _SYMBOL_CHUNK_SIZE: Final[int] = 5000
@@ -53,6 +77,34 @@ _SYMBOL_CHUNK_SIZE: Final[int] = 5000
 _NODE_ATTR_KEYS: Final[frozenset[str]] = frozenset(
     {"name", "symbol_type", "file_path", "start_line", "end_line"}
 )
+
+
+# 埋点写成专用函数、事件名常量直接写在 ``logger.debug`` 的第一个位置实参上，
+# ⛔ 不抽 ``_emit(event, **fields)`` 通用转发器：``test_observability_contract`` 要求
+# 事件名**可静态解析**成字面量，转发器会让 AST 只看到一个形参名（121-04 实际被拦过）。
+# 取 DEBUG：这是 10 万级装配循环的收尾汇总，INFO 会违反级别纪律。
+# 观测 best-effort —— 任何异常吞掉，绝不反噬装配主流程。
+
+
+def _log_exclusion_applied(
+    *,
+    repository_id: str,
+    branch: str,
+    excluded_file_count: int,
+    dropped_symbol_count: int,
+) -> None:
+    try:
+        logger.debug(
+            _EVENT_EXCLUSION_APPLIED,
+            component="code_graph",
+            category="sampling",
+            repository_id=str(repository_id),
+            branch=branch or "-",
+            excluded_file_count=excluded_file_count,
+            dropped_symbol_count=dropped_symbol_count,
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
 
 
 def _branch_filter(branch: str) -> list[str]:
@@ -180,12 +232,23 @@ def _load_symbol_nodes(
             overlay_shadowed_count += 1
             continue
 
+        # exclusion 在**装配阶段**生效（GRAPH-04）：命中即不进节点集，而不是「先进
+        # 了再删」，也不是输出阶段裁剪。
+        # ⚠️ 判定喂的是**原始** file_path：``ExclusionMatcher.is_excluded`` 内部自己
+        #    做归一，归一失败（绝对路径 / ``..`` 越界 / 空）一律 fail-closed 返回
+        #    ``True``，并被记忆化闭包计进 ``excluded_files``——「归一失败」与「命中
+        #    规则」由此共用同一个去重文件计数口径。
+        # 🚨 循环内**没有** per-item 日志：``exclusion.blocked``（INFO）由闭包按
+        #    「每个新的被排除 file_path 至多一次」控制，汇总事件在函数收尾统一发。
         if is_excluded(file_path):
             dropped_symbol_count += 1
             continue
 
         norm_path = normalize_rel_path(file_path)
         if norm_path is None:
+            # 上一行的 fail-closed 已覆盖这条路径；显式保留是为了把「归一失败即排除」
+            # 写成本模块自己的契约，而不是默默依赖 matcher 的实现细节——将来若 matcher
+            # 被替换成不 fail-closed 的实现，这道防线仍在。
             dropped_symbol_count += 1
             continue
 
@@ -202,11 +265,20 @@ def _load_symbol_nodes(
         node_ids.add(node_id)
         by_file_and_name[(norm_path, name)] = node_id
 
+    # ``excluded_files`` 是闭包附带的**活动只读视图**：这里读到的是本次装配真实命中
+    # 排除的**去重文件数**（不是符号数），直接喂 ``GraphMeta.excluded_file_count``。
     excluded_files = getattr(is_excluded, "excluded_files", ())
+    excluded_file_count = len(excluded_files)
+    _log_exclusion_applied(
+        repository_id=repository_id,
+        branch=branch,
+        excluded_file_count=excluded_file_count,
+        dropped_symbol_count=dropped_symbol_count,
+    )
     return _SymbolNodeIndex(
         node_ids=node_ids,
         by_file_and_name=by_file_and_name,
-        excluded_file_count=len(excluded_files),
+        excluded_file_count=excluded_file_count,
         dropped_symbol_count=dropped_symbol_count,
         overlay_shadowed_count=overlay_shadowed_count,
     )
