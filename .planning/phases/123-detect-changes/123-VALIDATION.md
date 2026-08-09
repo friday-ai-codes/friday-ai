@@ -1,9 +1,9 @@
 ---
 phase: 123
 slug: detect-changes
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: complete
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-08-10
 ---
 
@@ -37,19 +37,21 @@ created: 2026-08-10
 ## Per-Task Verification Map
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 123-00-* | 00 | 0 | DIFF-01/02 | T-123-ACL / T-123-DOS | stubs exist; ACL/exclusion/DoS fixtures sketched | unit scaffolding | `pytest tests/services/code_graph/test_detect_changes.py --collect-only` | ❌ W0 | ⬜ pending |
-| 123-01-* | 01 | 1 | DIFF-01 | T-123-BASE | base pinned to `last_indexed_commit_sha`; hard reject empty index | unit | `pytest ... -k 'overlap or diff_base_pinned or hard_reject' -x` | ❌ W0 | ⬜ pending |
-| 123-01-* | 01 | 1 | DIFF-02 | T-123-RENAME | pure rename → `renamed` only; `base_ref` declarative | unit+git | `pytest tests/services/test_diff_mirror.py -k 'rename or base_ref' -x` | ❌ W0 | ⬜ pending |
-| 123-01-* | 01 | 1 | DIFF-01 | T-123-EXCL | excluded files absent from affected | unit | `pytest ... -k exclusion -x` | ❌ W0 | ⬜ pending |
-| 123-02-* | 02 | 2 | DIFF-01 | T-123-DOS | >100 → file summary + zero `run_impact`; formatting_only skipped | unit | `pytest ... -k 'threshold or formatting_only or batch_impact' -x` | ❌ W0 | ⬜ pending |
-| 123-02-* | 02 | 2 | DIFF-01 | T-123-STALE | staleness envelope + behind still ok | unit | `pytest ... -k staleness -x` | ❌ W0 | ⬜ pending |
-| 123-02-* | 02 | 2 | DIFF-01 | T-123-ACL | `ensure_repository_readable` → `GraphAccessDenied` 硬拒，无空成功 affected | unit | `pytest tests/services/code_graph/test_detect_changes_orchestrator.py -k hard_reject_acl -x` | ❌ W0 | ⬜ pending |
-| 123-03-* | 03 | 3 | DIFF-01/02 | T-123-AUTH | MCP PAT + serializer + ACL error mapping | integration | `pytest tests/mcp_tools/test_detect_changes_tools.py -k mcp -x` | ❌ W0 | ⬜ pending |
-| 123-04-* | 04 | 4 | DIFF-01/02 | T-123-AUTH | conversational `@tool` shell | unit | `pytest tests/agents/tools/test_graph_tools.py -k detect_changes -x` | ❌ W0 | ⬜ pending |
-| 123-05-* | 05 | 5 | IMPACT-06 延续 | T-123-TRACE | MCP↔对话 data byte-identical (sans `run_id`); RetrievalTrace counts only | integration | `pytest tests/mcp_tools/test_detect_changes_tools.py -k two_surfaces -x` | ❌ W0 | ⬜ pending |
+| --------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
+| 123-00-* | 00 | 0 | DIFF-01/02 | T-123-ACL / T-123-DOS | stubs exist; ACL/exclusion/DoS fixtures sketched | unit scaffolding | `pytest tests/services/code_graph/test_detect_changes.py --collect-only` | ✅ | ✅ green |
+| 123-01-* | 01 | 1 | DIFF-01 | T-123-BASE | base pinned to `last_indexed_commit_sha`; hard reject empty index | unit | `pytest ... -k 'overlap or diff_base_pinned or hard_reject' -x` | ✅ | ✅ green |
+| 123-01-* | 01 | 1 | DIFF-02 | T-123-RENAME | pure rename → `renamed` only; `base_ref` declarative | unit+git | `pytest tests/services/test_diff_mirror.py -k 'rename or base_ref' -x` | ✅ | ✅ green |
+| 123-01-* | 01 | 1 | DIFF-01 | T-123-EXCL | excluded files absent from affected | unit | `pytest ... -k exclusion -x` | ✅ | ✅ green |
+| 123-02-* | 02 | 2 | DIFF-01 | T-123-DOS | >100 → file summary + zero `run_impact`; formatting_only skipped | unit | `pytest ... -k 'threshold or formatting_only or batch_impact' -x` | ✅ | ✅ green |
+| 123-02-* | 02 | 2 | DIFF-01 | T-123-STALE | staleness envelope + behind still ok | unit | `pytest ... -k staleness -x` | ✅ | ✅ green |
+| 123-02-* | 02 | 2 | DIFF-01 | T-123-ACL | `ensure_repository_readable` → `GraphAccessDenied` 硬拒，无空成功 affected | unit | `pytest tests/services/code_graph/test_detect_changes_orchestrator.py -k hard_reject_acl -x` | ✅ | ✅ green |
+| 123-03-* | 03 | 3 | DIFF-01/02 | T-123-AUTH | MCP PAT + serializer + ACL error mapping | integration | `pytest tests/mcp_tools/test_detect_changes_tools.py -k mcp -x` | ✅ | ✅ green |
+| 123-04-* | 04 | 4 | DIFF-01/02 | T-123-AUTH | conversational `@tool` shell | unit | `pytest tests/agents/tools/test_graph_tools.py -k detect_changes -x` | ✅ | ✅ green |
+| 123-05-* | 05 | 5 | IMPACT-06 延续 | T-123-TRACE | MCP↔对话 data byte-identical (sans `run_id`); RetrievalTrace counts only | integration | `pytest tests/mcp_tools/test_detect_changes_tools.py -k two_surfaces -x` | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+**已知既有失败（D-27，不阻塞本相位）：** `test_mcp_package_tools_match_server_snapshot` 继续红——漂移 **7→8**（新增 `detect_changes`）；按 D-27 **不修** `mcp/` submodule。
 
 ---
 
@@ -78,11 +80,11 @@ created: 2026-08-10
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 90s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 90s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** phase automation green；mcp package drift 已知既有失败按 D-27 接受
