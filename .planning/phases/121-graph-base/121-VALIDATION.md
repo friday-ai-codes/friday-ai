@@ -56,7 +56,7 @@ mapped: 2026-08-09
 | 121-04-T1 | 121-04 | 2 | GRAPH-02 | T-121-半新图 | 签名对 `last_indexed_commit_sha` 变化敏感 | unit | `uv run pytest tests/services/code_graph/test_signature.py -k watermark -x` | ❌ W0 | ⬜ pending |
 | 121-04-T2 | 121-04 | 2 | GRAPH-02 | T-121-半新图 | 签名对**两条**边构建轨各自变化都敏感（D-06-2） | unit | `uv run pytest tests/services/code_graph/test_signature.py -k generation -x` | ❌ W0 | ⬜ pending |
 | 121-04-T1 | 121-04 | 2 | GRAPH-02 | — | 无变更时签名稳定（连算两次相等） | unit | `uv run pytest tests/services/code_graph/test_signature.py -k stable -x` | ❌ W0 | ⬜ pending |
-| 121-08-T2 | 121-08 | 5 | GRAPH-02 | T-121-半新图 | 水位推进 + 边构建 RUNNING ⇒ 拒用缓存 + `partial_edges=True` | unit | `uv run pytest tests/services/code_graph/test_cache.py -k partial -x` | ❌ W0 | ⬜ pending |
+| 121-08-T2 | 121-08 | 5 | GRAPH-02 | T-121-半新图 | 水位推进 + 轨 B 在途（`Repository.graph_build_status=RUNNING` **且** 新鲜 RUNNING 的 `GraphBuildHistory`，双 mutation 缺一不可）⇒ 拒用缓存 + `partial_edges=True` | unit | `uv run pytest tests/services/code_graph/test_cache.py -k partial -x` | ❌ W0 | ⬜ pending |
 | 121-04-T3 | 121-04 | 2 | GRAPH-02 | T-121-长鸣 | **`graph_build_status=PENDING` 但已终态 ⇒ 不判在途**（D-06-3 回归） | unit | `uv run pytest tests/services/code_graph/test_cache.py -k pending_not_inflight -x` | ❌ W0 | ⬜ pending |
 | 121-04-T3 | 121-04 | 2 | GRAPH-02 | T-121-孤儿 | 超时的 `RUNNING` 孤儿行 ⇒ 不判在途 | unit | `uv run pytest tests/services/code_graph/test_cache.py -k orphan -x` | ❌ W0 | ⬜ pending |
 | 121-07-T1 | 121-07 | 3 | GRAPH-03 | T-121-OOM | 字节估算为纯函数，给定 n/e 返回确定值 | unit | `uv run pytest tests/services/code_graph/test_cache.py -k estimate -x` | ❌ W0 | ⬜ pending |
@@ -84,7 +84,7 @@ mapped: 2026-08-09
 | 121-05-T2 | 121-05 | 3 | GRAPH-04 | T-121-陈旧规则 | loader 为纯装配层：`grep -c 'build_matcher_and_fingerprint' loader.py` == 0，matcher 只能来自入参 | `uv run pytest tests/services/code_graph/test_access.py -k exclusion -x` |
 | 121-07-T3 | 121-07 | 3 | GRAPH-03 | T-121-用例污染 | 模块级单例 lazy 实例化 + `_reset_for_tests()` 用例间隔离 | `uv run pytest tests/services/code_graph/test_cache.py -x` |
 | 121-08-T1 | 121-08 | 5 | GRAPH-04 | T-121-陈旧规则 | 一次调用只解析一次 exclusion；连续两次 `get_graph` 的 `_resolve_effective_specs` 调用数 ≤ 1 | `uv run pytest tests/services/code_graph/test_cache.py -k exclusion_resolved_once -x` |
-| 121-08-T2 | 121-08 | 5 | GRAPH-02 | T-121-半新图 | **闸门位置回归**：签名恒定、只翻构建轨为 RUNNING ⇒ 仍拒用缓存并置 `partial_edges`（证明 in-flight 判定在命中返回之前） | `uv run pytest tests/services/code_graph/test_cache.py -k partial -x` |
+| 121-08-T2 | 121-08 | 5 | GRAPH-02 | T-121-半新图 | **闸门位置回归**：只把轨 A 的 `IndexHistory.started_at` 从「孤儿超时」推进到 `now`（`ihA:` 分量不含 `started_at`，故签名逐字节不变，用例内先显式断言 `compute_signature(...) == entry.built_signature`）⇒ 仍拒用缓存并置 `partial_edges` / `partial_reason="chunk_edge_build_running"`（证明 in-flight 判定在命中返回之前）。⛔ 不得打桩 `compute_signature` / `detect_edge_build_in_flight` | `uv run pytest tests/services/code_graph/test_cache.py -k partial -x` |
 | 121-09-T1 | 121-09 | 6 | GRAPH-04 | T-121-绕闸 | barrel 恰导出 17 项（含 `invalidate_repository`），loader/cache/signature/access 不可从包顶层取得 | `uv run pytest tests/services/code_graph/test_access.py -k barrel -x` |
 | 121-09-T1 | 121-09 | 6 | GRAPH-02 | T-121-陈旧图 | `GraphService.invalidate` 按仓驱逐全部分支条目并连带清 matcher/指纹 memo；异常吞掉不反噬 | `uv run pytest tests/services/code_graph/test_cache.py -k invalidate -x` |
 | 121-09-T2 | 121-09 | 6 | GRAPH-02 | T-121-陈旧图 / T-121-冻结面误改 | 两处钩子经**包根**导入 `invalidate_repository`（不 reach into `.cache`）；冻结面 `server/codegraph/services/repo_router_v2.py` 未被触碰 | `uv run pytest tests/code_relations tests/services/test_update_graph_progress.py -q` |
