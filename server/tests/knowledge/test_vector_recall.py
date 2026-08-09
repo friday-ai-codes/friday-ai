@@ -50,7 +50,9 @@ def hybrid_calls(monkeypatch):
 @pytest.fixture
 def recall_deps(monkeypatch, hybrid_calls):
     monkeypatch.setattr(
-        "knowledge.vector_recall.EmbeddingService.generate_embedding",
+        # 查询侧 embedding 已收口到 services.query_embedding.embed_query，
+        # vector_recall 不再直接持有 EmbeddingService，故补丁下移到真实来源模块。
+        "services.embedding.EmbeddingService.generate_embedding",
         AsyncMock(return_value=[0.1] * 8),
     )
     monkeypatch.setattr(

@@ -43,31 +43,63 @@ class BranchAwareSearchService:
         2. base 分支 / resolve 失败 → 直接查 base collection
         3. inherited 分支 → 直接查 base collection
         4. 功能分支 → 并行查 overlay + base，过滤合并
+
+        默认排除 ``kind=commit``（提交摘要，见
+        :data:`QdrantService.CODE_SEARCH_EXCLUDE`）。调用方若已显式传入
+        ``filters[EXCLUDE_KEY]`` 则尊重其意图（可传空 dict 关闭排除）。
         """
+        from services.qdrant_service import QdrantService
+
+        merged_filters = dict(filters or {})
+        default_commit_exclude = QdrantService.EXCLUDE_KEY not in merged_filters
+        if default_commit_exclude:
+            merged_filters[QdrantService.EXCLUDE_KEY] = dict(
+                QdrantService.CODE_SEARCH_EXCLUDE
+            )
+        filters = merged_filters
+
+        # 既有 collection 可能缺 kind keyword 索引；无索引时 hybrid prefetch
+        # 上的 must_not(kind=commit) 会被 Qdrant 静默忽略。best-effort 补齐。
+        if default_commit_exclude:
+            try:
+                await sync_to_async(
+                    QdrantService.ensure_kind_payload_index, thread_sensitive=False
+                )(QdrantService.get_collection_name(repository_id))
+            except Exception:  # noqa: BLE001 — 索引失败不阻断检索
+                pass
+
         if not await is_branch_index_enabled_async(repository_id):
-            return await cls._search_single(
+            results = await cls._search_single(
                 repository_id, query_dense,
                 query_sparse=query_sparse, top_k=top_k, filters=filters,
             )
+        else:
+            _, branch_index = await resolve_branch_for_query(repository_id, branch_name)
 
-        _, branch_index = await resolve_branch_for_query(repository_id, branch_name)
+            if branch_index is None or branch_index.is_base_branch:
+                results = await cls._search_single(
+                    repository_id, query_dense,
+                    query_sparse=query_sparse, top_k=top_k, filters=filters,
+                )
+            elif branch_index.status == "inherited":
+                results = await cls._search_single(
+                    repository_id, query_dense,
+                    query_sparse=query_sparse, top_k=top_k, filters=filters,
+                )
+            else:
+                results = await cls._search_branch(
+                    repository_id, branch_index, query_dense,
+                    query_sparse=query_sparse, top_k=top_k, filters=filters,
+                )
 
-        if branch_index is None or branch_index.is_base_branch:
-            return await cls._search_single(
-                repository_id, query_dense,
-                query_sparse=query_sparse, top_k=top_k, filters=filters,
-            )
-
-        if branch_index.status == "inherited":
-            return await cls._search_single(
-                repository_id, query_dense,
-                query_sparse=query_sparse, top_k=top_k, filters=filters,
-            )
-
-        return await cls._search_branch(
-            repository_id, branch_index, query_dense,
-            query_sparse=query_sparse, top_k=top_k, filters=filters,
-        )
+        # 应用层兜底：即便 Qdrant 过滤因缺索引失效，也不把 commit 摘要交给代码 RAG。
+        if default_commit_exclude:
+            results = [
+                r
+                for r in results
+                if (r.get("payload") or {}).get("kind") != "commit"
+            ]
+        return results
 
     # ------------------------------------------------------------------
     # 内部方法

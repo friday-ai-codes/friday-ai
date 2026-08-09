@@ -126,7 +126,6 @@ async def search_rag(
         from asgiref.sync import sync_to_async
 
         from services.branch_search import BranchAwareSearchService
-        from services.embedding import EmbeddingService
         from services.retrieval.rerank import get_rerank_plan, reorder
         from services.sparse_encoder import SparseEncoderService
 
@@ -136,7 +135,13 @@ async def search_rag(
         fetch_k = max(top_k, plan.fetch_k) if plan.mode == "model" else top_k
 
         _t0 = time.perf_counter()
-        query_dense = await EmbeddingService.generate_embedding(query)
+        # 查询收口：用户在对话里贴长文档/长堆栈时，改造前 generate_embedding 返回
+        # None → 整条 RAG 判 error。切块后至少取首块，长文本不再等于检索失败。
+        # （BranchAwareSearchService.search 仍是单向量签名，多探针待其扩展。）
+        from services.query_embedding import embed_query
+
+        _embedded = await embed_query(query)
+        query_dense = _embedded.primary
         _stage_embedding_ms = (time.perf_counter() - _t0) * 1000
         if not query_dense:
             _record_rag_metric(

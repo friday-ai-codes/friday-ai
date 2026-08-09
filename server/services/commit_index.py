@@ -409,6 +409,13 @@ async def index_commits(repository_id: str, repo_path: str) -> dict[str, Any]:
         )
         return {"indexed": 0, "head": head_sha, "boundary_from": boundary}
 
+    # 写入 kind=commit 前补齐 payload 索引，否则代码检索侧 must_not(kind)
+    # 在 hybrid prefetch 上会被 Qdrant 静默忽略。
+    collection_name = QdrantService.get_collection_name(str(repository_id))
+    await sync_to_async(QdrantService.ensure_kind_payload_index, thread_sensitive=False)(
+        collection_name
+    )
+
     ok = await sync_to_async(QdrantService.upsert_vectors)(repository_id, points)
     if not ok:
         # upsert 失败：绝不推进边界，下次重新尝试（不丢 commit，T-25-09）。

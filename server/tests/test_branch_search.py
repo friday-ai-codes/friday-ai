@@ -348,3 +348,39 @@ class TestBranchAwareSearchService:
         mock_qs.hybrid_search_by_name.assert_called_once()
         mock_qs.hybrid_search.assert_called_once()
         assert len(results) == 2
+
+    async def test_default_filters_exclude_commit_kind(
+        self, _patch_branch_utils, _patch_qdrant
+    ):
+        """代码检索默认排除 kind=commit，避免提交摘要挤占源码召回。"""
+        from services.qdrant_service import QdrantService
+
+        mock_enabled, _, _ = _patch_branch_utils
+        mock_qs = _patch_qdrant
+        mock_enabled.return_value = False
+        mock_qs.search.return_value = []
+
+        await BranchAwareSearchService.search("repo1", [0.1] * 10)
+
+        filters = mock_qs.search.call_args.kwargs.get("filters") or {}
+        assert filters.get(QdrantService.EXCLUDE_KEY) == {"kind": "commit"}
+
+    async def test_explicit_exclude_key_respected(
+        self, _patch_branch_utils, _patch_qdrant
+    ):
+        """调用方显式传 EXCLUDE_KEY（含空 dict）时不覆盖其意图。"""
+        from services.qdrant_service import QdrantService
+
+        mock_enabled, _, _ = _patch_branch_utils
+        mock_qs = _patch_qdrant
+        mock_enabled.return_value = False
+        mock_qs.search.return_value = []
+
+        await BranchAwareSearchService.search(
+            "repo1",
+            [0.1] * 10,
+            filters={QdrantService.EXCLUDE_KEY: {}},
+        )
+
+        filters = mock_qs.search.call_args.kwargs.get("filters") or {}
+        assert filters.get(QdrantService.EXCLUDE_KEY) == {}

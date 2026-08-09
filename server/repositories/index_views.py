@@ -774,7 +774,12 @@ class CodeSearchView(APIView):
         reranker_enabled = await RerankerService.is_enabled()
         fetch_k = min(top_k * 3, 50) if reranker_enabled else top_k
 
-        query_embedding = await EmbeddingService.generate_embedding(query)
+        # 查询收口：代码搜索框可能被贴进整段报错/整个函数，改造前超长即静默返回
+        # 空列表（前端表现为「没搜到」，日志无线索）。
+        from services.query_embedding import embed_query
+
+        _embedded = await embed_query(query)
+        query_embedding = _embedded.primary
         if not query_embedding:
             return []
 

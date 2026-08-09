@@ -13,7 +13,6 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 
-from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
 from services.sparse_encoder import SparseEncoderService
 
@@ -68,13 +67,17 @@ class RepoRouter:
             return []
 
         # 2. 生成 query dense vector (供 RRF 融合用)
-        query_dense = await EmbeddingService.generate_embedding(query)
-        if not query_dense:
-            logger.warning("embedding_failed", query=query[:100])
+        # 走查询收口：长需求文本切块多探针，绝不因超长返回空（改造前 None → 静默 []）。
+        from services.query_embedding import embed_query
+
+        embedded = await embed_query(query)
+        if not embedded.ok:
+            logger.warning("embedding_failed", query_len=len(query or ""))
             return []
+        query_dense = embedded.vectors
 
         # 3. 调用 hybrid_search (RRF 融合 dense + sparse, 与 L3 层一致)
-        stage1_results = await sync_to_async(QdrantService.hybrid_search_by_name)(
+        stage1_results = await sync_to_async(QdrantService.hybrid_search_multi_by_name)(
             "repo_summaries",
             query_dense,
             query_sparse,

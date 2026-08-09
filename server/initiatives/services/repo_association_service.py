@@ -47,8 +47,22 @@ __all__ = ["RepoAssociationService"]
 _COMPONENT = "repo_association"
 # 候选数上限（对齐 RepoRouterV2Adapter 默认；卡片展示 + 逐仓深验数量预算）。
 _TOP_K = 5
-# query 字符预算（防超大 feature list 塞爆 LLM 上下文，T-88-02-DOS）。
-_QUERY_CHAR_BUDGET = 4000
+# query 字符预算——**只剩 DoS 兜底职责**（T-88-02-DOS 的原始意图）。
+#
+# 历史缺陷（2026-08 实测）：本值原为 4000，本意是「防超大 feature list 塞爆 LLM
+# 上下文」，但它被加在**送去检索的 query** 上，于是同时掐死了召回：「高三提分
+# 专项」45 个功能点只有 7 个进了 query（9 个模块里的 2 个），测试用例语料
+# 100% 未参与；目标仓 study-course 因此从未进入候选，5 次路由 0 次全中。
+#
+# 现在职责已拆开：
+# - 检索侧：`RepoRouterV2` 经 `services.query_embedding.embed_query` 把长语料切块
+#   多探针（Qdrant 服务端 RRF 融合，零额外往返），吃全量语料；实际参与召回的量
+#   由探针预算 `MAX_PROBES × MAX_SEGMENT_CHARS` 决定，不再由本值决定。
+# - prompt 侧：`repo_router_v2.STAGE1_PROMPT_QUERY_MAX_CHARS` 单独约束喂给 LLM
+#   的正文长度（lost-in-the-middle，与上下文窗口容量无关）。
+#
+# 故本值只需挡住病态输入（几十万字的粘贴），取一个远高于真实 feature list 的值。
+_QUERY_CHAR_BUDGET = 60000
 
 
 class RepoAssociationService:
@@ -162,8 +176,14 @@ class RepoAssociationService:
         from codegraph.services.repo_router_v2 import RepoRouterV2
 
         with use_call_source(CallSource.AUX_REPO_ROUTER):
+            # corpus_kind="requirement"：feature list 整篇都是检索意图，每个功能点
+            # 指向不同落点 → 切块后全切全探，不过噪声闸（对话型才需要过闸）。
             result = await RepoRouterV2.route(
-                query, top_k=_TOP_K, repository_ids=repo_ids, use_llm=True
+                query,
+                top_k=_TOP_K,
+                repository_ids=repo_ids,
+                use_llm=True,
+                corpus_kind="requirement",
             )
 
         candidates = [self._candidate_dict(c) for c in result.candidates]
