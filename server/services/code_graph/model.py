@@ -213,7 +213,9 @@ BARE_NAME_BLACKLIST: Final[frozenset[str]] = frozenset(
 #    与那句保守性声明，⛔ 不得只凭这个布尔量决定要不要提醒用户——布尔量表达不出
 #    0.17 与 0.55 的差别，而这两者对影响面结论的可信度是天壤之别。
 #
-# 🔁 重新校准：``cd server && uv run pytest -m perf tests/services/code_graph/ -s``。
+# 🔁 重新校准（``FRIDAY_PERF_ALLOW_PRODUCTION_DB=1`` 是连生产库的显式授权，不带它会
+#    回落到 sqlite 快照，分布就不是本仓真实分布）：``cd server &&
+#    FRIDAY_PERF_ALLOW_PRODUCTION_DB=1 uv run pytest -m perf tests/services/code_graph/ -s``。
 LOW_RESOLUTION_THRESHOLD: Final[float] = 0.10
 
 # 跨仓遍历穿到未授权仓库时，整仓折叠成该占位符（不泄漏仓库名/符号名/文件路径）。

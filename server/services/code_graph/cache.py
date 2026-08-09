@@ -128,7 +128,9 @@ _MAX_SUBGRAPH_DEPTH: Final[int] = 10
 # ⚠️ 连带结论：单图触顶点从「约 11 万符号」下调到 **约 8.6 万**（算术见
 #    ``friday/settings.py`` 的 CODE_GRAPH_* 注释）。当前生产最大仓才 3 万符号，
 #    这条收紧暂时不会让任何仓走降级路径。
-# 🔁 复校口径若要重跑：``cd server && uv run pytest -m perf tests/services/code_graph/ -s``。
+# 🔁 复校口径若要重跑（``FRIDAY_PERF_ALLOW_PRODUCTION_DB=1`` 是连生产库的显式授权，
+#    不带它会自动回落到 sqlite 快照 / 合成图，标定数字就不再是本仓真实值）：
+#    ``cd server && FRIDAY_PERF_ALLOW_PRODUCTION_DB=1 uv run pytest -m perf tests/services/code_graph/ -s``。
 NODE_COST_BYTES: Final[int] = 800  # 生产实测 733 × 1.05 ≈ 770，取整到 800 更保守
 EDGE_COST_BYTES: Final[int] = 680  # 生产实测 626 × 1.05 ≈ 658，取整到 680 更保守
 
