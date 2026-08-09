@@ -379,6 +379,29 @@ async def collect_cross_repo_impact(
                 # 落空或歧义一律计数不丢；⛔ 绝不静默取第一条（D-19 / Phase 121 D-05）。
                 unresolved += 1
 
+        # HI-02：全部 call site 未解析时 ⛔ 不 fetch_graph_for_tool([])——空种子会走全量图，
+        # 超预算仓被误标 unavailable，小仓则像「无影响面」。
+        if not seed_ids:
+            success_entries.append(
+                {
+                    "cross_repo": True,
+                    "repository_id": peer_repo_id,
+                    "match_confidence": hits.max_match_confidence,
+                    "call_sites": list(hits.call_sites),
+                    "unresolved_call_sites": unresolved,
+                    "impact": _merge_impact_payloads([]),
+                    "reason": "call_sites_unresolved",
+                }
+            )
+            _log_cross_repo_hop(
+                local_repository_id=local_id,
+                peer_repository_id=peer_repo_id,
+                call_site_count=len(hits.call_sites),
+                unresolved_call_sites=unresolved,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+            continue
+
         try:
             # D-12：get_graph 仍会再跑一遍 ensure_repository_readable（缓存命中也不跳过）。
             peer_graph = await fetch_graph_for_tool(
