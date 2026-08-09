@@ -83,7 +83,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 121-09-PLAN.md — W6 curated barrel（架构红线，恰 17 项导出）+ `invalidate` 与两处构建完成失效钩子
+- [x] 121-09-PLAN.md — W6 curated barrel（架构红线，恰 17 项导出）+ `invalidate` 与两处构建完成失效钩子
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
