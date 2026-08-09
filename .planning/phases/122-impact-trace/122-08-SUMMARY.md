@@ -75,7 +75,7 @@ completed: 2026-08-09
 2. **Task 2: View + urls + snapshot** - `62cb80b7` (feat)
 3. **Task 3: 五个 MCP 用例** - `5bdd1586` (test)
 
-**Plan metadata:** （待 docs 提交）
+**Plan metadata:** `0e3af745` (docs: complete plan)
 
 ## Files Created/Modified
 
@@ -135,6 +135,13 @@ None - no external service configuration required.
 - MCP 面可调；122-09 可接对话壳，共用同一编排与分支/留痕原语。
 - 122-10：`test_two_surfaces_same_payload` + `mcp/` submodule 对齐（D-27）+ IMPACT-* Complete。
 
+## Self-Check: PASSED
+
+- Files: code_graph_tools / serializers / views / urls / schema snapshot test / impact_trace_tools test / SUMMARY — all FOUND
+- Commits: `4d919cf9` / `62cb80b7` / `5bdd1586` — all FOUND
+- Symbols: `resolve_tool_graph_branch` / `tool_trace_payload` / `ImpactAnalysisView` / `TraceCallPathView` / `ImpactAnalysisRequestSerializer` / `tools/impact_analysis/` — present
+
 ---
 *Phase: 122-impact-trace*
 *Completed: 2026-08-09*
+*
