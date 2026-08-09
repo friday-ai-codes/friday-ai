@@ -35,7 +35,7 @@
 
 - [x] **Phase 121: 内存图服务基座** - `(repository, branch)` 内存符号图缓存（水位失效 + 字节 LRU + single-flight）+ 权限/exclusion 读取层统一收口
 - [x] **Phase 122: impact / trace 工具面** - 反向 BFS 深度分组 + 置信度分层 + 跨仓边界 + 有向最短路，MCP/对话双面暴露 (completed 2026-08-09)
-- [x] **Phase 123: detect_changes 工具本体** - diff 行区间 × Symbol 区间定位受影响符号 + 批量 impact，水位锚定 + rename 检测 (plans 6/6 complete 2026-08-09; pending verify)
+- [x] **Phase 123: detect_changes 工具本体** - diff 行区间 × Symbol 区间定位受影响符号 + 批量 impact，水位锚定 + rename 检测 (completed 2026-08-10, verified passed)
 - [ ] **Phase 124: 编码链闭环** - 编码容器提交前自查 + MR 描述自动附影响面报告（fail-soft）
 - [ ] **Phase 125: 社区检测 + 模块摘要** - Louvain 社区落库 + 成员指纹跳过重生成 + LLM 模块摘要三点注入（adapter 层，不动冻结面）
 - [ ] **Phase 126: 执行流 + rename_preview + skills** - Endpoint 正向执行流存 Process + affected_processes 回填 + 只读改名清单 + 两个 skill 同源分发
@@ -192,7 +192,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 124-00-PLAN.md — Wave 0：DIFF-03/04 测试骨架（skip 桩）+ VALIDATION Task ID 对齐
+- [x] 124-00-PLAN.md — Wave 0：DIFF-03/04 测试骨架（skip 桩）+ VALIDATION Task ID 对齐
 - [ ] 124-01-PLAN.md — Wave 1：容器白名单 + system prompt 自查指引（DIFF-03 / D-01..D-04）
 - [ ] 124-02-PLAN.md — Wave 1：共享 impact_report + settings 超时/体积（DIFF-04 核心 / D-05..D-13/D-15）
 
@@ -457,7 +457,7 @@ Plans:
 | 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 10/10 | ✅ Complete (verified passed 4/4) | 2026-08-09 |
 | 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 10/10 | Complete | 2026-08-09 |
 | 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 6/6 | Complete   | 2026-08-09 |
-| 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 0/4 | Planned | - |
+| 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 1/4 | In Progress | - |
 | 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 0/? | Not started | - |
 | 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 0/? | Not started | - |
 | 127. Semgrep 门禁 + LSP 基准 | v0.22.0 | TAINT-01~03, LSP-01 | 0/? | Not started | - |
