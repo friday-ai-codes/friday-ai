@@ -38,6 +38,8 @@ MIN_COMMUNITY_SIZE = 5
 # T-125-04：写入前截断，防 JSON 行膨胀 DoS。
 MAX_MEMBERS_STORED = 500
 MAX_TOP_FILES_STORED = 40
+# Jaccard 对账用完整 key 列表；与展示用 members 截断分离（WR-02）。
+MAX_MEMBER_KEYS_STORED = 50_000
 
 MemberDict = dict[str, Any]
 SummaryFn = Callable[
@@ -239,6 +241,14 @@ def _unique_community_key(base: str, used: set[str]) -> str:
     raise RuntimeError("community_key_collision_exhausted")
 
 
+def _persist_member_keys(keys: Sequence[str] | None) -> list[str]:
+    """落库用完整稳定键列表（截断上限远高于 members 展示截断）。"""
+    ordered = sorted({str(k) for k in (keys or []) if str(k)})
+    if len(ordered) > MAX_MEMBER_KEYS_STORED:
+        return ordered[:MAX_MEMBER_KEYS_STORED]
+    return ordered
+
+
 def _resolve_built_at_sha(repository_id: str) -> str:
     try:
         from repositories.models import Repository
@@ -265,6 +275,7 @@ def _load_old_communities(repository_id: str, branch_name: str) -> list[dict[str
             "community_key",
             "member_fingerprint",
             "members",
+            "member_keys",
             "summary",
             "summary_model",
             "summary_generated_at",
@@ -273,12 +284,19 @@ def _load_old_communities(repository_id: str, branch_name: str) -> list[dict[str
     out: list[dict[str, Any]] = []
     for row in rows:
         members = list(row.get("members") or [])
+        stored_keys = [
+            str(k) for k in (row.get("member_keys") or []) if str(k)
+        ]
+        # 新行用持久化 member_keys；旧行回退从 truncated members 重建。
+        member_keys = stored_keys or [
+            _member_stable_key(m) for m in members if isinstance(m, Mapping)
+        ]
         out.append(
             {
                 "community_key": str(row.get("community_key") or ""),
                 "member_fingerprint": str(row.get("member_fingerprint") or ""),
                 "members": members,
-                "member_keys": [_member_stable_key(m) for m in members if isinstance(m, Mapping)],
+                "member_keys": member_keys,
                 "summary": row.get("summary"),
                 "summary_model": row.get("summary_model"),
                 "summary_generated_at": row.get("summary_generated_at"),
@@ -431,6 +449,7 @@ def _persist_communities(
                 algorithm=str(c.get("algorithm") or "louvain"),
                 member_count=int(c.get("member_count") or 0),
                 members=_truncate_members(list(c.get("members") or [])),
+                member_keys=_persist_member_keys(list(c.get("member_keys") or [])),
                 top_files=list(c.get("top_files") or [])[:MAX_TOP_FILES_STORED],
                 member_fingerprint=str(c.get("member_fingerprint") or ""),
                 summary=c.get("summary"),
@@ -565,6 +584,7 @@ async def rebuild_communities(
 __all__ = [
     "JACCARD_THRESHOLD",
     "LOUVAIN_SEED",
+    "MAX_MEMBER_KEYS_STORED",
     "MAX_MEMBERS_STORED",
     "MAX_TOP_FILES_STORED",
     "MIN_COMMUNITY_SIZE",

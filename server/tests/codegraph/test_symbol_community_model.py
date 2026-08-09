@@ -21,6 +21,7 @@ def test_symbol_community_fields_and_unique_together() -> None:
         "algorithm",
         "member_count",
         "members",
+        "member_keys",
         "top_files",
         "member_fingerprint",
         "summary",
