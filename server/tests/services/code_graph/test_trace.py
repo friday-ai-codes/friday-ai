@@ -4,12 +4,10 @@
 合成冻结图上（D-01）。⛔ 不得引入数据库标记——需要库的分支（重名候选要取
 ``Symbol.signature``）请放 ``test_symbol_resolve.py``。
 
-Wave 0（Plan 122-01）只落骨架，用例由 122-04 填实。
+骨架由 Wave 0（Plan 122-01）落位，三条用例由 122-04 填实，已无 skip 桩。
 """
 
 from __future__ import annotations
-
-import pytest
 
 from services.code_graph import EdgeConfidence, EdgeKind, derive_reason
 from services.code_graph.trace import trace_path
@@ -71,16 +69,41 @@ def test_shortest_path_hops(known_topology) -> None:
     assert relaxed["path_confidence"] == 0.3
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-04 落地")
-def test_equal_length_paths_declared() -> None:
+def test_equal_length_paths_declared(known_topology) -> None:
     """多条等长路径时返回第一条 + ``equal_length_path_count``（D-18）。
 
     用 ``known_topology`` 的等长多解簇：``P → Q → S`` 与 ``P → R → S`` 两条等长最短路。
     ⛔ 不要拿 ``D → A`` 试——那条只有一条最短路，声明恒为 1，验证不了任何东西。
 
+    三支各守一件事：多解要**声明条数**、单解要**闭嘴**（空串而不是「只有 1 条」的
+    废话）、封顶后措辞要从「存在 N 条」切成「存在**至少** N 条」——后者是唯一能让
+    agent 知道自己看到的计数不是全貌的信号。
+
     （Req: IMPACT-05, 决策: D-18）
     """
-    pytest.fail("Wave 0 桩")
+    graph = known_topology
+
+    multi = trace_path(graph, "P", "S")
+    assert multi["found"] is True
+    assert len(multi["path"]) == 3
+    # 返回的是确定性的「第一条」，两条候选都是合法答案。
+    assert multi["path"] in (["P", "Q", "S"], ["P", "R", "S"])
+    assert multi["equal_length_path_count"] == 2
+    assert multi["equal_length_path_count_capped"] is False
+    # ⛔ 只给数字不够：声明字段必须真的把条数说出来，否则渲染层容易整条漏掉。
+    assert multi["alternatives_note"] != ""
+    assert "2" in multi["alternatives_note"]
+
+    single = trace_path(graph, "D", "A")
+    assert single["equal_length_path_count"] == 1
+    assert single["equal_length_path_count_capped"] is False
+    assert single["alternatives_note"] == ""
+
+    # 封顶分支：cap=1 时实际有 2 条，计数停在 1 且必须显式声明这是个下界。
+    capped = trace_path(graph, "P", "S", alt_path_cap=1)
+    assert capped["equal_length_path_count"] == 1
+    assert capped["equal_length_path_count_capped"] is True
+    assert "至少" in capped["alternatives_note"]
 
 
 def test_no_path_explicit_structure(known_topology) -> None:

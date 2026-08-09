@@ -24,6 +24,9 @@
 - **逐跳渲染**：``shortest_path`` 返回的是**节点序列**、不含边 key，MultiDiGraph 上
   同一符号对可并存多档边，因此每一跳都要自己在 ``view[u][v]`` 里挑一条（挑置信度
     **最高**的那条），再取出 ``file:line`` + 边类型 + 置信档 + 现推的 ``reason``。
+- **等长多解封顶声明**：用 :func:`networkx.all_shortest_paths` 数等长路径条数，但它
+  是生成器、高扇出图上条数可能天文数字，必须 ``itertools.islice`` 封顶
+  （威胁登记 T-122-遍历 DoS）。
 
 边界与已知翻车点
 ================
@@ -39,18 +42,23 @@
    **0.004ms**，而 ``graph.copy()`` / ``reverse(copy=True)`` 要 **330–690ms**——差五个
    数量级。⛔ 不 ``copy()``、⛔ 不 ``copy=True``（有 AST 断言守着）。
 
-③ **``reason`` 现推不存**（D-09）：输出时调
+③ 🚨 **``all_shortest_paths`` 的结果绝不 ``list()`` 物化**。它数的是**节点序列**条数
+   （不是边组合数），高扇出图上可能极多；``list()`` 会把整个解集拉进内存，而我们只
+   需要「有没有超过 cap 条」这一个布尔量。用 ``islice(gen, cap + 1)`` 探一格即可。
+
+④ **``reason`` 现推不存**（D-09）：输出时调
    :func:`~services.code_graph.derive_reason` 生成，⛔ 不在图边属性上新增第四个属性。
 
-④ **输出是结构化 dict，不是渲染好的字符串**（D-10）。渲染留给壳层，让 MCP（JSON）
+⑤ **输出是结构化 dict，不是渲染好的字符串**（D-10）。渲染留给壳层，让 MCP（JSON）
    与对话（markdown）两面各自决定形态。
 
-⑤ **不吞 ``GraphError``**（D-03）：本模块根本不取图，没有可吞的异常。「没有路径」与
+⑥ **不吞 ``GraphError``**（D-03）：本模块根本不取图，没有可吞的异常。「没有路径」与
    「查询失败」在输出上是两种形态，翻译归壳层。
 """
 
 from __future__ import annotations
 
+import itertools
 import time
 from collections.abc import Mapping
 from typing import Any, Final
@@ -251,6 +259,21 @@ def trace_path(
     - ``path_confidence``：整条路径各跳分值的**最小值**（D-07 同口径，弱边决定强度）。
       ⛔ 不取平均——一条 ``resolved`` 边会把 ``bare_name`` 洗白。零跳的平凡路径
       （``source == target``）取 1.0。
+    - ``equal_length_path_count`` / ``equal_length_path_count_capped`` /
+      ``alternatives_note``：等长多解声明，见下。
+
+    **等长多解（D-18）**：存在多条等长最短路时返回的「第一条」是
+    :func:`networkx.shortest_path` 的确定性输出（同一张图、同一对端点上稳定可复现），
+    但⛔ **不承诺**它是「最重要」的那一条——判断哪条更重要需要语义信息（业务主链路 /
+    热路径），本相位不做。agent 拿到 ``equal_length_path_count > 1`` 的声明后可以自行
+    追问其余解。``alternatives_note`` 是同一事实的**给人看**的那一份：只给一个数字的
+    话，渲染层很容易把它漏掉，而漏掉就等于静默隐瞒多解——D-18 明令不许。
+
+    ⚠️ **封顶后的计数语义**：``equal_length_path_count_capped`` 为真时，
+    ``equal_length_path_count`` 读作「**至少** 这么多条」，⛔ 不读作「恰好这么多条」。
+    两者的差别不是措辞问题：「恰好 10 条」会让 agent 以为自己已经知道解集的规模，而
+    真实条数可能比它大几个数量级。
+
     :param graph: 已过 ``GraphService.get_graph()`` 三道闸的冻结 ``MultiDiGraph``。
         本函数只读，⛔ 不修改、⛔ 不复制。
     :param source_symbol_id: 起点符号 id（调用方）。
@@ -314,6 +337,31 @@ def trace_path(
         hop_scores.append(_edge_score(attrs))
         hops.append(_render_hop(graph, caller_id, callee_id, attrs))
 
+    # ⚠️ cap < 1 按 1 处理：0 会让 ``min(probed, 0)`` 恒为 0，输出上出现「存在至少 0
+    # 条等长路径」这种自相矛盾的声明——而我们手上明明已经有一条路径了。
+    effective_cap = max(1, alt_path_cap)
+    # 🚨 只探到 cap + 1 条就停：``all_shortest_paths`` 是生成器，我们要的只是「有没有
+    # 超过 cap 条」这一个布尔量。⛔ 绝不 ``list(...)`` 物化整个解集（威胁登记
+    # T-122-遍历 DoS：高扇出图上等长解的条数是各跳并行分支的乘积）。
+    probed = sum(
+        1
+        for _ in itertools.islice(
+            nx.all_shortest_paths(view, source_symbol_id, target_symbol_id),
+            effective_cap + 1,
+        )
+    )
+    capped = probed > effective_cap
+    equal_length_path_count = min(probed, effective_cap)
+
+    if capped:
+        # 封顶时计数读作「至少 N 条」，措辞必须与未封顶那一支区分开。
+        alternatives_note = f"存在至少 {equal_length_path_count} 条等长路径，此处返回其中第一条"
+    elif equal_length_path_count > 1:
+        alternatives_note = f"存在 {equal_length_path_count} 条等长路径，此处返回其中第一条"
+    else:
+        # 恰一条最短路 —— 没有多解可声明，给空串而不是一句「只有 1 条」的废话。
+        alternatives_note = ""
+
     _log_trace_completed(
         found=True,
         hop_count=len(hops),
@@ -330,4 +378,7 @@ def trace_path(
         # D-07 同口径：整条路径的强度由最弱的那一跳决定。零跳（source == target）
         # 没有任何边可以拉低它，取 1.0。
         "path_confidence": min(hop_scores, default=1.0),
+        "equal_length_path_count": equal_length_path_count,
+        "equal_length_path_count_capped": capped,
+        "alternatives_note": alternatives_note,
     }
