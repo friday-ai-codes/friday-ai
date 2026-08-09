@@ -1865,8 +1865,9 @@ async def run_rename_preview(
     """只读改名预览的**唯一**编排入口（D-09/D-10/D-11）——MCP / 对话 / knowledge 共用。
 
     双源：图定义点 + 一跳 callers；文本半边经 ``grep_mirror`` + exclusion fail-closed。
-    ``applied`` 恒为 ``False``。消歧 / 未找到 → ``ok=False``，⛔ 不伪装零引用成功信封。
-    ``GraphError``（含未索引）原样上抛给壳层翻译。
+    ``applied`` 恒为 ``False``。消歧 / 未找到 / ``GraphError`` → ``ok=False`` 软信封，
+    ⛔ 不伪装零引用成功信封；``GraphError`` 折叠为带 ``applied: false`` 的同形失败
+    （WR-05），壳层可按 HTTP 200 / ToolResult(success=True) 透出。
     """
     from services.code_graph.rename_preview import (
         COVERAGE_LIMITATIONS,
@@ -1984,15 +1985,38 @@ async def run_rename_preview(
     sid = resolution.resolved
     assert sid is not None
 
-    # GraphError（含未索引）原样上抛——壳层翻译（D-03）
-    graph = await fetch_graph_for_tool(
-        repository_id,
-        graph_branch or "",
-        user=user,
-        seed_symbol_ids=[sid],
-        depth=1,
-        include_low_confidence=False,
-    )
+    # GraphError（含未索引）折软信封 + applied=false（WR-05 / rename 双面契约）
+    try:
+        graph = await fetch_graph_for_tool(
+            repository_id,
+            graph_branch or "",
+            user=user,
+            seed_symbol_ids=[sid],
+            depth=1,
+            include_low_confidence=False,
+        )
+    except GraphError as exc:
+        code, message = graph_error_to_tool_error(exc)
+        try:
+            logger.info(
+                _EVENT_RENAME_PREVIEW_FAILED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                error_code=code,
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "ok": False,
+            "error_code": code,
+            "error": message,
+            "tool": "rename_preview",
+            "applied": False,
+            "coverage_limitations": COVERAGE_LIMITATIONS,
+            "query": query,
+        }
     in_graph = resolve_symbol_in_graph(graph.graph, symbol_id=sid)
     if in_graph.resolved is None:
         try:

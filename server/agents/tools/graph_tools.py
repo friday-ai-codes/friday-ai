@@ -1375,6 +1375,7 @@ async def _rename_preview_impl(
 
     from interactions.models import RetrievalTrace
     from services.code_graph import GraphError
+    from services.code_graph.rename_preview import COVERAGE_LIMITATIONS
     from services.code_graph_tools import (
         graph_error_to_tool_error,
         resolve_tool_graph_branch,
@@ -1400,8 +1401,24 @@ async def _rename_preview_impl(
             context_lines=validated.context_lines,
         )
     except GraphError as exc:
-        _code, message = graph_error_to_tool_error(exc)
-        return ToolResult(success=False, error=message)
+        # WR-05：与编排软信封同形，applied=false；勿把图故障当成 ToolResult 硬失败
+        code, message = graph_error_to_tool_error(exc)
+        result = {
+            "ok": False,
+            "error_code": code,
+            "error": message,
+            "tool": "rename_preview",
+            "applied": False,
+            "coverage_limitations": COVERAGE_LIMITATIONS,
+            "query": {
+                "symbol_id": validated.symbol_id,
+                "symbol": validated.symbol or None,
+                "file_path": validated.file_path or None,
+                "symbol_type": validated.symbol_type or None,
+                "new_name": validated.new_name,
+                "context_lines": validated.context_lines,
+            },
+        }
 
     orchestration_ms = int((perf_counter() - orch_started) * 1000)
     duration_ms = int((perf_counter() - started) * 1000)
