@@ -839,7 +839,9 @@ CODE_INTELLIGENCE_PROVIDER: str = env.str(
 # ts/tsx/vue/js/jsx 仍声明 volar 作为重开目标（kill-switch 关闭时不生效）。
 EXTRACTOR_BACKENDS: dict[str, str] = {
     "python": "tree_sitter",
-    "go": "tree_sitter",         # ：回落 tree_sitter（默认禁用 gopls）
+    # Phase 127 / D-12：声明「重开目标」为 gopls；仍受 GOPLS_BACKEND_ENABLED
+    # kill-switch 约束（默认 False），关闭时 apps.ready 不注册、运行期回落 tree-sitter。
+    "go": "gopls",
     "typescript": "volar",       # 声明性：重开 volar 时目标后端（默认 kill-switch 关）
     "tsx": "volar",              # implementation 切
     "vue": "volar",              # implementation 切
@@ -1032,6 +1034,26 @@ VOLAR_BACKEND_ENABLED: bool = env.bool("VOLAR_BACKEND_ENABLED", default=False)
 # ：默认改 False —— 仅用 tree-sitter，缓解图谱构建慢与 gopls 冷启动等待；
 # 调好 gopls 后经 env `GOPLS_BACKEND_ENABLED=true` 可逆重开（无需改代码）。
 GOPLS_BACKEND_ENABLED: bool = env.bool("GOPLS_BACKEND_ENABLED", default=False)
+
+# =============================================================================
+# Semgrep CLI Settings（Phase 127 / D-01 / D-04 / D-09 / D-10）
+# =============================================================================
+# Semgrep 以镜像独立安装（/opt/semgrep），永不进 server/pyproject.toml / uv.lock；
+# 代码只持绝对路径，经 subprocess 调用，禁止 import semgrep。
+
+SEMGREP_BIN: str = env.str("SEMGREP_BIN", default="/opt/semgrep/bin/semgrep")
+# 单规则超时秒（注入 CLI --timeout / SEMGREP_TIMEOUT）。
+SEMGREP_TIMEOUT: int = env.int("SEMGREP_TIMEOUT", default=5)
+# 任务墙钟秒（durable 扫描任务整体预算；超时 fail-open）。
+SEMGREP_TASK_TIMEOUT: int = env.int("SEMGREP_TASK_TIMEOUT", default=180)
+# 官方 registry 精选 pack CSV（可配置；D-10）。
+SEMGREP_CONFIGS: str = env.str(
+    "SEMGREP_CONFIGS",
+    default="p/python,p/django,p/javascript,p/typescript,p/golang",
+)
+# Escape hatch：仅当 SystemSetting SEMGREP_APP_TOKEN 空时由扫描层可读（D-09）；
+# 禁止写入日志 / MR / ledger。权威存储仍是加密 SystemSetting。
+SEMGREP_APP_TOKEN_ENV: str = env.str("SEMGREP_APP_TOKEN", default="")
 
 # =============================================================================
 # APScheduler Settings
