@@ -27,6 +27,7 @@ from typing import Any
 import networkx as nx
 import structlog
 from asgiref.sync import sync_to_async
+from django.db import transaction
 from networkx.algorithms.community import louvain_communities
 
 logger = structlog.get_logger(__name__)
@@ -223,6 +224,21 @@ def _truncate_members(members: Sequence[MemberDict]) -> list[MemberDict]:
     return ordered[:MAX_MEMBERS_STORED]
 
 
+def _unique_community_key(base: str, used: set[str]) -> str:
+    """保证 ``(repository, branch, community_key)`` 唯一，碰撞时加 ``~N`` 后缀。"""
+    key = (base or "community")[:64]
+    if key not in used:
+        used.add(key)
+        return key
+    for i in range(1, 10_000):
+        suffix = f"~{i}"
+        candidate = f"{key[: max(0, 64 - len(suffix))]}{suffix}"
+        if candidate not in used:
+            used.add(candidate)
+            return candidate
+    raise RuntimeError("community_key_collision_exhausted")
+
+
 def _resolve_built_at_sha(repository_id: str) -> str:
     try:
         from repositories.models import Repository
@@ -403,26 +419,30 @@ def _persist_communities(
     from repositories.models import Repository
 
     repo = Repository.objects.get(id=repository_id)
-    SymbolCommunity.objects.filter(repository=repo, branch_name=branch_name).delete()
-    rows = [
-        SymbolCommunity(
-            repository=repo,
-            branch_name=branch_name,
-            community_key=str(c["community_key"])[:64],
-            algorithm=str(c.get("algorithm") or "louvain"),
-            member_count=int(c.get("member_count") or 0),
-            members=_truncate_members(list(c.get("members") or [])),
-            top_files=list(c.get("top_files") or [])[:MAX_TOP_FILES_STORED],
-            member_fingerprint=str(c.get("member_fingerprint") or ""),
-            summary=c.get("summary"),
-            summary_model=c.get("summary_model"),
-            summary_generated_at=c.get("summary_generated_at"),
-            built_at_sha=built_at_sha,
+    used_keys: set[str] = set()
+    rows: list[SymbolCommunity] = []
+    for c in communities:
+        key = _unique_community_key(str(c.get("community_key") or ""), used_keys)
+        rows.append(
+            SymbolCommunity(
+                repository=repo,
+                branch_name=branch_name,
+                community_key=key,
+                algorithm=str(c.get("algorithm") or "louvain"),
+                member_count=int(c.get("member_count") or 0),
+                members=_truncate_members(list(c.get("members") or [])),
+                top_files=list(c.get("top_files") or [])[:MAX_TOP_FILES_STORED],
+                member_fingerprint=str(c.get("member_fingerprint") or ""),
+                summary=c.get("summary"),
+                summary_model=c.get("summary_model"),
+                summary_generated_at=c.get("summary_generated_at"),
+                built_at_sha=built_at_sha,
+            )
         )
-        for c in communities
-    ]
-    if rows:
-        SymbolCommunity.objects.bulk_create(rows)
+    with transaction.atomic():
+        SymbolCommunity.objects.filter(repository=repo, branch_name=branch_name).delete()
+        if rows:
+            SymbolCommunity.objects.bulk_create(rows)
     return len(rows)
 
 
