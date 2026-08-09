@@ -44,9 +44,9 @@ created: 2026-08-10
 | 127-TAINT-FAIL | 01+ | 1+ | TAINT-01 | T-127-02 | mirror/CLI/timeout → fail-open；`error_code` 稳定 | unit | 同上 | ❌ W0 | ⬜ pending |
 | 127-TAINT-ADV | 02+ | 2+ | TAINT-02 | T-127-05 | severity 进 `## 安全扫描`；advisory 无 raise | unit | `pytest tests/services/code_graph/test_security_scan_report.py -q` | ❌ W0 | ⬜ pending |
 | 127-TAINT-NOSE | 02+ | 2+ | TAINT-02 | — | `nosemgrep` 语义 / 文档句 | unit | 同上 | ❌ W0 | ⬜ pending |
-| 127-TAINT-DUAL | 02+ | 2+ | TAINT-02 | — | workflow + MCP 双链路 append | unit | 扩展 coding/MR impact report 测 | ❌ W0 | ⬜ pending |
+| 127-TAINT-DUAL | 04 | 3 | TAINT-02 | — | workflow + MCP 双链路 append | unit | `pytest tests/workflows/test_coding_security_scan.py tests/mcp_tools/test_mr_security_scan.py -q` | ❌ W0 | ⬜ pending |
 | 127-TAINT-CE | 02+ | 2+ | TAINT-03 | T-127-05 | CE 函数内 taint disclaimer | unit | `test_security_scan_report` | ❌ W0 | ⬜ pending |
-| 127-TAINT-TOK | 02+ | 2+ | TAINT-03 | T-127-01 | token 不出现在日志/MR | unit | assert 无明文 token | ❌ W0 | ⬜ pending |
+| 127-TAINT-TOK | 02+ | 2+ | TAINT-03 | T-127-01 | token 不出现在日志/MR；Fernet 写读 round-trip | unit | `test_semgrep_app_token.py` + report stub 无明文 | ❌ W0 | ⬜ pending |
 | 127-TAINT-PRO | 02+ | 2+ | TAINT-03 | T-127-01 | 空=CE；有=「Pro 已配置」不夸大 | unit | 同上 | ❌ W0 | ⬜ pending |
 | 127-LSP-IMG | 03+ | 1+ | LSP-01 | T-127-02 | Dockerfile 含 node/go/semgrep 层 | smoke | 静态 grep / CI image probe | ❌ W0 | ⬜ pending |
 | 127-LSP-PROBE | 03+ | 1+ | LSP-01 | — | 缺二进制 → available=False | unit | `pytest codegraph/lsp/tests/test_node_check.py test_go_check.py -q` | ✅ | ⬜ pending |
@@ -64,13 +64,16 @@ created: 2026-08-10
 - [ ] `server/tests/services/code_graph/test_semgrep_scan.py` — TAINT-01 CLI 契约 / fail-open
 - [ ] `server/tests/services/code_graph/test_security_scan_report.py` — TAINT-02/03 段文案与幂等
 - [ ] `server/tests/services/code_graph/test_semgrep_enqueue.py` — QUEUE_SCAN / lock / idempotency
+- [ ] `server/tests/services/code_graph/test_semgrep_app_token.py` — D-09 Fernet 写读 round-trip
 - [ ] `server/tests/codegraph/test_security_finding_model.py` — 模型字段 / 无 Symbol FK
+- [ ] `server/tests/workflows/test_coding_security_scan.py` — 127-04 dual-link coding hang-point
+- [ ] `server/tests/mcp_tools/test_mr_security_scan.py` — 127-04 dual-link MCP/mr_service hang-point
 - [ ] `server/codegraph/lsp/tests/test_orphan_reap.py` — 孤儿收割
 - [ ] `server/tests/codegraph/test_lsp_defaults_unchanged.py` — kill-switch 默认 False
 - [ ] Fixture：假 semgrep JSON stdout（含 severity / fingerprint / nosemgrep 形态）
 - [ ] （可选）Dockerfile 静态 grep：断言 `semgrep` / `nodejs` / `gopls` 安装层存在
 
-*Existing infrastructure covers LSP probe unit tests (`node_check` / `go_check`); all new Semgrep + orphan + defaults need Wave 0 stubs.*
+*Existing infrastructure covers LSP probe unit tests (`node_check` / `go_check`); all new Semgrep + orphan + defaults + dual-link hang-points need Wave 0 stubs.*
 
 ---
 

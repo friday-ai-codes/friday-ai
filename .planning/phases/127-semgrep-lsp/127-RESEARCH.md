@@ -470,16 +470,15 @@ logger.info("lsp_process_reaped", category="sampling", component="codegraph.lsp"
 
 **A3 note:** Pro 能力激活路径以实现期 `semgrep scan --help` + 官方 Pro docs 为准；文案侧即使 Pro 启用也不得夸大未实测的跨文件覆盖率（D-08）。
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **异步回填 vs 创建前尽力**
+1. **异步回填 vs 创建前尽力** — **RESOLVED**
    - What we know: D-04 允许 fire-and-forget；`pr_cross_reference` 已有 MR 编辑范式。
-   - What's unclear: 首版是否必须「创建时带完整结果」。
-   - Recommendation: **创建时写 stub 或空安全段 → 任务完成后替换/填充**；墙钟内能完成则创建前也可同步跑，超时仍 stub。
+   - Resolution: **stub-then-async** — 创建时写 stub/pending 安全段 → enqueue 扫描 → 任务完成后替换/填充；墙钟超时仍 stub。落地见 plan **127-04** Task 2。
 
-2. **`EXTRACTOR_BACKENDS["go"]` 是否改回 `gopls`**
-   - What we know: 现为 `tree_sitter` 注释「默认禁用 gopls」；声明表与 kill-switch 正交。
-   - Recommendation: 可改声明以匹配「重开目标」，但 **不得** 改 kill-switch 默认。
+2. **`EXTRACTOR_BACKENDS["go"]` 是否改回 `gopls`** — **RESOLVED**
+   - What we know: 现为 `tree_sitter` 注释「默认禁用 gopls」；声明表与 kill-switch 正交（D-12）。
+   - Resolution: **可选**将 `EXTRACTOR_BACKENDS["go"]` 声明为 `"gopls"`（重开目标），但 **`VOLAR_BACKEND_ENABLED` / `GOPLS_BACKEND_ENABLED` kill-switch 默认保持 False**。落地见 plan **127-02** Task 2。
 
 ## Environment Availability
 
