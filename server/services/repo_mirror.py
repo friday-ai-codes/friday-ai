@@ -43,6 +43,8 @@ _GIT_TIMEOUT_SECONDS = 300.0
 _MAX_GREP_OUTPUT_BYTES = 8 * 1024 * 1024
 _MAX_FILE_OUTPUT_BYTES = 8 * 1024 * 1024
 _MAX_LINE_CHARS = 400
+# detect_changes 通路的 unified diff 上限（T-123-DOS）；超限明确 MirrorError
+DETECT_CHANGES_MAX_DIFF_BYTES = 16 * 1024 * 1024
 
 # git check-ref-format 的保守子集：禁止前导 '-'（防 argv 注入）与 '..'
 _SAFE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/@+-]{0,254}$")
@@ -76,6 +78,15 @@ class MirrorSnapshot:
     commit_sha: str
     ref: str
     matches_index: bool
+
+
+@dataclass(frozen=True)
+class DiffMirrorResult:
+    """tree-to-tree ``git diff`` 结果（two-dot + ``--find-renames``）。"""
+
+    base_sha: str
+    head_sha: str
+    unified_diff: str
 
 
 def _scrub(text: str) -> str:
@@ -312,6 +323,124 @@ async def ensure_mirror_commit(
         _failure_cache.pop(repository_id, None)
         _fetch_cache[(repository_id, ref)] = (sha, time.monotonic())
         return MirrorSnapshot(repository_id, repo_dir, sha, ref, sha == indexed_sha)
+
+
+async def ensure_mirror_sha(
+    repository_id: str,
+    sha: str,
+    *,
+    timeout: float = _GIT_TIMEOUT_SECONDS,
+) -> MirrorSnapshot:
+    """按完整 40 位 sha pin 对象到本地 bare 镜像（⛔ 不经 ``refs/heads/{sha}``）。
+
+    fetch 形态与 :func:`ensure_mirror_commit` 的索引 pin 同构：
+    ``+{sha}:refs/friday/pin-{sha[:12]}``。
+    """
+    if not getattr(settings, "REPO_MIRROR_ENABLED", True):
+        raise MirrorError("mirror_disabled", "仓库本地镜像功能未启用")
+
+    repository_id = str(repository_id)
+    sha = (sha or "").strip().lower()
+    if not _SHA_RE.match(sha):
+        raise MirrorError("invalid_params", f"非法 commit sha: {sha!r}")
+
+    failure = _failure_cache.get(repository_id)
+    if failure and (time.monotonic() - failure[1]) < _FAILURE_TTL_SECONDS:
+        raise MirrorError("mirror_fetch_failed", failure[0])
+
+    params = await _fetch_repo_params(repository_id)
+    git_url = str(params["git_url"] or "")
+    if not git_url:
+        raise MirrorError("mirror_unavailable", "仓库缺少 git_url，无法建立本地镜像")
+
+    indexed_sha = str(params["last_indexed_commit_sha"] or "").lower()
+    proxy_url = params["proxy_url"] or None
+    pin_ref = _local_ref_for(f"pin-{sha[:12]}")
+
+    async with _lock_for(repository_id):
+        repo_dir = Path(settings.REPO_CLONE_DIR) / repository_id
+        if not (repo_dir / "HEAD").exists():
+            repo_dir.mkdir(parents=True, exist_ok=True)
+            rc, _, stderr = await _run_git(
+                ["init", "--bare", "--quiet", str(repo_dir)], timeout=30.0
+            )
+            if rc != 0:
+                shutil.rmtree(repo_dir, ignore_errors=True)
+                raise MirrorError(
+                    "mirror_unavailable",
+                    f"镜像目录初始化失败: {_scrub(stderr.decode(errors='replace'))[:300]}",
+                )
+
+        if await _has_commit(repo_dir, sha):
+            return MirrorSnapshot(
+                repository_id, repo_dir, sha, sha, sha == indexed_sha
+            )
+
+        from repositories.views import build_authenticated_git_url
+
+        auth_url = build_authenticated_git_url(git_url, params["token"])
+        rc, _, stderr = await _run_git(
+            ["fetch", "--depth", "1", "--quiet", auth_url, f"+{sha}:{pin_ref}"],
+            cwd=repo_dir,
+            proxy_url=proxy_url,
+            timeout=timeout,
+        )
+        if rc != 0 or not await _has_commit(repo_dir, sha):
+            detail = (
+                f"镜像 sha fetch 失败: {_scrub(stderr.decode(errors='replace'))[:300]}"
+            )
+            _failure_cache[repository_id] = (detail, time.monotonic())
+            raise MirrorError("mirror_fetch_failed", detail)
+
+        _failure_cache.pop(repository_id, None)
+        _fetch_cache[(repository_id, sha)] = (sha, time.monotonic())
+        return MirrorSnapshot(repository_id, repo_dir, sha, sha, sha == indexed_sha)
+
+
+async def diff_mirror(
+    base: MirrorSnapshot,
+    head: MirrorSnapshot,
+    *,
+    timeout: float = 120.0,
+) -> DiffMirrorResult:
+    """对同一 bare 镜像做 tree-to-tree two-dot diff（``-U0 --find-renames``）。
+
+    左端 sha 完全由调用方传入的 ``base.commit_sha`` 决定（D-01）；
+    ⛔ 禁止三-dot ``A...B``（会把左端换成 merge-base）。
+    """
+    if base.repo_dir != head.repo_dir:
+        raise MirrorError("invalid_params", "diff_mirror 要求同一 bare 镜像目录")
+    if base.repository_id != head.repository_id:
+        raise MirrorError("invalid_params", "diff_mirror 禁止跨仓")
+
+    rc, out, stderr = await _run_git(
+        [
+            "diff",
+            "--unified=0",
+            "--find-renames",
+            base.commit_sha,
+            head.commit_sha,
+        ],
+        cwd=base.repo_dir,
+        timeout=timeout,
+        max_output_bytes=DETECT_CHANGES_MAX_DIFF_BYTES,
+    )
+    # _run_cmd 截断时强制 rc=0 并返回 ≥cap 字节；此处显式失败，禁止静默截断
+    if len(out) >= DETECT_CHANGES_MAX_DIFF_BYTES:
+        raise MirrorError(
+            "diff_too_large",
+            f"git diff 输出超过上限（{DETECT_CHANGES_MAX_DIFF_BYTES} bytes）",
+        )
+    if rc not in (0, 1):  # git diff: 1 = 有差异
+        raise MirrorError(
+            "mirror_fetch_failed",
+            f"git diff 失败: {_scrub(stderr.decode(errors='replace'))[:300]}",
+        )
+    return DiffMirrorResult(
+        base_sha=base.commit_sha,
+        head_sha=head.commit_sha,
+        unified_diff=out.decode(errors="replace"),
+    )
 
 
 def _validate_pathspec(value: str) -> str:
