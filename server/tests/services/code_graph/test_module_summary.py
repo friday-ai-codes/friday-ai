@@ -137,13 +137,16 @@ async def test_failsoft_returns_none_on_llm_error() -> None:
     """
     from services.code_graph.module_summary import agenerate_module_summary
 
-    broken = AsyncMock(side_effect=RuntimeError("upstream boom token=sk-secret"))
-    fake = FakeChatModel(responses=["unused"])
-    fake.ainvoke = broken  # type: ignore[method-assign]
+    class _BrokenModel:
+        def bind(self, **_kwargs: Any) -> _BrokenModel:
+            return self
+
+        async def ainvoke(self, *_a: Any, **_k: Any) -> Any:
+            raise RuntimeError("upstream boom token=sk-secret")
 
     with (
         patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
-        patch(_BUILD, return_value=fake),
+        patch(_BUILD, return_value=_BrokenModel()),
     ):
         result = await agenerate_module_summary(_MEMBERS_OK)
 
