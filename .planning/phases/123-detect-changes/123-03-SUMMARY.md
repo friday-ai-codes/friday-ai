@@ -73,7 +73,7 @@ Each task was committed atomically:
 1. **Task 1: Serializer + TOOL_SCHEMA_SNAPSHOT** - `55924415` (feat)
 2. **Task 2: DetectChangesView + url + MCP tests** - `238ffacf` (feat)
 
-**Plan metadata:** (pending docs commit)
+**Plan metadata:** `67ff95af` (docs: complete plan)
 
 ## Files Created/Modified
 
