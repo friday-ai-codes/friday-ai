@@ -55,6 +55,12 @@ logger = structlog.get_logger(__name__)
 # ⚠️ 前缀不得缩写：``graph_build_*`` 已被 ``services/graph_builder.py`` 占用。
 _EVENT_SIGNATURE_COMPUTED: Final[str] = "code_graph_signature_computed"
 
+# 无 history 行时的占位分量长度（与各自 ``values_list`` 的字段数严格一致）。
+# 长度一致才能保证「无行」与「有行但字段全为空」不会碰撞成同一个分量串；
+# 而两者绝不会互相冒充，因为真实行的第一项是 ``id``（UUID），永远不是 ``"-"``。
+_TRACK_A_FIELDS: Final[int] = 6
+_TRACK_B_FIELDS: Final[int] = 5
+
 __all__ = [
     "compute_signature",
 ]
@@ -102,6 +108,71 @@ def _watermark_part(repository_id: str, branch: str) -> str:
     return f"wm:{repo_sha or '-'}"
 
 
+def _track_a_part(repository_id: str) -> str:
+    """② 轨 A 代数 ``ihA:`` —— ChunkEdge 构建轨（``IndexHistory``）。
+
+    依 ``IndexHistory.Meta.ordering = ["-created_at"]`` 取最近一条，纳入
+    ``id`` / ``graph_build_status`` / ``status`` / ``finished_at`` /
+    ``payload_synced_at`` / ``edge_count`` 六项：新一轮索引会换 ``id``，边构建推进
+    会改 ``graph_build_status``，payload 回写会改 ``payload_synced_at``，边数变化
+    会改 ``edge_count`` —— 任何一处动了都换签名。
+
+    ⛔ **刻意不纳入 ``started_at``**：它是 in-flight 判定的专用判据
+    （:func:`detect_edge_build_in_flight` 要求 ``started_at >= cutoff``）。把它拼进
+    签名会让「同一轮构建的在途/超时状态翻转」也变成一次缓存失效，两个判据就纠缠
+    在一起了——签名答「数据变了吗」，在途判定答「现在正在写吗」，二者必须各管各的。
+    """
+    from repositories.models import IndexHistory
+
+    row = (
+        IndexHistory.objects.filter(repository_id=repository_id)
+        .values_list(
+            "id",
+            "graph_build_status",
+            "status",
+            "finished_at",
+            "payload_synced_at",
+            "edge_count",
+        )
+        .first()
+    )
+    values = row if row else ("-",) * _TRACK_A_FIELDS
+    return "ihA:" + ":".join(str(v) for v in values)
+
+
+def _track_b_parts(repository_id: str, branch: str) -> list[str]:
+    """③ 轨 B 代数 ``ghB:`` + 兜底 ``repoG:`` —— Symbol/CallEdge/Endpoint 抽取轨。
+
+    依 ``GraphBuildHistory.Meta.ordering = ["-started_at"]`` 取该分支最近一条
+    （``Index(["repository", "-started_at"])`` 覆盖，单行取值走索引）。
+    ``GraphBuildHistory`` 比 ``Repository.graph_last_built_at`` 更好的地方在于它
+    **按分支隔离**，且带 ``symbols_count`` / ``calls_count`` 两个产物计数。
+
+    ``repoG:`` 兜底**无条件追加**：没有任何 history 行的老仓（``GraphBuildHistory``
+    是后来才引入的）在轨 B 上只剩 ``Repository`` 的聚合态可看，少了这一分量它们的
+    重建会完全不反映在签名里。
+    """
+    from repositories.models import GraphBuildHistory, Repository
+
+    row = (
+        GraphBuildHistory.objects.filter(
+            repository_id=repository_id, branch_name=branch
+        )
+        .values_list("id", "status", "finished_at", "symbols_count", "calls_count")
+        .first()
+    )
+    values = row if row else ("-",) * _TRACK_B_FIELDS
+    parts = ["ghB:" + ":".join(str(v) for v in values)]
+
+    repo_g = (
+        Repository.objects.filter(id=repository_id)
+        .values_list("graph_build_status", "graph_last_built_at")
+        .first()
+    )
+    parts.append("repoG:" + ":".join(str(v) for v in (repo_g or ("-", "-"))))
+    return parts
+
+
 def _count_parts(repository_id: str, branch: str) -> list[str]:
     """④ 计数分量 ``nsym:`` / ``ncall:`` —— 照 Galaxy 的 count 思路兜底。
 
@@ -134,10 +205,27 @@ def compute_signature(
 
     ==========  ====================================================
     ``wm:``     索引水位（分支索引行优先，回落 ``Repository``）
+    ``ihA:``    轨 A 代数：ChunkEdge 构建（``IndexHistory``）
+    ``ghB:``    轨 B 代数：Symbol/CallEdge 抽取（``GraphBuildHistory``）
+    ``repoG:``  轨 B 兜底：无 history 行的老仓
     ``nsym:``   ``Symbol`` 行数（overlay 口径）
     ``ncall:``  ``CallEdge`` 行数（overlay 口径）
     ``excl:``   exclusion 有效规则集指纹（调用方传入）
     ==========  ====================================================
+
+    🚨 **本仓的「边构建」是两条互相独立的轨，签名必须都纳入**（121-CONTEXT D-02）。
+    两条轨的写入方是完全不同的代码路径：
+
+    ===  ==========================  ================================  =====================================  ==========================================
+    轨   跟踪对象                    状态字段                          时间戳                                 写入方
+    ===  ==========================  ================================  =====================================  ==========================================
+    A    ``ChunkEdge``               ``IndexHistory.graph_build_status``  ``finished_at`` / ``payload_synced_at``  ``code_relations/lifecycle.py::enqueue_edge_build_for_history``
+    B    ``Symbol``/``CallEdge``/``Endpoint``  ``Repository.graph_build_status`` + ``GraphBuildHistory.status``  ``graph_last_built_at`` / ``GraphBuildHistory.finished_at``  ``services/graph_builder.py::{reset_repository_graph_progress, mark_repository_graph_terminal}``
+    ===  ==========================  ================================  =====================================  ==========================================
+
+    ⛔ 只纳入轨 A 会漏掉「``Symbol``/``CallEdge`` 被重新抽取但 ``ChunkEdge`` 没变」
+    的失效场景——而 ``CallEdge`` 恰恰是本相位图的**主边源**，那种漏失效意味着图里
+    的调用边整整旧了一代，上层 impact 分析会据此给出过时结论。
 
     成本：全部是带索引的单行取值与 COUNT，毫秒级，与 Galaxy 的 7 条聚合同量级。
 
@@ -153,9 +241,8 @@ def compute_signature(
     """
     started = timezone.now()
     parts: list[str] = [_watermark_part(repository_id, branch)]
-
-    # 分量 ② ③（两条边构建轨的代数）插在这里 —— 见 Task 2。
-
+    parts.append(_track_a_part(repository_id))
+    parts.extend(_track_b_parts(repository_id, branch))
     parts.extend(_count_parts(repository_id, branch))
     parts.append(f"excl:{exclusion_fingerprint}")
 
