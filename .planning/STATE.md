@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-status: executing
-stopped_at: Completed 125-03-PLAN.md
-last_updated: "2026-08-09T20:29:19.651Z"
-last_activity: 2026-08-09 -- Completed 125-03-PLAN.md
+status: verifying
+stopped_at: Completed 125-04-PLAN.md
+last_updated: "2026-08-09T20:35:01.383Z"
+last_activity: 2026-08-09 -- Completed 125-04-PLAN.md
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 34
-  completed_plans: 33
-  percent: 57
+  completed_plans: 34
+  percent: 71
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 ## Current Position
 
-Phase: 125 (community-summary) — EXECUTING
+Phase: 125 (community-summary) — VERIFYING
 Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-08-09 -- Completed 125-03-PLAN.md
+Status: Phase complete — ready for verification
+Last activity: 2026-08-09 -- Completed 125-04-PLAN.md
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
 
@@ -40,7 +40,7 @@ Last activity: 2026-08-09 -- Completed 125-03-PLAN.md
 | 122 | impact / trace 工具面（深度分组 + 置信度分层 + 跨仓 + MCP/对话双面） | IMPACT-01~06 | 🚧 In progress (7/10 plans — 编排入口已落地，MCP/对话壳待接) |
 | 123 | detect_changes 工具本体（水位锚定 diff × Symbol 定位 + 批量 impact） | DIFF-01/02 | ✅ Plans complete (6/6) — ready for verification |
 | 124 | 编码链闭环（容器提交前自查 + MR 描述影响面报告 fail-soft） | DIFF-03/04 | 🚧 In progress (3/4 plans — impact_report core green; MR wiring next) |
-| 125 | 社区检测 + 模块摘要（Louvain + 指纹跳过 + 三点注入不动冻结面） | MOD-01~04 | 🚧 In progress (3/4 plans — MOD-02/03 module_summary+Jaccard green; 125-04 next) |
+| 125 | 社区检测 + 模块摘要（Louvain + 指纹跳过 + 三点注入不动冻结面） | MOD-01~04 | ✅ Plans complete (4/4) — ready for verification |
 | 126 | 执行流 + rename_preview + skills（Process 模型 + affected_processes 回填 + 只读改名清单 + skill 分发） | EXEC-01~03, RENAME-01, SKILL-01 | Not started |
 | 127 | Semgrep 门禁 + LSP 基准（diff-aware advisory + volar/gopls 探测与基准） | TAINT-01~03, LSP-01 | Not started |
 
@@ -347,6 +347,7 @@ Last activity: 2026-08-09 -- Completed 125-03-PLAN.md
 | Phase 125 P01 | 2min | 2 tasks | 11 files |
 | Phase 125 P02 | 4min | 2 tasks | 12 files |
 | Phase 125 P03 | 8min | 2 tasks | 5 files |
+| Phase 125 P04 | 4min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -654,6 +655,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 125]: summary_fn optional on rebuild_communities; 125-02 persists empty summaries — Leaves Jaccard/LLM wiring to 125-03 without blocking MOD-01
 - [Phase 125]: summary stored as JSON text; render_module_summary is sole consumer render
 - [Phase 125]: JACCARD_THRESHOLD stays module constant 0.8; rebuild summary_fn=None means no LLM
+- [Phase 125]: v1 module summary signal is evidence-only (blended_score == router_score); no new weight key — D-15 / avoid frozen-surface golden entanglement
+- [Phase 125]: Research prompt module_summaries from blueprint evidence with 2000/top-5 budget truncate — D-16 / T-125-04
 
 ### Pending Todos
 
@@ -1021,8 +1024,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-09T20:29:19.635Z
-Stopped at: Completed 125-03-PLAN.md
+Last session: 2026-08-09T20:35:01.370Z
+Stopped at: Completed 125-04-PLAN.md
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。
 Earlier: 2026-07-31T07:28:32.180Z — v0.19.0 全部相位执行完毕（105/106/107/109/110）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01；Phase 110 七个 plan 全落地并闭合 GAP-1（前半程失败时间线撒谎）。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。

@@ -39,7 +39,7 @@
 - [x] **MOD-01**: 每仓图上运行社区检测（networkx `louvain_communities` 固定 seed），社区归属以独立模型 + 软引用落库（⛔ 不加在 `Symbol` 上——增量索引 per-file 删建会丢），增量索引后自动刷新
 - [x] **MOD-02**: 社区成员指纹稳定化——指纹（Jaccard 阈值）判定未变的社区跳过摘要重生成；「无代码变更连续重建两次，LLM 调用数为 0」是验收用例
 - [x] **MOD-03**: 每个社区生成 LLM 模块摘要（关键文件 / 入口 / 职责叙述，LLM 调用赋 `call_source`）
-- [ ] **MOD-04**: 模块摘要注入 RepoRouter adapter 层（evidence 侧）与技术方案生成 prompt（⛔ `repo_router_v2.py` 是冻结面不许动）；消费端按相关度排序 + token 预算截断，不全量灌入
+- [x] **MOD-04**: 模块摘要注入 RepoRouter adapter 层（evidence 侧）与技术方案生成 prompt（⛔ `repo_router_v2.py` 是冻结面不许动）；消费端按相关度排序 + token 预算截断，不全量灌入
 
 ### EXEC — 执行流追踪
 
@@ -112,7 +112,7 @@
 | MOD-01 | Phase 125 | Complete |
 | MOD-02 | Phase 125 | Complete |
 | MOD-03 | Phase 125 | Complete |
-| MOD-04 | Phase 125 | Pending |
+| MOD-04 | Phase 125 | Complete |
 | EXEC-01 | Phase 126 | Pending |
 | EXEC-02 | Phase 126 | Pending |
 | EXEC-03 | Phase 126 | Pending |
