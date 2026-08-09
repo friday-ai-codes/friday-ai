@@ -1,28 +1,140 @@
-"""MCP / mr_service 建 MR 安全扫描挂点验收桩（TAINT-02；D-06；归属 127-04）。
+"""MCP / mr_service 建 MR 安全扫描挂点（TAINT-02；D-04 / D-06）。
 
-Wave 0：节点名可收集；实现由 127-04 去 skip。
+与 ``test_coding_security_scan`` 共用 ``attach_security_scan_pending``。
+⛔ 不得改 ``mcp/`` submodule；⛔ 不得改 ``repo_router_v2.py``。
 """
 
 from __future__ import annotations
 
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
 import pytest
 
-_SKIP = pytest.mark.skip(reason="Wave 0 桩：由 127-04 落地")
+from services.code_graph.security_scan_report import SECURITY_SECTION_MARKER
+from services.git_platform.models import MRCreateRequest, MRCreateResult
+
+pytestmark = [pytest.mark.asyncio]
 
 
-@_SKIP
-def test_mcp_create_mr_appends_security_scan_and_enqueues() -> None:
+class _FakeGitClient:
+    def __init__(self) -> None:
+        self.last_request: MRCreateRequest | None = None
+
+    async def create_merge_request(self, request: MRCreateRequest) -> MRCreateResult:
+        self.last_request = request
+        return MRCreateResult(
+            success=True,
+            mr_id="42",
+            mr_url="https://example.com/mr/42",
+        )
+
+
+def _repo(*, name: str = "demo") -> MagicMock:
+    repo = MagicMock()
+    repo.id = uuid4()
+    repo.name = name
+    repo.default_branch = "main"
+    return repo
+
+
+async def test_mcp_create_mr_appends_security_scan_and_enqueues() -> None:
     """MCP create_mr 缝调 append + enqueue；不阻断建 MR。
 
     （Req: TAINT-02, 决策: D-06）
     """
-    pytest.fail("Wave 0 桩")
+    from mcp_tools import merge_request_service as mrs
+
+    client = _FakeGitClient()
+    user = MagicMock(id=3)
+    enqueue = AsyncMock(return_value="job-mcp")
+
+    with (
+        patch.object(mrs, "_get_client", new=AsyncMock(return_value=client)),
+        patch(
+            "services.code_graph.impact_report.build_impact_report_section",
+            new=AsyncMock(return_value=""),
+        ),
+        patch(
+            "services.code_graph.semgrep_enqueue.enqueue_semgrep_scan",
+            new=enqueue,
+        ),
+    ):
+        payload = await mrs.create_merge_request(
+            repository=_repo(),
+            source_branch="feat/x",
+            target_branch="main",
+            title="feat: x",
+            description="## Custom\n\nhello",
+            reviewer_usernames=[],
+            remove_source_branch=True,
+            trace=None,
+            user=user,
+        )
+
+    assert payload["success"]
+    assert client.last_request is not None
+    desc = client.last_request.description
+    assert SECURITY_SECTION_MARKER in desc
+    assert "`pending`" in desc
+    enqueue.assert_awaited()
+    assert "sgp_" not in desc
 
 
-@_SKIP
-def test_mr_service_security_scan_shell_failure_is_fail_open() -> None:
+async def test_mr_service_security_scan_shell_failure_is_fail_open() -> None:
     """mr_service 路径 shell/scan 失败 fail-open，不阻断建 MR。
 
     （Req: TAINT-02, 决策: D-04/D-06；威胁: T-127-02）
     """
-    pytest.fail("Wave 0 桩")
+    from workflows.services import mr_service
+
+    repo = _repo(name="svc")
+    repo.default_branch = "develop"
+    user = MagicMock(id=9)
+    task = MagicMock()
+    task.id = uuid4()
+    task.name = "feat: demo"
+    task.repository = repo
+    task.metadata = {}
+    execution = MagicMock()
+    execution.triggered_by = user
+    execution.triggered_by_id = user.id
+    task.workflow_execution = execution
+
+    client = AsyncMock()
+    client.create_merge_request.return_value = MRCreateResult(
+        success=True,
+        mr_url="https://example.com/mr/9",
+        mr_id="9",
+        has_conflicts=False,
+    )
+
+    async def _fake_token(*args: Any, **kwargs: Any) -> str:
+        return "tok"
+
+    with (
+        patch("workflows.services.mr_service.aresolve_git_token", _fake_token),
+        patch(
+            "workflows.services.mr_service.get_git_platform_client",
+            MagicMock(return_value=client),
+        ),
+        patch(
+            "services.code_graph.impact_report.build_impact_report_section",
+            new=AsyncMock(return_value=""),
+        ),
+        patch(
+            "services.code_graph.security_scan_report.attach_security_scan_pending",
+            new=AsyncMock(side_effect=RuntimeError("security down")),
+        ),
+    ):
+        soft = await mr_service.create_mr_for_task(
+            task=task,
+            branch_name="friday/task-2",
+            commit_sha="a" * 40,
+            modified_files=["x.py"],
+            target_branch="develop",
+        )
+
+    assert soft.success
+    client.create_merge_request.assert_awaited_once()
