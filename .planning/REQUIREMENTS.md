@@ -20,12 +20,12 @@
 
 ### IMPACT — 影响面与调用路径
 
-- [ ] **IMPACT-01**: 用户/agent 对任一符号执行 impact 查询，获得反向依赖的深度分组结果（d1/d2/d3 = WILL BREAK / LIKELY AFFECTED / MAY NEED TESTING 语义标签）
-- [ ] **IMPACT-02**: impact 每条边带 confidence 分档（解析边 / 裸名边 / 跨仓 `match_confidence` 原值）+ reason 说明，调用方可用 `min_confidence` 参数自选精度/召回
-- [ ] **IMPACT-03**: impact 可穿仓库边界（沿 `CrossRepoApiCall` 边），跨仓结果标注 `cross_repo: true` 与独立置信档——改后端 `Endpoint` 能列出受影响的前端调用点
-- [ ] **IMPACT-04**: impact 输出带确定性风险分级（LOW/MEDIUM/HIGH/CRITICAL，阈值判定可解释、不走 LLM）与截断 summary 计数（agent 知道被截断了多少）
-- [ ] **IMPACT-05**: trace 工具：任意两符号间有向最短路，逐跳渲染 file:line + 边类型/置信度；符号重名时返回消歧候选列表，绝不静默取第一个
-- [ ] **IMPACT-06**: impact/trace 经 MCP 工具 + agents 对话工具双面暴露，输出带索引 staleness 提示（「索引落后 N commits」）
+- [x] **IMPACT-01**: 用户/agent 对任一符号执行 impact 查询，获得反向依赖的深度分组结果（d1/d2/d3 = WILL BREAK / LIKELY AFFECTED / MAY NEED TESTING 语义标签）
+- [x] **IMPACT-02**: impact 每条边带 confidence 分档（解析边 / 裸名边 / 跨仓 `match_confidence` 原值）+ reason 说明，调用方可用 `min_confidence` 参数自选精度/召回
+- [x] **IMPACT-03**: impact 可穿仓库边界（沿 `CrossRepoApiCall` 边），跨仓结果标注 `cross_repo: true` 与独立置信档——改后端 `Endpoint` 能列出受影响的前端调用点
+- [x] **IMPACT-04**: impact 输出带确定性风险分级（LOW/MEDIUM/HIGH/CRITICAL，阈值判定可解释、不走 LLM）与截断 summary 计数（agent 知道被截断了多少）
+- [x] **IMPACT-05**: trace 工具：任意两符号间有向最短路，逐跳渲染 file:line + 边类型/置信度；符号重名时返回消歧候选列表，绝不静默取第一个
+- [x] **IMPACT-06**: impact/trace 经 MCP 工具 + agents 对话工具双面暴露，输出带索引 staleness 提示（「索引落后 N commits」）
 
 ### DIFF — detect_changes 与编码链闭环
 
@@ -99,12 +99,12 @@
 | GRAPH-02 | Phase 121 | Complete |
 | GRAPH-03 | Phase 121 | Complete |
 | GRAPH-04 | Phase 121 | Complete |
-| IMPACT-01 | Phase 122 | Pending |
-| IMPACT-02 | Phase 122 | Pending |
-| IMPACT-03 | Phase 122 | Pending |
-| IMPACT-04 | Phase 122 | Pending |
-| IMPACT-05 | Phase 122 | Pending |
-| IMPACT-06 | Phase 122 | Pending |
+| IMPACT-01 | Phase 122 | Complete |
+| IMPACT-02 | Phase 122 | Complete |
+| IMPACT-03 | Phase 122 | Complete |
+| IMPACT-04 | Phase 122 | Complete |
+| IMPACT-05 | Phase 122 | Complete |
+| IMPACT-06 | Phase 122 | Complete |
 | DIFF-01 | Phase 123 | Pending |
 | DIFF-02 | Phase 123 | Pending |
 | DIFF-03 | Phase 124 | Pending |
