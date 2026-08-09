@@ -123,6 +123,113 @@ async def test_cache_hit_no_rebuild(
     assert svc.stats()["total_bytes"] == third.meta.estimated_bytes
 
 
+@pytest.mark.django_db(transaction=True)
+async def test_include_low_confidence_is_part_of_the_cache_key(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """``include_low_confidence`` 是缓存键的一维——**两个方向**都不得串图。
+
+    这个开关改变的是装配产物本身（``loader._load_call_edges`` 对它分流：裸名边装不
+    装载），所以它是「另一张图」而不是「同一张图的一个视图」。少了这一维就是双向错图：
+
+    - **污染方向（危险）**：任一调用方先以 ``True`` 建过图，之后所有用安全默认值的
+      调用方都会命中那张含裸名边的图。「裸名边默认不参与扩散」是本相位的验收内核，
+      而 Phase 122 的 impact 会把凭名字连出来的假边当成真影响面报给 agent——调用方
+      从未开启过这个开关。
+    - **漏报方向**：先建了默认图，随后开启档的请求命中它，拿到一张**没有**裸名边的
+      图，却以为自己开启了低置信度扩散。
+
+    同时钉死 :attr:`GraphMeta.include_low_confidence`：上层拿到图之后必须能自检手上
+    这张图是按哪个口径建的，⛔ 不必去遍历边集反推。
+    """
+    from asgiref.sync import sync_to_async
+
+    from services.code_graph import cache as cache_module
+
+    def _seed() -> None:
+        # 同目录 + 无限定符 + 不在黑名单 ⇒ 三道过滤全过，裸名边会真的建出来。
+        caller = symbols_factory("caller", "src/a.py")
+        symbols_factory("helper", "src/a.py", start_line=50, end_line=60)
+        call_edges_factory(caller, None, callee_name="helper", callee_file="src/a.py")
+
+    await sync_to_async(_seed)()
+
+    svc = cache_module.get_graph_service()
+    repo_id = str(indexed_repo.id)
+
+    # ① 先建开启档（污染源）。
+    opened = await svc.get_graph(repo_id, include_low_confidence=True)
+    assert opened.graph.number_of_edges() == 1
+    assert opened.meta.include_low_confidence is True
+
+    # ② 安全默认值**不得**命中上面那张含裸名边的图。
+    closed = await svc.get_graph(repo_id)
+    assert closed.graph.number_of_edges() == 0, (
+        "默认请求命中了含裸名边的缓存条目——include_low_confidence 不在缓存键里"
+    )
+    assert closed is not opened
+    assert closed.meta.include_low_confidence is False
+
+    # ③ 反方向：默认档已在缓存里，开启档仍须拿到含裸名边的那张图。
+    reopened = await svc.get_graph(repo_id, include_low_confidence=True)
+    assert reopened.graph.number_of_edges() == 1, (
+        "开启档命中了默认档的缓存条目——拿到一张没有裸名边的图却以为开了低置信度扩散"
+    )
+    assert reopened.meta.include_low_confidence is True
+
+    # ④ 两档各自缓存一份、互不覆盖，且都是命中而非重建。
+    assert svc.stats()["entries"] == 2
+    assert set(svc._cache.keys()) == {(repo_id, "", False), (repo_id, "", True)}
+    assert reopened is opened
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_single_flight_placeholder_keyed_by_include_low_confidence(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """single-flight 占位键同样带这一维——等待者不得拿到领头那份 flag 不同的图。
+
+    占位键若只有 ``(repository_id, branch)``，两个 flag 不同的并发请求里后到的那个会
+    挂在领头的占位上，拿到的是**别人开关**下装配的图。这与子图路径为 ``seed_symbol_ids``
+    写下的那条推理完全同形：那是错图，不是慢图。
+
+    这里不起真线程（并发时序不可靠），而是直接检查占位登记：领头装配期间往
+    ``_inflight`` 里塞一个默认档占位，若键少了第三维，开启档的请求会被判成「已有领头」
+    并去等那个永不属于它的结果。
+    """
+    from asgiref.sync import sync_to_async
+    from django.test import override_settings
+
+    from services.code_graph import cache as cache_module
+
+    def _seed() -> None:
+        caller = symbols_factory("caller", "src/a.py")
+        symbols_factory("helper", "src/a.py", start_line=50, end_line=60)
+        call_edges_factory(caller, None, callee_name="helper", callee_file="src/a.py")
+
+    await sync_to_async(_seed)()
+
+    svc = cache_module.get_graph_service()
+    repo_id = str(indexed_repo.id)
+
+    # 手工占住**默认档**的占位（模拟一个正在装配的领头请求）。
+    squatter = cache_module._InFlight(event=threading.Event())
+    svc._inflight[(repo_id, "", False)] = squatter
+
+    # 开启档必须自己当领头、真的装配，⛔ 不得去等那个默认档的占位。
+    # 等待上界压到 0：占位键一旦退化回两维，本调用会去等那把永不 set 的 event，
+    # 于是**立刻** GraphBuildTimeout 而不是挂满 120 秒——回归要红得快才有人看。
+    with override_settings(CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS=0):
+        opened = await svc.get_graph(repo_id, include_low_confidence=True)
+    assert opened.graph.number_of_edges() == 1
+    assert opened.meta.include_low_confidence is True
+
+    # 领头自己的占位已弹出，被占住的那把仍在（本次调用没碰它）。
+    assert (repo_id, "", True) not in svc._inflight
+    assert svc._inflight[(repo_id, "", False)] is squatter
+    svc._inflight.clear()
+
+
 # 121-VALIDATION.md 121-08-T1（planner 追加行）：一次调用只解析一次 exclusion；
 # 连续两次 get_graph 的 _resolve_effective_specs 调用数 ≤ 1。
 @pytest.mark.django_db(transaction=True)
@@ -325,7 +432,7 @@ async def test_partial_edges_rejects_cache_even_when_signature_matches(
     first = await svc.get_graph(repo_id)
     assert first.meta.partial_edges is False
     assert svc.stats()["entries"] == 1
-    cached_signature = svc._cache[(repo_id, "")].built_signature
+    cached_signature = svc._cache[(repo_id, "", False)].built_signature
 
     # ④ 只改这一个字段。⛔ 不碰 last_indexed_commit_sha / Symbol 计数 / CallEdge 计数 /
     #    exclusion 规则 / 任何 GraphBuildHistory 或 Repository 字段。
@@ -585,6 +692,7 @@ def _make_entry(node_count: int, edge_count: int):
         cross_repo_unresolved_count=0,
         cross_repo_branch_unfiltered=False,
         excluded_file_count=0,
+        include_low_confidence=False,
         built_signature="sig",
         built_at=now,
     )
@@ -632,14 +740,14 @@ def test_evict_lru_until_within_budget() -> None:
 
     with capture_logs() as events:
         for name in ("a", "b", "c"):
-            svc._put((name, ""), _make_entry(1, 1))
+            svc._put((name, "", False), _make_entry(1, 1))
 
     # 3 × unit > 预算 ⇒ 最早写入的 a 被逐出，剩 2 × unit ≤ 预算。
     stats = svc.stats()
     assert stats["total_bytes"] == 2 * unit
     assert stats["total_bytes"] <= budget
     assert stats["entries"] == 2
-    assert list(svc._cache.keys()) == [("b", ""), ("c", "")]
+    assert list(svc._cache.keys()) == [("b", "", False), ("c", "", False)]
 
     evicted = [e for e in events if e["event"] == "code_graph_cache_evicted"]
     assert len(evicted) == 1
@@ -658,14 +766,14 @@ def test_evict_loop_drops_multiple_entries() -> None:
     unit = _entry_bytes(1, 1)
     budget = 2 * unit + unit // 2
     svc = GraphService(max_bytes=budget, max_graph_bytes=10 * unit)
-    svc._put(("a", ""), _make_entry(1, 1))  # 1 × unit
-    svc._put(("b", ""), _make_entry(1, 1))  # 2 × unit
+    svc._put(("a", "", False), _make_entry(1, 1))  # 1 × unit
+    svc._put(("b", "", False), _make_entry(1, 1))  # 2 × unit
     assert svc.stats()["entries"] == 2
 
     # 双倍大的条目挤进来 ⇒ 4 × unit > 预算，必须连逐两个才能回到预算内。
-    svc._put(("big", ""), _make_entry(2, 2))
+    svc._put(("big", "", False), _make_entry(2, 2))
 
-    assert list(svc._cache.keys()) == [("big", "")]
+    assert list(svc._cache.keys()) == [("big", "", False)]
     assert svc.stats()["total_bytes"] == 2 * unit <= budget
 
 
@@ -679,14 +787,14 @@ def test_get_entry_moves_to_end_on_hit() -> None:
 
     svc = GraphService(max_bytes=100_000, max_graph_bytes=100_000)
     for name in ("a", "b", "c"):
-        svc._put((name, ""), _make_entry(1, 1))
-    assert list(svc._cache.keys()) == [("a", ""), ("b", ""), ("c", "")]
+        svc._put((name, "", False), _make_entry(1, 1))
+    assert list(svc._cache.keys()) == [("a", "", False), ("b", "", False), ("c", "", False)]
 
-    hit = svc._get_entry(("a", ""))
+    hit = svc._get_entry(("a", "", False))
     assert hit is not None
-    assert list(svc._cache.keys()) == [("b", ""), ("c", ""), ("a", "")]
+    assert list(svc._cache.keys()) == [("b", "", False), ("c", "", False), ("a", "", False)]
 
-    assert svc._get_entry(("missing", "")) is None
+    assert svc._get_entry(("missing", "", False)) is None
 
 
 def test_put_overwrite_does_not_double_count() -> None:
@@ -698,8 +806,8 @@ def test_put_overwrite_does_not_double_count() -> None:
     from services.code_graph.cache import GraphService
 
     svc = GraphService(max_bytes=100_000, max_graph_bytes=100_000)
-    svc._put(("a", ""), _make_entry(1, 1))
-    svc._put(("a", ""), _make_entry(1, 1))
+    svc._put(("a", "", False), _make_entry(1, 1))
+    svc._put(("a", "", False), _make_entry(1, 1))
 
     assert svc.stats() == {
         "entries": 1,
@@ -708,7 +816,7 @@ def test_put_overwrite_does_not_double_count() -> None:
     }
 
     # 覆盖成一个更小的条目时同样要减对（不是只加不减）。
-    svc._put(("a", ""), _make_entry(1, 0))
+    svc._put(("a", "", False), _make_entry(1, 0))
     assert svc.stats()["total_bytes"] == _entry_bytes(1, 0)
 
 
@@ -846,7 +954,7 @@ def test_reset_for_tests_returns_fresh_service() -> None:
     from services.code_graph.cache import _reset_for_tests, get_graph_service
 
     first = get_graph_service()
-    first._put(("repo", ""), _make_entry(1, 1))
+    first._put(("repo", "", False), _make_entry(1, 1))
     assert first.stats()["entries"] == 1
 
     _reset_for_tests()
@@ -865,7 +973,7 @@ def test_singleton_isolation_first_writer() -> None:
 
     svc = get_graph_service()
     assert svc.stats()["entries"] == 0, "看到了上一个用例留下的条目——autouse 重置失效"
-    svc._put(("isolation-a", ""), _make_entry(1, 1))
+    svc._put(("isolation-a", "", False), _make_entry(1, 1))
     assert svc.stats()["entries"] == 1
 
 
@@ -874,7 +982,7 @@ def test_singleton_isolation_second_writer() -> None:
 
     svc = get_graph_service()
     assert svc.stats()["entries"] == 0, "看到了上一个用例留下的条目——autouse 重置失效"
-    svc._put(("isolation-b", ""), _make_entry(1, 1))
+    svc._put(("isolation-b", "", False), _make_entry(1, 1))
     assert svc.stats()["entries"] == 1
 
 
@@ -1325,13 +1433,16 @@ def test_invalidate_evicts_repo_entries() -> None:
     from services.code_graph.cache import GraphService
 
     svc = GraphService(max_bytes=100_000, max_graph_bytes=100_000)
-    svc._put(("repo-a", ""), _make_entry(1, 1))
-    svc._put(("repo-a", "feature/x"), _make_entry(1, 1))
-    svc._put(("repo-b", ""), _make_entry(1, 1))
+    svc._put(("repo-a", "", False), _make_entry(1, 1))
+    svc._put(("repo-a", "feature/x", False), _make_entry(1, 1))
+    # ⚠️ ``include_low_confidence`` 档同样要被按仓驱逐：它是键的第三维，若 invalidate
+    #    只按 ``(repo, branch)`` 前两维匹配，开启档的陈旧图会在钩子之后继续被命中。
+    svc._put(("repo-a", "", True), _make_entry(1, 1))
+    svc._put(("repo-b", "", False), _make_entry(1, 1))
     unit = _entry_bytes(1, 1)
     assert svc.stats() == {
-        "entries": 3,
-        "total_bytes": 3 * unit,
+        "entries": 4,
+        "total_bytes": 4 * unit,
         "max_bytes": 100_000,
     }
 
@@ -1345,7 +1456,9 @@ def test_invalidate_evicts_repo_entries() -> None:
     ):
         svc.invalidate("repo-a")
 
-    assert list(svc._cache.keys()) == [("repo-b", "")], "repo-a 的分支条目没被清干净"
+    assert list(svc._cache.keys()) == [("repo-b", "", False)], (
+        "repo-a 的分支 / include_low_confidence 条目没被清干净"
+    )
     assert svc.stats()["total_bytes"] == unit, "记账没跟着驱逐一起扣减"
 
     memo_spy.assert_called_once_with(repository_id="repo-a")
@@ -1355,8 +1468,8 @@ def test_invalidate_evicts_repo_entries() -> None:
     assert invalidated[0]["component"] == "code_graph"
     assert invalidated[0]["category"] == "sampling"
     assert invalidated[0]["repository_id"] == "repo-a"
-    assert invalidated[0]["evicted_entries"] == 2
-    assert invalidated[0]["evicted_bytes"] == 2 * unit
+    assert invalidated[0]["evicted_entries"] == 3
+    assert invalidated[0]["evicted_bytes"] == 3 * unit
     assert invalidated[0]["total_bytes"] == unit
     # 钩子跑在后台任务上下文，无触发用户 ⇒ 显式记 system（LOGGING-SPEC §3 强制）。
     assert invalidated[0]["initiated_by_user_id"] == "system"
@@ -1384,7 +1497,7 @@ def test_invalidate_swallows_errors_and_never_breaks_the_hook() -> None:
 
     # ① 方法内部失败（memo 清理抛）：条目照样被驱逐，异常不外泄。
     svc = GraphService(max_bytes=100_000, max_graph_bytes=100_000)
-    svc._put(("repo-a", ""), _make_entry(1, 1))
+    svc._put(("repo-a", "", False), _make_entry(1, 1))
     with (
         mock.patch.object(
             access_module,
@@ -1428,11 +1541,11 @@ def test_invalidate_repository_delegates_to_the_singleton() -> None:
     from services.code_graph.cache import get_graph_service
 
     svc = get_graph_service()
-    svc._put(("repo-a", ""), _make_entry(1, 1))
-    svc._put(("repo-b", ""), _make_entry(1, 1))
+    svc._put(("repo-a", "", False), _make_entry(1, 1))
+    svc._put(("repo-b", "", False), _make_entry(1, 1))
 
     invalidate_repository("repo-a")
 
-    assert list(svc._cache.keys()) == [("repo-b", "")]
+    assert list(svc._cache.keys()) == [("repo-b", "", False)]
 
 

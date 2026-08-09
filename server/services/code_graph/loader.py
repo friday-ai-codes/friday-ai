@@ -1071,6 +1071,8 @@ def load_subgraph(
         cross_repo_unresolved_count=cross_repo.unresolved_count,
         cross_repo_branch_unfiltered=cross_repo.loaded_count > 0,
         excluded_file_count=nodes.excluded_file_count,
+        # 如实声明装配口径：这张图是按「装载裸名边」还是「安全默认值」建的。
+        include_low_confidence=include_low_confidence,
         built_signature=exclusion_fingerprint,
         built_at=timezone.now(),
     )
@@ -1181,6 +1183,9 @@ def load_graph(
         # 跨仓边时才置真：没有跨仓边就不存在这个缺口，长鸣的标记等于失效的标记。
         cross_repo_branch_unfiltered=cross_repo.loaded_count > 0,
         excluded_file_count=nodes.excluded_file_count,
+        # 如实声明装配口径：这张图是按「装载裸名边」还是「安全默认值」建的。上层据此
+        # 自检手上这张图是否可能含 bare_name 边，⛔ 不必去遍历边集反推。
+        include_low_confidence=include_low_confidence,
         # loader 手上只有 exclusion 这一个分量；完整的复合签名（水位 ‖ 两条边构建轨 ‖
         # 计数 ‖ 规则指纹）由 ``cache.py`` 用 ``signature.compute_signature`` 算好后覆写。
         built_signature=exclusion_fingerprint,

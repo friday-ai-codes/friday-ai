@@ -175,6 +175,7 @@ def _make_meta(**overrides: object) -> GraphMeta:
         "cross_repo_unresolved_count": 0,
         "cross_repo_branch_unfiltered": False,
         "excluded_file_count": 0,
+        "include_low_confidence": False,
         "built_signature": "deadbeef",
         "built_at": datetime(2026, 8, 9, tzinfo=UTC),
     }
@@ -207,7 +208,7 @@ def test_value_objects_are_frozen_and_slotted() -> None:
 
 
 def test_graph_meta_carries_all_declared_markers() -> None:
-    """GraphMeta 的 15 个字段是契约；少一个上层就少一条可信度声明。"""
+    """GraphMeta 的 16 个字段是契约；少一个上层就少一条可信度声明。"""
     field_names = [f.name for f in dataclasses.fields(GraphMeta)]
     assert set(field_names) == {
         "repository_id",
@@ -223,19 +224,26 @@ def test_graph_meta_carries_all_declared_markers() -> None:
         "cross_repo_unresolved_count",
         "cross_repo_branch_unfiltered",
         "excluded_file_count",
+        "include_low_confidence",
         "built_signature",
         "built_at",
     }
-    assert len(field_names) == 15
+    assert len(field_names) == 16
 
-    # 四个标记字段必填、无默认值——漏透出要在 review 暴露，而不是静默取默认。
+    # 五个标记字段必填、无默认值——漏透出要在 review 暴露，而不是静默取默认。
     marker_fields = {
         f.name: f
         for f in dataclasses.fields(GraphMeta)
         if f.name
-        in {"partial_edges", "degraded", "low_resolution", "cross_repo_unresolved_count"}
+        in {
+            "partial_edges",
+            "degraded",
+            "low_resolution",
+            "cross_repo_unresolved_count",
+            "include_low_confidence",
+        }
     }
-    assert len(marker_fields) == 4
+    assert len(marker_fields) == 5
     for f in marker_fields.values():
         assert f.default is dataclasses.MISSING
         assert f.default_factory is dataclasses.MISSING
