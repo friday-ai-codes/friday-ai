@@ -23,3 +23,19 @@
 `test_perf_diagnostics.py` / `test_signature.py`），均为 Phase 121 交付物，本 plan 未触碰。
 122-01 交付的 4 个文件（`conftest.py` / `test_impact.py` / `test_trace.py` /
 `test_symbol_resolve.py`）与 Task 3 的 5 个文件均为 already formatted。
+
+## 122-05
+
+### 既有 ruff error（`services/` 下两处，本 plan 从未触碰的文件）
+
+122-05 的 `<verification>` 要求跑 `uv run ruff check services/`，这是本相位第一次把
+gate 扩到整个 `services/` 目录，于是暴露出两条**先于本 plan 存在**的 error：
+
+| 文件 | 规则 | 内容 |
+|---|---|---|
+| `server/services/branch_search.py:109` | F841 | `base_collection` 赋值后未使用 |
+| `server/services/project_context_packer.py:415` | I001 | 函数体内 import 块未排序 |
+
+两个文件 `git status` 均显示未被本会话或并发会话修改（最后改动分别是 `c3047129` /
+`a3759080`），与 122-05 的编辑面无交集。按 scope boundary 未修。本 plan 新增/修改的
+5 个文件 `ruff check` 全绿。
