@@ -1,7 +1,7 @@
-"""``impact_analysis`` / ``trace_call_path`` 对话工具薄壳（Phase 122 IMPACT-06）。
+"""``impact_analysis`` / ``trace_call_path`` / ``detect_changes`` 对话工具薄壳。
 
-与 122-08 的 MCP 壳共用 122-07 的 ``run_impact`` / ``run_trace`` 编排入口（D-21）：
-壳内零算法，``output["data"]`` 原样透出编排信封。
+与 MCP 壳共用 ``run_impact`` / ``run_trace`` / ``run_detect_changes`` 编排入口
+（D-21 / D-13）：壳内零算法，``output["data"]`` 原样透出编排信封。
 
 **注册路径**：通过 ``agents/tools/__init__.py`` 顶层 import 触发 ``@tool`` 注册；
 还必须同时挂进 ``chat_runner._INDEXED_TOOL_NAMES``——注册 ≠ 暴露
@@ -20,6 +20,7 @@ from agents.tools.base import ToolCategory, ToolResult, tool
 from agents.tools.delivery_knowledge_tools import _resolve_conversation_user
 from agents.tools.project_read_tools import _CONV_ID_PARAM
 from agents.tools.schemas.graph_tools import (
+    DetectChangesToolInput,
     ImpactAnalysisToolInput,
     TraceCallPathToolInput,
 )
@@ -74,6 +75,34 @@ _DESC_TRACE = (
     "DO NOT USE FOR finding a handler by URL — use `find_api_handler`.\n"
     "DO NOT USE FOR fuzzy semantic retrieval — use `search_repository_code`.\n"
     "DO NOT USE FOR chunk-level relation walks — use `find_related_code`."
+)
+
+_DESC_DETECT = (
+    "Detect which indexed symbols are affected by a git range, then batch-run "
+    "impact analysis on those seeds.\n"
+    "\n"
+    "USE WHEN the user asks what broke / what is impacted by commits on a branch "
+    "or SHA relative to the last indexed snapshot:\n"
+    "  - 'what did feature/foo change vs our index?' → "
+    "detect_changes(compare='feature/foo', ...)\n"
+    "  - 'MR blast radius for this tip SHA' → detect_changes(compare='<sha>', "
+    "base_ref='origin/main' for declaration only)\n"
+    "\n"
+    "IMPORTANT agent notes:\n"
+    "  - `compare` is the **diff head** (branch / tag / SHA).\n"
+    "  - Diff **base is always the repository's last_indexed_commit_sha** — "
+    "not user-chosen. Optional `base_ref` is declarative MR metadata only; "
+    "it never changes the left side of the diff.\n"
+    "  - There is **no** `branch` overlay param; graph coordinates stay on the "
+    "index watermark.\n"
+    "  - Results include `staleness`, `graph`, `diff_base_sha`, `diff_head_sha`; "
+    "read those before trusting conclusions.\n"
+    "  - Orchestration `ok=false` (e.g. empty_diff_range) is a query outcome "
+    "inside the envelope, not a tool crash.\n"
+    "\n"
+    "DO NOT USE FOR a single known symbol blast radius — use `impact_analysis`.\n"
+    "DO NOT USE FOR call-path between two symbols — use `trace_call_path`.\n"
+    "DO NOT USE FOR fuzzy semantic retrieval — use `search_repository_code`."
 )
 
 _PARAMS_IMPACT: dict[str, Any] = {
@@ -191,6 +220,51 @@ _PARAMS_TRACE: dict[str, Any] = {
         **_CONV_ID_PARAM,
     },
     "required": ["repository_id", "conversation_id"],
+}
+
+_PARAMS_DETECT: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "repository_id": {
+            "type": "string",
+            "description": "**REQUIRED.** 目标仓库 UUID",
+        },
+        "compare": {
+            "type": "string",
+            "description": (
+                "**REQUIRED.** diff head（分支名 / tag / 完整 SHA）；"
+                "diff 左端永远是索引水位 last_indexed_commit_sha"
+            ),
+        },
+        "base_ref": {
+            "type": "string",
+            "description": (
+                "可选：MR 语义声明透出（如 origin/main）；不参与 diff 左端，不改图坐标"
+            ),
+        },
+        "max_depth": {
+            "type": "integer",
+            "description": "遍历深度 1–3，默认 3",
+            "default": 3,
+        },
+        "min_confidence": {
+            "type": "number",
+            "description": "边置信度下限 0.0–1.0，默认 1.0",
+            "default": 1.0,
+        },
+        "include_low_confidence": {
+            "type": "boolean",
+            "description": "是否纳入低置信度边",
+            "default": False,
+        },
+        "limit": {
+            "type": "integer",
+            "description": "响应条数上限 1–200，默认 200",
+            "default": 200,
+        },
+        **_CONV_ID_PARAM,
+    },
+    "required": ["repository_id", "compare", "conversation_id"],
 }
 
 
@@ -364,9 +438,7 @@ async def _impact_analysis_impl(
         tool_trace_payload,
     )
 
-    graph_branch = await resolve_tool_graph_branch(
-        validated.repository_id, repo, validated.branch
-    )
+    graph_branch = await resolve_tool_graph_branch(validated.repository_id, repo, validated.branch)
     orch_started = perf_counter()
     try:
         result = await run_impact(
@@ -560,9 +632,7 @@ async def _trace_call_path_impl(
         tool_trace_payload,
     )
 
-    graph_branch = await resolve_tool_graph_branch(
-        validated.repository_id, repo, validated.branch
-    )
+    graph_branch = await resolve_tool_graph_branch(validated.repository_id, repo, validated.branch)
     orch_started = perf_counter()
     try:
         result = await run_trace(
@@ -634,4 +704,176 @@ async def _trace_call_path_impl(
     )
 
 
-__all__ = ["impact_analysis", "trace_call_path"]
+@tool(
+    name="detect_changes",
+    description=_DESC_DETECT,
+    category=ToolCategory.PROJECT.value,
+    parameters=_PARAMS_DETECT,
+)
+async def detect_changes(
+    repository_id: str | None = None,
+    compare: str = "",
+    base_ref: str | None = None,
+    max_depth: int = 3,
+    min_confidence: float = 1.0,
+    include_low_confidence: bool = False,
+    limit: int = 200,
+    conversation_id: str = "",
+) -> ToolResult:
+    """变更检测对话薄壳（Phase 123 DIFF-01/02 / D-13）。
+
+    ``success=False`` 只留给：会话 owner 解析失败、输入校验失败、翻译后的
+    ``GraphError``。编排层 ``ok=False`` 仍返回 ``success=True``，信封里的
+    ``ok`` 才是查询结论——与 MCP HTTP 200 对齐（D-13）。
+    """
+    try:
+        return await _detect_changes_impl(
+            repository_id=repository_id,
+            compare=compare,
+            base_ref=base_ref,
+            max_depth=max_depth,
+            min_confidence=min_confidence,
+            include_low_confidence=include_low_confidence,
+            limit=limit,
+            conversation_id=conversation_id,
+        )
+    except ValidationError as exc:
+        logger.warning(
+            "detect_changes_tool_failed",
+            error_type="ValidationError",
+            error=redact_secrets_in_text(str(exc))[:500],
+            component=_COMPONENT,
+            category="caller",
+        )
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
+    except Exception as exc:  # noqa: BLE001 — 双层防御：永不冒泡
+        logger.warning(
+            "detect_changes_tool_failed",
+            error_type=type(exc).__name__,
+            error=redact_secrets_in_text(str(exc))[:500],
+            component=_COMPONENT,
+            category="caller",
+        )
+        return ToolResult(
+            success=False,
+            error=redact_secrets_in_text(str(exc))[:500],
+        )
+
+
+async def _detect_changes_impl(
+    *,
+    repository_id: str | None,
+    compare: str,
+    base_ref: str | None,
+    max_depth: int,
+    min_confidence: float,
+    include_low_confidence: bool,
+    limit: int,
+    conversation_id: str,
+) -> ToolResult:
+    started = perf_counter()
+    # 🚨 fail-closed 第一步：与 impact 同构——会话 owner 未解析则硬拒。
+    user = await _resolve_conversation_user(conversation_id)
+    if user is None:
+        return ToolResult(
+            success=False,
+            error="无法解析会话 owner，拒绝分析（fail-closed）",
+        )
+
+    try:
+        validated = DetectChangesToolInput(
+            repository_id=repository_id or "",
+            compare=compare or "",
+            base_ref=base_ref,
+            max_depth=int(max_depth),
+            min_confidence=float(min_confidence),
+            include_low_confidence=bool(include_low_confidence),
+            limit=int(limit),
+        )
+    except ValidationError as exc:
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
+
+    repo, err_code = await _resolve_tool_repo(validated.repository_id)
+    if repo is None:
+        return ToolResult(
+            success=False,
+            error=_REPO_ERR_MESSAGES.get(err_code or "", "仓库不可用"),
+        )
+
+    from interactions.models import RetrievalTrace
+    from services.code_graph import GraphError
+    from services.code_graph_tools import (
+        graph_error_to_tool_error,
+        run_detect_changes,
+        tool_trace_payload,
+    )
+
+    # ⛔ 不调 resolve_tool_graph_branch——交叠坐标由编排锁定索引水位（D-01/D-02）
+    orch_started = perf_counter()
+    try:
+        result = await run_detect_changes(
+            repository_id=validated.repository_id,
+            repo=repo,
+            user=user,
+            compare=validated.compare,
+            base_ref=validated.base_ref,
+            max_depth=validated.max_depth,
+            min_confidence=validated.min_confidence,
+            include_low_confidence=validated.include_low_confidence,
+            limit=validated.limit,
+        )
+    except GraphError as exc:
+        code, message = graph_error_to_tool_error(exc)
+        logger.warning(
+            "detect_changes_tool_failed",
+            error_code=code,
+            error=redact_secrets_in_text(str(exc))[:500],
+            error_type=type(exc).__name__,
+            component=_COMPONENT,
+            category="caller",
+            initiated_by_user_id=str(user.id),
+        )
+        return ToolResult(success=False, error=message)
+
+    orchestration_ms = int((perf_counter() - orch_started) * 1000)
+    duration_ms = int((perf_counter() - started) * 1000)
+    await _record_chat_retrieval(
+        RetrievalTrace.Kind.EDGE,
+        tool_trace_payload(
+            result,
+            tool="detect_changes",
+            duration_ms=duration_ms,
+            orchestration_ms=orchestration_ms,
+        ),
+        conversation_id=conversation_id,
+        user=user,
+    )
+    summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+    logger.info(
+        "detect_changes_tool_done",
+        conversation_id=conversation_id,
+        repository_id=validated.repository_id,
+        ok=bool(result.get("ok")),
+        error_code=str(result.get("error_code") or ""),
+        result_count=int(summary.get("affected_symbol_count") or 0) if summary else 0,
+        duration_ms=duration_ms,
+        component=_COMPONENT,
+        category="caller",
+        initiated_by_user_id=str(user.id),
+    )
+    return ToolResult(
+        success=True,
+        output={
+            "data": result,
+            "metadata": {
+                "repository_id": validated.repository_id,
+                "compare": validated.compare,
+                "base_ref": validated.base_ref,
+                "conversation_id": conversation_id,
+                "duration_ms": duration_ms,
+            },
+        },
+    )
+
+
+__all__ = ["impact_analysis", "trace_call_path", "detect_changes"]
