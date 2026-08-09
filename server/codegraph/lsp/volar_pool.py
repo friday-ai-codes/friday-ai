@@ -164,10 +164,11 @@ class VolarPool:
         )
 
     def shutdown_all(self, timeout: float = 5.0) -> None:
-        """串行 stop 全部 supervisor + 清池；吞所有异常防 atexit cascade。
+        """串行 stop 全部 supervisor + 清池 + 孤儿收割；吞所有异常防 atexit cascade。
 
         per Pitfall P-checkpoint：atexit 阶段 background loop 可能已停，
         每 supervisor.stop 单独 try/except + log warning。
+        D-14：finally 路径 best-effort 调 ``reap_orphan_lsp_processes``。
         """
         with self._lock:
             snapshot = list(self._pool.items())
@@ -183,6 +184,12 @@ class VolarPool:
                     error=str(exc),
                 )
         logger.info(_EVENT_POOL_SHUTDOWN, count=len(snapshot))
+        try:
+            from codegraph.lsp.orphan_reap import reap_orphan_lsp_processes
+
+            reap_orphan_lsp_processes(live_pids=set())
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # =============================================================================

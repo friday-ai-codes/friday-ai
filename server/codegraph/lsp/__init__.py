@@ -110,7 +110,7 @@ def get_or_create_supervisor(
 
 
 def shutdown_all_supervisors(timeout: float = 5.0) -> None:
-    """批量优雅停止所有 supervisor（清理 _SUPERVISORS 缓存）。"""
+    """批量优雅停止所有 supervisor（清理 _SUPERVISORS 缓存）+ 孤儿收割（D-14）。"""
     with _LOCK:
         snapshot = list(_SUPERVISORS.values())
         _SUPERVISORS.clear()
@@ -125,10 +125,16 @@ def shutdown_all_supervisors(timeout: float = 5.0) -> None:
                 error_class=type(exc).__name__,
                 error=str(exc),
             )
+    try:
+        from codegraph.lsp.orphan_reap import reap_orphan_lsp_processes
+
+        reap_orphan_lsp_processes(live_pids=set())
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _atexit_cleanup(supervisor: LspSupervisor) -> None:
-    """atexit 钩子：进程退出时调 supervisor.stop（吞所有异常 + log warning）。"""
+    """atexit 钩子：进程退出时调 supervisor.stop + orphan reap（吞所有异常）。"""
     try:
         supervisor.call_async_in_loop(supervisor.stop, timeout=5.0)
     except Exception as exc:  # noqa: BLE001
@@ -138,6 +144,12 @@ def _atexit_cleanup(supervisor: LspSupervisor) -> None:
             error_class=type(exc).__name__,
             error=str(exc),
         )
+    try:
+        from codegraph.lsp.orphan_reap import reap_orphan_lsp_processes
+
+        reap_orphan_lsp_processes(live_pids=set())
+    except Exception:  # noqa: BLE001
+        pass
 
 
 __all__ = ["get_or_create_supervisor", "shutdown_all_supervisors"]
