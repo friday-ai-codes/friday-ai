@@ -85,7 +85,7 @@ Each task was committed atomically:
    - main `a8c1f6c6` — `feat(126-05): 更新 skills 子模块指针（friday-impact / friday-refactoring）`
 2. **Task 2: SKILL_NAMES 扩展 + sync + sha256 守卫（D-14/D-15）** — RED `74f6756b` (test) → GREEN `60ce8e7c` (feat)
 
-**Plan metadata:** (pending docs commit)
+**Plan metadata:** `51ed2a65` (docs: complete plan SUMMARY)
 
 ## Files Created/Modified
 
@@ -141,5 +141,5 @@ Frozen confirmation: commits `a8c1f6c6`..`60ce8e7c` do not touch `server/codegra
 - FOUND: `skills/skills/friday-refactoring/SKILL.md`
 - FOUND: `task/assets/skills/friday-impact/SKILL.md`
 - FOUND: `task/assets/skills/friday-refactoring/SKILL.md`
-- FOUND: commit `54f15aa` (skills submodule)
-- FOUND: commits `a8c1f6c6`, `74f6756b`, `60ce8e7c` (main)
+- FOUND: commit `54f15aa` via `git -C skills log` (skills submodule)
+- FOUND: commits `a8c1f6c6`, `74f6756b`, `60ce8e7c`, `51ed2a65` (main)

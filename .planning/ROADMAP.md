@@ -260,7 +260,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 126-05-PLAN.md — Wave 4：friday-impact / friday-refactoring skill + SKILL_NAMES sync/hash
+- [x] 126-05-PLAN.md — Wave 4：friday-impact / friday-refactoring skill + SKILL_NAMES sync/hash
 
 ### Phase 127: Semgrep 门禁 + LSP 基准
 
@@ -492,7 +492,7 @@ Plans:
 | 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 6/6 | Complete   | 2026-08-09 |
 | 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 4/4 | Complete   | 2026-08-09 |
 | 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 4/4 | Complete   | 2026-08-09 |
-| 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 4/5 | In Progress|  |
+| 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 5/5 | Complete   | 2026-08-09 |
 | 127. Semgrep 门禁 + LSP 基准 | v0.22.0 | TAINT-01~03, LSP-01 | 0/? | Not started | - |
 
 **Coverage (v0.22.0):** 27/27 需求全部映射（GRAPH 4 / IMPACT 6 / DIFF 4 / MOD 4 / EXEC 3 / RENAME 1 / TAINT 3 / LSP 1 / SKILL 1），无孤儿、无重复。
