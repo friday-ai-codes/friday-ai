@@ -405,3 +405,141 @@ async def test_two_surfaces_same_payload(
     assert "run_id" in amb_mcp_body
     assert "run_id" not in amb_tool_data
     _assert_surfaces_byte_equal(amb_mcp_data, amb_tool_data)
+
+
+def _build_trace_fixture(repository) -> tuple[str, str]:
+    """造 A→B→C 解析调用链，返回 ``(source_name, target_name)``。"""
+    from codegraph.models import CallEdge, Symbol
+
+    names = ("trace_src", "trace_mid", "trace_dst")
+    symbols = []
+    for i, name in enumerate(names):
+        symbols.append(
+            Symbol.objects.create(
+                repository=repository,
+                branch_name="",
+                name=name,
+                symbol_type="FUNCTION",
+                file_path=f"src/trace/{name}.py",
+                start_line=(i + 1) * 10,
+                end_line=(i + 1) * 10 + 5,
+            )
+        )
+    for i in range(len(symbols) - 1):
+        CallEdge.objects.create(
+            repository=repository,
+            branch_name="",
+            caller_symbol=symbols[i],
+            caller_file=symbols[i].file_path,
+            callee_symbol=symbols[i + 1],
+            callee_name=symbols[i + 1].name,
+            call_type="DIRECT",
+            line_number=i + 1,
+        )
+    return names[0], names[-1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_two_surfaces_same_payload_trace(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository,
+    access_user,
+    project,
+) -> None:
+    """**双面同源（trace）**：``trace_call_path`` MCP / 对话壳 ``data`` 逐字节相同（D-21）。
+
+    与 ``test_two_surfaces_same_payload`` 同构：成功态（``found=True``）+ ``ambiguous_symbol``。
+    ⛔ 不许 mock ``run_trace``。
+
+    （Req: IMPACT-06, 决策: D-21；ME-02）
+    """
+    from asgiref.sync import sync_to_async
+
+    from agents.tools.graph_tools import trace_call_path
+    from chat.models import Conversation
+    from codegraph.models import Symbol
+
+    client, _plaintext = mcp_client
+    conversation = await Conversation.objects.acreate(
+        space=project,
+        title="dual-surface-trace",
+        created_by=access_user,
+    )
+    source_name, target_name = await sync_to_async(_build_trace_fixture)(
+        indexed_repository
+    )
+
+    payload = {
+        "repository_id": str(indexed_repository.id),
+        "source": source_name,
+        "target": target_name,
+        "min_confidence": 1.0,
+        "alt_path_cap": 10,
+    }
+
+    # —— 第一轮：found=True ——
+    response = await sync_to_async(client.post)(TRACE_URL, payload, format="json")
+    assert response.status_code == 200
+    mcp_body = response.json()
+    assert mcp_body.get("ok") is True
+    assert mcp_body.get("found") is True
+    mcp_data = {k: v for k, v in mcp_body.items() if k != "run_id"}
+
+    tool_result = await trace_call_path(
+        **payload,
+        conversation_id=str(conversation.id),
+    )
+    assert tool_result.success is True
+    tool_data = tool_result.output["data"]
+    assert tool_data.get("found") is True
+
+    assert "run_id" in mcp_body
+    assert "run_id" not in tool_data
+    _assert_surfaces_byte_equal(mcp_data, tool_data)
+
+    # —— 第二轮：ambiguous_symbol（source 端重名）——
+    def _seed_ambiguous_source() -> None:
+        for i, path in enumerate(
+            ("src/trace/a/dup.py", "src/trace/b/dup.py", "src/trace/c/dup.py"),
+            start=1,
+        ):
+            Symbol.objects.create(
+                repository=indexed_repository,
+                branch_name="",
+                name="dup_src",
+                symbol_type="FUNCTION",
+                file_path=path,
+                start_line=i * 10,
+                end_line=i * 10 + 5,
+            )
+
+    await sync_to_async(_seed_ambiguous_source)()
+    amb_payload = {
+        "repository_id": str(indexed_repository.id),
+        "source": "dup_src",
+        "target": target_name,
+        "min_confidence": 1.0,
+        "alt_path_cap": 10,
+    }
+
+    amb_response = await sync_to_async(client.post)(
+        TRACE_URL, amb_payload, format="json"
+    )
+    assert amb_response.status_code == 200
+    amb_mcp_body = amb_response.json()
+    assert amb_mcp_body["ok"] is False
+    assert amb_mcp_body["error_code"] == "ambiguous_symbol"
+    amb_mcp_data = {k: v for k, v in amb_mcp_body.items() if k != "run_id"}
+
+    amb_tool = await trace_call_path(
+        **amb_payload,
+        conversation_id=str(conversation.id),
+    )
+    assert amb_tool.success is True
+    amb_tool_data = amb_tool.output["data"]
+    assert amb_tool_data["error_code"] == "ambiguous_symbol"
+
+    assert "run_id" in amb_mcp_body
+    assert "run_id" not in amb_tool_data
+    _assert_surfaces_byte_equal(amb_mcp_data, amb_tool_data)
