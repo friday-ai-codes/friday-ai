@@ -212,7 +212,13 @@ Plans:
   3. 每个社区有 LLM 模块摘要（关键文件 / 入口 / 职责叙述），LLM 调用赋新 `call_source`（LOGGING-SPEC §4.1 先登记）
   4. 模块摘要注入 RepoRouter adapter 层（evidence 侧）与技术方案生成 prompt，消费端按相关度排序 + token 预算截断不全量灌入；⛔ `repo_router_v2.py` 冻结面全程零改动
 
-**Plans**: TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 125-01-PLAN.md — Wave 0：登记 `call_source=module_summary` + 全套验收测试桩 + 冻结面守卫桩
+- [ ] 125-02-PLAN.md — Wave 1：`SymbolCommunity` + Louvain/指纹 + durable `QUEUE_GRAPH` 双钩子 enqueue
+- [ ] 125-03-PLAN.md — Wave 2：`module_summary` LLM + Jaccard 跳过 + rebuild×2 LLM=0 验收
+- [ ] 125-04-PLAN.md — Wave 3：三点 adapter 注入（evidence / signal / 调研 prompt）+ 冻结面守卫绿
 
 ### Phase 126: 执行流 + rename_preview + skills
 
@@ -458,7 +464,7 @@ Plans:
 | 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 10/10 | Complete | 2026-08-09 |
 | 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 6/6 | Complete   | 2026-08-09 |
 | 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 4/4 | Complete   | 2026-08-09 |
-| 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 0/? | Not started | - |
+| 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 0/4 | Planned | - |
 | 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 0/? | Not started | - |
 | 127. Semgrep 门禁 + LSP 基准 | v0.22.0 | TAINT-01~03, LSP-01 | 0/? | Not started | - |
 
