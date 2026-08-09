@@ -55,6 +55,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Final
 
+import networkx as nx
 import structlog
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -704,6 +705,16 @@ class GraphService:
            个并发请求只装配一次；② LRU 让建过的图不再重建；③ 超预算大仓走按需子图
            ——第三层才是大仓的真正防线，因为前两层只降频次、不降单次时长。
 
+           ⚠️ **等待者那一侧同样占线程**（此前未记，ME-08）：single-flight 的后来者走
+           :meth:`_wait_for_inflight`，里面的 ``event.wait(timeout)`` 是纯阻塞调用，同样
+           跑在执行器线程上，上界是 ``CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS``。请求链路
+           上 Django 为每个请求开 ``ThreadSensitiveContext``，影响限于该请求自身；但
+           **不经过请求的调用方**（channels consumer、``background_runner``、durable
+           worker）落在全局 ``SyncToAsync.single_thread_executor`` 上——那是**进程唯一
+           一条**线程，一个等待者卡在那里，本进程所有其它非请求 ``sync_to_async`` 工作
+           全部排队。不是死锁（领头永远在 ``finally`` 里 ``set``），但是一次可观的头
+           阻塞。调那个 setting 之前请先读这一段。
+
         :param repository_id: 仓库主键。
         :param branch: ``""`` = base 分支（与 ``Symbol.branch_name`` 同口径）。
         :param user: 触发用户；``None`` 表示后台/系统路径，埋点记 ``system``。
@@ -889,9 +900,11 @@ class GraphService:
         ``settings.CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS``。
 
         ⚠️ 这里的 ``event.wait()`` 是阻塞调用，运行在 ``sync_to_async`` 派发的执行器
-        线程上、不在 event loop 线程上，所以不阻塞 loop（RESEARCH Pitfall 7）。
+        线程上、不在 event loop 线程上，所以不阻塞 loop（RESEARCH Pitfall 7）。**但它
+        占住那条执行器线程**——非请求路径上那是进程唯一一条，代价见 :meth:`get_graph`
+        的 ``.. note::``。这正是默认上界取 30 秒而非 120 秒的理由。
         """
-        timeout = float(getattr(settings, "CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS", 120))
+        timeout = float(getattr(settings, "CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS", 30))
         if not inflight.event.wait(timeout):
             raise GraphBuildTimeout(
                 "等待同键的图构建超时",
@@ -998,6 +1011,18 @@ class GraphService:
             # 在途时这张图是「半新」的：如实打标记，且**不写进缓存**——缓存下来会让
             # 后续命中一直返回半新图，污染面比这一次大得多。
             cacheable = not in_flight
+
+        # 🚨 冻结图对象再交出去。``CodeGraph`` 是 frozen、``chunk_evidence`` 也收成了
+        #    tuple，唯独 ``graph`` 此前是个完全可变的 ``MultiDiGraph``，而缓存命中时**所有
+        #    调用方拿到的是同一个实例**——任一上层工具一次 ``add_edge`` / ``remove_node``
+        #    就会永久污染本 worker 里所有后续命中，且不会有任何信号。
+        #    ``nx.freeze`` 是 networkx 自带的零内存代价硬约束：修改抛 ``NetworkXError``，
+        #    只读遍历与 ``g.reverse(copy=False)`` 视图完全不受影响，需要改写的调用方走
+        #    ``graph.copy()``（副本不带冻结标记）。
+        #    ⚠️ 这里对**每一张**出图都冻结、不只是入缓存的那些：子图与半新图虽然不进缓存，
+        #    但让「从 GraphService 拿到的图一律只读」成为一条无例外的契约，比让调用方去
+        #    分辨手上这张能不能改要可靠得多。
+        nx.freeze(graph.graph)
 
         # 记账用**实际** node/edge 计数重算（准入用的是 COUNT 估算，两者可能因 exclusion
         # 过滤而不同）；同一个数必须同时写进 GraphMeta 与 _Entry，否则 LRU 记的与元数据

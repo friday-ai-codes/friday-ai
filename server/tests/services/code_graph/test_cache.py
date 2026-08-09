@@ -1281,6 +1281,58 @@ async def test_degraded_on_demand_subgraph(indexed_repo, symbols_factory) -> Non
 
 
 @pytest.mark.django_db(transaction=True)
+async def test_returned_graph_is_frozen_against_in_place_mutation(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """从 ``GraphService`` 拿到的图**只读**——就地改写会污染所有后续命中。
+
+    ``CodeGraph`` 是 frozen、``chunk_evidence`` 也收成了 tuple，唯独 ``graph`` 是个完全
+    可变的 ``MultiDiGraph``，而缓存命中时所有调用方拿到的是**同一个实例**：任一上层工具
+    一次 ``add_edge`` 就会永久污染本 worker 里所有后续命中，且不会有任何信号。
+    ``nx.freeze`` 把这条纪律从「靠自律」变成「抛异常」，且零内存代价。
+    """
+    import networkx as nx
+    from asgiref.sync import sync_to_async
+
+    from services.code_graph import cache as cache_module
+
+    def _seed() -> None:
+        caller = symbols_factory("caller", "src/a.py")
+        callee = symbols_factory("callee", "src/b.py")
+        call_edges_factory(caller, callee)
+
+    await sync_to_async(_seed)()
+
+    svc = cache_module.get_graph_service()
+    repo_id = str(indexed_repo.id)
+
+    result = await svc.get_graph(repo_id)
+    assert nx.is_frozen(result.graph)
+
+    for mutate in (
+        lambda: result.graph.add_edge("x", "y"),
+        lambda: result.graph.add_node("z"),
+        lambda: result.graph.clear(),
+    ):
+        with pytest.raises(nx.NetworkXError):
+            mutate()
+
+    # 只读遍历与反向视图不受影响（遍历纪律靠的就是这两个）。
+    assert result.graph.number_of_nodes() == 2
+    assert result.graph.reverse(copy=False).number_of_edges() == 1
+
+    # 需要改写的调用方走 copy()——副本可写，且**不**回污缓存里那张。
+    writable = result.graph.copy()
+    writable.add_node("scratch")
+    assert "scratch" not in result.graph
+
+    # 缓存命中返回的仍是同一个（仍冻结）对象。
+    again = await svc.get_graph(repo_id)
+    assert again is result
+    assert nx.is_frozen(again.graph)
+
+
+@pytest.mark.django_db(transaction=True)
 async def test_seed_symbol_ids_must_be_valid_uuids(indexed_repo, symbols_factory) -> None:
     """非法 ``seed_symbol_ids`` 抛 ``GraphError``，⛔ 不放它进 ORM 变成一个 500。
 

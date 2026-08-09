@@ -334,6 +334,16 @@ class CodeGraph:
       是 ``cross_repo`` 边额外带 ``match_confidence``——该档边数量在千级，第 4
       个属性的阶跃成本可忽略。
     - ``reason`` **不在其中**，由 :func:`derive_reason` 在输出时现推（D-08）。
+
+    🚨 :attr:`graph` 是**共享对象**：缓存命中时所有调用方拿到的是**同一个**
+    ``MultiDiGraph`` 实例（本类 frozen 只挡住「换掉这个字段」，挡不住「就地改写这个
+    对象」）。⛔ 绝不就地修改（``add_edge`` / ``remove_node`` /
+    ``nx.set_node_attributes`` …）——那会永久污染本 worker 里所有后续命中，而且不会有
+    任何信号。需要改写请先 ``graph.copy()``（返回一份可写的副本）；只读遍历与反向视图
+    （``g.reverse(copy=False)``）不受影响。
+
+    这条纪律在 ``cache.py`` 里是**机械**的：入缓存前会对图调 ``networkx.freeze()``，
+    任何就地修改直接抛 ``nx.NetworkXError``，而只读遍历零成本。
     """
 
     meta: GraphMeta
