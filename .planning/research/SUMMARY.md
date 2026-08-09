@@ -1,183 +1,196 @@
 # Project Research Summary
 
-**Project:** Friday AI — v0.17.0 统一知识库与全链路联动（KNOW / LOOP / AGENT / UNIFY）
-**Domain:** brownfield 增量：AI 编码代理平台的统一知识库 / agent memory / 完工沉淀闭环 / 容器代理工具配给
-**Researched:** 2026-07-15
-**Confidence:** HIGH（四份研究均以本仓真实代码坐标核实；外部生态结论与官方文档/多源交叉验证一致）
+**Project:** Friday AI — 里程碑 v0.22.0 代码智能图分析升级（对标 GitNexus）
+**Domain:** brownfield 增量 — graph-based code intelligence for AI coding agents（内存图服务 / impact / trace / detect_changes / 社区检测 + LLM 模块摘要 / 执行流 / rename_preview / Semgrep taint 门禁 / LSP 默认开启）
+**Researched:** 2026-08-09
+**Confidence:** HIGH
 
 ## Executive Summary
 
-本里程碑是纯集成型工作：**零新增依赖、不新建存储、不引入新架构**。Friday 既有的 `KnowledgeEntity` + bi-temporal 图边 + Qdrant 混合检索在架构上就是业界头部方案（Zep/Graphiti）的同型，本里程碑要做的不是造新东西，而是把三类"最后一公里"断点接进既有架构：① 漏网数据源（`McpLearningCase`、MCP 三类产物）接入单一摄取入口 `aschedule_ingestion` 与单一检索面 `DeliveryKnowledgeSearchService`；② 完工闭环（飞书回写 + LLM 自动提炼 learning case）在工作流/Chat/MCP 三链路的"MR 结果已知"锚点统一接线；③ 编码容器经进程内 SDK MCP server（`create_sdk_mcp_server` + httpx 转调 `/api/mcp/tools/*`，生产蓝本 `task/core/remote_tools.py`）获得受控知识读能力，skills 物料构建期同源注入。业界对照显示：完工业务回写是 table stakes（Copilot 基线行为），全自动提炼入库则超出 Devin/Cursor 的"建议 + 人工审核"形态，是本里程碑的差异化核心——前提是质量门槛与功能同 phase 落地。
+本里程碑的本质是：在既有 tree-sitter 符号图（`Symbol`/`CallEdge`/`Endpoint`/`CrossRepoApiCall`，SQL 存储）之上叠加一层**内存图分析服务**，把 GitNexus 已经验证过的 agent 消费范式（impact 深度分组 + 语义标签、逐边 confidence、风险四级、截断纪律、重名消歧、staleness 声明）落到 Friday 的服务端多用户场景，并在三个点上反超：跨仓 impact（穿 `CrossRepoApiCall` 边界，GitNexus 每仓独立图做不到）、LLM 模块摘要（GitNexus 只有目录启发式标签）、detect_changes 直接闭环进「需求→PR」编码链（容器提交前自查 + MR 描述自动生成）。行业交叉验证（Sourcegraph 双层精度、Aider 排序+预算截断、CodeQL 重路线反例）确认这条「tree-sitter 图 + 外购 Semgrep taint、不自研数据流」的路线与业界一致。
 
-推荐路径：KNOW 块的 learning case 入图（KNOW-1）是全里程碑枢纽——LOOP 沉淀的入库通道、检索切换的底层、编排召回扩容、容器查经验的数据源全部依赖它，必须最先做；LOOP 回写与 KNOW 无依赖可并行；AGENT 容器 MCP 应在 KNOW 检索行为定版后集成（避免对着会变的契约集成两次）；UNIFY 收口放最后。**唯一需要提前到 discuss-phase 的架构决策是容器 MCP 的 PAT 可用性问题**：Chat 链与飞书触发的 workflow 链在派发线程内拿不到 PAT 明文，需在"接受降级（选项 A）"与"派发时铸造短 TTL 任务级 token（选项 B，与历史决策 PATX-04 冲突需显式推翻）"之间做人工确认——这直接决定 AGENT 块的验收口径。
+技术选型的结论是**几乎零新增 Python 依赖**：图引擎用已在依赖树的 networkx 3.6.1（rustworkx 没有社区检测算法，引入后仍须保留 networkx，得不偿失）；图缓存纯 stdlib（`OrderedDict` + `threading.Lock`，失效走 `last_indexed_commit_sha` 水位比对而非时间 TTL）；Semgrep 以独立 CLI 形态安装（`semgrep==1.172.*`，绝不进 server venv），门禁语义按 CE 免费版能力上限收敛（仅单函数内 taint），Pro 留 opt-in。架构上新增代码集中在 `server/services/code_graph/` 一个新包，持久化一律新模型（`SymbolCommunity`/`ProcessTrace`/`SecurityFinding`）软引用不加 FK，消费面全部复用既有 `McpToolView` / `@tool` / durable 队列 / `repo_mirror` 模式——集成点均已逐一在本仓代码中核实。
 
-最大风险两类，均有明确预防手段：一是检索底层切换（token→向量）的召回回归——精确路径/symbol 类查询是向量检索的天然弱项，且存量 case 无 backfill 会当天全空；缓解是 golden set 对照测试作为验收门 + normalizer/backfill/读切换同 phase 闭环 + hint 参数走 metadata 过滤不做摆设。二是自动沉淀的噪音污染——业界一手案例（mem0 审计 97.8% 垃圾率）证明"无准入门槛 + 回调重入"必然污染知识库；缓解是幂等键（TaskResult UUID）+ 显式 REJECT 路径 + `call_source` 登记 + 系统级开关，且必须与提炼功能同 PR 落地而非"先跑通后补"。
+最大的风险不是造不出来，而是**精度与信任**：裸名调用边（`callee_symbol` 为空、只有 `callee_name` 兜底）若默认参与 impact 扩散，两跳后影响面就是整个仓库，工具信任直接破产——置信度分层透出（resolved / bare_name / cross_repo）必须是 P1 的输出契约而非优化项。其次是**运行时资源**：多 worker 各持一份内存图（10 万符号仓约 150–500MB/图），LRU 必须按字节预算而非条目数，并配 single-flight 建图锁与取图时水位校验。第三是**成本与稳定性**：社区检测结果漂移会让 LLM 模块摘要反复重生成，成员指纹（member fingerprint）跳过机制是需求级验收。Semgrep 门禁按「diff-aware + advisory 起步 + 异步不阻塞」铁律设计，否则重蹈「门禁两周内被关」的行业覆辙。
+
+## 交叉冲突裁决：Louvain vs Leiden（社区检测确定性）
+
+STACK 与 PITFALLS 存在一处需要显式裁决的矛盾：
+
+- **STACK 的立场**：leidenalg 是 GPL-3.0（依赖的 python-igraph 为 GPL-2），本仓 MIT license 且分发 Docker 镜像，GPL 传染风险不可接受 ⇒ 否决 leidenalg，用 networkx 内置 `louvain_communities(seed=固定)`（BSD，零新增依赖）。networkx 3.6 的 `leiden_communities` 只有 dispatch 接口、无 CPU 默认实现，不可用。
+- **PITFALLS 的立场**：networkx issue #6655（官方 wontfix）证实 Louvain 即使固定 seed，节点插入顺序不同结果仍会漂移；Leiden 在同 seed 下确定性且保证社区连通（Traag 2019），倾向用 Leiden。
+
+**裁决：license 约束优先，采用 Louvain + 成员指纹稳定化；Leiden 列为触发条件升级项。**理由：
+
+1. GPL 传染是**分发合规问题**，对一个 MIT + ghcr.io 预构建镜像分发的产品是硬约束；Louvain 漂移是**工程可缓解问题**——两者不对等。
+2. 本场景社区只是 LLM 模块摘要的粗分组输入（摘要质量主要取决于 LLM 与提示词），不是用户可见的最终产物，Louvain 分区质量够用。
+3. 漂移的实际危害（摘要反复重生成烧 LLM 成本、路由输入不稳定）可以在**消费侧**阻断：不依赖「划分逐节点一致」，只依赖「成员集近似不变 ⇒ 不重生成」。
+
+**具体做法（写进 P-社区的需求级验收）：**
+
+- 建图前节点按 `symbol_id` 排序 + `louvain_communities(seed=固定值)`——尽力压低漂移，但**不作为唯一保证**；
+- 每个社区落库带 `member_fingerprint = hash(sorted(symbol_ids))`；重跑后新旧划分按成员 Jaccard 匹配对账，**只有 Jaccard < 0.8 的社区才重生成 LLM 摘要**，指纹不变直接跳过（LLM 调用数为 0 是「无变更重建两次」的验收用例）;
+- 预处理：只对最大弱连通分量 + 规模 ≥ 5 符号的分量跑算法，孤立节点归目录兜底社区或标 `unclustered`，绝不给单节点社区发摘要；
+- `SymbolCommunity.algorithm` 字段已预留（"louvain"/"leiden"），**Leiden 升级触发条件**：(a) 指纹跳过后摘要重生成率仍 > 阈值（如每次重建 > 20% 社区变动且人工核对为算法漂移而非真实代码变化）；或 (b) 部署方明确接受 GPL（如内部私有部署 opt-in 安装 leidenalg，运行时探测可用则切换）。升级只换 `community.py` 内一个函数调用，落库 schema 不变。
 
 ## Key Findings
 
 ### Recommended Stack
 
-三件新能力全部由既有栈覆盖，`task/pyproject.toml`、`server/pyproject.toml`、`skills/package.json` 一律不动。容器内 HTTP 代理型 MCP server 照抄 `task/core/remote_tools.py` 模式（`SdkMcpTool` 直接构造、handler 永不 raise、PAT 只进 header）；skills 注入是纯 stdlib 文件拷贝（`shutil.copytree`），加载通道 `setting_sources=["project"]` 已在 v0.9.0 验证；LLM 提炼在服务端走 `build_chat_model` seam，同构先例 `server/initiatives/services/memory_distill.py` 已把 call_source/ledger/脱敏/fail-soft 全套模式踩通。
+本里程碑 Python 侧**零新增依赖**：networkx 3.6.1 已在 `uv.lock`（llama-index 传递依赖），API 覆盖全部算法需求（反向 BFS / 最短路 / `louvain_communities`）；10万–100万边规模下构图秒级（缓存后摊销为零）、查询毫秒–百毫秒级。唯一真实风险是内存（100 万边约 0.5–1GB/图），靠属性瘦身 + 字节 LRU 管控。rustworkx 留 adapter seam 与明确升级触发条件（单仓 > 50 万边 / impact p95 > 2s / 缓存 > 2GB）。
 
 **Core technologies:**
-- claude-agent-sdk ==0.1.58（双侧 pinned，不升级）：进程内 SDK MCP server；0.1.58 已修复 string prompt + SDK MCP 的 stdin 时序崩溃与 ~70s 超时坑，生产已并存 3 个 SDK MCP server，新增第 4 个走完全相同路径
-- httpx（task 侧已有）：MCP handler 内转调服务端；注意知识 MCP 目标是 `/api/mcp/tools/<name>/` 每工具一 URL，与 RemoteTool 统一端点不同，需新建 `task/core/knowledge_tools.py` 而非硬塞进 remote_tools.py
-- langchain 栈 + `agents.llm_factory.build_chat_model`（server 侧既有）：learning case 提炼；凭证走 `ProviderConfigService` 不走 env
-- 明确不引入：`fastmcp`/显式 `mcp` 依赖、服务端 MCP streamable-HTTP 协议层（`McpHttpServerConfig` 不能指向普通 REST 端点）、task 侧 LLM SDK、skills 运行时 HTTP 拉取
-
-**唯一构建坑**：task 镜像 build context 是 `./task`，仓库根 `skills/skills/` 在 context 外——推荐构建前同步脚本拷进 `task/assets/skills/` + Dockerfile COPY + hash 一致性测试，不要改 build context（改动面大）。
+- networkx 3.6.1（已在依赖树）：内存图构建 + 全部图算法 — 零新增依赖，纯 Python wheel 天然兼容 Py3.14
+- Python stdlib（`OrderedDict` + `threading.Lock`）：图缓存 LRU — 失效走 `last_indexed_commit_sha` 水位比对，不用时间 TTL，不引 cachetools
+- Semgrep CLI 1.172.0（LGPL-2.1，独立 venv / `uv tool`，subprocess 调用）：MR diff taint 门禁 — 绝不进 server venv；CE 只有单函数内 taint，门禁承诺按此收敛，`SEMGREP_APP_TOKEN` 走加密凭证存储留 Pro opt-in；不要用 < 1.172 的版本（baseline 扫描误报 bug 刚修）
+- gopls v0.23.0 + @vue/language-server 3.x：LSP 抽取后端 — **真正前置是改 `server/Dockerfile`**（当前 `python:3.14-slim` 无 Node 无 Go，kill-switch 打开也会全量回落 tree-sitter），镜像体积 +400–550MB 须进发布说明
 
 ### Expected Features
 
-业界基线（Devin/Cursor/Copilot/Qodo 对照）显示：单一检索入口覆盖全部记忆类型、产物不分入口一律入库、完工自动回写业务方，都是 table stakes——三链路回写不一致在业界属于产品缺陷而非功能选择。
+GitNexus 官方文档一手调研给出完整工具契约参照（输入参数、输出结构、截断策略、消歧协议均可直接照搬）。
 
-**Must have (table stakes，P1)：**
-- KNOW-1/2 learning case 入图 + `search_learning_cases` 切向量检索（token 打分退役，API 契约不变）——统一知识库的定义性交付
-- KNOW-3 MCP 产物入图（plan/analysis/trace 各补 normalizer）——消除"走 MCP 就成盲区"的管道断裂
-- LOOP-1 公共回写 service 三链路接入——业务侧可见性底线
-- LOOP-2 完工自动提炼（质量门槛全套同 phase）——差异化核心
-- AGENT-1 容器知识 MCP（7 个只读工具白名单 + 配额/超时）——"知识贫民区"直接解药
-- AGENT-3 工作流 prepend `pack_project_context`——复杂度最低、断裂感消除最直接
-- UNIFY-2 schema snapshot 补全（`report_project_state` 已核实缺失）
+**Must have (table stakes):**
+- impact 深度分组 + 语义标签（d1=WILL BREAK / d2=LIKELY AFFECTED / d3=MAY NEED TESTING）+ 每边独立 confidence + reason + `minConfidence` 参数
+- 风险四级（LOW/MEDIUM/HIGH/CRITICAL）判定标准写死可解释，不用 LLM 判
+- 结果截断 + summary 计数 + `include_content` 默认关 — token 纪律是 agent 工具的生命线
+- detect_changes 受影响符号清单（uid/name/type/filePath/changeType/linesChanged 六字段最小集）— agent 的行动指南，无它无法行动
+- 重名消歧协议（uid 优先 + disambiguation 候选列表，绝不静默取第一个）+ 索引 staleness 声明（`as_of: <commit_sha>`）
+- rename 只做只读 preview：图边 + 文本兜底双源、graph/text_search 二值 confidence、context 片段、动态引用限制显式声明
+- Semgrep diff-aware（baseline 取 merge-base）+ severity 透出 + `nosemgrep` 通道 + 默认报告不阻断
 
-**Should have (P2，机制已有、物料/薄封装为主)：**
-- KNOW-4 编排召回扩 `document`/`learning_case` kinds（可配置 + 每 kind 限额守 token 预算）
-- KNOW-5 Chat 白名单补 3 个知识读工具
-- LOOP-3 平台 Skill 两枚（`pre_coding_research`/`post_coding_capture`，复用 RemoteTool SKILL 多步机制）
-- AGENT-2 容器 skills 注入 + hash 一致性测试
+**Should have (competitive):**
+- 跨仓 impact（穿 `CrossRepoApiCall`，带 `cross_repo: true` + 独立置信档）— 反超 GitNexus 的核心点
+- LLM 模块摘要（超越 heuristicLabel）喂 RepoRouter / 技术方案生成 — 消费端按 Aider 范式「排序 + token 预算截断」，不全量灌入
+- detect_changes → MR 描述自动生成闭环（照 GitNexus `detect_impact` prompt 的 Changes/Affected Processes/Risk/Recommendations 四段结构）
+- 执行流以 `Endpoint` 为确定性一等入口（优于 GitNexus 启发式打分），保留其 BFS 参数纪律（depth 10 / branching 4 / minSteps 3 / conf ≥ 0.5）
+- impact-analysis / refactoring skills 进 `@friday-ai-codes/skills` 同源分发
 
-**Defer / 降级候选：**
-- LOOP-4 PR 后轻量 review 沉淀（依赖最深的增值项，进度紧最先降级）；UNIFY-1 improve/analyze 收敛（内部重构，可排后但建议做）
-- 显式不做：chat.CodingPlan 与 McpCodingPlan 合表、review 产品化、会话内 sidecar 记忆提取、consolidation/decay 自动策展
-
-**Anti-features（业界踩过的坑）：** 主模型直接 tool-call 写记忆（产出任务日志而非可泛化知识）、"记住一切"无门槛入库（lesson rot）、给容器开放全部 30 工具、容器直连 Qdrant/DB、learning case 造第二套排序、记忆无条件注入对话开头（context pollution）。
+**Defer (v2+):**
+- detect_impact 式编排 MCP prompt — 等工具面稳定
+- taint finding 台账化（主干 full scan + 状态机 + 跨分支 triage）— 平台级能力，等门禁用量验证
+- 模块摘要进 Galaxy 可视化 — 展示层增值，不影响 agent 链路
 
 ### Architecture Approach
 
-全部集成点已读码核实，无外部生态依赖。核心形态：各域写模型保留（`McpLearningCase` 等），触发点只投 ID（`aschedule_ingestion`），normalizer 后台重读入图；检索一律走 `DeliveryKnowledgeSearchService` 按 `entity_kinds` 过滤；完工闭环挂三链路各自的"MR 结果已知"锚点（不挂容器回调——回调时刻 MR 未建且有重试风暴前科，INGEST-02 既有结论）；容器能力 = 服务端 HTTP 工具面复用 + env 三要素开关（任一为空整体降级不挂，零回归）。
+新增代码集中在 `server/services/code_graph/` 一个新包：纯算法（`impact.py`/`trace.py` 只吃 `DiGraph`）与 ORM（`loader.py` 独占，单次 `sync_to_async` 包裹批量 `values_list+iterator`）严格分离；消费面全部复用既有模式——MCP 壳照 `McpToolView`（PAT fail-closed + `RetrievalTrace` + snapshot 测试）、对话壳照 `@tool` 注册、容器自查走既有 `/api/mcp/tools/` HTTP 白名单加一条、重算走 durable `QUEUE_GRAPH` + `queueing_lock` 去重。diff 一律走 `repo_mirror`（base 强制 pin 到 `last_indexed_commit_sha` 与 Symbol 行号同源对齐），不依赖 MR webhook payload。⛔ `repo_router_v2.py` 是 §13.2 冻结面，模块摘要只在 adapter 层三点注入（blueprint_route evidence / charter signal 同款范式 / 调研 prompt）。
 
-**Major components（新增/修改）：**
-1. 4 个新 normalizer（`knowledge/sources/learning_case.py` 等）+ `EntityKind.LEARNING_CASE` 新字面值（走 Phase 79 扩枚举先例，一个 migration 更新 CHECK 约束）——推荐新 kind 而非复用 `document`，否则检索/召回的 kind 过滤无法区分经验案例与项目记忆
-2. `CompletionWritebackService`（建议落 `server/delivery/services/coding_completion.py`）：从 `_write_results_back` 抽取中性化参数版；MCP 改薄包装零回归，workflow 挂 `_finalize_and_notify`，chat 挂 `create_pr_or_skip_node`；MCP 专属 retry_state 不进公共层
-3. `task/core/knowledge_tools.py` `build_knowledge_mcp_server`：镜像 remote_tools.py 全套约束；配置经 `env_FRIDAY_TASK_*` → runner 透传 → `TaskConfig` 既有链路；`allowed_tools` 排他白名单必须并入 `_BUILTIN_CODING_TOOLS`（WR-02 前科，需收口单一构造函数 + 专项测试）
-4. 容器 skills 注入：镜像构建期 COPY + `runner.py` workspace 准备段复制进 `.claude/skills/`（同名跳过不覆盖）；不要走 env 传输（ARG_MAX 压力）
-5. `search_learning_cases` 底层切换 + recall_adapter kinds 扩容 + Chat 白名单 + snapshot 补全（均为既有模式的接线）
-
-**⚠️ 唯一悬置架构决策（必须 discuss-phase 解决）**：PAT 明文可用性三链路不一致——MCP 链可捕获但 dispatch 路径未接 ContextVar；Chat 链（cookie-JWT）与飞书/定时触发的 workflow 链线程内没有 PAT 明文。选项 A（最小改动）：接受降级，无 PAT 链路只靠 prepend 上下文兜底；选项 B（研究推荐但需人确认）：派发时铸造短 TTL 任务级 token（明文不落盘不反取，不违反 PAT-02，但与"短 TTL 派生凭证留 v2"的历史决策 PATX-04 冲突，需显式推翻）。
+**Major components:**
+1. `GraphService`（per-worker 内存 networkx 缓存）— 签名失效（仿 `GalaxyGraphCache.compute_signature`，水位 + 边构建代数双信号）+ 字节 LRU + single-flight 锁；一切图工具的共同地基
+2. `impact/trace/change_detect/rename_preview` 内核 + MCP/对话双面薄壳 ×4 — 与 40+ 既有工具完全同构
+3. `SymbolCommunity`/`ProcessTrace`/`SecurityFinding` 新模型 — 纯加表零改既有表，软引用不 FK（增量索引 per-file 删建 Symbol，FK 会被牵连），`built_at_sha` 落水位
+4. `semgrep_scan.py` — server 容器内 subprocess 扫 `repo_mirror` worktree，durable 任务限 1–2 并发，与内存图零耦合可完全并行开发
+5. 编码链挂点 — 容器提交前自查（prompt 驱动，v1 不做硬门禁）+ MR 描述两处拼接点（workflow 链 `_finalize_and_notify` / MCP 链 `merge_request_service`），均 fail-soft
 
 ### Critical Pitfalls
 
-1. **检索切换召回回归与契约漂移（P1）**——golden set（30–100 条真实查询含路径/symbol 类）对照测试为验收门；normalizer + backfill + 读切换同 phase 闭环；hint 参数映射 metadata 过滤/rerank 不做摆设；score 语义显式定版进 snapshot；Qdrant 故障 fail-soft 空结果不 500。
-2. **自动沉淀噪音污染与成本失控（P2）**——TaskResult UUID 幂等键前置（callback 重入自驱是本仓已知设计）；准入门槛（status 门、字段完整性门、显式 REJECT 路径 + 结构化 rejected 事件）；新 `call_source` 先登记 LOGGING-SPEC §4.1 再写代码；`SystemSetting` 系统级开关可秒关。污染入库后清理成本远高于预防（mem0 案例 97.8% 垃圾率）。
-3. **回写开关默认值改变存量行为（P3）**——区分"模板默认开"与"存量 fallback"（config 无该键时：有绑定 work_item 才回写、无绑定静默跳过）；成功标准显式含"存量工作流（未绑定 work_item）行为零变化"用例 + 升级说明。
-4. **容器 MCP 四险（P4）**——白名单锁 7 个只读工具 + per-task 配额/超时（配额用尽返回 agent 可理解的明确文案）；PAT 只走进程内存不落任何 workspace 文件，错误信息过 `redact_secrets_in_text`；`allowed_tools` 三方 merge 收口单一构造函数 + 断言 Bash/Edit/Write 在列；容器视角排除回归测试（v0.5 六面加第七面）；QPS/调用数观测与功能同 phase 上线。
-5. **实体去重/关联错误（P7）**——入图前先扩 `generate_entity_id` docstring natural key 规则表（locked，漂移需数据迁移）；Chat plan 与 MCP plan 推荐"不同实体 + 边显式关联"（硬去重踩 bridge 拷贝时序坑）；work_item 锚照抄 `mcp_plan.py` 禁止自造；每个 normalizer 带重复摄取幂等测试 + plan→execution→PR 边可达性端到端断言。
-
-另有：skills 双源漂移（hash 一致性 CI 测试 + skill 引用工具名 ∈ snapshot 的 grep 测试）、UNIFY 退役 planning_service 的 stale mock target（本仓 Phase 26 前科，`rg planning_service` 引用清单为第一个 task）、观测欠债（不设独立观测 phase，埋点断言内嵌各功能 phase 验收标准）。
+1. **裸名边假阳性灾难** — 默认只走 `callee_symbol IS NOT NULL` 的解析边 + `CrossRepoApiCall`；置信度分层透出（resolved / bare_name / cross_repo）是输出契约；裸名边仅 `include_low_confidence=true` 显式开启且加同目录/qualifier/常见名黑名单三道过滤；索引完成时统计解析率，低于阈值在输出头部声明
+2. **多 worker 内存放大 + 构建风暴 + 失效窗口** — 字节预算 LRU（不按条目数）+ per-key single-flight 建图锁 + **取图时**（不只建图时）水位校验 + 超大仓不进缓存走按需子图降级，四件套同相位落齐
+3. **社区漂移 ⇒ LLM 成本失控** — 见上文冲突裁决：member fingerprint + Jaccard 对账跳过重生成是需求级验收；「无变更重建两次 LLM 调用数为 0」是验收用例
+4. **detect_changes 行号错位** — diff 强制锚定 `last_indexed_commit_sha`；`git diff -M` 开 rename 检测（否则纯 rename PR 误报满屏）；format diff 降级 `formatting_only`、超阈值切文件级摘要
+5. **Semgrep 门禁死亡螺旋** — diff-aware 只报增量 + advisory 起步不阻断 + 异步不挂 MR 创建同步路径 + 超时 fail-open 显式标注，四项同相位必选不可拆
+6. **越权与 exclusion 漏接** — 鉴权/`is_excluded` 拦截做进图服务读取层统一收口（所有上层工具天然继承）；跨仓 impact 每穿一仓复核权限，未授权整仓折叠 `redacted_repository`；`purge_file` 从五面扩到六面
 
 ## Implications for Roadmap
 
-基于依赖分析（ARCHITECTURE 构建顺序 + FEATURES 依赖图 + PITFALLS phase 映射），建议 7 个 phase：
+建议 8 个相位，依赖关系遵循 ARCHITECTURE 的 build order（Wave 0–3），三条独立线（图地基 / Semgrep / LSP）可并行开工：
 
-### Phase 1: KNOW-基座 — learning case 入图与检索切换
-**Rationale:** KNOW-1 是全里程碑枢纽，LOOP 沉淀/召回扩容/容器查经验全部依赖；natural key 规则表决策（P7 前置）也在此落定供后续 normalizer 遵循。
-**Delivers:** `EntityKind.LEARNING_CASE` + migration、`learning_case` normalizer（含 work_item/tech_plan 边）、`create_learning_case` 投递、存量 backfill command、`search_learning_cases` 底层切换（契约不变）。
-**Addresses:** KNOW-1/2（P1 必达）；验收面 1 的前提。
-**Avoids:** Pitfall 1（golden set 对照测试为验收门；normalizer/backfill/读切换同 phase 闭环）、Pitfall 7（规则表先行）。
+### Phase 1: 内存图服务基座（P-基座）
+**Rationale:** 五个图功能的共同依赖，必须最先；且安全/精度的两大横切纪律（边准入 + 读取层鉴权/exclusion 收口）必须做进地基，让上层工具天然继承
+**Delivers:** `GraphService` + `loader.py` + 签名失效 + 字节 LRU + single-flight + impact/trace 纯函数 + 边准入词表与置信度枚举 + exclusion/权限统一拦截
+**Addresses:** 一切图工具的地基（FEATURES P1）
+**Avoids:** Pitfall 2（缓存四件套）、Pitfall 1（边准入）、Pitfall 8（读取层收口）
 
-### Phase 2: KNOW-MCP 产物入图
-**Rationale:** 与 Phase 1 无硬依赖可并行（共享 Phase 1 的规则表决策，若并行则规则表决策放先执行者）。
-**Delivers:** McpCodingPlan/McpRepositoryAnalysis/McpCodingExecutionTrace 三个 normalizer + 写入点投递 + 与 chat plan 的边关联决策落地。
-**Addresses:** KNOW-3（P1）；验收面 2。
-**Avoids:** Pitfall 7（幂等测试 + plan→execution→PR 边可达性自动化断言）。
+### Phase 2: impact / trace 工具面（P-impact）
+**Rationale:** 里程碑核心承诺，agent「改前自查」主工具；MCP + 对话双面接线模式在此相位定型，后续工具照抄
+**Delivers:** `impact_analysis` / `trace_call_path` 双面接线（8 壳文件 + schema snapshot 测试）+ 深度分组 + 置信度分层输出 + 跨仓边 + golden 符号集精度回归
+**Uses:** networkx 反向 BFS / 最短路；`McpToolView` + `@tool` 既有模式
+**Implements:** 分析层 → 消费面完整链路首通；断链标注词表在此相位先定（P-执行流复用）
 
-### Phase 3: LOOP-回写 — 公共 write-back service 三链路接入
-**Rationale:** 与 KNOW 无依赖，可与 Phase 1/2 并行；同时为 Phase 4 的沉淀提供锚点管线。
-**Delivers:** `CompletionWritebackService` 抽取（MCP 薄包装零回归）+ workflow `_finalize_and_notify` / chat `create_pr_or_skip_node` 锚点接线 + 节点开关（模板默认开、存量 fallback 守门）。
-**Addresses:** LOOP-1（P1）；验收面 3。
-**Avoids:** Pitfall 3（fallback 语义/守门/与 notify_feishu_im 去重界定为设计输入，非收尾补丁）。
+### Phase 3: detect_changes 工具本体（P-detect）
+**Rationale:** 只依赖 Phase 1/2 基建；与链路集成（Phase 4）风险面不同，拆开交付
+**Delivers:** `repo_mirror.diff_mirror` helper + diff 行区间 × Symbol 区间定位 + 批量 impact + 符号清单输出 + rename 检测 + 水位锚定 + stale 声明
+**Avoids:** Pitfall 5（锚定 + `-M` + 噪声压制是功能正确性，第一批落）
 
-### Phase 4: LOOP-沉淀 — 完工自动提炼 learning case
-**Rationale:** 依赖 Phase 1（入图通路）+ Phase 3（锚点管线成型）。
-**Delivers:** LLM 提炼（outcome/root_cause/solution/trigger_context 结构化字段）+ 幂等键 + 准入门槛（泛化过滤/去重/脱敏/字段校验/REJECT 路径）+ 新 `call_source` 登记 + 系统级开关 + 三锚点接线；`McpLearningCase` FK 放松（如需）。
-**Addresses:** LOOP-2（P1，差异化核心）；验收面 4。
-**Avoids:** Pitfall 2（质量门与功能同 phase，绝不"先跑通后补"）。
+### Phase 4: 编码链闭环（detect_changes 集成）
+**Rationale:** 「提交前自查 + MR 描述」是 Friday 区别于 GitNexus 的落点，也是本里程碑对用户最可感知的价值；动 task/workflow 两条链，单独相位控风险
+**Delivers:** 容器工具白名单 + system prompt 自查指引（v1 提示不阻断）+ workflow/MCP 两处 MR 描述「## 影响面」fail-soft 挂点
+**Addresses:** detect_changes → MR 描述闭环（FEATURES 差异化项）
 
-### Phase 5: AGENT — 容器知识 MCP + skills 注入 + 上下文对齐
-**Rationale:** 容器白名单调的正是 KNOW 定版后的检索工具，放 KNOW 之后避免对着会变的契约集成两次；**PAT 方案（选项 A/B）需在 discuss-phase 先决策**。AGENT-3（prepend pack_project_context）无硬依赖，是本 phase 内最低风险项。
-**Delivers:** `task/core/knowledge_tools.py` + TaskConfig 字段 + 三派发路径 env 注入 + allowed_tools 合并收口测试 + per-task 配额/超时 + 容器视角排除测试 + QPS 观测；镜像 COPY skills + runner 注入 + hash 一致性测试；workflow `_dispatch_wave` 层 prepend `pack_project_context`（按 (project, branch) 解析一次逐仓复用）。
-**Addresses:** AGENT-1/2/3（P1/P2）；验收面 5/6/7。
-**Avoids:** Pitfall 4（四险全套同 phase）、Pitfall 5（同源测试）。
+### Phase 5: 社区检测 + LLM 模块摘要（P-社区）
+**Rationale:** GitNexus 索引管线中社区先于执行流（Process 需要 community 归属）；摘要消费接线依赖社区落库
+**Delivers:** `SymbolCommunity` 模型 + Louvain（seed + 节点排序）+ member fingerprint / Jaccard 对账跳过 + 孤立节点预处理 + `module_summary.py`（新 `call_source` 枚举）+ 摘要三注入点（blueprint_route evidence / 对话·MCP 路由信号 / 调研 prompt）
+**Uses:** `louvain_communities`（冲突裁决见上）；durable `QUEUE_GRAPH` defer
+**Avoids:** Pitfall 3（指纹跳过是需求级验收）；⛔ 不动 `repo_router_v2.py` 冻结面
 
-### Phase 6: KNOW-消费面 + LOOP-Skill 种子
-**Rationale:** 依赖 Phase 1（learning_case kind 存在、检索已切向量版）；均为薄接线/物料工作，聚合成一个收敛 phase。
-**Delivers:** recall_adapter kinds 扩容（可配置 + 每 kind 限额）、Chat 白名单 3 工具、`pre_coding_research`/`post_coding_capture` 两个 SKILL 种子、friday-memory skills 文档与新检索行为对齐、snapshot 补 `report_project_state`（含"注册工具 == snapshot 键集合"防漏断言）。
-**Addresses:** KNOW-4/5、LOOP-3、UNIFY-2（P1/P2）；验收面 9/10。
-**Avoids:** Pitfall 5（文档对齐）、召回 token 预算膨胀（Performance Trap）。
+### Phase 6: 执行流追踪（P-执行流）
+**Rationale:** 依赖社区结果（intra/cross_community 分类）；随后回填 detect_changes/impact 的 `affected_processes` 叙事层
+**Delivers:** `ProcessTrace` 模型 + `Endpoint` 确定性入口正向追踪 + 三重预算硬上限（depth/nodes/fanout）+ 环显式标注 + async 断链标注（`boundary: async_dispatch`）
+**Avoids:** Pitfall 4（预算与环处理；存摘要不存全展开节点集）
 
-### Phase 7: UNIFY 收口 + 端到端验收
-**Rationale:** improve/analyze 收敛依赖编排召回扩容先就位（否则收敛后工具质量降级）；退役工作放最后减少 rebase 面冲突。契约决策（同步 vs 会话式）是首个 task。
-**Delivers:** improve/analyze 走 `delegate_process_runtime` + 退役 `planning_service` 缝（先 `rg` 引用清单）+ 删 `plan_orchestration/` 空壳 + stale mock target 清扫；四处检索同一 learning case 的端到端验收；LOOP-4 PR 后 review 沉淀（可选增值项，进度紧降级）。
-**Addresses:** UNIFY-1、LOOP-4（P3）；验收面 1/8。
-**Avoids:** Pitfall 6（契约先定、引用先清、patch target 可 import 断言）。
+### Phase 7: rename_preview + skills 固化
+**Rationale:** 独立性强，何时插入均可；工具面稳定后一并固化 impact-analysis / refactoring skills
+**Delivers:** 图引用 + grep 兜底双源清单（grep 半边走既有已拦截的 grep 路径）+ graph/text_search 二值 confidence + 按文件分组 + skills 进 `@friday-ai-codes/skills`
+
+### Phase 8: Semgrep taint 门禁（P-semgrep，可与 Phase 2 起并行）
+**Rationale:** 与内存图零耦合，独立轨道任何时点可插入；但 diff-aware + advisory + 异步化三件套必须同相位不可拆
+**Delivers:** Dockerfile 装 semgrep 二进制（独立于 server venv）+ `semgrep_scan.py` + `SecurityFinding` 模型（snippet 过 `redact_secrets_in_text`）+ durable 任务限并发 + MR 描述「## 安全扫描」段 + CE 单函数 taint 边界如实声明 + Pro opt-in 配置面
+**Avoids:** Pitfall 6（门禁死亡螺旋）
+
+**LSP 默认开启（P-LSP）** 建议本里程碑做成「降低开启门槛」而非无条件翻默认：Dockerfile 补 Node 22 + volar + Go 工具链 + gopls、依赖健康探测、孤儿进程收口、索引耗时基准——默认值翻转留给基准数据说话（gopls/tree-sitter 抽取结果有差异，切换会改变 Endpoint/Symbol 产出，须灰度）。可作为独立小相位或并入基建相位，但**不与 Phase 5/6 并行上线**（同时引入多个内存大户会让 OOM 归因困难）。
 
 ### Phase Ordering Rationale
 
-- **Phase 1 的 natural key 规则表决策先于一切入图工作**（P1/P7 共享前置）；Phase 1/2/3 三者互无依赖可并行推进。
-- **Phase 4 沉淀必须在 Phase 1（入库通道）与 Phase 3（锚点）之后**——沉淀产物要能被统一检索到才有意义。
-- **Phase 5 放 KNOW 之后**：容器集成的是定版后的工具契约；PAT 决策是唯一需要人工确认的前置。
-- **Phase 7 收口放最后**：UNIFY 是内部重构，早做会与 KNOW/LOOP 的改动面冲突；且 process_runtime 承接 improve/analyze 前需要编排召回先扩容。
-- **观测埋点不设独立 phase**：RetrievalTrace/call_source/QPS 断言按 Pitfall 8 的分配内嵌进各 phase success criteria——漏埋直接等于验收不过。
+- **Phase 1 绝对先行**：五个图功能全部踩在图缓存上，且边准入/鉴权/exclusion 三个横切纪律后补的代价是「必有一个工具漏接」（PITFALLS 的技术债表将其列为 never acceptable）
+- **detect_changes 拆「本体」与「链路集成」两相位**：前者只依赖图基建，后者要动 task 容器与 workflow 两条链，风险面与回归面完全不同
+- **社区先于执行流**：GitNexus 索引管线的既证顺序；Process 的 intra/cross_community 分类依赖社区归属
+- **Semgrep / LSP 两条独立线**：与图功能零耦合，可随时并行插入，用于平衡各 wave 的工作量
+- **摘要注入放在社区相位内而非独立相位**：注入点全部是 adapter 层 fail-soft 追加（v0.8 / charter signal 既有范式照抄），单独成相位过薄
 
 ### Research Flags
 
 Phases likely needing deeper research during planning:
-- **Phase 5（AGENT）:** PAT 方案选项 A/B 是架构决策，需 discuss-phase 人工确认（选项 B 与历史决策 PATX-04 冲突）；MCP dispatch 路径的 ContextVar 捕获缺口（PROJECT.md 已列 known follow-up）需实现细节确认。
-- **Phase 4（LOOP-沉淀）:** 提炼 prompt 的泛化性过滤是成败关键（业界教训集中地），plan-phase 时建议细化 prompt 设计与去重阈值（参考值 cosine > 0.92）。
-- **Phase 7（UNIFY）:** improve/analyze 的对外契约（同步 vs 会话式）决策影响 Cursor 侧体验，需在 phase 内首个 task 定版。
+- **Phase 5（社区+摘要）:** Louvain 稳定化的经验阈值（Jaccard 0.8、最小分量规模 5）为 MEDIUM 置信，相位内需用本仓真实图数据校准；摘要注入 blueprint_route 若要参与打分（而非仅 evidence），涉及权重 schema 变更须单独评审
+- **Phase 6（执行流）:** depth/nodes/fanout 默认值为经验值，需在大仓实测校准；async 断链模式词表（`sync_to_async`/`defer_task`/`.delay(`/`group_send`）需在本仓穷举核实
+- **P-LSP:** 索引耗时基准与灰度策略本身就是调研型工作（Wave 0 C 线）
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1/2（KNOW 入图）:** normalizer 契约、双事件锚模式、幂等翻转全部有既有先例（`coding_plan.py`/`mcp_plan.py`），照抄即可。
-- **Phase 3（LOOP-回写）:** 抽取源 `_write_results_back` 依赖面已逐项核实，纯重构。
-- **Phase 6（消费面）:** 全部是既有机制的接线（RECALL-02 先例、SKILL steps 执行器、snapshot 纪律）。
+- **Phase 2/3/4/7:** 工具双面接线、diff 通路、MR 描述挂点、grep 兜底全部有本仓既有先例逐文件核实在案（ARCHITECTURE 的集成清单精确到行号）
+- **Phase 8（Semgrep）:** 官方文档对 diff-aware / baseline / 超时 / 分级实践给足了成熟范式，照方抓药
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | 版本全部经本仓 uv.lock/pyproject/已安装源码逐行核实；SDK 坑与修复经上游 issue + 本地源码交叉验证 |
-| Features | MEDIUM-HIGH | claude-agent-sdk 集成与 memory 生态为 HIGH（官方文档多源一致）；Devin/Cursor 内部机制为 MEDIUM（官方文档 + 工程访谈）；本项目落点坐标为 HIGH |
-| Architecture | HIGH | 全部集成点读码核实到文件/函数/行号；无外部生态依赖，纯内部集成 |
-| Pitfalls | HIGH | 坑 1–8 均以仓库真实代码坐标 + 外部来源交叉验证；个别缓解手段为 MEDIUM（正文已标注） |
+| Stack | HIGH | 所有依赖版本与 Py3.14 wheel 可用性经 PyPI/官方 release notes 核实；性能数字 MEDIUM（官方 benchmark + 第三方实测，未本仓复现） |
+| Features | HIGH | GitNexus 全部工具契约来自官方 Mintlify docs 一手引用；Semgrep/Sourcegraph/Aider 均官方文档或源码 |
+| Architecture | HIGH | 全部集成点直接读本仓代码核实，文中路径与行号真实存在 |
+| Pitfalls | HIGH | 核心结论有代码事实或官方文档/论文佐证；个别经验阈值 MEDIUM 需相位内实测校准 |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **容器 MCP 的 PAT 三链路可用性（唯一悬置架构决策）**: discuss-phase 必须在选项 A（接受降级）/选项 B（短 TTL 任务级 token，需推翻 PATX-04）间定版——直接决定验收面第 5 条的口径。
-- **token 版检索 fallback 开关是否保留一个里程碑周期**: plan-phase 权衡（MEDIUM，Pitfall 1 缓解项）。
-- **检索层关联簇去重的具体层次**（Chat plan 与 MCP plan 同簇只出最优一条）: plan-phase 定（MEDIUM，Pitfall 7）。
-- **Phase 26 遗留 5 例 stale patch target 是否顺手修**: plan-phase 定（MEDIUM，Pitfall 6）。
-- **容器版 skills 是否裁剪（friday-memory 的 setup 向导段对容器无意义）**: 若裁剪则构建脚本生成、仍以 `skills/` 包为唯一输入。
-- **CI 产物 PAT 前缀扫描的具体点位**: plan-phase 定（MEDIUM，Security Mistakes）。
+- **Louvain 漂移的实际幅度**：issue #6655 证实理论上会漂移，但本仓图（节点排序 + 固定 seed 后）的实际漂移率未知——Phase 5 首个交付物应包含「同一仓重建两次的 Jaccard 对账数据」，用真实数据决定是否触发 Leiden 升级条件
+- **networkx 内存放大系数**：150–500MB/图为经验估算区间，Phase 1 验收需在本仓最大仓实测并据此定 `CODE_GRAPH_CACHE_MAX` 默认值
+- **裸名边解析率现状**：per repo per language 的 `callee_symbol` 回填率未统计，Phase 1 应先出这个指标（它决定 impact 输出「偏保守」声明的阈值与 grep 兜底的必要性）
+- **LSP 切换的抽取产物差异面**：`test_go_extractor.py` 已证实 gopls 与 tree-sitter 结果不同，但差异全貌未量化——P-LSP 的基准工作需产出 golden 对比
+- **`mcp` npm 包跨仓欠债**：服务端四个新工具先齐，npm 客户端另批（v0.20 已有同款缺口在案），roadmap 需显式记账
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- 本仓一手代码核实 — `server/knowledge/{ingestion,models,retrieval}.py`、`knowledge/sources/`、`server/mcp_tools/*`、`server/workflows/nodes/ai/coding.py`、`server/chat/coding_session_service.py`、`server/subagent/api/callbacks.py`、`task/core/{executor,config,remote_tools,runner}.py`、`task/.venv` 内 claude-agent-sdk 已安装源码（types.py/query.py/版本文件逐行核实）
-- 锁文件与配置 — `task/uv.lock`、`server/uv.lock`、双侧 `pyproject.toml`、`docker-compose.build.yaml`、`.github/workflows/release.yaml`
-- `.planning/MILESTONE-CONTEXT.md` / `.planning/PROJECT.md` — 里程碑范围、锁定决策、复用坐标、历史前科（WR-02/PAT-02/INGEST-02/Phase 26）
-- 官方文档 — code.claude.com Agent SDK（create_sdk_mcp_server/McpServerConfig/allowed_tools/setting_sources/安全部署 proxy 模式）、docs.devin.ai（Knowledge/Skills）、docs.github.com Copilot coding agent、docs.qodo.ai auto best practices
-- 学术源 — Reflexion（NeurIPS 2023）、ExpeL（AAAI 2024）：失败经验价值、insight 策展、lesson rot 与显式 retire
-- 一手案例 — mem0ai/mem0 issue #4573（10,134 条自动沉淀记忆审计 97.8% 垃圾率）
+- 本仓代码一手核实：`server/uv.lock`、`server/Dockerfile`、`server/codegraph/`（models/galaxy/lsp）、`server/code_relations/tasks.py`、`server/services/`（indexer/repo_mirror/charter_route_signal/process_runtime）、`server/mcp_tools/`、`server/agents/tools/`、`server/durable/`、`task/core/`、`server/friday/settings.py` — 全部集成点与既有契约
+- GitNexus 官方文档（Mintlify，2026-08-09 抓取）+ GitHub README — 全部工具契约、Clusters/Processes、skills 分发、detect_impact prompt
+- Semgrep 官方 docs — CE/Pro taint 边界、diff-aware baseline、Rules License、CLI 语义、1.172.0 bugfix
+- PyPI / 官方 release notes：networkx 3.6.1、rustworkx 0.18.0（含 issue #1141）、leidenalg 0.12.0（GPL-3.0）、semgrep 1.172.0、gopls v0.23.0
+- networkx issue #6655（Louvain 同 seed 非确定，官方 wontfix）；Traag, Waltman & van Eck 2019（Leiden 连通性保证）
+- Aider 官方 repomap 文档 + `aider/repomap.py` 源码；Go 官方博客与 golang/go#45457（gopls 内存特征）
 
 ### Secondary (MEDIUM confidence)
-- claude-agent-sdk-python 上游 issue #578/#817、#676/#730/#731 — 与已安装源码交叉验证一致
-- Cursor Memories 工程访谈（多源一致）— sidecar vs tool-call、任务日志偏好、激进过滤
-- Zep arXiv 2501.13956 / Mem0 blog / 2026 memory 综述 — 记忆分型、bi-temporal、context pollution
-- Memory MCP server 生态（Loci/AutoMem 等）— 工具面形态、去重门 cosine>0.92 参考值、fail-soft 协议
-- 检索切换回归防护多源（golden set/recall@k/hybrid 补召回）— 行业共识
+- rustworkx JOSS 论文 + 官方 benchmark — 3x–100x 提速数字（未本仓复现）
+- Sourcegraph docs（precise vs search-based 双层精度）— 与置信度分层设计交叉印证
+- 经验性阈值（Jaccard 0.8、解析率 60%、depth/nodes/fanout 默认值、内存放大系数）— 需相位内实测校准
 
 ---
-*Research completed: 2026-07-15*
+*Research completed: 2026-08-09*
 *Ready for roadmap: yes*

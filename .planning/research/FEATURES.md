@@ -1,207 +1,316 @@
 # Feature Research
 
-**Domain:** AI 编码代理平台的统一知识库 / agent memory / 完工沉淀闭环 / 容器代理工具配给（v0.17.0 KNOW·LOOP·AGENT·UNIFY）
-**Researched:** 2026-07-15
-**Confidence:** MEDIUM-HIGH（agent memory 生态与 claude-agent-sdk 集成为 HIGH——官方文档与多源一致；Devin/Cursor 内部机制为 MEDIUM——依据官方文档与工程访谈；本项目落地建议基于 MILESTONE-CONTEXT.md 的代码坐标为 HIGH）
+**Domain:** 代码智能图分析（graph-based code intelligence for AI coding agents），对标 GitNexus
+**Researched:** 2026-08-09
+**Confidence:** HIGH（GitNexus 全部工具契约来自官方 Mintlify docs 一手引用；Semgrep 来自官方 docs；Sourcegraph / Aider 来自官方文档与源码）
 
-> 范围限定：只调研 v0.17.0 四类新能力（KNOW/LOOP/AGENT/UNIFY）对应的业界做法。既有能力（RAG/codegraph、delivery_knowledge 图谱、process_runtime 编排、wave 编码、飞书链路、MCP 约 30 工具）不重复调研，只作为依赖坐标引用。
+> 范围限定：只研究 v0.22.0 净新增功能（impact / trace / detect_changes / 社区检测+模块摘要 / 执行流 / rename_preview / Semgrep taint 门禁）。已有能力（hybrid 检索、grep、find_related、RepoRouter、CrossRepoApiCall、Galaxy 可视化、索引管线）不重复研究。
 
-## 业界格局速览（结论先行）
+## 一手调研：GitNexus 工具契约（问题 1）
 
-1. **Agent memory 已收敛出标准分型**：working（上下文内）/ episodic（事件，"上次做了什么"）/ semantic（事实结论）/ procedural（做法规则）。生产系统主流是分层架构：小而热的常驻上下文 + 向量库支撑的检索层 + 显式的整合（consolidation）与遗忘（decay）策略。主流框架 Mem0（混合向量-图）、Zep/Graphiti（**bi-temporal 时间知识图谱**）、Letta/MemGPT（agent 自管理分页）、LangMem（LangGraph 原生）。**Friday 的 `KnowledgeEntity` + bi-temporal 边 + Qdrant 混合检索在架构上就是 Zep/Graphiti 同型**——本里程碑不需要新架构，需要的是把 learning case / MCP 产物这些"漏网数据源"接进既有架构，这正是 KNOW 的定位。
-2. **编码 agent 完工自动沉淀的业界共识是"自动提炼 + 建议先行"**：Devin 自动从会话反馈生成 Knowledge 建议（人工审核后入库，带 Trigger Description 控制召回时机，可 pin 到 repo/org 作用域）；Cursor Memories 用 sidecar 小模型旁路观察对话提取记忆（关键工程教训：**必须激进过滤掉 90%+ 任务特定内容，只留可泛化知识**——主模型直接 tool-call 写记忆会偏向产出"任务日志"）；Qodo/PR-Agent 把"被采纳的 review 建议"沉淀为 auto best practices 文档并在后续 review 中标注引用。
-3. **完工业务回写是 table stakes**：Copilot coding agent 全程锚定 PR——开 draft PR、任务清单打勾、commit message 链接 session log、完工更新 PR 描述并 tag 审核人。"跑完了但业务方（issue/工作项）看不到结果"在业界属于产品缺陷。Friday 三链路（工作流/Chat/MCP）回写不一致正是这个缺陷。
-4. **容器内代理配 MCP 工具的标准做法**：claude-agent-sdk 进程内 SDK MCP server（`create_sdk_mcp_server`）+ `allowed_tools` 白名单（`mcp__<server>__<tool>` 全名）+ **代理凭证代持模式**（工具把请求转发到安全边界外的服务、由服务注入凭证，agent 永远拿不到密钥）——Friday 的"HTTP 调服务端工具面 + PAT 鉴权"方案与官方推荐的 proxy 模式完全一致。skills 走 `setting_sources=["project"]` + `Skill` 工具（task 容器已用此机制加载仓库自带 skills，v0.9.0 验证过）。
-5. **知识库 MCP 工具面的典型形态**是小而稳的核心四件套（store / recall·search / inspect / forget）+ 作用域过滤 + 混合检索，工具数量克制（Loci 6 个、AutoMem 6 个），并附"先召回再干活、完工后存储、失败静默降级"的使用协议（rule/skill 文档）——Friday 已有 `search_*`/`create_learning_case`/`report_project_knowledge`，缺的是 schema snapshot 补全与使用协议（skills 文档）对齐，不是缺工具。
+以下输入输出格式全部摘自 GitNexus 官方文档（https://abhigyanpatwari-gitnexus.mintlify.app），是设计 Friday 同类 MCP 工具时的直接参照。
+
+### `impact`（blast radius 分析）
+
+**输入参数：**
+
+| 参数 | 说明 |
+|------|------|
+| `target` | 函数/类/方法/文件名（如 `"validateUser"`、`"src/auth/validator.ts"`） |
+| `direction` | `"upstream"`（谁依赖我，最常用）/ `"downstream"`（我依赖谁） |
+| `maxDepth` | 最大遍历深度，推荐 1–5 |
+| `relationTypes` | 边类型过滤：`CALLS` / `IMPORTS` / `EXTENDS` / `IMPLEMENTS`，省略则用 usage-based 推断 |
+| `includeTests` | 是否含测试文件（想知道哪些测试会挂时设 true） |
+| `minConfidence` | 边置信度阈值 0–1（降低可多召回、代价是误报） |
+| `repo` | 多仓索引时必填 |
+
+**输出结构（关键设计点）：**
+
+- `risk`：整体风险 `LOW` / `MEDIUM` / `HIGH` / `CRITICAL`，有明确判定标准（如 MEDIUM = 5–15 个受影响符号、2–5 条受影响流程、多模块）
+- `summary`：`directCallers` / `affectedProcesses` / `affectedModules` / `totalAffected` 四个计数
+- `byDepth`：**按深度分组 + 语义标签**——`d1` = "WILL BREAK"（直接调用者，必须更新）、`d2` = "LIKELY AFFECTED"（间接依赖，可能要改）、`d3` = "MAY NEED TESTING"（传递影响，需测试）。每个符号带 `name` / `type` / `filePath` / `line` / `edgeType` / `confidence`
+- `affected_processes`：受影响执行流列表，标注 target 出现在流程第几步（`step` / `totalSteps`）
+- `affected_modules`：受影响功能模块，分 `direct`（d=1 命中）与 `indirect`（d≥2 命中）
+
+**关键洞察**：深度分组 + 每条边独立 `confidence` + 语义化风险标签，是让 LLM agent 直接可消费的核心设计——agent 不需要自己解释图遍历结果，工具已经把"该做什么"编码进了分组语义（d1 必改、d2 复查、d3 补测试）。
+
+### `detect_changes`（diff → 受影响符号 → 受影响流程）
+
+**输入参数：**
+
+| 参数 | 说明 |
+|------|------|
+| `scope` | `"unstaged"`（默认）/ `"staged"`（提交前检查）/ `"all"` / `"compare"`（PR 影响分析，需 `base_ref`） |
+| `base_ref` | 比较基线：`"main"` / `"HEAD~3"` / commit hash |
+| `repo` | 多仓时必填 |
+
+**输出结构：**
+
+- `changed_symbols[]`：`uid` / `name` / `type` / `filePath` / `changeType`（modified/added/deleted）/ `linesChanged`
+- `affected_processes[]`：`name` / `affectedSteps[]`（流程中哪几步被改到）/ `totalSteps` / `module`
+- `risk` + `summary`（filesChanged / symbolsChanged / processesAffected / modulesAffected）
+
+**官方定位**：pre-commit 工作流的一环（文档给出 git pre-commit hook 与 GitHub Actions PR 检查两个集成示例，HIGH/CRITICAL 时警告或阻断）；有显式的**索引新鲜度限制声明**——索引过期会漏掉新符号，工具提示先重建索引。
+
+### `context`（符号 360 度视图）
+
+- **输入**：`name` / `uid`（零歧义查找，优先）/ `file_path`（重名消歧）/ `include_content`（默认关，开了才带源码）/ `repo`；三者至少给一个
+- **输出**：`symbol` 元数据（含所属 `module` 社区）+ `incoming`（分类：calls / imports / extends / implements）+ `outgoing`（同分类）+ `processes[]`（参与的执行流及步骤位置）
+- **消歧协议**：重名时返回 `disambiguation[]` 候选列表（uid + filePath + line），让 agent 二选一——不猜、不静默取第一个
+
+### `query`（概念 → 执行流分组检索）
+
+- **输入**：`query` 自然语言 + `task_context`（"我在做什么"）+ `goal`（"我想找什么"）两个排序增强参数 + `limit`（默认 5，1–20）+ `max_symbols`（默认 10，每流程符号上限）+ `include_content`（默认关）
+- **输出**：`processes[]`（按 RRF 相关度排序的执行流）+ `process_symbols[]`（参与符号，带 uid/process 归属/step_index）+ `definitions[]`（匹配但不属于任何流程的独立类型）
+- **截断策略**：limit × max_symbols 双维度截断 + `include_content` 默认关闭控 token——这是所有工具的统一纪律
+
+### `rename`（多文件协同改名，问题 5）
+
+- **输入**：`symbol_name` 或 `symbol_uid` + `new_name` + `file_path`（消歧）+ **`dry_run` 默认 `true`** + `repo`
+- **输出**：`changes[]` 按文件分组，每条 edit 带 `line` / `old_text` / `new_text` / **`confidence`（二值：`"graph"` = 图边高置信、`"text_search"` = regex 兜底低置信）** / `context`（周边代码片段供人审）；`summary`（totalEdits / filesAffected / graphEdits / textSearchEdits）；`applied` 标志
+- **官方工作流**：preview → 人审 text_search 项 → `dry_run:false` 应用 → `detect_changes()` 验证范围 → 独立 commit
+- **显式限制声明**：抓不到动态属性访问（`obj["validateUser"]()`）、外部配置里的字符串、未索引文件
+
+**对问题 5 的回答**：GitNexus 的 rename 是"preview 默认 + 可选 apply"。**只读 preview 是它设计的重心**——confidence 二分、context 片段、强制先审后改的 checklist 全部服务于 preview 环节；apply 只是最后一步落盘。Friday 场景（服务端工具、消费者是编码代理而非本地 CLI 用户）只做只读 preview 完全成立：apply 半边由编码代理拿着清单自己执行编辑，服务端直接改写用户仓库反而引入危险的写路径。**table stakes 是 preview 的质量**：图引用 + 文本兜底双源、逐条 confidence 标注、周边 context、按文件分组、动态引用限制的显式声明。
+
+### Clusters / Processes 资源与模块摘要（问题 3）
+
+**Clusters（Leiden 社区检测）：**
+
+- 资源 `gitnexus://repo/{name}/clusters` 返回 **top 20** 模块：`name`（启发式标签，基于目录模式自动生成）+ `symbols` 计数 + `cohesion`（内聚度百分比，80%+ = 边界清晰的好模块，<40% = 社区过宽）
+- 详情资源 `cluster/{name}` 返回成员符号列表（同样 top 20 截断）
+- 注意：GitNexus 的模块名是**启发式生成**（`heuristicLabel`），没有 LLM 摘要——这正是 Friday 计划的「LLM 生成模块摘要」可以超越的点
+
+**Processes（执行流）：**
+
+- 入口点检测是**多因子打分**：call ratio（调多被调少 +40~60）、exported（+30）、命名模式（`handle|on|process|execute` +40，`main|run` +50）、路径模式（controller/handler +20）、框架装饰器乘子（`@Controller`/`@app.route` ×1.5–3）；**测试文件排除**
+- 追踪算法：从入口 BFS 正向，`maxTraceDepth: 10`、`maxBranching: 4`（防工具函数爆炸）、`minSteps: 3`（滤掉 A→B 两步平凡流）、`maxProcesses` 按仓库规模动态 `max(20, min(300, symbolCount/10))`、**边置信度 ≥0.5 才参与追踪**（滤掉 fuzzy 匹配导致的跳线）
+- 去重两层：子集去重（短 trace 是长 trace 子串则删）+ 端点去重（同 entry→terminal 只留最长）
+- Process 分 `intra_community` / `cross_community` 两类，**跨社区流程被标注为架构上最重要的**
+- 每个符号有 `STEP_IN_PROCESS` 边带 step 序号，`context` 工具直接透出「此符号在 LoginFlow 第 2/7 步」
+
+**AI agent 怎么消费效果最好（GitNexus 的答案）：**
+
+1. **skills 随索引自动落仓**：`gitnexus analyze` 把 4 个 skill（exploring / debugging / impact-analysis / refactoring）写进 `.claude/skills/gitnexus/`，生成 `AGENTS.md` 引用，Claude Code 还注册 PreToolUse hooks（用图上下文增强 grep/glob）
+2. **skill = 工作流 + checklist**：每个 skill 定义任务触发条件、工具选择顺序、必查清单（如 exploring：先读 context 资源 → query → context 工具 → process 资源 → 读源码）
+3. **「always start with context」**：约 150 token 的轻量资源先行（符号计数、staleness 检查、可用工具），agent 先花小钱确认索引可用再花大钱查询
+4. **「smart tools, not raw queries」哲学**：工具返回**预结构化情报**（process 分组、分类引用、深度分组 blast radius），不返回原始图数据——"agent 一次调用拿全上下文（而不是 5–10 次）、小模型也能用好（工具做了重活）"
+5. `cypher` 原始查询工具保留为 escape hatch，但 skills 全部引导走 smart tools
+
+### `detect_impact` MCP prompt（问题 4 的编排范式）
+
+GitNexus 除工具外还提供 prompt：`detect_impact(scope, base_ref)` 引导 agent 走四步工作流——① `detect_changes` 找改动符号与受影响流程 → ② 对关键符号跑 `context` 看全引用 → ③ 对高危项跑 `impact` 看 blast radius → ④ 产出结构化 markdown 风险报告（Changes / Affected Processes / Risk Level / Recommendations 四段，含测试建议、review 建议、部署建议）。**prompt 提供工作流逻辑，tool 提供数据**——这个报告结构就是 Friday「detect_changes 接入 MR 描述」的模板参照。
+
+**对问题 4 的回答（受影响流程 vs 受影响符号清单）**：GitNexus 的答案是**两者都给、各司其职**——
+
+- **受影响符号清单**（changed_symbols + impact byDepth）是 coding agent 的**行动指南**：d1 逐条列出"必须更新的 caller"，带 file:line 可直接跳转编辑。没有它 agent 无法行动。
+- **受影响流程**（affected_processes）是**风险叙事层**：「LoginFlow 第 2 步被改」比「validateUser 有 23 个 caller」对人类 reviewer 和 MR 描述更有说服力；官方 best practice 明说"Breaking LoginFlow is more critical than a utility function"。
+- 对 Friday：**符号清单是 MVP 必需**（编码代理提交前自查靠它行动），**流程叙事是 MR 描述的增值层**（依赖执行流功能先落地）。两者不是二选一，是分层交付。
+
+### 置信度体系（Friday impact 置信度分级的参照）
+
+GitNexus 每条边带 `confidence` + `reason`：
+
+| 分数 | 场景 | reason |
+|------|------|--------|
+| 1.0 | 同文件引用 | `same-file` |
+| 0.85 | import 已解析的跨文件调用 | `import-resolved` |
+| ~0.5–0.7 | import 解析失败的模糊名匹配 | `fuzzy-global` |
+| ~0.3 | 常见名（`render`/`init`）的极低置信匹配 | `fuzzy-global-low-confidence` |
+
+流程追踪硬性过滤 `MIN_TRACE_CONFIDENCE = 0.5`；impact 让调用方用 `minConfidence` 自选权衡。Friday 的三级来源（解析边 / 裸名边 / 跨仓 `match_confidence`）可直接映射到这套数值 + reason 字符串的呈现方式。
+
+## 竞品交互范式（问题 2）
+
+### Sourcegraph（code navigation）
+
+- **双层精度模型**：search-based（tree-sitter/ctags 启发式，开箱即用、有误报漏报）与 precise（SCIP 编译器级索引，跨仓精确）并存，UI 里 find references 结果**同时展示两类并标注来源**——与 Friday「解析边 vs 裸名边」的置信度分层是同一设计哲学：不隐藏低置信结果，而是标注让用户/agent 自行取舍
+- 跨仓导航靠 SCIP 全局唯一 symbol ID + 版本感知解析；find implementations 支持接口→跨仓所有实现
+- 定位是「人看的导航」而非「agent 消费的分析」：无深度分组、无风险分级——GitNexus 式的 blast radius 语义化是 agent 时代的增量
+
+### Aider repo map（模块摘要消费的另一个范本）
+
+- tree-sitter 抽定义/引用 → 文件为节点、引用为边建图 → **NetworkX Personalized PageRank** 排序 → 在 **token 预算内**（默认 1k，`--map-tokens` 可调）挑最重要的符号签名塞进每轮 prompt
+- 个性化偏置：聊天中已加入的文件出边 ×50、用户提到的标识符 ×10、长而具体的标识符 ×10、引用频次开方衰减
+- **对 Friday 模块摘要的启示**：agent 消费图产物的成功范式是「**排序 + 预算截断**，不是全量灌入」。模块摘要喂 RepoRouter / 技术方案生成时应同样按相关度排序、限 token 预算，而非把所有社区摘要拼接
+- 反面教训：Aider 的 map 每轮重算（有缓存），Friday 的内存图服务 + 水位失效设计已经规避了这一成本
+
+### CodeQL
+
+- 以编译器级数据流/污点分析为核心，查询语言（QL）表达能力最强，但索引构建重（需编译）、增量差、面向安全审计而非 agent 实时交互。Friday 的定位（tree-sitter 图 + Semgrep 外购 taint）刻意避开了这条重路线——与 PROJECT.md「买不是造」决策一致，本调研确认该取舍与业界一致（GitNexus 同样不做数据流分析）
+
+### Cody（Sourcegraph 的 agent context）
+
+- context 引擎混合 keyword + embedding 检索，近年方向是把 precise code graph 作为 context 源之一。公开资料中无 GitNexus 式的 impact/blast-radius 工具面——确认「图分析工具化给 agent」仍是差异化空间而非红海
+
+## Semgrep taint 门禁在 MR 流程的呈现（问题 6）
+
+来自 Semgrep 官方 docs 的关键实践：
+
+**扫描模式（决定噪声水平的第一因素）：**
+
+- **diff-aware scanning**：MR 场景只报「基线之后新引入」的 finding。基线取 merge-base（`SEMGREP_BASELINE_COMMIT=$(git merge-base main feature-branch)`），非 GitHub/GitLab CI 环境用 `SEMGREP_BASELINE_REF`
+- **推荐组合**：主干分支定期 full scan（维护全量 finding 台账）+ MR 分支 diff-aware scan（只看增量）——否则同一 finding 在每个分支重复出现
+- **shortest-path-only**：同一 source→sink 组合只报最短路径一条，加速 triage（多路径同 taint 视为重复）
+
+**finding 分级与生命周期：**
+
+- 规则自带 severity（ERROR/WARNING/INFO 三级），平台侧 finding 状态机：Open → Reviewing / Fixing / **Ignored**（须给原因：False positive / Acceptable risk / No time to fix）/ Fixed
+- **triage 跨分支生效**：某 finding 在任一分支被 ignore，其他分支/ref 同步 ignore——不用每个 MR 重复处理同一误报
+- 误报处理三通道：平台 UI 批量 triage、代码内 `nosemgrep` 注释、**MR 评论回复 `/fp`**（把开发者留在 MR 上下文里完成 triage）
+- dataflow traces（source→sink 传播路径逐步展示）随 finding 给出，`--dataflow-traces` CLI 可见
+
+**taint 能力边界（影响 Friday 门禁的承诺口径）：**
+
+- CE 版 taint 是**函数内**（intraprocedural）；跨函数（`--pro-intrafile`）与跨文件（`--pro` + rule 标 `interfile: true`）是 **Semgrep Pro 付费能力**，且跨文件仅支持部分语言、内存要求高（8GB/核、默认 5GB 上限超限自动回退单文件分析、3 小时超时回退）
+- 引擎无路径敏感、无指针/别名分析、数组元素不追踪——官方明示的假阴性来源
+- **对 Friday 的直接含义**：开源集成只能承诺函数内 taint + 规则库扫 diff，跨函数/跨文件 taint 不可承诺（除非用户自带 Pro license）；门禁文案必须如实声明这个边界，否则「安全门禁」的名号会产生虚假安全感
+
+**门禁呈现的成熟范式（供 MR 集成参照）：**
+
+1. finding 以 MR 评论/描述区块呈现，带 severity、规则 ID、dataflow trace、修复建议
+2. 默认**报告不阻断**（或仅 ERROR 级阻断），阻断必须配 override 通道（`/fp`、ignore + 原因）——无 escape hatch 的硬门禁会被团队整体绕过或关闭
+3. baseline 语义让存量债务不淹没增量信号
 
 ## Feature Landscape
 
-### Table Stakes（用户/业界默认预期，缺了就是断裂）
+### Table Stakes（对标 GitNexus 的必备项）
 
-| Feature | Why Expected | Complexity | Notes（本项目落点） |
+| Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| **经验/记忆统一进单一检索面（向量检索）** | 所有主流 memory 框架（Mem0/Zep/Letta）第一原则：一个检索入口覆盖全部记忆类型，episodic 条目带 timestamp + scope + metadata 走语义检索 | MEDIUM | `McpLearningCase` 补 `knowledge/sources/learning_case.py` normalizer 入图；`search_learning_cases` 底层切 `DeliveryKnowledgeSearchService`（kind 过滤），API 契约不变。token 打分是业界已淘汰的"naive 关键词检索"形态 |
-| **产物不分入口一律入库** | 同一种产物（方案/分析/执行 trace）走不同入口结果不同，属于数据管道 bug 而非产品选择；Zep/Mem0 都强调 ingestion 是统一入口 | MEDIUM | `McpCodingPlan`/`McpRepositoryAnalysis`/`McpCodingExecutionTrace` 各补 normalizer；与 chat `coding_plan`/`task_result` 用既有 natural key 去重关联 |
-| **完工自动回写业务方（issue/工作项/PR）** | Copilot coding agent 的基线行为：完工更新 PR 描述 + tag 人；Devin 完工在 issue/PR 留痕。业务方在自己的系统里看到结果是底线 | MEDIUM | 从 `work_item_execution_service` 抽公共 write-back service，工作流 `ai_coding` 完成 / Chat 建 PR 后 / MCP 执行三处统一调用；开关默认开、fail-soft |
-| **回写/沉淀 best-effort 不反噬主流程** | AutoMem 等 memory 集成的通用协议明文写死："store 失败照常完成任务，memory 是增强不是必需" | LOW | 项目已有 fail-soft 惯例（审计/回写均如此），沿用即可 |
-| **容器内代理能主动查知识（读工具白名单）** | Devin/Copilot 的执行环境都能查组织知识；claude-agent-sdk 官方推荐 proxy 模式给沙箱代理配受控工具。"编码代理是知识贫民区"在业界是明确反模式 | HIGH | task 侧 `build_knowledge_mcp_server`（进程内 SDK MCP server，HTTP 调 `/api/mcp/tools/*` 白名单子集，PAT 鉴权），复用 `extra_mcp_servers`/`allowed_tools` 机制；注意 `allowed_tools` 须写 `mcp__<server>__<tool>` 全名（官方文档强调的常见踩坑点） |
-| **skills 随代理环境自动可见** | Devin 自动发现 `.agents/skills/`/`.claude/skills/` 等多路径 SKILL.md 并在会话开始即列出 name+description；claude-agent-sdk 需 `setting_sources` 显式启用 + `Skill` 工具在 allowed_tools | MEDIUM | 派发准备 workspace 时注入 friday-code/friday-memory 精简版到 `.claude/skills/`（与仓库自带共存不覆盖）；v0.9.0 已打通 `setting_sources=["project"]` 通道，本次只是多放物料 |
-| **三链路上下文注入对齐** | 同一平台不同入口给代理的上下文不一致 = 行为不可预期；Copilot 无论从 issue/panel/chat 发起都注入同样的 repo instructions | LOW | 工作流 `ai_coding` 节点派发前 prepend `pack_project_context`（对齐 Chat 的 `_resolve_project_context_for_dispatch`），纯复用 |
-| **对外工具 schema 完整可发现** | MCP 生态基线：工具面即产品契约，注册了的工具必须进 schema/文档，否则客户端不可发现 | LOW | `report_project_state`/`reverse_lookup_requirements` 补进 `TOOL_SCHEMA_SNAPSHOT` + 快照测试 |
-| **权限/排除/脱敏在新通道天然继承** | claude-agent-sdk 安全部署指南核心原则：凭证与权限校验留在安全边界外的服务端，agent 经 proxy 调用 | LOW | 容器 MCP 走服务端 HTTP 工具面（不直连 Qdrant/DB），排除文件 fail-closed、PAT 按所有者 RBAC 天然生效——这是选 proxy 方案的最大红利 |
+| impact 深度分组 + 语义标签 | GitNexus byDepth d1/d2/d3 = WILL BREAK / LIKELY AFFECTED / MAY NEED TESTING 已是 agent 消费的事实标准 | MEDIUM | 反向 BFS 按深度分桶；标签语义直接写进工具描述与输出 |
+| 每条边独立 confidence + `minConfidence` 参数 | GitNexus 1.0/0.85/0.5/0.3 四档 + reason 字符串；调用方自选精度/召回权衡 | LOW | Friday 三级来源（解析边 1.0 / 裸名边 ~0.5 / 跨仓 match_confidence 原值）映射即可，务必带 reason |
+| 风险分级 LOW/MEDIUM/HIGH/CRITICAL + 明确判定标准 | GitNexus impact 与 detect_changes 都给 risk + criteria 表；agent 靠它决定下一步动作强度 | LOW | 判定标准（符号数/流程数/模块数阈值）写死可解释，不要 LLM 判 |
+| 结果截断 + summary 计数 | 所有 GitNexus 工具 limit/max_symbols 双维截断、include_content 默认关、资源 top-20 | LOW | token 纪律是 agent 工具的生命线；summary 计数让 agent 知道被截断了多少 |
+| detect_changes 的 scope 参数（staged/all/compare+base_ref） | GitNexus 四种 scope 覆盖 pre-commit / PR 两大场景；compare+base_ref 是 MR 影响分析的标准形态 | MEDIUM | Friday 场景以 compare（MR diff）为主；git diff 行区间 × Symbol 行区间定位已在里程碑规划 |
+| 受影响符号清单（changeType + 行数 + file:line） | coding agent 的行动指南；无清单无法行动（问题 4 结论） | MEDIUM | uid/name/type/filePath/changeType/linesChanged 六字段是 GitNexus 的最小集 |
+| trace 路径带 file:line 逐步渲染 | GitNexus process 资源逐 step 给 symbol+file:line+community；Sourcegraph 导航同样以位置为锚 | LOW | 两符号最短路 + 每跳 file:line + 边类型/置信度 |
+| 重名消歧协议（uid 优先 + disambiguation 候选列表） | GitNexus context/rename 遇重名返回候选让 agent 明确二选，绝不静默取第一个 | LOW | Friday Symbol 已有主键，透出稳定 uid 即可 |
+| 索引新鲜度（staleness）声明 | GitNexus context 资源带 staleness 检查，detect_changes 文档显式声明索引过期的失效模式 | LOW | Friday 已有 `last_indexed_commit_sha` 水位，工具输出带「索引落后 N commits」提示 |
+| rename 只读 preview：图边 + 文本兜底双源、逐条 confidence 二分、context 片段 | GitNexus rename 的价值重心在 preview 质量（问题 5 结论）；动态引用限制须显式声明 | MEDIUM | Friday 只做只读半边是合理裁剪；graph/text_search 二值标签 + 按文件分组照搬 |
+| taint 门禁 diff-aware（只报 MR 新增 finding） | Semgrep 官方推荐范式；全量 finding 灌 MR 是噪声灾难 | MEDIUM | baseline 取 merge-base；主干 full scan 台账可后置 |
+| finding 分级 + 误报通道 | severity 三级 + ignore 须给原因 + triage 跨分支生效是 Semgrep 成熟实践 | MEDIUM | 最小集：severity 透出 + `nosemgrep` 注释生效 + 门禁默认报告不阻断 |
 
-### Differentiators（竞争优势，本里程碑值得投入的差异化）
+### Differentiators（Friday 的竞争优势位）
 
-| Feature | Value Proposition | Complexity | Notes（本项目落点） |
+| Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| **编码完成自动提炼 learning case（全自动入库）** | Devin/Cursor 都停在"建议 + 人工确认"；Qodo auto best practices 是商用独占功能。Friday 做到"任一编码路径完工 → 自动产可检索经验"即超出多数产品的默认形态 | HIGH | 挂 `subagent/api/callbacks.py` 完工回调，LLM 从 TaskResult/diff/plan 提炼，赋新 `call_source`，best-effort。质量门槛见下文专节——这是成败关键，业界教训集中在这里 |
-| **bi-temporal 知识图谱做经验底座** | Zep 把 bi-temporal 作为对 Mem0/Letta 的核心差异化卖点（矛盾事实不删除而是失效 + 时点查询）；Friday 已有这套（v0.3.0/v0.6.0），learning case 入图即免费获得时效失效、supersedes 版本链、图边关联（case→plan→PR→work_item 可追溯） | LOW（复用） | 入图时把 learning case 与 work_item/repository/tech_plan 建边，检索时图扩散召回——纯复用既有 `GraphStore` 能力，业界要单独买 Zep 才有 |
-| **平台级多步 Skill（pre_coding_research / post_coding_capture）** | 业界的"先召回再编码、完工后沉淀"只是 rule 文档里的君子约定（AutoMem 的 automem.mdc、Devin 的 Knowledge 使用习惯）；做成服务端可执行的多步 RemoteTool Skill，Cursor 与容器代理同一份，是把约定变成产品能力 | MEDIUM | 复用 `server/tools/sources/skill.py` 多步 steps + `/api/tools/execute/`；`pre_coding_research`: route→rag→delivery_knowledge→learning_cases 聚合；`post_coding_capture`: summarize_branch→create_learning_case→report_project_knowledge |
-| **编排召回吃到全部沉淀（document/learning_case 扩容）** | 方案生成时召回历史经验/项目记忆 = ExpeL 的"insight 注入 inference"模式产品化；多数编码平台的方案生成不带组织记忆 | LOW | `recall_adapter` kinds 扩 `document` + `learning_case`，可配置开关默认开 |
-| **PR 后轻量 review 沉淀** | Qodo 的差异化能力（商用独占）：review 结论回流成组织经验，形成"review→经验→下次更好"飞轮 | MEDIUM | 范围克制：PR 创建后可选触发 review，结论沉淀为 learning case；不做 review 产品化（UI/规则引擎显式 out of scope） |
-| **skills 单一事实源（容器 == npm 包同源）** | Devin 用"indexed + 磁盘扫描覆盖"保证 skills 不漂移；多数自建平台的容器物料与对外包各维护一份、必然漂移 | LOW | 容器物料由根 `skills/` 包生成/直引，加一致性测试（hash 对比）防 CI 漂移 |
-| **三链路检索同一条经验（统一排序验收）** | "在 Chat / 工作流 / MCP / 编排四处检索能召回同一条 learning case"是统一知识库的可验证承诺，业界没有对等物（各产品都是单入口） | —（验收面） | 这是里程碑验收标准 1，不是独立功能；靠 KNOW 各项共同达成 |
+| 跨仓 impact（穿 `CrossRepoApiCall` 边界） | GitNexus 每仓独立图、impact 不穿仓；Friday 多仓图 + 跨仓 API 边可以回答「改这个后端接口影响哪些前端仓」——里程碑已标「反超 GitNexus」 | HIGH | 跨仓边带 `match_confidence`，在 byDepth 输出里标注 `cross_repo: true` + 独立置信档 |
+| LLM 模块摘要（超越 heuristicLabel） | GitNexus 社区标签是目录启发式字符串；Friday 用 LLM 生成语义摘要，喂 RepoRouter charter_match 与技术方案生成——摘要成为路由/规划的检索信号而不只是展示 | MEDIUM | Aider 教训：消费端按相关度排序 + token 预算截断，不全量灌入。LLM 调用须赋 `call_source` |
+| detect_changes → MR 描述自动生成闭环 | GitNexus 的 detect_impact prompt 只产给人看的报告；Friday 把同一报告结构（Changes/Affected Processes/Risk/Recommendations）直接写进编码任务的 MR 描述与提交前自查 | MEDIUM | 报告模板照 detect_impact prompt 四段结构；接入 `RepoCodingTask` 提交链路 |
+| 服务端多用户图服务（权限 + exclusion fail-closed） | GitNexus 是本地单用户 CLI；Friday 图工具天然继承 PAT 鉴权、排除文件六面不可见、RetrievalTrace 留痕 | MEDIUM | 复用既有 MCP 工具模式即零额外设计；这是自托管团队场景的护城河 |
+| taint 门禁进 MR 编排流 | GitNexus 完全没有安全分析面；Semgrep 自身是通用 CI 工具——Friday 把 diff-aware taint 扫描编排进「需求→PR」流水线，finding 进 MR 描述/评论 | MEDIUM | 买不是造（已定决策）；开源版只承诺函数内 taint，文案如实声明边界 |
+| 执行流以 `Endpoint` 为一等入口 | GitNexus 入口点靠启发式打分猜；Friday 已有 Endpoint 模型（路由装饰器解析），入口是确定性的——执行流质量天花板更高 | MEDIUM | 保留 GitNexus 的 BFS 参数纪律（maxDepth 10 / maxBranching 4 / minSteps 3 / 置信度 ≥0.5） |
+| skills 随平台分发（repo-specific 工作流） | GitNexus 用 `.claude/skills/` 落仓 + AGENTS.md 引用证明了「工具 + 工作流 skill」比裸工具留存率高；Friday 已有 `@friday-ai-codes/skills` 同源分发管线 | LOW | 新增 impact-analysis / refactoring 两个 skill 模板即可，复用 v0.17.0 同源机制 |
 
-### Anti-Features（业界踩过的坑，明确不做/不这样做）
+### Anti-Features（明确不做/不这样做）
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| **主模型直接 tool-call 写记忆（无过滤全自动）** | 实现最简单，"agent 自己决定记什么" | Cursor 实测：强模型有产出"任务日志"的强烈偏好，与"可泛化知识"目标相反；错误记忆会让模型"double down"（坚信记忆正确而拒绝纠正） | 沉淀走独立的提炼调用（旁路 LLM，专用 prompt 强调泛化性），不让编码主 agent 顺手写库；提炼失败静默丢弃 |
-| **"记住一切"（每次完工无门槛入库）** | 数据越多越好的直觉 | Reflexion/ExpeL 系统性结论：无策展的记忆库积累噪声，"lesson rot"（过时经验误导后续）比没有记忆更糟；Mem0 明确把 consolidation 列为必须步骤 | 入库前质量门槛（见下节）+ 复用 bi-temporal 失效机制让过时 case 可被 supersede；重复 case 走实体 natural key 去重 |
-| **给容器代理开放全部 30 个 MCP 工具** | 反正鉴权了，全开省事 | claude-agent-sdk 安全指南：无人值守运行必须窄白名单 + fail-closed；写类工具（create_merge_request 等）在容器内被 prompt injection 滥用的爆炸半径大；每工具都增加时延与 token 负担 | 只开读类知识工具白名单（search_rag_chunks/grep_repository/get_repository_file/search_delivery_knowledge/search_learning_cases/search_project_context/lookup_project_by_branch）+ 每任务调用配额/超时 |
-| **容器直连 Qdrant/DB 查知识** | 绕过 HTTP 一跳，性能好 | 凭证进容器（违反 PAT-02 精神）、排除文件/权限过滤要在容器侧重新实现一遍、脱敏旁路 | 服务端 HTTP 工具面 proxy 模式（官方推荐），权限/排除/脱敏零成本继承 |
-| **learning case 检索造第二套排序** | McpLearningCase 已有 token 打分，加权融合"兼顾两边" | 两套排序 = 统一知识库目标失败的根因（当前痛点就是平行两套"历史经验"无法统一排序） | 底层整体切 `DeliveryKnowledgeSearchService`，token 打分退役；保留 API 契约 + 对照测试守住召回质量（风险 1 的既定缓解） |
-| **本里程碑合并 chat.CodingPlan 与 McpCodingPlan 两张表** | "同名不同物"看着难受，合表最彻底 | 改动面横跨 chat/MCP/执行 bridge，与知识收敛目标正交；MILESTONE-CONTEXT 已显式 out of scope | 两侧 plan 都稳定入统一知识库、可互相检索到（最小趋同）；合表单独立项 |
-| **完整 review 产品化（评审 UI/规则引擎）** | review 沉淀听着像要做全套 | 范围爆炸；Qodo 整个产品线做这一件事 | "PR 后可选 review + 结论沉淀为 learning case"最小环 |
-| **记忆自动注入每次对话开头（无召回条件）** | AutoMem 式"conversation start 自动 recall"看似省心 | 无关记忆污染上下文（context pollution 是 2026 memory 综述列的头号未解问题）；Devin 特意用 Trigger Description 控制"相关才召回" | 走检索式按需召回（既有 RAG 惯例）；Chat 工具面补读工具让 agent 主动查，而非无脑注入 |
-
-## 自动提炼 learning case：触发时机 / 结构化字段 / 质量门槛（专节）
-
-这是 LOOP 的技术核心，业界经验最集中的地方，单独展开供 requirements 直接消费。
-
-**典型触发时机**（业界实践并集，按本项目适配排序）：
-
-1. **编码任务终态回调**（成功与失败都触发——Reflexion/ExpeL 均强调失败经验价值更高，failure pattern 是最有用的 insight 类型）→ 本项目挂 `subagent/api/callbacks.py`。
-2. **PR 创建/合并后**（Copilot/Qodo 的锚点；合并 = 人类隐式验收，质量信号最强）→ 本项目在 write-back service 后串接。
-3. **review 结论产出后**（Qodo：被采纳的建议才入库——"人类采纳"是天然质量门槛）→ 本项目 PR 后轻量 review 的沉淀点。
-4. **用户在会话中给出纠正性反馈时**（Devin Knowledge suggestion / Cursor sidecar 的主触发）→ 本项目已有 Cursor 侧 `create_learning_case` 手动通道 + friday-memory skill 引导，本里程碑不新增会话监听（避免 sidecar 模型这一整套新基建）。
-
-**结构化字段**（Mem0 schema + Devin Knowledge + 既有 McpLearningCase 交集，推荐 schema）：
-
-- `outcome`（success/failure/partial）——ExpeL 的成败配对是提炼输入的基础
-- `root_cause` / `solution`（失败向）或 `approach` / `key_decision`（成功向）——Reflexion 的"可执行改进方向"
-- `trigger_context`（什么场景该召回这条——Devin Trigger Description 的等价物；向量化后这就是检索锚点）
-- `scope`（repository / work_item / 全局——Devin pin 语义；本项目用图边关联 repository/work_item/tech_plan 实现，比字段更强）
-- `source_pointers`（task_result id / PR URL / plan_version——审计与可信度回溯；Mem0 的 source-message pointers）
-- 时间戳 + `initiated_by_user_id`（无则 system）——观测规范既有要求
-
-**质量门槛**（业界教训的并集，按拦截顺序）：
-
-1. **泛化性过滤**：提炼 prompt 显式要求"可复用教训"而非"本次任务日志"（Cursor 的核心教训，90%+ 内容应被丢弃）；产出为空/低置信度直接不入库。
-2. **去重门**：与既有 case 语义相似度过高（业界参考值 cosine > 0.92，Loci 的 dedup gate）则合并/跳过——本项目可复用实体 natural key + 向量相似检查。
-3. **脱敏不可绕过**：提炼输入（TaskResult/diff）与产出都过 `redact_secrets_in_text`——既有强制规范。
-4. **长度/结构校验**：必填字段齐全才入库（Devin：Knowledge 必须有 trigger）。
-5. **可退场**：入库的 case 保留 supersede/失效通道（bi-temporal 天然支持），对抗 lesson rot；不做静默删除（Reflexion 模式明确：显式 retire 而非 overwrite）。
-6. **全程 fail-soft + 观测**：提炼 LLM 调用赋新 `call_source`、失败吞掉、写入走 ingestion 唯一入口（INV-6）。
+| rename 自动 apply（服务端改写用户仓库） | "既然能算出清单为什么不直接改" | 服务端写用户仓库是危险的新写路径；GitNexus 的 apply 是本地 CLI 场景，且官方 checklist 也强制先 preview 人审 | 只读 preview 清单 + 编码代理自己执行编辑（里程碑已定） |
+| 自研 PDG/CFG/污点分析 | "CodeQL 能做我们也做" | 编译器级数据流是另一个量级的工程；GitNexus 同样不做；CodeQL 索引重、增量差 | Semgrep taint mode 外购（已定决策，本调研确认与业界一致） |
+| 原始图数据 dump / 裸 Cypher 面向 agent | "灵活性最大" | GitNexus skills 明确引导「smart tools, not raw queries」——预结构化输出让 agent 一次拿全、小模型可用；裸图数据浪费 token 且小模型驾驭不了 | 预结构化工具输出；原始查询最多作为 superuser 调试 escape hatch |
+| 无截断的完整 impact 结果 | "怕漏" | 大仓 d3 传递闭包可达数千符号，token 爆炸且 agent 消化不了 | 深度分组 + 每层 top-N + summary 总计数 + minConfidence 过滤 |
+| taint 硬门禁默认阻断、无 override | "安全要严" | Semgrep 实践证明无 escape hatch 的硬门禁会被整体绕过；存量债务淹没增量信号 | diff-aware 只报新增 + 默认报告不阻断（或仅 ERROR 阻断）+ ignore/nosemgrep 通道 |
+| 用受影响流程替代受影响符号清单 | "流程叙事更高级" | 流程是叙事层不是行动层；agent 没有符号清单无法定位要改的 caller（问题 4 结论） | 符号清单为主 + 流程叙事为 MR 描述增值层，两者分层交付 |
+| 每请求实时全图重算 | "保证最新" | Aider 每轮重算是本地小图；服务端多仓大图重算延迟不可接受 | 内存图缓存 + `last_indexed_commit_sha` 水位失效 + LRU（地基已规划） |
+| 承诺跨函数/跨文件 taint（开源版） | "门禁要全" | 跨函数/跨文件 taint 是 Semgrep Pro 付费能力且资源要求高（8GB/核）；虚假承诺产生虚假安全感 | 如实声明函数内边界；Pro license 用户可配置升级 |
 
 ## Feature Dependencies
 
 ```
-[KNOW-1 learning case 入图 normalizer]
-    └──requires──> 既有 knowledge/sources/ 注册表 + aschedule_ingestion（v0.3.0）
-[KNOW-2 search_learning_cases 切向量检索]
-    └──requires──> KNOW-1（不入图无从检索）
-[KNOW-3 MCP 产物入图（plan/analysis/trace）]
-    └──requires──> 既有 sources 模式；与 chat coding_plan natural key 去重约定
-[KNOW-4 编排召回扩容 document/learning_case]
-    └──requires──> KNOW-1（learning_case kind 存在）；既有 recall_adapter
-[KNOW-5 Chat 工具面补读工具]
-    └──requires──> KNOW-2（否则 Chat 查到的还是 token 打分结果）
+内存图服务（地基：networkx 缓存 + 水位失效 + LRU）
+    └──required by──> impact 影响面分析
+    └──required by──> trace 调用路径
+    └──required by──> rename_preview（图引用半边）
+    └──required by──> 社区检测
+    └──required by──> 执行流追踪
 
-[LOOP-1 公共飞书回写 service]
-    └──requires──> 既有 work_item_execution_service（抽取源）；三处调用点各自既有链路
-[LOOP-2 完工自动提炼 learning case]
-    └──requires──> KNOW-1（入库通道）+ 既有 callbacks.py + 脱敏/观测设施
-[LOOP-3 平台 Skill 两枚]
-    └──requires──> KNOW-2（pre_coding_research 引用向量版检索）+ 既有 RemoteTool SKILL 多步机制
-[LOOP-4 PR 后轻量 review 沉淀]
-    └──requires──> LOOP-2（沉淀通道同源）+ LOOP-1（挂接点在回写链路附近）
+impact ──required by──> detect_changes（diff→符号→批量 impact）
+社区检测 ──required by──> LLM 模块摘要 ──enhances──> RepoRouter / 技术方案生成
+社区检测 ──enhances──> 执行流（intra/cross_community 分类；GitNexus 中社区先于流程检测）
+执行流（Process 模型） ──enhances──> detect_changes（affected_processes 叙事层）
+执行流 ──enhances──> impact（affected_processes 字段）
+detect_changes ──required by──> MR 描述自动生成 / 编码任务提交前自查
 
-[AGENT-1 容器知识 MCP]
-    └──requires──> 既有 extra_mcp_servers/allowed_tools 机制（task/core/executor.py）+ PAT 直传链路（v0.2.0）
-    └──enhanced by──> KNOW-2（容器查到的 learning case 是向量版）
-[AGENT-2 容器 skills 注入]
-    └──requires──> 既有 setting_sources=["project"] 通道（v0.9.0）+ 根 skills/ 包（同源）
-    └──enhanced by──> LOOP-3（skills 文档引导调用平台 Skill）
-[AGENT-3 工作流上下文对齐 pack_project_context]
-    └──requires──> 既有 project_context_packer（v0.15.0）——纯复用
-
-[UNIFY-1 improve/analyze 收敛 delegate_process_runtime] ──independent──
-[UNIFY-2 schema snapshot 补全] ──independent（但 AGENT-1 白名单工具的 schema 必须先稳定）──
+Semgrep taint 门禁 ──independent──（只依赖 MR diff 通道，不依赖内存图）
+rename_preview ──enhances──> 编码代理改名工作流（grep 兜底半边复用既有 grep 面）
 ```
 
 ### Dependency Notes
 
-- **KNOW-1 是全里程碑的枢纽**：LOOP-2 的入库通道、KNOW-2 的检索底层、KNOW-4 的召回扩容、AGENT-1 容器查经验的数据源全部依赖它先落地。Phase 排序上应最先。
-- **LOOP-1 与 KNOW 无依赖**，可并行推进（回写用的是既有飞书能力，不经知识库）。
-- **AGENT-1 依赖 UNIFY-2 的顺序敏感点**：容器白名单里的工具 schema 若在同里程碑变动，会造成容器侧与 snapshot 漂移；建议 UNIFY-2 在 AGENT-1 验收前完成。
-- **LOOP-4 是增值项**：依赖最深（LOOP-1 + LOOP-2 都要先在），范围最该守住"能跑通 + 沉淀"。
+- **一切图工具依赖内存图服务**：GitNexus 用 KuzuDB 常驻 + 连接池懒加载 5 分钟逐出；Friday 的 networkx 缓存 + 水位 + LRU 是同构方案，必须第一个落地。
+- **社区检测先于执行流**：GitNexus 索引管线第 6 阶段在社区之后才做流程检测，因为 Process 需要 `intra/cross_community` 分类与 community 归属标注——Friday 相位排序应保持同序。
+- **detect_changes 分两层交付**：符号清单半边只依赖 impact（MVP）；affected_processes 叙事半边依赖执行流（可后置增强，不阻塞 MR 描述首版）。
+- **Semgrep 门禁与图功能零耦合**：可并行开发，任何相位插入均可。
+- **模块摘要是消费端驱动的**：摘要本身 MEDIUM 复杂度，但价值取决于 RepoRouter/方案生成的消费接线；喂养侧遵循 Aider 范式（排序 + 预算截断）。
 
 ## MVP Definition
 
-### Launch With (v1 — 本里程碑必达)
+### Launch With (v1)
 
-- [ ] KNOW-1/2 learning case 入图 + 向量检索切换 — 统一知识库的定义性交付，验收标准 1 的前提
-- [ ] KNOW-3 MCP 产物入图 — 消除"同一产物走 MCP 就成盲区"的数据管道断裂
-- [ ] LOOP-1 公共回写 service 三链路接入 — table stakes，业务侧可见性底线
-- [ ] LOOP-2 完工自动提炼（含质量门槛全套） — 里程碑的差异化核心
-- [ ] AGENT-1 容器知识 MCP（读白名单） — "知识贫民区"的直接解药
-- [ ] AGENT-3 工作流 pack_project_context 对齐 — 复杂度最低、断裂感消除最直接
-- [ ] UNIFY-2 schema snapshot 补全 — 低成本、契约完整性
+- [ ] 内存图服务 — 一切图工具的地基，无它全部空谈
+- [ ] impact（深度分组 + 置信度 + 风险分级 + 截断 + 跨仓边） — 里程碑核心承诺，agent「改前自查」的主工具
+- [ ] trace 调用路径 — impact 的姊妹工具，实现共享图遍历基建，边际成本低
+- [ ] detect_changes 符号清单半边 + MR 描述接入 — 「提交前自查」闭环是 Friday 区别于 GitNexus 的落点
+- [ ] 重名消歧 + staleness 提示 + 截断纪律 — 所有工具的横切 table stakes，首版就要有
 
-### Add After Validation (v1.x — 里程碑内后置或视进度)
+### Add After Validation (v1.x)
 
-- [ ] KNOW-4 编排召回扩容 — KNOW-1 落地后加 kinds 即可，注意召回质量观测先行
-- [ ] KNOW-5 Chat 工具面补读工具 — 薄封装，随 KNOW-2 顺手
-- [ ] LOOP-3 平台 Skill 两枚 — 机制已有，物料工作为主
-- [ ] AGENT-2 容器 skills 注入 + 同源校验 — 通道已有（v0.9.0），物料 + 一致性测试
-- [ ] LOOP-4 PR 后轻量 review 沉淀 — 依赖最深的增值项，进度紧则最先降级
-- [ ] UNIFY-1 improve/analyze 收敛 — 内部重构，用户不可见，可排后
+- [ ] 社区检测 + LLM 模块摘要 — 触发条件：impact/trace 上线后，RepoRouter charter_match 消费接线就绪
+- [ ] 执行流（Endpoint 入口 + Process 模型） — 触发条件：社区检测落库后；随后回填 detect_changes/impact 的 affected_processes 字段
+- [ ] rename_preview — 独立性强，编码代理改名需求出现即可插入
+- [ ] Semgrep taint 门禁（diff-aware + severity + nosemgrep） — 独立轨道，MR diff 通道就绪即可；首版报告不阻断
+- [ ] impact-analysis / refactoring skills 进 `@friday-ai-codes/skills` — 工具面稳定后固化工作流
 
-### Future Consideration (v2+ — 显式不做)
+### Future Consideration (v2+)
 
-- [ ] chat.CodingPlan 与 McpCodingPlan 合表 — 单独立项（已 out of scope）
-- [ ] review 产品化（UI/规则引擎） — Qodo 整条产品线的体量
-- [ ] 会话内 sidecar 记忆提取（Cursor Memories 同型） — 需要旁路小模型基建 + 激进过滤 prompt 调优，投入产出比不如完工触发
-- [ ] 记忆 consolidation/decay 自动策展 — 业界前沿（Mem0 刚产品化），先靠 bi-temporal 失效 + 人工 supersede 过渡
-- [ ] 对外知识开放平台（配额/租户/计费） — 已 out of scope
+- [ ] detect_impact 式 MCP prompt（编排 detect_changes→context→impact 的工作流 prompt） — 等工具面全部稳定
+- [ ] taint 门禁台账化（主干 full scan + finding 状态机 + 跨分支 triage） — Semgrep 平台级能力，自建成本高，等门禁用量验证
+- [ ] 模块摘要进 Galaxy 可视化 / 前端社区着色 — 展示层增值，不影响 agent 链路
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| learning case 入图 + 向量检索（KNOW-1/2） | HIGH | MEDIUM | P1 |
-| MCP 产物入图（KNOW-3） | HIGH | MEDIUM | P1 |
-| 公共回写 service 三链路（LOOP-1） | HIGH | MEDIUM | P1 |
-| 完工自动提炼 learning case（LOOP-2） | HIGH | HIGH | P1 |
-| 容器知识 MCP（AGENT-1） | HIGH | HIGH | P1 |
-| 工作流上下文对齐（AGENT-3） | MEDIUM | LOW | P1 |
-| schema snapshot 补全（UNIFY-2） | MEDIUM | LOW | P1 |
-| 编排召回扩容（KNOW-4） | MEDIUM | LOW | P2 |
-| Chat 工具面补读工具（KNOW-5） | MEDIUM | LOW | P2 |
-| 平台 Skill 两枚（LOOP-3） | MEDIUM | MEDIUM | P2 |
-| 容器 skills 注入 + 同源校验（AGENT-2） | MEDIUM | MEDIUM | P2 |
-| PR 后轻量 review 沉淀（LOOP-4） | MEDIUM | MEDIUM | P3 |
-| improve/analyze 收敛（UNIFY-1） | LOW（内部质量） | MEDIUM | P3 |
-
-**Priority key:**
-- P1: 本里程碑必达（验收面 1–5、7、9 的支撑）
-- P2: 应做，机制已有、物料/薄封装为主（验收面 6、10）
-- P3: 增值/内部收口，进度紧可降级
+| 内存图服务 | HIGH（地基） | MEDIUM | P1 |
+| impact（含跨仓） | HIGH | HIGH | P1 |
+| trace | MEDIUM | LOW（复用 impact 基建） | P1 |
+| detect_changes 符号清单 + MR 描述 | HIGH | MEDIUM | P1 |
+| 社区检测 + LLM 模块摘要 | MEDIUM | MEDIUM | P2 |
+| 执行流（Endpoint 入口 + Process） | MEDIUM | HIGH | P2 |
+| rename_preview | MEDIUM | MEDIUM | P2 |
+| Semgrep taint 门禁 | MEDIUM | MEDIUM | P2 |
+| skills 固化工作流 | MEDIUM | LOW | P2 |
+| detect_impact 式编排 prompt | LOW | LOW | P3 |
+| taint finding 台账/状态机 | LOW | HIGH | P3 |
 
 ## Competitor Feature Analysis
 
-| Feature | Devin (Cognition) | Cursor | Copilot coding agent | Qodo/PR-Agent | Our Approach |
-|---------|-------------------|--------|----------------------|---------------|--------------|
-| 经验自动沉淀 | 会话反馈→Knowledge 建议→人工审核入库；Trigger Description 控召回 | sidecar 小模型旁路提取→用户审批；激进过滤任务日志 | 无（session log 可查但不提炼） | 采纳的 review 建议→定期提炼 auto best practices（商用） | 完工回调触发 LLM 提炼→质量门槛（泛化过滤/去重/脱敏/字段校验）→自动入库 + bi-temporal 可失效；比 Devin/Cursor 更自动，靠门槛而非人工审核守质量 |
-| 沉淀数据结构 | 自由文本 + trigger + pin 作用域（repo/org）+ 文件夹 | 短 rule 式条目，项目作用域 | — | markdown 最佳实践文档 | 结构化字段（outcome/root_cause/solution/trigger_context）+ 图边关联（case↔repo↔work_item↔plan↔PR）+ 向量检索——结构化程度业界最高档 |
-| 完工业务回写 | issue/PR 留痕 + session 可追问 | 本地工具，无业务回写 | draft PR 全程锚定：清单打勾、commit 链 session log、完工更新描述 tag 人 | review 评论回写 PR | 公共 write-back service：飞书工作项评论 + 可选文档，三链路（工作流/Chat/MCP）统一格式 |
-| 容器代理知识工具 | 会话内建知识检索（Accessed Knowledge 可见）+ Devin MCP server 对外 | MCP 生态由用户自配 | repo instructions + 自定义 MCP（firewall 内） | — | 进程内 SDK MCP server 经服务端 HTTP proxy（官方推荐模式），PAT 鉴权，读白名单 7 工具，排除/权限/脱敏零成本继承 |
-| skills 分发 | 多路径 SKILL.md 自动发现 + indexed/disk 双源防漂移 + 会话中自动建议新 skill | .cursor/skills + 插件市场 | .github/skills | — | 派发时注入容器 `.claude/skills/`，与 npm 包同源 + hash 一致性测试（对齐 Devin 的防漂移思路） |
-| 知识 MCP 工具面 | Devin MCP：knowledge CRUD + 建议管理 | — | — | — | 既有约 30 工具补 snapshot 完整性 + 平台级多步 Skill（pre/post coding）——多步服务端 Skill 是业界少有形态 |
+| Feature | GitNexus | Sourcegraph / CodeQL / Aider / Semgrep | Our Approach |
+|---------|----------|----------------------------------------|--------------|
+| impact/blast radius | byDepth d1/d2/d3 语义标签 + risk 四级 + minConfidence + affected_processes/modules | Sourcegraph：find references 跨仓精确但无深度分组/风险语义（面向人） | 照搬 GitNexus 输出契约 + 跨仓边（反超）+ 置信度三源映射 |
+| detect_changes | scope 四态 + base_ref + 符号清单 + 流程叙事 + pre-commit/CI 集成示例 | Semgrep：diff-aware baseline（merge-base）是同构思想 | scope 以 compare（MR diff）为主，报告结构照 detect_impact prompt 四段进 MR 描述 |
+| 模块/社区 | Leiden + heuristicLabel + cohesion% + top-20 资源 | Aider：PageRank 排序 + token 预算截断喂 LLM | Leiden/Louvain 社区落库 + LLM 语义摘要（超越启发式标签），消费端按 Aider 范式排序限额 |
+| 执行流 | 入口启发式打分 + BFS（depth10/branch4/minSteps3/conf≥0.5）+ 双层去重 + intra/cross 分类 | 无对标（CodeQL 数据流是另一范畴） | Endpoint 确定性入口（优于启发式猜测）+ 保留 GitNexus BFS 参数纪律 |
+| rename | preview 默认 + graph/text_search 二分 confidence + context 片段 + 可 apply | Sourcegraph：无批量 rename；IDE LSP rename 单机精确但无跨文件 confidence 分层 | 只读 preview（不做 apply），双源 + confidence 二分照搬 |
+| 安全门禁 | 无 | Semgrep：diff-aware + severity + triage 状态机 + /fp + nosemgrep + shortest-path | 集成 Semgrep（买不是造）；开源版如实声明函数内 taint 边界 |
+| agent 消费面 | 7 tools + 6 resources + 2 prompts + 4 skills 落仓 + hooks | Cody：context 检索为主，无图分析工具面 | MCP 工具复用既有模式 + skills 同源分发；「smart tools 预结构化」哲学全盘采纳 |
 
 ## Sources
 
-- Devin Docs — Knowledge / Knowledge Onboarding / Skills / Advanced Capabilities（docs.devin.ai，HIGH：官方文档）
-- Cursor Memories 工程访谈（leverage.to Yash Gaitonde 访谈；DataCamp Cursor 课程；MEDIUM：非官方但多源一致——sidecar vs tool-call、任务日志偏好、人工审批）
-- GitHub Copilot coding agent（docs.github.com + GitHub Blog，HIGH：官方——draft PR 锚定、session log、完工回写模式）
-- claude-agent-sdk 安全部署与 MCP/Skills 集成（code.claude.com 官方文档 + 多篇 2026 实践指南，HIGH：`create_sdk_mcp_server`、`allowed_tools` 全名前缀、proxy 凭证模式、`setting_sources` + `Skill` 工具、fail-closed 无人值守）
-- Agent memory 框架综述（Zep arXiv 2501.13956、Mem0 episodic memory blog、Zylos 2026-04 综述、多篇 2026 对比文，HIGH/MEDIUM：四分型、分层架构、bi-temporal、consolidation/decay、context pollution 未解问题）
-- Reflexion（NeurIPS 2023）/ ExpeL（AAAI 2024）（HIGH：学术源——失败经验提炼、ADD/UPVOTE/DOWNVOTE/EDIT insight 策展、lesson rot 与显式 retire）
-- Qodo/PR-Agent auto best practices（docs.qodo.ai + GitHub，HIGH：官方——采纳建议追踪→定期提炼→标注引用闭环，商用独占）
-- Memory MCP server 生态（Loci、AutoMem、mcp-memory、awesome-mcp-servers，MEDIUM：工具面形态——store/recall/forget 核心组、去重门 cosine>0.92 参考值、fail-soft 使用协议）
-- 本项目 `.planning/MILESTONE-CONTEXT.md` / `.planning/PROJECT.md`（HIGH：代码坐标与既有资产）
+**一手（HIGH confidence）：**
+
+- GitNexus 官方文档（Mintlify，2026-08-09 抓取）：`api/tools/{impact,detect-changes,context,query,rename}.md`、`api/resources/clusters.md`、`api/prompts/detect-impact.md`、`concepts/{knowledge-graph,processes-and-flows}.md`、`skills/overview.md` — https://abhigyanpatwari-gitnexus.mintlify.app
+- GitNexus GitHub README — https://github.com/abhigyanpatwari/GitNexus
+- Semgrep 官方 docs：taint-mode overview、semgrep-pro-engine-intro、findings-ci、ci-environment-variables、finding_all_taints（shortest-path） — https://docs.semgrep.dev
+- Aider 官方：repomap.html、2023/10/22/repomap.html、`aider/repomap.py` 源码 — https://aider.chat
+
+**二手验证（MEDIUM confidence）：**
+
+- Sourcegraph docs：precise-code-navigation、code-navigation、cross-repository blog、SCIP repo — https://sourcegraph.com/docs
+- Aider PageRank 解析（anishgandhi.com）、DeepWiki repomap 分析 — 与官方源码交叉验证一致
 
 ---
-*Feature research for: Friday AI v0.17.0 统一知识库与全链路联动*
-*Researched: 2026-07-15*
+*Feature research for: 代码智能图分析升级（对标 GitNexus，Friday AI v0.22.0）*
+*Researched: 2026-08-09*
