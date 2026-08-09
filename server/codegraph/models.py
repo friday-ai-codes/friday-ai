@@ -387,6 +387,59 @@ class SymbolCommunity(models.Model):
         )
 
 
+class ProcessTrace(models.Model):
+    """执行流摘要 —— Endpoint 入口正向 BFS 主干路径（Phase 126 / EXEC-01）。
+
+    ⛔ 类名锁定为 ``ProcessTrace``，禁止命名 ``Process``（与
+    ``services.process_runtime.ProcessEngine`` / ``ProcessDefinition`` 撞名）。
+    ``entry_endpoint`` 为 JSON 快照，⛔ 不对 ``Endpoint`` 建 FK（索引删建会牵连）。
+    ``steps`` 存主干有序摘要软引用，非整图展开。
+    """
+
+    class CommunityClass(models.TextChoices):
+        INTRA_COMMUNITY = "intra_community", "社区内"
+        CROSS_COMMUNITY = "cross_community", "跨社区"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        "repositories.Repository",
+        on_delete=models.CASCADE,
+        related_name="process_traces",
+    )
+    # 分支隔离维度。"" = base 分支（与 Symbol / Endpoint / SymbolCommunity 同构）。
+    branch_name = models.CharField(max_length=200, default="", blank=True)
+    process_key = models.CharField(max_length=640)
+    name = models.CharField(max_length=640)
+    # Endpoint 快照：http_method / url_path / handler_name / file_path / line_number
+    entry_endpoint = models.JSONField(default=dict)
+    steps = models.JSONField(default=list)
+    # 封闭枚举；无法对账时落空串 + rebuild 写 degradation（D-05）。
+    community_class = models.CharField(
+        max_length=32,
+        choices=CommunityClass.choices,
+        blank=True,
+        default="",
+    )
+    step_count = models.PositiveIntegerField(default=0)
+    # cycle / async_boundary / truncated 等过程级标记。
+    flags = models.JSONField(default=dict, blank=True)
+    # 对齐 last_indexed_commit_sha 水位，供消费方判 stale。
+    built_at_sha = models.CharField(max_length=64, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "执行流"
+        verbose_name_plural = "执行流"
+        unique_together = [("repository", "branch_name", "process_key")]
+        indexes = [
+            models.Index(fields=["repository", "branch_name"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"ProcessTrace({self.process_key}, steps={self.step_count})"
+
+
 __all__ = [
     "Symbol",
     "ImportEdge",
@@ -396,4 +449,5 @@ __all__ = [
     "ApiCallSite",
     "CrossRepoApiCall",
     "SymbolCommunity",
+    "ProcessTrace",
 ]
