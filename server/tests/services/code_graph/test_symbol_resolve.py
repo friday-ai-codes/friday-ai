@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import networkx as nx
 import pytest
+from asgiref.sync import sync_to_async
 
 from services.code_graph.symbol_resolve import (
     CANDIDATE_LIMIT,
     resolve_symbol_in_graph,
 )
+from services.code_graph_tools import CANDIDATE_SIGNATURE_MAX_CHARS
 
 
 def _graph_with_names(
@@ -140,11 +142,86 @@ def test_candidate_list_is_capped() -> None:
     assert [c.symbol_id for c in result.candidates] == [f"uid-{i:02d}" for i in range(20)]
 
 
-@pytest.mark.django_db
-@pytest.mark.skip(reason="Wave 0 桩：由 122-05 落地")
-def test_ambiguous_returns_candidates() -> None:
+@pytest.mark.django_db(transaction=True)
+async def test_ambiguous_returns_candidates(indexed_repo) -> None:
     """重名 → 候选列表（带 ``file:line``/``symbol_type``/``signature``），⛔ 绝不静默取第一个（D-19）。
+
+    这条走 **ORM** 而不是图：``signature`` 是 TextField，``loader.py:354-356`` 刻意不把它
+    取进图节点属性（节点恒 5 个），只能由壳层的 ``resolve_symbol_candidates`` 回 ORM 补取。
 
     （Req: IMPACT-05, 决策: D-19）
     """
-    pytest.fail("Wave 0 桩")
+    from services.code_graph_tools import (
+        resolution_to_payload,
+        resolve_symbol_candidates,
+    )
+
+    def _seed() -> None:
+        from codegraph.models import Symbol
+
+        # 插入序刻意与期望的排序结果相反。第三条的 signature 长 500 字符，用来验截断。
+        rows = [
+            ("internal/api/zebra.go", 300, "func handler(w http.ResponseWriter)"),
+            ("internal/api/alpha.go", 100, "x" * 500),
+            ("internal/api/mango.go", 200, "func handler(ctx context.Context) error"),
+        ]
+        for file_path, start_line, signature in rows:
+            Symbol.objects.create(
+                repository=indexed_repo,
+                branch_name="",
+                name="handler",
+                symbol_type="FUNCTION",
+                file_path=file_path,
+                start_line=start_line,
+                end_line=start_line + 5,
+                signature=signature,
+            )
+
+    await sync_to_async(_seed)()
+    repo_id = str(indexed_repo.id)
+
+    result = await resolve_symbol_candidates(
+        repository_id=repo_id, branch_names=[""], name="handler"
+    )
+
+    assert result.resolved is None, "重名时给出 resolved 等于替调用方做了选择"
+    assert result.total_candidates == 3
+    assert len(result.candidates) == 3
+    assert result.truncated is False
+
+    # 按 (file_path, start_line) 升序稳定排序。
+    assert [c.file_path for c in result.candidates] == [
+        "internal/api/alpha.go",
+        "internal/api/mango.go",
+        "internal/api/zebra.go",
+    ]
+    assert [c.start_line for c in result.candidates] == [100, 200, 300]
+    assert all(c.symbol_type == "FUNCTION" for c in result.candidates)
+
+    # D-19 要求的 signature 逐条非空（图内那一半恒为空串，这里必须已经补上）。
+    assert all(c.signature for c in result.candidates)
+
+    # 500 字符的那条被截到 200 + 省略号，⛔ 不把几 KB 的 TextField 原样吐给 agent。
+    long_one = next(c for c in result.candidates if c.file_path.endswith("alpha.go"))
+    assert len(long_one.signature) <= CANDIDATE_SIGNATURE_MAX_CHARS + 1
+    assert long_one.signature.endswith("…")
+
+    # 一次收敛：补上 file_path 就不再返回候选（Pitfall 2 §4——能一轮就不要两轮）。
+    narrowed = await resolve_symbol_candidates(
+        repository_id=repo_id,
+        branch_names=[""],
+        name="handler",
+        file_path="internal/api/mango.go",
+    )
+    assert narrowed.resolved is not None
+    assert narrowed.candidates == ()
+    assert narrowed.total_candidates == 1
+
+    # 壳层共用的 dict 形态：歧义时给出**可执行**的下一步，不是一句「不唯一」了事。
+    payload = resolution_to_payload(result)
+    assert payload["ambiguous"] is True
+    assert payload["resolved"] is None
+    assert len(payload["candidates"]) == 3
+    assert payload["candidates"][0]["signature"]
+    assert payload["hint"]
+    assert resolution_to_payload(narrowed)["hint"] == ""
