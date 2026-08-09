@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -84,10 +85,16 @@ _EVENT_STALE_WATERMARK: Final[str] = "code_graph_stale_watermark"
 _EVENT_BUILD_STARTED: Final[str] = "code_graph_build_started"
 _EVENT_BUILD_COMPLETED: Final[str] = "code_graph_build_completed"
 _EVENT_BUILD_FAILED: Final[str] = "code_graph_build_failed"
+_EVENT_SUBGRAPH_DEPTH_CLAMPED: Final[str] = "code_graph_subgraph_depth_clamped"
 
 # 调用方未指定 ``depth`` 时按需子图的默认跳数（loader 内部按 ``depth + 1`` 收敛，
 # 多留的那一跳保证边界节点邻接完整）。取 2 与 Phase 122 的默认影响面半径一致。
 _DEFAULT_SUBGRAPH_DEPTH: Final[int] = 2
+
+# ``depth`` 的硬上界。⚠️ 不是性能旋钮而是**入参钳位**：``depth`` 从 Phase 122 起来自
+# MCP 工具入参（不可信），极大值会让 ``_expand_seed_ids`` 白跑多轮全表查询；而影响面
+# 分析在 10 跳之外早已失去可解释性——那时报出来的「受影响」对人和 agent 都不再可行动。
+_MAX_SUBGRAPH_DEPTH: Final[int] = 10
 
 # =============================================================================
 # 字节估算（实测标定）
@@ -184,6 +191,59 @@ def _initiated_by(user: Any | None) -> str:
         return "system"
     user_id = getattr(user, "id", None) or getattr(user, "pk", None)
     return str(user_id) if user_id is not None else "system"
+
+
+def _validated_seed_ids(
+    seed_symbol_ids: Sequence[str] | None, *, repository_id: Any
+) -> tuple[str, ...]:
+    """把 ``seed_symbol_ids`` 校验成合法 UUID 字符串元组；非法即 :class:`GraphError`。
+
+    🚨 与 ``access.py`` 对 ``repository_id`` 的处理**同一标准**（那边同样是
+    ``uuid.UUID()`` 解析 + 显式拒绝，注明 ASVS V5）。同一个模块对两个入参用两套标准
+    是不一致的，而 ``seed_symbol_ids`` 从 Phase 122 起来自 MCP 工具入参，属于**不可信
+    输入**：不校验的话，字符串会原样进 ``CallEdge.objects.filter(...__in=…)`` 与
+    ``Symbol.objects.filter(id__in=…)``，Django 在 UUIDField 上抛 ``ValidationError``
+    （Postgres 上还可能是 ``DataError``）——两者都不是 ``GraphError`` 子类，上层的
+    ``except GraphError`` 兜不住，最终表现为一个 500。
+
+    ⚠️ 只回传规范化后的字符串形式，⛔ 不回传 ``uuid.UUID`` 对象：下游要拿它们做
+    ``visited`` 集合的成员比对，而那个集合里装的是 ``str(symbol_id)``。
+    """
+    if not seed_symbol_ids:
+        return ()
+    try:
+        return tuple(str(uuid.UUID(str(seed))) for seed in seed_symbol_ids)
+    except (ValueError, TypeError, AttributeError):
+        # ⛔ 不回显原值：种子来自不可信入参，原样写进异常消息就是一条反射面。
+        raise GraphError(
+            "seed_symbol_ids 含非法 UUID",
+            {"repository_id": str(repository_id)},
+        ) from None
+
+
+def _clamped_depth(depth: int | None) -> int | None:
+    """把 ``depth`` 钳到 ``[0, _MAX_SUBGRAPH_DEPTH]``；``None`` 原样透传（由下游取缺省）。
+
+    ``depth < 0`` 会让 ``_expand_seed_ids`` 的 ``range(radius)`` 变成空循环，子图**静默**
+    退化成「只有种子」——调用方拿到一张几乎空的图却收不到任何提示，那正是「把不知道
+    表达成没有」的形状。极大值不会失控（图直径会收敛），但会白跑多轮全表查询。
+    """
+    if depth is None:
+        return None
+    clamped = max(0, min(int(depth), _MAX_SUBGRAPH_DEPTH))
+    if clamped != depth:
+        try:
+            logger.debug(
+                _EVENT_SUBGRAPH_DEPTH_CLAMPED,
+                component="code_graph",
+                category="sampling",
+                requested_depth=depth,
+                clamped_depth=clamped,
+                max_depth=_MAX_SUBGRAPH_DEPTH,
+            )
+        except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+            pass
+    return clamped
 
 
 def _log_cache_hit(
@@ -651,17 +711,20 @@ class GraphService:
         :param seed_symbol_ids: 非空时走**按需子图**路径——⛔ 既不查缓存也不进缓存
             （子图内容依赖种子与深度，而缓存键里没有这两维；把种子塞进键会让缓存
             退化成一次一建）。
-        :param depth: 调用方随后要在图上走的跳数，仅子图路径使用（缺省 2）。
+        :param depth: 调用方随后要在图上走的跳数，仅子图路径使用（缺省 2）。⛔ 越界值
+            一律钳到 ``[0, _MAX_SUBGRAPH_DEPTH]``，⚠️ 不静默接受负数（``range(depth + 1)``
+            会是空循环，子图悄悄退化成「只有种子」，调用方拿不到任何提示）。
         :raises GraphAccessDenied: 仓库不可读，或 exclusion matcher 构造失败（fail-closed）。
         :raises GraphNotIndexed: 仓库尚未建立索引（⛔ 不返回空图）。
+        :raises GraphError: ``seed_symbol_ids`` 含非法 UUID。
         """
         await access.ensure_repository_readable(user, repository_id)
         return await sync_to_async(self._get_graph_sync)(
             str(repository_id),
             branch,
             include_low_confidence,
-            tuple(seed_symbol_ids) if seed_symbol_ids else (),
-            depth,
+            _validated_seed_ids(seed_symbol_ids, repository_id=repository_id),
+            _clamped_depth(depth),
             _initiated_by(user),
         )
 
@@ -902,7 +965,11 @@ class GraphService:
                 },
             )
 
-        if over_budget or seed_symbol_ids:
+        # ⚠️ 谓词只看种子：「超预算 **且** 无种子」已在上一句 ``raise`` 掉，走到这里
+        #    ``over_budget`` 为真必然蕴含种子非空。写成 ``over_budget or seed_symbol_ids``
+        #    会让读者以为还存在一条「超预算但无种子」的自动降级分支——本相位实际交付的
+        #    是「超预算 ⇒ 显式抛错并要求调用方给种子」，不是自动降级。
+        if seed_symbol_ids:
             # 降级路径：种子相关，⛔ 不进缓存（缓存键里没有种子与深度这两维，
             # 而种子空间无界——塞进键会让缓存退化成一次一建）。
             # ``degraded``（``on_demand_subgraph`` / ``on_demand_subgraph_truncated``）

@@ -1280,6 +1280,81 @@ async def test_degraded_on_demand_subgraph(indexed_repo, symbols_factory) -> Non
             assert load_spy.call_count == 0
 
 
+@pytest.mark.django_db(transaction=True)
+async def test_seed_symbol_ids_must_be_valid_uuids(indexed_repo, symbols_factory) -> None:
+    """非法 ``seed_symbol_ids`` 抛 ``GraphError``，⛔ 不放它进 ORM 变成一个 500。
+
+    ``repository_id`` 在 ``access.py`` 走 ``uuid.UUID()`` 解析并注明 ASVS V5；种子此前
+    没有对应处理，字符串原样进 ``filter(id__in=…)``，Django 在 UUIDField 上抛
+    ``ValidationError``（Postgres 上还可能是 ``DataError``）——两者都不是 ``GraphError``
+    子类，上层的 ``except GraphError`` 兜不住。同一个模块对两个入参用两套标准是不一致的，
+    而种子从 Phase 122 起来自 MCP 工具入参，属于不可信输入。
+    """
+    import uuid
+
+    from asgiref.sync import sync_to_async
+
+    from services.code_graph import cache as cache_module
+    from services.code_graph.model import GraphError
+
+    seed = await sync_to_async(symbols_factory)("a", "src/a.py")
+
+    svc = cache_module.get_graph_service()
+    repo_id = str(indexed_repo.id)
+
+    # 合法种子照常放行（先钉死这条，否则下面的 raises 可能只是「什么都拒」）。
+    ok = await svc.get_graph(repo_id, seed_symbol_ids=[str(seed.id)])
+    assert ok.meta.degraded.startswith("on_demand_subgraph")
+
+    # 一个合法 + 一个非法 ⇒ 整批拒绝（⛔ 不静默丢掉非法的那个继续跑）。
+    for bad in ("not-a-uuid", "", "'; DROP TABLE codegraph_symbol; --", None, 42):
+        with pytest.raises(GraphError) as excinfo:
+            await svc.get_graph(repo_id, seed_symbol_ids=[str(uuid.uuid4()), bad])
+        message = str(excinfo.value)
+        assert "seed_symbol_ids" in message
+        # ⛔ 不回显原值：种子来自不可信入参，原样写进异常消息就是一条反射面。
+        assert "DROP TABLE" not in message
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_depth_is_clamped_instead_of_silently_degrading(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """越界 ``depth`` 被钳位，⛔ 不静默退化成「只有种子」。
+
+    ``depth=-1`` 会让 ``range(depth + 1)`` 变成空循环，子图悄悄只剩种子本身——调用方
+    拿到一张几乎空的图却收不到任何提示，那正是「把不知道表达成没有」的形状。
+    """
+    from asgiref.sync import sync_to_async
+
+    from services.code_graph import cache as cache_module
+
+    def _seed():
+        caller = symbols_factory("caller", "src/a.py")
+        callee = symbols_factory("callee", "src/b.py")
+        call_edges_factory(caller, callee)
+        return caller
+
+    caller = await sync_to_async(_seed)()
+
+    svc = cache_module.get_graph_service()
+    repo_id = str(indexed_repo.id)
+
+    # depth=-1 钳到 0 ⇒ 半径仍是 0 + 1 = 1 跳，邻居进得来（而非空循环只剩种子）。
+    negative = await svc.get_graph(
+        repo_id, seed_symbol_ids=[str(caller.id)], depth=-1
+    )
+    assert negative.graph.number_of_nodes() == 2, (
+        "depth=-1 被原样透传，range(depth + 1) 成了空循环，子图静默退化成只有种子"
+    )
+
+    # 极大值钳到上界，不失控也不报错。
+    huge = await svc.get_graph(
+        repo_id, seed_symbol_ids=[str(caller.id)], depth=10_000
+    )
+    assert huge.graph.number_of_nodes() == 2
+
+
 @pytest.mark.django_db
 def test_admission_seam_covers_both_counts(indexed_repo, symbols_factory) -> None:
     """``_estimate_admission`` 是准入 COUNT 的**唯一**接缝，可被整体 stub 掉。
