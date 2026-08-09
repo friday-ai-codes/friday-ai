@@ -213,6 +213,7 @@ def _build_prompt(
     facets: dict[str, Any],
     recent_mrs: list[dict[str, str]],
     associations: list[dict[str, str]],
+    recent_releases: list[dict[str, str]] | None = None,
 ) -> str:
     parts: list[str] = []
     parts.append("## 仓库摘要\n" + (overview.strip() or "（暂无 AI 摘要）"))
@@ -222,11 +223,19 @@ def _build_prompt(
     if recent_mrs:
         mr_lines = "\n".join(f"- [{m['status']}] {m['title']}" for m in recent_mrs)
         parts.append("## 近期 MR\n" + mr_lines)
+    if recent_releases:
+        rel_lines = "\n".join(
+            f"- {r.get('date') or '未知日期'}: {r.get('title') or '（无标题）'}"
+            for r in recent_releases
+        )
+        parts.append("## 近期上线记录（已关联到本仓）\n" + rel_lines)
     if associations:
         assoc_lines = "\n".join(
             f"- [{a['status']}] {a['routed_reason'] or '（无路由理由）'}" for a in associations
         )
-        parts.append("## 关联裁决（verified→owned 证据、rejected→边界候选）\n" + assoc_lines)
+        parts.append(
+            "## 关联裁决（confirmed/verified→owned 证据、rejected→边界候选）\n" + assoc_lines
+        )
     parts.append("请输出该仓库的章程草案 JSON。")
     return "\n\n".join(parts)
 
@@ -258,6 +267,8 @@ async def _agenerate_draft(
     repository_id: str,
     initiated_by_user_id: str,
     started: float,
+    provider_credential_id: str | None = None,
+    model: str | None = None,
 ) -> dict[str, Any] | None:
     """三源蒸馏 → LLM 单调用 → 解析归一；上游不可用/解析失败一律返回 ``None``。
 
@@ -267,8 +278,9 @@ async def _agenerate_draft(
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from agents.call_source import CallSource, use_call_source
+    from agents.llm_concurrency import acquire_llm_slot
     from agents.llm_factory import build_chat_model
-    from services.provider_config import ProviderConfigService
+    from services.provider_config import ProviderConfigService, ProviderMissingError
 
     # ── 三源蒸馏输入（ORM 一律 sync_to_async，P1）─────────────────────────────
     overview = repo.overview_text
@@ -287,20 +299,102 @@ async def _agenerate_draft(
     def _load_associations() -> list[dict[str, str]]:
         from initiatives.models import RepoAssociation
 
+        # confirmed 是人工确认常态；verified 是深验终态——起草都要吃到，否则
+        # 生产里大量 confirmed 关联会被静默丢掉（实测 1058 confirmed / 0 verified）。
         return [
             {"status": assoc.status, "routed_reason": assoc.routed_reason}
             for assoc in RepoAssociation.objects.filter(
-                repository_id=repository_id, status__in=["verified", "rejected"]
-            )[:_RECENT_LIMIT]
+                repository_id=repository_id,
+                status__in=["confirmed", "verifying", "verified", "rejected"],
+            ).order_by("-updated_at")[:_RECENT_LIMIT]
         ]
+
+    def _load_recent_releases() -> list[dict[str, str]]:
+        """经 RELATES_TO（metadata.source="artifact"）边反查已挂到本仓的上线记录标题。
+
+        ⭐ 按**工件类型**（`type__key="release_record"`）筛选而非按导入来源筛选：
+        挂仓边统一是 `source="artifact"`（官方 `RepoRouterV2` 管线与 bitable 回填
+        归一后同一形状，quick-260809 续作），来源只在 `origin` 留痕——按 origin 过滤
+        会漏掉官方管线以后挂上来的上线记录。
+        """
+        from initiatives.models import Artifact
+        from knowledge.models import (
+            EdgeRelation,
+            EntityKind,
+            KnowledgeEdge,
+            KnowledgeEntity,
+            KnowledgeEntityVersion,
+            generate_entity_id,
+        )
+
+        repo_node = generate_entity_id(EntityKind.REPOSITORY, "repository", str(repository_id))
+        # 不能在边这一步就截 _RECENT_LIMIT：挂仓边里混着需求文档等其他工件，
+        # 先截会把真正的上线记录挤掉（study-app 有上千条边）。
+        candidate_ids = list(
+            KnowledgeEdge.objects.filter(
+                target_entity_id=repo_node,
+                relation=EdgeRelation.RELATES_TO,
+                invalid_at__isnull=True,
+                expired_at__isnull=True,
+                metadata__source="artifact",
+            ).values_list("source_entity_id", flat=True)
+        )
+        if not candidate_ids:
+            return []
+        entities = list(
+            KnowledgeEntity.objects.filter(id__in=candidate_ids, source_kind="artifact").only(
+                "id", "title", "source_id"
+            )
+        )
+        release_artifact_ids = {
+            str(aid)
+            for aid in Artifact.objects.filter(
+                id__in=[e.source_id for e in entities if e.source_id],
+                type__key="release_record",
+            ).values_list("id", flat=True)
+        }
+        source_ids = [e.id for e in entities if str(e.source_id) in release_artifact_ids]
+        if not source_ids:
+            return []
+        titles = {str(e.id): (e.title or "") for e in entities}
+        out: list[dict[str, str]] = []
+        for ver in (
+            KnowledgeEntityVersion.objects.filter(entity_id__in=source_ids, is_latest=True)
+            .only("entity_id", "payload")
+            .order_by("-event_time")[:_RECENT_LIMIT]
+        ):
+            out.append(
+                {
+                    "title": titles.get(str(ver.entity_id), "")[:200],
+                    "date": str((ver.payload or {}).get("release_date") or "")[:32],
+                }
+            )
+        return out
 
     recent_mrs = await sync_to_async(_load_recent_mrs)()
     associations = await sync_to_async(_load_associations)()
+    recent_releases = await sync_to_async(_load_recent_releases)()
 
     # ── LLM 五步骨架（镜像 decompose_segments）────────────────────────────────
     try:
-        resolved = await ProviderConfigService.aresolve()
-        model_name = (getattr(resolved, "extra", None) or {}).get("default_model", "")
+        if provider_credential_id:
+            resolved = await ProviderConfigService.aresolve_or_error(
+                node_config={"provider_credential_id": provider_credential_id}
+            )
+            if isinstance(resolved, ProviderMissingError):
+                _draft_failed(
+                    "provider_missing",
+                    repository_id=repository_id,
+                    initiated_by_user_id=initiated_by_user_id,
+                    started=started,
+                    error=str(resolved),
+                )
+                return None
+        else:
+            resolved = await ProviderConfigService.aresolve()
+        model_name = (model or "").strip() or (getattr(resolved, "extra", None) or {}).get(
+            "default_model", ""
+        )
         if not model_name:
             _draft_failed(
                 "no_default_model",
@@ -310,7 +404,7 @@ async def _agenerate_draft(
             )
             return None
 
-        model = build_chat_model(resolved, model_name, streaming=False)
+        model_obj = build_chat_model(resolved, model_name, streaming=False)
         messages = [
             SystemMessage(content=_system_prompt()),
             HumanMessage(
@@ -319,11 +413,15 @@ async def _agenerate_draft(
                     facets=facets,
                     recent_mrs=recent_mrs,
                     associations=associations,
+                    recent_releases=recent_releases,
                 )
             ),
         ]
+        cred_id = str(getattr(resolved, "credential_id", "") or provider_credential_id or "")
+        max_c = int(getattr(resolved, "max_concurrency", 0) or 0)
         with use_call_source(CallSource.BLUEPRINT_CHARTER_DRAFT):
-            response = await model.ainvoke(messages)
+            async with acquire_llm_slot(cred_id, max_c):
+                response = await model_obj.ainvoke(messages)
     except Exception as exc:  # noqa: BLE001 — 上游不可用 → best-effort None
         _draft_failed(
             "llm_error",
@@ -357,7 +455,11 @@ async def _agenerate_draft(
 
 
 async def adraft_charter(
-    repository_id: str, *, initiated_by_user_id: str = "system"
+    repository_id: str,
+    *,
+    initiated_by_user_id: str = "system",
+    provider_credential_id: str | None = None,
+    model: str | None = None,
 ) -> RepoCharter | None:
     """AI 起草仓库章程草案（三源蒸馏 → LLM 单调用 → 归一化落库）。
 
@@ -370,6 +472,7 @@ async def adraft_charter(
       已有且仍是草案 → 正式字段就地更新（version 不变）；已有且
       ``source=human_confirmed`` → **只写 ``draft_content``**，正式字段一个不碰。
       并发首次起草撞 OneToOne 唯一约束时重跑一次读-改路径（MN-05）。
+    - ``provider_credential_id`` / ``model``：可选覆盖默认供应商（批量回填指定 mimo）。
     """
     from repositories.models import RepoCharter, Repository
 
@@ -382,6 +485,8 @@ async def adraft_charter(
         component="charter_service",
         repository_id=str(repository_id),
         initiated_by_user_id=initiated_by_user_id,
+        provider_credential_id=provider_credential_id or "",
+        model=model or "",
     )
 
     draft = await _agenerate_draft(
@@ -389,6 +494,8 @@ async def adraft_charter(
         repository_id=str(repository_id),
         initiated_by_user_id=initiated_by_user_id,
         started=started,
+        provider_credential_id=provider_credential_id,
+        model=model,
     )
     if draft is None:
         return None
@@ -460,14 +567,19 @@ async def aconfirm_charter(
 ) -> RepoCharter:
     """人工确认章程生效：草案提升 + edits 套用 + version+1 + confirmed_by 署名。
 
-    - charter 不存在 → ``ValueError``（视图层转 404）。
+    - charter 不存在且 ``edits`` 为非空 dict：按 edits 归一后直接创建
+      ``source=human_confirmed`` / ``version=1``（人手从零维护，无需先 AI 起草）。
+    - charter 不存在且无 edits（``None`` / 空 dict）→ ``ValueError``（视图层转 404）。
     - ``draft_content`` 非空：先过 :func:`normalize_charter_draft` 提升为正式字段。
     - ``edits``：仅套用调用方显式给出的白名单字段（同 normalize 归一，非法值回退）。
     - 收口后 ``source=human_confirmed``、``version += 1``、``draft_content = {}``。
     """
-    from repositories.models import RepoCharter
+    from repositories.models import RepoCharter, Repository
 
-    def _confirm() -> RepoCharter:
+    started = time.monotonic()
+    created = False
+
+    def _confirm() -> tuple[RepoCharter, bool]:
         from django.db import transaction
 
         with transaction.atomic():
@@ -475,7 +587,21 @@ async def aconfirm_charter(
                 RepoCharter.objects.select_for_update().filter(repository_id=repository_id).first()
             )
             if charter is None:
-                raise ValueError("章程不存在，请先生成草案")
+                # 空确认（无 edits）保持原语义：不创建 → ValueError → API 404
+                if not isinstance(edits, dict) or not edits:
+                    raise ValueError("章程不存在，请先生成草案")
+                if not Repository.objects.filter(pk=repository_id).exists():
+                    raise ValueError("章程不存在，请先生成草案")
+                normalized = normalize_charter_draft(edits)
+                new_charter = RepoCharter.objects.create(
+                    repository_id=repository_id,
+                    source=RepoCharter.Source.HUMAN_CONFIRMED,
+                    version=1,
+                    confirmed_by=user,
+                    draft_content={},
+                    **normalized,
+                )
+                return new_charter, True
 
             if charter.draft_content:
                 promoted = normalize_charter_draft(charter.draft_content)
@@ -493,9 +619,28 @@ async def aconfirm_charter(
             charter.confirmed_by = user
             charter.draft_content = {}
             charter.save()
-            return charter
+            return charter, False
 
-    charter = await sync_to_async(_confirm)()
+    try:
+        charter, created = await sync_to_async(_confirm)()
+    except ValueError:
+        # 「不存在」类业务拒绝：不刷 charter_confirm_failed
+        raise
+    except Exception as exc:
+        try:
+            logger.error(
+                "charter_confirm_failed",
+                category="caller",
+                component="charter_service",
+                repository_id=str(repository_id),
+                initiated_by_user_id=str(user.id),
+                error=redact_secrets_in_text(str(exc)),
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+        except Exception:  # noqa: BLE001 — 观测绝不反噬
+            pass
+        raise
+
     logger.info(
         "charter_confirmed",
         category="caller",
@@ -503,5 +648,7 @@ async def aconfirm_charter(
         repository_id=str(repository_id),
         initiated_by_user_id=str(user.id),
         version=charter.version,
+        created=created,
+        duration_ms=round((time.monotonic() - started) * 1000, 2),
     )
     return charter

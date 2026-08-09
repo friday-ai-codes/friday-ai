@@ -26,10 +26,18 @@ logger = structlog.get_logger(__name__)
 __all__ = ["ascore_history_match", "HistoryMatchResult", "HISTORY_ENTITY_KINDS"]
 
 # 历史落点召回的实体 kinds（逐字对齐 `knowledge.models.EntityKind` 实际值）。
-# `["code_change", "tech_plan"]` 一次 search_similar 即覆盖 code 与 demand 两条
-# 分路白名单（vector_recall 按「传入 ∩ 白名单」交集分派），无需拆两次调用；
-# 未知 kind 绝不回退全量（检索侧保证返回空而非放大范围）。
-HISTORY_ENTITY_KINDS = ["code_change", "tech_plan"]
+# 一次 search_similar 即覆盖 code 与 demand 两条分路白名单（vector_recall 按
+# 「传入 ∩ 白名单」交集分派），无需拆两次调用；未知 kind 绝不回退全量
+# （检索侧保证返回空而非放大范围）。
+#
+# `document` 承载上线记录工件——它才是「同类需求上次真的合进了哪个仓」最直接的
+# 证据。document 只在 `include_document_kind=True` 时进 demand 分路白名单。
+HISTORY_ENTITY_KINDS = ["code_change", "tech_plan", "document"]
+
+# 工件类实体的仓库归属**只走图边**：`knowledge/sources/artifact.py` 建实体时
+# `repository_id=None` 是设计（一个工件可同时关系到多个仓，单个 FK 列表达不了），
+# 所以 document 命中必须经 RELATES_TO 边反查才能归因到候选仓。
+_ARTIFACT_EDGE_SOURCE = "artifact"
 
 
 @dataclass(frozen=True)
@@ -56,6 +64,51 @@ def _resolve_actor(session):
 
 def _clamp(value: float) -> float:
     return max(0.0, min(1.0, value))
+
+
+@sync_to_async
+def _resolve_repos_via_edges(entity_ids: list) -> dict[str, list[str]]:
+    """经 RELATES_TO 边把工件实体归因到仓库：`{entity_id: [repository_id, ...]}`。
+
+    两跳都是批量查询（无 N+1）：边 → 仓库节点 id，仓库节点 → `source_id`（= 仓库
+    UUID）。仓库节点 id 是 uuid5 派生的，**不可逆**，只能查库还原。
+
+    best-effort：任何异常按「归因不到」处理，返回 `{}`，绝不阻断路由。
+    """
+    if not entity_ids:
+        return {}
+    try:
+        from knowledge.models import EdgeRelation, EntityKind, KnowledgeEdge, KnowledgeEntity
+
+        pairs = list(
+            KnowledgeEdge.objects.filter(
+                source_entity_id__in=entity_ids,
+                relation=EdgeRelation.RELATES_TO,
+                metadata__source=_ARTIFACT_EDGE_SOURCE,
+                invalid_at__isnull=True,
+                expired_at__isnull=True,
+            ).values_list("source_entity_id", "target_entity_id")
+        )
+        if not pairs:
+            return {}
+        node_to_repo = {
+            node_id: str(source_id)
+            for node_id, source_id in KnowledgeEntity.objects.filter(
+                id__in={t for _, t in pairs}, kind=EntityKind.REPOSITORY
+            ).values_list("id", "source_id")
+            if source_id
+        }
+        mapping: dict[str, list[str]] = {}
+        for entity_id, node_id in pairs:
+            repository_id = node_to_repo.get(node_id)
+            if not repository_id:
+                continue
+            bucket = mapping.setdefault(str(entity_id), [])
+            if repository_id not in bucket:
+                bucket.append(repository_id)
+        return mapping
+    except Exception:  # noqa: BLE001 — 归因失败按「无历史证据」降级，不反噬路由
+        return {}
 
 
 async def ascore_history_match(
@@ -112,7 +165,9 @@ async def ascore_history_match(
             entity_kinds=HISTORY_ENTITY_KINDS,
             # 用候选仓收窄召回：跨全库召回的历史落点对本次路由没有区分度
             repository_ids=candidate_ids,
-            include_document_kind=False,
+            # document 不开此 flag 在 demand 分路永远召不回（vector_recall 按
+            # 「传入 ∩ 白名单」严格过滤）。权限不放宽——仍受 allowed_project_ids 收口。
+            include_document_kind=True,
         )
     except Exception as exc:  # noqa: BLE001 — best-effort：检索失败不阻断路由
         from common.logging import redact_secrets_in_text
@@ -127,26 +182,42 @@ async def ascore_history_match(
         )
         return HistoryMatchResult(unavailable_reason="retrieval_error")
 
-    duration_ms = round((time.perf_counter() - started) * 1000, 2)
     allowed = set(candidate_ids)
-    hit_counts: dict[str, int] = {}
-    top_scores: dict[str, float] = {}
-    citation_ids: list[str] = []
+    # 先归集，再归因：工件类命中的 repository_id 恒为空，需要一次批量边反查补齐，
+    # 逐条查会退化成 N+1。
+    scored: list[tuple[str, float]] = []  # (entity_id, score)
+    direct: dict[str, str] = {}  # entity_id → repository_id（实体自带列）
     for result in results or []:
         entity = getattr(result, "entity", None)
-        repository_id = str(getattr(entity, "repository_id", "") or "")
-        if not repository_id or repository_id not in allowed:
+        entity_id = str(getattr(entity, "entity_id", "") or "")
+        if not entity_id:
             continue
         try:
             score = float(getattr(result, "score", 0.0) or 0.0)
         except (TypeError, ValueError):
             score = 0.0
-        hit_counts[repository_id] = hit_counts.get(repository_id, 0) + 1
-        if score > top_scores.get(repository_id, 0.0):
-            top_scores[repository_id] = score
-        entity_id = str(getattr(entity, "entity_id", "") or "")
-        if entity_id:
-            citation_ids.append(entity_id)
+        scored.append((entity_id, score))
+        repository_id = str(getattr(entity, "repository_id", "") or "")
+        if repository_id:
+            direct[entity_id] = repository_id
+
+    via_edges = await _resolve_repos_via_edges([eid for eid, _ in scored if eid not in direct])
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+
+    hit_counts: dict[str, int] = {}
+    top_scores: dict[str, float] = {}
+    citation_ids: list[str] = []
+    for entity_id, score in scored:
+        repo_ids = [direct[entity_id]] if entity_id in direct else via_edges.get(entity_id, [])
+        # 一条上线记录可同时挂多个仓：每个候选仓都拿到同一条证据（它确实都改了）
+        matched = [rid for rid in repo_ids if rid in allowed]
+        if not matched:
+            continue
+        for repository_id in matched:
+            hit_counts[repository_id] = hit_counts.get(repository_id, 0) + 1
+            if score > top_scores.get(repository_id, 0.0):
+                top_scores[repository_id] = score
+        citation_ids.append(entity_id)
 
     scores = {rid: _clamp(score) for rid, score in top_scores.items()}
     result_obj = HistoryMatchResult(
@@ -169,6 +240,7 @@ async def ascore_history_match(
         candidate_count=len(candidate_ids),
         result_count=len(results or []),
         matched_repo_count=len(scores),
+        edge_attributed_count=len(via_edges),
         unavailable_reason="",
         duration_ms=duration_ms,
         category="sampling",

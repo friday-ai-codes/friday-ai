@@ -61,6 +61,59 @@ def test_owned_implemented_scores_higher_than_planned() -> None:
     assert planned.matched_domains == [{"domain": "培优/学习提分", "status": "planned"}]
 
 
+def test_short_ascii_segment_alone_does_not_match() -> None:
+    """2 字符纯 ASCII 片段（"ai"/"h5"）不参与子串判定——否则任何带 "AI" 的 query
+    会把任何带 "AI" 的领域判成满分命中（实测「AI 自习室」命中「AI 代码审查」）。"""
+    result = score_charter_match(
+        _charter(owned_domains=[{"domain": "AI 代码审查", "status": "implemented"}]),
+        query_terms=["AI 自习室精准学对接"],
+    )
+
+    assert result.score == 0.0
+    assert result.matched_domains == []
+
+
+def test_note_participates_in_domain_match() -> None:
+    """note 里的具体能力点参与命中：AI 起草的 domain 常是概括词（"AI 助学"），
+    具体能力（"AI 自习室"）写在 note 里——只匹配 domain 会让具体 query 全部落空。"""
+    result = score_charter_match(
+        _charter(
+            owned_domains=[
+                {
+                    "domain": "AI 助学",
+                    "note": "包括 AI 自习室、AI 定制班、精准学等功能",
+                    "status": "implemented",
+                }
+            ]
+        ),
+        query_terms=["AI 自习室精准学对接"],
+    )
+
+    assert result.score > 0.0
+    assert result.matched_domains == [{"domain": "AI 助学", "status": "implemented"}]
+
+
+def test_note_generic_two_char_word_does_not_match() -> None:
+    """note 是长自由文本，"导出/管理" 这类通用 2 字词不参与其命中判定——实测
+    「错题本导出」曾经 note 里的「导出」命中「发货单操作管理」。domain 侧 2 字词
+    （培优）保持可命中，只收紧 note 侧。"""
+    result = score_charter_match(
+        _charter(
+            owned_domains=[
+                {
+                    "domain": "发货单操作管理",
+                    "note": "支持发货单的创建、导出、打印",
+                    "status": "implemented",
+                }
+            ]
+        ),
+        query_terms=["错题本导出"],
+    )
+
+    assert result.score == 0.0
+    assert result.matched_domains == []
+
+
 def test_planned_domain_scores_strictly_positive() -> None:
     """planned 命中严格 > 0 —— 「规划中领域也能把仓推进候选」的机制锁。"""
     result = score_charter_match(

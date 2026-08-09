@@ -267,6 +267,36 @@ async def test_aconfirm_missing_charter_raises_value_error(repository: Repositor
         await aconfirm_charter(str(repository.id), user)
 
 
+async def test_confirm_missing_without_edits_raises(repository: Repository, user) -> None:
+    """无章程 + 空 edits / None → 仍 ValueError，不创建行。"""
+    with pytest.raises(ValueError, match="章程不存在"):
+        await aconfirm_charter(str(repository.id), user, edits={})
+    assert not await RepoCharter.objects.filter(repository=repository).aexists()
+
+
+async def test_confirm_creates_when_missing_with_edits(repository: Repository, user) -> None:
+    """无章程 + 非空 edits → 直接创建 human_confirmed / version=1 / confirmed_by。"""
+    charter = await aconfirm_charter(
+        str(repository.id),
+        user,
+        edits={
+            "positioning": "人手从零维护",
+            "audience": "内部研发",
+            "form": "服务",
+            "evolution": "active",
+            "owned_domains": [{"domain": "鉴权", "status": "implemented"}],
+        },
+    )
+    assert charter.source == RepoCharter.Source.HUMAN_CONFIRMED
+    assert charter.version == 1
+    assert charter.confirmed_by_id == user.id
+    assert charter.positioning == "人手从零维护"
+    assert charter.audience == "内部研发"
+    assert charter.draft_content == {}
+    assert len(charter.owned_domains) == 1
+    assert charter.owned_domains[0]["domain"] == "鉴权"
+
+
 async def test_aconfirm_applies_edits_with_normalize(repository: Repository, user) -> None:
     """confirm 带 edits → 白名单字段生效，且 evolution 非法值被 normalize 回退。"""
     with (

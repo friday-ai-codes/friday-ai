@@ -8,7 +8,8 @@
   蒸馏起草（``call_source=blueprint_charter_draft``）；LLM 不可用 → 503，
   草案落库失败 → 500。
 - ``POST /api/repositories/<uuid:repository_id>/charter/confirm/``：人工确认
-  生效（可带 ``{"edits": {...}}``），署名 ``request.user``。
+  生效（可带 ``{"edits": {...}}``），署名 ``request.user``；无章程行 + 非空
+  ``edits`` → 经 service 创建 ``human_confirmed``（人手从零维护）；空 body 仍 404。
 
 写入纪律（INV-6）：视图零 RepoCharter 写操作，起草/确认全部委托
 ``services/charter_service``（charter_service 测试的源码扫描守护会扫本文件）；
@@ -89,7 +90,8 @@ class RepoCharterConfirmView(APIView):
     """POST /api/repositories/<uuid:repository_id>/charter/confirm/ —— 人工确认生效。
 
     body 可带 ``{"edits": {...}}``（无 body 允许；非 dict 的 edits 按无 edits
-    处理——白名单归一在 service 层，T-111-07）。章程不存在 → 404。
+    处理——白名单归一在 service 层，T-111-07）。章程不存在 + 非空 edits →
+    service 创建 human_confirmed；无 edits 的空确认仍 404。
     """
 
     permission_classes = [IsAuthenticated]

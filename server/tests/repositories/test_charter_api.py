@@ -219,6 +219,32 @@ class TestCharterConfirm:
         assert resp.status_code == 404
         assert not RepoCharter.objects.filter(repository=repository).exists()
 
+    def test_confirm_creates_charter_with_edits_when_absent(
+        self, authenticated_client, repository: Repository, user
+    ) -> None:
+        """无章程 + 非空 edits → 200 创建 human_confirmed / version=1。"""
+        resp = authenticated_client.post(
+            CONFIRM_URL.format(repo_id=repository.id),
+            {
+                "edits": {
+                    "positioning": "新建仓人手章程",
+                    "audience": "平台",
+                    "form": "库",
+                    "evolution": "maintenance_only",
+                }
+            },
+            format="json",
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["source"] == "human_confirmed"
+        assert body["version"] == 1
+        assert body["positioning"] == "新建仓人手章程"
+        assert body["evolution"] == "maintenance_only"
+        assert body["confirmed_by"] == str(user.id)
+        assert body["draft_content"] == {}
+        assert RepoCharter.objects.filter(repository=repository).exists()
+
     def test_confirm_missing_repo_404(self, authenticated_client) -> None:
         resp = authenticated_client.post(
             CONFIRM_URL.format(repo_id=MISSING_REPO_ID), {}, format="json"

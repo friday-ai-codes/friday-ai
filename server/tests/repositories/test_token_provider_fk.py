@@ -102,7 +102,9 @@ def space(db) -> Space:
 async def _post_create(client, user, payload):
     from unittest.mock import patch
 
-    with patch("repositories.summary_service.enqueue_repo_summary"):
+    with patch("repositories.summary_service.enqueue_repo_summary"), patch(
+        "repositories.index_enqueue.enqueue_repo_index"
+    ):
         return await client.post(
             "/api/repositories/",
             data=payload,

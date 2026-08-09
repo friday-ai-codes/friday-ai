@@ -60,6 +60,15 @@ _SEPARATORS = re.compile(r"[\s/\\|、，,。.;；:：()（）\[\]【】<>《》\
 # 参与「片段互为子串」判定的最短片段长度：单字符片段（如 "页"）会把任意长文本
 # 命中成假阳性，因此只让 ≥2 字符的片段参与子串判定。
 _MIN_SEGMENT_LEN = 2
+# 纯 ASCII 片段额外要求 ≥3 字符："ai"/"h5"/"cr" 这类 2 字符缩写在本域语料里近乎
+# 无处不在，放行会让任何带 "AI" 的 query 命中任何带 "AI" 的领域（实测「AI 自习室
+# 精准学对接」把「AI Agent 自治」「AI 代码审查」全部判成满分命中）。CJK 2 字符词
+# （培优/组卷）信息量足够，保持可命中。
+_MIN_ASCII_SEGMENT_LEN = 3
+# note 参与命中时的最短片段：domain 是人工可控的短字符串（"培优" 这类 2 字词信息量
+# 足够），note 是长自由文本，"导出/管理/支持" 这类通用 2 字词遍地都是——实测「错题本
+# 导出」经 note 的「导出」命中了「发货单操作管理」。note 侧片段一律 ≥3 字符。
+_MIN_NOTE_SEGMENT_LEN = 3
 
 # CJK 片段的 n-gram 长度：中文不带分隔符（章程禁区常写成整句「不承接课程权益鉴权」，
 # 需求文本也是连写长句），纯片段子串判定会漏掉「两条长句共享一个关键词」这类命中。
@@ -117,7 +126,18 @@ def _tokens(text: Any) -> set[str]:
     return tokens
 
 
-def _matches(target: Any, query_terms: list[str]) -> bool:
+def _segment_qualifies(seg: str, min_len: int = _MIN_SEGMENT_LEN) -> bool:
+    """片段是否有资格参与子串判定（CJK ≥ `min_len` 字符；纯 ASCII 恒 ≥3，见常量注释）。"""
+    if len(seg) < min_len:
+        return False
+    if _CJK_CHAR.search(seg):
+        return True
+    return len(seg) >= _MIN_ASCII_SEGMENT_LEN
+
+
+def _matches(
+    target: Any, query_terms: list[str], *, min_segment_len: int = _MIN_SEGMENT_LEN
+) -> bool:
     """章程文本 `target` 是否命中 `query_terms`（大小写无关的 token 交集 / 子串判定）。
 
     不引入分词依赖（T-112-SC：零新增外部依赖），三条判定依次尝试：
@@ -133,7 +153,9 @@ def _matches(target: Any, query_terms: list[str]) -> bool:
     norm_target = _normalize(target)
     if not norm_target:
         return False
-    target_segments = [seg for seg in norm_target.split(" ") if len(seg) >= _MIN_SEGMENT_LEN]
+    target_segments = [
+        seg for seg in norm_target.split(" ") if _segment_qualifies(seg, min_segment_len)
+    ]
     target_tokens = _tokens(target)
     for term in query_terms or []:
         norm_term = _normalize(term)
@@ -143,7 +165,11 @@ def _matches(target: Any, query_terms: list[str]) -> bool:
             return True
         if any(seg in norm_term for seg in target_segments):
             return True
-        if any(seg in norm_target for seg in norm_term.split(" ") if len(seg) >= _MIN_SEGMENT_LEN):
+        if any(
+            seg in norm_target
+            for seg in norm_term.split(" ")
+            if _segment_qualifies(seg, min_segment_len)
+        ):
             return True
         if len(target_tokens & _tokens(term)) >= _MIN_NGRAM_OVERLAP:
             return True
@@ -204,7 +230,14 @@ def score_charter_match(
             if not isinstance(item, dict):
                 continue
             domain = str(item.get("domain") or "").strip()
-            if not domain or not _matches(domain, terms):
+            # note 与 domain 同为领域声明的一部分：AI 起草的 domain 往往是概括词
+            # （"AI 助学"），具体能力点（"AI 自习室 / 精准学"）写在 note 里——只匹配
+            # domain 会让最常见的具体 query 全部落空。
+            note = str(item.get("note") or "").strip()
+            if not domain or not (
+                _matches(domain, terms)
+                or (note and _matches(note, terms, min_segment_len=_MIN_NOTE_SEGMENT_LEN))
+            ):
                 continue
             status = str(item.get("status") or "").strip().lower()
             if status not in _VALID_DOMAIN_STATUS:
@@ -372,7 +405,12 @@ async def acollect_charter_candidates(
             if not isinstance(item, dict):
                 continue
             domain = str(item.get("domain") or "").strip()
-            if not domain or not _matches(domain, terms):
+            # 与 score_charter_match 同款：note 里的具体能力点参与命中判定
+            note = str(item.get("note") or "").strip()
+            if not domain or not (
+                _matches(domain, terms)
+                or (note and _matches(note, terms, min_segment_len=_MIN_NOTE_SEGMENT_LEN))
+            ):
                 continue
             status = str(item.get("status") or "").strip().lower()
             if status not in _VALID_DOMAIN_STATUS:
