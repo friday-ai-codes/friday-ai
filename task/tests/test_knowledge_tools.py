@@ -7,7 +7,7 @@
 覆盖契约：
 - 三要素守门：endpoint / token 任一空 → build 返回 None（存量任务零回归）。
 - 端点校验：非法 scheme（javascript:/file://）→ None，绝不向非法端点注入 PAT（T-103-06）。
-- 白名单：恰 11 个工具（103 的 7 + 113 蓝图 3 + 124 detect_changes）；``knowledge_allowed_tools()`` 前缀正确。
+- 白名单：恰 12 个工具（103 的 7 + 113 蓝图 3 + 124 detect_changes + 126 rename_preview）；``knowledge_allowed_tools()`` 前缀正确。
 - handler：200 JSON → 文本含业务字段；401 → 固定文案 is_error；500 → 文案不含响应体
   （T-103-05）；非 JSON 200 → 解析失败文案；传输错误 → return 不 raise。
 - 配额：quota 用尽后返回配额文案且不再发 HTTP（T-103-07）。
@@ -55,11 +55,14 @@ _NEW_113_TOOL_NAMES = [
 _NEW_113_04_TOOL_NAMES = ["await_blueprint_context"]
 # 124-01 追加：编码完成后提交前自查影响面（DIFF-03 / D-02）。
 _NEW_124_TOOL_NAMES = ["detect_changes"]
+# 126-04 追加：只读改名预览（RENAME-01 / D-12）。
+_NEW_126_TOOL_NAMES = ["rename_preview"]
 EXPECTED_TOOL_NAMES = [
     *_LEGACY_TOOL_NAMES,
     *_NEW_113_TOOL_NAMES,
     *_NEW_113_04_TOOL_NAMES,
     *_NEW_124_TOOL_NAMES,
+    *_NEW_126_TOOL_NAMES,
 ]
 
 
@@ -169,22 +172,23 @@ def test_valid_endpoint_builds_server(ok_endpoint: str) -> None:
 
 @pytest.mark.asyncio
 async def test_server_has_exactly_seven_whitelist_tools() -> None:
-    """构建出的 server 工具集恰为白名单名字（历史 10 + 124 detect_changes）。"""
+    """构建出的 server 工具集恰为白名单名字（历史 11 + 126 rename_preview）。"""
     config = build_knowledge_mcp_server(ENDPOINT_BASE, SECRET_PAT, SESSION_ID, 200)
     assert config is not None
     assert config["type"] == "sdk"
     assert config["name"] == KNOWLEDGE_MCP_SERVER_NAME
     names = await _server_tool_names(config)
     assert sorted(names) == sorted(EXPECTED_TOOL_NAMES)
-    assert len(names) == 11
+    assert len(names) == 12
 
 
 def test_knowledge_allowed_tools_naming() -> None:
-    """allowed_tools 为 11 条 mcp__friday-knowledge__{name}（顺序即白名单顺序）。"""
+    """allowed_tools 为 12 条 mcp__friday-knowledge__{name}（顺序即白名单顺序）。"""
     allowed = knowledge_allowed_tools()
     assert allowed == [f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__{name}" for name in EXPECTED_TOOL_NAMES]
-    assert len(allowed) == 11
+    assert len(allowed) == 12
     assert f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__detect_changes" in allowed
+    assert f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__rename_preview" in allowed
 
 
 def test_schemas_required_fields_accurate() -> None:

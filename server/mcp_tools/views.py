@@ -109,6 +109,7 @@ from .serializers import (
     ImproveCodingPlanRequestSerializer,
     ListProcessesRequestSerializer,
     ListRepositoryFilesRequestSerializer,
+    RenamePreviewRequestSerializer,
     LookupProjectByBranchRequestSerializer,
     ReadBlueprintContextRequestSerializer,
     ReadProjectDocRequestSerializer,
@@ -1672,6 +1673,103 @@ class GetProcessView(McpToolView):
                 repository_id=repository_id,
                 ok=bool(result.get("ok")),
                 error_code=str(result.get("error_code") or ""),
+                duration_ms=duration_ms,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class RenamePreviewView(McpToolView):
+    """只读改名预览 MCP 薄壳（Phase 126 RENAME-01 / D-09）。
+
+    壳内零算法：校验 → ``_get_indexed_repo`` → ``resolve_tool_graph_branch`` →
+    ``run_rename_preview`` → 原样透出 + RetrievalTrace + caller 事件。
+    ``ok=False`` 一律 HTTP 200 + 信封；``applied`` 由编排恒为 false。
+    """
+
+    tool_name = "rename_preview"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(RenamePreviewRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        repository_id = str(input_data["repository_id"])
+        repo, err = await self._get_indexed_repo(repository_id)
+        if err is not None:
+            return err
+        assert repo is not None
+
+        from services.code_graph import GraphError
+        from services.code_graph_tools import (
+            resolve_tool_graph_branch,
+            run_rename_preview,
+            tool_trace_payload,
+        )
+
+        graph_branch = await resolve_tool_graph_branch(
+            repository_id, repo, input_data.get("branch")
+        )
+        orch_started = time.perf_counter()
+        try:
+            result = await run_rename_preview(
+                repository_id=repository_id,
+                repo=repo,
+                graph_branch=graph_branch,
+                user=request.user,
+                symbol_id=str(input_data["symbol_id"]) if input_data.get("symbol_id") else None,
+                symbol=str(input_data.get("symbol") or "") or None,
+                file_path=str(input_data.get("file_path") or "") or None,
+                symbol_type=str(input_data.get("symbol_type") or "") or None,
+                new_name=str(input_data["new_name"]),
+                context_lines=int(input_data.get("context_lines", 2)),
+            )
+        except GraphError as exc:
+            return _graph_error_response(exc)
+        except MirrorError as exc:
+            return _mirror_error_response(exc)
+        orchestration_ms = int((time.perf_counter() - orch_started) * 1000)
+
+        output_data = {**result, "run_id": str(run.run_id)}
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        traces = [
+            (
+                RetrievalTrace.Kind.EDGE,
+                tool_trace_payload(
+                    result,
+                    tool=self.tool_name,
+                    duration_ms=duration_ms,
+                    orchestration_ms=orchestration_ms,
+                ),
+            )
+        ]
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        try:
+            summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+            logger.info(
+                "mcp_rename_preview_completed",
+                tool_name=self.tool_name,
+                component="mcp_tools",
+                category="caller",
+                initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+                repository_id=repository_id,
+                ok=bool(result.get("ok")),
+                error_code=str(result.get("error_code") or ""),
+                applied=bool(result.get("applied")),
+                result_count=int(summary.get("total_edits") or 0) if summary else 0,
                 duration_ms=duration_ms,
             )
         except Exception:  # noqa: BLE001

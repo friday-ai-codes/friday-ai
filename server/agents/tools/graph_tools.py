@@ -24,6 +24,7 @@ from agents.tools.schemas.graph_tools import (
     GetProcessToolInput,
     ImpactAnalysisToolInput,
     ListProcessesToolInput,
+    RenamePreviewToolInput,
     TraceCallPathToolInput,
 )
 from common.logging import redact_secrets_in_text
@@ -950,6 +951,60 @@ _PARAMS_GET_PROCESS: dict[str, Any] = {
     "required": ["repository_id", "process_key", "conversation_id"],
 }
 
+_DESC_RENAME_PREVIEW = (
+    "Read-only rename preview: dual-source edit list (graph refs + text_search "
+    "via grep_mirror). Never rewrites the repo; applied is always false.\n"
+    "\n"
+    "USE WHEN planning a symbol rename before you edit files yourself:\n"
+    "  - 'what would rename Foo to Bar touch?' → rename_preview(...)\n"
+    "\n"
+    "IMPORTANT: preview first, then edit locally. Dynamic refs "
+    "(templates/getattr/reflection) may be missed — read coverage_limitations.\n"
+    "DO NOT USE FOR applying renames — there is no apply API; edit yourself.\n"
+    "DO NOT USE FOR blast radius alone — use impact_analysis."
+)
+
+_PARAMS_RENAME_PREVIEW: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "repository_id": {
+            "type": "string",
+            "description": "**REQUIRED.** 目标仓库 UUID",
+        },
+        "branch": {
+            "type": "string",
+            "description": "查询分支；缺省走 base",
+        },
+        "symbol_id": {
+            "type": "string",
+            "description": "符号 UUID；与 symbol 必须且只能提供其一",
+        },
+        "symbol": {
+            "type": "string",
+            "description": "符号名；与 symbol_id 必须且只能提供其一",
+        },
+        "file_path": {
+            "type": "string",
+            "description": "可选：文件路径，收窄同名符号",
+        },
+        "symbol_type": {
+            "type": "string",
+            "description": "可选：符号类型（function / class 等）",
+        },
+        "new_name": {
+            "type": "string",
+            "description": "**REQUIRED.** 新名称",
+        },
+        "context_lines": {
+            "type": "integer",
+            "description": "上下文行数 0–5，默认 2",
+            "default": 2,
+        },
+        **_CONV_ID_PARAM,
+    },
+    "required": ["repository_id", "new_name", "conversation_id"],
+}
+
 
 @tool(
     name="list_processes",
@@ -1225,10 +1280,174 @@ async def _get_process_impl(
     )
 
 
+@tool(
+    name="rename_preview",
+    description=_DESC_RENAME_PREVIEW,
+    category=ToolCategory.PROJECT.value,
+    parameters=_PARAMS_RENAME_PREVIEW,
+)
+async def rename_preview(
+    repository_id: str | None = None,
+    branch: str | None = None,
+    symbol_id: str | None = None,
+    symbol: str = "",
+    file_path: str = "",
+    symbol_type: str = "",
+    new_name: str = "",
+    context_lines: int = 2,
+    conversation_id: str = "",
+) -> ToolResult:
+    """只读改名预览对话薄壳——只调 ``run_rename_preview``；强制 chat RetrievalTrace。"""
+    try:
+        return await _rename_preview_impl(
+            repository_id=repository_id,
+            branch=branch,
+            symbol_id=symbol_id,
+            symbol=symbol,
+            file_path=file_path,
+            symbol_type=symbol_type,
+            new_name=new_name,
+            context_lines=context_lines,
+            conversation_id=conversation_id,
+        )
+    except ValidationError as exc:
+        logger.warning(
+            "rename_preview_tool_failed",
+            error_type="ValidationError",
+            error=redact_secrets_in_text(str(exc))[:500],
+            component=_COMPONENT,
+            category="caller",
+        )
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "rename_preview_tool_failed",
+            error_type=type(exc).__name__,
+            error=redact_secrets_in_text(str(exc))[:500],
+            component=_COMPONENT,
+            category="caller",
+        )
+        return ToolResult(
+            success=False,
+            error=redact_secrets_in_text(str(exc))[:500],
+        )
+
+
+async def _rename_preview_impl(
+    *,
+    repository_id: str | None,
+    branch: str | None,
+    symbol_id: str | None,
+    symbol: str,
+    file_path: str,
+    symbol_type: str,
+    new_name: str,
+    context_lines: int,
+    conversation_id: str,
+) -> ToolResult:
+    started = perf_counter()
+    user = await _resolve_conversation_user(conversation_id)
+    if user is None:
+        return ToolResult(
+            success=False,
+            error="无法解析会话 owner，拒绝预览（fail-closed）",
+        )
+    try:
+        validated = RenamePreviewToolInput(
+            repository_id=repository_id or "",
+            branch=branch,
+            symbol_id=symbol_id,
+            symbol=symbol or "",
+            file_path=file_path or "",
+            symbol_type=symbol_type or "",
+            new_name=new_name or "",
+            context_lines=int(context_lines),
+        )
+    except ValidationError as exc:
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
+
+    repo, err_code = await _resolve_tool_repo(validated.repository_id)
+    if repo is None:
+        return ToolResult(
+            success=False,
+            error=_REPO_ERR_MESSAGES.get(err_code or "", "仓库不可用"),
+        )
+
+    from interactions.models import RetrievalTrace
+    from services.code_graph import GraphError
+    from services.code_graph_tools import (
+        graph_error_to_tool_error,
+        resolve_tool_graph_branch,
+        run_rename_preview,
+        tool_trace_payload,
+    )
+
+    graph_branch = await resolve_tool_graph_branch(
+        validated.repository_id, repo, validated.branch
+    )
+    orch_started = perf_counter()
+    try:
+        result = await run_rename_preview(
+            repository_id=validated.repository_id,
+            repo=repo,
+            graph_branch=graph_branch,
+            user=user,
+            symbol_id=validated.symbol_id,
+            symbol=validated.symbol or None,
+            file_path=validated.file_path or None,
+            symbol_type=validated.symbol_type or None,
+            new_name=validated.new_name,
+            context_lines=validated.context_lines,
+        )
+    except GraphError as exc:
+        _code, message = graph_error_to_tool_error(exc)
+        return ToolResult(success=False, error=message)
+
+    orchestration_ms = int((perf_counter() - orch_started) * 1000)
+    duration_ms = int((perf_counter() - started) * 1000)
+    await _record_chat_retrieval(
+        RetrievalTrace.Kind.EDGE,
+        tool_trace_payload(
+            result,
+            tool="rename_preview",
+            duration_ms=duration_ms,
+            orchestration_ms=orchestration_ms,
+        ),
+        conversation_id=conversation_id,
+        user=user,
+    )
+    summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+    logger.info(
+        "rename_preview_tool_done",
+        conversation_id=conversation_id,
+        repository_id=validated.repository_id,
+        ok=bool(result.get("ok")),
+        applied=bool(result.get("applied")),
+        result_count=int(summary.get("total_edits") or 0) if summary else 0,
+        duration_ms=duration_ms,
+        component=_COMPONENT,
+        category="caller",
+        initiated_by_user_id=str(user.id),
+    )
+    return ToolResult(
+        success=True,
+        output={
+            "data": result,
+            "metadata": {
+                "repository_id": validated.repository_id,
+                "branch": validated.branch,
+                "conversation_id": conversation_id,
+                "duration_ms": duration_ms,
+            },
+        },
+    )
+
+
 __all__ = [
     "impact_analysis",
     "trace_call_path",
     "detect_changes",
     "list_processes",
     "get_process",
+    "rename_preview",
 ]

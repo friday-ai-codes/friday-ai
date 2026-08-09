@@ -267,10 +267,60 @@ class GetProcessToolInput(BaseModel):
     )
 
 
+class RenamePreviewToolInput(BaseModel):
+    """``rename_preview`` 对话工具输入契约（Phase 126 RENAME-01 / D-09）。"""
+
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    repository_id: str = Field(description="目标仓库 UUID（必填）")
+    branch: str | None = Field(
+        default=None,
+        description="查询分支；缺省走 base",
+    )
+    symbol_id: str | None = Field(
+        default=None,
+        description="符号 UUID；与 symbol 必须且只能提供其一",
+    )
+    symbol: str = Field(
+        default="",
+        description="符号名；与 symbol_id 必须且只能提供其一",
+    )
+    file_path: str = Field(
+        default="",
+        description="可选：文件路径，收窄同名符号",
+    )
+    symbol_type: str = Field(
+        default="",
+        description="可选：符号类型（function / class 等）",
+    )
+    new_name: str = Field(
+        description="新名称（必填）",
+        min_length=1,
+        max_length=512,
+    )
+    context_lines: int = Field(
+        default=2,
+        ge=0,
+        le=5,
+        description="上下文行数 0–5，默认 2",
+    )
+
+    @model_validator(mode="after")
+    def _require_symbol_xor(self) -> RenamePreviewToolInput:
+        has_id = bool(self.symbol_id)
+        has_name = bool((self.symbol or "").strip())
+        if has_id == has_name:
+            raise ValueError("必须且只能提供 symbol_id 或 symbol 之一")
+        if not (self.new_name or "").strip():
+            raise ValueError("new_name 不能为空")
+        return self
+
+
 __all__ = [
     "ImpactAnalysisToolInput",
     "TraceCallPathToolInput",
     "DetectChangesToolInput",
     "ListProcessesToolInput",
     "GetProcessToolInput",
+    "RenamePreviewToolInput",
 ]
