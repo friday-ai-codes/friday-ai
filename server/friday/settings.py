@@ -328,7 +328,7 @@ LLM_CONCURRENCY_LEASE_TTL_SECONDS = env.int(
 REPO_ROUTER_STAGE1_TIMEOUT_SECONDS = env.float("REPO_ROUTER_STAGE1_TIMEOUT_SECONDS", default=90.0)
 # 送进 Stage 1 prompt 的候选仓数量上限。Stage 0 仍聚合更多候选供降级时使用，
 # 这里只收窄"喂给 LLM"的部分——prompt 越短越快，且尾部低分候选本就不会被选中。
-REPO_ROUTER_STAGE1_MAX_CANDIDATES = env.int("REPO_ROUTER_STAGE1_MAX_CANDIDATES", default=8)
+REPO_ROUTER_STAGE1_MAX_CANDIDATES = env.int("REPO_ROUTER_STAGE1_MAX_CANDIDATES", default=10)
 # 每个候选仓在 prompt 里展示的命中节点数上限。
 REPO_ROUTER_STAGE1_HITS_PER_REPO = env.int("REPO_ROUTER_STAGE1_HITS_PER_REPO", default=4)
 # Stage 1 输入哈希缓存 TTL（秒）。缓存 key 已含 index_version（参与候选各仓

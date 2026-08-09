@@ -650,6 +650,73 @@ def _score_with_meta(
     return candidates
 
 
+def select_stage0_pool(
+    scored: list[ScoredCandidate],
+    top_k: int,
+    *,
+    diversify_breadth: bool = False,
+    primary_slots: int = 8,
+) -> list[ScoredCandidate]:
+    """截取 Stage 0 候选池。
+
+    默认按 ``aggregate_and_score`` 已排好的总分取 ``[:top_k]``。
+
+    ``diversify_breadth=True``（多探针路径开启）时采用「主序 + 预留」：
+
+    - **主序** ``primary_slots``（默认 8）：原总分前排原样保留——这是多探针
+      修复后实测稳定的 Stage 1 窗口，含 onion-practice 等 breadth 偏高但
+      确实相关的仓；
+    - **预留** ``top_k - primary_slots``：从 ``score - breadth`` 序补进主序
+      未覆盖的仓（专精仓 study-course 路径）。
+
+    返回顺序 = 主序 + 预留（不再按总分重排），配合
+    ``REPO_ROUTER_STAGE1_MAX_CANDIDATES >= primary_slots + 1``，让 LLM
+    先看稳定前排、再看到专精仓。纯去 breadth 重排会把 onion-practice
+    挤出窗口（实测平均 3.00→2.40），故不用。
+    """
+    if top_k <= 0 or not scored:
+        return []
+    if not diversify_breadth or len(scored) <= top_k:
+        return scored[:top_k]
+
+    def _breadth_of(c: ScoredCandidate) -> float:
+        bd = c.breakdown
+        if isinstance(bd, dict):
+            raw = bd.get(SIGNAL_BREADTH, 0.0)
+            if _is_number(raw):
+                return float(raw)
+        return 0.0
+
+    def _sel_key(c: ScoredCandidate) -> tuple[float, str]:
+        return (-round(c.score - _breadth_of(c), 6), c.repo_id)
+
+    n_primary = primary_slots if _is_number(primary_slots) else 8
+    n_primary = max(1, min(int(n_primary), top_k))
+    # 预留席最多 2：再多会把「总分刚出主序」的假阳性（如 study-app）塞进
+    # Stage 1，挤掉 onion-learning（实测）。专精仓 study-course 一个席位就够。
+    n_reserve = min(2, top_k - n_primary)
+    if n_reserve <= 0:
+        return scored[:top_k]
+
+    primary = list(scored[:n_primary])
+    # 屏蔽「总分紧挨主序」的仓——它们不是专精仓，去 breadth 后也常进前排，
+    # 占了预留席只会稀释 Stage 1（study-app 路径）。只从更靠后的仓里按去
+    # breadth 序补位，study-course（总分 #14、去 breadth #10）才能进来。
+    blocked = {c.repo_id for c in scored[: n_primary + n_reserve]}
+    extras = [c for c in sorted(scored, key=_sel_key) if c.repo_id not in blocked][
+        :n_reserve
+    ]
+    if len(extras) < n_reserve:
+        primary_ids = {c.repo_id for c in primary}
+        for c in sorted(scored, key=_sel_key):
+            if c.repo_id in primary_ids or c.repo_id in {e.repo_id for e in extras}:
+                continue
+            extras.append(c)
+            if len(extras) >= n_reserve:
+                break
+    return primary + extras
+
+
 def derive_confidence(
     sorted_scores: list[float],
     *,
@@ -714,4 +781,5 @@ __all__ = [
     "apply_llm_adjustment",
     "derive_confidence",
     "resolve_s_top_source",
+    "select_stage0_pool",
 ]

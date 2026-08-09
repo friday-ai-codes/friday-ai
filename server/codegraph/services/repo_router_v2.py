@@ -83,18 +83,82 @@ from codegraph.services.repo_router_scoring import (
     apply_llm_adjustment,
     derive_confidence,
     resolve_s_top_source,
+    select_stage0_pool,
 )
 from common.logging import redact_secrets_in_text
 from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
+from services.query_embedding import embed_query
 from services.sparse_encoder import SparseEncoderService
 
 logger = structlog.get_logger(__name__)
 
 Confidence = Literal["high", "medium", "low"]
 
-STAGE0_NODE_K = 50
+# Stage 0 全局节点召回预算。50 是历史值，实测偏小：30 仓空间下「高三提分专项」
+# 语料把 study-course 的最佳节点压到全局 #80，它因此**从未进入候选**，Stage 1 的
+# LLM 再强也无从挽回（reranker/LLM 救不回没见过的文档——一阶召回即天花板）。
+# 200 覆盖实测所需深度且仍是单次 query_points 调用（服务端 RRF，零额外往返）。
+# 运维可经 settings 覆盖而不必改代码发版。
+_STAGE0_NODE_K_DEFAULT = 200
 STAGE0_REPO_K = 12
+
+
+def _stage0_node_k() -> int:
+    """全局节点召回预算（调用时读 settings，非数值/非正一律回退默认，绝不抛）。"""
+    from django.conf import settings
+
+    try:
+        value = int(float(getattr(settings, "REPO_ROUTER_STAGE0_NODE_K", _STAGE0_NODE_K_DEFAULT)))
+    except (TypeError, ValueError, OverflowError):
+        return _STAGE0_NODE_K_DEFAULT
+    return value if value >= 1 else _STAGE0_NODE_K_DEFAULT
+
+
+# 向后兼容：既有调用方/测试直接读模块常量（v1 回退路径也用它）。
+STAGE0_NODE_K = _STAGE0_NODE_K_DEFAULT
+
+# dense 余弦探测的召回预算，与节点召回预算同值。
+#
+# ⚠️ 调大它会**改变 S_top 的口径**，不是单纯多召回一点：`resolve_s_top_source`
+# 要求**全部**分桶仓都拿到 dense_cos_max 才启用校准余弦，只要缺一个就全仓回退
+# `rrf_s_hat`。实测本实例 30 仓空间下 top_k=200/400 → 覆盖 19/20 仓（走 RRF），
+# 800 → 20/20（切到余弦）。
+#
+# 2026-08 实测结论：切到余弦口径当前**弊大于利**——校准常数 s_top_c_lo/c_hi
+# （0.25/0.55）是从未回填的占位初值，而 doubao-embedding-text 的真实 dense_cos_max
+# 落在 0.72~0.86，**100% 落在 c_hi 之上**，全部 clip 成 1.0 → text 退化为常数、
+# 零区分度，排序改由 breadth/activity 主导。校准窗口修正为 p5/p95（0.737/0.815）
+# 后 text 恢复区分度（饱和率 100%→5.4%），但端到端 candidate_recall 无变化
+# （0.9167），收益未经证实，故两项都未采纳。
+#
+# 要启用余弦口径，必须**先**用 `.planning/quick/260809-repo-route-eval/
+# calibrate_s_top.py` 重新校准并跑多轮召回评测确认收益，再一起上。
+STAGE0_DENSE_K = _STAGE0_NODE_K_DEFAULT
+
+# 接入 cross-encoder 精排时先取的**宽**候选池，精排后再收窄回 STAGE0_REPO_K。
+#
+# 为什么需要它（2026-08 实测）：六信号打分含 `breadth`（命中广度）分量，而多探针
+# 检索把这个信号放大了——泛泛相关的仓在 8 个探针上各捞几个节点，累积出 20~27 个；
+# 专精仓只在少数探针上强命中，只有 9 个。结果 study-course 在融合节点里排 #58
+# （稳稳在 top-200 内），却因节点数少而挤不进仓级 top-12，Stage 1 的 LLM 从未见过它。
+# cross-encoder 拿 query 与文档**联合**打分，不吃「你出现了多少次」，正是这一偏置的解药。
+STAGE0_REPO_K_WIDE = 30
+
+# 每仓取几个命中节点拼成 rerank 文档（够表达该仓与需求的关系，又不撑爆 pair 长度）。
+_RERANK_REPO_DOC_HITS = 6
+# cross-encoder 的 query 侧预算。它同样是 transformer，pair 总长受限；且实测**短
+# query 反而更准**（一句话摘要能把 study-course 从"未进候选"直接拉到 #1）。
+_RERANK_QUERY_MAX_CHARS = 2000
+# 双序融合的 RRF 常数（社区默认 k=60）。
+#
+# 为什么是融合而不是「精排全权定序」：实测两个极端都会漏。让精排主导中后段能把
+# study-course 从 #11 提到 #9（进了 LLM 视野），但同时把 onion-practice 挤出
+# top-12，换进两个无关仓——净收益为负。六信号里有 cross-encoder 看不到的事实
+# （活跃度、关键度、子应用结构），两路必须互补而非相互取代。
+# RRF 融合下四个目标仓**全部**落在 top-12 内（study-course #11），代价只是
+# Stage 1 得看得到第 11 名 —— 见 REPO_ROUTER_STAGE1_MAX_CANDIDATES。
+_RERANK_RRF_K = 60
 
 # 仓库级 last_commit 聚合缓存 TTL（MJ-05）：活跃度是天级衰减信号，60s 陈旧
 # 完全可接受；键含候选仓集合，命中即省掉一次 FileIndex 全量聚合。
@@ -107,7 +171,20 @@ STAGE0_T2_EMBED_BUDGET = 16
 # Stage 1 prompt 模板版本（ROUTE-09 幂等三件套）：参与输入哈希缓存 key 与
 # snapshot 的 prompt_hash 版本绑定四元组。system/human prompt 文案（含排列输出
 # 指令）任何变更都必须递增此版本——否则旧模板下缓存的排列会冒充新模板输出。
-PROMPT_TEMPLATE_VERSION = "stage1-permutation-v1"
+# v2：Stage 1 prompt 的需求正文改为独立截断（见 STAGE1_PROMPT_QUERY_MAX_CHARS）。
+# 长查询下渲染出的 human 消息与 v1 不同，必须递增以让旧模板缓存自然失效。
+PROMPT_TEMPLATE_VERSION = "stage1-permutation-v2"
+
+# Stage 1 prompt 里需求正文的字符上界。**只管 prompt，不管检索**——这正是历史
+# 缺陷的根因：`RepoAssociationService._QUERY_CHAR_BUDGET=4000` 本是为「防超大
+# feature list 塞爆 LLM 上下文」而设，却被加在了检索入参上，把 45 个功能点截到
+# 只剩 7 个，检索侧 85% 的语料从未参与召回。两者职责必须分开：检索吃全量（切块
+# 多探针），prompt 吃截断版。
+#
+# 取 8000 而非贴着模型上限：opus 4.8 有 1M 上下文，28k 字符只占约 2%，容量根本
+# 不是约束；限制的理由是「lost in the middle」——prompt 越长，中部信息越容易被
+# 忽略，且延迟线性上涨。
+STAGE1_PROMPT_QUERY_MAX_CHARS = 8000
 
 # Stage 1 固定 decode 参数（幂等第三道防线；主防线是输入哈希缓存 + 排列输出）。
 # temperature=0 / top_p=1 / 固定 seed——候选按 Stage 0 分数降序喂入（固定顺序，
@@ -118,7 +195,15 @@ _STAGE1_DECODE_PARAMS: dict[str, Any] = {"temperature": 0.0, "top_p": 1.0, "seed
 # 便于按供应商速度调整而不必改代码发版。默认见 friday/settings.py。
 _STAGE1_DEFAULTS = {
     "REPO_ROUTER_STAGE1_TIMEOUT_SECONDS": 90.0,
-    "REPO_ROUTER_STAGE1_MAX_CANDIDATES": 8,
+    # 实测不要调大：8→12 后平均命中从 3.00 掉到 1.20（onion-practice 5/5→0/5）。
+    # 容量不是原因（12 仓 × 4 节点对 1M 上下文毫无压力），是 lost-in-the-middle
+    # ——候选越多，LLM 越容易被聚合分高的假阳性淹没。名额要靠**精排提高前 8 名的
+    # 质量**来用好，而不是靠放宽。
+    # 8→10：多探针下专精仓（如 study-course）常落在聚合分 #10~#14；
+    # 配合 ``select_stage0_pool(diversify_breadth=True)`` 去 breadth 入选后，
+    # Stage 1 需要看到第 10 名才能覆盖。再往 12 实测会触发 lost-in-the-middle
+    # （平均命中 3.00→1.20），故停在 10。
+    "REPO_ROUTER_STAGE1_MAX_CANDIDATES": 10,
     "REPO_ROUTER_STAGE1_HITS_PER_REPO": 4,
     "REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS": 86400,
     # 107-01 落地：首调与 1 次重试**共享**的总延迟上界（per-call 超时语义不变，
@@ -502,6 +587,7 @@ class RepoRouterV2:
         repository_ids: list[str] | None = None,
         grouping_repository_ids: list[str] | None = None,
         use_llm: bool = True,
+        corpus_kind: str = "conversation",
     ) -> RepoRouteResultV2:
         """执行推理式路由。
 
@@ -517,16 +603,33 @@ class RepoRouterV2:
                 依据，不参与任何过滤或打分**。None = 调用方无项目上下文（MCP /
                 REST / skill_steps）→ 全部记 ``global`` 并跳过分组呈现，不报错。
             use_llm: False 时仅跑 Stage 0（纯检索 API 用）。
+            corpus_kind: 长查询的语料性质，决定切块后是否过噪声闸。
+                ``"conversation"``（默认）= 对话型上下文，只有小部分是检索意图，
+                噪声块不该变成探针挤占候选池；``"requirement"`` = 需求型语料
+                （feature list / PRD / 技术方案），整篇都是意图，全切全探。
+                短查询（单块）下本参数无任何影响。
         """
         # ---- Stage 0: 节点级 hybrid 粗筛 ----
         started = time.monotonic()
         group_delta, _alpha, _budget_k = _ranking_conf()
-        searched = await cls._stage0_node_search(query, repository_ids)
-        # 返回形状兼容：生产实现返回 (hits, query_dense)（复用已算好的 dense
-        # 向量，零额外 embedding）；既有测试替身只返回 hits 列表——此时
-        # query_dense=None，dense 余弦/T2 走既有降级分支（S_top 回退 RRF）。
+        # 默认路径不传 kwarg：既有测试替身是严格两位置参数的 `_fake_search(query,
+        # repository_ids)`，无条件传 kwarg 会把三个 Stage 0 注入 seam 全部打断。
+        if corpus_kind == "requirement":
+            searched = await cls._stage0_node_search(
+                query, repository_ids, drop_noise_probes=False
+            )
+        else:
+            searched = await cls._stage0_node_search(query, repository_ids)
+        # 返回形状兼容三态：生产实现返回 (hits, primary, probe_vectors)；历史
+        # 2 元组 (hits, query_dense) 与只返回 hits 列表的测试替身都必须继续可用
+        # ——此时 query_dense=None，dense 余弦/T2 走既有降级分支（S_top 回退 RRF）。
+        probe_vectors: list[list[float]] = []
         if isinstance(searched, tuple):
-            node_hits, query_dense = searched
+            if len(searched) == 3:
+                node_hits, query_dense, probe_vectors = searched
+            else:
+                node_hits, query_dense = searched
+                probe_vectors = [query_dense] if query_dense else []
         else:
             node_hits, query_dense = searched, None
         if not node_hits:
@@ -541,13 +644,17 @@ class RepoRouterV2:
         # 权重经 loader 调用时读取（保存即生效）；repo_meta 组装整体失败
         # （意外异常）回退 repo_meta=None → 打分核心走 legacy 三信号路径——
         # 观测代码与新信号永不反噬路由主流程（T-106-14）。
+        # 接了 cross-encoder 就先取宽池，精排后再收窄回 STAGE0_REPO_K；没接则维持原样。
+        rerank_on = await cls._rerank_available()
+        pool_k = STAGE0_REPO_K_WIDE if rerank_on else STAGE0_REPO_K
+
         config: dict[str, Any] | None = None
         repo_meta: dict[str, dict[str, Any]] | None = None
         meta_stats: dict[str, Any] = {}
         try:
             config = await aload_weight_config()
             repo_meta, meta_stats = await cls._load_repo_meta(
-                node_hits, query, query_dense, config
+                node_hits, query, query_dense, config, probe_vectors=probe_vectors
             )
         except Exception as exc:  # noqa: BLE001 — 整体失败回退 legacy，绝不中断路由
             repo_meta = None
@@ -567,6 +674,10 @@ class RepoRouterV2:
         # 锚点参数注入打分核心，回放/golden 确定性依赖此纪律。
         scored_at = datetime.now(timezone.utc).isoformat()
 
+        # 多探针（长需求切块）放大 breadth：专精仓节点少、挤不进仓级 top-K。
+        # 仅在此路径打开去 breadth 入选；单探针短查询保持原总分序。
+        diversify_breadth = bool(probe_vectors and len(probe_vectors) > 1)
+
         if config is not None and repo_meta is not None:
             effective_constants = {**config["constants"], "n_bar": meta_stats.get("n_bar")}
             # 锚点表也是外置配置（MJ-01）：注入打分核心 + 进快照，否则运维改了
@@ -577,12 +688,13 @@ class RepoRouterV2:
             )
             stage0_candidates = cls._stage0_candidates(
                 node_hits,
-                top_k=STAGE0_REPO_K,
+                top_k=pool_k,
                 weights=config["weights"],
                 repo_meta=repo_meta,
                 constants=effective_constants,
                 criticality_anchors=effective_anchors,
                 now=scored_at,
+                diversify_breadth=diversify_breadth,
             )
             # 快照携带本次生效全值（回放不依赖当时的 SystemSetting，106-07 消费）。
             snapshot_weight_config: dict[str, Any] | None = {
@@ -600,9 +712,17 @@ class RepoRouterV2:
             # path 等长字段）上，repo_meta 每仓仅 5 个短字段，50 仓不过几 KB。
             snapshot_repo_meta: dict[str, Any] | None = dict(repo_meta)
         else:
-            stage0_candidates = cls._stage0_candidates(node_hits, top_k=STAGE0_REPO_K)
+            stage0_candidates = cls._stage0_candidates(
+                node_hits, top_k=pool_k, diversify_breadth=diversify_breadth
+            )
             snapshot_weight_config = None
             snapshot_repo_meta = None
+
+        # Stage 0.7：cross-encoder 按真实相关度纠正入选集合与次序（fail-open）。
+        if rerank_on:
+            stage0_candidates = await cls._rerank_select(
+                query, stage0_candidates, keep=STAGE0_REPO_K
+            )
 
         snapshot_extras: dict[str, Any] = {
             "weight_config": snapshot_weight_config,
@@ -737,14 +857,134 @@ class RepoRouterV2:
         return result
 
     # ------------------------------------------------------------------
+    # Stage 0.7：cross-encoder 精排纠偏
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _rerank_available() -> bool:
+        """reranker 是否可用（配置读失败一律当不可用，绝不阻断路由）。"""
+        try:
+            from services.reranker import RerankerService
+
+            return await RerankerService.is_enabled()
+        except Exception:  # noqa: BLE001 — fail-open
+            return False
+
+    @staticmethod
+    def _rerank_document(candidate: dict[str, Any]) -> str:
+        """把一个候选仓压成 rerank 文档：仓名 + 命中的能力节点路径/摘要。"""
+        parts = [str(candidate.get("repo_name") or candidate.get("repo_id") or "")]
+        for hit in (candidate.get("hits") or [])[:_RERANK_REPO_DOC_HITS]:
+            payload = hit.get("payload") or {}
+            node_path = str(payload.get("node_path") or "").strip()
+            summary = str(payload.get("summary") or "").strip()
+            line = f"{node_path}: {summary}" if node_path else summary
+            if line:
+                parts.append(line)
+        return "\n".join(parts)
+
+    @classmethod
+    async def _rerank_select(
+        cls, query: str, candidates: list[dict[str, Any]], *, keep: int
+    ) -> list[dict[str, Any]]:
+        """用 cross-encoder 真实相关度纠正候选仓次序，收窄回 ``keep`` 个。
+
+        **只改次序与入选集合，不改任何 score/breakdown** —— 打分核心
+        （``aggregate_and_score``）与 golden/replay 的分数契约逐字不变，本步只决定
+        「哪 ``keep`` 个仓、以什么顺序」进 Stage 1。
+
+        次序策略：聚合序与精排序用 RRF 融合（理由见 ``_RERANK_RRF_K`` 注释——两个
+        极端各自会漏掉不同的目标仓，融合下四仓全进 top-12）。
+
+        fail-open：reranker 未配置/超时/返回空 → 原序截断，与未接入前逐字一致。
+        """
+        if len(candidates) <= 1:
+            return candidates[:keep]
+        started = time.monotonic()
+        try:
+            from services.reranker import RerankerService
+
+            documents = [cls._rerank_document(c) for c in candidates]
+            with use_call_source(CallSource.RERANKER):
+                results = await RerankerService.rerank(
+                    query[:_RERANK_QUERY_MAX_CHARS], documents, top_n=len(documents)
+                )
+            if not results:
+                return candidates[:keep]
+
+            rerank_rank: dict[int, int] = {}
+            for order, item in enumerate(results):
+                idx = item.get("index")
+                if isinstance(idx, int) and 0 <= idx < len(candidates):
+                    rerank_rank.setdefault(idx, order)
+            if not rerank_rank:
+                return candidates[:keep]
+
+            # 未被 reranker 返回的候选按「排在所有返回项之后」处理，不直接淘汰。
+            missing_rank = len(results)
+
+            def _fused(i: int) -> float:
+                agg = 1.0 / (_RERANK_RRF_K + i)
+                rr = 1.0 / (_RERANK_RRF_K + rerank_rank.get(i, missing_rank))
+                return agg + rr
+
+            order_idx = sorted(
+                range(len(candidates)),
+                # 次键取原序下标，保证同分稳定（ROUTE-09 确定性纪律）。
+                key=lambda i: (-_fused(i), i),
+            )
+            selected = [candidates[i] for i in order_idx[:keep]]
+
+            try:
+                rescued = [
+                    candidates[i]["repo_name"]
+                    for i in order_idx[:keep]
+                    if i >= keep
+                ]
+                logger.info(
+                    "repo_router_rerank_applied",
+                    pool_size=len(candidates),
+                    kept=len(selected),
+                    rescued_count=len(rescued),
+                    rescued=rescued[:5],
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                    category="sampling",
+                    component="repo_router_v2",
+                )
+            except Exception:  # noqa: BLE001 — 观测 best-effort
+                pass
+            return selected
+        except Exception as exc:  # noqa: BLE001 — 精排失败绝不反噬路由
+            try:
+                logger.warning(
+                    "repo_router_rerank_failed",
+                    error_type=type(exc).__name__,
+                    error=redact_secrets_in_text(str(exc))[:200],
+                    category="sampling",
+                    component="repo_router_v2",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return candidates[:keep]
+
+    # ------------------------------------------------------------------
     # Stage 0
     # ------------------------------------------------------------------
 
     @classmethod
     async def _stage0_node_search(
-        cls, query: str, repository_ids: list[str] | None
+        cls,
+        query: str,
+        repository_ids: list[str] | None,
+        *,
+        drop_noise_probes: bool = True,
     ) -> tuple[list[dict[str, Any]], list[float] | None]:
-        """节点级 hybrid 检索。
+        """节点级 hybrid 检索（长查询自动多探针）。
+
+        Args:
+            drop_noise_probes: 长查询切块后是否过噪声闸。对话型上下文置 True
+                （"好的我看看"这类块不该变成探针去挤占候选池名额）；需求型语料
+                置 False（整篇都是检索意图，每段指向不同落点，全切全探）。
 
         Returns:
             ``(node_hits, query_dense)``——dense 向量随命中一并返回，供
@@ -752,29 +992,43 @@ class RepoRouterV2:
             （零额外 embedding）。``route()`` 对旧形状（测试替身只返回
             hits 列表）保持兼容。
         """
+        # 稀疏侧对全文编一次：SparseEncoderService 是本地 BM25，无长度上限，
+        # 不随 dense 切块——关键词/标识符这一面由它完整兜底。
         query_sparse = await sync_to_async(
             SparseEncoderService.encode, thread_sensitive=False
         )(query)
         if not query_sparse.get("indices"):
             return [], None
-        query_dense = await EmbeddingService.generate_embedding(query)
-        if not query_dense:
+
+        # dense 侧走查询收口：短查询单向量（与改造前逐字同路径），超长查询切块
+        # 出多向量。绝不因「文本太长」返回空——那正是历史上静默零召回的成因。
+        embedded = await embed_query(query, drop_noise=drop_noise_probes)
+        if not embedded.ok:
             return [], None
 
         filters: dict[str, Any] | None = None
         if repository_ids:
             filters = {"repository_id": [str(r) for r in repository_ids]}
 
+        node_k = _stage0_node_k()
+        # 多探针塞进**同一次** query_points 的 prefetch 列表，服务端 RRF 融合：
+        # 调用次数与单探针相同（N+1 路 prefetch 仍是一次往返）。
         hits = await sync_to_async(
-            QdrantService.hybrid_search_by_name, thread_sensitive=False
+            QdrantService.hybrid_search_multi_by_name, thread_sensitive=False
         )(
             COLLECTION_NAME,
-            query_dense,
+            embedded.vectors,
             query_sparse,
-            top_k=STAGE0_NODE_K,
+            top_k=node_k,
+            prefetch_limit=node_k,
             filters=filters,
         )
-        return hits or [], query_dense
+        # 回传向量供 _load_repo_meta 复用（零额外 embedding）：
+        # - primary 供 T2 facet 匹配（单向量接口）；
+        # - 全部探针供 dense_cos_max —— **必须全给**。只用首块算余弦会让 S_top
+        #   只看 1/N 的需求语料，相关内容落在后面块的仓（实测 study-course）
+        #   text 信号被系统性压低，进而挤不进候选池。
+        return hits or [], embedded.primary, embedded.vectors
 
     @classmethod
     def _aggregate_by_repo(
@@ -873,6 +1127,8 @@ class RepoRouterV2:
         query: str,
         query_dense: list[float] | None,
         config: dict[str, Any],
+        *,
+        probe_vectors: list[list[float]] | None = None,
     ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
         """Stage 0 repo_meta 组装（resolver 编排——六信号的全部 I/O 收口点）。
 
@@ -896,16 +1152,23 @@ class RepoRouterV2:
         buckets = cls._aggregate_by_repo(node_hits)
         rids = sorted(buckets)
 
-        # ---- dense 余弦（O-3 口径）：复用已算好的 query_dense，归仓取 max ----
+        # ---- dense 余弦（O-3 口径）：复用已算好的探针向量，归仓取 max ----
+        # 长查询切成 N 块时**必须用全部探针**：dense_cos_max 的语义是「该仓与需求
+        # 任一部分的最佳匹配度」。只用首块会让相关内容在后段的仓 S_top 被系统性
+        # 压低（实测 study-course 因此 text 信号落后 0.23，挤不进候选池）。
+        # 单探针时 dense_search_multi_by_name 逐字委托单向量实现，调用计数不变。
+        dense_probes = [v for v in (probe_vectors or []) if v] or (
+            [query_dense] if query_dense else []
+        )
         cos_by_repo: dict[str, float] = {}
-        if query_dense and rids:
+        if dense_probes and rids:
             try:
                 dense_hits = await sync_to_async(
-                    QdrantService.dense_search_by_name, thread_sensitive=False
+                    QdrantService.dense_search_multi_by_name, thread_sensitive=False
                 )(
                     COLLECTION_NAME,
-                    query_dense,
-                    top_k=STAGE0_NODE_K,
+                    dense_probes,
+                    top_k=STAGE0_DENSE_K,
                     # 与 hybrid 同款 repository_id 过滤构造，限定到分桶候选仓——
                     # 余弦是 query·point 逐点值，不受候选集缩小影响，且提升
                     # 候选仓在 top-50 内的覆盖（减少 Pitfall 6 回退面）。
@@ -927,7 +1190,8 @@ class RepoRouterV2:
                 logger.warning(
                     "repo_router_dense_search_failed",
                     repo_count=len(rids),
-                    has_query_dense=bool(query_dense),
+                    has_query_dense=bool(dense_probes),
+                    probe_count=len(dense_probes),
                     category="sampling",
                     component="repo_router_v2",
                 )
@@ -1074,15 +1338,21 @@ class RepoRouterV2:
         constants: dict[str, Any] | None = None,
         criticality_anchors: dict[str, float] | None = None,
         now: str | None = None,
+        diversify_breadth: bool = False,
     ) -> list[dict[str, Any]]:
         """Stage 0 聚合打分薄封装——调纯函数打分核心（105-01 / 106-01）。
 
         分桶/归一/信号加性合成/稳定排序全部在 ``aggregate_and_score`` 内完成；
         本方法只把 ``ScoredCandidate`` 转回既有 dict 形状（repo_id/repo_name/
-        score/facets/hits + breakdown + criticality）并截取 top_k。
+        score/facets/hits + breakdown + criticality），再经
+        :func:`select_stage0_pool` 截取 top_k。
 
         ``repo_meta=None``（默认，兼容既有直调方：replay 测试等）→ 打分核心
         走 legacy 三信号路径；106-06 起 ``route()`` 注入六信号新路径参数。
+
+        ``diversify_breadth``：多探针时由 ``route()`` 打开，纠偏 breadth 膨胀
+        （见 ``select_stage0_pool``）；单探针 / 直调方保持默认 False，不改
+        golden/replay 契约。
         """
         scored = aggregate_and_score(
             node_hits,
@@ -1091,6 +1361,9 @@ class RepoRouterV2:
             constants=constants,
             criticality_anchors=criticality_anchors,
             now=now,
+        )
+        selected = select_stage0_pool(
+            scored, top_k, diversify_breadth=diversify_breadth
         )
         return [
             {
@@ -1102,7 +1375,7 @@ class RepoRouterV2:
                 "hits": c.hits,
                 "criticality": c.criticality,
             }
-            for c in scored[:top_k]
+            for c in selected
         ]
 
     @classmethod
@@ -1508,8 +1781,12 @@ class RepoRouterV2:
         # 也是 LLM 输入的一部分：不同 top_k 渲染出不同 prompt，是不同输入，
         # 必须并入 key 材料，否则跨 top_k 请求缓存碰撞（105 评审 MJ-02）。
         output_cap = max(top_k, 3)
+        # prompt 侧独立截断：检索已用全量语料（多探针）跑完，这里只约束喂给 LLM 的
+        # 正文长度。截断后的值同时进 stage0_input——缓存 key 必须与实际发出的
+        # prompt 一致，否则「同一 prompt 命中不同 key」。
+        prompt_query = query[:STAGE1_PROMPT_QUERY_MAX_CHARS]
         stage0_input: dict[str, Any] = {
-            "query": query,
+            "query": prompt_query,
             "candidates": [],
             "output_cap": output_cap,
         }
@@ -1564,7 +1841,8 @@ class RepoRouterV2:
             )
         )
         human = HumanMessage(
-            content=f"用户需求：{query}\n\n候选仓库及命中节点：\n\n" + "\n\n".join(context_blocks)
+            content=f"用户需求：{prompt_query}\n\n候选仓库及命中节点：\n\n"
+            + "\n\n".join(context_blocks)
         )
         prompt_text = str(system.content) + "\n\n" + str(human.content)
         prompt_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
