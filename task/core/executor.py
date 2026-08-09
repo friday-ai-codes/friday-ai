@@ -1033,10 +1033,18 @@ class ClaudeRunner:
   这些步骤——它们已经被外部流程接管，你只需修改源代码文件。"""
         # Phase 51 GATE-02（D-51-4）：server gate 放行的 approved SDD 仓注入
         # FRIDAY_TASK_FOLLOW_OPENSPEC=true → 追加 openspec 指引段（独立 helper 便于测试）。
-        # 默认 False → 返回 base 与现状逐字一致（零回归，D-51-5）。
+        # Phase 124 DIFF-03（D-01）：knowledge 已挂载且 plan/execute 时追加 detect_changes 自查指引。
+        # parts-join：openspec 与 detect_changes 可共存，勿 early-return 互斥。
+        parts = [base]
         if bool(self.config.follow_openspec):
-            return base + "\n\n" + self._openspec_guidance()
-        return base
+            parts.append(self._openspec_guidance())
+        if (
+            self.config.knowledge_endpoint
+            and self.config.user_token
+            and self.config.task_mode in {"plan", "execute"}
+        ):
+            parts.append(self._detect_changes_guidance())
+        return "\n\n".join(parts)
 
     def _openspec_guidance(self) -> str:
         """openspec 指引段（Phase 51-03，D-51-4）：指示 agent 按 openspec 流程编码。
@@ -1050,6 +1058,23 @@ class ClaudeRunner:
 - 动手前优先查阅仓库内 openspec skill（`.claude/skills/` 已由运行时原生加载）与 `openspec/`
   下的 spec 文档 / change proposal，理解目标规格与变更增量后再实现。
 - 实现须与已批准 spec 保持一致：spec 未覆盖的改动应谨慎，必要时在产出说明中标注与 spec 的关系。"""
+
+    def _detect_changes_guidance(self) -> str:
+        """detect_changes 自查指引（Phase 124-01，DIFF-03 / D-01/D-03/D-04）。
+
+        独立 helper（静态可信文本，无外部输入拼接，无 prompt 注入面）。仅在
+        knowledge MCP 已挂载且 ``task_mode`` 为 plan/execute 时被 ``_get_system_prompt`` 追加。
+        非阻断：失败 / HIGH/CRITICAL 仍继续交付；不改 runner commit/push（D-04）。
+        """
+        return (
+            "影响面自查（编码完成后、结束 turn 前）：\n"
+            "- 若已挂载 friday-knowledge，调用 `detect_changes`："
+            "`repository_id`=本任务仓 UUID，`compare`=当前功能分支"
+            "（可选 `base_ref`=MR 目标分支，仅声明；勿传工作树 tip 当 base）。\n"
+            "- 根据返回的受影响符号与风险决定是否继续修补；结果仅供决策参考。\n"
+            "- 工具失败 / 未索引 / 配额用尽：记录原因并继续交付，不要重试刷屏；"
+            "不要因为 HIGH/CRITICAL 而停止交付（提交由 Runner 负责）。"
+        )
 
     async def _save_session(self, result: dict) -> None:
         """Save session data for potential resume.
