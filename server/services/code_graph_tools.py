@@ -68,11 +68,13 @@ from typing import Any, Final
 import structlog
 
 from services.code_graph import (
+    LOW_RESOLUTION_THRESHOLD,
     CodeGraph,
     GraphAccessDenied,
     GraphBuildFailed,
     GraphBuildTimeout,
     GraphError,
+    GraphMeta,
     GraphNotIndexed,
     get_graph_service,
 )
@@ -104,8 +106,10 @@ GRAPH_ERROR_MESSAGES: Final[Mapping[type[GraphError], tuple[str, str]]] = {
 
 __all__ = [
     "GRAPH_ERROR_MESSAGES",
+    "degradation_payload",
     "fetch_graph_for_tool",
     "graph_error_to_tool_error",
+    "staleness_payload",
 ]
 
 
@@ -237,3 +241,117 @@ async def fetch_graph_for_tool(
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
     )
     return graph
+
+
+async def staleness_payload(repo: Any) -> dict[str, Any]:
+    """索引新鲜度声明——「你看到的结论是哪一版代码的」（D-22）。
+
+    :param repo: 一个 ``repositories.models.Repository`` 实例（已由调用方取好）。
+
+    三态（``fresh`` / ``stale`` / ``unknown``）一律走
+    ``repositories.freshness_service.compute_freshness_status``，⛔ 不自己比 sha：那张
+    决策表里「``remote_head_checked_at is None`` ⇒ unknown」这条最容易漏，漏了就会把
+    「从没查过远端」误报成 ``fresh``。
+
+    ⛔ **请求路径不起 git 子进程**。``behind_commits`` 是定时任务
+    ``update_behind_commits_for_stale_repos`` 预先算好的库字段；现算一次是两个
+    ``create_subprocess_exec`` 加 30s / 15s 两段超时，放在工具调用路径上不可接受。
+
+    🚨 ``behind_commits is None`` 是**真实可达**的分支，不是理论情形：
+    ``_calculate_commit_distance`` 在本地没有 clone 时返回 ``None``
+    （``freshness_service.py:88-94``），而那个定时任务只覆盖 ``auto_index_enabled=True``
+    的仓。此时降级为只报 ``as_of <sha 前 12 位>`` 并明说落后数未知——
+    ⛔ **绝不编造一个数字**：一个凭空的「落后 3 commits」会让 agent 以为索引只差一点点，
+    而真相可能是差了三百个 commit。
+    """
+    from repositories.freshness_service import compute_freshness_status
+
+    status = compute_freshness_status(repo)
+    as_of = repo.last_indexed_commit_sha or ""
+    behind = repo.behind_commits
+    calculated_at = repo.behind_commits_calculated_at
+
+    if behind is None:
+        short = as_of[:12]
+        declaration = (
+            f"索引 as_of {short}；落后提交数未知"
+            if short
+            else "索引水位未知；落后提交数未知"
+        )
+    elif behind == 0:
+        declaration = "索引与远端一致"
+    else:
+        declaration = f"索引落后 {behind} commits"
+
+    return {
+        "as_of": as_of,
+        "freshness": status,
+        "behind_commits": behind,
+        "behind_commits_calculated_at": (
+            calculated_at.isoformat() if calculated_at is not None else None
+        ),
+        "declaration": declaration,
+    }
+
+
+def degradation_payload(meta: GraphMeta) -> dict[str, Any]:
+    """把 ``GraphMeta`` 上「🔔 上层工具必须透出」的字段原样搬进工具输出（D-23）。
+
+    键名与 :class:`~services.code_graph.GraphMeta` 的字段名**逐字一致**：两边各起一个
+    名字，下一个人就得在两处之间做心算映射，而这些字段恰恰是「结论有多可信」的全部
+    依据，映射错一个就是一次静默的误导。
+
+    🚨 ``resolution_rate`` 是**数值**且**必带**，``declarations`` 里的解析率声明同样
+    **无条件**追加——⛔ 不得只在 ``low_resolution is True`` 时才提醒。121-10 在生产
+    218 个仓上实测：解析率中位数只有 **0.17**，全库最高的一个仓也才 0.56，没有任何一个
+    仓「解析得好」。在这个常态下 ``low_resolution`` 表达的是「**比本仓常态更差**」，
+    布尔量本身没有信息量，区分不出 0.17 与 0.55——而这两者对影响面结论的可信度是天壤
+    之别。
+
+    ``degraded`` 的两个子档措辞**必须不同**：``on_demand_subgraph`` 的子图在其深度内是
+    完整的（「影响面就这么大」这句话在该深度内说得出口），
+    ``on_demand_subgraph_truncated`` 则缺了一部分邻接（同一句话说不出口）。合成一句会让
+    上层无从分辨自己能不能下那个结论。
+    """
+    unresolved_pct = round((1.0 - meta.resolution_rate) * 100)
+    declarations: list[str] = [
+        f"本仓约 {unresolved_pct}% 的调用边未解析到具体符号，影响面结论偏保守"
+    ]
+
+    if meta.low_resolution:
+        declarations.append(
+            f"本仓解析率 {meta.resolution_rate:.2f} 低于 {LOW_RESOLUTION_THRESHOLD:.2f}"
+            "，比本仓常态更差，结论请按更保守的口径采信"
+        )
+    if meta.partial_edges:
+        reason = f"（在途原因：{meta.partial_reason}）" if meta.partial_reason else ""
+        declarations.append(f"边构建在途，结果可能不完整{reason}")
+    if meta.degraded == "on_demand_subgraph":
+        declarations.append(
+            "已降级为按需子图，覆盖面小于全图（该子图在其深度内是完整的）"
+        )
+    elif meta.degraded == "on_demand_subgraph_truncated":
+        declarations.append("按需子图的某一轮邻接被截断，结论可能在边界处断掉")
+    if meta.cross_repo_unresolved_count > 0:
+        # ⚠️ 这个数是**装配时**丢弃的跨仓边条数，与 122-06「本次 ORM 查到 N 条跨仓调用」
+        #    是两个不同的数，键名与文案都不许混。
+        declarations.append(
+            f"装配时有 {meta.cross_repo_unresolved_count} 条跨仓边无法定位到符号，已丢弃"
+        )
+    if meta.cross_repo_branch_unfiltered:
+        declarations.append("跨仓边无法按分支过滤")
+
+    return {
+        "resolution_rate": meta.resolution_rate,
+        "low_resolution": meta.low_resolution,
+        "partial_edges": meta.partial_edges,
+        "partial_reason": meta.partial_reason,
+        "degraded": meta.degraded,
+        "cross_repo_unresolved_count": meta.cross_repo_unresolved_count,
+        "cross_repo_branch_unfiltered": meta.cross_repo_branch_unfiltered,
+        "include_low_confidence": meta.include_low_confidence,
+        "node_count": meta.node_count,
+        "edge_count": meta.edge_count,
+        "excluded_file_count": meta.excluded_file_count,
+        "declarations": declarations,
+    }

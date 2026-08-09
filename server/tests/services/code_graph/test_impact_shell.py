@@ -14,15 +14,21 @@ from unittest import mock
 import pytest
 from asgiref.sync import sync_to_async
 from django.test import override_settings
+from django.utils import timezone
 
 from services.code_graph import (
     CodeGraph,
     GraphAccessDenied,
     GraphBuildTimeout,
     GraphError,
+    GraphMeta,
     GraphNotIndexed,
 )
-from services.code_graph_tools import fetch_graph_for_tool, graph_error_to_tool_error
+from services.code_graph_tools import (
+    degradation_payload,
+    fetch_graph_for_tool,
+    graph_error_to_tool_error,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -131,6 +137,80 @@ async def test_graph_error_translated_not_swallowed(indexed_repo) -> None:
     _, leaky_message = graph_error_to_tool_error(leaky)
     assert "999" not in leaky_message
     assert "estimated_bytes" not in leaky_message
+
+
+def _meta(**overrides) -> GraphMeta:
+    """造一个 ``GraphMeta``。默认是「全量装配、无任何降级」的干净形态。"""
+    fields = {
+        "repository_id": "repo-1",
+        "branch": "",
+        "node_count": 12,
+        "edge_count": 20,
+        "estimated_bytes": 1024,
+        "resolution_rate": 0.17,
+        "low_resolution": False,
+        "partial_edges": False,
+        "partial_reason": "",
+        "degraded": "",
+        "cross_repo_unresolved_count": 0,
+        "cross_repo_branch_unfiltered": False,
+        "excluded_file_count": 0,
+        "include_low_confidence": False,
+        "built_signature": "sig",
+        "built_at": timezone.now(),
+    }
+    fields.update(overrides)
+    return GraphMeta(**fields)
+
+
+def test_degradation_payload_declares_resolution_rate_numerically() -> None:
+    """降级标记与**数值** ``resolution_rate`` 一律透出，⛔ 不只给布尔量（D-23）。
+
+    生产 218 个仓的解析率中位数只有 0.17、最高 0.56——``low_resolution`` 表达的是
+    「比本仓常态更差」，⛔ 不是「解析率够不够用」。所以解析率声明**无条件**出现，
+    哪怕 ``low_resolution is False``；只透布尔量的实现会在这条用例上当场红。
+
+    （决策: D-23）
+    """
+    clean = degradation_payload(_meta(resolution_rate=0.17, low_resolution=False))
+
+    assert clean["resolution_rate"] == 0.17
+    assert isinstance(clean["resolution_rate"], float)
+    # 关键的一条：布尔量为 False 时解析率声明**仍然**在。
+    assert any("83%" in d for d in clean["declarations"]), clean["declarations"]
+
+    # 键名与 GraphMeta 字段名逐字一致，五个标记类字段一个都不许漏。
+    assert {
+        "resolution_rate",
+        "low_resolution",
+        "partial_edges",
+        "partial_reason",
+        "degraded",
+        "cross_repo_unresolved_count",
+        "cross_repo_branch_unfiltered",
+        "include_low_confidence",
+        "node_count",
+        "edge_count",
+        "excluded_file_count",
+        "declarations",
+    } == set(clean)
+
+    # ``degraded`` 的两档措辞必须不同：前者的子图在其深度内完整，后者缺了一部分邻接
+    # ——上层据此才知道「影响面就这么大」这句话能不能说。
+    subgraph = degradation_payload(_meta(degraded="on_demand_subgraph"))
+    truncated = degradation_payload(_meta(degraded="on_demand_subgraph_truncated"))
+    subgraph_note = [d for d in subgraph["declarations"] if d not in clean["declarations"]]
+    truncated_note = [d for d in truncated["declarations"] if d not in clean["declarations"]]
+    assert subgraph_note and truncated_note
+    assert subgraph_note != truncated_note
+
+    # 其余三个标记各自带出一条声明。
+    partial = degradation_payload(_meta(partial_edges=True, partial_reason="edge_build"))
+    assert len(partial["declarations"]) > len(clean["declarations"])
+    unresolved = degradation_payload(_meta(cross_repo_unresolved_count=4))
+    assert any("4" in d for d in unresolved["declarations"])
+    unfiltered = degradation_payload(_meta(cross_repo_branch_unfiltered=True))
+    assert len(unfiltered["declarations"]) > len(clean["declarations"])
 
 
 @pytest.mark.skip(reason="Wave 0 桩：由 122-07 落地")
