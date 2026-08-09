@@ -455,12 +455,16 @@ def _build_process_rows(
     symbol_to_community: Mapping[str, str],
     max_processes: int,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Endpoint → BFS → 分类；返回 (rows, degradation_summary)。"""
+    """Endpoint → BFS → 分类；返回 (rows, degradation_summary)。
+
+    先收集全部可解析候选，再按 ``cross_community`` 优先、``step_count`` 降序截断
+    （WR-06）——避免按 Endpoint 迭代顺序任意丢弃跨社区 / 更长流。
+    """
     degradation: dict[str, Any] = {
         "unresolved_endpoints": 0,
         "community_class_unknown": 0,
     }
-    rows: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     used_keys: set[str] = set()
 
     for ep in endpoints:
@@ -505,30 +509,36 @@ def _build_process_rows(
                 int(degradation["community_class_unknown"]) + 1
             )
 
+        row = {
+            "process_key": process_key,
+            "name": name,
+            "entry_endpoint": entry_snapshot,
+            "steps": steps,
+            "step_count": len(steps),
+            "community_class": community_class,
+            "flags": dict(best.get("flags") or {}),
+        }
         if process_key in used_keys:
             # 同 key 冲突：保留更长
             existing_idx = next(
-                i for i, r in enumerate(rows) if r["process_key"] == process_key
+                i for i, r in enumerate(candidates) if r["process_key"] == process_key
             )
-            if len(steps) <= len(rows[existing_idx]["steps"]):
+            if len(steps) <= len(candidates[existing_idx]["steps"]):
                 continue
-            rows.pop(existing_idx)
+            candidates.pop(existing_idx)
         used_keys.add(process_key)
-        rows.append(
-            {
-                "process_key": process_key,
-                "name": name,
-                "entry_endpoint": entry_snapshot,
-                "steps": steps,
-                "step_count": len(steps),
-                "community_class": community_class,
-                "flags": dict(best.get("flags") or {}),
-            }
-        )
-        if len(rows) >= max_processes:
-            degradation["truncated_by_max_processes"] = True
-            break
+        candidates.append(row)
 
+    candidates.sort(
+        key=lambda r: (
+            0 if r.get("community_class") == "cross_community" else 1,
+            -int(r.get("step_count") or 0),
+            str(r.get("process_key") or ""),
+        )
+    )
+    if len(candidates) > max_processes:
+        degradation["truncated_by_max_processes"] = True
+    rows = candidates[: max(0, int(max_processes))]
     return rows, degradation
 
 
