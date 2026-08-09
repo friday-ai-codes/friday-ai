@@ -180,18 +180,44 @@ def test_edge_confidence_and_reason(known_topology: nx.MultiDiGraph) -> None:
     assert _item(result, "B")["path_confidence"] == 1.0
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
-def test_min_confidence_filter() -> None:
+def test_min_confidence_filter(known_topology: nx.MultiDiGraph) -> None:
     """``min_confidence`` 各阈值下结果集单调收缩；``cross_repo`` 用 ``match_confidence``
     原值参与比较（不归一化）。
 
+    ⚠️ 四档阈值走**表内循环**而不是 ``parametrize``：它们断言的是「后一档是前一档的子集」
+    这条**跨档**性质，拆成四个独立节点就没法比了。
+
     （Req: IMPACT-02, 决策: D-06 / D-13）
     """
-    pytest.fail("Wave 0 桩")
+    previous: set[str] | None = None
+    for min_confidence in (0.0, 0.3, 0.7, 1.0):
+        current = _all_ids(
+            analyze_impact(
+                known_topology,
+                "A",
+                min_confidence=min_confidence,
+                include_low_confidence=True,
+            )
+        )
+        if previous is not None:
+            assert current <= previous, (
+                f"min_confidence={min_confidence} 的结果不是上一档的子集，"
+                f"单调收缩被破坏：{current - previous}"
+            )
+        previous = current
+
+    # F 的那条边是 cross_repo(match_confidence=0.7)。0.7 恰好达标、0.71 就被挡掉
+    # —— 证明参与比较的是 match_confidence **原值**，而不是被归一化成某个档位常量
+    # （若被归一化成 1.0，0.71 那档 F 还在；若被抹成 0.3，0.7 那档 F 就已经不在了）。
+    at_070 = analyze_impact(known_topology, "A", min_confidence=0.7)
+    assert "F" in _all_ids(at_070)
+    assert _item(at_070, "F")["path_confidence"] == 0.7
+
+    at_071 = analyze_impact(known_topology, "A", min_confidence=0.71)
+    assert "F" not in _all_ids(at_071)
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
-def test_bare_name_requires_both_gates() -> None:
+def test_bare_name_requires_both_gates(known_topology: nx.MultiDiGraph) -> None:
     """**D-08 双闸**：单开 ``include_low_confidence`` 或单降 ``min_confidence`` 都不足以让
     bare_name 边参与扩散。
 
@@ -201,7 +227,37 @@ def test_bare_name_requires_both_gates() -> None:
 
     （Req: IMPACT-02, 决策: D-08）
     """
-    pytest.fail("Wave 0 桩")
+    from services.code_graph.impact import _bare_name_allowed
+
+    cases = [
+        # (include_low_confidence, min_confidence, X 是否应当出现)
+        (False, 0.3, False),  # 装配口径关着：图里本就不该有这一档边
+        (True, 1.0, False),   # 查询口径卡在最高档：调用方要的是只看强证据
+        (False, 1.0, False),  # 两道都关
+        (True, 0.3, True),    # 两道同时开 —— 唯一放行的组合
+    ]
+    for include_low_confidence, min_confidence, expected in cases:
+        result = analyze_impact(
+            known_topology,
+            "A",
+            min_confidence=min_confidence,
+            include_low_confidence=include_low_confidence,
+        )
+        present = "X" in _all_ids(result)
+        assert present is expected, (
+            f"include_low_confidence={include_low_confidence} / "
+            f"min_confidence={min_confidence} 时 X 的在场情况应为 {expected}"
+        )
+        # 谓词本身与 analyze_impact 的实际行为必须一致，且被如实透出。
+        assert result["bare_name_included"] is _bare_name_allowed(
+            include_low_confidence=include_low_confidence,
+            min_confidence=min_confidence,
+        )
+
+    # 谓词可独立单测（它是 D-08 的唯一判据，不该只能经 analyze_impact 间接观察）。
+    assert _bare_name_allowed(include_low_confidence=True, min_confidence=0.3) is True
+    assert _bare_name_allowed(include_low_confidence=True, min_confidence=0.31) is False
+    assert _bare_name_allowed(include_low_confidence=False, min_confidence=0.0) is False
 
 
 @pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
