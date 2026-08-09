@@ -12,26 +12,28 @@ import pytest
 from services.code_graph import process_trace as pt
 
 
-def _node(
+def _add_node(
+    g: nx.MultiDiGraph,
     nid: str,
     *,
     name: str | None = None,
     file_path: str = "app/views.py",
     start_line: int = 1,
-) -> tuple[str, dict[str, Any]]:
-    return nid, {
-        "name": name or nid,
-        "symbol_type": "FUNCTION",
-        "file_path": file_path,
-        "start_line": start_line,
-        "end_line": start_line,
-    }
+) -> None:
+    g.add_node(
+        nid,
+        name=name or nid,
+        symbol_type="FUNCTION",
+        file_path=file_path,
+        start_line=start_line,
+        end_line=start_line,
+    )
 
 
 def _chain_graph(names: list[str], *, conf: str = "resolved") -> nx.MultiDiGraph:
     g = nx.MultiDiGraph()
     for i, n in enumerate(names):
-        g.add_node(*_node(n, start_line=i + 1))
+        _add_node(g, n, start_line=i + 1)
     for i in range(len(names) - 1):
         g.add_edge(names[i], names[i + 1], kind="call", confidence=conf, line_number=i + 1)
     return g
@@ -66,13 +68,12 @@ def test_bfs_respects_depth_branching_min_steps_conf() -> None:
 
     # branching：星型出口 >4，只扩前 4 个（按边分排序后截断）
     star = nx.MultiDiGraph()
-    star.add_node(*_node("hub"))
+    _add_node(star, "hub")
     for i in range(6):
         leaf = f"leaf{i}"
-        star.add_node(*_node(leaf))
-        # 再挂一层使每条臂 ≥3 steps
         mid = f"mid{i}"
-        star.add_node(*_node(mid))
+        _add_node(star, leaf)
+        _add_node(star, mid)
         star.add_edge("hub", mid, kind="call", confidence="resolved", line_number=1)
         star.add_edge(mid, leaf, kind="call", confidence="resolved", line_number=2)
     paths = pt.collect_process_paths(star, "hub")
@@ -87,7 +88,7 @@ def test_cycle_marked_not_silently_skipped() -> None:
     """
     g = nx.MultiDiGraph()
     for n in ("h", "a", "b"):
-        g.add_node(*_node(n))
+        _add_node(g, n)
     g.add_edge("h", "a", kind="call", confidence="resolved", line_number=1)
     g.add_edge("a", "b", kind="call", confidence="resolved", line_number=2)
     g.add_edge("b", "a", kind="call", confidence="resolved", line_number=3)  # cycle
@@ -103,10 +104,10 @@ def test_async_dispatch_boundary_not_crossed() -> None:
     （Req: EXEC-01, 决策: D-02）
     """
     g = nx.MultiDiGraph()
-    g.add_node(*_node("entry"))
-    g.add_node(*_node("svc"))
-    g.add_node(*_node("apply_async_helper", name="apply_async"))
-    g.add_node(*_node("worker_task"))
+    _add_node(g, "entry")
+    _add_node(g, "svc")
+    _add_node(g, "apply_async_helper", name="apply_async")
+    _add_node(g, "worker_task")
     g.add_edge("entry", "svc", kind="call", confidence="resolved", line_number=1)
     g.add_edge("svc", "apply_async_helper", kind="call", confidence="resolved", line_number=2)
     g.add_edge(
@@ -224,11 +225,9 @@ async def test_rebuild_processes_persists_and_filters(repository, monkeypatch) -
     )
 
     g = nx.MultiDiGraph()
-    g.add_node(
-        *_node("h1", name="list_items", file_path="app/views.py", start_line=10)
-    )
-    g.add_node(*_node("s1", name="svc", file_path="app/svc.py", start_line=1))
-    g.add_node(*_node("s2", name="repo", file_path="app/repo.py", start_line=1))
+    _add_node(g, "h1", name="list_items", file_path="app/views.py", start_line=10)
+    _add_node(g, "s1", name="svc", file_path="app/svc.py", start_line=1)
+    _add_node(g, "s2", name="repo", file_path="app/repo.py", start_line=1)
     g.add_edge("h1", "s1", kind="call", confidence="resolved", line_number=11)
     g.add_edge("s1", "s2", kind="call", confidence="resolved", line_number=2)
 
