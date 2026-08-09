@@ -1,8 +1,8 @@
 # Phase 124: 编码链闭环 - Pattern Map
 
 **Mapped:** 2026-08-10
-**Files analyzed:** 15
-**Analogs found:** 15 / 15
+**Files analyzed:** 17
+**Analogs found:** 17 / 17
 
 > Freeze (D-16): ⛔ 不改 `mcp/` submodule；⛔ 不改 `server/codegraph/services/repo_router_v2.py`；⛔ 不改 `task/core/runner.py` commit/push 门禁。
 
@@ -15,6 +15,8 @@
 | `server/services/code_graph/impact_report.py` | service | request-response | `server/services/code_graph_tools.py::run_detect_changes` + `pr_cross_reference.py` | role-match |
 | `server/workflows/nodes/ai/coding.py` | service | request-response | same file (`_create_mr_for_repo`) + `pr_cross_reference.py` | exact |
 | `server/mcp_tools/merge_request_service.py` | service | request-response | same file (`_draft_from_summary` / `create_merge_request`) | exact |
+| `server/mcp_tools/views.py` | api | request-response | same file (`CreateMergeRequestView.post` user 透传；对照既有 MCP view 传 `request.user`） | exact |
+| `server/mcp_tools/work_item_execution_service.py` | service | request-response | same file (`create_merge_request` 调用点 + `initiating_user`） | exact |
 | `server/workflows/services/mr_service.py` | service | request-response | same file (`build_mr_description` / `create_mr_for_task`) | exact |
 | `server/friday/settings.py` | config | — | same file (`CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS`) | exact |
 | `task/tests/test_knowledge_tools.py` | test | — | same file (whitelist / `EXPECTED_TOOL_NAMES`) | exact |
@@ -188,9 +190,10 @@ logger.info(
     component="code_graph",
     category="caller",
     repository_id=repository_id,
+    initiated_by_user_id=str(user.id) if user is not None and getattr(user, "id", None) is not None else "system",
 )
-# completed: duration_ms, section_chars, ok=
-# failed: duration_ms, error_code=  (redact_secrets_in_text on any exception text)
+# completed: duration_ms, section_chars, ok=, initiated_by_user_id=
+# failed: duration_ms, error_code=, initiated_by_user_id=  (redact_secrets_in_text on any exception text)
 ```
 
 **Fail-soft / stub** (D-09/D-11; align empty-string last-resort with pr_cross_reference):
@@ -310,6 +313,51 @@ request = MRCreateRequest(..., description=description, ...)
 ```
 
 **User:** MCP view supplies `request.user` into service (extend signature if needed). Never duplicate markdown logic in the view.
+
+---
+
+### `server/mcp_tools/views.py` (api, request-response)
+
+**Analog:** same file `CreateMergeRequestView.post` (~2842–2871) + other MCP tools that pass `request.user` into services for ACL/attribution.
+
+**Role:** HTTP/MCP 入口只做鉴权与参数解包；**不**渲染 `## 影响面` markdown。签名扩展后调用：
+
+```python
+# Source: mcp_tools/views.py CreateMergeRequestView — pass ACL user only
+await create_merge_request(
+    repository=repository,
+    source_branch=...,
+    target_branch=...,
+    title=...,
+    description=...,
+    user=request.user,  # Phase 124：供 build_impact_report_section ACL
+    ...
+)
+```
+
+**Do not:** 在 view 内 import/拼装 impact 四段；重复业务逻辑属于 anti-pattern（D-14）。
+
+---
+
+### `server/mcp_tools/work_item_execution_service.py` (service, request-response)
+
+**Analog:** same file `create_merge_request(...)` call (~405–414) already receives `initiating_user` on the enclosing function.
+
+**Hook:** after signature adds `user=`, pass through:
+
+```python
+mr = await create_merge_request(
+    repository=task.repository,
+    source_branch=task.branch_name,
+    target_branch=task.target_branch or task.repository.default_branch,
+    title=...,
+    description=...,
+    reviewer_usernames=reviewer_usernames,
+    remove_source_branch=True,
+    trace=trace,
+    user=initiating_user,  # Phase 124：缺传 → 永久 unavailable stub
+)
+```
 
 ---
 
@@ -460,7 +508,7 @@ Shells must not reimplement impact/diff.
 **Source:** `server/services/code_graph_tools.py:1100-1138`  
 **Apply to:** `impact_report.py`  
 - Events: `impact_report_started` / `_completed` / `_failed`  
-- Fields: `component="code_graph"`, `category="caller"`, `duration_ms`, `repository_id`, `section_chars`, `error_code`  
+- Fields: `component="code_graph"`, `category="caller"`, `duration_ms`, `repository_id`, `section_chars`, `error_code`, **`initiated_by_user_id`**（`str(user.id)` 或 `"system"`）  
 - `except: pass` around log emits; `redact_secrets_in_text` on error strings  
 - Hook-site components may also log with `workflows` / `mcp_tools` if needed
 
@@ -499,6 +547,6 @@ Shells must not reimplement impact/diff.
 
 ## Metadata
 
-**Analog search scope:** `task/core/`, `task/tests/`, `server/services/code_graph*`, `server/workflows/nodes/ai/coding.py`, `server/workflows/services/`, `server/mcp_tools/`, `server/friday/settings.py`, `server/tests/{workflows,mcp_tools,services/code_graph}/`  
-**Files scanned:** ~25 primary + test analogs  
+**Analog search scope:** `task/core/`, `task/tests/`, `server/services/code_graph*`, `server/workflows/nodes/ai/coding.py`, `server/workflows/services/`, `server/mcp_tools/`（含 `views.py` / `work_item_execution_service.py`）, `server/friday/settings.py`, `server/tests/{workflows,mcp_tools,services/code_graph}/`  
+**Files scanned:** ~27 primary + test analogs  
 **Pattern extraction date:** 2026-08-10

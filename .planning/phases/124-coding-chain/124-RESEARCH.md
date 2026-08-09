@@ -407,11 +407,13 @@ except Exception:  # noqa: BLE001
 
 ```python
 # Source: 对齐 code_graph_tools.run_detect_changes 观测姿态 + D-15
+initiated_by_user_id = str(user.id) if user is not None and getattr(user, "id", None) is not None else "system"
 logger.info(
     "impact_report_started",
     component="code_graph",
     category="caller",
     repository_id=repository_id,
+    initiated_by_user_id=initiated_by_user_id,
 )
 # ...
 logger.info(
@@ -419,6 +421,7 @@ logger.info(
     component="code_graph",
     category="caller",
     repository_id=repository_id,
+    initiated_by_user_id=initiated_by_user_id,
     duration_ms=duration_ms,
     section_chars=len(section),
     ok=True,
@@ -446,16 +449,16 @@ logger.info(
 
 **若表非空：** A1 为最大产品风险但被 DIFF-04 服务端保证兜住；planner 无需为人确认阻塞。
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-无阻塞问题。下列为执行期注意点（非用户决策）：
+无阻塞问题。下列执行期注意点已由计划钉死：
 
-1. **workflow 路径的 `user` 从哪取**  
+1. **workflow 路径的 `user` 从哪取** — RESOLVED → `124-03` Task 1  
    - What we know: `run_detect_changes` 需要 `user` 做 ACL；dispatch 有 `dispatch_user` / `task_token_user_id`。  
-   - Recommendation: `_create_mr_for_repo` 从 `ExecutionContext` / 节点发起用户解析；缺失则用仓库所有者或跳过报告走 stub `unavailable`（仍 fail-soft）。Planner 任务须写明取用户顺序。
+   - Resolution: `_finalize_and_notify` 传入 `await self._resolve_dispatch_user(context)` 到 `_create_mr_for_repo(user=...)`；缺失则 `user=None` → helper stub `unavailable`（仍 fail-soft）。`mr_service.create_mr_for_task` 取 task 关联用户（有则传，无则 None→stub）。
 
-2. **MCP `create_merge_request` 显式 description 已含自定义结构**  
-   - Recommendation: 仅按标记头幂等 append；不重排既有章节。
+2. **MCP `create_merge_request` 显式 description 已含自定义结构** — RESOLVED → `124-03` Task 2  
+   - Resolution: 仅经 `append_impact_report` 按 `## 影响面` 标记头幂等 append；已含则不重复；不重排既有章节。`work_item_execution_service` 调用点传 `user=initiating_user`。
 
 ## Environment Availability
 
@@ -495,7 +498,7 @@ Step 2.6: 外部服务非硬依赖；单测 mock 编排入口即可。
 | DIFF-04 | `_create_mr_for_repo`：mock `run_detect_changes` 失败仍 `create_merge_request` 且 description 含 stub | unit | `cd server && uv run pytest tests/workflows/test_coding_impact_report.py -q --reuse-db` | ❌ Wave 0 |
 | DIFF-04 | MCP `create_merge_request` / draft 同 helper；幂等不双段 | unit | `cd server && uv run pytest tests/mcp_tools/test_mr_impact_report.py -q --reuse-db` | ❌ Wave 0 |
 | DIFF-04 / D-14 | 同一 fixture 下 workflow 拼装段与 MCP 拼装段规范化后一致 | unit sentinel | `test_mr_impact_report.py::test_workflow_mcp_impact_section_parity` | ❌ Wave 0 |
-| D-15 | 事件名静态字面量 / component / category（可 AST 或调用断言） | unit | `test_impact_report.py -k observability` | ❌ Wave 0 |
+| D-15 | 事件名静态字面量 / component / category / `initiated_by_user_id`（可 AST 或调用断言） | unit | `test_impact_report.py -k observability` | ❌ Wave 0 |
 
 ### Sampling Rate
 
