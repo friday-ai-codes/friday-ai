@@ -74,7 +74,7 @@ Each task was committed atomically:
 1. **Task 1: Wave 0 验收测试桩（七文件）** - `1f805d9d` (test)
 2. **Task 2: VALIDATION 与五 plan 编号对齐** - `fadaf910` (docs) + `e9e2a5d3` (fix prose scrub for Nyquist assert)
 
-**Plan metadata:** (pending docs commit with this SUMMARY)
+**Plan metadata:** `b5a6e56c` (docs: complete plan) + `19ef9ea6` (docs: STATE/ROADMAP)
 
 ## Files Created/Modified
 
@@ -103,6 +103,12 @@ Each task was committed atomically:
 - **Fix:** Reworded lock notes without that marker substring
 - **Files modified:** `126-VALIDATION.md`
 - **Commit:** `e9e2a5d3`
+
+**2. [Rule 2 - Correctness] Skipped `requirements.mark-complete` for Wave 0**
+- **Found during:** State updates after SUMMARY
+- **Issue:** Frontmatter lists EXEC/RENAME/SKILL IDs, but 126-01 only registers Nyquist stubs — marking complete would falsely close product requirements
+- **Fix:** Left REQUIREMENTS.md unchecked; implementing plans 126-02..05 own completion
+- **Files modified:** none (intentional no-op)
 
 ## Auth Gates
 
