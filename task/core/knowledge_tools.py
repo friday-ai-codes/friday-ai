@@ -1,4 +1,4 @@
-"""容器知识 MCP（AGENT-02）：7 个白名单只读知识工具的进程内 SDK MCP server。
+"""容器知识 MCP（AGENT-02）：11 个白名单知识工具的进程内 SDK MCP server。
 
 镜像 ``remote_tools.py`` 全套约束，把服务端 ``/api/mcp/tools/<name>/`` HTTP 工具面
 暴露给容器内编码代理——权限/排除/脱敏经服务端天然继承，容器不再是"知识贫民区"。
@@ -46,7 +46,7 @@ KNOWLEDGE_MCP_SERVER_NAME = "friday-knowledge"
 # 配额用尽文案：agent 可理解、可继续（不带 is_error，避免模型反复重试）。
 QUOTA_EXHAUSTED_TEXT = "知识工具调用配额已用尽，请基于已有上下文继续完成任务"
 
-# 7 工具白名单（task 侧硬编码，input_schema 逐一对照
+# 11 工具白名单（task 侧硬编码，input_schema 逐一对照
 # server/mcp_tools/serializers.py 对应 RequestSerializer 字段）。
 # description 面向 agent 写清"何时用哪个"。
 KNOWLEDGE_TOOL_SCHEMAS: list[dict[str, Any]] = [
@@ -344,6 +344,39 @@ KNOWLEDGE_TOOL_SCHEMAS: list[dict[str, Any]] = [
             "required": ["key_pattern"],
         },
     },
+    # ---- 编码链自查（DIFF-03，Phase 124-01）--------------------------------
+    # 对照 DetectChangesRequestSerializer；经既有工厂打 server MCP PAT 面。
+    # 失败/配额用尽继续交付，不另造配额体系（D-02/D-03）。
+    {
+        "name": "detect_changes",
+        "description": (
+            "编码完成后、提交前自查影响面：对当前功能分支相对索引水位做变更交叠 + 批量 impact。"
+            "`compare` 用当前任务功能分支；可选 `base_ref` 仅声明 MR 目标分支（勿传工作树 tip 当 base）。"
+            "结果仅供决策参考；失败/未索引/配额用尽时记录原因并继续交付，不要重试刷屏。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "repository_id": {"type": "string", "description": "仓库 UUID（必填）"},
+                "compare": {
+                    "type": "string",
+                    "description": "对比 head：当前功能分支名或 40 位 commit SHA（必填）",
+                },
+                "base_ref": {
+                    "type": "string",
+                    "description": "可选：MR 目标分支声明（仅透出，不改 diff 左端）",
+                },
+                "max_depth": {"type": "integer", "description": "impact 深度 1..3（默认 3）"},
+                "min_confidence": {"type": "number", "description": "最小置信度 0..1（默认 1.0）"},
+                "include_low_confidence": {
+                    "type": "boolean",
+                    "description": "是否含低置信边（默认 false）",
+                },
+                "limit": {"type": "integer", "description": "结果上限 1..200（默认 200）"},
+            },
+            "required": ["repository_id", "compare"],
+        },
+    },
 ]
 
 # 短等待工具名（handler 需要特殊包装，见 `_attach_await_handler`）。
@@ -551,14 +584,14 @@ def build_knowledge_mcp_server(
     session_id: str,
     quota: int,
 ) -> McpSdkServerConfig | None:
-    """构建容器知识 MCP server（7 工具白名单硬编码）。
+    """构建容器知识 MCP server（11 工具白名单硬编码）。
 
     Args:
         endpoint_base: Friday Server 基址（不带路径），拼 ``/api/mcp/tools/<name>/``。
         user_token: 用户 PAT，仅注入 Authorization header（脱敏）。
         session_id: 任务 session 标识，经 ``X-Friday-Session-Id`` 头下发，
             服务端入 ``InteractionRun.raw_request['task_session_id']`` 供关联查询。
-        quota: per-task 调用配额（全部 7 工具共享一个计数器）。
+        quota: per-task 调用配额（全部工具共享一个计数器）。
 
     Returns:
         ``McpSdkServerConfig``；``endpoint_base`` / ``user_token`` 任一为空 →
@@ -610,7 +643,7 @@ def build_knowledge_mcp_server(
 
 
 def knowledge_allowed_tools() -> list[str]:
-    """生成 allowed_tools 列表，格式 ``mcp__{KNOWLEDGE_MCP_SERVER_NAME}__{name}``（7 条）。"""
+    """生成 allowed_tools 列表，格式 ``mcp__{KNOWLEDGE_MCP_SERVER_NAME}__{name}``（11 条）。"""
     return [
         f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__{schema['name']}" for schema in KNOWLEDGE_TOOL_SCHEMAS
     ]
