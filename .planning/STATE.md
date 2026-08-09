@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
 status: executing
-stopped_at: Completed 121-02-PLAN.md
-last_updated: "2026-08-09T05:35:53.239Z"
+stopped_at: Completed 121-03-PLAN.md
+last_updated: "2026-08-09T05:55:37.618Z"
 last_activity: 2026-08-09 — Phase 121 execution started
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 10
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 ## Current Position
 
 Phase: 121 (内存图服务基座) — EXECUTING
-Plan: 3 of 10
+Plan: 4 of 10
 Status: Ready to execute
 Last activity: 2026-08-09 — Phase 121 execution started
 
@@ -317,6 +317,7 @@ Last activity: 2026-08-09 — Phase 121 execution started
 | Phase 116-entry P04 | ~2.5h | 3 tasks | 17 files（3 新建 + 14 改），新增 30 例后端用例 + 2 例前端用例，一条变异验证 |
 | Phase 121-graph-base P01 | 31min | 3 tasks | 11 files |
 | Phase 121 P02 | 9min | 3 tasks | 3 files |
+| Phase 121 P03 | 16min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -549,6 +550,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 121-graph-base]: 121-01: LOGGING-SPEC component 取值 code_graph，与索引侧 codegraph 并存 — D-07：两条链路故障模式不同，分开取值才能按 component 精确筛日志
 - [Phase 121]: GraphError.details 未提供时保持 None，不照 AgentError 折成 {} — 「没带上下文」与「带了个空上下文」对排障是两回事，抹平后调用方无法区分
 - [Phase 121]: code_graph 契约层的 adapter seam 用 AST 断言守护，不用 sys.modules 判定 — 测试进程里 llama-index 会先载入 networkx，sys.modules 断言恒假；AST 断言不依赖进程状态
+- [Phase 121]: code_graph 观测契约测试按「能否静态解析成字面量」判定事件名，兼容 Final[str] 常量形态
+- [Phase 121]: access.py 自建加锁 60s TTL matcher/指纹 memo，TTL 与 services/exclusion.py 严格对齐并用测试锁死
 
 ### Pending Todos
 
@@ -916,8 +919,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-09T05:35:53.225Z
-Stopped at: Completed 121-02-PLAN.md
+Last session: 2026-08-09T05:55:37.605Z
+Stopped at: Completed 121-03-PLAN.md
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。
 Earlier: 2026-07-31T07:28:32.180Z — v0.19.0 全部相位执行完毕（105/106/107/109/110）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01；Phase 110 七个 plan 全落地并闭合 GAP-1（前半程失败时间线撒谎）。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。

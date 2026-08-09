@@ -65,7 +65,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 121-03-PLAN.md — W2 `access.py`：仓库可读性单一校验点 + exclusion 同步收口与规则指纹（fail-closed）
+- [x] 121-03-PLAN.md — W2 `access.py`：仓库可读性单一校验点 + exclusion 同步收口与规则指纹（fail-closed）
 - [ ] 121-04-PLAN.md — W2 `signature.py`：复合签名（两条边构建轨）+ in-flight 判定（躲 PENDING 长鸣与 RUNNING 孤儿）
 
 **Wave 3** *(blocked on Wave 2 completion)*
