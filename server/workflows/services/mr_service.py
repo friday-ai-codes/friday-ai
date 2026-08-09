@@ -170,8 +170,17 @@ async def create_mr_for_task(
             base_ref=resolved_target,
         )
         description = append_impact_report(description, section)
-    except Exception:  # noqa: BLE001 — 最后兜底；helper 内应已吞
-        pass
+    except Exception as exc:  # noqa: BLE001 — 最后兜底；helper 内应已吞
+        try:
+            log.warning(
+                "impact_report_shell_failed",
+                component="workflows",
+                category="caller",
+                repository_id=str(getattr(repository, "id", "") or ""),
+                error=str(exc)[:200],
+            )
+        except Exception:  # noqa: BLE001 — 观测永不反噬
+            pass
 
     # Create MR request
     request = MRCreateRequest(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
+import structlog
 from django.utils import timezone
 
 from chat.models import CodingSession
@@ -13,6 +14,8 @@ from repositories.models import Repository
 from services.git_credentials import aresolve_git_token
 from services.git_platform import get_git_platform_client
 from services.git_platform.models import MRCreateRequest
+
+logger = structlog.get_logger(__name__)
 
 
 class MergeRequestToolError(Exception):
@@ -162,8 +165,17 @@ async def create_merge_request(
             base_ref=target_branch,
         )
         description = append_impact_report(description, section)
-    except Exception:  # noqa: BLE001 — 最后兜底；helper 内应已吞
-        pass
+    except Exception as exc:  # noqa: BLE001 — 最后兜底；helper 内应已吞
+        try:
+            logger.warning(
+                "impact_report_shell_failed",
+                component="mcp_tools",
+                category="caller",
+                repository_id=str(getattr(repository, "id", "") or ""),
+                error=str(exc)[:200],
+            )
+        except Exception:  # noqa: BLE001 — 观测永不反噬
+            pass
 
     request = MRCreateRequest(
         source_branch=source_branch,
