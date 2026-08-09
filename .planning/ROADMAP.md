@@ -241,10 +241,13 @@ Plans:
   5. impact-analysis / refactoring 两个工作流 skill 进 `@friday-ai-codes/skills` 同源分发（复用 v0.17.0 hash 一致性机制），编码容器与外部 agent 可用
 
 **Plans:** 5 plans
-Plans:
-**Wave 1**
 
-- [ ] 126-01-PLAN.md — Wave 0：Nyquist 测试桩 + VALIDATION 五 plan 对齐 + 冻结面守卫桩
+**Wave 0**
+
+- [ ] 126-01-PLAN.md — Wave 0：Nyquist 测试桩（含 process_query）+ VALIDATION 对齐 + 冻结面守卫桩
+
+**Wave 1** *(blocked on Wave 0 completion)*
+
 - [ ] 126-02-PLAN.md — Wave 1：ProcessTrace 模型/迁移 + 正向 BFS 内核 + QUEUE_GRAPH 链式重建
 
 **Wave 2** *(blocked on Wave 1 completion)*
