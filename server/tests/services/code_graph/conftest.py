@@ -152,12 +152,25 @@ def exclusion_rule_factory(indexed_repo) -> Callable[..., Any]:
 def _reset_code_graph_state():
     """用例间清进程级缓存，防止上一个用例的状态污染下一个。
 
-    当前只清 ``services.exclusion`` 的 60s TTL matcher 缓存（模块级裸字典，
-    跨用例存活）。``GraphService`` 的模块级单例重置会在 Plan 121-07 交付
-    ``_reset_for_tests()`` 后补进本 fixture——届时 setup/teardown 两侧都要调。
+    两份 memo **都要清**：``services.exclusion`` 的 60s TTL matcher 缓存（模块级
+    裸字典），以及 ``services.code_graph.access`` 自建的 matcher/指纹 memo（同为
+    60s TTL，但同步路径够不着前者，见该模块注释）。只清一份会让指纹敏感性断言
+    读到另一份的旧值、随机失败。
+
+    ``GraphService`` 的模块级单例重置会在 Plan 121-07 交付 ``_reset_for_tests()``
+    后补进本 fixture——届时 setup/teardown 两侧都要调。
     """
     from services.exclusion import invalidate_matcher_cache
 
-    invalidate_matcher_cache()
+    def _reset() -> None:
+        invalidate_matcher_cache()
+        # Plan 121-03 之前本模块不存在，用 ImportError 兜住保持子计划顺序安全。
+        try:
+            from services.code_graph.access import invalidate_matcher_fingerprint_cache
+        except ImportError:
+            return
+        invalidate_matcher_fingerprint_cache()
+
+    _reset()
     yield
-    invalidate_matcher_cache()
+    _reset()

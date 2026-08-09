@@ -40,12 +40,21 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import threading
+import time
 import uuid
-from typing import Any, Final
+from collections.abc import Set as AbstractSet
+from typing import TYPE_CHECKING, Any, Callable, Final, Iterator
 
 import structlog
 
+from common.logging import redact_secrets_in_text
 from services.code_graph.model import GraphAccessDenied, GraphNotIndexed
+
+if TYPE_CHECKING:
+    from services.exclusion import ExclusionMatcher
 
 logger = structlog.get_logger(__name__)
 
@@ -54,8 +63,35 @@ logger = structlog.get_logger(__name__)
 #    ``galaxy_cache_*`` 已被 ``codegraph/galaxy/cache.py`` 占用，缩写会让两条链路的
 #    日志混在一起筛不开。
 _EVENT_ACCESS_DENIED: Final[str] = "code_graph_access_denied"
+_EVENT_MATCHER_FAILED: Final[str] = "code_graph_exclusion_matcher_failed"
 
-__all__ = ["ensure_repository_readable"]
+# matcher + 规则指纹的跨调用 memo：``repository_id -> (过期时刻, matcher, 指纹)``。
+#
+# 为什么本模块要自建一份：``services/exclusion.py`` 的 ``_matcher_cache`` 只有
+# **async** 的 ``build_matcher_for_repo`` 会读，而本相位的取图链路整条跑在
+# ``sync_to_async`` 包裹的同步上下文里、走的是同步的 ``_resolve_effective_specs``,
+# 那份 TTL 缓存对我们完全够不着。没有 memo 的话，``_resolve_effective_specs``（DB 读）
+# 与 ``ExclusionMatcher.__init__``（编译该仓全部 glob/regex）会在**每次** ``get_graph``
+# 重跑一遍，包括缓存命中的那些。
+#
+# ⚠️ 与 ``exclusion.py`` 的无锁裸字典不同，这里必须加锁：本模块的读者来自三类
+#    event loop 的执行器线程（ASGI 主循环 / workflow 引擎自建循环 / durable worker）。
+_MATCHER_FP_CACHE: dict[str, tuple[float, "ExclusionMatcher", str]] = {}
+_MATCHER_FP_LOCK: Final[threading.Lock] = threading.Lock()
+
+# 刻意与 ``services/exclusion.py::_MATCHER_CACHE_TTL_SECONDS`` 对齐：规则变更后
+# 最多 60s 才生效的暴露窗口，与全仓既有 exclusion 读取面**完全相同**，不是本相位
+# 新引入的弱化。要收窄就两处一起改。主动失效走
+# :func:`invalidate_matcher_fingerprint_cache`（Plan 121-09 的 ``GraphService.invalidate``
+# 与测试 fixture 都会调）。
+_MATCHER_FP_TTL_SECONDS: Final[float] = 60.0
+
+__all__ = [
+    "build_matcher_and_fingerprint",
+    "ensure_repository_readable",
+    "invalidate_matcher_fingerprint_cache",
+    "make_path_exclusion_memo",
+]
 
 
 def _initiated_by(user: Any | None) -> str:
@@ -142,3 +178,172 @@ async def ensure_repository_readable(user: Any | None, repository_id: str) -> No
         )
 
     _check_user_acl(user, repo)
+
+
+# ── exclusion 收口：matcher 构造 / 规则指纹 / 热路径记忆化 ────────────────────
+
+
+def _compute_rules_fingerprint(specs: Any) -> str:
+    """对**有效规则集**直接哈希，得到 16 位规则指纹（供缓存签名比对）。
+
+    对 ``(rule_type, pattern, enabled, source)`` 四元组排序后 JSON 规范化再取
+    sha256 前 16 位。这个口径是免费且精确的——``specs`` 本来就要取，而它同时覆盖
+    三个规则来源：per-repo ``RepoExclusionRule``、``SystemSetting`` 的全局 JSON、
+    以及 ``BUILTIN_GLOBAL_DEFAULTS`` 的**代码**变更。
+
+    两个被否决的替代方案（RESEARCH Pitfall 9，别再改回去）：
+
+    - ⛔ ``RepoExclusionRule`` 的 ``count + MAX(updated_at)``：漏掉 ``SystemSetting``
+      全局 JSON 与 ``BUILTIN_GLOBAL_DEFAULTS`` 的代码变更——升级一次内置默认，
+      所有旧图签名照样命中。
+    - ⛔ 拿 ``exclusion._matcher_cache`` 的 60s TTL 当版本号：TTL 只控制**何时重建
+      matcher**，不产生任何可比对的版本标识；那还是个无锁裸模块字典。
+    """
+    canonical = sorted(
+        (s.rule_type, s.pattern, bool(s.enabled), s.source) for s in specs
+    )
+    payload = json.dumps(canonical, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def build_matcher_and_fingerprint(repository_id: str) -> tuple[ExclusionMatcher, str]:
+    """同步构造某仓库的 exclusion matcher，并顺带算出其规则指纹。
+
+    同步而非 async：取图链路整条跑在 ``sync_to_async`` 包裹的同步上下文里，
+    没必要为了 ``build_matcher_for_repo`` 再折一次线程。判定逻辑全部复用
+    ``services/exclusion.py``（全仓唯一事实源），本函数只做接线 + 指纹 + memo。
+
+    命中 60s memo 时直接返回，不重复读 DB、不重复编译 glob/regex。
+
+    🚨 **fail-closed 优先于缓存**：解析或构造抛任何异常 → 埋点 + ``exclusion.blocked``
+    审计 + 抛 :class:`GraphAccessDenied` **整仓拒绝**，并且**不写入 memo**、
+    **不返回上一轮的旧 matcher**。绝不降级成「不过滤」——那等于把 ``.env`` /
+    ``*.pem`` / ``id_rsa`` 的符号名与路径泄漏进每一个上层图工具的输出。
+
+    :returns: ``(matcher, fingerprint)``，指纹为 16 位十六进制串。
+    :raises GraphAccessDenied: 有效规则集解析失败或 matcher 构造失败（含
+        ``InvalidExclusionRuleError``）。
+    """
+    key = str(repository_id)
+
+    with _MATCHER_FP_LOCK:
+        cached = _MATCHER_FP_CACHE.get(key)
+        if cached is not None and cached[0] > time.monotonic():
+            return cached[1], cached[2]
+
+    from services.exclusion import (
+        ExclusionMatcher,
+        _resolve_effective_specs,
+        log_exclusion_blocked,
+    )
+
+    try:
+        specs = _resolve_effective_specs(key)
+        fingerprint = _compute_rules_fingerprint(specs)
+        matcher = ExclusionMatcher(specs, repository_id=key)
+    except Exception as exc:  # noqa: BLE001 — 整仓 fail-closed，见下方 raise
+        try:
+            logger.warning(
+                _EVENT_MATCHER_FAILED,
+                component="code_graph",
+                category="sampling",
+                repository_id=key,
+                error=redact_secrets_in_text(str(exc))[:500],
+                error_type=type(exc).__name__,
+            )
+        except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务
+            pass
+        log_exclusion_blocked(
+            surface="code_graph", repository_id=key, rel_path="<repository>"
+        )
+        raise GraphAccessDenied(
+            "exclusion matcher 构造失败，整仓拒绝取图",
+            {"repository_id": key, "error_type": type(exc).__name__},
+        ) from exc
+
+    with _MATCHER_FP_LOCK:
+        _MATCHER_FP_CACHE[key] = (
+            time.monotonic() + _MATCHER_FP_TTL_SECONDS,
+            matcher,
+            fingerprint,
+        )
+    return matcher, fingerprint
+
+
+def invalidate_matcher_fingerprint_cache(repository_id: str | None = None) -> None:
+    """失效本模块的 matcher/指纹 memo。``None`` 清空全部。
+
+    形态照抄 ``services/exclusion.py::invalidate_matcher_cache``。规则变更后两份
+    memo 都要清——只清一份会读到另一份的 60s 旧值。
+    """
+    with _MATCHER_FP_LOCK:
+        if repository_id is None:
+            _MATCHER_FP_CACHE.clear()
+        else:
+            _MATCHER_FP_CACHE.pop(str(repository_id), None)
+
+
+class _LiveReadOnlySet(AbstractSet):
+    """对活动 ``set`` 的只读视图（随底层增长，但调用方改不动）。"""
+
+    __slots__ = ("_backing",)
+
+    def __init__(self, backing: set[str]) -> None:
+        self._backing = backing
+
+    def __contains__(self, item: object) -> bool:
+        return item in self._backing
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._backing)
+
+    def __len__(self) -> int:
+        return len(self._backing)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({sorted(self._backing)!r})"
+
+
+def make_path_exclusion_memo(matcher: ExclusionMatcher) -> Callable[[str], bool]:
+    """返回一个按 ``file_path`` 记忆化的排除判定闭包。
+
+    为什么要记忆化：``matcher.is_excluded`` 是**每节点一次**的热路径调用（10 万级），
+    内部要对该仓每条 dir/glob/regex 规则各跑一遍匹配。而符号数远大于文件数——同一
+    文件的所有符号共享同一个判定结果，按 ``file_path`` 去重通常能省掉 90% 以上的
+    调用。
+
+    🚨 **不刷屏**：``log_exclusion_blocked`` 是 INFO 级，10 万级循环里 per-item 打点
+    会直接违反 ``.cursor/rules/observability-logging.mdc`` 的级别纪律（规范正文点名
+    过「4000+ 文件刷爆 stdout」的历史教训）。约定：对**每个新的被排除 file_path**
+    至多打一次，命中记忆化时不再打点。
+
+    闭包附带 ``excluded_files`` 只读集合（被排除的 ``file_path`` 去重后的全集），
+    供 loader 汇总 ``GraphMeta.excluded_file_count``。
+
+    ``matcher.is_excluded`` 自身对运行期异常已 fail-closed（返回 ``True``），
+    路径归一越界与 ``None`` 路径同样视为排除——本闭包直接继承该语义，不再包一层。
+    """
+    verdicts: dict[str, bool] = {}
+    excluded: set[str] = set()
+    repository_id = str(getattr(matcher, "_repository_id", "") or "")
+
+    from services.exclusion import log_exclusion_blocked
+
+    def _is_excluded(file_path: str) -> bool:
+        key = file_path or ""
+        cached = verdicts.get(key)
+        if cached is not None:
+            return cached
+
+        verdict = matcher.is_excluded(key)
+        verdicts[key] = verdict
+        if verdict:
+            excluded.add(key)
+            # 每个被排除文件只审计一次（上面的 memo 短路保证不随符号数增长）。
+            log_exclusion_blocked(
+                surface="code_graph", repository_id=repository_id, rel_path=key
+            )
+        return verdict
+
+    _is_excluded.excluded_files = _LiveReadOnlySet(excluded)  # type: ignore[attr-defined]
+    return _is_excluded
