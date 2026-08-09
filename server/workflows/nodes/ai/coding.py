@@ -2253,6 +2253,35 @@ class AICodingNode(SubStepMixin, BaseNode):
             except Exception:  # noqa: BLE001 — 观测永不反噬
                 pass
 
+        # Phase 127 TAINT-02：fail-soft 安全扫描 pending stub（异步回填；D-04/D-06）
+        # enqueue 放在建 MR 成功后（mr_key=平台 MR id）；此处仅挂 stub。
+        try:
+            from services.code_graph.security_scan_report import (
+                append_security_scan,  # noqa: F401 — D-06 dual-link 合同字面量
+                attach_security_scan_pending,
+            )
+
+            body = await attach_security_scan_pending(
+                body,
+                repository=repository,
+                source_branch=branch_name,
+                target_branch=resolved_target,
+                user=user,
+                mr_key=branch_name,
+                enqueue=False,
+            )
+        except Exception as exc:  # noqa: BLE001 — 最后兜底；helper 内应已吞
+            try:
+                logger.warning(
+                    "security_scan_shell_failed",
+                    component="workflows",
+                    category="caller",
+                    repository_id=str(getattr(repository, "id", "") or ""),
+                    error=str(exc)[:200],
+                )
+            except Exception:  # noqa: BLE001 — 观测永不反噬
+                pass
+
         request = MRCreateRequest(
             source_branch=branch_name,
             target_branch=resolved_target,
@@ -2280,6 +2309,25 @@ class AICodingNode(SubStepMixin, BaseNode):
                 mr_url=existing.mr_url,
                 mr_id=existing.mr_id,
             )
+            # 复用既有 MR 时仍 fire-and-forget 入队扫描（D-04）
+            try:
+                from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan
+
+                initiated_by = (
+                    str(user.id)
+                    if user is not None and getattr(user, "id", None) is not None
+                    else "system"
+                )
+                await enqueue_semgrep_scan(
+                    str(getattr(repository, "id", "") or ""),
+                    mr_key=str(existing.mr_id or branch_name),
+                    source_sha="",
+                    target_sha="",
+                    branch_name=branch_name,
+                    initiated_by_user_id=initiated_by,
+                )
+            except Exception:  # noqa: BLE001 — enqueue 失败不反噬复用路径
+                pass
             return {
                 "mr_url": existing.mr_url,
                 "mr_id": existing.mr_id,
@@ -2306,6 +2354,34 @@ class AICodingNode(SubStepMixin, BaseNode):
                 mr_url=result.mr_url,
                 mr_id=result.mr_id,
             )
+            # Phase 127：建 MR 成功后再 enqueue（mr_key=平台 MR id；D-04 stub-then-async）
+            try:
+                from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan
+
+                initiated_by = (
+                    str(user.id)
+                    if user is not None and getattr(user, "id", None) is not None
+                    else "system"
+                )
+                await enqueue_semgrep_scan(
+                    str(getattr(repository, "id", "") or ""),
+                    mr_key=str(result.mr_id or ""),
+                    source_sha="",
+                    target_sha="",
+                    branch_name=branch_name,
+                    initiated_by_user_id=initiated_by,
+                )
+            except Exception as exc:  # noqa: BLE001 — enqueue 失败不反噬已建 MR
+                try:
+                    logger.warning(
+                        "security_scan_shell_failed",
+                        component="workflows",
+                        category="caller",
+                        repository_id=str(getattr(repository, "id", "") or ""),
+                        error=str(exc)[:200],
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             return {
                 "mr_url": result.mr_url,
                 "mr_id": result.mr_id,

@@ -52,6 +52,7 @@ __all__ = [
     "replace_security_scan_section",
     "stub_security_scan_section",
     "is_security_scan_stub_section",
+    "patch_mr_security_scan_section",
 ]
 
 
@@ -291,6 +292,175 @@ def build_security_scan_section(
             return ""
 
 
+async def patch_mr_security_scan_section(
+    *,
+    repository_id: str,
+    mr_key: str,
+    scan_result: Mapping[str, Any] | None = None,
+) -> bool:
+    """异步回填 MR 描述中的 ``## 安全扫描`` 段（stub/pending → 完整结果）。
+
+    fail-soft：缺凭证 / 平台失败 / 非 stub 段 → 返回 False，不抛、不重试风暴。
+    """
+    import asyncio
+
+    from asgiref.sync import sync_to_async
+
+    repo_id = str(repository_id or "").strip()
+    key = str(mr_key or "").strip()
+    if not repo_id or not key:
+        return False
+
+    scan = dict(scan_result or {})
+    started = time.perf_counter()
+
+    try:
+        from repositories.models import Repository
+        from services.git_credentials import aresolve_git_token
+        from services.git_platform import get_git_platform_client
+
+        repo = await Repository.objects.filter(id=repo_id).afirst()
+        if repo is None:
+            return False
+
+        token = await aresolve_git_token(repo)
+        if not token:
+            return False
+
+        # 构建完整段：error_code → stub；否则从 SecurityFinding 拉 findings
+        error_code = scan.get("error_code")
+        pro_enabled = False
+        try:
+            from services.code_graph.semgrep_token import get_semgrep_app_token
+
+            pro_enabled = bool((await sync_to_async(get_semgrep_app_token)() or "").strip())
+        except Exception:  # noqa: BLE001
+            pro_enabled = False
+
+        if error_code:
+            new_section = build_security_scan_section(
+                findings=[],
+                pro_enabled=pro_enabled,
+                error_code=str(error_code),
+            )
+        else:
+            findings = await _load_findings_for_mr(repo_id, key)
+            new_section = build_security_scan_section(
+                findings=findings,
+                pro_enabled=pro_enabled,
+            )
+
+        if not new_section:
+            return False
+
+        client = get_git_platform_client(repo, token)
+        current_body = await _read_mr_description(client, key)
+        if current_body is None:
+            return False
+
+        # 已是完整结果（非 stub）→ 幂等 skip
+        if SECURITY_SECTION_MARKER in current_body and not is_security_scan_stub_section(
+            current_body
+        ):
+            return True
+
+        new_body = replace_security_scan_section(current_body, new_section)
+        if new_body == current_body:
+            return True
+
+        ok = await _write_mr_description(client, key, new_body)
+        try:
+            logger.info(
+                "security_scan_mr_patch_completed" if ok else "security_scan_mr_patch_failed",
+                component="code_graph",
+                category="caller",
+                repository_id=repo_id,
+                mr_key=key,
+                ok=ok,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return ok
+    except Exception as exc:  # noqa: BLE001 — 回填永不反噬扫描
+        try:
+            logger.warning(
+                "security_scan_mr_patch_failed",
+                component="code_graph",
+                category="caller",
+                repository_id=repo_id,
+                mr_key=key,
+                error=_sanitize_error_text(str(exc)),
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+
+async def _load_findings_for_mr(repository_id: str, mr_key: str) -> list[dict[str, Any]]:
+    from asgiref.sync import sync_to_async
+
+    @sync_to_async
+    def _query() -> list[dict[str, Any]]:
+        from codegraph.models import SecurityFinding
+
+        rows = list(
+            SecurityFinding.objects.filter(
+                repository_id=repository_id,
+                mr_key=mr_key,
+                status="open",
+            )
+            .order_by("severity", "file_path", "line")
+            .values("severity", "rule_id", "file_path", "line", "message")[:200]
+        )
+        return rows
+
+    try:
+        return await _query()
+    except Exception:  # noqa: BLE001
+        return []
+
+
+async def _read_mr_description(client: Any, mr_id: str) -> str | None:
+    """GitHub/GitLab 读当前 MR/PR body；失败返回 None。"""
+    import asyncio
+
+    try:
+        if hasattr(client, "_get_repo"):
+            repo_obj = client._get_repo()
+            pr = await asyncio.to_thread(repo_obj.get_pull, int(mr_id))
+            return str(getattr(pr, "body", None) or "")
+        if hasattr(client, "_get_project"):
+            project = client._get_project()
+            mr_obj = await asyncio.to_thread(project.mergerequests.get, int(mr_id))
+            return str(getattr(mr_obj, "description", None) or "")
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+async def _write_mr_description(client: Any, mr_id: str, body: str) -> bool:
+    """对齐 pr_cross_reference：GitHub ``pr.edit`` / GitLab ``description``+``save``。"""
+    import asyncio
+
+    try:
+        if hasattr(client, "_get_repo"):
+            repo_obj = client._get_repo()
+            pr = await asyncio.to_thread(repo_obj.get_pull, int(mr_id))
+            await asyncio.to_thread(pr.edit, body=body)
+            return True
+        if hasattr(client, "_get_project"):
+            project = client._get_project()
+            mr_obj = await asyncio.to_thread(project.mergerequests.get, int(mr_id))
+            mr_obj.description = body
+            await asyncio.to_thread(mr_obj.save)
+            return True
+    except Exception:  # noqa: BLE001
+        return False
+    return False
+
+
 async def attach_security_scan_pending(
     description: str,
     *,
@@ -335,7 +505,7 @@ async def attach_security_scan_pending(
     except Exception:  # noqa: BLE001 — enqueue 失败不阻断建 MR
         try:
             logger.warning(
-                "security_scan_shell_failed",
+                "security_scan_attach_enqueue_failed",
                 component="code_graph",
                 category="caller",
                 repository_id=str(getattr(repository, "id", "") or ""),
@@ -344,3 +514,197 @@ async def attach_security_scan_pending(
         except Exception:  # noqa: BLE001
             pass
     return out
+
+
+def _pro_enabled() -> bool:
+    """有加密 token（或 env escape hatch）即视为 Pro opt-in；永不记录 token 值。"""
+    try:
+        from services.code_graph.semgrep_token import get_semgrep_app_token
+
+        if (get_semgrep_app_token() or "").strip():
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from django.conf import settings
+
+        return bool((getattr(settings, "SEMGREP_APP_TOKEN_ENV", "") or "").strip())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+async def _load_findings_for_mr(*, repository_id: str, mr_key: str) -> list[dict[str, Any]]:
+    from asgiref.sync import sync_to_async
+
+    @sync_to_async
+    def _fetch() -> list[dict[str, Any]]:
+        from codegraph.models import SecurityFinding
+
+        rows = list(
+            SecurityFinding.objects.filter(
+                repository_id=repository_id,
+                mr_key=mr_key or "",
+            )
+            .order_by("severity", "file_path", "line")
+            .values("rule_id", "severity", "file_path", "line", "message")[:200]
+        )
+        return [
+            {
+                "rule_id": r.get("rule_id") or "unknown",
+                "severity": r.get("severity") or "INFO",
+                "file_path": r.get("file_path") or "",
+                "line": r.get("line"),
+                "message": r.get("message") or "",
+            }
+            for r in rows
+        ]
+
+    try:
+        return await _fetch()
+    except Exception:  # noqa: BLE001
+        return []
+
+
+async def patch_mr_security_scan_section(
+    *,
+    repository_id: str,
+    mr_key: str,
+    scan_result: Mapping[str, Any] | None = None,
+    branch_name: str = "",
+) -> bool:
+    """扫描完成后把 MR 描述中的 stub/pending 段替换为完整 ``## 安全扫描``。
+
+    对齐 ``pr_cross_reference``：GitHub ``pr.edit`` / GitLab ``mr.save``；fail-soft。
+    已是完整结果则幂等 skip。**永不**把 token 写入 body/日志。
+    """
+    import asyncio
+
+    started = time.perf_counter()
+    scan = dict(scan_result or {})
+    repo_id = str(repository_id or "")
+    key = mr_key or ""
+    branch = branch_name or str(scan.get("branch_name") or "") or key
+
+    try:
+        logger.info(
+            "security_scan_mr_patch_started",
+            component="code_graph",
+            category="caller",
+            repository_id=repo_id,
+            mr_key=key,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        from repositories.models import Repository
+        from services.git_credentials import aresolve_git_token
+        from services.git_platform import get_git_platform_client
+
+        repository = await Repository.objects.filter(id=repo_id).afirst()
+        if repository is None:
+            return False
+
+        token = await aresolve_git_token(repository)
+        if not token:
+            return False
+
+        client = get_git_platform_client(repository, token)
+        mr_id = key if key.isdigit() else ""
+        if not mr_id and branch and hasattr(client, "find_open_merge_request"):
+            target = str(
+                scan.get("target_branch")
+                or getattr(repository, "default_branch", None)
+                or "main"
+            )
+            try:
+                existing = await client.find_open_merge_request(branch, target)
+                if existing and getattr(existing, "success", False):
+                    mr_id = str(getattr(existing, "mr_id", "") or "")
+            except Exception:  # noqa: BLE001
+                mr_id = ""
+        if not mr_id:
+            return False
+
+        # 读当前 body
+        body = ""
+        pr_obj = None
+        mr_obj = None
+        if hasattr(client, "_get_repo"):
+            repo_obj = client._get_repo()
+            pr_obj = await asyncio.to_thread(repo_obj.get_pull, int(mr_id))
+            body = str(getattr(pr_obj, "body", None) or "")
+        elif hasattr(client, "_get_project"):
+            project = client._get_project()
+            mr_obj = await asyncio.to_thread(project.mergerequests.get, int(mr_id))
+            body = str(getattr(mr_obj, "description", None) or "")
+        else:
+            return False
+
+        if SECURITY_SECTION_MARKER in body and not is_security_scan_stub_section(body):
+            try:
+                logger.info(
+                    "security_scan_mr_patch_completed",
+                    component="code_graph",
+                    category="caller",
+                    repository_id=repo_id,
+                    mr_key=key,
+                    skipped=True,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return True
+
+        error_code = scan.get("error_code")
+        if error_code:
+            new_section = build_security_scan_section(error_code=str(error_code))
+        else:
+            findings = await _load_findings_for_mr(repository_id=repo_id, mr_key=key)
+            # 兼容：enqueue 用 branch 作 mr_key 时，落库可能也用同一 key
+            if not findings and branch and branch != key:
+                findings = await _load_findings_for_mr(
+                    repository_id=repo_id, mr_key=branch
+                )
+            new_section = build_security_scan_section(
+                findings=findings,
+                pro_enabled=_pro_enabled(),
+            )
+
+        new_body = replace_security_scan_section(body, new_section)
+        if new_body == body:
+            return True
+
+        if pr_obj is not None:
+            await asyncio.to_thread(pr_obj.edit, body=new_body)
+        elif mr_obj is not None:
+            mr_obj.description = new_body
+            await asyncio.to_thread(mr_obj.save)
+
+        try:
+            logger.info(
+                "security_scan_mr_patch_completed",
+                component="code_graph",
+                category="caller",
+                repository_id=repo_id,
+                mr_key=key,
+                skipped=False,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return True
+    except Exception as exc:  # noqa: BLE001 — 回填失败只观测
+        try:
+            logger.warning(
+                "security_scan_mr_patch_failed",
+                component="code_graph",
+                category="caller",
+                repository_id=repo_id,
+                mr_key=key,
+                error=_sanitize_error_text(str(exc)),
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return False

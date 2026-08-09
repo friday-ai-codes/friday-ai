@@ -211,6 +211,36 @@ async def create_mr_for_task(
         except Exception:  # noqa: BLE001 — 观测永不反噬
             pass
 
+    # Phase 127 TAINT-02：与 AICodingNode / MCP 同一 security helper（D-04/D-06）
+    security_user = None
+    try:
+        from services.code_graph.security_scan_report import (
+            append_security_scan,  # noqa: F401 — D-06 dual-link 合同字面量
+            attach_security_scan_pending,
+        )
+
+        execution = getattr(task, "workflow_execution", None)
+        security_user = await _resolve_impact_user(execution)
+        description = await attach_security_scan_pending(
+            description,
+            repository=repository,
+            source_branch=branch_name,
+            target_branch=resolved_target or "",
+            user=security_user,
+            enqueue=False,
+        )
+    except Exception as exc:  # noqa: BLE001 — 最后兜底；helper 内应已吞
+        try:
+            log.warning(
+                "security_scan_shell_failed",
+                component="workflows",
+                category="caller",
+                repository_id=str(getattr(repository, "id", "") or ""),
+                error=str(exc)[:200],
+            )
+        except Exception:  # noqa: BLE001 — 观测永不反噬
+            pass
+
     # Create MR request
     request = MRCreateRequest(
         source_branch=branch_name,
@@ -227,6 +257,33 @@ async def create_mr_for_task(
 
     if result.success:
         log.info("MR created successfully", mr_url=result.mr_url)
+        try:
+            from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan
+
+            initiated_by = (
+                str(security_user.id)
+                if security_user is not None and getattr(security_user, "id", None) is not None
+                else "system"
+            )
+            await enqueue_semgrep_scan(
+                str(getattr(repository, "id", "") or ""),
+                mr_key=str(result.mr_id or ""),
+                source_sha=commit_sha or "",
+                target_sha="",
+                branch_name=branch_name,
+                initiated_by_user_id=initiated_by,
+            )
+        except Exception as exc:  # noqa: BLE001 — enqueue 失败不反噬已建 MR
+            try:
+                log.warning(
+                    "security_scan_shell_failed",
+                    component="workflows",
+                    category="caller",
+                    repository_id=str(getattr(repository, "id", "") or ""),
+                    error=str(exc)[:200],
+                )
+            except Exception:  # noqa: BLE001
+                pass
     else:
         log.error("MR creation failed", error=result.error)
 

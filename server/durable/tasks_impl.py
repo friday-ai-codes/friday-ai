@@ -842,6 +842,7 @@ async def run_semgrep_scan(
             "error_code": result.error_code,
             "repository_id": str(repository_id),
             "mr_key": mr_key or "",
+            "branch_name": branch_name or "",
             "findings_count": result.findings_count,
             "persisted": result.persisted,
             "baseline_sha": result.baseline_sha,
@@ -881,5 +882,12 @@ async def maybe_patch_security_scan_section(
     mr_key: str,
     scan_result: dict[str, Any],
 ) -> None:
-    """MR「## 安全扫描」段回填钩子 —— 127-04 实现；本相 no-op。"""
-    return None
+    """MR「## 安全扫描」段异步回填：stub/pending → 完整段（D-04；fail-soft）。"""
+    from services.code_graph.security_scan_report import patch_mr_security_scan_section
+
+    await patch_mr_security_scan_section(
+        repository_id=str(repository_id),
+        mr_key=mr_key or "",
+        scan_result=scan_result or {},
+        branch_name=str((scan_result or {}).get("branch_name") or ""),
+    )
