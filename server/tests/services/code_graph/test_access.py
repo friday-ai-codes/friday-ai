@@ -585,6 +585,14 @@ def test_no_upper_layer_imports_internal_submodules() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
                 modules.append((node.lineno, node.module))
+                # ⚠️ `from services.code_graph import loader` 的 node.module 就是包根，
+                # 违规藏在 names 里。只看 node.module 会漏掉这种写法——而它恰恰是包内部
+                # 自己惯用的拼法，也就是上层最容易照抄的那一种。
+                if node.module == "services.code_graph":
+                    modules.extend(
+                        (node.lineno, f"{node.module}.{alias.name}")
+                        for alias in node.names
+                    )
             elif isinstance(node, ast.Import):
                 modules.extend((node.lineno, alias.name) for alias in node.names)
 
