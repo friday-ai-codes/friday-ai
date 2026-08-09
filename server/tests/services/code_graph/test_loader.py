@@ -716,9 +716,12 @@ def test_on_demand_subgraph_query_count_does_not_scale_with_repo(
         )
 
     small_repo_queries = _count_graph_queries()
-    # depth + 1 轮 frontier 扩张 + 常数条（Symbol / CallEdge / CrossRepoApiCall /
-    # ChunkEdge 各一条）。
-    assert small_repo_queries <= depth + 1 + 4
+    # 每轮 frontier 两条（CallEdge 扩张 + 该轮 frontier 的 exclusion 过滤，后者是 ME-05
+    # 的代价：不过滤的话子图会含全量图里根本不可达的节点），共 2 × (depth + 1)；
+    # 加常数条（Symbol / CallEdge / CrossRepoApiCall / ChunkEdge 各一条）。
+    # 🚨 本条契约守的是「**不随仓库规模增长**」，不是「条数越少越好」——下面那句
+    #    ``== small_repo_queries`` 才是判别式，这里的上界只防常数项失控。
+    assert small_repo_queries <= 2 * (depth + 1) + 4
 
     # 200 个与种子无关的符号：全量装配会多取 200 行，SQL 侧收敛则一条查询都不多。
     for i in range(200):
@@ -785,3 +788,41 @@ def test_on_demand_subgraph_applies_exclusion(
     # 被排除节点连同其邻接边一并消失，不是输出阶段裁剪。
     assert result.graph.number_of_edges() == 0
     assert result.meta.excluded_file_count == 1
+
+
+@pytest.mark.django_db
+def test_subgraph_does_not_expand_through_excluded_symbols(
+    indexed_repo, symbols_factory, call_edges_factory, exclusion_rule_factory
+) -> None:
+    """被排除的符号不得作为**中继**继续扩张——子图与全量图的可达语义必须一致。
+
+    ``test_on_demand_subgraph_applies_exclusion`` 恰好覆盖不到这条：那个用例里被排除的
+    ``secret/keys.py`` 是链条末端，没有下游邻居。这里给它加一个下游 ``downstream``：
+
+    - 全量图里 ``downstream`` 在 ``seed`` 的 2 跳内**根本不可达**——被排除节点连同其
+      全部邻接边一并消失，链子在 ``secret`` 处就断了。
+    - 若 frontier 扩张不看 exclusion，``downstream`` 会被拉进 ``visited``，最终作为一个
+      **孤立节点**出现在子图里：同一个问题在两条路径上给出不同答案，还顺带开了一个弱
+      推断通道（它的出现暗示 seed 与它之间存在一条经由被排除文件的路径）。
+    """
+    seed = symbols_factory("seed", "src/ok.py")
+    secret = symbols_factory("load_key", "secret/keys.py")
+    downstream = symbols_factory("downstream", "src/downstream.py")
+    call_edges_factory(seed, secret)
+    call_edges_factory(secret, downstream)
+    exclusion_rule_factory("secret/**")
+
+    subgraph = _assemble_subgraph(
+        indexed_repo, seed_symbol_ids=[str(seed.id)], depth=2
+    )
+
+    assert str(downstream.id) not in subgraph.graph.nodes, (
+        "子图穿过被排除的符号继续扩张了——它含有全量图里根本不可达的节点"
+    )
+    assert set(subgraph.graph.nodes) == {str(seed.id)}
+
+    # 与全量路径逐字对齐：同一个仓、同一套规则，两条路径给出同一个可达集。
+    full = _assemble(indexed_repo)
+    assert set(full.graph.nodes) == {str(seed.id), str(downstream.id)}
+    # ⚠️ 全量图里 downstream 在，但它与 seed **不连通**（这正是子图不该收录它的理由）。
+    assert full.graph.number_of_edges() == 0

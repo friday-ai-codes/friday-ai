@@ -963,6 +963,7 @@ def _expand_seed_ids(
     branch: str,
     seed_symbol_ids: Sequence[str],
     radius: int,
+    is_excluded: Callable[[str], bool],
 ) -> tuple[set[str], bool]:
     """从种子出发在 **SQL 侧**逐跳扩张，返回 ``(可达 symbol_id 集合, 是否发生截断)``。
 
@@ -978,13 +979,25 @@ def _expand_seed_ids(
     ``visited`` 去重同时也是**防环**——没有它，一个 ``a → b → a`` 的循环调用会让
     这个循环永远跑下去。
 
+    🚨 **每轮 frontier 先过 exclusion 再进入下一跳**。扩张若只看 ``CallEdge``、把过滤
+    留给之后的 :func:`_load_symbol_nodes`，那么 ``seed → (被排除的 secret 符号) → X``
+    这条路径会把 ``X`` 拉进 ``visited``，``X`` 最终作为一个**孤立节点**出现在子图里——
+    而在全量图里 ``X`` 在该深度**根本不可达**（被排除节点连同其邻接边一并消失）。同一个
+    问题在全量路径与降级路径上给出不同答案，是这里必须多花一条查询的理由；顺带也堵掉
+    一个弱推断通道（``X`` 的出现暗示 seed 与 ``X`` 之间存在一条经由被排除文件的路径）。
+
+    ⚠️ 种子**本身**不在这道过滤内：调用方点名要的符号照常进 ``visited``，若它命中
+    exclusion，会在 :func:`_load_symbol_nodes` 那一层被丢掉（与全量路径同口径）。
+
     :param radius: 跳数上限。调用方传的是 ``depth + 1``，理由见 :func:`load_subgraph`。
+    :param is_excluded: ``access.make_path_exclusion_memo(matcher)`` 产出的记忆化闭包；
+        已按 ``file_path`` 记忆化，这一步对热路径几乎零成本。
     :returns: ``visited`` 含种子本身；``truncated`` 为真表示某一轮 frontier 撞上
         :data:`SUBGRAPH_FRONTIER_LIMIT` 被截断，子图不完整。
     """
     from django.db.models import Q
 
-    from codegraph.models import CallEdge
+    from codegraph.models import CallEdge, Symbol
 
     visited: set[str] = {str(seed) for seed in seed_symbol_ids}
     frontier: set[str] = set(visited)
@@ -1013,6 +1026,18 @@ def _expand_seed_ids(
                 node_id = str(endpoint)
                 if node_id not in visited:
                     next_frontier.add(node_id)
+
+        if next_frontier:
+            # 被排除的节点不得作为**中继**继续扩张（理由见 docstring）。
+            # ⚠️ 过滤放在截断**之前**：否则上限会被一批注定要丢弃的节点占掉名额。
+            allowed = {
+                str(symbol_id)
+                for symbol_id, file_path in Symbol.objects.filter(
+                    repository_id=repository_id, id__in=next_frontier
+                ).values_list("id", "file_path")
+                if not is_excluded(file_path)
+            }
+            next_frontier &= allowed
 
         if len(next_frontier) > SUBGRAPH_FRONTIER_LIMIT:
             # 截断是**有损**的：子图会缺一部分邻接。如实置标记，由上层与日志透出。
@@ -1100,6 +1125,9 @@ def load_subgraph(
         seed_symbol_ids=seed_symbol_ids,
         # 多留一跳，让边界节点的邻接完整。
         radius=depth + 1,
+        # 同一个记忆化闭包贯穿扩张与装配两阶段：⛔ 不在扩张阶段另建一个，
+        # 那会让「哪些文件被排除」在同一次装配里出现两份计数。
+        is_excluded=is_excluded,
     )
 
     # 只按最终 symbol_id 集合取 ``Symbol`` 行 —— exclusion 与 overlay 去重与全量路径
