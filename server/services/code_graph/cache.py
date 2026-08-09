@@ -248,3 +248,73 @@ class GraphService:
                 "total_bytes": self._total_bytes,
                 "max_bytes": self._max_bytes,
             }
+
+
+# =============================================================================
+# 模块级单例
+# =============================================================================
+#
+# 为什么是 ``threading`` 原语而不是 ``asyncio``：本仓同时存在**三类** event loop
+# ——ASGI 主循环、``services/background_runner.py`` 的常驻 daemon 线程循环、以及
+# workflow engine ``_run_in_thread`` 每次执行新建的独立循环——而下面这个
+# :class:`GraphService` 是**进程级**单例，会被三者共用。``asyncio.Lock`` /
+# ``asyncio.Event`` 绑定创建它们的那个 loop，跨 loop 使用直接 ``RuntimeError``
+# （121-CONTEXT D-04 / RESEARCH Pitfall 8）。本仓已有 11 处模块级 ``threading.Lock``
+# 先例，这里照同一个形态走。
+
+_GRAPH_SERVICE: GraphService | None = None
+_SINGLETON_LOCK: Final[threading.Lock] = threading.Lock()
+
+
+def get_graph_service() -> GraphService:
+    """模块级单例；**lazy 实例化让 settings 加载顺序安全**。
+
+    形态照 ``codegraph/lsp/volar_pool.py::get_volar_pool()``：预算值在**首次调用时**才
+    从 settings 读，而不是在 import 时求值——模块 import 可能发生在 Django settings
+    完全就绪之前，那时求值会拿到默认值并永久固化，``override_settings`` 也再改不动。
+    """
+    global _GRAPH_SERVICE
+    with _SINGLETON_LOCK:
+        if _GRAPH_SERVICE is None:
+            from django.conf import settings
+
+            _GRAPH_SERVICE = GraphService(
+                max_bytes=int(
+                    getattr(settings, "CODE_GRAPH_CACHE_MAX_BYTES", 512 * 1024 * 1024)
+                ),
+                max_graph_bytes=int(
+                    getattr(settings, "CODE_GRAPH_MAX_GRAPH_BYTES", 256 * 1024 * 1024)
+                ),
+            )
+        return _GRAPH_SERVICE
+
+
+def _reset_for_tests() -> None:
+    """测试钩子：丢弃模块级单例并清空其状态，下次 :func:`get_graph_service` 会重建。
+
+    **严禁在生产代码里调用。** 在线上把单例换掉意味着整个 worker 的图缓存瞬间清零，
+    紧接着的每个请求都要冷建 2–4 秒的大图——那是一次自伤的拒绝服务。
+
+    形态照 ``services/background_runner.py::_reset_for_tests()``。之所以既置 ``None``
+    **又**清空旧实例的内部状态：别处可能已经把旧实例的引用拿在手上（例如某个用例先
+    ``svc = get_graph_service()`` 再触发重置），只换指针会让那份引用继续带着上一个用例
+    的条目跑，用例间污染照旧。
+    """
+    global _GRAPH_SERVICE
+    with _SINGLETON_LOCK:
+        stale = _GRAPH_SERVICE
+        _GRAPH_SERVICE = None
+    if stale is not None:
+        with stale._lock:
+            stale._cache.clear()
+            stale._total_bytes = 0
+            stale._inflight.clear()
+
+
+__all__ = [
+    "EDGE_COST_BYTES",
+    "NODE_COST_BYTES",
+    "GraphService",
+    "estimate_graph_bytes",
+    "get_graph_service",
+]

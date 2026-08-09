@@ -422,6 +422,78 @@ def test_lock_discipline_documented_and_no_await() -> None:
         assert "调用方必须已持锁" in (method.__doc__ or ""), method.__name__
 
 
+# 121-VALIDATION.md 121-07-T3：模块级单例 + 测试重置钩子。
+def test_get_graph_service_is_singleton() -> None:
+    """连调两次拿到**同一个对象**——否则每个调用方各持一份缓存，预算立刻失去意义。"""
+    from services.code_graph.cache import get_graph_service
+
+    assert get_graph_service() is get_graph_service()
+
+
+def test_get_graph_service_reads_settings_lazily() -> None:
+    """预算在**首次调用时**才读 settings，不是 import 时固化。
+
+    import 时求值会在 Django settings 完全就绪前拿到默认值并永久钉死，
+    ``override_settings`` 从此改不动它——运维调了环境变量却不生效，且没有任何报错。
+    """
+    from django.test import override_settings
+
+    from services.code_graph.cache import _reset_for_tests, get_graph_service
+
+    with override_settings(CODE_GRAPH_CACHE_MAX_BYTES=4096):
+        _reset_for_tests()
+        assert get_graph_service()._max_bytes == 4096
+
+    _reset_for_tests()
+    assert get_graph_service()._max_bytes != 4096
+
+
+def test_reset_for_tests_returns_fresh_service() -> None:
+    """重置后拿到的是**新对象**且缓存为空。"""
+    from services.code_graph.cache import _reset_for_tests, get_graph_service
+
+    first = get_graph_service()
+    first._put(("repo", ""), _make_entry(1, 1))
+    assert first.stats()["entries"] == 1
+
+    _reset_for_tests()
+
+    second = get_graph_service()
+    assert second is not first
+    assert second.stats()["entries"] == 0
+    # 旧引用也被清空：只换指针的话，先前已拿到 first 的调用方会继续带着旧条目跑。
+    assert first.stats() == {"entries": 0, "total_bytes": 0, "max_bytes": first._max_bytes}
+
+
+# 下面两条**成对**存在：单独看任一条都会通过，合起来才证明「用例间无污染」。
+# 顺序无关——两条各自写入后都断言自己看到的是空缓存，谁先跑都一样。
+def test_singleton_isolation_first_writer() -> None:
+    from services.code_graph.cache import get_graph_service
+
+    svc = get_graph_service()
+    assert svc.stats()["entries"] == 0, "看到了上一个用例留下的条目——autouse 重置失效"
+    svc._put(("isolation-a", ""), _make_entry(1, 1))
+    assert svc.stats()["entries"] == 1
+
+
+def test_singleton_isolation_second_writer() -> None:
+    from services.code_graph.cache import get_graph_service
+
+    svc = get_graph_service()
+    assert svc.stats()["entries"] == 0, "看到了上一个用例留下的条目——autouse 重置失效"
+    svc._put(("isolation-b", ""), _make_entry(1, 1))
+    assert svc.stats()["entries"] == 1
+
+
+def test_conftest_autouse_fixture_calls_reset() -> None:
+    """autouse fixture 确实调了 ``_reset_for_tests``（隔离靠它，不靠自觉）。"""
+    from pathlib import Path
+
+    conftest = Path(__file__).with_name("conftest.py").read_text(encoding="utf-8")
+    assert conftest.count("_reset_for_tests") >= 1
+    assert "待 121-07" not in conftest and "Plan 121-07 交付" not in conftest
+
+
 # 121-VALIDATION.md 121-08-T3：N 个并发请求同一 key ⇒ builder 只被调用一次
 # （内存假 builder + 零 DB 查询断言）。
 @pytest.mark.skip(reason="stub：由 Plan 121-08 实现")
