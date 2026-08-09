@@ -34,6 +34,9 @@ MAX_DEPTH = 10
 MAX_BRANCHING = 4
 MIN_STEPS = 3
 MIN_CONF = 0.5
+# 路径预算：去掉全局首访后靠预算抑扇出（WR-01）；环仍只靠 path_ids。
+MAX_PATHS_PER_ENTRY = 64
+MAX_FRONTIER_SIZE = 256
 
 ASYNC_NAME_MARKERS = (
     "sync_to_async",
@@ -160,10 +163,14 @@ def collect_process_paths(
     )
     entry_step = _step_from_node(graph, entry_id, depth=0)
     frontier.append((entry_id, (entry_id,), (entry_step,), {}))
-    # 全局首次访问（浅层优先）——同符号多层取最浅，避免扇出爆炸
-    seen_global: set[str] = {entry_id}
+    # 环只用 path_ids；不再用全局首访，否则 diamond 会丢掉交替终点（WR-01）。
+    budget_exhausted = False
 
     while frontier:
+        if len(raw) >= MAX_PATHS_PER_ENTRY:
+            budget_exhausted = True
+            break
+
         node, path_ids, steps, flags = frontier.popleft()
         depth = len(steps) - 1
 
@@ -193,6 +200,10 @@ def collect_process_paths(
 
         expanded = False
         for succ, _score, _attrs in candidates:
+            if len(raw) >= MAX_PATHS_PER_ENTRY:
+                budget_exhausted = True
+                break
+
             succ_name = str(graph.nodes[succ].get("name") or succ)
 
             # 环：在路径内重访 → 标注并收束，不静默丢弃
@@ -220,9 +231,11 @@ def collect_process_paths(
                 expanded = True
                 continue
 
-            if succ in seen_global:
-                continue
-            seen_global.add(succ)
+            if len(frontier) >= MAX_FRONTIER_SIZE:
+                flags = {**flags, "truncated": True}
+                budget_exhausted = True
+                break
+
             next_step = _step_from_node(graph, succ, depth=depth + 1)
             frontier.append(
                 (
@@ -234,9 +247,17 @@ def collect_process_paths(
             )
             expanded = True
 
-        # 全部后继被 global-seen 挡掉且当前路径已够长 → 作为终端保留
+        # 无后继可扩且当前路径已够长 → 作为终端保留
         if not expanded and len(steps) >= min_steps:
             raw.append({"steps": list(steps), "flags": dict(flags)})
+
+        if budget_exhausted:
+            break
+
+    if budget_exhausted and raw:
+        # 预算截断时给已收路径打 truncated，便于下游 degradation 感知
+        for path in raw:
+            path["flags"] = {**dict(path.get("flags") or {}), "truncated": True}
 
     return _dedupe_paths(raw)
 
