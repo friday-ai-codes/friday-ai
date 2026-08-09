@@ -384,10 +384,37 @@ def test_truncation_summary(hub_topology) -> None:
     assert small["summary"]["truncated_by_depth"][2] == 250
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-06 落地")
-def test_graph_cross_repo_edges_are_intra_repo() -> None:
-    """**反向守护**：图里 ``kind == "cross_repo"`` 的边两端必在同仓，不得被标 ``cross_repo: true``。
+def test_graph_cross_repo_edges_are_intra_repo(known_topology: nx.MultiDiGraph) -> None:
+    """**反向守护**：图里 ``kind == "cross_repo"`` 的边两端必在同仓，不得被标跨仓结果。
+
+    ``EdgeKind.CROSS_REPO`` 这个名字暗示它跨仓，但 ``loader._load_cross_repo_edges`` 要求
+    两端都在本仓才建边——这些边是「本仓前端调本仓后端」，不是跨仓。一旦有人把它们当跨仓
+    边处理（给 item 标 ``cross_repo: true``，或往顶层 ``cross_repo`` 字段位塞东西），输出的
+    「跨仓影响面」实际上全在本仓，agent 会据此得出完全错误的结论。
+
+    Warning sign：impact 输出里 ``cross_repo: true`` 的条目其 ``repository_id`` 与查询仓相同。
 
     （Req: IMPACT-03, 决策: D-25）
     """
-    pytest.fail("Wave 0 桩")
+    # ① 建边口径固化：每条 cross_repo 边的两端都在同一张图内。
+    for u, v, attrs in known_topology.edges(data=True):
+        if attrs.get("kind") != EdgeKind.CROSS_REPO.value:
+            continue
+        assert u in known_topology and v in known_topology, (
+            f"cross_repo 边 {u!r}→{v!r} 有一端不在本仓图内——loader 建边口径漂移了"
+        )
+
+    # ② F 那条边档位与原值都正确透出，但任何 item 都不得被标成跨仓结果。
+    result = analyze_impact(known_topology, "A", min_confidence=0.7)
+    f_item = _item(result, "F")
+    assert f_item["via"]["confidence"] == "cross_repo"
+    assert f_item["path_confidence"] == 0.7
+    assert "cross_repo" not in f_item
+    assert not any(
+        item.get("cross_repo")
+        for group in result["groups"].values()
+        for item in group
+    )
+
+    # ③ 顶层 cross_repo 字段位由壳层（collect_cross_repo_impact）填充；内核恒为空。
+    assert result["cross_repo"] == []
