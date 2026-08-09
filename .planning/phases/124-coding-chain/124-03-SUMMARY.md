@@ -81,7 +81,7 @@ Each task was committed atomically:
 3. **Task 2 RED: MCP parity assertions** - `d4a93651` (test)
 4. **Task 2 GREEN: MCP wiring + VALIDATION** - `da97cfc0` (feat)
 
-**Plan metadata:** (pending docs commit)
+**Plan metadata:** `20a9720f` (docs: complete plan)
 
 ## Files Created/Modified
 
