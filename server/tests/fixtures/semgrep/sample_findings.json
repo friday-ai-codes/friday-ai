@@ -1,0 +1,61 @@
+{
+  "version": "1.90.0",
+  "results": [
+    {
+      "check_id": "python.lang.security.audit.dangerous-subprocess-use.dangerous-subprocess-use",
+      "path": "app/handlers/upload.py",
+      "start": {"line": 42, "col": 5, "offset": 1200},
+      "end": {"line": 42, "col": 48, "offset": 1243},
+      "extra": {
+        "severity": "ERROR",
+        "message": "Detected subprocess call with shell=True; prefer argv list.",
+        "fingerprint": "semgrep-fixture-fingerprint-001",
+        "metadata": {
+          "category": "security",
+          "confidence": "MEDIUM"
+        }
+      }
+    },
+    {
+      "check_id": "python.lang.security.audit.logging.logger-credential-leak",
+      "path": "app/auth/login.py",
+      "start": {"line": 88, "col": 9, "offset": 2400},
+      "end": {"line": 88, "col": 55, "offset": 2446},
+      "extra": {
+        "severity": "WARNING",
+        "message": "Possible credential logged; scrub secrets before logging.",
+        "fingerprint": "semgrep-fixture-fingerprint-002",
+        "metadata": {
+          "category": "security",
+          "confidence": "LOW"
+        }
+      }
+    },
+    {
+      "check_id": "javascript.lang.security.audit.detect-non-literal-regexp",
+      "path": "web/src/utils/search.ts",
+      "start": {"line": 15, "col": 3, "offset": 400},
+      "end": {"line": 15, "col": 40, "offset": 437},
+      "extra": {
+        "severity": "INFO",
+        "message": "Non-literal RegExp may enable ReDoS; validate pattern source.",
+        "fingerprint": "semgrep-fixture-fingerprint-003",
+        "metadata": {
+          "category": "security",
+          "confidence": "LOW"
+        }
+      }
+    }
+  ],
+  "errors": [],
+  "paths": {
+    "scanned": [
+      "app/handlers/upload.py",
+      "app/auth/login.py",
+      "web/src/utils/search.ts"
+    ]
+  },
+  "_fixture_notes": {
+    "nosemgrep": "Lines annotated with `# nosemgrep` / `// nosemgrep` are ignored by Semgrep CLI; Wave 0 fixture does not include a suppressed finding — production report copy must mention nosemgrep (D-08)."
+  }
+}
