@@ -154,5 +154,5 @@ None that block the plan goal — create-path `pending` stub is intentional and 
 
 - [x] `server/services/code_graph/security_scan_report.py` exists with `SECURITY_SECTION_MARKER` / `append_security_scan` / `build_security_scan_section`
 - [x] Hang-points contain `append_security_scan` + `enqueue_semgrep_scan` in coding / mr_service / MCP
-- [x] Commits `3b149299`, `6f294939`, `9a45052d`, `2a25631a` present
+- [x] Commits `3b149299`, `6f294939`, `9a45052d`, `2a25631a`, `662fe63e` present
 - [x] Scoped pytest 10 passed
