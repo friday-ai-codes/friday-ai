@@ -450,17 +450,19 @@ def jaccard(a: set[str], b: set[str]) -> float:
 
 **已验证、非 ASSUMED 的关键事实：** networkx 3.6.1 API、冻结图可只读跑 Louvain、节点 id=symbol UUID 字符串、证据键扩展面、charter signal 接线坐标、CallSource 44 值守护、QUEUE_GRAPH 注册模式。
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **真实仓连续重建两次的 Jaccard 分布**
    - What we know: #6655 理论漂移 + 节点排序护栏；阈值 0.8 为 MEDIUM 初值。
    - What's unclear: 本仓生产图实际漂移率。
    - Recommendation: 相位内交付诊断数据进 SUMMARY；若跳过后重生成率仍 &gt;20% 再评 Leiden 触发条件（不在本相位默认切换）。
+   - **RESOLVED:** 自动化验收用合成 MultiDiGraph fixture（`test_rebuild_twice_zero_llm` 等）钉死跳过语义；真实仓 Jaccard 分布校准写入相位 SUMMARY，不阻塞 AC。验收阈值保持 **Jaccard ≥ 0.8**（指纹全等 short-circuit）；校准后可外置 settings/env，但用例语义不变。
 
 2. **branch_name 透传**
    - What we know: Symbol/图以 `branch_name=""` 为基线。
    - What's unclear: feature 分支图构建完成钩子是否总带 branch。
    - Recommendation: enqueue payload 显式 `branch_name`；缺省 `""`；lock 含 branch。
+   - **RESOLVED:** `enqueue_community_rebuild` / `DurableTaskService.defer` payload **必须显式传 `branch_name`**（缺省 `""`）；`queueing_lock` / `idempotency_key` 含 branch（`community:{repo_id}:{branch or ''}`）。钩子侧从建图/失效上下文透传，禁止静默省略导致基线串扰。
 
 ## Environment Availability
 
