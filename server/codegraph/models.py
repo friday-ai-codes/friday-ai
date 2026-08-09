@@ -440,6 +440,56 @@ class ProcessTrace(models.Model):
         return f"ProcessTrace({self.process_key}, steps={self.step_count})"
 
 
+def prepare_finding_message(raw: str) -> str:
+    """写入 SecurityFinding.message 前的脱敏约定（D-05 / T-127-01）。
+
+    调用方必须经此 helper（或等价 ``redact_secrets_in_text``）再落库；
+    模型本身不做 save() 钩子，避免静默绕过观测语义。
+    """
+    from common.logging import redact_secrets_in_text
+
+    return redact_secrets_in_text(raw or "")
+
+
+class SecurityFinding(models.Model):
+    """Semgrep 安全 finding 台账 —— 软引用、无 Symbol FK（Phase 127 / D-05）。
+
+    MR / 分支以 ``mr_key`` / ``branch_name`` 字符串关联；增量索引删建 Symbol
+    不会级联丢 finding。snippet/message 入库前须经 ``prepare_finding_message``。
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        "repositories.Repository",
+        on_delete=models.CASCADE,
+        related_name="security_findings",
+    )
+    branch_name = models.CharField(max_length=200, default="", blank=True)
+    mr_key = models.CharField(max_length=200, default="", blank=True, db_index=True)
+    rule_id = models.CharField(max_length=512, db_index=True)
+    severity = models.CharField(max_length=32, db_index=True)
+    file_path = models.CharField(max_length=1024)
+    line = models.PositiveIntegerField(null=True, blank=True)
+    message = models.TextField(blank=True, default="")
+    fingerprint = models.CharField(max_length=128, db_index=True)
+    scan_sha = models.CharField(max_length=64, blank=True, default="")
+    status = models.CharField(max_length=32, default="open", db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "安全 finding"
+        verbose_name_plural = "安全 findings"
+        indexes = [
+            models.Index(fields=["repository", "branch_name"]),
+            models.Index(fields=["repository", "mr_key"]),
+            models.Index(fields=["repository", "fingerprint"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"SecurityFinding({self.rule_id}, {self.severity}, {self.status})"
+
+
 __all__ = [
     "Symbol",
     "ImportEdge",
@@ -450,4 +500,6 @@ __all__ = [
     "CrossRepoApiCall",
     "SymbolCommunity",
     "ProcessTrace",
+    "SecurityFinding",
+    "prepare_finding_message",
 ]

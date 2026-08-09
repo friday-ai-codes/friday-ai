@@ -123,6 +123,17 @@ class SettingKeys:
     # feature list 逐模块解析槽位上限：粘贴文档解析 fan-out 时每个模块一个 LLM 调用，
     # 槽位池控并发（默认 4，避免同时打爆 AI Provider 触发 429）。
     CONCURRENCY_FEATURE_PARSE_MAX = "concurrency_feature_parse_max"  # 默认 4
+    # 仓库章程 AI 起草槽位上限：summary 成功后串联 durable_charter_draft，默认 4。
+    # 无种子迁移：SystemSetting 动态键，缺失时 concurrency 模块回退默认值。
+    CONCURRENCY_CHARTER_MAX = "concurrency_charter_max"  # 默认 4
+    # Semgrep 扫描槽位上限（Phase 127 / D-02）：durable QUEUE_SCAN 并发窗口，默认 2。
+    # 无种子迁移：缺失时 concurrency 模块回退默认值（127-03 消费）。
+    CONCURRENCY_SCAN_MAX = "concurrency_scan_max"  # 默认 2
+
+    # Semgrep App / Pro token（Phase 127 / D-09）：Fernet 加密存储，空 = CE。
+    # 写入必须经 services.code_graph.semgrep_token.set_semgrep_app_token
+    # （encrypt_value + is_encrypted=True）；禁止明文落库。永不打进日志/MR/ledger。
+    SEMGREP_APP_TOKEN = "semgrep_app_token"
 
     # 运行时日志配置（LOG-06，实时生效）：复用 SystemSetting + settings_service(60s 缓存)
     # + signals(写时失效 + 即时调级别)。点分命名与 code_index.exclusion.* 风格一致。
