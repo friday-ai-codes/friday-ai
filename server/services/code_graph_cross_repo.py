@@ -170,7 +170,12 @@ async def _find_peer_call_sites(
 
 
 def _merge_impact_payloads(impacts: list[dict[str, Any]]) -> dict[str, Any]:
-    """合并多个种子上的 ``analyze_impact`` 结果，只保留 ``groups`` / ``summary``。"""
+    """合并多个种子上的 ``analyze_impact`` 结果，只保留 ``groups`` / ``summary``。
+
+    同 ``symbol_id`` 保留更优路径（``depth`` 更浅，其次 ``path_confidence`` 更高）；
+    按 ``result_limit`` 截断并重算 ``truncated_by_depth``；``truncated_by_nodes`` 对各
+    种子做 OR（ME-01）。
+    """
     if not impacts:
         return {
             "groups": {},
@@ -188,33 +193,63 @@ def _merge_impact_payloads(impacts: list[dict[str, Any]]) -> dict[str, Any]:
             "summary": impacts[0]["summary"],
         }
 
-    items: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    best_by_id: dict[str, dict[str, Any]] = {}
     truncated_by_nodes = False
     max_depth = 0
-    result_limit = int(impacts[0]["summary"].get("result_limit", 0))
+    result_limit = 0
     for impact in impacts:
         max_depth = max(max_depth, int(impact.get("max_depth") or 0))
+        summary = impact.get("summary") or {}
         truncated_by_nodes = truncated_by_nodes or bool(
-            impact["summary"].get("truncated_by_nodes")
+            summary.get("truncated_by_nodes")
         )
-        for item in impact["items"]:
-            sid = item["symbol_id"]
-            if sid in seen:
+        result_limit = max(result_limit, int(summary.get("result_limit") or 0))
+        for item in impact.get("items") or []:
+            sid = str(item["symbol_id"])
+            prev = best_by_id.get(sid)
+            if prev is None:
+                best_by_id[sid] = item
                 continue
-            seen.add(sid)
-            items.append(item)
+            # 浅层优先；同深度取更高 path_confidence；再比 symbol_id 保稳定。
+            prev_key = (
+                int(prev["depth"]),
+                -float(prev.get("path_confidence") or 0.0),
+                str(prev["symbol_id"]),
+            )
+            new_key = (
+                int(item["depth"]),
+                -float(item.get("path_confidence") or 0.0),
+                sid,
+            )
+            if new_key < prev_key:
+                best_by_id[sid] = item
 
+    items = sorted(
+        best_by_id.values(),
+        key=lambda item: (
+            int(item["depth"]),
+            -float(item.get("path_confidence") or 0.0),
+            str(item["symbol_id"]),
+        ),
+    )
+    total_found = len(items)
+    limit = max(result_limit, 0)
+    returned_items = items[:limit] if limit else items[:0]
     groups = {
-        depth: [item for item in items if item["depth"] == depth]
+        depth: [item for item in returned_items if int(item["depth"]) == depth]
         for depth in range(1, max_depth + 1)
     }
+    truncated_by_depth: dict[int, int] = {}
+    for depth in range(1, max_depth + 1):
+        found = sum(1 for item in items if int(item["depth"]) == depth)
+        truncated_by_depth[depth] = found - len(groups.get(depth, []))
+
     return {
         "groups": groups,
         "summary": {
-            "total_found": len(items),
-            "returned": len(items),
-            "truncated_by_depth": {depth: 0 for depth in range(1, max_depth + 1)},
+            "total_found": total_found,
+            "returned": len(returned_items),
+            "truncated_by_depth": truncated_by_depth,
             "truncated_by_nodes": truncated_by_nodes,
             "result_limit": result_limit,
         },

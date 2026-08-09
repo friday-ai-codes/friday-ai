@@ -600,3 +600,75 @@ async def test_hop_budget(indexed_repo, cross_repo_call_factory) -> None:
     assert peer_b_id in repo_ids
     assert peer_c_id not in repo_ids
     assert peer_c_id not in fetch_calls
+
+
+def test_merge_impact_payloads_prefers_shallow_and_recomputes_truncation() -> None:
+    """多种子合并：同 id 浅层优先；按 result_limit 截断并重算 truncated_by_depth（ME-01）。"""
+    from services.code_graph_cross_repo import _merge_impact_payloads
+
+    deep = {
+        "max_depth": 3,
+        "items": [
+            {
+                "symbol_id": "shared",
+                "depth": 3,
+                "path_confidence": 0.9,
+                "name": "shared",
+                "file_path": "a.py",
+            },
+            {
+                "symbol_id": "only-deep",
+                "depth": 2,
+                "path_confidence": 0.5,
+                "name": "only_deep",
+                "file_path": "b.py",
+            },
+        ],
+        "summary": {
+            "total_found": 2,
+            "returned": 2,
+            "truncated_by_depth": {1: 0, 2: 0, 3: 0},
+            "truncated_by_nodes": False,
+            "result_limit": 1,
+        },
+        "groups": {},
+    }
+    shallow = {
+        "max_depth": 3,
+        "items": [
+            {
+                "symbol_id": "shared",
+                "depth": 1,
+                "path_confidence": 0.4,
+                "name": "shared",
+                "file_path": "a.py",
+            },
+            {
+                "symbol_id": "only-shallow",
+                "depth": 1,
+                "path_confidence": 0.8,
+                "name": "only_shallow",
+                "file_path": "c.py",
+            },
+        ],
+        "summary": {
+            "total_found": 2,
+            "returned": 2,
+            "truncated_by_depth": {1: 0, 2: 0, 3: 0},
+            "truncated_by_nodes": True,
+            "result_limit": 1,
+        },
+        "groups": {},
+    }
+
+    merged = _merge_impact_payloads([deep, shallow])
+    assert merged["summary"]["total_found"] == 3
+    assert merged["summary"]["returned"] == 1
+    assert merged["summary"]["result_limit"] == 1
+    assert merged["summary"]["truncated_by_nodes"] is True
+    # 排序：(depth asc, -path_confidence) → only-shallow(d1,0.8) 先于 shared(d1,0.4)
+    assert len(merged["groups"][1]) == 1
+    assert merged["groups"][1][0]["symbol_id"] == "only-shallow"
+    assert merged["summary"]["truncated_by_depth"][1] == 1  # shared 被 limit 截掉
+    assert merged["summary"]["truncated_by_depth"][2] == 1  # only-deep 被截掉
+    assert merged["summary"]["truncated_by_depth"][3] == 0
