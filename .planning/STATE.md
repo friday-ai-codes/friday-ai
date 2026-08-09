@@ -2,13 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-current_phase: 125
-current_phase_name: 社区检测 + 模块摘要
-status: planning
+status: executing
 stopped_at: Completed 124-03-PLAN.md
-last_updated: "2026-08-09T19:56:54.902Z"
-last_activity: 2026-08-10
-last_activity_desc: Phase 124 complete, transitioned to Phase 125
+last_updated: "2026-08-09T20:11:42.519Z"
+last_activity: 2026-08-10 — Phase 124 complete, transitioned to Phase 125
 progress:
   total_phases: 7
   completed_phases: 4
@@ -32,7 +29,7 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 Phase: 125 — 社区检测 + 模块摘要
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-08-10 — Phase 124 complete, transitioned to Phase 125
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
