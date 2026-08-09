@@ -79,7 +79,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 121-08-PLAN.md — W5 `GraphService.get_graph` 编排：签名复校 / 命中前的 in-flight 闸 / 准入降级 / single-flight
+- [x] 121-08-PLAN.md — W5 `GraphService.get_graph` 编排：签名复校 / 命中前的 in-flight 闸 / 准入降级 / single-flight
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
