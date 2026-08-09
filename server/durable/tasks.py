@@ -287,6 +287,29 @@ async def durable_community_rebuild(
     )
 
 
+@app.task(name="durable_process_rebuild", queue=QUEUE_GRAPH)
+async def durable_process_rebuild(
+    *,
+    repository_id: str,
+    branch_name: str = "",
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """执行流 ProcessTrace 重建 durable 任务（procrastinate 包壳）。
+
+    社区重建成功后链式入队；任务体内经 ``get_graph_service`` 取图后
+    ``rebuild_processes``（D-03）。幂等：
+    ``idempotency_key=f"process:{repo_id}:{branch}"``。
+    ``initiated_by_user_id``（CTX-02）显式形参消费 payload 同名键并转发。
+    """
+    from durable.tasks_impl import run_process_rebuild
+
+    return await run_process_rebuild(
+        repository_id=repository_id,
+        branch_name=branch_name,
+        initiated_by_user_id=initiated_by_user_id,
+    )
+
+
 @app.task(name="durable_ping", queue=QUEUE_MAINTENANCE)
 async def durable_ping(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """最小可 defer 的烟囱 / 测试任务。

@@ -689,5 +689,77 @@ async def run_community_rebuild(
             communities_total=result.get("communities_total"),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
         )
+        # D-03：成功路径（含空/降级）best-effort 链式 Process 重建；本函数 raise 时不执行。
+        try:
+            from services.process_enqueue import enqueue_process_rebuild
+
+            await enqueue_process_rebuild(
+                str(repository_id),
+                branch_name=branch,
+                initiated_by_user_id=initiated_by_user_id,
+            )
+        except Exception:  # noqa: BLE001 — 链式入队失败不反噬社区成功结果
+            pass
+        return result
+
+
+async def run_process_rebuild(
+    *,
+    repository_id: str,
+    branch_name: str = "",
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """执行流重建任务体：绑定用户上下文 → ``rebuild_processes``。
+
+    绑定 ``initiated_by_user_id``（缺省 ``system``）；业务异常脱敏后 re-raise。
+    """
+    import time
+
+    from common.logging import redact_secrets_in_text
+    from services.code_graph.process_trace import rebuild_processes
+
+    actor = initiated_by_user_id or "system"
+    branch = branch_name or ""
+    started = time.monotonic()
+    logger.info(
+        "process_rebuild_job_started",
+        category="caller",
+        component="code_graph",
+        repository_id=str(repository_id),
+        branch_name=branch,
+        initiated_by_user_id=actor,
+    )
+
+    with bind_task_context(
+        user_id=actor,
+        source="durable",
+        component="code_graph",
+    ):
+        try:
+            result = await rebuild_processes(str(repository_id), branch)
+        except Exception as exc:
+            logger.warning(
+                "process_rebuild_job_failed",
+                category="caller",
+                component="code_graph",
+                repository_id=str(repository_id),
+                branch_name=branch,
+                initiated_by_user_id=actor,
+                error=redact_secrets_in_text(str(exc)),
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            raise
+
+        logger.info(
+            "process_rebuild_job_completed",
+            category="caller",
+            component="code_graph",
+            repository_id=str(repository_id),
+            branch_name=branch,
+            initiated_by_user_id=actor,
+            status=result.get("status", "ok"),
+            processes_total=result.get("processes_total"),
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
         return result
 
