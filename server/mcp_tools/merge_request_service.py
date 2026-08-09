@@ -177,6 +177,33 @@ async def create_merge_request(
         except Exception:  # noqa: BLE001 — 观测永不反噬
             pass
 
+    # Phase 127 TAINT-02：与 AICodingNode 同一 security helper（D-04/D-06）
+    try:
+        from services.code_graph.security_scan_report import (
+            append_security_scan,  # noqa: F401 — D-06 dual-link 合同字面量
+            attach_security_scan_pending,
+        )
+
+        description = await attach_security_scan_pending(
+            description,
+            repository=repository,
+            source_branch=source_branch,
+            target_branch=target_branch,
+            user=user,
+            enqueue=False,
+        )
+    except Exception as exc:  # noqa: BLE001 — 最后兜底；helper 内应已吞
+        try:
+            logger.warning(
+                "security_scan_shell_failed",
+                component="mcp_tools",
+                category="caller",
+                repository_id=str(getattr(repository, "id", "") or ""),
+                error=str(exc)[:200],
+            )
+        except Exception:  # noqa: BLE001 — 观测永不反噬
+            pass
+
     request = MRCreateRequest(
         source_branch=source_branch,
         target_branch=target_branch,
@@ -186,6 +213,34 @@ async def create_merge_request(
         remove_source_branch=remove_source_branch,
     )
     result = await client.create_merge_request(request)
+    if result.success:
+        try:
+            from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan
+
+            initiated_by = (
+                str(user.id)
+                if user is not None and getattr(user, "id", None) is not None
+                else "system"
+            )
+            await enqueue_semgrep_scan(
+                str(getattr(repository, "id", "") or ""),
+                mr_key=str(result.mr_id or ""),
+                source_sha="",
+                target_sha="",
+                branch_name=source_branch,
+                initiated_by_user_id=initiated_by,
+            )
+        except Exception as exc:  # noqa: BLE001 — enqueue 失败不反噬已建 MR
+            try:
+                logger.warning(
+                    "security_scan_shell_failed",
+                    component="mcp_tools",
+                    category="caller",
+                    repository_id=str(getattr(repository, "id", "") or ""),
+                    error=str(exc)[:200],
+                )
+            except Exception:  # noqa: BLE001
+                pass
     payload = {
         "success": result.success,
         "mr_id": result.mr_id,
