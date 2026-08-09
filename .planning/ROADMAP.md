@@ -216,7 +216,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 125-01-PLAN.md — Wave 0：登记 `call_source=module_summary` + 全套验收测试桩 + 冻结面守卫桩
+- [x] 125-01-PLAN.md — Wave 0：登记 `call_source=module_summary` + 全套验收测试桩 + 冻结面守卫桩
 - [ ] 125-02-PLAN.md — Wave 1：`SymbolCommunity` + Louvain/指纹 + durable `QUEUE_GRAPH` 双钩子 enqueue
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -471,7 +471,7 @@ Plans:
 | 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 10/10 | Complete | 2026-08-09 |
 | 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 6/6 | Complete   | 2026-08-09 |
 | 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 4/4 | Complete   | 2026-08-09 |
-| 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 0/4 | Planned | - |
+| 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 1/4 | In Progress|  |
 | 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 0/? | Not started | - |
 | 127. Semgrep 门禁 + LSP 基准 | v0.22.0 | TAINT-01~03, LSP-01 | 0/? | Not started | - |
 
