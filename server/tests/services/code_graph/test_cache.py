@@ -1277,8 +1277,129 @@ def test_cache_has_no_hand_rolled_inflight_judgement() -> None:
 
 # 121-VALIDATION.md 121-09-T1：GraphService.invalidate 按仓驱逐全部分支条目
 # 并连带清 matcher/指纹 memo；异常吞掉不反噬主流程。
-@pytest.mark.skip(reason="stub：由 Plan 121-09 实现")
 def test_invalidate_evicts_repo_entries() -> None:
-    pass
+    """``invalidate(A)`` 驱逐 A 的**所有分支**条目、放过 B，并连带清 A 的指纹 memo。
+
+    三件事各守一条：
+
+    - **按仓而非按键**驱逐：重索引影响该仓所有分支的图（overlay 语义下 feature 分支的
+      图 = base 全量 + 分支增量），只驱逐 ``(repo, "")`` 会让 feature 分支继续命中旧图。
+    - **只驱逐命中的那个仓**：钩子带的是单个 ``repository_id``，误清全表等于让本 worker
+      上所有其它仓库的图一起冷建 2–4 秒。
+    - **指纹 memo 一并清**：规则若刚变过而 ``access`` 的 60s memo 仍是旧指纹，签名复校
+      算出的签名会与旧条目恰好一致——只清图不清指纹，下一次取图照样命中陈旧图。
+    """
+    from unittest import mock
+
+    from structlog.testing import capture_logs
+
+    from services.code_graph import access as access_module
+    from services.code_graph.cache import GraphService
+
+    svc = GraphService(max_bytes=100_000, max_graph_bytes=100_000)
+    svc._put(("repo-a", ""), _make_entry(1, 1))
+    svc._put(("repo-a", "feature/x"), _make_entry(1, 1))
+    svc._put(("repo-b", ""), _make_entry(1, 1))
+    assert svc.stats() == {"entries": 3, "total_bytes": 3600, "max_bytes": 100_000}
+
+    with (
+        mock.patch.object(
+            access_module,
+            "invalidate_matcher_fingerprint_cache",
+            wraps=access_module.invalidate_matcher_fingerprint_cache,
+        ) as memo_spy,
+        capture_logs() as events,
+    ):
+        svc.invalidate("repo-a")
+
+    assert list(svc._cache.keys()) == [("repo-b", "")], "repo-a 的分支条目没被清干净"
+    assert svc.stats()["total_bytes"] == 1200, "记账没跟着驱逐一起扣减"
+
+    memo_spy.assert_called_once_with(repository_id="repo-a")
+
+    invalidated = [e for e in events if e["event"] == "code_graph_cache_invalidated"]
+    assert len(invalidated) == 1, "汇总事件应当只发一条（⛔ 不是每条目一条）"
+    assert invalidated[0]["component"] == "code_graph"
+    assert invalidated[0]["category"] == "sampling"
+    assert invalidated[0]["repository_id"] == "repo-a"
+    assert invalidated[0]["evicted_entries"] == 2
+    assert invalidated[0]["evicted_bytes"] == 2400
+    assert invalidated[0]["total_bytes"] == 1200
+    # 钩子跑在后台任务上下文，无触发用户 ⇒ 显式记 system（LOGGING-SPEC §3 强制）。
+    assert invalidated[0]["initiated_by_user_id"] == "system"
+
+    # 幂等：同一个仓再失效一次不报错、不把记账做成负数。
+    svc.invalidate("repo-a")
+    assert svc.stats() == {"entries": 1, "total_bytes": 1200, "max_bytes": 100_000}
+
+
+def test_invalidate_swallows_errors_and_never_breaks_the_hook() -> None:
+    """失效失败**不向调用方抛**，只留一条 warning —— 钩子绝不反噬构建主流程。
+
+    两层都要吞：``GraphService.invalidate`` 内部（memo 清理抛异常）与模块级
+    ``invalidate_repository``（拿单例或调用方法本身抛异常）。少吞一层，一次缓存维护
+    故障就会把边构建 / 图谱构建的**成功出口**变成失败——而失效本来只是优化，正确性由
+    取图时的签名复校兜住。
+    """
+    from unittest import mock
+
+    from structlog.testing import capture_logs
+
+    from services.code_graph import access as access_module
+    from services.code_graph import cache as cache_module
+    from services.code_graph.cache import GraphService, invalidate_repository
+
+    # ① 方法内部失败（memo 清理抛）：条目照样被驱逐，异常不外泄。
+    svc = GraphService(max_bytes=100_000, max_graph_bytes=100_000)
+    svc._put(("repo-a", ""), _make_entry(1, 1))
+    with (
+        mock.patch.object(
+            access_module,
+            "invalidate_matcher_fingerprint_cache",
+            side_effect=RuntimeError("memo boom"),
+        ),
+        capture_logs() as events,
+    ):
+        svc.invalidate("repo-a")  # ⛔ 不得抛
+
+    failures = [e for e in events if e["event"] == "code_graph_cache_invalidate_failed"]
+    assert len(failures) == 1
+    assert failures[0]["component"] == "code_graph"
+    assert failures[0]["category"] == "sampling"
+    assert failures[0]["error_type"] == "RuntimeError"
+    assert failures[0]["initiated_by_user_id"] == "system"
+
+    # ② 模块级入口失败（单例/方法整体抛）：同样不外泄。
+    with (
+        mock.patch.object(
+            cache_module,
+            "get_graph_service",
+            side_effect=RuntimeError("singleton boom"),
+        ),
+        capture_logs() as events,
+    ):
+        invalidate_repository("repo-a")  # ⛔ 不得抛
+
+    failures = [e for e in events if e["event"] == "code_graph_cache_invalidate_failed"]
+    assert len(failures) == 1
+    assert failures[0]["error_type"] == "RuntimeError"
+
+
+def test_invalidate_repository_delegates_to_the_singleton() -> None:
+    """模块级 ``invalidate_repository`` 打的是**进程单例**，不是新实例。
+
+    钩子只拿到一个 ``repository_id``，没有 service 句柄；若这里误建新实例，驱逐就会打在
+    一个空缓存上、本 worker 的旧图一条都不掉，钩子表面成功、实际全空转。
+    """
+    from services.code_graph import invalidate_repository
+    from services.code_graph.cache import get_graph_service
+
+    svc = get_graph_service()
+    svc._put(("repo-a", ""), _make_entry(1, 1))
+    svc._put(("repo-b", ""), _make_entry(1, 1))
+
+    invalidate_repository("repo-a")
+
+    assert list(svc._cache.keys()) == [("repo-b", "")]
 
 

@@ -469,6 +469,87 @@ def test_matcher_fingerprint_memo_ttl() -> None:
 
 # 121-VALIDATION.md 121-09-T1（planner 追加行）：barrel 恰导出 17 项
 # （含 invalidate_repository），loader/cache/signature/access 不可从包顶层取得。
-@pytest.mark.skip(reason="stub：由 Plan 121-09 实现")
-def test_barrel_exports_are_curated() -> None:
-    pass
+
+# 🚨 **逐字写死**这 17 个字面量，⛔ 绝不从 ``code_graph_package.__all__`` 反查——
+# 从模块自身反查出期望值的用例是自证的，`__all__` 里多塞一个 ``loader`` 它照样绿，
+# 而「不多导出」恰恰是这条红线要守的全部内容。
+_EXPECTED_BARREL_EXPORTS = frozenset(
+    {
+        "ChunkEvidence",
+        "CodeGraph",
+        "EdgeConfidence",
+        "EdgeKind",
+        "GraphAccessDenied",
+        "GraphBuildFailed",
+        "GraphBuildTimeout",
+        "GraphError",
+        "GraphMeta",
+        "GraphNotIndexed",
+        "GraphService",
+        "LOW_RESOLUTION_THRESHOLD",
+        "REDACTED_REPOSITORY",
+        "confidence_score",
+        "derive_reason",
+        "get_graph_service",
+        "invalidate_repository",
+    }
+)
+
+# 这些名字**存在**于包内子模块，但一律不得出现在包顶层导出面上：前四个是「绕过
+# GraphService 三道闸」的直接通路，后三个是存储层/内部 memo 的实现细节。
+_FORBIDDEN_BARREL_EXPORTS = (
+    "loader",
+    "cache",
+    "signature",
+    "access",
+    "estimate_graph_bytes",
+    "NODE_COST_BYTES",
+    "invalidate_matcher_fingerprint_cache",
+)
+
+
+def test_barrel_exports_only_public_surface() -> None:
+    """``services.code_graph`` 的公开面恰是那 17 项，且不含任何内部通路。
+
+    这条用例是**架构红线的机械防线**（威胁登记 T-121-绕闸，ASVS V1）。红线本身写在
+    121-CONTEXT Area 4：所有图访问必须经 ``GraphService.get_graph()``，因为它是权限
+    校验、exclusion 过滤与水位一致性校验三道闸的唯一收口点。靠自律守不住——靠
+    ``__init__.py`` 不导出 + 这条断言才守得住：任何人想绕过校验，都得刻意写出
+    ``services.code_graph.loader`` 这样的内部模块路径，而那在 code review 里藏不住。
+    """
+    exported = code_graph_package.__all__
+
+    assert len(exported) == 17, f"barrel 导出面从 17 项变成了 {len(exported)} 项"
+    assert set(exported) == _EXPECTED_BARREL_EXPORTS
+    assert list(exported) == sorted(exported), "__all__ 必须字母序（照 code_intel/__init__.py）"
+
+    for forbidden in _FORBIDDEN_BARREL_EXPORTS:
+        assert forbidden not in exported, (
+            f"{forbidden} 被导出到了包顶层——上层可借它绕过 GraphService 的三道闸"
+        )
+
+    # 每一项都真的能取到（``__all__`` 里写了但没 import 的名字会让 `import *` 直接炸）。
+    for name in exported:
+        assert hasattr(code_graph_package, name), f"__all__ 声明了 {name} 但包顶层取不到"
+
+    # 钩子与上层工具的实际写法必须可用。
+    from services.code_graph import (  # noqa: F401 — 断言的就是「能 import」本身
+        CodeGraph,
+        EdgeConfidence,
+        GraphService,
+        invalidate_repository,
+    )
+
+
+def test_barrel_docstring_records_the_architecture_red_line() -> None:
+    """红线的**理由**必须写在 ``__init__.py`` 的 docstring 里，不能只活在计划文档里。
+
+    只有导出面收敛、没有留下「为什么」的话，下一个人为了图方便补一行
+    ``from services.code_graph.loader import load_graph`` 时看不到任何阻力信号。
+    """
+    doc = code_graph_package.__doc__ or ""
+    assert "架构" in doc
+    assert "loader" in doc
+
+    source = Path(code_graph_package.__file__).read_text(encoding="utf-8")
+    assert "from ." not in source, "barrel 必须用绝对导入（本仓 first-party 约定）"
