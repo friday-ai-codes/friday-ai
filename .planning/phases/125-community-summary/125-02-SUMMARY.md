@@ -86,7 +86,7 @@ Each task was committed atomically:
 3. **Task 2 RED: Louvain/fingerprint/enqueue acceptance tests** - `6e8474f8` (test)
 4. **Task 2 GREEN: community rebuild + QUEUE_GRAPH hooks** - `736b063d` (feat)
 
-**Plan metadata:** see final docs commit after this SUMMARY
+**Plan metadata:** `c688934a` (docs: complete plan)
 
 ## Files Created/Modified
 
