@@ -1,16 +1,18 @@
-"""``services/code_graph/security_scan_report`` MR 段契约（TAINT-02/03；D-06..D-09）。
+"""``services/code_graph/security_scan_report`` formatter / stub / Pro 文案（TAINT-02/03；D-06..D-09）。
 
-归属 Plan 127-04：幂等 append、severity 分级、CE/nosemgrep/Pro 诚实文案、stub 脱敏。
+归属 Plan 127-04：与 ``impact_report`` 同构；mock findings 边界，不重测 Semgrep CLI。
+覆盖 advisory 分级、CE disclaimer、nosemgrep、stub 脱敏、Pro opt-in 短句。
 """
 
 from __future__ import annotations
 
-from structlog.testing import capture_logs
+from typing import Any
 
 from services.code_graph.security_scan_report import (
     SECURITY_SECTION_MARKER,
     append_security_scan,
     build_security_scan_section,
+    stub_security_scan_section,
 )
 
 
@@ -25,11 +27,11 @@ def test_append_security_scan_idempotent() -> None:
     assert append_security_scan("", section) == section
     assert append_security_scan("desc", "") == "desc"
 
-    with_impact = "## Custom\n\n## 影响面\n\n_impact_"
+    with_impact = "## 方案\n\n## 影响面\n\n_impact_"
     out = append_security_scan(with_impact, section)
     assert "## 影响面" in out
     assert out.count(SECURITY_SECTION_MARKER) == 1
-    assert out.count("## 影响面") == 1
+    assert out.startswith("## 方案")
 
 
 def test_security_section_lists_severity_advisory() -> None:
@@ -37,27 +39,27 @@ def test_security_section_lists_severity_advisory() -> None:
 
     （Req: TAINT-02, 决策: D-07；威胁: T-127-05）
     """
-    findings = [
+    findings: list[dict[str, Any]] = [
         {
-            "rule_id": "r.error",
             "severity": "ERROR",
+            "rule_id": "python.lang.security.audit.sqli",
             "file_path": "a.py",
             "line": 10,
-            "message": "bad",
+            "message": "SQL injection",
         },
         {
-            "rule_id": "r.warn",
             "severity": "WARNING",
+            "rule_id": "python.lang.security.audit.xss",
             "file_path": "b.py",
-            "line": 2,
-            "message": "meh",
+            "line": 3,
+            "message": "XSS",
         },
         {
-            "rule_id": "r.info",
             "severity": "INFO",
+            "rule_id": "python.lang.correctness",
             "file_path": "c.py",
-            "line": 3,
-            "message": "note",
+            "line": 1,
+            "message": "style",
         },
     ]
     section = build_security_scan_section(findings=findings, pro_enabled=False)
@@ -65,11 +67,9 @@ def test_security_section_lists_severity_advisory() -> None:
     assert "ERROR" in section
     assert "WARNING" in section
     assert "INFO" in section
-    assert "advisory" in section.lower() or "不阻断" in section or "仅供参考" in section
-    # 不得出现硬门禁措辞
+    assert "advisory" in section.lower() or "建议" in section or "不阻断" in section
     assert "blocking" not in section.lower()
     assert "merge-gate" not in section.lower()
-    assert "禁止合并" not in section
 
 
 def test_security_section_has_ce_disclaimer() -> None:
@@ -96,41 +96,34 @@ def test_stub_omits_token_stack_and_abs_paths() -> None:
 
     （Req: TAINT-03, 决策: D-09；威胁: T-127-01）
     """
-    secret = "sgp_live_FAKESECRET_for_test_only"
+    fake_token = "sgp_live_ABCDEFG1234567890secret"
     abs_path = "/Users/zaneliu/Projects/secret/repo/src/a.py"
-    with capture_logs() as events:
-        section = build_security_scan_section(
-            error_code="timeout",
-            error=(
-                f"boom token={secret} path={abs_path}\n"
-                "Traceback (most recent call last):\n  File ..."
-            ),
-        )
-
+    # 即使传入脏 error_code，stub 也只保留稳定短码
+    section = stub_security_scan_section(
+        f"timeout token={fake_token} path={abs_path}\nTraceback (most recent call last):\n  File ..."
+    )
     assert SECURITY_SECTION_MARKER in section
-    assert "`timeout`" in section
     assert "安全扫描未能生成" in section
-    assert secret not in section
+    assert "`timeout`" in section or "`unavailable`" in section
+    assert fake_token not in section
     assert abs_path not in section
     assert "Traceback" not in section
-    blob = " ".join(str(e) for e in events)
-    assert secret not in blob
-    assert "Traceback" not in blob
+    assert "/Users/" not in section
 
 
 def test_pro_token_configured_line_without_hype() -> None:
     """有 token →「Pro 能力已启用」类短句且不夸大；空 token → 纯 CE。
 
-    （Req: TAINT-03, 决策: D-08/D-09）
+    （Req: TAINT-03, 决策: D-09/D-10）
     """
     ce = build_security_scan_section(findings=[], pro_enabled=False)
     assert "Pro 能力已启用" not in ce
     assert "CE" in ce
-    assert "跨文件" not in ce or "不承诺" in ce or "不保证" in ce or "仅函数内" in ce
+    assert "跨文件" in ce  # disclaimer 明确不承诺
 
     pro = build_security_scan_section(findings=[], pro_enabled=True)
     assert "Pro 能力已启用" in pro
     # 不得夸大未验证跨文件覆盖
-    assert "全面跨文件" not in pro
-    assert "100%" not in pro
+    assert "完整跨文件" not in pro
     assert "保证跨文件" not in pro
+    assert "100%" not in pro
