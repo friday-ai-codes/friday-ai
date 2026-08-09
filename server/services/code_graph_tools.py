@@ -991,3 +991,149 @@ async def run_trace(
         "staleness": await staleness_payload(repo),
         "graph": graph_payload,
     }
+
+
+# ---------------------------------------------------------------------------
+# 两面共用的壳层原语（122-08）——分支口径与留痕 payload
+# ---------------------------------------------------------------------------
+# 这些键名刻意放在函数体外：``tool_trace_payload`` 的 AST 守卫禁止函数体内出现
+# ``groups`` / ``hops`` / ``items`` 等字符串常量（那会把正文键带进留痕面）。
+_TRACE_KEY_GROUPS: Final[str] = "groups"
+_TRACE_KEY_HOPS: Final[str] = "hops"
+_TRACE_KEY_CROSS_REPO: Final[str] = "cross_repo"
+_CONF_DIST_KEYS: Final[tuple[str, ...]] = (
+    "resolved",
+    "bare_name",
+    "cross_repo",
+    "other",
+)
+
+
+async def resolve_tool_graph_branch(
+    repository_id: str,
+    repo: Any,
+    branch: str | None,
+) -> str | None:
+    """两面共用的图分支解析——返回 ``None`` 表示 base 分支。
+
+    口径与 MCP ``McpToolView._resolve_graph_branch`` 的分支段一致，但**不**返回
+    Qdrant ``collection_name``（本相位不需要）。两个壳必须调同一个本函数：分支口径
+    一旦分叉，两面就会在不同的图上跑出不同的 ``data``，而 ``test_two_surfaces_same_payload``
+    （122-10）只覆盖被测的那一组输入，抓不住所有漂移。
+
+    返回 ``None`` 时，传给 ``get_graph`` / ``run_impact`` / ``run_trace`` 由编排层内部
+    转成 ``""``（base）。⛔ 不要改 ``McpToolView._resolve_graph_branch``——40+ 既有
+    工具仍走那条含 collection 的路径。
+    """
+    from services.branch_utils import resolve_branch_for_query
+
+    effective_branch, _branch_index = await resolve_branch_for_query(
+        repository_id, branch or None
+    )
+    base_branch = repo.base_branch or repo.default_branch
+    if not effective_branch or effective_branch == base_branch:
+        return None
+    return effective_branch
+
+
+def tool_trace_payload(
+    result: dict[str, Any],
+    *,
+    tool: str,
+    duration_ms: int,
+    orchestration_ms: int,
+) -> dict[str, Any]:
+    """从编排信封萃取**计数与分布**，产出一条汇总留痕 payload。
+
+    ⛔ 不得出现符号名、路径、源码正文、候选列表、任何 item 正文——只出计数、
+    分档分布与耗时（Pitfall 8 + T-122-日志放大 + T-122-exclusion 回流）。
+
+    更细的分层耗时不在这里造：内核的 ``sampling`` 事件
+    （``code_graph_impact_analyzed`` / ``code_graph_tool_graph_fetched``）各自带
+    ``duration_ms``，按 ``request_id`` / ``run_id`` 关联查——这是 LOGGING-SPEC
+    「指标与留痕分离、用关联键串起来」的既定分工，⛔ 不在留痕里复制一份。
+    """
+    ok = bool(result.get("ok"))
+    error_code = str(result.get("error_code") or "") if not ok else ""
+    summary = result.get("summary") if isinstance(result.get("summary"), Mapping) else {}
+    graph = result.get("graph") if isinstance(result.get("graph"), Mapping) else {}
+
+    conf_dist = {k: 0 for k in _CONF_DIST_KEYS}
+    path_conf_max = 0.0
+    result_count = 0
+    total_found = 0
+    risk_level = ""
+    cross_repo_entry_count = 0
+
+    if tool == "impact_analysis":
+        result_count = int(summary.get("returned") or 0) if summary else 0
+        total_found = int(summary.get("total_found") or 0) if summary else 0
+        risk_level = str(result.get("risk_level") or "")
+        groups = result.get(_TRACE_KEY_GROUPS)
+        if isinstance(groups, Mapping):
+            for depth_rows in groups.values():
+                if not isinstance(depth_rows, Sequence) or isinstance(depth_rows, (str, bytes)):
+                    continue
+                for row in depth_rows:
+                    if not isinstance(row, Mapping):
+                        continue
+                    via = row.get("via")
+                    conf = ""
+                    if isinstance(via, Mapping):
+                        conf = str(via.get("confidence") or "")
+                    if conf in conf_dist:
+                        conf_dist[conf] += 1
+                    else:
+                        conf_dist["other"] += 1
+                    try:
+                        pc = float(row.get("path_confidence") or 0.0)
+                    except (TypeError, ValueError):
+                        pc = 0.0
+                    if pc > path_conf_max:
+                        path_conf_max = pc
+        cross = result.get(_TRACE_KEY_CROSS_REPO)
+        if isinstance(cross, Sequence) and not isinstance(cross, (str, bytes)):
+            cross_repo_entry_count = len(cross)
+        elif isinstance(cross, Mapping):
+            # 编排成功态 ``cross_repo`` 是 list；兼容 mapping 包装时取 entries 长度
+            entries = cross.get("entries")
+            if isinstance(entries, Sequence) and not isinstance(entries, (str, bytes)):
+                cross_repo_entry_count = len(entries)
+    else:
+        hops = result.get(_TRACE_KEY_HOPS)
+        if isinstance(hops, Sequence) and not isinstance(hops, (str, bytes)):
+            result_count = len(hops)
+            for hop in hops:
+                if not isinstance(hop, Mapping):
+                    continue
+                conf = str(hop.get("confidence") or "")
+                if conf in conf_dist:
+                    conf_dist[conf] += 1
+                else:
+                    conf_dist["other"] += 1
+        try:
+            path_conf_max = float(result.get("path_confidence") or 0.0)
+        except (TypeError, ValueError):
+            path_conf_max = 0.0
+
+    shell_ms = max(duration_ms - orchestration_ms, 0)
+    return {
+        "source": tool,
+        "ok": ok,
+        "error_code": error_code,
+        "repository_id": str(result.get("repository_id") or ""),
+        "branch": str(result.get("branch") or ""),
+        "result_count": result_count,
+        "total_found": total_found,
+        "confidence_distribution": conf_dist,
+        "path_confidence_max": path_conf_max,
+        "risk_level": risk_level,
+        "cross_repo_entry_count": cross_repo_entry_count,
+        "degraded": graph.get("degraded") if graph else "",
+        "resolution_rate": float(graph.get("resolution_rate") or 0.0) if graph else 0.0,
+        "duration_ms": duration_ms,
+        "layer_durations_ms": {
+            "orchestration": orchestration_ms,
+            "shell": shell_ms,
+        },
+    }
