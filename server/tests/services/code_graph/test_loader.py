@@ -108,14 +108,20 @@ def _make_cross_repo_call(
     handler_name: str,
     match_confidence: float = 0.7,
     caller_line: int = 33,
+    endpoint_repository=None,
 ):
     """造一条 ``CrossRepoApiCall`` 及其两端（``ApiCallSite`` / ``Endpoint``）。
 
     ⚠️ 两端都**没有 ``Symbol`` 外键**，``CrossRepoApiCall`` 自身也**没有
     ``repository`` 字段**——这正是 loader 必须做「文件路径 + 名字」二次解析、
     并按 ``call_site__repository_id`` / ``endpoint__repository_id`` 反查过滤的原因。
+
+    :param endpoint_repository: 端点所属仓库；缺省与 ``repository`` 同仓。传入**另一个
+        仓库**即造出一条真正的跨仓行——两侧分属不同仓，正是 HI-01 要覆盖的形状。
     """
     from codegraph.models import ApiCallSite, ApiWrapper, CrossRepoApiCall, Endpoint
+
+    endpoint_repository = endpoint_repository or repository
 
     wrapper = ApiWrapper.objects.create(
         repository=repository,
@@ -133,7 +139,7 @@ def _make_cross_repo_call(
         line_number=caller_line,
     )
     endpoint = Endpoint.objects.create(
-        repository=repository,
+        repository=endpoint_repository,
         http_method="GET",
         url_path="/api/orders",
         handler_name=handler_name,
@@ -210,6 +216,66 @@ def test_cross_repo_edge_resolution(indexed_repo, symbols_factory) -> None:
     # (c) ⛔ 绝不建虚拟节点：图里每个节点都是一个真实装载过的 Symbol.id。
     loaded_symbol_ids = {str(caller.id), str(handler.id)}
     assert set(graph.nodes) <= loaded_symbol_ids
+
+
+@pytest.mark.django_db
+def test_cross_repo_far_side_never_matched_against_local_index(
+    indexed_repo, symbols_factory
+) -> None:
+    """对端仓的端点**不得**拿去撞本仓符号索引——否则会造出一条伪造的 ``cross_repo`` 边。
+
+    ``by_file_and_name`` 里只有**本仓**符号。微服务仓之间路径与 handler 命名高度同构
+    （这里刻意让 B 仓的 ``Endpoint`` 与 A 仓某个符号的 ``(file_path, name)`` **完全
+    同名**），一旦拿对端侧去撞本仓索引就会命中，于是在两个**本仓**符号之间加一条
+    ``kind="cross_repo"`` 的边。
+
+    这条伪造边比裸名假阳性更难发现：它带着原值 ``match_confidence`` 这种高可信度标签、
+    本档默认参与扩散，而 ``cross_repo_unresolved_count`` **不会** +1（它"解析成功"
+    了），上层拿不到任何可用来打折的信号。正确行为是整条丢弃并计数（D-05）。
+    """
+    from repositories.models import IndexStatus, Repository
+
+    far_repo = Repository.objects.create(
+        name="code-graph-far-repo",
+        git_url="https://example.com/code-graph-far-repo.git",
+        default_branch="main",
+        index_status=IndexStatus.INDEXED,
+        is_deleted=False,
+        last_indexed_commit_sha="b" * 40,
+    )
+
+    caller = symbols_factory("submitOrder", "web/src/pages/order.ts")
+    # 🚨 诱饵：本仓恰好也有一个 (src/api/views.py, order_create) —— 与 B 仓端点同名。
+    decoy = symbols_factory("order_create", "src/api/views.py")
+
+    # call_site 在 A 仓、endpoint 在 B 仓 ⇒ 真正的跨仓行。
+    _make_cross_repo_call(
+        indexed_repo,
+        caller_file="web/src/pages/order.ts",
+        caller_function="submitOrder",
+        endpoint_file="src/api/views.py",
+        handler_name="order_create",
+        match_confidence=1.0,
+        endpoint_repository=far_repo,
+    )
+
+    result = _assemble(indexed_repo)
+    graph = result.graph
+
+    cross_edges = [d for _u, _v, d in graph.edges(data=True) if d["kind"] == "cross_repo"]
+    assert cross_edges == [], (
+        "对端仓的端点撞上了本仓同名符号，凭空造出一条 cross_repo 边"
+        f"——伪造边落在 {caller.id} → {decoy.id} 之间"
+    )
+    # 解析不上就得如实计数，上层才有信号可用来打折（D-05）。
+    assert result.meta.cross_repo_unresolved_count == 1
+    # 一条边都没建成 ⇒ 不打「无法按分支过滤」标记（长鸣的标记等于失效的标记）。
+    assert result.meta.cross_repo_branch_unfiltered is False
+
+    # 反向对称：从 B 仓看过去，call_site 在 A 仓，同样不得建边。
+    far_result = _assemble(far_repo)
+    assert far_result.graph.number_of_edges() == 0
+    assert far_result.meta.cross_repo_unresolved_count == 1
 
 
 @pytest.mark.django_db
