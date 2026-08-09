@@ -245,7 +245,7 @@ async def test_workflow_mcp_impact_section_parity() -> None:
         )
     assert s1.strip() == s2.strip() == _STUB.strip()
 
-    # user=None 短路径：同一 helper 两次输出仍字节稳定（ACL 身份缺口）
+    # user=None 短路径：同一 helper 两次输出仍字节稳定（ACL 身份缺口 → user_missing）
     s_none_a = await build_impact_report_section(
         repository=repo, user=None, compare=compare, base_ref=base_ref
     )
@@ -254,3 +254,4 @@ async def test_workflow_mcp_impact_section_parity() -> None:
     )
     assert s_none_a.strip() == s_none_b.strip()
     assert IMPACT_SECTION_MARKER in s_none_a
+    assert "`user_missing`" in s_none_a

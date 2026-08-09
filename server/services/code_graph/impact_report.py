@@ -373,9 +373,10 @@ async def build_impact_report_section(
         _log_failed(error_code=_map_error_code(error_code), error=error)
         return stub
 
-    # user 缺失：不调用编排撞 ACL 绕过；直接 stub（D-15 / 124-03 接线约定）
+    # user 缺失：不调用编排撞 ACL 绕过；直接 stub（D-15 / 124-03 接线约定）。
+    # 使用独立 error_code=user_missing，与图谱/ACL 出站失败的 unavailable 区分（ME-03）。
     if user is None:
-        return _safe_stub("unavailable", error="user_missing")
+        return _safe_stub("user_missing", error="user_missing")
 
     timeout = float(
         getattr(settings, "CODE_GRAPH_IMPACT_REPORT_TIMEOUT_SECONDS", 30.0)
