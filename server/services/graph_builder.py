@@ -532,6 +532,14 @@ async def build_graph_for_repository(
         # 失效自身的异常在 ``invalidate_repository`` 内部吞掉，不反噬图谱构建。
         await sync_to_async(invalidate_repository)(repository_id)
 
+        # Phase 125 / D-03：社区重建只 enqueue，⛔ 钩子内不内联 Louvain。
+        try:
+            from services.community_enqueue import enqueue_community_rebuild
+
+            await enqueue_community_rebuild(str(repository_id), branch_name="")
+        except Exception:  # noqa: BLE001 — best-effort，不反噬图谱构建
+            pass
+
         duration = time.perf_counter() - start
         logger.info(
             "graph_build_completed",

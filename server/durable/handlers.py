@@ -83,6 +83,12 @@ async def _runner_dispatch(payload: dict[str, Any]) -> Any:
     return await run_runner_dispatch(**payload)
 
 
+async def _community_rebuild(payload: dict[str, Any]) -> Any:
+    from durable.tasks_impl import run_community_rebuild
+
+    return await run_community_rebuild(**payload)
+
+
 def register_business_handlers() -> None:
     """把 index / graph / page_index 的 ``**payload`` 展开 adapter 注册到 in-process 后端。
 
@@ -100,6 +106,7 @@ def register_business_handlers() -> None:
     register_handler("feature_list_parse_module", _feature_list_parse_module)
     register_handler("durable_blueprint_resume", _blueprint_resume)
     register_handler("durable_runner_dispatch", _runner_dispatch)
+    register_handler("durable_community_rebuild", _community_rebuild)
 
 
 __all__ = ["register_business_handlers"]

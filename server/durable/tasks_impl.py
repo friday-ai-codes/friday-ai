@@ -624,3 +624,68 @@ async def run_blueprint_resume(
         return await arun_blueprint_resume(
             session_id, initiated_by_user_id=initiated_by_user_id or "system"
         )
+
+async def run_community_rebuild(
+    *,
+    repository_id: str,
+    branch_name: str = "",
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """社区 Louvain 重建任务体：``get_graph`` → ``rebuild_communities``。
+
+    绑定 ``initiated_by_user_id``（缺省 ``system``）；业务异常脱敏后 re-raise，
+    让 Procrastinate / in-process 可见 stalled 并可重试。
+    """
+    import time
+
+    from common.logging import redact_secrets_in_text
+    from services.code_graph.community import rebuild_communities
+
+    actor = initiated_by_user_id or "system"
+    branch = branch_name or ""
+    started = time.monotonic()
+    logger.info(
+        "community_rebuild_job_started",
+        category="caller",
+        component="code_graph",
+        repository_id=str(repository_id),
+        branch_name=branch,
+        initiated_by_user_id=actor,
+    )
+
+    with bind_task_context(
+        user_id=actor,
+        source="durable",
+        component="code_graph",
+    ):
+        try:
+            result = await rebuild_communities(
+                str(repository_id),
+                branch,
+            )
+        except Exception as exc:
+            logger.warning(
+                "community_rebuild_job_failed",
+                category="caller",
+                component="code_graph",
+                repository_id=str(repository_id),
+                branch_name=branch,
+                initiated_by_user_id=actor,
+                error=redact_secrets_in_text(str(exc)),
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            raise
+
+        logger.info(
+            "community_rebuild_job_completed",
+            category="caller",
+            component="code_graph",
+            repository_id=str(repository_id),
+            branch_name=branch,
+            initiated_by_user_id=actor,
+            status=result.get("status", "ok"),
+            communities_total=result.get("communities_total"),
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
+        return result
+
