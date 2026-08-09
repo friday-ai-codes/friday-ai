@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-status: planning
-last_updated: "2026-08-09T02:03:43.735Z"
+status: roadmap_created
+last_updated: "2026-08-09T02:30:00.000Z"
 last_activity: 2026-08-09
 progress:
-  total_phases: 0
+  total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -22,14 +22,28 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。
 **v0.19.0 交付的那一层：** 技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。
 **v0.20.0 交付的那一层：** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，飞书式划线澄清多轮收敛，全生命周期可管理、可查可引可导出。
-**Current focus:** ⛔ **无在建里程碑，下一里程碑尚未立项。** ~~下一个动作是同步点 2 顺延的四件事~~ —— **四件事已于 2026-08-02 分两步完成，GATE-01 满足**（见 `.planning/SYNC-POINT-2-CLOSURE.md`）。⇒ 现在真正待办的是 Pending Todos 里剩下的独立工作项，其中**最紧的一条随本次改动上调了优先级**：`BLUEPRINT_ENTRY_SWITCH` 无运维面 —— 默认已翻到蓝图链，要单入口回滚仍得经通用设置 API 裸写 `SystemSetting`。
+**Current focus:** 🚧 **在建里程碑 v0.22.0 代码智能图分析升级（对标 GitNexus，Phases 121–127）**——roadmap 已建，下一步 `/gsd-plan-phase 121`（内存图服务基座）。同步点 2 顺延四件事已于 2026-08-02 完成（见 `.planning/SYNC-POINT-2-CLOSURE.md`）；Pending Todos 中仍挂的独立工作项里最紧一条：`BLUEPRINT_ENTRY_SWITCH` 无运维面——默认已翻到蓝图链，要单入口回滚仍得经通用设置 API 裸写 `SystemSetting`。
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 121 of 121–127 (v0.22.0 内存图服务基座) — Not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-08-09 — Milestone v0.22.0 started
+Status: Roadmap created (7 phases, 27/27 requirements mapped) — ready for `/gsd-plan-phase 121`
+Last activity: 2026-08-09 — v0.22.0 roadmap created（Phases 121–127：图基座 → impact/trace → detect_changes 本体 → 编码链闭环 → 社区+摘要 → 执行流+rename+skills → Semgrep+LSP）
+
+## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 121 | 内存图服务基座（缓存四件套 + 边准入 + 权限/exclusion 读取层收口） | GRAPH-01~04 | Not started |
+| 122 | impact / trace 工具面（深度分组 + 置信度分层 + 跨仓 + MCP/对话双面） | IMPACT-01~06 | Not started |
+| 123 | detect_changes 工具本体（水位锚定 diff × Symbol 定位 + 批量 impact） | DIFF-01/02 | Not started |
+| 124 | 编码链闭环（容器提交前自查 + MR 描述影响面报告 fail-soft） | DIFF-03/04 | Not started |
+| 125 | 社区检测 + 模块摘要（Louvain + 指纹跳过 + 三点注入不动冻结面） | MOD-01~04 | Not started |
+| 126 | 执行流 + rename_preview + skills（Process 模型 + affected_processes 回填 + 只读改名清单 + skill 分发） | EXEC-01~03, RENAME-01, SKILL-01 | Not started |
+| 127 | Semgrep 门禁 + LSP 基准（diff-aware advisory + volar/gopls 探测与基准） | TAINT-01~03, LSP-01 | Not started |
+
+**Execution order（依赖链）:** 121 → 122 → 123 → 124 → 125 → 126 → 127（125 只依赖 121，可与 122–124 并行；127 独立轨道但刻意排在 125/126 之后避免多个内存大户同时上线）。需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)，调研见 [research/SUMMARY.md](./research/SUMMARY.md)。
 
 ## Milestone Overview (v0.20.0 — Phases 111–116 — ✅ SHIPPED 2026-08-02；六相位全部完成并 verified，CLAR-03 closure 已闭，里程碑审计 `tech_debt`)
 

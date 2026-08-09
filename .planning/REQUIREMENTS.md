@@ -91,6 +91,40 @@
 
 ## Traceability
 
-<!-- roadmap 创建后由 roadmapper 填充 REQ-ID → Phase 映射 -->
+<!-- roadmap 创建于 2026-08-09（Phases 121–127），27/27 需求全部映射，无孤儿、无重复 -->
 
-*Last updated: 2026-08-09 — 立项定义（24 条需求 / 9 分类）*
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| GRAPH-01 | Phase 121 | Pending |
+| GRAPH-02 | Phase 121 | Pending |
+| GRAPH-03 | Phase 121 | Pending |
+| GRAPH-04 | Phase 121 | Pending |
+| IMPACT-01 | Phase 122 | Pending |
+| IMPACT-02 | Phase 122 | Pending |
+| IMPACT-03 | Phase 122 | Pending |
+| IMPACT-04 | Phase 122 | Pending |
+| IMPACT-05 | Phase 122 | Pending |
+| IMPACT-06 | Phase 122 | Pending |
+| DIFF-01 | Phase 123 | Pending |
+| DIFF-02 | Phase 123 | Pending |
+| DIFF-03 | Phase 124 | Pending |
+| DIFF-04 | Phase 124 | Pending |
+| MOD-01 | Phase 125 | Pending |
+| MOD-02 | Phase 125 | Pending |
+| MOD-03 | Phase 125 | Pending |
+| MOD-04 | Phase 125 | Pending |
+| EXEC-01 | Phase 126 | Pending |
+| EXEC-02 | Phase 126 | Pending |
+| EXEC-03 | Phase 126 | Pending |
+| RENAME-01 | Phase 126 | Pending |
+| SKILL-01 | Phase 126 | Pending |
+| TAINT-01 | Phase 127 | Pending |
+| TAINT-02 | Phase 127 | Pending |
+| TAINT-03 | Phase 127 | Pending |
+| LSP-01 | Phase 127 | Pending |
+
+**Coverage:** 27/27 mapped（GRAPH 4 / IMPACT 6 / DIFF 4 / MOD 4 / EXEC 3 / RENAME 1 / TAINT 3 / LSP 1 / SKILL 1）— 无孤儿、无重复。
+
+> 注：立项时页脚记「24 条需求」为计数笔误，实际清单为 **27 条 REQ-ID / 9 分类**（上表逐条可数）。
+
+*Last updated: 2026-08-09 — roadmap 创建，Traceability 填充（27 条需求 → Phases 121–127）*
