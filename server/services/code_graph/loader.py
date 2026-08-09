@@ -28,7 +28,10 @@ FK 走 attname（``caller_symbol_id``）避免隐式 JOIN。
 
 ② **属性个数是内存契约**：节点恒 5 个（``name`` / ``symbol_type`` / ``file_path`` /
    ``start_line`` / ``end_line``），⛔ 绝不取 ``Symbol.signature``（TextField 可长达数
-   KB，放进节点属性会让线性内存估算彻底失准）。边恒 3 个（见 Plan 121-05 Task 3）。
+   KB，放进节点属性会让线性内存估算彻底失准）。边恒 3 个（``kind`` / ``confidence`` /
+   ``line_number``），⛔ **不存 ``reason``**（D-08：1–3 个边属性成本完全相同，第 4 个
+   才跳一级；30 万边多花约 6.9MB，而 ``reason`` 只是展示文案，由
+   ``model.derive_reason()`` 在输出时现推）。
 
 ③ **分支语义是 overlay**：``""`` 是 base 全量，feature 分支只写增量行。取数必须
    ``branch_name__in=["", branch]``，去重键取**整文件**（D-06）。
@@ -56,27 +59,48 @@ FK 走 attname（``caller_symbol_id``）避免隐式 JOIN。
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
-from typing import Callable, Final
+from typing import TYPE_CHECKING, Callable, Final
 
 import networkx as nx
 import structlog
+from django.utils import timezone
+
+from services.code_graph.access import make_path_exclusion_memo
+from services.code_graph.model import (
+    BARE_NAME_BLACKLIST,
+    LOW_RESOLUTION_THRESHOLD,
+    CodeGraph,
+    EdgeConfidence,
+    EdgeKind,
+    GraphMeta,
+)
+
+if TYPE_CHECKING:
+    from services.exclusion import ExclusionMatcher
 
 logger = structlog.get_logger(__name__)
 
 # 事件名常量（形态对齐 ``access.py`` / ``signature.py`` / ``codegraph/lsp/volar_pool.py``）。
 # ⚠️ 前缀不得缩写：``graph_build_*`` 已被 ``services/graph_builder.py`` 占用。
 _EVENT_EXCLUSION_APPLIED: Final[str] = "code_graph_exclusion_applied"
+_EVENT_ASSEMBLED: Final[str] = "code_graph_assembled"
 
 # ORM 批量取数的游标批大小（Postgres 上走服务端游标）。与 RESEARCH §Code Examples 1
 # 给出的形状一致；不做成 settings —— 它是取数实现细节，不是运维旋钮。
 _SYMBOL_CHUNK_SIZE: Final[int] = 5000
+_CALL_EDGE_CHUNK_SIZE: Final[int] = 5000
 
 # 节点属性键集合。个数写死在这里供用例引用：**恒 5 个**，多一个就会让
 # ``NODE_COST_BYTES`` 的标定假设失效（RESEARCH §Byte Estimation 的属性敏感性表）。
 _NODE_ATTR_KEYS: Final[frozenset[str]] = frozenset(
     {"name", "symbol_type", "file_path", "start_line", "end_line"}
 )
+# 边属性键集合，**恒 3 个**。⛔ ``reason`` 不在其中（D-08）。
+_EDGE_ATTR_KEYS: Final[frozenset[str]] = frozenset({"kind", "confidence", "line_number"})
+
+__all__ = ["load_graph"]
 
 
 # 埋点写成专用函数、事件名常量直接写在 ``logger.debug`` 的第一个位置实参上，
@@ -102,6 +126,41 @@ def _log_exclusion_applied(
             branch=branch or "-",
             excluded_file_count=excluded_file_count,
             dropped_symbol_count=dropped_symbol_count,
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
+
+
+def _log_assembled(
+    *,
+    repository_id: str,
+    branch: str,
+    node_count: int,
+    edge_count: int,
+    resolution_rate: float,
+    duration_ms: float,
+    overlay_shadowed_count: int,
+    dropped_no_caller_count: int,
+    dropped_missing_node_count: int,
+    dropped_bare_filtered_count: int,
+) -> None:
+    try:
+        logger.debug(
+            _EVENT_ASSEMBLED,
+            component="code_graph",
+            category="sampling",
+            repository_id=str(repository_id),
+            branch=branch or "-",
+            node_count=node_count,
+            edge_count=edge_count,
+            resolution_rate=resolution_rate,
+            duration_ms=duration_ms,
+            # 下面几项只进日志、不进 GraphMeta 契约：它们是排障线索
+            # （「这仓怎么边这么少」），不是上层工具要向用户声明的可信度标记。
+            overlay_shadowed_count=overlay_shadowed_count,
+            dropped_no_caller_count=dropped_no_caller_count,
+            dropped_missing_node_count=dropped_missing_node_count,
+            dropped_bare_filtered_count=dropped_bare_filtered_count,
         )
     except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
         pass
@@ -282,3 +341,337 @@ def _load_symbol_nodes(
         dropped_symbol_count=dropped_symbol_count,
         overlay_shadowed_count=overlay_shadowed_count,
     )
+
+
+# ── 裸名边的三道过滤（CONTEXT Area 3；三个谓词各自可单测） ──────────────────
+#
+# 为什么裸名边默认不装载、装载了还要再过三道：跨目录同名的命中率极高，一条假的
+# `handle → handle` 边会让 impact 的影响面凭空膨胀一整个子树，而 agent 读到的是
+# 「改这里会波及这些地方」这种听起来很确定的结论。假阳性比漏报危险得多。
+
+
+def _directory_of(file_path: str | None) -> str | None:
+    """取归一后路径的目录部分；仓库根下的文件返回 ``""``。
+
+    路径为空 / 归一失败（绝对路径、``..`` 越界）→ ``None``，调用方据此丢弃。
+    """
+    from services.exclusion import normalize_rel_path
+
+    if not file_path:
+        return None
+    norm = normalize_rel_path(file_path)
+    if norm is None:
+        return None
+    head, sep, _tail = norm.rpartition("/")
+    return head if sep else ""
+
+
+def _is_same_directory(caller_file: str | None, callee_file: str | None) -> bool:
+    """过滤 ① —— 同目录/同文件优先，跨目录同名一律丢弃。
+
+    任一侧缺失或归一失败即返回 ``False``（丢弃）：没有 ``callee_file`` 就无从判断
+    这个名字指的是哪个文件里的符号，此时保留等于凭名字瞎连。
+    """
+    caller_dir = _directory_of(caller_file)
+    callee_dir = _directory_of(callee_file)
+    if caller_dir is None or callee_dir is None:
+        return False
+    return caller_dir == callee_dir
+
+
+def _qualifier_matches(callee_qualifier: str | None, callee_file: str | None) -> bool:
+    """过滤 ② —— ``callee_qualifier`` 非空时，候选文件必须与该限定符对得上。
+
+    ``callee_qualifier`` 是 selector / 对象调用的限定符：Go ``pkg.Func()`` 的 ``pkg``
+    （包目录名）、Python ``mod.func()`` 的 ``mod``（模块文件名去扩展名）、
+    ``obj.method()`` 的 ``obj``（局部变量名）。
+
+    判据（保守）：限定符须等于候选文件的**模块名**（basename 去扩展名）或其**父目录
+    名**（包名）。``obj.method()`` 这类对象调用两者都对不上 → 丢弃。这是有意为之：
+    本函数只在「已经没有 FK、只剩一个字符串」的裸名档上生效，对不上就说明我们并不
+    知道它指向谁，宁可少一条边也不要一条编造的边。
+
+    限定符为空（绝大多数直接调用）→ 恒 ``True``，本道过滤不参与判定。
+    """
+    if not callee_qualifier:
+        return True
+
+    from services.exclusion import normalize_rel_path
+
+    if not callee_file:
+        return False
+    norm = normalize_rel_path(callee_file)
+    if norm is None:
+        return False
+
+    head, sep, basename = norm.rpartition("/")
+    module_name = basename.rsplit(".", 1)[0] if "." in basename else basename
+    package_name = head.rsplit("/", 1)[-1] if sep else ""
+    return callee_qualifier in {module_name, package_name}
+
+
+def _is_blacklisted_bare_name(callee_name: str | None) -> bool:
+    """过滤 ③ —— 常见名黑名单（``get`` / ``handle`` / ``main`` …）。
+
+    黑名单本体在 ``model.BARE_NAME_BLACKLIST``（契约层常量，17 项），⛔ 不在本模块
+    另抄一份：两处各写一份必然漂移。
+    """
+    return (callee_name or "") in BARE_NAME_BLACKLIST
+
+
+@dataclass(frozen=True, slots=True)
+class _CallEdgeStats:
+    """一次 ``CallEdge`` 装配的统计量。"""
+
+    # 🚨 下面两项统计的是**全部** CallEdge 行，与 ``include_low_confidence``
+    #    以及任何丢弃动作都无关——否则关掉裸名装载时解析率会恒为 1.0，
+    #    变成一个「本仓解析得很好」的假信号。
+    resolved_count: int
+    bare_name_count: int
+
+    loaded_count: int
+    # 模块级调用（``caller_symbol_id IS NULL``）无处挂载，丢弃并计数。
+    dropped_no_caller_count: int
+    # 端点符号不在节点集内（被 exclusion 拦掉、或裸名解析不到候选）。
+    dropped_missing_node_count: int
+    # 过了 ``include_low_confidence`` 开关、但被三道过滤挡下的裸名边。
+    dropped_bare_filtered_count: int
+
+    @property
+    def resolution_rate(self) -> float:
+        """``resolved / (resolved + bare_name)``；分母为 0 时定义为 ``1.0``。
+
+        分母为 0 意味着这个仓一条调用边都没有（空仓 / 只索引了符号）。此时取 ``1.0``
+        而不是 ``0.0``：``0.0`` 会让 ``low_resolution`` 对每个空仓都为真，把「无从判断」
+        误报成「解析质量差」，降级标记一长鸣上层就学会无视它了。
+        """
+        total = self.resolved_count + self.bare_name_count
+        if total == 0:
+            return 1.0
+        return self.resolved_count / total
+
+
+def _load_call_edges(
+    graph: nx.MultiDiGraph,
+    *,
+    repository_id: str,
+    branch: str,
+    nodes: _SymbolNodeIndex,
+    include_low_confidence: bool,
+) -> _CallEdgeStats:
+    """把 ``CallEdge`` 行装配成图边（解析边 / 裸名边双档）。
+
+    **分档判据**：``callee_symbol_id IS NOT NULL`` ⇒ :attr:`EdgeConfidence.RESOLVED`；
+    为 ``NULL`` ⇒ :attr:`EdgeConfidence.BARE_NAME`。
+    ⛔ 不要去找 ``CallEdge.match_confidence`` —— **该字段不存在**，全仓只有
+    ``CrossRepoApiCall`` 有 ``match_confidence``。
+
+    **``caller_symbol_id IS NULL``（模块级调用，不在任何函数体内）**：整条边丢弃。
+    ⛔ 不用 ``caller_file`` 造虚拟节点 —— 与 D-05 同理，虚拟节点会污染上层 impact 的
+    深度分组与计数，且无法给出 ``file:line``，对 agent 没有行动价值。
+    """
+    from codegraph.models import CallEdge
+    from services.exclusion import normalize_rel_path
+
+    node_ids = nodes.node_ids
+    by_file_and_name = nodes.by_file_and_name
+
+    resolved_count = 0
+    bare_name_count = 0
+    loaded_count = 0
+    dropped_no_caller_count = 0
+    dropped_missing_node_count = 0
+    dropped_bare_filtered_count = 0
+
+    # ⚠️ FK 一律用 attname（``caller_symbol_id`` / ``callee_symbol_id``）取列：
+    #    写成 ``caller_symbol`` 会产生隐式 JOIN，30 万行上是数量级差异。
+    rows = (
+        CallEdge.objects.filter(
+            repository_id=repository_id, branch_name__in=_branch_filter(branch)
+        )
+        .values_list(
+            "caller_symbol_id",
+            "callee_symbol_id",
+            "caller_file",
+            "callee_name",
+            "callee_file",
+            "callee_qualifier",
+            "call_type",
+            "line_number",
+        )
+        .iterator(chunk_size=_CALL_EDGE_CHUNK_SIZE)
+    )
+
+    for (
+        caller_symbol_id,
+        callee_symbol_id,
+        caller_file,
+        callee_name,
+        callee_file,
+        callee_qualifier,
+        _call_type,  # 取列保持与 RESEARCH §Code Examples 1 的查询形状一致；
+        # ⛔ 不进边属性（边属性恒 3 个，见模块 docstring ②）。
+        line_number,
+    ) in rows:
+        # 解析率先统计、后过滤：口径是**全部**落库的 CallEdge 行。
+        if callee_symbol_id is not None:
+            resolved_count += 1
+        else:
+            bare_name_count += 1
+
+        if caller_symbol_id is None:
+            dropped_no_caller_count += 1
+            continue
+
+        caller_node = str(caller_symbol_id)
+        if caller_node not in node_ids:
+            # 主叫符号被 exclusion 拦掉（或不在本分支的 overlay 里）⇒ 整条边消失。
+            dropped_missing_node_count += 1
+            continue
+
+        if callee_symbol_id is not None:
+            callee_node = str(callee_symbol_id)
+            if callee_node not in node_ids:
+                dropped_missing_node_count += 1
+                continue
+            confidence = EdgeConfidence.RESOLVED
+        else:
+            # 裸名边**默认不装载**：只有调用方显式 include_low_confidence=True 才进来。
+            if not include_low_confidence:
+                continue
+            # …进来了也仍须过三道过滤（CONTEXT Area 3）。
+            if (
+                not _is_same_directory(caller_file, callee_file)
+                or not _qualifier_matches(callee_qualifier, callee_file)
+                or _is_blacklisted_bare_name(callee_name)
+            ):
+                dropped_bare_filtered_count += 1
+                continue
+            norm_callee_file = normalize_rel_path(callee_file or "")
+            resolved_node = (
+                by_file_and_name.get((norm_callee_file, callee_name))
+                if norm_callee_file is not None
+                else None
+            )
+            if resolved_node is None:
+                # 三道过滤全过，但 (file, name) 在本次装配的节点集里找不到候选
+                # ——被 exclusion 拦掉，或该符号压根没被索引。丢弃。
+                dropped_missing_node_count += 1
+                continue
+            callee_node = resolved_node
+            confidence = EdgeConfidence.BARE_NAME
+
+        # 边属性**恰好 3 个**。⛔ 没有 ``reason``（D-08，由 derive_reason() 现推）。
+        graph.add_edge(
+            caller_node,
+            callee_node,
+            kind=EdgeKind.CALL.value,
+            confidence=confidence.value,
+            line_number=line_number,
+        )
+        loaded_count += 1
+
+    return _CallEdgeStats(
+        resolved_count=resolved_count,
+        bare_name_count=bare_name_count,
+        loaded_count=loaded_count,
+        dropped_no_caller_count=dropped_no_caller_count,
+        dropped_missing_node_count=dropped_missing_node_count,
+        dropped_bare_filtered_count=dropped_bare_filtered_count,
+    )
+
+
+def load_graph(
+    repository_id: str,
+    branch: str = "",
+    *,
+    matcher: ExclusionMatcher,
+    exclusion_fingerprint: str,
+    include_low_confidence: bool = False,
+) -> CodeGraph:
+    """装配 ``(repository, branch)`` 的内存符号图。
+
+    全同步：本函数连同其调用的一切由 ``cache.py`` **一次性** ``sync_to_async`` 包裹
+    （RESEARCH Pattern 1 / Pitfall 7 —— 让「持锁」与「await」在物理上不可能重叠）。
+
+    :param repository_id: 仓库主键。调用方须**已经**过了
+        ``access.ensure_repository_readable``（本函数不重复校验可读性）。
+    :param branch: ``""`` = base；非空时取 base ∪ 本分支的 overlay。
+    :param matcher: exclusion 匹配器。🚨 **必填关键字参数，由 ``cache.py`` 解析后注入**
+        ——⛔ 本模块不调 ``build_matcher_and_fingerprint``，理由见模块 docstring ④。
+    :param exclusion_fingerprint: 该仓有效规则集的 16 位指纹，同样由 ``cache.py`` 注入。
+        本函数只把它写进 :attr:`GraphMeta.built_signature`，**不重算**。
+    :param include_low_confidence: 是否装载裸名边（默认否）。开启时裸名边仍须过三道
+        过滤。⚠️ 本开关**不影响** :attr:`GraphMeta.resolution_rate` 的取值。
+
+    :returns: :class:`CodeGraph` 单值——指纹既然是入参，就不必再作为返回值往回传。
+
+    .. note::
+       本 plan（121-05）只装配前两档边（``resolved`` / ``bare_name``）。
+       ``cross_repo`` 档、``chunk_level`` 旁挂证据面与按需子图由 Plan 121-06 补齐；
+       ``partial_edges`` / ``degraded`` / ``estimated_bytes`` 由 ``cache.py``
+       （Plan 121-07 / 121-08）在装配后按实际情况覆写。
+    """
+    started = time.perf_counter()
+
+    graph: nx.MultiDiGraph = nx.MultiDiGraph()
+    is_excluded = make_path_exclusion_memo(matcher)
+
+    nodes = _load_symbol_nodes(
+        graph,
+        repository_id=str(repository_id),
+        branch=branch,
+        is_excluded=is_excluded,
+    )
+    edges = _load_call_edges(
+        graph,
+        repository_id=str(repository_id),
+        branch=branch,
+        nodes=nodes,
+        include_low_confidence=include_low_confidence,
+    )
+
+    resolution_rate = edges.resolution_rate
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+
+    meta = GraphMeta(
+        repository_id=str(repository_id),
+        branch=branch,
+        node_count=graph.number_of_nodes(),
+        edge_count=graph.number_of_edges(),
+        # 字节记账归 ``cache.py``（Plan 121-07 的 ``estimate_graph_bytes`` 与
+        # ``NODE_COST_BYTES`` / ``EDGE_COST_BYTES`` 常数都在那边）：装配后由它按
+        # **实际** node/edge 计数重算并覆写。⛔ loader 不复制那两个常数——两处各存
+        # 一份必然漂移，而准入判据与 LRU 记账必须用同一个估算函数。
+        estimated_bytes=0,
+        resolution_rate=resolution_rate,
+        low_resolution=resolution_rate < LOW_RESOLUTION_THRESHOLD,
+        # 半新图判定（GRAPH-02）由 ``cache.py`` 在取图链路上做——它才看得见
+        # ``detect_edge_build_in_flight`` 的结果。loader 只如实报「我装配了什么」。
+        partial_edges=False,
+        partial_reason="",
+        degraded="",
+        # 跨仓边（Plan 121-06）尚未装配，两项如实为 0 / False。
+        cross_repo_unresolved_count=0,
+        cross_repo_branch_unfiltered=False,
+        excluded_file_count=nodes.excluded_file_count,
+        # loader 手上只有 exclusion 这一个分量；完整的复合签名（水位 ‖ 两条边构建轨 ‖
+        # 计数 ‖ 规则指纹）由 ``cache.py`` 用 ``signature.compute_signature`` 算好后覆写。
+        built_signature=exclusion_fingerprint,
+        built_at=timezone.now(),
+    )
+
+    _log_assembled(
+        repository_id=str(repository_id),
+        branch=branch,
+        node_count=meta.node_count,
+        edge_count=meta.edge_count,
+        resolution_rate=resolution_rate,
+        duration_ms=duration_ms,
+        overlay_shadowed_count=nodes.overlay_shadowed_count,
+        dropped_no_caller_count=edges.dropped_no_caller_count,
+        dropped_missing_node_count=edges.dropped_missing_node_count,
+        dropped_bare_filtered_count=edges.dropped_bare_filtered_count,
+    )
+
+    return CodeGraph(meta=meta, graph=graph)
