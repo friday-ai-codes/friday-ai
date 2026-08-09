@@ -241,6 +241,14 @@ async def _run_all_builders_and_sync_payload(
             # 失效自身的异常在 ``invalidate_repository`` 内部吞掉，不反噬边构建。
             await sync_to_async(invalidate_repository)(repository_id)
 
+            # Phase 125 / D-03：社区重建只 enqueue，⛔ 钩子内不内联 Louvain。
+            try:
+                from services.community_enqueue import enqueue_community_rebuild
+
+                await enqueue_community_rebuild(str(repository_id), branch_name="")
+            except Exception:  # noqa: BLE001 — best-effort，不反噬边构建
+                pass
+
         # 返回本次去重后真实新增数，供 lifecycle 回写 chunk_edges_added。
         return inserted
     except Exception as exc:
