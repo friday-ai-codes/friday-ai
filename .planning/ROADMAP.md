@@ -71,7 +71,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 121-05-PLAN.md — W3 `loader.py` 主干：符号节点 overlay 装配 + 装配阶段 exclusion 过滤 + CallEdge 双档与解析率
-- [ ] 121-07-PLAN.md — W3 `cache.py` 存储侧：字节估算纯函数 + 字节预算 LRU 逐出 + 单例与测试重置钩子（与 121-05 并行；只依赖 `model.py` 与 settings，不碰 loader/signature）
+- [x] 121-07-PLAN.md — W3 `cache.py` 存储侧：字节估算纯函数 + 字节预算 LRU 逐出 + 单例与测试重置钩子（与 121-05 并行；只依赖 `model.py` 与 settings，不碰 loader/signature）
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
