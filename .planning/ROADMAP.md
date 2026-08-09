@@ -75,7 +75,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 121-06-PLAN.md — W4 `loader.py` 补齐：跨仓边二次解析 + chunk 旁挂证据面 + 按需子图降级路径
+- [x] 121-06-PLAN.md — W4 `loader.py` 补齐：跨仓边二次解析 + chunk 旁挂证据面 + 按需子图降级路径
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
