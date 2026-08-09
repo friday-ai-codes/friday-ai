@@ -1435,6 +1435,11 @@ async def run_detect_changes(
 _TRACE_KEY_GROUPS: Final[str] = "groups"
 _TRACE_KEY_HOPS: Final[str] = "hops"
 _TRACE_KEY_CROSS_REPO: Final[str] = "cross_repo"
+_TRACE_KEY_FILES: Final[str] = "files"
+_TRACE_KEY_IMPACTS: Final[str] = "impacts"
+_TRACE_SUMMARY_AFFECTED: Final[str] = "affected_symbol_count"
+_TRACE_SUMMARY_SEEDS: Final[str] = "impact_seed_count"
+_TRACE_SUMMARY_TRUNCATED: Final[str] = "truncated"
 _CONF_DIST_KEYS: Final[tuple[str, ...]] = (
     "resolved",
     "bare_name",
@@ -1498,6 +1503,10 @@ def tool_trace_payload(
     total_found = 0
     risk_level = ""
     cross_repo_entry_count = 0
+    files_touched = 0
+    impacts_ok = 0
+    impacts_failed = 0
+    truncated_flag = 0
 
     if tool == "impact_analysis":
         result_count = int(summary.get("returned") or 0) if summary else 0
@@ -1533,6 +1542,37 @@ def tool_trace_payload(
             entries = cross.get("entries")
             if isinstance(entries, Sequence) and not isinstance(entries, (str, bytes)):
                 cross_repo_entry_count = len(entries)
+    elif tool == "detect_changes":
+        # 只计数（T-123-TRACE）：符号数 / 种子数 / 文件数 / impact 成败 / 截断。
+        # ⛔ 不读 files[*].path、符号名、diff 正文进 payload。
+        result_count = int(summary.get(_TRACE_SUMMARY_AFFECTED) or 0) if summary else 0
+        total_found = int(summary.get(_TRACE_SUMMARY_SEEDS) or 0) if summary else 0
+        truncated_flag = (
+            1 if summary and bool(summary.get(_TRACE_SUMMARY_TRUNCATED)) else 0
+        )
+        files = result.get(_TRACE_KEY_FILES)
+        if isinstance(files, Sequence) and not isinstance(files, (str, bytes)):
+            files_touched = len(files)
+            if result_count == 0:
+                # summary 缺失时回退：只累加每组 symbols 长度，不读正文键。
+                for group in files:
+                    if not isinstance(group, Mapping):
+                        continue
+                    syms = group.get("symbols")
+                    if isinstance(syms, Sequence) and not isinstance(syms, (str, bytes)):
+                        result_count += len(syms)
+        impacts = result.get(_TRACE_KEY_IMPACTS)
+        if isinstance(impacts, Sequence) and not isinstance(impacts, (str, bytes)):
+            for row in impacts:
+                if not isinstance(row, Mapping):
+                    continue
+                if "impact_error" in row:
+                    impacts_failed += 1
+                elif "impact" in row:
+                    impacts_ok += 1
+        # confidence / risk 对本工具无意义，保持零值与空串。
+        risk_level = ""
+        cross_repo_entry_count = 0
     else:
         hops = result.get(_TRACE_KEY_HOPS)
         if isinstance(hops, Sequence) and not isinstance(hops, (str, bytes)):
@@ -1551,7 +1591,7 @@ def tool_trace_payload(
             path_conf_max = 0.0
 
     shell_ms = max(duration_ms - orchestration_ms, 0)
-    return {
+    payload: dict[str, Any] = {
         "source": tool,
         "ok": ok,
         "error_code": error_code,
@@ -1571,3 +1611,9 @@ def tool_trace_payload(
             "shell": shell_ms,
         },
     }
+    if tool == "detect_changes":
+        payload["files_touched"] = files_touched
+        payload["impacts_ok"] = impacts_ok
+        payload["impacts_failed"] = impacts_failed
+        payload["truncated"] = truncated_flag
+    return payload
