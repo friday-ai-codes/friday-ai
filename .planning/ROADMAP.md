@@ -150,7 +150,32 @@ Plans:
   2. compare + base_ref 场景（MR diff）可用；文件重命名被识别（`git diff -M`），纯 rename PR 不产生满屏误报
   3. 输出带索引 staleness 声明（as_of commit），索引落后时 agent 能看到并自行判断可信度
 
-**Plans**: TBD
+**Plans**: 6 plans（6 waves，W0–W5；线性依赖以锁定 MCP↔对话 schema 同表）
+
+Plans:
+**Wave 0**
+
+- [ ] 123-00-PLAN.md — W0 验收地基：交叠 / diff_mirror / 编排 / MCP·双面 四文件测试骨架
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [ ] 123-01-PLAN.md — W1 `diff_mirror` + `ensure_mirror_sha` + 纯 `detect_changes.py` 交叠内核（D-01/D-05/D-06/D-07/D-15）
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 123-02-PLAN.md — W2 `run_detect_changes` 编排 + `tool_trace_payload` detect_changes 分支（D-01..D-12/D-14）
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 123-03-PLAN.md — W3 MCP 壳：Serializer + DetectChangesView + url + schema snapshot（D-13）
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 123-04-PLAN.md — W4 对话壳：DetectChangesToolInput + `@tool` + chat 白名单（D-13）
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 123-05-PLAN.md — W5 双面同源哨兵 + 观测无内容泄漏 + D-27 漂移 7→8 记账
 
 ### Phase 124: 编码链闭环
 
@@ -421,7 +446,7 @@ Plans:
 |-------|-----------|--------------|----------------|--------|-----------|
 | 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 10/10 | ✅ Complete (verified passed 4/4) | 2026-08-09 |
 | 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 10/10 | Complete | 2026-08-09 |
-| 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 0/? | Not started | - |
+| 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 0/6 | Planned | - |
 | 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 0/? | Not started | - |
 | 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 0/? | Not started | - |
 | 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 0/? | Not started | - |
