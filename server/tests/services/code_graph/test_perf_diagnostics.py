@@ -16,9 +16,16 @@
 ``perf`` 标记在 ``pyproject.toml`` 的 ``addopts`` 里被默认排除，常规采样跑不到
 这里（大图装配要几秒 + 几百 MB，进 CI 只会拖慢每一次提交）。手动运行::
 
-    cd server && uv run pytest -m perf tests/services/code_graph/ -s
+    cd server && FRIDAY_PERF_ALLOW_PRODUCTION_DB=1 \
+        uv run pytest -m perf tests/services/code_graph/ -s
 
 ⚠️ 不加 ``-s`` 时 pytest 会吞掉 ``print``，用例通过了也看不到数据表。
+
+🚨 ``FRIDAY_PERF_ALLOW_PRODUCTION_DB=1`` 是**连生产库的显式开关**，不带它就自动回落到
+只读 sqlite 快照 / 合成图。之所以要这道闸：本仓开发者的 ``.env`` 常常指向生产库，而
+:func:`_run_child` 起的子进程**绕过了** ``addopts`` 里的 ``--disable-socket``
+（pytest-socket 只 patch 父进程）——两者相加，一次不带开关的 ``pytest -m perf`` 就会在
+开发者毫不知情的情况下去查生产。查询全程只读，所以这不是保密措施，是知情同意。
 
 为什么一切都在子进程里做
 ========================
@@ -429,6 +436,10 @@ def _run_child(spec: dict[str, Any]) -> Any:
 # ---------------------------------------------------------------------------
 
 
+# 连生产库的显式授权开关。⛔ 不改成「默认开、用变量关」：安全默认值必须是**不连**。
+_ALLOW_PRODUCTION_DB_ENV = "FRIDAY_PERF_ALLOW_PRODUCTION_DB"
+
+
 def _dev_sqlite_path() -> Path | None:
     """本地 sqlite dev 快照的路径（存在才返回）。
 
@@ -443,11 +454,20 @@ def _dev_sqlite_path() -> Path | None:
 
 
 def _has_production_dsn() -> bool:
-    """``DATABASE_URL`` 是否可用。
+    """``DATABASE_URL`` 可用 **且** 调用方已显式授权连生产。
 
     settings 在 import 时已 ``env.read_env`` 过，连接串因此在 ``os.environ`` 里，
     会被子进程继承 —— 本函数只判断有没有，⛔ 不返回、不打印它的值。
+
+    🚨 **不能只看 ``DATABASE_URL``。** 本仓开发者的 ``.env`` 常常指向生产库，而
+    :func:`_run_child` 起的子进程**绕过了** ``addopts`` 里的 ``--disable-socket``
+    （pytest-socket 只 patch 父进程）。两者相加，一次 ``uv run pytest -m perf`` 就会在
+    开发者毫不知情的情况下去查生产——「跑测试会打生产库」必须是一次**主动选择**，
+    不能是环境的副作用。查询全程只读、且输出里没有连接串，所以这道闸不是保密措施，
+    是**知情同意**。
     """
+    if os.environ.get(_ALLOW_PRODUCTION_DB_ENV) != "1":
+        return False
     return bool(os.environ.get("DATABASE_URL"))
 
 
@@ -485,6 +505,37 @@ def _ratio(numerator: float | None, denominator: float | None) -> float:
     if not numerator or not denominator:
         return float("nan")
     return numerator / denominator
+
+
+# ⚠️ 本条**不带** ``@pytest.mark.perf``：它守的正是「perf 用例什么时候会去连生产库」
+#    这条闸，所以必须在常规采样里跑到。它自己不连任何库。
+def test_production_db_requires_explicit_opt_in(monkeypatch) -> None:
+    """连生产库必须是**主动选择**，⛔ 不能是 ``.env`` 的副作用。
+
+    :func:`_run_child` 起的子进程绕过了 ``addopts`` 里的 ``--disable-socket``
+    （pytest-socket 只 patch 父进程），而本仓开发者的 ``.env`` 常常指向生产库。少了这道
+    闸，一次 ``uv run pytest -m perf`` 就会在开发者毫不知情的情况下去查生产。
+
+    三条断言分别钉死：有连接串但没授权 ⇒ 不连；有授权但没连接串 ⇒ 不连；
+    两者齐备 ⇒ 才连。安全默认值是**不连**。
+    """
+    monkeypatch.setenv("DATABASE_URL", "postgres://user:pw@example.invalid:5432/db")
+    monkeypatch.delenv(_ALLOW_PRODUCTION_DB_ENV, raising=False)
+    assert _has_production_dsn() is False, (
+        "只凭 DATABASE_URL 就去连生产——一次 pytest -m perf 会打到生产库上"
+    )
+
+    monkeypatch.setenv(_ALLOW_PRODUCTION_DB_ENV, "1")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert _has_production_dsn() is False
+
+    monkeypatch.setenv("DATABASE_URL", "postgres://user:pw@example.invalid:5432/db")
+    assert _has_production_dsn() is True
+
+    # 非 "1" 的任何取值都不算授权（``0`` / ``true`` / 空串都不放行）。
+    for not_granted in ("0", "true", "yes", ""):
+        monkeypatch.setenv(_ALLOW_PRODUCTION_DB_ENV, not_granted)
+        assert _has_production_dsn() is False
 
 
 @pytest.mark.perf
