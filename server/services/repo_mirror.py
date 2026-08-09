@@ -496,6 +496,15 @@ async def _ensure_worktree(snapshot: MirrorSnapshot) -> Path:
         return target
 
 
+async def ensure_worktree_for_scan(repository_id: str, commit_sha: str) -> Path:
+    """公开 worktree API：确保 ``commit_sha`` 已 pin 到 mirror 并检出可扫描目录（D-02）。
+
+    业务层（Semgrep 扫描等）应调用本函数，⛔ 不长期依赖私有 ``_ensure_worktree``。
+    """
+    snapshot = await ensure_mirror_sha(str(repository_id), commit_sha)
+    return await _ensure_worktree(snapshot)
+
+
 async def _ripgrep_records(
     rg_bin: str,
     worktree: Path,
