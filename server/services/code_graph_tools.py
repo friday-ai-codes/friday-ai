@@ -789,6 +789,10 @@ async def run_impact(
     )
     branch_names = ["", graph_branch] if graph_branch else [""]
 
+    # ⓪ 仓级 ACL 闸必须在 ORM 解析之前（T-122-exclusion / ME-03）：
+    # ambiguous / not_found 会回显 signature，不得在 ensure_repository_readable 之前触碰 Symbol。
+    await _code_graph_access().ensure_repository_readable(user, repository_id)
+
     # ① ORM 先行解析（D-24 鸡生蛋：取图需要种子，解析却要在取图之前）。
     resolution = await resolve_symbol_candidates(
         repository_id=repository_id,
@@ -920,6 +924,9 @@ async def run_trace(
     ``GraphError`` 同样是唯一向上冒泡的异常类型。
     """
     branch_names = ["", graph_branch] if graph_branch else [""]
+
+    # ⓪ 仓级 ACL 闸必须在 ORM 解析之前——与 :func:`run_impact` 同序（ME-03）。
+    await _code_graph_access().ensure_repository_readable(user, repository_id)
 
     source_res = await resolve_symbol_candidates(
         repository_id=repository_id,
