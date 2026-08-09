@@ -10,11 +10,15 @@
 
 from __future__ import annotations
 
+import ast
 import inspect
+import re
+from pathlib import Path
 from unittest import mock
 
 import pytest
 
+import services.code_graph as code_graph_package
 from services.code_graph.access import (
     _MATCHER_FP_TTL_SECONDS,
     _check_user_acl,
@@ -218,11 +222,129 @@ def test_path_exclusion_memo_dedupes_by_file_path(indexed_repo) -> None:
         is_excluded.excluded_files.add("server/app/views.py")
 
 
+# ── 121-03-T3：观测契约守护 ─────────────────────────────────────────────────
+
+_LOG_LEVELS = frozenset(
+    {"debug", "info", "warning", "warn", "error", "exception", "critical"}
+)
+_SNAKE_CASE = re.compile(r"^[a-z][a-z0-9_]*$")
+_EVENT_PREFIX = "code_graph_"
+
+
+def _module_string_constants(tree: ast.Module) -> dict[str, str]:
+    """收集模块级 ``NAME = "字面量"`` / ``NAME: Final[str] = "字面量"``。
+
+    事件名走 ``Final[str]`` 常量是本仓既有形态（``codegraph/lsp/volar_pool.py``
+    L42–47），所以「不得拼变量」这条要按**能否静态解析成字面量**判定，而不是
+    要求 emit 点必须写裸字符串。f-string / 拼接 / 函数调用一律解析不出来，照样违规。
+    """
+    constants: dict[str, str] = {}
+    for node in tree.body:
+        targets: list[ast.expr] = []
+        if isinstance(node, ast.Assign):
+            targets = list(node.targets)
+            value = node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+            value = node.value
+        else:
+            continue
+        if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                constants[target.id] = value.value
+    return constants
+
+
+def _iter_logger_calls(tree: ast.Module):
+    """产出包内所有 ``logger.<level>(...)`` 调用节点。"""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "logger"
+            and func.attr in _LOG_LEVELS
+        ):
+            yield node
+
+
 # 121-VALIDATION.md 121-03-T3（planner 追加行）：观测契约守护——包内每个 structlog
 # 调用都带 component="code_graph" + category="sampling" + code_graph_ 事件名前缀。
-@pytest.mark.skip(reason="stub：由 Plan 121-03 实现")
 def test_observability_contract() -> None:
-    pass
+    """``services/code_graph/`` 包内每个 structlog 调用都满足强制观测契约。
+
+    用 ``glob`` 遍历、不写死文件清单——Plan 121-04~121-09 新增的模块自动受这条
+    契约管住，观测规范从「code review 靠人眼」升级为「CI 自动拦截」。
+
+    ⚠️ 事件名前缀不得缩写：``graph_build_*`` 已被 ``services/graph_builder.py``
+    占用、``galaxy_cache_*`` 已被 ``codegraph/galaxy/cache.py`` 占用。唯一豁免是
+    转调 ``services/exclusion.py::log_exclusion_blocked``——它发的是全仓统一审计
+    事件 ``exclusion.blocked``，不是本包的 logger 调用，天然不在扫描范围。
+    """
+    package_dir = Path(code_graph_package.__file__).resolve().parent
+    violations: list[str] = []
+    scanned = 0
+
+    for source_path in sorted(package_dir.glob("*.py")):
+        source = source_path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(source_path))
+        constants = _module_string_constants(tree)
+
+        for call in _iter_logger_calls(tree):
+            scanned += 1
+            where = f"{source_path.name}:{call.lineno}"
+
+            # ① 事件名必须能静态解析成 snake_case 字面量（不得拼变量）
+            event = None
+            if call.args:
+                first = call.args[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    event = first.value
+                elif isinstance(first, ast.Name):
+                    event = constants.get(first.id)
+            if event is None:
+                violations.append(
+                    f"{where}:<unresolved> 事件名不是字符串字面量/模块级字面量常量"
+                )
+                continue
+            if not _SNAKE_CASE.match(event):
+                violations.append(f"{where}:{event} 事件名不是 snake_case")
+
+            # ④ 前缀
+            if not event.startswith(_EVENT_PREFIX):
+                violations.append(f"{where}:{event} 事件名缺少 {_EVENT_PREFIX} 前缀")
+
+            keywords = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+
+            # ② component
+            component = keywords.get("component")
+            if not (
+                isinstance(component, ast.Constant) and component.value == "code_graph"
+            ):
+                violations.append(f'{where}:{event} 缺少 component="code_graph"')
+
+            # ③ category
+            category = keywords.get("category")
+            if not (
+                isinstance(category, ast.Constant) and category.value == "sampling"
+            ):
+                violations.append(f'{where}:{event} 缺少 category="sampling"')
+
+            # ⑤ 异常文本必须脱敏
+            error_value = keywords.get("error")
+            if error_value is not None and "redact_secrets_in_text" not in ast.unparse(
+                error_value
+            ):
+                violations.append(
+                    f"{where}:{event} 的 error= 未过 redact_secrets_in_text"
+                )
+
+    assert scanned > 0, f"未在 {package_dir} 下扫描到任何 logger 调用，契约守护形同虚设"
+    assert not violations, "观测契约违规：\n" + "\n".join(violations)
 
 
 # 121-VALIDATION.md 121-03-T2（planner 追加行）：matcher/指纹 60s TTL memo——
