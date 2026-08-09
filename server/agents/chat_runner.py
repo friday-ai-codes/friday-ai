@@ -103,6 +103,8 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     # 本对话面靠 conversation_id 解析会话 owner 做 fail-closed。
     "impact_analysis",
     "trace_call_path",
+    # Phase 123：compare↔索引水位变更检测（注册 ≠ 暴露；缺此项 LLM 不可见）
+    "detect_changes",
     # 先分析相关性，后创建方案
     "analyze_repository_relevance",
     # 不确定时主动澄清（暴露给所有有索引仓库的项目）

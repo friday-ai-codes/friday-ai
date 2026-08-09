@@ -31,7 +31,7 @@ from agents.tools.feishu_im_tools import send_card_message
 from agents.tools.find_api_callers import find_api_callers
 from agents.tools.find_api_handler import find_api_handler
 from agents.tools.find_related_code import find_related_code
-from agents.tools.graph_tools import impact_analysis, trace_call_path
+from agents.tools.graph_tools import detect_changes, impact_analysis, trace_call_path
 from agents.tools.langchain_adapter import build_langchain_tools
 from agents.tools.list_endpoints import list_endpoints
 from agents.tools.plan_research_tools import start_plan_research
@@ -73,6 +73,8 @@ __all__ = [
     # chunk 级游走互补（前者吃符号出影响面与路径，后者吃 chunk 出邻居）。
     "impact_analysis",
     "trace_call_path",
+    # Phase 123：索引水位↔compare 变更检测 + 批量 impact（D-13 对话半边）
+    "detect_changes",
     # Delivery knowledge tools (Phase 16)
     "search_delivery_knowledge",
     "get_entity_timeline",
