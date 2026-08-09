@@ -44,9 +44,11 @@ sha256 猜哪个分量变了要省事得多）。
 from __future__ import annotations
 
 import hashlib
+from datetime import timedelta
 from typing import Any, Final
 
 import structlog
+from django.conf import settings
 from django.utils import timezone
 
 logger = structlog.get_logger(__name__)
@@ -54,6 +56,7 @@ logger = structlog.get_logger(__name__)
 # 事件名常量（形态对齐 ``access.py`` / ``codegraph/lsp/volar_pool.py``）。
 # ⚠️ 前缀不得缩写：``graph_build_*`` 已被 ``services/graph_builder.py`` 占用。
 _EVENT_SIGNATURE_COMPUTED: Final[str] = "code_graph_signature_computed"
+_EVENT_EDGE_BUILD_IN_FLIGHT: Final[str] = "code_graph_edge_build_in_flight"
 
 # 无 history 行时的占位分量长度（与各自 ``values_list`` 的字段数严格一致）。
 # 长度一致才能保证「无行」与「有行但字段全为空」不会碰撞成同一个分量串；
@@ -63,17 +66,45 @@ _TRACK_B_FIELDS: Final[int] = 5
 
 __all__ = [
     "compute_signature",
+    "detect_edge_build_in_flight",
 ]
 
 
-def _emit(event: str, **fields: Any) -> None:
-    """DEBUG 级埋点。观测 best-effort —— 任何异常吞掉，绝不反噬取图主流程。
+# 两个埋点各自成函数、事件名常量直接写在 ``logger.debug`` 的第一个位置实参上，
+# ⛔ 不抽成 ``_emit(event, **fields)`` 那样的通用转发器：``test_observability_contract``
+# 要求事件名**可静态解析**成字面量，转发器会让 AST 只看到一个形参名。
+#
+# 取 DEBUG 而非 INFO：这两个函数在**每次** ``get_graph`` 都会跑（含缓存命中的那些），
+# INFO 会直接违反 ``.cursor/rules/observability-logging.mdc`` 的级别纪律。
+# 观测 best-effort —— 任何异常吞掉，绝不反噬取图主流程。
 
-    取 DEBUG 而非 INFO：这两个函数在**每次** ``get_graph`` 都会跑（含缓存命中的
-    那些），INFO 会直接违反 ``.cursor/rules/observability-logging.mdc`` 的级别纪律。
-    """
+
+def _log_signature_computed(
+    *, repository_id: Any, branch: str, duration_ms: int
+) -> None:
     try:
-        logger.debug(event, component="code_graph", category="sampling", **fields)
+        logger.debug(
+            _EVENT_SIGNATURE_COMPUTED,
+            component="code_graph",
+            category="sampling",
+            repository_id=str(repository_id),
+            branch=branch or "-",
+            duration_ms=duration_ms,
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
+
+
+def _log_edge_build_in_flight(*, repository_id: Any, branch: str, reason: str) -> None:
+    try:
+        logger.debug(
+            _EVENT_EDGE_BUILD_IN_FLIGHT,
+            component="code_graph",
+            category="sampling",
+            repository_id=str(repository_id),
+            branch=branch or "-",
+            reason=reason,
+        )
     except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
         pass
 
@@ -247,10 +278,107 @@ def compute_signature(
     parts.append(f"excl:{exclusion_fingerprint}")
 
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
-    _emit(
-        _EVENT_SIGNATURE_COMPUTED,
-        repository_id=str(repository_id),
-        branch=branch or "-",
+    _log_signature_computed(
+        repository_id=repository_id,
+        branch=branch,
         duration_ms=int((timezone.now() - started).total_seconds() * 1000),
     )
     return digest
+
+
+def detect_edge_build_in_flight(repository_id: str, branch: str) -> tuple[bool, str]:
+    """判断这一刻是否**正有一轮边构建在跑**，返回 ``(是否在途, 原因短码)``。
+
+    在途 ⇒ 上层在图元数据上打 ``partial_edges=True`` 且
+    ``partial_reason=<原因短码>``（Plan 121-08 落地）。原因短码四取一：
+    ``symbol_extraction_running`` / ``indexing`` / ``chunk_edge_build_pending`` /
+    ``chunk_edge_build_running``；不在途时返回 ``(False, "")``。
+
+    设计意图：**无法确证在途时不打标记**，宁可漏报也不长鸣。降级标记的价值全在
+    「它为真时确有其事」——一旦对某类仓库恒为真，上层很快就会学会无视它，那时它
+    对真正的半新图也失去了保护作用。以下三种情形因此一律判**不在途**：
+
+    - ``GraphBuildStatus.SKIPPED``：空 dirty 集，是**正常终态**
+      （``code_relations/lifecycle.py`` 在 ``dirty_chunk_ids`` 为空时写这个值）。
+    - ``IndexHistory.status`` 已终态（COMPLETED / FAILED / CANCELLED）。
+    - ``started_at`` 早于超时线的 RUNNING 孤儿行，以及压根没有 history 行的仓库。
+
+    🚨 **轨 A 的三条件复合判据**（121-CONTEXT D-03）：
+    ``IndexHistory.graph_build_status`` 的**模型默认值就是 ``PENDING``**，而只有走
+    ``enqueue_edge_build_for_history`` 才会推进它——``history_id is None`` 直接透传、
+    ``ENABLE_CODEGRAPH=False`` 或 ``auto_build_graph_enabled=False`` 同样不推进。
+    照字面把 ``PENDING`` 读成在途，会让**从未触发过边构建**的仓库永久带
+    ``partial_edges``。所以必须三条同时成立：``graph_build_status`` 在途态 **且**
+    该 ``IndexHistory`` 行自身也在跑 **且** ``started_at`` 未超时。
+
+    轨 B 没有这个问题：``RepositoryGraphStatus`` 的枚举里**没有 PENDING**，默认值
+    是 ``IDLE``，所以 ``RUNNING`` 本身就是一个有信息量的信号。它需要的是超时兜底
+    （下方 ``cutoff``）——卡住的 RUNNING 孤儿行会让该仓每次查询都重建 2–4 秒的大图。
+
+    :param repository_id: 仓库主键。
+    :param branch: 分支名（``""`` = base）。当前仅用于埋点归因：两条轨的在途判据
+        都是仓库级的（``Repository.graph_build_status`` 与最近一条 ``IndexHistory``
+        都不分分支），分支级细化要等边构建本身按分支隔离之后才有意义。
+    """
+    from repositories.models import (
+        GraphBuildHistory,
+        GraphBuildHistoryStatus,
+        GraphBuildStatus,
+        IndexHistory,
+        IndexHistoryStatus,
+        IndexStatus,
+        Repository,
+        RepositoryGraphStatus,
+    )
+
+    # ⛔ 刻意复用既有的孤儿回收阈值，**不新增配置项**（RESEARCH Pitfall 5）：
+    # 两个阈值一旦漂移，就会出现「孤儿行已被 codegraph.apps 回收成 FAILED，
+    # 但图服务这边还在按更长的窗口判在途」的长鸣降级。
+    timeout_min = int(getattr(settings, "GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES", 30))
+    cutoff = timezone.now() - timedelta(minutes=timeout_min)
+
+    def _hit(reason: str) -> tuple[bool, str]:
+        _log_edge_build_in_flight(
+            repository_id=repository_id, branch=branch, reason=reason
+        )
+        return True, reason
+
+    # ── 轨 B：Symbol/CallEdge/Endpoint 抽取 ───────────────────────────────
+    repo = (
+        Repository.objects.filter(id=repository_id)
+        .values_list("graph_build_status", "index_status")
+        .first()
+    )
+    if repo:
+        graph_status, index_status = repo
+        if graph_status == RepositoryGraphStatus.RUNNING:
+            # 聚合态说「在跑」还不够，得有一条**新鲜**的 RUNNING history 行佐证：
+            # 聚合态本身也会被崩溃的 worker 留成孤儿。
+            fresh_build = GraphBuildHistory.objects.filter(
+                repository_id=repository_id,
+                status=GraphBuildHistoryStatus.RUNNING,
+                started_at__gte=cutoff,
+            ).exists()
+            if fresh_build:
+                return _hit("symbol_extraction_running")
+        if index_status == IndexStatus.INDEXING:
+            return _hit("indexing")
+
+    # ── 轨 A：ChunkEdge 构建 ──────────────────────────────────────────────
+    history = (
+        IndexHistory.objects.filter(repository_id=repository_id)
+        .values_list("graph_build_status", "status", "started_at")
+        .first()
+    )
+    if history:
+        graph_build_status, history_status, started_at = history
+        if (
+            graph_build_status in (GraphBuildStatus.PENDING, GraphBuildStatus.RUNNING)
+            and history_status
+            in (IndexHistoryStatus.PENDING, IndexHistoryStatus.RUNNING)
+            and started_at is not None
+            and started_at >= cutoff
+        ):
+            return _hit(f"chunk_edge_build_{graph_build_status}")
+
+    return False, ""
