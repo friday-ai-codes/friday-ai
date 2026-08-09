@@ -11,7 +11,7 @@ created: 2026-08-10
 
 > Per-phase validation contract for feedback sampling during execution.
 > Derived from `127-RESEARCH.md` § Validation Architecture.
-> Aligned to final five plan IDs: `127-01` .. `127-05`（无幽灵第六 plan）。
+> Aligned to plans `127-01` .. `127-05` (no ghost sixth plan).
 
 ---
 
@@ -21,36 +21,44 @@ created: 2026-08-10
 |----------|-------|
 | **Framework** | pytest + pytest-django（server） |
 | **Config file** | `server/pyproject.toml` `[tool.pytest.ini_options]` |
-| **Quick run command** | `cd server && GALAXY_CACHE_WARM_ON_STARTUP=False GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP=False uv run pytest <scoped> -q --reuse-db` |
-| **Full suite command** | `cd server && uv run pytest -q`（注意 addopts 排除 `perf/integration/slow/postgres_queue`） |
+| **Quick run command** | `cd server && GALAXY_CACHE_WARM_ON_STARTUP=False GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP=False uv run pytest <Per-Task files> -q --reuse-db` |
+| **Full suite command** | `cd server && GALAXY_CACHE_WARM_ON_STARTUP=False GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP=False uv run pytest -q --reuse-db`（注意 addopts 排除 `perf/integration/slow/postgres_queue`；本相位禁止 `-m perf`） |
 | **Estimated runtime** | ~30–90 seconds（quick）；full suite per CI norms |
 
 ---
 
 ## Sampling Rate
 
-- **After every task commit (quick):** Run the relevant new/changed test files from the Per-Task map only（scoped pytest，非全量）
-- **After every plan wave (full-for-wave):** Scoped suite covering that plan’s Automated Command column
-- **Before `/gsd-verify-work` (full phase):** Default suite green；已知 `mcp` snapshot 漂移仍白名单（D-18）
-- **Max feedback latency:** 90 seconds（quick）
+| Cadence | Scope | Command style |
+|---------|-------|---------------|
+| **After every task commit（quick）** | 仅本 task 触及的测试文件 | Per-Task Map 的 Automated Command |
+| **After every plan wave（full）** | 该 wave 全部相关节点 | 同 Map 行 Command；wave 结束后可并跑本相位已落地文件 |
+| **Before `/gsd-verify-work`（full / phase）** | 默认 suite | Full suite green；已知 `mcp` snapshot 漂移仍白名单（D-18） |
+| **Max feedback latency** | quick ≤ 90s | — |
 
 ---
 
 ## Per-Task Verification Map
 
+主表 **恰好 5 行**（`127-01` .. `127-05`）。Wave / Requirement / Command 与各 plan frontmatter 一致。
+
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 127-01 | 127-01 | 0 | TAINT-01..03 + LSP-01 | T-127-01..05 | Wave 0 stubs + fixture + frozen-surface before impl | unit/collect | `pytest … --collect-only -q`（见 127-01 PLAN verify） | ✅ | ⬜ pending |
-| 127-02 | 127-02 | 1 | TAINT-01 + TAINT-03(key) + LSP-01(image/defaults) | T-127-01 | Dockerfile 层；SecurityFinding；Fernet token；LSP 默认 False | unit/smoke | `pytest tests/services/code_graph/test_dockerfile_semgrep_lsp_layers.py tests/codegraph/test_security_finding_model.py tests/services/code_graph/test_semgrep_app_token.py tests/codegraph/test_lsp_defaults_unchanged.py -q` | ✅ W0 | ⬜ pending |
-| 127-03 | 127-03 | 2 | TAINT-01 | T-127-02/03 | CLI argv / fail-open / QUEUE_SCAN enqueue | unit | `pytest tests/services/code_graph/test_semgrep_scan.py tests/services/code_graph/test_semgrep_enqueue.py -q` | ✅ W0 | ⬜ pending |
-| 127-04 | 127-04 | 3 | TAINT-02 + TAINT-03 | T-127-01/05 | MR `## 安全扫描` advisory/CE/nosemgrep + dual hang-points | unit | `pytest tests/services/code_graph/test_security_scan_report.py tests/workflows/test_coding_security_scan.py tests/mcp_tools/test_mr_security_scan.py -q` | ✅ W0 | ⬜ pending |
-| 127-05 | 127-05 | 4 | LSP-01 | T-127-04 | orphan reap + IMPACT-03 revisit/honest defer + defaults；`depends_on: [127-02, 127-04]` | unit/cmd | `pytest codegraph/lsp/tests/test_orphan_reap.py tests/codegraph/test_revisit_impact03.py tests/codegraph/test_lsp_defaults_unchanged.py -q` | ✅ W0 | ⬜ pending |
+| 127-W0 | 127-01 | 0 | TAINT-01..03 + LSP-01 | T-127-01..05 | Wave 0 验收桩 + fixture + 冻结面可收集；实现由后续 plan 去 skip | unit / collect | `cd server && GALAXY_CACHE_WARM_ON_STARTUP=False GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP=False uv run pytest tests/services/code_graph/test_semgrep_scan.py tests/services/code_graph/test_security_scan_report.py tests/services/code_graph/test_semgrep_enqueue.py tests/services/code_graph/test_semgrep_app_token.py tests/codegraph/test_security_finding_model.py codegraph/lsp/tests/test_orphan_reap.py tests/codegraph/test_lsp_defaults_unchanged.py tests/services/code_graph/test_frozen_surface_127.py tests/services/code_graph/test_dockerfile_semgrep_lsp_layers.py tests/codegraph/test_revisit_impact03.py tests/workflows/test_coding_security_scan.py tests/mcp_tools/test_mr_security_scan.py --collect-only -q --reuse-db` | ✅ | ✅ green（collect） |
+| 127-FOUNDATION | 127-02 | 1 | TAINT-01 + TAINT-03(key) + LSP-01(image/defaults) | T-127-01 | Dockerfile Semgrep/Node/Go/volar/gopls 层；SecurityFinding；Fernet token；VOLAR/GOPLS 默认 False | unit / smoke | `cd server && GALAXY_CACHE_WARM_ON_STARTUP=False GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP=False uv run pytest tests/services/code_graph/test_dockerfile_semgrep_lsp_layers.py tests/codegraph/test_security_finding_model.py tests/services/code_graph/test_semgrep_app_token.py tests/codegraph/test_lsp_defaults_unchanged.py -q --reuse-db` | ✅ W0 | ⬜ pending |
+| 127-SCAN | 127-03 | 2 | TAINT-01 | T-127-02/03 | CLI argv `--baseline-commit`；fail-open；QUEUE_SCAN + scan-slot；无 `import semgrep` | unit | `cd server && GALAXY_CACHE_WARM_ON_STARTUP=False GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP=False uv run pytest tests/services/code_graph/test_semgrep_scan.py tests/services/code_graph/test_semgrep_enqueue.py -q --reuse-db` | ✅ W0 | ⬜ pending |
+| 127-MR | 127-04 | 3 | TAINT-02 + TAINT-03 | T-127-01/05 | `## 安全扫描` 幂等/advisory/CE/nosemgrep；workflow+MCP 双链路；stub 脱敏 | unit | `cd server && GALAXY_CACHE_WARM_ON_STARTUP=False GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP=False uv run pytest tests/services/code_graph/test_security_scan_report.py tests/workflows/test_coding_security_scan.py tests/mcp_tools/test_mr_security_scan.py -q --reuse-db` | ✅ W0 | ⬜ pending |
+| 127-LSP | 127-05 | 4 | LSP-01 | T-127-04 | orphan reap + finally stop；IMPACT-03 复验或诚实延期；defaults 仍 False；`depends_on: [127-02, 127-04]` | unit / cmd | `cd server && GALAXY_CACHE_WARM_ON_STARTUP=False GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP=False uv run pytest codegraph/lsp/tests/test_orphan_reap.py tests/codegraph/test_revisit_impact03.py tests/codegraph/test_lsp_defaults_unchanged.py -q --reuse-db` | ✅ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+**依赖备注：** `127-05` frontmatter `depends_on: [127-02, 127-04]`（Wave 4；可与 Wave 3 后并行于实现落地，但验证命令以上表为准）。
 
 ---
 
 ## Wave 0 Requirements
+
+与 `127-01` Task 1 文件列表一致：
 
 - [x] `server/tests/services/code_graph/test_semgrep_scan.py` — TAINT-01 CLI 契约 / fail-open
 - [x] `server/tests/services/code_graph/test_security_scan_report.py` — TAINT-02/03 段文案与幂等
@@ -61,12 +69,12 @@ created: 2026-08-10
 - [x] `server/tests/mcp_tools/test_mr_security_scan.py` — 127-04 dual-link MCP/mr_service hang-point
 - [x] `server/codegraph/lsp/tests/test_orphan_reap.py` — 孤儿收割
 - [x] `server/tests/codegraph/test_lsp_defaults_unchanged.py` — kill-switch 默认 False
-- [x] `server/tests/services/code_graph/test_frozen_surface_127.py` — D-18 冻结面（`repo_router_v2` / `mcp/` / GraphService）
 - [x] `server/tests/services/code_graph/test_dockerfile_semgrep_lsp_layers.py` — Dockerfile Semgrep/Node/Go 层
-- [x] `server/tests/codegraph/test_revisit_impact03.py` — D-17 IMPACT-03 revisit / honest defer
-- [x] Fixture：`server/tests/fixtures/semgrep/sample_findings.json`（含 `check_id` / `extra.severity` / fingerprint / nosemgrep 说明）
+- [x] `server/tests/services/code_graph/test_frozen_surface_127.py` — D-18 冻结面（router/mcp/GraphService）
+- [x] `server/tests/codegraph/test_revisit_impact03.py` — D-17 IMPACT-03 复验/诚实延期
+- [x] Fixture：`server/tests/fixtures/semgrep/sample_findings.json`（假 semgrep JSON：severity / fingerprint / nosemgrep 说明）
 
-*Existing infrastructure covers LSP probe unit tests (`node_check` / `go_check`); Wave 0 stubs land all new Semgrep + orphan + defaults + dual-link hang-points. `wave_0_complete` flips true after 127-01 SUMMARY.*
+*Existing infrastructure covers LSP probe unit tests (`node_check` / `go_check`); Semgrep + orphan + defaults + dual-link hang-points Wave 0 stubs landed in 127-01.*
 
 ---
 
@@ -84,11 +92,11 @@ created: 2026-08-10
 
 | Threat | STRIDE | Mitigations to verify |
 |--------|--------|----------------------|
-| T-127-01 Token/snippet leak | Information Disclosure | redact + no token in logs/MR；`test_stub_omits_token_*` + Fernet round-trip |
-| T-127-02 CPU exhaustion | Denial of Service | wall-clock + concurrency slot + fail-open 节点 |
+| T-127-01 Token/snippet leak | Information Disclosure | fixture 假数据；`test_stub_omits_token_*`；Fernet round-trip；redact at write |
+| T-127-02 CPU exhaustion | Denial of Service | wall-clock + concurrency slot + fail-open 节点（127-03） |
 | T-127-03 Command injection | Tampering | fixed `SEMGREP_BIN` + argv list；never `import semgrep` |
-| T-127-04 Orphan LSP OOM | Denial of Service | finally kill + reap counter |
-| T-127-05 False “blocking” expectation | Spoofing | advisory + CE disclaimer copy |
+| T-127-04 Orphan LSP OOM | Denial of Service | finally kill + reap counter（127-05） |
+| T-127-05 False “blocking” expectation | Spoofing | advisory + CE disclaimer copy（127-04） |
 
 ---
 
@@ -96,9 +104,10 @@ created: 2026-08-10
 
 - [x] All tasks have `<automated>` verify or Wave 0 dependencies
 - [x] Sampling continuity: no 3 consecutive tasks without automated verify
-- [x] Wave 0 covers all MISSING references
+- [x] Wave 0 covers all MISSING references（stubs collectable）
 - [x] No watch-mode flags
-- [x] Feedback latency < 90s
-- [x] `nyquist_compliant: true` set in frontmatter after Wave 0 stubs land（`wave_0_complete` 仍由 SUMMARY 勾选）
+- [x] Feedback latency < 90s（quick）
+- [x] `nyquist_compliant: true` set in frontmatter after Wave 0 stubs land
+- [ ] `wave_0_complete: true` — set after 127-01 SUMMARY
 
 **Approval:** pending
