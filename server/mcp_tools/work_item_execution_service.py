@@ -411,6 +411,7 @@ async def _execute_one_task(
                 reviewer_usernames=reviewer_usernames,
                 remove_source_branch=True,
                 trace=trace,
+                user=initiating_user,
             )
             task.result = {**task.result, "branch_summary": summary, "mr": mr}
             if mr.get("success"):

@@ -55,6 +55,7 @@ def _draft_from_summary(
     target_branch: str,
     summary: dict[str, Any],
 ) -> dict[str, str]:
+    """同步拼装 draft 标题/描述（不含影响面；create 路径统一 append，幂等安全）。"""
     title = f"{repository.name}: {source_branch}"
     file_lines = "\n".join(
         f"- {item['path']} ({item['change_type']}, +{item['additions']}/-{item['deletions']})"
@@ -136,6 +137,7 @@ async def create_merge_request(
     reviewer_usernames: list[str],
     remove_source_branch: bool,
     trace: McpCodingExecutionTrace | None = None,
+    user: Any | None = None,
 ) -> dict[str, Any]:
     client = await _get_client(repository)
     if not title:
@@ -145,6 +147,23 @@ async def create_merge_request(
             draft = trace.branch_summary.get("mr_draft") or {}
             description = str(draft.get("description") or "")
         description = description or f"Merge `{source_branch}` into `{target_branch}`."
+
+    # Phase 124 DIFF-04：与 AICodingNode 同一 helper；显式已含 ## 影响面 时幂等跳过（D-06/D-09）
+    try:
+        from services.code_graph.impact_report import (
+            append_impact_report,
+            build_impact_report_section,
+        )
+
+        section = await build_impact_report_section(
+            repository=repository,
+            user=user,
+            compare=source_branch,
+            base_ref=target_branch,
+        )
+        description = append_impact_report(description, section)
+    except Exception:  # noqa: BLE001 — 最后兜底；helper 内应已吞
+        pass
 
     request = MRCreateRequest(
         source_branch=source_branch,
