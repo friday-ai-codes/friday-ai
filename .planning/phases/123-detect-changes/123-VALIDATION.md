@@ -44,8 +44,9 @@ created: 2026-08-10
 | 123-01-* | 01 | 1 | DIFF-01 | T-123-EXCL | excluded files absent from affected | unit | `pytest ... -k exclusion -x` | ❌ W0 | ⬜ pending |
 | 123-02-* | 02 | 2 | DIFF-01 | T-123-DOS | >100 → file summary + zero `run_impact`; formatting_only skipped | unit | `pytest ... -k 'threshold or formatting_only or batch_impact' -x` | ❌ W0 | ⬜ pending |
 | 123-02-* | 02 | 2 | DIFF-01 | T-123-STALE | staleness envelope + behind still ok | unit | `pytest ... -k staleness -x` | ❌ W0 | ⬜ pending |
+| 123-02-* | 02 | 2 | DIFF-01 | T-123-ACL | `ensure_repository_readable` → `GraphAccessDenied` 硬拒，无空成功 affected | unit | `pytest tests/services/code_graph/test_detect_changes_orchestrator.py -k hard_reject_acl -x` | ❌ W0 | ⬜ pending |
 | 123-03-* | 03 | 3 | DIFF-01/02 | T-123-AUTH | MCP PAT + serializer + ACL error mapping | integration | `pytest tests/mcp_tools/test_detect_changes_tools.py -k mcp -x` | ❌ W0 | ⬜ pending |
-| 123-04-* | 04 | 4 | DIFF-01/02 | T-123-AUTH | conversational `@tool` shell | unit | `pytest tests/mcp_tools/test_detect_changes_tools.py -k conversational -x` | ❌ W0 | ⬜ pending |
+| 123-04-* | 04 | 4 | DIFF-01/02 | T-123-AUTH | conversational `@tool` shell | unit | `pytest tests/agents/tools/test_graph_tools.py -k detect_changes -x` | ❌ W0 | ⬜ pending |
 | 123-05-* | 05 | 5 | IMPACT-06 延续 | T-123-TRACE | MCP↔对话 data byte-identical (sans `run_id`); RetrievalTrace counts only | integration | `pytest tests/mcp_tools/test_detect_changes_tools.py -k two_surfaces -x` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
