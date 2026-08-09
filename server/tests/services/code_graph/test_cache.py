@@ -171,9 +171,185 @@ async def test_exclusion_resolved_once_across_two_calls(indexed_repo) -> None:
 # 121-VALIDATION.md 121-08-T2：水位推进 + 轨 B 在途（Repository.graph_build_status
 # =RUNNING 且有新鲜 RUNNING 的 GraphBuildHistory，双 mutation 缺一不可）
 # ⇒ 拒用缓存 + partial_edges=True，绝不静默返回半新图。
-@pytest.mark.skip(reason="stub：由 Plan 121-08 实现")
-def test_partial_edges_when_edge_build_running() -> None:
-    pass
+@pytest.mark.django_db(transaction=True)
+async def test_partial_edges_when_edge_build_running(
+    indexed_repo, symbols_factory
+) -> None:
+    """轨 B 在途 ⇒ 打 ``partial_edges`` 且该次结果**不进缓存**。
+
+    轨 B 的判据是**合取**（`121-04` Task 3）：``Repository.graph_build_status=RUNNING``
+    **且**存在一条未超时的 ``GraphBuildHistory(status=RUNNING)``。只翻其中一处会得到
+    ``(False, "")`` ——用例开头先把这条单独断言掉，免得后人以为原因短码写错了。
+
+    半新图不进缓存这一条同样关键：缓存下来的话，后续每一次命中都会返回这张少了一半边
+    的图，污染面比这一次大得多。
+    """
+    from asgiref.sync import sync_to_async
+    from django.utils import timezone
+
+    from services.code_graph import cache as cache_module
+
+    def _seed() -> None:
+        symbols_factory("a", "src/a.py")
+
+    await sync_to_async(_seed)()
+
+    svc = cache_module.get_graph_service()
+    repo_id = str(indexed_repo.id)
+
+    def _only_repo_flag() -> None:
+        from repositories.models import Repository, RepositoryGraphStatus
+
+        Repository.objects.filter(id=indexed_repo.id).update(
+            graph_build_status=RepositoryGraphStatus.RUNNING
+        )
+
+    await sync_to_async(_only_repo_flag)()
+    lone = await svc.get_graph(repo_id)
+    assert lone.meta.partial_edges is False, (
+        "只翻 Repository.graph_build_status 就判在途——轨 B 的合取判据被写成了析取"
+    )
+    cache_module._reset_for_tests()
+    svc = cache_module.get_graph_service()
+
+    def _start_build():
+        from repositories.models import (
+            GraphBuildHistory,
+            GraphBuildHistoryStatus,
+            GraphBuildHistoryTrigger,
+        )
+
+        return GraphBuildHistory.objects.create(
+            repository=indexed_repo,
+            trigger_type=GraphBuildHistoryTrigger.MANUAL,
+            status=GraphBuildHistoryStatus.RUNNING,
+            branch_name="",
+            started_at=timezone.now(),
+        )
+
+    build = await sync_to_async(_start_build)()
+
+    partial = await svc.get_graph(repo_id)
+    assert partial.meta.partial_edges is True
+    assert partial.meta.partial_reason == "symbol_extraction_running"
+    assert svc.stats()["entries"] == 0, "半新图被写进了缓存，后续命中会一直返回它"
+
+    def _finish_build() -> None:
+        from repositories.models import (
+            GraphBuildHistory,
+            GraphBuildHistoryStatus,
+            Repository,
+            RepositoryGraphStatus,
+        )
+
+        GraphBuildHistory.objects.filter(pk=build.pk).update(
+            status=GraphBuildHistoryStatus.COMPLETED, finished_at=timezone.now()
+        )
+        Repository.objects.filter(id=indexed_repo.id).update(
+            graph_build_status=RepositoryGraphStatus.COMPLETED
+        )
+
+    await sync_to_async(_finish_build)()
+
+    settled = await svc.get_graph(repo_id)
+    assert settled.meta.partial_edges is False
+    assert settled.meta.partial_reason == ""
+    assert svc.stats()["entries"] == 1
+
+
+# 121-VALIDATION.md 121-08-T2（闸门位置回归）：只推进轨 A 的 IndexHistory.started_at
+# ——签名逐字节不变，但 in-flight 翻真 ⇒ 仍须拒用缓存。
+@pytest.mark.django_db(transaction=True)
+async def test_partial_edges_rejects_cache_even_when_signature_matches(
+    indexed_repo, symbols_factory
+) -> None:
+    """**签名恰好一致**时仍拒用缓存——「in-flight 闸在命中返回之前」的唯一机械证据。
+
+    为什么走轨 A 的 ``started_at``：`121-04` 的 ``ihA:`` 分量取的是
+    ``(id, graph_build_status, status, finished_at, payload_synced_at, edge_count)``，
+    **刻意不含 ``started_at``**；而轨 A 的在途判据第三条正是 ``started_at >= cutoff``。
+    单改 ``started_at`` 因此会翻转 in-flight 而签名逐字节不变。
+
+    ⛔ 轨 B 走不通：``ghB:`` 含 ``status``、``repoG:`` 含 ``graph_build_status``，两处
+    mutation 都会改签名，「签名恰好一致」的前提根本造不出来。⛔ 也不能走
+    ``index_status=INDEXING`` 绕——``ensure_repository_readable`` 会在
+    ``_get_graph_sync`` 之前就抛 ``GraphNotIndexed``。
+
+    ⛔ **本用例不得打桩 ``compute_signature`` / ``detect_edge_build_in_flight``**：它的
+    全部价值在于「签名真的一致」这个前提**真实成立**；一旦打桩，断言的只是 stub 的行为，
+    闸门挪位照样能过。（Task 3 并发用例的打桩是另一回事——那里打桩是为了消除 DB 竞态。）
+
+    若把闸门挪到命中返回之后，最后一步会拿到第一次那个**同一个** ``CodeGraph`` 对象且
+    ``partial_edges is False``，用例必然失败。
+    """
+    from datetime import timedelta
+
+    from asgiref.sync import sync_to_async
+    from django.conf import settings
+    from django.utils import timezone
+
+    from services.code_graph import access as access_module
+    from services.code_graph import cache as cache_module
+    from services.code_graph import signature as signature_module
+
+    timeout_min = int(getattr(settings, "GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES", 30))
+
+    def _seed():
+        from repositories.models import (
+            GraphBuildStatus,
+            IndexHistory,
+            IndexHistoryStatus,
+            TriggerType,
+        )
+
+        symbols_factory("a", "src/a.py")
+        # 前两条判据已满足，只差第三条超时 ⇒ 此刻是**孤儿，不在途**。
+        # ⚠️ fixture 自洽性：仓库级 index_status=INDEXED（已完成过索引）与本行的
+        # status=RUNNING（当前正在跑一次增量索引）在本仓语义上完全合法，不矛盾。
+        return IndexHistory.objects.create(
+            repository=indexed_repo,
+            trigger_type=TriggerType.MANUAL,
+            status=IndexHistoryStatus.RUNNING,
+            graph_build_status=GraphBuildStatus.RUNNING,
+            started_at=timezone.now() - timedelta(minutes=timeout_min + 5),
+        )
+
+    history = await sync_to_async(_seed)()
+
+    svc = cache_module.get_graph_service()
+    repo_id = str(indexed_repo.id)
+
+    first = await svc.get_graph(repo_id)
+    assert first.meta.partial_edges is False
+    assert svc.stats()["entries"] == 1
+    cached_signature = svc._cache[(repo_id, "")].built_signature
+
+    # ④ 只改这一个字段。⛔ 不碰 last_indexed_commit_sha / Symbol 计数 / CallEdge 计数 /
+    #    exclusion 规则 / 任何 GraphBuildHistory 或 Repository 字段。
+    def _advance_started_at() -> str:
+        from repositories.models import IndexHistory
+
+        IndexHistory.objects.filter(pk=history.pk).update(started_at=timezone.now())
+        _, fingerprint = access_module.build_matcher_and_fingerprint(repo_id)
+        return signature_module.compute_signature(
+            repo_id, "", exclusion_fingerprint=fingerprint
+        )
+
+    recomputed = await sync_to_async(_advance_started_at)()
+
+    # ⑤ 把「签名恰好一致」固化成用例的显式前提，而不是假设。
+    assert recomputed == cached_signature, (
+        "推进 started_at 之后签名变了——ihA: 分量误纳入了 started_at，本用例的杠杆失效"
+    )
+
+    second = await svc.get_graph(repo_id)
+    assert second.meta.partial_edges is True, (
+        "签名一致就直接返回了缓存——in-flight 闸被挪到了命中返回之后（GRAPH-02 失效）"
+    )
+    assert second.meta.partial_reason == "chunk_edge_build_running"
+    assert second is not first, "返回的是缓存里那张图，说明命中并未被拒"
+    # 绕过 ≠ 驱逐：条目没被证伪，边构建完成后签名自然会推进并触发正常替换。
+    assert svc.stats()["entries"] == 1
 
 
 # 121-VALIDATION.md 121-04-T3：graph_build_status=PENDING 但已终态 ⇒ 不判在途
@@ -694,9 +870,181 @@ def test_build_failure_not_cached() -> None:
 
 # 121-VALIDATION.md 121-08-T2：单图估算 > CODE_GRAPH_MAX_GRAPH_BYTES ⇒ 不进缓存
 # + degraded="on_demand_subgraph"，由上层工具透出。
-@pytest.mark.skip(reason="stub：由 Plan 121-08 实现")
-def test_degraded_on_demand_subgraph() -> None:
-    pass
+@pytest.mark.django_db(transaction=True)
+async def test_degraded_on_demand_subgraph(indexed_repo, symbols_factory) -> None:
+    """超单图预算 ⇒ 走按需子图、不进缓存；**无种子时显式抛错**，不返回空图或截断图。
+
+    准入必须发生在**装配之前**：``load_graph`` 的 spy 全程 ``call_count == 0``，
+    证明没有「先全量装配出来再判断多大」——那就是「先 OOM 再逐出」，OOM 之后逐出
+    已经救不回来了。
+    """
+    from unittest import mock
+
+    from asgiref.sync import sync_to_async
+    from django.test import override_settings
+
+    from services.code_graph import cache as cache_module
+    from services.code_graph import loader as loader_module
+    from services.code_graph.model import GraphError
+
+    def _seed():
+        return symbols_factory("a", "src/a.py")
+
+    seed = await sync_to_async(_seed)()
+    repo_id = str(indexed_repo.id)
+
+    # 单图上限 1 字节：一个符号（640 字节）就已经触顶。
+    with override_settings(CODE_GRAPH_MAX_GRAPH_BYTES=1):
+        cache_module._reset_for_tests()
+        svc = cache_module.get_graph_service()
+
+        with mock.patch.object(
+            loader_module, "load_graph", wraps=loader_module.load_graph
+        ) as load_spy:
+            degraded = await svc.get_graph(repo_id, seed_symbol_ids=[str(seed.id)])
+
+            assert degraded.meta.degraded == "on_demand_subgraph"
+            assert svc.stats()["entries"] == 0, (
+                "子图进了缓存——它依赖种子与深度，而缓存键里没有这两维"
+            )
+            assert load_spy.call_count == 0, "先全量装配再判断大小 = 先 OOM 再逐出"
+
+            with pytest.raises(GraphError) as excinfo:
+                await svc.get_graph(repo_id)
+
+            assert "seed_symbol_ids" in str(excinfo.value)
+            assert load_spy.call_count == 0
+
+
+@pytest.mark.django_db
+def test_admission_seam_covers_both_counts(indexed_repo, symbols_factory) -> None:
+    """``_estimate_admission`` 是准入 COUNT 的**唯一**接缝，可被整体 stub 掉。
+
+    判据是「打桩前后 ``Symbol`` / ``CallEdge`` 的 COUNT 查询数正好差 2」：打桩后剩下的
+    那 2 条来自 ``signature.compute_signature`` 的计数分量（它有自己的职责，不归本接缝
+    管）。若有人把某一条 COUNT 内联回 ``_build_graph``，差值会变成 1，用例立刻红——
+    而 Task 3 的并发用例正是靠「patch 掉这一个接缝就不再碰库」才能确定性通过。
+
+    直接调同步主体而不是 ``get_graph``：``CaptureQueriesContext`` 抓的是**本线程**的
+    连接，而 ``sync_to_async`` 会把主体派发到执行器线程上，隔着线程抓不到。
+    """
+    from unittest import mock
+
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from services.code_graph import cache as cache_module
+
+    symbols_factory("a", "src/a.py")
+    svc = cache_module.get_graph_service()
+    repo_id = str(indexed_repo.id)
+
+    def _count_admission_queries(ctx) -> int:
+        return sum(
+            1
+            for q in ctx.captured_queries
+            if "COUNT" in q["sql"].upper()
+            and ("codegraph_symbol" in q["sql"] or "codegraph_calledge" in q["sql"])
+        )
+
+    with CaptureQueriesContext(connection) as baseline:
+        svc._get_graph_sync(repo_id, "", False, (), None, "system")
+    cache_module._reset_for_tests()
+    svc = cache_module.get_graph_service()
+
+    with mock.patch.object(
+        cache_module.GraphService, "_estimate_admission", return_value=(1, 1, 1024)
+    ) as seam:
+        with CaptureQueriesContext(connection) as stubbed:
+            svc._get_graph_sync(repo_id, "", False, (), None, "system")
+
+    assert seam.call_count == 1
+    assert _count_admission_queries(baseline) - _count_admission_queries(stubbed) == 2, (
+        "准入 COUNT 没有全部收进 _estimate_admission —— 并发用例的零查询断言会漏掉它"
+    )
+
+
+@pytest.mark.django_db
+def test_build_completed_event_carries_required_kv(indexed_repo, symbols_factory) -> None:
+    """``code_graph_build_completed`` 的 kv 覆盖规范要求的全部字段。
+
+    ``duration_ms`` 是 ``.cursor/rules/observability-logging.mdc`` 对关键生命周期事件的
+    硬要求；``partial_edges`` / ``degraded`` 则决定这张图能不能被上层全信——少一个，
+    排障就得回头翻三个模块的 DEBUG 事件去拼。
+    """
+    from structlog.testing import capture_logs
+
+    from services.code_graph import cache as cache_module
+
+    symbols_factory("a", "src/a.py")
+    svc = cache_module.get_graph_service()
+
+    with capture_logs() as events:
+        svc._get_graph_sync(str(indexed_repo.id), "", False, (), None, "system")
+
+    completed = [e for e in events if e["event"] == "code_graph_build_completed"]
+    assert len(completed) == 1
+    required = {
+        "component",
+        "category",
+        "duration_ms",
+        "node_count",
+        "edge_count",
+        "estimated_bytes",
+        "resolution_rate",
+        "partial_edges",
+        "degraded",
+        "cross_repo_unresolved_count",
+        "initiated_by_user_id",
+    }
+    assert required <= set(completed[0]), required - set(completed[0])
+    assert completed[0]["component"] == "code_graph"
+    assert completed[0]["category"] == "sampling"
+    assert completed[0]["initiated_by_user_id"] == "system"
+
+
+def test_cache_has_no_hand_rolled_inflight_judgement() -> None:
+    """in-flight 判据只能来自 ``signature.detect_edge_build_in_flight``（D-03）。
+
+    ``IndexHistory.graph_build_status`` 的**模型默认值就是 ``PENDING``**，照字面在
+    cache.py 里另写一份「PENDING 即在途」会让从未触发过边构建的仓库永久带
+    ``partial_edges: true``——降级标记长鸣就等于失效（威胁登记 T-121-长鸣）。
+    """
+    from pathlib import Path
+
+    from services.code_graph import cache as cache_module
+
+    source = Path(cache_module.__file__).read_text(encoding="utf-8")
+    assert "detect_edge_build_in_flight" in source
+    # ⚠️ 判据用「不引用状态字段名」而非 grep 禁令散文：注释里点名 ``graph_build_status``
+    #    是 plan 明确要求写下的 D-03 说明，字面 grep 会命中那句说明自己。这里只禁**代码**
+    #    引用——注释与 docstring 全部剥掉之后再看。
+    import ast
+
+    tree = ast.parse(source, filename=cache_module.__file__)
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(
+            node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+        )
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    }
+    code_strings = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    ]
+    names = {
+        node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+    } | {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    assert "graph_build_status" not in names
+    assert not [s for s in code_strings if "graph_build_status" in s]
 
 
 # 121-VALIDATION.md 121-09-T1：GraphService.invalidate 按仓驱逐全部分支条目

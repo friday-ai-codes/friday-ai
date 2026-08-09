@@ -58,7 +58,7 @@ import structlog
 from asgiref.sync import sync_to_async
 
 from services.code_graph import access, loader, signature
-from services.code_graph.model import CodeGraph
+from services.code_graph.model import CodeGraph, GraphError
 
 logger = structlog.get_logger(__name__)
 
@@ -75,6 +75,10 @@ _EVENT_STALE_WATERMARK: Final[str] = "code_graph_stale_watermark"
 _EVENT_BUILD_STARTED: Final[str] = "code_graph_build_started"
 _EVENT_BUILD_COMPLETED: Final[str] = "code_graph_build_completed"
 _EVENT_BUILD_FAILED: Final[str] = "code_graph_build_failed"
+
+# 调用方未指定 ``depth`` 时按需子图的默认跳数（loader 内部按 ``depth + 1`` 收敛，
+# 多留的那一跳保证边界节点邻接完整）。取 2 与 Phase 122 的默认影响面半径一致。
+_DEFAULT_SUBGRAPH_DEPTH: Final[int] = 2
 
 # =============================================================================
 # 字节估算（实测标定）
@@ -524,23 +528,68 @@ class GraphService:
         in_flight_reason: str,
         user_id: str,
     ) -> CodeGraph:
-        """装配一张图并按规则决定是否入缓存。**不得在持锁状态下调用**（装配 2–4 秒）。"""
+        """装配一张图并按规则决定是否入缓存。**不得在持锁状态下调用**（装配 2–4 秒）。
+
+        两道判定在这里落地：
+
+        - **半新图防护（GRAPH-02）**：消费 :meth:`_get_graph_sync` 步骤 ⑤ 已算好的
+          ``in_flight``。⛔ **不在这里重新调一次** ``detect_edge_build_in_flight``
+          ——那等于把闸门挪到命中判定之后，「签名恰好一致但边正在写」的窗口就漏了，
+          而那恰恰是 GRAPH-02 要挡的那一类。
+        - **装配前准入（GRAPH-03）**：先用 COUNT 估一把再决定装不装。⛔ 不能「先装配
+          再看多大」——那就是「先 OOM 再逐出」，OOM 之后逐出已经救不回来了。
+        """
         started = time.perf_counter()
         _log_build_started(
             repository_id=repository_id, branch=branch, initiated_by_user_id=user_id
         )
 
-        graph = loader.load_graph(
-            repository_id,
-            branch,
-            matcher=matcher,
-            exclusion_fingerprint=exclusion_fingerprint,
-            include_low_confidence=include_low_confidence,
-        )
+        _, _, admission_bytes = self._estimate_admission(repository_id, branch)
+        over_budget = admission_bytes > self._max_graph_bytes
 
-        # 记账用**实际** node/edge 计数重算（准入侧用的是 COUNT 估算，两者可能因
-        # exclusion 过滤而不同）；同一个数必须同时写进 GraphMeta 与 _Entry，否则
-        # LRU 记的与元数据声明的对不上（121-07 handoff 点名的那条）。
+        if over_budget and not seed_symbol_ids:
+            # ⛔ 不返回空图、也不返回截断的全量图：两者都会被上层读成「影响面就这么大」，
+            # 而真相是「这仓大到装不下」。显式抛错并把出路写进消息里。
+            raise GraphError(
+                "本仓超出单图内存预算，请改用带 seed_symbol_ids 的按需子图查询",
+                {
+                    "repository_id": repository_id,
+                    "branch": branch,
+                    "estimated_bytes": admission_bytes,
+                    "max_graph_bytes": self._max_graph_bytes,
+                },
+            )
+
+        if over_budget or seed_symbol_ids:
+            # 降级路径：种子相关，⛔ 不进缓存（缓存键里没有种子与深度这两维，
+            # 而种子空间无界——塞进键会让缓存退化成一次一建）。
+            # ``degraded="on_demand_subgraph"`` 由 loader 置成终值，此处不覆写；
+            # ``code_graph_degraded_subgraph`` 事件同样由 loader 发，不重复。
+            graph = loader.load_subgraph(
+                repository_id,
+                branch,
+                seed_symbol_ids=list(seed_symbol_ids),
+                depth=_DEFAULT_SUBGRAPH_DEPTH if depth is None else depth,
+                matcher=matcher,
+                exclusion_fingerprint=exclusion_fingerprint,
+                include_low_confidence=include_low_confidence,
+            )
+            cacheable = False
+        else:
+            graph = loader.load_graph(
+                repository_id,
+                branch,
+                matcher=matcher,
+                exclusion_fingerprint=exclusion_fingerprint,
+                include_low_confidence=include_low_confidence,
+            )
+            # 在途时这张图是「半新」的：如实打标记，且**不写进缓存**——缓存下来会让
+            # 后续命中一直返回半新图，污染面比这一次大得多。
+            cacheable = not in_flight
+
+        # 记账用**实际** node/edge 计数重算（准入用的是 COUNT 估算，两者可能因 exclusion
+        # 过滤而不同）；同一个数必须同时写进 GraphMeta 与 _Entry，否则 LRU 记的与元数据
+        # 声明的对不上（121-07 handoff 点名的那条）。
         estimated_bytes = estimate_graph_bytes(
             graph.graph.number_of_nodes(), graph.graph.number_of_edges()
         )
@@ -550,19 +599,22 @@ class GraphService:
                 graph.meta,
                 estimated_bytes=estimated_bytes,
                 built_signature=current_sig,
+                partial_edges=in_flight,
+                partial_reason=in_flight_reason if in_flight else "",
             ),
         )
 
-        with self._lock:
-            self._put(
-                key,
-                _Entry(
-                    graph=result,
-                    estimated_bytes=estimated_bytes,
-                    built_signature=current_sig,
-                    built_at=result.meta.built_at,
-                ),
-            )
+        if cacheable:
+            with self._lock:
+                self._put(
+                    key,
+                    _Entry(
+                        graph=result,
+                        estimated_bytes=estimated_bytes,
+                        built_signature=current_sig,
+                        built_at=result.meta.built_at,
+                    ),
+                )
 
         _log_build_completed(
             repository_id=repository_id,
@@ -575,10 +627,32 @@ class GraphService:
             partial_edges=result.meta.partial_edges,
             degraded=result.meta.degraded,
             cross_repo_unresolved_count=result.meta.cross_repo_unresolved_count,
-            cached=True,
+            cached=cacheable,
             initiated_by_user_id=user_id,
         )
         return result
+
+    def _estimate_admission(self, repository_id: str, branch: str) -> tuple[int, int, int]:
+        """装配**前**的准入估算，返回 ``(node_count, edge_count, estimated_bytes)``。
+
+        🚨 **这两条 COUNT 是 ``_get_graph_sync`` 里除签名/in-flight/exclusion 之外仅剩的
+        DB 触点**，封在这一个方法里是刻意的：并发用例只需 stub 这一个接缝就能做到「全程
+        不碰数据库」（4 个线程并发打 SQLite 文件测试库必然 flaky）。⛔ 不要把 COUNT 内联
+        回 ``_build_graph``——那会让那条零查询断言无处下手。
+
+        ``branch_name__in`` 取 overlay 语义（与 ``signature._count_parts`` 同口径）：
+        feature 分支的图是「base 全量 + 分支增量」，两个分支的行都要计入。
+        """
+        from codegraph.models import CallEdge, Symbol
+
+        branch_filter = ["", branch] if branch else [""]
+        node_count = Symbol.objects.filter(
+            repository_id=repository_id, branch_name__in=branch_filter
+        ).count()
+        edge_count = CallEdge.objects.filter(
+            repository_id=repository_id, branch_name__in=branch_filter
+        ).count()
+        return node_count, edge_count, estimate_graph_bytes(node_count, edge_count)
 
 
 # =============================================================================
