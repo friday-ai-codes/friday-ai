@@ -1272,7 +1272,7 @@ class ImpactAnalysisView(McpToolView):
     ``run_impact`` → 原样透出信封 + ``run_id`` → 一条汇总 ``RetrievalTrace`` +
     一条 ``caller`` 事件。
 
-    ``ok=False``（``symbol_not_found`` / ``ambiguous_symbol``）
+    ``ok=False``（``symbol_not_found`` / ``ambiguous_symbol`` / ``symbol_not_in_graph``）
     一律返回 HTTP 200 + 该信封，⛔ 不转 4xx。``ambiguous_symbol`` 的候选列表是 agent
     二选一的唯一依据（生产 19.3% 的名字不唯一，这是主路径不是兜底）；转成
     ``{"error_code","detail"}`` 的 4xx 会把候选整段丢掉。``ok=False`` 只表示

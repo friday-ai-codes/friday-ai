@@ -2,10 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-status: completed
+current_phase: 123
+current_phase_name: detect_changes 工具本体
+status: planning
 stopped_at: Completed 122-10-PLAN.md
-last_updated: "2026-08-09T17:53:34.956Z"
-last_activity: 2026-08-09 — 122-07 完成：`tests/services/code_graph` 122 → 130 passed / 0 skipped，`test_impact_shell.py` 11 passed，零新增失败
+last_updated: "2026-08-09T18:12:07.136Z"
+last_activity: 2026-08-10
+last_activity_desc: Phase 122 complete, transitioned to Phase 123
 progress:
   total_phases: 7
   completed_phases: 2
@@ -27,10 +30,10 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 ## Current Position
 
-Phase: 122 (impact / trace 工具面) — 🚧 IN PROGRESS (121 verified passed 4/4, code review 20 findings 处理完毕)
-Plan: 10 of 10
-Status: 122-07 complete — 共享编排 `run_impact` / `run_trace` 已落地（D-21：两壳唯一入口；重名取图前短路；`found=False` 保持 `ok=True`；按需子图无路径补充声明）。下一步进 122-08 MCP 壳
-Last activity: 2026-08-09 — 122-07 完成：`tests/services/code_graph` 122 → 130 passed / 0 skipped，`test_impact_shell.py` 11 passed，零新增失败
+Phase: 123 — detect_changes 工具本体
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-10 — Phase 122 complete, transitioned to Phase 123
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
 
