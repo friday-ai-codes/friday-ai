@@ -1152,15 +1152,25 @@ async def run_detect_changes(
             "repository_id": repository_id,
         }
 
-    # ② base 强制 pin 索引水位（D-01）：ensure_mirror_commit 无 branch。
+    # ② base 强制 pin 索引水位（D-01 / D-03）：按 sha 锚定，禁止分支 tip / 缓存回退。
     try:
-        base = await ensure_mirror_commit(repository_id)
+        base = await ensure_mirror_sha(repository_id, indexed_sha.lower())
     except MirrorError as exc:
         _log_failed(exc.code, exc.detail)
         return {
             "ok": False,
             "error_code": exc.code,
             "error": exc.detail,
+            "tool": "detect_changes",
+            "repository_id": repository_id,
+        }
+    if base.commit_sha.lower() != indexed_sha.lower():
+        err = "无法将 diff base 锚定到索引水位 commit"
+        _log_failed("mirror_fetch_failed", err)
+        return {
+            "ok": False,
+            "error_code": "mirror_fetch_failed",
+            "error": err,
             "tool": "detect_changes",
             "repository_id": repository_id,
         }

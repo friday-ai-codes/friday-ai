@@ -274,10 +274,12 @@ async def ensure_mirror_commit(
         if pin_sha and await _has_commit(repo_dir, pin_sha):
             return MirrorSnapshot(repository_id, repo_dir, pin_sha, ref, True)
 
-        # 2) TTL 内的分支头缓存
+        # 2) TTL 内的分支头缓存——有 pin_sha 时不得用漂移 tip 短路（D-01）。
         cached = _fetch_cache.get((repository_id, ref))
         if cached and (time.monotonic() - cached[1]) < _FETCH_TTL_SECONDS:
-            if await _has_commit(repo_dir, cached[0]):
+            if (not pin_sha or cached[0] == pin_sha) and await _has_commit(
+                repo_dir, cached[0]
+            ):
                 return MirrorSnapshot(
                     repository_id, repo_dir, cached[0], ref, cached[0] == indexed_sha
                 )
