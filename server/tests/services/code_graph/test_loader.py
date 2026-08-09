@@ -22,6 +22,7 @@ from services.code_graph.loader import (
     _NODE_ATTR_KEYS,
     CHUNK_EVIDENCE_MAX_PER_SYMBOL,
     load_graph,
+    load_subgraph,
 )
 
 
@@ -506,8 +507,152 @@ def test_chunk_evidence_fan_out_is_capped(indexed_repo, symbols_factory) -> None
     assert len(result.chunk_evidence[str(hot.id)]) == CHUNK_EVIDENCE_MAX_PER_SYMBOL
 
 
+def _assemble_subgraph(repository, branch: str = "", **kwargs):
+    """按仓库当前的真实 exclusion 规则装配一张按需子图。
+
+    ⚠️ 与 :func:`_assemble` 同款契约：``matcher`` / ``exclusion_fingerprint`` 由调用方
+    注入，``load_subgraph`` 自身不做规则解析。
+    """
+    matcher, fingerprint = build_matcher_and_fingerprint(str(repository.id))
+    return load_subgraph(
+        str(repository.id),
+        branch,
+        matcher=matcher,
+        exclusion_fingerprint=fingerprint,
+        **kwargs,
+    )
+
+
+def _make_call_chain(symbols_factory, call_edges_factory, length: int):
+    """造一条 ``s0 → s1 → … → s{length}`` 的调用链（每个符号一个文件，避免同名干扰）。"""
+    chain = [
+        symbols_factory(f"s{i}", f"src/s{i}.py") for i in range(length + 1)
+    ]
+    for i in range(length):
+        call_edges_factory(chain[i], chain[i + 1], line_number=i + 1)
+    return chain
+
+
 # 121-VALIDATION.md 121-06-T3：按需子图在 SQL 侧多跳收敛，
 # 查询次数不随仓库规模增长（深度有界，不先全量再裁剪）。
-@pytest.mark.skip(reason="stub：由 Plan 121-06 实现")
-def test_on_demand_subgraph_depth_bounded() -> None:
-    pass
+@pytest.mark.django_db
+def test_on_demand_subgraph_depth_bounded(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """``depth=2`` 的子图收敛到 ``depth + 1 = 3`` 跳，且不含不可达符号。"""
+    chain = _make_call_chain(symbols_factory, call_edges_factory, length=5)
+    iso = symbols_factory("iso", "src/iso.py")
+
+    result = _assemble_subgraph(
+        indexed_repo, seed_symbol_ids=[str(chain[0].id)], depth=2
+    )
+
+    # 半径 = depth + 1 = 3 跳 ⇒ s0..s3。多留的那一跳保证 s2 的邻接是完整的。
+    assert set(result.graph.nodes) == {str(s.id) for s in chain[:4]}
+    assert str(chain[5].id) not in result.graph.nodes
+    assert str(iso.id) not in result.graph.nodes
+
+    # 🔔 上层必须透出：结论覆盖面小于全图。
+    assert result.meta.degraded == "on_demand_subgraph"
+    # 对照：全量装配不打降级标记。
+    assert _assemble(indexed_repo).meta.degraded == ""
+
+
+@pytest.mark.django_db
+def test_on_demand_subgraph_query_count_does_not_scale_with_repo(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """查询次数 ≤ ``depth + 1 + 常数``，且**不随**仓库总符号数增长。
+
+    这条是「SQL 侧多跳收敛」与「先全量装配再裁剪」的判别式：后者的取数量会随仓库
+    规模线性膨胀，前者不会。
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    chain = _make_call_chain(symbols_factory, call_edges_factory, length=5)
+    depth = 2
+    # matcher 在计数窗口外解析——它的 DB 读属于调用方（真实链路里是 cache.py）。
+    matcher, fingerprint = build_matcher_and_fingerprint(str(indexed_repo.id))
+
+    def _count_graph_queries() -> int:
+        with CaptureQueriesContext(connection) as ctx:
+            load_subgraph(
+                str(indexed_repo.id),
+                "",
+                seed_symbol_ids=[str(chain[0].id)],
+                depth=depth,
+                matcher=matcher,
+                exclusion_fingerprint=fingerprint,
+            )
+        # 只数打到图数据表的查询：日志基础设施自己读 ``system_settings``（结构化日志
+        # 的运行期配置），那不是装配取数，不该算进本条契约。
+        return sum(
+            1
+            for q in ctx.captured_queries
+            if "codegraph_" in q["sql"] or "code_relations_" in q["sql"]
+        )
+
+    small_repo_queries = _count_graph_queries()
+    # depth + 1 轮 frontier 扩张 + 常数条（Symbol / CallEdge / CrossRepoApiCall /
+    # ChunkEdge 各一条）。
+    assert small_repo_queries <= depth + 1 + 4
+
+    # 200 个与种子无关的符号：全量装配会多取 200 行，SQL 侧收敛则一条查询都不多。
+    for i in range(200):
+        symbols_factory(f"noise{i}", f"src/noise/{i}.py")
+
+    assert _count_graph_queries() == small_repo_queries
+
+
+@pytest.mark.django_db
+def test_on_demand_subgraph_frontier_truncation(
+    indexed_repo, symbols_factory, call_edges_factory, monkeypatch
+) -> None:
+    """每轮 frontier 撞上限即截断，并在降级事件里如实标 ``frontier_truncated``。"""
+    from structlog.testing import capture_logs
+
+    from services.code_graph import loader as loader_module
+
+    hub = symbols_factory("hub", "src/hub.py")
+    for i in range(5):
+        callee = symbols_factory(f"leaf{i}", f"src/leaf{i}.py")
+        call_edges_factory(hub, callee)
+
+    monkeypatch.setattr(loader_module, "SUBGRAPH_FRONTIER_LIMIT", 2)
+
+    with capture_logs() as events:
+        result = _assemble_subgraph(
+            indexed_repo, seed_symbol_ids=[str(hub.id)], depth=1
+        )
+
+    # 种子 + 至多 2 个邻居；不截断的话会是 1 + 5 = 6 个节点。
+    assert result.graph.number_of_nodes() <= 3
+
+    degraded = [e for e in events if e["event"] == "code_graph_degraded_subgraph"]
+    assert len(degraded) == 1
+    assert degraded[0]["frontier_truncated"] is True
+    # 观测契约：component / category / 触发用户绑定。
+    assert degraded[0]["component"] == "code_graph"
+    assert degraded[0]["category"] == "sampling"
+    assert degraded[0]["initiated_by_user_id"] == "system"
+
+
+@pytest.mark.django_db
+def test_on_demand_subgraph_applies_exclusion(
+    indexed_repo, symbols_factory, call_edges_factory, exclusion_rule_factory
+) -> None:
+    """exclusion 在子图路径同口径生效：被排除文件的邻居不进节点集。"""
+    seed = symbols_factory("seed", "src/ok.py")
+    secret = symbols_factory("load_key", "secret/keys.py")
+    call_edges_factory(seed, secret)
+    exclusion_rule_factory("secret/**")
+
+    result = _assemble_subgraph(
+        indexed_repo, seed_symbol_ids=[str(seed.id)], depth=2
+    )
+
+    assert set(result.graph.nodes) == {str(seed.id)}
+    # 被排除节点连同其邻接边一并消失，不是输出阶段裁剪。
+    assert result.graph.number_of_edges() == 0
+    assert result.meta.excluded_file_count == 1
