@@ -107,7 +107,7 @@ Plans:
 Plans:
 **Wave 0**
 
-- [ ] 122-01-PLAN.md — W0 验收地基：合成冻结 `MultiDiGraph` fixture（13 节点）+ 可调扇入 hub + 跨仓造数工厂 + 9 个测试文件骨架
+- [x] 122-01-PLAN.md — W0 验收地基：合成冻结 `MultiDiGraph` fixture（13 节点）+ 可调扇入 hub + 跨仓造数工厂 + 9 个测试文件骨架
 
 **Wave 1** *(blocked on Wave 0 completion)*
 

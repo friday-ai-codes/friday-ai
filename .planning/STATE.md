@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-status: executing
-stopped_at: Completed 121-10-PLAN.md (Phase 121 all plans done)
-last_updated: "2026-08-09T08:29:25.486Z"
-last_activity: 2026-08-09 — Phase 121 execution complete (10/10 plans)
+status: completed
+stopped_at: Completed 122-01-PLAN.md（Phase 122 Wave 0：合成冻结图 fixture + 9 个测试文件 27 个 pytest 节点；`tests/services/code_graph` 96 → 97 passed / 23 skipped）
+last_updated: "2026-08-09T15:27:13.161Z"
+last_activity: 2026-08-09 — 122-01 完成：`tests/services/code_graph` 96 → 97 passed / 23 skipped，零新增失败
 progress:
   total_phases: 7
-  completed_phases: 0
-  total_plans: 10
-  completed_plans: 9
-  percent: 0
+  completed_phases: 1
+  total_plans: 20
+  completed_plans: 11
+  percent: 14
 ---
 
 # Project State
@@ -27,17 +27,17 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 ## Current Position
 
-Phase: 122 (impact / trace 工具面) — NEXT (121 verified passed 4/4, code review 20 findings 处理完毕)
-Plan: 10 of 10
-Status: Ready to execute
-Last activity: 2026-08-09 — Phase 121 execution complete (10/10 plans, 86 new tests, 0 regressions)
+Phase: 122 (impact / trace 工具面) — 🚧 IN PROGRESS (121 verified passed 4/4, code review 20 findings 处理完毕)
+Plan: 1 of 10
+Status: 122-01 complete — Wave 0 验收地基已落地（合成冻结图 fixture + 27 个 pytest 节点，26 个为 skip 桩）
+Last activity: 2026-08-09 — 122-01 完成：`tests/services/code_graph` 96 → 97 passed / 23 skipped，零新增失败
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 121 | 内存图服务基座（缓存四件套 + 边准入 + 权限/exclusion 读取层收口） | GRAPH-01~04 | ✅ Complete (10/10 plans, verified passed) |
-| 122 | impact / trace 工具面（深度分组 + 置信度分层 + 跨仓 + MCP/对话双面） | IMPACT-01~06 | Not started |
+| 122 | impact / trace 工具面（深度分组 + 置信度分层 + 跨仓 + MCP/对话双面） | IMPACT-01~06 | 🚧 In progress (1/10 plans — Wave 0 验收地基已落地) |
 | 123 | detect_changes 工具本体（水位锚定 diff × Symbol 定位 + 批量 impact） | DIFF-01/02 | Not started |
 | 124 | 编码链闭环（容器提交前自查 + MR 描述影响面报告 fail-soft） | DIFF-03/04 | Not started |
 | 125 | 社区检测 + 模块摘要（Louvain + 指纹跳过 + 三点注入不动冻结面） | MOD-01~04 | Not started |
@@ -324,6 +324,7 @@ Last activity: 2026-08-09 — Phase 121 execution complete (10/10 plans, 86 new 
 | Phase 121 P06 | 40min | 3 tasks | 3 files |
 | Phase 121 P08 | 36min | 3 tasks | 2 files |
 | Phase 121-graph-base P09 | 45min | 2 tasks | 6 files |
+| Phase 122 P01 | 30min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -573,6 +574,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 121-graph-base]: services.code_graph 的公开面收敛为恰 17 项 curated barrel（loader/cache/signature/access 不导出） — get_graph 是权限校验、exclusion 过滤与水位一致性校验三道闸的唯一收口点；不导出把绕过校验从「需要自律」降级为「需要刻意书写内部模块路径」（ASVS V1），由逐字断言 17 个字面量的守护测试回归
 - [Phase 121-graph-base]: GraphService.invalidate 只驱逐不重建，且按仓驱逐该仓全部分支条目 — 重建要在钩子线程上跑 2-4 秒纯 CPU（与 GalaxyGraphCache.refresh_repo 的驱逐+重建刻意不同）；overlay 语义下 feature 分支图 = base 全量 + 分支增量，重索引会同时证伪所有分支，按单键驱逐会漏
 - [Phase 121-graph-base]: 两处构建完成钩子从包根 import invalidate_repository，主动失效不替代取图时的签名复校 — 钩子自己 reach into 包内 cache 子模块会让 barrel 守护测试形同虚设；且钩子只对本 worker 生效，多 worker 部署下旧图仍靠签名复校发现陈旧，故 _get_graph_sync 的签名比对不可删除（理由在 cache.py 与两处钩子共三处留痕）
+- [Phase 122]: known_topology 扩到 13 节点：在 RESEARCH §5 的 8 节点基础上加与 A 不连通的等长多解簇 P/Q/R/S 与只经裸名边可达的观察点 X — 原拓扑里 D→A 只有一条最短路，验证不了 D-18 的等长多解声明；C 还有 resolved 出边，用它会让 D-08 双闸用例恒真
+- [Phase 122]: cross_repo_call_factory 是 test_loader.py::_make_cross_repo_call 之外有意的第二份实现，不搬走既有 helper — 搬走会改到一批已绿的 Phase 121 用例；跨模块 import 别的测试模块的私有 helper 不是本仓做法
 
 ### Pending Todos
 
@@ -940,8 +943,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-09T08:28:59.171Z
-Stopped at: Completed 121-08-PLAN.md
+Last session: 2026-08-09T15:45:00.000Z
+Stopped at: Completed 122-01-PLAN.md（Phase 122 Wave 0：合成冻结图 fixture + 9 个测试文件 27 个 pytest 节点；`tests/services/code_graph` 96 → 97 passed / 23 skipped）
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。
 Earlier: 2026-07-31T07:28:32.180Z — v0.19.0 全部相位执行完毕（105/106/107/109/110）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01；Phase 110 七个 plan 全落地并闭合 GAP-1（前半程失败时间线撒谎）。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。
