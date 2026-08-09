@@ -40,7 +40,31 @@
 
 from __future__ import annotations
 
-from typing import Final
+import threading
+from collections import OrderedDict
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Final
+
+import structlog
+
+from services.code_graph.model import CodeGraph
+
+logger = structlog.get_logger(__name__)
+
+# 事件名常量（形态对齐 ``loader.py`` / ``signature.py`` / ``codegraph/lsp/volar_pool.py``）。
+# 🚨 前缀**不得缩写**：``graph_build_started/completed/failed`` 已被
+# ``services/graph_builder.py`` 占用，``galaxy_cache_*`` 已被 ``codegraph/galaxy/cache.py``
+# 占用；缩写会让两条完全不同的链路在日志里混成一摊。
+# ⚠️ 常量必须直接写在 ``logger.*`` 的第一个位置实参上，⛔ 不得抽 ``_emit(event, **kw)``
+# 转发器——``tests/services/code_graph/test_access.py::test_observability_contract`` 要求
+# 事件名可静态解析，转发器只会让它看到一个形参名（Plan 121-04 实际被这条契约拦下过一次）。
+_EVENT_CACHE_HIT: Final[str] = "code_graph_cache_hit"
+_EVENT_CACHE_EVICTED: Final[str] = "code_graph_cache_evicted"
+_EVENT_STALE_WATERMARK: Final[str] = "code_graph_stale_watermark"
+_EVENT_BUILD_STARTED: Final[str] = "code_graph_build_started"
+_EVENT_BUILD_COMPLETED: Final[str] = "code_graph_build_completed"
+_EVENT_BUILD_FAILED: Final[str] = "code_graph_build_failed"
 
 # =============================================================================
 # 字节估算（实测标定）
@@ -94,3 +118,133 @@ def estimate_graph_bytes(node_count: int, edge_count: int) -> int:
             f"节点数与边数必须 >= 0，收到 node_count={node_count} edge_count={edge_count}"
         )
     return node_count * NODE_COST_BYTES + edge_count * EDGE_COST_BYTES
+
+
+# =============================================================================
+# 字节预算 LRU
+# =============================================================================
+
+# 缓存键 = ``(repository_id, branch_name)``。``branch_name`` 沿用既有模型语义——
+# ``""`` 就是基线分支，⛔ **不做归一化别名**（不把 ``"main"`` 折成 ``""``）：默认分支名
+# 因仓库而异（``main`` / ``master`` / ``trunk``），一旦别名折错就是两张不同的图共用一个
+# 键，返回的会是另一个分支的结论。
+CacheKey = tuple[str, str]
+
+
+@dataclass
+class _Entry:
+    """一条缓存条目：图本体 + 记账所需的三项元数据。
+
+    刻意把 ``estimated_bytes`` 冗余在条目上（而不是每次从 ``graph`` 现算）：逐出时
+    要在持锁状态下做减法，现算意味着在锁内遍历图；而条目一旦写入就不再变形，冗余的
+    这个数不会与图本身漂移。
+    """
+
+    graph: CodeGraph
+    estimated_bytes: int
+    built_signature: str
+    built_at: datetime
+
+
+class GraphService:
+    """进程内、按**字节预算**逐出的图缓存（GRAPH-03）。
+
+    与本仓既有两套缓存先例的关键差异：``codegraph/lsp/volar_pool.py`` 按**条目数**逐出
+    且一次只逐一个，``codegraph/galaxy/cache.py`` 按**文件**记账；本类按字节预算**循环**
+    逐出——因为「4 张图」在这里可以是 40MB 也可以是 1GB，条目数根本约束不住 worker RSS。
+
+    线程安全：所有读写 ``_cache`` / ``_total_bytes`` 的路径都要持 :attr:`_lock`。锁是
+    ``RLock`` 而非 ``Lock``，因为 Plan 121-08 的编排路径会在同一线程内嵌套进入
+    （取图 → 未命中 → 装配 → 回写），``Lock`` 在那里会自死锁。
+
+    ⛔ 本类**全部方法均为同步**，不含任何 ``await``：异步外壳由 Plan 121-08 用一次
+    ``sync_to_async`` 包在外面，「持锁」与「await」因此在物理上不可能重叠
+    （121-CONTEXT D-04 / RESEARCH Pitfall 7）。
+    """
+
+    def __init__(self, max_bytes: int, max_graph_bytes: int) -> None:
+        if max_bytes <= 0:
+            raise ValueError(f"max_bytes 必须 > 0，收到 {max_bytes}")
+        if max_graph_bytes <= 0:
+            raise ValueError(f"max_graph_bytes 必须 > 0，收到 {max_graph_bytes}")
+        self._max_bytes = max_bytes
+        self._max_graph_bytes = max_graph_bytes
+        # OrderedDict 的**头部是 LRU 端、尾部是 MRU 端**：命中 move_to_end 推到尾部，
+        # 逐出 popitem(last=False) 从头部取。
+        self._cache: OrderedDict[CacheKey, _Entry] = OrderedDict()
+        self._total_bytes: int = 0
+        # 只保护 map 本身（以及 _total_bytes 这个伴随它的计数），不保护建图过程——
+        # 建图要 2–4 秒，放进锁内会让所有其它仓库的取图一起排队。
+        self._lock = threading.RLock()
+        # single-flight 占位。Plan 121-08 填充（键 → 领头请求的等待原语）。
+        self._inflight: dict[CacheKey, Any] = {}
+
+    def _get_entry(self, key: CacheKey) -> _Entry | None:
+        """取条目并把它移到 MRU 端。**调用方必须已持锁**（:attr:`_lock`）。
+
+        🚨 命中事件走 **DEBUG**：这条路径在每次取图时都会跑，INFO 会直接违反
+        ``.cursor/rules/observability-logging.mdc`` 的级别纪律（高频循环禁止 INFO 刷屏）。
+        """
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+        self._cache.move_to_end(key)
+        logger.debug(
+            _EVENT_CACHE_HIT,
+            component="code_graph",
+            category="sampling",
+            repository_id=key[0],
+            branch=key[1],
+            estimated_bytes=entry.estimated_bytes,
+            total_bytes=self._total_bytes,
+            cache_size=len(self._cache),
+        )
+        return entry
+
+    def _put(self, key: CacheKey, entry: _Entry) -> None:
+        """写入/覆盖条目，然后逐出到预算内。**调用方必须已持锁**（:attr:`_lock`）。
+
+        覆盖同一个键时**先减旧条目字节再加新条目**：漏掉这一步的话，同一个仓库反复
+        重建就会让 ``_total_bytes`` 单调虚增，最终把整个缓存逐空还是「超预算」
+        （威胁登记 T-121-记账漂移）。
+        """
+        existing = self._cache.get(key)
+        if existing is not None:
+            self._total_bytes -= existing.estimated_bytes
+        self._cache[key] = entry
+        self._cache.move_to_end(key)
+        self._total_bytes += entry.estimated_bytes
+        self._evict_until_within_budget()
+
+    def _evict_until_within_budget(self) -> None:
+        """从 LRU 端循环逐出，直到总字节回到预算内。**调用方必须已持锁**（:attr:`_lock`）。
+
+        ⚠️ 是 ``while`` 而不是 ``if``：一个接近单图上限的新条目可能一次性挤掉**两张
+        以上**旧图，逐一次只会让缓存长期停在超预算状态——那正是 OOM 的形状。
+        """
+        while self._total_bytes > self._max_bytes and self._cache:
+            evicted_key, evicted = self._cache.popitem(last=False)
+            self._total_bytes -= evicted.estimated_bytes
+            # 低频事件（只在预算真的被撑破时发），INFO 可接受，且它是排查
+            # 「为什么缓存命中率突然掉了」的第一手线索。
+            logger.info(
+                _EVENT_CACHE_EVICTED,
+                component="code_graph",
+                category="sampling",
+                repository_id=evicted_key[0],
+                branch=evicted_key[1],
+                evicted_bytes=evicted.estimated_bytes,
+                total_bytes=self._total_bytes,
+                max_bytes=self._max_bytes,
+                cache_size=len(self._cache),
+                reason="budget_exceeded",
+            )
+
+    def stats(self) -> dict[str, int]:
+        """当前缓存的记账快照（供诊断接口与用例断言）。"""
+        with self._lock:
+            return {
+                "entries": len(self._cache),
+                "total_bytes": self._total_bytes,
+                "max_bytes": self._max_bytes,
+            }
