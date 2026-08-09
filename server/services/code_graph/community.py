@@ -16,9 +16,11 @@ size≥``MIN_COMMUNITY_SIZE`` 跑 ``louvain_communities(..., seed=LOUVAIN_SEED)`
 from __future__ import annotations
 
 import hashlib
+import inspect
+import json
 import time
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -37,7 +39,10 @@ MAX_MEMBERS_STORED = 500
 MAX_TOP_FILES_STORED = 40
 
 MemberDict = dict[str, Any]
-SummaryFn = Callable[[Sequence[MemberDict], Mapping[str, Any]], Any]
+SummaryFn = Callable[
+    [Sequence[MemberDict], Mapping[str, Any]],
+    Any | Awaitable[Any],
+]
 
 
 def project_undirected(g: nx.MultiDiGraph | nx.Graph) -> nx.Graph:
@@ -232,6 +237,161 @@ def _resolve_built_at_sha(repository_id: str) -> str:
         return ""
 
 
+def _load_old_communities(repository_id: str, branch_name: str) -> list[dict[str, Any]]:
+    """读旧 ``SymbolCommunity`` 行，供指纹 / Jaccard 对账（D-06）。"""
+    from codegraph.models import SymbolCommunity
+
+    rows = list(
+        SymbolCommunity.objects.filter(
+            repository_id=repository_id,
+            branch_name=branch_name,
+        ).values(
+            "community_key",
+            "member_fingerprint",
+            "members",
+            "summary",
+            "summary_model",
+            "summary_generated_at",
+        )
+    )
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        members = list(row.get("members") or [])
+        out.append(
+            {
+                "community_key": str(row.get("community_key") or ""),
+                "member_fingerprint": str(row.get("member_fingerprint") or ""),
+                "members": members,
+                "member_keys": [_member_stable_key(m) for m in members if isinstance(m, Mapping)],
+                "summary": row.get("summary"),
+                "summary_model": row.get("summary_model"),
+                "summary_generated_at": row.get("summary_generated_at"),
+            }
+        )
+    return out
+
+
+def _summary_nonempty(summary: Any) -> bool:
+    return bool(str(summary or "").strip())
+
+
+def _reuse_summary_fields(community: dict[str, Any], old: Mapping[str, Any]) -> None:
+    community["summary"] = old.get("summary")
+    community["summary_model"] = old.get("summary_model")
+    community["summary_generated_at"] = old.get("summary_generated_at")
+    old_key = str(old.get("community_key") or "").strip()
+    if old_key:
+        community["community_key"] = old_key
+
+
+def _normalize_summary_payload(result: Any) -> str | None:
+    if result is None:
+        return None
+    if isinstance(result, str):
+        text = result.strip()
+        return text or None
+    if isinstance(result, Mapping):
+        try:
+            return json.dumps(dict(result), ensure_ascii=False, sort_keys=True)
+        except (TypeError, ValueError):
+            return None
+    text = str(result).strip()
+    return text or None
+
+
+async def _call_summary_fn(
+    summary_fn: SummaryFn,
+    members: Sequence[MemberDict],
+    community: Mapping[str, Any],
+) -> str | None:
+    try:
+        result = summary_fn(members, community)
+        if inspect.isawaitable(result):
+            result = await result
+        return _normalize_summary_payload(result)
+    except Exception:  # noqa: BLE001 — 单社区失败不阻断
+        return None
+
+
+async def _apply_summary_reconcile(
+    communities: list[dict[str, Any]],
+    old_communities: Sequence[Mapping[str, Any]],
+    *,
+    summary_fn: SummaryFn | None,
+) -> tuple[int, int]:
+    """指纹 short-circuit → Jaccard 贪心 → 串行 LLM（D-06/D-07/D-08/D-11）。"""
+    summaries_skipped = 0
+    summaries_generated = 0
+
+    old_by_fp: dict[str, dict[str, Any]] = {}
+    for old in old_communities:
+        fp = str(old.get("member_fingerprint") or "")
+        if fp and fp not in old_by_fp:
+            old_by_fp[fp] = dict(old)
+
+    used_old_fps: set[str] = set()
+    used_old_keys: set[str] = set()
+    need_llm: list[dict[str, Any]] = []
+    pending_jaccard: list[dict[str, Any]] = []
+
+    for community in communities:
+        if community.get("unclustered") or int(community.get("member_count") or 0) < MIN_COMMUNITY_SIZE:
+            summaries_skipped += 1
+            continue
+
+        fp = str(community.get("member_fingerprint") or "")
+        old_exact = old_by_fp.get(fp) if fp else None
+        if old_exact is not None:
+            used_old_fps.add(fp)
+            used_old_keys.add(str(old_exact.get("community_key") or ""))
+            if _summary_nonempty(old_exact.get("summary")):
+                _reuse_summary_fields(community, old_exact)
+                summaries_skipped += 1
+            else:
+                # D-08：指纹未变但 summary 空白 → 允许重试
+                need_llm.append(community)
+            continue
+
+        pending_jaccard.append(community)
+
+    remaining_old = [
+        dict(o)
+        for o in old_communities
+        if str(o.get("member_fingerprint") or "") not in used_old_fps
+        and str(o.get("community_key") or "") not in used_old_keys
+    ]
+    if pending_jaccard and remaining_old:
+        matches = match_communities_greedy(pending_jaccard, remaining_old, threshold=JACCARD_THRESHOLD)
+        matched_new: set[int] = set()
+        for ni, oi, _score in matches:
+            matched_new.add(ni)
+            old = remaining_old[oi]
+            new = pending_jaccard[ni]
+            if _summary_nonempty(old.get("summary")):
+                _reuse_summary_fields(new, old)
+                summaries_skipped += 1
+            else:
+                need_llm.append(new)
+        for ni, community in enumerate(pending_jaccard):
+            if ni not in matched_new:
+                need_llm.append(community)
+    else:
+        need_llm.extend(pending_jaccard)
+
+    if summary_fn is not None:
+        for community in need_llm:
+            summary = await _call_summary_fn(summary_fn, community.get("members") or [], community)
+            if summary:
+                community["summary"] = summary
+                summaries_generated += 1
+            else:
+                summaries_skipped += 1
+    else:
+        summaries_skipped += len(need_llm)
+
+    return summaries_skipped, summaries_generated
+
+
 def _persist_communities(
     *,
     repository_id: str,
@@ -273,10 +433,10 @@ async def rebuild_communities(
     graph: Any | None = None,
     summary_fn: SummaryFn | None = None,
 ) -> dict[str, Any]:
-    """取图 → Louvain → 指纹 →（可选 summary_fn）→ 按仓/分支全删全建。
+    """取图 → Louvain → 指纹/Jaccard 对账 →（可选 summary_fn）→ 全删全建。
 
     ``graph`` 可注入（测试）；缺省经 ``get_graph_service().get_graph``。
-    本 plan（125-02）默认 ``summary_fn=None``，摘要接线留给 125-03。
+    durable 默认传入 ``agenerate_module_summary``；``summary_fn=None`` 时只落库不调 LLM。
     """
     from services.code_graph import get_graph_service
 
@@ -310,21 +470,15 @@ async def rebuild_communities(
             nx_graph,
             chunk_evidence=chunk_evidence,
         )
-
-        if summary_fn is not None:
-            for community in communities:
-                if community.get("unclustered") or community["member_count"] < MIN_COMMUNITY_SIZE:
-                    summaries_skipped += 1
-                    continue
-                try:
-                    summary = summary_fn(community["members"], community)
-                except Exception:  # noqa: BLE001 — 单社区失败不阻断
-                    summary = None
-                if summary:
-                    community["summary"] = summary
-                    summaries_generated += 1
-                else:
-                    summaries_skipped += 1
+        old_communities = await sync_to_async(_load_old_communities)(
+            str(repository_id),
+            branch,
+        )
+        summaries_skipped, summaries_generated = await _apply_summary_reconcile(
+            communities,
+            old_communities,
+            summary_fn=summary_fn,
+        )
 
         built_at_sha = await sync_to_async(_resolve_built_at_sha)(str(repository_id))
         written = await sync_to_async(_persist_communities)(
