@@ -10,7 +10,8 @@ facet 降权 + LLM 树推理 三合一，D-01/D-04，**绝不自写打分**）�
 
 - :meth:`propose`：解析候选范围（``_resolve_repository_ids`` 限定 ``Space.repositories``，
   防跨项目噪声 Pitfall 6）→ 拼 query（``_build_query`` 消费 ``features_flat`` 的
-  name/description/module，D-06）→ ``RepoRouterV2.route`` 选仓 → 候选落 proposed。
+  name/description/module，D-06）→ ``RepoRouterV2.route`` 选仓 → **章程 + 历史三分量
+  融合**（对齐 ``BlueprintRouteAdapter`` brownfield 默认权重）→ 候选落 proposed。
 - :meth:`refine`：把用户澄清 ``extra_instruction`` 并进 query 重 route（多轮 RAG 细化，
   D-01 首版 = 重 route），刷新 proposed 候选集；每轮各写一条 RetrievalTrace。
 
@@ -186,12 +187,18 @@ class RepoAssociationService:
                 corpus_kind="requirement",
             )
 
-        candidates = [self._candidate_dict(c) for c in result.candidates]
+        candidates = await self._fuse_extended_signals(
+            query=query,
+            result=result,
+            repo_ids=repo_ids,
+            initiated_by_user_id=user_label,
+        )
 
         # 召回留痕（routing 链，覆盖 AI 对话）；best-effort 不反噬选仓。
         await self._record_routing_trace(
             query=query,
             result=result,
+            candidates=candidates,
             user_label=user_label,
         )
 
@@ -225,7 +232,12 @@ class RepoAssociationService:
         }
 
     async def _record_routing_trace(
-        self, *, query: str, result: Any, user_label: str
+        self,
+        *,
+        query: str,
+        result: Any,
+        candidates: list[dict[str, Any]],
+        user_label: str,
     ) -> None:
         """写 routing 召回留痕（best-effort，观测失败绝不反噬选仓）。"""
         try:
@@ -233,8 +245,9 @@ class RepoAssociationService:
                 kind="routing",
                 payload={
                     "query": query,
-                    "candidates": [c.to_dict() for c in result.candidates],
+                    "candidates": candidates,
                     "router_version": result.router_version,
+                    "signal_fusion": "charter+history",
                 },
                 user_id=user_label,
                 source=_COMPONENT,
@@ -247,6 +260,205 @@ class RepoAssociationService:
                 component=_COMPONENT,
                 category="sampling",
             )
+
+    # ------------------------------------------------------------------
+    # 章程 + 历史三分量融合（CHARTER-02，对齐 BlueprintRouteAdapter）
+    # ------------------------------------------------------------------
+
+    async def _fuse_extended_signals(
+        self,
+        *,
+        query: str,
+        result: Any,
+        repo_ids: list[str],
+        initiated_by_user_id: str,
+    ) -> list[dict[str, Any]]:
+        """能力树 router_base + 章程 + 历史加权融合；best-effort 失败回退纯 router 候选。"""
+        started = perf_counter()
+        router_candidates = list(getattr(result, "candidates", []) or [])
+        fallback = [self._candidate_dict(c) for c in router_candidates]
+        if not fallback:
+            return []
+
+        try:
+            from services.process_runtime.blueprint_charter_match import (
+                acollect_charter_candidates,
+                aload_charters,
+                score_charter_match,
+            )
+            from services.process_runtime.blueprint_route import (
+                DEFAULT_ROUTE_WEIGHTS,
+                aload_route_weights,
+                build_score_breakdown,
+            )
+            from services.process_runtime.blueprint_route_history import ascore_history_match
+
+            weights = await aload_route_weights()
+            vector = dict(
+                (weights or {}).get("brownfield") or DEFAULT_ROUTE_WEIGHTS["brownfield"]
+            )
+            query_terms = [query]
+
+            raw: list[dict[str, Any]] = []
+            for c in router_candidates:
+                rid = str(getattr(c, "repo_id", "") or "")
+                if not rid:
+                    continue
+                raw.append(
+                    {
+                        "repository_id": rid,
+                        "repository_name": str(getattr(c, "repo_name", "") or ""),
+                        "router_base": float(getattr(c, "score", 0.0) or 0.0),
+                        "confidence": str(getattr(c, "confidence", "") or ""),
+                        "reasoning": str(getattr(c, "reasoning", "") or ""),
+                        "matched_node_paths": list(getattr(c, "matched_node_paths", []) or []),
+                        "charter_supplement": False,
+                    }
+                )
+
+            exclude_ids = {item["repository_id"] for item in raw}
+            try:
+                supplements = await acollect_charter_candidates(
+                    query_terms=query_terms,
+                    exclude_repository_ids=exclude_ids,
+                    repository_ids=repo_ids,
+                    limit=3,
+                )
+            except Exception:  # noqa: BLE001 — 补入失败退化为无补入
+                supplements = []
+            for row in supplements or []:
+                rid = str(row.get("repository_id") or "")
+                if not rid or rid in exclude_ids:
+                    continue
+                exclude_ids.add(rid)
+                raw.append(
+                    {
+                        "repository_id": rid,
+                        "repository_name": str(row.get("repository_name") or ""),
+                        "router_base": 0.0,
+                        "confidence": "low",
+                        "reasoning": "",
+                        "matched_node_paths": [],
+                        "charter_supplement": True,
+                        "_charter_match_raw": float(row.get("charter_match_raw") or 0.0),
+                        "_matched_domains": list(row.get("matched_domains") or []),
+                    }
+                )
+
+            if not raw:
+                return fallback
+
+            candidate_ids = [item["repository_id"] for item in raw]
+            charters = await aload_charters(candidate_ids)
+            acting_user = await self._resolve_acting_user(initiated_by_user_id)
+            history = await ascore_history_match(
+                query=query,
+                candidate_repository_ids=candidate_ids,
+                acting_user=acting_user,
+            )
+
+            fused: list[dict[str, Any]] = []
+            for item in raw:
+                rid = item["repository_id"]
+                if item.get("charter_supplement"):
+                    charter_score = float(item.get("_charter_match_raw") or 0.0)
+                    charter_source = "ai_draft"
+                    charter_version = 0
+                    matched_domains = list(item.get("_matched_domains") or [])
+                    violated_boundaries: list[str] = []
+                    penalty_reasons: list[str] = []
+                else:
+                    charter_result = score_charter_match(
+                        charters.get(rid), query_terms=query_terms
+                    )
+                    charter_score = float(charter_result.score or 0.0)
+                    charter_source = str(charter_result.charter_source or "")
+                    charter_version = int(charter_result.charter_version or 0)
+                    matched_domains = list(charter_result.matched_domains or [])
+                    violated_boundaries = list(charter_result.violated_boundaries or [])
+                    penalty_reasons = list(charter_result.penalty_reasons or [])
+
+                history_score = float(history.scores.get(rid, 0.0))
+                breakdown = build_score_breakdown(
+                    router_base=item["router_base"],
+                    charter_match=charter_score,
+                    history_match=history_score,
+                    weights=vector,
+                    evidence={
+                        "router_version": str(getattr(result, "router_version", "") or ""),
+                        "auto_selected": bool(getattr(result, "auto_selected", False)),
+                        "confidence": item["confidence"],
+                        "reasoning": item["reasoning"],
+                        "matched_node_paths": item["matched_node_paths"],
+                        "charter_source": charter_source,
+                        "charter_version": charter_version,
+                        "matched_domains": matched_domains,
+                        "violated_boundaries": violated_boundaries,
+                        "penalty_reasons": penalty_reasons,
+                        "history_match_unavailable": history.unavailable_reason,
+                        "boundary_override_reason": "",
+                        "unjustified_boundary_hit": False,
+                        "module_summaries": [],
+                    },
+                )
+                confidence = item["confidence"]
+                if violated_boundaries:
+                    confidence = "low"
+                fused.append(
+                    {
+                        "repo_id": rid,
+                        "repo_name": item["repository_name"],
+                        "score": round(float(breakdown["total"]), 4),
+                        "confidence": confidence,
+                        "reason": item["reasoning"],
+                        "matched_node_paths": list(item["matched_node_paths"]),
+                        "breakdown": {
+                            "router_base": breakdown["router_base"],
+                            "charter_match": breakdown["charter_match"],
+                            "history_match": breakdown["history_match"],
+                            "total": breakdown["total"],
+                        },
+                        "charter_supplement": bool(item.get("charter_supplement")),
+                    }
+                )
+
+            fused.sort(key=lambda c: (-float(c["score"]), str(c["repo_id"])))
+            top = fused[:_TOP_K]
+            logger.info(
+                "repo_association_signals_fused",
+                candidate_count=len(top),
+                supplement_count=sum(1 for c in top if c.get("charter_supplement")),
+                history_unavailable=history.unavailable_reason,
+                duration_ms=round((perf_counter() - started) * 1000, 2),
+                initiated_by_user_id=initiated_by_user_id,
+                component=_COMPONENT,
+                category="sampling",
+            )
+            return top
+        except Exception as exc:  # noqa: BLE001 — 融合失败回退纯 router，不反噬选仓
+            logger.warning(
+                "repo_association_signals_fusion_failed",
+                reason=redact_secrets_in_text(str(exc)),
+                error_type=type(exc).__name__,
+                duration_ms=round((perf_counter() - started) * 1000, 2),
+                initiated_by_user_id=initiated_by_user_id,
+                component=_COMPONENT,
+                category="sampling",
+            )
+            return fallback
+
+    @sync_to_async
+    def _resolve_acting_user(self, user_label: str) -> Any:
+        """解析历史分量所需 acting user（system/无效 id → None，fail-closed）。"""
+        if not user_label or user_label == "system":
+            return None
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        try:
+            return User.objects.get(pk=user_label)
+        except (User.DoesNotExist, ValueError, TypeError):
+            return None
 
     # ------------------------------------------------------------------
     # 候选范围 / query / 候选映射

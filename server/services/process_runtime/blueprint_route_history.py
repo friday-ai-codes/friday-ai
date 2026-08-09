@@ -115,7 +115,8 @@ async def ascore_history_match(
     *,
     query: str,
     candidate_repository_ids: list[str],
-    session,
+    session=None,
+    acting_user=None,
     top_k_multiplier: int = 2,
 ) -> HistoryMatchResult:
     """算逐候选仓的 `history_match` 分量（单次检索 + 埋点 + 显式降级）。
@@ -141,7 +142,9 @@ async def ascore_history_match(
     try:
         from knowledge.retrieval import DeliveryKnowledgeSearchService
 
-        actor = await _resolve_actor(session)
+        actor = acting_user
+        if actor is None and session is not None:
+            actor = await _resolve_actor(session)
         if actor is None:
             # T-112-10：权限 fail-closed。绝不伪造 actor 提权，也不静默当 0 分——
             # 上层据此在 breakdown 里写 history_match_unavailable=no_acting_user。

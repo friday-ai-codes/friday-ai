@@ -158,7 +158,54 @@ async def test_propose_observability_call_source_and_trace() -> None:
     assert kwargs["kind"] == "routing"
     assert "query" in kwargs["payload"]
     assert "candidates" in kwargs["payload"]
+    assert kwargs["payload"].get("signal_fusion") == "charter+history"
     assert kwargs["source"] == "repo_association"
+
+
+async def test_propose_fuses_charter_and_history_signals() -> None:
+    """章程 + 历史融合后候选带 breakdown，且按融合分排序。"""
+    space, project, repos = await _aprep(2)
+    capture: dict = {}
+    fused = [
+        {
+            "repo_id": str(repos[1].id),
+            "repo_name": repos[1].name,
+            "score": 0.88,
+            "confidence": "high",
+            "reason": "history boost",
+            "matched_node_paths": ["x"],
+            "breakdown": {
+                "router_base": 0.3,
+                "charter_match": 0.4,
+                "history_match": 0.18,
+                "total": 0.88,
+            },
+        },
+        {
+            "repo_id": str(repos[0].id),
+            "repo_name": repos[0].name,
+            "score": 0.55,
+            "confidence": "medium",
+            "reason": "router only",
+            "matched_node_paths": ["y"],
+            "breakdown": {
+                "router_base": 0.55,
+                "charter_match": 0.0,
+                "history_match": 0.0,
+                "total": 0.55,
+            },
+        },
+    ]
+    with (
+        _patch_route(capture, _result_for(repos)),
+        patch(f"{_SVC_MOD}.arecord_retrieval_trace", AsyncMock()),
+        patch(f"{_SVC_MOD}.RepoAssociationService._fuse_extended_signals", AsyncMock(return_value=fused)),
+    ):
+        result = await RepoAssociationService().propose(
+            space=space, features_flat=_FEATURES, project=project,
+        )
+    assert result["candidates"][0]["repo_id"] == str(repos[1].id)
+    assert result["candidates"][0]["breakdown"]["history_match"] == 0.18
 
 
 async def test_propose_empty_features_skips_route() -> None:
