@@ -28,6 +28,7 @@ from services.code_graph_tools import (
     degradation_payload,
     fetch_graph_for_tool,
     graph_error_to_tool_error,
+    run_impact,
 )
 
 pytestmark = pytest.mark.django_db
@@ -213,10 +214,136 @@ def test_degradation_payload_declares_resolution_rate_numerically() -> None:
     assert len(unfiltered["declarations"]) > len(clean["declarations"])
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-07 落地")
-def test_ambiguous_symbol_short_circuits_before_graph_fetch() -> None:
+@pytest.mark.django_db(transaction=True)
+async def test_ambiguous_symbol_short_circuits_before_graph_fetch(
+    indexed_repo, symbols_factory
+) -> None:
     """重名时在**取图之前**短路成候选列表，不白建一张图（D-19）。
 
     （Req: IMPACT-05, 决策: D-19）
     """
-    pytest.fail("Wave 0 桩")
+    def _seed() -> None:
+        for i, path in enumerate(
+            ("src/a/dup.py", "src/b/dup.py", "src/c/dup.py"), start=1
+        ):
+            symbols_factory("dup", path, start_line=i * 10, end_line=i * 10 + 5)
+
+    await sync_to_async(_seed)()
+
+    with mock.patch(
+        "services.code_graph_tools.fetch_graph_for_tool",
+        new_callable=mock.AsyncMock,
+    ) as fetch_spy:
+        result = await run_impact(
+            repository_id=str(indexed_repo.id),
+            repo=indexed_repo,
+            graph_branch=None,
+            user=None,
+            symbol="dup",
+        )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "ambiguous_symbol"
+    assert len(result["candidates"]) == 3
+    assert result["total_candidates"] == 3
+    assert fetch_spy.call_count == 0
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_run_impact_envelope_always_declares(
+    indexed_repo, symbols_factory
+) -> None:
+    """成功态信封 15 键恒在；``staleness`` / ``graph`` 永不缺席（D-22 / D-23）。
+
+    （Req: IMPACT-01 / IMPACT-04 / IMPACT-06）
+    """
+    def _seed():
+        return symbols_factory("leaf", "src/leaf.py")
+
+    seed = await sync_to_async(_seed)()
+    result = await run_impact(
+        repository_id=str(indexed_repo.id),
+        repo=indexed_repo,
+        graph_branch=None,
+        user=None,
+        symbol_id=str(seed.id),
+    )
+
+    assert result["ok"] is True
+    assert set(result) >= {
+        "ok",
+        "tool",
+        "repository_id",
+        "branch",
+        "seed",
+        "query",
+        "groups",
+        "risk_level",
+        "risk_inputs",
+        "summary",
+        "cross_repo",
+        "affected_processes",
+        "staleness",
+        "graph",
+    }
+    assert isinstance(result["graph"]["resolution_rate"], float)
+    assert isinstance(result["staleness"]["declaration"], str)
+    assert result["staleness"]["declaration"]
+    assert result["affected_processes"] == []
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_run_impact_does_not_swallow_graph_error(
+    indexed_repo, symbols_factory
+) -> None:
+    """未索引仓 ⇒ ``GraphNotIndexed`` 上抛，⛔ 不是 ``ok=False`` / 空 groups（D-03）。
+
+    先落一条 ORM 符号再撤索引：解析短路在取图之前，没有符号时根本走不到
+    ``GraphNotIndexed``，测不到「编排层不吞」这条红线。
+
+    （Req: IMPACT-01, 决策: D-03）
+    """
+    from repositories.models import IndexStatus
+
+    def _seed_then_unindex():
+        sym = symbols_factory("leaf", "src/leaf.py")
+        indexed_repo.index_status = IndexStatus.NOT_INDEXED
+        indexed_repo.save(update_fields=["index_status"])
+        return sym
+
+    seed = await sync_to_async(_seed_then_unindex)()
+
+    with pytest.raises(GraphNotIndexed):
+        await run_impact(
+            repository_id=str(indexed_repo.id),
+            repo=indexed_repo,
+            graph_branch=None,
+            user=None,
+            symbol_id=str(seed.id),
+        )
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_symbol_not_in_graph_is_explicit(
+    indexed_repo, symbols_factory, exclusion_rule_factory
+) -> None:
+    """被 exclusion 挡掉的符号 ⇒ ``symbol_not_in_graph``，结果**不含** ``groups``。
+
+    （Req: IMPACT-01；GRAPH-04 端到端回填落点）
+    """
+    def _seed():
+        exclusion_rule_factory("secret/*")
+        return symbols_factory("hidden", "secret/hidden.py")
+
+    seed = await sync_to_async(_seed)()
+    result = await run_impact(
+        repository_id=str(indexed_repo.id),
+        repo=indexed_repo,
+        graph_branch=None,
+        user=None,
+        symbol_id=str(seed.id),
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "symbol_not_in_graph"
+    assert "groups" not in result
