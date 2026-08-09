@@ -48,7 +48,7 @@ patterns-established:
   - "Phase 127 frozen guard lists semgrep_scan/security_scan_report/semgrep_enqueue/orphan_reap"
   - "sample_findings.json uses check_id + extra.severity + fingerprint + nosemgrep note"
 
-requirements-completed: [TAINT-01, TAINT-02, TAINT-03, LSP-01]
+requirements-completed: []  # Wave 0 stubs only — TAINT/LSP complete in 127-02..05
 
 duration: 2min
 completed: 2026-08-10
@@ -80,7 +80,7 @@ Each task was committed atomically:
 1. **Task 1: Wave 0 验收测试桩 + Semgrep fixture** - `86a58c40` (test)
 2. **Task 2: VALIDATION 与五 plan 编号对齐** - `da6e05d5` + follow-up `94784bf3` (docs)
 
-**Plan metadata:** `b1e15ba6` (docs: complete plan; follow-up docs commit may amend VALIDATION sign-off)
+**Plan metadata:** `b1e15ba6` / `8a892c4c` / `dbe2ae18` (docs complete + STATE/ROADMAP)
 
 ## Files Created/Modified
 
