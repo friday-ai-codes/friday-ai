@@ -108,6 +108,6 @@ created: 2026-08-10
 - [x] No watch-mode flags
 - [x] Feedback latency < 90s（quick）
 - [x] `nyquist_compliant: true` set in frontmatter after Wave 0 stubs land
-- [ ] `wave_0_complete: true` — set after 127-01 SUMMARY
+- [x] `wave_0_complete: true` — set after 127-01 SUMMARY
 
 **Approval:** pending

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
 status: executing
-stopped_at: Completed 126-05-PLAN.md
-last_updated: "2026-08-09T22:06:05.642Z"
-last_activity: 2026-08-10 — Phase 126 complete, transitioned to Phase 127
+stopped_at: Completed 127-01-PLAN.md
+last_updated: "2026-08-09T22:09:17.491Z"
+last_activity: 2026-08-10 -- Completed 127-01 (Wave 0 stubs)
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 39
-  completed_plans: 39
-  percent: 86
+  total_plans: 44
+  completed_plans: 40
+  percent: 91
 ---
 
 # Project State
@@ -23,14 +23,14 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。
 **v0.19.0 交付的那一层：** 技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。
 **v0.20.0 交付的那一层：** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，飞书式划线澄清多轮收敛，全生命周期可管理、可查可引可导出。
-**Current focus:** Phase 126 — process-rename-skills
+**Current focus:** Phase 127 — semgrep-lsp
 
 ## Current Position
 
-Phase: 127 — Semgrep 门禁 + LSP 基准
-Plan: Not started
+Phase: 127 (semgrep-lsp) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-08-10 — Phase 126 complete, transitioned to Phase 127
+Last activity: 2026-08-10 -- Completed 127-01 (Wave 0 stubs)
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
 
@@ -42,7 +42,7 @@ Last activity: 2026-08-10 — Phase 126 complete, transitioned to Phase 127
 | 124 | 编码链闭环（容器提交前自查 + MR 描述影响面报告 fail-soft） | DIFF-03/04 | 🚧 In progress (3/4 plans — impact_report core green; MR wiring next) |
 | 125 | 社区检测 + 模块摘要（Louvain + 指纹跳过 + 三点注入不动冻结面） | MOD-01~04 | ✅ Plans complete (4/4) — ready for verification |
 | 126 | 执行流 + rename_preview + skills（Process 模型 + affected_processes 回填 + 只读改名清单 + skill 分发） | EXEC-01~03, RENAME-01, SKILL-01 | Not started |
-| 127 | Semgrep 门禁 + LSP 基准（diff-aware advisory + volar/gopls 探测与基准） | TAINT-01~03, LSP-01 | Not started |
+| 127 | Semgrep 门禁 + LSP 基准（diff-aware advisory + volar/gopls 探测与基准） | TAINT-01~03, LSP-01 | 🚧 In progress (1/5 plans — Wave 0 stubs) |
 
 **Execution order（依赖链）:** 121 → 122 → 123 → 124 → 125 → 126 → 127（125 只依赖 121，可与 122–124 并行；127 独立轨道但刻意排在 125/126 之后避免多个内存大户同时上线）。需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)，调研见 [research/SUMMARY.md](./research/SUMMARY.md)。
 
@@ -353,6 +353,7 @@ Last activity: 2026-08-10 — Phase 126 complete, transitioned to Phase 127
 | Phase 126 P03 | 8min | 3 tasks | 14 files |
 | Phase 126 P04 | 5min | 2 tasks | 16 files |
 | Phase 126 P05 | 2min | 2 tasks | 14 files |
+| Phase 127 P01 | 2min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -673,6 +674,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 126]: D-27 npm mcp drift +1 rename_preview (10→11); submodule untouched
 - [Phase 126]: D-13/14: friday-impact + friday-refactoring in skills submodule and SKILL_NAMES; routing excluded
 - [Phase 126]: D-15: npm skills publish Deferred; acceptance via source+hash+injection
+- [Phase 127]: Wave 0 stubs only; freeze repo_router_v2/mcp; Semgrep CLI-only
+- [Phase 127]: Live frozen-surface + LSP defaults; behavior nodes stay skipped until 127-02..05
+- [Phase 127]: Do not mark TAINT/LSP requirements complete from Wave 0 stubs alone
 
 ### Pending Todos
 
@@ -1040,8 +1044,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-09T21:34:07.229Z
-Stopped at: Completed 126-05-PLAN.md
+Last session: 2026-08-09T22:09:17.477Z
+Stopped at: Completed 127-01-PLAN.md
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。
 Earlier: 2026-07-31T07:28:32.180Z — v0.19.0 全部相位执行完毕（105/106/107/109/110）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01；Phase 110 七个 plan 全落地并闭合 GAP-1（前半程失败时间线撒谎）。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。
