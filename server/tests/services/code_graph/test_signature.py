@@ -91,6 +91,97 @@ def test_signature_exclusion_fingerprint_changes(indexed_repo, branch_index) -> 
 
 # 121-VALIDATION.md 121-04-T2：签名对**两条**边构建轨各自的变化都敏感（D-02）——
 # 只看 IndexHistory 一条轨会漏失效，CallEdge 抽取走的是另一条轨。
-@pytest.mark.skip(reason="stub：由 Plan 121-04 Task 2 实现")
-def test_signature_generation_two_tracks() -> None:
-    pass
+def test_signature_generation_two_tracks(db, indexed_repo, branch_index) -> None:
+    """两条边构建轨各自单独推进都必须改变签名（121-CONTEXT D-02）。
+
+    两个分支**分别单独成立**是本用例的全部意义：如果实现只纳入了轨 A，(b) 段会红；
+    只纳入轨 B，(a) 段会红。每段内部都只动一条轨的字段，另一条轨保持静止，任何一段
+    都不能靠另一条轨的副作用蒙混过关。
+    """
+    from django.utils import timezone
+
+    from repositories.models import (
+        GraphBuildHistory,
+        GraphBuildHistoryStatus,
+        GraphBuildHistoryTrigger,
+        GraphBuildStatus,
+        IndexHistory,
+        IndexHistoryStatus,
+        IndexStatus,
+        Repository,
+        RepositoryGraphStatus,
+        TriggerType,
+    )
+
+    repo_id = str(indexed_repo.id)
+
+    def _sig() -> str:
+        return compute_signature(repo_id, "", exclusion_fingerprint=_FP)
+
+    # ── (a) 轨 A：ChunkEdge 构建（IndexHistory）单独推进 ──────────────────
+    baseline = _sig()
+
+    history = IndexHistory.objects.create(
+        repository=indexed_repo,
+        trigger_type=TriggerType.MANUAL,
+        status=IndexHistoryStatus.RUNNING,
+        started_at=timezone.now(),
+    )
+    after_new_history = _sig()
+    assert after_new_history != baseline, "新增 IndexHistory 未改变签名（轨 A 缺失）"
+
+    history.graph_build_status = GraphBuildStatus.COMPLETED
+    history.edge_count = 42
+    history.save(update_fields=["graph_build_status", "edge_count"])
+
+    after_track_a_advance = _sig()
+    assert after_track_a_advance != after_new_history, (
+        "轨 A 的 graph_build_status/edge_count 推进未改变签名"
+    )
+
+    # ── (b) 轨 B：Symbol/CallEdge 抽取（GraphBuildHistory）单独推进 ───────
+    before_track_b = after_track_a_advance
+
+    build = GraphBuildHistory.objects.create(
+        repository=indexed_repo,
+        trigger_type=GraphBuildHistoryTrigger.MANUAL,
+        status=GraphBuildHistoryStatus.RUNNING,
+        branch_name="",
+    )
+    after_new_build = _sig()
+    assert after_new_build != before_track_b, (
+        "新增 GraphBuildHistory 未改变签名（轨 B 缺失——CallEdge 是主边源，"
+        "漏掉这条轨意味着调用边旧了一代还照样命中缓存）"
+    )
+
+    build.status = GraphBuildHistoryStatus.COMPLETED
+    build.calls_count = 17
+    build.save(update_fields=["status", "calls_count"])
+
+    after_track_b_advance = _sig()
+    assert after_track_b_advance != after_new_build, (
+        "轨 B 的 status/calls_count 推进未改变签名"
+    )
+
+    # ── 兜底分量：没有任何 history 行的老仓 ───────────────────────────────
+    legacy_repo = Repository.objects.create(
+        name="code-graph-legacy-repo",
+        git_url="https://example.com/code-graph-legacy-repo.git",
+        default_branch="main",
+        index_status=IndexStatus.INDEXED,
+        last_indexed_commit_sha="e" * 40,
+    )
+    legacy_before = compute_signature(
+        str(legacy_repo.id), "", exclusion_fingerprint=_FP
+    )
+
+    legacy_repo.graph_build_status = RepositoryGraphStatus.COMPLETED
+    legacy_repo.graph_last_built_at = timezone.now()
+    legacy_repo.save(update_fields=["graph_build_status", "graph_last_built_at"])
+
+    legacy_after = compute_signature(
+        str(legacy_repo.id), "", exclusion_fingerprint=_FP
+    )
+    assert legacy_after != legacy_before, (
+        "无 history 行的老仓：repoG: 兜底分量未随 Repository 图字段变化"
+    )
