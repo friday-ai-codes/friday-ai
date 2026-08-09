@@ -88,7 +88,7 @@ Each task was committed atomically:
 3. **Task 2 RED: prompt + frozen surface tests** - `008507b2` (test)
 4. **Task 2 GREEN: research prompt budget truncate** - `5a0aa471` (feat)
 
-**Plan metadata:** (pending docs commit)
+**Plan metadata:** `ff8239ff` (docs: complete plan)
 
 ## Files Created/Modified
 
