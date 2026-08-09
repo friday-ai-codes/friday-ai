@@ -606,7 +606,8 @@ async def _trace_call_path_impl(
         conversation_id=conversation_id,
         user=user,
     )
-    hops = result.get("hops") if isinstance(result.get("hops"), list) else []
+    hops_raw = result.get("hops")
+    hops: list[Any] = hops_raw if isinstance(hops_raw, list) else []
     logger.info(
         "trace_call_path_tool_done",
         conversation_id=conversation_id,
