@@ -138,8 +138,13 @@ async def test_mcp_create_mr_failsoft_on_impact_error() -> None:
 
 
 async def test_workflow_mcp_impact_section_parity() -> None:
-    """同一 (repo, compare) fixture 下 workflow 与 MCP 段规范化后一致（D-14）。"""
+    """同一 (repo, compare, base_ref, user) 下两侧以等价 kwargs 调共享 helper（D-14）。
+
+    不再用固定 stub mock 自证；spy 记录 await kwargs，并对照未 patch 的
+    ``build_impact_report_section`` stub 输出字节级稳定。
+    """
     from mcp_tools import merge_request_service as mrs
+    from services.code_graph.impact_report import build_impact_report_section
     from workflows.nodes.ai.coding import AICodingNode
 
     repo = _repo(name="parity-repo")
@@ -149,17 +154,24 @@ async def test_workflow_mcp_impact_section_parity() -> None:
     repo.default_branch = base_ref
 
     shared_section = _FOUR_SECTION
+    spy_calls: list[dict[str, Any]] = []
 
-    async def _fixed_section(**kwargs: Any) -> str:
-        assert kwargs["compare"] == compare
-        assert kwargs["base_ref"] == base_ref
+    async def _spy_section(**kwargs: Any) -> str:
+        spy_calls.append(
+            {
+                "repository": kwargs.get("repository"),
+                "compare": kwargs.get("compare"),
+                "base_ref": kwargs.get("base_ref"),
+                "user": kwargs.get("user"),
+            }
+        )
         return shared_section
 
     mcp_client = _FakeGitClient()
     with (
         patch(
             "services.code_graph.impact_report.build_impact_report_section",
-            new=AsyncMock(side_effect=_fixed_section),
+            new=AsyncMock(side_effect=_spy_section),
         ),
         patch.object(mrs, "_get_client", new=AsyncMock(return_value=mcp_client)),
     ):
@@ -187,7 +199,7 @@ async def test_workflow_mcp_impact_section_parity() -> None:
     with (
         patch(
             "services.code_graph.impact_report.build_impact_report_section",
-            new=AsyncMock(side_effect=_fixed_section),
+            new=AsyncMock(side_effect=_spy_section),
         ),
         patch("workflows.nodes.ai.coding.aresolve_git_token", _tok),
         patch(
@@ -205,23 +217,26 @@ async def test_workflow_mcp_impact_section_parity() -> None:
             user=user,
         )
 
+    assert len(spy_calls) == 2
+    mcp_kwargs, wf_kwargs = spy_calls
+    assert mcp_kwargs["repository"] is repo
+    assert wf_kwargs["repository"] is repo
+    assert mcp_kwargs["compare"] == wf_kwargs["compare"] == compare
+    assert mcp_kwargs["base_ref"] == wf_kwargs["base_ref"] == base_ref
+    assert mcp_kwargs["user"] is user
+    assert wf_kwargs["user"] is user
+
     mcp_desc = mcp_payload["description"]
     wf_desc = wf_client.create_merge_request.call_args.args[0].description
-    # 两侧最终 description 都含同一段；段本身规范化后一致
     assert shared_section.strip() in mcp_desc
     assert shared_section.strip() in wf_desc
     assert IMPACT_SECTION_MARKER in (wf_result.get("description") or "")
 
-    # stub 文案对等
-    async def _stub_section(**_kwargs: Any) -> str:
-        return _STUB
-
+    # stub 字节级对等：未 patch helper，mock 编排失败 → 两侧同模板
     with patch(
-        "services.code_graph.impact_report.build_impact_report_section",
-        new=AsyncMock(side_effect=_stub_section),
+        "services.code_graph.impact_report.run_detect_changes",
+        new=AsyncMock(return_value={"ok": False, "error_code": "unavailable", "error": "parity"}),
     ):
-        from services.code_graph.impact_report import build_impact_report_section
-
         s1 = await build_impact_report_section(
             repository=repo, user=user, compare=compare, base_ref=base_ref
         )
@@ -229,3 +244,13 @@ async def test_workflow_mcp_impact_section_parity() -> None:
             repository=repo, user=user, compare=compare, base_ref=base_ref
         )
     assert s1.strip() == s2.strip() == _STUB.strip()
+
+    # user=None 短路径：同一 helper 两次输出仍字节稳定（ACL 身份缺口）
+    s_none_a = await build_impact_report_section(
+        repository=repo, user=None, compare=compare, base_ref=base_ref
+    )
+    s_none_b = await build_impact_report_section(
+        repository=repo, user=None, compare=compare, base_ref=base_ref
+    )
+    assert s_none_a.strip() == s_none_b.strip()
+    assert IMPACT_SECTION_MARKER in s_none_a
