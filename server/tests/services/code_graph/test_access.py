@@ -336,6 +336,22 @@ _LOG_LEVELS = frozenset(
 _SNAKE_CASE = re.compile(r"^[a-z][a-z0-9_]*$")
 _EVENT_PREFIX = "code_graph_"
 
+# ``services/`` 下、与 ``code_graph/`` 包**同级**、但属于同一条链路的兄弟模块。
+#
+# 为什么它们在包外：D-01 把 ORM 严格收在包内的 ``loader.py`` 一处，包内其余模块零 ORM。
+# 这些文件必须直查 ``Symbol`` / ``Repository`` / ``CrossRepoApiCall``（候选的 signature
+# 补取、staleness 三态、跨仓一跳），放进包内即破那条分层。
+#
+# 为什么它们仍要受管：它们发的事件同属 ``code_graph`` 组件、同用 ``code_graph_`` 前缀，
+# 脱敏与静态可解析事件名的要求一条不减。「在包外」是分层的结果，⛔ 不是观测契约的豁免。
+#
+# ⚠️ 清单**显式**列出，⛔ 不写成 ``code_graph_*.py`` 的 glob：glob 会让一次重命名静默地
+# 把文件移出守护，而显式清单配下面的存在性断言会当场变红。
+# 🚨 规矩：**谁新建包外兄弟模块，谁在同一个 plan 里把它加进来**（122-06 加
+# ``code_graph_cross_repo.py``）。⛔ 不要提前登记还不存在的文件——存在性断言会在两个
+# wave 之间一直红着。
+_SIBLING_GUARDED_MODULES: tuple[str, ...] = ("code_graph_tools.py",)
+
 
 def _module_string_constants(tree: ast.Module) -> dict[str, str]:
     """收集模块级 ``NAME = "字面量"`` / ``NAME: Final[str] = "字面量"``。
@@ -381,10 +397,24 @@ def _iter_logger_calls(tree: ast.Module):
 # 121-VALIDATION.md 121-03-T3（planner 追加行）：观测契约守护——包内每个 structlog
 # 调用都带 component="code_graph" + category="sampling" + code_graph_ 事件名前缀。
 def test_observability_contract() -> None:
-    """``services/code_graph/`` 包内每个 structlog 调用都满足强制观测契约。
+    """code_graph 链路上每个 structlog 调用都满足强制观测契约。
 
-    用 ``glob`` 遍历、不写死文件清单——Plan 121-04~121-09 新增的模块自动受这条
-    契约管住，观测规范从「code review 靠人眼」升级为「CI 自动拦截」。
+    **扫描面 = 包内全部 ``*.py`` + 一份显式的包外兄弟清单**
+    （:data:`_SIBLING_GUARDED_MODULES`）。包内那半用 ``glob``、不写死文件名——
+    Plan 121-04~121-09 与 Phase 122 新增的**包内**模块自动受这条契约管住。包外那半
+    必须显式登记，理由与规矩写在该常量处：谁新建兄弟模块，谁在同一个 plan 里把它加进
+    清单；⛔ 不要提前登记还不存在的文件。
+
+    🚨 Phase 122 之前，本用例只 glob 包内目录，``services/code_graph_tools.py`` 与
+    ``services/code_graph_cross_repo.py`` 因此天然落在扫描面之外——**那是缺口，不是
+    豁免**。它们照样发 ``code_graph_`` 前缀的事件、照样要把异常文本脱敏，在扩展之前
+    没有任何机制强制这一点。122-05 补上第一个，122-06 补上第二个。
+
+    判据对两类文件**逐字相同**，唯一放宽的是 ``category``：包外兄弟文件可取
+    ``sampling`` / ``caller`` 之一（给壳层将来下沉的原语留位），包内文件仍**只许**
+    ``sampling``——``services/code_graph/*.py`` 里出现 ``caller`` 是架构错误，内核不是
+    调用入口。⛔ 其余四条（事件名静态可解析、``code_graph_`` 前缀、
+    ``component == "code_graph"``、``error=`` 过 ``redact_secrets_in_text``）一条都不放宽。
 
     ⚠️ 事件名前缀不得缩写：``graph_build_*`` 已被 ``services/graph_builder.py``
     占用、``galaxy_cache_*`` 已被 ``codegraph/galaxy/cache.py`` 占用。唯一豁免是
@@ -392,10 +422,17 @@ def test_observability_contract() -> None:
     事件 ``exclusion.blocked``，不是本包的 logger 调用，天然不在扫描范围。
     """
     package_dir = Path(code_graph_package.__file__).resolve().parent
+    siblings = [package_dir.parent / name for name in _SIBLING_GUARDED_MODULES]
+    for sibling in siblings:
+        assert sibling.exists(), (
+            f"兄弟模块清单漂移：{sibling} 不存在——重命名后请同步更新 "
+            "_SIBLING_GUARDED_MODULES，⛔ 不要删条目了事"
+        )
+
     violations: list[str] = []
     scanned = 0
 
-    for source_path in sorted(package_dir.glob("*.py")):
+    for source_path in sorted(package_dir.glob("*.py")) + siblings:
         source = source_path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(source_path))
         constants = _module_string_constants(tree)
@@ -433,12 +470,20 @@ def test_observability_contract() -> None:
             ):
                 violations.append(f'{where}:{event} 缺少 component="code_graph"')
 
-            # ③ category
+            # ③ category —— 唯一按文件位置放宽的一条：包内只许 sampling（内核不是调用
+            #    入口），包外兄弟文件可取 sampling / caller 之一。
+            allowed = (
+                {"sampling"}
+                if source_path.parent == package_dir
+                else {"sampling", "caller"}
+            )
             category = keywords.get("category")
             if not (
-                isinstance(category, ast.Constant) and category.value == "sampling"
+                isinstance(category, ast.Constant) and category.value in allowed
             ):
-                violations.append(f'{where}:{event} 缺少 category="sampling"')
+                violations.append(
+                    f"{where}:{event} 的 category 不在 {sorted(allowed)} 之内"
+                )
 
             # ⑤ 异常文本必须脱敏
             error_value = keywords.get("error")
