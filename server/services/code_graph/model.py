@@ -192,9 +192,26 @@ BARE_NAME_BLACKLIST: Final[frozenset[str]] = frozenset(
 
 # resolved / (resolved + bare_name) 低于该值时，图元数据置 low_resolution=True，
 # 上层工具须在输出头部声明「本仓解析率偏低，影响面可能偏保守」。
-# ⚠️ 经验值，由 Plan 121-10 的「per repo / per language 解析率统计」交付物复校
-#    （RESEARCH Gap A5）。改动前先看那份数据，不要凭感觉调。
-LOW_RESOLUTION_THRESHOLD: Final[float] = 0.6
+#
+# 2026-08-09 **已按本仓实测校准**（Plan 121-10，交付物
+# ``tests/services/code_graph/test_perf_diagnostics.py::test_callee_symbol_resolution_rate_survey``，
+# 6 个已索引仓库 / base 分支 / 与 loader 同口径并已交叉验证）：
+#   p10=0.0671 / p50=0.1668 / p90=0.1706；per extension 全部落在 0.117–0.172。
+#   原值 0.6 会命中 **6/6** 个仓库 —— 阈值**永远触发**，等于信号失效
+#   （威胁登记 T-121-长鸣：长鸣的标记与不存在的标记效果相同）。
+#   校准为 **0.10**：卡在分布的 p10(0.067) 与主簇下沿(0.134) 之间，两侧各留出最宽的
+#   稳定裕度，命中 1/6（study-practice：1,036 条边**零解析**，是真正退化的那个仓），
+#   既不长鸣也非永不触发。
+#
+# 🚨 **写给 Phase 122 的硬要求**：本仓生态的解析率常态就在 0.17 量级——也就是说，
+#    即便一个仓**没有**被判 low_resolution，它也有约 83% 的调用边未解析。因此
+#    ``low_resolution`` 在校准后的语义是「**比本仓常态更差**」的异常标记，⛔ 不是
+#    「解析率是否够用」的判据。上层输出必须**始终**透出数值 ``resolution_rate``
+#    与那句保守性声明，⛔ 不得只凭这个布尔量决定要不要提醒用户——布尔量表达不出
+#    0.17 与 0.55 的差别，而这两者对影响面结论的可信度是天壤之别。
+#
+# 🔁 重新校准：``cd server && uv run pytest -m perf tests/services/code_graph/ -s``。
+LOW_RESOLUTION_THRESHOLD: Final[float] = 0.10
 
 # 跨仓遍历穿到未授权仓库时，整仓折叠成该占位符（不泄漏仓库名/符号名/文件路径）。
 # 折叠动作本身在 Phase 122 的跨仓 impact 里实现，本相位先把契约字面量定好，
@@ -248,6 +265,9 @@ class GraphMeta:
     # resolved / (resolved + bare_name)。
     resolution_rate: float
     # 🔔 上层工具必须透出：低于 LOW_RESOLUTION_THRESHOLD，影响面可能偏保守。
+    # ⚠️ 校准后（121-10）这是「**比本仓常态更差**」的异常标记，不是「解析率够不够用」
+    #    的判据——本仓常态就在 0.17 量级。⛔ 不要只凭本字段决定要不要提醒用户，
+    #    ``resolution_rate`` 的**数值**必须一并透出（理由见该常量处的注释）。
     low_resolution: bool
 
     # 🔔 上层工具必须透出：水位已推进但边未建完，图是「半新」的。
