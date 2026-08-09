@@ -541,6 +541,67 @@ def test_barrel_exports_only_public_surface() -> None:
     )
 
 
+# 上层直连即架构违规的四个内部子模块（``model`` 是纯契约层，从包根导出，不在此列）。
+_INTERNAL_SUBMODULES = frozenset({"loader", "cache", "signature", "access"})
+
+# 全仓扫描时跳过的目录名（虚拟环境 / 依赖 / 构建产物 —— 不是本仓源码）。
+_SCAN_SKIP_DIRS = frozenset(
+    {".venv", "venv", "node_modules", "__pycache__", ".git", "build", "dist", ".mypy_cache"}
+)
+
+
+def test_no_upper_layer_imports_internal_submodules() -> None:
+    """全仓只准从**包根**导入 ``services.code_graph``；直连内部子模块即架构违规。
+
+    🚨 这条才是 ``__init__.py`` 自称的那道「机械防线」。
+    ``test_barrel_exports_only_public_surface`` 守的是「barrel 没有变胖」——它只看
+    ``__all__``，而 ``__all__`` 只影响 ``from … import *``；
+    ``from services.code_graph.loader import load_graph`` 一直都能正常工作，绕过
+    ``GraphService.get_graph`` 只需自造一个 ``matcher`` 传进去，可读性校验、exclusion、
+    水位复校三道闸**一次全过**（威胁登记 T-121-绕闸，ASVS V1）。
+
+    这条红线要到 Phase 122–127 才真正开始承压，现在建防线成本最低：目前违规数为 0，
+    第一条违规写进来的那一刻就会红。
+    """
+    import ast
+
+    server_root = Path(__file__).resolve().parents[3]
+    package_dir = server_root / "services" / "code_graph"
+    tests_dir = Path(__file__).resolve().parent
+    violations: list[str] = []
+
+    for path in server_root.rglob("*.py"):
+        if any(part in _SCAN_SKIP_DIRS for part in path.parts):
+            continue
+        # 包自身与它的测试目录当然要引内部子模块。
+        if package_dir in path.parents or tests_dir in path.parents:
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (SyntaxError, UnicodeDecodeError):  # 非本仓源码 / 生成物，跳过
+            continue
+
+        modules: list[tuple[int, str]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                modules.append((node.lineno, node.module))
+            elif isinstance(node, ast.Import):
+                modules.extend((node.lineno, alias.name) for alias in node.names)
+
+        for lineno, module in modules:
+            parts = module.split(".")
+            if parts[:2] == ["services", "code_graph"] and len(parts) > 2:
+                if parts[2] in _INTERNAL_SUBMODULES:
+                    violations.append(
+                        f"{path.relative_to(server_root)}:{lineno} {module}"
+                    )
+
+    assert not violations, (
+        "上层直连 code_graph 内部子模块（绕过 GraphService 的三道闸）：\n"
+        + "\n".join(violations)
+    )
+
+
 def test_barrel_docstring_records_the_architecture_red_line() -> None:
     """红线的**理由**必须写在 ``__init__.py`` 的 docstring 里，不能只活在计划文档里。
 

@@ -1066,6 +1066,24 @@ def load_subgraph(
        （完整复制，内存翻倍）。
 
     .. note::
+       ⚠️ **已知局限：四个数据源里只有两个真正收敛了**（ME-10，登记而非修复）。
+       ``_load_symbol_nodes(restrict_symbol_ids=…)`` 与
+       ``_load_call_edges(restrict_caller_ids=…)`` 走的是 SQL 侧收敛；但
+       ``_load_cross_repo_edges`` 仍扫**该仓全部** ``CrossRepoApiCall``（还带两个 JOIN），
+       ``_load_chunk_evidence`` 仍扫**该仓全部** ``ChunkEdge``。
+
+       **产出**是有界的（跨仓边靠 ``by_file_and_name`` 过滤、chunk 证据靠
+       ``chunk_to_symbols`` 过滤，``iterator()`` 也保证了内存不爆），但**迭代量**随仓库
+       规模线性增长——而走到这条路径的前提恰恰是「这个仓大到全量装不下」。
+       ``test_on_demand_subgraph_query_count_does_not_scale_with_repo`` 数的是**查询条数**
+       而非扫描行数，所以这个洞在用例里是隐形的，⛔ 别把那条用例的绿色读成「处处收敛」。
+
+       收敛办法已探明（chunk 侧按 ``source/target_chunk_id__in=set(chunk_to_symbols)``
+       反向收敛，跨仓侧按已装载符号的去重文件集加
+       ``call_site__caller_file__in`` / ``endpoint__file_path__in``），留待真的观察到大仓
+       降级路径变慢时再做——现在做属于无实测依据的优化。
+
+    .. note::
        与 :func:`load_graph` 相同，``estimated_bytes`` / ``partial_edges`` 由
        ``cache.py`` 覆写；``degraded`` 在这里就已经是终值——``"on_demand_subgraph"``，
        或 frontier 撞上 :data:`SUBGRAPH_FRONTIER_LIMIT` 时的
