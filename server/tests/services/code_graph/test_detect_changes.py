@@ -116,20 +116,7 @@ def test_formatting_only_not_impact_seed() -> None:
     new = ["import sys\n", "import os\n", "\n", "def f():\n", "    return 1\n"]
     assert is_formatting_only(old, new) is True
 
-    diff = """\
-diff --git a/fmt.py b/fmt.py
-index 1111111..2222222 100644
---- a/fmt.py
-+++ b/fmt.py
-@@ -1,2 +1,2 @@
--import os
--import sys
-+import sys
-+import os
-"""
-    parsed = parse_unified_diff(diff)
     symbols = {"fmt.py": [_sym("fmt-fn", path="fmt.py", start=4, end=5, name="f")]}
-    # hunk 只改 1-2 行 import；符号在 4-5 → 不交叠；用整文件旧/新行测 heuristic
     # 构造会命中符号的 formatting hunk：改符号行内空白
     diff2 = """\
 diff --git a/fmt.py b/fmt.py
@@ -183,26 +170,11 @@ def test_threshold_file_summary_shape() -> None:
     assert should_skip_batch_impact(100) is False
     assert should_skip_batch_impact(101) is True
 
-    # 构造 >100 个被命中符号（同一文件多个小符号 + 覆盖 hunk）
+    # 构造 >100 个被命中符号（整文件 delete 映射全部旧路径符号）
     symbols = [
         _sym(f"u{i}", path="big.py", start=i * 2 + 1, end=i * 2 + 2)
         for i in range(101)
     ]
-    # hunk 覆盖整个文件行范围
-    last_end = symbols[-1].end_line
-    diff = f"""\
-diff --git a/big.py b/big.py
-index 1111111..2222222 100644
---- a/big.py
-+++ b/big.py
-@@ -1,{last_end} +1,{last_end} @@
-"""
-    # 手工拼 hunk：每行都有变更标记以便 parser 收集
-    lines = []
-    for i in range(1, last_end + 1):
-        lines.append(f"-old{i}")
-        lines.append(f"+new{i}")
-    # 简化：用 parse + 强制大 count；改用 detect 直接喂大量 symbols 于 deleted 文件
     del_diff = """\
 diff --git a/big.py b/big.py
 deleted file mode 100644
