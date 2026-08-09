@@ -1575,6 +1575,45 @@ async def _update_repository_on_summary_complete(
         tree_written=tree_written,
     )
 
+    # summary 成功落库后 best-effort 入队章程起草（只 defer，不在 callback 内跑 LLM）
+    import time as _time
+
+    from common.logging import redact_secrets_in_text
+
+    charter_started = _time.monotonic()
+    try:
+        from repositories.charter_enqueue import enqueue_charter_draft
+
+        initiated = await _resolve_initiated_user(session)
+        charter_job = await enqueue_charter_draft(
+            str(repo_id),
+            initiated_by_user_id=initiated,
+        )
+        try:
+            logger.info(
+                "repo_summary_charter_enqueued",
+                category="caller",
+                component="charter_service",
+                repository_id=str(repo_id),
+                initiated_by_user_id=initiated,
+                job_enqueued=bool(charter_job),
+                duration_ms=round((_time.monotonic() - charter_started) * 1000, 2),
+            )
+        except Exception:  # noqa: BLE001 — 观测绝不反噬 summary 回调
+            pass
+    except Exception as exc:  # noqa: BLE001 — 章程入队绝不反噬 summary 回调
+        try:
+            logger.warning(
+                "repo_summary_charter_enqueue_failed",
+                category="caller",
+                component="charter_service",
+                repository_id=str(repo_id),
+                error=redact_secrets_in_text(str(exc)),
+                duration_ms=round((_time.monotonic() - charter_started) * 1000, 2),
+            )
+        except Exception:  # noqa: BLE001 — 观测绝不反噬 summary 回调
+            pass
+
     # 树写入成功后异步重建节点向量索引 + 全局树增量归类（不阻塞 callback 响应）
     if tree_written:
         from codegraph.services.corpus_tree import CorpusTreeService

@@ -528,12 +528,52 @@ async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
         source="api",
     )
 
-    # 建仓即自动生成「AI 描述 + PageIndex 索引」（best-effort，失败不阻塞）。
-    # 收进 durable 队列（幂等 + slot 锁），server 重启不丢——替代旧的 fire-and-forget。
+    # 建仓即自动入队「代码索引(RAG+条件图谱) + AI 描述」（best-effort，失败不阻塞）。
+    # 图谱仅当 ENABLE_CODEGRAPH ∧ auto_build_graph_enabled 时由 indexer auto_after_index
+    # 内联触发——禁止在此额外入队独立图谱任务（避免双跑）。
+    import time as _time
+
+    from common.logging import redact_secrets_in_text
+    from repositories.index_enqueue import enqueue_repo_index
     from repositories.summary_service import enqueue_repo_summary
 
-    if repository.ai_summary_status not in (AISummaryStatus.PENDING, AISummaryStatus.RUNNING):
-        await enqueue_repo_summary(str(repository.id))
+    actor_id = str(getattr(actor, "id", "") or "") or None
+    pipeline_started = _time.monotonic()
+    index_job = None
+    summary_job = None
+    try:
+        index_job = await enqueue_repo_index(
+            str(repository.id), initiated_by_user_id=actor_id, trigger="create"
+        )
+        if repository.ai_summary_status not in (
+            AISummaryStatus.PENDING,
+            AISummaryStatus.RUNNING,
+        ):
+            summary_job = await enqueue_repo_summary(
+                str(repository.id), initiated_by_user_id=actor_id
+            )
+        # 入队可能已把 DB 置为 INDEXING；刷新实例，避免 201 序列化仍报 not_indexed。
+        await repository.arefresh_from_db()
+        logger.info(
+            "repo_create_pipeline_enqueued",
+            category="caller",
+            component="repositories",
+            repository_id=str(repository.id),
+            initiated_by_user_id=actor_id or "system",
+            index_job=bool(index_job),
+            summary_job=bool(summary_job),
+            duration_ms=round((_time.monotonic() - pipeline_started) * 1000, 2),
+        )
+    except Exception as exc:  # noqa: BLE001 — 入队绝不回滚已创建的仓库
+        logger.warning(
+            "repo_create_pipeline_enqueue_failed",
+            category="caller",
+            component="repositories",
+            repository_id=str(repository.id),
+            initiated_by_user_id=actor_id or "system",
+            error=redact_secrets_in_text(str(exc)),
+            duration_ms=round((_time.monotonic() - pipeline_started) * 1000, 2),
+        )
     return repository
 
 

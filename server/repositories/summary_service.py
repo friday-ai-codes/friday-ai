@@ -87,7 +87,11 @@ async def _is_empty_remote(repository: Repository) -> bool:
     return await aremote_branch_count(auth_url) == 0
 
 
-async def dispatch_repo_summary(repository: Repository) -> str:
+async def dispatch_repo_summary(
+    repository: Repository,
+    *,
+    initiated_by_user_id: str | None = None,
+) -> str:
     """构建 DispatchTask 并 dispatch 到 Runner。
 
     流程：
@@ -100,6 +104,8 @@ async def dispatch_repo_summary(repository: Repository) -> str:
 
     Args:
         repository: Repository 模型实例。
+        initiated_by_user_id: 发起用户 PK；可解析则写入 ``AgentSession.user_id``，
+            供 summary 回调经 ``_resolve_initiated_user`` 归因（绝不信任 runner payload）。
 
     Returns:
         sub_session 的 session_id 字符串。
@@ -117,10 +123,22 @@ async def dispatch_repo_summary(repository: Repository) -> str:
 
     session_id = f"reposummary-{uuid.uuid4().hex[:12]}"
 
+    # 合法 User PK → 写入 AgentSession.user（回调归因）；非法/空 → 不设（worker 记 system）
+    session_user_id = None
+    if initiated_by_user_id:
+        from accounts.models import User
+
+        try:
+            if await User.objects.filter(pk=initiated_by_user_id).aexists():
+                session_user_id = initiated_by_user_id
+        except (TypeError, ValueError):  # noqa: BLE001 — 非法 PK 形状当未归因
+            session_user_id = None
+
     # 1. 创建 AgentSession + SubAgentSession
     agent_session = await AgentSession.objects.acreate(
         session_id=f"agent-{session_id}",
         space=None,
+        user_id=session_user_id,
         status=AgentSession.Status.RUNNING,
         metadata={
             "source": "repo_summary",
@@ -187,7 +205,11 @@ async def dispatch_repo_summary(repository: Repository) -> str:
     return session_id
 
 
-async def enqueue_repo_summary(repository_id: str) -> str | None:
+async def enqueue_repo_summary(
+    repository_id: str,
+    *,
+    initiated_by_user_id: str | None = None,
+) -> str | None:
     """把 repo_summary 派发收进 durable 队列（替代 fire-and-forget run_in_background）。
 
     durable job 只负责"可靠地发起一次派发"（job 体内调用 ``dispatch_repo_summary``），
@@ -196,9 +218,11 @@ async def enqueue_repo_summary(repository_id: str) -> str | None:
     - **不丢**：job 落 Postgres，server/worker 重启后仍会被消费；
     - **幂等**：``idempotency_key=f"summary:{repo_id}"`` 保证同仓在途只一份；
     - **平滑**：``summary-slot`` 槽位锁限制并发派发，避免批量建仓 session 创建洪峰。
+    - **归因**：``initiated_by_user_id`` 写入 payload，worker 透传给 ``dispatch_repo_summary``。
 
     返回 durable job id（失败返回 None，不抛——建仓 best-effort 不阻塞）。
     """
+    from common.logging import redact_secrets_in_text
     from durable.concurrency import asummary_lock
     from durable.queues import QUEUE_REPO_SUMMARY
     from durable.service import DurableTaskService
@@ -211,9 +235,20 @@ async def enqueue_repo_summary(repository_id: str) -> str | None:
             queue=QUEUE_REPO_SUMMARY,
             idempotency_key=f"summary:{repository_id}",
             lock=lock,
+            initiated_by_user_id=initiated_by_user_id,
         )
-    except Exception:  # noqa: BLE001 — 入队失败不阻塞建仓/触发；recover 兜底
-        logger.warning("enqueue_repo_summary_failed", repository_id=str(repository_id), exc_info=True)
+    except Exception as exc:  # noqa: BLE001 — 入队失败不阻塞建仓/触发；recover 兜底
+        try:
+            logger.warning(
+                "enqueue_repo_summary_failed",
+                category="caller",
+                component="repositories",
+                repository_id=str(repository_id),
+                initiated_by_user_id=initiated_by_user_id or "system",
+                error=redact_secrets_in_text(str(exc)),
+            )
+        except Exception:  # noqa: BLE001 — 观测绝不反噬建仓/触发
+            pass
         return None
 
 
