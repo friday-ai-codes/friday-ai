@@ -2850,6 +2850,7 @@ class CreateMergeRequestView(SummarizeBranchView):
                 reviewer_usernames=list(input_data.get("reviewer_usernames") or []),
                 remove_source_branch=bool(input_data.get("remove_source_branch", True)),
                 trace=trace,
+                user=request.user,
             )
         except MergeRequestToolError as exc:
             error_output_data = {"error_code": "git_platform_error", "detail": str(exc)}
