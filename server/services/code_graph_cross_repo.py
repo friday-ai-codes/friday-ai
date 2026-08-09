@@ -322,8 +322,48 @@ async def collect_cross_repo_impact(
     redacted_entries: list[dict[str, Any]] = []
     redacted_count = 0
 
+    # access 经 importlib：包外兄弟不得 ``from services.code_graph.access import …``。
+    import importlib
+
+    access = importlib.import_module("services.code_graph.access")
+
     for peer_repo_id, hits in grouped.items():
         started = time.perf_counter()
+
+        # HI-01：权限复核必须在 ORM 解析对端 Symbol **之前**。
+        # denied 路径不得触碰 peer Symbol（含 signature）。
+        try:
+            await access.ensure_repository_readable(user, peer_repo_id)
+        except GraphAccessDenied:
+            # D-30：折叠条目**只有**这两个键。⛔ 不带 repository_id / affected_count /
+            # 仓名 / 路径 / 符号——计数是存在性预言机，会泄漏一个调用方无权访问的仓库
+            # 的内部规模。折叠携带的信息止于「这里有一个你无权看的仓库」。
+            redacted_count += 1
+            redacted_entries.append(
+                {"cross_repo": True, "repository": REDACTED_REPOSITORY}
+            )
+            _log_cross_repo_peer_redacted(
+                local_repository_id=local_id, redacted_count=redacted_count
+            )
+            continue
+        except GraphNotIndexed as exc:
+            # D-14 fail-soft：未索引对端在取图前就能判定，不必再碰 Symbol / get_graph。
+            reason, _message = graph_error_to_tool_error(exc)
+            unavailable_entries.append(
+                {
+                    "cross_repo": True,
+                    "repository_id": peer_repo_id,
+                    "unavailable_reason": reason,
+                }
+            )
+            _log_cross_repo_peer_unavailable(
+                local_repository_id=local_id,
+                peer_repository_id=peer_repo_id,
+                unavailable_reason=reason,
+                exc=exc,
+            )
+            continue
+
         seed_ids: list[str] = []
         unresolved = 0
         for site in hits.call_sites:
@@ -340,9 +380,7 @@ async def collect_cross_repo_impact(
                 unresolved += 1
 
         try:
-            # D-12 权限复核点：get_graph 每次都跑 ensure_repository_readable。
-            # ⛔ 不为对端仓另查 Repository——那会绕过 GraphAccessDenied 统一出口并制造
-            # 存在性预言机。
+            # D-12：get_graph 仍会再跑一遍 ensure_repository_readable（缓存命中也不跳过）。
             peer_graph = await fetch_graph_for_tool(
                 peer_repo_id,
                 "",
@@ -352,9 +390,7 @@ async def collect_cross_repo_impact(
                 include_low_confidence=include_low_confidence,
             )
         except GraphAccessDenied:
-            # D-30：折叠条目**只有**这两个键。⛔ 不带 repository_id / affected_count /
-            # 仓名 / 路径 / 符号——计数是存在性预言机，会泄漏一个调用方无权访问的仓库
-            # 的内部规模。折叠携带的信息止于「这里有一个你无权看的仓库」。
+            # 竞态：ensure 通过后权限被收回——仍按 D-30 折叠，不泄漏仓标识。
             redacted_count += 1
             redacted_entries.append(
                 {"cross_repo": True, "repository": REDACTED_REPOSITORY}
