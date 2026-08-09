@@ -143,6 +143,13 @@ Hard locks confirmed:
 
 ## Self-Check: PASSED
 
+- FOUND: `.planning/phases/127-semgrep-lsp/127-05-SUMMARY.md`
+- FOUND: `orphan_reap.py`, `lsp-baseline-report.json`, `impact03-revisit.md`
+- FOUND commits: `2724b9d9`, `82fd522c`, `68321656`, `58e7edd4`, `9e484e0d`
+- Defaults still False; Semgrep not in uv.lock; frozen surfaces untouched by this plan
+
+## Self-Check: PASSED
+
 - Artifacts found: orphan_reap.py, measure_lsp_baseline.py, revisit_impact03_samples.py, lsp-baseline-report.json, impact03-revisit.md, 127-05-SUMMARY.md
 - Commits found: `82fd522c`, `9e484e0d` (plus RED/polish `2724b9d9`, `68321656`, `58e7edd4`)
 - VOLAR/GOPLS `default=False` confirmed; IMPACT-03 disposition = honest defer
