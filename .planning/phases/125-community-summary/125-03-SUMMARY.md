@@ -77,7 +77,7 @@ Each task was committed atomically:
 3. **Task 2 RED: Jaccard / rebuild×2 LLM=0 tests** - `63520014` (test)
 4. **Task 2 GREEN: reconcile + durable summary_fn** - `88106a99` (feat)
 
-**Plan metadata:** (see final docs commit after this SUMMARY)
+**Plan metadata:** `055e548f` (docs: complete plan)
 
 ## Files Created/Modified
 
