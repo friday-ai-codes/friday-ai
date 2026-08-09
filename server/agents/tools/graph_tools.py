@@ -288,7 +288,7 @@ async def impact_analysis(
             component=_COMPONENT,
             category="caller",
         )
-        return ToolResult(success=False, error=str(exc))
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
     except Exception as exc:  # noqa: BLE001 — 双层防御：永不冒泡
         logger.warning(
             "impact_analysis_tool_failed",
@@ -346,7 +346,7 @@ async def _impact_analysis_impl(
             exclude_test_files=bool(exclude_test_files),
         )
     except ValidationError as exc:
-        return ToolResult(success=False, error=str(exc))
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
 
     repo, err_code = await _resolve_tool_repo(validated.repository_id)
     if repo is None:
@@ -486,7 +486,7 @@ async def trace_call_path(
             component=_COMPONENT,
             category="caller",
         )
-        return ToolResult(success=False, error=str(exc))
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
     except Exception as exc:  # noqa: BLE001 — 双层防御：永不冒泡
         logger.warning(
             "trace_call_path_tool_failed",
@@ -542,7 +542,7 @@ async def _trace_call_path_impl(
             alt_path_cap=int(alt_path_cap),
         )
     except ValidationError as exc:
-        return ToolResult(success=False, error=str(exc))
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
 
     repo, err_code = await _resolve_tool_repo(validated.repository_id)
     if repo is None:
