@@ -252,6 +252,9 @@ async def build_dispatch_metadata(
 
     env_metadata: dict[str, Any] = {
         "repository_id": str(repository.id),
+        # Phase 124 DIFF-03：权威仓库 UUID 进容器 env（task TaskConfig.repository_id），
+        # 供 detect_changes 自查指引内联；与 metadata.repository_id（非 env_ 前缀、不进容器）并存。
+        "env_FRIDAY_TASK_REPOSITORY_ID": str(repository.id),
         "env_FRIDAY_TASK_CLAUDE_API_KEY": api_key,
         "env_FRIDAY_TASK_CLAUDE_BASE_URL": base_url,
         # 兼容既有两档 env（容器旧逻辑仍读取）

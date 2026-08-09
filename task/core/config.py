@@ -28,6 +28,12 @@ class TaskConfig(BaseSettings):
     # Task identification
     task_id: str = Field(..., description="Unique task identifier")
     project_id: str = Field(default="cli", description="Project identifier")
+    # Phase 124 DIFF-03：Friday 仓库 UUID（服务端 dispatch 注入 FRIDAY_TASK_REPOSITORY_ID），
+    # 供 detect_changes 自查指引使用；默认空 → 指引回退到「见任务环境」文案。
+    repository_id: str = Field(
+        default="",
+        description="Friday 仓库 UUID（FRIDAY_TASK_REPOSITORY_ID；detect_changes 自查用）",
+    )
 
     # Task details
     task_title: str = Field(default="", description="Task title (可选，从 description 提取)")
