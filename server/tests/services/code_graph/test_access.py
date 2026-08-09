@@ -33,24 +33,21 @@ from services.code_graph.model import GraphAccessDenied, GraphNotIndexed
 
 
 def _assemble(repository, branch: str = ""):
-    """按仓库当前的真实 exclusion 规则装配图。
+    """按仓库当前的真实 exclusion 规则装配整张图（节点 + 边）。
 
-    ⚠️ matcher 由**调用方**解析并注入——``loader`` 是纯装配层，自身不做规则解析
-    （真实链路里这一步由 ``cache.py`` 承担，一次取图只解析一次）。
+    ⚠️ ``matcher`` 与 ``exclusion_fingerprint`` 由**调用方**解析并注入——``loader``
+    是纯装配层，自身不做规则解析（真实链路里这一步由 ``cache.py`` 承担）。
+
+    ⚠️ 走**公开入口** ``load_graph`` 而不是私有的 ``_load_symbol_nodes``：只装节点的
+    话「邻接边一并消失」那半句断言会恒真（图里本来就没有边），威胁 ``T-121-泄漏``
+    的 mitigation 就失去了回归。
     """
-    import networkx as nx
+    from services.code_graph.loader import load_graph
 
-    from services.code_graph.loader import _load_symbol_nodes
-
-    matcher, _fingerprint = build_matcher_and_fingerprint(str(repository.id))
-    graph = nx.MultiDiGraph()
-    index = _load_symbol_nodes(
-        graph,
-        repository_id=str(repository.id),
-        branch=branch,
-        is_excluded=make_path_exclusion_memo(matcher),
+    matcher, fingerprint = build_matcher_and_fingerprint(str(repository.id))
+    return load_graph(
+        str(repository.id), branch, matcher=matcher, exclusion_fingerprint=fingerprint
     )
-    return graph, index
 
 
 # 121-VALIDATION.md 121-05-T2：命中 exclusion 的符号不在节点集，
@@ -66,15 +63,16 @@ def test_exclusion_hides_symbols_and_edges(
     callee = symbols_factory("callee", "secret/.env.py")
     call_edges_factory(caller, callee)
 
-    graph, index = _assemble(indexed_repo)
+    result = _assemble(indexed_repo)
+    graph = result.graph
 
     # 过滤发生在**装配阶段**：被排除符号的 id 根本没进过节点集。
     assert str(callee.id) not in graph.nodes
-    assert str(callee.id) not in index.node_ids
     # 未被排除的一端仍在（不是把整张图连坐掉）。
     assert str(caller.id) in graph.nodes
     # 邻接边一并消失：任一端点不在节点集内 ⇒ 整条边丢弃。
     assert graph.number_of_edges() == 0
+    assert result.meta.excluded_file_count == 1
 
 
 @pytest.mark.django_db
@@ -84,7 +82,7 @@ def test_exclusion_covers_unnormalizable_paths(indexed_repo, symbols_factory) ->
     escaped = symbols_factory("escaped", "../outside/x.py")
     absolute = symbols_factory("absolute", "/etc/shadow.py")
 
-    graph, _index = _assemble(indexed_repo)
+    graph = _assemble(indexed_repo).graph
 
     assert str(inside.id) in graph.nodes
     assert str(escaped.id) not in graph.nodes
@@ -103,11 +101,11 @@ def test_exclusion_file_count_is_deduped_by_file(
     symbols_factory("s", "secret/b.py")
     symbols_factory("ok", "src/ok.py")
 
-    graph, index = _assemble(indexed_repo)
+    result = _assemble(indexed_repo)
 
-    assert index.excluded_file_count == 2  # secret/a.py + secret/b.py
-    assert index.dropped_symbol_count == 4  # 3 + 1 个符号行
-    assert len(graph.nodes) == 1
+    # 4 个符号行落在 2 个被排除文件里 —— 计的是**文件**，不是符号。
+    assert result.meta.excluded_file_count == 2  # secret/a.py + secret/b.py
+    assert result.meta.node_count == 1
 
 
 @pytest.mark.django_db
@@ -138,10 +136,10 @@ def test_exclusion_audit_does_not_spam_per_symbol(
     )
 
     with mock.patch("services.exclusion.log_exclusion_blocked") as blocked_spy:
-        graph, index = _assemble(indexed_repo)
+        result = _assemble(indexed_repo)
 
-    assert index.dropped_symbol_count == 200
-    assert len(graph.nodes) == 0
+    assert result.meta.node_count == 0
+    assert result.meta.excluded_file_count == 1
     assert blocked_spy.call_count == 1
 
 
