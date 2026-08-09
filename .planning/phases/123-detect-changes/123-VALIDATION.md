@@ -55,10 +55,10 @@ created: 2026-08-10
 
 ## Wave 0 Requirements
 
-- [ ] `server/tests/services/code_graph/test_detect_changes.py` — overlap / formatting / threshold / rename classification (string fixtures)
-- [ ] `server/tests/services/test_diff_mirror.py` — temp bare repo: `git init` + two commits + rename + format
-- [ ] `server/tests/services/code_graph/test_detect_changes_orchestrator.py` — `run_detect_changes` mock mirror / spy `run_impact` / `test_hard_reject_acl`
-- [ ] `server/tests/mcp_tools/test_detect_changes_tools.py` — MCP 200 + dual-surface sentinel
+- [x] `server/tests/services/code_graph/test_detect_changes.py` — overlap / formatting / threshold / rename classification (string fixtures)
+- [x] `server/tests/services/test_diff_mirror.py` — temp bare repo: `git init` + two commits + rename + format
+- [x] `server/tests/services/code_graph/test_detect_changes_orchestrator.py` — `run_detect_changes` mock mirror / spy `run_impact` / `test_hard_reject_acl`
+- [x] `server/tests/mcp_tools/test_detect_changes_tools.py` — MCP 200 + dual-surface sentinel
 - [ ] serializers `TOOL_SCHEMAS["detect_changes"]` + snapshot assertion update (accept mcp package drift +1 per D-27)
 
 *Existing infrastructure (pytest, mcp snapshot harness, impact/trace dual-surface patterns) covers runners; new files above are Wave 0 gaps.*

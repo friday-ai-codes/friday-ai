@@ -358,7 +358,13 @@ function cmdRoadmapUpdatePlanProgress(cwd, phaseNum, raw) {
         const dateField = isComplete ? ` ${today} ` : '  ';
         roadmapContent = roadmapContent.replace(tableRowPattern, (fullRow) => {
             const cells = fullRow.split('|').slice(1, -1); // drop leading/trailing empty from split
-            if (cells.length === 5) {
+            if (cells.length === 6) {
+                // 6-col: Phase | Milestone | Requirements | Plans | Status | Completed
+                cells[3] = ` ${summaryCount}/${planCount} `;
+                cells[4] = ` ${status.padEnd(11)}`;
+                cells[5] = dateField;
+            }
+            else if (cells.length === 5) {
                 // 5-col: Phase | Milestone | Plans | Status | Completed
                 cells[2] = ` ${summaryCount}/${planCount} `;
                 cells[3] = ` ${status.padEnd(11)}`;
