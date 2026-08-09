@@ -11,6 +11,7 @@ Wave 0（Plan 122-01）先落地 fixture 自检这一条真用例；其余用例
 from __future__ import annotations
 
 import networkx as nx
+import pytest
 
 
 # 122-VALIDATION.md A1：Wave 0 地基自检。fixture 一旦退化（忘了 freeze、属性个数漂移、
@@ -42,3 +43,92 @@ def test_known_topology_fixture_is_frozen(known_topology: nx.MultiDiGraph) -> No
         "match_confidence",
     }
     assert set(known_topology["B"]["A"][0]) == {"kind", "confidence", "line_number"}
+
+
+@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
+def test_depth_grouping() -> None:
+    """合成图上 d1/d2/d3 分组逐点正确；同符号多层出现取最浅；方向正确（下游不出现）。
+
+    （Req: IMPACT-01, 决策: D-05）
+    """
+    pytest.fail("Wave 0 桩")
+
+
+@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
+def test_max_depth_budget() -> None:
+    """``max_depth`` 生效；超深节点不出现。
+
+    （Req: IMPACT-01, 决策: D-05）
+    """
+    pytest.fail("Wave 0 桩")
+
+
+@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
+def test_kernel_does_not_mutate_graph() -> None:
+    """内核不修改入参图（fixture 已 ``freeze``，就地改必抛）。
+
+    （Req: IMPACT-01, 决策: D-01）
+    """
+    pytest.fail("Wave 0 桩")
+
+
+@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
+def test_edge_confidence_and_reason() -> None:
+    """每条结果带 ``confidence`` 档 + ``reason``（经 ``derive_reason``）+ ``path_confidence``
+    （= path min，D-07）。
+
+    （Req: IMPACT-02, 决策: D-06 / D-07 / D-09）
+    """
+    pytest.fail("Wave 0 桩")
+
+
+@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
+def test_min_confidence_filter() -> None:
+    """``min_confidence`` 各阈值下结果集单调收缩；``cross_repo`` 用 ``match_confidence``
+    原值参与比较（不归一化）。
+
+    （Req: IMPACT-02, 决策: D-06 / D-13）
+    """
+    pytest.fail("Wave 0 桩")
+
+
+@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
+def test_bare_name_requires_both_gates() -> None:
+    """**D-08 双闸**：单开 ``include_low_confidence`` 或单降 ``min_confidence`` 都不足以让
+    bare_name 边参与扩散。
+
+    观察点用 ``known_topology`` 的 ``X``——它只有 ``X --bare_name--> B`` 一条出边，两道闸
+    没同时开时它必须缺席。⛔ 不要改用 ``C``：``C`` 还有 ``C --resolved--> A``，用它会让本条
+    用例恒真。
+
+    （Req: IMPACT-02, 决策: D-08）
+    """
+    pytest.fail("Wave 0 桩")
+
+
+@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
+def test_risk_levels() -> None:
+    """四级风险分级在阈值边界（d1 = 2/3/7/8/19/20 与穿仓组合）上逐点正确。
+
+    （Req: IMPACT-04, 决策: D-15 / D-29）
+    """
+    pytest.fail("Wave 0 桩")
+
+
+@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
+def test_truncation_summary() -> None:
+    """截断：``total_found``/``returned``/``truncated_by_depth`` 计数正确；排序键为
+    「深度升序 + 置信度降序」且在截断前生效。
+
+    （Req: IMPACT-04, 决策: D-16）
+    """
+    pytest.fail("Wave 0 桩")
+
+
+@pytest.mark.skip(reason="Wave 0 桩：由 122-06 落地")
+def test_graph_cross_repo_edges_are_intra_repo() -> None:
+    """**反向守护**：图里 ``kind == "cross_repo"`` 的边两端必在同仓，不得被标 ``cross_repo: true``。
+
+    （Req: IMPACT-03, 决策: D-25）
+    """
+    pytest.fail("Wave 0 桩")
