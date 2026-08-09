@@ -413,10 +413,14 @@ async def _apply_summary_reconcile(
         need_llm.extend(pending_jaccard)
 
     if summary_fn is not None:
+        from django.utils import timezone
+
         for community in need_llm:
             summary = await _call_summary_fn(summary_fn, community.get("members") or [], community)
             if summary:
                 community["summary"] = summary
+                if not community.get("summary_generated_at"):
+                    community["summary_generated_at"] = timezone.now()
                 summaries_generated += 1
             else:
                 summaries_skipped += 1

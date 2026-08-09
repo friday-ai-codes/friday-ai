@@ -290,6 +290,16 @@ async def agenerate_module_summary(
             pass
         return None
 
+    # D-01/D-06：把模型与生成时间写回可变 community，供落库复用。
+    if isinstance(community, dict):
+        try:
+            from django.utils import timezone
+
+            community["summary_model"] = str(model_name or "")[:128] or None
+            community["summary_generated_at"] = timezone.now()
+        except Exception:  # noqa: BLE001 — 元数据失败不丢摘要正文
+            pass
+
     try:
         logger.info(
             "module_summary_completed",
@@ -297,6 +307,7 @@ async def agenerate_module_summary(
             component="code_graph",
             member_count=member_count,
             community_key=community_key or None,
+            summary_model=str(model_name or "") or None,
             duration_ms=round((time.monotonic() - started) * 1000, 2),
         )
     except Exception:  # noqa: BLE001
