@@ -20,6 +20,12 @@
 「影响面就这么大」。不导出把「绕过校验」从**需要自律**降级为**需要刻意书写内部模块
 路径**（ASVS V1）。
 
+⚠️ 光靠不导出**挡不住**这件事：``__all__`` 只影响 ``from … import *``，
+``from services.code_graph.loader import load_graph`` 一直都能正常工作。真正的机械
+防线是 ``tests/services/code_graph/test_access.py::test_no_upper_layer_imports_internal_submodules``
+——它 AST 扫全仓，包外任何一处直连 ``loader`` / ``cache`` / ``signature`` / ``access``
+都会让 CI 红。本文件负责收敛公开面，那条用例负责让越界当场暴露，两者缺一不可。
+
 不导出什么
 ==========
 ``estimate_graph_bytes`` / ``NODE_COST_BYTES`` / ``EDGE_COST_BYTES``（存储层记账细节）、
