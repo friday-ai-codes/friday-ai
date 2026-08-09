@@ -107,8 +107,8 @@ _EVENT_DETECT_CHANGES_STARTED: Final[str] = "code_graph_detect_changes_started"
 _EVENT_DETECT_CHANGES_COMPLETED: Final[str] = "code_graph_detect_changes_completed"
 _EVENT_DETECT_CHANGES_FAILED: Final[str] = "code_graph_detect_changes_failed"
 
-# compare 形参：完整 40 位小写 hex → ensure_mirror_sha；否则当分支名。
-_FULL_SHA_RE: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{40}$")
+# compare 形参：完整 40 位 hex（大小写均可）→ ensure_mirror_sha；否则当分支名。
+_FULL_SHA_RE: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 
 # 候选条目上 ``signature`` 的字符上限（D-17 的 token 纪律）。``Symbol.signature`` 是
 # TextField、可长达数 KB，一次 20 条候选原样吐出去就能吃掉几千 token，而 agent 消歧只
@@ -1178,7 +1178,7 @@ async def run_detect_changes(
     compare_s = (compare or "").strip()
     try:
         if _FULL_SHA_RE.match(compare_s):
-            head = await ensure_mirror_sha(repository_id, compare_s)
+            head = await ensure_mirror_sha(repository_id, compare_s.lower())
         else:
             head = await ensure_mirror_commit(repository_id, branch=compare_s)
     except MirrorError as exc:
