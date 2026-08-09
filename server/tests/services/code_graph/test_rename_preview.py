@@ -243,3 +243,121 @@ def test_coverage_limitations_declared() -> None:
     )
     assert merged["coverage_limitations"]
     assert merged["coverage_limitations"] == COVERAGE_LIMITATIONS
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_mcp_rename_preview_call_through(indexed_repo) -> None:
+    """MCP RenamePreviewView 只调 run_rename_preview + RetrievalTrace。
+
+    （Req: RENAME-01, 决策: D-06/D-09）
+    """
+    from unittest import mock
+
+    from asgiref.sync import sync_to_async
+    from django.contrib.auth import get_user_model
+    from rest_framework.test import APIRequestFactory, force_authenticate
+
+    from mcp_tools.views import RenamePreviewView
+
+    User = get_user_model()
+    user = await sync_to_async(User.objects.create_user)(
+        username="rp-mcp-user", password="x"
+    )
+    factory = APIRequestFactory()
+    repo_id = str(indexed_repo.id)
+    run_mock = AsyncMock(
+        return_value={
+            "ok": True,
+            "tool": "rename_preview",
+            "applied": False,
+            "files": [],
+            "summary": {
+                "total_edits": 0,
+                "files_affected": 0,
+                "graph_edits": 0,
+                "text_search_edits": 0,
+            },
+            "coverage_limitations": "x",
+        }
+    )
+    run = mock.Mock(run_id="run-rp")
+    with (
+        mock.patch("services.code_graph_tools.run_rename_preview", run_mock),
+        mock.patch.object(
+            RenamePreviewView, "_begin", new=AsyncMock(return_value=(run, None))
+        ),
+        mock.patch.object(
+            RenamePreviewView,
+            "_get_indexed_repo",
+            new=AsyncMock(return_value=(indexed_repo, None)),
+        ),
+        mock.patch.object(RenamePreviewView, "_record", new=AsyncMock()) as record_mock,
+    ):
+        req = factory.post(
+            "/api/mcp/tools/rename_preview/",
+            {
+                "repository_id": repo_id,
+                "symbol_id": "00000000-0000-4000-8000-000000000099",
+                "new_name": "new_fn",
+            },
+            format="json",
+        )
+        force_authenticate(req, user=user)
+        resp = RenamePreviewView.as_view()(req)
+        if hasattr(resp, "__await__"):
+            resp = await resp
+        assert getattr(resp, "status_code", 200) == 200
+        assert run_mock.await_count == 1
+        assert record_mock.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_agents_rename_preview_call_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """对话 @tool rename_preview 只调 run_rename_preview 并写 chat RetrievalTrace。
+
+    （Req: RENAME-01, 决策: D-06/D-09）
+    """
+    import agents.tools.graph_tools as graph_tools
+
+    user = MagicMock(id=9)
+    monkeypatch.setattr(
+        graph_tools, "_resolve_conversation_user", AsyncMock(return_value=user)
+    )
+    monkeypatch.setattr(
+        graph_tools,
+        "_resolve_tool_repo",
+        AsyncMock(return_value=(MagicMock(id="repo"), None)),
+    )
+    record = AsyncMock()
+    monkeypatch.setattr(graph_tools, "_record_chat_retrieval", record)
+    run_mock = AsyncMock(
+        return_value={
+            "ok": True,
+            "tool": "rename_preview",
+            "applied": False,
+            "files": [],
+            "summary": {"total_edits": 0},
+        }
+    )
+    monkeypatch.setattr("services.code_graph_tools.run_rename_preview", run_mock)
+    monkeypatch.setattr(
+        "services.code_graph_tools.resolve_tool_graph_branch",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "services.code_graph_tools.tool_trace_payload",
+        lambda *a, **k: {"tool": k.get("tool", "")},
+    )
+
+    result = await graph_tools.rename_preview(
+        repository_id="00000000-0000-4000-8000-000000000001",
+        symbol_id="00000000-0000-4000-8000-000000000099",
+        new_name="new_fn",
+        conversation_id="00000000-0000-4000-8000-000000000002",
+    )
+    assert result.success is True
+    assert run_mock.await_count == 1
+    assert record.await_count == 1
