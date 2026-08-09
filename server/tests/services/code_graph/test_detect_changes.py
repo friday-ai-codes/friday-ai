@@ -110,6 +110,35 @@ rename to new_name.py
     assert result["files"][0]["symbols"][0]["changeType"] == ChangeType.RENAMED.value
 
 
+def test_rename_with_hunks_no_symbol_hit_is_file_level_only() -> None:
+    """rename + 内容 hunk 未命中符号 → 文件级 renamed，不整文件灌种子（WR-02）。"""
+    diff = """\
+diff --git a/old_name.py b/new_name.py
+similarity index 80%
+rename from old_name.py
+rename to new_name.py
+index 1111111..2222222 100644
+--- a/old_name.py
++++ b/new_name.py
+@@ -10,1 +10,1 @@
+-# comment a
++# comment b
+"""
+    parsed = parse_unified_diff(diff)
+    assert parsed[0].is_rename is True
+    assert parsed[0].hunks
+    # 符号落在 1-5，hunk 在第 10 行 → 无交叠
+    symbols = {
+        "old_name.py": [_sym("sym-old", path="old_name.py", start=1, end=5, name="foo")],
+    }
+    result = detect_affected_symbols(parsed_diff=parsed, symbols_by_path=symbols)
+    assert len(result["files"]) == 1
+    group = result["files"][0]
+    assert group["change_type"] == ChangeType.RENAMED.value
+    assert group["symbols"] == []
+    assert group.get("file_summary", {}).get("changeType") == ChangeType.RENAMED.value
+
+
 def test_formatting_only_not_impact_seed() -> None:
     """formatting_only 不进入 impact 种子集（D-07）。"""
     old = ["import os\n", "import sys\n", "\n", "def f():\n", "    return 1\n"]
