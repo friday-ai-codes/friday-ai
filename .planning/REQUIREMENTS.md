@@ -13,10 +13,10 @@
 
 ### GRAPH — 内存图服务（地基）
 
-- [ ] **GRAPH-01**: Agent/工具查询任一已索引仓库时，系统提供该 `(repository, branch)` 的内存符号图（`Symbol`/`CallEdge`/`ChunkEdge`/`CrossRepoApiCall` 装配），首次构建后命中缓存，不重复建图
-- [ ] **GRAPH-02**: 索引水位（`last_indexed_commit_sha`）或边构建代数变化后缓存自动失效重建；取图时校验水位，不返回「水位已更新但边未建完」的半新图
-- [ ] **GRAPH-03**: 缓存带字节预算 LRU 逐出 + single-flight 防并发构建风暴；超预算大仓有降级路径（不缓存/按需子图），进程不 OOM
-- [ ] **GRAPH-04**: 图读取层统一收口权限校验与 exclusion 过滤（fail-closed），排除文件在所有图分析工具输出中不可见
+- [x] **GRAPH-01**: Agent/工具查询任一已索引仓库时，系统提供该 `(repository, branch)` 的内存符号图（`Symbol`/`CallEdge`/`ChunkEdge`/`CrossRepoApiCall` 装配），首次构建后命中缓存，不重复建图
+- [x] **GRAPH-02**: 索引水位（`last_indexed_commit_sha`）或边构建代数变化后缓存自动失效重建；取图时校验水位，不返回「水位已更新但边未建完」的半新图
+- [x] **GRAPH-03**: 缓存带字节预算 LRU 逐出 + single-flight 防并发构建风暴；超预算大仓有降级路径（不缓存/按需子图），进程不 OOM
+- [x] **GRAPH-04**: 图读取层统一收口权限校验与 exclusion 过滤（fail-closed），排除文件在所有图分析工具输出中不可见
 
 ### IMPACT — 影响面与调用路径
 
@@ -95,10 +95,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GRAPH-01 | Phase 121 | Pending |
-| GRAPH-02 | Phase 121 | Pending |
-| GRAPH-03 | Phase 121 | Pending |
-| GRAPH-04 | Phase 121 | Pending |
+| GRAPH-01 | Phase 121 | Complete |
+| GRAPH-02 | Phase 121 | Complete |
+| GRAPH-03 | Phase 121 | Complete |
+| GRAPH-04 | Phase 121 | Complete |
 | IMPACT-01 | Phase 122 | Pending |
 | IMPACT-02 | Phase 122 | Pending |
 | IMPACT-03 | Phase 122 | Pending |
@@ -127,4 +127,4 @@
 
 > 注：立项时页脚记「24 条需求」为计数笔误，实际清单为 **27 条 REQ-ID / 9 分类**（上表逐条可数）。
 
-*Last updated: 2026-08-09 — roadmap 创建，Traceability 填充（27 条需求 → Phases 121–127）*
+*Last updated: 2026-08-09 — Phase 121 完成，GRAPH-01~04 交付（内存图服务基座）*
