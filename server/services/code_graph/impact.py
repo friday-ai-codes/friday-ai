@@ -201,6 +201,37 @@ def _edge_score(attrs: Mapping[str, Any]) -> float:
     return confidence_score(confidence)
 
 
+def _bare_name_allowed(*, include_low_confidence: bool, min_confidence: float) -> bool:
+    """D-08 的**双闸**：两道都开，``bare_name`` 边才参与扩散。
+
+    两道闸问的是**两个不同的问题**，缺一不可：
+
+    - ``include_low_confidence`` 问的是「这张图里到底有没有裸名边」。它是 Phase 121
+      ``get_graph`` 的**缓存键分量之一**——为假时装配阶段根本没把裸名边装进图，本内核
+      再怎么放宽门槛也无边可走。所以它表达的是**装配口径**。
+    - ``min_confidence`` 问的是「本次查询愿不愿意看这一档」。同一张含裸名边的图，一次
+      查询可以只看 ``resolved``，下一次可以把弱证据一并看进来；这是**查询口径**，与图
+      怎么装的无关。
+
+    单开任何一道都不足以放行。装配口径开着但查询门槛卡在 1.0 时，调用方要的是「只看
+    强证据」，此时把 0.3 分的裸名边放进扩散会直接违背它的显式意图；反过来查询门槛降到
+    0 但装配口径关着时，图里压根没有这一档边，放行也只是个空动作——但真正的风险在于
+    它会让人以为「门槛调低了就等于看到了全部弱证据」，从而对一份其实缺了整档边的结果
+    产生虚假的完整感。
+
+    做成两道而不是一道，是为了让**一次误配置不足以**把裸名边的假阳性放出来（研究
+    Pitfall 1）：生产解析率中位数只有 0.17，裸名边的基数远大于解析边，一旦它们无门槛
+    地参与扩散，影响面会凭空膨胀整整几个子树，而假边在输出里与真边看起来毫无区别。
+
+    :returns: 两道闸同时满足时为真。第二道的判据是「查询门槛不高于 ``bare_name`` 档的
+        分值」——⛔ 不写死 ``0.3``，走 :func:`~services.code_graph.confidence_score`，
+        免得 Phase 121 调整档位数值时本模块悄悄失配。
+    """
+    return include_low_confidence and min_confidence <= confidence_score(
+        EdgeConfidence.BARE_NAME
+    )
+
+
 def _depth_label(depth: int) -> str:
     """深度 → 语义标签；超出 :data:`DEPTH_LABELS` 登记范围时落到最弱的那一档。
 
@@ -372,8 +403,12 @@ def analyze_impact(
         ``seed_in_graph=False``——「符号不存在」与「没有影响」必须能被壳层区分开，
         后者才是可以据以决定「改这里安全」的结论。
     :param max_depth: 反向展开层数上限，默认 :data:`DEFAULT_MAX_DEPTH`。
-    :param min_confidence: 边的置信度数值下限。过滤发生在**扩散**阶段而不是输出阶段
-        ——不合格的边不参与 BFS 推进，因此提高本参数一定让结果集**单调收缩**。
+    :param min_confidence: 边的置信度数值下限，按 ``confidence_score()`` 的数值映射比较
+        （D-06）。两条语义要记住：① 过滤发生在**扩散**阶段而不是输出阶段——不合格的边
+        不参与 BFS 推进，因此提高本参数一定让结果集**单调收缩**（这是条可测性质）；
+        ② ``cross_repo`` 档参与比较时用该行的 ``match_confidence`` **原值**，⛔ 不归一化
+        到本仓的档位数值（D-13）——跨仓边的可信度来源与本仓完全不同，折算成同一个常量
+        再比较，比较出来的东西没有意义。
     :param include_low_confidence: 声明本次查询愿意看 ``bare_name`` 档。⚠️ 单开它
         **不足以**放行，另一道闸见 :func:`_bare_name_allowed`。
     :param limit: 输出条数上限，默认 :data:`DEFAULT_RESULT_LIMIT`。
@@ -386,12 +421,15 @@ def analyze_impact(
     """
     started = time.perf_counter()
 
+    allow_bare_name = _bare_name_allowed(
+        include_low_confidence=include_low_confidence, min_confidence=min_confidence
+    )
     reached, truncated_by_nodes = _reverse_layers(
         graph,
         seed_symbol_id,
         max_depth=max_depth,
         min_confidence=min_confidence,
-        allow_bare_name=include_low_confidence,
+        allow_bare_name=allow_bare_name,
         max_nodes=max_nodes,
     )
 
@@ -426,6 +464,10 @@ def analyze_impact(
         "max_depth": max_depth,
         "min_confidence": min_confidence,
         "include_low_confidence": include_low_confidence,
+        # 两道闸的**合成结果**，与上面那个入参分开透出：调用方传了
+        # include_low_confidence=True 却因为门槛太高而没看到任何裸名边时，得能一眼看出
+        # 是自己把第二道闸关着，而不是「这个符号确实没有弱证据调用方」。
+        "bare_name_included": allow_bare_name,
         "crosses_repo": crosses_repo,
         "truncated_by_nodes": truncated_by_nodes,
         "items": items,
