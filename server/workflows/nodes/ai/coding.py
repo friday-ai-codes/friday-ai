@@ -1321,6 +1321,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 repo_id = result["repository_id"]
                 repo = await Repository.objects.filter(id=repo_id).afirst()
                 if repo:
+                    dispatch_user = await self._resolve_dispatch_user(context)
                     mr_result = await self._create_mr_for_repo(
                         repository=repo,
                         branch_name=branch_name,
@@ -1328,6 +1329,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                         plan_title=plan_title,
                         tasks_completed=result.get("tasks_completed", []),
                         changes_summary=result.get("output", {}),
+                        user=dispatch_user,
                     )
                     mr_results.append({**result, **mr_result})
 
@@ -2168,6 +2170,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         plan_title: str,
         tasks_completed: list[str],
         changes_summary: dict[str, Any],
+        user: Any | None = None,
     ) -> dict[str, Any]:
         """为单个仓库创建 MR。
 
@@ -2211,6 +2214,23 @@ class AICodingNode(SubStepMixin, BaseNode):
         # PR-01：各仓 target_branch 优先用各仓自己的 default_branch，base_branch 降为
         # node 级兜底（对齐 mr_service.create_mr_for_task 范式，per D-01）。
         resolved_target = repository.default_branch or base_branch or "main"
+
+        # Phase 124 DIFF-04：fail-soft 影响面段（与 pr_cross_reference 同姿态；D-06/D-09）
+        try:
+            from services.code_graph.impact_report import (
+                append_impact_report,
+                build_impact_report_section,
+            )
+
+            section = await build_impact_report_section(
+                repository=repository,
+                user=user,
+                compare=branch_name,
+                base_ref=resolved_target,
+            )
+            body = append_impact_report(body, section)
+        except Exception:  # noqa: BLE001 — 最后兜底；helper 内应已吞
+            pass
 
         request = MRCreateRequest(
             source_branch=branch_name,

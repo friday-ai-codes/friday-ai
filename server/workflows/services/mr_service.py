@@ -152,11 +152,31 @@ async def create_mr_for_task(
     # Build MR content
     title = build_mr_title(task.name)
     description = build_mr_description(feishu_url, feishu_title, tech_summary, modified_files)
+    resolved_target = target_branch or repository.default_branch
+
+    # Phase 124 DIFF-04：与 AICodingNode / MCP 同一 helper；fail-soft 不阻断建 MR（D-06/D-09）
+    try:
+        from services.code_graph.impact_report import (
+            append_impact_report,
+            build_impact_report_section,
+        )
+
+        execution = getattr(task, "workflow_execution", None)
+        user = getattr(execution, "triggered_by", None) if execution is not None else None
+        section = await build_impact_report_section(
+            repository=repository,
+            user=user,
+            compare=branch_name,
+            base_ref=resolved_target,
+        )
+        description = append_impact_report(description, section)
+    except Exception:  # noqa: BLE001 — 最后兜底；helper 内应已吞
+        pass
 
     # Create MR request
     request = MRCreateRequest(
         source_branch=branch_name,
-        target_branch=target_branch or repository.default_branch,
+        target_branch=resolved_target,
         title=title,
         description=description,
         reviewer_usernames=reviewers,
