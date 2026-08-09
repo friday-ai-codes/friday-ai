@@ -1362,6 +1362,10 @@ async def run_detect_changes(
                     break
         graph_payload = await _graph_payload_for(any_uid)
         impacts = []
+        # D-08：阈值后改文件级摘要，清空 per-symbol 清单（计数保留在 summary）。
+        files = [
+            {**dict(g), "symbols": []} if isinstance(g, Mapping) else g for g in files
+        ]
     else:
         # D-09/D-10/D-11：顺序 for-loop，默认参数与 impact_analysis 一致。
         graph_payload = {}
@@ -1408,6 +1412,7 @@ async def run_detect_changes(
         "truncated": truncated,
         "not_expanded": not_expanded,
         "file_count": len(files),
+        "file_level_only": truncated,
     }
 
     result: dict[str, Any] = {

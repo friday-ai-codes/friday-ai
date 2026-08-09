@@ -481,6 +481,11 @@ async def test_threshold_skips_batch_impact(
     assert result["impacts"] == []
     assert result["summary"]["truncated"] is True
     assert result["summary"]["not_expanded"] is True
+    assert result["summary"]["file_level_only"] is True
+    assert result["summary"]["impact_seed_count"] == 101
+    assert result["summary"]["affected_symbol_count"] == 101
+    # D-08：阈值后 files[].symbols 清空，仅保留文件级摘要
+    assert all(g.get("symbols") == [] for g in result["files"])
     assert isinstance(result["graph"].get("resolution_rate"), (int, float))
 
 
