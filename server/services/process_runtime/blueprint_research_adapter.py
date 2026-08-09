@@ -766,12 +766,15 @@ class BlueprintResearchAdapter:
                 stage1=stage1,
             )
         repo_name = getattr(repo, "name", "") if repo is not None else ""
+        module_section = self._summarize_module_summaries(session, candidate)
+        module_block = f"{module_section}\n\n" if module_section else ""
         return (
             f"你正在为仓库「{repo_name}」评估它与本次需求的适配度（fitness）并调研现状。\n\n"
             f"{summarize_requirement_context(session)}\n\n"
             f"## 路由证据（服务端已算，供你核对，不要盲信）\n"
             f"{self._summarize_route_evidence(candidate)}\n\n"
             f"## 仓库章程\n{self._summarize_charter(charter)}\n\n"
+            f"{module_block}"
             "请深入阅读本仓代码后，**只输出一个 JSON 对象**，字段如下：\n"
             '- fitness: {"verdict": "suitable|partial|unsuitable", "reasons": [...], '
             '"citations": [...]}\n'
@@ -936,6 +939,24 @@ class BlueprintResearchAdapter:
             f"- 命中章程禁区：{_join(boundaries) or '（无）'}",
         ]
         return "\n".join(parts)
+
+    @staticmethod
+    def _summarize_module_summaries(session: Any, candidate: dict) -> str:
+        """调研 prompt 模块摘要段（MOD-04 / D-16）：空 → \"\"；失败 → \"\"。"""
+        try:
+            from services.process_runtime.artifact_injection import (
+                render_module_summaries_section,
+            )
+
+            evidence = candidate.get("evidence") if isinstance(candidate, dict) else None
+            evidence = evidence if isinstance(evidence, dict) else {}
+            summaries = evidence.get("module_summaries") or []
+            query = _summarize_goal(_requirement_spec_from_state(session))
+            if query == "（无）":
+                query = ""
+            return render_module_summaries_section(summaries, query=query)
+        except Exception:  # noqa: BLE001 — fail-soft：摘要段失败不阻断调研
+            return ""
 
     @staticmethod
     def _summarize_charter(charter: dict | None) -> str:
