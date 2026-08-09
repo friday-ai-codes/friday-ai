@@ -640,6 +640,7 @@ async def run_community_rebuild(
 
     from common.logging import redact_secrets_in_text
     from services.code_graph.community import rebuild_communities
+    from services.code_graph.module_summary import agenerate_module_summary
 
     actor = initiated_by_user_id or "system"
     branch = branch_name or ""
@@ -662,6 +663,7 @@ async def run_community_rebuild(
             result = await rebuild_communities(
                 str(repository_id),
                 branch,
+                summary_fn=agenerate_module_summary,
             )
         except Exception as exc:
             logger.warning(

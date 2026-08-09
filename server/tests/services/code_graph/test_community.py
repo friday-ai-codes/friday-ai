@@ -133,7 +133,7 @@ async def test_fingerprint_jaccard_skip(repository) -> None:
 
     members = [_member(i) for i in range(6)]
     desc = _community_desc(members)
-    SymbolCommunity.objects.create(
+    await SymbolCommunity.objects.acreate(
         repository=repository,
         branch_name="",
         community_key=desc["community_key"],
@@ -177,7 +177,7 @@ async def test_fingerprint_jaccard_skip(repository) -> None:
     assert score >= community_mod.JACCARD_THRESHOLD
 
     await SymbolCommunity.objects.filter(repository=repository).adelete()
-    SymbolCommunity.objects.create(
+    await SymbolCommunity.objects.acreate(
         repository=repository,
         branch_name="",
         community_key=old_desc["community_key"],
@@ -268,7 +268,7 @@ async def test_empty_summary_retries(repository) -> None:
     """
     members = [_member(i) for i in range(6)]
     desc = _community_desc(members)
-    SymbolCommunity.objects.create(
+    await SymbolCommunity.objects.acreate(
         repository=repository,
         branch_name="",
         community_key=desc["community_key"],
