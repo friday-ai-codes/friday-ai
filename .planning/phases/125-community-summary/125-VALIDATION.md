@@ -1,0 +1,87 @@
+---
+phase: 125
+slug: community-summary
+status: draft
+nyquist_compliant: false
+wave_0_complete: false
+created: 2026-08-10
+---
+
+# Phase 125 — Validation Strategy
+
+> Per-phase validation contract for feedback sampling during execution.
+
+---
+
+## Test Infrastructure
+
+| Property | Value |
+|----------|-------|
+| **Framework** | pytest 9.0.2 + pytest-django + pytest-asyncio |
+| **Config file** | `server/pyproject.toml`（`[tool.pytest.ini_options]`） |
+| **Quick run command** | `cd server && uv run pytest tests/services/code_graph/test_community.py tests/services/code_graph/test_module_summary.py tests/services/test_module_summary_signal.py tests/test_model_usage_call_source.py -q --no-header` |
+| **Full suite command** | `cd server && uv run pytest tests/services/code_graph/ tests/services/process_runtime/test_blueprint_route_breakdown.py tests/services/test_charter_route_signal.py tests/test_model_usage_call_source.py -q` |
+| **Estimated runtime** | ~60–120 seconds (full); ~15–30 seconds (quick) |
+
+---
+
+## Sampling Rate
+
+- **After every task commit:** Run quick run command above
+- **After every plan wave:** Run full suite command above
+- **Before `/gsd-verify-work`:** Full suite must be green; MOD-02 `test_rebuild_twice_zero_llm` must pass
+- **Max feedback latency:** 120 seconds
+
+---
+
+## Per-Task Verification Map
+
+| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
+|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
+| 125-01-W0 | 01 | 0 | MOD-01..04 | — | N/A | stubs | create Wave 0 test files | ❌ W0 | ⬜ pending |
+| 125-02-* | 02 | 1 | MOD-01 | T-125-01 | 只经 get_graph 取图 | unit+db | `uv run pytest tests/codegraph/test_symbol_community_model.py tests/services/code_graph/test_community.py::test_louvain_seed_stable tests/services/code_graph/test_community_enqueue.py -x` | ❌ W0 | ⬜ pending |
+| 125-03-* | 03 | 1 | MOD-03 | T-125-02 | call_source 先登记；凭证脱敏 | unit | `uv run pytest tests/test_model_usage_call_source.py::TestCallSourceEnum -x` | ✅ extend | ⬜ pending |
+| 125-04-* | 04 | 2 | MOD-02/03 | T-125-02 | 空 summary 可重试；失败不阻断 | unit | `uv run pytest tests/services/code_graph/test_community.py::test_rebuild_twice_zero_llm tests/services/code_graph/test_module_summary.py -x` | ❌ W0 | ⬜ pending |
+| 125-05-* | 05 | 3 | MOD-04 | T-125-01/03 | fail-soft；冻结面零改 | unit | `uv run pytest tests/services/test_module_summary_signal.py tests/services/process_runtime/test_blueprint_route_breakdown.py tests/services/process_runtime/test_module_summary_prompt.py tests/services/code_graph/test_frozen_surface_125.py -x` | ❌ W0 | ⬜ pending |
+
+*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+---
+
+## Wave 0 Requirements
+
+- [ ] `tests/services/code_graph/test_community.py` — Louvain 稳定 / 指纹 / Jaccard / rebuild×2 LLM=0（MOD-01/02）
+- [ ] `tests/services/code_graph/test_module_summary.py` — call_source + fail-soft + 规模门槛（MOD-03）
+- [ ] `tests/services/test_module_summary_signal.py` — adapter fail-soft（MOD-04）
+- [ ] `tests/services/process_runtime/test_module_summary_prompt.py` — 空段 + 预算（MOD-04）
+- [ ] `tests/codegraph/test_symbol_community_model.py` — 模型字段 / 无 Symbol FK（MOD-01）
+- [ ] `tests/services/code_graph/test_community_enqueue.py` — defer + lock 键（MOD-01）
+- [ ] `tests/services/code_graph/test_frozen_surface_125.py` — 冻结面守卫（MOD-04）
+- [ ] 扩展 `tests/test_model_usage_call_source.py`：`module_summary` → 45 值
+- [ ] 扩展 `tests/services/process_runtime/test_blueprint_route_breakdown.py`：`module_summaries` 默认 `[]`
+- [ ] Wave 0 文档任务：LOGGING-SPEC §4.1 登记 `module_summary`（**先于**调用点代码）
+
+*Existing infrastructure (pytest + django) covers framework; stubs above are required.*
+
+---
+
+## Manual-Only Verifications
+
+| Behavior | Requirement | Why Manual | Test Instructions |
+|----------|-------------|------------|-------------------|
+| 生产图连续重建 Jaccard 分布校准 | MOD-02 | 需真实仓图数据 | 相位内跑诊断命令，写 SUMMARY；阈值可调但验收语义不变 |
+
+*All other phase behaviors have automated verification.*
+
+---
+
+## Validation Sign-Off
+
+- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
+- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
+- [ ] Wave 0 covers all MISSING references
+- [ ] No watch-mode flags
+- [ ] Feedback latency < 120s
+- [ ] `nyquist_compliant: true` set in frontmatter
+
+**Approval:** pending
