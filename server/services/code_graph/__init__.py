@@ -26,6 +26,37 @@
 ——它 AST 扫全仓，包外任何一处直连 ``loader`` / ``cache`` / ``signature`` / ``access``
 都会让 CI 红。本文件负责收敛公开面，那条用例负责让越界当场暴露，两者缺一不可。
 
+红线管到哪、管不到哪（Phase 122 的边界裁决，D-28）
+==================================================
+``impact`` / ``trace`` / ``symbol_resolve`` 三个**新内核**与 ``model`` 同属契约/算法层，
+**刻意不进本 barrel，也不进** ``test_access.py`` 的 ``_INTERNAL_SUBMODULES``。壳层写
+``import services.code_graph.impact`` 取用其中的分析函数是**合法的**，不构成架构违规。
+
+理由：红线守的是「绕过 ``GraphService.get_graph()`` 的权限 / exclusion / 水位这三道闸」，
+而这三个内核**自己就是经 ``get_graph`` 拿到图之后的纯消费者**——它们只吃
+``MultiDiGraph`` 与参数，没有任何一条通往数据库的路，绕不动任何一道闸。把它们也锁进
+barrel，只会逼壳层写一层毫无信息量的转发。
+
+⚠️ **「内核可以直连」不等于「图可以直连」**。取图仍然**必须**经
+:func:`get_graph_service` → ``get_graph()``，那才是 D-02 的实质。内核拿到的图是三道闸
+的产物，谁把图递给它们、那张图怎么来的，红线一寸没松。
+
+包内 vs 包外兄弟模块
+--------------------
+本相位新增的文件分两处落地，判据只有一条——**是否碰 ORM**：
+
+- 包**内**（``impact`` / ``trace`` / ``symbol_resolve``）：零 ORM、零 Django，纯函数吃
+  图。D-01 的分层要求本包内只有 ``loader`` 持有 ORM，它们进得来。
+- 包**外兄弟模块**（``services/code_graph_tools.py`` / ``services/code_graph_cross_repo.py``）：
+  必须直查 ``Symbol`` / ``Repository`` / ``CrossRepoApiCall``（``signature`` 补取、跨仓
+  一跳），放进包内即破 D-01，所以它们只能待在包外。
+
+⚠️ **「在包外」不等于「不受观测契约管」**：122-05 会把
+``test_observability_contract`` 的**扫描面**显式扩展到这两个兄弟文件——同样的
+``component="code_graph"``、同样的 ``code_graph_`` 事件名前缀、同样的静态可解析事件名与
+``error=`` 脱敏，判据一条都不放松；唯一放宽的是 ``category`` 可取 ``sampling`` /
+``caller`` 之一，因为壳层要发调用类事件。
+
 不导出什么
 ==========
 ``estimate_graph_bytes`` / ``NODE_COST_BYTES`` / ``EDGE_COST_BYTES``（存储层记账细节）、
