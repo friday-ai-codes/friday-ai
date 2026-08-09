@@ -132,9 +132,8 @@ async def test_mcp_create_mr_failsoft_on_impact_error() -> None:
 
     assert payload["success"]
     assert client.last_request is not None
-    assert client.last_request.description == "base body" or IMPACT_SECTION_MARKER in (
-        client.last_request.description or ""
-    )
+    # helper 抛错时 outer shell fail-soft：description 保持原 body（D-09；LO-02）
+    assert client.last_request.description == "base body"
 
 
 async def test_workflow_mcp_impact_section_parity() -> None:
