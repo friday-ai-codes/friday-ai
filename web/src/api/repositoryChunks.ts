@@ -31,7 +31,7 @@
  * `<pre class="font-mono">` + 行号列形态。
  */
 
-import { get } from './client'
+import { ApiError, get, post } from './client'
 
 /** `chunk-at` 返回的单个 chunk 引用（⚠️ **不含代码正文**，只有定位信息）。 */
 export interface RepoChunkRef {
@@ -54,22 +54,51 @@ export interface ChunkAtResult {
   usable: boolean
 }
 
-/** `charter` 返回的仓库章程（各 JSON 字段形状由 service 决定，逐键可选链）。 */
-export interface RepoCharter {
+/** 归属域条目（对齐 normalize_charter_draft 白名单）。 */
+export interface RepoCharterOwnedDomain {
+  domain: string
+  status: 'implemented' | 'planned' | string
+  note?: string
+  citations?: string[]
+}
+
+/** 边界禁区条目。 */
+export interface RepoCharterBoundary {
+  rule: string
+  decided_by?: string
+  citations?: string[]
+}
+
+/** 落点偏好条目。 */
+export interface RepoCharterPlacementPreference {
+  kind: string
+  target: string
+  note?: string
+}
+
+export type RepoCharterSource = 'ai_draft' | 'human_confirmed'
+export type RepoCharterEvolution = 'active' | 'maintenance_only' | 'deprecated'
+
+/** 章程可编辑字段（confirm edits / 草稿内容共用形状）。 */
+export interface RepoCharterFields {
+  positioning: string
+  owned_domains: RepoCharterOwnedDomain[]
+  boundaries: RepoCharterBoundary[]
+  placement_preferences: RepoCharterPlacementPreference[]
+  audience: string
+  form: string
+  evolution: RepoCharterEvolution | string
+}
+
+/** `charter` 返回的仓库章程（字段形状对齐 RepoCharterSerializer）。 */
+export interface RepoCharter extends RepoCharterFields {
   id: string
   repository: string
   version: number
-  source: string
+  source: RepoCharterSource | string
   confirmed_by: string | null
-  positioning: string
-  owned_domains: unknown
-  boundaries: unknown
-  placement_preferences: unknown
-  audience: string
-  form: string
-  evolution: unknown
   /** pending 的 AI 修订草案（未确认生效）。 */
-  draft_content: unknown
+  draft_content: Partial<RepoCharterFields> | Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
@@ -174,8 +203,41 @@ export async function getRepositoryCharter(repositoryId: string): Promise<RepoCh
   }
 }
 
+/**
+ * 详情页读取章程：404 → `null`（空态）；其它错误上抛 `ApiError`（与 citation 容错分流）。
+ */
+export async function fetchRepositoryCharter(repositoryId: string): Promise<RepoCharter | null> {
+  try {
+    return await get<RepoCharter>(`/repositories/${repositoryId}/charter/`)
+  }
+  catch (e: unknown) {
+    if (e instanceof ApiError && e.status === 404)
+      return null
+    throw e
+  }
+}
+
+/** 触发 AI 三源蒸馏起草；失败上抛（503 等由 UI toast）。 */
+export async function draftRepositoryCharter(repositoryId: string): Promise<RepoCharter> {
+  return await post<RepoCharter>(`/repositories/${repositoryId}/charter/draft/`)
+}
+
+/**
+ * 人工确认章程生效；可带 `edits`。无章程 + 非空 edits 时后端会创建 human_confirmed。
+ */
+export async function confirmRepositoryCharter(
+  repositoryId: string,
+  edits?: Partial<RepoCharterFields>,
+): Promise<RepoCharter> {
+  const body = edits ? { edits } : undefined
+  return await post<RepoCharter>(`/repositories/${repositoryId}/charter/confirm/`, body)
+}
+
 export default {
   getChunkAt,
   getRepositoryFileLines,
   getRepositoryCharter,
+  fetchRepositoryCharter,
+  draftRepositoryCharter,
+  confirmRepositoryCharter,
 }

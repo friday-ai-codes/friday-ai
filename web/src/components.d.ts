@@ -404,6 +404,7 @@ declare module 'vue' {
     ReplayTimeline: typeof import('./components/execution/replay/ReplayTimeline.vue')['default']
     RepoAssociationCard: typeof import('./components/blueprint/RepoAssociationCard.vue')['default']
     RepoAssociationsSection: typeof import('./components/blueprint/sections/RepoAssociationsSection.vue')['default']
+    RepoCharterSection: typeof import('./components/repository/RepoCharterSection.vue')['default']
     RepoHashFreshnessCard: typeof import('./components/repository/RepoHashFreshnessCard.vue')['default']
     RepoMultiSelector: typeof import('./components/chat/RepoMultiSelector.vue')['default']
     RepoRouterWeightSettings: typeof import('./components/settings/RepoRouterWeightSettings.vue')['default']
