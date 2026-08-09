@@ -198,7 +198,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 124-03-PLAN.md — Wave 2：workflow + MCP + mr_service 挂点与 D-14 对等哨兵
+- [x] 124-03-PLAN.md — Wave 2：workflow + MCP + mr_service 挂点与 D-14 对等哨兵
 
 ### Phase 125: 社区检测 + 模块摘要
 
@@ -457,7 +457,7 @@ Plans:
 | 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 10/10 | ✅ Complete (verified passed 4/4) | 2026-08-09 |
 | 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 10/10 | Complete | 2026-08-09 |
 | 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 6/6 | Complete   | 2026-08-09 |
-| 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 3/4 | In Progress|  |
+| 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 4/4 | Complete   | 2026-08-09 |
 | 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 0/? | Not started | - |
 | 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 0/? | Not started | - |
 | 127. Semgrep 门禁 + LSP 基准 | v0.22.0 | TAINT-01~03, LSP-01 | 0/? | Not started | - |
