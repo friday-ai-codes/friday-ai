@@ -79,7 +79,7 @@ Each task was committed atomically:
 3. **Task 2 RED: unskip prompt assertions** - `4a84d79f` (test)
 4. **Task 2 GREEN: prompt guidance helper** - `ce2ecda4` (feat)
 
-**Plan metadata:** _(pending docs commit)_
+**Plan metadata:** `6b261514` (docs: complete plan)
 
 ## Files Created/Modified
 
