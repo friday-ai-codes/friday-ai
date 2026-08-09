@@ -13,6 +13,26 @@ from __future__ import annotations
 import networkx as nx
 import pytest
 
+from services.code_graph import EdgeConfidence, EdgeKind, derive_reason
+from services.code_graph.impact import analyze_impact
+
+
+def _ids(result: dict, depth: int) -> set[str]:
+    """某一层的 ``symbol_id`` 集合。"""
+    return {item["symbol_id"] for item in result["groups"][depth]}
+
+
+def _all_ids(result: dict) -> set[str]:
+    """全部返回条目的 ``symbol_id`` 集合（跨层）。"""
+    return {item["symbol_id"] for item in result["items"]}
+
+
+def _item(result: dict, symbol_id: str) -> dict:
+    """按 ``symbol_id`` 取唯一一条结果（取不到即断言失败，比 ``next()`` 的 StopIteration 可读）。"""
+    matches = [item for item in result["items"] if item["symbol_id"] == symbol_id]
+    assert len(matches) == 1, f"{symbol_id} 应恰好出现一次，实际 {len(matches)} 次"
+    return matches[0]
+
 
 # 122-VALIDATION.md A1：Wave 0 地基自检。fixture 一旦退化（忘了 freeze、属性个数漂移、
 # 少造了观察点），后面九个 plan 的断言会集体失去意义——所以这条必须先于它们绿。
@@ -45,41 +65,119 @@ def test_known_topology_fixture_is_frozen(known_topology: nx.MultiDiGraph) -> No
     assert set(known_topology["B"]["A"][0]) == {"kind", "confidence", "line_number"}
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
-def test_depth_grouping() -> None:
+def test_depth_grouping(known_topology: nx.MultiDiGraph) -> None:
     """合成图上 d1/d2/d3 分组逐点正确；同符号多层出现取最浅；方向正确（下游不出现）。
 
     （Req: IMPACT-01, 决策: D-05）
     """
-    pytest.fail("Wave 0 桩")
+    strict = analyze_impact(known_topology, "A", min_confidence=1.0)
+
+    # A 的直接调用方里，B / C 走 resolved 边（1.0），F 走 cross_repo(0.7) 被门槛挡掉。
+    assert _ids(strict, 1) == {"B", "C"}
+    # B 的上游 E；C 的上游 D。C→B 与 X→B 是 bare_name（0.3），进不来。
+    assert _ids(strict, 2) == {"E", "D"}
+    assert _ids(strict, 3) == set()
+    assert "F" not in _all_ids(strict), "0.7 < 1.0 的跨仓边不该参与扩散"
+
+    # 🚨 方向纪律：G 是 A 的**下游**（A --resolved--> G），反向影响面里永不出现。
+    # 用最松的一组参数取样——两道闸全开、门槛降到 0 都不该把它放进来。
+    loosest = analyze_impact(
+        known_topology, "A", min_confidence=0.0, include_low_confidence=True
+    )
+    assert "G" not in _all_ids(loosest)
+    # 顺带确认这组参数确实把闸开到了最大（否则上一条断言可能只是因为压根没走远）。
+    assert {"B", "C", "F", "E", "D", "X"} == _all_ids(loosest)
+
+    # 门槛降到 0.7：F 恰好达标，且它那条路径的 path_confidence 就是 0.7（path-min）。
+    relaxed = analyze_impact(known_topology, "A", min_confidence=0.7)
+    assert _ids(relaxed, 1) == {"B", "C", "F"}
+    assert _item(relaxed, "F")["path_confidence"] == 0.7
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
-def test_max_depth_budget() -> None:
+def test_max_depth_budget(known_topology: nx.MultiDiGraph) -> None:
     """``max_depth`` 生效；超深节点不出现。
 
     （Req: IMPACT-01, 决策: D-05）
     """
-    pytest.fail("Wave 0 桩")
+    depth1 = analyze_impact(known_topology, "A", max_depth=1)
+    assert set(depth1["groups"]) == {1}
+    assert _all_ids(depth1) == {"B", "C"}
+    assert "D" not in _all_ids(depth1)
+
+    depth2 = analyze_impact(known_topology, "A", max_depth=2)
+    assert "D" in _ids(depth2, 2)
+
+    # C 同时是 A 的 d1（C --resolved--> A）与 d2（C --bare_name--> B --> A）。
+    # 无论层预算给多少，它恒在 d1 —— 最浅优先（最坏情况优先）。
+    for max_depth in (1, 2, 3, 5):
+        result = analyze_impact(
+            known_topology,
+            "A",
+            max_depth=max_depth,
+            min_confidence=0.0,
+            include_low_confidence=True,
+        )
+        assert "C" in _ids(result, 1), f"max_depth={max_depth} 时 C 不在 d1"
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
-def test_kernel_does_not_mutate_graph() -> None:
+def test_kernel_does_not_mutate_graph(known_topology: nx.MultiDiGraph) -> None:
     """内核不修改入参图（fixture 已 ``freeze``，就地改必抛）。
 
     （Req: IMPACT-01, 决策: D-01）
     """
-    pytest.fail("Wave 0 桩")
+    nodes_before = known_topology.number_of_nodes()
+    edges_before = known_topology.number_of_edges()
+
+    # 覆盖会走到各条分支的参数组合：截断、层预算、双闸、遍历软上限。
+    for kwargs in (
+        {},
+        {"min_confidence": 0.0, "include_low_confidence": True},
+        {"max_depth": 1},
+        {"limit": 1},
+        {"max_nodes": 2},
+        {"exclude_test_files": True},
+    ):
+        analyze_impact(known_topology, "A", **kwargs)  # 就地改写会抛 NetworkXError
+
+    assert known_topology.number_of_nodes() == nodes_before
+    assert known_topology.number_of_edges() == edges_before
+    assert nx.is_frozen(known_topology) is True
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
-def test_edge_confidence_and_reason() -> None:
+def test_edge_confidence_and_reason(known_topology: nx.MultiDiGraph) -> None:
     """每条结果带 ``confidence`` 档 + ``reason``（经 ``derive_reason``）+ ``path_confidence``
     （= path min，D-07）。
 
     （Req: IMPACT-02, 决策: D-06 / D-07 / D-09）
     """
-    pytest.fail("Wave 0 桩")
+    result = analyze_impact(
+        known_topology, "A", min_confidence=0.0, include_low_confidence=True
+    )
+    assert _all_ids(result), "样本为空的话下面的逐条断言等于没写"
+
+    for item in result["items"]:
+        via = item["via"]
+        attrs = known_topology[via["from"]][via["to"]][0]
+        # 档位与种类取边属性**原值**，不被折算成数值、不被归一化。
+        assert via["confidence"] == attrs["confidence"]
+        assert via["kind"] == attrs["kind"]
+        assert via["line_number"] == attrs["line_number"]
+        # reason 现推不存（D-09）：与直接调 derive_reason 的返回逐字相等。
+        assert via["reason"] == derive_reason(
+            EdgeKind(attrs["kind"]),
+            EdgeConfidence(attrs["confidence"]),
+            callee_name=known_topology.nodes[via["to"]]["name"],
+            match_confidence=attrs.get("match_confidence"),
+        )
+        assert 0.0 <= item["path_confidence"] <= 1.0
+
+    # cross_repo 档的 reason 必须带上 match_confidence 原值，agent 才有的核对。
+    assert "0.7" in _item(result, "F")["via"]["reason"]
+
+    # path-min（D-07）：X 经 bare_name(0.3) 到 B，再经 resolved(1.0) 到 A ⇒ 取最小值 0.3。
+    # ⛔ 平均会是 0.65、乘积会是 0.3 —— 用平均的实现会在这里红。
+    assert _item(result, "X")["path_confidence"] == 0.3
+    assert _item(result, "B")["path_confidence"] == 1.0
 
 
 @pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
