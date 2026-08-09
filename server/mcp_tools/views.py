@@ -88,6 +88,7 @@ from .serializers import (
     CreateLearningCaseRequestSerializer,
     CreateMergeRequestRequestSerializer,
     CreateWorkItemRepoTasksRequestSerializer,
+    DetectChangesRequestSerializer,
     ExecuteCodingPlanRequestSerializer,
     ExecuteWorkItemRepoTasksRequestSerializer,
     FindRelatedChunksRequestSerializer,
@@ -1365,6 +1366,104 @@ class ImpactAnalysisView(McpToolView):
                 error_code=str(result.get("error_code") or ""),
                 result_count=int(summary.get("returned") or 0) if summary else 0,
                 total_found=int(summary.get("total_found") or 0) if summary else 0,
+                degraded=graph.get("degraded") if graph else "",
+                resolution_rate=float(graph.get("resolution_rate") or 0.0) if graph else 0.0,
+                duration_ms=duration_ms,
+            )
+        except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务
+            pass
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class DetectChangesView(McpToolView):
+    """变更检测 MCP 薄壳（Phase 123 DIFF-01/02 / D-13）。
+
+    壳内零算法：校验 → ``_get_indexed_repo`` → ``run_detect_changes`` →
+    原样透出信封 + ``run_id`` → 一条汇总 ``RetrievalTrace`` + 一条 ``caller`` 事件。
+
+    ⛔ 不调 ``resolve_tool_graph_branch``——交叠坐标由编排锁定索引水位（D-01/D-02）。
+    ``ok=False`` 一律 HTTP 200 + 信封（与 impact 一致；MirrorError 已在编排折信封）。
+    """
+
+    tool_name = "detect_changes"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(DetectChangesRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        repository_id = str(input_data["repository_id"])
+        repo, err = await self._get_indexed_repo(repository_id)
+        if err is not None:
+            return err
+        assert repo is not None
+
+        from services.code_graph import GraphError
+        from services.code_graph_tools import run_detect_changes, tool_trace_payload
+
+        orch_started = time.perf_counter()
+        try:
+            result = await run_detect_changes(
+                repository_id=repository_id,
+                repo=repo,
+                user=request.user,
+                compare=str(input_data.get("compare") or ""),
+                base_ref=str(input_data["base_ref"])
+                if input_data.get("base_ref")
+                else None,
+                max_depth=int(input_data.get("max_depth", 3)),
+                min_confidence=float(input_data.get("min_confidence", 1.0)),
+                include_low_confidence=bool(input_data.get("include_low_confidence")),
+                limit=int(input_data.get("limit", 200)),
+            )
+        except GraphError as exc:
+            return _graph_error_response(exc)
+        except MirrorError as exc:
+            # 编排优先折信封；若仍上抛则壳层翻译（双面同形优先编排）。
+            return _mirror_error_response(exc)
+        orchestration_ms = int((time.perf_counter() - orch_started) * 1000)
+
+        output_data = {**result, "run_id": str(run.run_id)}
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        traces = [
+            (
+                RetrievalTrace.Kind.EDGE,
+                tool_trace_payload(
+                    result,
+                    tool=self.tool_name,
+                    duration_ms=duration_ms,
+                    orchestration_ms=orchestration_ms,
+                ),
+            )
+        ]
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        try:
+            summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+            graph = result.get("graph") if isinstance(result.get("graph"), dict) else {}
+            logger.info(
+                "mcp_detect_changes_completed",
+                tool_name=self.tool_name,
+                component="mcp_tools",
+                category="caller",
+                initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+                repository_id=repository_id,
+                ok=bool(result.get("ok")),
+                error_code=str(result.get("error_code") or ""),
+                result_count=int(summary.get("affected_symbol_count") or 0) if summary else 0,
+                impact_seed_count=int(summary.get("impact_seed_count") or 0) if summary else 0,
+                truncated=bool(summary.get("truncated")) if summary else False,
                 degraded=graph.get("degraded") if graph else "",
                 resolution_rate=float(graph.get("resolution_rate") or 0.0) if graph else 0.0,
                 duration_ms=duration_ms,
