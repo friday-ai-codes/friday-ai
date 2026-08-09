@@ -74,7 +74,69 @@ def test_two_surfaces_same_payload_detect_changes() -> None:
     pytest.fail("Wave 0 桩")
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 123-05 落地")
 def test_tool_trace_payload_detect_changes_counts_only() -> None:
-    """RetrievalTrace 只记计数，无路径/符号名（T-123-TRACE）。"""
-    pytest.fail("Wave 0 桩")
+    """RetrievalTrace 只记计数，无路径/符号名（T-123-TRACE）。
+
+    本用例无 DB：构造假编排信封 → ``tool_trace_payload`` → 序列化文本断言。
+    MCP 壳接线由 123-03/05 覆盖；计数分支在本 plan（123-02）转绿。
+    """
+    import json
+
+    from services.code_graph_tools import tool_trace_payload
+
+    fake = {
+        "ok": True,
+        "tool": "detect_changes",
+        "repository_id": "repo-uuid-1",
+        "diff_base_sha": "a" * 40,
+        "diff_head_sha": "b" * 40,
+        "files": [
+            {
+                "path": "src/secret_leak.py",
+                "change_type": "modified",
+                "symbols": [
+                    {
+                        "uid": "sym-1",
+                        "name": "leaky_helper",
+                        "file_path": "src/secret_leak.py",
+                        "changeType": "modified",
+                        "impact_seed": True,
+                    }
+                ],
+            }
+        ],
+        "impacts": [
+            {"symbol_id": "sym-1", "impact": {"ok": True}},
+            {
+                "symbol_id": "sym-2",
+                "impact_error": "graph_unavailable",
+                "unavailable_reason": "x",
+            },
+        ],
+        "summary": {
+            "affected_symbol_count": 1,
+            "impact_seed_count": 1,
+            "truncated": False,
+            "not_expanded": False,
+            "file_count": 1,
+        },
+        "graph": {"resolution_rate": 0.17, "degraded": ""},
+    }
+    payload = tool_trace_payload(
+        fake, tool="detect_changes", duration_ms=12, orchestration_ms=8
+    )
+    assert isinstance(payload, dict)
+    assert payload["result_count"] == 1
+    assert payload["total_found"] == 1
+    assert payload["files_touched"] == 1
+    assert payload["impacts_ok"] == 1
+    assert payload["impacts_failed"] == 1
+    assert payload["truncated"] == 0
+    assert payload["risk_level"] == ""
+    assert payload["cross_repo_entry_count"] == 0
+
+    dumped = json.dumps(payload, ensure_ascii=False)
+    assert "file_path" not in dumped
+    assert "secret_leak" not in dumped
+    assert "leaky_helper" not in dumped
+    assert "src/" not in dumped
