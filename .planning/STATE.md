@@ -4,13 +4,13 @@ milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
 status: executing
 stopped_at: Completed 124-03-PLAN.md
-last_updated: "2026-08-09T20:11:42.519Z"
-last_activity: 2026-08-10 — Phase 124 complete, transitioned to Phase 125
+last_updated: "2026-08-09T20:15:22.930Z"
+last_activity: 2026-08-09 -- Phase 125 execution started
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 30
-  completed_plans: 30
+  total_plans: 34
+  completed_plans: 31
   percent: 57
 ---
 
@@ -23,14 +23,14 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。
 **v0.19.0 交付的那一层：** 技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。
 **v0.20.0 交付的那一层：** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，飞书式划线澄清多轮收敛，全生命周期可管理、可查可引可导出。
-**Current focus:** Phase 124 — coding-chain
+**Current focus:** Phase 125 — community-summary
 
 ## Current Position
 
-Phase: 125 — 社区检测 + 模块摘要
-Plan: Not started
+Phase: 125 (community-summary) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-08-10 — Phase 124 complete, transitioned to Phase 125
+Last activity: 2026-08-09 -- Phase 125 execution started
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
 
@@ -1010,7 +1010,7 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-09T19:47:06.724Z
+Last session: 2026-08-09T20:15:22.915Z
 Stopped at: Completed 124-03-PLAN.md
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。

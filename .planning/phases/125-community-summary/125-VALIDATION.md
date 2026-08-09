@@ -3,7 +3,7 @@ phase: 125
 slug: community-summary
 status: draft
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-08-10
 ---
 
