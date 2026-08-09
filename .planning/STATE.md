@@ -602,9 +602,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 122]: D-21：MCP 壳只调 run_impact/run_trace，信封原样透出（仅加 run_id）
 - [Phase 122]: ok=False 一律 HTTP 200，保留 ambiguous_symbol 候选列表给 agent
 - [Phase 122]: 一次调用恰一条汇总 RetrievalTrace + caller 事件；RequestMetric 由基类 _record 写入
-- [Phase ?]: D-21：对话壳只调 run_impact/run_trace，data 段零加工
-- [Phase ?]: ok=False/found=False 走 success=True 信封，与 MCP HTTP 200 对齐
-- [Phase ?]: 非法 conversation_id 的 Django ValidationError 也 fail-closed 为无 owner
+- [Phase 122]: D-21：对话壳只调 run_impact/run_trace，data 段零加工
+- [Phase 122]: ok=False/found=False 走 success=True 信封，与 MCP HTTP 200 对齐
+- [Phase 122]: 非法 conversation_id 的 Django ValidationError 也 fail-closed 为无 owner
 
 ### Pending Todos
 
