@@ -18,12 +18,14 @@ def _runner(
     knowledge_endpoint: str | None = "https://friday.example.com",
     user_token: str | None = "friday_pat_test",
     task_mode: str = "execute",
+    repository_id: str | None = "",
 ) -> ClaudeRunner:
     config = MagicMock()
     config.follow_openspec = follow_openspec
     config.knowledge_endpoint = knowledge_endpoint
     config.user_token = user_token
     config.task_mode = task_mode
+    config.repository_id = repository_id
     return ClaudeRunner(config, Path("/tmp"))
 
 
@@ -57,16 +59,32 @@ def test_prompt_skips_when_knowledge_missing() -> None:
 
 
 def test_detect_changes_guidance_helper_independent() -> None:
-    """独立 helper 非空静态文本（T-124-01）。"""
+    """独立 helper 非空；仅允许拼受信赖的 repository_id（T-124-01 / HI-01）。"""
     guidance = _runner()._detect_changes_guidance()
     assert guidance
     assert "detect_changes" in guidance
-    # 静态字面量：方法体不得用 f-string / format 拼外部变量（人工可读契约）。
+    # 不得用 f-string / format 拼外部自由文本；受信赖 UUID 用字符串拼接内联。
     import inspect
 
     source = inspect.getsource(ClaudeRunner._detect_changes_guidance)
     assert "f\"" not in source and "f'" not in source
     assert ".format(" not in source
+    assert "FRIDAY_TASK_REPOSITORY_ID" in guidance
+
+
+def test_detect_changes_guidance_inlines_repository_uuid() -> None:
+    """有 FRIDAY_TASK_REPOSITORY_ID（合法 UUID）时指引内联该值。"""
+    rid = "11111111-1111-1111-1111-111111111111"
+    guidance = _runner(repository_id=rid)._detect_changes_guidance()
+    assert rid in guidance
+    assert f"`repository_id`=`{rid}`" in guidance
+
+
+def test_detect_changes_guidance_rejects_unsafe_repository_id() -> None:
+    """非法 repository_id 不得内联进 prompt（防注入）；回退环境变量提示。"""
+    guidance = _runner(repository_id="evil\ninject")._detect_changes_guidance()
+    assert "evil" not in guidance
+    assert "FRIDAY_TASK_REPOSITORY_ID" in guidance
 
 
 def test_guidance_non_blocking_language() -> None:

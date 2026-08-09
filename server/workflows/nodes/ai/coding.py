@@ -1848,7 +1848,11 @@ class AICodingNode(SubStepMixin, BaseNode):
         )
 
         prompt = self._build_coding_prompt(
-            tasks, global_context, branch_name, upstream_artifacts=upstream_artifacts
+            tasks,
+            global_context,
+            branch_name,
+            upstream_artifacts=upstream_artifacts,
+            repository_id=str(repository.id),
         )
 
         # Phase 103 AGENT-04：项目上下文注入（镜像 chat dispatch_coding_task 两件套——
@@ -1901,6 +1905,8 @@ class AICodingNode(SubStepMixin, BaseNode):
         branch_env: dict[str, str] = {
             "env_FRIDAY_TASK_BRANCH_STRATEGY": branch_name,
             "env_FRIDAY_TASK_TARGET_BRANCH": base_branch,
+            # Phase 124 DIFF-03：权威仓库 UUID 进容器，供 detect_changes 自查指引内联。
+            "env_FRIDAY_TASK_REPOSITORY_ID": str(repository.id),
         }
 
         # 构造 env_FRIDAY_TASK_CLAUDE_* 字段（contract 纠偏命名；Runner Docker executor
@@ -2072,12 +2078,14 @@ class AICodingNode(SubStepMixin, BaseNode):
         global_context: str,
         branch_name: str,
         upstream_artifacts: list[dict] | None = None,
+        repository_id: str = "",
     ) -> str:
         """构建 SubAgent 编码 prompt。
 
         合并该仓库所有任务的编码指令。``upstream_artifacts`` 为 ARTIFACT-02 上游产物注入
         （默认 None → 首发 wave 0 / 无上游 → 注入段不渲染 → 与 Phase 44 现行为逐字一致，
-        零回归命门）。
+        零回归命门）。``repository_id`` 为 Friday 仓 UUID（Phase 124 DIFF-03），供
+        detect_changes 自查；默认空 → 分支段与现状逐字一致。
         """
         from services.process_runtime.artifact_injection import (
             render_upstream_artifacts_section,
@@ -2095,7 +2103,11 @@ class AICodingNode(SubStepMixin, BaseNode):
         if upstream_section:
             parts.append(upstream_section)
 
-        parts.append(f"# 分支信息\n\n目标分支: `{branch_name}`")
+        branch_lines = [f"目标分支: `{branch_name}`"]
+        rid = (repository_id or "").strip()
+        if rid:
+            branch_lines.append(f"仓库 ID: `{rid}`")
+        parts.append("# 分支信息\n\n" + "\n".join(branch_lines))
 
         # 编码指令
         if len(tasks) == 1:

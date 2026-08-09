@@ -11,6 +11,7 @@ bypassPermissions 在 Docker 容器隔离环境中是安全的，可以支持无
 
 import asyncio
 import json
+import re
 import time
 from collections import deque
 from datetime import datetime
@@ -1062,14 +1063,25 @@ class ClaudeRunner:
     def _detect_changes_guidance(self) -> str:
         """detect_changes 自查指引（Phase 124-01，DIFF-03 / D-01/D-03/D-04）。
 
-        独立 helper（静态可信文本，无外部输入拼接，无 prompt 注入面）。仅在
-        knowledge MCP 已挂载且 ``task_mode`` 为 plan/execute 时被 ``_get_system_prompt`` 追加。
+        独立 helper：正文为静态可信文本。仅允许拼接服务端注入的
+        ``config.repository_id``（FRIDAY_TASK_REPOSITORY_ID，UUID 形态校验后才内联）；
+        绝不拼用户/仓库自由文本。仅在 knowledge MCP 已挂载且 ``task_mode`` 为
+        plan/execute 时被 ``_get_system_prompt`` 追加。
         非阻断：失败 / HIGH/CRITICAL 仍继续交付；不改 runner commit/push（D-04）。
         """
+        raw_id = (getattr(self.config, "repository_id", None) or "").strip()
+        # 仅内联服务端可信 UUID；非法值回退到环境变量提示，避免 prompt 注入面。
+        if raw_id and re.fullmatch(r"[0-9a-fA-F-]{36}", raw_id):
+            repo_clause = "`repository_id`=`" + raw_id + "`"
+        else:
+            repo_clause = (
+                "`repository_id`=本任务仓 UUID（见任务环境 FRIDAY_TASK_REPOSITORY_ID）"
+            )
         return (
             "影响面自查（编码完成后、结束 turn 前）：\n"
             "- 若已挂载 friday-knowledge，调用 `detect_changes`："
-            "`repository_id`=本任务仓 UUID，`compare`=当前功能分支"
+            + repo_clause
+            + "，`compare`=当前功能分支"
             "（可选 `base_ref`=MR 目标分支，仅声明；勿传工作树 tip 当 base）。\n"
             "- 根据返回的受影响符号与风险决定是否继续修补；结果仅供决策参考。\n"
             "- 工具失败 / 未索引 / 配额用尽：记录原因并继续交付，不要重试刷屏；"
