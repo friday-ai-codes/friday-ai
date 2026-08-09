@@ -52,7 +52,19 @@
   2. 重索引推进 `last_indexed_commit_sha` 或边构建代数变化后，旧缓存自动失效重建；取图时校验水位，绝不返回「水位已更新但边未建完」的半新图
   3. 缓存按字节预算 LRU 逐出且有 single-flight 建图锁——并发查询同一仓只触发一次构建；超预算大仓走降级路径（不缓存/按需子图），进程不 OOM
   4. 被排除文件与无权限仓库在图读取层统一拦截（fail-closed），任何上层图分析工具的输出中均不可见
-**Plans**: TBD
+**Plans**: 10 plans（9 waves，W0–W8）
+
+Plans:
+- [ ] 121-01-PLAN.md — W0 依赖提升（networkx 直接依赖）、`CODE_GRAPH_*` 配置项、LOGGING-SPEC §5 登记 `code_graph`、测试包与 fixture 脚手架
+- [ ] 121-02-PLAN.md — W1 `model.py` 契约层：四档边枚举 / `CodeGraph`·`GraphMeta`·`ChunkEvidence` / 异常层级 / 裸名黑名单
+- [ ] 121-03-PLAN.md — W2 `access.py`：仓库可读性单一校验点 + exclusion 同步收口与规则指纹（fail-closed）
+- [ ] 121-04-PLAN.md — W2 `signature.py`：复合签名（两条边构建轨）+ in-flight 判定（躲 PENDING 长鸣与 RUNNING 孤儿）
+- [ ] 121-05-PLAN.md — W3 `loader.py` 主干：符号节点 overlay 装配 + 装配阶段 exclusion 过滤 + CallEdge 双档与解析率
+- [ ] 121-06-PLAN.md — W4 `loader.py` 补齐：跨仓边二次解析 + chunk 旁挂证据面 + 按需子图降级路径
+- [ ] 121-07-PLAN.md — W5 `cache.py` 存储侧：字节估算纯函数 + 字节预算 LRU 逐出 + 单例与测试重置钩子
+- [ ] 121-08-PLAN.md — W6 `GraphService.get_graph` 编排：签名复校 / 半新图防护 / 准入降级 / single-flight
+- [ ] 121-09-PLAN.md — W7 curated barrel（架构红线）+ 两处构建完成失效钩子
+- [ ] 121-10-PLAN.md — W8 诊断交付物：最大仓内存实测（常数复校）+ `callee_symbol` 解析率统计（阈值校准）
 
 ### Phase 122: impact / trace 工具面
 **Goal**: 用户/agent 改代码前能回答「影响谁、怎么到达」——impact 深度分组 + 置信度分层 + 跨仓边界，trace 两符号间最短路，经 MCP 与对话双面可用
