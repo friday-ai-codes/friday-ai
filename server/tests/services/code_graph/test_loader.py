@@ -696,9 +696,16 @@ def test_on_demand_subgraph_frontier_truncation(
     # 种子 + 至多 2 个邻居；不截断的话会是 1 + 5 = 6 个节点。
     assert result.graph.number_of_nodes() <= 3
 
+    # 🔔 截断必须进 GraphMeta，不能只进日志：上层工具拿到的若只有
+    #    ``degraded == "on_demand_subgraph"``，它就无从区分「完整的深度受限子图」与
+    #    「撞了上限、缺了一大块邻接的子图」——日志不是给 agent 看的。
+    assert result.meta.degraded == "on_demand_subgraph_truncated"
+
     degraded = [e for e in events if e["event"] == "code_graph_degraded_subgraph"]
     assert len(degraded) == 1
     assert degraded[0]["frontier_truncated"] is True
+    # 与全量路径同款排障 kv（LO-06：同一个信号不该只在一条路径上存在）。
+    assert "chunk_evidence_truncated_count" in degraded[0]
     # 观测契约：component / category / 触发用户绑定。
     assert degraded[0]["component"] == "code_graph"
     assert degraded[0]["category"] == "sampling"

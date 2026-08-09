@@ -186,6 +186,73 @@ def _initiated_by(user: Any | None) -> str:
     return str(user_id) if user_id is not None else "system"
 
 
+def _log_cache_hit(
+    *,
+    repository_id: str,
+    branch: str,
+    estimated_bytes: int,
+    total_bytes: int,
+    cache_size: int,
+) -> None:
+    """缓存命中。
+
+    🚨 取 **DEBUG**：这条路径在每次取图时都会跑，INFO 会直接违反
+    ``.cursor/rules/observability-logging.mdc`` 的级别纪律（高频循环禁止 INFO 刷屏）。
+
+    ⚠️ 与同模块其余埋点同形地包 ``try/except``，**这里尤其不能少**：本仓的 structlog
+    链路带 SystemLogEntry 队列化落库处理器，emit 不是纯内存操作；而本函数位于**缓存
+    命中热路径**上，一次 emit 抛异常会把本该零成本的命中变成一次请求失败。
+    """
+    try:
+        logger.debug(
+            _EVENT_CACHE_HIT,
+            component="code_graph",
+            category="sampling",
+            repository_id=repository_id,
+            branch=branch or "-",
+            estimated_bytes=estimated_bytes,
+            total_bytes=total_bytes,
+            cache_size=cache_size,
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
+
+
+def _log_cache_evicted(
+    *,
+    repository_id: str,
+    branch: str,
+    evicted_bytes: int,
+    total_bytes: int,
+    max_bytes: int,
+    cache_size: int,
+) -> None:
+    """按字节预算逐出一条条目。
+
+    低频事件（只在预算真的被撑破时发），INFO 可接受，且它是排查「为什么缓存命中率
+    突然掉了」的第一手线索。
+
+    ⚠️ 包 ``try/except`` 的理由同 :func:`_log_cache_hit`，外加一条：本函数在
+    :attr:`GraphService._lock` 的**持锁区间内**被调用（经 ``_put`` 进入），抛出会让
+    整个 ``_build_graph`` 失败。
+    """
+    try:
+        logger.info(
+            _EVENT_CACHE_EVICTED,
+            component="code_graph",
+            category="sampling",
+            repository_id=repository_id,
+            branch=branch or "-",
+            evicted_bytes=evicted_bytes,
+            total_bytes=total_bytes,
+            max_bytes=max_bytes,
+            cache_size=cache_size,
+            reason="budget_exceeded",
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
+
+
 def _log_stale_watermark(
     *, repository_id: str, branch: str, cached_signature: str, current_signature: str
 ) -> None:
@@ -425,17 +492,13 @@ class GraphService:
     def _get_entry(self, key: CacheKey) -> _Entry | None:
         """取条目并把它移到 MRU 端。**调用方必须已持锁**（:attr:`_lock`）。
 
-        🚨 命中事件走 **DEBUG**：这条路径在每次取图时都会跑，INFO 会直接违反
-        ``.cursor/rules/observability-logging.mdc`` 的级别纪律（高频循环禁止 INFO 刷屏）。
+        命中埋点走 :func:`_log_cache_hit`（DEBUG + best-effort，理由见该函数）。
         """
         entry = self._cache.get(key)
         if entry is None:
             return None
         self._cache.move_to_end(key)
-        logger.debug(
-            _EVENT_CACHE_HIT,
-            component="code_graph",
-            category="sampling",
+        _log_cache_hit(
             repository_id=key[0],
             branch=key[1],
             estimated_bytes=entry.estimated_bytes,
@@ -468,19 +531,13 @@ class GraphService:
         while self._total_bytes > self._max_bytes and self._cache:
             evicted_key, evicted = self._cache.popitem(last=False)
             self._total_bytes -= evicted.estimated_bytes
-            # 低频事件（只在预算真的被撑破时发），INFO 可接受，且它是排查
-            # 「为什么缓存命中率突然掉了」的第一手线索。
-            logger.info(
-                _EVENT_CACHE_EVICTED,
-                component="code_graph",
-                category="sampling",
+            _log_cache_evicted(
                 repository_id=evicted_key[0],
                 branch=evicted_key[1],
                 evicted_bytes=evicted.estimated_bytes,
                 total_bytes=self._total_bytes,
                 max_bytes=self._max_bytes,
                 cache_size=len(self._cache),
-                reason="budget_exceeded",
             )
 
     def stats(self) -> dict[str, int]:
@@ -848,7 +905,8 @@ class GraphService:
         if over_budget or seed_symbol_ids:
             # 降级路径：种子相关，⛔ 不进缓存（缓存键里没有种子与深度这两维，
             # 而种子空间无界——塞进键会让缓存退化成一次一建）。
-            # ``degraded="on_demand_subgraph"`` 由 loader 置成终值，此处不覆写；
+            # ``degraded``（``on_demand_subgraph`` / ``on_demand_subgraph_truncated``）
+            # 由 loader 置成终值，此处不覆写；
             # ``code_graph_degraded_subgraph`` 事件同样由 loader 发，不重复。
             graph = loader.load_subgraph(
                 repository_id,
