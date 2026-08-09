@@ -1,0 +1,46 @@
+{
+  "_doc": "端到端仓库路由召回回归 case。跑法见 codegraph/management/commands/evaluate_repo_route_recall.py。expected_repos 为人工确认的落点仓 id；lost_at 分层归因会指出漏在检索/聚合/LLM 哪一层。",
+  "cases": [
+    {
+      "id": "gaokao-boost-feature-list",
+      "_desc": "「高三提分专项」feature list（9 模块 45 功能点，完整语料 2 万余字符）。这是 _QUERY_CHAR_BUDGET=4000 把召回压死的原始现场：改造前 45 个功能点只有 7 个进 query，study-course 从未进候选。",
+      "project_id": "75248ff9-3a22-4175-b940-6093d71eb4dc",
+      "space_id": "2f6ae28d-444d-4dd7-8eac-97a85f94fcae",
+      "corpus_kind": "requirement",
+      "expected_repos": [
+        "050e49b2-633a-44ad-96e8-9262546756db",
+        "cee27ee1-cc73-4937-9a9e-730edd6c93b2",
+        "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+        "47991a7f-c8e4-4da6-b42c-2ce81d8b137f"
+      ],
+      "_expected_names": [
+        "frontend/onion-learning",
+        "frontend/onion-practice",
+        "backend/study-user-status",
+        "backend/study-course"
+      ]
+    },
+    {
+      "id": "short-query-entry-permission",
+      "_desc": "短查询基线：确认长文本改造没有拖累正常短查询（单块快路径，行为应与改造前逐字一致）。",
+      "query": "高中数学全部功能页里「极速提分营」入口的课程包权益鉴权在哪个服务实现",
+      "space_id": "2f6ae28d-444d-4dd7-8eac-97a85f94fcae",
+      "corpus_kind": "conversation",
+      "expected_repos": [
+        "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663"
+      ],
+      "_expected_names": ["backend/study-user-status"]
+    },
+    {
+      "id": "practice-answer-component",
+      "_desc": "前端做题组件类查询，守 onion-practice 这条线不回归。",
+      "query": "真题检测页和同型题检验页复用的端内做题作答组件、提交后展示答案解析、中途退出的阻断弹窗在哪里实现",
+      "space_id": "2f6ae28d-444d-4dd7-8eac-97a85f94fcae",
+      "corpus_kind": "conversation",
+      "expected_repos": [
+        "cee27ee1-cc73-4937-9a9e-730edd6c93b2"
+      ],
+      "_expected_names": ["frontend/onion-practice"]
+    }
+  ]
+}

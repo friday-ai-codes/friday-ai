@@ -1,0 +1,10 @@
+{
+  "node_recall": 1.0,
+  "candidate_recall": 0.9167,
+  "final_recall": 0.9167,
+  "full_recall_cases": 2,
+  "total_cases": 3,
+  "_doc": "端到端召回门禁基线。刷新方式：python manage.py evaluate_repo_route_recall --write-baseline <本文件>。指标只许升不许降（compare_to_baseline 逐层比对，防「检索退步但被 LLM 蒙对」的掩盖式回归）。",
+  "_generated_at": "2026-08-09",
+  "_note": "study-course 当前漏在 aggregation 层（多探针放大了 breadth 信号），candidate_recall 因此停在 0.9167；修好后应升到 1.0。"
+}
