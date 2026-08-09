@@ -79,6 +79,24 @@
 - **D-23 — Phase 121 的四个降级标记必须原样透传到工具输出**：`partial_edges` / `degraded` / `low_resolution` / `cross_repo_unresolved_count`。Phase 121 的实测发现全仓解析率中位数只有 **0.17**，因此 **`resolution_rate` 必须始终透出数值**，不能只透出 `low_resolution` 布尔标记 —— 在 17% 的常态下布尔值没有信息量（这是 121-10 写给本相位的硬要求）。
 - **D-24 — 超预算大仓不自动降级**：Phase 121 的 `get_graph` 在无 `seed_symbol_ids` 时对超预算仓**抛 `GraphError`** 而非返回截断图。impact/trace 天然有种子符号，因此壳层**必须**把种子透传下去走按需子图路径；这是本相位必须处理的异常分支，不是可选优化。
 
+### Area 7: 调研回灌的补充裁决（2026-08-09，RESEARCH.md 提出的 5 个 open question，已裁决为锁定决策）
+
+调研（`122-RESEARCH.md`）推翻了 Area 3 的一条根本假设，以下裁决**优先级高于**上文对应条目：
+
+- **D-25 — 跨仓穿越必须走 ORM 直查，不能靠图内的 `cross_repo` 边**（推翻 D-11/D-13 的隐含前提）。实测确认 `loader._load_cross_repo_edges`（`loader.py:812-828`）只在 `call_site.repository_id` 与 `endpoint.repository_id` **同时等于本仓**时才建边，凡有一端在别的仓库的行一律计入 `cross_repo_unresolved_count` 并丢弃 —— 图里 `kind == "cross_repo"` 的边**从来不跨仓**。因此跨仓 impact 的实现路径是：壳层直查 `CrossRepoApiCall` ORM 找到对端 `Endpoint` → 对对端仓再走一次 `get_graph` → 在对端图上继续反向 BFS。⛔ 不许改 `loader.py` 的建边口径来「顺手修好」——那是 Phase 121 已验证的冻结行为，改它要另开相位。
+- **D-26 — IMPACT-03 在零生产样本下的验收方式**：生产库 `CrossRepoApiCall` = 0 / `ApiCallSite` = 0 / `ApiWrapper` = 0（`Endpoint` = 6,014），上游产出器依赖 volar LSP 而 server 镜像无 Node（归 LSP-01 / Phase 127）。所以本相位**用合成数据覆盖四条分支**（解析成功 / 对端无权限折叠 / 对端未索引 fail-soft / 跳数超限），并在 SUMMARY 里**如实声明「跨仓路径未经任何真实数据验证」**，同时在 ROADMAP 记一笔「Phase 127 补齐 LSP 后需回来用真实样本复验 IMPACT-03」。⛔ 不得把合成数据的通过表述成能力已验证。121-10 记的「样本不足」实为**样本为零**，本条更正之。
+- **D-27 — 本相位不碰 `mcp` npm 包，欠债走 ROADMAP 记账**。`test_mcp_package_tools_match_server_snapshot` 在 HEAD 上已经红着（5 项既有漂移），新增两个 MCP 工具会让它变成 7 项。仍然不修，两个理由：① 该 submodule 当前正被另一个并发会话修改，本相位去动必然冲突；② ROADMAP 已明文记账「`mcp` npm 包需为本里程碑新增的 MCP 工具补条目并发版（另一仓库改动，v0.20.0 已有同款缺口在案）」。本相位**只需在 SUMMARY 里把漂移项从 5 更新为 7**，不改 submodule、不改守护测试的判据。
+- **D-28 — `impact.py` / `trace.py` 不进 barrel，也不进 `_INTERNAL_SUBMODULES`**。它们是与 `model`/`loader`/`cache` 平级的新内核，壳层直连合法。理由：barrel 的红线守的是「绕过 `GraphService.get_graph` 的三道闸」，而 impact/trace 内核**自己就是经 `get_graph` 拿图的消费者**，把它们也锁进去只会逼壳层写无谓的转发。需在 `__init__.py` docstring 里补一句说明这个边界，避免下次 review 误判。
+- **D-29 — 风险分级补上第三个输入的真实判据**（修正 D-15 的自相矛盾：原表列了三个输入却只用了两个）。新增一条**封顶规则**：若某符号的全部到达路径的最高置信档只到 `bare_name`，则其风险等级**封顶为 MEDIUM**，不得判 HIGH/CRITICAL。理由：弱证据不该产生强告警，否则裸名边的假阳性会直接变成 CRITICAL 噪音，正是 Pitfall 1 要防的事。封顶规则在阈值表之后生效（先按 d1/穿仓算,再封顶）。
+- **D-30 — `REDACTED_REPOSITORY` 折叠条目不带 `affected_count`**，只出裸标记。裁决依据是存在性预言机（existence oracle）权衡：计数会泄漏一个调用方**无权访问**的仓库的内部规模。安全优先于便利，与本相位 fail-closed 的整体姿态一致。折叠条目携带的信息止于「这里有一个你无权看的仓库」。
+
+### 调研带出的两个生产分布（planner 必须据此定参数）
+
+- **符号重名率 19.3%**（2,436 个名字对应 >20 个符号）—— D-19 的候选列表是**主路径**，不是异常兜底，接口设计要按「多数查询都会撞重名」来做。
+- **解析边入度 max 2,803 / p99 25** —— D-16 的 200 条截断在热点符号上**必然触发**，截断计数与排序策略是实际会被用到的功能，不是理论边界。
+- **staleness 零成本**：`Repository.behind_commits` 是定时任务算好的库字段，生产 258/258 全覆盖 —— D-22 的降级分支基本用不上，但仍要保留。
+- **networkx 性能实测**：冻结 `MultiDiGraph` 上 `reverse(copy=False)` 0.004ms、`subgraph_view(filter_edge)` 0.013ms、`shortest_path` 0.038ms；而 `copy()` / `reverse(copy=True)` 要 **330–690ms**。⛔ 任何实现都不许 copy 图，一律走视图。
+
 ### Claude's Discretion
 
 - 模块与私有函数的切分粒度、`symbol_resolve` 是独立模块还是内核共享私有函数、渲染模板的具体措辞、测试文件的组织方式。
