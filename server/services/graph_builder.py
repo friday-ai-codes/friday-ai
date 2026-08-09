@@ -536,7 +536,10 @@ async def build_graph_for_repository(
         try:
             from services.community_enqueue import enqueue_community_rebuild
 
-            await enqueue_community_rebuild(str(repository_id), branch_name="")
+            await enqueue_community_rebuild(
+                str(repository_id),
+                branch_name=normalized_branch or "",
+            )
         except Exception:  # noqa: BLE001 — best-effort，不反噬图谱构建
             pass
 

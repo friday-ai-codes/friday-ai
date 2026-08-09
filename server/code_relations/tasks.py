@@ -245,7 +245,10 @@ async def _run_all_builders_and_sync_payload(
             try:
                 from services.community_enqueue import enqueue_community_rebuild
 
-                await enqueue_community_rebuild(str(repository_id), branch_name="")
+                await enqueue_community_rebuild(
+                    str(repository_id),
+                    branch_name=branch_name or "",
+                )
             except Exception:  # noqa: BLE001 — best-effort，不反噬边构建
                 pass
 
