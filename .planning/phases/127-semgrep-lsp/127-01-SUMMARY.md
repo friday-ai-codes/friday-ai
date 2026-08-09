@@ -48,7 +48,7 @@ patterns-established:
   - "Phase 127 frozen guard lists semgrep_scan/security_scan_report/semgrep_enqueue/orphan_reap"
   - "sample_findings.json uses check_id + extra.severity + fingerprint + nosemgrep note"
 
-requirements-completed: []
+requirements-completed: [TAINT-01, TAINT-02, TAINT-03, LSP-01]
 
 duration: 2min
 completed: 2026-08-10
