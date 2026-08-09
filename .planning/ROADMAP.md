@@ -212,7 +212,7 @@ Plans:
   3. 每个社区有 LLM 模块摘要（关键文件 / 入口 / 职责叙述），LLM 调用赋新 `call_source`（LOGGING-SPEC §4.1 先登记）
   4. 模块摘要注入 RepoRouter adapter 层（evidence 侧）与技术方案生成 prompt，消费端按相关度排序 + token 预算截断不全量灌入；⛔ `repo_router_v2.py` 冻结面全程零改动
 
-**Plans:** 4 plans
+**Plans:** 4/4 plans complete
 Plans:
 **Wave 1**
 
