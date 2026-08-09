@@ -338,6 +338,53 @@ class CrossRepoApiCall(models.Model):
         )
 
 
+class SymbolCommunity(models.Model):
+    """符号社区 —— Louvain（等）划分结果，成员以 JSON 软引用 Symbol.id。
+
+    Phase 125 / MOD-01：独立模型纯加表，⛔ 不给 Symbol 加 community_id / FK / M2M。
+    ``members`` 每项至少含 ``symbol_id``（UUID 字符串软引用），对齐 ``Symbol.chunk_id``
+    柔性引用先例；增量索引 per-file 删建 Symbol 不会级联丢社区标注。
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        "repositories.Repository",
+        on_delete=models.CASCADE,
+        related_name="symbol_communities",
+    )
+    # 分支隔离维度。"" = base 分支（与 Symbol / 向量 overlay 语义同构）。
+    branch_name = models.CharField(max_length=200, default="", blank=True)
+    # 指纹派生稳定键（通常 member_fingerprint[:16]），仓内唯一。
+    community_key = models.CharField(max_length=64)
+    algorithm = models.CharField(max_length=32, default="louvain")
+    member_count = models.PositiveIntegerField(default=0)
+    members = models.JSONField(default=list)
+    top_files = models.JSONField(default=list)
+    member_fingerprint = models.CharField(max_length=64, blank=True, default="")
+    summary = models.TextField(null=True, blank=True)
+    summary_model = models.CharField(max_length=128, null=True, blank=True)
+    summary_generated_at = models.DateTimeField(null=True, blank=True)
+    # 对齐 last_indexed_commit_sha 水位，供消费方判 stale。
+    built_at_sha = models.CharField(max_length=64, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "符号社区"
+        verbose_name_plural = "符号社区"
+        unique_together = [("repository", "branch_name", "community_key")]
+        indexes = [
+            models.Index(fields=["repository", "branch_name"]),
+            models.Index(fields=["repository", "branch_name", "member_fingerprint"]),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"SymbolCommunity({self.community_key}, n={self.member_count}, "
+            f"algo={self.algorithm})"
+        )
+
+
 __all__ = [
     "Symbol",
     "ImportEdge",
@@ -346,4 +393,5 @@ __all__ = [
     "ApiWrapper",
     "ApiCallSite",
     "CrossRepoApiCall",
+    "SymbolCommunity",
 ]
