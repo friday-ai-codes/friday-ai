@@ -240,7 +240,14 @@ Plans:
   4. rename_preview 输出图解析引用 + grep 文本兜底的双源合并清单，逐条带 graph/text_search 置信标签 + context 片段、按文件分组，显式声明动态引用覆盖限制；只出清单不改写
   5. impact-analysis / refactoring 两个工作流 skill 进 `@friday-ai-codes/skills` 同源分发（复用 v0.17.0 hash 一致性机制），编码容器与外部 agent 可用
 
-**Plans**: TBD
+**Plans:** 5 plans
+
+Plans:
+- [ ] 126-01-PLAN.md — Wave 0：Nyquist 测试桩 + VALIDATION 五 plan 对齐 + 冻结面守卫桩
+- [ ] 126-02-PLAN.md — Wave 1：ProcessTrace 模型/迁移 + 正向 BFS 内核 + QUEUE_GRAPH 链式重建
+- [ ] 126-03-PLAN.md — Wave 2：list/get 双面查询 + assemble_affected_processes + impact_report 执行流段
+- [ ] 126-04-PLAN.md — Wave 3：rename_preview 只读双源 + MCP/对话壳 + knowledge 白名单
+- [ ] 126-05-PLAN.md — Wave 4：friday-impact / friday-refactoring skill + SKILL_NAMES sync/hash
 
 ### Phase 127: Semgrep 门禁 + LSP 基准
 
@@ -472,7 +479,7 @@ Plans:
 | 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 6/6 | Complete   | 2026-08-09 |
 | 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 4/4 | Complete   | 2026-08-09 |
 | 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 4/4 | Complete   | 2026-08-09 |
-| 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 0/? | Not started | - |
+| 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 0/5 | Planned | 2026-08-10 |
 | 127. Semgrep 门禁 + LSP 基准 | v0.22.0 | TAINT-01~03, LSP-01 | 0/? | Not started | - |
 
 **Coverage (v0.22.0):** 27/27 需求全部映射（GRAPH 4 / IMPACT 6 / DIFF 4 / MOD 4 / EXEC 3 / RENAME 1 / TAINT 3 / LSP 1 / SKILL 1），无孤儿、无重复。
