@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 import structlog
+from django.core.exceptions import ValidationError as DjangoValidationError
 from pydantic import ValidationError
 
 from agents.tools.base import ToolCategory, ToolResult, tool
@@ -60,7 +60,8 @@ async def _resolve_conversation_user(conversation_id: str):
         conversation = await Conversation.objects.select_related("created_by").aget(
             id=conversation_id
         )
-    except (Conversation.DoesNotExist, ValueError):
+    except (Conversation.DoesNotExist, ValueError, TypeError, DjangoValidationError):
+        # 非法 UUID 等会抬 DjangoValidationError；一律视为无 owner（fail-closed）。
         return None
     return conversation.created_by
 
