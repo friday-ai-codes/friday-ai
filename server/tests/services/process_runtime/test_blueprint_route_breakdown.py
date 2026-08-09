@@ -159,6 +159,30 @@ def test_evidence_missing_keys_get_neutral_defaults() -> None:
     assert bd["evidence"]["boundary_override_reason"] == ""
     assert bd["evidence"]["unjustified_boundary_hit"] is False
     assert bd["evidence"]["violated_boundaries"] == []
+    # MOD-04 / D-14：module_summaries 缺键默认 []，不破三分量恒等式
+    assert bd["evidence"]["module_summaries"] == []
+    assert bd["total"] == bd["router_base"] + bd["charter_match"] + bd["history_match"]
+
+
+def test_evidence_can_carry_module_summaries() -> None:
+    """evidence 可携带 module_summaries，且 total 仍等于三分量加权和（D-14）。"""
+    summaries = [
+        {
+            "community_key": "auth",
+            "text": "### 职责\n鉴权",
+            "responsibility": "鉴权",
+        }
+    ]
+    bd = build_score_breakdown(
+        router_base=0.5,
+        charter_match=0.2,
+        history_match=0.1,
+        weights=_BROWNFIELD,
+        evidence={"router_version": "v2", "module_summaries": summaries},
+    )
+
+    assert bd["evidence"]["module_summaries"] == summaries
+    assert bd["total"] == bd["router_base"] + bd["charter_match"] + bd["history_match"]
 
 
 # ── resolve_boundary_override 不变量（SC2 后半） ──────────────────────────
