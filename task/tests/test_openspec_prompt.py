@@ -14,6 +14,10 @@ from core.executor import ClaudeRunner
 def _runner(follow_openspec: bool) -> ClaudeRunner:
     config = MagicMock()
     config.follow_openspec = follow_openspec
+    # 124-01：缺省 MagicMock 字段为真会误触发 detect_changes 段；显式关闭 knowledge 挂载保证零回归。
+    config.knowledge_endpoint = None
+    config.user_token = None
+    config.task_mode = "execute"
     return ClaudeRunner(config, Path("/tmp"))
 
 
