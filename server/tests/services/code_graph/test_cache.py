@@ -492,9 +492,11 @@ def test_estimate_bytes_is_pure() -> None:
         estimate_graph_bytes,
     )
 
-    assert (NODE_COST_BYTES, EDGE_COST_BYTES) == (640, 560)
+    # 2026-08-09 由 Plan 121-10 的最大仓实测复校：640/560 → 760/720
+    # （study-app 实测 706 B/节点、665 B/边，原值让估算低于实测常驻）。
+    assert (NODE_COST_BYTES, EDGE_COST_BYTES) == (760, 720)
 
-    expected = 100 * 640 + 300 * 560
+    expected = 100 * 760 + 300 * 720
     assert estimate_graph_bytes(100, 300) == expected
     # 连调三次结果逐字节相同（无内部状态、无随机、无时间依赖）。
     assert [estimate_graph_bytes(100, 300) for _ in range(3)] == [expected] * 3
@@ -515,7 +517,7 @@ def test_estimate_bytes_is_pure() -> None:
 def test_estimate_bytes_matches_budget_arithmetic() -> None:
     """锁死「单仓约 11 万符号触顶」这条容量结论。
 
-    settings 注释写的是 ``n × (640 + 3×560) = n × 2320``、``256MB → 约 11 万符号``。
+    settings 注释写的是 ``n × (760 + 2.4×720) = n × 2488``、``256MB → 约 11 万符号``。
     这条断言让「有人改了常数却没改预算默认值（或反之）」当场变红——两者漂移的后果是
     准入判据放行的图比预算能装下的更大，OOM 保护静默失效。
     """
@@ -524,8 +526,12 @@ def test_estimate_bytes_matches_budget_arithmetic() -> None:
     from services.code_graph.cache import estimate_graph_bytes
 
     max_graph_bytes = int(settings.CODE_GRAPH_MAX_GRAPH_BYTES)
-    # 本仓典型边:节点 ≈ 3:1（RESEARCH 假设 A2，待 121-10 用真实仓复校）。
-    ratio = estimate_graph_bytes(110_000, 3 * 110_000) / max_graph_bytes
+    # 2026-08-09 Plan 121-10 实测复校（假设 A2）：本仓**准入口径**（``CallEdge`` 原始
+    # 行数 / ``Symbol`` 行数，正是 ``_estimate_admission`` 用的那个口径）实测
+    # 2.40:1，RESEARCH 原假设的 3:1 偏高。⚠️ 入图口径只有 0.35:1（解析率低导致绝大
+    # 多数边不入图），但准入判据看不到那个数，所以这里必须用准入口径——用入图口径会
+    # 让这条断言在守一个准入判据根本不会算出来的数。
+    ratio = estimate_graph_bytes(110_000, int(2.4 * 110_000)) / max_graph_bytes
     assert 0.9 <= ratio <= 1.1, (
         f"11 万符号的估算值与 CODE_GRAPH_MAX_GRAPH_BYTES 已漂移（比值 {ratio:.3f}）"
     )
@@ -590,6 +596,19 @@ def _make_entry(node_count: int, edge_count: int):
     )
 
 
+def _entry_bytes(node_count: int, edge_count: int) -> int:
+    """``_make_entry(n, e)`` 那条条目的记账字节数。
+
+    记账类断言一律经本函数取数，⛔ 不写死 ``1200`` / ``2400`` 这类字面量：那些数字是
+    ``NODE_COST_BYTES`` / ``EDGE_COST_BYTES`` 的**派生值**，而两个常数按设计会被
+    「最大仓实测」复校（2026-08-09 Plan 121-10 已复校过一次，640/560 → 760/720）。
+    写死字面量会让每次复校都顺带打红一批与逐出逻辑毫无关系的用例——那不是回归，是耦合。
+    """
+    from services.code_graph.cache import estimate_graph_bytes
+
+    return estimate_graph_bytes(node_count, edge_count)
+
+
 # 121-VALIDATION.md 121-07-T2：超预算时按 LRU 顺序逐出至 ≤ 预算，
 # 并发 code_graph_cache_evicted 事件。
 def test_evict_lru_until_within_budget() -> None:
@@ -602,21 +621,23 @@ def test_evict_lru_until_within_budget() -> None:
 
     from services.code_graph.cache import GraphService
 
-    svc = GraphService(max_bytes=3000, max_graph_bytes=3000)
-    entry_bytes = _make_entry(1, 1).estimated_bytes
-    assert entry_bytes == 1200, "单条目字节数变了，本用例的预算算术需要同步调整"
+    unit = _entry_bytes(1, 1)
+    # 预算刚好装得下 2 条、装不下 3 条 —— 用单条目字节数推算，⛔ 不写死字面量
+    # （字节常数会被最大仓实测复校，见 :func:`_entry_bytes`）。
+    budget = 2 * unit + unit // 2
+    svc = GraphService(max_bytes=budget, max_graph_bytes=budget)
     # 载荷是真图，字节数必须真的被记进条目（121-05 的显式待办：estimated_bytes
     # 若恒为 0，LRU 会把每张图都记成 0 字节、永远逐不出东西）。
-    assert entry_bytes > 0
+    assert _make_entry(1, 1).estimated_bytes == unit > 0
 
     with capture_logs() as events:
         for name in ("a", "b", "c"):
             svc._put((name, ""), _make_entry(1, 1))
 
-    # 3 × 1200 = 3600 > 3000 ⇒ 最早写入的 a 被逐出，剩 2400 ≤ 3000。
+    # 3 × unit > 预算 ⇒ 最早写入的 a 被逐出，剩 2 × unit ≤ 预算。
     stats = svc.stats()
-    assert stats["total_bytes"] == 2400
-    assert stats["total_bytes"] <= 3000
+    assert stats["total_bytes"] == 2 * unit
+    assert stats["total_bytes"] <= budget
     assert stats["entries"] == 2
     assert list(svc._cache.keys()) == [("b", ""), ("c", "")]
 
@@ -625,8 +646,8 @@ def test_evict_lru_until_within_budget() -> None:
     assert evicted[0]["component"] == "code_graph"
     assert evicted[0]["category"] == "sampling"
     assert evicted[0]["repository_id"] == "a"
-    assert evicted[0]["evicted_bytes"] == 1200
-    assert evicted[0]["total_bytes"] == 2400
+    assert evicted[0]["evicted_bytes"] == unit
+    assert evicted[0]["total_bytes"] == 2 * unit
     assert evicted[0]["reason"] == "budget_exceeded"
 
 
@@ -634,15 +655,18 @@ def test_evict_loop_drops_multiple_entries() -> None:
     """一个大条目要挤掉**两个**旧条目时，两个都得走——``while`` 而不是 ``if``。"""
     from services.code_graph.cache import GraphService
 
-    svc = GraphService(max_bytes=3000, max_graph_bytes=10_000)
-    svc._put(("a", ""), _make_entry(1, 1))  # 1200
-    svc._put(("b", ""), _make_entry(1, 1))  # 2400
+    unit = _entry_bytes(1, 1)
+    budget = 2 * unit + unit // 2
+    svc = GraphService(max_bytes=budget, max_graph_bytes=10 * unit)
+    svc._put(("a", ""), _make_entry(1, 1))  # 1 × unit
+    svc._put(("b", ""), _make_entry(1, 1))  # 2 × unit
     assert svc.stats()["entries"] == 2
 
-    svc._put(("big", ""), _make_entry(2, 2))  # +2400 ⇒ 4800，需连逐两个
+    # 双倍大的条目挤进来 ⇒ 4 × unit > 预算，必须连逐两个才能回到预算内。
+    svc._put(("big", ""), _make_entry(2, 2))
 
     assert list(svc._cache.keys()) == [("big", "")]
-    assert svc.stats()["total_bytes"] == 2400 <= 3000
+    assert svc.stats()["total_bytes"] == 2 * unit <= budget
 
 
 def test_get_entry_moves_to_end_on_hit() -> None:
@@ -677,11 +701,15 @@ def test_put_overwrite_does_not_double_count() -> None:
     svc._put(("a", ""), _make_entry(1, 1))
     svc._put(("a", ""), _make_entry(1, 1))
 
-    assert svc.stats() == {"entries": 1, "total_bytes": 1200, "max_bytes": 100_000}
+    assert svc.stats() == {
+        "entries": 1,
+        "total_bytes": _entry_bytes(1, 1),
+        "max_bytes": 100_000,
+    }
 
     # 覆盖成一个更小的条目时同样要减对（不是只加不减）。
     svc._put(("a", ""), _make_entry(1, 0))
-    assert svc.stats()["total_bytes"] == 640
+    assert svc.stats()["total_bytes"] == _entry_bytes(1, 0)
 
 
 def test_graph_service_rejects_non_positive_budgets() -> None:
@@ -1300,7 +1328,12 @@ def test_invalidate_evicts_repo_entries() -> None:
     svc._put(("repo-a", ""), _make_entry(1, 1))
     svc._put(("repo-a", "feature/x"), _make_entry(1, 1))
     svc._put(("repo-b", ""), _make_entry(1, 1))
-    assert svc.stats() == {"entries": 3, "total_bytes": 3600, "max_bytes": 100_000}
+    unit = _entry_bytes(1, 1)
+    assert svc.stats() == {
+        "entries": 3,
+        "total_bytes": 3 * unit,
+        "max_bytes": 100_000,
+    }
 
     with (
         mock.patch.object(
@@ -1313,7 +1346,7 @@ def test_invalidate_evicts_repo_entries() -> None:
         svc.invalidate("repo-a")
 
     assert list(svc._cache.keys()) == [("repo-b", "")], "repo-a 的分支条目没被清干净"
-    assert svc.stats()["total_bytes"] == 1200, "记账没跟着驱逐一起扣减"
+    assert svc.stats()["total_bytes"] == unit, "记账没跟着驱逐一起扣减"
 
     memo_spy.assert_called_once_with(repository_id="repo-a")
 
@@ -1323,14 +1356,14 @@ def test_invalidate_evicts_repo_entries() -> None:
     assert invalidated[0]["category"] == "sampling"
     assert invalidated[0]["repository_id"] == "repo-a"
     assert invalidated[0]["evicted_entries"] == 2
-    assert invalidated[0]["evicted_bytes"] == 2400
-    assert invalidated[0]["total_bytes"] == 1200
+    assert invalidated[0]["evicted_bytes"] == 2 * unit
+    assert invalidated[0]["total_bytes"] == unit
     # 钩子跑在后台任务上下文，无触发用户 ⇒ 显式记 system（LOGGING-SPEC §3 强制）。
     assert invalidated[0]["initiated_by_user_id"] == "system"
 
     # 幂等：同一个仓再失效一次不报错、不把记账做成负数。
     svc.invalidate("repo-a")
-    assert svc.stats() == {"entries": 1, "total_bytes": 1200, "max_bytes": 100_000}
+    assert svc.stats() == {"entries": 1, "total_bytes": unit, "max_bytes": 100_000}
 
 
 def test_invalidate_swallows_errors_and_never_breaks_the_hook() -> None:
