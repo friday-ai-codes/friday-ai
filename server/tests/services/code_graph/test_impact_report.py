@@ -422,3 +422,73 @@ async def test_observability_events_static_names() -> None:
     assert any(e["event"] == "impact_report_failed" for e in none_events)
     failed = next(e for e in none_events if e["event"] == "impact_report_failed")
     assert failed.get("error_code") == "user_missing"
+
+
+@pytest.mark.asyncio
+async def test_affected_processes_section_with_data() -> None:
+    """非空 affected_processes → Affected 出现「受影响执行流」清单（D-08）。"""
+    from services.code_graph.impact_report import build_impact_report_section
+
+    envelope = _ok_envelope(
+        affected_processes=[
+            {
+                "name": "GET /api/orders",
+                "process_key": "GET:/api/orders",
+                "affected_steps": [0, 2],
+                "total_steps": 5,
+                "community_class": "cross_community",
+                "step": 0,
+            },
+            {
+                "name": "POST /api/pay",
+                "process_key": "POST:/api/pay",
+                "affected_steps": [1],
+                "total_steps": 3,
+                "community_class": "intra_community",
+                "step": 1,
+            },
+        ]
+    )
+    with mock.patch(
+        "services.code_graph.impact_report.run_detect_changes",
+        new=mock.AsyncMock(return_value=envelope),
+    ):
+        section = await build_impact_report_section(
+            repository=_repo(),
+            user=_user(),
+            compare="feature/x",
+        )
+
+    assert "受影响执行流" in section
+    assert "GET /api/orders" in section
+    assert "POST /api/pay" in section
+    assert "待 Phase 126" not in section
+
+
+@pytest.mark.asyncio
+async def test_affected_processes_empty_short_declaration() -> None:
+    """空 affected_processes → 短声明，不编造（D-08）。"""
+    from services.code_graph.impact_report import build_impact_report_section
+
+    envelope = _ok_envelope(affected_processes=[])
+    with mock.patch(
+        "services.code_graph.impact_report.run_detect_changes",
+        new=mock.AsyncMock(return_value=envelope),
+    ):
+        section = await build_impact_report_section(
+            repository=_repo(),
+            user=_user(),
+            compare="feature/x",
+        )
+
+    assert "暂无匹配执行流" in section or "未构建 Process" in section
+    assert "待 Phase 126" not in section
+
+
+def test_impact_report_source_no_phase126_placeholder() -> None:
+    """源文件不再含 Phase 126 占位句（D-08）。"""
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[3] / "services/code_graph/impact_report.py"
+    text = src.read_text(encoding="utf-8")
+    assert "待 Phase 126" not in text
