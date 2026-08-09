@@ -2355,4 +2355,11 @@ def tool_trace_payload(
         payload["result_count"] = result_count
         payload["total_found"] = total_found
         payload["truncated"] = truncated_flag
+    elif tool == "rename_preview":
+        # 只计数：⛔ 不把 files/edits/context 正文灌进 RetrievalTrace（T-126-03）。
+        payload["result_count"] = int(summary.get("total_edits") or 0) if summary else 0
+        payload["total_found"] = int(summary.get("files_affected") or 0) if summary else 0
+        payload["truncated"] = (
+            1 if bool(graph.get("text_search_truncated")) else 0
+        )
     return payload
