@@ -382,7 +382,7 @@ Plans:
 
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
-| 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 10/10 | ✅ Complete | 2026-08-09 |
+| 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 10/10 | ✅ Complete (verified passed 4/4) | 2026-08-09 |
 | 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 0/? | Not started | - |
 | 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 0/? | Not started | - |
 | 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 0/? | Not started | - |
