@@ -4,14 +4,14 @@ milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
 status: executing
 stopped_at: Completed 127-01-PLAN.md
-last_updated: "2026-08-09T22:09:17.491Z"
+last_updated: "2026-08-09T22:10:03.543Z"
 last_activity: 2026-08-10 -- Completed 127-01 (Wave 0 stubs)
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 44
   completed_plans: 40
-  percent: 91
+  percent: 86
 ---
 
 # Project State
@@ -354,6 +354,7 @@ Last activity: 2026-08-10 -- Completed 127-01 (Wave 0 stubs)
 | Phase 126 P04 | 5min | 2 tasks | 16 files |
 | Phase 126 P05 | 2min | 2 tasks | 14 files |
 | Phase 127 P01 | 2min | 2 tasks | 14 files |
+| Phase 127 P01 | 2min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -677,6 +678,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 127]: Wave 0 stubs only; freeze repo_router_v2/mcp; Semgrep CLI-only
 - [Phase 127]: Live frozen-surface + LSP defaults; behavior nodes stay skipped until 127-02..05
 - [Phase 127]: Do not mark TAINT/LSP requirements complete from Wave 0 stubs alone
+- [Phase 127]: Wave 0 stubs skip until 127-02..05; frozen-surface + LSP defaults assert live
+- [Phase 127]: VALIDATION map is exactly five plans (127-01..05); no 127-06 row
+- [Phase 127]: Semgrep stays CLI-only — fixture/tests never imply uv.lock dependency
 
 ### Pending Todos
 
