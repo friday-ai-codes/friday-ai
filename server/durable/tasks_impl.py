@@ -767,3 +767,119 @@ async def run_process_rebuild(
         )
         return result
 
+
+
+async def run_semgrep_scan(
+    *,
+    repository_id: str,
+    mr_key: str = "",
+    source_sha: str = "",
+    target_sha: str = "",
+    branch_name: str = "",
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """Semgrep 扫描任务体：bind 用户 → ``services.code_graph.semgrep_scan.run_semgrep_scan``。
+
+    业务语义 fail-open：核心扫描返回含 ``error_code`` 的结果，本任务体不把超时/CLI
+    失败变成建 MR 阻断（返回 dict，不 raise）。MR 描述回填见 ``maybe_patch_security_scan_section``
+    钩子（127-04 实现）。
+    """
+    import time
+
+    from common.logging import redact_secrets_in_text
+    from services.code_graph.semgrep_scan import run_semgrep_scan as _scan_core
+
+    actor = initiated_by_user_id or "system"
+    started = time.monotonic()
+    logger.info(
+        "semgrep_scan_job_started",
+        category="caller",
+        component="code_graph",
+        repository_id=str(repository_id),
+        mr_key=mr_key or "",
+        initiated_by_user_id=actor,
+    )
+
+    with bind_task_context(
+        user_id=actor,
+        source="durable",
+        component="code_graph",
+    ):
+        try:
+            result = await _scan_core(
+                repository_id=str(repository_id),
+                source_sha=source_sha or "",
+                target_sha=target_sha or "",
+                mr_key=mr_key or "",
+                branch_name=branch_name or "",
+                initiated_by_user_id=initiated_by_user_id,
+            )
+        except Exception as exc:  # noqa: BLE001 — 任务级 fail-open，不 re-raise 阻断
+            try:
+                logger.warning(
+                    "semgrep_scan_job_failed",
+                    category="caller",
+                    component="code_graph",
+                    repository_id=str(repository_id),
+                    mr_key=mr_key or "",
+                    initiated_by_user_id=actor,
+                    error_code="unavailable",
+                    error=redact_secrets_in_text(str(exc))[:300],
+                    duration_ms=round((time.monotonic() - started) * 1000, 2),
+                )
+            except Exception:
+                pass
+            return {
+                "status": "failed",
+                "error_code": "unavailable",
+                "repository_id": str(repository_id),
+                "mr_key": mr_key or "",
+                "findings_count": 0,
+            }
+
+        payload = {
+            "status": "ok" if not result.error_code else "failed",
+            "error_code": result.error_code,
+            "repository_id": str(repository_id),
+            "mr_key": mr_key or "",
+            "findings_count": result.findings_count,
+            "persisted": result.persisted,
+            "baseline_sha": result.baseline_sha,
+            "scan_sha": result.scan_sha,
+        }
+        # 127-04 钩子：异步回填 MR「## 安全扫描」段（首版 no-op）
+        try:
+            await maybe_patch_security_scan_section(
+                repository_id=str(repository_id),
+                mr_key=mr_key or "",
+                scan_result=payload,
+            )
+        except Exception:  # noqa: BLE001 — 回填失败不反噬扫描结果
+            pass
+
+        event = "semgrep_scan_job_completed" if not result.error_code else "semgrep_scan_job_failed"
+        try:
+            logger.info(
+                event,
+                category="caller",
+                component="code_graph",
+                repository_id=str(repository_id),
+                mr_key=mr_key or "",
+                initiated_by_user_id=actor,
+                error_code=result.error_code,
+                findings_count=result.findings_count,
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+        except Exception:
+            pass
+        return payload
+
+
+async def maybe_patch_security_scan_section(
+    *,
+    repository_id: str,
+    mr_key: str,
+    scan_result: dict[str, Any],
+) -> None:
+    """MR「## 安全扫描」段回填钩子 —— 127-04 实现；本相 no-op。"""
+    return None

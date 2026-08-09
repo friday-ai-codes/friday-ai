@@ -27,6 +27,7 @@ from durable.queues import (
     QUEUE_MAINTENANCE,
     QUEUE_PAGE_INDEX,
     QUEUE_REPO_SUMMARY,
+    QUEUE_SCAN,
 )
 
 logger = structlog.get_logger(__name__)
@@ -305,6 +306,34 @@ async def durable_process_rebuild(
 
     return await run_process_rebuild(
         repository_id=repository_id,
+        branch_name=branch_name,
+        initiated_by_user_id=initiated_by_user_id,
+    )
+
+
+@app.task(name="durable_semgrep_scan", queue=QUEUE_SCAN)
+async def durable_semgrep_scan(
+    *,
+    repository_id: str,
+    mr_key: str = "",
+    source_sha: str = "",
+    target_sha: str = "",
+    branch_name: str = "",
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """Semgrep diff-aware 扫描 durable 任务（procrastinate 包壳）。
+
+    入队点 ``QUEUE_SCAN`` + ``idempotency_key=semgrep:{repo}:{mr_key}`` +
+    ``lock=scan-slot-*``。业务语义 fail-open：超时/CLI 失败返回含 ``error_code``
+    的 dict，不阻断建 MR。MR 文案回填钩子留给 127-04。
+    """
+    from durable.tasks_impl import run_semgrep_scan
+
+    return await run_semgrep_scan(
+        repository_id=repository_id,
+        mr_key=mr_key,
+        source_sha=source_sha,
+        target_sha=target_sha,
         branch_name=branch_name,
         initiated_by_user_id=initiated_by_user_id,
     )
