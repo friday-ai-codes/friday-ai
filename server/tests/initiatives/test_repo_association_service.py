@@ -69,11 +69,14 @@ def _result_for(repos: list[Repository]) -> RepoRouteResultV2:
 
 
 def _patch_route(capture: dict, result: RepoRouteResultV2):
-    async def _fake_route(query, *, top_k, repository_ids, use_llm):
+    # **kwargs 兜住 route() 后续新增的 keyword 参数（如 corpus_kind）——
+    # 本替身只关心 propose/refine 传下来的选仓语义，不锁死路由器签名。
+    async def _fake_route(query, *, top_k, repository_ids, use_llm, **kwargs):
         capture["query"] = query
         capture["repository_ids"] = repository_ids
         capture["top_k"] = top_k
         capture["use_llm"] = use_llm
+        capture["corpus_kind"] = kwargs.get("corpus_kind")
         capture["call_source"] = get_call_source()
         return result
 

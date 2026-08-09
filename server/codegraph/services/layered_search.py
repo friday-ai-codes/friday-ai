@@ -222,10 +222,15 @@ class LayeredSearchService:
         """混合向量搜索：对每个路由仓库调用 BranchAwareSearchService。"""
         try:
             from services.branch_search import BranchAwareSearchService
-            from services.embedding import EmbeddingService
+
+            # 查询收口：长文本切块后取首块向量。BranchAwareSearchService.search
+            # 目前只收单向量（分支 overlay/base 扇出后各自查询），多探针需先扩它的
+            # 签名——本处至少保证「超长文本不再静默判失败」。
+            from services.query_embedding import embed_query
             from services.sparse_encoder import SparseEncoderService
 
-            query_dense = await EmbeddingService.generate_embedding(query)
+            embedded = await embed_query(query)
+            query_dense = embedded.primary
             if not query_dense:
                 return LayerResult(layer="L3", status="error", error="embedding generation failed")
 

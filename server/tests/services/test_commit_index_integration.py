@@ -1,20 +1,19 @@
-"""commit 历史索引 → search_rag 召回端到端守护测试（IDX-01，per 25-04 PLAN）。
+"""commit 历史索引 → 入库与代码 RAG 边界守护测试（IDX-01，per 25-04 PLAN）。
 
-把 25-03 的 ``index_commits`` 挂接进索引流程后，验证 commit 文档落主 collection 经既有
-``search_rag`` chokepoint 自然召回，且同受 Phase 22 排除约束。覆盖：
+把 25-03 的 ``index_commits`` 挂接进索引流程后，验证 commit 文档落主 collection，
+且**默认不进入代码 RAG 召回**（``BranchAwareSearchService`` 排除 ``kind=commit``——
+提交摘要是自然语言，会系统性挤占源码召回窗口）。覆盖：
 
 - dispatch：``_run_commit_index`` best-effort —— ``index_commits`` 抛异常不冒泡（仅 warning，
   绝不阻断索引 success，T-25-12）；正常路径在 rmtree 之前 await 完成（读真实克隆）。
-- 召回：含特定 message / author 的 commit 索引后，经 ``search_rag`` 用关键字 / author 召回到
-  对应 commit 文档（payload kind=commit、commit_sha 匹配）；不相关 query 不召回。
-- 排除：commit 改动含被排除文件（.env / *.pem）+ 普通文件，召回的 commit 文档摘要含普通文件、
+- 代码 RAG：含特定 message 的 commit 索引后，经 ``search_rag`` **不**返回 kind=commit。
+- 入库内容：commit 改动含被排除文件（.env / *.pem）+ 普通文件时，入库摘要含普通文件、
   **不含**被排除文件路径（fail-closed，T-25-13）。
 - 增量：同 HEAD 第二次 ``index_commits`` 0 条；新增 commit 后只 +1（T-25-14）。
 
 真实临时 git 仓库驱动 git log / diff-tree；mock embedding / sparse / qdrant upsert /
-BranchAwareSearchService.search（避免真实模型与向量库）。召回侧由 mock search 对捕获的
-commit point 按 query substring 命中其 content，模拟语义召回，从而验证 search_rag 的排除 /
-去重 chokepoint 对 commit 文档生效（合成 file_path ``.friday/commits/{sha}`` 不被排除）。
+BranchAwareSearchService.search（避免真实模型与向量库）。mock search 模拟生产默认
+排除 ``kind=commit``。
 """
 
 from __future__ import annotations
@@ -136,10 +135,8 @@ async def _run_index(repository, repo: Path, points: list[dict[str, Any]]) -> di
 def _patch_search(points: list[dict[str, Any]]):
     """模拟 search_rag 召回面：mock embedding/sparse + BranchAwareSearchService.search。
 
-    search 对捕获的 commit point 按 query 是否 substring 命中其 ``content`` 返回结果，
-    模拟"语义召回到 commit 文档"，从而验证 search_rag 的排除/去重 chokepoint 对 commit 文档
-    生效（合成 file_path ``.friday/commits/{sha}`` 不被排除）。build_matcher_for_repo 用真实
-    实现（仅 builtin 全局默认）以真正经过排除过滤。
+    生产路径默认排除 ``kind=commit``；本 mock 同步该契约——即使 point 内容命中
+    query，也不把 commit 文档返回给 search_rag。
     """
     captured: dict[str, str] = {}
 
@@ -152,6 +149,8 @@ def _patch_search(points: list[dict[str, Any]]):
         out: list[dict[str, Any]] = []
         for i, p in enumerate(points):
             payload = p["payload"]
+            if payload.get("kind") == "commit":
+                continue
             if q and q in str(payload.get("content", "")).lower():
                 out.append({"id": p["id"], "score": 0.9 - i * 0.01, "payload": payload})
         return out
@@ -215,64 +214,48 @@ async def test_dispatch_invokes_index_commits_before_rmtree(repository, tmp_path
 
 
 # ============================================================================
-# 召回：search_rag 用关键字 / author 召回 commit 文档
+# 代码 RAG：默认不召回 commit 文档
 # ============================================================================
 
 
-async def test_search_rag_recalls_commit_by_keyword(repository, tmp_path) -> None:
-    """含唯一关键字的 commit 索引后，经 search_rag 用关键字召回对应 commit 文档。"""
+async def test_search_rag_excludes_commit_by_keyword(repository, tmp_path) -> None:
+    """commit 已入库且 content 命中关键字，search_rag 仍不返回 kind=commit。"""
     repo = _init_repo(tmp_path)
     head = _commit(repo, {"src/auth.py": "x=1\n"}, "fix zorptastic login regression")
 
     points: list[dict[str, Any]] = []
     idx = await _run_index(repository, repo, points)
     assert idx["indexed"] == 1
+    assert points[0]["payload"]["commit_sha"] == head
+    assert "zorptastic" in points[0]["payload"]["content"]
 
     snap = await _search_rag(repository, "zorptastic", points)
 
     assert snap.status == "ok"
-    commit_items = [it for it in snap.items if it["payload"].get("kind") == "commit"]
-    assert len(commit_items) == 1
-    assert commit_items[0]["payload"]["commit_sha"] == head
-    assert "zorptastic" in commit_items[0]["payload"]["content"]
+    assert [it for it in snap.items if it["payload"].get("kind") == "commit"] == []
 
 
-async def test_search_rag_recalls_commit_by_author(repository, tmp_path) -> None:
-    """用 author 名作 query 亦可召回到 commit 文档（author 入文档内容）。"""
+async def test_search_rag_excludes_commit_by_author(repository, tmp_path) -> None:
+    """author 写入 commit 文档内容后，search_rag 也不因 author 召回 commit。"""
     repo = _init_repo(tmp_path)
-    head = _commit(repo, {"src/app.py": "x=1\n"}, "routine change")
+    _commit(repo, {"src/app.py": "x=1\n"}, "routine change")
 
     points: list[dict[str, Any]] = []
     await _run_index(repository, repo, points)
+    assert points[0]["payload"]["author_name"] == "Grace Hopper"
 
     snap = await _search_rag(repository, "Grace Hopper", points)
-
-    commit_items = [it for it in snap.items if it["payload"].get("kind") == "commit"]
-    assert len(commit_items) == 1
-    assert commit_items[0]["payload"]["commit_sha"] == head
-    assert commit_items[0]["payload"]["author_name"] == "Grace Hopper"
-
-
-async def test_search_rag_no_recall_for_unrelated_query(repository, tmp_path) -> None:
-    """不相关 query 不召回 commit 文档（确保召回是 query 相关而非恒真）。"""
-    repo = _init_repo(tmp_path)
-    _commit(repo, {"src/app.py": "x=1\n"}, "fix login regression")
-
-    points: list[dict[str, Any]] = []
-    await _run_index(repository, repo, points)
-
-    snap = await _search_rag(repository, "absolutelynotpresentkeyword", points)
 
     assert [it for it in snap.items if it["payload"].get("kind") == "commit"] == []
 
 
 # ============================================================================
-# 排除：被排除文件不出现在召回的 commit 文档摘要（fail-closed，T-25-13）
+# 入库内容：被排除文件不出现在 commit 文档摘要（fail-closed，T-25-13）
 # ============================================================================
 
 
-async def test_search_rag_recalled_commit_excludes_sensitive_files(repository, tmp_path) -> None:
-    """召回的 commit 文档 changed_files / content 含普通文件、不含被排除文件。"""
+async def test_indexed_commit_excludes_sensitive_files(repository, tmp_path) -> None:
+    """入库的 commit 文档 changed_files / content 含普通文件、不含被排除文件。"""
     repo = _init_repo(tmp_path)
     _commit(
         repo,
@@ -287,11 +270,9 @@ async def test_search_rag_recalled_commit_excludes_sensitive_files(repository, t
     points: list[dict[str, Any]] = []
     await _run_index(repository, repo, points)
 
-    snap = await _search_rag(repository, "config", points)
-
-    commit_items = [it for it in snap.items if it["payload"].get("kind") == "commit"]
-    assert len(commit_items) == 1
-    payload = commit_items[0]["payload"]
+    assert len(points) == 1
+    payload = points[0]["payload"]
+    assert payload.get("kind") == "commit"
     # 普通文件保留
     assert "src/app.py" in payload["changed_files"]
     assert "src/app.py" in payload["content"]
@@ -309,7 +290,7 @@ async def test_search_rag_recalled_commit_excludes_sensitive_files(repository, t
 
 
 async def test_incremental_only_indexes_new_commits(repository, tmp_path) -> None:
-    """全量后二次同 HEAD 增量 0 条；新增 commit 后只 +1，且新 commit 可召回。"""
+    """全量后二次同 HEAD 增量 0 条；新增 commit 后只 +1，且仍不进代码 RAG。"""
     repo = _init_repo(tmp_path)
     _commit(repo, {"a.py": "1\n"}, "first frobnicate")
     head1 = _commit(repo, {"b.py": "2\n"}, "second change")
@@ -332,11 +313,8 @@ async def test_incremental_only_indexes_new_commits(repository, tmp_path) -> Non
     assert r3["indexed"] == 1
     assert points3[0]["payload"]["commit_sha"] == head3
 
-    # 新 commit 经 search_rag 用其唯一关键字可召回
     snap = await _search_rag(repository, "wibblesnew", points3)
-    commit_items = [it for it in snap.items if it["payload"].get("kind") == "commit"]
-    assert len(commit_items) == 1
-    assert commit_items[0]["payload"]["commit_sha"] == head3
+    assert [it for it in snap.items if it["payload"].get("kind") == "commit"] == []
 
 
 # ============================================================================
@@ -390,8 +368,9 @@ async def test_shallow_clone_unshallow_indexes_full_history(repository, tmp_path
     assert result["indexed"] == 3
     assert {p["payload"]["commit_sha"] for p in points} == {h1, h2, h3}
 
-    # 任一历史（非 HEAD）commit 都能经 search_rag 召回（证明历史确实入库）
+    # 历史 commit 已入库（按 message 关键字可定位），但不进代码 RAG
+    hist = [p for p in points if "alphacommit" in p["payload"].get("content", "")]
+    assert len(hist) == 1
+    assert hist[0]["payload"]["commit_sha"] == h1
     snap = await _search_rag(repository, "alphacommit", points)
-    commit_items = [it for it in snap.items if it["payload"].get("kind") == "commit"]
-    assert len(commit_items) == 1
-    assert commit_items[0]["payload"]["commit_sha"] == h1
+    assert [it for it in snap.items if it["payload"].get("kind") == "commit"] == []

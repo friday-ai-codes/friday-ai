@@ -16,7 +16,6 @@ from qdrant_client import models
 
 from knowledge.collection import DELIVERY_KNOWLEDGE_COLLECTION
 from knowledge.models import EntityKind
-from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
 from services.sparse_encoder import SparseEncoderService
 
@@ -120,13 +119,21 @@ def _build_knowledge_must_filter(
 
 
 async def _hybrid_query(
-    query_dense: list[float],
+    query_dense: list[float] | list[list[float]],
     query_sparse: dict[str, Any],
     *,
     limit: int,
     query_filter: models.Filter,
 ) -> list[dict[str, Any]]:
-    """hybrid dense+sparse RRF 查询（注入完整 models.Filter）。"""
+    """hybrid dense+sparse RRF 查询（注入完整 models.Filter）。
+
+    ``query_dense`` 可为单个向量或**多个探针向量**（长查询经
+    ``services.query_embedding.embed_query`` 切块所得）。多探针各占一路 prefetch，
+    与 sparse 一起由 Qdrant 服务端 RRF 融合——N 路与 1 路的网络往返次数相同。
+    """
+    denses: list[list[float]] = (
+        query_dense if query_dense and isinstance(query_dense[0], list) else [query_dense]
+    )  # type: ignore[list-item]
 
     def _run() -> list[dict[str, Any]]:
         client = QdrantService.get_client()
@@ -137,7 +144,12 @@ async def _hybrid_query(
         results = client.query_points(
             collection_name=DELIVERY_KNOWLEDGE_COLLECTION,
             prefetch=[
-                models.Prefetch(query=query_dense, using="dense", limit=limit, filter=query_filter),
+                *(
+                    models.Prefetch(
+                        query=vec, using="dense", limit=limit, filter=query_filter
+                    )
+                    for vec in denses
+                ),
                 models.Prefetch(
                     query=sparse_vector, using="sparse", limit=limit, filter=query_filter
                 ),
@@ -251,9 +263,15 @@ async def recall_similar_chunks(
             # 短路在 embedding 之前，省一次远程调用
             return []
 
-    query_dense = await EmbeddingService.generate_embedding(query)
-    if not query_dense:
+    # 查询收口：短查询单向量（与改造前同路径），长查询切块多探针。
+    # 用户在对话里贴长文档/长堆栈时，改造前 generate_embedding 返回 None → 这里
+    # 静默 return []，界面表现为「什么都没搜到」且日志无可查线索。
+    from services.query_embedding import embed_query
+
+    embedded = await embed_query(query)
+    if not embedded.ok:
         return []
+    query_dense = embedded.vectors
     query_sparse = await sync_to_async(SparseEncoderService.encode)(query)
     if not query_sparse.get("indices"):
         return []

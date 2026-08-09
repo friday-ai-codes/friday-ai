@@ -94,6 +94,22 @@ class QdrantService:
     _client: QdrantClient | None = None
     _client_url: str | None = None
 
+    # `filters` 里的保留键：其值翻译成 Qdrant `must_not`（见 _build_filter）。
+    EXCLUDE_KEY = "__must_not__"
+
+    # 代码检索的默认排除集。
+    #
+    # 背景（2026-08 实测）：`commit_index` 把提交摘要以 `kind=commit` 写进**代码
+    # 的同一个 collection**。提交摘要是自然语言，与中文自然语言查询的向量相似度
+    # 天然高于源码，于是系统性挤占召回窗口：onion-practice 里这类产物只占 3% 的
+    # 点数，却占了某代码查询 top-20 的 75%（15/20）。它们随后被路径排除规则
+    # （`.friday/` 前缀）全部丢弃，最终 `search_rag` 返回 **0 条**——status=ok 却
+    # 什么都搜不到，是典型的静默降级。
+    #
+    # 提交历史对"这段逻辑在哪个文件"这类问题基本无用，故代码检索默认排除；需要
+    # 检索提交历史的调用方自行显式查询 `kind=commit`。
+    CODE_SEARCH_EXCLUDE: dict[str, Any] = {"kind": "commit"}
+
     @classmethod
     def _get_config_sync(cls) -> dict[str, Any]:
         """Get Qdrant configuration (sync, for client init)。
@@ -543,6 +559,14 @@ class QdrantService:
                 field_name="language",
                 field_schema=models.PayloadSchemaType.KEYWORD,
             )
+            # kind：commit_index 与源码共用 collection；无 keyword 索引时
+            # hybrid prefetch 上的 must_not(kind=commit) 会被 Qdrant 静默忽略，
+            # 提交摘要会继续挤占代码召回（2026-08 实测）。
+            client.create_payload_index(
+                collection_name=collection_name,
+                field_name="kind",
+                field_schema=models.PayloadSchemaType.KEYWORD,
+            )
 
             return True
 
@@ -566,6 +590,51 @@ class QdrantService:
                 "branch_payload_index_may_exist",
                 collection_name=collection_name,
             )
+            return False
+
+    @classmethod
+    def ensure_kind_payload_index(cls, collection_name: str) -> bool:
+        """确保 collection 有 ``kind`` keyword 索引（幂等，已存在则 True）。
+
+        既有仓在引入 commit_index 前创建，payload schema 里没有 ``kind``；
+        此时 must_not(kind=commit) 在 hybrid prefetch 上无效。检索路径与
+        commit 入库路径都应 best-effort 调一次本方法。
+        """
+        client = cls.get_client()
+        try:
+            info = client.get_collection(collection_name)
+            schema = getattr(info, "payload_schema", None) or {}
+            if "kind" in schema:
+                return True
+            client.create_payload_index(
+                collection_name=collection_name,
+                field_name="kind",
+                field_schema=models.PayloadSchemaType.KEYWORD,
+            )
+            try:
+                logger.info(
+                    "kind_payload_index_created",
+                    collection_name=collection_name,
+                    category="sampling",
+                    component="qdrant",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return True
+        except UnexpectedResponse:
+            # 并发创建时可能已存在
+            return True
+        except Exception as exc:  # noqa: BLE001 — 索引失败不阻断检索
+            try:
+                logger.warning(
+                    "kind_payload_index_ensure_failed",
+                    collection_name=collection_name,
+                    error_type=type(exc).__name__,
+                    category="sampling",
+                    component="qdrant",
+                )
+            except Exception:  # noqa: BLE001
+                pass
             return False
 
     @classmethod
@@ -978,21 +1047,7 @@ class QdrantService:
         """
         client = cls.get_client()
         collection_name = cls.get_collection_name(repository_id)
-
-        # Build filter conditions
-        filter_conditions = []
-        if filters:
-            if "language" in filters:
-                filter_conditions.append(
-                    models.FieldCondition(
-                        key="language",
-                        match=models.MatchValue(value=filters["language"]),
-                    )
-                )
-
-        query_filter = None
-        if filter_conditions:
-            query_filter = models.Filter(must=filter_conditions)
+        query_filter = cls._build_filter(filters)
 
         try:
             results = client.query_points(
@@ -1288,10 +1343,34 @@ class QdrantService:
         """构建 Qdrant 查询过滤条件。
 
         通用规则：值为 list → MatchAny（任一匹配）；标量 → MatchValue 等值。
+
+        保留键 ``EXCLUDE_KEY``（``__must_not__``）：其值是同样形状的
+        ``{payload_key: 值或值列表}``，翻译成 Qdrant ``must_not``。用于把某类
+        payload 整体排除出召回，如代码检索排掉 ``kind=commit``（见
+        :data:`CODE_SEARCH_EXCLUDE`）。
         """
         filter_conditions = []
+        must_not_conditions = []
         if filters:
             for key, value in filters.items():
+                if key == cls.EXCLUDE_KEY:
+                    for ex_key, ex_value in (value or {}).items():
+                        if isinstance(ex_value, (list, tuple, set)):
+                            values = [v for v in ex_value if v is not None]
+                            if not values:
+                                continue
+                            must_not_conditions.append(
+                                models.FieldCondition(
+                                    key=ex_key, match=models.MatchAny(any=list(values))
+                                )
+                            )
+                        elif ex_value is not None:
+                            must_not_conditions.append(
+                                models.FieldCondition(
+                                    key=ex_key, match=models.MatchValue(value=ex_value)
+                                )
+                            )
+                    continue
                 if isinstance(value, (list, tuple, set)):
                     values = [v for v in value if v is not None]
                     if not values:
@@ -1309,8 +1388,11 @@ class QdrantService:
                             match=models.MatchValue(value=value),
                         )
                     )
-        if filter_conditions:
-            return models.Filter(must=filter_conditions)
+        if filter_conditions or must_not_conditions:
+            return models.Filter(
+                must=filter_conditions or None,
+                must_not=must_not_conditions or None,
+            )
         return None
 
     @classmethod
@@ -1424,6 +1506,180 @@ class QdrantService:
             )
             return []
 
+    @classmethod
+    def dense_search_multi_by_name(
+        cls,
+        collection_name: str,
+        query_denses: list[list[float]],
+        *,
+        top_k: int = 30,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """多探针 dense-only 查询，**一次网络往返**，返回各探针的真实余弦命中并集。
+
+        为什么不能复用 :meth:`hybrid_search_multi_by_name`：那条走
+        ``FusionQuery(RRF)``，返回的是**排名融合分**而非余弦；而 ``S_top`` 信号
+        要的恰恰是余弦量级（``dense_cos_max``）。
+
+        为什么不能逐向量调 :meth:`dense_search_by_name`：单次路由的 Qdrant 调用
+        次数有契约约束（``test_one_route_query_budget_no_nplus1`` 断言 dense 恰好
+        1 次），N 次串行既破契约又白白放大延迟。``query_batch_points`` 把 N 个
+        独立查询打包成一次往返，每个查询各自返回真实余弦。
+
+        ``len(query_denses) == 1`` 时**逐字委托** :meth:`dense_search_by_name`，
+        保证绝大多数场景（短查询单探针）与改造前完全同路径、同调用计数。
+
+        同一节点被多个探针命中时保留**最高**余弦——``dense_cos_max`` 的语义是
+        「该仓与需求任一部分的最佳匹配度」，不是平均匹配度。
+        """
+        denses = [v for v in (query_denses or []) if v]
+        if not denses:
+            return []
+        if len(denses) == 1:
+            return cls.dense_search_by_name(
+                collection_name, denses[0], top_k=top_k, filters=filters
+            )
+
+        try:
+            client = cls.get_client()
+            query_filter = cls._build_filter(filters)
+            responses = client.query_batch_points(
+                collection_name=collection_name,
+                requests=[
+                    models.QueryRequest(
+                        query=vec,
+                        using="dense",
+                        filter=query_filter,
+                        limit=top_k,
+                        with_payload=True,
+                    )
+                    for vec in denses
+                ],
+            )
+            best: dict[str, dict[str, Any]] = {}
+            for response in responses:
+                for point in response.points:
+                    pid = str(point.id)
+                    score = float(point.score)
+                    current = best.get(pid)
+                    if current is None or score > current["score"]:
+                        best[pid] = {
+                            "id": pid,
+                            "score": score,
+                            "payload": point.payload,
+                        }
+            return sorted(best.values(), key=lambda h: -h["score"])[:top_k]
+        except Exception as e:  # noqa: BLE001 — 失败返回空列表，调用方降级 S_top
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "dense_search_multi_by_name_failed",
+                collection_name=collection_name,
+                probe_count=len(denses),
+                error=redact_secrets_in_text(str(e)),
+                error_type=type(e).__name__,
+                category="sampling",
+                component="qdrant",
+            )
+            return []
+
+    @classmethod
+    def hybrid_search_multi_by_name(
+        cls,
+        collection_name: str,
+        query_denses: list[list[float]],
+        query_sparse: dict[str, Any] | None,
+        top_k: int = 30,
+        *,
+        prefetch_limit: int | None = None,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """多探针混合检索：N 路 dense + 1 路 sparse，**一次调用**服务端 RRF 融合。
+
+        长查询被 ``services.query_embedding.embed_query`` 切成多块后，每块出一个
+        向量。Qdrant 的 ``prefetch`` 本就是列表、``FusionQuery(RRF)`` 本就在服务端，
+        所以 N 路探针与单路探针**网络往返次数相同**（各一次 ``query_points``）——
+        多探针在本架构里几乎是免费的。
+
+        Args:
+            query_denses: 1..N 个 dense 向量（探针）。空列表 → 返回 []。
+            query_sparse: 稀疏向量；``SparseEncoderService`` 是本地 BM25 无长度限制，
+                对全文编一次即可，不随 dense 切块（关键词/标识符面由它兜底）。
+            top_k: **融合后**返回条数。
+            prefetch_limit: 每路探针各自的召回条数，缺省同 ``top_k``。
+
+        ``len(query_denses) == 1`` 时**逐字委托** :meth:`hybrid_search_by_name`
+        ——单探针是绝对多数场景，必须与改造前完全同路径（含既有测试替身）。
+        """
+        denses = [v for v in (query_denses or []) if v]
+        if not denses:
+            return []
+        if len(denses) == 1:
+            if query_sparse and query_sparse.get("indices"):
+                return cls.hybrid_search_by_name(
+                    collection_name, denses[0], query_sparse, top_k=top_k, filters=filters
+                )
+            return cls.dense_search_by_name(
+                collection_name, denses[0], top_k=top_k, filters=filters
+            )
+
+        client = cls.get_client()
+        query_filter = cls._build_filter(filters)
+        per_probe = prefetch_limit or top_k
+
+        try:
+            prefetch: list[Any] = [
+                models.Prefetch(
+                    query=vec, using="dense", limit=per_probe, filter=query_filter
+                )
+                for vec in denses
+            ]
+            if query_sparse and query_sparse.get("indices"):
+                prefetch.append(
+                    models.Prefetch(
+                        query=models.SparseVector(
+                            indices=query_sparse["indices"],
+                            values=query_sparse["values"],
+                        ),
+                        using="sparse",
+                        limit=per_probe,
+                        filter=query_filter,
+                    )
+                )
+
+            results = client.query_points(
+                collection_name=collection_name,
+                prefetch=prefetch,
+                query=models.FusionQuery(fusion=models.Fusion.RRF),
+                limit=top_k,
+                with_payload=True,
+            )
+            return [
+                {"id": str(r.id), "score": r.score, "payload": r.payload}
+                for r in results.points
+            ]
+        except UnexpectedResponse as e:
+            # 与 hybrid_search_by_name 同款降级：老 collection 缺命名向量时退纯 dense，
+            # 且只用首个探针（多探针在无命名向量的老格式上无从表达）。
+            if cls._is_missing_named_vector_error(e):
+                logger.warning(
+                    "hybrid_search_multi_fallback_to_dense",
+                    collection_name=collection_name,
+                    probe_count=len(denses),
+                    reason="collection_missing_named_vectors",
+                    hint="rebuild index to enable hybrid search",
+                )
+                return cls.search_by_name(
+                    collection_name, denses[0], top_k=top_k, filters=filters
+                )
+            logger.warning(
+                "hybrid_search_multi_failed",
+                collection_name=collection_name,
+                probe_count=len(denses),
+                error=str(e),
+            )
+            return []
+
     @staticmethod
     def _is_missing_named_vector_error(error: UnexpectedResponse) -> bool:
         """识别 Qdrant "Not existing vector name" 类错误。
@@ -1514,21 +1770,9 @@ class QdrantService:
         """
         client = cls.get_client()
         collection_name = cls.get_collection_name(repository_id)
-
-        # Build filter
-        filter_conditions = []
-        if filters:
-            if "language" in filters:
-                filter_conditions.append(
-                    models.FieldCondition(
-                        key="language",
-                        match=models.MatchValue(value=filters["language"]),
-                    )
-                )
-
-        query_filter = None
-        if filter_conditions:
-            query_filter = models.Filter(must=filter_conditions)
+        # 与 hybrid_search_by_name 对齐：走统一 _build_filter（含 EXCLUDE_KEY）。
+        # 旧实现只认 language，导致 CODE_SEARCH_EXCLUDE 在默认代码检索路径上失效。
+        query_filter = cls._build_filter(filters)
 
         try:
             sparse_vector = models.SparseVector(
