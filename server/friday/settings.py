@@ -919,6 +919,14 @@ CODE_GRAPH_MAX_GRAPH_BYTES: int = env.int(
 CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS: int = env.int(
     "CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS", default=30
 )
+# 建 MR 路径影响面报告（Phase 124 DIFF-04）：对 run_detect_changes 的显式超时与
+# 单段 markdown 软上限。⛔ 不新增「关闭影响面」产品 kill-switch（D-13）。
+CODE_GRAPH_IMPACT_REPORT_TIMEOUT_SECONDS: float = env.float(
+    "CODE_GRAPH_IMPACT_REPORT_TIMEOUT_SECONDS", default=30.0
+)
+CODE_GRAPH_IMPACT_REPORT_MAX_CHARS: int = env.int(
+    "CODE_GRAPH_IMPACT_REPORT_MAX_CHARS", default=10240
+)
 # ⛔ 刻意不新增「边构建 in-flight 超时」配置项：该判据直接复用上方的
 # GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES（同一语义——超时的 RUNNING 行视为孤儿、不算在
 # 途），避免两个阈值漂移导致「孤儿已被回收但图服务仍判在途」的长鸣降级。
