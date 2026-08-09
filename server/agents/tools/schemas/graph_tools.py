@@ -1,15 +1,20 @@
-"""``impact_analysis`` / ``trace_call_path`` 对话工具输入契约（Phase 122 IMPACT-06）。
+"""``impact_analysis`` / ``trace_call_path`` / ``detect_changes`` 对话工具输入契约。
 
-上下界必须与 MCP ``ImpactAnalysisRequestSerializer`` /
-``TraceCallPathRequestSerializer`` **同表**——两面参数域一旦分叉，同一个查询在
-两面就会得到不同结果，D-21 的「同源」就断在这一层。
+上下界必须与 MCP serializer **同表**——两面参数域一旦分叉，同一个查询在
+两面就会得到不同结果，D-21 / D-13 的「同源」就断在这一层。
 
 ⛔ 零 Django import：本模块需在 ``apps.ready()`` 之前可独立 import。
 """
 
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+# 与 mcp_tools.serializers._SAFE_COMPARE_RE / _FULL_SHA_RE 同表（D-02）
+_SAFE_COMPARE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/@+-]{0,254}$")
+_FULL_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 class ImpactAnalysisToolInput(BaseModel):
@@ -150,4 +155,77 @@ class TraceCallPathToolInput(BaseModel):
         return self
 
 
-__all__ = ["ImpactAnalysisToolInput", "TraceCallPathToolInput"]
+class DetectChangesToolInput(BaseModel):
+    """``detect_changes`` 对话工具输入契约（Phase 123 DIFF-01/02 / D-02）。
+
+    字段与上下界对齐 ``mcp_tools.serializers.DetectChangesRequestSerializer``。
+    ⛔ 不含 ``branch`` 图 overlay——交叠坐标锁定索引水位（D-01）；
+    ``compare`` 为 head，``base_ref`` 仅声明透出，不改 diff 左端。
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    repository_id: str = Field(description="目标仓库 UUID（必填）")
+    compare: str = Field(
+        description="diff head（分支名 / tag / SHA）；必填",
+        min_length=1,
+        max_length=255,
+    )
+    base_ref: str | None = Field(
+        default=None,
+        description="可选：MR 语义声明透出；不参与 diff 左端",
+    )
+    max_depth: int = Field(
+        default=3,
+        ge=1,
+        le=3,
+        description="影响面遍历深度上界（1–3，与 MCP / impact 同表）",
+    )
+    min_confidence: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="边置信度下限（0.0–1.0）",
+    )
+    include_low_confidence: bool = Field(
+        default=False,
+        description="是否纳入低置信度边",
+    )
+    limit: int = Field(
+        default=200,
+        ge=1,
+        le=200,
+        description="单次响应条数硬上限（1–200）",
+    )
+
+    @model_validator(mode="after")
+    def _validate_refs(self) -> DetectChangesToolInput:
+        compare = (self.compare or "").strip()
+        if not compare:
+            raise ValueError("compare 不能为空")
+        if ".." in compare or any(ord(c) < 32 for c in compare):
+            raise ValueError("compare 含非法字符")
+        if not (_SAFE_COMPARE_RE.match(compare) or _FULL_SHA_RE.match(compare)):
+            raise ValueError("compare 格式非法")
+
+        raw_base = self.base_ref
+        if raw_base is None or str(raw_base).strip() == "":
+            object.__setattr__(self, "base_ref", None)
+            object.__setattr__(self, "compare", compare)
+            return self
+
+        base_ref = str(raw_base).strip()
+        if ".." in base_ref or any(ord(c) < 32 for c in base_ref):
+            raise ValueError("base_ref 含非法字符")
+        if not _SAFE_COMPARE_RE.match(base_ref):
+            raise ValueError("base_ref 格式非法")
+        object.__setattr__(self, "base_ref", base_ref)
+        object.__setattr__(self, "compare", compare)
+        return self
+
+
+__all__ = [
+    "ImpactAnalysisToolInput",
+    "TraceCallPathToolInput",
+    "DetectChangesToolInput",
+]
