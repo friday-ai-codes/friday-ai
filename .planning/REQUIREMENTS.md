@@ -63,7 +63,7 @@
 
 ### SKILL — 工作流固化
 
-- [ ] **SKILL-01**: impact-analysis / refactoring 两个工作流 skill 进 `@friday-ai-codes/skills` 同源分发（复用 v0.17.0 机制），编码容器与外部 agent 可用
+- [x] **SKILL-01**: impact-analysis / refactoring 两个工作流 skill 进 `@friday-ai-codes/skills` 同源分发（复用 v0.17.0 机制），编码容器与外部 agent 可用
 
 ---
 
@@ -117,7 +117,7 @@
 | EXEC-02 | Phase 126 | Complete |
 | EXEC-03 | Phase 126 | Complete |
 | RENAME-01 | Phase 126 | Complete |
-| SKILL-01 | Phase 126 | Pending |
+| SKILL-01 | Phase 126 | Complete |
 | TAINT-01 | Phase 127 | Pending |
 | TAINT-02 | Phase 127 | Pending |
 | TAINT-03 | Phase 127 | Pending |
