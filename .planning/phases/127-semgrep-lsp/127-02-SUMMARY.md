@@ -82,7 +82,7 @@ Each task was committed atomically:
 2. **Task 2: SEMGREP_* settings + kill-switch defaults** - `b6b0bdd7` (feat)
 3. **Task 3: Dockerfile Semgrep + Node/Go/volar/gopls** - `b233b23b` (feat)
 
-**Plan metadata:** (this commit)
+**Plan metadata:** `a50d8b19` (docs: complete plan) + follow-up STATE hygiene commit
 
 ## Files Created/Modified
 

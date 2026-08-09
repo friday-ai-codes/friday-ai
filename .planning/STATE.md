@@ -4,14 +4,14 @@ milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
 status: executing
 stopped_at: Completed 127-02-PLAN.md
-last_updated: "2026-08-09T22:19:32.914Z"
-last_activity: 2026-08-10 -- Completed 127-01 (Wave 0 stubs)
+last_updated: "2026-08-09T22:20:00.000Z"
+last_activity: 2026-08-10 -- Completed 127-02 (Semgrep/LSP runtime foundation)
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 44
-  completed_plans: 41
-  percent: 86
+  completed_plans: 42
+  percent: 95
 ---
 
 # Project State
@@ -687,10 +687,6 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 127]: Empty SEMGREP_APP_TOKEN deletes SystemSetting row → CE; Fernet write via set_semgrep_app_token
 - [Phase 127]: Image Semgrep/Node/Go volume +400-550MB estimate; real docker images deferred to CI
 - [Phase 127]: 127-02 does not mark TAINT-01/03/LSP-01 complete — foundation only (same lock as 127-01)
-- [Phase 127]: EXTRACTOR_BACKENDS[go]=gopls reopen target only; VOLAR/GOPLS defaults stay False (D-12)
-- [Phase 127]: Empty SEMGREP_APP_TOKEN deletes SystemSetting row for CE path
-- [Phase 127]: Image +400-550MB estimate; docker images size deferred to CI
-- [Phase 127]: TAINT-01/03 LSP-01 not marked complete after 127-02 foundation
 
 ### Pending Todos
 
