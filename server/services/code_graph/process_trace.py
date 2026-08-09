@@ -13,6 +13,7 @@ BFS 硬闸（D-02）
 
 from __future__ import annotations
 
+import re
 import time
 from collections import deque
 from collections.abc import Mapping, Sequence
@@ -38,14 +39,11 @@ MIN_CONF = 0.5
 MAX_PATHS_PER_ENTRY = 64
 MAX_FRONTIER_SIZE = 256
 
-ASYNC_NAME_MARKERS = (
-    "sync_to_async",
-    "defer",
-    "delay",
-    "apply_async",
-    "group_send",
-    "create_task",
-    "background_runner",
+# Token / 后缀边界匹配，避免 delay_response / group_sender 等误截断（WR-04）。
+_ASYNC_BOUNDARY_RE = re.compile(
+    r"(?:^|_)(?:sync_to_async|apply_async|create_task|background_runner|group_send)(?:$|_)"
+    r"|(?:^|\.)(?:delay|defer)$",
+    re.IGNORECASE,
 )
 
 # 单行 JSON 主干截断（T-126-04）
@@ -83,8 +81,8 @@ def make_process_name(http_method: str, url_path: str) -> str:
 
 
 def is_async_boundary_name(name: str) -> bool:
-    lowered = (name or "").lower()
-    return any(marker in lowered for marker in ASYNC_NAME_MARKERS)
+    """识别 async 派发边界名；短词 ``delay``/``defer`` 仅精确或 ``.delay`` 后缀。"""
+    return bool(_ASYNC_BOUNDARY_RE.search(name or ""))
 
 
 def max_processes_for_symbol_count(symbol_count: int) -> int:
