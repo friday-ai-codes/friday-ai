@@ -82,6 +82,11 @@ from services.code_graph import (
     GraphNotIndexed,
     get_graph_service,
 )
+from services.code_graph.affected_processes import (
+    assemble_affected_processes,
+    collect_hits_from_detect_changes,
+    collect_hits_from_impact_payload,
+)
 from services.code_graph.impact import (
     DEFAULT_MAX_DEPTH,
     DEFAULT_RESULT_LIMIT,
@@ -147,6 +152,7 @@ _SUBGRAPH_NO_PATH_DECLARATION: Final[str] = (
 __all__ = [
     "CANDIDATE_SIGNATURE_MAX_CHARS",
     "GRAPH_ERROR_MESSAGES",
+    "assemble_affected_processes",
     "degradation_payload",
     "fetch_graph_for_tool",
     "graph_error_to_tool_error",
@@ -707,6 +713,37 @@ def _seed_from_graph(graph: Any, symbol_id: str) -> dict[str, Any]:
     }
 
 
+async def _load_process_traces(
+    *,
+    repository_id: str,
+    branch_name: str,
+) -> list[Any]:
+    """一次加载仓分支 ProcessTrace 行（detect_changes / impact 共用，禁 N+1）。"""
+    from codegraph.models import ProcessTrace
+
+    return [
+        row
+        async for row in ProcessTrace.objects.filter(
+            repository_id=repository_id,
+            branch_name=branch_name,
+        )
+    ]
+
+
+def _log_affected_processes_filled(*, count: int, tool: str) -> None:
+    """sampling 级回填条数——⛔ 不刷 steps 全文。"""
+    try:
+        logger.debug(
+            "code_graph_affected_processes_filled",
+            component="code_graph",
+            category="sampling",
+            tool=tool,
+            count=count,
+        )
+    except Exception:  # noqa: BLE001 — 观测永不反噬
+        pass
+
+
 def _crosses_repo_from_entries(cross: Sequence[Mapping[str, Any]]) -> bool:
     """穿仓是否成立：任一成功条目或折叠条目即可（unavailable 不算）。
 
@@ -881,6 +918,25 @@ async def run_impact(
         impact, crosses_repo=crosses_repo
     )
 
+    # D-07：单一 helper 回填 affected_processes（seed + groups 命中 ∩ ProcessTrace）。
+    hit_ids, hit_keys = collect_hits_from_impact_payload(
+        seed=seed,
+        groups=impact.get("groups"),
+    )
+    processes = await _load_process_traces(
+        repository_id=str(repository_id),
+        branch_name=graph_branch or "",
+    )
+    affected_processes = assemble_affected_processes(
+        hit_symbol_ids=hit_ids,
+        hit_file_name_keys=hit_keys,
+        processes=processes,
+    )
+    _log_affected_processes_filled(
+        count=len(affected_processes),
+        tool="impact_analysis",
+    )
+
     return {
         "ok": True,
         "tool": "impact_analysis",
@@ -900,7 +956,7 @@ async def run_impact(
         "risk_inputs": risk_inputs,
         "summary": impact["summary"],
         "cross_repo": cross,
-        "affected_processes": [],
+        "affected_processes": affected_processes,
         "staleness": await staleness_payload(repo),
         "graph": degradation_payload(graph.meta),
     }
@@ -1415,6 +1471,22 @@ async def run_detect_changes(
         "file_level_only": truncated,
     }
 
+    # D-07 / Pitfall 4：batch 汇总后一次加载 Process 集再内存对账，禁止 N+1。
+    hit_ids, hit_keys = collect_hits_from_detect_changes(files=files, impacts=impacts)
+    processes = await _load_process_traces(
+        repository_id=repository_id,
+        branch_name="",  # detect_changes 交叠锚定 base 索引（branch_name=""）
+    )
+    affected_processes = assemble_affected_processes(
+        hit_symbol_ids=hit_ids,
+        hit_file_name_keys=hit_keys,
+        processes=processes,
+    )
+    _log_affected_processes_filled(
+        count=len(affected_processes),
+        tool="detect_changes",
+    )
+
     result: dict[str, Any] = {
         "ok": True,
         "tool": "detect_changes",
@@ -1424,7 +1496,7 @@ async def run_detect_changes(
         "files": files,
         "impacts": impacts,
         "summary": summary,
-        "affected_processes": [],
+        "affected_processes": affected_processes,
         "staleness": staleness,
         "graph": graph_payload,
     }
