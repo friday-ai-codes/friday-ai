@@ -103,6 +103,7 @@ from .serializers import (
     GetTechnicalBlueprintRequestSerializer,
     GrepProjectRequestSerializer,
     GrepRepositoryRequestSerializer,
+    ImpactAnalysisRequestSerializer,
     ImproveCodingPlanRequestSerializer,
     ListRepositoryFilesRequestSerializer,
     LookupProjectByBranchRequestSerializer,
@@ -120,6 +121,7 @@ from .serializers import (
     SearchRagChunksRequestSerializer,
     StartRepoResearchRequestSerializer,
     SummarizeBranchRequestSerializer,
+    TraceCallPathRequestSerializer,
 )
 from .technical_plan_service import TechnicalPlanError, build_work_item_technical_plan
 from .work_item_context_service import WorkItemContextError, build_work_item_context
@@ -197,12 +199,32 @@ _MIRROR_ERROR_STATUS = {
     "git_timeout": status.HTTP_502_BAD_GATEWAY,
 }
 
+_GRAPH_ERROR_STATUS = {
+    "repository_not_indexed": status.HTTP_400_BAD_REQUEST,
+    "repository_access_denied": status.HTTP_403_FORBIDDEN,
+    "graph_build_timeout": status.HTTP_504_GATEWAY_TIMEOUT,
+    "graph_build_failed": status.HTTP_500_INTERNAL_SERVER_ERROR,
+    "graph_unavailable": status.HTTP_400_BAD_REQUEST,
+}
+
 
 def _mirror_error_response(exc: MirrorError) -> Response:
     return error_response(
         exc.code,
         exc.detail,
         status_code=_MIRROR_ERROR_STATUS.get(exc.code, status.HTTP_400_BAD_REQUEST),
+    )
+
+
+def _graph_error_response(exc: Any) -> Response:
+    """把 ``GraphError`` 翻译成 MCP error_response（只出映射表文案，不透 details）。"""
+    from services.code_graph_tools import graph_error_to_tool_error
+
+    code, message = graph_error_to_tool_error(exc)
+    return error_response(
+        code,
+        message,
+        status_code=_GRAPH_ERROR_STATUS.get(code, status.HTTP_400_BAD_REQUEST),
     )
 
 
@@ -1240,6 +1262,226 @@ class ReverseLookupView(McpToolView):
             traces=traces,
             started_at=started_at,
         )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class ImpactAnalysisView(McpToolView):
+    """影响面分析 MCP 薄壳（Phase 122 IMPACT-06）。
+
+    壳内零算法：校验 → ``_get_indexed_repo`` → ``resolve_tool_graph_branch`` →
+    ``run_impact`` → 原样透出信封 + ``run_id`` → 一条汇总 ``RetrievalTrace`` +
+    一条 ``caller`` 事件。
+
+    ``ok=False``（``symbol_not_found`` / ``ambiguous_symbol`` / ``symbol_not_in_graph``）
+    一律返回 HTTP 200 + 该信封，⛔ 不转 4xx。``ambiguous_symbol`` 的候选列表是 agent
+    二选一的唯一依据（生产 19.3% 的名字不唯一，这是主路径不是兜底）；转成
+    ``{"error_code","detail"}`` 的 4xx 会把候选整段丢掉。``ok=False`` 只表示
+    「这次查询没能定位到符号」，不是传输层错误——也避免对话面（无 HTTP 概念）
+    被逼出另一套语义（D-21）。
+    """
+
+    tool_name = "impact_analysis"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(ImpactAnalysisRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        repository_id = str(input_data["repository_id"])
+        repo, err = await self._get_indexed_repo(repository_id)
+        if err is not None:
+            return err
+        assert repo is not None
+
+        from services.code_graph import GraphError
+        from services.code_graph_tools import (
+            resolve_tool_graph_branch,
+            run_impact,
+            tool_trace_payload,
+        )
+
+        graph_branch = await resolve_tool_graph_branch(
+            repository_id, repo, input_data.get("branch")
+        )
+        orch_started = time.perf_counter()
+        try:
+            result = await run_impact(
+                repository_id=repository_id,
+                repo=repo,
+                graph_branch=graph_branch,
+                user=request.user,
+                symbol_id=str(input_data["symbol_id"]) if input_data.get("symbol_id") else None,
+                symbol=str(input_data.get("symbol") or "") or None,
+                file_path=str(input_data.get("file_path") or "") or None,
+                symbol_type=str(input_data.get("symbol_type") or "") or None,
+                max_depth=int(input_data.get("max_depth", 3)),
+                min_confidence=float(input_data.get("min_confidence", 1.0)),
+                include_low_confidence=bool(input_data.get("include_low_confidence")),
+                limit=int(input_data.get("limit", 200)),
+                max_cross_repo_hops=int(input_data.get("max_cross_repo_hops", 1)),
+                exclude_test_files=bool(input_data.get("exclude_test_files")),
+            )
+        except GraphError as exc:
+            return _graph_error_response(exc)
+        orchestration_ms = int((time.perf_counter() - orch_started) * 1000)
+
+        output_data = {**result, "run_id": str(run.run_id)}
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        traces = [
+            (
+                RetrievalTrace.Kind.EDGE,
+                tool_trace_payload(
+                    result,
+                    tool=self.tool_name,
+                    duration_ms=duration_ms,
+                    orchestration_ms=orchestration_ms,
+                ),
+            )
+        ]
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        try:
+            summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+            graph = result.get("graph") if isinstance(result.get("graph"), dict) else {}
+            logger.info(
+                "mcp_impact_analysis_completed",
+                tool_name=self.tool_name,
+                component="mcp_tools",
+                category="caller",
+                initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+                repository_id=repository_id,
+                ok=bool(result.get("ok")),
+                error_code=str(result.get("error_code") or ""),
+                result_count=int(summary.get("returned") or 0) if summary else 0,
+                total_found=int(summary.get("total_found") or 0) if summary else 0,
+                degraded=graph.get("degraded") if graph else "",
+                resolution_rate=float(graph.get("resolution_rate") or 0.0) if graph else 0.0,
+                duration_ms=duration_ms,
+            )
+        except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务
+            pass
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class TraceCallPathView(McpToolView):
+    """调用路径追踪 MCP 薄壳（Phase 122 IMPACT-06）。
+
+    与 :class:`ImpactAnalysisView` 严格同构：校验 → 仓闸 → 分支 → ``run_trace`` →
+    原样透出 + 一条汇总 trace + ``caller`` 事件。
+
+    ``found is False`` 时 ``ok`` 仍为 ``True``（D-20）：「确实没有调用关系」是一次
+    成功的查询，⛔ 不映射成错误。``ok=False`` 同样走 HTTP 200 + 信封。
+    """
+
+    tool_name = "trace_call_path"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(TraceCallPathRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        repository_id = str(input_data["repository_id"])
+        repo, err = await self._get_indexed_repo(repository_id)
+        if err is not None:
+            return err
+        assert repo is not None
+
+        from services.code_graph import GraphError
+        from services.code_graph_tools import (
+            resolve_tool_graph_branch,
+            run_trace,
+            tool_trace_payload,
+        )
+
+        graph_branch = await resolve_tool_graph_branch(
+            repository_id, repo, input_data.get("branch")
+        )
+        orch_started = time.perf_counter()
+        try:
+            result = await run_trace(
+                repository_id=repository_id,
+                repo=repo,
+                graph_branch=graph_branch,
+                user=request.user,
+                source_symbol_id=(
+                    str(input_data["source_symbol_id"])
+                    if input_data.get("source_symbol_id")
+                    else None
+                ),
+                source=str(input_data.get("source") or "") or None,
+                source_file_path=str(input_data.get("source_file_path") or "") or None,
+                target_symbol_id=(
+                    str(input_data["target_symbol_id"])
+                    if input_data.get("target_symbol_id")
+                    else None
+                ),
+                target=str(input_data.get("target") or "") or None,
+                target_file_path=str(input_data.get("target_file_path") or "") or None,
+                min_confidence=float(input_data.get("min_confidence", 1.0)),
+                include_low_confidence=bool(input_data.get("include_low_confidence")),
+                alt_path_cap=int(input_data.get("alt_path_cap", 10)),
+            )
+        except GraphError as exc:
+            return _graph_error_response(exc)
+        orchestration_ms = int((time.perf_counter() - orch_started) * 1000)
+
+        output_data = {**result, "run_id": str(run.run_id)}
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        traces = [
+            (
+                RetrievalTrace.Kind.EDGE,
+                tool_trace_payload(
+                    result,
+                    tool=self.tool_name,
+                    duration_ms=duration_ms,
+                    orchestration_ms=orchestration_ms,
+                ),
+            )
+        ]
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        try:
+            hops = result.get("hops") if isinstance(result.get("hops"), list) else []
+            graph = result.get("graph") if isinstance(result.get("graph"), dict) else {}
+            logger.info(
+                "mcp_trace_call_path_completed",
+                tool_name=self.tool_name,
+                component="mcp_tools",
+                category="caller",
+                initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+                repository_id=repository_id,
+                ok=bool(result.get("ok")),
+                error_code=str(result.get("error_code") or ""),
+                result_count=len(hops),
+                total_found=0,
+                degraded=graph.get("degraded") if graph else "",
+                resolution_rate=float(graph.get("resolution_rate") or 0.0) if graph else 0.0,
+                duration_ms=duration_ms,
+            )
+        except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务
+            pass
         return Response(output_data, status=status.HTTP_200_OK)
 
 

@@ -144,9 +144,11 @@ __all__ = [
     "graph_error_to_tool_error",
     "resolution_to_payload",
     "resolve_symbol_candidates",
+    "resolve_tool_graph_branch",
     "run_impact",
     "run_trace",
     "staleness_payload",
+    "tool_trace_payload",
 ]
 
 
