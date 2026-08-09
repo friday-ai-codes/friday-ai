@@ -150,7 +150,7 @@ Plans:
   2. compare + base_ref 场景（MR diff）可用；文件重命名被识别（`git diff -M`），纯 rename PR 不产生满屏误报
   3. 输出带索引 staleness 声明（as_of commit），索引落后时 agent 能看到并自行判断可信度
 
-**Plans**: 5/6 plans executed（6 waves，W0–W5；线性依赖以锁定 MCP↔对话 schema 同表）
+**Plans**: 6/6 plans executed（6 waves，W0–W5；线性依赖以锁定 MCP↔对话 schema 同表）
 
 Plans:
 **Wave 0**
@@ -175,7 +175,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 123-05-PLAN.md — W5 双面同源哨兵 + 观测无内容泄漏 + D-27 漂移 7→8 记账
+- [x] 123-05-PLAN.md — W5 双面同源哨兵 + 观测无内容泄漏 + D-27 漂移 7→8 记账
 
 ### Phase 124: 编码链闭环
 
@@ -237,7 +237,7 @@ Plans:
 
 **执行顺序（依赖链）:** 121（地基，绝对先行——缓存四件套 + 边准入 + 读取层鉴权/exclusion 收口必须做进地基）→ 122（核心工具面，双面接线模式定型）→ 123（detect_changes 本体）→ 124（编码链集成，动 task/workflow 两条链单独控风险）→ 125（社区先于执行流，Process 需要 community 分类）→ 126（执行流 + 独立小项收编）→ 127（Semgrep/LSP 独立轨道收尾，避开与 125/126 同时引入内存大户）。其中 125 只依赖 121，可视执行情况与 122–124 并行推进。
 
-需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；领域调研与相位依据见 [research/SUMMARY.md](./research/SUMMARY.md)（含 Louvain vs Leiden 裁决、缓存四件套、裸名边准入纪律、Semgrep 死亡螺旋规避）。**跨仓记账:** `test_mcp_package_tools_match_server_snapshot` 在 HEAD 上已红着 **5** 项漂移（`apply_repo_association` / `generate_requirement_spec` / `get_repo_research` / `route_blueprint_repos` / `start_repo_research`，来自阶段沙箱工具，与 Phase 122 无关）；Phase 122 新增 `impact_analysis` / `trace_call_path` 两个 MCP 工具后变为 **7** 项。按 D-27 **不修** `mcp` submodule（并发会话占用 + 跨仓改动另批发版），该守护继续红着并列入相位门的「已知既有失败」白名单（另一仓库改动，v0.20.0 已有同款缺口在案）。
+需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；领域调研与相位依据见 [research/SUMMARY.md](./research/SUMMARY.md)（含 Louvain vs Leiden 裁决、缓存四件套、裸名边准入纪律、Semgrep 死亡螺旋规避）。**跨仓记账:** `test_mcp_package_tools_match_server_snapshot` 在 HEAD 上已红着 **5** 项漂移（`apply_repo_association` / `generate_requirement_spec` / `get_repo_research` / `route_blueprint_repos` / `start_repo_research`，来自阶段沙箱工具，与 Phase 122 无关）；Phase 122 新增 `impact_analysis` / `trace_call_path` 后变为 **7** 项；Phase 123 再新增 `detect_changes` 后变为 **8** 项。按 D-27 **不修** `mcp` submodule（并发会话占用 + 跨仓改动另批发版），该守护继续红着并列入相位门的「已知既有失败」白名单（另一仓库改动，v0.20.0 已有同款缺口在案）。**本相位使既有失败从 7 扩大到 8——不是「没有影响」。**
 
 ### ✅ v0.21.0 蓝图过程可见与返工闭环 (Phases 117–120) — COMPLETE 2026-08-05（未打 tag）— 验证 tech_debt
 
