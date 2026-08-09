@@ -359,6 +359,8 @@ class SymbolCommunity(models.Model):
     algorithm = models.CharField(max_length=32, default="louvain")
     member_count = models.PositiveIntegerField(default=0)
     members = models.JSONField(default=list)
+    # 完整稳定键列表，供 Jaccard 对账；与 members 展示截断分离（WR-02）。
+    member_keys = models.JSONField(default=list)
     top_files = models.JSONField(default=list)
     member_fingerprint = models.CharField(max_length=64, blank=True, default="")
     summary = models.TextField(null=True, blank=True)
