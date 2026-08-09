@@ -1,4 +1,4 @@
-"""容器知识 MCP（AGENT-02）：11 个白名单知识工具的进程内 SDK MCP server。
+"""容器知识 MCP（AGENT-02）：12 个白名单知识工具的进程内 SDK MCP server。
 
 镜像 ``remote_tools.py`` 全套约束，把服务端 ``/api/mcp/tools/<name>/`` HTTP 工具面
 暴露给容器内编码代理——权限/排除/脱敏经服务端天然继承，容器不再是"知识贫民区"。
@@ -46,7 +46,7 @@ KNOWLEDGE_MCP_SERVER_NAME = "friday-knowledge"
 # 配额用尽文案：agent 可理解、可继续（不带 is_error，避免模型反复重试）。
 QUOTA_EXHAUSTED_TEXT = "知识工具调用配额已用尽，请基于已有上下文继续完成任务"
 
-# 11 工具白名单（task 侧硬编码，input_schema 逐一对照
+# 12 工具白名单（task 侧硬编码，input_schema 逐一对照
 # server/mcp_tools/serializers.py 对应 RequestSerializer 字段）。
 # description 面向 agent 写清"何时用哪个"。
 KNOWLEDGE_TOOL_SCHEMAS: list[dict[str, Any]] = [
@@ -375,6 +375,49 @@ KNOWLEDGE_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "limit": {"type": "integer", "description": "结果上限 1..200（默认 200）"},
             },
             "required": ["repository_id", "compare"],
+        },
+    },
+    # ---- 只读改名预览（RENAME-01，Phase 126-04 / D-12）-----------------------
+    # 对照 RenamePreviewRequestSerializer；经既有工厂打 server MCP PAT 面。
+    # 失败/配额用尽继续交付，不另造配额体系（与 detect_changes 同路）。
+    {
+        "name": "rename_preview",
+        "description": (
+            "改名前只读预览：图引用 + 文本兜底双源编辑清单（applied 恒为 false，服务端永不改写）。"
+            "先 preview 再自行 Edit/Write；动态引用（模板/反射/getattr）可能漏检，请读 coverage_limitations。"
+            "失败/未索引/消歧失败/配额用尽时记录原因并继续交付，不要重试刷屏。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "repository_id": {"type": "string", "description": "仓库 UUID（必填）"},
+                "branch": {
+                    "type": "string",
+                    "description": "可选：查询分支；缺省走 base",
+                },
+                "symbol_id": {
+                    "type": "string",
+                    "description": "符号 UUID；与 symbol 必须且只能提供其一",
+                },
+                "symbol": {
+                    "type": "string",
+                    "description": "符号名；与 symbol_id 必须且只能提供其一",
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "可选：文件路径，收窄同名符号",
+                },
+                "symbol_type": {
+                    "type": "string",
+                    "description": "可选：符号类型（function / class 等）",
+                },
+                "new_name": {"type": "string", "description": "新名称（必填）"},
+                "context_lines": {
+                    "type": "integer",
+                    "description": "上下文行数 0..5（默认 2）",
+                },
+            },
+            "required": ["repository_id", "new_name"],
         },
     },
 ]

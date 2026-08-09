@@ -324,11 +324,12 @@ async def test_knowledge_alone_keeps_builtin_tools(monkeypatch, temp_workspace, 
     # WR-02：全量 builtin 必须在列（Bash/Read/Edit/Write/MultiEdit/Glob/Grep 等）
     for builtin in _BUILTIN_CODING_TOOLS:
         assert builtin in options.allowed_tools, f"builtin {builtin} 不得丢失"
-    # 11 个知识工具全部在列（124 追加 detect_changes 后 10 → 11）
+    # 12 个知识工具全部在列（126 追加 rename_preview 后 11 → 12）
     for tool in knowledge_allowed_tools():
         assert tool in options.allowed_tools
-    assert len(knowledge_allowed_tools()) == 11
+    assert len(knowledge_allowed_tools()) == 12
     assert "mcp__friday-knowledge__detect_changes" in options.allowed_tools
+    assert "mcp__friday-knowledge__rename_preview" in options.allowed_tools
 
 
 @pytest.mark.asyncio

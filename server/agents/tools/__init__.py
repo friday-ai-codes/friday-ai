@@ -36,6 +36,7 @@ from agents.tools.graph_tools import (
     get_process,
     impact_analysis,
     list_processes,
+    rename_preview,
     trace_call_path,
 )
 from agents.tools.langchain_adapter import build_langchain_tools
@@ -84,6 +85,8 @@ __all__ = [
     # Phase 126：ProcessTrace 查询（D-06 对话半边）
     "list_processes",
     "get_process",
+    # Phase 126：只读 rename_preview（D-09 对话半边）
+    "rename_preview",
     # Delivery knowledge tools (Phase 16)
     "search_delivery_knowledge",
     "get_entity_timeline",

@@ -290,6 +290,33 @@ class GetProcessRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class RenamePreviewRequestSerializer(serializers.Serializer):
+    """``rename_preview`` 请求契约（Phase 126 RENAME-01 / D-09）。
+
+    ``symbol_id`` 与 ``symbol`` 必须且只能提供其一（对齐 impact）；``new_name`` 必填。
+    """
+
+    repository_id = serializers.UUIDField(required=True)
+    branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+    symbol_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    symbol = serializers.CharField(required=False, allow_blank=True, default="")
+    file_path = serializers.CharField(required=False, allow_blank=True, default="")
+    symbol_type = serializers.CharField(required=False, allow_blank=True, default="")
+    new_name = serializers.CharField(required=True, allow_blank=False, max_length=512)
+    context_lines = serializers.IntegerField(default=2, min_value=0, max_value=5)
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        has_id = bool(attrs.get("symbol_id"))
+        has_name = bool(str(attrs.get("symbol") or "").strip())
+        if has_id == has_name:
+            raise serializers.ValidationError("必须且只能提供 symbol_id 或 symbol 之一")
+        new_name = str(attrs.get("new_name") or "").strip()
+        if not new_name:
+            raise serializers.ValidationError({"new_name": "new_name 不能为空"})
+        attrs["new_name"] = new_name
+        return attrs
+
+
 class TraceCallPathRequestSerializer(serializers.Serializer):
     repository_id = serializers.UUIDField(required=True)
     branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)

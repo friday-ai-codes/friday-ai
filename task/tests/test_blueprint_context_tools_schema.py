@@ -62,9 +62,9 @@ def test_handler_factory_timeout_and_no_callback() -> None:
 
 
 def test_whitelist_grew_to_nine_without_losing_legacy() -> None:
-    """白名单 7 → 9 → 10 → 11（124 追加 detect_changes）；七个既有工具逐名仍在。"""
-    assert len(KNOWLEDGE_TOOL_SCHEMAS) == 11
-    assert len(knowledge_allowed_tools()) == 11
+    """白名单 7 → 9 → 10 → 11 → 12（126 追加 rename_preview）；七个既有工具逐名仍在。"""
+    assert len(KNOWLEDGE_TOOL_SCHEMAS) == 12
+    assert len(knowledge_allowed_tools()) == 12
     names = [s["name"] for s in KNOWLEDGE_TOOL_SCHEMAS]
     for legacy in _LEGACY_TOOL_NAMES:
         assert legacy in names, f"既有工具 {legacy} 不得丢失"
@@ -72,6 +72,8 @@ def test_whitelist_grew_to_nine_without_losing_legacy() -> None:
         assert f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__{new}" in knowledge_allowed_tools()
     assert "detect_changes" in names
     assert f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__detect_changes" in knowledge_allowed_tools()
+    assert "rename_preview" in names
+    assert f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__rename_preview" in knowledge_allowed_tools()
 
 
 def test_new_tool_schema_shape() -> None:

@@ -108,6 +108,8 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     # Phase 126：ProcessTrace 查询（注册 ≠ 暴露；缺此项 LLM 不可见）
     "list_processes",
     "get_process",
+    # Phase 126：只读 rename_preview（注册 ≠ 暴露；缺此项 LLM 不可见）
+    "rename_preview",
     # 先分析相关性，后创建方案
     "analyze_repository_relevance",
     # 不确定时主动澄清（暴露给所有有索引仓库的项目）

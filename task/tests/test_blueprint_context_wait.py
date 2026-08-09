@@ -414,8 +414,8 @@ def test_literal_prefix_cases() -> None:
 
 
 def test_whitelist_is_ten_and_allowed_tools_match() -> None:
-    assert len(KNOWLEDGE_TOOL_SCHEMAS) == 11
-    assert len(knowledge_allowed_tools()) == 11
+    assert len(KNOWLEDGE_TOOL_SCHEMAS) == 12
+    assert len(knowledge_allowed_tools()) == 12
     assert f"mcp__friday-knowledge__{AWAIT_CONTEXT_TOOL_NAME}" in knowledge_allowed_tools()
     assert "mcp__friday-knowledge__detect_changes" in knowledge_allowed_tools()
 
