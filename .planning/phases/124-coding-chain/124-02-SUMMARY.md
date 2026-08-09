@@ -73,7 +73,7 @@ Each task was committed atomically:
 2. **Task 2 RED: failing formatter assertions** - `7679d9b4` (test)
 3. **Task 2 GREEN: impact_report module** - `1db9d07f` (feat)
 
-**Plan metadata:** _(see final docs commit)_
+**Plan metadata:** `1e17ea43` (docs: complete plan)
 
 ## Files Created/Modified
 
