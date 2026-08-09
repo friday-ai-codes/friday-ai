@@ -900,7 +900,7 @@ _acquire_repo_lock_async = sync_to_async(_acquire_repo_lock)
 | `MultiDiGraph` 装配 + 四档边契约 | `loader.py` | 本仓应用代码零 networkx 使用（仅 llama-index 传递依赖）。RESEARCH §Code Examples 1 的 ORM 查询形状是唯一参照。 |
 | 字节预算准入 + 线性估算常数 | `cache.py` | volar_pool 按条目数、Galaxy 按文件，本仓无按字节的缓存。常数取 `NODE_COST=640 / EDGE_COST=560`（RESEARCH §Byte Estimation 实测标定），估算函数必须是可单测的纯函数。 |
 | in-flight 边构建判定（两条轨 + 超时兜底） | `signature.py` 或 `cache.py` | Galaxy 只回答「数据变了吗」，不回答「边建完了吗」。RESEARCH §Code Examples 3 是唯一参照，且必须同时躲开 Pitfall 4（PENDING 长鸣）与 Pitfall 5（RUNNING 孤儿）。 |
-| 跨仓边端点二次解析（file_path + name → Symbol） | `loader.py` | `CrossRepoApiCall` 两端无 Symbol FK（RESEARCH Pitfall 1）。本仓无同类解析代码。CONTEXT D-06-5 已裁决：解析失败**丢弃 + 计数上报**，不建虚拟节点。 |
+| 跨仓边端点二次解析（file_path + name → Symbol） | `loader.py` | `CrossRepoApiCall` 两端无 Symbol FK（RESEARCH Pitfall 1）。本仓无同类解析代码。CONTEXT D-05 已裁决：解析失败**丢弃 + 计数上报**，不建虚拟节点。 |
 
 ---
 

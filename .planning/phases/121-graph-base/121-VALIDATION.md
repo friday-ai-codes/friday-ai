@@ -54,10 +54,10 @@ mapped: 2026-08-09
 | 121-06-T1 | 121-06 | 4 | GRAPH-01 | T-121-虚假节点 | `CrossRepoApiCall` 按 file+name 解析到符号；解析不上丢弃并计数上报 | unit | `uv run pytest tests/services/code_graph/test_loader.py -k cross_repo -x` | ❌ W0 | ⬜ pending |
 | 121-05-T1 | 121-05 | 3 | GRAPH-01 | — | feature 分支 overlay（base ∪ feature），同文件 feature 覆盖 base | unit | `uv run pytest tests/services/code_graph/test_loader.py -k overlay -x` | ❌ W0 | ⬜ pending |
 | 121-04-T1 | 121-04 | 2 | GRAPH-02 | T-121-半新图 | 签名对 `last_indexed_commit_sha` 变化敏感 | unit | `uv run pytest tests/services/code_graph/test_signature.py -k watermark -x` | ❌ W0 | ⬜ pending |
-| 121-04-T2 | 121-04 | 2 | GRAPH-02 | T-121-半新图 | 签名对**两条**边构建轨各自变化都敏感（D-06-2） | unit | `uv run pytest tests/services/code_graph/test_signature.py -k generation -x` | ❌ W0 | ⬜ pending |
+| 121-04-T2 | 121-04 | 2 | GRAPH-02 | T-121-半新图 | 签名对**两条**边构建轨各自变化都敏感（D-02） | unit | `uv run pytest tests/services/code_graph/test_signature.py -k generation -x` | ❌ W0 | ⬜ pending |
 | 121-04-T1 | 121-04 | 2 | GRAPH-02 | — | 无变更时签名稳定（连算两次相等） | unit | `uv run pytest tests/services/code_graph/test_signature.py -k stable -x` | ❌ W0 | ⬜ pending |
 | 121-08-T2 | 121-08 | 5 | GRAPH-02 | T-121-半新图 | 水位推进 + 轨 B 在途（`Repository.graph_build_status=RUNNING` **且** 新鲜 RUNNING 的 `GraphBuildHistory`，双 mutation 缺一不可）⇒ 拒用缓存 + `partial_edges=True` | unit | `uv run pytest tests/services/code_graph/test_cache.py -k partial -x` | ❌ W0 | ⬜ pending |
-| 121-04-T3 | 121-04 | 2 | GRAPH-02 | T-121-长鸣 | **`graph_build_status=PENDING` 但已终态 ⇒ 不判在途**（D-06-3 回归） | unit | `uv run pytest tests/services/code_graph/test_cache.py -k pending_not_inflight -x` | ❌ W0 | ⬜ pending |
+| 121-04-T3 | 121-04 | 2 | GRAPH-02 | T-121-长鸣 | **`graph_build_status=PENDING` 但已终态 ⇒ 不判在途**（D-03 回归） | unit | `uv run pytest tests/services/code_graph/test_cache.py -k pending_not_inflight -x` | ❌ W0 | ⬜ pending |
 | 121-04-T3 | 121-04 | 2 | GRAPH-02 | T-121-孤儿 | 超时的 `RUNNING` 孤儿行 ⇒ 不判在途 | unit | `uv run pytest tests/services/code_graph/test_cache.py -k orphan -x` | ❌ W0 | ⬜ pending |
 | 121-07-T1 | 121-07 | 3 | GRAPH-03 | T-121-OOM | 字节估算为纯函数，给定 n/e 返回确定值 | unit | `uv run pytest tests/services/code_graph/test_cache.py -k estimate -x` | ❌ W0 | ⬜ pending |
 | 121-07-T2 | 121-07 | 3 | GRAPH-03 | T-121-OOM | 超预算时按 LRU 顺序逐出至 ≤ 预算，发 `code_graph_cache_evicted` | unit | `uv run pytest tests/services/code_graph/test_cache.py -k evict -x` | ❌ W0 | ⬜ pending |
@@ -75,8 +75,8 @@ mapped: 2026-08-09
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Automated Command |
 |---------|------|------|-------------|------------|-----------------|-------------------|
-| 121-01-T1 | 121-01 | 0 | 全部 | T-121-SC | networkx 直接依赖 + 三个 `CODE_GRAPH_*` settings + LOGGING-SPEC §5 登记 `code_graph`（D-06-7） | 见 121-01-PLAN.md Task 1 的 grep 链 |
-| 121-02-T1 | 121-02 | 1 | GRAPH-01 | T-121-静默降级 | 四档置信度枚举与数值映射；`reason` 现推不存（D-06-8） | `uv run pytest tests/services/code_graph/test_model.py -x` |
+| 121-01-T1 | 121-01 | 0 | 全部 | T-121-SC | networkx 直接依赖 + 三个 `CODE_GRAPH_*` settings + LOGGING-SPEC §5 登记 `code_graph`（D-07） | 见 121-01-PLAN.md Task 1 的 grep 链 |
+| 121-02-T1 | 121-02 | 1 | GRAPH-01 | T-121-静默降级 | 四档置信度枚举与数值映射；`reason` 现推不存（D-08） | `uv run pytest tests/services/code_graph/test_model.py -x` |
 | 121-03-T3 | 121-03 | 2 | 全部 | T-121-规范漏筛 | 观测契约守护：包内每个 structlog 调用带 `component="code_graph"` + `category="sampling"` + `code_graph_` 前缀 | `uv run pytest tests/services/code_graph/test_access.py -k observability -x` |
 | 121-06-T2 | 121-06 | 4 | GRAPH-01 | T-121-笛卡尔爆炸 | `ChunkEdge` 走旁挂证据面，绝不进 `MultiDiGraph` 边集 | `uv run pytest tests/services/code_graph/test_loader.py -k chunk_evidence -x` |
 | 121-06-T3 | 121-06 | 4 | GRAPH-03 | T-121-OOM | 按需子图 SQL 侧多跳收敛，查询次数不随仓库规模增长 | `uv run pytest tests/services/code_graph/test_loader.py -k subgraph -x` |
