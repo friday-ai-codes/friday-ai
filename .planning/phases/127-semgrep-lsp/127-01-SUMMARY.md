@@ -48,7 +48,7 @@ patterns-established:
   - "Phase 127 frozen guard lists semgrep_scan/security_scan_report/semgrep_enqueue/orphan_reap"
   - "sample_findings.json uses check_id + extra.severity + fingerprint + nosemgrep note"
 
-requirements-completed: [TAINT-01, TAINT-02, TAINT-03, LSP-01]
+requirements-completed: []  # Wave 0 stubs only — TAINT/LSP stay Pending until 127-02..05 implement
 
 duration: 2min
 completed: 2026-08-10
@@ -78,9 +78,9 @@ completed: 2026-08-10
 Each task was committed atomically:
 
 1. **Task 1: Wave 0 验收测试桩 + Semgrep fixture** - `86a58c40` (test)
-2. **Task 2: VALIDATION 与五 plan 编号对齐** - `da6e05d5` (docs)
+2. **Task 2: VALIDATION 与五 plan 编号对齐** - `da6e05d5` + follow-up `94784bf3` (docs)
 
-**Plan metadata:** (pending docs commit after SUMMARY)
+**Plan metadata:** `b1e15ba6` (docs: complete plan; follow-up docs commit may amend VALIDATION sign-off)
 
 ## Files Created/Modified
 
@@ -107,7 +107,20 @@ Each task was committed atomically:
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Auto-fixed Issues
+
+**1. [Rule 2 - Missing Critical] Do not mark TAINT/LSP requirements complete from Wave 0**
+- **Found during:** Summary / state updates
+- **Issue:** `requirements.mark-complete` would check off TAINT-01..03 / LSP-01 after stubs-only plan
+- **Fix:** Keep REQUIREMENTS Pending; SUMMARY `requirements-completed: []`; STATE decision records the lock
+- **Files modified:** `.planning/REQUIREMENTS.md` (left unchecked), `127-01-SUMMARY.md`, `.planning/STATE.md`
+- **Verification:** REQUIREMENTS checkboxes remain `[ ]` for TAINT/LSP
+- **Committed in:** docs complete commit
+
+---
+
+**Total deviations:** 1 auto-fixed (Rule 2)
+**Impact on plan:** Prevents false requirement completion; no scope creep.
 
 ## Issues Encountered
 
