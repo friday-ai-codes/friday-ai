@@ -206,11 +206,13 @@ Plans:
   3. 门禁文案如实声明 CE 版仅函数内 taint 的边界（不虚假承诺跨函数/跨文件）；Pro 能力经 `SEMGREP_APP_TOKEN`（加密凭证存储）opt-in
   4. server 镜像补齐 Node/Go 运行时，volar/gopls 带可用性探测 + fail-soft 降级 + 孤儿进程清扫；产出开启前后的抽取质量/耗时基准报告，默认值翻转由基准数据决定（本里程碑不盲翻）
 
+**跨相位回访（D-26 / IMPACT-03）：** 生产库 `CrossRepoApiCall` / `ApiCallSite` / `ApiWrapper` **均为 0 行**（`Endpoint` 6,014 行）——上游产出器依赖 volar LSP，而 server 镜像无 Node。Phase 122 的 IMPACT-03 四条分支**全部由合成数据覆盖**，跨仓路径**未经任何真实数据验证**；121-10 记的「样本不足」实为**样本为零**，命中率在本相位补齐 LSP 并重建索引之前根本不可测。本相位落地 LSP 并重建索引后，**必须回来用真实样本复验 IMPACT-03** 的四条分支，并测出 `(file_path, name)` 二次解析的真实命中率。
+
 **Plans**: TBD
 
 **执行顺序（依赖链）:** 121（地基，绝对先行——缓存四件套 + 边准入 + 读取层鉴权/exclusion 收口必须做进地基）→ 122（核心工具面，双面接线模式定型）→ 123（detect_changes 本体）→ 124（编码链集成，动 task/workflow 两条链单独控风险）→ 125（社区先于执行流，Process 需要 community 分类）→ 126（执行流 + 独立小项收编）→ 127（Semgrep/LSP 独立轨道收尾，避开与 125/126 同时引入内存大户）。其中 125 只依赖 121，可视执行情况与 122–124 并行推进。
 
-需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；领域调研与相位依据见 [research/SUMMARY.md](./research/SUMMARY.md)（含 Louvain vs Leiden 裁决、缓存四件套、裸名边准入纪律、Semgrep 死亡螺旋规避）。**跨仓记账:** `mcp` npm 包需为本里程碑新增的 MCP 工具补条目并发版（另一仓库改动，v0.20.0 已有同款缺口在案）。
+需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；领域调研与相位依据见 [research/SUMMARY.md](./research/SUMMARY.md)（含 Louvain vs Leiden 裁决、缓存四件套、裸名边准入纪律、Semgrep 死亡螺旋规避）。**跨仓记账:** `test_mcp_package_tools_match_server_snapshot` 在 HEAD 上已红着 **5** 项漂移（`apply_repo_association` / `generate_requirement_spec` / `get_repo_research` / `route_blueprint_repos` / `start_repo_research`，来自阶段沙箱工具，与 Phase 122 无关）；Phase 122 新增 `impact_analysis` / `trace_call_path` 两个 MCP 工具后变为 **7** 项。按 D-27 **不修** `mcp` submodule（并发会话占用 + 跨仓改动另批发版），该守护继续红着并列入相位门的「已知既有失败」白名单（另一仓库改动，v0.20.0 已有同款缺口在案）。
 
 ### ✅ v0.21.0 蓝图过程可见与返工闭环 (Phases 117–120) — COMPLETE 2026-08-05（未打 tag）— 验证 tech_debt
 
