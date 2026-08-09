@@ -61,6 +61,7 @@ import time
 from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import Enum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
@@ -121,6 +122,31 @@ _CONFIDENCE_TIER_RANK: Final[Mapping[EdgeConfidence, int]] = MappingProxyType(
 # 前端的 ``*.spec.ts`` / ``*.test.ts``。
 _TEST_PATH_HINTS: Final[tuple[str, ...]] = ("_test.", "test_", "/tests/", ".spec.", ".test.")
 
+# 风险四级的阈值表（D-15）。逐条解释每个数从哪来：
+#
+#   - ``critical_d1 = 20``：d1 到 20 个直接调用方，改动几乎必然要跨多个模块协调，
+#     已经不是「改完跑一下测试」的量级。
+#   - ``critical_cross_repo_d1 = 5``：穿仓时门槛压到 1/4——跨仓改动要协调另一个仓的
+#     发布节奏，5 个调用方的协调成本已经接近同仓 20 个。
+#   - ``high_d1 = 8``：d1 到 8 个时单人一次改完的把握明显下降。
+#   - ``medium_d1 = 3``：3 是「不止一两处」的最小自然数，用来把「顺手改」与「需要
+#     过一遍调用方」区分开。
+#
+# 🚨 **这四个数是未经真实数据校准的初值**，⛔ 不得表述成经验结论。它们来自上面那些
+#    定性推理，没有任何一条对应实测分布。校准需要工具上线后的真实使用样本（「agent
+#    看到某个等级之后实际做了什么」），届时照 121-10 的复校范式回来改——
+#    ``LOW_RESOLUTION_THRESHOLD`` 由 0.6 校到 0.10 就是那个范式：拿生产分布跑一遍，
+#    发现原值命中 218/218（等于永远触发、信号失效），据此定到 p10 与 p50 之间。
+#    在拿到同等分布之前，本表只是一个**可解释、可复现**的确定性判据，不是最优判据。
+RISK_THRESHOLDS: Final[Mapping[str, int]] = MappingProxyType(
+    {
+        "critical_d1": 20,
+        "critical_cross_repo_d1": 5,
+        "high_d1": 8,
+        "medium_d1": 3,
+    }
+)
+
 # 事件名常量（形态对齐 ``signature.py`` / ``symbol_resolve.py``）。
 # ⚠️ 前缀不得缩写：``code_graph_`` 是本包观测契约的强制前缀。
 _EVENT_IMPACT_ANALYZED: Final[str] = "code_graph_impact_analyzed"
@@ -130,8 +156,24 @@ __all__ = [
     "DEFAULT_MAX_NODES",
     "DEFAULT_RESULT_LIMIT",
     "DEPTH_LABELS",
+    "RISK_THRESHOLDS",
+    "RiskLevel",
     "analyze_impact",
+    "grade_risk",
 ]
+
+
+class RiskLevel(str, Enum):
+    """改动风险四级（D-15）。
+
+    取 ``(str, Enum)`` 而非 ``models.TextChoices``：本模块是 service 层契约、不落库
+    （写法对齐 ``model.py::EdgeKind``）。
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
 
 
 # 埋点自成函数、事件名常量直接写在 ``logger.debug`` 的第一个位置实参上，
@@ -199,6 +241,61 @@ def _edge_score(attrs: Mapping[str, Any]) -> float:
     if confidence is EdgeConfidence.CROSS_REPO:
         return confidence_score(confidence, match_confidence=attrs["match_confidence"])
     return confidence_score(confidence)
+
+
+def grade_risk(*, d1_count: int, crosses_repo: bool, best_path_tier: int) -> RiskLevel:
+    """确定性风险分级，输入只有三个量（D-15），⛔ 不走 LLM、不引入不可复现的判断。
+
+    两步走，顺序不能颠倒：
+
+    **① 阈值表初判**（CRITICAL → HIGH → MEDIUM → LOW，取先命中的那一档）::
+
+        CRITICAL   d1 ≥ 20，或（穿仓 且 d1 ≥ 5）
+        HIGH       d1 ≥ 8，或穿仓
+        MEDIUM     d1 ≥ 3
+        LOW        其余
+
+    **② D-29 封顶**：若 ``best_path_tier`` 不超过 ``bare_name`` 档（即全部到达路径上
+    都**没有出现过** ``resolved`` 或 ``cross_repo`` 这两档强证据），把结果封顶为
+    :attr:`RiskLevel.MEDIUM`，不得判 HIGH/CRITICAL。
+
+    封顶为什么必须在阈值表**之后**：阈值表数的是「有多少条」，封顶问的是「这些条有多
+    可信」，两个正交的量，先算数量再按证据强度压回来才对。反过来先封顶再数数量，等于
+    让证据强度去改变计数，说不通。
+
+    封顶为什么必要：弱证据不该产生强告警。本仓 81% 的调用边只有名字兜底，一个常见函数
+    名能在几十个文件里凭空撞出 d1，不封顶的话这种纯假阳性会直接顶到 CRITICAL——研究
+    Pitfall 1「裸名边假阳性灾难」防的就是这个。**告警一旦长鸣就等于没有**，agent 会很快
+    学会无视 CRITICAL 这个词。
+
+    ⚠️ 封顶是**只降不升**的：初判为 LOW 时不会被「封」到 MEDIUM。弱证据是压低结论的
+    理由，不是抬高结论的理由。
+
+    这条规则同时**修正了 D-15 的自相矛盾**：原表声称输入有三个量，实际只用了 d1 数量与
+    是否穿仓两个，第三个「路径最高置信档」收了却不用。自此它有了真实判据。
+
+    :param d1_count: 直接调用方（d1 层）的条数。
+    :param crosses_repo: 本次影响面是否穿了仓（由壳层透传，内核不感知跨仓）。
+    :param best_path_tier: 全部到达路径中出现过的**最高**置信档，取
+        :data:`_CONFIDENCE_TIER_RANK` 的序值。无结果时取最弱档。
+    """
+    if d1_count >= RISK_THRESHOLDS["critical_d1"] or (
+        crosses_repo and d1_count >= RISK_THRESHOLDS["critical_cross_repo_d1"]
+    ):
+        level = RiskLevel.CRITICAL
+    elif d1_count >= RISK_THRESHOLDS["high_d1"] or crosses_repo:
+        level = RiskLevel.HIGH
+    elif d1_count >= RISK_THRESHOLDS["medium_d1"]:
+        level = RiskLevel.MEDIUM
+    else:
+        level = RiskLevel.LOW
+
+    if best_path_tier <= _CONFIDENCE_TIER_RANK[EdgeConfidence.BARE_NAME] and level in (
+        RiskLevel.HIGH,
+        RiskLevel.CRITICAL,
+    ):
+        return RiskLevel.MEDIUM
+    return level
 
 
 def _bare_name_allowed(*, include_low_confidence: bool, min_confidence: float) -> bool:
@@ -441,20 +538,46 @@ def analyze_impact(
     if exclude_test_files:
         items = [item for item in items if not _looks_like_test_file(item["file_path"])]
 
-    # 排序键必须在截断之前算完（D-16），否则截掉的可能正是最该看的那几条。
-    # 第三键 ``symbol_id`` 保证同深度同置信度时的顺序在不同 worker 上可复现。
+    # 🚨 排序键必须在截断**之前**算完（D-16），否则截掉的可能正是最该看的那几条
+    # ——先截断再排序，200 条里留下的会是遍历顺序里的前 200 个，与「深度浅、置信高」
+    # 毫无关系。第三键 ``symbol_id`` 保证同深度同置信度时的顺序在不同 worker 上可复现。
     items.sort(key=lambda item: (item["depth"], -item["path_confidence"], item["symbol_id"]))
 
+    total_found = len(items)
+    returned_items = items[: max(limit, 0)]
     groups: dict[int, list[dict[str, Any]]] = {
-        depth: [item for item in items if item["depth"] == depth]
+        depth: [item for item in returned_items if item["depth"] == depth]
         for depth in range(1, max_depth + 1)
     }
+
+    # 每一层**被截掉**的条数（⛔ 不是每层总数）——agent 要回答的是「我看到的是不是全部」，
+    # 而在深度分组的语境下它还得知道「缺的那些主要缺在哪一层」：d3 被截 300 条与 d1 被截
+    # 300 条对「这次改动有多危险」是完全不同的两件事。
+    returned_by_depth: dict[int, int] = {depth: len(rows) for depth, rows in groups.items()}
+    truncated_by_depth: dict[int, int] = {}
+    for depth in range(1, max_depth + 1):
+        found = sum(1 for item in items if item["depth"] == depth)
+        truncated_by_depth[depth] = found - returned_by_depth.get(depth, 0)
+
+    # D-29 的第三个输入：全部到达路径中出现过的最高置信档。取 ``items``（截断**前**的
+    # 全集）而不是 ``returned_items``——风险等级描述的是这次改动的真实影响面，不该因为
+    # 输出被截到 200 条就跟着变。无结果时取最弱档：没有任何证据时不该反过来给出
+    # 「证据很强」的输入。
+    best_path_tier = (
+        max(item["path_top_tier"] for item in items)
+        if items
+        else _CONFIDENCE_TIER_RANK[EdgeConfidence.CHUNK_LEVEL]
+    )
+    d1_count = returned_by_depth.get(1, 0) + truncated_by_depth.get(1, 0)
+    risk = grade_risk(
+        d1_count=d1_count, crosses_repo=crosses_repo, best_path_tier=best_path_tier
+    )
 
     duration_ms = int((time.perf_counter() - started) * 1000)
     _log_impact_analyzed(
         depth=max_depth,
-        returned=len(items),
-        total_found=len(items),
+        returned=len(returned_items),
+        total_found=total_found,
         duration_ms=duration_ms,
     )
 
@@ -469,7 +592,36 @@ def analyze_impact(
         # 是自己把第二道闸关着，而不是「这个符号确实没有弱证据调用方」。
         "bare_name_included": allow_bare_name,
         "crosses_repo": crosses_repo,
-        "truncated_by_nodes": truncated_by_nodes,
-        "items": items,
+        "risk": risk.value,
+        # 阈值可解释是 IMPACT-04 的明文要求：把三个输入与封顶是否生效一并给出，
+        # agent 才能看懂这个等级是怎么算出来的，而不是收到一个不可追问的标签。
+        "risk_inputs": {
+            "d1_count": d1_count,
+            "crosses_repo": crosses_repo,
+            "best_path_tier": best_path_tier,
+            "capped_by_weak_evidence": risk is RiskLevel.MEDIUM
+            and grade_risk(
+                d1_count=d1_count,
+                crosses_repo=crosses_repo,
+                best_path_tier=_CONFIDENCE_TIER_RANK[EdgeConfidence.RESOLVED],
+            )
+            in (RiskLevel.HIGH, RiskLevel.CRITICAL),
+        },
+        "items": returned_items,
         "groups": groups,
+        "summary": {
+            "total_found": total_found,
+            "returned": len(returned_items),
+            "truncated_by_depth": truncated_by_depth,
+            "truncated_by_nodes": truncated_by_nodes,
+            "result_limit": limit,
+        },
+        # ⬇️ 两个**预留字段位**，本相位只占位、不实现。
+        # ``affected_processes``：叙事层（「这次改动会影响哪几条业务流程」），归 Phase 126 回填。
+        # ``cross_repo``：跨仓条目，由壳层 122-06 / 122-07 填充。
+        # 🚨 内核**绝不**根据图内 ``kind == "cross_repo"`` 的边往这里放东西——D-25 实测确认
+        #    ``loader._load_cross_repo_edges`` 只在两端同属本仓时才建边，图里那一档边
+        #    **从来不跨仓**；照着它填，填进去的会是一堆同仓边被误标成跨仓。
+        "affected_processes": [],
+        "cross_repo": [],
     }

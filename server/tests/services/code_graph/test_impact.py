@@ -14,7 +14,13 @@ import networkx as nx
 import pytest
 
 from services.code_graph import EdgeConfidence, EdgeKind, derive_reason
-from services.code_graph.impact import analyze_impact
+from services.code_graph.impact import (
+    DEFAULT_RESULT_LIMIT,
+    RISK_THRESHOLDS,
+    RiskLevel,
+    analyze_impact,
+    grade_risk,
+)
 
 
 def _ids(result: dict, depth: int) -> set[str]:
@@ -260,23 +266,122 @@ def test_bare_name_requires_both_gates(known_topology: nx.MultiDiGraph) -> None:
     assert _bare_name_allowed(include_low_confidence=False, min_confidence=0.0) is False
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
 def test_risk_levels() -> None:
     """四级风险分级在阈值边界（d1 = 2/3/7/8/19/20 与穿仓组合）上逐点正确。
 
+    ⚠️ 走**表内循环**而不是 ``parametrize``：本文件的节点数是 122-01 定下的验收口径
+    （9 passed / 1 skipped），参数化会把它撑成几十个节点。
+
     （Req: IMPACT-04, 决策: D-15 / D-29）
     """
-    pytest.fail("Wave 0 桩")
+    from services.code_graph.impact import _CONFIDENCE_TIER_RANK
+
+    resolved_tier = _CONFIDENCE_TIER_RANK[EdgeConfidence.RESOLVED]
+
+    # (d1_count, crosses_repo) -> 期望等级。best_path_tier 取 RESOLVED 档，不触发封顶。
+    expected = {
+        (2, False): RiskLevel.LOW,
+        (3, False): RiskLevel.MEDIUM,
+        (7, False): RiskLevel.MEDIUM,
+        (8, False): RiskLevel.HIGH,
+        (19, False): RiskLevel.HIGH,
+        (20, False): RiskLevel.CRITICAL,
+        (2, True): RiskLevel.HIGH,
+        (3, True): RiskLevel.HIGH,
+        (7, True): RiskLevel.CRITICAL,
+        (8, True): RiskLevel.CRITICAL,
+        (19, True): RiskLevel.CRITICAL,
+        (20, True): RiskLevel.CRITICAL,
+    }
+    for (d1_count, crosses_repo), level in expected.items():
+        assert (
+            grade_risk(
+                d1_count=d1_count,
+                crosses_repo=crosses_repo,
+                best_path_tier=resolved_tier,
+            )
+            is level
+        ), f"d1={d1_count} crosses_repo={crosses_repo} 的等级不是 {level}"
+
+    # D-29 封顶：全路径最高档只到 bare_name 时，再大的 d1、再加穿仓也只能是 MEDIUM。
+    assert (
+        grade_risk(
+            d1_count=50,
+            crosses_repo=True,
+            best_path_tier=_CONFIDENCE_TIER_RANK[EdgeConfidence.BARE_NAME],
+        )
+        is RiskLevel.MEDIUM
+    )
+    # 把档位提到 cross_repo，同样的输入立刻回到 CRITICAL —— 证明封顶规则真的在起作用，
+    # 而不是那条分支恒假、MEDIUM 只是碰巧从阈值表里掉出来的。
+    assert (
+        grade_risk(
+            d1_count=50,
+            crosses_repo=True,
+            best_path_tier=_CONFIDENCE_TIER_RANK[EdgeConfidence.CROSS_REPO],
+        )
+        is RiskLevel.CRITICAL
+    )
+    # 封顶只降不升：弱证据是压低结论的理由，不是抬高结论的理由。
+    assert (
+        grade_risk(
+            d1_count=0,
+            crosses_repo=False,
+            best_path_tier=_CONFIDENCE_TIER_RANK[EdgeConfidence.BARE_NAME],
+        )
+        is RiskLevel.LOW
+    )
+
+    assert set(RISK_THRESHOLDS) == {
+        "critical_d1",
+        "critical_cross_repo_d1",
+        "high_d1",
+        "medium_d1",
+    }
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-03 落地")
-def test_truncation_summary() -> None:
+def test_truncation_summary(hub_topology) -> None:
     """截断：``total_found``/``returned``/``truncated_by_depth`` 计数正确；排序键为
     「深度升序 + 置信度降序」且在截断前生效。
 
+    250 扇入取自生产分布（解析边入度 p99 = 25 / max = 2,803）——200 条上限在热点符号上
+    必然触发，这条用例测的是会被真实走到的路径，不是理论边界。
+
     （Req: IMPACT-04, 决策: D-16）
     """
-    pytest.fail("Wave 0 桩")
+    graph = hub_topology(fan_in=250)
+
+    result = analyze_impact(graph, "hub")
+    summary = result["summary"]
+
+    # d1 = 250 个直接调用方，d2 = 250 个二级调用方。
+    assert summary["total_found"] >= 250
+    assert summary["returned"] == DEFAULT_RESULT_LIMIT == 200
+    assert len(result["items"]) == summary["returned"]
+    # 三个计数自洽：被截掉的总数 = 找到的 − 返回的。
+    assert (
+        sum(summary["truncated_by_depth"].values())
+        == summary["total_found"] - summary["returned"]
+    )
+    assert summary["truncated_by_nodes"] is False
+    assert summary["result_limit"] == 200
+    # 风险等级用的是**截断前**的 d1 全量，不该因为输出被截到 200 条就跟着变小。
+    assert result["risk_inputs"]["d1_count"] == 250
+    assert result["risk"] == RiskLevel.CRITICAL.value
+
+    # 预留字段位（本相位只占位，Phase 126 / 122-06 分别回填）。
+    assert result["affected_processes"] == []
+    assert result["cross_repo"] == []
+
+    # limit=10：返回的 10 条**全部**是 d1，且 path_confidence 非递增
+    # —— 证明排序在截断之前生效。先截后排的实现会在这里混进 d2 的条目。
+    small = analyze_impact(graph, "hub", limit=10)
+    assert small["summary"]["returned"] == 10
+    assert [item["depth"] for item in small["items"]] == [1] * 10
+    confidences = [item["path_confidence"] for item in small["items"]]
+    assert confidences == sorted(confidences, reverse=True)
+    assert small["summary"]["truncated_by_depth"][1] == 240
+    assert small["summary"]["truncated_by_depth"][2] == 250
 
 
 @pytest.mark.skip(reason="Wave 0 桩：由 122-06 落地")
