@@ -121,7 +121,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 122-06-PLAN.md — W3 `code_graph_cross_repo.py`：`CrossRepoApiCall` ORM 直查的跨仓一跳（D-25）+ 逐仓权限复核 + 三种显式条目
+- [x] 122-06-PLAN.md — W3 `code_graph_cross_repo.py`：`CrossRepoApiCall` ORM 直查的跨仓一跳（D-25）+ 逐仓权限复核 + 三种显式条目
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
