@@ -32,6 +32,7 @@ _TOP_FILES: Final[int] = 15
 _TOP_SYMBOLS_PER_FILE: Final[int] = 8
 _TOP_IMPACT_SEEDS: Final[int] = 10
 _TOP_AFFECTED_ITEMS_PER_GROUP: Final[int] = 8
+_TOP_AFFECTED_PROCESSES: Final[int] = 10
 
 _RISK_RANK: Final[dict[str, int]] = {
     "low": 1,
@@ -238,7 +239,38 @@ def _render_affected(envelope: Mapping[str, Any]) -> list[str]:
     omitted = max(0, len(_as_list(envelope.get("impacts"))) - len(impacts))
     if omitted:
         lines.append(f"- … 另有 {omitted} 个 impact 种子未列出（top-{_TOP_IMPACT_SEEDS}）")
+
+    lines.extend(_render_affected_processes(envelope))
     lines.append("")
+    return lines
+
+
+def _render_affected_processes(envelope: Mapping[str, Any]) -> list[str]:
+    """Affected 小节内的「受影响执行流」清单（D-08）；空则短声明不编造。"""
+    processes = _as_list(envelope.get("affected_processes"))
+    lines = ["", "#### 受影响执行流", ""]
+    if not processes:
+        lines.append("- 暂无匹配执行流 / 未构建 Process")
+        return lines
+
+    shown = processes[:_TOP_AFFECTED_PROCESSES]
+    for row in shown:
+        m = _as_mapping(row)
+        name = str(m.get("name") or m.get("process_key") or "?")
+        step = m.get("step")
+        total = m.get("total_steps")
+        detail = ""
+        if isinstance(step, int) and isinstance(total, int):
+            detail = f"（step {step}/{total}）"
+        elif isinstance(total, int):
+            detail = f"（{total} steps）"
+        lines.append(f"- {name}{detail}")
+
+    omitted = max(0, len(processes) - len(shown))
+    if omitted:
+        lines.append(
+            f"- … 另有 {omitted} 条执行流未列出（top-{_TOP_AFFECTED_PROCESSES}）"
+        )
     return lines
 
 
@@ -282,8 +314,11 @@ def _render_recommendations(envelope: Mapping[str, Any]) -> list[str]:
         lines.append("- 建议重索引后再信行号交叠结果（索引落后）")
     if graph.get("degraded"):
         lines.append("- 图服务处于降级态，影响面可能不完整")
-    # ⛔ 不编造 affected_processes Process 叙事（Phase 126）
-    lines.append("- 执行流叙事（affected_processes）待 Phase 126，本报告不编造 Process 影响")
+    processes = _as_list(envelope.get("affected_processes"))
+    if processes:
+        lines.append("- 复核受影响执行流中标注的步骤，确认跨社区路径是否需同步改动")
+    else:
+        lines.append("- 暂无匹配执行流；若业务路径应受影响，请先构建 Process 后再信本段")
     if len(lines) == 2:
         lines.append("- 按常规 code review 复核变更影响即可")
     lines.append("")
