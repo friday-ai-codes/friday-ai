@@ -292,11 +292,15 @@ async def test_peer_unavailable_fail_soft(indexed_repo, cross_repo_call_factory)
     （Req: IMPACT-03, 决策: D-14）
     """
     from codegraph.models import Symbol
-    from services.code_graph import GraphBuildTimeout, GraphNotIndexed
+    from repositories.models import IndexStatus
+    from services.code_graph import GraphBuildTimeout
     from services.code_graph_cross_repo import collect_cross_repo_impact
 
     def _seed() -> tuple:
+        # 未索引对端由 ensure_repository_readable 直接判出（HI-01），不必再 mock fetch。
         bad = _make_peer_repo(name="peer-unindexed", sha_char="d")
+        bad.index_status = IndexStatus.NOT_INDEXED
+        bad.save(update_fields=["index_status"])
         good = _make_peer_repo(name="peer-healthy", sha_char="e")
         endpoint_file = "src/api/views.py"
         handler_name = "order_create"
@@ -342,7 +346,7 @@ async def test_peer_unavailable_fail_soft(indexed_repo, cross_repo_call_factory)
         seed_name="goodCaller",
     )
 
-    async def _fetch_not_indexed(
+    async def _fetch_good_only(
         repo_id,
         branch,
         *,
@@ -351,13 +355,12 @@ async def test_peer_unavailable_fail_soft(indexed_repo, cross_repo_call_factory)
         depth,
         include_low_confidence=False,
     ):
-        if str(repo_id) == bad_id:
-            raise GraphNotIndexed("仓库尚未建立索引")
+        assert str(repo_id) == good_id, "未索引对端不得走到 fetch_graph_for_tool"
         return good_graph
 
     with mock.patch(
         "services.code_graph_cross_repo.fetch_graph_for_tool",
-        _fetch_not_indexed,
+        _fetch_good_only,
     ):
         result = await collect_cross_repo_impact(
             local_repository_id=str(indexed_repo.id),
@@ -379,6 +382,23 @@ async def test_peer_unavailable_fail_soft(indexed_repo, cross_repo_call_factory)
         "repository_id": bad_id,
         "unavailable_reason": "repository_not_indexed",
     }
+
+    # GraphBuildTimeout：对端已索引且 call site 可解析，失败发生在取图阶段。
+    def _reindex_bad_with_symbol() -> str:
+        bad.index_status = IndexStatus.INDEXED
+        bad.save(update_fields=["index_status"])
+        timeout_seed = Symbol.objects.create(
+            repository=bad,
+            branch_name="",
+            name="badCaller",
+            symbol_type="FUNCTION",
+            file_path="web/src/pages/bad.ts",
+            start_line=1,
+            end_line=10,
+        )
+        return str(timeout_seed.id)
+
+    await sync_to_async(_reindex_bad_with_symbol)()
 
     async def _fetch_timeout(
         repo_id,
@@ -410,6 +430,60 @@ async def test_peer_unavailable_fail_soft(indexed_repo, cross_repo_call_factory)
     timeout_unavailable = [e for e in timeout_result if "unavailable_reason" in e]
     assert len(timeout_unavailable) == 1
     assert timeout_unavailable[0]["unavailable_reason"] == "graph_build_timeout"
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_unresolved_call_sites_skip_empty_seed_fetch(
+    indexed_repo, cross_repo_call_factory
+) -> None:
+    """全部 call site 未解析 ⇒ 成功条目带 ``call_sites_unresolved``，⛔ 不取空种子全量图。
+
+    （HI-02）
+    """
+    from services.code_graph_cross_repo import collect_cross_repo_impact
+
+    def _seed() -> tuple:
+        peer = _make_peer_repo(name="peer-unresolved-only", sha_char="a")
+        endpoint_file = "src/api/views.py"
+        handler_name = "order_create"
+        cross_repo_call_factory(
+            peer,
+            caller_file="web/src/pages/missing.ts",
+            caller_function="noSuchCaller",
+            endpoint_file=endpoint_file,
+            handler_name=handler_name,
+            match_confidence=0.55,
+            caller_line=3,
+            endpoint_repository=indexed_repo,
+        )
+        return peer, endpoint_file, handler_name
+
+    peer, endpoint_file, handler_name = await sync_to_async(_seed)()
+    peer_id = str(peer.id)
+    fetch_spy = mock.AsyncMock(side_effect=AssertionError("不得 fetch 空种子全量图"))
+
+    with mock.patch(
+        "services.code_graph_cross_repo.fetch_graph_for_tool",
+        fetch_spy,
+    ):
+        result = await collect_cross_repo_impact(
+            local_repository_id=str(indexed_repo.id),
+            symbol_file_path=endpoint_file,
+            symbol_name=handler_name,
+            user=None,
+            max_hops=1,
+            max_depth=3,
+            min_confidence=0.0,
+        )
+
+    assert fetch_spy.await_count == 0
+    assert len(result) == 1
+    entry = result[0]
+    assert entry["repository_id"] == peer_id
+    assert entry["unresolved_call_sites"] == 1
+    assert entry["reason"] == "call_sites_unresolved"
+    assert entry["impact"]["summary"]["total_found"] == 0
+    assert "unavailable_reason" not in entry
 
 
 @pytest.mark.django_db(transaction=True)
