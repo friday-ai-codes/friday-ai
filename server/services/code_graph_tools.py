@@ -29,7 +29,8 @@ test_observability_contract`` 原先只 glob 包内 ``*.py``，本文件因此�
 - :func:`resolve_symbol_candidates` / :func:`resolution_to_payload` —— 取图**之前**的
   ORM 侧符号解析与重名候选（D-19）。
 
-上半层（``run_impact`` / ``run_trace`` 两个唯一编排入口）由 122-07 追加到本文件。
+上半层（:func:`run_impact` / :func:`run_trace`）是两个壳共用的**唯一**编排入口
+（D-21）：壳只做校验 → 调它 → 渲染 → 留痕，逻辑不许在壳里分叉。
 
 边界与已知翻车点
 ================
@@ -69,6 +70,7 @@ import structlog
 
 from services.code_graph import (
     LOW_RESOLUTION_THRESHOLD,
+    REDACTED_REPOSITORY,
     CodeGraph,
     GraphAccessDenied,
     GraphBuildFailed,
@@ -78,10 +80,18 @@ from services.code_graph import (
     GraphNotIndexed,
     get_graph_service,
 )
+from services.code_graph.impact import (
+    DEFAULT_MAX_DEPTH,
+    DEFAULT_RESULT_LIMIT,
+    RiskLevel,
+    analyze_impact,
+    grade_risk,
+)
 from services.code_graph.symbol_resolve import (
     CANDIDATE_LIMIT,
     SymbolCandidate,
     SymbolResolution,
+    resolve_symbol_in_graph,
 )
 
 logger = structlog.get_logger(__name__)
@@ -123,6 +133,7 @@ __all__ = [
     "graph_error_to_tool_error",
     "resolution_to_payload",
     "resolve_symbol_candidates",
+    "run_impact",
     "staleness_payload",
 ]
 
@@ -591,4 +602,236 @@ def resolution_to_payload(resolution: SymbolResolution) -> dict[str, Any]:
             if ambiguous
             else ""
         ),
+    }
+
+
+def _branch_label(repo: Any, graph_branch: str | None) -> str:
+    """输出信封上的分支展示名：feature 用 ``graph_branch``，否则回退 base/default。"""
+    if graph_branch:
+        return graph_branch
+    return getattr(repo, "base_branch", None) or getattr(repo, "default_branch", "") or ""
+
+
+def _query_descriptor(
+    *,
+    symbol_id: str | None,
+    symbol: str | None,
+    file_path: str | None,
+    symbol_type: str | None,
+) -> dict[str, Any]:
+    """落空 / 歧义响应里回显的查询描述，便于 agent 对照自己刚发的参数。"""
+    return {
+        "symbol_id": symbol_id,
+        "symbol": symbol,
+        "file_path": file_path,
+        "symbol_type": symbol_type,
+    }
+
+
+def _seed_from_graph(graph: Any, symbol_id: str) -> dict[str, Any]:
+    """从图节点属性抽出种子描述块。"""
+    attrs = graph.nodes[symbol_id]
+    return {
+        "symbol_id": symbol_id,
+        "name": attrs.get("name", ""),
+        "symbol_type": attrs.get("symbol_type", ""),
+        "file_path": attrs.get("file_path", ""),
+        "start_line": int(attrs.get("start_line") or 0),
+    }
+
+
+def _crosses_repo_from_entries(cross: Sequence[Mapping[str, Any]]) -> bool:
+    """穿仓是否成立：任一成功条目或折叠条目即可（unavailable 不算）。
+
+    成功条目带 ``impact``；折叠条目只有 ``repository == REDACTED_REPOSITORY``
+    （D-30，无 ``affected_count``）。unavailable 表示「权限已过但对端图不可用」，
+    不算进风险分级的穿仓输入——那会把一次临时故障抬成 HIGH。
+    """
+    return any(
+        "impact" in entry or entry.get("repository") == REDACTED_REPOSITORY
+        for entry in cross
+    )
+
+
+def _regrade_with_cross_repo(
+    impact: Mapping[str, Any], *, crosses_repo: bool
+) -> tuple[str, dict[str, Any]]:
+    """用跨仓一跳结果重算 ``risk_level`` 与 ``risk_inputs``（D-15 第二个输入）。"""
+    d1_count = int(impact["risk_inputs"]["d1_count"])
+    best_path_tier = int(impact["risk_inputs"]["best_path_tier"])
+    risk = grade_risk(
+        d1_count=d1_count,
+        crosses_repo=crosses_repo,
+        best_path_tier=best_path_tier,
+    )
+    # 「若证据很强会不会更高」——用 resolved 档序 3 做对照，与内核同口径。
+    uncapped = grade_risk(
+        d1_count=d1_count, crosses_repo=crosses_repo, best_path_tier=3
+    )
+    risk_inputs = {
+        "d1_count": d1_count,
+        "crosses_repo": crosses_repo,
+        "best_path_tier": best_path_tier,
+        "capped_by_weak_evidence": risk is RiskLevel.MEDIUM
+        and uncapped in (RiskLevel.HIGH, RiskLevel.CRITICAL),
+    }
+    return risk.value, risk_inputs
+
+
+async def run_impact(
+    *,
+    repository_id: str,
+    repo: Any,
+    graph_branch: str | None,
+    user: Any,
+    symbol_id: str | None = None,
+    symbol: str | None = None,
+    file_path: str | None = None,
+    symbol_type: str | None = None,
+    max_depth: int = DEFAULT_MAX_DEPTH,
+    min_confidence: float = 1.0,
+    include_low_confidence: bool = False,
+    limit: int = DEFAULT_RESULT_LIMIT,
+    max_cross_repo_hops: int | None = None,
+    exclude_test_files: bool = False,
+) -> dict[str, Any]:
+    """影响面分析的**唯一**编排入口——MCP 与对话两面都只调这一个函数（D-21）。
+
+    ``ok`` / ``error_code`` / ``error`` 三个键构成两面共用的失败语义：同一故障在
+    两侧必须落成同一形状，⛔ 不许一面折成空结果、一面报工具坏了。
+
+    ``GraphError``（及子类）是**唯一**从本函数向上冒泡的异常类型——原样上抛，由壳
+    层调 :func:`graph_error_to_tool_error` 翻译；其余一切失败（未找到 / 重名 /
+    不在图内）都在 ``ok=False`` 里表达。``ok=False`` 且 ``error_code`` 为
+    ``ambiguous_symbol`` 时是一次**成功的工具响应**（把消歧权交回 agent），不是
+    工具故障（D-19）。
+
+    :param user: **必填**关键字参数。两面的用户来源不同且无共同抽象，在此收敛为
+        显式入参，一路透传到取图与跨仓一跳的权限复核。
+    :param repo: 已经过索引校验的 ``Repository`` 实例，只用于
+        :func:`staleness_payload`。
+    :param graph_branch: ``None`` 表示 base 分支（与 MCP
+        ``_resolve_graph_branch`` 同口径）；传给取图时转成 ``""``。
+    """
+    # 延迟导入：``code_graph_cross_repo`` 在模块顶层反向依赖本文件的取图原语，
+    # 顶层互引会在任一侧首次 import 时炸成部分初始化。
+    from services.code_graph_cross_repo import (
+        DEFAULT_MAX_CROSS_REPO_HOPS,
+        collect_cross_repo_impact,
+    )
+
+    if max_cross_repo_hops is None:
+        max_cross_repo_hops = DEFAULT_MAX_CROSS_REPO_HOPS
+
+    query = _query_descriptor(
+        symbol_id=symbol_id,
+        symbol=symbol,
+        file_path=file_path,
+        symbol_type=symbol_type,
+    )
+    branch_names = ["", graph_branch] if graph_branch else [""]
+
+    # ① ORM 先行解析（D-24 鸡生蛋：取图需要种子，解析却要在取图之前）。
+    resolution = await resolve_symbol_candidates(
+        repository_id=repository_id,
+        branch_names=branch_names,
+        symbol_id=symbol_id,
+        name=symbol,
+        file_path=file_path,
+        symbol_type=symbol_type,
+    )
+    if resolution.total_candidates == 0:
+        return {
+            "ok": False,
+            "error_code": "symbol_not_found",
+            "error": "未找到匹配的符号；请检查符号名 / symbol_id / file_path",
+            "query": query,
+        }
+    if resolution.candidates:
+        # 🚨 在取图之前短路（D-19）——重名是主路径，白建一张图没有意义。
+        return {
+            "ok": False,
+            "error_code": "ambiguous_symbol",
+            "error": "符号名不唯一；请带 symbol_id 重试，或补 file_path / symbol_type 收窄",
+            "query": query,
+            **resolution_to_payload(resolution),
+        }
+
+    sid = resolution.resolved
+    assert sid is not None  # total==1 且无 candidates ⇒ resolved 必非空
+
+    # ② 取图。⛔ 不 catch GraphError——原样上抛给壳层翻译（D-03）。
+    graph = await fetch_graph_for_tool(
+        repository_id,
+        graph_branch or "",
+        user=user,
+        seed_symbol_ids=[sid],
+        depth=max_depth,
+        include_low_confidence=include_low_confidence,
+    )
+
+    # ③ 图内确认：索引有 ≠ 本次图里有（exclusion / 按需子图边界）。
+    in_graph = resolve_symbol_in_graph(graph.graph, symbol_id=sid)
+    if in_graph.resolved is None:
+        return {
+            "ok": False,
+            "error_code": "symbol_not_in_graph",
+            "error": (
+                "符号存在于索引但不在本次图内，可能被 exclusion 规则排除，"
+                "或不在按需子图的覆盖范围内"
+            ),
+            "query": query,
+        }
+
+    # ④ 内核（本文件内唯一调用点；跨仓一跳里对端仓那次不在本文件）。
+    impact = analyze_impact(
+        graph.graph,
+        sid,
+        max_depth=max_depth,
+        min_confidence=min_confidence,
+        include_low_confidence=include_low_confidence,
+        limit=limit,
+        exclude_test_files=exclude_test_files,
+    )
+
+    seed = _seed_from_graph(graph.graph, sid)
+
+    # ⑤ 跨仓一跳 + 声明。折叠 / unavailable 条目原样透传（D-12 / D-14 / D-30）。
+    cross = await collect_cross_repo_impact(
+        local_repository_id=repository_id,
+        symbol_file_path=str(seed["file_path"]),
+        symbol_name=str(seed["name"]),
+        user=user,
+        max_hops=max_cross_repo_hops,
+        max_depth=max_depth,
+        min_confidence=min_confidence,
+        include_low_confidence=include_low_confidence,
+    )
+    crosses_repo = _crosses_repo_from_entries(cross)
+    risk_level, risk_inputs = _regrade_with_cross_repo(
+        impact, crosses_repo=crosses_repo
+    )
+
+    return {
+        "ok": True,
+        "tool": "impact_analysis",
+        "repository_id": str(repository_id),
+        "branch": _branch_label(repo, graph_branch),
+        "seed": seed,
+        "query": {
+            "max_depth": max_depth,
+            "min_confidence": min_confidence,
+            "include_low_confidence": include_low_confidence,
+            "limit": limit,
+            "max_cross_repo_hops": max_cross_repo_hops,
+            "exclude_test_files": exclude_test_files,
+        },
+        "groups": impact["groups"],
+        "risk_level": risk_level,
+        "risk_inputs": risk_inputs,
+        "summary": impact["summary"],
+        "cross_repo": cross,
+        "affected_processes": [],
+        "staleness": await staleness_payload(repo),
+        "graph": degradation_payload(graph.meta),
     }
