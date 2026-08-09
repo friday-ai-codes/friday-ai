@@ -10,7 +10,7 @@ created: 2026-08-10
 # Phase 126 — Validation Strategy
 
 > Per-phase validation contract for feedback sampling during execution.
-> Plan IDs **exactly** `126-01`..`126-05`（无幽灵 `126-06`）；另可有一行 `126-XX-F` frozen 交叉引用。
+> Plan IDs **exactly** `126-01`..`126-05`（无幽灵第六 plan）；另可有一行 `126-XX-F` frozen 交叉引用。
 
 ---
 
@@ -53,7 +53,7 @@ created: 2026-08-10
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
-**Plan ID lock:** Map 主 plan 列仅 `126-01` / `126-02` / `126-03` / `126-04` / `126-05`；Wave 列分别为 `0`/`1`/`2`/`3`/`4`。禁止出现 `| 126-06`。
+**Plan ID lock:** Map 主 plan 列仅 `126-01` / `126-02` / `126-03` / `126-04` / `126-05`；Wave 列分别为 `0`/`1`/`2`/`3`/`4`。禁止幽灵第六 plan（编号 126 后不可出现 06）。
 
 ---
 
