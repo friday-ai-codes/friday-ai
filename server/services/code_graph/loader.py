@@ -72,6 +72,7 @@ from services.code_graph.access import make_path_exclusion_memo
 from services.code_graph.model import (
     BARE_NAME_BLACKLIST,
     LOW_RESOLUTION_THRESHOLD,
+    ChunkEvidence,
     CodeGraph,
     EdgeConfidence,
     EdgeKind,
@@ -95,6 +96,13 @@ _CALL_EDGE_CHUNK_SIZE: Final[int] = 5000
 # 跨仓边的量级比 ``CallEdge`` 小两三个数量级（千级），且每行都跨两个 JOIN，
 # 批大小取小一档（形状与 RESEARCH §Code Examples 1 的 ``cross_rows`` 一致）。
 _CROSS_REPO_CHUNK_SIZE: Final[int] = 2000
+_CHUNK_EDGE_CHUNK_SIZE: Final[int] = 5000
+
+# 单个符号最多挂多少条 chunk 证据，超出即截断并计数。
+# 防的是「热点 chunk」：``SEMANTIC`` / ``CO_CHANGED`` 这类边在一个高频改动的 chunk 上
+# 可以有成百上千条，而同一个 chunk 里的每个符号都会各挂一份——不设上限，证据面本身
+# 就会把内存吃穿（而且第 51 条之后对人/agent 的判断也不再增加信息）。
+CHUNK_EVIDENCE_MAX_PER_SYMBOL: Final[int] = 50
 
 # 节点属性键集合。个数写死在这里供用例引用：**恒 5 个**，多一个就会让
 # ``NODE_COST_BYTES`` 的标定假设失效（RESEARCH §Byte Estimation 的属性敏感性表）。
@@ -149,6 +157,7 @@ def _log_assembled(
     dropped_no_caller_count: int,
     dropped_missing_node_count: int,
     dropped_bare_filtered_count: int,
+    chunk_evidence_truncated_count: int = 0,
 ) -> None:
     try:
         logger.debug(
@@ -167,6 +176,7 @@ def _log_assembled(
             dropped_no_caller_count=dropped_no_caller_count,
             dropped_missing_node_count=dropped_missing_node_count,
             dropped_bare_filtered_count=dropped_bare_filtered_count,
+            chunk_evidence_truncated_count=chunk_evidence_truncated_count,
         )
     except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
         pass
@@ -195,8 +205,13 @@ class _SymbolNodeIndex:
     # （被排除节点连同其邻接边一并消失的落点）。
     node_ids: set[str]
     # ``(归一后的 file_path, name) -> symbol_id``。裸名边的目标解析与
-    # Plan 121-06 的跨仓边二次解析都靠它。
+    # 跨仓边二次解析都靠它。
     by_file_and_name: dict[tuple[str, str], str]
+    # ``str(Symbol.chunk_id) -> [symbol_id, …]``，chunk 旁挂证据面的挂载索引。
+    # 🚨 **不是节点属性**：``chunk_id`` 一旦进节点属性就把节点从 5 个属性推到 6 个，
+    #    直接破掉内存契约；而它只在装配 ``chunk_evidence`` 时用一次，做成独立的
+    #    旁挂映射即可。一个 chunk 常含多个 Symbol，所以值是**列表**。
+    chunk_to_symbols: dict[str, list[str]]
     # 被 exclusion 拦掉的**去重文件数**（不是符号数）。
     excluded_file_count: int
     # 因 exclusion 被丢弃的符号行数（仅用于日志汇总，不进 GraphMeta 契约）。
@@ -262,11 +277,13 @@ def _load_symbol_nodes(
 
     node_ids: set[str] = set()
     by_file_and_name: dict[tuple[str, str], str] = {}
+    chunk_to_symbols: dict[str, list[str]] = {}
     dropped_symbol_count = 0
     overlay_shadowed_count = 0
 
-    # ⚠️ 字段清单即节点属性来源，**不含 signature**（TextField，数 KB）、
-    #    也不含 chunk_id（chunk 关联由 Plan 121-06 的旁挂映射解决，不占节点属性名额）。
+    # ⚠️ 字段清单**不等于**节点属性来源：``signature``（TextField，数 KB）根本不取；
+    #    ``chunk_id`` 取但**不进节点属性**——它只喂 :attr:`_SymbolNodeIndex.chunk_to_symbols`
+    #    这个旁挂映射，节点属性仍恒 5 个。
     rows = (
         Symbol.objects.filter(
             repository_id=repository_id, branch_name__in=_branch_filter(branch)
@@ -279,6 +296,7 @@ def _load_symbol_nodes(
             "start_line",
             "end_line",
             "branch_name",
+            "chunk_id",
         )
         .iterator(chunk_size=_SYMBOL_CHUNK_SIZE)
     )
@@ -291,6 +309,7 @@ def _load_symbol_nodes(
         start_line,
         end_line,
         row_branch,
+        chunk_id,
     ) in rows:
         # overlay 去重（D-06）：feature 碰过的文件，其 base 行整体作废。
         if row_branch == "" and file_path in shadowed_files:
@@ -329,6 +348,11 @@ def _load_symbol_nodes(
         )
         node_ids.add(node_id)
         by_file_and_name[(norm_path, name)] = node_id
+        # ``Symbol.chunk_id`` 是**软引用且 null=True**（历史数据 / 未命中任何 chunk）。
+        # 为空的符号直接跳过——它不会出现在 ``chunk_evidence`` 的键里，这是正常态，
+        # 不是缺失。
+        if chunk_id is not None:
+            chunk_to_symbols.setdefault(str(chunk_id), []).append(node_id)
 
     # ``excluded_files`` 是闭包附带的**活动只读视图**：这里读到的是本次装配真实命中
     # 排除的**去重文件数**（不是符号数），直接喂 ``GraphMeta.excluded_file_count``。
@@ -343,6 +367,7 @@ def _load_symbol_nodes(
     return _SymbolNodeIndex(
         node_ids=node_ids,
         by_file_and_name=by_file_and_name,
+        chunk_to_symbols=chunk_to_symbols,
         excluded_file_count=excluded_file_count,
         dropped_symbol_count=dropped_symbol_count,
         overlay_shadowed_count=overlay_shadowed_count,
@@ -703,6 +728,93 @@ def _load_cross_repo_edges(
     return _CrossRepoStats(loaded_count=loaded_count, unresolved_count=unresolved_count)
 
 
+def _load_chunk_evidence(
+    *,
+    repository_id: str,
+    branch: str,
+    nodes: _SymbolNodeIndex,
+) -> tuple[dict[str, tuple[ChunkEvidence, ...]], int]:
+    """把 ``ChunkEdge`` 装配成**旁挂证据面**，⛔ 绝不写进 ``MultiDiGraph`` 的边集。
+
+    🚨 **Pitfall 2（笛卡尔爆炸）**：``ChunkEdge`` 连的是 ``source_chunk_id`` /
+    ``target_chunk_id``（UUID **软引用、无 FK**），要挂到符号上只能靠
+    ``Symbol.chunk_id`` 反查；而**一个 chunk 通常含多个 Symbol**——一条 chunk 边在
+    两端各有 k 个符号时，展开成符号级边就是 **k² 条**。chunk 与 symbol 本就是不同
+    粒度，强行对齐既贵又不准。
+
+    本相位的裁决是「装配但默认不参与符号级扩散，仅作为补充证据面」，落地形态就是
+    这个 ``symbol_id -> (ChunkEvidence, …)`` 的旁挂 dict：一条 chunk 边挂到两端各
+    k 个符号上是 **k + k 条记录**（线性），而不是 k² 条边。
+
+    🔔 **写给 Phase 122 的实现者**：:attr:`EdgeConfidence.CHUNK_LEVEL` 档在本相位
+    **不产生任何图中的边**——去 ``graph.edges`` 里找 ``kind == "chunk"`` 是找不到的。
+    该档位只是给上层工具在渲染 :attr:`CodeGraph.chunk_evidence` 时标注置信档用的。
+
+    :returns: ``(证据面, 因 fan-out 上限被截断的记录数)``。
+    """
+    from code_relations.models import ChunkEdge
+
+    chunk_to_symbols = nodes.chunk_to_symbols
+
+    evidence: dict[str, list[ChunkEvidence]] = {}
+    truncated_count = 0
+
+    # 索引覆盖：``idx_chunkedge_branch_fanout (repository, branch_name, source_chunk_id)``
+    # 的 ``(repository, branch_name)`` 前缀。
+    rows = (
+        ChunkEdge.objects.filter(
+            repository_id=repository_id, branch_name__in=_branch_filter(branch)
+        )
+        .values_list(
+            "source_chunk_id",
+            "target_chunk_id",
+            "edge_type",
+            "weight",
+            "target_repository_id",
+        )
+        .iterator(chunk_size=_CHUNK_EDGE_CHUNK_SIZE)
+    )
+
+    for (
+        source_chunk_id,
+        target_chunk_id,
+        edge_type,
+        weight,
+        target_repository_id,
+    ) in rows:
+        source_key = str(source_chunk_id)
+        target_key = str(target_chunk_id)
+
+        # 两端的符号都挂：证据面回答的是「哪些符号被这条共现关系触及」，单挂源侧会
+        # 让被调侧的符号看不到自己身上的证据。跨仓边的 target chunk 不在本仓，
+        # ``chunk_to_symbols`` 自然查不到，天然只挂得上源侧。
+        touched: list[str] = list(chunk_to_symbols.get(source_key, ()))
+        if target_key != source_key:
+            touched.extend(chunk_to_symbols.get(target_key, ()))
+        if not touched:
+            continue
+
+        record = ChunkEvidence(
+            source_chunk_id=source_key,
+            target_chunk_id=target_key,
+            edge_type=edge_type,
+            weight=weight,
+            target_repository_id=(
+                str(target_repository_id) if target_repository_id is not None else None
+            ),
+        )
+        for symbol_id in touched:
+            bucket = evidence.setdefault(symbol_id, [])
+            if len(bucket) >= CHUNK_EVIDENCE_MAX_PER_SYMBOL:
+                truncated_count += 1
+                continue
+            bucket.append(record)
+
+    # 值收成 tuple：``CodeGraph`` 是 frozen，证据面同样不可变——否则上层拿到后就地
+    # ``append`` 会污染缓存里的同一张图。
+    return {key: tuple(items) for key, items in evidence.items()}, truncated_count
+
+
 def _resolve_by_file_and_name(
     by_file_and_name: dict[tuple[str, str], str],
     file_path: str | None,
@@ -783,6 +895,11 @@ def load_graph(
         repository_id=str(repository_id),
         nodes=nodes,
     )
+    chunk_evidence, chunk_evidence_truncated_count = _load_chunk_evidence(
+        repository_id=str(repository_id),
+        branch=branch,
+        nodes=nodes,
+    )
 
     resolution_rate = edges.resolution_rate
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
@@ -827,6 +944,7 @@ def load_graph(
         dropped_no_caller_count=edges.dropped_no_caller_count,
         dropped_missing_node_count=edges.dropped_missing_node_count,
         dropped_bare_filtered_count=edges.dropped_bare_filtered_count,
+        chunk_evidence_truncated_count=chunk_evidence_truncated_count,
     )
 
-    return CodeGraph(meta=meta, graph=graph)
+    return CodeGraph(meta=meta, graph=graph, chunk_evidence=chunk_evidence)

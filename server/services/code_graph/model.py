@@ -300,6 +300,10 @@ class CodeGraph:
     graph: nx.MultiDiGraph
     # 键 = symbol_id。值用 tuple 而非 list：本对象 frozen，证据面同样不可变，
     # 免得上层拿到后就地 append 污染缓存里的同一张图。
+    #
+    # 🔔 :attr:`EdgeConfidence.CHUNK_LEVEL` 档**不产生任何 :attr:`graph` 中的边**
+    #    ——去 ``graph.edges`` 里找 ``kind == "chunk"`` 是找不到的。chunk 级证据只
+    #    存在于这个旁挂面上，该档位仅供上层在渲染本字段时标注置信档。
     chunk_evidence: Mapping[str, tuple[ChunkEvidence, ...]] = field(default_factory=dict)
 
 

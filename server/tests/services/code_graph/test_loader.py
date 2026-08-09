@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import networkx as nx
 import pytest
 
@@ -18,6 +20,7 @@ from services.code_graph.loader import (
     _CROSS_REPO_EDGE_ATTR_KEYS,
     _EDGE_ATTR_KEYS,
     _NODE_ATTR_KEYS,
+    CHUNK_EVIDENCE_MAX_PER_SYMBOL,
     load_graph,
 )
 
@@ -414,11 +417,93 @@ def test_meta_carries_injected_exclusion_fingerprint(
     assert meta.partial_edges is False
 
 
+def _bind_chunk(symbol, chunk_id) -> None:
+    """把 ``Symbol.chunk_id`` 绑到给定 chunk（软引用，无 FK，可为 ``None``）。"""
+    symbol.chunk_id = chunk_id
+    symbol.save(update_fields=["chunk_id"])
+
+
+def _make_chunk_edge(
+    repository,
+    source_chunk_id,
+    target_chunk_id,
+    *,
+    edge_type: str = "SEMANTIC",
+    weight: float = 0.8,
+    target_repository_id=None,
+):
+    from code_relations.models import ChunkEdge
+
+    return ChunkEdge.objects.create(
+        repository=repository,
+        branch_name="",
+        source_chunk_id=source_chunk_id,
+        target_chunk_id=target_chunk_id,
+        edge_type=edge_type,
+        weight=weight,
+        target_repository_id=target_repository_id,
+    )
+
+
 # 121-VALIDATION.md 121-06-T2：ChunkEdge 走旁挂证据面，绝不进 MultiDiGraph 边集
 # （chunk 与 symbol 粒度不同，展开成符号级边会笛卡尔爆炸）。
-@pytest.mark.skip(reason="stub：由 Plan 121-06 实现")
-def test_chunk_evidence_side_channel() -> None:
-    pass
+@pytest.mark.django_db
+def test_chunk_evidence_side_channel(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """chunk 证据挂在旁挂 dict 上，图的边数不因 ``ChunkEdge`` 增加一条。"""
+    caller = symbols_factory("caller", "src/a.py")
+    callee = symbols_factory("callee", "src/b.py")
+    call_edges_factory(caller, callee)
+
+    # 对照组：还没有任何 ChunkEdge 时的边数。
+    baseline_edges = _assemble(indexed_repo).graph.number_of_edges()
+
+    # 两个符号共享同一个 chunk（一个 chunk 常含多个 Symbol——这正是笛卡尔爆炸的来源）。
+    shared_chunk = uuid.uuid4()
+    other_chunk = uuid.uuid4()
+    _bind_chunk(caller, shared_chunk)
+    _bind_chunk(callee, shared_chunk)
+    # chunk_id 为 None 的符号：不进证据面的键，且不得抛异常。
+    orphan = symbols_factory("orphan", "src/c.py")
+
+    _make_chunk_edge(indexed_repo, shared_chunk, other_chunk)
+
+    result = _assemble(indexed_repo)
+
+    # 两个共享 chunk 的符号各拿到 1 条证据。
+    assert set(result.chunk_evidence) == {str(caller.id), str(callee.id)}
+    for symbol_id in (str(caller.id), str(callee.id)):
+        records = result.chunk_evidence[symbol_id]
+        assert len(records) == 1
+        assert records[0].source_chunk_id == str(shared_chunk)
+        assert records[0].target_chunk_id == str(other_chunk)
+        assert records[0].edge_type == "SEMANTIC"
+        assert records[0].weight == pytest.approx(0.8)
+        assert records[0].target_repository_id is None
+
+    assert str(orphan.id) not in result.chunk_evidence
+
+    # 🚨 Pitfall 2：边数**不因 ChunkEdge 增加**，图里也不存在 chunk 档的边。
+    assert result.graph.number_of_edges() == baseline_edges
+    assert result.meta.edge_count == baseline_edges
+    assert all(data["kind"] != "chunk" for _u, _v, data in result.graph.edges(data=True))
+
+
+@pytest.mark.django_db
+def test_chunk_evidence_fan_out_is_capped(indexed_repo, symbols_factory) -> None:
+    """单个符号的证据条数被 ``CHUNK_EVIDENCE_MAX_PER_SYMBOL`` 截断（防热点 chunk）。"""
+    hot = symbols_factory("hot", "src/hot.py")
+    hot_chunk = uuid.uuid4()
+    _bind_chunk(hot, hot_chunk)
+
+    for _ in range(60):
+        _make_chunk_edge(indexed_repo, hot_chunk, uuid.uuid4())
+
+    result = _assemble(indexed_repo)
+
+    assert CHUNK_EVIDENCE_MAX_PER_SYMBOL == 50
+    assert len(result.chunk_evidence[str(hot.id)]) == CHUNK_EVIDENCE_MAX_PER_SYMBOL
 
 
 # 121-VALIDATION.md 121-06-T3：按需子图在 SQL 侧多跳收敛，
