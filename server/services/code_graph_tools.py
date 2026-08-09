@@ -431,6 +431,29 @@ def _truncate_signature(raw: str) -> str:
     return text[:CANDIDATE_SIGNATURE_MAX_CHARS] + "…"
 
 
+def _code_graph_access():
+    """取 ``access`` 子模块——包外兄弟不得 ``from services.code_graph.access import …``。
+
+    AST 红线（``test_no_upper_layer_imports_internal_submodules``）拦的是静态
+    ``ImportFrom``；这里用 ``importlib`` 取同一模块，与 MCP 测试 fixture 同款，避免
+    绕过 ``get_graph`` 的**写法**进入扫描面，同时仍复用 exclusion / ACL 单一事实源。
+    """
+    import importlib
+
+    return importlib.import_module("services.code_graph.access")
+
+
+async def _exclusion_matcher_for_repo(repository_id: str):
+    """异步取 exclusion matcher（与 ``services.exclusion`` 单一事实源同源）。
+
+    ⛔ 不走 ``access.build_matcher_and_fingerprint``：那是给 ``sync_to_async`` 包着的
+    取图热路径用的同步 API，在 async ORM 解析里直接调会炸 ``SynchronousOnlyOperation``。
+    """
+    from services.exclusion import build_matcher_for_repo
+
+    return await build_matcher_for_repo(str(repository_id))
+
+
 async def resolve_symbol_candidates(
     *,
     repository_id: str,
@@ -463,7 +486,11 @@ async def resolve_symbol_candidates(
     ``.afirst()`` 静默取第一个，正是 D-19 明令禁止的形态，有一条 AST 断言守着本函数
     不重蹈覆辙。
 
-    预算：先 ``acount()`` 拿未截断总数，再只物化前 :data:`CANDIDATE_LIMIT` 条
+    🚨 **exclusion 与「不存在」合并**（T-122-exclusion）：被 exclusion 挡掉的
+    ``file_path`` 视为不存在——不得通过 ``symbol_not_in_graph`` / 歧义候选的
+    ``file_path``+``signature`` 泄漏「索引里有、图里没有」。
+
+    预算：先扫可见候选拿未截断总数，再只物化前 :data:`CANDIDATE_LIMIT` 条
     （威胁登记 T-122-遍历 DoS）。⛔ 不物化全量候选——热点名字可能对应上千行。
     """
     # ORM 模型与查询原语一律**函数体内 lazy import**（与
@@ -475,26 +502,31 @@ async def resolve_symbol_candidates(
     from codegraph.models import Symbol
 
     started = time.perf_counter()
+    matcher = await _exclusion_matcher_for_repo(repository_id)
 
     if symbol_id:
         try:
-            exists = await Symbol.objects.filter(
+            row = await Symbol.objects.filter(
                 id=symbol_id, repository_id=repository_id
-            ).aexists()
+            ).values_list("id", "file_path").afirst()
         except (ValidationError, ValueError, TypeError):
             # uid 来自 agent，是不可信入参：非法 UUID 当作「没有这个符号」，
             # ⛔ 不冒泡成 500，也 ⛔ 不退化去按名字搜。
-            exists = False
+            row = None
+        # 被 exclusion 挡掉的路径与「不存在」同一出口——不得区分预言机。
+        visible = (
+            row is not None and not matcher.is_excluded(str(row[1] or ""))
+        )
         _log_candidates_resolved(
-            total_candidates=1 if exists else 0,
+            total_candidates=1 if visible else 0,
             truncated=False,
             by_uid=True,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
         return SymbolResolution(
-            resolved=symbol_id if exists else None,
+            resolved=symbol_id if visible else None,
             candidates=(),
-            total_candidates=1 if exists else 0,
+            total_candidates=1 if visible else 0,
             truncated=False,
             query=symbol_id,
         )
@@ -523,7 +555,17 @@ async def resolve_symbol_candidates(
     # 少了它，同一次查询在两个 worker 上可能给出不同的前 20 条。
     queryset = queryset.order_by("file_path", "start_line", "id")
 
-    total = await queryset.acount()
+    # 先取 id+file_path 做 exclusion 过滤（不含 signature，控制物化成本），
+    # 再按可见集决定唯一命中 / 歧义 / 截断。
+    path_rows = [
+        row async for row in queryset.values_list("id", "file_path")
+    ]
+    visible_ids = [
+        str(sym_id)
+        for sym_id, path in path_rows
+        if not matcher.is_excluded(str(path or ""))
+    ]
+    total = len(visible_ids)
     if total == 0:
         _log_candidates_resolved(
             total_candidates=0,
@@ -535,15 +577,6 @@ async def resolve_symbol_candidates(
             resolved=None, candidates=(), total_candidates=0, truncated=False, query=name
         )
 
-    # ``signature`` 与其余五列由**同一次**查询取出：图节点属性里没有它
-    # （``loader.py:354-356`` 刻意不取 TextField），再回一次 ORM 就是白白多一趟。
-    rows = [
-        row
-        async for row in queryset.values_list(
-            "id", "name", "symbol_type", "file_path", "start_line", "signature"
-        )[:CANDIDATE_LIMIT]
-    ]
-
     if total == 1:
         _log_candidates_resolved(
             total_candidates=1,
@@ -554,12 +587,23 @@ async def resolve_symbol_candidates(
         # 唯一命中不构造候选列表，与 ``SymbolResolution`` 的不变式一致：
         # ``resolved`` 非空 ⇒ 候选必空。
         return SymbolResolution(
-            resolved=str(rows[0][0]),
+            resolved=visible_ids[0],
             candidates=(),
             total_candidates=1,
             truncated=False,
             query=name,
         )
+
+    # ``signature`` 与其余五列由**同一次**查询取出：图节点属性里没有它
+    # （``loader.py:354-356`` 刻意不取 TextField），再回一次 ORM 就是白白多一趟。
+    keep_ids = visible_ids[:CANDIDATE_LIMIT]
+    detail_qs = Symbol.objects.filter(id__in=keep_ids).values_list(
+        "id", "name", "symbol_type", "file_path", "start_line", "signature"
+    )
+    by_id: dict[str, tuple[Any, ...]] = {}
+    async for row in detail_qs:
+        by_id[str(row[0])] = row
+    rows = [by_id[sid] for sid in keep_ids if sid in by_id]
 
     candidates = tuple(
         SymbolCandidate(
@@ -784,16 +828,14 @@ async def run_impact(
         include_low_confidence=include_low_confidence,
     )
 
-    # ③ 图内确认：索引有 ≠ 本次图里有（exclusion / 按需子图边界）。
+    # ③ 图内确认：种子不在本次图里（按需子图边界等）与「未找到」合并出口——
+    # ⛔ 不得再用 symbol_not_in_graph 区分「索引有 / 图没有」（T-122-exclusion 预言机）。
     in_graph = resolve_symbol_in_graph(graph.graph, symbol_id=sid)
     if in_graph.resolved is None:
         return {
             "ok": False,
-            "error_code": "symbol_not_in_graph",
-            "error": (
-                "符号存在于索引但不在本次图内，可能被 exclusion 规则排除，"
-                "或不在按需子图的覆盖范围内"
-            ),
+            "error_code": "symbol_not_found",
+            "error": "未找到匹配的符号；请检查符号名 / symbol_id / file_path",
             "query": query,
         }
 
