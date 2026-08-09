@@ -29,11 +29,13 @@ DEFAULT_INDEX_CONCURRENCY = 5
 DEFAULT_GRAPH_CONCURRENCY = 3
 DEFAULT_SUMMARY_CONCURRENCY = 8
 DEFAULT_FEATURE_PARSE_CONCURRENCY = 4
+DEFAULT_SCAN_CONCURRENCY = 2
 
 _INDEX_SLOT_PREFIX = "index-slot-"
 _GRAPH_SLOT_PREFIX = "graph-slot-"
 _SUMMARY_SLOT_PREFIX = "summary-slot-"
 _FEATURE_PARSE_SLOT_PREFIX = "featparse-slot-"
+_SCAN_SLOT_PREFIX = "scan-slot-"
 
 
 def _stable_slot(repo_id: str, n: int) -> int:
@@ -69,6 +71,11 @@ def feature_parse_slot_lock(key: str, n: int) -> str:
     打 LLM，超限者原生留 todo 排队、worker 自动跳过（与 index/graph 槽位池同构）。
     """
     return f"{_FEATURE_PARSE_SLOT_PREFIX}{_stable_slot(key, n)}"
+
+
+def scan_slot_lock(repo_id: str, n: int) -> str:
+    """计算 Semgrep 扫描槽位 lock 值：``scan-slot-{stable_hash(repo_id) % N}``。"""
+    return f"{_SCAN_SLOT_PREFIX}{_stable_slot(repo_id, n)}"
 
 
 def _read_int_setting_sync(key: str, default: int) -> int:
@@ -151,6 +158,14 @@ async def aget_feature_parse_concurrency() -> int:
     )
 
 
+async def aget_scan_concurrency() -> int:
+    from system.models import SettingKeys
+
+    return await _read_int_setting_async(
+        SettingKeys.CONCURRENCY_SCAN_MAX, DEFAULT_SCAN_CONCURRENCY
+    )
+
+
 async def afeature_parse_lock(key: str) -> str:
     """读取 N 并返回该模块的 feature list 解析槽位 lock（async 入队点用）。"""
     return feature_parse_slot_lock(key, await aget_feature_parse_concurrency())
@@ -171,6 +186,11 @@ async def agraph_lock(repo_id: str) -> str:
     return graph_slot_lock(repo_id, await aget_graph_concurrency())
 
 
+async def ascan_lock(repo_id: str) -> str:
+    """读取 N 并返回该仓库的 Semgrep 扫描槽位 lock（async 入队点用）。"""
+    return scan_slot_lock(repo_id, await aget_scan_concurrency())
+
+
 def index_lock_sync(repo_id: str) -> str:
     """同步路径的索引槽位 lock。"""
     return index_slot_lock(repo_id, get_index_concurrency_sync())
@@ -186,20 +206,24 @@ __all__ = [
     "DEFAULT_GRAPH_CONCURRENCY",
     "DEFAULT_SUMMARY_CONCURRENCY",
     "DEFAULT_FEATURE_PARSE_CONCURRENCY",
+    "DEFAULT_SCAN_CONCURRENCY",
     "index_slot_lock",
     "graph_slot_lock",
     "summary_slot_lock",
     "feature_parse_slot_lock",
+    "scan_slot_lock",
     "get_index_concurrency_sync",
     "get_graph_concurrency_sync",
     "aget_index_concurrency",
     "aget_graph_concurrency",
     "aget_summary_concurrency",
     "aget_feature_parse_concurrency",
+    "aget_scan_concurrency",
     "aindex_lock",
     "agraph_lock",
     "asummary_lock",
     "afeature_parse_lock",
+    "ascan_lock",
     "index_lock_sync",
     "graph_lock_sync",
 ]
