@@ -166,7 +166,9 @@ async def run_repo_summary(
                 "repository_id": repository_id,
             }
 
-        session_id = await dispatch_repo_summary(repo)
+        session_id = await dispatch_repo_summary(
+            repo, initiated_by_user_id=initiated_by_user_id
+        )
         logger.info(
             "durable_repo_summary_dispatched",
             repository_id=repository_id,
@@ -624,6 +626,123 @@ async def run_blueprint_resume(
         return await arun_blueprint_resume(
             session_id, initiated_by_user_id=initiated_by_user_id or "system"
         )
+
+async def run_charter_draft(
+    *,
+    repository_id: str,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """仓库章程 AI 起草任务体：委托 ``adraft_charter``（含 P11 human_confirmed 保护）。
+
+    预期可完成（不重试）的结局：
+    - 仓库不存在 → ``skipped/not_found``
+    - LLM/供应商不可用（``adraft_charter`` 返回 ``None``）→ ``skipped/llm_unavailable``
+
+    持久化失败（``CharterPersistError``）与其它未预期异常：脱敏日志后 **re-raise**，
+    让 Procrastinate / in-process 后端可见 stalled 并可重试。
+    """
+    import time
+
+    from django.core.exceptions import ObjectDoesNotExist
+
+    from common.logging import redact_secrets_in_text
+    from repositories.services.charter_service import CharterPersistError, adraft_charter
+
+    actor = initiated_by_user_id or "system"
+    started = time.monotonic()
+    logger.info(
+        "charter_draft_job_started",
+        category="caller",
+        component="charter_service",
+        repository_id=str(repository_id),
+        initiated_by_user_id=actor,
+    )
+
+    with bind_task_context(
+        user_id=actor,
+        source="durable",
+        component="charter_service",
+    ):
+        try:
+            charter = await adraft_charter(
+                str(repository_id),
+                initiated_by_user_id=actor,
+            )
+        except ObjectDoesNotExist:
+            logger.info(
+                "charter_draft_job_completed",
+                category="caller",
+                component="charter_service",
+                repository_id=str(repository_id),
+                initiated_by_user_id=actor,
+                status="skipped",
+                reason="not_found",
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            return {
+                "status": "skipped",
+                "reason": "not_found",
+                "repository_id": str(repository_id),
+            }
+        except CharterPersistError as exc:
+            logger.warning(
+                "charter_draft_job_failed",
+                category="caller",
+                component="charter_service",
+                repository_id=str(repository_id),
+                initiated_by_user_id=actor,
+                reason="persist_error",
+                error=redact_secrets_in_text(str(exc)),
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            raise
+        except Exception as exc:
+            logger.warning(
+                "charter_draft_job_failed",
+                category="caller",
+                component="charter_service",
+                repository_id=str(repository_id),
+                initiated_by_user_id=actor,
+                reason="unexpected",
+                error=redact_secrets_in_text(str(exc)),
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            raise
+
+        if charter is None:
+            logger.info(
+                "charter_draft_job_completed",
+                category="caller",
+                component="charter_service",
+                repository_id=str(repository_id),
+                initiated_by_user_id=actor,
+                status="skipped",
+                reason="llm_unavailable",
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            return {
+                "status": "skipped",
+                "reason": "llm_unavailable",
+                "repository_id": str(repository_id),
+            }
+
+        logger.info(
+            "charter_draft_job_completed",
+            category="caller",
+            component="charter_service",
+            repository_id=str(repository_id),
+            initiated_by_user_id=actor,
+            status="ok",
+            charter_source=str(charter.source),
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
+        return {
+            "status": "ok",
+            "repository_id": str(repository_id),
+            "charter_source": str(charter.source),
+        }
+
+
 
 async def run_community_rebuild(
     *,

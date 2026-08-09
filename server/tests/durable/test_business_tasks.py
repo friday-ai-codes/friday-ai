@@ -29,7 +29,8 @@ from services import background_runner
 
 async def test_index_adapter_calls_task_with_expanded_kwargs(settings, monkeypatch) -> None:
     """durable_index：in-process adapter 以展开 kwargs 调 run_index，键集合精确匹配 payload。"""
-    settings.DURABLE_TASK_BACKEND = "auto"  # SQLite 默认即 in-process，显式声明更稳
+    settings.DURABLE_TASK_BACKEND = "inprocess"
+    monkeypatch.setattr("durable.service.use_procrastinate_backend", lambda: False)
     register_business_handlers()
 
     captured = AsyncMock(return_value={"ok": True})
@@ -49,7 +50,8 @@ async def test_index_adapter_calls_task_with_expanded_kwargs(settings, monkeypat
 
 async def test_graph_adapter_calls_task_with_expanded_kwargs(settings, monkeypatch) -> None:
     """durable_graph：in-process adapter 以展开 kwargs 调 run_graph，同形断言。"""
-    settings.DURABLE_TASK_BACKEND = "auto"
+    settings.DURABLE_TASK_BACKEND = "inprocess"
+    monkeypatch.setattr("durable.service.use_procrastinate_backend", lambda: False)
     register_business_handlers()
 
     captured = AsyncMock(return_value={"ok": True})
@@ -113,9 +115,10 @@ def test_app_tasks_registered_with_explicit_names(procrastinate_app) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_has_active_by_key_inprocess(settings) -> None:
+async def test_has_active_by_key_inprocess(settings, monkeypatch) -> None:
     """in-process 门面按 key 读 _jobs 状态：pending/running 为 True，终态 / 未知为 False。"""
-    settings.DURABLE_TASK_BACKEND = "auto"
+    settings.DURABLE_TASK_BACKEND = "inprocess"
+    monkeypatch.setattr("durable.service.use_procrastinate_backend", lambda: False)
     from durable import backends
 
     backends._set_job_state("k-running", status="running")

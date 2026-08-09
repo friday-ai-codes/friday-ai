@@ -30,6 +30,8 @@ QUEUE_BLUEPRINT = "blueprint"
 # 派发"（标签匹配 + channels send），重活在 Runner 容器内执行；替代 TaskDispatcher 的
 # 进程内存队列，解决 server 重启丢派发。lock=dispatch-{session_id} 同会话派发串行。
 QUEUE_DISPATCH = "dispatch"
+# 仓库章程 AI 起草（summary 成功回写后串联；只调 adraft_charter，不在 callback 内跑 LLM）
+QUEUE_CHARTER = "charter"
 # Semgrep diff-aware 安全扫描（独立于 index/graph；lock=scan-slot-* 限并发 N=2）
 QUEUE_SCAN = "scan"
 
@@ -45,6 +47,7 @@ ALL_QUEUES: tuple[str, ...] = (
     QUEUE_FEATURE_PARSE,
     QUEUE_BLUEPRINT,
     QUEUE_DISPATCH,
+    QUEUE_CHARTER,
     QUEUE_SCAN,
 )
 
@@ -59,6 +62,7 @@ __all__ = [
     "QUEUE_FEATURE_PARSE",
     "QUEUE_BLUEPRINT",
     "QUEUE_DISPATCH",
+    "QUEUE_CHARTER",
     "QUEUE_SCAN",
     "ALL_QUEUES",
 ]
