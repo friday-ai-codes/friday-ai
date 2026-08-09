@@ -17,7 +17,7 @@ import pytest
 from core import runner as runner_module
 from core.runner import TaskRunner
 
-SKILL_NAMES = ("friday-code", "friday-memory")
+SKILL_NAMES = ("friday-code", "friday-memory", "friday-impact", "friday-refactoring")
 
 
 def _find_repo_root() -> Path | None:
@@ -80,7 +80,7 @@ class TestRuntimeInjection:
         return runner
 
     def _make_fake_image_skills(self, base: Path) -> Path:
-        """在 tmp 下构造假镜像 skills 目录（两个技能）。"""
+        """在 tmp 下构造假镜像 skills 目录（SKILL_NAMES 全量）。"""
         image_dir = base / "opt-friday-skills"
         for name in SKILL_NAMES:
             (image_dir / name / "references").mkdir(parents=True)
@@ -89,7 +89,7 @@ class TestRuntimeInjection:
         return image_dir
 
     def test_inject_copies_all_skills(self, tmp_path, monkeypatch):
-        """(a) 两技能完整拷达 workspace/.claude/skills/。"""
+        """(a) SKILL_NAMES 全量完整拷达 workspace/.claude/skills/。"""
         image_dir = self._make_fake_image_skills(tmp_path)
         monkeypatch.setattr(runner_module, "IMAGE_SKILLS_DIR", image_dir)
         workspace = tmp_path / "workspace"
