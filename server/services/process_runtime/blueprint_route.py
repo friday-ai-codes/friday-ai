@@ -68,6 +68,8 @@ _EVIDENCE_KEYS = (
     "history_match_unavailable",
     "boundary_override_reason",
     "unjustified_boundary_hit",
+    # Phase 125 / MOD-04：社区模块摘要（evidence only，不进三分量打分）
+    "module_summaries",
 )
 
 _VALID_INTENTS = ("greenfield", "brownfield", "fix")
@@ -187,6 +189,7 @@ def _normalize_evidence(evidence: dict | None) -> dict:
         "history_match_unavailable": "",
         "boundary_override_reason": "",
         "unjustified_boundary_hit": False,
+        "module_summaries": [],
     }
     return {key: src.get(key, defaults[key]) for key in _EVIDENCE_KEYS}
 
@@ -603,6 +606,9 @@ class BlueprintRouteAdapter:
         history = await self._ascore_history(
             query=query, candidate_ids=candidate_ids, session=session
         )
+        module_by_repo = await self._aload_module_summaries(
+            candidate_ids, query=query
+        )
 
         vector = _weights_for(weights, intent)
         citations: list[dict] = []
@@ -626,6 +632,7 @@ class BlueprintRouteAdapter:
                 "history_match_unavailable": history.unavailable_reason,
                 "boundary_override_reason": "",
                 "unjustified_boundary_hit": False,
+                "module_summaries": module_by_repo.get(repository_id, []),
             }
             breakdown = build_score_breakdown(
                 router_base=raw["router_base"],
@@ -806,6 +813,25 @@ class BlueprintRouteAdapter:
                 component="process_runtime",
             )
             return {}
+
+    async def _aload_module_summaries(
+        self, candidate_ids: list[str], *, query: str
+    ) -> dict[str, list[dict]]:
+        """fail-soft 加载仓模块摘要进 evidence（MOD-04 / D-14）；失败 → 各仓 []。"""
+        try:
+            from services.module_summary_signal import aload_module_summaries_for_repos
+
+            return await aload_module_summaries_for_repos(
+                candidate_ids, query=query
+            )
+        except Exception as exc:  # noqa: BLE001 — 摘要读失败不阻断路由
+            logger.warning(
+                "blueprint_route_module_summary_load_failed",
+                error=str(exc),
+                category="sampling",
+                component="process_runtime",
+            )
+            return {str(rid): [] for rid in candidate_ids}
 
     def _score_charter(self, charter: dict | None, query_terms: list[str]):
         try:

@@ -150,6 +150,107 @@ def _truncate_by_group_quota(
     return kept
 
 
+async def _apply_charter_signal(
+    query: str, candidates: list[RepositoryRelevanceCandidate]
+) -> list[RepositoryRelevanceCandidate]:
+    """给 v2 候选叠加章程意图面：改分 + 补证据 + 补入章程命中的仓（CHARTER-01）。
+
+    能力树只回答「这个仓现在有什么」，章程回答「这个仓该放什么、不放什么」——对话链
+    此前只有前者。触及章程禁区的候选强制取消自动选中：让「章程说别放这」真的能拦住
+    AI 预填，而不只是加一行说明文字。
+
+    `breakdown` 与 `score_ranked` 同步调整：前者要维持「各项之和 == score」的前端
+    分数分解恒等式，后者是前端实际排序依据（`score_ranked ?? score`），只改 `score`
+    的话章程完全影响不到用户看到的顺序。无章程的仓（章程分为 0）逐字段零扰动。
+
+    best-effort：任何异常原样返回入参。
+    """
+    from services.charter_route_signal import aapply_charter_signal, resolve_charter_weight
+
+    try:
+        items = await aapply_charter_signal(
+            query=query,
+            candidates=[(c.repository_id, c.repository_name, c.score) for c in candidates],
+        )
+    except Exception as exc:  # noqa: BLE001 — 章程失效不影响能力树路由结果
+        logger.warning("repository_relevance_charter_signal_failed", error=str(exc))
+        return candidates
+
+    weight = resolve_charter_weight()
+    by_id = {c.repository_id: c for c in candidates}
+    merged: list[RepositoryRelevanceCandidate] = []
+    for item in items:
+        base = by_id.get(item.repository_id)
+        if base is None:
+            merged.append(
+                RepositoryRelevanceCandidate(
+                    repository_id=item.repository_id,
+                    repository_name=item.repository_name or item.repository_id,
+                    score=item.blended_score,
+                    level="low",
+                    evidence=item.evidence,
+                    # 补入候选恒不自动选中：它没有任何代码证据支撑，只有意图面声明
+                    selected_by_ai=False,
+                    selected_by_user_final=False,
+                    breakdown={"charter_match": item.blended_score},
+                )
+            )
+            continue
+        base.score = item.blended_score
+        if base.score_ranked is not None:
+            base.score_ranked = max(0.0, min(1.0, base.score_ranked + item.charter_score * weight))
+        if base.breakdown and item.charter_score:
+            # 差值而非直接写 weight*charter_score：blended 被 clamp 到 [0,1] 时，
+            # 只有取差值才能维持「各项之和 == score」这条前端分数分解的恒等式。
+            base.breakdown = {
+                **base.breakdown,
+                "charter_match": item.blended_score - sum(base.breakdown.values()),
+            }
+        if item.evidence:
+            base.evidence = f"{base.evidence}；{item.evidence}" if base.evidence else item.evidence
+        if item.violated_boundaries:
+            base.selected_by_ai = False
+            base.selected_by_user_final = False
+        merged.append(base)
+
+    # `_truncate_by_group_quota` 的前提是入参已按前端实际排序键降序，而前端用的是
+    # `score_ranked ?? score` —— 两个键分别混了章程分，顺序不一定一致，必须重排。
+    merged.sort(
+        key=lambda c: (
+            -(c.score_ranked if c.score_ranked is not None else c.score),
+            c.repository_id,
+        )
+    )
+    return merged
+
+
+async def _apply_module_summary_signal(
+    query: str, candidates: list[RepositoryRelevanceCandidate]
+) -> list[RepositoryRelevanceCandidate]:
+    """给候选追加模块摘要 evidence（MOD-04 / D-15）；默认不改分数。
+
+    best-effort：任何异常原样返回入参。
+    """
+    from services.module_summary_signal import aapply_module_summary_signal
+
+    try:
+        items = await aapply_module_summary_signal(
+            query=query,
+            candidates=[(c.repository_id, c.repository_name, c.score) for c in candidates],
+        )
+    except Exception as exc:  # noqa: BLE001 — 摘要失效不影响章程/能力树结果
+        logger.warning("repository_relevance_module_summary_signal_failed", error=str(exc))
+        return candidates
+
+    by_id = {c.repository_id: c for c in candidates}
+    for item in items:
+        base = by_id.get(item.repository_id)
+        if base is None or not item.evidence:
+            continue
+        base.evidence = f"{base.evidence}；{item.evidence}" if base.evidence else item.evidence
+    return candidates
+
+
 def _score_to_level(score: float) -> Literal["high", "medium", "low"]:
     """三档阈值映射：0.7 / 0.4。"""
     if score >= 0.7:
@@ -291,9 +392,7 @@ async def _analyze_relevance_core(
             query,
             top_k=top_k,
             repository_ids=None,
-            grouping_repository_ids=(
-                None if grouping_ids is None else sorted(grouping_ids)
-            ),
+            grouping_repository_ids=(None if grouping_ids is None else sorted(grouping_ids)),
         )
         if v2_result.router_version in ("v2", "v2_stage0_only") and v2_result.candidates:
             router_version = v2_result.router_version
@@ -311,9 +410,7 @@ async def _analyze_relevance_core(
                 repo_name = repo.name if repo is not None else (c.repo_name or c.repo_id)
                 evidence_parts: list[str] = []
                 if c.matched_node_paths:
-                    evidence_parts.append(
-                        "命中能力节点: " + " / ".join(c.matched_node_paths[:3])
-                    )
+                    evidence_parts.append("命中能力节点: " + " / ".join(c.matched_node_paths[:3]))
                 if c.reasoning:
                     evidence_parts.append(c.reasoning)
                 if c.sub_project:
@@ -355,6 +452,11 @@ async def _analyze_relevance_core(
         # 排序，全局组分数整体占优时，简单的 `[:top_k]` 会把 in_project 组整组截空，
         # 而落库的 block_order 来自 router 结果、仍报长度 2 → 前端启用分组却发现该组
         # total == 0 被过滤掉，ROUTE-01「组内各展示 Top-3」在 top_k 较小时无法保证。
+        # 章程叠加必须在按组配额截断**之前**：截断后再改分会让被截掉的、章程明确
+        # 声明拥有的仓永远没机会进候选，而那正是章程要解决的问题。
+        v2_candidates = await _apply_charter_signal(query, v2_candidates)
+        # MOD-04：模块摘要 evidence 旁路（不改分；失败原样）
+        v2_candidates = await _apply_module_summary_signal(query, v2_candidates)
         candidates = _truncate_by_group_quota(v2_candidates, top_k)
         trace = await RepositoryRoutingTrace.objects.acreate(
             agent_session_id=agent_session_id,
@@ -408,9 +510,7 @@ async def _analyze_relevance_core(
             continue
         for item in layer.items:
             rid = (
-                item.get("repository_id")
-                or (item.get("payload") or {}).get("repository_id")
-                or ""
+                item.get("repository_id") or (item.get("payload") or {}).get("repository_id") or ""
             )
             rid = str(rid)
             if rid and rid in repo_by_id:
