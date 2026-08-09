@@ -443,28 +443,58 @@ class RouteRepositoriesView(McpToolView):
         query = str(input_data["query"])
         top_k = int(input_data.get("top_k", 3))
         route_result = await RepoRouterV2.route(query, top_k=top_k)
-        route_ids = [str(c.repo_id) for c in route_result.candidates]
+        by_repo_id = {str(c.repo_id): c for c in route_result.candidates if str(c.repo_id or "")}
+
+        # 章程分量（CHARTER-01）：能力树只回答「这个仓现在有什么」，章程回答「该放
+        # 什么、不放什么」。补入的仓能力树未召回，`by_repo_id` 里没有对应候选。
+        from services.charter_route_signal import aapply_charter_signal
+        from services.module_summary_signal import aapply_module_summary_signal
+
+        signal_items = await aapply_charter_signal(
+            query=query,
+            candidates=[
+                (rid, str(c.repo_name or ""), float(c.score)) for rid, c in by_repo_id.items()
+            ],
+        )
+        # MOD-04：模块摘要 evidence 旁路（默认不改分；⛔ 不改 mcp/ submodule）
+        module_items = await aapply_module_summary_signal(
+            query=query,
+            candidates=[
+                (i.repository_id, i.repository_name, i.blended_score) for i in signal_items
+            ],
+        )
+        module_evidence = {i.repository_id: i.evidence for i in module_items if i.evidence}
+
         repos = {
             str(repo.id): repo
-            async for repo in Repository.objects.filter(id__in=route_ids, is_deleted=False)
+            async for repo in Repository.objects.filter(
+                id__in=[i.repository_id for i in signal_items], is_deleted=False
+            )
         }
         ranked_repos: list[dict[str, Any]] = []
         traces: list[tuple[str, dict[str, Any]]] = []
-        for candidate in route_result.candidates:
-            repo_id = str(candidate.repo_id)
-            repo = repos.get(repo_id)
+        for signal in signal_items:
+            repo = repos.get(signal.repository_id)
             if repo is None:
                 continue
+            candidate = by_repo_id.get(signal.repository_id)
+            reason = str(getattr(candidate, "reasoning", "") or "")
+            if signal.evidence:
+                reason = f"{reason}；{signal.evidence}" if reason else signal.evidence
+            mod_ev = module_evidence.get(signal.repository_id) or ""
+            if mod_ev:
+                reason = f"{reason}；{mod_ev}" if reason else mod_ev
             item = {
-                "repo_id": repo_id,
+                "repo_id": signal.repository_id,
                 "name": repo.name,
                 "description": repo.overview_text,
-                "score": float(candidate.score),
-                "reason": candidate.reasoning,
-                "confidence": candidate.confidence,
-                "sub_project": candidate.sub_project,
-                "sub_project_paths": candidate.sub_project_paths,
-                "matched_node_paths": candidate.matched_node_paths,
+                "score": signal.blended_score,
+                "reason": reason,
+                # 章程补入的仓没有代码证据，置信度恒 low（绝不冒充能力树命中）
+                "confidence": str(getattr(candidate, "confidence", "") or "low"),
+                "sub_project": getattr(candidate, "sub_project", "") or "",
+                "sub_project_paths": list(getattr(candidate, "sub_project_paths", []) or []),
+                "matched_node_paths": list(getattr(candidate, "matched_node_paths", []) or []),
                 "index_status": repo.index_status,
                 "default_branch": repo.default_branch,
                 "ai_summary": repo.ai_summary or "",
@@ -1273,7 +1303,7 @@ class ImpactAnalysisView(McpToolView):
     ``run_impact`` → 原样透出信封 + ``run_id`` → 一条汇总 ``RetrievalTrace`` +
     一条 ``caller`` 事件。
 
-    ``ok=False``（``symbol_not_found`` / ``ambiguous_symbol`` / ``symbol_not_in_graph``）
+    ``ok=False``（``symbol_not_found`` / ``ambiguous_symbol``）
     一律返回 HTTP 200 + 该信封，⛔ 不转 4xx。``ambiguous_symbol`` 的候选列表是 agent
     二选一的唯一依据（生产 19.3% 的名字不唯一，这是主路径不是兜底）；转成
     ``{"error_code","detail"}`` 的 4xx 会把候选整段丢掉。``ok=False`` 只表示

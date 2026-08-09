@@ -61,11 +61,9 @@ async def test_apply_signal_appends_evidence_without_changing_router_base(
             _REPO_A: [
                 {
                     "community_key": "auth-mod",
-                    "summary": (
-                        '{"key_files":["a.py"],"entry_points":["login"],'
-                        '"responsibility":"错题本导出与鉴权"}'
-                    ),
+                    "text": "## 模块摘要\n### 职责\n错题本导出与鉴权",
                     "responsibility": "错题本导出与鉴权",
+                    "relevance": 0.9,
                 }
             ]
         },
