@@ -133,7 +133,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 122-09-PLAN.md — W6 对话壳：2 个 `@tool` + 会话 owner fail-closed + `agents/tools/__init__` 与 chat 白名单两处注册
+- [x] 122-09-PLAN.md — W6 对话壳：2 个 `@tool` + 会话 owner fail-closed + `agents/tools/__init__` 与 chat 白名单两处注册
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
