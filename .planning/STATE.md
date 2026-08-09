@@ -23,11 +23,11 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。
 **v0.19.0 交付的那一层：** 技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。
 **v0.20.0 交付的那一层：** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，飞书式划线澄清多轮收敛，全生命周期可管理、可查可引可导出。
-**Current focus:** Phase 121 — 内存图服务基座
+**Current focus:** Phase 122 — impact / trace 工具面
 
 ## Current Position
 
-Phase: 121 (内存图服务基座) — EXECUTED, awaiting verification
+Phase: 122 (impact / trace 工具面) — NEXT (121 verified passed 4/4, code review 20 findings 处理完毕)
 Plan: 10 of 10
 Status: Ready to execute
 Last activity: 2026-08-09 — Phase 121 execution complete (10/10 plans, 86 new tests, 0 regressions)
@@ -36,7 +36,7 @@ Last activity: 2026-08-09 — Phase 121 execution complete (10/10 plans, 86 new 
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 121 | 内存图服务基座（缓存四件套 + 边准入 + 权限/exclusion 读取层收口） | GRAPH-01~04 | ✅ Executed (10/10 plans) |
+| 121 | 内存图服务基座（缓存四件套 + 边准入 + 权限/exclusion 读取层收口） | GRAPH-01~04 | ✅ Complete (10/10 plans, verified passed) |
 | 122 | impact / trace 工具面（深度分组 + 置信度分层 + 跨仓 + MCP/对话双面） | IMPACT-01~06 | Not started |
 | 123 | detect_changes 工具本体（水位锚定 diff × Symbol 定位 + 批量 impact） | DIFF-01/02 | Not started |
 | 124 | 编码链闭环（容器提交前自查 + MR 描述影响面报告 fail-soft） | DIFF-03/04 | Not started |
