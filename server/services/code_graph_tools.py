@@ -62,12 +62,14 @@ test_observability_contract`` 原先只 glob 包内 ``*.py``，本文件因此�
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 import structlog
 
+from common.logging import redact_secrets_in_text
 from services.code_graph import (
     LOW_RESOLUTION_THRESHOLD,
     REDACTED_REPOSITORY,
@@ -101,6 +103,12 @@ logger = structlog.get_logger(__name__)
 # ⚠️ 前缀不得缩写：``code_graph_`` 是观测契约的强制前缀，扫描面已含本文件。
 _EVENT_GRAPH_FETCHED: Final[str] = "code_graph_tool_graph_fetched"
 _EVENT_CANDIDATES_RESOLVED: Final[str] = "code_graph_tool_candidates_resolved"
+_EVENT_DETECT_CHANGES_STARTED: Final[str] = "code_graph_detect_changes_started"
+_EVENT_DETECT_CHANGES_COMPLETED: Final[str] = "code_graph_detect_changes_completed"
+_EVENT_DETECT_CHANGES_FAILED: Final[str] = "code_graph_detect_changes_failed"
+
+# compare 形参：完整 40 位小写 hex → ensure_mirror_sha；否则当分支名。
+_FULL_SHA_RE: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{40}$")
 
 # 候选条目上 ``signature`` 的字符上限（D-17 的 token 纪律）。``Symbol.signature`` 是
 # TextField、可长达数 KB，一次 20 条候选原样吐出去就能吃掉几千 token，而 agent 消歧只
@@ -145,6 +153,7 @@ __all__ = [
     "resolution_to_payload",
     "resolve_symbol_candidates",
     "resolve_tool_graph_branch",
+    "run_detect_changes",
     "run_impact",
     "run_trace",
     "staleness_payload",
@@ -1044,9 +1053,383 @@ async def run_trace(
     }
 
 
+async def run_detect_changes(
+    *,
+    repository_id: str,
+    repo: Any,
+    user: Any,
+    compare: str,
+    base_ref: str | None = None,
+    max_depth: int = DEFAULT_MAX_DEPTH,
+    min_confidence: float = 1.0,
+    include_low_confidence: bool = False,
+    limit: int = DEFAULT_RESULT_LIMIT,
+) -> dict[str, Any]:
+    """变更检测的**唯一**编排入口——MCP / 对话两面只调这一个函数（D-13）。
+
+    流程：ACL → 校验索引水位 → pin base（``last_indexed_commit_sha``）→ 解析 head
+    → ``diff_mirror`` → ORM Symbol（``branch_name=""``）→ exclusion → 纯交叠内核
+    → 阈值闸 → 顺序 ``run_impact`` → 122 同形信封。
+
+    ``base_ref`` **只声明透出**，绝不参与 diff 左端（D-02 / T-123-BASE）。
+
+    当 ``compare`` 解析后的 head sha 与 base（索引水位）相同时，返回
+    ``ok=False, error_code="empty_diff_range"``——⛔ 不静默假装「无改动且可信」
+    （Pitfall 6）。
+
+    :param user: 必填；ACL 与 batch impact 权限复核同源。
+    :param repo: 已取好的 ``Repository``，供 staleness / 索引水位读取。
+    :raises GraphAccessDenied: ACL 失败原样上抛（壳层翻译；⛔ 不折成空清单）。
+    """
+    # 延迟导入：内核 / mirror 不在模块顶层，避免 services 早期加载与测试 patch 点漂移。
+    from services.code_graph.detect_changes import (
+        DETECT_CHANGES_MAX_SYMBOLS_FOR_IMPACT,
+        SymbolRecord,
+        detect_affected_symbols,
+        parse_unified_diff,
+    )
+    from services.repo_mirror import (
+        MirrorError,
+        diff_mirror,
+        ensure_mirror_commit,
+        ensure_mirror_sha,
+    )
+
+    started = time.perf_counter()
+    repository_id = str(repository_id)
+    try:
+        logger.info(
+            _EVENT_DETECT_CHANGES_STARTED,
+            component="code_graph",
+            category="caller",
+            repository_id=repository_id,
+        )
+    except Exception:  # noqa: BLE001 — 观测永不反噬
+        pass
+
+    def _duration_ms() -> float:
+        return round((time.perf_counter() - started) * 1000, 2)
+
+    def _log_failed(error_code: str, error: str) -> None:
+        try:
+            logger.info(
+                _EVENT_DETECT_CHANGES_FAILED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                error_code=error_code,
+                error=redact_secrets_in_text(error)[:500],
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _log_completed(**fields: Any) -> None:
+        try:
+            logger.info(
+                _EVENT_DETECT_CHANGES_COMPLETED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                duration_ms=_duration_ms(),
+                **fields,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    # ① ACL 必须在 mirror / ORM 之前（T-123-ACL）——失败上抛，不 catch。
+    await _code_graph_access().ensure_repository_readable(user, repository_id)
+
+    indexed_sha = str(getattr(repo, "last_indexed_commit_sha", None) or "").strip()
+    if not indexed_sha:
+        err = "仓库尚未建立索引，无法检测变更；请先完成索引后重试"
+        _log_failed("repository_not_indexed", err)
+        return {
+            "ok": False,
+            "error_code": "repository_not_indexed",
+            "error": err,
+            "tool": "detect_changes",
+            "repository_id": repository_id,
+        }
+
+    # ② base 强制 pin 索引水位（D-01）：ensure_mirror_commit 无 branch。
+    try:
+        base = await ensure_mirror_commit(repository_id)
+    except MirrorError as exc:
+        _log_failed(exc.code, exc.detail)
+        return {
+            "ok": False,
+            "error_code": exc.code,
+            "error": exc.detail,
+            "tool": "detect_changes",
+            "repository_id": repository_id,
+        }
+
+    compare_s = (compare or "").strip()
+    try:
+        if _FULL_SHA_RE.match(compare_s):
+            head = await ensure_mirror_sha(repository_id, compare_s)
+        else:
+            head = await ensure_mirror_commit(repository_id, branch=compare_s)
+    except MirrorError as exc:
+        _log_failed(exc.code, exc.detail)
+        out: dict[str, Any] = {
+            "ok": False,
+            "error_code": exc.code,
+            "error": exc.detail,
+            "tool": "detect_changes",
+            "repository_id": repository_id,
+            "diff_base_sha": base.commit_sha,
+        }
+        if base_ref:
+            out["base_ref"] = base_ref
+        return out
+
+    if head.commit_sha == base.commit_sha:
+        err = "compare 与索引水位相同，无可信变更区间可分析"
+        _log_failed("empty_diff_range", err)
+        out = {
+            "ok": False,
+            "error_code": "empty_diff_range",
+            "error": err,
+            "tool": "detect_changes",
+            "repository_id": repository_id,
+            "diff_base_sha": base.commit_sha,
+            "diff_head_sha": head.commit_sha,
+        }
+        if base_ref:
+            out["base_ref"] = base_ref
+        return out
+
+    # ③ tree-to-tree diff；MirrorError 折信封（双面同形，D-03）。
+    try:
+        diff = await diff_mirror(base, head)
+    except MirrorError as exc:
+        _log_failed(exc.code, exc.detail)
+        out = {
+            "ok": False,
+            "error_code": exc.code,
+            "error": exc.detail,
+            "tool": "detect_changes",
+            "repository_id": repository_id,
+            "diff_base_sha": base.commit_sha,
+            "diff_head_sha": head.commit_sha,
+        }
+        if base_ref:
+            out["base_ref"] = base_ref
+        return out
+
+    parsed = parse_unified_diff(diff.unified_diff)
+    touched: set[str] = set()
+    for fc in parsed:
+        if fc.old_path:
+            touched.add(fc.old_path)
+        if fc.new_path:
+            touched.add(fc.new_path)
+
+    # ④ exclusion 后再交叠（T-123-EXCL / GRAPH-04 fail-closed）。
+    matcher = await _exclusion_matcher_for_repo(repository_id)
+    allowed_paths = sorted(p for p in touched if not matcher.is_excluded(p))
+
+    from codegraph.models import Symbol
+
+    symbols_by_path: dict[str, list[SymbolRecord]] = {}
+    if allowed_paths:
+        rows = [
+            row
+            async for row in Symbol.objects.filter(
+                repository_id=repository_id,
+                branch_name="",
+                file_path__in=allowed_paths,
+            ).values_list(
+                "id",
+                "name",
+                "symbol_type",
+                "file_path",
+                "start_line",
+                "end_line",
+            )
+        ]
+        for uid, name, stype, fpath, start, end in rows:
+            path = str(fpath or "")
+            if matcher.is_excluded(path):
+                continue
+            symbols_by_path.setdefault(path, []).append(
+                SymbolRecord(
+                    uid=str(uid),
+                    name=str(name or ""),
+                    symbol_type=str(stype or ""),
+                    file_path=path,
+                    start_line=int(start or 0),
+                    end_line=int(end or 0),
+                )
+            )
+
+    overlap = detect_affected_symbols(
+        parsed_diff=parsed,
+        symbols_by_path=symbols_by_path,
+    )
+    files = list(overlap.get("files") or [])
+    # 再滤一遍文件组：排除路径不得出现在输出（T-123-EXCL）。
+    files = [f for f in files if not matcher.is_excluded(str(f.get("path") or ""))]
+
+    seed_ids: list[str] = []
+    for group in files:
+        for sym in group.get("symbols") or []:
+            if not isinstance(sym, Mapping):
+                continue
+            if sym.get("impact_seed") and sym.get("changeType") != "formatting_only":
+                uid = str(sym.get("uid") or "")
+                if uid:
+                    seed_ids.append(uid)
+
+    affected_symbol_count = sum(
+        len(g.get("symbols") or []) for g in files if isinstance(g, Mapping)
+    )
+    impact_seed_count = len(seed_ids)
+    truncated = impact_seed_count > DETECT_CHANGES_MAX_SYMBOLS_FOR_IMPACT
+    not_expanded = truncated
+
+    async def _graph_payload_for(seed: str | None) -> dict[str, Any]:
+        """截断 / 成功路径都要有数值 resolution_rate（D-14 / A5）。"""
+        if not seed:
+            # 无种子：轻量占位，仍带数值 resolution_rate，声明未展开。
+            return {
+                "resolution_rate": 0.0,
+                "low_resolution": False,
+                "partial_edges": False,
+                "partial_reason": "",
+                "degraded": "not_expanded" if not_expanded else "",
+                "cross_repo_unresolved_count": 0,
+                "cross_repo_branch_unfiltered": False,
+                "include_low_confidence": include_low_confidence,
+                "node_count": 0,
+                "edge_count": 0,
+                "excluded_file_count": 0,
+                "declarations": [
+                    "本次未取图或无可作种子的受影响符号；结论按更保守口径采信"
+                ],
+            }
+        try:
+            graph = await fetch_graph_for_tool(
+                repository_id,
+                "",  # base 图坐标（graph_branch=None）
+                user=user,
+                seed_symbol_ids=[seed],
+                depth=1,
+                include_low_confidence=include_low_confidence,
+            )
+            return degradation_payload(graph.meta)
+        except GraphError:
+            return {
+                "resolution_rate": 0.0,
+                "low_resolution": False,
+                "partial_edges": False,
+                "partial_reason": "",
+                "degraded": "not_expanded" if not_expanded else "",
+                "cross_repo_unresolved_count": 0,
+                "cross_repo_branch_unfiltered": False,
+                "include_low_confidence": include_low_confidence,
+                "node_count": 0,
+                "edge_count": 0,
+                "excluded_file_count": 0,
+                "declarations": ["取图失败；变更检测结论不含影响面展开"],
+            }
+
+    impacts: list[dict[str, Any]] = []
+    graph_payload: dict[str, Any]
+
+    if truncated:
+        # D-08 / T-123-DOS：零次 run_impact；仍填 graph（A5）。
+        any_uid = seed_ids[0] if seed_ids else None
+        if any_uid is None:
+            for group in files:
+                for sym in group.get("symbols") or []:
+                    if isinstance(sym, Mapping) and sym.get("uid"):
+                        any_uid = str(sym["uid"])
+                        break
+                if any_uid:
+                    break
+        graph_payload = await _graph_payload_for(any_uid)
+        impacts = []
+    else:
+        # D-09/D-10/D-11：顺序 for-loop，默认参数与 impact_analysis 一致。
+        graph_payload = {}
+        for sid in seed_ids:
+            try:
+                one = await run_impact(
+                    repository_id=repository_id,
+                    repo=repo,
+                    graph_branch=None,
+                    user=user,
+                    symbol_id=sid,
+                    max_depth=max_depth,
+                    min_confidence=min_confidence,
+                    include_low_confidence=include_low_confidence,
+                    limit=limit,
+                )
+                impacts.append({"symbol_id": sid, "impact": one})
+                if not graph_payload and isinstance(one.get("graph"), Mapping):
+                    graph_payload = dict(one["graph"])
+            except GraphError as exc:
+                code, msg = graph_error_to_tool_error(exc)
+                impacts.append(
+                    {
+                        "symbol_id": sid,
+                        "impact_error": code,
+                        "unavailable_reason": msg,
+                    }
+                )
+        if not graph_payload:
+            graph_payload = await _graph_payload_for(seed_ids[0] if seed_ids else None)
+
+    staleness = await staleness_payload(repo)
+    # D-04：behind 大时加强 declaration，不硬拒。
+    behind = staleness.get("behind_commits")
+    if isinstance(behind, int) and behind >= 20:
+        decl = str(staleness.get("declaration") or "")
+        extra = f"；索引明显落后（{behind} commits），变更交叠相对旧水位"
+        if extra.strip("；") not in decl:
+            staleness = {**staleness, "declaration": decl + extra}
+
+    summary = {
+        "affected_symbol_count": affected_symbol_count,
+        "impact_seed_count": impact_seed_count,
+        "truncated": truncated,
+        "not_expanded": not_expanded,
+        "file_count": len(files),
+    }
+
+    result: dict[str, Any] = {
+        "ok": True,
+        "tool": "detect_changes",
+        "repository_id": repository_id,
+        "diff_base_sha": diff.base_sha,
+        "diff_head_sha": diff.head_sha,
+        "files": files,
+        "impacts": impacts,
+        "summary": summary,
+        "affected_processes": [],
+        "staleness": staleness,
+        "graph": graph_payload,
+    }
+    if base_ref:
+        result["base_ref"] = base_ref
+
+    _log_completed(
+        affected_symbol_count=affected_symbol_count,
+        impact_seed_count=impact_seed_count,
+        truncated=truncated,
+        impacts_ok=sum(1 for i in impacts if "impact" in i),
+        impacts_failed=sum(1 for i in impacts if "impact_error" in i),
+    )
+    return result
+
+
 # ---------------------------------------------------------------------------
 # 两面共用的壳层原语（122-08）——分支口径与留痕 payload
 # ---------------------------------------------------------------------------
+
 # 这些键名刻意放在函数体外：``tool_trace_payload`` 的 AST 守卫禁止函数体内出现
 # ``groups`` / ``hops`` / ``items`` 等字符串常量（那会把正文键带进留痕面）。
 _TRACE_KEY_GROUPS: Final[str] = "groups"
