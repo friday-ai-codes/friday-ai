@@ -226,7 +226,20 @@ async def _run_all_builders_and_sync_payload(
         if inserted > 0:
             from codegraph.galaxy.cache import GalaxyGraphCache
 
+            # 🚨 必须从**包根**导入：``services.code_graph`` 的 ``__init__.py`` 是 curated
+            # barrel，直连包内 ``cache`` 子模块正是它要挡住的架构违规（红线连钩子自己
+            # 也不例外，否则那道守护测试形同虚设）。函数内 lazy import 同时避开与
+            # ``code_relations`` 的模块级循环依赖。
+            from services.code_graph import invalidate_repository
+
             await sync_to_async(GalaxyGraphCache.refresh_repo)(repository_id)
+
+            # 边构建完成 → 驱逐本 worker 的内存符号图（Phase 121 / GRAPH-01）。
+            # ⚠️ 这**只是优化，不是正确性保证**：钩子只对**本 worker** 生效，多 worker
+            # 部署下其余进程里的旧图仍然只能靠取图时的**签名**复校发现陈旧——因此
+            # ``GraphService._get_graph_sync`` 里那道签名比对**不可删除**。
+            # 失效自身的异常在 ``invalidate_repository`` 内部吞掉，不反噬边构建。
+            await sync_to_async(invalidate_repository)(repository_id)
 
         # 返回本次去重后真实新增数，供 lifecycle 回写 chunk_edges_added。
         return inserted
