@@ -1,18 +1,62 @@
 """``services/code_graph/community.py`` 验收测（MOD-01 / MOD-02）。
 
 125-02：Louvain / 指纹 / 取图纪律。
-125-03：rebuild×2 LLM=0 / Jaccard / 空摘要重试（仍 skip）。
+125-03：rebuild×2 LLM=0 / Jaccard / 空摘要重试。
 """
 
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
 import networkx as nx
 import pytest
 
 import services.code_graph.community as community_mod
+from codegraph.models import SymbolCommunity
+
+
+def _member(i: int, *, prefix: str = "m", file_path: str = "pkg/a.py") -> dict[str, Any]:
+    return {
+        "symbol_id": f"{prefix}-{i}",
+        "name": f"{prefix}_fn_{i}",
+        "file_path": file_path,
+        "symbol_type": "FUNCTION",
+    }
+
+
+def _community_desc(
+    members: list[dict[str, Any]],
+    *,
+    unclustered: bool = False,
+    community_key: str | None = None,
+) -> dict[str, Any]:
+    fp = community_mod.member_fingerprint(members)
+    key = community_key or (f"unclustered:pkg:{fp[:8]}" if unclustered else fp[:16])
+    return {
+        "community_key": key,
+        "algorithm": "louvain",
+        "unclustered": unclustered,
+        "members": members,
+        "member_keys": [community_mod._member_stable_key(m) for m in members],
+        "member_fingerprint": fp,
+        "member_count": len(members),
+        "top_files": sorted({str(m["file_path"]) for m in members}),
+    }
+
+
+def _fake_summary_json(tag: str = "ok") -> str:
+    return json.dumps(
+        {
+            "key_files": ["pkg/a.py"],
+            "entry_points": ["m_fn_0"],
+            "responsibility": f"module {tag}",
+        },
+        ensure_ascii=False,
+    )
 
 
 def test_louvain_seed_stable() -> None:
@@ -78,40 +122,217 @@ def test_fingerprint_deterministic_order_independent() -> None:
     assert fp_a == community_mod.member_fingerprint(members_a)
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 125-03 落地")
-def test_fingerprint_jaccard_skip() -> None:
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_fingerprint_jaccard_skip(repository) -> None:
     """指纹全等 short-circuit；Jaccard≥阈值复用既有 summary。
 
     （Req: MOD-02, 决策: D-06/D-07）
     """
-    pytest.fail("Wave 0 桩")
+    assert community_mod.JACCARD_THRESHOLD == 0.8
+
+    members = [_member(i) for i in range(6)]
+    desc = _community_desc(members)
+    SymbolCommunity.objects.create(
+        repository=repository,
+        branch_name="",
+        community_key=desc["community_key"],
+        algorithm="louvain",
+        member_count=desc["member_count"],
+        members=desc["members"],
+        top_files=desc["top_files"],
+        member_fingerprint=desc["member_fingerprint"],
+        summary=_fake_summary_json("fp"),
+        summary_model="test-model",
+    )
+
+    calls = {"n": 0}
+
+    async def _summary_fn(ms, community):  # noqa: ANN001
+        calls["n"] += 1
+        return _fake_summary_json("should-not-run")
+
+    g = nx.freeze(nx.MultiDiGraph())
+    with patch.object(community_mod, "detect_communities", return_value=[desc]):
+        result = await community_mod.rebuild_communities(
+            str(repository.id),
+            "",
+            graph=g,
+            summary_fn=_summary_fn,
+        )
+
+    assert calls["n"] == 0
+    assert result["summaries_skipped"] >= 1
+    assert result["summaries_generated"] == 0
+    row = await SymbolCommunity.objects.aget(repository=repository, community_key=desc["community_key"])
+    assert "module fp" in (row.summary or "")
+
+    # Jaccard ≥ 0.8：成员集高重叠但指纹不同 → 复用旧 summary / community_key
+    old_members = [_member(i, prefix="j") for i in range(10)]
+    new_members = [_member(i, prefix="j") for i in range(9)] + [_member(99, prefix="j")]
+    old_desc = _community_desc(old_members, community_key="old-jaccard-key")
+    new_desc = _community_desc(new_members)
+    assert old_desc["member_fingerprint"] != new_desc["member_fingerprint"]
+    score = community_mod.jaccard(old_desc["member_keys"], new_desc["member_keys"])
+    assert score >= community_mod.JACCARD_THRESHOLD
+
+    await SymbolCommunity.objects.filter(repository=repository).adelete()
+    SymbolCommunity.objects.create(
+        repository=repository,
+        branch_name="",
+        community_key=old_desc["community_key"],
+        algorithm="louvain",
+        member_count=old_desc["member_count"],
+        members=old_desc["members"],
+        top_files=old_desc["top_files"],
+        member_fingerprint=old_desc["member_fingerprint"],
+        summary=_fake_summary_json("jaccard"),
+        summary_model="test-model",
+    )
+    calls["n"] = 0
+    with patch.object(community_mod, "detect_communities", return_value=[new_desc]):
+        result2 = await community_mod.rebuild_communities(
+            str(repository.id),
+            "",
+            graph=g,
+            summary_fn=_summary_fn,
+        )
+    assert calls["n"] == 0
+    assert result2["summaries_generated"] == 0
+    reused = await SymbolCommunity.objects.aget(repository=repository)
+    assert reused.community_key == "old-jaccard-key"
+    assert "module jaccard" in (reused.summary or "")
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 125-03 落地")
-def test_rebuild_twice_zero_llm() -> None:
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_rebuild_twice_zero_llm(repository) -> None:
     """无代码变更连续 rebuild 两次 → LLM 调用数 = 0（验收铁律）。
 
     （Req: MOD-02, 决策: D-07）
     """
-    pytest.fail("Wave 0 桩")
+    members = [_member(i) for i in range(6)]
+    desc = _community_desc(members)
+    calls = {"n": 0}
+
+    async def _summary_fn(ms, community):  # noqa: ANN001
+        calls["n"] += 1
+        return _fake_summary_json(f"gen-{calls['n']}")
+
+    g = nx.MultiDiGraph()
+    for i in range(6):
+        g.add_node(
+            f"n{i}",
+            name=f"n{i}",
+            symbol_type="FUNCTION",
+            file_path="a.py",
+            start_line=i,
+            end_line=i,
+        )
+    for i in range(5):
+        g.add_edge(f"n{i}", f"n{i + 1}", kind="call", confidence="resolved", line_number=i)
+    frozen = nx.freeze(g)
+
+    with patch.object(community_mod, "detect_communities", return_value=[desc]):
+        first = await community_mod.rebuild_communities(
+            str(repository.id),
+            "",
+            graph=frozen,
+            summary_fn=_summary_fn,
+        )
+    assert first["summaries_generated"] == 1
+    assert calls["n"] == 1
+    n_after_first = calls["n"]
+
+    with patch.object(community_mod, "detect_communities", return_value=[desc]):
+        second = await community_mod.rebuild_communities(
+            str(repository.id),
+            "",
+            graph=frozen,
+            summary_fn=_summary_fn,
+        )
+    assert calls["n"] == n_after_first == 1
+    assert second["summaries_generated"] == 0
+    assert second["summaries_skipped"] >= 1
+    row = await SymbolCommunity.objects.aget(repository=repository)
+    assert row.summary
+    assert "module gen-1" in row.summary
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 125-03 落地")
-def test_empty_summary_retries() -> None:
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_empty_summary_retries(repository) -> None:
     """既有 summary 为空时允许重试生成（仍计 LLM）。
 
     （Req: MOD-02, 决策: D-08）
     """
-    pytest.fail("Wave 0 桩")
+    members = [_member(i) for i in range(6)]
+    desc = _community_desc(members)
+    SymbolCommunity.objects.create(
+        repository=repository,
+        branch_name="",
+        community_key=desc["community_key"],
+        algorithm="louvain",
+        member_count=desc["member_count"],
+        members=desc["members"],
+        top_files=desc["top_files"],
+        member_fingerprint=desc["member_fingerprint"],
+        summary="",  # 空白 → 必须重试
+        summary_model=None,
+    )
+    calls = {"n": 0}
+
+    async def _summary_fn(ms, community):  # noqa: ANN001
+        calls["n"] += 1
+        return _fake_summary_json("retry")
+
+    g = nx.freeze(nx.MultiDiGraph())
+    with patch.object(community_mod, "detect_communities", return_value=[desc]):
+        result = await community_mod.rebuild_communities(
+            str(repository.id),
+            "",
+            graph=g,
+            summary_fn=_summary_fn,
+        )
+    assert calls["n"] == 1
+    assert result["summaries_generated"] == 1
+    row = await SymbolCommunity.objects.aget(repository=repository)
+    assert "module retry" in (row.summary or "")
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 125-03 落地")
-def test_unclustered_or_small_skips_llm() -> None:
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_unclustered_or_small_skips_llm(repository) -> None:
     """unclustered 或规模过小社区不调 LLM。
 
     （Req: MOD-02/MOD-03, 决策: D-08）
     """
-    pytest.fail("Wave 0 桩")
+    small = _community_desc([_member(i) for i in range(3)], unclustered=False)
+    unclustered = _community_desc(
+        [_member(i, prefix="u", file_path="pkg/x.py") for i in range(2)],
+        unclustered=True,
+    )
+    calls = {"n": 0}
+
+    async def _summary_fn(ms, community):  # noqa: ANN001
+        calls["n"] += 1
+        return _fake_summary_json("nope")
+
+    g = nx.freeze(nx.MultiDiGraph())
+    with patch.object(
+        community_mod,
+        "detect_communities",
+        return_value=[small, unclustered],
+    ):
+        result = await community_mod.rebuild_communities(
+            str(repository.id),
+            "",
+            graph=g,
+            summary_fn=_summary_fn,
+        )
+    assert calls["n"] == 0
+    assert result["summaries_generated"] == 0
+    assert await SymbolCommunity.objects.filter(repository=repository).acount() == 2
 
 
 def test_get_graph_only_no_loader_import() -> None:
