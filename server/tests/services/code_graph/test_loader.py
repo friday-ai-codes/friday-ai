@@ -15,6 +15,7 @@ import pytest
 
 from services.code_graph.access import build_matcher_and_fingerprint
 from services.code_graph.loader import (
+    _CROSS_REPO_EDGE_ATTR_KEYS,
     _EDGE_ATTR_KEYS,
     _NODE_ATTR_KEYS,
     load_graph,
@@ -94,11 +95,132 @@ def test_edge_attrs_are_exactly_three_without_reason(
         assert "reason" not in data
 
 
+def _make_cross_repo_call(
+    repository,
+    *,
+    caller_file: str,
+    caller_function: str,
+    endpoint_file: str,
+    handler_name: str,
+    match_confidence: float = 0.7,
+    caller_line: int = 33,
+):
+    """造一条 ``CrossRepoApiCall`` 及其两端（``ApiCallSite`` / ``Endpoint``）。
+
+    ⚠️ 两端都**没有 ``Symbol`` 外键**，``CrossRepoApiCall`` 自身也**没有
+    ``repository`` 字段**——这正是 loader 必须做「文件路径 + 名字」二次解析、
+    并按 ``call_site__repository_id`` / ``endpoint__repository_id`` 反查过滤的原因。
+    """
+    from codegraph.models import ApiCallSite, ApiWrapper, CrossRepoApiCall, Endpoint
+
+    wrapper = ApiWrapper.objects.create(
+        repository=repository,
+        file_path="web/src/api/orders.ts",
+        function_symbol=f"fetch_{handler_name}",
+        http_method="GET",
+        url_path_raw="/api/orders",
+        url_path_pattern="/api/orders",
+    )
+    call_site = ApiCallSite.objects.create(
+        repository=repository,
+        api_wrapper=wrapper,
+        caller_file=caller_file,
+        caller_function=caller_function,
+        line_number=caller_line,
+    )
+    endpoint = Endpoint.objects.create(
+        repository=repository,
+        http_method="GET",
+        url_path="/api/orders",
+        handler_name=handler_name,
+        view_type="FUNCTION_VIEW",
+        file_path=endpoint_file,
+        line_number=8,
+    )
+    return CrossRepoApiCall.objects.create(
+        call_site=call_site,
+        endpoint=endpoint,
+        match_confidence=match_confidence,
+    )
+
+
 # 121-VALIDATION.md 121-06-T1：CrossRepoApiCall 按 file+name 解析到符号；
 # 解析不上直接丢弃（不建虚拟节点）并计数上报 cross_repo_unresolved_count（D-05）。
-@pytest.mark.skip(reason="stub：由 Plan 121-06 实现")
-def test_cross_repo_edge_resolution() -> None:
-    pass
+@pytest.mark.django_db
+def test_cross_repo_edge_resolution(indexed_repo, symbols_factory) -> None:
+    """跨仓边的三个分支：解析成功建边 / 解析失败丢弃计数 / 全程不建虚拟节点。"""
+    caller = symbols_factory("submitOrder", "web/src/pages/order.ts")
+    handler = symbols_factory("order_create", "src/api/views.py")
+
+    # (a) 两端都能按 (file_path, name) 解析到本图已装载的符号。
+    _make_cross_repo_call(
+        indexed_repo,
+        caller_file="web/src/pages/order.ts",
+        caller_function="submitOrder",
+        endpoint_file="src/api/views.py",
+        handler_name="order_create",
+        match_confidence=0.7,
+        caller_line=33,
+    )
+
+    result = _assemble(indexed_repo)
+    graph = result.graph
+
+    cross_edges = [
+        (u, v, data)
+        for u, v, data in graph.edges(data=True)
+        if data["kind"] == "cross_repo"
+    ]
+    assert len(cross_edges) == 1
+    u, v, data = cross_edges[0]
+    assert (u, v) == (str(caller.id), str(handler.id))
+    assert data["confidence"] == "cross_repo"
+    assert data["line_number"] == 33
+    # 原值透传，⛔ 不归一化——它是 confidence_score() 对本档的必需入参。
+    assert data["match_confidence"] == pytest.approx(0.7)
+    # 唯一允许 4 个属性的档位。
+    assert set(data) == _CROSS_REPO_EDGE_ATTR_KEYS
+
+    assert result.meta.cross_repo_unresolved_count == 0
+    # 装配到跨仓边即须声明「本档无法按分支过滤」（ApiCallSite 无 branch_name）。
+    assert result.meta.cross_repo_branch_unfiltered is True
+
+    # (b) handler_name 对不上任何符号 ⇒ 该边不进图，计入 unresolved。
+    _make_cross_repo_call(
+        indexed_repo,
+        caller_file="web/src/pages/order.ts",
+        caller_function="submitOrder",
+        endpoint_file="src/api/views.py",
+        handler_name="ghost_handler",
+        match_confidence=0.4,
+    )
+
+    result = _assemble(indexed_repo)
+    graph = result.graph
+
+    assert (
+        sum(1 for _u, _v, d in graph.edges(data=True) if d["kind"] == "cross_repo") == 1
+    )
+    assert result.meta.cross_repo_unresolved_count == 1
+
+    # (c) ⛔ 绝不建虚拟节点：图里每个节点都是一个真实装载过的 Symbol.id。
+    loaded_symbol_ids = {str(caller.id), str(handler.id)}
+    assert set(graph.nodes) <= loaded_symbol_ids
+
+
+@pytest.mark.django_db
+def test_cross_repo_branch_unfiltered_false_without_cross_edges(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """没有跨仓边时不打「无法按分支过滤」标记——长鸣的标记等于失效的标记。"""
+    caller = symbols_factory("caller", "src/a.py")
+    callee = symbols_factory("callee", "src/b.py")
+    call_edges_factory(caller, callee)
+
+    meta = _assemble(indexed_repo).meta
+
+    assert meta.cross_repo_branch_unfiltered is False
+    assert meta.cross_repo_unresolved_count == 0
 
 
 # 121-VALIDATION.md 121-05-T1：feature 分支 overlay（base ∪ feature），
