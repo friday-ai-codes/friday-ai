@@ -5,13 +5,12 @@
 
 ⛔ 不得 mock ``run_detect_changes``——双面哨兵必须打真实共享编排（或同源真实路径），
 否则 MCP↔对话同源断言失去意义。可 mock ``diff_mirror`` / ``ensure_mirror_commit``。
-
-对话壳由 123-04、双面同源由 123-05 填实。
 """
 
 from __future__ import annotations
 
 import importlib
+import json
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -37,6 +36,19 @@ index 1111111..2222222 100644
 -    return 1
 +    return 2
 """
+
+
+def _assert_surfaces_byte_equal(mcp_data: dict, tool_data: dict) -> None:
+    """键集先行（报错可读），再 ``json.dumps(sort_keys=True)`` 逐字节比对。"""
+    mcp_keys = set(mcp_data)
+    tool_keys = set(tool_data)
+    assert mcp_keys == tool_keys, (
+        f"双面 data 键集不一致：仅 MCP={sorted(mcp_keys - tool_keys)} "
+        f"仅对话={sorted(tool_keys - mcp_keys)}"
+    )
+    mcp_dump = json.dumps(mcp_data, sort_keys=True, ensure_ascii=False, default=str)
+    tool_dump = json.dumps(tool_data, sort_keys=True, ensure_ascii=False, default=str)
+    assert mcp_dump == tool_dump
 
 
 @pytest.fixture(autouse=True)
@@ -180,16 +192,113 @@ def test_mcp_detect_changes_success_envelope(
     assert body.get("run_id")
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 123-04 落地")
 def test_conversational_detect_changes_registered() -> None:
-    """对话侧 detect_changes @tool 已注册且 schema 对齐。"""
-    pytest.fail("Wave 0 桩")
+    """对话侧注册断言的薄包装——权威用例在 agents 侧，避免双份维护。
+
+    见 ``tests/agents/tools/test_graph_tools.py::test_detect_changes_registered_in_indexed_tools``。
+    """
+    from tests.agents.tools.test_graph_tools import (
+        test_detect_changes_registered_in_indexed_tools as _agents_registered,
+    )
+
+    _agents_registered()
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 123-05 落地")
-def test_two_surfaces_same_payload_detect_changes() -> None:
-    """MCP↔对话 data 逐字节同源（去 run_id）；含成功 + 硬错误态。"""
-    pytest.fail("Wave 0 桩")
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_two_surfaces_same_payload_detect_changes(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository,
+    access_user,
+    project,
+) -> None:
+    """**双面同源**：同一输入下 MCP 与对话壳 ``data`` 逐字节相同（D-13 / IMPACT-06）。
+
+    成功态 + ``repository_not_indexed`` 硬错误态各一轮。``run_id`` 是 MCP 面唯一
+    允许且写死的差异。⛔ 不许 mock ``run_detect_changes``——否则哨兵退化为自证。
+
+    （Req: DIFF-01/DIFF-02, 决策: D-13）
+    """
+    from asgiref.sync import sync_to_async
+
+    from agents.tools.graph_tools import detect_changes
+    from chat.models import Conversation
+
+    client, _plaintext = mcp_client
+    conversation = await Conversation.objects.acreate(
+        space=project,
+        title="dual-surface-detect-changes",
+        created_by=access_user,
+    )
+    await sync_to_async(_seed_symbol)(indexed_repository)
+    repo_id = str(indexed_repository.id)
+
+    payload = {
+        "repository_id": repo_id,
+        "compare": "feature/x",
+        "base_ref": "origin/develop",
+        "max_depth": 3,
+        "min_confidence": 1.0,
+        "limit": 200,
+    }
+
+    # —— 第一轮：成功态（mock 仅 mirror 下层；编排层真实跑）——
+    ensure_c, ensure_s, diff_m = _patch_mirror_for_mcp(repo_id)
+    with ensure_c, ensure_s, diff_m:
+        response = await sync_to_async(client.post)(
+            DETECT_CHANGES_URL, payload, format="json"
+        )
+        assert response.status_code == 200
+        mcp_body = response.json()
+        mcp_data = {k: v for k, v in mcp_body.items() if k != "run_id"}
+
+        tool_result = await detect_changes(
+            **payload,
+            conversation_id=str(conversation.id),
+        )
+
+    assert tool_result.success is True
+    tool_data = tool_result.output["data"]
+    assert mcp_body.get("ok") is True
+    assert tool_data.get("ok") is True
+    assert "run_id" in mcp_body
+    assert "run_id" not in tool_data
+    _assert_surfaces_byte_equal(mcp_data, tool_data)
+
+    # —— 第二轮：硬错误 repository_not_indexed（索引水位清空，壳层仍放行 INDEXED）——
+    def _clear_index_sha() -> None:
+        indexed_repository.last_indexed_commit_sha = ""
+        indexed_repository.save(update_fields=["last_indexed_commit_sha"])
+
+    await sync_to_async(_clear_index_sha)()
+    hard_payload = {
+        "repository_id": repo_id,
+        "compare": "feature/x",
+        "max_depth": 3,
+        "min_confidence": 1.0,
+        "limit": 200,
+    }
+
+    hard_response = await sync_to_async(client.post)(
+        DETECT_CHANGES_URL, hard_payload, format="json"
+    )
+    assert hard_response.status_code == 200
+    hard_mcp_body = hard_response.json()
+    assert hard_mcp_body["ok"] is False
+    assert hard_mcp_body["error_code"] == "repository_not_indexed"
+    hard_mcp_data = {k: v for k, v in hard_mcp_body.items() if k != "run_id"}
+
+    hard_tool = await detect_changes(
+        **hard_payload,
+        conversation_id=str(conversation.id),
+    )
+    assert hard_tool.success is True
+    hard_tool_data = hard_tool.output["data"]
+    assert hard_tool_data["error_code"] == "repository_not_indexed"
+
+    assert "run_id" in hard_mcp_body
+    assert "run_id" not in hard_tool_data
+    _assert_surfaces_byte_equal(hard_mcp_data, hard_tool_data)
 
 
 def test_tool_trace_payload_detect_changes_counts_only() -> None:
