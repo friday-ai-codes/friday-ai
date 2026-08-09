@@ -117,7 +117,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 122-05-PLAN.md — W2 `code_graph_tools.py` 原语层：带种子取图（D-24）+ `GraphError` 翻译表 + staleness/降级声明 + 候选 `signature` 补取；并把 AST 观测契约扩到包外兄弟模块
+- [x] 122-05-PLAN.md — W2 `code_graph_tools.py` 原语层：带种子取图（D-24）+ `GraphError` 翻译表 + staleness/降级声明 + 候选 `signature` 补取；并把 AST 观测契约扩到包外兄弟模块
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
