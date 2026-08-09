@@ -70,7 +70,7 @@ Each task was committed atomically:
 1. **Task 1: Server impact_report + MR 双链路测试骨架** - `bddea227` (test)
 2. **Task 2: Task prompt 测试骨架 + VALIDATION 表对齐** - `7d799cbb` (test)
 
-**Plan metadata:** _(pending docs commit)_
+**Plan metadata:** `355027ad` (docs: complete plan)
 
 ## Files Created/Modified
 
