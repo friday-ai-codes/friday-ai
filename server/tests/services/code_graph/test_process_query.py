@@ -94,7 +94,7 @@ async def test_run_list_processes_and_get_process(indexed_repo, user_obj) -> Non
 
 
 @pytest.mark.django_db(transaction=True)
-def test_mcp_list_get_process_call_through(indexed_repo) -> None:
+async def test_mcp_list_get_process_call_through(indexed_repo) -> None:
     """薄壳 View 只调 run_list_processes / run_get_process，无算法分叉。
 
     （Req: EXEC-02, 决策: D-06）
@@ -102,7 +102,9 @@ def test_mcp_list_get_process_call_through(indexed_repo) -> None:
     from mcp_tools.views import GetProcessView, ListProcessesView
 
     User = get_user_model()
-    user = User.objects.create_user(username="pq-mcp-user", password="x")
+    user = await sync_to_async(User.objects.create_user)(
+        username="pq-mcp-user", password="x"
+    )
     factory = APIRequestFactory()
     repo_id = str(indexed_repo.id)
 
@@ -158,6 +160,8 @@ def test_mcp_list_get_process_call_through(indexed_repo) -> None:
         )
         force_authenticate(req, user=user)
         resp = ListProcessesView.as_view()(req)
+        if hasattr(resp, "__await__"):
+            resp = await resp
         assert getattr(resp, "status_code", 200) == 200
         assert list_mock.await_count == 1
 
@@ -168,6 +172,8 @@ def test_mcp_list_get_process_call_through(indexed_repo) -> None:
         )
         force_authenticate(req2, user=user)
         resp2 = GetProcessView.as_view()(req2)
+        if hasattr(resp2, "__await__"):
+            resp2 = await resp2
         assert getattr(resp2, "status_code", 200) == 200
         assert get_mock.await_count == 1
 
