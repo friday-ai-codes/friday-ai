@@ -13,6 +13,9 @@ single-flight/失败不毒化/降级/半新图闸门）与 **Plan 121-09**（inv
 
 from __future__ import annotations
 
+import threading
+import time
+
 import pytest
 
 
@@ -775,6 +778,8 @@ def test_lock_discipline_documented_and_no_await() -> None:
     }
     assert "asyncio" not in imported, "本模块不得 import asyncio（锁原语一律 threading）"
     assert "threading" in imported
+    # single-flight 的等待信号必须是 loop 无关的 threading.Event（D-04 / Pitfall 8）。
+    assert "threading.Event" in source
 
     for method in (cache_module.GraphService._evict_until_within_budget,
                    cache_module.GraphService._get_entry,
@@ -854,18 +859,241 @@ def test_conftest_autouse_fixture_calls_reset() -> None:
     assert "待 121-07" not in conftest and "Plan 121-07 交付" not in conftest
 
 
+def _make_code_graph():
+    """并发用例的**纯内存**图载荷（真 ``CodeGraph``，不碰数据库）。"""
+    return _make_entry(1, 1).graph
+
+
+class _NoopMatcher:
+    """``ExclusionMatcher`` 的最小替身：什么都不排除，且不读 DB、不编译正则。"""
+
+    def is_excluded(self, file_path: str) -> bool:
+        return False
+
+
+@pytest.fixture
+def no_db_graph_build(monkeypatch):
+    """把 ``_get_graph_sync`` 的**全部四个 DB 触点**一次性 patch 掉，并装上零 SQL 兜底。
+
+    并发用例必须全程不碰数据库：测试库是文件/连接级共享资源，4 个线程同时打进去会重现
+    ``121-VALIDATION.md`` 警告的那类 flaky（照 ``codegraph/lsp/tests/test_volar_pool.py``
+    的范式，该用例同样不碰库）。清单恰好四项，少 patch 一项就会漏出去：
+
+    1. ``access.build_matcher_and_fingerprint``（内部有 ``_resolve_effective_specs``
+       的 DB 读 + 该仓全部 glob/regex 编译）
+    2. ``signature.compute_signature``（水位 / 两条轨 / 两条 COUNT）
+    3. ``signature.detect_edge_build_in_flight``（两条轨的状态读）
+    4. ``GraphService._estimate_admission``（Task 2 建的单一接缝，覆盖两条准入 COUNT）
+
+    ⚠️ ``access.ensure_repository_readable`` 不在清单内：它是 ``async``、只在 ``get_graph``
+    外壳里调用，而并发线程直接进入的是 ``_get_graph_sync``，不经过它。
+
+    **兜底为什么不用 ``CaptureQueriesContext``**：它抓的是**本线程**连接上的查询，而
+    这里的查询恰恰发生在 worker 线程里——用它做断言会对本用例要防的那类回归**恒真**。
+    改为在 ``CursorWrapper.execute`` 上装一个进程级计数器：它与线程、连接都无关，任何
+    线程发出的任何一条 SQL 都会被记下。若将来 ``_get_graph_sync`` 新增 DB 触点，这条
+    断言会立刻失败并逼迫补 patch —— ⛔ 不要为了让用例过而放宽它。
+    """
+    from django.db.backends.utils import CursorWrapper
+
+    from services.code_graph import access as access_module
+    from services.code_graph import cache as cache_module
+    from services.code_graph import signature as signature_module
+
+    monkeypatch.setattr(
+        access_module,
+        "build_matcher_and_fingerprint",
+        lambda repository_id: (_NoopMatcher(), "fp-fixed"),
+    )
+    monkeypatch.setattr(
+        signature_module,
+        "compute_signature",
+        lambda repository_id, branch, *, exclusion_fingerprint: "sig-fixed",
+    )
+    monkeypatch.setattr(
+        signature_module,
+        "detect_edge_build_in_flight",
+        lambda repository_id, branch: (False, ""),
+    )
+    monkeypatch.setattr(
+        cache_module.GraphService,
+        "_estimate_admission",
+        lambda self, repository_id, branch: (10, 20, 1024),
+    )
+
+    executed: list[str] = []
+    real_execute = CursorWrapper.execute
+
+    def _record(self, sql, params=None):
+        executed.append(sql)
+        return real_execute(self, sql, params)
+
+    monkeypatch.setattr(CursorWrapper, "execute", _record)
+    yield executed
+    assert executed == [], f"并发取图路径打了数据库：{executed[:3]}"
+
+
+def _run_concurrently(worker, count: int = 4) -> None:
+    """``threading.Barrier`` 对齐起跑，全部 ``join(timeout=5.0)`` 兜底。
+
+    对齐起跑是确定性的关键：不对齐的话线程可能串行跑完，「只建一次」会因为第二个线程
+    命中缓存而**假绿**——那样连 single-flight 都不需要就能通过。
+    """
+    barrier = threading.Barrier(count)
+    threads = [threading.Thread(target=worker, args=(barrier,)) for _ in range(count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5.0)
+    assert not [t for t in threads if t.is_alive()], "有线程没在 5 秒内结束（疑似永久挂起）"
+
+
 # 121-VALIDATION.md 121-08-T3：N 个并发请求同一 key ⇒ builder 只被调用一次
 # （内存假 builder + 零 DB 查询断言）。
-@pytest.mark.skip(reason="stub：由 Plan 121-08 实现")
-def test_single_flight_builds_once() -> None:
-    pass
+def test_single_flight_builds_once(no_db_graph_build, monkeypatch) -> None:
+    """4 个并发请求同一 key ⇒ 装配只发生一次，4 个返回值全是**同一个对象**。
+
+    范式照 ``codegraph/lsp/tests/test_volar_pool.py::test_concurrent_get_no_double_build``。
+    """
+    from structlog.testing import capture_logs
+
+    from services.code_graph import cache as cache_module
+    from services.code_graph import loader as loader_module
+
+    build_count = 0
+    count_lock = threading.Lock()
+
+    def _fake_load_graph(repository_id, branch="", **kwargs):
+        nonlocal build_count
+        with count_lock:
+            build_count += 1
+        # 装配窗口：让后来者确实撞进「领头正在建」的那一刻。
+        time.sleep(0.05)
+        return _make_code_graph()
+
+    monkeypatch.setattr(loader_module, "load_graph", _fake_load_graph)
+
+    svc = cache_module.get_graph_service()
+    results: list[object] = []
+    errors: list[BaseException] = []
+
+    def _worker(barrier: threading.Barrier) -> None:
+        barrier.wait(timeout=5.0)
+        try:
+            results.append(svc._get_graph_sync("repo", "", False, (), None, "system"))
+        except BaseException as exc:  # noqa: BLE001 — 用例要把异常带回主线程断言
+            errors.append(exc)
+
+    with capture_logs():
+        _run_concurrently(_worker)
+
+    assert not errors, errors
+    assert build_count == 1, f"同 key 并发装配了 {build_count} 次——single-flight 没生效"
+    assert len(results) == 4
+    assert all(item is results[0] for item in results)
+    # 领头装配期间等待者能拿到占位（而不是被 map 锁卡在入口）：只有装配在锁外进行
+    # 才可能出现「4 个线程都进到等待/返回阶段」这个结果。
+    assert svc._inflight == {}
 
 
 # 121-VALIDATION.md 121-08-T3：构建失败 ⇒ 所有等待者各自抛，
 # 且失败不进缓存（不毒化后续请求）。
-@pytest.mark.skip(reason="stub：由 Plan 121-08 实现")
-def test_build_failure_not_cached() -> None:
-    pass
+def test_build_failure_not_cached(no_db_graph_build, monkeypatch) -> None:
+    """领头失败 ⇒ 4 个并发请求**各自**抛出；失败不进缓存、不留占位、下次可重试成功。"""
+    from structlog.testing import capture_logs
+
+    from services.code_graph import cache as cache_module
+    from services.code_graph import loader as loader_module
+    from services.code_graph.model import GraphBuildFailed
+
+    def _failing_load_graph(repository_id, branch="", **kwargs):
+        time.sleep(0.05)
+        raise RuntimeError("装配炸了")
+
+    monkeypatch.setattr(loader_module, "load_graph", _failing_load_graph)
+
+    svc = cache_module.get_graph_service()
+    errors: list[BaseException] = []
+    results: list[object] = []
+
+    def _worker(barrier: threading.Barrier) -> None:
+        barrier.wait(timeout=5.0)
+        try:
+            results.append(svc._get_graph_sync("repo", "", False, (), None, "system"))
+        except BaseException as exc:  # noqa: BLE001 — 用例要把异常带回主线程断言
+            errors.append(exc)
+
+    with capture_logs() as events:
+        _run_concurrently(_worker)
+
+    assert not results, "构建失败却有请求拿到了图"
+    assert len(errors) == 4, "有请求既没拿到图也没抛异常（多半是永久挂起后被 join 放弃）"
+    # 领头抛原异常，等待者抛 GraphBuildFailed（原异常挂在 __cause__ 上供排障）。
+    assert any(isinstance(exc, RuntimeError) for exc in errors)
+    waiter_errors = [exc for exc in errors if isinstance(exc, GraphBuildFailed)]
+    assert len(waiter_errors) == 3
+    assert all(isinstance(exc.__cause__, RuntimeError) for exc in waiter_errors)
+
+    failed = [e for e in events if e["event"] == "code_graph_build_failed"]
+    assert len(failed) == 1
+    assert failed[0]["error_type"] == "RuntimeError"
+    assert failed[0]["waiters"] == 3
+
+    assert svc.stats()["entries"] == 0, "失败结果进了缓存"
+    assert svc._inflight == {}, "失败占位没弹出——下一个请求会挂在一个永不 set 的 event 上"
+
+    # 失败未毒化：换成成功实现后立刻能建出来。
+    monkeypatch.setattr(
+        loader_module,
+        "load_graph",
+        lambda repository_id, branch="", **kwargs: _make_code_graph(),
+    )
+    with capture_logs():
+        retried = svc._get_graph_sync("repo", "", False, (), None, "system")
+    assert retried is not None
+    assert svc.stats()["entries"] == 1
+
+
+def test_single_flight_waiter_times_out(no_db_graph_build, monkeypatch) -> None:
+    """领头卡住时等待者**超时抛错**，而不是永久挂起。
+
+    超时是必需的而非可选：领头请求随时可能被 kill（最典型的是 ASGI 断连取消），
+    没有上界的话等待者会一直挂在一个永不 ``set`` 的 event 上，一个卡死的构建就能
+    把该 key 的所有后续请求拖死。
+    """
+    from django.test import override_settings
+    from structlog.testing import capture_logs
+
+    from services.code_graph import cache as cache_module
+    from services.code_graph import loader as loader_module
+    from services.code_graph.model import GraphBuildTimeout
+
+    release = threading.Event()
+
+    def _blocking_load_graph(repository_id, branch="", **kwargs):
+        release.wait(timeout=5.0)
+        return _make_code_graph()
+
+    monkeypatch.setattr(loader_module, "load_graph", _blocking_load_graph)
+
+    svc = cache_module.get_graph_service()
+    leader = threading.Thread(
+        target=lambda: svc._get_graph_sync("repo", "", False, (), None, "system")
+    )
+    with capture_logs():
+        leader.start()
+        deadline = time.monotonic() + 5.0
+        while not svc._inflight and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert svc._inflight, "领头没能在 5 秒内登记占位"
+
+        with override_settings(CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS=0):
+            with pytest.raises(GraphBuildTimeout):
+                svc._get_graph_sync("repo", "", False, (), None, "system")
+
+        release.set()
+        leader.join(timeout=5.0)
+    assert not leader.is_alive()
 
 
 # 121-VALIDATION.md 121-08-T2：单图估算 > CODE_GRAPH_MAX_GRAPH_BYTES ⇒ 不进缓存

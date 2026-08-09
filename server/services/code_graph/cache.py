@@ -56,9 +56,16 @@ from typing import Any, Final
 
 import structlog
 from asgiref.sync import sync_to_async
+from django.conf import settings
 
+from common.logging import redact_secrets_in_text
 from services.code_graph import access, loader, signature
-from services.code_graph.model import CodeGraph, GraphError
+from services.code_graph.model import (
+    CodeGraph,
+    GraphBuildFailed,
+    GraphBuildTimeout,
+    GraphError,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -240,6 +247,41 @@ def _log_build_completed(
         pass
 
 
+def _log_build_failed(
+    *,
+    repository_id: str,
+    branch: str,
+    error: str,
+    error_type: str,
+    duration_ms: float,
+    waiters: int,
+    initiated_by_user_id: str,
+) -> None:
+    """装配失败。WARNING —— 领头失败会连带让全部等待者一起失败，值得被看见。
+
+    ``waiters`` 记的是失败时挂在同一个占位上的等待者数：它把「一次瞬时故障波及了几个
+    请求」这件事直接答出来，否则只能从零散的 ``GraphBuildFailed`` 里数。
+
+    异常文本过 ``redact_secrets_in_text`` 后截断 500 字符：装配路径上的异常可能带
+    上游连接串或凭证片段（威胁登记 T-121-异常泄密）。
+    """
+    try:
+        logger.warning(
+            _EVENT_BUILD_FAILED,
+            component="code_graph",
+            category="sampling",
+            repository_id=repository_id,
+            branch=branch or "-",
+            error=redact_secrets_in_text(error)[:500],
+            error_type=error_type,
+            duration_ms=duration_ms,
+            waiters=waiters,
+            initiated_by_user_id=initiated_by_user_id,
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
+
+
 # =============================================================================
 # 字节预算 LRU
 # =============================================================================
@@ -264,6 +306,33 @@ class _Entry:
     estimated_bytes: int
     built_signature: str
     built_at: datetime
+
+
+@dataclass
+class _InFlight:
+    """per-key single-flight 占位：领头装配期间，同键的后来者挂在这里等同一个结果。
+
+    🚨 ``event`` 必须是 ``threading.Event``，⛔ **绝不能是 ``asyncio.Event``**
+    （121-CONTEXT D-04 / RESEARCH Pitfall 8）：本仓同时存在 ASGI 主循环、
+    ``background_runner`` 常驻 daemon 线程循环、workflow engine ``_run_in_thread``
+    的每次执行独立循环三类 loop，而 :class:`GraphService` 是进程级单例、会被三者共用；
+    ``asyncio`` 原语绑定创建它的那个 loop，跨 loop 使用直接 ``RuntimeError``。
+    ``threading.Event`` 与 loop 无关，是这里唯一稳妥的形态。
+
+    ⚠️ ``event.wait()`` 是**阻塞**调用，但它只会跑在 ``sync_to_async`` 派发的执行器
+    线程上、不在 event loop 线程上，所以不阻塞 loop（RESEARCH Pitfall 7）。若将来有人
+    要从协程里直接等待占位，必须走 ``await asyncio.to_thread(ev.wait, timeout)``，
+    ⛔ 不得在协程里直接 ``ev.wait()``。
+
+    ⛔ **失败不留痕**：占位在 ``finally`` 中无条件从 ``_inflight`` 弹出，失败也不写进
+    缓存——不做失败缓存是刻意的，一次瞬时故障不该毒化后续所有请求。
+    """
+
+    event: threading.Event
+    result: CodeGraph | None = None
+    error: BaseException | None = None
+    # 失败埋点用：这次故障一共波及了几个等待者。
+    waiters: int = 0
 
 
 class GraphService:
@@ -296,8 +365,9 @@ class GraphService:
         # 只保护 map 本身（以及 _total_bytes 这个伴随它的计数），不保护建图过程——
         # 建图要 2–4 秒，放进锁内会让所有其它仓库的取图一起排队。
         self._lock = threading.RLock()
-        # single-flight 占位。Plan 121-08 填充（键 → 领头请求的等待原语）。
-        self._inflight: dict[CacheKey, Any] = {}
+        # per-key single-flight 占位（键 → 领头请求的等待原语）。与 ``_cache`` 一样，
+        # 只有这个 map **本身**受 ``_lock`` 保护；装配全程在锁外进行。
+        self._inflight: dict[CacheKey, _InFlight] = {}
 
     def _get_entry(self, key: CacheKey) -> _Entry | None:
         """取条目并把它移到 MRU 端。**调用方必须已持锁**（:attr:`_lock`）。
@@ -497,20 +567,118 @@ class GraphService:
                     # 该条目本身没有被证伪，边构建完成后签名自然会推进并触发正常替换；
                     # 驱逐只会白白丢掉一份可能马上又要用的图。
 
-        return self._build_graph(
-            key=key,
-            repository_id=repository_id,
-            branch=branch,
-            include_low_confidence=include_low_confidence,
-            seed_symbol_ids=seed_symbol_ids,
-            depth=depth,
-            matcher=matcher,
-            exclusion_fingerprint=exclusion_fingerprint,
-            current_sig=current_sig,
-            in_flight=in_flight,
-            in_flight_reason=in_flight_reason,
-            user_id=user_id,
-        )
+        build_kwargs: dict[str, Any] = {
+            "key": key,
+            "repository_id": repository_id,
+            "branch": branch,
+            "include_low_confidence": include_low_confidence,
+            "seed_symbol_ids": seed_symbol_ids,
+            "depth": depth,
+            "matcher": matcher,
+            "exclusion_fingerprint": exclusion_fingerprint,
+            "current_sig": current_sig,
+            "in_flight": in_flight,
+            "in_flight_reason": in_flight_reason,
+            "user_id": user_id,
+        }
+
+        if seed_symbol_ids:
+            # ⛔ 子图请求**不进** single-flight：占位键是 ``(repository_id, branch)``，
+            # 里面没有种子与深度这两维。让不同种子的并发请求共用同一个占位，等待者拿到的
+            # 会是领头那份**别人种子**的子图——那是错图，不是慢图，比重复装配严重得多。
+            return self._build_graph(**build_kwargs)
+
+        return self._build_single_flight(key, build_kwargs)
+
+    def _build_single_flight(
+        self, key: CacheKey, build_kwargs: dict[str, Any]
+    ) -> CodeGraph:
+        """同键并发只装配一次：领头真建，其余等同一个结果（威胁登记 T-121-风暴）。
+
+        锁纪律：:attr:`_lock` **只**保护 ``_inflight`` / ``_cache`` 两个 map 本身，装配
+        （2–4 秒纯 CPU + ORM）一律在锁外——放进锁内会让所有**其它仓库**的取图一起排队。
+        """
+        with self._lock:
+            existing = self._inflight.get(key)
+            if existing is None:
+                inflight = _InFlight(event=threading.Event())
+                self._inflight[key] = inflight
+                is_leader = True
+            else:
+                existing.waiters += 1
+                inflight = existing
+                is_leader = False
+
+        if not is_leader:
+            return self._wait_for_inflight(inflight, key=key)
+
+        started = time.perf_counter()
+        result: CodeGraph | None = None
+        error: BaseException | None = None
+        try:
+            result = self._build_graph(**build_kwargs)
+            return result
+        except BaseException as exc:  # noqa: BLE001 — 记录并唤醒等待者后原样抛出
+            error = exc
+            raise
+        finally:
+            # 无条件弹出占位：⛔ 不做失败缓存，下一个请求会重新竞争占位并重新构建，
+            # 一次瞬时故障因此不会毒化后续所有请求（威胁登记 T-121-毒化）。
+            with self._lock:
+                inflight.result = result
+                inflight.error = error
+                self._inflight.pop(key, None)
+                waiters = inflight.waiters
+            inflight.event.set()
+            if error is not None:
+                _log_build_failed(
+                    repository_id=key[0],
+                    branch=key[1],
+                    error=str(error),
+                    error_type=type(error).__name__,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                    waiters=waiters,
+                    initiated_by_user_id=build_kwargs["user_id"],
+                )
+
+    def _wait_for_inflight(self, inflight: _InFlight, *, key: CacheKey) -> CodeGraph:
+        """等领头把图建出来。**超时是必需的，不是可选的**。
+
+        领头请求随时可能被 kill（最典型的是 ASGI 断连取消），届时占位虽然会在
+        ``finally`` 里弹出、``event`` 也会被 set，但若领头连 ``finally`` 都没跑到
+        （进程级中断），等待者不能就此永久挂住。上界取
+        ``settings.CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS``。
+
+        ⚠️ 这里的 ``event.wait()`` 是阻塞调用，运行在 ``sync_to_async`` 派发的执行器
+        线程上、不在 event loop 线程上，所以不阻塞 loop（RESEARCH Pitfall 7）。
+        """
+        timeout = float(getattr(settings, "CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS", 120))
+        if not inflight.event.wait(timeout):
+            raise GraphBuildTimeout(
+                "等待同键的图构建超时",
+                {
+                    "repository_id": key[0],
+                    "branch": key[1],
+                    "timeout_seconds": timeout,
+                },
+            )
+        if inflight.error is not None:
+            # 包一层再抛：等待者拿到的是「领头失败了」这个事实，原异常留在 __cause__ 里
+            # 供排障，⛔ 不返回任何降级结果（宁可显式失败也不给半成品）。
+            raise GraphBuildFailed(
+                "领头请求的图构建失败",
+                {
+                    "repository_id": key[0],
+                    "branch": key[1],
+                    "error_type": type(inflight.error).__name__,
+                },
+            ) from inflight.error
+        if inflight.result is None:
+            raise GraphBuildFailed(
+                "领头请求既未产出图也未记录异常",
+                {"repository_id": key[0], "branch": key[1]},
+            )
+        return inflight.result
 
     def _build_graph(
         self,
@@ -681,8 +849,6 @@ def get_graph_service() -> GraphService:
     global _GRAPH_SERVICE
     with _SINGLETON_LOCK:
         if _GRAPH_SERVICE is None:
-            from django.conf import settings
-
             _GRAPH_SERVICE = GraphService(
                 max_bytes=int(
                     getattr(settings, "CODE_GRAPH_CACHE_MAX_BYTES", 512 * 1024 * 1024)
