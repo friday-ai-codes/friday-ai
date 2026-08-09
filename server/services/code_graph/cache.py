@@ -78,6 +78,8 @@ logger = structlog.get_logger(__name__)
 # 事件名可静态解析，转发器只会让它看到一个形参名（Plan 121-04 实际被这条契约拦下过一次）。
 _EVENT_CACHE_HIT: Final[str] = "code_graph_cache_hit"
 _EVENT_CACHE_EVICTED: Final[str] = "code_graph_cache_evicted"
+_EVENT_CACHE_INVALIDATED: Final[str] = "code_graph_cache_invalidated"
+_EVENT_CACHE_INVALIDATE_FAILED: Final[str] = "code_graph_cache_invalidate_failed"
 _EVENT_STALE_WATERMARK: Final[str] = "code_graph_stale_watermark"
 _EVENT_BUILD_STARTED: Final[str] = "code_graph_build_started"
 _EVENT_BUILD_COMPLETED: Final[str] = "code_graph_build_completed"
@@ -183,6 +185,27 @@ def _log_stale_watermark(
             cached_signature=cached_signature[:12],
             current_signature=current_signature[:12],
             reason="signature_mismatch",
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
+
+
+def _log_invalidate_failed(*, repository_id: Any, exc: BaseException) -> None:
+    """主动失效失败。WARNING —— 照 ``GalaxyGraphCache.refresh_repo`` L289–294 的形态。
+
+    这条事件是「失效没生效」的唯一线索，而失效失效之后**正确性仍由取图时的签名复校
+    兜住**（钩子只是优化），所以这里 WARNING 而非 ERROR。异常文本过
+    ``redact_secrets_in_text`` 后截断 500 字符（威胁登记 T-121-异常泄密）。
+    """
+    try:
+        logger.warning(
+            _EVENT_CACHE_INVALIDATE_FAILED,
+            component="code_graph",
+            category="sampling",
+            repository_id=str(repository_id),
+            error=redact_secrets_in_text(str(exc))[:500],
+            error_type=type(exc).__name__,
+            initiated_by_user_id="system",
         )
     except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
         pass
@@ -438,6 +461,63 @@ class GraphService:
                 "total_bytes": self._total_bytes,
                 "max_bytes": self._max_bytes,
             }
+
+    def invalidate(self, repository_id: str) -> None:
+        """驱逐某仓库**全部分支**的图条目，并连带清掉该仓的 matcher/指纹 memo。
+
+        由两处「构建完成」钩子调用：``code_relations/tasks.py`` 的 ChunkEdge 边构建
+        完成点与 ``services/graph_builder.py`` 的 Symbol/CallEdge 抽取完成点。
+
+        🚨 **只驱逐、不重建** —— 与 ``codegraph/galaxy/cache.py::refresh_repo``
+        （驱逐 **+** 重建）刻意不同：重建要在钩子线程上跑 2–4 秒纯 CPU，会把索引流水线
+        直接拖慢；本相位让下一次真正需要图的调用去冷建，代价落在它自己身上。
+
+        🚨 **这是优化，不是正确性保证。** 钩子只对**本 worker** 生效；多 worker 部署下
+        其余进程里的旧图仍然只能靠取图时的**签名**复校发现陈旧，因此
+        :meth:`_get_graph_sync` 里那道签名比对**不可删除**。
+
+        matcher/指纹 memo 必须一并清：规则若刚变过而指纹仍是 60s 内的旧值，复校算出的
+        签名会与旧条目**恰好一致**，陈旧图会被判成命中——只清图不清指纹等于没清。
+
+        ⚠️ 刻意**不动** ``_inflight``：正在装配的领头请求可能在本次驱逐之后才回写条目，
+        那条回写带的是它自己那一刻的签名，下一次取图的签名复校会照常把它判掉。
+
+        所有异常内部吞掉（照 ``refresh_repo``）：缓存维护 best-effort，绝不反噬边构建 /
+        图谱构建主流程。
+        """
+        try:
+            repo_key = str(repository_id)
+            with self._lock:
+                stale_keys = [key for key in self._cache if key[0] == repo_key]
+                evicted_bytes = 0
+                for key in stale_keys:
+                    entry = self._cache.pop(key, None)
+                    if entry is None:
+                        continue
+                    evicted_bytes += entry.estimated_bytes
+                    self._total_bytes -= entry.estimated_bytes
+                total_bytes = self._total_bytes
+                cache_size = len(self._cache)
+
+            access.invalidate_matcher_fingerprint_cache(repository_id=repo_key)
+
+            # 一条**汇总**事件（不是每条目一条）：钩子路径低频，INFO 可接受，而
+            # per-entry 打点在多分支大仓上就是刷屏。
+            logger.info(
+                _EVENT_CACHE_INVALIDATED,
+                component="code_graph",
+                category="sampling",
+                repository_id=repo_key,
+                evicted_entries=len(stale_keys),
+                evicted_bytes=evicted_bytes,
+                total_bytes=total_bytes,
+                cache_size=cache_size,
+                reason="build_completed",
+                # 钩子跑在后台任务上下文里，没有 request 也没有触发用户（LOGGING-SPEC §3）。
+                initiated_by_user_id="system",
+            )
+        except Exception as exc:  # noqa: BLE001 — 失效失败绝不反噬构建主流程
+            _log_invalidate_failed(repository_id=repository_id, exc=exc)
 
     # ── 取图入口（GRAPH-01/02/03 在同一条链路上收口） ────────────────────────
 
@@ -860,6 +940,25 @@ def get_graph_service() -> GraphService:
         return _GRAPH_SERVICE
 
 
+def invalidate_repository(repository_id: str) -> None:
+    """驱逐某仓库在**本 worker** 的图缓存 —— 构建完成钩子的**唯一**公开入口。
+
+    钩子必须走这个模块级函数（并且从**包根** ``from services.code_graph import
+    invalidate_repository`` 导入），而不是自己 ``get_graph_service().invalidate(...)``：
+    包根的 curated barrel 正是为了挡住上层直连 ``services.code_graph.cache``，钩子
+    自己带头绕过会让 ``__init__.py`` 那道防线形同虚设。
+
+    ⚠️ 同 :meth:`GraphService.invalidate`——**只是优化，不是正确性保证**：多 worker
+    部署下只对本进程生效，其余进程靠取图时的签名复校兜底。
+
+    异常同样内部吞掉：失效失败不得让边构建 / 图谱构建的成功出口翻车。
+    """
+    try:
+        get_graph_service().invalidate(repository_id)
+    except Exception as exc:  # noqa: BLE001 — 失效失败绝不反噬构建主流程
+        _log_invalidate_failed(repository_id=repository_id, exc=exc)
+
+
 def _reset_for_tests() -> None:
     """测试钩子：丢弃模块级单例并清空其状态，下次 :func:`get_graph_service` 会重建。
 
@@ -888,4 +987,5 @@ __all__ = [
     "GraphService",
     "estimate_graph_bytes",
     "get_graph_service",
+    "invalidate_repository",
 ]
