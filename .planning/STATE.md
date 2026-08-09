@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
 status: completed
-stopped_at: Completed 122-02-PLAN.md
-last_updated: "2026-08-09T15:41:39.465Z"
-last_activity: 2026-08-09 — 122-01 完成：`tests/services/code_graph` 96 → 97 passed / 23 skipped，零新增失败
+stopped_at: Completed 122-03-PLAN.md
+last_updated: "2026-08-09T16:00:58.369Z"
+last_activity: 2026-08-09 — 122-02 完成：`tests/services/code_graph` 97 → 100 passed / 22 skipped，零新增失败
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 20
-  completed_plans: 12
+  completed_plans: 13
   percent: 14
 ---
 
@@ -28,16 +28,16 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 ## Current Position
 
 Phase: 122 (impact / trace 工具面) — 🚧 IN PROGRESS (121 verified passed 4/4, code review 20 findings 处理完毕)
-Plan: 2 of 10
-Status: 122-02 complete — 图内符号解析器已落地（uid 优先 + 重名候选列表，impact/trace 共用；D-28 边界写进 barrel docstring）
-Last activity: 2026-08-09 — 122-02 完成：`tests/services/code_graph` 97 → 100 passed / 22 skipped，零新增失败
+Plan: 3 of 10
+Status: 122-03 complete — impact 内核已落地（分层反向 BFS + path-min 置信度 + D-08 双闸 + 确定性风险四级含 D-29 弱证据封顶 + 200 条截断 summary，全程只读不复制图）
+Last activity: 2026-08-09 — 122-03 完成：`tests/services/code_graph` 100 → 108 passed / 14 skipped，`test_impact.py` 达成 9 passed / 1 skipped，零新增失败
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 121 | 内存图服务基座（缓存四件套 + 边准入 + 权限/exclusion 读取层收口） | GRAPH-01~04 | ✅ Complete (10/10 plans, verified passed) |
-| 122 | impact / trace 工具面（深度分组 + 置信度分层 + 跨仓 + MCP/对话双面） | IMPACT-01~06 | 🚧 In progress (2/10 plans — 验收地基 + 图内符号解析器已落地) |
+| 122 | impact / trace 工具面（深度分组 + 置信度分层 + 跨仓 + MCP/对话双面） | IMPACT-01~06 | 🚧 In progress (3/10 plans — 验收地基 + 图内符号解析器 + impact 内核已落地) |
 | 123 | detect_changes 工具本体（水位锚定 diff × Symbol 定位 + 批量 impact） | DIFF-01/02 | Not started |
 | 124 | 编码链闭环（容器提交前自查 + MR 描述影响面报告 fail-soft） | DIFF-03/04 | Not started |
 | 125 | 社区检测 + 模块摘要（Louvain + 指纹跳过 + 三点注入不动冻结面） | MOD-01~04 | Not started |
@@ -326,6 +326,7 @@ Last activity: 2026-08-09 — 122-02 完成：`tests/services/code_graph` 97 →
 | Phase 121-graph-base P09 | 45min | 2 tasks | 6 files |
 | Phase 122 P01 | 30min | 3 tasks | 9 files |
 | Phase 122 P02 | 25min | 2 tasks | 3 files |
+| Phase 122 P03 | 13min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -580,6 +581,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 122]: 122-02：symbol_resolve 定下「要么唯一答案、要么候选列表」互斥不变式（resolved 非空 ⇒ candidates 必空） — 不存在「给了 resolved 又附一堆候选」的中间态，杜绝调用方误以为可以直接用第一个；命中恰 1 个时 candidates 也置空
 - [Phase 122]: 122-02：file_path 收窄的后缀匹配必须卡在 / 边界上 — 裸 endswith 会让 r.go 匹上 user.go；「收窄参数反而放进不相干符号」比不支持后缀更糟，调用方会以为自己已消歧成功
 - [Phase 122]: 122-02：候选排序键带第三项 symbol_id — 生产 24,312 组同文件同名多符号在 (file_path, start_line) 上完全打平；少了第三项，前 20 条就依赖 graph.nodes 插入序，同一查询在两个 worker 上结果可能不同
+- [Phase 122]: 122-03: impact 内核的风险等级取截断前的 d1 全量与 best_path_tier —— 等级描述真实影响面，不该因输出被截到 200 条而变小
+- [Phase 122]: 122-03: D-29 弱证据封顶实现为「只降不升」，初判 LOW 时不被抬到 MEDIUM
+- [Phase 122]: 122-03: RISK_THRESHOLDS 四个阈值如实标注为未经真实数据校准的初值，校准照 121-10 复校范式留待工具上线后
 
 ### Pending Todos
 
@@ -947,8 +951,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-09T15:41:39.451Z
-Stopped at: Completed 122-02-PLAN.md
+Last session: 2026-08-09T16:00:46.775Z
+Stopped at: Completed 122-03-PLAN.md
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。
 Earlier: 2026-07-31T07:28:32.180Z — v0.19.0 全部相位执行完毕（105/106/107/109/110）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01；Phase 110 七个 plan 全落地并闭合 GAP-1（前半程失败时间线撒谎）。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。
