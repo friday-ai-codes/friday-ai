@@ -93,6 +93,7 @@ from services.code_graph.symbol_resolve import (
     SymbolResolution,
     resolve_symbol_in_graph,
 )
+from services.code_graph.trace import DEFAULT_ALT_PATH_CAP, trace_path
 
 logger = structlog.get_logger(__name__)
 
@@ -125,6 +126,16 @@ GRAPH_ERROR_MESSAGES: Final[Mapping[type[GraphError], tuple[str, str]]] = {
     ),
 }
 
+# 按需子图种子深度（``run_trace``）：子图路径按 ``radius = depth + 1`` 扩张，3
+# 已能覆盖绝大多数「两点之间几跳」的实际查询；更深的路径在按需子图上可能查不到，
+# 无路径结果里必须如实声明（见 :func:`run_trace` 第 ⑤ 步）。
+_TRACE_SEED_DEPTH: Final[int] = 3
+
+# 按需子图上「无路径」时的补充声明——⛔ 不把「子图里没查到」说成「确实无路径」。
+_SUBGRAPH_NO_PATH_DECLARATION: Final[str] = (
+    "本次在按需子图上查询，超出子图覆盖范围的更长路径可能未被检出"
+)
+
 __all__ = [
     "CANDIDATE_SIGNATURE_MAX_CHARS",
     "GRAPH_ERROR_MESSAGES",
@@ -134,6 +145,7 @@ __all__ = [
     "resolution_to_payload",
     "resolve_symbol_candidates",
     "run_impact",
+    "run_trace",
     "staleness_payload",
 ]
 
@@ -834,4 +846,148 @@ async def run_impact(
         "affected_processes": [],
         "staleness": await staleness_payload(repo),
         "graph": degradation_payload(graph.meta),
+    }
+
+
+async def run_trace(
+    *,
+    repository_id: str,
+    repo: Any,
+    graph_branch: str | None,
+    user: Any,
+    source_symbol_id: str | None = None,
+    source: str | None = None,
+    source_file_path: str | None = None,
+    target_symbol_id: str | None = None,
+    target: str | None = None,
+    target_file_path: str | None = None,
+    min_confidence: float = 1.0,
+    include_low_confidence: bool = False,
+    alt_path_cap: int = DEFAULT_ALT_PATH_CAP,
+) -> dict[str, Any]:
+    """调用路径追踪的**唯一**编排入口——与 :func:`run_impact` 同构（D-21）。
+
+    ``ok`` 回答「这次查询做成了吗」；``found`` 回答「两点之间有路吗」。
+    ``found is False`` 时 ``ok`` **仍为** ``True``——「确实没有调用关系」是一次成功的
+    查询结果，不是工具故障（D-20）。⛔ 把 ``found=False`` 映射成 ``ok=False`` 会让
+    agent 把「没有调用关系」误读成「工具坏了」。
+
+    失败语义与 :func:`run_impact` 共用 ``ok`` / ``error_code`` / ``error`` 三键；
+    ``GraphError`` 同样是唯一向上冒泡的异常类型。
+    """
+    branch_names = ["", graph_branch] if graph_branch else [""]
+
+    source_res = await resolve_symbol_candidates(
+        repository_id=repository_id,
+        branch_names=branch_names,
+        symbol_id=source_symbol_id,
+        name=source,
+        file_path=source_file_path,
+    )
+    target_res = await resolve_symbol_candidates(
+        repository_id=repository_id,
+        branch_names=branch_names,
+        symbol_id=target_symbol_id,
+        name=target,
+        file_path=target_file_path,
+    )
+
+    if source_res.total_candidates == 0:
+        return {
+            "ok": False,
+            "error_code": "symbol_not_found",
+            "error": "未找到 source 端匹配的符号；请检查 source / source_symbol_id / source_file_path",
+            "end": "source",
+            "query": {
+                "source_symbol_id": source_symbol_id,
+                "source": source,
+                "source_file_path": source_file_path,
+                "target_symbol_id": target_symbol_id,
+                "target": target,
+                "target_file_path": target_file_path,
+            },
+        }
+    if target_res.total_candidates == 0:
+        return {
+            "ok": False,
+            "error_code": "symbol_not_found",
+            "error": "未找到 target 端匹配的符号；请检查 target / target_symbol_id / target_file_path",
+            "end": "target",
+            "query": {
+                "source_symbol_id": source_symbol_id,
+                "source": source,
+                "source_file_path": source_file_path,
+                "target_symbol_id": target_symbol_id,
+                "target": target,
+                "target_file_path": target_file_path,
+            },
+        }
+
+    if source_res.candidates or target_res.candidates:
+        # 🚨 在取图之前短路（D-19）。哪端歧义填哪端 resolution，另一端给已解析 id。
+        payload: dict[str, Any] = {
+            "ok": False,
+            "error_code": "ambiguous_symbol",
+            "error": "符号名不唯一；请带 symbol_id 重试，或补 file_path 收窄",
+        }
+        if source_res.candidates:
+            payload["source_resolution"] = resolution_to_payload(source_res)
+        else:
+            payload["source"] = source_res.resolved
+        if target_res.candidates:
+            payload["target_resolution"] = resolution_to_payload(target_res)
+        else:
+            payload["target"] = target_res.resolved
+        return payload
+
+    source_sid = source_res.resolved
+    target_sid = target_res.resolved
+    assert source_sid is not None and target_sid is not None
+
+    # ② 两端都是种子（D-24）；深度见 :data:`_TRACE_SEED_DEPTH`。
+    graph = await fetch_graph_for_tool(
+        repository_id,
+        graph_branch or "",
+        user=user,
+        seed_symbol_ids=[source_sid, target_sid],
+        depth=_TRACE_SEED_DEPTH,
+        include_low_confidence=include_low_confidence,
+    )
+
+    # ③ 内核（本文件内唯一调用点）。
+    traced = trace_path(
+        graph.graph,
+        source_sid,
+        target_sid,
+        min_confidence=min_confidence,
+        alt_path_cap=alt_path_cap,
+    )
+
+    graph_payload = degradation_payload(graph.meta)
+    # ⑤ 按需子图 + 无路径：追加补充声明，⛔ 不编造「确实无路径」的更强结论。
+    if (
+        str(graph.meta.degraded).startswith("on_demand_subgraph")
+        and traced.get("found") is False
+    ):
+        graph_payload = {
+            **graph_payload,
+            "declarations": [
+                *list(graph_payload["declarations"]),
+                _SUBGRAPH_NO_PATH_DECLARATION,
+            ],
+        }
+
+    return {
+        "ok": True,
+        "tool": "trace_call_path",
+        "repository_id": str(repository_id),
+        "branch": _branch_label(repo, graph_branch),
+        "query": {
+            "min_confidence": min_confidence,
+            "include_low_confidence": include_low_confidence,
+            "alt_path_cap": alt_path_cap,
+        },
+        **traced,
+        "staleness": await staleness_payload(repo),
+        "graph": graph_payload,
     }

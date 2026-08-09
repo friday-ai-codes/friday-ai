@@ -29,6 +29,7 @@ from services.code_graph_tools import (
     fetch_graph_for_tool,
     graph_error_to_tool_error,
     run_impact,
+    run_trace,
 )
 
 pytestmark = pytest.mark.django_db
@@ -347,3 +348,146 @@ async def test_symbol_not_in_graph_is_explicit(
     assert result["ok"] is False
     assert result["error_code"] == "symbol_not_in_graph"
     assert "groups" not in result
+
+
+def _make_resolved_chain(symbols_factory, call_edges_factory, length: int):
+    """造 ``s0 → s1 → … → s{length}`` 解析调用链（每符号独立文件）。"""
+    chain = [
+        symbols_factory(f"s{i}", f"src/chain/s{i}.py", start_line=i + 1, end_line=i + 2)
+        for i in range(length + 1)
+    ]
+    for i in range(length):
+        call_edges_factory(chain[i], chain[i + 1], line_number=i + 1)
+    return chain
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_run_trace_envelope(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """A→B→C 解析链 ⇒ ``ok`` / ``found`` / ``hops==2``，含声明段。
+
+    （Req: IMPACT-02, 决策: D-18 / D-20）
+    """
+    def _seed():
+        return _make_resolved_chain(symbols_factory, call_edges_factory, length=2)
+
+    chain = await sync_to_async(_seed)()
+    result = await run_trace(
+        repository_id=str(indexed_repo.id),
+        repo=indexed_repo,
+        graph_branch=None,
+        user=None,
+        source_symbol_id=str(chain[0].id),
+        target_symbol_id=str(chain[2].id),
+    )
+
+    assert result["ok"] is True
+    assert result["found"] is True
+    assert len(result["hops"]) == 2
+    assert "staleness" in result
+    assert "graph" in result
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_run_trace_no_path_is_ok_true(
+    indexed_repo, symbols_factory
+) -> None:
+    """互不可达 ⇒ ``ok is True`` 且 ``found is False``（D-20）。
+
+    （Req: IMPACT-02, 决策: D-20）
+    """
+    def _seed():
+        a = symbols_factory("alone_a", "src/alone_a.py")
+        b = symbols_factory("alone_b", "src/alone_b.py")
+        return a, b
+
+    source, target = await sync_to_async(_seed)()
+    result = await run_trace(
+        repository_id=str(indexed_repo.id),
+        repo=indexed_repo,
+        graph_branch=None,
+        user=None,
+        source_symbol_id=str(source.id),
+        target_symbol_id=str(target.id),
+    )
+
+    assert result["ok"] is True
+    assert result["found"] is False
+    assert result["reason"] == "no_path"
+    assert "source" in result
+    assert "target" in result
+    assert "min_confidence" in result
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_run_trace_no_path_on_subgraph_declares_uncertainty(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """按需子图上比种子半径更长的路径 ⇒ ``found=False`` + 补充声明。
+
+    上一条用的是全图，覆盖不到编排层第 ⑤ 步。``_TRACE_SEED_DEPTH=3`` ⇒
+    ``radius=4``；两端同时做种子时覆盖半径合计 8 跳，造一条 10 跳链让中间断档。
+
+    （决策: D-24）
+    """
+    from services.code_graph import cache as cache_module
+
+    def _seed():
+        # 10 跳：两端各扩 4 跳仍接不上。
+        return _make_resolved_chain(symbols_factory, call_edges_factory, length=10)
+
+    chain = await sync_to_async(_seed)()
+
+    with override_settings(CODE_GRAPH_MAX_GRAPH_BYTES=1):
+        cache_module._reset_for_tests()
+        result = await run_trace(
+            repository_id=str(indexed_repo.id),
+            repo=indexed_repo,
+            graph_branch=None,
+            user=None,
+            source_symbol_id=str(chain[0].id),
+            target_symbol_id=str(chain[10].id),
+        )
+
+    assert result["graph"]["degraded"].startswith("on_demand_subgraph")
+    assert result["found"] is False
+    assert any(
+        "超出子图覆盖范围" in d for d in result["graph"]["declarations"]
+    ), result["graph"]["declarations"]
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_run_trace_ambiguous_short_circuits(
+    indexed_repo, symbols_factory
+) -> None:
+    """target 重名 ⇒ 取图前短路；source 端已解析。
+
+    （Req: IMPACT-05, 决策: D-19）
+    """
+    def _seed():
+        source = symbols_factory("unique_src", "src/unique_src.py")
+        symbols_factory("dup_tgt", "src/t1.py", start_line=1, end_line=5)
+        symbols_factory("dup_tgt", "src/t2.py", start_line=1, end_line=5)
+        return source
+
+    source = await sync_to_async(_seed)()
+
+    with mock.patch(
+        "services.code_graph_tools.fetch_graph_for_tool",
+        new_callable=mock.AsyncMock,
+    ) as fetch_spy:
+        result = await run_trace(
+            repository_id=str(indexed_repo.id),
+            repo=indexed_repo,
+            graph_branch=None,
+            user=None,
+            source_symbol_id=str(source.id),
+            target="dup_tgt",
+        )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "ambiguous_symbol"
+    assert result["target_resolution"]["total_candidates"] >= 2
+    assert result["source"] == str(source.id)
+    assert fetch_spy.call_count == 0
