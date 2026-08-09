@@ -78,7 +78,7 @@ Each task was committed atomically:
 1. **Task 1: worktree 公共 API + semgrep_scan CLI** - `f2099230` (test RED) + `217eac88` (feat GREEN)
 2. **Task 2: QUEUE_SCAN + durable_semgrep_scan + enqueue** - `a67c0de4` (test RED) + `7df63776` (feat GREEN)
 
-**Plan metadata:** `ac50db08` (docs: complete plan)
+**Plan metadata:** `ac50db08` / `f4534d98` / `a72d1c38` (docs: complete plan + SUMMARY hygiene)
 
 ## Files Created/Modified
 
