@@ -518,7 +518,19 @@ async def build_graph_for_repository(
         # 异常，失败时下次请求的签名对比仍会自动重建，不影响主流程）。
         from codegraph.galaxy.cache import GalaxyGraphCache
 
+        # 🚨 必须从**包根**导入：``services.code_graph`` 的 ``__init__.py`` 是 curated
+        # barrel，直连包内 ``cache`` 子模块正是它要挡住的架构违规（红线连钩子自己也不
+        # 例外，否则那道守护测试形同虚设）。函数内 lazy import 同时避开模块级循环依赖。
+        from services.code_graph import invalidate_repository
+
         await sync_to_async(GalaxyGraphCache.refresh_repo)(repository_id)
+
+        # Symbol/CallEdge 抽取完成 → 驱逐本 worker 的内存符号图（Phase 121 / GRAPH-01）。
+        # ⚠️ 这**只是优化，不是正确性保证**：钩子只对**本 worker** 生效，多 worker
+        # 部署下其余进程里的旧图仍然只能靠取图时的**签名**复校发现陈旧——因此
+        # ``GraphService._get_graph_sync`` 里那道签名比对**不可删除**。
+        # 失效自身的异常在 ``invalidate_repository`` 内部吞掉，不反噬图谱构建。
+        await sync_to_async(invalidate_repository)(repository_id)
 
         duration = time.perf_counter() - start
         logger.info(
