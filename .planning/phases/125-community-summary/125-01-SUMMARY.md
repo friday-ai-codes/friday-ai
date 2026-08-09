@@ -77,7 +77,7 @@ Each task was committed atomically:
 1. **Task 1: 登记 call_source=module_summary（先于一切调用点）** - `cb0f86a9` (feat)
 2. **Task 2: Wave 0 验收测试桩 + VALIDATION 对齐** - `36a08aaf` (test)
 
-**Plan metadata:** (docs commit after this SUMMARY)
+**Plan metadata:** `2d390ae1` (docs: complete plan)
 
 ## Files Created/Modified
 
