@@ -18,9 +18,154 @@ import pytest
 
 # 121-VALIDATION.md 121-08-T1：首次查询 build 一次、同键再查命中缓存
 # （builder 调用计数 == 1）。
-@pytest.mark.skip(reason="stub：由 Plan 121-08 实现")
-def test_cache_hit_no_rebuild() -> None:
-    pass
+@pytest.mark.django_db(transaction=True)
+async def test_cache_hit_no_rebuild(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """同键连查两次只装配一次；命中路径**不跳过**权限校验，也**不跳过** in-flight 闸。
+
+    三条断言各自守一件不同的事，缺一不可：
+
+    - ``load_graph`` 只调一次、两次返回**同一个对象** ⇒ 缓存真的生效（GRAPH-01）。
+    - ``ensure_repository_readable`` 调了**两次** ⇒ 命中没有绕过唯一的权限防线。缓存键
+      不带用户维度，一旦命中跳过校验，任何拿得到 ``repository_id`` 的调用方都能读到
+      别人建好的图（威胁登记 T-121-串图）。
+    - ``detect_edge_build_in_flight`` 调了**两次** ⇒ 闸门确实位于命中返回**之前**。若被
+      挪进未命中分支，这里会是 1，而 GRAPH-02 的半新图防护就只在冷路径上生效了。
+    """
+    from unittest import mock
+
+    from asgiref.sync import sync_to_async
+    from structlog.testing import capture_logs
+
+    from services.code_graph import access as access_module
+    from services.code_graph import cache as cache_module
+    from services.code_graph import loader as loader_module
+    from services.code_graph import signature as signature_module
+
+    def _seed() -> None:
+        caller = symbols_factory("caller", "src/a.py")
+        callee = symbols_factory("callee", "src/b.py")
+        call_edges_factory(caller, callee)
+
+    await sync_to_async(_seed)()
+
+    svc = cache_module.get_graph_service()
+    repo_id = str(indexed_repo.id)
+
+    with (
+        mock.patch.object(
+            loader_module, "load_graph", wraps=loader_module.load_graph
+        ) as load_spy,
+        mock.patch.object(
+            access_module,
+            "ensure_repository_readable",
+            wraps=access_module.ensure_repository_readable,
+        ) as acl_spy,
+        mock.patch.object(
+            signature_module,
+            "detect_edge_build_in_flight",
+            wraps=signature_module.detect_edge_build_in_flight,
+        ) as inflight_spy,
+        mock.patch.object(
+            signature_module,
+            "compute_signature",
+            wraps=signature_module.compute_signature,
+        ) as sig_spy,
+    ):
+        first = await svc.get_graph(repo_id)
+        assert load_spy.call_count == 1
+        assert first.graph.number_of_nodes() == 2
+
+        second = await svc.get_graph(repo_id)
+        assert load_spy.call_count == 1, "同键第二次查询又装配了一遍——缓存没生效"
+        assert second is first, "命中应当返回缓存里的同一个 CodeGraph 对象"
+
+        assert acl_spy.call_count == 2, "命中路径跳过了 ensure_repository_readable"
+        assert inflight_spy.call_count == 2, (
+            "命中路径跳过了 in-flight 闸——闸门被挪到了命中返回之后"
+        )
+
+        # loader 收到的是 cache 解析好的 matcher/指纹（loader 自己不再解析），
+        # 且该指纹与喂给 compute_signature 的是同一个值。
+        load_kwargs = load_spy.call_args.kwargs
+        assert "matcher" in load_kwargs and "exclusion_fingerprint" in load_kwargs
+        assert (
+            load_kwargs["exclusion_fingerprint"]
+            == sig_spy.call_args.kwargs["exclusion_fingerprint"]
+        )
+
+        # 签名失效：水位一变，旧条目被丢弃并重建。
+        from repositories.models import Repository
+
+        await Repository.objects.filter(id=indexed_repo.id).aupdate(
+            last_indexed_commit_sha="b" * 40
+        )
+        with capture_logs() as events:
+            third = await svc.get_graph(repo_id)
+
+        assert load_spy.call_count == 2, "签名已变却仍返回旧图"
+        assert third is not first
+        stale = [e for e in events if e["event"] == "code_graph_stale_watermark"]
+        assert len(stale) == 1
+        assert stale[0]["component"] == "code_graph"
+        assert stale[0]["category"] == "sampling"
+        assert stale[0]["reason"] == "signature_mismatch"
+        # 只记签名前 12 位：全量签名的明文分量含水位 sha 与两条轨的行 id/状态。
+        assert len(stale[0]["cached_signature"]) == 12
+        assert len(stale[0]["current_signature"]) == 12
+
+    # 记账没有随重建漂移：缓存里只剩一条，字节数等于该图的估算值。
+    assert svc.stats()["entries"] == 1
+    assert svc.stats()["total_bytes"] == third.meta.estimated_bytes
+
+
+# 121-VALIDATION.md 121-08-T1（planner 追加行）：一次调用只解析一次 exclusion；
+# 连续两次 get_graph 的 _resolve_effective_specs 调用数 ≤ 1。
+@pytest.mark.django_db(transaction=True)
+async def test_exclusion_resolved_once_across_two_calls(indexed_repo) -> None:
+    """exclusion 规则**一次调用只解析编译一次**，跨调用还能吃到 access.py 的 TTL memo。
+
+    两处浪费各有一条断言：
+
+    - ``build_matcher_and_fingerprint`` 在单次 ``get_graph`` 内只调一次 ⇒ loader 没有
+      自己再解析一遍（它内部会走 ``_resolve_effective_specs`` 的 DB 读，再把该仓全部
+      glob/regex 重编译一遍，而这条同步路径吃不到 ``build_matcher_for_repo`` 的 60s
+      ``_matcher_cache``，省不掉）。
+    - 连调两次后 ``_resolve_effective_specs`` ≤ 1 ⇒ 跨调用命中了 ``access.py`` 自带的
+      TTL memo。
+    """
+    from unittest import mock
+
+    from services import exclusion as exclusion_module
+    from services.code_graph import access as access_module
+    from services.code_graph import cache as cache_module
+
+    svc = cache_module.get_graph_service()
+    repo_id = str(indexed_repo.id)
+
+    with (
+        mock.patch.object(
+            exclusion_module,
+            "_resolve_effective_specs",
+            wraps=exclusion_module._resolve_effective_specs,
+        ) as resolve_spy,
+        mock.patch.object(
+            access_module,
+            "build_matcher_and_fingerprint",
+            wraps=access_module.build_matcher_and_fingerprint,
+        ) as matcher_spy,
+    ):
+        await svc.get_graph(repo_id)
+        assert matcher_spy.call_count == 1, (
+            "单次 get_graph 内解析了不止一次——多半是 loader 又自己解析了一遍"
+        )
+        assert resolve_spy.call_count == 1
+
+        await svc.get_graph(repo_id)
+        assert resolve_spy.call_count <= 1, (
+            "第二次调用重新解析了规则集——access.py 的 TTL memo 没吃到"
+        )
 
 
 # 121-VALIDATION.md 121-08-T2：水位推进 + 轨 B 在途（Repository.graph_build_status
@@ -375,15 +520,21 @@ def test_graph_service_rejects_non_positive_budgets() -> None:
 
 
 def test_lock_discipline_documented_and_no_await() -> None:
-    """锁纪律有代码内留痕，且本模块全同步。
+    """锁纪律有代码内留痕；``async``/``await`` 被限制在唯一的外壳里。
 
-    「本模块零 await」不是洁癖：只要有一个 ``await`` 落在持锁区间内，多 event loop 下
+    「临界区零 await」不是洁癖：只要有一个 ``await`` 落在持锁区间内，多 event loop 下
     就会出现「A 持锁挂起、B 在另一个 loop 里等同一把锁」的死锁（D-04 / Pitfall 7）。
-    全同步让这件事在物理上不可能发生。
+    把整段临界区做成同步函数、由**唯一一次** ``sync_to_async`` 包裹，让这件事在物理上
+    不可能发生。本用例把这个形状锁死：
+
+    - 模块里**恰好一个** ``async def``，名字必须是 ``get_graph``（外壳）。
+    - 全部 ``await`` 都在那个外壳里；``_get_graph_sync`` 及其下游零 ``await``。
+    - ``sync_to_async(`` 恰好出现一次——两次就意味着有第二个 async/sync 边界。
+    - 无 ``AsyncWith`` / ``AsyncFor``，且未 import ``asyncio``。
 
     ⚠️ 判据走 **AST** 而不是 ``grep -c 'await'``：模块 docstring 里那条禁令本身就含
     「绝不 await」四个字（plan 明确要求写进去），字面 grep 与该要求自相矛盾。AST 断言
-    「没有 await 表达式、没有 async def」比 grep 更严——它连字符串拼出来的都不放过。
+    比 grep 更严——它连字符串拼出来的都不放过。
     """
     import ast
     from pathlib import Path
@@ -392,12 +543,45 @@ def test_lock_discipline_documented_and_no_await() -> None:
 
     source = Path(cache_module.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source, filename=cache_module.__file__)
-    offenders = [
+
+    async_defs = [
+        node for node in ast.walk(tree) if isinstance(node, ast.AsyncFunctionDef)
+    ]
+    assert [node.name for node in async_defs] == ["get_graph"], (
+        "本模块只允许 get_graph 一个 async 外壳，其余一律同步"
+    )
+
+    blocking = [
         f"{type(node).__name__}:{node.lineno}"
         for node in ast.walk(tree)
-        if isinstance(node, (ast.Await, ast.AsyncFunctionDef, ast.AsyncWith, ast.AsyncFor))
+        if isinstance(node, (ast.AsyncWith, ast.AsyncFor))
     ]
-    assert not offenders, f"本模块必须全同步，发现异步构造：{offenders}"
+    assert not blocking, f"发现不该存在的异步构造：{blocking}"
+
+    # 全部 await 都必须落在外壳内部：临界区里出现一个就足以让持锁与挂起重叠。
+    shell_awaits = {
+        id(node) for node in ast.walk(async_defs[0]) if isinstance(node, ast.Await)
+    }
+    stray = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Await) and id(node) not in shell_awaits
+    ]
+    assert not stray, f"await 出现在 get_graph 之外（行 {stray}）"
+
+    # 唯一的 async/sync 边界，且不显式传 thread_sensitive（取默认 True，与全仓 ORM 一致）。
+    assert source.count("sync_to_async(") == 1
+    boundary_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "sync_to_async"
+    ]
+    assert len(boundary_calls) == 1
+    assert not [kw.arg for kw in boundary_calls[0].keywords], (
+        "sync_to_async 不该显式传参——thread_sensitive 取默认 True，与全仓 ORM 调用一致"
+    )
 
     # asyncio 同步原语同样禁用：它们绑定创建时的 loop，而 GraphService 是进程级单例、
     # 会被本仓三类 loop 共用，跨 loop 使用直接 RuntimeError（D-04 / Pitfall 8）。
@@ -522,8 +706,3 @@ def test_invalidate_evicts_repo_entries() -> None:
     pass
 
 
-# 121-VALIDATION.md 121-08-T1（planner 追加行）：一次调用只解析一次 exclusion；
-# 连续两次 get_graph 的 _resolve_effective_specs 调用数 ≤ 1。
-@pytest.mark.skip(reason="stub：由 Plan 121-08 实现")
-def test_exclusion_resolved_once_per_call() -> None:
-    pass
