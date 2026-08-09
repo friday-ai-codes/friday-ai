@@ -59,7 +59,7 @@
 
 ### LSP — 解析精度
 
-- [ ] **LSP-01**: server 镜像补齐 Node/Go 运行时前提，volar/gopls 带可用性探测 + fail-soft 降级 + 孤儿进程清扫；产出开启前后的抽取质量/耗时基准报告，**默认值翻转由基准数据决定**（本里程碑不盲翻）
+- [x] **LSP-01**: server 镜像补齐 Node/Go 运行时前提，volar/gopls 带可用性探测 + fail-soft 降级 + 孤儿进程清扫；产出开启前后的抽取质量/耗时基准报告，**默认值翻转由基准数据决定**（本里程碑不盲翻）
 
 ### SKILL — 工作流固化
 
@@ -121,7 +121,7 @@
 | TAINT-01 | Phase 127 | Complete |
 | TAINT-02 | Phase 127 | Complete |
 | TAINT-03 | Phase 127 | Complete |
-| LSP-01 | Phase 127 | Pending |
+| LSP-01 | Phase 127 | Complete |
 
 **Coverage:** 27/27 mapped（GRAPH 4 / IMPACT 6 / DIFF 4 / MOD 4 / EXEC 3 / RENAME 1 / TAINT 3 / LSP 1 / SKILL 1）— 无孤儿、无重复。
 

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-status: executing
-stopped_at: Completed 127-04-PLAN.md
-last_updated: "2026-08-09T22:31:21.392Z"
+status: verifying
+stopped_at: Completed 127-05-PLAN.md
+last_updated: "2026-08-09T22:38:46.036Z"
 last_activity: 2026-08-10 -- Completed 127-03 (diff-aware Semgrep scan kernel)
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 44
-  completed_plans: 43
-  percent: 86
+  completed_plans: 44
+  percent: 100
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 Phase: 127 (semgrep-lsp) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-10 -- Completed 127-03 (diff-aware Semgrep scan kernel)
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
@@ -360,6 +360,8 @@ Last activity: 2026-08-10 -- Completed 127-03 (diff-aware Semgrep scan kernel)
 | Phase 127 P03 | 5min | 2 tasks | 10 files |
 | Phase 127 P03 | 4min | 2 tasks | 10 files |
 | Phase 127 P04 | 5min | 2 tasks | 8 files |
+| Phase 127 P05 | 6min | 2 tasks | 11 files |
+| Phase 127 P05 | 6min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -698,6 +700,10 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 127]: Shared attach_security_scan_pending stub; enqueue after MR id (D-04)
 - [Phase 127]: patch_mr_security_scan_section in security_scan_report; tasks_impl thin wrapper
 - [Phase 127]: Pro line only when token present; never log/embed token (D-09)
+- [Phase 127]: D-16: keep VOLAR/GOPLS defaults False — baseline gate not met (recommend_flip_defaults=false)
+- [Phase 127]: D-17: IMPACT-03 honest defer — CrossRepoApiCall=0; cross-repo impact not verified on real samples
+- [Phase 127]: D-16: keep VOLAR/GOPLS defaults False — baseline lacks full quality+latency proof
+- [Phase 127]: D-17 IMPACT-03: honest defer — CrossRepoApiCall still 0; not claiming cross-repo verified
 
 ### Pending Todos
 
@@ -1065,8 +1071,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-09T22:31:21.377Z
-Stopped at: Completed 127-04-PLAN.md
+Last session: 2026-08-09T22:38:46.022Z
+Stopped at: Completed 127-05-PLAN.md
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。
 Earlier: 2026-07-31T07:28:32.180Z — v0.19.0 全部相位执行完毕（105/106/107/109/110）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01；Phase 110 七个 plan 全落地并闭合 GAP-1（前半程失败时间线撒谎）。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。
