@@ -1,5 +1,22 @@
 # Milestones
 
+## v0.21.0 蓝图过程可见与返工闭环（反向关联 + 门到期 + 按阶段 agent 活动流 + 带原始上下文重跑） (Completed: 2026-08-05，未打 tag)
+
+**Phases completed:** 4 phases（117–120）；15 条需求 **14 满足 / 1 部分**（LIVE-04 落增量轮询而非推送通道）/ 0 未达；验证 **tech_debt**，报告见 [milestones/v0.21.0-VERIFICATION.md](./milestones/v0.21.0-VERIFICATION.md)，需求归档见 [milestones/v0.21.0-REQUIREMENTS.md](./milestones/v0.21.0-REQUIREMENTS.md)。
+
+**Timeline:** 2026-08-05 立项并当日收尾。立项动机是 v0.20.0 交付后用户对蓝图查看器的四点反馈：蓝图反向跳不回项目、HITL 门无到期策略（可无限静默悬挂）、过程只有阶段级标量看不到 agent 在做什么、驳回重跑范围固定且拿不到原始 agent 会话上下文。
+
+**Key accomplishments:**
+
+- **LINK 双向可达**：蓝图顶栏项目面包屑（detail 接口顶层补 `project_id`/`project_name`，口径对齐 list），项目名缺失回落「未命名项目」不回落 UUID。
+- **WAIT 门到期**：`BlueprintThread.reminder_count`/`expired_at` + 提醒上限可配；到期只收口扫描面、**不改** `ThreadStatus`/`blocking`/蓝图状态（与 CLAR-04「不自动作答、不判失败」不变式一致，有变异守卫锁定）。
+- **LIVE 按阶段活动流**：路由召回/打分（三分量 + 适配度表）、分仓每仓波次与产出三态聚合、六类活动事件叙事文案；`useBlueprintLive` 增量轮询（`since_ts`）——推送通道为登记的唯一缺口，切换点唯一（该 composable）。
+- **RERUN 带原始上下文重跑**：人审可选重跑范围，续跑携带原始 agent 会话上下文（容器侧 jsonl transcript 接入蓝图链）。
+
+**质量基线（收尾实测）：** 后端 **9849 passed**、前端 1 条既存失败（`blueprint-source-guard` 颜色字面量守卫，改动前干净树可复现、非本里程碑引入）、`makemigrations --check` 无变化。
+
+**Known gaps:** LIVE-04 推送通道（WS/SSE）待独立工作项；未打 tag（与 v0.19.0/v0.20.0 一致）；真实飞书/容器/浏览器人工验收未执行（同类遗留）；容器内 tool call 级步骤刻意不上事件流（INV-5 纪律）。
+
 ## v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编） (Shipped: 2026-08-02)
 
 **Phases completed:** 6 phases (111–116), 34 plans；34/35 需求（SCHEMA-01~07 / LIFE-01~03 / CHARTER-01~03 / FLOW-01~08 / CLAR-01~04 / BUS-01~03 / VIEW-01~05 / GATE-01~02）；里程碑审计 **tech_debt**（34/35 需求满足 / 6 相位全 verified / 7-of-10 跨相位接缝 WIRED / 0 可在本里程碑内闭合的缺口；GATE-01 因硬依赖同步点 2 判 PARTIAL）见 [milestones/v0.20.0-MILESTONE-AUDIT.md](./milestones/v0.20.0-MILESTONE-AUDIT.md)
