@@ -330,11 +330,20 @@ def _log_build_failed(
 # 字节预算 LRU
 # =============================================================================
 
-# 缓存键 = ``(repository_id, branch_name)``。``branch_name`` 沿用既有模型语义——
-# ``""`` 就是基线分支，⛔ **不做归一化别名**（不把 ``"main"`` 折成 ``""``）：默认分支名
-# 因仓库而异（``main`` / ``master`` / ``trunk``），一旦别名折错就是两张不同的图共用一个
-# 键，返回的会是另一个分支的结论。
-CacheKey = tuple[str, str]
+# 缓存键 = ``(repository_id, branch_name, include_low_confidence)``。
+#
+# ``branch_name`` 沿用既有模型语义——``""`` 就是基线分支，⛔ **不做归一化别名**
+# （不把 ``"main"`` 折成 ``""``）：默认分支名因仓库而异（``main`` / ``master`` /
+# ``trunk``），一旦别名折错就是两张不同的图共用一个键，返回的会是另一个分支的结论。
+#
+# 🚨 ``include_low_confidence`` **必须在键里**，它不是「同一张图的一个视图」而是
+# **另一张图**：``loader._load_call_edges`` 明确对该开关分流（裸名边装不装载）。少了这
+# 一维就会双向出错——任一调用方先以 ``True`` 建过图，之后**所有**用安全默认值的调用方
+# 都会命中那张含裸名边的图（「裸名边默认不参与扩散」这条验收内核当场失守，Phase 122 的
+# impact 会把凭名字连出来的边当成真影响面报给 agent）；反方向则是开了开关却命中默认图、
+# 拿到一张没有裸名边的图。这与 :meth:`GraphService._get_graph_sync` 为 ``seed_symbol_ids``
+# 写下的那条推理是**同一条**：那是错图，不是慢图。
+CacheKey = tuple[str, str, bool]
 
 
 @dataclass
@@ -558,10 +567,11 @@ class GraphService:
         一次 ``sync_to_async``。
 
         🚨 ``ensure_repository_readable`` 绝不因缓存命中而跳过。缓存键是
-        ``(repository_id, branch)``，键本身不带用户维度——命中即返回意味着任何拿得到
-        ``repository_id`` 的调用方都能读到别人建好的图，跨仓串图与 ACL 撤销滞后就都成了
-        真（威胁登记 T-121-串图）。⛔ **不要**为了「命中更快」把这一行挪进未命中分支：
-        它是这条链路上唯一的权限防线，而它的成本只是一次带主键索引的单行取值。
+        ``(repository_id, branch, include_low_confidence)``，键本身不带用户维度——命中即
+        返回意味着任何拿得到 ``repository_id`` 的调用方都能读到别人建好的图，跨仓串图与
+        ACL 撤销滞后就都成了真（威胁登记 T-121-串图）。⛔ **不要**为了「命中更快」把这
+        一行挪进未命中分支：它是这条链路上唯一的权限防线，而它的成本只是一次带主键索引
+        的单行取值。
 
         .. note::
            **``thread_sensitive=True`` 的代价（如实记录，不传该参数就是取这个默认值）**：
@@ -578,7 +588,9 @@ class GraphService:
         :param repository_id: 仓库主键。
         :param branch: ``""`` = base 分支（与 ``Symbol.branch_name`` 同口径）。
         :param user: 触发用户；``None`` 表示后台/系统路径，埋点记 ``system``。
-        :param include_low_confidence: 是否装载裸名边（默认否）。
+        :param include_low_confidence: 是否装载裸名边（默认否）。**是缓存键的一维**：
+            开启档与默认档各自缓存一份，两者互不命中（理由见 :data:`CacheKey`）。
+            图自身也会在 :attr:`GraphMeta.include_low_confidence` 上如实声明，供上层自检。
         :param seed_symbol_ids: 非空时走**按需子图**路径——⛔ 既不查缓存也不进缓存
             （子图内容依赖种子与深度，而缓存键里没有这两维；把种子塞进键会让缓存
             退化成一次一建）。
@@ -617,7 +629,9 @@ class GraphService:
 
         ⑤ 与 ⑥ 的先后是 GRAPH-02 的全部要害，详见步骤 ⑤ 处的注释。
         """
-        key: CacheKey = (repository_id, branch)
+        # ``include_low_confidence`` 是键的**第三维**，⛔ 不可省：它改变的是装配产物本身
+        # （裸名边装不装载），不是同一张图的呈现方式。理由见 :data:`CacheKey` 处的注释。
+        key: CacheKey = (repository_id, branch, include_low_confidence)
 
         # ③ exclusion 规则**本次调用只解析编译一次**，随后作为关键字参数注入 loader。
         #    ⛔ 绝不让 loader 自己再调一次 ``build_matcher_and_fingerprint``：那是一次
@@ -684,9 +698,11 @@ class GraphService:
         }
 
         if seed_symbol_ids:
-            # ⛔ 子图请求**不进** single-flight：占位键是 ``(repository_id, branch)``，
-            # 里面没有种子与深度这两维。让不同种子的并发请求共用同一个占位，等待者拿到的
-            # 会是领头那份**别人种子**的子图——那是错图，不是慢图，比重复装配严重得多。
+            # ⛔ 子图请求**不进** single-flight：占位键里没有种子与深度这两维
+            # （``include_low_confidence`` 已并入，见 :data:`CacheKey`，但种子空间无界，
+            # 塞进键只会让占位退化成一次一建）。让不同种子的并发请求共用同一个占位，
+            # 等待者拿到的会是领头那份**别人种子**的子图——那是错图，不是慢图，
+            # 比重复装配严重得多。
             return self._build_graph(**build_kwargs)
 
         return self._build_single_flight(key, build_kwargs)

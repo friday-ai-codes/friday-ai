@@ -249,12 +249,13 @@ class ChunkEvidence:
 class GraphMeta:
     """一张图的元数据——上层工具向用户/agent 声明「结果有多可信」的唯一依据。
 
-    四个**标记类**字段（:attr:`partial_edges` / :attr:`degraded` /
-    :attr:`low_resolution` / :attr:`cross_repo_unresolved_count`）刻意设为必填、
-    无默认值：漏透出会在 review 阶段暴露，而不是变成一次静默的错误结论。
+    五个**标记类**字段（:attr:`partial_edges` / :attr:`degraded` /
+    :attr:`low_resolution` / :attr:`cross_repo_unresolved_count` /
+    :attr:`include_low_confidence`）刻意设为必填、无默认值：漏透出会在 review 阶段
+    暴露，而不是变成一次静默的错误结论。
 
-    仅凭本对象就能写出四条输出声明：本仓解析率偏低 / 边未建完 / 已降级为按需
-    子图 / N 条跨仓边无法定位。
+    仅凭本对象就能写出五条输出声明：本仓解析率偏低 / 边未建完 / 已降级为按需
+    子图 / N 条跨仓边无法定位 / 本图含裸名边。
     """
 
     repository_id: str
@@ -293,6 +294,14 @@ class GraphMeta:
 
     # 被 exclusion 规则拦掉的文件数（节点连同邻接边一并丢弃，装配阶段就过滤）。
     excluded_file_count: int
+
+    # 🔔 上层工具必须透出：这张图**是否含裸名边**。
+    # 没有这个字段，拿到图的一方就无从自检自己手上是不是一张含 bare_name 边的图——而
+    # 「裸名边默认不参与扩散」是本相位的验收内核，一条凭名字连出来的假边会让 impact 的
+    # 影响面凭空膨胀一整个子树，且它看起来与真边毫无区别。⚠️ 本字段如实反映装配时的
+    # ``include_low_confidence`` 入参，**不是**「图里真的存在裸名边」——开了开关但三道
+    # 过滤把裸名边全挡掉时，本字段仍为 ``True``（声明的是口径，不是结果）。
+    include_low_confidence: bool
 
     # 复合签名：水位 ‖ 两条边构建轨 ‖ 计数 ‖ exclusion 规则指纹。取图时复算比对。
     built_signature: str
