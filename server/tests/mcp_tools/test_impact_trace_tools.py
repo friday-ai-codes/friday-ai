@@ -4,7 +4,7 @@
 ``mcp_client`` / ``indexed_repository`` 两个 conftest fixture（前者返回
 ``(APIClient, plaintext_token)``，已带 Bearer 头）。
 
-``test_two_surfaces_same_payload`` 仍归 122-10。
+``test_two_surfaces_same_payload``（122-10）是本仓第一条双面同源逐字节守护。
 """
 
 from __future__ import annotations
@@ -283,10 +283,125 @@ def test_staleness_declared(
     assert staleness["as_of"] == indexed_repository.last_indexed_commit_sha
 
 
-@pytest.mark.skip(reason="Wave 0 桩：由 122-10 落地")
-def test_two_surfaces_same_payload() -> None:
-    """**双面同源**：同一输入下 MCP 与对话壳产出的 ``data`` 段逐字节相同（D-21 防漂移）。
+def _assert_surfaces_byte_equal(mcp_data: dict, tool_data: dict) -> None:
+    """键集先行（报错可读），再 ``json.dumps(sort_keys=True)`` 逐字节比对。"""
+    mcp_keys = set(mcp_data)
+    tool_keys = set(tool_data)
+    assert mcp_keys == tool_keys, (
+        f"双面 data 键集不一致：仅 MCP={sorted(mcp_keys - tool_keys)} "
+        f"仅对话={sorted(tool_keys - mcp_keys)}"
+    )
+    mcp_dump = json.dumps(mcp_data, sort_keys=True, ensure_ascii=False, default=str)
+    tool_dump = json.dumps(tool_data, sort_keys=True, ensure_ascii=False, default=str)
+    assert mcp_dump == tool_dump
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_two_surfaces_same_payload(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository,
+    access_user,
+    project,
+) -> None:
+    """**双面同源**：同一输入下 MCP 与对话壳产出的 ``data`` 段逐字节相同（D-21）。
+
+    防的是什么、为什么不能靠 review：两个壳各自约 40 行、看上去都对，漂移是在后续
+    某次「只改一面」的维护里长出来的——``search_delivery_knowledge`` 那对就是这么漂的
+    （两侧各自手写七个关键字参数，连注释都是复制粘贴的两份）。全仓此前没有任何双面
+    一致性断言；本用例是哨兵，不是机械保证本身——真正的机械保证是共享编排层
+    （122-07 的 ``run_impact``）与共享原语（``resolve_tool_graph_branch`` /
+    ``tool_trace_payload``）。
+
+    本用例**不覆盖**：它只证明「被测的这组输入两面一致」，不证明所有输入都一致。
+    ⛔ 不许 mock ``run_impact``——mock 掉编排层就等于两面在比同一个假对象，守护退化为
+    自证。两轮（成功态 + ``ambiguous_symbol``）都必须真的走完全程。
 
     （Req: IMPACT-06, 决策: D-21）
     """
-    pytest.fail("Wave 0 桩")
+    from asgiref.sync import sync_to_async
+
+    from agents.tools.graph_tools import impact_analysis
+    from chat.models import Conversation
+    from codegraph.models import Symbol
+
+    client, _plaintext = mcp_client
+    conversation = await Conversation.objects.acreate(
+        space=project,
+        title="dual-surface-impact",
+        created_by=access_user,
+    )
+    await sync_to_async(_build_impact_fixture)(indexed_repository)
+
+    payload = {
+        "repository_id": str(indexed_repository.id),
+        "symbol": "get_user",
+        "max_depth": 3,
+        "min_confidence": 1.0,
+        "limit": 200,
+    }
+
+    # —— 第一轮：成功态 ——
+    response = await sync_to_async(client.post)(IMPACT_URL, payload, format="json")
+    assert response.status_code == 200
+    mcp_body = response.json()
+    mcp_data = {k: v for k, v in mcp_body.items() if k != "run_id"}
+
+    tool_result = await impact_analysis(
+        **payload,
+        conversation_id=str(conversation.id),
+    )
+    assert tool_result.success is True
+    tool_data = tool_result.output["data"]
+
+    assert "run_id" in mcp_body
+    assert "run_id" not in tool_data
+    _assert_surfaces_byte_equal(mcp_data, tool_data)
+
+    # —— 第二轮：ambiguous_symbol 失败态（真正防漂移的地方）——
+    def _seed_ambiguous() -> None:
+        for i, path in enumerate(
+            ("src/a/dup.py", "src/b/dup.py", "src/c/dup.py"), start=1
+        ):
+            Symbol.objects.create(
+                repository=indexed_repository,
+                branch_name="",
+                name="dup",
+                symbol_type="FUNCTION",
+                file_path=path,
+                start_line=i * 10,
+                end_line=i * 10 + 5,
+            )
+
+    await sync_to_async(_seed_ambiguous)()
+    amb_payload = {
+        "repository_id": str(indexed_repository.id),
+        "symbol": "dup",
+        "max_depth": 3,
+        "min_confidence": 1.0,
+        "limit": 200,
+    }
+
+    amb_response = await sync_to_async(client.post)(
+        IMPACT_URL, amb_payload, format="json"
+    )
+    # 🚨 不是 4xx——candidates 是 agent 二选一的唯一依据
+    assert amb_response.status_code == 200
+    amb_mcp_body = amb_response.json()
+    assert amb_mcp_body["ok"] is False
+    assert amb_mcp_body["error_code"] == "ambiguous_symbol"
+    assert len(amb_mcp_body["candidates"]) == 3
+    amb_mcp_data = {k: v for k, v in amb_mcp_body.items() if k != "run_id"}
+
+    amb_tool = await impact_analysis(
+        **amb_payload,
+        conversation_id=str(conversation.id),
+    )
+    # 🚨 不是 success=False——工具调用本身成功了，ok=False 才是查询结论
+    assert amb_tool.success is True
+    amb_tool_data = amb_tool.output["data"]
+    assert amb_tool_data["error_code"] == "ambiguous_symbol"
+
+    assert "run_id" in amb_mcp_body
+    assert "run_id" not in amb_tool_data
+    _assert_surfaces_byte_equal(amb_mcp_data, amb_tool_data)
