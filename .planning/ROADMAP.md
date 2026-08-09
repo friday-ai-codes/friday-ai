@@ -129,7 +129,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 122-08-PLAN.md — W5 MCP 壳：2 个 `McpToolView` + serializers + urls + schema snapshot 双份字面量 + `caller` 事件与 `RetrievalTrace`
+- [x] 122-08-PLAN.md — W5 MCP 壳：2 个 `McpToolView` + serializers + urls + schema snapshot 双份字面量 + `caller` 事件与 `RetrievalTrace`
 
 **Wave 6** *(blocked on Wave 5 completion)*
 

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
 status: completed
-stopped_at: Completed 122-07-PLAN.md
-last_updated: "2026-08-09T17:14:52.431Z"
-last_activity: 2026-08-09 — 122-07 完成：`run_impact` / `run_trace` 共享编排落地；`tests/services/code_graph` 122 → 130 passed / 0 skipped，`test_impact_shell.py` 11 passed，零新增失败
+stopped_at: Completed 122-08-PLAN.md
+last_updated: "2026-08-09T17:33:54.620Z"
+last_activity: 2026-08-09 — 122-07 完成：`tests/services/code_graph` 122 → 130 passed / 0 skipped，`test_impact_shell.py` 11 passed，零新增失败
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 20
-  completed_plans: 17
+  completed_plans: 18
   percent: 14
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 ## Current Position
 
 Phase: 122 (impact / trace 工具面) — 🚧 IN PROGRESS (121 verified passed 4/4, code review 20 findings 处理完毕)
-Plan: 8 of 10
+Plan: 9 of 10
 Status: 122-07 complete — 共享编排 `run_impact` / `run_trace` 已落地（D-21：两壳唯一入口；重名取图前短路；`found=False` 保持 `ok=True`；按需子图无路径补充声明）。下一步进 122-08 MCP 壳
 Last activity: 2026-08-09 — 122-07 完成：`tests/services/code_graph` 122 → 130 passed / 0 skipped，`test_impact_shell.py` 11 passed，零新增失败
 
@@ -331,6 +331,7 @@ Last activity: 2026-08-09 — 122-07 完成：`tests/services/code_graph` 122 �
 | Phase 122 P05 | 21min | 4 tasks | 5 files |
 | Phase 122 P06 | 20min | 3 tasks | 4 files |
 | Phase 122 P07 | 8min | 2 tasks | 2 files |
+| Phase 122 P08 | 17min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -597,6 +598,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 122]: D-26：IMPACT-03 四分支全靠合成数据，未经真实数据验证
 - [Phase 122]: D-21：两壳只调 run_impact/run_trace，失败语义三键统一
 - [Phase 122]: D-20：found=False 保持 ok=True；子图无路径追加不确定性声明
+- [Phase 122]: D-21：MCP 壳只调 run_impact/run_trace，信封原样透出（仅加 run_id）
+- [Phase 122]: ok=False 一律 HTTP 200，保留 ambiguous_symbol 候选列表给 agent
+- [Phase 122]: 一次调用恰一条汇总 RetrievalTrace + caller 事件；RequestMetric 由基类 _record 写入
 
 ### Pending Todos
 
@@ -964,8 +968,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-09T17:14:52.411Z
-Stopped at: Completed 122-07-PLAN.md
+Last session: 2026-08-09T17:33:54.606Z
+Stopped at: Completed 122-08-PLAN.md
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。
 Earlier: 2026-07-31T07:28:32.180Z — v0.19.0 全部相位执行完毕（105/106/107/109/110）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01；Phase 110 七个 plan 全落地并闭合 GAP-1（前半程失败时间线撒谎）。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。
