@@ -260,6 +260,36 @@ class DetectChangesRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class ListProcessesRequestSerializer(serializers.Serializer):
+    """``list_processes`` 请求契约（Phase 126 EXEC-02 / D-06）。"""
+
+    repository_id = serializers.UUIDField(required=True)
+    branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+    community_class = serializers.ChoiceField(
+        choices=["intra_community", "cross_community"],
+        required=False,
+        allow_null=True,
+        default=None,
+    )
+    symbol_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    limit = serializers.IntegerField(default=50, min_value=1, max_value=200)
+
+
+class GetProcessRequestSerializer(serializers.Serializer):
+    """``get_process`` 请求契约（Phase 126 EXEC-02 / D-06）。"""
+
+    repository_id = serializers.UUIDField(required=True)
+    branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+    process_key = serializers.CharField(required=True, allow_blank=False, max_length=640)
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        key = str(attrs.get("process_key") or "").strip()
+        if not key:
+            raise serializers.ValidationError({"process_key": "process_key 不能为空"})
+        attrs["process_key"] = key
+        return attrs
+
+
 class TraceCallPathRequestSerializer(serializers.Serializer):
     repository_id = serializers.UUIDField(required=True)
     branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
@@ -1686,5 +1716,45 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "apply_repo_association": {
         "request": ["project_id", "action", "bindings"],
         "response": ["project_id", "action", "results", "run_id"],
+    },
+    "list_processes": {
+        "request": [
+            "repository_id",
+            "branch",
+            "community_class",
+            "symbol_id",
+            "limit",
+        ],
+        "response": [
+            "ok",
+            "tool",
+            "repository_id",
+            "branch",
+            "processes",
+            "summary",
+            "as_of",
+            "staleness",
+            "degradation",
+            "error_code",
+            "error",
+            "run_id",
+        ],
+    },
+    "get_process": {
+        "request": ["repository_id", "branch", "process_key"],
+        "response": [
+            "ok",
+            "tool",
+            "repository_id",
+            "branch",
+            "process",
+            "process_key",
+            "as_of",
+            "staleness",
+            "degradation",
+            "error_code",
+            "error",
+            "run_id",
+        ],
     },
 }

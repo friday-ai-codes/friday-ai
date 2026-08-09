@@ -21,7 +21,9 @@ from agents.tools.delivery_knowledge_tools import _resolve_conversation_user
 from agents.tools.project_read_tools import _CONV_ID_PARAM
 from agents.tools.schemas.graph_tools import (
     DetectChangesToolInput,
+    GetProcessToolInput,
     ImpactAnalysisToolInput,
+    ListProcessesToolInput,
     TraceCallPathToolInput,
 )
 from common.logging import redact_secrets_in_text
@@ -876,4 +878,357 @@ async def _detect_changes_impl(
     )
 
 
-__all__ = ["impact_analysis", "trace_call_path", "detect_changes"]
+_DESC_LIST_PROCESSES = (
+    "List execution-flow ProcessTrace summaries for a repository "
+    "(entry → main path narrative).\n"
+    "\n"
+    "USE WHEN you need which business flows exist or which cross-community "
+    "flows to inspect before impact/rename work:\n"
+    "  - 'what processes touch this repo?' → list_processes(...)\n"
+    "  - 'show cross-community flows' → list_processes(community_class='cross_community')\n"
+    "\n"
+    "IMPORTANT: default sort prefers cross_community. Results include "
+    "staleness / degradation / as_of; read those first.\n"
+    "DO NOT USE FOR blast radius of one symbol — use impact_analysis.\n"
+    "DO NOT USE FOR rename edits — use rename_preview (when available)."
+)
+
+_DESC_GET_PROCESS = (
+    "Fetch one ProcessTrace by process_key, including ordered steps.\n"
+    "\n"
+    "USE WHEN list_processes already gave a process_key and you need step detail.\n"
+    "IMPORTANT: ok=false with process_not_found is a query outcome, not a crash.\n"
+    "DO NOT USE FOR inventing flows — empty/not found means no persisted Process."
+)
+
+_PARAMS_LIST_PROCESSES: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "repository_id": {
+            "type": "string",
+            "description": "**REQUIRED.** 目标仓库 UUID",
+        },
+        "branch": {
+            "type": "string",
+            "description": "查询分支；缺省走 base",
+        },
+        "community_class": {
+            "type": "string",
+            "description": "可选：intra_community | cross_community",
+        },
+        "symbol_id": {
+            "type": "string",
+            "description": "可选：只返回含该 symbol_id 的执行流",
+        },
+        "limit": {
+            "type": "integer",
+            "description": "条数上限 1–200，默认 50",
+            "default": 50,
+        },
+        **_CONV_ID_PARAM,
+    },
+    "required": ["repository_id", "conversation_id"],
+}
+
+_PARAMS_GET_PROCESS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "repository_id": {
+            "type": "string",
+            "description": "**REQUIRED.** 目标仓库 UUID",
+        },
+        "branch": {
+            "type": "string",
+            "description": "查询分支；缺省走 base",
+        },
+        "process_key": {
+            "type": "string",
+            "description": "**REQUIRED.** 执行流稳定键",
+        },
+        **_CONV_ID_PARAM,
+    },
+    "required": ["repository_id", "process_key", "conversation_id"],
+}
+
+
+@tool(
+    name="list_processes",
+    description=_DESC_LIST_PROCESSES,
+    category=ToolCategory.PROJECT.value,
+    parameters=_PARAMS_LIST_PROCESSES,
+)
+async def list_processes(
+    repository_id: str | None = None,
+    branch: str | None = None,
+    community_class: str | None = None,
+    symbol_id: str | None = None,
+    limit: int = 50,
+    conversation_id: str = "",
+) -> ToolResult:
+    """列出执行流对话薄壳——只调 ``run_list_processes``。"""
+    try:
+        return await _list_processes_impl(
+            repository_id=repository_id,
+            branch=branch,
+            community_class=community_class,
+            symbol_id=symbol_id,
+            limit=limit,
+            conversation_id=conversation_id,
+        )
+    except ValidationError as exc:
+        logger.warning(
+            "list_processes_tool_failed",
+            error_type="ValidationError",
+            error=redact_secrets_in_text(str(exc))[:500],
+            component=_COMPONENT,
+            category="caller",
+        )
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "list_processes_tool_failed",
+            error_type=type(exc).__name__,
+            error=redact_secrets_in_text(str(exc))[:500],
+            component=_COMPONENT,
+            category="caller",
+        )
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
+
+
+async def _list_processes_impl(
+    *,
+    repository_id: str | None,
+    branch: str | None,
+    community_class: str | None,
+    symbol_id: str | None,
+    limit: int,
+    conversation_id: str,
+) -> ToolResult:
+    started = perf_counter()
+    user = await _resolve_conversation_user(conversation_id)
+    if user is None:
+        return ToolResult(
+            success=False,
+            error="无法解析会话 owner，拒绝查询（fail-closed）",
+        )
+    try:
+        validated = ListProcessesToolInput(
+            repository_id=repository_id or "",
+            branch=branch,
+            community_class=community_class,
+            symbol_id=symbol_id,
+            limit=int(limit),
+        )
+    except ValidationError as exc:
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
+
+    repo, err_code = await _resolve_tool_repo(validated.repository_id)
+    if repo is None:
+        return ToolResult(
+            success=False,
+            error=_REPO_ERR_MESSAGES.get(err_code or "", "仓库不可用"),
+        )
+
+    from interactions.models import RetrievalTrace
+    from services.code_graph import GraphError
+    from services.code_graph_tools import (
+        graph_error_to_tool_error,
+        resolve_tool_graph_branch,
+        run_list_processes,
+        tool_trace_payload,
+    )
+
+    graph_branch = await resolve_tool_graph_branch(
+        validated.repository_id, repo, validated.branch
+    )
+    orch_started = perf_counter()
+    try:
+        result = await run_list_processes(
+            repository_id=validated.repository_id,
+            repo=repo,
+            graph_branch=graph_branch,
+            user=user,
+            community_class=validated.community_class,
+            symbol_id=validated.symbol_id,
+            limit=validated.limit,
+        )
+    except GraphError as exc:
+        code, message = graph_error_to_tool_error(exc)
+        return ToolResult(success=False, error=message)
+
+    orchestration_ms = int((perf_counter() - orch_started) * 1000)
+    duration_ms = int((perf_counter() - started) * 1000)
+    await _record_chat_retrieval(
+        RetrievalTrace.Kind.EDGE,
+        tool_trace_payload(
+            result,
+            tool="list_processes",
+            duration_ms=duration_ms,
+            orchestration_ms=orchestration_ms,
+        ),
+        conversation_id=conversation_id,
+        user=user,
+    )
+    logger.info(
+        "list_processes_tool_done",
+        conversation_id=conversation_id,
+        repository_id=validated.repository_id,
+        ok=bool(result.get("ok")),
+        duration_ms=duration_ms,
+        component=_COMPONENT,
+        category="caller",
+        initiated_by_user_id=str(user.id),
+    )
+    return ToolResult(
+        success=True,
+        output={
+            "data": result,
+            "metadata": {
+                "repository_id": validated.repository_id,
+                "branch": validated.branch,
+                "conversation_id": conversation_id,
+                "duration_ms": duration_ms,
+            },
+        },
+    )
+
+
+@tool(
+    name="get_process",
+    description=_DESC_GET_PROCESS,
+    category=ToolCategory.PROJECT.value,
+    parameters=_PARAMS_GET_PROCESS,
+)
+async def get_process(
+    repository_id: str | None = None,
+    branch: str | None = None,
+    process_key: str = "",
+    conversation_id: str = "",
+) -> ToolResult:
+    """获取单条执行流对话薄壳——只调 ``run_get_process``。"""
+    try:
+        return await _get_process_impl(
+            repository_id=repository_id,
+            branch=branch,
+            process_key=process_key,
+            conversation_id=conversation_id,
+        )
+    except ValidationError as exc:
+        logger.warning(
+            "get_process_tool_failed",
+            error_type="ValidationError",
+            error=redact_secrets_in_text(str(exc))[:500],
+            component=_COMPONENT,
+            category="caller",
+        )
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "get_process_tool_failed",
+            error_type=type(exc).__name__,
+            error=redact_secrets_in_text(str(exc))[:500],
+            component=_COMPONENT,
+            category="caller",
+        )
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
+
+
+async def _get_process_impl(
+    *,
+    repository_id: str | None,
+    branch: str | None,
+    process_key: str,
+    conversation_id: str,
+) -> ToolResult:
+    started = perf_counter()
+    user = await _resolve_conversation_user(conversation_id)
+    if user is None:
+        return ToolResult(
+            success=False,
+            error="无法解析会话 owner，拒绝查询（fail-closed）",
+        )
+    try:
+        validated = GetProcessToolInput(
+            repository_id=repository_id or "",
+            branch=branch,
+            process_key=(process_key or "").strip(),
+        )
+    except ValidationError as exc:
+        return ToolResult(success=False, error=redact_secrets_in_text(str(exc))[:500])
+
+    repo, err_code = await _resolve_tool_repo(validated.repository_id)
+    if repo is None:
+        return ToolResult(
+            success=False,
+            error=_REPO_ERR_MESSAGES.get(err_code or "", "仓库不可用"),
+        )
+
+    from interactions.models import RetrievalTrace
+    from services.code_graph import GraphError
+    from services.code_graph_tools import (
+        graph_error_to_tool_error,
+        resolve_tool_graph_branch,
+        run_get_process,
+        tool_trace_payload,
+    )
+
+    graph_branch = await resolve_tool_graph_branch(
+        validated.repository_id, repo, validated.branch
+    )
+    orch_started = perf_counter()
+    try:
+        result = await run_get_process(
+            repository_id=validated.repository_id,
+            repo=repo,
+            graph_branch=graph_branch,
+            user=user,
+            process_key=validated.process_key,
+        )
+    except GraphError as exc:
+        _code, message = graph_error_to_tool_error(exc)
+        return ToolResult(success=False, error=message)
+
+    orchestration_ms = int((perf_counter() - orch_started) * 1000)
+    duration_ms = int((perf_counter() - started) * 1000)
+    await _record_chat_retrieval(
+        RetrievalTrace.Kind.EDGE,
+        tool_trace_payload(
+            result,
+            tool="get_process",
+            duration_ms=duration_ms,
+            orchestration_ms=orchestration_ms,
+        ),
+        conversation_id=conversation_id,
+        user=user,
+    )
+    logger.info(
+        "get_process_tool_done",
+        conversation_id=conversation_id,
+        repository_id=validated.repository_id,
+        ok=bool(result.get("ok")),
+        duration_ms=duration_ms,
+        component=_COMPONENT,
+        category="caller",
+        initiated_by_user_id=str(user.id),
+    )
+    return ToolResult(
+        success=True,
+        output={
+            "data": result,
+            "metadata": {
+                "repository_id": validated.repository_id,
+                "branch": validated.branch,
+                "conversation_id": conversation_id,
+                "duration_ms": duration_ms,
+            },
+        },
+    )
+
+
+__all__ = [
+    "impact_analysis",
+    "trace_call_path",
+    "detect_changes",
+    "list_processes",
+    "get_process",
+]

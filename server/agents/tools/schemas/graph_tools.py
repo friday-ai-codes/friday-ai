@@ -224,8 +224,53 @@ class DetectChangesToolInput(BaseModel):
         return self
 
 
+class ListProcessesToolInput(BaseModel):
+    """``list_processes`` 对话工具输入契约（Phase 126 EXEC-02 / D-06）。"""
+
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    repository_id: str = Field(description="目标仓库 UUID（必填）")
+    branch: str | None = Field(
+        default=None,
+        description="查询分支；缺省 / 空 / 与 base 相同则走 base",
+    )
+    community_class: str | None = Field(
+        default=None,
+        description="可选：intra_community | cross_community",
+    )
+    symbol_id: str | None = Field(
+        default=None,
+        description="可选：只返回 steps 含该 symbol_id 的执行流",
+    )
+    limit: int = Field(
+        default=50,
+        ge=1,
+        le=200,
+        description="响应条数上限（1–200，默认 50）",
+    )
+
+
+class GetProcessToolInput(BaseModel):
+    """``get_process`` 对话工具输入契约（Phase 126 EXEC-02 / D-06）。"""
+
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    repository_id: str = Field(description="目标仓库 UUID（必填）")
+    branch: str | None = Field(
+        default=None,
+        description="查询分支；缺省走 base",
+    )
+    process_key: str = Field(
+        description="执行流稳定键（必填）",
+        min_length=1,
+        max_length=640,
+    )
+
+
 __all__ = [
     "ImpactAnalysisToolInput",
     "TraceCallPathToolInput",
     "DetectChangesToolInput",
+    "ListProcessesToolInput",
+    "GetProcessToolInput",
 ]

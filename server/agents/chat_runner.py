@@ -105,6 +105,9 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     "trace_call_path",
     # Phase 123：compare↔索引水位变更检测（注册 ≠ 暴露；缺此项 LLM 不可见）
     "detect_changes",
+    # Phase 126：ProcessTrace 查询（注册 ≠ 暴露；缺此项 LLM 不可见）
+    "list_processes",
+    "get_process",
     # 先分析相关性，后创建方案
     "analyze_repository_relevance",
     # 不确定时主动澄清（暴露给所有有索引仓库的项目）

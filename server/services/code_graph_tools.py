@@ -111,6 +111,20 @@ _EVENT_CANDIDATES_RESOLVED: Final[str] = "code_graph_tool_candidates_resolved"
 _EVENT_DETECT_CHANGES_STARTED: Final[str] = "code_graph_detect_changes_started"
 _EVENT_DETECT_CHANGES_COMPLETED: Final[str] = "code_graph_detect_changes_completed"
 _EVENT_DETECT_CHANGES_FAILED: Final[str] = "code_graph_detect_changes_failed"
+_EVENT_LIST_PROCESSES_STARTED: Final[str] = "list_processes_started"
+_EVENT_LIST_PROCESSES_COMPLETED: Final[str] = "list_processes_completed"
+_EVENT_LIST_PROCESSES_FAILED: Final[str] = "list_processes_failed"
+_EVENT_GET_PROCESS_STARTED: Final[str] = "get_process_started"
+_EVENT_GET_PROCESS_COMPLETED: Final[str] = "get_process_completed"
+_EVENT_GET_PROCESS_FAILED: Final[str] = "get_process_failed"
+
+_DEFAULT_PROCESS_LIST_LIMIT: Final[int] = 50
+_MAX_PROCESS_LIST_LIMIT: Final[int] = 200
+_COMMUNITY_SORT_RANK: Final[dict[str, int]] = {
+    "cross_community": 0,
+    "intra_community": 1,
+    "": 2,
+}
 
 # compare 形参：完整 40 位 hex（大小写均可）→ ensure_mirror_sha；否则当分支名。
 _FULL_SHA_RE: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
@@ -160,7 +174,9 @@ __all__ = [
     "resolve_symbol_candidates",
     "resolve_tool_graph_branch",
     "run_detect_changes",
+    "run_get_process",
     "run_impact",
+    "run_list_processes",
     "run_trace",
     "staleness_payload",
     "tool_trace_payload",
@@ -1513,6 +1529,322 @@ async def run_detect_changes(
     return result
 
 
+def _process_trace_to_dict(row: Any, *, include_steps: bool) -> dict[str, Any]:
+    """Serialize a ProcessTrace row; list omits steps body, get includes it."""
+    payload: dict[str, Any] = {
+        "process_key": str(getattr(row, "process_key", "") or ""),
+        "name": str(getattr(row, "name", "") or ""),
+        "community_class": str(getattr(row, "community_class", "") or ""),
+        "step_count": int(getattr(row, "step_count", 0) or 0),
+        "built_at_sha": str(getattr(row, "built_at_sha", "") or ""),
+        "entry_endpoint": getattr(row, "entry_endpoint", None) or {},
+        "flags": getattr(row, "flags", None) or {},
+    }
+    if include_steps:
+        payload["steps"] = list(getattr(row, "steps", None) or [])
+    return payload
+
+
+def _process_degradation(rows: Sequence[Any]) -> dict[str, Any]:
+    """Declare community_class_unknown when any row lacks a classified community."""
+    unknown = sum(1 for r in rows if not str(getattr(r, "community_class", "") or ""))
+    if not unknown:
+        return {"community_class_unknown": False, "unknown_count": 0}
+    return {
+        "community_class_unknown": True,
+        "unknown_count": unknown,
+        "declaration": "部分执行流未能对账社区归属，community_class 为空",
+    }
+
+
+async def run_list_processes(
+    *,
+    repository_id: str,
+    repo: Any,
+    graph_branch: str | None,
+    user: Any,
+    community_class: str | None = None,
+    symbol_id: str | None = None,
+    limit: int = _DEFAULT_PROCESS_LIST_LIMIT,
+) -> dict[str, Any]:
+    """列出仓分支 ProcessTrace 的**唯一**编排入口（D-06 / EXEC-02）。
+
+    默认 ``cross_community`` 优先排序。壳层只调本函数，算法不许分叉。
+    """
+    started = time.perf_counter()
+    repository_id = str(repository_id)
+    branch_name = graph_branch or ""
+    limit = max(1, min(int(limit or _DEFAULT_PROCESS_LIST_LIMIT), _MAX_PROCESS_LIST_LIMIT))
+
+    def _duration_ms() -> float:
+        return round((time.perf_counter() - started) * 1000, 2)
+
+    try:
+        logger.info(
+            _EVENT_LIST_PROCESSES_STARTED,
+            component="code_graph",
+            category="caller",
+            repository_id=repository_id,
+            branch_name=branch_name,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        await _code_graph_access().ensure_repository_readable(user, repository_id)
+
+        from codegraph.models import ProcessTrace
+
+        qs = ProcessTrace.objects.filter(
+            repository_id=repository_id,
+            branch_name=branch_name,
+        )
+        if community_class:
+            qs = qs.filter(community_class=community_class)
+
+        rows = [row async for row in qs]
+        if symbol_id:
+            sid = str(symbol_id)
+            filtered: list[Any] = []
+            for row in rows:
+                steps = getattr(row, "steps", None) or []
+                if any(
+                    isinstance(s, Mapping) and str(s.get("symbol_id") or "") == sid
+                    for s in steps
+                ):
+                    filtered.append(row)
+            rows = filtered
+
+        rows.sort(
+            key=lambda r: (
+                _COMMUNITY_SORT_RANK.get(str(getattr(r, "community_class", "") or ""), 9),
+                -int(getattr(r, "step_count", 0) or 0),
+                str(getattr(r, "process_key", "") or ""),
+            )
+        )
+        total = len(rows)
+        truncated = total > limit
+        shown = rows[:limit]
+        as_of = ""
+        if shown:
+            as_of = str(getattr(shown[0], "built_at_sha", "") or "")
+        if not as_of:
+            as_of = str(getattr(repo, "last_indexed_commit_sha", "") or "")
+
+        processes = [_process_trace_to_dict(r, include_steps=False) for r in shown]
+        result = {
+            "ok": True,
+            "tool": "list_processes",
+            "repository_id": repository_id,
+            "branch": _branch_label(repo, graph_branch),
+            "processes": processes,
+            "summary": {
+                "returned": len(processes),
+                "total": total,
+                "truncated": truncated,
+            },
+            "as_of": as_of,
+            "staleness": await staleness_payload(repo),
+            "degradation": _process_degradation(shown),
+        }
+        try:
+            logger.info(
+                _EVENT_LIST_PROCESSES_COMPLETED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                returned=len(processes),
+                total=total,
+                truncated=truncated,
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return result
+    except Exception as exc:  # noqa: BLE001 — 折信封；GraphAccessDenied 仍上抛
+        from services.code_graph import GraphAccessDenied
+
+        if isinstance(exc, GraphAccessDenied):
+            try:
+                logger.info(
+                    _EVENT_LIST_PROCESSES_FAILED,
+                    component="code_graph",
+                    category="caller",
+                    repository_id=repository_id,
+                    error_code="repository_access_denied",
+                    error=redact_secrets_in_text(str(exc))[:500],
+                    duration_ms=_duration_ms(),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            raise
+        err = redact_secrets_in_text(str(exc))[:500]
+        try:
+            logger.info(
+                _EVENT_LIST_PROCESSES_FAILED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                error_code="process_query_failed",
+                error=err,
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "ok": False,
+            "error_code": "process_query_failed",
+            "error": "执行流查询失败",
+            "tool": "list_processes",
+            "repository_id": repository_id,
+        }
+
+
+async def run_get_process(
+    *,
+    repository_id: str,
+    repo: Any,
+    graph_branch: str | None,
+    user: Any,
+    process_key: str,
+) -> dict[str, Any]:
+    """按 process_key 取单条 ProcessTrace 的**唯一**编排入口（D-06 / EXEC-02）。"""
+    started = time.perf_counter()
+    repository_id = str(repository_id)
+    branch_name = graph_branch or ""
+    process_key = str(process_key or "").strip()
+
+    def _duration_ms() -> float:
+        return round((time.perf_counter() - started) * 1000, 2)
+
+    try:
+        logger.info(
+            _EVENT_GET_PROCESS_STARTED,
+            component="code_graph",
+            category="caller",
+            repository_id=repository_id,
+            branch_name=branch_name,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    if not process_key:
+        try:
+            logger.info(
+                _EVENT_GET_PROCESS_FAILED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                error_code="invalid_process_key",
+                error="process_key 不能为空",
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "ok": False,
+            "error_code": "invalid_process_key",
+            "error": "process_key 不能为空",
+            "tool": "get_process",
+            "repository_id": repository_id,
+        }
+
+    try:
+        await _code_graph_access().ensure_repository_readable(user, repository_id)
+
+        from codegraph.models import ProcessTrace
+
+        row = await ProcessTrace.objects.filter(
+            repository_id=repository_id,
+            branch_name=branch_name,
+            process_key=process_key,
+        ).afirst()
+        if row is None:
+            try:
+                logger.info(
+                    _EVENT_GET_PROCESS_FAILED,
+                    component="code_graph",
+                    category="caller",
+                    repository_id=repository_id,
+                    error_code="process_not_found",
+                    error="未找到匹配的执行流",
+                    duration_ms=_duration_ms(),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return {
+                "ok": False,
+                "error_code": "process_not_found",
+                "error": "未找到匹配的执行流；请检查 process_key / branch",
+                "tool": "get_process",
+                "repository_id": repository_id,
+                "process_key": process_key,
+            }
+
+        as_of = str(getattr(row, "built_at_sha", "") or "") or str(
+            getattr(repo, "last_indexed_commit_sha", "") or ""
+        )
+        result = {
+            "ok": True,
+            "tool": "get_process",
+            "repository_id": repository_id,
+            "branch": _branch_label(repo, graph_branch),
+            "process": _process_trace_to_dict(row, include_steps=True),
+            "as_of": as_of,
+            "staleness": await staleness_payload(repo),
+            "degradation": _process_degradation([row]),
+        }
+        try:
+            logger.info(
+                _EVENT_GET_PROCESS_COMPLETED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                step_count=int(getattr(row, "step_count", 0) or 0),
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return result
+    except Exception as exc:  # noqa: BLE001
+        from services.code_graph import GraphAccessDenied
+
+        if isinstance(exc, GraphAccessDenied):
+            try:
+                logger.info(
+                    _EVENT_GET_PROCESS_FAILED,
+                    component="code_graph",
+                    category="caller",
+                    repository_id=repository_id,
+                    error_code="repository_access_denied",
+                    error=redact_secrets_in_text(str(exc))[:500],
+                    duration_ms=_duration_ms(),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            raise
+        err = redact_secrets_in_text(str(exc))[:500]
+        try:
+            logger.info(
+                _EVENT_GET_PROCESS_FAILED,
+                component="code_graph",
+                category="caller",
+                repository_id=repository_id,
+                error_code="process_query_failed",
+                error=err,
+                duration_ms=_duration_ms(),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "ok": False,
+            "error_code": "process_query_failed",
+            "error": "执行流查询失败",
+            "tool": "get_process",
+            "repository_id": repository_id,
+        }
+
+
 # ---------------------------------------------------------------------------
 # 两面共用的壳层原语（122-08）——分支口径与留痕 payload
 # ---------------------------------------------------------------------------
@@ -1702,5 +2034,18 @@ def tool_trace_payload(
         payload["files_touched"] = files_touched
         payload["impacts_ok"] = impacts_ok
         payload["impacts_failed"] = impacts_failed
+        payload["truncated"] = truncated_flag
+    elif tool in ("list_processes", "get_process"):
+        # 只计数：⛔ 不把 steps / name 正文灌进 RetrievalTrace（T-126-03）。
+        if tool == "list_processes":
+            result_count = int(summary.get("returned") or 0) if summary else 0
+            total_found = int(summary.get("total") or 0) if summary else 0
+            truncated_flag = 1 if summary and bool(summary.get("truncated")) else 0
+        else:
+            proc = result.get("process") if isinstance(result.get("process"), Mapping) else {}
+            result_count = 1 if proc else 0
+            total_found = int(proc.get("step_count") or 0) if proc else 0
+        payload["result_count"] = result_count
+        payload["total_found"] = total_found
         payload["truncated"] = truncated_flag
     return payload
