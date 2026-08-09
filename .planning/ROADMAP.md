@@ -102,7 +102,42 @@ Plans:
   4. trace 返回任意两符号间有向最短路并逐跳渲染 file:line + 边类型/置信度；符号重名时返回消歧候选列表，绝不静默取第一个
   5. impact/trace 经 MCP 工具（PAT fail-closed + schema snapshot）与 agents 对话工具双面可调，输出带索引 staleness 提示（「索引落后 N commits」）
 
-**Plans**: TBD
+**Plans**: 10 plans
+
+Plans:
+**Wave 0**
+
+- [ ] 122-01-PLAN.md — W0 验收地基：合成冻结 `MultiDiGraph` fixture（13 节点）+ 可调扇入 hub + 跨仓造数工厂 + 9 个测试文件骨架
+
+**Wave 1** *(blocked on Wave 0 completion)*
+
+- [ ] 122-02-PLAN.md — W1 `symbol_resolve.py`：uid 优先 + 重名候选列表（D-19）+ barrel docstring 记 D-28 边界
+- [ ] 122-03-PLAN.md — W1 `impact.py` 内核：分层反向 BFS + path-min 置信度 + 确定性风险四级（含 D-29 封顶）+ 截断纪律
+- [ ] 122-04-PLAN.md — W1 `trace.py` 内核：置信度视图上的有向最短路 + 等长多解声明 + 显式无路径结构
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 122-05-PLAN.md — W2 `code_graph_tools.py` 原语层：带种子取图（D-24）+ `GraphError` 翻译表 + staleness/降级声明 + 候选 `signature` 补取；并把 AST 观测契约扩到包外兄弟模块
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 122-06-PLAN.md — W3 `code_graph_cross_repo.py`：`CrossRepoApiCall` ORM 直查的跨仓一跳（D-25）+ 逐仓权限复核 + 三种显式条目
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 122-07-PLAN.md — W4 `run_impact` / `run_trace`：两面共用的唯一编排入口（D-21）+ 重名取图前短路
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 122-08-PLAN.md — W5 MCP 壳：2 个 `McpToolView` + serializers + urls + schema snapshot 双份字面量 + `caller` 事件与 `RetrievalTrace`
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 122-09-PLAN.md — W6 对话壳：2 个 `@tool` + 会话 owner fail-closed + `agents/tools/__init__` 与 chat 白名单两处注册
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 122-10-PLAN.md — W7 双面同源逐字节守护（D-21）+ D-26 / D-27 两笔跨相位记账
 
 ### Phase 123: detect_changes 工具本体
 
@@ -383,7 +418,7 @@ Plans:
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
 | 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 10/10 | ✅ Complete (verified passed 4/4) | 2026-08-09 |
-| 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 0/? | Not started | - |
+| 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 0/10 | Planned (8 waves) | - |
 | 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 0/? | Not started | - |
 | 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 0/? | Not started | - |
 | 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 0/? | Not started | - |
