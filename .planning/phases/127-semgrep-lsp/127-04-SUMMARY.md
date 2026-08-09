@@ -76,7 +76,7 @@ Each task was committed atomically (TDD RED→GREEN):
 1. **Task 1: security_scan_report helper** - `3b149299` (test RED; parallel `505f83c3` superseding draft) + `6f294939` (feat GREEN)
 2. **Task 2: dual hang-points + async MR patch** - `9a45052d` (test RED) + `2a25631a` (feat GREEN)
 
-**Plan metadata:** _(pending docs commit)_
+**Plan metadata:** `2829d254` (docs: complete plan)
 
 ## Files Created/Modified
 
