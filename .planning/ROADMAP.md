@@ -277,12 +277,22 @@ Plans:
 **跨相位回访（D-26 / IMPACT-03）：** 生产库 `CrossRepoApiCall` / `ApiCallSite` / `ApiWrapper` **均为 0 行**（`Endpoint` 6,014 行）——上游产出器依赖 volar LSP，而 server 镜像无 Node。Phase 122 的 IMPACT-03 四条分支**全部由合成数据覆盖**，跨仓路径**未经任何真实数据验证**；121-10 记的「样本不足」实为**样本为零**，命中率在本相位补齐 LSP 并重建索引之前根本不可测。本相位落地 LSP 并重建索引后，**必须回来用真实样本复验 IMPACT-03** 的四条分支，并测出 `(file_path, name)` 二次解析的真实命中率。
 
 **Plans:** 5 plans
-
 Plans:
+**Wave 1**
+
 - [ ] 127-01-PLAN.md — Wave 0：Nyquist 测试桩 + 冻结面守卫 + VALIDATION 对齐
 - [ ] 127-02-PLAN.md — Wave 1：Dockerfile Semgrep/Node/Go/LSP + settings/keys + SecurityFinding
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 127-03-PLAN.md — Wave 2：semgrep_scan CLI + QUEUE_SCAN durable + fail-open
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 127-04-PLAN.md — Wave 3：`## 安全扫描` MR 段 + 双链路挂点 + Pro token / CE 文案
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 127-05-PLAN.md — Wave 4：LSP 孤儿清扫 + 基准报告 + IMPACT-03 复验/诚实延期 + 默认翻转门禁
 
 **执行顺序（依赖链）:** 121（地基，绝对先行——缓存四件套 + 边准入 + 读取层鉴权/exclusion 收口必须做进地基）→ 122（核心工具面，双面接线模式定型）→ 123（detect_changes 本体）→ 124（编码链集成，动 task/workflow 两条链单独控风险）→ 125（社区先于执行流，Process 需要 community 分类）→ 126（执行流 + 独立小项收编）→ 127（Semgrep/LSP 独立轨道收尾，避开与 125/126 同时引入内存大户）。其中 125 只依赖 121，可视执行情况与 122–124 并行推进。
