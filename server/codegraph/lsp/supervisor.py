@@ -252,6 +252,19 @@ class LspSupervisor:
         # STOPPED / CRASHED / UNHEALTHY → 重新 spawn
         await self._spawn_client()
 
+    def live_pid(self) -> int | None:
+        """当前 LSP 子进程 PID（若仍存活）；供 orphan_reap 排除 live-set。"""
+        if self._client is None:
+            return None
+        try:
+            proc = self._get_subprocess(self._client)
+        except Exception:  # noqa: BLE001
+            return None
+        if proc is None or getattr(proc, "returncode", None) is not None:
+            return None
+        pid = getattr(proc, "pid", None)
+        return pid if isinstance(pid, int) and pid > 0 else None
+
     async def stop(self) -> None:
         """优雅停止 supervisor（cancel 后台 task + 停 client + 转 STOPPED）。"""
         if self._status == LspSupervisorStatus.STOPPED:
