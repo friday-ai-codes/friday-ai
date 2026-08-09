@@ -199,6 +199,7 @@ def _log_degraded_subgraph(
     edge_count: int,
     frontier_truncated: bool,
     duration_ms: float,
+    chunk_evidence_truncated_count: int = 0,
 ) -> None:
     """降级为按需子图的埋点。
 
@@ -222,6 +223,9 @@ def _log_degraded_subgraph(
             edge_count=edge_count,
             frontier_truncated=frontier_truncated,
             duration_ms=duration_ms,
+            # 与全量路径的 ``code_graph_assembled`` 对齐：同一个排障信号不该只在一条
+            # 路径上存在（否则「这仓怎么证据面这么少」在降级路径上无从答起）。
+            chunk_evidence_truncated_count=chunk_evidence_truncated_count,
             initiated_by_user_id="system",
         )
     except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
@@ -1035,7 +1039,9 @@ def load_subgraph(
 
     .. note::
        与 :func:`load_graph` 相同，``estimated_bytes`` / ``partial_edges`` 由
-       ``cache.py`` 覆写；``degraded`` 在这里就已经是终值 ``"on_demand_subgraph"``。
+       ``cache.py`` 覆写；``degraded`` 在这里就已经是终值——``"on_demand_subgraph"``，
+       或 frontier 撞上 :data:`SUBGRAPH_FRONTIER_LIMIT` 时的
+       ``"on_demand_subgraph_truncated"``（后者意味着子图**缺了一部分邻接**）。
     """
     started = time.perf_counter()
 
@@ -1073,7 +1079,7 @@ def load_subgraph(
         repository_id=str(repository_id),
         nodes=nodes,
     )
-    chunk_evidence, _chunk_truncated = _load_chunk_evidence(
+    chunk_evidence, chunk_evidence_truncated_count = _load_chunk_evidence(
         repository_id=str(repository_id),
         branch=branch,
         nodes=nodes,
@@ -1093,7 +1099,12 @@ def load_subgraph(
         partial_edges=False,
         partial_reason="",
         # 🔔 上层工具必须透出：结论的覆盖面小于全图。
-        degraded="on_demand_subgraph",
+        # 🚨 截断是**第二档**语义，必须与「完整的深度受限子图」区分开：撞上
+        #    ``SUBGRAPH_FRONTIER_LIMIT`` 的子图**缺了一大块邻接**，而日志不是给 agent
+        #    看的。复用 ``degraded`` 承载这一档，避免为此再动 16 字段契约。
+        degraded=(
+            "on_demand_subgraph_truncated" if frontier_truncated else "on_demand_subgraph"
+        ),
         cross_repo_unresolved_count=cross_repo.unresolved_count,
         cross_repo_branch_unfiltered=cross_repo.loaded_count > 0,
         excluded_file_count=nodes.excluded_file_count,
@@ -1112,6 +1123,7 @@ def load_subgraph(
         edge_count=meta.edge_count,
         frontier_truncated=frontier_truncated,
         duration_ms=duration_ms,
+        chunk_evidence_truncated_count=chunk_evidence_truncated_count,
     )
 
     return CodeGraph(meta=meta, graph=graph, chunk_evidence=chunk_evidence)

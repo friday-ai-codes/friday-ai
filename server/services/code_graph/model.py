@@ -280,8 +280,14 @@ class GraphMeta:
     # ——省掉上层一次 Optional 判空，空串即「无」。
     partial_reason: str
 
-    # 🔔 上层工具必须透出："" 或 "on_demand_subgraph"（超预算大仓不缓存、
-    # 只装配种子符号周边的诱导子图，结论覆盖面小于全图）。
+    # 🔔 上层工具必须透出，三个字面量：
+    #   - ``""``：全量装配，无降级。
+    #   - ``"on_demand_subgraph"``：超预算大仓不缓存、只装配种子符号周边的诱导子图，
+    #     结论覆盖面小于全图，但该子图在其深度内是**完整**的。
+    #   - ``"on_demand_subgraph_truncated"``：同上，且某一轮 frontier 撞上
+    #     ``loader.SUBGRAPH_FRONTIER_LIMIT`` 被截断——子图**缺了一部分邻接**，
+    #     结论可能在边界处莫名断掉。这一档与上一档必须区分：上层据此才知道
+    #     「影响面就这么大」这句话能不能说。
     degraded: str
 
     # 🔔 上层工具必须透出：CrossRepoApiCall 两端只有 (file_path, name) 字符串、
