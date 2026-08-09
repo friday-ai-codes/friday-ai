@@ -38,7 +38,7 @@
 - [x] **Phase 123: detect_changes 工具本体** - diff 行区间 × Symbol 区间定位受影响符号 + 批量 impact，水位锚定 + rename 检测 (completed 2026-08-10, verified passed)
 - [x] **Phase 124: 编码链闭环** - 编码容器提交前自查 + MR 描述自动附影响面报告（fail-soft） (completed 2026-08-10)
 - [x] **Phase 125: 社区检测 + 模块摘要** - Louvain 社区落库 + 成员指纹跳过重生成 + LLM 模块摘要三点注入（adapter 层，不动冻结面） (plans 4/4 complete 2026-08-09 — ready for verification)
-- [ ] **Phase 126: 执行流 + rename_preview + skills** - Endpoint 正向执行流存 Process + affected_processes 回填 + 只读改名清单 + 两个 skill 同源分发
+- [x] **Phase 126: 执行流 + rename_preview + skills** - Endpoint 正向执行流存 Process + affected_processes 回填 + 只读改名清单 + 两个 skill 同源分发 (completed 2026-08-10)
 - [ ] **Phase 127: Semgrep 门禁 + LSP 基准** - diff-aware taint 扫描 advisory 起步 + volar/gopls 可用性探测与抽取质量基准
 
 #### Phase Details (v0.22.0)
@@ -240,7 +240,7 @@ Plans:
   4. rename_preview 输出图解析引用 + grep 文本兜底的双源合并清单，逐条带 graph/text_search 置信标签 + context 片段、按文件分组，显式声明动态引用覆盖限制；只出清单不改写
   5. impact-analysis / refactoring 两个工作流 skill 进 `@friday-ai-codes/skills` 同源分发（复用 v0.17.0 hash 一致性机制），编码容器与外部 agent 可用
 
-**Plans:** 5 plans
+**Plans:** 5/5 plans complete
 
 **Wave 0**
 
