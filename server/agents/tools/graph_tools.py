@@ -261,7 +261,7 @@ async def impact_analysis(
 
     ``success=False`` 只留给：会话 owner 解析失败、输入校验失败、翻译后的
     ``GraphError``（对应 MCP 面 401/400/4xx-5xx）。编排层 ``ok=False``
-    （``symbol_not_found`` / ``ambiguous_symbol`` / ``symbol_not_in_graph``）仍返回
+    （``symbol_not_found`` / ``ambiguous_symbol``）仍返回
     ``success=True``，信封里的 ``ok`` 才是查询结论——与 MCP HTTP 200 对齐（D-21）。
     """
     try:

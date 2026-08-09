@@ -325,10 +325,12 @@ async def test_run_impact_does_not_swallow_graph_error(
 
 
 @pytest.mark.django_db(transaction=True)
-async def test_symbol_not_in_graph_is_explicit(
+async def test_excluded_symbol_indistinguishable_from_not_found(
     indexed_repo, symbols_factory, exclusion_rule_factory
 ) -> None:
-    """被 exclusion 挡掉的符号 ⇒ ``symbol_not_in_graph``，结果**不含** ``groups``。
+    """被 exclusion 挡掉的符号 ⇒ ``symbol_not_found``，与「不存在」同出口（T-122-exclusion）。
+
+    ⛔ 不得再暴露 ``symbol_not_in_graph``——那会泄漏「索引里有、图里没有」。
 
     （Req: IMPACT-01；GRAPH-04 端到端回填落点）
     """
@@ -346,8 +348,10 @@ async def test_symbol_not_in_graph_is_explicit(
     )
 
     assert result["ok"] is False
-    assert result["error_code"] == "symbol_not_in_graph"
+    assert result["error_code"] == "symbol_not_found"
     assert "groups" not in result
+    assert "secret/hidden.py" not in str(result)
+    assert "exclusion" not in str(result).lower()
 
 
 def _make_resolved_chain(symbols_factory, call_edges_factory, length: int):
