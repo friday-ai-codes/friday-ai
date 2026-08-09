@@ -7,7 +7,7 @@
 覆盖契约：
 - 三要素守门：endpoint / token 任一空 → build 返回 None（存量任务零回归）。
 - 端点校验：非法 scheme（javascript:/file://）→ None，绝不向非法端点注入 PAT（T-103-06）。
-- 白名单：恰 7 个工具；``knowledge_allowed_tools()`` 前缀正确。
+- 白名单：恰 11 个工具（103 的 7 + 113 蓝图 3 + 124 detect_changes）；``knowledge_allowed_tools()`` 前缀正确。
 - handler：200 JSON → 文本含业务字段；401 → 固定文案 is_error；500 → 文案不含响应体
   （T-103-05）；非 JSON 200 → 解析失败文案；传输错误 → return 不 raise。
 - 配额：quota 用尽后返回配额文案且不再发 HTTP（T-103-07）。
@@ -53,7 +53,14 @@ _NEW_113_TOOL_NAMES = [
 # 113-04 追加的短等待原语（BUS-02）；它的 handler 是自定义包装而非工厂直造，
 # 但仍在白名单与 allowed_tools 里（见 tests/test_blueprint_context_wait.py）。
 _NEW_113_04_TOOL_NAMES = ["await_blueprint_context"]
-EXPECTED_TOOL_NAMES = [*_LEGACY_TOOL_NAMES, *_NEW_113_TOOL_NAMES, *_NEW_113_04_TOOL_NAMES]
+# 124-01 追加：编码完成后提交前自查影响面（DIFF-03 / D-02）。
+_NEW_124_TOOL_NAMES = ["detect_changes"]
+EXPECTED_TOOL_NAMES = [
+    *_LEGACY_TOOL_NAMES,
+    *_NEW_113_TOOL_NAMES,
+    *_NEW_113_04_TOOL_NAMES,
+    *_NEW_124_TOOL_NAMES,
+]
 
 
 class _FakeResponse:
@@ -156,25 +163,28 @@ def test_valid_endpoint_builds_server(ok_endpoint: str) -> None:
 
 
 # =========================================================================
-# 白名单：恰 7 个工具 + allowed_tools 前缀
+# 白名单：恰 11 个工具 + allowed_tools 前缀
 # =========================================================================
 
 
 @pytest.mark.asyncio
 async def test_server_has_exactly_seven_whitelist_tools() -> None:
-    """构建出的 server 工具集恰为白名单名字（103 的 7 个 + 113-02 的 2 个）。"""
+    """构建出的 server 工具集恰为白名单名字（历史 10 + 124 detect_changes）。"""
     config = build_knowledge_mcp_server(ENDPOINT_BASE, SECRET_PAT, SESSION_ID, 200)
     assert config is not None
     assert config["type"] == "sdk"
     assert config["name"] == KNOWLEDGE_MCP_SERVER_NAME
     names = await _server_tool_names(config)
     assert sorted(names) == sorted(EXPECTED_TOOL_NAMES)
+    assert len(names) == 11
 
 
 def test_knowledge_allowed_tools_naming() -> None:
-    """allowed_tools 为 9 条 mcp__friday-knowledge__{name}（顺序即白名单顺序）。"""
+    """allowed_tools 为 11 条 mcp__friday-knowledge__{name}（顺序即白名单顺序）。"""
     allowed = knowledge_allowed_tools()
     assert allowed == [f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__{name}" for name in EXPECTED_TOOL_NAMES]
+    assert len(allowed) == 11
+    assert f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__detect_changes" in allowed
 
 
 def test_schemas_required_fields_accurate() -> None:
@@ -191,6 +201,28 @@ def test_schemas_required_fields_accurate() -> None:
         "query",
     ]
     assert by_name["lookup_project_by_branch"]["input_schema"]["required"] == ["branch_name"]
+
+
+def test_detect_changes_schema_shape() -> None:
+    """detect_changes schema 对照 DetectChangesRequestSerializer（DIFF-03 / D-02）。"""
+    by_name = {s["name"]: s for s in KNOWLEDGE_TOOL_SCHEMAS}
+    assert "detect_changes" in by_name
+    schema = by_name["detect_changes"]
+    assert schema["description"].strip()
+    assert "自查" in schema["description"] or "提交前" in schema["description"]
+    assert schema["input_schema"]["type"] == "object"
+    assert schema["input_schema"]["required"] == ["repository_id", "compare"]
+    props = schema["input_schema"]["properties"]
+    for key in (
+        "repository_id",
+        "compare",
+        "base_ref",
+        "max_depth",
+        "min_confidence",
+        "include_low_confidence",
+        "limit",
+    ):
+        assert key in props, f"missing property {key}"
 
 
 # =========================================================================
