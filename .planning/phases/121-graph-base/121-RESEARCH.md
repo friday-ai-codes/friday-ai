@@ -937,26 +937,33 @@ logger.warning(
 | A4 | workflow engine 的 `_run_in_thread` 确实为每次执行创建独立 event loop | Threading Model | 若实际共用一个 loop，`asyncio.Event` 的禁令会过于保守（但 `threading.Event` 方案在两种情况下都正确，故无风险）。来源是 `ARCHITECTURE.md` 描述，未逐行读 scheduler 源码 |
 | A5 | `resolution_rate < 0.6` 是合理的 `low_resolution` 阈值 | （来自 CONTEXT） | CONTEXT 与里程碑调研都标注这是经验值，**本相位的解析率统计交付物正是为了校准它**——计划应把「用实测数据回填/确认阈值」写成显式任务，而不是照抄 0.6 就完事 |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> 四项均已在计划阶段裁定完毕，无遗留待决项。逐项裁决出处见各条末尾的 **Resolved** 行。
+> 1 / 2 / 4 由 `121-CONTEXT.md` Area 6 的锁定决策（D-06-5 / D-06-6 / D-06-7）拍板；3 由 `121-09-PLAN.md` Task 2 落地。
 
 1. **`CrossRepoApiCall` 端点解析不上 Symbol 时怎么办？**
    - 已知：两端只有 `(file_path, function_name)` 字符串，无 FK（Pitfall 1）。
    - 不明：解析失败（例如 handler 是类方法而 Symbol 里存的是 `METHOD` 带不同命名）时，是丢弃该跨仓边，还是建一个 `external`/`unresolved` 虚拟节点。
    - Recommendation: **丢弃 + 计数上报**（新增 `cross_repo_unresolved_count` 到图元数据）。建虚拟节点会污染 impact 结果，而计数让 Phase 122 能如实声明「有 N 条跨仓边无法定位」。
+   - **Resolved**：采纳。锁定为 `121-CONTEXT.md` Area 6 **D-06-5**（丢弃 + 计数，⛔ 不建虚拟节点）；实现与回归见 `121-09` 之前的 `121-06-PLAN.md` Task 1，验证行见 `121-VALIDATION.md` GRAPH-01 的 `cross_repo_unresolved` 行。
 
 2. **feature 分支 overlay 的符号去重键是什么？**
    - 已知：必须 overlay（Pitfall 3），`Symbol` 的 `unique_together` 是 `(repository, branch_name, file_path, name, start_line)`。
    - 不明：feature 覆盖 base 时按 `(file_path, name, start_line)` 还是仅按 `file_path`（整文件覆盖）去重。行号在分支间会漂移，按 `start_line` 去重会漏。
    - Recommendation: **按 `file_path` 整文件覆盖**——与索引侧「per-file delete+rebuild」的增量语义一致（`CallEdge` docstring 明写 per-file 幂等删除按 `caller_file` 走）。计划应把这条写死并加测试。
+   - **Resolved**：采纳。锁定为 `121-CONTEXT.md` Area 6 **D-06-6**（去重键 = 整个 `file_path`）；实现见 `121-05-PLAN.md` Task 1 的 overlay 语义，回归见 `121-VALIDATION.md` GRAPH-01 的 `overlay_dedup` 行。
 
 3. **`invalidate(repository_id)` 钩子挂不挂？**
    - CONTEXT 列为 Claude's Discretion（推荐做）。
    - 现成挂点：`code_relations/tasks.py:224-229` 与 `services/graph_builder.py:517-521`，两处都已有 `await sync_to_async(GalaxyGraphCache.refresh_repo)(repository_id)`，紧邻加一行即可。
    - Recommendation: **挂**。成本是两行代码，收益是「重索引后首查不必等签名比对发现陈旧」。但**主动失效只是优化，不能替代取图时校验**——多 worker 下钩子只对本 worker 生效，正确性必须由签名兜底。这个「钩子非充分条件」的理由应写进代码注释，防止后人误删签名校验。
+   - **Resolved**：采纳（Claude's Discretion 项，由计划拍板挂上）。落地见 `121-09-PLAN.md` Task 1（`GraphService.invalidate` + `invalidate_repository`，只驱逐不重建）与 Task 2（两处钩子，经**包根**导入）；「钩子非充分条件」的注释在两处钩子与 `cache.py` 三处留痕，威胁项 `T-121-陈旧图`。
 
 4. **`code_graph` vs 复用既有 `codegraph` 作为 `component` 值？**
    - CONTEXT 锁定 `code_graph`；`LOGGING-SPEC §5` 注册表里只有 `codegraph`。
    - Recommendation: **遵从 CONTEXT，用 `code_graph`，并在计划里加一个任务把它登记进 §5**。两个值并存是有意义的——`codegraph` 是索引/抽取侧，`code_graph` 是查询/服务侧，筛日志时能分开正是好事。
+   - **Resolved**：采纳。锁定为 `121-CONTEXT.md` Area 6 **D-06-7**（`component="code_graph"`）；§5 注册见 `121-01-PLAN.md` Task 1，全包契约由 `121-03-PLAN.md` Task 3 的 `test_observability_contract` 机械守护。
 
 ## Environment Availability
 
