@@ -68,7 +68,7 @@ Each task was committed atomically:
 1. **Task 1: 纯内核 + diff_mirror 测试骨架** - `918071d7` (test)
 2. **Task 2: 编排 + MCP/双面测试骨架** - `7158865a` (test)
 
-**Plan metadata:** (pending docs commit)
+**Plan metadata:** `404425f2` (docs: complete plan)
 
 ## Files Created/Modified
 
