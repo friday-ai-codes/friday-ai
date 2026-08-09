@@ -20,7 +20,7 @@ created: 2026-08-10
 | **Framework** | pytest + pytest-asyncio + pytest-django（server）；pytest（task） |
 | **Config file** | `server/pyproject.toml`；`task/pyproject.toml` |
 | **Quick run command** | `cd server && GALAXY_CACHE_WARM_ON_STARTUP=False GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP=False uv run pytest tests/services/code_graph/test_impact_report.py tests/workflows/test_coding_impact_report.py tests/mcp_tools/test_mr_impact_report.py -q --reuse-db` |
-| **Full suite command** | Quick run + `cd task && uv run pytest tests/test_knowledge_tools.py tests/test_openspec_prompt.py tests/test_detect_changes_prompt.py tests/test_claude_sdk_integration.py tests/test_blueprint_context_tools_schema.py -q` |
+| **Full suite command** | Quick run + `cd task && uv run pytest tests/test_knowledge_tools.py tests/test_openspec_prompt.py tests/test_detect_changes_prompt.py tests/test_claude_sdk_integration.py tests/test_blueprint_context_tools_schema.py tests/test_blueprint_context_wait.py -q` |
 | **Estimated runtime** | ~30–90 seconds（mock `run_detect_changes`） |
 
 ---
@@ -38,16 +38,16 @@ created: 2026-08-10
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 124-W0-* | 00 | 0 | DIFF-03/04 | — | N/A | scaffold | create missing test stubs | ❌ W0 | ⬜ pending |
-| 124-*-* | 01+ | 1+ | DIFF-03 | T-124-01 | prompt 静态字面量；无 token 入日志 | unit | `cd task && uv run pytest tests/test_knowledge_tools.py -k detect_changes -q` | ❌ W0 | ⬜ pending |
-| 124-*-* | 01+ | 1+ | DIFF-03 | T-124-01 | plan/execute 才挂指引；不改 runner | unit | `cd task && uv run pytest tests/test_detect_changes_prompt.py -q` | ❌ W0 | ⬜ pending |
-| 124-*-* | 01+ | 1+ | DIFF-04 | T-124-02/03 | stub 仅稳定 error_code；无堆栈/凭证 | unit | `cd server && uv run pytest tests/services/code_graph/test_impact_report.py -q --reuse-db` | ❌ W0 | ⬜ pending |
-| 124-*-* | 01+ | 1+ | DIFF-04 | T-124-04 | fail-soft：异常不阻断 create_merge_request | unit | `cd server && uv run pytest tests/workflows/test_coding_impact_report.py tests/mcp_tools/test_mr_impact_report.py -q --reuse-db` | ❌ W0 | ⬜ pending |
-| 124-*-* | 01+ | 1+ | DIFF-04 / D-14 | — | workflow↔MCP 段规范化一致 | unit sentinel | `test_mr_impact_report.py::test_workflow_mcp_impact_section_parity` | ❌ W0 | ⬜ pending |
+| 124-00-01 | 00 | 0 | DIFF-03/04 | — | N/A | scaffold collect | `pytest … --collect-only -q` (3 server files) | ❌ W0 | ⬜ pending |
+| 124-00-02 | 00 | 0 | DIFF-03 | T-124-01 | N/A | scaffold collect | `pytest tests/test_detect_changes_prompt.py --collect-only -q` | ❌ W0 | ⬜ pending |
+| 124-01-01 | 01 | 1 | DIFF-03 | — | schema/whitelist；无 mcp submodule 改动 | unit | `cd task && uv run pytest tests/test_knowledge_tools.py -k detect_changes -q` | ✅ | ⬜ pending |
+| 124-01-02 | 01 | 1 | DIFF-03 | T-124-01 | prompt 静态字面量；不改 runner | unit | `cd task && uv run pytest tests/test_detect_changes_prompt.py tests/test_openspec_prompt.py -q` | ❌→W0 | ⬜ pending |
+| 124-02-01 | 02 | 1 | DIFF-04 | D-13 | settings 无 kill-switch | config grep | `rg CODE_GRAPH_IMPACT_REPORT_ TIMEOUT|MAX_CHARS settings.py` | ✅ | ⬜ pending |
+| 124-02-02 | 02 | 1 | DIFF-04 | T-124-02/03/04/05 | stub 仅稳定 error_code；无堆栈/源码 | unit | `cd server && uv run pytest tests/services/code_graph/test_impact_report.py -q --reuse-db` | ❌→W0 | ⬜ pending |
+| 124-03-01 | 03 | 2 | DIFF-04 | T-124-04 | fail-soft：异常不阻断 create_merge_request | unit | `cd server && uv run pytest tests/workflows/test_coding_impact_report.py -q --reuse-db` | ❌→W0 | ⬜ pending |
+| 124-03-02 | 03 | 2 | DIFF-04 / D-14 | T-124-05 | workflow↔MCP 段规范化一致；view 传 user | unit sentinel | `pytest … test_mr_impact_report.py -q --reuse-db` | ❌→W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
-
-*Planner must refine Task IDs to match final PLAN task numbers.*
 
 ---
 
@@ -57,7 +57,7 @@ created: 2026-08-10
 - [ ] `server/tests/workflows/test_coding_impact_report.py` — `_create_mr_for_repo` fail-soft + 段附加
 - [ ] `server/tests/mcp_tools/test_mr_impact_report.py` — MCP 路径 + D-14 对等哨兵
 - [ ] `task/tests/test_detect_changes_prompt.py` — prompt 条件追加（可扩 `test_openspec_prompt.py`）
-- [ ] 更新既有 task 计数断言 10→11（`test_knowledge_tools.py`、`test_blueprint_context_*`、`test_claude_sdk_integration.py`）
+- [ ] 更新既有 task 计数断言 10→11（`test_knowledge_tools.py`、`test_blueprint_context_*`、`test_claude_sdk_integration.py`）— **由 124-01 落地，不在 Wave 0 单独改**
 
 *Existing pytest infrastructure covers frameworks; Wave 0 adds missing phase-specific test files/stubs.*
 
@@ -90,6 +90,6 @@ created: 2026-08-10
 - [ ] Wave 0 covers all MISSING references
 - [ ] No watch-mode flags
 - [ ] Feedback latency < 90s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [ ] `nyquist_compliant: true` set in frontmatter（after 124-03）
 
 **Approval:** pending
