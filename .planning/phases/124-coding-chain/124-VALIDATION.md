@@ -21,16 +21,16 @@ created: 2026-08-10
 | **Config file** | `server/pyproject.toml`；`task/pyproject.toml` |
 | **Quick run command** | `cd server && GALAXY_CACHE_WARM_ON_STARTUP=False GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP=False uv run pytest tests/services/code_graph/test_impact_report.py tests/workflows/test_coding_impact_report.py tests/mcp_tools/test_mr_impact_report.py -q --reuse-db` |
 | **Full suite command** | Quick run + `cd task && uv run pytest tests/test_knowledge_tools.py tests/test_openspec_prompt.py tests/test_detect_changes_prompt.py tests/test_claude_sdk_integration.py tests/test_blueprint_context_tools_schema.py tests/test_blueprint_context_wait.py -q` |
-| **Estimated runtime** | ~30–90 seconds（mock `run_detect_changes`） |
+| **Estimated runtime** | Task verify 目标 &lt;30s（单文件）；Quick run / wave gate ~30–90s（三文件 mock） |
 
 ---
 
 ## Sampling Rate
 
-- **After every task commit:** Run Quick run command（server impact_report 相关）或 task 对应子集
-- **After every plan wave:** Run Full suite command（本相位相关）
+- **After every task commit:** Run **该 task 的** `<automated>`（单文件/小子集；目标 &lt;30s）— 勿把 Quick run 三文件塞进每个 task verify
+- **After every plan wave / phase gate:** Run Quick run command（server 三文件）+ Full suite 中 task 侧相关套件
 - **Before `/gsd-verify-work`:** Full suite must be green
-- **Max feedback latency:** 90 seconds
+- **Max feedback latency:** task verify &lt;30s；wave/phase gate ≤90s
 
 ---
 
@@ -44,8 +44,8 @@ created: 2026-08-10
 | 124-01-02 | 01 | 1 | DIFF-03 | T-124-01 | prompt 静态字面量；不改 runner | unit | `cd task && uv run pytest tests/test_detect_changes_prompt.py tests/test_openspec_prompt.py -q` | ❌→W0 | ⬜ pending |
 | 124-02-01 | 02 | 1 | DIFF-04 | D-13 | settings 无 kill-switch | config grep | `rg CODE_GRAPH_IMPACT_REPORT_ TIMEOUT|MAX_CHARS settings.py` | ✅ | ⬜ pending |
 | 124-02-02 | 02 | 1 | DIFF-04 | T-124-02/03/04/05 | stub 仅稳定 error_code；无堆栈/源码 | unit | `cd server && uv run pytest tests/services/code_graph/test_impact_report.py -q --reuse-db` | ❌→W0 | ⬜ pending |
-| 124-03-01 | 03 | 2 | DIFF-04 | T-124-04 | fail-soft：异常不阻断 create_merge_request | unit | `cd server && uv run pytest tests/workflows/test_coding_impact_report.py -q --reuse-db` | ❌→W0 | ⬜ pending |
-| 124-03-02 | 03 | 2 | DIFF-04 / D-14 | T-124-05 | workflow↔MCP 段规范化一致；view 传 user | unit sentinel | `pytest … test_mr_impact_report.py -q --reuse-db` | ❌→W0 | ⬜ pending |
+| 124-03-01 | 03 | 2 | DIFF-04 | T-124-04 | fail-soft：异常不阻断 create_merge_request；含 create_mr_for_task | unit | `cd server && uv run pytest tests/workflows/test_coding_impact_report.py -q --reuse-db` | ❌→W0 | ⬜ pending |
+| 124-03-02 | 03 | 2 | DIFF-04 / D-14 | T-124-05 | workflow↔MCP 段规范化一致；view+work_item 传 user | unit sentinel | `cd server && uv run pytest tests/mcp_tools/test_mr_impact_report.py -q --reuse-db` | ❌→W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -54,7 +54,7 @@ created: 2026-08-10
 ## Wave 0 Requirements
 
 - [ ] `server/tests/services/code_graph/test_impact_report.py` — formatter / stub / timeout / 体积 / 观测
-- [ ] `server/tests/workflows/test_coding_impact_report.py` — `_create_mr_for_repo` fail-soft + 段附加
+- [ ] `server/tests/workflows/test_coding_impact_report.py` — `_create_mr_for_repo` fail-soft + 段附加 + `test_create_mr_for_task_failsoft_appends_impact`
 - [ ] `server/tests/mcp_tools/test_mr_impact_report.py` — MCP 路径 + D-14 对等哨兵
 - [ ] `task/tests/test_detect_changes_prompt.py` — prompt 条件追加（可扩 `test_openspec_prompt.py`）
 - [ ] 更新既有 task 计数断言 10→11（`test_knowledge_tools.py`、`test_blueprint_context_*`、`test_claude_sdk_integration.py`）— **由 124-01 落地，不在 Wave 0 单独改**
@@ -89,7 +89,7 @@ created: 2026-08-10
 - [ ] Sampling continuity: no 3 consecutive tasks without automated verify
 - [ ] Wave 0 covers all MISSING references
 - [ ] No watch-mode flags
-- [ ] Feedback latency < 90s
+- [ ] Task verify feedback latency &lt; 30s；wave/phase gate ≤90s
 - [ ] `nyquist_compliant: true` set in frontmatter（after 124-03）
 
 **Approval:** pending
