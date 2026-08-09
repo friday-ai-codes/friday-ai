@@ -927,6 +927,10 @@ CODE_GRAPH_IMPACT_REPORT_TIMEOUT_SECONDS: float = env.float(
 CODE_GRAPH_IMPACT_REPORT_MAX_CHARS: int = env.int(
     "CODE_GRAPH_IMPACT_REPORT_MAX_CHARS", default=10240
 )
+# ProcessTrace 重建规模闸（Phase 126 / EXEC-01）：maxProcesses =
+# max(MIN, min(CAP, symbol_count // 10))。非密钥；微调不改四个 BFS 硬闸。
+CODE_GRAPH_PROCESS_MIN: int = env.int("CODE_GRAPH_PROCESS_MIN", default=20)
+CODE_GRAPH_PROCESS_MAX_CAP: int = env.int("CODE_GRAPH_PROCESS_MAX_CAP", default=300)
 # ⛔ 刻意不新增「边构建 in-flight 超时」配置项：该判据直接复用上方的
 # GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES（同一语义——超时的 RUNNING 行视为孤儿、不算在
 # 途），避免两个阈值漂移导致「孤儿已被回收但图服务仍判在途」的长鸣降级。
