@@ -25,7 +25,7 @@
 - [ ] **IMPACT-03**: impact 可穿仓库边界（沿 `CrossRepoApiCall` 边），跨仓结果标注 `cross_repo: true` 与独立置信档——改后端 `Endpoint` 能列出受影响的前端调用点
 - [ ] **IMPACT-04**: impact 输出带确定性风险分级（LOW/MEDIUM/HIGH/CRITICAL，阈值判定可解释、不走 LLM）与截断 summary 计数（agent 知道被截断了多少）
 - [ ] **IMPACT-05**: trace 工具：任意两符号间有向最短路，逐跳渲染 file:line + 边类型/置信度；符号重名时返回消歧候选列表，绝不静默取第一个
-- [ ] **IMPACT-06**: impact/trace 经 MCP 工具 + agents 对话工具双面暴露，输出带索引 staleness 提示（「索引落后 N commits」）
+- [x] **IMPACT-06**: impact/trace 经 MCP 工具 + agents 对话工具双面暴露，输出带索引 staleness 提示（「索引落后 N commits」）
 
 ### DIFF — detect_changes 与编码链闭环
 
@@ -104,7 +104,7 @@
 | IMPACT-03 | Phase 122 | Pending |
 | IMPACT-04 | Phase 122 | Pending |
 | IMPACT-05 | Phase 122 | Pending |
-| IMPACT-06 | Phase 122 | Pending |
+| IMPACT-06 | Phase 122 | Complete |
 | DIFF-01 | Phase 123 | Pending |
 | DIFF-02 | Phase 123 | Pending |
 | DIFF-03 | Phase 124 | Pending |
