@@ -167,7 +167,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 123-03-PLAN.md — W3 MCP 壳：Serializer + DetectChangesView + url + schema snapshot（D-13）
+- [x] 123-03-PLAN.md — W3 MCP 壳：Serializer + DetectChangesView + url + schema snapshot（D-13）
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -446,7 +446,7 @@ Plans:
 |-------|-----------|--------------|----------------|--------|-----------|
 | 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 10/10 | ✅ Complete (verified passed 4/4) | 2026-08-09 |
 | 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 10/10 | Complete | 2026-08-09 |
-| 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 3/6 | In Progress|  |
+| 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 4/6 | In Progress|  |
 | 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 0/? | Not started | - |
 | 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 0/? | Not started | - |
 | 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 0/? | Not started | - |
