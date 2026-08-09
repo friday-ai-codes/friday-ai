@@ -33,7 +33,7 @@
 
 ### 🚧 v0.22.0 代码智能图分析升级（对标 GitNexus）(Phases 121–127) — IN PROGRESS
 
-- [ ] **Phase 121: 内存图服务基座** - `(repository, branch)` 内存符号图缓存（水位失效 + 字节 LRU + single-flight）+ 权限/exclusion 读取层统一收口
+- [x] **Phase 121: 内存图服务基座** - `(repository, branch)` 内存符号图缓存（水位失效 + 字节 LRU + single-flight）+ 权限/exclusion 读取层统一收口
 - [ ] **Phase 122: impact / trace 工具面** - 反向 BFS 深度分组 + 置信度分层 + 跨仓边界 + 有向最短路，MCP/对话双面暴露
 - [ ] **Phase 123: detect_changes 工具本体** - diff 行区间 × Symbol 区间定位受影响符号 + 批量 impact，水位锚定 + rename 检测
 - [ ] **Phase 124: 编码链闭环** - 编码容器提交前自查 + MR 描述自动附影响面报告（fail-soft）
@@ -382,7 +382,7 @@ Plans:
 
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
-| 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 5/10 | In progress | - |
+| 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 10/10 | ✅ Complete | 2026-08-09 |
 | 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 0/? | Not started | - |
 | 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 0/? | Not started | - |
 | 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 0/? | Not started | - |
