@@ -153,9 +153,77 @@ def test_orphan_running_not_inflight(indexed_repo) -> None:
 
 # 121-VALIDATION.md 121-07-T1：字节估算为纯函数，给定 n/e 返回确定值
 # （NODE_COST=640 / EDGE_COST=560，不用 sys.getsizeof 递归）。
-@pytest.mark.skip(reason="stub：由 Plan 121-07 实现")
 def test_estimate_bytes_is_pure() -> None:
-    pass
+    """字节估算是确定性纯函数：同参数任意次调用返回同一个值。
+
+    「纯」在这里不是风格洁癖，而是准入判据成立的前提——装配**前**用 COUNT 估的那个
+    数，必须与装配**后**按实际计数记进 LRU 的那个数出自同一套算术，否则准入放行的
+    图会在缓存里被记成另一个数，字节预算形同虚设。
+    """
+    import inspect
+
+    from services.code_graph.cache import (
+        EDGE_COST_BYTES,
+        NODE_COST_BYTES,
+        estimate_graph_bytes,
+    )
+
+    assert (NODE_COST_BYTES, EDGE_COST_BYTES) == (640, 560)
+
+    expected = 100 * 640 + 300 * 560
+    assert estimate_graph_bytes(100, 300) == expected
+    # 连调三次结果逐字节相同（无内部状态、无随机、无时间依赖）。
+    assert [estimate_graph_bytes(100, 300) for _ in range(3)] == [expected] * 3
+    assert estimate_graph_bytes(0, 0) == 0
+
+    for bad in ((-1, 0), (0, -1), (-1, -1)):
+        with pytest.raises(ValueError):
+            estimate_graph_bytes(*bad)
+
+    # 签名恰为 (node_count, edge_count)：不收图对象、更不收 repository_id
+    # ——收了就说明它在读外部状态，纯函数性质当场失效。
+    params = list(inspect.signature(estimate_graph_bytes).parameters)
+    assert params == ["node_count", "edge_count"], params
+
+
+# 121-VALIDATION.md 121-07-T1（预算算术自洽性）：估算函数与 settings 默认值必须
+# 讲同一套算术，否则 CODE_GRAPH_MAX_GRAPH_BYTES 的注释就是一句无人校验的散文。
+def test_estimate_bytes_matches_budget_arithmetic() -> None:
+    """锁死「单仓约 11 万符号触顶」这条容量结论。
+
+    settings 注释写的是 ``n × (640 + 3×560) = n × 2320``、``256MB → 约 11 万符号``。
+    这条断言让「有人改了常数却没改预算默认值（或反之）」当场变红——两者漂移的后果是
+    准入判据放行的图比预算能装下的更大，OOM 保护静默失效。
+    """
+    from django.conf import settings
+
+    from services.code_graph.cache import estimate_graph_bytes
+
+    max_graph_bytes = int(settings.CODE_GRAPH_MAX_GRAPH_BYTES)
+    # 本仓典型边:节点 ≈ 3:1（RESEARCH 假设 A2，待 121-10 用真实仓复校）。
+    ratio = estimate_graph_bytes(110_000, 3 * 110_000) / max_graph_bytes
+    assert 0.9 <= ratio <= 1.1, (
+        f"11 万符号的估算值与 CODE_GRAPH_MAX_GRAPH_BYTES 已漂移（比值 {ratio:.3f}）"
+    )
+
+
+# 121-VALIDATION.md 121-07-T1（标定前提留痕）：常数的标定条件必须写在代码里，
+# 否则 121-10 复校时没人知道这两个数是在什么形态下测出来的。
+def test_byte_constants_document_calibration() -> None:
+    """常数注释含 tracemalloc / RSS / MultiDiGraph 三个关键词。
+
+    - ``tracemalloc``：说明测量口径（不是 RSS，不含 arena 碎片）。
+    - ``RSS``：说明 121-10 必须按哪个口径复校。
+    - ``MultiDiGraph``：说明边成本按哪种图类型标定（``DiGraph`` 的边便宜 224 字节/条，
+      照 DiGraph 标定会低估 44%）。
+    """
+    from pathlib import Path
+
+    from services.code_graph import cache as cache_module
+
+    source = Path(cache_module.__file__).read_text(encoding="utf-8")
+    for keyword in ("tracemalloc", "RSS", "MultiDiGraph"):
+        assert keyword in source, f"字节常数的标定条件未在代码内留痕：缺 {keyword}"
 
 
 # 121-VALIDATION.md 121-07-T2：超预算时按 LRU 顺序逐出至 ≤ 预算，
