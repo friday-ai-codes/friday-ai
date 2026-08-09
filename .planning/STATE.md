@@ -2,13 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-current_phase: 123
-current_phase_name: detect_changes 工具本体
-status: planning
+status: executing
 stopped_at: Completed 122-10-PLAN.md
-last_updated: "2026-08-09T18:12:07.136Z"
-last_activity: 2026-08-10
-last_activity_desc: Phase 122 complete, transitioned to Phase 123
+last_updated: "2026-08-09T18:28:59.084Z"
+last_activity: 2026-08-10 — Phase 122 complete, transitioned to Phase 123
 progress:
   total_phases: 7
   completed_phases: 2
@@ -32,7 +29,7 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 Phase: 123 — detect_changes 工具本体
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-08-10 — Phase 122 complete, transitioned to Phase 123
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
