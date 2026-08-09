@@ -121,6 +121,16 @@ _EDGE_ATTR_KEYS: Final[frozenset[str]] = frozenset({"kind", "confidence", "line_
 # ``cross_repo`` 档是**唯一**允许 4 个边属性的档位，多出来的是 ``match_confidence``。
 _CROSS_REPO_EDGE_ATTR_KEYS: Final[frozenset[str]] = _EDGE_ATTR_KEYS | {"match_confidence"}
 
+# ``by_file_and_name`` 的歧义哨兵：同一个 ``(归一后 file_path, name)`` 上落了**两个
+# 以上**符号时写这个值，解析方见到它一律放弃。
+# 🚨 用哨兵而不是「后写入者覆盖」：同文件同名并不罕见（Go 里不同 receiver 上的同名方法
+#    ``func (a *A) Get()`` / ``func (b *B) Get()``、Python 的 ``@overload`` 与条件定义、
+#    TS 的重载签名）。静默覆盖会让索引里只剩最后一个，而它的两个消费者（裸名边解析、
+#    跨仓边二次解析）拿到的是一条**指向错误符号**的边——比丢弃这条边更糟，因为它看起来
+#    是成功解析。「宁可不连也不连错」与裸名三道过滤的既定倾向一致。
+# ⚠️ 比较用 ``is``：全模块只存这一个对象进索引，而 UUID 字符串永远不会与它同一。
+_AMBIGUOUS: Final[str] = "\x00ambiguous\x00"
+
 __all__ = ["load_graph", "load_subgraph"]
 
 
@@ -165,6 +175,7 @@ def _log_assembled(
     dropped_missing_node_count: int,
     dropped_bare_filtered_count: int,
     chunk_evidence_truncated_count: int = 0,
+    ambiguous_name_count: int = 0,
 ) -> None:
     try:
         logger.debug(
@@ -184,6 +195,7 @@ def _log_assembled(
             dropped_missing_node_count=dropped_missing_node_count,
             dropped_bare_filtered_count=dropped_bare_filtered_count,
             chunk_evidence_truncated_count=chunk_evidence_truncated_count,
+            ambiguous_name_count=ambiguous_name_count,
         )
     except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
         pass
@@ -256,6 +268,8 @@ class _SymbolNodeIndex:
     node_ids: set[str]
     # ``(归一后的 file_path, name) -> symbol_id``。裸名边的目标解析与
     # 跨仓边二次解析都靠它。
+    # ⚠️ 值可能是 :data:`_AMBIGUOUS` —— 同一个键上落了多个符号，解析方须放弃
+    #    （一律经 :func:`_resolve_by_file_and_name` 读，别直接 ``.get()``）。
     by_file_and_name: dict[tuple[str, str], str]
     # ``str(Symbol.chunk_id) -> [symbol_id, …]``，chunk 旁挂证据面的挂载索引。
     # 🚨 **不是节点属性**：``chunk_id`` 一旦进节点属性就把节点从 5 个属性推到 6 个，
@@ -268,6 +282,8 @@ class _SymbolNodeIndex:
     dropped_symbol_count: int
     # 被 feature 分支整文件覆盖而丢弃的 base 行数（同上，仅用于日志汇总）。
     overlay_shadowed_count: int
+    # ``(file_path, name)`` 撞车而被标成歧义的次数（同上，仅用于日志汇总）。
+    ambiguous_name_count: int = 0
 
 
 def _feature_shadowed_files(repository_id: str, branch: str) -> set[str]:
@@ -333,6 +349,7 @@ def _load_symbol_nodes(
     chunk_to_symbols: dict[str, list[str]] = {}
     dropped_symbol_count = 0
     overlay_shadowed_count = 0
+    ambiguous_name_count = 0
 
     # ⚠️ 字段清单**不等于**节点属性来源：``signature``（TextField，数 KB）根本不取；
     #    ``chunk_id`` 取但**不进节点属性**——它只喂 :attr:`_SymbolNodeIndex.chunk_to_symbols`
@@ -404,7 +421,14 @@ def _load_symbol_nodes(
             end_line=end_line,
         )
         node_ids.add(node_id)
-        by_file_and_name[(norm_path, name)] = node_id
+        # 同文件同名撞车 ⇒ 标歧义，两个消费者一律放弃解析（理由见 :data:`_AMBIGUOUS`）。
+        # ⚠️ 节点本身照常入图，被放弃的只是「按名字反查到它」这条通路。
+        name_key = (norm_path, name)
+        if name_key in by_file_and_name:
+            by_file_and_name[name_key] = _AMBIGUOUS
+            ambiguous_name_count += 1
+        else:
+            by_file_and_name[name_key] = node_id
         # ``Symbol.chunk_id`` 是**软引用且 null=True**（历史数据 / 未命中任何 chunk）。
         # 为空的符号直接跳过——它不会出现在 ``chunk_evidence`` 的键里，这是正常态，
         # 不是缺失。
@@ -428,6 +452,7 @@ def _load_symbol_nodes(
         excluded_file_count=excluded_file_count,
         dropped_symbol_count=dropped_symbol_count,
         overlay_shadowed_count=overlay_shadowed_count,
+        ambiguous_name_count=ambiguous_name_count,
     )
 
 
@@ -646,15 +671,14 @@ def _load_call_edges(
             ):
                 dropped_bare_filtered_count += 1
                 continue
-            norm_callee_file = normalize_rel_path(callee_file or "")
-            resolved_node = (
-                by_file_and_name.get((norm_callee_file, callee_name))
-                if norm_callee_file is not None
-                else None
+            # 走同一个解析助手（⛔ 不直接 ``.get()``）：它连带兜住 ``_AMBIGUOUS``
+            # ——同文件同名的多个符号无从判断指向哪一个，指错符号比丢边更糟。
+            resolved_node = _resolve_by_file_and_name(
+                by_file_and_name, callee_file, callee_name, normalize_rel_path
             )
             if resolved_node is None:
-                # 三道过滤全过，但 (file, name) 在本次装配的节点集里找不到候选
-                # ——被 exclusion 拦掉，或该符号压根没被索引。丢弃。
+                # 三道过滤全过，但 (file, name) 在本次装配的节点集里找不到唯一候选
+                # ——被 exclusion 拦掉、压根没被索引、或该键歧义。丢弃。
                 dropped_missing_node_count += 1
                 continue
             callee_node = resolved_node
@@ -920,13 +944,17 @@ def _resolve_by_file_and_name(
     两侧路径必须**同口径归一**后才能比对：索引里的键是
     ``normalize_rel_path(Symbol.file_path)``，这里的入参是 ``ApiCallSite.caller_file``
     / ``Endpoint.file_path`` 的原始值，写法上很容易一侧带 ``./`` 前缀、一侧不带。
+
+    🚨 命中 :data:`_AMBIGUOUS` 视同解析失败：同一个 ``(file, name)`` 上有多个符号时
+    无从判断指向哪一个，指错符号比丢边更糟（见 :data:`_AMBIGUOUS`）。
     """
     if not file_path or not name:
         return None
     norm = normalize(file_path)
     if norm is None:
         return None
-    return by_file_and_name.get((norm, name))
+    node = by_file_and_name.get((norm, name))
+    return None if node is _AMBIGUOUS else node
 
 
 def _expand_seed_ids(
@@ -1242,6 +1270,7 @@ def load_graph(
         dropped_missing_node_count=edges.dropped_missing_node_count,
         dropped_bare_filtered_count=edges.dropped_bare_filtered_count,
         chunk_evidence_truncated_count=chunk_evidence_truncated_count,
+        ambiguous_name_count=nodes.ambiguous_name_count,
     )
 
     return CodeGraph(meta=meta, graph=graph, chunk_evidence=chunk_evidence)

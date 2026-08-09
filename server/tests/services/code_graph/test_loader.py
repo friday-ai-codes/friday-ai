@@ -219,6 +219,61 @@ def test_cross_repo_edge_resolution(indexed_repo, symbols_factory) -> None:
 
 
 @pytest.mark.django_db
+def test_same_file_same_name_symbols_are_ambiguous_not_silently_overwritten(
+    indexed_repo, symbols_factory, call_edges_factory
+) -> None:
+    """``(file_path, name)`` 撞车时一律放弃解析——⛔ 不静默指向最后写入的那一个。
+
+    同文件同名并不罕见：Go 里不同 receiver 上的同名方法、Python 的 ``@overload`` 与
+    条件定义、TS 的重载签名。后写入者静默覆盖会让索引里只剩一个候选，于是裸名边与
+    跨仓边都会连到一个**错误的符号**上——那比丢掉这条边更糟，因为它看起来是成功解析。
+    """
+    from unittest import mock
+
+    from services.code_graph import loader as loader_module
+
+    caller = symbols_factory("submitOrder", "internal/handler/order.go")
+    # 同一个文件里两个同名符号（不同 receiver），行号不同。
+    first = symbols_factory("Save", "internal/model/user.go", start_line=10, end_line=20)
+    second = symbols_factory("Save", "internal/model/user.go", start_line=30, end_line=40)
+
+    # ① 裸名边指向那个歧义键 ⇒ 整条丢弃，⛔ 不得连到 first / second 中的任何一个。
+    #    （同目录判定要求两侧同目录，所以把主叫也放进 internal/model/。）
+    bare_caller = symbols_factory("touch", "internal/model/user.go", start_line=1, end_line=5)
+    call_edges_factory(
+        bare_caller, None, callee_name="Save", callee_file="internal/model/user.go"
+    )
+
+    # ② 跨仓边的端点落在同一个歧义键上 ⇒ 同样整条丢弃并计数。
+    _make_cross_repo_call(
+        indexed_repo,
+        caller_file="internal/handler/order.go",
+        caller_function="submitOrder",
+        endpoint_file="internal/model/user.go",
+        handler_name="Save",
+        match_confidence=1.0,
+    )
+
+    # ⚠️ 埋点走 mock 而不是 ``capture_logs``：``code_graph_assembled`` 是 DEBUG，
+    #    本仓的 filtering bound logger 会在进 processor 之前就把它丢掉。
+    with mock.patch.object(
+        loader_module, "_log_assembled", wraps=loader_module._log_assembled
+    ) as log_spy:
+        result = _assemble(indexed_repo, include_low_confidence=True)
+    graph = result.graph
+
+    # 三个符号都照常入图——被放弃的只是「按名字反查到它」这条通路。
+    assert {str(first.id), str(second.id), str(caller.id)} <= set(graph.nodes)
+    assert graph.number_of_edges() == 0, (
+        "歧义键被解析成了某一个具体符号——索引在撞车时静默覆盖了先写入者"
+    )
+    assert result.meta.cross_repo_unresolved_count == 1
+
+    # 歧义次数进排障 kv（不进 GraphMeta 契约——它是线索，不是可信度声明）。
+    assert log_spy.call_args.kwargs["ambiguous_name_count"] == 1
+
+
+@pytest.mark.django_db
 def test_cross_repo_far_side_never_matched_against_local_index(
     indexed_repo, symbols_factory
 ) -> None:
