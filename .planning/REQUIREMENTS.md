@@ -49,7 +49,7 @@
 
 ### RENAME — 改名预览
 
-- [ ] **RENAME-01**: rename_preview 只读工具：图解析引用 + grep 文本兜底双源合并，逐条带 graph/text_search 置信标签、context 片段，按文件分组输出；显式声明动态引用/字符串模板的覆盖限制；**只出清单不改写**，apply 由编码代理自行执行
+- [x] **RENAME-01**: rename_preview 只读工具：图解析引用 + grep 文本兜底双源合并，逐条带 graph/text_search 置信标签、context 片段，按文件分组输出；显式声明动态引用/字符串模板的覆盖限制；**只出清单不改写**，apply 由编码代理自行执行
 
 ### TAINT — Semgrep 安全门禁
 
@@ -116,7 +116,7 @@
 | EXEC-01 | Phase 126 | Complete |
 | EXEC-02 | Phase 126 | Complete |
 | EXEC-03 | Phase 126 | Complete |
-| RENAME-01 | Phase 126 | Pending |
+| RENAME-01 | Phase 126 | Complete |
 | SKILL-01 | Phase 126 | Pending |
 | TAINT-01 | Phase 127 | Pending |
 | TAINT-02 | Phase 127 | Pending |
