@@ -1708,7 +1708,9 @@ class RenamePreviewView(McpToolView):
         assert repo is not None
 
         from services.code_graph import GraphError
+        from services.code_graph.rename_preview import COVERAGE_LIMITATIONS
         from services.code_graph_tools import (
+            graph_error_to_tool_error,
             resolve_tool_graph_branch,
             run_rename_preview,
             tool_trace_payload,
@@ -1718,21 +1720,39 @@ class RenamePreviewView(McpToolView):
             repository_id, repo, input_data.get("branch")
         )
         orch_started = time.perf_counter()
+        query = {
+            "symbol_id": str(input_data["symbol_id"]) if input_data.get("symbol_id") else None,
+            "symbol": str(input_data.get("symbol") or "") or None,
+            "file_path": str(input_data.get("file_path") or "") or None,
+            "symbol_type": str(input_data.get("symbol_type") or "") or None,
+            "new_name": str(input_data["new_name"]),
+            "context_lines": int(input_data.get("context_lines", 2)),
+        }
         try:
             result = await run_rename_preview(
                 repository_id=repository_id,
                 repo=repo,
                 graph_branch=graph_branch,
                 user=request.user,
-                symbol_id=str(input_data["symbol_id"]) if input_data.get("symbol_id") else None,
-                symbol=str(input_data.get("symbol") or "") or None,
-                file_path=str(input_data.get("file_path") or "") or None,
-                symbol_type=str(input_data.get("symbol_type") or "") or None,
-                new_name=str(input_data["new_name"]),
-                context_lines=int(input_data.get("context_lines", 2)),
+                symbol_id=query["symbol_id"],
+                symbol=query["symbol"],
+                file_path=query["file_path"],
+                symbol_type=query["symbol_type"],
+                new_name=query["new_name"],
+                context_lines=query["context_lines"],
             )
         except GraphError as exc:
-            return _graph_error_response(exc)
+            # WR-05：rename 契约要求 ok=False + applied=false 仍 HTTP 200
+            code, message = graph_error_to_tool_error(exc)
+            result = {
+                "ok": False,
+                "error_code": code,
+                "error": message,
+                "tool": "rename_preview",
+                "applied": False,
+                "coverage_limitations": COVERAGE_LIMITATIONS,
+                "query": query,
+            }
         except MirrorError as exc:
             return _mirror_error_response(exc)
         orchestration_ms = int((time.perf_counter() - orch_started) * 1000)
