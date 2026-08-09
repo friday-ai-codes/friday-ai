@@ -69,7 +69,7 @@ async def test_enqueue_passes_initiated_by_user_id(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_community_success_chains_process_enqueue(monkeypatch) -> None:
-    """run_community_rebuild 成功路径 best-effort enqueue；raise 不链式。
+    """run_community_rebuild 成功/失败均 best-effort 链式 Process enqueue。
 
     （Req: EXEC-01, 决策: D-03）
     """
@@ -121,4 +121,11 @@ async def test_community_success_chains_process_enqueue(monkeypatch) -> None:
             branch_name="main",
             initiated_by_user_id="7",
         )
-    assert chained == []
+    # 社区硬失败仍链式 Process（community_class 可降级），避免 ProcessTrace 永久陈旧。
+    assert chained == [
+        {
+            "repository_id": "repo-c",
+            "branch_name": "main",
+            "initiated_by_user_id": "7",
+        }
+    ]

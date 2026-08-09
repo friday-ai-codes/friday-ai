@@ -659,6 +659,19 @@ async def run_community_rebuild(
         source="durable",
         component="code_graph",
     ):
+        async def _enqueue_process_rebuild_best_effort() -> None:
+            # D-03：社区成功/失败都 best-effort 链式 Process（可 community_class 降级）。
+            try:
+                from services.process_enqueue import enqueue_process_rebuild
+
+                await enqueue_process_rebuild(
+                    str(repository_id),
+                    branch_name=branch,
+                    initiated_by_user_id=initiated_by_user_id,
+                )
+            except Exception:  # noqa: BLE001 — 链式入队失败不反噬主结果
+                pass
+
         try:
             result = await rebuild_communities(
                 str(repository_id),
@@ -676,6 +689,7 @@ async def run_community_rebuild(
                 error=redact_secrets_in_text(str(exc)),
                 duration_ms=round((time.monotonic() - started) * 1000, 2),
             )
+            await _enqueue_process_rebuild_best_effort()
             raise
 
         logger.info(
@@ -689,17 +703,7 @@ async def run_community_rebuild(
             communities_total=result.get("communities_total"),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
         )
-        # D-03：成功路径（含空/降级）best-effort 链式 Process 重建；本函数 raise 时不执行。
-        try:
-            from services.process_enqueue import enqueue_process_rebuild
-
-            await enqueue_process_rebuild(
-                str(repository_id),
-                branch_name=branch,
-                initiated_by_user_id=initiated_by_user_id,
-            )
-        except Exception:  # noqa: BLE001 — 链式入队失败不反噬社区成功结果
-            pass
+        await _enqueue_process_rebuild_best_effort()
         return result
 
 
