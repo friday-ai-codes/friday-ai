@@ -83,6 +83,18 @@ async def _runner_dispatch(payload: dict[str, Any]) -> Any:
     return await run_runner_dispatch(**payload)
 
 
+async def _charter_draft(payload: dict[str, Any]) -> Any:
+    from durable.tasks_impl import run_charter_draft
+
+    return await run_charter_draft(**payload)
+
+
+async def _semgrep_scan(payload: dict[str, Any]) -> Any:
+    from durable.tasks_impl import run_semgrep_scan
+
+    return await run_semgrep_scan(**payload)
+
+
 async def _community_rebuild(payload: dict[str, Any]) -> Any:
     from durable.tasks_impl import run_community_rebuild
 
@@ -93,12 +105,6 @@ async def _process_rebuild(payload: dict[str, Any]) -> Any:
     from durable.tasks_impl import run_process_rebuild
 
     return await run_process_rebuild(**payload)
-
-
-async def _semgrep_scan(payload: dict[str, Any]) -> Any:
-    from durable.tasks_impl import run_semgrep_scan
-
-    return await run_semgrep_scan(**payload)
 
 
 def register_business_handlers() -> None:
@@ -118,9 +124,10 @@ def register_business_handlers() -> None:
     register_handler("feature_list_parse_module", _feature_list_parse_module)
     register_handler("durable_blueprint_resume", _blueprint_resume)
     register_handler("durable_runner_dispatch", _runner_dispatch)
+    register_handler("durable_charter_draft", _charter_draft)
+    register_handler("durable_semgrep_scan", _semgrep_scan)
     register_handler("durable_community_rebuild", _community_rebuild)
     register_handler("durable_process_rebuild", _process_rebuild)
-    register_handler("durable_semgrep_scan", _semgrep_scan)
 
 
 __all__ = ["register_business_handlers"]

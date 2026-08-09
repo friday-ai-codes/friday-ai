@@ -29,12 +29,14 @@ DEFAULT_INDEX_CONCURRENCY = 5
 DEFAULT_GRAPH_CONCURRENCY = 3
 DEFAULT_SUMMARY_CONCURRENCY = 8
 DEFAULT_FEATURE_PARSE_CONCURRENCY = 4
+DEFAULT_CHARTER_CONCURRENCY = 4
 DEFAULT_SCAN_CONCURRENCY = 2
 
 _INDEX_SLOT_PREFIX = "index-slot-"
 _GRAPH_SLOT_PREFIX = "graph-slot-"
 _SUMMARY_SLOT_PREFIX = "summary-slot-"
 _FEATURE_PARSE_SLOT_PREFIX = "featparse-slot-"
+_CHARTER_SLOT_PREFIX = "charter-slot-"
 _SCAN_SLOT_PREFIX = "scan-slot-"
 
 
@@ -71,6 +73,11 @@ def feature_parse_slot_lock(key: str, n: int) -> str:
     打 LLM，超限者原生留 todo 排队、worker 自动跳过（与 index/graph 槽位池同构）。
     """
     return f"{_FEATURE_PARSE_SLOT_PREFIX}{_stable_slot(key, n)}"
+
+
+def charter_slot_lock(repo_id: str, n: int) -> str:
+    """计算章程起草槽位 lock 值：``charter-slot-{stable_hash(repo_id) % N}``。"""
+    return f"{_CHARTER_SLOT_PREFIX}{_stable_slot(repo_id, n)}"
 
 
 def scan_slot_lock(repo_id: str, n: int) -> str:
@@ -158,6 +165,14 @@ async def aget_feature_parse_concurrency() -> int:
     )
 
 
+async def aget_charter_concurrency() -> int:
+    from system.models import SettingKeys
+
+    return await _read_int_setting_async(
+        SettingKeys.CONCURRENCY_CHARTER_MAX, DEFAULT_CHARTER_CONCURRENCY
+    )
+
+
 async def aget_scan_concurrency() -> int:
     from system.models import SettingKeys
 
@@ -176,6 +191,16 @@ async def asummary_lock(repo_id: str) -> str:
     return summary_slot_lock(repo_id, await aget_summary_concurrency())
 
 
+async def acharacter_lock(repo_id: str) -> str:
+    """读取 N 并返回该仓库的章程起草槽位 lock（async 入队点用）。"""
+    return charter_slot_lock(repo_id, await aget_charter_concurrency())
+
+
+async def ascan_lock(repo_id: str) -> str:
+    """读取 N 并返回该仓库的 Semgrep 扫描槽位 lock（async 入队点用）。"""
+    return scan_slot_lock(repo_id, await aget_scan_concurrency())
+
+
 async def aindex_lock(repo_id: str) -> str:
     """读取 N 并返回该仓库的索引槽位 lock（async 入队点用）。"""
     return index_slot_lock(repo_id, await aget_index_concurrency())
@@ -184,11 +209,6 @@ async def aindex_lock(repo_id: str) -> str:
 async def agraph_lock(repo_id: str) -> str:
     """读取 N 并返回该仓库的图谱槽位 lock（async 入队点用）。"""
     return graph_slot_lock(repo_id, await aget_graph_concurrency())
-
-
-async def ascan_lock(repo_id: str) -> str:
-    """读取 N 并返回该仓库的 Semgrep 扫描槽位 lock（async 入队点用）。"""
-    return scan_slot_lock(repo_id, await aget_scan_concurrency())
 
 
 def index_lock_sync(repo_id: str) -> str:
@@ -206,11 +226,13 @@ __all__ = [
     "DEFAULT_GRAPH_CONCURRENCY",
     "DEFAULT_SUMMARY_CONCURRENCY",
     "DEFAULT_FEATURE_PARSE_CONCURRENCY",
+    "DEFAULT_CHARTER_CONCURRENCY",
     "DEFAULT_SCAN_CONCURRENCY",
     "index_slot_lock",
     "graph_slot_lock",
     "summary_slot_lock",
     "feature_parse_slot_lock",
+    "charter_slot_lock",
     "scan_slot_lock",
     "get_index_concurrency_sync",
     "get_graph_concurrency_sync",
@@ -218,11 +240,13 @@ __all__ = [
     "aget_graph_concurrency",
     "aget_summary_concurrency",
     "aget_feature_parse_concurrency",
+    "aget_charter_concurrency",
     "aget_scan_concurrency",
     "aindex_lock",
     "agraph_lock",
     "asummary_lock",
     "afeature_parse_lock",
+    "acharacter_lock",
     "ascan_lock",
     "index_lock_sync",
     "graph_lock_sync",
