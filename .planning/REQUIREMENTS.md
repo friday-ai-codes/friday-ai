@@ -1,71 +1,96 @@
-# Requirements — v0.21.0 蓝图过程可见与返工闭环
+# Requirements — v0.22.0 代码智能图分析升级（对标 GitNexus）
 
-**Milestone:** v0.21.0
-**Defined:** 2026-08-05
-**Source:** 用户对 v0.20.0 蓝图查看器的四点反馈（反向关联 / 等待与队列化 / 按阶段实时展示 agent 活动 / 打回重跑带原始上下文）
-**前置:** v0.20.0（Phases 111–116，蓝图六段结构化 + 确认门 + 划线澄清 + 全入口收编）已归档并合流；v0.19.0 Phase 110 的 `ConvergenceSessionEvent` 单点 fan-out 与阶段时间线契约就位
+**Milestone:** v0.22.0
+**Defined:** 2026-08-09
+**Source:** 与 GitNexus（本地代码知识图谱 + MCP 工具引擎）的能力对比调研：Friday 赢在服务端多仓/权限/观测/交付流水线耦合，输在静态图分析深度（impact / trace / 执行流 / 聚类 / PDG 全缺）。本里程碑在现有 codegraph/RAG 底座上补齐图分析能力。领域调研见 `.planning/research/`（STACK / FEATURES / ARCHITECTURE / PITFALLS / SUMMARY，commit `8cdd47ce`）。
+**前置:** v0.21.0（Phases 117–120）已验证归档；`CallEdge` 已有外键化 `caller_symbol`/`callee_symbol`；networkx 3.6.1 已在依赖树；`GalaxyGraphCache` 提供签名失效范式先例。
 
-> 需求以「用户能做到什么 / 用户不会遭遇什么」表述，不描述实现。
-
----
-
-## 立项动机（现状缺口，均已由代码核查确认）
-
-1. **蓝图 → 项目只有页尾一个链接**：归属写在 `ArtifactVersion.content.meta.project_id`（JSON 软引用，无 FK），顶栏无回跳，且页面未把 `project_name` 传给关联段 ⇒ 链接文案常退化成 UUID；detail 接口顶层不返回项目字段（list 接口反而有）。
-2. **HITL 门无到期策略**：编排本身已是落库状态机 + durable 队列（`ProcessEngine.advance` 状态驱动、`QUEUE_BLUEPRINT` + `lock=blueprint-resume-{session_id}`、15/60 分钟僵尸恢复扫描），**不占运行资源**；但人一直不回复时只有 apscheduler 周期提醒卡片，没有任何到期收口 ⇒ 蓝图可无限停在 `needs_clarification`。
-3. **过程只有阶段级标量**：蓝图页无专用推送（`useBlueprintLive` 5s REST 轮询），21 个 `blueprint.*` 事件全是标量（`repository_id` / `verdict` / `findings_count`），没有「agent 正在做什么」这一层；`repo_plan` 波次存在 `stage_state` 但 events 接口不暴露 ⇒ 分仓阶段每仓进度前端基本不可见；`RetrievalTrace` 已在记召回条数/score/耗时但无消费方。
-4. **重跑不带原始上下文**：驳回已做「新版本 + `revision_round+1` + 复位会话到 `merge` + 开 `human_comment` 线程」，但**范围固定**（只重融合重审，无法重调研或全量重做）；容器侧 jsonl transcript 持久化与 `resume` 能力已存在（`task/core/sdk_sessions.py` + `CodingSession.sdk_session_id/sdk_transcript`）却**只接了编码链**，`RepoResearchTask` / `SubAgentSession` 没有这两个字段 ⇒ 每仓重跑只能从结论（`PartialPlan` / `BlueprintContextEntry`）重建，拿不到原始 agent 会话。
+> 需求以「用户/agent 能做到什么」表述，不描述实现。已定裁决：图引擎用 networkx（rustworkx 缺社区检测暂不引入）；社区检测用内置 `louvain_communities(seed=固定)`（leidenalg GPL-3.0 否决，Leiden 列触发条件升级项）；污点分析外购 Semgrep CE（1.172.0+，独立 CLI）不自研 PDG。
 
 ---
 
-## v0.21.0 Requirements
+## v0.22.0 Requirements
 
-### LINK — 蓝图与项目双向可达
+### GRAPH — 内存图服务（地基）
 
-- [x] **LINK-01**：用户在蓝图页顶部一眼就能看到该方案属于哪个项目，并一键跳回项目工作区；链接文案是项目名而非 UUID（页尾关联段的既有链接保留，不作为唯一入口）
-- [x] **LINK-02**：蓝图详情接口顶层直接给出项目归属（与列表接口口径一致），消费方无需自行从版本正文 `meta` 里挖
+- [ ] **GRAPH-01**: Agent/工具查询任一已索引仓库时，系统提供该 `(repository, branch)` 的内存符号图（`Symbol`/`CallEdge`/`ChunkEdge`/`CrossRepoApiCall` 装配），首次构建后命中缓存，不重复建图
+- [ ] **GRAPH-02**: 索引水位（`last_indexed_commit_sha`）或边构建代数变化后缓存自动失效重建；取图时校验水位，不返回「水位已更新但边未建完」的半新图
+- [ ] **GRAPH-03**: 缓存带字节预算 LRU 逐出 + single-flight 防并发构建风暴；超预算大仓有降级路径（不缓存/按需子图），进程不 OOM
+- [ ] **GRAPH-04**: 图读取层统一收口权限校验与 exclusion 过滤（fail-closed），排除文件在所有图分析工具输出中不可见
 
-### WAIT — 等待不无限、资源不占用
+### IMPACT — 影响面与调用路径
 
-- [x] **WAIT-01**：澄清 / 确认门长期无人应答时按**可配置策略**显式到期收口（提醒到上限后落到期态并通知），不再无限静默悬挂；到期后人仍可随时恢复推进，不丢已产出内容
-- [x] **WAIT-02**：人不回复期间编排不占用运行资源、进程重启后状态可恢复（现状已由落库状态机 + durable 队列满足，本里程碑以回归用例锁死，防后续改动退化）
-- [x] **WAIT-03**：用户能看出一份蓝图当前在等谁、等多久了、下一次提醒/到期是什么时候，而不是只看到「需要澄清」
+- [ ] **IMPACT-01**: 用户/agent 对任一符号执行 impact 查询，获得反向依赖的深度分组结果（d1/d2/d3 = WILL BREAK / LIKELY AFFECTED / MAY NEED TESTING 语义标签）
+- [ ] **IMPACT-02**: impact 每条边带 confidence 分档（解析边 / 裸名边 / 跨仓 `match_confidence` 原值）+ reason 说明，调用方可用 `min_confidence` 参数自选精度/召回
+- [ ] **IMPACT-03**: impact 可穿仓库边界（沿 `CrossRepoApiCall` 边），跨仓结果标注 `cross_repo: true` 与独立置信档——改后端 `Endpoint` 能列出受影响的前端调用点
+- [ ] **IMPACT-04**: impact 输出带确定性风险分级（LOW/MEDIUM/HIGH/CRITICAL，阈值判定可解释、不走 LLM）与截断 summary 计数（agent 知道被截断了多少）
+- [ ] **IMPACT-05**: trace 工具：任意两符号间有向最短路，逐跳渲染 file:line + 边类型/置信度；符号重名时返回消歧候选列表，绝不静默取第一个
+- [ ] **IMPACT-06**: impact/trace 经 MCP 工具 + agents 对话工具双面暴露，输出带索引 staleness 提示（「索引落后 N commits」）
 
-### LIVE — 按阶段实时展示 agent 活动
+### DIFF — detect_changes 与编码链闭环
 
-- [x] **LIVE-01**：蓝图生成过程按阶段实时展示该阶段**特有的分析流程**——用户看到 agent 此刻在做什么，而不是一个笼统的「生成中」转圈
-- [x] **LIVE-02**：路由阶段的判断过程可解释且实时可见：召回了多少候选仓、知识树命中哪些仓具备哪些功能、历史上同类功能落过哪个仓、按职责/边界/活跃度等分项与加权算出的适配度（含总分），以及初步仓库路由方案（每仓建议承接哪些功能点 + 理由 + 引用）
-- [x] **LIVE-03**：分仓阶段按仓可见：每个仓执行到哪一步、已产出什么、依赖谁在等待、以及指派给该仓的分仓方案本体
-- [~] **LIVE-04**：活动流实时到达而非靠固定间隔轮询；页面中途打开或刷新可回放此前的活动历史；高频内部步骤经采样/聚合呈现，不把面板刷爆
-  - ⚠️ **部分交付（登记，非静默）**：历史回放与采样聚合已达成；「实时到达」目前是**增量轮询**（`since_ts` + 上界，单轮只搬新增事件），⛔ **不是推送**。真正的推送通道（蓝图 WS consumer 或 artifact 级 SSE）未做 —— 它要新建 consumer + 路由 + 前端订阅端，独立成一个工作项更清晰。`useBlueprintLive.ts` 仍是**唯一切换点**（该文件的既有契约），换推送时只改它。
-- [x] **LIVE-05**：活动流只呈现可归因的过程结论与标量证据（检索条数、命中项、分项得分、引用 id），不外泄凭证与模型私有推理原文
+- [ ] **DIFF-01**: 用户/agent 对分支 diff（base 锚定 `last_indexed_commit_sha`，保证与 Symbol 行号同源）执行 detect_changes，获得受影响符号清单（changeType / 行数 / file:line）与批量 impact 结果
+- [ ] **DIFF-02**: detect_changes 支持 compare + base_ref 场景（MR diff）；文件重命名被识别、不产生误报
+- [ ] **DIFF-03**: 编码任务容器在提交前可经既有 MCP PAT 白名单调用 detect_changes 自查（受影响清单进提交决策）
+- [ ] **DIFF-04**: MR 描述自动附影响面报告（Changes / Affected / Risk / Recommendations 四段结构），fail-soft 不阻断建 MR 主流程
 
-### REDO — Review 与带上下文重跑
+### MOD — 社区检测与模块摘要
 
-- [x] **REDO-01**：人审驳回时可选择**重跑范围**——仅重审 / 重新融合 / 重跑指定仓 / 完整重做（回到路由与调研），而不是只有一种固定返工路径
-- [x] **REDO-02**：重跑带着人审上下文继续处理：打回理由、划线批注与评论、上一版蓝图、修订轮次都进入 agent 输入，用户写的意见不会「AI 永远看不到」
-- [x] **REDO-03**：分仓的每个仓可单独 resume，且续跑带**原始 agent 会话上下文**（不只是上一轮的结论摘要），能接着上次的分析继续而非从头重来
-- [x] **REDO-04**：留存的原始上下文有界、可清理、入库前脱敏，不因保留上下文而无限膨胀或泄漏凭证
-- [x] **REDO-05**：任一重跑动作都不覆盖人工编辑过的内容；重跑产生新版本，历史版本与批注锚点仍可查
+- [ ] **MOD-01**: 每仓图上运行社区检测（networkx `louvain_communities` 固定 seed），社区归属以独立模型 + 软引用落库（⛔ 不加在 `Symbol` 上——增量索引 per-file 删建会丢），增量索引后自动刷新
+- [ ] **MOD-02**: 社区成员指纹稳定化——指纹（Jaccard 阈值）判定未变的社区跳过摘要重生成；「无代码变更连续重建两次，LLM 调用数为 0」是验收用例
+- [ ] **MOD-03**: 每个社区生成 LLM 模块摘要（关键文件 / 入口 / 职责叙述，LLM 调用赋 `call_source`）
+- [ ] **MOD-04**: 模块摘要注入 RepoRouter adapter 层（evidence 侧）与技术方案生成 prompt（⛔ `repo_router_v2.py` 是冻结面不许动）；消费端按相关度排序 + token 预算截断，不全量灌入
+
+### EXEC — 执行流追踪
+
+- [ ] **EXEC-01**: 以 `Endpoint` 为确定性入口正向追踪执行流，遵守 BFS 纪律（maxDepth 10 / maxBranching 4 / minSteps 3 / 只走置信度 ≥0.5 的边 + 去重），结果存 Process 模型
+- [ ] **EXEC-02**: 执行流带社区归属分类（intra/cross_community），可经 MCP 工具查询
+- [ ] **EXEC-03**: detect_changes / impact 输出回填 `affected_processes` 叙事层（受影响执行流名称清单，进 MR 描述增值段）
+
+### RENAME — 改名预览
+
+- [ ] **RENAME-01**: rename_preview 只读工具：图解析引用 + grep 文本兜底双源合并，逐条带 graph/text_search 置信标签、context 片段，按文件分组输出；显式声明动态引用/字符串模板的覆盖限制；**只出清单不改写**，apply 由编码代理自行执行
+
+### TAINT — Semgrep 安全门禁
+
+- [ ] **TAINT-01**: MR 流程可触发 Semgrep diff-aware 扫描（`--baseline-commit` 取 merge-base），只报本次 MR 新增 finding；Semgrep 以独立 CLI/venv 形态集成，不进 server Python 依赖树
+- [ ] **TAINT-02**: finding 带 severity 分级进 MR 描述/评论；门禁默认报告不阻断（advisory 起步）；`nosemgrep` 误报通道生效
+- [ ] **TAINT-03**: 门禁文案如实声明 CE 版函数内 taint 边界（不虚假承诺跨函数/跨文件）；Pro 能力经 `SEMGREP_APP_TOKEN` opt-in
+
+### LSP — 解析精度
+
+- [ ] **LSP-01**: server 镜像补齐 Node/Go 运行时前提，volar/gopls 带可用性探测 + fail-soft 降级 + 孤儿进程清扫；产出开启前后的抽取质量/耗时基准报告，**默认值翻转由基准数据决定**（本里程碑不盲翻）
+
+### SKILL — 工作流固化
+
+- [ ] **SKILL-01**: impact-analysis / refactoring 两个工作流 skill 进 `@friday-ai-codes/skills` 同源分发（复用 v0.17.0 机制），编码容器与外部 agent 可用
 
 ---
+
+## Future Requirements（本里程碑不做，登记备查）
+
+- **detect_impact 式 MCP 编排 prompt**（detect_changes→context→impact 工作流）— 等工具面稳定（v2+）
+- **taint 门禁台账化**（主干 full scan + finding 状态机 + 跨分支 triage）— 等门禁用量验证（v2+）
+- **模块摘要进 Galaxy 可视化 / 社区着色** — 展示层增值，不影响 agent 链路
+- **Leiden 社区检测升级** — 触发条件：指纹跳过后摘要重生成率仍超阈值，或部署方接受 GPL 时 opt-in
+- **rustworkx 图引擎升级** — 触发条件：单仓 >50 万边 / impact p95 >2s / 缓存 >2GB（STACK.md 已记录 adapter seam 策略）
+- **context 符号 360 度视图工具**（GitNexus `context` 对标）— impact/trace 稳定后自然演化
+
+## Out of Scope（显式排除）
+
+| 项 | 原因 |
+|---|---|
+| 开箱体验/安装向导对标 | 用户明确排除 |
+| 自研 PDG/CFG/污点分析 | 编译器级工程量；Semgrep 外购已定（业界一致） |
+| 新语言 extractor（Java/Kotlin/Rust 等） | 每语言成本大且独立，单独立项 |
+| rename 自动 apply（服务端改写用户仓库） | 危险的新写路径；preview + 编码代理执行已覆盖 |
+| 裸 Cypher/原始图 dump 面向 agent | GitNexus skills 自己都引导「smart tools, not raw queries」 |
+| taint 硬门禁默认阻断、无 override | Semgrep 实践证明会被整体绕过 |
+| 承诺跨函数/跨文件 taint（CE 版） | Pro 付费能力；虚假承诺产生虚假安全感 |
+| 每请求实时全图重算 | 服务端多仓大图延迟不可接受，缓存方案已定 |
 
 ## Traceability
 
-| 需求 | Phase | 交付面 |
-|------|-------|--------|
-| LINK-01, LINK-02 | 117 | 蓝图 detail 接口顶层项目字段 + 查看器顶栏归属面包屑 |
-| WAIT-01, WAIT-03 | 117 | 门到期策略（配置 + apscheduler job + 到期态）与等待态呈现 |
-| WAIT-02 | 117 | 落库状态机 / 队列续驱的回归锁 |
-| LIVE-02, LIVE-04, LIVE-05 | 118 | 活动流事件契约与脱敏、路由过程埋点、检索留痕上屏、推送通道 |
-| LIVE-01, LIVE-03 | 119 | 查看器阶段活动流 UI + 分仓每仓进度与分仓方案面 |
-| REDO-01, REDO-02, REDO-05 | 120 | 重跑范围选择 + 人审上下文注入 + 人工块保护 |
-| REDO-03, REDO-04 | 120 | 每仓 transcript 落库与 resume 续跑、有界与脱敏 |
+<!-- roadmap 创建后由 roadmapper 填充 REQ-ID → Phase 映射 -->
 
-## Out of Scope（本里程碑锁定）
-
-- 给 `delivery.Artifact` 加 `project` 外键（权威在 JSON `meta.project_id`，加列要双写 + 迁移，收益不抵成本；范围闸仍以 `meta.project_id` 为准）
-- 把模型 CoT 原文 / Interaction Ledger 原始记录直接搬到人审面（违反 `event_taxonomy` 既有纪律 INV-5）
-- 换掉 durable 队列底座或新起第二个 scheduler 进程
-- 重做蓝图 schema（`blueprint/v1` 六段骨架不动）
-- 段级权限（沿用 v0.20.0 决策：项目成员皆可）
+*Last updated: 2026-08-09 — 立项定义（24 条需求 / 9 分类）*
