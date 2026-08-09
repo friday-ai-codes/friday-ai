@@ -1,7 +1,38 @@
-"""``code_graph`` 契约层 —— 边种类、四档置信度与 ``reason`` 现推函数。
+"""内存符号图的**契约层** —— 枚举 / 值对象 / 异常层级（Phase 121，GRAPH-01）。
 
-（模块 docstring 由 Plan 121-02 Task 3 补齐为「问题背景 / 方案 / 边界」三段式，
-并写入三条要传给 Phase 122+ 的跨相位纪律。）
+问题背景
+========
+v0.22.0 的全部图分析工具（impact / trace / detect_changes / rename_preview …，
+Phase 122–127）都要回答同一组问题：这条边有多可信？这张图是不是半新的？哪些
+仓库因为没权限被折叠了？如果每个工具各自定义一套字段，同一个「影响面」在不同
+工具里会给出互相矛盾的可信度声明；更糟的是，只要有一个工具把 networkx 的具体
+类型写进自己的签名，整个里程碑就被锁死在 networkx 上。
+
+方案（纯契约、零依赖）
+======================
+本模块只有 ``Enum`` + ``dataclass`` + ``Exception``：零 Django、零 ORM、零运行期
+networkx，在 Django app loading 之前即可 import。上层只需 import 本模块就能写出
+完整的输出结构；:class:`GraphMeta` 的四个标记字段是它们声明「结果有多可信」的
+唯一依据。
+
+边界（三条纪律，传给下游相位）
+==============================
+① **adapter seam**：本模块运行期不 import networkx（``import networkx as nx``
+   只在 ``if TYPE_CHECKING:`` 块内）。:attr:`CodeGraph.graph` 就是那道缝——未来
+   换 **rustworkx** 时只需改 ``loader.py`` 与本文件的类型注解，上层工具不受影响。
+   升级触发条件（单仓 >50 万边 / impact p95 >2s / 缓存 >2GB）见 REQUIREMENTS
+   Future 段，本相位只留缝、不实现。
+
+② **遍历纪律**（RESEARCH Pitfall 10）：下游做深度受限遍历一律用
+   ``nx.bfs_tree(g, src, depth_limit=d)`` 或
+   ``itertools.islice(nx.bfs_layers(g, [src]), d)``；**绝不**写
+   ``list(nx.bfs_layers(...))[:d]`` —— ``bfs_layers`` 是生成器，``list()`` 会先
+   物化整个可达分量再切片，100k 节点 / 300k 边上实测 97.3ms vs 0.0ms，**千倍差**
+   且结果完全相同。反向遍历用 ``g.reverse(copy=False)`` 只读视图（建视图 0.1ms），
+   不要 ``copy=True``（完整复制，内存翻倍）。
+   注意这里的图是 **MultiDiGraph**（D-01），同一符号对之间可并存四档边。
+
+③ **``reason`` 现推不存**（D-08）：见 :func:`derive_reason`。
 """
 
 from __future__ import annotations
@@ -270,3 +301,72 @@ class CodeGraph:
     # 键 = symbol_id。值用 tuple 而非 list：本对象 frozen，证据面同样不可变，
     # 免得上层拿到后就地 append 污染缓存里的同一张图。
     chunk_evidence: Mapping[str, tuple[ChunkEvidence, ...]] = field(default_factory=dict)
+
+
+class GraphError(Exception):
+    """图服务异常基类（形态对齐 ``agents/core/exceptions.py::AgentError``）。
+
+    与 ``AgentError`` 的唯一差异：``details`` 未提供时保持 ``None`` 而不是折成
+    ``{}``——「没带上下文」与「带了个空上下文」对排障是两回事，不要抹平。
+    """
+
+    def __init__(self, message: str, details: dict | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.details = details
+
+    def __str__(self) -> str:
+        if self.details:
+            return f"{self.message} | Details: {self.details}"
+        return self.message
+
+
+class GraphAccessDenied(GraphError):
+    """仓库不可读：不存在 / 已删除 / ``repository_id`` 非法 / exclusion matcher 构造失败。
+
+    ⛔ exclusion matcher 构造失败必须 **fail-closed** 到这里（整仓不返回图），
+    不能退化成「不过滤直接返回」——那等于把被排除文件泄漏进所有图分析工具的输出。
+    """
+
+
+class GraphNotIndexed(GraphError):
+    """仓库 ``index_status != INDEXED``，尚不具备建图条件。
+
+    ⛔ **绝不返回空图**：空图会被上层误读为「没有影响」，让 agent 得出「这次改动
+    安全」的错误结论。未索引是「不知道」，不是「没有」，只能显式抛错。
+    """
+
+
+class GraphBuildTimeout(GraphError):
+    """single-flight 等待超时：领头请求仍在建图，本请求等到了
+    ``CODE_GRAPH_BUILD_WAIT_TIMEOUT_SECONDS`` 上限。
+
+    等待方拿到的是超时而非降级结果——同上，宁可显式失败也不给半成品。
+    """
+
+
+class GraphBuildFailed(GraphError):
+    """领头请求构建失败，用于唤醒并通知全部等待者。
+
+    ⛔ **失败不进缓存**：不做失败缓存，避免一次瞬时故障毒化后续所有请求；
+    下一个请求重新竞争 single-flight 占位、重新构建。
+    """
+
+
+__all__ = [
+    "BARE_NAME_BLACKLIST",
+    "ChunkEvidence",
+    "CodeGraph",
+    "EdgeConfidence",
+    "EdgeKind",
+    "GraphAccessDenied",
+    "GraphBuildFailed",
+    "GraphBuildTimeout",
+    "GraphError",
+    "GraphMeta",
+    "GraphNotIndexed",
+    "LOW_RESOLUTION_THRESHOLD",
+    "REDACTED_REPOSITORY",
+    "confidence_score",
+    "derive_reason",
+]

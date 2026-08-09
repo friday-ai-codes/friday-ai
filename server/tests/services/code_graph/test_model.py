@@ -28,7 +28,12 @@ from services.code_graph.model import (
     CodeGraph,
     EdgeConfidence,
     EdgeKind,
+    GraphAccessDenied,
+    GraphBuildFailed,
+    GraphBuildTimeout,
+    GraphError,
     GraphMeta,
+    GraphNotIndexed,
     confidence_score,
     derive_reason,
 )
@@ -257,3 +262,60 @@ def test_model_module_has_no_django_dependency() -> None:
     """契约层零 Django、零 ORM：Django app loading 之前即可 import。"""
     source = Path(model.__file__).read_text(encoding="utf-8")
     assert "django" not in source
+
+
+def test_graph_exception_hierarchy() -> None:
+    """五级异常同根，上层可以只 catch GraphError 兜住全部图服务失败。"""
+    for subclass in (
+        GraphAccessDenied,
+        GraphNotIndexed,
+        GraphBuildTimeout,
+        GraphBuildFailed,
+    ):
+        assert issubclass(subclass, GraphError)
+
+    assert GraphError("x", {"k": 1}).details == {"k": 1}
+    # 「没带上下文」与「带了个空上下文」是两回事，不折成 {}。
+    assert GraphError("x").details is None
+    assert str(GraphError("x", {"k": 1})) == "x | Details: {'k': 1}"
+    assert str(GraphError("x")) == "x"
+
+    # ⛔ 未索引不得返回空图——纪律要有代码内留痕。
+    assert "绝不返回空图" in (GraphNotIndexed.__doc__ or "")
+    assert "失败不进缓存" in (GraphBuildFailed.__doc__ or "")
+
+
+def test_module_docstring_carries_cross_phase_disciplines() -> None:
+    """三条跨相位纪律必须写在模块 docstring 里，供 Phase 122+ 直接引用。"""
+    doc = model.__doc__ or ""
+    # ① adapter seam ② 遍历纪律 ③ 图对象类型
+    assert "rustworkx" in doc
+    assert "depth_limit" in doc
+    assert "MultiDiGraph" in doc
+    # ③ reason 现推不存
+    assert "D-08" in doc
+
+
+def test_all_is_curated_and_sorted() -> None:
+    """``__all__`` 字母序且覆盖三个 task 的全部公开符号。"""
+    assert sorted(model.__all__) == list(model.__all__)
+    assert set(model.__all__) == {
+        "BARE_NAME_BLACKLIST",
+        "ChunkEvidence",
+        "CodeGraph",
+        "EdgeConfidence",
+        "EdgeKind",
+        "GraphAccessDenied",
+        "GraphBuildFailed",
+        "GraphBuildTimeout",
+        "GraphError",
+        "GraphMeta",
+        "GraphNotIndexed",
+        "LOW_RESOLUTION_THRESHOLD",
+        "REDACTED_REPOSITORY",
+        "confidence_score",
+        "derive_reason",
+    }
+    # 每个导出名都真实存在（拼错会在 121-09 的 barrel 才爆，太晚）。
+    for name in model.__all__:
+        assert hasattr(model, name), name
