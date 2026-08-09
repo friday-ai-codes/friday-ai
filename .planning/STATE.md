@@ -2,10 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-status: verifying
+current_phase: 127
+current_phase_name: Semgrep 门禁 + LSP 基准
+status: planning
 stopped_at: Completed 126-05-PLAN.md
-last_updated: "2026-08-09T21:34:07.242Z"
-last_activity: 2026-08-09 -- Phase 126 execution started
+last_updated: "2026-08-09T21:48:59.699Z"
+last_activity: 2026-08-10
+last_activity_desc: Phase 126 complete, transitioned to Phase 127
 progress:
   total_phases: 7
   completed_phases: 6
@@ -27,10 +30,10 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 ## Current Position
 
-Phase: 126 (process-rename-skills) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-08-09 -- Phase 126 execution started
+Phase: 127 — Semgrep 门禁 + LSP 基准
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-10 — Phase 126 complete, transitioned to Phase 127
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
 
