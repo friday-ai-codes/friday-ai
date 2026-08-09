@@ -2,13 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-current_phase: 126
-current_phase_name: 执行流 + rename_preview + skills
-status: planning
+status: executing
 stopped_at: Completed 125-04-PLAN.md
-last_updated: "2026-08-09T20:45:36.997Z"
-last_activity: 2026-08-10
-last_activity_desc: Phase 125 complete, transitioned to Phase 126
+last_updated: "2026-08-09T21:02:47.383Z"
+last_activity: 2026-08-10 — Phase 125 complete, transitioned to Phase 126
 progress:
   total_phases: 7
   completed_phases: 5
@@ -32,7 +29,7 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 Phase: 126 — 执行流 + rename_preview + skills
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-08-10 — Phase 125 complete, transitioned to Phase 126
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
