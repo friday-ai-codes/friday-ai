@@ -188,6 +188,61 @@ class FindRelatedChunksRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class ImpactAnalysisRequestSerializer(serializers.Serializer):
+    repository_id = serializers.UUIDField(required=True)
+    branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+    symbol_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    symbol = serializers.CharField(required=False, allow_blank=True, default="")
+    file_path = serializers.CharField(required=False, allow_blank=True, default="")
+    symbol_type = serializers.CharField(required=False, allow_blank=True, default="")
+    # T-122-遍历 DoS 第一道闸：生产解析边入度 max 2,803，d1 就能到近 3,000 条
+    max_depth = serializers.IntegerField(default=3, min_value=1, max_value=3)
+    min_confidence = serializers.FloatField(default=1.0, min_value=0.0, max_value=1.0)
+    include_low_confidence = serializers.BooleanField(default=False)
+    # T-122-遍历 DoS：单次响应条数硬上限，与内核 DEFAULT_RESULT_LIMIT 对齐
+    limit = serializers.IntegerField(default=200, min_value=1, max_value=200)
+    # D-11：跨仓不递归，上界 1
+    max_cross_repo_hops = serializers.IntegerField(default=1, min_value=0, max_value=1)
+    exclude_test_files = serializers.BooleanField(default=False)
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        has_id = bool(attrs.get("symbol_id"))
+        has_name = bool(str(attrs.get("symbol") or "").strip())
+        if has_id == has_name:
+            raise serializers.ValidationError("必须且只能提供 symbol_id 或 symbol 之一")
+        return attrs
+
+
+class TraceCallPathRequestSerializer(serializers.Serializer):
+    repository_id = serializers.UUIDField(required=True)
+    branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+    source_symbol_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    source = serializers.CharField(required=False, allow_blank=True, default="")
+    source_file_path = serializers.CharField(required=False, allow_blank=True, default="")
+    target_symbol_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    target = serializers.CharField(required=False, allow_blank=True, default="")
+    target_file_path = serializers.CharField(required=False, allow_blank=True, default="")
+    min_confidence = serializers.FloatField(default=1.0, min_value=0.0, max_value=1.0)
+    include_low_confidence = serializers.BooleanField(default=False)
+    # T-122-遍历 DoS：等长备选路径条数上限
+    alt_path_cap = serializers.IntegerField(default=10, min_value=1, max_value=50)
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        has_source_id = bool(attrs.get("source_symbol_id"))
+        has_source = bool(str(attrs.get("source") or "").strip())
+        if has_source_id == has_source:
+            raise serializers.ValidationError(
+                "必须且只能提供 source_symbol_id 或 source 之一"
+            )
+        has_target_id = bool(attrs.get("target_symbol_id"))
+        has_target = bool(str(attrs.get("target") or "").strip())
+        if has_target_id == has_target:
+            raise serializers.ValidationError(
+                "必须且只能提供 target_symbol_id 或 target 之一"
+            )
+        return attrs
+
+
 class ReverseLookupRequestSerializer(serializers.Serializer):
     repository_id = serializers.UUIDField(required=True)
     file_path = serializers.CharField(required=False, allow_blank=True, default="")
