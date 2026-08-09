@@ -70,7 +70,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 121-05-PLAN.md — W3 `loader.py` 主干：符号节点 overlay 装配 + 装配阶段 exclusion 过滤 + CallEdge 双档与解析率
+- [x] 121-05-PLAN.md — W3 `loader.py` 主干：符号节点 overlay 装配 + 装配阶段 exclusion 过滤 + CallEdge 双档与解析率
 - [ ] 121-07-PLAN.md — W3 `cache.py` 存储侧：字节估算纯函数 + 字节预算 LRU 逐出 + 单例与测试重置钩子（与 121-05 并行；只依赖 `model.py` 与 settings，不碰 loader/signature）
 
 **Wave 4** *(blocked on Wave 3 completion)*
@@ -382,7 +382,7 @@ Plans:
 
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
-| 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 0/? | Not started | - |
+| 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 5/10 | In progress | - |
 | 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 0/? | Not started | - |
 | 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 0/? | Not started | - |
 | 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 0/? | Not started | - |
