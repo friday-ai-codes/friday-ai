@@ -43,8 +43,8 @@
 
 ### EXEC — 执行流追踪
 
-- [ ] **EXEC-01**: 以 `Endpoint` 为确定性入口正向追踪执行流，遵守 BFS 纪律（maxDepth 10 / maxBranching 4 / minSteps 3 / 只走置信度 ≥0.5 的边 + 去重），结果存 Process 模型
-- [ ] **EXEC-02**: 执行流带社区归属分类（intra/cross_community），可经 MCP 工具查询
+- [x] **EXEC-01**: 以 `Endpoint` 为确定性入口正向追踪执行流，遵守 BFS 纪律（maxDepth 10 / maxBranching 4 / minSteps 3 / 只走置信度 ≥0.5 的边 + 去重），结果存 Process 模型
+- [x] **EXEC-02**: 执行流带社区归属分类（intra/cross_community），可经 MCP 工具查询
 - [ ] **EXEC-03**: detect_changes / impact 输出回填 `affected_processes` 叙事层（受影响执行流名称清单，进 MR 描述增值段）
 
 ### RENAME — 改名预览
@@ -113,8 +113,8 @@
 | MOD-02 | Phase 125 | Complete |
 | MOD-03 | Phase 125 | Complete |
 | MOD-04 | Phase 125 | Complete |
-| EXEC-01 | Phase 126 | Pending |
-| EXEC-02 | Phase 126 | Pending |
+| EXEC-01 | Phase 126 | Complete |
+| EXEC-02 | Phase 126 | Complete |
 | EXEC-03 | Phase 126 | Pending |
 | RENAME-01 | Phase 126 | Pending |
 | SKILL-01 | Phase 126 | Pending |
