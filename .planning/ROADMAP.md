@@ -60,7 +60,7 @@
 Plans:
 **Wave 1**
 
-- [ ] 121-01-PLAN.md — W0 依赖提升（networkx 直接依赖）、`CODE_GRAPH_*` 配置项、LOGGING-SPEC §5 登记 `code_graph`、测试包与 fixture 脚手架
+- [x] 121-01-PLAN.md — W0 依赖提升（networkx 直接依赖）、`CODE_GRAPH_*` 配置项、LOGGING-SPEC §5 登记 `code_graph`、测试包与 fixture 脚手架
 - [ ] 121-02-PLAN.md — W1 `model.py` 契约层：四档边枚举 / `CodeGraph`·`GraphMeta`·`ChunkEvidence` / 异常层级 / 裸名黑名单
 
 **Wave 2** *(blocked on Wave 1 completion)*
