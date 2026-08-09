@@ -882,17 +882,20 @@ GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES: int = env.int(
 # 缓存在**单个 worker 进程内存**里，故预算必须显式约束，否则大仓一次冷建图就能把
 # worker 打 OOM。
 #
-# 预算算术（常数标定见 121-RESEARCH.md §Byte Estimation，MultiDiGraph / UUID 字符串
-# 节点键 / networkx 3.6.1 实测）：NODE_COST=640 字节、EDGE_COST=560 字节，本仓典型
-# 边:节点 ≈ 3:1 → 单图约 n × (640 + 3×560) = n × 2320 字节。据此：
+# 预算算术（常数已于 2026-08-09 由 Plan 121-10 在本仓最大仓上复校，见
+# services/code_graph/cache.py 的常数注释）：NODE_COST=760 字节、EDGE_COST=720 字节，
+# 本仓实测**准入口径**边:节点 ≈ 2.4:1（RESEARCH 原假设 3:1 偏高）
+# → 单图约 n × (760 + 2.4×720) = n × 2488 字节。据此：
 #   - CODE_GRAPH_MAX_GRAPH_BYTES = 256MB → 单仓约 11 万符号即触顶，超过则不进缓存、
 #     改走「按需子图」降级路径（返回值带 degraded 标记，由上层工具透出）。
+#     ⚠️ 常数上调与边:节点比下调恰好互相抵消，这条容量结论在复校后仍然成立——不是
+#     没复校，是复校后数字没变，别据此以为本段是旧文案。
 #   - CODE_GRAPH_CACHE_MAX_BYTES = 512MB → 只装得下约 2 张接近上限的大图（或若干中
 #     小图），超出按 LRU 逐出。
 #   - ⚠️ 这是 **per worker** 预算，不是全进程/全机预算：4 个 worker 最坏 2GB 常驻。
 #     运维扩 worker 数时必须同步下调本值，否则物理内存按倍数放大。
-# 默认值取保守侧，待 Plan 121-10 的「本仓最大仓内存实测」交付物出数后复校
-# （tracemalloc 不含 arena 碎片，真实 RSS 通常更高）。
+# 两个默认字节数本身仍取保守侧，留待生产多 worker 的 RSS 与逐出频率观察后调优
+# （121-VALIDATION.md §Manual-Only Verifications，不阻塞相位完成）。
 CODE_GRAPH_CACHE_MAX_BYTES: int = env.int(
     "CODE_GRAPH_CACHE_MAX_BYTES", default=512 * 1024 * 1024
 )

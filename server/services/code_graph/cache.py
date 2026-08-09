@@ -101,8 +101,23 @@ _DEFAULT_SUBGRAPH_DEPTH: Final[int] = 2
 # ⚠️ 两个常数必须在 Plan 121-10 的「最大仓实测」交付物中复校，并按 **RSS**（而非
 # tracemalloc）修正：tracemalloc 计的是 Python 分配器请求的字节数，不含 arena 碎片与
 # 解释器开销，真实 RSS 通常更高；比值显著 > 1 时需要再上调。
-NODE_COST_BYTES: Final[int] = 640  # 实测 598 × 1.05 ≈ 630，取整到 640 更保守
-EDGE_COST_BYTES: Final[int] = 560  # MultiDiGraph 实测约 515（3 属性）× 1.05 ≈ 540，取整到 560
+#
+# 2026-08-09 **已按本仓最大仓复校**（Plan 121-10，交付物
+# ``tests/services/code_graph/test_perf_diagnostics.py::test_largest_repo_memory_calibration``，
+# 干净子进程 / macOS arm64 / CPython 3.14.2 / networkx 3.6.1）：
+#   - 最大仓 study-app（11,180 节点 / 3,930 入图边）：实测 **706 B/节点、665 B/边**，
+#     原常数 640/560 让线性估算 8.92MB 低于实测常驻 10.03MB —— 准入判据会放行装不下
+#     的图，正是威胁登记 T-121-OOM 的形状。
+#   - 100k/300k 合成参照图：实测 668 B/节点、413 B/边，``rss/tracemalloc = 1.099``
+#     （< 1.15 的上调判据，故**不再叠加** RSS 系数；假设 A1 到此闭环：RSS 确实高于
+#     tracemalloc，但幅度在 10% 量级，不是数量级）。
+#   - 取两组测量的**逐项最大值**（706 / 665）× 1.05 安全裕度并向上取整：
+#     NODE_COST 640 → **760**，EDGE_COST 560 → **720**。真实数据的每项成本都高于合成
+#     数据，因为属性字符串（``file_path`` / ``name``）在真实仓里长得多，而合成数据的
+#     短字符串会系统性低估——这正是「必须在本仓复校」的理由。
+# 🔁 复校口径若要重跑：``cd server && uv run pytest -m perf tests/services/code_graph/ -s``。
+NODE_COST_BYTES: Final[int] = 760  # 本仓实测 706（study-app）× 1.05 ≈ 741，取整到 760 更保守
+EDGE_COST_BYTES: Final[int] = 720  # 本仓实测 665（study-app）× 1.05 ≈ 698，取整到 720 更保守
 
 # ⛔ 两个「优化」已被本仓实测**证伪**，别再花预算试：
 #   - 字符串驻留 ``file_path``：只省 6.3MB / 4%，不值得为此加一层池化代码。
