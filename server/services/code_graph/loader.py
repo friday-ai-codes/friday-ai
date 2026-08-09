@@ -31,7 +31,8 @@ FK 走 attname（``caller_symbol_id``）避免隐式 JOIN。
    KB，放进节点属性会让线性内存估算彻底失准）。边恒 3 个（``kind`` / ``confidence`` /
    ``line_number``），⛔ **不存 ``reason``**（D-08：1–3 个边属性成本完全相同，第 4 个
    才跳一级；30 万边多花约 6.9MB，而 ``reason`` 只是展示文案，由
-   ``model.derive_reason()`` 在输出时现推）。
+   ``model.derive_reason()`` 在输出时现推）。**唯一例外**是 ``cross_repo`` 档的第 4
+   个属性 ``match_confidence``（理由见 :func:`_load_cross_repo_edges`）。
 
 ③ **分支语义是 overlay**：``""`` 是 base 全量，feature 分支只写增量行。取数必须
    ``branch_name__in=["", branch]``，去重键取**整文件**（D-06）。
@@ -91,6 +92,9 @@ _EVENT_ASSEMBLED: Final[str] = "code_graph_assembled"
 # 给出的形状一致；不做成 settings —— 它是取数实现细节，不是运维旋钮。
 _SYMBOL_CHUNK_SIZE: Final[int] = 5000
 _CALL_EDGE_CHUNK_SIZE: Final[int] = 5000
+# 跨仓边的量级比 ``CallEdge`` 小两三个数量级（千级），且每行都跨两个 JOIN，
+# 批大小取小一档（形状与 RESEARCH §Code Examples 1 的 ``cross_rows`` 一致）。
+_CROSS_REPO_CHUNK_SIZE: Final[int] = 2000
 
 # 节点属性键集合。个数写死在这里供用例引用：**恒 5 个**，多一个就会让
 # ``NODE_COST_BYTES`` 的标定假设失效（RESEARCH §Byte Estimation 的属性敏感性表）。
@@ -99,6 +103,8 @@ _NODE_ATTR_KEYS: Final[frozenset[str]] = frozenset(
 )
 # 边属性键集合，**恒 3 个**。⛔ ``reason`` 不在其中（D-08）。
 _EDGE_ATTR_KEYS: Final[frozenset[str]] = frozenset({"kind", "confidence", "line_number"})
+# ``cross_repo`` 档是**唯一**允许 4 个边属性的档位，多出来的是 ``match_confidence``。
+_CROSS_REPO_EDGE_ATTR_KEYS: Final[frozenset[str]] = _EDGE_ATTR_KEYS | {"match_confidence"}
 
 __all__ = ["load_graph"]
 
@@ -581,6 +587,142 @@ def _load_call_edges(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _CrossRepoStats:
+    """一次 ``CrossRepoApiCall`` 装配的统计量。"""
+
+    loaded_count: int
+    # 🚨 D-05：两端有任一侧无法在本图内解析到符号节点的边，被**丢弃**并计进这里。
+    #    该计数是 ``GraphMeta.cross_repo_unresolved_count`` 的唯一来源，上层工具据此
+    #    向用户声明「有 N 条跨仓边无法定位」。
+    unresolved_count: int
+
+
+def _load_cross_repo_edges(
+    graph: nx.MultiDiGraph,
+    *,
+    repository_id: str,
+    nodes: _SymbolNodeIndex,
+) -> _CrossRepoStats:
+    """把 ``CrossRepoApiCall`` 装配成第三档 ``cross_repo`` 边（D-05）。
+
+    **为什么要「二次解析」**（RESEARCH Pitfall 1）：``CrossRepoApiCall`` 只有两个 FK
+    —— ``call_site → ApiCallSite``、``endpoint → Endpoint``，**两端都不是 ``Symbol``**。
+    ``ApiCallSite`` 手上只有 ``caller_file`` + ``caller_function`` 两个字符串，
+    ``Endpoint`` 只有 ``file_path`` + ``handler_name``。要把这条边挂到图里的符号节点
+    上，只能拿 ``(归一后 file_path, name)`` 去查 :attr:`_SymbolNodeIndex.by_file_and_name`。
+
+    **按仓过滤只能走反查**：``CrossRepoApiCall`` **自身没有 ``repository`` 字段**，
+    所以过滤条件是 ``Q(call_site__repository_id=…) | Q(endpoint__repository_id=…)``
+    —— 与 ``codegraph/galaxy/cache.py:62`` 登记的
+    ``("cross_repo_api_call", CrossRepoApiCall, "call_site__repository_id", …)``
+    是同一个做法，不是本模块自创。
+
+    🚨 **D-05：解析不上的边直接丢弃 + 计数，⛔ 绝不建 ``external`` / ``unresolved``
+    虚拟节点。** 虚拟节点会污染上层 impact 的**深度分组与计数**（凭空多出一层"受影响
+    的东西"），而且它给不出 ``file:line``——agent 拿到它既不能读也不能改，没有任何行动
+    价值。丢弃 + 如实计数则让 Phase 122 能在输出里声明「另有 N 条跨仓边无法定位」，
+    把"不知道"诚实地表达成"不知道"。
+
+    **对端仓的符号不在本图内**：本相位**不做多仓合并大图**（CONTEXT Area 1），跨仓
+    impact 由 Phase 122 通过「按需再取对端仓的图」组合。因此一条边的两端里，只有落在
+    本仓的那一侧可能解析成功；对端侧用同一张索引尝试，查不到即整条边丢弃。
+
+    :returns: 装配与丢弃的计数（喂 ``GraphMeta``）。
+    """
+    from django.db.models import Q
+
+    from codegraph.models import CrossRepoApiCall
+    from services.exclusion import normalize_rel_path
+
+    by_file_and_name = nodes.by_file_and_name
+
+    loaded_count = 0
+    unresolved_count = 0
+
+    rows = (
+        CrossRepoApiCall.objects.filter(
+            Q(call_site__repository_id=repository_id)
+            | Q(endpoint__repository_id=repository_id)
+        )
+        .values_list(
+            "call_site__repository_id",
+            "call_site__caller_file",
+            "call_site__caller_function",
+            "call_site__line_number",
+            "endpoint__repository_id",
+            "endpoint__file_path",
+            "endpoint__handler_name",
+            "endpoint__http_method",
+            "endpoint__url_path",
+            "endpoint__branch_name",
+            "match_confidence",
+        )
+        .iterator(chunk_size=_CROSS_REPO_CHUNK_SIZE)
+    )
+
+    for (
+        _call_site_repository_id,
+        caller_file,
+        caller_function,
+        call_line_number,
+        _endpoint_repository_id,
+        endpoint_file_path,
+        handler_name,
+        _http_method,  # 取列保持与 RESEARCH §Code Examples 1 的查询形状一致；
+        _url_path,  # ⛔ 不进边属性（``cross_repo`` 档也只有 4 个属性）。
+        _endpoint_branch_name,  # ⚠️ ApiCallSite 侧**没有** branch_name，见下方说明。
+        match_confidence,
+    ) in rows:
+        caller_node = _resolve_by_file_and_name(
+            by_file_and_name, caller_file, caller_function, normalize_rel_path
+        )
+        callee_node = _resolve_by_file_and_name(
+            by_file_and_name, endpoint_file_path, handler_name, normalize_rel_path
+        )
+        if caller_node is None or callee_node is None:
+            unresolved_count += 1
+            continue
+
+        # 边属性 4 个 —— 本档是唯一例外。理由：``cross_repo`` 边的量级在**千级**
+        # （``CallEdge`` 是十万到三十万级），第 4 个属性的阶跃成本（约 +143 B/边 vs
+        # +120 B/边）在这个量级上可忽略；而 ``match_confidence`` 是
+        # ``model.confidence_score()`` 对本档的**必需入参**（缺参会抛 ValueError，
+        # 刻意不做静默兜底），不存就等于把跨仓边的可信度抹成常量。
+        # ⚠️ 原值透传（1.0 / 0.7 / 0.4 三档），⛔ 不归一化。
+        graph.add_edge(
+            caller_node,
+            callee_node,
+            kind=EdgeKind.CROSS_REPO.value,
+            confidence=EdgeConfidence.CROSS_REPO.value,
+            line_number=call_line_number,
+            match_confidence=match_confidence,
+        )
+        loaded_count += 1
+
+    return _CrossRepoStats(loaded_count=loaded_count, unresolved_count=unresolved_count)
+
+
+def _resolve_by_file_and_name(
+    by_file_and_name: dict[tuple[str, str], str],
+    file_path: str | None,
+    name: str | None,
+    normalize: Callable[[str], str | None],
+) -> str | None:
+    """``(file_path, name)`` → 已装载的 ``symbol_id``；解析不到返回 ``None``。
+
+    两侧路径必须**同口径归一**后才能比对：索引里的键是
+    ``normalize_rel_path(Symbol.file_path)``，这里的入参是 ``ApiCallSite.caller_file``
+    / ``Endpoint.file_path`` 的原始值，写法上很容易一侧带 ``./`` 前缀、一侧不带。
+    """
+    if not file_path or not name:
+        return None
+    norm = normalize(file_path)
+    if norm is None:
+        return None
+    return by_file_and_name.get((norm, name))
+
+
 def load_graph(
     repository_id: str,
     branch: str = "",
@@ -607,8 +749,14 @@ def load_graph(
     :returns: :class:`CodeGraph` 单值——指纹既然是入参，就不必再作为返回值往回传。
 
     .. note::
-       本 plan（121-05）只装配前两档边（``resolved`` / ``bare_name``）。
-       ``cross_repo`` 档、``chunk_level`` 旁挂证据面与按需子图由 Plan 121-06 补齐；
+       ⚠️ **跨仓边无法按分支过滤**：``CrossRepoApiCall`` 的调用侧
+       ``ApiCallSite`` **没有 ``branch_name`` 字段**（``Endpoint`` 侧有），所以
+       ``branch`` 入参对 ``cross_repo`` 档不起作用——feature 分支上看到的跨仓边其实
+       是**全分支合集**。这是数据模型缺口，本相位不改表，改为在装配到跨仓边时把
+       :attr:`GraphMeta.cross_repo_branch_unfiltered` 置 ``True`` 如实声明，由上层
+       工具透出。
+
+    .. note::
        ``partial_edges`` / ``degraded`` / ``estimated_bytes`` 由 ``cache.py``
        （Plan 121-07 / 121-08）在装配后按实际情况覆写。
     """
@@ -629,6 +777,11 @@ def load_graph(
         branch=branch,
         nodes=nodes,
         include_low_confidence=include_low_confidence,
+    )
+    cross_repo = _load_cross_repo_edges(
+        graph,
+        repository_id=str(repository_id),
+        nodes=nodes,
     )
 
     resolution_rate = edges.resolution_rate
@@ -651,9 +804,11 @@ def load_graph(
         partial_edges=False,
         partial_reason="",
         degraded="",
-        # 跨仓边（Plan 121-06）尚未装配，两项如实为 0 / False。
-        cross_repo_unresolved_count=0,
-        cross_repo_branch_unfiltered=False,
+        cross_repo_unresolved_count=cross_repo.unresolved_count,
+        # 语义缺口如实声明：``ApiCallSite`` **没有 ``branch_name`` 字段**，跨仓边无从
+        # 按分支过滤——feature 分支上看到的跨仓边其实是全分支合集。只有真的装配到
+        # 跨仓边时才置真：没有跨仓边就不存在这个缺口，长鸣的标记等于失效的标记。
+        cross_repo_branch_unfiltered=cross_repo.loaded_count > 0,
         excluded_file_count=nodes.excluded_file_count,
         # loader 手上只有 exclusion 这一个分量；完整的复合签名（水位 ‖ 两条边构建轨 ‖
         # 计数 ‖ 规则指纹）由 ``cache.py`` 用 ``signature.compute_signature`` 算好后覆写。
