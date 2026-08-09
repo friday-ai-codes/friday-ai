@@ -84,6 +84,19 @@
 - 触发用户绑定：走既有中间件注入的 contextvars；后台/预热路径显式 `initiated_by_user_id="system"`。
 - 观测代码 best-effort，异常吞掉，绝不反噬取图主流程。
 
+### Area 6: 调研回灌的补充裁决（2026-08-09，RESEARCH.md 提出的三个 open question，已裁决为锁定决策）
+
+调研（`121-RESEARCH.md`）推翻/补充了 Area 1–5 的三处，以下裁决**优先级高于**上文对应条目：
+
+- **D-06-1 图对象用 `MultiDiGraph` 而非 `DiGraph`**（推翻 Area 3 的隐含假设）。实测确认 `DiGraph` 对同一符号对的第二条边是**静默覆盖**，而四档边契约要求同一对符号间多档边并存。接受 +44%（≈ +224 字节/边）内存代价，`EDGE_COST` 常数按 MultiDiGraph 标定。
+- **D-06-2 「边构建代数」必须取两条轨的合成**（补强 Area 1）。本仓边构建是两条互相独立的轨：`IndexHistory.graph_build_status` 跟踪的是 **ChunkEdge**，而 `Symbol`/`CallEdge`/`Endpoint` 的抽取由 `Repository.graph_build_status` + `GraphBuildHistory` 跟踪，写入方是完全不同的代码路径。`CallEdge` 是本相位图的主边源，**只看 `IndexHistory` 一条轨会漏失效**——签名的代数分量必须同时纳入两条轨的终态标识。
+- **D-06-3 in-flight 判定不得直接用 `graph_build_status == PENDING`**（修正 Area 1 的半新图防护）。`IndexHistory.graph_build_status` 的**模型默认值就是 `PENDING`**，且只有走 `enqueue_edge_build_for_history` 才推进；照字面实现会让「从未触发过边构建」的仓库**永久**带 `partial_edges: true`，降级标记长鸣即等于失效。正确判定 = 存在一条**本轮索引产生的、状态为 `RUNNING`（或 PENDING 且有对应在途任务凭证）**的记录，且其水位新于缓存图的水位；无法确证在途时**不打标记**（宁可不报也不长鸣）。具体判据由执行方按 `lifecycle.py` 实际状态机确定并写进测试。
+- **D-06-4 single-flight 用 `threading.Event`，不用 `asyncio.Event`**（补强 Area 2）。本仓并存三类 event loop（ASGI 主 loop / workflow 引擎 `_run_in_thread` 自建 loop / durable worker），`asyncio.Event` 跨 loop 无法 await。等待方走 `asyncio.to_thread` 包裹阻塞等待；**绝不能持锁 await**。
+- **D-06-5 跨仓边端点解析不上 `Symbol` 时丢弃 + 计数上报**（open question 1 裁决）。`CrossRepoApiCall` 两端指向 `ApiCallSite`（`caller_file` + `caller_function` 字符串）与 `Endpoint`（`file_path` + `handler_name`），**都没有 `Symbol` 外键，自身也没有 repository / branch_name 字段**——需要一段「文件路径 + 名字」二次解析把它挂到符号节点上。解析失败的边**直接丢弃**（不建虚拟节点），并在图元数据上报 `cross_repo_unresolved_count`，由上层工具在输出中声明。理由：虚拟节点会污染 impact 的深度分组与计数，且无法给出 file:line，对 agent 无行动价值。
+- **D-06-6 feature 分支 overlay 去重键取整文件**（open question 2 裁决），与索引侧 per-file 删建重建的既有语义一致，不含行号。
+- **D-06-7 `component` 值登记为 `code_graph` 并补 LOGGING-SPEC 注册**（open question 3 裁决）。`LOGGING-SPEC §5` 现有的是 `codegraph`（无下划线，指既有 app），本服务是新的 service 层组件，用 `code_graph` 区分；**计划中必须含一个把 `code_graph` 写进 `LOGGING-SPEC §5` 组件清单的任务**，否则违反强制规范。
+- **D-06-8 `reason` 字符串输出时现推、不存进边属性**（调研的免费优化）。边属性 1–3 个成本完全相同（CPython 小字典预分配），第 4 个才跳一级；把 `reason` 移出边属性可省约 7MB/大图且零功能损失。反之调研已证伪两个直觉优化：字符串驻留只省 4%、int 键替代 UUID 字符串实测**更费** 12.5MB——**都不要做**。
+
 ### Claude's Discretion
 
 - 具体模块拆分粒度与私有函数命名、字节估算常数的标定方法、测试用例的组织方式（`server/tests/services/code_graph/` 下的文件切分）、是否额外抽 `signature.py`——均由执行方按本仓既有 service 写法自行决定。
