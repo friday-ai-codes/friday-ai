@@ -80,7 +80,7 @@ Each task was committed atomically (TDD RED→GREEN):
 1. **Task 1: LSP orphan reap + lifecycle finally** - `2724b9d9` (test RED) + `82fd522c` (feat GREEN) + `68321656` (test polish)
 2. **Task 2: baseline + IMPACT-03 revisit/defer + D-16 gate** - `58e7edd4` (test RED) + `9e484e0d` (feat GREEN + report artifacts)
 
-**Plan metadata:** _(this commit)_
+**Plan metadata:** `6a8a3fa4` (docs: complete plan; prior `81ed8828` coalesced STATE/ROADMAP)
 
 ## Files Created/Modified
 
