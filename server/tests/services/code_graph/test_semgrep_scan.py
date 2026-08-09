@@ -50,8 +50,10 @@ def test_semgrep_never_imports_semgrep_module() -> None:
         elif isinstance(node, ast.ImportFrom):
             mod = node.module or ""
             assert mod != "semgrep" and not mod.startswith("semgrep.")
-    assert "import semgrep" not in source
-    assert "from semgrep" not in source
+    # 仅检查语句级导入；文档字面量不算
+    assert "import semgrep\n" not in source
+    assert "from semgrep " not in source
+    assert "from semgrep." not in source
 
 
 @pytest.mark.asyncio
@@ -67,9 +69,17 @@ async def test_semgrep_fail_open_on_timeout_and_unavailable() -> None:
     source_sha = "a" * 40
     target_sha = "b" * 40
 
-    with patch(
-        "services.code_graph.semgrep_scan.ensure_worktree_for_scan",
-        new=AsyncMock(side_effect=MirrorError("mirror_unavailable", "boom")),
+    with (
+        patch(
+            "services.code_graph.semgrep_scan.ensure_mirror_sha",
+            new=AsyncMock(
+                return_value=MagicMock(repo_dir=Path("/tmp/mirror"), commit_sha=source_sha)
+            ),
+        ),
+        patch(
+            "services.code_graph.semgrep_scan.ensure_worktree_for_scan",
+            new=AsyncMock(side_effect=MirrorError("mirror_unavailable", "boom")),
+        ),
     ):
         result = await run_semgrep_scan(
             repository_id="repo-1",
@@ -94,6 +104,10 @@ async def test_semgrep_fail_open_on_timeout_and_unavailable() -> None:
         patch(
             "services.code_graph.semgrep_scan._resolve_merge_base",
             new=AsyncMock(return_value="c" * 40),
+        ),
+        patch(
+            "services.code_graph.semgrep_scan._resolve_app_token",
+            return_value="",
         ),
         patch(
             "services.code_graph.semgrep_scan._run_semgrep_cli",
