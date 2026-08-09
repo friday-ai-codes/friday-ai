@@ -61,6 +61,7 @@ FK 走 attname（``caller_symbol_id``）避免隐式 JOIN。
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Final
 
@@ -88,6 +89,7 @@ logger = structlog.get_logger(__name__)
 # ⚠️ 前缀不得缩写：``graph_build_*`` 已被 ``services/graph_builder.py`` 占用。
 _EVENT_EXCLUSION_APPLIED: Final[str] = "code_graph_exclusion_applied"
 _EVENT_ASSEMBLED: Final[str] = "code_graph_assembled"
+_EVENT_DEGRADED_SUBGRAPH: Final[str] = "code_graph_degraded_subgraph"
 
 # ORM 批量取数的游标批大小（Postgres 上走服务端游标）。与 RESEARCH §Code Examples 1
 # 给出的形状一致；不做成 settings —— 它是取数实现细节，不是运维旋钮。
@@ -104,6 +106,11 @@ _CHUNK_EDGE_CHUNK_SIZE: Final[int] = 5000
 # 就会把内存吃穿（而且第 51 条之后对人/agent 的判断也不再增加信息）。
 CHUNK_EVIDENCE_MAX_PER_SYMBOL: Final[int] = 50
 
+# 按需子图每轮 frontier 的上限，超出即截断并计数。
+# 防的是「种子选在超级枢纽符号上」——一个被全仓调用的 ``logger.info`` 级别的符号，
+# 一跳就能把半个仓拉进来，子图当场退化成全图，降级路径也就白设了。
+SUBGRAPH_FRONTIER_LIMIT: Final[int] = 5000
+
 # 节点属性键集合。个数写死在这里供用例引用：**恒 5 个**，多一个就会让
 # ``NODE_COST_BYTES`` 的标定假设失效（RESEARCH §Byte Estimation 的属性敏感性表）。
 _NODE_ATTR_KEYS: Final[frozenset[str]] = frozenset(
@@ -114,7 +121,7 @@ _EDGE_ATTR_KEYS: Final[frozenset[str]] = frozenset({"kind", "confidence", "line_
 # ``cross_repo`` 档是**唯一**允许 4 个边属性的档位，多出来的是 ``match_confidence``。
 _CROSS_REPO_EDGE_ATTR_KEYS: Final[frozenset[str]] = _EDGE_ATTR_KEYS | {"match_confidence"}
 
-__all__ = ["load_graph"]
+__all__ = ["load_graph", "load_subgraph"]
 
 
 # 埋点写成专用函数、事件名常量直接写在 ``logger.debug`` 的第一个位置实参上，
@@ -177,6 +184,45 @@ def _log_assembled(
             dropped_missing_node_count=dropped_missing_node_count,
             dropped_bare_filtered_count=dropped_bare_filtered_count,
             chunk_evidence_truncated_count=chunk_evidence_truncated_count,
+        )
+    except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
+        pass
+
+
+def _log_degraded_subgraph(
+    *,
+    repository_id: str,
+    branch: str,
+    seed_count: int,
+    depth: int,
+    node_count: int,
+    edge_count: int,
+    frontier_truncated: bool,
+    duration_ms: float,
+) -> None:
+    """降级为按需子图的埋点。
+
+    取 INFO 而非 DEBUG：这是**低频**事件（只有超预算大仓才走到），且它对应一个
+    上层必须向用户透出的可信度标记（``degraded="on_demand_subgraph"`` 意味着结论
+    覆盖面小于全图）。级别纪律禁止的是高频循环刷屏，不是这种一次一图的关键事件。
+
+    ``initiated_by_user_id`` 取 ``system``：loader 是纯同步装配层，触发用户的绑定
+    由 ``cache.py`` 在异步侧完成（它才拿得到 ``user``），本层如实记系统行为。
+    """
+    try:
+        logger.info(
+            _EVENT_DEGRADED_SUBGRAPH,
+            component="code_graph",
+            category="sampling",
+            repository_id=str(repository_id),
+            branch=branch or "-",
+            seed_count=seed_count,
+            depth=depth,
+            node_count=node_count,
+            edge_count=edge_count,
+            frontier_truncated=frontier_truncated,
+            duration_ms=duration_ms,
+            initiated_by_user_id="system",
         )
     except Exception:  # noqa: BLE001 — 观测失败绝不反噬业务（不是安全降级分支）
         pass
@@ -261,6 +307,7 @@ def _load_symbol_nodes(
     repository_id: str,
     branch: str,
     is_excluded: Callable[[str], bool],
+    restrict_symbol_ids: set[str] | None = None,
 ) -> _SymbolNodeIndex:
     """把 ``Symbol`` 行装配成图节点（overlay 去重 + exclusion 过滤）。
 
@@ -269,6 +316,8 @@ def _load_symbol_nodes(
     :param branch: 缓存键里的分支名，``""`` = base。
     :param is_excluded: 由 ``access.make_path_exclusion_memo(matcher)`` 产出的记忆化
         排除判定闭包。⛔ 本模块**不自行解析规则**，matcher 一律由 ``cache.py`` 注入。
+    :param restrict_symbol_ids: 仅 :func:`load_subgraph` 使用——把取数收敛到 SQL 侧
+        已经收敛出来的那批 ``symbol_id``。``None`` = 全量装配。
     """
     from codegraph.models import Symbol
     from services.exclusion import normalize_rel_path
@@ -284,10 +333,14 @@ def _load_symbol_nodes(
     # ⚠️ 字段清单**不等于**节点属性来源：``signature``（TextField，数 KB）根本不取；
     #    ``chunk_id`` 取但**不进节点属性**——它只喂 :attr:`_SymbolNodeIndex.chunk_to_symbols`
     #    这个旁挂映射，节点属性仍恒 5 个。
+    symbol_qs = Symbol.objects.filter(
+        repository_id=repository_id, branch_name__in=_branch_filter(branch)
+    )
+    if restrict_symbol_ids is not None:
+        symbol_qs = symbol_qs.filter(id__in=restrict_symbol_ids)
+
     rows = (
-        Symbol.objects.filter(
-            repository_id=repository_id, branch_name__in=_branch_filter(branch)
-        )
+        symbol_qs
         .values_list(
             "id",
             "name",
@@ -489,6 +542,7 @@ def _load_call_edges(
     branch: str,
     nodes: _SymbolNodeIndex,
     include_low_confidence: bool,
+    restrict_caller_ids: set[str] | None = None,
 ) -> _CallEdgeStats:
     """把 ``CallEdge`` 行装配成图边（解析边 / 裸名边双档）。
 
@@ -500,6 +554,12 @@ def _load_call_edges(
     **``caller_symbol_id IS NULL``（模块级调用，不在任何函数体内）**：整条边丢弃。
     ⛔ 不用 ``caller_file`` 造虚拟节点 —— 与 D-05 同理，虚拟节点会污染上层 impact 的
     深度分组与计数，且无法给出 ``file:line``，对 agent 没有行动价值。
+
+    :param restrict_caller_ids: 仅 :func:`load_subgraph` 使用。收敛条件只加在**主叫**
+        侧就够了：任何幸存的边都必须先满足 ``caller_symbol_id ∈ node_ids``，而
+        ``node_ids ⊆ restrict_caller_ids``，所以再加一个 callee 侧的 ``OR`` 只会多捞
+        一批注定被丢弃的行。⚠️ 此时 :attr:`_CallEdgeStats.resolution_rate` 的口径随之
+        变成「该子图内的解析率」，而非全仓解析率——这是子图路径的固有语义。
     """
     from codegraph.models import CallEdge
     from services.exclusion import normalize_rel_path
@@ -516,10 +576,14 @@ def _load_call_edges(
 
     # ⚠️ FK 一律用 attname（``caller_symbol_id`` / ``callee_symbol_id``）取列：
     #    写成 ``caller_symbol`` 会产生隐式 JOIN，30 万行上是数量级差异。
+    call_qs = CallEdge.objects.filter(
+        repository_id=repository_id, branch_name__in=_branch_filter(branch)
+    )
+    if restrict_caller_ids is not None:
+        call_qs = call_qs.filter(caller_symbol_id__in=restrict_caller_ids)
+
     rows = (
-        CallEdge.objects.filter(
-            repository_id=repository_id, branch_name__in=_branch_filter(branch)
-        )
+        call_qs
         .values_list(
             "caller_symbol_id",
             "callee_symbol_id",
@@ -833,6 +897,196 @@ def _resolve_by_file_and_name(
     if norm is None:
         return None
     return by_file_and_name.get((norm, name))
+
+
+def _expand_seed_ids(
+    *,
+    repository_id: str,
+    branch: str,
+    seed_symbol_ids: Sequence[str],
+    radius: int,
+) -> tuple[set[str], bool]:
+    """从种子出发在 **SQL 侧**逐跳扩张，返回 ``(可达 symbol_id 集合, 是否发生截断)``。
+
+    🚨 **收敛必须发生在 SQL 侧**，⛔ **不是**「先全量装配再裁剪」——全量装配正是本
+    路径要避开的那 2–4 秒纯 CPU 与内存尖峰（RESEARCH §Byte Estimation：10 万符号仓
+    一次冷建图约 2.07 秒、20 万约 4.03 秒），而 ``thread_sensitive=True`` 意味着这段
+    时间会**阻塞同一执行器上的其他 ORM 工作**。先装配再裁剪等于把代价全额付掉之后
+    再把结果扔掉。
+
+    每轮只取 ``(caller_symbol_id, callee_symbol_id)`` 两列（命中
+    ``Index(fields=["repository","branch_name","caller_file"])`` 的
+    ``(repository, branch_name)`` 前缀），把新出现的对端收进下一轮 frontier；
+    ``visited`` 去重同时也是**防环**——没有它，一个 ``a → b → a`` 的循环调用会让
+    这个循环永远跑下去。
+
+    :param radius: 跳数上限。调用方传的是 ``depth + 1``，理由见 :func:`load_subgraph`。
+    :returns: ``visited`` 含种子本身；``truncated`` 为真表示某一轮 frontier 撞上
+        :data:`SUBGRAPH_FRONTIER_LIMIT` 被截断，子图不完整。
+    """
+    from django.db.models import Q
+
+    from codegraph.models import CallEdge
+
+    visited: set[str] = {str(seed) for seed in seed_symbol_ids}
+    frontier: set[str] = set(visited)
+    truncated = False
+
+    for _hop in range(radius):
+        if not frontier:
+            # 提前收敛：这一圈没有新节点，再查也只会得到空集。
+            break
+
+        rows = CallEdge.objects.filter(
+            repository_id=repository_id, branch_name__in=_branch_filter(branch)
+        ).filter(
+            Q(caller_symbol_id__in=frontier) | Q(callee_symbol_id__in=frontier)
+        ).values_list("caller_symbol_id", "callee_symbol_id")
+
+        next_frontier: set[str] = set()
+        for caller_symbol_id, callee_symbol_id in rows.iterator(
+            chunk_size=_CALL_EDGE_CHUNK_SIZE
+        ):
+            for endpoint in (caller_symbol_id, callee_symbol_id):
+                if endpoint is None:
+                    # 模块级调用（``caller_symbol_id IS NULL``）无处挂载，
+                    # 与全量路径同口径丢弃，⛔ 不造虚拟节点。
+                    continue
+                node_id = str(endpoint)
+                if node_id not in visited:
+                    next_frontier.add(node_id)
+
+        if len(next_frontier) > SUBGRAPH_FRONTIER_LIMIT:
+            # 截断是**有损**的：子图会缺一部分邻接。如实置标记，由上层与日志透出。
+            next_frontier = set(list(next_frontier)[:SUBGRAPH_FRONTIER_LIMIT])
+            truncated = True
+
+        visited |= next_frontier
+        frontier = next_frontier
+
+    return visited, truncated
+
+
+def load_subgraph(
+    repository_id: str,
+    branch: str = "",
+    *,
+    seed_symbol_ids: Sequence[str],
+    depth: int,
+    matcher: ExclusionMatcher,
+    exclusion_fingerprint: str,
+    include_low_confidence: bool = False,
+) -> CodeGraph:
+    """装配以种子符号为中心、深度受限的**诱导子图**（GRAPH-03 的降级路径）。
+
+    超预算大仓（单图估算 > ``CODE_GRAPH_MAX_GRAPH_BYTES``）不走 :func:`load_graph`
+    而走这里。这**不是可选优化**：全量装配的 2–4 秒纯 CPU 会在
+    ``thread_sensitive=True`` 的共享执行器上阻塞其他 ORM 工作，子图才是大仓不拖垮
+    进程的真正防线。
+
+    **半径取 ``depth + 1``**：调用方拿到子图之后还要在上面做 ``depth`` 跳遍历，多留
+    一跳才能保证边界节点的邻接是完整的——否则第 ``depth`` 层的节点会因为「它的邻居
+    没被装进来」而看起来像叶子，上层得出的影响面会在边界处莫名截断。
+
+    🚨 与 :func:`load_graph` 同款契约：``matcher`` 与 ``exclusion_fingerprint`` 是
+    **必填关键字参数**，由 ``cache.py`` 解析一次后注入。⛔ 本函数**不得**调用
+    ``access.build_matcher_and_fingerprint`` —— 同一次请求内二次解析 = 一次 DB 读 +
+    该仓全部 glob/regex 重新编译，且这条同步路径吃不到 ``build_matcher_for_repo``
+    的 60s ``_matcher_cache``（模块 docstring ④）。
+
+    :param seed_symbol_ids: 查询种子。⚠️ 由调用方传入，**超级枢纽种子会让子图退化
+        成全图**——每轮 frontier 因此设了 :data:`SUBGRAPH_FRONTIER_LIMIT` 上限。
+    :param depth: 调用方随后要在子图上走的跳数；本函数按 ``depth + 1`` 收敛。
+
+    .. note::
+       **传给下游的遍历纪律**（RESEARCH Pitfall 10）：拿到这张子图后，深度受限遍历
+       一律用 ``nx.bfs_tree(g, src, depth_limit=d)`` 或
+       ``itertools.islice(nx.bfs_layers(g, [src]), d)``；⛔ **绝不**写
+       ``list(nx.bfs_layers(...))[:d]`` —— ``bfs_layers`` 是生成器，``list()`` 会先
+       物化整个可达分量再切片，实测 97.3ms vs 0.0ms（结果完全相同）。反向遍历用
+       ``g.reverse(copy=False)`` 只读视图（建视图 0.1ms），⛔ 不要 ``copy=True``
+       （完整复制，内存翻倍）。
+
+    .. note::
+       与 :func:`load_graph` 相同，``estimated_bytes`` / ``partial_edges`` 由
+       ``cache.py`` 覆写；``degraded`` 在这里就已经是终值 ``"on_demand_subgraph"``。
+    """
+    started = time.perf_counter()
+
+    graph: nx.MultiDiGraph = nx.MultiDiGraph()
+    is_excluded = make_path_exclusion_memo(matcher)
+
+    reachable_ids, frontier_truncated = _expand_seed_ids(
+        repository_id=str(repository_id),
+        branch=branch,
+        seed_symbol_ids=seed_symbol_ids,
+        # 多留一跳，让边界节点的邻接完整。
+        radius=depth + 1,
+    )
+
+    # 只按最终 symbol_id 集合取 ``Symbol`` 行 —— exclusion 与 overlay 去重与全量路径
+    # 完全同口径（同一个记忆化闭包、同一个整文件去重键），子图路径不存在「泄漏面比
+    # 全量路径宽」的可能。
+    nodes = _load_symbol_nodes(
+        graph,
+        repository_id=str(repository_id),
+        branch=branch,
+        is_excluded=is_excluded,
+        restrict_symbol_ids=reachable_ids,
+    )
+    edges = _load_call_edges(
+        graph,
+        repository_id=str(repository_id),
+        branch=branch,
+        nodes=nodes,
+        include_low_confidence=include_low_confidence,
+        restrict_caller_ids=reachable_ids,
+    )
+    cross_repo = _load_cross_repo_edges(
+        graph,
+        repository_id=str(repository_id),
+        nodes=nodes,
+    )
+    chunk_evidence, _chunk_truncated = _load_chunk_evidence(
+        repository_id=str(repository_id),
+        branch=branch,
+        nodes=nodes,
+    )
+
+    resolution_rate = edges.resolution_rate
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+
+    meta = GraphMeta(
+        repository_id=str(repository_id),
+        branch=branch,
+        node_count=graph.number_of_nodes(),
+        edge_count=graph.number_of_edges(),
+        estimated_bytes=0,
+        resolution_rate=resolution_rate,
+        low_resolution=resolution_rate < LOW_RESOLUTION_THRESHOLD,
+        partial_edges=False,
+        partial_reason="",
+        # 🔔 上层工具必须透出：结论的覆盖面小于全图。
+        degraded="on_demand_subgraph",
+        cross_repo_unresolved_count=cross_repo.unresolved_count,
+        cross_repo_branch_unfiltered=cross_repo.loaded_count > 0,
+        excluded_file_count=nodes.excluded_file_count,
+        built_signature=exclusion_fingerprint,
+        built_at=timezone.now(),
+    )
+
+    _log_degraded_subgraph(
+        repository_id=str(repository_id),
+        branch=branch,
+        seed_count=len(seed_symbol_ids),
+        depth=depth,
+        node_count=meta.node_count,
+        edge_count=meta.edge_count,
+        frontier_truncated=frontier_truncated,
+        duration_ms=duration_ms,
+    )
+
+    return CodeGraph(meta=meta, graph=graph, chunk_evidence=chunk_evidence)
 
 
 def load_graph(
