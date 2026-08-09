@@ -825,9 +825,11 @@ class BlueprintRouteAdapter:
                 candidate_ids, query=query
             )
         except Exception as exc:  # noqa: BLE001 — 摘要读失败不阻断路由
+            from common.logging import redact_secrets_in_text
+
             logger.warning(
                 "blueprint_route_module_summary_load_failed",
-                error=str(exc),
+                error=redact_secrets_in_text(str(exc)),
                 category="sampling",
                 component="process_runtime",
             )

@@ -239,7 +239,17 @@ async def _apply_module_summary_signal(
             candidates=[(c.repository_id, c.repository_name, c.score) for c in candidates],
         )
     except Exception as exc:  # noqa: BLE001 — 摘要失效不影响章程/能力树结果
-        logger.warning("repository_relevance_module_summary_signal_failed", error=str(exc))
+        try:
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "repository_relevance_module_summary_signal_failed",
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="agents",
+            )
+        except Exception:  # noqa: BLE001 — 观测失败不反噬
+            pass
         return candidates
 
     by_id = {c.repository_id: c for c in candidates}
