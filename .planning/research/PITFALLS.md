@@ -1,326 +1,290 @@
-# Pitfalls Research
+# Domain Pitfalls
 
-**Domain:** 既有 AI 交付自动化系统（Friday AI，brownfield）新增"统一知识库 + 完工沉淀闭环 + 容器内置 MCP/Skills + 工具面收口"
-**Researched:** 2026-07-15
-**Confidence:** HIGH（坑 1–8 均以仓库真实代码坐标 + 外部来源交叉验证；个别缓解手段为 MEDIUM，正文标注）
+**Domain:** 给既有多仓代码智能系统（tree-sitter 符号图 SQL 存储 + Qdrant RAG + MCP 工具面 + 增量索引/分支 overlay）叠加图分析能力（内存图服务 / impact / trace / detect_changes / 社区检测 + LLM 模块摘要 / 执行流 / rename_preview / Semgrep taint 门禁 / LSP 默认开启）
+**Researched:** 2026-08-09
+**Confidence:** HIGH（核心结论均有代码事实或官方文档/论文佐证；个别经验性阈值为 MEDIUM）
 
-> 本文写给 roadmapper 与 plan-phase：每个坑聚焦"往既有系统加这些功能"的集成风险，不是泛泛 LLM 应用坑。Phase 指 v0.17.0 的四大块（KNOW / LOOP / AGENT / UNIFY），Phases 100+ 具体编号由 roadmap 落定后按块映射。
+> 编号约定：本文的「Phase 建议」是功能相位名（roadmap 未定稿），映射到 v0.22.0 target features：**P-基座**=内存图服务、**P-impact**=impact/trace、**P-detect**=detect_changes、**P-社区**=社区检测+模块摘要、**P-执行流**=执行流追踪、**P-rename**=rename_preview、**P-semgrep**=Semgrep 门禁、**P-LSP**=解析精度提升。
 
 ## Critical Pitfalls
 
-### Pitfall 1: 检索底层切换（token→向量）的召回回归与 API 契约漂移
+### Pitfall 1: 裸名调用边直接进 impact/trace ⇒ 假阳性灾难
 
 **What goes wrong:**
-`search_learning_cases` 从 token 打分（`mcp_tools/learning_case_service.py` 的 `_TOKEN_RE` 命中计数 + repo/file/symbol hint 加权）切到 `DeliveryKnowledgeSearchService` 向量检索后，出现三类回归：
-1. **精确标识符召回变差**——token 版对仓库名、文件路径、symbol 这类精确串命中是强项（hint 命中 +3.0 分），纯向量对 `server/mcp_tools/views.py` 这种路径类查询天然弱（外部验证：向量检索对 exact identifiers / rare terms 的召回缺口是行业共识坑）。
-2. **API 契约静默漂移**——现契约里 `score` 是 token 命中计数（0–N 开区间、`round(score, 4)`），向量版是余弦相似度（约 0–1）；调用方（Cursor friday-memory skill、`create_feishu_technical_plan` 自动召回）若对 score 有阈值/排序假设会静默失真。`work_item_type` 过滤、`repo_hints`/`file_hints`/`symbol_hints` 参数语义也要在向量层重新实现，容易"参数还在、不再生效"。
-3. **存量数据空窗**——存量 `McpLearningCase` 从未入过 `delivery_knowledge` 向量库；切换当天若无 backfill，向量检索对全部历史 case 返回空，看起来像"检索坏了"。
-4. **基础设施依赖变化**——token 版纯 DB 查询，向量版依赖 Qdrant 在线；dev（SQLite、无 Qdrant）与 Qdrant 故障场景下行为从"能用"变"报错/空结果"。
+`CallEdge` 的现实是：`callee_symbol` 可空、`callee_name` 是永远保留的裸名兜底（`server/codegraph/models.py` 明确注明「跨文件符号解析属 implementation+，留空待回填」）。如果 impact 反向 BFS 把「`callee_name == "save"`」这类裸名边当作真边扩散，任何一个叫 `save`/`get`/`run`/`handle` 的方法都会把全仓几百个同名符号拉进影响面。两跳之后影响面就是「整个仓库」，工具输出没人敢信，AI 编码代理拿着它做「改动安全吗」判断等于掷硬币。动态派发（duck typing）、装饰器/中间件间接调用（Django view decorator、DRF permission、workflow node registry 的 import 副作用注册）在 tree-sitter 层面根本没有边，构成对称的假阴性。
 
 **Why it happens:**
-"底层换实现、契约不变"听起来是纯重构，但检索的"契约"不仅是 request/response schema，还包括**召回分布与 score 语义**——这部分没有类型系统保护，只有对照测试能看住。
+tree-sitter 是语法级提取，没有类型信息；开发者急于让 impact「有结果」，把 `callee_name` 文本匹配当边用。而「结果很多」在 demo 里看起来像「功能很强」，上线后才发现精度崩了。
 
 **How to avoid:**
-- **切换前先建 golden set**：从现有 token 版跑 30–100 条真实查询（含精确路径/symbol 查询、中文语义查询、hint 组合），记录"必须可召回集合"；切换后断言这些集合非空且目标 case 在 top-k 内（milestone 风险 1 已点名，落成 pytest 固定用例，不是一次性人工对比）。
-- **hint 类参数走过滤/加权而非丢弃**：`repo_hints`/`file_hints` 映射为向量检索的 metadata 过滤或后置 rerank 加权；如向量层不支持，保留一条轻量 keyword 补召回路径（hybrid），不要让参数变摆设。
-- **score 语义显式定版**：要么归一化到 0–1 并在工具 schema 描述里写清语义变化，要么在 payload 中新增 `score_kind` 字段；`TOOL_SCHEMA_SNAPSHOT` 与快照测试（`server/tests/mcp_tools/test_schema_snapshot.py`）同步更新。
-- **backfill 与切换解耦为两步**：先写 normalizer + management command 把存量 case 全量入图（可观察摄取成功率），确认向量侧可召回后再切读路径；切换后保留 token 实现一个里程碑周期作为 fallback 开关（MEDIUM：是否留开关可在 plan-phase 权衡）。
-- **Qdrant 不可用时 fail-soft**：向量检索异常降级为空结果 + 结构化 `xxx_failed` 事件，不抛 500（对齐"观测永不反噬业务"）。
+1. **默认只走已解析边**：impact/trace 的图构建默认只吃 `callee_symbol IS NOT NULL` 的边 + `CrossRepoApiCall`（自带 `match_confidence` 1.0/0.7/0.4 分档，直接复用这套分层词表）。
+2. **置信度是输出契约的一部分**：每个受影响节点带 `confidence: resolved | same_file_name_match | bare_name | cross_repo(0.4~1.0)`，MCP 返回按置信度分组渲染，让 LLM 消费方自己决定用哪一层——**不是二选一，是分层透出**。
+3. **裸名边有条件启用**：`include_low_confidence=true` 参数显式开启，且裸名匹配至少加两道过滤：同文件/同目录优先、`callee_qualifier` 匹配（模型里已有该字段）、常见名黑名单（`get/set/run/save/init` 等出现次数超过阈值的名字直接不扩散）。
+4. **控噪过度的对冲**：漏报靠「解析率指标」兜底——索引完成时统计 `callee_symbol` 回填率（per repo per language），低于阈值（如 Python <60%）时 impact 输出头部显式声明「本仓解析率 X%，结果偏保守」，而不是假装全知。rename_preview 的「图引用 + grep 兜底」模式就是这个思路的既有先例，impact 可给一个 `grep_supplement` 段但物理上与图结果分区。
 
 **Warning signs:**
-- 对照测试里"路径/symbol 类查询"召回集合明显缩水而"语义类查询"变好——典型 hybrid 缺口信号。
-- 切换 PR 里没有出现 backfill command / 数据迁移，只有 service 层改动。
-- `TOOL_SCHEMA_SNAPSHOT` diff 为空但返回 payload 字段语义实际变了。
-- 上线后 `search_learning_cases` 空结果率突增（RetrievalTrace 条数指标可见）。
+- impact 结果节点数随深度指数增长（depth=2 就 >500 节点）；
+- 同一个查询里出现大量同名不同文件的目标；
+- golden case（选 3-5 个人工核对过的符号）影响面对不上人工判断。
 
-**Phase to address:**
-KNOW 块的"learning case 入图 + 检索切换" phase：**normalizer + backfill 与读路径切换必须在同一 phase 内闭环**（否则中间态"写了新库、读还在旧库"或反之），golden set 对照测试作为该 phase 的验收门。
+**Phase to address:** P-基座定边的准入词表与置信度枚举；P-impact 落分层输出 + golden case 回归测试。
 
 ---
 
-### Pitfall 2: 自动 LLM 沉淀的噪音污染与成本失控
+### Pitfall 2: 多 worker 内存图缓存放大 + 构建风暴 + 失效窗口
 
 **What goes wrong:**
-编码完成回调自动触发 LLM 提炼 learning case 后，知识库被低质量 case 淹没：失败/中途取消的任务也产 case、同一任务重复产多条 case、case 内容复述 diff 而非提炼"root_cause/solution"、召回时垃圾 case 挤掉人工精品 case。外部佐证极强：mem0 社区审计 10,134 条自动沉淀记忆发现 **97.8% 是垃圾**，根因正是"提取后无准入门槛直进向量库 + 回调重入放大"。成本侧：每次编码完成一次 LLM 调用看似可控，但叠加"PR 后可选 review 沉淀"与重试后放大，且无 per-source 用量归因时发现不了。
+三个叠加的坑：
+1. **内存放大**：图缓存是进程内的（networkx 对象没法进 Redis）。helm 已支持 `gunicornWorkers>1`，每个 worker 各自缓存一份 `(repository, branch)` 图——10 万符号的仓一份图可能 500MB+（networkx 每节点/边是 Python dict，开销约为邻接表的 10-40 倍），4 worker 就是 4 份。生产 261 仓的实例上 LRU 容量若按「仓数」而不是「内存字节」算，OOM 是时间问题。
+2. **构建风暴**：并发首查同一仓（AI 编码代理批量 impact、detect_changes 一次触发几十个符号查询）时无锁则 N 个请求各自从 DB 拉全量 Symbol/CallEdge 建图，DB 被打爆且内存瞬时 N 倍。
+3. **不一致窗口**：增量索引提交后 `last_indexed_commit_sha` 前移，但已建好的图还是旧水位；若失效检查只在「建图时」做而不在「取图时」做，缓存命中路径会一直吐旧图。分支 overlay（`branch_name` 维度）再乘一倍缓存键空间。
 
 **Why it happens:**
-两个本仓库特有的放大器：
-1. **callback 重入自驱**——v0.8 起 `subagent/api/callbacks.py` 的回调被刻意设计为"重入自驱推进 wave"（同一 TaskResult 的回调路径可能被走多次），沉淀钩子若挂在回调上而不做幂等，天然重复提炼。
-2. **fail-soft 掩盖质量问题**——沉淀被正确地定为 best-effort 吞异常，但"吞异常"会连带吞掉"产出了但质量差"的信号，没有人看见它在变坏。
+单 worker dev 环境下一切正常，问题只在多 worker/大仓/并发下爆发；networkx 的内存开销远超直觉；「按 mtime 失效」的直觉方案在增量索引这种异步写入面前有竞态。
 
 **How to avoid:**
-- **幂等键前置**：以 `TaskResult`/session UUID 为确定性锚（对齐 natural key 规则表 `task_result` 行），提炼前先查"该 result 是否已产 case"，重入直接跳过——这是最便宜也最必须的一道闸。
-- **准入门槛（admission gate），不是产了就入库**：最小规则集——任务 status 非 success 不提炼（或只提炼为 failure 教训并显式标注 outcome）；提炼产物缺 `root_cause` 或 `solution` 为空/过短则丢弃并计数；diff 为空或极小的任务不提炼。行业方向（A-MAC、Bedrock AgentCore consolidation）是"打分准入 + 异步整合"，本里程碑不必上打分模型，但**必须有显式 REJECT 路径**，不能只有 ADD。
-- **成本归因先行**：新 `call_source`（如 `learning_case_distill`、`post_pr_review`）在第一行代码前登记 LOGGING-SPEC §4.1，`ModelUsageRecord` 自动可按 source 聚合；给该 source 配可观测阈值（日调用数/日 token）而非事后追查。
-- **提炼失败/被拒也要有结构化事件**（`learning_case_distill_rejected`，category=sampling），让"质量门在挡什么"可见。
-- **可关**：自动沉淀提供系统级开关（`SystemSetting`），污染发生时能立即止血而不用回滚代码。
+1. **按字节做 LRU**，不按条目数：建图后 `sys.getsizeof` 级估算（节点数 × 经验系数）计入预算，预算 env 可调（默认如 2GB/worker）；超预算逐出最久未用。超大仓（symbol 数超阈值）直接不进缓存、走「每查询按需子图」降级路径（从查询符号出发按深度限界拉边，DB 索引 `repository, callee_symbol` 已在）。
+2. **single-flight 建图锁**：进程内 per-key asyncio lock（或线程锁，取决于建图跑在 `sync_to_async` 还是线程），首个请求建图、其余等待；跨 worker 不做分布式锁（代价大于收益，最坏是 worker 数份重复构建，可接受）。
+3. **取图时校验水位**：每次命中缓存都比对 `Repository.last_indexed_commit_sha`（一次轻量 DB 读或短 TTL 本地缓存），不一致即丢弃重建。这正是既有 `GALAXY_CACHE` 的「数据签名失效」模式（`settings.py:858-861`），直接沿用同一套约定并同样留 `*_CACHE_ENABLED=False` 逃生舱。
+4. **观测**：`gauge` 上报缓存条目数/估算字节/命中率/构建耗时（`category=sampling`），构建事件 `graph_build_started/completed/failed + duration_ms`（`category=caller` 首查归因用户）。
 
 **Warning signs:**
-- learning case 日增量与编码任务完成数不是约 1:1（>1 说明重复提炼，明显 >1 说明回调重入没挡住）。
-- `search_learning_cases` top-k 里自动 case 占比迅速接近 100%、且 `root_cause` 字段大面积雷同或空泛。
-- `ModelUsageRecord` 里新 call_source 的 token 曲线随重试/失败率上升而非随任务量上升。
+- server 容器 RSS 在图工具上线后阶梯式上涨不回落；
+- 日志出现同一 repo 短时间多条 `graph_build_started`；
+- impact 结果引用了已被增量索引删除的符号（stale 图证据）。
 
-**Phase to address:**
-LOOP 块"自动经验沉淀" phase：幂等键 + 准入规则 + call_source 登记与提炼逻辑**同 phase 落地**（不是"先跑通再补质量门"——污染入库后清理成本远高于预防，见 Recovery）。回写/沉淀开关的默认值决策也在此 phase 显式过一遍（联动 Pitfall 3）。
+**Phase to address:** P-基座（这是地基相位的核心验收项：字节 LRU + single-flight + 水位校验 + 大仓降级四件套必须同相位落齐，后续所有图工具都踩在它上面）。
 
 ---
 
-### Pitfall 3: 回写开关默认值改变存量部署行为
+### Pitfall 3: 社区检测结果漂移 ⇒ 模块摘要反复重生成、LLM 成本失控
 
 **What goes wrong:**
-公共飞书回写 service 接入工作流 `ai_coding` 后，若"默认开"，存量部署升级当天，**所有已保存的工作流**跑完编码突然开始往飞书工作项写评论/文档——用户没改任何配置。轻则重复通知（既有 `notify_feishu_im` 下游节点 + 新回写 = 一件事两条消息），重则写错对象（工作流上下文里 work_item 绑定缺失/陈旧时评论挂错单）、或用无权限凭证反复失败刷 error 日志。反向坑同样存在：若"默认关"，验收面第 3 条（"工作流跑完自动出现结果评论"）对升级用户不成立，功能等于没上。
+Louvain/Leiden 都是随机贪心启发式，同一张图两次运行可产出不同划分；networkx 的 `louvain_communities` 甚至有「seed 相同但节点插入顺序不同结果就不同」的已证实行为（networkx issue #6655，官方以 wontfix 关闭）。如果每次重建索引都重跑社区检测并对「变了的社区」重生成 LLM 摘要，一个没实质变化的仓每晚重索引都会触发几十个模块摘要重生成——LLM 成本线性失血，且下游 RepoRouter 消费的模块描述天天变，路由稳定性（v0.19.0 拿命换来的幂等纪律）被上游污染。孤立节点/不连通子图是第二个坑：代码图天然有大量孤立符号（未被调用的工具函数、入口脚本），直接跑算法会产出上百个单节点「社区」，LLM 摘要生成会对着一个函数写一段废话。
 
 **Why it happens:**
-brownfield 加开关的经典两难：新默认值只对"新建"安全，对"存量已保存配置"是静默行为变更。本仓库的既有先例是把配置放在节点 config 上（如 `CreateGroupChatNode` 的可选写回），而节点 config 是随工作流定义持久化的——**存量工作流定义里根本没有这个字段**，代码里的 fallback 默认值就是存量行为。
+社区检测在论文/demo 里都是「一张图跑一次」，没人告诉你生产里是「同一张图每天重跑」的稳定性问题；单节点社区在小图 demo 里不出现。
 
 **How to avoid:**
-- **区分"模板默认"与"存量 fallback"**：内置模板/新建节点默认开（对齐 milestone 预设），但节点 config 缺失该字段时的代码 fallback 明确定为——有绑定 work_item 才回写、无绑定静默跳过（fail-soft），并把该决策写进升级说明。这样存量工作流"绑定了 work_item 的"获得新能力，"没绑定的"零变化。
-- **回写前守门**：work_item 存在性 + 凭证可用性校验，任一不满足记 `writeback_skipped` 事件后跳过，绝不重试轰炸飞书 API。
-- **与既有通知去重界定**：回写（工作项评论，业务留痕）与 IM 推送（群卡片，即时通知）语义分开写清，避免用户看到"两条差不多的消息"后把整个功能关掉。
-- **升级说明 + 审计留痕**：回写动作 emit 审计/结构化事件带 `initiated_by_user_id`（工作流触发者，无则 `system`），让"谁的工作流往哪个单写了什么"可回答。
+1. **算法选型**：用 Leiden（`leidenalg` 或 igraph）+ 固定 seed + 固定节点排序（按 symbol UUID 排序后建图），Leiden 在同 seed 下确定性且保证社区连通（Traag 2019）；若留在 networkx Louvain，必须自己做节点排序 + seed，且接受仍可能漂移。
+2. **稳定性护栏**：新旧划分做相似度对账（ARI 或按社区成员 Jaccard 匹配），**只有成员集变化超过阈值（如 Jaccard < 0.8）的社区才重生成摘要**；未变社区沿用旧摘要（社区落库时带 `member_fingerprint = hash(sorted(symbol_ids))`，指纹不变直接跳过 LLM）。
+3. **预处理**：只对「最大弱连通分量 + 规模 ≥ N（如 5 个符号）的分量」跑社区检测；孤立节点归入所在目录的兜底社区或标 `unclustered`，绝不给单节点社区发 LLM 摘要。
+4. **成本闸门**：模块摘要生成走批量 + 每仓每次重建的摘要生成条数上限（env 可调），赋独立 `call_source` 便于在 `ModelUsageRecord` 里单独看成本曲线。
 
 **Warning signs:**
-- 升级后飞书侧出现大量来源为 Friday 的评论且用户反馈"我没配过这个"。
-- 日志里 `writeback_failed` 高频出现同一 work_item / 同一凭证错误（守门缺失信号）。
-- 测试只覆盖"新建节点带 config"路径，没有"存量节点 config 无该键"的 fallback 用例。
+- `ModelUsageRecord` 里模块摘要 call_source 的 token 曲线与索引频率同形；
+- 同一仓两次重建后社区数量/命名大幅变动；
+- 社区列表里出现大量 size=1 的社区。
 
-**Phase to address:**
-LOOP 块"公共回写 service" phase：fallback 语义、守门、与 `notify_feishu_im` 的关系界定都是该 phase 的设计输入，不是收尾补丁。roadmap 上该 phase 的成功标准应显式含"存量工作流（未绑定 work_item）行为零变化"。
+**Phase to address:** P-社区（指纹跳过 + 稳定性对账是该相位的需求级验收，不是优化项）；算法选型在 P-社区开工前的 research 定夺。
 
 ---
 
-### Pitfall 4: 容器内 MCP 的时延/负载/凭证泄漏/排除绕过
+### Pitfall 4: 执行流/impact 遍历爆炸——递归环、扇出、async 断链
 
 **What goes wrong:**
-task 容器挂 Friday 知识 MCP（HTTP 转调 `/api/mcp/tools/*`，PAT 鉴权）后四类风险叠加：
-1. **时延与负载**：agent 在编码 hot loop 里高频调检索（一次任务几十次 `search_rag_chunks`），每次都是跨网络 HTTP + 服务端向量检索，编码总时长显著拉长；多容器并发时服务端 QPS 突增（原 MCP 工具面只服务 Cursor 人类节奏，现在是 agent 机器节奏）。
-2. **凭证泄漏面扩大**：PAT 是任务 user_token（PAT-02 约束：明文绝不落盘）。MCP server 配置若以文件形式写进 workspace（`.mcp.json` 风格），或 PAT 出现在 agent 可读的 env dump / 错误信息里，**agent 可能把它读进上下文进而写进 diff/PR/日志**——这是比传统日志泄漏更隐蔽的新通道。
-3. **排除文件绕过**：服务端工具层排除 fail-closed 已有（v0.5），"天然继承"成立的前提是**只走白名单工具**；若白名单里混入能间接读任意内容的工具，或转调层拼错误信息时把上游响应体原样透出，排除与脱敏就被打洞。
-4. **`allowed_tools` 排他白名单陷阱（本仓库特有，最容易翻车）**：`task/core/executor.py` 明确注释——`allowed_tools` 一旦非空即排他，挂新 MCP server 时若只列远程工具名，会**连带禁掉 Bash/Edit/Write 等编码内建工具，编码直接废掉**。ask_user 集成时已踩过一次（代码里 `_BUILTIN_CODING_TOOLS` 必须一并列入），新增 knowledge MCP 是第三个挂载方，三方 merge 逻辑一旦有一方漏列就全盘失效。
+以 `Endpoint` 为入口正向展开调用链：递归/相互递归成环则 naive DFS 不终止；一个 Django view 调 service 层再进 ORM/工具函数，扇出很快到几万节点（尤其裸名边混入时）；`async` 任务派发（durable queue、`background_runner`、channels consumer、workflow 节点 dispatch）在静态调用图上是断的——`aemit`/`sync_to_async`/信号/回调处链路中断，执行流画一半，用户以为链路只有这么长，比不画更误导。
 
 **Why it happens:**
-容器内 agent 是全新的调用主体：既有工具面的权限/排除/脱敏假设"调用方是外部客户端"，而 agent 拿着 PAT 在服务器眼里与 Cursor 无异，但它的调用频率、错误处理方式（把响应塞进上下文）、和对 workspace 文件的读写能力都完全不同。
+图遍历的终止条件、预算控制是「第二天才想起来」的需求；异步断链是静态分析的原理性极限，但产品呈现上不标注就成了隐性谎言。
 
 **How to avoid:**
-- **白名单最小化 + 每任务配额/超时**（milestone 风险 2 已点名）：白名单锁定 7 个只读检索工具；task 侧转调层做 per-task 调用计数与单次超时，超限后工具返回明确"配额已用尽"提示（agent 可理解并停止重试），不无声失败。
-- **PAT 只走内存**：MCP server 用进程内 SDK server（既有 `extra_mcp_servers` 机制）在 Python 侧持有 PAT 发 HTTP，**不生成任何含 PAT 的 workspace 文件**；转调层错误信息过 `redact_secrets_in_text` 再返回给 agent。复用 v0.2.0 既有 PAT 直传/脱敏链路，不新开传递通道。
-- **`allowed_tools` merge 收口**：把"内建工具 + ask_user + repo_summary + knowledge MCP"的白名单合并逻辑收成单一构造函数 + 专项测试断言 Bash/Edit/Write 始终在列——这是一行注释救不了的坑，必须测试看住。
-- **服务端把容器来源标记出来**：转调请求带 source 标识（如 header 或 PAT 绑定元数据），服务端指标按"容器 MCP"独立统计 QPS/错误率（新请求入口纳入观测是强制规范），才能在负载出问题时定位到是哪类调用方。
-- **排除回归测试**：新增"容器视角"测试——用任务 PAT 调白名单每个工具查询已排除文件，断言不可见（复用 v0.5 六面 fail-closed 测试模式加第七面）。
+1. **三重预算硬上限**：max_depth（默认 6-8）、max_nodes（默认 500）、max_fanout_per_node（如 50，超过则截断并标 `truncated: fanout`）；visited set 防环（环检测到时在输出里显式标 `cycle` 而非静默跳过——递归本身是有价值的信息）。
+2. **结果分页/摘要化**：MCP 工具返回超预算时给「截断说明 + 按置信度/深度取 top-N」，绝不吐几万节点撑爆 LLM 上下文。
+3. **断链显式标注**：识别已知断链模式（`sync_to_async`、`defer_task`、`.delay(`、channel `group_send`、workflow node dispatch）在链路末端标 `boundary: async_dispatch`，让消费方知道「这里之后是另一个执行域」，而不是链路终点。第一版不必跨过边界，标出来就赢了。
+4. **Process 模型存摘要不存全图**：落库的执行流存「入口 + 主干路径 + 统计」，不存全展开节点集（否则大仓一个 endpoint 一行几 MB JSON）。
 
 **Warning signs:**
-- 编码任务平均时长上升且 trace 里检索调用次数与耗时占比高（观测埋点先行才能看到，联动 Pitfall 8）。
-- 服务端 `/api/mcp/tools/*` QPS 曲线在编码任务启动时出现尖峰。
-- workspace 产物（diff/PR body/日志回传）中出现 `friday_pat_` 前缀串——立即视为事故。
-- 挂载新 MCP 后 smoke 任务里 agent 报"Bash tool not allowed"——排他白名单翻车信号。
+- 执行流查询 p99 耗时随仓库大小超线性增长；
+- 单条 Process 记录 JSON 超过几百 KB；
+- 用户反馈「这个接口明明会发任务/推 WS，执行流里没有」。
 
-**Phase to address:**
-AGENT 块"容器内置 MCP" phase：白名单/配额/PAT 内存化/allowed_tools 合并测试全部在此 phase；**观测埋点（QPS、per-task 调用数、RetrievalTrace）必须与功能同 phase 上线**，不能等 UNIFY 或收尾（没有埋点就无法判断风险 2 是否成真）。
+**Phase to address:** P-执行流（预算与环处理），断链标注词表可在 P-impact 先定（impact 反向遍历同样需要）。
 
 ---
 
-### Pitfall 5: skills 双源漂移（容器内置 ≠ npm 包）
+### Pitfall 5: detect_changes 行号错位与 diff 噪声
 
 **What goes wrong:**
-容器注入的 friday-code/friday-memory skills 与根 `skills/`（npm `@friday-ai-codes/skills`）各自演化：改了包没同步容器物料（或反之），两边 agent 拿到不同指引；更隐蔽的是**行为契约漂移**——KNOW 块改了 `search_learning_cases` 的检索行为/score 语义后，包内 friday-memory 的 SKILL.md 还在描述旧行为，Cursor 侧 agent 按过时文档调工具。CI 构建脚本若在生成"容器精简版"时做裁剪转换，转换逻辑本身成为第三个漂移源。
-
-**Why it happens:**
-"同源"在设计上一句话，在工程上是构建产物问题：容器物料在派发时写入 workspace，npm 包走独立发版节奏，仓库里没有任何机制强制两者一致——除非专门造一个。
+detect_changes = git diff 行区间 × Symbol 行区间求交。三个错位源：
+1. **快照错位**：Symbol 的行号来自 `last_indexed_commit_sha` 时刻，而 diff 若以工作树/MR HEAD 计算，两个 commit 之间的无关提交早已把行号推移——交出来的符号根本不是改的那个。
+2. **重命名文件**：git 默认把 rename 输出成 delete+add，旧路径符号全部命中「被删」、新路径零符号命中（索引里还没有新路径），一次 rename 误报满屏。
+3. **格式化大 diff**：一次 prettier/ruff format 改动 200 个文件，逐符号 impact 批量展开后输出淹没真实变更，且触发 Pitfall 2 的构建风暴（几十个仓的图同时首建）。
 
 **How to avoid:**
-- **单一物理源**：容器物料直接从 `skills/skills/` 目录读取/打包（构建期拷贝也行，但拷贝必须由脚本完成、产物不进 git 手工维护区）。
-- **一致性测试**（milestone 风险 4 已点名，落实为 CI 用例）：断言"容器注入物料的内容 hash == 包内对应文件 hash"（若有精简转换，则断言转换脚本输出与提交产物一致），漂移即红。
-- **工具行为变更联动检查**：KNOW 块任何改动 `search_learning_cases`/新增知识工具的 PR，checklist 含"skills 文档是否需要同步"——可用简单 grep 测试（skill 文档中引用的工具名必须存在于 `TOOL_SCHEMA_SNAPSHOT`）半自动看住。
+1. **diff 锚定索引水位**：强制 `git diff <last_indexed_commit_sha>...<target>` 做基线（v0.6.0 「MR diff commit 锚定 + 不假设 master」已是同款纪律）；若 `last_indexed_commit_sha` 落后 target 太多（如 >200 commits），先声明 stale 并建议触发增量索引，而不是硬算。
+2. **rename 检测开启**：`git diff -M`（或 GitPython `find_renames`），rename 对按「旧路径符号 → 新路径」映射而非 delete+add 两次告警。
+3. **噪声压制**：diff hunk 只有空白/import 顺序变化的（可用启发式：strip 后相同）降级为 `formatting_only`；单次 detect_changes 受影响符号数超过阈值（如 100）时切换为「文件级摘要 + 明确说明未逐符号展开」，不做批量 impact。
+4. **接入点顺序**：先接「编码任务提交前自查」（容器内、有明确 base commit），后接「MR 描述生成」（异步、可容忍慢），不要一开始就挂到同步 API 上。
 
 **Warning signs:**
-- git log 里 `skills/skills/**` 与容器注入物料路径的提交不再成对出现。
-- 容器内 agent 的工具调用参数与服务端 schema 不匹配的报错率上升（文档教的旧用法）。
+- detect_changes 报告的符号行号与当前文件对不上；
+- rename PR 的报告里同一逻辑符号同时出现在「删除」列表且新文件无匹配；
+- 一次 format commit 触发的 impact 调用数量激增（观测 `RequestMetric`）。
 
-**Phase to address:**
-AGENT 块"容器内置 skills" phase 落一致性测试；KNOW 块"对外知识服务面"（skills 文档与新检索行为对齐）在检索切换 phase 的验收清单里带上。
+**Phase to address:** P-detect（锚定 + rename 是功能正确性，第一批落）；噪声压制阈值可 env 化后续调。
 
 ---
 
-### Pitfall 6: 退役"确定性缝"（planning_service）的测试与兼容断裂
+### Pitfall 6: Semgrep 门禁被自己杀死——误报疲劳、耗时阻塞、baseline 漂移
 
 **What goes wrong:**
-`improve_coding_plan`/`analyze_repository` 从 `planning_service.py` 确定性实现收敛到 `delegate_process_runtime` 后：
-1. **调用方契约断裂**——确定性版是同步、快速、输出形状稳定；编排版走 `process_runtime` session（异步状态机、可能要 poll/事件驱动、时延从秒级到分钟级）。外部调用方（Cursor 经 HTTP MCP、`@friday-ai-codes/skills` 文档描述的用法）若假设同步返回完整结果，切换后表现为"工具超时/挂起"。
-2. **测试假死**——指向 `planning_service` 内部符号的既有测试在删除后大面积失败或（更糟）patch target 失效但测试静默通过。本仓库有前科：Phase 26 遗留 `test_batch_pr.py` 5 例 stale patch target 至今未修——**mock 路径退化是这个 codebase 已被证实的债务模式**。
-3. **删空壳目录连带断 import**——`services/plan_orchestration/` 空壳清理时，若仍有文档/测试/迁移引用旧路径，删除即断。
-
-**Why it happens:**
-"收敛到统一编排"改变的不只是实现，而是**执行模型**（同步→会话式）；而退役旧代码时测试套件对 mock target 的引用不会被类型检查捕获。
+安全门禁的死法高度一致：初版全量规则 + 全仓扫描 + 硬阻断 ⇒ 误报淹没 + MR 等 10 分钟 ⇒ 两周内被开发者要求关掉 ⇒ 门禁名存实亡。具体机制：不做 diff-aware 时 Semgrep 会把存量历史问题全algia到每个 MR 头上；taint mode 规则在大文件上单规则默认 5s 超时（`SEMGREP_TIMEOUT`），规则多时扫描分钟级；自维护规则集没人认领后 rules 与框架版本脱节，误报率单调上升；baseline（比较基准）若取 target 分支 HEAD 而不是 merge-base，别人先合入的代码会算到你头上。
 
 **How to avoid:**
-- **先定契约再动实现**：切换前明确 `improve_coding_plan` 对外语义——是保持同步语义（服务端内部等编排完成再返回，超时上限写进 schema 描述）还是改为返回 session id + 轮询。若改语义，`TOOL_SCHEMA_SNAPSHOT` 变更 + skills 文档同步（联动 Pitfall 5）+ 对外变更说明三件套一起走。
-- **退役前先 grep 引用面**：`rg planning_service` 全仓（含 tests/docs/.planning 引用），列出清单逐一处置，作为该 phase 的第一个 task 而非最后。
-- **mock target 专项清扫**：切换 PR 内跑全量后端测试且检查"被 patch 的路径仍真实存在"（可写一个轻量测试工具断言 patch target 可 import）；顺手把 Phase 26 那 5 例已知 stale 一并修掉或显式 skip 标注（MEDIUM：是否顺手修在 plan-phase 定）。
-- **保留 analyze 产物的消费语义**："分析结果作为编排输入证据"要落到具体接线（analysis 进 recall/context），否则退役后 `analyze_repository` 变成产物无人消费的空转工具——工具面收口反而制造新孤岛。
+1. **只扫 diff、只报增量**：`SEMGREP_BASELINE_COMMIT` 设为 merge-base（官方明确建议），只对「本 MR 新引入」的 finding 发声（Semgrep 官方 diff-aware 语义）。
+2. **分级不硬断**：finding 分 `blocking`（高置信 taint 规则白名单，如 SQL 注入/命令注入的核心几条）与 `advisory`（其余全部只评论不拦）；第一个月全部 advisory 跑观察期，误报率有数据后再提级。这与本仓 AI 审查「超界是待人审不是失败」的既有决策（v0.20.0 Phase 114）同一哲学。
+3. **异步不阻塞**：扫描挂在 MR 创建后的异步任务（durable queue 已有 `maintenance`/独立队列基建），结果回填 MR 评论/检查项，不在 PR 创建同步路径上等待；超时 fail-open + 显式标注「扫描未完成」（安全门禁 fail-open 是有意识的产品决策，需在方案里写明理由：阻塞交付的门禁会被整体关闭，净安全收益为负）。
+4. **规则集治理**：起步用官方 registry 精选 pack（p/python、p/django 等）而非自写；自定义规则每条带 owner 与误报申诉出口（`nosemgrep` + 理由注释，接入审计）。
 
 **Warning signs:**
-- 切换后 Cursor 侧 `improve_coding_plan` 调用超时率上升 / 用户反馈"工具卡住"。
-- CI 全绿但 coverage 报告显示原 planning_service 测试文件覆盖归零（patch 假通过信号）。
-- 删除 PR 的 diff 里没有 tests/ 目录改动——几乎必然有 stale 引用没清。
+- MR 上 Semgrep 评论条数中位数 >5；
+- 开发者批量加 `nosemgrep` 无理由；
+- 扫描 p50 耗时 >2min 或出现「等扫描才能合并」抱怨。
 
-**Phase to address:**
-UNIFY 块整体一个 phase，且**建议排在 KNOW/LOOP 之后**：process_runtime 承接 improve/analyze 前，编排召回扩容（KNOW）先就位，收敛后的工具质量才不降级。契约决策（同步 vs 会话式）是该 phase 的第一个决策点。
+**Phase to address:** P-semgrep（diff-aware + advisory 起步 + 异步化是同相位必选项，不可拆）；blocking 白名单提级是相位交付后的运营动作。
 
 ---
 
-### Pitfall 7: 知识实体去重/关联错误（同一方案多来源重复入图）
+### Pitfall 7: LSP 默认开启拖垮索引管线
 
 **What goes wrong:**
-本里程碑一次性新增 3+ 个 normalizer（learning_case、McpCodingPlan、McpRepositoryAnalysis、McpCodingExecutionTrace），而系统里"同一件事"天然多来源：Chat `create_coding_plan` 落 `chat.CodingPlan`（已入图，source_kind=`coding_plan`）、MCP 同名工具落 `McpCodingPlan`、执行时 bridge 还会**拷贝** plan 跨表（`mcp_tools/execution_service.py`）。若 McpCodingPlan normalizer 简单以自身 UUID 为 source_id 新建 TECH_PLAN 实体，同一份方案在图里出现两个节点：检索时同一方案占两个坑挤掉其他结果、图扩散沿错误节点走、"plan→execution→PR"关联边挂在其中一个节点上而检索命中另一个——验收面第 2 条（trace 带关联边）直接不成立。锚实体同样有此坑：work_item 锚必须复用 `feishu_work_item` 的三元组 natural key（`mcp_plan.py` 已示范），新 normalizer 若自造锚格式，边就挂到孤儿节点上。
-
-**Why it happens:**
-`generate_entity_id` 的 natural key 规则表（`knowledge/models.py` docstring）是 locked decision——**id 拼接格式一旦漂移需要全量数据迁移而非改函数**。多个 normalizer 并行开发时，每个作者局部看都"合理地"用了自己模型的 UUID，去重问题只在图整体视角才暴露。
+本仓 settings 里已经写着教训：gopls 被回落 tree_sitter 的原因就是「冷启动慢」（`settings.py:838-842`），volar 大插件链场景启动 60-90s（`settings.py:902-904` advisory）。默认开启后：每仓索引多付 20-90s 冷启动；gopls 对大仓稳态内存数百 MB 且分析器（staticcheck 类）可到 GB 级（golang/go#45457）；LSP server 是子进程，索引任务异常退出时不清理就进程泄漏，几轮索引后容器里挂着一排僵尸 `gopls serve`；容器镜像若缺 Node（volar 需要）或 Go toolchain（gopls 需要 `go list`），启动直接失败——fail 方式若是抛异常而不是回落，整条索引管线崩。
 
 **How to avoid:**
-- **入图前先扩 natural key 规则表**：该 phase 的第一个产出是更新 `generate_entity_id` docstring 规则表——新增 source_kind 各自的 source_id 构成、以及"bridge 拷贝场景下 Chat plan 与 MCP plan 是同一实体还是关联实体"的显式决策。推荐：**不同表就是不同实体 + `supersedes`/`REFERENCES` 边显式关联**（合表已 Out of Scope，硬去重到同一 entity id 会踩 bridge 拷贝的时序坑），但检索层需按关联簇去重（同簇只出最优一条，MEDIUM：具体去重层次在 plan-phase 定）。
-- **锚实体只用既有规则**：所有新 normalizer 的 work_item / repository 锚一律照抄 `mcp_plan.py` 的构造方式，code review checklist 明确"禁止自造锚 source_id 格式"。
-- **幂等断言测试**：每个新 normalizer 带"重复摄取同一对象 → 实体数不变、版本翻转正确"的测试（既有摄取管线的 upsert 幂等锚正是 uuid5 稳定 PK，测试模式现成）。
-- **图完整性抽查**：phase 验收含一条端到端断言——建 MCP plan → 执行 → PR 后，从 plan 实体沿边可达 execution 与 work_item（即验收面第 2 条落成自动化测试而非人工看）。
+1. **fail-soft 回落是硬约束**：LSP 后端启动失败/超时/崩溃一律回落 TreeSitterBackend 并记 `lsp_backend_degraded` 事件（现有 kill-switch 机制在 `codegraph/apps.py::ready()`，保留并细化到 per-language 运行时降级，不只是启动期开关）。
+2. **启动前探测**：索引 worker 启动时探测 `node --version`/`gopls version` 可用性，缺运行时的语言直接静默走 tree_sitter 并在仓库索引详情里透出「LSP 未启用：缺 X 运行时」——用户可见但不报错。
+3. **进程生命周期收口**：LSP 子进程绑定索引任务生命周期（context manager / finally kill + `psutil` 兜底清扫孤儿），每次索引结束上报 `lsp_process_reaped` 计数；设 per-process 内存上限观测（gopls >1GB 自动写 debug zip 的行为可作为告警信号源）。
+4. **默认开启分两步**：先把「开启门槛」降到 per-repo/per-language 设置 + 探测通过自动启用（本里程碑），全局默认开启等冷启动摊销（LSP 常驻 daemon 或跨索引复用 session）验证后再做——gopls 文件缓存使二次启动显著变快，值得让 mirror 目录稳定以吃到这个缓存。
 
 **Warning signs:**
-- `search_delivery_knowledge` 返回结果里出现 title 几乎相同、source_kind 不同的成对条目。
-- 图里出现零边的 TECH_PLAN/WORK_ITEM 节点数增长（锚拼错的直接产物）。
-- normalizer PR 里 source_id 构造是 f-string 现拼而非引用规则表注释。
+- 索引耗时 p50 在 LSP 开启后翻倍以上；
+- 容器内 `ps` 出现多个无父 gopls/vue-language-server；
+- server RSS 与并发索引数强相关地上涨。
 
-**Phase to address:**
-KNOW 块"MCP 产物入图" phase：natural key 规则表扩表 + 关联决策是该 phase 的**前置设计 task**；learning_case normalizer（Pitfall 1 的 phase）也依赖同一决策，两者若拆 phase，规则表决策放在先执行的那个。
+**Phase to address:** P-LSP（探测 + fail-soft + 进程收口三件套）；建议 P-LSP 排在 P-基座之后、且不与 P-社区/P-执行流并行上线（同时引入两个内存大户会让 OOM 归因困难）。
 
 ---
 
-### Pitfall 8: 观测规范欠债（call_source / RetrievalTrace / 新入口漏埋）
+### Pitfall 8: 图分析工具面越权与 exclusion 漏接
 
 **What goes wrong:**
-本里程碑几乎每一块都触发强制观测规范的"新增"条款：新 LLM 调用点（learning case 提炼、可选 review）、新召回路径（learning case 向量检索、容器 MCP 七个检索工具、编排召回扩 document/learning_case）、新请求入口（容器 MCP 转调）。漏埋的后果不是"少个日志"：**风险 2（容器时延/负载）和风险 1（召回回归）的判定手段就是这些埋点**——漏埋等于蒙眼上线；且 `call_source` 枚举未登记 LOGGING-SPEC §4.1 会让 `ModelUsageRecord` 聚合出现"unknown 来源"黑洞，成本失控（Pitfall 2）不可归因。历史规律：横切规范在功能 phase 里最常被"先跑通、观测后补"，而后补的观测在 brownfield 里往往永远停在 backlog。
-
-**Why it happens:**
-观测是每个 phase 的"第 11 项任务"，单个 phase 里砍掉它对该 phase 验收无影响——影响的是下一个 phase 和线上排障，激励错位。
+新增 8+ 个 MCP/对话工具，每个都是一条新的数据出口。两类事故：
+1. **权限旁路**：图查询按 `repository_id` 直查 Symbol/CallEdge，跳过仓库可见性校验——现状 `RepositoryPermission` 本来就是「任意登录用户可读任意存在仓库」（PROJECT.md 已列为平台级欠债），图工具若再把跨仓 impact（穿 `CrossRepoApiCall` 边界）做出来，一个低权用户能沿边遍历读到他从未被授权仓库的符号名/文件路径/行号——比 RAG 泄漏更结构化。
+2. **exclusion 漏接**：v0.5.0 的 fail-closed 纪律是「被排除文件六面不可见」，但图数据是索引期写入的——若排除规则在索引之后添加，Symbol/CallEdge 里还躺着被排除文件的符号；`purge_file` 清五面，图分析工具作为新读取面必须把 `is_excluded` 运行期拦截接上（`mcp_tools/views.py` 已有统一 matcher 入口模式可抄），否则 impact 结果会把已排除的敏感文件路径吐回给 LLM。另外高频图查询（AI 代理一次任务几百次 impact）若逐条 INFO 落 `RetrievalTrace`/系统日志，会刷爆日志表。
 
 **How to avoid:**
-- **把规范 checklist 摊到 phase 验收标准里**，而不是笼统一句"遵守观测规范"。具体分配：
-  - KNOW 检索切换：`search_learning_cases` 新路径写 `RetrievalTrace`（MCP 链 + Chat 链两条都要，规范原文点名）+ 召回条数/耗时/score 上报；
-  - LOOP 沉淀：新 `call_source`（提炼、review 各一）先登记 §4.1 再写调用代码；回写/沉淀事件带 `initiated_by_user_id`（回调触发的用工作流触发者，无则 `system`）+ `category`/`component`；
-  - AGENT 容器 MCP：转调入口纳入 QPS/错误率/时长统计；容器侧检索经服务端自然产 RetrievalTrace，需验证 run/task 关联键贯穿（能从一次编码任务查到它的全部召回）；
-  - 全部：高频检索循环用 `sampling` 分类，禁 INFO 刷屏。
-- **验收面第 5 条已内嵌观测**（"日志可见工具调用 + RetrievalTrace"）——roadmapper 把同样写法复制到其余各条验收，让漏埋直接等于验收不过。
-- **利用现成设施**：v0.14.0 平台设施（contextvars 用户上下文、RequestMetric、GaugeSample）已就位，新代码只需按约定接线，没有"先建基建"的借口。
+1. **工具入口统一鉴权装饰**：所有图工具走与既有 MCP 工具同一鉴权/仓库解析入口（PAT fail-closed），跨仓遍历时对每个「穿出去」的仓库做同样校验，未授权仓在结果里整仓折叠为 `redacted_repository`（保留「有影响」的事实但不泄内容）——即便当前权限模型宽松，接口形状先按 fail-closed 设计，等仓库级 ACL 落地时零改动。
+2. **exclusion 双保险**：读路径全部过 `is_excluded`（运行期 fail-closed，与 grep 工具同款）；同时把 Symbol/CallEdge/Endpoint 纳入 `purge_file` 的清理面（从五面变六面），补对账命令。
+3. **日志纪律**：图查询归 `sampling` 类（高频内部步骤），只有工具级调用（一次 MCP invoke）记 `caller` 事件 + `RetrievalTrace`；BFS 内部逐节点绝不 INFO。`RetrievalTrace` 记「查询符号 + 结果计数 + 置信度分布」，不整体复制结果集。
 
 **Warning signs:**
-- phase PLAN 的 task 列表里没有独立的观测 task / 验收标准不含埋点断言。
-- `ModelUsageRecord` 出现新的高量 unknown/复用旧 call_source 的记录。
-- 上线容器 MCP 后想看"每任务检索次数"时发现查不出来——已经晚了。
+- 图工具响应里出现 exclusion 规则覆盖的路径（写一条回归测试常驻）；
+- `RetrievalTrace`/SystemLogEntry 表增速在图工具上线后跳变；
+- 跨仓 impact 返回了请求用户无仓库记录的 repo 名。
 
-**Phase to address:**
-不设独立观测 phase（会变成永远排最后的 phase）；按上面分配**内嵌进各功能 phase 的验收标准**。roadmapper 在写各 phase success criteria 时逐条带上。
+**Phase to address:** P-基座（鉴权/exclusion 拦截做进图服务读取层，让所有上层工具天然继承——这是「单一匹配器」纪律的直接延伸）；purge 六面扩展可单独小相位或并入 P-基座。
 
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| 检索切换不做 golden set，靠人工点几条查询验证 | 省 1–2 天 | 召回回归静默上线，用户以"知识库不好用"弃用整个飞轮 | Never（milestone 风险 1 已点名，对照测试是验收门） |
-| 自动沉淀先"全量入库"，质量门后补 | 快速看到"闭环跑通" | 垃圾 case 入库后需人工清洗 + 向量下线，成本远超预防（mem0 案例 97.8% 垃圾率） | Never（至少幂等键 + status 门槛与功能同 PR） |
-| 容器 skills 物料手工拷贝一份"先用着" | 当天可演示 | 双源漂移（Pitfall 5），后续每次改 skills 都要人肉记得同步 | 仅限本地 spike，合入主干前必须换成脚本 + 一致性测试 |
-| 退役 planning_service 时只删代码不清 tests/docs 引用 | PR 小 | stale patch target 假通过（本仓库 Phase 26 前科），未来重构不敢动 | Never |
-| 容器 MCP 先不做配额/超时，"观察一下再说" | 少写一层控制逻辑 | agent 重试风暴打满服务端时无刹车，只能全量下线功能 | 仅当同 phase 已有 QPS 告警阈值且有系统级开关可秒关 |
-| 回写默认值不写升级说明，"反正 fail-soft 不会崩" | 省文档 | 存量用户被静默行为变更惊到，信任损失 > 崩溃 | Never（Compatibility 约束明文要求升级行为不回退） |
+| 裸名边默认参与 impact | 结果「丰富」、demo 好看 | 精度崩塌、工具信任破产 | never（只能作显式 opt-in 分层） |
+| 图缓存按条目数 LRU | 实现简单 | 大仓 OOM、多 worker 放大 | 仅单 worker dev；生产必须按字节 |
+| 每次重建全量重跑社区+摘要 | 逻辑简单无状态 | LLM 成本失控、路由输入漂移 | never（指纹跳过是必需品） |
+| detect_changes 用工作树 diff 不锚定索引水位 | 少一次 rev 解析 | 行号错位、符号误命中 | never |
+| Semgrep 全量规则同步阻断 | 「安全感」 | 门禁两周内被关闭 | never（advisory 起步） |
+| LSP 失败抛异常不回落 | 错误显眼好排查 | 一个缺 Node 的容器拖崩整条索引管线 | never（fail-soft + 可见降级标注） |
+| 执行流存全展开节点集 | 查询时不用重算 | 单行 MB 级 JSON、表膨胀 | 仅节点数 < 阈值的小图 |
+| 图工具各自写权限/exclusion 过滤 | 各相位可并行 | 必有一个漏接（六面纪律破口） | never（读取层统一收口） |
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| claude-agent-sdk `allowed_tools` | 挂新 MCP server 时只列远程工具名 → 排他白名单禁掉 Bash/Edit，编码全废 | 收口单一白名单构造函数，永远合并 `_BUILTIN_CODING_TOOLS`；专项测试断言内建工具在列 |
-| `/api/mcp/tools/*` 容器转调 | 把上游错误响应体原样返回给 agent（可能含敏感串），或 PAT 进 workspace 文件 | 错误过 `redact_secrets_in_text`；PAT 仅进程内存持有（复用 v0.2.0 直传链路），不落任何文件 |
-| `subagent/api/callbacks.py` 沉淀钩子 | 直接在回调里触发提炼——回调重入自驱会重复提炼 | 以 TaskResult UUID 为幂等键，先查已产 case 再提炼 |
-| `knowledge/sources/` 新 normalizer | 自造 source_id 格式 / 自拼 work_item 锚 | 先扩 `generate_entity_id` docstring 规则表，锚照抄 `mcp_plan.py` |
-| 飞书工作项回写 | 无守门直接写评论；失败重试轰炸飞书 API | work_item 存在性 + 凭证校验，不满足记 `writeback_skipped` 跳过；不自动重试 |
-| `TOOL_SCHEMA_SNAPSHOT` | 改了工具行为/score 语义但 schema 描述没动，快照测试绿着通过 | schema 描述随行为更新；补 `report_project_state`/`reverse_lookup_requirements` 时顺手核对全部 30 工具描述与现实一致 |
-| `recall_adapter` 扩 kinds | 直接加 document/learning_case 无开关，编排召回 token 预算被撑爆 | kinds 可配置（默认开）+ 每 kind 限额，召回总量守 token 预算 |
-| Qdrant | 向量检索路径无降级，Qdrant 故障时 learning case 检索 500 | fail-soft 空结果 + 结构化 failed 事件（token 版原本不依赖 Qdrant，这是新引入的故障面） |
+| networkx | 把全仓图当常驻对象随意复制（`subgraph().copy()` 链）| 视图（`subgraph` 不 copy）+ 按需子图；大仓不建全图 |
+| networkx Louvain | 信任 `seed` 参数保证可复现 | 节点排序 + seed 仍可能漂移（issue #6655 wontfix）；生产用 Leiden 固定 seed |
+| Semgrep CI | baseline 取 target HEAD | 取 merge-base（官方 `SEMGREP_BASELINE_COMMIT` 建议）；否则别人的合入算你头上 |
+| Semgrep taint | 无超时预算跑全规则 | `SEMGREP_TIMEOUT` 显式设定 + 精选 pack；超时 fail-open 标注 |
+| gopls | 当普通子进程即起即用 | 冷启动 20-60s + 首轮 workspace load 内存峰值；探测→超时→回落三段式，复用 mirror 目录吃文件缓存 |
+| volar | 假设容器有 Node/tsdk | `node_check.discover_tsdk()`（已有）失败必须静默降级 tree_sitter |
+| git diff | 默认参数处理 rename | `-M`/find_renames 开启，rename 对做符号映射 |
+| MCP 工具面 | 新工具自带一套过滤逻辑 | 复用 `mcp_tools/views.py` 的统一 matcher 入口 + `RetrievalTrace` 约定 |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| 容器 agent 高频调检索（机器节奏 vs 人类节奏） | 编码任务时长上升、服务端 MCP 入口 QPS 尖峰 | per-task 调用配额 + 单次超时 + 白名单最小化；QPS 独立统计告警 | 约 5–10 个并发编码容器同时活跃时（每容器几十次检索 × 向量查询） |
-| 编排召回扩 kinds 后候选集膨胀 | 方案生成变慢、LLM 上下文超预算被截断 | 每 kind 限额 + 时间衰减排序保留既有行为；扩容前后对比方案生成耗时 | document 类实体量大的部署（v0.15/0.16 沉淀多的老用户） |
-| 自动沉淀 LLM 调用随重试放大 | token 成本曲线与任务量脱钩 | 幂等键 + 失败不重试（best-effort 语义）+ 按 call_source 日限额告警 | 编码失败率高的时期（失败任务反复回调） |
-| learning case backfill 一次性全量摄取 | 摄取队列积压堵住正常 ingestion | backfill 走低优先级批处理（复用 durable queue 多逻辑队列），分批 + 可断点续跑 | 存量 case 数百条以上的部署 |
-| 向量检索替代 token 打分后每次查询都打 embedding | 单次检索延迟从 ~10ms（DB 查询）升到百 ms 级 | 查询 embedding 用既有 fastembed 本地路径；hint 过滤前置缩小候选集 | 对时延敏感的调用点（`create_feishu_technical_plan` 自动召回在交互路径上） |
+| 全仓图进程内缓存 × N worker | RSS 阶梯上涨不回落 | 字节预算 LRU + 大仓降级按需子图 | 单仓 symbol >10 万 或 worker ≥4 |
+| 并发首查建图无锁 | DB 查询尖峰 + 内存瞬时数倍 | per-key single-flight | detect_changes 批量触发时（一次 MR 几十仓）|
+| BFS 无预算 | p99 秒级→分钟级 | depth/nodes/fanout 三重上限 + 截断标注 | 裸名边混入后任何中型仓 |
+| 社区检测在请求路径同步跑 | 图工具偶发超长响应 | 社区检测只在索引后异步任务跑，结果落库供查询 | 仓 >1 万符号 |
+| 逐节点写 RetrievalTrace/INFO | 日志表增速跳变 | 工具级 caller 事件 + 内部 sampling/debug | AI 代理批量调用（单任务数百次查询）|
+| LSP 每仓每次索引冷启动 | 索引时长翻倍 | 探测缓存 + mirror 目录稳定复用 LSP 文件缓存 | 仓数 >50 的夜间批量重索引 |
 
 ## Security Mistakes
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| PAT 出现在容器 workspace 文件 / agent 可读 env dump | agent 把 PAT 读进上下文 → 写进 diff/PR/日志，凭证公开泄漏 | MCP server 进程内持有 PAT；不生成 `.mcp.json` 类文件；错误信息过脱敏；CI 加"产物中无 `friday_pat_` 前缀"扫描（MEDIUM：扫描点位 plan-phase 定） |
-| 容器白名单混入非只读工具或未过排除的路径 | 排除文件经容器 agent 泄漏（绕过 v0.5 六面 fail-closed） | 白名单锁定只读检索子集；加"容器视角排除回归测试"（第七面） |
-| LLM 提炼的 learning case 未脱敏入库 | TaskResult/diff 中的密钥、内网地址随 case 入向量库并可被全员检索 | 提炼输出入库前过 `redact_secrets_in_text`（对齐"入库留痕走脱敏"规范）；case 检索受既有权限过滤 |
-| 回写内容把上游异常文本原样写进飞书评论 | 异常里的连接串/token 泄漏到飞书侧 | 回写正文只用结构化结果字段；异常路径只记内部日志（脱敏后） |
-| 自动沉淀/回写不带 initiated_by_user_id | 审计无法回答"谁触发的"，违反强制规范 | 回调链路透传工作流/会话触发者；无触发用户标 `system` |
+| 跨仓 impact 穿边不复核目标仓权限 | 结构化泄漏未授权仓的符号/路径/行号 | 每穿一仓复核；未授权整仓折叠 `redacted_repository` |
+| 图读取面不接 `is_excluded` | 已排除敏感文件路径经 impact 回流 LLM | 读取层统一 matcher 拦截 + 常驻回归测试 |
+| Symbol/CallEdge 不进 purge 面 | 敏感清理后图里仍有残留 | `purge_file` 扩到六面 + 对账命令 |
+| Semgrep finding 原文含密钥片段直接落库/回评 | taint 规则命中处代码片段可能含凭证 | finding snippet 过 `redact_secrets_in_text` 再落库/外发 |
+| rename_preview 输出未过 exclusion | grep 兜底扫到排除文件 | grep 兜底走既有已拦截的 grep 工具路径，不另起裸 grep |
 
 ## UX Pitfalls
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| 回写 + IM 通知双发同一结果 | 用户觉得吵，关掉其一时可能连功能一起关 | 语义分工写清（评论=业务留痕，卡片=即时通知），文案区分 |
-| 自动 case 与人工 case 检索时不可区分 | 用户对召回结果信任下降（"这条是机器瞎写的吗"） | payload 带来源标记（auto/manual），排序时人工确认的 case 可加权 |
-| `improve_coding_plan` 切编排后从秒级变分钟级且无进度反馈 | Cursor 用户以为工具挂了，反复重试 | 若改会话式，返回 session 引用 + skills 文档教轮询；若保同步，schema 描述写明预期时长 |
-| 容器配额用尽后工具静默空结果 | agent 反复重试烧时间，任务变慢且难解释 | 配额用尽返回明确文案（"检索配额已用尽，请基于已有上下文继续"），agent 可理解并停手 |
+| impact 不带置信度一锅端 | 用户/LLM 无法区分真影响与同名噪声 | 按 resolved/bare_name/cross_repo 分组渲染 |
+| 执行流断链处静默终止 | 「链路就这么长」的错误结论 | `boundary: async_dispatch` 显式标注 |
+| detect_changes 对 format diff 满屏输出 | 真实变更被淹没 | formatting_only 降级 + 超阈值文件级摘要 |
+| Semgrep 硬阻断无申诉出口 | 开发者绕过或要求关门禁 | advisory 起步 + nosemgrep 带理由 + 分级提级 |
+| 图结果 stale 不声明 | 用户按旧图做决策 | 输出头部带 `as_of: <commit_sha>` 水位声明 |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **检索切换**：向量路径通了，但常缺——存量 case backfill、hint 参数在新层的等价实现、score 语义定版、Qdrant 故障降级。验证：golden set 对照测试 + 断开 Qdrant 跑一次。
-- [ ] **自动沉淀**：能产 case，但常缺——回调重入幂等、REJECT 路径、call_source 登记、脱敏入库。验证：同一 TaskResult 回调两次只产一条 case；失败任务不产正向 case。
-- [ ] **公共回写**：三链路都调了 service，但常缺——存量工作流（config 无该键）的 fallback 用例、无绑定 work_item 时的跳过路径、升级说明。验证：老工作流定义 JSON 直接跑，行为与升级前一致。
-- [ ] **容器 MCP**：工具能调通，但常缺——`allowed_tools` 合并测试（Bash/Edit 仍在）、per-task 配额、容器视角排除测试、QPS 独立统计。验证：smoke 编码任务能同时用 Bash 和检索工具；排除文件查不到。
-- [ ] **skills 同源**：容器里能看到 skills，但常缺——hash 一致性 CI 测试、skills 文档与新检索行为对齐。验证：改一个包内 skill 文件不跑同步脚本，CI 应红。
-- [ ] **工具面收口**：improve/analyze 走了 process_runtime，但常缺——stale mock target 清扫、`plan_orchestration/` 引用清理、analyze 产物的实际消费接线。验证：`rg planning_service` 零结果；coverage 无归零文件。
-- [ ] **MCP 产物入图**：normalizer 写了，但常缺——natural key 规则表更新、重复摄取幂等测试、plan→execution→PR 边的端到端可达性断言。验证：图上从 plan 实体沿边走到 PR。
-- [ ] **快照补全**：`report_project_state` 进了 snapshot，但常缺——快照测试断言"注册工具 == snapshot 键集合"（防未来再漏），而非只加两条。
+- [ ] **impact/trace：** 常缺「解析率声明 + 置信度分层」——验证：对 golden 符号集核对影响面精度，输出含 confidence 与 as_of 字段
+- [ ] **内存图服务：** 常缺「取图时水位校验」——验证：增量索引后立即查询，结果不含已删符号
+- [ ] **社区摘要：** 常缺「指纹跳过」——验证：无变更重建索引两次，LLM 调用数为 0
+- [ ] **执行流：** 常缺「环与截断标注」——验证：构造相互递归用例，输出含 cycle 标注且终止
+- [ ] **detect_changes：** 常缺「rename 处理」——验证：纯 rename PR 不产生删除+新增双列表
+- [ ] **Semgrep：** 常缺「异步化」——验证：扫描超时时 MR 创建不被阻塞且带「未完成」标注
+- [ ] **LSP：** 常缺「孤儿进程清扫」——验证：kill 索引任务后容器内无残留 gopls/vue-language-server
+- [ ] **全部图工具：** 常缺 exclusion 拦截——验证：排除规则覆盖文件出现在任何图工具输出即测试失败
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| 召回回归上线（P1） | MEDIUM | 若留了 token fallback 开关：切回旧路径 → 修 golden set 红项 → 再切。没留开关：热修 hybrid 补召回，同时补 backfill 缺口 |
-| 知识库被垃圾 case 污染（P2） | HIGH | 关自动沉淀系统开关止血 → 按 call_source/时间窗筛出自动 case → 批量下线向量 + 实体失效（bi-temporal `invalid_at`，勿物理删）→ 补质量门后重开。污染越久清洗越贵，这是"预防远优于恢复"的头号项 |
-| 回写惊扰存量用户（P3） | LOW | 系统级关回写 → 发升级说明与默认值修正 → 以"存量 fallback 关、新建默认开"重上 |
-| PAT 泄漏进产物（P4） | HIGH | 立即吊销该 PAT（graceful 机制已有）→ 排查泄漏通道（workspace 文件/错误透传）→ 审计该 PAT 时间窗内调用记录 → 修通道后换新 token 重跑 |
-| skills 漂移被发现（P5） | LOW | 跑同步脚本对齐 → 补一致性测试防复发 |
-| 收口后契约断裂（P6） | MEDIUM | 若外部调用方超时：临时恢复确定性实现为 fallback 分支 → 定契约（同步/会话式）→ 按新契约重切并同步 skills 文档 |
-| 实体重复入图（P7） | MEDIUM | 找出重复簇（同 title 异 source_kind）→ 补关联边或按规则表迁移 source_id（uuid5 漂移需数据迁移，勿直接改函数）→ 检索层加簇去重 |
-| 观测漏埋（P8） | LOW–MEDIUM | 补埋点本身便宜；贵在漏埋期间的问题不可归因——尽早在 phase 验收中拦住 |
+| 假阳性灾难已上线 | MEDIUM | 加 confidence 字段默认过滤 bare_name（接口向后兼容加参不破坏）；补 golden 回归 |
+| 图缓存 OOM | LOW | 逃生舱 env 关缓存走按需子图（照 GALAXY_CACHE_ENABLED 模式预留）；再按字节预算修 |
+| 社区漂移已烧钱 | LOW | 立即上指纹跳过 + 每仓摘要条数上限；历史摘要不回滚 |
+| Semgrep 门禁被关 | HIGH | 信任重建最贵：清零规则重新 advisory 观察期，用误报率数据逐条提级 |
+| 图工具泄漏排除文件 | MEDIUM | 走 v0.5.0 敏感清理流程 purge + 补六面拦截 + 审计事件回查暴露范围 |
 
 ## Pitfall-to-Phase Mapping
 
-> Phase 编号待 roadmap 落定，此处按 v0.17.0 四大块 + 建议顺序映射。
-
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| P1 检索切换回归/契约漂移 | KNOW·learning case 入图 + 检索切换（normalizer/backfill/读切换同 phase） | golden set 对照测试通过；`TOOL_SCHEMA_SNAPSHOT` diff 含 score 语义；断 Qdrant 不 500 |
-| P7 实体去重/关联错误 | KNOW·MCP 产物入图（natural key 规则表扩表为前置 task，若与 P1 拆 phase 则规则表决策放先行者） | 重复摄取幂等测试；plan→execution→PR 边可达性端到端断言 |
-| P2 沉淀噪音/成本 | LOOP·自动经验沉淀（幂等键 + 准入门 + call_source 与功能同 phase） | 回调重入只产一条 case；失败任务不产正向 case；ModelUsageRecord 可按新 call_source 聚合 |
-| P3 回写默认值 | LOOP·公共回写 service（fallback 语义为设计输入） | 存量工作流定义（config 无新键）行为零变化用例；升级说明产出 |
-| P4 容器 MCP 四险 | AGENT·容器内置 MCP（白名单/配额/PAT 内存化/allowed_tools 测试/观测埋点同 phase） | allowed_tools 合并测试；容器视角排除测试；MCP 入口 QPS 可查；产物无 PAT 前缀 |
-| P5 skills 双源漂移 | AGENT·容器内置 skills（一致性测试）；KNOW·对外服务面（文档对齐） | hash 一致性 CI 红绿可证；skill 引用工具名 ∈ snapshot |
-| P6 收口断裂 | UNIFY（建议排 KNOW/LOOP 之后；契约决策为首个 task） | `rg planning_service` 零引用；patch target 可 import 断言；Cursor 侧调用不超时 |
-| P8 观测欠债 | 内嵌各功能 phase 验收（不设独立观测 phase） | 各 phase success criteria 含对应埋点断言（RetrievalTrace/call_source/QPS） |
-
-**对 phase 排序的两点建议：**
-1. **KNOW 的 natural key 规则表决策先于一切入图工作**（P1/P7 共享前置）；LOOP 的沉淀依赖 KNOW 的 learning case 入图路径（沉淀产物要能被统一检索到），故 KNOW 检索切换 → LOOP 沉淀存在软依赖。
-2. **AGENT 容器 MCP 依赖 KNOW 的检索工具行为定版**（容器白名单调的就是这些工具），放 KNOW 之后可避免容器侧对着会变的契约集成两次；UNIFY 收口放最后。
+| 裸名边假阳性 | P-基座（边准入）+ P-impact（分层输出） | golden 符号集精度回归 + confidence 字段快照测试 |
+| 缓存放大/风暴/不一致 | P-基座 | 并发首查压测单次建图；索引后即查无 stale；RSS 预算内 |
+| 社区漂移/LLM 成本 | P-社区 | 无变更重建 LLM 调用数 0；ARI/Jaccard 对账日志 |
+| 遍历爆炸/断链 | P-执行流（P-impact 先定断链词表） | 递归用例终止 + cycle 标注；max_nodes 截断测试 |
+| detect_changes 错位 | P-detect | rename PR 用例；stale 水位声明用例 |
+| Semgrep 门禁死亡螺旋 | P-semgrep | 异步化 + advisory 默认的配置断言；扫描超时 fail-open 用例 |
+| LSP 拖垮索引 | P-LSP | 缺运行时容器索引成功且标注降级；孤儿进程清扫测试 |
+| 越权/exclusion 漏接/日志刷爆 | P-基座（读取层收口） | 排除文件出现即败的常驻回归；跨仓 redacted 用例；日志分类抽查 |
 
 ## Sources
 
-- 仓库代码实证（HIGH）：`server/mcp_tools/learning_case_service.py`（token 打分现实现与 score 语义）、`server/knowledge/models.py` `generate_entity_id` docstring（natural key locked 规则表与漂移警告）、`server/knowledge/sources/mcp_plan.py`（锚实体构造范式）、`task/core/executor.py`（`allowed_tools` 排他白名单注释与 ask_user 前科）、`server/tests/mcp_tools/test_schema_snapshot.py`（快照测试存在性）、`server/mcp_tools/work_item_execution_service.py`（write_back 现状）
-- `.planning/MILESTONE-CONTEXT.md`（风险 1–4 原始识别、复用坐标表、Out of Scope 边界）；`.planning/PROJECT.md`（Phase 26 stale patch target 前科、v0.8 callback 重入自驱设计、PAT-02 约束、Compatibility 约束）
-- `.cursor/rules/observability-logging.mdc` + LOGGING-SPEC 引用（call_source/RetrievalTrace/新入口强制条款）
-- 检索切换回归防护（MEDIUM，多源一致）：llmbestpractices.com Embeddings Evaluation（golden set 100–500 查询 + recall@k/MRR CI 门）、backendbytes.com Production RAG Pipelines（golden set day one + hybrid 补精确标识符召回）、qaskills.sh RAG Regression Testing（冻结数据集 + 阈值门 + 版本化）
-- 自动沉淀污染（HIGH，一手案例 + 论文）：mem0ai/mem0 issue #4573（10,134 条审计 97.8% 垃圾：反馈环放大、无准入门、需 REJECT 路径）、arXiv 2603.04549 A-MAC（五维准入打分：utility/confidence/novelty/recency/type prior）、arXiv 2604.07877 MemReader（被动提取无价值判断 → 低价值信息重复入库污染）、hidekazu-konishi.com Agent Memory Design Guide（异步提取 + 写门槛不在 hot loop）
+- 本仓代码事实（HIGH）：`server/codegraph/models.py`（CallEdge 裸名兜底/callee_symbol 可空/CrossRepoApiCall match_confidence 分档）、`server/friday/settings.py:837-930`（gopls 因冷启动慢已回落、volar 启动 60-90s advisory、GALAXY_CACHE 签名失效先例）、`server/mcp_tools/views.py`（统一 exclusion matcher + RetrievalTrace 约定）、`deploy/helm/friday/`（gunicornWorkers 多 worker 形态）、`.planning/PROJECT.md`（RepositoryPermission 欠债、v0.5.0 六面纪律、v0.19.0 路由幂等纪律）
+- Traag, Waltman & van Eck, "From Louvain to Leiden: guaranteeing well-connected communities", Sci Rep 9, 5233 (2019)（HIGH — Louvain 最多 25% 社区连接不良/16% 不连通；Leiden 保证连通）
+- networkx issue #6655 "Louvain is non-deterministic given seed"（HIGH — 官方 wontfix，节点顺序影响结果）；networkx `louvain_communities` 文档（seed 语义）
+- Semgrep 官方文档：diff-aware scanning / `SEMGREP_BASELINE_COMMIT` merge-base 建议 / `SEMGREP_TIMEOUT` 默认每规则 5s / blocking vs monitor 分级（HIGH）
+- Go 官方博客 "Scaling gopls for the growing Go ecosystem" + golang/go#45457、#72919（HIGH — gopls 内存特征、文件缓存二次启动加速、staticcheck 类分析器 GB 级内存）；gopls troubleshooting/daemon 文档（>1GB 自动 debug dump、共享 daemon 模式）
+- 经验性阈值（MEDIUM，需相位内实测校准）：networkx 内存放大系数、depth/nodes/fanout 默认值、Jaccard 0.8、解析率 60%
 
 ---
-*Pitfalls research for: Friday AI v0.17.0 统一知识库与全链路联动（brownfield 集成）*
-*Researched: 2026-07-15*
+*Pitfalls research for: v0.22.0 代码智能图分析升级（对标 GitNexus）*
+*Researched: 2026-08-09*
