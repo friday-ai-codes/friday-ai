@@ -12,9 +12,9 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）（2026-08-02，审计 **tech_debt**，34/35 需求，Phases 111–116）与 v0.19.0 技术方案可信度（2026-08-02，审计 **tech_debt**，19 条需求 17 满足 / 2 部分，Phases 105–110 其中 108 已移交 v0.20.0，未打 tag）。两者于 2026-07-29 起双 worktree 并行开发、各自在本分支归档，**已于 2026-08-02 合并（同步点 2）**。里程碑 v0.1.0–v0.17.0（Phases 1–104）与 v0.19.0、v0.20.0 均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
+**Latest shipped:** v0.21.0 蓝图过程可见与返工闭环（2026-08-05，验证 **tech_debt**，15 条需求 14 满足 / 1 部分，Phases 117–120，未打 tag）；此前为 v0.20.0 技术方案蓝图（2026-08-02，审计 **tech_debt**，34/35 需求，Phases 111–116）与 v0.19.0 技术方案可信度（2026-08-02，审计 **tech_debt**，17/19 需求，Phases 105–110），两者双 worktree 并行开发、已于 2026-08-02 合并（同步点 2）。里程碑 v0.1.0–v0.21.0（Phases 1–120）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
 
-**⛔ 当前无在建里程碑，下一里程碑尚未立项。** 合并后的下一个动作不是新里程碑，而是执行同步点 2 顺延的四件事（翻四个 per-entry 开关默认值 + workflow / feature_list / MCP 三个入口出口映射重做 + `TechPlanCard`/`NodeDataTab`/`ArtifactTimeline` 三处触点升级 + 旧 `technical_plan` process 退役收口）——**硬依赖已由本次合并满足，状态从「阻塞」转为「解阻塞、待执行」**。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号。
+**当前在建里程碑：v0.22.0 代码智能图分析升级（对标 GitNexus）**，见下方 Current Milestone。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号。
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -30,7 +30,26 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Latest Milestone: v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）— ✅ SHIPPED 2026-08-02（审计 tech_debt）
+## Current Milestone: v0.22.0 代码智能图分析升级（对标 GitNexus）
+
+**Goal:** 在现有 codegraph/RAG 底座上补齐 GitNexus 级的图分析能力,让 AI 编码代理改代码前能回答「影响谁、怎么到达、属于哪个模块、这条改动安全吗」。
+
+**Target features:**
+- **内存图服务(地基)**：按 `(repository, branch)` 从 `Symbol`/`CallEdge`/`ChunkEdge`/`CrossRepoApiCall` 构建 networkx 有向图缓存,挂 `last_indexed_commit_sha` 水位失效 + LRU 逐出。
+- **impact 影响面分析**：反向 BFS + 深度分组 + 置信度分级(解析边/裸名边/跨仓 `match_confidence`),支持穿仓边界(反超 GitNexus)。
+- **trace 调用路径**：两符号间有向最短路,带文件/行号渲染。
+- **detect_changes**：git diff 行区间 × Symbol 行区间定位受影响符号 → 批量 impact,接入编码任务提交前自查与 MR 描述。
+- **社区检测 + 模块摘要**：图上跑社区发现,社区落库;LLM 生成模块摘要,喂 RepoRouter 与技术方案生成。
+- **执行流**：以 `Endpoint` 为入口正向追踪调用链,存 Process 模型。
+- **rename_preview**：图引用 + grep 兜底的只读改名清单工具(不自动改写)。
+- **Semgrep 安全门禁**：集成 Semgrep taint mode 扫 MR diff,替代自研 PDG/污点(买不是造)。
+- **解析精度提升**：volar/gopls LSP 后端默认开启或降低开启门槛。
+
+**Key context:** networkx 已在依赖树(v3.6.1);`CallEdge` 已有外键化 caller/callee;全部新工具走现有 MCP/对话工具模式,复用 exclusion、`RetrievalTrace`、观测埋点约定。
+
+**显式 Out of Scope:** 开箱体验/安装向导(用户明确排除);自研 PDG/CFG(Semgrep 替代);新语言 extractor(Java/Kotlin/Rust 等,单独立项)。
+
+## Previous Milestone: v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）— ✅ SHIPPED 2026-08-02（审计 tech_debt）
 
 > 6 个 Phase（111–116）线性交付，34 plans、34/35 需求满足、6 相位全 verified。设计输入 `.planning/technical-blueprint/DESIGN.md`（13 节，§12 八项决策已定夺）；归档见 `.planning/milestones/v0.20.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` 与 `.planning/milestones/v0.20.0-phases/`。**与 v0.19.0 双 worktree 并行开发，两分支已于 2026-08-02 合并（同步点 2）。**
 
@@ -397,4 +416,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-02 — v0.19.0 技术方案可信度（审计 tech_debt，17/19 需求满足，未打 tag）与 v0.20.0 技术方案蓝图（审计 tech_debt，34/35 需求，Phases 111–116）两个并行里程碑归档并合并（同步点 2）。当前无在建里程碑；下一步是执行同步点 2 顺延的四件事，之后再 `$gsd-new-milestone` 立项。*
+*Last updated: 2026-08-09 — v0.21.0 轻量归档；立项 v0.22.0 代码智能图分析升级（对标 GitNexus）。*

@@ -1,41 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.21.0
-milestone_name: 蓝图过程可见与返工闭环（反向关联 + 门到期 + 按阶段 agent 活动流 + 带原始上下文重跑）
-status: verified
-current_phase: 120
-stopped_at: >
-  ⭐ **v0.21.0「蓝图过程可见与返工闭环」已于 2026-08-05 立项**（Phases 117–120，需求见
-  `.planning/REQUIREMENTS.md`）。立项动机是 v0.20.0 交付后用户在查看器上提的四点：蓝图
-  反向跳不回项目、HITL 门无到期策略（编排本身已是落库状态机 + durable 队列，不占资源，
-  但可无限静默悬挂）、过程只有阶段级标量而看不到 agent 在做什么（尤其路由打分过程与
-  分仓每仓进度）、驳回重跑范围固定且拿不到原始 agent 会话上下文（容器侧 jsonl transcript
-  设施已存在但只接了编码链）。执行顺序 117 → 118 → 119 → 120。
-
-  以下是上一批里程碑的收尾记录（仍有效）：
-  v0.19.0「技术方案可信度」与 v0.20.0「技术方案蓝图」两个并行里程碑均已归档，并于 2026-08-02
-  由 `milestone/v0.20.0-blueprint` 合并 `origin/main` 完成合流 —— **这次合并即 v0.20.0 设计文档
-  里的同步点 1 与同步点 2**。v0.19.0：5 相位 39/39 plans，审计 tech_debt（17 满足 / 2 部分 / 0 未达），
-  27 项人工验收全未执行。v0.20.0：6 相位 34/34 plans，审计 tech_debt。
-  两者均未打 tag。
-
-  ⭐ **同步点 2 顺延的四件事已于 2026-08-02 分两步全部完成** ⇒ **GATE-01 满足**
-  （v0.20.0 35/35 需求）。第一步修三道消费方接缝（G1/G3/G4）与终态映射，第二步升级三处
-  前端触点、把四个入口开关默认翻到 `technical_blueprint`、给旧 `technical_plan` process 收口
-  退役。完整记录 `.planning/SYNC-POINT-2-CLOSURE.md`。
-  ⚠️ **两个里程碑的审计 status 仍是 `tech_debt`**：本次解除的是「入口收编」那一支的债，
-  其余（mcp npm 包漂移 / 蓝图 confirmed 后无下游驱动方 / 开关无运维面 / 相位级条目 /
-  Nyquist 全缺）一条未动，见 `v0.20.0-MILESTONE-AUDIT.md` §14.5。
-  **下一步仍不是立项新里程碑**，而是 Pending Todos 里剩下的独立工作项。
-last_updated: "2026-08-05T09:00:00.000Z"
-last_activity: 2026-08-05
-last_activity_description: v0.21.0 收尾——逐条验证 15 项需求（14 满足 / 1 部分）+ 全量回归（后端 9849 绿）+ 验证报告归档
+milestone: v0.22.0
+milestone_name: 代码智能图分析升级（对标 GitNexus）
+status: planning
+last_updated: "2026-08-09T02:03:43.735Z"
+last_activity: 2026-08-09
 progress:
-  total_phases: 4
-  completed_phases: 4
+  total_phases: 0
+  completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 100
+  percent: 0
 ---
 
 # Project State
@@ -51,15 +26,10 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 ## Current Position
 
-Milestone: v0.21.0 蓝图过程可见与返工闭环（Phases 117–120，started 2026-08-05）
-Phase: 117–120 全部已执行（2026-08-05）
+Phase: Not started (defining requirements)
 Plan: —
-Status: 15 条需求中 14 条完全交付、1 条（LIVE-04 的「推送」）部分交付——落的是增量轮询而非推送通道，已在 REQUIREMENTS.md 与 ROADMAP.md 显式登记
-遗留工作项: ① 蓝图推送通道（WS consumer 或 artifact 级 SSE，`useBlueprintLive.ts` 是唯一切换点，LIVE-04 的未达半边）；② 人工验收（真实飞书卡片重推 / 真实容器 resume / 浏览器视觉走查）；③ 未打 tag（与 v0.19.0、v0.20.0 一致）。逐条证据见 [milestones/v0.21.0-VERIFICATION.md](./milestones/v0.21.0-VERIFICATION.md)
-Status: 两个里程碑均判 `tech_debt`、均未打 tag；同步点 1/2 已达成，**同步点 2 的顺延工作项已全部执行完毕**（GATE-01 闭合），其余独立工作项待执行
-Last activity: 2026-08-08 — Completed quick task 260808-g1c: AI 对话思考过程全量实时展示 + 上游抹思考时显示「正在思考」
-
-> 相位执行期的逐 plan 状态存档（各 plan 的收口记录与「开工前必读」清单）随归档移出本文件 —— 权威副本在 `.planning/milestones/v0.{19,20}.0-phases/<phase>/<plan>-SUMMARY.md`，历史版本在 git。**仍然有效的跨里程碑信息全部保留在下方**：两个里程碑的关键约束/设计底座、Accumulated Context 的 Decisions 与 Pending Todos、Blockers/Concerns、Deferred Items。
+Status: Defining requirements
+Last activity: 2026-08-09 — Milestone v0.22.0 started
 
 ## Milestone Overview (v0.20.0 — Phases 111–116 — ✅ SHIPPED 2026-08-02；六相位全部完成并 verified，CLAR-03 closure 已闭，里程碑审计 `tech_debt`)
 
@@ -316,7 +286,6 @@ Last activity: 2026-08-08 — Completed quick task 260808-g1c: AI 对话思考�
 | Phase 103 P04 | ~11min | 2 tasks | 5 files |
 | Phase 104 P02 | ~25min | 4 tasks | 12 files |
 | Phase 104 P03 | ~12min | 2 tasks | 1 file |
-
 
 **Milestone v0.20.0（技术方案蓝图，逐 plan）:**
 
