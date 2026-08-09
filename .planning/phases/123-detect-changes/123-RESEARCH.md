@@ -488,16 +488,18 @@ async def run_detect_changes(...):
 
 **若需用户确认：** A2（图分支坐标）影响 API 语义最大；其余可按推荐直接规划。
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **截断路径的 `graph` / `degradation` 如何填？**
+1. **截断路径的 `graph` / `degradation` 如何填？** — RESOLVED
    - What we know: D-14 成功时必含 `degradation_payload`（含数值 `resolution_rate`）
    - What's unclear: 跳过 batch 时没有自然的 `run_impact` 返回
    - Recommendation: 对任意一个非 formatting 种子（或文件内第一符号）`fetch_graph_for_tool(depth=1)` 只取 meta；无种子则 `graph` 带 `resolution_rate` 自 `GraphMeta` 空仓定义或显式 `degraded: "not_expanded"`
+   - **Resolution (A5):** 截断路径用一次轻量 `fetch_graph_for_tool` 填 `graph` / `degradation`；已被 123-02/03 采纳。
 
-2. **`compare` 与历史工具参数 `branch` 是否并存？**
+2. **`compare` 与历史工具参数 `branch` 是否并存？** — RESOLVED
    - What we know: 122 工具用 `branch` 表示图分支；123 的 `compare` 是 diff head
    - Recommendation: 请求字段用 `compare`（必填）+ `base_ref`（可选）；**不要**复用 `branch` 以免与图 overlay 混淆；对话 description 写清
+   - **Resolution:** 请求用 `compare` 必填 + `base_ref` 可选；不加 overlay `branch` 字段；已被 123-02/03/04 采纳。
 
 ## Environment Availability
 
