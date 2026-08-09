@@ -34,15 +34,16 @@ index 1111111..2222222 100644
 +    return 2
 """
 
-_FORMATTING_DIFF = """\
-diff --git a/src/fmt.py b/src/fmt.py
-index 1111111..2222222 100644
---- a/src/fmt.py
-+++ b/src/fmt.py
-@@ -2,1 +2,1 @@
--def fmt():
-+def fmt():  
-"""
+# 新行故意带尾随空白；用显式空格拼出，避免源码 W291。
+_FORMATTING_DIFF = (
+    "diff --git a/src/fmt.py b/src/fmt.py\n"
+    "index 1111111..2222222 100644\n"
+    "--- a/src/fmt.py\n"
+    "+++ b/src/fmt.py\n"
+    "@@ -2,1 +2,1 @@\n"
+    "-def fmt():\n"
+    "+def fmt():" + "  " + "\n"
+)
 
 
 def _snap(
