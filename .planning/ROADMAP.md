@@ -213,11 +213,18 @@ Plans:
   4. 模块摘要注入 RepoRouter adapter 层（evidence 侧）与技术方案生成 prompt，消费端按相关度排序 + token 预算截断不全量灌入；⛔ `repo_router_v2.py` 冻结面全程零改动
 
 **Plans:** 4 plans
-
 Plans:
+**Wave 1**
+
 - [ ] 125-01-PLAN.md — Wave 0：登记 `call_source=module_summary` + 全套验收测试桩 + 冻结面守卫桩
 - [ ] 125-02-PLAN.md — Wave 1：`SymbolCommunity` + Louvain/指纹 + durable `QUEUE_GRAPH` 双钩子 enqueue
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 125-03-PLAN.md — Wave 2：`module_summary` LLM + Jaccard 跳过 + rebuild×2 LLM=0 验收
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 125-04-PLAN.md — Wave 3：三点 adapter 注入（evidence / signal / 调研 prompt）+ 冻结面守卫绿
 
 ### Phase 126: 执行流 + rename_preview + skills
