@@ -64,7 +64,7 @@ class TestRepoRouterRoute:
         with (
             patch("codegraph.services.repo_router.SparseEncoderService.encode",
                   return_value=_make_sparse_result()),
-            patch("codegraph.services.repo_router.EmbeddingService.generate_embedding",
+            patch("services.embedding.EmbeddingService.generate_embedding",
                   new_callable=AsyncMock, return_value=[0.1] * 1024),
             patch("codegraph.services.repo_router.QdrantService.hybrid_search_by_name",
                   return_value=mock_results),
@@ -91,7 +91,7 @@ class TestRepoRouterRoute:
         with (
             patch("codegraph.services.repo_router.SparseEncoderService.encode",
                   return_value=_make_sparse_result()),
-            patch("codegraph.services.repo_router.EmbeddingService.generate_embedding",
+            patch("services.embedding.EmbeddingService.generate_embedding",
                   new_callable=AsyncMock, return_value=[0.1] * 1024),
             patch("codegraph.services.repo_router.QdrantService.hybrid_search_by_name",
                   return_value=[]),
@@ -114,7 +114,7 @@ class TestRepoRouterRoute:
         with (
             patch("codegraph.services.repo_router.SparseEncoderService.encode",
                   return_value=_make_sparse_result()),
-            patch("codegraph.services.repo_router.EmbeddingService.generate_embedding",
+            patch("services.embedding.EmbeddingService.generate_embedding",
                   new_callable=AsyncMock, return_value=[0.1] * 1024),
             patch("codegraph.services.repo_router.QdrantService.hybrid_search_by_name",
                   return_value=mock_results),
@@ -146,7 +146,7 @@ class TestRepoRouterRoute:
         with (
             patch("codegraph.services.repo_router.SparseEncoderService.encode",
                   return_value=_make_sparse_result()),
-            patch("codegraph.services.repo_router.EmbeddingService.generate_embedding",
+            patch("services.embedding.EmbeddingService.generate_embedding",
                   new_callable=AsyncMock, return_value=[0.1] * 1024),
             patch("codegraph.services.repo_router.QdrantService.hybrid_search_by_name",
                   return_value=mock_results),
@@ -171,7 +171,7 @@ class TestRepoRouterRoute:
         with (
             patch("codegraph.services.repo_router.SparseEncoderService.encode",
                   return_value=_make_sparse_result()),
-            patch("codegraph.services.repo_router.EmbeddingService.generate_embedding",
+            patch("services.embedding.EmbeddingService.generate_embedding",
                   new_callable=AsyncMock, return_value=[0.1] * 1024),
             patch("codegraph.services.repo_router.QdrantService.hybrid_search_by_name",
                   return_value=mock_results),

@@ -1008,3 +1008,62 @@ class TestNewPathDeterminismAndLegacy:
             now=_NOW,
         )
         assert hostile == sane  # 非法项全部回退默认 → 结果一致
+
+
+class TestSelectStage0Pool:
+    """多探针去 breadth 入选：专精仓不被节点广度挤出 Stage 0 窗口。"""
+
+    def _scored(self, rows: list[tuple[str, float, float]]):
+        """rows = [(repo_id, score, breadth_contribution), ...] 已按 score 降序。"""
+        from codegraph.services.repo_router_scoring import ScoredCandidate
+
+        out = []
+        for rid, score, breadth in rows:
+            out.append(
+                ScoredCandidate(
+                    repo_id=rid,
+                    repo_name=rid,
+                    score=score,
+                    breakdown={"text": score - breadth, "breadth": breadth},
+                    facets={},
+                    hits=[],
+                )
+            )
+        return out
+
+    def test_default_is_score_prefix(self):
+        from codegraph.services.repo_router_scoring import select_stage0_pool
+
+        scored = self._scored(
+            [("a", 0.9, 0.1), ("b", 0.8, 0.4), ("c", 0.7, 0.05), ("d", 0.6, 0.01)]
+        )
+        assert [c.repo_id for c in select_stage0_pool(scored, 2)] == ["a", "b"]
+
+    def test_diversify_keeps_primary_and_reserves_deep_specialist(self):
+        """主序保住总分前排；预留席只补给「总分更靠后」的专精仓。"""
+        from codegraph.services.repo_router_scoring import select_stage0_pool
+
+        # primary=3、reserve=2 → 屏蔽总分前 5；e 第 4 被屏蔽，d 第 6 进预留。
+        scored = self._scored(
+            [
+                ("a", 0.95, 0.10),
+                ("b", 0.85, 0.45),
+                ("c", 0.80, 0.40),
+                ("e", 0.78, 0.05),  # 紧挨主序 → 屏蔽
+                ("f", 0.74, 0.30),
+                ("d", 0.70, 0.02),  # 更深专精 → 预留席
+                ("g", 0.60, 0.20),
+            ]
+        )
+        selected = select_stage0_pool(
+            scored, 5, diversify_breadth=True, primary_slots=3
+        )
+        assert [c.repo_id for c in selected[:3]] == ["a", "b", "c"]
+        assert "d" in {c.repo_id for c in selected[3:]}
+        assert "e" not in {c.repo_id for c in selected[3:]}
+
+    def test_diversify_noop_when_pool_fits(self):
+        from codegraph.services.repo_router_scoring import select_stage0_pool
+
+        scored = self._scored([("a", 0.9, 0.1), ("b", 0.8, 0.4)])
+        assert select_stage0_pool(scored, 5, diversify_breadth=True) == scored
