@@ -4,7 +4,7 @@ milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
 status: completed
 stopped_at: Completed 122-08-PLAN.md
-last_updated: "2026-08-09T17:46:05.406Z"
+last_updated: "2026-08-09T17:46:29.975Z"
 last_activity: 2026-08-09 — 122-07 完成：`tests/services/code_graph` 122 → 130 passed / 0 skipped，`test_impact_shell.py` 11 passed，零新增失败
 progress:
   total_phases: 7
@@ -332,6 +332,7 @@ Last activity: 2026-08-09 — 122-07 完成：`tests/services/code_graph` 122 �
 | Phase 122 P06 | 20min | 3 tasks | 4 files |
 | Phase 122 P07 | 8min | 2 tasks | 2 files |
 | Phase 122 P08 | 17min | 3 tasks | 6 files |
+| Phase 122 P09 | 11min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -601,6 +602,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 122]: D-21：MCP 壳只调 run_impact/run_trace，信封原样透出（仅加 run_id）
 - [Phase 122]: ok=False 一律 HTTP 200，保留 ambiguous_symbol 候选列表给 agent
 - [Phase 122]: 一次调用恰一条汇总 RetrievalTrace + caller 事件；RequestMetric 由基类 _record 写入
+- [Phase ?]: D-21：对话壳只调 run_impact/run_trace，data 段零加工
+- [Phase ?]: ok=False/found=False 走 success=True 信封，与 MCP HTTP 200 对齐
+- [Phase ?]: 非法 conversation_id 的 Django ValidationError 也 fail-closed 为无 owner
 
 ### Pending Todos
 
