@@ -413,10 +413,12 @@ async def test_observability_events_static_names() -> None:
             user=None,
             compare="feature/x",
         )
-    assert "`unavailable`" in section
+    assert "`user_missing`" in section
     none_events = [e for e in events_none if e["event"].startswith("impact_report_")]
     assert none_events
     for e in none_events:
         assert e.get("initiated_by_user_id") == "system"
     assert any(e["event"] == "impact_report_started" for e in none_events)
     assert any(e["event"] == "impact_report_failed" for e in none_events)
+    failed = next(e for e in none_events if e["event"] == "impact_report_failed")
+    assert failed.get("error_code") == "user_missing"

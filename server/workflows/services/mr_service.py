@@ -1,5 +1,7 @@
 """MR creation service for CodingTasks with dual-channel failure reporting."""
 
+from typing import Any
+
 import structlog
 
 from repositories.models import Repository
@@ -8,6 +10,33 @@ from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platf
 from workflows.models.coding_task import CodingTask
 
 logger = structlog.get_logger()
+
+
+async def _resolve_impact_user(execution: Any) -> Any:
+    """解析影响面报告所需的触发用户（对齐 AICodingNode._resolve_dispatch_user）。
+
+    - 无 ``triggered_by_id`` → None（stub ``user_missing``，不撞 ACL）
+    - Django model：优先 fields_cache，否则按 id 异步反查（避免 ASGI 下 sync lazy FK）
+    - 非 ORM fixture（MagicMock 等）：直接读 ``triggered_by`` 属性
+    """
+    if execution is None:
+        return None
+    triggered_by_id = getattr(execution, "triggered_by_id", None)
+    if not triggered_by_id:
+        return None
+    state = getattr(execution, "_state", None)
+    fields_cache = getattr(state, "fields_cache", None)
+    if isinstance(fields_cache, dict):
+        cached = fields_cache.get("triggered_by")
+        if cached is not None:
+            return cached
+    from django.db.models import Model
+
+    if isinstance(execution, Model):
+        from django.contrib.auth import get_user_model
+
+        return await get_user_model().objects.filter(pk=triggered_by_id).afirst()
+    return getattr(execution, "triggered_by", None)
 
 
 def build_mr_description(
@@ -162,7 +191,7 @@ async def create_mr_for_task(
         )
 
         execution = getattr(task, "workflow_execution", None)
-        user = getattr(execution, "triggered_by", None) if execution is not None else None
+        user = await _resolve_impact_user(execution)
         section = await build_impact_report_section(
             repository=repository,
             user=user,
