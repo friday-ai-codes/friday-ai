@@ -35,7 +35,7 @@
 
 - [x] **Phase 121: 内存图服务基座** - `(repository, branch)` 内存符号图缓存（水位失效 + 字节 LRU + single-flight）+ 权限/exclusion 读取层统一收口
 - [x] **Phase 122: impact / trace 工具面** - 反向 BFS 深度分组 + 置信度分层 + 跨仓边界 + 有向最短路，MCP/对话双面暴露 (completed 2026-08-09)
-- [ ] **Phase 123: detect_changes 工具本体** - diff 行区间 × Symbol 区间定位受影响符号 + 批量 impact，水位锚定 + rename 检测
+- [x] **Phase 123: detect_changes 工具本体** - diff 行区间 × Symbol 区间定位受影响符号 + 批量 impact，水位锚定 + rename 检测 (plans 6/6 complete 2026-08-09; pending verify)
 - [ ] **Phase 124: 编码链闭环** - 编码容器提交前自查 + MR 描述自动附影响面报告（fail-soft）
 - [ ] **Phase 125: 社区检测 + 模块摘要** - Louvain 社区落库 + 成员指纹跳过重生成 + LLM 模块摘要三点注入（adapter 层，不动冻结面）
 - [ ] **Phase 126: 执行流 + rename_preview + skills** - Endpoint 正向执行流存 Process + affected_processes 回填 + 只读改名清单 + 两个 skill 同源分发

@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-status: executing
+status: ready_for_verification
 stopped_at: Completed 123-05-PLAN.md
 last_updated: "2026-08-09T19:03:19.687Z"
-last_activity: 2026-08-09 -- Completed 123-04 conversational detect_changes shell
+last_activity: 2026-08-09 -- Completed 123-05 dual-surface sentinel + D-27 ledger
 progress:
   total_phases: 7
   completed_phases: 3
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 
 ## Current Position
 
-Phase: 123 (detect-changes) — EXECUTING
+Phase: 123 (detect-changes) — READY FOR VERIFICATION
 Plan: 6 of 6
-Status: Ready to execute 123-05
-Last activity: 2026-08-09 -- Completed 123-04 conversational detect_changes shell
+Status: All plans complete — ready for `/gsd-verify-work`
+Last activity: 2026-08-09 -- Completed 123-05 dual-surface sentinel + D-27 ledger
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
 
@@ -38,7 +38,7 @@ Last activity: 2026-08-09 -- Completed 123-04 conversational detect_changes shel
 |-------|------|--------------|--------|
 | 121 | 内存图服务基座（缓存四件套 + 边准入 + 权限/exclusion 读取层收口） | GRAPH-01~04 | ✅ Complete (10/10 plans, verified passed) |
 | 122 | impact / trace 工具面（深度分组 + 置信度分层 + 跨仓 + MCP/对话双面） | IMPACT-01~06 | 🚧 In progress (7/10 plans — 编排入口已落地，MCP/对话壳待接) |
-| 123 | detect_changes 工具本体（水位锚定 diff × Symbol 定位 + 批量 impact） | DIFF-01/02 | 🚧 In progress (5/6 plans — MCP + conversational shells green; dual-surface pending) |
+| 123 | detect_changes 工具本体（水位锚定 diff × Symbol 定位 + 批量 impact） | DIFF-01/02 | ✅ Plans complete (6/6) — ready for verification |
 | 124 | 编码链闭环（容器提交前自查 + MR 描述影响面报告 fail-soft） | DIFF-03/04 | Not started |
 | 125 | 社区检测 + 模块摘要（Louvain + 指纹跳过 + 三点注入不动冻结面） | MOD-01~04 | Not started |
 | 126 | 执行流 + rename_preview + skills（Process 模型 + affected_processes 回填 + 只读改名清单 + skill 分发） | EXEC-01~03, RENAME-01, SKILL-01 | Not started |
