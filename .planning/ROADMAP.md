@@ -44,92 +44,133 @@
 #### Phase Details (v0.22.0)
 
 ### Phase 121: 内存图服务基座
+
 **Goal**: Agent/工具查询任一已索引仓库时能拿到该 `(repository, branch)` 的内存符号图——缓存命中、水位一致、内存有界、权限与 exclusion 天然 fail-closed，为一切上层图工具提供共同地基
 **Depends on**: Nothing (first phase of milestone；前置为既有 `Symbol`/`CallEdge`/`ChunkEdge`/`CrossRepoApiCall` 与 networkx 3.6.1)
 **Requirements**: GRAPH-01, GRAPH-02, GRAPH-03, GRAPH-04
 **Success Criteria** (what must be TRUE):
+
   1. Agent 首次查询某 `(repository, branch)` 触发建图，同键再次查询命中缓存不重复装配（可从日志事件/计数观察到 build 一次、hit 多次）
   2. 重索引推进 `last_indexed_commit_sha` 或边构建代数变化后，旧缓存自动失效重建；取图时校验水位，绝不返回「水位已更新但边未建完」的半新图
   3. 缓存按字节预算 LRU 逐出且有 single-flight 建图锁——并发查询同一仓只触发一次构建；超预算大仓走降级路径（不缓存/按需子图），进程不 OOM
   4. 被排除文件与无权限仓库在图读取层统一拦截（fail-closed），任何上层图分析工具的输出中均不可见
+
 **Plans**: 10 plans（8 waves，W0–W7；W2 与 W3 各有两个 plan 可并行）
 
 Plans:
+**Wave 1**
+
 - [ ] 121-01-PLAN.md — W0 依赖提升（networkx 直接依赖）、`CODE_GRAPH_*` 配置项、LOGGING-SPEC §5 登记 `code_graph`、测试包与 fixture 脚手架
 - [ ] 121-02-PLAN.md — W1 `model.py` 契约层：四档边枚举 / `CodeGraph`·`GraphMeta`·`ChunkEvidence` / 异常层级 / 裸名黑名单
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 121-03-PLAN.md — W2 `access.py`：仓库可读性单一校验点 + exclusion 同步收口与规则指纹（fail-closed）
 - [ ] 121-04-PLAN.md — W2 `signature.py`：复合签名（两条边构建轨）+ in-flight 判定（躲 PENDING 长鸣与 RUNNING 孤儿）
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 121-05-PLAN.md — W3 `loader.py` 主干：符号节点 overlay 装配 + 装配阶段 exclusion 过滤 + CallEdge 双档与解析率
-- [ ] 121-06-PLAN.md — W4 `loader.py` 补齐：跨仓边二次解析 + chunk 旁挂证据面 + 按需子图降级路径
 - [ ] 121-07-PLAN.md — W3 `cache.py` 存储侧：字节估算纯函数 + 字节预算 LRU 逐出 + 单例与测试重置钩子（与 121-05 并行；只依赖 `model.py` 与 settings，不碰 loader/signature）
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 121-06-PLAN.md — W4 `loader.py` 补齐：跨仓边二次解析 + chunk 旁挂证据面 + 按需子图降级路径
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 121-08-PLAN.md — W5 `GraphService.get_graph` 编排：签名复校 / 命中前的 in-flight 闸 / 准入降级 / single-flight
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 121-09-PLAN.md — W6 curated barrel（架构红线，恰 17 项导出）+ `invalidate` 与两处构建完成失效钩子
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 121-10-PLAN.md — W7 诊断交付物：最大仓内存实测（常数复校）+ `callee_symbol` 解析率统计（阈值校准）+ 零迁移守护
 
 ### Phase 122: impact / trace 工具面
+
 **Goal**: 用户/agent 改代码前能回答「影响谁、怎么到达」——impact 深度分组 + 置信度分层 + 跨仓边界，trace 两符号间最短路，经 MCP 与对话双面可用
 **Depends on**: Phase 121
 **Requirements**: IMPACT-01, IMPACT-02, IMPACT-03, IMPACT-04, IMPACT-05, IMPACT-06
 **Success Criteria** (what must be TRUE):
+
   1. 对任一符号执行 impact 查询，返回反向依赖的深度分组结果（d1/d2/d3 = WILL BREAK / LIKELY AFFECTED / MAY NEED TESTING），每条边带 confidence 分档（resolved / bare_name / cross_repo 原值）+ reason，调用方可用 `min_confidence` 自选精度/召回
   2. 修改后端 `Endpoint` 时 impact 能沿 `CrossRepoApiCall` 边列出受影响的前端调用点，跨仓结果标注 `cross_repo: true` 与独立置信档
   3. impact 输出带确定性风险分级（LOW/MEDIUM/HIGH/CRITICAL，阈值可解释、不走 LLM）与截断 summary 计数，agent 知道被截断了多少
   4. trace 返回任意两符号间有向最短路并逐跳渲染 file:line + 边类型/置信度；符号重名时返回消歧候选列表，绝不静默取第一个
   5. impact/trace 经 MCP 工具（PAT fail-closed + schema snapshot）与 agents 对话工具双面可调，输出带索引 staleness 提示（「索引落后 N commits」）
+
 **Plans**: TBD
 
 ### Phase 123: detect_changes 工具本体
+
 **Goal**: 用户/agent 对分支 diff 一键得到「这次改动碰了哪些符号、波及多大」——受影响符号清单 + 批量 impact，行号与 Symbol 同源对齐、rename 不误报
 **Depends on**: Phase 121, Phase 122
 **Requirements**: DIFF-01, DIFF-02
 **Success Criteria** (what must be TRUE):
+
   1. 对分支 diff 执行 detect_changes 得到受影响符号清单（changeType / 行数 / file:line）与批量 impact 结果；diff base 强制锚定 `last_indexed_commit_sha`，保证行区间与 Symbol 行号同源
   2. compare + base_ref 场景（MR diff）可用；文件重命名被识别（`git diff -M`），纯 rename PR 不产生满屏误报
   3. 输出带索引 staleness 声明（as_of commit），索引落后时 agent 能看到并自行判断可信度
+
 **Plans**: TBD
 
 ### Phase 124: 编码链闭环
+
 **Goal**: detect_changes 真正进「需求→PR」编码链——容器提交前自查、MR 描述自动带影响面报告，这是 Friday 区别于 GitNexus 的落点
 **Depends on**: Phase 123
 **Requirements**: DIFF-03, DIFF-04
 **Success Criteria** (what must be TRUE):
+
   1. 编码任务容器在提交前可经既有 MCP PAT 白名单调用 detect_changes 自查，受影响清单进入提交决策（system prompt 指引，v1 提示不阻断）
   2. workflow 与 MCP 两条建 MR 链路的 MR 描述自动附影响面报告（Changes / Affected / Risk / Recommendations 四段结构）
   3. 影响面报告生成失败时 fail-soft——建 MR 主流程零阻断、MR 照常创建
+
 **Plans**: TBD
 
 ### Phase 125: 社区检测 + 模块摘要
+
 **Goal**: 每仓代码自动聚成模块并有 LLM 生成的模块摘要，喂给 RepoRouter 与技术方案生成——回答「这段代码属于哪个模块、这个仓有哪些职责」
 **Depends on**: Phase 121
 **Requirements**: MOD-01, MOD-02, MOD-03, MOD-04
 **Success Criteria** (what must be TRUE):
+
   1. 每仓图上运行社区检测（networkx `louvain_communities` 固定 seed + 节点排序），社区归属以独立模型 + 软引用落库（不加在 `Symbol` 上），增量索引后自动刷新
   2. 成员指纹（Jaccard 阈值）判定未变的社区跳过摘要重生成——「无代码变更连续重建两次，LLM 调用数为 0」验收用例通过
   3. 每个社区有 LLM 模块摘要（关键文件 / 入口 / 职责叙述），LLM 调用赋新 `call_source`（LOGGING-SPEC §4.1 先登记）
   4. 模块摘要注入 RepoRouter adapter 层（evidence 侧）与技术方案生成 prompt，消费端按相关度排序 + token 预算截断不全量灌入；⛔ `repo_router_v2.py` 冻结面全程零改动
+
 **Plans**: TBD
 
 ### Phase 126: 执行流 + rename_preview + skills
+
 **Goal**: 以 `Endpoint` 为入口的执行流可追踪可查询并回填影响面叙事层；改名前有只读双源清单；工作流经验固化为 skill 对内外分发
 **Depends on**: Phase 125 (执行流需要 community 分类), Phase 123 (affected_processes 回填 detect_changes/impact 输出)
 **Requirements**: EXEC-01, EXEC-02, EXEC-03, RENAME-01, SKILL-01
 **Success Criteria** (what must be TRUE):
+
   1. 以 `Endpoint` 为确定性入口正向追踪执行流并存 Process 模型，遵守 BFS 纪律（maxDepth 10 / maxBranching 4 / minSteps 3 / 只走置信度 ≥0.5 的边 + 去重），环与 async 断链显式标注
   2. 执行流带社区归属分类（intra/cross_community），可经 MCP 工具查询
   3. detect_changes / impact 输出回填 `affected_processes` 叙事层（受影响执行流名称清单），进 MR 描述增值段
   4. rename_preview 输出图解析引用 + grep 文本兜底的双源合并清单，逐条带 graph/text_search 置信标签 + context 片段、按文件分组，显式声明动态引用覆盖限制；只出清单不改写
   5. impact-analysis / refactoring 两个工作流 skill 进 `@friday-ai-codes/skills` 同源分发（复用 v0.17.0 hash 一致性机制），编码容器与外部 agent 可用
+
 **Plans**: TBD
 
 ### Phase 127: Semgrep 门禁 + LSP 基准
+
 **Goal**: MR 有外购的 taint 安全扫描（advisory 起步、边界如实声明），LSP 抽取后端开启门槛降低且有质量/耗时基准数据——两条与内存图零耦合的独立轨道收尾
 **Depends on**: Phase 124 (MR 描述挂点范式复用；且刻意排在 125/126 之后，避免多个内存大户同时上线导致 OOM 归因困难)
 **Requirements**: TAINT-01, TAINT-02, TAINT-03, LSP-01
 **Success Criteria** (what must be TRUE):
+
   1. MR 流程可触发 Semgrep diff-aware 扫描（`--baseline-commit` 取 merge-base），只报本次 MR 新增 finding；Semgrep 以独立 CLI/venv 形态集成，不进 server Python 依赖树
   2. finding 带 severity 分级进 MR 描述/评论；门禁默认报告不阻断（advisory）；`nosemgrep` 误报通道生效；扫描超时 fail-open 且显式标注
   3. 门禁文案如实声明 CE 版仅函数内 taint 的边界（不虚假承诺跨函数/跨文件）；Pro 能力经 `SEMGREP_APP_TOKEN`（加密凭证存储）opt-in
   4. server 镜像补齐 Node/Go 运行时，volar/gopls 带可用性探测 + fail-soft 降级 + 孤儿进程清扫；产出开启前后的抽取质量/耗时基准报告，默认值翻转由基准数据决定（本里程碑不盲翻）
+
 **Plans**: TBD
 
 **执行顺序（依赖链）:** 121（地基，绝对先行——缓存四件套 + 边准入 + 读取层鉴权/exclusion 收口必须做进地基）→ 122（核心工具面，双面接线模式定型）→ 123（detect_changes 本体）→ 124（编码链集成，动 task/workflow 两条链单独控风险）→ 125（社区先于执行流，Process 需要 community 分类）→ 126（执行流 + 独立小项收编）→ 127（Semgrep/LSP 独立轨道收尾，避开与 125/126 同时引入内存大户）。其中 125 只依赖 121，可视执行情况与 122–124 并行推进。
