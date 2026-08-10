@@ -396,3 +396,34 @@ async def test_cache_backend_exception_does_not_break_route(
     assert result.router_version == "v2"
     assert result.candidates[0].repo_id == "repo-a"
     assert result.auto_selected is True
+
+
+# ---------------------------------------------------------------------------
+# 已知拒收 decode 参数的模型：Stage 1 首次构建即不带 temperature/top_p/seed
+# （省掉「先 400 → 丢参重建 → 再调」的废调用），不在清单的模型仍走被动重试。
+# ---------------------------------------------------------------------------
+
+
+def test_model_rejects_decode_params_known_model() -> None:
+    from django.test import override_settings
+
+    from codegraph.services.repo_router_v2 import _model_rejects_decode_params
+
+    with override_settings(
+        REPO_ROUTER_STAGE1_DECODE_PARAM_REJECT_MODELS=["claude-opus", "claude-sonnet"]
+    ):
+        assert _model_rejects_decode_params("claude-opus-4-8") is True
+        assert _model_rejects_decode_params("Claude-Sonnet-5") is True  # 大小写不敏感
+        assert _model_rejects_decode_params("mimo-v2.5-pro") is False
+        assert _model_rejects_decode_params("") is False
+
+
+def test_model_rejects_decode_params_empty_or_missing_config() -> None:
+    from django.test import override_settings
+
+    from codegraph.services.repo_router_v2 import _model_rejects_decode_params
+
+    with override_settings(REPO_ROUTER_STAGE1_DECODE_PARAM_REJECT_MODELS=[]):
+        assert _model_rejects_decode_params("claude-opus-4-8") is False
+    with override_settings(REPO_ROUTER_STAGE1_DECODE_PARAM_REJECT_MODELS=None):
+        assert _model_rejects_decode_params("claude-opus-4-8") is False

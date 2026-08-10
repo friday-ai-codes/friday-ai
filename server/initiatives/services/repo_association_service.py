@@ -650,7 +650,33 @@ class RepoAssociationService:
         user_label = (
             str(initiated_by_user_id) if initiated_by_user_id is not None else "system"
         )
-        return await self._confirm_repos_sync(project, repo_ids, user_label)
+        confirmed = await self._confirm_repos_sync(project, repo_ids, user_label)
+        # 人工确认 = 该仓的正样本：best-effort 触发 charter 重新起草回灌（confirmed →
+        # owned_domains 证据）。durable 幂等键 charter:{repo_id}，重复确认只入队一次。
+        await self._reinforce_charters([a.repository_id for a in confirmed], user_label, "confirm")
+        return confirmed
+
+    async def _reinforce_charters(
+        self, repository_ids: list[Any], user_label: str, action: str
+    ) -> None:
+        """人工裁决后 best-effort 回灌 charter（正/负样本），绝不反噬选仓主流程。"""
+        try:
+            from repositories.charter_enqueue import enqueue_charter_draft
+        except Exception:  # noqa: BLE001 — 无 charter 管线时静默跳过
+            return
+        for rid in {str(r) for r in (repository_ids or []) if r}:
+            try:
+                await enqueue_charter_draft(rid, initiated_by_user_id=user_label)
+            except Exception as exc:  # noqa: BLE001 — 单仓失败不阻断其余
+                logger.warning(
+                    "repo_association_charter_reinforce_failed",
+                    repository_id=rid,
+                    action=action,
+                    reason=redact_secrets_in_text(str(exc))[:200],
+                    initiated_by_user_id=user_label,
+                    component=_COMPONENT,
+                    category="sampling",
+                )
 
     @sync_to_async
     def _confirm_repos_sync(
@@ -697,7 +723,12 @@ class RepoAssociationService:
         user_label = (
             str(initiated_by_user_id) if initiated_by_user_id is not None else "system"
         )
-        return await self._reject_candidates_sync(project, repo_ids, user_label)
+        rejected_count = await self._reject_candidates_sync(project, repo_ids, user_label)
+        # 人工拒绝 = 该仓的负样本：best-effort 触发 charter 重新起草回灌（rejected →
+        # boundaries 边界候选），让误路由的仓下次被边界排除。
+        if rejected_count:
+            await self._reinforce_charters(list(repo_ids or []), user_label, "reject")
+        return rejected_count
 
     @sync_to_async
     def _reject_candidates_sync(

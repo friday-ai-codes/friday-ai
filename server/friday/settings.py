@@ -336,6 +336,15 @@ REPO_ROUTER_STAGE1_HITS_PER_REPO = env.int("REPO_ROUTER_STAGE1_HITS_PER_REPO", d
 REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS = env.int(
     "REPO_ROUTER_STAGE1_CACHE_TTL_SECONDS", default=86400
 )
+# 已知拒收固定 decode 参数（temperature/top_p/seed）的模型子串清单（大小写不敏感）。
+# 命中的模型 Stage 1 首次构建就不带 decode 参数，省掉「先 400 → 丢参重建 → 再调」的
+# 废调用与 2~3s 延迟（实测 claude-opus-4-8 对 temperature 回 400 deprecated）。
+# 幂等改由「输入哈希缓存 + 排列输出」两道主防线承担，decode 固定在该类模型上诚实缺省。
+# 不在清单内的模型仍走「400 被动丢参重试」兜底，二者互补。
+REPO_ROUTER_STAGE1_DECODE_PARAM_REJECT_MODELS = env.list(
+    "REPO_ROUTER_STAGE1_DECODE_PARAM_REJECT_MODELS",
+    default=["claude-opus", "claude-sonnet", "claude-fable"],
+)
 
 # =============================================================================
 # 仓库路由 v2 分组呈现与有界重排（ROUTE-01/02、RELY-05）
