@@ -40,6 +40,18 @@ async def enqueue_semgrep_scan(
     repo_id = str(repository_id)
     key = mr_key or ""
     try:
+        logger.info(
+            "enqueue_semgrep_scan_started",
+            category="caller",
+            component="code_graph",
+            repository_id=repo_id,
+            mr_key=key,
+            initiated_by_user_id=initiated_by_user_id or "system",
+        )
+    except Exception:  # noqa: BLE001 — 观测绝不反噬建 MR
+        pass
+
+    try:
         lock = await ascan_lock(repo_id)
         job_id = await DurableTaskService.defer(
             "durable_semgrep_scan",
