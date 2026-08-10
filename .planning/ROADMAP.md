@@ -87,7 +87,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 121-10-PLAN.md — W7 诊断交付物：最大仓内存实测（常数复校）+ `callee_symbol` 解析率统计（阈值校准）+ 零迁移守护
+- [x] 121-10-PLAN.md — W7 诊断交付物：最大仓内存实测（常数复校）+ `callee_symbol` 解析率统计（阈值校准）+ 零迁移守护
 
 ### Phase 122: impact / trace 工具面
 

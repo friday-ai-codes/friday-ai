@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
 status: verifying
-stopped_at: Completed 127-05-PLAN.md
-last_updated: "2026-08-09T22:38:46.036Z"
-last_activity: 2026-08-10 -- Completed 127-03 (diff-aware Semgrep scan kernel)
+stopped_at: Phase 127 re-verified 4/4 — milestone audit next
+last_updated: "2026-08-10T19:05:00.000Z"
+last_activity: 2026-08-11 -- Phase 127 收口（8 项审查发现全修 + 两个遗留红灯清理 + 重新验证 4/4）
 progress:
   total_phases: 7
   completed_phases: 7
@@ -23,26 +23,28 @@ See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合�
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。
 **v0.19.0 交付的那一层：** 技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。
 **v0.20.0 交付的那一层：** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，飞书式划线澄清多轮收敛，全生命周期可管理、可查可引可导出。
-**Current focus:** Phase 127 — semgrep-lsp
+**Current focus:** v0.22.0 收口 — 七相位全部完成，进入里程碑审计
 
 ## Current Position
 
-Phase: 127 (semgrep-lsp) — EXECUTING
+Phase: 127 (semgrep-lsp) — COMPLETE
 Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-08-10 -- Completed 127-03 (diff-aware Semgrep scan kernel)
+Status: 重新验证 4/4 must-haves（`human_needed`：3 项需真实环境的人工检查，见 127-VERIFICATION.md）
+Last activity: 2026-08-11 -- Phase 127 收口：CR-01 建 MR 挂点解析真实两端 sha（缺口闭合）、8 项审查发现全修、code_graph 链路 83 项观测契约违规清理
 
-## Milestone Overview (v0.22.0 — Phases 121–127 — 🚧 IN PROGRESS，2026-08-09 立项)
+## Milestone Overview (v0.22.0 — Phases 121–127 — ✅ 七相位全部完成，2026-08-09 立项，2026-08-11 收口)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 121 | 内存图服务基座（缓存四件套 + 边准入 + 权限/exclusion 读取层收口） | GRAPH-01~04 | ✅ Complete (10/10 plans, verified passed) |
-| 122 | impact / trace 工具面（深度分组 + 置信度分层 + 跨仓 + MCP/对话双面） | IMPACT-01~06 | 🚧 In progress (7/10 plans — 编排入口已落地，MCP/对话壳待接) |
-| 123 | detect_changes 工具本体（水位锚定 diff × Symbol 定位 + 批量 impact） | DIFF-01/02 | ✅ Plans complete (6/6) — ready for verification |
-| 124 | 编码链闭环（容器提交前自查 + MR 描述影响面报告 fail-soft） | DIFF-03/04 | 🚧 In progress (3/4 plans — impact_report core green; MR wiring next) |
-| 125 | 社区检测 + 模块摘要（Louvain + 指纹跳过 + 三点注入不动冻结面） | MOD-01~04 | ✅ Plans complete (4/4) — ready for verification |
-| 126 | 执行流 + rename_preview + skills（Process 模型 + affected_processes 回填 + 只读改名清单 + skill 分发） | EXEC-01~03, RENAME-01, SKILL-01 | Not started |
-| 127 | Semgrep 门禁 + LSP 基准（diff-aware advisory + volar/gopls 探测与基准） | TAINT-01~03, LSP-01 | 🚧 In progress (3/5 plans — scan kernel landed; MR section next) |
+| 122 | impact / trace 工具面（深度分组 + 置信度分层 + 跨仓 + MCP/对话双面） | IMPACT-01~06 | ✅ Complete (10/10 plans, verified passed) |
+| 123 | detect_changes 工具本体（水位锚定 diff × Symbol 定位 + 批量 impact） | DIFF-01/02 | ✅ Complete (6/6 plans, verified passed) |
+| 124 | 编码链闭环（容器提交前自查 + MR 描述影响面报告 fail-soft） | DIFF-03/04 | ✅ Complete (4/4 plans, verified passed) |
+| 125 | 社区检测 + 模块摘要（Louvain + 指纹跳过 + 三点注入不动冻结面） | MOD-01~04 | ✅ Complete (4/4 plans, verified passed) |
+| 126 | 执行流 + rename_preview + skills（Process 模型 + affected_processes 回填 + 只读改名清单 + skill 分发） | EXEC-01~03, RENAME-01, SKILL-01 | ✅ Complete (5/5 plans, verified passed) |
+| 127 | Semgrep 门禁 + LSP 基准（diff-aware advisory + volar/gopls 探测与基准） | TAINT-01~03, LSP-01 | ✅ Complete (5/5 plans, re-verified 4/4 — `human_needed`：3 项真实环境检查) |
+
+⭐ **127 的收口经过一轮实修**：初次验证判 `gaps_found` (2/4)——三处建 MR 挂点以空 `source_sha`/`target_sha` 入队，`run_semgrep_scan` 恒 `unavailable`，diff-aware 扫描在生产链路从未真正执行（Level 4 HOLLOW）。闭合方式是新增 `services/code_graph/semgrep_sha.py`（已知 sha → 平台 client `resolve_branch_sha` → 本地裸镜像 三级回退）与守卫入口 `enqueue_semgrep_scan_for_branches`（两端解析不到就不入队、记 `code_graph_enqueue_semgrep_scan_skipped_missing_sha` 并保留 pending stub），三处挂点与 `attach_security_scan_pending` 统一改走它。同轮清掉 code_graph 链路 **83 项观测契约违规**（事件名补 `code_graph_` 前缀、包内 `category` 收敛 `sampling`、`error=` 收口脱敏），并把命名约定登记进 `observability/LOGGING-SPEC.md` §5——此前这四条规则只活在守卫测试里。
 
 **Execution order（依赖链）:** 121 → 122 → 123 → 124 → 125 → 126 → 127（125 只依赖 121，可与 122–124 并行；127 独立轨道但刻意排在 125/126 之后避免多个内存大户同时上线）。需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)，调研见 [research/SUMMARY.md](./research/SUMMARY.md)。
 
