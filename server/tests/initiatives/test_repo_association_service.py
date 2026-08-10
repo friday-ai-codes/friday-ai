@@ -162,6 +162,74 @@ async def test_propose_observability_call_source_and_trace() -> None:
     assert kwargs["source"] == "repo_association"
 
 
+async def test_confirm_repos_reinforces_charter() -> None:
+    """人工确认 = 正样本：confirm 后 best-effort 触发 charter 回灌（enqueue 一次/仓）。"""
+    space, project, repos = await _aprep(2)
+    # 先落两个 proposed 候选
+    from initiatives.models import RepoAssociation
+
+    for r in repos:
+        await sync_to_async(RepoAssociation.objects.create)(
+            project=project, repository_id=r.id, status=RepoAssociationStatus.PROPOSED,
+            source="router_v2",
+        )
+    enqueue = AsyncMock(return_value="job-1")
+    with patch(
+        "repositories.charter_enqueue.enqueue_charter_draft", enqueue
+    ):
+        confirmed = await RepoAssociationService().confirm_repos(
+            project=project, repo_ids=[str(r.id) for r in repos],
+            initiated_by_user_id="u-9",
+        )
+    assert len(confirmed) == 2
+    # 每个确认仓都触发一次 charter 回灌
+    assert enqueue.await_count == 2
+    called_ids = {c.args[0] for c in enqueue.await_args_list}
+    assert called_ids == {str(r.id) for r in repos}
+
+
+async def test_reject_candidates_reinforces_charter() -> None:
+    """人工拒绝 = 负样本：reject 后 best-effort 触发 charter 回灌（boundaries 候选）。"""
+    space, project, repos = await _aprep(2)
+    from initiatives.models import RepoAssociation
+
+    for r in repos:
+        await sync_to_async(RepoAssociation.objects.create)(
+            project=project, repository_id=r.id, status=RepoAssociationStatus.PROPOSED,
+            source="router_v2",
+        )
+    enqueue = AsyncMock(return_value="job-2")
+    with patch(
+        "repositories.charter_enqueue.enqueue_charter_draft", enqueue
+    ):
+        rejected = await RepoAssociationService().reject_candidates(
+            project=project, repo_ids=[str(repos[0].id)],
+            initiated_by_user_id="u-9",
+        )
+    assert rejected == 1
+    assert enqueue.await_count == 1
+    assert enqueue.await_args_list[0].args[0] == str(repos[0].id)
+
+
+async def test_reinforce_charters_failure_never_breaks_confirm() -> None:
+    """charter 回灌失败（如 durable 不可用）绝不反噬 confirm 主流程。"""
+    space, project, repos = await _aprep(1)
+    from initiatives.models import RepoAssociation
+
+    await sync_to_async(RepoAssociation.objects.create)(
+        project=project, repository_id=repos[0].id, status=RepoAssociationStatus.PROPOSED,
+        source="router_v2",
+    )
+    with patch(
+        "repositories.charter_enqueue.enqueue_charter_draft",
+        AsyncMock(side_effect=RuntimeError("durable down")),
+    ):
+        confirmed = await RepoAssociationService().confirm_repos(
+            project=project, repo_ids=[str(repos[0].id)],
+        )
+    assert len(confirmed) == 1  # 回灌失败，确认仍成功
+
+
 async def test_propose_fuses_charter_and_history_signals() -> None:
     """章程 + 历史融合后候选带 breakdown，且按融合分排序。"""
     space, project, repos = await _aprep(2)

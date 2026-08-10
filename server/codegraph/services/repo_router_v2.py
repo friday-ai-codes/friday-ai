@@ -393,6 +393,31 @@ class RepoRouteResultV2:
     auto_selected_suppressed_by_alpha: bool = False
 
 
+def _model_rejects_decode_params(model_name: str) -> bool:
+    """该模型是否已知拒收固定 decode 参数（temperature/top_p/seed）。
+
+    与 :func:`_is_decode_param_rejection` 的「被动 400 重试」互补：对**已知**不收
+    decode 参数的模型（如 Claude 5 家族对 ``temperature`` 返回 400 ``deprecated``），
+    首次构建就直接不带，省掉「先 400 一次 → 丢参数重建 → 再调一次」的废调用与
+    2~3s 延迟，并让幂等第三道防线（固定 decode）在该模型上诚实缺省而非假装生效
+    后又被丢弃。
+
+    模型清单从 settings 读（``REPO_ROUTER_STAGE1_DECODE_PARAM_REJECT_MODELS``），
+    子串大小写不敏感匹配——新模型上架由运维补清单，不必改代码发版；不在清单内
+    的模型仍走被动重试兜底。
+    """
+    from django.conf import settings
+
+    name = (model_name or "").strip().lower()
+    if not name:
+        return False
+    try:
+        known = getattr(settings, "REPO_ROUTER_STAGE1_DECODE_PARAM_REJECT_MODELS", None) or []
+    except Exception:  # noqa: BLE001 — 配置缺失绝不阻断路由
+        return False
+    return any(str(m).strip().lower() in name for m in known if str(m).strip())
+
+
 def _is_decode_param_rejection(exc: BaseException) -> bool:
     """上游 400 是否在拒绝 **decode 参数本身**（而非 prompt / 鉴权等真客户端错误）。
 
@@ -1769,7 +1794,10 @@ class RepoRouterV2:
                 **decode,
             )
 
-        model = _build_stage1_model(with_decode_params=True)
+        # 已知拒收 decode 参数的模型（如 Claude 5 家族）首次就不带 temperature/top_p/seed，
+        # 省掉「先 400 → 重建 → 再调」的废调用；不在清单的模型仍走被动重试兜底。
+        _with_decode = not _model_rejects_decode_params(model_name)
+        model = _build_stage1_model(with_decode_params=_with_decode)
 
         # 只把高分候选喂给 LLM：prompt 越短越快，尾部低分候选本就选不中；
         # Stage 0 仍保留完整候选集供降级时使用。
@@ -1934,6 +1962,7 @@ class RepoRouterV2:
                     # 后续 `response.content` 直接 AttributeError。
                     if (
                         attempt == 0
+                        and _with_decode
                         and not decode_params_dropped
                         and _is_decode_param_rejection(exc)
                     ):
