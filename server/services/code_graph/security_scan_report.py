@@ -116,12 +116,14 @@ def is_security_scan_stub_section(section_or_body: str) -> bool:
     chunk = rest if nxt < 0 else rest[:nxt]
     if "安全扫描未能生成" in chunk:
         return True
-    if "`pending`" in chunk or "pending" in chunk.lower() and "未能生成" in chunk:
+    # ⛔ 显式括号：只出现字面量 `pending`（例如某条 finding message 里提到 pending）
+    # 不算 stub，必须与失败文案同现才是可替换占位——否则会把完整结果段当占位覆盖掉。
+    if "未能生成" in chunk and ("`pending`" in chunk or "pending" in chunk.lower()):
         return True
     # 成功段必含 CE disclaimer；缺则视为可替换的占位
     if "仅函数内" not in chunk and "未能生成" in chunk:
         return True
-    return "安全扫描未能生成" in chunk
+    return False
 
 
 def replace_security_scan_section(description: str, new_section: str) -> str:
@@ -297,15 +299,28 @@ async def _load_findings_for_mr(repository_id: str, mr_key: str) -> list[dict[st
 
     @sync_to_async
     def _query() -> list[dict[str, Any]]:
+        from django.db.models import Case, IntegerField, Value, When
+
         from codegraph.models import SecurityFinding
 
+        # 按 _SEVERITY_ORDER 桶序排（ERROR→WARNING→INFO）。⛔ 不能直接 order_by("severity")：
+        # 字典序会给出 ERROR→INFO→WARNING，让 per-severity 截断取到错误的 top-N。
+        severity_rank = Case(
+            *[
+                When(severity__iexact=sev, then=Value(rank))
+                for rank, sev in enumerate(_SEVERITY_ORDER)
+            ],
+            default=Value(len(_SEVERITY_ORDER)),
+            output_field=IntegerField(),
+        )
         rows = list(
             SecurityFinding.objects.filter(
                 repository_id=repository_id,
                 mr_key=mr_key,
                 status="open",
             )
-            .order_by("severity", "file_path", "line")
+            .annotate(severity_rank=severity_rank)
+            .order_by("severity_rank", "file_path", "line")
             .values("severity", "rule_id", "file_path", "line", "message")[:200]
         )
         return rows
