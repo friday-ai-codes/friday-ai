@@ -1,0 +1,444 @@
+{
+  "header": {
+    "project": "高三提分专项",
+    "project_id": "75248ff9-3a22-4175-b940-6093d71eb4dc",
+    "space": "学习工具",
+    "corpus": "feature_list+test_case",
+    "features_in_corpus": 238,
+    "query_len": 4000,
+    "query_budget_applied": true,
+    "candidate_repo_count": 30,
+    "top_k": 5,
+    "stage0_node_k": 300,
+    "stage1_max_candidates": 12,
+    "stage1_timeout_s": 90.0,
+    "stage1_budget_s": 120.0,
+    "ground_truth": [
+      "backend/study-course",
+      "backend/study-user-status",
+      "frontend/onion-learning",
+      "frontend/onion-practice"
+    ]
+  },
+  "runs": [
+    {
+      "duration_ms": 25946,
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "candidates": [
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.7209,
+          "confidence": "medium",
+          "reasoning": "需求为高中数学全部功能页新增入口、单题型学习页4节点UI与状态机、掌握度浮层等前端页面，命中「业务应用 (apps/)」下课程学习/导航入口模块及「视频播放能力」",
+          "matched_node_paths": [
+            "业务应用 (apps/)",
+            "业务应用 (apps/) > AI 助学 > 横屏问答互动",
+            "业务工具链 (utils/) > 任务与媒体工具 > 视频播放能力"
+          ]
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.8987,
+          "confidence": "medium",
+          "reasoning": "4节点解锁状态、掌握度结果、题型图谱学习状态数据命中「精准学 AI > 章节诊断/推题与答题记录」",
+          "matched_node_paths": [
+            "精准学 AI > 章节诊断",
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI > 章节列表与图谱浏览"
+          ]
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.616,
+          "confidence": "medium",
+          "reasoning": "真题诊断、同型题作答提交与完成推进逻辑命中「试卷与诊断 > 期末诊断与变式复习」及诊断后变式题作答",
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习",
+            "study-practice 学习练习服务 > 高频错题 > 错题练习与回顾"
+          ]
+        },
+        {
+          "repo_id": "47991a7f-c8e4-4da6-b42c-2ce81d8b137f",
+          "repo_name": "study-course",
+          "score": 0.4779,
+          "confidence": "medium",
+          "reasoning": "入口的学习场景鉴权、课程包权益判断及专项课列表由「学习首页与用户学习 > 学习场景鉴权」「专项课列表与详情」承载",
+          "matched_node_paths": [
+            "study-course 服务 > 学习首页与用户学习",
+            "study-course 服务 > 专项课与总复习 > 专项课列表与详情",
+            "study-course 服务 > 专项课与总复习 > 重难点培优"
+          ]
+        },
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.4896,
+          "confidence": "low",
+          "reasoning": "节点完成/薄弱推进与视频交互答题可能涉及「学习主流程 > 课后练习与答题」及掌握程度统计",
+          "matched_node_paths": [
+            "学习主流程 > 课后练习与答题",
+            "学情报告与推荐 > 知识点完成率统计与推荐"
+          ]
+        }
+      ],
+      "scoring": {
+        "returned_ids": [
+          "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "47991a7f-c8e4-4da6-b42c-2ce81d8b137f",
+          "0edf24fe-ed7e-4998-bbf4-79711db92d40"
+        ],
+        "hit": [
+          "backend/study-user-status",
+          "backend/study-course"
+        ],
+        "hit_count": 2,
+        "missed": [
+          "frontend/onion-learning",
+          "frontend/onion-practice"
+        ],
+        "extra": [
+          "study-app",
+          "study-practice",
+          "backend/study-flow"
+        ],
+        "full_recall": false,
+        "exact_set": false
+      }
+    },
+    {
+      "duration_ms": 26113,
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "candidates": [
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.7209,
+          "confidence": "medium",
+          "reasoning": "命中「业务应用 (apps/) > 课程学习」的移动端H5页面体系，极速提分营入口、单题型学习页、4节点解锁与掌握度浮层等均为C端学生H5功能页开发",
+          "matched_node_paths": [
+            "业务应用 (apps/)",
+            "业务应用 (apps/) > AI 助学 > 横屏问答互动",
+            "公共组件 (components/) > 通用 UI 组件 > 选择器与表单体系"
+          ]
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.8988,
+          "confidence": "medium",
+          "reasoning": "命中「精准学 AI > 章节列表与图谱浏览」及推题答题记录，题型图谱、节点掌握度、真题/同型题答题状态等本专项学习状态数据可由此服务承载",
+          "matched_node_paths": [
+            "精准学 AI > 章节列表与图谱浏览",
+            "精准学 AI > 推题与答题记录"
+          ]
+        },
+        {
+          "repo_id": "cee27ee1-cc73-4937-9a9e-730edd6c93b2",
+          "repo_name": "onion-practice",
+          "score": 0.6055,
+          "confidence": "medium",
+          "reasoning": "命中「应用入口 (apps) > 多场景练习路由」与横屏做题组件，真题检测/同型题作答等练习场景可能承接，属活跃开发的练习前端",
+          "matched_node_paths": [
+            "应用入口 (apps) > Group A 应用 > 多场景练习路由",
+            "核心框架 (packages) > 横屏 UI 组件库 (ui-landscape) > 业务组件"
+          ]
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.6161,
+          "confidence": "low",
+          "reasoning": "命中「试卷与诊断 > 期末诊断与变式复习」，真题诊断结果推进节点解锁的后端练习逻辑可能相关",
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+          ]
+        },
+        {
+          "repo_id": "47991a7f-c8e4-4da6-b42c-2ce81d8b137f",
+          "repo_name": "study-course",
+          "score": 0.4794,
+          "confidence": "medium",
+          "reasoning": "命中「专项课列表与详情」「学习场景鉴权」，课程包权益鉴权（高三暑期数学提分专项）与专项课入口展示可能由此服务提供",
+          "matched_node_paths": [
+            "study-course 服务 > 专项课与总复习 > 专项课列表与详情",
+            "study-course 服务 > 学习首页与用户学习"
+          ]
+        }
+      ],
+      "scoring": {
+        "returned_ids": [
+          "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "cee27ee1-cc73-4937-9a9e-730edd6c93b2",
+          "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "47991a7f-c8e4-4da6-b42c-2ce81d8b137f"
+        ],
+        "hit": [
+          "backend/study-user-status",
+          "frontend/onion-practice",
+          "backend/study-course"
+        ],
+        "hit_count": 3,
+        "missed": [
+          "frontend/onion-learning"
+        ],
+        "extra": [
+          "study-app",
+          "study-practice"
+        ],
+        "full_recall": false,
+        "exact_set": false
+      }
+    },
+    {
+      "duration_ms": 26768,
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "candidates": [
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.7209,
+          "confidence": "medium",
+          "reasoning": "该 monorepo 含 62 个 C 端 H5 业务应用（导航入口/课程学习/练习刷题模块），且有视频播放能力与选择器组件，最契合新增高中数学功能页入口、单题型学习页与 4 节点解锁的前端实现",
+          "matched_node_paths": [
+            "业务应用 (apps/)",
+            "业务应用 (apps/) > AI 助学 > 横屏问答互动",
+            "业务工具链 (utils/) > 任务与媒体工具 > 视频播放能力"
+          ]
+        },
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.8987,
+          "confidence": "medium",
+          "reasoning": "掌握度浮层、4 节点解锁状态、真题诊断结果等学习状态数据依赖精准学的图谱掌握度与章节诊断能力，本专项学习状态数据来源于此",
+          "matched_node_paths": [
+            "精准学 AI > 章节列表与图谱浏览",
+            "精准学 AI > 章节诊断",
+            "精准学 AI > 推题与答题记录"
+          ]
+        },
+        {
+          "repo_id": "cee27ee1-cc73-4937-9a9e-730edd6c93b2",
+          "repo_name": "onion-practice",
+          "score": 0.6055,
+          "confidence": "medium",
+          "reasoning": "多场景练习路由支持按 scene 动态路由到 AI 诊断/变式讲解等 20+ 练习场景，做真题/看讲解/做同型题等做题环节可复用其横屏做题组件与答题卡",
+          "matched_node_paths": [
+            "应用入口 (apps) > Group A 应用 > 多场景练习路由",
+            "核心框架 (packages) > 横屏 UI 组件库 (ui-landscape) > 业务组件"
+          ]
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.616,
+          "confidence": "low",
+          "reasoning": "真题诊断与变式题复习流程与其试卷诊断/变式复习后端能力相关，可作同型题与诊断数据支撑",
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+          ]
+        },
+        {
+          "repo_id": "47991a7f-c8e4-4da6-b42c-2ce81d8b137f",
+          "repo_name": "study-course",
+          "score": 0.4793,
+          "confidence": "low",
+          "reasoning": "课程包权益鉴权（专项课列表与鉴权）与全部功能页入口展示可对接其专项课列表与学习场景鉴权能力",
+          "matched_node_paths": [
+            "study-course 服务 > 专项课与总复习 > 专项课列表与详情",
+            "study-course 服务 > 学习首页与用户学习 > 学习首页教材展示"
+          ]
+        }
+      ],
+      "scoring": {
+        "returned_ids": [
+          "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "cee27ee1-cc73-4937-9a9e-730edd6c93b2",
+          "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "47991a7f-c8e4-4da6-b42c-2ce81d8b137f"
+        ],
+        "hit": [
+          "backend/study-user-status",
+          "frontend/onion-practice",
+          "backend/study-course"
+        ],
+        "hit_count": 3,
+        "missed": [
+          "frontend/onion-learning"
+        ],
+        "extra": [
+          "study-app",
+          "study-practice"
+        ],
+        "full_recall": false,
+        "exact_set": false
+      }
+    },
+    {
+      "duration_ms": 21727,
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.8987,
+          "confidence": "medium",
+          "reasoning": "题型对应CB知识点、掌握度、节点解锁与专项学习状态命中「章节列表与图谱浏览」「章节诊断」「推题与答题记录」，承载学习状态与掌握度数据",
+          "matched_node_paths": [
+            "精准学 AI > 章节列表与图谱浏览",
+            "精准学 AI > 章节诊断",
+            "精准学 AI > 推题与答题记录"
+          ]
+        },
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.4891,
+          "confidence": "low",
+          "reasoning": "4节点中做真题/看讲解/做同型题涉及答题正误判定与视频学习记录，命中「课后练习与答题」「视频交互题」，可能承载节点完成状态推进",
+          "matched_node_paths": [
+            "学习主流程 > 课后练习与答题",
+            "学习主流程 > 视频交互题"
+          ]
+        }
+      ],
+      "scoring": {
+        "returned_ids": [
+          "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "0edf24fe-ed7e-4998-bbf4-79711db92d40"
+        ],
+        "hit": [
+          "backend/study-user-status"
+        ],
+        "hit_count": 1,
+        "missed": [
+          "backend/study-course",
+          "frontend/onion-learning",
+          "frontend/onion-practice"
+        ],
+        "extra": [
+          "backend/study-flow"
+        ],
+        "full_recall": false,
+        "exact_set": false
+      }
+    },
+    {
+      "duration_ms": 23030,
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.8988,
+          "confidence": "medium",
+          "reasoning": "4节点解锁状态、掌握度浮层依赖本专项学习状态数据，命中「精准学 AI>章节列表与图谱浏览（含掌握度元数据）」及答题记录",
+          "matched_node_paths": [
+            "精准学 AI > 章节列表与图谱浏览",
+            "精准学 AI > 推题与答题记录"
+          ]
+        },
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.7209,
+          "confidence": "medium",
+          "reasoning": "极速提分营入口与单题型学习页、4节点解锁属于C端移动H5学习页，命中「业务应用 (apps/)>课程学习/AI助学」模块",
+          "matched_node_paths": [
+            "业务应用 (apps/)",
+            "业务应用 (apps/) > AI 助学 > 横屏问答互动"
+          ]
+        },
+        {
+          "repo_id": "47991a7f-c8e4-4da6-b42c-2ce81d8b137f",
+          "repo_name": "study-course",
+          "score": 0.4794,
+          "confidence": "medium",
+          "reasoning": "入口权益鉴权依赖课程包持有状态，命中「学习首页与用户学习>学习场景鉴权」及专项课列表",
+          "matched_node_paths": [
+            "study-course 服务 > 学习首页与用户学习",
+            "study-course 服务 > 专项课与总复习 > 专项课列表与详情"
+          ]
+        },
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.4891,
+          "confidence": "low",
+          "reasoning": "真题诊断与节点完成推进涉及做题记录与薄弱知识点推荐，命中「学习主流程>课后练习与答题」",
+          "matched_node_paths": [
+            "学习主流程 > 课后练习与答题",
+            "学情报告与推荐 > 知识点完成率统计与推荐"
+          ]
+        },
+        {
+          "repo_id": "cee27ee1-cc73-4937-9a9e-730edd6c93b2",
+          "repo_name": "onion-practice",
+          "score": 0.6055,
+          "confidence": "low",
+          "reasoning": "真题/同型题做题渲染可能复用横屏练习场景路由，命中「多场景练习路由」",
+          "matched_node_paths": [
+            "应用入口 (apps) > Group A 应用 > 多场景练习路由"
+          ]
+        }
+      ],
+      "scoring": {
+        "returned_ids": [
+          "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "47991a7f-c8e4-4da6-b42c-2ce81d8b137f",
+          "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "cee27ee1-cc73-4937-9a9e-730edd6c93b2"
+        ],
+        "hit": [
+          "backend/study-user-status",
+          "backend/study-course",
+          "frontend/onion-practice"
+        ],
+        "hit_count": 3,
+        "missed": [
+          "frontend/onion-learning"
+        ],
+        "extra": [
+          "study-app",
+          "backend/study-flow"
+        ],
+        "full_recall": false,
+        "exact_set": false
+      }
+    }
+  ],
+  "summary": {
+    "full_recall_runs": 0,
+    "exact_set_runs": 0,
+    "avg_hit": 2.4,
+    "per_repo_recall": {
+      "backend/study-course": 4,
+      "backend/study-user-status": 5,
+      "frontend/onion-learning": 0,
+      "frontend/onion-practice": 3
+    }
+  }
+}

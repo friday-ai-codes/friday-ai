@@ -1,0 +1,86 @@
+[
+  {
+    "scenario": "embed_query",
+    "variant": "短查询",
+    "ok": true,
+    "detail": "1 个探针 / 切 1 块",
+    "ms": 257
+  },
+  {
+    "scenario": "embed_query",
+    "variant": "长上下文",
+    "ok": true,
+    "detail": "8 个探针 / 切 8 块",
+    "ms": 827
+  },
+  {
+    "scenario": "repo_route",
+    "variant": "短查询",
+    "ok": true,
+    "detail": "5 候选 / v2_stage0_only",
+    "ms": 1310
+  },
+  {
+    "scenario": "repo_route",
+    "variant": "长上下文",
+    "ok": true,
+    "detail": "5 候选 / v2_stage0_only",
+    "ms": 1507
+  },
+  {
+    "scenario": "rag_search",
+    "variant": "短查询",
+    "ok": false,
+    "detail": "status=ok / 0 条",
+    "ms": 1748
+  },
+  {
+    "scenario": "rag_search",
+    "variant": "长上下文",
+    "ok": false,
+    "detail": "status=ok / 0 条",
+    "ms": 1447
+  },
+  {
+    "scenario": "vector_recall",
+    "variant": "短查询",
+    "ok": true,
+    "detail": "6 条命中",
+    "ms": 329
+  },
+  {
+    "scenario": "vector_recall",
+    "variant": "长上下文",
+    "ok": true,
+    "detail": "1 条命中",
+    "ms": 1385
+  },
+  {
+    "scenario": "layered_search_l3",
+    "variant": "短查询",
+    "ok": true,
+    "detail": "status=ok",
+    "ms": 582
+  },
+  {
+    "scenario": "layered_search_l3",
+    "variant": "长上下文",
+    "ok": true,
+    "detail": "status=ok",
+    "ms": 1243
+  },
+  {
+    "scenario": "blueprint_route",
+    "variant": "短查询",
+    "ok": true,
+    "detail": "4 候选",
+    "ms": 168
+  },
+  {
+    "scenario": "blueprint_route",
+    "variant": "长上下文",
+    "ok": true,
+    "detail": "4 候选",
+    "ms": 197
+  }
+]

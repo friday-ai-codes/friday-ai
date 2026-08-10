@@ -1,0 +1,489 @@
+{
+  "header": {
+    "project": "高三提分专项",
+    "project_id": "75248ff9-3a22-4175-b940-6093d71eb4dc",
+    "space": "学习工具",
+    "corpus": "feature_list+test_case",
+    "features_in_corpus": 238,
+    "query_len": 28872,
+    "query_budget_applied": true,
+    "candidate_repo_count": 30,
+    "top_k": 5,
+    "stage0_node_k": 200,
+    "stage1_max_candidates": 8,
+    "stage1_timeout_s": 90.0,
+    "stage1_budget_s": 120.0,
+    "ground_truth": [
+      "backend/study-course",
+      "backend/study-user-status",
+      "frontend/onion-learning",
+      "frontend/onion-practice"
+    ]
+  },
+  "runs": [
+    {
+      "duration_ms": 31762,
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.9416,
+          "confidence": "medium",
+          "reasoning": "掌握度浮层、节点解锁状态机、题型学习状态数据依赖用户学习状态后端，命中「精准学AI>推题与答题记录」「章节列表与图谱浏览（掌握度元数据）」",
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI > 章节列表与图谱浏览",
+            "精准学 AI"
+          ]
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.675,
+          "confidence": "medium",
+          "reasoning": "真题检测提交答题、诊断结果、断点续做/重做清空、错题本自动收录等后端逻辑命中「试卷作答与报告」「期末诊断与变式复习」等节点",
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 试卷作答与报告",
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习",
+            "study-practice 学习练习服务 > 高频错题 > 错题练习与回顾"
+          ]
+        },
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.506,
+          "confidence": "medium",
+          "reasoning": "需求为高中数学「极速提分营」全套前端页面（全部功能页入口、单题型学习页4节点、真题检测、知识卡片等），属于C端移动H5课程学习/练习刷题模块，命中「练习与刷题>日常练习与备考」「课程学习」等能力节点",
+          "matched_node_paths": [
+            "业务应用 (apps/) > 练习与刷题 > 日常练习与备考",
+            "业务应用 (apps/)",
+            "业务应用 (apps/) > AI 助学"
+          ]
+        },
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.564,
+          "confidence": "low",
+          "reasoning": "4节点解锁的学习主流程推进、视频完成、知识点完成率与掌握度可能涉及学习主流程后端，命中「课后练习与答题」「视频交互题」",
+          "matched_node_paths": [
+            "学习主流程 > 课后练习与答题",
+            "学习主流程 > 视频交互题"
+          ]
+        },
+        {
+          "repo_id": "cf19acc3-6cf3-4729-a3fa-3685a3f15e36",
+          "repo_name": "frontend/new-course-builder-client",
+          "score": 0.6881,
+          "confidence": "low",
+          "reasoning": "题型真题、知识卡片、讲解视频等专项内容配置录入可能需在运营后台管理，命中「专项内容管理>先测后学诊断题」",
+          "matched_node_paths": [
+            "专项内容管理 > 先测后学诊断题",
+            "专项内容管理"
+          ]
+        }
+      ],
+      "scoring": {
+        "returned_ids": [
+          "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "cf19acc3-6cf3-4729-a3fa-3685a3f15e36"
+        ],
+        "hit": [
+          "backend/study-user-status"
+        ],
+        "hit_count": 1,
+        "missed": [
+          "backend/study-course",
+          "frontend/onion-learning",
+          "frontend/onion-practice"
+        ],
+        "extra": [
+          "study-practice",
+          "study-app",
+          "backend/study-flow",
+          "frontend/new-course-builder-client"
+        ],
+        "full_recall": false,
+        "exact_set": false
+      }
+    },
+    {
+      "duration_ms": 27815,
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.9418,
+          "confidence": "medium",
+          "reasoning": "题型4节点解锁状态、掌握度、同型题推荐与答题记录需后端支撑，命中「精准学AI > 推题与答题记录」与「章节列表与图谱浏览（掌握度元数据）」",
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI > 章节列表与图谱浏览"
+          ]
+        },
+        {
+          "repo_id": "ec433b88-2e6a-422c-8073-1b4612e373c1",
+          "repo_name": "backend/study-stream",
+          "score": 0.5381,
+          "confidence": "medium",
+          "reasoning": "涉及专项课学习流水、掌握度与学习状态记录，命中「学习场景定制化处理（专项课/AI诊疗）」及「学习场景与内容类型枚举」，可承载本专项的学习状态数据",
+          "matched_node_paths": [
+            "业务逻辑层 (biz) > 学习场景定制化处理",
+            "API 定义层 > 学习场景与内容类型枚举"
+          ]
+        },
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.506,
+          "confidence": "medium",
+          "reasoning": "需求是移动端H5的完整前端功能页（全部功能页入口、单题型学习页4节点、真题检测、知识卡片等），命中「业务应用 > 练习与刷题」及「AI助学 > 精准学诊断」，属于C端学生移动端页面开发",
+          "matched_node_paths": [
+            "业务应用 (apps/) > 练习与刷题 > 日常练习与备考",
+            "业务应用 (apps/) > AI 助学 > 精准学诊断"
+          ]
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.6669,
+          "confidence": "low",
+          "reasoning": "真题检测提交作答、诊断结果与错题本入库逻辑与「试卷作答与报告」「期末诊断与变式复习」相近，可能承载真题诊断结果记录",
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 试卷作答与报告",
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+          ]
+        },
+        {
+          "repo_id": "cf19acc3-6cf3-4729-a3fa-3685a3f15e36",
+          "repo_name": "frontend/new-course-builder-client",
+          "score": 0.6886,
+          "confidence": "low",
+          "reasoning": "真题/知识卡片/视频等专项内容需运营后台录入配置，命中「专项内容管理 > 先测后学诊断题」及习题管理，用于配置本专项资源",
+          "matched_node_paths": [
+            "专项内容管理 > 先测后学诊断题",
+            "习题管理 > 习题统计与反馈"
+          ]
+        }
+      ],
+      "scoring": {
+        "returned_ids": [
+          "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "ec433b88-2e6a-422c-8073-1b4612e373c1",
+          "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "cf19acc3-6cf3-4729-a3fa-3685a3f15e36"
+        ],
+        "hit": [
+          "backend/study-user-status"
+        ],
+        "hit_count": 1,
+        "missed": [
+          "backend/study-course",
+          "frontend/onion-learning",
+          "frontend/onion-practice"
+        ],
+        "extra": [
+          "backend/study-stream",
+          "study-app",
+          "study-practice",
+          "frontend/new-course-builder-client"
+        ],
+        "full_recall": false,
+        "exact_set": false
+      }
+    },
+    {
+      "duration_ms": 23719,
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.9416,
+          "confidence": "medium",
+          "reasoning": "4节点解锁状态、掌握度、真题诊断结果的学习状态存储与读取命中「精准学AI>推题与答题记录」及「章节列表与图谱浏览（含掌握度元数据）」",
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI > 章节列表与图谱浏览"
+          ]
+        },
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.5061,
+          "confidence": "medium",
+          "reasoning": "需求是移动端H5全新的极速提分营学习流程（入口展示、单题型4节点解锁、真题检测、知识卡片等前端页面与交互），命中「练习与刷题>日常练习与备考」及「AI助学>精准学诊断」，前端页面主体应在此仓库",
+          "matched_node_paths": [
+            "业务应用 (apps/) > 练习与刷题 > 日常练习与备考",
+            "业务应用 (apps/) > AI 助学 > 精准学诊断"
+          ]
+        },
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.564,
+          "confidence": "medium",
+          "reasoning": "真题检测、同型题答题、视频交互及完成率统计的学习主流程后端命中「学习主流程>课后练习与答题」「视频交互题」「知识点完成率统计与推荐」",
+          "matched_node_paths": [
+            "学习主流程 > 课后练习与答题",
+            "学习主流程 > 视频交互题",
+            "学情报告与推荐 > 知识点完成率统计与推荐"
+          ]
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.675,
+          "confidence": "low",
+          "reasoning": "真题作答、诊断结果生成与错题本沉淀命中「试卷与诊断>试卷作答与报告」「期末诊断与变式复习」，可能承接真题诊断逻辑",
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 试卷作答与报告",
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+          ]
+        },
+        {
+          "repo_id": "ec433b88-2e6a-422c-8073-1b4612e373c1",
+          "repo_name": "backend/study-stream",
+          "score": 0.5382,
+          "confidence": "low",
+          "reasoning": "新增专项学习场景可能需在学习流水/场景枚举中登记，命中「学习场景定制化处理」及「学习场景与内容类型枚举」",
+          "matched_node_paths": [
+            "业务逻辑层 (biz) > 学习场景定制化处理",
+            "API 定义层 > 学习场景与内容类型枚举"
+          ]
+        }
+      ],
+      "scoring": {
+        "returned_ids": [
+          "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "ec433b88-2e6a-422c-8073-1b4612e373c1"
+        ],
+        "hit": [
+          "backend/study-user-status"
+        ],
+        "hit_count": 1,
+        "missed": [
+          "backend/study-course",
+          "frontend/onion-learning",
+          "frontend/onion-practice"
+        ],
+        "extra": [
+          "study-app",
+          "backend/study-flow",
+          "study-practice",
+          "backend/study-stream"
+        ],
+        "full_recall": false,
+        "exact_set": false
+      }
+    },
+    {
+      "duration_ms": 23711,
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.9418,
+          "confidence": "medium",
+          "reasoning": "掌握度浮层、4节点解锁状态、同型题推荐与答题记录命中「精准学AI>推题与答题记录」及「章节列表与图谱浏览（含掌握度）」，可提供学习状态数据",
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI > 章节列表与图谱浏览"
+          ]
+        },
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.506,
+          "confidence": "medium",
+          "reasoning": "需求为高中数学「极速提分营」完整前端功能（入口展示、单题型学习页4节点、真题检测复用做题组件、知识卡片切换等），命中「练习与刷题>日常练习与备考」及「AI助学>精准学诊断」，属C端移动H5练习应用",
+          "matched_node_paths": [
+            "业务应用 (apps/) > 练习与刷题 > 日常练习与备考",
+            "业务应用 (apps/) > AI 助学 > 精准学诊断"
+          ]
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.6702,
+          "confidence": "medium",
+          "reasoning": "真题检测/诊断结果、变式题复习、试卷作答与报告命中「试卷与诊断>期末诊断与变式复习」，可能提供真题诊断与同型题后端能力",
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习",
+            "study-practice 学习练习服务 > 试卷与诊断 > 试卷作答与报告"
+          ]
+        },
+        {
+          "repo_id": "050e49b2-633a-44ad-96e8-9262546756db",
+          "repo_name": "frontend/onion-learning",
+          "score": 0.5239,
+          "confidence": "medium",
+          "reasoning": "同为C端移动H5学习前端，命中「练习应用」及「学段年级映射」（高中学段判定），可能承载题型学习页与真题检测UI",
+          "matched_node_paths": [
+            "练习应用 > AI 错题本 > 错题收集与筛选",
+            "基础能力库 > 基础配置与共享库 > 学段年级映射"
+          ]
+        },
+        {
+          "repo_id": "0edf24fe-ed7e-4998-bbf4-79711db92d40",
+          "repo_name": "backend/study-flow",
+          "score": 0.564,
+          "confidence": "low",
+          "reasoning": "视频讲解节点、答题判定与知识点完成率统计命中「学习主流程>视频交互题」及「知识点完成率统计」，可能涉及节点完成推进后端",
+          "matched_node_paths": [
+            "学习主流程 > 视频交互题",
+            "学情报告与推荐 > 知识点完成率统计与推荐"
+          ]
+        }
+      ],
+      "scoring": {
+        "returned_ids": [
+          "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "050e49b2-633a-44ad-96e8-9262546756db",
+          "0edf24fe-ed7e-4998-bbf4-79711db92d40"
+        ],
+        "hit": [
+          "backend/study-user-status",
+          "frontend/onion-learning"
+        ],
+        "hit_count": 2,
+        "missed": [
+          "backend/study-course",
+          "frontend/onion-practice"
+        ],
+        "extra": [
+          "study-app",
+          "study-practice",
+          "backend/study-flow"
+        ],
+        "full_recall": false,
+        "exact_set": false
+      }
+    },
+    {
+      "duration_ms": 24534,
+      "router_version": "v2",
+      "degraded": false,
+      "degrade_reason": "",
+      "auto_selected": false,
+      "candidates": [
+        {
+          "repo_id": "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "repo_name": "backend/study-user-status",
+          "score": 0.9418,
+          "confidence": "medium",
+          "reasoning": "4节点解锁状态、掌握度浮层与专项学习状态数据命中「精准学AI>推题与答题记录」「章节列表与图谱浏览（含掌握度元数据）」，承载题型学习状态与掌握度存储",
+          "matched_node_paths": [
+            "精准学 AI > 推题与答题记录",
+            "精准学 AI > 章节列表与图谱浏览"
+          ]
+        },
+        {
+          "repo_id": "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "repo_name": "study-practice",
+          "score": 0.6669,
+          "confidence": "medium",
+          "reasoning": "真题检测作答提交、诊断结果生成、变式/同型题复习与错题本进入命中「试卷作答与报告」「期末诊断与变式复习」，可承接专项诊断与同型题作答后端逻辑",
+          "matched_node_paths": [
+            "study-practice 学习练习服务 > 试卷与诊断 > 试卷作答与报告",
+            "study-practice 学习练习服务 > 试卷与诊断 > 期末诊断与变式复习"
+          ]
+        },
+        {
+          "repo_id": "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "repo_name": "study-app",
+          "score": 0.5061,
+          "confidence": "medium",
+          "reasoning": "需求为高中数学「极速提分营」专项的完整前端页面（入口展示、单题型学习页、真题检测、知识卡片、4节点解锁交互），命中「练习与刷题>日常练习与备考」「AI助学>精准学诊断」，是C端移动端H5练习刷题主战场",
+          "matched_node_paths": [
+            "业务应用 (apps/) > 练习与刷题 > 日常练习与备考",
+            "业务应用 (apps/) > AI 助学 > 精准学诊断"
+          ]
+        },
+        {
+          "repo_id": "cf19acc3-6cf3-4729-a3fa-3685a3f15e36",
+          "repo_name": "frontend/new-course-builder-client",
+          "score": 0.6886,
+          "confidence": "low",
+          "reasoning": "题型真题ID、知识卡片图片、同型题等专项内容配置录入命中「专项内容管理」「先测后学诊断题」，为B端配置侧支撑",
+          "matched_node_paths": [
+            "专项内容管理",
+            "专项内容管理 > 先测后学诊断题"
+          ]
+        },
+        {
+          "repo_id": "ec433b88-2e6a-422c-8073-1b4612e373c1",
+          "repo_name": "backend/study-stream",
+          "score": 0.5381,
+          "confidence": "low",
+          "reasoning": "专项课场景的学习流水与做题/视频统计命中「学习场景定制化处理」「学习场景与内容类型枚举」，可能需为极速提分营专项接入学情流水",
+          "matched_node_paths": [
+            "业务逻辑层 (biz) > 学习场景定制化处理",
+            "API 定义层 > 学习场景与内容类型枚举"
+          ]
+        }
+      ],
+      "scoring": {
+        "returned_ids": [
+          "a1bef5cc-b5e4-4869-8a5a-e1c4f5db4663",
+          "b2b1d6b6-1f2b-4ea1-9d88-42ed0380418b",
+          "5bdc1da9-6d1f-4ae9-85c8-1d9ce03560e2",
+          "cf19acc3-6cf3-4729-a3fa-3685a3f15e36",
+          "ec433b88-2e6a-422c-8073-1b4612e373c1"
+        ],
+        "hit": [
+          "backend/study-user-status"
+        ],
+        "hit_count": 1,
+        "missed": [
+          "backend/study-course",
+          "frontend/onion-learning",
+          "frontend/onion-practice"
+        ],
+        "extra": [
+          "study-practice",
+          "study-app",
+          "frontend/new-course-builder-client",
+          "backend/study-stream"
+        ],
+        "full_recall": false,
+        "exact_set": false
+      }
+    }
+  ],
+  "summary": {
+    "full_recall_runs": 0,
+    "exact_set_runs": 0,
+    "avg_hit": 1.2,
+    "per_repo_recall": {
+      "backend/study-course": 0,
+      "backend/study-user-status": 5,
+      "frontend/onion-learning": 1,
+      "frontend/onion-practice": 0
+    }
+  }
+}

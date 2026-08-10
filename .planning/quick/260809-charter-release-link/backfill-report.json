@@ -1,0 +1,14 @@
+{
+  "started_at": "2026-08-08T17:17:33.782552+00:00",
+  "deterministic_linked": 478,
+  "deterministic_edges": 632,
+  "alias_linked": 33,
+  "alias_edges": 34,
+  "still_unlinked": 1437,
+  "alias_hit_services": 10,
+  "alias_miss_services": 88,
+  "charter_ok": 257,
+  "charter_fail": 0,
+  "charter_errors": [],
+  "finished_at": "2026-08-08T17:43:39.209846+00:00"
+}
