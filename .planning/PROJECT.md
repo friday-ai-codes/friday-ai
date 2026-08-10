@@ -12,9 +12,9 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.21.0 蓝图过程可见与返工闭环（2026-08-05，验证 **tech_debt**，15 条需求 14 满足 / 1 部分，Phases 117–120，未打 tag）；此前为 v0.20.0 技术方案蓝图（2026-08-02，审计 **tech_debt**，34/35 需求，Phases 111–116）与 v0.19.0 技术方案可信度（2026-08-02，审计 **tech_debt**，17/19 需求，Phases 105–110），两者双 worktree 并行开发、已于 2026-08-02 合并（同步点 2）。里程碑 v0.1.0–v0.21.0（Phases 1–120）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
+**Latest shipped:** v0.22.0 代码智能图分析升级（对标 GitNexus）（2026-08-11，审计 **tech_debt**，27 条需求 26 满足 / 1 部分（IMPACT-03），Phases 121–127，44 plans，**未打 tag**）；此前为 v0.21.0 蓝图过程可见与返工闭环（2026-08-05，验证 **tech_debt**，Phases 117–120）、v0.20.0 技术方案蓝图与 v0.19.0 技术方案可信度（2026-08-02 双归档合并）。里程碑 v0.1.0–v0.22.0（Phases 1–127）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
 
-**当前在建里程碑：v0.22.0 代码智能图分析升级（对标 GitNexus）**，见下方 Current Milestone。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号。
+**当前无在建里程碑**——下一里程碑待 `$gsd-new-milestone` 立项。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -30,24 +30,28 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.22.0 代码智能图分析升级（对标 GitNexus）
+## Current Milestone
 
-**Goal:** 在现有 codegraph/RAG 底座上补齐 GitNexus 级的图分析能力,让 AI 编码代理改代码前能回答「影响谁、怎么到达、属于哪个模块、这条改动安全吗」。
+无在建里程碑。下一里程碑通过 `$gsd-new-milestone` 立项（重新生成 `REQUIREMENTS.md`）。
 
-**Target features:**
-- **内存图服务(地基)**：按 `(repository, branch)` 从 `Symbol`/`CallEdge`/`ChunkEdge`/`CrossRepoApiCall` 构建 networkx 有向图缓存,挂 `last_indexed_commit_sha` 水位失效 + LRU 逐出。
-- **impact 影响面分析**：反向 BFS + 深度分组 + 置信度分级(解析边/裸名边/跨仓 `match_confidence`),支持穿仓边界(反超 GitNexus)。
-- **trace 调用路径**：两符号间有向最短路,带文件/行号渲染。
-- **detect_changes**：git diff 行区间 × Symbol 行区间定位受影响符号 → 批量 impact,接入编码任务提交前自查与 MR 描述。
-- **社区检测 + 模块摘要**：图上跑社区发现,社区落库;LLM 生成模块摘要,喂 RepoRouter 与技术方案生成。
-- **执行流**：以 `Endpoint` 为入口正向追踪调用链,存 Process 模型。
-- **rename_preview**：图引用 + grep 兜底的只读改名清单工具(不自动改写)。
-- **Semgrep 安全门禁**：集成 Semgrep taint mode 扫 MR diff,替代自研 PDG/污点(买不是造)。
-- **解析精度提升**：volar/gopls LSP 后端默认开启或降低开启门槛。
+## Previous Milestone: v0.22.0 代码智能图分析升级（对标 GitNexus）— ✅ COMPLETE 2026-08-11（审计 tech_debt，未打 tag）
 
-**Key context:** networkx 已在依赖树(v3.6.1);`CallEdge` 已有外键化 caller/callee;全部新工具走现有 MCP/对话工具模式,复用 exclusion、`RetrievalTrace`、观测埋点约定。
+> **收口结论：** 7 相位 44/44 plans；27 条需求 **26 满足 / 1 部分（IMPACT-03）/ 0 未达**。服务端主路径（图缓存→impact/detect_changes→MR 影响面、社区→Router evidence、Process→affected_processes、Semgrep SHA 守卫）经对抗性复核接通。Phase 127 曾出现 Level 4 HOLLOW（空 SHA 入队）并已结构性闭合。
+>
+> **判 `tech_debt` 而非 `passed` 的理由：** IMPACT-03 生产样本缺席 + mcp npm 客户端漂移 + Adapter 未挂 module_summary + CreatePRNode 未挂 impact_report + Nyquist 七相位均未 validated + Phase 127 三项 human_needed / SHA 双失败 pending 残留。归档口径与 v0.19.0/v0.20.0 一致。
+>
+> 归档产物：`milestones/v0.22.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `v0.22.0-phases/`。**刻意未打 git tag**——本仓 tag 是发布轨（`tags: v*` 触发 release），与 GSD 里程碑不同编号。
 
-**显式 Out of Scope:** 开箱体验/安装向导(用户明确排除);自研 PDG/CFG(Semgrep 替代);新语言 extractor(Java/Kotlin/Rust 等,单独立项)。
+<details>
+<summary>立项时的原始范围（2026-08-09）</summary>
+
+**Goal:** 在现有 codegraph/RAG 底座上补齐 GitNexus 级的图分析能力，让 AI 编码代理改代码前能回答「影响谁、怎么到达、属于哪个模块、这条改动安全吗」。
+
+**Target features:** 内存图服务地基 / impact+trace / detect_changes 编码链闭环 / 社区检测+模块摘要 / Endpoint 执行流 / rename_preview / Semgrep advisory / LSP 基准（默认值不盲翻）。
+
+**显式 Out of Scope:** 开箱体验/安装向导；自研 PDG/CFG；新语言 extractor；rename 自动 apply；taint 硬门禁默认阻断。
+
+</details>
 
 ## Previous Milestone: v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）— ✅ SHIPPED 2026-08-02（审计 tech_debt）
 
@@ -223,9 +227,18 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **蓝图质量基线**：golden set 与质量指标（引用覆盖率 / AI 打回率 / 人审修改量 / 澄清轮次 / 目标仓命中率）建立，首条 case 为「高三提分专项」真实用例，质量退化可被回归检出 — v0.20.0 (GATE-02)
 - ⚠️ **全入口统一走蓝图编排（PARTIAL）**：workflow / chat / MCP / feature list 四入口的蓝图可执行路径与 per-entry 运行时开关已交付、MCP 异步澄清协议全量交付；但**开关默认值仍为 `technical_plan`**，默认切换与三个入口的出口映射重做原硬阻塞在同步点 2（v0.19.0 Phase 109/110 合并），该依赖已于 2026-08-02 合并时满足 ⇒ 待执行 — v0.20.0 (GATE-01)
 
+- ✓ **内存符号图服务**：`(repository, branch)` networkx 图缓存（水位失效 + 字节 LRU + single-flight + 权限/exclusion fail-closed），公开面收敛、生产常数实测标定 — v0.22.0 (GRAPH-01~04, `server/services/code_graph/`)
+- ✓ **impact / trace 工具面**：反向 BFS 深度分组 + 四档置信度 + 弱证据封顶；有向最短路显式消歧；MCP/对话双面同源 — v0.22.0 (IMPACT-01/02/04/05/06)
+- ⚠️ **跨仓 impact（PARTIAL）**：沿 `CrossRepoApiCall` 一跳穿仓内核与合成测绿；本环境无跨仓样本且 LSP 默认关，生产可用性未复验 — v0.22.0 (IMPACT-03)
+- ✓ **detect_changes + 编码链闭环**：水位锚定 diff × Symbol、rename 不误报；容器提交前自查；MR `## 影响面` fail-soft 三挂点 — v0.22.0 (DIFF-01~04)
+- ✓ **社区检测 + 模块摘要**：固定 seed Louvain + 指纹跳过重生成 + `module_summary` 三点注入（不动 `repo_router_v2.py`） — v0.22.0 (MOD-01~04)
+- ✓ **执行流 + rename_preview + skills**：Endpoint→Process；affected_processes 回填；只读双源改名清单；`friday-impact`/`friday-refactoring` 同源分发 — v0.22.0 (EXEC-01~03, RENAME-01, SKILL-01)
+- ✓ **Semgrep advisory + LSP 基准**：diff-aware 扫描 + MR 安全段；空 SHA hollow 已闭合；LSP 默认保持 False（基准未达翻转门槛） — v0.22.0 (TAINT-01~03, LSP-01)
+
 ### Active（无 — 当前无在建里程碑）
 
-<!-- 2026-08-02 v0.19.0 与 v0.20.0 双双归档并合并（同步点 2）后，无在建需求集，`.planning/REQUIREMENTS.md` 已按 complete-milestone 契约删除；两个里程碑的需求分别归档在 milestones/v0.19.0-REQUIREMENTS.md（19 条 RELY/ROUTE/SPINE/OBS，DEPTH-01~05 已移交）与 milestones/v0.20.0-REQUIREMENTS.md（35 条 SCHEMA/LIFE/CHARTER/FLOW/CLAR/BUS/VIEW/GATE）。v0.15.0–v0.17.0 的需求同样已交付并归档，详见 MILESTONES.md 与 milestones/。下一里程碑立项（$gsd-new-milestone）时重新生成 REQUIREMENTS.md。以下 v0.15.0 需求清单为历史存档（已全部交付），保留仅作追溯。 -->
+<!-- 2026-08-11 v0.22.0 归档后，无在建需求集，`.planning/REQUIREMENTS.md` 已按 complete-milestone 契约删除；需求归档在 milestones/v0.22.0-REQUIREMENTS.md（27 条 GRAPH/IMPACT/DIFF/MOD/EXEC/RENAME/TAINT/LSP/SKILL）。此前里程碑需求见 milestones/v0.19.0～v0.21.0-REQUIREMENTS.md。下一里程碑立项（$gsd-new-milestone）时重新生成 REQUIREMENTS.md。以下 v0.15.0 需求清单为历史存档（已全部交付），保留仅作追溯。 -->
+
 
 > ⚠️ **已知既有漂移（早于本次归档）**：下方清单仍是 v0.15.0 的历史存档，`### Active` 段并非当前在建需求。合并后已把标题与说明改为如实的「无在建里程碑」，清单本身保留作追溯，待下一里程碑立项时整体替换。
 
@@ -396,7 +409,13 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 | AI 审查超界是「待人审」而非「流程失败」；finding 处置只走 `resolve`/`dismiss`，⛔ 不走作答通道 | 打回 ≤2 轮后带未决项升人审，绝不落 FAILED；作答通道会把 BLOCKER 推到 `answered` 从而绕开 `reason` 必填与处置留痕，既解不开确认门又污染状态 | ✓ Validated（v0.20.0，Phase 114） |
 | 「AI 不覆盖人工」与「人不无声覆盖已确认内容」是对称的两道闸 | 前者靠回灌侧冲突检测 + 重装侧人工块还原两条链；后者靠 `EDITABLE_BLUEPRINT_STATUSES`——已 `confirmed` 及其后的状态要改必须先驳回再重走人审，否则确认锚定的内容会被事后掉包且无痕 | ✓ Validated（v0.20.0，Phase 114） |
 | 「未经确认」标注做成**结构上关不掉**的东西：必填 keyword-only 参数 + 闭合白名单 + 零布尔开关 | 默认开着的开关迟早会被关掉；唯一可机器验证的形式是 `inspect.signature` 断言，拿不到状态的注册表分支传 `""` 而空串不在白名单 ⇒ fail-safe 当作未确认 | ✓ Validated（v0.20.0，Phase 116，对齐 RELY-01 语义） |
-| 蓝图默认入口切换顺延同步点 2，且必须与三个入口的出口映射重做、三处触点升级、旧 process 退役**同批**做 | 语义前提而非排期：蓝图的 `DONE` 语义是「等人审」，而 `_map_terminal` 把 `DONE` 无条件映射成 completed 并喂给下游 `ai_coding` ⇒ 今天翻默认 = 未经人审的蓝图直送编码代理，正面违反 RELY-01。任何一件单独做都造成回退 | ⚠️ Revisit（v0.20.0 GATE-01 PARTIAL；阻塞项 v0.19.0 Phase 109/110 合并已于 2026-08-02 满足 ⇒ 解阻塞、待执行） |
+| 蓝图默认入口切换顺延同步点 2，且必须与三个入口的出口映射重做、三处触点升级、旧 process 退役**同批**做 | 语义前提而非排期：蓝图的 `DONE` 语义是「等人审」，而 `_map_terminal` 把 `DONE` 无条件映射成 completed 并喂给下游 `ai_coding` ⇒ 今天翻默认 = 未经人审的蓝图直送编码代理，正面违反 RELY-01。任何一件单独做都造成回退 | ✓ Validated（v0.20.0 GATE-01；同步点 2 四件事已于 2026-08-02 闭合） |
+| 图引擎用 networkx（不引入 rustworkx）；社区用内置 `louvain_communities(seed=固定)`（否决 leidenalg GPL） | rustworkx 缺社区检测；GPL 污染风险；触发条件升级项已记 Future Requirements | ✓ Validated（v0.22.0，Phase 121/125） |
+| 污点分析外购 Semgrep CE 独立 CLI/venv，不进 server Python 依赖树；门禁 advisory 起步 | 自研 PDG 是编译器级工程量；硬门禁会被整体绕过；CE 边界如实声明 | ✓ Validated（v0.22.0，Phase 127） |
+| Semgrep 入队必须两端非空 SHA（`enqueue_semgrep_scan_for_branches`）；解析失败不入队、保留 pending stub + skip 日志 | 空 SHA 入队曾造成 Level 4 HOLLOW（恒 unavailable 却单测绿）；守卫把「假扫描」从结构上堵住 | ✓ Validated（v0.22.0，Phase 127 收口实修） |
+| LSP（volar/gopls）默认保持 False，翻转门槛由 baseline 报告决定，本里程碑不盲翻 | 缺少完整 before/after 墙钟与质量证明时翻转会放大冷启动与 OOM 归因难度 | ✓ Validated（v0.22.0，LSP-01 / D-16） |
+| IMPACT-03 诚实 defer：CrossRepo=0 时不宣称生产跨仓 impact 可用 | 合成测绿 ≠ 生产数据流有样本；诚实空列表优于虚假安全感 | ⚠️ Revisit（v0.22.0 IMPACT-03 PARTIAL；待真样本 + LSP 生产者） |
+| v0.22.0 **不打 git tag** | 本仓 tag 是发布轨（`tags: v*`），与 GSD 里程碑轨不同编号；与 v0.19.0/v0.20.0/v0.21.0 归档纪律一致 | ✓ Validated（v0.22.0 归档） |
 
 ## Evolution
 
@@ -416,4 +435,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-09 — v0.21.0 轻量归档；立项 v0.22.0 代码智能图分析升级（对标 GitNexus）。*
+*Last updated: 2026-08-11 — v0.22.0 归档（tech_debt，未打 tag）。*

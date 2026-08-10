@@ -2,10 +2,11 @@
 gsd_state_version: 1.0
 milestone: v0.22.0
 milestone_name: 代码智能图分析升级（对标 GitNexus）
-status: verifying
-stopped_at: Phase 127 re-verified 4/4 — milestone audit next
-last_updated: "2026-08-10T19:05:00.000Z"
-last_activity: 2026-08-11 -- Phase 127 收口（8 项审查发现全修 + 两个遗留红灯清理 + 重新验证 4/4）
+status: completed
+stopped_at: Milestone v0.22.0 archived（tech_debt，未打 tag）
+last_updated: "2026-08-11T03:15:00.000Z"
+last_activity: 2026-08-11
+last_activity_desc: 归档 v0.22.0（override_closeout / tech_debt）
 progress:
   total_phases: 7
   completed_phases: 7
@@ -18,21 +19,22 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md（updated 2026-08-02，v0.19.0 + v0.20.0 双归档合并后）。v0.20.0 的权威设计输入 `technical-blueprint/DESIGN.md`，v0.19.0 的路由排序调研 `research/ROUTING-RANKING.md`；两者的全部相位产物已分别归档到 `.planning/milestones/v0.20.0-phases/` 与 `.planning/milestones/v0.19.0-phases/`。
+See: .planning/PROJECT.md（updated 2026-08-11，v0.22.0 归档后）。v0.22.0 调研见 `research/SUMMARY.md`；相位产物归档到 `.planning/milestones/v0.22.0-phases/`。此前 v0.20.0 设计输入 `technical-blueprint/DESIGN.md`、v0.19.0 路由调研 `research/ROUTING-RANKING.md`。
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。
-**v0.19.0 交付的那一层：** 技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，编排产出直连执行流，全过程对用户实时可见。
-**v0.20.0 交付的那一层：** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图——六段骨架每条结论带引用证据，三大编排阶段贯穿仓库确认门与分仓方案，飞书式划线澄清多轮收敛，全生命周期可管理、可查可引可导出。
-**Current focus:** v0.22.0 收口 — 七相位全部完成，进入里程碑审计
+**v0.22.0 交付的那一层：** 在 codegraph/RAG 底座上叠加内存图分析——改代码前能回答「影响谁、怎么到达、属于哪个模块、这条改动安全吗」，并把 detect_changes 闭环进编码链与 MR 描述。
+**v0.20.0 交付的那一层：** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图。
+**v0.19.0 交付的那一层：** 技术方案链路真正跑通并可信——编排不塌陷、路由可解释、编排产出直连执行流、过程可见。
+**Current focus:** 规划下一里程碑（`$gsd-new-milestone`）
 
 ## Current Position
 
-Phase: 127 (semgrep-lsp) — COMPLETE
-Plan: 5 of 5
-Status: 重新验证 4/4 must-haves（`human_needed`：3 项需真实环境的人工检查，见 127-VERIFICATION.md）
-Last activity: 2026-08-11 -- Phase 127 收口：CR-01 建 MR 挂点解析真实两端 sha（缺口闭合）、8 项审查发现全修、code_graph 链路 83 项观测契约违规清理
+Phase: —
+Plan: —
+Status: v0.22.0 已归档（tech_debt / override_closeout），等待下一里程碑立项
+Last activity: 2026-08-11 — 归档 v0.22.0：相位 121–127 移入 milestones/v0.22.0-phases/，台账中文化收口
 
-## Milestone Overview (v0.22.0 — Phases 121–127 — ✅ 七相位全部完成，2026-08-09 立项，2026-08-11 收口)
+## Milestone Overview (v0.22.0 — Phases 121–127 — ✅ ARCHIVED 2026-08-11，审计 tech_debt，未打 tag)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
@@ -46,7 +48,7 @@ Last activity: 2026-08-11 -- Phase 127 收口：CR-01 建 MR 挂点解析真实�
 
 ⭐ **127 的收口经过一轮实修**：初次验证判 `gaps_found` (2/4)——三处建 MR 挂点以空 `source_sha`/`target_sha` 入队，`run_semgrep_scan` 恒 `unavailable`，diff-aware 扫描在生产链路从未真正执行（Level 4 HOLLOW）。闭合方式是新增 `services/code_graph/semgrep_sha.py`（已知 sha → 平台 client `resolve_branch_sha` → 本地裸镜像 三级回退）与守卫入口 `enqueue_semgrep_scan_for_branches`（两端解析不到就不入队、记 `code_graph_enqueue_semgrep_scan_skipped_missing_sha` 并保留 pending stub），三处挂点与 `attach_security_scan_pending` 统一改走它。同轮清掉 code_graph 链路 **83 项观测契约违规**（事件名补 `code_graph_` 前缀、包内 `category` 收敛 `sampling`、`error=` 收口脱敏），并把命名约定登记进 `observability/LOGGING-SPEC.md` §5——此前这四条规则只活在守卫测试里。
 
-**Execution order（依赖链）:** 121 → 122 → 123 → 124 → 125 → 126 → 127（125 只依赖 121，可与 122–124 并行；127 独立轨道但刻意排在 125/126 之后避免多个内存大户同时上线）。需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)，调研见 [research/SUMMARY.md](./research/SUMMARY.md)。
+**Execution order（依赖链）:** 121 → 122 → 123 → 124 → 125 → 126 → 127（125 只依赖 121，可与 122–124 并行；127 独立轨道但刻意排在 125/126 之后避免多个内存大户同时上线）。需求见 [milestones/v0.22.0-REQUIREMENTS.md](./milestones/v0.22.0-REQUIREMENTS.md)；阶段详情见 [milestones/v0.22.0-ROADMAP.md](./milestones/v0.22.0-ROADMAP.md)；审计见 [milestones/v0.22.0-MILESTONE-AUDIT.md](./milestones/v0.22.0-MILESTONE-AUDIT.md)；调研见 [research/SUMMARY.md](./research/SUMMARY.md)。
 
 ## Milestone Overview (v0.20.0 — Phases 111–116 — ✅ SHIPPED 2026-08-02；六相位全部完成并 verified，CLAR-03 closure 已闭，里程碑审计 `tech_debt`)
 
@@ -925,6 +927,40 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 
 ## Deferred Items
 
+### 🔒 Acknowledged at v0.22.0 close（2026-08-11）
+
+Items acknowledged and deferred at milestone close on 2026-08-11（`gsd-tools query audit-open` 报 19 项；确认后继续关闭，`closeout_type=override_closeout`，accept `tech_debt`——与 v0.19.0 / v0.20.0 同口径）:
+
+| Category | Item | Status |
+|----------|------|--------|
+| verification_gap | Phase 127 · `127-VERIFICATION.md` | human_needed（4/4 must-haves 已绿；保留 3 项真实环境人工检查：docker 镜像体积审计 / LSP baseline 真仓复跑 / IMPACT-03 真样本 revisit） |
+| requirement_partial | **IMPACT-03** — 跨仓内核与合成测绿；本环境 CrossRepoApiCall/ApiCallSite=0 且 LSP 默认关 ⇒ 生产者未激活 | deferred（**不得宣称生产跨仓 impact 可用**） |
+| tech_debt | mcp npm 客户端缺 impact/trace/detect_changes/list_processes/get_process/rename_preview 等工具名 | deferred（跨仓改动 + 发版，本里程碑范围外） |
+| tech_debt | `RepoRouterV2Adapter` 未消费 module-summary 信号 | deferred（MCP/chat/BlueprintRoute 三点已挂） |
+| tech_debt | CreatePRNode / coding_graph MR 路径未挂 impact_report | deferred（IN-01 / CONTEXT 非必达） |
+| tech_debt | Nyquist：121–127 均有 `*-VALIDATION.md`，无一 `status: validated` | deferred（`$gsd-validate-phase` 对账） |
+| tech_debt | Phase 127：两端 SHA 解析失败时 security-scan stub 可永久 pending | deferred（可观测 skip 日志；intentional fail-open） |
+| quick_task | `blueprint-stage-runner` | missing（v0.22.0 范围外的既有 quick task） |
+| quick_task | `260610-oug-url-https` | unknown（既有） |
+| quick_task | `260611-ghb-workflow-card-uniform` | unknown（既有） |
+| quick_task | `260624-w11-abort-stuck-index-job-962-and-add-2mb-pr` | unknown（既有） |
+| quick_task | `260805-31u-runner` | unknown（既有；Quick Tasks Completed 表已有交付记录） |
+| quick_task | `260806-2c2-kind-ai-ai` | unknown（既有；已有交付记录） |
+| quick_task | `260806-d9y-blueprint-title-order` | unknown（既有） |
+| quick_task | `260806-fy2-ai-fp-id` | unknown（既有） |
+| quick_task | `260807-release-bitable-import` | unknown（既有） |
+| quick_task | `260807-ricelove-import` | unknown（既有） |
+| quick_task | `260808-g1c-ai-thinking-claude-opus-4-6` | completed（既有；已有交付记录） |
+| quick_task | `260808-gaosan-repo-routing` | missing（既有） |
+| quick_task | `260809-3kc-repository-charter-ui` | unknown（既有） |
+| quick_task | `260809-charter-release-link` | unknown（既有） |
+| quick_task | `260809-f3z-rag-ai` | unknown（既有） |
+| quick_task | `260809-regen-scheme-descriptions` | unknown（既有） |
+| quick_task | `260809-repo-route-eval` | unknown（既有） |
+| quick_task | `260810-index-counter-fix` | missing（既有） |
+
+⚠️ 里程碑级技术债权威清单见 [milestones/v0.22.0-MILESTONE-AUDIT.md](./milestones/v0.22.0-MILESTONE-AUDIT.md) `tech_debt` 段与上方 Known Gaps。**未打 tag**（发布轨独立于 GSD 里程碑编号）。
+
 Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后分三类：✅ 已解决、
 🔒 需外部系统/全新实例（本地无法闭环）、🖐 纯观感人工验收（可后续浏览器抽验）。
 
@@ -1108,14 +1144,7 @@ Resume file: None
 
 ## Operator Next Steps
 
-- ⛔ **不要现在开下一个里程碑。** 合并（同步点 1 + 2）已于 2026-08-02 完成，下一个动作是 Pending Todos 第 2 条的**四件事同批改动**：翻四个 per-entry 开关默认值 + workflow / feature_list / MCP 三个入口的出口映射重做（审计 §4.1 的 G1/G3/G4）+ `TechPlanCard`/`NodeDataTab`/`ArtifactTimeline` 三处触点升级 + 旧 `technical_plan` process 退役收口。⚠️ 灰度顺序按「第一次澄清就会撞 G1/G4」估，⛔ 不要按「先翻开关再看终态」的直觉走；⛔ 任何一件单独做都会造成回退。
-- **顺带解阻塞的一条**：同步点 1 也已达成 ⇒ 蓝图澄清飞书卡片的**交互回调**可以接了（换 107 的送达设施是同一批改动，届时**仍只改 `blueprint_notify.py` 那一个文件**）。
-- **v0.19.0 归档后的欠条**（详见 Deferred Items「Acknowledged at v0.19.0 close」）：27 项人工验收全未执行；⭐ **生产跑一条 `measure_repo_index_stats --write-snapshot` 即可让 ROUTE-03 从 PARTIAL 转满足**（成本最低的一条）；发布前必须先就迁移 0033 的「存量方案卡集体出现『未经代码调研』横幅」向用户交代（109-UAT #5）。
-- **v0.20.0 归档后的欠条**（详见 Deferred Items「Acknowledged at v0.20.0 close」与 Pending Todos）：`mcp` npm 包缺四个新增工具（跨仓 + 发版）；`redact_secrets_in_text` 不覆盖数据库连接串（平台级，与全仓 `error=str(exc)` 未脱敏合并成独立清理相位）；115-MN-03 的四语义契约整体改版；FLOW-02 替代建议结构化；chat 回灌挂载点无结构性保证；Nyquist validation 六相位全缺。
-- **版本号纪律**：本仓 tag 是发布轨（最新 `v0.18.0`，`.github/workflows/release.yaml` 由 `tags: v*` 触发），与 GSD 里程碑轨不同编号。v0.19.0 与 v0.20.0 **均刻意未打 tag**。立项下一里程碑前先 `gh release list` 核对可用版本号。
-- 候选立项输入：`.planning/coding-agent/PROPOSAL.md`（Coding Agent 流水线，V1.2 提案待评审）。
-- 把 v0.17.0 遗留的 11 项真实环境人工验证转入运维验收 backlog（目前无承接方）。
-- 遗留 housekeeping（非阻断）：`/Users/zaneliu/gsd-workspaces/friday-fastapi-sa/friday-ai` 是 30 天未动的 GSD workspace，其分支 `codex/fastapi-sqlalchemy-migration` 相对 main 已 0 独有提交（工作已并入），可 `git worktree remove` 清理；`worktree-agent-*` 三个分支属另一份与 main 无共同祖先的历史（tip 为 2026-04-30），worktree 注册已清、分支 ref 待确认后删除。
+- Start the next milestone with /gsd-new-milestone
 
 ## Deferred Verification
 

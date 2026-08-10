@@ -2,7 +2,7 @@
 
 ## Milestones
 
-- 🚧 **v0.22.0 代码智能图分析升级（对标 GitNexus）** — Phases 121–127 (in progress, started 2026-08-09) — 在现有 codegraph/RAG 底座上叠加内存图分析层：`(repository, branch)` 内存符号图缓存地基 + impact/trace 影响面与调用路径（穿仓边界反超 GitNexus）+ detect_changes 闭环进编码链（提交前自查 + MR 影响面报告）+ 社区检测与 LLM 模块摘要 + Endpoint 执行流 + rename_preview + Semgrep taint 门禁（买不是造）+ LSP 开启门槛与基准 — 27 条需求 / 9 分类，调研见 [research/SUMMARY.md](./research/SUMMARY.md)
+- ✅ **v0.22.0 代码智能图分析升级（对标 GitNexus）** — Phases 121–127 (completed 2026-08-11，未打 tag) — 在现有 codegraph/RAG 底座上叠加内存图分析层：图缓存地基 + impact/trace（穿仓）+ detect_changes 闭环进编码链 + 社区/模块摘要 + 执行流 + rename_preview + Semgrep advisory + LSP 基准 — 里程碑审计 **tech_debt**（27 条需求 26 满足 / 1 部分（IMPACT-03）/ 0 未达；121–126 passed、127 human_needed @ 4/4）见 [audit](./milestones/v0.22.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.22.0-ROADMAP.md) · [requirements](./milestones/v0.22.0-REQUIREMENTS.md) · [phases](./milestones/v0.22.0-phases/) · [research](./research/SUMMARY.md)
 - ✅ **v0.21.0 蓝图过程可见与返工闭环（反向关联 + 门到期 + 按阶段 agent 活动流 + 带原始上下文重跑）** — Phases 117–120 (completed 2026-08-05，未打 tag) — 让蓝图的「生成过程」与「返工过程」都对人可见可控：阶段级活动流取代笼统转圈、分仓每仓进度与方案可见、人审可选重跑范围且续跑带原始 agent 上下文、HITL 门不再无限静默悬挂 — 验证 **tech_debt**（15 条需求 14 满足 / 1 部分（LIVE-04 落增量轮询而非推送通道）/ 0 未达；后端 9849 全绿、前端 1 条既存失败）见 [verification](./milestones/v0.21.0-VERIFICATION.md) — [requirements](./milestones/v0.21.0-REQUIREMENTS.md)
 - ✅ **v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）** — Phases 111–116 (shipped 2026-08-02) — 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图 — 里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口；GATE-01 与三道入口接缝因硬依赖同步点 2 判 PARTIAL / 转技术债，同步点 2 已由 2026-08-02 的分支合并满足）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.20.0-ROADMAP.md) · [requirements](./milestones/v0.20.0-REQUIREMENTS.md) · [design](./technical-blueprint/DESIGN.md)
 - ✅ **v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 编排产出直连执行流 + 过程可见）** — Phases 105–110（其中 108 已移交 v0.20.0）(completed 2026-08-02，未打 tag) — 让技术方案链路真正跑通并可信：编排不再中途卡死被降级工具顶替、路由基于多维证据分层呈现并可解释、编排产出直连执行流、全过程对用户实时可见 — 5 相位 39/39 plans；里程碑审计 **tech_debt**（19 条需求 17 满足 / 2 部分（ROUTE-03 生产 `nr_snapshot` 未写入、RELY-02 澄清送达需真实飞书）/ 0 未达；ROUTE 缺口已结构性闭合；遗留 27 项人工验收全未执行）见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.19.0-ROADMAP.md) · [requirements](./milestones/v0.19.0-REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
@@ -31,303 +31,33 @@
 
 ## Phases
 
-### 🚧 v0.22.0 代码智能图分析升级（对标 GitNexus）(Phases 121–127) — IN PROGRESS
-
-- [x] **Phase 121: 内存图服务基座** - `(repository, branch)` 内存符号图缓存（水位失效 + 字节 LRU + single-flight）+ 权限/exclusion 读取层统一收口
-- [x] **Phase 122: impact / trace 工具面** - 反向 BFS 深度分组 + 置信度分层 + 跨仓边界 + 有向最短路，MCP/对话双面暴露 (completed 2026-08-09)
-- [x] **Phase 123: detect_changes 工具本体** - diff 行区间 × Symbol 区间定位受影响符号 + 批量 impact，水位锚定 + rename 检测 (completed 2026-08-10, verified passed)
-- [x] **Phase 124: 编码链闭环** - 编码容器提交前自查 + MR 描述自动附影响面报告（fail-soft） (completed 2026-08-10)
-- [x] **Phase 125: 社区检测 + 模块摘要** - Louvain 社区落库 + 成员指纹跳过重生成 + LLM 模块摘要三点注入（adapter 层，不动冻结面） (plans 4/4 complete 2026-08-09 — ready for verification)
-- [x] **Phase 126: 执行流 + rename_preview + skills** - Endpoint 正向执行流存 Process + affected_processes 回填 + 只读改名清单 + 两个 skill 同源分发 (completed 2026-08-10)
-- [x] **Phase 127: Semgrep 门禁 + LSP 基准** - diff-aware taint 扫描 advisory 起步 + volar/gopls 可用性探测与抽取质量基准 (completed 2026-08-10)
-
-#### Phase Details (v0.22.0)
-
-### Phase 121: 内存图服务基座
-
-**Goal**: Agent/工具查询任一已索引仓库时能拿到该 `(repository, branch)` 的内存符号图——缓存命中、水位一致、内存有界、权限与 exclusion 天然 fail-closed，为一切上层图工具提供共同地基
-**Depends on**: Nothing (first phase of milestone；前置为既有 `Symbol`/`CallEdge`/`ChunkEdge`/`CrossRepoApiCall` 与 networkx 3.6.1)
-**Requirements**: GRAPH-01, GRAPH-02, GRAPH-03, GRAPH-04
-**Success Criteria** (what must be TRUE):
-
-  1. Agent 首次查询某 `(repository, branch)` 触发建图，同键再次查询命中缓存不重复装配（可从日志事件/计数观察到 build 一次、hit 多次）
-  2. 重索引推进 `last_indexed_commit_sha` 或边构建代数变化后，旧缓存自动失效重建；取图时校验水位，绝不返回「水位已更新但边未建完」的半新图
-  3. 缓存按字节预算 LRU 逐出且有 single-flight 建图锁——并发查询同一仓只触发一次构建；超预算大仓走降级路径（不缓存/按需子图），进程不 OOM
-  4. 被排除文件与无权限仓库在图读取层统一拦截（fail-closed），任何上层图分析工具的输出中均不可见
-
-**Plans**: 10 plans（8 waves，W0–W7；W2 与 W3 各有两个 plan 可并行）
-
-Plans:
-**Wave 1**
-
-- [x] 121-01-PLAN.md — W0 依赖提升（networkx 直接依赖）、`CODE_GRAPH_*` 配置项、LOGGING-SPEC §5 登记 `code_graph`、测试包与 fixture 脚手架
-- [x] 121-02-PLAN.md — W1 `model.py` 契约层：四档边枚举 / `CodeGraph`·`GraphMeta`·`ChunkEvidence` / 异常层级 / 裸名黑名单
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 121-03-PLAN.md — W2 `access.py`：仓库可读性单一校验点 + exclusion 同步收口与规则指纹（fail-closed）
-- [x] 121-04-PLAN.md — W2 `signature.py`：复合签名（两条边构建轨）+ in-flight 判定（躲 PENDING 长鸣与 RUNNING 孤儿）
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 121-05-PLAN.md — W3 `loader.py` 主干：符号节点 overlay 装配 + 装配阶段 exclusion 过滤 + CallEdge 双档与解析率
-- [x] 121-07-PLAN.md — W3 `cache.py` 存储侧：字节估算纯函数 + 字节预算 LRU 逐出 + 单例与测试重置钩子（与 121-05 并行；只依赖 `model.py` 与 settings，不碰 loader/signature）
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 121-06-PLAN.md — W4 `loader.py` 补齐：跨仓边二次解析 + chunk 旁挂证据面 + 按需子图降级路径
-
-**Wave 5** *(blocked on Wave 4 completion)*
-
-- [x] 121-08-PLAN.md — W5 `GraphService.get_graph` 编排：签名复校 / 命中前的 in-flight 闸 / 准入降级 / single-flight
-
-**Wave 6** *(blocked on Wave 5 completion)*
-
-- [x] 121-09-PLAN.md — W6 curated barrel（架构红线，恰 17 项导出）+ `invalidate` 与两处构建完成失效钩子
-
-**Wave 7** *(blocked on Wave 6 completion)*
-
-- [x] 121-10-PLAN.md — W7 诊断交付物：最大仓内存实测（常数复校）+ `callee_symbol` 解析率统计（阈值校准）+ 零迁移守护
-
-### Phase 122: impact / trace 工具面
-
-**Goal**: 用户/agent 改代码前能回答「影响谁、怎么到达」——impact 深度分组 + 置信度分层 + 跨仓边界，trace 两符号间最短路，经 MCP 与对话双面可用
-**Depends on**: Phase 121
-**Requirements**: IMPACT-01, IMPACT-02, IMPACT-03, IMPACT-04, IMPACT-05, IMPACT-06
-**Success Criteria** (what must be TRUE):
-
-  1. 对任一符号执行 impact 查询，返回反向依赖的深度分组结果（d1/d2/d3 = WILL BREAK / LIKELY AFFECTED / MAY NEED TESTING），每条边带 confidence 分档（resolved / bare_name / cross_repo 原值）+ reason，调用方可用 `min_confidence` 自选精度/召回
-  2. 修改后端 `Endpoint` 时 impact 能沿 `CrossRepoApiCall` 边列出受影响的前端调用点，跨仓结果标注 `cross_repo: true` 与独立置信档
-  3. impact 输出带确定性风险分级（LOW/MEDIUM/HIGH/CRITICAL，阈值可解释、不走 LLM）与截断 summary 计数，agent 知道被截断了多少
-  4. trace 返回任意两符号间有向最短路并逐跳渲染 file:line + 边类型/置信度；符号重名时返回消歧候选列表，绝不静默取第一个
-  5. impact/trace 经 MCP 工具（PAT fail-closed + schema snapshot）与 agents 对话工具双面可调，输出带索引 staleness 提示（「索引落后 N commits」）
-
-**Plans**: 10/10 plans complete
-
-Plans:
-**Wave 0**
-
-- [x] 122-01-PLAN.md — W0 验收地基：合成冻结 `MultiDiGraph` fixture（13 节点）+ 可调扇入 hub + 跨仓造数工厂 + 9 个测试文件骨架
-
-**Wave 1** *(blocked on Wave 0 completion)*
-
-- [x] 122-02-PLAN.md — W1 `symbol_resolve.py`：uid 优先 + 重名候选列表（D-19）+ barrel docstring 记 D-28 边界
-- [x] 122-03-PLAN.md — W1 `impact.py` 内核：分层反向 BFS + path-min 置信度 + 确定性风险四级（含 D-29 封顶）+ 截断纪律
-- [x] 122-04-PLAN.md — W1 `trace.py` 内核：置信度视图上的有向最短路 + 等长多解声明 + 显式无路径结构
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 122-05-PLAN.md — W2 `code_graph_tools.py` 原语层：带种子取图（D-24）+ `GraphError` 翻译表 + staleness/降级声明 + 候选 `signature` 补取；并把 AST 观测契约扩到包外兄弟模块
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 122-06-PLAN.md — W3 `code_graph_cross_repo.py`：`CrossRepoApiCall` ORM 直查的跨仓一跳（D-25）+ 逐仓权限复核 + 三种显式条目
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 122-07-PLAN.md — W4 `run_impact` / `run_trace`：两面共用的唯一编排入口（D-21）+ 重名取图前短路
-
-**Wave 5** *(blocked on Wave 4 completion)*
-
-- [x] 122-08-PLAN.md — W5 MCP 壳：2 个 `McpToolView` + serializers + urls + schema snapshot 双份字面量 + `caller` 事件与 `RetrievalTrace`
-
-**Wave 6** *(blocked on Wave 5 completion)*
-
-- [x] 122-09-PLAN.md — W6 对话壳：2 个 `@tool` + 会话 owner fail-closed + `agents/tools/__init__` 与 chat 白名单两处注册
-
-**Wave 7** *(blocked on Wave 6 completion)*
-
-- [x] 122-10-PLAN.md — W7 双面同源逐字节守护（D-21）+ D-26 / D-27 两笔跨相位记账
-
-### Phase 123: detect_changes 工具本体
-
-**Goal**: 用户/agent 对分支 diff 一键得到「这次改动碰了哪些符号、波及多大」——受影响符号清单 + 批量 impact，行号与 Symbol 同源对齐、rename 不误报
-**Depends on**: Phase 121, Phase 122
-**Requirements**: DIFF-01, DIFF-02
-**Success Criteria** (what must be TRUE):
-
-  1. 对分支 diff 执行 detect_changes 得到受影响符号清单（changeType / 行数 / file:line）与批量 impact 结果；diff base 强制锚定 `last_indexed_commit_sha`，保证行区间与 Symbol 行号同源
-  2. compare + base_ref 场景（MR diff）可用；文件重命名被识别（`git diff -M`），纯 rename PR 不产生满屏误报
-  3. 输出带索引 staleness 声明（as_of commit），索引落后时 agent 能看到并自行判断可信度
-
-**Plans**: 6/6 plans executed（6 waves，W0–W5；线性依赖以锁定 MCP↔对话 schema 同表）
-
-Plans:
-**Wave 0**
-
-- [x] 123-00-PLAN.md — W0 验收地基：交叠 / diff_mirror / 编排 / MCP·双面 四文件测试骨架
-
-**Wave 1** *(blocked on Wave 0)*
-
-- [x] 123-01-PLAN.md — W1 `diff_mirror` + `ensure_mirror_sha` + 纯 `detect_changes.py` 交叠内核（D-01/D-05/D-06/D-07/D-15）
-
-**Wave 2** *(blocked on Wave 1)*
-
-- [x] 123-02-PLAN.md — W2 `run_detect_changes` 编排 + `tool_trace_payload` detect_changes 分支（D-01..D-12/D-14）
-
-**Wave 3** *(blocked on Wave 2)*
-
-- [x] 123-03-PLAN.md — W3 MCP 壳：Serializer + DetectChangesView + url + schema snapshot（D-13）
-
-**Wave 4** *(blocked on Wave 3)*
-
-- [x] 123-04-PLAN.md — W4 对话壳：DetectChangesToolInput + `@tool` + chat 白名单（D-13）
-
-**Wave 5** *(blocked on Wave 4)*
-
-- [x] 123-05-PLAN.md — W5 双面同源哨兵 + 观测无内容泄漏 + D-27 漂移 7→8 记账
-
-### Phase 124: 编码链闭环
-
-**Goal**: detect_changes 真正进「需求→PR」编码链——容器提交前自查、MR 描述自动带影响面报告，这是 Friday 区别于 GitNexus 的落点
-**Depends on**: Phase 123
-**Requirements**: DIFF-03, DIFF-04
-**Success Criteria** (what must be TRUE):
-
-  1. 编码任务容器在提交前可经既有 MCP PAT 白名单调用 detect_changes 自查，受影响清单进入提交决策（system prompt 指引，v1 提示不阻断）
-  2. workflow 与 MCP 两条建 MR 链路的 MR 描述自动附影响面报告（Changes / Affected / Risk / Recommendations 四段结构）
-  3. 影响面报告生成失败时 fail-soft——建 MR 主流程零阻断、MR 照常创建
-
-**Plans:** 4/4 plans complete
-Plans:
-**Wave 1**
-
-- [x] 124-00-PLAN.md — Wave 0：DIFF-03/04 测试骨架（skip 桩）+ VALIDATION Task ID 对齐
-- [x] 124-01-PLAN.md — Wave 1：容器白名单 + system prompt 自查指引（DIFF-03 / D-01..D-04）
-- [x] 124-02-PLAN.md — Wave 1：共享 impact_report + settings 超时/体积（DIFF-04 核心 / D-05..D-13/D-15）
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 124-03-PLAN.md — Wave 2：workflow + MCP + mr_service 挂点与 D-14 对等哨兵
-
-### Phase 125: 社区检测 + 模块摘要
-
-**Goal**: 每仓代码自动聚成模块并有 LLM 生成的模块摘要，喂给 RepoRouter 与技术方案生成——回答「这段代码属于哪个模块、这个仓有哪些职责」
-**Depends on**: Phase 121
-**Requirements**: MOD-01, MOD-02, MOD-03, MOD-04
-**Success Criteria** (what must be TRUE):
-
-  1. 每仓图上运行社区检测（networkx `louvain_communities` 固定 seed + 节点排序），社区归属以独立模型 + 软引用落库（不加在 `Symbol` 上），增量索引后自动刷新
-  2. 成员指纹（Jaccard 阈值）判定未变的社区跳过摘要重生成——「无代码变更连续重建两次，LLM 调用数为 0」验收用例通过
-  3. 每个社区有 LLM 模块摘要（关键文件 / 入口 / 职责叙述），LLM 调用赋新 `call_source`（LOGGING-SPEC §4.1 先登记）
-  4. 模块摘要注入 RepoRouter adapter 层（evidence 侧）与技术方案生成 prompt，消费端按相关度排序 + token 预算截断不全量灌入；⛔ `repo_router_v2.py` 冻结面全程零改动
-
-**Plans:** 4/4 plans complete
-Plans:
-**Wave 1**
-
-- [x] 125-01-PLAN.md — Wave 0：登记 `call_source=module_summary` + 全套验收测试桩 + 冻结面守卫桩
-- [x] 125-02-PLAN.md — Wave 1：`SymbolCommunity` + Louvain/指纹 + durable `QUEUE_GRAPH` 双钩子 enqueue
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 125-03-PLAN.md — Wave 2：`module_summary` LLM + Jaccard 跳过 + rebuild×2 LLM=0 验收
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 125-04-PLAN.md — Wave 3：三点 adapter 注入（evidence / signal / 调研 prompt）+ 冻结面守卫绿
-
-### Phase 126: 执行流 + rename_preview + skills
-
-**Goal**: 以 `Endpoint` 为入口的执行流可追踪可查询并回填影响面叙事层；改名前有只读双源清单；工作流经验固化为 skill 对内外分发
-**Depends on**: Phase 125 (执行流需要 community 分类), Phase 123 (affected_processes 回填 detect_changes/impact 输出)
-**Requirements**: EXEC-01, EXEC-02, EXEC-03, RENAME-01, SKILL-01
-**Success Criteria** (what must be TRUE):
-
-  1. 以 `Endpoint` 为确定性入口正向追踪执行流并存 Process 模型，遵守 BFS 纪律（maxDepth 10 / maxBranching 4 / minSteps 3 / 只走置信度 ≥0.5 的边 + 去重），环与 async 断链显式标注
-  2. 执行流带社区归属分类（intra/cross_community），可经 MCP 工具查询
-  3. detect_changes / impact 输出回填 `affected_processes` 叙事层（受影响执行流名称清单），进 MR 描述增值段
-  4. rename_preview 输出图解析引用 + grep 文本兜底的双源合并清单，逐条带 graph/text_search 置信标签 + context 片段、按文件分组，显式声明动态引用覆盖限制；只出清单不改写
-  5. impact-analysis / refactoring 两个工作流 skill 进 `@friday-ai-codes/skills` 同源分发（复用 v0.17.0 hash 一致性机制），编码容器与外部 agent 可用
-
-**Plans:** 5/5 plans complete
-
-**Wave 0**
-
-- [x] 126-01-PLAN.md — Wave 0：Nyquist 测试桩（含 process_query）+ VALIDATION 对齐 + 冻结面守卫桩
-
-**Wave 1** *(blocked on Wave 0 completion)*
-
-- [x] 126-02-PLAN.md — Wave 1：ProcessTrace 模型/迁移 + 正向 BFS 内核 + QUEUE_GRAPH 链式重建
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 126-03-PLAN.md — Wave 2：list/get 双面查询 + assemble_affected_processes + impact_report 执行流段
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 126-04-PLAN.md — Wave 3：rename_preview 只读双源 + MCP/对话壳 + knowledge 白名单
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 126-05-PLAN.md — Wave 4：friday-impact / friday-refactoring skill + SKILL_NAMES sync/hash
-
-### Phase 127: Semgrep 门禁 + LSP 基准
-
-**Goal**: MR 有外购的 taint 安全扫描（advisory 起步、边界如实声明），LSP 抽取后端开启门槛降低且有质量/耗时基准数据——两条与内存图零耦合的独立轨道收尾
-**Depends on**: Phase 124 (MR 描述挂点范式复用；且刻意排在 125/126 之后，避免多个内存大户同时上线导致 OOM 归因困难)
-**Requirements**: TAINT-01, TAINT-02, TAINT-03, LSP-01
-**Success Criteria** (what must be TRUE):
-
-  1. MR 流程可触发 Semgrep diff-aware 扫描（`--baseline-commit` 取 merge-base），只报本次 MR 新增 finding；Semgrep 以独立 CLI/venv 形态集成，不进 server Python 依赖树
-  2. finding 带 severity 分级进 MR 描述/评论；门禁默认报告不阻断（advisory）；`nosemgrep` 误报通道生效；扫描超时 fail-open 且显式标注
-  3. 门禁文案如实声明 CE 版仅函数内 taint 的边界（不虚假承诺跨函数/跨文件）；Pro 能力经 `SEMGREP_APP_TOKEN`（加密凭证存储）opt-in
-  4. server 镜像补齐 Node/Go 运行时，volar/gopls 带可用性探测 + fail-soft 降级 + 孤儿进程清扫；产出开启前后的抽取质量/耗时基准报告，默认值翻转由基准数据决定（本里程碑不盲翻）
-
-**跨相位回访（D-26 / IMPACT-03）：** 生产库 `CrossRepoApiCall` / `ApiCallSite` / `ApiWrapper` **均为 0 行**（`Endpoint` 6,014 行）——上游产出器依赖 volar LSP，而 server 镜像无 Node。Phase 122 的 IMPACT-03 四条分支**全部由合成数据覆盖**，跨仓路径**未经任何真实数据验证**；121-10 记的「样本不足」实为**样本为零**，命中率在本相位补齐 LSP 并重建索引之前根本不可测。本相位落地 LSP 并重建索引后，**必须回来用真实样本复验 IMPACT-03** 的四条分支，并测出 `(file_path, name)` 二次解析的真实命中率。
-
-**127-05 闭合备注（2026-08-10）：** D-16 保持 `VOLAR_BACKEND_ENABLED`/`GOPLS_BACKEND_ENABLED` 默认 False（基准缺完整索引差分与 gopls PATH，不建议翻默认）。 D-17 IMPACT-03：**诚实延期** — 真实 `CrossRepoApiCall`/`ApiCallSite`/`ApiWrapper` 仍为 0，未宣称跨仓已验证； follow-up 为开启 LSP 后重建索引再复验四分支。详见 `127-05-SUMMARY.md` / `impact03-revisit.md` / `lsp-baseline-report.json`。
-
-**Plans:** 5 plans
-Plans:
-**Wave 1**
-
-- [x] 127-01-PLAN.md — Wave 0：Nyquist 测试桩 + 冻结面守卫 + VALIDATION 对齐
-- [x] 127-02-PLAN.md — Wave 1：Dockerfile Semgrep/Node/Go/LSP + settings/keys + SecurityFinding
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 127-03-PLAN.md — Wave 2：semgrep_scan CLI + QUEUE_SCAN durable + fail-open
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 127-04-PLAN.md — Wave 3：`## 安全扫描` MR 段 + 双链路挂点 + Pro token / CE 文案
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 127-05-PLAN.md — Wave 4：LSP 孤儿清扫 + 基准报告 + IMPACT-03 复验/诚实延期 + 默认翻转门禁
-
-**执行顺序（依赖链）:** 121（地基，绝对先行——缓存四件套 + 边准入 + 读取层鉴权/exclusion 收口必须做进地基）→ 122（核心工具面，双面接线模式定型）→ 123（detect_changes 本体）→ 124（编码链集成，动 task/workflow 两条链单独控风险）→ 125（社区先于执行流，Process 需要 community 分类）→ 126（执行流 + 独立小项收编）→ 127（Semgrep/LSP 独立轨道收尾，避开与 125/126 同时引入内存大户）。其中 125 只依赖 121，可视执行情况与 122–124 并行推进。
-
-需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；领域调研与相位依据见 [research/SUMMARY.md](./research/SUMMARY.md)（含 Louvain vs Leiden 裁决、缓存四件套、裸名边准入纪律、Semgrep 死亡螺旋规避）。**跨仓记账:** `test_mcp_package_tools_match_server_snapshot` 在 HEAD 上已红着 **5** 项漂移（`apply_repo_association` / `generate_requirement_spec` / `get_repo_research` / `route_blueprint_repos` / `start_repo_research`，来自阶段沙箱工具，与 Phase 122 无关）；Phase 122 新增 `impact_analysis` / `trace_call_path` 后变为 **7** 项；Phase 123 再新增 `detect_changes` 后变为 **8** 项。按 D-27 **不修** `mcp` submodule（并发会话占用 + 跨仓改动另批发版），该守护继续红着并列入相位门的「已知既有失败」白名单（另一仓库改动，v0.20.0 已有同款缺口在案）。**本相位使既有失败从 7 扩大到 8——不是「没有影响」。**
-
-### ✅ v0.21.0 蓝图过程可见与返工闭环 (Phases 117–120) — COMPLETE 2026-08-05（未打 tag）— 验证 tech_debt
-
-- [x] Phase 117: 归属可达与门到期（LINK-01/02, WAIT-01/02/03）— 蓝图 detail 顶层项目字段 + 查看器顶栏归属面包屑；澄清/确认门可配置到期策略（提醒到上限 → 显式到期态 + 通知，人可随时恢复）；等待态呈现「等谁/等多久/下次提醒」；落库状态机与队列续驱加回归锁
-- [x] Phase 118: 活动流事件契约与推送（LIVE-02/04/05）— `event_taxonomy` 增活动级事件（路由召回与分项打分、逐仓调研活动、`repo_plan` 每仓起止与波次）走 `aemit_event` 单一出口 + `sanitize_process_event_payload`；`RetrievalTrace` 召回标量上屏 API；蓝图页推送通道（替代 5s 轮询，`useBlueprintLive` 为唯一切换点）+ 历史回放；高频步骤采样聚合
-- [x] Phase 119: 阶段活动流与分仓进度 UI（LIVE-01/03）— `BlueprintStageTimeline` 每阶段节点下挂活动流；路由阶段展示召回/命中/历史落点/适配度分项与总分/初步路由方案；分仓阶段按仓卡片展示执行位置、依赖等待、波次与该仓分仓方案；修 `repository_name` 缺失导致的进度文案退化
-- [x] Phase 120: 重跑范围与每仓 resume（REDO-01~05）— 驳回可选重跑范围（仅重审 / 重融合 / 重跑指定仓 / 完整重做）；重跑注入人审上下文（打回理由 + 批注评论 + 上一版差异 + 轮次）；`SubAgentSession` / `RepoResearchTask` 接入 jsonl transcript 落库与 `resume` 续跑（复用编码链既有设施）；有界 + 脱敏 + 人工块保护
-
-需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)。**执行顺序（依赖链）:** 117（独立，可先落）→ 118（事件与推送底座）→ 119（消费 118 的契约）→ 120（重跑，复用 118 的事件面做过程可见）—— 已按此顺序执行完毕（2026-08-05）。
-
-⚠️ **唯一部分交付项：LIVE-04 的「推送」**。118 落的是**增量轮询**（`since_ts` + 上界，单轮只搬新增事件）+ 历史回放 + 采样聚合；真正的推送通道（蓝图 WS consumer 或 artifact 级 SSE）未做，`useBlueprintLive.ts` 仍是唯一切换点。详见 REQUIREMENTS.md 该条下的登记。
-
 <details>
-<summary>✅ v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）(Phases 111–116) — SHIPPED 2026-08-02 — 审计 tech_debt</summary>
+<summary>✅ v0.22.0 代码智能图分析升级（对标 GitNexus）(Phases 121–127) — SHIPPED 2026-08-11（审计 tech_debt，未打 tag）</summary>
 
-- [x] Phase 111: 蓝图底座 (4/4 plans) — `blueprint/v1` 六段 jsonschema 强制 + 11 态生命周期状态机 + 划线线程/评审人模型 + `RepoCharter` 章程与 AI 起草管道 + `execution_plan` 确定性派生 + golden set 质量基线（SCHEMA-01/06/07, LIFE-01/02/03, CHARTER-01, GATE-02）— completed 2026-07-30
-- [x] Phase 112: 规格门与双面路由调研 (5/5 plans) — `spec_gate` 歧义门与意图分类 + `blueprint_route` 双面路由（章程/历史落点/能力树三分量可拆解）+ 逐仓容器 fitness 调研 + reroute ≤2 轮 + `repo_confirmation` 硬确认门与章程回灌（FLOW-01/02/03/04, CHARTER-02/03）— completed 2026-07-30
-- [x] Phase 113: 分仓方案与融合 + Context Bus (6/6 plans) — `RepoPlan` 逐仓方案 + 会话级共享上下文总线（实时读写/两档等待恢复/互等环检测）+ `blueprint_merge` 融合装配（六段 + 引用强制 + 跨仓 API 对账）（FLOW-05/06, SCHEMA-02/03/04/05, BUS-01/02/03）— completed 2026-07-30
-- [x] Phase 114: 审查与澄清收敛 (5/5 plans) — AI 对抗审查七类规则与归因有界打回 + 澄清回灌产新版本 + 决策记录物化 + 批注重锚定 + 人工 block 编辑且 AI 不覆盖人工（FLOW-07, CLAR-02/03/04）— completed 2026-07-31
-- [x] Phase 115: 前端查看器与知识库 (7/7 plans) — `BlueprintViewer` 十段结构化渲染与划线批注层 + 版本 diff + 引用二级预览 + 知识库技术方案 tab + 人审终审与确认门面板（VIEW-01/02/03/04, CLAR-01, FLOW-08）— completed 2026-08-01
-- [x] Phase 116: 入口收编与导出 (7/7 plans) — 四入口的蓝图可执行路径与 per-entry 开关 + MCP 异步澄清协议 + 飞书导出与不可关闭的「未经确认」标注 + 知识图谱物化与反查 + 引用预览源码正文（GATE-01 PARTIAL, VIEW-05，并闭合 115 顺延的 VIEW-04 / VIEW-02）— completed 2026-08-01
-- [x] CLAR-03 closure (2026-08-02) — 里程碑审计打回的唯一归档阻塞缺口：查看器补 block 级人工编辑面（后端零改动），审计 status `gaps_found` → `tech_debt`
+- [x] **Phase 121: 内存图服务基座** — `(repository, branch)` 内存符号图缓存 + 权限/exclusion 读取层收口 (10/10, passed)
+- [x] **Phase 122: impact / trace 工具面** — 反向 BFS + 置信度分层 + 跨仓 + MCP/对话双面 (10/10, passed)
+- [x] **Phase 123: detect_changes 工具本体** — 水位锚定 diff × Symbol + 批量 impact (6/6, passed)
+- [x] **Phase 124: 编码链闭环** — 容器提交前自查 + MR 影响面报告 fail-soft (4/4, passed)
+- [x] **Phase 125: 社区检测 + 模块摘要** — Louvain + 指纹跳过 + 三点注入不动冻结面 (4/4, passed)
+- [x] **Phase 126: 执行流 + rename_preview + skills** — Process + affected_processes + 只读改名 + skill 分发 (5/5, passed)
+- [x] **Phase 127: Semgrep 门禁 + LSP 基准** — diff-aware advisory + volar/gopls 基准 (5/5, human_needed @ 4/4)
 
-完整阶段详情见 [milestones/v0.20.0-ROADMAP.md](./milestones/v0.20.0-ROADMAP.md)；需求归档见 [milestones/v0.20.0-REQUIREMENTS.md](./milestones/v0.20.0-REQUIREMENTS.md)；里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口）见 [milestones/v0.20.0-MILESTONE-AUDIT.md](./milestones/v0.20.0-MILESTONE-AUDIT.md)；相位产物归档在 `milestones/v0.20.0-phases/`。
+完整相位明细见 [milestones/v0.22.0-ROADMAP.md](./milestones/v0.22.0-ROADMAP.md)；相位产物见 [milestones/v0.22.0-phases/](./milestones/v0.22.0-phases/)。
 
-⚠️ **顺延同步点 2 的四件事必须同批做**：翻四个 per-entry 开关默认值 + workflow / feature_list / MCP 三个入口的出口映射重做（审计 §4.1 的 G1/G3/G4）+ `TechPlanCard`/`NodeDataTab`/`ArtifactTimeline` 三处触点升级 + 旧 `technical_plan` process 退役收口。默认开关下三道接缝零生产影响；⛔ 任何一件单独做都会造成回退。**同步点 2（v0.19.0 Phase 109/110 合并）已于 2026-08-02 满足** —— 这四件事状态由「阻塞」转为「解阻塞、待执行」，是下一个动作；台账见 STATE.md Pending Todos。
+| Phase | Milestone | Plans | Status | Completed |
+|-------|-----------|-------|--------|-----------|
+| 121. 内存图服务基座 | v0.22.0 | 10/10 | ✅ passed | 2026-08-09 |
+| 122. impact / trace 工具面 | v0.22.0 | 10/10 | ✅ passed | 2026-08-09 |
+| 123. detect_changes 工具本体 | v0.22.0 | 6/6 | ✅ passed | 2026-08-10 |
+| 124. 编码链闭环 | v0.22.0 | 4/4 | ✅ passed | 2026-08-10 |
+| 125. 社区检测 + 模块摘要 | v0.22.0 | 4/4 | ✅ passed | 2026-08-09 |
+| 126. 执行流 + rename_preview + skills | v0.22.0 | 5/5 | ✅ passed | 2026-08-10 |
+| 127. Semgrep 门禁 + LSP 基准 | v0.22.0 | 5/5 | ⚠️ human_needed（4/4 must-haves） | 2026-08-11 |
+
+**Coverage:** 27/27 需求映射；收口 **26 Complete / 1 Partial（IMPACT-03）/ 0 Missing**。审计见 [milestones/v0.22.0-MILESTONE-AUDIT.md](./milestones/v0.22.0-MILESTONE-AUDIT.md)。
 
 </details>
+
 
 <details>
 <summary>✅ v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 编排产出直连执行流 + 过程可见）(Phases 105–110，其中 108 已移交 v0.20.0) — COMPLETE 2026-08-02（未打 tag）— 审计 tech_debt</summary>
@@ -502,29 +232,28 @@ Plans:
 
 ## Progress
 
-### 🚧 v0.22.0 代码智能图分析升级（Phases 121–127，27/27 需求已映射）
+<details>
+<summary>✅ v0.22.0 进度表（Phases 121–127，26 Complete / 1 Partial）</summary>
 
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
-| 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 10/10 | ✅ Complete (verified passed 4/4) | 2026-08-09 |
-| 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 10/10 | Complete | 2026-08-09 |
-| 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 6/6 | Complete   | 2026-08-09 |
-| 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 4/4 | Complete   | 2026-08-09 |
-| 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 4/4 | Complete   | 2026-08-09 |
-| 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 5/5 | Complete   | 2026-08-09 |
-| 127. Semgrep 门禁 + LSP 基准 | v0.22.0 | TAINT-01~03, LSP-01 | 5/5 | Complete   | 2026-08-09 |
+| 121. 内存图服务基座 | v0.22.0 | GRAPH-01~04 | 10/10 | ✅ passed | 2026-08-09 |
+| 122. impact / trace 工具面 | v0.22.0 | IMPACT-01~06 | 10/10 | ✅ passed | 2026-08-09 |
+| 123. detect_changes 工具本体 | v0.22.0 | DIFF-01/02 | 6/6 | ✅ passed | 2026-08-10 |
+| 124. 编码链闭环 | v0.22.0 | DIFF-03/04 | 4/4 | ✅ passed | 2026-08-10 |
+| 125. 社区检测 + 模块摘要 | v0.22.0 | MOD-01~04 | 4/4 | ✅ passed | 2026-08-09 |
+| 126. 执行流 + rename_preview + skills | v0.22.0 | EXEC-01~03, RENAME-01, SKILL-01 | 5/5 | ✅ passed | 2026-08-10 |
+| 127. Semgrep 门禁 + LSP 基准 | v0.22.0 | TAINT-01~03, LSP-01 | 5/5 | ⚠️ human_needed（4/4） | 2026-08-11 |
 
-**Coverage (v0.22.0):** 27/27 需求全部映射（GRAPH 4 / IMPACT 6 / DIFF 4 / MOD 4 / EXEC 3 / RENAME 1 / TAINT 3 / LSP 1 / SKILL 1），无孤儿、无重复。
+**Coverage (v0.22.0):** 27/27 需求映射；收口 **26 Complete / 1 Partial（IMPACT-03）/ 0 Missing**。审计 tech_debt 见 [milestones/v0.22.0-MILESTONE-AUDIT.md](./milestones/v0.22.0-MILESTONE-AUDIT.md)；相位产物在 `milestones/v0.22.0-phases/`。**未打 tag**。
+
+</details>
 
 ---
 
-里程碑 v0.1.0–v0.17.0（Phases 1–104）与 **v0.19.0（Phases 105–110）、v0.20.0（Phases 111–116）均已交付并归档**。两个里程碑于 2026-07-29 起在 `milestone/v0.19.0-plan-trust` 与 `milestone/v0.20.0-blueprint` 双 worktree 并行开发，各自在本分支归档后于 **2026-08-02 合并**——**这次合并即同步点 2**。
+里程碑 v0.1.0–v0.22.0（Phases 1–127）均已交付并归档。v0.19.0 与 v0.20.0 于 2026-07-29 起双 worktree 并行，2026-08-02 合并（同步点 2）。v0.21.0 于 2026-08-05 轻量归档；v0.22.0 于 2026-08-11 归档（tech_debt，未打 tag）。
 
-**v0.19.0 技术方案可信度**收口于 2026-08-02（未打 tag）——源于一次生产实例的实证排查：用户拿到的技术方案根本不是技术方案流水线产出的，两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`，agent 等不到就绕道 `create_coding_plan` 徒手编了一份。根因链已实测定位（haiku 档误配 → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替），并在 105/107/109 三处切断。收口判定 `tech_debt`：17/19 需求满足，ROUTE-03（生产 `nr_snapshot` 未写入）与 RELY-02（澄清送达需真实飞书）挂账，27 项人工验收全未执行——详见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) §9。
-
-**v0.20.0 技术方案蓝图**于 2026-08-02 归档，判定 `tech_debt`：34/35 需求满足，GATE-01 PARTIAL（四入口 per-entry 开关默认值仍全为 `technical_plan`）——详见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md)。
-
-**当前在建里程碑：v0.22.0 代码智能图分析升级（Phases 121–127，2026-08-09 立项）**，见上方进度表。同步点 2 顺延的四件事已于 2026-08-02 分两步执行完毕（见 `SYNC-POINT-2-CLOSURE.md`）；其余独立待办见 STATE.md Pending Todos。
+**当前无在建里程碑**——下一里程碑通过 `$gsd-new-milestone` 立项。遗留债务见 STATE.md Deferred Items / Pending Todos。
 
 <details>
 <summary>✅ v0.20.0 进度表（Phases 111–116，34/35 需求已交付 · GATE-01 PARTIAL）</summary>

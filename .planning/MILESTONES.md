@@ -1,5 +1,40 @@
 # Milestones
 
+## v0.22.0 代码智能图分析升级（对标 GitNexus） (Completed: 2026-08-11，未打 tag)
+
+**Phases completed:** 7 phases（121–127）；44 plans / 105 tasks；27 条需求 **26 满足 / 1 部分**（IMPACT-03）/ 0 未达；里程碑审计 **tech_debt**，报告见 [milestones/v0.22.0-MILESTONE-AUDIT.md](./milestones/v0.22.0-MILESTONE-AUDIT.md)，需求归档见 [milestones/v0.22.0-REQUIREMENTS.md](./milestones/v0.22.0-REQUIREMENTS.md)，路线图归档见 [milestones/v0.22.0-ROADMAP.md](./milestones/v0.22.0-ROADMAP.md)，相位产物见 [milestones/v0.22.0-phases/](./milestones/v0.22.0-phases/)。
+
+**Timeline:** 2026-08-09 立项 → 2026-08-11 收口（约 3 天）。立项动机是与 GitNexus 的能力对比：Friday 赢在服务端多仓/权限/观测/交付流水线耦合，输在静态图分析深度（impact / trace / 执行流 / 聚类 / PDG 全缺）。本里程碑在现有 codegraph/RAG 底座上叠加内存图分析层，并把 detect_changes 真正闭环进「需求→PR」编码链。
+
+**Key accomplishments:**
+
+- **内存图服务基座（Phase 121）**：`(repository, branch)` 内存符号图——`GraphService` 取图入口 + 字节预算 LRU + single-flight + 复合签名水位失效；权限/exclusion 读取层 fail-closed 统一收口；公开面收敛为恰 17 个符号；生产库实测把字节常数与 `low_resolution` 阈值从「永远触发」校正到可用。
+- **impact / trace 工具面（Phase 122）**：反向 BFS 深度分组 + 四档置信度原样透出 + 「弱证据封顶 MEDIUM」；有向最短路显式消歧；跨仓一跳沿 `CrossRepoApiCall`（合成测绿）；MCP/对话双面同源编排 + 逐字节守护。
+- **detect_changes + 编码链闭环（Phase 123–124）**：diff base 锚定 `last_indexed_commit_sha`、rename 不误报；容器提交前自查白名单 + MR 描述 `## 影响面` 四段结构 fail-soft（AICodingNode / MCP create_merge_request / mr_service 三挂点）。
+- **社区检测 + 模块摘要（Phase 125）**：固定 seed Louvain → `SymbolCommunity` 软引用落库；成员指纹 Jaccard 跳过重生成；`call_source=module_summary`；三点注入（blueprint evidence / conversation·MCP signal / research prompt），⛔ 不动冻结的 `repo_router_v2.py`。
+- **执行流 + rename_preview + skills（Phase 126）**：Endpoint 正向 BFS → Process；`affected_processes` 回填影响面叙事；只读双源 `rename_preview`；`friday-impact` / `friday-refactoring` 同源进 skills 与 task 镜像（未做 npm publish）。
+- **Semgrep 门禁 + LSP 基准（Phase 127）**：独立 CLI/venv 的 diff-aware advisory 扫描 + `## 安全扫描` MR 段；曾发现 Level 4 HOLLOW（空 SHA 入队）并结构性闭合为 `enqueue_semgrep_scan_for_branches`；LSP 默认保持 False（baseline 未达翻转门槛）；同轮清掉 code_graph 链路 83 项观测契约违规。
+
+**质量基线：** 121–126 验证 `passed`；127 重新验证 4/4 must-haves、状态 `human_needed`（三项真实环境人工检查）；审计 status `tech_debt`（26 Complete / 1 Partial / 0 Missing）。
+
+### Known Gaps
+
+- **IMPACT-03（PARTIAL）**：跨仓内核与合成测绿，但本环境 `CrossRepoApiCall`/`ApiCallSite`=0 且 LSP 默认关闭 ⇒ 生产者未激活；**不得宣称生产跨仓 impact 已可用**。
+- **mcp npm 客户端漂移**：外部包缺 impact/trace/detect_changes/processes/rename 等工具名（跨仓改动 + 发版，本里程碑范围外）——IDE 侧 agent 调不到。
+- **`RepoRouterV2Adapter` 未消费 module-summary 信号**（MCP/chat/BlueprintRoute 三点已挂）。
+- **CreatePRNode / coding_graph MR 路径未挂 `impact_report`**（IN-01 / CONTEXT 非必达）。
+- **Nyquist**：七相位均有 `*-VALIDATION.md`，无一 `status: validated`。
+- **Phase 127 ops 残留**：两端 SHA 解析都失败时 MR security-scan stub 可永久 `pending`（可观测日志 `code_graph_enqueue_semgrep_scan_skipped_missing_sha`，intentional fail-open）。
+- **Phase 127 三项 human_needed**：docker 镜像体积审计、LSP baseline 真仓复跑、IMPACT-03 真样本 revisit。
+
+**Known deferred items at close:** 19 项（1 verification gap + 18 quick tasks，见 STATE.md Deferred Items）+ 上列里程碑级技术债。**Closeout type:** `override_closeout`（Phase 127 `human_needed`；与 v0.19.0/v0.20.0 同口径 accept `tech_debt`）。
+
+**未打 tag：** 本仓 tag 是发布轨（`tags: v*` 触发 release workflow，最新发布轨 `v0.18.0`），与 GSD 里程碑不同编号；虽 `.planning/config.json` 有 `git.create_tag: true`，本里程碑与 v0.19.0/v0.20.0/v0.21.0 一样**刻意不打** GSD 归档 tag，避免制造假发布点。
+
+**What's next:** `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）。
+
+---
+
 ## v0.21.0 蓝图过程可见与返工闭环（反向关联 + 门到期 + 按阶段 agent 活动流 + 带原始上下文重跑） (Completed: 2026-08-05，未打 tag)
 
 **Phases completed:** 4 phases（117–120）；15 条需求 **14 满足 / 1 部分**（LIVE-04 落增量轮询而非推送通道）/ 0 未达；验证 **tech_debt**，报告见 [milestones/v0.21.0-VERIFICATION.md](./milestones/v0.21.0-VERIFICATION.md)，需求归档见 [milestones/v0.21.0-REQUIREMENTS.md](./milestones/v0.21.0-REQUIREMENTS.md)。
