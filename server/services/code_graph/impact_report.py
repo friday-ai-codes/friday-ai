@@ -360,9 +360,9 @@ async def build_impact_report_section(
 
     try:
         logger.info(
-            "impact_report_started",
+            "code_graph_impact_report_started",
             component="code_graph",
-            category="caller",
+            category="sampling",
             repository_id=repository_id,
             initiated_by_user_id=initiated_by,
         )
@@ -372,9 +372,9 @@ async def build_impact_report_section(
     def _log_completed(*, section: str, ok: bool) -> None:
         try:
             logger.info(
-                "impact_report_completed",
+                "code_graph_impact_report_completed",
                 component="code_graph",
-                category="caller",
+                category="sampling",
                 repository_id=repository_id,
                 initiated_by_user_id=initiated_by,
                 duration_ms=_duration_ms(),
@@ -387,14 +387,17 @@ async def build_impact_report_section(
     def _log_failed(*, error_code: str, error: str = "") -> None:
         try:
             logger.info(
-                "impact_report_failed",
+                "code_graph_impact_report_failed",
                 component="code_graph",
-                category="caller",
+                category="sampling",
                 repository_id=repository_id,
                 initiated_by_user_id=initiated_by,
                 duration_ms=_duration_ms(),
                 error_code=error_code,
-                error=_sanitize_error_text(error),
+                # ⚠️ 埋点处**显式**再过一遍 redact_secrets_in_text：脱敏幂等，但包内观测契约
+                # （tests/services/code_graph/test_access.py::test_observability_contract）
+                # 是静态 AST 判据——藏在 helper 里它看不见。
+                error=redact_secrets_in_text(_sanitize_error_text(error)),
             )
         except Exception:  # noqa: BLE001
             pass

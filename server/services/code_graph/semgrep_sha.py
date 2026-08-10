@@ -11,7 +11,7 @@
    GitHub ``get_branch``）——建 MR 挂点手里本来就有 client，零新增抽象；
 3. 本地 bare 镜像 ``ensure_mirror_commit``（无 client / 平台抖动时的兜底）。
 
-两端都解析不出来时返回空串，由挂点记 ``enqueue_semgrep_scan_skipped_missing_sha``
+两端都解析不出来时返回空串，由挂点记 ``code_graph_enqueue_semgrep_scan_skipped_missing_sha``
 并保留 pending stub —— ⛔ 不入队注定 ``unavailable`` 的任务。
 
 本模块 best-effort：任何异常都吞成"解析不到"，绝不反噬建 MR。

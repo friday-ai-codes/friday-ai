@@ -559,8 +559,8 @@ async def rebuild_processes(
 
     try:
         logger.info(
-            "process_rebuild_started",
-            category="caller",
+            "code_graph_process_rebuild_started",
+            category="sampling",
             component="code_graph",
             repository_id=str(repository_id),
             branch_name=branch,
@@ -625,8 +625,8 @@ async def rebuild_processes(
         }
         try:
             logger.info(
-                "process_rebuild_completed",
-                category="caller",
+                "code_graph_process_rebuild_completed",
+                category="sampling",
                 component="code_graph",
                 repository_id=str(repository_id),
                 branch_name=branch,
@@ -641,8 +641,8 @@ async def rebuild_processes(
     except Exception as exc:
         try:
             logger.warning(
-                "process_rebuild_failed",
-                category="caller",
+                "code_graph_process_rebuild_failed",
+                category="sampling",
                 component="code_graph",
                 repository_id=str(repository_id),
                 branch_name=branch,

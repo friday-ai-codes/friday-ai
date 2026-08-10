@@ -262,7 +262,7 @@ def _persist_findings(
         except Exception:  # noqa: BLE001 — 单条落库失败不反噬整次扫描
             try:
                 logger.warning(
-                    "semgrep_finding_persist_failed",
+                    "code_graph_semgrep_finding_persist_failed",
                     category="sampling",
                     component="code_graph",
                     repository_id=str(repository_id),
@@ -292,8 +292,8 @@ async def run_semgrep_scan(
 
     try:
         logger.info(
-            "semgrep_scan_started",
-            category="caller",
+            "code_graph_semgrep_scan_started",
+            category="sampling",
             component="code_graph",
             repository_id=str(repository_id),
             mr_key=mr_key or "",
@@ -362,8 +362,8 @@ async def run_semgrep_scan(
                 result.error_code = "unavailable"
                 try:
                     logger.warning(
-                        "semgrep_scan_cli_failed",
-                        category="caller",
+                        "code_graph_semgrep_scan_cli_failed",
+                        category="sampling",
                         component="code_graph",
                         repository_id=str(repository_id),
                         returncode=rc,
@@ -410,8 +410,8 @@ async def run_semgrep_scan(
         result.error_code = "unavailable"
         try:
             logger.warning(
-                "semgrep_scan_failed",
-                category="caller",
+                "code_graph_semgrep_scan_failed",
+                category="sampling",
                 component="code_graph",
                 repository_id=str(repository_id),
                 mr_key=mr_key or "",
@@ -437,8 +437,8 @@ def _finish(
     try:
         if failed or result.error_code:
             logger.warning(
-                "semgrep_scan_failed",
-                category="caller",
+                "code_graph_semgrep_scan_failed",
+                category="sampling",
                 component="code_graph",
                 repository_id=str(repository_id),
                 mr_key=mr_key or "",
@@ -450,8 +450,8 @@ def _finish(
             )
         else:
             logger.info(
-                "semgrep_scan_completed",
-                category="caller",
+                "code_graph_semgrep_scan_completed",
+                category="sampling",
                 component="code_graph",
                 repository_id=str(repository_id),
                 mr_key=mr_key or "",

@@ -114,7 +114,10 @@ async def test_enqueue_failure_returns_none_not_raise(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_enqueue_emits_started_completed_lifecycle(monkeypatch) -> None:
-    """caller 类生命周期须有 started/completed（带 duration_ms）。
+    """入队生命周期须有 started/completed（带 duration_ms）。
+
+    包内内核只许 ``category="sampling"``（观测契约；调用类归因在外层壳层），
+    「谁触发的」由 ``initiated_by_user_id`` 保住。
 
     （决策: 可观测规范；review: MN-03）
     """
@@ -141,13 +144,13 @@ async def test_enqueue_emits_started_completed_lifecycle(monkeypatch) -> None:
         )
 
     events = {entry["event"]: entry for entry in logs}
-    assert "enqueue_semgrep_scan_started" in events
-    assert "enqueue_semgrep_scan_completed" in events
-    started_entry = events["enqueue_semgrep_scan_started"]
-    assert started_entry["category"] == "caller"
+    assert "code_graph_enqueue_semgrep_scan_started" in events
+    assert "code_graph_enqueue_semgrep_scan_completed" in events
+    started_entry = events["code_graph_enqueue_semgrep_scan_started"]
+    assert started_entry["category"] == "sampling"
     assert started_entry["component"] == "code_graph"
     assert started_entry["initiated_by_user_id"] == "user-1"
-    assert "duration_ms" in events["enqueue_semgrep_scan_completed"]
+    assert "duration_ms" in events["code_graph_enqueue_semgrep_scan_completed"]
 
 
 @pytest.mark.asyncio

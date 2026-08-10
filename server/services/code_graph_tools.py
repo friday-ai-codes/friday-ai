@@ -111,15 +111,15 @@ _EVENT_CANDIDATES_RESOLVED: Final[str] = "code_graph_tool_candidates_resolved"
 _EVENT_DETECT_CHANGES_STARTED: Final[str] = "code_graph_detect_changes_started"
 _EVENT_DETECT_CHANGES_COMPLETED: Final[str] = "code_graph_detect_changes_completed"
 _EVENT_DETECT_CHANGES_FAILED: Final[str] = "code_graph_detect_changes_failed"
-_EVENT_LIST_PROCESSES_STARTED: Final[str] = "list_processes_started"
-_EVENT_LIST_PROCESSES_COMPLETED: Final[str] = "list_processes_completed"
-_EVENT_LIST_PROCESSES_FAILED: Final[str] = "list_processes_failed"
-_EVENT_GET_PROCESS_STARTED: Final[str] = "get_process_started"
-_EVENT_GET_PROCESS_COMPLETED: Final[str] = "get_process_completed"
-_EVENT_GET_PROCESS_FAILED: Final[str] = "get_process_failed"
-_EVENT_RENAME_PREVIEW_STARTED: Final[str] = "rename_preview_started"
-_EVENT_RENAME_PREVIEW_COMPLETED: Final[str] = "rename_preview_completed"
-_EVENT_RENAME_PREVIEW_FAILED: Final[str] = "rename_preview_failed"
+_EVENT_LIST_PROCESSES_STARTED: Final[str] = "code_graph_list_processes_started"
+_EVENT_LIST_PROCESSES_COMPLETED: Final[str] = "code_graph_list_processes_completed"
+_EVENT_LIST_PROCESSES_FAILED: Final[str] = "code_graph_list_processes_failed"
+_EVENT_GET_PROCESS_STARTED: Final[str] = "code_graph_get_process_started"
+_EVENT_GET_PROCESS_COMPLETED: Final[str] = "code_graph_get_process_completed"
+_EVENT_GET_PROCESS_FAILED: Final[str] = "code_graph_get_process_failed"
+_EVENT_RENAME_PREVIEW_STARTED: Final[str] = "code_graph_rename_preview_started"
+_EVENT_RENAME_PREVIEW_COMPLETED: Final[str] = "code_graph_rename_preview_completed"
+_EVENT_RENAME_PREVIEW_FAILED: Final[str] = "code_graph_rename_preview_failed"
 
 _DEFAULT_PROCESS_LIST_LIMIT: Final[int] = 50
 _MAX_PROCESS_LIST_LIMIT: Final[int] = 200
@@ -1682,7 +1682,6 @@ async def run_list_processes(
             except Exception:  # noqa: BLE001
                 pass
             raise
-        err = redact_secrets_in_text(str(exc))[:500]
         try:
             logger.info(
                 _EVENT_LIST_PROCESSES_FAILED,
@@ -1690,7 +1689,7 @@ async def run_list_processes(
                 category="caller",
                 repository_id=repository_id,
                 error_code="process_query_failed",
-                error=err,
+                error=redact_secrets_in_text(str(exc))[:500],
                 duration_ms=_duration_ms(),
             )
         except Exception:  # noqa: BLE001
@@ -1740,7 +1739,6 @@ async def run_get_process(
                 category="caller",
                 repository_id=repository_id,
                 error_code="invalid_process_key",
-                error="process_key 不能为空",
                 duration_ms=_duration_ms(),
             )
         except Exception:  # noqa: BLE001
@@ -1771,7 +1769,6 @@ async def run_get_process(
                     category="caller",
                     repository_id=repository_id,
                     error_code="process_not_found",
-                    error="未找到匹配的执行流",
                     duration_ms=_duration_ms(),
                 )
             except Exception:  # noqa: BLE001
@@ -1827,7 +1824,6 @@ async def run_get_process(
             except Exception:  # noqa: BLE001
                 pass
             raise
-        err = redact_secrets_in_text(str(exc))[:500]
         try:
             logger.info(
                 _EVENT_GET_PROCESS_FAILED,
@@ -1835,7 +1831,7 @@ async def run_get_process(
                 category="caller",
                 repository_id=repository_id,
                 error_code="process_query_failed",
-                error=err,
+                error=redact_secrets_in_text(str(exc))[:500],
                 duration_ms=_duration_ms(),
             )
         except Exception:  # noqa: BLE001
@@ -1911,7 +1907,6 @@ async def run_rename_preview(
                 category="caller",
                 repository_id=repository_id,
                 error_code="invalid_new_name",
-                error="new_name 不能为空",
                 duration_ms=_duration_ms(),
             )
         except Exception:  # noqa: BLE001
