@@ -215,6 +215,33 @@ class GitLabClient(GitPlatformClient):
         except Exception:
             return False
 
+    async def resolve_branch_sha(self, branch_name: str) -> str:
+        """解析 GitLab 分支 HEAD 的 commit sha（``branch.commit["id"]``）。
+
+        Args:
+            branch_name: 分支名称。
+
+        Returns:
+            40 位小写 sha；分支不存在 / 平台异常 → 空字符串（fail-soft，绝不上抛）。
+        """
+        name = (branch_name or "").strip()
+        if not name:
+            return ""
+        try:
+            project = self._get_project()
+            branch = await asyncio.to_thread(project.branches.get, name)
+            commit = getattr(branch, "commit", None)
+            sha = commit.get("id") if isinstance(commit, dict) else getattr(commit, "id", "")
+            return str(sha or "").strip().lower()
+        except Exception as e:  # noqa: BLE001 — token 绝不入日志，仅记分支
+            logger.warning(
+                "gitlab_branch_sha_lookup_failed",
+                project=self.project_path,
+                branch=name,
+                error=str(e),
+            )
+            return ""
+
     async def find_open_merge_request(
         self, source_branch: str, target_branch: str
     ) -> MRCreateResult | None:

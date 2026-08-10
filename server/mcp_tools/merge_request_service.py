@@ -60,10 +60,13 @@ def _draft_from_summary(
 ) -> dict[str, str]:
     """同步拼装 draft 标题/描述（不含影响面；create 路径统一 append，幂等安全）。"""
     title = f"{repository.name}: {source_branch}"
-    file_lines = "\n".join(
-        f"- {item['path']} ({item['change_type']}, +{item['additions']}/-{item['deletions']})"
-        for item in summary.get("files", [])[:20]
-    ) or "- 平台未返回文件差异"
+    file_lines = (
+        "\n".join(
+            f"- {item['path']} ({item['change_type']}, +{item['additions']}/-{item['deletions']})"
+            for item in summary.get("files", [])[:20]
+        )
+        or "- 平台未返回文件差异"
+    )
     risk_lines = "\n".join(f"- {risk}" for risk in summary.get("risks", []))
     test_lines = "\n".join(f"- {item}" for item in summary.get("test_suggestions", []))
     description = (
@@ -215,19 +218,22 @@ async def create_merge_request(
     result = await client.create_merge_request(request)
     if result.success:
         try:
-            from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan
+            from services.code_graph.semgrep_enqueue import (
+                enqueue_semgrep_scan_for_branches,
+            )
 
             initiated_by = (
                 str(user.id)
                 if user is not None and getattr(user, "id", None) is not None
                 else "system"
             )
-            await enqueue_semgrep_scan(
+            # 两端 sha 经同一 client 解析后入队；解析不到则跳过（空 sha 恒 unavailable）
+            await enqueue_semgrep_scan_for_branches(
                 str(getattr(repository, "id", "") or ""),
                 mr_key=str(result.mr_id or ""),
-                source_sha="",
-                target_sha="",
-                branch_name=source_branch,
+                source_branch=source_branch,
+                target_branch=target_branch,
+                client=client,
                 initiated_by_user_id=initiated_by,
             )
         except Exception as exc:  # noqa: BLE001 — enqueue 失败不反噬已建 MR

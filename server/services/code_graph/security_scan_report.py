@@ -505,19 +505,21 @@ async def attach_security_scan_pending(
         return out
 
     try:
-        from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan
+        from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan_for_branches
 
         repo_id = str(getattr(repository, "id", "") or "")
         initiated_by = "system"
         if user is not None and getattr(user, "id", None) is not None:
             initiated_by = str(user.id)
         if repo_id:
-            await enqueue_semgrep_scan(
+            # 两端 sha 缺失时由 helper 记 skip 并保留 pending stub（⛔ 不入队恒失败任务）
+            await enqueue_semgrep_scan_for_branches(
                 repo_id,
                 mr_key=mr_key or "",
+                source_branch=source_branch or "",
+                target_branch=target_branch or "",
                 source_sha=source_sha or "",
                 target_sha=target_sha or "",
-                branch_name=source_branch or "",
                 initiated_by_user_id=initiated_by,
             )
     except Exception:  # noqa: BLE001 — enqueue 失败不阻断建 MR

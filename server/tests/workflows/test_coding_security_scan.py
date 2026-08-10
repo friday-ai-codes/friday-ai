@@ -23,6 +23,9 @@ _PENDING_STUB = (
     "_安全扫描未能生成（`pending`）。MR 已照常创建，请人工复核（advisory，不阻断合并）。_\n"
 )
 
+_SOURCE_SHA = "a" * 40
+_TARGET_SHA = "b" * 40
+
 
 def _make_repo(default_branch: str = "main", name: str = "repo") -> MagicMock:
     repo = MagicMock()
@@ -34,7 +37,7 @@ def _make_repo(default_branch: str = "main", name: str = "repo") -> MagicMock:
     return repo
 
 
-def _make_client() -> AsyncMock:
+def _make_client(*, branch_shas: dict[str, str] | None = None) -> AsyncMock:
     client = AsyncMock()
     client.create_merge_request.return_value = MRCreateResult(
         success=True,
@@ -43,6 +46,15 @@ def _make_client() -> AsyncMock:
         has_conflicts=False,
     )
     client.find_open_merge_request = AsyncMock(return_value=None)
+    shas = (
+        branch_shas
+        if branch_shas is not None
+        else {
+            "friday/task-1": _SOURCE_SHA,
+            "main": _TARGET_SHA,
+        }
+    )
+    client.resolve_branch_sha = AsyncMock(side_effect=lambda branch: shas.get(branch, ""))
     return client
 
 
@@ -109,6 +121,63 @@ async def test_coding_create_mr_appends_security_scan_and_enqueues() -> None:
     )
     assert str(called_repo) == str(repo.id)
     assert "sgp_" not in request.description
+    # CR-01：入队 payload 必须携带解析出的两端真实 sha，⛔ 不得为空
+    kwargs = enqueue.await_args.kwargs
+    assert kwargs["source_sha"] == _SOURCE_SHA
+    assert kwargs["target_sha"] == _TARGET_SHA
+
+
+async def test_coding_enqueue_skipped_when_sha_unresolvable() -> None:
+    """两端 sha 解析不到时跳过入队（⛔ 不入队注定 unavailable 的任务）。
+
+    （Req: TAINT-01, 决策: D-04）
+    """
+    repo = _make_repo()
+    client = _make_client(branch_shas={})
+    enqueue = AsyncMock(return_value="job-never")
+
+    with (
+        patch("services.code_graph.semgrep_enqueue.enqueue_semgrep_scan", new=enqueue),
+        patch(
+            "services.repo_mirror.ensure_mirror_commit",
+            new=AsyncMock(side_effect=RuntimeError("mirror down")),
+        ),
+    ):
+        result = await _call_create_mr(repo, client=client, user=MagicMock(id=7))
+
+    # MR 照常创建 + pending stub 留在描述里，但不入队
+    assert result.get("mr_url")
+    request = client.create_merge_request.call_args.args[0]
+    assert "`pending`" in request.description
+    enqueue.assert_not_awaited()
+
+
+async def test_coding_dedup_reuse_enqueues_with_resolved_shas() -> None:
+    """复用既有 MR 的挂点同样传入非空两端 sha。
+
+    （Req: TAINT-01, 决策: D-04）
+    """
+    repo = _make_repo()
+    client = _make_client()
+    client.find_open_merge_request = AsyncMock(
+        return_value=MRCreateResult(
+            success=True,
+            mr_url="https://github.com/org/repo/pull/5",
+            mr_id="5",
+            has_conflicts=False,
+        )
+    )
+    enqueue = AsyncMock(return_value="job-reuse")
+
+    with patch("services.code_graph.semgrep_enqueue.enqueue_semgrep_scan", new=enqueue):
+        result = await _call_create_mr(repo, client=client, user=MagicMock(id=7))
+
+    assert result.get("deduplicated") is True
+    enqueue.assert_awaited_once()
+    kwargs = enqueue.await_args.kwargs
+    assert kwargs["mr_key"] == "5"
+    assert kwargs["source_sha"] == _SOURCE_SHA
+    assert kwargs["target_sha"] == _TARGET_SHA
 
 
 async def test_coding_security_scan_shell_failure_is_fail_open() -> None:
