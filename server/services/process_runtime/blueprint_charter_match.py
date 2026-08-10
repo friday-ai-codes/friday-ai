@@ -254,11 +254,33 @@ def score_charter_match(
     violated_boundaries: list[str] = []
     raw_boundaries = charter.get("boundaries")
     if isinstance(raw_boundaries, list):
+        # 本仓 owned_domains 的匹配词集合——用于「自撞豁免」：boundary 写的是
+        # 「本仓做课程内容的**读取**、不做课程内容的**编辑**」这类**自指边界**时，
+        # 其领域词（课程内容）与本仓 owned（课程内容目录）同源。若 query 因该领域词
+        # 同时命中 owned 与 boundary，正负自撞抵消（实测把正仓压到 0/-1，反被无
+        # boundary 的干扰仓挤掉）。豁免规则：一条 boundary 命中的 query 词若**也命中
+        # 本仓 owned_domains**，则该条不扣分（它是本仓内部职责划分，不是路由到他仓的
+        # 信号）；只有命中**与 owned 无关**的词（真正属于他仓的事）才扣分。
+        owned_targets = [
+            str(d.get("domain") or "") + " " + str(d.get("note") or "")
+            for d in (raw_domains if isinstance(raw_domains, list) else [])
+            if isinstance(d, dict)
+        ]
         for item in raw_boundaries:
             if not isinstance(item, dict):
                 continue
             rule_text = str(item.get("rule") or "").strip()
-            if not rule_text or not _matches(rule_text, terms):
+            if not rule_text:
+                continue
+            matched_terms = [t for t in terms if _matches(rule_text, [t])]
+            if not matched_terms:
+                continue
+            # 自撞判定：该 boundary 的所有命中词是否都能命中本仓 owned（即全自指）。
+            # 只要有一个命中词**不**命中 owned，就视为真禁区（他仓的事），照扣。
+            self_colliding = bool(owned_targets) and all(
+                any(_matches(ot, [t]) for ot in owned_targets) for t in matched_terms
+            )
+            if self_colliding:
                 continue
             negative += resolved_rules["boundary_hit"]
             violated_boundaries.append(rule_text)

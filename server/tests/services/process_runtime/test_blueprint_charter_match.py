@@ -203,8 +203,13 @@ def test_boundary_hit_makes_score_negative() -> None:
     assert any("boundary_hit" in reason for reason in result.penalty_reasons)
 
 
-def test_boundary_offsets_owned_positive() -> None:
-    """owned 命中 + boundary 命中 → 正分被抵消到 <= 0 且 violated_boundaries 非空。"""
+def test_boundary_self_collision_with_owned_is_exempted() -> None:
+    """boundary 命中词与本仓 owned 同源（自指边界）→ 豁免不扣分（自撞豁免）。
+
+    旧行为：boundary 命中即 -1.0，owned 正分被抵消到 ≤ 0。但「培优课入口改造」与
+    owned「培优/学习提分」同源——这是本仓内部职责划分（做培优学习、不做入口改造），
+    不是路由到他仓的信号。若照扣，正仓会被无 boundary 的干扰仓挤掉（自撞 bug）。
+    """
     result = score_charter_match(
         _charter(
             owned_domains=[{"domain": "培优/学习提分", "status": "implemented"}],
@@ -213,8 +218,24 @@ def test_boundary_offsets_owned_positive() -> None:
         query_terms=_TERMS,
     )
 
+    assert result.score > 0.0  # owned 正分保留，未被自撞抵消
+    assert not result.violated_boundaries  # 自指 boundary 不计禁区
+    assert result.matched_domains
+
+
+def test_true_boundary_unrelated_to_owned_still_penalizes() -> None:
+    """boundary 命中词与本仓 owned **无关**（真禁区，他仓的事）→ 照常扣分。"""
+    result = score_charter_match(
+        _charter(
+            owned_domains=[{"domain": "培优/学习提分", "status": "implemented"}],
+            boundaries=[{"rule": "不承接支付结算与发票开具"}],
+        ),
+        query_terms=["培优课入口改造", "支付结算", "发票开具"],
+    )
+
+    # owned 命中 +1 与真禁区 -1 抵消 → ≤ 0，且禁区被记录
     assert result.score <= 0.0
-    assert result.violated_boundaries
+    assert result.violated_boundaries == ["不承接支付结算与发票开具"]
     assert result.matched_domains
 
 
