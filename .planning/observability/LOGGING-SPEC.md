@@ -150,6 +150,16 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 
 > `codegraph`（无下划线）与 `code_graph`（有下划线）**刻意并存**，不是笔误：前者是索引/抽取侧的 Django app（`server/codegraph/`，负责 Symbol / CallEdge / Endpoint 抽取与图谱构建），后者是查询/服务侧的内存图服务（`server/services/code_graph/`，负责装配 networkx 图、缓存与读取层收口）。两条链路的故障模式与排障路径完全不同，分开取值才能按 `component` 精确筛日志（Phase 121 决策 D-07）。
 
+> **`code_graph` 链路附加约定（由 `server/tests/services/code_graph/test_access.py::test_observability_contract` 静态守护，违规当场变红）**：
+>
+> 1. 事件名必须带 `code_graph_` 前缀且**静态可解析**（字符串字面量或模块级 `Final[str]` 常量）——⛔ 禁止三元表达式 / f-string / 拼接；前缀不得缩写（`graph_build_*` 已被 `services/graph_builder.py` 占用、`galaxy_cache_*` 已被 `codegraph/galaxy/cache.py` 占用）。
+> 2. `component` 恒为 `"code_graph"`。
+> 3. `category`：**包内** `services/code_graph/*.py` 只许 `sampling`（内核不是调用入口，调用类归因由外层壳层 `mcp_tools` / `workflows` 自己发 `caller` 事件承担，内核靠 `initiated_by_user_id` 保住「谁触发的」）；包外兄弟模块（`services/code_graph_tools.py`、`services/code_graph_cross_repo.py`）可取 `sampling` / `caller` 之一。
+> 4. `error=` 必须在**埋点处**显式过 `redact_secrets_in_text`（判据是静态 AST，藏在 helper 里看不见）；稳定短码走 `error_code=`，⛔ 不要塞进 `error=`。
+> 5. 公共 kv ⛔ 不要收进 `**fields` 再展开——契约按关键字名逐条查 `component` / `category`，展开的 dict 在 AST 上没有名字。
+>
+> Phase 125–127 的 `community_rebuild_*` / `process_rebuild_*` / `module_summary_*` / `impact_report_*` / `security_scan_*` / `semgrep_*` / `enqueue_semgrep_scan_*` / `list_processes_*` / `get_process_*` / `rename_preview_*` 均已按上述约定统一补前缀为 `code_graph_*`，并把包内 `caller` 收敛为 `sampling`。
+
 可观测性子系统（71–74 实际使用，按视图/服务细分以便筛选）：
 `metric_sampling`（gauge 周期采样）`metric_retention`（指标行清理）`alerting`（告警规则/评估/通知）`alert_retention`（告警事件清理）`call_drilldown`（调用下钻）`conversation_drilldown`（会话下钻）`webhook_events`（webhook 留痕查询）`webhook_recorder`（webhook 入库）`system_logs`（系统日志查询/清理）`log_retention`（系统日志/webhook 留痕保留清理）
 
