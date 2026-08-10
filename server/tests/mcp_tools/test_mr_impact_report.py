@@ -132,8 +132,13 @@ async def test_mcp_create_mr_failsoft_on_impact_error() -> None:
 
     assert payload["success"]
     assert client.last_request is not None
-    # helper 抛错时 outer shell fail-soft：description 保持原 body（D-09；LO-02）
-    assert client.last_request.description == "base body"
+    # helper 抛错时 outer shell fail-soft：base body 原样保留，且**不追加**任何影响面段
+    # （D-09；LO-02）。⛔ 不断言字节级相等：Phase 127 的 ``## 安全扫描`` pending stub 是
+    # 另一条挂点的既定行为（随后异步回填真实 finding），与本用例守的「影响面失败不落段」
+    # 无关；把它写进断言会让两个 fail-soft 挂点互相绑死。
+    desc = client.last_request.description or ""
+    assert desc.startswith("base body")
+    assert IMPACT_SECTION_MARKER not in desc
 
 
 async def test_workflow_mcp_impact_section_parity() -> None:
