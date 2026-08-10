@@ -396,12 +396,14 @@ async def test_observability_events_static_names() -> None:
             )
 
     names = {e["event"] for e in events}
-    assert "impact_report_started" in names
-    assert "impact_report_completed" in names
-    started = next(e for e in events if e["event"] == "impact_report_started")
-    completed = next(e for e in events if e["event"] == "impact_report_completed")
+    assert "code_graph_impact_report_started" in names
+    assert "code_graph_impact_report_completed" in names
+    started = next(e for e in events if e["event"] == "code_graph_impact_report_started")
+    completed = next(e for e in events if e["event"] == "code_graph_impact_report_completed")
     assert started["component"] == "code_graph"
-    assert started["category"] == "caller"
+    # 包内内核只许 sampling：调用类归因由外层壳层（mcp_tools / workflows）自己发
+    # caller 事件承担，内核这条链靠 ``initiated_by_user_id`` 保住「谁触发的」。
+    assert started["category"] == "sampling"
     assert started["initiated_by_user_id"] == "7"
     assert completed["initiated_by_user_id"] == "7"
     assert "duration_ms" in completed
@@ -414,13 +416,13 @@ async def test_observability_events_static_names() -> None:
             compare="feature/x",
         )
     assert "`user_missing`" in section
-    none_events = [e for e in events_none if e["event"].startswith("impact_report_")]
+    none_events = [e for e in events_none if e["event"].startswith("code_graph_impact_report_")]
     assert none_events
     for e in none_events:
         assert e.get("initiated_by_user_id") == "system"
-    assert any(e["event"] == "impact_report_started" for e in none_events)
-    assert any(e["event"] == "impact_report_failed" for e in none_events)
-    failed = next(e for e in none_events if e["event"] == "impact_report_failed")
+    assert any(e["event"] == "code_graph_impact_report_started" for e in none_events)
+    assert any(e["event"] == "code_graph_impact_report_failed" for e in none_events)
+    failed = next(e for e in none_events if e["event"] == "code_graph_impact_report_failed")
     assert failed.get("error_code") == "user_missing"
 
 

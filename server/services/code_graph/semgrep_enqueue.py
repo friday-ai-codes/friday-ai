@@ -30,7 +30,7 @@ async def enqueue_semgrep_scan(
 
     - 幂等键 ``semgrep:{repository_id}:{mr_key}``
     - 槽位锁 ``scan-slot-*``（N=``CONCURRENCY_SCAN_MAX`` 默认 2）
-    - 失败 swallow + ``enqueue_semgrep_scan_failed``，返回 ``None``，不抛
+    - 失败 swallow + ``code_graph_enqueue_semgrep_scan_failed``，返回 ``None``，不抛
     """
     from durable.concurrency import ascan_lock
     from durable.queues import QUEUE_SCAN
@@ -41,8 +41,8 @@ async def enqueue_semgrep_scan(
     key = mr_key or ""
     try:
         logger.info(
-            "enqueue_semgrep_scan_started",
-            category="caller",
+            "code_graph_enqueue_semgrep_scan_started",
+            category="sampling",
             component="code_graph",
             repository_id=repo_id,
             mr_key=key,
@@ -70,8 +70,8 @@ async def enqueue_semgrep_scan(
         )
         try:
             logger.info(
-                "enqueue_semgrep_scan_completed",
-                category="caller",
+                "code_graph_enqueue_semgrep_scan_completed",
+                category="sampling",
                 component="code_graph",
                 repository_id=repo_id,
                 mr_key=key,
@@ -85,8 +85,8 @@ async def enqueue_semgrep_scan(
     except Exception as exc:  # noqa: BLE001 — 入队失败不阻塞建 MR
         try:
             logger.warning(
-                "enqueue_semgrep_scan_failed",
-                category="caller",
+                "code_graph_enqueue_semgrep_scan_failed",
+                category="sampling",
                 component="code_graph",
                 repository_id=repo_id,
                 mr_key=key,
@@ -114,7 +114,7 @@ async def enqueue_semgrep_scan_for_branches(
 
     ``run_semgrep_scan`` 对空 ``source_sha`` / ``target_sha`` 只会 fail-open 返回
     ``unavailable``，所以两端必须都解析到才入队；否则记
-    ``enqueue_semgrep_scan_skipped_missing_sha`` 并返回 ``None``，把 MR 描述里的
+    ``code_graph_enqueue_semgrep_scan_skipped_missing_sha`` 并返回 ``None``，把 MR 描述里的
     pending stub 原样留着（人工可读＞永久 unavailable 假结论）。
 
     Returns:
@@ -139,8 +139,8 @@ async def enqueue_semgrep_scan_for_branches(
     if not resolved_source or not resolved_target:
         try:
             logger.warning(
-                "enqueue_semgrep_scan_skipped_missing_sha",
-                category="caller",
+                "code_graph_enqueue_semgrep_scan_skipped_missing_sha",
+                category="sampling",
                 component="code_graph",
                 repository_id=repo_id,
                 mr_key=key,

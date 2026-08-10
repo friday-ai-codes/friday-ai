@@ -187,7 +187,7 @@ async def agenerate_module_summary(
 
     try:
         logger.info(
-            "module_summary_started",
+            "code_graph_module_summary_started",
             category="sampling",
             component="code_graph",
             member_count=member_count,
@@ -199,7 +199,7 @@ async def agenerate_module_summary(
     if member_count < MIN_SUMMARY_MEMBERS:
         try:
             logger.info(
-                "module_summary_completed",
+                "code_graph_module_summary_completed",
                 category="sampling",
                 component="code_graph",
                 member_count=member_count,
@@ -253,7 +253,7 @@ async def agenerate_module_summary(
     except Exception as exc:  # noqa: BLE001 — fail-soft
         try:
             logger.warning(
-                "module_summary_failed",
+                "code_graph_module_summary_failed",
                 category="sampling",
                 component="code_graph",
                 member_count=member_count,
@@ -278,7 +278,7 @@ async def agenerate_module_summary(
     except Exception as exc:  # noqa: BLE001
         try:
             logger.warning(
-                "module_summary_failed",
+                "code_graph_module_summary_failed",
                 category="sampling",
                 component="code_graph",
                 member_count=member_count,
@@ -302,7 +302,7 @@ async def agenerate_module_summary(
 
     try:
         logger.info(
-            "module_summary_completed",
+            "code_graph_module_summary_completed",
             category="sampling",
             component="code_graph",
             member_count=member_count,

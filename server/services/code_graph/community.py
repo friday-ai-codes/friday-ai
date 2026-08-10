@@ -490,8 +490,8 @@ async def rebuild_communities(
 
     try:
         logger.info(
-            "community_rebuild_started",
-            category="caller",
+            "code_graph_community_rebuild_started",
+            category="sampling",
             component="code_graph",
             repository_id=str(repository_id),
             branch_name=branch,
@@ -534,8 +534,8 @@ async def rebuild_communities(
         duration_ms = round((time.monotonic() - started) * 1000, 2)
         try:
             logger.info(
-                "community_rebuild_completed",
-                category="caller",
+                "code_graph_community_rebuild_completed",
+                category="sampling",
                 component="code_graph",
                 repository_id=str(repository_id),
                 branch_name=branch,
@@ -546,7 +546,7 @@ async def rebuild_communities(
                 duration_ms=duration_ms,
             )
             logger.debug(
-                "community_rebuild_counts",
+                "code_graph_community_rebuild_counts",
                 category="sampling",
                 component="code_graph",
                 repository_id=str(repository_id),
@@ -572,8 +572,8 @@ async def rebuild_communities(
             from common.logging import redact_secrets_in_text
 
             logger.warning(
-                "community_rebuild_failed",
-                category="caller",
+                "code_graph_community_rebuild_failed",
+                category="sampling",
                 component="code_graph",
                 repository_id=str(repository_id),
                 branch_name=branch,

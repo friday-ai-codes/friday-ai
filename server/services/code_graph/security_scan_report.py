@@ -231,9 +231,9 @@ def build_security_scan_section(
 
     try:
         logger.info(
-            "security_scan_report_started",
+            "code_graph_security_scan_report_started",
             component="code_graph",
-            category="caller",
+            category="sampling",
             pro_enabled=bool(pro_enabled),
             findings_count=len(findings or []),
         )
@@ -245,9 +245,9 @@ def build_security_scan_section(
             section = _stub_section(error_code)
             try:
                 logger.info(
-                    "security_scan_report_failed",
+                    "code_graph_security_scan_report_failed",
                     component="code_graph",
-                    category="caller",
+                    category="sampling",
                     error_code=_map_error_code(error_code),
                     duration_ms=_duration_ms(),
                 )
@@ -264,9 +264,9 @@ def build_security_scan_section(
         section = "\n".join(parts).rstrip() + "\n"
         try:
             logger.info(
-                "security_scan_report_completed",
+                "code_graph_security_scan_report_completed",
                 component="code_graph",
-                category="caller",
+                category="sampling",
                 duration_ms=_duration_ms(),
                 section_chars=len(section),
                 pro_enabled=bool(pro_enabled),
@@ -279,11 +279,13 @@ def build_security_scan_section(
     except Exception as exc:  # noqa: BLE001 — fail-soft
         try:
             logger.info(
-                "security_scan_report_failed",
+                "code_graph_security_scan_report_failed",
                 component="code_graph",
-                category="caller",
+                category="sampling",
                 error_code="unavailable",
-                error=_sanitize_error_text(str(exc)),
+                # ⚠️ 埋点处**显式**再过一遍 redact_secrets_in_text：脱敏幂等，但包内观测契约
+                # 是静态 AST 判据——藏在 ``_sanitize_error_text`` 里它看不见。
+                error=redact_secrets_in_text(_sanitize_error_text(str(exc))),
                 duration_ms=_duration_ms(),
             )
         except Exception:  # noqa: BLE001
@@ -465,27 +467,42 @@ async def patch_mr_security_scan_section(
 
         ok = await _write_mr_description(client, mr_id, new_body)
         try:
-            logger.info(
-                "security_scan_mr_patch_completed" if ok else "security_scan_mr_patch_failed",
-                component="code_graph",
-                category="caller",
-                repository_id=repo_id,
-                mr_key=key or mr_id,
-                ok=ok,
-                duration_ms=round((time.perf_counter() - started) * 1000, 2),
-            )
+            # ⚠️ 事件名必须是**静态**字面量（包内观测契约禁止三元/拼接/f-string），
+            # 且公共 kv ⛔ 不能收进 ``**fields``——契约按关键字名逐条查 component/category，
+            # 展开的 dict 在 AST 上看不到名字。两个分支各自写全是刻意的。
+            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            if ok:
+                logger.info(
+                    "code_graph_security_scan_mr_patch_completed",
+                    component="code_graph",
+                    category="sampling",
+                    repository_id=repo_id,
+                    mr_key=key or mr_id,
+                    ok=True,
+                    duration_ms=duration_ms,
+                )
+            else:
+                logger.info(
+                    "code_graph_security_scan_mr_patch_failed",
+                    component="code_graph",
+                    category="sampling",
+                    repository_id=repo_id,
+                    mr_key=key or mr_id,
+                    ok=False,
+                    duration_ms=duration_ms,
+                )
         except Exception:  # noqa: BLE001
             pass
         return ok
     except Exception as exc:  # noqa: BLE001 — 回填永不反噬扫描
         try:
             logger.warning(
-                "security_scan_mr_patch_failed",
+                "code_graph_security_scan_mr_patch_failed",
                 component="code_graph",
-                category="caller",
+                category="sampling",
                 repository_id=repo_id,
                 mr_key=key,
-                error=_sanitize_error_text(str(exc)),
+                error=redact_secrets_in_text(_sanitize_error_text(str(exc))),
                 duration_ms=round((time.perf_counter() - started) * 1000, 2),
             )
         except Exception:  # noqa: BLE001
@@ -536,14 +553,15 @@ async def attach_security_scan_pending(
                 target_sha=target_sha or "",
                 initiated_by_user_id=initiated_by,
             )
-    except Exception:  # noqa: BLE001 — enqueue 失败不阻断建 MR
+    except Exception as exc:  # noqa: BLE001 — enqueue 失败不阻断建 MR
         try:
             logger.warning(
-                "security_scan_attach_enqueue_failed",
+                "code_graph_security_scan_attach_enqueue_failed",
                 component="code_graph",
-                category="caller",
+                category="sampling",
                 repository_id=str(getattr(repository, "id", "") or ""),
-                error="enqueue_failed",
+                error_code="enqueue_failed",
+                error=redact_secrets_in_text(str(exc))[:300],
             )
         except Exception:  # noqa: BLE001
             pass
