@@ -110,3 +110,122 @@ async def test_enqueue_failure_returns_none_not_raise(monkeypatch) -> None:
         target_sha="f" * 40,
     )
     assert job is None
+
+
+@pytest.mark.asyncio
+async def test_enqueue_for_branches_resolves_both_shas(monkeypatch) -> None:
+    """挂点 helper 经 client 解析两端 sha 后入队，payload 两端均非空。
+
+    （Req: TAINT-01；决策: D-04）
+    """
+    from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan_for_branches
+
+    captured: dict = {}
+
+    async def _fake_defer(task, payload, **kwargs):
+        captured["payload"] = payload
+        return "job-branches"
+
+    monkeypatch.setattr("durable.service.DurableTaskService.defer", _fake_defer)
+    monkeypatch.setattr(
+        "durable.concurrency.ascan_lock",
+        AsyncMock(return_value="scan-slot-0"),
+    )
+
+    client = AsyncMock()
+    client.resolve_branch_sha = AsyncMock(
+        side_effect=lambda branch: ("a" * 40) if branch == "feat/x" else ("b" * 40)
+    )
+
+    job = await enqueue_semgrep_scan_for_branches(
+        "repo-b",
+        mr_key="mr-1",
+        source_branch="feat/x",
+        target_branch="main",
+        client=client,
+    )
+    assert job == "job-branches"
+    assert captured["payload"]["source_sha"] == "a" * 40
+    assert captured["payload"]["target_sha"] == "b" * 40
+    assert captured["payload"]["branch_name"] == "feat/x"
+
+
+@pytest.mark.asyncio
+async def test_enqueue_for_branches_skips_when_target_unresolvable(monkeypatch) -> None:
+    """任一端 sha 解析不到 → 返回 None 且完全不 defer（⛔ 不入队恒 unavailable 任务）。
+
+    （Req: TAINT-01；决策: D-04）
+    """
+    from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan_for_branches
+
+    deferred: list = []
+
+    async def _fake_defer(task, payload, **kwargs):
+        deferred.append(payload)
+        return "job-should-not-happen"
+
+    monkeypatch.setattr("durable.service.DurableTaskService.defer", _fake_defer)
+    monkeypatch.setattr(
+        "durable.concurrency.ascan_lock",
+        AsyncMock(return_value="scan-slot-0"),
+    )
+    monkeypatch.setattr(
+        "services.repo_mirror.ensure_mirror_commit",
+        AsyncMock(side_effect=RuntimeError("mirror down")),
+    )
+
+    client = AsyncMock()
+    client.resolve_branch_sha = AsyncMock(
+        side_effect=lambda branch: ("a" * 40) if branch == "feat/x" else ""
+    )
+
+    job = await enqueue_semgrep_scan_for_branches(
+        "repo-c",
+        mr_key="mr-2",
+        source_branch="feat/x",
+        target_branch="main",
+        client=client,
+    )
+    assert job is None
+    assert deferred == []
+
+
+@pytest.mark.asyncio
+async def test_enqueue_for_branches_falls_back_to_mirror(monkeypatch) -> None:
+    """client 解析不到时回退本地 bare 镜像 ``ensure_mirror_commit``。
+
+    （Req: TAINT-01；决策: D-02/D-04）
+    """
+    from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan_for_branches
+
+    captured: dict = {}
+
+    async def _fake_defer(task, payload, **kwargs):
+        captured["payload"] = payload
+        return "job-mirror"
+
+    monkeypatch.setattr("durable.service.DurableTaskService.defer", _fake_defer)
+    monkeypatch.setattr(
+        "durable.concurrency.ascan_lock",
+        AsyncMock(return_value="scan-slot-0"),
+    )
+
+    class _Snapshot:
+        def __init__(self, sha: str) -> None:
+            self.commit_sha = sha
+
+    async def _fake_mirror(repository_id, branch=None):
+        return _Snapshot(("a" * 40) if branch == "feat/y" else ("b" * 40))
+
+    monkeypatch.setattr("services.repo_mirror.ensure_mirror_commit", _fake_mirror)
+
+    job = await enqueue_semgrep_scan_for_branches(
+        "repo-d",
+        mr_key="mr-3",
+        source_branch="feat/y",
+        target_branch="main",
+        client=None,
+    )
+    assert job == "job-mirror"
+    assert captured["payload"]["source_sha"] == "a" * 40
+    assert captured["payload"]["target_sha"] == "b" * 40

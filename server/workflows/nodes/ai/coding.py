@@ -2309,21 +2309,24 @@ class AICodingNode(SubStepMixin, BaseNode):
                 mr_url=existing.mr_url,
                 mr_id=existing.mr_id,
             )
-            # 复用既有 MR 时仍 fire-and-forget 入队扫描（D-04）
+            # 复用既有 MR 时仍 fire-and-forget 入队扫描（D-04）；两端 sha 经 client 解析，
+            # 解析不到就跳过入队（空 sha 只会换来永久 unavailable）。
             try:
-                from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan
+                from services.code_graph.semgrep_enqueue import (
+                    enqueue_semgrep_scan_for_branches,
+                )
 
                 initiated_by = (
                     str(user.id)
                     if user is not None and getattr(user, "id", None) is not None
                     else "system"
                 )
-                await enqueue_semgrep_scan(
+                await enqueue_semgrep_scan_for_branches(
                     str(getattr(repository, "id", "") or ""),
                     mr_key=str(existing.mr_id or branch_name),
-                    source_sha="",
-                    target_sha="",
-                    branch_name=branch_name,
+                    source_branch=branch_name,
+                    target_branch=resolved_target,
+                    client=client,
                     initiated_by_user_id=initiated_by,
                 )
             except Exception:  # noqa: BLE001 — enqueue 失败不反噬复用路径
@@ -2356,19 +2359,21 @@ class AICodingNode(SubStepMixin, BaseNode):
             )
             # Phase 127：建 MR 成功后再 enqueue（mr_key=平台 MR id；D-04 stub-then-async）
             try:
-                from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan
+                from services.code_graph.semgrep_enqueue import (
+                    enqueue_semgrep_scan_for_branches,
+                )
 
                 initiated_by = (
                     str(user.id)
                     if user is not None and getattr(user, "id", None) is not None
                     else "system"
                 )
-                await enqueue_semgrep_scan(
+                await enqueue_semgrep_scan_for_branches(
                     str(getattr(repository, "id", "") or ""),
                     mr_key=str(result.mr_id or ""),
-                    source_sha="",
-                    target_sha="",
-                    branch_name=branch_name,
+                    source_branch=branch_name,
+                    target_branch=resolved_target,
+                    client=client,
                     initiated_by_user_id=initiated_by,
                 )
             except Exception as exc:  # noqa: BLE001 — enqueue 失败不反噬已建 MR

@@ -65,6 +65,22 @@ class GitPlatformClient(ABC):
         """
         return None
 
+    async def resolve_branch_sha(self, branch_name: str) -> str:
+        """解析分支 HEAD 的完整 commit sha（Semgrep diff-aware 扫描的两端锚点）。
+
+        **刻意不设为 @abstractmethod**：与 ``find_open_merge_request`` 同款理由——
+        新增抽象方法会让所有既有子类实例化抛 ``TypeError``。未覆盖的实现自然退化为
+        "解析不到 → 调用方回退本地镜像 / 跳过入队"，零回归。
+
+        Args:
+            branch_name: 分支名称。
+
+        Returns:
+            40 位小写 commit sha；分支不存在 / 平台异常（fail-soft）→ 空字符串。
+            ⛔ 绝不上抛：调用方是 best-effort 的建 MR 旁路，不得被观测链阻断。
+        """
+        return ""
+
     @abstractmethod
     async def get_user_id_by_username(self, username: str) -> int | None:
         """Resolve a username to the platform's user ID.

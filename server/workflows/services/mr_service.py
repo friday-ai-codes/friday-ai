@@ -258,19 +258,24 @@ async def create_mr_for_task(
     if result.success:
         log.info("MR created successfully", mr_url=result.mr_url)
         try:
-            from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan
+            from services.code_graph.semgrep_enqueue import (
+                enqueue_semgrep_scan_for_branches,
+            )
 
             initiated_by = (
                 str(security_user.id)
                 if security_user is not None and getattr(security_user, "id", None) is not None
                 else "system"
             )
-            await enqueue_semgrep_scan(
+            # source 侧直接复用本次推送的 commit_sha（已是完整 sha 时零额外调用）；
+            # target 侧经 client 解析 base 分支 HEAD。任一端空则跳过入队。
+            await enqueue_semgrep_scan_for_branches(
                 str(getattr(repository, "id", "") or ""),
                 mr_key=str(result.mr_id or ""),
+                source_branch=branch_name,
+                target_branch=resolved_target or "",
+                client=client,
                 source_sha=commit_sha or "",
-                target_sha="",
-                branch_name=branch_name,
                 initiated_by_user_id=initiated_by,
             )
         except Exception as exc:  # noqa: BLE001 — enqueue 失败不反噬已建 MR
