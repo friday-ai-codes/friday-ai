@@ -72,6 +72,56 @@ def test_security_finding_has_no_symbol_fk() -> None:
 
 
 @pytest.mark.django_db
+def test_security_finding_unique_on_update_or_create_lookup() -> None:
+    """(repository, fingerprint, mr_key) 唯一：并发/重试不会插出重复行。
+
+    （决策: D-05；review: MJ-01）
+    """
+    from django.db import IntegrityError, transaction
+
+    from codegraph.models import SecurityFinding
+
+    constraint_fields = {
+        tuple(c.fields)
+        for c in SecurityFinding._meta.constraints
+        if isinstance(c, models.UniqueConstraint)
+    }
+    assert ("repository", "fingerprint", "mr_key") in constraint_fields
+
+    repo = Repository.objects.create(
+        name="security-finding-uniq-repo",
+        git_url="https://example.com/security-finding-uniq.git",
+        default_branch="main",
+    )
+    common = {
+        "repository": repo,
+        "fingerprint": "fp-dup",
+        "mr_key": "mr-7",
+    }
+    SecurityFinding.objects.create(
+        rule_id="rule.a",
+        severity="ERROR",
+        file_path="a.py",
+        **common,
+    )
+    with pytest.raises(IntegrityError), transaction.atomic():
+        SecurityFinding.objects.create(
+            rule_id="rule.b",
+            severity="WARNING",
+            file_path="b.py",
+            **common,
+        )
+
+    # 落库路径的 update_or_create 仍然幂等（命中同一行做更新，不新增）
+    _, created = SecurityFinding.objects.update_or_create(
+        defaults={"rule_id": "rule.c", "severity": "INFO", "file_path": "c.py"},
+        **common,
+    )
+    assert created is False
+    assert SecurityFinding.objects.filter(**common).count() == 1
+
+
+@pytest.mark.django_db
 def test_security_finding_message_expected_redacted_at_write_path() -> None:
     """写入路径过 redact_secrets_in_text——断言 helper 脱敏。
 

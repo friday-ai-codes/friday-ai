@@ -480,6 +480,15 @@ class SecurityFinding(models.Model):
     class Meta:
         verbose_name = "安全 finding"
         verbose_name_plural = "安全 findings"
+        # 落库走 update_or_create(repository, fingerprint, mr_key)；没有唯一约束时
+        # 并发扫描/重试会插出重复行，之后 update_or_create 直接抛
+        # MultipleObjectsReturned（被逐条吞掉 → 静默丢 finding）。
+        constraints = [
+            models.UniqueConstraint(
+                fields=["repository", "fingerprint", "mr_key"],
+                name="uniq_security_finding_repo_fp_mr",
+            ),
+        ]
         indexes = [
             models.Index(fields=["repository", "branch_name"]),
             models.Index(fields=["repository", "mr_key"]),
