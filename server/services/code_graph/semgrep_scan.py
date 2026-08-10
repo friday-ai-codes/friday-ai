@@ -28,6 +28,9 @@ from services.repo_mirror import (
 
 logger = structlog.get_logger(__name__)
 
+# terminate 到 kill 的宽限期：给 Semgrep 一点时间自己收尾，超过即 SIGKILL
+_KILL_GRACE_SECONDS = 5.0
+
 __all__ = [
     "SemgrepScanResult",
     "build_semgrep_argv",
@@ -113,6 +116,41 @@ def _resolve_app_token() -> str:
     return (getattr(settings, "SEMGREP_APP_TOKEN_ENV", "") or "").strip()
 
 
+def _kill_quietly(proc: asyncio.subprocess.Process) -> None:
+    try:
+        proc.kill()
+    except (ProcessLookupError, OSError):
+        pass
+
+
+async def _terminate_process(proc: asyncio.subprocess.Process) -> None:
+    """先 terminate 再 kill 并回收退出码；已退出则无操作。
+
+    Semgrep 子进程环境里可能带 Pro ``SEMGREP_APP_TOKEN``，放任超时孤儿存活等于把
+    凭证留在一个还在烧 CPU/IO 的进程里，fail-open 超时语义也形同虚设（T-127-01）。
+    """
+    if proc.returncode is not None:
+        return
+    try:
+        proc.terminate()
+    except (ProcessLookupError, OSError):
+        return
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=_KILL_GRACE_SECONDS)
+        return
+    except asyncio.CancelledError:
+        # 外层取消：至少确保 SIGKILL 已送达，不再 await
+        _kill_quietly(proc)
+        raise
+    except (TimeoutError, asyncio.TimeoutError):
+        pass
+    _kill_quietly(proc)
+    try:
+        await proc.wait()
+    except Exception:  # noqa: BLE001 — 已 kill，回收失败不再升级
+        pass
+
+
 async def _run_semgrep_cli(
     argv: list[str],
     *,
@@ -120,6 +158,11 @@ async def _run_semgrep_cli(
     env: dict[str, str],
     wall_timeout: float,
 ) -> tuple[int, bytes, bytes]:
+    """跑 Semgrep CLI；本函数是墙钟超时的**唯一**归属方。
+
+    ``finally`` 回收保证超时 / 取消 / 异常三条路径都不会留下 token-bearing 孤儿；
+    正常返回时子进程已退出，回收为 no-op。
+    """
     proc = await asyncio.create_subprocess_exec(
         *argv,
         cwd=str(cwd),
@@ -127,7 +170,10 @@ async def _run_semgrep_cli(
         stderr=asyncio.subprocess.PIPE,
         env=env,
     )
-    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=wall_timeout)
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=wall_timeout)
+    finally:
+        await _terminate_process(proc)
     return proc.returncode or 0, stdout, stderr
 
 
@@ -297,14 +343,13 @@ async def run_semgrep_scan(
             env["SEMGREP_APP_TOKEN"] = token
 
         try:
-            rc, stdout, stderr = await asyncio.wait_for(
-                _run_semgrep_cli(
-                    argv,
-                    cwd=worktree,
-                    env=env,
-                    wall_timeout=wall_timeout,
-                ),
-                timeout=wall_timeout,
+            # 超时只由 _run_semgrep_cli 内层 wait_for 归属：外再套一层 wait_for 会把
+            # 内层的子进程回收变成"取消中清理"，正是 token-bearing 孤儿的来源。
+            rc, stdout, stderr = await _run_semgrep_cli(
+                argv,
+                cwd=worktree,
+                env=env,
+                wall_timeout=wall_timeout,
             )
         except TimeoutError:
             result.error_code = "timeout"

@@ -124,6 +124,48 @@ async def test_semgrep_fail_open_on_timeout_and_unavailable() -> None:
     assert timed_out.findings_count == 0
 
 
+@pytest.mark.asyncio
+async def test_semgrep_cli_timeout_reaps_child_process(monkeypatch) -> None:
+    """墙钟超时必须回收子进程：⛔ 不留带 SEMGREP_APP_TOKEN 的孤儿。
+
+    （Req: TAINT-01, 决策: D-04；威胁: T-127-01/T-127-02）
+    """
+    import asyncio
+    import os
+    import shutil
+
+    from services.code_graph.semgrep_scan import _run_semgrep_cli
+
+    sleep_bin = shutil.which("sleep")
+    if not sleep_bin:
+        pytest.skip("sleep 不可用")
+
+    spawned: list = []
+    real_exec = asyncio.create_subprocess_exec
+
+    async def _spy(*args, **kwargs):
+        proc = await real_exec(*args, **kwargs)
+        spawned.append(proc)
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _spy)
+
+    with pytest.raises(TimeoutError):
+        await _run_semgrep_cli(
+            [sleep_bin, "30"],
+            cwd=Path.cwd(),
+            env={"PYTHONUNBUFFERED": "1", "SEMGREP_APP_TOKEN": "sgp_secret"},
+            wall_timeout=0.3,
+        )
+
+    assert spawned, "子进程未被创建"
+    proc = spawned[0]
+    # 已回收退出码（信号终止为负值），且 OS 层进程确实不存在
+    assert proc.returncode is not None
+    with pytest.raises(ProcessLookupError):
+        os.kill(proc.pid, 0)
+
+
 def test_semgrep_packs_from_semgrep_configs_setting() -> None:
     """SEMGREP_CONFIGS CSV → 多个 --config。
 
