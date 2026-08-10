@@ -8,10 +8,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from services.code_graph.security_scan_report import (
     SECURITY_SECTION_MARKER,
     append_security_scan,
     build_security_scan_section,
+    is_security_scan_stub_section,
     stub_security_scan_section,
 )
 
@@ -72,6 +75,31 @@ def test_security_section_lists_severity_advisory() -> None:
     assert "merge-gate" not in section.lower()
 
 
+def test_completed_section_mentioning_pending_is_not_a_stub() -> None:
+    """finding 文本里出现字面量 ``pending`` 不得让完整段被当成占位覆盖。
+
+    （Req: TAINT-02, 决策: D-06；review: MN-01）
+    """
+    findings: list[dict[str, Any]] = [
+        {
+            "severity": "ERROR",
+            "rule_id": "python.lang.security.audit.sqli",
+            "file_path": "a.py",
+            "line": 10,
+            "message": "unsafe query built from `pending` request state",
+        }
+    ]
+    section = build_security_scan_section(findings=findings, pro_enabled=False)
+    assert "`pending`" in section
+    assert is_security_scan_stub_section(section) is False
+
+    # 真 stub 仍然可识别（pending / timeout 两种短码）
+    assert is_security_scan_stub_section(stub_security_scan_section("pending")) is True
+    assert is_security_scan_stub_section(stub_security_scan_section("timeout")) is True
+    # 无标记 → 不是 stub
+    assert is_security_scan_stub_section("## 影响面\n\nnothing") is False
+
+
 def test_security_section_has_ce_disclaimer() -> None:
     """CE 函数内 taint 边界文案。
 
@@ -127,3 +155,41 @@ def test_pro_token_configured_line_without_hype() -> None:
     assert "完整跨文件" not in pro
     assert "保证跨文件" not in pro
     assert "100%" not in pro
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_findings_load_orders_by_severity_bucket() -> None:
+    """DB 加载按 ERROR→WARNING→INFO 桶序，⛔ 不是字典序 ERROR→INFO→WARNING。
+
+    （Req: TAINT-02, 决策: D-07；review: MN-02）
+    """
+    from asgiref.sync import sync_to_async
+
+    from services.code_graph.security_scan_report import _load_findings_for_mr
+
+    @sync_to_async
+    def _seed() -> str:
+        from codegraph.models import SecurityFinding
+        from repositories.models import Repository
+
+        repo = Repository.objects.create(
+            name="severity-order-repo",
+            git_url="https://example.com/severity-order.git",
+            default_branch="main",
+        )
+        # 刻意按 INFO → ERROR → WARNING 的顺序写入
+        for idx, severity in enumerate(("INFO", "ERROR", "WARNING")):
+            SecurityFinding.objects.create(
+                repository=repo,
+                mr_key="mr-order",
+                rule_id=f"rule.{severity.lower()}",
+                severity=severity,
+                file_path=f"{idx}.py",
+                fingerprint=f"fp-{severity}",
+            )
+        return str(repo.id)
+
+    repo_id = await _seed()
+    rows = await _load_findings_for_mr(repo_id, "mr-order")
+    assert [r["severity"] for r in rows] == ["ERROR", "WARNING", "INFO"]
