@@ -4,6 +4,7 @@ from typing import Any
 
 import structlog
 
+from common.logging import redact_secrets_in_text
 from repositories.models import Repository
 from services.git_credentials import aresolve_git_token
 from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platform_client
@@ -206,7 +207,7 @@ async def create_mr_for_task(
                 component="workflows",
                 category="caller",
                 repository_id=str(getattr(repository, "id", "") or ""),
-                error=str(exc)[:200],
+                error=redact_secrets_in_text(str(exc))[:200],
             )
         except Exception:  # noqa: BLE001 — 观测永不反噬
             pass
@@ -236,7 +237,7 @@ async def create_mr_for_task(
                 component="workflows",
                 category="caller",
                 repository_id=str(getattr(repository, "id", "") or ""),
-                error=str(exc)[:200],
+                error=redact_secrets_in_text(str(exc))[:200],
             )
         except Exception:  # noqa: BLE001 — 观测永不反噬
             pass
@@ -285,7 +286,7 @@ async def create_mr_for_task(
                     component="workflows",
                     category="caller",
                     repository_id=str(getattr(repository, "id", "") or ""),
-                    error=str(exc)[:200],
+                    error=redact_secrets_in_text(str(exc))[:200],
                 )
             except Exception:  # noqa: BLE001
                 pass
