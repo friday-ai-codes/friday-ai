@@ -107,13 +107,13 @@ async def _resolve_merge_base(repo_dir: Path, target_sha: str, source_sha: str) 
 
 
 def _resolve_app_token() -> str:
-    """Pro token：优先加密 SystemSetting；空则 CE；env 仅 escape hatch（D-09）。"""
-    from services.code_graph.semgrep_token import get_semgrep_app_token
+    """Pro token：优先加密 SystemSetting；空则 CE；env 仅 escape hatch（D-09）。
 
-    token = (get_semgrep_app_token() or "").strip()
-    if token:
-        return token
-    return (getattr(settings, "SEMGREP_APP_TOKEN_ENV", "") or "").strip()
+    与 MR 段的 Pro 声明共用 ``semgrep_token.resolve_semgrep_app_token``，口径唯一。
+    """
+    from services.code_graph.semgrep_token import resolve_semgrep_app_token
+
+    return resolve_semgrep_app_token()
 
 
 def _kill_quietly(proc: asyncio.subprocess.Process) -> None:

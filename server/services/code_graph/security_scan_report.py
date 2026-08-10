@@ -394,9 +394,7 @@ async def patch_mr_security_scan_section(
         mr_id = key if key.isdigit() else ""
         if not mr_id and branch and hasattr(client, "find_open_merge_request"):
             target = str(
-                scan.get("target_branch")
-                or getattr(repo, "default_branch", None)
-                or "main"
+                scan.get("target_branch") or getattr(repo, "default_branch", None) or "main"
             )
             try:
                 existing = await client.find_open_merge_request(branch, target)
@@ -411,9 +409,10 @@ async def patch_mr_security_scan_section(
         error_code = scan.get("error_code")
         pro_enabled = False
         try:
-            from services.code_graph.semgrep_token import get_semgrep_app_token
+            # 与扫描注入同一判定（含 env escape hatch），避免「跑了 Pro 却不声明」
+            from services.code_graph.semgrep_token import is_semgrep_pro_enabled
 
-            pro_enabled = bool((await sync_to_async(get_semgrep_app_token)() or "").strip())
+            pro_enabled = bool(await sync_to_async(is_semgrep_pro_enabled)())
         except Exception:  # noqa: BLE001
             pro_enabled = False
 

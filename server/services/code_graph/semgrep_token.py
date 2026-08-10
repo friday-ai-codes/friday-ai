@@ -6,10 +6,17 @@ Pro opt-in token 仅经本模块读写：写入强制 ``encrypt_value`` + ``is_e
 
 from __future__ import annotations
 
+from django.conf import settings
+
 from common.encryption import decrypt_value, encrypt_value
 from system.models import SettingKeys, SystemSetting
 
-__all__ = ["set_semgrep_app_token", "get_semgrep_app_token"]
+__all__ = [
+    "set_semgrep_app_token",
+    "get_semgrep_app_token",
+    "resolve_semgrep_app_token",
+    "is_semgrep_pro_enabled",
+]
 
 
 def set_semgrep_app_token(plaintext: str) -> None:
@@ -43,3 +50,23 @@ def get_semgrep_app_token() -> str:
         return decrypt_value(value) or ""
     # 不应出现明文行；若历史脏数据则原样返回供调用方注入（仍禁止打日志）。
     return value
+
+
+def resolve_semgrep_app_token() -> str:
+    """Pro token 的**唯一**判定入口：加密 SystemSetting 优先，其次 env escape hatch。
+
+    扫描注入与 MR 段的 Pro 诚实声明必须问同一个函数，否则「仅用 env 打开 Pro」时
+    Semgrep 跑的是 Pro 而 MR 段却不声明（D-09 口径不一致）。⛔ 返回值永不入日志。
+    """
+    token = (get_semgrep_app_token() or "").strip()
+    if token:
+        return token
+    return (getattr(settings, "SEMGREP_APP_TOKEN_ENV", "") or "").strip()
+
+
+def is_semgrep_pro_enabled() -> bool:
+    """Pro 是否启用（含 env escape hatch）；只返回布尔，不泄漏 token 值。"""
+    try:
+        return bool(resolve_semgrep_app_token())
+    except Exception:  # noqa: BLE001 — 判定失败按 CE 处理，不阻断建 MR
+        return False
