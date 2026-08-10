@@ -9,6 +9,7 @@ import structlog
 from django.utils import timezone
 
 from chat.models import CodingSession
+from common.logging import redact_secrets_in_text
 from mcp_tools.models import McpCodingExecutionTrace
 from repositories.models import Repository
 from services.git_credentials import aresolve_git_token
@@ -175,7 +176,7 @@ async def create_merge_request(
                 component="mcp_tools",
                 category="caller",
                 repository_id=str(getattr(repository, "id", "") or ""),
-                error=str(exc)[:200],
+                error=redact_secrets_in_text(str(exc))[:200],
             )
         except Exception:  # noqa: BLE001 — 观测永不反噬
             pass
@@ -202,7 +203,7 @@ async def create_merge_request(
                 component="mcp_tools",
                 category="caller",
                 repository_id=str(getattr(repository, "id", "") or ""),
-                error=str(exc)[:200],
+                error=redact_secrets_in_text(str(exc))[:200],
             )
         except Exception:  # noqa: BLE001 — 观测永不反噬
             pass
@@ -243,7 +244,7 @@ async def create_merge_request(
                     component="mcp_tools",
                     category="caller",
                     repository_id=str(getattr(repository, "id", "") or ""),
-                    error=str(exc)[:200],
+                    error=redact_secrets_in_text(str(exc))[:200],
                 )
             except Exception:  # noqa: BLE001
                 pass

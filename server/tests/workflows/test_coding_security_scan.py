@@ -180,6 +180,23 @@ async def test_coding_dedup_reuse_enqueues_with_resolved_shas() -> None:
     assert kwargs["target_sha"] == _TARGET_SHA
 
 
+async def test_hang_point_shell_failure_logs_are_redacted() -> None:
+    """挂点 ``*_shell_failed`` 的异常文本必须过 redact_secrets_in_text（脱敏不可绕过）。
+
+    （决策: 可观测规范；威胁: T-127-01；review: MJ-03）
+    """
+    import inspect
+
+    from mcp_tools import merge_request_service as mcp_mrs
+    from workflows.nodes.ai import coding as coding_mod
+    from workflows.services import mr_service
+
+    for module in (coding_mod, mcp_mrs, mr_service):
+        source = inspect.getsource(module)
+        assert "error=str(exc)[:200]" not in source, f"{module.__name__} 存在未脱敏的异常日志"
+        assert "redact_secrets_in_text" in source
+
+
 async def test_coding_security_scan_shell_failure_is_fail_open() -> None:
     """coding 路径 shell/scan 失败 fail-open，不阻断建 MR。
 
