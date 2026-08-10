@@ -50,7 +50,7 @@ async def _sha_from_client(client: Any, branch: str) -> str:
     except Exception as exc:  # noqa: BLE001 — 平台抖动降级到镜像兜底
         try:
             logger.warning(
-                "semgrep_branch_sha_client_failed",
+                "code_graph_semgrep_branch_sha_client_failed",
                 category="sampling",
                 component="code_graph",
                 branch=branch,
@@ -72,7 +72,7 @@ async def _sha_from_mirror(repository_id: str, branch: str) -> str:
     except Exception as exc:  # noqa: BLE001 — 镜像不可用即"解析不到"
         try:
             logger.warning(
-                "semgrep_branch_sha_mirror_failed",
+                "code_graph_semgrep_branch_sha_mirror_failed",
                 category="sampling",
                 component="code_graph",
                 repository_id=str(repository_id),
