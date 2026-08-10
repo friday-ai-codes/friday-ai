@@ -136,7 +136,9 @@ declare global {
   const repoInitial: typeof import('./composables/useToolDisplay').repoInitial
   const rerankInfo: typeof import('./composables/useToolDisplay').rerankInfo
   const resolveComponent: typeof import('vue').resolveComponent
+  const resolveRef: typeof import('@vueuse/core').resolveRef
   const resolveRepoName: typeof import('./composables/useOrchestrationTimeline').resolveRepoName
+  const resolveUnref: typeof import('@vueuse/core').resolveUnref
   const routingDecisionView: typeof import('./composables/useToolDisplay').routingDecisionView
   const searchedRepoLabel: typeof import('./composables/useToolDisplay').searchedRepoLabel
   const setActivePinia: typeof import('pinia').setActivePinia
@@ -557,7 +559,6 @@ declare module 'vue' {
     readonly controlledComputed: UnwrapRef<typeof import('@vueuse/core')['controlledComputed']>
     readonly controlledRef: UnwrapRef<typeof import('@vueuse/core')['controlledRef']>
     readonly createApp: UnwrapRef<typeof import('vue')['createApp']>
-    readonly createDisposableDirective: UnwrapRef<typeof import('@vueuse/core')['createDisposableDirective']>
     readonly createEventHook: UnwrapRef<typeof import('@vueuse/core')['createEventHook']>
     readonly createGlobalState: UnwrapRef<typeof import('@vueuse/core')['createGlobalState']>
     readonly createInjectionState: UnwrapRef<typeof import('@vueuse/core')['createInjectionState']>
@@ -649,14 +650,15 @@ declare module 'vue' {
     readonly refAutoReset: UnwrapRef<typeof import('@vueuse/core')['refAutoReset']>
     readonly refDebounced: UnwrapRef<typeof import('@vueuse/core')['refDebounced']>
     readonly refDefault: UnwrapRef<typeof import('@vueuse/core')['refDefault']>
-    readonly refManualReset: UnwrapRef<typeof import('@vueuse/core')['refManualReset']>
     readonly refThrottled: UnwrapRef<typeof import('@vueuse/core')['refThrottled']>
     readonly refWithControl: UnwrapRef<typeof import('@vueuse/core')['refWithControl']>
     readonly relevanceCandidates: UnwrapRef<typeof import('./composables/useToolDisplay')['relevanceCandidates']>
     readonly repoInitial: UnwrapRef<typeof import('./composables/useToolDisplay')['repoInitial']>
     readonly rerankInfo: UnwrapRef<typeof import('./composables/useToolDisplay')['rerankInfo']>
     readonly resolveComponent: UnwrapRef<typeof import('vue')['resolveComponent']>
+    readonly resolveRef: UnwrapRef<typeof import('@vueuse/core')['resolveRef']>
     readonly resolveRepoName: UnwrapRef<typeof import('./composables/useOrchestrationTimeline')['resolveRepoName']>
+    readonly resolveUnref: UnwrapRef<typeof import('@vueuse/core')['resolveUnref']>
     readonly routingDecisionView: UnwrapRef<typeof import('./composables/useToolDisplay')['routingDecisionView']>
     readonly searchedRepoLabel: UnwrapRef<typeof import('./composables/useToolDisplay')['searchedRepoLabel']>
     readonly setActivePinia: UnwrapRef<typeof import('pinia')['setActivePinia']>
@@ -733,7 +735,6 @@ declare module 'vue' {
     readonly useCountdown: UnwrapRef<typeof import('@vueuse/core')['useCountdown']>
     readonly useCounter: UnwrapRef<typeof import('@vueuse/core')['useCounter']>
     readonly useCssModule: UnwrapRef<typeof import('vue')['useCssModule']>
-    readonly useCssSupports: UnwrapRef<typeof import('@vueuse/core')['useCssSupports']>
     readonly useCssVar: UnwrapRef<typeof import('@vueuse/core')['useCssVar']>
     readonly useCssVars: UnwrapRef<typeof import('vue')['useCssVars']>
     readonly useCurrentElement: UnwrapRef<typeof import('@vueuse/core')['useCurrentElement']>
@@ -883,7 +884,6 @@ declare module 'vue' {
     readonly useThrottleFn: UnwrapRef<typeof import('@vueuse/core')['useThrottleFn']>
     readonly useThrottledRefHistory: UnwrapRef<typeof import('@vueuse/core')['useThrottledRefHistory']>
     readonly useTimeAgo: UnwrapRef<typeof import('@vueuse/core')['useTimeAgo']>
-    readonly useTimeAgoIntl: UnwrapRef<typeof import('@vueuse/core')['useTimeAgoIntl']>
     readonly useTimeout: UnwrapRef<typeof import('@vueuse/core')['useTimeout']>
     readonly useTimeoutFn: UnwrapRef<typeof import('@vueuse/core')['useTimeoutFn']>
     readonly useTimeoutPoll: UnwrapRef<typeof import('@vueuse/core')['useTimeoutPoll']>
