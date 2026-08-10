@@ -170,6 +170,48 @@
 - Sessions: 跨多会话执行，逐 plan discuss→plan→execute→verify→review→fix 子代理链；两次 provider 资源上限打断后由续跑执行者逐条复核补齐（116-07），未重做实现。
 - Notable: 单 plan 多在 60–180min 量级（见 STATE.md Performance Metrics）；相位级 review 修复轮（114: 10 fixed / 115-UI: 13 fixed / 116: 9 fixed）稳定抓到真实缺陷，是质量门控中性价比最高的一环。
 
+## Milestone: v0.22.0 — 代码智能图分析升级（对标 GitNexus）
+
+**Completed:** 2026-08-11（未打 tag）
+**Phases:** 7（121–127） | **Plans:** 44 | **Tasks:** 105 | **Requirements:** 26 满足 / 1 部分（IMPACT-03）/ 0 未达 | **Audit:** tech_debt
+**Timeline:** 2026-08-09 → 2026-08-11（约 3 天）
+
+### What Was Built
+
+在现有 codegraph/RAG 底座上叠加内存图分析层：`(repository, branch)` 图缓存地基（P121）；impact/trace 深度分组与最短路、MCP/对话双面（P122）；detect_changes 水位锚定 diff（P123）并闭环进容器自查与 MR 影响面（P124）；Louvain 社区 + 指纹跳过 + 模块摘要三点注入（P125）；Endpoint→Process 执行流 + rename_preview + friday-impact/refactoring skills（P126）；Semgrep diff-aware advisory + LSP 基准且不盲翻默认（P127）。Phase 127 收口实修闭合空 SHA 入队 hollow，并清掉 code_graph 链路 83 项观测契约违规。
+
+### What Worked
+
+- **「让假绿在结构上不可能」再次奏效**：空 SHA 入队被 `enqueue_semgrep_scan_for_branches` 守卫堵住；MCP↔对话双面逐字节守护；弱证据封顶 MEDIUM 防止裸名边顶到 CRITICAL。
+- **冻结面纪律守住**：`repo_router_v2.py` 与 `mcp/` 子模块指针全程不动；模块摘要只在 adapter/evidence 层注入。
+- **对抗性审计透镜**：不采信自报，专找「单测绿但生产数据流断开」——抓住 IMPACT-03 数据依赖与 Semgrep hollow。
+- **观测契约收口进 LOGGING-SPEC**：把原先只活在守卫测试里的命名规则写进规范 §5，后续自动生效。
+
+### What Was Inefficient
+
+- **合成测绿掩盖生产空数据**：IMPACT-03 四条分支全靠合成数据，DB CrossRepo=0 时用户永远看不到跨仓结果——需求勾 Complete 过早。
+- **客户端白名单再次漂移**：服务端新增图工具，`mcp` npm 静态白名单未跟进（v0.20.0 同型复现）。
+- **Nyquist VALIDATION 七相位均未 reconcile 到 `validated`**：文件在、状态停在 planned/complete/draft，覆盖债累积。
+- **CLI 归档产出英文 one-liner 堆砌**：MILESTONES/STATE 需手工中文化，与仓库台账风格对齐成本固定。
+
+### Patterns Established
+
+- **图工具双面同源编排**：内核纯函数 + 包外 ORM 壳 + `run_*` 唯一编排 + MCP/agents 薄壳，失败语义与信封固定。
+- **水位锚定 diff**：detect_changes base 钉 `last_indexed_commit_sha`，保证与 Symbol 行号同源。
+- **fingerprint/Jaccard 跳过重生成**：社区成员未变 ⇒ LLM 调用数为 0（可验收）。
+- **advisory + 诚实边界声明**：Semgrep CE 函数内 taint 边界写进 MR 文案，Pro 经 token opt-in。
+
+### Key Lessons
+
+- **空洞入队是比「功能未写」更危险的假绿**：空 SHA → 恒 unavailable → 单测 mock enqueue 不断言 SHA ⇒ 生产链路从未真正扫描。守卫必须钉在「能不能跑」的前置条件上。
+- **Partial 要写进用户可见口径**：CrossRepo=0 时诚实空列表可以，但台账/文档不得写成「生产跨仓 impact 已可用」。
+- **子模块白名单与服务端工具面是同一交付面**：skills 指引调用的工具若 npm 包不可发现，IDE 侧交付就是 hollow。
+
+### Cost Observations
+
+- Sessions: 多会话连续执行（121–127 波次并行度高，125 可与 122–124 并行）。
+- Notable: Phase 127 收口多一轮实修（hollow 闭合 + 观测违规清理），验证从 gaps_found 回到 human_needed。
+
 ## Cross-Milestone Trends
 
 | Milestone | Phases | Plans | Shipped |
@@ -179,22 +221,26 @@
 | v0.16.3 外部依赖接入知识体系 | 4 | 15 | 2026-07-01 |
 | v0.19.0 技术方案可信度 | 5 | 39 | 2026-08-02（未打 tag） |
 | v0.20.0 技术方案蓝图 | 6 | 34 | 2026-08-02 |
+| v0.21.0 蓝图过程可见与返工闭环 | 4 | — | 2026-08-05（未打 tag） |
+| v0.22.0 代码智能图分析升级 | 7 | 44 | 2026-08-11（未打 tag） |
 
-> v0.19.0 与 v0.20.0 是同期双 worktree 并行开发的两个里程碑（2026-07-29 → 2026-08-02），于 2026-08-02 合并（同步点 2）。
+> v0.19.0 与 v0.20.0 是同期双 worktree 并行开发的两个里程碑（2026-07-29 → 2026-08-02），于 2026-08-02 合并（同步点 2）。v0.22.0 为单线高速交付（约 3 天 / 7 相位）。
 
-**趋势观察（截至 v0.20.0）：**
+**趋势观察（截至 v0.22.0）：**
 
 - **单相位规模在涨。** v0.16.3 是 15 plans / 4 phases（≈3.8），v0.19.0 是 39 plans / 5 phases（≈7.8），翻了一倍；v0.20.0 是 34 plans / 6 phases（≈5.7），在并行约束下略有回落。收益是相位内依赖可控、wave 并行度高；代价是单相位的验证面变大，v0.19.0 的 107 一相就压了 5 条需求 9 个 plan，也正是缺口发生的那一相。
 - **审计判定连续四个里程碑落在 `tech_debt`（v0.16.3 / v0.17.0 / v0.19.0 / v0.20.0），成因高度一致**：代码层需求全满足或近乎全满足，卡在「真实飞书 / 真实容器 / 真实 Qdrant / 浏览器视觉」这四类本地无法闭环的人工验收上。累计已挂账 27（v0.19.0）+ 11（v0.17.0）+ 若干（v0.16.x / v0.20.0）项，**至今无承接方**。这不再是单个里程碑的遗留，而是一个需要独立处置的结构性缺口——建议建立运维验收 backlog 与定期真机验收窗口。
 - **「延后人工视觉验收」的代价在 v0.19.0 第一次具体化。** 此前它只是挂账数字；这次它直接导致四条需求被建在一个已下线的组件里、五个相位判绿、返工一次跨相位闭环。挂账不是零成本的。
 - **双 worktree 并行开发首次验证可行。** 前提是边界纪律在立项时定版并逐 plan 核算（冻结面 `git diff` 为空作为门禁）：两个里程碑 11 个相位跑完**零源码文件交集**，合并冲突只剩 `.planning/` 台账与一个 migration 叶子分叉。
+- **`tech_debt` 归档已成默认出口（含 v0.22.0）。** 代码层近乎全满足，卡在真实环境样本 / 客户端白名单 / Nyquist reconcile——继续 accept 归档可以，但债务清单必须进 STATE Deferred，避免「过了审计就消失」。
+- **「服务端在线、客户端白名单缺席」在 v0.22.0 第三次同型复现**（v0.19 `nr_snapshot` / v0.20 mcp 四工具 / v0.22 图工具集）——子模块发版应进里程碑 Definition of Done，或显式标为跨仓 out-of-scope 并挂账。
 
 **反复出现的形态（跨里程碑）：**
 
-| 形态 | 首次登记 | v0.19.0 复现 | v0.20.0 复现 |
-|------|----------|--------------|--------------|
-| 状态文件（STATE / REQUIREMENTS traceability）滞后于磁盘真实状态 | v0.8.0 | ROADMAP 进度表 109/110 在两相位完成后仍写 `0/TBD` / `Not started`；Traceability 状态列口径三分 | 归档前需专门做一轮记账订正（ROADMAP 六处 + 14 份 SUMMARY frontmatter） |
-| 真机 / 真实 provider / 浏览器视觉验收是结构性 deferred | v0.16.3 | 27 项 UAT 全 pending；且延后视觉验收直接导致四条需求建在已下线组件上 | 无飞书凭证 ⇒ 一次真实导出验证未执行，版式退化风险未消解 |
-| 规划文档与工具链契约漂移 | v0.16.3（顶层 ROADMAP 缺 `### Phase N:` 明细块） | 未复现 | 相位目录名 `112-1` / `113-2` 让 phase token 解析失效，归档工具拒绝执行 |
-| 共享展示常量 / 单源 helper 事后抽取 | v0.16.3 | 未复现 | 反向验证成立：本里程碑把「单一实现」前置为纪律（作答通道 / 范围闸 / 渲染器 / 文件读取），未出现事后抽取 |
-| 「消费方在线、生产方离线」的接缝 | v0.19.0（`RoutingDecisionPanel` / `nr_snapshot`） | 首次登记 | 同型复现：`mcp` npm 包缺四个服务端已交付的工具（服务端在线、客户端白名单缺席） |
+| 形态 | 首次登记 | v0.19.0 复现 | v0.20.0 复现 | v0.22.0 复现 |
+|------|----------|--------------|--------------|--------------|
+| 状态文件（STATE / REQUIREMENTS traceability）滞后于磁盘真实状态 | v0.8.0 | ROADMAP 进度表滞后；Traceability 口径三分 | 归档前专门记账订正 | CLI 英文 one-liner 需手工中文化；IMPACT-03 Traceability 曾标 Complete |
+| 真机 / 真实 provider / 浏览器视觉验收是结构性 deferred | v0.16.3 | 27 项 UAT pending | 无飞书凭证真实导出未跑 | 127 三项 human_needed（镜像体积 / LSP 真仓 / IMPACT-03 样本） |
+| 规划文档与工具链契约漂移 | v0.16.3 | 未复现 | `112-1`/`113-2` 目录名令归档工具失效 | CLI `milestone complete` 产出英文堆砌，与中文台账风格冲突 |
+| 「消费方在线、生产方离线」的接缝 | v0.19.0 | `RoutingDecisionPanel` / `nr_snapshot` | mcp npm 缺四个蓝图工具 | mcp npm 缺图工具集；CrossRepo 生产者因 LSP 关而离线 |
+| 合成测 / mock 掩盖生产空洞 | v0.19.0（叶子组件单测当用户可见） | 首次具体化 | 守卫 skip 掩盖对齐缺口 | Semgrep 空 SHA 入队 hollow；跨仓四分支纯合成 |
