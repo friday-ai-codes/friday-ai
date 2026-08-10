@@ -302,7 +302,7 @@
 
 </details>
 
-**v0.20.0 遗留的技术债**（同步点 2 的四件事——依赖已满足、待执行 / G1·G3·G4 三道入口接缝 / mcp npm 包漂移四个工具 / Nyquist validation 缺失）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md)；**v0.19.0 遗留 27 项人工验收（全未执行）+ 2 条 PARTIAL 需求 + 1 项发布前置交代**见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) §9.3/§9.5——其中 ROUTE-03 只差在生产跑一条 `measure_repo_index_stats --write-snapshot`；v0.17.0 遗留的真实 Qdrant·飞书·容器·Cursor 端人工验证（11 项）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md)；v0.16.3 遗留真机·真实 provider·浏览器视觉验收见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md)；v0.16.1 遗留人工验收（10 项）见 [audit](./milestones/v0.16.1-MILESTONE-AUDIT.md) §4。
+**v0.22.0 遗留的技术债**（IMPACT-03 真样本 / mcp npm 图工具漂移 / RepoRouterV2Adapter 未挂 module_summary / CreatePRNode 未挂 impact_report / Nyquist 未 validated / 127 SHA 双失败 pending / 三项 human_needed）见 [audit](./milestones/v0.22.0-MILESTONE-AUDIT.md) 与 STATE.md Deferred Items。**v0.20.0** mcp npm 蓝图四工具漂移等见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md)；**v0.19.0** 27 项人工验收 + ROUTE-03/RELY-02 PARTIAL 见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) §9.3/§9.5。
 
 各历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
 
