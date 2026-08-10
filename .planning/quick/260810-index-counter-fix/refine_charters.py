@@ -38,25 +38,7 @@ SIBLINGS = [
     "devices-learn", "devices-study-room", "new-course-builder-client",
 ]
 
-# 高三提分专项的模块粒度（细化目标参照）。
-MODULE_GRAIN = [
-    "全部功能页入口与权益展示", "单题型学习页与4节点解锁", "真题检测", "知识卡片",
-    "视频讲解与答疑", "同型题检验", "完成页与学习结果反馈", "学习进度与掌握程度",
-    "新手引导", "重难点培优四级目录",
-]
-
-
-def _flatten_tree(tree, depth=0, out=None):
-    out = out if out is not None else []
-    nodes = tree if isinstance(tree, list) else tree.get("nodes", [])
-    for n in nodes:
-        out.append("  " * depth + "- " + (n.get("title") or "") + "：" + (n.get("summary") or "")[:50])
-        for c in (n.get("children") or []):
-            _flatten_tree([c], depth + 1, out)
-    return out
-
-
-PROMPT_TMPL = """你是仓库职责章程专家。基于下面某仓库的事实信息，把它的「职责领域(owned_domains)」细化到**功能模块粒度**，并补全「职责边界(boundaries)」——用负面清单说清它**不做**什么、与名字相近仓的分界。
+PROMPT_TMPL = """你是仓库职责章程专家。基于下面某仓库的**事实信息**（定位 + 能力树），抽象地写清它的「职责领域(owned_domains)」与「职责边界(boundaries)」——只依据事实，不面向任何特定需求/语料。
 
 ## 仓库
 {name}（{form} / {audience}）
@@ -67,25 +49,36 @@ PROMPT_TMPL = """你是仓库职责章程专家。基于下面某仓库的事实
 ## 当前职责领域（过粗，需细化）
 {owned_domains}
 
-## 能力树（事实，细化依据）
+## 能力树（事实，唯一细化依据——只写树里真实存在的）
 {tree}
 
 ## 需区分的同族仓（名字相近、易被误路由到此）
 {siblings}
 
-## 模块粒度参照（该仓涉及的才写，不涉及不要硬凑）
-{modules}
-
 ## 输出要求（严格 JSON，无其它文字）
 {{
-  "owned_domains": [{{"domain": "<模块级领域名>", "status": "implemented", "note": "<具体能力点，8-40字>", "citations": []}}, ...],
+  "owned_domains": [{{"domain": "<抽象职责领域名>", "status": "implemented", "note": "<具体能力点，8-40字>", "citations": []}}, ...],
   "boundaries": [{{"rule": "<本仓不承接的事/与他仓分界，祈使或陈述句>", "decided_by": "架构约定", "citations": []}}, ...]
 }}
 
-约束：
-- owned_domains 6-12 条，domain 用模块级名词（如「单题型学习页」「真题检测」「重难点培优目录」），note 落到具体能力点；只写能力树里真实存在的。
-- boundaries 3-8 条，rule 要可判定（包含能匹配到 query 的关键词），用来排除同族仓的误路由。例如「不提供 XX，XX 归 <他仓>」。
-- 不要编造能力树里不存在的功能。"""
+约束（重要——从抽象职责角度写，不要堆功能词）：
+- owned_domains 6-12 条：domain 用**抽象职责/子系统名**（如「学习状态服务」「课程内容目录」「刷题作答内核」），概括一类能力；note 落能力树里的具体能力点。**只写能力树真实存在的**，不编造、不面向某个具体需求。
+- boundaries 3-6 条，**最严格约束**：rule 只写「**应路由到某个具体他仓**的事」，且该事的**核心名词必须是他仓专属、本仓 owned_domains 完全不涉及**的（如「原生应用」「课程构建工具」「社区社交」「学习计划调度」）。
+  - **严禁**在 rule 里使用本仓 owned_domains 已覆盖的领域名词（例如本仓 own「课程内容目录」，boundary 就**不得**再出现「课程内容」四字——要排除的是「课程**构建/编辑工具**」这个他仓动作，应写成「不承接课程构建与编辑工具，归 new-course-builder-client」，把领域词换成他仓动作词）。
+  - **严禁**用「学习」「数据」「内容」「功能」「课程」「管理」这类多仓共享的通用词作为排除主语——它们会误伤本仓或其它正仓。
+  - 每条 rule 都必须以「归/应路由到 <具体他仓名>」收尾，且该他仓名在下方同族仓清单里。
+  - 拿不准能不能写专属，就**少写**：3 条干净的专属 boundary 远好于 6 条含通用词的。boundary 缺失不会扣分，写错才会误伤。
+- 语言中性、描述职责本身，不引用任何具体业务需求名。"""
+
+
+def _flatten_tree(tree, depth=0, out=None):
+    out = out if out is not None else []
+    nodes = tree if isinstance(tree, list) else tree.get("nodes", [])
+    for n in nodes:
+        out.append("  " * depth + "- " + (n.get("title") or "") + "：" + (n.get("summary") or "")[:50])
+        for c in (n.get("children") or []):
+            _flatten_tree([c], depth + 1, out)
+    return out
 
 
 async def _mimo_chat(system: str, user: str) -> str:
@@ -150,7 +143,6 @@ async def refine_one(name: str, rid: str) -> dict | None:
         owned_domains=owned,
         tree="\n".join(tree_lines[:28]),
         siblings="、".join(SIBLINGS),
-        modules="、".join(MODULE_GRAIN),
     )
 
     text = await _mimo_chat("你是仓库职责章程专家，只输出严格 JSON。", prompt)
