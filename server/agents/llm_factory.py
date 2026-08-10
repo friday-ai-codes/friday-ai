@@ -153,6 +153,17 @@ def build_chat_model(
     if resolved.base_url:
         kwargs["base_url"] = resolved.base_url  # contract
 
+    # Anthropic 兼容网关（如 mimo）auth 修复：Friday 已显式提供 api_key 时，
+    # anthropic SDK 仍会在 auth_token=None 时回退读 env ``ANTHROPIC_AUTH_TOKEN``——
+    # Claude Code 容器会注入该变量为占位值（PROXY_MA...），SDK 于是同时发送
+    # ``X-Api-Key: <真 key>`` 与 ``Authorization: Bearer <占位值>``，网关优先读
+    # 到错误的 Bearer → 401（Friday 凭证的 x-api-key 反而被盖过）。这里用
+    # ``default_headers={"Authorization": ""}`` 覆盖 SDK 的 Bearer（default_headers
+    # 在 SDK merge 顺序里后于 auth_headers，同名键覆盖），使请求只携带 x-api-key。
+    # 仅在显式提供 api_key 的 anthropic 分支注入，其余 provider 不受影响（零回归面）。
+    if prefix == "anthropic" and resolved.api_key:
+        kwargs["default_headers"] = {"Authorization": ""}
+
     # 可选覆盖客户端重试次数。默认 None = 沿用 LangChain 默认（max_retries=2 → 最多 3 次）。
     # 对"快速失败即降级"的短任务（如仓库分级路由 Stage 1）传 0，避免超时后 3× 叠加空等。
     if max_retries is not None:

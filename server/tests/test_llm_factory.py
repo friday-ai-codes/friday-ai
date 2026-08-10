@@ -533,3 +533,44 @@ def test_no_api_key_leak_in_exception() -> None:
     # 异常消息必不含明文 api_key
     assert plaintext_key not in str(exc_info.value)
     assert "sk-ant-real" not in str(exc_info.value)
+
+
+# ============================================================================
+# Anthropic 兼容网关 env auth_token 抑制（mimo 401 修复）
+# ============================================================================
+
+
+def test_anthropic_explicit_api_key_suppresses_env_auth_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """显式 api_key 的 anthropic 分支必须抑制 env ``ANTHROPIC_AUTH_TOKEN`` 注入。
+
+    Claude Code 容器会注入 ``ANTHROPIC_AUTH_TOKEN=PROXY_MA...``（占位值）。anthropic
+    SDK 在 ``auth_token=None`` 时回退读该 env，于是同时发 ``X-Api-Key: <真 key>`` 与
+    ``Authorization: Bearer <占位值>``；mimo 这类兼容网关优先读 Bearer → 401，Friday
+    凭证的 x-api-key 反被盖过。修复后构造的模型必须携带
+    ``default_headers={"Authorization": ""}`` 覆盖 SDK 的 Bearer，使请求只带 x-api-key。
+    """
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "PROXY_MA_TEST_PLACEHOLDER")
+    resolved = _make_resolved(ProviderType.ANTHROPIC, api_key="tp-real-key")
+    built = build_chat_model(resolved, "mimo-v2.5-pro", timeout_seconds=5.0)
+    # 构造 kwargs 注入了空 Authorization；SDK merge 顺序里 default_headers 后于
+    # auth_headers，同名键覆盖 → 实际发送的 Authorization 是空串而非错误 Bearer。
+    assert built.default_headers == {"Authorization": ""}
+    client = getattr(built, "_async_client", None) or getattr(built, "_client", None)
+    assert client is not None
+    effective = {**client.auth_headers, **built.default_headers}
+    assert effective["Authorization"] == ""  # 占位 Bearer 被覆盖为空
+    assert effective["X-Api-Key"] == "tp-real-key"  # 真 key 保留
+
+
+def test_anthropic_auth_suppression_scoped_to_anthropic_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """抑制逻辑只在 anthropic 分支生效——其他 Provider 的构造不得被注入该 default_headers。"""
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "PROXY_MA_TEST_PLACEHOLDER")
+    resolved = _make_resolved(ProviderType.OPENAI_CHAT, api_key="sk-openai-fake")
+    built = build_chat_model(resolved, "gpt-4o-mini", timeout_seconds=5.0)
+    # OpenAI 分支不应携带我们注入的 anthropic 专用抑制 header
+    assert getattr(built, "default_headers", None) in (None, {})
+
