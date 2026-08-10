@@ -113,6 +113,44 @@ async def test_enqueue_failure_returns_none_not_raise(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_enqueue_emits_started_completed_lifecycle(monkeypatch) -> None:
+    """caller 类生命周期须有 started/completed（带 duration_ms）。
+
+    （决策: 可观测规范；review: MN-03）
+    """
+    import structlog
+
+    from services.code_graph.semgrep_enqueue import enqueue_semgrep_scan
+
+    async def _fake_defer(task, payload, **kwargs):
+        return "job-obs"
+
+    monkeypatch.setattr("durable.service.DurableTaskService.defer", _fake_defer)
+    monkeypatch.setattr(
+        "durable.concurrency.ascan_lock",
+        AsyncMock(return_value="scan-slot-0"),
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        await enqueue_semgrep_scan(
+            "repo-obs",
+            mr_key="mr-obs",
+            source_sha="a" * 40,
+            target_sha="b" * 40,
+            initiated_by_user_id="user-1",
+        )
+
+    events = {entry["event"]: entry for entry in logs}
+    assert "enqueue_semgrep_scan_started" in events
+    assert "enqueue_semgrep_scan_completed" in events
+    started_entry = events["enqueue_semgrep_scan_started"]
+    assert started_entry["category"] == "caller"
+    assert started_entry["component"] == "code_graph"
+    assert started_entry["initiated_by_user_id"] == "user-1"
+    assert "duration_ms" in events["enqueue_semgrep_scan_completed"]
+
+
+@pytest.mark.asyncio
 async def test_enqueue_for_branches_resolves_both_shas(monkeypatch) -> None:
     """挂点 helper 经 client 解析两端 sha 后入队，payload 两端均非空。
 
