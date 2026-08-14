@@ -1014,6 +1014,24 @@ class BlueprintRouteAdapter:
                 repo_ids = list(kwargs.get("repository_ids") or scope)
                 if not repo_ids:
                     repo_ids = list(scope) or list(shortlist_ids or [])
+                # 角色坍塌修复：forbidden primary 替换为 shortlist/hard_scope 内安全仓
+                forbidden: set[str] = set()
+                roles = (
+                    role_map_payload.get("roles")
+                    if isinstance(role_map_payload, dict)
+                    else {}
+                ) or {}
+                if isinstance(roles, dict):
+                    for bucket in roles.values():
+                        if isinstance(bucket, dict):
+                            for rid in bucket.get("forbidden") or []:
+                                if rid:
+                                    forbidden.add(str(rid))
+                team_safe = [
+                    rid
+                    for rid in (list(shortlist_ids or []) + list(repo_ids))
+                    if rid and rid not in forbidden
+                ]
                 fixed: list[dict] = []
                 for p in kwargs.get("placements") or placements:
                     p = dict(p)
@@ -1023,12 +1041,16 @@ class BlueprintRouteAdapter:
                         if not hs:
                             p["hard_scope"] = list(repo_ids)
                         primary = str(p.get("primary_repo") or "").strip()
-                        allowed = set(p.get("hard_scope") or repo_ids)
-                        if primary and primary not in allowed and allowed:
-                            p["primary_repo"] = next(iter(allowed))
-                            p["open_questions"] = list(p.get("open_questions") or []) + [
-                                "reflection_primary_clamped"
-                            ]
+                        allowed = set(p.get("hard_scope") or repo_ids) - forbidden
+                        safe_fallbacks = [
+                            rid for rid in team_safe if rid in allowed
+                        ] or list(allowed)
+                        if primary and (primary not in allowed or primary in forbidden):
+                            if safe_fallbacks:
+                                p["primary_repo"] = safe_fallbacks[0]
+                                p["open_questions"] = list(
+                                    p.get("open_questions") or []
+                                ) + ["reflection_primary_clamped"]
                     fixed.append(p)
                 return {"placements": fixed, "repository_ids": list(repo_ids)}
 
