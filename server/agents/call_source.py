@@ -38,7 +38,7 @@ UNKNOWN_CALL_SOURCE = "unknown"
 
 
 class CallSource(str, Enum):
-    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，45 值，权威照抄）。
+    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，46 值，权威照抄）。
 
     取值刻意收敛为有限集合：作为指标/筛选维度时基数可控；任意字符串经
     :meth:`normalize` 回退默认，杜绝外部输入污染 call_source 维度。
@@ -136,6 +136,9 @@ class CallSource(str, Enum):
     # Phase 125：仓社区模块摘要——Louvain 社区成员元数据 → 单轮 LLM 摘要
     # （services.code_graph.module_summary，单轮，best-effort；调用点在 125-03）。
     MODULE_SUMMARY = "module_summary"
+    # Phase 128：专项画像抽取——feature list 语料 → InitiativeProfile（单轮，
+    # best-effort；调用点 services.process_runtime.initiative_profile）。
+    INITIATIVE_PROFILE = "initiative_profile"
 
     @classmethod
     def normalize(cls, value: object, default: str = UNKNOWN_CALL_SOURCE) -> str:
