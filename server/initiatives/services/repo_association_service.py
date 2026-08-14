@@ -102,6 +102,8 @@ class RepoAssociationService:
             initiated_by_user_id=initiated_by_user_id,
             event="repo_association_proposed",
             round_no=1,
+            feature_list=feature_list,
+            features_flat=flat,
         )
 
     async def refine(
@@ -132,6 +134,8 @@ class RepoAssociationService:
             initiated_by_user_id=initiated_by_user_id,
             event="repo_association_refined",
             round_no=round_no,
+            feature_list=feature_list,
+            features_flat=flat,
         )
 
     # ------------------------------------------------------------------
@@ -147,6 +151,8 @@ class RepoAssociationService:
         initiated_by_user_id: Any,
         event: str,
         round_no: int,
+        feature_list: Any = None,
+        features_flat: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         started = perf_counter()
         user_label = (
@@ -214,8 +220,10 @@ class RepoAssociationService:
                 "team_core_count": 0,
             }
         repo_ids = indexed_ids
+        team_core_ids = list(repo_ids)
 
         # Phase 129：在 team_core 范围内 shortlist 收窄（至少 primary/候选不超出 shortlist）
+        shortlist_payload: list[dict[str, Any]] = []
         try:
             from services.process_runtime.history_prior import asplit_history_priors
             from services.process_runtime.shortlist import build_shortlist
@@ -236,6 +244,7 @@ class RepoAssociationService:
                 for r in (shortlist_result.repositories or [])
                 if r.get("repository_id")
             ]
+            shortlist_payload = list(shortlist_result.repositories or [])
             if narrowed:
                 repo_ids = narrowed
         except Exception:  # noqa: BLE001 — fail-soft：收窄失败仍用 team_core，不回退全库
@@ -261,12 +270,67 @@ class RepoAssociationService:
                 "query_len": 0,
             }
 
-        # COMBINED 选仓：复用 RepoRouterV2（语义+活跃度+LLM 三合一），包 call_source 补埋点。
+        # Phase 130：shortlist 后放置单元细落点（三分量降为信号，非唯一决策）
+        placements_payload: list[dict[str, Any]] = []
+        hard_scope = list(repo_ids)
+        placement_unit_count = 0
+        try:
+            from dataclasses import asdict
+
+            from services.process_runtime.placement_units import build_placement_units
+            from services.process_runtime.place_units import place_units
+
+            fl = feature_list if isinstance(feature_list, dict) else {}
+            units_result = build_placement_units(
+                feature_list=fl or None,
+                features_flat=features_flat,
+                modules=list(fl.get("modules") or []) if fl else None,
+            )
+            placement_unit_count = int(getattr(units_result, "unit_count", 0) or 0)
+            from codegraph.services.repo_router_v2 import RepoRouterV2
+
+            place_result = await place_units(
+                getattr(units_result, "units", None) or [],
+                shortlist_ids=repo_ids,
+                role_map=None,
+                team_core=team_core_ids,
+                router=RepoRouterV2,
+                use_llm=False,
+                top_k=_TOP_K,
+            )
+            hard_scope = list(getattr(place_result, "hard_scope", None) or repo_ids)
+            if hard_scope:
+                repo_ids = hard_scope
+            for p in getattr(place_result, "placements", None) or []:
+                try:
+                    placements_payload.append(asdict(p))
+                except Exception:  # noqa: BLE001
+                    placements_payload.append(
+                        {
+                            "unit_id": getattr(p, "unit_id", ""),
+                            "primary_repo": getattr(p, "primary_repo", None),
+                            "supporting_repos": list(
+                                getattr(p, "supporting_repos", []) or []
+                            ),
+                            "confidence": getattr(p, "confidence", ""),
+                            "evidence": list(getattr(p, "evidence", []) or []),
+                            "open_questions": list(
+                                getattr(p, "open_questions", []) or []
+                            ),
+                        }
+                    )
+        except Exception as exc:  # noqa: BLE001 — fail-soft：保留 shortlist，不回退全库
+            logger.warning(
+                "repo_association_placement_failed",
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component=_COMPONENT,
+            )
+
+        # COMBINED 选仓：复用 RepoRouterV2；放置后仍在 hard_scope 内取分作信号。
         from codegraph.services.repo_router_v2 import RepoRouterV2
 
         with use_call_source(CallSource.AUX_REPO_ROUTER):
-            # corpus_kind="requirement"：feature list 整篇都是检索意图，每个功能点
-            # 指向不同落点 → 切块后全切全探，不过噪声闸（对话型才需要过闸）。
             result = await RepoRouterV2.route(
                 query,
                 top_k=_TOP_K,
@@ -282,7 +346,56 @@ class RepoAssociationService:
             initiated_by_user_id=user_label,
         )
 
-        # 召回留痕（routing 链，覆盖 AI 对话）；best-effort 不反噬选仓。
+        # 以 placements 聚合约束候选：primary ∪ supporting ⊆ hard_scope
+        scope_set = set(hard_scope or repo_ids)
+        if placements_payload:
+            placed_ids: list[str] = []
+            seen_p: set[str] = set()
+            for p in placements_payload:
+                for rid in [p.get("primary_repo"), *(p.get("supporting_repos") or [])]:
+                    sid = str(rid or "").strip()
+                    if not sid or sid in seen_p:
+                        continue
+                    if scope_set and sid not in scope_set:
+                        continue
+                    seen_p.add(sid)
+                    placed_ids.append(sid)
+            if placed_ids:
+                by_id = {
+                    str(c.get("repo_id") or c.get("repository_id") or ""): c
+                    for c in candidates
+                }
+                merged: list[dict[str, Any]] = []
+                for rid in placed_ids:
+                    if rid in by_id:
+                        merged.append(by_id[rid])
+                    else:
+                        merged.append(
+                            {
+                                "repo_id": rid,
+                                "repo_name": "",
+                                "score": 0.5,
+                                "confidence": "medium",
+                                "reason": "placement",
+                                "matched_node_paths": [],
+                            }
+                        )
+                # 入围由 placements 决定；三分量 score 仅作排序信号（非唯一决策）
+                merged.sort(
+                    key=lambda c: (
+                        -float(c.get("score") or 0.0),
+                        str(c.get("repo_id") or ""),
+                    )
+                )
+                candidates = merged
+        else:
+            candidates = [
+                c
+                for c in candidates
+                if str(c.get("repo_id") or c.get("repository_id") or "") in scope_set
+                or not scope_set
+            ]
+
         await self._record_routing_trace(
             query=query,
             result=result,
@@ -290,7 +403,6 @@ class RepoAssociationService:
             user_label=user_label,
         )
 
-        # 候选落 RepoAssociation(proposed)（**唯一**写入口，INV-6）；无 project 仅返回不落库。
         persisted = await self._persist_candidates(
             space=space,
             project=project,
@@ -307,6 +419,8 @@ class RepoAssociationService:
             round=round_no,
             query_len=len(query),
             scoped_repo_count=len(repo_ids),
+            placement_unit_count=placement_unit_count,
+            placement_count=len(placements_payload),
             duration_ms=round((perf_counter() - started) * 1000, 2),
             initiated_by_user_id=user_label,
             component=_COMPONENT,
@@ -317,6 +431,11 @@ class RepoAssociationService:
             "router_version": result.router_version,
             "auto_selected": result.auto_selected,
             "query_len": len(query),
+            "shortlist": shortlist_payload,
+            "shortlist_count": len(shortlist_payload),
+            "placements": placements_payload,
+            "placement_unit_count": placement_unit_count,
+            "hard_scope": list(hard_scope),
         }
 
     async def _record_routing_trace(

@@ -285,6 +285,43 @@ async def arun_route_stage(
         exclude_repository_ids={str(r) for r in (exclude_repository_ids or []) if str(r or "")},
         ignore_pin=bool(ignore_pin),
     )
+    # Phase 130：hard_scope 守卫——primary/候选不得逃出 shortlist ∪ reuse hosts
+    try:
+        hard_scope = {
+            str(x)
+            for x in (summary.get("hard_scope") or [])
+            if str(x or "").strip()
+        }
+        if not hard_scope:
+            hard_scope = {
+                str(r.get("repository_id") or "")
+                for r in (summary.get("shortlist") or [])
+                if isinstance(r, dict) and r.get("repository_id")
+            }
+        if hard_scope:
+            summary["candidates"] = [
+                c
+                for c in (summary.get("candidates") or [])
+                if str(c.get("repository_id") or "") in hard_scope
+            ]
+            guarded_placements = []
+            for p in summary.get("placements") or []:
+                if not isinstance(p, dict):
+                    continue
+                primary = str(p.get("primary_repo") or "").strip()
+                if primary and primary not in hard_scope:
+                    p = {**p, "primary_repo": None, "open_questions": list(p.get("open_questions") or []) + ["sandbox_hard_scope_drop"]}
+                supporting = [
+                    s
+                    for s in (p.get("supporting_repos") or [])
+                    if str(s) in hard_scope
+                ]
+                guarded_placements.append({**p, "supporting_repos": supporting})
+            if "placements" in summary:
+                summary["placements"] = guarded_placements
+            summary["hard_scope"] = sorted(hard_scope)
+    except Exception:  # noqa: BLE001 — 守卫 best-effort，不反噬路由
+        pass
     logger.info(
         "blueprint_stage_route_sandbox_completed",
         category="caller",
@@ -296,6 +333,8 @@ async def arun_route_stage(
         scope_repository_count=len(include),
         status=str(summary.get("status") or ""),
         clarify_reason=str(summary.get("clarify_reason") or ""),
+        placement_count=len(summary.get("placements") or []),
+        hard_scope_count=len(summary.get("hard_scope") or []),
         duration_ms=round((time.monotonic() - started) * 1000, 2),
     )
     return summary
