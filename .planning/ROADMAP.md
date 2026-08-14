@@ -350,7 +350,7 @@ Plans:
 | 128. 专项画像 + 团队门禁地基 | v0.23.0 | PROF-01~03, TEAM-01~03 | 3/3 | Complete   | 2026-08-14 |
 | 129. 短名单 + 历史先验 + 章程角色图 | v0.23.0 | LIST-01~04, ROLE-01~03 | 4/4 | Complete   | 2026-08-14 |
 | 130. 放置单元 + 主路径接线 | v0.23.0 | UNIT-01~03, INT-01 | 3/3 | Complete   | 2026-08-14 |
-| 131. 门禁系统 + 反思环 | v0.23.0 | GATE-01~03, REFL-01~03 | 0/? | Not started | - |
+| 131. 门禁系统 + 反思环 | v0.23.0 | GATE-01~03, REFL-01~03 | 0/3 | Planned | - |
 | 132. 集成验收与高三提分回归 | v0.23.0 | INT-02, INT-03 | 0/? | Not started | - |
 
 **Coverage (v0.23.0):** 25/25 需求全部映射，无孤儿、无重复。约束：演进 `BlueprintRouteAdapter` / `RepoAssociationService`；不推倒 `RepoRouterV2`（降为 shortlist 内细排）；新阶段遵守可观测日志规范。
