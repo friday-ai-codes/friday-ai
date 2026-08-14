@@ -2,6 +2,7 @@
 
 ## Milestones
 
+- 🚧 **v0.23.0 仓库路由增强（分阶段决策漏斗）** — Phases 128–132 (in progress) — 把「全库单段文本相似度选仓」升级为「画像 → 团队门禁 → 短名单 → 章程/历史 → 放置单元 → 门禁/反思」的可解释决策漏斗；验收锚点「高三提分专项」 — [requirements](./REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
 - ✅ **v0.22.0 代码智能图分析升级（对标 GitNexus）** — Phases 121–127 (completed 2026-08-11，未打 tag) — 在现有 codegraph/RAG 底座上叠加内存图分析层：图缓存地基 + impact/trace（穿仓）+ detect_changes 闭环进编码链 + 社区/模块摘要 + 执行流 + rename_preview + Semgrep advisory + LSP 基准 — 里程碑审计 **tech_debt**（27 条需求 26 满足 / 1 部分（IMPACT-03）/ 0 未达；121–126 passed、127 human_needed @ 4/4）见 [audit](./milestones/v0.22.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.22.0-ROADMAP.md) · [requirements](./milestones/v0.22.0-REQUIREMENTS.md) · [phases](./milestones/v0.22.0-phases/) · [research](./research/SUMMARY.md)
 - ✅ **v0.21.0 蓝图过程可见与返工闭环（反向关联 + 门到期 + 按阶段 agent 活动流 + 带原始上下文重跑）** — Phases 117–120 (completed 2026-08-05，未打 tag) — 让蓝图的「生成过程」与「返工过程」都对人可见可控：阶段级活动流取代笼统转圈、分仓每仓进度与方案可见、人审可选重跑范围且续跑带原始 agent 上下文、HITL 门不再无限静默悬挂 — 验证 **tech_debt**（15 条需求 14 满足 / 1 部分（LIVE-04 落增量轮询而非推送通道）/ 0 未达；后端 9849 全绿、前端 1 条既存失败）见 [verification](./milestones/v0.21.0-VERIFICATION.md) — [requirements](./milestones/v0.21.0-REQUIREMENTS.md)
 - ✅ **v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）** — Phases 111–116 (shipped 2026-08-02) — 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图 — 里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口；GATE-01 与三道入口接缝因硬依赖同步点 2 判 PARTIAL / 转技术债，同步点 2 已由 2026-08-02 的分支合并满足）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.20.0-ROADMAP.md) · [requirements](./milestones/v0.20.0-REQUIREMENTS.md) · [design](./technical-blueprint/DESIGN.md)
@@ -30,6 +31,77 @@
 > v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号（v0.17.0 止于 Phase 104 → v0.19.0 从 Phase 105 续号）。
 
 ## Phases
+
+### 🚧 v0.23.0 仓库路由增强（分阶段决策漏斗）(Phases 128–132) — IN PROGRESS
+
+**Milestone Goal:** feature list 类需求经可解释决策漏斗稳定命中正确仓集（团队门禁 + 短名单 + 章程角色 + 放置单元 + 门禁/反思），不再漂到语义巧合仓；在 `BlueprintRouteAdapter` / `RepoAssociationService` 上演进，不推倒 `RepoRouterV2`。
+
+- [ ] **Phase 128: 专项画像 + 团队门禁地基** — 决策漏斗入口与硬范围（画像机读 + team_core / out_of_team）
+- [ ] **Phase 129: 短名单 + 历史先验 + 章程角色图** — 候选生成升级（shortlist 可解释 + 主/辅/禁）
+- [ ] **Phase 130: 放置单元 + 主路径接线** — shortlist 内细落点 + 蓝图路由走漏斗
+- [ ] **Phase 131: 门禁系统 + 反思环** — pass/clarify/block + 有界回跳修复
+- [ ] **Phase 132: 集成验收与高三提分回归** — 回归锚点 + 契约不回归 + 合成反思用例
+
+## Phase Details
+
+### Phase 128: 专项画像 + 团队门禁地基
+**Goal**: 系统能从 feature list 产出可机读专项画像，并划定 `team_core` 硬范围——`out_of_team` 默认不可作 primary，无团队时进入 clarify/block 而非全库裸路由
+**Depends on**: Nothing（本里程碑首相位；依赖既有 BlueprintRoute / Space / 项目挂载）
+**Requirements**: PROF-01, PROF-02, PROF-03, TEAM-01, TEAM-02, TEAM-03
+**Success Criteria** (what must be TRUE):
+  1. 给定含模块总览/简述的 feature list，系统产出可机读专项画像（产品形态、域、brownfield/greenfield/fix、主能力簇、显式非目标、复用声明摘要）
+  2. 画像主路径不把验收项/测试 case 正文当主语料；仅有操作细节语料时进入澄清而非静默建噪声画像
+  3. 画像写入路由 stage 可观测结构（可回放、绑定 request/run id）；失败 fail-soft 并带明确 degrade 原因
+  4. 系统解析 `primary_team`/Space 产出 `team_core`；`out_of_team` 默认不可作 primary，仅 `team_adjacent`（有复用/章程证据）可例外
+  5. 无可用团队/空间或 `team_core` 为空（或全无索引）时，路由进入 `clarify`/`block`，不得静默退回全库裸路由
+**Plans**: TBD
+
+### Phase 129: 短名单 + 历史先验 + 章程角色图
+**Goal**: 在团队范围内生成可解释 shortlist（活跃度 + 能力树粗相关 + 章程域 + 历史先验强制拉入），并对 shortlist 产出主/辅/禁角色图约束后续落点
+**Depends on**: Phase 128
+**Requirements**: LIST-01, LIST-02, LIST-03, LIST-04, ROLE-01, ROLE-02, ROLE-03
+**Success Criteria** (what must be TRUE):
+  1. 在 `team_core`（∪ 合法 adjacent）内，系统用活跃度 + 能力树粗相关（吃专项画像）+ 章程 domain 命中生成 shortlist
+  2. 章程规划中域（`evolution`/planned）的仓在能力树分低时仍可进入 shortlist；历史「需求史/上线史」与 `team_core` 求交后可强制拉入
+  3. shortlist 大小与排序可解释（逐仓信号 breakdown）；观测上报候选数/耗时，不回显需求原文
+  4. 对 shortlist 逐仓产出主/辅/禁角色图（至少覆盖 App 壳、做题/复用宿主、课程配置、学习状态）；触碰 `boundaries` 的落点被降级或剔除（除非显式 override）
+  5. 角色图进入后续放置默认约束（例如状态域默认写方 ≠ 任意 UI 页壳主仓）
+**Plans**: TBD
+
+### Phase 130: 放置单元 + 主路径接线
+**Goal**: feature 点聚合为放置单元后在 shortlist 内细落点（可调用 RepoRouterV2 但不得对全库开放 primary）；蓝图路由/项目选仓主路径走决策漏斗
+**Depends on**: Phase 129
+**Requirements**: UNIT-01, UNIT-02, UNIT-03, INT-01
+**Success Criteria** (what must be TRUE):
+  1. 系统将 feature 点聚合为放置单元（Placement Units），依据模块依赖与正文「复用 X」边，避免逐点独立全库检索
+  2. 每个放置单元在 shortlist 内产出 `primary_repo` + `supporting_repos[]` + confidence + evidence + open_questions
+  3. 细排可调用 `RepoRouterV2`，但候选范围硬限制在 shortlist（或 shortlist ∪ 复用宿主），禁止再对全库开放 primary
+  4. 蓝图路由 / 项目选仓主路径走决策漏斗（或等价编排）；三分量加权可作为漏斗内信号，不再作为唯一决策
+**Plans**: TBD
+
+### Phase 131: 门禁系统 + 反思环
+**Goal**: 统一 `pass | clarify | block` 门禁贯穿各阶段，并在证据冲突等条件下有预算反思回跳修复（不无界全库重跑）
+**Depends on**: Phase 130
+**Requirements**: GATE-01, GATE-02, GATE-03, REFL-01, REFL-02, REFL-03
+**Success Criteria** (what must be TRUE):
+  1. 门禁统一输出 `pass | clarify | block` + `reason_codes[]` + evidence，贯穿路由阶段可观测
+  2. 至少落地：团队门、短名单覆盖门、单元落点门、全局一致性门、发布门（P0 未确认不可下游开工）
+  3. 全局一致性门拦截：出界 primary、同一状态域双写、页面壳散落多 App 仓、违背「复用不改造」类边界
+  4. 证据冲突/角色坍塌/复用矛盾/覆盖空洞等触发反思，最多 N 轮（默认 2），超限进入 `needs_human_review`；补丁只重算受影响短名单/单元
+  5. 每轮反思写入 ledger/事件（脱敏）可回放
+**Plans**: TBD
+
+### Phase 132: 集成验收与高三提分回归
+**Goal**: 以「高三提分专项」为回归锚点验证漏斗命中四基线仓且 out_of_team 不作 primary；既有契约不回归，门禁/反思有自动化测试
+**Depends on**: Phase 131
+**Requirements**: INT-02, INT-03
+**Success Criteria** (what must be TRUE):
+  1. 以「高三提分专项」feature list 为回归锚点：在学习工具 Space 下，四基线仓（`onion-learning`、`onion-practice`、`study-course`、`study-user-status`）作为 primary 集合的覆盖达到约定门槛（文档化 hit@primary / 角色覆盖）
+  2. 同用例下 `out_of_team` 仓不得成为 primary
+  3. 既有单测与 MCP/编排契约不回归；新增门禁/反思路径有自动化测试（含至少一条角色坍塌→反思修复的合成用例）
+**Plans**: TBD
+
+---
 
 <details>
 <summary>✅ v0.22.0 代码智能图分析升级（对标 GitNexus）(Phases 121–127) — SHIPPED 2026-08-11（审计 tech_debt，未打 tag）</summary>
@@ -232,6 +304,18 @@
 
 ## Progress
 
+### v0.23.0 进度表（Phases 128–132）
+
+| Phase | Milestone | Requirements | Plans Complete | Status | Completed |
+|-------|-----------|--------------|----------------|--------|-----------|
+| 128. 专项画像 + 团队门禁地基 | v0.23.0 | PROF-01~03, TEAM-01~03 | 0/? | Not started | - |
+| 129. 短名单 + 历史先验 + 章程角色图 | v0.23.0 | LIST-01~04, ROLE-01~03 | 0/? | Not started | - |
+| 130. 放置单元 + 主路径接线 | v0.23.0 | UNIT-01~03, INT-01 | 0/? | Not started | - |
+| 131. 门禁系统 + 反思环 | v0.23.0 | GATE-01~03, REFL-01~03 | 0/? | Not started | - |
+| 132. 集成验收与高三提分回归 | v0.23.0 | INT-02, INT-03 | 0/? | Not started | - |
+
+**Coverage (v0.23.0):** 25/25 需求全部映射，无孤儿、无重复。约束：演进 `BlueprintRouteAdapter` / `RepoAssociationService`；不推倒 `RepoRouterV2`（降为 shortlist 内细排）；新阶段遵守可观测日志规范。
+
 <details>
 <summary>✅ v0.22.0 进度表（Phases 121–127，26 Complete / 1 Partial）</summary>
 
@@ -253,7 +337,7 @@
 
 里程碑 v0.1.0–v0.22.0（Phases 1–127）均已交付并归档。v0.19.0 与 v0.20.0 于 2026-07-29 起双 worktree 并行，2026-08-02 合并（同步点 2）。v0.21.0 于 2026-08-05 轻量归档；v0.22.0 于 2026-08-11 归档（tech_debt，未打 tag）。
 
-**当前无在建里程碑**——下一里程碑通过 `$gsd-new-milestone` 立项。遗留债务见 STATE.md Deferred Items / Pending Todos。
+**当前在建：** 🚧 **v0.23.0 仓库路由增强（分阶段决策漏斗）** — Phases 128–132。遗留债务见 STATE.md Deferred Items / Pending Todos。
 
 <details>
 <summary>✅ v0.20.0 进度表（Phases 111–116，34/35 需求已交付 · GATE-01 PARTIAL）</summary>

@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v0.23.0
 milestone_name: 仓库路由增强（分阶段决策漏斗）
-status: planning
-last_updated: "2026-08-14T04:26:39.271Z"
+status: roadmap_ready
+last_updated: "2026-08-14T12:30:00.000Z"
 last_activity: 2026-08-14
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,20 +17,37 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md（updated 2026-08-11，v0.22.0 归档后）。v0.22.0 调研见 `research/SUMMARY.md`；相位产物归档到 `.planning/milestones/v0.22.0-phases/`。此前 v0.20.0 设计输入 `technical-blueprint/DESIGN.md`、v0.19.0 路由调研 `research/ROUTING-RANKING.md`。
+See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 立项）。设计输入：对话决策漏斗 + `research/ROUTING-RANKING.md` + quick 评测语料。v0.22.0 归档见 `milestones/v0.22.0-*`。
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。
-**v0.22.0 交付的那一层：** 在 codegraph/RAG 底座上叠加内存图分析——改代码前能回答「影响谁、怎么到达、属于哪个模块、这条改动安全吗」，并把 detect_changes 闭环进编码链与 MR 描述。
-**v0.20.0 交付的那一层：** 技术方案成为「人类可读、AI 可依此完备编码」的项目级结构化蓝图。
-**v0.19.0 交付的那一层：** 技术方案链路真正跑通并可信——编排不塌陷、路由可解释、编排产出直连执行流、过程可见。
-**Current focus:** 规划下一里程碑（`$gsd-new-milestone`）
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——本里程碑让「需求→改哪个仓」在 feature list 场景下可信、可解释、可门禁。
+**Current focus:** Phase 128 — 专项画像 + 团队门禁地基（ready to discuss / plan）
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 128 of 132 (专项画像 + 团队门禁地基)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-08-14 — Milestone v0.23.0 started
+Status: Roadmap complete — ready to discuss Phase 128
+Last activity: 2026-08-14 — ROADMAP Phases 128–132 created；25/25 REQ mapped
+
+Progress: [░░░░░░░░░░] 0%
+
+## Milestone Overview (v0.23.0 — Phases 128–132 — 🚧 IN PROGRESS)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 128 | 专项画像 + 团队门禁地基 | PROF-01~03, TEAM-01~03 | Not started |
+| 129 | 短名单 + 历史先验 + 章程角色图 | LIST-01~04, ROLE-01~03 | Not started |
+| 130 | 放置单元 + 主路径接线 | UNIT-01~03, INT-01 | Not started |
+| 131 | 门禁系统 + 反思环 | GATE-01~03, REFL-01~03 | Not started |
+| 132 | 集成验收与高三提分回归 | INT-02, INT-03 | Not started |
+
+**Execution order:** 128 → 129 → 130 → 131 → 132（线性漏斗）。需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；阶段详情见 [ROADMAP.md](./ROADMAP.md)。
+
+**关键约束（plan-phase 必读）:**
+- 演进 `BlueprintRouteAdapter` / `RepoAssociationService`；**不推倒** `RepoRouterV2`（降为 shortlist 内细排工具）
+- 小版本不做大前端改版；章程仍人工确认生效
+- 验收锚点：「高三提分专项」四基线仓 + `out_of_team` 不得 primary
+- 新阶段遵守可观测日志规范（structlog / category / call_source / 脱敏 / initiated_by_user_id）
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — ✅ ARCHIVED 2026-08-11，审计 tech_debt，未打 tag)
 
@@ -1108,8 +1125,10 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-09T22:38:46.022Z
-Stopped at: Completed 127-05-PLAN.md
+Last session: 2026-08-14
+Stopped at: v0.23.0 ROADMAP created（Phases 128–132，25/25 REQ mapped）；ready to discuss Phase 128
+Resume file: None
+Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。
 Earlier: 2026-07-31T07:28:32.180Z — v0.19.0 全部相位执行完毕（105/106/107/109/110）。Phase 109 补完 109-08 并修掉评审的 1 BLOCKER/2 HIGH/6 MEDIUM + LO-01/LO-05 + UI 的 HI-01/MN-01；Phase 110 七个 plan 全落地并闭合 GAP-1（前半程失败时间线撒谎）。自动化面：后端 8204 passed、前端 1622 passed、vue-tsc 退出 0、迁移无变更。
