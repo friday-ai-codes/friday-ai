@@ -50,6 +50,8 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **设计输入:** 对话设计漏斗（2026-08-13/14）+ `.planning/research/ROUTING-RANKING.md` + `.planning/quick/260809-repo-route-eval/` + `.planning/quick/260811-gaosan-route-5rounds/`。本里程碑跳过重复生态调研，直接进入需求与路线图。
 
+**产品决策锁（autonomous 前置）:** 见 [milestones/v0.23.0-DECISIONS.md](./milestones/v0.23.0-DECISIONS.md) — D1 蓝图/项目硬门禁 + MCP 须识别或让用户选团队；D2 四基线角色级 primary 覆盖 + out_of_team=0；D3 无团队 → clarify；D4 发布确认门 + 有条件 auto_selected；D5 固定角色枚举映射章程。
+
 ## Previous Milestone: v0.22.0 代码智能图分析升级（对标 GitNexus）— ✅ COMPLETE 2026-08-11（审计 tech_debt，未打 tag）
 
 > **收口结论：** 7 相位 44/44 plans；27 条需求 **26 满足 / 1 部分（IMPACT-03）/ 0 未达**。服务端主路径（图缓存→impact/detect_changes→MR 影响面、社区→Router evidence、Process→affected_processes、Semgrep SHA 守卫）经对抗性复核接通。Phase 127 曾出现 Level 4 HOLLOW（空 SHA 入队）并已结构性闭合。
