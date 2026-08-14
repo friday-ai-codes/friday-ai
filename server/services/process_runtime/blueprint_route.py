@@ -677,38 +677,62 @@ class BlueprintRouteAdapter:
         # 后续 V2/融合硬限制在 shortlist（不得逃逸到 team 外/全库）
         repository_ids = shortlist_ids or repository_ids
 
+        # Phase 130：role_map 后 → placement units → place（INT-01；D-12）
         router = self._resolve_router()
-        result = await router.route(
-            query, top_k=self.top_k, repository_ids=repository_ids, use_llm=True
+        placement_funnel = await self._aapply_placement_funnel(
+            requirement_spec=requirement_spec,
+            shortlist_ids=shortlist_ids,
+            role_map_payload=role_map_payload,
+            placement_defaults=placement_defaults,
+            team_core=list(team_gate.get("team_core") or []),
+            router=router,
         )
-        router_version = str(getattr(result, "router_version", "") or "")
-        auto_selected = bool(getattr(result, "auto_selected", False))
-        shortlist_set = set(shortlist_ids)
+        hard_scope = list(placement_funnel.get("hard_scope") or shortlist_ids or repository_ids)
+        hard_scope_set = set(hard_scope)
+        # fail-soft：placement 失败不回退全库，保留 shortlist/hard_scope 收窄
+        repository_ids = hard_scope or repository_ids
+        shortlist_set = set(shortlist_ids) | hard_scope_set
 
-        # 逐字段显式映射（不 to_dict() 整包透传：新增分量时形状变更点唯一）
-        raw_candidates: list[dict] = [
-            {
-                "repository_id": str(getattr(c, "repo_id", "") or ""),
-                "repository_name": str(getattr(c, "repo_name", "") or ""),
-                "router_base": float(getattr(c, "score", 0.0) or 0.0),
-                "confidence": str(getattr(c, "confidence", "") or ""),
-                "reasoning": str(getattr(c, "reasoning", "") or ""),
-                "matched_node_paths": list(getattr(c, "matched_node_paths", []) or []),
-                "charter_supplement": False,
-            }
-            for c in getattr(result, "candidates", []) or []
-            if str(getattr(c, "repo_id", "") or "")
-            and str(getattr(c, "repo_id", "")) not in excluded
-            and (not shortlist_set or str(getattr(c, "repo_id", "")) in shortlist_set)
-        ]
+        raw_candidates: list[dict] = self._raw_candidates_from_placements(
+            placement_funnel.get("placements") or [],
+            hard_scope=hard_scope_set,
+            excluded=excluded,
+        )
+        router_version = "v2"
+        auto_selected = True
+        # 无放置候选时 fail-soft：在 hard_scope 内整篇 V2 取分（仍禁止全库）
+        if not raw_candidates:
+            result = await router.route(
+                query, top_k=self.top_k, repository_ids=repository_ids, use_llm=True
+            )
+            router_version = str(getattr(result, "router_version", "") or "")
+            auto_selected = bool(getattr(result, "auto_selected", False))
+            raw_candidates = [
+                {
+                    "repository_id": str(getattr(c, "repo_id", "") or ""),
+                    "repository_name": str(getattr(c, "repo_name", "") or ""),
+                    "router_base": float(getattr(c, "score", 0.0) or 0.0),
+                    "confidence": str(getattr(c, "confidence", "") or ""),
+                    "reasoning": str(getattr(c, "reasoning", "") or ""),
+                    "matched_node_paths": list(getattr(c, "matched_node_paths", []) or []),
+                    "charter_supplement": False,
+                }
+                for c in getattr(result, "candidates", []) or []
+                if str(getattr(c, "repo_id", "") or "")
+                and str(getattr(c, "repo_id", "")) not in excluded
+                and (
+                    not hard_scope_set
+                    or str(getattr(c, "repo_id", "")) in hard_scope_set
+                )
+            ]
 
         supplements = await self._collect_supplements(
             query_terms=query_terms,
             exclude_repository_ids={c["repository_id"] for c in raw_candidates} | excluded,
             repository_ids=repository_ids,
         )
-        if shortlist_set:
-            supplements = [s for s in supplements if s.get("repository_id") in shortlist_set]
+        if hard_scope_set:
+            supplements = [s for s in supplements if s.get("repository_id") in hard_scope_set]
         raw_candidates.extend(supplements)
         # 118（LIVE-02）：召回一完成就发一条活动事件——打分/调研可能要跑好几十秒，
         # 在此之前用户此前看到的只有一个转圈。⛔ best-effort，绝不反噬路由。
@@ -812,6 +836,13 @@ class BlueprintRouteAdapter:
             "shortlist_count": len(shortlist_ids),
             "role_map": role_map_payload,
             "placement_defaults": placement_defaults,
+            "placement_units": placement_funnel.get("placement_units"),
+            "placement_unit_count": int(placement_funnel.get("placement_unit_count") or 0),
+            "placements": list(placement_funnel.get("placements") or []),
+            "hard_scope": list(hard_scope),
+            "placement_degrade_reasons": list(
+                placement_funnel.get("degrade_reasons") or []
+            ),
         }
         from services.process_runtime.team_gate import annotate_team_membership
 
@@ -829,11 +860,176 @@ class BlueprintRouteAdapter:
             unjustified_boundary_hit_count=unjustified_count,
             team_core_count=len(list(team_gate.get("team_core") or [])),
             shortlist_count=len(shortlist_ids),
+            placement_unit_count=int(placement_funnel.get("placement_unit_count") or 0),
+            placement_count=len(placement_funnel.get("placements") or []),
+            hard_scope_count=len(hard_scope),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
             category="sampling",
             component="process_runtime",
         )
         return summary
+
+    def _raw_candidates_from_placements(
+        self,
+        placements: list[dict],
+        *,
+        hard_scope: set[str],
+        excluded: set[str],
+    ) -> list[dict]:
+        """由 placements 推导候选种子；primary 优先，supporting 次之；硬限制 hard_scope。"""
+        raw: list[dict] = []
+        seen: set[str] = set()
+        # 先 primary
+        for p in placements or []:
+            if not isinstance(p, dict):
+                continue
+            rid = str(p.get("primary_repo") or "").strip()
+            if not rid or rid in seen or rid in excluded:
+                continue
+            if hard_scope and rid not in hard_scope:
+                continue
+            seen.add(rid)
+            scores = p.get("scores") if isinstance(p.get("scores"), dict) else {}
+            raw.append(
+                {
+                    "repository_id": rid,
+                    "repository_name": "",
+                    "router_base": float(scores.get(rid, 0.7) or 0.7),
+                    "confidence": str(p.get("confidence") or "medium"),
+                    "reasoning": "placement_primary",
+                    "matched_node_paths": [],
+                    "charter_supplement": False,
+                }
+            )
+        for p in placements or []:
+            if not isinstance(p, dict):
+                continue
+            scores = p.get("scores") if isinstance(p.get("scores"), dict) else {}
+            for rid in p.get("supporting_repos") or []:
+                sid = str(rid or "").strip()
+                if not sid or sid in seen or sid in excluded:
+                    continue
+                if hard_scope and sid not in hard_scope:
+                    continue
+                seen.add(sid)
+                raw.append(
+                    {
+                        "repository_id": sid,
+                        "repository_name": "",
+                        "router_base": float(scores.get(sid, 0.35) or 0.35),
+                        "confidence": "low",
+                        "reasoning": "placement_supporting",
+                        "matched_node_paths": [],
+                        "charter_supplement": False,
+                    }
+                )
+        return raw
+
+    async def _aapply_placement_funnel(
+        self,
+        *,
+        requirement_spec: dict,
+        shortlist_ids: list[str],
+        role_map_payload: dict,
+        placement_defaults: dict,
+        team_core: list[str],
+        router,
+    ) -> dict:
+        """Phase 130：build_placement_units → place_units（fail-soft，不回退全库）。"""
+        from services.process_runtime.placement_units import (
+            build_placement_units,
+            placement_units_to_dict,
+        )
+        from services.process_runtime.place_units import (
+            place_units,
+            placement_result_to_dict,
+        )
+
+        empty = {
+            "placement_units": None,
+            "placement_unit_count": 0,
+            "placements": [],
+            "hard_scope": list(shortlist_ids or []),
+            "degrade_reasons": [],
+        }
+        try:
+            feature_list = _requirement_spec_to_feature_list(requirement_spec)
+            units_result = build_placement_units(feature_list=feature_list)
+        except Exception as exc:  # noqa: BLE001
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "blueprint_route_placement_units_failed",
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+            empty["degrade_reasons"] = ["placement_units_failed"]
+            return empty
+
+        try:
+            place_result = await place_units(
+                getattr(units_result, "units", None) or [],
+                shortlist_ids=shortlist_ids,
+                role_map=role_map_payload,
+                placement_defaults=placement_defaults,
+                team_core=team_core,
+                router=router,
+                use_llm=False,
+                top_k=self.top_k,
+            )
+        except Exception as exc:  # noqa: BLE001
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "blueprint_route_place_units_failed",
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+            return {
+                "placement_units": placement_units_to_dict(units_result),
+                "placement_unit_count": int(getattr(units_result, "unit_count", 0) or 0),
+                "placements": [],
+                "hard_scope": list(shortlist_ids or []),
+                "degrade_reasons": ["place_units_failed"],
+            }
+
+        placements_payload = []
+        for p in getattr(place_result, "placements", None) or []:
+            if hasattr(p, "__dict__"):
+                from dataclasses import asdict
+
+                try:
+                    placements_payload.append(asdict(p))
+                except Exception:  # noqa: BLE001
+                    placements_payload.append(
+                        {
+                            "unit_id": getattr(p, "unit_id", ""),
+                            "primary_repo": getattr(p, "primary_repo", None),
+                            "supporting_repos": list(
+                                getattr(p, "supporting_repos", []) or []
+                            ),
+                            "confidence": getattr(p, "confidence", ""),
+                            "evidence": list(getattr(p, "evidence", []) or []),
+                            "open_questions": list(
+                                getattr(p, "open_questions", []) or []
+                            ),
+                            "scores": dict(getattr(p, "scores", {}) or {}),
+                        }
+                    )
+            elif isinstance(p, dict):
+                placements_payload.append(p)
+
+        hard_scope = list(getattr(place_result, "hard_scope", None) or shortlist_ids or [])
+        return {
+            "placement_units": placement_units_to_dict(units_result),
+            "placement_unit_count": int(getattr(units_result, "unit_count", 0) or 0),
+            "placements": placements_payload,
+            "hard_scope": hard_scope,
+            "degrade_reasons": list(getattr(place_result, "degrade_reasons", None) or []),
+            "place_result": placement_result_to_dict(place_result),
+        }
 
     async def _aapply_shortlist_role_map(
         self,
