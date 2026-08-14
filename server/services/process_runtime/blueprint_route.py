@@ -458,13 +458,76 @@ async def _aresolve_requirement_spec(session) -> dict:
             from common.logging import redact_secrets_in_text
 
             logger.warning(
-                "blueprint_route_spec_load_failed",
-                session_id=str(getattr(session, "id", "")),
+                "blueprint_route_spec_artifact_load_failed",
                 error=redact_secrets_in_text(str(exc)),
                 category="sampling",
                 component="process_runtime",
             )
     return {}
+
+
+def _extract_team_context(session) -> tuple[str, str, str]:
+    """从 session.stage_state 提取 project_id / space_id / team_id。"""
+    stage_state = getattr(session, "stage_state", None) or {}
+    project_id = ""
+    space_id = ""
+    team_id = ""
+    if isinstance(stage_state, dict):
+        for holder in (
+            stage_state.get("blueprint"),
+            stage_state.get("decomposition"),
+            stage_state.get("team"),
+            stage_state,
+        ):
+            if not isinstance(holder, dict):
+                continue
+            project_id = project_id or str(holder.get("project_id") or "")
+            space_id = space_id or str(holder.get("space_id") or "")
+            team_id = team_id or str(
+                holder.get("team_id") or holder.get("primary_team") or ""
+            )
+    return project_id, space_id, team_id
+
+
+def _requirement_spec_to_feature_list(requirement_spec: dict | None) -> dict:
+    """requirement_spec → 画像语料形状（模块简述用 goal，功能用 feature_points）。"""
+    spec = requirement_spec if isinstance(requirement_spec, dict) else {}
+    overview_parts: list[str] = []
+    goal = spec.get("goal")
+    if isinstance(goal, list):
+        for block in goal:
+            if isinstance(block, dict):
+                text = str(block.get("text") or "").strip()
+                if text:
+                    overview_parts.append(text)
+            elif isinstance(block, str) and block.strip():
+                overview_parts.append(block.strip())
+    elif isinstance(goal, str) and goal.strip():
+        overview_parts.append(goal.strip())
+
+    features_flat: list[dict] = []
+    for fp in spec.get("feature_points") or []:
+        if not isinstance(fp, dict):
+            continue
+        title = str(fp.get("title") or fp.get("name") or "").strip()
+        if not title:
+            continue
+        features_flat.append(
+            {
+                "name": title,
+                "description": str(fp.get("description") or title).strip(),
+                "module": str(fp.get("module") or "").strip(),
+            }
+        )
+    return {
+        "flow_summary": "；".join(overview_parts),
+        "modules": (
+            [{"name": "requirement", "summary": "；".join(overview_parts)}]
+            if overview_parts
+            else []
+        ),
+        "features_flat": features_flat,
+    }
 
 
 # ── adapter ───────────────────────────────────────────────────────────────
@@ -538,6 +601,8 @@ class BlueprintRouteAdapter:
                 intent=intent,
                 weights_used=_weights_for(weights, intent),
             )
+            # pin 短路仍标注 team 隶属（可解析时），不扩大为全库。
+            summary = await self._aannotate_pin_team_membership(session, summary)
             await self._emit_scored(session, summary)
             logger.info(
                 "blueprint_route_pinned_by_project_binding",
@@ -550,7 +615,49 @@ class BlueprintRouteAdapter:
             )
             return summary
 
-        repository_ids = await self._resolve_repository_ids(session)
+        # Phase 128：漏斗画像 + 团队硬门禁（D1/D3）——禁止无团队时全库 V2 primary。
+        profile_result = await self._abuild_funnel_profile(
+            requirement_spec, session=session, query_char_len=len(query)
+        )
+        team_gate = await self._aapply_funnel_team_gate(session, profile=profile_result)
+        if team_gate.get("status") == "clarify":
+            clarify = self._clarify_result(
+                intent=intent,
+                weights_used=_weights_for(weights, intent),
+                clarify_reason=str(team_gate.get("clarify_reason") or "missing_team"),
+                team_core=list(team_gate.get("team_core") or []),
+                profile=profile_result.get("profile"),
+                degrade_reason=str(profile_result.get("degrade_reason") or ""),
+                offer=team_gate.get("offer"),
+            )
+            logger.info(
+                "blueprint_route_team_gate_clarify",
+                session_id=str(getattr(session, "id", "")),
+                clarify_reason=clarify.get("clarify_reason"),
+                team_core_count=clarify.get("team_core_count", 0),
+                profile_status=profile_result.get("status"),
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+                category="sampling",
+                component="process_runtime",
+            )
+            return clarify
+
+        repository_ids = list(team_gate.get("team_core") or [])
+        # 显式 include_repos 与 team_core 求交（不得放大到全库）。
+        scoped = await self._resolve_repository_ids(session)
+        if scoped:
+            scoped_set = {str(r) for r in scoped}
+            repository_ids = [r for r in repository_ids if r in scoped_set]
+            if not repository_ids:
+                return self._clarify_result(
+                    intent=intent,
+                    weights_used=_weights_for(weights, intent),
+                    clarify_reason="empty_team_core",
+                    team_core=[],
+                    profile=profile_result.get("profile"),
+                    degrade_reason=str(profile_result.get("degrade_reason") or ""),
+                )
+
         router = self._resolve_router()
         result = await router.route(
             query, top_k=self.top_k, repository_ids=repository_ids, use_llm=True
@@ -673,7 +780,17 @@ class BlueprintRouteAdapter:
             "unjustified_boundary_hit_count": unjustified_count,
             "candidates": candidates,
             "citations": citations,
+            "status": "ok",
+            "team_core": list(repository_ids),
+            "team_core_count": len(repository_ids),
+            "profile": profile_result.get("profile"),
+            "degrade_reason": str(profile_result.get("degrade_reason") or ""),
         }
+        from services.process_runtime.team_gate import annotate_team_membership
+
+        summary["candidates"] = annotate_team_membership(
+            summary["candidates"], repository_ids
+        )
         await self._emit_scored(session, summary)
         logger.info(
             "blueprint_route_completed",
@@ -683,6 +800,7 @@ class BlueprintRouteAdapter:
             intent=intent,
             charter_supplement_count=len(supplements),
             unjustified_boundary_hit_count=unjustified_count,
+            team_core_count=len(repository_ids),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
             category="sampling",
             component="process_runtime",
@@ -763,6 +881,140 @@ class BlueprintRouteAdapter:
             "candidates": [],
             "citations": [],
         }
+
+    @staticmethod
+    def _clarify_result(
+        *,
+        intent: str,
+        weights_used: dict,
+        clarify_reason: str,
+        team_core: list[str] | None = None,
+        profile: dict | None = None,
+        degrade_reason: str = "",
+        offer: dict | None = None,
+    ) -> dict:
+        """团队/画像门禁 clarify 摘要（additive 键，保留 routing 顶层形状）。"""
+        core = list(team_core or [])
+        return {
+            "router_version": "clarify",
+            "auto_selected": False,
+            "intent": intent,
+            "weights_used": weights_used,
+            "charter_supplement_count": 0,
+            "unjustified_boundary_hit_count": 0,
+            "candidates": [],
+            "citations": [],
+            "status": "clarify",
+            "clarify_reason": clarify_reason,
+            "team_core": core,
+            "team_core_count": len(core),
+            "profile": profile,
+            "degrade_reason": degrade_reason,
+            "offer": offer or {"bind_space": True},
+        }
+
+    async def _abuild_funnel_profile(
+        self, requirement_spec: dict, *, session, query_char_len: int = 0
+    ) -> dict:
+        """漏斗画像：fail-soft，失败不阻断门禁。"""
+        try:
+            from services.process_runtime.initiative_profile import build_profile
+
+            feature_list = _requirement_spec_to_feature_list(requirement_spec)
+            return await build_profile(
+                feature_list=feature_list,
+                initiated_by_user_id=str(getattr(session, "initiated_by_user_id", "") or "")
+                or "system",
+                request_id=str(getattr(session, "id", "") or ""),
+                run_id=str(getattr(session, "id", "") or ""),
+            )
+        except Exception as exc:  # noqa: BLE001 — fail-soft
+            logger.warning(
+                "blueprint_route_profile_failed",
+                error=str(exc)[:200],
+                query_char_len=query_char_len,
+                category="sampling",
+                component="process_runtime",
+            )
+            return {
+                "status": "degraded",
+                "degrade_reason": "profile_error",
+                "profile": None,
+                "clarify_reason": "",
+            }
+
+    async def _aapply_funnel_team_gate(self, session, *, profile: dict) -> dict:
+        """解析 team_core + 索引过滤；缺/空 → clarify（D1/D3）。"""
+        from services.process_runtime.team_gate import (
+            apply_team_gate,
+            filter_indexed_repository_ids,
+            resolve_team_core,
+        )
+
+        project_id, space_id, team_id = _extract_team_context(session)
+        if not project_id and not space_id and not team_id:
+            space_id = await self._awork_item_space_id(session) or ""
+
+        resolved = await resolve_team_core(
+            project_id=project_id or None,
+            space_id=space_id or None,
+            team_id=team_id or None,
+            primary_team=team_id or None,
+            indexed_repository_ids=None,
+        )
+        if resolved.get("should_clarify"):
+            return apply_team_gate(resolve_result=resolved, profile=profile.get("profile"))
+
+        core = list(resolved.get("team_core") or [])
+        try:
+            indexed_core = await filter_indexed_repository_ids(core)
+        except Exception:  # noqa: BLE001
+            indexed_core = []
+        resolved_indexed = {
+            **resolved,
+            "team_core": indexed_core,
+            "clarify_reason": "" if indexed_core else "empty_team_core",
+            "should_clarify": not bool(indexed_core),
+        }
+        return apply_team_gate(resolve_result=resolved_indexed, profile=profile.get("profile"))
+
+    @sync_to_async
+    def _awork_item_space_id(self, session) -> str:
+        """从 work_item 解析所属 space_id（无则空串）。"""
+        work_item_id = getattr(session, "work_item_id", None)
+        if work_item_id is None:
+            return ""
+        try:
+            from delivery.models import WorkItem
+
+            wi = WorkItem.objects.filter(id=work_item_id).only("space_id").first()
+            return str(wi.space_id) if wi and wi.space_id else ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+    async def _aannotate_pin_team_membership(self, session, summary: dict) -> dict:
+        """固定路由候选标注 team_membership（可解析时）。"""
+        try:
+            from services.process_runtime.team_gate import annotate_team_membership, resolve_team_core
+
+            project_id, space_id, team_id = _extract_team_context(session)
+            resolved = await resolve_team_core(
+                project_id=project_id or None,
+                space_id=space_id or None,
+                team_id=team_id or None,
+                indexed_repository_ids=None,
+            )
+            core = list(resolved.get("team_core") or [])
+            if not core:
+                return summary
+            out = dict(summary)
+            out["candidates"] = annotate_team_membership(out.get("candidates") or [], core)
+            out["team_core"] = core
+            out["team_core_count"] = len(core)
+            out["status"] = "ok"
+            return out
+        except Exception:  # noqa: BLE001
+            return summary
 
     async def _aresolve_requirement_spec(self, session) -> dict:
         return await _aresolve_requirement_spec(session)
