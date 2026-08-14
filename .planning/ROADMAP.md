@@ -38,7 +38,7 @@
 
 - [x] **Phase 128: 专项画像 + 团队门禁地基** — 决策漏斗入口与硬范围（画像机读 + team_core / out_of_team）
 - [x] **Phase 129: 短名单 + 历史先验 + 章程角色图** — 候选生成升级（shortlist 可解释 + 主/辅/禁） (completed 2026-08-14)
-- [ ] **Phase 130: 放置单元 + 主路径接线** — shortlist 内细落点 + 蓝图路由走漏斗
+- [x] **Phase 130: 放置单元 + 主路径接线** — shortlist 内细落点 + 蓝图路由走漏斗 (completed 2026-08-14)
 - [ ] **Phase 131: 门禁系统 + 反思环** — pass/clarify/block + 有界回跳修复
 - [ ] **Phase 132: 集成验收与高三提分回归** — 回归锚点 + 契约不回归 + 合成反思用例
 
@@ -102,9 +102,10 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 130-01-PLAN.md — Placement Units 聚合（模块依赖 + 复用边）
-- [ ] 130-02-PLAN.md — shortlist∪reuse-host 内细落点（V2 硬限制）
-- [ ] 130-03-PLAN.md — Blueprint/Association 主路径漏斗接线（INT-01）
+
+- [x] 130-01-PLAN.md — Placement Units 聚合（模块依赖 + 复用边）
+- [x] 130-02-PLAN.md — shortlist∪reuse-host 内细落点（V2 硬限制）
+- [x] 130-03-PLAN.md — Blueprint/Association 主路径漏斗接线（INT-01）
 
 ### Phase 131: 门禁系统 + 反思环
 
@@ -342,7 +343,7 @@ Plans:
 |-------|-----------|--------------|----------------|--------|-----------|
 | 128. 专项画像 + 团队门禁地基 | v0.23.0 | PROF-01~03, TEAM-01~03 | 3/3 | Complete   | 2026-08-14 |
 | 129. 短名单 + 历史先验 + 章程角色图 | v0.23.0 | LIST-01~04, ROLE-01~03 | 4/4 | Complete   | 2026-08-14 |
-| 130. 放置单元 + 主路径接线 | v0.23.0 | UNIT-01~03, INT-01 | 0/3 | Planned | - |
+| 130. 放置单元 + 主路径接线 | v0.23.0 | UNIT-01~03, INT-01 | 3/3 | Complete   | 2026-08-14 |
 | 131. 门禁系统 + 反思环 | v0.23.0 | GATE-01~03, REFL-01~03 | 0/? | Not started | - |
 | 132. 集成验收与高三提分回归 | v0.23.0 | INT-02, INT-03 | 0/? | Not started | - |
 

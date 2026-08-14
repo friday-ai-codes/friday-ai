@@ -34,9 +34,9 @@
 
 ### 连贯性与放置单元（UNIT）
 
-- [ ] **UNIT-01**: 系统将 feature 点聚合为放置单元（Placement Units），依据模块依赖与正文「复用 X」边，避免 43 点各自独立全库检索
-- [ ] **UNIT-02**: 每个放置单元在 shortlist 内产出 `primary_repo` + `supporting_repos[]` + confidence + evidence + open_questions
-- [ ] **UNIT-03**: 细排可调用 `RepoRouterV2`，但候选范围硬限制在 shortlist（或 shortlist ∪ 复用宿主），禁止再对全库开放 primary
+- [x] **UNIT-01**: 系统将 feature 点聚合为放置单元（Placement Units），依据模块依赖与正文「复用 X」边，避免 43 点各自独立全库检索
+- [x] **UNIT-02**: 每个放置单元在 shortlist 内产出 `primary_repo` + `supporting_repos[]` + confidence + evidence + open_questions
+- [x] **UNIT-03**: 细排可调用 `RepoRouterV2`，但候选范围硬限制在 shortlist（或 shortlist ∪ 复用宿主），禁止再对全库开放 primary
 
 ### 门禁系统（GATE）
 
@@ -52,7 +52,7 @@
 
 ### 集成与验收（INT）
 
-- [ ] **INT-01**: 蓝图路由 / 项目选仓主路径走决策漏斗（或等价编排），三分量加权可保留为漏斗内信号，不再作为唯一决策
+- [x] **INT-01**: 蓝图路由 / 项目选仓主路径走决策漏斗（或等价编排），三分量加权可保留为漏斗内信号，不再作为唯一决策
 - [ ] **INT-02**: 以「高三提分专项」feature list 为回归锚点：在学习工具 Space 下，四基线仓作为 primary 集合的覆盖达到约定门槛（文档化 hit@primary / 角色覆盖），且 `out_of_team` 仓不得成为 primary
 - [ ] **INT-03**: 既有单测与 MCP/编排契约不回归；新增门禁/反思路径有自动化测试（含至少一条角色坍塌→反思修复的合成用例）
 
@@ -92,10 +92,10 @@
 | ROLE-01 | Phase 129 | Complete |
 | ROLE-02 | Phase 129 | Complete |
 | ROLE-03 | Phase 129 | Complete |
-| UNIT-01 | Phase 130 | Pending |
-| UNIT-02 | Phase 130 | Pending |
-| UNIT-03 | Phase 130 | Pending |
-| INT-01 | Phase 130 | Pending |
+| UNIT-01 | Phase 130 | Complete |
+| UNIT-02 | Phase 130 | Complete |
+| UNIT-03 | Phase 130 | Complete |
+| INT-01 | Phase 130 | Complete |
 | GATE-01 | Phase 131 | Pending |
 | GATE-02 | Phase 131 | Pending |
 | GATE-03 | Phase 131 | Pending |
