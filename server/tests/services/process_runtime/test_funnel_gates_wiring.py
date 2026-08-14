@@ -450,3 +450,112 @@ async def test_no_requirement_fulltext_in_gate_summary():
     blob = str(summary.get("funnel_gates")) + str(summary.get("reflection"))
     assert "高三提分专项请勿" not in blob
     assert len(blob) < 20000
+
+
+def _role_map_with_forbidden() -> RoleMapResult:
+    return RoleMapResult(
+        status="ok",
+        roles={
+            "app_shell": {
+                "primary": "core-1",
+                "supporting": [],
+                "forbidden": ["bad-1"],
+            },
+            "practice_reuse_host": {
+                "primary": "host-1",
+                "supporting": [],
+                "forbidden": ["bad-1"],
+            },
+            "course_config": {
+                "primary": "core-2",
+                "supporting": [],
+                "forbidden": [],
+            },
+            "learning_state": {
+                "primary": "core-2",
+                "supporting": [],
+                "forbidden": [],
+            },
+        },
+        per_repo=[],
+        placement_defaults={},
+    )
+
+
+def _place_forbidden_primary() -> PlacementResult:
+    """合成角色坍塌：primary 落在 role_map.forbidden 上。"""
+    return PlacementResult(
+        status="ok",
+        placements=[
+            UnitPlacement(
+                unit_id="u-collapse",
+                primary_repo="bad-1",
+                supporting_repos=[],
+                confidence="high",
+                evidence=[{"kind": "v2"}],
+                open_questions=[],
+                feature_ids=["fp_1"],
+                hard_scope=["core-1", "core-2", "host-1", "bad-1"],
+            ),
+        ],
+        unit_count=1,
+        placement_count=1,
+        hard_scope=["core-1", "core-2", "host-1", "bad-1"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_role_collapse_repaired_via_adapter_reflection():
+    """接线级（INT-03/D-12）：forbidden primary → reflection → 不再含 role_collapse。"""
+    from services.process_runtime.funnel_gates import evaluate_funnel_gates
+    from services.process_runtime.reflection import detect_reflection_triggers
+
+    router = MagicMock()
+    router.route = AsyncMock(return_value=_fake_router(auto_selected=True))
+    adapter = BlueprintRouteAdapter(router=router, top_k=5)
+    role_map = _role_map_with_forbidden()
+
+    with _patches(
+        adapter,
+        place_result=_place_forbidden_primary(),
+        role_map=role_map,
+    ):
+        summary = await adapter.route(_session())
+
+    assert summary.get("reflection") is not None
+    placements = list(summary.get("placements") or [])
+    assert placements, "expected placements after adapter route"
+    # 不得把全库 ghost 当 primary
+    primaries = {p.get("primary_repo") for p in placements if isinstance(p, dict)}
+    assert "ghost-full-lib" not in primaries
+    assert "bad-1" not in primaries
+
+    role_payload = {
+        "status": role_map.status,
+        "roles": role_map.roles,
+        "per_repo": role_map.per_repo,
+    }
+    team = {
+        "status": "ok",
+        "team_core": ["core-1", "core-2", "host-1"],
+        "membership": {
+            "core-1": "team_core",
+            "core-2": "team_core",
+            "host-1": "team_core",
+            "bad-1": "team_core",
+        },
+    }
+    report = evaluate_funnel_gates(
+        team=team,
+        shortlist_ids=["core-1", "core-2", "host-1"],
+        role_map=role_payload,
+        placements=placements,
+        confirmation_acked=True,
+    )
+    triggers = detect_reflection_triggers(
+        report, placements=placements, role_map=role_payload
+    )
+    assert "role_collapse" not in triggers.trigger_codes
+
+    blob = str(summary.get("funnel_gates")) + str(summary.get("reflection"))
+    assert "高三提分专项请勿" not in blob
