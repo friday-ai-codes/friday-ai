@@ -19,15 +19,24 @@ def test_mcp_read_flow_creates_replayable_traces(
 ) -> None:
     client, _plaintext = mcp_client
     monkeypatch.setattr(
-        "codegraph.services.repo_router.RepoRouter.route",
+        "codegraph.services.repo_router_v2.RepoRouterV2.route",
         AsyncMock(
-            return_value=[
-                SimpleNamespace(
-                    repo_id=str(indexed_repository.id),
-                    final_score=1.0,
-                    match_reason="matched",
-                )
-            ]
+            return_value=SimpleNamespace(
+                candidates=[
+                    SimpleNamespace(
+                        repo_id=str(indexed_repository.id),
+                        repo_name=indexed_repository.name,
+                        score=1.0,
+                        reasoning="matched",
+                        confidence="high",
+                        sub_project="",
+                        sub_project_paths=[],
+                        matched_node_paths=[],
+                    )
+                ],
+                router_version="v2",
+                auto_selected=True,
+            )
         ),
     )
     monkeypatch.setattr(

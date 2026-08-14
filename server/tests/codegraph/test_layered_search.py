@@ -15,6 +15,7 @@ from codegraph.services.layered_search import (
     LayeredSearchService,
     LayerResult,
 )
+from codegraph.services.repo_router_v2 import RepoRouteCandidateV2, RepoRouteResultV2
 
 # ============================================================================
 # TestL1RepoRouting — L1 仓库路由层测试 (work item)
@@ -27,9 +28,9 @@ class TestL1RepoRouting:
     @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_l1_routes_when_no_repo_ids_specified(self):
-        """未指定 repository_ids 时，L1 调用 RepoRouter.route()。
+        """未指定 repository_ids 时，L1 调用统一 RepoRouterV2。
 
-        socket 禁用时 RepoRouter 失败，降级到查询所有已索引仓库（此时为空）。
+        socket 禁用时路由失败，降级到查询所有已索引仓库（此时为空）。
         """
         result, repo_ids = await LayeredSearchService._l1_repo_routing("test query", None, 3)
         assert isinstance(result, LayerResult)
@@ -52,7 +53,7 @@ class TestL1RepoRouting:
     async def test_l1_fallback_to_all_indexed_on_error(self):
         """RepoRouter 失败时回退到所有已索引仓库。"""
         with patch(
-            "codegraph.services.repo_router.RepoRouter.route",
+            "codegraph.services.repo_router_v2.RepoRouterV2.route",
             new_callable=AsyncMock,
         ) as mock_route:
             mock_route.side_effect = RuntimeError("network down")
@@ -64,26 +65,29 @@ class TestL1RepoRouting:
     @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_l1_with_mocked_router(self):
-        """Mock RepoRouter 返回路由结果。"""
-        from codegraph.services.repo_router import RepoRouteResult
-
-        mock_results = [
-            RepoRouteResult(
-                repo_id="repo-aaa", repo_name="Alpha",
-                bm25_score=0.85, embedding_score=0.72, final_score=0.78,
-                match_reason="matched tech_stack: django",
-            ),
-        ]
+        """Mock RepoRouterV2 返回统一路由结果，且 L1 禁用 LLM。"""
+        mock_result = RepoRouteResultV2(
+            candidates=[
+                RepoRouteCandidateV2(
+                    repo_id="repo-aaa", repo_name="Alpha", score=0.78,
+                    confidence="medium", reasoning="matched tech_stack: django",
+                ),
+            ],
+            router_version="v2_stage0_only",
+            auto_selected=False,
+            degraded=True,
+        )
         with patch(
-            "codegraph.services.repo_router.RepoRouter.route",
+            "codegraph.services.repo_router_v2.RepoRouterV2.route",
             new_callable=AsyncMock,
         ) as mock_route:
-            mock_route.return_value = mock_results
+            mock_route.return_value = mock_result
             result, repo_ids = await LayeredSearchService._l1_repo_routing("django models", None, 3)
             assert result.status == "ok"
             assert result.result_count == 1
             assert repo_ids == ["repo-aaa"]
             assert result.items[0]["repo_name"] == "Alpha"
+            mock_route.assert_awaited_once_with("django models", top_k=3, use_llm=False)
 
 
 # ============================================================================

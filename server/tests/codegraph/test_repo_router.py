@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from codegraph.services.repo_summaries_channel import route_repo_summaries
 
 # ---------------------------------------------------------------------------
 # Mock fixtures
@@ -44,12 +45,12 @@ def _make_sparse_result(indices=None, values=None):
 
 
 # ---------------------------------------------------------------------------
-# TestRepoRouterRoute — RepoRouter.route() 两阶段路由测试
+# TestRepoSummariesChannel — 统一服务内部摘要回退通道测试
 # ---------------------------------------------------------------------------
 
 
-class TestRepoRouterRoute:
-    """RepoRouter.route() 两阶段路由测试。"""
+class TestRepoSummariesChannel:
+    """repo_summaries BM25+dense+关键词微调测试。"""
 
     @pytest.mark.asyncio
     async def test_route_stage1_bm25_stage2_rerank(self):
@@ -62,16 +63,14 @@ class TestRepoRouterRoute:
         ]
 
         with (
-            patch("codegraph.services.repo_router.SparseEncoderService.encode",
+            patch("codegraph.services.repo_summaries_channel.SparseEncoderService.encode",
                   return_value=_make_sparse_result()),
             patch("services.embedding.EmbeddingService.generate_embedding",
                   new_callable=AsyncMock, return_value=[0.1] * 1024),
-            patch("codegraph.services.repo_router.QdrantService.hybrid_search_by_name",
+            patch("codegraph.services.repo_summaries_channel.QdrantService.hybrid_search_multi_by_name",
                   return_value=mock_results),
         ):
-            from codegraph.services.repo_router import RepoRouter
-
-            results = await RepoRouter.route("Django API", top_k=3)
+            results = await route_repo_summaries("Django API", top_k=3)
 
             assert len(results) == 3
             for r in results:
@@ -89,16 +88,14 @@ class TestRepoRouterRoute:
     async def test_route_empty_collection_returns_empty(self):
         """验证 repo_summaries 无数据时返回空列表。"""
         with (
-            patch("codegraph.services.repo_router.SparseEncoderService.encode",
+            patch("codegraph.services.repo_summaries_channel.SparseEncoderService.encode",
                   return_value=_make_sparse_result()),
             patch("services.embedding.EmbeddingService.generate_embedding",
                   new_callable=AsyncMock, return_value=[0.1] * 1024),
-            patch("codegraph.services.repo_router.QdrantService.hybrid_search_by_name",
+            patch("codegraph.services.repo_summaries_channel.QdrantService.hybrid_search_multi_by_name",
                   return_value=[]),
         ):
-            from codegraph.services.repo_router import RepoRouter
-
-            results = await RepoRouter.route("Nonexistent repo")
+            results = await route_repo_summaries("Nonexistent repo")
             assert results == []
 
     @pytest.mark.asyncio
@@ -112,26 +109,22 @@ class TestRepoRouterRoute:
         ]
 
         with (
-            patch("codegraph.services.repo_router.SparseEncoderService.encode",
+            patch("codegraph.services.repo_summaries_channel.SparseEncoderService.encode",
                   return_value=_make_sparse_result()),
             patch("services.embedding.EmbeddingService.generate_embedding",
                   new_callable=AsyncMock, return_value=[0.1] * 1024),
-            patch("codegraph.services.repo_router.QdrantService.hybrid_search_by_name",
+            patch("codegraph.services.repo_summaries_channel.QdrantService.hybrid_search_multi_by_name",
                   return_value=mock_results),
         ):
-            from codegraph.services.repo_router import RepoRouter
-
-            results = await RepoRouter.route("Python", top_k=5)
+            results = await route_repo_summaries("Python", top_k=5)
             assert len(results) == 5
 
     @pytest.mark.asyncio
     async def test_route_sparse_encode_failure_returns_empty(self):
         """验证 sparse 编码失败时返回空列表。"""
-        with patch("codegraph.services.repo_router.SparseEncoderService.encode",
+        with patch("codegraph.services.repo_summaries_channel.SparseEncoderService.encode",
                    return_value={"indices": [], "values": []}):
-            from codegraph.services.repo_router import RepoRouter
-
-            results = await RepoRouter.route("test query")
+            results = await route_repo_summaries("test query")
             assert results == []
 
     @pytest.mark.asyncio
@@ -144,16 +137,14 @@ class TestRepoRouterRoute:
         ]
 
         with (
-            patch("codegraph.services.repo_router.SparseEncoderService.encode",
+            patch("codegraph.services.repo_summaries_channel.SparseEncoderService.encode",
                   return_value=_make_sparse_result()),
             patch("services.embedding.EmbeddingService.generate_embedding",
                   new_callable=AsyncMock, return_value=[0.1] * 1024),
-            patch("codegraph.services.repo_router.QdrantService.hybrid_search_by_name",
+            patch("codegraph.services.repo_summaries_channel.QdrantService.hybrid_search_multi_by_name",
                   return_value=mock_results),
         ):
-            from codegraph.services.repo_router import RepoRouter
-
-            results = await RepoRouter.route("Django API")
+            results = await route_repo_summaries("Django API")
             assert len(results) == 1
             r = results[0]
             expected_final = round(r.bm25_score * 0.4 + r.embedding_score * 0.6, 4)
@@ -169,16 +160,14 @@ class TestRepoRouterRoute:
         ]
 
         with (
-            patch("codegraph.services.repo_router.SparseEncoderService.encode",
+            patch("codegraph.services.repo_summaries_channel.SparseEncoderService.encode",
                   return_value=_make_sparse_result()),
             patch("services.embedding.EmbeddingService.generate_embedding",
                   new_callable=AsyncMock, return_value=[0.1] * 1024),
-            patch("codegraph.services.repo_router.QdrantService.hybrid_search_by_name",
+            patch("codegraph.services.repo_summaries_channel.QdrantService.hybrid_search_multi_by_name",
                   return_value=mock_results),
         ):
-            from codegraph.services.repo_router import RepoRouter
-
-            results = await RepoRouter.route("python django api")
+            results = await route_repo_summaries("python django api")
             assert len(results) == 1
             assert "matched tech_stack:" in results[0].match_reason
             assert "python" in results[0].match_reason.lower()
@@ -212,22 +201,34 @@ class TestRepoRouteView:
     @pytest.mark.django_db(transaction=True)
     def test_route_api_returns_200_with_results(self, route_user):
         """验证 API 端点返回 200 + 结构化 JSON（per work item）。"""
-        from codegraph.services.repo_router import RepoRouteResult
         from rest_framework.test import APIClient
 
-        mock_results = [
-            RepoRouteResult(
-                repo_id="repo-1",
-                repo_name="test-repo",
-                bm25_score=0.8,
-                embedding_score=0.7,
-                final_score=0.74,
-                match_reason="matched tech_stack: python, django",
-            )
-        ]
+        from codegraph.services.repo_router_v2 import (
+            RepoRouteCandidateV2,
+            RepoRouteResultV2,
+        )
 
-        with patch("codegraph.services.repo_router.RepoRouter.route",
-                   new_callable=AsyncMock, return_value=mock_results):
+        mock_result = RepoRouteResultV2(
+            candidates=[
+                RepoRouteCandidateV2(
+                    repo_id="repo-1",
+                    repo_name="test-repo",
+                    score=0.74,
+                    confidence="low",
+                    reasoning="matched tech_stack: python, django",
+                )
+            ],
+            router_version="v1_fallback",
+            auto_selected=False,
+            degraded=True,
+            degrade_reason="no_node_index",
+        )
+
+        with patch(
+            "codegraph.services.repo_router_v2.RepoRouterV2.route",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
             client = APIClient()
             client.force_authenticate(user=route_user)
 

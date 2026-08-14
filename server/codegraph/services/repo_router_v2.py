@@ -1,4 +1,8 @@
-"""推理式仓库路由 v2（PageIndex 化）。
+"""统一仓库路由服务（PageIndex 化）。
+
+``RepoRouterV2.route`` 是生产代码唯一允许调用的仓库路由入口。原 v1 的
+``repo_summaries`` BM25+dense 召回与关键词微调已内化为本服务的摘要级回退通道，
+不再作为另一套业务 service 对外提供。
 
 Stage 0 — 节点级 hybrid 粗筛：query 对 `repo_index_nodes`（能力树节点）做
 dense+sparse RRF 检索，按 repository_id 聚合打分（纯函数打分核心
@@ -20,7 +24,7 @@ Stage 1 可用与不可用两条路径语义一致——Stage 1 失联不再导�
 
 降级链（结果带 ``degraded`` 标志，Stage 1 未参与时为 True）：
 - LLM 失败/超时 → Stage 0 聚合分数直接出结果（仍优于 v1：节点级检索）
-- repo_index_nodes 无命中 → 回落 v1 RepoRouter（repo_summaries 单点检索）
+- repo_index_nodes 无命中 → 内部摘要通道（repo_summaries 单点检索）
 
 分面信号：节点 payload 的 facets 参与排序——活跃度经枚举映射进加性活跃度项，
 疑似废弃仓库的惩罚为活跃度项封顶（非乘性惩罚，贡献仍可单独拆解展示）。
@@ -2186,13 +2190,13 @@ class RepoRouterV2:
         grouping_repository_ids: list[str] | None = None,
         delta: float = 0.0,
     ) -> RepoRouteResultV2:
-        """repo_index_nodes 无命中 → 回落 v1 单点摘要路由。
+        """repo_index_nodes 无命中 → 统一服务内部摘要通道。
 
         ``grouping_repository_ids/delta`` 带默认值：既有直调方与测试替身照旧可用。
         """
-        from codegraph.services.repo_router import RepoRouter
+        from codegraph.services.repo_summaries_channel import route_repo_summaries
 
-        v1_results = await RepoRouter.route(query, top_k=top_k)
+        v1_results = await route_repo_summaries(query, top_k=top_k)
         # getattr 防御：测试/调用方可能给出仅含核心字段的 stub 结果
         candidates = [
             RepoRouteCandidateV2(

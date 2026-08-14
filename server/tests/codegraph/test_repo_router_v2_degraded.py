@@ -605,10 +605,13 @@ async def test_degrade_reason_v1_fallback_is_no_node_index(monkeypatch) -> None:
     """节点索引无命中 → 回落 v1 且 degrade_reason == "no_node_index"。"""
     _install_stage0(monkeypatch, [])
 
-    async def _fake_v1_route(query: str, top_k: int = 3) -> list[Any]:
+    async def _fake_summaries_route(query: str, top_k: int = 3) -> list[Any]:
         return []
 
-    monkeypatch.setattr("codegraph.services.repo_router.RepoRouter.route", _fake_v1_route)
+    monkeypatch.setattr(
+        "codegraph.services.repo_summaries_channel.route_repo_summaries",
+        _fake_summaries_route,
+    )
 
     result = await RepoRouterV2.route("高三提分专项需求")
 
@@ -693,7 +696,7 @@ async def test_redact_meta_load_failure_log_event(monkeypatch) -> None:
 
     _install_stage0(monkeypatch, _high_margin_hits())
 
-    async def _boom(node_hits, query, query_dense, config):
+    async def _boom(node_hits, query, query_dense, config, **kwargs):
         raise RuntimeError("meta pipeline exploded with sk-ant-abcdefgh12345678")
 
     monkeypatch.setattr(RepoRouterV2, "_load_repo_meta", _boom)
