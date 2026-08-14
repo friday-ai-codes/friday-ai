@@ -36,7 +36,7 @@
 
 **Milestone Goal:** feature list 类需求经可解释决策漏斗稳定命中正确仓集（团队门禁 + 短名单 + 章程角色 + 放置单元 + 门禁/反思），不再漂到语义巧合仓；在 `BlueprintRouteAdapter` / `RepoAssociationService` 上演进，不推倒 `RepoRouterV2`。
 
-- [ ] **Phase 128: 专项画像 + 团队门禁地基** — 决策漏斗入口与硬范围（画像机读 + team_core / out_of_team）
+- [x] **Phase 128: 专项画像 + 团队门禁地基** — 决策漏斗入口与硬范围（画像机读 + team_core / out_of_team）
 - [ ] **Phase 129: 短名单 + 历史先验 + 章程角色图** — 候选生成升级（shortlist 可解释 + 主/辅/禁）
 - [ ] **Phase 130: 放置单元 + 主路径接线** — shortlist 内细落点 + 蓝图路由走漏斗
 - [ ] **Phase 131: 门禁系统 + 反思环** — pass/clarify/block + 有界回跳修复
@@ -45,65 +45,81 @@
 ## Phase Details
 
 ### Phase 128: 专项画像 + 团队门禁地基
+
 **Goal**: 系统能从 feature list 产出可机读专项画像，并划定 `team_core` 硬范围——`out_of_team` 默认不可作 primary，无团队时进入 clarify/block 而非全库裸路由
 **Depends on**: Nothing（本里程碑首相位；依赖既有 BlueprintRoute / Space / 项目挂载）
 **Requirements**: PROF-01, PROF-02, PROF-03, TEAM-01, TEAM-02, TEAM-03
 **Success Criteria** (what must be TRUE):
+
   1. 给定含模块总览/简述的 feature list，系统产出可机读专项画像（产品形态、域、brownfield/greenfield/fix、主能力簇、显式非目标、复用声明摘要）
   2. 画像主路径不把验收项/测试 case 正文当主语料；仅有操作细节语料时进入澄清而非静默建噪声画像
   3. 画像写入路由 stage 可观测结构（可回放、绑定 request/run id）；失败 fail-soft 并带明确 degrade 原因
   4. 系统解析 `primary_team`/Space 产出 `team_core`；`out_of_team` 默认不可作 primary，仅 `team_adjacent`（有复用/章程证据）可例外
   5. 无可用团队/空间或 `team_core` 为空（或全无索引）时，路由进入 `clarify`/`block`，不得静默退回全库裸路由
+
 **Plans:** 3 plans
 
 Plans:
-- [ ] 128-01-PLAN.md — 专项画像模块（PROF-01~03）：corpus 剔除 + build_profile + fail-soft 观测
-- [ ] 128-02-PLAN.md — 团队门禁模块（TEAM-01~03）：team_core 解析 + hard gate + 空团队 clarify（D1/D3）
-- [ ] 128-03-PLAN.md — 漏斗三入口接线：Blueprint / RepoAssociation / MCP，禁止静默全库 primary
+
+- [x] 128-01-PLAN.md — 专项画像模块（PROF-01~03）：corpus 剔除 + build_profile + fail-soft 观测
+- [x] 128-02-PLAN.md — 团队门禁模块（TEAM-01~03）：team_core 解析 + hard gate + 空团队 clarify（D1/D3）
+- [x] 128-03-PLAN.md — 漏斗三入口接线：Blueprint / RepoAssociation / MCP，禁止静默全库 primary
 
 ### Phase 129: 短名单 + 历史先验 + 章程角色图
+
 **Goal**: 在团队范围内生成可解释 shortlist（活跃度 + 能力树粗相关 + 章程域 + 历史先验强制拉入），并对 shortlist 产出主/辅/禁角色图约束后续落点
 **Depends on**: Phase 128
 **Requirements**: LIST-01, LIST-02, LIST-03, LIST-04, ROLE-01, ROLE-02, ROLE-03
 **Success Criteria** (what must be TRUE):
+
   1. 在 `team_core`（∪ 合法 adjacent）内，系统用活跃度 + 能力树粗相关（吃专项画像）+ 章程 domain 命中生成 shortlist
   2. 章程规划中域（`evolution`/planned）的仓在能力树分低时仍可进入 shortlist；历史「需求史/上线史」与 `team_core` 求交后可强制拉入
   3. shortlist 大小与排序可解释（逐仓信号 breakdown）；观测上报候选数/耗时，不回显需求原文
   4. 对 shortlist 逐仓产出主/辅/禁角色图（至少覆盖 App 壳、做题/复用宿主、课程配置、学习状态）；触碰 `boundaries` 的落点被降级或剔除（除非显式 override）
   5. 角色图进入后续放置默认约束（例如状态域默认写方 ≠ 任意 UI 页壳主仓）
+
 **Plans**: TBD
 
 ### Phase 130: 放置单元 + 主路径接线
+
 **Goal**: feature 点聚合为放置单元后在 shortlist 内细落点（可调用 RepoRouterV2 但不得对全库开放 primary）；蓝图路由/项目选仓主路径走决策漏斗
 **Depends on**: Phase 129
 **Requirements**: UNIT-01, UNIT-02, UNIT-03, INT-01
 **Success Criteria** (what must be TRUE):
+
   1. 系统将 feature 点聚合为放置单元（Placement Units），依据模块依赖与正文「复用 X」边，避免逐点独立全库检索
   2. 每个放置单元在 shortlist 内产出 `primary_repo` + `supporting_repos[]` + confidence + evidence + open_questions
   3. 细排可调用 `RepoRouterV2`，但候选范围硬限制在 shortlist（或 shortlist ∪ 复用宿主），禁止再对全库开放 primary
   4. 蓝图路由 / 项目选仓主路径走决策漏斗（或等价编排）；三分量加权可作为漏斗内信号，不再作为唯一决策
+
 **Plans**: TBD
 
 ### Phase 131: 门禁系统 + 反思环
+
 **Goal**: 统一 `pass | clarify | block` 门禁贯穿各阶段，并在证据冲突等条件下有预算反思回跳修复（不无界全库重跑）
 **Depends on**: Phase 130
 **Requirements**: GATE-01, GATE-02, GATE-03, REFL-01, REFL-02, REFL-03
 **Success Criteria** (what must be TRUE):
+
   1. 门禁统一输出 `pass | clarify | block` + `reason_codes[]` + evidence，贯穿路由阶段可观测
   2. 至少落地：团队门、短名单覆盖门、单元落点门、全局一致性门、发布门（P0 未确认不可下游开工）
   3. 全局一致性门拦截：出界 primary、同一状态域双写、页面壳散落多 App 仓、违背「复用不改造」类边界
   4. 证据冲突/角色坍塌/复用矛盾/覆盖空洞等触发反思，最多 N 轮（默认 2），超限进入 `needs_human_review`；补丁只重算受影响短名单/单元
   5. 每轮反思写入 ledger/事件（脱敏）可回放
+
 **Plans**: TBD
 
 ### Phase 132: 集成验收与高三提分回归
+
 **Goal**: 以「高三提分专项」为回归锚点验证漏斗命中四基线仓且 out_of_team 不作 primary；既有契约不回归，门禁/反思有自动化测试
 **Depends on**: Phase 131
 **Requirements**: INT-02, INT-03
 **Success Criteria** (what must be TRUE):
+
   1. 以「高三提分专项」feature list 为回归锚点：在学习工具 Space 下，四基线仓（`onion-learning`、`onion-practice`、`study-course`、`study-user-status`）作为 primary 集合的覆盖达到约定门槛（文档化 hit@primary / 角色覆盖）
   2. 同用例下 `out_of_team` 仓不得成为 primary
   3. 既有单测与 MCP/编排契约不回归；新增门禁/反思路径有自动化测试（含至少一条角色坍塌→反思修复的合成用例）
+
 **Plans**: TBD
 
 ---
@@ -134,7 +150,6 @@ Plans:
 **Coverage:** 27/27 需求映射；收口 **26 Complete / 1 Partial（IMPACT-03）/ 0 Missing**。审计见 [milestones/v0.22.0-MILESTONE-AUDIT.md](./milestones/v0.22.0-MILESTONE-AUDIT.md)。
 
 </details>
-
 
 <details>
 <summary>✅ v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 编排产出直连执行流 + 过程可见）(Phases 105–110，其中 108 已移交 v0.20.0) — COMPLETE 2026-08-02（未打 tag）— 审计 tech_debt</summary>
@@ -313,7 +328,7 @@ Plans:
 
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
-| 128. 专项画像 + 团队门禁地基 | v0.23.0 | PROF-01~03, TEAM-01~03 | 0/3 | Planned | - |
+| 128. 专项画像 + 团队门禁地基 | v0.23.0 | PROF-01~03, TEAM-01~03 | 3/3 | Complete   | 2026-08-14 |
 | 129. 短名单 + 历史先验 + 章程角色图 | v0.23.0 | LIST-01~04, ROLE-01~03 | 0/? | Not started | - |
 | 130. 放置单元 + 主路径接线 | v0.23.0 | UNIT-01~03, INT-01 | 0/? | Not started | - |
 | 131. 门禁系统 + 反思环 | v0.23.0 | GATE-01~03, REFL-01~03 | 0/? | Not started | - |
