@@ -120,7 +120,13 @@ Plans:
   4. 证据冲突/角色坍塌/复用矛盾/覆盖空洞等触发反思，最多 N 轮（默认 2），超限进入 `needs_human_review`；补丁只重算受影响短名单/单元
   5. 每轮反思写入 ledger/事件（脱敏）可回放
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+
+- [ ] 131-01-PLAN.md — 统一门禁契约 + 五门（含 D4 发布 / 全局一致性）
+- [ ] 131-02-PLAN.md — 有界反思环（N=2、补丁范围、ledger）
+- [ ] 131-03-PLAN.md — Blueprint/Association/sandbox 门禁与反思接线
 
 ### Phase 132: 集成验收与高三提分回归
 
