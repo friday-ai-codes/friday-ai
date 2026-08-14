@@ -7,9 +7,6 @@ Eval path = Learning-tools 合成宇宙 + funnel（role_map / place_units）；
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
 
 from services.process_runtime.gaosan_eval import score_placement_bar

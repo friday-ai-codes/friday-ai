@@ -200,3 +200,90 @@ def stub_v2_scores_by_unit() -> dict[str, dict[str, float]]:
             scores[bait] = 0.01
         out[m["unit_id"]] = scores
     return out
+
+
+def build_funnel_units() -> list[Any]:
+    """将合成 MODULES 转为 PlacementUnit 列表（含角色对齐的 query/hints）。"""
+    from services.process_runtime.placement_units import PlacementUnit
+
+    units: list[PlacementUnit] = []
+    for m in MODULES:
+        role = str(m.get("role") or "")
+        hints: list[str] = []
+        if role == "practice_reuse_host":
+            hints = ["practice_reuse_host"]
+        elif role == "learning_state":
+            hints = ["learning_state"]
+        query = f"{m['title']} role={role} expected={m['expected_primary']}"
+        if role == "learning_state":
+            query = f"学习状态与进度 {m['title']}"
+        units.append(
+            PlacementUnit(
+                unit_id=str(m["unit_id"]),
+                feature_ids=list(m.get("feature_ids") or []),
+                module_names=[str(m.get("title") or m["unit_id"])],
+                query_text=query,
+                reuse_host_hints=hints,
+                feature_names=list(m.get("feature_ids") or []),
+            )
+        )
+    return units
+
+
+def make_scoped_v2_router() -> tuple[Any, list[dict[str, Any]]]:
+    """Stub RepoRouterV2：按 unit query 对齐期望 primary；记录 repository_ids。"""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    call_log: list[dict[str, Any]] = []
+    scores_by_unit = stub_v2_scores_by_unit()
+    # query_text → unit_id 粗匹配
+    unit_by_token = {m["unit_id"]: m for m in MODULES}
+
+    async def _route(query: str, **kwargs: Any) -> Any:
+        call_log.append({"query": query, **kwargs})
+        scope = list(kwargs.get("repository_ids") or [])
+        # 选匹配 unit
+        matched = None
+        q = str(query or "")
+        for uid, m in unit_by_token.items():
+            if uid in q or str(m.get("title") or "") in q or str(m.get("role") or "") in q:
+                matched = m
+                break
+            if m["expected_primary"] in q:
+                matched = m
+                break
+        if matched is None:
+            # 学习状态关键词
+            if "学习状态" in q or "学习进度" in q:
+                matched = next(
+                    (m for m in MODULES if m["role"] == "learning_state"), MODULES[0]
+                )
+            else:
+                matched = MODULES[0]
+        unit_scores = scores_by_unit.get(matched["unit_id"], {})
+        ranked_ids = sorted(
+            scope or list(TEAM_CORE_IDS),
+            key=lambda rid: (-float(unit_scores.get(rid, 0.0)), rid),
+        )
+        candidates = [
+            SimpleNamespace(
+                repo_id=rid,
+                repo_name=rid,
+                score=float(unit_scores.get(rid, 0.05)),
+                confidence="high",
+                reasoning="synthetic",
+                matched_node_paths=[],
+            )
+            for rid in ranked_ids
+        ]
+        return SimpleNamespace(
+            candidates=candidates,
+            router_version="v2-stub",
+            auto_selected=True,
+            degrade_reason="",
+        )
+
+    router = MagicMock()
+    router.route = AsyncMock(side_effect=_route)
+    return router, call_log
