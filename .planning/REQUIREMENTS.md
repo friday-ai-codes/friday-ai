@@ -21,16 +21,16 @@
 
 ### 短名单与历史先验（LIST）
 
-- [ ] **LIST-01**: 在 `team_core`（∪ 合法 adjacent）内，系统用活跃度 + 能力树粗相关（吃专项画像，非整点验收句）+ 章程 domain 命中生成 shortlist
-- [ ] **LIST-02**: 章程规划中域（`evolution`/planned）的仓可在能力树分低时仍进入 shortlist（绕过 Stage0 节点天花板）
-- [ ] **LIST-03**: 历史先验拆「需求史」（tech_plan 等）与「上线史」（document 上线记录 / code_change），与 `team_core` 求交后可强制拉入 shortlist
-- [ ] **LIST-04**: shortlist 大小与排序可解释（逐仓信号 breakdown）；观测上报候选数/耗时，不回显需求原文
+- [x] **LIST-01**: 在 `team_core`（∪ 合法 adjacent）内，系统用活跃度 + 能力树粗相关（吃专项画像，非整点验收句）+ 章程 domain 命中生成 shortlist
+- [x] **LIST-02**: 章程规划中域（`evolution`/planned）的仓可在能力树分低时仍进入 shortlist（绕过 Stage0 节点天花板）
+- [x] **LIST-03**: 历史先验拆「需求史」（tech_plan 等）与「上线史」（document 上线记录 / code_change），与 `team_core` 求交后可强制拉入 shortlist
+- [x] **LIST-04**: shortlist 大小与排序可解释（逐仓信号 breakdown）；观测上报候选数/耗时，不回显需求原文
 
 ### 章程角色图（ROLE）
 
-- [ ] **ROLE-01**: 对 shortlist 逐仓做章程对齐，产出主/辅/禁角色图（至少覆盖：App 壳、做题/复用宿主、课程配置、学习状态）
-- [ ] **ROLE-02**: 触碰章程 `boundaries` 的落点候选被降级或剔除，除非带显式 override 理由
-- [ ] **ROLE-03**: 角色图进入后续放置默认约束（例如状态域默认写方 ≠ 任意 UI 页壳主仓）
+- [x] **ROLE-01**: 对 shortlist 逐仓做章程对齐，产出主/辅/禁角色图（至少覆盖：App 壳、做题/复用宿主、课程配置、学习状态）
+- [x] **ROLE-02**: 触碰章程 `boundaries` 的落点候选被降级或剔除，除非带显式 override 理由
+- [x] **ROLE-03**: 角色图进入后续放置默认约束（例如状态域默认写方 ≠ 任意 UI 页壳主仓）
 
 ### 连贯性与放置单元（UNIT）
 
@@ -85,13 +85,13 @@
 | TEAM-01 | Phase 128 | Complete |
 | TEAM-02 | Phase 128 | Complete |
 | TEAM-03 | Phase 128 | Complete |
-| LIST-01 | Phase 129 | Pending |
-| LIST-02 | Phase 129 | Pending |
-| LIST-03 | Phase 129 | Pending |
-| LIST-04 | Phase 129 | Pending |
-| ROLE-01 | Phase 129 | Pending |
-| ROLE-02 | Phase 129 | Pending |
-| ROLE-03 | Phase 129 | Pending |
+| LIST-01 | Phase 129 | Complete |
+| LIST-02 | Phase 129 | Complete |
+| LIST-03 | Phase 129 | Complete |
+| LIST-04 | Phase 129 | Complete |
+| ROLE-01 | Phase 129 | Complete |
+| ROLE-02 | Phase 129 | Complete |
+| ROLE-03 | Phase 129 | Complete |
 | UNIT-01 | Phase 130 | Pending |
 | UNIT-02 | Phase 130 | Pending |
 | UNIT-03 | Phase 130 | Pending |

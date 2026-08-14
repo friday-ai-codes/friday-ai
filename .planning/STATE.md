@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.23.0
 milestone_name: 仓库路由增强（分阶段决策漏斗）
 status: phase_complete
-stopped_at: Phase 128 verified passed；next Phase 129
-last_updated: "2026-08-14T05:45:00.000Z"
-last_activity: 2026-08-14 — Phase 128 plans 01–03 executed；VERIFICATION passed（41 pytest）
+stopped_at: Phase 129 verified passed；next Phase 130
+last_updated: "2026-08-14T06:05:00.000Z"
+last_activity: 2026-08-14 — Phase 129 plans 01–04 executed；VERIFICATION passed（23 pytest）
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 20
+  completed_phases: 2
+  total_plans: 7
+  completed_plans: 7
+  percent: 40
 ---
 
 # Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 立项）。设计输入：对话决策漏斗 + `research/ROUTING-RANKING.md` + quick 评测语料。v0.22.0 归档见 `milestones/v0.22.0-*`。
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——本里程碑让「需求→改哪个仓」在 feature list 场景下可信、可解释、可门禁。
-**Current focus:** Phase 128 ✅ Complete — next: Phase 129（短名单 + 历史先验 + 章程角色图）
+**Current focus:** Phase 129 ✅ Complete — next: Phase 130（放置单元 + 主路径接线）
 
 ## Current Position
 
-Phase: 128 of 132 (专项画像 + 团队门禁地基) — ✅ Complete
-Plan: 3/3
-Status: Phase complete — verified passed（`--no-transition`，未进 129）
-Last activity: 2026-08-14 — Phase 128 plans 01–03 executed；VERIFICATION passed
+Phase: 129 of 132 (短名单 + 历史先验 + 章程角色图) — ✅ Complete
+Plan: 4/4
+Status: Phase complete — verified passed（`--no-transition`，未进 130）
+Last activity: 2026-08-14 — Phase 129 plans 01–04 executed；VERIFICATION passed（23 pytest）
 
-Progress: [██░░░░░░░░] 20%
+Progress: [████░░░░░░] 40%
 
 ## Milestone Overview (v0.23.0 — Phases 128–132 — 🚧 IN PROGRESS)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 128 | 专项画像 + 团队门禁地基 | PROF-01~03, TEAM-01~03 | ✅ Complete (3/3 plans, verified passed) |
-| 129 | 短名单 + 历史先验 + 章程角色图 | LIST-01~04, ROLE-01~03 | Not started |
+| 129 | 短名单 + 历史先验 + 章程角色图 | LIST-01~04, ROLE-01~03 | ✅ Complete (4/4 plans, verified passed) |
 | 130 | 放置单元 + 主路径接线 | UNIT-01~03, INT-01 | Not started |
 | 131 | 门禁系统 + 反思环 | GATE-01~03, REFL-01~03 | Not started |
 | 132 | 集成验收与高三提分回归 | INT-02, INT-03 | Not started |
@@ -1127,7 +1127,7 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-14T05:40:25.636Z
+Last session: 2026-08-14T06:00:40.346Z
 Stopped at: v0.23.0 ROADMAP created（Phases 128–132，25/25 REQ mapped）；ready to discuss Phase 128
 Resume file: None
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）

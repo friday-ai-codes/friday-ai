@@ -37,7 +37,7 @@
 **Milestone Goal:** feature list 类需求经可解释决策漏斗稳定命中正确仓集（团队门禁 + 短名单 + 章程角色 + 放置单元 + 门禁/反思），不再漂到语义巧合仓；在 `BlueprintRouteAdapter` / `RepoAssociationService` 上演进，不推倒 `RepoRouterV2`。
 
 - [x] **Phase 128: 专项画像 + 团队门禁地基** — 决策漏斗入口与硬范围（画像机读 + team_core / out_of_team）
-- [ ] **Phase 129: 短名单 + 历史先验 + 章程角色图** — 候选生成升级（shortlist 可解释 + 主/辅/禁）
+- [x] **Phase 129: 短名单 + 历史先验 + 章程角色图** — 候选生成升级（shortlist 可解释 + 主/辅/禁） (completed 2026-08-14)
 - [ ] **Phase 130: 放置单元 + 主路径接线** — shortlist 内细落点 + 蓝图路由走漏斗
 - [ ] **Phase 131: 门禁系统 + 反思环** — pass/clarify/block + 有界回跳修复
 - [ ] **Phase 132: 集成验收与高三提分回归** — 回归锚点 + 契约不回归 + 合成反思用例
@@ -78,13 +78,14 @@ Plans:
   4. 对 shortlist 逐仓产出主/辅/禁角色图（至少覆盖 App 壳、做题/复用宿主、课程配置、学习状态）；触碰 `boundaries` 的落点被降级或剔除（除非显式 override）
   5. 角色图进入后续放置默认约束（例如状态域默认写方 ≠ 任意 UI 页壳主仓）
 
-**Plans:** 4 plans
+**Plans:** 4/4 plans complete
 
 Plans:
-- [ ] 129-01-PLAN.md — shortlist 生成（activity + capability_coarse + charter / planned force-include + breakdown）
-- [ ] 129-02-PLAN.md — 历史先验分桶（需求史/上线史）∩ team_core force-include
-- [ ] 129-03-PLAN.md — 固定四角色角色图 + boundaries + placement_defaults
-- [ ] 129-04-PLAN.md — Blueprint/入口接线 shortlist+role_map（候选 ⊆ shortlist）
+
+- [x] 129-01-PLAN.md — shortlist 生成（activity + capability_coarse + charter / planned force-include + breakdown）
+- [x] 129-02-PLAN.md — 历史先验分桶（需求史/上线史）∩ team_core force-include
+- [x] 129-03-PLAN.md — 固定四角色角色图 + boundaries + placement_defaults
+- [x] 129-04-PLAN.md — Blueprint/入口接线 shortlist+role_map（候选 ⊆ shortlist）
 
 ### Phase 130: 放置单元 + 主路径接线
 
@@ -335,7 +336,7 @@ Plans:
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
 | 128. 专项画像 + 团队门禁地基 | v0.23.0 | PROF-01~03, TEAM-01~03 | 3/3 | Complete   | 2026-08-14 |
-| 129. 短名单 + 历史先验 + 章程角色图 | v0.23.0 | LIST-01~04, ROLE-01~03 | 0/4 | Planned | - |
+| 129. 短名单 + 历史先验 + 章程角色图 | v0.23.0 | LIST-01~04, ROLE-01~03 | 4/4 | Complete   | 2026-08-14 |
 | 130. 放置单元 + 主路径接线 | v0.23.0 | UNIT-01~03, INT-01 | 0/? | Not started | - |
 | 131. 门禁系统 + 反思环 | v0.23.0 | GATE-01~03, REFL-01~03 | 0/? | Not started | - |
 | 132. 集成验收与高三提分回归 | v0.23.0 | INT-02, INT-03 | 0/? | Not started | - |
