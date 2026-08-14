@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from asgiref.sync import sync_to_async
@@ -43,12 +43,15 @@ _DIMENSIONS = ("goal", "boundary", "constraint", "acceptance")
 def _make_project(*, with_binding: bool) -> dict:
     from initiatives.models import BranchSource, Project, ProjectBranch
     from projects.models import Space
-    from repositories.models import Repository
+    from repositories.models import IndexStatus, Repository
 
     space = Space.objects.create(name="S-sandbox")
     project = Project.objects.create(space=space, name="P-sandbox")
     repo = Repository.objects.create(
-        name="repo-sandbox", git_url="https://example.com/sandbox.git", default_branch="main"
+        name="repo-sandbox",
+        git_url="https://example.com/sandbox.git",
+        default_branch="main",
+        index_status=IndexStatus.INDEXED,
     )
     space.repositories.add(repo)
     if with_binding:
@@ -98,7 +101,19 @@ async def test_route_adapter_ignore_pin_bypasses_binding() -> None:
     assert pinned["router_version"] == PINNED_ROUTER_VERSION
     assert [c["repository_id"] for c in pinned["candidates"]] == [ctx["repo_id"]]
 
-    bypassed = await adapter.route(session, ignore_pin=True)
+    with (
+        patch(
+            "services.process_runtime.initiative_profile.build_profile",
+            new=AsyncMock(
+                return_value={"status": "ok", "profile": {"change_kind": "brownfield"}, "degrade_reason": ""}
+            ),
+        ),
+        patch(
+            "services.process_runtime.team_gate.filter_indexed_repository_ids",
+            new=AsyncMock(return_value=[ctx["repo_id"]]),
+        ),
+    ):
+        bypassed = await adapter.route(session, ignore_pin=True)
     router.route.assert_awaited_once()
     assert bypassed["router_version"] == "v2-test"
 
@@ -160,7 +175,12 @@ async def test_arun_route_stage_resolves_project_scope() -> None:
 async def test_arun_route_stage_accepts_upstream_spec() -> None:
     """显式 requirement_spec（上游产物）优先于 requirement_text。"""
     adapter = _RecordingRouteAdapter()
-    await arun_route_stage(requirement_spec=_spec(), route_adapter=adapter)
+    include = "11111111-1111-1111-1111-111111111111"
+    await arun_route_stage(
+        requirement_spec=_spec(),
+        include_repository_ids=[include],
+        route_adapter=adapter,
+    )
     session = adapter.calls[0]["session"]
     assert session.stage_state["requirement_spec"] == _spec()
 
@@ -177,8 +197,10 @@ async def test_stub_session_exposes_created_by_from_initiated_user() -> None:
     """
     user = await _make_user("sandbox-actor")
     adapter = _RecordingRouteAdapter()
+    # 显式 include 越过漏斗 missing_team 短路，专注验证 created_by 绑定。
     await arun_route_stage(
         requirement_text="登录页改造",
+        include_repository_ids=["11111111-1111-1111-1111-111111111111"],
         initiated_by_user_id=str(user.id),
         route_adapter=adapter,
     )
@@ -192,7 +214,11 @@ async def test_stub_session_exposes_created_by_from_initiated_user() -> None:
 async def test_stub_session_created_by_is_none_without_initiated_user() -> None:
     """无发起用户 → created_by 为 None（落 no_acting_user），绝不伪造 actor 提权。"""
     adapter = _RecordingRouteAdapter()
-    await arun_route_stage(requirement_text="登录页改造", route_adapter=adapter)
+    await arun_route_stage(
+        requirement_text="登录页改造",
+        include_repository_ids=["11111111-1111-1111-1111-111111111111"],
+        route_adapter=adapter,
+    )
     session = adapter.calls[0]["session"]
     assert session.created_by_id is None
     assert await sync_to_async(lambda: session.created_by)() is None

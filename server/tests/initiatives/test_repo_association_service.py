@@ -39,12 +39,16 @@ _FEATURES = [
 
 
 def _make_space_with_repos(n: int = 2) -> tuple[Space, Project, list[Repository]]:
+    from repositories.models import IndexStatus
+
     space = Space.objects.create(name="AssocSvcSpace", feishu_project_key="svc-k")
     project = Project.objects.create(space=space, name="P", feishu_project_key="")
     repos: list[Repository] = []
     for i in range(n):
         repo = Repository.objects.create(
-            name=f"repo{i}", git_url=f"https://git/repo{i}.git"
+            name=f"repo{i}",
+            git_url=f"https://git/repo{i}.git",
+            index_status=IndexStatus.INDEXED,
         )
         space.repositories.add(repo)
         repos.append(repo)
@@ -295,7 +299,7 @@ async def test_propose_empty_features_skips_route() -> None:
 
 
 async def test_propose_no_space_repos_no_full_library() -> None:
-    """Space.repositories 为空 → 返回空提案，绝不全库 route（Pitfall 6）。"""
+    """Space.repositories 为空 → clarify(empty_team_core)，绝不全库 route（D3）。"""
     space = await _acreate_empty_space()
     project = await _acreate_project(space)
     capture: dict = {}
@@ -306,7 +310,9 @@ async def test_propose_no_space_repos_no_full_library() -> None:
         result = await RepoAssociationService().propose(
             space=space, features_flat=_FEATURES, project=project,
         )
-    assert result["router_version"] == "skipped"
+    assert result["status"] == "clarify"
+    assert result["clarify_reason"] == "empty_team_core"
+    assert result["router_version"] == "clarify"
     assert "repository_ids" not in capture  # route 未被调用
 
 
