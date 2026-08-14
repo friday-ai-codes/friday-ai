@@ -40,9 +40,9 @@
 
 ### 门禁系统（GATE）
 
-- [ ] **GATE-01**: 门禁统一输出 `pass | clarify | block` + `reason_codes[]` + evidence，贯穿路由阶段可观测
-- [ ] **GATE-02**: 至少落地：团队门、短名单覆盖门、单元落点门、全局一致性门、发布门（P0 未确认不可下游开工）
-- [ ] **GATE-03**: 全局一致性门拦截：出界 primary、同一状态域双写、页面壳散落多 App 仓、违背「复用不改造」类边界
+- [x] **GATE-01**: 门禁统一输出 `pass | clarify | block` + `reason_codes[]` + evidence，贯穿路由阶段可观测
+- [x] **GATE-02**: 至少落地：团队门、短名单覆盖门、单元落点门、全局一致性门、发布门（P0 未确认不可下游开工）
+- [x] **GATE-03**: 全局一致性门拦截：出界 primary、同一状态域双写、页面壳散落多 App 仓、违背「复用不改造」类边界
 
 ### 反思环（REFL）
 
@@ -96,9 +96,9 @@
 | UNIT-02 | Phase 130 | Complete |
 | UNIT-03 | Phase 130 | Complete |
 | INT-01 | Phase 130 | Complete |
-| GATE-01 | Phase 131 | Pending |
-| GATE-02 | Phase 131 | Pending |
-| GATE-03 | Phase 131 | Pending |
+| GATE-01 | Phase 131 | Complete |
+| GATE-02 | Phase 131 | Complete |
+| GATE-03 | Phase 131 | Complete |
 | REFL-01 | Phase 131 | Pending |
 | REFL-02 | Phase 131 | Pending |
 | REFL-03 | Phase 131 | Pending |
