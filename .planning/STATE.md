@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.23.0
 milestone_name: 仓库路由增强（分阶段决策漏斗）
 status: verifying
-stopped_at: v0.23.0 ROADMAP created（Phases 128–132，25/25 REQ mapped）；ready to discuss Phase 128
-last_updated: "2026-08-14T06:39:50.390Z"
-last_activity: 2026-08-14 — Phase 130 plans 01–03 executed；VERIFICATION passed（41 pytest 分段）
+stopped_at: Phase 131 VERIFICATION passed（--no-transition，未进 132）
+last_updated: "2026-08-14T06:47:30.000Z"
+last_activity: 2026-08-14 — Phase 131 plans 01–03 executed；VERIFICATION passed（49 pytest）；未启动 132
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 4
   total_plans: 14
-  completed_plans: 12
-  percent: 40
+  completed_plans: 13
+  percent: 93
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 立项）。设计输入：对话决策漏斗 + `research/ROUTING-RANKING.md` + quick 评测语料。v0.22.0 归档见 `milestones/v0.22.0-*`。
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——本里程碑让「需求→改哪个仓」在 feature list 场景下可信、可解释、可门禁。
-**Current focus:** Phase 130 ✅ Complete — next: Phase 131（门禁系统 + 反思环）
+**Current focus:** Phase 131 ✅ Complete — next: Phase 132（集成验收与高三提分回归；本轮 `--no-transition` 未启动）
 
 ## Current Position
 
-Phase: 130 of 132 (放置单元 + 主路径接线) — ✅ Complete
+Phase: 131 of 132 (门禁系统 + 反思环) — ✅ Complete
 Plan: 3/3
-Status: Phase complete — verified passed（`--no-transition`，未进 131）
-Last activity: 2026-08-14 — Phase 130 plans 01–03 executed；VERIFICATION passed（41 pytest 分段）
+Status: Phase complete — verified passed（`--no-transition`，未进 132）
+Last activity: 2026-08-14 — Phase 131 plans 01–03 executed；VERIFICATION passed（49 pytest）
 
-Progress: [██████░░░░] 60%
+Progress: [█████████░] 93%
 
 ## Milestone Overview (v0.23.0 — Phases 128–132 — 🚧 IN PROGRESS)
 
@@ -39,7 +39,7 @@ Progress: [██████░░░░] 60%
 | 128 | 专项画像 + 团队门禁地基 | PROF-01~03, TEAM-01~03 | ✅ Complete (3/3 plans, verified passed) |
 | 129 | 短名单 + 历史先验 + 章程角色图 | LIST-01~04, ROLE-01~03 | ✅ Complete (4/4 plans, verified passed) |
 | 130 | 放置单元 + 主路径接线 | UNIT-01~03, INT-01 | ✅ Complete (3/3 plans, verified passed) |
-| 131 | 门禁系统 + 反思环 | GATE-01~03, REFL-01~03 | Not started |
+| 131 | 门禁系统 + 反思环 | GATE-01~03, REFL-01~03 | ✅ Complete (3/3 plans, verified passed) |
 | 132 | 集成验收与高三提分回归 | INT-02, INT-03 | Not started |
 
 **Execution order:** 128 → 129 → 130 → 131 → 132（线性漏斗）。需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；阶段详情见 [ROADMAP.md](./ROADMAP.md)。
@@ -1130,7 +1130,7 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-14T06:24:27.987Z
+Last session: 2026-08-14T06:47:24.749Z
 Stopped at: v0.23.0 ROADMAP created（Phases 128–132，25/25 REQ mapped）；ready to discuss Phase 128
 Resume file: None
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）

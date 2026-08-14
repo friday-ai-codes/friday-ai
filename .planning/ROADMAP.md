@@ -39,7 +39,7 @@
 - [x] **Phase 128: 专项画像 + 团队门禁地基** — 决策漏斗入口与硬范围（画像机读 + team_core / out_of_team）
 - [x] **Phase 129: 短名单 + 历史先验 + 章程角色图** — 候选生成升级（shortlist 可解释 + 主/辅/禁） (completed 2026-08-14)
 - [x] **Phase 130: 放置单元 + 主路径接线** — shortlist 内细落点 + 蓝图路由走漏斗 (completed 2026-08-14)
-- [ ] **Phase 131: 门禁系统 + 反思环** — pass/clarify/block + 有界回跳修复
+- [x] **Phase 131: 门禁系统 + 反思环** — pass/clarify/block + 有界回跳修复
 - [ ] **Phase 132: 集成验收与高三提分回归** — 回归锚点 + 契约不回归 + 合成反思用例
 
 ## Phase Details
@@ -126,7 +126,7 @@ Plans:
 
 - [x] 131-01-PLAN.md — 统一门禁契约 + 五门（含 D4 发布 / 全局一致性）
 - [x] 131-02-PLAN.md — 有界反思环（N=2、补丁范围、ledger）
-- [ ] 131-03-PLAN.md — Blueprint/Association/sandbox 门禁与反思接线
+- [x] 131-03-PLAN.md — Blueprint/Association/sandbox 门禁与反思接线
 
 ### Phase 132: 集成验收与高三提分回归
 
@@ -350,7 +350,7 @@ Plans:
 | 128. 专项画像 + 团队门禁地基 | v0.23.0 | PROF-01~03, TEAM-01~03 | 3/3 | Complete   | 2026-08-14 |
 | 129. 短名单 + 历史先验 + 章程角色图 | v0.23.0 | LIST-01~04, ROLE-01~03 | 4/4 | Complete   | 2026-08-14 |
 | 130. 放置单元 + 主路径接线 | v0.23.0 | UNIT-01~03, INT-01 | 3/3 | Complete   | 2026-08-14 |
-| 131. 门禁系统 + 反思环 | v0.23.0 | GATE-01~03, REFL-01~03 | 2/3 | In Progress|  |
+| 131. 门禁系统 + 反思环 | v0.23.0 | GATE-01~03, REFL-01~03 | 3/3 | Complete   | 2026-08-14 |
 | 132. 集成验收与高三提分回归 | v0.23.0 | INT-02, INT-03 | 0/? | Not started | - |
 
 **Coverage (v0.23.0):** 25/25 需求全部映射，无孤儿、无重复。约束：演进 `BlueprintRouteAdapter` / `RepoAssociationService`；不推倒 `RepoRouterV2`（降为 shortlist 内细排）；新阶段遵守可观测日志规范。
