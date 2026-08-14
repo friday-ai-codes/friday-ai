@@ -143,7 +143,7 @@ Plans:
 
 Plans:
 
-- [ ] 132-01-PLAN.md — D2 bar 纯函数 + Learning-tools 合成 fixture（INT-02）
+- [x] 132-01-PLAN.md — D2 bar 纯函数 + Learning-tools 合成 fixture（INT-02）
 - [ ] 132-02-PLAN.md — 漏斗路径高三回归断言四基线 primary / out_of_team=0（INT-02）
 - [ ] 132-03-PLAN.md — 契约不回归包 + 接线级角色坍塌→反思修复（INT-03）
 
@@ -357,7 +357,7 @@ Plans:
 | 129. 短名单 + 历史先验 + 章程角色图 | v0.23.0 | LIST-01~04, ROLE-01~03 | 4/4 | Complete   | 2026-08-14 |
 | 130. 放置单元 + 主路径接线 | v0.23.0 | UNIT-01~03, INT-01 | 3/3 | Complete   | 2026-08-14 |
 | 131. 门禁系统 + 反思环 | v0.23.0 | GATE-01~03, REFL-01~03 | 3/3 | Complete   | 2026-08-14 |
-| 132. 集成验收与高三提分回归 | v0.23.0 | INT-02, INT-03 | 0/3 | Planned | - |
+| 132. 集成验收与高三提分回归 | v0.23.0 | INT-02, INT-03 | 1/3 | In Progress|  |
 
 **Coverage (v0.23.0):** 25/25 需求全部映射，无孤儿、无重复。约束：演进 `BlueprintRouteAdapter` / `RepoAssociationService`；不推倒 `RepoRouterV2`（降为 shortlist 内细排）；新阶段遵守可观测日志规范。
 
