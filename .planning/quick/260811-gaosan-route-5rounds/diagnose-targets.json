@@ -1,0 +1,290 @@
+{
+  "1A": {
+    "point": "入口位置与排序",
+    "node_pool_repos": 67,
+    "target_node_best_rank": {
+      "OL": 94,
+      "OP": 103,
+      "SC": 9,
+      "SUS": 34
+    },
+    "target_node_count": {
+      "OL": 1,
+      "OP": 4,
+      "SC": 7,
+      "SUS": 5
+    },
+    "stage0_top12": [
+      "frontend/activity-page",
+      "frontend/primary-components",
+      "study-app",
+      "frontend/new-course-builder-client",
+      "backend/study-course",
+      "backend/onion-cli",
+      "frontend/mobileui",
+      "frontend/vocation-problem-app",
+      "backend/devices-learn-resource",
+      "backend/study-user-status",
+      "study-practice",
+      "frontend/alipay-mp"
+    ],
+    "stage0_target_rank": {
+      "OL": null,
+      "OP": null,
+      "SC": 5,
+      "SUS": 10
+    }
+  },
+  "2C": {
+    "point": "左侧单层小节目录与定位",
+    "node_pool_repos": 68,
+    "target_node_best_rank": {
+      "OL": 175,
+      "OP": 124,
+      "SC": 111,
+      "SUS": 109
+    },
+    "target_node_count": {
+      "OL": 2,
+      "OP": 2,
+      "SC": 2,
+      "SUS": 1
+    },
+    "stage0_top12": [
+      "backend/devices-further-study-plan",
+      "frontend/institution-1v1",
+      "frontend/primary_school_study",
+      "backend/growth-activity",
+      "backend/go-openai",
+      "frontend/list-view",
+      "frontend/onion-player",
+      "frontend/new-course-builder-client",
+      "frontend/study-app-native",
+      "frontend/activity-page",
+      "backend/teacher-desk",
+      "study-practice"
+    ],
+    "stage0_target_rank": {
+      "OL": null,
+      "OP": null,
+      "SC": null,
+      "SUS": null
+    }
+  },
+  "2E": {
+    "point": "成绩分层筛选",
+    "node_pool_repos": 110,
+    "target_node_best_rank": {
+      "OL": 29,
+      "OP": 70,
+      "SC": null,
+      "SUS": 71
+    },
+    "target_node_count": {
+      "OL": 2,
+      "OP": 2,
+      "SC": 0,
+      "SUS": 5
+    },
+    "stage0_top12": [
+      "study-practice",
+      "frontend/onion-lib-starter",
+      "backend/teacher-desk",
+      "backend/ai-cr",
+      "frontend/npm-user-screening",
+      "backend/onion_util",
+      "frontend/new-course-builder-client",
+      "backend/study-user-status",
+      "backend/basic-resource",
+      "frontend/vocation-cb",
+      "backend/diff",
+      "backend/teacher-evaluate"
+    ],
+    "stage0_target_rank": {
+      "OL": null,
+      "OP": null,
+      "SC": null,
+      "SUS": 8
+    }
+  },
+  "4A": {
+    "point": "复用端内做题组件",
+    "node_pool_repos": 73,
+    "target_node_best_rank": {
+      "OL": null,
+      "OP": 87,
+      "SC": null,
+      "SUS": 14
+    },
+    "target_node_count": {
+      "OL": 0,
+      "OP": 2,
+      "SC": 0,
+      "SUS": 3
+    },
+    "stage0_top12": [
+      "frontend/vocation-problem-app",
+      "backend/crs-m2",
+      "frontend/docx2problem",
+      "frontend/new-course-builder-client",
+      "study-practice",
+      "backend/coursetex",
+      "backend/teacher-agent",
+      "backend/study-user-status",
+      "backend/devices-further-study-plan",
+      "frontend/list-view",
+      "backend/devices-study-room",
+      "backend/yapi-common-mcp"
+    ],
+    "stage0_target_rank": {
+      "OL": null,
+      "OP": null,
+      "SC": null,
+      "SUS": 8
+    }
+  },
+  "5B": {
+    "point": "图片放大查看",
+    "node_pool_repos": 58,
+    "target_node_best_rank": {
+      "OL": 26,
+      "OP": 34,
+      "SC": 87,
+      "SUS": 78
+    },
+    "target_node_count": {
+      "OL": 9,
+      "OP": 15,
+      "SC": 2,
+      "SUS": 7
+    },
+    "stage0_top12": [
+      "frontend/vocation-problem-app",
+      "backend/onion_util",
+      "backend/devices-study-room",
+      "backend/ai-cr",
+      "study-app",
+      "frontend/primary_school_study",
+      "frontend/new-course-builder-client",
+      "backend/diff",
+      "backend/study-user-status",
+      "backend/log-replay/log-replay",
+      "frontend/onion-learning",
+      "frontend/onion-practice"
+    ],
+    "stage0_target_rank": {
+      "OL": 11,
+      "OP": 12,
+      "SC": null,
+      "SUS": 9
+    }
+  },
+  "6A": {
+    "point": "复用通用知识点播放器",
+    "node_pool_repos": 55,
+    "target_node_best_rank": {
+      "OL": 37,
+      "OP": 67,
+      "SC": 38,
+      "SUS": 75
+    },
+    "target_node_count": {
+      "OL": 13,
+      "OP": 6,
+      "SC": 3,
+      "SUS": 4
+    },
+    "stage0_top12": [
+      "frontend/new-course-builder-client",
+      "backend/ai-cr",
+      "study-app",
+      "backend/cursorkit",
+      "frontend/onion-player",
+      "backend/teacher-ai-class",
+      "backend/devices-learn-resource",
+      "backend/crs-m2",
+      "frontend/yc-cli",
+      "backend/teacher-desk",
+      "frontend/ai-guardrails",
+      "frontend/onion-learning"
+    ],
+    "stage0_target_rank": {
+      "OL": 12,
+      "OP": null,
+      "SC": null,
+      "SUS": null
+    }
+  },
+  "7A": {
+    "point": "复用做题组件与题目配置",
+    "node_pool_repos": 76,
+    "target_node_best_rank": {
+      "OL": 86,
+      "OP": 125,
+      "SC": null,
+      "SUS": 2
+    },
+    "target_node_count": {
+      "OL": 4,
+      "OP": 2,
+      "SC": 0,
+      "SUS": 4
+    },
+    "stage0_top12": [
+      "backend/study-user-status",
+      "frontend/docx2problem",
+      "backend/devices-further-study-plan",
+      "study-practice",
+      "backend/coursetex",
+      "backend/devices-study-room",
+      "backend/growth-activity",
+      "frontend/list-view",
+      "backend/go-openai",
+      "backend/wrong-problem",
+      "backend/learn-2",
+      "frontend/new-course-builder-client"
+    ],
+    "stage0_target_rank": {
+      "OL": null,
+      "OP": null,
+      "SC": null,
+      "SUS": 1
+    }
+  },
+  "9A": {
+    "point": "学习进度计算",
+    "node_pool_repos": 72,
+    "target_node_best_rank": {
+      "OL": 169,
+      "OP": 77,
+      "SC": 90,
+      "SUS": 7
+    },
+    "target_node_count": {
+      "OL": 2,
+      "OP": 3,
+      "SC": 3,
+      "SUS": 12
+    },
+    "stage0_top12": [
+      "study-practice",
+      "backend/makevideoserver",
+      "backend/study-data-center",
+      "backend/study-user-status",
+      "frontend/vocation-problem-app",
+      "backend/devices-learn",
+      "backend/xlab",
+      "backend/study-flow",
+      "backend/log-replay/log-convert",
+      "backend/devices-study-room",
+      "backend/study-plan",
+      "backend/teacher-evaluate"
+    ],
+    "stage0_target_rank": {
+      "OL": null,
+      "OP": null,
+      "SC": null,
+      "SUS": 4
+    }
+  }
+}
