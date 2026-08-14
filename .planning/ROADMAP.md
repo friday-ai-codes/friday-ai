@@ -78,7 +78,13 @@ Plans:
   4. 对 shortlist 逐仓产出主/辅/禁角色图（至少覆盖 App 壳、做题/复用宿主、课程配置、学习状态）；触碰 `boundaries` 的落点被降级或剔除（除非显式 override）
   5. 角色图进入后续放置默认约束（例如状态域默认写方 ≠ 任意 UI 页壳主仓）
 
-**Plans**: TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 129-01-PLAN.md — shortlist 生成（activity + capability_coarse + charter / planned force-include + breakdown）
+- [ ] 129-02-PLAN.md — 历史先验分桶（需求史/上线史）∩ team_core force-include
+- [ ] 129-03-PLAN.md — 固定四角色角色图 + boundaries + placement_defaults
+- [ ] 129-04-PLAN.md — Blueprint/入口接线 shortlist+role_map（候选 ⊆ shortlist）
 
 ### Phase 130: 放置单元 + 主路径接线
 
@@ -329,7 +335,7 @@ Plans:
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
 | 128. 专项画像 + 团队门禁地基 | v0.23.0 | PROF-01~03, TEAM-01~03 | 3/3 | Complete   | 2026-08-14 |
-| 129. 短名单 + 历史先验 + 章程角色图 | v0.23.0 | LIST-01~04, ROLE-01~03 | 0/? | Not started | - |
+| 129. 短名单 + 历史先验 + 章程角色图 | v0.23.0 | LIST-01~04, ROLE-01~03 | 0/4 | Planned | - |
 | 130. 放置单元 + 主路径接线 | v0.23.0 | UNIT-01~03, INT-01 | 0/? | Not started | - |
 | 131. 门禁系统 + 反思环 | v0.23.0 | GATE-01~03, REFL-01~03 | 0/? | Not started | - |
 | 132. 集成验收与高三提分回归 | v0.23.0 | INT-02, INT-03 | 0/? | Not started | - |
