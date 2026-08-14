@@ -2,7 +2,7 @@
 
 ## Milestones
 
-- 🚧 **v0.23.0 仓库路由增强（分阶段决策漏斗）** — Phases 128–132 (in progress) — 把「全库单段文本相似度选仓」升级为「画像 → 团队门禁 → 短名单 → 章程/历史 → 放置单元 → 门禁/反思」的可解释决策漏斗；验收锚点「高三提分专项」 — [requirements](./REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
+- ✅ **v0.23.0 仓库路由增强（分阶段决策漏斗）** — Phases 128–132 (phases complete，待 ship/tag；`--no-transition`) — 把「全库单段文本相似度选仓」升级为「画像 → 团队门禁 → 短名单 → 章程/历史 → 放置单元 → 门禁/反思」的可解释决策漏斗；验收锚点「高三提分专项」 — [requirements](./REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
 - ✅ **v0.22.0 代码智能图分析升级（对标 GitNexus）** — Phases 121–127 (completed 2026-08-11，未打 tag) — 在现有 codegraph/RAG 底座上叠加内存图分析层：图缓存地基 + impact/trace（穿仓）+ detect_changes 闭环进编码链 + 社区/模块摘要 + 执行流 + rename_preview + Semgrep advisory + LSP 基准 — 里程碑审计 **tech_debt**（27 条需求 26 满足 / 1 部分（IMPACT-03）/ 0 未达；121–126 passed、127 human_needed @ 4/4）见 [audit](./milestones/v0.22.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.22.0-ROADMAP.md) · [requirements](./milestones/v0.22.0-REQUIREMENTS.md) · [phases](./milestones/v0.22.0-phases/) · [research](./research/SUMMARY.md)
 - ✅ **v0.21.0 蓝图过程可见与返工闭环（反向关联 + 门到期 + 按阶段 agent 活动流 + 带原始上下文重跑）** — Phases 117–120 (completed 2026-08-05，未打 tag) — 让蓝图的「生成过程」与「返工过程」都对人可见可控：阶段级活动流取代笼统转圈、分仓每仓进度与方案可见、人审可选重跑范围且续跑带原始 agent 上下文、HITL 门不再无限静默悬挂 — 验证 **tech_debt**（15 条需求 14 满足 / 1 部分（LIVE-04 落增量轮询而非推送通道）/ 0 未达；后端 9849 全绿、前端 1 条既存失败）见 [verification](./milestones/v0.21.0-VERIFICATION.md) — [requirements](./milestones/v0.21.0-REQUIREMENTS.md)
 - ✅ **v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）** — Phases 111–116 (shipped 2026-08-02) — 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图 — 里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口；GATE-01 与三道入口接缝因硬依赖同步点 2 判 PARTIAL / 转技术债，同步点 2 已由 2026-08-02 的分支合并满足）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.20.0-ROADMAP.md) · [requirements](./milestones/v0.20.0-REQUIREMENTS.md) · [design](./technical-blueprint/DESIGN.md)
@@ -32,7 +32,7 @@
 
 ## Phases
 
-### 🚧 v0.23.0 仓库路由增强（分阶段决策漏斗）(Phases 128–132) — IN PROGRESS
+### ✅ v0.23.0 仓库路由增强（分阶段决策漏斗）(Phases 128–132) — PHASES COMPLETE（待 ship）
 
 **Milestone Goal:** feature list 类需求经可解释决策漏斗稳定命中正确仓集（团队门禁 + 短名单 + 章程角色 + 放置单元 + 门禁/反思），不再漂到语义巧合仓；在 `BlueprintRouteAdapter` / `RepoAssociationService` 上演进，不推倒 `RepoRouterV2`。
 
@@ -382,7 +382,7 @@ Plans:
 
 里程碑 v0.1.0–v0.22.0（Phases 1–127）均已交付并归档。v0.19.0 与 v0.20.0 于 2026-07-29 起双 worktree 并行，2026-08-02 合并（同步点 2）。v0.21.0 于 2026-08-05 轻量归档；v0.22.0 于 2026-08-11 归档（tech_debt，未打 tag）。
 
-**当前在建：** 🚧 **v0.23.0 仓库路由增强（分阶段决策漏斗）** — Phases 128–132。遗留债务见 STATE.md Deferred Items / Pending Todos。
+**当前在建：** ✅ **v0.23.0** Phases 128–132 全部 verified（`--no-transition`，待 milestone ship/tag）。遗留债务见 STATE.md Deferred Items / Pending Todos。
 
 <details>
 <summary>✅ v0.20.0 进度表（Phases 111–116，34/35 需求已交付 · GATE-01 PARTIAL）</summary>
