@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.23.0
-milestone_name: 仓库路由增强（分阶段决策漏斗）
-status: milestone_ready
-stopped_at: Phase 132 VERIFICATION passed（--no-transition，未打 milestone tag）
-last_updated: "2026-08-14T07:12:00.000Z"
-last_activity: 2026-08-14 — Phase 132 plans 01–03 executed；VERIFICATION passed（65 pytest）；--no-transition
+milestone: —
+milestone_name: —
+status: Awaiting next milestone
+stopped_at: v0.23.0 archived（未打 tag）
+last_updated: "2026-08-14T07:20:00.000Z"
+last_activity: 2026-08-14 — Milestone v0.23.0 archived（tech_debt accepted；phases → milestones/v0.23.0-phases/）
 progress:
   total_phases: 5
   completed_phases: 5
-  total_plans: 17
-  completed_plans: 17
+  total_plans: 16
+  completed_plans: 16
   percent: 100
 ---
 
@@ -18,21 +18,21 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 立项）。设计输入：对话决策漏斗 + `research/ROUTING-RANKING.md` + quick 评测语料。v0.22.0 归档见 `milestones/v0.22.0-*`。
+See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 归档）。v0.23.0 归档见 `milestones/v0.23.0-*`；v0.22.0 归档见 `milestones/v0.22.0-*`。
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——本里程碑让「需求→改哪个仓」在 feature list 场景下可信、可解释、可门禁。
-**Current focus:** Phase 132 ✅ Complete — v0.23.0 五相位全部 verified（本轮 `--no-transition`，未打 milestone tag）
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。
+**Current focus:** Planning next milestone — `$gsd-new-milestone`
 
 ## Current Position
 
-Phase: 132 of 132 (集成验收与高三提分回归) — ✅ Complete
-Plan: 3/3
-Status: Phase complete — verified passed（`--no-transition`）
-Last activity: 2026-08-14 — Phase 132 plans 01–03 executed；VERIFICATION passed（65 pytest）
+Phase: — (awaiting next milestone)
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-08-14 — Milestone v0.23.0 archived（tech_debt accepted；未打 tag）
 
-Progress: [██████████] 100%
+Progress: [██████████] 100% (v0.23.0 complete)
 
-## Milestone Overview (v0.23.0 — Phases 128–132 — ✅ PHASES COMPLETE，待 ship/tag)
+## Milestone Overview (v0.23.0 — Phases 128–132 — ✅ ARCHIVED 2026-08-14，审计 tech_debt，未打 tag)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
@@ -42,9 +42,9 @@ Progress: [██████████] 100%
 | 131 | 门禁系统 + 反思环 | GATE-01~03, REFL-01~03 | ✅ Complete (3/3 plans, verified passed) |
 | 132 | 集成验收与高三提分回归 | INT-02, INT-03 | ✅ Complete (3/3 plans, verified passed) |
 
-**Execution order:** 128 → 129 → 130 → 131 → 132（线性漏斗）。需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；阶段详情见 [ROADMAP.md](./ROADMAP.md)。
+**Execution order:** 128 → 129 → 130 → 131 → 132（线性漏斗）。需求见 [milestones/v0.23.0-REQUIREMENTS.md](./milestones/v0.23.0-REQUIREMENTS.md)；阶段详情见 [milestones/v0.23.0-ROADMAP.md](./milestones/v0.23.0-ROADMAP.md)；审计见 [milestones/v0.23.0-MILESTONE-AUDIT.md](./milestones/v0.23.0-MILESTONE-AUDIT.md)；相位产物见 [milestones/v0.23.0-phases/](./milestones/v0.23.0-phases/)。
 
-**关键约束（plan-phase 必读）:**
+**关键约束（已兑现）:**
 
 - 演进 `BlueprintRouteAdapter` / `RepoAssociationService`；**不推倒** `RepoRouterV2`（降为 shortlist 内细排工具）
 - 小版本不做大前端改版；章程仍人工确认生效
@@ -952,6 +952,38 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 | 260811-av8 | 统一仓库路由 service：v1 的 `repo_summaries` BM25+dense+关键词微调内化为 RepoRouterV2 摘要回退通道；LayeredSearch L1 统一走 V2 且禁用 LLM；静态守卫阻止生产代码重引旧入口；126 条回归全绿 | 2026-08-11 | (pending) | [260811-av8-v1-bm25-embedding-v2-service](./quick/260811-av8-v1-bm25-embedding-v2-service/) |
 
 ## Deferred Items
+
+### 🔒 Acknowledged at v0.23.0 close（2026-08-14）
+
+Items acknowledged and deferred at milestone close on 2026-08-14（`gsd-tools query audit-open` 报 19 项 quick tasks；confirm Acknowledge；accept `tech_debt`——与 v0.22.0 同口径）:
+
+| Category | Item | Status |
+|----------|------|--------|
+| tech_debt | live_space `@pytest.mark.live_space` 默认 skip（D-07）；合成 fixture 已覆盖 D2 bar | deferred |
+| tech_debt | 四基线 hit@primary 真 Learning-tools Space 人工抽验未跑 | deferred |
+| tech_debt | Nyquist：128–132 均有 `*-VALIDATION.md`，无一 `status: validated` | deferred（`$gsd-validate-phase` 对账） |
+| tech_debt | Future：PROF-F01 / TEAM-F01 / LIST-F01 / GATE-F01 / REFL-F01；小版本不做大前端 | deferred（v2） |
+| quick_task | `blueprint-stage-runner` | missing（既有） |
+| quick_task | `260610-oug-url-https` | unknown（既有） |
+| quick_task | `260611-ghb-workflow-card-uniform` | unknown（既有） |
+| quick_task | `260624-w11-abort-stuck-index-job-962-and-add-2mb-pr` | unknown（既有） |
+| quick_task | `260805-31u-runner` | unknown（既有） |
+| quick_task | `260806-2c2-kind-ai-ai` | unknown（既有） |
+| quick_task | `260806-d9y-blueprint-title-order` | unknown（既有） |
+| quick_task | `260806-fy2-ai-fp-id` | unknown（既有） |
+| quick_task | `260807-release-bitable-import` | unknown（既有） |
+| quick_task | `260807-ricelove-import` | unknown（既有） |
+| quick_task | `260808-g1c-ai-thinking-claude-opus-4-6` | completed（既有） |
+| quick_task | `260808-gaosan-repo-routing` | missing（既有） |
+| quick_task | `260809-3kc-repository-charter-ui` | unknown（既有） |
+| quick_task | `260809-charter-release-link` | unknown（既有） |
+| quick_task | `260809-f3z-rag-ai` | unknown（既有） |
+| quick_task | `260809-regen-scheme-descriptions` | unknown（既有） |
+| quick_task | `260809-repo-route-eval` | unknown（既有） |
+| quick_task | `260810-index-counter-fix` | missing（既有） |
+| quick_task | `260811-gaosan-route-5rounds` | missing（既有；评测语料已喂入 v0.23 回归） |
+
+⚠️ 里程碑级技术债权威清单见 [milestones/v0.23.0-MILESTONE-AUDIT.md](./milestones/v0.23.0-MILESTONE-AUDIT.md) `tech_debt` 段。**未打 tag**（发布轨独立于 GSD 里程碑编号）。
 
 ### 🔒 Acknowledged at v0.22.0 close（2026-08-11）
 

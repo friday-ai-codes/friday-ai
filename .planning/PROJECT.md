@@ -12,9 +12,9 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.22.0 代码智能图分析升级（对标 GitNexus）（2026-08-11，审计 **tech_debt**，27 条需求 26 满足 / 1 部分（IMPACT-03），Phases 121–127，44 plans，**未打 tag**）；此前为 v0.21.0 蓝图过程可见与返工闭环（2026-08-05，验证 **tech_debt**，Phases 117–120）、v0.20.0 技术方案蓝图与 v0.19.0 技术方案可信度（2026-08-02 双归档合并）。里程碑 v0.1.0–v0.22.0（Phases 1–127）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
+**Latest shipped:** v0.23.0 仓库路由增强（分阶段决策漏斗）（2026-08-14，审计 **tech_debt**，25/25 需求满足，Phases 128–132，16 plans，**未打 tag**）；此前为 v0.22.0 代码智能图分析升级（2026-08-11，审计 **tech_debt**，27 条需求 26 满足 / 1 部分（IMPACT-03），Phases 121–127）、v0.21.0 蓝图过程可见与返工闭环、v0.20.0 技术方案蓝图与 v0.19.0 技术方案可信度。里程碑 v0.1.0–v0.23.0（Phases 1–132）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
 
-**当前在建：** v0.23.0 仓库路由增强（分阶段决策漏斗）。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
+**当前在建：** 无 — 等待 `$gsd-new-milestone` 立项。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -26,31 +26,30 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - **v0.10.0 操作审计治理**：立起统一横切审计能力——新建零业务依赖的 `audit` Django app + `AuditEvent` append-only 不可篡改模型（actor 标量软引用 + 双时间戳 + 5 查询索引 + 模型层 save/delete 守护）+ `AuditService.emit/aemit` 唯一写入入口（INV-6）+ 入口强制脱敏（key-name / 值级密钥正则 / 高熵）+ fail-soft 吞异常不阻断主操作 + 稳定 action taxonomy；全量覆盖敏感操作 emit——身份与权限类（accounts 建用户/启停/改资料/首启 superuser + projects/members 成员增删改/角色变更 + 空间配置/仓库权限）+ 凭证与数据治理类（Provider/Git 实例/per-repo Git/PAT/飞书凭证与同步 + 排除规则增删 + v0.5 `purge` 埋点收口统一表），凭证字段 DB 绝无明文；审计查询 REST（`/api/audit/`，IsSuperUser fail-closed、只读、过滤 + 分页）+ CSV/JSON 流式导出 + `/admin/audit` superuser 审计页（过滤/表格/分页/before-after 详情弹窗/导出/侧栏入口/i18n）。审计 passed。
 - **v0.11.0 开放与协作**：对外开放与协作层——内部工具调用（RAG/grep/仓库分析）经 §15 事件 taxonomy 映射为 OpenAI 兼容流式 progress/`reasoning_summary`（INV-5 非 CoT、不误用 `tool_calls`）；新增 Anthropic 兼容 `/v1/messages` 端点（非流式 + SSE 流式 + thinking block trace）；飞书机器人对话改走原生 CardKit 流式增量卡片（替代 PATCH 全量替换）；工作流自动建群节点（建群 + 拉人 + chat_id 写回 `WorkItem.feishu_chat_id` fail-soft）。审计 passed（6/6 需求，INV-5/INV-6 成立）。
 
-**已知 follow-up（tech debt）：** v0.2.0 chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖、RTOOL-02/03/04 容器端 E2E 待真实环境验收；v0.8 多仓 wave 编码/PR/HITL 的真实 runner+Docker 容器端到端验收待真实环境；chat 编码入口（`coding_session_service`）的 cross-ref / 遇阻 HITL 接线为 follow-up（helper 入口无关已就绪）；Phase 26 遗留 `test_batch_pr.py` 5 例 stale patch target 失败待修；部分里程碑的纯观感人工验收（UAT）顺延。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
+**已知 follow-up（tech debt）：** v0.23.0 live_space 默认 skip + 真 Space 人工抽验 + Nyquist 128–132 未 reconcile；v0.22.0 IMPACT-03 生产样本缺席 / mcp npm 图工具白名单 / Nyquist 121–127 未 validated；v0.2.0 chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖、RTOOL-02/03/04 容器端 E2E 待真实环境验收；v0.8 多仓 wave 编码/PR/HITL 的真实 runner+Docker 容器端到端验收待真实环境。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.23.0 仓库路由增强（分阶段决策漏斗）
+## Previous Milestone: v0.23.0 仓库路由增强（分阶段决策漏斗）— ✅ COMPLETE 2026-08-14（审计 tech_debt，未打 tag）
 
-**Goal:** 把「全库单段文本相似度选仓」升级为「画像 → 团队门禁 → 短名单 → 章程/历史 → 功能单元落点 → 一致性门禁与反思」的可解释决策漏斗，使 feature list 类需求（如「高三提分专项」）能稳定命中正确仓集，而不是漂到语义巧合仓。
+> **收口结论：** 5 相位 16/16 plans；25 条需求 **25 满足 / 0 部分 / 0 未达**。决策漏斗主路径（profile→team→shortlist→role_map→placement→gates→reflection）在 `BlueprintRouteAdapter` 与 `RepoAssociationService` 两端接通；INT-02/03 合成回归绿。无 unsatisfied / orphaned / 跨相位断链 BLOCKER。
+>
+> **判 `tech_debt` 而非 `passed` 的理由：** live_space 默认 skip（D-07）+ 真 Space 人工抽验未跑 + Nyquist 五相位 VALIDATION 均为 draft 未 reconcile + Future 项（GATE-F01 等）与小版本不做大前端——不构成归档阻断。归档口径与 v0.22.0 一致。
+>
+> 归档产物：`milestones/v0.23.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT,DECISIONS}.md` + `v0.23.0-phases/`。**刻意未打 git tag**——本仓 tag 是发布轨，与 GSD 里程碑不同编号。
 
-**Target features:**
-- 专项画像（模块总览/简述驱动；测试 case 不进主 query）
-- 团队 / 空间门禁（`team_core` 优先；`out_of_team` 默认不可作 primary）
-- 团队内短名单（活跃度 + 能力树粗相关 + 章程 domain + 历史先验）
-- 历史需求 / 上线先验（与团队求交后进候选生成，不只加权）
-- 章程角色图（主/辅/禁：App 壳 / 做题 / 课程配置 / 状态等）
-- Feature 连贯性 → 放置单元（模块依赖与「复用」边）后再 shortlist 内细落点
-- 门禁系统（`pass | clarify | block` + reason_code）
-- 有预算反思环（角色坍塌、章程↔历史冲突、复用矛盾等触发回跳）
+<details>
+<summary>立项时的原始范围（2026-08-14）</summary>
 
-**验收锚点:** 「高三提分专项」feature list；人工基线仓：`frontend/onion-learning`、`frontend/onion-practice`（或 `onion-practice`）、`backend/study-course`（或 `study-course`）、`backend/study-user-status`。
+**Goal:** 把「全库单段文本相似度选仓」升级为「画像 → 团队门禁 → 短名单 → 章程/历史 → 功能单元落点 → 一致性门禁与反思」的可解释决策漏斗，使 feature list 类需求（如「高三提分专项」）能稳定命中正确仓集。
 
-**约束:** 在 `BlueprintRouteAdapter` / `RepoAssociationService` 之上演进；不推倒 `RepoRouterV2`（降为 shortlist 内细排工具）；小版本不做大前端改版；章程仍人工确认生效。
+**Target features:** 专项画像 / 团队门禁 / 短名单与历史先验 / 章程角色图 / 放置单元 / 门禁系统 / 有预算反思环。
 
-**设计输入:** 对话设计漏斗（2026-08-13/14）+ `.planning/research/ROUTING-RANKING.md` + `.planning/quick/260809-repo-route-eval/` + `.planning/quick/260811-gaosan-route-5rounds/`。本里程碑跳过重复生态调研，直接进入需求与路线图。
+**验收锚点:** 「高三提分专项」四基线仓；`out_of_team` 不得 primary。
 
-**产品决策锁（autonomous 前置）:** 见 [milestones/v0.23.0-DECISIONS.md](./milestones/v0.23.0-DECISIONS.md) — D1 蓝图/项目硬门禁 + MCP 须识别或让用户选团队；D2 四基线角色级 primary 覆盖 + out_of_team=0；D3 无团队 → clarify；D4 发布确认门 + 有条件 auto_selected；D5 固定角色枚举映射章程。
+**约束:** 演进 `BlueprintRouteAdapter` / `RepoAssociationService`；不推倒 `RepoRouterV2`；小版本不做大前端；章程仍人工确认生效。
+
+</details>
 
 ## Previous Milestone: v0.22.0 代码智能图分析升级（对标 GitNexus）— ✅ COMPLETE 2026-08-11（审计 tech_debt，未打 tag）
 
@@ -364,6 +363,11 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
+| 仓库路由用分阶段决策漏斗，不推倒 `RepoRouterV2`（降为 shortlist 内细排） | feature list 场景需可解释门禁；V2 全库相似度会漂到语义巧合仓 | ✓ Validated（v0.23.0） |
+| D1/D3：蓝图/项目硬门禁；无团队 → clarify，禁止静默全库 primary | 避免 out_of_team / 无 Space 时裸路由 | ✓ Validated（v0.23.0） |
+| D2：高三四基线角色级 primary 覆盖 + out_of_team=0（合成宇宙自动化） | 客观回归锚点；live_space 默认 skip 记 tech_debt | ✓ Validated（v0.23.0，合成）；真 Space抽验 deferred |
+| D4：发布确认门独占 `auto_selected` | P0 未确认不可下游开工 | ✓ Validated（v0.23.0） |
+| D5：固定四角色枚举映射章程（主/辅/禁） | 放置默认约束可机读 | ✓ Validated（v0.23.0） |
 | 用"首次访问设置向导"替代启动期自动建管理员 | 自动建号的随机密码只在日志，用户进不去；让用户自设账号即时可用 | ✓ Validated（v0.1.0） |
 | 向导完成后接口/界面永久关闭并 fail-closed（无 superuser 才可用） | 防止被用于重置或接管已有实例（安全） | ✓ Validated（v0.1.0） |
 | DeepSeek V4 Pro / MiMo V2.5 Pro / Kimi 2.6 以 anthropic 兼容端点做"一键预设" | Claude Code 必须 anthropic 类型；这些模型经 base_url 覆盖接入，用户只填 Key | ✓ Validated（v0.1.0） |
@@ -453,4 +457,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-14 — 启动 v0.23.0 仓库路由增强（分阶段决策漏斗）。*
+*Last updated: 2026-08-14 after v0.23.0 milestone*

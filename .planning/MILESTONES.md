@@ -1,5 +1,36 @@
 # Milestones
 
+## v0.23.0 仓库路由增强（分阶段决策漏斗） (Completed: 2026-08-14，未打 tag)
+
+**Phases completed:** 5 phases（128–132）；16 plans / ~30 tasks；25 条需求 **25 满足 / 0 部分 / 0 未达**；里程碑审计 **tech_debt**，报告见 [milestones/v0.23.0-MILESTONE-AUDIT.md](./milestones/v0.23.0-MILESTONE-AUDIT.md)，需求归档见 [milestones/v0.23.0-REQUIREMENTS.md](./milestones/v0.23.0-REQUIREMENTS.md)，路线图归档见 [milestones/v0.23.0-ROADMAP.md](./milestones/v0.23.0-ROADMAP.md)，相位产物见 [milestones/v0.23.0-phases/](./milestones/v0.23.0-phases/)，决策锁见 [milestones/v0.23.0-DECISIONS.md](./milestones/v0.23.0-DECISIONS.md)。
+
+**Timeline:** 2026-08-14 立项并当日收口（约 1 天）。立项动机是「高三提分专项」等 feature list 场景下，全库单段文本相似度选仓会漂到语义巧合仓；把选仓升级为可解释决策漏斗（画像→团队→短名单→章程/历史→放置单元→门禁/反思），在 `BlueprintRouteAdapter` / `RepoAssociationService` 上演进，**不推倒** `RepoRouterV2`。
+
+**Key accomplishments:**
+
+- **专项画像 + 团队门禁（Phase 128）**：可单测 `build_profile`（剔除验收项语料、不足 clarify、LLM 失败 degraded）+ `team_gate`（`team_core` / 拒绝 out_of_team primary / 空团队 clarify，D1/D3）；Blueprint / Association / MCP 三入口接线，禁止静默全库 primary。
+- **短名单 + 历史先验 + 角色图（Phase 129）**：activity/capability/charter shortlist（planned 强制拉入）+ 需求史/上线史 ∩ team_core force-include + 固定四角色主/辅/禁与 boundary 降级；候选硬限制 ⊆ shortlist。
+- **放置单元 + 主路径接线（Phase 130）**：`build_placement_units`（模块依赖 +「复用」边）→ `place_units`（V2 硬限 hard_scope）；蓝图/项目选仓主路径走漏斗，三分量不再唯一决策（INT-01）。
+- **门禁 + 反思环（Phase 131）**：统一 `pass|clarify|block` 五门（含 D4 发布门独占 `auto_selected`）+ 有界反思（N=2、子集重算、ledger 脱敏可回放）。
+- **高三回归 + 契约（Phase 132）**：合成 Learning-tools 宇宙上 D2 bar（四基线 hit@primary / out_of_team=0）自动化绿；INT-03 契约包 + 接线级 role_collapse→reflection 修复。
+
+**质量基线：** 128–132 验证全部 `passed`；审计 status `tech_debt`（25/25 satisfied；无 BLOCKER；Nyquist 五相位 draft 未 reconcile；live_space 默认 skip）。
+
+### Known Gaps / Tech Debt
+
+- **live_space 默认 skip（D-07）**：`@pytest.mark.live_space` 不跑真 Learning-tools Space；合成 fixture 已覆盖 D2 bar。
+- **真 Space 人工抽验未跑**：四基线 hit@primary 以合成宇宙断言。
+- **Nyquist**：128–132 均有 `*-VALIDATION.md` + `nyquist_compliant: true`，无一 `status: validated`。
+- **Future（本里程碑不排期）**：PROF-F01 / TEAM-F01 / LIST-F01 / GATE-F01 / REFL-F01；小版本不做大前端。
+
+**Known deferred items at close:** 19 项 quick tasks（见 STATE.md Deferred Items）+ 上列里程碑级技术债。**Closeout type:** `override_closeout`（accept `tech_debt`；与 v0.22.0 同口径）。
+
+**未打 tag：** 本仓 tag 是发布轨（`tags: v*` 触发 release workflow），与 GSD 里程碑不同编号；虽 `.planning/config.json` 有 `git.create_tag: true`，本里程碑与 v0.22.0 / v0.21.0 / v0.19.0 一样**刻意不打** GSD 归档 tag，避免制造假发布点。
+
+**What's next:** `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）。
+
+---
+
 ## v0.22.0 代码智能图分析升级（对标 GitNexus） (Completed: 2026-08-11，未打 tag)
 
 **Phases completed:** 7 phases（121–127）；44 plans / 105 tasks；27 条需求 **26 满足 / 1 部分**（IMPACT-03）/ 0 未达；里程碑审计 **tech_debt**，报告见 [milestones/v0.22.0-MILESTONE-AUDIT.md](./milestones/v0.22.0-MILESTONE-AUDIT.md)，需求归档见 [milestones/v0.22.0-REQUIREMENTS.md](./milestones/v0.22.0-REQUIREMENTS.md)，路线图归档见 [milestones/v0.22.0-ROADMAP.md](./milestones/v0.22.0-ROADMAP.md)，相位产物见 [milestones/v0.22.0-phases/](./milestones/v0.22.0-phases/)。

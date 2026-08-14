@@ -212,6 +212,43 @@
 - Sessions: 多会话连续执行（121–127 波次并行度高，125 可与 122–124 并行）。
 - Notable: Phase 127 收口多一轮实修（hollow 闭合 + 观测违规清理），验证从 gaps_found 回到 human_needed。
 
+## Milestone: v0.23.0 — 仓库路由增强（分阶段决策漏斗）
+
+**Completed:** 2026-08-14（未打 tag）
+**Phases:** 5（128–132） | **Plans:** 16 | **Tasks:** ~30 | **Requirements:** 25/25 | **Audit:** tech_debt
+**Timeline:** 2026-08-14 当日立项并收口
+
+### What Was Built
+
+把选仓从全库相似度升级为决策漏斗：专项画像 + 团队门禁（128）→ shortlist/历史先验/角色图（129）→ 放置单元 + 主路径接线（130）→ 五门 + 有界反思（131）→ 高三合成回归 + 契约包（132）。`RepoRouterV2` 降为 shortlist 内细排，未推倒。
+
+### What Worked
+
+- **线性漏斗 + 硬范围**：out_of_team / 空团队在结构上无法静默全库 primary；V2 调用一律 hard_scope。
+- **合成宇宙回归**：Learning-tools fixture + D2 bar 让 INT-02 不依赖活 Space 也能绿。
+- **决策锁前置（DECISIONS.md）**：D1–D5 减少 discuss 灰区，当日五相位可跑完。
+
+### What Was Inefficient
+
+- **Nyquist 再次未 reconcile**：五相位 VALIDATION 停在 draft（与 v0.22 同型债）。
+- **CLI `milestone.complete` 英文 one-liner**：MILESTONES 条目需手工中文化。
+- **live_space 默认 skip**：真 Space 抽验仍挂账。
+
+### Patterns Established
+
+- **漏斗阶段可单测纯函数**：profile / team_gate / shortlist / place_units / gates / reflection 先内核后 Adapter 接线。
+- **D2 bar 作为客观验收函数**：hit@primary + out_of_team=0 可文档化、可自动化。
+
+### Key Lessons
+
+- **不推倒 V2、只收窄候选**比重写排序更稳：硬 scope 比调权重更能挡住漂仓。
+- **合成 fixture 是活 Space 的必要替身**，但不能替代真 Space 抽验——记 tech_debt 而非 pretended passed。
+
+### Cost Observations
+
+- Sessions: 单日连续执行（128→132，`--no-transition` 收尾后独立 complete-milestone）。
+- Notable: 约 94 files / +16k LOC（含 tests）；审计当日完成。
+
 ## Cross-Milestone Trends
 
 | Milestone | Phases | Plans | Shipped |
@@ -223,24 +260,26 @@
 | v0.20.0 技术方案蓝图 | 6 | 34 | 2026-08-02 |
 | v0.21.0 蓝图过程可见与返工闭环 | 4 | — | 2026-08-05（未打 tag） |
 | v0.22.0 代码智能图分析升级 | 7 | 44 | 2026-08-11（未打 tag） |
+| v0.23.0 仓库路由增强（决策漏斗） | 5 | 16 | 2026-08-14（未打 tag） |
 
-> v0.19.0 与 v0.20.0 是同期双 worktree 并行开发的两个里程碑（2026-07-29 → 2026-08-02），于 2026-08-02 合并（同步点 2）。v0.22.0 为单线高速交付（约 3 天 / 7 相位）。
+> v0.19.0 与 v0.20.0 是同期双 worktree 并行开发的两个里程碑（2026-07-29 → 2026-08-02），于 2026-08-02 合并（同步点 2）。v0.22.0 为单线高速交付（约 3 天 / 7 相位）。v0.23.0 为单日五相位漏斗交付。
 
-**趋势观察（截至 v0.22.0）：**
+**趋势观察（截至 v0.23.0）：**
 
 - **单相位规模在涨。** v0.16.3 是 15 plans / 4 phases（≈3.8），v0.19.0 是 39 plans / 5 phases（≈7.8），翻了一倍；v0.20.0 是 34 plans / 6 phases（≈5.7），在并行约束下略有回落。收益是相位内依赖可控、wave 并行度高；代价是单相位的验证面变大，v0.19.0 的 107 一相就压了 5 条需求 9 个 plan，也正是缺口发生的那一相。
-- **审计判定连续四个里程碑落在 `tech_debt`（v0.16.3 / v0.17.0 / v0.19.0 / v0.20.0），成因高度一致**：代码层需求全满足或近乎全满足，卡在「真实飞书 / 真实容器 / 真实 Qdrant / 浏览器视觉」这四类本地无法闭环的人工验收上。累计已挂账 27（v0.19.0）+ 11（v0.17.0）+ 若干（v0.16.x / v0.20.0）项，**至今无承接方**。这不再是单个里程碑的遗留，而是一个需要独立处置的结构性缺口——建议建立运维验收 backlog 与定期真机验收窗口。
+- **审计判定连续落在 `tech_debt`**：代码层需求全满足或近乎全满足，卡在「真实飞书 / 真实容器 / 真实 Qdrant / 浏览器视觉 / 真 Space」这几类本地无法闭环的人工验收上。累计已挂账多项，**至今无承接方**。这不再是单个里程碑的遗留，而是一个需要独立处置的结构性缺口——建议建立运维验收 backlog 与定期真机验收窗口。
 - **「延后人工视觉验收」的代价在 v0.19.0 第一次具体化。** 此前它只是挂账数字；这次它直接导致四条需求被建在一个已下线的组件里、五个相位判绿、返工一次跨相位闭环。挂账不是零成本的。
 - **双 worktree 并行开发首次验证可行。** 前提是边界纪律在立项时定版并逐 plan 核算（冻结面 `git diff` 为空作为门禁）：两个里程碑 11 个相位跑完**零源码文件交集**，合并冲突只剩 `.planning/` 台账与一个 migration 叶子分叉。
-- **`tech_debt` 归档已成默认出口（含 v0.22.0）。** 代码层近乎全满足，卡在真实环境样本 / 客户端白名单 / Nyquist reconcile——继续 accept 归档可以，但债务清单必须进 STATE Deferred，避免「过了审计就消失」。
+- **`tech_debt` 归档已成默认出口（含 v0.22.0 / v0.23.0）。** 代码层近乎全满足，卡在真实环境样本 / Nyquist reconcile——继续 accept 归档可以，但债务清单必须进 STATE Deferred，避免「过了审计就消失」。
 - **「服务端在线、客户端白名单缺席」在 v0.22.0 第三次同型复现**（v0.19 `nr_snapshot` / v0.20 mcp 四工具 / v0.22 图工具集）——子模块发版应进里程碑 Definition of Done，或显式标为跨仓 out-of-scope 并挂账。
+- **v0.23.0 证明「决策锁 + 合成回归 + 硬 scope」可当日收口五相位**；Nyquist draft 债仍未断。
 
 **反复出现的形态（跨里程碑）：**
 
-| 形态 | 首次登记 | v0.19.0 复现 | v0.20.0 复现 | v0.22.0 复现 |
-|------|----------|--------------|--------------|--------------|
-| 状态文件（STATE / REQUIREMENTS traceability）滞后于磁盘真实状态 | v0.8.0 | ROADMAP 进度表滞后；Traceability 口径三分 | 归档前专门记账订正 | CLI 英文 one-liner 需手工中文化；IMPACT-03 Traceability 曾标 Complete |
-| 真机 / 真实 provider / 浏览器视觉验收是结构性 deferred | v0.16.3 | 27 项 UAT pending | 无飞书凭证真实导出未跑 | 127 三项 human_needed（镜像体积 / LSP 真仓 / IMPACT-03 样本） |
-| 规划文档与工具链契约漂移 | v0.16.3 | 未复现 | `112-1`/`113-2` 目录名令归档工具失效 | CLI `milestone complete` 产出英文堆砌，与中文台账风格冲突 |
-| 「消费方在线、生产方离线」的接缝 | v0.19.0 | `RoutingDecisionPanel` / `nr_snapshot` | mcp npm 缺四个蓝图工具 | mcp npm 缺图工具集；CrossRepo 生产者因 LSP 关而离线 |
-| 合成测 / mock 掩盖生产空洞 | v0.19.0（叶子组件单测当用户可见） | 首次具体化 | 守卫 skip 掩盖对齐缺口 | Semgrep 空 SHA 入队 hollow；跨仓四分支纯合成 |
+| 形态 | 首次登记 | v0.19.0 复现 | v0.20.0 复现 | v0.22.0 复现 | v0.23.0 复现 |
+|------|----------|--------------|--------------|--------------|--------------|
+| 状态文件（STATE / REQUIREMENTS traceability）滞后于磁盘真实状态 | v0.8.0 | ROADMAP 进度表滞后；Traceability 口径三分 | 归档前专门记账订正 | CLI 英文 one-liner 需手工中文化；IMPACT-03 Traceability 曾标 Complete | CLI 英文堆砌；progress 计数短暂漂移 |
+| 真机 / 真实 provider / 浏览器视觉验收是结构性 deferred | v0.16.3 | 27 项 UAT pending | 无飞书凭证真实导出未跑 | 127 三项 human_needed（镜像体积 / LSP 真仓 / IMPACT-03 样本） | live_space skip + 真 Space 抽验 |
+| 规划文档与工具链契约漂移 | v0.16.3 | 未复现 | `112-1`/`113-2` 目录名令归档工具失效 | CLI `milestone complete` 产出英文堆砌，与中文台账风格冲突 | 同左 |
+| 「消费方在线、生产方离线」的接缝 | v0.19.0 | `RoutingDecisionPanel` / `nr_snapshot` | mcp npm 缺四个蓝图工具 | mcp npm 缺图工具集；CrossRepo 生产者因 LSP 关而离线 | 未新增同型；漏斗硬 scope 主动防漂 |
+| 合成测 / mock 掩盖生产空洞 | v0.19.0（叶子组件单测当用户可见） | 首次具体化 | 守卫 skip 掩盖对齐缺口 | Semgrep 空 SHA 入队 hollow；跨仓四分支纯合成 | D2 bar 合成宇宙绿；真 Space 未跑 |
