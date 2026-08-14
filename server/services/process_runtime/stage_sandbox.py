@@ -320,6 +320,33 @@ async def arun_route_stage(
             if "placements" in summary:
                 summary["placements"] = guarded_placements
             summary["hard_scope"] = sorted(hard_scope)
+        # Phase 131：block / needs_human_review 禁止全库 primary 回填
+        gate_status = str((summary.get("funnel_gates") or {}).get("status") or "")
+        review_status = str(summary.get("review_status") or "")
+        if (
+            gate_status == "block"
+            or review_status == "needs_human_review"
+            or "needs_human_review"
+            in list(((summary.get("reflection") or {}).get("reason_codes") or []))
+        ):
+            summary["auto_selected"] = False
+            if hard_scope:
+                summary["candidates"] = [
+                    c
+                    for c in (summary.get("candidates") or [])
+                    if str(c.get("repository_id") or "") in hard_scope
+                ]
+            else:
+                # 无 hard_scope 时清空候选，禁止静默全库
+                summary["candidates"] = []
+            if review_status == "needs_human_review" or "needs_human_review" in list(
+                ((summary.get("reflection") or {}).get("reason_codes") or [])
+            ):
+                summary["status"] = "clarify"
+                summary["clarify_reason"] = summary.get("clarify_reason") or "needs_human_review"
+            elif gate_status == "block":
+                summary["status"] = "block"
+                summary["clarify_reason"] = summary.get("clarify_reason") or "funnel_gate_block"
     except Exception:  # noqa: BLE001 — 守卫 best-effort，不反噬路由
         pass
     logger.info(

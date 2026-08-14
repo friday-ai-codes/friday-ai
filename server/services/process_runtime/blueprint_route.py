@@ -687,6 +687,20 @@ class BlueprintRouteAdapter:
             team_core=list(team_gate.get("team_core") or []),
             router=router,
         )
+        # Phase 131：placements 后 → 五门 + 有界反思；auto_selected 仅由发布门/D-02 决定
+        gate_bundle = self._apply_funnel_gates_and_reflection(
+            team_gate=team_gate,
+            shortlist_ids=shortlist_ids,
+            role_map_payload=role_map_payload,
+            placement_funnel=placement_funnel,
+        )
+        placement_funnel = gate_bundle["placement_funnel"]
+        funnel_gates_payload = gate_bundle["funnel_gates"]
+        reflection_payload = gate_bundle["reflection"]
+        publish_mode = str(gate_bundle.get("publish_mode") or "confirmation")
+        gate_status = str(gate_bundle.get("gate_status") or "pass")
+        review_status = gate_bundle.get("review_status")
+
         hard_scope = list(placement_funnel.get("hard_scope") or shortlist_ids or repository_ids)
         hard_scope_set = set(hard_scope)
         # fail-soft：placement 失败不回退全库，保留 shortlist/hard_scope 收窄
@@ -699,14 +713,16 @@ class BlueprintRouteAdapter:
             excluded=excluded,
         )
         router_version = "v2"
-        auto_selected = True
+        # V2 auto_selected 仅作信号；最终值由发布门覆盖（下方）
+        auto_selected = False
+        # block / needs_human_review：禁止静默全库 V2 回填
+        allow_v2_fallback = gate_status != "block" and review_status != "needs_human_review"
         # 无放置候选时 fail-soft：在 hard_scope 内整篇 V2 取分（仍禁止全库）
-        if not raw_candidates:
+        if not raw_candidates and allow_v2_fallback:
             result = await router.route(
                 query, top_k=self.top_k, repository_ids=repository_ids, use_llm=True
             )
             router_version = str(getattr(result, "router_version", "") or "")
-            auto_selected = bool(getattr(result, "auto_selected", False))
             raw_candidates = [
                 {
                     "repository_id": str(getattr(c, "repo_id", "") or ""),
@@ -749,11 +765,42 @@ class BlueprintRouteAdapter:
         if not raw_candidates:
             # 路由器与章程都没给出候选：透传真实 router_version（不谎报 "skipped"，
             # 「跑了但没召回」与「没跑」对 115 排障是两件事）
-            return self._empty_result(
+            empty = self._empty_result(
                 intent=intent,
                 weights_used=_weights_for(weights, intent),
                 router_version=router_version,
             )
+            empty.update(
+                {
+                    "status": "block"
+                    if gate_status == "block"
+                    else (
+                        "clarify"
+                        if review_status == "needs_human_review"
+                        else empty.get("status", "ok")
+                    ),
+                    "auto_selected": False,
+                    "funnel_gates": funnel_gates_payload,
+                    "publish_mode": publish_mode,
+                    "reflection": reflection_payload,
+                    "hard_scope": list(hard_scope),
+                    "placements": list(placement_funnel.get("placements") or []),
+                    "placement_unit_count": int(
+                        placement_funnel.get("placement_unit_count") or 0
+                    ),
+                    "shortlist": shortlist_payload,
+                    "shortlist_count": len(shortlist_ids),
+                    "role_map": role_map_payload,
+                    "team_core": list(team_gate.get("team_core") or []),
+                    "team_core_count": len(list(team_gate.get("team_core") or [])),
+                }
+            )
+            if review_status == "needs_human_review":
+                empty["review_status"] = "needs_human_review"
+                empty["clarify_reason"] = "needs_human_review"
+            elif gate_status == "block":
+                empty["clarify_reason"] = "funnel_gate_block"
+            return empty
 
         candidate_ids = [c["repository_id"] for c in raw_candidates]
         charters = await self._aload_charters(candidate_ids)
@@ -768,6 +815,7 @@ class BlueprintRouteAdapter:
         citations: list[dict] = []
         seen_citations: set[str] = set()
         candidates: list[dict] = []
+        auto_selected = bool(gate_bundle.get("allow_auto_selected"))
         for raw in raw_candidates:
             repository_id = raw["repository_id"]
             charter_result = self._score_charter(charters.get(repository_id), query_terms)
@@ -820,7 +868,7 @@ class BlueprintRouteAdapter:
 
         summary = {
             "router_version": router_version,
-            "auto_selected": auto_selected,
+            "auto_selected": bool(gate_bundle.get("allow_auto_selected")),
             "intent": intent,
             "weights_used": vector,
             "charter_supplement_count": len(supplements),
@@ -843,7 +891,53 @@ class BlueprintRouteAdapter:
             "placement_degrade_reasons": list(
                 placement_funnel.get("degrade_reasons") or []
             ),
+            "funnel_gates": funnel_gates_payload,
+            "publish_mode": publish_mode,
+            "reflection": reflection_payload,
         }
+        # 门禁/反思收口：block / needs_human_review 不得静默 ok 开工
+        # publish 仅 needs_confirmation 时保持 status=ok，靠 auto_selected=False + funnel_gates 表达
+        non_publish_statuses = []
+        for g in (funnel_gates_payload or {}).get("gates") or []:
+            if isinstance(g, dict) and g.get("gate_id") != "publish":
+                non_publish_statuses.append(str(g.get("status") or "pass"))
+        worst_non_publish = "pass"
+        for s in non_publish_statuses:
+            if s == "block":
+                worst_non_publish = "block"
+                break
+            if s == "clarify" and worst_non_publish != "block":
+                worst_non_publish = "clarify"
+
+        if review_status == "needs_human_review":
+            summary["status"] = "clarify"
+            summary["clarify_reason"] = "needs_human_review"
+            summary["review_status"] = "needs_human_review"
+            summary["auto_selected"] = False
+        elif gate_status == "block" or worst_non_publish == "block":
+            summary["status"] = "block"
+            summary["clarify_reason"] = "funnel_gate_block"
+            summary["auto_selected"] = False
+            if hard_scope_set:
+                summary["candidates"] = [
+                    c
+                    for c in summary["candidates"]
+                    if str(c.get("repository_id") or "") in hard_scope_set
+                ]
+        elif worst_non_publish == "clarify":
+            summary["status"] = "clarify"
+            codes = [
+                c
+                for c in ((funnel_gates_payload or {}).get("reason_codes") or [])
+                if c != "needs_confirmation"
+            ]
+            summary["clarify_reason"] = codes[0] if codes else "funnel_gate_clarify"
+            summary["auto_selected"] = False
+        auto_selected = bool(summary["auto_selected"])
+        for c in summary.get("candidates") or []:
+            ev = c.get("evidence")
+            if isinstance(ev, dict):
+                ev["auto_selected"] = auto_selected
         from services.process_runtime.team_gate import annotate_team_membership
 
         summary["candidates"] = annotate_team_membership(
@@ -863,11 +957,117 @@ class BlueprintRouteAdapter:
             placement_unit_count=int(placement_funnel.get("placement_unit_count") or 0),
             placement_count=len(placement_funnel.get("placements") or []),
             hard_scope_count=len(hard_scope),
+            gate_status=gate_status,
+            reflection_rounds=int((reflection_payload or {}).get("rounds") or 0),
+            allow_auto_selected=bool(summary.get("auto_selected")),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
             category="sampling",
             component="process_runtime",
         )
         return summary
+
+    def _apply_funnel_gates_and_reflection(
+        self,
+        *,
+        team_gate: dict,
+        shortlist_ids: list[str],
+        role_map_payload: dict,
+        placement_funnel: dict,
+    ) -> dict:
+        """Phase 131：evaluate_funnel_gates → 可选反思 → 发布门收口 auto_selected。"""
+        from services.process_runtime.funnel_gates import evaluate_funnel_gates
+        from services.process_runtime.reflection import (
+            detect_reflection_triggers,
+            run_reflection_loop,
+        )
+
+        placements = list(placement_funnel.get("placements") or [])
+        team_payload = {
+            "status": "ok" if team_gate.get("team_core") else "missing",
+            "team_core": list(team_gate.get("team_core") or []),
+            "membership": dict(team_gate.get("membership") or {}),
+        }
+        if not team_payload["membership"]:
+            team_payload["membership"] = {
+                str(r): "team_core" for r in team_payload["team_core"]
+            }
+
+        report = evaluate_funnel_gates(
+            team=team_payload,
+            shortlist_ids=shortlist_ids,
+            role_map=role_map_payload if isinstance(role_map_payload, dict) else {},
+            placements=placements,
+            confirmation_acked=False,
+            reuse_hosts=[],
+        )
+
+        reflection_payload: dict | None = None
+        review_status = None
+        triggers = detect_reflection_triggers(
+            report, placements=placements, role_map=role_map_payload
+        )
+        if triggers.should_reflect:
+            scope = list(placement_funnel.get("hard_scope") or shortlist_ids or [])
+
+            def repair_hook(**kwargs):
+                affected = set(kwargs.get("affected_unit_ids") or [])
+                repo_ids = list(kwargs.get("repository_ids") or scope)
+                if not repo_ids:
+                    repo_ids = list(scope) or list(shortlist_ids or [])
+                fixed: list[dict] = []
+                for p in kwargs.get("placements") or placements:
+                    p = dict(p)
+                    uid = str(p.get("unit_id") or "")
+                    if not affected or uid in affected:
+                        hs = list(p.get("hard_scope") or [])
+                        if not hs:
+                            p["hard_scope"] = list(repo_ids)
+                        primary = str(p.get("primary_repo") or "").strip()
+                        allowed = set(p.get("hard_scope") or repo_ids)
+                        if primary and primary not in allowed and allowed:
+                            p["primary_repo"] = next(iter(allowed))
+                            p["open_questions"] = list(p.get("open_questions") or []) + [
+                                "reflection_primary_clamped"
+                            ]
+                    fixed.append(p)
+                return {"placements": fixed, "repository_ids": list(repo_ids)}
+
+            refl = run_reflection_loop(
+                gate_report=report,
+                placements=placements,
+                role_map=role_map_payload if isinstance(role_map_payload, dict) else {},
+                team=team_payload,
+                shortlist_ids=shortlist_ids,
+                max_rounds=2,
+                repair_hook=repair_hook,
+                confirmation_acked=False,
+            )
+            reflection_payload = refl.to_dict()
+            review_status = refl.review_status
+            if refl.placements:
+                placements = list(refl.placements)
+                placement_funnel = {
+                    **placement_funnel,
+                    "placements": placements,
+                }
+            report = evaluate_funnel_gates(
+                team=team_payload,
+                shortlist_ids=shortlist_ids,
+                role_map=role_map_payload if isinstance(role_map_payload, dict) else {},
+                placements=placements,
+                confirmation_acked=False,
+                reuse_hosts=[],
+            )
+
+        return {
+            "placement_funnel": placement_funnel,
+            "funnel_gates": report.to_dict(),
+            "reflection": reflection_payload,
+            "publish_mode": report.publish_mode,
+            "allow_auto_selected": bool(report.allow_auto_selected),
+            "gate_status": report.status,
+            "review_status": review_status,
+        }
 
     def _raw_candidates_from_placements(
         self,

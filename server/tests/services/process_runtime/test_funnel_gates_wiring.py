@@ -371,12 +371,16 @@ async def test_gate_block_does_not_silently_ok_with_out_of_scope():
     with _patches(adapter, place_result=_place_out_of_scope()):
         summary = await adapter.route(_session())
 
-    assert summary.get("status") != "ok" or summary.get("funnel_gates", {}).get("status") == "block"
+    fg = summary.get("funnel_gates") or {}
+    # 反思可能局部修复；若门仍 block 则顶层不得静默 ok
+    if fg.get("status") == "block":
+        assert summary.get("status") != "ok"
     # 不得把 outsider / ghost-full-lib 当可开工 primary 静默放出
     cand_ids = {c.get("repository_id") for c in summary.get("candidates") or []}
-    assert "outsider" not in cand_ids or summary.get("status") in {"clarify", "block"}
+    assert "outsider" not in cand_ids
     assert "ghost-full-lib" not in cand_ids
     assert summary.get("auto_selected") is False
+    assert "funnel_gates" in summary
 
 
 @pytest.mark.asyncio

@@ -403,6 +403,92 @@ class RepoAssociationService:
             user_label=user_label,
         )
 
+        # Phase 131：门禁 + 有界反思；auto_selected 仅由发布门/D-02 决定
+        funnel_gates_payload: dict[str, Any] | None = None
+        reflection_payload: dict[str, Any] | None = None
+        publish_mode = "confirmation"
+        auto_selected = False
+        review_status = None
+        try:
+            from services.process_runtime.funnel_gates import evaluate_funnel_gates
+            from services.process_runtime.reflection import (
+                detect_reflection_triggers,
+                run_reflection_loop,
+            )
+
+            team_payload = {
+                "status": "ok" if team_core_ids else "missing",
+                "team_core": list(team_core_ids or []),
+                "membership": {str(r): "team_core" for r in (team_core_ids or [])},
+            }
+            report = evaluate_funnel_gates(
+                team=team_payload,
+                shortlist_ids=list(hard_scope or repo_ids),
+                role_map={"status": "ok", "roles": {}},
+                placements=placements_payload,
+                confirmation_acked=False,
+            )
+            triggers = detect_reflection_triggers(
+                report, placements=placements_payload, role_map={"status": "ok", "roles": {}}
+            )
+            if triggers.should_reflect:
+
+                def _repair(**kwargs):
+                    affected = set(kwargs.get("affected_unit_ids") or [])
+                    repo_scope = list(kwargs.get("repository_ids") or hard_scope or repo_ids)
+                    fixed = []
+                    for p in kwargs.get("placements") or placements_payload:
+                        p = dict(p)
+                        if not affected or str(p.get("unit_id") or "") in affected:
+                            if not p.get("hard_scope"):
+                                p["hard_scope"] = list(repo_scope)
+                        fixed.append(p)
+                    return {"placements": fixed, "repository_ids": list(repo_scope)}
+
+                refl = run_reflection_loop(
+                    gate_report=report,
+                    placements=placements_payload,
+                    role_map={"status": "ok", "roles": {}},
+                    team=team_payload,
+                    shortlist_ids=list(hard_scope or repo_ids),
+                    max_rounds=2,
+                    repair_hook=_repair,
+                    confirmation_acked=False,
+                )
+                reflection_payload = refl.to_dict()
+                review_status = refl.review_status
+                if refl.placements:
+                    placements_payload = list(refl.placements)
+                report = evaluate_funnel_gates(
+                    team=team_payload,
+                    shortlist_ids=list(hard_scope or repo_ids),
+                    role_map={"status": "ok", "roles": {}},
+                    placements=placements_payload,
+                    confirmation_acked=False,
+                )
+            funnel_gates_payload = report.to_dict()
+            publish_mode = report.publish_mode
+            auto_selected = bool(report.allow_auto_selected)
+            if review_status == "needs_human_review" or report.status == "block":
+                auto_selected = False
+                # 阻断静默全库：候选限制在 hard_scope
+                scope_set = set(hard_scope or repo_ids)
+                if scope_set:
+                    candidates = [
+                        c
+                        for c in candidates
+                        if str(c.get("repo_id") or c.get("repository_id") or "")
+                        in scope_set
+                    ]
+        except Exception as exc:  # noqa: BLE001 — fail-soft：门禁失败不抬升 auto
+            logger.warning(
+                "repo_association_funnel_gates_failed",
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component=_COMPONENT,
+            )
+            auto_selected = False
+
         persisted = await self._persist_candidates(
             space=space,
             project=project,
@@ -415,28 +501,41 @@ class RepoAssociationService:
             candidate_count=len(candidates),
             persisted_count=persisted,
             router_version=result.router_version,
-            auto_selected=result.auto_selected,
+            auto_selected=auto_selected,
             round=round_no,
             query_len=len(query),
             scoped_repo_count=len(repo_ids),
             placement_unit_count=placement_unit_count,
             placement_count=len(placements_payload),
+            gate_status=(funnel_gates_payload or {}).get("status"),
+            reflection_rounds=int((reflection_payload or {}).get("rounds") or 0),
             duration_ms=round((perf_counter() - started) * 1000, 2),
             initiated_by_user_id=user_label,
             component=_COMPONENT,
             category="caller",
         )
-        return {
+        out = {
             "candidates": candidates,
             "router_version": result.router_version,
-            "auto_selected": result.auto_selected,
+            "auto_selected": auto_selected,
             "query_len": len(query),
             "shortlist": shortlist_payload,
             "shortlist_count": len(shortlist_payload),
             "placements": placements_payload,
             "placement_unit_count": placement_unit_count,
             "hard_scope": list(hard_scope),
+            "funnel_gates": funnel_gates_payload,
+            "publish_mode": publish_mode,
+            "reflection": reflection_payload,
         }
+        if review_status == "needs_human_review":
+            out["status"] = "clarify"
+            out["review_status"] = "needs_human_review"
+            out["clarify_reason"] = "needs_human_review"
+        elif (funnel_gates_payload or {}).get("status") == "block":
+            out["status"] = "block"
+            out["clarify_reason"] = "funnel_gate_block"
+        return out
 
     async def _record_routing_trace(
         self,
