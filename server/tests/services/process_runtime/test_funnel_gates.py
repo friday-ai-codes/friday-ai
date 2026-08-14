@@ -241,11 +241,18 @@ class TestGlobalConsistency:
 
 class TestPublishGate:
     def test_default_confirmation_clarify(self):
+        # D-02 未满足（缺双证据 / 非 high）时默认 confirmation → clarify
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=["core-1", "core-2", "host-1"],
             role_map=_role_map_ok(),
-            placements=[_placement("u1")],
+            placements=[
+                _placement(
+                    "u1",
+                    confidence="medium",
+                    evidence=[{"kind": "v2"}],
+                )
+            ],
         )
         g = report.gate("publish")
         assert g.status == "clarify"
