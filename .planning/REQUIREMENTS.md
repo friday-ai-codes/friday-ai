@@ -79,37 +79,45 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROF-01 | TBD | Pending |
-| PROF-02 | TBD | Pending |
-| PROF-03 | TBD | Pending |
-| TEAM-01 | TBD | Pending |
-| TEAM-02 | TBD | Pending |
-| TEAM-03 | TBD | Pending |
-| LIST-01 | TBD | Pending |
-| LIST-02 | TBD | Pending |
-| LIST-03 | TBD | Pending |
-| LIST-04 | TBD | Pending |
-| ROLE-01 | TBD | Pending |
-| ROLE-02 | TBD | Pending |
-| ROLE-03 | TBD | Pending |
-| UNIT-01 | TBD | Pending |
-| UNIT-02 | TBD | Pending |
-| UNIT-03 | TBD | Pending |
-| GATE-01 | TBD | Pending |
-| GATE-02 | TBD | Pending |
-| GATE-03 | TBD | Pending |
-| REFL-01 | TBD | Pending |
-| REFL-02 | TBD | Pending |
-| REFL-03 | TBD | Pending |
-| INT-01 | TBD | Pending |
-| INT-02 | TBD | Pending |
-| INT-03 | TBD | Pending |
+| PROF-01 | Phase 128 | Pending |
+| PROF-02 | Phase 128 | Pending |
+| PROF-03 | Phase 128 | Pending |
+| TEAM-01 | Phase 128 | Pending |
+| TEAM-02 | Phase 128 | Pending |
+| TEAM-03 | Phase 128 | Pending |
+| LIST-01 | Phase 129 | Pending |
+| LIST-02 | Phase 129 | Pending |
+| LIST-03 | Phase 129 | Pending |
+| LIST-04 | Phase 129 | Pending |
+| ROLE-01 | Phase 129 | Pending |
+| ROLE-02 | Phase 129 | Pending |
+| ROLE-03 | Phase 129 | Pending |
+| UNIT-01 | Phase 130 | Pending |
+| UNIT-02 | Phase 130 | Pending |
+| UNIT-03 | Phase 130 | Pending |
+| INT-01 | Phase 130 | Pending |
+| GATE-01 | Phase 131 | Pending |
+| GATE-02 | Phase 131 | Pending |
+| GATE-03 | Phase 131 | Pending |
+| REFL-01 | Phase 131 | Pending |
+| REFL-02 | Phase 131 | Pending |
+| REFL-03 | Phase 131 | Pending |
+| INT-02 | Phase 132 | Pending |
+| INT-03 | Phase 132 | Pending |
 
 **Coverage:**
 - v1 requirements: 25 total
-- Mapped to phases: 0（路线图生成后回填）
-- Unmapped: 25
+- Mapped to phases: 25/25 ✓
+- Unmapped: 0
+
+| Phase | Requirements | Count |
+|-------|--------------|-------|
+| 128 | PROF-01~03, TEAM-01~03 | 6 |
+| 129 | LIST-01~04, ROLE-01~03 | 7 |
+| 130 | UNIT-01~03, INT-01 | 4 |
+| 131 | GATE-01~03, REFL-01~03 | 6 |
+| 132 | INT-02, INT-03 | 2 |
 
 ---
 *Requirements defined: 2026-08-14*  
-*Last updated: 2026-08-14 — milestone v0.23.0 kickoff*
+*Last updated: 2026-08-14 — roadmap Phases 128–132 mapped*
