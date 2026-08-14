@@ -54,7 +54,12 @@
   3. 画像写入路由 stage 可观测结构（可回放、绑定 request/run id）；失败 fail-soft 并带明确 degrade 原因
   4. 系统解析 `primary_team`/Space 产出 `team_core`；`out_of_team` 默认不可作 primary，仅 `team_adjacent`（有复用/章程证据）可例外
   5. 无可用团队/空间或 `team_core` 为空（或全无索引）时，路由进入 `clarify`/`block`，不得静默退回全库裸路由
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 128-01-PLAN.md — 专项画像模块（PROF-01~03）：corpus 剔除 + build_profile + fail-soft 观测
+- [ ] 128-02-PLAN.md — 团队门禁模块（TEAM-01~03）：team_core 解析 + hard gate + 空团队 clarify（D1/D3）
+- [ ] 128-03-PLAN.md — 漏斗三入口接线：Blueprint / RepoAssociation / MCP，禁止静默全库 primary
 
 ### Phase 129: 短名单 + 历史先验 + 章程角色图
 **Goal**: 在团队范围内生成可解释 shortlist（活跃度 + 能力树粗相关 + 章程域 + 历史先验强制拉入），并对 shortlist 产出主/辅/禁角色图约束后续落点
