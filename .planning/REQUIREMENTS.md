@@ -9,15 +9,15 @@
 
 ### 专项画像（PROF）
 
-- [ ] **PROF-01**: 系统能从 feature list（模块总览、全局流转、模块简述）生成可机读专项画像（产品形态、域、brownfield/greenfield/fix、主能力簇、显式非目标、复用声明摘要）
-- [ ] **PROF-02**: 画像主路径默认排除验收项/测试 case 正文；若仅有操作细节语料则触发澄清而非静默用噪声建画像
-- [ ] **PROF-03**: 画像结果写入路由 stage 可观测结构（可回放、可绑定 request/run id），失败 fail-soft 并带明确 degrade 原因
+- [x] **PROF-01**: 系统能从 feature list（模块总览、全局流转、模块简述）生成可机读专项画像（产品形态、域、brownfield/greenfield/fix、主能力簇、显式非目标、复用声明摘要）
+- [x] **PROF-02**: 画像主路径默认排除验收项/测试 case 正文；若仅有操作细节语料则触发澄清而非静默用噪声建画像
+- [x] **PROF-03**: 画像结果写入路由 stage 可观测结构（可回放、可绑定 request/run id），失败 fail-soft 并带明确 degrade 原因
 
 ### 团队门禁（TEAM）
 
-- [ ] **TEAM-01**: 系统能解析需求的 `primary_team` / Space（项目挂载空间优先），产出 `team_core` 仓库集合
-- [ ] **TEAM-02**: `out_of_team` 仓库默认不可作为 primary；仅 `team_adjacent`（有复用/章程证据）可例外进入
-- [ ] **TEAM-03**: 无可用团队/空间或 `team_core` 为空（或全无索引）时，路由进入 `clarify`/`block`，不得静默退回全库裸路由
+- [x] **TEAM-01**: 系统能解析需求的 `primary_team` / Space（项目挂载空间优先），产出 `team_core` 仓库集合
+- [x] **TEAM-02**: `out_of_team` 仓库默认不可作为 primary；仅 `team_adjacent`（有复用/章程证据）可例外进入
+- [x] **TEAM-03**: 无可用团队/空间或 `team_core` 为空（或全无索引）时，路由进入 `clarify`/`block`，不得静默退回全库裸路由
 
 ### 短名单与历史先验（LIST）
 
@@ -79,12 +79,12 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROF-01 | Phase 128 | Pending |
-| PROF-02 | Phase 128 | Pending |
-| PROF-03 | Phase 128 | Pending |
-| TEAM-01 | Phase 128 | Pending |
-| TEAM-02 | Phase 128 | Pending |
-| TEAM-03 | Phase 128 | Pending |
+| PROF-01 | Phase 128 | Complete |
+| PROF-02 | Phase 128 | Complete |
+| PROF-03 | Phase 128 | Complete |
+| TEAM-01 | Phase 128 | Complete |
+| TEAM-02 | Phase 128 | Complete |
+| TEAM-03 | Phase 128 | Complete |
 | LIST-01 | Phase 129 | Pending |
 | LIST-02 | Phase 129 | Pending |
 | LIST-03 | Phase 129 | Pending |
@@ -106,6 +106,7 @@
 | INT-03 | Phase 132 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 25 total
 - Mapped to phases: 25/25 ✓
 - Unmapped: 0
