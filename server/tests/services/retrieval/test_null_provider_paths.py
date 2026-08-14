@@ -22,7 +22,7 @@ matrix 由 implementation 补全）：
 开关语义集中在 ``CodeIntelConfig.ready()``。
 
 外部依赖（``services.retrieval.rag_search.search_rag`` /
-``codegraph.services.repo_router.RepoRouter.route`` /
+``codegraph.services.repo_router_v2.RepoRouterV2.route`` /
 ``LayeredSearchService._lN`` 私有 classmethod）走 ``unittest.mock.patch`` 局部
 mock，不依赖真实 ORM / Qdrant / Embedding。目标 < 5 秒跑完 5 条。
 """
@@ -115,12 +115,12 @@ async def test_case_2_null_provider_repo_ids_none_skips_repo_router() -> None:
     - ``search_rag`` 被以 ``repo_ids=[]`` 调用一次；
     - 空命中时 final_context == ""。
     """
-    from codegraph.services.repo_router import RepoRouter
+    from codegraph.services.repo_router_v2 import RepoRouterV2
 
-    repo_router_spy = AsyncMock(return_value=[])
+    repo_router_spy = AsyncMock()
     rag_search_mock = AsyncMock(return_value=_make_l3_snapshot([]))
 
-    with patch.object(RepoRouter, "route", new=repo_router_spy), patch(
+    with patch.object(RepoRouterV2, "route", new=repo_router_spy), patch(
         "services.retrieval.hybrid_search.search_rag",
         new=rag_search_mock,
     ):

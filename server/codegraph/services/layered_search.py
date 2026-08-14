@@ -28,6 +28,7 @@ Per contract / contract / contract / implementation Success Criteria #1。
 from __future__ import annotations
 
 import re
+import time
 import warnings
 from typing import Any
 
@@ -103,24 +104,55 @@ class LayeredSearchService:
     async def _l1_repo_routing(
         cls, query: str, repository_ids: list[str] | None, top_k: int,
     ) -> tuple[LayerResult, list[str]]:
-        """仓库路由：确定搜索目标仓库集合。"""
+        """经统一仓库路由服务确定搜索目标仓库集合。"""
         if repository_ids:
             return (
                 LayerResult(layer="L1", status="skipped", result_count=len(repository_ids)),
                 repository_ids,
             )
+        started = time.perf_counter()
         try:
-            from codegraph.services.repo_router import RepoRouter
+            from codegraph.services.repo_router_v2 import RepoRouterV2
 
-            route_results = await RepoRouter.route(query, top_k=min(top_k, 5))
-            repo_ids = [r.repo_id for r in route_results]
+            route_result = await RepoRouterV2.route(
+                query, top_k=min(top_k, 5), use_llm=False,
+            )
+            repo_ids = [candidate.repo_id for candidate in route_result.candidates]
             items = [
-                {"repo_id": r.repo_id, "repo_name": r.repo_name, "score": r.final_score, "match_reason": r.match_reason}
-                for r in route_results
+                {
+                    "repo_id": candidate.repo_id,
+                    "repo_name": candidate.repo_name,
+                    "score": candidate.score,
+                    "match_reason": candidate.reasoning,
+                    "router_version": route_result.router_version,
+                    "degraded": route_result.degraded,
+                }
+                for candidate in route_result.candidates
             ]
+            try:
+                logger.debug(
+                    "layered_search_l1_routed",
+                    category="sampling",
+                    component="retrieval",
+                    result_count=len(repo_ids),
+                    router_version=route_result.router_version,
+                    degraded=route_result.degraded,
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                )
+            except Exception:  # noqa: BLE001
+                pass
             return LayerResult(layer="L1", status="ok", result_count=len(repo_ids), items=items), repo_ids
         except Exception as e:
-            logger.warning("l1_routing_failed", query=query[:100], error=str(e))
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "layered_search_l1_routing_failed",
+                category="sampling",
+                component="retrieval",
+                query_len=len(query or ""),
+                error=redact_secrets_in_text(str(e)),
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
             # 降级: 返回所有已索引仓库
             from repositories.models import IndexStatus, Repository
 

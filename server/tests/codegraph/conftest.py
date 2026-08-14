@@ -13,10 +13,10 @@ from typing import Any, NamedTuple
 from unittest.mock import patch
 
 import pytest
-from asgiref.sync import sync_to_async
 
 from codegraph.models import CallEdge, Symbol
-from codegraph.services.repo_router import RepoRouteResult
+from codegraph.services.repo_router_v2 import RepoRouteCandidateV2, RepoRouteResultV2
+from codegraph.services.repo_summaries_channel import RepoSummaryRouteResult as RepoRouteResult
 from repositories.models import Repository
 
 
@@ -719,9 +719,25 @@ def golden_mock_environment_context():
 
     current_query_state: dict[str, str] = {"value": ""}
 
-    async def _golden_route(query: str, *, top_k: int = 3) -> list[RepoRouteResult]:
+    async def _golden_route(
+        query: str, *, top_k: int = 3, use_llm: bool = False,
+    ) -> RepoRouteResultV2:
         route_calls.append((query, top_k))
-        return list(GOLDEN_ROUTE_TABLE.get(query, []))
+        return RepoRouteResultV2(
+            candidates=[
+                RepoRouteCandidateV2(
+                    repo_id=item.repo_id,
+                    repo_name=item.repo_name,
+                    score=item.final_score,
+                    confidence="medium",
+                    reasoning=item.match_reason,
+                )
+                for item in list(GOLDEN_ROUTE_TABLE.get(query, []))
+            ],
+            router_version="v2_stage0_only",
+            auto_selected=False,
+            degraded=True,
+        )
 
     def _golden_symbol_filter(**kwargs: Any) -> _GoldenFakeQuerySet:
         symbol_filter_calls.append(dict(kwargs))
@@ -796,7 +812,7 @@ def golden_mock_environment_context():
 
     with contextlib.ExitStack() as stack:
         stack.enter_context(patch(
-            "codegraph.services.repo_router.RepoRouter.route",
+            "codegraph.services.repo_router_v2.RepoRouterV2.route",
             new=_golden_route,
         ))
         stack.enter_context(patch.object(
@@ -848,7 +864,7 @@ def golden_mock_environment():
     per contract / implementation plan Task 1。同一 query 多次跑 final_context 一致。
 
     Patches:
-      1. codegraph.services.repo_router.RepoRouter.route
+      1. codegraph.services.repo_router_v2.RepoRouterV2.route
       2. codegraph.models.Symbol.objects.filter / .get
       3. services.branch_search.BranchAwareSearchService.search
       4. services.embedding.EmbeddingService.generate_embedding
