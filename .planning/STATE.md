@@ -4,13 +4,13 @@ milestone: v0.23.0
 milestone_name: 仓库路由增强（分阶段决策漏斗）
 status: verifying
 stopped_at: v0.23.0 ROADMAP created（Phases 128–132，25/25 REQ mapped）；ready to discuss Phase 128
-last_updated: "2026-08-14T06:36:29.881Z"
+last_updated: "2026-08-14T06:39:50.390Z"
 last_activity: 2026-08-14 — Phase 130 plans 01–03 executed；VERIFICATION passed（41 pytest 分段）
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 14
-  completed_plans: 11
+  completed_plans: 12
   percent: 40
 ---
 
