@@ -93,7 +93,8 @@ class RepoAssociationService:
             ``[{repo_id, repo_name, score, confidence, reason, matched_node_paths}]``。
         """
         flat = self._normalize_features(feature_list, features_flat)
-        query = self._build_query(flat)
+        # Phase 128：画像语料构建检索 query（剔除 acceptance）；画像 degrade 仍可走门禁。
+        query = await self._abuild_profile_query(flat, feature_list=feature_list)
         return await self._route_and_persist(
             space=space,
             project=project,
@@ -121,7 +122,9 @@ class RepoAssociationService:
         不在新结果中）。每轮各写一条 RetrievalTrace。
         """
         flat = self._normalize_features(feature_list, features_flat)
-        query = self._build_query(flat, extra_instruction=extra_instruction)
+        query = await self._abuild_profile_query(
+            flat, feature_list=feature_list, extra_instruction=extra_instruction
+        )
         return await self._route_and_persist(
             space=space,
             project=project,
@@ -151,15 +154,74 @@ class RepoAssociationService:
         )
 
         repo_ids = await self._resolve_repository_ids(space, project)
-        # 候选范围限定 Space.repositories：为空或无 query 时绝不全库检索（Pitfall 6），
-        # 直接返回空提案（fail-soft）。
-        if not repo_ids or not query:
+        # Phase 128：空/缺 team_core → clarify（D3），禁止静默成功空候选当「无事发生」。
+        if not repo_ids:
+            logger.info(
+                event,
+                candidate_count=0,
+                router_version="clarify",
+                round=round_no,
+                query_len=len(query),
+                scoped_repo_count=0,
+                status="clarify",
+                clarify_reason="empty_team_core",
+                duration_ms=round((perf_counter() - started) * 1000, 2),
+                initiated_by_user_id=user_label,
+                component=_COMPONENT,
+                category="caller",
+            )
+            return {
+                "candidates": [],
+                "router_version": "clarify",
+                "auto_selected": False,
+                "query_len": len(query),
+                "status": "clarify",
+                "clarify_reason": "empty_team_core",
+                "team_core": [],
+                "team_core_count": 0,
+            }
+
+        # 索引过滤：挂载仓全无索引 → clarify（TEAM-03）
+        from services.process_runtime.team_gate import filter_indexed_repository_ids
+
+        try:
+            indexed_ids = await filter_indexed_repository_ids(repo_ids)
+        except Exception:  # noqa: BLE001
+            indexed_ids = []
+        if not indexed_ids:
+            logger.info(
+                event,
+                candidate_count=0,
+                router_version="clarify",
+                round=round_no,
+                query_len=len(query),
+                scoped_repo_count=len(repo_ids),
+                status="clarify",
+                clarify_reason="empty_team_core",
+                duration_ms=round((perf_counter() - started) * 1000, 2),
+                initiated_by_user_id=user_label,
+                component=_COMPONENT,
+                category="caller",
+            )
+            return {
+                "candidates": [],
+                "router_version": "clarify",
+                "auto_selected": False,
+                "query_len": len(query),
+                "status": "clarify",
+                "clarify_reason": "empty_team_core",
+                "team_core": [],
+                "team_core_count": 0,
+            }
+        repo_ids = indexed_ids
+
+        if not query:
             logger.info(
                 event,
                 candidate_count=0,
                 router_version="skipped",
                 round=round_no,
-                query_len=len(query),
+                query_len=0,
                 scoped_repo_count=len(repo_ids or []),
                 duration_ms=round((perf_counter() - started) * 1000, 2),
                 initiated_by_user_id=user_label,
@@ -170,7 +232,7 @@ class RepoAssociationService:
                 "candidates": [],
                 "router_version": "skipped",
                 "auto_selected": False,
-                "query_len": len(query),
+                "query_len": 0,
             }
 
         # COMBINED 选仓：复用 RepoRouterV2（语义+活跃度+LLM 三合一），包 call_source 补埋点。
@@ -525,6 +587,30 @@ class RepoAssociationService:
         if len(query) > _QUERY_CHAR_BUDGET:
             query = query[:_QUERY_CHAR_BUDGET]
         return query
+
+    async def _abuild_profile_query(
+        self,
+        features_flat: list[dict[str, Any]],
+        *,
+        feature_list: Any = None,
+        extra_instruction: str | None = None,
+    ) -> str:
+        """经画像 corpus 构建检索 query（PROF-02：不把 acceptance 当主语料）。"""
+        try:
+            from services.process_runtime.initiative_profile import select_profile_corpus
+
+            corpus = select_profile_corpus(feature_list, features_flat=features_flat)
+            if corpus.sufficient and corpus.texts:
+                body = "\n".join(corpus.texts)
+                instruction = (extra_instruction or "").strip()
+                if instruction:
+                    body = f"额外要求：{instruction}\n{body}"
+                if len(body) > _QUERY_CHAR_BUDGET:
+                    body = body[:_QUERY_CHAR_BUDGET]
+                return body
+        except Exception:  # noqa: BLE001 — fail-soft 回落旧拼法
+            pass
+        return self._build_query(features_flat, extra_instruction=extra_instruction)
 
     @staticmethod
     def _candidate_dict(candidate: Any) -> dict[str, Any]:

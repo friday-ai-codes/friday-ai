@@ -1023,6 +1023,9 @@ class RouteBlueprintReposRequestSerializer(serializers.Serializer):
     )
     requirement_spec = serializers.JSONField(required=False, allow_null=True, default=None)
     project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    space_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    team_id = serializers.CharField(required=False, allow_blank=True, default="")
+    primary_team = serializers.CharField(required=False, allow_blank=True, default="")
     include_repository_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,

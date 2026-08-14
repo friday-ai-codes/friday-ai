@@ -206,6 +206,9 @@ async def arun_route_stage(
     requirement_spec: dict | None = None,
     requirement_text: str = "",
     project_id: str = "",
+    space_id: str = "",
+    team_id: str = "",
+    primary_team: str = "",
     include_repository_ids: list[str] | None = None,
     exclude_repository_ids: list[str] | None = None,
     ignore_pin: bool = False,
@@ -215,24 +218,63 @@ async def arun_route_stage(
 ) -> dict:
     """三分量融合路由单跑：返回与 `stage_state["routing"]` 逐键同形的契约摘要。
 
-    候选范围三级：显式 ``include_repository_ids`` > ``project_id`` 所属 space 仓库集 >
-    全库。``ignore_pin=True`` 跳过项目手动绑定的固定路由短路。零落库（dry-run）。
+    候选范围：显式 ``include_repository_ids`` 与团队 ``team_core`` 求交。
+    **漏斗 MCP 禁止**无团队时全库 primary（D1/D3）——无法识别团队 → clarify。
+    裸 ``RepoRouterV2.route`` 无 grouping 的全局路径仍保留兼容，但不经本入口。
     """
     started = time.monotonic()
     spec = _normalize_requirement_spec(requirement_spec, requirement_text)
 
+    resolved_team = str(team_id or primary_team or "").strip()
+    resolved_space = str(space_id or "").strip()
     include = [str(r) for r in (include_repository_ids or []) if str(r or "")]
     if not include and str(project_id or ""):
         try:
             include = await _project_scope_repository_ids(str(project_id)) or []
-        except Exception:  # noqa: BLE001 — 范围解析 best-effort，失败退化全库
+        except Exception:  # noqa: BLE001 — 范围解析 best-effort
             include = []
+
+    # 无任何团队上下文且无 project 挂载仓 → clarify（禁止静默全库 primary）
+    if not str(project_id or "") and not resolved_space and not resolved_team and not include:
+        offer_spaces = await _aenumerate_space_offer()
+        duration_ms = round((time.monotonic() - started) * 1000, 2)
+        logger.info(
+            "blueprint_stage_route_sandbox_clarify",
+            category="caller",
+            component=_COMPONENT,
+            initiated_by_user_id=_initiated(initiated_by_user_id),
+            clarify_reason="missing_team",
+            duration_ms=duration_ms,
+        )
+        return {
+            "router_version": "clarify",
+            "auto_selected": False,
+            "intent": "",
+            "weights_used": {},
+            "charter_supplement_count": 0,
+            "unjustified_boundary_hit_count": 0,
+            "candidates": [],
+            "citations": [],
+            "status": "clarify",
+            "clarify_reason": "missing_team",
+            "team_core": [],
+            "team_core_count": 0,
+            "offer": {"bind_space": True, "spaces": offer_spaces},
+        }
 
     stage_state: dict[str, Any] = {"requirement_spec": spec}
     if include:
         stage_state["include_repos"] = include
+    decomposition: dict[str, Any] = {}
     if str(project_id or ""):
-        stage_state["decomposition"] = {"project_id": str(project_id)}
+        decomposition["project_id"] = str(project_id)
+    if resolved_space:
+        decomposition["space_id"] = resolved_space
+    if resolved_team:
+        decomposition["team_id"] = resolved_team
+        decomposition["primary_team"] = resolved_team
+    if decomposition:
+        stage_state["decomposition"] = decomposition
     session = SandboxSession(stage_state=stage_state, initiated_by_user_id=initiated_by_user_id)
 
     from services.process_runtime.blueprint_route import BlueprintRouteAdapter
@@ -252,9 +294,23 @@ async def arun_route_stage(
         router_version=str(summary.get("router_version") or ""),
         ignore_pin=bool(ignore_pin),
         scope_repository_count=len(include),
+        status=str(summary.get("status") or ""),
+        clarify_reason=str(summary.get("clarify_reason") or ""),
         duration_ms=round((time.monotonic() - started) * 1000, 2),
     )
     return summary
+
+
+@sync_to_async
+def _aenumerate_space_offer(limit: int = 20) -> list[dict[str, str]]:
+    """可枚举 Spaces 时填 offer.spaces（id+name，无密钥）。"""
+    try:
+        from projects.models import Space
+
+        rows = list(Space.objects.order_by("-updated_at").values("id", "name")[:limit])
+        return [{"id": str(r["id"]), "name": str(r["name"] or "")} for r in rows]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 # ── spec 单跑 ─────────────────────────────────────────────────────────────

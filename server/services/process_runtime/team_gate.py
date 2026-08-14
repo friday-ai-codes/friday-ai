@@ -24,6 +24,7 @@ __all__ = [
     "resolve_team_core",
     "annotate_team_membership",
     "apply_team_gate",
+    "filter_indexed_repository_ids",
 ]
 
 _COMPONENT = "process_runtime"
@@ -51,6 +52,22 @@ def _load_space_repo_ids(space_id: str) -> list[str] | None:
     if space is None:
         return None
     return [str(r) for r in space.repositories.values_list("id", flat=True)]
+
+
+@sync_to_async
+def filter_indexed_repository_ids(repository_ids: Collection[str]) -> list[str]:
+    """返回已索引（``index_status=indexed``）的仓库 id 子集。"""
+    from repositories.models import IndexStatus, Repository
+
+    ids = [str(r) for r in repository_ids if str(r or "").strip()]
+    if not ids:
+        return []
+    return [
+        str(r)
+        for r in Repository.objects.filter(
+            id__in=ids, index_status=IndexStatus.INDEXED, is_deleted=False
+        ).values_list("id", flat=True)
+    ]
 
 
 @sync_to_async

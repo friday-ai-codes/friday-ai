@@ -5535,6 +5535,9 @@ class RouteBlueprintReposView(McpToolView):
             requirement_spec=spec if isinstance(spec, dict) else None,
             requirement_text=str(input_data.get("requirement_text") or ""),
             project_id=str(input_data.get("project_id") or ""),
+            space_id=str(input_data.get("space_id") or ""),
+            team_id=str(input_data.get("team_id") or ""),
+            primary_team=str(input_data.get("primary_team") or ""),
             include_repository_ids=[
                 str(r) for r in (input_data.get("include_repository_ids") or [])
             ],
