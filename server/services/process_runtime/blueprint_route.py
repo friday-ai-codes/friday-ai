@@ -658,12 +658,32 @@ class BlueprintRouteAdapter:
                     degrade_reason=str(profile_result.get("degrade_reason") or ""),
                 )
 
+        # Phase 129：team_gate 后 → history prior → shortlist → role_map（D-15）
+        mid = await self._aapply_shortlist_role_map(
+            session=session,
+            query=query,
+            query_terms=query_terms,
+            team_core=repository_ids,
+            intent=intent,
+            weights=weights,
+            profile_result=profile_result,
+        )
+        if mid.get("status") == "clarify":
+            return mid["clarify"]
+        shortlist_payload = mid["shortlist"]
+        role_map_payload = mid["role_map"]
+        placement_defaults = mid["placement_defaults"]
+        shortlist_ids = list(mid["shortlist_ids"])
+        # 后续 V2/融合硬限制在 shortlist（不得逃逸到 team 外/全库）
+        repository_ids = shortlist_ids or repository_ids
+
         router = self._resolve_router()
         result = await router.route(
             query, top_k=self.top_k, repository_ids=repository_ids, use_llm=True
         )
         router_version = str(getattr(result, "router_version", "") or "")
         auto_selected = bool(getattr(result, "auto_selected", False))
+        shortlist_set = set(shortlist_ids)
 
         # 逐字段显式映射（不 to_dict() 整包透传：新增分量时形状变更点唯一）
         raw_candidates: list[dict] = [
@@ -679,6 +699,7 @@ class BlueprintRouteAdapter:
             for c in getattr(result, "candidates", []) or []
             if str(getattr(c, "repo_id", "") or "")
             and str(getattr(c, "repo_id", "")) not in excluded
+            and (not shortlist_set or str(getattr(c, "repo_id", "")) in shortlist_set)
         ]
 
         supplements = await self._collect_supplements(
@@ -686,6 +707,8 @@ class BlueprintRouteAdapter:
             exclude_repository_ids={c["repository_id"] for c in raw_candidates} | excluded,
             repository_ids=repository_ids,
         )
+        if shortlist_set:
+            supplements = [s for s in supplements if s.get("repository_id") in shortlist_set]
         raw_candidates.extend(supplements)
         # 118（LIVE-02）：召回一完成就发一条活动事件——打分/调研可能要跑好几十秒，
         # 在此之前用户此前看到的只有一个转圈。⛔ best-effort，绝不反噬路由。
@@ -781,15 +804,19 @@ class BlueprintRouteAdapter:
             "candidates": candidates,
             "citations": citations,
             "status": "ok",
-            "team_core": list(repository_ids),
-            "team_core_count": len(repository_ids),
+            "team_core": list(team_gate.get("team_core") or []),
+            "team_core_count": len(list(team_gate.get("team_core") or [])),
             "profile": profile_result.get("profile"),
             "degrade_reason": str(profile_result.get("degrade_reason") or ""),
+            "shortlist": shortlist_payload,
+            "shortlist_count": len(shortlist_ids),
+            "role_map": role_map_payload,
+            "placement_defaults": placement_defaults,
         }
         from services.process_runtime.team_gate import annotate_team_membership
 
         summary["candidates"] = annotate_team_membership(
-            summary["candidates"], repository_ids
+            summary["candidates"], list(team_gate.get("team_core") or [])
         )
         await self._emit_scored(session, summary)
         logger.info(
@@ -800,12 +827,193 @@ class BlueprintRouteAdapter:
             intent=intent,
             charter_supplement_count=len(supplements),
             unjustified_boundary_hit_count=unjustified_count,
-            team_core_count=len(repository_ids),
+            team_core_count=len(list(team_gate.get("team_core") or [])),
+            shortlist_count=len(shortlist_ids),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
             category="sampling",
             component="process_runtime",
         )
         return summary
+
+    async def _aapply_shortlist_role_map(
+        self,
+        *,
+        session,
+        query: str,
+        query_terms: list[str],
+        team_core: list[str],
+        intent: str,
+        weights,
+        profile_result: dict,
+    ) -> dict:
+        """Phase 129 中段：history prior → shortlist → role_map。
+
+        role_map clarify → 返回 clarify 载荷（candidates 空，不塞全库）。
+        best-effort：分步失败不阻断，降级为空 shortlist 信号。
+        """
+        from services.process_runtime.history_prior import asplit_history_priors
+        from services.process_runtime.role_map import build_role_map
+        from services.process_runtime.shortlist import build_shortlist
+
+        team_ids = [str(r) for r in (team_core or []) if str(r or "").strip()]
+        history_prior = None
+        try:
+            history_prior = await asplit_history_priors(
+                query=query,
+                team_core=team_ids,
+                candidate_repository_ids=team_ids,
+                session=session,
+            )
+        except Exception as exc:  # noqa: BLE001
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "blueprint_route_history_prior_failed",
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+
+        # 信号：先在 team_core 上取 V2 粗分（不改 V2 内核）；失败则空分
+        capability_scores: dict[str, float] = {}
+        activity_scores: dict[str, float] = {}
+        try:
+            router = self._resolve_router()
+            signal_result = await router.route(
+                query,
+                top_k=max(self.top_k, len(team_ids) or 1),
+                repository_ids=team_ids,
+                use_llm=False,
+            )
+            for c in getattr(signal_result, "candidates", []) or []:
+                rid = str(getattr(c, "repo_id", "") or "")
+                if not rid:
+                    continue
+                score = float(getattr(c, "score", 0.0) or 0.0)
+                capability_scores[rid] = score
+                activity_scores[rid] = score
+        except Exception as exc:  # noqa: BLE001
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "blueprint_route_shortlist_signal_failed",
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+
+        charter_domain_scores: dict[str, float] = {}
+        planned_ids: list[str] = []
+        charters: dict = {}
+        try:
+            charters = await self._aload_charters(team_ids)
+            for rid in team_ids:
+                cr = self._score_charter(charters.get(rid), query_terms)
+                charter_domain_scores[rid] = max(0.0, float(cr.score or 0.0))
+                if any(
+                    str(d.get("status") or "").lower() == "planned"
+                    for d in (cr.matched_domains or [])
+                    if isinstance(d, dict)
+                ):
+                    planned_ids.append(rid)
+        except Exception as exc:  # noqa: BLE001
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "blueprint_route_shortlist_charter_failed",
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+
+        force_ids = list(getattr(history_prior, "force_include_ids", None) or [])
+        reason_map = dict(getattr(history_prior, "reasons_by_repo", None) or {})
+        try:
+            shortlist_result = await build_shortlist(
+                team_core=team_ids,
+                activity_scores=activity_scores,
+                capability_scores=capability_scores,
+                charter_domain_scores=charter_domain_scores,
+                planned_charter_ids=planned_ids,
+                force_include_ids=force_ids,
+                force_include_reasons_by_id=reason_map,
+                top_n=max(int(self.top_k), 10),
+            )
+        except Exception as exc:  # noqa: BLE001
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "blueprint_route_shortlist_failed",
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+            shortlist_result = None
+
+        shortlist_repos = list(getattr(shortlist_result, "repositories", None) or [])
+        shortlist_ids = [r["repository_id"] for r in shortlist_repos if r.get("repository_id")]
+        if not shortlist_ids:
+            shortlist_ids = list(team_ids)
+
+        try:
+            role_map_result = build_role_map(
+                shortlist_repos=shortlist_ids,
+                charters_by_repo={rid: charters.get(rid) for rid in shortlist_ids},
+                profile=profile_result.get("profile")
+                if isinstance(profile_result.get("profile"), dict)
+                else None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "blueprint_route_role_map_failed",
+                error=redact_secrets_in_text(str(exc)),
+                category="sampling",
+                component="process_runtime",
+            )
+            from services.process_runtime.role_map import PLACEMENT_DEFAULTS, RoleMapResult
+
+            role_map_result = RoleMapResult(
+                status="ok", placement_defaults=dict(PLACEMENT_DEFAULTS)
+            )
+
+        placement_defaults = dict(
+            getattr(role_map_result, "placement_defaults", None) or {}
+        )
+        role_map_payload = {
+            "status": getattr(role_map_result, "status", "ok"),
+            "clarify_reason": getattr(role_map_result, "clarify_reason", ""),
+            "roles": getattr(role_map_result, "roles", {}) or {},
+            "per_repo": getattr(role_map_result, "per_repo", []) or [],
+            "placement_defaults": placement_defaults,
+        }
+        shortlist_payload = shortlist_repos
+
+        if getattr(role_map_result, "status", "ok") == "clarify":
+            clarify = self._clarify_result(
+                intent=intent,
+                weights_used=_weights_for(weights, intent),
+                clarify_reason=str(
+                    getattr(role_map_result, "clarify_reason", "") or "unmapped_role"
+                ),
+                team_core=team_ids,
+                profile=profile_result.get("profile"),
+                degrade_reason=str(profile_result.get("degrade_reason") or ""),
+            )
+            clarify["shortlist"] = shortlist_payload
+            clarify["shortlist_count"] = len(shortlist_ids)
+            clarify["role_map"] = role_map_payload
+            clarify["placement_defaults"] = placement_defaults
+            return {"status": "clarify", "clarify": clarify}
+
+        return {
+            "status": "ok",
+            "shortlist": shortlist_payload,
+            "shortlist_ids": shortlist_ids,
+            "role_map": role_map_payload,
+            "placement_defaults": placement_defaults,
+        }
 
     # ── 内部步骤（各自 best-effort，单个依赖失败不拖垮路由） ──────────────
 

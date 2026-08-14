@@ -215,6 +215,32 @@ class RepoAssociationService:
             }
         repo_ids = indexed_ids
 
+        # Phase 129：在 team_core 范围内 shortlist 收窄（至少 primary/候选不超出 shortlist）
+        try:
+            from services.process_runtime.history_prior import asplit_history_priors
+            from services.process_runtime.shortlist import build_shortlist
+
+            history_prior = await asplit_history_priors(
+                query=query,
+                team_core=repo_ids,
+                candidate_repository_ids=repo_ids,
+            )
+            shortlist_result = await build_shortlist(
+                team_core=repo_ids,
+                force_include_ids=list(history_prior.force_include_ids or []),
+                force_include_reasons_by_id=dict(history_prior.reasons_by_repo or {}),
+                top_n=max(_TOP_K, 10),
+            )
+            narrowed = [
+                r["repository_id"]
+                for r in (shortlist_result.repositories or [])
+                if r.get("repository_id")
+            ]
+            if narrowed:
+                repo_ids = narrowed
+        except Exception:  # noqa: BLE001 — fail-soft：收窄失败仍用 team_core，不回退全库
+            pass
+
         if not query:
             logger.info(
                 event,
