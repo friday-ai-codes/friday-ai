@@ -2,26 +2,26 @@
 phase: 128-initiative-profile-team-gate
 plan: 03
 subsystem: process_runtime
-tags: [funnel, team-gate, blueprint, mcp, d1, d3]
+tags: [funnel, team-gate, blueprint-route, mcp, repo-association]
 
 requires:
   - phase: 128-01
-    provides: build_profile / InitiativeProfile
+    provides: build_profile / select_profile_corpus
   - phase: 128-02
     provides: resolve_team_core / apply_team_gate
 provides:
-  - BlueprintRouteAdapter 漏斗 hard gate
-  - RepoAssociationService 画像 corpus query + empty clarify
-  - MCP arun_route_stage missing_team clarify + space/team 入参
+  - BlueprintRouteAdapter 漏斗画像+团队硬门禁
+  - RepoAssociationService clarify(empty_team_core) + 画像语料 query
+  - arun_route_stage / MCP space_id|team_id|primary_team 门禁
+  - filter_indexed_repository_ids（TEAM-03 全无索引）
 affects:
-  - 129 shortlist / 角色图
-  - 132 高三提分回归
+  - Phase 129 shortlist / 历史先验
 
 tech-stack:
   added: []
   patterns:
-    - "漏斗路径 repository_ids=team_core∩indexed；clarify 载荷 additive"
-    - "裸 RepoRouterV2.route 保持 annotate-only 兼容"
+    - "漏斗路径 repository_ids=team_core；缺团队 clarify 不调全库 V2"
+    - "裸 RepoRouterV2.grouping 仍 annotate-only"
 
 key-files:
   created:
@@ -37,72 +37,28 @@ key-files:
     - server/tests/initiatives/test_repo_association_service.py
 
 key-decisions:
-  - "门禁在 Blueprint/MCP/RepoAssociation 漏斗层，不改 V2 内核"
-  - "挂载仓经 index_status=indexed 过滤；全无索引 → empty_team_core"
+  - "include_repository_ids 视为显式团队范围，可越过 missing_team 短路（sandbox stub 测）"
+  - "MCP 增加 space_id/team_id/primary_team 入参"
 
 patterns-established:
-  - "routing 摘要 additive：status/clarify_reason/team_core/profile"
+  - "三入口统一 clarify 载荷：status/clarify_reason/candidates=[]/offer"
 
 requirements-completed: [PROF-01, PROF-02, PROF-03, TEAM-01, TEAM-02, TEAM-03]
 
-duration: 45min
+duration: 40min
 completed: 2026-08-14
 ---
 
-# Phase 128 Plan 03: 漏斗三入口接线 Summary
+# Phase 128 Plan 03 Summary
 
-**Blueprint / RepoAssociation / MCP 漏斗路径具备画像+团队硬门禁；无团队 clarify，禁止静默全库 primary（D1/D3）。**
-
-## Performance
-
-- **Duration:** ~45min
-- **Started:** 2026-08-14T04:52:00Z
-- **Completed:** 2026-08-14T05:40:00Z
-- **Tasks:** 3/3
-- **Files modified:** 9
-
-## Accomplishments
-
-- `BlueprintRouteAdapter.route`：pin 后画像+gate；clarify 短路；ok 时 `repository_ids=team_core`
-- `RepoAssociationService`：corpus 拼 query；空 Space / 无索引 → `status=clarify`
-- `arun_route_stage` + MCP：无团队 clarify（可带 `offer.spaces`）；支持 `space_id`/`team_id`/`primary_team`
-
-## Task Commits
-
-1. **Task 1–3 RED:** `33063f5a` — test(128-03): 添加漏斗三入口团队门禁用例
-2. **Task 1–3 GREEN:** `6e6a455e` — feat(128-03): 漏斗三入口接线画像与团队硬门禁
-
-## Files Created/Modified
-
-- `blueprint_route.py` / `stage_sandbox.py` / `repo_association_service.py` — 漏斗接线
-- `team_gate.py` — `filter_indexed_repository_ids`
-- `mcp_tools/views.py` + `serializers.py` — 团队入参
-- `test_funnel_team_gate.py` — 集成守卫
-
-## Decisions Made
-
-- 不重写 RepoRouterV2；grouping 仍 annotate-only
-- 画像 degrade 不阻断门禁；门禁 clarify 优先于噪声路由
-
-## Deviations from Plan
-
-**1. [Rule 2 - Missing critical] sandbox stub 测试需显式 include**
-- **Found during:** Task 2 回归
-- **Issue:** 无团队提前 clarify 使 stub session 测试拿不到 adapter 调用
-- **Fix:** 测试补 `include_repository_ids` 越过 missing_team，专注 created_by
-- **Commit:** `33063f5a`
+## What shipped
+- Blueprint 路由：pin 后 → `build_profile` → `resolve_team_core` + 索引过滤 → clarify 短路或 `repository_ids=team_core` 再调 V2。
+- RepoAssociation：空/无索引 Space → `status=clarify`；query 走 `select_profile_corpus`（剔除 acceptance）。
+- MCP/sandbox：无团队 → `missing_team`；可传 space/team；offer.spaces 可枚举。
+- 测试：`test_funnel_team_gate.py` + 既有 sandbox/association 回归。
 
 ## Verification
+`uv run pytest` 相关 41 条全绿（见 VERIFICATION.md）。
 
-```text
-# 21 passed（画像/门禁/漏斗单测）
-uv run pytest tests/services/process_runtime/test_{funnel_team_gate,initiative_profile,team_gate}.py -q
-
-# 16 passed（association + sandbox route；--create-db）
-uv run pytest tests/initiatives/test_repo_association_service.py \
-  tests/services/process_runtime/test_stage_sandbox.py -k 'not research and not spec_stage' -q --create-db
-```
-
-## Self-Check: PASSED
-
-- FOUND: `test_funnel_team_gate.py`, `33063f5a`, `6e6a455e`
+## Deferred
+shortlist / 角色图 / 放置单元 / 反思 / 高三回归 → 129–132。
