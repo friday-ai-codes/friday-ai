@@ -1,18 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.22.0
-milestone_name: 代码智能图分析升级（对标 GitNexus）
-status: completed
-stopped_at: Milestone v0.22.0 archived（tech_debt，未打 tag）
-last_updated: "2026-08-11T03:15:00.000Z"
-last_activity: 2026-08-11
-last_activity_desc: 归档 v0.22.0（override_closeout / tech_debt）
+milestone: v0.23.0
+milestone_name: 仓库路由增强（分阶段决策漏斗）
+status: planning
+last_updated: "2026-08-14T04:26:39.271Z"
+last_activity: 2026-08-14
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 44
-  completed_plans: 44
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -29,10 +27,10 @@ See: .planning/PROJECT.md（updated 2026-08-11，v0.22.0 归档后）。v0.22.0 
 
 ## Current Position
 
-Phase: —
+Phase: Not started (defining requirements)
 Plan: —
-Status: v0.22.0 已归档（tech_debt / override_closeout），等待下一里程碑立项
-Last activity: 2026-08-11 — 归档 v0.22.0：相位 121–127 移入 milestones/v0.22.0-phases/，台账中文化收口
+Status: Defining requirements
+Last activity: 2026-08-14 — Milestone v0.23.0 started
 
 ## Milestone Overview (v0.22.0 — Phases 121–127 — ✅ ARCHIVED 2026-08-11，审计 tech_debt，未打 tag)
 
@@ -924,6 +922,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 | 260808-fn3 | 数据运维：归档 260807 批量导入的 532 个历史项目（ricelove: 247 / ricelove-scheme: 284 / release-bitable: 1，全是模型默认「开发中」）并删除其 377 条导入时统一绑 default_branch 的分支绑定（master 对应 ~300 项目，反查失效）；全走 service 层（archive/unbind，审计归因 admin），零错误；终态 developing 仅剩 3 个手工项目、剩余绑定 6 条全属真实项目；⛔ 4 个 `default_branch=feat/coding-agent-base` 仓库按用户确认不动。教训：导入历史数据应显式 `status=archived`、拿不到真实分支不要退绑默认分支 | 2026-08-08 | (pending) | [260808-fn3-archive-imported-projects](./quick/260808-fn3-archive-imported-projects/) |
 | 260808-fsa | Friday 技术方案能力做成宿主 subagent（skills 子仓 80f4016 / mcp 子仓 9c997b8）：新增 `friday-plan`（技术方案编排专员——发起段原样带回待确认项、续跑段确认+轮询到终态，覆盖 feature 三段链与飞书蓝图澄清链，绝不代答）与 `friday-research`（只读调研专员，带 ID 出处证据摘要）两个 subagent 定义；安装器把它们装进 Cursor/Claude Code 原生 agents 目录（Cursor 变体剥离 Claude 专属 frontmatter 键），Claude 插件形态经 plugin.json `"agents"` 字段自动带上；skills 0.6.0 → 0.7.0。MCP server 代码不动：现有 pending/轮询/作答工具形状已与 MCP Tasks 扩展（2026-07-28 spec）语义对齐，待客户端支持后再做标准映射 | 2026-08-08 | 80f4016 (skills) | [260808-friday-subagents](./quick/260808-friday-subagents/) |
 | 260808-g1c | AI 对话思考过程全量实时展示 + 上游抹思考时显示「正在思考」：先实测定位到首字慢与自家代码无关（SSE 通道 106–132ms 通、服务端本地开销仅 ~150ms，其余全在等网关；prompt 体积与首字无关：28 tok→2.4s / 3268 tok→2.16s / 26290 tok→3.63s），真凶是网关把 thinking 文本整段抹掉只转发 signature（`claude-opus-4-8` 采样 4/4 全 0 字符，`claude-sonnet-5`/`claude-opus-4-5`/`claude-fable-5` 同样；`claude-opus-4-6` 4/4 有 306–464 字符，`claude-opus-5` 该网关不存在）。按用户决定**不切换模型**，保持 `claude-opus-4-8`。前端把 thinking 折叠 Set 语义反转为「记录手动收起的 id」（不能用展开集合——parts 流式增长会让后到的 part 退回收起态）、删 80/90 字符预览截断与 `max-height` 裁切；⛔ 计划里的占位触发条件 `groupedDisplayItems.length === 0` 恒不成立（流式兜底会合成一条 `text=''` 的 text part），必须改用 `hasVisibleContent`（空 text part 不算内容）否则占位是死代码。后端补 `chat_thinking_text_empty` 采样事件（已在真实网关验证触发）。前端 2328 测试全绿 | 2026-08-08 | a77f3470 | [260808-g1c-ai-thinking-claude-opus-4-6](./quick/260808-g1c-ai-thinking-claude-opus-4-6/) |
+| 260811-av8 | 统一仓库路由 service：v1 的 `repo_summaries` BM25+dense+关键词微调内化为 RepoRouterV2 摘要回退通道；LayeredSearch L1 统一走 V2 且禁用 LLM；静态守卫阻止生产代码重引旧入口；126 条回归全绿 | 2026-08-11 | (pending) | [260811-av8-v1-bm25-embedding-v2-service](./quick/260811-av8-v1-bm25-embedding-v2-service/) |
 
 ## Deferred Items
 

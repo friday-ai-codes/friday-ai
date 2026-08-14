@@ -14,7 +14,7 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Latest shipped:** v0.22.0 代码智能图分析升级（对标 GitNexus）（2026-08-11，审计 **tech_debt**，27 条需求 26 满足 / 1 部分（IMPACT-03），Phases 121–127，44 plans，**未打 tag**）；此前为 v0.21.0 蓝图过程可见与返工闭环（2026-08-05，验证 **tech_debt**，Phases 117–120）、v0.20.0 技术方案蓝图与 v0.19.0 技术方案可信度（2026-08-02 双归档合并）。里程碑 v0.1.0–v0.22.0（Phases 1–127）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
 
-**当前无在建里程碑**——下一里程碑待 `$gsd-new-milestone` 立项。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
+**当前在建：** v0.23.0 仓库路由增强（分阶段决策漏斗）。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -30,9 +30,25 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone
+## Current Milestone: v0.23.0 仓库路由增强（分阶段决策漏斗）
 
-无在建里程碑。下一里程碑通过 `$gsd-new-milestone` 立项（重新生成 `REQUIREMENTS.md`）。
+**Goal:** 把「全库单段文本相似度选仓」升级为「画像 → 团队门禁 → 短名单 → 章程/历史 → 功能单元落点 → 一致性门禁与反思」的可解释决策漏斗，使 feature list 类需求（如「高三提分专项」）能稳定命中正确仓集，而不是漂到语义巧合仓。
+
+**Target features:**
+- 专项画像（模块总览/简述驱动；测试 case 不进主 query）
+- 团队 / 空间门禁（`team_core` 优先；`out_of_team` 默认不可作 primary）
+- 团队内短名单（活跃度 + 能力树粗相关 + 章程 domain + 历史先验）
+- 历史需求 / 上线先验（与团队求交后进候选生成，不只加权）
+- 章程角色图（主/辅/禁：App 壳 / 做题 / 课程配置 / 状态等）
+- Feature 连贯性 → 放置单元（模块依赖与「复用」边）后再 shortlist 内细落点
+- 门禁系统（`pass | clarify | block` + reason_code）
+- 有预算反思环（角色坍塌、章程↔历史冲突、复用矛盾等触发回跳）
+
+**验收锚点:** 「高三提分专项」feature list；人工基线仓：`frontend/onion-learning`、`frontend/onion-practice`（或 `onion-practice`）、`backend/study-course`（或 `study-course`）、`backend/study-user-status`。
+
+**约束:** 在 `BlueprintRouteAdapter` / `RepoAssociationService` 之上演进；不推倒 `RepoRouterV2`（降为 shortlist 内细排工具）；小版本不做大前端改版；章程仍人工确认生效。
+
+**设计输入:** 对话设计漏斗（2026-08-13/14）+ `.planning/research/ROUTING-RANKING.md` + `.planning/quick/260809-repo-route-eval/` + `.planning/quick/260811-gaosan-route-5rounds/`。本里程碑跳过重复生态调研，直接进入需求与路线图。
 
 ## Previous Milestone: v0.22.0 代码智能图分析升级（对标 GitNexus）— ✅ COMPLETE 2026-08-11（审计 tech_debt，未打 tag）
 
@@ -435,4 +451,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-11 — v0.22.0 归档（tech_debt，未打 tag）。*
+*Last updated: 2026-08-14 — 启动 v0.23.0 仓库路由增强（分阶段决策漏斗）。*
