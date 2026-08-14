@@ -46,9 +46,9 @@
 
 ### 反思环（REFL）
 
-- [ ] **REFL-01**: 在证据冲突、角色坍塌、复用矛盾、覆盖空洞等触发条件下启动反思，最多 N 轮（默认 2），超限进入 `needs_human_review`
-- [ ] **REFL-02**: 反思产出结构化补丁（矛盾、根因假设、回跳点、repair_actions），只重算受影响短名单/单元，禁止无界全库重跑
-- [ ] **REFL-03**: 每轮反思写入 ledger/事件（脱敏），可回放
+- [x] **REFL-01**: 在证据冲突、角色坍塌、复用矛盾、覆盖空洞等触发条件下启动反思，最多 N 轮（默认 2），超限进入 `needs_human_review`
+- [x] **REFL-02**: 反思产出结构化补丁（矛盾、根因假设、回跳点、repair_actions），只重算受影响短名单/单元，禁止无界全库重跑
+- [x] **REFL-03**: 每轮反思写入 ledger/事件（脱敏），可回放
 
 ### 集成与验收（INT）
 
@@ -99,9 +99,9 @@
 | GATE-01 | Phase 131 | Complete |
 | GATE-02 | Phase 131 | Complete |
 | GATE-03 | Phase 131 | Complete |
-| REFL-01 | Phase 131 | Pending |
-| REFL-02 | Phase 131 | Pending |
-| REFL-03 | Phase 131 | Pending |
+| REFL-01 | Phase 131 | Complete |
+| REFL-02 | Phase 131 | Complete |
+| REFL-03 | Phase 131 | Complete |
 | INT-02 | Phase 132 | Pending |
 | INT-03 | Phase 132 | Pending |
 
