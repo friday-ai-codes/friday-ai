@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.23.0
 milestone_name: 仓库路由增强（分阶段决策漏斗）
-status: executing
-stopped_at: Completed 132-02-PLAN.md
-last_updated: "2026-08-14T07:02:33.580Z"
-last_activity: 2026-08-14 -- Phase 132 execution started
+status: milestone_ready
+stopped_at: Phase 132 VERIFICATION passed（--no-transition，未打 milestone tag）
+last_updated: "2026-08-14T07:12:00.000Z"
+last_activity: 2026-08-14 — Phase 132 plans 01–03 executed；VERIFICATION passed（65 pytest）；--no-transition
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 5
   total_plans: 17
-  completed_plans: 15
-  percent: 60
+  completed_plans: 17
+  percent: 100
 ---
 
 # Project State
@@ -21,18 +21,18 @@ progress:
 See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 立项）。设计输入：对话决策漏斗 + `research/ROUTING-RANKING.md` + quick 评测语料。v0.22.0 归档见 `milestones/v0.22.0-*`。
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——本里程碑让「需求→改哪个仓」在 feature list 场景下可信、可解释、可门禁。
-**Current focus:** Phase 132 — 集成验收与高三提分回归
+**Current focus:** Phase 132 ✅ Complete — v0.23.0 五相位全部 verified（本轮 `--no-transition`，未打 milestone tag）
 
 ## Current Position
 
-Phase: 132 (集成验收与高三提分回归) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
-Last activity: 2026-08-14 -- Phase 132 execution started
+Phase: 132 of 132 (集成验收与高三提分回归) — ✅ Complete
+Plan: 3/3
+Status: Phase complete — verified passed（`--no-transition`）
+Last activity: 2026-08-14 — Phase 132 plans 01–03 executed；VERIFICATION passed（65 pytest）
 
-Progress: [█████████░] 93%
+Progress: [██████████] 100%
 
-## Milestone Overview (v0.23.0 — Phases 128–132 — 🚧 IN PROGRESS)
+## Milestone Overview (v0.23.0 — Phases 128–132 — ✅ PHASES COMPLETE，待 ship/tag)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
@@ -40,7 +40,7 @@ Progress: [█████████░] 93%
 | 129 | 短名单 + 历史先验 + 章程角色图 | LIST-01~04, ROLE-01~03 | ✅ Complete (4/4 plans, verified passed) |
 | 130 | 放置单元 + 主路径接线 | UNIT-01~03, INT-01 | ✅ Complete (3/3 plans, verified passed) |
 | 131 | 门禁系统 + 反思环 | GATE-01~03, REFL-01~03 | ✅ Complete (3/3 plans, verified passed) |
-| 132 | 集成验收与高三提分回归 | INT-02, INT-03 | Not started |
+| 132 | 集成验收与高三提分回归 | INT-02, INT-03 | ✅ Complete (3/3 plans, verified passed) |
 
 **Execution order:** 128 → 129 → 130 → 131 → 132（线性漏斗）。需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；阶段详情见 [ROADMAP.md](./ROADMAP.md)。
 
@@ -386,6 +386,7 @@ Progress: [█████████░] 93%
 | Phase 130 P03 | 25min | 2 tasks | 4 files |
 | Phase 132 P01 | 12min | 2 tasks | 4 files |
 | Phase 132 P02 | 15min | 2 tasks | 2 files |
+| Phase 132 P03 | 20min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -730,6 +731,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 127]: D-17 IMPACT-03: honest defer — CrossRepoApiCall still 0; not claiming cross-repo verified
 - [Phase ?]: 130: depends_on 并查集合并放置单元；V2 仅 hard_scope 细排
 - [Phase ?]: 130: 三分量降为排序信号，入围由 placements 决定
+- [Phase 132]: Adapter repair_hook 钳 forbidden primary（INT-03 接线级 collapse 修复）
+- [Phase 132]: D2 bar 用 placement-unit + basename alias 归一；漏斗回归靠 fixture stub 达门槛，不改 V2
 
 ### Pending Todos
 
@@ -1132,8 +1135,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-14T07:02:33.565Z
-Stopped at: Completed 132-02-PLAN.md
+Last session: 2026-08-14T07:05:57.438Z
+Stopped at: Phase 132 VERIFICATION passed（--no-transition）
 Resume file: None
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。

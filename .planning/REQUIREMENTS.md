@@ -54,7 +54,7 @@
 
 - [x] **INT-01**: 蓝图路由 / 项目选仓主路径走决策漏斗（或等价编排），三分量加权可保留为漏斗内信号，不再作为唯一决策
 - [x] **INT-02**: 以「高三提分专项」feature list 为回归锚点：在学习工具 Space 下，四基线仓作为 primary 集合的覆盖达到约定门槛（文档化 hit@primary / 角色覆盖），且 `out_of_team` 仓不得成为 primary
-- [ ] **INT-03**: 既有单测与 MCP/编排契约不回归；新增门禁/反思路径有自动化测试（含至少一条角色坍塌→反思修复的合成用例）
+- [x] **INT-03**: 既有单测与 MCP/编排契约不回归；新增门禁/反思路径有自动化测试（含至少一条角色坍塌→反思修复的合成用例）
 
 ## v2 Requirements（本里程碑不排期）
 
@@ -103,7 +103,7 @@
 | REFL-02 | Phase 131 | Complete |
 | REFL-03 | Phase 131 | Complete |
 | INT-02 | Phase 132 | Complete |
-| INT-03 | Phase 132 | Pending |
+| INT-03 | Phase 132 | Complete |
 
 **Coverage:**
 
