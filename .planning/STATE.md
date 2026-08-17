@@ -28,7 +28,7 @@ See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 归档）。v0.23.0 归
 Phase: — (awaiting next milestone)
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-08-14 — Milestone v0.23.0 archived（tech_debt accepted；未打 tag）
+Last activity: 2026-08-17 — Quick 260817-xb9（仓库调研过程明细可读化：三事件 payload + 前端人话化）
 
 Progress: [██████████] 100% (v0.23.0 complete)
 
@@ -950,6 +950,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 | 260808-fsa | Friday 技术方案能力做成宿主 subagent（skills 子仓 80f4016 / mcp 子仓 9c997b8）：新增 `friday-plan`（技术方案编排专员——发起段原样带回待确认项、续跑段确认+轮询到终态，覆盖 feature 三段链与飞书蓝图澄清链，绝不代答）与 `friday-research`（只读调研专员，带 ID 出处证据摘要）两个 subagent 定义；安装器把它们装进 Cursor/Claude Code 原生 agents 目录（Cursor 变体剥离 Claude 专属 frontmatter 键），Claude 插件形态经 plugin.json `"agents"` 字段自动带上；skills 0.6.0 → 0.7.0。MCP server 代码不动：现有 pending/轮询/作答工具形状已与 MCP Tasks 扩展（2026-07-28 spec）语义对齐，待客户端支持后再做标准映射 | 2026-08-08 | 80f4016 (skills) | [260808-friday-subagents](./quick/260808-friday-subagents/) |
 | 260808-g1c | AI 对话思考过程全量实时展示 + 上游抹思考时显示「正在思考」：先实测定位到首字慢与自家代码无关（SSE 通道 106–132ms 通、服务端本地开销仅 ~150ms，其余全在等网关；prompt 体积与首字无关：28 tok→2.4s / 3268 tok→2.16s / 26290 tok→3.63s），真凶是网关把 thinking 文本整段抹掉只转发 signature（`claude-opus-4-8` 采样 4/4 全 0 字符，`claude-sonnet-5`/`claude-opus-4-5`/`claude-fable-5` 同样；`claude-opus-4-6` 4/4 有 306–464 字符，`claude-opus-5` 该网关不存在）。按用户决定**不切换模型**，保持 `claude-opus-4-8`。前端把 thinking 折叠 Set 语义反转为「记录手动收起的 id」（不能用展开集合——parts 流式增长会让后到的 part 退回收起态）、删 80/90 字符预览截断与 `max-height` 裁切；⛔ 计划里的占位触发条件 `groupedDisplayItems.length === 0` 恒不成立（流式兜底会合成一条 `text=''` 的 text part），必须改用 `hasVisibleContent`（空 text part 不算内容）否则占位是死代码。后端补 `chat_thinking_text_empty` 采样事件（已在真实网关验证触发）。前端 2328 测试全绿 | 2026-08-08 | a77f3470 | [260808-g1c-ai-thinking-claude-opus-4-6](./quick/260808-g1c-ai-thinking-claude-opus-4-6/) |
 | 260811-av8 | 统一仓库路由 service：v1 的 `repo_summaries` BM25+dense+关键词微调内化为 RepoRouterV2 摘要回退通道；LayeredSearch L1 统一走 V2 且禁用 LLM；静态守卫阻止生产代码重引旧入口；126 条回归全绿 | 2026-08-11 | (pending) | [260811-av8-v1-bm25-embedding-v2-service](./quick/260811-av8-v1-bm25-embedding-v2-service/) |
+| 260817-h88 | 分仓 OpenSpec Proposal（Why/What Changes/Impact/Spec Deltas）从 `blueprint/v1` 确定性渲染：新增 `blueprint_proposal_render.py`（含 `render_single_repo_proposal_markdown` 单仓投影）；主蓝图文档「仓库关联」后追加「分仓方案（OpenSpec Proposal）」章节；`AICodingNode._prepare_repo_proposals` 把单仓完备 proposal 作为**只读 prompt 上下文**注入编码 fan-out（⛔ 不写目标仓、不新增 LLM 调用、fail-soft、含截断守门与生命周期埋点）；前端 `BlueprintResearchDrawer` 渲染 `conclusion.repo_plan`。全相关测试绿 | 2026-08-17 | (pending) | [260817-h88-openspec-proposal](./quick/260817-h88-openspec-proposal/) |
+| 260817-xb9 | 「仓库调研」过程明细可读化：此前前端 i18n（`正在调研 {repository_name}…`）早已就位，是后端 `_emit_started` 的 research 分支把入参 `repository_name` 丢了、`completed` 又发 `verdict` 而非文案要的 `fitness_verdict`，导致三条文案全回落成通用文案 + 裸 UUID。后端对齐 started/completed/failed 三事件 payload（补 `repository_name`、`attempt`，`completed` 并存 `fitness_verdict`/`verdict` 不破坏既有消费方），新增 `_format_research_reason` 从 `candidate.evidence.reasoning` 派生一句人话调研理由（`placement_primary`/`placement_supporting` → 「主落点仓」/「支撑仓」，≤120 截断，⛔ 不把 `matched_node_paths` 列表塞进 payload），派发时把 `repository_name` 写入 `last_output` 供回调回填（不采信容器上报、不新增查库）；前端补 `routed_confidence`/`research_reason`/`verdict` 中文标签与置信度高/中/低映射，字段排序改为人话键优先、`*_id` 殿后，缺 `repository_name` 的存量事件仍回落 Generic。后端 48 + 前端 124 测试绿 | 2026-08-17 | d462232b | [260817-xb9-readable-repo-research-detail](./quick/260817-xb9-readable-repo-research-detail/) |
 
 ## Deferred Items
 
