@@ -228,7 +228,13 @@ class BlueprintResearchAdapter:
                     await self.research_service.mark_failed(
                         task, {"reason": "max_attempts_exhausted"}
                     )
-                    await self._emit_failed(session, task, "max_attempts_exhausted")
+                    cand = deep_index.get(repository_id) or {}
+                    await self._emit_failed(
+                        session,
+                        task,
+                        "max_attempts_exhausted",
+                        repository_name=str(cand.get("repository_name") or ""),
+                    )
                     continue
                 task_ids.append(str(task.id))
                 try:
@@ -259,7 +265,14 @@ class BlueprintResearchAdapter:
                             "error": redact_secrets_in_text(str(exc)),
                         },
                     )
-                    await self._emit_failed(session, task, "dispatch_failed", mode=mode)
+                    cand = deep_index.get(repository_id) or {}
+                    await self._emit_failed(
+                        session,
+                        task,
+                        "dispatch_failed",
+                        mode=mode,
+                        repository_name=str(cand.get("repository_name") or ""),
+                    )
 
         if mode == "plan":
             # plan 模式**绝不**走轻量合成：`_synthesize_light_partial` 产出的是调研形状结论，
@@ -468,7 +481,13 @@ class BlueprintResearchAdapter:
         repo_url = getattr(repo, "git_url", "") if repo is not None else ""
         if not repo_url:
             await self.research_service.mark_failed(task, {"reason": "missing_git_url"})
-            await self._emit_failed(session, task, "missing_git_url", mode=mode)
+            await self._emit_failed(
+                session,
+                task,
+                "missing_git_url",
+                mode=mode,
+                repository_name=str((candidate or {}).get("repository_name") or ""),
+            )
             return False
 
         # 113 扩展：阶段 2 换前缀与 source（uuid 后缀保留——stale 重跑会对同一 task 再派发）
@@ -500,6 +519,8 @@ class BlueprintResearchAdapter:
                 "blueprint_session_id": str(session.id),
                 "research_task_id": str(task.id),
                 "repository_id": str(task.repository_id),
+                # 展示用标量：completed/failed 回调只读回填，不采信容器上报
+                "repository_name": str((candidate or {}).get("repository_name") or ""),
             },
         )
 
@@ -575,6 +596,7 @@ class BlueprintResearchAdapter:
             task,
             mode=mode,
             repository_name=str((candidate or {}).get("repository_name") or ""),
+            research_reason=self._format_research_reason(candidate),
         )
         return True
 
@@ -1455,8 +1477,33 @@ class BlueprintResearchAdapter:
 
     # ── 事件与外部依赖（各自 best-effort） ────────────────────────────────
 
+    @staticmethod
+    def _format_research_reason(candidate: dict | None) -> str:
+        """从 candidate.evidence.reasoning 派生一句人话调研理由（≤120，无则空串）。
+
+        placement_primary / placement_supporting 翻成「主落点仓」/「支撑仓」；其余原样
+        strip 后截断。⛔ 不把 matched_node_paths 列表塞进事件 payload。
+        """
+        if not isinstance(candidate, dict):
+            return ""
+        evidence = candidate.get("evidence")
+        if not isinstance(evidence, dict):
+            return ""
+        reasoning = str(evidence.get("reasoning") or "").strip()
+        if reasoning == "placement_primary":
+            reasoning = "主落点仓"
+        elif reasoning == "placement_supporting":
+            reasoning = "支撑仓"
+        return reasoning[:120]
+
     async def _emit_started(
-        self, session: Any, task: Any, *, mode: str = "research", repository_name: str = ""
+        self,
+        session: Any,
+        task: Any,
+        *,
+        mode: str = "research",
+        repository_name: str = "",
+        research_reason: str = "",
     ) -> None:
         """派发起点事件**按 mode 分流**（quick-260806 观测整改）。
 
@@ -1466,38 +1513,40 @@ class BlueprintResearchAdapter:
         `repo_plan.repo_started`（118 设计）只在 stage handler 路径发、绕过 handler 的
         重派路径完全无痕。事件归属收敛到本漏斗后，stage handler 侧的重复发射已删除。
         """
+        # 人话键在前、关联 id 殿后（前端亦会再排；此处对齐契约）
+        payload = {
+            "repository_name": repository_name,
+            "research_reason": research_reason,
+            "routed_confidence": task.routed_confidence or "",
+            "repository_id": str(task.repository_id),
+            "task_id": str(task.id),
+        }
         if mode == "plan":
-            await self._emit(
-                EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED,
-                session,
-                {
-                    "repository_id": str(task.repository_id),
-                    "repository_name": repository_name,
-                    "task_id": str(task.id),
-                    "routed_confidence": task.routed_confidence or "",
-                },
-            )
+            await self._emit(EVENT_BLUEPRINT_REPO_PLAN_REPO_STARTED, session, payload)
             return
-        await self._emit(
-            EVENT_BLUEPRINT_REPO_RESEARCH_STARTED,
-            session,
-            {
-                "repository_id": str(task.repository_id),
-                "task_id": str(task.id),
-                "routed_confidence": task.routed_confidence or "",
-            },
-        )
+        await self._emit(EVENT_BLUEPRINT_REPO_RESEARCH_STARTED, session, payload)
 
     async def _emit_failed(
-        self, session: Any, task: Any, reason: str, *, mode: str = "research"
+        self,
+        session: Any,
+        task: Any,
+        reason: str,
+        *,
+        mode: str = "research",
+        repository_name: str = "",
+        attempt: int | None = None,
     ) -> None:
         """派发失败事件与 started 同款分流（plan → `repo_plan.repo_failed`）。"""
+        if attempt is None:
+            attempt = getattr(task, "attempt", None)
         await self._emit(
             EVENT_BLUEPRINT_REPO_PLAN_REPO_FAILED
             if mode == "plan"
             else EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
             session,
             {
+                "repository_name": repository_name or "",
+                "attempt": attempt,
                 "repository_id": str(task.repository_id),
                 "task_id": str(task.id),
                 "error": reason,
