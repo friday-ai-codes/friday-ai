@@ -747,3 +747,61 @@ async def test_default_dispatcher_path_uses_get_dispatcher() -> None:
     assert result["dispatched"] == 1
     assert get_dispatcher.called
     assert fake.dispatch.await_count == 1
+
+
+# ===========================================================================
+# 可读过程明细：started payload 含仓库名 + 调研理由（quick-260817-xb9）
+# ===========================================================================
+
+
+def test_format_research_reason_maps_placement_and_truncates() -> None:
+    """placement_* → 人话；普通 reasoning 原样；总长 ≤120。"""
+    fmt = BlueprintResearchAdapter._format_research_reason
+    assert fmt({"evidence": {"reasoning": "placement_primary"}}) == "主落点仓"
+    assert fmt({"evidence": {"reasoning": "placement_supporting"}}) == "支撑仓"
+    assert fmt({"evidence": {"reasoning": "  命中能力节点: 学习页  "}}) == "命中能力节点: 学习页"
+    long = "x" * 200
+    assert len(fmt({"evidence": {"reasoning": long}})) == 120
+    assert fmt({"evidence": {}}) == ""
+    assert fmt(None) == ""
+
+
+@override_settings(FRIDAY_BASE_URL="https://friday.example.com")
+async def test_emit_started_research_payload_has_name_and_reason() -> None:
+    """research started：payload 含 repository_name + research_reason；last_output 可回填 name。"""
+    from delivery.services.event_taxonomy import EVENT_BLUEPRINT_REPO_RESEARCH_STARTED
+    from subagent.models import SubAgentSession
+
+    user = await _make_user()
+    repo = await _make_repo(name="gaosan-web")
+    cand = _candidate(repo)
+    cand["evidence"] = {**cand["evidence"], "reasoning": "placement_primary"}
+    session = await _make_session(_routing_state(cand), user=user)
+    await _make_online_runner()
+    dispatcher = _FakeDispatcher()
+    cfg, git = _stub_runtime()
+
+    with cfg, git:
+        await _adapter(dispatcher, charters_loader=AsyncMock(return_value={})).dispatch(session)
+
+    started = [
+        e
+        async for e in ConvergenceSessionEvent.objects.filter(
+            session=session, event=EVENT_BLUEPRINT_REPO_RESEARCH_STARTED
+        ).aiterator()
+    ]
+    assert started, "必须 emit research started"
+    payload = started[0].payload
+    assert payload.get("repository_name") == "gaosan-web"
+    assert payload.get("research_reason") == "主落点仓"
+    assert payload.get("routed_confidence") == "high"
+    # 人话键在前、id 殿后（前端亦会再排；此处至少保证键齐全）
+    keys = list(payload.keys())
+    assert keys.index("repository_name") < keys.index("repository_id")
+    assert keys.index("research_reason") < keys.index("task_id")
+
+    sub = await SubAgentSession.objects.filter(
+        last_output__blueprint_session_id=str(session.id)
+    ).afirst()
+    assert sub is not None
+    assert (sub.last_output or {}).get("repository_name") == "gaosan-web"
