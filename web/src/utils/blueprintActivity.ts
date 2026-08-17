@@ -293,6 +293,76 @@ const MAX_ITEM_KEYS = 4
 /** 原始 JSON 的字符上界。 */
 const MAX_RAW_CHARS = 4000
 
+/** 过程明细标量字段：人话键优先，关联 id 殿后（UUID 仍保留可查）。 */
+const PAYLOAD_FIELD_PRIORITY: readonly string[] = [
+  'repository_name',
+  'research_reason',
+  'routed_confidence',
+  'fitness_verdict',
+  'verdict',
+  'attempt',
+  'role_suggestion',
+  'findings_count',
+  'error',
+  'error_kind',
+  'error_detail',
+  'depth',
+  'wave',
+]
+
+function payloadFieldRank(key: string): number {
+  const idx = PAYLOAD_FIELD_PRIORITY.indexOf(key)
+  if (idx >= 0)
+    return idx
+  if (key === 'task_id' || key === 'repository_id' || key.endsWith('_id'))
+    return 10_000 + (key === 'repository_id' ? 0 : key === 'task_id' ? 1 : 2)
+  return 500
+}
+
+/**
+ * 把事件 payload 里常见的英文枚举翻成展示值（浅拷贝，不改原对象）。
+ * 供标题插值与明细字段共用；未知值原样返回。
+ */
+export function humanizePayloadEnums(
+  payload: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!payload)
+    return {}
+  const out: Record<string, unknown> = { ...payload }
+  for (const [key, value] of Object.entries(out)) {
+    if (typeof value !== 'string')
+      continue
+    const mapped = humanizeEnumToken(value)
+    if (mapped !== value)
+      out[key] = mapped
+  }
+  return out
+}
+
+/** 单枚举 token → 中文（或原样）。与 `knowledge.blueprints.repo.fitness*` / activity 置信度文案对齐。 */
+export function humanizeEnumToken(value: string): string {
+  switch (value) {
+    case 'high':
+      return '高'
+    case 'medium':
+      return '中'
+    case 'low':
+      return '低'
+    case 'suitable':
+      return '适配'
+    case 'partial':
+      return '部分适配'
+    case 'unsuitable':
+      return '不适配'
+    case 'true':
+      return '是'
+    case 'false':
+      return '否'
+    default:
+      return value
+  }
+}
+
 /** 数值格式化：整数原样，小数保留 3 位（打分类字段全是 0–1 小数）。 */
 function formatNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(3)
@@ -339,7 +409,7 @@ function summarizeItem(item: unknown): string {
  *
  * ⚠️ `payload` 的键 schema 层零保证（P-8）：逐值 `typeof` 收窄，任何形状都不抛错。
  * ⛔ 不做 `*_id` 过滤：全景的诉求就是公开透明，id 是排障的关联键；它们只在明细的
- * 折叠层里出现，不进摘要行。
+ * 折叠层里出现，不进摘要行。人话键排前、`*_id` 殿后。
  */
 export function describeEventPayload(payload: Record<string, unknown> | undefined): {
   fields: PanoramaField[]
@@ -378,6 +448,8 @@ export function describeEventPayload(payload: Record<string, unknown> | undefine
     const lines = rawLines.filter(line => line !== '' && !line.endsWith('='))
     groups.push({ key, count, lines, truncated: count > MAX_GROUP_LINES })
   }
+
+  fields.sort((a, b) => payloadFieldRank(a.key) - payloadFieldRank(b.key))
 
   let raw = ''
   try {

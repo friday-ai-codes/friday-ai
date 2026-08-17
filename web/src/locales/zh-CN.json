@@ -584,8 +584,14 @@
           "decision_log_count": "决策留痕",
           "version_no": "版本号",
           "review_status": "审查结论",
-          "back_target": "回退目标"
-        }
+          "back_target": "回退目标",
+          "routed_confidence": "路由置信度",
+          "research_reason": "调研理由",
+          "verdict": "适配结论"
+        },
+        "confidenceHigh": "高",
+        "confidenceMedium": "中",
+        "confidenceLow": "低"
       },
       "viewer": {
         "summaryTitle": "方案摘要",

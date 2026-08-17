@@ -25,7 +25,12 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { buildStagePanorama, describeEventPayload } from '~/utils/blueprintActivity'
+import {
+  buildStagePanorama,
+  describeEventPayload,
+  humanizeEnumToken,
+  humanizePayloadEnums,
+} from '~/utils/blueprintActivity'
 import { resolveProgressKeys } from '~/utils/blueprintBlocks'
 
 const props = withDefaults(defineProps<{
@@ -164,11 +169,26 @@ function fieldLabel(key: string): string {
 }
 
 function fieldValue(value: string): string {
+  // 置信度 / 适配结论走 i18n 键；true/false 沿用 activity.yes/no；其余原样
+  if (value === 'high')
+    return t('knowledge.blueprints.activity.confidenceHigh')
+  if (value === 'medium')
+    return t('knowledge.blueprints.activity.confidenceMedium')
+  if (value === 'low')
+    return t('knowledge.blueprints.activity.confidenceLow')
+  if (value === 'suitable')
+    return t('knowledge.blueprints.repo.fitnessSuitable')
+  if (value === 'partial')
+    return t('knowledge.blueprints.repo.fitnessPartial')
+  if (value === 'unsuitable')
+    return t('knowledge.blueprints.repo.fitnessUnsuitable')
   if (value === 'true')
     return t('knowledge.blueprints.activity.yes')
   if (value === 'false')
     return t('knowledge.blueprints.activity.no')
-  return value
+  // 兜底：与 humanizeEnumToken 对齐，避免漏映射时标题/字段露出英文
+  const fallback = humanizeEnumToken(value)
+  return fallback
 }
 
 /** 事件中文名：取键与兜底一律走 `resolveProgressKeys`（与旧时间线/全景逐字同口径）。 */
@@ -176,8 +196,10 @@ function eventLabel(row: PanoramaEventRow): string {
   const { key, fallbackKey } = resolveProgressKeys(row.event, row.payload)
   if (!key)
     return row.event
+  // 插值前浅拷贝人话化，避免标题里出现 suitable/high 英文
+  const displayPayload = humanizePayloadEnums(row.payload)
   if (te(key))
-    return t(key, row.payload)
+    return t(key, displayPayload)
   return te(fallbackKey) ? t(fallbackKey) : row.event
 }
 
