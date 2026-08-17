@@ -23,6 +23,8 @@ import {
   buildRouteFitness,
   buildStagePanorama,
   describeEventPayload,
+  humanizeEnumToken,
+  humanizePayloadEnums,
   PANORAMA_STAGES,
 } from '~/utils/blueprintActivity'
 
@@ -234,6 +236,47 @@ describe('describeEventPayload', () => {
 
   it('原始 JSON 可序列化输出（透明度兜底）', () => {
     expect(describeEventPayload({ item_count: 7 }).raw).toContain('"item_count": 7')
+  })
+
+  it('⭐ 人话键优先、*_id 殿后；缺键不渲染 undefined', () => {
+    const { fields } = describeEventPayload({
+      task_id: 't-1',
+      repository_id: 'r-1',
+      repository_name: 'gaosan-web',
+      research_reason: '主落点仓',
+      routed_confidence: 'high',
+      fitness_verdict: 'suitable',
+      attempt: 2,
+      blank: '',
+      missing: undefined,
+    })
+    expect(fields.map(f => f.key)).toEqual([
+      'repository_name',
+      'research_reason',
+      'routed_confidence',
+      'fitness_verdict',
+      'attempt',
+      'repository_id',
+      'task_id',
+    ])
+    expect(fields.every(f => f.value !== 'undefined')).toBe(true)
+  })
+})
+
+describe('humanizeEnumToken / humanizePayloadEnums', () => {
+  it('置信度与适配结论翻中文；未知值原样', () => {
+    expect(humanizeEnumToken('high')).toBe('高')
+    expect(humanizeEnumToken('suitable')).toBe('适配')
+    expect(humanizeEnumToken('custom')).toBe('custom')
+    expect(humanizePayloadEnums({
+      fitness_verdict: 'partial',
+      routed_confidence: 'low',
+      repository_name: 'A',
+    })).toEqual({
+      fitness_verdict: '部分适配',
+      routed_confidence: '低',
+      repository_name: 'A',
+    })
   })
 })
 

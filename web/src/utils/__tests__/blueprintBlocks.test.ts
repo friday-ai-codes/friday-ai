@@ -415,6 +415,38 @@ describe('resolveProgressKeys —— 插值完整性与判别式变体', () => {
     )
   })
 
+  it('⭐ repo_research：有 repository_name 用具体文案，缺失回落 Generic（存量事件）', () => {
+    expect(
+      resolveProgressKeys('blueprint.repo_research.started', {
+        repository_name: 'gaosan-web',
+        research_reason: '主落点仓',
+      }).key,
+    ).toBe(`${PROGRESS}.repoResearchStarted`)
+    expect(
+      resolveProgressKeys('blueprint.repo_research.started', { repository_id: 'r-1' }).key,
+    ).toBe(`${PROGRESS}.repoResearchStartedGeneric`)
+
+    expect(
+      resolveProgressKeys('blueprint.repo_research.completed', {
+        repository_name: 'gaosan-web',
+        fitness_verdict: 'suitable',
+      }).key,
+    ).toBe(`${PROGRESS}.repoResearchCompleted`)
+    expect(
+      resolveProgressKeys('blueprint.repo_research.completed', { verdict: 'suitable' }).key,
+    ).toBe(`${PROGRESS}.repoResearchCompletedGeneric`)
+
+    expect(
+      resolveProgressKeys('blueprint.repo_research.failed', {
+        repository_name: 'gaosan-web',
+        attempt: 2,
+      }).key,
+    ).toBe(`${PROGRESS}.repoResearchFailed`)
+    expect(resolveProgressKeys('blueprint.repo_research.failed', {}).key).toBe(
+      `${PROGRESS}.repoResearchFailedGeneric`,
+    )
+  })
+
   /**
    * ⭐ 本用例是**防复发的主锁**：只要有人加一条带 `{占位符}` 的进度文案却忘了配
    * `Generic` 兜底，payload 一缺键就会上屏残句。让它在 CI 里挂，而不是在用户界面上挂。

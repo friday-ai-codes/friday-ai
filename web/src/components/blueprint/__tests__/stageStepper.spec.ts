@@ -62,8 +62,33 @@ const i18n = createI18n({
             yes: '是',
             no: '否',
             pinnedRoute: '固定路由：候选仓来自项目手动绑定',
+            confidenceHigh: '高',
+            confidenceMedium: '中',
+            confidenceLow: '低',
             fact: { candidateCount: '候选仓', researchProgress: '调研进度' },
-            payload: { candidate_count: '候选数' },
+            payload: {
+              candidate_count: '候选数',
+              repository_name: '仓库',
+              research_reason: '调研理由',
+              routed_confidence: '路由置信度',
+              fitness_verdict: '适配结论',
+              attempt: '尝试次数',
+              repository_id: '仓库 id',
+              task_id: '任务 id',
+            },
+          },
+          progress: {
+            repoResearchStarted: '正在调研 {repository_name}…',
+            repoResearchStartedGeneric: '正在调研相关仓库…',
+            repoResearchCompleted: '{repository_name} 调研完成（适配：{fitness_verdict}）',
+            repoResearchCompletedGeneric: '仓库调研完成',
+            repoResearchFailed: '{repository_name} 调研未成功（第 {attempt} 次）',
+            repoResearchFailedGeneric: '仓库调研未成功',
+          },
+          repo: {
+            fitnessSuitable: '适配',
+            fitnessPartial: '部分适配',
+            fitnessUnsuitable: '不适配',
           },
           stage: {
             summaryCurrent: '当前阶段：{label}',
@@ -427,6 +452,63 @@ describe('blueprintStageStepper —— 带指令重跑', () => {
     })
     expect(wrapper.findAll(NODE)).toHaveLength(BLUEPRINT_STAGES.length)
     expect(wrapper.find(RERUN_FORM).exists()).toBe(false)
+  })
+})
+
+describe('blueprintStageStepper —— 仓库调研过程明细可读性（quick-260817-xb9）', () => {
+  async function openResearchDetail(wrapper: ReturnType<typeof mountStepper>) {
+    const detail = wrapper.find(DETAIL)
+    // 已自动落在调研节点时再点会收起；仅在未展开或展开了别的节点时点击
+    if (detail.exists() && detail.attributes('data-stage') === 'repo_research')
+      return
+    await wrapper.find(`${NODE}[data-stage="repo_research"] button`).trigger('click')
+  }
+
+  it('有 repository_name 时标题含仓名；字段标签非英文键；枚举中文', async () => {
+    const wrapper = mountStepper({
+      events: [
+        event('blueprint.repo_research.started', {
+          repository_name: 'gaosan-web',
+          research_reason: '主落点仓',
+          routed_confidence: 'high',
+          repository_id: '11111111-1111-1111-1111-111111111111',
+          task_id: '22222222-2222-2222-2222-222222222222',
+        }),
+        event('blueprint.repo_research.completed', {
+          repository_name: 'gaosan-web',
+          fitness_verdict: 'suitable',
+          repository_id: '11111111-1111-1111-1111-111111111111',
+        }),
+      ],
+      currentStage: 'repo_research',
+      currentStatus: 'researching',
+    })
+    await openResearchDetail(wrapper)
+    const detail = wrapper.find(DETAIL)
+    expect(detail.exists()).toBe(true)
+    expect(detail.text()).toContain('正在调研 gaosan-web')
+    expect(detail.text()).toContain('调研理由')
+    expect(detail.text()).toContain('路由置信度')
+    expect(detail.text()).toContain('高')
+    expect(detail.text()).toContain('适配')
+    expect(detail.text()).not.toContain('routed_confidence')
+    expect(detail.text()).not.toContain('research_reason')
+  })
+
+  it('缺 repository_name 的存量事件回落 Generic，不白屏', async () => {
+    const wrapper = mountStepper({
+      events: [
+        event('blueprint.repo_research.started', { repository_id: 'r-old' }),
+        event('blueprint.repo_research.failed', { error_kind: 'container_failed' }),
+      ],
+      currentStage: 'repo_research',
+      currentStatus: 'researching',
+    })
+    await openResearchDetail(wrapper)
+    const text = wrapper.find(DETAIL).text()
+    expect(text).toContain('正在调研相关仓库')
+    expect(text).toContain('仓库调研未成功')
+    expect(text).not.toContain('undefined')
   })
 })
 
