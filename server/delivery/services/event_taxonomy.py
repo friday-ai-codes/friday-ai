@@ -174,11 +174,14 @@ EVENT_BLUEPRINT_SPEC_GATE_CLARIFICATION_ASKED: Final[str] = (
 EVENT_BLUEPRINT_SPEC_GATE_LOCKED: Final[str] = "blueprint.spec_gate.locked"
 # emit: 112-03 双面路由。payload: candidate_count/router_version/各候选三分量 breakdown
 EVENT_BLUEPRINT_ROUTE_SCORED: Final[str] = "blueprint.route.scored"
-# emit: 112-04 逐仓容器调研。payload: repository_id/task_id/depth
+# emit: 112-04 逐仓容器调研。payload: repository_name/research_reason/routed_confidence/
+# repository_id/task_id（人话键优先；缺 name 时前端走 Generic）
 EVENT_BLUEPRINT_REPO_RESEARCH_STARTED: Final[str] = "blueprint.repo_research.started"
-# emit: 112-04 调研回调。payload: repository_id/fitness_verdict/role_suggestion
+# emit: 112-04 调研回调。payload: repository_name/fitness_verdict(+verdict 兼容)/
+# role_suggestion/findings_count/repository_id/task_id
 EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED: Final[str] = "blueprint.repo_research.completed"
-# emit: 112-04 调研失败。payload: repository_id/attempt/error_kind（异常文本已脱敏截断）
+# emit: 112-04 调研失败。payload: repository_name/attempt/error(_kind|_detail)/
+# repository_id/task_id（异常文本已脱敏截断）
 EVENT_BLUEPRINT_REPO_RESEARCH_FAILED: Final[str] = "blueprint.repo_research.failed"
 # emit: 112-04 有界重路由（≤2 轮）。payload: round/excluded_repository_ids/new_candidate_count
 EVENT_BLUEPRINT_REROUTE_TRIGGERED: Final[str] = "blueprint.reroute.triggered"

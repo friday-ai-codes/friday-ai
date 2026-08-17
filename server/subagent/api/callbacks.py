@@ -2393,6 +2393,9 @@ async def _handle_blueprint_research_completion(
     research_service = ResearchService()
     session_service = ConvergenceSessionService()
     content = _parse_blueprint_fitness(p.get("output") or {})
+    # 展示用标量：派发时写入 last_output，回调只读回填（不采信容器上报）
+    lo = session.last_output if isinstance(session.last_output, dict) else {}
+    repository_name = str(lo.get("repository_name") or "")
 
     if content is None:
         await research_service.mark_failed(task, {"reason": "empty_or_unparseable_result"})
@@ -2401,6 +2404,8 @@ async def _handle_blueprint_research_completion(
                 EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
                 blueprint_session,
                 {
+                    "repository_name": repository_name,
+                    "attempt": getattr(task, "attempt", None),
                     "repository_id": str(task.repository_id),
                     "task_id": str(task.id),
                     "error": "empty_or_unparseable_result",
@@ -2411,15 +2416,18 @@ async def _handle_blueprint_research_completion(
         content["repository_id"] = str(task.repository_id)
         await research_service.record_partial(task, content)
         if blueprint_session is not None:
+            verdict = content["fitness"]["verdict"]
             await session_service.aemit_event(
                 EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED,
                 blueprint_session,
                 {
-                    "repository_id": str(task.repository_id),
-                    "task_id": str(task.id),
-                    "verdict": content["fitness"]["verdict"],
+                    "repository_name": repository_name,
+                    "fitness_verdict": verdict,
+                    "verdict": verdict,  # 兼容既有消费方
                     "role_suggestion": content["role_suggestion"],
                     "findings_count": len(content["findings"]),
+                    "repository_id": str(task.repository_id),
+                    "task_id": str(task.id),
                 },
             )
 
@@ -2452,10 +2460,13 @@ async def _handle_blueprint_research_failure(
     ]
     await ResearchService().mark_failed(task, {"reason": "container_failed", "error": error_detail})
     if blueprint_session is not None:
+        lo = session.last_output if isinstance(session.last_output, dict) else {}
         await ConvergenceSessionService().aemit_event(
             EVENT_BLUEPRINT_REPO_RESEARCH_FAILED,
             blueprint_session,
             {
+                "repository_name": str(lo.get("repository_name") or ""),
+                "attempt": getattr(task, "attempt", None),
                 "repository_id": str(task.repository_id),
                 "task_id": str(task.id),
                 "error_kind": "container_failed",

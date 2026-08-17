@@ -795,10 +795,8 @@ async def test_emit_started_research_payload_has_name_and_reason() -> None:
     assert payload.get("repository_name") == "gaosan-web"
     assert payload.get("research_reason") == "主落点仓"
     assert payload.get("routed_confidence") == "high"
-    # 人话键在前、id 殿后（前端亦会再排；此处至少保证键齐全）
-    keys = list(payload.keys())
-    assert keys.index("repository_name") < keys.index("repository_id")
-    assert keys.index("research_reason") < keys.index("task_id")
+    # 关联键仍保留可查（前端再做人话优先排序；落库 JSON 不保证键序）
+    assert "repository_id" in payload and "task_id" in payload
 
     sub = await SubAgentSession.objects.filter(
         last_output__blueprint_session_id=str(session.id)
