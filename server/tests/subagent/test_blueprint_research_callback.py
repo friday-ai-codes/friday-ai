@@ -292,7 +292,12 @@ async def test_failure_callback_marks_container_failed_and_emits() -> None:
     from delivery.services.event_taxonomy import EVENT_BLUEPRINT_REPO_RESEARCH_FAILED
     from subagent.api.callbacks import _handle_failed
 
-    _s, _r, task, sub = await _setup()
+    _s, repo, task, sub = await _setup()
+    # 派发侧写入 last_output.repository_name，回调只读回填（不采信容器上报）
+    sub.last_output = {**(sub.last_output or {}), "repository_name": repo.name}
+    await sub.asave(update_fields=["last_output", "updated_at"])
+    task.attempt = 2
+    await task.asave(update_fields=["attempt", "updated_at"])
     emitted: list[tuple] = []
 
     async def _spy(self, event, session, payload):  # noqa: ANN001
@@ -320,6 +325,83 @@ async def test_failure_callback_marks_container_failed_and_emits() -> None:
     # no-op 桩时才成立。
     assert emitted, "失败回调必须 emit 事件"
     assert emitted[0][0] == EVENT_BLUEPRINT_REPO_RESEARCH_FAILED
+    failed_payload = emitted[0][1]
+    assert failed_payload.get("repository_name") == repo.name
+    assert failed_payload.get("attempt") == 2
+
+
+async def test_completion_emits_repository_name_and_fitness_verdict() -> None:
+    """completed：repository_name + fitness_verdict，且保留 verdict 兼容键。"""
+    from delivery.services.event_taxonomy import EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED
+    from subagent.api.callbacks import _handle_completed
+
+    _s, repo, task, sub = await _setup()
+    sub.last_output = {**(sub.last_output or {}), "repository_name": repo.name}
+    await sub.asave(update_fields=["last_output", "updated_at"])
+    emitted: list[tuple] = []
+
+    async def _spy(self, event, session, payload):  # noqa: ANN001
+        emitted.append((event, payload))
+
+    with (
+        _PATCHES[0],
+        _PATCHES[1],
+        _PATCHES[2],
+        patch(
+            "delivery.services.convergence_session_service.ConvergenceSessionService._emit_event",
+            new=_spy,
+        ),
+    ):
+        resp = await _handle_completed(
+            sub, {"result_type": "text", "output": _fitness_output()}, _log()
+        )
+
+    assert resp.status_code == 200
+    await task.arefresh_from_db()
+    assert task.status == RepoResearchTaskStatus.DONE
+    completed = [p for e, p in emitted if e == EVENT_BLUEPRINT_REPO_RESEARCH_COMPLETED]
+    assert completed, "必须 emit research completed"
+    payload = completed[0]
+    assert payload.get("repository_name") == repo.name
+    assert payload.get("fitness_verdict") == "suitable"
+    assert payload.get("verdict") == "suitable"
+    assert payload.get("role_suggestion") == "direct"
+    assert payload.get("findings_count") == 1
+
+
+async def test_unparseable_failed_emits_repository_name_and_attempt() -> None:
+    """不可解析失败分支同样带 repository_name + attempt。"""
+    from delivery.services.event_taxonomy import EVENT_BLUEPRINT_REPO_RESEARCH_FAILED
+    from subagent.api.callbacks import _handle_completed
+
+    _s, repo, task, sub = await _setup()
+    sub.last_output = {**(sub.last_output or {}), "repository_name": repo.name}
+    await sub.asave(update_fields=["last_output", "updated_at"])
+    task.attempt = 1
+    await task.asave(update_fields=["attempt", "updated_at"])
+    emitted: list[tuple] = []
+
+    async def _spy(self, event, session, payload):  # noqa: ANN001
+        emitted.append((event, payload))
+
+    with (
+        _PATCHES[0],
+        _PATCHES[1],
+        _PATCHES[2],
+        patch(
+            "delivery.services.convergence_session_service.ConvergenceSessionService._emit_event",
+            new=_spy,
+        ),
+    ):
+        await _handle_completed(
+            sub, {"result_type": "text", "output": {"fitness": {"reasons": ["没给结论"]}}}, _log()
+        )
+
+    failed = [p for e, p in emitted if e == EVENT_BLUEPRINT_REPO_RESEARCH_FAILED]
+    assert failed
+    assert failed[0].get("repository_name") == repo.name
+    assert failed[0].get("attempt") == 1
+    assert failed[0].get("error") == "empty_or_unparseable_result"
 
 
 async def test_completion_exception_swallowed_returns_200() -> None:
