@@ -147,7 +147,7 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 
 按现有 Django app / 子系统归类（新增功能就近归类，没有就新增并在此登记）：
 
-`auth` `accounts` `mcp` `chat` `orchestration` `workflows` `compat` `repositories` `indexing` `codegraph` `rag` `knowledge` `delivery` `agents` `llm` `providers` `subagent` `runners` `task` `feishu` `webhook` `durable` `scheduler` `system` `settings` `notifications` `audit` `access_tokens` `health` `metrics` `logging` `interactions` `code_graph`
+`auth` `accounts` `mcp` `chat` `orchestration` `workflows` `compat` `repositories` `indexing` `codegraph` `rag` `knowledge` `delivery` `agents` `llm` `providers` `subagent` `runners` `task` `feishu` `webhook` `durable` `scheduler` `system` `settings` `notifications` `audit` `access_tokens` `health` `metrics` `logging` `interactions` `code_graph` `initiatives`
 
 > `codegraph`（无下划线）与 `code_graph`（有下划线）**刻意并存**，不是笔误：前者是索引/抽取侧的 Django app（`server/codegraph/`，负责 Symbol / CallEdge / Endpoint 抽取与图谱构建），后者是查询/服务侧的内存图服务（`server/services/code_graph/`，负责装配 networkx 图、缓存与读取层收口）。两条链路的故障模式与排障路径完全不同，分开取值才能按 `component` 精确筛日志（Phase 121 决策 D-07）。
 
