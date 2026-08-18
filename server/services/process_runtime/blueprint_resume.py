@@ -180,6 +180,11 @@ async def _adrive_blueprint_locked(engine: Any, session: Any, *, max_steps: int)
             if await _ahas_open_blocking_blueprint_threads(session) and not (
                 await acollect_pending_research_repos(session)
             ):
+                # ⭐ 短路前幂等刷新确认门快照（D-02）：确认门挂起时线程恒 open+blocking，
+                # 「无待调研仓」是稳态——调研若在门开着期间才终态（failed→done、verdict
+                # 变化），这里是续驱唯一会经过的点。不刷，用户看到的 task_status 会永远
+                # 停在陈旧值。refresh best-effort，绝不阻断短路。
+                await _arefresh_blueprint_confirm_gate(session)
                 await _amap_blueprint_status(session)
                 return session
 
@@ -587,6 +592,26 @@ async def aresume_blueprint_session(session: Any, *, engine: Any = None) -> Any:
 
 
 # ── pause 判据与蓝图状态映射（均 best-effort，绝不反噬续驱）────────────────────
+
+
+async def _arefresh_blueprint_confirm_gate(session: Any) -> None:
+    """续驱短路前把最新调研结论刷进确认门快照（best-effort，绝不反噬续驱）。
+
+    委托 :meth:`BlueprintConfirmGateAdapter.arefresh_open_gate_snapshot`（其内部已幂等、
+    无门自动 no-op、行锁内读改写）；此处再套一层吞异常，确保刷新故障绝不打断短路返回。
+    """
+    try:
+        from services.process_runtime.blueprint_confirm_gate import BlueprintConfirmGateAdapter
+
+        await BlueprintConfirmGateAdapter().arefresh_open_gate_snapshot(session)
+    except Exception as exc:  # noqa: BLE001 — refresh best-effort，绝不反噬续驱短路
+        logger.warning(
+            "blueprint_resume_confirm_gate_refresh_failed",
+            category="sampling",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            error=redact_secrets_in_text(str(exc)),
+        )
 
 
 async def _ahas_open_blocking_blueprint_threads(session: Any) -> bool:
