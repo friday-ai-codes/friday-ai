@@ -55,8 +55,9 @@ def test_int03_imports_smoke_key_modules():
         funnel_gates,
         place_units,
         reflection,
-        role_map,
     )
     from services.process_runtime.gaosan_eval import score_placement_bar  # noqa: F401
 
     assert callable(score_placement_bar)
+    with pytest.raises(ModuleNotFoundError):
+        import services.process_runtime.role_map  # noqa: F401

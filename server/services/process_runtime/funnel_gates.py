@@ -1,11 +1,11 @@
-"""漏斗统一门禁（Phase 131，GATE-01/02/03；D-02/D-04~D-11）。
+"""漏斗统一门禁（Phase 131，GATE-01/02/03；去固定角色化）。
 
 五门固定顺序：team → shortlist_coverage → unit_placement →
 global_consistency → publish。统一输出 ``pass|clarify|block`` +
 ``reason_codes[]`` + evidence；聚合最严重 status（block > clarify > pass）。
 
-发布门（D4/D-02）：默认 confirmation；``allow_auto_selected`` 仅当
-role_map 完整 + 全 unit high + 双证据（charter/history ∪ role_map/shortlist/v2/reuse）。
+发布门：默认 confirmation；``allow_auto_selected`` 仅当全 unit high +
+双证据（charter/history ∪ shortlist/v2/reuse）。
 
 观测：``funnel_gates_started/completed/failed`` 与分门 ``funnel_gate_<id>_evaluated``；
 ``category=sampling``，``component=process_runtime``；禁止需求全文。
@@ -56,11 +56,8 @@ REASON_CODES = frozenset(
         "primary_out_of_scope",
         "unit_open_questions",
         "primary_outside_universe",
-        "dual_state_domain_writer",
-        "app_shell_scattered",
         "reuse_modify_forbidden",
         "needs_confirmation",
-        "role_map_incomplete",
         "confidence_not_high",
         "dual_evidence_missing",
     }
@@ -69,7 +66,7 @@ REASON_CODES = frozenset(
 _STATUS_RANK = {"pass": 0, "clarify": 1, "block": 2}
 
 _CHARTER_HISTORY = frozenset({"charter", "history"})
-_ROUTE_EVIDENCE = frozenset({"role_map", "shortlist", "v2", "reuse"})
+_ROUTE_EVIDENCE = frozenset({"shortlist", "v2", "reuse", "repo_router_v2", "hard_scope"})
 
 
 @dataclass
@@ -208,55 +205,16 @@ def _evidence_kinds(placement: Mapping[str, Any]) -> set[str]:
     return kinds
 
 
-def _unit_kind(placement: Mapping[str, Any]) -> str:
-    for key in ("kind", "unit_kind", "domain", "role"):
-        v = placement.get(key)
-        if v:
-            return str(v).strip().lower()
-    # feature / open_questions hints
-    for oq in placement.get("open_questions") or []:
-        s = str(oq).lower()
-        if "learning_state" in s:
-            return "learning_state"
-        if "app_shell" in s or "壳" in s:
-            return "app_shell"
-    return ""
-
-
 def _is_reuse_unit(placement: Mapping[str, Any]) -> bool:
     if placement.get("reuse") is True:
         return True
     mode = str(placement.get("placement_mode") or "").lower()
     if mode in {"reuse", "reuse_only", "reuse_host"}:
         return True
-    for e in placement.get("evidence") or []:
-        if isinstance(e, Mapping) and str(e.get("kind") or "").lower() == "reuse":
-            # alone not enough — only if tagged reuse mode
-            pass
     tags = placement.get("tags") or []
     if isinstance(tags, (list, tuple)) and any(str(t).lower() == "reuse" for t in tags):
         return True
     return False
-
-
-def _role_map_complete(role_map: Mapping[str, Any] | None) -> bool:
-    if not isinstance(role_map, Mapping):
-        return False
-    status = str(role_map.get("status") or "").lower()
-    if status and status not in {"ok", "pass", "complete"}:
-        return False
-    roles = role_map.get("roles")
-    if not isinstance(roles, Mapping) or not roles:
-        return False
-    # 所需角色至少有 primary（允许 course_config 空，但 learning_state / app_shell 等应有）
-    required = ("app_shell", "learning_state")
-    for key in required:
-        bucket = roles.get(key)
-        if not isinstance(bucket, Mapping):
-            return False
-        if not str(bucket.get("primary") or "").strip():
-            return False
-    return True
 
 
 def _eval_team(
@@ -278,7 +236,6 @@ def _eval_team(
 
     core = _team_core_ids(team)
     if not core and str(team.get("status") or "") in {"", "missing", "clarify"}:
-        # empty team_core without membership fallback
         if not membership:
             return GateResult(
                 gate_id="team",
@@ -294,7 +251,9 @@ def _eval_team(
             continue
         mem = membership.get(primary, "")
         if mem == "out_of_team" or (
-            core and primary not in set(core) and mem not in {"team_core", "team_adjacent"}
+            core
+            and primary not in set(core)
+            and mem not in {"team_core", "team_adjacent"}
             and membership
             and primary in membership
             and membership[primary] == "out_of_team"
@@ -308,7 +267,6 @@ def _eval_team(
                 {"kind": "team", "unit_id": uid, "repo_id": primary, "membership": mem}
             )
 
-    # explicit: primary marked out_of_team in membership
     if "out_of_team_primary" not in codes:
         for p in placements:
             primary = str(p.get("primary_repo") or "").strip()
@@ -403,7 +361,6 @@ def _eval_unit_placement(placements: list[dict[str, Any]]) -> GateResult:
         oqs = [str(x) for x in (p.get("open_questions") or []) if x]
 
         if not primary:
-            # 允许有 open_question 路径仍 clarify
             status = _worst_status(status, "clarify")
             codes.append("missing_primary")
             if uid:
@@ -426,7 +383,6 @@ def _eval_unit_placement(placements: list[dict[str, Any]]) -> GateResult:
                 }
             )
 
-        # P0 / high priority still blocked by open questions
         priority = str(p.get("priority") or "").upper()
         if oqs and (priority in {"P0", "HIGH"} or p.get("blocking_open_questions")):
             status = _worst_status(status, "clarify")
@@ -462,12 +418,10 @@ def _eval_global_consistency(
     shortlist = set(_as_list(shortlist_ids))
     hosts = set(_as_list(reuse_hosts))
     universe = shortlist | hosts | core
-    # also include membership team_core/adjacent
     for rid, mem in membership.items():
         if mem in {"team_core", "team_adjacent"}:
             universe.add(rid)
 
-    # 1) primary outside team/shortlist universe
     for p in placements:
         primary = str(p.get("primary_repo") or "").strip()
         if not primary:
@@ -493,57 +447,6 @@ def _eval_global_consistency(
                 }
             )
 
-    # 2) dual learning_state writers
-    state_primaries: dict[str, list[str]] = {}
-    for p in placements:
-        kind = _unit_kind(p)
-        if kind != "learning_state":
-            continue
-        primary = str(p.get("primary_repo") or "").strip()
-        if not primary:
-            continue
-        uid = str(p.get("unit_id") or "")
-        state_primaries.setdefault(primary, []).append(uid)
-    if len(state_primaries) >= 2:
-        status = "block"
-        codes.append("dual_state_domain_writer")
-        for primary, uids in state_primaries.items():
-            affected.extend(uids)
-            evidence.append(
-                {
-                    "kind": "consistency",
-                    "repo_id": primary,
-                    "unit_ids": uids,
-                    "detail": "learning_state_writer",
-                }
-            )
-
-    # 3) app_shell scattered
-    shell_primaries: dict[str, list[str]] = {}
-    for p in placements:
-        kind = _unit_kind(p)
-        if kind != "app_shell":
-            continue
-        primary = str(p.get("primary_repo") or "").strip()
-        if not primary:
-            continue
-        uid = str(p.get("unit_id") or "")
-        shell_primaries.setdefault(primary, []).append(uid)
-    if len(shell_primaries) >= 2:
-        status = _worst_status(status, "block")
-        codes.append("app_shell_scattered")
-        for primary, uids in shell_primaries.items():
-            affected.extend(uids)
-            evidence.append(
-                {
-                    "kind": "consistency",
-                    "repo_id": primary,
-                    "unit_ids": uids,
-                    "detail": "app_shell",
-                }
-            )
-
-    # 4) reuse modify forbidden — reuse unit uses reuse host as modifiable primary
     host_set = hosts
     for p in placements:
         if not _is_reuse_unit(p):
@@ -587,24 +490,19 @@ def _looks_like_reuse_host(placement: Mapping[str, Any], primary: str) -> bool:
 
 
 def _eval_publish(
-    role_map: Mapping[str, Any] | None,
     placements: list[dict[str, Any]],
     confirmation_acked: bool,
 ) -> GateResult:
     codes: list[str] = []
     evidence: list[dict[str, Any]] = []
 
-    role_ok = _role_map_complete(role_map)
     all_high = bool(placements) and all(
         str(p.get("confidence") or "").lower() == "high" for p in placements
     )
     dual_ok = bool(placements) and all(_has_dual_evidence(p) for p in placements)
 
-    allow_auto = bool(role_ok and all_high and dual_ok)
+    allow_auto = bool(all_high and dual_ok)
 
-    if not role_ok:
-        codes.append("role_map_incomplete")
-        evidence.append({"kind": "publish", "detail": "role_map_incomplete"})
     if placements and not all_high:
         codes.append("confidence_not_high")
         evidence.append({"kind": "publish", "detail": "confidence_not_high"})
@@ -630,7 +528,6 @@ def _eval_publish(
             allow_auto_selected=False,
         )
 
-    # 默认 confirmation → clarify
     codes = _dedupe(["needs_confirmation"] + codes)
     return GateResult(
         gate_id="publish",
@@ -678,7 +575,7 @@ def evaluate_funnel_gates(
     *,
     team: Mapping[str, Any] | None = None,
     shortlist_ids: Sequence[str] | None = None,
-    role_map: Mapping[str, Any] | None = None,
+    role_map: Mapping[str, Any] | None = None,  # noqa: ARG001 — 已退役，保留签名兼容
     placements: Sequence[Any] | None = None,
     confirmation_acked: bool = False,
     membership: Mapping[str, str] | None = None,
@@ -715,7 +612,7 @@ def evaluate_funnel_gates(
             _eval_global_consistency(
                 team, shortlist_ids, place_dicts, mem, reuse_hosts
             ),
-            _eval_publish(role_map, place_dicts, confirmation_acked),
+            _eval_publish(place_dicts, confirmation_acked),
         ]
 
         for g in results:

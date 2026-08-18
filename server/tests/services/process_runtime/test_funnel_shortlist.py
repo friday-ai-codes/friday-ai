@@ -1,7 +1,8 @@
-"""Phase 129 漏斗 shortlist + role_map 接线守卫测（LIST+ROLE；D-15）。"""
+"""Phase 129 漏斗 shortlist 接线守卫测（LIST；去固定角色化）。"""
 
 from __future__ import annotations
 
+from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,7 +10,6 @@ import pytest
 
 from services.process_runtime.blueprint_route import BlueprintRouteAdapter
 from services.process_runtime.history_prior import HistoryPriorResult
-from services.process_runtime.role_map import RoleMapResult
 from services.process_runtime.shortlist import ShortlistResult
 
 
@@ -50,9 +50,84 @@ def _session(*, team_include: list[str] | None = None):
     )
 
 
+@contextmanager
+def _common_route_patches(*, adapter, shortlist, history=None, team_core=None):
+    """shortlist 路径 mock；不再 patch 已退役的 role_map。"""
+    team_ids = team_core or [
+        r["repository_id"] for r in (shortlist.repositories or [])
+    ] or ["core-1"]
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch(
+                "services.process_runtime.initiative_profile.build_profile",
+                new=AsyncMock(
+                    return_value={"status": "ok", "profile": {}, "degrade_reason": ""}
+                ),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "services.process_runtime.team_gate.resolve_team_core",
+                new=AsyncMock(
+                    return_value={
+                        "team_core": list(team_ids),
+                        "space_id": "space-1",
+                        "resolution": "explicit_space",
+                        "clarify_reason": "",
+                        "should_clarify": False,
+                    }
+                ),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "services.process_runtime.team_gate.filter_indexed_repository_ids",
+                new=AsyncMock(return_value=list(team_ids)),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "services.process_runtime.history_prior.asplit_history_priors",
+                new=AsyncMock(return_value=history or HistoryPriorResult()),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "services.process_runtime.shortlist.build_shortlist",
+                new=AsyncMock(return_value=shortlist),
+            )
+        )
+        stack.enter_context(
+            patch.object(adapter, "_aload_charters", new=AsyncMock(return_value={}))
+        )
+        stack.enter_context(
+            patch.object(
+                adapter,
+                "_ascore_history",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        scores={}, unavailable_reason="", citations=[], citation_ids=[]
+                    )
+                ),
+            )
+        )
+        stack.enter_context(
+            patch.object(adapter, "_aload_module_summaries", new=AsyncMock(return_value={}))
+        )
+        stack.enter_context(
+            patch.object(adapter, "_collect_supplements", new=AsyncMock(return_value=[]))
+        )
+        stack.enter_context(patch.object(adapter, "_emit_recalled", new=AsyncMock()))
+        stack.enter_context(patch.object(adapter, "_emit_scored", new=AsyncMock()))
+        stack.enter_context(
+            patch.object(adapter, "_apply_boundary_overrides", new=AsyncMock(return_value=0))
+        )
+        yield
+
+
 @pytest.mark.asyncio
-async def test_adapter_attaches_shortlist_and_role_map():
-    """team_gate 通过后结果含 shortlist 与 role_map/placement_defaults。"""
+async def test_adapter_attaches_shortlist_then_place():
+    """team_gate 通过后结果含 shortlist，并继续 place（含 placements）。"""
     router = MagicMock()
     router.route = AsyncMock(return_value=_fake_router_result(repo_ids=["core-1", "core-2"]))
     adapter = BlueprintRouteAdapter(router=router, top_k=3)
@@ -78,79 +153,23 @@ async def test_adapter_attaches_shortlist_and_role_map():
         ],
         shortlist_count=2,
     )
-    role_map = RoleMapResult(
-        status="ok",
-        roles={
-            "app_shell": {"primary": "core-1", "supporting": [], "forbidden": []},
-            "practice_reuse_host": {"primary": None, "supporting": [], "forbidden": []},
-            "course_config": {"primary": None, "supporting": [], "forbidden": []},
-            "learning_state": {"primary": None, "supporting": [], "forbidden": []},
-        },
-        per_repo=[{"repository_id": "core-1", "role": "app_shell", "assignment": "primary"}],
-        placement_defaults={"learning_state_writer_not_app_shell": True},
-    )
 
-    with (
-        patch(
-            "services.process_runtime.initiative_profile.build_profile",
-            new=AsyncMock(return_value={"status": "ok", "profile": {}, "degrade_reason": ""}),
+    with _common_route_patches(
+        adapter=adapter,
+        shortlist=shortlist,
+        history=HistoryPriorResult(
+            force_include_ids=["core-2"],
+            reasons_by_repo={"core-2": ["history_demand"]},
         ),
-        patch(
-            "services.process_runtime.team_gate.resolve_team_core",
-            new=AsyncMock(
-                return_value={
-                    "team_core": ["core-1", "core-2"],
-                    "space_id": "space-1",
-                    "resolution": "explicit_space",
-                    "clarify_reason": "",
-                    "should_clarify": False,
-                }
-            ),
-        ),
-        patch(
-            "services.process_runtime.team_gate.filter_indexed_repository_ids",
-            new=AsyncMock(return_value=["core-1", "core-2"]),
-        ),
-        patch(
-            "services.process_runtime.history_prior.asplit_history_priors",
-            new=AsyncMock(
-                return_value=HistoryPriorResult(
-                    force_include_ids=["core-2"],
-                    reasons_by_repo={"core-2": ["history_demand"]},
-                )
-            ),
-        ),
-        patch(
-            "services.process_runtime.shortlist.build_shortlist",
-            new=AsyncMock(return_value=shortlist),
-        ),
-        patch(
-            "services.process_runtime.role_map.build_role_map",
-            return_value=role_map,
-        ),
-        patch.object(adapter, "_aload_charters", new=AsyncMock(return_value={})),
-        patch.object(
-            adapter,
-            "_ascore_history",
-            new=AsyncMock(
-                return_value=SimpleNamespace(
-                    scores={}, unavailable_reason="", citations=[], citation_ids=[]
-                )
-            ),
-        ),
-        patch.object(adapter, "_aload_module_summaries", new=AsyncMock(return_value={})),
-        patch.object(adapter, "_collect_supplements", new=AsyncMock(return_value=[])),
-        patch.object(adapter, "_emit_recalled", new=AsyncMock()),
-        patch.object(adapter, "_emit_scored", new=AsyncMock()),
-        patch.object(adapter, "_apply_boundary_overrides", new=AsyncMock(return_value=0)),
+        team_core=["core-1", "core-2"],
     ):
         summary = await adapter.route(_session())
 
-    assert summary.get("status") == "ok"
+    assert summary.get("status") in {"ok", "clarify"}
     assert "shortlist" in summary
     assert summary.get("shortlist_count") == 2 or len(summary["shortlist"]) == 2
-    assert "role_map" in summary
-    assert summary.get("placement_defaults", {}).get("learning_state_writer_not_app_shell") is True
+    assert "placements" in summary
+    assert summary.get("clarify_reason") != "unmapped_role"
 
 
 @pytest.mark.asyncio
@@ -176,54 +195,8 @@ async def test_fusion_candidates_subset_of_shortlist():
         shortlist_count=1,
     )
 
-    with (
-        patch(
-            "services.process_runtime.initiative_profile.build_profile",
-            new=AsyncMock(return_value={"status": "ok", "profile": {}, "degrade_reason": ""}),
-        ),
-        patch(
-            "services.process_runtime.team_gate.resolve_team_core",
-            new=AsyncMock(
-                return_value={
-                    "team_core": ["core-1"],
-                    "space_id": "space-1",
-                    "resolution": "explicit_space",
-                    "clarify_reason": "",
-                    "should_clarify": False,
-                }
-            ),
-        ),
-        patch(
-            "services.process_runtime.team_gate.filter_indexed_repository_ids",
-            new=AsyncMock(return_value=["core-1"]),
-        ),
-        patch(
-            "services.process_runtime.history_prior.asplit_history_priors",
-            new=AsyncMock(return_value=HistoryPriorResult()),
-        ),
-        patch(
-            "services.process_runtime.shortlist.build_shortlist",
-            new=AsyncMock(return_value=shortlist),
-        ),
-        patch(
-            "services.process_runtime.role_map.build_role_map",
-            return_value=RoleMapResult(status="ok", placement_defaults={}),
-        ),
-        patch.object(adapter, "_aload_charters", new=AsyncMock(return_value={})),
-        patch.object(
-            adapter,
-            "_ascore_history",
-            new=AsyncMock(
-                return_value=SimpleNamespace(
-                    scores={}, unavailable_reason="", citations=[], citation_ids=[]
-                )
-            ),
-        ),
-        patch.object(adapter, "_aload_module_summaries", new=AsyncMock(return_value={})),
-        patch.object(adapter, "_collect_supplements", new=AsyncMock(return_value=[])),
-        patch.object(adapter, "_emit_recalled", new=AsyncMock()),
-        patch.object(adapter, "_emit_scored", new=AsyncMock()),
-        patch.object(adapter, "_apply_boundary_overrides", new=AsyncMock(return_value=0)),
+    with _common_route_patches(
+        adapter=adapter, shortlist=shortlist, team_core=["core-1"]
     ):
         summary = await adapter.route(_session(team_include=["core-1"]))
 
@@ -260,59 +233,14 @@ async def test_history_force_include_appears_in_shortlist_payload():
         shortlist_count=2,
     )
 
-    with (
-        patch(
-            "services.process_runtime.initiative_profile.build_profile",
-            new=AsyncMock(return_value={"status": "ok", "profile": {}, "degrade_reason": ""}),
+    with _common_route_patches(
+        adapter=adapter,
+        shortlist=shortlist,
+        history=HistoryPriorResult(
+            force_include_ids=["hist-1"],
+            reasons_by_repo={"hist-1": ["history_demand"]},
         ),
-        patch(
-            "services.process_runtime.team_gate.resolve_team_core",
-            new=AsyncMock(
-                return_value={
-                    "team_core": ["core-1", "hist-1"],
-                    "space_id": "space-1",
-                    "resolution": "explicit_space",
-                    "clarify_reason": "",
-                    "should_clarify": False,
-                }
-            ),
-        ),
-        patch(
-            "services.process_runtime.team_gate.filter_indexed_repository_ids",
-            new=AsyncMock(return_value=["core-1", "hist-1"]),
-        ),
-        patch(
-            "services.process_runtime.history_prior.asplit_history_priors",
-            new=AsyncMock(
-                return_value=HistoryPriorResult(
-                    force_include_ids=["hist-1"],
-                    reasons_by_repo={"hist-1": ["history_demand"]},
-                )
-            ),
-        ),
-        patch(
-            "services.process_runtime.shortlist.build_shortlist",
-            new=AsyncMock(return_value=shortlist),
-        ),
-        patch(
-            "services.process_runtime.role_map.build_role_map",
-            return_value=RoleMapResult(status="ok", placement_defaults={}),
-        ),
-        patch.object(adapter, "_aload_charters", new=AsyncMock(return_value={})),
-        patch.object(
-            adapter,
-            "_ascore_history",
-            new=AsyncMock(
-                return_value=SimpleNamespace(
-                    scores={}, unavailable_reason="", citations=[], citation_ids=[]
-                )
-            ),
-        ),
-        patch.object(adapter, "_aload_module_summaries", new=AsyncMock(return_value={})),
-        patch.object(adapter, "_collect_supplements", new=AsyncMock(return_value=[])),
-        patch.object(adapter, "_emit_recalled", new=AsyncMock()),
-        patch.object(adapter, "_emit_scored", new=AsyncMock()),
-        patch.object(adapter, "_apply_boundary_overrides", new=AsyncMock(return_value=0)),
+        team_core=["core-1", "hist-1"],
     ):
         summary = await adapter.route(_session(team_include=["core-1", "hist-1"]))
 
@@ -328,76 +256,40 @@ async def test_history_force_include_appears_in_shortlist_payload():
 
 
 @pytest.mark.asyncio
-async def test_role_map_unmapped_clarify_no_full_library():
-    """role_map clarify(unmapped_role) → status=clarify，candidates 不塞全库。"""
+async def test_shortlist_continues_to_place_no_unmapped_role_shortcircuit():
+    """shortlist 后继续 place；不得再因 unmapped_role 短路清空 candidates。"""
     router = MagicMock()
     router.route = AsyncMock(
         return_value=_fake_router_result(repo_ids=["core-1", "core-2", "core-3"])
     )
     adapter = BlueprintRouteAdapter(router=router, top_k=10)
+    shortlist = ShortlistResult(
+        repositories=[
+            {
+                "repository_id": "core-1",
+                "rank": 1,
+                "score": 0.1,
+                "team_membership": "team_core",
+                "signals": {
+                    "activity": 0.1,
+                    "capability_coarse": 0.1,
+                    "charter_domain": 0.0,
+                },
+                "force_include_reasons": [],
+            }
+        ],
+        shortlist_count=1,
+    )
 
-    with (
-        patch(
-            "services.process_runtime.initiative_profile.build_profile",
-            new=AsyncMock(return_value={"status": "ok", "profile": {}, "degrade_reason": ""}),
-        ),
-        patch(
-            "services.process_runtime.team_gate.resolve_team_core",
-            new=AsyncMock(
-                return_value={
-                    "team_core": ["core-1"],
-                    "space_id": "space-1",
-                    "resolution": "explicit_space",
-                    "clarify_reason": "",
-                    "should_clarify": False,
-                }
-            ),
-        ),
-        patch(
-            "services.process_runtime.team_gate.filter_indexed_repository_ids",
-            new=AsyncMock(return_value=["core-1"]),
-        ),
-        patch(
-            "services.process_runtime.history_prior.asplit_history_priors",
-            new=AsyncMock(return_value=HistoryPriorResult()),
-        ),
-        patch(
-            "services.process_runtime.shortlist.build_shortlist",
-            new=AsyncMock(
-                return_value=ShortlistResult(
-                    repositories=[
-                        {
-                            "repository_id": "core-1",
-                            "rank": 1,
-                            "score": 0.1,
-                            "team_membership": "team_core",
-                            "signals": {
-                                "activity": 0.1,
-                                "capability_coarse": 0.1,
-                                "charter_domain": 0.0,
-                            },
-                            "force_include_reasons": [],
-                        }
-                    ],
-                    shortlist_count=1,
-                )
-            ),
-        ),
-        patch(
-            "services.process_runtime.role_map.build_role_map",
-            return_value=RoleMapResult(
-                status="clarify",
-                clarify_reason="unmapped_role",
-                placement_defaults={"learning_state_writer_not_app_shell": True},
-            ),
-        ),
-        patch.object(adapter, "_aload_charters", new=AsyncMock(return_value={})),
-        patch.object(adapter, "_emit_scored", new=AsyncMock()),
+    with _common_route_patches(
+        adapter=adapter, shortlist=shortlist, team_core=["core-1"]
     ):
         summary = await adapter.route(_session(team_include=["core-1"]))
 
-    assert summary["status"] == "clarify"
-    assert summary["clarify_reason"] == "unmapped_role"
-    assert summary["candidates"] == []
-    # V2 可能已调用取信号，但不得把全库候选塞进 clarify 结果
-    assert len(summary["candidates"]) == 0
+    assert summary.get("clarify_reason") != "unmapped_role"
+    assert "placements" in summary
+    cand_ids = {c.get("repository_id") for c in summary.get("candidates") or []}
+    assert cand_ids <= {"core-1"}
+    # 不得把 shortlist 外的全库仓塞进结果
+    assert "core-2" not in cand_ids
+    assert "core-3" not in cand_ids

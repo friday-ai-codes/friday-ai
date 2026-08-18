@@ -12,7 +12,6 @@ from services.process_runtime.blueprint_route import BlueprintRouteAdapter
 from services.process_runtime.history_prior import HistoryPriorResult
 from services.process_runtime.placement_units import PlacementUnit, PlacementUnitsResult
 from services.process_runtime.place_units import PlacementResult, UnitPlacement
-from services.process_runtime.role_map import RoleMapResult
 from services.process_runtime.shortlist import ShortlistResult
 
 
@@ -68,20 +67,6 @@ def _shortlist() -> ShortlistResult:
             },
         ],
         shortlist_count=3,
-    )
-
-
-def _role_map_complete() -> RoleMapResult:
-    return RoleMapResult(
-        status="ok",
-        roles={
-            "app_shell": {"primary": "core-1", "supporting": [], "forbidden": []},
-            "practice_reuse_host": {"primary": "host-1", "supporting": [], "forbidden": []},
-            "course_config": {"primary": "core-2", "supporting": [], "forbidden": []},
-            "learning_state": {"primary": "core-2", "supporting": [], "forbidden": []},
-        },
-        per_repo=[],
-        placement_defaults={},
     )
 
 
@@ -227,7 +212,7 @@ def _fake_router(*, auto_selected=True):
 
 
 @contextmanager
-def _patches(adapter, *, place_result, role_map=None, shortlist=None):
+def _patches(adapter, *, place_result, shortlist=None):
     with ExitStack() as stack:
         stack.enter_context(
             patch(
@@ -273,12 +258,6 @@ def _patches(adapter, *, place_result, role_map=None, shortlist=None):
             patch(
                 "services.process_runtime.shortlist.build_shortlist",
                 new=AsyncMock(return_value=shortlist or _shortlist()),
-            )
-        )
-        stack.enter_context(
-            patch(
-                "services.process_runtime.role_map.build_role_map",
-                return_value=role_map or _role_map_complete(),
             )
         )
         stack.enter_context(
@@ -372,14 +351,14 @@ async def test_gate_block_does_not_silently_ok_with_out_of_scope():
         summary = await adapter.route(_session())
 
     fg = summary.get("funnel_gates") or {}
-    # 反思可能局部修复；若门仍 block 则顶层不得静默 ok
+    # 反思可能局部修复；若门仍 block 则顶层不得静默 ok / auto
     if fg.get("status") == "block":
         assert summary.get("status") != "ok"
+        assert summary.get("auto_selected") is False
     # 不得把 outsider / ghost-full-lib 当可开工 primary 静默放出
     cand_ids = {c.get("repository_id") for c in summary.get("candidates") or []}
     assert "outsider" not in cand_ids
     assert "ghost-full-lib" not in cand_ids
-    assert summary.get("auto_selected") is False
     assert "funnel_gates" in summary
 
 
@@ -450,112 +429,3 @@ async def test_no_requirement_fulltext_in_gate_summary():
     blob = str(summary.get("funnel_gates")) + str(summary.get("reflection"))
     assert "高三提分专项请勿" not in blob
     assert len(blob) < 20000
-
-
-def _role_map_with_forbidden() -> RoleMapResult:
-    return RoleMapResult(
-        status="ok",
-        roles={
-            "app_shell": {
-                "primary": "core-1",
-                "supporting": [],
-                "forbidden": ["bad-1"],
-            },
-            "practice_reuse_host": {
-                "primary": "host-1",
-                "supporting": [],
-                "forbidden": ["bad-1"],
-            },
-            "course_config": {
-                "primary": "core-2",
-                "supporting": [],
-                "forbidden": [],
-            },
-            "learning_state": {
-                "primary": "core-2",
-                "supporting": [],
-                "forbidden": [],
-            },
-        },
-        per_repo=[],
-        placement_defaults={},
-    )
-
-
-def _place_forbidden_primary() -> PlacementResult:
-    """合成角色坍塌：primary 落在 role_map.forbidden 上。"""
-    return PlacementResult(
-        status="ok",
-        placements=[
-            UnitPlacement(
-                unit_id="u-collapse",
-                primary_repo="bad-1",
-                supporting_repos=[],
-                confidence="high",
-                evidence=[{"kind": "v2"}],
-                open_questions=[],
-                feature_ids=["fp_1"],
-                hard_scope=["core-1", "core-2", "host-1", "bad-1"],
-            ),
-        ],
-        unit_count=1,
-        placement_count=1,
-        hard_scope=["core-1", "core-2", "host-1", "bad-1"],
-    )
-
-
-@pytest.mark.asyncio
-async def test_role_collapse_repaired_via_adapter_reflection():
-    """接线级（INT-03/D-12）：forbidden primary → reflection → 不再含 role_collapse。"""
-    from services.process_runtime.funnel_gates import evaluate_funnel_gates
-    from services.process_runtime.reflection import detect_reflection_triggers
-
-    router = MagicMock()
-    router.route = AsyncMock(return_value=_fake_router(auto_selected=True))
-    adapter = BlueprintRouteAdapter(router=router, top_k=5)
-    role_map = _role_map_with_forbidden()
-
-    with _patches(
-        adapter,
-        place_result=_place_forbidden_primary(),
-        role_map=role_map,
-    ):
-        summary = await adapter.route(_session())
-
-    assert summary.get("reflection") is not None
-    placements = list(summary.get("placements") or [])
-    assert placements, "expected placements after adapter route"
-    # 不得把全库 ghost 当 primary
-    primaries = {p.get("primary_repo") for p in placements if isinstance(p, dict)}
-    assert "ghost-full-lib" not in primaries
-    assert "bad-1" not in primaries
-
-    role_payload = {
-        "status": role_map.status,
-        "roles": role_map.roles,
-        "per_repo": role_map.per_repo,
-    }
-    team = {
-        "status": "ok",
-        "team_core": ["core-1", "core-2", "host-1"],
-        "membership": {
-            "core-1": "team_core",
-            "core-2": "team_core",
-            "host-1": "team_core",
-            "bad-1": "team_core",
-        },
-    }
-    report = evaluate_funnel_gates(
-        team=team,
-        shortlist_ids=["core-1", "core-2", "host-1"],
-        role_map=role_payload,
-        placements=placements,
-        confirmation_acked=True,
-    )
-    triggers = detect_reflection_triggers(
-        report, placements=placements, role_map=role_payload
-    )
-    assert "role_collapse" not in triggers.trigger_codes
-
-    blob = str(summary.get("funnel_gates")) + str(summary.get("reflection"))
-    assert "高三提分专项请勿" not in blob

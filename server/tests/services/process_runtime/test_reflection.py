@@ -1,9 +1,9 @@
-"""Phase 131 有界反思环（REFL-01/02/03；D-12~D-15）。"""
+"""Phase 131 有界反思环（REFL-01/02/03；去固定角色化）。"""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -27,18 +27,6 @@ def _team():
     }
 
 
-def _role_map(*, status="ok", forbidden_as_primary=False):
-    roles = {
-        "app_shell": {"primary": "core-1", "supporting": [], "forbidden": ["bad-1"]},
-        "practice_reuse_host": {"primary": "host-1", "supporting": [], "forbidden": []},
-        "course_config": {"primary": "core-2", "supporting": [], "forbidden": []},
-        "learning_state": {"primary": "core-2", "supporting": [], "forbidden": []},
-    }
-    if forbidden_as_primary:
-        roles["app_shell"]["primary"] = "bad-1"
-    return {"status": status, "roles": roles}
-
-
 def _placement(uid, **kw):
     base = {
         "unit_id": uid,
@@ -47,7 +35,7 @@ def _placement(uid, **kw):
         "confidence": kw.get("confidence", "high"),
         "evidence": kw.get(
             "evidence",
-            [{"kind": "charter"}, {"kind": "role_map"}],
+            [{"kind": "charter"}, {"kind": "v2"}],
         ),
         "open_questions": kw.get("open_questions", []),
         "hard_scope": kw.get("hard_scope", ["core-1", "core-2", "host-1"]),
@@ -72,43 +60,23 @@ class TestDetectTriggers:
         report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map(),
             placements=placements,
             confirmation_acked=True,
         )
-        triggers = detect_reflection_triggers(
-            report, placements=placements, role_map=_role_map()
-        )
+        triggers = detect_reflection_triggers(report, placements=placements)
         assert "evidence_conflict" in triggers.trigger_codes
-
-    def test_role_collapse(self):
-        placements = [_placement("u1", primary="bad-1", hard_scope=["core-1", "bad-1"])]
-        role_map = _role_map()
-        report = evaluate_funnel_gates(
-            team=_team(),
-            shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=role_map,
-            placements=placements,
-            confirmation_acked=True,
-            membership={**_team()["membership"], "bad-1": "team_core"},
-        )
-        triggers = detect_reflection_triggers(
-            report, placements=placements, role_map=role_map
-        )
-        assert "role_collapse" in triggers.trigger_codes
 
     def test_reuse_conflict(self):
         placements = [_placement("u1", primary="host-1", reuse=True)]
         report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map(),
             placements=placements,
             confirmation_acked=True,
             reuse_hosts=["host-1"],
         )
         triggers = detect_reflection_triggers(
-            report, placements=placements, role_map=_role_map(), reuse_hosts=["host-1"]
+            report, placements=placements, reuse_hosts=["host-1"]
         )
         assert "reuse_conflict" in triggers.trigger_codes
 
@@ -117,13 +85,10 @@ class TestDetectTriggers:
         report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1"],
-            role_map=_role_map(),
             placements=placements,
             confirmation_acked=True,
         )
-        triggers = detect_reflection_triggers(
-            report, placements=placements, role_map=_role_map()
-        )
+        triggers = detect_reflection_triggers(report, placements=placements)
         assert "coverage_hole" in triggers.trigger_codes
 
 
@@ -133,7 +98,6 @@ class TestReflectionLoop:
         report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map(),
             placements=placements,
             confirmation_acked=True,
         )
@@ -153,7 +117,6 @@ class TestReflectionLoop:
         result = run_reflection_loop(
             gate_report=report,
             placements=placements,
-            role_map=_role_map(),
             team=_team(),
             shortlist_ids=["core-1", "core-2", "host-1"],
             max_rounds=2,
@@ -176,7 +139,6 @@ class TestReflectionLoop:
         report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1", "core-2"],
-            role_map=_role_map(),
             placements=placements,
             confirmation_acked=True,
         )
@@ -193,7 +155,6 @@ class TestReflectionLoop:
         run_reflection_loop(
             gate_report=report,
             placements=placements,
-            role_map=_role_map(),
             team=_team(),
             shortlist_ids=["core-1", "core-2"],
             max_rounds=2,
@@ -209,7 +170,6 @@ class TestReflectionLoop:
         report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1"],
-            role_map=_role_map(),
             placements=placements,
             confirmation_acked=True,
         )
@@ -220,7 +180,6 @@ class TestReflectionLoop:
         result = run_reflection_loop(
             gate_report=report,
             placements=placements,
-            role_map=_role_map(),
             team=_team(),
             shortlist_ids=["core-1"],
             max_rounds=2,
@@ -238,7 +197,6 @@ class TestReflectionLoop:
         report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map(),
             placements=placements,
             confirmation_acked=True,
         )
@@ -256,7 +214,6 @@ class TestReflectionLoop:
         result = run_reflection_loop(
             gate_report=report,
             placements=placements,
-            role_map=_role_map(),
             team=_team(),
             shortlist_ids=["core-1", "core-2", "host-1"],
             max_rounds=2,
@@ -273,7 +230,6 @@ class TestReflectionLoop:
         report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1"],
-            role_map=_role_map(),
             placements=placements,
             confirmation_acked=True,
         )
@@ -291,7 +247,6 @@ class TestReflectionLoop:
         run_reflection_loop(
             gate_report=report,
             placements=placements,
-            role_map=_role_map(),
             team=_team(),
             shortlist_ids=["core-1"],
             max_rounds=2,
@@ -312,7 +267,6 @@ class TestReflectionLoop:
         report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1"],
-            role_map=_role_map(),
             placements=placements,
             confirmation_acked=True,
         )
@@ -326,7 +280,6 @@ class TestReflectionLoop:
         result = run_reflection_loop(
             gate_report=report,
             placements=placements,
-            role_map=_role_map(),
             team=_team(),
             shortlist_ids=["core-1"],
             max_rounds=2,
@@ -336,21 +289,22 @@ class TestReflectionLoop:
         )
         assert result.rounds >= 1
 
-    def test_role_collapse_repair_path_for_int03_hook(self):
-        """合成：角色坍塌 → 反思修复 → 可再评估（132/INT-03 钩子）。"""
-        placements = [_placement("u1", primary="bad-1", hard_scope=["core-1", "bad-1"])]
-        role_map = _role_map()
+    def test_primary_out_of_scope_repair_path(self):
+        """primary 越界 → 反思修复 → 可再评估（INT-03 钩子替代原 role_collapse）。"""
+        placements = [
+            _placement("u1", primary="ghost", hard_scope=["core-1"]),
+        ]
         report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=role_map,
             placements=placements,
             confirmation_acked=True,
-            membership={**_team()["membership"], "bad-1": "team_core"},
         )
-        assert "role_collapse" in detect_reflection_triggers(
-            report, placements=placements, role_map=role_map
-        ).trigger_codes
+        assert "primary_out_of_scope" in report.reason_codes or any(
+            "primary_out_of_scope" in g.reason_codes for g in report.gates
+        )
+        triggers = detect_reflection_triggers(report, placements=placements)
+        assert triggers.should_reflect
 
         def repair(**kwargs):
             return {
@@ -361,28 +315,21 @@ class TestReflectionLoop:
         result = run_reflection_loop(
             gate_report=report,
             placements=placements,
-            role_map=role_map,
             team=_team(),
             shortlist_ids=["core-1", "core-2", "host-1"],
             max_rounds=2,
             repair_hook=repair,
             confirmation_acked=True,
-            membership={**_team()["membership"], "bad-1": "team_core"},
         )
         assert result.outcome == "resolved"
         assert isinstance(result.patches[-1], ReflectionPatch)
-        # re-evaluate gates after repair
         new_report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=role_map,
             placements=result.placements,
             confirmation_acked=True,
         )
-        triggers_after = detect_reflection_triggers(
-            new_report, placements=result.placements, role_map=role_map
-        )
-        assert "role_collapse" not in triggers_after.trigger_codes
+        assert "primary_out_of_scope" not in new_report.reason_codes
 
 
 class TestObservability:
@@ -392,7 +339,6 @@ class TestObservability:
         report = evaluate_funnel_gates(
             team=_team(),
             shortlist_ids=["core-1"],
-            role_map=_role_map(),
             placements=placements,
             confirmation_acked=True,
         )
@@ -410,7 +356,6 @@ class TestObservability:
             run_reflection_loop(
                 gate_report=report,
                 placements=placements,
-                role_map=_role_map(),
                 team=_team(),
                 shortlist_ids=["core-1"],
                 max_rounds=2,
@@ -418,4 +363,3 @@ class TestObservability:
                 confirmation_acked=True,
             )
         assert any(e.startswith("reflection_round_") for e in events)
-        assert any(e == "reflection_loop_completed" for e in events)

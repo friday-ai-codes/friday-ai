@@ -1,8 +1,8 @@
-"""放置单元细落点（Phase 130，UNIT-02/03；D-07~D-11）。
+"""放置单元细落点（Phase 130，UNIT-02/03；去固定角色化）。
 
-在 ``shortlist ∪ reuse hosts``（∩ team）硬范围内为每个 Placement Unit 产出
+在 ``shortlist ∩ team`` 硬范围内为每个 Placement Unit 产出
 ``primary_repo`` / ``supporting_repos`` / confidence / evidence / open_questions。
-可调用 ``RepoRouterV2.route(..., repository_ids=hard_scope)`` 只取分数；
+调用 ``RepoRouterV2.route(..., repository_ids=hard_scope, use_llm=True)`` 取分；
 **禁止**全库开放 primary。primary∉hard_scope → 丢弃并 degrade/open_question。
 
 观测：``place_units_started/completed/failed``，``category=sampling``，
@@ -89,70 +89,6 @@ def _id_list(values: Sequence[str] | None) -> list[str]:
     return out
 
 
-def _roles_payload(role_map: Mapping[str, Any] | None) -> dict[str, Any]:
-    if not role_map:
-        return {}
-    if isinstance(role_map, Mapping) and "roles" in role_map:
-        roles = role_map.get("roles") or {}
-        return roles if isinstance(roles, dict) else {}
-    # 允许直接传 roles dict
-    return dict(role_map) if isinstance(role_map, Mapping) else {}
-
-
-def _forbidden_ids(role_map: Mapping[str, Any] | None) -> set[str]:
-    forbidden: set[str] = set()
-    roles = _roles_payload(role_map)
-    for bucket in roles.values():
-        if not isinstance(bucket, dict):
-            continue
-        for rid in bucket.get("forbidden") or []:
-            if rid:
-                forbidden.add(str(rid))
-    if isinstance(role_map, Mapping):
-        for entry in role_map.get("per_repo") or []:
-            if not isinstance(entry, dict):
-                continue
-            if str(entry.get("assignment") or "") == "forbidden":
-                rid = str(entry.get("repository_id") or "").strip()
-                if rid:
-                    forbidden.add(rid)
-    return forbidden
-
-
-def resolve_reuse_host_repo_ids(
-    *,
-    role_map: Mapping[str, Any] | None,
-    units: Sequence[Any],
-    team_universe: set[str],
-) -> list[str]:
-    """从 role_map.practice_reuse_host + unit hints 解析复用宿主（∩ team）。"""
-    hosts: list[str] = []
-    seen: set[str] = set()
-    roles = _roles_payload(role_map)
-    practice = roles.get("practice_reuse_host") if isinstance(roles, dict) else None
-    if isinstance(practice, dict):
-        for rid in [practice.get("primary"), *(practice.get("supporting") or [])]:
-            sid = str(rid or "").strip()
-            if sid and sid in team_universe and sid not in seen:
-                seen.add(sid)
-                hosts.append(sid)
-
-    # hints 仅标记需要 host；具体 id 仍来自 role_map（不硬编码 UUID）
-    need_practice = False
-    for unit in units:
-        hints = getattr(unit, "reuse_host_hints", None)
-        if hints is None and isinstance(unit, dict):
-            hints = unit.get("reuse_host_hints")
-        for h in hints or []:
-            hs = str(h).lower()
-            if "practice" in hs or "做题" in hs or "reuse_host" in hs:
-                need_practice = True
-    if need_practice and not hosts:
-        # 无 role_map host 时不捏造；仅返回空（open_questions 下游处理）
-        pass
-    return hosts
-
-
 def resolve_hard_scope(
     *,
     shortlist_ids: Sequence[str] | None,
@@ -186,40 +122,29 @@ def _confidence_from_score(score: float, *, contested: bool) -> str:
     return "low"
 
 
-def _is_learning_state_unit(unit: Any) -> bool:
-    hints = [str(h).lower() for h in (_unit_attr(unit, "reuse_host_hints") or [])]
-    if any("learning_state" in h for h in hints):
-        return True
-    qt = str(_unit_attr(unit, "query_text") or "")
-    return any(tok in qt for tok in ("学习状态", "学习进度", "learning state", "学情"))
-
-
 async def place_units(
     units: Sequence[Any] | None,
     *,
     shortlist_ids: Sequence[str] | None = None,
-    role_map: Mapping[str, Any] | None = None,
-    placement_defaults: Mapping[str, Any] | None = None,
+    role_map: Mapping[str, Any] | None = None,  # noqa: ARG001 — 兼容旧调用方，已忽略
+    placement_defaults: Mapping[str, Any] | None = None,  # noqa: ARG001 — 已退役
     team_core: Sequence[str] | None = None,
     router: Any = None,
-    use_llm: bool = False,
+    use_llm: bool = True,
     top_k: int = 5,
     capability_scores: Mapping[str, float] | None = None,
+    reuse_host_repo_ids: Sequence[str] | None = None,
+    forbidden_repo_ids: Sequence[str] | None = None,
 ) -> PlacementResult:
-    """在 hard_scope 内为每个 unit 细落点。"""
+    """在 hard_scope 内为每个 unit 细落点（RepoRouterV2 驱动，无固定角色加权）。"""
     started = time.perf_counter()
     unit_list = list(units or [])
-    defaults = dict(placement_defaults or {})
     team = _id_list(team_core)
     team_universe = set(team) if team else set(_id_list(shortlist_ids))
-    # 若未给 team，仍允许 shortlist 宇宙
     if not team_universe:
         team_universe = set(_id_list(shortlist_ids))
 
-    reuse_hosts = resolve_reuse_host_repo_ids(
-        role_map=role_map, units=unit_list, team_universe=team_universe or set(_id_list(shortlist_ids) + _id_list(team_core))
-    )
-    # 若 practice host 在 shortlist 外但在 team 内，仍并入
+    reuse_hosts = _id_list(reuse_host_repo_ids)
     if team:
         reuse_hosts = [h for h in reuse_hosts if h in set(team)]
     hard_scope = resolve_hard_scope(
@@ -227,8 +152,7 @@ async def place_units(
         reuse_host_repo_ids=reuse_hosts,
         team_core=team or list(team_universe),
     )
-    forbidden = _forbidden_ids(role_map)
-    roles = _roles_payload(role_map)
+    forbidden = set(_id_list(forbidden_repo_ids))
     degrade_reasons: list[str] = []
 
     logger.info(
@@ -236,6 +160,7 @@ async def place_units(
         unit_count=len(unit_list),
         hard_scope_count=len(hard_scope),
         shortlist_count=len(_id_list(shortlist_ids)),
+        use_llm=bool(use_llm),
         category="sampling",
         component=_COMPONENT,
     )
@@ -262,7 +187,6 @@ async def place_units(
                 degrade_reasons=["empty_hard_scope"],
             )
 
-        # 可选：批量预热 — 仍按 unit 调用以保持可测「按 unit 计」
         placements: list[UnitPlacement] = []
         for unit in unit_list:
             unit_id = str(_unit_attr(unit, "unit_id") or "")
@@ -303,9 +227,11 @@ async def place_units(
                         evidence.append(
                             {
                                 "source": "repo_router_v2",
+                                "kind": "v2",
                                 "router_version": str(
                                     getattr(result, "router_version", "") or ""
                                 ),
+                                "use_llm": bool(use_llm),
                                 "in_scope_hits": len(
                                     [
                                         c
@@ -326,31 +252,6 @@ async def place_units(
                         component=_COMPONENT,
                     )
 
-            # 角色信号加权（非唯一决策）
-            for role_name, bucket in roles.items():
-                if not isinstance(bucket, dict):
-                    continue
-                primary = str(bucket.get("primary") or "").strip()
-                if primary and primary in hard_scope:
-                    bump = 0.15
-                    if role_name == "practice_reuse_host" and any(
-                        "practice" in str(h).lower()
-                        for h in (_unit_attr(unit, "reuse_host_hints") or [])
-                    ):
-                        bump = 0.35
-                    if role_name == "learning_state" and _is_learning_state_unit(unit):
-                        bump = 0.4
-                    scores[primary] = scores.get(primary, 0.0) + bump
-                    evidence.append(
-                        {
-                            "source": "role_map",
-                            "role": role_name,
-                            "repository_id": primary,
-                            "bump": bump,
-                        }
-                    )
-
-            # 候选排序：排除 forbidden
             ranked = sorted(
                 (
                     (rid, sc)
@@ -360,63 +261,7 @@ async def place_units(
                 key=lambda x: (-x[1], x[0]),
             )
 
-            app_shell = ""
-            shell_bucket = roles.get("app_shell") if isinstance(roles, dict) else None
-            if isinstance(shell_bucket, dict):
-                app_shell = str(shell_bucket.get("primary") or "").strip()
-
-            primary: str | None = None
-            if ranked:
-                primary = ranked[0][0]
-
-            # learning_state_writer_not_app_shell
-            if (
-                defaults.get("learning_state_writer_not_app_shell")
-                and _is_learning_state_unit(unit)
-                and primary
-                and app_shell
-                and primary == app_shell
-            ):
-                alt = next((rid for rid, _ in ranked if rid != app_shell), None)
-                if alt:
-                    evidence.append(
-                        {
-                            "source": "placement_defaults",
-                            "rule": "learning_state_writer_not_app_shell",
-                            "from": app_shell,
-                            "to": alt,
-                        }
-                    )
-                    primary = alt
-                else:
-                    open_questions.append(
-                        "learning_state_writer_only_app_shell_candidate"
-                    )
-
-            # practice_reuse_prefers_host_not_shell
-            if (
-                defaults.get("practice_reuse_prefers_host_not_shell")
-                and any(
-                    "practice" in str(h).lower()
-                    for h in (_unit_attr(unit, "reuse_host_hints") or [])
-                )
-                and primary
-                and app_shell
-                and primary == app_shell
-            ):
-                practice_bucket = roles.get("practice_reuse_host")
-                host = ""
-                if isinstance(practice_bucket, dict):
-                    host = str(practice_bucket.get("primary") or "").strip()
-                if host and host in hard_scope and host not in forbidden:
-                    primary = host
-                    evidence.append(
-                        {
-                            "source": "placement_defaults",
-                            "rule": "practice_reuse_prefers_host_not_shell",
-                            "to": host,
-                        }
-                    )
+            primary: str | None = ranked[0][0] if ranked else None
 
             # 最终守卫：primary ∈ hard_scope 且非 forbidden
             if primary and (primary not in hard_scope or primary in forbidden):
@@ -439,19 +284,11 @@ async def place_units(
             else:
                 top_score = scores.get(primary, 0.0)
                 contested = (
-                    len(ranked) > 1
-                    and abs(ranked[0][1] - ranked[1][1]) < 0.05
+                    len(ranked) > 1 and abs(ranked[0][1] - ranked[1][1]) < 0.05
                 )
                 confidence = _confidence_from_score(top_score, contested=contested)
                 if contested:
                     open_questions.append("near_tie_multi_repo")
-
-            if _unit_attr(unit, "reuse_host_hints") and not reuse_hosts:
-                if any(
-                    "practice" in str(h).lower()
-                    for h in (_unit_attr(unit, "reuse_host_hints") or [])
-                ):
-                    open_questions.append("missing_practice_reuse_host")
 
             placements.append(
                 UnitPlacement(
@@ -468,7 +305,6 @@ async def place_units(
             )
 
         duration_ms = round((time.perf_counter() - started) * 1000, 2)
-        # 去重 degrade
         degrade_reasons = list(dict.fromkeys(degrade_reasons))
         status = "ok" if placements else "degraded"
         result = PlacementResult(

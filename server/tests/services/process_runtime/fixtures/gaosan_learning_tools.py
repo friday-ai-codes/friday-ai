@@ -1,14 +1,14 @@
-"""合成 Learning-tools Space 宇宙（Phase 132 / INT-02；D-06）。
+"""合成 Learning-tools Space 宇宙（Phase 132 / INT-02；去固定角色化）。
 
-提供 team_core（含四基线）、out_of_team 诱饵、membership、压缩 modules/features，
-以及四角色 ↔ 四基线期望映射。不读活 DB / 无网络。
+提供 team_core、out_of_team 诱饵、membership、压缩 modules/features，
+以及 unit → expected_primary 映射。不读活 DB / 无网络。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-# 四基线规范 id（测试宇宙内用规范路径作 repository_id）
+# 规范 id（测试宇宙内用规范路径作 repository_id）
 REPO_ONION_LEARNING = "frontend/onion-learning"
 REPO_ONION_PRACTICE = "frontend/onion-practice"
 REPO_STUDY_COURSE = "backend/study-course"
@@ -47,12 +47,13 @@ MEMBERSHIP: dict[str, str] = {
     REPO_VOCATION_PROBLEM: "out_of_team",
 }
 
-# 四角色 ↔ 四基线（fixture 对齐，非硬编码产品逻辑）
-ROLE_EXPECTATIONS: dict[str, str] = {
-    "app_shell": REPO_ONION_LEARNING,
-    "practice_reuse_host": REPO_ONION_PRACTICE,
-    "course_config": REPO_STUDY_COURSE,
-    "learning_state": REPO_STUDY_USER_STATUS,
+# unit → 期望 primary（fixture 对齐，非硬编码产品角色枚举）
+UNIT_PRIMARY_EXPECTATIONS: dict[str, str] = {
+    "mod-shell": REPO_ONION_LEARNING,
+    "mod-practice": REPO_ONION_PRACTICE,
+    "mod-course": REPO_STUDY_COURSE,
+    "mod-state": REPO_STUDY_USER_STATUS,
+    "mod-dashboard": REPO_ONION_LEARNING,
 }
 
 # 压缩放置单元（4–9）：对齐高三九模块语义的子集
@@ -60,35 +61,30 @@ MODULES: list[dict[str, Any]] = [
     {
         "unit_id": "mod-shell",
         "title": "学习工具壳与导航",
-        "role": "app_shell",
         "expected_primary": REPO_ONION_LEARNING,
         "feature_ids": ["fp-nav", "fp-home"],
     },
     {
         "unit_id": "mod-practice",
         "title": "练习复用宿主",
-        "role": "practice_reuse_host",
         "expected_primary": REPO_ONION_PRACTICE,
         "feature_ids": ["fp-practice-entry", "fp-wrong-book"],
     },
     {
         "unit_id": "mod-course",
         "title": "课程与任务配置",
-        "role": "course_config",
         "expected_primary": REPO_STUDY_COURSE,
         "feature_ids": ["fp-course-cfg", "fp-task-cfg"],
     },
     {
         "unit_id": "mod-state",
         "title": "学习状态与进度",
-        "role": "learning_state",
         "expected_primary": REPO_STUDY_USER_STATUS,
         "feature_ids": ["fp-progress", "fp-streak"],
     },
     {
         "unit_id": "mod-dashboard",
         "title": "提分看板",
-        "role": "app_shell",
         "expected_primary": REPO_ONION_LEARNING,
         "feature_ids": ["fp-dashboard"],
     },
@@ -103,7 +99,7 @@ FEATURES_FLAT: list[dict[str, Any]] = [
 # charter / history 信号（漏斗回归用）
 CHARTER_SIGNALS: dict[str, Any] = {
     "domains": ["learning-tools", "gaosan-boost"],
-    "role_hints": dict(ROLE_EXPECTATIONS),
+    "unit_primary_hints": dict(UNIT_PRIMARY_EXPECTATIONS),
     "force_include": list(TEAM_CORE_IDS),
 }
 
@@ -170,26 +166,6 @@ def shortlist_universe() -> list[dict[str, Any]]:
     return rows
 
 
-def role_map_payload() -> dict[str, Any]:
-    roles: dict[str, Any] = {}
-    per_repo: list[dict[str, Any]] = []
-    for role, primary in ROLE_EXPECTATIONS.items():
-        roles[role] = {
-            "primary": primary,
-            "supporting": [],
-            "forbidden": list(OUT_OF_TEAM_IDS),
-        }
-        per_repo.append(
-            {"repository_id": primary, "role": role, "assignment": "primary"}
-        )
-    return {
-        "status": "ok",
-        "roles": roles,
-        "per_repo": per_repo,
-        "placement_defaults": {"learning_state_writer_not_app_shell": True},
-    }
-
-
 def stub_v2_scores_by_unit() -> dict[str, dict[str, float]]:
     """hard_scope 内 stub 分数：期望 primary 最高，诱饵极低。"""
     out: dict[str, dict[str, float]] = {}
@@ -203,19 +179,13 @@ def stub_v2_scores_by_unit() -> dict[str, dict[str, float]]:
 
 
 def build_funnel_units() -> list[Any]:
-    """将合成 MODULES 转为 PlacementUnit 列表（含角色对齐的 query/hints）。"""
+    """将合成 MODULES 转为 PlacementUnit 列表。"""
     from services.process_runtime.placement_units import PlacementUnit
 
     units: list[PlacementUnit] = []
     for m in MODULES:
-        role = str(m.get("role") or "")
-        hints: list[str] = []
-        if role == "practice_reuse_host":
-            hints = ["practice_reuse_host"]
-        elif role == "learning_state":
-            hints = ["learning_state"]
-        query = f"{m['title']} role={role} expected={m['expected_primary']}"
-        if role == "learning_state":
+        query = f"{m['title']} expected={m['expected_primary']}"
+        if "学习状态" in str(m.get("title") or ""):
             query = f"学习状态与进度 {m['title']}"
         units.append(
             PlacementUnit(
@@ -223,7 +193,7 @@ def build_funnel_units() -> list[Any]:
                 feature_ids=list(m.get("feature_ids") or []),
                 module_names=[str(m.get("title") or m["unit_id"])],
                 query_text=query,
-                reuse_host_hints=hints,
+                reuse_host_hints=[],
                 feature_names=list(m.get("feature_ids") or []),
             )
         )
@@ -237,27 +207,24 @@ def make_scoped_v2_router() -> tuple[Any, list[dict[str, Any]]]:
 
     call_log: list[dict[str, Any]] = []
     scores_by_unit = stub_v2_scores_by_unit()
-    # query_text → unit_id 粗匹配
     unit_by_token = {m["unit_id"]: m for m in MODULES}
 
     async def _route(query: str, **kwargs: Any) -> Any:
         call_log.append({"query": query, **kwargs})
         scope = list(kwargs.get("repository_ids") or [])
-        # 选匹配 unit
         matched = None
         q = str(query or "")
         for uid, m in unit_by_token.items():
-            if uid in q or str(m.get("title") or "") in q or str(m.get("role") or "") in q:
+            if uid in q or str(m.get("title") or "") in q:
                 matched = m
                 break
             if m["expected_primary"] in q:
                 matched = m
                 break
         if matched is None:
-            # 学习状态关键词
             if "学习状态" in q or "学习进度" in q:
                 matched = next(
-                    (m for m in MODULES if m["role"] == "learning_state"), MODULES[0]
+                    (m for m in MODULES if m["unit_id"] == "mod-state"), MODULES[0]
                 )
             else:
                 matched = MODULES[0]

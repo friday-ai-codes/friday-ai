@@ -489,8 +489,65 @@ def _extract_team_context(session) -> tuple[str, str, str]:
     return project_id, space_id, team_id
 
 
+#: 「像模块名」的判定：短、单段、无句读。⛔ 宁缺勿造 —— recover 不出来就留空，
+#: 让 guardrail 显式记 degrade，而不是把一整句需求正文当模块名去聚合。
+_MODULE_NAME_MAX_CHARS = 30
+_MODULE_NAME_RE = re.compile(r"^[\w\u4e00-\u9fff][\w\u4e00-\u9fff\-_.·:：()（）\[\]【】]*$")
+#: `len(features_flat) >= 5` 却凑不出 2 个模块 ⇒ 全部落 `_unassigned` ⇒ 恒 1 个
+#: PlacementUnit（mega-unit）。阈值取 5：4 个以内的需求压成一个单元本就合理。
+_MEGA_UNIT_FEATURE_THRESHOLD = 5
+MEGA_UNIT_DEGRADE_REASON = "mega_unit_missing_modules"
+
+
+def _module_name_candidate(description: str) -> tuple[str, bool]:
+    """从**旧数据**的 description 首段取模块名候选（Fix A 的 legacy 兼容）。
+
+    旧 `_points_from_segments` 只把 `module`/`layer` 拼成 ``"模块A / layer"`` 写进
+    description，从不落结构化 `module`。这里只认「短且无句读的首段」，句子形态一律
+    返回空 —— 误判出来的假模块名会让 placement 按噪声聚合，比塌成 1 unit 更糟。
+
+    Returns:
+        ``(candidate, strong)``：``strong`` 表示候选自带**结构信号**（旧 ``"A / B"``
+        合成形状，或带「模块」字样），可单条采信；否则只是「短首段」，需靠跨功能点
+        复现（同一 head 至少出现 2 次 ⇒ 它在充当分组键而不是散文）才采信。
+    """
+    text = str(description or "").strip()
+    if not text:
+        return "", False
+    first_line = text.splitlines()[0].strip()
+    head, _, tail = first_line.partition(" / ")
+    head = head.strip()
+    if not head or len(head) > _MODULE_NAME_MAX_CHARS:
+        return "", False
+    if any(ch in head for ch in "。！？；，,;"):
+        return "", False
+    if not _MODULE_NAME_RE.match(head):
+        return "", False
+    strong = bool(tail.strip()) or "模块" in head
+    return head, strong
+
+
+def _recover_module_names(candidates: list[tuple[str, bool]]) -> list[str]:
+    """把候选表收敛成逐功能点的模块名（弱候选须跨功能点复现才采信）。"""
+    counts: dict[str, int] = {}
+    for name, _strong in candidates:
+        if name:
+            counts[name] = counts.get(name, 0) + 1
+    return [
+        name if name and (strong or counts.get(name, 0) >= 2) else "" for name, strong in candidates
+    ]
+
+
 def _requirement_spec_to_feature_list(requirement_spec: dict | None) -> dict:
-    """requirement_spec → 画像语料形状（模块简述用 goal，功能用 feature_points）。"""
+    """requirement_spec → 画像语料形状（模块简述用 goal，功能用 feature_points）。
+
+    ⭐ `modules[]` 是**真实模块名去重表**（driver of `build_placement_units` 聚合）。
+    历史实现在这里伪造 ``[{"name": "requirement"}]``，于是所有功能点 `module` 皆空、
+    统统进 `_unassigned` 桶 ⇒ 恒 1 个 PlacementUnit ⇒ 多模块需求只发一次
+    `RepoRouterV2` 查询。现在：module 取结构化字段 → 取不到则从 description 回收 →
+    仍取不到且功能点够多时记 :data:`MEGA_UNIT_DEGRADE_REASON`（`_degrade_reasons`，
+    由 `_aapply_placement_funnel` 并进 funnel 的 degrade_reasons）。
+    """
     spec = requirement_spec if isinstance(requirement_spec, dict) else {}
     overview_parts: list[str] = []
     goal = spec.get("goal")
@@ -506,27 +563,56 @@ def _requirement_spec_to_feature_list(requirement_spec: dict | None) -> dict:
         overview_parts.append(goal.strip())
 
     features_flat: list[dict] = []
+    candidates: list[tuple[str, bool]] = []
     for fp in spec.get("feature_points") or []:
         if not isinstance(fp, dict):
             continue
         title = str(fp.get("title") or fp.get("name") or "").strip()
         if not title:
             continue
-        features_flat.append(
-            {
-                "name": title,
-                "description": str(fp.get("description") or title).strip(),
-                "module": str(fp.get("module") or "").strip(),
-            }
+        description = _blocks_to_text(fp.get("description")).strip()
+        module = str(fp.get("module") or "").strip()
+        feature: dict[str, Any] = {
+            "name": title,
+            "description": description or title,
+            "module": module,
+        }
+        fid = str(fp.get("id") or "").strip()
+        if fid:
+            feature["id"] = fid
+        features_flat.append(feature)
+        # 结构化 module 缺失才进 legacy 回收（回收决议要看全表，故先收候选）
+        candidates.append(("", False) if module else _module_name_candidate(description))
+
+    recovered_count = 0
+    for feature, recovered in zip(features_flat, _recover_module_names(candidates), strict=True):
+        if not feature["module"] and recovered:
+            feature["module"] = recovered
+            recovered_count += 1
+
+    module_names: list[str] = []
+    for feature in features_flat:
+        module = feature["module"]
+        if module and module not in module_names:
+            module_names.append(module)
+
+    degrade_reasons: list[str] = []
+    if len(features_flat) >= _MEGA_UNIT_FEATURE_THRESHOLD and len(module_names) < 2:
+        degrade_reasons.append(MEGA_UNIT_DEGRADE_REASON)
+        logger.info(
+            "blueprint_route_placement_mega_unit_guardrail",
+            feature_count=len(features_flat),
+            unit_module_count=len(module_names),
+            recovered_module_count=recovered_count,
+            category="sampling",
+            component="process_runtime",
         )
+
     return {
         "flow_summary": "；".join(overview_parts),
-        "modules": (
-            [{"name": "requirement", "summary": "；".join(overview_parts)}]
-            if overview_parts
-            else []
-        ),
+        "modules": [{"name": name, "summary": ""} for name in module_names],
         "features_flat": features_flat,
+        "_degrade_reasons": degrade_reasons,
     }
 
 
@@ -658,32 +744,23 @@ class BlueprintRouteAdapter:
                     degrade_reason=str(profile_result.get("degrade_reason") or ""),
                 )
 
-        # Phase 129：team_gate 后 → history prior → shortlist → role_map（D-15）
-        mid = await self._aapply_shortlist_role_map(
+        # Phase 129：team_gate 后 → history prior → shortlist（角色图已退役）
+        mid = await self._aapply_shortlist(
             session=session,
             query=query,
             query_terms=query_terms,
             team_core=repository_ids,
-            intent=intent,
-            weights=weights,
-            profile_result=profile_result,
         )
-        if mid.get("status") == "clarify":
-            return mid["clarify"]
         shortlist_payload = mid["shortlist"]
-        role_map_payload = mid["role_map"]
-        placement_defaults = mid["placement_defaults"]
         shortlist_ids = list(mid["shortlist_ids"])
         # 后续 V2/融合硬限制在 shortlist（不得逃逸到 team 外/全库）
         repository_ids = shortlist_ids or repository_ids
 
-        # Phase 130：role_map 后 → placement units → place（INT-01；D-12）
+        # Phase 130：shortlist → placement units → place（RepoRouterV2 use_llm=True）
         router = self._resolve_router()
         placement_funnel = await self._aapply_placement_funnel(
             requirement_spec=requirement_spec,
             shortlist_ids=shortlist_ids,
-            role_map_payload=role_map_payload,
-            placement_defaults=placement_defaults,
             team_core=list(team_gate.get("team_core") or []),
             router=router,
         )
@@ -691,7 +768,6 @@ class BlueprintRouteAdapter:
         gate_bundle = self._apply_funnel_gates_and_reflection(
             team_gate=team_gate,
             shortlist_ids=shortlist_ids,
-            role_map_payload=role_map_payload,
             placement_funnel=placement_funnel,
         )
         placement_funnel = gate_bundle["placement_funnel"]
@@ -790,7 +866,6 @@ class BlueprintRouteAdapter:
                     ),
                     "shortlist": shortlist_payload,
                     "shortlist_count": len(shortlist_ids),
-                    "role_map": role_map_payload,
                     "team_core": list(team_gate.get("team_core") or []),
                     "team_core_count": len(list(team_gate.get("team_core") or [])),
                 }
@@ -882,8 +957,6 @@ class BlueprintRouteAdapter:
             "degrade_reason": str(profile_result.get("degrade_reason") or ""),
             "shortlist": shortlist_payload,
             "shortlist_count": len(shortlist_ids),
-            "role_map": role_map_payload,
-            "placement_defaults": placement_defaults,
             "placement_units": placement_funnel.get("placement_units"),
             "placement_unit_count": int(placement_funnel.get("placement_unit_count") or 0),
             "placements": list(placement_funnel.get("placements") or []),
@@ -971,7 +1044,6 @@ class BlueprintRouteAdapter:
         *,
         team_gate: dict,
         shortlist_ids: list[str],
-        role_map_payload: dict,
         placement_funnel: dict,
     ) -> dict:
         """Phase 131：evaluate_funnel_gates → 可选反思 → 发布门收口 auto_selected。"""
@@ -995,7 +1067,6 @@ class BlueprintRouteAdapter:
         report = evaluate_funnel_gates(
             team=team_payload,
             shortlist_ids=shortlist_ids,
-            role_map=role_map_payload if isinstance(role_map_payload, dict) else {},
             placements=placements,
             confirmation_acked=False,
             reuse_hosts=[],
@@ -1003,9 +1074,7 @@ class BlueprintRouteAdapter:
 
         reflection_payload: dict | None = None
         review_status = None
-        triggers = detect_reflection_triggers(
-            report, placements=placements, role_map=role_map_payload
-        )
+        triggers = detect_reflection_triggers(report, placements=placements)
         if triggers.should_reflect:
             scope = list(placement_funnel.get("hard_scope") or shortlist_ids or [])
 
@@ -1014,23 +1083,8 @@ class BlueprintRouteAdapter:
                 repo_ids = list(kwargs.get("repository_ids") or scope)
                 if not repo_ids:
                     repo_ids = list(scope) or list(shortlist_ids or [])
-                # 角色坍塌修复：forbidden primary 替换为 shortlist/hard_scope 内安全仓
-                forbidden: set[str] = set()
-                roles = (
-                    role_map_payload.get("roles")
-                    if isinstance(role_map_payload, dict)
-                    else {}
-                ) or {}
-                if isinstance(roles, dict):
-                    for bucket in roles.values():
-                        if isinstance(bucket, dict):
-                            for rid in bucket.get("forbidden") or []:
-                                if rid:
-                                    forbidden.add(str(rid))
                 team_safe = [
-                    rid
-                    for rid in (list(shortlist_ids or []) + list(repo_ids))
-                    if rid and rid not in forbidden
+                    rid for rid in (list(shortlist_ids or []) + list(repo_ids)) if rid
                 ]
                 fixed: list[dict] = []
                 for p in kwargs.get("placements") or placements:
@@ -1041,11 +1095,11 @@ class BlueprintRouteAdapter:
                         if not hs:
                             p["hard_scope"] = list(repo_ids)
                         primary = str(p.get("primary_repo") or "").strip()
-                        allowed = set(p.get("hard_scope") or repo_ids) - forbidden
+                        allowed = set(p.get("hard_scope") or repo_ids)
                         safe_fallbacks = [
                             rid for rid in team_safe if rid in allowed
                         ] or list(allowed)
-                        if primary and (primary not in allowed or primary in forbidden):
+                        if primary and primary not in allowed:
                             if safe_fallbacks:
                                 p["primary_repo"] = safe_fallbacks[0]
                                 p["open_questions"] = list(
@@ -1057,7 +1111,6 @@ class BlueprintRouteAdapter:
             refl = run_reflection_loop(
                 gate_report=report,
                 placements=placements,
-                role_map=role_map_payload if isinstance(role_map_payload, dict) else {},
                 team=team_payload,
                 shortlist_ids=shortlist_ids,
                 max_rounds=2,
@@ -1075,7 +1128,6 @@ class BlueprintRouteAdapter:
             report = evaluate_funnel_gates(
                 team=team_payload,
                 shortlist_ids=shortlist_ids,
-                role_map=role_map_payload if isinstance(role_map_payload, dict) else {},
                 placements=placements,
                 confirmation_acked=False,
                 reuse_hosts=[],
@@ -1098,7 +1150,14 @@ class BlueprintRouteAdapter:
         hard_scope: set[str],
         excluded: set[str],
     ) -> list[dict]:
-        """由 placements 推导候选种子；primary 优先，supporting 次之；硬限制 hard_scope。"""
+        """由 placements 推导候选种子；primary 优先，supporting 次之；硬限制 hard_scope。
+
+        D-02：supporting 的 confidence 走 `place_units._confidence_from_score`（复用同一套
+        阈值，⛔ 不复制常量、⛔ 不硬编码 ``"low"``）。历史实现把 supporting 一律钉成 low，
+        `_role_suggestion` 于是恒偏 `indirect`，高分协作仓永远拿不到直接职责。
+        """
+        from services.process_runtime.place_units import _confidence_from_score
+
         raw: list[dict] = []
         seen: set[str] = set()
         # 先 primary
@@ -1134,12 +1193,13 @@ class BlueprintRouteAdapter:
                 if hard_scope and sid not in hard_scope:
                     continue
                 seen.add(sid)
+                support_score = float(scores.get(sid, 0.35) or 0.35)
                 raw.append(
                     {
                         "repository_id": sid,
                         "repository_name": "",
-                        "router_base": float(scores.get(sid, 0.35) or 0.35),
-                        "confidence": "low",
+                        "router_base": support_score,
+                        "confidence": _confidence_from_score(support_score, contested=False),
                         "reasoning": "placement_supporting",
                         "matched_node_paths": [],
                         "charter_supplement": False,
@@ -1152,8 +1212,6 @@ class BlueprintRouteAdapter:
         *,
         requirement_spec: dict,
         shortlist_ids: list[str],
-        role_map_payload: dict,
-        placement_defaults: dict,
         team_core: list[str],
         router,
     ) -> dict:
@@ -1174,9 +1232,15 @@ class BlueprintRouteAdapter:
             "hard_scope": list(shortlist_ids or []),
             "degrade_reasons": [],
         }
+        feature_degrades: list[str] = []
         try:
             feature_list = _requirement_spec_to_feature_list(requirement_spec)
-            units_result = build_placement_units(feature_list=feature_list)
+            feature_degrades = [
+                str(r) for r in (feature_list.get("_degrade_reasons") or []) if str(r or "")
+            ]
+            # D-01：depends_on 只写 `depends_on_units` 边，⛔ 不并查合并 —— 默认 True 会把
+            # 互相依赖的模块塌回同一个 unit，等于把 Fix A 拆出来的多 unit 又合上。
+            units_result = build_placement_units(feature_list=feature_list, merge_depends_on=False)
         except Exception as exc:  # noqa: BLE001
             from common.logging import redact_secrets_in_text
 
@@ -1186,18 +1250,16 @@ class BlueprintRouteAdapter:
                 category="sampling",
                 component="process_runtime",
             )
-            empty["degrade_reasons"] = ["placement_units_failed"]
+            empty["degrade_reasons"] = [*feature_degrades, "placement_units_failed"]
             return empty
 
         try:
             place_result = await place_units(
                 getattr(units_result, "units", None) or [],
                 shortlist_ids=shortlist_ids,
-                role_map=role_map_payload,
-                placement_defaults=placement_defaults,
                 team_core=team_core,
                 router=router,
-                use_llm=False,
+                use_llm=True,
                 top_k=self.top_k,
             )
         except Exception as exc:  # noqa: BLE001
@@ -1214,7 +1276,7 @@ class BlueprintRouteAdapter:
                 "placement_unit_count": int(getattr(units_result, "unit_count", 0) or 0),
                 "placements": [],
                 "hard_scope": list(shortlist_ids or []),
-                "degrade_reasons": ["place_units_failed"],
+                "degrade_reasons": [*feature_degrades, "place_units_failed"],
             }
 
         placements_payload = []
@@ -1249,28 +1311,26 @@ class BlueprintRouteAdapter:
             "placement_unit_count": int(getattr(units_result, "unit_count", 0) or 0),
             "placements": placements_payload,
             "hard_scope": hard_scope,
-            "degrade_reasons": list(getattr(place_result, "degrade_reasons", None) or []),
+            "degrade_reasons": [
+                *feature_degrades,
+                *(str(r) for r in (getattr(place_result, "degrade_reasons", None) or [])),
+            ],
             "place_result": placement_result_to_dict(place_result),
         }
 
-    async def _aapply_shortlist_role_map(
+    async def _aapply_shortlist(
         self,
         *,
         session,
         query: str,
         query_terms: list[str],
         team_core: list[str],
-        intent: str,
-        weights,
-        profile_result: dict,
     ) -> dict:
-        """Phase 129 中段：history prior → shortlist → role_map。
+        """Phase 129 中段：history prior → shortlist。
 
-        role_map clarify → 返回 clarify 载荷（candidates 空，不塞全库）。
-        best-effort：分步失败不阻断，降级为空 shortlist 信号。
+        best-effort：分步失败不阻断，降级为空 shortlist 信号（回退 team_core）。
         """
         from services.process_runtime.history_prior import asplit_history_priors
-        from services.process_runtime.role_map import build_role_map
         from services.process_runtime.shortlist import build_shortlist
 
         team_ids = [str(r) for r in (team_core or []) if str(r or "").strip()]
@@ -1322,7 +1382,6 @@ class BlueprintRouteAdapter:
 
         charter_domain_scores: dict[str, float] = {}
         planned_ids: list[str] = []
-        charters: dict = {}
         try:
             charters = await self._aload_charters(team_ids)
             for rid in team_ids:
@@ -1373,64 +1432,11 @@ class BlueprintRouteAdapter:
         if not shortlist_ids:
             shortlist_ids = list(team_ids)
 
-        try:
-            role_map_result = build_role_map(
-                shortlist_repos=shortlist_ids,
-                charters_by_repo={rid: charters.get(rid) for rid in shortlist_ids},
-                profile=profile_result.get("profile")
-                if isinstance(profile_result.get("profile"), dict)
-                else None,
-            )
-        except Exception as exc:  # noqa: BLE001
-            from common.logging import redact_secrets_in_text
-
-            logger.warning(
-                "blueprint_route_role_map_failed",
-                error=redact_secrets_in_text(str(exc)),
-                category="sampling",
-                component="process_runtime",
-            )
-            from services.process_runtime.role_map import PLACEMENT_DEFAULTS, RoleMapResult
-
-            role_map_result = RoleMapResult(
-                status="ok", placement_defaults=dict(PLACEMENT_DEFAULTS)
-            )
-
-        placement_defaults = dict(
-            getattr(role_map_result, "placement_defaults", None) or {}
-        )
-        role_map_payload = {
-            "status": getattr(role_map_result, "status", "ok"),
-            "clarify_reason": getattr(role_map_result, "clarify_reason", ""),
-            "roles": getattr(role_map_result, "roles", {}) or {},
-            "per_repo": getattr(role_map_result, "per_repo", []) or [],
-            "placement_defaults": placement_defaults,
-        }
-        shortlist_payload = shortlist_repos
-
-        if getattr(role_map_result, "status", "ok") == "clarify":
-            clarify = self._clarify_result(
-                intent=intent,
-                weights_used=_weights_for(weights, intent),
-                clarify_reason=str(
-                    getattr(role_map_result, "clarify_reason", "") or "unmapped_role"
-                ),
-                team_core=team_ids,
-                profile=profile_result.get("profile"),
-                degrade_reason=str(profile_result.get("degrade_reason") or ""),
-            )
-            clarify["shortlist"] = shortlist_payload
-            clarify["shortlist_count"] = len(shortlist_ids)
-            clarify["role_map"] = role_map_payload
-            clarify["placement_defaults"] = placement_defaults
-            return {"status": "clarify", "clarify": clarify}
-
         return {
             "status": "ok",
-            "shortlist": shortlist_payload,
+            "shortlist": shortlist_repos,
             "shortlist_ids": shortlist_ids,
-            "role_map": role_map_payload,
-            "placement_defaults": placement_defaults,
+            "capability_scores": capability_scores,
         }
 
     # ── 内部步骤（各自 best-effort，单个依赖失败不拖垮路由） ──────────────

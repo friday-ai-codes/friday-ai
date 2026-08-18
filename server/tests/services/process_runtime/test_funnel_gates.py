@@ -1,4 +1,4 @@
-"""Phase 131 统一门禁契约与五门语义（GATE-01/02/03；D-02/D-04~D-11）。"""
+"""Phase 131 统一门禁契约与五门语义（GATE-01/02/03；去固定角色化）。"""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def _placement(
         if evidence is not None
         else [
             {"kind": "charter"},
-            {"kind": "role_map"},
+            {"kind": "v2"},
         ],
         "open_questions": open_questions or [],
         "hard_scope": hard_scope if hard_scope is not None else ["core-1", "core-2", "host-1"],
@@ -45,23 +45,6 @@ def _placement(
         p["reuse"] = True
         p["placement_mode"] = "reuse"
     return p
-
-
-def _role_map_ok() -> dict:
-    return {
-        "status": "ok",
-        "roles": {
-            "app_shell": {"primary": "core-1", "supporting": [], "forbidden": []},
-            "practice_reuse_host": {"primary": "host-1", "supporting": [], "forbidden": []},
-            "course_config": {"primary": "core-2", "supporting": [], "forbidden": []},
-            "learning_state": {"primary": "core-2", "supporting": [], "forbidden": []},
-        },
-        "per_repo": [
-            {"repository_id": "core-1", "role": "app_shell", "assignment": "primary"},
-            {"repository_id": "host-1", "role": "practice_reuse_host", "assignment": "primary"},
-            {"repository_id": "core-2", "role": "learning_state", "assignment": "primary"},
-        ],
-    }
 
 
 def _team_ok() -> dict:
@@ -82,7 +65,6 @@ class TestGateContract:
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map_ok(),
             placements=[_placement("u1")],
             confirmation_acked=True,
         )
@@ -109,7 +91,6 @@ class TestTeamGate:
         report = evaluate_funnel_gates(
             team=None,
             shortlist_ids=["core-1"],
-            role_map=_role_map_ok(),
             placements=[_placement("u1")],
         )
         team = report.gate("team")
@@ -121,7 +102,6 @@ class TestTeamGate:
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map_ok(),
             placements=[_placement("u1", primary="outsider", hard_scope=["core-1", "outsider"])],
         )
         team = report.gate("team")
@@ -135,7 +115,6 @@ class TestShortlistCoverage:
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=[],
-            role_map=_role_map_ok(),
             placements=[_placement("u1")],
         )
         g = report.gate("shortlist_coverage")
@@ -146,7 +125,6 @@ class TestShortlistCoverage:
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=["core-1"],
-            role_map=_role_map_ok(),
             placements=[_placement("u1", hard_scope=[])],
         )
         g = report.gate("shortlist_coverage")
@@ -159,7 +137,6 @@ class TestUnitPlacement:
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map_ok(),
             placements=[_placement("u1", primary=None)],
         )
         g = report.gate("unit_placement")
@@ -170,7 +147,6 @@ class TestUnitPlacement:
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map_ok(),
             placements=[_placement("u1", primary="core-2", hard_scope=["core-1"])],
         )
         g = report.gate("unit_placement")
@@ -179,36 +155,6 @@ class TestUnitPlacement:
 
 
 class TestGlobalConsistency:
-    def test_dual_state_domain_writer_block(self):
-        placements = [
-            _placement("u-state-a", primary="core-1", kind="learning_state"),
-            _placement("u-state-b", primary="core-2", kind="learning_state"),
-        ]
-        report = evaluate_funnel_gates(
-            team=_team_ok(),
-            shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map_ok(),
-            placements=placements,
-        )
-        g = report.gate("global_consistency")
-        assert g.status == "block"
-        assert "dual_state_domain_writer" in g.reason_codes
-
-    def test_app_shell_scattered_block(self):
-        placements = [
-            _placement("u-shell-a", primary="core-1", kind="app_shell"),
-            _placement("u-shell-b", primary="core-2", kind="app_shell"),
-        ]
-        report = evaluate_funnel_gates(
-            team=_team_ok(),
-            shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map_ok(),
-            placements=placements,
-        )
-        g = report.gate("global_consistency")
-        assert g.status in {"block", "clarify"}
-        assert "app_shell_scattered" in g.reason_codes
-
     def test_reuse_modify_forbidden_block(self):
         placements = [
             _placement("u-reuse", primary="host-1", reuse=True),
@@ -216,7 +162,6 @@ class TestGlobalConsistency:
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map_ok(),
             placements=placements,
             reuse_hosts=["host-1"],
         )
@@ -228,7 +173,6 @@ class TestGlobalConsistency:
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=["core-1", "core-2"],
-            role_map=_role_map_ok(),
             placements=[_placement("u1", primary="ghost", hard_scope=["core-1", "ghost"])],
         )
         g = report.gate("global_consistency")
@@ -241,11 +185,10 @@ class TestGlobalConsistency:
 
 class TestPublishGate:
     def test_default_confirmation_clarify(self):
-        # D-02 未满足（缺双证据 / 非 high）时默认 confirmation → clarify
+        # 未满足 all_high + dual_evidence 时默认 confirmation → clarify
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map_ok(),
             placements=[
                 _placement(
                     "u1",
@@ -259,7 +202,8 @@ class TestPublishGate:
         assert "needs_confirmation" in g.reason_codes
         assert report.allow_auto_selected is False
 
-    def test_d02_auto_selected_when_three_conditions_met(self):
+    def test_auto_selected_when_all_high_and_dual_evidence(self):
+        """发布 auto：全 unit high + 双证据（charter/history ∪ shortlist/v2/reuse）。"""
         placements = [
             _placement(
                 "u1",
@@ -276,7 +220,6 @@ class TestPublishGate:
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map_ok(),
             placements=placements,
         )
         g = report.gate("publish")
@@ -287,7 +230,6 @@ class TestPublishGate:
         report = evaluate_funnel_gates(
             team=_team_ok(),
             shortlist_ids=["core-1", "core-2", "host-1"],
-            role_map=_role_map_ok(),
             placements=[_placement("u1", confidence="medium")],
             confirmation_acked=True,
         )
@@ -301,7 +243,6 @@ class TestAggregation:
         report = evaluate_funnel_gates(
             team=None,
             shortlist_ids=[],
-            role_map=_role_map_ok(),
             placements=[_placement("u1", primary="outsider", hard_scope=["outsider"])],
             membership={"outsider": "out_of_team"},
         )
@@ -325,7 +266,6 @@ class TestObservability:
             evaluate_funnel_gates(
                 team=_team_ok(),
                 shortlist_ids=["core-1"],
-                role_map=_role_map_ok(),
                 placements=[_placement("u1")],
                 confirmation_acked=True,
             )

@@ -43,12 +43,11 @@ _REPAIRABLE_GATE_CODES = frozenset(
         "empty_shortlist",
         "missing_primary",
         "reuse_modify_forbidden",
-        "app_shell_scattered",
-        "dual_state_domain_writer",
         "primary_out_of_scope",
         "out_of_team_primary",
         "unit_open_questions",
         "force_include_uncovered",
+        "primary_outside_universe",
     }
 )
 
@@ -58,7 +57,7 @@ class ReflectionTriggerSet:
     trigger_codes: list[str] = field(default_factory=list)
     affected_unit_ids: list[str] = field(default_factory=list)
     affected_repo_ids: list[str] = field(default_factory=list)
-    jump_back_to: str = "place_units"  # shortlist | role_map | place_units
+    jump_back_to: str = "place_units"  # shortlist | place_units
     details: list[dict[str, Any]] = field(default_factory=list)
 
     @property
@@ -141,26 +140,6 @@ def _as_dicts(placements: Sequence[Any] | None) -> list[dict[str, Any]]:
     return out
 
 
-def _forbidden_repos(role_map: Mapping[str, Any] | None) -> set[str]:
-    forbidden: set[str] = set()
-    if not isinstance(role_map, Mapping):
-        return forbidden
-    roles = role_map.get("roles") or {}
-    if isinstance(roles, Mapping):
-        for bucket in roles.values():
-            if not isinstance(bucket, Mapping):
-                continue
-            for rid in bucket.get("forbidden") or []:
-                if rid:
-                    forbidden.add(str(rid))
-    for entry in role_map.get("per_repo") or []:
-        if isinstance(entry, Mapping) and str(entry.get("assignment") or "") == "forbidden":
-            rid = str(entry.get("repository_id") or "").strip()
-            if rid:
-                forbidden.add(rid)
-    return forbidden
-
-
 def _evidence_conflict(placement: Mapping[str, Any]) -> bool:
     evid = list(placement.get("evidence") or [])
     if any(isinstance(e, Mapping) and e.get("conflict") for e in evid):
@@ -188,7 +167,7 @@ def detect_reflection_triggers(
     gate_report: FunnelGateReport | Mapping[str, Any] | None,
     *,
     placements: Sequence[Any] | None = None,
-    role_map: Mapping[str, Any] | None = None,
+    role_map: Mapping[str, Any] | None = None,  # noqa: ARG001 — 已退役
     reuse_hosts: Sequence[str] | None = None,
 ) -> ReflectionTriggerSet:
     """从门禁报告 + placements 检测可反思触发码。"""
@@ -222,25 +201,6 @@ def detect_reflection_triggers(
                 affected_units.append(uid)
             details.append({"kind": "evidence_conflict", "unit_id": uid})
             jump = "place_units"
-
-    # role collapse: forbidden primary or role_map clarify
-    forbidden = _forbidden_repos(role_map)
-    role_status = str((role_map or {}).get("status") or "").lower() if role_map else ""
-    if role_status in {"clarify", "block", "incomplete", "failed"}:
-        codes.append("role_collapse")
-        jump = "role_map"
-        details.append({"kind": "role_map_status", "status": role_status})
-
-    for p in place_dicts:
-        primary = str(p.get("primary_repo") or "").strip()
-        if primary and primary in forbidden:
-            codes.append("role_collapse")
-            uid = str(p.get("unit_id") or "")
-            if uid:
-                affected_units.append(uid)
-            affected_repos.append(primary)
-            details.append({"kind": "forbidden_primary", "unit_id": uid, "repo_id": primary})
-            jump = "role_map"
 
     # reuse conflict
     if "reuse_modify_forbidden" in gate_codes:
@@ -280,9 +240,8 @@ def detect_reflection_triggers(
             "empty_shortlist",
             "reuse_modify_forbidden",
         }:
-            if c == "app_shell_scattered" or c == "dual_state_domain_writer":
-                codes.append("consistency_repairable")
-                jump = "place_units"
+            codes.append("consistency_repairable")
+            jump = "place_units"
 
     codes = _dedupe(codes)
     # map empty_shortlist also as coverage_hole for trigger surface if only that

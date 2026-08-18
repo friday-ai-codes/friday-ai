@@ -814,6 +814,59 @@ async def test_resume_short_circuits_when_blocked_and_nothing_to_research() -> N
 
 @pytestmark_db
 @pytest.mark.asyncio
+async def test_resume_short_circuit_refreshes_confirm_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-02：确认门开着、调研已 done、旧 options 残留 ``task_status=failed`` —— resume 在
+    「blocked + 无待调研」短路**之前**必须 refresh，把快照刷成最新（advance 仍为 0）。"""
+    from services.process_runtime.blueprint_confirm_gate import (
+        BlueprintConfirmGateAdapter,
+        iter_snapshot_repos,
+    )
+    from services.process_runtime.blueprint_resume import (
+        adrive_blueprint_session_to_pause_or_terminal,
+    )
+
+    session, _artifact, thread, repo = await _confirmation_gate_session(pending_task_status=None)
+    # 旧快照残留 failed（模拟门开着期间调研先失败落进 options 的存量）。
+    from delivery.models import BlueprintThread
+
+    await BlueprintThread.objects.filter(id=thread.id).aupdate(
+        options=[{"repository_id": str(repo.id), "task_status": "failed"}]
+    )
+
+    # 让 fitness 聚合确定性地返回 done（避免依赖真实 PartialPlan 装配）。
+    monkeypatch.setattr(
+        BlueprintConfirmGateAdapter,
+        "_acollect_fitness",
+        AsyncMock(
+            return_value={
+                str(repo.id): {
+                    "verdict": "suitable",
+                    "role_suggestion": "direct",
+                    "responsibility": "负责生成接口",
+                    "findings": [],
+                    "task_status": "done",
+                }
+            }
+        ),
+    )
+
+    advance = AsyncMock()
+    engine = SimpleNamespace(advance=advance, session_service=ConvergenceSessionService())
+
+    await adrive_blueprint_session_to_pause_or_terminal(engine, session, max_steps=1)
+
+    assert advance.await_count == 0, "无待调研仓 → advance 仍为 0"
+    fresh = await BlueprintThread.objects.aget(id=thread.id)
+    entry = next(
+        e for e in iter_snapshot_repos(fresh.options) if e["repository_id"] == str(repo.id)
+    )
+    assert entry["task_status"] == "done", "resume 短路前必须把陈旧 failed 刷成最新 done"
+
+
+@pytestmark_db
+@pytest.mark.asyncio
 async def test_resume_lets_advance_through_when_research_is_pending() -> None:
     """合取第二项若被漏写（只看线程就短路），这条即红 —— SC-4 最容易断的一环。"""
     from services.process_runtime.blueprint_resume import (
