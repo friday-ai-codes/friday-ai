@@ -186,6 +186,15 @@ class TestRepoSummaryStructuredSubmit:
         assert runner._captured_summary == {"overview": "x", "tech_stack": []}
         assert resp["content"][0]["type"] == "text"
 
+    def test_repo_summary_schema_includes_optional_charter(self):
+        """submit_summary schema 含可选 charter（D-01）。"""
+        from core.executor import _REPO_SUMMARY_INPUT_SCHEMA
+
+        props = _REPO_SUMMARY_INPUT_SCHEMA["properties"]
+        assert "charter" in props
+        assert "charter" not in _REPO_SUMMARY_INPUT_SCHEMA["required"]
+        assert "意图面" in props["charter"]["description"]
+
     @pytest.mark.asyncio
     async def test_fallback_to_text_output_when_tool_not_called(self, tmp_path):
         """模型没调工具时降级走文本输出（由 runner 侧 _extract_summary_json 兜底）。"""

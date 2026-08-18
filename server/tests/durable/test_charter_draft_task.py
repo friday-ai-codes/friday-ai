@@ -63,11 +63,10 @@ async def test_run_charter_draft_llm_unavailable_skipped(monkeypatch) -> None:
 
     monkeypatch.setattr(cs, "adraft_charter", AsyncMock(return_value=None))
     result = await run_charter_draft(repository_id="repo-1")
-    assert result == {
-        "status": "skipped",
-        "reason": "llm_unavailable",
-        "repository_id": "repo-1",
-    }
+    assert result["status"] == "skipped"
+    assert result["reason"] == "llm_unavailable"
+    assert result["repository_id"] == "repo-1"
+    assert result.get("mode") == "bootstrap"
 
 
 async def test_run_charter_draft_not_found_skipped(monkeypatch) -> None:
@@ -121,10 +120,41 @@ async def test_enqueue_charter_draft_idempotency_and_lock(monkeypatch) -> None:
         AsyncMock(return_value="charter-slot-1"),
     )
 
-    job = await enqueue_charter_draft("repo-x", initiated_by_user_id="7")
+    job = await enqueue_charter_draft(
+        "repo-x",
+        initiated_by_user_id="7",
+        mode="bootstrap",
+        fingerprint="fp-1",
+    )
     assert job == "job-charter"
     assert captured["task"] == "durable_charter_draft"
+    assert captured["payload"]["mode"] == "bootstrap"
+    assert captured["payload"]["fingerprint"] == "fp-1"
     assert captured["kwargs"]["queue"] == QUEUE_CHARTER
-    assert captured["kwargs"]["idempotency_key"] == "charter:repo-x"
+    assert captured["kwargs"]["idempotency_key"] == "charter:bootstrap:repo-x"
     assert captured["kwargs"]["lock"] == "charter-slot-1"
     assert captured["kwargs"]["initiated_by_user_id"] == "7"
+
+
+async def test_run_charter_draft_supplement_passes_fingerprint(monkeypatch) -> None:
+    import repositories.services.charter_service as cs
+
+    charter = MagicMock()
+    charter.source = "ai_draft"
+    charter.baseline_fingerprint = "fp-sup"
+    charter.positioning = "frozen"
+    charter.draft_content = {}
+    draft = AsyncMock(return_value=charter)
+    monkeypatch.setattr(cs, "adraft_charter", draft)
+
+    result = await run_charter_draft(
+        repository_id="repo-1",
+        initiated_by_user_id="42",
+        mode="supplement",
+        fingerprint="fp-sup",
+    )
+    assert result["status"] == "ok"
+    assert result["mode"] == "supplement"
+    assert result["fingerprint"] == "fp-sup"
+    draft.assert_awaited_once()
+    assert draft.await_args.kwargs.get("fingerprint") == "fp-sup"

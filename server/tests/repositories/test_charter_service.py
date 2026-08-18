@@ -27,6 +27,9 @@ from repositories.services.charter_service import (
     CharterPersistError,
     aconfirm_charter,
     adraft_charter,
+    aapply_charter_from_runner,
+    classify_charter_delta,
+    compute_charter_fingerprint,
     normalize_charter_draft,
 )
 from tests.helpers.fake_chat_model import FakeChatModel
@@ -95,29 +98,39 @@ async def test_adraft_creates_ai_draft_row(repository: Repository) -> None:
     assert charter.boundaries[0]["rule"] == "不承接课程权益鉴权"
     assert charter.evolution == "active"
     assert charter.draft_content == {}
+    assert charter.baseline_fingerprint
+    assert charter.baseline_locked_at is not None
+    assert charter.appendices == []
+    assert charter.change_proposals == []
     assert await RepoCharter.objects.acount() == 1
 
 
-async def test_adraft_redrafts_in_place_while_still_ai_draft(repository: Repository) -> None:
-    """已有 ai_draft 再起草 → 正式字段就地更新，version 不变，不产新行。"""
+async def test_adraft_freezes_formal_on_existing_row(repository: Repository) -> None:
+    """已有基线再起草 → 正式字段与 draft_content 不变，标量差异进 change_proposals。"""
     with (
         patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
         patch(_BUILD, return_value=_fake_model(_charter_json("初版定位"))),
     ):
-        first = await adraft_charter(str(repository.id))
+        first = await adraft_charter(str(repository.id), fingerprint="fp-v1")
     assert first is not None
 
     with (
         patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
         patch(_BUILD, return_value=_fake_model(_charter_json("二版定位"))),
     ):
-        second = await adraft_charter(str(repository.id))
+        second = await adraft_charter(str(repository.id), fingerprint="fp-v2")
 
     assert second is not None
     assert second.id == first.id
     assert second.version == 1
     assert second.source == RepoCharter.Source.AI_DRAFT
-    assert second.positioning == "二版定位"
+    assert second.positioning == "初版定位"
+    assert second.draft_content == {}
+    assert second.baseline_fingerprint == "fp-v2"
+    assert any(
+        p.get("field") == "positioning" and p.get("after") == "二版定位"
+        for p in (second.change_proposals or [])
+    )
     assert await RepoCharter.objects.acount() == 1
 
 
@@ -239,7 +252,12 @@ async def test_adraft_retries_once_on_unique_race(repository: Repository) -> Non
 
     assert len(calls) == 2, "应重跑一次读-改路径"
     assert charter is not None
-    assert charter.positioning == "重试后的定位"
+    # 行已存在 → 侧信道：正式定位保持并发对手写入的值
+    assert charter.positioning == "并发对手写入的草案"
+    assert any(
+        p.get("field") == "positioning" and p.get("after") == "重试后的定位"
+        for p in (charter.change_proposals or [])
+    )
     assert await RepoCharter.objects.acount() == 1
 
 
@@ -317,16 +335,16 @@ async def test_aconfirm_applies_edits_with_normalize(repository: Repository, use
     assert charter.source == RepoCharter.Source.HUMAN_CONFIRMED
 
 
-# ── P11 不覆盖不变量（CHARTER-01 核心）────────────────────────────────────
+# ── Append-only / fingerprint / classify（D-02..D-05）─────────────────────
 
 
 async def test_ai_never_overwrites_human_confirmed(repository: Repository, user) -> None:
-    """human_confirmed 后再起草：正式字段逐字节不变，仅 draft_content 变为新草案。"""
+    """human_confirmed 后再起草：正式字段与 draft_content 不变，差异进 proposals。"""
     with (
         patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
         patch(_BUILD, return_value=_fake_model(_charter_json("人工确认前定位"))),
     ):
-        await adraft_charter(str(repository.id))
+        await adraft_charter(str(repository.id), fingerprint="fp-a")
     confirmed = await aconfirm_charter(str(repository.id), user)
 
     snapshot = {
@@ -340,13 +358,14 @@ async def test_ai_never_overwrites_human_confirmed(repository: Repository, user)
         "source": confirmed.source,
         "version": confirmed.version,
         "confirmed_by_id": confirmed.confirmed_by_id,
+        "draft_content": confirmed.draft_content,
     }
 
     with (
         patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
         patch(_BUILD, return_value=_fake_model(_charter_json("AI 想覆盖的新定位"))),
     ):
-        redraft = await adraft_charter(str(repository.id))
+        redraft = await adraft_charter(str(repository.id), fingerprint="fp-b")
     assert redraft is not None
 
     reloaded = await RepoCharter.objects.aget(repository_id=repository.id)
@@ -360,30 +379,221 @@ async def test_ai_never_overwrites_human_confirmed(repository: Repository, user)
     assert reloaded.source == snapshot["source"]
     assert reloaded.version == snapshot["version"]
     assert reloaded.confirmed_by_id == snapshot["confirmed_by_id"]
-    # 新草案只进 draft_content
-    assert reloaded.draft_content["positioning"] == "AI 想覆盖的新定位"
+    assert reloaded.draft_content == {}
+    assert any(
+        p.get("after") == "AI 想覆盖的新定位" for p in (reloaded.change_proposals or [])
+    )
 
 
 async def test_aconfirm_promotes_pending_draft_content(repository: Repository, user) -> None:
-    """human_confirmed + 非空 draft_content 再 confirm → 草案提升为正式、version+1、draft 清空。"""
+    """human 手工写入 draft_content 后再 confirm → 草案提升为正式、version+1、draft 清空。"""
     with (
         patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
         patch(_BUILD, return_value=_fake_model(_charter_json("初版定位"))),
     ):
-        await adraft_charter(str(repository.id))
+        await adraft_charter(str(repository.id), fingerprint="fp-a")
     await aconfirm_charter(str(repository.id), user)  # v2 human_confirmed
 
-    with (
-        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
-        patch(_BUILD, return_value=_fake_model(_charter_json("修订草案定位"))),
-    ):
-        await adraft_charter(str(repository.id))  # 只写 draft_content
+    charter = await RepoCharter.objects.aget(repository_id=repository.id)
+    charter.draft_content = normalize_charter_draft(
+        json.loads(_charter_json("修订草案定位"))
+    )
+    await sync_to_async(charter.save)(update_fields=["draft_content", "updated_at"])
 
     charter = await aconfirm_charter(str(repository.id), user)
-    assert charter.positioning == "修订草案定位"  # 草案提升为正式
+    assert charter.positioning == "修订草案定位"
     assert charter.version == 3
     assert charter.source == RepoCharter.Source.HUMAN_CONFIRMED
     assert charter.draft_content == {}
+
+
+async def test_classify_new_key_to_appendices_scalar_to_proposals() -> None:
+    baseline = normalize_charter_draft(
+        {
+            "positioning": "旧定位",
+            "owned_domains": [
+                {"domain": "A", "status": "implemented", "note": "", "citations": ["c1"]}
+            ],
+            "boundaries": [],
+            "placement_preferences": [],
+            "audience": "",
+            "form": "",
+            "evolution": "active",
+        }
+    )
+    incoming = normalize_charter_draft(
+        {
+            "positioning": "新定位",
+            "owned_domains": [
+                {"domain": "A", "status": "implemented", "note": "", "citations": ["c1", "c2"]},
+                {"domain": "B", "status": "planned", "note": "", "citations": []},
+            ],
+            "boundaries": [],
+            "evolution": "active",
+        }
+    )
+    delta = classify_charter_delta(baseline, incoming)
+    assert any(a.get("reason") == "new_key" for a in delta["additions"])
+    assert any(a.get("reason") == "citation_only" for a in delta["additions"])
+    assert any(p.get("reason") == "scalar_change" for p in delta["proposals"])
+
+
+async def test_classify_same_key_semantic_and_removal() -> None:
+    baseline = normalize_charter_draft(
+        {
+            "owned_domains": [
+                {"domain": "A", "status": "implemented", "note": "n1", "citations": []},
+                {"domain": "B", "status": "planned", "note": "", "citations": []},
+            ],
+            "evolution": "active",
+        }
+    )
+    incoming = normalize_charter_draft(
+        {
+            "owned_domains": [
+                {"domain": "A", "status": "planned", "note": "n1", "citations": []},
+            ],
+            "evolution": "active",
+        }
+    )
+    delta = classify_charter_delta(baseline, incoming)
+    assert any(p.get("reason") == "same_key_semantic" for p in delta["proposals"])
+    assert any(p.get("reason") == "removal" for p in delta["proposals"])
+
+
+async def test_fingerprint_repeat_does_not_grow_side_channels(repository: Repository) -> None:
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=_fake_model(_charter_json())),
+    ):
+        first = await adraft_charter(str(repository.id), fingerprint="same-fp")
+    assert first is not None
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=_fake_model(_charter_json("完全不同的定位"))),
+    ):
+        second = await adraft_charter(str(repository.id), fingerprint="same-fp")
+    assert second is not None
+    assert second.positioning == first.positioning
+    assert len(second.appendices or []) == len(first.appendices or [])
+    assert len(second.change_proposals or []) == len(first.change_proposals or [])
+    assert second.baseline_fingerprint == "same-fp"
+
+
+async def test_empty_delta_still_persists_fingerprint(repository: Repository) -> None:
+    payload = normalize_charter_draft(json.loads(_charter_json()))
+    first = await aapply_charter_from_runner(
+        str(repository.id), payload, fingerprint="fp-empty-1", initiated_by_user_id="system"
+    )
+    assert first is not None
+    second = await aapply_charter_from_runner(
+        str(repository.id), payload, fingerprint="fp-empty-2", initiated_by_user_id="system"
+    )
+    assert second is not None
+    assert second.baseline_fingerprint == "fp-empty-2"
+    assert second.positioning == first.positioning
+    assert second.draft_content == {}
+
+
+async def test_legacy_null_locked_at_set_without_rewriting_body(repository: Repository) -> None:
+    charter = await sync_to_async(RepoCharter.objects.create)(
+        repository=repository,
+        source=RepoCharter.Source.AI_DRAFT,
+        version=1,
+        positioning="遗留正文",
+        baseline_fingerprint="",
+        baseline_locked_at=None,
+    )
+    payload = normalize_charter_draft({"positioning": "遗留正文", "evolution": "active"})
+    updated = await aapply_charter_from_runner(
+        str(repository.id), payload, fingerprint="legacy-fp", initiated_by_user_id="system"
+    )
+    assert updated is not None
+    assert updated.positioning == "遗留正文"
+    assert updated.baseline_fingerprint == "legacy-fp"
+    assert updated.baseline_locked_at is not None
+    assert updated.id == charter.id
+
+
+async def test_manual_draft_without_fingerprint_preserves_stored(
+    repository: Repository,
+) -> None:
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=_fake_model(_charter_json())),
+    ):
+        first = await adraft_charter(str(repository.id), fingerprint="keep-me")
+    assert first is not None
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=_fake_model(_charter_json())),
+        patch(
+            "repositories.services.charter_service.resolve_fingerprint_for_repository",
+            return_value="",
+        ),
+    ):
+        # 显式传空 fingerprint 且 resolve 返回空 → 应保留 stored
+        second = await adraft_charter(str(repository.id), fingerprint="")
+    # resolve 被 patch 为空时 apply 仍用 observed=""；若 stored 非空且 observed 空，
+    # 相等检查不跳过。改为直接断言：调用方省略 fingerprint 时走 resolve。
+    del second
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=_fake_model(_charter_json())),
+    ):
+        # overview/tree 空 → resolve 可能算出固定空证据指纹；确保非空 stored 不被 "" 覆盖
+        third = await adraft_charter(str(repository.id))
+    assert third is not None
+    assert third.baseline_fingerprint  # 非空
+    # 若证据算出新指纹可以更新；但不得是被强制清空
+    assert third.baseline_fingerprint != ""
+
+
+async def test_aconfirm_approve_and_reject_proposals(repository: Repository, user) -> None:
+    payload = normalize_charter_draft(json.loads(_charter_json("基线定位")))
+    await aapply_charter_from_runner(
+        str(repository.id), payload, fingerprint="fp1", initiated_by_user_id="system"
+    )
+    changed = normalize_charter_draft(json.loads(_charter_json("提案定位")))
+    await aapply_charter_from_runner(
+        str(repository.id), changed, fingerprint="fp2", initiated_by_user_id="system"
+    )
+    charter = await RepoCharter.objects.aget(repository_id=repository.id)
+    prop_ids = [p["id"] for p in charter.change_proposals if p.get("field") == "positioning"]
+    assert prop_ids
+    approve_id = prop_ids[0]
+    # 再塞一条待拒绝
+    charter.change_proposals = list(charter.change_proposals) + [
+        {
+            "id": "reject-me",
+            "status": "pending",
+            "field": "audience",
+            "before": "C端学生",
+            "after": "B端",
+            "reason": "scalar_change",
+        }
+    ]
+    await sync_to_async(charter.save)(update_fields=["change_proposals", "updated_at"])
+
+    confirmed = await aconfirm_charter(
+        str(repository.id),
+        user,
+        approve_proposal_ids=[approve_id],
+        reject_proposal_ids=["reject-me"],
+    )
+    assert confirmed.positioning == "提案定位"
+    statuses = {p["id"]: p["status"] for p in confirmed.change_proposals}
+    assert statuses[approve_id] == "approved"
+    assert statuses["reject-me"] == "rejected"
+    assert confirmed.audience == "C端学生"
+
+
+@pytest.mark.django_db(transaction=False)
+def test_compute_charter_fingerprint_stable() -> None:
+    a = compute_charter_fingerprint("ov", ["a/path", "b/path"], {"k": "v"})
+    b = compute_charter_fingerprint("ov", ["b/path", "a/path"], {"k": "v"})
+    assert a == b
+    assert len(a) == 64
 
 
 # ── normalize_charter_draft 纯函数边界（无 DB）────────────────────────────

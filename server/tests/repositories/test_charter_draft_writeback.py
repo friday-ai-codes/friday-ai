@@ -1,18 +1,11 @@
-"""``charter_draft_writeback.asubmit_charter_draft`` 三分支等价性测试（Phase 112-05，CHARTER-03）。
-
-**等价性靠对照断言，不靠「diff 为空」这种不可机械验证的措辞**：本文件逐条锁死新模块与
-``charter_service.adraft_charter`` 的落库语义等价，外加确认门专属的合并语义：
+"""``charter_draft_writeback.asubmit_charter_draft`` append-only 契约测试。
 
 1. 无 charter → 建行 ``source=ai_draft`` / ``version=1``。
-2. 已有 ``source=ai_draft`` → 正式字段就地更新且 ``version`` **不变**。
-3. 已有 ``source=human_confirmed`` → **只写 ``draft_content``**，正式字段
-   （positioning / owned_domains / boundaries / evolution）逐字段与写入前**完全相等**
-   （CHARTER-01「AI 不覆盖人工」不变量在回灌路径上仍成立）。
-4. ``merge=True`` 按 key 去重追加（同 domain / 同 rule 不重复），不同 key 追加而非覆盖；
-   ``merge=False`` 按覆盖语义。
-5. 归一复用：畸形草案经 ``normalize_charter_draft`` 回退，落库结果与直接调用该归一函数
-   的结果**逐字相等**（证明没有另写一套白名单）。
-6. 依赖失败：仓不存在 / 非法 uuid → 返 ``None`` 且不抛（best-effort，绝不反噬确认门锁定）。
+2. 已有行 → 正式字段冻结；新 key → appendices；标量/语义 → proposals。
+3. ``draft_content`` 永不被自动化写入。
+4. 指纹重复不增长侧信道；省略 fingerprint 不把已存非空指纹清空。
+5. 归一复用 ``normalize_charter_draft``。
+6. 依赖失败 best-effort。
 """
 
 from __future__ import annotations
@@ -39,54 +32,59 @@ async def _make_repo() -> Repository:
     )
 
 
-def _draft(domain: str = "培优/学习提分", rule: str = "不承接课程权益鉴权") -> dict:
-    return {
-        "positioning": "C 端学生移动 H5 学习应用集",
+def _draft(domain: str = "培优/学习提分", rule: str = "不承接课程权益鉴权", **extra) -> dict:
+    base = {
+        "positioning": extra.pop("positioning", "C 端学生移动 H5 学习应用集"),
         "owned_domains": [{"domain": domain, "status": "planned", "note": "", "citations": []}],
         "boundaries": [{"rule": rule, "decided_by": "human", "citations": []}],
         "evolution": "active",
     }
+    base.update(extra)
+    return base
 
 
 async def _reload(repo: Repository) -> RepoCharter:
     return await RepoCharter.objects.filter(repository=repo).afirst()
 
 
-# ── 分支 1：无 charter → 建行 ───────────────────────────────────────────────
-
-
 async def test_creates_ai_draft_row_when_absent() -> None:
     repo = await _make_repo()
 
-    charter = await asubmit_charter_draft(str(repo.id), _draft())
+    charter = await asubmit_charter_draft(str(repo.id), _draft(), fingerprint="fp-create")
 
     assert charter is not None
     assert charter.source == RepoCharter.Source.AI_DRAFT
     assert charter.version == 1
     assert charter.positioning == "C 端学生移动 H5 学习应用集"
     assert [item["domain"] for item in charter.owned_domains] == ["培优/学习提分"]
+    assert charter.baseline_fingerprint == "fp-create"
+    assert charter.baseline_locked_at is not None
 
 
-# ── 分支 2：ai_draft → 就地更新且 version 不变 ───────────────────────────────
-
-
-async def test_updates_ai_draft_in_place_without_bumping_version() -> None:
+async def test_existing_row_formal_unchanged_new_key_appendix() -> None:
     repo = await _make_repo()
-    await asubmit_charter_draft(str(repo.id), _draft())
+    await asubmit_charter_draft(str(repo.id), _draft(), fingerprint="fp1")
 
-    await asubmit_charter_draft(str(repo.id), _draft(domain="题库能力", rule="不承接支付结算"))
+    await asubmit_charter_draft(
+        str(repo.id), _draft(domain="题库能力", rule="不承接支付结算"), fingerprint="fp2"
+    )
 
     charter = await _reload(repo)
     assert charter.source == RepoCharter.Source.AI_DRAFT
-    assert charter.version == 1, "草案就地更新不得翻版本"
-    assert {item["domain"] for item in charter.owned_domains} == {"培优/学习提分", "题库能力"}
-    assert {item["rule"] for item in charter.boundaries} == {"不承接课程权益鉴权", "不承接支付结算"}
+    assert charter.version == 1
+    assert charter.positioning == "C 端学生移动 H5 学习应用集"
+    assert [item["domain"] for item in charter.owned_domains] == ["培优/学习提分"]
+    assert charter.draft_content == {}
+    appendix_domains = [
+        a["item"]["domain"]
+        for a in (charter.appendices or [])
+        if a.get("kind") == "owned_domains" and isinstance(a.get("item"), dict)
+    ]
+    assert "题库能力" in appendix_domains
+    assert charter.baseline_fingerprint == "fp2"
 
 
-# ── 分支 3：human_confirmed → 只写 draft_content（CHARTER-01 不变量）────────
-
-
-async def test_human_confirmed_charter_only_receives_draft_content() -> None:
+async def test_human_confirmed_formal_unchanged_no_draft_content() -> None:
     repo = await _make_repo()
     confirmed = await RepoCharter.objects.acreate(
         repository=repo,
@@ -107,58 +105,49 @@ async def test_human_confirmed_charter_only_receives_draft_content() -> None:
         "version": confirmed.version,
     }
 
-    charter = await asubmit_charter_draft(str(repo.id), _draft())
+    charter = await asubmit_charter_draft(str(repo.id), _draft(), fingerprint="fp-h")
 
     assert charter is not None
     fresh = await _reload(repo)
     for field, value in before.items():
         assert getattr(fresh, field) == value, f"human_confirmed 章程的 {field} 被改写了"
     assert fresh.source == RepoCharter.Source.HUMAN_CONFIRMED
-    assert [item["domain"] for item in fresh.draft_content["owned_domains"]] == ["培优/学习提分"]
+    assert fresh.draft_content == {}
+    assert fresh.change_proposals or fresh.appendices
 
 
-async def test_human_confirmed_draft_content_merges_by_key() -> None:
+async def test_merge_false_does_not_wipe_formal_lists() -> None:
     repo = await _make_repo()
-    await RepoCharter.objects.acreate(
-        repository=repo,
-        source=RepoCharter.Source.HUMAN_CONFIRMED,
-        version=2,
-        positioning="人工定位",
+    await asubmit_charter_draft(str(repo.id), _draft(), fingerprint="fp1")
+
+    await asubmit_charter_draft(
+        str(repo.id), _draft(domain="题库能力"), merge=False, fingerprint="fp2"
     )
-    await asubmit_charter_draft(str(repo.id), _draft())
-    await asubmit_charter_draft(str(repo.id), _draft(domain="题库能力"))
-    await asubmit_charter_draft(str(repo.id), _draft())
-
-    fresh = await _reload(repo)
-    domains = [item["domain"] for item in fresh.draft_content["owned_domains"]]
-    assert sorted(domains) == ["培优/学习提分", "题库能力"], "同 domain 重复提交不得堆积"
-    assert fresh.positioning == "人工定位"
-
-
-# ── 分支 4：merge 语义 ─────────────────────────────────────────────────────
-
-
-async def test_merge_false_overwrites_lists() -> None:
-    repo = await _make_repo()
-    await asubmit_charter_draft(str(repo.id), _draft())
-
-    await asubmit_charter_draft(str(repo.id), _draft(domain="题库能力"), merge=False)
 
     charter = await _reload(repo)
-    assert [item["domain"] for item in charter.owned_domains] == ["题库能力"]
+    assert [item["domain"] for item in charter.owned_domains] == ["培优/学习提分"]
+    assert charter.draft_content == {}
 
 
-async def test_merge_true_dedupes_same_rule() -> None:
+async def test_fingerprint_repeat_no_side_channel_growth() -> None:
     repo = await _make_repo()
-    await asubmit_charter_draft(str(repo.id), _draft())
-    await asubmit_charter_draft(str(repo.id), _draft())
+    first = await asubmit_charter_draft(str(repo.id), _draft(), fingerprint="same")
+    second = await asubmit_charter_draft(
+        str(repo.id), _draft(domain="新领域"), fingerprint="same"
+    )
+    assert first is not None and second is not None
+    assert len(second.appendices or []) == len(first.appendices or [])
+    assert len(second.change_proposals or []) == len(first.change_proposals or [])
 
-    charter = await _reload(repo)
-    assert len(charter.boundaries) == 1
-    assert len(charter.owned_domains) == 1
 
-
-# ── 分支 5：归一逐字复用 charter_service.normalize_charter_draft ─────────────
+async def test_omitted_fingerprint_preserves_stored_nonempty() -> None:
+    repo = await _make_repo()
+    await asubmit_charter_draft(str(repo.id), _draft(), fingerprint="keep-fp")
+    # 证据为空时 resolve 仍会算出固定 hash；显式验证 stored 非空路径：
+    # 传入与 stored 相同的指纹后省略再写不应清空
+    fresh = await asubmit_charter_draft(str(repo.id), _draft())
+    assert fresh is not None
+    assert fresh.baseline_fingerprint  # 不得被清空为 ""
 
 
 async def test_normalization_matches_charter_service_whitelist() -> None:
@@ -175,7 +164,7 @@ async def test_normalization_matches_charter_service_whitelist() -> None:
     }
     expected = normalize_charter_draft(malformed)
 
-    await asubmit_charter_draft(str(repo.id), malformed, merge=False)
+    await asubmit_charter_draft(str(repo.id), malformed, merge=False, fingerprint="fp-n")
 
     charter = await _reload(repo)
     assert charter.positioning == expected["positioning"]
@@ -185,9 +174,6 @@ async def test_normalization_matches_charter_service_whitelist() -> None:
     assert charter.audience == expected["audience"]
     assert charter.owned_domains[0]["status"] == "implemented"
     assert charter.owned_domains[0]["citations"] == []
-
-
-# ── 分支 6：依赖失败 best-effort ────────────────────────────────────────────
 
 
 @pytest.mark.parametrize("repository_id", ["not-a-uuid", "00000000-0000-0000-0000-000000000001"])

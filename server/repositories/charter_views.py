@@ -1,19 +1,15 @@
-"""仓库章程 REST API（111-03，CHARTER-01 / DESIGN §5.7）。
+"""仓库章程 REST API（111-03，CHARTER-01 / DESIGN §5.7；append-only 修订）。
 
-三端点（``IsAuthenticated``，T-111-06——repositories 既有 view 同级低门槛）：
+三端点（``IsAuthenticated``）：
 
 - ``GET  /api/repositories/<uuid:repository_id>/charter/``：读取章程（含
-  ``draft_content``，供前端预览 pending 修订草案）；无章程 → 404 中性消息。
-- ``POST /api/repositories/<uuid:repository_id>/charter/draft/``：触发 AI 三源
-  蒸馏起草（``call_source=blueprint_charter_draft``）；LLM 不可用 → 503，
-  草案落库失败 → 500。
-- ``POST /api/repositories/<uuid:repository_id>/charter/confirm/``：人工确认
-  生效（可带 ``{"edits": {...}}``），署名 ``request.user``；无章程行 + 非空
-  ``edits`` → 经 service 创建 ``human_confirmed``（人手从零维护）；空 body 仍 404。
+  appendices / change_proposals / fingerprint）；无章程 → 404。
+- ``POST .../charter/draft/``：AI 起草；无行建基线；已有行仅侧信道
+  （自动化永不写 ``draft_content``）。
+- ``POST .../charter/confirm/``：人工确认（``edits`` /
+  ``approve_proposal_ids`` / ``reject_proposal_ids``）；正式字段唯一变更口。
 
-写入纪律（INV-6）：视图零 RepoCharter 写操作，起草/确认全部委托
-``services/charter_service``（charter_service 测试的源码扫描守护会扫本文件）；
-读路径允许视图直接查询。serializer ``.data`` 一律 ``sync_to_async`` 包裹。
+写入纪律（INV-6）：视图零 RepoCharter 写操作，全部委托 ``charter_service``。
 """
 
 from typing import Any
@@ -51,10 +47,9 @@ class RepoCharterDetailView(APIView):
 class RepoCharterDraftView(APIView):
     """POST /api/repositories/<uuid:repository_id>/charter/draft/ —— 触发 AI 起草。
 
-    委托 :func:`charter_service.adraft_charter`：仓库不存在 → 404；返回 ``None``
-    （无 provider/default_model、LLM 调用失败、解析失败）→ 503；``CharterPersistError``
-    （草案落库失败）→ 500——**内部写失败不得伪装成「供应商未配置」**（MJ-02）；
-    成功 → 200 序列化（human_confirmed 章程的新草案只落 ``draft_content``）。
+    委托 :func:`charter_service.adraft_charter`：无行 → 建基线；已有行 →
+    appendices/proposals 侧信道（正式字段与 ``draft_content`` 不变）。
+    LLM 不可用 → 503；``CharterPersistError`` → 500。
     """
 
     permission_classes = [IsAuthenticated]
@@ -89,9 +84,9 @@ class RepoCharterDraftView(APIView):
 class RepoCharterConfirmView(APIView):
     """POST /api/repositories/<uuid:repository_id>/charter/confirm/ —— 人工确认生效。
 
-    body 可带 ``{"edits": {...}}``（无 body 允许；非 dict 的 edits 按无 edits
-    处理——白名单归一在 service 层，T-111-07）。章程不存在 + 非空 edits →
-    service 创建 human_confirmed；无 edits 的空确认仍 404。
+    body 可带 ``edits`` / ``approve_proposal_ids`` / ``reject_proposal_ids``。
+    批准提案会写入正式字段；拒绝仅改提案状态。无章程 + 非空 edits → 创建；
+    空确认仍 404。
     """
 
     permission_classes = [IsAuthenticated]
@@ -104,9 +99,19 @@ class RepoCharterConfirmView(APIView):
         raw_edits = body.get("edits")
         edits = raw_edits if isinstance(raw_edits, dict) else None
 
+        def _id_list(key: str) -> list[str] | None:
+            raw = body.get(key)
+            if not isinstance(raw, list):
+                return None
+            return [str(x) for x in raw if str(x).strip()]
+
         try:
             charter = await charter_service.aconfirm_charter(
-                str(repository_id), request.user, edits=edits
+                str(repository_id),
+                request.user,
+                edits=edits,
+                approve_proposal_ids=_id_list("approve_proposal_ids"),
+                reject_proposal_ids=_id_list("reject_proposal_ids"),
             )
         except ValueError:
             return Response({"detail": "章程不存在"}, status=status.HTTP_404_NOT_FOUND)
