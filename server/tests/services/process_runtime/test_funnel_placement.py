@@ -1,4 +1,4 @@
-"""Phase 130 漏斗放置接线守卫测（INT-01；D-12~D-14）。"""
+"""Phase 130 漏斗放置接线守卫测（INT-01；去固定角色化）。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from services.process_runtime.blueprint_route import BlueprintRouteAdapter
 from services.process_runtime.history_prior import HistoryPriorResult
 from services.process_runtime.placement_units import PlacementUnit, PlacementUnitsResult
 from services.process_runtime.place_units import PlacementResult, UnitPlacement
-from services.process_runtime.role_map import RoleMapResult
 from services.process_runtime.shortlist import ShortlistResult
 
 
@@ -91,26 +90,8 @@ def _shortlist() -> ShortlistResult:
     )
 
 
-def _role_map() -> RoleMapResult:
-    return RoleMapResult(
-        status="ok",
-        roles={
-            "app_shell": {"primary": "core-1", "supporting": [], "forbidden": []},
-            "practice_reuse_host": {"primary": "host-1", "supporting": [], "forbidden": []},
-            "course_config": {"primary": None, "supporting": [], "forbidden": []},
-            "learning_state": {"primary": "core-2", "supporting": [], "forbidden": []},
-        },
-        per_repo=[
-            {"repository_id": "core-1", "role": "app_shell", "assignment": "primary"},
-            {"repository_id": "host-1", "role": "practice_reuse_host", "assignment": "primary"},
-            {"repository_id": "core-2", "role": "learning_state", "assignment": "primary"},
-        ],
-        placement_defaults={"learning_state_writer_not_app_shell": True},
-    )
-
-
 @contextmanager
-def _common_patches(adapter, *, shortlist, role_map, place_result=None, units_result=None):
+def _common_patches(adapter, *, shortlist, place_result=None, units_result=None):
     place = place_result or PlacementResult(
         status="ok",
         placements=[
@@ -153,7 +134,6 @@ def _common_patches(adapter, *, shortlist, role_map, place_result=None, units_re
                 feature_ids=["fp_3", "fp_4", "fp_5"],
                 module_names=["模块B"],
                 query_text="模块B 练习 复用端内做题组件",
-                reuse_host_hints=["practice_reuse_host"],
             ),
         ],
         unit_count=2,
@@ -199,12 +179,6 @@ def _common_patches(adapter, *, shortlist, role_map, place_result=None, units_re
         )
         stack.enter_context(
             patch(
-                "services.process_runtime.role_map.build_role_map",
-                return_value=role_map,
-            )
-        )
-        stack.enter_context(
-            patch(
                 "services.process_runtime.placement_units.build_placement_units",
                 return_value=units,
             )
@@ -244,13 +218,13 @@ def _common_patches(adapter, *, shortlist, role_map, place_result=None, units_re
 
 
 @pytest.mark.asyncio
-async def test_adapter_attaches_placements_after_role_map():
-    """role_map 后结果含 placement_units 摘要与 placements 字段。"""
+async def test_adapter_attaches_placements_after_shortlist():
+    """shortlist 后结果含 placement_units 摘要与 placements 字段。"""
     router = MagicMock()
     router.route = AsyncMock(return_value=_fake_router_result(repo_ids=["core-1", "core-2"]))
     adapter = BlueprintRouteAdapter(router=router, top_k=5)
 
-    with _common_patches(adapter, shortlist=_shortlist(), role_map=_role_map()):
+    with _common_patches(adapter, shortlist=_shortlist()):
         summary = await adapter.route(_session())
 
     assert summary.get("status") == "ok"
@@ -273,7 +247,7 @@ async def test_placement_primary_in_shortlist_or_reuse_hosts():
     shortlist_ids = {"core-1", "core-2", "host-1"}
     reuse_hosts = {"host-1"}
 
-    with _common_patches(adapter, shortlist=_shortlist(), role_map=_role_map()):
+    with _common_patches(adapter, shortlist=_shortlist()):
         summary = await adapter.route(_session())
 
     allowed = shortlist_ids | reuse_hosts
@@ -314,7 +288,6 @@ async def test_v2_calls_use_nonempty_hard_scope_subset():
                 feature_ids=["c", "d", "e"],
                 module_names=["模块B"],
                 query_text="练习 复用端内做题组件",
-                reuse_host_hints=["practice_reuse_host"],
             ),
         ],
         unit_count=2,
@@ -350,10 +323,6 @@ async def test_v2_calls_use_nonempty_hard_scope_subset():
             new=AsyncMock(return_value=_shortlist()),
         ),
         patch(
-            "services.process_runtime.role_map.build_role_map",
-            return_value=_role_map(),
-        ),
-        patch(
             "services.process_runtime.placement_units.build_placement_units",
             return_value=units,
         ),
@@ -381,6 +350,7 @@ async def test_v2_calls_use_nonempty_hard_scope_subset():
         assert ids is not None and len(ids) > 0
         assert set(ids) <= hard_scope | {"core-1", "core-2", "host-1"}
 
+
 @pytest.mark.asyncio
 async def test_v2_call_count_tracks_units_not_features():
     """多 feature 时 unit_count < feature_count，且 V2 调用次数 ≈ unit_count。"""
@@ -403,7 +373,6 @@ async def test_v2_call_count_tracks_units_not_features():
                 feature_ids=["3", "4", "5"],
                 module_names=["B"],
                 query_text="b",
-                reuse_host_hints=["practice_reuse_host"],
             ),
         ],
         unit_count=2,
@@ -438,10 +407,6 @@ async def test_v2_call_count_tracks_units_not_features():
         patch(
             "services.process_runtime.shortlist.build_shortlist",
             new=AsyncMock(return_value=_shortlist()),
-        ),
-        patch(
-            "services.process_runtime.role_map.build_role_map",
-            return_value=_role_map(),
         ),
         patch(
             "services.process_runtime.placement_units.build_placement_units",
@@ -540,7 +505,6 @@ async def test_association_returns_placements_not_sole_three_component():
                         feature_ids=["f3"],
                         module_names=["M2"],
                         query_text="c",
-                        reuse_host_hints=["practice_reuse_host"],
                     ),
                 ],
                 unit_count=2,
