@@ -129,9 +129,11 @@ start_qdrant() {
   # (65530) 而 abort；这里尽力抬高（非命名空间参数，容器里可能被拒，不阻塞启动）。
   sudo sysctl -w vm.max_map_count=1048576 >/dev/null 2>&1 || warn "vm.max_map_count 未能调整"
   mkdir -p "$QDRANT_HOME/storage" "$QDRANT_HOME/snapshots"
-  # setsid + </dev/null + disown 缺一不可：只写 `&` 时 bash 退出前仍会等这个子进程，
-  # start 阶段就永远不返回（表现为环境启动一直卡住，而服务其实早就起好了）。
-  ( cd "$QDRANT_HOME" && setsid qdrant >"$LOG_DIR/qdrant.log" 2>&1 </dev/null & disown ) 
+  # `exec setsid --fork` 而不是 `( setsid ... & )`：后者那层括号子 shell 会留下来
+  # 等 qdrant（守护进程永不结束），并继续攥着本脚本的 stdout。管道写端不关 →
+  # 上层 tee 收不到 EOF → 环境启动被判定为「一直没跑完」（start-user.status 不写出），
+  # 尽管服务其实全都起好了。--fork 让 setsid 立刻退出，exec 顺带消掉子 shell 自身。
+  ( cd "$QDRANT_HOME" && exec setsid --fork qdrant >"$LOG_DIR/qdrant.log" 2>&1 </dev/null )
   if wait_for 45 curl -fsS http://127.0.0.1:6333/healthz; then
     ok "已启动 (127.0.0.1:6333 / gRPC 6334，无鉴权)"
   else
@@ -161,7 +163,7 @@ start_docker() {
   command -v fuse-overlayfs >/dev/null 2>&1 || driver=vfs
   sudo mkdir -p /etc/docker
   printf '{\n  "storage-driver": "%s"\n}\n' "$driver" | sudo tee /etc/docker/daemon.json >/dev/null
-  sudo sh -c "setsid dockerd >'$LOG_DIR/dockerd.log' 2>&1 </dev/null &"
+  sudo sh -c "exec setsid --fork dockerd >'$LOG_DIR/dockerd.log' 2>&1 </dev/null"
   # 探测用 sudo：install 阶段把 ubuntu 加进了 docker 组，但组成员身份要新登录会话
   # 才生效，本进程里 `docker info` 仍会 permission denied。socket 起来后直接放开权限，
   # 让后续所有 shell（含 terminals）都能免 sudo 用 docker。
