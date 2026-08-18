@@ -371,3 +371,43 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 - 观测代码 best-effort，绝不反噬业务；高频循环禁止 INFO 刷屏。
 
 > 平台设施已在 v0.14.0（Phase 71–74）落地：用户上下文 contextvars 贯穿、SystemLogEntry 队列化落库与运行时配置、指标精简事件表（`RequestMetric`/扩展 `ModelUsageRecord`/`GaugeSample`）、快照/趋势查询与可观测大盘、告警评估与通知。提交前自检清单见 `LOGGING-SPEC.md §9` 与 `.cursor/rules/observability-logging.mdc`（同一份）；call_source 枚举（22 值）/component 清单/事件目录见 `LOGGING-SPEC.md §4.1/§5/§10`。
+
+## Cloud Agent 环境
+
+`.cursor/environment.json` 定义了 Cloud Agent 环境，依赖安装在 `scripts/cloud-agent-install.sh`（幂等），常驻服务在 `scripts/cloud-agent-start.sh`（每次开机跑）。工具链版本全部从仓库自身的声明里读取（`server/.python-version` / `web/.nvmrc` / `web/package.json` 的 `packageManager` / `runner/go.mod`），改这些文件即改环境，不需要同步改脚本。
+
+开机即可用：Python 3.14（uv 托管）、Node + pnpm（corepack，按目录取 `packageManager`）、Go、PostgreSQL 17、Redis 7、Qdrant（原生二进制）、Docker daemon（`fuse-overlayfs` 存储驱动，bridge 网络可用）、Playwright chromium。`server`（10241）与 `web`（10240）两个开发服务器以 terminals 常驻。
+
+### 默认走 SQLite，别随手建 .env
+
+环境**刻意不生成 `.env`**：`server/friday/settings.py` 的默认值就是 SQLite（`server/data/friday.db`）+ 内存 channel layer，而 pytest 的 `addopts` 带 `--disable-socket`。一旦 `.env` 把 `DATABASE_URL` 指向 Postgres，默认测试套件会因禁用 socket 而整体失败。需要真实服务时用环境变量显式覆盖单次命令：
+
+```bash
+# durable 队列（真实 Postgres）——与 CI 的 postgres-queue job 同口径
+cd server && DATABASE_URL=postgres://friday:friday@127.0.0.1:5432/friday_test \
+  DURABLE_TASK_BACKEND=procrastinate \
+  uv run pytest -m postgres_queue --allow-hosts=127.0.0.1,localhost
+
+# 接 Redis channel layer / Qdrant 向量检索
+USE_REDIS_CHANNEL_LAYER=true REDIS_URL=redis://127.0.0.1:6379/0 \
+  QDRANT_URL=http://127.0.0.1:6333 uv run uvicorn friday.asgi:application
+```
+
+本机 Qdrant 未开鉴权，不要设 `QDRANT_API_KEY`（设了客户端会带认证头，反而 401）。
+
+### 四道门禁（与 `.github/workflows/ci.yaml` 一致）
+
+```bash
+cd server && uv run pytest                      # SQLite 默认路径
+cd web && pnpm exec vue-tsc --noEmit && pnpm exec vitest run
+cd runner && go build ./... && go vet ./... && go test ./... -race -count=1
+cd task && uv run pytest
+```
+
+### 已知的既有失败，不是环境坏了
+
+`main` 上这几类失败是仓库自身状态，重装环境不会改善，动手改代码前先确认是不是你引入的：
+
+- `skills` 子模块的 pin（`54f15aa`）指向一个已被上游 force-push 覆盖的 commit，`git submodule update` 硬失败——GitHub Actions 的 `server-ci` / `task-ci` 正是**卡在 checkout** 而非测试。install 脚本对此退化为「检出 `origin/main`」以保证环境可用，代价是 `task/assets/skills` 与 `skills/skills` 的同源 hash 断言（`test_assets_match_source[friday-impact|friday-refactoring]`）失败。根治要在主仓库把 pin 更新到上游现存 commit。
+- 后端约 30 个断言漂移（`test_blueprint_route_stage.py` 一批、MCP 工具 snapshot 缺 `rename_preview`、`test_enum_has_all_22_values` 实际已 23 个、`codegraph` 有未生成的迁移等）。
+- 前端 `blueprint-viewer-visual.spec.ts` 3 条 e2e 因页面内 `TypeError: ... reading 'map'` 点击超时；`runner` 与 `postgres_queue` 两道门禁在本环境全绿。
