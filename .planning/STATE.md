@@ -28,7 +28,7 @@ See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 归档）。v0.23.0 归
 Phase: — (awaiting next milestone)
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-08-14 — Milestone v0.23.0 archived（tech_debt accepted；未打 tag）
+Last activity: 2026-08-18 - Completed quick task 260818-86l: channels_redis 连接健康检查与 WS consumer group_add fail-soft
 
 Progress: [██████████] 100% (v0.23.0 complete)
 
@@ -950,6 +950,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 | 260808-fsa | Friday 技术方案能力做成宿主 subagent（skills 子仓 80f4016 / mcp 子仓 9c997b8）：新增 `friday-plan`（技术方案编排专员——发起段原样带回待确认项、续跑段确认+轮询到终态，覆盖 feature 三段链与飞书蓝图澄清链，绝不代答）与 `friday-research`（只读调研专员，带 ID 出处证据摘要）两个 subagent 定义；安装器把它们装进 Cursor/Claude Code 原生 agents 目录（Cursor 变体剥离 Claude 专属 frontmatter 键），Claude 插件形态经 plugin.json `"agents"` 字段自动带上；skills 0.6.0 → 0.7.0。MCP server 代码不动：现有 pending/轮询/作答工具形状已与 MCP Tasks 扩展（2026-07-28 spec）语义对齐，待客户端支持后再做标准映射 | 2026-08-08 | 80f4016 (skills) | [260808-friday-subagents](./quick/260808-friday-subagents/) |
 | 260808-g1c | AI 对话思考过程全量实时展示 + 上游抹思考时显示「正在思考」：先实测定位到首字慢与自家代码无关（SSE 通道 106–132ms 通、服务端本地开销仅 ~150ms，其余全在等网关；prompt 体积与首字无关：28 tok→2.4s / 3268 tok→2.16s / 26290 tok→3.63s），真凶是网关把 thinking 文本整段抹掉只转发 signature（`claude-opus-4-8` 采样 4/4 全 0 字符，`claude-sonnet-5`/`claude-opus-4-5`/`claude-fable-5` 同样；`claude-opus-4-6` 4/4 有 306–464 字符，`claude-opus-5` 该网关不存在）。按用户决定**不切换模型**，保持 `claude-opus-4-8`。前端把 thinking 折叠 Set 语义反转为「记录手动收起的 id」（不能用展开集合——parts 流式增长会让后到的 part 退回收起态）、删 80/90 字符预览截断与 `max-height` 裁切；⛔ 计划里的占位触发条件 `groupedDisplayItems.length === 0` 恒不成立（流式兜底会合成一条 `text=''` 的 text part），必须改用 `hasVisibleContent`（空 text part 不算内容）否则占位是死代码。后端补 `chat_thinking_text_empty` 采样事件（已在真实网关验证触发）。前端 2328 测试全绿 | 2026-08-08 | a77f3470 | [260808-g1c-ai-thinking-claude-opus-4-6](./quick/260808-g1c-ai-thinking-claude-opus-4-6/) |
 | 260811-av8 | 统一仓库路由 service：v1 的 `repo_summaries` BM25+dense+关键词微调内化为 RepoRouterV2 摘要回退通道；LayeredSearch L1 统一走 V2 且禁用 LLM；静态守卫阻止生产代码重引旧入口；126 条回归全绿 | 2026-08-11 | (pending) | [260811-av8-v1-bm25-embedding-v2-service](./quick/260811-av8-v1-bm25-embedding-v2-service/) |
+| 260818-86l | WS 因 Redis 抖动崩溃的纵深修复：根因是 redis-py `is_connected` 只看 `_reader/_writer` 非空不看 transport 存活、`ensure_connection` 只认 `(ConnectionError, OSError)`，而 uvloop 在死 transport 上抛的是 `RuntimeError` —— 三者叠加使连接池把死连接发给 `group_add`，异常直穿 `consumer.connect()` 逃进 uvicorn 触发 `send_500_response` 级联异常与客户端重连风暴。① channel layer host 由裸 URL 改 dict，带 `health_check_interval`/`socket_keepalive`/有界超时（`socket_timeout` 夹 10s 下限——redis-py 把它直接用于阻塞 `BZPOPMIN` 的读超时，取值 ≤ channels_redis `brpop_timeout`(5s) 会让空闲 channel 每 5s 假超时、加固反成新故障）；② 新增 `common/channel_groups.py` 的 `safe_group_add`/`safe_group_discard`（最多 2 次尝试、单次 `wait_for` 5s 有界、`CancelledError` 穿透、埋点脱敏且不反噬），16 处分组操作全量接线，失败按 D4 表逐个语义降级（`MonitorConsumer` 订阅成功才置 `authenticated`；通知广播组失败只降级公告）。⛔ InMemory 分支逐字未动，有测试守护。43 测试全绿 | 2026-08-18 | 8e5dc9b1..c671292b | [260818-86l-channels-redis-ws-consumer-group-add-fai](./quick/260818-86l-channels-redis-ws-consumer-group-add-fai/) |
 
 ## Deferred Items
 

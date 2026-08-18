@@ -179,12 +179,77 @@ REDIS_CHANNEL_LAYER_URL = env.str(
     default=env.str("REDIS_URL", default="redis://127.0.0.1:6379/0"),
 )
 
+# socket_timeout 下限 = channels_redis 的 brpop_timeout(5s) + 余量。redis-py 把
+# socket_timeout 直接用于阻塞 BZPOPMIN 的 read_response，取值 <= 5s 会让空闲 channel
+# 每 5s 假超时、把正常的 WS 收发打断 —— 加固反而制造新故障，故 env 只许上调。
+_CHANNEL_LAYER_SOCKET_TIMEOUT_FLOOR = 10
+
+REDIS_CHANNEL_LAYER_HEALTH_CHECK_INTERVAL = env.int(
+    "REDIS_CHANNEL_LAYER_HEALTH_CHECK_INTERVAL", default=30
+)
+REDIS_CHANNEL_LAYER_SOCKET_CONNECT_TIMEOUT = env.int(
+    "REDIS_CHANNEL_LAYER_SOCKET_CONNECT_TIMEOUT", default=5
+)
+REDIS_CHANNEL_LAYER_SOCKET_TIMEOUT = env.int("REDIS_CHANNEL_LAYER_SOCKET_TIMEOUT", default=15)
+REDIS_CHANNEL_LAYER_SOCKET_KEEPALIVE = env.bool(
+    "REDIS_CHANNEL_LAYER_SOCKET_KEEPALIVE", default=True
+)
+REDIS_CHANNEL_LAYER_RETRY_ON_TIMEOUT = env.bool(
+    "REDIS_CHANNEL_LAYER_RETRY_ON_TIMEOUT", default=True
+)
+
+
+def _build_channel_layer_host(
+    *,
+    address: str,
+    health_check_interval: int,
+    socket_connect_timeout: int,
+    socket_timeout: int,
+    socket_keepalive: bool,
+    retry_on_timeout: bool,
+) -> dict:
+    """组装 channels_redis 的单个 host 配置（dict 形态）。
+
+    抽成无副作用纯函数（不读 env、不触全局），便于单测直接断言而不必重载整个 settings
+    模块。``socket_timeout`` 恒被夹到 ``_CHANNEL_LAYER_SOCKET_TIMEOUT_FLOOR`` 之上——
+    只设下限不设上限，防止未来有人把它调到阻塞 BZPOPMIN 的超时以下。
+
+    ``channels_redis.utils.decode_hosts`` 原样接受 dict 条目，``create_pool`` 弹出
+    ``address`` 后把余下键全部转发给 ``aioredis.ConnectionPool.from_url``。
+    """
+    return {
+        "address": address,
+        "health_check_interval": health_check_interval,
+        "socket_keepalive": socket_keepalive,
+        "socket_connect_timeout": socket_connect_timeout,
+        "socket_timeout": max(socket_timeout, _CHANNEL_LAYER_SOCKET_TIMEOUT_FLOOR),
+        "retry_on_timeout": retry_on_timeout,
+    }
+
+
+# channel layer 的 Redis 连接必须带健康检查与有界超时：redis-py 的 is_connected 只看
+# _reader/_writer 非空、**不看 transport 是否活着**，ensure_connection 又只在
+# (ConnectionError, OSError) 时重连，而 uvloop 在死 transport 上抛的是 RuntimeError
+# —— 三者叠加导致连接池可能把一条已死的连接发给调用方（group_add 直接崩）。
+# 这里用空闲 PING（health_check_interval）+ TCP keepalive + 有界超时把「拿到死连接」
+# 的概率压下去；⚠️ 压不到零（PING 自身走同一条 send_packed_command，死 transport 上
+# 同样抛 RuntimeError），缺口由 common/channel_groups.py 的 fail-soft 兜底 —— 两道
+# 是纵深防御，缺一不可。
 if USE_REDIS_CHANNEL_LAYER:
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels_redis.core.RedisChannelLayer",
             "CONFIG": {
-                "hosts": [REDIS_CHANNEL_LAYER_URL],
+                "hosts": [
+                    _build_channel_layer_host(
+                        address=REDIS_CHANNEL_LAYER_URL,
+                        health_check_interval=REDIS_CHANNEL_LAYER_HEALTH_CHECK_INTERVAL,
+                        socket_connect_timeout=REDIS_CHANNEL_LAYER_SOCKET_CONNECT_TIMEOUT,
+                        socket_timeout=REDIS_CHANNEL_LAYER_SOCKET_TIMEOUT,
+                        socket_keepalive=REDIS_CHANNEL_LAYER_SOCKET_KEEPALIVE,
+                        retry_on_timeout=REDIS_CHANNEL_LAYER_RETRY_ON_TIMEOUT,
+                    )
+                ],
             },
         },
     }
