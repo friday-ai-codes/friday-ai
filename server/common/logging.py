@@ -101,6 +101,7 @@ _KNOWN_COMPONENTS = frozenset(
         "chat",
         "orchestration",
         "workflows",
+        "initiatives",
         "compat",
         "repositories",
         "indexing",
