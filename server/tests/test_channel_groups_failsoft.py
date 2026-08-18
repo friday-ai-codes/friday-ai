@@ -9,12 +9,15 @@
 """
 
 import asyncio
+import contextlib
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import redis.exceptions
 import structlog
 
+from common import channel_groups
 from common.channel_groups import safe_group_add, safe_group_discard
 
 # uvloop 在已关闭 transport 上抛的真实文本形态（根因小节 3：redis-py 不会把它映射成
@@ -30,6 +33,28 @@ def _make_layer() -> MagicMock:
     layer.group_add = AsyncMock()
     layer.group_discard = AsyncMock()
     return layer
+
+
+@contextlib.contextmanager
+def _capture_logs_at_debug():
+    """在放宽到 DEBUG 的过滤级别下捕获事件（``ws_group_discard_failed`` 是 debug 级）。
+
+    ``configure_structlog`` 用 ``make_filtering_bound_logger(INFO)`` +
+    ``cache_logger_on_first_use=True``：默认级别下 ``logger.debug`` 是 no-op，而
+    ``capture_logs()`` 只换 processor 链、不动 wrapper 级别；且已缓存的 bound logger
+    不会因重新 ``configure`` 而跟着降级。故这里既放宽 wrapper 级别，也给模块换一个
+    尚未缓存的 proxy，退出时全部还原。
+    """
+    original_wrapper = structlog.get_config()["wrapper_class"]
+    original_logger = channel_groups.logger
+    structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG))
+    channel_groups.logger = structlog.get_logger("common.channel_groups")
+    try:
+        with structlog.testing.capture_logs() as captured:
+            yield captured
+    finally:
+        channel_groups.logger = original_logger
+        structlog.configure(wrapper_class=original_wrapper)
 
 
 # === safe_group_add ===
@@ -162,7 +187,7 @@ async def test_group_discard_swallows_runtime_error():
     layer = _make_layer()
     layer.group_discard.side_effect = _UVLOOP_ERROR
 
-    with structlog.testing.capture_logs() as captured:
+    with _capture_logs_at_debug() as captured:
         assert await safe_group_discard(layer, "g1", "c1", component="runners") is None
 
     events = [e for e in captured if e.get("event") == "ws_group_discard_failed"]
