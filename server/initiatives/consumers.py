@@ -77,7 +77,9 @@ class ProjectConsumer(AsyncWebsocketConsumer):
         from initiatives.models import Project, ProjectMember
         from permissions.models import SpaceMembership
 
-        project = Project.objects.filter(pk=project_id).values_list("space_id", flat=True).first()
+        project = (
+            Project.objects.filter(pk=project_id).values_list("space_id", flat=True).first()
+        )
         if project is None:
             return False
         if SpaceMembership.objects.filter(space_id=project, user=user).exists():

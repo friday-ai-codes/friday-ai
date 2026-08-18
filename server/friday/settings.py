@@ -379,7 +379,9 @@ LLM_CONCURRENCY_ACQUIRE_TIMEOUT_SECONDS = env.float(
 )
 # Redis 租约 TTL（秒）：持有者崩溃后租约自动过期回收，避免永久占槽；
 # 须 > 单次 LLM 调用最长耗时（深度分析可达数分钟），持有期内自动续租。
-LLM_CONCURRENCY_LEASE_TTL_SECONDS = env.int("LLM_CONCURRENCY_LEASE_TTL_SECONDS", default=900)
+LLM_CONCURRENCY_LEASE_TTL_SECONDS = env.int(
+    "LLM_CONCURRENCY_LEASE_TTL_SECONDS", default=900
+)
 
 # =============================================================================
 # 仓库路由 v2（RepoRouterV2）Stage 1 调参
@@ -499,7 +501,9 @@ CLARIFICATION_TIMEOUT_EXIT_ACTION = env.str(
 RESUMABLE_RECOVERY_ON_STARTUP = env.bool("RESUMABLE_RECOVERY_ON_STARTUP", default=True)
 # 租约 TTL：运行中任务每 HEARTBEAT 秒续租到 now+TTL；启动扫描只领取已过期租约。
 RESUMABLE_LEASE_TTL_SECONDS = env.int("RESUMABLE_LEASE_TTL_SECONDS", default=90)
-RESUMABLE_HEARTBEAT_INTERVAL_SECONDS = env.int("RESUMABLE_HEARTBEAT_INTERVAL_SECONDS", default=30)
+RESUMABLE_HEARTBEAT_INTERVAL_SECONDS = env.int(
+    "RESUMABLE_HEARTBEAT_INTERVAL_SECONDS", default=30
+)
 # 可选：启用基于 Redis 的集群级恢复锁（多副本/k8s 推荐）。默认关闭走 DB CAS。
 RESUMABLE_USE_REDIS_LOCK = env.bool("RESUMABLE_USE_REDIS_LOCK", default=False)
 
@@ -912,25 +916,29 @@ EXTRACTOR_BACKENDS: dict[str, str] = {
     # Phase 127 / D-12：声明「重开目标」为 gopls；仍受 GOPLS_BACKEND_ENABLED
     # kill-switch 约束（默认 False），关闭时 apps.ready 不注册、运行期回落 tree-sitter。
     "go": "gopls",
-    "typescript": "volar",  # 声明性：重开 volar 时目标后端（默认 kill-switch 关）
-    "tsx": "volar",  # implementation 切
-    "vue": "volar",  # implementation 切
-    "javascript": "volar",  # implementation 新增（之前未有）
-    "jsx": "volar",  # implementation 新增
-    "html": "tree_sitter",  # implementation
-    "css": "tree_sitter",  # implementation
+    "typescript": "volar",       # 声明性：重开 volar 时目标后端（默认 kill-switch 关）
+    "tsx": "volar",              # implementation 切
+    "vue": "volar",              # implementation 切
+    "javascript": "volar",       # implementation 新增（之前未有）
+    "jsx": "volar",              # implementation 新增
+    "html": "tree_sitter",       # implementation
+    "css": "tree_sitter",        # implementation
 }
 
 # implementation B3：CoChangedEdgeBuilder min_support 阈值（per work item 0 条根因修复）。
 # 默认 2 让小仓库默认能建至少 2 commit 触发的边；env 可覆盖（ops 调试需要）。
-CODEGRAPH_COCHANGE_MIN_SUPPORT: int = env.int("CODEGRAPH_COCHANGE_MIN_SUPPORT", default=2)
+CODEGRAPH_COCHANGE_MIN_SUPPORT: int = env.int(
+    "CODEGRAPH_COCHANGE_MIN_SUPPORT", default=2
+)
 
 # Galaxy 图谱文件缓存（codegraph/galaxy/cache.py）。
 # 全量聚合结果落盘 + 数据签名失效，把数秒的聚合请求降到毫秒级。
 # GALAXY_CACHE_ENABLED=False 为逃生舱：直接走实时聚合。
 GALAXY_CACHE_ENABLED: bool = env.bool("GALAXY_CACHE_ENABLED", default=True)
 # 启动后是否在后台线程对比签名预热各仓库缓存
-GALAXY_CACHE_WARM_ON_STARTUP: bool = env.bool("GALAXY_CACHE_WARM_ON_STARTUP", default=True)
+GALAXY_CACHE_WARM_ON_STARTUP: bool = env.bool(
+    "GALAXY_CACHE_WARM_ON_STARTUP", default=True
+)
 GALAXY_CACHE_DIR = DATA_DIR / "galaxy_cache"
 
 # 图谱构建孤儿行回收：后台构建任务（run_in_background）随进程内存存活，无法
@@ -942,7 +950,9 @@ GALAXY_CACHE_DIR = DATA_DIR / "galaxy_cache"
 GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP: bool = env.bool(
     "GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP", default=True
 )
-GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES: int = env.int("GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES", default=30)
+GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES: int = env.int(
+    "GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES", default=30
+)
 
 # 内存图服务（services/code_graph/）的字节预算。图对象不落盘、按 (repo, branch)
 # 缓存在**单个 worker 进程内存**里，故预算必须显式约束，否则大仓一次冷建图就能把
@@ -962,8 +972,12 @@ GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES: int = env.int("GRAPH_BUILD_ORPHAN_TIMEOUT_MI
 #     运维扩 worker 数时必须同步下调本值，否则物理内存按倍数放大。
 # 两个默认字节数本身仍取保守侧，留待生产多 worker 的 RSS 与逐出频率观察后调优
 # （121-VALIDATION.md §Manual-Only Verifications，不阻塞相位完成）。
-CODE_GRAPH_CACHE_MAX_BYTES: int = env.int("CODE_GRAPH_CACHE_MAX_BYTES", default=512 * 1024 * 1024)
-CODE_GRAPH_MAX_GRAPH_BYTES: int = env.int("CODE_GRAPH_MAX_GRAPH_BYTES", default=256 * 1024 * 1024)
+CODE_GRAPH_CACHE_MAX_BYTES: int = env.int(
+    "CODE_GRAPH_CACHE_MAX_BYTES", default=512 * 1024 * 1024
+)
+CODE_GRAPH_MAX_GRAPH_BYTES: int = env.int(
+    "CODE_GRAPH_MAX_GRAPH_BYTES", default=256 * 1024 * 1024
+)
 # single-flight 等待者的最长阻塞时长：同键并发请求中只有首个真正建图，其余等待同一
 # 结果。10 万符号级仓库冷建图纯 CPU 约 2 秒、20 万级约 4 秒（不含 ORM 取数）。
 #
@@ -1058,10 +1072,14 @@ LSP_SERVERS: dict[str, dict[str, Any]] = {
 # - HEALTH_CHECK_TIMEOUT 默认 5s（workspace/symbol("") ping）
 LSP_STARTUP_TIMEOUT_SECONDS: int = env.int("LSP_STARTUP_TIMEOUT_SECONDS", default=30)
 LSP_REQUEST_TIMEOUT_SECONDS: int = env.int("LSP_REQUEST_TIMEOUT_SECONDS", default=10)
-LSP_HEALTH_CHECK_TIMEOUT_SECONDS: int = env.int("LSP_HEALTH_CHECK_TIMEOUT_SECONDS", default=5)
+LSP_HEALTH_CHECK_TIMEOUT_SECONDS: int = env.int(
+    "LSP_HEALTH_CHECK_TIMEOUT_SECONDS", default=5
+)
 
 # 健康检查间隔（每 30s 一次 workspace/symbol("") ping）
-LSP_HEALTH_CHECK_INTERVAL_SECONDS: int = env.int("LSP_HEALTH_CHECK_INTERVAL_SECONDS", default=30)
+LSP_HEALTH_CHECK_INTERVAL_SECONDS: int = env.int(
+    "LSP_HEALTH_CHECK_INTERVAL_SECONDS", default=30
+)
 
 # crash-loop 防护硬阈值（连续 N 次重启失败后转 DISABLED）
 LSP_MAX_RESTART_ATTEMPTS: int = env.int("LSP_MAX_RESTART_ATTEMPTS", default=3)
@@ -1138,7 +1156,9 @@ FF_ENABLE_SCHEDULER = env.bool("FF_ENABLE_SCHEDULER", True)
 # API Keys 白名单（逗号分隔），空字符串时 AllowAny（contract）
 # 启用后自动触发 Bearer token 校验；启用时务须修复 security mitigation IDOR（参见 compat/request_handler.py）
 OPENAI_COMPAT_API_KEYS: list[str] = [
-    k.strip() for k in os.environ.get("OPENAI_COMPAT_API_KEYS", "").split(",") if k.strip()
+    k.strip()
+    for k in os.environ.get("OPENAI_COMPAT_API_KEYS", "").split(",")
+    if k.strip()
 ]
 
 # =============================================================================
