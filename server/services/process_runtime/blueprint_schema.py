@@ -197,6 +197,10 @@ BLUEPRINT_JSON_SCHEMA: dict[str, Any] = {
                                 "$ref": "#/$defs/block_list",
                                 "description": "功能点描述",
                             },
+                            "module": {
+                                "type": "string",
+                                "description": "所属功能模块/章节名（可选；驱动 blueprint_route 的 placement unit 聚合，缺失时不得凭空发明）",
+                            },
                             "source_ref": {
                                 "type": "string",
                                 "description": "requirement_refs 内的来源标识",

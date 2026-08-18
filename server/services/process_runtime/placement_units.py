@@ -47,7 +47,7 @@ _ACCEPTANCE_KEYS = frozenset(
     }
 )
 
-# 「复用…」短语 → host hint（不硬编码仓 UUID）
+# 「复用…」短语 → host hint（纯证据标注，不再驱动固定角色加权）
 _REUSE_PATTERN = re.compile(
     r"复用\s*([^，,。；;\n]{1,40})",
     re.UNICODE,

@@ -48,6 +48,8 @@ from delivery.models import (
 )
 from services.process_runtime.blueprint_intake import (
     BlueprintIntakeRejected,
+    _decompose_system_prompt,
+    _points_from_segments,
     adecompose_feature_points,
     aresolve_project_id,
     build_skeleton,
@@ -448,6 +450,77 @@ async def test_decompose_handler_carries_pointer_when_nothing_changed() -> None:
     assert session.current_artifact_version_id != pointer_before
     version = await ArtifactVersion.objects.aget(id=session.current_artifact_version_id)
     assert len(version.content["requirement_spec"]["feature_points"]) == 3
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Fix A：feature_points[].module 是**结构化字段**（驱动 placement unit 聚合）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_segment_module_lands_as_structured_feature_point_field() -> None:
+    """⭐ ``segment.module`` → ``feature_point["module"]``，不只是 description 文本。
+
+    `blueprint_route._requirement_spec_to_feature_list` 读的是 ``fp["module"]``；只写
+    description 会让所有功能点进同一个 ``_unassigned`` 桶 ⇒ 恒 1 个 PlacementUnit ⇒
+    多模块需求只发一次 RepoRouterV2 查询，而且**零异常**（最难发现的那类缺陷）。
+    """
+    points = _points_from_segments(
+        [
+            {"title": "习题生成接口", "module": "practice", "layer": "backend"},
+            {"title": "生成结果埋点", "module": "observability", "layer": "backend"},
+        ]
+    )
+
+    assert [p["module"] for p in points] == ["practice", "observability"]
+    # description enrichment 保留（人读的可读性面），但不再是模块名的唯一载体
+    assert points[0]["description"][0]["text"] == "practice / backend"
+
+
+def test_segment_without_module_falls_back_to_layer() -> None:
+    """只有 ``layer`` 的 segment：module 回落 layer —— 有一个真实分层键就别塌成单桶。"""
+    points = _points_from_segments([{"title": "接口鉴权", "layer": "backend"}])
+
+    assert points[0]["module"] == "backend"
+
+
+def test_segment_without_module_or_layer_invents_nothing() -> None:
+    """⛔ 无模块信息时**不发明** module（T-lta-01：假模块名比缺失更糟）。"""
+    points = _points_from_segments([{"title": "接口鉴权"}])
+
+    assert "module" not in points[0]
+    assert "description" not in points[0]
+
+
+def test_llm_items_module_is_carried_but_never_invented() -> None:
+    """LLM 路径复用同一 mapper：items 带 module 则写入，不带则不补。"""
+    points = _points_from_segments(
+        [
+            {"title": "配额校验", "intent": "brownfield", "module": "billing"},
+            {"title": "配额告警", "intent": "greenfield"},
+        ]
+    )
+
+    assert points[0]["module"] == "billing"
+    assert points[0]["intent"] == "brownfield"
+    assert "module" not in points[1]
+
+
+def test_structured_module_is_schema_valid() -> None:
+    """新增 ``module`` 属性必须被 schema 接受（否则拆解版本一律 fail-closed）。"""
+    content = build_skeleton(title="t", project_id=_PROJECT_ID, goal_text="g")
+    content["requirement_spec"]["feature_points"] = _points_from_segments(
+        [{"title": "习题生成接口", "module": "practice"}]
+    )
+
+    assert validate_blueprint(content) == (True, None)
+
+
+def test_decompose_llm_prompt_allows_optional_module_without_inventing() -> None:
+    """提示词允许可选 module，但必须明写「严禁发明」（T-lta-01 的 LLM 面）。"""
+    prompt = _decompose_system_prompt()
+
+    assert "module" in prompt
+    assert "严禁发明" in prompt
 
 
 # ══════════════════════════════════════════════════════════════════════════

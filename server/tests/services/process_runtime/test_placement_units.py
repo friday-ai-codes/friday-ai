@@ -203,6 +203,29 @@ def test_placement_units_observability_no_requirement_body(monkeypatch):
     assert "duration_ms" in completed
 
 
+def test_merge_depends_on_false_links_units_without_collapsing_them():
+    """⭐ Fix A：``merge_depends_on=False`` 时 depends_on 只写 **unit 边**，⛔ 不并查合并。
+
+    蓝图 funnel 走的就是这条路径：默认 True 会把「A depends_on B」的两个模块塌回同一个
+    unit，于是多模块需求又变成一次 RepoRouterV2 查询、primary/supporting 全靠一份查询
+    定——正是 Fix A 要消灭的 mega-unit。
+    """
+    modules, features = _features_two_modules()
+
+    result = build_placement_units(features_flat=features, modules=modules, merge_depends_on=False)
+
+    units = result.units
+    assert result.unit_count == 2, "depends_on 不得让两个模块塌成一个 unit"
+    by_module = {}
+    for unit in units:
+        for name in unit.module_names:
+            by_module[name] = unit
+    assert set(by_module) == {"模块A", "模块B"}
+    # 依赖关系仍可测：A → B 的 unit 边存在
+    assert by_module["模块B"].unit_id in by_module["模块A"].depends_on_units
+    assert by_module["模块A"].unit_id not in by_module["模块B"].depends_on_units
+
+
 def test_build_from_feature_list_dict():
     """可用 feature_list 字典入口。"""
     modules, features = _features_two_modules()
