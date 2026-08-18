@@ -61,6 +61,7 @@ __all__ = [
     "acollect_pending_research_repos",
     "acollect_confirmation_state",
     "build_locked_associations",
+    "merge_gate_snapshot",
 ]
 
 # session.stage_state 内确认门的键（112-04 的增量 dispatch 从这里读 pending_research）。
@@ -81,6 +82,33 @@ _MAX_DOMAIN_CHARS = 40
 
 _VALID_ROLES = ("direct", "indirect")
 _VALID_VERDICTS = ("suitable", "partial", "unsuitable")
+
+# ⭐ D-03：`fitness.verdict == "unsuitable"` 的仓**默认不进锁定关联** —— 调研已经判定
+# 「这个需求不该落这个仓」，还把它锁进 `repo_associations` 等于让后续编码波次照着一个
+# 被否决的仓写方案。落地方式是复用既有的 `removed` 面（`build_locked_associations` 天然
+# 跳过 removed），而不是在锁定处再加一层 unsuitable 拦截 —— 后者会把人工重纳也挡掉。
+UNSUITABLE_REMOVE_REASON = "fitness_unsuitable"
+
+# ⭐ 幂等 refresh 的字段分工（D-01 / Discretion）：
+# - 人工裁决字段保留（确认门动作端点写入面），refresh 绝不覆盖——否则终态回调会把用户
+#   刚做的 remove/改判/加仓/职责编辑冲掉。
+# - fitness 面字段用最新调研结论覆盖（failed→done、verdict 变化、现状摘要更新）。
+# - repository_name 只在快照现值为空时才补（人工可能填过更准的名）。
+_HUMAN_PRESERVED_GATE_KEYS = (
+    "role_suggestion",
+    "responsibility",
+    "removed",
+    "remove_reason",
+    "pending_research",
+    "actions",
+)
+_FITNESS_REFRESH_GATE_KEYS = (
+    "fitness",
+    "task_status",
+    "current_state_summary",
+    "routing_evidence",
+    "confidence",
+)
 
 # 待重调研判据的第二个合取项：只有 task 仍可派发时标记才算「有待调研」。
 _DISPATCHABLE_STATUSES = (RepoResearchTaskStatus.PENDING, RepoResearchTaskStatus.STALE)
@@ -232,6 +260,111 @@ def _afilter_dispatchable_repos(session_id: Any, repository_ids: list[str]) -> l
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# 模块级纯函数：确认门快照幂等 refresh（D-01）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def merge_gate_snapshot(
+    existing: list[dict[str, Any]],
+    fresh: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """把最新调研结论（fitness 面）合并进既有确认门快照，保留人工裁决字段（**纯函数**）。
+
+    幂等 refresh 的字段分工（D-01）：
+
+    - **保留** ``_HUMAN_PRESERVED_GATE_KEYS``：role/responsibility/removed/remove_reason/
+      actions/pending_research —— 由确认门动作端点写入的人工裁决面，refresh 绝不覆盖，
+      否则调研终态回调会把用户刚做的 remove/改判/加仓/职责编辑冲掉。
+    - **覆盖** ``_FITNESS_REFRESH_GATE_KEYS``：fitness/task_status/current_state_summary/
+      routing_evidence/confidence —— 用最新计算值刷新（failed→done、verdict 变化、
+      现状摘要更新）。这正是「存量快照残留 failed 任务态」问题的修复面。
+    - ``repository_name`` 只在既值为空时补齐（人工可能已填过更准的名）。
+    - **仓集不增不减**：只更新既有条目；``fresh`` 里没有对应仓的条目原样保留（人工
+      ``add_repo`` 的仓在 fresh 尚无 fitness 时不被清空），``existing`` 里没有的
+      fresh-only 条目不追加（不把人工已移除/未纳入的路由候选重新塞回）。返回列表与
+      ``existing`` 一一对应、顺序不变，便于调用方逐条比对是否真的有变化。
+    - ⭐ **unsuitable 收紧**（D-03，`removed` 保留规则的**唯一例外**）：刷新后 fitness 判
+      ``unsuitable`` 且人工没 ``add_repo`` 重纳过 → 强制 ``removed=True`` +
+      ``remove_reason=fitness_unsuitable``。「门先开、调研后判不适配」时不收紧，这个仓
+      就会一路锁进 ``repo_associations``；人工重纳留痕（见
+      :func:`_human_kept_despite_unsuitable`）优先级更高，不被覆盖。
+    """
+    fresh_by_id = {
+        str(item.get("repository_id") or ""): item
+        for item in fresh or []
+        if isinstance(item, dict) and str(item.get("repository_id") or "")
+    }
+    merged: list[dict[str, Any]] = []
+    auto_removed = 0
+    for entry in existing or []:
+        if not isinstance(entry, dict):
+            merged.append(entry)
+            continue
+        repository_id = str(entry.get("repository_id") or "")
+        source = fresh_by_id.get(repository_id)
+        if not source:
+            merged.append(copy.deepcopy(entry))
+            continue
+        updated = copy.deepcopy(entry)
+        for key in _FITNESS_REFRESH_GATE_KEYS:
+            if key in source:
+                updated[key] = copy.deepcopy(source[key])
+        if not str(updated.get("repository_name") or "").strip():
+            name = str(source.get("repository_name") or "").strip()
+            if name:
+                updated["repository_name"] = name
+        if _apply_unsuitable_auto_remove(updated):
+            auto_removed += 1
+        merged.append(updated)
+    if auto_removed:
+        logger.info(
+            "blueprint_confirm_gate_unsuitable_auto_removed",
+            category="sampling",
+            component="process_runtime",
+            auto_removed_count=auto_removed,
+            repo_count=len(merged),
+        )
+    return merged
+
+
+def _human_kept_despite_unsuitable(entry: dict[str, Any]) -> bool:
+    """人工是否在门内**显式重纳**过这个仓（``add_repo`` 且 ``after.removed is False``）。
+
+    只认动作留痕，不认 ``removed`` 现值：现值 False 也可能只是「门先开时 verdict 还没
+    出来」，那种情况必须被 refresh 收紧成 removed，否则「先开门、调研后判不适配」的仓
+    会一路锁进蓝图（D-03 要拦的正是这条时序）。
+    """
+    for action in entry.get("actions") or []:
+        if not isinstance(action, dict):
+            continue
+        if str(action.get("action") or "").strip() != "add_repo":
+            continue
+        after = action.get("after")
+        if isinstance(after, dict) and after.get("removed") is False:
+            return True
+    return False
+
+
+def _apply_unsuitable_auto_remove(entry: dict[str, Any]) -> bool:
+    """fresh fitness 判 unsuitable → 收紧成 ``removed=True``（D-03）；人工重纳则不动。
+
+    Returns:
+        本次是否把该条目从「未移除」收紧为「已移除」（调用方据此计数/记日志）。
+    """
+    verdict = str((entry.get("fitness") or {}).get("verdict") or "").strip().lower()
+    if verdict != "unsuitable" or _human_kept_despite_unsuitable(entry):
+        return False
+    if entry.get("removed") is True:
+        # 已移除：保留人工 `remove_repo` 写下的原因，不覆盖成机器原因。
+        if not str(entry.get("remove_reason") or "").strip():
+            entry["remove_reason"] = UNSUITABLE_REMOVE_REASON
+        return False
+    entry["removed"] = True
+    entry["remove_reason"] = UNSUITABLE_REMOVE_REASON
+    return True
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # 模块级纯函数：快照 → 蓝图 repo_associations
 # ══════════════════════════════════════════════════════════════════════════
 
@@ -260,7 +393,9 @@ def build_locked_associations(
     """快照 + 用户裁决 → 蓝图 ``repo_associations`` 条目（**纯函数**）。
 
     - 被 ``remove_repo`` 的仓**不进** associations（其信息进 ``boundaries`` 草案与
-      ``decision_log``）。
+      ``decision_log``）。D-03 的 unsuitable 自动移除复用同一条通道 —— 这里**只**看
+      ``removed``，⛔ 不额外按 verdict 再拦一层，否则人工 ``add_repo`` 重纳（
+      ``removed=False``）也会被挡掉，人工裁决就变成了不可覆盖的机器判定。
     - 一律写 ``decided_by="human"`` / ``confirmed_at_gate=True``：确认门是人工裁决点。
     - 字段名严格对齐 ``blueprint_schema`` 的 ``repo_associations`` 子集，不新增 schema 外键；
       ``responsibility`` / ``fitness.reasons`` 落 block_list 形状。
@@ -416,10 +551,14 @@ class BlueprintConfirmGateAdapter:
 
         artifact = version.artifact
 
-        # 1. pending 门：已有 open+blocking 确认门线程 → 不重复开门、不重算快照。
+        # 1. pending 门：已有 open+blocking 确认门线程 → 不重复开门，但**幂等刷新快照**：
+        #    调研终态（failed→done、verdict 变化）在门开着期间发生时，旧实现直接短路返回
+        #    陈旧 options，用户看到的 task_status 会永远停在 failed。refresh 用最新 fitness
+        #    覆盖计算面、保留人工裁决面（best-effort，绝不阻断开门）。
         if await self.lifecycle.ahas_open_blocking_threads(
             artifact, kind=ThreadKind.REPO_CONFIRMATION
         ):
+            await self.arefresh_open_gate_snapshot(session)
             state = await acollect_confirmation_state(session)
             thread_id = str((state or {}).get("thread_id") or "") or None
             return self._result(
@@ -486,6 +625,60 @@ class BlueprintConfirmGateAdapter:
             {STAGE_STATE_KEY: {"thread_id": str(thread.id), "repos": snapshot}},
             len(snapshot),
         )
+
+    # ── 幂等 refresh（D-01：门开着期间用最新调研结论刷新快照，保留人工裁决） ──
+
+    async def arefresh_open_gate_snapshot(self, session: Any) -> dict[str, Any]:
+        """把最新调研结论刷进仍在受理中的确认门快照（幂等、best-effort、绝不抛）。
+
+        用最新 fitness/task_status 覆盖 ``_FITNESS_REFRESH_GATE_KEYS``、保留人工裁决面
+        （见 :func:`merge_gate_snapshot`）。合并与落库在 lifecycle 的行锁事务内完成
+        （读改写同一行，杜绝与动作端点交错），无变化时零写。
+
+        Returns:
+            ``{"refreshed": bool, "thread_id": str | None, "changed_count": int}``——
+            无门 / 无变化 / 任何异常一律 ``refreshed=False``（调用方无需判分支）。
+        """
+        started = time.monotonic()
+        result: dict[str, Any] = {"refreshed": False, "thread_id": None, "changed_count": 0}
+        try:
+            version = await self._aload_current_version(session)
+            if version is None:
+                return result
+            artifact = version.artifact
+            thread = await self._aload_active_gate_thread(artifact.id)
+            if thread is None:
+                return result
+            result["thread_id"] = str(thread.id)
+            fresh = await self._abuild_snapshot(session)
+            outcome = await self.lifecycle.arefresh_gate_options(
+                str(thread.id),
+                fresh_snapshot=fresh,
+                initiated_by_user_id=self._initiated_by(session),
+            )
+            result["refreshed"] = bool(outcome.get("refreshed"))
+            result["changed_count"] = int(outcome.get("changed_count") or 0)
+            if result["refreshed"]:
+                logger.info(
+                    "blueprint_confirmation_snapshot_refreshed",
+                    category="caller",
+                    component="process_runtime",
+                    session_id=str(getattr(session, "id", "")),
+                    artifact_id=str(artifact.id),
+                    thread_id=str(thread.id),
+                    changed_count=result["changed_count"],
+                    initiated_by_user_id=self._initiated_by(session),
+                    duration_ms=round((time.monotonic() - started) * 1000, 2),
+                )
+        except Exception as exc:  # noqa: BLE001 — refresh best-effort，绝不阻断开门/续驱
+            logger.warning(
+                "blueprint_confirm_gate_refresh_failed",
+                category="sampling",
+                component="process_runtime",
+                session_id=str(getattr(session, "id", "")),
+                error=redact_secrets_in_text(str(exc)),
+            )
+        return result
 
     # ── 锁定 ──────────────────────────────────────────────────────────────
 
@@ -671,7 +864,11 @@ class BlueprintConfirmGateAdapter:
     # ── 只读装配 helper（adapter 零 ORM 写，INV-6） ────────────────────────
 
     async def _abuild_snapshot(self, session: Any) -> list[dict[str, Any]]:
-        """组装结构化仓库清单快照（路由候选 ∪ fitness 聚合 ∪ escalation 现状）。"""
+        """组装结构化仓库清单快照（路由候选 ∪ fitness 聚合 ∪ escalation 现状）。
+
+        当 candidates/fitness/escalation 全空时回退 ``routing.shortlist``，
+        保证确认卡永不为空（防御 unmapped_role 等上游短路留下的死角）。
+        """
         state = self._stage_state(session)
         routing = state.get("routing") if isinstance(state.get("routing"), dict) else {}
         candidates: dict[str, dict[str, Any]] = {}
@@ -693,6 +890,37 @@ class BlueprintConfirmGateAdapter:
         repository_ids = list(candidates) + [
             rid for rid in list(fitness) + list(escalated_repos) if rid not in candidates
         ]
+
+        # 兜底：无候选时用 shortlist 组装，确认卡不得为空
+        if not repository_ids:
+            for item in routing.get("shortlist") or []:
+                if not isinstance(item, dict):
+                    continue
+                repository_id = str(item.get("repository_id") or "").strip()
+                if not repository_id or repository_id in candidates:
+                    continue
+                # shortlist 条目形状与 candidate 不同；合成最小可确认候选
+                score = float(item.get("score") or 0.0)
+                candidates[repository_id] = {
+                    "repository_id": repository_id,
+                    "repository_name": str(item.get("repository_name") or ""),
+                    "role_suggestion": "direct",
+                    "confidence": "medium" if score >= 0.4 else "low",
+                    "total": score,
+                    "breakdown": {
+                        "router_base": score,
+                        "charter_match": 0.0,
+                        "history_match": 0.0,
+                    },
+                    "evidence": {
+                        "router_version": str(routing.get("router_version") or ""),
+                        "matched_domains": [],
+                        "violated_boundaries": [],
+                        "history_match_unavailable": "",
+                    },
+                }
+            repository_ids = list(candidates)
+
         router_version = str(routing.get("router_version") or "")
 
         snapshot: list[dict[str, Any]] = []
@@ -844,7 +1072,12 @@ def _build_snapshot_entry(
     conclusion: dict[str, Any],
     router_version: str,
 ) -> dict[str, Any]:
-    """单仓快照条目：role 建议 / 职责 / fitness 结论 / 现状摘要 / 证据引用。"""
+    """单仓快照条目：role 建议 / 职责 / fitness 结论 / 现状摘要 / 证据引用。
+
+    ⭐ ``fitness.verdict == "unsuitable"`` 建门即 ``removed=True`` /
+    ``remove_reason=`` :data:`UNSUITABLE_REMOVE_REASON`（D-03）：调研已判「需求不该落这
+    个仓」，默认就不该进锁定关联；人工要保留它得在门内 ``add_repo`` 显式重纳。
+    """
     breakdown = candidate.get("breakdown") if isinstance(candidate.get("breakdown"), dict) else {}
     evidence = candidate.get("evidence") if isinstance(candidate.get("evidence"), dict) else {}
     role = str(conclusion.get("role_suggestion") or candidate.get("role_suggestion") or "").strip()
@@ -863,6 +1096,7 @@ def _build_snapshot_entry(
             reasons.append(reason)
         elif str(reason or "").strip():
             reasons.append(str(reason).strip()[:_MAX_SUMMARY_CHARS])
+    is_unsuitable = verdict == "unsuitable"
     return {
         "repository_id": repository_id,
         "repository_name": str(candidate.get("repository_name") or ""),
@@ -893,7 +1127,9 @@ def _build_snapshot_entry(
         },
         "task_status": str(conclusion.get("task_status") or ""),
         "pending_research": False,
-        "removed": False,
+        # ⭐ D-03：unsuitable 建门即预置 removed（人工可在门内 add_repo 重纳）。
+        "removed": is_unsuitable,
+        "remove_reason": UNSUITABLE_REMOVE_REASON if is_unsuitable else "",
         "actions": [],
     }
 
@@ -970,7 +1206,12 @@ def _build_charter_draft(entry: dict[str, Any]) -> dict[str, Any]:
     repository_name = str(entry.get("repository_name") or "")
     if entry.get("removed") is True:
         reason = str(entry.get("remove_reason") or "").strip()
-        rule = f"本类需求不落此仓（用户在蓝图确认门移除{('：' + reason) if reason else ''}）"
+        # D-03 的自动移除不是人工动作：措辞据 remove_reason 区分，别把机器判定写成
+        # 「用户移除」（章程 boundaries 是长期事实，错误归因会一直误导后续裁决）。
+        if reason == UNSUITABLE_REMOVE_REASON:
+            rule = "本类需求不落此仓（调研判定不适配，用户在蓝图确认门未重新纳入）"
+        else:
+            rule = f"本类需求不落此仓（用户在蓝图确认门移除{('：' + reason) if reason else ''}）"
         return {"boundaries": [{"rule": rule[:500], "decided_by": "human", "citations": []}]}
 
     responsibility = str(entry.get("responsibility") or "").strip()
@@ -989,9 +1230,12 @@ def _build_charter_draft(entry: dict[str, Any]) -> dict[str, Any]:
             {
                 "domain": domain,
                 "status": "implemented" if role == "direct" else "planned",
-                # 职责正文落 note（不参与匹配），领域名才是匹配面
-                "note": f"{responsibility[:500]}（来自蓝图确认门的人工确认"
-                f"{('：' + repository_name) if repository_name else ''}）",
+                # 职责正文不再落入 note：score_charter_match 会对 note 做 ≥3 字片段匹配，
+                # 长职责会污染路由（与 MJ-07 domain 污染同构）。领域名才是匹配面。
+                "note": (
+                    f"来自蓝图确认门的人工确认"
+                    f"{('：' + repository_name) if repository_name else ''}"
+                )[:500],
                 "citations": [],
             }
         ]
