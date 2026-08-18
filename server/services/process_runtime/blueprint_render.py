@@ -36,6 +36,7 @@ from __future__ import annotations
 from typing import Any
 
 from delivery.services.blueprint_anchor import _block_text as _anchor_block_text
+from services.process_runtime.blueprint_proposal_render import render_repo_proposals_markdown
 
 __all__ = ["blueprint_status_of", "render_blueprint_markdown"]
 
@@ -584,6 +585,12 @@ def render_blueprint_markdown(content: dict, *, blueprint_status: str) -> str:
 
     parts.extend(_section_requirement_spec(_dict(data.get("requirement_spec")), pool))
     parts.extend(_section_repo_associations(associations, pool))
+    # 分仓方案（OpenSpec Proposal）：把散落六段的仓级内容重新按仓聚合，紧随「仓库关联」
+    # 之后——读者先看到有哪些仓与角色，再逐仓看到该仓的 Why/What Changes/Impact/Spec
+    # Deltas，随后才是合并视角的现状/实现/API/影响/交互五段。渲染委托纯函数模块。
+    proposals = render_repo_proposals_markdown(data)
+    if proposals:
+        parts.append(proposals)
     parts.extend(_section_current_state(_list(data.get("current_state_analysis")), pool, names))
     parts.extend(_section_implementation(_dict(data.get("implementation_overview")), pool, names))
     parts.extend(_section_api_contracts(_list(data.get("api_contracts")), pool, names))

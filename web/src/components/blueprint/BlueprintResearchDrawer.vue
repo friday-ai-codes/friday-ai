@@ -91,6 +91,76 @@ const roleSuggestion = computed(() => String(activeRepo.value?.conclusion?.role_
 
 const researchSummary = computed(() => String(activeRepo.value?.conclusion?.research_summary ?? ''))
 
+/**
+ * 阶段二分仓方案（RepoPlan）：`conclusion.repo_plan`。仅在 `repo_plan` 阶段跑过后才有；
+ * 键由产出侧自定、schema 层零保证 ⇒ 逐层 `Array.isArray` / `typeof` 防御，⛔ 不直接下标。
+ */
+const repoPlan = computed<Record<string, unknown> | null>(() => {
+  const raw = activeRepo.value?.conclusion?.repo_plan
+  return raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+})
+
+const implItems = computed<Array<Record<string, unknown>>>(() => {
+  const raw = repoPlan.value?.impl_items
+  return Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : []
+})
+
+const apisProvided = computed<Array<Record<string, unknown>>>(() => {
+  const raw = repoPlan.value?.apis_provided
+  return Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : []
+})
+
+const apisConsumed = computed<Array<Record<string, unknown>>>(() => {
+  const raw = repoPlan.value?.apis_consumed
+  return Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : []
+})
+
+const hasRepoPlan = computed(
+  () => implItems.value.length > 0 || apisProvided.value.length > 0 || apisConsumed.value.length > 0,
+)
+
+/** 变更类型 → 中文标签；未知类型原样透出（⛔ 不隐藏）。 */
+const CHANGE_LABELS: Record<string, string> = {
+  create: '新建',
+  modify: '改动',
+  remove: '删除',
+  indirect_refine: '间接完善',
+}
+
+function changeLabel(value: unknown): string {
+  const key = String(value ?? '')
+  return CHANGE_LABELS[key] ?? key
+}
+
+/** RepoPlan how 字段是 block[] 或字符串；取首块可读文本，拆不出返空串。 */
+function implHow(item: Record<string, unknown>): string {
+  const how = item.how
+  if (typeof how === 'string')
+    return how
+  if (Array.isArray(how)) {
+    const first = how.find(block => block && typeof block === 'object') as Record<string, unknown> | undefined
+    const text = first?.text
+    if (typeof text === 'string')
+      return text
+    if (Array.isArray(text))
+      return text.map(String).join('；')
+  }
+  return ''
+}
+
+function endpointOf(api: Record<string, unknown>): string {
+  return `${String(api.method ?? '')} ${String(api.path ?? api.name ?? '')}`.trim()
+}
+
+function consumedSource(api: Record<string, unknown>): string {
+  const ds = api.data_source
+  if (!ds || typeof ds !== 'object')
+    return ''
+  const source = String((ds as Record<string, unknown>).from_service ?? '')
+  const availability = String((ds as Record<string, unknown>).availability ?? '')
+  return [source, availability].filter(Boolean).join(' · ')
+}
+
 /** 只渲染有日志的运行：0 条的那些是派发后立刻失败的重试，列出来只有噪音。 */
 const runs = computed<BlueprintResearchRun[]>(
   () => (activeRepo.value?.runs ?? []).filter(run => run.logs.length > 0),
@@ -255,6 +325,64 @@ function setOpen(value: boolean): void {
                 </p>
               </li>
             </ul>
+          </section>
+
+          <section v-if="hasRepoPlan" data-testid="blueprint-research-repo-plan">
+            <h4 class="mb-1.5 text-sm font-medium text-muted-foreground">
+              {{ t('knowledge.blueprints.research.repoPlanTitle') }}
+            </h4>
+
+            <ul v-if="implItems.length" class="space-y-1.5">
+              <li
+                v-for="(item, index) in implItems"
+                :key="String(item.item_id ?? index)"
+                class="rounded-lg border border-border/60 p-2.5 text-[13px] leading-6"
+                data-testid="blueprint-research-impl-item"
+              >
+                <div class="mb-0.5 flex flex-wrap items-baseline gap-1.5">
+                  <Badge v-if="item.change_type" variant="info">
+                    {{ changeLabel(item.change_type) }}
+                  </Badge>
+                  <span class="text-[13px] font-medium text-foreground">{{ item.title }}</span>
+                  <span class="ml-auto text-[11px] text-muted-foreground/60">#{{ index + 1 }}</span>
+                </div>
+                <p v-if="implHow(item)" class="whitespace-pre-wrap text-foreground/90">
+                  {{ implHow(item) }}
+                </p>
+                <p
+                  v-if="Array.isArray(item.files_touched) && item.files_touched.length"
+                  class="mt-0.5 text-[12px] text-muted-foreground"
+                >
+                  {{ t('knowledge.blueprints.research.filesTouched') }}：{{ (item.files_touched as unknown[]).map(String).join('、') }}
+                </p>
+              </li>
+            </ul>
+
+            <div v-if="apisProvided.length || apisConsumed.length" class="mt-2 space-y-1.5">
+              <div
+                v-for="(api, index) in apisProvided"
+                :key="`p-${index}`"
+                class="rounded-md border border-border/50 px-2.5 py-1.5 text-[12px] leading-6"
+                data-testid="blueprint-research-api-provided"
+              >
+                <Badge variant="secondary" class="font-normal">
+                  {{ t('knowledge.blueprints.research.apiProvided') }}
+                </Badge>
+                <code class="ml-1.5 text-[12px] text-foreground">{{ endpointOf(api) }}</code>
+              </div>
+              <div
+                v-for="(api, index) in apisConsumed"
+                :key="`c-${index}`"
+                class="rounded-md border border-border/50 px-2.5 py-1.5 text-[12px] leading-6"
+                data-testid="blueprint-research-api-consumed"
+              >
+                <Badge variant="muted" class="font-normal">
+                  {{ t('knowledge.blueprints.research.apiConsumed') }}
+                </Badge>
+                <code class="ml-1.5 text-[12px] text-foreground">{{ endpointOf(api) }}</code>
+                <span v-if="consumedSource(api)" class="ml-1.5 text-[11px] text-muted-foreground">{{ consumedSource(api) }}</span>
+              </div>
+            </div>
           </section>
 
           <section v-for="run in runs" :key="run.session_id" data-testid="blueprint-research-run">

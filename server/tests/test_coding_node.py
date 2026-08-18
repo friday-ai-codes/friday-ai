@@ -11,6 +11,7 @@ implementation 引入 ProviderConfigService.aresolve_or_error 之后，AICodingN
 
 import json
 import uuid
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -36,11 +37,13 @@ def _stub_provider_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     from services.provider_config import ProviderConfigService
+
     monkeypatch.setattr(
         ProviderConfigService,
         "aresolve_or_error",
         _resolve,
     )
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -595,9 +598,7 @@ class TestBuildCodingPromptUpstreamInjection:
     def test_no_upstream_param_byte_identical_to_phase44(self) -> None:
         """不传 upstream_artifacts（默认）→ prompt 与 Phase 44 现行为逐字一致（零回归命门）。"""
         node = AICodingNode()
-        prompt = node._build_coding_prompt(
-            _PROMPT_TASKS, "This is a test project.", "feat/x"
-        )
+        prompt = node._build_coding_prompt(_PROMPT_TASKS, "This is a test project.", "feat/x")
         assert prompt == _expected_baseline_prompt("This is a test project.", "feat/x")
 
     def test_none_and_empty_upstream_byte_identical(self) -> None:
@@ -609,8 +610,7 @@ class TestBuildCodingPromptUpstreamInjection:
             == expected
         )
         assert (
-            node._build_coding_prompt(_PROMPT_TASKS, "ctx", "br", upstream_artifacts=[])
-            == expected
+            node._build_coding_prompt(_PROMPT_TASKS, "ctx", "br", upstream_artifacts=[]) == expected
         )
 
     def test_with_upstream_includes_contract_section(self) -> None:
@@ -640,3 +640,49 @@ class TestBuildCodingPromptUpstreamInjection:
         idx_upstream = prompt.index("# 上游产物 / 上游契约")
         idx_branch = prompt.index("# 分支信息")
         assert idx_ctx < idx_upstream < idx_branch
+
+
+class TestBuildCodingPromptRepoProposal:
+    """分仓 proposal 只作为本仓 prompt 上下文，不通过文件运输。"""
+
+    def test_repo_proposal_is_read_only_context_before_upstream(self) -> None:
+        node = AICodingNode()
+        proposal = "**Why**\n本仓职责\n\n**What Changes**\n- 新建接口"
+        prompt = node._build_coding_prompt(
+            _PROMPT_TASKS,
+            "ctx",
+            "feat/x",
+            upstream_artifacts=_UPSTREAM_ARTIFACTS,
+            repo_proposal=proposal,
+        )
+        assert "# 本仓 OpenSpec Proposal（只读权威实现上下文）" in prompt
+        assert proposal in prompt
+        assert "不要在仓内新建 OpenSpec proposal 文件" in prompt
+        assert prompt.index("# 项目背景") < prompt.index("# 本仓 OpenSpec Proposal")
+        assert prompt.index("# 本仓 OpenSpec Proposal") < prompt.index("# 上游产物 / 上游契约")
+
+    @pytest.mark.asyncio
+    async def test_prepare_repo_proposals_isolates_repository_content(self) -> None:
+        from tests.helpers.blueprint_samples import make_blueprint
+
+        node = AICodingNode()
+        proposals = await node._prepare_repo_proposals(
+            plan_data={"blueprint_content": make_blueprint()},
+            repo_ids=["repo-backend"],
+            dispatch_user=SimpleNamespace(id="user-1"),
+            log=structlog.get_logger("test_repo_proposal"),
+        )
+        assert set(proposals) == {"repo-backend"}
+        assert "新增习题生成接口" in proposals["repo-backend"]
+        assert "练习页接入生成入口" not in proposals["repo-backend"]
+
+    @pytest.mark.asyncio
+    async def test_prepare_repo_proposals_without_blueprint_is_noop(self) -> None:
+        node = AICodingNode()
+        proposals = await node._prepare_repo_proposals(
+            plan_data={},
+            repo_ids=["repo-backend"],
+            dispatch_user=None,
+            log=structlog.get_logger("test_repo_proposal"),
+        )
+        assert proposals == {}
