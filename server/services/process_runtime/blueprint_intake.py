@@ -99,6 +99,9 @@ DEFAULT_FEATURE_POINT_INTENT = "greenfield"
 _MAX_FEATURE_POINTS = 200
 _MAX_FP_TITLE_CHARS = 200
 _MAX_FP_DESC_CHARS = 1000
+# `feature_points[].module` 是**结构化模块名**（被 blueprint_route 拿去聚合 placement unit），
+# 与 title 同量级即够；过长的「模块名」只会让聚合键退化成一段正文。
+_MAX_FP_MODULE_CHARS = 200
 
 
 def _schema_version() -> str:
@@ -583,9 +586,17 @@ def _points_from_segments(segments: list[dict]) -> list[dict]:
     （位序 index）       ``id`` = :func:`_feature_point_id`（``fp_{index+1}``）
     ``title``            ``title``（截断；空条目整条丢弃 —— schema 要求非空）
     ``intent`` （可选）  ``intent``（不在枚举内落 :data:`DEFAULT_FEATURE_POINT_INTENT`）
+    ``module`` （可选）  ⭐ ``module``：**结构化模块名**（空则回落 ``layer``）
     ``module``/``layer`` ``description``：一个 paragraph block，``block_id``
                          = ``fp_{n}_desc_1``（确定性，重跑同值）
     ==================  =========================================================
+
+    ⭐ ``module`` 必须落成**结构化字段**而不只是拼进 description：
+    ``blueprint_route._requirement_spec_to_feature_list`` 读的是 ``fp["module"]``，读空即
+    全部功能点落进同一个 ``_unassigned`` 桶 ⇒ ``build_placement_units`` 恒产 1 个
+    PlacementUnit ⇒ 多模块需求只发一次 ``RepoRouterV2`` 调用、primary/supporting 全靠
+    一份查询定，且**零异常**。⛔ 空 module 不发明（LLM 路径同理，见
+    :func:`_decompose_system_prompt`）。
     """
     points: list[dict] = []
     for index, segment in enumerate(segments[:_MAX_FEATURE_POINTS]):
@@ -600,6 +611,11 @@ def _points_from_segments(segments: list[dict]) -> list[dict]:
             "title": title,
             "intent": _normalize_intent(segment.get("intent")),
         }
+        module = str(segment.get("module") or "").strip()
+        if not module:
+            module = str(segment.get("layer") or "").strip()
+        if module:
+            point["module"] = module[:_MAX_FP_MODULE_CHARS]
         parts = [
             str(segment.get(key) or "").strip() for key in ("module", "layer") if segment.get(key)
         ]
@@ -620,8 +636,10 @@ def _decompose_system_prompt() -> str:
         "你是技术蓝图的需求拆分助手。用户会给你一段需求原文，请把它拆成互不重叠的功能点。\n"
         "要求：① 每个功能点是一句可独立验收的能力描述；② 不要发明需求里没有的功能；"
         "③ intent 三选一：greenfield（净新增）/ brownfield（存量改造）/ fix（缺陷修复），"
-        "判不出就填 greenfield；④ 严格输出 JSON："
-        '{"items": [{"title": "功能点标题", "intent": "greenfield"}]}'
+        "判不出就填 greenfield；④ 若需求原文本身有模块/章节划分，可为功能点带上 module "
+        "（原文里的模块名，逐字照抄）；原文没有模块划分就**省略该键**，严禁发明模块名；"
+        "⑤ 严格输出 JSON："
+        '{"items": [{"title": "功能点标题", "intent": "greenfield", "module": "可选模块名"}]}'
     )
 
 
