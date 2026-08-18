@@ -8,6 +8,7 @@ import structlog
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.utils import timezone
 
+from common.channel_groups import safe_group_add, safe_group_discard
 from common.log_context import LogSource
 from common.request_metrics import arecord_request_metric
 
@@ -77,7 +78,27 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         self._heartbeat_count = 0
         self._hello_received = False
 
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        if not await safe_group_add(
+            self.channel_layer,
+            self.group_name,
+            self.channel_name,
+            component="runners",
+        ):
+            # Redis 抖动时以可重试语义拒绝握手，避免 RuntimeError 逃进 ASGI 服务器引发二次
+            # 级联异常；runner 侧按自身退避重连即可，⛔ 绝不 accept 一条没订阅成功的 socket。
+            logger.warning(
+                "runner_ws_connect_rejected",
+                runner_id=str(runner.id),
+                reason="channel_layer_unavailable",
+                close_code=1013,
+                category="caller",
+                component="runners",
+                source=LogSource.WS.value,
+                initiated_by_user_id="system",
+            )
+            await self.close(code=1013)
+            return
+
         await self.accept()
         await self._update_channel_name(self.channel_name)
         self._ws_connected_at = time.perf_counter()
@@ -104,7 +125,12 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         if hasattr(self, "_hello_timeout"):
             self._hello_timeout.cancel()
         if hasattr(self, "group_name"):
-            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+            await safe_group_discard(
+                self.channel_layer,
+                self.group_name,
+                self.channel_name,
+                component="runners",
+            )
         if hasattr(self, "runner") and close_code != 4002:
             if self._hello_received:
                 await self._mark_offline()
@@ -1145,8 +1171,18 @@ class MonitorConsumer(AsyncJsonWebsocketConsumer):
                 from django.contrib.auth import get_user_model
 
                 await get_user_model().objects.aget(id=user_id)
+                # 先订阅成功再置 authenticated / 回 ok：⛔ 绝不把一条没订阅上的连接当成已鉴权。
+                if not await safe_group_add(
+                    self.channel_layer,
+                    MONITOR_GROUP,
+                    self.channel_name,
+                    component="runners",
+                    initiated_by_user_id=str(user_id),
+                ):
+                    await self.close(code=1013)
+                    return
+                self._auth_user_id = str(user_id)
                 self.authenticated = True
-                await self.channel_layer.group_add(MONITOR_GROUP, self.channel_name)
                 await self.send_json({"type": "auth", "status": "ok"})
                 return
             except Exception:
@@ -1166,7 +1202,13 @@ class MonitorConsumer(AsyncJsonWebsocketConsumer):
         if hasattr(self, "_auth_timeout"):
             self._auth_timeout.cancel()
         if self.authenticated:
-            await self.channel_layer.group_discard(MONITOR_GROUP, self.channel_name)
+            await safe_group_discard(
+                self.channel_layer,
+                MONITOR_GROUP,
+                self.channel_name,
+                component="runners",
+                initiated_by_user_id=getattr(self, "_auth_user_id", "system"),
+            )
 
     async def receive_json(self, content: dict, **kwargs) -> None:
         if content.get("type") == "auth":
@@ -1187,9 +1229,19 @@ class MonitorConsumer(AsyncJsonWebsocketConsumer):
             return
 
         if not self.authenticated:
+            # 同 cookie 路径：订阅成功才算鉴权通过，失败以可重试语义关闭而非放行。
+            if not await safe_group_add(
+                self.channel_layer,
+                MONITOR_GROUP,
+                self.channel_name,
+                component="runners",
+                initiated_by_user_id=str(user_id),
+            ):
+                await self.close(code=1013)
+                return
+            self._auth_user_id = str(user_id)
             self.authenticated = True
             self._auth_timeout.cancel()
-            await self.channel_layer.group_add(MONITOR_GROUP, self.channel_name)
         await self.send_json({"type": "auth", "status": "ok"})
 
     async def monitor_event(self, event: dict) -> None:

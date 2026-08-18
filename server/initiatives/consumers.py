@@ -14,6 +14,7 @@ import structlog
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 
+from common.channel_groups import safe_group_add, safe_group_discard
 from initiatives.services.realtime import project_group_name
 
 logger = structlog.get_logger(__name__)
@@ -34,13 +35,26 @@ class ProjectConsumer(AsyncWebsocketConsumer):
             return
 
         self.group_name = project_group_name(self.project_id)
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        if not await safe_group_add(
+            self.channel_layer,
+            self.group_name,
+            self.channel_name,
+            component="initiatives",
+            initiated_by_user_id=str(user.id),
+        ):
+            await self.close(code=1013)
+            return
         await self.accept()
 
     async def disconnect(self, close_code: int) -> None:
         group_name = getattr(self, "group_name", None)
         if group_name:
-            await self.channel_layer.group_discard(group_name, self.channel_name)
+            await safe_group_discard(
+                self.channel_layer,
+                group_name,
+                self.channel_name,
+                component="initiatives",
+            )
 
     async def project_event(self, event: dict) -> None:
         """转发 channel layer 广播的项目事件给前端。"""
@@ -63,9 +77,7 @@ class ProjectConsumer(AsyncWebsocketConsumer):
         from initiatives.models import Project, ProjectMember
         from permissions.models import SpaceMembership
 
-        project = (
-            Project.objects.filter(pk=project_id).values_list("space_id", flat=True).first()
-        )
+        project = Project.objects.filter(pk=project_id).values_list("space_id", flat=True).first()
         if project is None:
             return False
         if SpaceMembership.objects.filter(space_id=project, user=user).exists():

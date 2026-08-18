@@ -13,6 +13,7 @@ import json
 import structlog
 from channels.generic.websocket import AsyncWebsocketConsumer
 
+from common.channel_groups import safe_group_add, safe_group_discard
 from notifications.services import (
     NotificationService,
     broadcast_group_name,
@@ -33,10 +34,27 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
         self.user_id = str(user.id)
         self.group_name = notification_group_name(self.user_id)
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
-        # 全体广播分组（audience=all 系统公告实时下发）
-        self.broadcast_group = broadcast_group_name()
-        await self.channel_layer.group_add(self.broadcast_group, self.channel_name)
+        if not await safe_group_add(
+            self.channel_layer,
+            self.group_name,
+            self.channel_name,
+            component="notifications",
+            initiated_by_user_id=self.user_id,
+        ):
+            await self.close(code=1013)
+            return
+
+        # 全体广播分组（audience=all 系统公告实时下发）。广播组失败只降级公告、不牵连
+        # 个人通知：仅在订阅成功后才记 self.broadcast_group，disconnect 便只退订真加入过的组。
+        broadcast_group = broadcast_group_name()
+        if await safe_group_add(
+            self.channel_layer,
+            broadcast_group,
+            self.channel_name,
+            component="notifications",
+            initiated_by_user_id=self.user_id,
+        ):
+            self.broadcast_group = broadcast_group
         await self.accept()
 
         # 连接建立即下发当前未读数，避免前端首屏角标延迟
@@ -48,11 +66,24 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code: int) -> None:
         group_name = getattr(self, "group_name", None)
+        user_id = getattr(self, "user_id", "system")
         if group_name:
-            await self.channel_layer.group_discard(group_name, self.channel_name)
+            await safe_group_discard(
+                self.channel_layer,
+                group_name,
+                self.channel_name,
+                component="notifications",
+                initiated_by_user_id=user_id,
+            )
         broadcast_group = getattr(self, "broadcast_group", None)
         if broadcast_group:
-            await self.channel_layer.group_discard(broadcast_group, self.channel_name)
+            await safe_group_discard(
+                self.channel_layer,
+                broadcast_group,
+                self.channel_name,
+                component="notifications",
+                initiated_by_user_id=user_id,
+            )
 
     async def notification_message(self, event: dict) -> None:
         """转发 channel layer 广播的新通知给前端。"""

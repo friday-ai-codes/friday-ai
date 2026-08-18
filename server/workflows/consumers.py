@@ -6,15 +6,14 @@ import time
 import structlog
 from channels.generic.websocket import AsyncWebsocketConsumer
 
+from common.channel_groups import safe_group_add, safe_group_discard
 from common.log_context import LogSource
 from common.request_metrics import arecord_request_metric
 
 logger = structlog.get_logger()
 
 
-async def _record_ws_metric(
-    *, route: str, event: str, connected_at: float | None = None
-) -> None:
+async def _record_ws_metric(*, route: str, event: str, connected_at: float | None = None) -> None:
     """为 WS connect/disconnect 记一行 RequestMetric（best-effort，绝不影响握手/收发）。
 
     connect：status_code=101（协议切换），ws_event=connect；
@@ -50,7 +49,14 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
         self.group_name = f"execution_{self.execution_id}"
 
         # Join execution group
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        if not await safe_group_add(
+            self.channel_layer,
+            self.group_name,
+            self.channel_name,
+            component="workflows",
+        ):
+            await self.close(code=1013)
+            return
 
         await self.accept()
         self._ws_connected_at = time.perf_counter()
@@ -63,7 +69,12 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
             connected_at=getattr(self, "_ws_connected_at", None),
         )
         # Leave execution group
-        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        await safe_group_discard(
+            self.channel_layer,
+            self.group_name,
+            self.channel_name,
+            component="workflows",
+        )
 
         # 调试会话清理：WS 断线时释放暂停并标记取消
         from workflows.engine.scheduler import _debug_sessions
