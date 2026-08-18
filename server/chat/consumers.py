@@ -17,6 +17,7 @@ import structlog
 from channels.generic.websocket import AsyncWebsocketConsumer
 
 from chat.realtime import chat_project_group, chat_user_group
+from common.channel_groups import safe_group_add, safe_group_discard
 
 logger = structlog.get_logger(__name__)
 
@@ -33,7 +34,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.user_id = str(user.id)
         self.groups_joined: set[str] = set()
         user_group = chat_user_group(self.user_id)
-        await self.channel_layer.group_add(user_group, self.channel_name)
+        if not await safe_group_add(
+            self.channel_layer,
+            user_group,
+            self.channel_name,
+            component="chat",
+            initiated_by_user_id=self.user_id,
+        ):
+            await self.close(code=1013)
+            return
         self.groups_joined.add(user_group)
         await self.accept()
         logger.info(
@@ -45,7 +54,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code: int) -> None:
         for group in getattr(self, "groups_joined", set()):
-            await self.channel_layer.group_discard(group, self.channel_name)
+            await safe_group_discard(
+                self.channel_layer,
+                group,
+                self.channel_name,
+                component="chat",
+                initiated_by_user_id=getattr(self, "user_id", "system"),
+            )
 
     async def receive(self, text_data: str | None = None, bytes_data: bytes | None = None) -> None:
         try:
@@ -71,7 +86,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
         group = chat_project_group(project_id)
         if group in self.groups_joined:
             return
-        await self.channel_layer.group_add(group, self.channel_name)
+        # 订阅失败只放弃本次项目订阅、保持连接：用户组仍在，客户端可再发 subscribe_project 重试。
+        if not await safe_group_add(
+            self.channel_layer,
+            group,
+            self.channel_name,
+            component="chat",
+            initiated_by_user_id=self.user_id,
+        ):
+            return
         self.groups_joined.add(group)
         logger.info(
             "chat_ws_subscribed_project",
