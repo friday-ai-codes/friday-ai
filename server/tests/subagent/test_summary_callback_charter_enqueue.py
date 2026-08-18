@@ -1,8 +1,9 @@
-"""summary 成功回调串联 charter 入队：归因、失败路径、enqueue 异常不冒泡。"""
+"""summary 成功回调串联 charter：四分支决策树 + 归因 + 失败不冒泡。"""
 
 from __future__ import annotations
 
 import inspect
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -10,7 +11,8 @@ from asgiref.sync import sync_to_async
 
 from accounts.models import User
 from agents.models import AgentSession
-from repositories.models import Repository
+from repositories.models import RepoCharter, Repository
+from repositories.services.charter_service import compute_charter_fingerprint
 from subagent.api import callbacks as cb
 from subagent.api.callbacks import (
     _update_repository_on_summary_complete,
@@ -48,28 +50,136 @@ async def repo_and_session():
     return repo, session, user
 
 
-async def test_summary_complete_enqueues_charter_with_session_user(repo_and_session) -> None:
+def _summary_text(**extra) -> str:
+    payload = {
+        "overview": "ok",
+        "tech_stack": [],
+        "entry_points": [],
+        **extra,
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+async def test_summary_complete_bootstrap_enqueues_when_no_row_no_charter(
+    repo_and_session,
+) -> None:
     repo, session, user = repo_and_session
     enqueue = AsyncMock(return_value="job-c")
+    apply = AsyncMock(return_value=None)
 
-    with patch("repositories.charter_enqueue.enqueue_charter_draft", enqueue):
+    with (
+        patch("repositories.charter_enqueue.enqueue_charter_draft", enqueue),
+        patch(
+            "repositories.services.charter_service.aapply_charter_from_runner",
+            apply,
+        ),
+    ):
         await _update_repository_on_summary_complete(
             session,
-            {
-                "result_type": "text",
-                "output": {
-                    "text": '{"overview":"ok","tech_stack":[],"entry_points":[]}',
-                },
-            },
+            {"result_type": "text", "output": {"text": _summary_text()}},
         )
 
     enqueue.assert_awaited_once()
     args, kwargs = enqueue.await_args
     assert args[0] == str(repo.id)
     assert kwargs.get("initiated_by_user_id") == str(user.id)
+    assert kwargs.get("mode") == "bootstrap"
+    assert kwargs.get("fingerprint")
+    apply.assert_not_awaited()
 
     await repo.arefresh_from_db()
     assert repo.ai_summary_status == "completed"
+
+
+async def test_summary_complete_applies_when_charter_present(repo_and_session) -> None:
+    repo, session, user = repo_and_session
+    enqueue = AsyncMock(return_value="job-c")
+    apply = AsyncMock(return_value=object())
+
+    with (
+        patch("repositories.charter_enqueue.enqueue_charter_draft", enqueue),
+        patch(
+            "repositories.services.charter_service.aapply_charter_from_runner",
+            apply,
+        ),
+    ):
+        await _update_repository_on_summary_complete(
+            session,
+            {
+                "result_type": "text",
+                "output": {
+                    "text": _summary_text(
+                        charter={"positioning": "Runner 基线", "evolution": "active"}
+                    )
+                },
+            },
+        )
+
+    apply.assert_awaited_once()
+    enqueue.assert_not_awaited()
+    _args, kwargs = apply.await_args
+    assert kwargs.get("initiated_by_user_id") == str(user.id)
+    assert kwargs.get("fingerprint")
+
+
+async def test_summary_complete_skips_when_fingerprint_equal(repo_and_session) -> None:
+    repo, session, _user = repo_and_session
+    fp = compute_charter_fingerprint("ok", None, {})
+    await RepoCharter.objects.acreate(
+        repository=repo,
+        source=RepoCharter.Source.AI_DRAFT,
+        version=1,
+        positioning="已有",
+        baseline_fingerprint=fp,
+    )
+    enqueue = AsyncMock(return_value="job-c")
+    apply = AsyncMock(return_value=object())
+
+    with (
+        patch("repositories.charter_enqueue.enqueue_charter_draft", enqueue),
+        patch(
+            "repositories.services.charter_service.aapply_charter_from_runner",
+            apply,
+        ),
+    ):
+        await _update_repository_on_summary_complete(
+            session,
+            {"result_type": "text", "output": {"text": _summary_text()}},
+        )
+
+    enqueue.assert_not_awaited()
+    apply.assert_awaited_once()  # skip 路径经 service 持久化指纹
+
+
+async def test_summary_complete_supplement_when_row_no_charter(repo_and_session) -> None:
+    repo, session, user = repo_and_session
+    await RepoCharter.objects.acreate(
+        repository=repo,
+        source=RepoCharter.Source.AI_DRAFT,
+        version=1,
+        positioning="已有",
+        baseline_fingerprint="old-fp",
+    )
+    enqueue = AsyncMock(return_value="job-s")
+    apply = AsyncMock(return_value=None)
+
+    with (
+        patch("repositories.charter_enqueue.enqueue_charter_draft", enqueue),
+        patch(
+            "repositories.services.charter_service.aapply_charter_from_runner",
+            apply,
+        ),
+    ):
+        await _update_repository_on_summary_complete(
+            session,
+            {"result_type": "text", "output": {"text": _summary_text()}},
+        )
+
+    enqueue.assert_awaited_once()
+    _a, kwargs = enqueue.await_args
+    assert kwargs.get("mode") == "supplement"
+    assert kwargs.get("initiated_by_user_id") == str(user.id)
+    apply.assert_not_awaited()
 
 
 async def test_summary_fail_does_not_enqueue_charter(repo_and_session) -> None:
@@ -91,18 +201,16 @@ async def test_summary_complete_enqueue_error_swallowed(repo_and_session) -> Non
     with patch("repositories.charter_enqueue.enqueue_charter_draft", enqueue):
         await _update_repository_on_summary_complete(
             session,
-            {
-                "result_type": "text",
-                "output": {"text": '{"overview":"ok"}'},
-            },
+            {"result_type": "text", "output": {"text": _summary_text()}},
         )
 
     await repo.arefresh_from_db()
     assert repo.ai_summary_status == "completed"
 
 
-def test_no_direct_adraft_in_complete_callback() -> None:
-    """回调串联只 defer，不直接 await adraft_charter。"""
+def test_callback_uses_apply_and_enqueue() -> None:
     src = inspect.getsource(cb._update_repository_on_summary_complete)
-    assert "adraft_charter" not in src
+    assert "aapply_charter_from_runner" in src
     assert "enqueue_charter_draft" in src
+    assert "mode=\"bootstrap\"" in src or "mode='bootstrap'" in src
+    assert "mode=\"supplement\"" in src or "mode='supplement'" in src

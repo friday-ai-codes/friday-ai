@@ -123,6 +123,10 @@ class TestCharterDetail:
         assert body["version"] == 1
         assert body["positioning"] == "C 端学生移动 H5 学习应用集"
         assert body["draft_content"] == {}
+        assert "appendices" in body
+        assert "change_proposals" in body
+        assert "baseline_fingerprint" in body
+        assert "baseline_locked_at" in body
 
 
 # ── POST draft：AI 起草 ───────────────────────────────────────────────────
@@ -167,22 +171,43 @@ class TestCharterDraft:
         resp = authenticated_client.post(DRAFT_URL.format(repo_id=MISSING_REPO_ID))
         assert resp.status_code == 404
 
-    def test_draft_after_confirm_only_writes_draft_content(
+    def test_draft_after_confirm_formal_unchanged_side_channel(
         self, authenticated_client, repository: Repository
     ) -> None:
-        """human_confirmed 后再起草：响应正式字段不变，新草案进 draft_content（P11 API 面）。"""
+        """human_confirmed 后再起草：正式字段与 draft_content 不变；指纹变化时进 proposals。"""
         assert _post_draft(authenticated_client, repository.id, "人工确认前定位").status_code == 200
         confirm = authenticated_client.post(
             CONFIRM_URL.format(repo_id=repository.id), {}, format="json"
         )
         assert confirm.status_code == 200
 
+        # 变更仓库证据使 fingerprint 变化，否则 material gate 会 skip 侧信道
+        repository.ai_summary = '{"overview": "changed-for-fingerprint"}'
+        repository.save(update_fields=["ai_summary", "updated_at"])
+
         resp = _post_draft(authenticated_client, repository.id, "AI 想覆盖的新定位")
         assert resp.status_code == 200
         body = resp.json()
         assert body["source"] == "human_confirmed"
         assert body["positioning"] == "人工确认前定位"
-        assert body["draft_content"]["positioning"] == "AI 想覆盖的新定位"
+        assert body["draft_content"] == {}
+        assert any(
+            p.get("after") == "AI 想覆盖的新定位"
+            for p in (body.get("change_proposals") or [])
+        )
+
+    def test_draft_after_baseline_skips_when_fingerprint_unchanged(
+        self, authenticated_client, repository: Repository
+    ) -> None:
+        """指纹未变时再起草：正式字段与侧信道均不增长（material gate）。"""
+        assert _post_draft(authenticated_client, repository.id, "基线").status_code == 200
+        first = authenticated_client.get(CHARTER_URL.format(repo_id=repository.id)).json()
+        resp = _post_draft(authenticated_client, repository.id, "想变定位")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["positioning"] == "基线"
+        assert body["draft_content"] == {}
+        assert len(body.get("change_proposals") or []) == len(first.get("change_proposals") or [])
 
 
 # ── POST confirm：人工确认 ────────────────────────────────────────────────
@@ -250,3 +275,43 @@ class TestCharterConfirm:
             CONFIRM_URL.format(repo_id=MISSING_REPO_ID), {}, format="json"
         )
         assert resp.status_code == 404
+
+    def test_confirm_approve_and_reject_proposals(
+        self, authenticated_client, repository: Repository
+    ) -> None:
+        assert _post_draft(authenticated_client, repository.id, "基线定位").status_code == 200
+        repository.ai_summary = '{"overview": "fp-bump-1"}'
+        repository.save(update_fields=["ai_summary", "updated_at"])
+        # 第二次 draft（指纹已变）产生 positioning proposal
+        assert _post_draft(authenticated_client, repository.id, "提案定位").status_code == 200
+        get_body = authenticated_client.get(CHARTER_URL.format(repo_id=repository.id)).json()
+        prop = next(p for p in get_body["change_proposals"] if p.get("field") == "positioning")
+        # 再塞一条待拒绝（直接 DB，模拟侧信道）
+        charter = RepoCharter.objects.get(repository=repository)
+        charter.change_proposals = list(charter.change_proposals) + [
+            {
+                "id": "reject-api",
+                "status": "pending",
+                "field": "audience",
+                "before": charter.audience,
+                "after": "B端",
+                "reason": "scalar_change",
+            }
+        ]
+        charter.save(update_fields=["change_proposals", "updated_at"])
+
+        resp = authenticated_client.post(
+            CONFIRM_URL.format(repo_id=repository.id),
+            {
+                "approve_proposal_ids": [prop["id"]],
+                "reject_proposal_ids": ["reject-api"],
+            },
+            format="json",
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["positioning"] == "提案定位"
+        statuses = {p["id"]: p["status"] for p in body["change_proposals"]}
+        assert statuses[prop["id"]] == "approved"
+        assert statuses["reject-api"] == "rejected"
+        assert body["audience"] == "C端学生"

@@ -452,7 +452,11 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         r.status = "online"
         r.version = payload.get("version", "")
         r.last_heartbeat = timezone.now()
-        await r.asave(update_fields=["status", "version", "last_heartbeat", "updated_at"])
+        # hello 再钉一次 channel，抵御旧 disconnect 竞态清空
+        r.channel_name = self.channel_name
+        await r.asave(
+            update_fields=["status", "version", "last_heartbeat", "channel_name", "updated_at"]
+        )
 
     async def _update_heartbeat(self, payload: dict) -> None:
         r = self.runner
@@ -855,9 +859,28 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         await self.runner.asave(update_fields=["channel_name", "updated_at"])
 
     async def _mark_offline(self):
-        self.runner.status = "offline"
-        self.runner.channel_name = ""
-        await self.runner.asave(update_fields=["status", "channel_name", "updated_at"])
+        """标记 offline，但绝不覆盖「已重连」的新 channel。
+
+        keepalive 重连时旧连接的 disconnect 常晚于新连接的 connect/_update_channel_name；
+        若无条件清空 channel_name，会出现 status=online 但 channel 为空、派发永久失败。
+        仅当 DB 中 channel 仍是本连接自己的 channel 时才清掉。
+        """
+        from runners.models import Runner
+
+        own_channel = getattr(self, "channel_name", "") or ""
+        updated = await Runner.objects.filter(
+            id=self.runner.id,
+            channel_name=own_channel,
+        ).aupdate(status="offline", channel_name="", updated_at=timezone.now())
+        if updated:
+            self.runner.status = "offline"
+            self.runner.channel_name = ""
+        else:
+            # 新连接已写入其它 channel —— 只刷新内存，不写库
+            try:
+                await self.runner.arefresh_from_db(fields=["status", "channel_name"])
+            except Exception:  # noqa: BLE001 — best-effort
+                pass
 
     async def _recover_pending_tasks(self, running_tasks: list[str] | None = None) -> None:
         """重连时恢复未完成任务关联。

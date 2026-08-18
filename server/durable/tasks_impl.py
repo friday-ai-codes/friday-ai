@@ -631,15 +631,13 @@ async def run_charter_draft(
     *,
     repository_id: str,
     initiated_by_user_id: str | None = None,
+    mode: str = "bootstrap",
+    fingerprint: str | None = None,
 ) -> dict[str, Any]:
-    """仓库章程 AI 起草任务体：委托 ``adraft_charter``（含 P11 human_confirmed 保护）。
+    """仓库章程 AI 起草任务体。
 
-    预期可完成（不重试）的结局：
-    - 仓库不存在 → ``skipped/not_found``
-    - LLM/供应商不可用（``adraft_charter`` 返回 ``None``）→ ``skipped/llm_unavailable``
-
-    持久化失败（``CharterPersistError``）与其它未预期异常：脱敏日志后 **re-raise**，
-    让 Procrastinate / in-process 后端可见 stalled 并可重试。
+    - ``mode=bootstrap``：无行时可建基线（``adraft_charter``）；有行则 classify-only。
+    - ``mode=supplement``：有行时 classify-only + 指纹持久化；永不写正式/draft_content。
     """
     import time
 
@@ -649,6 +647,7 @@ async def run_charter_draft(
     from repositories.services.charter_service import CharterPersistError, adraft_charter
 
     actor = initiated_by_user_id or "system"
+    mode_norm = mode if mode in ("bootstrap", "supplement") else "bootstrap"
     started = time.monotonic()
     logger.info(
         "charter_draft_job_started",
@@ -656,6 +655,7 @@ async def run_charter_draft(
         component="charter_service",
         repository_id=str(repository_id),
         initiated_by_user_id=actor,
+        mode=mode_norm,
     )
 
     with bind_task_context(
@@ -667,6 +667,7 @@ async def run_charter_draft(
             charter = await adraft_charter(
                 str(repository_id),
                 initiated_by_user_id=actor,
+                fingerprint=fingerprint,
             )
         except ObjectDoesNotExist:
             logger.info(
@@ -677,12 +678,14 @@ async def run_charter_draft(
                 initiated_by_user_id=actor,
                 status="skipped",
                 reason="not_found",
+                mode=mode_norm,
                 duration_ms=round((time.monotonic() - started) * 1000, 2),
             )
             return {
                 "status": "skipped",
                 "reason": "not_found",
                 "repository_id": str(repository_id),
+                "mode": mode_norm,
             }
         except CharterPersistError as exc:
             logger.warning(
@@ -692,6 +695,7 @@ async def run_charter_draft(
                 repository_id=str(repository_id),
                 initiated_by_user_id=actor,
                 reason="persist_error",
+                mode=mode_norm,
                 error=redact_secrets_in_text(str(exc)),
                 duration_ms=round((time.monotonic() - started) * 1000, 2),
             )
@@ -704,6 +708,7 @@ async def run_charter_draft(
                 repository_id=str(repository_id),
                 initiated_by_user_id=actor,
                 reason="unexpected",
+                mode=mode_norm,
                 error=redact_secrets_in_text(str(exc)),
                 duration_ms=round((time.monotonic() - started) * 1000, 2),
             )
@@ -718,12 +723,14 @@ async def run_charter_draft(
                 initiated_by_user_id=actor,
                 status="skipped",
                 reason="llm_unavailable",
+                mode=mode_norm,
                 duration_ms=round((time.monotonic() - started) * 1000, 2),
             )
             return {
                 "status": "skipped",
                 "reason": "llm_unavailable",
                 "repository_id": str(repository_id),
+                "mode": mode_norm,
             }
 
         logger.info(
@@ -733,13 +740,17 @@ async def run_charter_draft(
             repository_id=str(repository_id),
             initiated_by_user_id=actor,
             status="ok",
+            mode=mode_norm,
             charter_source=str(charter.source),
+            fingerprint=getattr(charter, "baseline_fingerprint", "") or "",
             duration_ms=round((time.monotonic() - started) * 1000, 2),
         )
         return {
             "status": "ok",
             "repository_id": str(repository_id),
             "charter_source": str(charter.source),
+            "mode": mode_norm,
+            "fingerprint": getattr(charter, "baseline_fingerprint", "") or "",
         }
 
 

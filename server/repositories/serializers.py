@@ -301,12 +301,12 @@ class SensitiveFileSuggestionSerializer(serializers.ModelSerializer):
 
 
 class RepoCharterSerializer(serializers.ModelSerializer):
-    """仓库章程序列化器（111-03，CHARTER-01）。
+    """仓库章程序列化器（111-03，CHARTER-01；append-only 字段只读暴露）。
 
     API 层**只读**：所有字段 ``read_only``，状态只经 ``services/charter_service``
-    变更（INV-6 单点收口，对齐 ``SensitiveFileSuggestionSerializer`` 契约）——起草走
-    draft 端点、生效走 confirm 端点，不允许直接 PATCH 任意字段。``draft_content``
-    随响应返回，供前端预览 pending 修订草案。
+    变更（INV-6 单点收口）。``appendices`` / ``change_proposals`` /
+    ``baseline_fingerprint`` / ``baseline_locked_at`` 供审阅；正式字段仅经
+    confirm（edits / 批准提案）变更。
     """
 
     class Meta:
@@ -325,6 +325,10 @@ class RepoCharterSerializer(serializers.ModelSerializer):
             "form",
             "evolution",
             "draft_content",
+            "baseline_fingerprint",
+            "baseline_locked_at",
+            "appendices",
+            "change_proposals",
             "created_at",
             "updated_at",
         ]

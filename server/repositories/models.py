@@ -1107,9 +1107,9 @@ class RepoCharter(models.Model):
     写入纪律（INV-6）：唯一 writer = ``repositories/services/charter_service.py``，
     模型层零业务方法，视图/其他服务禁止直接 create/save。
 
-    「AI 不覆盖人工」契约（CHARTER-01 不变量）：``source=human_confirmed`` 之后，
-    AI 起草路径只能写 ``draft_content``（pending 修订草案），正式字段逐字节不变；
-    草案经人工 confirm（version+1、confirmed_by 署名）才提升为正式内容。
+    Append-only 契约（CHARTER-BASELINE/APPEND/PROPOSAL）：基线行一旦存在，自动化
+    路径冻结正式字段与 ``draft_content``，只写 ``appendices`` / ``change_proposals``
+    并持久化 ``baseline_fingerprint``；正式字段仅经人工 confirm（edits / 批准提案）变更。
     """
 
     class Source(models.TextChoices):
@@ -1160,8 +1160,16 @@ class RepoCharter(models.Model):
         choices=Evolution.choices,
         default=Evolution.ACTIVE,
     )
-    # pending 修订草案（human_confirmed 后 AI 起草只写这里，「单行 + 草案列」承载不覆盖）
+    # pending 修订草案：仅人工编辑路径可写；自动化不得写入
     draft_content = models.JSONField(default=dict, blank=True)
+    # material-change gate：overview/tree/facets 指纹；相等则跳过侧信道增长
+    baseline_fingerprint = models.CharField(max_length=64, blank=True, default="")
+    # 首次自动化门禁触碰时间（legacy 行可补写，不改写正文）
+    baseline_locked_at = models.DateTimeField(null=True, blank=True)
+    # 自动化追加证据 / 新 list key（不改正式字段）
+    appendices = models.JSONField(default=list, blank=True)
+    # 破坏性变更提案（标量/删除/同 key 语义），仅人工批准后进正式字段
+    change_proposals = models.JSONField(default=list, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

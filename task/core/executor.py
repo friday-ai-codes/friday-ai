@@ -272,6 +272,59 @@ _REPO_SUMMARY_INPUT_SCHEMA: dict[str, Any] = {
             "items": {"type": "string"},
             "description": "代码规范和约定",
         },
+        "charter": {
+            "type": "object",
+            "description": (
+                "意图面章程（基于源码阅读一等产出）：职责定位、owned 业务域、"
+                "边界禁区、落点偏好。禁止臆造无证据领域；有路径引用请写入 citations。"
+            ),
+            "properties": {
+                "positioning": {"type": "string"},
+                "owned_domains": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "domain": {"type": "string"},
+                            "status": {"type": "string"},
+                            "note": {"type": "string"},
+                            "citations": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                    },
+                },
+                "boundaries": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "rule": {"type": "string"},
+                            "decided_by": {"type": "string"},
+                            "citations": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                    },
+                },
+                "placement_preferences": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"type": "string"},
+                            "target": {"type": "string"},
+                            "note": {"type": "string"},
+                        },
+                    },
+                },
+                "audience": {"type": "string"},
+                "form": {"type": "string"},
+                "evolution": {"type": "string"},
+            },
+        },
     },
     "required": ["overview", "tech_stack", "tree"],
 }
