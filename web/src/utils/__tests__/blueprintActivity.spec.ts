@@ -238,8 +238,8 @@ describe('describeEventPayload', () => {
     expect(describeEventPayload({ item_count: 7 }).raw).toContain('"item_count": 7')
   })
 
-  it('⭐ 人话键优先、*_id 殿后；缺键不渲染 undefined', () => {
-    const { fields } = describeEventPayload({
+  it('⭐ 人话键优先；关联 id / 内部置信度隐去（D-05）；缺键不渲染 undefined', () => {
+    const { fields, raw } = describeEventPayload({
       task_id: 't-1',
       repository_id: 'r-1',
       repository_name: 'gaosan-web',
@@ -250,16 +250,18 @@ describe('describeEventPayload', () => {
       blank: '',
       missing: undefined,
     })
+    // ⛔ routed_confidence / repository_id / task_id 不进普通字段行
     expect(fields.map(f => f.key)).toEqual([
       'repository_name',
       'research_reason',
-      'routed_confidence',
       'fitness_verdict',
       'attempt',
-      'repository_id',
-      'task_id',
     ])
     expect(fields.every(f => f.value !== 'undefined')).toBe(true)
+    // 但原始 JSON 折叠层仍原样保留（排障可查、关联键不丢）
+    expect(raw).toContain('"routed_confidence"')
+    expect(raw).toContain('"repository_id"')
+    expect(raw).toContain('"task_id"')
   })
 })
 

@@ -1288,6 +1288,71 @@ class BlueprintLifecycleService:
                 "", requires_research=requires_research, before=before, after=after
             )
 
+    async def arefresh_gate_options(
+        self,
+        thread_id: str,
+        *,
+        fresh_snapshot: list[dict],
+        initiated_by_user_id: str = "system",
+    ) -> dict:
+        """把最新调研结论幂等刷进确认门快照（**确认门快照的第二个 writer**，D-01）。
+
+        读改写同一行都在 ``select_for_update`` 事务内完成：与 :meth:`_apply_gate_snapshot_sync`
+        （动作端点）共用行锁，杜绝「refresh 读到旧 options → 动作写新 options → refresh
+        覆盖回旧值」的交错。合并规则由 ``merge_gate_snapshot`` 单点实现（保留人工裁决面、
+        只覆盖 fitness 面）；无变化时零写（不推进 ``updated_at``，避免打扰 alock 的 CAS 基线）。
+
+        Returns:
+            ``{"refreshed": bool, "reason": str, "changed_count": int}``。
+        """
+        outcome = await self._apply_gate_refresh_sync(thread_id, fresh_snapshot=fresh_snapshot)
+        if outcome["refreshed"]:
+            logger.info(
+                "blueprint_gate_options_refreshed",
+                category="caller",
+                component="blueprint_lifecycle",
+                thread_id=str(thread_id),
+                changed_count=outcome["changed_count"],
+                initiated_by_user_id=initiated_by_user_id or "system",
+            )
+        return outcome
+
+    @sync_to_async
+    def _apply_gate_refresh_sync(self, thread_id: str, *, fresh_snapshot: list[dict]) -> dict:
+        """确认门快照幂等刷新的唯一 mutator（行锁内读改写；INV-6）。
+
+        ``merge_gate_snapshot`` 在函数内 lazy import：delivery 层不对
+        ``services.process_runtime`` 形成顶层依赖（后者 ``__init__`` 会 eager import
+        adapter 链，顶层 import 会成环）。
+        """
+        from services.process_runtime.blueprint_confirm_gate import merge_gate_snapshot
+
+        with transaction.atomic():
+            row = (
+                BlueprintThread.objects.select_for_update()
+                .filter(
+                    id=thread_id,
+                    kind=ThreadKind.REPO_CONFIRMATION,
+                    status__in=[ThreadStatus.OPEN, ThreadStatus.ANSWERED],
+                )
+                .first()
+            )
+            if row is None:
+                return {"refreshed": False, "reason": "gate_not_open", "changed_count": 0}
+            existing = [
+                item for item in (row.options if isinstance(row.options, list) else [])
+                if isinstance(item, dict)
+            ]
+            merged = merge_gate_snapshot(existing, list(fresh_snapshot or []))
+            if merged == existing:
+                return {"refreshed": False, "reason": "no_change", "changed_count": 0}
+            # merged 与 existing 一一对应、顺序不变（merge 只更新既有条目），可逐条比对。
+            changed_count = sum(1 for before, after in zip(existing, merged) if before != after)
+            BlueprintThread.objects.filter(id=thread_id).update(
+                options=merged, updated_at=timezone.now()
+            )
+            return {"refreshed": True, "reason": "", "changed_count": changed_count}
+
     async def _arecord_gate_note(
         self, thread: BlueprintThread, *, body: str, author: Any = None
     ) -> BlueprintThreadMessage:

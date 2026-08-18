@@ -18,8 +18,14 @@
  * 4. ⛔ **本组件只 emit 不发请求**（与顶栏同款纪律）：重跑 POST、toast 与查询失效都归页面。
  */
 
-import type { BlueprintEvent, BlueprintStageRerunMarker, BlueprintStagesResponse } from '~/types/blueprint'
-import type { PanoramaEventRow, StagePanoramaNode } from '~/utils/blueprintActivity'
+import type {
+  BlueprintEvent,
+  BlueprintProgressLog,
+  BlueprintResearchProgressRepo,
+  BlueprintStageRerunMarker,
+  BlueprintStagesResponse,
+} from '~/types/blueprint'
+import type { PanoramaEventRow, RepoResearchGroup, StagePanoramaNode } from '~/utils/blueprintActivity'
 import type { StageState } from '~/utils/blueprintBlocks'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -28,10 +34,16 @@ import { Button } from '~/components/ui/button'
 import {
   buildStagePanorama,
   describeEventPayload,
+  groupRepoResearchEvents,
   humanizeEnumToken,
   humanizePayloadEnums,
 } from '~/utils/blueprintActivity'
 import { resolveProgressKeys } from '~/utils/blueprintBlocks'
+
+/** repo_research 分组卡片 = 分组结论 + 该仓直播尾窗（无直播为 `null`）。 */
+interface MergedRepoResearchGroup extends RepoResearchGroup {
+  live: BlueprintResearchProgressRepo | null
+}
 
 const props = withDefaults(defineProps<{
   events?: BlueprintEvent[]
@@ -43,19 +55,25 @@ const props = withDefaults(defineProps<{
   stages?: BlueprintStagesResponse | null
   /** 重跑请求在途（页面持有 mutation 状态，本组件只用来锁按钮）。 */
   submitting?: boolean
+  /**
+   * 调研直播进度（来自 `useBlueprintLive`，仅 researching 态非空）。按 `repository_id` 合并到
+   * repo_research 分组卡片。⛔ 本组件**不发请求**（唯一轮询点在 `useBlueprintLive`）。
+   */
+  researchProgress?: BlueprintResearchProgressRepo[]
 }>(), {
   events: () => [],
   currentStage: '',
   currentStatus: '',
   stages: null,
   submitting: false,
+  researchProgress: () => [],
 })
 
 const emit = defineEmits<{
   /** 带指令重跑；`stage` 已映射成**后端 stage key**。 */
   'rerun': [payload: { stage: string, instruction: string }]
-  /** 打开按仓调研明细抽屉（结论 + agent 过程日志）。 */
-  'view-research': []
+  /** 打开按仓调研明细抽屉（结论 + agent 过程日志）；可带默认选中仓。 */
+  'view-research': [payload?: { initialRepositoryId?: string }]
 }>()
 
 const { t, te } = useI18n()
@@ -108,6 +126,60 @@ const activeIndex = computed(() =>
 const RESEARCH_DETAIL_STAGES = new Set(['repo_research', 'repo_plan'])
 
 const showResearchEntry = computed(() => RESEARCH_DETAIL_STAGES.has(activeStage.value))
+
+/** 选中的是不是 repo_research 节点（决定详情区走「按仓分组」还是「扁平事件列表」）。 */
+const isRepoResearchStage = computed(() => activeStage.value === 'repo_research')
+
+/**
+ * repo_research 按仓分组卡片（D-06）：分组结论 + 合并该仓直播尾窗（`researchProgress`，按
+ * `repository_id`）。⛔ 非 repo_research 节点返回空数组（详情区退回扁平事件列表）。
+ */
+const repoResearchGroups = computed<MergedRepoResearchGroup[]>(() => {
+  if (!isRepoResearchStage.value)
+    return []
+  const liveById = new Map(
+    (props.researchProgress ?? []).map(repo => [repo.repository_id, repo] as const),
+  )
+  return groupRepoResearchEvents(activeNode.value?.events).map(group => ({
+    ...group,
+    live: (group.repositoryId && liveById.get(group.repositoryId)) || null,
+  }))
+})
+
+const RESEARCH_STATE_VARIANT: Record<RepoResearchGroup['state'], 'info' | 'success' | 'destructive'> = {
+  running: 'info',
+  done: 'success',
+  failed: 'destructive',
+}
+
+const RESEARCH_STATE_LABEL_KEY: Record<RepoResearchGroup['state'], string> = {
+  running: 'researchStateRunning',
+  done: 'researchStateDone',
+  failed: 'researchStateFailed',
+}
+
+function researchStateLabel(state: RepoResearchGroup['state']): string {
+  return t(`knowledge.blueprints.activity.${RESEARCH_STATE_LABEL_KEY[state]}`)
+}
+
+/** 直播日志类型标签：复用抽屉的 `research.logType.*`；未配原样透出（⛔ 不隐藏新类型）。 */
+function liveLogLabel(type: string): string {
+  const key = `knowledge.blueprints.research.logType.${type}`
+  return te(key) ? t(key) : type
+}
+
+/**
+ * 直播日志正文：tool_call 拆出工具名（容器侧格式 `工具名({json})`），只保留「名 + 入参」
+ * 首行，避免把整段 JSON 铺满卡片。正文已在服务端脱敏，前端只读直出。
+ */
+function liveLogText(log: BlueprintProgressLog): string {
+  if (log.type === 'tool_call') {
+    const match = /^([\w-]+)\((.*)\)$/s.exec(log.content)
+    if (match)
+      return `${match[1]} · ${match[2]}`
+  }
+  return log.content
+}
 
 function toggleNode(stage: string): void {
   manualStage.value = activeStage.value === stage ? '' : stage
@@ -628,6 +700,78 @@ function connectorClass(index: number): string {
           <p v-if="!activeNode.events.length" class="text-xs text-muted-foreground">
             {{ t('knowledge.blueprints.stepper.eventsEmpty') }}
           </p>
+
+          <!-- ④a repo_research：按仓分组卡片（状态 + reason + 直播尾窗），⛔ 不是串行事件列表 -->
+          <ul
+            v-else-if="isRepoResearchStage"
+            class="space-y-2"
+            data-testid="blueprint-stepper-repo-groups"
+          >
+            <li
+              v-for="group in repoResearchGroups"
+              :key="group.repositoryId || group.repositoryName"
+              class="rounded-lg border border-border/60 p-3 text-xs"
+              data-testid="blueprint-stepper-repo-group"
+              :data-repository-id="group.repositoryId"
+              :data-state="group.state"
+            >
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-sm font-medium text-foreground">{{ group.repositoryName }}</span>
+                <Badge :variant="RESEARCH_STATE_VARIANT[group.state]">
+                  {{ researchStateLabel(group.state) }}
+                </Badge>
+                <Badge v-if="group.attempts > 1" variant="muted" class="tabular-nums">
+                  {{ t('knowledge.blueprints.activity.researchAttempts', { n: group.attempts }) }}
+                </Badge>
+                <button
+                  type="button"
+                  class="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  data-testid="blueprint-stepper-repo-group-detail"
+                  @click="emit('view-research', { initialRepositoryId: group.repositoryId })"
+                >
+                  <span class="icon-[lucide--list-tree]" aria-hidden="true" />
+                  {{ t('knowledge.blueprints.activity.researchViewDetail') }}
+                </button>
+              </div>
+              <p v-if="group.reason" class="mt-1.5 text-muted-foreground">
+                <span class="text-foreground/70">{{ t('knowledge.blueprints.activity.researchReason') }}：</span>{{ group.reason }}
+              </p>
+
+              <!-- 直播尾窗：只展示可观测里程碑（工具名/路径/脱敏摘要）；加密 thinking 已服务端过滤，⛔ 不渲染 CoT -->
+              <div
+                v-if="group.live && group.live.recent_logs.length"
+                class="mt-2"
+                data-testid="blueprint-stepper-repo-live"
+              >
+                <p class="text-[11px] text-muted-foreground/70">
+                  {{ t('knowledge.blueprints.activity.researchLiveTitle') }}
+                </p>
+                <ul class="mt-0.5 space-y-0.5 border-l border-border/60 pl-2.5">
+                  <li
+                    v-for="log in group.live.recent_logs"
+                    :key="log.id"
+                    class="flex items-baseline gap-1.5"
+                    data-testid="blueprint-stepper-repo-live-log"
+                    :data-log-type="log.type"
+                  >
+                    <Badge variant="muted" class="shrink-0 font-normal">
+                      {{ liveLogLabel(log.type) }}
+                    </Badge>
+                    <span class="truncate font-mono text-[11px] text-muted-foreground">{{ liveLogText(log) }}</span>
+                  </li>
+                </ul>
+              </div>
+              <p
+                v-else-if="group.state === 'running'"
+                class="mt-1.5 text-[11px] text-muted-foreground/70"
+                data-testid="blueprint-stepper-repo-nolive"
+              >
+                {{ t('knowledge.blueprints.activity.researchNoLive') }}
+              </p>
+            </li>
+          </ul>
+
+          <!-- ④b 其余节点：扁平事件明细 -->
           <ul v-else class="space-y-2">
             <li
               v-for="row in activeNode.events"

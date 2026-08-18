@@ -446,6 +446,43 @@ export interface BlueprintResearchDetailResponse {
   repositories: BlueprintResearchRepo[]
 }
 
+/**
+ * 直播进度单条日志（`research-progress` 的尾窗行）。
+ *
+ * 与 `BlueprintRunLog` 的唯一差异是多带 `id`：progress 是游标增量拉取，前端拿 `id`
+ * 推进 `after_log_id`。正文已在服务端过 `redact_secrets_in_text`，⛔ 前端不得再拼明文。
+ */
+export interface BlueprintProgressLog {
+  id: number
+  type: string
+  content: string
+  ts: string
+}
+
+/** 单个仓库的直播进度（task/run 标量 + 最近可观测日志尾窗）。 */
+export interface BlueprintResearchProgressRepo {
+  repository_id: string
+  repository_name: string
+  task_status: string
+  run_status: string
+  /** 最近一条可观测日志正文（已脱敏）；无日志则空串。 */
+  latest_observable: string
+  /** 本仓返回的最大 log id（前端据此推进全局 `after_log_id`）。 */
+  log_cursor: number
+  recent_logs: BlueprintProgressLog[]
+}
+
+/**
+ * `GET .../blueprint/research-progress/`：轻量 cursor/tail 直播进度（无会话同为 200 空结构）。
+ *
+ * 与 `BlueprintResearchDetailResponse` 的分工（D-07）：detail 全量复盘（抽屉按需拉），
+ * progress 5s 级尾窗（唯一进 live 轮询的调研读面，每仓 ≤20 条，⛔ 不回溯全量 400）。
+ */
+export interface BlueprintResearchProgressResponse {
+  session_id: string
+  repositories: BlueprintResearchProgressRepo[]
+}
+
 // ── 端点：节点面（stages GET + rerun POST，quick-260806 节点重跑）──────────────
 
 /**

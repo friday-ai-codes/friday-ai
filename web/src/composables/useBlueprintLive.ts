@@ -40,7 +40,11 @@
  */
 
 import type { Ref } from 'vue'
-import type { BlueprintEvent } from '~/types/blueprint'
+import type {
+  BlueprintEvent,
+  BlueprintProgressLog,
+  BlueprintResearchProgressRepo,
+} from '~/types/blueprint'
 import { useQuery } from '@tanstack/vue-query'
 import { computed, ref, watch } from 'vue'
 import blueprintsApi from '~/api/blueprints'
@@ -49,6 +53,13 @@ import { resolveProgressKeys, sectionKeyForEvent } from '~/utils/blueprintBlocks
 
 /** 轮询间隔（毫秒）。阶段级进展取 5s；日志级的 2s 太密，会把只读评审面变成压测。 */
 const LIVE_REFETCH_MS = 5_000
+
+/** 直播进度：调研态标识（唯一开启轻量 progress 轮询的状态）。 */
+const RESEARCHING_STATUS = 'researching'
+/** 每仓客户端累积保留的最近日志条数（尾窗；超出丢最旧，防止长会话把内存撑爆）。 */
+const PROGRESS_LOG_KEEP = 40
+/** 单次 progress 拉取每仓条数（后端仍 clamp；与端点默认一致）。 */
+const PROGRESS_FETCH_LIMIT = 20
 
 /** 某个导航段的进度文案信息（i18n key + 该事件的 payload，插值键缺失时回落无参兜底）。 */
 export interface SectionProgress {
@@ -145,7 +156,10 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
   }
 
   // 切换 artifact 必须清空累积器：不清会把上一份蓝图的事件混进这一份的时间线。
-  watch(artifactId, resetEventLog)
+  watch(artifactId, () => {
+    resetEventLog()
+    resetProgress()
+  })
 
   const eventsQuery = useQuery({
     queryKey: computed(() => ['blueprint', 'events', artifactId.value]),
@@ -175,6 +189,89 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
     refetchInterval: () => (isLive.value ? LIVE_REFETCH_MS : false),
   })
 
+  /**
+   * ⭐ 调研直播进度累积器（Task 3，D-07）：**唯一**接入 5s 轮询的调研读面。
+   *
+   * 拉的是**轻量 cursor/tail** `research-progress`（每仓 ≤ {@link PROGRESS_FETCH_LIMIT} 条最近可观测
+   * 日志）——⛔ 不是全量 `research-detail`（默认 400 条/仓，那是抽屉按需拉的复盘面）。用 `after_log_id`
+   * 全局游标做增量，客户端按仓累积最近 {@link PROGRESS_LOG_KEEP} 条尾窗。
+   *
+   * 状态标量（`task_status`/`run_status`/`latest_observable`）每次覆盖为最新；日志按 `id` 去重后追加。
+   */
+  const progressByRepo = ref<Map<string, BlueprintResearchProgressRepo>>(new Map())
+  const progressRepoOrder = ref<string[]>([])
+  /** 全局 cursor = 已见过的最大 log id；0 表示下一次取尾窗。 */
+  const progressCursor = ref(0)
+
+  function resetProgress(): void {
+    progressByRepo.value = new Map()
+    progressRepoOrder.value = []
+    progressCursor.value = 0
+  }
+
+  function mergeProgress(repos: BlueprintResearchProgressRepo[]): void {
+    if (repos.length === 0)
+      return
+    const next = new Map(progressByRepo.value)
+    const order = progressRepoOrder.value.slice()
+    let maxCursor = progressCursor.value
+    for (const repo of repos) {
+      const key = repo.repository_id || repo.repository_name
+      if (!key)
+        continue
+      const existing = next.get(key)
+      if (!existing)
+        order.push(key)
+      // 按 id 去重后追加，保留尾窗（⛔ 不无界增长）
+      const seen = new Set<number>((existing?.recent_logs ?? []).map(log => log.id))
+      const mergedLogs: BlueprintProgressLog[] = (existing?.recent_logs ?? []).slice()
+      for (const log of repo.recent_logs ?? []) {
+        if (seen.has(log.id))
+          continue
+        seen.add(log.id)
+        mergedLogs.push(log)
+        if (log.id > maxCursor)
+          maxCursor = log.id
+      }
+      mergedLogs.sort((a, b) => a.id - b.id)
+      const trimmed = mergedLogs.slice(-PROGRESS_LOG_KEEP)
+      if (repo.log_cursor > maxCursor)
+        maxCursor = repo.log_cursor
+      next.set(key, {
+        repository_id: repo.repository_id,
+        repository_name: repo.repository_name || existing?.repository_name || '',
+        task_status: repo.task_status || existing?.task_status || '',
+        run_status: repo.run_status || existing?.run_status || '',
+        latest_observable: repo.latest_observable || existing?.latest_observable || '',
+        log_cursor: Math.max(repo.log_cursor, existing?.log_cursor ?? 0),
+        recent_logs: trimmed,
+      })
+    }
+    progressByRepo.value = next
+    progressRepoOrder.value = order
+    progressCursor.value = maxCursor
+  }
+
+  /** 仅在蓝图处于 `researching` 时轮询（进 draft/评审即停）。 */
+  const isResearching = computed(() => currentStatus.value === RESEARCHING_STATUS)
+
+  const progressQuery = useQuery({
+    queryKey: computed(() => ['blueprint', 'research-progress', artifactId.value]),
+    queryFn: async () => {
+      const response = await blueprintsApi.getBlueprintResearchProgress(artifactId.value, {
+        after_log_id: progressCursor.value || undefined,
+        limit: PROGRESS_FETCH_LIMIT,
+      })
+      mergeProgress(response.repositories ?? [])
+      return response
+    },
+    enabled: computed(() => Boolean(artifactId.value) && isResearching.value),
+    staleTime: 0,
+    // ⛔ 唯一另一处 refetchInterval —— 与文件头纪律一致：轮询只在本文件。响应体带不出蓝图状态，
+    // 读外部 `isResearching`；启动保证同样落在下面 watch(isLive) 的 refetch 踢动上。
+    refetchInterval: () => (isResearching.value ? LIVE_REFETCH_MS : false),
+  })
+
   // ⭐ 启动保证：非活跃 → 活跃的那一刻踢一次 refetch，让 doc/events/stages 的间隔函数重算
   // 并装上定时器。⛔ 不得删除（见文件头的「为什么写法不一样」）。
   watch(isLive, (on) => {
@@ -182,11 +279,25 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
       docQuery.refetch()
       eventsQuery.refetch()
       stagesQuery.refetch()
+      // researching 态才有意义；非 researching 时 enabled=false，refetch 是安全 no-op。
+      if (isResearching.value)
+        progressQuery.refetch()
     }
   })
 
   /** 完整事件流（累积器）。⛔ 不读 `eventsQuery.data.events` —— 增量后那只是最后一批。 */
   const events = computed<BlueprintEvent[]>(() => eventLog.value)
+
+  /**
+   * 调研直播进度（按仓，累积尾窗）。供 `BlueprintStageStepper` 的 repo_research 分组卡片显示
+   * 「在途可观测行」；非 researching 态为空数组。⛔ 消费方不得据此再发请求（唯一读面在本文件）。
+   */
+  const researchProgress = computed<BlueprintResearchProgressRepo[]>(
+    () => progressRepoOrder.value.flatMap((key) => {
+      const repo = progressByRepo.value.get(key)
+      return repo ? [repo] : []
+    }),
+  )
 
   /**
    * 段级进度：`Record<sectionKey, SectionProgress>`，**一段取其命中事件中 `ts` 最大的一条**。
@@ -247,7 +358,9 @@ export function useBlueprintLive(artifactId: Ref<string>, versionId?: Ref<string
     snapshot: snapshotQuery,
     eventsQuery,
     stagesQuery,
+    progressQuery,
     events,
+    researchProgress,
     sectionProgress,
     statusProgressKey,
     refetchAll,

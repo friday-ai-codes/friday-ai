@@ -89,6 +89,7 @@ _ENDPOINTS = [
     ("blueprint-document", "get"),
     ("blueprint-events", "get"),
     ("blueprint-research-detail", "get"),
+    ("blueprint-research-progress", "get"),
     ("blueprint-review-threads", "get"),
     ("blueprint-review-threads", "post"),
 ]
@@ -661,8 +662,9 @@ def test_doc_views_reuse_the_project_scope_gate_by_import() -> None:
     assert "async def _aassert_project_scope" not in src
     assert "async def _ais_project_member" not in src
     assert "async def _ablueprint_project_id" not in src
-    # 五端点各调一次（threads 的 get/post 各算一次；research-detail 是第五个）
-    assert src.count("await _aassert_project_scope(") == 5
+    # 六端点各调一次（threads 的 get/post 各算一次；research-detail / research-progress
+    # 各是一个只读端点）
+    assert src.count("await _aassert_project_scope(") == 6
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1023,3 +1025,163 @@ def test_research_detail_keeps_container_workspace_paths_readable(
 
     assert workspace in content
     assert "REDACTED" not in content
+
+
+# ── 15. 轻量调研直播进度（research-progress cursor/tail，D-07）──────────────────
+#
+# 守六件事（与 research-detail 分工，不重复它的全量复盘语义）：
+# 1. 无会话 → 200 空结构（与 detail 同语义，⛔ 不 404）。
+# 2. ⭐ **尾窗 + id 游标**：每仓回最近 limit 条（升序），带 `id`/`log_cursor`；`after_log_id`
+#    只回 id 大于游标的日志（直播增量，⛔ 不回溯全量）。
+# 3. ⭐ **limit 夹紧不报错**：默认 20、上界 50、非法回落 20。
+# 4. ⭐ **脱敏不可绕过**：工具结果里的凭证出不来（与 detail 同一出口纪律）。
+# 5. **加密 thinking 噪音滤除**：明文思考保留。
+# 6. ⭐ **取最新一次运行**：阶段 2 派发后仍指向最新（run_status 来自最新那次）。
+
+
+def _runtime_log_ids(run: Any) -> list[int]:
+    from subagent.models import SubAgentRuntimeLog
+
+    return list(
+        SubAgentRuntimeLog.objects.filter(session=run).order_by("id").values_list("id", flat=True)
+    )
+
+
+def test_research_progress_returns_200_empty_structure_without_a_session(
+    authenticated_client,
+) -> None:
+    artifact = _make_artifact()
+    body = authenticated_client.get(_url("blueprint-research-progress", artifact)).json()
+    assert body == {"session_id": "", "repositories": []}
+
+
+def test_research_progress_returns_recent_tail_with_cursor(authenticated_client, user) -> None:
+    """⭐ 每仓回最近尾窗（升序），带 id/log_cursor 与 task/run 标量。"""
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    task = _make_research_task(session, _make_repo("live-repo"), status="running")
+    run = _make_run(task, "bp-research", logs=[("text", f"第 {i} 步") for i in range(5)])
+
+    body = authenticated_client.get(_url("blueprint-research-progress", artifact)).json()
+
+    assert body["session_id"] == str(session.id)
+    assert len(body["repositories"]) == 1
+    row = body["repositories"][0]
+    assert row["repository_name"] == "live-repo"
+    assert row["task_status"] == "running"
+    assert row["run_status"] == "completed"
+    contents = [log["content"] for log in row["recent_logs"]]
+    # 升序尾窗：5 条全在，最后一条是最近的
+    assert contents == [f"第 {i} 步" for i in range(5)]
+    assert row["latest_observable"] == "第 4 步"
+    # 每条带 id，log_cursor = 返回的最大 id
+    ids = [log["id"] for log in row["recent_logs"]]
+    assert ids == sorted(ids)
+    assert row["log_cursor"] == max(ids) == max(_runtime_log_ids(run))
+
+
+def test_research_progress_after_log_id_returns_only_newer_logs(
+    authenticated_client, user
+) -> None:
+    """⭐ 游标增量：只回 id 大于 after_log_id 的日志（5s 轮询只搬新增）。"""
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    task = _make_research_task(session, _make_repo("cursor-repo"), status="running")
+    run = _make_run(task, "bp-research", logs=[("text", f"第 {i} 步") for i in range(5)])
+    ids = _runtime_log_ids(run)
+
+    body = authenticated_client.get(
+        _url("blueprint-research-progress", artifact), {"after_log_id": str(ids[2])}
+    ).json()
+    row = body["repositories"][0]
+
+    assert [log["content"] for log in row["recent_logs"]] == ["第 3 步", "第 4 步"]
+    assert row["log_cursor"] == ids[4]
+
+    # 追平游标后无新增 → 空尾窗，游标原样回传
+    empty = authenticated_client.get(
+        _url("blueprint-research-progress", artifact), {"after_log_id": str(ids[4])}
+    ).json()
+    empty_row = empty["repositories"][0]
+    assert empty_row["recent_logs"] == []
+    assert empty_row["log_cursor"] == ids[4]
+
+
+def test_research_progress_limit_is_clamped_and_defaults(authenticated_client, user) -> None:
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    task = _make_research_task(session, _make_repo("many"), status="running")
+    _make_run(task, "bp-research", logs=[("text", f"第 {i} 步") for i in range(60)])
+
+    url = _url("blueprint-research-progress", artifact)
+
+    def _count(params: dict) -> int:
+        body = authenticated_client.get(url, params).json()
+        return len(body["repositories"][0]["recent_logs"])
+
+    assert _count({}) == 20  # 默认 20
+    assert _count({"limit": "100"}) == 50  # 夹紧到上界 50
+    assert _count({"limit": "abc"}) == 20  # 非法回落默认
+    # 尾窗取**最近** limit 条：默认 20 应是第 40..59 步
+    body = authenticated_client.get(url, {}).json()
+    contents = [log["content"] for log in body["repositories"][0]["recent_logs"]]
+    assert contents[0] == "第 40 步"
+    assert contents[-1] == "第 59 步"
+
+
+def test_research_progress_redacts_secrets(authenticated_client, user) -> None:
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    task = _make_research_task(session, _make_repo("secret"), status="running")
+    _make_run(
+        task,
+        "bp-research",
+        logs=[("tool_result", "ok tu_1 ANTHROPIC_API_KEY=sk-ant-abcdef0123456789")],
+    )
+
+    body = authenticated_client.get(_url("blueprint-research-progress", artifact)).json()
+    content = body["repositories"][0]["recent_logs"][0]["content"]
+
+    assert "sk-ant-abcdef0123456789" not in content
+    assert "REDACTED" in content
+
+
+def test_research_progress_drops_encrypted_thinking_noise(authenticated_client, user) -> None:
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    task = _make_research_task(session, _make_repo("noisy"), status="running")
+    _make_run(
+        task,
+        "bp-research",
+        logs=[
+            ("text", "[思考] EoMFCnEIEBABGAIqQEVySBpDl8GTtfS3UG1JqdyGqH06zVnnMn5Yi1IM3cha"),
+            ("text", "[思考] 我先读一下路由证据再决定看哪些文件"),
+            ("tool_call", 'Read({"file_path": "a.py"})'),
+        ],
+    )
+
+    body = authenticated_client.get(_url("blueprint-research-progress", artifact)).json()
+    contents = [log["content"] for log in body["repositories"][0]["recent_logs"]]
+
+    assert not any("EoMFCnEIEBAB" in text for text in contents), "加密签名必须滤掉"
+    assert "[思考] 我先读一下路由证据再决定看哪些文件" in contents, "⛔ 明文思考不得被连坐"
+    assert any("file_path" in text for text in contents)
+
+
+def test_research_progress_picks_the_latest_run(authenticated_client, user) -> None:
+    """⭐ 直播尾窗取**最新一次**运行：阶段 2（bp-plan）派发后 run_status 来自它。"""
+    artifact = _make_artifact()
+    session = _make_session(artifact, user)
+    task = _make_research_task(session, _make_repo("two-runs"), status="running")
+    _make_run(task, "bp-research", logs=[("text", "阶段一：探索关键文件")])
+    plan_run = _make_run(task, "bp-plan", logs=[("tool_call", 'Read({"path": "b.py"})')])
+    plan_run.status = "running"
+    plan_run.save(update_fields=["status"])
+
+    body = authenticated_client.get(_url("blueprint-research-progress", artifact)).json()
+    row = body["repositories"][0]
+
+    assert row["run_status"] == "running"
+    contents = [log["content"] for log in row["recent_logs"]]
+    assert any("b.py" in text for text in contents)
+    assert all("阶段一" not in text for text in contents), "取最新那次运行，不混阶段一日志"

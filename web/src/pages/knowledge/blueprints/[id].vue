@@ -295,6 +295,7 @@ const {
   eventsQuery,
   stagesQuery,
   events,
+  researchProgress,
   sectionProgress,
   statusProgressKey,
   refetchAll,
@@ -674,6 +675,14 @@ function onNavigateSection(key: string): void {
 const sheetOpen = ref(false)
 /** 按仓调研明细抽屉；由 stepper 的 `view-research` 打开。 */
 const researchDrawerOpen = ref(false)
+/** 抽屉打开时默认选中的仓（stepper 分组卡片点「查看明细」带过来）；缺省选第一个。 */
+const researchInitialRepoId = ref('')
+
+/** 打开调研抽屉；带 `initialRepositoryId` 时定位到该仓。 */
+function openResearchDrawer(payload?: { initialRepositoryId?: string }): void {
+  researchInitialRepoId.value = payload?.initialRepositoryId ?? ''
+  researchDrawerOpen.value = true
+}
 const selection = ref<SelectionPayload | null>(null)
 
 // ── 划线评论就地浮层（quick-260806-j1z，交互对齐飞书文档）───────────────────────
@@ -1495,6 +1504,7 @@ const sections = computed<NavSection[]>(() => [
                  同一个 buildStageTimeline，喂不同入参会让两处对同一阶段给出不同状态。 -->
             <BlueprintStageStepper
               :events="events"
+              :research-progress="researchProgress"
               :current-stage="eventsQuery.data.value?.current_stage ?? ''"
               :current-status="currentStatus"
               :stages="stagesData"

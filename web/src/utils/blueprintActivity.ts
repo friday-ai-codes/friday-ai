@@ -286,6 +286,20 @@ export interface StagePanoramaNode {
   pinnedRoute: boolean
 }
 
+/**
+ * 普通 UI 明细行**不显示**的 payload 键（D-05）。
+ *
+ * 这三个都是**关联 id / 内部置信度**：`routed_confidence` 是路由器内部标量（用户读了会误当成
+ * 结论置信度）、`repository_id` / `task_id` 是排障用的 UUID。它们**只从明细字段行里隐去**，
+ * ⛔ 不从 `raw` diagnostics 里删 —— 原始 JSON 折叠层仍原样保留，排障时可查、关联键不丢。
+ * 按仓分组（`groupRepoResearchEvents`）也仍从原始 payload 读 `repository_id`，不受此表影响。
+ */
+export const NORMAL_UI_HIDDEN_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
+  'routed_confidence',
+  'repository_id',
+  'task_id',
+])
+
 /** 单个复合键最多展开多少行（超出只给计数，防止一个 200 项的数组把 DOM 撑爆）。 */
 const MAX_GROUP_LINES = 12
 /** 每项摘要最多取几个标量键（取前 N 个，保持行宽可读）。 */
@@ -425,7 +439,8 @@ export function describeEventPayload(payload: Record<string, unknown> | undefine
       continue
     const scalar = formatScalar(value)
     if (scalar !== null) {
-      if (scalar !== '')
+      // ⛔ 关联 id / 内部置信度不进普通字段行（D-05）；raw JSON 兜底仍带（见下方 stringify）。
+      if (scalar !== '' && !NORMAL_UI_HIDDEN_PAYLOAD_KEYS.has(key))
         fields.push({ key, value: scalar })
       continue
     }
@@ -618,3 +633,107 @@ export function buildStagePanorama(
 
 /** 全景节点顺序（= 时间线八节点，供测试与调用方对齐）。 */
 export const PANORAMA_STAGES = BLUEPRINT_STAGES
+
+// ══════════════════════════════════════════════════════════════════════════
+// repo_research 按仓分组（Task 3，D-06）
+// ══════════════════════════════════════════════════════════════════════════
+
+/** 单个仓库的调研分组（started/completed/failed 折叠成一张卡片）。 */
+export interface RepoResearchGroup {
+  repositoryId: string
+  repositoryName: string
+  /** `done` = 出现过 completed；`failed` = 最后一次终态是 failed；否则 `running`（已派发未产出）。 */
+  state: 'running' | 'done' | 'failed'
+  /** started 事件里的 `research_reason`（取最新一条）；缺失为空串。 */
+  reason: string
+  /** started 次数（含重试）；0 表示只见到 completed/failed 而没抓到 started。 */
+  attempts: number
+  /** 该仓最近一条事件的 `ts`（排序与「多久没动静」用）。 */
+  latestTs: string
+  /** 归属本仓的全部过程事件（升序），供组内展开明细。 */
+  events: PanoramaEventRow[]
+}
+
+/** repo_research 事件名（与后端 `event_taxonomy` 对齐）。 */
+const REPO_RESEARCH_STARTED = 'blueprint.repo_research.started'
+const REPO_RESEARCH_COMPLETED = 'blueprint.repo_research.completed'
+const REPO_RESEARCH_FAILED = 'blueprint.repo_research.failed'
+
+/**
+ * 把 `repo_research` 节点的扁平事件流折成**按仓卡片**（D-06）。
+ *
+ * ⭐ 分组键取 `repository_id`（缺则 `repository_name`）：一个仓可能 started→failed→started→completed
+ * 多轮重试，串行列表读起来是「同一个仓来回跳」，折成一张卡才看得清「这个仓最终成了没」。
+ *
+ * 状态判据：出现过 `completed` ⇒ `done`；否则看**最后一条终态**是 failed 还是（无终态）——
+ * failed 且其后无 completed ⇒ `failed`；只 started 未见终态 ⇒ `running`。
+ *
+ * ⚠️ 入参是**已 describe 过的** `PanoramaEventRow[]`（`payload` 原样带在行上，见其 doc）——
+ * 分组只读 `payload.repository_id/name/research_reason`，⛔ 不重算 fields（那是渲染层的事）。
+ */
+export function groupRepoResearchEvents(
+  events: readonly PanoramaEventRow[] | undefined,
+): RepoResearchGroup[] {
+  const groups = new Map<string, RepoResearchGroup>()
+  const order: string[] = []
+
+  const sorted = [...(events ?? [])].sort((a, b) => String(a.ts).localeCompare(String(b.ts)))
+  for (const row of sorted) {
+    if (
+      row.event !== REPO_RESEARCH_STARTED
+      && row.event !== REPO_RESEARCH_COMPLETED
+      && row.event !== REPO_RESEARCH_FAILED
+    ) {
+      continue
+    }
+    const payload = row.payload ?? {}
+    const repositoryId = asText(payload.repository_id)
+    const repositoryName = asText(payload.repository_name)
+    const key = repositoryId || repositoryName
+    if (!key)
+      continue
+
+    let group = groups.get(key)
+    if (!group) {
+      group = {
+        repositoryId,
+        repositoryName: repositoryName || repositoryId,
+        state: 'running',
+        reason: '',
+        attempts: 0,
+        latestTs: '',
+        events: [],
+      }
+      groups.set(key, group)
+      order.push(key)
+    }
+    if (repositoryName)
+      group.repositoryName = repositoryName
+    group.events.push(row)
+    group.latestTs = String(row.ts ?? '') || group.latestTs
+
+    if (row.event === REPO_RESEARCH_STARTED) {
+      group.attempts += 1
+      const reason = asText(payload.research_reason)
+      if (reason)
+        group.reason = reason
+      // started 不覆盖已到达的终态（重试的 started 出现在 completed/failed 之后时保留结论）
+      if (group.state === 'running')
+        group.state = 'running'
+    }
+    else if (row.event === REPO_RESEARCH_COMPLETED) {
+      group.state = 'done'
+    }
+    else if (row.event === REPO_RESEARCH_FAILED) {
+      // 已 done 的不因后来的 failed 回退（completed 是产出已落库的强信号）
+      if (group.state !== 'done')
+        group.state = 'failed'
+    }
+  }
+
+  // 未产出的排前面（在途/失败的更需要关注），其余按最近活动倒序
+  const rank: Record<RepoResearchGroup['state'], number> = { failed: 0, running: 1, done: 2 }
+  return order
+    .map(key => groups.get(key)!)
+    .sort((a, b) => rank[a.state] - rank[b.state] || String(b.latestTs).localeCompare(String(a.latestTs)))
+}

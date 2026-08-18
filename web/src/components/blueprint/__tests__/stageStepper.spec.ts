@@ -76,7 +76,14 @@ const i18n = createI18n({
               repository_id: '仓库 id',
               task_id: '任务 id',
             },
+            researchStateRunning: '调研中',
+            researchStateDone: '已完成',
+            researchStateFailed: '未成功',
+            researchViewDetail: '查看该仓明细',
+            researchNoLive: '暂无可观测进展',
+            researchReason: '调研理由',
           },
+          research: { entry: '查看调研明细' },
           progress: {
             repoResearchStarted: '正在调研 {repository_name}…',
             repoResearchStartedGeneric: '正在调研相关仓库…',
@@ -464,7 +471,11 @@ describe('blueprintStageStepper —— 仓库调研过程明细可读性（quick
     await wrapper.find(`${NODE}[data-stage="repo_research"] button`).trigger('click')
   }
 
-  it('有 repository_name 时标题含仓名；字段标签非英文键；枚举中文', async () => {
+  const REPO_GROUPS = '[data-testid="blueprint-stepper-repo-groups"]'
+  const REPO_GROUP = '[data-testid="blueprint-stepper-repo-group"]'
+  const REPO_GROUP_DETAIL = '[data-testid="blueprint-stepper-repo-group-detail"]'
+
+  it('⭐ 按仓分组卡片：仓名 + 状态 + 调研理由（中文）；⛔ 隐去 routed_confidence / 仓库id / task_id', async () => {
     const wrapper = mountStepper({
       events: [
         event('blueprint.repo_research.started', {
@@ -486,16 +497,27 @@ describe('blueprintStageStepper —— 仓库调研过程明细可读性（quick
     await openResearchDetail(wrapper)
     const detail = wrapper.find(DETAIL)
     expect(detail.exists()).toBe(true)
-    expect(detail.text()).toContain('正在调研 gaosan-web')
-    expect(detail.text()).toContain('调研理由')
-    expect(detail.text()).toContain('路由置信度')
-    expect(detail.text()).toContain('高')
-    expect(detail.text()).toContain('适配')
-    expect(detail.text()).not.toContain('routed_confidence')
-    expect(detail.text()).not.toContain('research_reason')
+    // 不是串行事件列表，而是每仓一张卡
+    expect(wrapper.find(REPO_GROUPS).exists()).toBe(true)
+    const cards = wrapper.findAll(REPO_GROUP)
+    expect(cards).toHaveLength(1)
+    const card = cards[0]
+    expect(card.text()).toContain('gaosan-web')
+    expect(card.text()).toContain('已完成')
+    expect(card.text()).toContain('调研理由')
+    expect(card.text()).toContain('主落点仓')
+    // 每仓可点开调研明细抽屉入口（保留）
+    expect(card.find(REPO_GROUP_DETAIL).exists()).toBe(true)
+    // ⛔ 隐藏字段：路由置信度、仓库 id、task id 及其值都不出现在过程明细里
+    const text = detail.text()
+    expect(text).not.toContain('routed_confidence')
+    expect(text).not.toContain('research_reason')
+    expect(text).not.toContain('11111111-1111-1111-1111-111111111111')
+    expect(text).not.toContain('22222222-2222-2222-2222-222222222222')
+    expect(text).not.toContain('路由置信度')
   })
 
-  it('缺 repository_name 的存量事件回落 Generic，不白屏', async () => {
+  it('缺 repository_name 的存量事件回落到 repository_id 卡片；无直播时给占位，不白屏/不 undefined', async () => {
     const wrapper = mountStepper({
       events: [
         event('blueprint.repo_research.started', { repository_id: 'r-old' }),
@@ -505,10 +527,14 @@ describe('blueprintStageStepper —— 仓库调研过程明细可读性（quick
       currentStatus: 'researching',
     })
     await openResearchDetail(wrapper)
-    const text = wrapper.find(DETAIL).text()
-    expect(text).toContain('正在调研相关仓库')
-    expect(text).toContain('仓库调研未成功')
-    expect(text).not.toContain('undefined')
+    const cards = wrapper.findAll(REPO_GROUP)
+    // 只有带 repository_id 的 started 成组；缺关联键的 failed 事件被忽略，不产生空卡
+    expect(cards).toHaveLength(1)
+    const card = cards[0]
+    expect(card.text()).toContain('r-old')
+    expect(card.text()).toContain('调研中')
+    expect(card.text()).toContain('暂无可观测进展')
+    expect(wrapper.find(DETAIL).text()).not.toContain('undefined')
   })
 })
 
