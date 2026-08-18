@@ -278,6 +278,50 @@ async def test_multi_wave_progression(_dispatched: list[Any]) -> None:
     repo_a = await _make_repo("mw-a")
     repo_b = await _make_repo("mw-b")
     id_a, id_b = str(repo_a.id), str(repo_b.id)
+    pv.content = {
+        "schema_version": "blueprint/v1",
+        "repo_associations": [
+            {
+                "repository_id": id_a,
+                "repository_name": "mw-a",
+                "role": "direct",
+                "responsibility": [],
+            },
+            {
+                "repository_id": id_b,
+                "repository_name": "mw-b",
+                "role": "direct",
+                "responsibility": [],
+            },
+        ],
+        "requirement_spec": {
+            "feature_points": [
+                {"id": "fp-a", "title": "能力 A", "intent": "greenfield"},
+                {"id": "fp-b", "title": "能力 B", "intent": "brownfield"},
+            ]
+        },
+        "implementation_overview": {
+            "items": [
+                {
+                    "id": "impl-a",
+                    "feature_point_id": "fp-a",
+                    "repository_id": id_a,
+                    "change_type": "create",
+                    "title": "只属于仓 A 的实现",
+                },
+                {
+                    "id": "impl-b",
+                    "feature_point_id": "fp-b",
+                    "repository_id": id_b,
+                    "change_type": "modify",
+                    "title": "只属于仓 B 的实现",
+                },
+            ]
+        },
+        "api_contracts": [],
+        "impact_analysis": {"affected_features": []},
+    }
+    await pv.asave(update_fields=["content"])
 
     plan = {
         "title": "multi-wave",
@@ -303,6 +347,8 @@ async def test_multi_wave_progression(_dispatched: list[Any]) -> None:
     r1: NodeResult = await node.execute(ctx)
     assert r1.status == "waiting_event"
     assert _dispatched_repo_ids(_dispatched) == {id_a}
+    assert "只属于仓 A 的实现" in _dispatched[0].prompt
+    assert "只属于仓 B 的实现" not in _dispatched[0].prompt
     assert r1.output["plan_version_id"] == str(pv.id)
     # RepoCodingTask：2 行；repoA running（含 subagent_session）、repoB pending。
     task_a = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_a)
@@ -319,6 +365,8 @@ async def test_multi_wave_progression(_dispatched: list[Any]) -> None:
 
     assert r2.status == "waiting_event"
     assert _dispatched_repo_ids(_dispatched) == {id_b}  # 仅 wave1 repoB
+    assert "只属于仓 B 的实现" in _dispatched[0].prompt
+    assert "只属于仓 A 的实现" not in _dispatched[0].prompt
     task_a = await RepoCodingTask.objects.aget(id=task_a.id)
     task_b = await RepoCodingTask.objects.aget(id=task_b.id)
     assert task_a.status == RepoCodingTaskStatus.DONE

@@ -15,8 +15,10 @@ fundamentally different from AIAgentBaseNode's single SDK agent model.
 """
 
 import asyncio
+import hashlib
 import json
 import re
+import time
 import uuid
 from typing import Any, ClassVar, Literal
 from urllib.parse import urlparse
@@ -44,6 +46,10 @@ logger = structlog.get_logger(__name__)
 
 # 错误摘要最大长度
 _MAX_ERROR_LENGTH = 200
+
+# 单仓 proposal 只作为 coding prompt 上下文。限制字符数防止异常蓝图放大 dispatch
+# payload；超限时保留前部并显式标注截断，绝不把正文写入日志或目标仓库。
+_MAX_REPO_PROPOSAL_CHARS = 50_000
 
 
 def _truncate(text: str, max_length: int) -> str:
@@ -426,6 +432,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             tasks_by_repo=tasks_by_repo,
             service=service,
             log=log,
+            plan_data=plan_data,
         )
 
         log.info(
@@ -579,9 +586,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                         )
 
                         link = await (
-                            ProjectWorkItemLink.objects.filter(
-                                work_item__work_item_id=work_item_id
-                            )
+                            ProjectWorkItemLink.objects.filter(work_item__work_item_id=work_item_id)
                             .select_related("project")
                             .afirst()
                         )
@@ -605,6 +610,117 @@ class AICodingNode(SubStepMixin, BaseNode):
             contexts[repo_id] = text
         return contexts
 
+    async def _prepare_repo_proposals(
+        self,
+        *,
+        plan_data: dict[str, Any] | None,
+        repo_ids: list[str],
+        dispatch_user: Any,
+        log: Any,
+    ) -> dict[str, str]:
+        """从同一蓝图版本为待派发仓确定性投影只读 OpenSpec proposal。
+
+        这是 prompt 上下文准备，不是文件运输：不写目标仓、不新增 LLM 调用。蓝图缺失或
+        加载失败时 fail-soft 返回空映射，legacy / 非 blueprint 派发保持原样。
+        """
+        if not isinstance(plan_data, dict) or not repo_ids:
+            return {}
+
+        content = plan_data.get("blueprint_content")
+        if not isinstance(content, dict):
+            version_id = plan_data.get("artifact_version_id")
+            if not version_id:
+                return {}
+            try:
+                from delivery.models import ArtifactVersion
+
+                version = (
+                    await ArtifactVersion.objects.only("content").filter(id=version_id).afirst()
+                )
+                content = version.content if version is not None else None
+            except Exception as exc:  # noqa: BLE001 — 上下文注入失败不得阻断编码派发
+                log.warning(
+                    "openspec_proposal_prompt_failed",
+                    category="caller",
+                    component="workflows",
+                    initiated_by_user_id=str(getattr(dispatch_user, "id", "") or "system"),
+                    repository_id="",
+                    duration_ms=0,
+                    error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_LENGTH],
+                )
+                return {}
+
+        if not isinstance(content, dict) or content.get("schema_version") != "blueprint/v1":
+            return {}
+
+        from services.process_runtime.blueprint_proposal_render import (
+            render_single_repo_proposal_markdown,
+        )
+
+        initiated_by = str(getattr(dispatch_user, "id", "") or "system")
+        lifecycle_started = time.perf_counter()
+        log.info(
+            "openspec_proposal_prompt_started",
+            category="caller",
+            component="workflows",
+            initiated_by_user_id=initiated_by,
+            repository_count=len(repo_ids),
+        )
+        proposals: dict[str, str] = {}
+        for repo_id in repo_ids:
+            started = time.perf_counter()
+            try:
+                proposal = render_single_repo_proposal_markdown(content, repo_id)
+                if not proposal:
+                    continue
+                original_chars = len(proposal)
+                if original_chars > _MAX_REPO_PROPOSAL_CHARS:
+                    proposal = (
+                        proposal[:_MAX_REPO_PROPOSAL_CHARS]
+                        + "\n\n> 方案正文超过上下文上限，已截断；请严格按当前可见范围实现。"
+                    )
+                    log.warning(
+                        "openspec_proposal_prompt_truncated",
+                        category="caller",
+                        component="workflows",
+                        initiated_by_user_id=initiated_by,
+                        repository_id=repo_id,
+                        chars=original_chars,
+                        limit=_MAX_REPO_PROPOSAL_CHARS,
+                    )
+                proposals[repo_id] = proposal
+                encoded = proposal.encode("utf-8")
+                log.info(
+                    "openspec_proposal_prompt_completed",
+                    category="caller",
+                    component="workflows",
+                    initiated_by_user_id=initiated_by,
+                    repository_id=repo_id,
+                    bytes=len(encoded),
+                    content_hash=hashlib.sha256(encoded).hexdigest(),
+                    duration_ms=max(int((time.perf_counter() - started) * 1000), 0),
+                )
+            except Exception as exc:  # noqa: BLE001 — 单仓 proposal 失败仅降级该仓
+                log.warning(
+                    "openspec_proposal_prompt_failed",
+                    category="caller",
+                    component="workflows",
+                    initiated_by_user_id=initiated_by,
+                    repository_id=repo_id,
+                    duration_ms=max(int((time.perf_counter() - started) * 1000), 0),
+                    error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_LENGTH],
+                )
+        log.info(
+            "openspec_proposal_prompt_finished",
+            category="caller",
+            component="workflows",
+            initiated_by_user_id=initiated_by,
+            repository_count=len(repo_ids),
+            prepared_count=len(proposals),
+            duration_ms=max(int((time.perf_counter() - lifecycle_started) * 1000), 0),
+        )
+        return proposals
+
     async def _dispatch_wave(
         self,
         *,
@@ -623,6 +739,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         service: Any,
         log: Any,
         upstream_artifacts_by_repo: dict[str, list[dict]] | None = None,
+        plan_data: dict[str, Any] | None = None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """dispatch 指定一批仓（单 wave），返回 ``(waiting_sessions, failed)``。
 
@@ -657,6 +774,12 @@ class AICodingNode(SubStepMixin, BaseNode):
             dispatch_user=dispatch_user,
             log=log,
         )
+        repo_proposals = await self._prepare_repo_proposals(
+            plan_data=plan_data,
+            repo_ids=repo_ids,
+            dispatch_user=dispatch_user,
+            log=log,
+        )
 
         by_repo = upstream_artifacts_by_repo or {}
         coding_tasks = [
@@ -672,6 +795,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 anthropic_base_url=anthropic_base_url,
                 dispatch_user=dispatch_user,
                 project_context=project_contexts.get(repo_id, ""),
+                repo_proposal=repo_proposals.get(repo_id, ""),
                 upstream_artifacts=by_repo.get(repo_id, []),
                 # GATE-02：仅「通过 gate 且 follow_openspec=True」的仓（天然 = approved SDD 仓）
                 # 注入 env（默认 False 保非 wave/legacy 零回归）。
@@ -1046,9 +1170,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 return NodeResult(
                     status="failed",
                     output=partial.output,
-                    error=(
-                        f"wave 推进失败，已按当前 DB 状态收尾（可能有仓未完成或未派发）: {exc}"
-                    ),
+                    error=(f"wave 推进失败，已按当前 DB 状态收尾（可能有仓未完成或未派发）: {exc}"),
                 )
 
             # waiting：仍有 RUNNING 在途 task（aadvance 仅在 RUNNING 时返回 waiting）→ 重挂起
@@ -1149,6 +1271,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             service=service,
             log=log,
             upstream_artifacts_by_repo=upstream_by_repo,
+            plan_data=plan_data,
         )
         log.info(
             "coding_wave_next_dispatched",
@@ -1838,6 +1961,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         anthropic_base_url: str = "",  # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
         dispatch_user=None,  # Phase 103 AGENT-01：发起用户（User | None）——非 None 时 mint 任务级短 TTL token（替换机会性 PAT 透传）
         project_context: str = "",  # Phase 103 AGENT-04：wave 层解析的项目上下文（默认空 → 非 wave/legacy 调用路径零回归）
+        repo_proposal: str = "",  # 分仓 OpenSpec：只读 prompt 上下文，不写目标仓
         upstream_artifacts: list[dict]
         | None = None,  # ARTIFACT-02：上游产物注入（默认 None → 零回归）
         follow_openspec: bool = False,  # GATE-02：approved SDD 仓注入 openspec env（默认 False 保非 wave/legacy 零回归）
@@ -1854,6 +1978,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             branch_name,
             upstream_artifacts=upstream_artifacts,
             repository_id=str(repository.id),
+            repo_proposal=repo_proposal,
         )
 
         # Phase 103 AGENT-04：项目上下文注入（镜像 chat dispatch_coding_task 两件套——
@@ -2080,6 +2205,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         branch_name: str,
         upstream_artifacts: list[dict] | None = None,
         repository_id: str = "",
+        repo_proposal: str = "",
     ) -> str:
         """构建 SubAgent 编码 prompt。
 
@@ -2096,6 +2222,15 @@ class AICodingNode(SubStepMixin, BaseNode):
 
         if global_context:
             parts.append(f"# 项目背景\n\n{global_context}")
+
+        if repo_proposal:
+            parts.append(
+                "# 本仓 OpenSpec Proposal（只读权威实现上下文）\n\n"
+                "以下方案由 Friday 技术蓝图确定性投影，仅适用于当前仓库。实现必须与其 "
+                "Why / What Changes / Impact / Spec Deltas 一致；它只作为上下文存在，"
+                "不要在仓内新建 OpenSpec proposal 文件。\n\n"
+                f"{repo_proposal}"
+            )
 
         # ── ARTIFACT-02：上游产物段（D-08：global_context 之后、分支信息之前）──
         # 空段（无上游 / 空产物）→ render 返回 "" → 守卫不 append（逐字对齐既有
