@@ -1,0 +1,27 @@
+{
+  "name": "Friday AI",
+  "user": "ubuntu",
+  "install": "./scripts/cloud-agent-install.sh",
+  "start": "./scripts/cloud-agent-start.sh",
+  "terminals": [
+    {
+      "name": "server",
+      "command": "cd server && uv run uvicorn friday.asgi:application --reload --host 0.0.0.0 --port 10241",
+      "description": "Django ASGI 开发服务器（热重载），http://localhost:10241 。默认走 SQLite + 内存 channel layer；要接 Postgres/Redis/Qdrant 用环境变量显式覆盖，见 AGENTS.md。"
+    },
+    {
+      "name": "web",
+      "command": "cd web && VITE_USE_POLLING=true pnpm dev --host 0.0.0.0 --port 10240 --strictPort",
+      "description": "Vue 3 前端 Vite 开发服务器，http://localhost:10240 ，通过 vite.config.ts 的 proxy 转发 /api 到 10241。"
+    }
+  ],
+  "ports": [
+    { "name": "web", "port": 10240 },
+    { "name": "api", "port": 10241 },
+    { "name": "qdrant", "port": 6333 }
+  ],
+  "repositoryDependencies": [
+    "github.com/friday-ai-codes/mcp",
+    "github.com/friday-ai-codes/skills"
+  ]
+}
