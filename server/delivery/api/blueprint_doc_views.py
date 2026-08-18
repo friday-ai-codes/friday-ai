@@ -129,6 +129,32 @@ def _parse_run_log_limit(raw: Any) -> int:
     return max(1, min(value, _MAX_RUN_LOGS))
 
 
+def _parse_after_log_id(raw: Any) -> int:
+    """``?after_log_id=`` → ``>=0`` 全局游标；缺省/非法一律 ``0``（= 从头拉尾窗）。
+
+    游标是 ``SubAgentRuntimeLog.id``（单调自增整型），⛔ 不接受负数（负游标会让
+    ``id__gt`` 退化成全表扫描，正好是 T-fsn-03 要挡的 DoS 面）。
+    """
+    try:
+        value = int(str(raw or "").strip() or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, value)
+
+
+def _parse_progress_limit(raw: Any) -> int:
+    """``?limit=`` → ``[1, _MAX_PROGRESS_LOGS]``；缺省回落 ``_DEFAULT_PROGRESS_LOGS``。
+
+    与 ``research-detail`` 的 ``log_limit`` 刻意不同量级：progress 是 5s 级直播尾窗，
+    每仓只给最近 ≤50 条，**禁止**把默认 400 全量塞进轮询（D-07 / T-fsn-03）。
+    """
+    try:
+        value = int(str(raw or "").strip() or _DEFAULT_PROGRESS_LOGS)
+    except (TypeError, ValueError):
+        return _DEFAULT_PROGRESS_LOGS
+    return max(1, min(value, _MAX_PROGRESS_LOGS))
+
+
 async def _aload_version(artifact_id: Any, version_id: Any = None) -> Any:
     """取正文版本行；``version_id`` 缺省取**最新**一版。
 
@@ -473,6 +499,16 @@ class BlueprintEventsView(APIView):
 # 复盘「它当初怎么一步步走到这个结论」的，砍掉开头等于把推理链的前提砍了。
 _MAX_RUN_LOGS = 400
 
+# ── 轻量直播进度（research-progress）的量级常量（D-07）──────────────────────────
+# progress 是 5s 级轮询的**直播尾窗**，与 research-detail 的「全量复盘」是两个面：
+# 每仓默认只回最近 20 条、上界 50 条，且 DB 扫描封顶 100 行 ⇒ 结构上不可能把 400 全量
+# 回溯接进轮询（T-fsn-03：禁止把 detail 的默认 400-log 塞进 live 轮询）。
+_DEFAULT_PROGRESS_LOGS = 20
+_MAX_PROGRESS_LOGS = 50
+# 单仓单次运行的 DB 扫描封顶：先按 id 倒序取这么多，再滤噪音、再切 limit。远小于
+# detail 的 400，既够覆盖一次轮询间隔的新增，又给 DoS 面一个硬顶。
+_PROGRESS_SCAN_CAP = 100
+
 # 单条日志正文上界。工具结果里常是整段文件内容，容器侧已截过一次，这里再兜一道
 # （历史行是在旧截断口径下落的，长度不受容器侧新常量约束）。
 _MAX_LOG_CONTENT_CHARS = 4000
@@ -653,6 +689,158 @@ class BlueprintResearchDetailView(APIView):
             started,
             repo_count=len(repositories),
             run_count=sum(len(row["runs"]) for row in repositories),
+        )
+        return Response(
+            {"session_id": str(getattr(session, "id", "") or ""), "repositories": repositories}
+        )
+
+
+# ── 2c. 轻量调研直播进度（cursor/tail，D-07）────────────────────────────────────
+
+
+def _progress_log_row(row: Any) -> dict:
+    """单条运行日志 → **带 id 游标**的进度行（⭐ 脱敏复用 ``research-detail`` 同口径）。
+
+    与 :func:`_log_row` 的唯一差异是多带 ``id``：progress 是游标增量拉取，前端拿
+    ``id`` 推进 ``after_log_id``。正文出口同样过 ``redact_secrets_in_text`` +
+    ``_MAX_LOG_CONTENT_CHARS`` 截断（T-fsn-01：本端点也把工具结果送浏览器）。
+    """
+    from common.logging import redact_secrets_in_text
+
+    text = redact_secrets_in_text(str(getattr(row, "content", "") or ""))
+    ts = getattr(row, "ts", None)
+    return {
+        "id": int(row.id),
+        "type": str(getattr(row, "log_type", "") or ""),
+        "content": text[:_MAX_LOG_CONTENT_CHARS],
+        "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts or ""),
+    }
+
+
+@sync_to_async
+def _aload_research_progress(session_id: Any, after_log_id: int, limit: int) -> list[dict]:
+    """按仓装配**直播尾窗**：每仓最新一次运行的、id 大于游标的可观测日志尾部。
+
+    与 :func:`_aload_research_detail` 的分工（D-07）：
+    - detail：每仓**每一次**运行的**最早** N 条（复盘全过程，抽屉用）。
+    - progress：每仓**最新一次**运行、``id > after_log_id`` 的**最近** ``limit`` 条
+      （直播尾窗，5s 轮询用）——结构上不回溯全量。
+
+    ⭐ **找最新运行不走 ``task.subagent_session`` 外键**：与 detail 同因——阶段 2 派发会
+    覆写它。按会话 id 前缀（``bp-research-{marker}-`` / ``bp-plan-{marker}-``）反查、取
+    ``created_at`` 最新一次；本任务聚焦阶段一调研直播，``repo_plan`` 运行只附 ``run_status``
+    标量不强制灌日志（取最新那次，天然覆盖）。
+
+    ⚠️ **先滤噪音再切片**：与 detail 同一纪律——加密 thinking 会占掉 ``limit`` 额度把
+    真步骤挤出窗口。DB 侧先按 ``id`` 倒序封顶 ``_PROGRESS_SCAN_CAP``，避免一次轮询把
+    整段历史搬进内存（T-fsn-03）。
+    """
+    from django.db.models import Q
+
+    from delivery.models.research_task import RepoResearchTask
+    from subagent.models import SubAgentRuntimeLog, SubAgentSession
+
+    tasks = list(
+        RepoResearchTask.objects.filter(session_id=session_id)
+        .select_related("repository")
+        .order_by("created_at")
+    )
+    if not tasks:
+        return []
+
+    rows: list[dict] = []
+    for task in tasks:
+        marker = task.id.hex[:12]
+        run = (
+            SubAgentSession.objects.filter(
+                Q(session_id__startswith=f"bp-research-{marker}-")
+                | Q(session_id__startswith=f"bp-plan-{marker}-")
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        recent_logs: list[dict] = []
+        run_status = ""
+        log_cursor = after_log_id
+        if run is not None:
+            run_status = str(run.status or "")
+            # 先按 id 倒序封顶扫描 ⇒ 拿到「最近的一批」；再滤噪音、切最近 limit、翻回升序。
+            scanned = list(
+                SubAgentRuntimeLog.objects.filter(session=run, id__gt=after_log_id).order_by(
+                    "-id"
+                )[:_PROGRESS_SCAN_CAP]
+            )
+            observable = [r for r in scanned if not _is_noise(r.log_type, r.content)]
+            tail = list(reversed(observable[:limit]))
+            recent_logs = [_progress_log_row(r) for r in tail]
+            if recent_logs:
+                log_cursor = max(int(item["id"]) for item in recent_logs)
+        rows.append(
+            {
+                "repository_id": str(task.repository_id),
+                "repository_name": str(getattr(task.repository, "name", "") or ""),
+                "task_status": str(task.status or ""),
+                "run_status": run_status,
+                # 直播摘要 = 最近一条可观测日志正文（已脱敏）；无日志则空串。
+                "latest_observable": recent_logs[-1]["content"] if recent_logs else "",
+                "log_cursor": int(log_cursor),
+                "recent_logs": recent_logs,
+            }
+        )
+    return rows
+
+
+class BlueprintResearchProgressView(APIView):
+    """GET .../blueprint/research-progress/ —— 轻量调研直播进度（cursor/tail，只读）。
+
+    补的是 ``research-detail`` 拿来做 5s 轮询会**每轮搬整段历史**（默认 400 log/仓）的缺口
+    （D-07）：本端点每仓只回「最新一次运行、``id > after_log_id`` 的最近 ``limit`` 条」，
+    载荷远小于 detail，且带 ``task_status`` / ``run_status`` 标量便于 UI 直接标态。
+
+    Query：
+    - ``?after_log_id=<int>``：全局游标（``SubAgentRuntimeLog.id``），缺省 ``0``；只回 id 大
+      于它的日志。前端拿每仓 ``log_cursor`` 推进（取全仓最大）。
+    - ``?limit=<int>``：每仓返回条数，夹在 ``[1, 50]``，缺省 ``20``。
+
+    ⭐ **无会话 / 无调研任务一律 200 空结构，⛔ 绝不 404**：与 ``research-detail`` 同款理由。
+    权限/范围闸与既有 blueprint 读端点逐字一致（import 复用，不复制第三份）。
+    正文出口过 :func:`_progress_log_row` 脱敏，加密 thinking 经 :func:`_is_noise` 滤除
+    （T-fsn-01：不返回 transcript/CoT）。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request: Any, artifact_id: Any) -> Response:
+        started = time.monotonic()
+        artifact = await _aload_artifact(artifact_id)
+        if artifact is None:
+            return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
+        denied = await _aassert_project_scope(request, artifact)
+        if denied is not None:
+            return denied
+
+        session = await _aload_session(artifact_id)
+        if session is None:
+            _log(
+                "blueprint_research_progress_read",
+                request,
+                artifact_id,
+                started,
+                repo_count=0,
+                log_count=0,
+            )
+            return Response({"session_id": "", "repositories": []})
+
+        after_log_id = _parse_after_log_id(request.query_params.get("after_log_id"))
+        limit = _parse_progress_limit(request.query_params.get("limit"))
+        repositories = await _aload_research_progress(session.id, after_log_id, limit)
+        _log(
+            "blueprint_research_progress_read",
+            request,
+            artifact_id,
+            started,
+            repo_count=len(repositories),
+            log_count=sum(len(row["recent_logs"]) for row in repositories),
         )
         return Response(
             {"session_id": str(getattr(session, "id", "") or ""), "repositories": repositories}

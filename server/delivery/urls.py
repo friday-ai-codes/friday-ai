@@ -14,6 +14,7 @@ from delivery.api.blueprint_doc_views import (
     BlueprintDocumentView,
     BlueprintEventsView,
     BlueprintResearchDetailView,
+    BlueprintResearchProgressView,
     BlueprintReviewThreadsView,
 )
 from delivery.api.blueprint_export_views import (
@@ -261,6 +262,13 @@ urlpatterns = [
         "artifacts/<uuid:artifact_id>/blueprint/research-detail/",
         BlueprintResearchDetailView.as_view(),
         name="blueprint-research-detail",
+    ),
+    # 轻量调研直播进度（cursor/tail）：整段精确匹配，与 research-detail 分工（D-07）——
+    # detail 全量复盘（抽屉按需拉），progress 5s 级尾窗（直播轮询）。
+    path(
+        "artifacts/<uuid:artifact_id>/blueprint/research-progress/",
+        BlueprintResearchProgressView.as_view(),
+        name="blueprint-research-progress",
     ),
     # quick 260806 节点重跑 + 横向进度：stages/（节点快照）与 stages/rerun/（带指令重跑）
     # 两个整段精确匹配，与既有 blueprint/ 族互不遮挡。

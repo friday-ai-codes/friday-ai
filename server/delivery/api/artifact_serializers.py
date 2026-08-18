@@ -261,6 +261,38 @@ class BlueprintGateSnapshotSerializer(serializers.Serializer):
     repos = BlueprintGateRepoSerializer(many=True, read_only=True)
 
 
+class BlueprintResearchProgressLogSerializer(serializers.Serializer):
+    """调研直播尾窗单条日志（带 id 游标）。
+
+    ``id`` 是 ``SubAgentRuntimeLog.id``（全局单调游标），前端拿它推进 ``after_log_id``；
+    ``content`` 已过脱敏 + 截断（正文出口纪律，见 ``blueprint_doc_views._progress_log_row``）。
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    type = serializers.CharField(read_only=True, allow_blank=True)
+    content = serializers.CharField(read_only=True, allow_blank=True)
+    ts = serializers.CharField(read_only=True, allow_blank=True)
+
+
+class BlueprintResearchProgressRepoSerializer(serializers.Serializer):
+    """调研直播进度单仓条目（task/run 标量 + 最近可观测日志尾窗）。"""
+
+    repository_id = serializers.CharField(read_only=True)
+    repository_name = serializers.CharField(read_only=True, allow_blank=True)
+    task_status = serializers.CharField(read_only=True, allow_blank=True)
+    run_status = serializers.CharField(read_only=True, allow_blank=True)
+    latest_observable = serializers.CharField(read_only=True, allow_blank=True)
+    log_cursor = serializers.IntegerField(read_only=True)
+    recent_logs = BlueprintResearchProgressLogSerializer(many=True, read_only=True)
+
+
+class BlueprintResearchProgressSerializer(serializers.Serializer):
+    """调研直播进度只读响应（轻量 cursor/tail，D-07）。"""
+
+    session_id = serializers.CharField(read_only=True, allow_blank=True)
+    repositories = BlueprintResearchProgressRepoSerializer(many=True, read_only=True)
+
+
 class BlueprintGateActionResultSerializer(serializers.Serializer):
     """确认门动作结果（POST 五动作 + upgrade-research）：形状恒定，调用方无需判分支。"""
 

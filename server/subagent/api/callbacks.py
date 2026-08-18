@@ -1575,7 +1575,7 @@ async def _update_repository_on_summary_complete(
         tree_written=tree_written,
     )
 
-    # summary 成功落库后 best-effort 入队章程起草（只 defer，不在 callback 内跑 LLM）
+    # summary 成功落库后：确定性 fingerprint 门禁 → apply | bootstrap | supplement | skip
     import time as _time
 
     from common.logging import redact_secrets_in_text
@@ -1583,25 +1583,133 @@ async def _update_repository_on_summary_complete(
     charter_started = _time.monotonic()
     try:
         from repositories.charter_enqueue import enqueue_charter_draft
+        from repositories.models import RepoCharter
+        from repositories.services.charter_service import (
+            aapply_charter_from_runner,
+            compute_charter_fingerprint,
+        )
 
         initiated = await _resolve_initiated_user(session)
-        charter_job = await enqueue_charter_draft(
-            str(repo_id),
-            initiated_by_user_id=initiated,
+        overview = ""
+        facets: dict[str, Any] = {}
+        tree_for_fp: Any = None
+        if isinstance(payload_obj, dict):
+            overview = str(payload_obj.get("overview") or "")
+            raw_facets = payload_obj.get("facets")
+            if isinstance(raw_facets, dict):
+                facets = {str(k): str(v) for k, v in raw_facets.items()}
+            tree_for_fp = payload_obj.get("tree")
+        if not facets and isinstance(repo.facets, dict):
+            facets = {str(k): str(v) for k, v in repo.facets.items()}
+        if tree_for_fp is None:
+            tree_for_fp = repo.ai_summary_tree
+        if not overview:
+            overview = getattr(repo, "overview_text", None) or ""
+
+        observed_fingerprint = compute_charter_fingerprint(overview, tree_for_fp, facets)
+        charter_payload = (
+            payload_obj.get("charter") if isinstance(payload_obj, dict) else None
         )
-        try:
-            logger.info(
-                "repo_summary_charter_enqueued",
-                category="caller",
-                component="charter_service",
-                repository_id=str(repo_id),
-                initiated_by_user_id=initiated,
-                job_enqueued=bool(charter_job),
-                duration_ms=round((_time.monotonic() - charter_started) * 1000, 2),
+        charter_dict = charter_payload if isinstance(charter_payload, dict) else None
+
+        existing = await RepoCharter.objects.filter(repository_id=repo_id).afirst()
+        stored_fp = (existing.baseline_fingerprint or "").strip() if existing else ""
+
+        if existing is not None and stored_fp and stored_fp == observed_fingerprint:
+            # Branch 1: equal fingerprint → skip apply/enqueue；经 service 持久化指纹
+            await aapply_charter_from_runner(
+                str(repo_id),
+                {},
+                evidence={
+                    "overview": overview,
+                    "tree": tree_for_fp,
+                    "facets": facets,
+                },
+                fingerprint=observed_fingerprint,
+                initiated_by_user_id=initiated or "system",
             )
-        except Exception:  # noqa: BLE001 — 观测绝不反噬 summary 回调
-            pass
-    except Exception as exc:  # noqa: BLE001 — 章程入队绝不反噬 summary 回调
+            try:
+                logger.info(
+                    "repo_summary_charter_enqueue_skipped",
+                    category="caller",
+                    component="charter_service",
+                    repository_id=str(repo_id),
+                    initiated_by_user_id=initiated,
+                    reason="no_material_change",
+                    fingerprint=observed_fingerprint,
+                    duration_ms=round((_time.monotonic() - charter_started) * 1000, 2),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        elif charter_dict is not None:
+            # Branch 2: changed (or no stored fp) + charter → apply
+            applied = await aapply_charter_from_runner(
+                str(repo_id),
+                charter_dict,
+                evidence={
+                    "overview": overview,
+                    "tree": tree_for_fp,
+                    "facets": facets,
+                },
+                fingerprint=observed_fingerprint,
+                initiated_by_user_id=initiated or "system",
+            )
+            try:
+                logger.info(
+                    "repo_summary_charter_applied",
+                    category="caller",
+                    component="charter_service",
+                    repository_id=str(repo_id),
+                    initiated_by_user_id=initiated,
+                    applied=bool(applied),
+                    fingerprint=observed_fingerprint,
+                    duration_ms=round((_time.monotonic() - charter_started) * 1000, 2),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        elif existing is None:
+            # Branch 3: no row + no charter → bootstrap enqueue
+            charter_job = await enqueue_charter_draft(
+                str(repo_id),
+                initiated_by_user_id=initiated,
+                mode="bootstrap",
+                fingerprint=observed_fingerprint,
+            )
+            try:
+                logger.info(
+                    "repo_summary_charter_enqueued",
+                    category="caller",
+                    component="charter_service",
+                    repository_id=str(repo_id),
+                    initiated_by_user_id=initiated,
+                    job_enqueued=bool(charter_job),
+                    mode="bootstrap",
+                    duration_ms=round((_time.monotonic() - charter_started) * 1000, 2),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            # Branch 4: existing row + no charter → supplement enqueue (classify-only)
+            charter_job = await enqueue_charter_draft(
+                str(repo_id),
+                initiated_by_user_id=initiated,
+                mode="supplement",
+                fingerprint=observed_fingerprint,
+            )
+            try:
+                logger.info(
+                    "repo_summary_charter_enqueued",
+                    category="caller",
+                    component="charter_service",
+                    repository_id=str(repo_id),
+                    initiated_by_user_id=initiated,
+                    job_enqueued=bool(charter_job),
+                    mode="supplement",
+                    duration_ms=round((_time.monotonic() - charter_started) * 1000, 2),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception as exc:  # noqa: BLE001 — 章程路径绝不反噬 summary 回调
         try:
             logger.warning(
                 "repo_summary_charter_enqueue_failed",
@@ -2393,6 +2501,7 @@ async def _handle_blueprint_research_completion(
     research_service = ResearchService()
     session_service = ConvergenceSessionService()
     content = _parse_blueprint_fitness(p.get("output") or {})
+
     # 展示用标量：派发时写入 last_output，回调只读回填（不采信容器上报）
     lo = session.last_output if isinstance(session.last_output, dict) else {}
     repository_name = str(lo.get("repository_name") or "")

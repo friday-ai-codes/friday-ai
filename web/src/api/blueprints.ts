@@ -38,6 +38,7 @@ import type {
   BlueprintListResponse,
   BlueprintRejectResponse,
   BlueprintResearchDetailResponse,
+  BlueprintResearchProgressResponse,
   BlueprintReviewSnapshot,
   BlueprintStageRerunResponse,
   BlueprintStagesResponse,
@@ -101,6 +102,31 @@ export async function getBlueprintResearchDetail(
     query.log_limit = String(params.log_limit)
   return get<BlueprintResearchDetailResponse>(
     `/delivery/artifacts/${artifactId}/blueprint/research-detail/`,
+    query,
+  )
+}
+
+/**
+ * 调研直播进度（轻量 cursor/tail）。
+ *
+ * 与 {@link getBlueprintResearchDetail} 的分工（D-07）：detail 是全量复盘（抽屉按需拉），
+ * 本端点是**每仓 ≤ `limit` 条最近可观测日志的尾窗**，是唯一进 `useBlueprintLive` 5s 轮询的
+ * 调研读面 ⇒ ⛔ 不回溯全量（后端硬顶扫描面），`after_log_id` 只做游标增量。
+ *
+ * @param params.after_log_id 只回严格大于该 id 的日志；缺省/0 取尾窗。
+ * @param params.limit 每仓返回条数（后端 clamp 到 [1, 上限]，非法值回默认）。
+ */
+export async function getBlueprintResearchProgress(
+  artifactId: string,
+  params: { after_log_id?: number, limit?: number } = {},
+): Promise<BlueprintResearchProgressResponse> {
+  const query: Record<string, string> = {}
+  if (params.after_log_id)
+    query.after_log_id = String(params.after_log_id)
+  if (params.limit)
+    query.limit = String(params.limit)
+  return get<BlueprintResearchProgressResponse>(
+    `/delivery/artifacts/${artifactId}/blueprint/research-progress/`,
     query,
   )
 }
@@ -425,4 +451,6 @@ export default {
   upgradeResearch,
   getBlueprintExportAvailability,
   exportBlueprintToFeishu,
+  getBlueprintResearchDetail,
+  getBlueprintResearchProgress,
 }
