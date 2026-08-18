@@ -13,7 +13,9 @@ from common.request_metrics import arecord_request_metric
 logger = structlog.get_logger()
 
 
-async def _record_ws_metric(*, route: str, event: str, connected_at: float | None = None) -> None:
+async def _record_ws_metric(
+    *, route: str, event: str, connected_at: float | None = None
+) -> None:
     """为 WS connect/disconnect 记一行 RequestMetric（best-effort，绝不影响握手/收发）。
 
     connect：status_code=101（协议切换），ws_event=connect；
