@@ -35,7 +35,7 @@
 
 ### 🚧 v0.24.0 单仓图查询对齐 GitNexus（Phases 133–140）
 
-- [ ] **Phase 133: 同仓同 commit 基准与 v0.22 baseline** — 冻结评测身份、gold、分桶和分母，产出不含阈值的原始 baseline
+- [x] **Phase 133: 同仓同 commit 基准与 v0.22 baseline** — 冻结评测身份、gold、分桶和分母，产出不含阈值的原始 baseline（4/4，`human_needed`：真仓 OK 路径）
 - [ ] **Phase 134: TS/JS resolved 调用边** — 以 import alias、re-export 与 receiver 证据提升 TS/JS 调用边
 - [ ] **Phase 135: Python resolved 调用边** — 以 import/member/receiver 绑定提升 Python 调用边并独立验收
 - [ ] **Phase 136: Process 一等混合索引** — 从 canonical ProcessTrace 建立可重建、双 lane、同水位的 Process 投影
@@ -69,7 +69,7 @@
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 133-04-PLAN.md — 薄 command + 观测：水位闸 INVALID 短路、逐 case 真跑 v0.22 能力（冷/热计时）、无阈值 baseline + run manifest、caller/sampling 埋点（BENCH-01, BENCH-03）
+- [x] 133-04-PLAN.md — 薄 command + 观测：水位闸 INVALID 短路、逐 case 真跑 v0.22 能力（冷/热计时）、无阈值 baseline + run manifest、caller/sampling 埋点（BENCH-01, BENCH-03）
 
 ### Phase 134: TS/JS resolved 调用边
 
