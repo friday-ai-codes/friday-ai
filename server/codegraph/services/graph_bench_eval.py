@@ -41,10 +41,12 @@ __all__ = [
     "NO_GOLD",
     "NOT_APPLICABLE",
     "SEED_MISSING",
+    "CaseOutcome",
     "GoldCase",
     "GoldDataset",
     "RunIdentity",
     "build_run_identity",
+    "evaluate_case",
     "rank_process_candidates",
     "score_edge_pr",
     "score_impact_precision",
@@ -471,3 +473,136 @@ def score_trace(
         "node_not_in_graph_count": node_not_in_graph,
         "denominator": denominator,
     }
+
+
+# ---------------------------------------------------------------------------
+# BENCH-04：arrival set → CaseOutcome 折算
+# ---------------------------------------------------------------------------
+
+
+def _round_metric(value: float | str) -> float | str:
+    """float 按 ``_BASELINE_PRECISION`` 取整；str 空结果标记原样返回。"""
+    return round(value, _BASELINE_PRECISION) if isinstance(value, float) else value
+
+
+@dataclass
+class CaseOutcome:
+    """单条 case 的折算结果（进报告 JSON）。
+
+    质量指标字段（``symbol_recall`` … ``trace_error_path_rate``）允许为 float 或
+    str 空结果标记（``NO_GOLD``/``N/A``/``SEED_MISSING``）；``error`` 非空时这些
+    字段置空字符串（单 case 容错，不中断其它 case 折算）。``cold_ms``/``warm_ms``/
+    ``tokens`` 仅记录，不参与质量聚合。
+    """
+
+    case_id: str
+    split: str
+    language: str
+    framework: str
+    entry_type: str
+    protected: bool = False
+    symbol_recall: float | str = ""
+    process_recall: float | str = ""
+    edge_precision: float | str = ""
+    edge_recall: float | str = ""
+    impact_precision: float | str = ""
+    trace_success_rate: float | str = ""
+    trace_error_path_rate: float | str = ""
+    trace_node_not_in_graph_count: int = 0
+    cold_ms: int = 0
+    warm_ms: int = 0
+    tokens: int = 0
+    error: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "case_id": self.case_id,
+            "split": self.split,
+            "language": self.language,
+            "framework": self.framework,
+            "entry_type": self.entry_type,
+            "protected": self.protected,
+            "symbol_recall": _round_metric(self.symbol_recall),
+            "process_recall": _round_metric(self.process_recall),
+            "edge_precision": _round_metric(self.edge_precision),
+            "edge_recall": _round_metric(self.edge_recall),
+            "impact_precision": _round_metric(self.impact_precision),
+            "trace_success_rate": _round_metric(self.trace_success_rate),
+            "trace_error_path_rate": _round_metric(self.trace_error_path_rate),
+            "trace_node_not_in_graph_count": self.trace_node_not_in_graph_count,
+            "cold_ms": self.cold_ms,
+            "warm_ms": self.warm_ms,
+            "tokens": self.tokens,
+            "error": self.error,
+        }
+
+
+def evaluate_case(
+    *,
+    gold: GoldCase,
+    predicted_symbol_uids: list[str],
+    candidate_processes: list[dict[str, Any]],
+    predicted_edges: list[dict[str, Any]],
+    impact_result: dict[str, Any],
+    trace_results: list[dict[str, Any]],
+    cold_ms: int = 0,
+    warm_ms: int = 0,
+    tokens: int = 0,
+    error: str = "",
+) -> CaseOutcome:
+    """把某 case 的 arrival set（被测能力输出）折算成 :class:`CaseOutcome`。
+
+    各指标调用上文 scorer：symbol 用 ``predicted_symbol_uids[:5]``；process 用
+    ``rank_process_candidates(...)[:3]``；edge 用 ``score_edge_pr``；impact 用
+    ``gold.impact_golds`` 首个的 ``expected_affected_uids`` 与 ``impact_result`` 的
+    受影响 uid 列表（``seed_in_graph`` 缺省 True）；trace 用 ``score_trace``。
+
+    ``error`` 非空时各质量指标置空字符串但仍返回正常 :class:`CaseOutcome`（沿袭
+    recall eval 的单 case 容错：一条 case 出错不中断其它 case 折算）。
+    """
+    dims = {
+        "case_id": gold.case_id,
+        "split": gold.split,
+        "language": gold.language,
+        "framework": gold.framework,
+        "entry_type": gold.entry_type,
+        "protected": gold.protected,
+        "cold_ms": cold_ms,
+        "warm_ms": warm_ms,
+        "tokens": tokens,
+        "error": error,
+    }
+    if error:
+        return CaseOutcome(**dims)  # type: ignore[arg-type]
+
+    symbol_recall = score_symbol_recall(
+        [str(s.get("uid") or "") for s in gold.expected_symbols],
+        list(predicted_symbol_uids)[:5],
+    )
+    process_recall = score_process_recall(
+        [str(p.get("process_key") or "") for p in gold.expected_processes],
+        rank_process_candidates(list(predicted_symbol_uids), candidate_processes)[:3],
+    )
+    edge = score_edge_pr(gold.edge_golds, predicted_edges)
+
+    impact_expected: list[str] = []
+    if gold.impact_golds:
+        impact_expected = list(gold.impact_golds[0].get("expected_affected_uids") or [])
+    impact_precision = score_impact_precision(
+        impact_expected,
+        list(impact_result.get("affected_uids") or []),
+        seed_in_graph=bool(impact_result.get("seed_in_graph", True)),
+    )
+
+    trace = score_trace(gold.trace_golds, trace_results)
+    return CaseOutcome(
+        **dims,  # type: ignore[arg-type]
+        symbol_recall=symbol_recall,
+        process_recall=process_recall,
+        edge_precision=edge["precision"],
+        edge_recall=edge["recall"],
+        impact_precision=impact_precision,
+        trace_success_rate=trace["success_rate"],
+        trace_error_path_rate=trace["error_path_rate"],
+        trace_node_not_in_graph_count=trace["node_not_in_graph_count"],
+    )
