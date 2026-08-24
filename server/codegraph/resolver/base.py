@@ -12,7 +12,7 @@ per work item（interface-first，零依赖）：先把跨语言共享的解析�
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 
@@ -38,11 +38,17 @@ class ImportResolver(Protocol):
 
 @dataclass
 class ResolveResult:
-    """单条 ``CallEdge`` 的解析产出 —— 回填 287 留 NULL 的 callee 侧字段。"""
+    """单条调用解析产出；前三字段保持旧回填契约兼容。"""
 
     callee_symbol_id: str | None
     callee_file: str | None
     is_cross_file: bool
+    status: str = "unresolved"
+    language: str = "unknown"
+    call_shape: str = "direct"
+    strategy: str = "none"
+    candidates: list[dict[str, str]] = field(default_factory=list)
+    evidence: list[dict[str, str]] = field(default_factory=list)
 
 
 __all__ = ["ImportResolver", "ResolveResult"]

@@ -86,6 +86,75 @@ def _pick(candidates: list[IndexedSymbol]) -> IndexedSymbol:
     return min(candidates, key=lambda symbol: priority.get(symbol.symbol_type, 99))
 
 
+def _best_candidates(candidates: list[IndexedSymbol]) -> list[IndexedSymbol]:
+    """只保留最高优先级候选；同级多项必须交给调用方标 ambiguous。"""
+    if not candidates:
+        return []
+    priority = {"FUNCTION": 0, "CLASS": 0, "METHOD": 1, "VARIABLE": 2}
+    best = min(priority.get(symbol.symbol_type, 99) for symbol in candidates)
+    return [symbol for symbol in candidates if priority.get(symbol.symbol_type, 99) == best]
+
+
+def _language_name(caller_file: str) -> str:
+    if caller_file.endswith((".js", ".jsx")):
+        return "javascript"
+    if caller_file.endswith((".ts", ".tsx", ".vue")):
+        return "typescript"
+    return _lang_of(caller_file) or "unknown"
+
+
+def _candidate_dict(symbol: IndexedSymbol) -> dict[str, str]:
+    return {
+        "symbol_id": symbol.id,
+        "file_path": symbol.file_path,
+        "name": symbol.name,
+        "symbol_type": symbol.symbol_type,
+    }
+
+
+def _resolved(
+    symbol: IndexedSymbol,
+    *,
+    caller_file: str,
+    language: str,
+    call_shape: str,
+    strategy: str,
+    evidence: list[dict[str, str]],
+) -> ResolveResult:
+    return ResolveResult(
+        symbol.id,
+        symbol.file_path,
+        symbol.file_path != caller_file,
+        status="resolved",
+        language=language,
+        call_shape=call_shape,
+        strategy=strategy,
+        candidates=[_candidate_dict(symbol)],
+        evidence=evidence,
+    )
+
+
+def _not_resolved(
+    candidates: list[IndexedSymbol],
+    *,
+    language: str,
+    call_shape: str,
+    strategy: str,
+    evidence: list[dict[str, str]] | None = None,
+) -> ResolveResult:
+    return ResolveResult(
+        None,
+        None,
+        False,
+        status="ambiguous" if candidates else "unresolved",
+        language=language,
+        call_shape=call_shape,
+        strategy=strategy,
+        candidates=[_candidate_dict(candidate) for candidate in candidates],
+        evidence=evidence or [],
+    )
+
+
 class SymbolResolver:
     """跨文件静态符号解析编排器，供 288/289/290/291 复用。"""
 
@@ -103,11 +172,27 @@ class SymbolResolver:
         """解析单条 ``CallEdge``，产出可回填的 callee 三元组。"""
         caller_file = edge.caller_file
         callee_name = edge.callee_name
+        language_name = _language_name(caller_file)
+        call_shape = "member" if edge.call_type in {"METHOD", "ATTRIBUTE"} else "direct"
 
         local_hits = self._idx.exact(caller_file, callee_name)
         if local_hits:
-            symbol = _pick(local_hits)
-            return ResolveResult(symbol.id, caller_file, is_cross_file=False)
+            best = _best_candidates(local_hits)
+            if len(best) == 1:
+                return _resolved(
+                    best[0],
+                    caller_file=caller_file,
+                    language=language_name,
+                    call_shape=call_shape,
+                    strategy="same_file_exact",
+                    evidence=[{"kind": "same_file", "file_path": caller_file}],
+                )
+            return _not_resolved(
+                best,
+                language=language_name,
+                call_shape=call_shape,
+                strategy="same_file_exact",
+            )
 
         language = _lang_of(caller_file)
         resolver = self._resolvers.get(language) if language is not None else None
@@ -130,12 +215,47 @@ class SymbolResolver:
 
                 target_hits = self._idx.exact(target_file, original_name)
                 if target_hits:
-                    symbol = _pick(target_hits)
-                    return ResolveResult(
-                        symbol.id,
-                        target_file,
-                        is_cross_file=target_file != caller_file,
+                    best = _best_candidates(target_hits)
+                    if len(best) != 1:
+                        return _not_resolved(
+                            best,
+                            language=language_name,
+                            call_shape="import_alias",
+                            strategy="import_exact",
+                        )
+                    return _resolved(
+                        best[0],
+                        caller_file=caller_file,
+                        language=language_name,
+                        call_shape="import_alias",
+                        strategy="import_exact",
+                        evidence=[
+                            {
+                                "kind": "import",
+                                "source_file": caller_file,
+                                "target_file": target_file,
+                                "target_module": import_edge.target_module,
+                            }
+                        ],
                     )
+
+                if language == "frontend":
+                    chained = self._resolve_frontend_reexport(
+                        target_file,
+                        original_name,
+                        resolver,
+                        caller_file=caller_file,
+                        initial_evidence=[
+                            {
+                                "kind": "import",
+                                "source_file": caller_file,
+                                "target_file": target_file,
+                                "target_module": import_edge.target_module,
+                            }
+                        ],
+                    )
+                    if chained is not None:
+                        return chained
 
         # Go selector 解析（work item）：`pkg.Func()` 的 callee_name 是裸函数名、包限定符
         # 在 287→checkpoint 捕获的 callee_qualifier 里。用 qualifier 匹配 import 本地名（alias 或
@@ -161,11 +281,24 @@ class SymbolResolver:
                 ]
                 if candidates:
                     symbol = _pick(candidates)
-                    return ResolveResult(
-                        symbol.id,
-                        symbol.file_path,
-                        is_cross_file=symbol.file_path != caller_file,
+                    return _resolved(
+                        symbol,
+                        caller_file=caller_file,
+                        language=language_name,
+                        call_shape="receiver",
+                        strategy="go_import_qualifier",
+                        evidence=[{"kind": "import_qualifier", "qualifier": edge.callee_qualifier}],
                     )
+
+        if language == "frontend" and edge.callee_qualifier and resolver is not None:
+            receiver = self._resolve_frontend_receiver(
+                edge,
+                resolver,
+                caller_file=caller_file,
+                language=language_name,
+            )
+            if receiver is not None:
+                return receiver
 
         # 路径③组件引用解析（work item）：JSX / TEMPLATE_REF 边的 callee_name 是组件名，
         # 经 import 找到组件文件后连组件 Symbol。仅当 path② 未命中（名字未对齐，如重命名
@@ -199,14 +332,138 @@ class SymbolResolver:
                     ]
                 if hits:
                     symbol = _pick(hits)
-                    return ResolveResult(
-                        symbol.id,
-                        target_file,
-                        is_cross_file=target_file != caller_file,
+                    return _resolved(
+                        symbol,
+                        caller_file=caller_file,
+                        language=language_name,
+                        call_shape="component",
+                        strategy="component_import",
+                        evidence=[{"kind": "component_import", "target_file": target_file}],
                     )
 
         # 路径④：解析不到留空，绝不靠 fuzzy 同名兜底乱连。
-        return ResolveResult(None, None, False)
+        return _not_resolved(
+            [],
+            language=language_name,
+            call_shape=call_shape,
+            strategy="no_static_evidence",
+        )
+
+    def _resolve_frontend_reexport(
+        self,
+        start_file: str,
+        symbol_name: str,
+        resolver: ImportResolver,
+        *,
+        caller_file: str,
+        initial_evidence: list[dict[str, str]],
+    ) -> ResolveResult | None:
+        """沿 ImportEdge 做有界、循环安全的 TS/JS re-export 解析。"""
+        frontier: list[tuple[str, str, list[dict[str, str]]]] = [
+            (start_file, symbol_name, initial_evidence)
+        ]
+        visited: set[tuple[str, str]] = set()
+        found: list[tuple[IndexedSymbol, list[dict[str, str]]]] = []
+        while frontier and len(visited) < 32:
+            current_file, current_name, evidence = frontier.pop(0)
+            key = (current_file, current_name)
+            if key in visited:
+                continue
+            visited.add(key)
+            for import_edge in self._imports.get(current_file, []):
+                original_name = _match_imported_name(
+                    current_name, import_edge.imported_names
+                )
+                if original_name is None:
+                    continue
+                target_file = resolver.resolve_module(
+                    import_edge.target_module,
+                    import_edge.is_relative,
+                    current_file,
+                )
+                if target_file is None:
+                    continue
+                next_evidence = [
+                    *evidence,
+                    {
+                        "kind": "re_export",
+                        "source_file": current_file,
+                        "target_file": target_file,
+                        "target_module": import_edge.target_module,
+                    },
+                ]
+                hits = _best_candidates(self._idx.exact(target_file, original_name))
+                found.extend((hit, next_evidence) for hit in hits)
+                if not hits:
+                    frontier.append((target_file, original_name, next_evidence))
+
+        unique = {symbol.id: (symbol, evidence) for symbol, evidence in found}
+        if len(unique) == 1:
+            symbol, evidence = next(iter(unique.values()))
+            return _resolved(
+                symbol,
+                caller_file=caller_file,
+                language=_language_name(caller_file),
+                call_shape="re_export",
+                strategy="frontend_reexport_chain",
+                evidence=evidence,
+            )
+        if len(unique) > 1:
+            return _not_resolved(
+                [symbol for symbol, _ in unique.values()],
+                language=_language_name(caller_file),
+                call_shape="re_export",
+                strategy="frontend_reexport_chain",
+            )
+        return None
+
+    def _resolve_frontend_receiver(
+        self,
+        edge: CallEdge,
+        resolver: ImportResolver,
+        *,
+        caller_file: str,
+        language: str,
+    ) -> ResolveResult | None:
+        """解析 ``import * as ns`` 形成的静态 receiver binding。"""
+        qualifier = str(edge.callee_qualifier or "")
+        for import_edge in self._imports.get(caller_file, []):
+            if f"* as {qualifier}" not in list(import_edge.imported_names or []):
+                continue
+            target_file = resolver.resolve_module(
+                import_edge.target_module,
+                import_edge.is_relative,
+                caller_file,
+            )
+            if target_file is None:
+                continue
+            candidates = _best_candidates(
+                self._idx.exact(target_file, edge.callee_name)
+            )
+            evidence = [
+                {
+                    "kind": "namespace_import",
+                    "qualifier": qualifier,
+                    "target_file": target_file,
+                }
+            ]
+            if len(candidates) == 1:
+                return _resolved(
+                    candidates[0],
+                    caller_file=caller_file,
+                    language=language,
+                    call_shape="receiver",
+                    strategy="frontend_namespace_binding",
+                    evidence=evidence,
+                )
+            return _not_resolved(
+                candidates,
+                language=language,
+                call_shape="receiver",
+                strategy="frontend_namespace_binding",
+                evidence=evidence,
+            )
+        return None
 
     def backfill(self, repository_id: str) -> dict[str, int]:
         """批量回填该仓尚未解析的 ``CallEdge``。
