@@ -17,8 +17,8 @@ from codegraph.services.graph_bench_eval import (
     BUCKET_OK,
     INSUFFICIENT_DATA,
     MIN_BUCKET_SAMPLES,
-    NODE_NOT_IN_GRAPH,
     NO_GOLD,
+    NODE_NOT_IN_GRAPH,
     NOT_APPLICABLE,
     SEED_MISSING,
     CaseOutcome,
@@ -376,6 +376,10 @@ class TestBucketStatus:
     def test_insufficient_below_min(self) -> None:
         assert bucket_status(0) == INSUFFICIENT_DATA
         assert bucket_status(MIN_BUCKET_SAMPLES - 1) == INSUFFICIENT_DATA
+
+    def test_run_specific_minimum(self) -> None:
+        assert bucket_status(2, min_samples=2) == BUCKET_OK
+        assert bucket_status(2, min_samples=3) == INSUFFICIENT_DATA
 
 
 class TestBucketMetrics:

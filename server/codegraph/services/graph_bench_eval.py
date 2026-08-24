@@ -642,12 +642,14 @@ def _macro(values: list[float | str]) -> float | str:
     return round(sum(nums) / len(nums), _BASELINE_PRECISION)
 
 
-def bucket_status(n: int) -> str:
+def bucket_status(n: int, min_samples: int = MIN_BUCKET_SAMPLES) -> str:
     """分桶状态：``n >= MIN_BUCKET_SAMPLES`` → ``OK``，否则 ``INSUFFICIENT_DATA``。"""
-    return BUCKET_OK if n >= MIN_BUCKET_SAMPLES else INSUFFICIENT_DATA
+    return BUCKET_OK if n >= max(min_samples, 1) else INSUFFICIENT_DATA
 
 
-def bucket_metrics(cases: list[CaseOutcome]) -> list[dict[str, Any]]:
+def bucket_metrics(
+    cases: list[CaseOutcome], min_samples: int = MIN_BUCKET_SAMPLES
+) -> list[dict[str, Any]]:
     """按 ``(language, framework, entry_type)`` 分桶并算各质量指标的 macro 平均。
 
     每桶记录 ``key``/``n``/``status``/``has_protected``/``metrics``。``status`` 由
@@ -669,7 +671,7 @@ def bucket_metrics(cases: list[CaseOutcome]) -> list[dict[str, Any]]:
                     "entry_type": entry_type,
                 },
                 "n": len(members),
-                "status": bucket_status(len(members)),
+                "status": bucket_status(len(members), min_samples),
                 "has_protected": any(m.protected for m in members),
                 "metrics": {
                     metric: _macro([getattr(m, metric) for m in members])
@@ -680,7 +682,9 @@ def bucket_metrics(cases: list[CaseOutcome]) -> list[dict[str, Any]]:
     return buckets
 
 
-def aggregate_report(cases: list[CaseOutcome]) -> dict[str, Any]:
+def aggregate_report(
+    cases: list[CaseOutcome], min_samples: int = MIN_BUCKET_SAMPLES
+) -> dict[str, Any]:
     """聚合逐桶结果为 overall + 稀疏桶 / 受保护桶单列。
 
     ``overall`` 只聚合 ``status==OK`` 且**非受保护**的桶（macro：按 case 平均，非
@@ -688,7 +692,7 @@ def aggregate_report(cases: list[CaseOutcome]) -> dict[str, Any]:
     数据不足不参与结论；受保护桶的退化不得被 overall 的提升抵消（PITFALLS
     Pitfall 3）。
     """
-    buckets = bucket_metrics(cases)
+    buckets = bucket_metrics(cases, min_samples)
     ok_keys = {
         (b["key"]["language"], b["key"]["framework"], b["key"]["entry_type"])
         for b in buckets
@@ -715,6 +719,7 @@ def build_report(
     watermark: str,
     split: str,
     cases: list[CaseOutcome],
+    min_samples: int = MIN_BUCKET_SAMPLES,
 ) -> dict[str, Any]:
     """装配最终**无阈值**原始报告（BENCH-03）。
 
@@ -722,7 +727,7 @@ def build_report(
     overall、受保护桶 / 稀疏桶单列，并附空结果规则图例。本报告**不引入任何回归
     门/目标值/容差/比对字段**——阈值决策权属 Phase 140 独立评审。
     """
-    aggregated = aggregate_report(cases)
+    aggregated = aggregate_report(cases, min_samples)
     return {
         "identity": identity.to_dict(),
         "watermark": watermark,

@@ -16,8 +16,8 @@ v0.22 能力（get_graph/resolve/impact/trace/检索 lane）冷/热计时 → �
   ``INVALID``，写 manifest 含 ``invalid_reason``、非零退出，⛔ 此路径**绝不调用**
   ``get_graph`` 或任何被测能力、绝不跑任何 case。可选第四参 ``process_built_at_sha``
   （ProcessTrace 投影）漂移同样 INVALID。
-- **只读（BENCH-03）**：全程只调只读入口 + ORM 读，⛔ 不写生产索引、不触发回填/重建
-  （验收 grep 强制无 ``GraphWriter``/``trigger_reindex``/``backfill_symbol_resolution``）。
+- **只读（BENCH-03）**：全程只调只读入口 + ORM 读，⛔ 不写生产索引、不触发任何
+  索引回填或重建路径。
 - **holdout 拒读**：``--split holdout`` 直接 ``CommandError``——holdout 保留给 Phase 140
   最终验收，baseline 阶段不读。
 - **无阈值**：baseline JSON 只含原始值与空结果标记，⛔ 不含任何回归门/目标值/容差/比对
@@ -394,7 +394,11 @@ class Command(BaseCommand):
             raise
 
         report = build_report(
-            identity=identity, watermark="OK", split=split, cases=outcomes
+            identity=identity,
+            watermark="OK",
+            split=split,
+            cases=outcomes,
+            min_samples=int(options["min_bucket_samples"]),
         )
         duration_ms = int((time.monotonic() - started) * 1000)
         payload = {
