@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.24.0
 milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
 status: executing
-stopped_at: Completed 140-01-PLAN.md
-last_updated: "2026-08-24T17:07:16.646Z"
-last_activity: 2026-08-25 -- Phase 140 Plan 01 completed
+stopped_at: Completed 140-02-PLAN.md
+last_updated: "2026-08-24T17:36:35.006Z"
+last_activity: 2026-08-25 -- Phase 140 Plan 02 completed
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 16
-  completed_plans: 13
-  percent: 81
+  completed_plans: 14
+  percent: 88
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归
 ## Current Position
 
 Phase: 140 (Threshold policy 与整体收口) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
-Last activity: 2026-08-25 -- Phase 140 Plan 01 completed
+Last activity: 2026-08-25 -- Phase 140 Plan 02 completed
 
-Progress: [████████░░] 81%
+Progress: [█████████░] 88%
 
 ## Milestone Overview (v0.24.0 — Phases 133–140 — 🚧 PLANNED)
 
@@ -414,6 +414,7 @@ Progress: [████████░░] 81%
 | Phase 133-commit-v0-22-baseline P02 | 5min | 2 tasks | 5 files |
 | Phase 133-commit-v0-22-baseline P03 | 13min | 3 tasks | 2 files |
 | Phase 140 P01 | 35min | 2 tasks | 8 files |
+| Phase 140 P02 | 36min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -771,6 +772,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 140]: comparison identity 只保存同条件字段，system identity 单列允许 baseline/candidate Friday revision 不同。 — 防止把预期变化的系统版本错误纳入同条件约束。
 - [Phase 140]: Python from-import gold 对齐 resolver 的 import_alias，并将 gold_version 递增到 2。 — 冻结前对齐 ResolveResult 实际 taxonomy，避免静默折叠。
 - [Phase 140]: 无稳定 token 归因时输出 unavailable/INSUFFICIENT_DATA，不使用整数 0 作为通过证据。 — 避免缺失计量被误判为零成本或通过。
+- [Phase 140]: 真实 v0.22 baseline 不存在时不创建正式 threshold policy，外部数值验证保持 human_needed。
+- [Phase 140]: 四态 comparator 严格按 INVALID > FAIL > INSUFFICIENT_DATA > PASS 判定，并要求 primary quality metric 严格改善。
 
 ### Pending Todos
 
@@ -1207,8 +1210,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-24T17:07:16.632Z
-Stopped at: Completed 140-01-PLAN.md
+Last session: 2026-08-24T17:36:34.992Z
+Stopped at: Completed 140-02-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）

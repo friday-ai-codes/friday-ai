@@ -425,7 +425,7 @@
 | 137. 统一 GraphQueryService | v0.24.0 | QUERY-01~05/08/09/10 | 1/1 | Complete | 2026-08-24 |
 | 138. 消歧与 bounded impact | v0.24.0 | QUERY-06/07, OBS-05 | 1/1 | Complete | 2026-08-24 |
 | 139. 五消费面契约收敛 | v0.24.0 | CONTRACT-01~05, OBS-03 | 1/1 | Complete | 2026-08-24 |
-| 140. Threshold policy 与整体收口 | v0.24.0 | BENCH-06/07, EDGE-06, OBS-01/02 | 1/4 | In Progress|  |
+| 140. Threshold policy 与整体收口 | v0.24.0 | BENCH-06/07, EDGE-06, OBS-01/02 | 2/4 | In Progress|  |
 
 **Coverage (v0.24.0):** 39/39 需求全部映射且每条恰好一次，无孤儿、无重复。阈值严格后置到 Phase 140。
 

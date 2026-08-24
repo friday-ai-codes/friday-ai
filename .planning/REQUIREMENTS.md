@@ -13,7 +13,7 @@
 - [x] **BENCH-03**: 未修改的 v0.22 能力先在冻结数据集上产出逐 case、逐桶原始 baseline，baseline 阶段不得填写或推断回归目标值
 - [x] **BENCH-04**: 报告同时输出 NL→Symbol Recall@5、NL→Process Recall@3、resolved edge precision/recall、impact precision、trace 成功率/错误路径率、冷/热延迟与 token，并锁定各指标分母和空结果规则
 - [x] **BENCH-05**: 所有质量指标按语言、框架、入口类型分桶；稀疏桶标 `INSUFFICIENT_DATA`，受保护桶退化不得被 overall 提升抵消
-- [ ] **BENCH-06**: baseline 采集完成后，以独立、可审查的 threshold policy 锁定回归门；测试失败不得自动刷新 baseline 或阈值
+- [x] **BENCH-06**: baseline 采集完成后，以独立、可审查的 threshold policy 锁定回归门；测试失败不得自动刷新 baseline 或阈值
 - [x] **BENCH-07**: v0.24 candidate 与 v0.22 baseline 使用同一仓、同一 commit、同一 query/gold 和同一 evaluator 运行，并保留可复现命令、配置、排序版本与逐例 diff
 
 ### Resolved 调用边
@@ -97,7 +97,7 @@
 | BENCH-03 | Phase 133 | Complete |
 | BENCH-04 | Phase 133 | Complete |
 | BENCH-05 | Phase 133 | Complete |
-| BENCH-06 | Phase 140 | Pending |
+| BENCH-06 | Phase 140 | Complete |
 | BENCH-07 | Phase 140 | Complete |
 | EDGE-01 | Phase 134 | Complete |
 | EDGE-02 | Phase 134 | Complete |
