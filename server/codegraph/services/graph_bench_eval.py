@@ -9,8 +9,15 @@ gold 标注 sha、源码 checkout sha）不一致即把 run 标为 ``INVALID``�
 
 本模块**只做算术、零 I/O**：不触碰 ORM / 向量库 / 网络，不读文件。
 三方水位 sha 由调用方（Plan 04 的 management command）按 ``(repository_id, branch)``
-解析后注入；gold 输入为已 ``json.load`` 的 dict。指标折算/分桶/聚合由 Plan 03
-追加到同一文件。
+解析后注入；gold 输入为已 ``json.load`` 的 dict。
+
+**指标口径（BENCH-04/05，Plan 03 追加）。** 每个质量指标锁定固定分母与空结果规则：
+空 gold 记 ``NO_GOLD``（不计入平均，**非满分**）、无预测记 ``N/A``、impact
+``seed_in_graph=False`` 记 ``SEED_MISSING``、trace ``node_not_in_graph`` 单列不进
+成功率分母。分桶按 ``language × framework × entry_type``，样本不足标
+``INSUFFICIENT_DATA`` 且不进 overall；聚合用 macro（按 case 平均），受保护桶单列
+不被 overall 抵消。本模块只产原始分布，**不含任何回归门/目标值/容差/比对逻辑**
+（阈值决策权属 Phase 140，BENCH-03）。
 
 **防循环论证（BENCH-02 硬约束）。** resolved edge gold 来自独立 callsite 标注而
 非被测 codegraph 反向导出；因此 ``edge_golds`` 的 ``callee_uid`` 非空时必须附
@@ -23,14 +30,27 @@ from dataclasses import dataclass, field
 from typing import Any
 
 __all__ = [
+    "BUCKET_OK",
     "CALL_SHAPES",
     "ENTRY_TYPES",
     "FRAMEWORKS",
+    "INSUFFICIENT_DATA",
     "LANGUAGES",
+    "MIN_BUCKET_SAMPLES",
+    "NODE_NOT_IN_GRAPH",
+    "NO_GOLD",
+    "NOT_APPLICABLE",
+    "SEED_MISSING",
     "GoldCase",
     "GoldDataset",
     "RunIdentity",
     "build_run_identity",
+    "rank_process_candidates",
+    "score_edge_pr",
+    "score_impact_precision",
+    "score_process_recall",
+    "score_symbol_recall",
+    "score_trace",
     "validate_gold_case",
     "validate_gold_dataset",
     "validate_watermark",
@@ -278,3 +298,176 @@ def validate_gold_dataset(manifest: dict[str, Any], cases: list[dict[str, Any]])
         splits=dict(splits),
         cases=validated,
     )
+
+
+# ---------------------------------------------------------------------------
+# BENCH-04：逐 case 指标 scorer 与空结果规则
+# ---------------------------------------------------------------------------
+
+# 空结果标记（报告中显式单列，绝不静默并入分母或记满分）。
+# 统一原则（沿袭 PITFALLS B0）：空 gold ≠ 满分；无预测 ≠ 满分；``found=False`` ≠ 空
+# 数组；``seed_in_graph=False`` 与「无影响」必须分开。
+NO_GOLD = "NO_GOLD"  # gold 为空 → 该 case 此指标不计入平均（非满分）
+NOT_APPLICABLE = "N/A"  # 无预测 → 不计入平均（非满分）
+SEED_MISSING = "SEED_MISSING"  # impact seed_in_graph=False → 单列，不计 precision
+NODE_NOT_IN_GRAPH = "node_not_in_graph"  # trace 端点不在图 → 单列，不计成功率分母
+INSUFFICIENT_DATA = "INSUFFICIENT_DATA"  # 分桶样本不足 → 不进 overall
+BUCKET_OK = "OK"  # 分桶样本充足
+
+# 稀疏桶样本下限（研究中 Assumption A2，可配置）：n 小于此值的桶标
+# ``INSUFFICIENT_DATA``，单列展示且不进 overall（防大桶主导掩盖小桶退化）。
+MIN_BUCKET_SAMPLES = 3
+
+# 报告与聚合保留的小数位。逐 case / 逐桶 / overall 统一按同精度取整，避免不同层
+# 的舍入口径不一致（本阶段无回归门，仅为展示一致性）。
+_BASELINE_PRECISION = 4
+
+
+def score_symbol_recall(
+    expected_uids: list[str], predicted_top_k_uids: list[str]
+) -> float | str:
+    """NL→Symbol Recall@k：``|expected ∩ predicted| / len(expected)``。
+
+    空结果规则：``expected`` 为空 → ``NO_GOLD``（分母 0，不计入平均，**不记满分**）；
+    ``predicted`` 空且 gold 非空 → ``0.0``。命中按 uid 集合精确匹配。
+    """
+    if not expected_uids:
+        return NO_GOLD
+    got = set(predicted_top_k_uids)
+    return sum(1 for e in expected_uids if e in got) / len(expected_uids)
+
+
+def rank_process_candidates(
+    retrieved_uids: list[str], candidate_processes: list[dict[str, Any]]
+) -> list[str]:
+    """把检索结果映射到 Process 候选并按确定性规则排序，返回 ``process_key`` 列表。
+
+    排序键：``(与 retrieved 交集数降序, process_key 升序决胜)``——交集数相同按
+    ``process_key`` 字典序保证跨 run 可复现。每个 candidate 含 ``process_key`` 与
+    ``step_symbol_uids``。这是 baseline 的**测量映射**（把检索结果映射到 Process
+    候选以记分），不是生产 Process 检索器（属 Phase 136）。
+    """
+    retrieved = set(retrieved_uids)
+
+    def _overlap(candidate: dict[str, Any]) -> int:
+        steps = candidate.get("step_symbol_uids") or []
+        return len(retrieved & set(steps))
+
+    ordered = sorted(
+        candidate_processes,
+        key=lambda c: (-_overlap(c), str(c.get("process_key") or "")),
+    )
+    return [str(c.get("process_key") or "") for c in ordered]
+
+
+def score_process_recall(
+    expected_keys: list[str], predicted_top3_keys: list[str]
+) -> float | str:
+    """NL→Process Recall@3：``|expected ∩ predicted| / len(expected)``。
+
+    命中**仅以 ``process_key`` 精确匹配**计（禁名称模糊命中——名称相近但 key 不同
+    不算命中）。空结果规则同 symbol recall：gold 空 → ``NO_GOLD``。
+    """
+    if not expected_keys:
+        return NO_GOLD
+    got = set(predicted_top3_keys)
+    return sum(1 for e in expected_keys if e in got) / len(expected_keys)
+
+
+def score_edge_pr(
+    edge_golds: list[dict[str, Any]], predicted_edges: list[dict[str, Any]]
+) -> dict[str, float | str]:
+    """resolved edge precision/recall，以 ``(caller_uid, callee_uid)`` 二元组判命中。
+
+    分母锁定：precision 分母 = 预测边数；recall 分母 = gold 边数。
+    空结果规则：无预测边 → ``precision=NOT_APPLICABLE``（非满分）；gold 空 →
+    ``recall=NO_GOLD``。返回 ``{"precision": ..., "recall": ...}``。
+    """
+    gold_pairs = {(g.get("caller_uid"), g.get("callee_uid")) for g in edge_golds}
+    pred_pairs = {(p.get("caller_uid"), p.get("callee_uid")) for p in predicted_edges}
+    hits = len(pred_pairs & gold_pairs)
+    precision: float | str = NOT_APPLICABLE if not pred_pairs else hits / len(pred_pairs)
+    recall: float | str = NO_GOLD if not gold_pairs else hits / len(gold_pairs)
+    return {"precision": precision, "recall": recall}
+
+
+def score_impact_precision(
+    expected_affected: list[str],
+    predicted_affected: list[str],
+    *,
+    seed_in_graph: bool,
+) -> float | str:
+    """impact precision：``|expected ∩ predicted| / len(predicted)``（分母 = 预测受影响数）。
+
+    空结果规则（顺序敏感）：``seed_in_graph=False`` → ``SEED_MISSING``（单列，不计
+    precision）；``predicted`` 空 → ``NOT_APPLICABLE``；``expected`` 空 → ``NO_GOLD``。
+    """
+    if not seed_in_graph:
+        return SEED_MISSING
+    if not predicted_affected:
+        return NOT_APPLICABLE
+    if not expected_affected:
+        return NO_GOLD
+    got = set(predicted_affected)
+    return sum(1 for e in expected_affected if e in got) / len(predicted_affected)
+
+
+def _trace_path_matches(gold: dict[str, Any], result: dict[str, Any]) -> bool:
+    """判定 trace 命中的路径是否与 gold 一致（供区分「成功」与「错误路径」）。
+
+    gold 可附 ``expected_path``（uid 列表）做精确比对；缺省则退化为端点比对——
+    若 result 提供 ``path``，须以 gold 的 ``source_uid``/``target_uid`` 为首尾；
+    两者皆无路径细节可比时，``found`` 即视为一致（无从判错）。
+    """
+    expected_path = gold.get("expected_path")
+    path = result.get("path")
+    if expected_path is not None:
+        return list(path or []) == list(expected_path)
+    if path:
+        return path[0] == gold.get("source_uid") and path[-1] == gold.get("target_uid")
+    return True
+
+
+def score_trace(
+    trace_golds: list[dict[str, Any]], trace_results: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """trace 三态折算：``found`` / ``no_path`` / ``node_not_in_graph``。
+
+    遍历每条 gold 查询对应的结果（按下标配对）：
+
+    - ``found=True`` 且路径与 gold 一致 → 成功；
+    - ``found=True`` 但路径不一致 → 错误路径（计入 ``error_path_rate``）；
+    - ``reason=="no_path"`` → 失败路径（计入分母，既非成功也非错误路径）；
+    - ``reason=="node_not_in_graph"`` → 计入 ``node_not_in_graph_count``，**不进分母**。
+
+    分母 = 在图查询数（排除 ``node_not_in_graph``）。无可量测查询（分母 0）时
+    ``success_rate``/``error_path_rate`` 记 ``NO_GOLD``。
+    """
+    success = 0
+    error_path = 0
+    node_not_in_graph = 0
+    denominator = 0
+    for gold, result in zip(trace_golds, trace_results, strict=False):
+        if result.get("reason") == NODE_NOT_IN_GRAPH:
+            node_not_in_graph += 1
+            continue
+        denominator += 1
+        if result.get("found"):
+            if _trace_path_matches(gold, result):
+                success += 1
+            else:
+                error_path += 1
+        # found=False 且 reason=no_path → 失败路径：仅进分母，不计成功/错误。
+
+    if denominator == 0:
+        success_rate: float | str = NO_GOLD
+        error_path_rate: float | str = NO_GOLD
+    else:
+        success_rate = success / denominator
+        error_path_rate = error_path / denominator
+    return {
+        "success_rate": success_rate,
+        "error_path_rate": error_path_rate,
+        "node_not_in_graph_count": node_not_in_graph,
+        "denominator": denominator,
+    }
