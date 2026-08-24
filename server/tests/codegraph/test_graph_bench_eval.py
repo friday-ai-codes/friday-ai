@@ -23,6 +23,11 @@ from codegraph.services.graph_bench_eval import (
     SEED_MISSING,
     CaseOutcome,
     GoldCase,
+    aggregate_report,
+    bucket_metrics,
+    bucket_status,
+    build_report,
+    build_run_identity,
     evaluate_case,
     rank_process_candidates,
     score_edge_pr,
@@ -329,3 +334,180 @@ class TestEvaluateCase:
         # float 按精度取整；str 标记原样
         assert d["symbol_recall"] == 1.0
         assert isinstance(outcome, CaseOutcome)
+
+
+def _outcome(
+    case_id: str,
+    language: str,
+    framework: str,
+    entry_type: str,
+    *,
+    protected: bool = False,
+    symbol_recall: float | str = 1.0,
+    process_recall: float | str = 1.0,
+    edge_precision: float | str = 1.0,
+    edge_recall: float | str = 1.0,
+    impact_precision: float | str = 1.0,
+    trace_success_rate: float | str = 1.0,
+    trace_error_path_rate: float | str = 0.0,
+) -> CaseOutcome:
+    return CaseOutcome(
+        case_id=case_id,
+        split="dev",
+        language=language,
+        framework=framework,
+        entry_type=entry_type,
+        protected=protected,
+        symbol_recall=symbol_recall,
+        process_recall=process_recall,
+        edge_precision=edge_precision,
+        edge_recall=edge_recall,
+        impact_precision=impact_precision,
+        trace_success_rate=trace_success_rate,
+        trace_error_path_rate=trace_error_path_rate,
+    )
+
+
+class TestBucketStatus:
+    def test_ok_at_or_above_min(self) -> None:
+        assert bucket_status(MIN_BUCKET_SAMPLES) == BUCKET_OK
+        assert bucket_status(MIN_BUCKET_SAMPLES + 5) == BUCKET_OK
+
+    def test_insufficient_below_min(self) -> None:
+        assert bucket_status(0) == INSUFFICIENT_DATA
+        assert bucket_status(MIN_BUCKET_SAMPLES - 1) == INSUFFICIENT_DATA
+
+
+class TestBucketMetrics:
+    def test_groups_by_language_framework_entry(self) -> None:
+        cases = [
+            _outcome("c1", "python", "django", "http_endpoint", symbol_recall=1.0),
+            _outcome("c2", "python", "django", "http_endpoint", symbol_recall=0.0),
+            _outcome("c3", "go", "gin", "process_entry", symbol_recall=0.5),
+        ]
+        buckets = bucket_metrics(cases)
+        keys = {(b["key"]["language"], b["key"]["framework"], b["key"]["entry_type"]) for b in buckets}
+        assert ("python", "django", "http_endpoint") in keys
+        assert ("go", "gin", "process_entry") in keys
+
+    def test_macro_average_skips_markers(self) -> None:
+        cases = [
+            _outcome("c1", "python", "django", "http_endpoint", symbol_recall=1.0),
+            _outcome("c2", "python", "django", "http_endpoint", symbol_recall=NO_GOLD),
+            _outcome("c3", "python", "django", "http_endpoint", symbol_recall=0.0),
+        ]
+        buckets = bucket_metrics(cases)
+        assert len(buckets) == 1
+        b = buckets[0]
+        assert b["n"] == 3
+        assert b["status"] == BUCKET_OK
+        # macro：仅对数值 case 平均 → (1.0 + 0.0) / 2
+        assert b["metrics"]["symbol_recall"] == 0.5
+
+    def test_sparse_bucket_marked_insufficient(self) -> None:
+        cases = [_outcome("c1", "go", "gin", "process_entry")]
+        buckets = bucket_metrics(cases)
+        assert buckets[0]["status"] == INSUFFICIENT_DATA
+
+    def test_has_protected_flag(self) -> None:
+        cases = [
+            _outcome("c1", "python", "django", "http_endpoint", protected=True),
+            _outcome("c2", "python", "django", "http_endpoint"),
+            _outcome("c3", "python", "django", "http_endpoint"),
+        ]
+        buckets = bucket_metrics(cases)
+        assert buckets[0]["has_protected"] is True
+
+
+class TestAggregateReport:
+    def test_overall_excludes_insufficient_and_protected(self) -> None:
+        cases = [
+            # OK 非保护桶（python/django）：3 个数值 case
+            _outcome("c1", "python", "django", "http_endpoint", symbol_recall=1.0),
+            _outcome("c2", "python", "django", "http_endpoint", symbol_recall=0.5),
+            _outcome("c3", "python", "django", "http_endpoint", symbol_recall=0.0),
+            # 稀疏桶（go/gin）：仅 1 个，标 INSUFFICIENT_DATA，不进 overall
+            _outcome("c4", "go", "gin", "process_entry", symbol_recall=1.0),
+        ]
+        report = aggregate_report(cases)
+        # overall 只聚合 OK 桶的 3 个 case：(1.0+0.5+0.0)/3
+        assert report["overall"]["symbol_recall"] == 0.5
+        assert report["total_cases"] == 4
+        assert len(report["insufficient_buckets"]) == 1
+        assert report["insufficient_buckets"][0]["key"]["language"] == "go"
+
+    def test_protected_bucket_listed_separately_not_in_overall(self) -> None:
+        cases = [
+            _outcome("c1", "python", "django", "http_endpoint", symbol_recall=1.0),
+            _outcome("c2", "python", "django", "http_endpoint", symbol_recall=1.0),
+            _outcome("c3", "python", "django", "http_endpoint", symbol_recall=1.0),
+            # 受保护桶（ts/vue）：退化但不被 overall 抵消
+            _outcome("c4", "typescript", "vue", "plain_symbol", protected=True, symbol_recall=0.0),
+            _outcome("c5", "typescript", "vue", "plain_symbol", protected=True, symbol_recall=0.0),
+            _outcome("c6", "typescript", "vue", "plain_symbol", protected=True, symbol_recall=0.0),
+        ]
+        report = aggregate_report(cases)
+        # overall 只含 python/django 桶 → 1.0，不被 ts/vue 的 0.0 拉低
+        assert report["overall"]["symbol_recall"] == 1.0
+        protected = report["protected_buckets"]
+        assert len(protected) == 1
+        assert protected[0]["key"]["language"] == "typescript"
+        assert protected[0]["metrics"]["symbol_recall"] == 0.0
+
+    def test_empty_cases(self) -> None:
+        report = aggregate_report([])
+        assert report["total_cases"] == 0
+        assert report["per_bucket"] == []
+
+
+class TestBuildReport:
+    def _report(self) -> dict:
+        cases = [
+            _outcome("c1", "python", "django", "http_endpoint", symbol_recall=1.0),
+            _outcome("c2", "python", "django", "http_endpoint", symbol_recall=0.0),
+            _outcome("c3", "python", "django", "http_endpoint", symbol_recall=0.5),
+        ]
+        identity = build_run_identity(
+            repository="friday-ai",
+            branch="main",
+            commit_sha="abc123",
+            index_key="abc123",
+            gold_version="1",
+        )
+        return build_report(identity=identity, watermark="OK", split="dev", cases=cases)
+
+    def test_report_shape_and_identity_echo(self) -> None:
+        report = self._report()
+        assert report["identity"]["repository"] == "friday-ai"
+        assert report["identity"]["commit_sha"] == "abc123"
+        assert report["watermark"] == "OK"
+        assert report["split"] == "dev"
+        for key in (
+            "per_case",
+            "per_bucket",
+            "overall",
+            "protected_buckets",
+            "insufficient_buckets",
+            "legend",
+        ):
+            assert key in report
+        assert len(report["per_case"]) == 3
+
+    def test_legend_explains_empty_markers(self) -> None:
+        legend = self._report()["legend"]
+        for marker in (NO_GOLD, NOT_APPLICABLE, SEED_MISSING, NODE_NOT_IN_GRAPH, INSUFFICIENT_DATA):
+            assert marker in legend
+
+    def test_report_has_no_regression_gate_fields(self) -> None:
+        forbidden = {"tolerance", "threshold", "compare_to_baseline", "target_value"}
+
+        def _walk(node: object) -> None:
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    assert k not in forbidden
+                    _walk(v)
+            elif isinstance(node, list):
+                for item in node:
+                    _walk(item)
+
+        _walk(self._report())
