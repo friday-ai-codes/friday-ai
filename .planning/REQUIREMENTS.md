@@ -57,8 +57,8 @@
 
 ### 安全与可观测性
 
-- [ ] **OBS-01**: graph query 生命周期产生 `started`/`completed`/`failed` 结构化事件，含 `duration_ms`、`category=caller`、`component`、触发用户与关联键，且不记录 query 正文或凭证
-- [ ] **OBS-02**: resolver、Process 构建、检索 lane 与 impact 的高频步骤使用 `sampling` 分类并按语言/call shape 记录计数和分层耗时，禁止 INFO 循环刷屏
+- [x] **OBS-01**: graph query 生命周期产生 `started`/`completed`/`failed` 结构化事件，含 `duration_ms`、`category=caller`、`component`、触发用户与关联键，且不记录 query 正文或凭证
+- [x] **OBS-02**: resolver、Process 构建、检索 lane 与 impact 的高频步骤使用 `sampling` 分类并按语言/call shape 记录计数和分层耗时，禁止 INFO 循环刷屏
 - [x] **OBS-03**: MCP 与 AI 对话两条 graph query 链均 best-effort 写入脱敏的 `RetrievalTrace`，用 request/run/conversation id 关联；观测失败不得改变业务响应
 - [x] **OBS-04**: resolver 与 Process 重建后台任务显式携带 `initiated_by_user_id` 并在 worker 入口重新 bind；无触发用户时标 `system`
 - [x] **OBS-05**: 所有检索、图扩展、源码证据与消费面复用 repository 权限和 exclusion fail-closed；异常文本与 ledger 内容分别经规定的脱敏入口处理
@@ -126,8 +126,8 @@
 | CONTRACT-03 | Phase 139 | Complete |
 | CONTRACT-04 | Phase 139 | Complete |
 | CONTRACT-05 | Phase 139 | Complete |
-| OBS-01 | Phase 140 | Pending |
-| OBS-02 | Phase 140 | Pending |
+| OBS-01 | Phase 140 | Complete |
+| OBS-02 | Phase 140 | Complete |
 | OBS-03 | Phase 139 | Complete |
 | OBS-04 | Phase 136 | Complete |
 | OBS-05 | Phase 138 | Complete |
