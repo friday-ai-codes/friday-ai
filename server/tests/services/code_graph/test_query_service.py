@@ -4,18 +4,23 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import networkx as nx
 import pytest
 
 from services.code_graph.query_service import GraphQueryService
 
 
 class _GraphService:
-    def __init__(self) -> None:
+    def __init__(self, graph=None) -> None:
         self.calls = 0
+        self.graph = graph or nx.MultiDiGraph()
 
     async def get_graph(self, *_args, **_kwargs):
         self.calls += 1
-        return SimpleNamespace(meta=SimpleNamespace(built_signature="sig-1"))
+        return SimpleNamespace(
+            meta=SimpleNamespace(built_signature="sig-1"),
+            graph=self.graph,
+        )
 
 
 def _facts(*, community_sha: str = "sha-1") -> dict:
@@ -199,3 +204,118 @@ async def test_process_lane_failure_is_schema_preserving_partial(monkeypatch) ->
         "items": [],
     }
     assert result["capabilities"]["process_enrichment"]["status"] == "degraded"
+
+
+@pytest.mark.asyncio
+async def test_impact_requires_unique_anchor_for_multiple_candidates(monkeypatch) -> None:
+    graph_service = _GraphService()
+    _install(monkeypatch, graph_service)
+
+    result = await GraphQueryService().query(
+        "订单",
+        repository_id="repo",
+        branch_name="main",
+        include_impact=True,
+    )
+
+    assert result["impact"]["status"] == "needs_disambiguation"
+    assert [row["symbol_id"] for row in result["impact"]["candidates"]] == [
+        "s1",
+        "s2",
+    ]
+    assert result["impact"]["summary"] is None
+
+
+@pytest.mark.asyncio
+async def test_unique_anchor_returns_bounded_impact_with_location(monkeypatch) -> None:
+    graph = nx.MultiDiGraph()
+    graph.add_node(
+        "s1",
+        name="create_order",
+        file_path="orders/api.py",
+        start_line=10,
+        symbol_type="FUNCTION",
+    )
+    graph.add_node(
+        "caller",
+        name="submit_order",
+        file_path="orders/service.py",
+        start_line=30,
+        symbol_type="FUNCTION",
+    )
+    graph.add_edge(
+        "caller",
+        "s1",
+        kind="call",
+        confidence="resolved",
+        line_number=33,
+    )
+    graph_service = _GraphService(graph)
+    _install(monkeypatch, graph_service)
+
+    result = await GraphQueryService().query(
+        "创建订单",
+        repository_id="repo",
+        branch_name="main",
+        include_impact=True,
+        anchor_symbol_id="s1",
+        impact_limit=1,
+    )
+
+    assert result["impact"]["status"] == "completed"
+    assert result["impact"]["anchor"] == {
+        "symbol_id": "s1",
+        "name": "create_order",
+        "file_path": "orders/api.py",
+        "start_line": 10,
+    }
+    assert result["impact"]["summary"]["total_found"] == 1
+    assert result["impact"]["summary"]["returned"] == 1
+    assert result["impact"]["groups"][1][0]["file_path"] == "orders/service.py"
+    assert result["capabilities"]["impact"]["status"] == "used"
+
+
+@pytest.mark.asyncio
+async def test_empty_impact_is_not_interpreted_as_safe(monkeypatch) -> None:
+    graph = nx.MultiDiGraph()
+    graph.add_node(
+        "s1",
+        name="create_order",
+        file_path="orders/api.py",
+        start_line=10,
+        symbol_type="FUNCTION",
+    )
+    graph_service = _GraphService(graph)
+    _install(monkeypatch, graph_service)
+
+    result = await GraphQueryService().query(
+        "创建订单",
+        repository_id="repo",
+        branch_name="main",
+        include_impact=True,
+        anchor_symbol_id="s1",
+    )
+
+    assert result["impact"]["status"] == "completed"
+    assert result["impact"]["summary"]["total_found"] == 0
+    assert result["impact"]["warning"] == "no_observed_impact_not_safe"
+    assert "no_observed_impact_not_safe" in result["warnings"]
+
+
+@pytest.mark.asyncio
+async def test_missing_or_excluded_anchor_degrades_without_analysis(monkeypatch) -> None:
+    graph_service = _GraphService()
+    _install(monkeypatch, graph_service)
+
+    result = await GraphQueryService().query(
+        "创建订单",
+        repository_id="repo",
+        branch_name="main",
+        include_impact=True,
+        anchor_symbol_id="excluded-symbol",
+    )
+
+    assert result["partial"] is True
+    assert result["impact"]["status"] == "unavailable"
+    assert result["impact"]["warning"] == "anchor_stale_missing_or_excluded"
+    assert result["capabilities"]["impact"]["status"] == "degraded"
