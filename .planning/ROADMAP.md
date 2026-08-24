@@ -36,7 +36,7 @@
 ### 🚧 v0.24.0 单仓图查询对齐 GitNexus（Phases 133–140）
 
 - [x] **Phase 133: 同仓同 commit 基准与 v0.22 baseline** — 冻结评测身份、gold、分桶和分母，产出不含阈值的原始 baseline（4/4，`human_needed`：真仓 OK 路径）
-- [ ] **Phase 134: TS/JS resolved 调用边** — 以 import alias、re-export 与 receiver 证据提升 TS/JS 调用边
+- [x] **Phase 134: TS/JS resolved 调用边** — 以 import alias、re-export 与 receiver 证据提升 TS/JS 调用边（2/2，passed）
 - [ ] **Phase 135: Python resolved 调用边** — 以 import/member/receiver 绑定提升 Python 调用边并独立验收
 - [ ] **Phase 136: Process 一等混合索引** — 从 canonical ProcessTrace 建立可重建、双 lane、同水位的 Process 投影
 - [ ] **Phase 137: 统一 GraphQueryService** — 单次自然语言查询确定性融合 Symbol、Community 与 Process 证据
@@ -83,7 +83,10 @@
   3. receiver 类型或绑定唯一时成员调用可解析；无法唯一确定时保留 `ambiguous`/`unresolved`，不会任选同名 Symbol。
   4. `(repository, branch)` 批量回填支持 dry-run 对比；写入后水位或 resolver 版本变化会使 Community、Process 与检索投影失效，批任务仅输出分桶汇总与采样日志而不在 INFO 循环刷屏。
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+- [x] 134-01-PLAN.md — 可审计三态契约 + alias/re-export/namespace receiver
+- [x] 134-02-PLAN.md — `(repository, branch)` dry-run 回填 + 派生投影失效
 
 ### Phase 135: Python resolved 调用边
 

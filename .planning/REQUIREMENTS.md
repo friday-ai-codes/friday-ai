@@ -18,13 +18,13 @@
 
 ### Resolved 调用边
 
-- [ ] **EDGE-01**: 调用解析统一返回 resolved、ambiguous 或 unresolved 结果及语言、call shape、strategy、候选与证据，不允许用全仓同名 fuzzy 静默补边
-- [ ] **EDGE-02**: TS/JS resolver 能基于 import alias 与 re-export 链解析直接调用目标，并在 branch 作用域内保留可审计证据
-- [ ] **EDGE-03**: TS/JS resolver 能利用 receiver 类型/绑定解析成员调用，无法唯一确定时保留 ambiguous/unresolved 而非任选同名 Symbol
+- [x] **EDGE-01**: 调用解析统一返回 resolved、ambiguous 或 unresolved 结果及语言、call shape、strategy、候选与证据，不允许用全仓同名 fuzzy 静默补边
+- [x] **EDGE-02**: TS/JS resolver 能基于 import alias 与 re-export 链解析直接调用目标，并在 branch 作用域内保留可审计证据
+- [x] **EDGE-03**: TS/JS resolver 能利用 receiver 类型/绑定解析成员调用，无法唯一确定时保留 ambiguous/unresolved 而非任选同名 Symbol
 - [ ] **EDGE-04**: Python resolver 能解析 module import、from import alias 与 imported member 调用，并区分模块成员和局部同名符号
 - [ ] **EDGE-05**: Python resolver 能利用 receiver/class binding 解析成员调用，无法确定 MRO/动态目标时如实降级
 - [ ] **EDGE-06**: resolver 质量按 language × framework × call shape 分别统计 precision、recall、resolved、ambiguous、unresolved，TS/JS 与 Python 各自通过回归门；Go 深化不阻塞本里程碑
-- [ ] **EDGE-07**: resolver 回填按 `(repository, branch)` 批量执行，写入前支持 dry-run 对比；版本或水位变化会失效下游 Community、Process 与检索投影
+- [x] **EDGE-07**: resolver 回填按 `(repository, branch)` 批量执行，写入前支持 dry-run 对比；版本或水位变化会失效下游 Community、Process 与检索投影
 
 ### Process 一等检索对象
 
@@ -99,13 +99,13 @@
 | BENCH-05 | Phase 133 | Complete |
 | BENCH-06 | Phase 140 | Pending |
 | BENCH-07 | Phase 140 | Pending |
-| EDGE-01 | Phase 134 | Pending |
-| EDGE-02 | Phase 134 | Pending |
-| EDGE-03 | Phase 134 | Pending |
+| EDGE-01 | Phase 134 | Complete |
+| EDGE-02 | Phase 134 | Complete |
+| EDGE-03 | Phase 134 | Complete |
 | EDGE-04 | Phase 135 | Pending |
 | EDGE-05 | Phase 135 | Pending |
 | EDGE-06 | Phase 140 | Pending |
-| EDGE-07 | Phase 134 | Pending |
+| EDGE-07 | Phase 134 | Complete |
 | PROC-01 | Phase 136 | Pending |
 | PROC-02 | Phase 136 | Pending |
 | PROC-03 | Phase 136 | Pending |
