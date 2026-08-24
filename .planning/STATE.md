@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v0.24.0
 milestone_name: 单仓图查询对齐 GitNexus
 status: planning
-last_updated: "2026-08-24T07:38:53.854Z"
+last_updated: "2026-08-24T08:10:00.000Z"
 last_activity: 2026-08-24
 progress:
-  total_phases: 0
+  total_phases: 8
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,17 +17,38 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 归档）。v0.23.0 归档见 `milestones/v0.23.0-*`；v0.22.0 归档见 `milestones/v0.22.0-*`。
+See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归档见 `milestones/v0.23.0-*`；v0.22.0 归档见 `milestones/v0.22.0-*`。
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。
-**Current focus:** Planning next milestone — `$gsd-new-milestone`
+**Core value:** 已知仓库后，业务/技术自然语言通过统一入口获得正确、可核验、可解释的 Symbol、Community、Process 与影响面证据，并在同仓同 commit 基准上证明优于 v0.22.0。
+**Current focus:** Phase 133 — 同仓同 commit 基准与 v0.22 baseline
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 133 of 140（里程碑第 1/8 相位）
 Plan: —
-Status: Defining requirements
-Last activity: 2026-08-24 — Milestone v0.24.0 started
+Status: Ready to plan
+Last activity: 2026-08-24 — v0.24.0 roadmap created，39/39 requirements mapped
+
+Progress: [░░░░░░░░░░] 0%
+
+## Milestone Overview (v0.24.0 — Phases 133–140 — 🚧 PLANNED)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 133 | 同仓同 commit 基准与 v0.22 baseline | BENCH-01~05 | Ready to plan |
+| 134 | TS/JS resolved 调用边 | EDGE-01/02/03/07 | Not started |
+| 135 | Python resolved 调用边 | EDGE-04/05 | Not started |
+| 136 | Process 一等混合索引 | PROC-01~05, OBS-04 | Not started |
+| 137 | 统一 GraphQueryService | QUERY-01~05/08/09/10 | Not started |
+| 138 | 消歧与 bounded impact | QUERY-06/07, OBS-05 | Not started |
+| 139 | 五消费面契约收敛 | CONTRACT-01~05, OBS-03 | Not started |
+| 140 | Threshold policy 与整体收口 | BENCH-06/07, EDGE-06, OBS-01/02 | Not started |
+
+**Execution order:** 133 → 134 → 135 → 136 → 137 → 138 → 139 → 140。Phase 133 先冻结同仓同 commit 数据与未修改 v0.22 baseline，禁止设阈值；Phase 140 才依据 baseline 锁 threshold policy。
+
+**Coverage:** 39/39 requirements mapped exactly once；0 unmapped；0 duplicate。Go 深化、IMPACT-03 真跨仓与 LSP 默认翻转仅 Future，不作为里程碑必达。
+
+**横切约束:** 权限/exclusion fail-closed；日志/ledger 脱敏；graph query 用 `caller` 生命周期事件，高频 resolver/Process/retrieval/impact 用 `sampling`；MCP 与 AI 对话写 `RetrievalTrace`；后台任务显式传播并 re-bind `initiated_by_user_id`；观测 best-effort 不反噬业务。
 
 ## Milestone Overview (v0.23.0 — Phases 128–132 — ✅ ARCHIVED 2026-08-14，审计 tech_debt，未打 tag)
 
@@ -391,6 +412,7 @@ Last activity: 2026-08-24 — Milestone v0.24.0 started
 
 Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail in `.planning/milestones/v0.2.0-ROADMAP.md`.
 
+- [Milestone v0.24.0, 2026-08-24]: 路线图严格按 research-first 顺序执行：同仓同 commit v0.22 baseline（无阈值）→ TS/JS resolver → Python resolver → Process 一等索引 → GraphQueryService → bounded impact → 五消费面契约 → baseline 后 threshold policy 与整体收口。39 条 requirement 每条只映射一次；Go 深化、真跨仓 IMPACT-03、LSP 默认翻转留 Future。
 - [Milestone v0.19.0, 2026-07-29]: **Phase 108（DEPTH-01~05）整体移交 v0.20.0 技术方案蓝图里程碑**——由 blueprint/v1 结构化 schema 原生满足；v0.19.0 执行顺序改为 105→106→107→109→110；109 依赖改为「以现行 §7 execution_plan 对接执行流」。并行边界纪律：本里程碑冻结不做 `process_runtime` 旧 prompt/schema 文件（decompose_segments/research_adapter/architect_merge_adapter/merged_plan/clarify_adapter/render）的 DEPTH 向改动；`ConvergenceSessionEvent` 事件契约由本里程碑（105-07 快照 + 110 时间线）定义，v0.20.0 只新增 `blueprint_*` 类型。详见 main 分支 `.planning/technical-blueprint/DESIGN.md` §11/§13。
 
 - [Phase 101]: 101-03: chat→delivery 反查 seam 走 `ArtifactVersion.content__chat_coding_plan_id` JSON 键（现状无写入方 → 存量零行为变化；禁止重新引入 chat→delivery eager 投影）
@@ -1164,9 +1186,10 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-14T07:05:57.438Z
-Stopped at: Phase 132 VERIFICATION passed（--no-transition）
+Last session: 2026-08-24T08:10:00.000Z
+Stopped at: v0.24.0 roadmap created；Phase 133 ready to plan
 Resume file: None
+Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。
@@ -1201,7 +1224,7 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan Phase 133 with `/gsd-plan-phase 133`
 
 ## Deferred Verification
 

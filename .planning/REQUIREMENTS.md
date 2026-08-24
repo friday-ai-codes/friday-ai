@@ -90,13 +90,56 @@
 
 ## Traceability
 
-路线图创建后填充；每条 v0.24.0 requirement 必须且只能映射到一个 Phase。
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| BENCH-01 | Phase 133 | Pending |
+| BENCH-02 | Phase 133 | Pending |
+| BENCH-03 | Phase 133 | Pending |
+| BENCH-04 | Phase 133 | Pending |
+| BENCH-05 | Phase 133 | Pending |
+| BENCH-06 | Phase 140 | Pending |
+| BENCH-07 | Phase 140 | Pending |
+| EDGE-01 | Phase 134 | Pending |
+| EDGE-02 | Phase 134 | Pending |
+| EDGE-03 | Phase 134 | Pending |
+| EDGE-04 | Phase 135 | Pending |
+| EDGE-05 | Phase 135 | Pending |
+| EDGE-06 | Phase 140 | Pending |
+| EDGE-07 | Phase 134 | Pending |
+| PROC-01 | Phase 136 | Pending |
+| PROC-02 | Phase 136 | Pending |
+| PROC-03 | Phase 136 | Pending |
+| PROC-04 | Phase 136 | Pending |
+| PROC-05 | Phase 136 | Pending |
+| QUERY-01 | Phase 137 | Pending |
+| QUERY-02 | Phase 137 | Pending |
+| QUERY-03 | Phase 137 | Pending |
+| QUERY-04 | Phase 137 | Pending |
+| QUERY-05 | Phase 137 | Pending |
+| QUERY-06 | Phase 138 | Pending |
+| QUERY-07 | Phase 138 | Pending |
+| QUERY-08 | Phase 137 | Pending |
+| QUERY-09 | Phase 137 | Pending |
+| QUERY-10 | Phase 137 | Pending |
+| CONTRACT-01 | Phase 139 | Pending |
+| CONTRACT-02 | Phase 139 | Pending |
+| CONTRACT-03 | Phase 139 | Pending |
+| CONTRACT-04 | Phase 139 | Pending |
+| CONTRACT-05 | Phase 139 | Pending |
+| OBS-01 | Phase 140 | Pending |
+| OBS-02 | Phase 140 | Pending |
+| OBS-03 | Phase 139 | Pending |
+| OBS-04 | Phase 136 | Pending |
+| OBS-05 | Phase 138 | Pending |
 
 **Coverage:**
 - v0.24.0 requirements: 39 total
-- Mapped to phases: 0
-- Unmapped: 39
+- Mapped to phases: 39
+- Unmapped: 0
+- Duplicate mappings: 0
+- Coverage: 100%
+- Future Requirements mapped as milestone must-deliver: 0
 
 ---
 *Requirements defined: 2026-08-24*
-*Last updated: 2026-08-24 after research-first scoping*
+*Last updated: 2026-08-24 after roadmap traceability mapping*
