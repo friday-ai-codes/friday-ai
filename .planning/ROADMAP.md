@@ -60,7 +60,7 @@
 
 **Wave 1**
 
-- [ ] 133-01-PLAN.md — 纯函数地基：run identity 五元组 + 三方水位校验（INVALID fail-closed）+ gold schema 校验（BENCH-01, BENCH-02）
+- [x] 133-01-PLAN.md — 纯函数地基：run identity 五元组 + 三方水位校验（INVALID fail-closed）+ gold schema 校验（BENCH-01, BENCH-02）
 - [ ] 133-02-PLAN.md — 冻结 gold 数据集：manifest + dev/locked_test/holdout 三切分 + 防反导 README（BENCH-02）
 
 **Wave 2** *(blocked on Wave 1 completion)*

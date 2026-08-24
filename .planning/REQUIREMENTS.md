@@ -8,8 +8,8 @@
 
 ### Benchmark 与回归门
 
-- [ ] **BENCH-01**: 评测运行固定 repository、branch 与 commit SHA，且 Symbol、Process、调用边、`file:line`、impact 与 gold 均来自同一 commit；水位不一致的 run 必须标记为 INVALID
-- [ ] **BENCH-02**: benchmark 使用独立标注的 query/gold 数据，按 dev、locked test、holdout 切分；resolved edge gold 来自独立 callsite 抽样，不从被测图反导
+- [x] **BENCH-01**: 评测运行固定 repository、branch 与 commit SHA，且 Symbol、Process、调用边、`file:line`、impact 与 gold 均来自同一 commit；水位不一致的 run 必须标记为 INVALID
+- [x] **BENCH-02**: benchmark 使用独立标注的 query/gold 数据，按 dev、locked test、holdout 切分；resolved edge gold 来自独立 callsite 抽样，不从被测图反导
 - [ ] **BENCH-03**: 未修改的 v0.22 能力先在冻结数据集上产出逐 case、逐桶原始 baseline，baseline 阶段不得填写或推断回归目标值
 - [ ] **BENCH-04**: 报告同时输出 NL→Symbol Recall@5、NL→Process Recall@3、resolved edge precision/recall、impact precision、trace 成功率/错误路径率、冷/热延迟与 token，并锁定各指标分母和空结果规则
 - [ ] **BENCH-05**: 所有质量指标按语言、框架、入口类型分桶；稀疏桶标 `INSUFFICIENT_DATA`，受保护桶退化不得被 overall 提升抵消
@@ -92,8 +92,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BENCH-01 | Phase 133 | Pending |
-| BENCH-02 | Phase 133 | Pending |
+| BENCH-01 | Phase 133 | Complete |
+| BENCH-02 | Phase 133 | Complete |
 | BENCH-03 | Phase 133 | Pending |
 | BENCH-04 | Phase 133 | Pending |
 | BENCH-05 | Phase 133 | Pending |
@@ -133,6 +133,7 @@
 | OBS-05 | Phase 138 | Pending |
 
 **Coverage:**
+
 - v0.24.0 requirements: 39 total
 - Mapped to phases: 39
 - Unmapped: 0
