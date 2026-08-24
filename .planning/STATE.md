@@ -1,19 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.24.0
-milestone_name: 单仓图查询对齐 GitNexus
-current_phase: 133
-current_phase_name: 同仓同 commit 基准与 v0.22 baseline
+milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
 status: executing
-stopped_at: Completed 133-02-PLAN.md
-last_updated: "2026-08-24T09:48:14.178Z"
-last_activity: 2026-08-24
-last_activity_desc: Phase 133 execution started
+stopped_at: Completed 133-03-PLAN.md
+last_updated: "2026-08-24T10:06:41.017Z"
+last_activity: 2026-08-24 -- Phase 133 execution started
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -29,7 +26,7 @@ See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归
 ## Current Position
 
 Phase: 133 (同仓同 commit 基准与 v0.22 baseline) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-08-24 -- Phase 133 execution started
 
@@ -415,6 +412,7 @@ Progress: [█████░░░░░] 50%
 |------|----------|-------|-------|
 | Phase 133 P01 | 6min | 2 tasks | 3 files |
 | Phase 133-commit-v0-22-baseline P02 | 5min | 2 tasks | 5 files |
+| Phase 133-commit-v0-22-baseline P03 | 13min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -766,6 +764,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase ?]: edge_golds 的 callee_uid 非空时 evidence_file_line 必填（防反导锚点）
 - [Phase ?]: annotated_at_sha 用显式占位符（非编造 SHA），_doc/README 钉死运行前须对齐目标仓 last_indexed_commit_sha（BENCH-01 INVALID 前提）
 - [Phase ?]: dev/locked_test 分桶组合刻意不同（dev 出 python/none、locked_test 出 go/gin），供 Plan 03 分桶与 INSUFFICIENT_DATA 真实多桶输入
+- [Phase ?]: 133-03: 空结果标记显式单列不进分母（NO_GOLD/N/A/SEED_MISSING/node_not_in_graph），杜绝空记满分
+- [Phase ?]: 133-03: 质量聚合用 macro 且 overall 仅聚合 OK 非保护桶，稀疏/受保护桶单列防掩盖
+- [Phase ?]: 133-03: 报告零回归门字段，阈值决策权移交 Phase 140
 
 ### Pending Todos
 
@@ -1200,8 +1201,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-24T09:48:14.159Z
-Stopped at: Completed 133-02-PLAN.md
+Last session: 2026-08-24T10:06:28.171Z
+Stopped at: Completed 133-03-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
