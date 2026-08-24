@@ -41,8 +41,8 @@
 - [x] **QUERY-03**: Symbol 与 Process 两条检索 lane 确定性融合；同仓同 commit、同配置、同 query 重复运行的候选顺序一致，同分使用稳定 ID 决胜
 - [x] **QUERY-04**: 每个候选返回可离线重算的排序账本，含 lane、原始 rank、融合贡献、图/Community 增强贡献、最终分与排序版本
 - [x] **QUERY-05**: 同一 Symbol 属于多个 Process 时，各 Process 都保留自己的 step 归属和证据；matched count 与 returned count 分开报告，不因全局 UID 去重丢失归属
-- [ ] **QUERY-06**: 重名 Symbol 返回带路径、行号和 UID 的消歧候选；未唯一锚定时标 `needs_disambiguation`，不得生成确定性 impact 摘要
-- [ ] **QUERY-07**: 已消歧 anchor 返回基于既有 GraphService 的 bounded impact 摘要、置信度、总数/返回数、截断与 drill-down 提示；空结果不得解释为“安全”
+- [x] **QUERY-06**: 重名 Symbol 返回带路径、行号和 UID 的消歧候选；未唯一锚定时标 `needs_disambiguation`，不得生成确定性 impact 摘要
+- [x] **QUERY-07**: 已消歧 anchor 返回基于既有 GraphService 的 bounded impact 摘要、置信度、总数/返回数、截断与 drill-down 提示；空结果不得解释为“安全”
 - [x] **QUERY-08**: 响应预算收紧时按 schema-preserving 规则裁剪源码正文、低排 Symbol 与低排 Process，始终保留合法 schema、水位、warning、总数/返回数、`truncated` 原因和续查提示
 - [x] **QUERY-09**: 响应分别报告 BM25、embedding、Process enrichment、Community 与 impact 的 used/degraded/unavailable 状态；部分失败 best-effort 返回且 `partial=true`
 - [x] **QUERY-10**: 响应顶层与全部 evidence 使用同一 repository、branch/index key 与 commit SHA；发现混水位时拒绝拼接或显式降级，不产出不可核验证据
@@ -61,7 +61,7 @@
 - [ ] **OBS-02**: resolver、Process 构建、检索 lane 与 impact 的高频步骤使用 `sampling` 分类并按语言/call shape 记录计数和分层耗时，禁止 INFO 循环刷屏
 - [ ] **OBS-03**: MCP 与 AI 对话两条 graph query 链均 best-effort 写入脱敏的 `RetrievalTrace`，用 request/run/conversation id 关联；观测失败不得改变业务响应
 - [x] **OBS-04**: resolver 与 Process 重建后台任务显式携带 `initiated_by_user_id` 并在 worker 入口重新 bind；无触发用户时标 `system`
-- [ ] **OBS-05**: 所有检索、图扩展、源码证据与消费面复用 repository 权限和 exclusion fail-closed；异常文本与 ledger 内容分别经规定的脱敏入口处理
+- [x] **OBS-05**: 所有检索、图扩展、源码证据与消费面复用 repository 权限和 exclusion fail-closed；异常文本与 ledger 内容分别经规定的脱敏入口处理
 
 ## Future Requirements
 
@@ -116,8 +116,8 @@
 | QUERY-03 | Phase 137 | Complete |
 | QUERY-04 | Phase 137 | Complete |
 | QUERY-05 | Phase 137 | Complete |
-| QUERY-06 | Phase 138 | Pending |
-| QUERY-07 | Phase 138 | Pending |
+| QUERY-06 | Phase 138 | Complete |
+| QUERY-07 | Phase 138 | Complete |
 | QUERY-08 | Phase 137 | Complete |
 | QUERY-09 | Phase 137 | Complete |
 | QUERY-10 | Phase 137 | Complete |
@@ -130,7 +130,7 @@
 | OBS-02 | Phase 140 | Pending |
 | OBS-03 | Phase 139 | Pending |
 | OBS-04 | Phase 136 | Complete |
-| OBS-05 | Phase 138 | Pending |
+| OBS-05 | Phase 138 | Complete |
 
 **Coverage:**
 

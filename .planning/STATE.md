@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.24.0
 milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
 status: executing
-stopped_at: Completed Phase 137; ready to discuss Phase 138
-last_updated: "2026-08-24T11:30:00.000Z"
-last_activity: 2026-08-24 -- Phase 137 completed (1/1, passed)
+stopped_at: Completed Phase 138; ready to discuss Phase 139
+last_updated: "2026-08-24T11:45:00.000Z"
+last_activity: 2026-08-24 -- Phase 138 completed (1/1, passed)
 progress:
   total_phases: 8
-  completed_phases: 5
-  total_plans: 10
-  completed_plans: 10
-  percent: 63
+  completed_phases: 6
+  total_plans: 11
+  completed_plans: 11
+  percent: 75
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归档见 `milestones/v0.23.0-*`；v0.22.0 归档见 `milestones/v0.22.0-*`。
 
 **Core value:** 已知仓库后，业务/技术自然语言通过统一入口获得正确、可核验、可解释的 Symbol、Community、Process 与影响面证据，并在同仓同 commit 基准上证明优于 v0.22.0。
-**Current focus:** Phase 138 — 消歧与 bounded impact
+**Current focus:** Phase 139 — 五消费面契约收敛
 
 ## Current Position
 
-Phase: 138 (消歧与 bounded impact) — READY TO DISCUSS
+Phase: 139 (五消费面契约收敛) — READY TO DISCUSS
 Plan: TBD
-Status: Phase 137 completed; smart discuss pending
-Last activity: 2026-08-24 -- Phase 137 completed (1/1, passed)
+Status: Phase 138 completed; smart discuss pending
+Last activity: 2026-08-24 -- Phase 138 completed (1/1, passed)
 
-Progress: [██████░░░░] 63%
+Progress: [████████░░] 75%
 
 ## Milestone Overview (v0.24.0 — Phases 133–140 — 🚧 PLANNED)
 
@@ -41,7 +41,7 @@ Progress: [██████░░░░] 63%
 | 135 | Python resolved 调用边 | EDGE-04/05 | ✅ Complete (1/1, passed) |
 | 136 | Process 一等混合索引 | PROC-01~05, OBS-04 | ✅ Complete (2/2, human_needed) |
 | 137 | 统一 GraphQueryService | QUERY-01~05/08/09/10 | ✅ Complete (1/1, passed) |
-| 138 | 消歧与 bounded impact | QUERY-06/07, OBS-05 | Not started |
+| 138 | 消歧与 bounded impact | QUERY-06/07, OBS-05 | ✅ Complete (1/1, passed) |
 | 139 | 五消费面契约收敛 | CONTRACT-01~05, OBS-03 | Not started |
 | 140 | Threshold policy 与整体收口 | BENCH-06/07, EDGE-06, OBS-01/02 | Not started |
 
