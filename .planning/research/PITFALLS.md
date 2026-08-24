@@ -1,290 +1,385 @@
-# Domain Pitfalls
+# Pitfalls Research
 
-**Domain:** 给既有多仓代码智能系统（tree-sitter 符号图 SQL 存储 + Qdrant RAG + MCP 工具面 + 增量索引/分支 overlay）叠加图分析能力（内存图服务 / impact / trace / detect_changes / 社区检测 + LLM 模块摘要 / 执行流 / rename_preview / Semgrep taint 门禁 / LSP 默认开启）
-**Researched:** 2026-08-09
-**Confidence:** HIGH（核心结论均有代码事实或官方文档/论文佐证；个别经验性阈值为 MEDIUM）
+**Domain:** v0.24.0 单仓图查询评测与 MCP 契约对齐（NL→Symbol/Process、resolved edge、impact、trace、`file:line`、延迟/token）
+**Researched:** 2026-08-24
+**Confidence:** HIGH（指标定义与协议要求有官方资料及本仓实现佐证；阈值必须由本仓 baseline 实测后产生，本文不预设目标值）
 
-> 编号约定：本文的「Phase 建议」是功能相位名（roadmap 未定稿），映射到 v0.22.0 target features：**P-基座**=内存图服务、**P-impact**=impact/trace、**P-detect**=detect_changes、**P-社区**=社区检测+模块摘要、**P-执行流**=执行流追踪、**P-rename**=rename_preview、**P-semgrep**=Semgrep 门禁、**P-LSP**=解析精度提升。
+> 相位代号仅用于 roadmap 编排：**B0-基准协议与冻结基线**、**B1-调用边质量**、**B2-Process 一等检索**、**B3-统一图查询与证据**、**B4-MCP 契约收敛**、**B5-回归门与运行观测**。关键顺序是先 B0，再改算法；不得先调到“看起来更好”再补 baseline。
+
+## Benchmark Design Contract
+
+### 1. 每次评测必须冻结的运行清单
+
+每个 run 写出机器可读 manifest，至少包含：
+
+- `benchmark_version`、case fixture hash、标注规范版本；
+- `repository_id`、仓库 URL/路径、**完整 `commit_sha`**、索引水位 `indexed_commit_sha`；
+- extractor/LSP/embedding/reranker/LLM 的实现版本与配置 hash；
+- 图构建配置、候选预算、`top_k`、token 上限、截断策略；
+- 随机 seed、重复轮次、运行时间、硬件/worker 数、冷/热缓存状态；
+- 每个消费面及其构建产物版本：server commit、npm 包版本/tarball hash、task 镜像 digest；
+- per-case 原始结果、阶段耗时、输入/输出 token、错误码、截断原因，而不只存聚合分数。
+
+硬前置：`commit_sha == indexed_commit_sha == gold.commit_sha`。任一不等，本次 run 标为 **INVALID**，不得进入 baseline 或趋势。所有 `file:line` 必须从该 commit 的 blob 核验，不读当前工作树。
+
+### 2. Case 与标注规范
+
+一条 case 的最小形状：
+
+```json
+{
+  "case_id": "stable-id",
+  "commit_sha": "full-sha",
+  "query": "不泄漏答案的自然语言问题",
+  "query_source": "human|issue|trace|synthetic",
+  "task": "symbol|process|impact|trace",
+  "language": "typescript|javascript|python|go",
+  "framework": "vue|django|adrf|cobra|other",
+  "entry_type": "api|cli|event|init|workflow|unknown",
+  "gold": {},
+  "label_status": "double_annotated|adjudicated",
+  "split": "dev|locked_test|holdout"
+}
+```
+
+标注规则：
+
+1. 两名标注者独立标注，分歧由第三人裁决；保留初始标签与裁决理由，不能只留最终答案。
+2. Symbol 身份用 `(commit_sha, repo_relative_path, qualified_name, kind, declaration_range)`；Process 身份用 `(entry_symbol_id, terminal/outcome, ordered gold steps 或允许的等价路径集合)`。数据库自增 ID 不可作跨重建 gold。
+3. 一个 query 允许多个相关 Symbol/Process；标注 `required` 与 `acceptable`，主 Recall 只按事先锁定的 gold 集计算，不能见到系统输出后追加“也算对”。
+4. `file:line` 核验应确认：路径存在、行号在 blob 范围内、声明行确属目标 Symbol；trace 的相邻步骤还要核验对应 callsite/edge。仅“文件存在”不算通过。
+5. 正样本之外必须有负样本：仓内不存在的概念、同名歧义、不可达 source→target、被排除文件、错误 commit 的旧符号、合法但无 Process 的入口。负样本不混入 Recall 分母，单独评 no-answer/typed-error。
+6. 按 `language`、`framework`、`entry_type` 打标签；多语言文件或跨框架入口需指定主要桶并保留多值标签，避免事后随结果改桶。
+
+### 3. 指标与分母
+
+| 指标 | 单 case 定义 | 聚合与必要配套 |
+|------|--------------|----------------|
+| NL→Symbol Recall@5 | `|gold_symbol_ids ∩ top5_unique_symbol_ids| / |gold_symbol_ids|`；只纳入 gold 非空正样本 | 先对 case 宏平均；另报 Success@5、MRR/nDCG 作为排序诊断；重复/别名先 canonicalize |
+| NL→Process Recall@3 | `|gold_process_ids ∩ top3_unique_process_ids| / |gold_process_ids|`；只纳入 gold 非空正样本 | 先对 case 宏平均；等价 Process 必须在标注时锁定，不能按名称模糊算命中 |
+| resolved edge precision | 在**独立抽样并完整标注的 callsite 集**上，`正确预测的 (caller, callsite, callee) / 所有预测为 resolved 的边` | 无预测时 precision 记 `N/A`，不能记 1；按语言和调用构造分桶 |
+| resolved edge recall | `正确预测的 gold edge / 全部 gold 可解析 edge` | 分母含系统留作 unresolved 的 gold edge；只抽系统已 resolved 边会让 recall 虚高 |
+| impact precision | 对固定 seed、方向、relation 词表、max depth 和结果上限，`预测且在 gold impact 集 / 所有返回 impact 项` | 无返回记 `N/A`，另报 coverage；被截断后的 precision 必须带 `truncated=true`，不可与完整结果混算 |
+| trace 成功率 | 正样本中，返回至少一条**端点正确、每个相邻 edge 有效、每步 `file:line` 有效**路径的 case 数 / 可达正样本数 | 同时报路径 edge precision、location validity、超时率；只验证首尾不够 |
+| 错误路径正确率 | 负样本中返回预期稳定错误类（`source_not_found`、`target_not_found`、`ambiguous`、`no_path`、`stale_index` 等）的 case 数 / 负样本数 | 另报 false-path rate=`负样本却返回路径 / 负样本数`；禁止把所有失败折成空列表 |
+| 延迟 | 从统一入口收到请求到完整响应的墙钟时间；所有 case 均进分母 | 报 p50/p95、冷/热缓存、成功/错误各自分布；timeout 作为超时率，不能从延迟样本删掉 |
+| token | 实际送入/返回 LLM 的 input/output token；无 LLM 的阶段记 0 | 报每次调用与每个成功 case 分布；同时记录候选数、序列化字符数、预算与截断原因 |
+
+`file:line validity` 应作为独立指标和 trace/Process 的硬证据条件：`有效位置数 / 所有返回位置数`。如果响应声称 `as_of` 某 commit，却无法在该 commit 验证任一位置，该 case 即失败，而非仅扣一个展示分。
+
+### 4. 分桶与报告规则
+
+- 必报三组边际桶：语言、框架、入口；另报 roadmap 关心的交叉桶，如 `typescript×vue×event`、`python×django×api`。
+- overall 采用 per-case macro，仅作摘要；**任何受保护桶回退都不能被 overall 提升抵消**。
+- 每桶同时输出 `n`、分子、分母、点估计和置信区间。样本不足时标 `INSUFFICIENT_DATA`，不以 overall 替代，也不判绿。
+- TS 与 JS 至少在原始报告分开，是否合并展示只能是额外视图；Python、Go 同理独立。
+- 正/负、真实/合成、人标/弱标、冷/热缓存不得混成一个分数。
+- 对 retrieval 管线同时保存 `retrieved → reranked → returned` 三层 gold 到达情况，定位是候选召回丢失、排序丢失还是输出截断丢失。
+
+### 5. Baseline 后锁阈值
+
+1. 在 B0 固定 case、commit、索引配置和 harness。
+2. 从未修改的 v0.22.0 代码/构建产物运行 baseline；确定性层至少复跑以验证字节稳定，含 LLM/embedding 抖动的层做多轮配对运行。
+3. 保存逐 case 与逐桶分布、置信区间、失败清单。baseline 为观测事实，不是目标值。
+4. 完成 baseline 后，单独提交 threshold policy。阈值依据产品风险、baseline 方差、样本量和可接受回退预算决定；**本文不臆造数值**。
+5. 门禁同时包含：关键 case 不退、受保护桶不退、overall 改善、错误/超时/截断不恶化、位置有效率不退。统计不确定时判“需复验”，不能自动判提升。
+6. baseline 或阈值更新必须是显式 review 动作；测试失败时自动重生成 baseline 属禁止行为。
 
 ## Critical Pitfalls
 
-### Pitfall 1: 裸名调用边直接进 impact/trace ⇒ 假阳性灾难
+### Pitfall 1: “同仓”却不是同 commit，`file:line` 成为伪证据
 
 **What goes wrong:**
-`CallEdge` 的现实是：`callee_symbol` 可空、`callee_name` 是永远保留的裸名兜底（`server/codegraph/models.py` 明确注明「跨文件符号解析属 implementation+，留空待回填」）。如果 impact 反向 BFS 把「`callee_name == "save"`」这类裸名边当作真边扩散，任何一个叫 `save`/`get`/`run`/`handle` 的方法都会把全仓几百个同名符号拉进影响面。两跳之后影响面就是「整个仓库」，工具输出没人敢信，AI 编码代理拿着它做「改动安全吗」判断等于掷硬币。动态派发（duck typing）、装饰器/中间件间接调用（Django view decorator、DRF permission、workflow node registry 的 import 副作用注册）在 tree-sitter 层面根本没有边，构成对称的假阴性。
+query 在 commit A 的索引上运行，gold 或源码核验却来自当前分支 B。符号同名仍能命中，Recall 看似正常，但行号已漂移；Process 步骤甚至会指向另一个函数。最终证明的是“名字大致相似”，不是目标要求的同仓同 commit 可核实证据。
 
 **Why it happens:**
-tree-sitter 是语法级提取，没有类型信息；开发者急于让 impact「有结果」，把 `callee_name` 文本匹配当边用。而「结果很多」在 demo 里看起来像「功能很强」，上线后才发现精度崩了。
+仓库名、branch 和当前工作树比完整 SHA 更方便；索引水位、图缓存水位、git checkout 三者又常由不同组件维护。
 
 **How to avoid:**
-1. **默认只走已解析边**：impact/trace 的图构建默认只吃 `callee_symbol IS NOT NULL` 的边 + `CrossRepoApiCall`（自带 `match_confidence` 1.0/0.7/0.4 分档，直接复用这套分层词表）。
-2. **置信度是输出契约的一部分**：每个受影响节点带 `confidence: resolved | same_file_name_match | bare_name | cross_repo(0.4~1.0)`，MCP 返回按置信度分组渲染，让 LLM 消费方自己决定用哪一层——**不是二选一，是分层透出**。
-3. **裸名边有条件启用**：`include_low_confidence=true` 参数显式开启，且裸名匹配至少加两道过滤：同文件/同目录优先、`callee_qualifier` 匹配（模型里已有该字段）、常见名黑名单（`get/set/run/save/init` 等出现次数超过阈值的名字直接不扩散）。
-4. **控噪过度的对冲**：漏报靠「解析率指标」兜底——索引完成时统计 `callee_symbol` 回填率（per repo per language），低于阈值（如 Python <60%）时 impact 输出头部显式声明「本仓解析率 X%，结果偏保守」，而不是假装全知。rename_preview 的「图引用 + grep 兜底」模式就是这个思路的既有先例，impact 可给一个 `grep_supplement` 段但物理上与图结果分区。
+manifest 三 SHA 硬相等；评测前 fail-closed 校验，响应必须回 `as_of/commit_sha`；位置核验从 `git show <sha>:<path>` 等不可变 blob 读取。路径、qualified symbol、range 共同标识，禁用裸名和数据库 ID 作为 gold。
 
 **Warning signs:**
-- impact 结果节点数随深度指数增长（depth=2 就 >500 节点）；
-- 同一个查询里出现大量同名不同文件的目标；
-- golden case（选 3-5 个人工核对过的符号）影响面对不上人工判断。
+- 同一 case 重跑 Recall 不变但行号不断变化；
+- 报告只有 branch，没有完整 SHA/index watermark；
+- `file:line` 检查读取当前工作树；
+- rename 后旧路径仍被判正确。
 
-**Phase to address:** P-基座定边的准入词表与置信度枚举；P-impact 落分层输出 + golden case 回归测试。
+**Phase to address:** B0 定 manifest 与位置核验器；B3 将 `as_of` 和证据状态焊入统一响应；B5 设 INVALID-run 守门。
 
 ---
 
-### Pitfall 2: 多 worker 内存图缓存放大 + 构建风暴 + 失效窗口
+### Pitfall 2: 指标分母或“算命中”规则未锁，分数可被口径操纵
 
 **What goes wrong:**
-三个叠加的坑：
-1. **内存放大**：图缓存是进程内的（networkx 对象没法进 Redis）。helm 已支持 `gunicornWorkers>1`，每个 worker 各自缓存一份 `(repository, branch)` 图——10 万符号的仓一份图可能 500MB+（networkx 每节点/边是 Python dict，开销约为邻接表的 10-40 倍），4 worker 就是 4 份。生产 261 仓的实例上 LRU 容量若按「仓数」而不是「内存字节」算，OOM 是时间问题。
-2. **构建风暴**：并发首查同一仓（AI 编码代理批量 impact、detect_changes 一次触发几十个符号查询）时无锁则 N 个请求各自从 DB 拉全量 Symbol/CallEdge 建图，DB 被打爆且内存瞬时 N 倍。
-3. **不一致窗口**：增量索引提交后 `last_indexed_commit_sha` 前移，但已建好的图还是旧水位；若失效检查只在「建图时」做而不在「取图时」做，缓存命中路径会一直吐旧图。分支 overlay（`branch_name` 维度）再乘一倍缓存键空间。
+无 gold query 被当 Recall=1、无预测被当 precision=1；Symbol 别名重复占满 top5；Process 只要名字相似就算对；edge precision 只抽系统已经解析的边；trace 只核首尾不核中间边。实现不变，改几行 evaluator 就能“提升”。
 
 **Why it happens:**
-单 worker dev 环境下一切正常，问题只在多 worker/大仓/并发下爆发；networkx 的内存开销远超直觉；「按 mtime 失效」的直觉方案在增量索引这种异步写入面前有竞态。
+代码图对象有多重身份与多条可行路径，普通 IR 指标不能直接套用；团队容易先写公式，后补标注语义。
 
 **How to avoid:**
-1. **按字节做 LRU**，不按条目数：建图后 `sys.getsizeof` 级估算（节点数 × 经验系数）计入预算，预算 env 可调（默认如 2GB/worker）；超预算逐出最久未用。超大仓（symbol 数超阈值）直接不进缓存、走「每查询按需子图」降级路径（从查询符号出发按深度限界拉边，DB 索引 `repository, callee_symbol` 已在）。
-2. **single-flight 建图锁**：进程内 per-key asyncio lock（或线程锁，取决于建图跑在 `sync_to_async` 还是线程），首个请求建图、其余等待；跨 worker 不做分布式锁（代价大于收益，最坏是 worker 数份重复构建，可接受）。
-3. **取图时校验水位**：每次命中缓存都比对 `Repository.last_indexed_commit_sha`（一次轻量 DB 读或短 TTL 本地缓存），不一致即丢弃重建。这正是既有 `GALAXY_CACHE` 的「数据签名失效」模式（`settings.py:858-861`），直接沿用同一套约定并同样留 `*_CACHE_ENABLED=False` 逃生舱。
-4. **观测**：`gauge` 上报缓存条目数/估算字节/命中率/构建耗时（`category=sampling`），构建事件 `graph_build_started/completed/failed + duration_ms`（`category=caller` 首查归因用户）。
+先锁上文指标表和 canonical identity；零分母统一 `N/A` 并显式计 coverage；正负样本分开；Process 等价路径在看预测前标注；edge 以独立 callsite 样本为母集；trace 每条相邻边和每个位置都验证。
 
 **Warning signs:**
-- server 容器 RSS 在图工具上线后阶梯式上涨不回落；
-- 日志出现同一 repo 短时间多条 `graph_build_started`；
-- impact 结果引用了已被增量索引删除的符号（stale 图证据）。
+- precision 上升同时 resolved 数量骤降；
+- top5 含同一符号多个别名/重载投影；
+- evaluator 中出现“expected 为空记 1.0”而报告未单列空 gold；
+- Process 命中靠名称 substring；
+- trace 成功但中间步骤无法在图中复现。
 
-**Phase to address:** P-基座（这是地基相位的核心验收项：字节 LRU + single-flight + 水位校验 + 大仓降级四件套必须同相位落齐，后续所有图工具都踩在它上面）。
+**Phase to address:** B0 锁 evaluator 与双标注规范；B1/B2 分别产 edge/Process gold；B5 冻结 evaluator hash。
 
 ---
 
-### Pitfall 3: 社区检测结果漂移 ⇒ 模块摘要反复重生成、LLM 成本失控
+### Pitfall 3: overall 掩盖语言、框架或入口退化
 
 **What goes wrong:**
-Louvain/Leiden 都是随机贪心启发式，同一张图两次运行可产出不同划分；networkx 的 `louvain_communities` 甚至有「seed 相同但节点插入顺序不同结果就不同」的已证实行为（networkx issue #6655，官方以 wontfix 关闭）。如果每次重建索引都重跑社区检测并对「变了的社区」重生成 LLM 摘要，一个没实质变化的仓每晚重索引都会触发几十个模块摘要重生成——LLM 成本线性失血，且下游 RepoRouter 消费的模块描述天天变，路由稳定性（v0.19.0 拿命换来的幂等纪律）被上游污染。孤立节点/不连通子图是第二个坑：代码图天然有大量孤立符号（未被调用的工具函数、入口脚本），直接跑算法会产出上百个单节点「社区」，LLM 摘要生成会对着一个函数写一段废话。
+Python/Django/API 样本多，overall 提升覆盖 TS/Vue/event 的显著退化；或简单 direct-call 样本淹没 receiver/import alias。结果与“按语言提升 resolved 边、入口可查”的里程碑目标脱节。
 
 **Why it happens:**
-社区检测在论文/demo 里都是「一张图跑一次」，没人告诉你生产里是「同一张图每天重跑」的稳定性问题；单节点社区在小图 demo 里不出现。
+micro 聚合天然偏向样本多的桶；三维全交叉又会产生稀疏桶，团队遂退回一个总均值。
 
 **How to avoid:**
-1. **算法选型**：用 Leiden（`leidenalg` 或 igraph）+ 固定 seed + 固定节点排序（按 symbol UUID 排序后建图），Leiden 在同 seed 下确定性且保证社区连通（Traag 2019）；若留在 networkx Louvain，必须自己做节点排序 + seed，且接受仍可能漂移。
-2. **稳定性护栏**：新旧划分做相似度对账（ARI 或按社区成员 Jaccard 匹配），**只有成员集变化超过阈值（如 Jaccard < 0.8）的社区才重生成摘要**；未变社区沿用旧摘要（社区落库时带 `member_fingerprint = hash(sorted(symbol_ids))`，指纹不变直接跳过 LLM）。
-3. **预处理**：只对「最大弱连通分量 + 规模 ≥ N（如 5 个符号）的分量」跑社区检测；孤立节点归入所在目录的兜底社区或标 `unclustered`，绝不给单节点社区发 LLM 摘要。
-4. **成本闸门**：模块摘要生成走批量 + 每仓每次重建的摘要生成条数上限（env 可调），赋独立 `call_source` 便于在 `ModelUsageRecord` 里单独看成本曲线。
+按 case macro；固定语言/框架/入口桶及受保护交叉桶；每桶带原始 n/分子/分母/CI；稀疏桶标不足并补样，不借 overall 判绿。报告同时列最差桶、最大回退桶和 case-level diff。
 
 **Warning signs:**
-- `ModelUsageRecord` 里模块摘要 call_source 的 token 曲线与索引频率同形；
-- 同一仓两次重建后社区数量/命名大幅变动；
-- 社区列表里出现大量 size=1 的社区。
+- 报告只有 overall；
+- 改 TS resolver 后 Python 样本占比也变化；
+- 分桶没有 n；
+- 某桶没有数据却显示 0 或绿色；
+- TS/JS 被永久合并，无法看 receiver/alias 改动效果。
 
-**Phase to address:** P-社区（指纹跳过 + 稳定性对账是该相位的需求级验收，不是优化项）；算法选型在 P-社区开工前的 research 定夺。
+**Phase to address:** B0 固定 stratification；B1/B2 补齐优先语言与入口样本；B5 实施“overall 不可抵消受保护桶回退”。
 
 ---
 
-### Pitfall 4: 执行流/impact 遍历爆炸——递归环、扇出、async 断链
+### Pitfall 4: baseline、开发集和阈值互相污染
 
 **What goes wrong:**
-以 `Endpoint` 为入口正向展开调用链：递归/相互递归成环则 naive DFS 不终止；一个 Django view 调 service 层再进 ORM/工具函数，扇出很快到几万节点（尤其裸名边混入时）；`async` 任务派发（durable queue、`background_runner`、channels consumer、workflow 节点 dispatch）在静态调用图上是断的——`aemit`/`sync_to_async`/信号/回调处链路中断，执行流画一半，用户以为链路只有这么长，比不画更误导。
+团队反复查看 test 失败并针对单例调 prompt/权重；同一目标 Symbol 的多条改写随机分到 dev/test；直接复制 docstring、函数名或路径生成 query；最后再把当前最好结果保存为“baseline”。这是过拟合，不是提升。
 
 **Why it happens:**
-图遍历的终止条件、预算控制是「第二天才想起来」的需求；异步断链是静态分析的原理性极限，但产品呈现上不标注就成了隐性谎言。
+单仓样本有限，人工写 query 时已看代码；golden fixture 又与实现同仓可见，最容易被无意调参。
 
 **How to avoid:**
-1. **三重预算硬上限**：max_depth（默认 6-8）、max_nodes（默认 500）、max_fanout_per_node（如 50，超过则截断并标 `truncated: fanout`）；visited set 防环（环检测到时在输出里显式标 `cycle` 而非静默跳过——递归本身是有价值的信息）。
-2. **结果分页/摘要化**：MCP 工具返回超预算时给「截断说明 + 按置信度/深度取 top-N」，绝不吐几万节点撑爆 LLM 上下文。
-3. **断链显式标注**：识别已知断链模式（`sync_to_async`、`defer_task`、`.delay(`、channel `group_send`、workflow node dispatch）在链路末端标 `boundary: async_dispatch`，让消费方知道「这里之后是另一个执行域」，而不是链路终点。第一版不必跨过边界，标出来就赢了。
-4. **Process 模型存摘要不存全图**：落库的执行流存「入口 + 主干路径 + 统计」，不存全展开节点集（否则大仓一个 endpoint 一行几 MB JSON）。
+- B0 先跑冻结 v0.22 baseline，再开放算法开发。
+- 按 target family/module/Process family 分组切分，近重复 query 必须同 split；禁止随机按 query 行切。
+- `dev` 可见、`locked_test` 仅 CI 汇总、`holdout` 只在相位/里程碑验收打开。
+- query 作者与 gold 标注者分离；真实 issue/运行迹象优先。合成 query 必须标 source，并检查是否泄漏 symbol/path/docstring。
+- baseline、threshold、case fixture 分文件、分 review；新增 case 不重写历史 baseline，形成新 benchmark_version。
 
 **Warning signs:**
-- 执行流查询 p99 耗时随仓库大小超线性增长；
-- 单条 Process 记录 JSON 超过几百 KB；
-- 用户反馈「这个接口明明会发任务/推 WS，执行流里没有」。
+- test query 含精确函数名或路径，而真实用户不会这样问；
+- 每次算法提交同时更新 baseline；
+- 同一 Process 的多个同义改写跨 dev/test；
+- holdout 被日常单测直接打印逐例答案；
+- 提升集中在人工刚修改的 case。
 
-**Phase to address:** P-执行流（预算与环处理），断链标注词表可在 P-impact 先定（impact 反向遍历同样需要）。
+**Phase to address:** B0 建 split、去重与访问纪律；B5 才启用 locked/holdout 门禁。
 
 ---
 
-### Pitfall 5: detect_changes 行号错位与 diff 噪声
+### Pitfall 5: resolved edge 的“真值”来自被测图自身
 
 **What goes wrong:**
-detect_changes = git diff 行区间 × Symbol 行区间求交。三个错位源：
-1. **快照错位**：Symbol 的行号来自 `last_indexed_commit_sha` 时刻，而 diff 若以工作树/MR HEAD 计算，两个 commit 之间的无关提交早已把行号推移——交出来的符号根本不是改的那个。
-2. **重命名文件**：git 默认把 rename 输出成 delete+add，旧路径符号全部命中「被删」、新路径零符号命中（索引里还没有新路径），一次 rename 误报满屏。
-3. **格式化大 diff**：一次 prettier/ruff format 改动 200 个文件，逐符号 impact 批量展开后输出淹没真实变更，且触发 Pitfall 2 的构建风暴（几十个仓的图同时首建）。
+从现有 `CallEdge` 导出 gold，再评新 resolver；或只人工复核预测出的 resolved 边。前者是自我比较，后者只能估 precision，完全看不到漏掉的 callsite。动态 trace 若被当完整真值，又会把未被测试覆盖但合法的静态边误判为 false positive。
+
+**Why it happens:**
+真实程序调用图没有完备 ground truth；动态派发、装饰器、回调和框架注册使纯静态或纯动态证据都不完整。
 
 **How to avoid:**
-1. **diff 锚定索引水位**：强制 `git diff <last_indexed_commit_sha>...<target>` 做基线（v0.6.0 「MR diff commit 锚定 + 不假设 master」已是同款纪律）；若 `last_indexed_commit_sha` 落后 target 太多（如 >200 commits），先声明 stale 并建议触发增量索引，而不是硬算。
-2. **rename 检测开启**：`git diff -M`（或 GitPython `find_renames`），rename 对按「旧路径符号 → 新路径」映射而非 delete+add 两次告警。
-3. **噪声压制**：diff hunk 只有空白/import 顺序变化的（可用启发式：strip 后相同）降级为 `formatting_only`；单次 detect_changes 受影响符号数超过阈值（如 100）时切换为「文件级摘要 + 明确说明未逐符号展开」，不做批量 impact。
-4. **接入点顺序**：先接「编码任务提交前自查」（容器内、有明确 base commit），后接「MR 描述生成」（异步、可容忍慢），不要一开始就挂到同步 API 上。
+以源码 callsite 独立分层抽样：按语言、receiver/import alias/member call/直接调用/框架间接调用等构造分桶，标注所有可行 callee。用编译器/LSP、测试动态 trace、人工源码审查作多源证据并保存 provenance。动态 trace 是已执行边的下界，不是完整负例集合；precision/recall 只在明确标注的 callsite universe 内计算。
 
 **Warning signs:**
-- detect_changes 报告的符号行号与当前文件对不上；
-- rename PR 的报告里同一逻辑符号同时出现在「删除」列表且新文件无匹配；
-- 一次 format commit 触发的 impact 调用数量激增（观测 `RequestMetric`）。
+- edge benchmark 没有 unresolved callsite；
+- recall 分母等于当前系统 resolved 边数；
+- 新 resolver 关闭大半解析后 precision 大涨、报告仍判绿；
+- 未执行到的边一律标 false；
+- 标注没有 callsite line/column。
 
-**Phase to address:** P-detect（锚定 + rename 是功能正确性，第一批落）；噪声压制阈值可 env 化后续调。
+**Phase to address:** B0 定抽样与证据规范；B1 先补 gold 再改 TS/JS、Python resolver；B5 报 resolved coverage 与 P/R 双指标。
 
 ---
 
-### Pitfall 6: Semgrep 门禁被自己杀死——误报疲劳、耗时阻塞、baseline 漂移
+### Pitfall 6: Process/impact/trace 的 gold 循环定义，负路径缺席
 
 **What goes wrong:**
-安全门禁的死法高度一致：初版全量规则 + 全仓扫描 + 硬阻断 ⇒ 误报淹没 + MR 等 10 分钟 ⇒ 两周内被开发者要求关掉 ⇒ 门禁名存实亡。具体机制：不做 diff-aware 时 Semgrep 会把存量历史问题全algia到每个 MR 头上；taint mode 规则在大文件上单规则默认 5s 超时（`SEMGREP_TIMEOUT`），规则多时扫描分钟级；自维护规则集没人认领后 rules 与框架版本脱节，误报率单调上升；baseline（比较基准）若取 target 分支 HEAD 而不是 merge-base，别人先合入的代码会算到你头上。
+用当前 CallEdge 生成 Process，再用这些 Process 评价检索；用 BFS 可达集当 impact gold，再评价同一个 BFS；trace 只放已知最短可达对。三项都会接近满分，却无法发现入口漏检、错误 resolved 边、不可达对返回假路径或错误类型漂移。
+
+**Why it happens:**
+Process 和 impact 都是派生对象，人工标完整路径成本高；正样本 demo 更直观，错误路径被当异常处理而非产品契约。
 
 **How to avoid:**
-1. **只扫 diff、只报增量**：`SEMGREP_BASELINE_COMMIT` 设为 merge-base（官方明确建议），只对「本 MR 新引入」的 finding 发声（Semgrep 官方 diff-aware 语义）。
-2. **分级不硬断**：finding 分 `blocking`（高置信 taint 规则白名单，如 SQL 注入/命令注入的核心几条）与 `advisory`（其余全部只评论不拦）；第一个月全部 advisory 跑观察期，误报率有数据后再提级。这与本仓 AI 审查「超界是待人审不是失败」的既有决策（v0.20.0 Phase 114）同一哲学。
-3. **异步不阻塞**：扫描挂在 MR 创建后的异步任务（durable queue 已有 `maintenance`/独立队列基建），结果回填 MR 评论/检查项，不在 PR 创建同步路径上等待；超时 fail-open + 显式标注「扫描未完成」（安全门禁 fail-open 是有意识的产品决策，需在方案里写明理由：阻塞交付的门禁会被整体关闭，净安全收益为负）。
-4. **规则集治理**：起步用官方 registry 精选 pack（p/python、p/django 等）而非自写；自定义规则每条带 owner 与误报申诉出口（`nosemgrep` + 理由注释，接入审计）。
+- Process gold 从入口语义和真实业务流标注，记录入口、结果/终点、必经步骤及允许的可选分支，不从被测 Process 表反导。
+- impact case 固定 seed、方向、边类型、深度与上限；gold 由源码审查、历史改动/测试影响证据和独立图查询交叉裁决，明确它只代表该 scope。
+- trace 正样本覆盖多跳、歧义、环；负样本覆盖不可达、缺 source/target、同名歧义、stale、权限/exclusion。错误路径用稳定枚举而非自由文本。
+- Process/trace 返回的每一步都做 commit blob `file:line` 核验；截断必须说明在哪一层发生。
 
 **Warning signs:**
-- MR 上 Semgrep 评论条数中位数 >5；
-- 开发者批量加 `nosemgrep` 无理由；
-- 扫描 p50 耗时 >2min 或出现「等扫描才能合并」抱怨。
+- Process Recall@3 的 gold ID 来自同一次索引；
+- impact gold 与生产 BFS 共用同一个函数；
+- trace benchmark 没有负样本；
+- 所有错误都返回 `found=false` 或空列表；
+- Process 名称正确但入口/步骤/位置错误仍算命中。
 
-**Phase to address:** P-semgrep（diff-aware + advisory 起步 + 异步化是同相位必选项，不可拆）；blocking 白名单提级是相位交付后的运营动作。
+**Phase to address:** B0 建正负 case 骨架；B2 建独立 Process 标注；B3 建 trace/impact 证据验证与稳定错误词表；B5 锁负路径门禁。
 
 ---
 
-### Pitfall 7: LSP 默认开启拖垮索引管线
+### Pitfall 7: 延迟/token 被缓存、失败过滤和截断“优化”
 
 **What goes wrong:**
-本仓 settings 里已经写着教训：gopls 被回落 tree_sitter 的原因就是「冷启动慢」（`settings.py:838-842`），volar 大插件链场景启动 60-90s（`settings.py:902-904` advisory）。默认开启后：每仓索引多付 20-90s 冷启动；gopls 对大仓稳态内存数百 MB 且分析器（staticcheck 类）可到 GB 级（golang/go#45457）；LSP server 是子进程，索引任务异常退出时不清理就进程泄漏，几轮索引后容器里挂着一排僵尸 `gopls serve`；容器镜像若缺 Node（volar 需要）或 Go toolchain（gopls 需要 `go list`），启动直接失败——fail 方式若是抛异常而不是回落，整条索引管线崩。
+只测热缓存成功请求，timeout 和错误从样本删除；减少候选或提前截断让延迟/token 好看，却把 gold 在 retrieval 或序列化阶段丢掉。平均值进一步掩盖长尾。
+
+**Why it happens:**
+性能与质量由同一预算耦合；不同入口又有不同序列化和 agent prompt 开销，单个 service timer 不代表用户等待。
 
 **How to avoid:**
-1. **fail-soft 回落是硬约束**：LSP 后端启动失败/超时/崩溃一律回落 TreeSitterBackend 并记 `lsp_backend_degraded` 事件（现有 kill-switch 机制在 `codegraph/apps.py::ready()`，保留并细化到 per-language 运行时降级，不只是启动期开关）。
-2. **启动前探测**：索引 worker 启动时探测 `node --version`/`gopls version` 可用性，缺运行时的语言直接静默走 tree_sitter 并在仓库索引详情里透出「LSP 未启用：缺 X 运行时」——用户可见但不报错。
-3. **进程生命周期收口**：LSP 子进程绑定索引任务生命周期（context manager / finally kill + `psutil` 兜底清扫孤儿），每次索引结束上报 `lsp_process_reaped` 计数；设 per-process 内存上限观测（gopls >1GB 自动写 debug zip 的行为可作为告警信号源）。
-4. **默认开启分两步**：先把「开启门槛」降到 per-repo/per-language 设置 + 探测通过自动启用（本里程碑），全局默认开启等冷启动摊销（LSP 常驻 daemon 或跨索引复用 session）验证后再做——gopls 文件缓存使二次启动显著变快，值得让 mirror 目录稳定以吃到这个缓存。
+统一入口端到端计时；冷/热分开；所有 case 进入 availability/timeout 分母，成功与错误各报 p50/p95。逐阶段记录候选数、gold 到达、耗时、token、截断前后数量和原因。质量—成本报告必须配对到同一 case/run，不能拿不同样本比较。MCP、Chat、Django、npm、task 各跑同一 conformance/perf case。
 
 **Warning signs:**
-- 索引耗时 p50 在 LSP 开启后翻倍以上；
-- 容器内 `ps` 出现多个无父 gopls/vue-language-server；
-- server RSS 与并发索引数强相关地上涨。
+- p95 下降但 Recall 同时下降；
+- 报告没有 timeout/error 数；
+- `truncated` 永远 false 或根本不存在；
+- token 只统计输出，不统计输入/工具结果注入；
+- npm/task 延迟明显不同却没有分面数据。
 
-**Phase to address:** P-LSP（探测 + fail-soft + 进程收口三件套）；建议 P-LSP 排在 P-基座之后、且不与 P-社区/P-执行流并行上线（同时引入两个内存大户会让 OOM 归因困难）。
+**Phase to address:** B0 先定义计时点；B3 输出分层截断元数据；B4 做跨消费面性能冒烟；B5 纳入观测和趋势。
 
 ---
 
-### Pitfall 8: 图分析工具面越权与 exclusion 漏接
+### Pitfall 8: MCP 只对齐工具名，schema 与运行时产物仍漂移
 
 **What goes wrong:**
-新增 8+ 个 MCP/对话工具，每个都是一条新的数据出口。两类事故：
-1. **权限旁路**：图查询按 `repository_id` 直查 Symbol/CallEdge，跳过仓库可见性校验——现状 `RepositoryPermission` 本来就是「任意登录用户可读任意存在仓库」（PROJECT.md 已列为平台级欠债），图工具若再把跨仓 impact（穿 `CrossRepoApiCall` 边界）做出来，一个低权用户能沿边遍历读到他从未被授权仓库的符号名/文件路径/行号——比 RAG 泄漏更结构化。
-2. **exclusion 漏接**：v0.5.0 的 fail-closed 纪律是「被排除文件六面不可见」，但图数据是索引期写入的——若排除规则在索引之后添加，Symbol/CallEdge 里还躺着被排除文件的符号；`purge_file` 清五面，图分析工具作为新读取面必须把 `is_excluded` 运行期拦截接上（`mcp_tools/views.py` 已有统一 matcher 入口模式可抄），否则 impact 结果会把已排除的敏感文件路径吐回给 LLM。另外高频图查询（AI 代理一次任务几百次 impact）若逐条 INFO 落 `RetrievalTrace`/系统日志，会刷爆日志表。
+本仓现有 `test_mcp_package_alignment.py` 能抓服务端有而 npm 白名单缺失，但只比较工具名；`TOOL_SCHEMA_SNAPSHOT` 主要锁 request/response 键集合，未完整覆盖类型、required/default、约束、`additionalProperties`、output schema、错误语义、description/annotations。源码对齐也不代表发布的 npm tarball、task 镜像和 Chat 注册表对齐。
+
+**Why it happens:**
+工具定义存在 server serializer、Agent schema、Django MCP、npm 静态白名单、容器 allowed tools 多份投影；snapshot 更新容易变成“测试红就重生成”。子模块缺失时 skip 还可能让 CI 假绿。
 
 **How to avoid:**
-1. **工具入口统一鉴权装饰**：所有图工具走与既有 MCP 工具同一鉴权/仓库解析入口（PAT fail-closed），跨仓遍历时对每个「穿出去」的仓库做同样校验，未授权仓在结果里整仓折叠为 `redacted_repository`（保留「有影响」的事实但不泄内容）——即便当前权限模型宽松，接口形状先按 fail-closed 设计，等仓库级 ACL 落地时零改动。
-2. **exclusion 双保险**：读路径全部过 `is_excluded`（运行期 fail-closed，与 grep 工具同款）；同时把 Symbol/CallEdge/Endpoint 纳入 `purge_file` 的清理面（从五面变六面），补对账命令。
-3. **日志纪律**：图查询归 `sampling` 类（高频内部步骤），只有工具级调用（一次 MCP invoke）记 `caller` 事件 + `RetrievalTrace`；BFS 内部逐节点绝不 INFO。`RetrievalTrace` 记「查询符号 + 结果计数 + 置信度分布」，不整体复制结果集。
+1. 建 canonical tool manifest：name、description、annotations、input/output JSON Schema、错误枚举、truncation/as_of 字段、contract version。其他消费面由它生成或适配，不手抄。
+2. 对 schema 做规范化后语义 hash，不能只比键名或原始 JSON 字节顺序；输入、输出都运行 JSON Schema 校验。
+3. conformance matrix 覆盖同一主体/权限下的 tools discovery、合法最小/完整/边界请求、非法请求、成功输出、typed error、截断。工具集可因授权不同而变，但相同 principal/scope 必须一致。
+4. CI 测**构建产物**：npm `pack` 后启动 stdio server、task 镜像内 discovery、Django MCP/Chat 运行时注册；必需产物缺失应 fail，不得 skip。
+5. breaking change 显式升级 contract version 并提供迁移/兼容窗口；新增可选字段与新增 required 字段分级处理。旧客户端 conformance fixture 常驻。
+6. MCP 官方要求工具 server 声明 `tools` capability；工具列表动态变化时声明 `listChanged` 并发送 `notifications/tools/list_changed`，客户端收到后重新 `tools/list`。不能假设会话启动时发现一次就永久有效。
 
 **Warning signs:**
-- 图工具响应里出现 exclusion 规则覆盖的路径（写一条回归测试常驻）；
-- `RetrievalTrace`/SystemLogEntry 表增速在图工具上线后跳变；
-- 跨仓 impact 返回了请求用户无仓库记录的 repo 名。
+- 工具数相同但某消费面的 required/default/type 不同；
+- server 单测绿，发布 npm 调用 404 或参数校验失败；
+- CI 因子模块/产物缺失而 skip 对齐测试；
+- schema fixture 与实现同提交被无说明重生成；
+- 部署新增工具后长会话仍看不到；
+- output 无 schema，客户端只能猜自由文本。
 
-**Phase to address:** P-基座（鉴权/exclusion 拦截做进图服务读取层，让所有上层工具天然继承——这是「单一匹配器」纪律的直接延伸）；purge 六面扩展可单独小相位或并入 P-基座。
+**Phase to address:** B4 建单一 manifest、生成链、运行时 conformance 和版本策略；B5 持续跑构建产物矩阵。
 
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| 裸名边默认参与 impact | 结果「丰富」、demo 好看 | 精度崩塌、工具信任破产 | never（只能作显式 opt-in 分层） |
-| 图缓存按条目数 LRU | 实现简单 | 大仓 OOM、多 worker 放大 | 仅单 worker dev；生产必须按字节 |
-| 每次重建全量重跑社区+摘要 | 逻辑简单无状态 | LLM 成本失控、路由输入漂移 | never（指纹跳过是必需品） |
-| detect_changes 用工作树 diff 不锚定索引水位 | 少一次 rev 解析 | 行号错位、符号误命中 | never |
-| Semgrep 全量规则同步阻断 | 「安全感」 | 门禁两周内被关闭 | never（advisory 起步） |
-| LSP 失败抛异常不回落 | 错误显眼好排查 | 一个缺 Node 的容器拖崩整条索引管线 | never（fail-soft + 可见降级标注） |
-| 执行流存全展开节点集 | 查询时不用重算 | 单行 MB 级 JSON、表膨胀 | 仅节点数 < 阈值的小图 |
-| 图工具各自写权限/exclusion 过滤 | 各相位可并行 | 必有一个漏接（六面纪律破口） | never（读取层统一收口） |
+| 先改算法，后保存“baseline” | 很快展示高分 | 无法证明相对 v0.22 提升 | never |
+| gold 从当前图/Process 表反导 | 标注成本低 | 自我比较、系统性漏报不可见 | 仅用于 harness 冒烟，不得作质量结论 |
+| 只有正样本 | 成功率好看 | 假路径、歧义、稳定错误契约无人管 | never |
+| overall 单一门禁 | 规则简单 | 小语言/框架/入口退化被掩盖 | 仅作摘要，不得单独判定 |
+| 无预测 precision=1 | 避免除零 | 通过“不做事”刷高分 | never；应为 N/A + coverage |
+| MCP 仅比较工具名 | 实现便宜 | 类型/默认值/输出/错误语义继续漂移 | 只能作第一层 smoke |
+| 只测源码，不测 npm tarball/镜像 | CI 快 | 发布物与源码不同仍假绿 | 本地快速测试可用，发布门禁不可用 |
+| 测试失败自动刷新 snapshot | 省 review | 门禁退化为橡皮图章 | never |
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| networkx | 把全仓图当常驻对象随意复制（`subgraph().copy()` 链）| 视图（`subgraph` 不 copy）+ 按需子图；大仓不建全图 |
-| networkx Louvain | 信任 `seed` 参数保证可复现 | 节点排序 + seed 仍可能漂移（issue #6655 wontfix）；生产用 Leiden 固定 seed |
-| Semgrep CI | baseline 取 target HEAD | 取 merge-base（官方 `SEMGREP_BASELINE_COMMIT` 建议）；否则别人的合入算你头上 |
-| Semgrep taint | 无超时预算跑全规则 | `SEMGREP_TIMEOUT` 显式设定 + 精选 pack；超时 fail-open 标注 |
-| gopls | 当普通子进程即起即用 | 冷启动 20-60s + 首轮 workspace load 内存峰值；探测→超时→回落三段式，复用 mirror 目录吃文件缓存 |
-| volar | 假设容器有 Node/tsdk | `node_check.discover_tsdk()`（已有）失败必须静默降级 tree_sitter |
-| git diff | 默认参数处理 rename | `-M`/find_renames 开启，rename 对做符号映射 |
-| MCP 工具面 | 新工具自带一套过滤逻辑 | 复用 `mcp_tools/views.py` 的统一 matcher 入口 + `RetrievalTrace` 约定 |
+| Git/index/cache | branch 名相同即认为同快照 | 三方完整 SHA 相等，否则 run INVALID |
+| Qdrant/BM25/embedding | 只保存最终 top-k | 保存 retrieval/rerank/return 三层结果和截断 |
+| LLM reranker | 单跑一次与确定性 baseline 比 | 配对多轮、固定模型/config，分离确定性层与随机层 |
+| GitNexus 对标 | 只复制工具名/Process 展示 | 对齐可验证能力：process-grouped hybrid query、入口类型、步骤与 `file:line`、impact/trace 证据 |
+| MCP discovery | 会话启动只拉一次工具列表 | 声明/处理 `listChanged`，变化后重新 `tools/list` |
+| MCP output | 只返回 text | 提供 output schema 与 structured content；客户端验证，兼容期可同时给序列化 text |
+| npm MCP | 比 `src/tools.ts` 名称集合 | 构建 tarball 后运行 discovery + schema hash + call conformance |
+| task 容器 | 只检查镜像构建成功 | 在镜像内用实际 allowed tools/principal 跑 discovery 和最小调用 |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| 全仓图进程内缓存 × N worker | RSS 阶梯上涨不回落 | 字节预算 LRU + 大仓降级按需子图 | 单仓 symbol >10 万 或 worker ≥4 |
-| 并发首查建图无锁 | DB 查询尖峰 + 内存瞬时数倍 | per-key single-flight | detect_changes 批量触发时（一次 MR 几十仓）|
-| BFS 无预算 | p99 秒级→分钟级 | depth/nodes/fanout 三重上限 + 截断标注 | 裸名边混入后任何中型仓 |
-| 社区检测在请求路径同步跑 | 图工具偶发超长响应 | 社区检测只在索引后异步任务跑，结果落库供查询 | 仓 >1 万符号 |
-| 逐节点写 RetrievalTrace/INFO | 日志表增速跳变 | 工具级 caller 事件 + 内部 sampling/debug | AI 代理批量调用（单任务数百次查询）|
-| LSP 每仓每次索引冷启动 | 索引时长翻倍 | 探测缓存 + mirror 目录稳定复用 LSP 文件缓存 | 仓数 >50 的夜间批量重索引 |
+| 只测热缓存 | 本地极快、首个用户很慢 | 冷/热独立 run，记录 cache state | 首次查询或索引水位变化 |
+| 平均延迟 | 少数超时被均值掩盖 | p50/p95 + timeout rate + per-bucket | 图扇出和 Process 数分布长尾时 |
+| top_k 前过早截断 | 延迟降、Recall 降 | 每层 gold 到达率与 truncation reason | 大仓或 token budget 紧时 |
+| 返回全量 Process/impact | token 与序列化暴涨 | 有界结果、稳定排序、显式截断与 continuation | 高扇出入口/大社区 |
+| benchmark 自身重复索引 | 方差主要来自构建 | baseline 固定索引 artifact；另设 cold-build benchmark | 多轮比较时 |
+| 各入口重复 LLM 包装 | Chat/npm/task token 不可比 | 同一 core result + 各 adapter 独立 token/latency 记账 | 契约漂移或 prompt 膨胀时 |
 
 ## Security Mistakes
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| 跨仓 impact 穿边不复核目标仓权限 | 结构化泄漏未授权仓的符号/路径/行号 | 每穿一仓复核；未授权整仓折叠 `redacted_repository` |
-| 图读取面不接 `is_excluded` | 已排除敏感文件路径经 impact 回流 LLM | 读取层统一 matcher 拦截 + 常驻回归测试 |
-| Symbol/CallEdge 不进 purge 面 | 敏感清理后图里仍有残留 | `purge_file` 扩到六面 + 对账命令 |
-| Semgrep finding 原文含密钥片段直接落库/回评 | taint 规则命中处代码片段可能含凭证 | finding snippet 过 `redact_secrets_in_text` 再落库/外发 |
-| rename_preview 输出未过 exclusion | grep 兜底扫到排除文件 | grep 兜底走既有已拦截的 grep 工具路径，不另起裸 grep |
+| fixture 收录私有源码/真实 query 原文 | benchmark 入库泄密 | 只存必要标识与脱敏文本；私有 fixture 分级存放 |
+| 负样本包含 excluded 文件却仍返回位置 | 排除规则被图查询绕过 | exclusion case 常驻，任何符号/路径泄露即失败 |
+| 日志记录完整工具输入/输出 | 代码、凭证、上游异常泄露 | 结构化计数与 hash；文本过 `redact_secrets_in_text`，ledger 走 `redact_for_ledger` |
+| 跨消费面用不同测试身份 | 工具集差异被误判或真实越权被掩盖 | conformance 固定 principal/scope，并另测无权限主体 |
+| MCP annotations 当可信授权 | 恶意/漂移 metadata 诱导调用 | 按 MCP 规范视 annotations 为不可信；授权由服务端执行 |
 
 ## UX Pitfalls
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| impact 不带置信度一锅端 | 用户/LLM 无法区分真影响与同名噪声 | 按 resolved/bare_name/cross_repo 分组渲染 |
-| 执行流断链处静默终止 | 「链路就这么长」的错误结论 | `boundary: async_dispatch` 显式标注 |
-| detect_changes 对 format diff 满屏输出 | 真实变更被淹没 | formatting_only 降级 + 超阈值文件级摘要 |
-| Semgrep 硬阻断无申诉出口 | 开发者绕过或要求关门禁 | advisory 起步 + nosemgrep 带理由 + 分级提级 |
-| 图结果 stale 不声明 | 用户按旧图做决策 | 输出头部带 `as_of: <commit_sha>` 水位声明 |
+| 返回 `file:line` 但不带 commit | 用户无法复核，链接可能已漂移 | `repo@sha:path:start-end` + location status |
+| 无结果、截断、错误都返回空数组 | 用户误判“仓内没有” | 稳定 error/degradation/truncation 字段 |
+| Process 名称命中但步骤不可信 | 产生“完整执行流”错觉 | 展示入口、必经步骤、边置信度、断链/截断 |
+| impact 不声明 scope | 用户把有界静态近似当完整影响面 | 输出方向、edge types、depth、commit、coverage |
+| 跨入口字段/错误文案不同 | Agent 需为每面写特判 | canonical structured contract + adapter conformance |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **impact/trace：** 常缺「解析率声明 + 置信度分层」——验证：对 golden 符号集核对影响面精度，输出含 confidence 与 as_of 字段
-- [ ] **内存图服务：** 常缺「取图时水位校验」——验证：增量索引后立即查询，结果不含已删符号
-- [ ] **社区摘要：** 常缺「指纹跳过」——验证：无变更重建索引两次，LLM 调用数为 0
-- [ ] **执行流：** 常缺「环与截断标注」——验证：构造相互递归用例，输出含 cycle 标注且终止
-- [ ] **detect_changes：** 常缺「rename 处理」——验证：纯 rename PR 不产生删除+新增双列表
-- [ ] **Semgrep：** 常缺「异步化」——验证：扫描超时时 MR 创建不被阻塞且带「未完成」标注
-- [ ] **LSP：** 常缺「孤儿进程清扫」——验证：kill 索引任务后容器内无残留 gopls/vue-language-server
-- [ ] **全部图工具：** 常缺 exclusion 拦截——验证：排除规则覆盖文件出现在任何图工具输出即测试失败
+- [ ] **Baseline：** 是否确由未修改 v0.22.0 在冻结 commit/cases/config 上运行，而非当前实现回填？
+- [ ] **同 commit：** `repo/index/gold` 三 SHA 是否完全相等，`file:line` 是否从 commit blob 验证？
+- [ ] **指标：** 每项是否写明分母、零分母行为、canonical identity 和等价路径规则？
+- [ ] **分桶：** 是否同时报告语言/框架/入口的 n、分子、分母、CI 与最差桶？
+- [ ] **负样本：** trace/no-answer 是否覆盖不可达、歧义、stale、权限、exclusion 和缺失端点？
+- [ ] **edge：** recall 分母是否来自独立 callsite 样本，而非当前 resolved 边？
+- [ ] **Process：** gold 是否独立于被测 Process 生成器，步骤级位置与边是否核验？
+- [ ] **性能：** timeout/error 是否仍在分母，冷/热是否分开，截断是否逐层可观测？
+- [ ] **MCP：** 是否比较完整 input/output schema、错误枚举和运行时 discovery，而不只是工具名？
+- [ ] **发布物：** npm tarball 与 task 镜像是否真实运行 conformance，缺失时是否 fail 而非 skip？
+- [ ] **阈值：** 是否在 baseline 后单独 review 锁定，更新是否有逐 case/逐桶理由？
+- [ ] **可复现：** manifest、fixture hash、配置 hash、seed、硬件与原始 per-case 输出是否保存？
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| 假阳性灾难已上线 | MEDIUM | 加 confidence 字段默认过滤 bare_name（接口向后兼容加参不破坏）；补 golden 回归 |
-| 图缓存 OOM | LOW | 逃生舱 env 关缓存走按需子图（照 GALAXY_CACHE_ENABLED 模式预留）；再按字节预算修 |
-| 社区漂移已烧钱 | LOW | 立即上指纹跳过 + 每仓摘要条数上限；历史摘要不回滚 |
-| Semgrep 门禁被关 | HIGH | 信任重建最贵：清零规则重新 advisory 观察期，用误报率数据逐条提级 |
-| 图工具泄漏排除文件 | MEDIUM | 走 v0.5.0 敏感清理流程 purge + 补六面拦截 + 审计事件回查暴露范围 |
+| baseline 已被当前实现污染 | HIGH | 回到 v0.22.0 commit/build，重建同 SHA 索引并重跑；作废旧报告 |
+| gold 泄漏/过拟合 | HIGH | 按 target family 重切 split，重写 locked/holdout query，提升 benchmark_version |
+| 分母口径错误 | MEDIUM | 修 evaluator、保留旧报告但标 invalid，全部实现重跑，不做分数换算 |
+| `file:line` 漂移 | MEDIUM | 引入 blob verifier；无法核验的历史 case 降为 unverified，不计成功 |
+| 某语言被 overall 掩盖 | MEDIUM | 冻结该桶回归 case，补样后设独立门；不得只调 overall 权重 |
+| MCP schema 已漂移发布 | HIGH | 从 canonical manifest 生成差异矩阵；兼容适配/版本升级；补旧客户端 conformance |
+| 性能数据过滤失败样本 | LOW | 从原始 per-case 事件重算；若原始事件缺失则整轮重跑 |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| 裸名边假阳性 | P-基座（边准入）+ P-impact（分层输出） | golden 符号集精度回归 + confidence 字段快照测试 |
-| 缓存放大/风暴/不一致 | P-基座 | 并发首查压测单次建图；索引后即查无 stale；RSS 预算内 |
-| 社区漂移/LLM 成本 | P-社区 | 无变更重建 LLM 调用数 0；ARI/Jaccard 对账日志 |
-| 遍历爆炸/断链 | P-执行流（P-impact 先定断链词表） | 递归用例终止 + cycle 标注；max_nodes 截断测试 |
-| detect_changes 错位 | P-detect | rename PR 用例；stale 水位声明用例 |
-| Semgrep 门禁死亡螺旋 | P-semgrep | 异步化 + advisory 默认的配置断言；扫描超时 fail-open 用例 |
-| LSP 拖垮索引 | P-LSP | 缺运行时容器索引成功且标注降级；孤儿进程清扫测试 |
-| 越权/exclusion 漏接/日志刷爆 | P-基座（读取层收口） | 排除文件出现即败的常驻回归；跨仓 redacted 用例；日志分类抽查 |
+| commit/位置伪证据 | B0 + B3 | 三 SHA 不同即 INVALID；每个返回位置过 blob verifier |
+| 分母/命中规则漂移 | B0 | evaluator fixture + 手算小样；零分母为 N/A |
+| overall 掩盖分桶 | B0 + B5 | 每桶 n/CI；受保护桶回退时 overall 再高也失败 |
+| baseline/数据泄漏 | B0 | v0.22 build provenance；group split/近重复审计；locked/holdout 隔离 |
+| edge 自我评测 | B0 + B1 | 独立 callsite universe；resolved coverage + precision/recall |
+| Process/impact/trace 循环 gold | B2 + B3 | 独立双标、负路径、逐边/逐位置验证 |
+| 延迟/token 美化 | B3 + B5 | 冷热 p50/p95、timeout、token、每层 truncation 同报告 |
+| MCP 契约漂移 | B4 + B5 | canonical schema hash + npm/task/server/Chat/Django 运行时 conformance |
 
 ## Sources
 
-- 本仓代码事实（HIGH）：`server/codegraph/models.py`（CallEdge 裸名兜底/callee_symbol 可空/CrossRepoApiCall match_confidence 分档）、`server/friday/settings.py:837-930`（gopls 因冷启动慢已回落、volar 启动 60-90s advisory、GALAXY_CACHE 签名失效先例）、`server/mcp_tools/views.py`（统一 exclusion matcher + RetrievalTrace 约定）、`deploy/helm/friday/`（gunicornWorkers 多 worker 形态）、`.planning/PROJECT.md`（RepositoryPermission 欠债、v0.5.0 六面纪律、v0.19.0 路由幂等纪律）
-- Traag, Waltman & van Eck, "From Louvain to Leiden: guaranteeing well-connected communities", Sci Rep 9, 5233 (2019)（HIGH — Louvain 最多 25% 社区连接不良/16% 不连通；Leiden 保证连通）
-- networkx issue #6655 "Louvain is non-deterministic given seed"（HIGH — 官方 wontfix，节点顺序影响结果）；networkx `louvain_communities` 文档（seed 语义）
-- Semgrep 官方文档：diff-aware scanning / `SEMGREP_BASELINE_COMMIT` merge-base 建议 / `SEMGREP_TIMEOUT` 默认每规则 5s / blocking vs monitor 分级（HIGH）
-- Go 官方博客 "Scaling gopls for the growing Go ecosystem" + golang/go#45457、#72919（HIGH — gopls 内存特征、文件缓存二次启动加速、staticcheck 类分析器 GB 级内存）；gopls troubleshooting/daemon 文档（>1GB 自动 debug dump、共享 daemon 模式）
-- 经验性阈值（MEDIUM，需相位内实测校准）：networkx 内存放大系数、depth/nodes/fanout 默认值、Jaccard 0.8、解析率 60%
+- [MCP Tools specification](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)（HIGH）：`tools/list`、`tools/call`、`listChanged`、input/output JSON Schema、structured output、错误与安全要求。
+- [GitNexus Processes & Execution Flows](https://abhigyanpatwari-gitnexus.mintlify.app/concepts/processes-and-flows) 与 [Processes Resources](https://abhigyanpatwari-gitnexus.mintlify.app/api/resources/processes)（HIGH）：Process 是入口出发的调用序列；process-grouped search；步骤含 symbol 与文件位置；入口类型包括 api/cli/event/init/unknown；遍历、置信度与截断是能力的一部分。
+- [CodeSearchNet Challenge](https://arxiv.org/abs/1909.09436) 与 [官方仓库](https://github.com/github/CodeSearchNet)（HIGH）：代码检索数据去近重复、按仓/文件归组切分，避免相同代码跨 train/test；数据携带 repo/path/function/URL 等可核验证据。
+- Helm et al., [Total Recall? How Good Are Static Call Graphs Really?](https://doi.org/10.18420/se2025-28)（HIGH）：真实程序完整调用图 ground truth 通常不可得；固定入口和输入语料的动态 baseline 是近似，覆盖不足会扭曲 precision/recall，不能把动态未观察到当静态 false positive。
+- [Sentence Transformers Information Retrieval Evaluator](https://sbert.net/docs/package_reference/multi_vector_encoder/evaluation.html)（HIGH）：Recall@k、Precision@k、MRR、nDCG 等标准 IR 指标；本文在此基础上补代码图 canonical identity、负样本与 commit 证据。
+- 本仓事实（HIGH）：`server/codegraph/services/repo_router_eval.py` 已有 per-case macro、固定 seed bootstrap CI、逐例 diff；`repo_route_recall_eval.py` 已证明“只测候选后排序会漏掉召回层失败”；`server/tests/mcp_tools/test_schema_snapshot.py` 当前主要锁键集合；`test_mcp_package_alignment.py` 当前只比工具名且子模块缺失会 skip；`server/tests/agents/test_tool_contracts.py` 已有显式刷新 fixture + review 的好模式。
+- Agent Retrieval Bench、SWE-Explore（MEDIUM，2026 新研究）：支持冻结 base commit、line-level ground truth、固定预算、正负 retrieval 和 context efficiency；适合作为设计参照，但 v0.24 不应直接照搬其目标值。
 
 ---
-*Pitfalls research for: v0.22.0 代码智能图分析升级（对标 GitNexus）*
-*Researched: 2026-08-09*
+*Pitfalls research for: v0.24.0 单仓图查询对齐 GitNexus*
+*Researched: 2026-08-24*
