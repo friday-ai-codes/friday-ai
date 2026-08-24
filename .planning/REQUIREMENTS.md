@@ -49,17 +49,17 @@
 
 ### 工具契约与消费面对齐
 
-- [ ] **CONTRACT-01**: graph query 的工具名、描述、input/output schema、required、defaults、enums、错误码、响应版本与能力元数据由单一 versioned manifest/registry 定义
-- [ ] **CONTRACT-02**: 服务端 service、Chat Agent 与 Django MCP 仅作为统一 `GraphQueryService` 的薄适配面，并在 discovery 与真实调用中暴露相同契约
-- [ ] **CONTRACT-03**: npm `@friday-ai-codes/mcp` 从 canonical manifest 生成 graph query 工具定义，补齐 v0.22 图工具漂移；打包后的 tarball 与服务端完整 schema hash 一致
-- [ ] **CONTRACT-04**: 编码容器的 allowed-tools、工具 schema 与实际调用复用同一 manifest；镜像/构建产物缺工具或 schema 不一致时 conformance 测试 fail，不得 skip
-- [ ] **CONTRACT-05**: 所有消费面在调用前均可发现工具契约版本、单仓作用域、repository 必填语义、索引 commit、水位和各 capability 状态
+- [x] **CONTRACT-01**: graph query 的工具名、描述、input/output schema、required、defaults、enums、错误码、响应版本与能力元数据由单一 versioned manifest/registry 定义
+- [x] **CONTRACT-02**: 服务端 service、Chat Agent 与 Django MCP 仅作为统一 `GraphQueryService` 的薄适配面，并在 discovery 与真实调用中暴露相同契约
+- [x] **CONTRACT-03**: npm `@friday-ai-codes/mcp` 从 canonical manifest 生成 graph query 工具定义，补齐 v0.22 图工具漂移；打包后的 tarball 与服务端完整 schema hash 一致
+- [x] **CONTRACT-04**: 编码容器的 allowed-tools、工具 schema 与实际调用复用同一 manifest；镜像/构建产物缺工具或 schema 不一致时 conformance 测试 fail，不得 skip
+- [x] **CONTRACT-05**: 所有消费面在调用前均可发现工具契约版本、单仓作用域、repository 必填语义、索引 commit、水位和各 capability 状态
 
 ### 安全与可观测性
 
 - [ ] **OBS-01**: graph query 生命周期产生 `started`/`completed`/`failed` 结构化事件，含 `duration_ms`、`category=caller`、`component`、触发用户与关联键，且不记录 query 正文或凭证
 - [ ] **OBS-02**: resolver、Process 构建、检索 lane 与 impact 的高频步骤使用 `sampling` 分类并按语言/call shape 记录计数和分层耗时，禁止 INFO 循环刷屏
-- [ ] **OBS-03**: MCP 与 AI 对话两条 graph query 链均 best-effort 写入脱敏的 `RetrievalTrace`，用 request/run/conversation id 关联；观测失败不得改变业务响应
+- [x] **OBS-03**: MCP 与 AI 对话两条 graph query 链均 best-effort 写入脱敏的 `RetrievalTrace`，用 request/run/conversation id 关联；观测失败不得改变业务响应
 - [x] **OBS-04**: resolver 与 Process 重建后台任务显式携带 `initiated_by_user_id` 并在 worker 入口重新 bind；无触发用户时标 `system`
 - [x] **OBS-05**: 所有检索、图扩展、源码证据与消费面复用 repository 权限和 exclusion fail-closed；异常文本与 ledger 内容分别经规定的脱敏入口处理
 
@@ -121,14 +121,14 @@
 | QUERY-08 | Phase 137 | Complete |
 | QUERY-09 | Phase 137 | Complete |
 | QUERY-10 | Phase 137 | Complete |
-| CONTRACT-01 | Phase 139 | Pending |
-| CONTRACT-02 | Phase 139 | Pending |
-| CONTRACT-03 | Phase 139 | Pending |
-| CONTRACT-04 | Phase 139 | Pending |
-| CONTRACT-05 | Phase 139 | Pending |
+| CONTRACT-01 | Phase 139 | Complete |
+| CONTRACT-02 | Phase 139 | Complete |
+| CONTRACT-03 | Phase 139 | Complete |
+| CONTRACT-04 | Phase 139 | Complete |
+| CONTRACT-05 | Phase 139 | Complete |
 | OBS-01 | Phase 140 | Pending |
 | OBS-02 | Phase 140 | Pending |
-| OBS-03 | Phase 139 | Pending |
+| OBS-03 | Phase 139 | Complete |
 | OBS-04 | Phase 136 | Complete |
 | OBS-05 | Phase 138 | Complete |
 

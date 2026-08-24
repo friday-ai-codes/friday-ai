@@ -41,7 +41,7 @@
 - [x] **Phase 136: Process 一等混合索引** — 从 canonical ProcessTrace 建立可重建、双 lane、同水位的 Process 投影（2/2，`human_needed`：真实 Qdrant）
 - [x] **Phase 137: 统一 GraphQueryService** — 单次自然语言查询确定性融合 Symbol、Community 与 Process 证据（1/1，passed）
 - [x] **Phase 138: 消歧与 bounded impact** — 仅对已消歧 anchor 返回有界、不可误读为安全的影响面摘要（1/1，passed）
-- [ ] **Phase 139: 五消费面契约收敛** — 服务端、Chat、Django MCP、npm MCP 与编码容器共享 canonical manifest
+- [x] **Phase 139: 五消费面契约收敛** — 服务端、Chat、Django MCP、npm MCP 与编码容器共享 canonical manifest（1/1，passed）
 - [ ] **Phase 140: Threshold policy 与整体收口** — 基于 baseline 后锁定门禁并完成同条件对比、观测与全量回归
 
 ## Phase Details
@@ -168,7 +168,9 @@
   4. 编码容器的 allowed-tools、schema 与真实调用复用同一 manifest；镜像或构建产物缺工具、版本或 schema 不一致时 conformance 测试失败且不得 skip。
   5. 五个消费面调用前均能发现契约版本、单仓/repository 必填语义、索引 commit、水位与 capability 状态；MCP 和 AI 对话调用均 best-effort 写入脱敏 `RetrievalTrace`，观测失败不改变业务响应。
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+- [x] 139-01-PLAN.md — canonical manifest/hash、五消费面薄适配、构建 conformance 与 RetrievalTrace
 
 ### Phase 140: Threshold policy 与整体收口
 
@@ -422,7 +424,7 @@
 | 136. Process 一等混合索引 | v0.24.0 | PROC-01~05, OBS-04 | 0/TBD | Not started | - |
 | 137. 统一 GraphQueryService | v0.24.0 | QUERY-01~05/08/09/10 | 1/1 | Complete | 2026-08-24 |
 | 138. 消歧与 bounded impact | v0.24.0 | QUERY-06/07, OBS-05 | 1/1 | Complete | 2026-08-24 |
-| 139. 五消费面契约收敛 | v0.24.0 | CONTRACT-01~05, OBS-03 | 0/TBD | Not started | - |
+| 139. 五消费面契约收敛 | v0.24.0 | CONTRACT-01~05, OBS-03 | 1/1 | Complete | 2026-08-24 |
 | 140. Threshold policy 与整体收口 | v0.24.0 | BENCH-06/07, EDGE-06, OBS-01/02 | 0/TBD | Not started | - |
 
 **Coverage (v0.24.0):** 39/39 需求全部映射且每条恰好一次，无孤儿、无重复。阈值严格后置到 Phase 140。
