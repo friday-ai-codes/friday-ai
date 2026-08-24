@@ -1,16 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.24.0
-milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
+milestone_name: 单仓图查询对齐 GitNexus
+current_phase: 133
+current_phase_name: 同仓同 commit 基准与 v0.22 baseline
 status: executing
-stopped_at: v0.24.0 roadmap created；Phase 133 ready to plan
-last_updated: "2026-08-24T09:27:34.553Z"
-last_activity: 2026-08-24 — v0.24.0 roadmap created，39/39 requirements mapped
+stopped_at: Completed 133-01-PLAN.md
+last_updated: "2026-08-24T09:38:48.422Z"
+last_activity: 2026-08-24
+last_activity_desc: Phase 133 execution started
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 4
+  completed_plans: 1
   percent: 0
 ---
 
@@ -25,12 +28,12 @@ See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归
 
 ## Current Position
 
-Phase: 133 of 140（里程碑第 1/8 相位）
-Plan: —
+Phase: 133 (同仓同 commit 基准与 v0.22 baseline) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-08-24 — v0.24.0 roadmap created，39/39 requirements mapped
+Last activity: 2026-08-24 -- Phase 133 execution started
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███░░░░░░░] 25%
 
 ## Milestone Overview (v0.24.0 — Phases 133–140 — 🚧 PLANNED)
 
@@ -406,6 +409,11 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 132 P01 | 12min | 2 tasks | 4 files |
 | Phase 132 P02 | 15min | 2 tasks | 2 files |
 | Phase 132 P03 | 20min | 2 tasks | 3 files |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 133 P01 | 6min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -753,6 +761,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase ?]: 130: 三分量降为排序信号，入围由 placements 决定
 - [Phase 132]: Adapter repair_hook 钳 forbidden primary（INT-03 接线级 collapse 修复）
 - [Phase 132]: D2 bar 用 placement-unit + basename alias 归一；漏斗回归靠 fixture stub 达门槛，不改 V2
+- [Phase ?]: index_key 以 last_indexed_commit_sha 充当，manifest 记 index_key_source 供 Phase 140 演进复合键
+- [Phase ?]: edge_golds 的 callee_uid 非空时 evidence_file_line 必填（防反导锚点）
 
 ### Pending Todos
 
@@ -1187,8 +1197,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-24T08:10:00.000Z
-Stopped at: v0.24.0 roadmap created；Phase 133 ready to plan
+Last session: 2026-08-24T09:38:38.295Z
+Stopped at: Completed 133-01-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
