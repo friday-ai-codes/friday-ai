@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.24.0
 milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
 status: executing
-stopped_at: Completed Phase 134; ready to discuss Phase 135
-last_updated: "2026-08-24T11:02:00.000Z"
-last_activity: 2026-08-24 -- Phase 134 completed (2/2, passed)
+stopped_at: Completed Phase 135; ready to discuss Phase 136
+last_updated: "2026-08-24T11:10:00.000Z"
+last_activity: 2026-08-24 -- Phase 135 completed (1/1, passed)
 progress:
   total_phases: 8
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 25
+  completed_phases: 3
+  total_plans: 7
+  completed_plans: 7
+  percent: 38
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归档见 `milestones/v0.23.0-*`；v0.22.0 归档见 `milestones/v0.22.0-*`。
 
 **Core value:** 已知仓库后，业务/技术自然语言通过统一入口获得正确、可核验、可解释的 Symbol、Community、Process 与影响面证据，并在同仓同 commit 基准上证明优于 v0.22.0。
-**Current focus:** Phase 135 — Python resolved 调用边
+**Current focus:** Phase 136 — Process 一等混合索引
 
 ## Current Position
 
-Phase: 135 (Python resolved 调用边) — READY TO DISCUSS
+Phase: 136 (Process 一等混合索引) — READY TO DISCUSS
 Plan: TBD
-Status: Phase 134 completed; smart discuss pending
-Last activity: 2026-08-24 -- Phase 134 completed (2/2, passed)
+Status: Phase 135 completed; smart discuss pending
+Last activity: 2026-08-24 -- Phase 135 completed (1/1, passed)
 
-Progress: [███░░░░░░░] 25%
+Progress: [████░░░░░░] 38%
 
 ## Milestone Overview (v0.24.0 — Phases 133–140 — 🚧 PLANNED)
 
@@ -38,7 +38,7 @@ Progress: [███░░░░░░░] 25%
 |-------|------|--------------|--------|
 | 133 | 同仓同 commit 基准与 v0.22 baseline | BENCH-01~05 | ✅ Complete (4/4, human_needed) |
 | 134 | TS/JS resolved 调用边 | EDGE-01/02/03/07 | ✅ Complete (2/2, passed) |
-| 135 | Python resolved 调用边 | EDGE-04/05 | Not started |
+| 135 | Python resolved 调用边 | EDGE-04/05 | ✅ Complete (1/1, passed) |
 | 136 | Process 一等混合索引 | PROC-01~05, OBS-04 | Not started |
 | 137 | 统一 GraphQueryService | QUERY-01~05/08/09/10 | Not started |
 | 138 | 消歧与 bounded impact | QUERY-06/07, OBS-05 | Not started |

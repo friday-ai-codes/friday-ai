@@ -37,7 +37,7 @@
 
 - [x] **Phase 133: 同仓同 commit 基准与 v0.22 baseline** — 冻结评测身份、gold、分桶和分母，产出不含阈值的原始 baseline（4/4，`human_needed`：真仓 OK 路径）
 - [x] **Phase 134: TS/JS resolved 调用边** — 以 import alias、re-export 与 receiver 证据提升 TS/JS 调用边（2/2，passed）
-- [ ] **Phase 135: Python resolved 调用边** — 以 import/member/receiver 绑定提升 Python 调用边并独立验收
+- [x] **Phase 135: Python resolved 调用边** — 以 import/member/receiver 绑定提升 Python 调用边并独立验收（1/1，passed）
 - [ ] **Phase 136: Process 一等混合索引** — 从 canonical ProcessTrace 建立可重建、双 lane、同水位的 Process 投影
 - [ ] **Phase 137: 统一 GraphQueryService** — 单次自然语言查询确定性融合 Symbol、Community 与 Process 证据
 - [ ] **Phase 138: 消歧与 bounded impact** — 仅对已消歧 anchor 返回有界、不可误读为安全的影响面摘要
@@ -100,7 +100,9 @@
   3. 评测者可分别查看 language × framework × call shape 的 precision、recall、resolved、ambiguous、unresolved，为 Phase 140 按语言独立锁门提供输入。
   4. Go selector/interface 深化不影响本阶段及里程碑验收，LSP 默认值保持不变。
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+- [x] 135-01-PLAN.md — Python module/member/class binding + 动态语义降级
 
 ### Phase 136: Process 一等混合索引
 
