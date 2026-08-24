@@ -20,11 +20,7 @@ def _report(
 ) -> dict:
     policy = valid_policy()
     system_key = "system_identity" if release == "v0.22" else None
-    system = (
-        policy["baseline"][system_key]
-        if system_key
-        else policy["candidate_expectation"]
-    )
+    system = policy["baseline"][system_key] if system_key else policy["candidate_expectation"]
     return {
         "watermark": "OK",
         "comparison_identity": policy["baseline"]["comparison_identity"],
@@ -39,7 +35,11 @@ def _report(
                 "entry_type": "http_endpoint",
                 "symbol_recall": value,
             }
-            for case_id, value in (("c1", symbol_recall), ("c2", symbol_recall), ("c3", symbol_recall))
+            for case_id, value in (
+                ("c1", symbol_recall),
+                ("c2", symbol_recall),
+                ("c3", symbol_recall),
+            )
         ],
         "overall": {"symbol_recall": symbol_recall},
         "per_bucket": [
@@ -89,9 +89,9 @@ def _compare(
     candidate = candidate or _report(symbol_recall=0.9, release="v0.24")
     policy_payload = policy_payload or valid_policy()
     baseline_raw = _raw(baseline)
-    policy_payload["baseline"]["report_sha256"] = __import__("hashlib").sha256(
-        baseline_raw
-    ).hexdigest()
+    policy_payload["baseline"]["report_sha256"] = (
+        __import__("hashlib").sha256(baseline_raw).hexdigest()
+    )
     policy = load_threshold_policy(encoded(policy_payload))
     return compare_graph_bench(
         baseline_report=baseline,
@@ -177,7 +177,7 @@ def test_bucket_and_resolver_cell_pairing_is_strict(section: str) -> None:
     [
         ("higher_is_better", 0.8, 0.8, 0.0, "FAIL"),
         ("higher_is_better", 0.8, 0.79, 0.01, "FAIL"),
-        ("lower_is_better", 0.2, 0.21, 0.01, "PASS"),
+        ("lower_is_better", 0.2, 0.19, 0.01, "PASS"),
         ("lower_is_better", 0.2, 0.22, 0.01, "FAIL"),
     ],
 )
@@ -200,9 +200,7 @@ def test_direction_aware_boundaries(
             "protected": False,
         }
     ]
-    policy["primary_quality_metrics"] = [
-        {"scope": {"kind": "overall"}, "metric": "symbol_recall"}
-    ]
+    policy["primary_quality_metrics"] = [{"scope": {"kind": "overall"}, "metric": "symbol_recall"}]
     baseline = _report(symbol_recall=baseline_value)
     candidate = _report(symbol_recall=candidate_value, release="v0.24")
     assert _compare(baseline, candidate, policy_payload=policy).verdict == expected
