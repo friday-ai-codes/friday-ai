@@ -23,7 +23,10 @@ baseline。数据集独立于被测 codegraph，是 ground truth；版本化入 
 - 每条 case 的 `split` 字段必须与其所在文件一致（`dev.json` 内 `split="dev"`，
   `locked_test.json` 内 `split="locked_test"`），且 split 文件名与
   `manifest.splits` 映射一致。
-- `gold_version` 随数据演进递增（初始 `"1"`），便于 Phase 140 追溯。
+- `gold_version` 随数据演进递增，便于 Phase 140 追溯。当前为 `"2"`：在真实
+  baseline 首次冻结前，把 Python from-import seed 的旧 `from_import` 标记显式
+  映射为 resolver canonical `import_alias`，并纳入 `re_export` / `component`。
+  此映射不得由 candidate 结果反向修改。
 
 ## 标注口径
 
@@ -38,7 +41,7 @@ gold 独立于被测图）：
 | `language` | `python` / `typescript` / `javascript` / `go` | case 涉及代码的语言 |
 | `framework` | `django` / `vue` / `gin` / `none` | 框架上下文；无显式框架时填 `none` |
 | `entry_type` | `http_endpoint` / `process_entry` / `plain_symbol` | 入口类型：HTTP 端点 handler / 流程入口 / 普通符号 |
-| `call_shape`（仅 edge gold） | `direct` / `member` / `import_alias` / `receiver` / `from_import` | 调用形态 |
+| `call_shape`（仅 edge gold） | `direct` / `member` / `import_alias` / `receiver` / `from_import` / `re_export` / `component` | 调用形态 |
 
 越出闭集的取值会被 schema 校验（`validate_gold_case`）拒绝。
 

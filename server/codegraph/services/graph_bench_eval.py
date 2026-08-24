@@ -29,6 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from codegraph.resolver.base import ResolveResult
+
 __all__ = [
     "BUCKET_OK",
     "CALL_SHAPES",
@@ -45,13 +47,17 @@ __all__ = [
     "GoldCase",
     "GoldDataset",
     "RunIdentity",
+    "ResolverCellKey",
+    "ResolverEdgeOutcome",
     "aggregate_report",
+    "aggregate_resolver_cells",
     "bucket_metrics",
     "bucket_status",
     "build_report",
     "build_run_identity",
     "evaluate_case",
     "rank_process_candidates",
+    "resolver_cell_metrics",
     "score_edge_pr",
     "score_impact_precision",
     "score_process_recall",
@@ -72,7 +78,15 @@ LANGUAGES = ("python", "typescript", "javascript", "go")
 FRAMEWORKS = ("django", "vue", "gin", "none")
 ENTRY_TYPES = ("http_endpoint", "process_entry", "plain_symbol")
 # call_shape 仅 resolved edge gold 需要，记录独立 callsite 标注的调用形态。
-CALL_SHAPES = ("direct", "member", "import_alias", "receiver", "from_import")
+CALL_SHAPES = (
+    "direct",
+    "member",
+    "import_alias",
+    "receiver",
+    "from_import",
+    "re_export",
+    "component",
+)
 
 
 @dataclass
@@ -395,6 +409,188 @@ def score_edge_pr(
     precision: float | str = NOT_APPLICABLE if not pred_pairs else hits / len(pred_pairs)
     recall: float | str = NO_GOLD if not gold_pairs else hits / len(gold_pairs)
     return {"precision": precision, "recall": recall}
+
+
+# ---------------------------------------------------------------------------
+# EDGE-06：resolver edge-level 三态与 language × framework × call_shape cell
+# ---------------------------------------------------------------------------
+
+_RESOLVER_STATUSES = ("resolved", "ambiguous", "unresolved")
+_RESOLVER_REQUIRED_LANGUAGES = ("typescript", "javascript", "python")
+
+
+@dataclass(frozen=True, order=True)
+class ResolverCellKey:
+    """一个 resolver 质量 cell 的稳定三维键。"""
+
+    language: str
+    framework: str
+    call_shape: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "language": self.language,
+            "framework": self.framework,
+            "call_shape": self.call_shape,
+        }
+
+
+@dataclass(frozen=True)
+class ResolverEdgeOutcome:
+    """一条独立 gold callsite 与 resolver 三态事实的配对结果。"""
+
+    language: str
+    framework: str
+    call_shape: str
+    status: str
+    expected_callee_uid: str
+    predicted_callee_uid: str | None
+
+    @classmethod
+    def from_resolve_result(
+        cls,
+        result: ResolveResult,
+        *,
+        framework: str,
+        expected_callee_uid: str,
+    ) -> ResolverEdgeOutcome:
+        """直接消费 resolver 事实；禁止从 nullable callee 字段反推三态。"""
+        if result.status not in _RESOLVER_STATUSES:
+            raise ValueError(f"resolver status={result.status!r} 越出闭集 {_RESOLVER_STATUSES}")
+        if result.language not in LANGUAGES:
+            raise ValueError(f"resolver language={result.language!r} 越出闭集 {LANGUAGES}")
+        if framework not in FRAMEWORKS:
+            raise ValueError(f"resolver framework={framework!r} 越出闭集 {FRAMEWORKS}")
+        if result.call_shape not in CALL_SHAPES:
+            raise ValueError(
+                f"resolver call_shape={result.call_shape!r} 越出闭集 {CALL_SHAPES}"
+            )
+        if not expected_callee_uid:
+            raise ValueError("expected_callee_uid 为必填，resolver gold 不能为空")
+        if result.status == "resolved" and not result.callee_symbol_id:
+            raise ValueError("resolver status=resolved 时必须提供 callee_symbol_id")
+        if result.status != "resolved" and result.callee_symbol_id is not None:
+            raise ValueError("resolver 非 resolved 状态不得携带 callee_symbol_id")
+        return cls(
+            language=result.language,
+            framework=framework,
+            call_shape=result.call_shape,
+            status=result.status,
+            expected_callee_uid=expected_callee_uid,
+            predicted_callee_uid=result.callee_symbol_id,
+        )
+
+    @property
+    def key(self) -> ResolverCellKey:
+        return ResolverCellKey(self.language, self.framework, self.call_shape)
+
+    @property
+    def correct(self) -> bool:
+        return (
+            self.status == "resolved"
+            and self.predicted_callee_uid == self.expected_callee_uid
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **self.key.to_dict(),
+            "status": self.status,
+            "expected_callee_uid": self.expected_callee_uid,
+            "predicted_callee_uid": self.predicted_callee_uid,
+            "correct": self.correct,
+        }
+
+
+def _resolver_language_required(language: str) -> bool:
+    """TS/JS 与 Python 独立过门；Go 仅报告。"""
+    return language in _RESOLVER_REQUIRED_LANGUAGES
+
+
+def resolver_cell_metrics(
+    outcomes: list[ResolverEdgeOutcome],
+    *,
+    gold_count: int,
+    key: ResolverCellKey | None = None,
+    min_samples: int = MIN_BUCKET_SAMPLES,
+) -> dict[str, Any]:
+    """聚合单个 resolver cell，并 fail-closed 校验三态分母。"""
+    keys = {outcome.key for outcome in outcomes}
+    if key is None:
+        if len(keys) != 1:
+            raise ValueError("resolver cell outcomes 必须属于同一 cell，空 cell 需显式 key")
+        key = next(iter(keys))
+    elif keys and keys != {key}:
+        raise ValueError("resolver cell key 与 outcomes 不一致")
+    if gold_count < 0:
+        raise ValueError("resolver cell gold_count 不得为负数")
+
+    resolved_count = sum(outcome.status == "resolved" for outcome in outcomes)
+    ambiguous_count = sum(outcome.status == "ambiguous" for outcome in outcomes)
+    unresolved_count = sum(outcome.status == "unresolved" for outcome in outcomes)
+    observed_count = resolved_count + ambiguous_count + unresolved_count
+    correct_resolved_count = sum(outcome.correct for outcome in outcomes)
+    incorrect_resolved_count = resolved_count - correct_resolved_count
+
+    precision: float | str = (
+        NOT_APPLICABLE
+        if resolved_count == 0
+        else round(correct_resolved_count / resolved_count, _BASELINE_PRECISION)
+    )
+    recall: float | str = (
+        NO_GOLD
+        if gold_count == 0
+        else round(correct_resolved_count / gold_count, _BASELINE_PRECISION)
+    )
+    status = (
+        "INVALID"
+        if observed_count != gold_count
+        else bucket_status(gold_count, min_samples)
+    )
+    return {
+        "key": key.to_dict(),
+        "required": _resolver_language_required(key.language),
+        "gold_count": gold_count,
+        "resolved_count": resolved_count,
+        "ambiguous_count": ambiguous_count,
+        "unresolved_count": unresolved_count,
+        "correct_resolved_count": correct_resolved_count,
+        "incorrect_resolved_count": incorrect_resolved_count,
+        "precision": precision,
+        "recall": recall,
+        "status": status,
+    }
+
+
+def aggregate_resolver_cells(
+    outcomes: list[ResolverEdgeOutcome],
+    *,
+    gold_counts: dict[ResolverCellKey, int] | None = None,
+    min_samples: int = MIN_BUCKET_SAMPLES,
+) -> dict[str, Any]:
+    """确定性聚合 resolver cells；任一分母漂移使整体 ``INVALID``。"""
+    grouped: dict[ResolverCellKey, list[ResolverEdgeOutcome]] = {}
+    for outcome in outcomes:
+        grouped.setdefault(outcome.key, []).append(outcome)
+
+    counts = dict(gold_counts or {})
+    for key, members in grouped.items():
+        counts.setdefault(key, len(members))
+
+    cells = [
+        resolver_cell_metrics(
+            grouped.get(key, []),
+            key=key,
+            gold_count=counts[key],
+            min_samples=min_samples,
+        )
+        for key in sorted(counts)
+    ]
+    invalid_cells = [cell for cell in cells if cell["status"] == "INVALID"]
+    return {
+        "status": "INVALID" if invalid_cells else "OK",
+        "cells": cells,
+        "invalid_cells": invalid_cells,
+    }
 
 
 def score_impact_precision(
