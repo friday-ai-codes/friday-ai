@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.24.0
 milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
 status: executing
-stopped_at: Completed 133-03-PLAN.md
-last_updated: "2026-08-24T16:28:10.038Z"
-last_activity: 2026-08-24 -- Phase 139 completed (1/1, passed)
+stopped_at: Completed 140-01-PLAN.md
+last_updated: "2026-08-24T17:07:16.646Z"
+last_activity: 2026-08-25 -- Phase 140 Plan 01 completed
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 12
-  completed_plans: 12
-  percent: 88
+  total_plans: 16
+  completed_plans: 13
+  percent: 81
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归
 
 ## Current Position
 
-Phase: 140 (Threshold policy 与整体收口) — READY TO DISCUSS
-Plan: TBD
+Phase: 140 (Threshold policy 与整体收口) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-08-24 -- Phase 139 completed (1/1, passed)
+Last activity: 2026-08-25 -- Phase 140 Plan 01 completed
 
-Progress: [█████████░] 88%
+Progress: [████████░░] 81%
 
 ## Milestone Overview (v0.24.0 — Phases 133–140 — 🚧 PLANNED)
 
@@ -413,6 +413,7 @@ Progress: [█████████░] 88%
 | Phase 133 P01 | 6min | 2 tasks | 3 files |
 | Phase 133-commit-v0-22-baseline P02 | 5min | 2 tasks | 5 files |
 | Phase 133-commit-v0-22-baseline P03 | 13min | 3 tasks | 2 files |
+| Phase 140 P01 | 35min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -767,6 +768,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase ?]: 133-03: 空结果标记显式单列不进分母（NO_GOLD/N/A/SEED_MISSING/node_not_in_graph），杜绝空记满分
 - [Phase ?]: 133-03: 质量聚合用 macro 且 overall 仅聚合 OK 非保护桶，稀疏/受保护桶单列防掩盖
 - [Phase ?]: 133-03: 报告零回归门字段，阈值决策权移交 Phase 140
+- [Phase 140]: comparison identity 只保存同条件字段，system identity 单列允许 baseline/candidate Friday revision 不同。 — 防止把预期变化的系统版本错误纳入同条件约束。
+- [Phase 140]: Python from-import gold 对齐 resolver 的 import_alias，并将 gold_version 递增到 2。 — 冻结前对齐 ResolveResult 实际 taxonomy，避免静默折叠。
+- [Phase 140]: 无稳定 token 归因时输出 unavailable/INSUFFICIENT_DATA，不使用整数 0 作为通过证据。 — 避免缺失计量被误判为零成本或通过。
 
 ### Pending Todos
 
@@ -931,6 +935,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
   `env_FRIDAY_TASK_USER_TOKEN`。明文绝不落库/进日志（PAT-02 守护测试通过）。
   **剩余**：chat/MCP 编码 dispatch 路径（`coding_session_service`）的 PAT 注入未覆盖；
   真实容器端 RTOOL-02/03/04 运行时仍需带 PAT 的真实 dispatch + 容器 E2E 人工验收（见 Deferred）。
+
+- 真实 benchmark baseline 仍需目标仓、目标 commit、Qdrant 与 v0.22 artifact；当前状态为 human_needed。
 
 ### 共享面改动备注（Phase 113-06，同步点需关注）
 
@@ -1201,8 +1207,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-24T10:06:28.171Z
-Stopped at: Completed 133-03-PLAN.md
+Last session: 2026-08-24T17:07:16.632Z
+Stopped at: Completed 140-01-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
