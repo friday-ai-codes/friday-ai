@@ -99,6 +99,17 @@ def _evaluator_sha256() -> str:
     return hashlib.sha256(source.read_bytes()).hexdigest()
 
 
+def _canonical_payload_sha256(payload: dict[str, Any]) -> str:
+    """对 report payload 做 canonical hash，供 manifest 防篡改关联。"""
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def _benchmark_environment_preflight(
     *,
     repository_id: str,
@@ -492,6 +503,7 @@ class Command(BaseCommand):
                 reproducible=reproducible,
                 started_at=started_at,
                 duration_ms=int((time.monotonic() - started) * 1000),
+                artifact_sha256=None,
             )
             try:
                 logger.info(
@@ -583,6 +595,7 @@ class Command(BaseCommand):
                 ),
             },
         }
+        artifact_sha256 = _canonical_payload_sha256(payload)
 
         self._write_manifest(
             options,
@@ -598,6 +611,7 @@ class Command(BaseCommand):
             reproducible=reproducible,
             started_at=started_at,
             duration_ms=duration_ms,
+            artifact_sha256=artifact_sha256,
         )
         if options["output_json"]:
             Path(options["output_json"]).write_text(
@@ -827,6 +841,7 @@ class Command(BaseCommand):
         reproducible: str,
         started_at: str,
         duration_ms: int,
+        artifact_sha256: str | None,
     ) -> None:
         """写 run manifest（identity 五元组 + index_key_source + 三方水位输入与校验结果
         + run_id + 可复现命令行），供 Phase 140 同条件对比复用（BENCH-01）。"""
@@ -848,6 +863,7 @@ class Command(BaseCommand):
             "reproducible_command": reproducible,
             "started_at": started_at,
             "duration_ms": duration_ms,
+            "artifact_sha256": artifact_sha256,
         }
         output = str(options.get("output_manifest") or "")
         if output:
