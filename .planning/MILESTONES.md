@@ -16,7 +16,7 @@
 
 **质量结论：** 里程碑审计 `tech_debt`，39/39 requirements 满足、8/8 phases、16/16 plans、0 critical gaps。真实已索引目标仓/Qdrant、v0.22 baseline、v0.24 candidate、locked threshold policy 与 final-only holdout compare 仍为 `human_needed`；因此只确认可执行协议、门禁实现和 fail-closed 边界，**不宣称数值优于 v0.22.0**。
 
-**归档：** [audit](./milestones/v0.24.0-MILESTONE-AUDIT.md) · [roadmap](./milestones/v0.24.0-ROADMAP.md) · [requirements](./milestones/v0.24.0-REQUIREMENTS.md)。相位产物暂留 `.planning/phases/`，由受限 cleanup 清理归档临时产物；指定 quick JSON 不在归档提交中。
+**归档：** [audit](./milestones/v0.24.0-MILESTONE-AUDIT.md) · [roadmap](./milestones/v0.24.0-ROADMAP.md) · [requirements](./milestones/v0.24.0-REQUIREMENTS.md) · [phases](./milestones/v0.24.0-phases/)。受限 cleanup 仅迁移本里程碑 Phase 133–140 产物并移除活动 requirements 副本；指定 quick JSON 未被处理。
 
 **未打 tag：** 本仓 tag 属于发布轨，GSD 里程碑归档不创建 tag。
 
