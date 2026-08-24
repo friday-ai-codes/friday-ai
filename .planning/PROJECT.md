@@ -10,11 +10,22 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 让团队"开箱即用、安全地"把需求自动变成代码：用户能顺利完成首次部署与登录、配好必备的 AI 供应商，然后让工作流把飞书需求自动跑成 PR。如果第一步进不去（登录/配置），后面一切都无从谈起。
 
+## Current Milestone: v0.24.0 单仓图查询对齐 GitNexus
+
+**Goal:** 已知仓库后，业务/技术自然语言能够通过一个统一入口拿到候选符号、Community、Process 执行流（步骤和 `file:line`）及影响面摘要，并用同一仓、同一 commit 的可复现基准证明比 v0.22.0 更好。
+
+**Target features:**
+- 统一 graph-aware query：自然语言一次查询串起候选符号、Community、Process、可核实文件行号与影响面摘要，避免 agent 手工编排多个底层工具。
+- 提升 resolved 调用边质量，按语言分别度量；优先 TS/JS receiver + import alias、Python import/member，Go 按依赖顺序后置。
+- 将 Process 建成可检索一等对象，索引名称、入口、终点、步骤摘要、模块与业务关键词，并纳入 BM25/embedding 混合检索和可解释排序。
+- 统一服务端、Chat Agent、Django MCP、npm `@friday-ai-codes/mcp` 与编码容器的工具契约和发现面，消除 v0.22.0 的 npm MCP 漂移。
+- 建立按语言、框架、入口类型分桶的单仓 benchmark；先测 baseline，再锁定回归阈值，覆盖 Symbol/Process recall、resolved edge、impact、trace、延迟与 token。
+
 ## Current State
 
 **Latest shipped:** v0.23.0 仓库路由增强（分阶段决策漏斗）（2026-08-14，审计 **tech_debt**，25/25 需求满足，Phases 128–132，16 plans，**未打 tag**）；此前为 v0.22.0 代码智能图分析升级（2026-08-11，审计 **tech_debt**，27 条需求 26 满足 / 1 部分（IMPACT-03），Phases 121–127）、v0.21.0 蓝图过程可见与返工闭环、v0.20.0 技术方案蓝图与 v0.19.0 技术方案可信度。里程碑 v0.1.0–v0.23.0（Phases 1–132）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
 
-**当前在建：** 无 — 等待 `$gsd-new-milestone` 立项。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
+**当前在建：** v0.24.0 单仓图查询对齐 GitNexus，Phase 从 133 继续；研究优先，先实测 baseline 再锁回归门。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -252,9 +263,16 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **执行流 + rename_preview + skills**：Endpoint→Process；affected_processes 回填；只读双源改名清单；`friday-impact`/`friday-refactoring` 同源分发 — v0.22.0 (EXEC-01~03, RENAME-01, SKILL-01)
 - ✓ **Semgrep advisory + LSP 基准**：diff-aware 扫描 + MR 安全段；空 SHA hollow 已闭合；LSP 默认保持 False（基准未达翻转门槛） — v0.22.0 (TAINT-01~03, LSP-01)
 
-### Active（无 — 当前无在建里程碑）
+### Active（v0.24.0）
 
-<!-- 2026-08-11 v0.22.0 归档后，无在建需求集，`.planning/REQUIREMENTS.md` 已按 complete-milestone 契约删除；需求归档在 milestones/v0.22.0-REQUIREMENTS.md（27 条 GRAPH/IMPACT/DIFF/MOD/EXEC/RENAME/TAINT/LSP/SKILL）。此前里程碑需求见 milestones/v0.19.0～v0.21.0-REQUIREMENTS.md。下一里程碑立项（$gsd-new-milestone）时重新生成 REQUIREMENTS.md。以下 v0.15.0 需求清单为历史存档（已全部交付），保留仅作追溯。 -->
+- [ ] 已知仓库与自然语言 query 可经单一 graph-aware 入口返回候选 Symbol、Community、Process、步骤级 `file:line` 与影响面摘要
+- [ ] Process 作为一等检索对象进入 BM25/embedding 混合召回与可解释排序
+- [ ] TS/JS 与 Python resolved 调用边质量按语言独立提升并验证，Go 按依赖顺序后置
+- [ ] 服务端、Chat Agent、Django MCP、npm MCP 与编码容器发现同一工具契约
+- [ ] 单仓 benchmark 在同仓同 commit 上先建立 v0.22 baseline，再锁定可复现回归阈值并证明质量提升
+- [ ] 图查询与检索观测遵守 best-effort、脱敏、caller/sampling 分类及 `initiated_by_user_id` 传播
+
+<!-- v0.24.0 的原子需求以 `.planning/REQUIREMENTS.md` 为准。以下 v0.15.0 需求清单为历史存档（已全部交付），保留仅作追溯，不属于本里程碑 Active 范围。 -->
 
 
 > ⚠️ **已知既有漂移（早于本次归档）**：下方清单仍是 v0.15.0 的历史存档，`### Active` 段并非当前在建需求。合并后已把标题与说明改为如实的「无在建里程碑」，清单本身保留作追溯，待下一里程碑立项时整体替换。
@@ -457,4 +475,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-14 after v0.23.0 milestone*
+*Last updated: 2026-08-24 after starting v0.24.0 milestone*

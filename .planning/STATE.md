@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: —
-milestone_name: —
-status: Awaiting next milestone
-stopped_at: v0.23.0 archived（未打 tag）
-last_updated: "2026-08-14T07:20:00.000Z"
-last_activity: 2026-08-14 — Milestone v0.23.0 archived（tech_debt accepted；phases → milestones/v0.23.0-phases/）
+milestone: v0.24.0
+milestone_name: 单仓图查询对齐 GitNexus
+status: planning
+last_updated: "2026-08-24T07:38:53.854Z"
+last_activity: 2026-08-24
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 16
-  completed_plans: 16
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,12 +24,10 @@ See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 归档）。v0.23.0 归
 
 ## Current Position
 
-Phase: — (awaiting next milestone)
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-08-14 — Milestone v0.23.0 archived（tech_debt accepted；未打 tag）
-
-Progress: [██████████] 100% (v0.23.0 complete)
+Status: Defining requirements
+Last activity: 2026-08-24 — Milestone v0.24.0 started
 
 ## Milestone Overview (v0.23.0 — Phases 128–132 — ✅ ARCHIVED 2026-08-14，审计 tech_debt，未打 tag)
 
