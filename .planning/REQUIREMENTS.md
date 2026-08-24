@@ -28,11 +28,11 @@
 
 ### Process 一等检索对象
 
-- [ ] **PROC-01**: 每个 Process 由 canonical `ProcessTrace` 确定性生成检索文档，包含名称、入口、终点、有序步骤摘要、模块、业务关键词与 `built_at_sha`
-- [ ] **PROC-02**: Process 文档进入独立、可重建的 Qdrant 投影，同时支持 BM25/sparse 与 embedding/dense 召回；Django 数据仍是事实源
-- [ ] **PROC-03**: Process 投影以 repository、branch、generation 与 commit SHA 过滤和对账，重建幂等；旧 generation 不得与新结果静默混排
-- [ ] **PROC-04**: 当 query 词只存在于 Process 名称/摘要/业务关键词、不存在于 Symbol 名时，Process 仍可被直接召回并标明命中 lane
-- [ ] **PROC-05**: 每个返回 Process 保留完整的名称、入口、终点及有序 steps；每一步包含 Symbol UID、仓库相对路径和 1-based 起止行，并能在同 commit blob 中核验
+- [x] **PROC-01**: 每个 Process 由 canonical `ProcessTrace` 确定性生成检索文档，包含名称、入口、终点、有序步骤摘要、模块、业务关键词与 `built_at_sha`
+- [x] **PROC-02**: Process 文档进入独立、可重建的 Qdrant 投影，同时支持 BM25/sparse 与 embedding/dense 召回；Django 数据仍是事实源
+- [x] **PROC-03**: Process 投影以 repository、branch、generation 与 commit SHA 过滤和对账，重建幂等；旧 generation 不得与新结果静默混排
+- [x] **PROC-04**: 当 query 词只存在于 Process 名称/摘要/业务关键词、不存在于 Symbol 名时，Process 仍可被直接召回并标明命中 lane
+- [x] **PROC-05**: 每个返回 Process 保留完整的名称、入口、终点及有序 steps；每一步包含 Symbol UID、仓库相对路径和 1-based 起止行，并能在同 commit blob 中核验
 
 ### 统一 graph-aware query
 
@@ -60,7 +60,7 @@
 - [ ] **OBS-01**: graph query 生命周期产生 `started`/`completed`/`failed` 结构化事件，含 `duration_ms`、`category=caller`、`component`、触发用户与关联键，且不记录 query 正文或凭证
 - [ ] **OBS-02**: resolver、Process 构建、检索 lane 与 impact 的高频步骤使用 `sampling` 分类并按语言/call shape 记录计数和分层耗时，禁止 INFO 循环刷屏
 - [ ] **OBS-03**: MCP 与 AI 对话两条 graph query 链均 best-effort 写入脱敏的 `RetrievalTrace`，用 request/run/conversation id 关联；观测失败不得改变业务响应
-- [ ] **OBS-04**: resolver 与 Process 重建后台任务显式携带 `initiated_by_user_id` 并在 worker 入口重新 bind；无触发用户时标 `system`
+- [x] **OBS-04**: resolver 与 Process 重建后台任务显式携带 `initiated_by_user_id` 并在 worker 入口重新 bind；无触发用户时标 `system`
 - [ ] **OBS-05**: 所有检索、图扩展、源码证据与消费面复用 repository 权限和 exclusion fail-closed；异常文本与 ledger 内容分别经规定的脱敏入口处理
 
 ## Future Requirements
@@ -106,11 +106,11 @@
 | EDGE-05 | Phase 135 | Complete |
 | EDGE-06 | Phase 140 | Pending |
 | EDGE-07 | Phase 134 | Complete |
-| PROC-01 | Phase 136 | Pending |
-| PROC-02 | Phase 136 | Pending |
-| PROC-03 | Phase 136 | Pending |
-| PROC-04 | Phase 136 | Pending |
-| PROC-05 | Phase 136 | Pending |
+| PROC-01 | Phase 136 | Complete |
+| PROC-02 | Phase 136 | Complete |
+| PROC-03 | Phase 136 | Complete |
+| PROC-04 | Phase 136 | Complete |
+| PROC-05 | Phase 136 | Complete |
 | QUERY-01 | Phase 137 | Pending |
 | QUERY-02 | Phase 137 | Pending |
 | QUERY-03 | Phase 137 | Pending |
@@ -129,7 +129,7 @@
 | OBS-01 | Phase 140 | Pending |
 | OBS-02 | Phase 140 | Pending |
 | OBS-03 | Phase 139 | Pending |
-| OBS-04 | Phase 136 | Pending |
+| OBS-04 | Phase 136 | Complete |
 | OBS-05 | Phase 138 | Pending |
 
 **Coverage:**

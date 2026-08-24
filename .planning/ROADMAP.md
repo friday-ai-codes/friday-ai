@@ -38,7 +38,7 @@
 - [x] **Phase 133: 同仓同 commit 基准与 v0.22 baseline** — 冻结评测身份、gold、分桶和分母，产出不含阈值的原始 baseline（4/4，`human_needed`：真仓 OK 路径）
 - [x] **Phase 134: TS/JS resolved 调用边** — 以 import alias、re-export 与 receiver 证据提升 TS/JS 调用边（2/2，passed）
 - [x] **Phase 135: Python resolved 调用边** — 以 import/member/receiver 绑定提升 Python 调用边并独立验收（1/1，passed）
-- [ ] **Phase 136: Process 一等混合索引** — 从 canonical ProcessTrace 建立可重建、双 lane、同水位的 Process 投影
+- [x] **Phase 136: Process 一等混合索引** — 从 canonical ProcessTrace 建立可重建、双 lane、同水位的 Process 投影（2/2，`human_needed`：真实 Qdrant）
 - [ ] **Phase 137: 统一 GraphQueryService** — 单次自然语言查询确定性融合 Symbol、Community 与 Process 证据
 - [ ] **Phase 138: 消歧与 bounded impact** — 仅对已消歧 anchor 返回有界、不可误读为安全的影响面摘要
 - [ ] **Phase 139: 五消费面契约收敛** — 服务端、Chat、Django MCP、npm MCP 与编码容器共享 canonical manifest
@@ -117,7 +117,10 @@
   4. 仅出现在 Process 名称、摘要或业务关键词中的 query 仍可直接召回 Process，并明确标注命中 lane。
   5. 返回的 Process 保留完整有序 steps，每步含 Symbol UID、仓库相对路径与 1-based 起止行并可在同 commit blob 核验；重建任务携带并重新 bind `initiated_by_user_id`，无用户时标 `system`。
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+- [x] 136-01-PLAN.md — canonical Process 文档 + generation + steps 证据
+- [x] 136-02-PLAN.md — 独立 Qdrant dense+sparse 投影 + hybrid 召回
 
 ### Phase 137: 统一 GraphQueryService
 
