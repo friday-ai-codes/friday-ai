@@ -11,6 +11,12 @@ from asgiref.sync import sync_to_async
 
 from common.logging import redact_secrets_in_text
 from services.code_graph.cache import get_graph_service
+from services.code_graph.impact import (
+    DEFAULT_MAX_DEPTH,
+    DEFAULT_MAX_NODES,
+    DEFAULT_RESULT_LIMIT,
+    analyze_impact,
+)
 from services.code_graph.process_index import search_process_index
 from services.retrieval.rag_search import search_rag
 
@@ -78,6 +84,17 @@ def _rrf(rank: int, weight: float) -> float:
     return round(weight / (_RRF_K + rank), 8)
 
 
+def _disambiguation_candidate(row: Mapping[str, Any]) -> dict[str, Any]:
+    payload = row.get("payload") or {}
+    return {
+        "symbol_id": str(row.get("symbol_id") or ""),
+        "name": str(payload.get("name") or ""),
+        "file_path": str(payload.get("file_path") or ""),
+        "start_line": int(payload.get("start_line") or payload.get("line_start") or 0),
+        "end_line": int(payload.get("end_line") or payload.get("line_end") or 0),
+    }
+
+
 def _community_index(
     rows: Sequence[Mapping[str, Any]],
 ) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
@@ -112,6 +129,11 @@ class GraphQueryService:
         max_symbols: int = 10,
         max_processes: int = 5,
         budget_chars: int = 50_000,
+        include_impact: bool = False,
+        anchor_symbol_id: str | None = None,
+        impact_max_depth: int = 3,
+        impact_limit: int = 200,
+        impact_max_nodes: int = 2000,
     ) -> dict[str, Any]:
         if not query.strip():
             raise ValueError("query 不能为空")
@@ -304,6 +326,97 @@ class GraphQueryService:
                     row.pop("content", None)
                 truncated_reasons.append("content_budget")
 
+            impact: dict[str, Any] = {
+                "status": "not_requested",
+                "summary": None,
+            }
+            if include_impact:
+                candidates = [
+                    _disambiguation_candidate(row) for row in returned_symbols
+                ]
+                anchor = str(anchor_symbol_id or "")
+                if not anchor and len(candidates) > 1:
+                    impact = {
+                        "status": "needs_disambiguation",
+                        "anchor": None,
+                        "candidates": candidates,
+                        "summary": None,
+                        "warning": "impact_not_run_without_unique_anchor",
+                    }
+                    capabilities["impact"] = {
+                        "status": "degraded",
+                        "reason": "needs_disambiguation",
+                    }
+                else:
+                    if not anchor and len(candidates) == 1:
+                        anchor = candidates[0]["symbol_id"]
+                    if not anchor or anchor not in code_graph.graph:
+                        impact = {
+                            "status": "unavailable",
+                            "anchor": anchor or None,
+                            "candidates": candidates,
+                            "summary": None,
+                            "warning": "anchor_stale_missing_or_excluded",
+                        }
+                        partial = True
+                        warnings.append("impact_anchor_unavailable")
+                        capabilities["impact"] = {
+                            "status": "degraded",
+                            "reason": "anchor_unavailable",
+                        }
+                    else:
+                        raw_impact = analyze_impact(
+                            code_graph.graph,
+                            anchor,
+                            max_depth=max(1, min(impact_max_depth, DEFAULT_MAX_DEPTH)),
+                            min_confidence=1.0,
+                            include_low_confidence=False,
+                            limit=max(0, min(impact_limit, DEFAULT_RESULT_LIMIT)),
+                            max_nodes=max(1, min(impact_max_nodes, DEFAULT_MAX_NODES)),
+                        )
+                        impact_summary = dict(raw_impact["summary"])
+                        truncated = bool(
+                            impact_summary.get("truncated_by_nodes")
+                            or any(
+                                int(count) > 0
+                                for count in (
+                                    impact_summary.get("truncated_by_depth") or {}
+                                ).values()
+                            )
+                        )
+                        no_observed = int(impact_summary.get("total_found") or 0) == 0
+                        impact = {
+                            "status": "completed",
+                            "anchor": {
+                                "symbol_id": anchor,
+                                "name": str(
+                                    code_graph.graph.nodes[anchor].get("name") or ""
+                                ),
+                                "file_path": str(
+                                    code_graph.graph.nodes[anchor].get("file_path") or ""
+                                ),
+                                "start_line": int(
+                                    code_graph.graph.nodes[anchor].get("start_line") or 0
+                                ),
+                            },
+                            "risk": raw_impact["risk"],
+                            "risk_inputs": raw_impact["risk_inputs"],
+                            "groups": raw_impact["groups"],
+                            "summary": impact_summary,
+                            "truncated": truncated,
+                            "warning": (
+                                "no_observed_impact_not_safe" if no_observed else ""
+                            ),
+                            "drill_down_hint": (
+                                "提高 impact_limit 或缩小 max_depth 后按 Symbol UID 续查"
+                                if truncated
+                                else ""
+                            ),
+                        }
+                        if no_observed:
+                            warnings.append("no_observed_impact_not_safe")
+                        capabilities["impact"] = {"status": "used"}
+
             response = {
                 "response_version": GRAPH_QUERY_RESPONSE_VERSION,
                 "ranking_version": GRAPH_QUERY_RANKING_VERSION,
@@ -331,10 +444,7 @@ class GraphQueryService:
                     "returned_count": len(returned_processes),
                     "items": returned_processes,
                 },
-                "impact": {
-                    "status": "not_requested",
-                    "summary": None,
-                },
+                "impact": impact,
                 "truncated": bool(truncated_reasons),
                 "truncated_reasons": truncated_reasons,
                 "continuation_hint": (
