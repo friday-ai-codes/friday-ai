@@ -20,6 +20,36 @@ DIRECTIONS = ("higher_is_better", "lower_is_better")
 MARKERS = frozenset({"NO_GOLD", "N/A", "SEED_MISSING", "INSUFFICIENT_DATA"})
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _SCOPE_KINDS = ("overall", "bucket", "resolver", "case_aggregate")
+_POLICY_KEYS = frozenset(
+    {
+        "schema_version",
+        "policy_version",
+        "status",
+        "baseline",
+        "candidate_expectation",
+        "insufficient_data",
+        "primary_quality_metrics",
+        "gates",
+    }
+)
+_BASELINE_KEYS = frozenset(
+    {"report_sha256", "manifest_sha256", "comparison_identity", "system_identity"}
+)
+_INSUFFICIENT_DATA_KEYS = frozenset(
+    {"min_samples", "required_bucket_missing", "optional_bucket_sparse"}
+)
+_GATE_KEYS = frozenset(
+    {
+        "scope",
+        "metric",
+        "direction",
+        "baseline_value",
+        "allowed_abs_regression",
+        "required",
+        "protected",
+    }
+)
+_PRIMARY_METRIC_KEYS = frozenset({"scope", "metric"})
 _COMPARISON_IDENTITY_KEYS = frozenset(
     {
         "repository",
@@ -300,6 +330,7 @@ def load_threshold_policy(raw: bytes) -> ThresholdPolicy:
         raise ValueError("threshold policy 不是合法 UTF-8 JSON") from exc
     if not isinstance(payload, dict):
         raise ValueError("threshold policy 顶层必须是 object")
+    _validate_exact_keys(payload, _POLICY_KEYS, where="policy")
 
     schema_version = _require_text(payload, "schema_version", where="policy")
     if schema_version != POLICY_SCHEMA_VERSION:
@@ -310,6 +341,7 @@ def load_threshold_policy(raw: bytes) -> ThresholdPolicy:
         raise ValueError("policy.status 必须为 locked")
 
     baseline = _require_mapping(payload, "baseline", where="policy")
+    _validate_exact_keys(baseline, _BASELINE_KEYS, where="policy.baseline")
     if "report_sha256" not in baseline:
         raise ValueError("policy.baseline 缺少必填字段 report_sha256")
     if "manifest_sha256" not in baseline:
@@ -335,6 +367,11 @@ def load_threshold_policy(raw: bytes) -> ThresholdPolicy:
     )
 
     insufficient = _require_mapping(payload, "insufficient_data", where="policy")
+    _validate_exact_keys(
+        insufficient,
+        _INSUFFICIENT_DATA_KEYS,
+        where="policy.insufficient_data",
+    )
     if "min_samples" not in insufficient:
         raise ValueError("policy.insufficient_data 缺少必填字段 min_samples")
     min_samples = insufficient["min_samples"]
@@ -361,6 +398,7 @@ def load_threshold_policy(raw: bytes) -> ThresholdPolicy:
         where = f"policy.gates[{index}]"
         if not isinstance(raw_gate, dict):
             raise ValueError(f"{where} 必须是 object")
+        _validate_exact_keys(raw_gate, _GATE_KEYS, where=where)
         scope = _validate_scope(
             _require_mapping(raw_gate, "scope", where=where), where=f"{where}.scope"
         )
@@ -393,6 +431,7 @@ def load_threshold_policy(raw: bytes) -> ThresholdPolicy:
         where = f"policy.primary_quality_metrics[{index}]"
         if not isinstance(item, dict):
             raise ValueError(f"{where} 必须是 object")
+        _validate_exact_keys(item, _PRIMARY_METRIC_KEYS, where=where)
         scope = _validate_scope(
             _require_mapping(item, "scope", where=where), where=f"{where}.scope"
         )
