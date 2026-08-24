@@ -127,6 +127,8 @@ def _step_from_node(
         "name": str(attrs.get("name") or node_id),
         "file_path": str(attrs.get("file_path") or ""),
         "line": int(attrs.get("start_line") or 0) or None,
+        "start_line": int(attrs.get("start_line") or 0) or None,
+        "end_line": int(attrs.get("end_line") or attrs.get("start_line") or 0) or None,
         "depth": depth,
     }
     if community_key:
