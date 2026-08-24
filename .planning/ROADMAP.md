@@ -40,7 +40,7 @@
 - [x] **Phase 135: Python resolved 调用边** — 以 import/member/receiver 绑定提升 Python 调用边并独立验收（1/1，passed）
 - [x] **Phase 136: Process 一等混合索引** — 从 canonical ProcessTrace 建立可重建、双 lane、同水位的 Process 投影（2/2，`human_needed`：真实 Qdrant）
 - [x] **Phase 137: 统一 GraphQueryService** — 单次自然语言查询确定性融合 Symbol、Community 与 Process 证据（1/1，passed）
-- [ ] **Phase 138: 消歧与 bounded impact** — 仅对已消歧 anchor 返回有界、不可误读为安全的影响面摘要
+- [x] **Phase 138: 消歧与 bounded impact** — 仅对已消歧 anchor 返回有界、不可误读为安全的影响面摘要（1/1，passed）
 - [ ] **Phase 139: 五消费面契约收敛** — 服务端、Chat、Django MCP、npm MCP 与编码容器共享 canonical manifest
 - [ ] **Phase 140: Threshold policy 与整体收口** — 基于 baseline 后锁定门禁并完成同条件对比、观测与全量回归
 
@@ -151,7 +151,9 @@
   3. 空 impact、不可达、stale 或部分图结果不会被解释为“安全”，而以稳定 warning/degradation 语义呈现。
   4. impact 的图扩展与源码证据复用仓库权限和 exclusion fail-closed；异常文本与 ledger 分别经规定入口脱敏，凭证或被排除内容不会出现在响应、日志或留痕。
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+- [x] 138-01-PLAN.md — 唯一 UID 锚定、bounded impact、非安全空结果与 exclusion 复用
 
 ### Phase 139: 五消费面契约收敛
 
@@ -419,7 +421,7 @@
 | 135. Python resolved 调用边 | v0.24.0 | EDGE-04/05 | 0/TBD | Not started | - |
 | 136. Process 一等混合索引 | v0.24.0 | PROC-01~05, OBS-04 | 0/TBD | Not started | - |
 | 137. 统一 GraphQueryService | v0.24.0 | QUERY-01~05/08/09/10 | 1/1 | Complete | 2026-08-24 |
-| 138. 消歧与 bounded impact | v0.24.0 | QUERY-06/07, OBS-05 | 0/TBD | Not started | - |
+| 138. 消歧与 bounded impact | v0.24.0 | QUERY-06/07, OBS-05 | 1/1 | Complete | 2026-08-24 |
 | 139. 五消费面契约收敛 | v0.24.0 | CONTRACT-01~05, OBS-03 | 0/TBD | Not started | - |
 | 140. Threshold policy 与整体收口 | v0.24.0 | BENCH-06/07, EDGE-06, OBS-01/02 | 0/TBD | Not started | - |
 
