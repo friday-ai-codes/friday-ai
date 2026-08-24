@@ -1,5 +1,5 @@
 {
-  "gold_version": "1",
+  "gold_version": "2",
   "annotated_at_sha": "REPLACE_WITH_TARGET_REPO_LAST_INDEXED_COMMIT_SHA",
   "repository": "REPLACE_WITH_TARGET_REPO_SLUG",
   "branch": "main",
@@ -8,5 +8,5 @@
     "locked_test": "locked_test.json",
     "holdout": "holdout.json"
   },
-  "_doc": "v0.22 图查询能力原始 baseline 的冻结 gold 数据集身份。防循环论证硬约束：gold 全部来自独立标注，禁止从被测 codegraph（CallEdge/Symbol/ProcessTrace 现值）反向导出；resolved edge gold 来自独立 callsite 抽样人工/规则标注，并以每条 edge_golds[].evidence_file_line 记录人工核验锚点。水位对齐硬约束：annotated_at_sha 必须与评测目标仓按 (repository, branch) 的 last_indexed_commit_sha 一致，否则 run 标 INVALID；当前为占位符，评测者运行真实 baseline 前须以目标仓实际 last_indexed_commit_sha 对齐并冻结。gold_version 随数据演进递增（初始 1）。baseline 只读 dev + locked_test；holdout 为 Phase 140 最终验收预留，baseline 阶段不读。"
+  "_doc": "v0.22 图查询能力原始 baseline 的冻结 gold 数据集身份。防循环论证硬约束：gold 全部来自独立标注，禁止从被测 codegraph（CallEdge/Symbol/ProcessTrace 现值）反向导出；resolved edge gold 来自独立 callsite 抽样人工/规则标注，并以每条 edge_golds[].evidence_file_line 记录人工核验锚点。水位对齐硬约束：annotated_at_sha 必须与评测目标仓按 (repository, branch) 的 last_indexed_commit_sha 一致，否则 run 标 INVALID；当前为占位符，评测者运行真实 baseline 前须以目标仓实际 last_indexed_commit_sha 对齐并冻结。gold_version=2 在真实 baseline 冻结前将 Python from-import seed 的旧 from_import 标记映射为 resolver canonical import_alias，并扩展 re_export/component taxonomy；不得由 candidate 结果反改。baseline 只读 dev + locked_test；holdout 为 Phase 140 最终验收预留，baseline 阶段不读。"
 }

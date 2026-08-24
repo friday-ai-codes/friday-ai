@@ -20,7 +20,7 @@
         {
           "caller_uid": "py:app/auth/views.py::login_view",
           "callee_uid": "py:app/auth/services.py::authenticate_user",
-          "call_shape": "from_import",
+          "call_shape": "import_alias",
           "evidence_file_line": "app/auth/views.py:24"
         }
       ],
