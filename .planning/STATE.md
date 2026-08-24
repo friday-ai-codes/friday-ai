@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.24.0
 milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
 status: executing
-stopped_at: Completed Phase 138; ready to discuss Phase 139
-last_updated: "2026-08-24T11:45:00.000Z"
-last_activity: 2026-08-24 -- Phase 138 completed (1/1, passed)
+stopped_at: Completed Phase 139; ready to discuss Phase 140
+last_updated: "2026-08-24T12:00:00.000Z"
+last_activity: 2026-08-24 -- Phase 139 completed (1/1, passed)
 progress:
   total_phases: 8
-  completed_phases: 6
-  total_plans: 11
-  completed_plans: 11
-  percent: 75
+  completed_phases: 7
+  total_plans: 12
+  completed_plans: 12
+  percent: 88
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归档见 `milestones/v0.23.0-*`；v0.22.0 归档见 `milestones/v0.22.0-*`。
 
 **Core value:** 已知仓库后，业务/技术自然语言通过统一入口获得正确、可核验、可解释的 Symbol、Community、Process 与影响面证据，并在同仓同 commit 基准上证明优于 v0.22.0。
-**Current focus:** Phase 139 — 五消费面契约收敛
+**Current focus:** Phase 140 — Threshold policy 与整体收口
 
 ## Current Position
 
-Phase: 139 (五消费面契约收敛) — READY TO DISCUSS
+Phase: 140 (Threshold policy 与整体收口) — READY TO DISCUSS
 Plan: TBD
-Status: Phase 138 completed; smart discuss pending
-Last activity: 2026-08-24 -- Phase 138 completed (1/1, passed)
+Status: Phase 139 completed; smart discuss pending
+Last activity: 2026-08-24 -- Phase 139 completed (1/1, passed)
 
-Progress: [████████░░] 75%
+Progress: [█████████░] 88%
 
 ## Milestone Overview (v0.24.0 — Phases 133–140 — 🚧 PLANNED)
 
@@ -42,7 +42,7 @@ Progress: [████████░░] 75%
 | 136 | Process 一等混合索引 | PROC-01~05, OBS-04 | ✅ Complete (2/2, human_needed) |
 | 137 | 统一 GraphQueryService | QUERY-01~05/08/09/10 | ✅ Complete (1/1, passed) |
 | 138 | 消歧与 bounded impact | QUERY-06/07, OBS-05 | ✅ Complete (1/1, passed) |
-| 139 | 五消费面契约收敛 | CONTRACT-01~05, OBS-03 | Not started |
+| 139 | 五消费面契约收敛 | CONTRACT-01~05, OBS-03 | ✅ Complete (1/1, passed) |
 | 140 | Threshold policy 与整体收口 | BENCH-06/07, EDGE-06, OBS-01/02 | Not started |
 
 **Execution order:** 133 → 134 → 135 → 136 → 137 → 138 → 139 → 140。Phase 133 先冻结同仓同 commit 数据与未修改 v0.22 baseline，禁止设阈值；Phase 140 才依据 baseline 锁 threshold policy。
