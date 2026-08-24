@@ -90,7 +90,6 @@ from .serializers import (
     CreateWorkItemRepoTasksRequestSerializer,
     DetectChangesRequestSerializer,
     ExecuteCodingPlanRequestSerializer,
-    GetProcessRequestSerializer,
     ExecuteWorkItemRepoTasksRequestSerializer,
     FindRelatedChunksRequestSerializer,
     GenerateRequirementSpecRequestSerializer,
@@ -98,21 +97,23 @@ from .serializers import (
     GetEntityTimelineRequestSerializer,
     GetFeatureTechPlanRequestSerializer,
     GetFeishuWorkItemContextRequestSerializer,
+    GetProcessRequestSerializer,
     GetRelatedEntitiesRequestSerializer,
     GetRepoResearchRequestSerializer,
     GetRepositoryFileRequestSerializer,
     GetRepositoryRequestSerializer,
     GetTechnicalBlueprintRequestSerializer,
+    GraphQueryRequestSerializer,
     GrepProjectRequestSerializer,
     GrepRepositoryRequestSerializer,
     ImpactAnalysisRequestSerializer,
     ImproveCodingPlanRequestSerializer,
     ListProcessesRequestSerializer,
     ListRepositoryFilesRequestSerializer,
-    RenamePreviewRequestSerializer,
     LookupProjectByBranchRequestSerializer,
     ReadBlueprintContextRequestSerializer,
     ReadProjectDocRequestSerializer,
+    RenamePreviewRequestSerializer,
     ReportBlueprintContextRequestSerializer,
     ReportProjectKnowledgeRequestSerializer,
     ReportProjectStateRequestSerializer,
@@ -1289,6 +1290,72 @@ class ReverseLookupView(McpToolView):
             (RetrievalTrace.Kind.EDGE, {"source": "reverse_lookup", **item})
             for item in result["related_documents"]
         )
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class GraphQueryView(McpToolView):
+    """canonical GraphQueryService 的 Django MCP 薄适配面。"""
+
+    tool_name = "graph_query"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(GraphQueryRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from services.code_graph import GraphError, GraphQueryService
+
+        try:
+            result = await GraphQueryService().query(
+                str(input_data["query"]),
+                repository_id=str(input_data["repository_id"]),
+                branch_name=str(input_data.get("branch") or ""),
+                user=request.user,
+                initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+                max_symbols=int(input_data.get("max_symbols", 10)),
+                max_processes=int(input_data.get("max_processes", 5)),
+                budget_chars=int(input_data.get("budget_chars", 50_000)),
+                include_impact=bool(input_data.get("include_impact")),
+                anchor_symbol_id=str(input_data.get("anchor_symbol_id") or "") or None,
+                impact_max_depth=int(input_data.get("impact_max_depth", 3)),
+                impact_limit=int(input_data.get("impact_limit", 200)),
+            )
+        except GraphError as exc:
+            return _graph_error_response(exc)
+        except ValueError as exc:
+            return error_response(
+                "invalid_input",
+                redact_secrets_in_text(str(exc)),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        output_data = {**result, "run_id": str(run.run_id)}
+        traces = [
+            (
+                RetrievalTrace.Kind.EDGE,
+                {
+                    "source": "mcp_graph_query",
+                    "scope": result["scope"],
+                    "partial": result["partial"],
+                    "symbol_count": result["symbols"]["returned_count"],
+                    "process_count": result["processes"]["returned_count"],
+                    "impact_status": result["impact"]["status"],
+                    "manifest_hash": result["manifest_hash"],
+                },
+            )
+        ]
         await self._record(
             run,
             input_data=input_data,

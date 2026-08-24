@@ -154,7 +154,7 @@ async def rebuild_process_index(
                 branch_name=branch,
                 initiated_by_user_id=user_id,
                 category="caller",
-                component="codegraph",
+                component="code_graph",
             )
         except Exception:  # noqa: BLE001
             pass
@@ -233,7 +233,7 @@ async def rebuild_process_index(
                     duration_ms=duration_ms,
                     initiated_by_user_id=user_id,
                     category="caller",
-                    component="codegraph",
+                    component="code_graph",
                 )
             except Exception:  # noqa: BLE001
                 pass
@@ -254,7 +254,7 @@ async def rebuild_process_index(
                     duration_ms=int((time.monotonic() - started) * 1000),
                     initiated_by_user_id=user_id,
                     category="caller",
-                    component="codegraph",
+                    component="code_graph",
                 )
             except Exception:  # noqa: BLE001
                 pass

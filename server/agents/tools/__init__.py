@@ -31,6 +31,7 @@ from agents.tools.feishu_im_tools import send_card_message
 from agents.tools.find_api_callers import find_api_callers
 from agents.tools.find_api_handler import find_api_handler
 from agents.tools.find_related_code import find_related_code
+from agents.tools.graph_query import graph_query
 from agents.tools.graph_tools import (
     detect_changes,
     get_process,
@@ -76,6 +77,7 @@ __all__ = [
     "search_repository_code",
     # Code graph tools (implementation)
     "find_related_code",
+    "graph_query",
     # Phase 122 内存图工具面：符号深度分组 / 最短路；与 find_related_code 的
     # chunk 级游走互补（前者吃符号出影响面与路径，后者吃 chunk 出邻居）。
     "impact_analysis",

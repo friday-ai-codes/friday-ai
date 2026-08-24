@@ -194,6 +194,31 @@ class FindRelatedChunksRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class GraphQueryRequestSerializer(serializers.Serializer):
+    """由 canonical graph-query/v1 manifest 映射的 HTTP 输入契约。"""
+
+    repository_id = serializers.UUIDField(required=True)
+    query = serializers.CharField(required=True, allow_blank=False, max_length=2000)
+    branch = serializers.CharField(
+        required=False, allow_blank=True, max_length=255, default=""
+    )
+    max_symbols = serializers.IntegerField(default=10, min_value=0, max_value=50)
+    max_processes = serializers.IntegerField(default=5, min_value=0, max_value=20)
+    budget_chars = serializers.IntegerField(default=50_000, min_value=0, max_value=200_000)
+    include_impact = serializers.BooleanField(default=False)
+    anchor_symbol_id = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, default=None
+    )
+    impact_max_depth = serializers.IntegerField(default=3, min_value=1, max_value=3)
+    impact_limit = serializers.IntegerField(default=200, min_value=0, max_value=200)
+
+    def validate_query(self, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("query 不能为空")
+        return value
+
+
 class ImpactAnalysisRequestSerializer(serializers.Serializer):
     repository_id = serializers.UUIDField(required=True)
     branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)

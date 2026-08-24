@@ -18,6 +18,10 @@ from services.code_graph.impact import (
     analyze_impact,
 )
 from services.code_graph.process_index import search_process_index
+from services.code_graph.query_manifest import (
+    graph_query_manifest,
+    graph_query_manifest_hash,
+)
 from services.retrieval.rag_search import search_rag
 
 logger = structlog.get_logger(__name__)
@@ -147,7 +151,7 @@ class GraphQueryService:
                 response_version=GRAPH_QUERY_RESPONSE_VERSION,
                 initiated_by_user_id=initiated_by_user_id,
                 category="caller",
-                component="codegraph",
+                component="code_graph",
             )
         except Exception:  # noqa: BLE001
             pass
@@ -418,6 +422,8 @@ class GraphQueryService:
                         capabilities["impact"] = {"status": "used"}
 
             response = {
+                "contract_version": graph_query_manifest()["contract_version"],
+                "manifest_hash": graph_query_manifest_hash(),
                 "response_version": GRAPH_QUERY_RESPONSE_VERSION,
                 "ranking_version": GRAPH_QUERY_RANKING_VERSION,
                 "scope": {
@@ -464,7 +470,7 @@ class GraphQueryService:
                     duration_ms=int((time.monotonic() - started) * 1000),
                     initiated_by_user_id=initiated_by_user_id,
                     category="caller",
-                    component="codegraph",
+                    component="code_graph",
                 )
             except Exception:  # noqa: BLE001
                 pass
@@ -479,7 +485,7 @@ class GraphQueryService:
                     duration_ms=int((time.monotonic() - started) * 1000),
                     initiated_by_user_id=initiated_by_user_id,
                     category="caller",
-                    component="codegraph",
+                    component="code_graph",
                 )
             except Exception:  # noqa: BLE001
                 pass

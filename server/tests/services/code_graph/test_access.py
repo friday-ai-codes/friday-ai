@@ -398,7 +398,10 @@ def _iter_logger_calls(tree: ast.Module):
 
 
 # 121-VALIDATION.md 121-03-T3（planner 追加行）：观测契约守护——包内每个 structlog
-# 调用都带 component="code_graph" + category="sampling" + code_graph_ 事件名前缀。
+# 调用都带 component="code_graph" + 合法 category + code_graph_ 事件名前缀。
+_CALLER_ENTRY_MODULES = frozenset({"process_index.py", "query_service.py"})
+
+
 def test_observability_contract() -> None:
     """code_graph 链路上每个 structlog 调用都满足强制观测契约。
 
@@ -413,10 +416,10 @@ def test_observability_contract() -> None:
     豁免**。它们照样发 ``code_graph_`` 前缀的事件、照样要把异常文本脱敏，在扩展之前
     没有任何机制强制这一点。122-05 补上第一个，122-06 补上第二个。
 
-    判据对两类文件**逐字相同**，唯一放宽的是 ``category``：包外兄弟文件可取
-    ``sampling`` / ``caller`` 之一（给壳层将来下沉的原语留位），包内文件仍**只许**
-    ``sampling``——``services/code_graph/*.py`` 里出现 ``caller`` 是架构错误，内核不是
-    调用入口。⛔ 其余四条（事件名静态可解析、``code_graph_`` 前缀、
+    判据对两类文件**逐字相同**，唯一放宽的是 ``category``：包外兄弟文件，以及包内
+    明确承担调用/后台任务入口的 ``query_service.py`` / ``process_index.py``，可取
+    ``sampling`` / ``caller``；其余纯内核仍只许 ``sampling``。⛔ 其余四条
+    （事件名静态可解析、``code_graph_`` 前缀、
     ``component == "code_graph"``、``error=`` 过 ``redact_secrets_in_text``）一条都不放宽。
 
     ⚠️ 事件名前缀不得缩写：``graph_build_*`` 已被 ``services/graph_builder.py``
@@ -473,11 +476,11 @@ def test_observability_contract() -> None:
             ):
                 violations.append(f'{where}:{event} 缺少 component="code_graph"')
 
-            # ③ category —— 唯一按文件位置放宽的一条：包内只许 sampling（内核不是调用
-            #    入口），包外兄弟文件可取 sampling / caller 之一。
+            # ③ category —— 纯内核只许 sampling；调用/后台任务入口与包外壳可 caller。
             allowed = (
                 {"sampling"}
                 if source_path.parent == package_dir
+                and source_path.name not in _CALLER_ENTRY_MODULES
                 else {"sampling", "caller"}
             )
             category = keywords.get("category")
@@ -515,10 +518,10 @@ def test_matcher_fingerprint_memo_ttl() -> None:
     assert _MATCHER_FP_TTL_SECONDS == _MATCHER_CACHE_TTL_SECONDS
 
 
-# 121-VALIDATION.md 121-09-T1（planner 追加行）：barrel 恰导出 17 项
+# 121-VALIDATION.md 121-09-T1（Phase 137 扩展）：barrel 恰导出 20 项
 # （含 invalidate_repository），loader/cache/signature/access 不可从包顶层取得。
 
-# 🚨 **逐字写死**这 17 个字面量，⛔ 绝不从 ``code_graph_package.__all__`` 反查——
+# 🚨 **逐字写死**这 20 个字面量，⛔ 绝不从 ``code_graph_package.__all__`` 反查——
 # 从模块自身反查出期望值的用例是自证的，`__all__` 里多塞一个 ``loader`` 它照样绿，
 # 而「不多导出」恰恰是这条红线要守的全部内容。
 _EXPECTED_BARREL_EXPORTS = frozenset(
@@ -533,7 +536,10 @@ _EXPECTED_BARREL_EXPORTS = frozenset(
         "GraphError",
         "GraphMeta",
         "GraphNotIndexed",
+        "GraphQueryService",
         "GraphService",
+        "GRAPH_QUERY_RANKING_VERSION",
+        "GRAPH_QUERY_RESPONSE_VERSION",
         "LOW_RESOLUTION_THRESHOLD",
         "REDACTED_REPOSITORY",
         "confidence_score",
@@ -557,7 +563,7 @@ _FORBIDDEN_BARREL_EXPORTS = (
 
 
 def test_barrel_exports_only_public_surface() -> None:
-    """``services.code_graph`` 的公开面恰是那 17 项，且不含任何内部通路。
+    """``services.code_graph`` 的公开面恰是 20 项，且不含任何内部通路。
 
     这条用例是**架构红线的机械防线**（威胁登记 T-121-绕闸，ASVS V1）。红线本身写在
     121-CONTEXT Area 4：所有图访问必须经 ``GraphService.get_graph()``，因为它是权限
@@ -567,7 +573,7 @@ def test_barrel_exports_only_public_surface() -> None:
     """
     exported = code_graph_package.__all__
 
-    assert len(exported) == 17, f"barrel 导出面从 17 项变成了 {len(exported)} 项"
+    assert len(exported) == 20, f"barrel 导出面从 20 项变成了 {len(exported)} 项"
     assert set(exported) == _EXPECTED_BARREL_EXPORTS
     assert list(exported) == sorted(exported), "__all__ 必须字母序（照 code_intel/__init__.py）"
 
