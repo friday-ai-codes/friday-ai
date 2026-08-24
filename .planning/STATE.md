@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.24.0
 milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
 status: executing
-stopped_at: Completed Phase 139; ready to discuss Phase 140
-last_updated: "2026-08-24T12:00:00.000Z"
+stopped_at: Completed 133-03-PLAN.md
+last_updated: "2026-08-24T16:28:10.038Z"
 last_activity: 2026-08-24 -- Phase 139 completed (1/1, passed)
 progress:
   total_phases: 8
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归
 
 Phase: 140 (Threshold policy 与整体收口) — READY TO DISCUSS
 Plan: TBD
-Status: Phase 139 completed; smart discuss pending
+Status: Ready to execute
 Last activity: 2026-08-24 -- Phase 139 completed (1/1, passed)
 
 Progress: [█████████░] 88%
