@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.24.0
 milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
-status: audited
-stopped_at: v0.24.0 milestone audit tech_debt accepted; ready for completion
-last_updated: "2026-08-24T19:00:00.000Z"
-last_activity: 2026-08-25 -- v0.24.0 audited 39/39 with accepted external evidence debt
+status: Awaiting next milestone
+stopped_at: v0.24.0 milestone completed and archived; awaiting next milestone
+last_updated: "2026-08-24T23:30:00+08:00"
+last_activity: 2026-08-24 — Milestone v0.24.0 completed and archived
 progress:
   total_phases: 8
   completed_phases: 8
@@ -18,21 +18,19 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归档见 `milestones/v0.23.0-*`；v0.22.0 归档见 `milestones/v0.22.0-*`。
+See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 已归档）。v0.24.0 归档见 `milestones/v0.24.0-*`。
 
 **Core value:** 已知仓库后，业务/技术自然语言通过统一入口获得正确、可核验、可解释的 Symbol、Community、Process 与影响面证据，并在同仓同 commit 基准上证明优于 v0.22.0。
-**Current focus:** Phase 140 — Threshold policy 与整体收口
+**Current focus:** 无活动里程碑；等待下一里程碑立项
 
 ## Current Position
 
-Phase: 140 (Threshold policy 与整体收口) — COMPLETE
-Plan: 4 of 4
-Status: Milestone audit tech_debt accepted; completion pending
-Last activity: 2026-08-25 -- v0.24.0 audited 39/39 with accepted external evidence debt
+Phase: Milestone v0.24.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-08-24 — Milestone v0.24.0 completed and archived
 
-Progress: [██████████] 100%
-
-## Milestone Overview (v0.24.0 — Phases 133–140 — 🚧 PLANNED)
+## Milestone Overview (v0.24.0 — Phases 133–140 — ✅ ARCHIVED)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
@@ -999,6 +997,22 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 
 ## Deferred Items
 
+### 🔒 Acknowledged at v0.24.0 close（2026-08-24）
+
+Items acknowledged and deferred at milestone close（里程碑审计 `tech_debt`；39/39 requirements 满足、0 critical gaps；真实外部环境证据不伪造、不以空指标判通过）:
+
+| Category | Item | Status |
+|----------|------|--------|
+| verification_gap | Phase 133 · v0.22 baseline 真仓采集 | human_needed（缺真实已索引目标仓、Qdrant、独立 gold 与未修改 v0.22 baseline） |
+| verification_gap | Phase 136 · Process 真 Qdrant 路径 | human_needed（缺真实 embedding provider + Qdrant collection rebuild/search） |
+| verification_gap | Phase 140 · candidate/threshold/holdout | human_needed（缺同 comparison identity 的真实 v0.24 candidate、locked threshold policy 与 final-only holdout compare） |
+| tech_debt | BENCH-06/07、EDGE-06 的真实数值改善声明 | deferred（只能声明协议、门禁和 fail-closed 边界已实现，不能声明数值优于 v0.22） |
+| tech_debt | Nyquist：Phases 134–139 缺独立 `VALIDATION.md` | deferred（VERIFICATION 与自动化证据已存在） |
+| tech_debt | Phases 134–139 SUMMARY frontmatter 未统一列 `requirements-completed` | deferred（已按 REQUIREMENTS/PLAN/VERIFICATION 三方对账） |
+| quick_tasks | 19 项既有 quick task | unchanged（已在 v0.23.0 close 登记，不重复搬运） |
+
+权威审计见 [milestones/v0.24.0-MILESTONE-AUDIT.md](./milestones/v0.24.0-MILESTONE-AUDIT.md)。**未打 tag**（发布轨与 GSD 里程碑编号独立）。
+
 ### 🔒 Acknowledged at v0.23.0 close（2026-08-14）
 
 Items acknowledged and deferred at milestone close on 2026-08-14（`gsd-tools query audit-open` 报 19 项 quick tasks；confirm Acknowledge；accept `tech_debt`——与 v0.22.0 同口径）:
@@ -1251,7 +1265,7 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Plan Phase 133 with `/gsd-plan-phase 133`
+- Start the next milestone with /gsd-new-milestone
 
 ## Deferred Verification
 
