@@ -17,10 +17,13 @@ from codegraph.services.graph_bench_eval import (
     BUCKET_OK,
     INSUFFICIENT_DATA,
     MIN_BUCKET_SAMPLES,
+    NODE_NOT_IN_GRAPH,
     NO_GOLD,
     NOT_APPLICABLE,
     SEED_MISSING,
+    CaseOutcome,
     GoldCase,
+    evaluate_case,
     rank_process_candidates,
     score_edge_pr,
     score_impact_precision,
@@ -184,3 +187,145 @@ class TestConstants:
         assert MIN_BUCKET_SAMPLES >= 1
         assert BUCKET_OK == "OK"
         assert INSUFFICIENT_DATA == "INSUFFICIENT_DATA"
+        assert NODE_NOT_IN_GRAPH == "node_not_in_graph"
+
+
+def _full_gold() -> GoldCase:
+    return _gold(
+        expected_symbols=[{"uid": "s1"}, {"uid": "s2"}],
+        expected_processes=[{"process_key": "p1"}],
+        edge_golds=[{"caller_uid": "a", "callee_uid": "b", "call_shape": "direct"}],
+        trace_golds=[{"source_uid": "a", "target_uid": "b"}],
+        impact_golds=[{"seed_uid": "b", "expected_affected_uids": ["a"]}],
+    )
+
+
+class TestEvaluateCase:
+    def test_full_arrival_set_scores_all_metrics(self) -> None:
+        outcome = evaluate_case(
+            gold=_full_gold(),
+            predicted_symbol_uids=["s1", "s9"],
+            candidate_processes=[{"process_key": "p1", "step_symbol_uids": ["s1"]}],
+            predicted_edges=[{"caller_uid": "a", "callee_uid": "b"}],
+            impact_result={"affected_uids": ["a", "x"], "seed_in_graph": True},
+            trace_results=[{"found": True, "path": ["a", "b"]}],
+            cold_ms=120,
+            warm_ms=30,
+            tokens=42,
+        )
+        assert outcome.symbol_recall == 0.5
+        assert outcome.process_recall == 1.0
+        assert outcome.edge_precision == 1.0
+        assert outcome.edge_recall == 1.0
+        assert outcome.impact_precision == 0.5  # 1/2 预测受影响命中
+        assert outcome.trace_success_rate == 1.0
+        assert outcome.trace_error_path_rate == 0.0
+        assert outcome.trace_node_not_in_graph_count == 0
+        assert outcome.cold_ms == 120
+        assert outcome.warm_ms == 30
+        assert outcome.tokens == 42
+        assert outcome.error == ""
+
+    def test_symbol_recall_uses_top5_and_process_uses_ranked_top3(self) -> None:
+        gold = _gold(
+            expected_symbols=[{"uid": "s6"}],
+            expected_processes=[{"process_key": "p_low"}],
+        )
+        outcome = evaluate_case(
+            gold=gold,
+            # s6 排在第 6 位（超出 Recall@5 窗口）
+            predicted_symbol_uids=["s1", "s2", "s3", "s4", "s5", "s6"],
+            candidate_processes=[
+                {"process_key": "p_high", "step_symbol_uids": ["s1", "s2", "s3"]},
+                {"process_key": "p_low", "step_symbol_uids": ["s6"]},
+            ],
+            predicted_edges=[],
+            impact_result={},
+            trace_results=[],
+        )
+        assert outcome.symbol_recall == 0.0  # s6 在 top5 之外
+        # p_high 交集大排前，p_low 挤出 top3 之外？仅 2 个候选，p_low 仍在 top3
+        assert outcome.process_recall == 1.0
+
+    def test_impact_seed_missing_propagates(self) -> None:
+        outcome = evaluate_case(
+            gold=_full_gold(),
+            predicted_symbol_uids=["s1"],
+            candidate_processes=[],
+            predicted_edges=[],
+            impact_result={"affected_uids": ["a"], "seed_in_graph": False},
+            trace_results=[],
+        )
+        assert outcome.impact_precision == SEED_MISSING
+
+    def test_all_gold_dims_empty_no_error_no_full_marks(self) -> None:
+        outcome = evaluate_case(
+            gold=_gold(),  # 全部 gold 维度为空
+            predicted_symbol_uids=[],
+            candidate_processes=[],
+            predicted_edges=[],
+            impact_result={},
+            trace_results=[],
+        )
+        assert outcome.symbol_recall == NO_GOLD
+        assert outcome.process_recall == NO_GOLD
+        assert outcome.edge_recall == NO_GOLD
+        assert outcome.edge_precision == NOT_APPLICABLE
+        assert outcome.impact_precision == NOT_APPLICABLE
+        assert outcome.trace_success_rate == NO_GOLD
+        assert outcome.trace_node_not_in_graph_count == 0
+
+    def test_error_blanks_metrics_but_keeps_dims(self) -> None:
+        outcome = evaluate_case(
+            gold=_full_gold(),
+            predicted_symbol_uids=["s1"],
+            candidate_processes=[],
+            predicted_edges=[],
+            impact_result={},
+            trace_results=[],
+            error="boom",
+        )
+        assert outcome.error == "boom"
+        assert outcome.symbol_recall == ""
+        assert outcome.impact_precision == ""
+        assert outcome.language == "python"
+        assert outcome.framework == "django"
+        assert outcome.entry_type == "http_endpoint"
+
+    def test_to_dict_contains_bucket_dims_and_timing(self) -> None:
+        outcome = evaluate_case(
+            gold=_full_gold(),
+            predicted_symbol_uids=["s1", "s2"],
+            candidate_processes=[{"process_key": "p1", "step_symbol_uids": ["s1"]}],
+            predicted_edges=[{"caller_uid": "a", "callee_uid": "b"}],
+            impact_result={"affected_uids": ["a"], "seed_in_graph": True},
+            trace_results=[{"found": True, "path": ["a", "b"]}],
+            cold_ms=1,
+            warm_ms=2,
+            tokens=3,
+        )
+        d = outcome.to_dict()
+        for key in (
+            "case_id",
+            "split",
+            "language",
+            "framework",
+            "entry_type",
+            "protected",
+            "symbol_recall",
+            "process_recall",
+            "edge_precision",
+            "edge_recall",
+            "impact_precision",
+            "trace_success_rate",
+            "trace_error_path_rate",
+            "trace_node_not_in_graph_count",
+            "cold_ms",
+            "warm_ms",
+            "tokens",
+            "error",
+        ):
+            assert key in d
+        # float 按精度取整；str 标记原样
+        assert d["symbol_recall"] == 1.0
+        assert isinstance(outcome, CaseOutcome)
