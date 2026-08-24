@@ -477,7 +477,7 @@ class Command(BaseCommand):
         cold_only: bool,
     ) -> Any:
         """单 case 串行编排 v0.22 只读能力并折算为 CaseOutcome。"""
-        from services.code_graph.cache import get_graph_service, invalidate_repository
+        from services.code_graph import get_graph_service, invalidate_repository
         from services.code_graph.impact import analyze_impact
         from services.code_graph.symbol_resolve import resolve_symbol_in_graph
         from services.code_graph.trace import trace_path

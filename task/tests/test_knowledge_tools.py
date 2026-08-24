@@ -58,6 +58,7 @@ _NEW_124_TOOL_NAMES = ["detect_changes"]
 # 126-04 追加：只读改名预览（RENAME-01 / D-12）。
 _NEW_126_TOOL_NAMES = ["rename_preview"]
 EXPECTED_TOOL_NAMES = [
+    "graph_query",
     *_LEGACY_TOOL_NAMES,
     *_NEW_113_TOOL_NAMES,
     *_NEW_113_04_TOOL_NAMES,
@@ -179,14 +180,14 @@ async def test_server_has_exactly_seven_whitelist_tools() -> None:
     assert config["name"] == KNOWLEDGE_MCP_SERVER_NAME
     names = await _server_tool_names(config)
     assert sorted(names) == sorted(EXPECTED_TOOL_NAMES)
-    assert len(names) == 12
+    assert len(names) == 13
 
 
 def test_knowledge_allowed_tools_naming() -> None:
     """allowed_tools 为 12 条 mcp__friday-knowledge__{name}（顺序即白名单顺序）。"""
     allowed = knowledge_allowed_tools()
     assert allowed == [f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__{name}" for name in EXPECTED_TOOL_NAMES]
-    assert len(allowed) == 12
+    assert len(allowed) == 13
     assert f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__detect_changes" in allowed
     assert f"mcp__{KNOWLEDGE_MCP_SERVER_NAME}__rename_preview" in allowed
 

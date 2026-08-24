@@ -1,0 +1,133 @@
+{
+  "contract_version": "graph-query-tool/v1",
+  "response_version": "graph-query/v1",
+  "ranking_version": "rrf-v1",
+  "name": "graph_query",
+  "endpoint": "/api/mcp/tools/graph_query/",
+  "description": "在一个已知仓库内用自然语言统一查询 Symbol、Community、Process 与可选 bounded impact；响应携带同 commit 水位、排序账本和能力降级状态。",
+  "annotations": {
+    "title": "代码图谱 · 单仓统一查询",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  },
+  "capabilities": [
+    "bm25",
+    "embedding",
+    "process_enrichment",
+    "community",
+    "impact"
+  ],
+  "errors": [
+    "invalid_input",
+    "repository_not_found",
+    "repository_not_indexed",
+    "repository_access_denied",
+    "graph_not_indexed",
+    "graph_build_failed"
+  ],
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "repository_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "单仓 repository UUID（必填）"
+      },
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000,
+        "description": "中文或英文自然语言问题（必填，非空白）"
+      },
+      "branch": {
+        "type": "string",
+        "maxLength": 255,
+        "default": "",
+        "description": "索引分支；空串使用仓库默认索引坐标"
+      },
+      "max_symbols": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 50,
+        "default": 10
+      },
+      "max_processes": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 20,
+        "default": 5
+      },
+      "budget_chars": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 200000,
+        "default": 50000
+      },
+      "include_impact": {
+        "type": "boolean",
+        "default": false
+      },
+      "anchor_symbol_id": {
+        "type": ["string", "null"],
+        "default": null,
+        "description": "消歧后的稳定 Symbol UID；缺省时仅单候选可自动锚定"
+      },
+      "impact_max_depth": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3,
+        "default": 3
+      },
+      "impact_limit": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 200,
+        "default": 200
+      }
+    },
+    "required": ["repository_id", "query"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": [
+      "contract_version",
+      "manifest_hash",
+      "response_version",
+      "ranking_version",
+      "scope",
+      "partial",
+      "warnings",
+      "capabilities",
+      "symbols",
+      "communities",
+      "processes",
+      "impact",
+      "truncated",
+      "truncated_reasons"
+    ],
+    "properties": {
+      "contract_version": {"const": "graph-query-tool/v1"},
+      "manifest_hash": {"type": "string", "minLength": 64, "maxLength": 64},
+      "response_version": {"const": "graph-query/v1"},
+      "ranking_version": {"const": "rrf-v1"},
+      "scope": {
+        "type": "object",
+        "required": ["repository_id", "branch_name", "commit_sha", "index_key"]
+      },
+      "partial": {"type": "boolean"},
+      "warnings": {"type": "array", "items": {"type": "string"}},
+      "capabilities": {"type": "object"},
+      "symbols": {"type": "object"},
+      "communities": {"type": "object"},
+      "processes": {"type": "object"},
+      "impact": {"type": "object"},
+      "truncated": {"type": "boolean"},
+      "truncated_reasons": {"type": "array", "items": {"type": "string"}},
+      "continuation_hint": {"type": "string"},
+      "run_id": {"type": "string", "format": "uuid"}
+    }
+  }
+}

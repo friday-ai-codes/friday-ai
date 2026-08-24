@@ -15,8 +15,6 @@ from .views import (
     CreateWorkItemRepoTasksView,
     DetectChangesView,
     ExecuteCodingPlanView,
-    GetProcessView,
-    RenamePreviewView,
     ExecuteWorkItemRepoTasksView,
     FindRelatedChunksView,
     GenerateRequirementSpecView,
@@ -24,11 +22,13 @@ from .views import (
     GetEntityTimelineView,
     GetFeatureTechPlanView,
     GetFeishuWorkItemContextView,
+    GetProcessView,
     GetRelatedEntitiesView,
     GetRepoResearchView,
     GetRepositoryFileView,
     GetRepositoryView,
     GetTechnicalBlueprintView,
+    GraphQueryView,
     GrepProjectView,
     GrepRepositoryView,
     ImpactAnalysisView,
@@ -38,6 +38,7 @@ from .views import (
     LookupProjectByBranchView,
     ReadBlueprintContextView,
     ReadProjectDocView,
+    RenamePreviewView,
     ReportBlueprintContextView,
     ReportProjectKnowledgeView,
     ReportProjectStateView,
@@ -54,6 +55,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("tools/graph_query/", GraphQueryView.as_view(), name="mcp-tool-graph-query"),
     path("tools/route_repositories/", RouteRepositoriesView.as_view(), name="mcp-tool-route-repositories"),
     path("tools/search_rag_chunks/", SearchRagChunksView.as_view(), name="mcp-tool-search-rag-chunks"),
     path("tools/get_repository/", GetRepositoryView.as_view(), name="mcp-tool-get-repository"),

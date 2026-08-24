@@ -327,7 +327,7 @@ async def test_knowledge_alone_keeps_builtin_tools(monkeypatch, temp_workspace, 
     # 12 个知识工具全部在列（126 追加 rename_preview 后 11 → 12）
     for tool in knowledge_allowed_tools():
         assert tool in options.allowed_tools
-    assert len(knowledge_allowed_tools()) == 12
+    assert len(knowledge_allowed_tools()) == 13
     assert "mcp__friday-knowledge__detect_changes" in options.allowed_tools
     assert "mcp__friday-knowledge__rename_preview" in options.allowed_tools
 
