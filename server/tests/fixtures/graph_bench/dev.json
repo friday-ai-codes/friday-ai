@@ -1,0 +1,110 @@
+{
+  "cases": [
+    {
+      "case_id": "dev-0001",
+      "split": "dev",
+      "query": "Django 里把请求路由到视图函数的是哪个对象？",
+      "language": "python",
+      "framework": "django",
+      "entry_type": "http_endpoint",
+      "expected_symbols": [
+        {
+          "uid": "py:app/urls.py::router",
+          "file_path": "app/urls.py",
+          "start_line": 8,
+          "name": "router"
+        }
+      ],
+      "expected_processes": [],
+      "edge_golds": [
+        {
+          "caller_uid": "py:app/urls.py::router",
+          "callee_uid": "py:app/views.py::index",
+          "call_shape": "direct",
+          "evidence_file_line": "app/urls.py:12"
+        }
+      ],
+      "trace_golds": [],
+      "impact_golds": [
+        {
+          "seed_uid": "py:app/views.py::index",
+          "expected_affected_uids": [
+            "py:app/urls.py::router"
+          ]
+        }
+      ],
+      "protected": true
+    },
+    {
+      "case_id": "dev-0002",
+      "split": "dev",
+      "query": "前端提交表单时校验用户输入的函数在哪里？",
+      "language": "typescript",
+      "framework": "vue",
+      "entry_type": "plain_symbol",
+      "expected_symbols": [
+        {
+          "uid": "ts:src/lib/validate.ts::validateInput",
+          "file_path": "src/lib/validate.ts",
+          "start_line": 3,
+          "name": "validateInput"
+        }
+      ],
+      "expected_processes": [],
+      "edge_golds": [
+        {
+          "caller_uid": "ts:src/components/Form.vue::submit",
+          "callee_uid": "ts:src/lib/validate.ts::validateInput",
+          "call_shape": "import_alias",
+          "evidence_file_line": "src/components/Form.vue:41"
+        }
+      ],
+      "trace_golds": [
+        {
+          "source_uid": "ts:src/components/Form.vue::submit",
+          "target_uid": "ts:src/lib/validate.ts::validateInput"
+        }
+      ],
+      "impact_golds": [],
+      "protected": false
+    },
+    {
+      "case_id": "dev-0003",
+      "split": "dev",
+      "query": "订单结算流程的入口是哪个函数？",
+      "language": "python",
+      "framework": "none",
+      "entry_type": "process_entry",
+      "expected_symbols": [
+        {
+          "uid": "py:app/services/checkout.py::run_checkout",
+          "file_path": "app/services/checkout.py",
+          "start_line": 20,
+          "name": "run_checkout"
+        }
+      ],
+      "expected_processes": [
+        {
+          "process_key": "checkout_flow",
+          "name": "订单结算流程"
+        }
+      ],
+      "edge_golds": [
+        {
+          "caller_uid": "py:app/services/checkout.py::run_checkout",
+          "callee_uid": "py:app/services/pricing.py::compute_total",
+          "call_shape": "member",
+          "evidence_file_line": "app/services/checkout.py:33"
+        }
+      ],
+      "trace_golds": [
+        {
+          "source_uid": "py:app/services/checkout.py::run_checkout",
+          "target_uid": "py:app/services/pricing.py::compute_total"
+        }
+      ],
+      "impact_golds": [],
+      "protected": false
+    }
+  ]
+}

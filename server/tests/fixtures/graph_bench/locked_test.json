@@ -1,0 +1,110 @@
+{
+  "cases": [
+    {
+      "case_id": "lt-0001",
+      "split": "locked_test",
+      "query": "Django 中处理用户登录 POST 请求的视图函数是哪个？",
+      "language": "python",
+      "framework": "django",
+      "entry_type": "http_endpoint",
+      "expected_symbols": [
+        {
+          "uid": "py:app/auth/views.py::login_view",
+          "file_path": "app/auth/views.py",
+          "start_line": 15,
+          "name": "login_view"
+        }
+      ],
+      "expected_processes": [],
+      "edge_golds": [
+        {
+          "caller_uid": "py:app/auth/views.py::login_view",
+          "callee_uid": "py:app/auth/services.py::authenticate_user",
+          "call_shape": "from_import",
+          "evidence_file_line": "app/auth/views.py:24"
+        }
+      ],
+      "trace_golds": [],
+      "impact_golds": [
+        {
+          "seed_uid": "py:app/auth/services.py::authenticate_user",
+          "expected_affected_uids": [
+            "py:app/auth/views.py::login_view"
+          ]
+        }
+      ],
+      "protected": false
+    },
+    {
+      "case_id": "lt-0002",
+      "split": "locked_test",
+      "query": "Vue 组件里格式化日期的工具函数定义在哪？",
+      "language": "typescript",
+      "framework": "vue",
+      "entry_type": "plain_symbol",
+      "expected_symbols": [
+        {
+          "uid": "ts:src/utils/date.ts::formatDate",
+          "file_path": "src/utils/date.ts",
+          "start_line": 5,
+          "name": "formatDate"
+        }
+      ],
+      "expected_processes": [],
+      "edge_golds": [
+        {
+          "caller_uid": "ts:src/components/History.vue::render",
+          "callee_uid": "ts:src/utils/date.ts::formatDate",
+          "call_shape": "member",
+          "evidence_file_line": "src/components/History.vue:58"
+        }
+      ],
+      "trace_golds": [
+        {
+          "source_uid": "ts:src/components/History.vue::render",
+          "target_uid": "ts:src/utils/date.ts::formatDate"
+        }
+      ],
+      "impact_golds": [],
+      "protected": false
+    },
+    {
+      "case_id": "lt-0003",
+      "split": "locked_test",
+      "query": "Go 服务里启动 HTTP 服务的入口函数是哪个？",
+      "language": "go",
+      "framework": "gin",
+      "entry_type": "process_entry",
+      "expected_symbols": [
+        {
+          "uid": "go:cmd/server/main.go::main",
+          "file_path": "cmd/server/main.go",
+          "start_line": 10,
+          "name": "main"
+        }
+      ],
+      "expected_processes": [
+        {
+          "process_key": "server_bootstrap",
+          "name": "HTTP 服务启动流程"
+        }
+      ],
+      "edge_golds": [
+        {
+          "caller_uid": "go:cmd/server/main.go::main",
+          "callee_uid": "go:internal/router/router.go::Setup",
+          "call_shape": "receiver",
+          "evidence_file_line": "cmd/server/main.go:18"
+        }
+      ],
+      "trace_golds": [
+        {
+          "source_uid": "go:cmd/server/main.go::main",
+          "target_uid": "go:internal/router/router.go::Setup"
+        }
+      ],
+      "impact_golds": [],
+      "protected": false
+    }
+  ]
+}
