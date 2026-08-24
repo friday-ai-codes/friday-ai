@@ -64,6 +64,15 @@ def _go_local_name(import_edge: ImportEdge) -> str:
     return import_edge.target_module.rsplit("/", 1)[-1]
 
 
+def _python_module_local_name(import_edge: ImportEdge) -> str:
+    """求 ``import pkg.mod [as alias]`` 在调用文件中的模块绑定名。"""
+    for item in list(import_edge.imported_names or []):
+        original, separator, alias = item.partition(" as ")
+        if original == import_edge.target_module:
+            return alias if separator else original.split(".", 1)[0]
+    return ""
+
+
 def _match_imported_name(callee_name: str, imported_names: Sequence[str]) -> str | None:
     """用本地名匹配 ``imported_names``，返回目标文件内应查找的原始名。
 
@@ -177,7 +186,12 @@ class SymbolResolver:
         language_name = _language_name(caller_file)
         call_shape = "member" if edge.call_type in {"METHOD", "ATTRIBUTE"} else "direct"
 
-        local_hits = self._idx.exact(caller_file, callee_name)
+        # qualifier 调用（mod.foo / Class.method）不能误命中同文件裸名 foo。
+        local_hits = (
+            self._idx.exact(caller_file, callee_name)
+            if not edge.callee_qualifier
+            else []
+        )
         if local_hits:
             best = _best_candidates(local_hits)
             if len(best) == 1:
@@ -258,6 +272,15 @@ class SymbolResolver:
                     )
                     if chained is not None:
                         return chained
+
+        if language == "python" and edge.callee_qualifier and resolver is not None:
+            member = self._resolve_python_receiver(
+                edge,
+                resolver,
+                caller_file=caller_file,
+            )
+            if member is not None:
+                return member
 
         # Go selector 解析（work item）：`pkg.Func()` 的 callee_name 是裸函数名、包限定符
         # 在 287→checkpoint 捕获的 callee_qualifier 里。用 qualifier 匹配 import 本地名（alias 或
@@ -350,6 +373,143 @@ class SymbolResolver:
             call_shape=call_shape,
             strategy="no_static_evidence",
         )
+
+    def _resolve_python_receiver(
+        self,
+        edge: CallEdge,
+        resolver: ImportResolver,
+        *,
+        caller_file: str,
+    ) -> ResolveResult | None:
+        """解析 Python module member 与唯一 class binding；不猜动态 receiver/MRO。"""
+        qualifier = str(edge.callee_qualifier or "")
+        evidence: list[dict[str, str]]
+
+        # ``import pkg.mod as alias; alias.member()``。
+        for import_edge in self._imports.get(caller_file, []):
+            if _python_module_local_name(import_edge) != qualifier:
+                continue
+            target_file = resolver.resolve_module(
+                import_edge.target_module,
+                import_edge.is_relative,
+                caller_file,
+            )
+            if target_file is None:
+                continue
+            candidates = _best_candidates(
+                self._idx.exact(target_file, edge.callee_name)
+            )
+            evidence = [
+                {
+                    "kind": "python_module_binding",
+                    "qualifier": qualifier,
+                    "target_file": target_file,
+                }
+            ]
+            if len(candidates) == 1:
+                return _resolved(
+                    candidates[0],
+                    caller_file=caller_file,
+                    language="python",
+                    call_shape="member",
+                    strategy="python_module_member",
+                    evidence=evidence,
+                )
+            return _not_resolved(
+                candidates,
+                language="python",
+                call_shape="member",
+                strategy="python_module_member",
+                evidence=evidence,
+            )
+
+        # ``from pkg import Client [as C]; C.method()``：目标文件中 class 与 member
+        # 均唯一才成立；无父类图时不尝试跨文件 MRO。
+        for import_edge in self._imports.get(caller_file, []):
+            original_class = _match_imported_name(
+                qualifier, import_edge.imported_names
+            )
+            if original_class is None:
+                continue
+            target_file = resolver.resolve_module(
+                import_edge.target_module,
+                import_edge.is_relative,
+                caller_file,
+            )
+            if target_file is None:
+                continue
+            classes = [
+                item
+                for item in self._idx.exact(target_file, original_class)
+                if item.symbol_type == "CLASS"
+            ]
+            members = [
+                item
+                for item in self._idx.exact(target_file, edge.callee_name)
+                if item.symbol_type == "METHOD"
+            ]
+            candidates = members if len(classes) == 1 else []
+            evidence = [
+                {
+                    "kind": "python_class_import",
+                    "qualifier": qualifier,
+                    "class_name": original_class,
+                    "target_file": target_file,
+                }
+            ]
+            if len(candidates) == 1:
+                return _resolved(
+                    candidates[0],
+                    caller_file=caller_file,
+                    language="python",
+                    call_shape="receiver",
+                    strategy="python_imported_class",
+                    evidence=evidence,
+                )
+            return _not_resolved(
+                candidates,
+                language="python",
+                call_shape="receiver",
+                strategy="python_imported_class",
+                evidence=evidence,
+            )
+
+        # 同文件 ``Client.method()``，同样要求 class/member 各唯一。
+        classes = [
+            item
+            for item in self._idx.exact(caller_file, qualifier)
+            if item.symbol_type == "CLASS"
+        ]
+        members = [
+            item
+            for item in self._idx.exact(caller_file, edge.callee_name)
+            if item.symbol_type == "METHOD"
+        ]
+        if classes:
+            evidence = [
+                {
+                    "kind": "python_local_class",
+                    "qualifier": qualifier,
+                    "target_file": caller_file,
+                }
+            ]
+            if len(classes) == 1 and len(members) == 1:
+                return _resolved(
+                    members[0],
+                    caller_file=caller_file,
+                    language="python",
+                    call_shape="receiver",
+                    strategy="python_local_class",
+                    evidence=evidence,
+                )
+            return _not_resolved(
+                members,
+                language="python",
+                call_shape="receiver",
+                strategy="python_local_class",
+                evidence=evidence,
+            )
+        return None
 
     def _resolve_frontend_reexport(
         self,
