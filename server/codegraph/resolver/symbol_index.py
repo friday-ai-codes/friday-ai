@@ -64,6 +64,15 @@ class SymbolIndex:
             idx._fuzzy.setdefault(indexed.name, []).append(indexed)
             idx._by_file.setdefault(indexed.file_path, []).append(indexed)
             idx._files.add(indexed.file_path)
+        # 纯 re-export/barrel 文件可能没有可索引 Symbol，但仍是合法模块路径。
+        # 把 ImportEdge.source_file 纳入文件集合，允许 FrontendImportResolver 进入下一跳。
+        from codegraph.models import ImportEdge
+
+        idx._files.update(
+            ImportEdge.objects.filter(repository_id=repository_id).values_list(
+                "source_file", flat=True
+            )
+        )
         return idx
 
     def exact(self, file_path: str, name: str) -> list[IndexedSymbol]:
