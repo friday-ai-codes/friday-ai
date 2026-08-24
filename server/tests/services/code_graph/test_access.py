@@ -354,6 +354,10 @@ _SIBLING_GUARDED_MODULES: tuple[str, ...] = (
     "code_graph_tools.py",
     "code_graph_cross_repo.py",
 )
+_RETRIEVAL_GUARDED_MODULES: tuple[str, ...] = (
+    "rag_search.py",
+    "hybrid_search.py",
+)
 
 
 def _module_string_constants(tree: ast.Module) -> dict[str, str]:
@@ -502,6 +506,64 @@ def test_observability_contract() -> None:
 
     assert scanned > 0, f"未在 {package_dir} 下扫描到任何 logger 调用，契约守护形同虚设"
     assert not violations, "观测契约违规：\n" + "\n".join(violations)
+
+
+def test_logging_leakage_and_info_loop_guard() -> None:
+    """Graph query 扫描面禁止正文、循环 INFO 与未脱敏异常。"""
+    package_dir = Path(code_graph_package.__file__).resolve().parent
+    siblings = [package_dir.parent / name for name in _SIBLING_GUARDED_MODULES]
+    retrieval_dir = package_dir.parent / "retrieval"
+    retrieval = [retrieval_dir / name for name in _RETRIEVAL_GUARDED_MODULES]
+    guarded_paths = sorted(package_dir.glob("*.py")) + siblings + retrieval
+
+    expected = set(_SIBLING_GUARDED_MODULES) | set(_RETRIEVAL_GUARDED_MODULES)
+    assert expected <= {path.name for path in guarded_paths}
+    for path in [*siblings, *retrieval]:
+        assert path.exists(), f"日志扫描面文件不存在：{path}"
+
+    violations: list[str] = []
+    for source_path in guarded_paths:
+        tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+        parents: dict[ast.AST, ast.AST] = {
+            child: parent
+            for parent in ast.walk(tree)
+            for child in ast.iter_child_nodes(parent)
+        }
+        for call in _iter_logger_calls(tree):
+            where = f"{source_path.name}:{call.lineno}"
+            keywords = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            forbidden = {"query", "query_text", "prompt"} & set(keywords)
+            if forbidden:
+                violations.append(f"{where} 禁止正文日志字段：{sorted(forbidden)}")
+
+            logged_nodes = [*call.args, *keywords.values()]
+            for node in logged_nodes:
+                for candidate in ast.walk(node):
+                    if not isinstance(candidate, ast.Subscript):
+                        continue
+                    if isinstance(candidate.value, ast.Name) and candidate.value.id in {
+                        "query",
+                        "query_text",
+                        "prompt",
+                    }:
+                        violations.append(f"{where} 禁止截断正文日志")
+
+            error_value = keywords.get("error")
+            if error_value is not None and "redact_secrets_in_text" not in ast.unparse(
+                error_value
+            ):
+                violations.append(f"{where} 的 error= 未过 redact_secrets_in_text")
+
+            func = call.func
+            if isinstance(func, ast.Attribute) and func.attr == "info":
+                parent = parents.get(call)
+                while parent is not None:
+                    if isinstance(parent, (ast.For, ast.AsyncFor, ast.While)):
+                        violations.append(f"{where} 循环内禁止 INFO")
+                        break
+                    parent = parents.get(parent)
+
+    assert not violations, "日志泄漏/放大守卫违规：\n" + "\n".join(violations)
 
 
 # 121-VALIDATION.md 121-03-T2（planner 追加行）：matcher/指纹 60s TTL memo——
