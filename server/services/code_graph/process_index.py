@@ -169,8 +169,10 @@ async def rebuild_process_index(
             generation = process_generation(repository_id, branch, built_at_sha)
             documents = [build_process_document(row) for row in traces]
             texts = [doc["content"] for doc in documents]
+            encode_started = time.monotonic()
             dense = await EmbeddingService.generate_embeddings_batch(texts)
             sparse = await sync_to_async(SparseEncoderService.encode_batch)(texts)
+            encode_duration_ms = int((time.monotonic() - encode_started) * 1000)
             if len(dense) != len(documents) or len(sparse) != len(documents):
                 raise ValueError("process_index_embedding_count_mismatch")
 
@@ -217,12 +219,28 @@ async def rebuild_process_index(
             )
             if not created:
                 raise RuntimeError("process_index_collection_unavailable")
+            upsert_started = time.monotonic()
             ok = await sync_to_async(QdrantService.upsert_vectors_by_name)(
                 collection, points
             )
+            upsert_duration_ms = int((time.monotonic() - upsert_started) * 1000)
             if not ok:
                 raise RuntimeError("process_index_upsert_failed")
             duration_ms = int((time.monotonic() - started) * 1000)
+            try:
+                logger.debug(
+                    "code_graph_process_index_stages_completed",
+                    encoded=len(documents),
+                    upserted=len(points),
+                    encode_duration_ms=encode_duration_ms,
+                    upsert_duration_ms=upsert_duration_ms,
+                    duration_ms=duration_ms,
+                    status="used",
+                    category="sampling",
+                    component="code_graph",
+                )
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 logger.info(
                     "code_graph_process_index_rebuild_completed",
@@ -273,15 +291,32 @@ async def search_process_index(
     if not query.strip():
         raise ValueError("query 不能为空")
 
+    started = time.monotonic()
+
+    def _log_search(*, status: str, returned: int) -> None:
+        try:
+            logger.debug(
+                "code_graph_process_index_search_completed",
+                status=status,
+                returned=returned,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                category="sampling",
+                component="code_graph",
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort
+            pass
+
     from services.qdrant_service import QdrantService
     from services.query_embedding import embed_query
     from services.sparse_encoder import SparseEncoderService
 
     embedded = await embed_query(query)
     if not embedded.primary:
+        _log_search(status="skipped", returned=0)
         return []
     sparse = await sync_to_async(SparseEncoderService.encode)(query)
     if not sparse or not sparse.get("indices"):
+        _log_search(status="skipped", returned=0)
         return []
     generation = process_generation(repository_id, branch_name or "", commit_sha)
     rows = await sync_to_async(QdrantService.hybrid_search_by_name)(
@@ -296,7 +331,7 @@ async def search_process_index(
             "commit_sha": commit_sha,
         },
     )
-    return [
+    results = [
         {
             **dict(row.get("payload") or {}),
             "score": row.get("score"),
@@ -304,6 +339,8 @@ async def search_process_index(
         }
         for row in rows
     ]
+    _log_search(status="used", returned=len(results))
+    return results
 
 
 __all__ = [
