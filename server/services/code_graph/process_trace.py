@@ -560,17 +560,6 @@ async def rebuild_processes(
     branch = branch_name or ""
 
     try:
-        logger.info(
-            "code_graph_process_rebuild_started",
-            category="sampling",
-            component="code_graph",
-            repository_id=str(repository_id),
-            branch_name=branch,
-        )
-    except Exception:  # noqa: BLE001
-        pass
-
-    try:
         code_graph = graph
         if code_graph is None:
             code_graph = await get_graph_service().get_graph(
@@ -626,7 +615,7 @@ async def rebuild_processes(
             "duration_ms": duration_ms,
         }
         try:
-            logger.info(
+            logger.debug(
                 "code_graph_process_rebuild_completed",
                 category="sampling",
                 component="code_graph",
@@ -642,7 +631,7 @@ async def rebuild_processes(
         return result
     except Exception as exc:
         try:
-            logger.warning(
+            logger.debug(
                 "code_graph_process_rebuild_failed",
                 category="sampling",
                 component="code_graph",

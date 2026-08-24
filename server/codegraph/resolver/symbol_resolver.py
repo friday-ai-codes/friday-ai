@@ -643,19 +643,6 @@ class SymbolResolver:
         from codegraph.models import CallEdge
 
         started = time.monotonic()
-        try:
-            logger.info(
-                "code_graph_symbol_resolve_backfill_started",
-                repository_id=repository_id,
-                branch_name=branch_name,
-                dry_run=dry_run,
-                initiated_by_user_id=initiated_by_user_id,
-                category="caller",
-                component="codegraph",
-            )
-        except Exception:  # noqa: BLE001 — 观测 best-effort
-            pass
-
         edges = list(
             CallEdge.objects.filter(
                 repository_id=repository_id,
@@ -667,6 +654,7 @@ class SymbolResolver:
         ambiguous = 0
         unresolved = 0
         changed_edges: list[CallEdge] = []
+        grouped: dict[tuple[str, str], dict[str, int | str]] = {}
 
         for edge in edges:
             try:
@@ -686,17 +674,31 @@ class SymbolResolver:
                 unresolved += 1
                 continue
 
+            cell_key = (result.language or "unknown", result.call_shape or "unknown")
+            cell = grouped.setdefault(
+                cell_key,
+                {
+                    "language": cell_key[0],
+                    "call_shape": cell_key[1],
+                    "resolved": 0,
+                    "ambiguous": 0,
+                    "unresolved": 0,
+                },
+            )
             if result.callee_symbol_id is None:
                 if result.status == "ambiguous":
                     ambiguous += 1
+                    cell["ambiguous"] = int(cell["ambiguous"]) + 1
                 else:
                     unresolved += 1
+                    cell["unresolved"] = int(cell["unresolved"]) + 1
                 continue
 
             edge.callee_symbol_id = result.callee_symbol_id
             edge.callee_file = result.callee_file
             edge.is_cross_file = result.is_cross_file
             resolved += 1
+            cell["resolved"] = int(cell["resolved"]) + 1
             changed_edges.append(edge)
 
         if changed_edges and not dry_run:
@@ -714,15 +716,13 @@ class SymbolResolver:
             "changed": 0 if dry_run else len(changed_edges),
         }
         try:
-            logger.info(
-                "code_graph_symbol_resolve_backfill_completed",
-                repository_id=repository_id,
-                branch_name=branch_name,
-                dry_run=dry_run,
+            logger.debug(
+                "code_graph_symbol_resolve_batch_completed",
                 duration_ms=int((time.monotonic() - started) * 1000),
                 initiated_by_user_id=initiated_by_user_id,
-                category="caller",
+                category="sampling",
                 component="codegraph",
+                cells=[grouped[key] for key in sorted(grouped)],
                 **stats,
             )
         except Exception:  # noqa: BLE001 — 观测 best-effort
