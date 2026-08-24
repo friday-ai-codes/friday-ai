@@ -45,6 +45,10 @@ __all__ = [
     "GoldCase",
     "GoldDataset",
     "RunIdentity",
+    "aggregate_report",
+    "bucket_metrics",
+    "bucket_status",
+    "build_report",
     "build_run_identity",
     "evaluate_case",
     "rank_process_candidates",
@@ -606,3 +610,134 @@ def evaluate_case(
         trace_error_path_rate=trace["error_path_rate"],
         trace_node_not_in_graph_count=trace["node_not_in_graph_count"],
     )
+
+
+# ---------------------------------------------------------------------------
+# BENCH-05：分桶 + INSUFFICIENT_DATA + macro 聚合；BENCH-03：无阈值报告
+# ---------------------------------------------------------------------------
+
+# 参与逐桶 / overall macro 平均的质量指标（trace_node_not_in_graph_count 为计数、
+# cold/warm/tokens 仅记录，均不参与平均）。
+_QUALITY_METRICS = (
+    "symbol_recall",
+    "process_recall",
+    "edge_precision",
+    "edge_recall",
+    "impact_precision",
+    "trace_success_rate",
+    "trace_error_path_rate",
+)
+
+
+def _macro(values: list[float | str]) -> float | str:
+    """按 case 取平均（macro）：只对数值型 case 求平均，跳过空结果标记。
+
+    分母 = 该指标数值 case 数。无可平均数值时记 ``NO_GOLD``（该桶此指标无可量测
+    数据，不记满分）。用 macro 而非 micro（按样本合并）：case 之间 gold 数量差异
+    大，micro 会让大桶主导、掩盖小桶整体退化（PITFALLS Pitfall 3）。
+    """
+    nums = [v for v in values if isinstance(v, float)]
+    if not nums:
+        return NO_GOLD
+    return round(sum(nums) / len(nums), _BASELINE_PRECISION)
+
+
+def bucket_status(n: int) -> str:
+    """分桶状态：``n >= MIN_BUCKET_SAMPLES`` → ``OK``，否则 ``INSUFFICIENT_DATA``。"""
+    return BUCKET_OK if n >= MIN_BUCKET_SAMPLES else INSUFFICIENT_DATA
+
+
+def bucket_metrics(cases: list[CaseOutcome]) -> list[dict[str, Any]]:
+    """按 ``(language, framework, entry_type)`` 分桶并算各质量指标的 macro 平均。
+
+    每桶记录 ``key``/``n``/``status``/``has_protected``/``metrics``。``status`` 由
+    :func:`bucket_status` 判定；``metrics`` 仅对数值型 case 求平均（跳过
+    ``NO_GOLD``/``N/A``/``SEED_MISSING`` 标记）。
+    """
+    groups: dict[tuple[str, str, str], list[CaseOutcome]] = {}
+    for case in cases:
+        key = (case.language, case.framework, case.entry_type)
+        groups.setdefault(key, []).append(case)
+
+    buckets: list[dict[str, Any]] = []
+    for (language, framework, entry_type), members in sorted(groups.items()):
+        buckets.append(
+            {
+                "key": {
+                    "language": language,
+                    "framework": framework,
+                    "entry_type": entry_type,
+                },
+                "n": len(members),
+                "status": bucket_status(len(members)),
+                "has_protected": any(m.protected for m in members),
+                "metrics": {
+                    metric: _macro([getattr(m, metric) for m in members])
+                    for metric in _QUALITY_METRICS
+                },
+            }
+        )
+    return buckets
+
+
+def aggregate_report(cases: list[CaseOutcome]) -> dict[str, Any]:
+    """聚合逐桶结果为 overall + 稀疏桶 / 受保护桶单列。
+
+    ``overall`` 只聚合 ``status==OK`` 且**非受保护**的桶（macro：按 case 平均，非
+    按样本合并 micro）。``INSUFFICIENT_DATA`` 稀疏桶与受保护桶分别单列——稀疏桶
+    数据不足不参与结论；受保护桶的退化不得被 overall 的提升抵消（PITFALLS
+    Pitfall 3）。
+    """
+    buckets = bucket_metrics(cases)
+    ok_keys = {
+        (b["key"]["language"], b["key"]["framework"], b["key"]["entry_type"])
+        for b in buckets
+        if b["status"] == BUCKET_OK and not b["has_protected"]
+    }
+    overall_cases = [
+        c for c in cases if (c.language, c.framework, c.entry_type) in ok_keys
+    ]
+    return {
+        "overall": {
+            metric: _macro([getattr(c, metric) for c in overall_cases])
+            for metric in _QUALITY_METRICS
+        },
+        "per_bucket": buckets,
+        "insufficient_buckets": [b for b in buckets if b["status"] == INSUFFICIENT_DATA],
+        "protected_buckets": [b for b in buckets if b["has_protected"]],
+        "total_cases": len(cases),
+    }
+
+
+def build_report(
+    *,
+    identity: RunIdentity,
+    watermark: str,
+    split: str,
+    cases: list[CaseOutcome],
+) -> dict[str, Any]:
+    """装配最终**无阈值**原始报告（BENCH-03）。
+
+    只含原始值与空结果标记：echo 评测身份五元组与水位状态、逐 case、逐桶、
+    overall、受保护桶 / 稀疏桶单列，并附空结果规则图例。本报告**不引入任何回归
+    门/目标值/容差/比对字段**——阈值决策权属 Phase 140 独立评审。
+    """
+    aggregated = aggregate_report(cases)
+    return {
+        "identity": identity.to_dict(),
+        "watermark": watermark,
+        "split": split,
+        "per_case": [c.to_dict() for c in cases],
+        "per_bucket": aggregated["per_bucket"],
+        "overall": aggregated["overall"],
+        "protected_buckets": aggregated["protected_buckets"],
+        "insufficient_buckets": aggregated["insufficient_buckets"],
+        "total_cases": aggregated["total_cases"],
+        "legend": {
+            NO_GOLD: "gold 为空：该 case 此指标不计入平均（非满分）",
+            NOT_APPLICABLE: "无预测：不计入平均（非满分）",
+            SEED_MISSING: "impact seed_in_graph=False：单列，不计 precision",
+            NODE_NOT_IN_GRAPH: "trace 端点不在图：单列，不计成功率分母",
+            INSUFFICIENT_DATA: "分桶样本不足 MIN_BUCKET_SAMPLES：单列，不进 overall",
+        },
+    }
