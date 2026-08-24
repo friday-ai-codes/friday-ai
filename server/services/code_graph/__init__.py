@@ -88,6 +88,11 @@ from services.code_graph.model import (
     confidence_score,
     derive_reason,
 )
+from services.code_graph.query_service import (
+    GRAPH_QUERY_RANKING_VERSION,
+    GRAPH_QUERY_RESPONSE_VERSION,
+    GraphQueryService,
+)
 
 __all__ = [
     "ChunkEvidence",
@@ -100,7 +105,10 @@ __all__ = [
     "GraphError",
     "GraphMeta",
     "GraphNotIndexed",
+    "GraphQueryService",
     "GraphService",
+    "GRAPH_QUERY_RANKING_VERSION",
+    "GRAPH_QUERY_RESPONSE_VERSION",
     "LOW_RESOLUTION_THRESHOLD",
     "REDACTED_REPOSITORY",
     "confidence_score",
