@@ -65,7 +65,7 @@
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 133-03-PLAN.md — 指标 + 分桶 + 无阈值报告：Recall@5/@3、edge P/R、impact、trace 三态、空结果规则、INSUFFICIENT_DATA、macro 聚合（BENCH-03, BENCH-04, BENCH-05）
+- [x] 133-03-PLAN.md — 指标 + 分桶 + 无阈值报告：Recall@5/@3、edge P/R、impact、trace 三态、空结果规则、INSUFFICIENT_DATA、macro 聚合（BENCH-03, BENCH-04, BENCH-05）
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -404,7 +404,7 @@
 
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
-| 133. 同仓同 commit 基准与 v0.22 baseline | v0.24.0 | BENCH-01~05 | 0/4 | Planned | - |
+| 133. 同仓同 commit 基准与 v0.22 baseline | v0.24.0 | BENCH-01~05 | 3/4 | In Progress|  |
 | 134. TS/JS resolved 调用边 | v0.24.0 | EDGE-01/02/03/07 | 0/TBD | Not started | - |
 | 135. Python resolved 调用边 | v0.24.0 | EDGE-04/05 | 0/TBD | Not started | - |
 | 136. Process 一等混合索引 | v0.24.0 | PROC-01~05, OBS-04 | 0/TBD | Not started | - |
