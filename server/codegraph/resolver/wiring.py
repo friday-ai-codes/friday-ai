@@ -54,7 +54,14 @@ def _discover_go_module(repo_path: str) -> str:
         return ""
 
 
-def backfill_symbol_resolution(repository_id: str, repo_path: str) -> dict[str, int]:
+def backfill_symbol_resolution(
+    repository_id: str,
+    repo_path: str,
+    *,
+    branch_name: str = "",
+    dry_run: bool = False,
+    initiated_by_user_id: str = "system",
+) -> dict[str, int]:
     """对整库构建解析上下文并回填 ``CallEdge`` 的 callee 侧字段。
 
     Args:
@@ -66,10 +73,14 @@ def backfill_symbol_resolution(repository_id: str, repo_path: str) -> dict[str, 
     """
     from codegraph.models import ImportEdge
 
-    index = SymbolIndex.build(repository_id)
+    branch_filter = ["", branch_name] if branch_name else [""]
+    index = SymbolIndex.build(repository_id, branch_name)
 
     import_by_source: dict[str, list[ImportEdge]] = {}
-    for import_edge in ImportEdge.objects.filter(repository_id=repository_id):
+    for import_edge in ImportEdge.objects.filter(
+        repository_id=repository_id,
+        branch_name__in=branch_filter,
+    ):
         import_by_source.setdefault(import_edge.source_file, []).append(import_edge)
 
     alias_map = _discover_alias_map(repo_path)
@@ -82,14 +93,46 @@ def backfill_symbol_resolution(repository_id: str, repo_path: str) -> dict[str, 
     }
 
     resolver = SymbolResolver(index, import_by_source, resolver_by_lang)
-    stats = resolver.backfill(repository_id)
-
-    logger.info(
-        "symbol_resolution_wired",
-        repository_id=repository_id,
-        total=stats["total"],
-        resolved=stats["resolved"],
-        has_tsconfig=bool(alias_map),
-        has_go_module=bool(module_path),
+    stats = resolver.backfill(
+        repository_id,
+        branch_name=branch_name,
+        dry_run=dry_run,
+        initiated_by_user_id=initiated_by_user_id,
     )
+
+    if stats["changed"] and not dry_run:
+        from codegraph.models import ProcessTrace, SymbolCommunity
+        from services.code_graph import invalidate_repository
+
+        # resolved edge 是两个投影的输入；目标分支变更后必须删除旧投影，等待既有重建流程
+        # 以当前水位再生。缓存失效 best-effort 由公开入口内部保证。
+        SymbolCommunity.objects.filter(
+            repository_id=repository_id,
+            branch_name=branch_name,
+        ).delete()
+        ProcessTrace.objects.filter(
+            repository_id=repository_id,
+            branch_name=branch_name,
+        ).delete()
+        invalidate_repository(repository_id)
+
+    try:
+        logger.info(
+            "code_graph_symbol_resolution_wired",
+            repository_id=repository_id,
+            branch_name=branch_name,
+            dry_run=dry_run,
+            total=stats["total"],
+            resolved=stats["resolved"],
+            ambiguous=stats["ambiguous"],
+            unresolved=stats["unresolved"],
+            changed=stats["changed"],
+            has_tsconfig=bool(alias_map),
+            has_go_module=bool(module_path),
+            initiated_by_user_id=initiated_by_user_id,
+            category="caller",
+            component="codegraph",
+        )
+    except Exception:  # noqa: BLE001 — 观测 best-effort
+        pass
     return stats

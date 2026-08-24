@@ -108,7 +108,13 @@ async def test_backfill_resolves_multi_language(test_repository, tmp_path) -> No
     for call in calls:
         await call.arefresh_from_db()
 
-    assert stats == {"total": 4, "resolved": 3}
+    assert stats == {
+        "total": 4,
+        "resolved": 3,
+        "ambiguous": 0,
+        "unresolved": 1,
+        "changed": 3,
+    }
     assert calls[0].callee_symbol_id == symbols[0].id  # py 跨文件
     assert calls[1].callee_symbol_id == symbols[1].id  # go selector
     assert calls[2].callee_symbol_id == symbols[2].id  # 前端组件
@@ -147,5 +153,69 @@ async def test_backfill_without_config_still_resolves_python(
 
     for call in calls:
         await call.arefresh_from_db()
-    assert stats == {"total": 1, "resolved": 1}
+    assert stats == {
+        "total": 1,
+        "resolved": 1,
+        "ambiguous": 0,
+        "unresolved": 0,
+        "changed": 1,
+    }
     assert calls[0].callee_symbol_id == symbols[0].id
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_branch_dry_run_reports_without_writing_other_branches(
+    test_repository, tmp_path
+) -> None:
+    """dry-run 只量测目标 branch，且目标/其他分支都不写。"""
+    from codegraph.models import CallEdge, ImportEdge, Symbol
+
+    target = await Symbol.objects.acreate(
+        repository=test_repository,
+        branch_name="feature/a",
+        name="run",
+        symbol_type="FUNCTION",
+        file_path="src/target.ts",
+        start_line=1,
+        end_line=2,
+    )
+    await ImportEdge.objects.acreate(
+        repository=test_repository,
+        branch_name="feature/a",
+        source_file="src/main.ts",
+        target_module="./target",
+        imported_names=["run"],
+        is_relative=True,
+    )
+    feature_call = await CallEdge.objects.acreate(
+        repository=test_repository,
+        branch_name="feature/a",
+        caller_file="src/main.ts",
+        callee_name="run",
+        call_type="DIRECT",
+        line_number=1,
+    )
+    base_call = await CallEdge.objects.acreate(
+        repository=test_repository,
+        branch_name="",
+        caller_file="src/main.ts",
+        callee_name="run",
+        call_type="DIRECT",
+        line_number=1,
+    )
+
+    stats = await sync_to_async(backfill_symbol_resolution)(
+        str(test_repository.id),
+        str(tmp_path),
+        branch_name="feature/a",
+        dry_run=True,
+    )
+
+    await feature_call.arefresh_from_db()
+    await base_call.arefresh_from_db()
+    assert stats["total"] == 1
+    assert stats["resolved"] == 1
+    assert stats["changed"] == 0
+    assert feature_call.callee_symbol_id is None
+    assert base_call.callee_symbol_id is None
+    assert target.id is not None

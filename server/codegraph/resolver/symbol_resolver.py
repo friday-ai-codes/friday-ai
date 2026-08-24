@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,7 @@ import structlog
 from codegraph.resolver.base import ImportResolver, ResolveResult
 from codegraph.resolver.go_import import GoImportResolver
 from codegraph.resolver.symbol_index import IndexedSymbol, SymbolIndex
+from common.logging import redact_secrets_in_text
 
 if TYPE_CHECKING:
     from codegraph.models import CallEdge, ImportEdge
@@ -465,7 +467,14 @@ class SymbolResolver:
             )
         return None
 
-    def backfill(self, repository_id: str) -> dict[str, int]:
+    def backfill(
+        self,
+        repository_id: str,
+        *,
+        branch_name: str = "",
+        dry_run: bool = False,
+        initiated_by_user_id: str = "system",
+    ) -> dict[str, int]:
         """批量回填该仓尚未解析的 ``CallEdge``。
 
         整库接入索引/重建流程留到 implementation；本入口仅供单测驱动与后续流程调用。
@@ -473,44 +482,89 @@ class SymbolResolver:
         """
         from codegraph.models import CallEdge
 
+        started = time.monotonic()
+        try:
+            logger.info(
+                "code_graph_symbol_resolve_backfill_started",
+                repository_id=repository_id,
+                branch_name=branch_name,
+                dry_run=dry_run,
+                initiated_by_user_id=initiated_by_user_id,
+                category="caller",
+                component="codegraph",
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort
+            pass
+
         edges = list(
             CallEdge.objects.filter(
                 repository_id=repository_id,
+                branch_name=branch_name,
                 callee_symbol__isnull=True,
             )
         )
         resolved = 0
+        ambiguous = 0
+        unresolved = 0
+        changed_edges: list[CallEdge] = []
 
         for edge in edges:
             try:
                 result = self.resolve_call(edge)
             except Exception as exc:  # noqa: BLE001 - 单边异常必须隔离，不能中断整批回填。
-                logger.warning(
-                    "resolve_call_failed",
-                    edge_id=str(edge.id),
-                    error=str(exc),
-                )
+                try:
+                    logger.debug(
+                        "code_graph_resolve_call_failed",
+                        edge_id=str(edge.id),
+                        error=redact_secrets_in_text(str(exc)),
+                        category="sampling",
+                        component="codegraph",
+                        initiated_by_user_id=initiated_by_user_id,
+                    )
+                except Exception:  # noqa: BLE001 — 观测 best-effort
+                    pass
+                unresolved += 1
                 continue
 
             if result.callee_symbol_id is None:
+                if result.status == "ambiguous":
+                    ambiguous += 1
+                else:
+                    unresolved += 1
                 continue
 
             edge.callee_symbol_id = result.callee_symbol_id
             edge.callee_file = result.callee_file
             edge.is_cross_file = result.is_cross_file
             resolved += 1
+            changed_edges.append(edge)
 
-        if edges:
+        if changed_edges and not dry_run:
             CallEdge.objects.bulk_update(
-                edges,
+                changed_edges,
                 ["callee_symbol", "callee_file", "is_cross_file"],
                 batch_size=500,
             )
 
-        logger.info(
-            "symbol_resolve_backfill_complete",
-            repository_id=repository_id,
-            total=len(edges),
-            resolved=resolved,
-        )
-        return {"total": len(edges), "resolved": resolved}
+        stats = {
+            "total": len(edges),
+            "resolved": resolved,
+            "ambiguous": ambiguous,
+            "unresolved": unresolved,
+            "changed": 0 if dry_run else len(changed_edges),
+        }
+        try:
+            logger.info(
+                "code_graph_symbol_resolve_backfill_completed",
+                repository_id=repository_id,
+                branch_name=branch_name,
+                dry_run=dry_run,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                initiated_by_user_id=initiated_by_user_id,
+                category="caller",
+                component="codegraph",
+                **stats,
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort
+            pass
+        return stats
