@@ -1,9 +1,9 @@
 ---
 phase: 140
 slug: threshold-policy
-status: draft
+status: complete
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-08-24
 ---
 
@@ -32,28 +32,28 @@ created: 2026-08-24
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 140-01-01 | 01 | 1 | BENCH-07, EDGE-06 | T-140-02/03 | identity/case-set/evaluator 与 resolver denominator fail-closed | unit | `cd server && uv run pytest tests/codegraph/test_graph_bench_resolver_metrics.py -x -q` | ❌ W0 | ⬜ pending |
-| 140-01-02 | 01 | 1 | BENCH-07 | T-140-02/03 | run artifact 保留 system/comparison identity 且不可混水位 | integration | `cd server && uv run pytest tests/codegraph/test_graph_bench_integration.py -x -q` | ✅ extend | ⬜ pending |
-| 140-02-01 | 02 | 2 | BENCH-06 | T-140-01/02 | policy 缺键、占位、hash、默认方向/容差均拒绝 | unit | `cd server && uv run pytest tests/codegraph/test_graph_bench_policy.py -x -q` | ❌ W0 | ⬜ pending |
-| 140-02-02 | 02 | 2 | BENCH-06, BENCH-07 | T-140-01/02/03 | comparator 四态、required sparse、逐例配对与 hash pin | unit | `cd server && uv run pytest tests/codegraph/test_graph_bench_compare.py -x -q` | ❌ W0 | ⬜ pending |
-| 140-02-03 | 02 | 2 | BENCH-07 | T-140-01/02 | compare command 只读输入、输出三 hash 与非零失败码 | command integration | `cd server && uv run pytest tests/codegraph/test_compare_graph_bench_command.py -x -q` | ❌ W0 | ⬜ pending |
-| 140-03-01 | 03 | 2 | OBS-01 | T-140-04 | caller 三事件无 query/凭证，logger 失败不反噬 | async unit | `cd server && uv run pytest tests/services/code_graph/test_query_observability.py -x -q` | ❌ W0 | ⬜ pending |
-| 140-03-02 | 03 | 2 | OBS-02 | T-140-04 | resolver/Process/lane/impact 仅 sampling 汇总，无 INFO 循环 | unit + static | `cd server && uv run pytest tests/services/code_graph/test_graph_query_sampling.py tests/services/code_graph/test_access.py -x -q` | ❌ W0 / ✅ extend | ⬜ pending |
-| 140-04-01 | 04 | 3 | BENCH-06, BENCH-07, EDGE-06 | T-140-01/02/03 | 同条件 candidate 只有 required gates 全过才 PASS | external integration | `cd server && uv run python manage.py compare_graph_bench ...` | ❌ 需真实 artifacts | ⬜ pending |
-| 140-04-02 | 04 | 3 | OBS-01, OBS-02 | T-140-04/05/06 | 权限/exclusion、触发用户、partial、hash、水位全量不回归 | regression | 运行 phase full suite、task 全量与 npm MCP 构建回归 | ✅ combine | ⬜ pending |
+| 140-01-01 | 01 | 1 | BENCH-07, EDGE-06 | T-140-02/03 | identity/case-set/evaluator 与 resolver denominator fail-closed | unit | `cd server && uv run pytest tests/codegraph/test_graph_bench_resolver_metrics.py -x -q` | ✅ | ✅ green |
+| 140-01-02 | 01 | 1 | BENCH-07 | T-140-02/03 | run artifact 保留 system/comparison identity 且不可混水位 | integration | `cd server && uv run pytest tests/codegraph/test_graph_bench_integration.py -x -q` | ✅ | ✅ green / external human_needed |
+| 140-02-01 | 02 | 2 | BENCH-06 | T-140-01/02 | policy 缺键、占位、hash、默认方向/容差均拒绝 | unit | `cd server && uv run pytest tests/codegraph/test_graph_bench_policy.py -x -q` | ✅ | ✅ green |
+| 140-02-02 | 02 | 2 | BENCH-06, BENCH-07 | T-140-01/02/03 | comparator 四态、required sparse、逐例配对与 hash pin | unit | `cd server && uv run pytest tests/codegraph/test_graph_bench_compare.py -x -q` | ✅ | ✅ green |
+| 140-02-03 | 02 | 2 | BENCH-07 | T-140-01/02 | compare command 只读输入、输出三 hash 与非零失败码 | command integration | `cd server && uv run pytest tests/codegraph/test_compare_graph_bench_command.py -x -q` | ✅ | ✅ green |
+| 140-03-01 | 03 | 2 | OBS-01 | T-140-04 | caller 三事件无 query/凭证，logger 失败不反噬 | async unit | `cd server && uv run pytest tests/services/code_graph/test_query_observability.py -x -q` | ✅ | ✅ green |
+| 140-03-02 | 03 | 2 | OBS-02 | T-140-04 | resolver/Process/lane/impact 仅 sampling 汇总，无 INFO 循环 | unit + static | `cd server && uv run pytest tests/services/code_graph/test_graph_query_sampling.py tests/services/code_graph/test_access.py -x -q` | ✅ | ✅ green |
+| 140-04-01 | 04 | 3 | BENCH-06, BENCH-07, EDGE-06 | T-140-01/02/03 | 同条件 candidate 只有 required gates 全过才 PASS | external integration | `cd server && uv run python manage.py compare_graph_bench ...` | ⚠️ 需真实 artifacts | ⚠️ human_needed |
+| 140-04-02 | 04 | 3 | OBS-01, OBS-02 | T-140-04/05/06 | 权限/exclusion、触发用户、partial、hash、水位全量不回归 | regression | 运行 phase full suite、task 全量与 npm MCP 构建回归 | ✅ | ✅ green |
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ human_needed*
 
 ## Wave 0 Requirements
 
-- [ ] `tests/codegraph/test_graph_bench_policy.py` — policy schema/hash/pin/immutability。
-- [ ] `tests/codegraph/test_graph_bench_compare.py` — paired comparator 与四态 gate。
-- [ ] `tests/codegraph/test_graph_bench_resolver_metrics.py` — resolver cell 指标和 denominator。
-- [ ] `tests/codegraph/test_compare_graph_bench_command.py` — 薄 I/O command。
-- [ ] `tests/services/code_graph/test_query_observability.py` — caller 生命周期、无正文、best-effort。
-- [ ] `tests/services/code_graph/test_graph_query_sampling.py` — sampling 事件与 INFO/query 正文守卫。
+- [x] `tests/codegraph/test_graph_bench_policy.py` — policy schema/hash/pin/immutability。
+- [x] `tests/codegraph/test_graph_bench_compare.py` — paired comparator 与四态 gate。
+- [x] `tests/codegraph/test_graph_bench_resolver_metrics.py` — resolver cell 指标和 denominator。
+- [x] `tests/codegraph/test_compare_graph_bench_command.py` — 薄 I/O command。
+- [x] `tests/services/code_graph/test_query_observability.py` — caller 生命周期、无正文、best-effort。
+- [x] `tests/services/code_graph/test_graph_query_sampling.py` — sampling 事件与 INFO/query 正文守卫。
 - [ ] 真实目标仓、独立 gold、非占位 manifest、v0.22 baseline report/run manifest/hashes。
-- [ ] token 按 run/case 归因；若环境无法闭合则明确 `INSUFFICIENT_DATA`，不得把 0 当通过。
+- [x] token 按 run/case 归因；环境无法闭合时明确 `INSUFFICIENT_DATA`，未把 0 当通过。
 - [ ] holdout final-only 数据与开启审计；普通测试不读取 holdout 正文。
 
 ## Manual-Only Verifications
