@@ -39,7 +39,7 @@
 - [x] **Phase 134: TS/JS resolved 调用边** — 以 import alias、re-export 与 receiver 证据提升 TS/JS 调用边（2/2，passed）
 - [x] **Phase 135: Python resolved 调用边** — 以 import/member/receiver 绑定提升 Python 调用边并独立验收（1/1，passed）
 - [x] **Phase 136: Process 一等混合索引** — 从 canonical ProcessTrace 建立可重建、双 lane、同水位的 Process 投影（2/2，`human_needed`：真实 Qdrant）
-- [ ] **Phase 137: 统一 GraphQueryService** — 单次自然语言查询确定性融合 Symbol、Community 与 Process 证据
+- [x] **Phase 137: 统一 GraphQueryService** — 单次自然语言查询确定性融合 Symbol、Community 与 Process 证据（1/1，passed）
 - [ ] **Phase 138: 消歧与 bounded impact** — 仅对已消歧 anchor 返回有界、不可误读为安全的影响面摘要
 - [ ] **Phase 139: 五消费面契约收敛** — 服务端、Chat、Django MCP、npm MCP 与编码容器共享 canonical manifest
 - [ ] **Phase 140: Threshold policy 与整体收口** — 基于 baseline 后锁定门禁并完成同条件对比、观测与全量回归
@@ -135,7 +135,9 @@
   4. 同一 Symbol 在多个 Process 中的 step 归属和证据均被保留，matched count 与 returned count 分开报告，不因全局 UID 去重丢失上下文。
   5. 预算不足或 lane 部分失败时响应按 schema-preserving 规则裁剪，并保留水位、warning、总数/返回数、`truncated` 原因、续查提示及各 capability 的 used/degraded/unavailable 状态；混水位证据不会被拼接。
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+- [x] 137-01-PLAN.md — 版本化统一响应、确定性融合账本、同水位与 schema-preserving partial
 
 ### Phase 138: 消歧与 bounded impact
 
@@ -416,7 +418,7 @@
 | 134. TS/JS resolved 调用边 | v0.24.0 | EDGE-01/02/03/07 | 0/TBD | Not started | - |
 | 135. Python resolved 调用边 | v0.24.0 | EDGE-04/05 | 0/TBD | Not started | - |
 | 136. Process 一等混合索引 | v0.24.0 | PROC-01~05, OBS-04 | 0/TBD | Not started | - |
-| 137. 统一 GraphQueryService | v0.24.0 | QUERY-01~05/08/09/10 | 0/TBD | Not started | - |
+| 137. 统一 GraphQueryService | v0.24.0 | QUERY-01~05/08/09/10 | 1/1 | Complete | 2026-08-24 |
 | 138. 消歧与 bounded impact | v0.24.0 | QUERY-06/07, OBS-05 | 0/TBD | Not started | - |
 | 139. 五消费面契约收敛 | v0.24.0 | CONTRACT-01~05, OBS-03 | 0/TBD | Not started | - |
 | 140. Threshold policy 与整体收口 | v0.24.0 | BENCH-06/07, EDGE-06, OBS-01/02 | 0/TBD | Not started | - |
