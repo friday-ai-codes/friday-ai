@@ -36,16 +36,16 @@
 
 ### 统一 graph-aware query
 
-- [ ] **QUERY-01**: 已知 repository 后，中文或英文非空自然语言可通过单一版本化入口查询；空白 query 在任何检索或图分析发生前被稳定拒绝
-- [ ] **QUERY-02**: 一次响应同时返回候选 Symbol、Community、Process 分组、步骤级 `file:line` 与影响面摘要，不要求调用方手工串联 RAG、symbol、process、trace、impact
-- [ ] **QUERY-03**: Symbol 与 Process 两条检索 lane 确定性融合；同仓同 commit、同配置、同 query 重复运行的候选顺序一致，同分使用稳定 ID 决胜
-- [ ] **QUERY-04**: 每个候选返回可离线重算的排序账本，含 lane、原始 rank、融合贡献、图/Community 增强贡献、最终分与排序版本
-- [ ] **QUERY-05**: 同一 Symbol 属于多个 Process 时，各 Process 都保留自己的 step 归属和证据；matched count 与 returned count 分开报告，不因全局 UID 去重丢失归属
+- [x] **QUERY-01**: 已知 repository 后，中文或英文非空自然语言可通过单一版本化入口查询；空白 query 在任何检索或图分析发生前被稳定拒绝
+- [x] **QUERY-02**: 一次响应同时返回候选 Symbol、Community、Process 分组、步骤级 `file:line` 与影响面摘要，不要求调用方手工串联 RAG、symbol、process、trace、impact
+- [x] **QUERY-03**: Symbol 与 Process 两条检索 lane 确定性融合；同仓同 commit、同配置、同 query 重复运行的候选顺序一致，同分使用稳定 ID 决胜
+- [x] **QUERY-04**: 每个候选返回可离线重算的排序账本，含 lane、原始 rank、融合贡献、图/Community 增强贡献、最终分与排序版本
+- [x] **QUERY-05**: 同一 Symbol 属于多个 Process 时，各 Process 都保留自己的 step 归属和证据；matched count 与 returned count 分开报告，不因全局 UID 去重丢失归属
 - [ ] **QUERY-06**: 重名 Symbol 返回带路径、行号和 UID 的消歧候选；未唯一锚定时标 `needs_disambiguation`，不得生成确定性 impact 摘要
 - [ ] **QUERY-07**: 已消歧 anchor 返回基于既有 GraphService 的 bounded impact 摘要、置信度、总数/返回数、截断与 drill-down 提示；空结果不得解释为“安全”
-- [ ] **QUERY-08**: 响应预算收紧时按 schema-preserving 规则裁剪源码正文、低排 Symbol 与低排 Process，始终保留合法 schema、水位、warning、总数/返回数、`truncated` 原因和续查提示
-- [ ] **QUERY-09**: 响应分别报告 BM25、embedding、Process enrichment、Community 与 impact 的 used/degraded/unavailable 状态；部分失败 best-effort 返回且 `partial=true`
-- [ ] **QUERY-10**: 响应顶层与全部 evidence 使用同一 repository、branch/index key 与 commit SHA；发现混水位时拒绝拼接或显式降级，不产出不可核验证据
+- [x] **QUERY-08**: 响应预算收紧时按 schema-preserving 规则裁剪源码正文、低排 Symbol 与低排 Process，始终保留合法 schema、水位、warning、总数/返回数、`truncated` 原因和续查提示
+- [x] **QUERY-09**: 响应分别报告 BM25、embedding、Process enrichment、Community 与 impact 的 used/degraded/unavailable 状态；部分失败 best-effort 返回且 `partial=true`
+- [x] **QUERY-10**: 响应顶层与全部 evidence 使用同一 repository、branch/index key 与 commit SHA；发现混水位时拒绝拼接或显式降级，不产出不可核验证据
 
 ### 工具契约与消费面对齐
 
@@ -111,16 +111,16 @@
 | PROC-03 | Phase 136 | Complete |
 | PROC-04 | Phase 136 | Complete |
 | PROC-05 | Phase 136 | Complete |
-| QUERY-01 | Phase 137 | Pending |
-| QUERY-02 | Phase 137 | Pending |
-| QUERY-03 | Phase 137 | Pending |
-| QUERY-04 | Phase 137 | Pending |
-| QUERY-05 | Phase 137 | Pending |
+| QUERY-01 | Phase 137 | Complete |
+| QUERY-02 | Phase 137 | Complete |
+| QUERY-03 | Phase 137 | Complete |
+| QUERY-04 | Phase 137 | Complete |
+| QUERY-05 | Phase 137 | Complete |
 | QUERY-06 | Phase 138 | Pending |
 | QUERY-07 | Phase 138 | Pending |
-| QUERY-08 | Phase 137 | Pending |
-| QUERY-09 | Phase 137 | Pending |
-| QUERY-10 | Phase 137 | Pending |
+| QUERY-08 | Phase 137 | Complete |
+| QUERY-09 | Phase 137 | Complete |
+| QUERY-10 | Phase 137 | Complete |
 | CONTRACT-01 | Phase 139 | Pending |
 | CONTRACT-02 | Phase 139 | Pending |
 | CONTRACT-03 | Phase 139 | Pending |
