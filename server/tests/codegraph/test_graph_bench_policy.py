@@ -139,6 +139,27 @@ def test_missing_required_field_fails_closed(path: tuple[str, ...]) -> None:
 
 
 @pytest.mark.parametrize(
+    "path",
+    [
+        (),
+        ("baseline",),
+        ("insufficient_data",),
+        ("gates", 0),
+        ("primary_quality_metrics", 0),
+    ],
+)
+def test_unknown_policy_fields_fail_closed(path: tuple[object, ...]) -> None:
+    payload = valid_policy()
+    target: object = payload
+    for key in path:
+        target = target[key]  # type: ignore[index]
+    target["unexpected_extension"] = True  # type: ignore[index]
+
+    with pytest.raises(ValueError, match="未知字段"):
+        load_threshold_policy(encoded(payload))
+
+
+@pytest.mark.parametrize(
     ("path", "value"),
     [
         (("schema_version",), "graph-bench-threshold-policy/v999"),
