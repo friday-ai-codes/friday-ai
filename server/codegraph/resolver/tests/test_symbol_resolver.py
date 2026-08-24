@@ -260,7 +260,13 @@ async def test_backfill_updates_resolved_edges_and_leaves_unresolved_empty(
 
     for call in calls:
         await call.arefresh_from_db()
-    assert stats == {"total": 3, "resolved": 2}
+    assert stats == {
+        "total": 3,
+        "resolved": 2,
+        "ambiguous": 0,
+        "unresolved": 1,
+        "changed": 2,
+    }
     assert calls[0].callee_symbol_id == symbols[0].id
     assert calls[0].callee_file == "pkg/caller.py"
     assert calls[0].is_cross_file is False
@@ -300,7 +306,13 @@ async def test_backfill_isolates_single_edge_failures(test_repository, monkeypat
 
     for call in calls:
         await call.arefresh_from_db()
-    assert stats == {"total": 2, "resolved": 1}
+    assert stats == {
+        "total": 2,
+        "resolved": 1,
+        "ambiguous": 0,
+        "unresolved": 1,
+        "changed": 1,
+    }
     assert calls[0].callee_symbol_id is None
     assert calls[1].callee_symbol_id == symbols[0].id
 
