@@ -195,6 +195,8 @@ class GraphQueryService:
                 capabilities["community"] = {"status": "used"}
 
             symbol_rows: list[dict[str, Any]] = []
+            symbol_lane_started = time.monotonic()
+            symbol_lane_status = "used"
             try:
                 snapshot = await search_rag(
                     query,
@@ -226,6 +228,7 @@ class GraphQueryService:
                 capabilities["bm25"] = {"status": "used"}
                 capabilities["embedding"] = {"status": "used"}
             except Exception as exc:
+                symbol_lane_status = "degraded"
                 partial = True
                 warnings.append("symbol_lane_failed")
                 capabilities["bm25"] = {
@@ -236,8 +239,32 @@ class GraphQueryService:
                     "status": "degraded",
                     "reason": type(exc).__name__,
                 }
+            try:
+                logger.debug(
+                    "code_graph_query_symbol_lane_completed",
+                    lane="symbol",
+                    status=symbol_lane_status,
+                    returned=len(symbol_rows),
+                    top_score=(
+                        max(
+                            (
+                                float(row["score"])
+                                for row in symbol_rows
+                                if row.get("score") is not None
+                            ),
+                            default=None,
+                        )
+                    ),
+                    duration_ms=int((time.monotonic() - symbol_lane_started) * 1000),
+                    category="sampling",
+                    component="code_graph",
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
             process_rows: list[dict[str, Any]] = []
+            process_lane_started = time.monotonic()
+            process_lane_status = "used"
             try:
                 raw_processes = await search_process_index(
                     query,
@@ -262,12 +289,35 @@ class GraphQueryService:
                     )
                 capabilities["process_enrichment"] = {"status": "used"}
             except Exception as exc:
+                process_lane_status = "degraded"
                 partial = True
                 warnings.append("process_lane_failed")
                 capabilities["process_enrichment"] = {
                     "status": "degraded",
                     "reason": type(exc).__name__,
                 }
+            try:
+                logger.debug(
+                    "code_graph_query_process_lane_completed",
+                    lane="process",
+                    status=process_lane_status,
+                    returned=len(process_rows),
+                    top_score=(
+                        max(
+                            (
+                                float(row["score"])
+                                for row in process_rows
+                                if row.get("score") is not None
+                            ),
+                            default=None,
+                        )
+                    ),
+                    duration_ms=int((time.monotonic() - process_lane_started) * 1000),
+                    category="sampling",
+                    component="code_graph",
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
             by_symbol, communities = _community_index(community_rows)
             memberships: dict[str, list[dict[str, Any]]] = {}
