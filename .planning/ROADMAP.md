@@ -47,95 +47,130 @@
 ## Phase Details
 
 ### Phase 133: 同仓同 commit 基准与 v0.22 baseline
+
 **Goal**: 获得可复现、无阈值污染的 v0.22 原始基线，作为后续所有质量声明的唯一比较起点
 **Depends on**: Phase 132
 **Requirements**: BENCH-01, BENCH-02, BENCH-03, BENCH-04, BENCH-05
 **Success Criteria** (what must be TRUE):
+
   1. 评测者可用固定 repository、branch、commit SHA 运行 benchmark；任一索引、gold 或源码水位不一致时 run 明确标为 `INVALID`，不会产出可比较结论。
   2. 评测数据具有独立的 dev、locked test、holdout 切分，resolved edge gold 来自独立 callsite 标注而不是从被测图反导。
   3. 未修改的 v0.22 能力可在冻结数据集上输出逐 case、逐语言/框架/入口桶的原始 baseline，产物中不存在预填或推断的回归阈值。
-  4. 报告同时给出 Symbol/Process recall、resolved edge、impact、trace、冷/热延迟与 token 的固定分母和空结果规则；稀疏桶显示 `INSUFFICIENT_DATA`，受保护桶不会被 overall 掩盖。
-**Plans**: TBD
+  4. 报告同时给出 Symbol/Process recall、resolved edge、impact、trace、冷/热延迟与 token 的固定分母和空结果规则；稀疏桶显示 `INSUFFICIENT_DATA`，受保护桶不会被 overall 掩盖。**Plans**: 4 plans
+
+**Wave 1**
+
+- [ ] 133-01-PLAN.md — 纯函数地基：run identity 五元组 + 三方水位校验（INVALID fail-closed）+ gold schema 校验（BENCH-01, BENCH-02）
+- [ ] 133-02-PLAN.md — 冻结 gold 数据集：manifest + dev/locked_test/holdout 三切分 + 防反导 README（BENCH-02）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 133-03-PLAN.md — 指标 + 分桶 + 无阈值报告：Recall@5/@3、edge P/R、impact、trace 三态、空结果规则、INSUFFICIENT_DATA、macro 聚合（BENCH-03, BENCH-04, BENCH-05）
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 133-04-PLAN.md — 薄 command + 观测：水位闸 INVALID 短路、逐 case 真跑 v0.22 能力（冷/热计时）、无阈值 baseline + run manifest、caller/sampling 埋点（BENCH-01, BENCH-03）
 
 ### Phase 134: TS/JS resolved 调用边
+
 **Goal**: TS/JS 调用边由可审计的语言证据解析，错误同名补边不再污染下游 Process、trace 与 impact
 **Depends on**: Phase 133
 **Requirements**: EDGE-01, EDGE-02, EDGE-03, EDGE-07
 **Success Criteria** (what must be TRUE):
+
   1. 每个 TS/JS 调用点都返回 `resolved`、`ambiguous` 或 `unresolved`，并携带 language、call shape、strategy、候选和证据；全仓同名 fuzzy 不会静默补边。
   2. import alias 与 re-export 链上的直接调用可在 branch 作用域内解析到目标 Symbol，并可追溯每一步解析证据。
   3. receiver 类型或绑定唯一时成员调用可解析；无法唯一确定时保留 `ambiguous`/`unresolved`，不会任选同名 Symbol。
   4. `(repository, branch)` 批量回填支持 dry-run 对比；写入后水位或 resolver 版本变化会使 Community、Process 与检索投影失效，批任务仅输出分桶汇总与采样日志而不在 INFO 循环刷屏。
+
 **Plans**: TBD
 
 ### Phase 135: Python resolved 调用边
+
 **Goal**: Python import 与成员调用按独立语言口径可靠解析，不让动态语义被伪装成确定边
 **Depends on**: Phase 134
 **Requirements**: EDGE-04, EDGE-05
 **Success Criteria** (what must be TRUE):
+
   1. module import、from import alias 与 imported member 调用可解析，并能区分模块成员与局部同名符号。
   2. receiver/class binding 足够明确时成员调用可解析；MRO 或动态目标不能确定时如实降级为 `ambiguous`/`unresolved`。
   3. 评测者可分别查看 language × framework × call shape 的 precision、recall、resolved、ambiguous、unresolved，为 Phase 140 按语言独立锁门提供输入。
   4. Go selector/interface 深化不影响本阶段及里程碑验收，LSP 默认值保持不变。
+
 **Plans**: TBD
 
 ### Phase 136: Process 一等混合索引
+
 **Goal**: Process 能脱离 Symbol 名称被直接检索，并始终返回 canonical、同 commit、步骤可核验的执行流证据
 **Depends on**: Phase 135
 **Requirements**: PROC-01, PROC-02, PROC-03, PROC-04, PROC-05, OBS-04
 **Success Criteria** (what must be TRUE):
+
   1. 每个 Process 都从 canonical `ProcessTrace` 确定性生成包含名称、入口、终点、有序步骤摘要、模块、业务关键词和 `built_at_sha` 的检索文档。
   2. Process 文档进入独立且可重建的 Qdrant 投影，可由 BM25/sparse 与 embedding/dense 两路直接召回，Django 数据仍是事实源。
   3. 查询和对账严格按 repository、branch、generation 与 commit SHA 过滤；重建幂等，旧 generation 不会与新结果静默混排。
   4. 仅出现在 Process 名称、摘要或业务关键词中的 query 仍可直接召回 Process，并明确标注命中 lane。
   5. 返回的 Process 保留完整有序 steps，每步含 Symbol UID、仓库相对路径与 1-based 起止行并可在同 commit blob 核验；重建任务携带并重新 bind `initiated_by_user_id`，无用户时标 `system`。
+
 **Plans**: TBD
 
 ### Phase 137: 统一 GraphQueryService
+
 **Goal**: 调用者通过一个版本化入口获得确定性、可解释、同水位的 Symbol、Community 与 Process 查询结果
 **Depends on**: Phase 136
 **Requirements**: QUERY-01, QUERY-02, QUERY-03, QUERY-04, QUERY-05, QUERY-08, QUERY-09, QUERY-10
 **Success Criteria** (what must be TRUE):
+
   1. 有仓库访问权的调用者可用中文或英文非空自然语言查询；空白 query 在检索或图分析前稳定拒绝，权限与 exclusion 检查 fail-closed。
   2. 一次响应同时返回 Symbol 候选、Community、Process 分组、步骤级 `file:line` 和影响面占位/状态，不要求调用方手工编排底层工具。
   3. Symbol 与 Process lane 确定性融合，同仓同 commit、同配置、同 query 重跑顺序一致；排序账本可离线重算 lane rank、各项贡献、最终分与排序版本。
   4. 同一 Symbol 在多个 Process 中的 step 归属和证据均被保留，matched count 与 returned count 分开报告，不因全局 UID 去重丢失上下文。
   5. 预算不足或 lane 部分失败时响应按 schema-preserving 规则裁剪，并保留水位、warning、总数/返回数、`truncated` 原因、续查提示及各 capability 的 used/degraded/unavailable 状态；混水位证据不会被拼接。
+
 **Plans**: TBD
 
 ### Phase 138: 消歧与 bounded impact
+
 **Goal**: 用户只在证据唯一锚定后获得有界影响面，并能看清置信度、覆盖范围和不确定性
 **Depends on**: Phase 137
 **Requirements**: QUERY-06, QUERY-07, OBS-05
 **Success Criteria** (what must be TRUE):
+
   1. 重名 Symbol 返回路径、行号和 UID 消歧候选；未唯一锚定时标记 `needs_disambiguation`，不会生成确定性 impact 摘要。
   2. 已消歧 anchor 返回复用既有 GraphService 的 bounded impact 摘要、置信度、总数/返回数、截断原因和 drill-down 提示。
   3. 空 impact、不可达、stale 或部分图结果不会被解释为“安全”，而以稳定 warning/degradation 语义呈现。
   4. impact 的图扩展与源码证据复用仓库权限和 exclusion fail-closed；异常文本与 ledger 分别经规定入口脱敏，凭证或被排除内容不会出现在响应、日志或留痕。
+
 **Plans**: TBD
 
 ### Phase 139: 五消费面契约收敛
+
 **Goal**: 所有调用面发现并执行同一个版本化 graph query 契约，不再出现 npm 或容器工具漂移
 **Depends on**: Phase 138
 **Requirements**: CONTRACT-01, CONTRACT-02, CONTRACT-03, CONTRACT-04, CONTRACT-05, OBS-03
 **Success Criteria** (what must be TRUE):
+
   1. 工具名、描述、input/output schema、required、defaults、enums、错误码、响应版本和 capability 元数据均可从单一 versioned manifest/registry 得到。
   2. 服务端 service、Chat Agent 与 Django MCP 仅做鉴权、上下文注入和协议映射，并在 discovery 与真实调用中暴露相同契约。
   3. npm `@friday-ai-codes/mcp` 的 graph query 定义由 canonical manifest 生成，打包 tarball 与服务端完整 schema hash 一致。
   4. 编码容器的 allowed-tools、schema 与真实调用复用同一 manifest；镜像或构建产物缺工具、版本或 schema 不一致时 conformance 测试失败且不得 skip。
   5. 五个消费面调用前均能发现契约版本、单仓/repository 必填语义、索引 commit、水位与 capability 状态；MCP 和 AI 对话调用均 best-effort 写入脱敏 `RetrievalTrace`，观测失败不改变业务响应。
+
 **Plans**: TBD
 
 ### Phase 140: Threshold policy 与整体收口
+
 **Goal**: 用 baseline 后审查锁定的门禁证明 v0.24 在相同条件下提升，并以安全、可观测、可回放的整体回归收口
 **Depends on**: Phase 139
 **Requirements**: BENCH-06, BENCH-07, EDGE-06, OBS-01, OBS-02
 **Success Criteria** (what must be TRUE):
+
   1. threshold policy 仅基于 Phase 133 已完成的 baseline 分布独立锁定并可审查；测试失败不会自动刷新 baseline 或阈值。
   2. v0.24 candidate 与 v0.22 baseline 使用同仓、同 commit、同 query/gold、同 evaluator 比较，并保留可复现命令、配置、排序版本和逐例 diff。
   3. overall 与所有受保护桶均通过锁定门禁，TS/JS、Python、Process、impact、trace、冷/热延迟和 token 的退化不会被其他桶提升抵消。
   4. graph query 生命周期产生含 `duration_ms`、`category=caller`、`component`、触发用户和关联键的 started/completed/failed 事件，不记录 query 正文或凭证；resolver、Process、检索 lane 与 impact 的高频统计使用 `sampling` 且禁止 INFO 刷屏。
   5. 整体回归证明权限/exclusion、脱敏、`initiated_by_user_id`、partial/degradation、契约 hash 与同水位不变式保持；Go 深化、真跨仓 IMPACT-03 和 LSP 默认翻转仍留 Future，不作为通过条件。
+
 **Plans**: TBD
 
 **Execution order:** 133 → 134 → 135 → 136 → 137 → 138 → 139 → 140。Phase 133 只冻结评测协议并采集未修改 v0.22 baseline，不设阈值；Phase 140 才依据 baseline 锁 threshold policy。
@@ -369,7 +404,7 @@
 
 | Phase | Milestone | Requirements | Plans Complete | Status | Completed |
 |-------|-----------|--------------|----------------|--------|-----------|
-| 133. 同仓同 commit 基准与 v0.22 baseline | v0.24.0 | BENCH-01~05 | 0/TBD | Not started | - |
+| 133. 同仓同 commit 基准与 v0.22 baseline | v0.24.0 | BENCH-01~05 | 0/4 | Planned | - |
 | 134. TS/JS resolved 调用边 | v0.24.0 | EDGE-01/02/03/07 | 0/TBD | Not started | - |
 | 135. Python resolved 调用边 | v0.24.0 | EDGE-04/05 | 0/TBD | Not started | - |
 | 136. Process 一等混合索引 | v0.24.0 | PROC-01~05, OBS-04 | 0/TBD | Not started | - |
