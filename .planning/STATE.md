@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.24.0
 milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
-status: verifying
-stopped_at: Completed 140-04-PLAN.md; ready for Phase 140 review and verification
-last_updated: "2026-08-24T18:34:00.000Z"
-last_activity: 2026-08-25 -- Phase 140 Plan 04 completed with external evidence debt
+status: ready_for_audit
+stopped_at: Phase 140 verified human_needed; ready for v0.24.0 milestone audit
+last_updated: "2026-08-24T18:48:00.000Z"
+last_activity: 2026-08-25 -- Phase 140 reviewed, fixed, and verified with external evidence debt
 progress:
   total_phases: 8
   completed_phases: 8
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归
 
 ## Current Position
 
-Phase: 140 (Threshold policy 与整体收口) — VERIFYING
+Phase: 140 (Threshold policy 与整体收口) — COMPLETE
 Plan: 4 of 4
-Status: Plan complete; review and verification pending
-Last activity: 2026-08-25 -- Phase 140 Plan 04 completed with external evidence debt
+Status: Verified human_needed; milestone audit pending
+Last activity: 2026-08-25 -- Phase 140 reviewed, fixed, and verified with external evidence debt
 
 Progress: [██████████] 100%
 
