@@ -1,10 +1,11 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.24.0
-milestone_name: 单仓图查询对齐 GitNexus
-status: planning
-last_updated: "2026-08-24T08:10:00.000Z"
-last_activity: 2026-08-24
+milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
+status: executing
+stopped_at: v0.24.0 roadmap created；Phase 133 ready to plan
+last_updated: "2026-08-24T09:27:34.553Z"
+last_activity: 2026-08-24 — v0.24.0 roadmap created，39/39 requirements mapped
 progress:
   total_phases: 8
   completed_phases: 0
@@ -26,7 +27,7 @@ See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归
 
 Phase: 133 of 140（里程碑第 1/8 相位）
 Plan: —
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-08-24 — v0.24.0 roadmap created，39/39 requirements mapped
 
 Progress: [░░░░░░░░░░] 0%
