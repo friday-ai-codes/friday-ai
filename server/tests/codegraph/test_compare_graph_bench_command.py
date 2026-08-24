@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -73,9 +72,7 @@ def test_pass_writes_complete_report_and_preserves_inputs(tmp_path: Path) -> Non
     assert payload["candidate_system_identity"]["release_label"] == "v0.24"
     assert payload["reproducible_commands"]["baseline"]
     assert payload["reproducible_commands"]["candidate"]
-    assert payload["reproducible_command"].startswith(
-        "python manage.py compare_graph_bench"
-    )
+    assert payload["reproducible_command"].startswith("python manage.py compare_graph_bench")
     assert payload["per_case"]
     assert payload["per_bucket"]
     assert payload["resolver_cells"]
@@ -127,9 +124,7 @@ def test_non_pass_verdict_writes_report_then_exits_nonzero(
 def test_raw_hash_mismatch_is_invalid_and_inputs_stay_unchanged(tmp_path: Path) -> None:
     baseline, candidate, policy, before = _write_inputs(
         tmp_path,
-        policy_mutator=lambda payload: payload["baseline"].update(
-            report_sha256="f" * 64
-        ),
+        policy_mutator=lambda payload: payload["baseline"].update(report_sha256="f" * 64),
     )
     output = tmp_path / "compare.json"
     with pytest.raises(CommandError, match="INVALID"):
