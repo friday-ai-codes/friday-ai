@@ -78,7 +78,9 @@ async def test_success_emits_one_attributed_caller_lifecycle(monkeypatch) -> Non
         user_id="user-140",
     )
     try:
-        with structlog.testing.capture_logs() as captured:
+        with structlog.testing.capture_logs(
+            processors=[structlog.contextvars.merge_contextvars]
+        ) as captured:
             await GraphQueryService().query(
                 "sentinel-natural-language-query",
                 repository_id="repo",
@@ -112,6 +114,38 @@ async def test_success_emits_one_attributed_caller_lifecycle(monkeypatch) -> Non
 
     serialized = json.dumps(captured, ensure_ascii=False)
     assert "sentinel-natural-language-query" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_success_emits_symbol_and_process_sampling_summaries(monkeypatch) -> None:
+    _install(monkeypatch)
+    recorded: list[dict] = []
+
+    class _RecordingLogger:
+        def info(self, event, **kwargs):
+            recorded.append({"event": event, **kwargs})
+
+        def warning(self, event, **kwargs):
+            recorded.append({"event": event, **kwargs})
+
+        def debug(self, event, **kwargs):
+            recorded.append({"event": event, **kwargs})
+
+    monkeypatch.setattr("services.code_graph.query_service.logger", _RecordingLogger())
+    await GraphQueryService().query("query", repository_id="repo", branch_name="main")
+
+    lane_events = _events(
+        recorded,
+        "code_graph_query_symbol_lane_completed",
+        "code_graph_query_process_lane_completed",
+    )
+    assert [event["lane"] for event in lane_events] == ["symbol", "process"]
+    for event in lane_events:
+        assert event["category"] == "sampling"
+        assert event["component"] == "code_graph"
+        assert event["status"] == "used"
+        assert event["returned"] >= 0
+        assert event["duration_ms"] >= 0
 
 
 @pytest.mark.asyncio
