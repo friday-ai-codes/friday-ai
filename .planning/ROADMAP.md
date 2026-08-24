@@ -42,7 +42,7 @@
 - [x] **Phase 137: 统一 GraphQueryService** — 单次自然语言查询确定性融合 Symbol、Community 与 Process 证据（1/1，passed）
 - [x] **Phase 138: 消歧与 bounded impact** — 仅对已消歧 anchor 返回有界、不可误读为安全的影响面摘要（1/1，passed）
 - [x] **Phase 139: 五消费面契约收敛** — 服务端、Chat、Django MCP、npm MCP 与编码容器共享 canonical manifest（1/1，passed）
-- [ ] **Phase 140: Threshold policy 与整体收口** — 基于 baseline 后锁定门禁并完成同条件对比、观测与全量回归
+- [x] **Phase 140: Threshold policy 与整体收口** — 基于 baseline 后锁定门禁并完成同条件对比、观测与全量回归（4/4，human_needed）
 
 ## Phase Details
 
@@ -185,7 +185,12 @@
   4. graph query 生命周期产生含 `duration_ms`、`category=caller`、`component`、触发用户和关联键的 started/completed/failed 事件，不记录 query 正文或凭证；resolver、Process、检索 lane 与 impact 的高频统计使用 `sampling` 且禁止 INFO 刷屏。
   5. 整体回归证明权限/exclusion、脱敏、`initiated_by_user_id`、partial/degradation、契约 hash 与同水位不变式保持；Go 深化、真跨仓 IMPACT-03 和 LSP 默认翻转仍留 Future，不作为通过条件。
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+- [x] 140-01-PLAN.md — 可比身份、resolver 三态 cell 指标与 benchmark 证据链
+- [x] 140-02-PLAN.md — 只读 threshold policy、四态 paired comparator 与 compare 审计命令
+- [x] 140-03-PLAN.md — graph query caller 生命周期、内部 sampling 与 retrieval 日志脱敏
+- [x] 140-04-PLAN.md — 跨阶段 closure、全组件回归与真实证据 HUMAN_NEEDED 边界
 
 **Execution order:** 133 → 134 → 135 → 136 → 137 → 138 → 139 → 140。Phase 133 只冻结评测协议并采集未修改 v0.22 baseline，不设阈值；Phase 140 才依据 baseline 锁 threshold policy。
 
@@ -425,7 +430,7 @@
 | 137. 统一 GraphQueryService | v0.24.0 | QUERY-01~05/08/09/10 | 1/1 | Complete | 2026-08-24 |
 | 138. 消歧与 bounded impact | v0.24.0 | QUERY-06/07, OBS-05 | 1/1 | Complete | 2026-08-24 |
 | 139. 五消费面契约收敛 | v0.24.0 | CONTRACT-01~05, OBS-03 | 1/1 | Complete | 2026-08-24 |
-| 140. Threshold policy 与整体收口 | v0.24.0 | BENCH-06/07, EDGE-06, OBS-01/02 | 3/4 | In Progress|  |
+| 140. Threshold policy 与整体收口 | v0.24.0 | BENCH-06/07, EDGE-06, OBS-01/02 | 4/4 | Complete (human_needed) | 2026-08-25 |
 
 **Coverage (v0.24.0):** 39/39 需求全部映射且每条恰好一次，无孤儿、无重复。阈值严格后置到 Phase 140。
 

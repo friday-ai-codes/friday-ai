@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.24.0
 milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
-status: executing
-stopped_at: Completed 140-03-PLAN.md
-last_updated: "2026-08-24T18:02:32.987Z"
-last_activity: 2026-08-25 -- Phase 140 Plan 03 completed
+status: verifying
+stopped_at: Completed 140-04-PLAN.md; ready for Phase 140 review and verification
+last_updated: "2026-08-24T18:34:00.000Z"
+last_activity: 2026-08-25 -- Phase 140 Plan 04 completed with external evidence debt
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 16
-  completed_plans: 15
-  percent: 94
+  completed_plans: 16
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 立项）。v0.23.0 归
 
 ## Current Position
 
-Phase: 140 (Threshold policy 与整体收口) — EXECUTING
+Phase: 140 (Threshold policy 与整体收口) — VERIFYING
 Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-08-25 -- Phase 140 Plan 03 completed
+Status: Plan complete; review and verification pending
+Last activity: 2026-08-25 -- Phase 140 Plan 04 completed with external evidence debt
 
-Progress: [█████████░] 94%
+Progress: [██████████] 100%
 
 ## Milestone Overview (v0.24.0 — Phases 133–140 — 🚧 PLANNED)
 
@@ -43,7 +43,7 @@ Progress: [█████████░] 94%
 | 137 | 统一 GraphQueryService | QUERY-01~05/08/09/10 | ✅ Complete (1/1, passed) |
 | 138 | 消歧与 bounded impact | QUERY-06/07, OBS-05 | ✅ Complete (1/1, passed) |
 | 139 | 五消费面契约收敛 | CONTRACT-01~05, OBS-03 | ✅ Complete (1/1, passed) |
-| 140 | Threshold policy 与整体收口 | BENCH-06/07, EDGE-06, OBS-01/02 | Not started |
+| 140 | Threshold policy 与整体收口 | BENCH-06/07, EDGE-06, OBS-01/02 | ✅ Complete (4/4, human_needed) |
 
 **Execution order:** 133 → 134 → 135 → 136 → 137 → 138 → 139 → 140。Phase 133 先冻结同仓同 commit 数据与未修改 v0.22 baseline，禁止设阈值；Phase 140 才依据 baseline 锁 threshold policy。
 
