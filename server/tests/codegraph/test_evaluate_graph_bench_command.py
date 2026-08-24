@@ -23,7 +23,19 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from codegraph.services.graph_bench_eval import validate_gold_dataset
+from codegraph.management.commands.evaluate_graph_bench import (
+    _benchmark_environment_preflight,
+    _evaluator_sha256,
+)
+from codegraph.services.graph_bench_eval import (
+    INSUFFICIENT_DATA,
+    GoldCase,
+    build_comparison_identity,
+    build_system_identity,
+    canonical_case_set_sha256,
+    evaluate_case,
+    validate_gold_dataset,
+)
 
 _FIXTURES = (
     Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "graph_bench"
@@ -83,6 +95,90 @@ def test_real_fixtures_validate_authoritative() -> None:
     dataset = validate_gold_dataset(manifest, cases)
     assert dataset.gold_version
     assert len(dataset.cases) == len(cases) > 0
+
+
+def test_case_set_and_evaluator_hashes_are_canonical() -> None:
+    cases = [
+        GoldCase("b", "dev", "q2", "python", "django", "plain_symbol"),
+        GoldCase("a", "dev", "q1", "typescript", "vue", "plain_symbol"),
+    ]
+    first = canonical_case_set_sha256(cases)
+    second = canonical_case_set_sha256(list(reversed(cases)))
+
+    assert first == second
+    assert len(first) == 64
+    assert len(_evaluator_sha256()) == 64
+
+
+def test_comparison_and_system_identities_are_separate() -> None:
+    comparison = build_comparison_identity(
+        repository="repo",
+        branch="main",
+        commit_sha="target-sha",
+        index_key_source="last_indexed_commit_sha",
+        gold_version="2",
+        split="locked_test",
+        case_set_sha256="a" * 64,
+        evaluator_version="graph-bench-evaluator/v2",
+        evaluator_sha256="b" * 64,
+        min_bucket_samples=3,
+    )
+    baseline = build_system_identity(
+        release_label="v0.22",
+        friday_revision="baseline-friday-sha",
+        ranking_version="legacy",
+        response_version="graph-query/v0",
+        manifest_hash="c" * 64,
+        index_generation="g1",
+        index_signature="s1",
+    )
+    candidate = build_system_identity(
+        release_label="v0.24",
+        friday_revision="candidate-friday-sha",
+        ranking_version="rrf-v1",
+        response_version="graph-query/v1",
+        manifest_hash="d" * 64,
+        index_generation="g2",
+        index_signature="s2",
+    )
+
+    assert comparison.to_dict()["commit_sha"] == "target-sha"
+    assert baseline.friday_revision != candidate.friday_revision
+    assert baseline.to_dict()["release_label"] == "v0.22"
+    assert candidate.to_dict()["release_label"] == "v0.24"
+
+
+def test_token_measurement_unavailable_is_not_zero() -> None:
+    gold = GoldCase("c", "dev", "q", "python", "django", "plain_symbol")
+    outcome = evaluate_case(
+        gold=gold,
+        predicted_symbol_uids=[],
+        candidate_processes=[],
+        predicted_edges=[],
+        impact_result={},
+        trace_results=[],
+    )
+
+    assert outcome.tokens == INSUFFICIENT_DATA
+    assert outcome.token_availability == "unavailable"
+
+
+def test_missing_real_environment_reports_human_needed_without_metrics() -> None:
+    evidence = _benchmark_environment_preflight(
+        repository_id="",
+        commit_sha="",
+        qdrant_url="",
+        baseline_artifact="",
+    )
+
+    assert evidence["status"] == "human_needed"
+    assert evidence["missing"] == [
+        "target_repository",
+        "target_commit_sha",
+        "qdrant",
+        "v0.22_baseline_artifact",
+    ]
+    assert "metrics" not in evidence
 
 
 @pytest.mark.django_db(transaction=True)
@@ -158,4 +254,17 @@ def test_gold_schema_error_fail_closed(tmp_path: Path) -> None:
             commit_sha="sha",
             gold=str(gold),
             split="dev",
+        )
+
+
+def test_holdout_requires_explicit_final_acceptance(tmp_path: Path) -> None:
+    gold = _write_gold_dir(tmp_path, annotated_at_sha="sha")
+
+    with pytest.raises(CommandError, match="final-acceptance"):
+        call_command(
+            "evaluate_graph_bench",
+            repo="00000000-0000-0000-0000-000000000000",
+            commit_sha="sha",
+            gold=str(gold),
+            split="holdout",
         )

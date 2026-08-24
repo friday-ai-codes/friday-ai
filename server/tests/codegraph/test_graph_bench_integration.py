@@ -22,6 +22,8 @@ from pathlib import Path
 import pytest
 from django.core.management import call_command
 
+from codegraph.management.commands.evaluate_graph_bench import _benchmark_environment_preflight
+
 
 @pytest.mark.integration
 @pytest.mark.django_db(transaction=True)
@@ -29,8 +31,19 @@ def test_graph_bench_real_repository_ok_path(tmp_path: Path) -> None:
     """真仓 OK 路径应同时产出可关联 manifest 与无阈值 baseline。"""
     repository_id = os.getenv("GRAPH_BENCH_REPOSITORY_ID")
     commit_sha = os.getenv("GRAPH_BENCH_COMMIT_SHA")
-    if not repository_id or not commit_sha:
-        pytest.skip("需设置 GRAPH_BENCH_REPOSITORY_ID 与 GRAPH_BENCH_COMMIT_SHA")
+    qdrant_url = os.getenv("GRAPH_BENCH_QDRANT_URL")
+    baseline_artifact = os.getenv("GRAPH_BENCH_V022_BASELINE_ARTIFACT")
+    preflight = _benchmark_environment_preflight(
+        repository_id=repository_id or "",
+        commit_sha=commit_sha or "",
+        qdrant_url=qdrant_url or "",
+        baseline_artifact=baseline_artifact or "",
+    )
+    if preflight["status"] == "human_needed":
+        assert preflight["reproduce_command"]
+        assert preflight["missing"]
+        assert "metrics" not in preflight
+        return
 
     manifest_path = tmp_path / "run-manifest.json"
     baseline_path = tmp_path / "baseline.json"
