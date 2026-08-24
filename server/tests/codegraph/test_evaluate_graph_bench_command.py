@@ -104,8 +104,12 @@ def test_case_set_and_evaluator_hashes_are_canonical() -> None:
     ]
     first = canonical_case_set_sha256(cases)
     second = canonical_case_set_sha256(list(reversed(cases)))
+    changed = canonical_case_set_sha256(
+        [GoldCase("a", "dev", "changed", "typescript", "vue", "plain_symbol"), cases[0]]
+    )
 
     assert first == second
+    assert changed != first
     assert len(first) == 64
     assert len(_evaluator_sha256()) == 64
 
@@ -157,6 +161,7 @@ def test_token_measurement_unavailable_is_not_zero() -> None:
         predicted_edges=[],
         impact_result={},
         trace_results=[],
+        tokens=0,
     )
 
     assert outcome.tokens == INSUFFICIENT_DATA
@@ -222,6 +227,14 @@ def test_watermark_invalid_short_circuits(tmp_path: Path) -> None:
     assert payload["invalid_reason"]
     assert payload["identity"]["repository"] == str(repo.id)
     assert payload["identity"]["index_key_source"] == "last_indexed_commit_sha"
+    assert payload["comparison_identity"]["case_set_sha256"]
+    assert payload["comparison_identity"]["evaluator_sha256"]
+    assert payload["system_identity"]["friday_revision"] == "unavailable"
+    assert payload["holdout_audit"] == {
+        "opened": False,
+        "opened_at": None,
+        "mode": "closed",
+    }
     assert payload["run_id"]
     assert "evaluate_graph_bench" in payload["reproducible_command"]
 
@@ -268,3 +281,25 @@ def test_holdout_requires_explicit_final_acceptance(tmp_path: Path) -> None:
             gold=str(gold),
             split="holdout",
         )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_final_acceptance_records_holdout_open_audit(tmp_path: Path) -> None:
+    gold = _write_gold_dir(tmp_path, annotated_at_sha="sha")
+    output = tmp_path / "holdout-manifest.json"
+
+    with pytest.raises(CommandError, match="INVALID"):
+        call_command(
+            "evaluate_graph_bench",
+            repo="00000000-0000-0000-0000-000000000000",
+            commit_sha="sha",
+            gold=str(gold),
+            split="holdout",
+            final_acceptance=True,
+            output_manifest=str(output),
+        )
+
+    audit = json.loads(output.read_text(encoding="utf-8"))["holdout_audit"]
+    assert audit["opened"] is True
+    assert audit["mode"] == "final-acceptance"
+    assert audit["opened_at"]

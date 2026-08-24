@@ -26,6 +26,8 @@ gold 标注 sha、源码 checkout sha）不一致即把 run 标为 ``INVALID``�
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -44,9 +46,11 @@ __all__ = [
     "NOT_APPLICABLE",
     "SEED_MISSING",
     "CaseOutcome",
+    "ComparisonIdentity",
     "GoldCase",
     "GoldDataset",
     "RunIdentity",
+    "SystemIdentity",
     "ResolverCellKey",
     "ResolverEdgeOutcome",
     "aggregate_report",
@@ -54,7 +58,10 @@ __all__ = [
     "bucket_metrics",
     "bucket_status",
     "build_report",
+    "build_comparison_identity",
     "build_run_identity",
+    "build_system_identity",
+    "canonical_case_set_sha256",
     "evaluate_case",
     "rank_process_candidates",
     "resolver_cell_metrics",
@@ -115,6 +122,117 @@ class RunIdentity:
             "gold_version": self.gold_version,
             "index_key_source": self.index_key_source,
         }
+
+
+@dataclass(frozen=True)
+class ComparisonIdentity:
+    """两次 benchmark 必须完全相同的被测条件。"""
+
+    repository: str
+    branch: str
+    commit_sha: str
+    index_key_source: str
+    gold_version: str
+    split: str
+    case_set_sha256: str
+    evaluator_version: str
+    evaluator_sha256: str
+    min_bucket_samples: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "repository": self.repository,
+            "branch": self.branch,
+            "commit_sha": self.commit_sha,
+            "index_key_source": self.index_key_source,
+            "gold_version": self.gold_version,
+            "split": self.split,
+            "case_set_sha256": self.case_set_sha256,
+            "evaluator_version": self.evaluator_version,
+            "evaluator_sha256": self.evaluator_sha256,
+            "min_bucket_samples": self.min_bucket_samples,
+        }
+
+
+@dataclass(frozen=True)
+class SystemIdentity:
+    """允许 baseline/candidate 不同、但必须显式记录的系统身份。"""
+
+    release_label: str
+    friday_revision: str
+    ranking_version: str
+    response_version: str
+    manifest_hash: str
+    index_generation: str
+    index_signature: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "release_label": self.release_label,
+            "friday_revision": self.friday_revision,
+            "ranking_version": self.ranking_version,
+            "response_version": self.response_version,
+            "manifest_hash": self.manifest_hash,
+            "index_generation": self.index_generation,
+            "index_signature": self.index_signature,
+        }
+
+
+def canonical_case_set_sha256(cases: list["GoldCase"]) -> str:
+    """对排序后的 case_id 与完整 gold 内容计算 canonical SHA-256。"""
+    payload = [case.to_dict() for case in sorted(cases, key=lambda item: item.case_id)]
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def build_comparison_identity(**values: Any) -> ComparisonIdentity:
+    """构建同条件比较身份；缺失字符串或非法桶下限时 fail-closed。"""
+    required = (
+        "repository",
+        "commit_sha",
+        "index_key_source",
+        "gold_version",
+        "split",
+        "case_set_sha256",
+        "evaluator_version",
+        "evaluator_sha256",
+    )
+    missing = [name for name in required if not str(values.get(name) or "")]
+    if missing:
+        raise ValueError(f"comparison identity 缺少必填字段：{', '.join(missing)}")
+    min_samples = int(values.get("min_bucket_samples", 0))
+    if min_samples < 1:
+        raise ValueError("min_bucket_samples 必须大于 0")
+    return ComparisonIdentity(
+        repository=str(values["repository"]),
+        branch=str(values.get("branch") or ""),
+        commit_sha=str(values["commit_sha"]),
+        index_key_source=str(values["index_key_source"]),
+        gold_version=str(values["gold_version"]),
+        split=str(values["split"]),
+        case_set_sha256=str(values["case_set_sha256"]),
+        evaluator_version=str(values["evaluator_version"]),
+        evaluator_sha256=str(values["evaluator_sha256"]),
+        min_bucket_samples=min_samples,
+    )
+
+
+def build_system_identity(**values: Any) -> SystemIdentity:
+    """构建单次 run 的系统身份，不要求不同 run 的 Friday revision 相等。"""
+    return SystemIdentity(
+        release_label=str(values.get("release_label") or "unavailable"),
+        friday_revision=str(values.get("friday_revision") or "unavailable"),
+        ranking_version=str(values.get("ranking_version") or "unavailable"),
+        response_version=str(values.get("response_version") or "unavailable"),
+        manifest_hash=str(values.get("manifest_hash") or "unavailable"),
+        index_generation=str(values.get("index_generation") or "unavailable"),
+        index_signature=str(values.get("index_signature") or "unavailable"),
+    )
 
 
 def build_run_identity(
@@ -453,6 +571,7 @@ class ResolverEdgeOutcome:
         *,
         framework: str,
         expected_callee_uid: str,
+        call_shape: str | None = None,
     ) -> ResolverEdgeOutcome:
         """直接消费 resolver 事实；禁止从 nullable callee 字段反推三态。"""
         if result.status not in _RESOLVER_STATUSES:
@@ -461,9 +580,10 @@ class ResolverEdgeOutcome:
             raise ValueError(f"resolver language={result.language!r} 越出闭集 {LANGUAGES}")
         if framework not in FRAMEWORKS:
             raise ValueError(f"resolver framework={framework!r} 越出闭集 {FRAMEWORKS}")
-        if result.call_shape not in CALL_SHAPES:
+        effective_call_shape = call_shape or result.call_shape
+        if effective_call_shape not in CALL_SHAPES:
             raise ValueError(
-                f"resolver call_shape={result.call_shape!r} 越出闭集 {CALL_SHAPES}"
+                f"resolver call_shape={effective_call_shape!r} 越出闭集 {CALL_SHAPES}"
             )
         if not expected_callee_uid:
             raise ValueError("expected_callee_uid 为必填，resolver gold 不能为空")
@@ -474,7 +594,7 @@ class ResolverEdgeOutcome:
         return cls(
             language=result.language,
             framework=framework,
-            call_shape=result.call_shape,
+            call_shape=effective_call_shape,
             status=result.status,
             expected_callee_uid=expected_callee_uid,
             predicted_callee_uid=result.callee_symbol_id,
@@ -711,7 +831,10 @@ class CaseOutcome:
     trace_node_not_in_graph_count: int = 0
     cold_ms: int = 0
     warm_ms: int = 0
-    tokens: int = 0
+    tokens: int | str = INSUFFICIENT_DATA
+    token_availability: str = "unavailable"
+    cold_trials_ms: list[int] = field(default_factory=list)
+    warm_trials_ms: list[int] = field(default_factory=list)
     error: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -733,6 +856,9 @@ class CaseOutcome:
             "cold_ms": self.cold_ms,
             "warm_ms": self.warm_ms,
             "tokens": self.tokens,
+            "token_availability": self.token_availability,
+            "cold_trials_ms": list(self.cold_trials_ms),
+            "warm_trials_ms": list(self.warm_trials_ms),
             "error": self.error,
         }
 
@@ -747,7 +873,10 @@ def evaluate_case(
     trace_results: list[dict[str, Any]],
     cold_ms: int = 0,
     warm_ms: int = 0,
-    tokens: int = 0,
+    tokens: int | str = INSUFFICIENT_DATA,
+    token_availability: str | None = None,
+    cold_trials_ms: list[int] | None = None,
+    warm_trials_ms: list[int] | None = None,
     error: str = "",
 ) -> CaseOutcome:
     """把某 case 的 arrival set（被测能力输出）折算成 :class:`CaseOutcome`。
@@ -760,6 +889,8 @@ def evaluate_case(
     ``error`` 非空时各质量指标置空字符串但仍返回正常 :class:`CaseOutcome`（沿袭
     recall eval 的单 case 容错：一条 case 出错不中断其它 case 折算）。
     """
+    has_tokens = isinstance(tokens, int) and tokens > 0
+    recorded_tokens: int | str = tokens if has_tokens else INSUFFICIENT_DATA
     dims = {
         "case_id": gold.case_id,
         "split": gold.split,
@@ -769,7 +900,12 @@ def evaluate_case(
         "protected": gold.protected,
         "cold_ms": cold_ms,
         "warm_ms": warm_ms,
-        "tokens": tokens,
+        "tokens": recorded_tokens,
+        "token_availability": (token_availability or "available")
+        if has_tokens
+        else "unavailable",
+        "cold_trials_ms": list(cold_trials_ms or ([cold_ms] if cold_ms else [])),
+        "warm_trials_ms": list(warm_trials_ms or ([warm_ms] if warm_ms else [])),
         "error": error,
     }
     if error:

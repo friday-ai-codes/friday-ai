@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import time
 import uuid
@@ -61,8 +62,14 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from codegraph.services.graph_bench_eval import (
+    INSUFFICIENT_DATA,
+    ResolverEdgeOutcome,
+    aggregate_resolver_cells,
+    build_comparison_identity,
     build_report,
     build_run_identity,
+    build_system_identity,
+    canonical_case_set_sha256,
     evaluate_case,
     validate_gold_dataset,
     validate_watermark,
@@ -83,6 +90,41 @@ _DEFAULT_GOLD = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "gr
 
 # baseline 只读 dev + locked_test；holdout 保留 Phase 140 最终验收，本阶段不读。
 _BASELINE_SPLITS = ("dev", "locked_test")
+_EVALUATOR_VERSION = "graph-bench-evaluator/v2"
+
+
+def _evaluator_sha256() -> str:
+    """只 hash scorer/schema 纯函数源，避免把 command/runner revision 混入评测器身份。"""
+    source = Path(__file__).resolve().parents[2] / "services" / "graph_bench_eval.py"
+    return hashlib.sha256(source.read_bytes()).hexdigest()
+
+
+def _benchmark_environment_preflight(
+    *,
+    repository_id: str,
+    commit_sha: str,
+    qdrant_url: str,
+    baseline_artifact: str,
+) -> dict[str, Any]:
+    """描述真仓比较前置条件；缺失时只返回 human_needed，不生成数字。"""
+    checks = {
+        "target_repository": bool(repository_id),
+        "target_commit_sha": bool(commit_sha),
+        "qdrant": bool(qdrant_url),
+        "v0.22_baseline_artifact": bool(baseline_artifact)
+        and Path(baseline_artifact).is_file(),
+    }
+    missing = [name for name, available in checks.items() if not available]
+    return {
+        "status": "human_needed" if missing else "ready",
+        "missing": missing,
+        "reproduce_command": (
+            "GRAPH_BENCH_REPOSITORY_ID=<uuid> GRAPH_BENCH_COMMIT_SHA=<sha> "
+            "GRAPH_BENCH_QDRANT_URL=<url> "
+            "GRAPH_BENCH_V022_BASELINE_ARTIFACT=<path> "
+            "uv run pytest tests/codegraph/test_graph_bench_integration.py -m integration -q"
+        ),
+    }
 
 
 def _load_gold(gold_dir: Path, split: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -220,6 +262,79 @@ def _load_predicted_edges(
     ]
 
 
+def _evaluate_resolver_edges(
+    dataset: Any,
+    repository_id: str,
+    branch: str,
+) -> list[ResolverEdgeOutcome]:
+    """在同步 ORM helper 内重放 gold callsite，并直接消费 ``ResolveResult`` 三态。"""
+    from codegraph.models import CallEdge, ImportEdge
+    from codegraph.resolver.frontend_import import FrontendImportResolver
+    from codegraph.resolver.go_import import GoImportResolver
+    from codegraph.resolver.python_import import PythonImportResolver
+    from codegraph.resolver.symbol_index import SymbolIndex
+    from codegraph.resolver.symbol_resolver import SymbolResolver
+
+    branch_filter = ["", branch] if branch else [""]
+    index = SymbolIndex.build(repository_id, branch)
+    import_by_source: dict[str, list[Any]] = {}
+    for import_edge in ImportEdge.objects.filter(
+        repository_id=repository_id,
+        branch_name__in=branch_filter,
+    ):
+        import_by_source.setdefault(import_edge.source_file, []).append(import_edge)
+    resolver = SymbolResolver(
+        index,
+        import_by_source,
+        {
+            "python": PythonImportResolver(index),
+            "frontend": FrontendImportResolver(index, {}),
+            "go": GoImportResolver(index, ""),
+        },
+    )
+
+    outcomes: list[ResolverEdgeOutcome] = []
+    for gold in dataset.cases:
+        for edge_gold in gold.edge_golds:
+            expected_uid = str(edge_gold.get("callee_uid") or "")
+            if not expected_uid:
+                continue
+            locator = str(edge_gold.get("evidence_file_line") or "")
+            caller_file, separator, line_text = locator.rpartition(":")
+            if not separator or not caller_file or not line_text.isdigit():
+                raise ValueError(
+                    f"resolver gold {gold.case_id} 的 evidence_file_line 无法定位：{locator!r}"
+                )
+            matches = list(
+                CallEdge.objects.filter(
+                    repository_id=repository_id,
+                    branch_name__in=branch_filter,
+                    caller_symbol_id=str(edge_gold.get("caller_uid") or ""),
+                    caller_file=caller_file,
+                    line_number=int(line_text),
+                )[:2]
+            )
+            if len(matches) != 1:
+                raise ValueError(
+                    f"resolver gold {gold.case_id} 的 callsite 命中 {len(matches)} 条，须恰为 1"
+                )
+            result = resolver.resolve_call(matches[0])
+            if result.language != gold.language:
+                raise ValueError(
+                    f"resolver gold {gold.case_id} 的 language={gold.language!r}，"
+                    f"resolver 输出 {result.language!r}"
+                )
+            outcomes.append(
+                ResolverEdgeOutcome.from_resolve_result(
+                    result,
+                    framework=gold.framework,
+                    expected_callee_uid=expected_uid,
+                    call_shape=str(edge_gold.get("call_shape") or result.call_shape),
+                )
+            )
+    return outcomes
+
+
 class Command(BaseCommand):
     help = "v0.22 图查询能力 benchmark（冻结 gold + 水位闸 fail-closed + 无阈值 baseline）"
 
@@ -251,13 +366,23 @@ class Command(BaseCommand):
             default=3,
             help="稀疏桶样本下限（低于此值标 INSUFFICIENT_DATA）",
         )
+        parser.add_argument(
+            "--final-acceptance",
+            action="store_true",
+            help="显式开启 holdout 最终验收并写 opened 审计元数据",
+        )
+        parser.add_argument("--release-label", default="unavailable")
+        parser.add_argument("--friday-revision", default="unavailable")
+        parser.add_argument("--ranking-version", default="unavailable")
+        parser.add_argument("--response-version", default="graph-query/v1")
+        parser.add_argument("--index-generation", default="unavailable")
+        parser.add_argument("--index-signature", default="unavailable")
 
     def handle(self, *args: Any, **options: Any) -> None:
         split = options["split"]
-        if split == "holdout":
-            # holdout 保留给 Phase 140 最终验收，baseline 阶段拒绝读取（CONTEXT 硬约束）。
+        if split == "holdout" and not options["final_acceptance"]:
             raise CommandError(
-                "holdout 切分保留给 Phase 140 最终验收，baseline 阶段拒绝读取"
+                "holdout 切分默认不可读；仅显式 --final-acceptance 可开启"
             )
 
         gold_dir = Path(options["gold"])
@@ -280,6 +405,7 @@ class Command(BaseCommand):
         started = time.monotonic()
         started_at = timezone.now().isoformat()
         reproducible = self._reproducible_command(options)
+        min_samples = int(options["min_bucket_samples"])
 
         watermarks = await sync_to_async(_resolve_watermarks)(
             repository_id, branch, commit_sha
@@ -293,6 +419,38 @@ class Command(BaseCommand):
             gold_version=dataset.gold_version,
             index_key_source="last_indexed_commit_sha",
         )
+        comparison_identity = build_comparison_identity(
+            repository=repository_id,
+            branch=branch,
+            commit_sha=commit_sha,
+            index_key_source=str(watermarks["index_key_source"]),
+            gold_version=dataset.gold_version,
+            split=split,
+            case_set_sha256=canonical_case_set_sha256(dataset.cases),
+            evaluator_version=_EVALUATOR_VERSION,
+            evaluator_sha256=_evaluator_sha256(),
+            min_bucket_samples=min_samples,
+        )
+        try:
+            from services.code_graph.query_manifest import graph_query_manifest_hash
+
+            manifest_hash = graph_query_manifest_hash()
+        except Exception:  # noqa: BLE001 — 身份字段 fail-closed 为 unavailable
+            manifest_hash = "unavailable"
+        system_identity = build_system_identity(
+            release_label=options["release_label"],
+            friday_revision=options["friday_revision"],
+            ranking_version=options["ranking_version"],
+            response_version=options["response_version"],
+            manifest_hash=manifest_hash,
+            index_generation=options["index_generation"],
+            index_signature=options["index_signature"],
+        )
+        holdout_audit = {
+            "opened": split == "holdout",
+            "opened_at": started_at if split == "holdout" else None,
+            "mode": "final-acceptance" if split == "holdout" else "closed",
+        }
 
         watermark = validate_watermark(
             index_built_at_sha=watermarks["index_built_at_sha"],
@@ -323,6 +481,9 @@ class Command(BaseCommand):
             self._write_manifest(
                 options,
                 identity=identity.to_dict(),
+                comparison_identity=comparison_identity.to_dict(),
+                system_identity=system_identity.to_dict(),
+                holdout_audit=holdout_audit,
                 watermark="INVALID",
                 invalid_reason=invalid_reason,
                 watermarks=watermarks,
@@ -368,6 +529,11 @@ class Command(BaseCommand):
             pass
 
         try:
+            resolver_outcomes = await sync_to_async(_evaluate_resolver_edges)(
+                dataset,
+                repository_id,
+                branch,
+            )
             outcomes = await self._run_all_cases(
                 dataset,
                 repository_id=repository_id,
@@ -398,7 +564,7 @@ class Command(BaseCommand):
             watermark="OK",
             split=split,
             cases=outcomes,
-            min_samples=int(options["min_bucket_samples"]),
+            min_samples=min_samples,
         )
         duration_ms = int((time.monotonic() - started) * 1000)
         payload = {
@@ -406,11 +572,24 @@ class Command(BaseCommand):
             "run_id": run_id,
             "duration_ms": duration_ms,
             "reproducible_command": reproducible,
+            "comparison_identity": comparison_identity.to_dict(),
+            "system_identity": system_identity.to_dict(),
+            "holdout_audit": holdout_audit,
+            "resolver": {
+                "per_edge": [item.to_dict() for item in resolver_outcomes],
+                **aggregate_resolver_cells(
+                    resolver_outcomes,
+                    min_samples=min_samples,
+                ),
+            },
         }
 
         self._write_manifest(
             options,
             identity=identity.to_dict(),
+            comparison_identity=comparison_identity.to_dict(),
+            system_identity=system_identity.to_dict(),
+            holdout_audit=holdout_audit,
             watermark="OK",
             invalid_reason="",
             watermarks=watermarks,
@@ -566,7 +745,10 @@ class Command(BaseCommand):
                 trace_results=trace_results,
                 cold_ms=cold_ms,
                 warm_ms=warm_ms,
-                tokens=0,
+                tokens=INSUFFICIENT_DATA,
+                token_availability="unavailable",
+                cold_trials_ms=[cold_ms],
+                warm_trials_ms=[] if cold_only else [warm_ms],
             )
         except Exception as exc:  # 单 case 失败不反噬整轮
             outcome = evaluate_case(
@@ -578,7 +760,10 @@ class Command(BaseCommand):
                 trace_results=[],
                 cold_ms=cold_ms,
                 warm_ms=warm_ms,
-                tokens=0,
+                tokens=INSUFFICIENT_DATA,
+                token_availability="unavailable",
+                cold_trials_ms=[cold_ms] if cold_ms else [],
+                warm_trials_ms=[warm_ms] if warm_ms else [],
                 error=f"{type(exc).__name__}: {redact_secrets_in_text(str(exc))[:200]}",
             )
 
@@ -613,6 +798,17 @@ class Command(BaseCommand):
         ]
         if options["cold_only"]:
             parts.append("--cold-only")
+        for name in (
+            "release_label",
+            "friday_revision",
+            "ranking_version",
+            "response_version",
+            "index_generation",
+            "index_signature",
+        ):
+            parts.append(f"--{name.replace('_', '-')} {options[name]}")
+        if options["final_acceptance"]:
+            parts.append("--final-acceptance")
         return " ".join(parts)
 
     def _write_manifest(
@@ -620,6 +816,9 @@ class Command(BaseCommand):
         options: dict[str, Any],
         *,
         identity: dict[str, Any],
+        comparison_identity: dict[str, Any],
+        system_identity: dict[str, Any],
+        holdout_audit: dict[str, Any],
         watermark: str,
         invalid_reason: str,
         watermarks: dict[str, Any],
@@ -634,6 +833,9 @@ class Command(BaseCommand):
         payload = {
             "run_id": run_id,
             "identity": identity,
+            "comparison_identity": comparison_identity,
+            "system_identity": system_identity,
+            "holdout_audit": holdout_audit,
             "watermark": watermark,
             "invalid_reason": invalid_reason,
             "split": split,
