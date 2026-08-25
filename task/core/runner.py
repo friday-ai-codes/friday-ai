@@ -264,15 +264,24 @@ class TaskRunner:
         if not await self._check_workspace_clean(log):
             return 1
 
+        # 260818-pt8 D-01/D-02/D-08：结构化提交场景（blueprint fitness / repo plan）经共享
+        # MCP 工厂捕获 `mcp_result`。有 scenario 时权威结果=`mcp_result`（executor 已在
+        # 未捕获时判 success=False，上面已 report_error 返回）；普通 explore（无 scenario）
+        # 保持既有 `output.text` 契约，零回归。
+        submit_scenario = str(result.get("submit_scenario") or "").strip()
+        mcp_result = result.get("mcp_result")
+
         # ⭐ 分析产物必须显式随 completed 帧上报（与 plan / repo_summary 模式同款契约）：
         # server 端蓝图调研 / 拟方案回调（subagent/api/callbacks._parse_blueprint_repo_plan
-        # 等）只认 `output.text`——不上报时 server 收到的只有 runner 的容器退出通知，
-        # 全部解析为空、任务被判 failed（实测四仓调研/拟方案全灭的根因）。
+        # 等）只认结构化 `output.mcp_result`——不上报时 server 收到的只有 runner 的容器退出
+        # 通知，全部解析为空、任务被判 failed（实测四仓调研/拟方案全灭的根因）。
         #
         # resume 支撑（同 execute 模式，runner.py 的 _run_execute_mode）：蓝图调研/拟方案
         # 容器全部跑 explore 模式，SDK 会话 transcript 不随 completed 帧上传的话，
         # `SubAgentSession` 留痕恒空、`_aresume_env` 永远查不到可续会话 ⇒ 同仓重派
         # （长等待/澄清后续跑）只能全新执行。读失败仅丢续跑能力，不影响产物上报。
+        # 仅成功捕获结构化结果时才上传可 resume 的 transcript（D-08：失败路径已在上面
+        # report_error 早退，不会走到这里上传污染 transcript）。
         sdk_session_id = str(result.get("session_id") or "")
         sdk_transcript = ""
         if sdk_session_id:
@@ -280,14 +289,26 @@ class TaskRunner:
 
             sdk_transcript = read_transcript(sdk_session_id, str(self.git_ops.get_workspace_path()))
 
+        if submit_scenario and isinstance(mcp_result, dict):
+            output_payload: dict = {
+                "task_type": "explore",
+                "submit_scenario": submit_scenario,
+                "mcp_result": mcp_result,
+            }
+        else:
+            output_payload = {
+                "text": str(result.get("output", "") or ""),
+                "task_type": "explore",
+            }
+
         await self.callback.report_completed(
-            output={"text": str(result.get("output", "") or ""), "task_type": "explore"},
+            output=output_payload,
             result_type="text",
             sdk_session_id=sdk_session_id,
             sdk_transcript=sdk_transcript,
         )
 
-        log.info("Explore mode completed successfully")
+        log.info("Explore mode completed successfully", submit_scenario=submit_scenario)
         return 0
 
     async def _check_workspace_clean(self, log) -> bool:
@@ -338,22 +359,27 @@ class TaskRunner:
             await self.callback.report_failed(error_msg)
             return 1
 
-        raw_output = result.get("output", "")
-        # 先提取 JSON：模型常在 JSON 外包一层前言 / ```json 围栏。
-        extracted = _extract_summary_json(raw_output)
-        sanitized = _sanitize_summary(extracted)
-        # 合法 JSON 不截断——含 tree 能力树的 payload 远超 8000 字符，按字符
-        # 截断会把 JSON 腰斩，server 端解析失败 → 树丢失 + 描述存进乱码。
-        # 仅对非 JSON 的降级文本保留 8000 截断（server 端容量 8192 留余量）。
-        if not _is_valid_json(sanitized):
-            sanitized = sanitized[:8000]
+        # 260818-pt8 D-01/D-02：唯一权威结果=共享 MCP 工厂捕获的 `mcp_result`（dict）。
+        # 删除 `_extract_summary_json` / `_sanitize_summary` 自由文本兜底路径；结构化提交
+        # 未捕获时 executor 已判 success=False（上面已 report_failed）。
+        mcp_result = result.get("mcp_result")
+        if not isinstance(mcp_result, dict):
+            log.error("repo_summary_mcp_result_missing")
+            await self.callback.report_failed(
+                "repo_summary_mcp_result_missing: 容器未经共享 MCP 提交结构化结果"
+            )
+            return 1
 
         await self.callback.report_completed(
-            output={"text": sanitized, "task_type": "repo_summary"},
+            output={
+                "task_type": "repo_summary",
+                "submit_scenario": result.get("submit_scenario", "repo_summary"),
+                "mcp_result": mcp_result,
+            },
             result_type="text",
         )
 
-        log.info("repo_summary_completed", output_length=len(sanitized))
+        log.info("repo_summary_completed")
         return 0
 
     def _load_resume_transcript(self) -> str:
@@ -730,65 +756,6 @@ async def main() -> int:
 
     runner = TaskRunner(config)
     return await runner.run()
-
-
-def _extract_summary_json(text: str) -> str:
-    """从模型输出中提取 JSON summary 对象。
-
-    模型即使被要求"输出严格 JSON"，也常包一层前言（"Here is the ..."）
-    或 ```json 代码围栏。这里在截断 / 上报前先剥掉包装：
-
-    1. ```json ... ``` 围栏内提取；
-    2. 首个 ``{`` 到末个 ``}`` 的跨度尝试解析（容忍前言 / 未闭合围栏）；
-    3. 都失败则返回原文（由 server 端降级为 markdown 存储）。
-    """
-    import json
-    import re
-
-    if not text:
-        return text
-
-    m = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if m:
-        try:
-            return json.dumps(json.loads(m.group(1)), ensure_ascii=False, indent=2)
-        except json.JSONDecodeError:
-            pass
-
-    start, end = text.find("{"), text.rfind("}")
-    if start != -1 and end > start:
-        try:
-            return json.dumps(
-                json.loads(text[start : end + 1]), ensure_ascii=False, indent=2
-            )
-        except json.JSONDecodeError:
-            pass
-
-    return text
-
-
-def _is_valid_json(text: str) -> bool:
-    """判断文本是否为完整可解析的 JSON。"""
-    import json
-
-    try:
-        json.loads(text)
-    except (ValueError, TypeError):
-        return False
-    return True
-
-
-def _sanitize_summary(text: str) -> str:
-    """脱敏 — 移除凭据、API key、邮箱等敏感信息。"""
-    import re
-
-    # Email 地址
-    text = re.sub(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[EMAIL]", text)
-    # Bearer token
-    text = re.sub(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", "Bearer [REDACTED]", text)
-    # API key 前缀 (ghp_, glpat-, sk-, xoxb-, xoxp-)
-    text = re.sub(r"(ghp_|glpat-|sk-|xoxb-|xoxp-)[A-Za-z0-9_\-]{10,}", r"\1[REDACTED]", text)
-    return text
 
 
 if __name__ == "__main__":

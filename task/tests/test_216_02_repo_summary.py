@@ -79,44 +79,12 @@ class TestExploreGuardRepoSummary:
         assert exc_info.value.operation == "setup_task_branch"
 
 
-class TestExtractSummaryJson:
-    """_extract_summary_json: 截断/上报前剥掉模型输出的前言与代码围栏。"""
-
-    def test_extracts_from_json_fence(self):
-        from core.runner import _extract_summary_json
-
-        text = 'Here is the analysis:\n```json\n{"overview": "测试", "tech_stack": ["Vue"]}\n```\nDone.'
-        result = _extract_summary_json(text)
-        import json
-
-        assert json.loads(result) == {"overview": "测试", "tech_stack": ["Vue"]}
-
-    def test_extracts_with_preamble_and_unclosed_fence(self):
-        from core.runner import _extract_summary_json
-
-        text = 'Here is the final structured JSON analysis:\n```json\n{"overview": "无闭合围栏"}'
-        result = _extract_summary_json(text)
-        import json
-
-        assert json.loads(result) == {"overview": "无闭合围栏"}
-
-    def test_returns_original_when_not_json(self):
-        from core.runner import _extract_summary_json
-
-        text = "纯 markdown 描述，没有 JSON"
-        assert _extract_summary_json(text) == text
-
-    def test_empty_passthrough(self):
-        from core.runner import _extract_summary_json
-
-        assert _extract_summary_json("") == ""
-
-
 class TestRepoSummaryStructuredSubmit:
-    """repo_summary 不再用 plan 模式，通过 submit_summary 工具调用收集结构化结果。
+    """repo_summary 经共享 Agent→Friday MCP 工厂提交结构化结果（唯一渠道）。
 
     plan 模式会让模型等待"用户批准计划"，无人值守容器里会以
-    "Please approve the plan ..." 文本收尾，拿不到 JSON。
+    "Please approve the plan ..." 文本收尾，拿不到结果；改为 bypassPermissions +
+    只读白名单 + MCP 提交工具，收口统一走 apply_capture_to_result。
     """
 
     def _make_runner(self, tmp_path: Path) -> ClaudeRunner:
@@ -130,11 +98,11 @@ class TestRepoSummaryStructuredSubmit:
         return ClaudeRunner(config, tmp_path)
 
     @pytest.mark.asyncio
-    async def test_repo_summary_does_not_use_plan_mode(self, tmp_path):
-        """repo_summary 用 bypassPermissions + 只读白名单 + 禁用写工具，不再用 plan。"""
+    async def test_repo_summary_mounts_shared_submit_mcp(self, tmp_path):
+        """repo_summary 用 bypassPermissions + 只读白名单 + 共享 friday-submit 工具。"""
         runner = self._make_runner(tmp_path)
         runner._execute_claude = AsyncMock(
-            return_value={"success": True, "output": '{"overview": "x"}'}
+            return_value={"success": False, "error": "empty"}
         )
 
         await runner.run_repo_summary_mode()
@@ -144,23 +112,31 @@ class TestRepoSummaryStructuredSubmit:
         for tool in ("Write", "Edit", "MultiEdit"):
             assert tool in kwargs["disallowed_tools"]
 
-        submit_tool = "mcp__repo-summary__submit_summary"
+        submit_tool = "mcp__friday-submit__submit_repo_summary"
         assert submit_tool in kwargs["extra_allowed_tools"]
         assert "Write" not in kwargs["extra_allowed_tools"]
-        assert "repo-summary" in kwargs["extra_mcp_servers"]
-        # prompt 末尾追加了工具提交指令
+        assert "friday-submit" in kwargs["extra_mcp_servers"]
+        # prompt 末尾追加了工厂提交契约
         assert submit_tool in kwargs["prompt"]
 
     @pytest.mark.asyncio
-    async def test_tool_captured_summary_wins_even_on_empty_text(self, tmp_path):
-        """模型只调工具、无文本输出时，工具捕获的结构化结果覆盖 empty response 误判。"""
+    async def test_captured_result_wins_even_on_empty_text(self, tmp_path, monkeypatch):
+        """模型只调工具、SDK 空文本报错时，工厂捕获的结构化结果覆盖误判为成功。"""
+        import core.executor as executor_mod
+        from core.agent_submit_mcp import build_submit_mcp as real_build
+
         runner = self._make_runner(tmp_path)
 
+        built = real_build("repo_summary")
+
+        def fake_build(scenario):
+            return built
+
+        monkeypatch.setattr(executor_mod, "build_submit_mcp", fake_build)
+
         async def fake_execute(**kwargs):
-            # 模拟 SDK 运行期间模型调用了 submit_summary 工具
-            await runner._handle_submit_summary(
-                {"overview": "测试项目", "tech_stack": ["Vue", "TypeScript"]}
-            )
+            # 模拟 SDK 运行期间模型经 MCP 工具提交（工厂 handler 写入 capture）
+            built.capture.value = {"overview": "测试项目", "tech_stack": ["Vue"]}
             return {"success": False, "error": "Claude SDK returned empty response"}
 
         runner._execute_claude = AsyncMock(side_effect=fake_execute)
@@ -168,36 +144,12 @@ class TestRepoSummaryStructuredSubmit:
 
         assert result["success"] is True
         assert "error" not in result
-        assert result["structured_summary"] == {
-            "overview": "测试项目",
-            "tech_stack": ["Vue", "TypeScript"],
-        }
-        import json
-
-        assert json.loads(result["output"])["overview"] == "测试项目"
+        assert result["mcp_result"]["overview"] == "测试项目"
+        assert result["submit_scenario"] == "repo_summary"
 
     @pytest.mark.asyncio
-    async def test_handle_submit_summary_captures_args(self, tmp_path):
-        """submit_summary handler 捕获参数并返回完成提示。"""
-        runner = self._make_runner(tmp_path)
-
-        resp = await runner._handle_submit_summary({"overview": "x", "tech_stack": []})
-
-        assert runner._captured_summary == {"overview": "x", "tech_stack": []}
-        assert resp["content"][0]["type"] == "text"
-
-    def test_repo_summary_schema_includes_optional_charter(self):
-        """submit_summary schema 含可选 charter（D-01）。"""
-        from core.executor import _REPO_SUMMARY_INPUT_SCHEMA
-
-        props = _REPO_SUMMARY_INPUT_SCHEMA["properties"]
-        assert "charter" in props
-        assert "charter" not in _REPO_SUMMARY_INPUT_SCHEMA["required"]
-        assert "意图面" in props["charter"]["description"]
-
-    @pytest.mark.asyncio
-    async def test_fallback_to_text_output_when_tool_not_called(self, tmp_path):
-        """模型没调工具时降级走文本输出（由 runner 侧 _extract_summary_json 兜底）。"""
+    async def test_not_called_marks_failure(self, tmp_path):
+        """未经 MCP 提交（capture 为空）→ 明确失败，稳定 reason，不拿文本兜底。"""
         runner = self._make_runner(tmp_path)
         runner._execute_claude = AsyncMock(
             return_value={"success": True, "output": '{"overview": "纯文本"}'}
@@ -205,9 +157,19 @@ class TestRepoSummaryStructuredSubmit:
 
         result = await runner.run_repo_summary_mode()
 
-        assert result["success"] is True
-        assert "structured_summary" not in result
-        assert result["output"] == '{"overview": "纯文本"}'
+        assert result["success"] is False
+        assert result["error_reason"] == "mcp_tool_not_called"
+        assert "mcp_result" not in result
+
+    def test_repo_summary_schema_includes_optional_charter(self):
+        """repo_summary schema 含可选 charter（D-01）。"""
+        from core.agent_submit_mcp import get_scenario
+
+        schema = get_scenario("repo_summary").input_schema
+        props = schema["properties"]
+        assert "charter" in props
+        assert "charter" not in schema["required"]
+        assert "意图面" in props["charter"]["description"]
 
 
 class TestGitWrapperRepoSummary:

@@ -8,6 +8,7 @@
 """
 
 import os
+import uuid
 from pathlib import Path
 
 import pytest
@@ -85,6 +86,36 @@ async def test_claude_runner_session_save(temp_workspace, mock_config):
 
 
 # === 模拟测试（不需要真实 API）===
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "API Error: The socket connection was closed unexpectedly.",
+        "The connection was closed unexpectedly while streaming.",
+    ],
+)
+def test_unexpected_socket_close_is_retryable(message):
+    """最终 MCP 提交前的 socket close 属于瞬时上游故障，必须留在容器内立即重试。"""
+    from core.executor import _is_transient_claude_error
+
+    assert _is_transient_claude_error(
+        RuntimeError("Command failed with exit code 1"),
+        [message],
+    ) is True
+
+
+def test_transient_retry_resumes_completed_sdk_session():
+    """收到 ResultMessage 后中断时，下一 attempt 必须 resume，不能重复占用 session_id。"""
+    from claude_agent_sdk import ClaudeAgentOptions
+
+    from core.executor import _resume_options_after_transient
+
+    options = ClaudeAgentOptions(session_id="requested-session")
+    retried = _resume_options_after_transient(options, "actual-session")
+
+    assert retried.session_id is None
+    assert retried.resume == "actual-session"
 
 
 @pytest.mark.asyncio
@@ -220,6 +251,37 @@ async def test_options_include_mcp_when_remote_tools_present(
     # WR-02：挂载远程工具不得禁掉内建编码工具，Bash/Edit/Write/Read 必须仍可用
     for builtin in ("Bash", "Edit", "Write", "Read"):
         assert builtin in options.allowed_tools
+
+
+@pytest.mark.asyncio
+async def test_new_sdk_execution_uses_an_explicit_stable_session_id(
+    monkeypatch, temp_workspace, temp_session_dir
+):
+    """每次 query 从开始就有可持久化 UUID；不能等 ResultMessage 才首次知道 session id。"""
+    from core import ClaudeRunner
+
+    config = _make_real_config(temp_session_dir)
+    runner = ClaudeRunner(config=config, workspace=temp_workspace)
+
+    options = await _capture_options(monkeypatch, runner)
+
+    assert str(uuid.UUID(options.session_id)) == options.session_id
+    assert options.resume is None
+
+
+@pytest.mark.asyncio
+async def test_resumed_sdk_execution_uses_resume_without_a_competing_session_id(
+    monkeypatch, temp_workspace, temp_session_dir
+):
+    from core import ClaudeRunner
+
+    config = _make_real_config(temp_session_dir, resume_session_id="sdk-existing")
+    runner = ClaudeRunner(config=config, workspace=temp_workspace)
+
+    options = await _capture_options(monkeypatch, runner)
+
+    assert options.resume == "sdk-existing"
+    assert options.session_id is None
 
 
 @pytest.mark.asyncio
@@ -407,11 +469,11 @@ async def test_extra_only_mount_keeps_caller_allowlist_no_builtin(
             yield None
 
     monkeypatch.setattr("core.executor.query", fake_query)
-    submit_tool = "mcp__repo-summary__submit_summary"
+    submit_tool = "mcp__friday-submit__submit_repo_summary"
     await runner._execute_claude(
         prompt="hi",
         permission_mode="bypassPermissions",
-        extra_mcp_servers={"repo-summary": object()},
+        extra_mcp_servers={"friday-submit": object()},
         extra_allowed_tools=[*_READONLY_ANALYSIS_TOOLS, submit_tool],
     )
     options = captured["options"]
