@@ -4,8 +4,8 @@ milestone: —
 milestone_name: —
 status: Awaiting next milestone
 stopped_at: v0.23.0 archived（未打 tag）
-last_updated: "2026-08-14T07:20:00.000Z"
-last_activity: 2026-08-14 — Milestone v0.23.0 archived（tech_debt accepted；phases → milestones/v0.23.0-phases/）
+last_updated: "2026-08-19T03:10:00.000Z"
+last_activity: 2026-08-19 — Quick 260818-pt8（Agent→Friday MCP 结构化提交统一化：三场景硬切 mcp_result，删自由文本 JSON + 污染 resume 过滤 + repository_name 回退）
 progress:
   total_phases: 5
   completed_phases: 5
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 归档）。v0.23.0 归
 Phase: — (awaiting next milestone)
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-08-17 — Quick 260817-xb9（仓库调研过程明细可读化：三事件 payload + 前端人话化）
+Last activity: 2026-08-19 — Quick 260818-pt8（Agent→Friday MCP 结构化提交工厂 + 三场景 MCP-only 硬切；plan-internal 测试 task 46 passed/3 skipped、server 85 passed）
 
 Progress: [██████████] 100% (v0.23.0 complete)
 
