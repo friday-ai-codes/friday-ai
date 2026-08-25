@@ -23,6 +23,7 @@ from typing import Any
 
 import structlog
 
+from common.logging import redact_secrets_in_text
 from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
 from services.retrieval.types import LayerSnapshot
 
@@ -175,7 +176,13 @@ async def search_rag(
                 try:
                     matcher = await build_matcher_for_repo(repo_id)
                 except Exception as e:  # noqa: BLE001 — 构造失败一律 fail-closed
-                    logger.warning("rag_search_matcher_build_failed", repo_id=repo_id, error=str(e))
+                    logger.debug(
+                        "rag_search_matcher_build_failed",
+                        repo_id=repo_id,
+                        error=redact_secrets_in_text(str(e)),
+                        category="sampling",
+                        component="code_graph",
+                    )
                     log_exclusion_blocked(surface="rag", repository_id=repo_id, rel_path="")
                     return []
                 try:
@@ -190,10 +197,22 @@ async def search_rag(
                         timeout=_RAG_PER_REPO_TIMEOUT_S,
                     )
                 except TimeoutError:
-                    logger.warning("rag_search_single_repo_timeout", repo_id=repo_id, timeout_s=_RAG_PER_REPO_TIMEOUT_S)
+                    logger.debug(
+                        "rag_search_single_repo_timeout",
+                        repo_id=repo_id,
+                        timeout_s=_RAG_PER_REPO_TIMEOUT_S,
+                        category="sampling",
+                        component="code_graph",
+                    )
                     return []
                 except Exception as e:  # noqa: BLE001
-                    logger.warning("rag_search_single_repo_failed", repo_id=repo_id, error=str(e))
+                    logger.debug(
+                        "rag_search_single_repo_failed",
+                        repo_id=repo_id,
+                        error=redact_secrets_in_text(str(e)),
+                        category="sampling",
+                        component="code_graph",
+                    )
                     return []
                 out: list[dict[str, Any]] = []
                 for r in results:
@@ -221,7 +240,13 @@ async def search_rag(
         _stage_qdrant_ms = (time.perf_counter() - _t0) * 1000
         for repo_id, res in zip(repo_ids, per_repo, strict=True):
             if isinstance(res, BaseException):
-                logger.warning("rag_search_single_repo_failed", repo_id=repo_id, error=str(res))
+                logger.debug(
+                    "rag_search_single_repo_failed",
+                    repo_id=repo_id,
+                    error=redact_secrets_in_text(str(res)),
+                    category="sampling",
+                    component="code_graph",
+                )
                 continue
             for r in res:
                 payload = r.get("payload", {})
@@ -260,7 +285,12 @@ async def search_rag(
             extra={"rerank": rerank_meta} if rerank_meta else None,
         )
     except Exception as e:
-        logger.warning("rag_search_failed", query=query[:100], error=str(e))
+        logger.debug(
+            "rag_search_failed",
+            error=redact_secrets_in_text(str(e)),
+            category="sampling",
+            component="code_graph",
+        )
         _record_rag_metric(
             start=_metric_start,
             all_results=[],

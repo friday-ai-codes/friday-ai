@@ -1,5 +1,27 @@
 # Milestones
 
+## v0.24.0 单仓图查询对齐 GitNexus (Shipped: 2026-08-24)
+
+**Phases completed:** 8 phases, 16 plans, 15 tasks
+
+**Key accomplishments:**
+
+- 图查询基准评测的纯函数地基：三方水位 fail-closed 校验（INVALID 短路）、run identity 五元组、gold 冻结数据集 schema 与闭集校验，零 I/O 可在默认 --disable-socket 套件单测
+- 为 v0.22 图查询 baseline 落地可版本化、独立于被测 codegraph 的冻结 gold 数据集：manifest（gold_version + annotated_at_sha + splits + 防反导声明）+ dev/locked_test 双切分 seed case（四维分桶必填、edge gold 带独立 callsite 锚点）+ holdout 空壳 + 标注口径 README
+- 在 Plan 01 纯函数地基上补齐 BENCH-04 指标集（锁定分母 + 空结果规则）与 BENCH-05 分桶/INSUFFICIENT_DATA/macro 聚合，产出 BENCH-03 要求的无阈值原始报告——全部零 I/O 纯函数，可在默认 --disable-socket 套件单测，模块零回归门字段
+- 建立可机械配对的 benchmark 双身份与 hash 证据链，并补齐 resolver edge-level 三态 cell 测量。
+- 以严格内容寻址和配对校验实现只读 threshold policy、四态 benchmark comparator 及可回放审计命令，同时在缺少真实 baseline 时拒绝生成伪正式 policy。
+- 以唯一 caller 生命周期、低噪声内部 sampling、统一异常脱敏和跨 retrieval AST 守卫收口 graph query 可观测边界。
+- 建立跨 Phase 133–140 的单一 closure gate，完成 server/task/npm MCP 全组件回归，并把缺失真实 baseline 的数值验证诚实递延为 HUMAN_NEEDED。
+
+**质量结论：** 里程碑审计 `tech_debt`，39/39 requirements 满足、8/8 phases、16/16 plans、0 critical gaps。真实已索引目标仓/Qdrant、v0.22 baseline、v0.24 candidate、locked threshold policy 与 final-only holdout compare 仍为 `human_needed`；因此只确认可执行协议、门禁实现和 fail-closed 边界，**不宣称数值优于 v0.22.0**。
+
+**归档：** [audit](./milestones/v0.24.0-MILESTONE-AUDIT.md) · [roadmap](./milestones/v0.24.0-ROADMAP.md) · [requirements](./milestones/v0.24.0-REQUIREMENTS.md) · [phases](./milestones/v0.24.0-phases/)。受限 cleanup 仅迁移本里程碑 Phase 133–140 产物并移除活动 requirements 副本；指定 quick JSON 未被处理。
+
+**未打 tag：** 本仓 tag 属于发布轨，GSD 里程碑归档不创建 tag。
+
+---
+
 ## v0.23.0 仓库路由增强（分阶段决策漏斗） (Completed: 2026-08-14，未打 tag)
 
 **Phases completed:** 5 phases（128–132）；16 plans / ~30 tasks；25 条需求 **25 满足 / 0 部分 / 0 未达**；里程碑审计 **tech_debt**，报告见 [milestones/v0.23.0-MILESTONE-AUDIT.md](./milestones/v0.23.0-MILESTONE-AUDIT.md)，需求归档见 [milestones/v0.23.0-REQUIREMENTS.md](./milestones/v0.23.0-REQUIREMENTS.md)，路线图归档见 [milestones/v0.23.0-ROADMAP.md](./milestones/v0.23.0-ROADMAP.md)，相位产物见 [milestones/v0.23.0-phases/](./milestones/v0.23.0-phases/)，决策锁见 [milestones/v0.23.0-DECISIONS.md](./milestones/v0.23.0-DECISIONS.md)。

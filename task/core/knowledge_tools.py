@@ -39,6 +39,8 @@ import httpx
 import structlog
 from claude_agent_sdk import McpSdkServerConfig, SdkMcpTool, create_sdk_mcp_server
 
+from .generated_graph_query_manifest import GRAPH_QUERY_TOOL_SCHEMA
+
 logger = structlog.get_logger(__name__)
 
 KNOWLEDGE_MCP_SERVER_NAME = "friday-knowledge"
@@ -50,6 +52,7 @@ QUOTA_EXHAUSTED_TEXT = "知识工具调用配额已用尽，请基于已有上�
 # server/mcp_tools/serializers.py 对应 RequestSerializer 字段）。
 # description 面向 agent 写清"何时用哪个"。
 KNOWLEDGE_TOOL_SCHEMAS: list[dict[str, Any]] = [
+    GRAPH_QUERY_TOOL_SCHEMA,
     {
         "name": "search_rag_chunks",
         "description": (

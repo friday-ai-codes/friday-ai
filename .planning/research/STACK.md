@@ -1,221 +1,309 @@
-# Stack Research — v0.22.0 代码智能图分析升级（对标 GitNexus）
+# Stack Research
 
-**Domain:** brownfield 增量（内存图服务 / impact·trace·detect_changes / 社区检测 + 模块摘要 / Semgrep taint 门禁 / volar·gopls 默认开启）
-**Researched:** 2026-08-09
-**Confidence:** HIGH（所有新依赖的版本与 Python 3.14 wheel 可用性均经 PyPI / 官方文档 / 官方 release notes 核实；性能数字为 MEDIUM——引用官方 benchmark 与第三方实测，未在本仓复现）
+**Domain:** v0.24.0 单仓 graph-aware query（Process 分组混合检索、语言感知调用解析、MCP 契约、可复现评测）
+**Researched:** 2026-08-24
+**Confidence:** HIGH（GitNexus v1.6.9、MCP 2026-07-28 规范、Qdrant 官方文档与本仓锁文件/源码交叉核验；排序效果仍须由本里程碑 baseline 实测）
 
-## 结论先行（TL;DR）
+## 结论先行
 
-**本里程碑几乎零新增 Python 依赖。** 五个问题的裁决：
+**运行时依赖零新增，现有依赖足够。** 本里程碑应增加的是索引对象、服务层编排、契约单一事实源和 benchmark 资产，不是另一套图数据库、搜索引擎或解析框架。
 
-1. **图引擎：用已在依赖树的 networkx 3.6.1，不引入 rustworkx**。10万–100万边规模下 networkx 构建 + 反向 BFS 完全可用（图缓存后查询是毫秒–百毫秒级）；rustworkx 快 3–100 倍但**没有社区检测算法**（Louvain/Leiden 均为 open issue），引入它反而还得留着 networkx，两套图对象双倍内存。留 adapter seam，触发条件见下。
-2. **社区检测：networkx 原生 `louvain_communities`（BSD，零新增依赖），不用 leidenalg**。leidenalg 是 **GPL-3.0**（python-igraph 是 GPL-2），本仓 MIT + 分发 Docker 镜像，GPL 传染风险不值得为边际质量提升买单；networkx 3.6 的 `leiden_communities` 只有 dispatch 接口、无默认实现（需 cugraph GPU backend），不可用。
-3. **Semgrep：独立安装 CLI（`semgrep==1.172.*`，LGPL-2.1），subprocess 调用，绝不装进 server venv**。diff 扫描用 `semgrep scan --config <rulesets> --baseline-commit <merge-base> --json`。**CE（免费版）taint 只有单函数内分析**，跨函数/跨文件 taint 是付费 Pro 能力——门禁设计必须按 CE 能力上限收敛预期，Pro 留 opt-in 升级路径。
-4. **内存图缓存 LRU：零新增依赖，纯 stdlib**（`collections.OrderedDict` + `threading.Lock`；失效走 `last_indexed_commit_sha` 水位比对，不是时间 TTL）。cachetools 不在依赖树，也不需要进来。
-5. **volar/gopls 默认开启的真正前提是改 `server/Dockerfile`**：当前 `python:3.14-slim` 镜像**没有 Node 也没有 Go**，两个 kill-switch 打开了探针也会 fail-soft 回落 tree-sitter。需加 Node 22 LTS + `@vue/language-server`（v3.x）+ Go 工具链 + gopls（当前 v0.23.0）。
+1. **Process 检索继续用 Qdrant dense+sparse+RRF。** 本仓已锁 `qdrant-client==1.16.2`，已有 named dense/sparse vectors、`Prefetch`、`FusionQuery(RRF)` 和老索引 dense fallback。为 `ProcessTrace` 建独立的全局 `code_graph_processes` collection，以 payload 按 repository/branch 隔离；不要混入 chunk collection，也不加 `rank_bm25`、Elasticsearch、LadybugDB/Kuzu。
+2. **Process 继续落 Django `ProcessTrace`，NetworkX 继续负责图遍历。** GitNexus 的价值在“先召回 Symbol，再沿 `STEP_IN_PROCESS` 聚合 Process”，不是它选用哪种图库。本仓已有 `ProcessTrace.steps`、`SymbolCommunity`、`GraphService` 和 `networkx==3.6.1`，无需复制 GitNexus 存储栈。
+3. **resolver 演进现有 Protocol + `SymbolIndex`。** 优先补 TS/JS receiver/import alias/re-export 与 Python import/member/receiver；保留 unresolved 和证据原因，禁止全仓同名 fuzzy 兜底。Go 后置。不要把 LSP 默认翻转夹带进本里程碑。
+4. **新增一个 canonical `graph_query` 契约，而不是让 agent 编排四个旧工具。** Django service 是唯一实现；Chat、Django MCP、npm MCP、编码容器都由同一 schema/manifest 生成或校验。MCP 返回 `structuredContent` + `outputSchema`，同时保留 JSON text 兼容旧客户端。
+5. **评测零新增库即可完成。** `pytest==9.0.2` + JSON/JSONL fixtures + stdlib `statistics`/`random`/`time.perf_counter_ns` 足够计算 Recall@k、MRR、resolved-edge precision/recall、Process step/file:line 命中、impact/trace 命中、延迟与 token。先冻结同仓同 commit 的 v0.22 baseline，再从数据锁门；不预设阈值。
 
 ## Recommended Stack
 
-### Core Technologies（图分析）
+### Core Technologies
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| networkx | 3.6.1（已在 `uv.lock`，llama-index 传递依赖） | 内存图构建、反向 BFS（impact）、最短路（trace）、正向遍历（执行流）、Louvain 社区检测 | 零新增依赖；纯 Python wheel 天然兼容 Py3.14；API 覆盖本里程碑全部算法需求（`bfs_layers`/`shortest_path`/`descendants`/`louvain_communities`）；节点可用任意 hashable（直接挂 `symbol_id`），无 rustworkx 的整数索引映射负担 |
-| Python stdlib（`collections.OrderedDict` + `threading.Lock` + `sys.getsizeof` 估算） | 3.14 | per `(repository, branch)` 图缓存的 LRU 逐出 + 并发保护 | 缓存条目少（个位数到几十个 repo 图）、逐出策略简单（LRU + commit sha 水位失效），引第三方 cache 库是过度设计；仓内已有同构先例（`node_check.py` 进程缓存、galaxy 文件缓存） |
-| Semgrep CLI | 1.172.0（2026-07-28 发布；pip 包，LGPL-2.1-or-later） | MR diff 的 taint mode 安全门禁（买不是造，替代自研 PDG） | 唯一维护活跃、规则生态完整的开源 taint 引擎；`--baseline-commit` 原生支持 diff-aware 扫描；`--json` 结构化输出好接门禁 |
+| Django ORM / PostgreSQL（既有） | Django 5.1+；生产 PostgreSQL 17 | `ProcessTrace` canonical 数据、索引水位与构建状态 | 已有模型含 repository/branch/process_key/name/entry/steps/community_class/built_at_sha；保持操作态事实在 SQL，避免向量库成为唯一事实源 |
+| Qdrant + qdrant-client | server 锁定 `1.16.2` | Symbol/Process dense+sparse hybrid recall 与 RRF | 本仓 `QdrantService.hybrid_search_by_name` 已是一请求双 prefetch + RRF；官方 Query API 原生支持此模式，且 payload filter 可按 repo/branch/kind/built_at_sha 限定 |
+| fastembed | server 锁定 `0.7.4` | Process 文本 dense/sparse 向量 | 已用于现有混合索引，复用同一 encoder 和维度，保证查询向量与索引向量一致；不再引入 GitNexus 的 ONNX/transformers.js 栈 |
+| NetworkX | server 锁定 `3.6.1` | Symbol→Process membership、impact/trace 与 Process 步骤装配 | v0.22 已验证；新需求是查询编排与边质量，不是图库性能迁移 |
+| tree-sitter + 既有语言 grammar | `tree-sitter>=0.21`（现有 lock） | TS/JS/Python 调用、import、receiver 结构事实采集 | resolver 质量需要 AST 事实和语言规则；算法名不能替代 receiver/import evidence。沿用现有 extractor 避免双 AST |
+| MCP Python SDK / TS SDK | Python `mcp>=1.25,<2`；npm `@modelcontextprotocol/sdk ^1.29.0` | 工具发现与调用 | 两端已在依赖树；Python `<2` 是 `claude-agent-sdk` 兼容约束，不能为本里程碑盲升 2.x |
+| jsonschema + Pydantic | `jsonschema==4.26.0`；既有 Pydantic 2 | canonical input/output schema 校验 | MCP 2026-07-28 允许 `outputSchema` + `structuredContent`；本仓已有严格 Pydantic tool input 和 schema snapshot，足以建立单一契约 |
 
 ### Supporting Libraries
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| `networkx.algorithms.community.louvain_communities` | networkx 3.6.1 内置 | 社区发现（模块划分），社区落库后喂 LLM 生成模块摘要 | 传 `seed=<固定值>` 保证幂等（对齐本仓「路由幂等」纪律：同一图输入产同一分区，社区 ID 可复现） |
-| `graphlib.TopologicalSorter`（stdlib） | 3.14 | 执行流正向追踪时的层级展开（如需要） | 仓内 v0.8.0 wave 分层已有使用先例，同构复用 |
-| gopls | v0.23.0（2026-07 发布，BSD-3-Clause） | Go 符号抽取 LSP 后端（默认开启） | 现有 `go_check.py` 下界 v0.14 仍有效；镜像内 `go install golang.org/x/tools/gopls@latest` |
-| @vue/language-server (volar) | v3.x（npm，MIT） | Vue/TS 符号抽取 LSP 后端（默认开启） | 现有 `node_check.py` 要求 Node ≥ 18（建议 22 LTS）；`npm i -g @vue/language-server`；tsdk 缺失时回落 volar 内置 typescript，可另装 `typescript` 提精度 |
+| `QdrantService.hybrid_search_by_name` / `hybrid_search_multi_by_name` | 本仓现有 | dense+sparse RRF、单/多探针、dense fallback | Process 和 Symbol 两路召回都走这里；不要复制一份 Python RRF，避免 0/1-based rank、tie-break 和 fallback 漂移 |
+| `services.query_embedding` / 现有 SparseEncoder | 本仓现有 | 自然语言 query 的 dense/sparse 编码 | Process 文本与查询必须复用相同模型/预处理；将 model id、vector dims 写入 index metadata |
+| `GraphService` + `ProcessTrace` + `SymbolCommunity` | v0.22 既有 | graph-aware enrichment | hybrid 候选命中后批量查 membership，一次聚合 Process、Community、步骤和影响摘要；避免逐候选 N+1 |
+| `codegraph.resolver.base.ImportResolver` + `SymbolIndex` | 既有 | 按语言替换解析策略 | 扩展 TS/JS/Python resolver；语言差异封装在 strategy，writer 与统计共用统一 `ResolveOutcome` |
+| pytest parametrization | `pytest==9.0.2` | 按语言/框架/入口类型运行 golden corpus | 固定 corpus、commit、query、qrels，逐 bucket 输出结果；官方 pytest 支持 fixture/function 动态参数化 |
+| Python stdlib `statistics`, `random`, `time`, `json`, `hashlib` | Python 3.14 | 指标、bootstrap CI、计时、manifest/hash | benchmark 规模有限时足够；固定 seed、记录样本数与逐 query 结果，不需 NumPy/SciPy/pandas |
 
 ### Development Tools
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| `semgrep --validate` | 自定义 taint 规则 CI 校验 | 若沉淀本地规则文件（YAML），进 CI 防规则语法坏掉 |
-| `pytest` 既有基线 | 图算法确定性测试 | 社区检测/impact 排序都要固定 seed + 稳定 tie-break（对齐 v0.19.0「先量化再比」纪律） |
+| `pytest -m perf` | 离线质量与延迟 benchmark | 仓库已声明 `perf` marker 且默认 CI 排除；质量回归可拆成快速 deterministic gate，墙钟 benchmark 独立运行 |
+| JSONL benchmark manifest | 固定 repo、commit、branch、语言、框架、入口类型、query、qrels | manifest 必须包含 index config、embedding model、schema version、seed、机器信息；拒绝拿不同 commit/索引参数做前后对比 |
+| schema alignment tests | 保证 Django、Chat、npm MCP、容器工具发现一致 | 扩展现有 `test_schema_snapshot.py` 与 `test_mcp_package_alignment.py`；npm 当前 37 工具中缺 v0.22 图工具，漂移是已证实事实 |
+| `RetrievalTrace` / RequestMetric / ModelUsageRecord | 记录召回分层、耗时、token 与调用归因 | 新 graph query 是 `caller`；内部 dense/sparse、membership、impact enrichment 是 `sampling`；观测 best-effort |
 
-## 五个问题的详细裁决
+## 具体技术选择与集成点
 
-### 1. networkx vs rustworkx（10万–100万节点/边）
+### 1. Process 索引：一等检索对象，不更换存储
 
-**结论：本里程碑用 networkx，不引 rustworkx。**
+推荐生成稳定的 `ProcessDocument` 投影，point id 由 `(repository_id, branch, process_key)` 确定性派生，`built_at_sha` 作为 payload 水位；同分支重建按 repository/branch 过滤删除旧点后批量 upsert，避免旧 SHA 点累积。payload 至少包含：
 
-事实核查（HIGH confidence）：
+- `kind="process"`、`repository_id`、`branch_name`、`process_key`、`built_at_sha`
+- `name`、HTTP method/path、入口 handler 与入口 `file:line`
+- 终点名称与终点 `file:line`
+- 有序步骤摘要（name、symbol type、file path；正文严格受 token/字符预算）
+- community keys/summary、top modules、业务关键词
+- `step_count`、`community_class`、`flags`（cycle/async/truncated）
 
-- rustworkx 0.18.0（2026-06-18）**官方支持 Python 3.14**，且自 0.17.1 起用 Python Stable ABI（abi3）打 wheel，manylinux/macOS/Windows 全平台预编译，还发布了 3.14 free-threaded wheel——**wheel 可用性不是障碍**，无需本地 Rust 工具链。License 是 Apache-2.0，无合规问题。
-- 性能：官方 JOSS 论文与 benchmark 称常见场景 3x–100x 提速（Dijkstra 1M 节点 ~85ms vs networkx ~4.5s），内存占用显著低于 networkx 的 per-object 开销。
-- **关键短板：rustworkx 至今没有 Louvain/Leiden 社区检测**（Qiskit/rustworkx#1141 仍是 open issue，讨论中在等 petgraph 上游）。本里程碑恰恰需要社区检测 ⇒ 引入 rustworkx 也无法退役 networkx，结果是同一份图数据要在两套对象里各存一份。
-- rustworkx 不是 drop-in：节点是整数索引，需要自己维护 `symbol_id ↔ index` 双向映射；API 按图类型显式分型（`digraph_*`）。
+索引文本应分别保留可解释字段，不把所有内容拼成不可审计大段：
 
-规模判断（MEDIUM confidence）：本仓单个 `(repository, branch)` 图的典型规模是 1万–20万符号节点 + 数十万边（`Symbol`/`CallEdge`/`ChunkEdge` 现状）。networkx 在此规模：
-
-- **构图**：一次性成本，10万边约 1–3 秒、100万边约 10–30 秒——图缓存常驻内存后摊销为零，且构图发生在索引完成后的后台，不在请求路径。
-- **查询**：反向 BFS（impact）与两点最短路（trace）是局部遍历，实际触达节点通常远小于全图，毫秒到百毫秒级；`louvain_communities` 在 10万边量级秒级完成，且属离线批处理（索引后跑一次落库）。
-- **内存**：networkx 有向图 + 最小属性（只挂 id，正文留 SQL 反查）约 0.5–1 KB/边 ⇒ 100万边约 0.5–1 GB。**这是唯一真实风险点**，缓解手段：(a) 节点/边属性只存标量 id 不存对象；(b) LRU 上限按条目数（如 8 个图）+ 估算字节数双闸。
-
-**升级触发条件（写进 adapter seam 注释）**：若生产出现单仓图 > 50 万边、或 impact 查询 p95 > 2s、或图缓存内存 > 2GB，先做「属性瘦身 + 邻接表预物化」，仍不够再评估 rustworkx——届时社区检测留 networkx（离线路径不敏感），只把 BFS/最短路热路径切 rustworkx。
-
-### 2. 社区检测：networkx louvain vs leidenalg
-
-**结论：`networkx.community.louvain_communities(G, seed=固定值)`，不引 leidenalg。**
-
-事实核查（HIGH confidence）：
-
-- networkx 3.6.1 的 `louvain_communities` 是**原生默认实现**（BSD-3-Clause），带 `seed`/`resolution`/`threshold` 参数。
-- networkx 3.6 的 `leiden_communities` **没有默认实现**——文档明确「backend required」，目前唯一 backend 是 NVIDIA cugraph（GPU）。自托管 CPU 部署不可用。
-- leidenalg 0.12.0（2026-05-24）打了 abi3 wheel（CPython ≥3.8 全平台），conda-forge 也有 cp314 构建——**技术上 Py3.14 可用**，但 leidenalg 是 **GPL-3.0**、其依赖 python-igraph 基于 igraph C 核心（GPL-2）。本仓是 **MIT license 且分发 Docker 镜像**（ghcr.io 预构建镜像），把 GPL 库打进分发物会给下游商用部署带来传染争议。
-- 质量差异：Leiden 修复 Louvain 的「badly connected communities」问题、速度更快，这在**社区结构本身是最终产物**的学术场景重要；本里程碑社区只是 LLM 模块摘要的**粗分组输入**（摘要质量主要取决于 LLM 与提示词），Louvain 的分区质量完全够用。
-
-工程纪律：`seed` 固定 + 社区成员按 `(symbol_id)` 排序后取 hash 作社区指纹，保证重跑幂等、落库可对账。
-
-### 3. Semgrep 集成
-
-**结论：独立二进制形态装 CLI（镜像构建期 `pip install semgrep==1.172.*` 到独立 venv 或 `uv tool install`），server 侧 subprocess 调用 + `--json` 解析。绝不把 semgrep 加进 `server/pyproject.toml`。**
-
-事实核查（HIGH confidence，2026-08 现状）：
-
-- **版本**：semgrep 1.172.0（2026-07-28），PyPI 包 `semgrep`，Python >=3.10，License **LGPL-2.1-or-later**（引擎）。周更节奏，锁 minor 即可。
-- **为什么不进 server venv**：semgrep wheel 内嵌 OCaml 编译的 `semgrep-core` 二进制并携带自己的一批 Python 依赖 pin（click/rich/ruamel 等），与 server 的 90+ 依赖树合并是冲突温床；它只被 subprocess 调用，物理隔离（独立 venv / `uv tool` / 官方 docker image `semgrep/semgrep`）是标准做法。
-- **taint 能力边界（设计门禁前必须认账）**：
-  - Semgrep CE（Community Edition，免费开源）：`mode: taint` 规则可用，但**只做单函数内（intraprocedural）taint** + 单文件常量传播。
-  - 跨函数（`--pro-intrafile`）与跨文件（`--pro` + 规则 `interfile: true`）taint 是 **Semgrep Code（付费 AppSec Platform）** 能力，需 `semgrep install-semgrep-pro`（专有二进制）+ 登录 token。
-  - ⇒ **门禁的产品语义要按 CE 收敛**：「diff 内单函数 taint + 规则模式匹配」级别的安全检查，不承诺跨文件数据流追踪；配置面留 `SEMGREP_APP_TOKEN`（走既有 `ProviderCredential`/`SystemSetting` 加密存储约定，不走 env）作 Pro opt-in。
-- **规则来源**：registry ruleset 推荐组合 `p/default`（平衡）+ 按语言补 `p/python` `p/golang` `p/typescript`；`p/security-audit` 偏审计（噪音更高），适合作可选严格档而非默认档。规则受 **Semgrep Rules License v1.0**：内部使用（含商用私有代码）免费无限制，仅当「把 registry 规则作为竞品服务出售」才触发限制——Friday AI 自托管场景安全，但因 Friday AI 本身是分发的产品，**建议默认在运行时按需拉取 registry（`--config p/...`）而不是把规则文件打包进镜像分发**，规避再分发争议；离线部署场景让用户自带规则目录。
-- **diff 扫描推荐调用**：
-
-  ```bash
-  semgrep scan \
-    --config p/default --config p/python --config p/golang \
-    --baseline-commit "$(git merge-base <target_branch> HEAD)" \
-    --json --metrics=off --timeout 30 --max-memory 4000
-  ```
-
-  注意：`--baseline-commit` 要求工作区是 git 目录、**无未暂存变更**、baseline hash 本地可达（浅克隆要 `fetch --deepen`）——门禁执行环境（编码任务容器 / server 本地镜像仓）需保证这三点。`semgrep ci` 是 AppSec Platform 配套命令，OSS 自托管场景用 `semgrep scan`。
-  1.172.0 刚修了 baseline 扫描「规则失败时把整文件旧 finding 误报为新增」的 bug——**不要用更老的版本**。
-
-### 4. 内存图缓存 LRU/TTL
-
-**结论：零新增依赖，纯 stdlib。**（cachetools 不在 `uv.lock`，无需引入）
-
-- 结构：`OrderedDict[(repo_id, branch), CachedGraph]` + `threading.Lock`；命中 `move_to_end`，超限 `popitem(last=False)`。
-- **失效不是时间 TTL，是水位比对**：`CachedGraph` 记录构建时的 `last_indexed_commit_sha`，每次取用先对比仓库当前索引水位，不一致即重建——这与里程碑目标「挂 `last_indexed_commit_sha` 水位失效」一致，时间 TTL 反而会造成「没重索引也白白重建」或「重索引了还在用旧图」两头不讨好。可选加 `time.monotonic()` 兜底上限（如 24h）防水位字段异常时的极端 stale。
-- `functools.lru_cache` 不适用：无法按 key 主动失效、无法容量按字节估算、装饰器形态与 async 入口（`sync_to_async` 包桥）不搭。
-- 并发注意：图构建秒级–分钟级，锁内只做字典操作，构建放锁外 + per-key 构建中标记（防惊群重复构建）；构建线程走既有 `background_runner`/durable 约定并带 `initiated_by_user_id`。
-
-### 5. volar/gopls 默认开启的运维前提
-
-**结论：真正的前置是 `server/Dockerfile` 加运行时；代码侧探针与 fail-soft 回落已就绪，「默认开启」可以安全地实现为「kill-switch 默认翻开 + 探针失败自动回落 tree-sitter」。**
-
-现状核查（读本仓代码，HIGH confidence）：
-
-- `codegraph/lsp/node_check.py` 要求：`node` ≥ 18（建议 22 LTS）+ `vue-language-server` 在 PATH（`@vue/language-server` v3.x，npm 全局装）+ tsdk 三探针（缺失回落 volar 内置 typescript）。
-- `codegraph/lsp/go_check.py` 要求：`gopls` ≥ v0.14（当前最新 v0.23.0，2026-07）+ **`go` ≥ 1.20 也必须在 PATH**——gopls 运行时要调 `go` 命令做包加载，光有 gopls 二进制不够。
-- **当前 `server/Dockerfile`（`python:3.14-slim`）两样都没有** ⇒ 生产镜像里即使翻开 `VOLAR/GOPLS_BACKEND_ENABLED` 两个 kill-switch，探针必失败、全量回落 tree-sitter。「默认开启」在镜像不改的情况下是空话。
-
-Dockerfile 增量（runtime stage）：
-
-```dockerfile
-# Node 22 LTS + volar（NodeSource 或 distro node；~180MB）
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm i -g @vue/language-server typescript \
-    && rm -rf /var/lib/apt/lists/*
-
-# Go 工具链 + gopls（gopls 运行时依赖 go 命令；~330MB）
-COPY --from=golang:1.25-bookworm /usr/local/go /usr/local/go
-ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
-RUN GOBIN=/usr/local/bin go install golang.org/x/tools/gopls@v0.23.0
+```text
+name + endpoint
+entry + terminal
+ordered step names
+module/community summaries
+file path tokens
 ```
 
-运维注意（既有代码注释已声明）：volar 大插件链场景启动 60–90s、gopls 大仓 20–60s ⇒ 随默认开启同批把 `LSP_STARTUP_TIMEOUT_SECONDS=60` 写进 compose 默认 env；镜像体积预计 +400–550MB（Node ~180MB + Go 工具链 ~300MB + gopls ~50MB），发布说明要提。若体积敏感，备选方案是把 LSP 后端拆 sidecar 镜像——但那是架构改动，超出本里程碑「降低开启门槛」的范围，不推荐。
+**WHY：** GitNexus 当前 `query` 先对符号做 BM25+semantic RRF，再批量沿 `STEP_IN_PROCESS` 查询 Process，并以匹配符号 RRF 分累计和轻量 cohesion boost 排序。这个结构证明“候选→membership→Process 分组”有效，但不证明 Friday 必须采用 LadybugDB。Qdrant 官方支持同一请求 dense/sparse prefetch + RRF；Friday 已有完全相同能力。
+
+推荐两阶段：
+
+1. `symbol_hits` 与 `process_hits` 并行 hybrid recall；
+2. 批量补 `symbol→community/process`，按 `process_key` 聚合；
+3. 用可拆解信号排序：各召回路排名、命中步骤数、入口/终点命中、Community 命中、staleness/degradation；
+4. 返回每个信号的 rank/source，不以未经 benchmark 的 magic weight 隐藏决策。
+
+初版优先 rank fusion，不把 GitNexus 的 `totalScore + cohesion*0.1` 原样搬来。该权重是其实现选择，不是跨项目常数。若 baseline 证明某信号需要权重，再把权重外置并记录版本。
+
+### 2. Process 构建：借鉴边界与确定性，不复制算法品牌
+
+继续使用现有 Endpoint→正向 BFS→`ProcessTrace`。需要调整的是：
+
+- 入口来源从“只有 Endpoint”扩展为可配置 entry classes 时，先由 benchmark 决定；本里程碑至少保留 HTTP Endpoint。
+- 保留 depth/branch/frontier/process count ceilings，并把 dropped/truncated 计数写入构建结果与查询 degradation。
+- 同 endpoint 多路径不能永远只留“最长一条”而没有证据；至少在 benchmark 中评估 top-N path coverage，再决定持久化条数。
+- 所有排序加稳定 tie-break（process_key/symbol_id/file:line），同 commit 重建必须字节级稳定。
+- 步骤 `file:line` 来自 Symbol/Endpoint 原始事实；缺失应返回 null + reason，不猜行号。
+
+GitNexus v1.6.9 的 Process processor同样使用 entry-point scoring、受限 DFS、路径去重、entry-terminal 去重、固定 ceilings，并显式记录候选被截断、未遍历入口、深度截断、丢弃分支和丢弃 Process。这些“认识论字段”值得对齐；DFS/BFS 名称本身不构成质量证据。
+
+### 3. 语言感知 resolver：扩展现有 seam
+
+本仓当前已具备：
+
+- `SymbolResolver`：同文件裸名 → import 解析 → Go selector → component 引用；
+- `FrontendImportResolver`：相对路径、单个 tsconfig alias、扩展名/index；
+- `PythonImportResolver`：相对/绝对 import 到文件；
+- `CallEdge.callee_qualifier`：目前主要服务 Go；
+- unresolved 留空而非全仓 fuzzy，方向正确。
+
+必须调整：
+
+| 优先级 | 调整 | 复用/新增 |
+|--------|------|-----------|
+| P0 TS/JS | 捕获 receiver、import local/original binding、default/named/namespace import、re-export；读取多 tsconfig `extends`/`baseUrl`/`paths` 与 workspace package 映射；按 receiver 类型/constructor/return type 解析 method | 复用 tree-sitter、`ImportEdge`、`callee_qualifier`（必要时泛化为 receiver evidence JSON）、`SymbolIndex`；新增语言 strategy 和 evidence/outcome，不加库 |
+| P0 Python | 区分 `import a.b`、`from a.b import c`（c 可能是 symbol 或 submodule）、alias、package `__init__` re-export；用 `self`/`cls`、constructor、annotation、显式 return type 解析 member | 复用 `PythonImportResolver`；新增 binding/receiver facts 与确定性优先级，不加 mypy/pyright |
+| P1 通用 | `ResolveOutcome` 记录 resolved/unresolved/ambiguous/external，带 reason/evidence/origin/language；按语言出 denominator | 现有 `ResolveResult` 演进；用于 benchmark 与 impact epistemic，不加库 |
+| Future Go | go.mod/workspace、selector/receiver、interface dispatch 继续完善 | 本里程碑后置，避免范围扩张 |
+
+GitNexus 当前实现不是一个“万能 resolver”，而是共享 pipeline + 每语言 `ScopeResolver` 配置：TS 读取 tsconfig/workspace，Python提供 namespace import/LEGB/MRO/receiver 规则，并把 constructor、return type、field fallback 等作为明确 capability。这支持 Friday 沿现有 Protocol 演进，而非引入 GitNexus 包或 LSP 默认翻转。
+
+### 4. 统一 graph query 与 MCP 契约
+
+推荐 canonical service：
+
+```text
+GraphQueryService.query(repository_id, query, branch?, limits?, include_content?)
+  -> GraphQueryResult
+```
+
+结果顶层应稳定包含：
+
+- `candidates`: Symbol 候选（uid/name/type/file/start/end、retrieval ranks/sources、resolution）
+- `communities`: 命中的 Community 与 summary/member evidence
+- `processes`: process_key/name/type/priority/signals/entry/terminal
+- `process_steps`: process_key、step_index、symbol_id、name、`file_path`、`line`
+- `impact_summary`: seed、risk、by-depth counts、affected processes/modules、epistemic/degradation
+- `staleness`: requested branch、index SHA、current SHA（若可得）
+- `degradation`/`truncated`/`warnings`
+- `timing_ms` 与 token/size 元数据
+
+契约实施：
+
+1. Pydantic/dataclass 定义 canonical DTO；
+2. 从同一 DTO 生成/导出 JSON Schema；
+3. Django MCP 发布 input/output schema；
+4. npm package 构建时消费生成的 manifest，而非手写第二份 `tools.ts`；
+5. Chat tool 与 task 容器只做 adapter；
+6. schema snapshot 比较工具名、required、properties、enum/default、响应 shape，不只比较 key 列表。
+
+MCP 2026-07-28 规范明确：tool 可声明 `outputSchema`，返回 `structuredContent` 必须符合它；为兼容旧客户端，应同时返回序列化 JSON TextContent。现有 npm SDK `^1.29.0` 与 Python SDK 已足够，不需升级协议库。
+
+### 5. Benchmark：新增资产，不新增统计栈
+
+最小目录建议：
+
+```text
+server/tests/benchmarks/code_graph_query/
+  manifest.json
+  queries.jsonl
+  qrels_symbols.jsonl
+  qrels_processes.jsonl
+  qrels_edges.jsonl
+  run_benchmark.py
+  metrics.py
+  snapshots/
+    v0.22.json
+    candidate.json
+```
+
+必须分桶：language、framework、entry_type、query_type（业务自然语言/符号名/路径/API）、repo size。每个 case 绑定 repo remote/id、commit SHA、branch、index schema/model/config。
+
+指标建议：
+
+- Symbol：Recall@k、MRR；若 qrels 有等级再用 nDCG@k。
+- Process：Process Recall@k、首个正确 Process rank、正确步骤覆盖率、步骤顺序一致率、`file:line` 命中率。
+- Resolver：按语言分别报告 TP/FP/FN、precision/recall、unresolved/ambiguous/external 分桶；**分母必须固定**。
+- impact/trace：golden affected set/path 命中、下界/截断/degradation 比例；不能把 partial 当 clean zero。
+- 成本：index wall time、query cold/warm p50/p95、Qdrant/ORM/graph call counts、response bytes、估算 token。
+
+比较规则：
+
+- baseline 与 candidate 必须同仓、同 commit、同 query/qrels、同硬件/进程模式；输出环境 manifest。
+- 排名/质量逐 query 保存，汇总之外保留 failure diff。
+- 固定随机 seed；若用 bootstrap CI，保存 seed、重复数和样本数。
+- 先跑 v0.22 baseline，再根据实测分布和业务容忍度锁 gate；研究阶段不臆造“提升 10%”或“p95 < 500ms”。
+- 对“优于 v0.22”的证明至少同时满足：目标质量指标改善、关键 bucket 不回退、误连不增加、延迟/token 无不可接受退化。具体阈值由 baseline 后 requirements 决定。
+
+`ir_measures`/`trec_eval` 是成熟选择，但当前指标少且需要自定义 Process/edge/file:line 指标，引入它们不会减少核心实现；先用透明的 stdlib 公式和 golden tests。若未来接 TREC qrels/run 生态或指标扩展到 MAP/nDCG 大集合，再考虑把 `ir_measures` 作为 **dev-only** 依赖。
 
 ## Installation
 
 ```bash
-# Python 侧：本里程碑零新增（networkx 3.6.1 已在 uv.lock）
-# 如未来触发 rustworkx 升级条件：
-# cd server && uv add "rustworkx>=0.18,<0.19"
+# v0.24.0 推荐：运行时与 benchmark 均零新增依赖
+cd server
+uv sync --locked
 
-# Semgrep：独立于 server venv（Dockerfile builder stage 或独立层）
-python3 -m venv /opt/semgrep && /opt/semgrep/bin/pip install "semgrep==1.172.*" \
-  && ln -s /opt/semgrep/bin/semgrep /usr/local/bin/semgrep
-# （或 uv tool install "semgrep==1.172.*"）
+# npm MCP 沿用现有依赖，只需同步生成契约并构建
+cd ../mcp
+npm run build
+npm test
 
-# LSP 运行时（见上文 Dockerfile 增量）
-npm i -g @vue/language-server typescript
-go install golang.org/x/tools/gopls@v0.23.0
+# Future：只有决定接入 TREC 格式时才评估（本里程碑不加）
+# cd ../server && uv add --dev ir-measures
 ```
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
 |-------------|-------------|-------------------------|
-| networkx（已有） | rustworkx 0.18.0 | 单仓图 > 50万边、impact p95 > 2s 或图缓存 > 2GB 且属性瘦身无效时，仅热路径（BFS/最短路）切换；社区检测仍留 networkx |
-| `louvain_communities`(seed) | leidenalg 0.12.0 + python-igraph | 只有当社区质量本身成为用户可见产物且部署方接受 GPL 时；当前模块摘要场景不值得 |
-| semgrep 独立 venv/binary | 官方 docker image `semgrep/semgrep` | 若门禁跑在编码任务容器外的独立 job 里，docker image 隔离更干净；但 server 进程内 subprocess 调本地二进制延迟更低 |
-| stdlib OrderedDict LRU | cachetools `TTLCache`/`LRUCache` | 若未来缓存策略复杂化（多级、权重、per-entry TTL 混合）再考虑；现在引入是无谓依赖 |
-| 镜像内置 Node/Go | LSP sidecar 容器 | k8s 大规模部署且镜像体积敏感时；需要新增跨容器 LSP 传输层，本里程碑不做 |
+| Qdrant Process hybrid index | PostgreSQL FTS + pgvector | 只有部署明确取消 Qdrant、并愿意迁移所有现有 RAG 索引时；本里程碑无此证据 |
+| Qdrant RRF | 手写 RRF | 只有需要融合 Qdrant 外的独立排名列表且无法在一次 Query API 表达时；仍须统一 1-based rank 与稳定 tie-break |
+| Django `ProcessTrace` canonical + Qdrant 投影 | LadybugDB/Kuzu Process nodes | 只有整体迁移代码图到 property graph DB 时；当前会复制数据、权限、分支/水位和运维体系 |
+| 现有 Protocol resolver | LSP/tsserver/pyright 作为默认真源 | 只有同 commit benchmark 证明质量收益覆盖冷启动、内存和部署成本后；默认翻转明确是 future |
+| pytest + stdlib metrics | `ir_measures` / `trec_eval` | benchmark 扩成标准 TREC run/qrels、多种 IR 指标且维护成本明显下降时，作为 dev-only |
+| canonical schema 生成多 adapter | 手写 Django/Chat/npm/task 四份 schema | 没有合理使用场景；手写多份已造成 npm MCP 漂移 |
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| leidenalg / python-igraph | GPL-3.0 / GPL-2 传染，本仓 MIT + 分发 Docker 镜像 | networkx `louvain_communities`（BSD） |
-| networkx `leiden_communities` | 3.6 只有 dispatch 接口无默认实现，唯一 backend 是 cugraph（GPU） | 同上 |
-| rustworkx（本里程碑） | 无社区检测（issue #1141 open），引入后仍需 networkx，双图对象双内存；性能瓶颈未被证实 | networkx + adapter seam + 明确升级触发条件 |
-| graph-tool | 无 PyPI wheel，C++/boost 源码编译，Docker 构建成本爆炸 | networkx / rustworkx |
-| semgrep 装进 server venv | 依赖 pin 冲突温床；semgrep 自带 OCaml core 二进制，本质是 CLI 工具不是库 | 独立 venv / `uv tool` / docker image + subprocess |
-| semgrep join mode | 官方标注 experimental、不再积极维护 | CE taint mode（单函数）+ Pro opt-in |
-| 自研 PDG/CFG 污点分析 | 里程碑显式 out of scope（买不是造） | Semgrep |
-| `functools.lru_cache` 做图缓存 | 无法按 key 失效、无容量字节控制 | stdlib OrderedDict + 水位失效 |
-| 时间 TTL 作为图缓存主失效机制 | 与索引水位脱节，两头不讨好 | `last_indexed_commit_sha` 水位比对（时间仅作兜底） |
+| `rank_bm25` | 本仓 Qdrant sparse vector 已承担 lexical/BM25 面；再建进程内索引带来刷新、分支、权限与多 worker 一致性问题 | Qdrant named sparse+dense + RRF |
+| Elasticsearch/OpenSearch | 仅为 Process BM25 引入新服务，运维和数据同步成本远大于收益 | 现有 Qdrant |
+| LadybugDB/Kuzu/Neo4j | GitNexus 的存储选型不是 Friday 功能前提；会形成第二图事实源 | Django ORM + GraphService + NetworkX + Qdrant 投影 |
+| GitNexus npm/package 直接嵌入 | GitNexus v1.6.9 为 Node 22+、不同图存储/模型/许可证；Friday 已有同类底座，集成会绕过权限、排除、归因与水位 | 参考其契约/算法结构，落到 Friday service |
+| `scikit-learn`/NumPy/SciPy/pandas 只为 benchmark | 现有指标公式简单，重依赖不带来硬收益 | stdlib + pytest |
+| LTR/学习排序 | 当前 labeled query 数量未知，小样本易过拟合且难解释；违背“先 baseline 再锁门” | RRF + 可拆解信号；有足量 qrels 后再评估 |
+| LLM 生成 Process 名/关键词作为唯一检索文本 | 不可复现、成本高、模型漂移；会让 benchmark 混入模型变化 | 先用确定性字段投影；LLM summary 仅可选信号并记录 model/version |
+| 全仓同名 fuzzy resolver | 会提高“resolved 数”同时制造误连，直接污染 Process/impact/trace | 语言 import/receiver evidence；歧义返回候选或 unresolved |
+| 只测 resolved rate | 把错误连接也算成功，无法证明边质量 | precision/recall + FP/FN + reason buckets |
+| 直接照搬 GitNexus 排序常数 | `k=60`/cohesion 0.1 是实现起点，不是 Friday 数据上的最优证据 | baseline + qrels 后决定并版本化 |
 
 ## Stack Patterns by Variant
 
-**If 部署方是离线/内网环境（拉不到 semgrep registry）：**
-- 提供 `SEMGREP_RULES_DIR` 类设置指向本地规则目录（`--config <dir>`），门禁 fail-soft 降级为跳过并显式标注（对齐「降级必须可见」纪律）
-- 因为 registry 拉取是运行时网络依赖，与本仓 fastembed 预置缓存同类问题
+**如果仓库没有可用 embedding provider 或旧 collection 只有 dense：**
+- 保持明确降级：sparse-only/dense-only 仍返回结果，`degradation` 标记缺失 lane。
+- 不把“0 Process”解释成“仓库没有相关流程”；先区分索引缺失、stale、召回为空。
 
-**If 用户购买了 Semgrep AppSec Platform：**
-- `SEMGREP_APP_TOKEN` 经加密凭证存储注入，`semgrep install-semgrep-pro` 后门禁自动升级为跨函数 taint（`--pro-intrafile`）
-- 门禁结果标注 engine 档位（ce / pro），报告可比
+**如果 Process 数量小、精确 endpoint/符号查询占主导：**
+- SQL 精确命中可作为独立候选 lane，再与 hybrid rank 融合。
+- 不因此取消 Process 向量索引；业务自然语言仍需要 semantic lane。
 
-**If 生产图规模触发 rustworkx 升级条件：**
-- 只替换 `GraphService` 内部热路径实现（BFS/最短路），对外 API 不变（这就是 adapter seam 的意义）
-- `uv add "rustworkx>=0.18,<0.19"`（abi3 wheel，Py3.14 官方支持，无 Rust 工具链需求）
+**如果 resolver 无法确定 receiver 类型：**
+- 返回 unresolved + reason/evidence，impact 标为 lower-bound/unknown。
+- 可建议 grep 二次核验，但不得静默连接同名符号。
+
+**如果 benchmark 后发现 TS/JS 提升明显、Python 无提升：**
+- 按语言独立 gate 与发布；不要用总体均值掩盖某语言回退。
+
+**如果未来 LSP 默认翻转：**
+- 单独里程碑比较 tree-sitter-only 与 LSP cold/warm 质量、耗时、内存、故障降级。
+- 本里程碑只保留 LSP 可选实验 lane，不改变生产默认。
 
 ## Version Compatibility
 
 | Package | Compatible With | Notes |
 |---------|-----------------|-------|
-| networkx 3.6.1 | Python 3.14 ✓ | 纯 Python wheel（`py3-none-any`），已在 `uv.lock` |
-| rustworkx 0.18.0 | Python 3.14 ✓（官方声明 + abi3 wheel + free-threaded wheel） | 备选；Apache-2.0；`>=3.10` |
-| semgrep 1.172.0 | Python >=3.10（含 3.14） | 独立安装，不与 server 依赖树合并，兼容性风险物理隔离 |
-| leidenalg 0.12.0 | Python 3.14 ✓（abi3 wheel / conda-forge cp314） | 技术可用但 GPL-3.0，**license 否决** |
-| gopls v0.23.0 | 需 `go` ≥ 1.20 在 PATH（仓内探针下界）；用 golang:1.25 工具链装 | BSD-3-Clause；`go_check.py` 宽松版本解析已兼容 |
-| @vue/language-server 3.x | Node ≥ 18（建议 22 LTS） | `node_check.py` 下界 18；tsdk 缺失自动回落内置 typescript |
+| `qdrant-client==1.16.2` | 现有 Qdrant deployment | 当前代码已使用 `query_points`、`Prefetch`、`FusionQuery(RRF)`；无需升级 |
+| `networkx==3.6.1` | Python 3.14 | 已锁定并直接声明 `<4` |
+| `fastembed==0.7.4` | 现有 embedding 服务 | 索引与查询必须记录并核对 model/dim，防语义 lane 静默失效 |
+| `pytest==9.0.2` | Python 3.14 | 现有 `perf` marker；参数化和 fixture 足够 |
+| `jsonschema==4.26.0` | MCP JSON Schema | 可校验 canonical tool output；注意发布时固定 schema draft |
+| Python `mcp>=1.25,<2` | `claude-agent-sdk>=0.1.58,<0.2` | 本仓注释明确 SDK 依赖 MCP 1.x lowlevel decorator，禁止盲升 2.x |
+| npm `@modelcontextprotocol/sdk ^1.29.0` | Node `>=18`（当前 npm 包） | 足够发布 tools/list/call 与 schema；不需要跟随 GitNexus 的 Node 22 runtime |
+| GitNexus `v1.6.9` | 参考实现，不作为依赖 | 最新 release 2026-07-04；其 package 要求 Node `^22.18 || >=24.11` 且是 PolyForm Noncommercial，进一步支持“不嵌入” |
+
+## 明确的“不新增 / 不更换”
+
+- 不新增生产 Python 包。
+- 不新增数据库或搜索服务。
+- 不更换 NetworkX、Qdrant、Django ORM、tree-sitter。
+- 不引入 GitNexus runtime/package。
+- 不引入 `rank_bm25`、Elasticsearch/OpenSearch、Neo4j/Kuzu/LadybugDB。
+- 不引入 LTR、reranker 或新 embedding model，除非 baseline 给出硬证据。
+- 不翻转 LSP 默认值；Go resolver 深化与真实跨仓 impact 留 future。
+- 不为 benchmark 引入 NumPy/SciPy/pandas/scikit-learn；`ir_measures` 仅 future dev-only 候选。
 
 ## Sources
 
-- https://pypi.org/project/rustworkx/ + https://github.com/Qiskit/rustworkx/releases/tag/0.18.0 — 0.18.0（2026-06-18）官方支持 Py3.14、abi3 + free-threaded wheels（HIGH）
-- https://www.rustworkx.org/release_notes.html — Stable ABI、Py3.10–3.14 测试范围（HIGH）
-- https://github.com/Qiskit/rustworkx/issues/1141 — Louvain 仍为 open issue，rustworkx 无社区检测（HIGH）
-- rustworkx JOSS paper (doi:10.21105/joss.03968) + https://www.rustworkx.org/benchmarks.html — 3x–100x 提速数字（MEDIUM，未本仓复现）
-- https://networkx.org/documentation/stable/.../louvain_communities.html 与 .../leiden_communities.html — louvain 原生实现、leiden「backend required」（HIGH）
-- https://pypi.org/project/leidenalg/ + https://github.com/vtraag/leidenalg — 0.12.0（2026-05-24）、GPL-3.0、abi3 wheel 矩阵（HIGH）
-- https://pypi.org/project/semgrep/ + https://github.com/semgrep/semgrep/releases — 1.172.0（2026-07-28）、LGPL-2.1、baseline 扫描 bugfix（HIGH）
-- https://semgrep.dev/docs/semgrep-pro-vs-oss + https://docs.semgrep.dev/writing-rules/data-flow/taint-mode/overview — CE 单函数 taint / Pro 跨函数跨文件边界、`--pro-intrafile`/`interfile: true`（HIGH）
-- https://docs.semgrep.dev/faq/overview — Semgrep Rules License v1.0 边界（内部使用免费，出售竞品服务受限）（HIGH）
-- https://docs.semgrep.dev/cli-reference + ci-environment-variables — `--baseline-commit` 语义与约束（git 目录、无 unstaged、hash 可达）（HIGH）
-- https://go.dev/gopls/release/v0.23.0 + https://pkg.go.dev/golang.org/x/tools/gopls — gopls v0.23.0（2026-07）、BSD-3-Clause（HIGH）
-- 本仓核实：`server/uv.lock`（networkx 3.6.1 在树、cachetools/igraph/rustworkx/semgrep 均不在）、`server/Dockerfile`（无 Node/Go）、`server/codegraph/lsp/node_check.py` / `go_check.py`（运行时下界与探针行为）、`LICENSE`（MIT）（HIGH）
+### GitNexus 官方实现（HIGH）
+
+- https://github.com/abhigyanpatwari/GitNexus/releases/tag/v1.6.9 — 当前 release v1.6.9，2026-07-04。
+- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/package.json — v1.6.9 依赖、Node 要求与 PolyForm Noncommercial license。
+- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/mcp/tools.ts — `query` 契约：process-grouped hybrid search，返回 processes/process_symbols/definitions。
+- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/mcp/local/local-backend.ts — hybrid 并行召回、批量 `STEP_IN_PROCESS`/Community enrichment、Process 聚合与 phase timing；也显示手写 RRF/常数可能漂移，故不照搬。
+- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/core/search/hybrid-search.ts — BM25 + semantic + RRF 与 FTS 失败 semantic-only fallback。
+- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/core/ingestion/process-processor.ts — entry scoring、受限遍历、路径去重、确定性 tie-break、截断统计。
+- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/core/ingestion/languages/typescript/scope-resolver.ts — tsconfig/workspace/receiver/return type 的语言 capability。
+- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/core/ingestion/languages/python/scope-resolver.ts — namespace import、LEGB、MRO、constructor/receiver 的语言 capability。
+- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/bench/receiver-resolution/BASELINE.md — baseline.json 单一事实源、byte-exact check、按 origin/shape/language 记录 denominator，避免用直觉设阈值。
+
+### 官方协议与检索文档（HIGH）
+
+- https://modelcontextprotocol.io/specification/2026-07-28/server/tools — tools/list/call、`outputSchema`、`structuredContent` 合规要求与 text 兼容建议。
+- https://qdrant.tech/documentation/search/hybrid-queries/ — Query API prefetch、RRF/DBSF、weighted RRF；权重应基于 validation set。
+- https://qdrant.tech/documentation/search/text-search/hybrid-search/ — semantic + lexical 同请求融合，阈值需按自身数据调优。
+- https://docs.pytest.org/en/stable/how-to/parametrize.html — fixture/function/dynamic parametrization。
+- https://github.com/usnistgov/trec_eval/blob/master/README — qrels + ranked run 的标准 IR 评测工具与逐 query 输出。
+- https://trec.nist.gov/pubs/trec16/appendices/measures.pdf — precision/recall/AP 等检索指标定义。
+
+### 本仓证据（HIGH）
+
+- `server/pyproject.toml` / `server/uv.lock` — qdrant-client 1.16.2、networkx 3.6.1、fastembed 0.7.4、pytest 9.0.2、jsonschema 4.26.0 已存在。
+- `server/services/qdrant_service.py` — named dense/sparse、Qdrant RRF、multi-probe、dense fallback 已实现。
+- `server/codegraph/models.py` — `ProcessTrace`、`SymbolCommunity`、CallEdge `callee_qualifier` 与 resolved callee 字段。
+- `server/services/code_graph/process_trace.py` — Endpoint→Process 现有构建、步骤 `file:line`、硬 ceilings 与 degradation。
+- `server/codegraph/resolver/` — 现有 `ImportResolver`/`SymbolIndex`/TS·JS/Python/Go strategy seam。
+- `server/mcp_tools/serializers.py`、`server/agents/tools/`、`mcp/src/tools.ts` — 服务端/Chat/npm 多契约现状；npm 37 工具缺 `impact_analysis`、`trace_call_path`、`detect_changes`、`list_processes`、`get_process`，漂移已坐实。
+- `server/tests/mcp_tools/test_mcp_package_alignment.py` 与 `test_schema_snapshot.py` — 可扩展的契约守门点。
 
 ---
-*Stack research for: v0.22.0 代码智能图分析升级（对标 GitNexus）*
-*Researched: 2026-08-09*
+*Stack research for: v0.24.0 单仓图查询对齐 GitNexus*
+*Researched: 2026-08-24*

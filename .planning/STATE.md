@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: —
-milestone_name: —
+milestone: v0.24.0
+milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
 status: Awaiting next milestone
-stopped_at: v0.23.0 archived（未打 tag）
-last_updated: "2026-08-19T03:10:00.000Z"
-last_activity: 2026-08-19 — Quick 260818-pt8（Agent→Friday MCP 结构化提交统一化：三场景硬切 mcp_result，删自由文本 JSON + 污染 resume 过滤 + repository_name 回退）
+stopped_at: v0.24.0 milestone completed and archived; awaiting next milestone
+last_updated: "2026-08-24T23:30:00+08:00"
+last_activity: 2026-08-24 — Milestone v0.24.0 completed and archived
 progress:
-  total_phases: 5
-  completed_phases: 5
+  total_phases: 8
+  completed_phases: 8
   total_plans: 16
   completed_plans: 16
   percent: 100
@@ -18,19 +18,36 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md（updated 2026-08-14，v0.23.0 归档）。v0.23.0 归档见 `milestones/v0.23.0-*`；v0.22.0 归档见 `milestones/v0.22.0-*`。
+See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 已归档）。v0.24.0 归档见 `milestones/v0.24.0-*`。
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。
-**Current focus:** Planning next milestone — `$gsd-new-milestone`
+**Core value:** 已知仓库后，业务/技术自然语言通过统一入口获得正确、可核验、可解释的 Symbol、Community、Process 与影响面证据，并在同仓同 commit 基准上证明优于 v0.22.0。
+**Current focus:** 无活动里程碑；等待下一里程碑立项
 
 ## Current Position
 
-Phase: — (awaiting next milestone)
+Phase: Milestone v0.24.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-08-19 — Quick 260818-pt8（Agent→Friday MCP 结构化提交工厂 + 三场景 MCP-only 硬切；plan-internal 测试 task 46 passed/3 skipped、server 85 passed）
+Last activity: 2026-08-24 — Milestone v0.24.0 completed and archived
 
-Progress: [██████████] 100% (v0.23.0 complete)
+## Milestone Overview (v0.24.0 — Phases 133–140 — ✅ ARCHIVED)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 133 | 同仓同 commit 基准与 v0.22 baseline | BENCH-01~05 | ✅ Complete (4/4, human_needed) |
+| 134 | TS/JS resolved 调用边 | EDGE-01/02/03/07 | ✅ Complete (2/2, passed) |
+| 135 | Python resolved 调用边 | EDGE-04/05 | ✅ Complete (1/1, passed) |
+| 136 | Process 一等混合索引 | PROC-01~05, OBS-04 | ✅ Complete (2/2, human_needed) |
+| 137 | 统一 GraphQueryService | QUERY-01~05/08/09/10 | ✅ Complete (1/1, passed) |
+| 138 | 消歧与 bounded impact | QUERY-06/07, OBS-05 | ✅ Complete (1/1, passed) |
+| 139 | 五消费面契约收敛 | CONTRACT-01~05, OBS-03 | ✅ Complete (1/1, passed) |
+| 140 | Threshold policy 与整体收口 | BENCH-06/07, EDGE-06, OBS-01/02 | ✅ Complete (4/4, human_needed) |
+
+**Execution order:** 133 → 134 → 135 → 136 → 137 → 138 → 139 → 140。Phase 133 先冻结同仓同 commit 数据与未修改 v0.22 baseline，禁止设阈值；Phase 140 才依据 baseline 锁 threshold policy。
+
+**Coverage:** 39/39 requirements mapped exactly once；0 unmapped；0 duplicate。Go 深化、IMPACT-03 真跨仓与 LSP 默认翻转仅 Future，不作为里程碑必达。
+
+**横切约束:** 权限/exclusion fail-closed；日志/ledger 脱敏；graph query 用 `caller` 生命周期事件，高频 resolver/Process/retrieval/impact 用 `sampling`；MCP 与 AI 对话写 `RetrievalTrace`；后台任务显式传播并 re-bind `initiated_by_user_id`；观测 best-effort 不反噬业务。
 
 ## Milestone Overview (v0.23.0 — Phases 128–132 — ✅ ARCHIVED 2026-08-14，审计 tech_debt，未打 tag)
 
@@ -387,6 +404,16 @@ Progress: [██████████] 100% (v0.23.0 complete)
 | Phase 132 P01 | 12min | 2 tasks | 4 files |
 | Phase 132 P02 | 15min | 2 tasks | 2 files |
 | Phase 132 P03 | 20min | 2 tasks | 3 files |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 133 P01 | 6min | 2 tasks | 3 files |
+| Phase 133-commit-v0-22-baseline P02 | 5min | 2 tasks | 5 files |
+| Phase 133-commit-v0-22-baseline P03 | 13min | 3 tasks | 2 files |
+| Phase 140 P01 | 35min | 2 tasks | 8 files |
+| Phase 140 P02 | 36min | 2 tasks | 5 files |
+| Phase 140 P03 | 15min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -394,6 +421,7 @@ Progress: [██████████] 100% (v0.23.0 complete)
 
 Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail in `.planning/milestones/v0.2.0-ROADMAP.md`.
 
+- [Milestone v0.24.0, 2026-08-24]: 路线图严格按 research-first 顺序执行：同仓同 commit v0.22 baseline（无阈值）→ TS/JS resolver → Python resolver → Process 一等索引 → GraphQueryService → bounded impact → 五消费面契约 → baseline 后 threshold policy 与整体收口。39 条 requirement 每条只映射一次；Go 深化、真跨仓 IMPACT-03、LSP 默认翻转留 Future。
 - [Milestone v0.19.0, 2026-07-29]: **Phase 108（DEPTH-01~05）整体移交 v0.20.0 技术方案蓝图里程碑**——由 blueprint/v1 结构化 schema 原生满足；v0.19.0 执行顺序改为 105→106→107→109→110；109 依赖改为「以现行 §7 execution_plan 对接执行流」。并行边界纪律：本里程碑冻结不做 `process_runtime` 旧 prompt/schema 文件（decompose_segments/research_adapter/architect_merge_adapter/merged_plan/clarify_adapter/render）的 DEPTH 向改动；`ConvergenceSessionEvent` 事件契约由本里程碑（105-07 快照 + 110 时间线）定义，v0.20.0 只新增 `blueprint_*` 类型。详见 main 分支 `.planning/technical-blueprint/DESIGN.md` §11/§13。
 
 - [Phase 101]: 101-03: chat→delivery 反查 seam 走 `ArtifactVersion.content__chat_coding_plan_id` JSON 键（现状无写入方 → 存量零行为变化；禁止重新引入 chat→delivery eager 投影）
@@ -733,6 +761,20 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase ?]: 130: 三分量降为排序信号，入围由 placements 决定
 - [Phase 132]: Adapter repair_hook 钳 forbidden primary（INT-03 接线级 collapse 修复）
 - [Phase 132]: D2 bar 用 placement-unit + basename alias 归一；漏斗回归靠 fixture stub 达门槛，不改 V2
+- [Phase ?]: index_key 以 last_indexed_commit_sha 充当，manifest 记 index_key_source 供 Phase 140 演进复合键
+- [Phase ?]: edge_golds 的 callee_uid 非空时 evidence_file_line 必填（防反导锚点）
+- [Phase ?]: annotated_at_sha 用显式占位符（非编造 SHA），_doc/README 钉死运行前须对齐目标仓 last_indexed_commit_sha（BENCH-01 INVALID 前提）
+- [Phase ?]: dev/locked_test 分桶组合刻意不同（dev 出 python/none、locked_test 出 go/gin），供 Plan 03 分桶与 INSUFFICIENT_DATA 真实多桶输入
+- [Phase ?]: 133-03: 空结果标记显式单列不进分母（NO_GOLD/N/A/SEED_MISSING/node_not_in_graph），杜绝空记满分
+- [Phase ?]: 133-03: 质量聚合用 macro 且 overall 仅聚合 OK 非保护桶，稀疏/受保护桶单列防掩盖
+- [Phase ?]: 133-03: 报告零回归门字段，阈值决策权移交 Phase 140
+- [Phase 140]: comparison identity 只保存同条件字段，system identity 单列允许 baseline/candidate Friday revision 不同。 — 防止把预期变化的系统版本错误纳入同条件约束。
+- [Phase 140]: Python from-import gold 对齐 resolver 的 import_alias，并将 gold_version 递增到 2。 — 冻结前对齐 ResolveResult 实际 taxonomy，避免静默折叠。
+- [Phase 140]: 无稳定 token 归因时输出 unavailable/INSUFFICIENT_DATA，不使用整数 0 作为通过证据。 — 避免缺失计量被误判为零成本或通过。
+- [Phase 140]: 真实 v0.22 baseline 不存在时不创建正式 threshold policy，外部数值验证保持 human_needed。
+- [Phase 140]: 四态 comparator 严格按 INVALID > FAIL > INSUFFICIENT_DATA > PASS 判定，并要求 primary quality metric 严格改善。
+- [Phase 140]: GraphQueryService 是 graph query 唯一 caller 生命周期边界，内部步骤仅发 debug/sampling 汇总。
+- [Phase 140]: Retrieval 日志禁止 query 正文，异常统一使用 redact_secrets_in_text 脱敏。
 
 ### Pending Todos
 
@@ -898,6 +940,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
   **剩余**：chat/MCP 编码 dispatch 路径（`coding_session_service`）的 PAT 注入未覆盖；
   真实容器端 RTOOL-02/03/04 运行时仍需带 PAT 的真实 dispatch + 容器 E2E 人工验收（见 Deferred）。
 
+- 真实 benchmark baseline 仍需目标仓、目标 commit、Qdrant 与 v0.22 artifact；当前状态为 human_needed。
+
 ### 共享面改动备注（Phase 113-06，同步点需关注）
 
 - **`process_runtime/engine.py`**（非 §13.2 冻结面，但与旧 `technical_plan` process 共享）：修掉「每次不产版本的转移都无条件把 `session.current_artifact_version` 透传成 NULL」的缺陷——原行为会让阶段 2/3 永远找不到基线版本，且因全链 best-effort 吞异常而完全静默。该修复对两条链都是严格改进，但**属共享代码**：与 v0.19.0 合并时需确认无冲突，并在 rebase 后复跑旧链回归。
@@ -954,6 +998,22 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 | 260817-xb9 | 「仓库调研」过程明细可读化：此前前端 i18n（`正在调研 {repository_name}…`）早已就位，是后端 `_emit_started` 的 research 分支把入参 `repository_name` 丢了、`completed` 又发 `verdict` 而非文案要的 `fitness_verdict`，导致三条文案全回落成通用文案 + 裸 UUID。后端对齐 started/completed/failed 三事件 payload（补 `repository_name`、`attempt`，`completed` 并存 `fitness_verdict`/`verdict` 不破坏既有消费方），新增 `_format_research_reason` 从 `candidate.evidence.reasoning` 派生一句人话调研理由（`placement_primary`/`placement_supporting` → 「主落点仓」/「支撑仓」，≤120 截断，⛔ 不把 `matched_node_paths` 列表塞进 payload），派发时把 `repository_name` 写入 `last_output` 供回调回填（不采信容器上报、不新增查库）；前端补 `routed_confidence`/`research_reason`/`verdict` 中文标签与置信度高/中/低映射，字段排序改为人话键优先、`*_id` 殿后，缺 `repository_name` 的存量事件仍回落 Generic。后端 48 + 前端 124 测试绿 | 2026-08-17 | d462232b | [260817-xb9-readable-repo-research-detail](./quick/260817-xb9-readable-repo-research-detail/) |
 
 ## Deferred Items
+
+### 🔒 Acknowledged at v0.24.0 close（2026-08-24）
+
+Items acknowledged and deferred at milestone close（里程碑审计 `tech_debt`；39/39 requirements 满足、0 critical gaps；真实外部环境证据不伪造、不以空指标判通过）:
+
+| Category | Item | Status |
+|----------|------|--------|
+| verification_gap | Phase 133 · v0.22 baseline 真仓采集 | human_needed（缺真实已索引目标仓、Qdrant、独立 gold 与未修改 v0.22 baseline） |
+| verification_gap | Phase 136 · Process 真 Qdrant 路径 | human_needed（缺真实 embedding provider + Qdrant collection rebuild/search） |
+| verification_gap | Phase 140 · candidate/threshold/holdout | human_needed（缺同 comparison identity 的真实 v0.24 candidate、locked threshold policy 与 final-only holdout compare） |
+| tech_debt | BENCH-06/07、EDGE-06 的真实数值改善声明 | deferred（只能声明协议、门禁和 fail-closed 边界已实现，不能声明数值优于 v0.22） |
+| tech_debt | Nyquist：Phases 134–139 缺独立 `VALIDATION.md` | deferred（VERIFICATION 与自动化证据已存在） |
+| tech_debt | Phases 134–139 SUMMARY frontmatter 未统一列 `requirements-completed` | deferred（已按 REQUIREMENTS/PLAN/VERIFICATION 三方对账） |
+| quick_tasks | 19 项既有 quick task | unchanged（已在 v0.23.0 close 登记，不重复搬运） |
+
+权威审计见 [milestones/v0.24.0-MILESTONE-AUDIT.md](./milestones/v0.24.0-MILESTONE-AUDIT.md)。**未打 tag**（发布轨与 GSD 里程碑编号独立）。
 
 ### 🔒 Acknowledged at v0.23.0 close（2026-08-14）
 
@@ -1169,9 +1229,10 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-14T07:05:57.438Z
-Stopped at: Phase 132 VERIFICATION passed（--no-transition）
+Last session: 2026-08-24T18:02:32.974Z
+Stopped at: Completed 140-03-PLAN.md
 Resume file: None
+Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
 Earlier: 2026-08-02T00:55:00.000Z — v0.20.0 已归档（`$gsd-complete-milestone`）：ROADMAP 折叠、REQUIREMENTS/ROADMAP/AUDIT 与六个相位目录进 `.planning/milestones/`，MILESTONES.md 与 PROJECT.md 已回写。
 Stopped at: v0.19.0 收口归档完成。先做审计对账——不采信 ROUTE 缺口闭环的自述，回源码逐层复核 ROUTE-01/02/07 + RELY-03 的「后端出参 → 前端派生 → 渲染 → 挂载宿主」四层链路，并实跑一组变异验证（把 `RoutingCandidateList` 从 `ToolProcessGroup.vue:229` 摘掉 → 11 条用例全灭 → 还原后工作区干净），确认四条属实；同时复核 ROUTE-03 / RELY-02 两条 PARTIAL 的剩余半边确未交付，用 `audit-open` 独立复算出人工验收实为 27 项（原报告 §6.3 漏计 110-UAT #8）。审计 `status` 由 `gaps_found` 改判 **`tech_debt`**，计数 13/4/2 → **17/2/0**，并订正 §8.2 的一处算术错误（16 → 17）。随后执行归档：`gsd-tools milestone.complete` 因 Phase 108（已移交 v0.20.0，无目录）被守卫误判为「未开工相位」而拒绝，用 `--force` 越过——该守卫无「migrated」概念，而相位归属过滤本身正确（5 相位 / 39 plans / 101 tasks，v0.20.0 分支上的 `extractPhaseToken` 缺陷未命中本里程碑的目录名）。CLI 生成的英文 STATE 占位与 39 条原始 one-liner 已按仓库约定重写。未打 tag、未起下一里程碑。

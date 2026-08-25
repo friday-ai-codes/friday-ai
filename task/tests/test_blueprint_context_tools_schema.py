@@ -63,8 +63,8 @@ def test_handler_factory_timeout_and_no_callback() -> None:
 
 def test_whitelist_grew_to_nine_without_losing_legacy() -> None:
     """白名单 7 → 9 → 10 → 11 → 12（126 追加 rename_preview）；七个既有工具逐名仍在。"""
-    assert len(KNOWLEDGE_TOOL_SCHEMAS) == 12
-    assert len(knowledge_allowed_tools()) == 12
+    assert len(KNOWLEDGE_TOOL_SCHEMAS) == 13
+    assert len(knowledge_allowed_tools()) == 13
     names = [s["name"] for s in KNOWLEDGE_TOOL_SCHEMAS]
     for legacy in _LEGACY_TOOL_NAMES:
         assert legacy in names, f"既有工具 {legacy} 不得丢失"

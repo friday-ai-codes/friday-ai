@@ -354,6 +354,10 @@ _SIBLING_GUARDED_MODULES: tuple[str, ...] = (
     "code_graph_tools.py",
     "code_graph_cross_repo.py",
 )
+_RETRIEVAL_GUARDED_MODULES: tuple[str, ...] = (
+    "rag_search.py",
+    "hybrid_search.py",
+)
 
 
 def _module_string_constants(tree: ast.Module) -> dict[str, str]:
@@ -398,7 +402,10 @@ def _iter_logger_calls(tree: ast.Module):
 
 
 # 121-VALIDATION.md 121-03-T3（planner 追加行）：观测契约守护——包内每个 structlog
-# 调用都带 component="code_graph" + category="sampling" + code_graph_ 事件名前缀。
+# 调用都带 component="code_graph" + 合法 category + code_graph_ 事件名前缀。
+_CALLER_ENTRY_MODULES = frozenset({"process_index.py", "query_service.py"})
+
+
 def test_observability_contract() -> None:
     """code_graph 链路上每个 structlog 调用都满足强制观测契约。
 
@@ -413,10 +420,10 @@ def test_observability_contract() -> None:
     豁免**。它们照样发 ``code_graph_`` 前缀的事件、照样要把异常文本脱敏，在扩展之前
     没有任何机制强制这一点。122-05 补上第一个，122-06 补上第二个。
 
-    判据对两类文件**逐字相同**，唯一放宽的是 ``category``：包外兄弟文件可取
-    ``sampling`` / ``caller`` 之一（给壳层将来下沉的原语留位），包内文件仍**只许**
-    ``sampling``——``services/code_graph/*.py`` 里出现 ``caller`` 是架构错误，内核不是
-    调用入口。⛔ 其余四条（事件名静态可解析、``code_graph_`` 前缀、
+    判据对两类文件**逐字相同**，唯一放宽的是 ``category``：包外兄弟文件，以及包内
+    明确承担调用/后台任务入口的 ``query_service.py`` / ``process_index.py``，可取
+    ``sampling`` / ``caller``；其余纯内核仍只许 ``sampling``。⛔ 其余四条
+    （事件名静态可解析、``code_graph_`` 前缀、
     ``component == "code_graph"``、``error=`` 过 ``redact_secrets_in_text``）一条都不放宽。
 
     ⚠️ 事件名前缀不得缩写：``graph_build_*`` 已被 ``services/graph_builder.py``
@@ -473,11 +480,11 @@ def test_observability_contract() -> None:
             ):
                 violations.append(f'{where}:{event} 缺少 component="code_graph"')
 
-            # ③ category —— 唯一按文件位置放宽的一条：包内只许 sampling（内核不是调用
-            #    入口），包外兄弟文件可取 sampling / caller 之一。
+            # ③ category —— 纯内核只许 sampling；调用/后台任务入口与包外壳可 caller。
             allowed = (
                 {"sampling"}
                 if source_path.parent == package_dir
+                and source_path.name not in _CALLER_ENTRY_MODULES
                 else {"sampling", "caller"}
             )
             category = keywords.get("category")
@@ -501,6 +508,64 @@ def test_observability_contract() -> None:
     assert not violations, "观测契约违规：\n" + "\n".join(violations)
 
 
+def test_logging_leakage_and_info_loop_guard() -> None:
+    """Graph query 扫描面禁止正文、循环 INFO 与未脱敏异常。"""
+    package_dir = Path(code_graph_package.__file__).resolve().parent
+    siblings = [package_dir.parent / name for name in _SIBLING_GUARDED_MODULES]
+    retrieval_dir = package_dir.parent / "retrieval"
+    retrieval = [retrieval_dir / name for name in _RETRIEVAL_GUARDED_MODULES]
+    guarded_paths = sorted(package_dir.glob("*.py")) + siblings + retrieval
+
+    expected = set(_SIBLING_GUARDED_MODULES) | set(_RETRIEVAL_GUARDED_MODULES)
+    assert expected <= {path.name for path in guarded_paths}
+    for path in [*siblings, *retrieval]:
+        assert path.exists(), f"日志扫描面文件不存在：{path}"
+
+    violations: list[str] = []
+    for source_path in guarded_paths:
+        tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+        parents: dict[ast.AST, ast.AST] = {
+            child: parent
+            for parent in ast.walk(tree)
+            for child in ast.iter_child_nodes(parent)
+        }
+        for call in _iter_logger_calls(tree):
+            where = f"{source_path.name}:{call.lineno}"
+            keywords = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            forbidden = {"query", "query_text", "prompt"} & set(keywords)
+            if forbidden:
+                violations.append(f"{where} 禁止正文日志字段：{sorted(forbidden)}")
+
+            logged_nodes = [*call.args, *keywords.values()]
+            for node in logged_nodes:
+                for candidate in ast.walk(node):
+                    if not isinstance(candidate, ast.Subscript):
+                        continue
+                    if isinstance(candidate.value, ast.Name) and candidate.value.id in {
+                        "query",
+                        "query_text",
+                        "prompt",
+                    }:
+                        violations.append(f"{where} 禁止截断正文日志")
+
+            error_value = keywords.get("error")
+            if error_value is not None and "redact_secrets_in_text" not in ast.unparse(
+                error_value
+            ):
+                violations.append(f"{where} 的 error= 未过 redact_secrets_in_text")
+
+            func = call.func
+            if isinstance(func, ast.Attribute) and func.attr == "info":
+                parent = parents.get(call)
+                while parent is not None:
+                    if isinstance(parent, (ast.For, ast.AsyncFor, ast.While)):
+                        violations.append(f"{where} 循环内禁止 INFO")
+                        break
+                    parent = parents.get(parent)
+
+    assert not violations, "日志泄漏/放大守卫违规：\n" + "\n".join(violations)
+
+
 # 121-VALIDATION.md 121-03-T2（planner 追加行）：matcher/指纹 60s TTL memo——
 # 连算两次只解析一次（见 test_matcher_fingerprint_memo_resolves_once）；invalidate
 # 后重新解析；构造失败不写 memo（见 test_fail_closed_on_matcher_build_error）。
@@ -515,10 +580,10 @@ def test_matcher_fingerprint_memo_ttl() -> None:
     assert _MATCHER_FP_TTL_SECONDS == _MATCHER_CACHE_TTL_SECONDS
 
 
-# 121-VALIDATION.md 121-09-T1（planner 追加行）：barrel 恰导出 17 项
+# 121-VALIDATION.md 121-09-T1（Phase 137 扩展）：barrel 恰导出 20 项
 # （含 invalidate_repository），loader/cache/signature/access 不可从包顶层取得。
 
-# 🚨 **逐字写死**这 17 个字面量，⛔ 绝不从 ``code_graph_package.__all__`` 反查——
+# 🚨 **逐字写死**这 20 个字面量，⛔ 绝不从 ``code_graph_package.__all__`` 反查——
 # 从模块自身反查出期望值的用例是自证的，`__all__` 里多塞一个 ``loader`` 它照样绿，
 # 而「不多导出」恰恰是这条红线要守的全部内容。
 _EXPECTED_BARREL_EXPORTS = frozenset(
@@ -533,7 +598,10 @@ _EXPECTED_BARREL_EXPORTS = frozenset(
         "GraphError",
         "GraphMeta",
         "GraphNotIndexed",
+        "GraphQueryService",
         "GraphService",
+        "GRAPH_QUERY_RANKING_VERSION",
+        "GRAPH_QUERY_RESPONSE_VERSION",
         "LOW_RESOLUTION_THRESHOLD",
         "REDACTED_REPOSITORY",
         "confidence_score",
@@ -557,7 +625,7 @@ _FORBIDDEN_BARREL_EXPORTS = (
 
 
 def test_barrel_exports_only_public_surface() -> None:
-    """``services.code_graph`` 的公开面恰是那 17 项，且不含任何内部通路。
+    """``services.code_graph`` 的公开面恰是 20 项，且不含任何内部通路。
 
     这条用例是**架构红线的机械防线**（威胁登记 T-121-绕闸，ASVS V1）。红线本身写在
     121-CONTEXT Area 4：所有图访问必须经 ``GraphService.get_graph()``，因为它是权限
@@ -567,7 +635,7 @@ def test_barrel_exports_only_public_surface() -> None:
     """
     exported = code_graph_package.__all__
 
-    assert len(exported) == 17, f"barrel 导出面从 17 项变成了 {len(exported)} 项"
+    assert len(exported) == 20, f"barrel 导出面从 20 项变成了 {len(exported)} 项"
     assert set(exported) == _EXPECTED_BARREL_EXPORTS
     assert list(exported) == sorted(exported), "__all__ 必须字母序（照 code_intel/__init__.py）"
 

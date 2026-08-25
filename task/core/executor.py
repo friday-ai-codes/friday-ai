@@ -1034,7 +1034,8 @@ class ClaudeRunner:
         plan/execute 时被 ``_get_system_prompt`` 追加。
         非阻断：失败 / HIGH/CRITICAL 仍继续交付；不改 runner commit/push（D-04）。
         """
-        raw_id = (getattr(self.config, "repository_id", None) or "").strip()
+        configured_id = getattr(self.config, "repository_id", None)
+        raw_id = configured_id.strip() if isinstance(configured_id, str) else ""
         # 仅内联服务端可信 UUID；非法值回退到环境变量提示，避免 prompt 注入面。
         if raw_id and re.fullmatch(r"[0-9a-fA-F-]{36}", raw_id):
             repo_clause = "`repository_id`=`" + raw_id + "`"

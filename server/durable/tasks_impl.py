@@ -850,6 +850,7 @@ async def run_process_rebuild(
     import time
 
     from common.logging import redact_secrets_in_text
+    from services.code_graph.process_index import rebuild_process_index
     from services.code_graph.process_trace import rebuild_processes
 
     actor = initiated_by_user_id or "system"
@@ -871,6 +872,11 @@ async def run_process_rebuild(
     ):
         try:
             result = await rebuild_processes(str(repository_id), branch)
+            result["process_index"] = await rebuild_process_index(
+                str(repository_id),
+                branch,
+                initiated_by_user_id=actor,
+            )
         except Exception as exc:
             logger.warning(
                 "process_rebuild_job_failed",
