@@ -40,6 +40,17 @@ class TaskConfig(BaseSettings):
     task_description: str = Field(..., description="Task description (必填)")
     task_mode: str = Field(default="plan", description="Mode: plan or execute")
 
+    # 260818-pt8：explore 链结构化提交场景选择器（FRIDAY_TASK_SUBMIT_SCENARIO）。
+    # 取值：空（普通 explore，零回归）/ blueprint_research_fitness / blueprint_repo_plan。
+    # repo_summary 模式硬绑定，无需经此字段。
+    submit_scenario: str = Field(
+        default="",
+        description=(
+            "结构化提交场景（FRIDAY_TASK_SUBMIT_SCENARIO）：空=普通 explore；"
+            "blueprint_research_fitness / blueprint_repo_plan 挂载共享提交 MCP"
+        ),
+    )
+
     # Git configuration
     git_repo_url: str = Field(..., description="Git repository URL")
     git_branch: str = Field(default="main", description="Git branch to work on")

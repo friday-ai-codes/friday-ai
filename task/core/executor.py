@@ -13,7 +13,9 @@ import asyncio
 import json
 import re
 import time
+import uuid
 from collections import deque
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -23,16 +25,21 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ResultMessage,
-    SdkMcpTool,
     SystemMessage,
     TextBlock,
     ToolResultBlock,
     ToolUseBlock,
     UserMessage,
-    create_sdk_mcp_server,
     query,
 )
 
+from .agent_submit_mcp import (
+    SCENARIO_BLUEPRINT_REPO_PLAN,
+    SCENARIO_REPO_SUMMARY,
+    apply_capture_to_result,
+    build_submit_mcp,
+    known_scenarios,
+)
 from .config import TaskConfig
 from .knowledge_tools import (
     KNOWLEDGE_MCP_SERVER_NAME,
@@ -164,170 +171,9 @@ def _build_tool_mounts(
     return mcp_servers, allowed_tools
 
 
-# repo_summary 结构化提交工具：模型通过 tool call 的参数提交结果，
-# 参数由 SDK 按 input_schema 校验，天然是合法 JSON——不再依赖模型在
-# 文本里输出可解析的 JSON（prompt 约束不可靠）。
-REPO_SUMMARY_MCP_SERVER_NAME = "repo-summary"
-REPO_SUMMARY_TOOL_NAME = "submit_summary"
-
-# 能力树节点采用扁平邻接表（parent_id 引用）而非嵌套结构：
-# 递归 JSON Schema（$ref/$defs）在部分模型上校验/生成不稳定，扁平结构对
-# LLM 更易产出且可被严格校验；server 端 callback 负责组装为嵌套树。
-_TREE_NODE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "node_id": {
-            "type": "string",
-            "description": "节点唯一 ID，层级编号格式：0001 / 0001-01 / 0001-01-01",
-        },
-        "parent_id": {
-            "type": ["string", "null"],
-            "description": "父节点 node_id；顶层节点为 null",
-        },
-        "node_type": {
-            "type": "string",
-            "enum": ["sub_app", "module", "capability"],
-            "description": (
-                "节点层级语义：sub_app=monorepo 子应用（仅 monorepo 顶层使用）；"
-                "module=代码中真实存在的模块/目录；capability=一条需求能描述清楚的功能点"
-            ),
-        },
-        "title": {"type": "string", "description": "节点名称，用业务语言（中文优先）"},
-        "summary": {"type": "string", "description": "节点职责的一句话描述（中文）"},
-        "keywords": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "检索关键词（业务词 + 技术词混合）",
-        },
-        "paths": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "节点对应的真实目录/文件相对路径（必须实际存在，禁止虚构）",
-        },
-    },
-    "required": ["node_id", "parent_id", "node_type", "title", "summary"],
-}
-
-_REPO_SUMMARY_INPUT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "overview": {"type": "string", "description": "项目总体描述，用中文撰写"},
-        "tech_stack": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "主要技术栈列表，保留英文技术名称",
-        },
-        "is_monorepo": {
-            "type": "boolean",
-            "description": "是否为 monorepo（含多个子应用/子包）",
-        },
-        "tree": {
-            "type": "array",
-            "items": _TREE_NODE_SCHEMA,
-            "description": (
-                "层级能力树的扁平节点列表（parent_id 邻接表）。"
-                "monorepo 仓库第一层必须是 sub_app 节点；"
-                "之下为 module 节点（对应真实目录），叶子为 capability 节点"
-                "（粒度=一条需求能描述清楚的功能点，如「消息撤回」）。"
-                "总节点数不超过 80，树深不超过 4 层。"
-            ),
-        },
-        "facets": {
-            "type": "object",
-            "additionalProperties": {"type": "string"},
-            "description": (
-                "语义分面标签 {维度: 取值}。仅当 prompt 提供了受控词表时填写，"
-                "且只能从词表中选值；选不出填 '未分类'"
-            ),
-        },
-        "modules": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "description": {"type": "string"},
-                },
-                "required": ["name", "description"],
-            },
-            "description": "（兼容字段）主要模块列表（不超过 10 个）",
-        },
-        "entry_points": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "主要入口文件路径",
-        },
-        "build_commands": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "构建命令",
-        },
-        "testing_commands": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "测试命令",
-        },
-        "conventions": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "代码规范和约定",
-        },
-        "charter": {
-            "type": "object",
-            "description": (
-                "意图面章程（基于源码阅读一等产出）：职责定位、owned 业务域、"
-                "边界禁区、落点偏好。禁止臆造无证据领域；有路径引用请写入 citations。"
-            ),
-            "properties": {
-                "positioning": {"type": "string"},
-                "owned_domains": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "domain": {"type": "string"},
-                            "status": {"type": "string"},
-                            "note": {"type": "string"},
-                            "citations": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
-                        },
-                    },
-                },
-                "boundaries": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "rule": {"type": "string"},
-                            "decided_by": {"type": "string"},
-                            "citations": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
-                        },
-                    },
-                },
-                "placement_preferences": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "kind": {"type": "string"},
-                            "target": {"type": "string"},
-                            "note": {"type": "string"},
-                        },
-                    },
-                },
-                "audience": {"type": "string"},
-                "form": {"type": "string"},
-                "evolution": {"type": "string"},
-            },
-        },
-    },
-    "required": ["overview", "tech_stack", "tree"],
-}
+# repo_summary / blueprint 结构化提交已统一迁入共享工厂 `agent_submit_mcp`
+# （唯一结构化提交渠道，见 260818-pt8 D-01/D-04）。此处不再保留 repo_summary 私有
+# server/tool/schema 常量（旧的 repo-summary 私有提交 server 已删除）。
 
 _CLAUDE_TRANSIENT_ERROR_MARKERS = (
     "server had an error while processing your request",
@@ -338,13 +184,32 @@ _CLAUDE_TRANSIENT_ERROR_MARKERS = (
     "econnreset",
     "connection reset",
     "stream disconnected",
+    "socket connection was closed unexpectedly",
+    "connection was closed unexpectedly",
 )
 
 
-def _is_transient_claude_error(error: Exception) -> bool:
-    """判断 Claude SDK/API 错误是否适合立即重试。"""
-    message = str(error).lower()
+def _is_transient_claude_error(
+    error: Exception,
+    stderr_lines: list[str] | tuple[str, ...] = (),
+) -> bool:
+    """判断 Claude SDK/API 错误是否适合立即重试。
+
+    Claude CLI 传输中断时，SDK 外层异常经常只剩 ``Command failed with exit code 1``，
+    真正的 ``ECONNRESET`` / socket close 只写入 stderr。判定必须同时覆盖两处，否则
+    最终 MCP 提交前的瞬时断连会被误判为不可重试的容器失败。
+    """
+    stderr_text = "\n".join(stderr_lines)
+    message = f"{error}\n{stderr_text}".lower()
     return any(marker in message for marker in _CLAUDE_TRANSIENT_ERROR_MARKERS)
+
+
+def _resume_options_after_transient(
+    options: ClaudeAgentOptions,
+    session_id: str,
+) -> ClaudeAgentOptions:
+    """瞬时中断后改用 resume，避免复用 ``session_id`` 被 CLI 判定为会话占用。"""
+    return replace(options, session_id=None, resume=session_id)
 
 
 # 工具入参上界。原值 300 会把 `get_repository_file(repository_id=…, file_path=…)` 这类
@@ -400,8 +265,6 @@ class ClaudeRunner:
         self.callback = callback
         self.session_file = Path(config.session_dir) / f"{config.task_id}.json"
         self.mapping_file = Path(config.session_dir) / "mapping.json"
-        # repo_summary 模式下由 submit_summary 工具 handler 填充的结构化结果
-        self._captured_summary: dict[str, Any] | None = None
 
     async def run_plan_mode(self) -> dict:
         """Run Claude Agent in plan mode to generate implementation plan.
@@ -465,17 +328,80 @@ class ClaudeRunner:
 
         使用 bypassPermissions 权限模式（需要执行命令来分析代码），
         但不会修改或提交代码。Prompt 引导 Claude 只做分析。
+
+        当 ``config.submit_scenario`` 非空（blueprint research fitness / repo plan
+        经 ``FRIDAY_TASK_SUBMIT_SCENARIO`` 注入）时，挂载共享 Agent→Friday MCP
+        提交工具并**只**经 ``apply_capture_to_result`` 收口（空文本成功 / 未调用失败，
+        与 repo_summary 同一实现点，禁止复制分支，见 D-06/D-07）。未设置 scenario
+        时保持普通 explore 行为不变（无提交工具，零回归）。
         """
-        log = logger.bind(task_id=self.config.task_id, mode="explore")
+        # 仅当 submit_scenario 为真实非空字符串时启用结构化提交；非 str（如测试传入的
+        # MagicMock 或误配）一律按普通 explore 处理，避免把非法值当未知场景直接判失败。
+        raw_scenario = getattr(self.config, "submit_scenario", "")
+        scenario = raw_scenario.strip() if isinstance(raw_scenario, str) else ""
+        log = logger.bind(task_id=self.config.task_id, mode="explore", submit_scenario=scenario)
         log.info("Starting explore mode execution with claude-agent-sdk")
 
         prompt = self._build_explore_prompt()
 
-        result = await self._execute_claude(
-            prompt=prompt,
-            permission_mode="bypassPermissions",
-        )
+        # 无 scenario：普通 explore，行为与现状完全一致。
+        if not scenario:
+            result = await self._execute_claude(
+                prompt=prompt,
+                permission_mode="bypassPermissions",
+            )
+            log.info("Explore mode completed", success=result.get("success", False))
+            return result
 
+        if scenario not in known_scenarios():
+            log.error("explore_submit_scenario_unknown", scenario=scenario)
+            return {
+                "success": False,
+                "error": f"unknown submit scenario: {scenario}",
+                "submit_scenario": scenario,
+            }
+
+        submit = build_submit_mcp(scenario)
+        prompt = f"{prompt}\n\n{submit.prompt_contract}"
+
+        start = time.monotonic()
+        log.info(
+            "structured_submit_started",
+            scenario=scenario,
+            category="caller",
+            component="task",
+        )
+        try:
+            result = await self._execute_claude(
+                prompt=prompt,
+                permission_mode="bypassPermissions",
+                max_turns=100 if scenario == SCENARIO_BLUEPRINT_REPO_PLAN else None,
+                extra_mcp_servers=submit.mcp_servers,
+                extra_allowed_tools=submit.allowed_tools,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # CLI 非零退出（如轮次用尽）不应吞掉已捕获的提交结果。
+            result = {"success": False, "error": str(exc)}
+        result = apply_capture_to_result(result, submit.capture, scenario=scenario)
+
+        duration_ms = int((time.monotonic() - start) * 1000)
+        if result.get("success"):
+            log.info(
+                "structured_submit_completed",
+                scenario=scenario,
+                duration_ms=duration_ms,
+                category="caller",
+                component="task",
+            )
+        else:
+            log.warning(
+                "structured_submit_failed",
+                scenario=scenario,
+                duration_ms=duration_ms,
+                error_reason=result.get("error_reason"),
+                category="caller",
+                component="task",
+            )
         log.info("Explore mode completed", success=result.get("success", False))
         return result
 
@@ -559,32 +485,22 @@ class ClaudeRunner:
 
         return base_prompt
 
-    async def _handle_submit_summary(self, args: dict[str, Any]) -> dict[str, Any]:
-        """repo_summary 提交工具 handler — 捕获结构化结果到实例属性。"""
-        self._captured_summary = dict(args)
-        return {
-            "content": [
-                {
-                    "type": "text",
-                    "text": "仓库描述已提交，任务完成，请直接结束，不要再输出其它内容。",
-                }
-            ]
-        }
-
     async def run_repo_summary_mode(self) -> dict:
-        """Run Claude Agent in repo summary mode — 只读工具白名单 + 结构化提交工具。
+        """Run Claude Agent in repo summary mode — 只读工具白名单 + 共享结构化提交工具。
 
         不再使用 permission_mode="plan"：plan 模式会让模型在结尾等待
         "用户批准计划"（无人值守容器里没人批准），以 "Please approve the
-        plan ..." 之类的文本收尾，根本拿不到 JSON。改为 bypassPermissions +
-        只读工具白名单（无 Write/Edit），并通过进程内 MCP 工具
-        submit_summary 捕获结构化结果——工具参数由 SDK 按 schema 校验，
-        不再依赖模型在文本里输出合法 JSON。
+        plan ..." 之类的文本收尾，根本拿不到结构化结果。改为 bypassPermissions +
+        只读工具白名单（无 Write/Edit），并通过**共享** Agent→Friday MCP 工厂
+        （``agent_submit_mcp``，唯一结构化提交渠道）捕获结果——工具参数由 SDK 按
+        schema 校验，天然是合法 JSON，不再依赖模型在文本里输出可解析 JSON，也不保留
+        任何自由文本 JSON 兜底（D-01/D-02/D-04）。
+
+        「空文本成功 / 未调用失败」统一经 ``apply_capture_to_result`` 收口，本模式
+        **不复制**该分支（D-06/D-07）。
         """
         log = logger.bind(task_id=self.config.task_id, mode="repo_summary")
         log.info("Starting repo summary mode execution with claude-agent-sdk")
-
-        self._captured_summary = None
 
         # monorepo 子项目静态发现：事实清单注入 prompt，约束树第一层骨架
         from .workspace_facts import discover_workspace_facts, format_facts_prompt_section
@@ -595,24 +511,10 @@ class ClaudeRunner:
             log.warning("workspace_facts_discovery_failed", error=str(exc))
             workspace_facts = {"is_monorepo": False, "sub_projects": []}
 
-        summary_server = create_sdk_mcp_server(
-            name=REPO_SUMMARY_MCP_SERVER_NAME,
-            tools=[
-                SdkMcpTool(
-                    name=REPO_SUMMARY_TOOL_NAME,
-                    description=(
-                        "提交最终的仓库结构化描述。分析完成后必须调用本工具提交结果，"
-                        "调用成功即代表任务完成。"
-                    ),
-                    input_schema=_REPO_SUMMARY_INPUT_SCHEMA,
-                    handler=self._handle_submit_summary,
-                )
-            ],
-        )
+        submit = build_submit_mcp(SCENARIO_REPO_SUMMARY)
 
-        submit_tool = f"mcp__{REPO_SUMMARY_MCP_SERVER_NAME}__{REPO_SUMMARY_TOOL_NAME}"
-        # dispatch 时已渲染好的分析 prompt + 子项目事实约束 + 任务侧强制追加的
-        # 提交方式说明。追加段优先级最高，覆盖 DB prompt 里旧的输出格式要求。
+        # dispatch 时已渲染好的分析 prompt + 子项目事实约束 + 工厂提交契约段。
+        # 追加段优先级最高，覆盖 DB prompt 里旧的输出格式要求。
         facts_section = format_facts_prompt_section(workspace_facts)
         prompt = (
             f"{self.config.task_description}\n"
@@ -625,13 +527,15 @@ class ClaudeRunner:
             "- 若当前工作目录为空或不含可识别的项目文件，说明仓库未就位：**不要**调用"
             "提交工具，直接如实说明「目标仓库工作目录为空/缺失」并结束，绝不能拿容器"
             "自身代码冒充目标仓库。\n\n"
-            "## 结果提交方式（最高优先级，覆盖上文的任何输出格式要求）\n\n"
-            f"分析完成后，必须调用 `{submit_tool}` 工具提交结构化结果，"
-            "工具参数即为最终的仓库描述字段（含 tree 能力树节点列表）。\n"
-            "- 不要把 JSON 写在普通文本回复里\n"
-            "- 不需要任何人批准你的计划或结果，调用工具成功后直接结束任务"
+            f"{submit.prompt_contract}"
         )
 
+        start = time.monotonic()
+        log.info(
+            "repo_summary_submit_started",
+            category="caller",
+            component="task",
+        )
         # max_turns 不能太小：大型 monorepo 只读分析常需 30+ 轮工具调用，
         # 轮次用尽时 claude CLI 以非零码退出（SDK 抛 ProcessError），整次
         # 任务白跑（实测 15 轮在 monorepo 上 100% 触发）。
@@ -640,8 +544,8 @@ class ClaudeRunner:
                 prompt=prompt,
                 permission_mode="bypassPermissions",
                 max_turns=40,
-                extra_mcp_servers={REPO_SUMMARY_MCP_SERVER_NAME: summary_server},
-                extra_allowed_tools=[*_READONLY_ANALYSIS_TOOLS, submit_tool],
+                extra_mcp_servers=submit.mcp_servers,
+                extra_allowed_tools=[*_READONLY_ANALYSIS_TOOLS, *submit.allowed_tools],
                 # WebFetch/WebSearch 显式禁用（103 审查 WR-01）：只读分析容器禁网络
                 # 出口是白名单级策略而非仅 prompt 约束——即使 knowledge/remote 同时
                 # 挂载导致 builtin 并入，disallowed 优先级更高仍兜底。
@@ -655,39 +559,36 @@ class ClaudeRunner:
                 ],
             )
         except Exception as exc:  # noqa: BLE001
-            # CLI 非零退出（如 max-turns 用尽）不应吞掉已捕获的提交结果；
-            # 未捕获到结果时给出可诊断的错误，而非裸 ProcessError。
-            if not self._captured_summary:
-                log.error("repo_summary_claude_failed", error=str(exc))
-                return {
-                    "success": False,
-                    "error": (
-                        f"Claude 执行中断（疑似轮次用尽仍未调用 submit_summary 提交结果）: {exc}"
-                    ),
-                }
-            log.warning("repo_summary_claude_exit_after_submit", error=str(exc))
-            result = {"success": True, "output": ""}
+            # CLI 非零退出（如 max-turns 用尽）不应吞掉已捕获的提交结果；收口交给
+            # apply_capture_to_result（有 capture → 成功；无 → mcp_tool_not_called）。
+            result = {"success": False, "error": str(exc)}
 
-        # 只要工具捕获到结构化结果，就以它为准（即使模型最后没有任何文本输出，
-        # _execute_claude 会因 empty response 误判失败——这里覆盖回 success）。
-        if self._captured_summary:
-            # 静态发现的子项目清单随结果回传，供 server 端校验
-            # "monorepo 第一层 sub_app 与事实清单对齐"（LLM 输出不可信，事实可信）
-            if workspace_facts.get("sub_projects"):
-                self._captured_summary["discovered_sub_projects"] = [
-                    sp["root"] for sp in workspace_facts["sub_projects"]
-                ]
-                self._captured_summary.setdefault("is_monorepo", workspace_facts["is_monorepo"])
-            result["structured_summary"] = self._captured_summary
-            result["output"] = json.dumps(self._captured_summary, ensure_ascii=False, indent=2)
-            result["success"] = True
-            result.pop("error", None)
-        elif result.get("success"):
-            log.warning(
-                "repo_summary_tool_not_called",
-                output_preview=str(result.get("output", ""))[:200],
+        # 静态发现的子项目清单随结果回传，供 server 端校验「monorepo 第一层 sub_app
+        # 与事实清单对齐」（LLM 输出不可信，事实可信）。仅在已捕获结构化结果时补入。
+        if submit.capture.value is not None and workspace_facts.get("sub_projects"):
+            submit.capture.value["discovered_sub_projects"] = [
+                sp["root"] for sp in workspace_facts["sub_projects"]
+            ]
+            submit.capture.value.setdefault("is_monorepo", workspace_facts["is_monorepo"])
+
+        result = apply_capture_to_result(result, submit.capture, scenario=SCENARIO_REPO_SUMMARY)
+
+        duration_ms = int((time.monotonic() - start) * 1000)
+        if result.get("success"):
+            log.info(
+                "repo_summary_submit_completed",
+                duration_ms=duration_ms,
+                category="caller",
+                component="task",
             )
-
+        else:
+            log.warning(
+                "repo_summary_submit_failed",
+                duration_ms=duration_ms,
+                error_reason=result.get("error_reason"),
+                category="caller",
+                component="task",
+            )
         log.info("Repo summary mode completed", success=result.get("success", False))
         return result
 
@@ -710,6 +611,7 @@ class ClaudeRunner:
             disallowed_tools: 显式禁用的工具名（优先级高于 allowed_tools）。
         """
         log = logger.bind(task_id=self.config.task_id)
+        requested_session_id = self.config.resume_session_id or str(uuid.uuid4())
 
         try:
             if not self.config.claude_api_key:
@@ -796,6 +698,14 @@ class ClaudeRunner:
                     "claude_sdk_resume_enabled",
                     resume_session_id=self.config.resume_session_id,
                 )
+            else:
+                options_kwargs["session_id"] = requested_session_id
+                log.info(
+                    "claude_sdk_session_initialized",
+                    sdk_session_id=requested_session_id,
+                    category="caller",
+                    component="task_executor",
+                )
             if mcp_servers:
                 options_kwargs["mcp_servers"] = mcp_servers
             if allowed_tools:
@@ -828,7 +738,7 @@ class ClaudeRunner:
             for attempt in range(1, max_attempts + 1):
                 messages = []
                 text_outputs = []  # 收集所有 AssistantMessage 的文本
-                session_id = None
+                session_id = requested_session_id
                 total_cost = None
                 result_output = None  # ResultMessage 的 result 字段
                 attempt_start = time.monotonic()
@@ -895,7 +805,7 @@ class ClaudeRunner:
                         ttft_ms = max(int((first_token_at - attempt_start) * 1000), 0)
                     break
                 except Exception as e:
-                    if not _is_transient_claude_error(e):
+                    if not _is_transient_claude_error(e, stderr_tail):
                         # 非临时错误（如 claude CLI 以退出码 1 崩溃）：集中 dump stderr 尾部，
                         # 把被海量 debug 日志淹没的真实失败原因暴露出来，便于定位。
                         print(
@@ -924,6 +834,7 @@ class ClaudeRunner:
                         f"({attempt}/{max_attempts}): {e}",
                         flush=True,
                     )
+                    options = _resume_options_after_transient(options, session_id)
                     await asyncio.sleep(delay_seconds)
 
             # 检查是否有 SDK 执行错误
@@ -1052,6 +963,7 @@ class ClaudeRunner:
             return {
                 "success": False,
                 "error": str(e),
+                "session_id": requested_session_id,
             }
 
     def _get_system_prompt(self) -> str:
@@ -1127,9 +1039,7 @@ class ClaudeRunner:
         if raw_id and re.fullmatch(r"[0-9a-fA-F-]{36}", raw_id):
             repo_clause = "`repository_id`=`" + raw_id + "`"
         else:
-            repo_clause = (
-                "`repository_id`=本任务仓 UUID（见任务环境 FRIDAY_TASK_REPOSITORY_ID）"
-            )
+            repo_clause = "`repository_id`=本任务仓 UUID（见任务环境 FRIDAY_TASK_REPOSITORY_ID）"
         return (
             "影响面自查（编码完成后、结束 turn 前）：\n"
             "- 若已挂载 friday-knowledge，调用 `detect_changes`："
