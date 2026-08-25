@@ -372,6 +372,71 @@ export function humanizeEnumToken(value: string): string {
       return '是'
     case 'false':
       return '否'
+    case 'retry':
+      return '需要重审'
+    case 'exhausted':
+      return '重试已用尽'
+    case 'passed':
+      return '审查通过'
+    case 'failed':
+      return '审查失败'
+    case 'direct':
+      return '直接改造'
+    case 'indirect':
+      return '间接关联'
+    case 'ready':
+      return '已就绪'
+    case 'degraded':
+      return '产出不完整'
+    case 'empty':
+      return '无实现项'
+    case 'needs_clarification':
+      return '需要补充信息'
+    case 'pending':
+      return '等待中'
+    case 'queued':
+      return '排队中'
+    case 'running':
+      return '进行中'
+    case 'completed':
+    case 'done':
+      return '已完成'
+    case 'stale':
+      return '已失效'
+    case 'available':
+      return '可用'
+    case 'unavailable':
+      return '不可用'
+    case 'needs_support':
+      return '需要协作仓支持'
+    case 'warning':
+      return '警告'
+    case 'error':
+      return '错误'
+    case 'blocker':
+      return '阻断问题'
+    case 'info':
+      return '提示'
+    case 'repo_plan':
+      return '各仓方案'
+    case 'merge':
+      return '方案合并'
+    case 'ai_review':
+      return 'AI 审查'
+    case 'http':
+      return 'HTTP 接口'
+    case 'rpc':
+      return 'RPC 接口'
+    case 'event':
+      return '事件'
+    case 'mq':
+      return '消息队列'
+    case 'feature':
+      return '功能需求'
+    case 'bugfix':
+      return '缺陷修复'
+    case 'refactor':
+      return '代码重构'
     default:
       return value
   }
@@ -485,12 +550,52 @@ function countOf(events: readonly BlueprintEvent[], name: string): number {
   return events.filter(event => event.event === name).length
 }
 
+/** 某事件名下出现过的唯一 `repository_id` 集合（重试 / 重派只计一次）。 */
+function repositoryIdsForEvent(events: readonly BlueprintEvent[], name: string): Set<string> {
+  const ids = new Set<string>()
+  for (const event of events) {
+    if (event.event !== name)
+      continue
+    const repositoryId = asText((event.payload ?? {}).repository_id)
+    if (repositoryId)
+      ids.add(repositoryId)
+  }
+  return ids
+}
+
+/** 多个集合的并集大小；事件窗口裁掉早期 started 时，completed/failed 仍进入分母。 */
+function unionSize(...sets: ReadonlySet<string>[]): number {
+  return new Set(sets.flatMap(set => [...set])).size
+}
+
 /** 取最新一条指定事件的某个 payload 标量（缺失返回 `''`）。 */
 function latestField(events: readonly BlueprintEvent[], name: string, key: string): string {
   const event = latestOf(events, name)
   if (!event)
     return ''
   return formatScalar((event.payload ?? {})[key]) ?? ''
+}
+
+/**
+ * 取最新一条指定事件的标量，按候选键顺序回退（兼容历史 emit 与 taxonomy 键名漂移）。
+ *
+ * 例：确认门一度 emit `repo_count`，taxonomy / 摘要事实读的是 `repository_count`。
+ */
+function latestFieldAny(
+  events: readonly BlueprintEvent[],
+  name: string,
+  keys: readonly string[],
+): string {
+  const event = latestOf(events, name)
+  if (!event)
+    return ''
+  const payload = event.payload ?? {}
+  for (const key of keys) {
+    const value = formatScalar(payload[key])
+    if (value)
+      return value
+  }
+  return ''
 }
 
 /** 往 facts 里推一条（值为空串一律跳过 ⇒ ⛔ 不把缺失显示成 0）。 */
@@ -518,18 +623,31 @@ function factsForStage(stage: string, events: readonly BlueprintEvent[]): Panora
     pushFact(facts, 'retrievalHitCount', latestField(events, 'blueprint.retrieval.completed', 'hit_count'))
   }
   else if (stage === 'repo_research') {
-    const started = countOf(events, 'blueprint.repo_research.started')
-    const done = countOf(events, 'blueprint.repo_research.completed')
-    const failed = countOf(events, 'blueprint.repo_research.failed')
-    if (started > 0)
-      pushFact(facts, 'researchProgress', `${done}/${started}`)
-    if (failed > 0)
-      pushFact(facts, 'researchFailed', String(failed))
+    const started = repositoryIdsForEvent(events, 'blueprint.repo_research.started')
+    const done = repositoryIdsForEvent(events, 'blueprint.repo_research.completed')
+    const failed = repositoryIdsForEvent(events, 'blueprint.repo_research.failed')
+    const total = unionSize(started, done, failed)
+    const terminalFailed = [...failed].filter(repositoryId => !done.has(repositoryId)).length
+    if (total > 0)
+      pushFact(facts, 'researchProgress', `${done.size}/${total}`)
+    if (terminalFailed > 0)
+      pushFact(facts, 'researchFailed', String(terminalFailed))
   }
   else if (stage === 'confirmation') {
-    pushFact(facts, 'gateRepositoryCount', latestField(events, 'blueprint.confirmation.opened', 'repository_count'))
+    pushFact(
+      facts,
+      'gateRepositoryCount',
+      latestFieldAny(events, 'blueprint.confirmation.opened', ['repository_count', 'repo_count']),
+    )
     pushFact(facts, 'actionCount', String(countOf(events, 'blueprint.confirmation.action') || ''))
-    pushFact(facts, 'lockedRepositoryCount', latestField(events, 'blueprint.confirmation.locked', 'locked_repository_count'))
+    pushFact(
+      facts,
+      'lockedRepositoryCount',
+      latestFieldAny(events, 'blueprint.confirmation.locked', [
+        'locked_repository_count',
+        'locked_repo_count',
+      ]),
+    )
     pushFact(facts, 'decidedBy', latestField(events, 'blueprint.confirmation.locked', 'decided_by'))
   }
   else if (stage === 'spec_gate') {
@@ -540,10 +658,15 @@ function factsForStage(stage: string, events: readonly BlueprintEvent[]): Panora
     pushFact(facts, 'decisionLogCount', latestField(events, 'blueprint.spec_gate.locked', 'decision_log_count'))
   }
   else if (stage === 'repo_plan') {
-    const started = countOf(events, 'blueprint.repo_plan.repo_started')
-    const done = countOf(events, 'blueprint.repo_plan.repo_completed')
-    if (started > 0)
-      pushFact(facts, 'repoPlanProgress', `${done}/${started}`)
+    const started = repositoryIdsForEvent(events, 'blueprint.repo_plan.repo_started')
+    const done = repositoryIdsForEvent(events, 'blueprint.repo_plan.repo_completed')
+    const failed = repositoryIdsForEvent(events, 'blueprint.repo_plan.repo_failed')
+    const total = unionSize(started, done, failed)
+    const terminalFailed = [...failed].filter(repositoryId => !done.has(repositoryId)).length
+    if (total > 0)
+      pushFact(facts, 'repoPlanProgress', `${done.size}/${total}`)
+    if (terminalFailed > 0)
+      pushFact(facts, 'repoPlanFailed', String(terminalFailed))
     const wave = latestField(events, 'blueprint.repo_plan.wave_advanced', 'wave')
     const totalWaves = latestField(events, 'blueprint.repo_plan.wave_advanced', 'total_waves')
     if (wave !== '' && totalWaves !== '')
@@ -578,6 +701,34 @@ function durationBetween(from: string, to: string): number | null {
 }
 
 /**
+ * 有效活跃耗时：相邻事件间隔 ≤ `pauseThresholdMs` 才计入，更大间隔视为暂停
+ * （等人澄清 / 跨夜挂起 / 会话失败后人工恢复）。
+ *
+ * ⭐ 首末墙钟差会把「等了 1 天」算进阶段耗时（实测把各仓方案显示成 1621m）。
+ * 活跃耗时只累加连续工作片段，暂停不计入。
+ */
+export const STAGE_ACTIVE_PAUSE_THRESHOLD_MS = 30 * 60 * 1000
+
+export function activeDurationMs(
+  timestamps: readonly string[],
+  pauseThresholdMs: number = STAGE_ACTIVE_PAUSE_THRESHOLD_MS,
+): number | null {
+  const times = timestamps
+    .map(value => new Date(value).getTime())
+    .filter(value => !Number.isNaN(value))
+    .sort((a, b) => a - b)
+  if (times.length < 2)
+    return null
+  let active = 0
+  for (let index = 1; index < times.length; index += 1) {
+    const gap = times[index]! - times[index - 1]!
+    if (gap > 0 && gap <= pauseThresholdMs)
+      active += gap
+  }
+  return active > 0 ? active : null
+}
+
+/**
  * 阶段全景：八个流程节点各自的状态、耗时、摘要事实与**全部**事件明细。
  *
  * ⭐ **状态推断与事件归属全部委托 `buildStageTimeline`**：那是全相位唯一的一份实现
@@ -604,13 +755,18 @@ export function buildStagePanorama(
   return buildStageTimeline(list, currentStage, currentStatus).map((node, index) => {
     const startedTs = String(node.events[0]?.ts ?? '')
     const latestTs = String(node.latestTs ?? '')
+    const eventTimestamps = node.events.map(event => String(event.ts ?? '')).filter(Boolean)
+    const activeMs = activeDurationMs(eventTimestamps)
+    const wallMs = startedTs && latestTs ? durationBetween(startedTs, latestTs) : null
     return {
       stage: node.stage,
       state: node.state,
       index: index + 1,
       startedTs,
       latestTs,
-      durationMs: startedTs && latestTs ? durationBetween(startedTs, latestTs) : null,
+      // 活跃片段优先；若整段只有超阈值间隔（跨夜/等人），宁可不出耗时也不要用墙钟灌进「1621m」。
+      durationMs: activeMs
+        ?? (wallMs !== null && wallMs <= STAGE_ACTIVE_PAUSE_THRESHOLD_MS ? wallMs : null),
       facts: factsForStage(node.stage, node.events),
       fitness: node.stage === 'route' ? fitness : [],
       repos: node.stage === 'repo_plan' ? repos : [],

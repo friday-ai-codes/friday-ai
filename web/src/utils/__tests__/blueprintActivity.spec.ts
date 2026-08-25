@@ -19,6 +19,7 @@
 import type { BlueprintEvent } from '~/types/blueprint'
 import { describe, expect, it } from 'vitest'
 import {
+  activeDurationMs,
   buildRepoPlanProgress,
   buildRouteFitness,
   buildStagePanorama,
@@ -26,6 +27,7 @@ import {
   humanizeEnumToken,
   humanizePayloadEnums,
   PANORAMA_STAGES,
+  STAGE_ACTIVE_PAUSE_THRESHOLD_MS,
 } from '~/utils/blueprintActivity'
 
 function event(name: string, payload: Record<string, unknown>, ts: string): BlueprintEvent {
@@ -33,8 +35,10 @@ function event(name: string, payload: Record<string, unknown>, ts: string): Blue
 }
 
 const T1 = '2026-08-05T01:00:00+00:00'
+const T1b = '2026-08-05T01:10:00+00:00'
 const T2 = '2026-08-05T02:00:00+00:00'
 const T3 = '2026-08-05T03:00:00+00:00'
+const T_NEXT_DAY = '2026-08-06T04:00:00+00:00'
 
 describe('buildRouteFitness', () => {
   it('⭐ 合成分数与证据，按适配度降序', () => {
@@ -329,7 +333,7 @@ describe('buildStagePanorama', () => {
     expect(nodes.find(node => node.stage === 'route')?.pinnedRoute).toBe(false)
   })
 
-  it('耗时取该阶段首末事件间隔；单条事件无耗时', () => {
+  it('耗时取活跃片段之和；单条事件无耗时；跨夜长暂停不计墙钟', () => {
     const single = buildStagePanorama([
       event('blueprint.review.started', { round: 1 }, T1),
     ], '', '')
@@ -337,10 +341,23 @@ describe('buildStagePanorama', () => {
 
     const spanned = buildStagePanorama([
       event('blueprint.review.started', { round: 1 }, T1),
-      event('blueprint.review.completed', { round: 1, review_status: 'passed' }, T2),
+      event('blueprint.review.completed', { round: 1, review_status: 'passed' }, T1b),
     ], '', '')
-    // T1 → T2 恰好一小时
-    expect(spanned.find(node => node.stage === 'ai_review')?.durationMs).toBe(3_600_000)
+    // T1 → T1b = 10 分钟，低于暂停阈值 ⇒ 计入活跃耗时
+    expect(spanned.find(node => node.stage === 'ai_review')?.durationMs).toBe(600_000)
+
+    const overnight = buildStagePanorama([
+      event('blueprint.repo_plan.repo_started', { repository_id: 'r1', wave: 1 }, T1),
+      event('blueprint.repo_plan.repo_completed', { repository_id: 'r1', item_count: 1 }, T_NEXT_DAY),
+    ], '', '')
+    // 仅有超阈值间隔：宁可不出耗时，也不要把跨夜墙钟渲成「1621m」
+    expect(overnight.find(node => node.stage === 'repo_plan')?.durationMs).toBe(null)
+    expect(STAGE_ACTIVE_PAUSE_THRESHOLD_MS).toBe(30 * 60 * 1000)
+    expect(activeDurationMs([T1, T1b])).toBe(600_000)
+    expect(activeDurationMs([T1, '2026-08-05T01:20:00+00:00', '2026-08-05T01:35:00+00:00'])).toBe(
+      20 * 60 * 1000 + 15 * 60 * 1000,
+    )
+    expect(activeDurationMs([T1, T_NEXT_DAY])).toBe(null)
   })
 
   it('摘要事实只出非空项（⛔ 缺失不显示成 0）', () => {
@@ -366,5 +383,58 @@ describe('buildStagePanorama', () => {
     const node = nodes.find(item => item.stage === 'repo_research')
     expect(node?.facts).toContainEqual({ key: 'researchProgress', value: '1/2' })
     expect(node?.facts).toContainEqual({ key: 'researchFailed', value: '1' })
+  })
+
+  it('调研/分仓进度按唯一 repository_id 去重（重试不抬高分母）', () => {
+    const research = buildStagePanorama([
+      event('blueprint.repo_research.started', { repository_id: 'a' }, T1),
+      event('blueprint.repo_research.failed', { repository_id: 'a', error_kind: 'timeout' }, T1b),
+      event('blueprint.repo_research.started', { repository_id: 'a' }, T2),
+      event('blueprint.repo_research.started', { repository_id: 'b' }, T2),
+      event('blueprint.repo_research.completed', { repository_id: 'a' }, T3),
+      event('blueprint.repo_research.completed', { repository_id: 'b' }, T3),
+      // 额外 3 次 started 重试 —— 事件数 2 完成 / 5 派发，但唯一仓应是 2/2
+      event('blueprint.repo_research.started', { repository_id: 'a' }, T3),
+    ], '', '')
+    expect(research.find(node => node.stage === 'repo_research')?.facts)
+      .toContainEqual({ key: 'researchProgress', value: '2/2' })
+
+    const plan = buildStagePanorama([
+      event('blueprint.repo_plan.repo_started', { repository_id: 'r1', wave: 1 }, T1),
+      event('blueprint.repo_plan.repo_failed', { repository_id: 'r1', error_kind: 'schema' }, T1b),
+      event('blueprint.repo_plan.repo_started', { repository_id: 'r1', wave: 1 }, T2),
+      event('blueprint.repo_plan.repo_completed', { repository_id: 'r1', item_count: 1 }, T3),
+      event('blueprint.repo_plan.repo_started', { repository_id: 'r2', wave: 1 }, T1),
+      event('blueprint.repo_plan.repo_completed', { repository_id: 'r2', item_count: 2 }, T2),
+    ], '', '')
+    const planFacts = plan.find(node => node.stage === 'repo_plan')?.facts ?? []
+    expect(planFacts).toContainEqual({ key: 'repoPlanProgress', value: '2/2' })
+    // r1 后续完成，历史失败不应继续显示为终态失败。
+    expect(planFacts.some(fact => fact.key === 'repoPlanFailed')).toBe(false)
+  })
+
+  it('事件窗口缺早期 started 时，completed/failed 仍进入进度分母', () => {
+    const nodes = buildStagePanorama([
+      event('blueprint.repo_plan.repo_started', { repository_id: 'r1' }, T1),
+      event('blueprint.repo_plan.repo_completed', { repository_id: 'r1' }, T2),
+      // r2 的 started 已被事件窗口裁掉，只剩完成事件。
+      event('blueprint.repo_plan.repo_completed', { repository_id: 'r2' }, T3),
+      // r3 只有失败终态。
+      event('blueprint.repo_plan.repo_failed', { repository_id: 'r3' }, T3),
+    ], '', '')
+    const facts = nodes.find(node => node.stage === 'repo_plan')?.facts ?? []
+    expect(facts).toContainEqual({ key: 'repoPlanProgress', value: '2/3' })
+    expect(facts).toContainEqual({ key: 'repoPlanFailed', value: '1' })
+  })
+
+  it('确认门摘要兼容历史 repo_count / locked_repo_count 别名', () => {
+    const nodes = buildStagePanorama([
+      event('blueprint.confirmation.opened', { thread_id: 't1', repo_count: 9 }, T1),
+      event('blueprint.confirmation.locked', { locked_repo_count: 8, decided_by: 'human' }, T1b),
+    ], '', '')
+    const facts = nodes.find(node => node.stage === 'confirmation')?.facts ?? []
+    expect(facts).toContainEqual({ key: 'gateRepositoryCount', value: '9' })
+    expect(facts).toContainEqual({ key: 'lockedRepositoryCount', value: '8' })
+    expect(facts).toContainEqual({ key: 'decidedBy', value: 'human' })
   })
 })

@@ -58,13 +58,19 @@ const i18n = createI18n({
             eventsTitle: '过程明细',
             groupCount: '共 {n} 项',
             groupTruncated: '余下项已折叠',
-            rawToggle: '原始数据',
+            rawToggle: '诊断数据',
+            unknownEvent: '其他流程事件',
+            unknownField: '其他信息',
+            unknownFact: '其他指标',
+            unknownLogType: '其他日志',
             yes: '是',
             no: '否',
             pinnedRoute: '固定路由：候选仓来自项目手动绑定',
             confidenceHigh: '高',
             confidenceMedium: '中',
             confidenceLow: '低',
+            repoTag: '仓库：{name}',
+            repoUnknown: '未知仓库',
             fact: { candidateCount: '候选仓', researchProgress: '调研进度' },
             payload: {
               candidate_count: '候选数',
@@ -73,8 +79,15 @@ const i18n = createI18n({
               routed_confidence: '路由置信度',
               fitness_verdict: '适配结论',
               attempt: '尝试次数',
-              repository_id: '仓库 id',
+              repository_id: '仓库',
               task_id: '任务 id',
+              round: '轮次',
+              info_count: '提示数量',
+              thread_count: '线程数量',
+              blocker_count: '阻断问题数量',
+              warning_count: '警告数量',
+              review_status: '审查结论',
+              intent: '意图',
             },
             researchStateRunning: '调研中',
             researchStateDone: '已完成',
@@ -91,6 +104,8 @@ const i18n = createI18n({
             repoResearchCompletedGeneric: '仓库调研完成',
             repoResearchFailed: '{repository_name} 调研未成功（第 {attempt} 次）',
             repoResearchFailedGeneric: '仓库调研未成功',
+            reviewStarted: 'AI 审查已开始',
+            reviewCompleted: 'AI 审查已完成',
           },
           repo: {
             fitnessSuitable: '适配',
@@ -151,6 +166,7 @@ function mountStepper(options: {
   currentStatus?: string
   stages?: BlueprintStagesResponse | null
   submitting?: boolean
+  repoNames?: Record<string, string>
 } = {}) {
   return mount(BlueprintStageStepper, {
     props: {
@@ -159,6 +175,7 @@ function mountStepper(options: {
       currentStatus: options.currentStatus ?? '',
       stages: options.stages === undefined ? makeStages() : options.stages,
       submitting: options.submitting ?? false,
+      repoNames: options.repoNames ?? {},
     },
     global: { plugins: [i18n] },
   })
@@ -305,7 +322,40 @@ describe('blueprintStageStepper —— 详情区（单选展开）', () => {
     // 事件明细：复合键展开成可读行，⛔ 不只列键名
     const group = detail.find('[data-testid="blueprint-stepper-event-group"][data-group="candidates"]')
     expect(group.exists()).toBe(true)
-    expect(group.text()).toContain('repository_name=数学仓')
+    expect(group.text()).toContain('仓库：数学仓')
+  })
+
+  it('ai 审查事件字段与枚举全部显示中文，默认不露事件标识', async () => {
+    const repositoryId = '47991a7f-c8e4-4da6-b42c-2ce81d8b137f'
+    const wrapper = mountStepper({
+      events: [
+        event('blueprint.review.started', { round: 1 }),
+        event('blueprint.review.completed', {
+          round: 1,
+          info_count: 0,
+          thread_count: 42,
+          blocker_count: 10,
+          warning_count: 40,
+          review_status: 'exhausted',
+          affected_repository_ids: [repositoryId],
+        }, '2026-08-05T02:00:00+00:00'),
+      ],
+      currentStage: 'ai_review',
+      currentStatus: 'ai_reviewing',
+      repoNames: { [repositoryId]: 'backend/study-course' },
+    })
+
+    await wrapper.find(`${NODE}[data-stage="ai_review"] button`).trigger('click')
+    const detail = wrapper.find(DETAIL)
+    expect(detail.text()).toContain('AI 审查已完成')
+    expect(detail.text()).toContain('线程数量')
+    expect(detail.text()).toContain('阻断问题数量')
+    expect(detail.text()).toContain('警告数量')
+    expect(detail.text()).toContain('审查结论')
+    expect(detail.text()).toContain('重试已用尽')
+    expect(detail.text()).toContain('仓库：backend/study-course')
+    expect(detail.text()).not.toContain('blueprint.review.completed')
+    expect(detail.text()).not.toContain(repositoryId)
   })
 
   it('⭐ stage_state 分片渲染成可读键值 + 折叠 JSON（⛔ 不整页倾倒）', async () => {
@@ -322,8 +372,8 @@ describe('blueprintStageStepper —— 详情区（单选展开）', () => {
     const state = wrapper.find('[data-testid="blueprint-stepper-state"]')
     expect(state.exists()).toBe(true)
     // 标量字段直接可读
-    expect(state.text()).toContain('intent')
-    expect(state.text()).toContain('feature')
+    expect(state.text()).toContain('意图')
+    expect(state.text()).toContain('功能需求')
     // 复合键折成行 + 计数
     expect(state.find('[data-group="routing"]').exists()).toBe(true)
     // 原始 JSON 默认收起、点击展开

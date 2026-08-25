@@ -26,7 +26,7 @@ import { resolve } from 'node:path'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import { ApiError } from '~/api/client'
 import BlueprintViewerPage from '~/pages/knowledge/blueprints/[id].vue'
@@ -149,6 +149,7 @@ const i18n = createI18n({
           finding: { resolveSuccess: '已标记为已修复', dismissSuccess: '已标记为误报忽略', noopNotice: '该发现此前已有结论' },
           rerun: { accepted: '已受理：该环节将以轮次 {label} 重跑' },
           thread: { commentCreated: '评论已提交' },
+          viewer: { nextOpen: '下一条未决 {n}', backToTop: '返回顶部' },
           error: {
             notFoundOrForbidden: '无权访问或该蓝图不存在',
             unavailable: '暂时读取不到该方案，请稍后重试',
@@ -875,5 +876,84 @@ describe('diff 模式的进入与退出', () => {
     const { wrapper } = mountPage()
     await flush()
     expect(wrapper.find(NOTICE).exists()).toBe(false)
+  })
+})
+
+/**
+ * 巡航按钮原先只按 `blk-<block_id>` 量位置，空 block_id 的 finding 会被整体过滤。
+ * happy-dom 无布局引擎 ⇒ 把目标节点挂到 document 上并 mock getBoundingClientRect，
+ * 用「当前位置之下」那条命中规则钉住 section_path 线程能进 positioned。
+ */
+describe('蓝图查看器 —— 未决批注巡航命中 section_path 锚点', () => {
+  const RID = 'cee27ee1-cc73-4937-9a9e-730edd6c93b2'
+  const FINDING_ID = 'finding-section-path'
+  const BLOCK_ID = 'th-with-block'
+
+  function rect(top: number): DOMRect {
+    return { top, bottom: top + 40, left: 0, right: 100, width: 100, height: 40, x: 0, y: top, toJSON: () => ({}) }
+  }
+
+  function plantAnchor(id: string, top: number): HTMLElement {
+    const el = document.createElement('div')
+    el.id = id
+    document.body.appendChild(el)
+    vi.spyOn(el, 'getBoundingClientRect').mockReturnValue(rect(top))
+    return el
+  }
+
+  function openThread(overrides: Record<string, unknown> = {}) {
+    return {
+      thread_id: 'th',
+      kind: 'human_comment',
+      severity: '',
+      status: 'open',
+      blocking: false,
+      anchor_status: 'anchored',
+      anchor: { block_id: 'b1', quoted_text: '原文' },
+      return_stage: '',
+      created_at: '2026-08-01T00:00:00Z',
+      options: [],
+      last_reminded_at: null,
+      messages: [],
+      ...overrides,
+    }
+  }
+
+  afterEach(() => {
+    document.getElementById(`blk-b1`)?.remove()
+    document.getElementById(`repo-${RID}`)?.remove()
+  })
+
+  it('混入只有 section_path 的 open finding ⇒ 巡航命中它（⛔ 不被按空 block_id 过滤）', async () => {
+    media.matches = true
+    api.getBlueprintThreads.mockResolvedValue({
+      threads: [
+        openThread({ thread_id: BLOCK_ID, anchor: { block_id: 'b1', quoted_text: '原文' } }),
+        openThread({
+          thread_id: FINDING_ID,
+          kind: 'ai_review_finding',
+          severity: 'warning',
+          anchor: {
+            block_id: '',
+            quoted_text: '',
+            section_path: `repo_associations[${RID}].rationale`,
+          },
+        }),
+      ],
+    })
+    // 块锚在视口之上，仓库卡在当前滚动位置之下 ⇒ 下一条必须是 finding。
+    plantAnchor('blk-b1', 0)
+    plantAnchor(`repo-${RID}`, 5000)
+
+    const { wrapper } = mountPage()
+    await flush()
+    const button = wrapper.find('[data-testid="blueprint-goto-next-open"]')
+    expect(button.exists()).toBe(true)
+    await button.trigger('click')
+
+    const sidebars = wrapper.findAllComponents(SidebarStub)
+    expect(sidebars.length).toBeGreaterThan(0)
+    for (const sidebar of sidebars)
+      expect(sidebar.props('activeThreadId')).toBe(FINDING_ID)
   })
 })

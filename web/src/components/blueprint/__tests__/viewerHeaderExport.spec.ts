@@ -31,6 +31,8 @@ vi.mock('~/api/blueprints', () => ({
 
 const BANNER = '[data-testid="blueprint-unconfirmed-banner"]'
 const EXPORT_BUTTON = '[data-testid="blueprint-header-export"]'
+const APPROVE_BUTTON = '[data-testid="blueprint-review-approve"]'
+const REJECT_BUTTON = '[data-testid="blueprint-review-reject"]'
 
 const CONFIRMED_STATUSES = ['confirmed', 'implementing', 'implemented']
 const UNCONFIRMED_STATUSES = [
@@ -138,6 +140,16 @@ describe('「未经确认」常驻横幅', () => {
     )
     for (const status of CONFIRMED_STATUSES)
       expect(component).toContain(`'${status}'`)
+  })
+})
+
+describe('待人类审查操作区', () => {
+  it('pending_review 当前版本始终渲染通过与驳回按钮', () => {
+    const wrapper = mountHeader({ currentStatus: 'pending_review', readonly: false })
+    expect(wrapper.find(APPROVE_BUTTON).exists()).toBe(true)
+    expect(wrapper.find(REJECT_BUTTON).exists()).toBe(true)
+    expect(wrapper.find(APPROVE_BUTTON).attributes('disabled')).toBeUndefined()
+    expect(wrapper.find(REJECT_BUTTON).attributes('disabled')).toBeUndefined()
   })
 })
 

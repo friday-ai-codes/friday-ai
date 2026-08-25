@@ -663,6 +663,15 @@ export function buildStageTimeline(
       if (state === 'running' && (collapseRunning || (currentIndex >= 0 && index < currentIndex)))
         state = 'done'
     }
+    else if (
+      (status === 'pending_review' && stage !== 'pending_review')
+      || (currentIndex >= 0 && index < currentIndex)
+    ) {
+      // 阶段位序已经越过该节点时，即使后端没有为该阶段产生专属事件，也必须收敛为完成。
+      // merge 的真实执行不保证发 context waiter 事件；缺少本分支会在 ai_review / 人审阶段
+      // 仍把「方案合并」显示为「未开始」。
+      state = 'done'
+    }
     else if (!settled && (stage === currentNode || (stage === 'pending_review' && status === 'pending_review'))) {
       // 无事件的当前阶段仍要点亮；编排已确定走完时不再点亮任何空节点。
       state = 'running'

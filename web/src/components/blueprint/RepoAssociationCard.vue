@@ -71,7 +71,11 @@ const VERDICT_META: Record<string, { variant: 'success' | 'warning' | 'destructi
   unsuitable: { variant: 'destructive', labelKey: 'fitnessUnsuitable' },
 }
 
-const repoLabel = computed(() => props.repoName || props.association.repository_name || props.association.repository_id)
+const repoLabel = computed(() =>
+  props.repoName
+  || props.association.repository_name
+  || t('knowledge.blueprints.activity.repoUnknown'),
+)
 
 const roleMeta = computed(() => ROLE_META[props.association.role] ?? null)
 
@@ -149,6 +153,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
 
 <template>
   <div
+    :id="`repo-${association.repository_id}`"
     class="card p-4 space-y-3"
     data-testid="blueprint-repo-card"
     :data-role="association.role"

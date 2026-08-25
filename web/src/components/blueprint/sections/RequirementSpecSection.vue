@@ -27,7 +27,7 @@ import type {
   BlueprintThreadDetail,
   Citation,
 } from '~/types/blueprint'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import { Badge } from '~/components/ui/badge'
@@ -43,6 +43,14 @@ import BlueprintBlockList from '../BlueprintBlockList.vue'
 
 const props = withDefaults(defineProps<{
   spec?: BlueprintRequirementSpec | null
+  /**
+   * 展开需求正文的外部信号（页面每次跳 `fp-*` 锚点就 +1）。
+   *
+   * 折叠是 CSS 裁切，被裁掉的功能点标签**仍在 DOM 里但不可见**，而页面的
+   * `scrollToDom` 靠 `getBoundingClientRect()` 量位置 —— 不先展开就会滚到一个
+   * 看不见的坐标。收到信号只**单向展开**（不回收），用户之后仍可自己收起。
+   */
+  expandGoalSignal?: number
   /** —— 以下五项是 blockCtx，原样透传给 `BlueprintBlockList` —— */
   threads?: BlueprintThreadDetail[]
   citations?: Record<string, Citation>
@@ -51,6 +59,7 @@ const props = withDefaults(defineProps<{
   showClosed?: boolean
 }>(), {
   spec: null,
+  expandGoalSignal: 0,
   threads: () => [],
   citations: () => ({}),
   readonly: false,
@@ -74,6 +83,30 @@ const featurePoints = computed(() => props.spec?.feature_points ?? [])
 const isEmpty = computed(
   () => !goalBlocks.value.length && !backgroundBlocks.value.length && !featurePoints.value.length,
 )
+
+// ── 需求正文折叠（quick-260819：后端不再截字，长正文由这里收起）──────────────────
+//
+// ⛔ **不裁文本**：`ApiContractCard` 那种「JS 按行 slice 后再渲染」的折叠口径在这里
+// 不能用 —— goal 正文承载批注划线，`BlueprintBlock` 的 mark 分段按**文本 offset**
+// 定位，少喂一个字后面所有划线就全错位，功能点内联标签也会跟着丢。
+// 所以折叠一律走 **CSS max-height 裁切**：整段正文恒在 DOM 里（offset 坐标系不动），
+// 只是视觉上被蒙层盖住。用户点「展开全部」即解除 max-height。
+
+/** 正文超过该字数才提供折叠（≈ 折叠高度装得下的量，短正文不该出现无意义的按钮）。 */
+const GOAL_FOLD_MIN_CHARS = 2400
+
+const goalExpanded = ref(false)
+
+const goalText = computed(() => goalBlocks.value.map(block => blockText(block)).join('\n'))
+
+const goalFoldable = computed(() => goalText.value.length > GOAL_FOLD_MIN_CHARS)
+
+/** 折叠中 = 够长且用户没展开。蒙层与按钮共用这一个判据。 */
+const goalCollapsed = computed(() => goalFoldable.value && !goalExpanded.value)
+
+watch(() => props.expandGoalSignal, () => {
+  goalExpanded.value = true
+})
 
 // ── 功能点内联标签 + 兜底索引（quick-260806：功能点分散进目标正文）────────────────
 //
@@ -200,22 +233,49 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
         <!-- ⭐ 长文阅读面控行长：正文限 52rem（≈52 汉字/行）。max-w 不改文本节点，
              批注 offset 坐标系不受影响。 -->
         <div v-if="goalBlocks.length" data-field="goal" class="px-4 py-3.5">
-          <!-- ⭐ feature-points 只传给 goal：功能点标签内联到正文对应标题行的行尾 -->
-          <BlueprintBlockList
-            class="max-w-208"
-            :blocks="goalBlocks"
-            :feature-points="featurePoints"
-            section-path="requirement_spec.goal"
-            :threads="threads"
-            :citations="citations"
-            :readonly="readonly"
-            :active-thread-id="activeThreadId"
-            :show-closed="showClosed"
-            @thread-click="forwardThread"
-            @citation-click="emit('citation-click', $event)"
-            @selection-comment="emit('selection-comment', $event)"
-            @cross-block-selection="emit('cross-block-selection')"
-          />
+          <!-- ⭐ 折叠容器：`max-h` + `overflow-hidden` 纯 CSS 裁切，正文**全量**留在 DOM
+               里（批注 offset 与内联功能点标签都不受影响，见 script 段说明）。 -->
+          <div
+            class="relative"
+            :class="goalCollapsed ? 'max-h-160 overflow-hidden' : ''"
+            data-testid="blueprint-spec-goal-fold"
+            :data-collapsed="goalCollapsed ? 'true' : 'false'"
+          >
+            <!-- ⭐ feature-points 只传给 goal：功能点标签内联到正文对应标题行的行尾 -->
+            <BlueprintBlockList
+              class="max-w-208"
+              :blocks="goalBlocks"
+              :feature-points="featurePoints"
+              section-path="requirement_spec.goal"
+              :threads="threads"
+              :citations="citations"
+              :readonly="readonly"
+              :active-thread-id="activeThreadId"
+              :show-closed="showClosed"
+              @thread-click="forwardThread"
+              @citation-click="emit('citation-click', $event)"
+              @selection-comment="emit('selection-comment', $event)"
+              @cross-block-selection="emit('cross-block-selection')"
+            />
+            <!-- 渐变蒙层：`pointer-events-none` —— 绝不能挡住划线选区与 mark 点击 -->
+            <div
+              v-if="goalCollapsed"
+              class="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-card via-card/85 to-transparent"
+              aria-hidden="true"
+            />
+          </div>
+          <button
+            v-if="goalFoldable"
+            type="button"
+            class="mt-1 text-xs text-primary hover:underline"
+            data-testid="blueprint-spec-goal-toggle"
+            :aria-expanded="goalExpanded"
+            @click="goalExpanded = !goalExpanded"
+          >
+            {{ goalExpanded
+              ? t('knowledge.blueprints.block.collapse')
+              : t('knowledge.blueprints.block.expandAll') }}
+          </button>
         </div>
 
         <div v-if="backgroundBlocks.length" data-field="background" class="border-t border-border/70 px-4 py-3.5">

@@ -217,8 +217,8 @@ const sidebarToggleLabel = computed(() =>
     </div>
 
     <!-- ② 身份行：所属项目面包屑 + 标题 + 状态 + 生成中（左）｜ 终审决策（右，恒在第一行） -->
-    <div class="flex items-center gap-3 px-5 pt-3 pb-1.5">
-      <div class="min-w-0 flex-1">
+    <div class="flex flex-wrap items-center gap-3 px-5 pt-3 pb-1.5">
+      <div class="min-w-0 flex-1 basis-64">
         <!-- ⭐ 面包屑与标题同栏堆叠（text-xs，不新增整行）：sticky 顶栏的高度是稀缺资源 -->
         <RouterLink
           v-if="projectId"
@@ -251,7 +251,10 @@ const sidebarToggleLabel = computed(() =>
       </span>
 
       <!-- ⭐ 终审操作区：可用性判断、二次确认与 Tooltip 全在 115-04 的组件里，本组件只透传 -->
-      <div v-if="!readonly" class="flex shrink-0 items-center">
+      <div
+        v-if="!readonly"
+        class="ml-auto flex shrink-0 basis-full items-center justify-end border-t border-border/50 pt-2 lg:basis-auto lg:border-t-0 lg:pt-0"
+      >
         <BlueprintReviewActions
           :current-status="currentStatus"
           :revision-round="revisionRound"

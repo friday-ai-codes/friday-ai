@@ -164,7 +164,7 @@ function forwardThread(threadId: string, allThreadIds: string[]): void {
       <span v-else class="min-w-0 flex-1 truncate text-base font-semibold">{{ contract.name }}</span>
 
       <span v-if="repoName || contract.repository_id" class="shrink-0 text-[11px] text-muted-foreground">
-        {{ repoName || contract.repository_id }}
+        {{ t('knowledge.blueprints.activity.repoTag', { name: repoName || t('knowledge.blueprints.activity.repoUnknown') }) }}
       </span>
     </div>
 

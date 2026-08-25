@@ -538,6 +538,17 @@ describe('buildStageTimeline —— 末态推断（MJ-02）', () => {
     expect(states.pending_review).toBe('running')
   })
 
+  it('⭐ merge 没有专属事件时，进入 ai_review 或 pending_review 后仍收敛为 done', () => {
+    const reviewing = stateOf(buildStageTimeline([], 'ai_review', 'ai_reviewing'))
+    expect(reviewing.merge).toBe('done')
+    expect(reviewing.ai_review).toBe('running')
+
+    const humanReview = stateOf(buildStageTimeline([], '', 'pending_review'))
+    expect(humanReview.merge).toBe('done')
+    expect(humanReview.ai_review).toBe('done')
+    expect(humanReview.pending_review).toBe('running')
+  })
+
   it('编排终态（四值）把发过事件的阶段一律收成 done，failed / superseded 不在其列', () => {
     const events = [ev('blueprint.route.scored', '2026-08-01T00:00:01Z')]
     for (const status of ['confirmed', 'implementing', 'implemented', 'archived'])

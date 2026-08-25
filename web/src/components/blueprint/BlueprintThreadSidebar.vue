@@ -68,6 +68,8 @@ const props = withDefaults(defineProps<{
   draft?: BlueprintCommentDraft | null
   /** 功能点 id → 标题；透传给澄清向导 chip。 */
   featurePointTitles?: Record<string, string>
+  /** 仓库 id → 仓名；透传给段级 finding 的位置入口。 */
+  repoNames?: Record<string, string>
 }>(), {
   threads: () => [],
   orphanedThreads: () => [],
@@ -79,6 +81,7 @@ const props = withDefaults(defineProps<{
   submitting: false,
   draft: null,
   featurePointTitles: () => ({}),
+  repoNames: () => ({}),
 })
 
 const emit = defineEmits<{
@@ -360,6 +363,7 @@ function onKeydown(event: KeyboardEvent): void {
             :degraded="degradedSet.has(thread.thread_id)"
             :gate-available="gateAvailable"
             :feature-point-titles="featurePointTitles"
+            :repo-names="repoNames"
             :show-kind="false"
             @select="emit('select', $event)"
             @answer="(id, body) => emit('answer', id, body)"
