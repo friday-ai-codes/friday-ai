@@ -5,10 +5,13 @@ FROM node:24-alpine AS node-tools
 # Stage 1: Build dependencies
 FROM python:3.14-alpine AS builder
 
-RUN apk add --no-cache \
-    gcc \
-    musl-dev \
-    libffi-dev
+RUN set -eux; \
+    i=0; \
+    until apk add --no-cache gcc musl-dev libffi-dev; do \
+      i=$((i+1)); \
+      if [ "$i" -ge 5 ]; then exit 1; fi; \
+      sleep 8; \
+    done
 
 WORKDIR /app
 
