@@ -31,6 +31,7 @@ import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { createI18n } from 'vue-i18n'
+import { resolveBlueprintAnchorDomId } from '~/components/blueprint/anchorTargets'
 import { FOCUS_RING_CLASS } from '~/components/blueprint/annotationTokens'
 import BlueprintFindingActions from '~/components/blueprint/BlueprintFindingActions.vue'
 import BlueprintSelectionPopover from '~/components/blueprint/BlueprintSelectionPopover.vue'
@@ -71,6 +72,8 @@ const i18n = createI18n({
             reminded: '上次提醒：{time}',
             authorAi: 'AI',
             gotoGate: '前往确认门',
+            anchorLocation: '定位：{location}',
+            gotoAnchorLocation: '定位到{location}',
             draftTitle: '针对选中片段发起评论',
             draftSubmit: '提交评论',
             groupOpen: '未决',
@@ -90,6 +93,13 @@ const i18n = createI18n({
             resolveTitle: '标记该审查发现为已修复',
             dismissTitle: '标记该审查发现为误报忽略',
             confirm: '确认处置',
+          },
+          repo: {
+            rationale: '选仓理由',
+          },
+          activity: {
+            repoTag: '仓库：{name}',
+            repoUnknown: '未知仓库',
           },
           annotation: {
             degraded: '无法精确定位到原文片段，已标注整块',
@@ -111,6 +121,10 @@ const i18n = createI18n({
 
 /** reka-ui 的浮层走 Portal，VTU 找不到 ⇒ 拍平成裸 div。 */
 const OVERLAY_STUBS = {
+  RouterLink: {
+    props: ['to'],
+    template: '<a :href="to"><slot /></a>',
+  },
   Dialog: { template: '<div><slot /></div>' },
   DialogContent: { template: '<div><slot /></div>' },
   DialogHeader: { template: '<div><slot /></div>' },
@@ -157,6 +171,72 @@ function mountSidebar(props: Record<string, unknown> = {}) {
     global: { plugins: [i18n], stubs: OVERLAY_STUBS },
   })
 }
+
+describe('线程 section_path 的段级定位', () => {
+  it('finding 缺 block_id 时点击仓库位置入口 emit repo-<rid>', async () => {
+    const rid = 'cee27ee1-cc73-4937-9a9e-730edd6c93b2'
+    const wrapper = mountCard({
+      thread: makeThread({
+        kind: 'ai_review_finding',
+        anchor: {
+          block_id: '',
+          quoted_text: '',
+          section_path: `repo_associations[${rid}].rationale`,
+        },
+      }),
+      repoNames: { [rid]: 'friday-ai' },
+    })
+
+    const location = wrapper.find('[data-testid="blueprint-thread-anchor-location"]')
+    expect(location.text()).toContain('friday-ai · 选仓理由')
+    await location.trigger('click')
+    expect(wrapper.emitted('goto-anchor')?.[0]).toEqual([`repo-${rid}`])
+  })
+
+  it.each([
+    [{ block_id: '', section_path: 'repo_associations[repo-1].rationale' }, 'repo-repo-1'],
+    [{ block_id: '', section_path: 'implementation_overview.items[impl-1].how' }, 'impl-impl-1'],
+    [{ block_id: '', section_path: 'api_contracts[api-1].request' }, 'api-api-1'],
+    [{ block_id: '', section_path: 'current_state_analysis.findings' }, 'current_state_analysis'],
+    [{ block_id: '', section_path: '' }, ''],
+    [{ block_id: '', section_path: 42 }, ''],
+    [{ block_id: '', section_path: '[]' }, ''],
+  ])('section_path 防御解析：%j ⇒ %s', (anchor, expected) => {
+    expect(() => resolveBlueprintAnchorDomId(anchor as never)).not.toThrow()
+    expect(resolveBlueprintAnchorDomId(anchor as never)).toBe(expected)
+  })
+
+  it('block_id 非空时优先保持 blk-<block_id> 行为', () => {
+    expect(resolveBlueprintAnchorDomId({
+      block_id: 'block-7',
+      section_path: 'repo_associations[repo-1].rationale',
+    })).toBe('blk-block-7')
+  })
+})
+
+describe('线程正文的仓库标签', () => {
+  it('仓库 UUID 转成可读且可跳转的仓库标签，不在正文裸露 UUID', () => {
+    const repositoryId = '47991a7f-c8e4-4da6-b42c-2ce81d8b137f'
+    const wrapper = mountCard({
+      thread: makeThread({
+        messages: [{
+          id: 'm-repo',
+          author_type: 'ai',
+          author_user_id: null,
+          author_display: '',
+          body: `仓库 ${repositoryId} 的分仓方案未能产出`,
+          created_at: '2026-08-01T00:00:00Z',
+        }],
+      }),
+      repoNames: { [repositoryId]: 'backend/study-course' },
+    })
+
+    const link = wrapper.find('[data-testid="blueprint-thread-repo-link"]')
+    expect(link.text()).toBe('仓库：backend/study-course')
+    expect(link.attributes('href')).toBe(`/repositories/${repositoryId}`)
+    expect(wrapper.text()).not.toContain(repositoryId)
+  })
+})
 
 describe('⭐ §20 断言 1：线程动作按 kind 硬分流（渲染层）', () => {
   it('1a. ai_review_finding ⇒ 作答框不存在于 DOM，只有处置按钮', () => {

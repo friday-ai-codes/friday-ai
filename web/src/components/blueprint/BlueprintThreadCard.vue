@@ -47,6 +47,7 @@ import {
   normalizeClarificationQuestions,
   parseClarificationAnswers,
 } from '~/utils/clarificationQuestions'
+import { parseBlueprintSectionPath, resolveBlueprintAnchorDomId } from './anchorTargets'
 import { FOCUS_RING_CLASS } from './annotationTokens'
 import BlueprintClarificationWizard from './BlueprintClarificationWizard.vue'
 import BlueprintFindingActions from './BlueprintFindingActions.vue'
@@ -67,6 +68,8 @@ const props = withDefaults(defineProps<{
   gateAvailable?: boolean
   /** 功能点 id → 标题；结构化澄清向导 chip 展示用。 */
   featurePointTitles?: Record<string, string>
+  /** 仓库 id → 仓名；段级 finding 的位置入口展示用。 */
+  repoNames?: Record<string, string>
   /**
    * 是否渲染 kind 徽标。侧栏已按 kind 分组，组内每张卡再挂一枚同名徽标是纯冗余
    * （quick-260806-tsb 视觉整改）⇒ 侧栏传 `false`；就地浮层（CommentPopover）无分组
@@ -80,6 +83,7 @@ const props = withDefaults(defineProps<{
   degraded: false,
   gateAvailable: false,
   featurePointTitles: () => ({}),
+  repoNames: () => ({}),
   showKind: true,
 })
 
@@ -157,6 +161,69 @@ const statusLabel = computed(() =>
 const statusVariant = computed(() => STATUS_VARIANT[props.thread.status] ?? 'outline')
 
 const quotedText = computed(() => String(props.thread.anchor?.quoted_text ?? ''))
+const sectionPath = computed(() =>
+  typeof props.thread.anchor?.section_path === 'string'
+    ? props.thread.anchor.section_path.trim()
+    : '',
+)
+const hasBlockAnchor = computed(() =>
+  typeof props.thread.anchor?.block_id === 'string' && Boolean(props.thread.anchor.block_id.trim()),
+)
+const anchorTarget = computed(() => parseBlueprintSectionPath(sectionPath.value))
+const anchorDomId = computed(() => resolveBlueprintAnchorDomId(props.thread.anchor))
+
+const SECTION_LABEL_KEY: Record<string, string> = {
+  requirement_spec: 'requirementSpec',
+  repo_associations: 'repoAssociations',
+  current_state_analysis: 'currentStateAnalysis',
+  implementation_overview: 'implementationOverview',
+  api_contracts: 'apiContracts',
+  impact_analysis: 'impactAnalysis',
+  interaction_flows: 'interactionFlows',
+  must_haves: 'mustHaves',
+  decision_log: 'decisionLog',
+  associations: 'associations',
+}
+
+const REPO_FIELD_LABEL_KEY: Record<string, string> = {
+  responsibility: 'responsibility',
+  rationale: 'rationale',
+  fitness: 'fitness',
+  planned_change_summary: 'plannedChange',
+  support_needed: 'supportNeeded',
+  capabilities_used: 'capabilitiesUsed',
+}
+
+/** 段级 finding 的人读位置；未知字段保留原路径，避免静默吞掉定位线索。 */
+const anchorLocationLabel = computed(() => {
+  const target = anchorTarget.value
+  if (!target)
+    return sectionPath.value
+
+  if (target.kind === 'repo') {
+    const repoName = props.repoNames[target.itemId] || t('knowledge.blueprints.activity.repoUnknown')
+    const field = target.fieldPath.split('.')[0] ?? ''
+    const fieldKey = REPO_FIELD_LABEL_KEY[field]
+    return fieldKey
+      ? `${repoName} · ${t(`knowledge.blueprints.repo.${fieldKey}`)}`
+      : `${repoName} · ${sectionPath.value}`
+  }
+
+  const sectionLabelKey = SECTION_LABEL_KEY[target.sectionKey]
+  const sectionLabel = sectionLabelKey
+    ? t(`knowledge.blueprints.section.${sectionLabelKey}`)
+    : target.sectionKey
+  return target.itemId ? `${sectionLabel} · ${target.itemId}` : sectionLabel
+})
+
+const showAnchorLocation = computed(() =>
+  !isOrphaned.value
+  && !quotedText.value
+  && !hasBlockAnchor.value
+  && Boolean(sectionPath.value)
+  && Boolean(anchorDomId.value)
+  && Boolean(anchorLocationLabel.value),
+)
 
 /**
  * 等待态（Phase 117，WAIT-03）。
@@ -293,6 +360,35 @@ const visibleMessages = computed(() => {
   })
 })
 
+interface MessageTextSegment {
+  type: 'text' | 'repository'
+  text: string
+  repositoryId?: string
+}
+
+const REPOSITORY_UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi
+
+/** 把线程正文中的仓库 UUID 转成可读、可跳转的仓库标签。 */
+function repoAwareSegments(text: string): MessageTextSegment[] {
+  const segments: MessageTextSegment[] = []
+  let cursor = 0
+  for (const match of text.matchAll(REPOSITORY_UUID_PATTERN)) {
+    const index = match.index ?? 0
+    if (index > cursor)
+      segments.push({ type: 'text', text: text.slice(cursor, index) })
+    const repositoryId = match[0]
+    segments.push({
+      type: 'repository',
+      repositoryId,
+      text: props.repoNames[repositoryId] || t('knowledge.blueprints.activity.repoUnknown'),
+    })
+    cursor = index + repositoryId.length
+  }
+  if (cursor < text.length)
+    segments.push({ type: 'text', text: text.slice(cursor) })
+  return segments.length ? segments : [{ type: 'text', text }]
+}
+
 /**
  * 消息渲染视图：把 `[rule_id]` 前缀拆成中文标签徽标 + 正文（quick-260806-vqh）。
  *
@@ -311,6 +407,7 @@ const renderedMessages = computed(() =>
         ? t(`knowledge.blueprints.thread.rule.${ruleId}`)
         : ruleId,
       text,
+      segments: repoAwareSegments(text),
     }
   }),
 )
@@ -440,6 +537,22 @@ function onGotoAnchor(domId: string): void {
       <pre class="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words text-xs leading-5 text-foreground/85">{{ quotedText }}</pre>
     </div>
 
+    <!-- 无块锚点时明示卡级 / 段级位置；失锚线程仍只展示原文快照，不提供过期跳转。 -->
+    <button
+      v-if="showAnchorLocation"
+      type="button"
+      class="flex w-full items-center gap-1.5 rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+      data-testid="blueprint-thread-anchor-location"
+      :title="t('knowledge.blueprints.thread.gotoAnchorLocation', { location: anchorLocationLabel })"
+      @click="onGotoAnchor(anchorDomId)"
+    >
+      <span class="icon-[lucide--map-pin] shrink-0" aria-hidden="true" />
+      <span class="min-w-0 truncate">
+        {{ t('knowledge.blueprints.thread.anchorLocation', { location: anchorLocationLabel }) }}
+      </span>
+      <span class="icon-[lucide--arrow-up-left] ml-auto shrink-0 opacity-60" aria-hidden="true" />
+    </button>
+
     <!-- ⭐ 问答对视图：已答/已关闭的结构化澄清逐题渲染「题面 + 答案 + 功能点跳转」，
          替代整墙 pre（题面/答案默认截断，一键展开全部）。 -->
     <div v-if="showQaView" class="space-y-2" data-testid="blueprint-thread-qa">
@@ -512,10 +625,25 @@ function onGotoAnchor(domId: string): void {
             {{ message.ruleLabel }}
           </Badge>
         </div>
-        <pre
+        <div
           class="whitespace-pre-wrap break-words text-[13px] leading-6 text-foreground/90"
           :class="isMessageClamped(message.id, message.text) ? 'line-clamp-6' : ''"
-        >{{ message.text }}</pre>
+        >
+          <template v-for="(segment, index) in message.segments" :key="`${message.id}-${index}`">
+            <RouterLink
+              v-if="segment.type === 'repository' && segment.repositoryId"
+              :to="`/repositories/${segment.repositoryId}`"
+              class="mx-0.5 inline-flex items-center gap-1 rounded-md border border-border bg-muted/60 px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:border-primary/50 hover:bg-primary/5"
+              data-testid="blueprint-thread-repo-link"
+            >
+              <span class="icon-[lucide--folder-git-2] shrink-0" aria-hidden="true" />
+              {{ t('knowledge.blueprints.activity.repoTag', { name: segment.text }) }}
+            </RouterLink>
+            <template v-else>
+              {{ segment.text }}
+            </template>
+          </template>
+        </div>
         <button
           v-if="isMessageExpandable(message.text)"
           type="button"

@@ -60,6 +60,8 @@ const props = withDefaults(defineProps<{
    * repo_research 分组卡片。⛔ 本组件**不发请求**（唯一轮询点在 `useBlueprintLive`）。
    */
   researchProgress?: BlueprintResearchProgressRepo[]
+  /** 仓库 UUID → 可读仓名；过程明细里只展示可读标签，UUID 仅保留在折叠的原始数据中。 */
+  repoNames?: Record<string, string>
 }>(), {
   events: () => [],
   currentStage: '',
@@ -67,6 +69,7 @@ const props = withDefaults(defineProps<{
   stages: null,
   submitting: false,
   researchProgress: () => [],
+  repoNames: () => ({}),
 })
 
 const emit = defineEmits<{
@@ -162,10 +165,10 @@ function researchStateLabel(state: RepoResearchGroup['state']): string {
   return t(`knowledge.blueprints.activity.${RESEARCH_STATE_LABEL_KEY[state]}`)
 }
 
-/** 直播日志类型标签：复用抽屉的 `research.logType.*`；未配原样透出（⛔ 不隐藏新类型）。 */
+/** 直播日志类型标签：普通视图不裸露后端 token；原值仍保留在诊断数据中。 */
 function liveLogLabel(type: string): string {
   const key = `knowledge.blueprints.research.logType.${type}`
-  return te(key) ? t(key) : type
+  return te(key) ? t(key) : t('knowledge.blueprints.activity.unknownLogType')
 }
 
 /**
@@ -228,19 +231,22 @@ function nodeIsWaiting(node: StagePanoramaNode): boolean {
   return node.state === 'running' && waitingClarification.value
 }
 
-/** 摘要事实标签：`activity.fact.*`；未配文案回落键名本身（与旧全景同口径）。 */
+/** 摘要事实标签：普通视图未登记字段统一降级，不裸露后端 key。 */
 function factLabel(key: string): string {
   const full = `knowledge.blueprints.activity.fact.${key}`
-  return te(full) ? t(full) : key
+  return te(full) ? t(full) : t('knowledge.blueprints.activity.unknownFact')
 }
 
-/** payload / stage_state 键的可读标签：`activity.payload.*`；未配则原样 mono 显示。 */
+/** payload / stage_state 键的可读标签：未登记字段统一降级，不裸露 snake_case。 */
 function fieldLabel(key: string): string {
   const full = `knowledge.blueprints.activity.payload.${key}`
-  return te(full) ? t(full) : key
+  return te(full) ? t(full) : t('knowledge.blueprints.activity.unknownField')
 }
 
 function fieldValue(value: string): string {
+  const repoName = props.repoNames[value]
+  if (repoName)
+    return t('knowledge.blueprints.activity.repoTag', { name: repoName })
   // 置信度 / 适配结论走 i18n 键；true/false 沿用 activity.yes/no；其余原样
   if (value === 'high')
     return t('knowledge.blueprints.activity.confidenceHigh')
@@ -263,16 +269,45 @@ function fieldValue(value: string): string {
   return fallback
 }
 
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi
+
+/** stage_state / 复合 payload 的紧凑行也不得裸露仓库 UUID。 */
+function groupLineValue(line: string): string {
+  const readable = line.replace(UUID_PATTERN, (repositoryId) => {
+    const name = props.repoNames[repositoryId]
+    return name
+      ? t('knowledge.blueprints.activity.repoTag', { name })
+      : t('knowledge.blueprints.activity.repoUnknown')
+  })
+  return readable.split(' · ').map((part) => {
+    const separator = part.indexOf('=')
+    if (separator < 1)
+      return fieldValue(part)
+    const key = part.slice(0, separator)
+    const value = part.slice(separator + 1)
+    return `${fieldLabel(key)}：${fieldValue(value)}`
+  }).join(' · ')
+}
+
+/** 诊断 JSON 也不展示仓库 UUID；保留其他原始字段供排障。 */
+function diagnosticJson(raw: string): string {
+  return raw.replace(UUID_PATTERN, (repositoryId) => {
+    return props.repoNames[repositoryId]
+      ? t('knowledge.blueprints.activity.repoTag', { name: props.repoNames[repositoryId] })
+      : t('knowledge.blueprints.activity.repoUnknown')
+  })
+}
+
 /** 事件中文名：取键与兜底一律走 `resolveProgressKeys`（与旧时间线/全景逐字同口径）。 */
 function eventLabel(row: PanoramaEventRow): string {
   const { key, fallbackKey } = resolveProgressKeys(row.event, row.payload)
   if (!key)
-    return row.event
+    return t('knowledge.blueprints.activity.unknownEvent')
   // 插值前浅拷贝人话化，避免标题里出现 suitable/high 英文
   const displayPayload = humanizePayloadEnums(row.payload)
   if (te(key))
     return t(key, displayPayload)
-  return te(fallbackKey) ? t(fallbackKey) : row.event
+  return te(fallbackKey) ? t(fallbackKey) : t('knowledge.blueprints.activity.unknownEvent')
 }
 
 function formatTime(raw: string): string {
@@ -282,7 +317,7 @@ function formatTime(raw: string): string {
   return Number.isNaN(date.getTime()) ? raw : date.toLocaleString('zh-CN', { hour12: false })
 }
 
-/** 耗时：秒以下给毫秒，分钟以下给秒，其余给「Xm Ys」（与旧全景同款）。 */
+/** 耗时：秒以下给毫秒，分钟以下给秒，小时以下给「Xm Ys」，更长给「Xh Ym」。 */
 function formatDuration(ms: number | null): string {
   if (ms === null || ms <= 0)
     return ''
@@ -290,9 +325,14 @@ function formatDuration(ms: number | null): string {
     return `${ms}ms`
   if (ms < 60_000)
     return `${(ms / 1000).toFixed(1)}s`
-  const minutes = Math.floor(ms / 60_000)
-  const seconds = Math.round((ms % 60_000) / 1000)
-  return `${minutes}m ${seconds}s`
+  if (ms < 3_600_000) {
+    const minutes = Math.floor(ms / 60_000)
+    const seconds = Math.round((ms % 60_000) / 1000)
+    return `${minutes}m ${seconds}s`
+  }
+  const hours = Math.floor(ms / 3_600_000)
+  const minutes = Math.floor((ms % 3_600_000) / 60_000)
+  return `${hours}h ${minutes}m`
 }
 
 // ── stage_state 分片（来自 stages API）────────────────────────────────────────
@@ -648,7 +688,7 @@ function connectorClass(index: number): string {
               </p>
               <ul class="mt-0.5 space-y-0.5 border-l border-border/60 pl-2.5">
                 <li v-for="(line, index) in group.lines" :key="index" class="break-all font-mono text-[11px] text-muted-foreground">
-                  {{ line }}
+                  {{ groupLineValue(line) }}
                 </li>
                 <li v-if="group.truncated" class="text-[11px] text-muted-foreground/70">
                   {{ t('knowledge.blueprints.activity.groupTruncated') }}
@@ -673,7 +713,7 @@ function connectorClass(index: number): string {
                 v-if="rawOpen.has(`state:${activeStage}`)"
                 class="mt-1 max-h-64 overflow-auto rounded-lg bg-muted/40 p-2 font-mono text-[11px] leading-relaxed"
                 data-testid="blueprint-stepper-state-raw"
-              >{{ activeStageState.raw }}</pre>
+              >{{ diagnosticJson(activeStageState.raw) }}</pre>
             </template>
           </div>
         </section>
@@ -783,7 +823,6 @@ function connectorClass(index: number): string {
               <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                 <span class="text-sm font-medium text-foreground">{{ eventLabel(row) }}</span>
                 <span class="tabular-nums text-muted-foreground">{{ formatTime(row.ts) }}</span>
-                <code class="ml-auto text-[11px] text-muted-foreground/70">{{ row.event }}</code>
               </div>
 
               <dl v-if="row.fields.length" class="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-muted-foreground">
@@ -810,7 +849,7 @@ function connectorClass(index: number): string {
                 </p>
                 <ul class="mt-0.5 space-y-0.5 border-l border-border/60 pl-2.5">
                   <li v-for="(line, index) in group.lines" :key="index" class="break-all font-mono text-[11px] text-muted-foreground">
-                    {{ line }}
+                    {{ groupLineValue(line) }}
                   </li>
                   <li v-if="group.truncated" class="text-[11px] text-muted-foreground/70">
                     {{ t('knowledge.blueprints.activity.groupTruncated') }}
@@ -836,7 +875,7 @@ function connectorClass(index: number): string {
                   v-if="rawOpen.has(row.id)"
                   class="mt-1 max-h-64 overflow-auto rounded-lg bg-muted/40 p-2 font-mono text-[11px] leading-relaxed"
                   data-testid="blueprint-stepper-event-raw"
-                >{{ row.raw }}</pre>
+                >{{ diagnosticJson(row.raw) }}</pre>
               </template>
             </li>
           </ul>

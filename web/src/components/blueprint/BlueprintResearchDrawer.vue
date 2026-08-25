@@ -26,6 +26,7 @@ import {
 } from '~/components/ui/sheet'
 import { Skeleton } from '~/components/ui/skeleton'
 import { extractErrorMessage } from '~/composables/useErrorHandler'
+import { humanizeEnumToken } from '~/utils/blueprintActivity'
 
 const props = defineProps<{
   open: boolean
@@ -84,10 +85,12 @@ const verdict = computed(() => {
   const fitness = activeRepo.value?.conclusion?.fitness
   if (!fitness || typeof fitness !== 'object')
     return ''
-  return String((fitness as Record<string, unknown>).verdict ?? '')
+  return humanizeEnumToken(String((fitness as Record<string, unknown>).verdict ?? ''))
 })
 
-const roleSuggestion = computed(() => String(activeRepo.value?.conclusion?.role_suggestion ?? ''))
+const roleSuggestion = computed(() =>
+  humanizeEnumToken(String(activeRepo.value?.conclusion?.role_suggestion ?? '')),
+)
 
 const researchSummary = computed(() => String(activeRepo.value?.conclusion?.research_summary ?? ''))
 
@@ -129,7 +132,14 @@ const CHANGE_LABELS: Record<string, string> = {
 
 function changeLabel(value: unknown): string {
   const key = String(value ?? '')
-  return CHANGE_LABELS[key] ?? key
+  const mapped = humanizeEnumToken(key)
+  return CHANGE_LABELS[key] ?? (mapped !== key ? mapped : t('knowledge.blueprints.research.unknownType'))
+}
+
+function findingKindLabel(value: unknown): string {
+  const key = String(value ?? '')
+  const mapped = humanizeEnumToken(key)
+  return mapped !== key ? mapped : t('knowledge.blueprints.research.unknownFinding')
 }
 
 /** RepoPlan how 字段是 block[] 或字符串；取首块可读文本，拆不出返空串。 */
@@ -157,7 +167,7 @@ function consumedSource(api: Record<string, unknown>): string {
   if (!ds || typeof ds !== 'object')
     return ''
   const source = String((ds as Record<string, unknown>).from_service ?? '')
-  const availability = String((ds as Record<string, unknown>).availability ?? '')
+  const availability = humanizeEnumToken(String((ds as Record<string, unknown>).availability ?? ''))
   return [source, availability].filter(Boolean).join(' · ')
 }
 
@@ -181,13 +191,16 @@ function logVariant(type: string): 'info' | 'warning' | 'destructive' | 'seconda
 function logLabel(type: string): string {
   const key = `knowledge.blueprints.research.logType.${type}`
   const label = t(key)
-  return label === key ? type : label
+  return label === key ? t('knowledge.blueprints.activity.unknownLogType') : label
 }
 
 function stageLabel(stage: string): string {
   const key = `knowledge.blueprints.research.stage.${stage}`
   const label = t(key)
-  return label === key ? stage : label
+  if (label !== key)
+    return label
+  const mapped = humanizeEnumToken(stage)
+  return mapped !== stage ? mapped : t('knowledge.blueprints.research.unknownStage')
 }
 
 /**
@@ -272,7 +285,7 @@ function setOpen(value: boolean): void {
             :data-repository-id="repo.repository_id"
             @click="activeRepoId = repo.repository_id"
           >
-            <span class="block break-all text-[13px] font-medium">{{ repo.repository_name || repo.repository_id }}</span>
+            <span class="block break-all text-[13px] font-medium">{{ repo.repository_name || t('knowledge.blueprints.activity.repoUnknown') }}</span>
             <span class="mt-0.5 block text-[11px] text-muted-foreground">
               {{ t('knowledge.blueprints.research.findingCount', { n: findingCountOf(repo) }) }}
             </span>
@@ -284,7 +297,7 @@ function setOpen(value: boolean): void {
           <section>
             <div class="flex flex-wrap items-center gap-1.5">
               <h3 class="text-sm font-medium text-foreground">
-                {{ activeRepo.repository_name || activeRepo.repository_id }}
+                {{ activeRepo.repository_name || t('knowledge.blueprints.activity.repoUnknown') }}
               </h3>
               <Badge v-if="verdict" variant="info">
                 {{ verdict }}
@@ -293,7 +306,7 @@ function setOpen(value: boolean): void {
                 {{ roleSuggestion }}
               </Badge>
               <Badge variant="muted">
-                {{ activeRepo.status }}
+                {{ humanizeEnumToken(activeRepo.status) }}
               </Badge>
             </div>
             <p v-if="researchSummary" class="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-foreground/90">
@@ -316,7 +329,7 @@ function setOpen(value: boolean): void {
                     {{ findingTitle(finding) }}
                   </span>
                   <Badge v-if="finding.kind" variant="muted">
-                    {{ finding.kind }}
+                    {{ findingKindLabel(finding.kind) }}
                   </Badge>
                   <span class="ml-auto text-[11px] text-muted-foreground/60">#{{ index + 1 }}</span>
                 </div>
@@ -391,7 +404,7 @@ function setOpen(value: boolean): void {
                 {{ stageLabel(run.stage) }}
               </h4>
               <Badge variant="muted">
-                {{ run.status }}
+                {{ humanizeEnumToken(run.status) }}
               </Badge>
               <span class="text-[11px] text-muted-foreground/70">{{ formatTime(run.started_at) }}</span>
               <code class="ml-auto text-[11px] text-muted-foreground/60">{{ run.session_id }}</code>

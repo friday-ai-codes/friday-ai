@@ -84,7 +84,9 @@ const roleMeta = computed(() => ROLE_META[role.value] ?? null)
 const verdict = computed(() => String(props.repo.fitness?.verdict ?? ''))
 const verdictMeta = computed(() => VERDICT_META[verdict.value] ?? null)
 
-const repoName = computed(() => props.repo.repository_name || props.repo.repository_id)
+const repoName = computed(() =>
+  props.repo.repository_name || t('knowledge.blueprints.activity.repoUnknown'),
+)
 
 /** 证据 chip 数：`citations` 是数组就取长度，否则退化成键数（裸 JSONField ⇒ 逐键可选链）。 */
 const evidenceCount = computed(() => {

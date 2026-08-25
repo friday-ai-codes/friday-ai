@@ -378,6 +378,60 @@ describe('段组件 —— blockCtx 透传与零批注实现', () => {
   })
 })
 
+describe('requirementSpec 需求正文折叠 —— quick-260819', () => {
+  /** 超过折叠阈值（2400 字）的真实形态正文：10 个模块各一段验收细节。 */
+  const LONG_GOAL = {
+    block_id: 'bp_goal_1',
+    type: 'paragraph' as const,
+    text: Array.from({ length: 10 }, (_, i) => `## 模块 ${i + 1}：标题\n- 功能点 A：${'验收细节'.repeat(250)}`).join('\n'),
+  }
+
+  function mountGoal(text: unknown, props: Record<string, unknown> = {}) {
+    return mountWith(RequirementSpecSection, {
+      spec: { goal: [text], feature_points: [] },
+      ...BLOCK_CTX,
+      ...props,
+    })
+  }
+
+  it('长正文收起并出「展开全部」，但**全文仍原样交给块序列**（⛔ 不裁文本）', () => {
+    const wrapper = mountGoal(LONG_GOAL)
+
+    expect(wrapper.find('[data-testid="blueprint-spec-goal-fold"]').attributes('data-collapsed')).toBe('true')
+    expect(wrapper.find('[data-testid="blueprint-spec-goal-toggle"]').text()).toBe('展开全部')
+
+    // ⭐ 本条是这次修复的核心：折叠只能是 CSS 裁切。块序列收到的 text 必须逐字等于原文 ——
+    // 一旦有人改回「JS 里 slice 完再渲染」，批注 offset 全错位，本条立刻转红。
+    const blocks = wrapper.findComponent(BlockListStub).props('blocks') as Array<{ text: string }>
+    expect(blocks[0].text).toBe(LONG_GOAL.text)
+  })
+
+  it('点「展开全部」解除收起并翻成「收起」', async () => {
+    const wrapper = mountGoal(LONG_GOAL)
+
+    await wrapper.find('[data-testid="blueprint-spec-goal-toggle"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="blueprint-spec-goal-fold"]').attributes('data-collapsed')).toBe('false')
+    expect(wrapper.find('[data-testid="blueprint-spec-goal-toggle"]').text()).toBe('收起')
+  })
+
+  it('短正文不出折叠按钮（⛔ 不给无意义的展开入口）', () => {
+    const wrapper = mountGoal(BLOCK)
+
+    expect(wrapper.find('[data-testid="blueprint-spec-goal-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="blueprint-spec-goal-fold"]').attributes('data-collapsed')).toBe('false')
+  })
+
+  it('⭐ expandGoalSignal 变化即展开：跨段跳 fp-* 锚点前必须先展开，否则滚到被裁掉的坐标', async () => {
+    const wrapper = mountGoal(LONG_GOAL, { expandGoalSignal: 0 })
+    expect(wrapper.find('[data-testid="blueprint-spec-goal-fold"]').attributes('data-collapsed')).toBe('true')
+
+    await wrapper.setProps({ expandGoalSignal: 1 })
+
+    expect(wrapper.find('[data-testid="blueprint-spec-goal-fold"]').attributes('data-collapsed')).toBe('false')
+  })
+})
+
 describe('repoAssociationCard —— UI-SPEC §6.3', () => {
   it('3a. role 两档徽标文案不同（双色，⛔ 无第三色）', () => {
     const direct = mountWith(RepoAssociationsSection, { associations: [makeAssociation({ role: 'direct' })], ...BLOCK_CTX })
@@ -405,6 +459,12 @@ describe('repoAssociationCard —— UI-SPEC §6.3', () => {
     const wrapper = mountWith(RepoAssociationsSection, { associations: [makeAssociation()], ...BLOCK_CTX })
 
     expect(wrapper.find('[data-testid="blueprint-repo-open"]').attributes('href')).toBe('/repositories/repo-1')
+  })
+
+  it('3c-1. 仓库卡根节点提供 repo-<repository_id> DOM 锚点', () => {
+    const wrapper = mountWith(RepoAssociationsSection, { associations: [makeAssociation()], ...BLOCK_CTX })
+
+    expect(wrapper.find('[data-testid="blueprint-repo-card"]').attributes('id')).toBe('repo-repo-1')
   })
 
   it('3d. cross_team === true ⇒ 跨组徽标；缺键 ⇒ 不出现（正反并列）', () => {

@@ -56,6 +56,7 @@ import { useRoute, useRouter } from 'vue-router'
 import blueprintsApi from '~/api/blueprints'
 import { ApiError } from '~/api/client'
 import deliveryArtifactsApi from '~/api/deliveryArtifacts'
+import { resolveBlueprintAnchorDomId } from '~/components/blueprint/anchorTargets'
 import { canEditBlueprintBlock } from '~/components/blueprint/blockEditOps'
 import BlueprintAssociationsSection from '~/components/blueprint/BlueprintAssociationsSection.vue'
 import BlueprintBlockDiff from '~/components/blueprint/BlueprintBlockDiff.vue'
@@ -434,6 +435,16 @@ const repoNames = computed<Record<string, string>>(() => {
     if (association.repository_id)
       names[association.repository_id] = association.repository_name || association.repository_id
   }
+  // 过程事件里出现过、但最终被确认门剔除的仓（如 unsuitable）仍要能显示名字，
+  // 否则时间线/调研明细会把历史 UUID 渲成「未知仓库」。
+  // ⭐ 读累积器 `events`，⛔ 不读 `eventsQuery.data.events`（增量后只是最后一批）。
+  for (const event of events.value) {
+    const payload = event.payload ?? {}
+    const repositoryId = typeof payload.repository_id === 'string' ? payload.repository_id.trim() : ''
+    const repositoryName = typeof payload.repository_name === 'string' ? payload.repository_name.trim() : ''
+    if (repositoryId && repositoryName && !names[repositoryId])
+      names[repositoryId] = repositoryName
+  }
   return names
 })
 
@@ -661,7 +672,20 @@ function sectionClass(key: string): string {
   return highlightId.value === key ? `space-y-4 scroll-mt-24 ${HIGHLIGHT_CLASS}` : 'space-y-4 scroll-mt-24'
 }
 
+/**
+ * 需求正文的展开信号（每次 +1）。`RequirementSpecSection` 的长正文折叠是 CSS 裁切，
+ * 被裁掉的内联功能点标签仍在 DOM 里但不可见 —— 不先展开，下面量出来的坐标就是个
+ * 看不见的位置。
+ */
+const expandGoalSignal = ref(0)
+
 function onGotoAnchor(domId: string): void {
+  // `fp-*` 落在需求正文里，可能正被折叠裁掉：先发展开信号，等重排完再量位置。
+  if (domId.startsWith('fp-')) {
+    expandGoalSignal.value += 1
+    nextTick(() => scrollToDom(domId))
+    return
+  }
   scrollToDom(domId)
 }
 
@@ -1212,8 +1236,9 @@ function onGotoBlockedThread(threadId: string): void {
   revealAnnotations()
   const anchor = findThread(threadId)?.anchor
   nextTick(() => {
-    if (anchor?.block_id)
-      scrollToDom(`blk-${anchor.block_id}`)
+    const domId = resolveBlueprintAnchorDomId(anchor)
+    if (domId)
+      scrollToDom(domId)
   })
 }
 
@@ -1257,8 +1282,9 @@ watch(
     revealAnnotations()
     const anchor = findThread(threadId)?.anchor
     nextTick(() => {
-      if (anchor?.block_id)
-        scrollToDom(`blk-${anchor.block_id}`)
+      const domId = resolveBlueprintAnchorDomId(anchor)
+      if (domId)
+        scrollToDom(domId)
     })
     threadParam.value = ''
   },
@@ -1342,17 +1368,17 @@ function gotoNextOpenThread(): void {
     return
   const positioned = rows
     .map((thread) => {
-      const blockId = thread.anchor?.block_id
-      const el = blockId ? document.getElementById(`blk-${blockId}`) : null
-      return el ? { thread, top: el.getBoundingClientRect().top + window.scrollY } : null
+      const domId = resolveBlueprintAnchorDomId(thread.anchor)
+      const el = domId ? document.getElementById(domId) : null
+      return el ? { thread, top: el.getBoundingClientRect().top + window.scrollY, domId } : null
     })
-    .filter((row): row is { thread: BlueprintThreadDetail, top: number } => row !== null)
+    .filter((row): row is { thread: BlueprintThreadDetail, top: number, domId: string } => row !== null)
     .sort((a, b) => a.top - b.top)
   const cursor = window.scrollY + measureScrollOffset() + 1
   const next = positioned.find(row => row.top > cursor) ?? positioned[0]
   if (next) {
     selectThread(next.thread.thread_id)
-    scrollToDom(`blk-${next.thread.anchor!.block_id}`)
+    scrollToDom(next.domId)
     return
   }
   selectThread(rows[0].thread_id)
@@ -1508,9 +1534,10 @@ const sections = computed<NavSection[]>(() => [
               :current-stage="eventsQuery.data.value?.current_stage ?? ''"
               :current-status="currentStatus"
               :stages="stagesData"
+              :repo-names="repoNames"
               :submitting="submitting"
               @rerun="onStageRerun"
-              @view-research="researchDrawerOpen = true"
+              @view-research="openResearchDrawer"
             />
 
             <!-- ⭐ 确认门（阶段 1 澄清）挂在正文**顶部**而非页尾：它是当前阻塞整条链的
@@ -1580,6 +1607,7 @@ const sections = computed<NavSection[]>(() => [
                 <RequirementSpecSection
                   v-else
                   :spec="content?.requirement_spec ?? null"
+                  :expand-goal-signal="expandGoalSignal"
                   :threads="threads"
                   :citations="citations"
                   :readonly="readonly"
@@ -1883,6 +1911,7 @@ const sections = computed<NavSection[]>(() => [
                   :gate-available="gateAvailable"
                   :submitting="submitting"
                   :feature-point-titles="featurePointTitles"
+                  :repo-names="repoNames"
                   @select="selectThread"
                   @answer="onAnswer"
                   @resolve="onResolve"
@@ -1918,6 +1947,7 @@ const sections = computed<NavSection[]>(() => [
               :gate-available="gateAvailable"
               :submitting="submitting"
               :feature-point-titles="featurePointTitles"
+              :repo-names="repoNames"
               @select="selectThread"
               @answer="onAnswer"
               @resolve="onResolve"
@@ -1935,6 +1965,7 @@ const sections = computed<NavSection[]>(() => [
       <BlueprintResearchDrawer
         v-model:open="researchDrawerOpen"
         :artifact-id="artifactId"
+        :initial-repository-id="researchInitialRepoId"
       />
 
       <BlueprintSelectionPopover
