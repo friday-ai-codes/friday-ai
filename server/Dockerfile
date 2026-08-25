@@ -104,9 +104,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 1) Semgrep CE ≥1.172.0 — 独立 tool dir，不进 server venv
+# uv ≥0.12 已移除 --install-dir，改用 UV_TOOL_DIR / UV_TOOL_BIN_DIR
 RUN pip install --no-cache-dir uv \
-    && uv tool install --default-index https://pypi.org/simple semgrep==1.172.0 \
-        --install-dir /opt/semgrep
+    && UV_TOOL_DIR=/opt/semgrep UV_TOOL_BIN_DIR=/opt/semgrep/bin \
+       uv tool install --default-index https://pypi.org/simple semgrep==1.172.0
 
 ENV SEMGREP_BIN=/opt/semgrep/bin/semgrep
 ENV PATH="/opt/semgrep/bin:${PATH}"

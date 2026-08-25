@@ -16,6 +16,8 @@ COPY . .
 # 发版时由 CI 传入 git tag（如 v0.2.1），覆盖 package.json 中的版本号
 ARG APP_VERSION
 ENV APP_VERSION=$APP_VERSION
+# vue-tsc 在 8GB 级 Docker VM 上默认 ~2GB heap 会 OOM
+ENV NODE_OPTIONS=--max-old-space-size=4096
 
 RUN pnpm build
 
