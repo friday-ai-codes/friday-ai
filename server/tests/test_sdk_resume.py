@@ -41,7 +41,7 @@ def test_roundtrip_small_transcript():
 
 def test_roundtrip_multichunk_transcript():
     # 跨多个 chunk（含多字节中文，验证按字符切不破坏 UTF-8）
-    transcript = ("行内容测试-" * 10_000)
+    transcript = '{"type":"user","content":"' + ("行内容测试-" * 10_000) + '"}\n'
     assert len(transcript) > RESUME_CHUNK_CHARS
     env = build_resume_dispatch_env(_session("sess-1", transcript))
     chunk_count = int(env["env_FRIDAY_TASK_RESUME_TRANSCRIPT_CHUNKS"])
@@ -56,3 +56,12 @@ def test_oversize_transcript_skipped():
     # 超字节上限 → 不下发 resume env（回退语义重建）
     big = "x" * (MAX_RESUME_TRANSCRIPT_BYTES + 1)
     assert build_resume_dispatch_env(_session("sess-1", big)) == {}
+
+
+def test_malformed_or_missing_thinking_transcript_skipped():
+    assert build_resume_dispatch_env(_session("sess-1", "{broken\n")) == {}
+    missing_thinking = (
+        '{"type":"assistant","message":{"content":'
+        '[{"type":"thinking","signature":"encrypted-only"}]}}\n'
+    )
+    assert build_resume_dispatch_env(_session("sess-1", missing_thinking)) == {}

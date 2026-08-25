@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import structlog
@@ -29,6 +30,43 @@ RESUME_CHUNK_CHARS = 25_000
 # transcript 下发总字节上限。低于 ARG_MAX(~2MB) 大幅留余量给 coding prompt + 其它 env。
 # 超限放弃 resume 下发（走语义重建回退），避免 exec() 因 E2BIG 失败。
 MAX_RESUME_TRANSCRIPT_BYTES = 800_000
+
+
+def validate_sdk_transcript(transcript: str) -> tuple[bool, str]:
+    """校验 SDK resume JSONL 的最低兼容契约。
+
+    SDK 会拒绝只有加密 ``signature``、没有明文 ``thinking`` 的 thinking block。
+    服务端应在派发前安全降级为新会话，避免反复注入已知不兼容的 transcript。
+    """
+    if not transcript.strip():
+        return False, "empty"
+
+    line_count = 0
+    for raw_line in transcript.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        line_count += 1
+        try:
+            message = json.loads(line)
+        except (TypeError, ValueError):
+            return False, "malformed_jsonl"
+        if not isinstance(message, dict):
+            return False, "message_not_object"
+
+        payload = message.get("message")
+        content = payload.get("content") if isinstance(payload, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "thinking":
+                continue
+            if not str(block.get("thinking") or "").strip():
+                return False, "thinking_text_missing"
+
+    if line_count == 0:
+        return False, "empty"
+    return True, ""
 
 
 def build_resume_dispatch_env(
@@ -54,6 +92,16 @@ def build_resume_dispatch_env(
     sid = (data.get("sdk_session_id") or "").strip()
     transcript = data.get("sdk_transcript") or ""
     if not sid or not transcript:
+        return {}
+    compatible, reason = validate_sdk_transcript(transcript)
+    if not compatible:
+        logger.warning(
+            "resume_transcript_incompatible",
+            category="sampling",
+            component="sdk_resume",
+            owner_id=str(getattr(coding_session, "id", "")),
+            reason=reason,
+        )
         return {}
 
     # cwd 一致校验：stored_cwd 空（DB fallback / 旧数据）→ 放行不回退；非空且漂移 → 放弃。
