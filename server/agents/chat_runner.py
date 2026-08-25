@@ -102,6 +102,7 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     # find_related_code 等走 chunk 级关系，本两项吃符号出深度分组与最短路。
     # 本对话面靠 conversation_id 解析会话 owner 做 fail-closed。
     "impact_analysis",
+    "graph_query",
     "trace_call_path",
     # Phase 123：compare↔索引水位变更检测（注册 ≠ 暴露；缺此项 LLM 不可见）
     "detect_changes",

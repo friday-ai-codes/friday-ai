@@ -1,316 +1,272 @@
 # Feature Research
 
-**Domain:** 代码智能图分析（graph-based code intelligence for AI coding agents），对标 GitNexus
-**Researched:** 2026-08-09
-**Confidence:** HIGH（GitNexus 全部工具契约来自官方 Mintlify docs 一手引用；Semgrep 来自官方 docs；Sourcegraph / Aider 来自官方文档与源码）
+**Domain:** v0.24.0 单仓 graph-aware query（对齐 GitNexus 的 Process 分组混合检索）
+**Researched:** 2026-08-24
+**Confidence:** HIGH（核心结论来自 GitNexus 官方仓库 `11a60e6` 的源码、README 与官方 Skill）
 
-> 范围限定：只研究 v0.22.0 净新增功能（impact / trace / detect_changes / 社区检测+模块摘要 / 执行流 / rename_preview / Semgrep taint 门禁）。已有能力（hybrid 检索、grep、find_related、RepoRouter、CrossRepoApiCall、Galaxy 可视化、索引管线）不重复研究。
+> 范围限定：本文只研究统一查询入口、Process 一等检索、可解释排序、`file:line` 证据、截断/降级、工具发现、多消费面契约与单仓 benchmark。Friday 已有 `GraphService`、impact、trace、Community、Process 不重复研究。跨仓 impact、PDG/CFG、rename apply、以 Leiden 替换现有社区算法均不进入 v0.24.0。
 
-## 一手调研：GitNexus 工具契约（问题 1）
+## 结论先行
 
-以下输入输出格式全部摘自 GitNexus 官方文档（https://abhigyanpatwari-gitnexus.mintlify.app），是设计 Friday 同类 MCP 工具时的直接参照。
+1. GitNexus 的 `query` 不是平铺文件搜索：它并行执行 BM25 与 semantic 检索，以 RRF 合并 Symbol，再沿 `STEP_IN_PROCESS` 归入 Process；结果分为 `processes`、`process_symbols`、`definitions`。
+2. GitNexus 当前主线的 Process **不是直接检索对象**。检索先命中 Symbol，再把 Symbol 映射到 Process。因此，把 Process 名称、入口、终点、步骤摘要、模块和业务关键词直接纳入 BM25/embedding，是 Friday 可验证的差异化，而不是照抄。
+3. GitNexus 的 Process 排名为「命中 Symbol 的 RRF 分数求和 + 最大 Community cohesion 的固定小幅加成」，只返回最终 `priority`，没有返回各项贡献。Friday 要做到“可解释排序”，必须把检索 lane、原始 rank、RRF 贡献、图增强贡献和稳定 tie-break 暴露为结构化 breakdown。
+4. GitNexus 对运行降级处理较成熟：FTS 不可用时继续 semantic-only 并返回 warning；向量索引失败时尝试 exact scan；图 enrichment 真失败时返回 `partial: true`。但 embeddings 未生成、exact scan 因规模上限退出等路径仍可能静默退为 BM25-only。Friday 应把每条 lane 的实际状态统一返回。
+5. GitNexus 有三层结果约束：`limit`、`max_symbols`、MCP `maxTokens`。最后一层只是 UTF-8 安全的字符串截断，可能把结构化 JSON 截断成以 `…` 结尾的文本；Friday 不应复制这种不透明截断，应优先做 schema-preserving 语义裁剪并返回总数、返回数和裁剪原因。
+6. 工具发现不是只列工具名：GitNexus 动态 `ListTools` 会在多仓时把 `repo` 改成机器可读的必填参数，repo context resource 同时给出索引新鲜度、可用工具与下一步资源。Friday 的五个消费面应从同一 canonical manifest 生成 schema，并能发现能力、版本、仓库/commit 水位和降级状态。
 
-### `impact`（blast radius 分析）
+## 观察事实：GitNexus 的用户可见行为
 
-**输入参数：**
+以下均为对 GitNexus 当前主线源码的观察，不是 Friday 的既定设计。
 
-| 参数 | 说明 |
-|------|------|
-| `target` | 函数/类/方法/文件名（如 `"validateUser"`、`"src/auth/validator.ts"`） |
-| `direction` | `"upstream"`（谁依赖我，最常用）/ `"downstream"`（我依赖谁） |
-| `maxDepth` | 最大遍历深度，推荐 1–5 |
-| `relationTypes` | 边类型过滤：`CALLS` / `IMPORTS` / `EXTENDS` / `IMPLEMENTS`，省略则用 usage-based 推断 |
-| `includeTests` | 是否含测试文件（想知道哪些测试会挂时设 true） |
-| `minConfidence` | 边置信度阈值 0–1（降低可多召回、代价是误报） |
-| `repo` | 多仓索引时必填 |
+### 查询、分组与排序
 
-**输出结构（关键设计点）：**
+| 观察事实 | 用户可见结果 | 证据 |
+|---------|--------------|------|
+| `query` 接受自然语言 `search_query`，默认最多 5 个 Process、每个 Process 最多 10 个 Symbol，源码内容默认关闭 | 一次调用先看到少量流程与定位信息，不默认灌入源码 | `tools.ts`、`local-backend.ts` |
+| BM25 与 semantic 并行执行；候选上限为 `limit × max_symbols`；两路用 RRF 合并 | 同时兼顾精确关键词和语义近似；命中两路的候选得到更高融合分 | `local-backend.ts` |
+| 每个命中 Symbol 经 `STEP_IN_PROCESS` 找到所有所属 Process | 结果按执行流分组，而不是按文件平铺 | `local-backend.ts` |
+| Process 的 `totalScore` 是成员命中 Symbol 的 RRF 分数之和；`cohesionBoost` 取成员 Community cohesion 最大值；最终 `priority = totalScore + cohesionBoost × 0.1` | 多个相关步骤同时命中的流程更靠前；内聚度只作小幅增强 | `local-backend.ts` |
+| 同分时按稳定 ID 排序，Community 多归属时也按 Community ID 稳定选第一项 | 相同索引和输入下，边界截断结果可复现 | `local-backend.ts` |
+| `task_context`、`goal` 出现在公开 schema，但当前单仓 `query()` 排序实现没有消费这两个字段 | 调用者以为它们“帮助排序”，但单仓结果实际不受其影响 | `tools.ts` 与 `local-backend.ts` 对照 |
+| `processes[].symbol_count` 在 per-process 截断和全局去重之前计算；`process_symbols` 最后按 Symbol ID 全局去重 | 一个 Symbol 同属多个 Process 时，扁平列表只保留首次出现的 `process_id`；计数与实际返回条数可能不同 | `local-backend.ts` |
 
-- `risk`：整体风险 `LOW` / `MEDIUM` / `HIGH` / `CRITICAL`，有明确判定标准（如 MEDIUM = 5–15 个受影响符号、2–5 条受影响流程、多模块）
-- `summary`：`directCallers` / `affectedProcesses` / `affectedModules` / `totalAffected` 四个计数
-- `byDepth`：**按深度分组 + 语义标签**——`d1` = "WILL BREAK"（直接调用者，必须更新）、`d2` = "LIKELY AFFECTED"（间接依赖，可能要改）、`d3` = "MAY NEED TESTING"（传递影响，需测试）。每个符号带 `name` / `type` / `filePath` / `line` / `edgeType` / `confidence`
-- `affected_processes`：受影响执行流列表，标注 target 出现在流程第几步（`step` / `totalSteps`）
-- `affected_modules`：受影响功能模块，分 `direct`（d=1 命中）与 `indirect`（d≥2 命中）
+### `file:line`、Process 与后续动作
 
-**关键洞察**：深度分组 + 每条边独立 `confidence` + 语义化风险标签，是让 LLM agent 直接可消费的核心设计——agent 不需要自己解释图遍历结果，工具已经把"该做什么"编码进了分组语义（d1 必改、d2 复查、d3 补测试）。
+| 观察事实 | 用户可见结果 | 证据 |
+|---------|--------------|------|
+| `query.process_symbols` 返回 `filePath`、1-based `startLine/endLine`、`process_id`、`step_index` 和可选 `module` | Agent 可从自然语言结果直接跳到代码区间，并知道它在流程第几步 | `local-backend.ts`、`resources.ts` |
+| `definitions` 保存未归入任何 Process 的文件/符号，最多 20 项 | 没有 Process 归属的类型或文件不会完全丢失 | `local-backend.ts` |
+| `process/{name}` resource 返回按 step 排序的完整 trace，但当前只显示 `name (filePath)`，未显示行号 | `query` 有行区间，完整 Process resource 反而缺少 `file:line`，证据契约不完全一致 | `resources.ts` |
+| `query` 本身不返回 blast radius；MCP 响应提示调用者下一步用 `context`，再按需用 `impact` | GitNexus 的统一程度是“发现流程”，不是 Friday 目标的 NL→…→impact 一次完成 | `server.ts`、官方 `gitnexus-exploring` Skill |
+| repo context resource 返回 stats、staleness、可用 tools/resources；官方 Skill 要求先绑定 repo、检查 freshness，再 query | 索引水位是回答可信度的一部分，而不是隐藏运维细节 | `resources.ts`、官方 Skill |
 
-### `detect_changes`（diff → 受影响符号 → 受影响流程）
+### 截断与降级
 
-**输入参数：**
+| 场景 | GitNexus 行为 | 对 Friday 的启示 |
+|------|---------------|------------------|
+| Process 数量过多 | `limit` 截断 Process | 需要返回匹配总数/返回数，不能只给 top-N |
+| 单 Process 符号过多 | `max_symbols` 截断该 Process；`include_content=false` 控制体积 | 保留结构证据优先于源码正文 |
+| 独立 definitions 过多 | 固定截到 20 | 固定隐式 cap 不利于调用者判断遗漏；应显式元数据化 |
+| MCP 响应超预算 | `maxTokens` 按每 token 估算 4 UTF-8 bytes，对完整文本做安全前缀截断并以 `…` 结尾 | 这是 transport guardrail，不是语义分页；Friday 应避免截断 JSON 中段 |
+| FTS 完全不可用 | semantic-only 继续；返回包含 repo/branch/indexedAt 的 warning | 降级可见且带修复上下文是 table stake |
+| FTS 部分表失败 | 保留其他结果；warning；`partial: true` | 部分成功必须区别于完整成功 |
+| 未生成 embeddings | semantic lane 返回空，通常继续 BM25-only | Friday 应显式返回 lane=`unavailable/not_indexed`，不能让用户误判为完整 hybrid |
+| VECTOR 查询失败 | 尝试 exact scan；仅首次向服务端日志写 fallback | 可自动降级，但用户结果应标实际执行模式 |
+| exact scan 超出内部规模上限 | semantic lane 返回空 | 不应静默等同于“没有语义命中” |
+| Process/Community 表不存在 | 当作正常配置，不标 `partial` | Friday v0.24.0 已承诺这两类对象；缺失时应明确 capability unavailable，而非看似完整空结果 |
+| Process/Community/content enrichment 真失败 | 继续返回已有数据；warning；`partial: true` | best-effort 不反噬主查询，同时不隐藏证据缺口 |
+| CJK 分词配置不一致或 query 超出分词保护上限 | 返回具体 warning 和修复建议 | 中文 NL query 的分词模式与索引模式必须进入 benchmark 与 capability 回显 |
 
-| 参数 | 说明 |
-|------|------|
-| `scope` | `"unstaged"`（默认）/ `"staged"`（提交前检查）/ `"all"` / `"compare"`（PR 影响分析，需 `base_ref`） |
-| `base_ref` | 比较基线：`"main"` / `"HEAD~3"` / commit hash |
-| `repo` | 多仓时必填 |
+### 工具发现与契约
 
-**输出结构：**
-
-- `changed_symbols[]`：`uid` / `name` / `type` / `filePath` / `changeType`（modified/added/deleted）/ `linesChanged`
-- `affected_processes[]`：`name` / `affectedSteps[]`（流程中哪几步被改到）/ `totalSteps` / `module`
-- `risk` + `summary`（filesChanged / symbolsChanged / processesAffected / modulesAffected）
-
-**官方定位**：pre-commit 工作流的一环（文档给出 git pre-commit hook 与 GitHub Actions PR 检查两个集成示例，HIGH/CRITICAL 时警告或阻断）；有显式的**索引新鲜度限制声明**——索引过期会漏掉新符号，工具提示先重建索引。
-
-### `context`（符号 360 度视图）
-
-- **输入**：`name` / `uid`（零歧义查找，优先）/ `file_path`（重名消歧）/ `include_content`（默认关，开了才带源码）/ `repo`；三者至少给一个
-- **输出**：`symbol` 元数据（含所属 `module` 社区）+ `incoming`（分类：calls / imports / extends / implements）+ `outgoing`（同分类）+ `processes[]`（参与的执行流及步骤位置）
-- **消歧协议**：重名时返回 `disambiguation[]` 候选列表（uid + filePath + line），让 agent 二选一——不猜、不静默取第一个
-
-### `query`（概念 → 执行流分组检索）
-
-- **输入**：`query` 自然语言 + `task_context`（"我在做什么"）+ `goal`（"我想找什么"）两个排序增强参数 + `limit`（默认 5，1–20）+ `max_symbols`（默认 10，每流程符号上限）+ `include_content`（默认关）
-- **输出**：`processes[]`（按 RRF 相关度排序的执行流）+ `process_symbols[]`（参与符号，带 uid/process 归属/step_index）+ `definitions[]`（匹配但不属于任何流程的独立类型）
-- **截断策略**：limit × max_symbols 双维度截断 + `include_content` 默认关闭控 token——这是所有工具的统一纪律
-
-### `rename`（多文件协同改名，问题 5）
-
-- **输入**：`symbol_name` 或 `symbol_uid` + `new_name` + `file_path`（消歧）+ **`dry_run` 默认 `true`** + `repo`
-- **输出**：`changes[]` 按文件分组，每条 edit 带 `line` / `old_text` / `new_text` / **`confidence`（二值：`"graph"` = 图边高置信、`"text_search"` = regex 兜底低置信）** / `context`（周边代码片段供人审）；`summary`（totalEdits / filesAffected / graphEdits / textSearchEdits）；`applied` 标志
-- **官方工作流**：preview → 人审 text_search 项 → `dry_run:false` 应用 → `detect_changes()` 验证范围 → 独立 commit
-- **显式限制声明**：抓不到动态属性访问（`obj["validateUser"]()`）、外部配置里的字符串、未索引文件
-
-**对问题 5 的回答**：GitNexus 的 rename 是"preview 默认 + 可选 apply"。**只读 preview 是它设计的重心**——confidence 二分、context 片段、强制先审后改的 checklist 全部服务于 preview 环节；apply 只是最后一步落盘。Friday 场景（服务端工具、消费者是编码代理而非本地 CLI 用户）只做只读 preview 完全成立：apply 半边由编码代理拿着清单自己执行编辑，服务端直接改写用户仓库反而引入危险的写路径。**table stakes 是 preview 的质量**：图引用 + 文本兜底双源、逐条 confidence 标注、周边 context、按文件分组、动态引用限制的显式声明。
-
-### Clusters / Processes 资源与模块摘要（问题 3）
-
-**Clusters（Leiden 社区检测）：**
-
-- 资源 `gitnexus://repo/{name}/clusters` 返回 **top 20** 模块：`name`（启发式标签，基于目录模式自动生成）+ `symbols` 计数 + `cohesion`（内聚度百分比，80%+ = 边界清晰的好模块，<40% = 社区过宽）
-- 详情资源 `cluster/{name}` 返回成员符号列表（同样 top 20 截断）
-- 注意：GitNexus 的模块名是**启发式生成**（`heuristicLabel`），没有 LLM 摘要——这正是 Friday 计划的「LLM 生成模块摘要」可以超越的点
-
-**Processes（执行流）：**
-
-- 入口点检测是**多因子打分**：call ratio（调多被调少 +40~60）、exported（+30）、命名模式（`handle|on|process|execute` +40，`main|run` +50）、路径模式（controller/handler +20）、框架装饰器乘子（`@Controller`/`@app.route` ×1.5–3）；**测试文件排除**
-- 追踪算法：从入口 BFS 正向，`maxTraceDepth: 10`、`maxBranching: 4`（防工具函数爆炸）、`minSteps: 3`（滤掉 A→B 两步平凡流）、`maxProcesses` 按仓库规模动态 `max(20, min(300, symbolCount/10))`、**边置信度 ≥0.5 才参与追踪**（滤掉 fuzzy 匹配导致的跳线）
-- 去重两层：子集去重（短 trace 是长 trace 子串则删）+ 端点去重（同 entry→terminal 只留最长）
-- Process 分 `intra_community` / `cross_community` 两类，**跨社区流程被标注为架构上最重要的**
-- 每个符号有 `STEP_IN_PROCESS` 边带 step 序号，`context` 工具直接透出「此符号在 LoginFlow 第 2/7 步」
-
-**AI agent 怎么消费效果最好（GitNexus 的答案）：**
-
-1. **skills 随索引自动落仓**：`gitnexus analyze` 把 4 个 skill（exploring / debugging / impact-analysis / refactoring）写进 `.claude/skills/gitnexus/`，生成 `AGENTS.md` 引用，Claude Code 还注册 PreToolUse hooks（用图上下文增强 grep/glob）
-2. **skill = 工作流 + checklist**：每个 skill 定义任务触发条件、工具选择顺序、必查清单（如 exploring：先读 context 资源 → query → context 工具 → process 资源 → 读源码）
-3. **「always start with context」**：约 150 token 的轻量资源先行（符号计数、staleness 检查、可用工具），agent 先花小钱确认索引可用再花大钱查询
-4. **「smart tools, not raw queries」哲学**：工具返回**预结构化情报**（process 分组、分类引用、深度分组 blast radius），不返回原始图数据——"agent 一次调用拿全上下文（而不是 5–10 次）、小模型也能用好（工具做了重活）"
-5. `cypher` 原始查询工具保留为 escape hatch，但 skills 全部引导走 smart tools
-
-### `detect_impact` MCP prompt（问题 4 的编排范式）
-
-GitNexus 除工具外还提供 prompt：`detect_impact(scope, base_ref)` 引导 agent 走四步工作流——① `detect_changes` 找改动符号与受影响流程 → ② 对关键符号跑 `context` 看全引用 → ③ 对高危项跑 `impact` 看 blast radius → ④ 产出结构化 markdown 风险报告（Changes / Affected Processes / Risk Level / Recommendations 四段，含测试建议、review 建议、部署建议）。**prompt 提供工作流逻辑，tool 提供数据**——这个报告结构就是 Friday「detect_changes 接入 MR 描述」的模板参照。
-
-**对问题 4 的回答（受影响流程 vs 受影响符号清单）**：GitNexus 的答案是**两者都给、各司其职**——
-
-- **受影响符号清单**（changed_symbols + impact byDepth）是 coding agent 的**行动指南**：d1 逐条列出"必须更新的 caller"，带 file:line 可直接跳转编辑。没有它 agent 无法行动。
-- **受影响流程**（affected_processes）是**风险叙事层**：「LoginFlow 第 2 步被改」比「validateUser 有 23 个 caller」对人类 reviewer 和 MR 描述更有说服力；官方 best practice 明说"Breaking LoginFlow is more critical than a utility function"。
-- 对 Friday：**符号清单是 MVP 必需**（编码代理提交前自查靠它行动），**流程叙事是 MR 描述的增值层**（依赖执行流功能先落地）。两者不是二选一，是分层交付。
-
-### 置信度体系（Friday impact 置信度分级的参照）
-
-GitNexus 每条边带 `confidence` + `reason`：
-
-| 分数 | 场景 | reason |
-|------|------|--------|
-| 1.0 | 同文件引用 | `same-file` |
-| 0.85 | import 已解析的跨文件调用 | `import-resolved` |
-| ~0.5–0.7 | import 解析失败的模糊名匹配 | `fuzzy-global` |
-| ~0.3 | 常见名（`render`/`init`）的极低置信匹配 | `fuzzy-global-low-confidence` |
-
-流程追踪硬性过滤 `MIN_TRACE_CONFIDENCE = 0.5`；impact 让调用方用 `minConfidence` 自选权衡。Friday 的三级来源（解析边 / 裸名边 / 跨仓 `match_confidence`）可直接映射到这套数值 + reason 字符串的呈现方式。
-
-## 竞品交互范式（问题 2）
-
-### Sourcegraph（code navigation）
-
-- **双层精度模型**：search-based（tree-sitter/ctags 启发式，开箱即用、有误报漏报）与 precise（SCIP 编译器级索引，跨仓精确）并存，UI 里 find references 结果**同时展示两类并标注来源**——与 Friday「解析边 vs 裸名边」的置信度分层是同一设计哲学：不隐藏低置信结果，而是标注让用户/agent 自行取舍
-- 跨仓导航靠 SCIP 全局唯一 symbol ID + 版本感知解析；find implementations 支持接口→跨仓所有实现
-- 定位是「人看的导航」而非「agent 消费的分析」：无深度分组、无风险分级——GitNexus 式的 blast radius 语义化是 agent 时代的增量
-
-### Aider repo map（模块摘要消费的另一个范本）
-
-- tree-sitter 抽定义/引用 → 文件为节点、引用为边建图 → **NetworkX Personalized PageRank** 排序 → 在 **token 预算内**（默认 1k，`--map-tokens` 可调）挑最重要的符号签名塞进每轮 prompt
-- 个性化偏置：聊天中已加入的文件出边 ×50、用户提到的标识符 ×10、长而具体的标识符 ×10、引用频次开方衰减
-- **对 Friday 模块摘要的启示**：agent 消费图产物的成功范式是「**排序 + 预算截断**，不是全量灌入」。模块摘要喂 RepoRouter / 技术方案生成时应同样按相关度排序、限 token 预算，而非把所有社区摘要拼接
-- 反面教训：Aider 的 map 每轮重算（有缓存），Friday 的内存图服务 + 水位失效设计已经规避了这一成本
-
-### CodeQL
-
-- 以编译器级数据流/污点分析为核心，查询语言（QL）表达能力最强，但索引构建重（需编译）、增量差、面向安全审计而非 agent 实时交互。Friday 的定位（tree-sitter 图 + Semgrep 外购 taint）刻意避开了这条重路线——与 PROJECT.md「买不是造」决策一致，本调研确认该取舍与业界一致（GitNexus 同样不做数据流分析）
-
-### Cody（Sourcegraph 的 agent context）
-
-- context 引擎混合 keyword + embedding 检索，近年方向是把 precise code graph 作为 context 源之一。公开资料中无 GitNexus 式的 impact/blast-radius 工具面——确认「图分析工具化给 agent」仍是差异化空间而非红海
-
-## Semgrep taint 门禁在 MR 流程的呈现（问题 6）
-
-来自 Semgrep 官方 docs 的关键实践：
-
-**扫描模式（决定噪声水平的第一因素）：**
-
-- **diff-aware scanning**：MR 场景只报「基线之后新引入」的 finding。基线取 merge-base（`SEMGREP_BASELINE_COMMIT=$(git merge-base main feature-branch)`），非 GitHub/GitLab CI 环境用 `SEMGREP_BASELINE_REF`
-- **推荐组合**：主干分支定期 full scan（维护全量 finding 台账）+ MR 分支 diff-aware scan（只看增量）——否则同一 finding 在每个分支重复出现
-- **shortest-path-only**：同一 source→sink 组合只报最短路径一条，加速 triage（多路径同 taint 视为重复）
-
-**finding 分级与生命周期：**
-
-- 规则自带 severity（ERROR/WARNING/INFO 三级），平台侧 finding 状态机：Open → Reviewing / Fixing / **Ignored**（须给原因：False positive / Acceptable risk / No time to fix）/ Fixed
-- **triage 跨分支生效**：某 finding 在任一分支被 ignore，其他分支/ref 同步 ignore——不用每个 MR 重复处理同一误报
-- 误报处理三通道：平台 UI 批量 triage、代码内 `nosemgrep` 注释、**MR 评论回复 `/fp`**（把开发者留在 MR 上下文里完成 triage）
-- dataflow traces（source→sink 传播路径逐步展示）随 finding 给出，`--dataflow-traces` CLI 可见
-
-**taint 能力边界（影响 Friday 门禁的承诺口径）：**
-
-- CE 版 taint 是**函数内**（intraprocedural）；跨函数（`--pro-intrafile`）与跨文件（`--pro` + rule 标 `interfile: true`）是 **Semgrep Pro 付费能力**，且跨文件仅支持部分语言、内存要求高（8GB/核、默认 5GB 上限超限自动回退单文件分析、3 小时超时回退）
-- 引擎无路径敏感、无指针/别名分析、数组元素不追踪——官方明示的假阴性来源
-- **对 Friday 的直接含义**：开源集成只能承诺函数内 taint + 规则库扫 diff，跨函数/跨文件 taint 不可承诺（除非用户自带 Pro license）；门禁文案必须如实声明这个边界，否则「安全门禁」的名号会产生虚假安全感
-
-**门禁呈现的成熟范式（供 MR 集成参照）：**
-
-1. finding 以 MR 评论/描述区块呈现，带 severity、规则 ID、dataflow trace、修复建议
-2. 默认**报告不阻断**（或仅 ERROR 级阻断），阻断必须配 override 通道（`/fp`、ignore + 原因）——无 escape hatch 的硬门禁会被团队整体绕过或关闭
-3. baseline 语义让存量债务不淹没增量信号
+| 观察事实 | 价值 | Friday 对应要求 |
+|---------|------|----------------|
+| `GITNEXUS_TOOLS` 是 MCP tools schema 的集中定义 | 工具名、描述、参数边界不散落 | 建 canonical graph-query manifest |
+| `ListTools` 根据只读策略、仓库 allowlist 动态过滤；多仓且无默认仓时，把 `repo` 注入 required | Agent 在调用前即可发现权限与必填作用域 | Friday 单仓 query 仍要显式绑定 `repository_id`，五面同一 required 语义 |
+| `gitnexus://repos` 与 repo context resource 提供仓库发现、索引 stats/staleness、available tools/resources | 先发现能力，再执行重查询 | Friday 工具发现需包含 schema version、index commit、能力 lane |
+| 工具响应附 next-step hint；官方 Skill 固化 `list_repos → context → query → context → process` | 小模型不必猜工具编排 | Friday 的统一入口应减少必需的二次编排；高级 drill-down 仍提供明确 next actions |
+| 旧 `query` 参数仍兼容，但公开 schema 只广告 `search_query`，以绕过特定客户端会丢 `query` 参数的问题 | 公开契约和兼容别名可分离 | canonical manifest 可保留 alias，但 contract test 必须覆盖每个消费面真实序列化 |
 
 ## Feature Landscape
 
-### Table Stakes（对标 GitNexus 的必备项）
+### Table Stakes（用户默认应当具备）
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| impact 深度分组 + 语义标签 | GitNexus byDepth d1/d2/d3 = WILL BREAK / LIKELY AFFECTED / MAY NEED TESTING 已是 agent 消费的事实标准 | MEDIUM | 反向 BFS 按深度分桶；标签语义直接写进工具描述与输出 |
-| 每条边独立 confidence + `minConfidence` 参数 | GitNexus 1.0/0.85/0.5/0.3 四档 + reason 字符串；调用方自选精度/召回权衡 | LOW | Friday 三级来源（解析边 1.0 / 裸名边 ~0.5 / 跨仓 match_confidence 原值）映射即可，务必带 reason |
-| 风险分级 LOW/MEDIUM/HIGH/CRITICAL + 明确判定标准 | GitNexus impact 与 detect_changes 都给 risk + criteria 表；agent 靠它决定下一步动作强度 | LOW | 判定标准（符号数/流程数/模块数阈值）写死可解释，不要 LLM 判 |
-| 结果截断 + summary 计数 | 所有 GitNexus 工具 limit/max_symbols 双维截断、include_content 默认关、资源 top-20 | LOW | token 纪律是 agent 工具的生命线；summary 计数让 agent 知道被截断了多少 |
-| detect_changes 的 scope 参数（staged/all/compare+base_ref） | GitNexus 四种 scope 覆盖 pre-commit / PR 两大场景；compare+base_ref 是 MR 影响分析的标准形态 | MEDIUM | Friday 场景以 compare（MR diff）为主；git diff 行区间 × Symbol 行区间定位已在里程碑规划 |
-| 受影响符号清单（changeType + 行数 + file:line） | coding agent 的行动指南；无清单无法行动（问题 4 结论） | MEDIUM | uid/name/type/filePath/changeType/linesChanged 六字段是 GitNexus 的最小集 |
-| trace 路径带 file:line 逐步渲染 | GitNexus process 资源逐 step 给 symbol+file:line+community；Sourcegraph 导航同样以位置为锚 | LOW | 两符号最短路 + 每跳 file:line + 边类型/置信度 |
-| 重名消歧协议（uid 优先 + disambiguation 候选列表） | GitNexus context/rename 遇重名返回候选让 agent 明确二选，绝不静默取第一个 | LOW | Friday Symbol 已有主键，透出稳定 uid 即可 |
-| 索引新鲜度（staleness）声明 | GitNexus context 资源带 staleness 检查，detect_changes 文档显式声明索引过期的失效模式 | LOW | Friday 已有 `last_indexed_commit_sha` 水位，工具输出带「索引落后 N commits」提示 |
-| rename 只读 preview：图边 + 文本兜底双源、逐条 confidence 二分、context 片段 | GitNexus rename 的价值重心在 preview 质量（问题 5 结论）；动态引用限制须显式声明 | MEDIUM | Friday 只做只读半边是合理裁剪；graph/text_search 二值标签 + 按文件分组照搬 |
-| taint 门禁 diff-aware（只报 MR 新增 finding） | Semgrep 官方推荐范式；全量 finding 灌 MR 是噪声灾难 | MEDIUM | baseline 取 merge-base；主干 full scan 台账可后置 |
-| finding 分级 + 误报通道 | severity 三级 + ignore 须给原因 + triage 跨分支生效是 Semgrep 成熟实践 | MEDIUM | 最小集：severity 透出 + `nosemgrep` 注释生效 + 门禁默认报告不阻断 |
+| Feature | Why Expected | Complexity | 可转为原子验收的 Notes |
+|---------|--------------|------------|--------------------------|
+| **TS-01 单一 graph-aware query** | 用户不应手工串 Symbol、Community、Process、impact 多个底层工具 | HIGH | 给定 repository + NL query，一次响应同时含候选 Symbol、Community、Process、步骤证据和有界 impact 摘要；空 query 明确拒绝 |
+| **TS-02 Process 分组结果契约** | GitNexus 已把执行流分组做成核心用户行为 | MEDIUM | 每个 Process 内嵌自己的命中 Symbol/steps，不使用会丢多归属的全局扁平去重；返回 `matched_symbol_count` 与 `returned_symbol_count` |
+| **TS-03 Process 一等 BM25/embedding 召回** | 仅 Symbol→Process 映射会漏掉业务词只存在于流程摘要的查询 | HIGH | Process 检索文档至少覆盖名称、入口、终点、步骤摘要、模块、业务关键词；测试“Symbol 名无 query 词、Process 摘要有 query 词”仍能召回 |
+| **TS-04 双 lane 混合检索与确定性融合** | 关键词与自然语言互补；相同输入应可复现 | HIGH | Symbol lane 与 Process lane 均记录 BM25/semantic 排名；同仓同 commit 同配置重复运行排序一致；tie-break 使用稳定 ID |
+| **TS-05 可解释排序 breakdown** | 仅给一个 `priority` 无法判断为什么命中，也无法做 benchmark 归因 | MEDIUM | 每个结果返回命中 lane、各检索 rank/贡献、图增强贡献、最终分与排序版本；所有贡献可重算最终分；不在研究阶段臆造权重 |
+| **TS-06 步骤级 `file:line` 证据** | Agent 必须能核验并跳转，不可只有流程叙事 | MEDIUM | 每个返回步骤包含仓库相对路径、1-based start/end line、Symbol UID、index commit；行号落在文件范围内且源码锚点可反查 |
+| **TS-07 候选消歧与锚点选择** | 重名 Symbol 不能静默选第一个后继续算 impact | MEDIUM | 重名时返回候选及路径/行号；impact 只基于已明确 UID 的 anchor；无法唯一化时标 `needs_disambiguation`，不伪造影响面 |
+| **TS-08 有界 impact 摘要** | v0.24.0 目标要求一次回答影响面，但不能把完整传递闭包灌入 | MEDIUM | 对明确 anchor 返回既有 impact 能力的摘要、直接影响样本和截断信息；完整明细通过 next action/drill-down 获取 |
+| **TS-09 schema-preserving 截断** | LLM 工具响应必须在预算内且仍可解析 | MEDIUM | 按“源码正文→次要 Symbol→低排 Process”顺序裁剪；始终返回合法 schema、总数/返回数、`truncated=true`、原因和继续查询提示 |
+| **TS-10 lane 级降级可见** | BM25-only、semantic-only、无 Process enrichment 不能看起来像完整 hybrid | MEDIUM | 返回 `retrieval_status`，分别标 BM25、embedding、graph enrichment、impact 的 used/degraded/unavailable 及脱敏原因；部分成功置 `partial=true` |
+| **TS-11 索引水位与证据一致性** | `file:line`、Process、impact 必须来自同仓同 commit，否则组合答案不可核验 | MEDIUM | 响应顶层返回 repository、branch/index key、commit SHA；发现组件水位不一致时降级或拒绝拼接，并明确 warning |
+| **TS-12 canonical 工具契约与发现** | 服务端、Chat、Django MCP、npm MCP、容器任一漂移都会造成“服务端有、Agent 找不到” | HIGH | 五个消费面从同一 manifest 生成/适配；工具名、description、required、defaults、enums、response version 一致；schema hash snapshot 全面相等 |
+| **TS-13 权限、排除与可观测约束** | 新统一入口不能绕过既有安全边界 | MEDIUM | 所有 lane 复用 repository 权限与 exclusion fail-closed；日志/`RetrievalTrace` best-effort，携带触发用户和关联键，不记录凭证或未脱敏上游文本 |
+| **TS-14 单仓同 commit benchmark** | “更好”必须可重复证明，不能凭样例感受 | HIGH | 冻结 repo+commit+query set，先记录 v0.22 baseline；按语言/框架/入口类型分桶，产 Symbol/Process recall、`file:line` 有效率、resolved edge、impact/trace、延迟/token 原始结果；回归阈值仅在 baseline 后锁定 |
 
-### Differentiators（Friday 的竞争优势位）
+### Differentiators（相对 GitNexus 的竞争优势）
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| 跨仓 impact（穿 `CrossRepoApiCall` 边界） | GitNexus 每仓独立图、impact 不穿仓；Friday 多仓图 + 跨仓 API 边可以回答「改这个后端接口影响哪些前端仓」——里程碑已标「反超 GitNexus」 | HIGH | 跨仓边带 `match_confidence`，在 byDepth 输出里标注 `cross_repo: true` + 独立置信档 |
-| LLM 模块摘要（超越 heuristicLabel） | GitNexus 社区标签是目录启发式字符串；Friday 用 LLM 生成语义摘要，喂 RepoRouter charter_match 与技术方案生成——摘要成为路由/规划的检索信号而不只是展示 | MEDIUM | Aider 教训：消费端按相关度排序 + token 预算截断，不全量灌入。LLM 调用须赋 `call_source` |
-| detect_changes → MR 描述自动生成闭环 | GitNexus 的 detect_impact prompt 只产给人看的报告；Friday 把同一报告结构（Changes/Affected Processes/Risk/Recommendations）直接写进编码任务的 MR 描述与提交前自查 | MEDIUM | 报告模板照 detect_impact prompt 四段结构；接入 `RepoCodingTask` 提交链路 |
-| 服务端多用户图服务（权限 + exclusion fail-closed） | GitNexus 是本地单用户 CLI；Friday 图工具天然继承 PAT 鉴权、排除文件六面不可见、RetrievalTrace 留痕 | MEDIUM | 复用既有 MCP 工具模式即零额外设计；这是自托管团队场景的护城河 |
-| taint 门禁进 MR 编排流 | GitNexus 完全没有安全分析面；Semgrep 自身是通用 CI 工具——Friday 把 diff-aware taint 扫描编排进「需求→PR」流水线，finding 进 MR 描述/评论 | MEDIUM | 买不是造（已定决策）；开源版只承诺函数内 taint，文案如实声明边界 |
-| 执行流以 `Endpoint` 为一等入口 | GitNexus 入口点靠启发式打分猜；Friday 已有 Endpoint 模型（路由装饰器解析），入口是确定性的——执行流质量天花板更高 | MEDIUM | 保留 GitNexus 的 BFS 参数纪律（maxDepth 10 / maxBranching 4 / minSteps 3 / 置信度 ≥0.5） |
-| skills 随平台分发（repo-specific 工作流） | GitNexus 用 `.claude/skills/` 落仓 + AGENTS.md 引用证明了「工具 + 工作流 skill」比裸工具留存率高；Friday 已有 `@friday-ai-codes/skills` 同源分发管线 | LOW | 新增 impact-analysis / refactoring 两个 skill 模板即可，复用 v0.17.0 同源机制 |
+| **DF-01 Process 直接检索 + Symbol 间接映射双路合流** | GitNexus 当前只先搜 Symbol 再映射 Process；Friday 可召回“业务概念存在于流程摘要、却不在符号名”的流程 | HIGH | Process 是独立检索文档，不只是 enrichment 标签；与 Symbol→Process 证据在统一排序中合流 |
+| **DF-02 一次返回 NL→证据→影响面** | GitNexus 要 query→context→impact 多调用；Friday 面向编码/方案 Agent 可一次获得可行动摘要 | HIGH | 保持 bounded summary；不要在统一入口塞完整 impact 闭包 |
+| **DF-03 完整排序账本** | GitNexus 只暴露三位小数 `priority`；Friday 可让用户和 benchmark 精确解释每次排序变化 | MEDIUM | breakdown、排序版本、稳定 tie-break、lane 状态全部结构化；可离线回放 |
+| **DF-04 五消费面同契约** | GitNexus MCP 定义集中，但 Friday 的产品价值要求 Chat、Django MCP、npm MCP、容器与服务端真正同源 | HIGH | contract manifest + 生成物/adapter + schema hash + E2E discovery；这是 v0.22 npm 漂移的结构性修复 |
+| **DF-05 证据一致性硬约束** | 把 Process、行号、impact 锚定同一 index commit，避免“每块都真、拼起来是假” | MEDIUM | 每个 evidence item 可继承顶层水位；混水位不得静默合并 |
+| **DF-06 结构化、可续查的预算降级** | GitNexus `maxTokens` 可能截断结构化文本；Friday 可在低 token 预算下仍返回可解析且可 drill-down 的答案 | MEDIUM | 用语义裁剪替代字符串截断；测试多个预算档只验证单调裁剪与 schema 完整，不预设业务阈值 |
 
-### Anti-Features（明确不做/不这样做）
+### Anti-Features（明确不做或不复制）
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| rename 自动 apply（服务端改写用户仓库） | "既然能算出清单为什么不直接改" | 服务端写用户仓库是危险的新写路径；GitNexus 的 apply 是本地 CLI 场景，且官方 checklist 也强制先 preview 人审 | 只读 preview 清单 + 编码代理自己执行编辑（里程碑已定） |
-| 自研 PDG/CFG/污点分析 | "CodeQL 能做我们也做" | 编译器级数据流是另一个量级的工程；GitNexus 同样不做；CodeQL 索引重、增量差 | Semgrep taint mode 外购（已定决策，本调研确认与业界一致） |
-| 原始图数据 dump / 裸 Cypher 面向 agent | "灵活性最大" | GitNexus skills 明确引导「smart tools, not raw queries」——预结构化输出让 agent 一次拿全、小模型可用；裸图数据浪费 token 且小模型驾驭不了 | 预结构化工具输出；原始查询最多作为 superuser 调试 escape hatch |
-| 无截断的完整 impact 结果 | "怕漏" | 大仓 d3 传递闭包可达数千符号，token 爆炸且 agent 消化不了 | 深度分组 + 每层 top-N + summary 总计数 + minConfidence 过滤 |
-| taint 硬门禁默认阻断、无 override | "安全要严" | Semgrep 实践证明无 escape hatch 的硬门禁会被整体绕过；存量债务淹没增量信号 | diff-aware 只报新增 + 默认报告不阻断（或仅 ERROR 阻断）+ ignore/nosemgrep 通道 |
-| 用受影响流程替代受影响符号清单 | "流程叙事更高级" | 流程是叙事层不是行动层；agent 没有符号清单无法定位要改的 caller（问题 4 结论） | 符号清单为主 + 流程叙事为 MR 描述增值层，两者分层交付 |
-| 每请求实时全图重算 | "保证最新" | Aider 每轮重算是本地小图；服务端多仓大图重算延迟不可接受 | 内存图缓存 + `last_indexed_commit_sha` 水位失效 + LRU（地基已规划） |
-| 承诺跨函数/跨文件 taint（开源版） | "门禁要全" | 跨函数/跨文件 taint 是 Semgrep Pro 付费能力且资源要求高（8GB/核）；虚假承诺产生虚假安全感 | 如实声明函数内边界；Pro license 用户可配置升级 |
+| **AF-01 跨仓 impact / group query** | 看起来是统一查询的自然延伸 | 本里程碑验收是单仓 benchmark；跨仓真实样本与生产者仍有已知欠债，会稀释单仓质量闭环 | 响应明确 `scope=single_repository`；跨仓后续独立里程碑 |
+| **AF-02 自研或扩展 PDG/CFG** | 希望 query 解释控制/数据依赖 | 编译器级范围，与 Process 混合召回没有必要依赖；会造成范围爆炸 | 只消费现有 Symbol/调用边/Process/impact |
+| **AF-03 rename apply** | Agent 拿到 Symbol 后可顺手改名 | 引入写仓副作用，与只读统一查询无关 | 保留既有只读能力；编码 Agent 自己编辑 |
+| **AF-04 把 Louvain 换成 Leiden** | GitNexus 文档称 Community 使用 Leiden | Friday 已有固定 seed 的 Louvain 决策；替换算法会把检索改进与社区重建混为一谈 | 复用现有 Community；只改其检索/解释消费 |
+| **AF-05 仅搜 Symbol 再映射 Process** | 最接近 GitNexus 当前实现，改动较小 | Process 仍非一等对象，无法满足“业务词命中流程摘要”的目标 | Symbol 与 Process 两条 retrieval lane |
+| **AF-06 用 LLM 直接给最终排序分** | 自然语言 query 看似适合智能重排 | 不可稳定回放、难解释、难做同 commit benchmark | 确定性混合排序；如后续加 LLM，只能有界重排且不得覆盖事实分 |
+| **AF-07 全局扁平 `process_symbols` + Symbol ID 去重** | 输出紧凑、看似省 token | 多 Process 归属会丢失，Process 计数与返回项不一致 | Symbol 嵌套在 Process 内；共享 Symbol 可重复引用 UID，正文去重另做 |
+| **AF-08 仅返回最终 `priority`** | payload 更小 | 用户无法解释 Community/Process 为什么排前，也无法定位 benchmark 回归 | 返回可加和 breakdown 和排序版本 |
+| **AF-09 字符串中段 `maxTokens` 截断** | 实现简单、能硬控上下文 | 可能破坏 JSON/schema，调用者不知道漏了哪一层 | schema-preserving 语义裁剪 + truncation metadata |
+| **AF-10 静默退为 BM25-only 或空 Process** | availability-first | 用户会把能力缺失误判为“没有相关流程” | availability-first 继续，但 lane 状态、warning、partial 必须可见 |
+| **AF-11 在 baseline 前拍脑袋设门槛/权重** | 便于先写 CI | 违反同仓同 commit 实测原则，可能把旧缺陷固化或制造不可达门槛 | 先采 baseline 与分桶分布，再在需求评审中锁阈值与版本 |
+| **AF-12 为五个入口手写五份 schema** | 每个入口能快速上线 | 必然重演 npm MCP 漂移，且默认值/枚举最容易悄悄分叉 | canonical manifest 派生适配层与 snapshot |
 
 ## Feature Dependencies
 
-```
-内存图服务（地基：networkx 缓存 + 水位失效 + LRU）
-    └──required by──> impact 影响面分析
-    └──required by──> trace 调用路径
-    └──required by──> rename_preview（图引用半边）
-    └──required by──> 社区检测
-    └──required by──> 执行流追踪
+```text
+[同仓同 commit 数据集与 v0.22 baseline]
+    └──requires──> [TS-14 benchmark 与后续门槛]
 
-impact ──required by──> detect_changes（diff→符号→批量 impact）
-社区检测 ──required by──> LLM 模块摘要 ──enhances──> RepoRouter / 技术方案生成
-社区检测 ──enhances──> 执行流（intra/cross_community 分类；GitNexus 中社区先于流程检测）
-执行流（Process 模型） ──enhances──> detect_changes（affected_processes 叙事层）
-执行流 ──enhances──> impact（affected_processes 字段）
-detect_changes ──required by──> MR 描述自动生成 / 编码任务提交前自查
+[Process 检索文档构建]
+    └──requires──> [TS-03 Process 一等 BM25/embedding]
+                       └──requires──> [TS-04 双 lane 融合]
+                                          └──requires──> [TS-05 排序 breakdown]
 
-Semgrep taint 门禁 ──independent──（只依赖 MR diff 通道，不依赖内存图）
-rename_preview ──enhances──> 编码代理改名工作流（grep 兜底半边复用既有 grep 面）
+[稳定 Symbol UID + Community/Process 归属 + index commit]
+    └──requires──> [TS-02 Process 分组]
+    └──requires──> [TS-06 file:line 证据]
+    └──requires──> [TS-07 消歧]
+                       └──requires──> [TS-08 impact 摘要]
+
+[TS-02~TS-11 canonical response schema]
+    └──requires──> [TS-01 单一入口]
+                       └──requires──> [TS-12 五消费面契约与发现]
+
+[TS-09 语义截断] ──cross-cuts──> [TS-01/02/06/08/12]
+[TS-10 降级可见] ──cross-cuts──> [BM25/embedding/graph/impact]
+[TS-11 水位一致性] ──cross-cuts──> [所有证据与 benchmark]
+[TS-13 权限/排除/观测] ──cross-cuts──> [所有入口]
 ```
 
 ### Dependency Notes
 
-- **一切图工具依赖内存图服务**：GitNexus 用 KuzuDB 常驻 + 连接池懒加载 5 分钟逐出；Friday 的 networkx 缓存 + 水位 + LRU 是同构方案，必须第一个落地。
-- **社区检测先于执行流**：GitNexus 索引管线第 6 阶段在社区之后才做流程检测，因为 Process 需要 `intra/cross_community` 分类与 community 归属标注——Friday 相位排序应保持同序。
-- **detect_changes 分两层交付**：符号清单半边只依赖 impact（MVP）；affected_processes 叙事半边依赖执行流（可后置增强，不阻塞 MR 描述首版）。
-- **Semgrep 门禁与图功能零耦合**：可并行开发，任何相位插入均可。
-- **模块摘要是消费端驱动的**：摘要本身 MEDIUM 复杂度，但价值取决于 RepoRouter/方案生成的消费接线；喂养侧遵循 Aider 范式（排序 + 预算截断）。
+- **先建 Process 检索文档，再做融合排序。** 没有可独立索引的 Process 表示，就仍然只是 GitNexus 式 Symbol→Process enrichment。
+- **先定 canonical response，再铺五个入口。** 否则各入口会围绕半成品 schema 独立演化，最后只能做人工对齐。
+- **消歧先于 impact。** 任何基于名称猜中的 impact 都会把低置信候选包装成确定事实。
+- **水位一致性先于 benchmark。** benchmark 若混用不同 commit 的 Symbol、Process 或行号，指标本身不可解释。
+- **benchmark 先采 baseline，后锁回归门。** 研究只定义指标维度和数据冻结协议，不定义阈值。
+- **TS/JS 与 Python resolved edge 提升是召回质量依赖，但应按语言独立测。** Go 按项目既定依赖顺序后置，不应阻塞统一契约和 benchmark harness。
 
-## MVP Definition
+## MVP Definition（v0.24.0）
 
-### Launch With (v1)
+### Launch With
 
-- [ ] 内存图服务 — 一切图工具的地基，无它全部空谈
-- [ ] impact（深度分组 + 置信度 + 风险分级 + 截断 + 跨仓边） — 里程碑核心承诺，agent「改前自查」的主工具
-- [ ] trace 调用路径 — impact 的姊妹工具，实现共享图遍历基建，边际成本低
-- [ ] detect_changes 符号清单半边 + MR 描述接入 — 「提交前自查」闭环是 Friday 区别于 GitNexus 的落点
-- [ ] 重名消歧 + staleness 提示 + 截断纪律 — 所有工具的横切 table stakes，首版就要有
+- [ ] **MVP-01** canonical graph query request/response schema：单仓作用域、版本、水位、Process 嵌套结果、evidence、breakdown、truncation、degradation。
+- [ ] **MVP-02** Process 检索文档与 BM25/embedding 双 lane：支持业务词直接命中 Process。
+- [ ] **MVP-03** Symbol + Process 确定性混合排序：可重算 breakdown、稳定 tie-break、重名消歧。
+- [ ] **MVP-04** 步骤级 `file:line` + bounded impact 摘要：所有结论可核验，同一 commit。
+- [ ] **MVP-05** schema-preserving 预算与 lane 级降级：部分成功不装成完整成功。
+- [ ] **MVP-06** 服务端、Chat、Django MCP、npm MCP、编码容器五面发现同一工具契约。
+- [ ] **MVP-07** 单仓 benchmark：冻结同仓同 commit，先记录 v0.22 baseline，再锁门槛。
+- [ ] **MVP-08** 权限/exclusion/脱敏/触发用户/`RetrievalTrace` 与结构化日志覆盖。
 
-### Add After Validation (v1.x)
+### Add After Validation
 
-- [ ] 社区检测 + LLM 模块摘要 — 触发条件：impact/trace 上线后，RepoRouter charter_match 消费接线就绪
-- [ ] 执行流（Endpoint 入口 + Process 模型） — 触发条件：社区检测落库后；随后回填 detect_changes/impact 的 affected_processes 字段
-- [ ] rename_preview — 独立性强，编码代理改名需求出现即可插入
-- [ ] Semgrep taint 门禁（diff-aware + severity + nosemgrep） — 独立轨道，MR diff 通道就绪即可；首版报告不阻断
-- [ ] impact-analysis / refactoring skills 进 `@friday-ai-codes/skills` — 工具面稳定后固化工作流
+- [ ] **VAL-01** query drill-down cursor/分页：只有 benchmark 证明 top-N 语义裁剪不足时再增加。
+- [ ] **VAL-02** 可选 `task_context`/`goal` 真正入排序：只有建立独立增益对照后启用；不能只在 schema 声称有效。
+- [ ] **VAL-03** 更丰富的 Process 摘要生成：先验证确定性字段索引，确有召回缺口再引入额外 LLM 生成成本。
 
-### Future Consideration (v2+)
+### Future Consideration
 
-- [ ] detect_impact 式 MCP prompt（编排 detect_changes→context→impact 的工作流 prompt） — 等工具面全部稳定
-- [ ] taint 门禁台账化（主干 full scan + finding 状态机 + 跨分支 triage） — Semgrep 平台级能力，自建成本高，等门禁用量验证
-- [ ] 模块摘要进 Galaxy 可视化 / 前端社区着色 — 展示层增值，不影响 agent 链路
+- [ ] 跨仓 graph-aware query / impact。
+- [ ] PDG/CFG 或语句级数据流检索。
+- [ ] rename apply。
+- [ ] 社区算法替换。
+- [ ] 学习排序或 LLM 重排。
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| 内存图服务 | HIGH（地基） | MEDIUM | P1 |
-| impact（含跨仓） | HIGH | HIGH | P1 |
-| trace | MEDIUM | LOW（复用 impact 基建） | P1 |
-| detect_changes 符号清单 + MR 描述 | HIGH | MEDIUM | P1 |
-| 社区检测 + LLM 模块摘要 | MEDIUM | MEDIUM | P2 |
-| 执行流（Endpoint 入口 + Process） | MEDIUM | HIGH | P2 |
-| rename_preview | MEDIUM | MEDIUM | P2 |
-| Semgrep taint 门禁 | MEDIUM | MEDIUM | P2 |
-| skills 固化工作流 | MEDIUM | LOW | P2 |
-| detect_impact 式编排 prompt | LOW | LOW | P3 |
-| taint finding 台账/状态机 | LOW | HIGH | P3 |
+| canonical request/response + 水位 | HIGH | MEDIUM | P1 |
+| Process 一等混合召回 | HIGH | HIGH | P1 |
+| Process 分组 + `file:line` | HIGH | MEDIUM | P1 |
+| 可解释确定性排序 | HIGH | MEDIUM | P1 |
+| bounded impact 摘要 | HIGH | MEDIUM | P1 |
+| 截断/降级结构化 | HIGH | MEDIUM | P1 |
+| 五消费面契约与发现 | HIGH | HIGH | P1 |
+| 单仓 benchmark | HIGH | HIGH | P1 |
+| `task_context`/`goal` 排序增强 | MEDIUM | MEDIUM | P2 |
+| Process LLM 摘要扩充 | MEDIUM | MEDIUM | P2 |
+| 跨仓 query | OUT OF SCOPE | HIGH | P3 |
 
 ## Competitor Feature Analysis
 
-| Feature | GitNexus | Sourcegraph / CodeQL / Aider / Semgrep | Our Approach |
-|---------|----------|----------------------------------------|--------------|
-| impact/blast radius | byDepth d1/d2/d3 语义标签 + risk 四级 + minConfidence + affected_processes/modules | Sourcegraph：find references 跨仓精确但无深度分组/风险语义（面向人） | 照搬 GitNexus 输出契约 + 跨仓边（反超）+ 置信度三源映射 |
-| detect_changes | scope 四态 + base_ref + 符号清单 + 流程叙事 + pre-commit/CI 集成示例 | Semgrep：diff-aware baseline（merge-base）是同构思想 | scope 以 compare（MR diff）为主，报告结构照 detect_impact prompt 四段进 MR 描述 |
-| 模块/社区 | Leiden + heuristicLabel + cohesion% + top-20 资源 | Aider：PageRank 排序 + token 预算截断喂 LLM | Leiden/Louvain 社区落库 + LLM 语义摘要（超越启发式标签），消费端按 Aider 范式排序限额 |
-| 执行流 | 入口启发式打分 + BFS（depth10/branch4/minSteps3/conf≥0.5）+ 双层去重 + intra/cross 分类 | 无对标（CodeQL 数据流是另一范畴） | Endpoint 确定性入口（优于启发式猜测）+ 保留 GitNexus BFS 参数纪律 |
-| rename | preview 默认 + graph/text_search 二分 confidence + context 片段 + 可 apply | Sourcegraph：无批量 rename；IDE LSP rename 单机精确但无跨文件 confidence 分层 | 只读 preview（不做 apply），双源 + confidence 二分照搬 |
-| 安全门禁 | 无 | Semgrep：diff-aware + severity + triage 状态机 + /fp + nosemgrep + shortest-path | 集成 Semgrep（买不是造）；开源版如实声明函数内 taint 边界 |
-| agent 消费面 | 7 tools + 6 resources + 2 prompts + 4 skills 落仓 + hooks | Cody：context 检索为主，无图分析工具面 | MCP 工具复用既有模式 + skills 同源分发；「smart tools 预结构化」哲学全盘采纳 |
+| Feature | GitNexus 当前主线 | Friday v0.24.0 建议 |
+|---------|-------------------|----------------------|
+| 检索入口 | NL query，BM25 + semantic 并行，RRF | 保留混合检索，增加 Symbol lane + Process lane |
+| Process 命中 | 先命中 Symbol，再沿 `STEP_IN_PROCESS` 分组 | Process 自身可被 BM25/embedding 直接命中，同时接受 Symbol 间接证据 |
+| Process 排名 | Symbol RRF 分数求和 + 最大 cohesion 小幅加成 | 确定性融合，但返回完整 breakdown；具体权重在 baseline 后锁定 |
+| 结果结构 | `processes` + 扁平 `process_symbols` + `definitions` | Process 内嵌命中与步骤；保留 standalone Symbol 区，避免多归属丢失 |
+| 行号 | query Symbol 为 1-based start/end；Process resource 仅 file | 所有 Process steps 一致返回 1-based `file:line` 和 index commit |
+| impact | 需 query→context→impact 后续调用 | 统一入口返回有界摘要，完整 impact 仍可 drill-down |
+| 截断 | limit、max_symbols、definitions cap、可选字符串 maxTokens | 语义裁剪、合法 schema、总数/返回数/原因/next action |
+| 降级 | FTS warning、enrichment partial；部分 semantic 降级仅日志可见 | 每条 lane 结构化状态，任何不完整结果 `partial` 可见 |
+| 工具发现 | 集中 tools 定义；动态 required repo；context resource + Skill | canonical manifest 派生五消费面，schema hash 与真实调用 E2E |
+| 评测 | 源码有单元回归与 timing，但不是 Friday 目标的同仓 v0.22 对照 | 冻结单仓 commit 与分桶 query set，先 baseline 后门槛 |
+
+## 可直接转成需求的验收清单
+
+1. **QUERY-01:** 给定已索引 repository 和非空中文/英文 NL query，统一入口返回版本化 schema；空白 query 不触发检索。
+2. **QUERY-02:** 响应顶层 repository、branch/index key、commit 与每条 evidence 一致；混水位不能静默拼接。
+3. **PROC-01:** Process 文档包含名称、入口、终点、步骤摘要、模块、业务关键词，并进入 BM25 与 embedding 两路。
+4. **PROC-02:** 构造 query 词只存在于 Process 文档、不存在于 Symbol 名的 fixture，Process 仍进入候选。
+5. **GROUP-01:** 同一 Symbol 属于两个 Process 时，两个 Process 均保留该 UID 的归属/step 证据；计数与返回数各自明确。
+6. **RANK-01:** 每个候选的 breakdown 可确定性重算最终分，排序版本存在，稳定 ID 决定同分顺序。
+7. **RANK-02:** 同仓、同 commit、同配置、同 query 重复运行，候选顺序与 breakdown 相同。
+8. **EVID-01:** 每个 Process 返回的每一步都有 repo-relative file、1-based line range、Symbol UID；随机抽样可读取对应源码范围。
+9. **DISAMB-01:** 重名 anchor 返回候选而不静默选取；未消歧时 impact 标不可用/待选择。
+10. **IMPACT-01:** 已消歧 anchor 返回 bounded summary、总数/返回数和 drill-down 提示，不复制完整闭包。
+11. **BUDGET-01:** 在不同响应预算下输出始终满足 schema；预算收紧只减少可选正文/低排项，不移除水位、warning、truncation 元数据。
+12. **DEGRADE-01:** 分别模拟 FTS、embedding、Process enrichment、impact 失败；主查询 best-effort 返回，lane 状态与 `partial` 如实变化。
+13. **CONTRACT-01:** 五消费面对同一 manifest 的工具名、required/default/enum、response schema version 和 schema hash 一致。
+14. **DISCOVER-01:** 每个消费面在执行前都能发现工具能力、契约版本、仓库作用域和索引水位； npm/容器真实调用不依赖只存在于服务端的隐藏参数。
+15. **BENCH-01:** benchmark 固定 repo+commit+query set，按语言/框架/入口类型分桶；v0.22 baseline 与 v0.24 candidate 使用同一输入运行。
+16. **BENCH-02:** 报告输出 Symbol/Process recall、`file:line` 有效率、resolved edge、impact/trace、延迟、token 的逐例原始结果与汇总；阈值字段在 baseline 采集前不得伪造。
+17. **OBS-01:** query 生命周期有 started/completed/failed 结构化事件、`duration_ms`、`category`、`component` 和触发用户；各检索 lane 写 best-effort trace，任何观测失败不改变业务响应。
 
 ## Sources
 
-**一手（HIGH confidence）：**
+**一手源码与文档（HIGH confidence，均核对于 GitNexus `11a60e6de30ac3905066c2012f47878b995e69ed`，2026-08-24）：**
 
-- GitNexus 官方文档（Mintlify，2026-08-09 抓取）：`api/tools/{impact,detect-changes,context,query,rename}.md`、`api/resources/clusters.md`、`api/prompts/detect-impact.md`、`concepts/{knowledge-graph,processes-and-flows}.md`、`skills/overview.md` — https://abhigyanpatwari-gitnexus.mintlify.app
-- GitNexus GitHub README — https://github.com/abhigyanpatwari/GitNexus
-- Semgrep 官方 docs：taint-mode overview、semgrep-pro-engine-intro、findings-ci、ci-environment-variables、finding_all_taints（shortest-path） — https://docs.semgrep.dev
-- Aider 官方：repomap.html、2023/10/22/repomap.html、`aider/repomap.py` 源码 — https://aider.chat
+- GitNexus `query` 主实现：BM25/semantic 并行、RRF、Process 分组、cohesion boost、稳定 tie-break、`file:line`、warning/partial
+  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/mcp/local/local-backend.ts
+- MCP tool canonical definitions：`query` schema、`limit`、`max_symbols`、`include_content`、`maxTokens`、工具发现参数
+  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/mcp/tools.ts
+- MCP server：动态工具发现、仓库作用域 required 注入、next-step hints、response budget 应用
+  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/mcp/server.ts
+- MCP output budget：4 UTF-8 bytes/token 估算与 `…` 前缀截断
+  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/mcp/output-budget.ts
+- MCP resources：repo context/staleness/tool discovery、Process 列表与 step trace、行号口径
+  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/mcp/resources.ts
+- Hybrid search 核心：RRF 与 FTS→semantic-only fallback
+  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/core/search/hybrid-search.ts
+- 官方探索 Skill：repo 绑定、freshness、query→context→process 的用户工作流
+  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus-claude-plugin/skills/gitnexus-exploring/SKILL.md
+- 官方 README：Process-grouped query 示例、MCP response budget、当前工具面
+  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/README.md
 
-**二手验证（MEDIUM confidence）：**
+**Friday 范围与既有决策（HIGH confidence）：**
 
-- Sourcegraph docs：precise-code-navigation、code-navigation、cross-repository blog、SCIP repo — https://sourcegraph.com/docs
-- Aider PageRank 解析（anishgandhi.com）、DeepWiki repomap 分析 — 与官方源码交叉验证一致
+- `.planning/PROJECT.md`：v0.24.0 Goal、Active features、v0.22.0 已交付基线与显式边界。
+
+## Confidence 与待验证项
+
+| Area | Confidence | Notes |
+|------|------------|-------|
+| GitNexus query 分组与排序 | HIGH | 直接阅读当前主线实现；文档中“按 step count 归一化”的旧说法与当前源码不一致，本文以源码为准 |
+| 行号与 Process resource | HIGH | `local-backend.ts` 和 `resources.ts` 可直接对照 |
+| 截断与降级 | HIGH | 直接读取 query、semantic fallback、output-budget 实现 |
+| 工具发现 | HIGH | 直接读取 MCP `ListTools`、resources 和官方 Skill |
+| Friday 排序权重/回归阈值 | 未定 | 必须由同仓同 commit baseline 决定；本文刻意不臆造 |
+| Process 直接检索的实际增益 | MEDIUM | 机制上补足 GitNexus 的间接映射缺口，但增益需 BENCH-01/02 实测 |
 
 ---
-*Feature research for: 代码智能图分析升级（对标 GitNexus，Friday AI v0.22.0）*
-*Researched: 2026-08-09*
+*Feature research for: Friday AI v0.24.0 单仓 graph-aware query*
+*Researched: 2026-08-24*

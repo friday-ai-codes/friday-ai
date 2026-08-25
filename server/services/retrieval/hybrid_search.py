@@ -39,6 +39,7 @@ import structlog
 from django.conf import settings
 
 from code_relations.cross_repo_expander import expand_cross_repo
+from common.logging import redact_secrets_in_text
 from services.code_intel.protocols import (
     BaseCodeProvider,
     GraphCapableProvider,
@@ -183,7 +184,12 @@ async def _build_is_excluded_path(repo_ids: list[str]):
         try:
             matchers.append(await build_matcher_for_repo(rid))
         except Exception:  # noqa: BLE001 — 构造失败一律 fail-closed
-            logger.warning("hybrid_search_matcher_build_failed", repo_id=rid)
+            logger.debug(
+                "hybrid_search_matcher_build_failed",
+                repo_id=rid,
+                category="sampling",
+                component="code_graph",
+            )
             matchers.append(None)
 
     def _is_excluded(file_path: str) -> bool:
@@ -335,10 +341,12 @@ class HybridSearchService:
         """
         keywords: list[str] = extract_symbol_keywords(query)
 
-        logger.info(
+        logger.debug(
             "hybrid_search_wave_started",
             wave_id=0,
             wave_0_tasks=["rag", "symbol"],
+            category="sampling",
+            component="code_graph",
         )
         t0 = time.perf_counter()
         rag_task = asyncio.create_task(
@@ -365,18 +373,22 @@ class HybridSearchService:
             return_exceptions=True,
         )
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
-        logger.info(
+        logger.debug(
             "hybrid_search_wave_done",
             wave_id=0,
             elapsed_ms=elapsed_ms,
+            category="sampling",
+            component="code_graph",
         )
 
         rag_result = results[0]
         if isinstance(rag_result, BaseException):
-            logger.warning(
+            logger.debug(
                 "rag_task_failed",
-                error=str(rag_result),
+                error=redact_secrets_in_text(str(rag_result)),
                 error_type=type(rag_result).__name__,
+                category="sampling",
+                component="code_graph",
             )
             raise rag_result
 
@@ -384,10 +396,12 @@ class HybridSearchService:
         symbol_failed: bool = False
         symbol_results: list[dict[str, Any]]
         if isinstance(symbol_result, BaseException):
-            logger.warning(
+            logger.debug(
                 "symbol_task_failed",
-                error=str(symbol_result),
+                error=redact_secrets_in_text(str(symbol_result)),
                 error_type=type(symbol_result).__name__,
+                category="sampling",
+                component="code_graph",
             )
             symbol_results = []
             symbol_failed = True
@@ -478,10 +492,11 @@ class HybridSearchService:
         """
         _ = project_id  # 保签名兼容 plan callsite
 
-        logger.info(
+        logger.debug(
             "hybrid_search_started",
             path="graph_capable",
-            query=query[:100],
+            category="sampling",
+            component="code_graph",
         )
 
         repo_ids: list[str] = list(repository_ids or [])
@@ -495,18 +510,20 @@ class HybridSearchService:
         )
 
         if rag_snapshot.status != "ok" or not rag_snapshot.items:
-            logger.info(
+            logger.debug(
                 "hybrid_search_completed",
                 path="graph_capable",
                 repo_count=len(repo_ids),
                 l3_status=rag_snapshot.status,
-                l3_error=rag_snapshot.error,
+                l3_error=redact_secrets_in_text(str(rag_snapshot.error or "")),
                 total_tokens=0,
                 hop1_count=0,
                 hop2_count=0,
                 symbol_count=len(symbol_results),
                 symbol_failed=symbol_failed,
                 wave_0_elapsed_ms=wave_0_ms,
+                category="sampling",
+                component="code_graph",
             )
             return HybridSearchResult(
                 query=query,
@@ -534,7 +551,12 @@ class HybridSearchService:
         # ENABLE_CROSS_REPO_ENRICHMENT 唯一直读点（hybrid_search 模块）。
         enable_cross: bool = bool(getattr(settings, "ENABLE_CROSS_REPO_ENRICHMENT", True))
         if enable_cross:
-            logger.info("hybrid_search_wave_started", wave_id=3)
+            logger.debug(
+                "hybrid_search_wave_started",
+                wave_id=3,
+                category="sampling",
+                component="code_graph",
+            )
             t3 = time.perf_counter()
             cross_repo_neighbors: list[NeighborMetadata] = await self._run_wave_3(
                 rag_snapshot=rag_snapshot,
@@ -542,11 +564,13 @@ class HybridSearchService:
                 exclude_chunk_ids=frozenset(hop1_chunk_ids | rag_chunk_ids),
             )
             elapsed_3ms = int((time.perf_counter() - t3) * 1000)
-            logger.info(
+            logger.debug(
                 "hybrid_search_wave_done",
                 wave_id=3,
                 elapsed_ms=elapsed_3ms,
                 count=len(cross_repo_neighbors),
+                category="sampling",
+                component="code_graph",
             )
         else:
             cross_repo_neighbors = []
@@ -581,7 +605,7 @@ class HybridSearchService:
             final_context = rag_section
         total_tokens: int = estimate_tokens(final_context)
 
-        logger.info(
+        logger.debug(
             "hybrid_search_completed",
             path="graph_capable",
             repo_count=len(repo_ids),
@@ -592,6 +616,8 @@ class HybridSearchService:
             symbol_count=len(symbol_results),
             symbol_failed=symbol_failed,
             wave_0_elapsed_ms=wave_0_ms,
+            category="sampling",
+            component="code_graph",
         )
         return HybridSearchResult(
             query=query,
@@ -624,10 +650,11 @@ class HybridSearchService:
         实现，既有 NullProvider 路径测试（test_hybrid_skeleton + test_null_provider_paths)
         必须全绿。
         """
-        logger.info(
+        logger.debug(
             "hybrid_search_started",
             path="rag_only",
-            query=query[:100],
+            category="sampling",
+            component="code_graph",
         )
 
         repo_ids: list[str] = list(repository_ids or [])
@@ -639,12 +666,14 @@ class HybridSearchService:
         )
 
         if l3.status != "ok" or not l3.items:
-            logger.info(
+            logger.debug(
                 "hybrid_search_completed",
                 path="rag_only",
                 repo_count=len(repo_ids),
                 l3_status=l3.status,
                 total_tokens=0,
+                category="sampling",
+                component="code_graph",
             )
             return RagSearchResult(
                 query=query,
@@ -661,11 +690,13 @@ class HybridSearchService:
         final_context: str = trim_to_budget(l3_markdown, budgets["rag"])
         total_tokens: int = estimate_tokens(final_context)
 
-        logger.info(
+        logger.debug(
             "hybrid_search_completed",
             path="rag_only",
             repo_count=len(repo_ids),
             total_tokens=total_tokens,
+            category="sampling",
+            component="code_graph",
         )
         return RagSearchResult(
             query=query,

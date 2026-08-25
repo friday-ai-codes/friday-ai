@@ -41,7 +41,7 @@ class SymbolIndex:
         self._files: set[str] = set()
 
     @classmethod
-    def build(cls, repository_id: str) -> SymbolIndex:
+    def build(cls, repository_id: str, branch_name: str = "") -> SymbolIndex:
         """一次性读取该仓全部 Symbol，构建精确/模糊双索引 + 文件集合。
 
         用 ``.only(...)`` 仅取索引所需 4 字段 + ``.iterator(chunk_size=2000)`` 流式灌入，
@@ -50,7 +50,10 @@ class SymbolIndex:
         from codegraph.models import Symbol
 
         idx = cls()
-        qs = Symbol.objects.filter(repository_id=repository_id).only(
+        branch_filter = ["", branch_name] if branch_name else [""]
+        qs = Symbol.objects.filter(
+            repository_id=repository_id, branch_name__in=branch_filter
+        ).only(
             "id", "name", "file_path", "symbol_type"
         )
         for symbol in qs.iterator(chunk_size=2000):
@@ -64,6 +67,16 @@ class SymbolIndex:
             idx._fuzzy.setdefault(indexed.name, []).append(indexed)
             idx._by_file.setdefault(indexed.file_path, []).append(indexed)
             idx._files.add(indexed.file_path)
+        # 纯 re-export/barrel 文件可能没有可索引 Symbol，但仍是合法模块路径。
+        # 把 ImportEdge.source_file 纳入文件集合，允许 FrontendImportResolver 进入下一跳。
+        from codegraph.models import ImportEdge
+
+        idx._files.update(
+            ImportEdge.objects.filter(
+                repository_id=repository_id,
+                branch_name__in=branch_filter,
+            ).values_list("source_file", flat=True)
+        )
         return idx
 
     def exact(self, file_path: str, name: str) -> list[IndexedSymbol]:

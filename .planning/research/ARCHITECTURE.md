@@ -1,404 +1,428 @@
 # Architecture Research
 
-**Domain:** 代码智能图分析升级（对标 GitNexus）— brownfield 集成架构
-**Researched:** 2026-08-09
-**Confidence:** HIGH（所有集成点均直接读本仓代码核实；文中文件路径全部真实存在）
+**Domain:** Friday AI v0.24.0 单仓 graph-aware query 对齐 GitNexus
+**Researched:** 2026-08-24
+**Confidence:** HIGH（架构接缝来自当前仓库源码；GitNexus 目标形态来自其当前 MCP `query` 契约）
 
-> 本文档回答「新能力如何与现有架构集成」：内存图服务分层与缓存语义、MCP/对话工具接线、
-> detect_changes 的 diff 通路与编码任务链挂点、社区/执行流持久化建模、模块摘要注入点、
-> Semgrep 执行位置、LSP 默认开启风险面，以及建议 build order。
+> 结论先行：不替换 Django ORM、Qdrant、NetworkX，也不另建图数据库。应把现有
+> `Symbol` / `CallEdge` / `SymbolCommunity` / `ProcessTrace` 继续作为 canonical
+> 图索引，把 Qdrant 作为可重建的 Process 检索投影，把 NetworkX 作为按需分析投影；
+> 新增一个入口无关的 `GraphQueryService`，由所有消费面做薄适配。
 
 ## Standard Architecture
 
 ### System Overview
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  消费面（全部复用既有入口模式）                                              │
-│  ┌───────────────┐ ┌───────────────┐ ┌────────────────┐ ┌──────────────┐ │
-│  │ MCP 工具面     │ │ 对话工具       │ │ task 容器       │ │ process_     │ │
-│  │ mcp_tools/    │ │ agents/tools/ │ │ knowledge_tools│ │ runtime 编排  │ │
-│  │ (impact/trace │ │ (@tool 注册)   │ │ (HTTP 白名单)   │ │ (模块摘要注入)│ │
-│  │ /detect/...)  │ │               │ │ 提交前自查      │ │              │ │
-│  └───────┬───────┘ └───────┬───────┘ └───────┬────────┘ └──────┬───────┘ │
-├──────────┴─────────────────┴─────────────────┴─────────────────┴─────────┤
-│  新增分析层  server/services/code_graph/（NEW）                            │
-│  ┌─────────────────────────────────────────────────────────────────────┐ │
-│  │ GraphService（per-worker 内存 networkx 缓存，签名失效 + LRU 逐出）      │ │
-│  │  ├─ impact.py（反向 BFS + 置信度分级 + 跨仓边）                        │ │
-│  │  ├─ trace.py（最短路 + 文件/行号渲染）                                │ │
-│  │  ├─ change_detect.py（diff 行区间 × Symbol 区间 → 批量 impact）        │ │
-│  │  ├─ community.py（社区发现 → SymbolCommunity 落库）                   │ │
-│  │  ├─ process_trace.py（Endpoint 正向追踪 → ProcessTrace 落库）          │ │
-│  │  └─ rename_preview.py（图引用 + grep_mirror 兜底）                    │ │
-│  │ semgrep_scan.py（独立，不依赖内存图；CLI + 镜像 worktree）              │ │
-│  └───────────────┬─────────────────────────────────────────────────────┘ │
-├──────────────────┴────────────────────────────────────────────────────────┤
-│  既有数据层（零重建，只读 + 少量新表）                                       │
-│  ┌───────────┐ ┌────────────┐ ┌──────────────┐ ┌─────────────────────┐   │
-│  │ codegraph │ │ code_      │ │ repo_mirror  │ │ NEW: SymbolCommunity│   │
-│  │ Symbol/   │ │ relations  │ │ (bare 镜像 + │ │ ProcessTrace        │   │
-│  │ CallEdge/ │ │ ChunkEdge/ │ │  worktree +  │ │ SecurityFinding     │   │
-│  │ Endpoint/ │ │ ChunkReg   │ │  git diff)   │ │ (独立新模型)         │   │
-│  │ CrossRepo │ │            │ │              │ │                     │   │
-│  └───────────┘ └────────────┘ └──────────────┘ └─────────────────────┘   │
-└──────────────────────────────────────────────────────────────────────────┘
-触发/失效：indexer.py 边构建完成钩子（code_relations/tasks.py 已有
-GalaxyGraphCache.refresh_repo 调用点）→ 同点追加内存图失效 + 社区/执行流重算（durable QUEUE_GRAPH）
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 消费面（只做鉴权、上下文注入、协议适配）                                      │
+│ Django MCP │ Chat Agent │ npm @friday-ai-codes/mcp │ task 编码容器          │
+└────────────┬─────────────┬──────────────────────────┬───────────────────────┘
+             └─────────────┴──────────────┬───────────┘
+                                         ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│ ToolContractRegistry（NEW，工具契约单一事实源）                              │
+│ Pydantic request/response + manifest + contract_version                    │
+└──────────────────────────────────────┬─────────────────────────────────────┘
+                                       ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│ GraphQueryService（NEW，入口无关的唯一查询编排）                             │
+│  1. access/exclusion/watermark gate                                        │
+│  2. Symbol lane ───────────────┐                                           │
+│  3. Process hybrid lane ───────┼─ RRF/解释分数 → process-grouped assembler │
+│  4. Community enrichment ──────┤                                           │
+│  5. bounded impact ────────────┘ → deterministic impact summary            │
+└──────────────┬──────────────────────────────┬──────────────────────────────┘
+               ▼                              ▼
+┌──────────────────────────────┐ ┌───────────────────────────────────────────┐
+│ GraphService / NetworkX      │ │ ProcessSearchIndex（NEW projection）      │
+│ impact / trace / staleness   │ │ Qdrant dense+sparse，按 repo/branch/SHA   │
+└──────────────┬───────────────┘ └───────────────────┬───────────────────────┘
+               └──────────────────────┬──────────────┘
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│ Canonical Django models                                                    │
+│ Symbol / ImportEdge / CallEdge / SymbolCommunity / ProcessTrace / Endpoint │
+└────────────────────────────────────────────────────────────────────────────┘
+
+索引链：
+AST 单趟抽取 → raw graph rows → language-aware resolution → Graph cache invalidate
+→ Community rebuild → Process rebuild → Process Qdrant projection sync
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | 实现方式 |
-|-----------|----------------|------------------------|
-| `services/code_graph/graph_service.py`（NEW） | per `(repository, branch)` 构建/缓存 networkx `DiGraph`，签名失效 + LRU 逐出 | 模块级单例 dict + `asyncio.Lock`，仿 `codegraph/galaxy/cache.py` 签名范式 |
-| `services/code_graph/impact.py` / `trace.py`（NEW） | 纯图算法（反向 BFS / 最短路），不碰 ORM | 纯函数，输入 `DiGraph`，可独立单测 |
-| `services/code_graph/change_detect.py`（NEW） | diff 行区间 × `Symbol` 行区间定位 → 批量 impact | 依赖 `repo_mirror` 拿 diff + `Symbol` ORM 区间查询 |
-| `codegraph/models.py` 新增 `SymbolCommunity` / `ProcessTrace`（NEW model） | 社区与执行流持久化（软引用 Symbol，不加 FK） | 新 migration，`(repository, branch_name)` 隔离，对齐既有约定 |
-| `mcp_tools/`（MODIFIED） | `impact_analysis` / `trace_call_path` / `detect_changes` / `preview_rename` 四个新工具 | 照 `McpToolView` 现有模式（serializer + view + url + snapshot 测试） |
-| `agents/tools/`（MODIFIED） | 同名对话工具薄封装 | `@tool` 装饰器 + `schemas/` Pydantic + `__init__.py` import 注册 |
-| `services/code_graph/semgrep_scan.py`（NEW） | Semgrep CLI 扫 MR diff（taint mode），结果落 `SecurityFinding` | server 容器内 subprocess，跑在 `repo_mirror` worktree 上，durable 队列执行 |
-| `task/core/knowledge_tools.py`（MODIFIED） | 容器内提交前自查：`detect_changes` 加入 HTTP 工具白名单 | 复用既有 `/api/mcp/tools/<name>/` PAT 通路，零新机制 |
+| Component | 状态 | Responsibility | Implementation |
+|-----------|------|----------------|----------------|
+| `codegraph/extractors/base.py::CallData` | MODIFIED | 携带 receiver/member 的可解析 hint | 增加结构化 `resolution_hints`，不存源码正文 |
+| `codegraph/models.py::CallEdge` | MODIFIED | 保存解析结果及可度量证据 | 增加 `resolution_kind/confidence/resolver_version/resolution_evidence`；保留现有 nullable FK |
+| `codegraph/resolver/` | MODIFIED | 语言分派、候选生成与确定性裁决 | 通用 orchestrator + TS/JS、Python、Go plugin |
+| `codegraph/resolver/wiring.py` | MODIFIED | 全仓 raw 写完后的唯一 resolution 入口 | 按 `(repository, branch)` 建上下文，批量回填 |
+| `ProcessTrace` | MODIFIED | Process canonical 读模型 | 增派生检索字段、schema/version/generation；`steps` 仍是步骤事实源 |
+| `services/process_search_index.py` | NEW | Process 检索文档构建、Qdrant 同步、混合召回 | 确定性 point id；dense+sparse；SHA/generation 过滤 |
+| `services/code_graph_query/` | NEW | graph-aware query 编排与统一响应 | async service；各 lane 并发；有界 impact |
+| `services/code_graph/impact_summary.py` | NEW | 结构化影响面摘要 | 复用 `run_impact` 与 `assemble_affected_processes`，确定性组装 |
+| `tools/contracts/` | NEW | 工具 manifest 与模型单一事实源 | Pydantic JSON Schema；server/npm/container 从 manifest 投影 |
+| MCP/Chat/npm/task adapters | MODIFIED | 鉴权、注入、协议映射 | 不重复查询算法、排序权重或响应字段定义 |
 
 ## Recommended Project Structure
 
-新增代码集中在一个新包，避免散落：
-
 ```
-server/services/code_graph/          # NEW 包 —— 图分析层
-├── __init__.py                      # 导出 GraphService / impact / trace 等 curated API
-├── graph_service.py                 # 内存图构建 + 缓存 + 失效 + LRU
-├── loader.py                        # ORM 批量读取（values_list + iterator，sync 函数）
-├── impact.py                        # 反向 BFS + 深度分组 + 置信度（纯函数）
-├── trace.py                         # 两符号最短路（纯函数）
-├── change_detect.py                 # diff → 受影响 Symbol → 批量 impact
-├── community.py                     # 社区发现（networkx.algorithms.community）+ 落库
-├── process_trace.py                 # Endpoint 正向执行流 + 落库
-├── rename_preview.py                # 图引用 + grep_mirror 兜底改名清单
-├── module_summary.py                # 社区 → LLM 模块摘要（call_source 新枚举值）
-└── semgrep_scan.py                  # Semgrep CLI 封装 + SecurityFinding 写入
+server/
+├── codegraph/
+│   ├── models.py                         # MODIFIED：CallEdge / ProcessTrace additive fields
+│   ├── extractors/
+│   │   ├── base.py                       # MODIFIED：resolution_hints
+│   │   └── calls.py                      # MODIFIED：member chain / receiver hints
+│   └── resolver/
+│       ├── symbol_resolver.py            # MODIFIED：只负责编排和裁决
+│       ├── frontend_receiver.py          # NEW：TS/JS import alias + receiver
+│       ├── python_member.py              # NEW：Python import/member
+│       ├── go_selector.py                # NEW/LATER：Go selector
+│       ├── scoring.py                    # NEW：闭集 resolution_kind 与置信度
+│       └── wiring.py                     # MODIFIED：branch-aware bulk backfill
+├── services/
+│   ├── code_graph_query/
+│   │   ├── service.py                    # 唯一 graph-aware query 入口
+│   │   ├── planner.py                    # query probes / budgets
+│   │   ├── ranking.py                    # lane 内分数 + RRF
+│   │   ├── assembler.py                  # process-grouped response
+│   │   └── types.py                      # 内部纯 dataclass
+│   ├── process_search_index.py           # Process → Qdrant projection
+│   └── code_graph/impact_summary.py      # 结构化影响摘要
+├── tools/contracts/
+│   ├── registry.py                       # canonical tool registry
+│   ├── graph_query.py                    # request/response Pydantic models
+│   └── manifest.py                       # versioned JSON manifest
+├── mcp_tools/                            # MODIFIED：薄 HTTP adapter
+└── agents/tools/                         # MODIFIED：薄 Chat adapter
 
-server/codegraph/models.py           # MODIFIED：追加 SymbolCommunity / ProcessTrace
-server/codegraph/migrations/00XX_*.py# NEW：纯加表 migration，零改既有表
-server/system/models.py（或 codegraph）# NEW：SecurityFinding（见 §6，建议放 codegraph app）
+mcp/src/generated/tools.ts                # GENERATED：由 manifest 生成，禁止手写 schema
+task/...                                  # MODIFIED：策略白名单与同 manifest hash 守门
 ```
 
-**Structure Rationale:**
+### Structure Rationale
 
-- **`services/code_graph/` 单独成包**：既有 `services/retrieval/`（chunk 检索面）与 `codegraph/services/`（router/summary）各有职责；新图分析既非检索也非路由，独立包边界最清晰。`code_relations` 的 contract 明确「柔性引用、不做 FK」，新包只读它们的表，不反向依赖。
-- **纯算法与 ORM 分离**：`impact.py`/`trace.py` 只吃 `DiGraph`，`loader.py` 独占 ORM——`sync_to_async` 边界收敛在 `graph_service.py` 一处（见 Pattern 1），单测不需要 DB。
-- **Semgrep 与内存图无依赖**，放同包但可完全并行开发。
+- **resolver 留在 `codegraph/`：** 它属于索引构建，不属于在线 GraphService；在线查询不得临时猜调用边。
+- **query service 放 `services/`：** 它需要 async ORM、Qdrant、GraphService、权限与 ledger，不能污染纯图算法包。
+- **Process DB 与 Qdrant 分层：** `ProcessTrace` 是事实源，向量点只是可重建投影；Qdrant 故障不能删除或改写 Process。
+- **contract 独立于入口：** 现有 DRF serializer、Chat Pydantic、`TOOL_SCHEMA_SNAPSHOT`、npm `tools.ts` 四处手写已产生漂移，新增入口不能继续复制。
 
 ## Architectural Patterns
 
-### Pattern 1: per-worker 内存图缓存（签名失效 + LRU）——问题 (1)
+### Pattern 1: 两阶段语言感知解析
 
-**What:** `GraphService` 维护模块级 `dict[(repo_id, branch), CachedGraph]`；`CachedGraph` 含 `networkx.DiGraph` + 构建时的失效签名。取图时先比签名，不一致即重建；超过 `MAX_CACHED_GRAPHS`（建议 8~16，settings 外置）按 LRU 逐出。
+**What:** 抽取阶段只记录语法事实；全仓阶段结合 import 表、符号表和作用域 hint 做解析。
 
-**失效信号（两级，取廉价者）：**
-1. **首选水位**：`Repository.last_indexed_commit_sha`（base 分支）/ `RepositoryBranchIndex.last_indexed_commit_sha`（feature 分支）——一条主键查询，微秒级。但它只反映向量轨完成（`persist_vector_track_complete` 在 BUILDING_GRAPH **之前**就写了 sha，见 `server/services/indexer.py:120-131`），**图数据滞后于水位**，单靠它会缓存到半新不旧的图。
-2. **必须叠加边构建代数**：在 `code_relations/tasks.py` 的边构建完成点（`server/code_relations/tasks.py:224-229`，现已在此调 `GalaxyGraphCache.refresh_repo`）同点追加 `GraphService.invalidate(repository_id)`——进程内直调即可让**本 worker** 失效；跨 worker 靠签名兜底：仿 `GalaxyGraphCache.compute_signature`（`server/codegraph/galaxy/cache.py:87-104`，每表 `COUNT + MAX(时间戳)`），对 `Symbol` / `CallEdge` / `ChunkEdge` / `CrossRepoApiCall` 四表算签名，7 条带索引聚合查询毫秒级，**每次取图都比一次**。
-
-**ASGI 多 worker 语义：每 worker 独立缓存完全可接受。** 依据：
-- 生产 ASGI 是 daphne/uvicorn 多进程，本就无共享内存；`GalaxyGraphCache` 用文件缓存解决跨进程共享，但 networkx 对象无法廉价序列化共享（pickle 10 万边 ≈ 数十 MB，得不偿失）。
-- 图是只读分析用途，worker 间短暂不一致无害——签名比对保证每个 worker 最迟在下次请求时拿到新图。
-- 内存账：10 万 `CallEdge` + 数万 `Symbol` 的 `DiGraph`，节点用 `str(symbol_id)`、属性精简（name/file/line/type），实测量级约 150~300MB/图；LRU 上限 × worker 数是总账，settings 给运维逃生舱（`CODE_GRAPH_CACHE_MAX` / `CODE_GRAPH_CACHE_ENABLED`）。
-- **反例排除**：不要用 Redis/进程外图存储——引入序列化与网络成本，且本里程碑明确「networkx 已在依赖树（v3.6.1，`server/uv.lock:2371`）」是选型前提。
-
-**ORM 批量读取模式（10 万级 CallEdge）：**
-
-```python
-# loader.py —— 全部 sync 函数，由 graph_service 用 sync_to_async(thread_sensitive=False) 包一层
-def load_call_edges(repository_id: str, branch_name: str) -> list[tuple]:
-    return list(
-        CallEdge.objects
-        .filter(repository_id=repository_id, branch_name=branch_name)
-        .values_list(
-            "caller_symbol_id", "caller_file", "callee_symbol_id",
-            "callee_name", "callee_file", "call_type", "line_number",
-        )
-        .iterator(chunk_size=5000)
-    )
+```
+Call AST
+  → raw: callee_name + qualifier/member_chain + receiver hint
+  → language plugin 生成候选
+  → exact scope/import/type evidence 裁决
+  → callee_symbol + resolution_kind/confidence/version
+  → unresolved 留 NULL（禁止同名 fuzzy 硬连）
 ```
 
-- `values_list` 避免 model 实例化开销（10 万行差一个数量级）；`iterator(chunk_size=5000)` 控峰值内存（Django 5.1 在 psycopg3 上走服务端游标）。
-- **`sync_to_async` 边界**：构建全程是一次长 sync 调用（读 4 张表 + 建图），放进 **一个** `sync_to_async` 包裹的函数，别逐查询穿梭 async/sync（每次穿梭有线程切换开销，也易踩 `CurrentThreadExecutor` 生命周期坑，见 `server/services/background_runner.py:16-30` 的教训记录）。构建期间用 per-key `asyncio.Lock` 防同 key 并发重建（`repo_mirror.py:86` 的 `_lock_for` 同款范式）。
-- 构建慢（预估 10 万边 2~5s）**不要**在请求线程里同步等首次构建之外的重建：命中旧签名时可先返旧图 + 后台触发重建（stale-while-revalidate，best-effort），首次无图时同步构建并明示 `building` 状态。
+TS/JS 首批顺序：
 
-**Trade-offs:** 每 worker 冗余内存与冗余构建（可接受，见上）；签名查询每次访问 +几 ms（对分析类工具无感）。
+1. 同文件函数/类/方法。
+2. named/default/namespace import 与 alias；`api.fetch()` 先把 `api` 解析为 import binding。
+3. `this.method()` 与 class scope。
+4. `const service = new Service()`、显式类型标注、构造参数注入等 receiver hint。
+5. 动态属性、复杂链、类型不足时留 unresolved。
 
-### Pattern 2: MCP + 对话工具双面接线——问题 (2)
+Python 首批顺序：
 
-**What:** 新工具一律「Python API 内核 + 两个薄壳」：内核在 `services/code_graph/`，MCP 壳照 `McpToolView` 模式，对话壳照 `@tool` 模式。`find_related` 就是现成样板（内核 `services/retrieval/find_related.py` → MCP `FindRelatedChunksView` → 对话 `agents/tools/find_related_code.py`）。
+1. `from a import b as c` 的 direct call。
+2. `import a.b as m; m.fn()` 的 module member。
+3. `self.method()` / `cls.method()` 的 class scope。
+4. `obj = ClassName()` 与显式 annotation 的 member。
+5. star import、monkey patch、动态 `getattr` 留 unresolved。
 
-**MCP 侧需要动的文件清单**（照 `search_rag_chunks` 逐一对齐）：
+Go 后置：沿用现有 import qualifier → package dir → symbol；待 TS/Python contract 和 benchmark 稳定后再扩 method receiver/interface。不要让 Go 的接口派发复杂度阻塞前两种语言。
 
-| 文件 | 动作 |
-|------|------|
-| `server/mcp_tools/serializers.py` | NEW class：`ImpactAnalysisRequestSerializer` / `TraceCallPathRequestSerializer` / `DetectChangesRequestSerializer` / `PreviewRenameRequestSerializer` |
-| `server/mcp_tools/views.py` | NEW class：四个 `McpToolView` 子类（`tool_name` 赋值；`_begin` → `_validate` → 调内核 → `_record` 带 `RetrievalTrace`；impact/trace 的结果按 `RetrievalTrace.Kind.EDGE` 写 trace，参照 `views.py:1143`） |
-| `server/mcp_tools/urls.py` | 追加四条 `path("tools/<name>/", ...)` |
-| `server/mcp_tools/`（schema snapshot 测试） | `TOOL_SCHEMA_SNAPSHOT` 补四条（v0.17 UNIFY 约定：schema 变更必须同步快照测试） |
-| `mcp` npm 包（跨仓） | 已知欠债模式：服务端先齐，npm 客户端另批（v0.20 已有同款缺口在案） |
+**Trade-offs:** 会增加少量 additive 字段和整仓回填成本，但解析可解释、可按语言/形态度量；比在线 query 时按名字猜边安全。
 
-**对话侧需要动的文件清单：**
+### Pattern 2: Process 一等对象，投影而非第二事实源
 
-| 文件 | 动作 |
-|------|------|
-| `server/agents/tools/schemas/`（NEW 文件×4） | Pydantic Input/Output |
-| `server/agents/tools/impact_analysis.py` 等（NEW 文件×4） | `@tool` 装饰 + 结构化 `ToolResult`（错误不冒泡，per `find_related_code.py` 契约） |
-| `server/agents/tools/__init__.py` | 顶层 import 触发注册（注册机制见 `find_related_code.py:17-21` 文档） |
+**What:** `ProcessTrace.steps`、`entry_endpoint` 是 canonical；检索文档由确定性 builder 派生：
 
-**观测约定（强制）**：每个 view/tool 记 `xxx_started/completed/failed` + `duration_ms`，`category="caller"`、`component="mcp_tools"` 或 `"agents"`；`McpToolView._record` 已内置 `ToolCallRecord` + `RequestMetric`（`views.py:271-286`），照抄即得。
-
-**Trade-offs:** 四工具 × 两面 = 8 个薄壳文件，样板代码多；但与 40+ 既有工具完全同构，review 与测试成本最低。⛔ 反模式：绕过 `McpToolView` 自建入口（丢 PAT fail-closed、丢 trace、丢排除文件继承）。
-
-### Pattern 3: detect_changes 的 diff 通路与编码任务链挂点——问题 (3)
-
-**What:** diff 一律走 `repo_mirror`（server 侧自取），不依赖 MR webhook payload。
-
-**通路核实**：`ensure_mirror_commit(repository_id, branch)`（`server/services/repo_mirror.py:217`）在 bare 镜像里 depth-1 fetch 目标 sha/分支头并返回 `MirrorSnapshot(commit_sha)`。detect_changes 需要 base 与 head 两个 commit：
-1. `ensure_mirror_commit(repo_id)` 拿 base（pin 到 `last_indexed_commit_sha`，与索引态 Symbol 行号**同源对齐**——这是关键：Symbol 行区间是按 `last_indexed_commit_sha` 时刻抽的，diff base 必须取同一 sha，否则行号错位）；
-2. `ensure_mirror_commit(repo_id, branch=feature_branch)` 拿 head；
-3. 同一 bare 目录下 `git diff --unified=0 <base_sha> <head_sha>`（两个 depth-1 fetch 各自带全量 tree，diff 树对树可行；需在 `repo_mirror.py` 新增一个 `diff_mirror(snapshot_base, snapshot_head)` helper，约 40 行，复用 `_run_git`）。
-4. 解析 hunk 行区间 × `Symbol.objects.filter(repository, branch_name, file_path, start_line__lte=..., end_line__gte=...)` 定位受影响符号 → 批量 impact。
-
-**MR webhook payload 不做主通路**的理由：webhook 只覆盖「MR 已建」场景，而两个核心消费点（容器提交前自查、MR 描述生成）都发生在 MR 创建**之前**；且 payload diff 有截断风险。webhook 场景后续要用时同一内核换 diff 来源即可。
-
-**编码任务链两个挂点（都是既有缝，零新机制）：**
-
-1. **容器提交前自查**：task 容器已有 `/api/mcp/tools/<name>/` HTTP 工具面（`task/core/knowledge_tools.py:379-383`，PAT 鉴权 + 白名单）。把 `detect_changes` 加进 `knowledge_allowed_tools()` 白名单（`knowledge_tools.py:612`）+ system prompt 注入「提交前调 detect_changes 自查」指引（`task/core/executor.py` 的 `_get_system_prompt` 段，v0.9 `follow_openspec` 注入同款方式）。注意容器内 agent 被禁止 git 写操作（`executor.py:1028-1032`），真正 commit/push 在 `task/core/runner.py`（`:611-697`）——自查发生在 agent 编码完、runner commit 前，靠 prompt 驱动 agent 主动调用即可，不必改 runner 硬门禁（v1 不做阻断，只做提示，避免误报卡死编码链）。
-2. **MR 描述生成**：两条链各一个挂点——workflow 链在 `server/workflows/nodes/ai/coding.py::_finalize_and_notify`（`:1300`，create_merge_request 前拼 description，`pr_cross_reference.py` 的「## 关联 PR」同款 fail-soft 追加「## 影响面」段）；MCP 链在 `server/mcp_tools/merge_request_service.py`（`summarize_branch` 起草 description，`:65-71` 与 `:143-147` 两处拼接点）。均 best-effort：impact 失败绝不阻断 MR 创建。
-
-### Pattern 4: 社区/执行流持久化——问题 (4)
-
-**What:** 一律新模型，不给 `Symbol` 加字段。
-
-**否决「Symbol 加 community_id 字段」**：`GraphWriter` 增量索引按 `caller_file` 做 per-file 幂等删除重写（`codegraph/models.py:104-110` 的 CallEdge 契约文档），Symbol 行本身在文件重索引时会删建——挂在 Symbol 上的社区标注随重写丢失，且每次社区重算要 UPDATE 数万行 Symbol。新模型 + 软引用（存 `symbol_name`/`file_path`/`chunk_id`，不 FK——对齐 `Symbol.chunk_id` 的「柔性引用」先例，`models.py:41-45`）天然免疫重写。
-
-```python
-# codegraph/models.py 追加（示意）
-class SymbolCommunity(models.Model):
-    repository = models.ForeignKey("repositories.Repository", on_delete=models.CASCADE)
-    branch_name = models.CharField(max_length=200, default="", blank=True)  # 对齐既有隔离维度
-    community_key = models.CharField(max_length=64)        # 算法产出的稳定 key（成员指纹 hash）
-    algorithm = models.CharField(max_length=32)            # "louvain" / "leiden" 等
-    member_count = models.IntegerField()
-    members = models.JSONField(default=list)               # [{name,file_path,symbol_type,chunk_id}]
-    top_files = models.JSONField(default=list)
-    summary = models.TextField(blank=True)                 # LLM 模块摘要（module_summary.py 回填）
-    summary_model = models.CharField(max_length=100, blank=True)
-    built_at_sha = models.CharField(max_length=64, default="")  # 水位：对齐 last_indexed_commit_sha
-    created_at = models.DateTimeField(auto_now_add=True)
-    class Meta:
-        unique_together = [("repository", "branch_name", "community_key")]
-
-class ProcessTrace(models.Model):
-    repository = models.ForeignKey("repositories.Repository", on_delete=models.CASCADE)
-    branch_name = models.CharField(max_length=200, default="", blank=True)
-    entry_endpoint = models.JSONField()                    # {http_method,url_path,handler,file,line} 快照
-    steps = models.JSONField(default=list)                 # 有序调用链 [{symbol,file,line,depth}]
-    built_at_sha = models.CharField(max_length=64, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
+```
+name + HTTP method/path
++ entry handler/file
++ terminal symbol/file
++ ordered step names
++ community/module summaries
++ path/module-derived business keywords
 ```
 
-**Migration 影响**：纯加表，零改既有表 → 零锁表风险、`makemigrations --check` 基线不受扰。Endpoint 也可能被重索引删建，故 `ProcessTrace.entry_endpoint` 存快照 JSON 而非 FK。
+建议给 `ProcessTrace` 增加：
 
-**增量索引刷新语义**：整仓重算、按 `(repository, branch)` 全删全建（社区检测本质是全图算法，无增量意义；10 万边 Louvain 秒级）。触发点 = 边构建完成钩子（与 Pattern 1 失效同点，`code_relations/tasks.py:224-229` 旁），但**不在钩子内联执行**——投 durable `QUEUE_GRAPH`（`server/durable/queues.py:13`、任务注册照 `server/durable/tasks.py:64` 的 `durable_graph` 模式），带 `initiated_by_user_id`（无用户则 `system`），`queueing_lock=f"community:{repo_id}:{branch}"` 天然去重防抖。`built_at_sha` 落水位，消费方可判 stale。
+- `entry_symbol_id`、`terminal_symbol_id`：软引用，加速分组与影响交集。
+- `module_keys`、`business_keywords`：派生 JSON，闭集/受长度限制。
+- `search_text`、`search_schema_version`：确定性可回放文档。
+- `resolver_version`、`index_generation`：定位数据代际。
 
-### Pattern 5: 模块摘要注入 RepoRouterV2 与 process_runtime——问题 (5)
+Qdrant point 使用 `hash(repository_id, branch, process_key)` 的稳定 id，payload 至少含
+`document_kind=process/repository_id/branch/process_key/built_at_sha/index_generation`。
+同步顺序为“upsert 新 generation → 标记 DB projection ready → 删除旧 generation”；
+在线查询强制过滤当前 `built_at_sha + generation`，因此中途失败只会显式 unavailable/stale，
+不会把旧、新 Process 混排。
 
-**What:** ⛔ `codegraph/services/repo_router_v2.py` 是 §13.2 冻结面（`blueprint_route.py:7-11` 与 `charter_route_signal.py:10-11` 两处重申「零改动、只调不改，证据不进 Stage1 prompt」）。模块摘要**只在 adapter 层注入**，三个注入点：
+### Pattern 3: process-grouped hybrid query
 
-1. **蓝图路由链**：`server/services/process_runtime/blueprint_route.py` 的三分量融合处（`build_score_breakdown`，`:143`）。模块摘要不建议做第四分量（会破坏「三分量之和恒等于总分」的既有恒等式契约与前端展示），而是做 **evidence 增强**：candidate 的 `evidence` dict（`_EVIDENCE_KEYS`，`:56-70`）加 `module_summaries` 键，把命中仓的 top 社区摘要带给确认门与调研 prompt。若确需参与打分，按 `charter_match` 的先例把摘要相似度并进 `charter_match` 或经 `SettingKeys.BLUEPRINT_ROUTE_WEIGHTS` 扩权重向量——那是显式的权重 schema 变更，须单独评审。
-2. **对话/MCP 路由链**：照抄 `server/services/charter_route_signal.py` 的完整范式（纯函数打分 + `aapply_charter_signal` 融合 + best-effort 降级）——新建 `services/module_summary_signal.py` 或直接扩展 charter signal 的 evidence；接线点在 `server/agents/tools/repository_relevance.py::_apply_charter_signal`（`:153`）旁与 `mcp_tools/views.py::RouteRepositoriesView`。
-3. **技术方案生成（调研 prompt）**：`server/services/process_runtime/blueprint_research_adapter.py` / `artifact_injection.py` —— 逐仓调研容器的 prompt 组装处注入该仓 top-N 社区摘要（「这个仓由哪些模块组成」是调研 agent 最缺的先验）。v0.8 `render_upstream_artifacts_section` 的「空段守卫 + fail-soft」模式照抄。
+**What:** 查询不是“找若干 chunk 后附带 Process”，而是 Symbol 与 Process 两条 lane 并发，
+最终以 Process 为主要分组。
 
-另外 `RepoSummaryBuilder.build`（`codegraph/services/repo_summary_builder.py:35`，索引 FINALIZING 期跑）的 `description` 现在只用 `Repository.ai_summary` 兜底——社区摘要就绪后可把 top 社区名并进 repo summary 向量文本，路由召回免费受益。
+1. query 只生成一次 dense embedding 与一次 sparse encoding。
+2. Symbol lane：精确/别名符号 + 既有代码 chunk hybrid。
+3. Process lane：Process `search_text` dense+sparse hybrid。
+4. 各 lane 内保留原始分数；跨 lane 用 Reciprocal Rank Fusion，禁止直接相加异构分数。
+5. Process 命中直接建 group；Symbol 命中通过 `steps.symbol_id` 倒排归入 Process。
+6. 不属于任何 Process 的高质量 Symbol 放 `standalone_symbols`，不得硬塞进某个流程。
+7. 每组返回 `why_matched`、lane rank、步骤 `file:line`、Community 和 freshness。
 
-**LLM 调用约定**：`module_summary.py` 的 LLM 调用赋新 `call_source` 枚举值（LOGGING-SPEC §4.1 加一条，如 `module_summary`），上报 token/TTFT/错误码。
+响应建议固定为：
 
-### Pattern 6: Semgrep 执行位置与落库——问题 (6)
+```
+query/repository/branch/as_of
+processes[] {
+  process_key/name/score/explanation
+  entry/terminal/steps[]
+  matched_symbols[]/communities[]
+  impact_summary
+}
+standalone_symbols[]
+definitions[]
+degradation/staleness/metrics
+```
 
-**What:** **server 容器内跑 CLI，durable 任务执行，扫 `repo_mirror` worktree**。
+这与当前 GitNexus `query` 的“processes + process_symbols + definitions”目标形态一致，
+但保留 Friday 已有的权限、排除规则、分支水位和影响面声明。
 
-- **执行位置选型**：`repo_mirror` 已具备把 bare 镜像物化成 worktree 的能力（`repo_mirror.py:335-366` `_worktree_root`/`_ensure_worktree`，grep 链在用）——Semgrep 需要真实文件树，这个缝现成。经 runner 分发独立容器的方案否决（v1）：要新增镜像、走 WS dispatch/callback 协议、改 `runner/`+`task/` 两个组件，为一个 CLI 扫描不成比例；「买不是造」的精神是最小集成。**代价**：semgrep 是重依赖（pyproject 加 `semgrep>=1.x` 或 server 镜像 Dockerfile 装二进制，建议后者——pip 依赖树污染更小），扫描吃 CPU，必须限并发。
-- **执行形态**：durable 任务（建议复用 `QUEUE_MAINTENANCE` 或新增 `QUEUE_SCAN`，注册照 `durable/tasks.py` 模式），`ConcurrencyWindow` 限 1~2 并发；MR 门禁场景由 `_finalize_and_notify` / MR webhook 触发 defer，结果异步回填。taint mode 扫 diff 涉及的文件集（`--include` 收窄），不全仓扫。
-- **落库**：新建 `SecurityFinding` 模型（放 `codegraph` app 或新 `scanning` app）。既有模型无一适配：`AuditEvent` 是操作审计（append-only 语义不符）、`McpRepositoryAnalysis` 是 LLM 仓库分析产物、`RetrievalTrace` 是召回留痕。字段：repository/branch/mr_url/rule_id/severity/file_path/line/message/fingerprint（去重键）/status（open/resolved/dismissed）/scan_sha。**脱敏**：Semgrep 输出含代码片段，入库前过 `redact_secrets_in_text`（规范强制）。
-- **呈现**：MR 描述追加「## 安全扫描」段（挂点同 Pattern 3 的两处）；REST 查询面后续按需（v1 可只有 MCP `get_security_findings` 读工具）。
+### Pattern 4: 有界影响摘要，不把空结果解释为安全
 
-### Pattern 7: LSP 默认开启的风险面——问题 (7)
+**What:** `ImpactSummaryAssembler` 对 top Process 的 entry、命中步骤和高分 standalone
+symbol 选有限种子（建议总计 3–5），批量调用现有 `run_impact`，再复用
+`assemble_affected_processes` 交叉映射。
 
-现状：`VOLAR_BACKEND_ENABLED` / `GOPLS_BACKEND_ENABLED` 默认双 False（`settings.py:968/977`），Phase 66 主动关闭，注释写明关闭原因是「图谱构建慢与 LSP 冷启动等待」。`EXTRACTOR_BACKENDS`（`settings.py:840-850`）是声明性目标表，kill-switch 才是实际开关（`codegraph/apps.py:129-137`）。
+- 返回结构化 `direct_callers/depth_groups/affected_processes/risk/degradation`。
+- “未索引、图构建失败、解析率低、预算截断”必须显式声明，不能折成空数组。
+- markdown、Chat 文本、MCP JSON 都从同一结构化结果渲染。
+- 不复用 MR `impact_report.py` 作为 canonical；它是展示 formatter，且容错语义是 MR fail-soft。
+- v0.24.0 默认确定性摘要，不新增 LLM 调用；若后续加自然语言摘要，只能消费结构化结果并保留原事实。
 
-| 风险 | 证据 | 缓解 |
-|------|------|------|
-| 索引耗时显著上升 | `settings.py:903-904` 注释：大插件链场景 volar 启动 60-90s；gopls 冷启动慢是 go 回落 tree_sitter 的显式理由（`:838`） | 默认开启前先跑基准（大仓索引全程耗时对比）；`LSP_STARTUP_TIMEOUT_SECONDS` 运维文档化；失败 fallback 链已在（`LspUnhealthyError → TreeSitterBackend`，`test_registry_integration.py` 已锁） |
-| 容器内依赖 | `vue-language-server` 需 node + tsdk 发现（`node_check.discover_tsdk()` 动态注入，`settings.py:901-902`）；gopls 需 go 工具链——server 镜像需确认已含这些二进制，否则开了也起不来 | Dockerfile 审计 + 启动健康探测日志；缺依赖时 kill-switch 语义保证静默回落 tree-sitter（行为已测试锁定） |
-| 回归面 | `test_go_extractor.py:163-171` 记录了 gopls/tree-sitter 抽取结果**不同**（gin 路由 endpoint gopls 路径不抽）——切换会改变 Endpoint/Symbol 产出，影响执行流与路由 | 切换作为独立 Phase，先在少数仓灰度（kill-switch 是全局的，可考虑加 per-repo facet 覆盖，工作量小）；golden 对比抽取产物 |
+### Pattern 5: Tool Contract Registry + 生成式适配
 
-**建议**：本里程碑做「降低开启门槛」而非无条件默认开——补依赖健康探测 + 文档 + 基准数据，默认值翻转留给基准结果说话。
+**What:** 以 Pydantic request/response model 和 tool metadata 建 registry：
+
+- Django MCP view 从 registry 取 schema，DRF 只承担 HTTP 校验/状态码映射。
+- Chat SDK MCP adapter 从同 registry 注册，自动注入 `conversation_id/user`。
+- `/api/mcp/tools/manifest/` 返回授权后可见工具、schema、annotations、`contract_version`。
+- npm MCP 启动时读取 manifest；网络不可用时使用仓内 generated snapshot，并校验 hash。
+- task 容器只取 manifest 与任务策略白名单的交集，不能因 server 新增工具而自动获得写能力。
+
+`TOOL_SCHEMA_SNAPSHOT` 降为从 registry 生成的测试快照；`mcp/src/tools.ts` 改 generated 文件。
+CI 同时校验工具名、输入 schema、响应 schema、manifest hash，而不只比较名称集合。
 
 ## Data Flow
 
-### 主流程 1：impact 查询（MCP 链）
+### Index / Rebuild Flow
 
 ```
-LLM 调 impact_analysis(symbol, repo, branch)
-    ↓
-McpToolView(_begin: PAT fail-closed) → serializer 校验
-    ↓
-GraphService.get_graph(repo, branch)
-    ├─ 签名一致 → 命中内存 DiGraph（毫秒）
-    └─ 失效/未建 → sync_to_async 一次性批量读 4 表 → 建图 → 缓存
-    ↓
-impact.py 反向 BFS（深度分组；解析边=high / 裸名边=medium / CrossRepoApiCall 按 match_confidence）
-    ↓
-_record（ToolCallRecord + RetrievalTrace.Kind.EDGE + RequestMetric）→ Response
+Indexer parse_file_dual
+  → GraphWriter per-file raw rows（branch-aware transaction）
+  → backfill_symbol_resolution(repo, branch, repo_path)
+       ├─ TS/JS resolver
+       ├─ Python resolver
+       └─ Go resolver（现状；增强后置）
+  → GraphService.invalidate(repo, branch)
+  → durable_community_rebuild
+  → durable_process_rebuild
+  → durable_process_projection_sync
+  → current generation ready
 ```
 
-### 主流程 2：detect_changes 进编码链
+关键修改：当前 `backfill_symbol_resolution()` 和 `SymbolResolver.backfill()` 只按
+`repository_id` 查询，必须把 `branch_name` 贯穿 `SymbolIndex`、`ImportEdge`、`CallEdge`
+过滤；否则 feature 分支回填可能读到 base facts。三个 durable job 均继续携带
+`initiated_by_user_id`，worker 入口重新 bind。
+
+### Request Flow
 
 ```
-task 容器 agent 编码完成
-    ↓ (system prompt 指引)
-容器经 /api/mcp/tools/detect_changes/（PAT）
-    ↓
-server: ensure_mirror_commit ×2（base=last_indexed_commit_sha, head=feature 分支）
-    → git diff base..head → hunk 行区间 × Symbol 区间 → 受影响符号 → 批量 impact
-    ↓
-agent 依结果自查/修补 → runner commit+push → server 回调
-    ↓
-_finalize_and_notify: MR description 追加「## 影响面」（fail-soft）→ create_merge_request
-（Semgrep durable 任务同点触发，异步回填 SecurityFinding）
+MCP / Chat / npm / task
+  → adapter authentication + actor injection
+  → GraphQueryRequest validation
+  → ensure_repository_readable + exclusion matcher + branch/watermark resolution
+  → asyncio.gather(Symbol lane, Process lane)
+  → RRF + process grouping + Community enrichment
+  → bounded GraphService impact
+  → GraphQueryResponse
+  → RetrievalTrace + caller metric（best-effort）
+  → protocol-specific render
 ```
 
-### 主流程 3：索引后台刷新链
+权限与 exclusion 必须发生在 embedding、取图、ORM 候选查询之前；matcher 构造失败即
+fail-closed。Qdrant 返回点、Process steps、Community members 和 impact nodes 在出墙前
+各自再做一次路径过滤，防历史脏投影回流。
 
-```
-indexer 边构建完成（code_relations/tasks.py 钩子点，现有 GalaxyGraphCache.refresh_repo 旁）
-    ↓ best-effort，绝不反噬索引
-GraphService.invalidate(repo)（本 worker 直接失效；他 worker 靠签名）
-    ↓
-DurableTaskService.defer(QUEUE_GRAPH, community_rebuild, queueing_lock 去重)
-    → 社区检测 → SymbolCommunity 全删全建 → module_summary.py LLM 摘要回填
-    → process_trace 重算（Endpoint 入口 × 正向追踪）
-    → RepoSummaryBuilder 增益（可选）
-```
+## Migration and Backfill
+
+### Additive Schema Migration
+
+1. `CallEdge` 新增 nullable/default 字段；旧 reader 不受影响。
+2. `ProcessTrace` 新增 nullable/JSON default 字段与 `(repository, branch, built_at_sha)` 索引。
+3. 新建 projection status/checkpoint（可放 Repository facet 或独立小表），不要把 Qdrant 状态塞进 `flags`。
+4. 先发布兼容 writer，再启动回填；最后才开放新 query 工具。
+
+### Backfill Plan
+
+1. **先冻结 baseline：** 同仓同 commit 记录 v0.22 resolved edge、Symbol/Process recall、impact/trace、延迟/token。
+2. **resolver dry-run：** 新 resolver 只产对比报告，不写 FK；按 language × call shape 统计 gained/lost/conflict。
+3. **分语言回填：** TS/JS → Python → Go；每批 `(repo, branch)` 幂等，使用 resolver version。
+4. **失效与重建：** resolver 成功后才 invalidate GraphService，再链式 Community → Process。
+5. **Process projection：** 新 generation upsert 并核对 DB count/Qdrant count，再切 ready。
+6. **灰度 query：** feature flag 按仓开启；旧 impact/list_processes 工具继续可用。
+7. **全量切换后：** 保留旧字段和工具至少一个里程碑，禁止同批 destructive cleanup。
+
+失败恢复以每仓每分支 checkpoint 重跑；不要做全局巨事务。Process DB 全删全建继续放在单个
+`transaction.atomic()` 内，Qdrant 用 generation 隔离弥补跨存储无事务。
+
+## Observability
+
+| Layer | Category | Required signals |
+|-------|----------|------------------|
+| 外部 graph query | `caller` | started/completed/failed、actor、source、repo、duration、result/degradation count |
+| resolver batch/job | job lifecycle `caller`；边级汇总 `sampling` | language、call_shape、total/resolved/ambiguous/unresolved/conflict、resolver_version、duration |
+| Process rebuild/projection | lifecycle `caller`；内部 stage `sampling` | Process 数、零步骤/截断数、DB/Qdrant 对账、generation、queue lag |
+| hybrid lanes | `sampling` | dense/sparse/BM25 各耗时与候选数、RRF overlap、group coverage、top score；不记 query 正文 |
+| impact assembly | `sampling` | seed 数、depth、affected 数、预算截断、graph degradation、duration |
+| MCP/Chat retrieval | ledger | 两条链都写 `RetrievalTrace`，以 request/run/conversation id 关联 |
+
+规则：
+
+- 后台 payload 显式带 `initiated_by_user_id`，无用户为 `system`；worker 用 `bind_task_context`。
+- 日志只记 query 长度/hash、计数和闭集枚举；禁止 query、源码、路径清单逐条 INFO。
+- 所有异常文本经 `redact_secrets_in_text`；ledger payload 经 `redact_for_ledger`。
+- 观测、ledger、projection 对账均 best-effort，不得反噬主查询；权限/exclusion 失败则相反，必须 fail-closed。
+- resolver 质量指标按语言和 call shape 分桶，不能只报一个全仓 resolution rate。
 
 ## Scaling Considerations
 
-| Scale | 架构调整 |
+| Scale | Architecture Adjustments |
 |-------|--------------------------|
-| 单仓 ≤1 万边 | 全部默认值即可，图构建 <1s，社区检测内联都行（仍建议走队列保一致性） |
-| 单仓 10 万边（设计目标） | `values_list+iterator` 批读；LRU=8~16；社区/执行流必须走 `QUEUE_GRAPH`；impact BFS 加 `max_nodes` 硬上限（防全图返回） |
-| 260 仓全热 / 单仓 50 万边+ | 内存账爆 worker：需按需降级——大仓改「不缓存、每次 SQL 递归 CTE」或图裁剪（只入解析边）；这是 v2 问题，接口留 `settings` 阈值即可 |
+| 小仓 / Process <100 | 同 collection 逻辑 namespace，单次 hybrid + bounded impact |
+| 10 万边 / Process ≤300 | 保持现有 NetworkX LRU；Process 预建倒排；lane 并发；top-N 后才 impact |
+| 超大单仓 | 强制 seed 子图、Process/impact 分预算；按 generation 分批 projection；不提高返回上限 |
+| 多 worker 高并发 | Qdrant/DB 共用 canonical 水位；NetworkX 仍 per-worker，不引入远程图库 |
 
-**First bottleneck:** 首次建图的冷启动延迟（秒级）——stale-while-revalidate + 索引后预热（可选仿 `warm_stale`）。
-**Second bottleneck:** worker 内存（LRU 上限 × 图大小 × worker 数）——`CODE_GRAPH_CACHE_MAX` 外置 + gauge 上报缓存占用。
+第一瓶颈会是 resolver 后全图重建与冷图内存，而不是 Process 数量；第二瓶颈是每次 query
+对多个种子跑 impact。优先做 generation、cache hit、seed budget，不做图库迁移。
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: 动 `repo_router_v2.py` 或把新证据塞进其 Stage1 prompt
+### 在线查询时补解析边
 
-**What people do:** 为模块摘要参与路由直接改 router 内核。
-**Why it's wrong:** §13.2 冻结面，两个既有模块（`blueprint_route.py`、`charter_route_signal.py`）文档均显式承诺零改动；破坏会撕裂 v0.19/v0.20 的回放与 golden set 契约。
-**Do this instead:** adapter 层融合（Pattern 5 三注入点）。
+**错误：** query 根据同名或 embedding 临时连 caller/callee。
+**后果：** 相同 commit 的结果不可复现，benchmark 无法归因。
+**替代：** resolver 只在索引/回填阶段写 versioned evidence；在线只消费。
 
-### Anti-Pattern 2: 观测/刷新钩子反噬主流程
+### 把 Qdrant Process 点当事实源
 
-**What people do:** 在索引钩子里内联跑社区检测/Semgrep，失败抛回 indexer。
-**Why it's wrong:** 违反「图谱失败不阻塞向量轨 INDEXED」既有不变量（`indexer.py:1414` 注释）与观测规范「best-effort 绝不反噬」。
-**Do this instead:** 钩子内只 defer durable 任务 + try/except 吞异常记 warning（`_run_sdd_detect` 范式，`indexer.py:3685-3706`）。
+**错误：** 只写向量点，不落/不核对 `ProcessTrace`。
+**后果：** projection 漂移后无法解释步骤和水位。
+**替代：** DB canonical，Qdrant 可删可重建且按 generation 过滤。
 
-### Anti-Pattern 3: 给 Symbol/CallEdge 加社区字段或新 FK
+### 在四个消费面复制 schema 和排序
 
-**What people do:** `Symbol.community_id` 或 `SymbolCommunity` M2M 到 Symbol。
-**Why it's wrong:** 增量索引 per-file 删建 Symbol，标注随行丢失；FK 级联使社区表被索引重写牵连。
-**Do this instead:** 独立模型 + JSON 软引用 + `built_at_sha` 水位（Pattern 4）。
+**错误：** DRF、Chat、npm、task 各维护一次参数和默认值。
+**后果：** 重演 npm MCP 漂移；同一 query 在不同入口得到不同结果。
+**替代：** registry + manifest + generated adapters；入口只注入上下文。
 
-### Anti-Pattern 4: 逐边 async ORM 读取建图
+### 把 GraphError 吞成空影响面
 
-**What people do:** `async for edge in CallEdge.objects.filter(...)` 逐行搬进图。
-**Why it's wrong:** 10 万次 async/sync 穿梭，分钟级；且散落的 ORM 调用让 `sync_to_async` 边界不可审计。
-**Do this instead:** 单次 `sync_to_async` 包裹的批量 `values_list+iterator`（Pattern 1）。
+**错误：** 图不可用时返回 `affected=[]`。
+**后果：** agent 会把“未知”误读为“安全”。
+**替代：** 保留 error/degradation/staleness；空结果仅表示成功查询且确无命中。
+
+### 为对齐 GitNexus 整体换图库
+
+**错误：** 引入 Neo4j/Memgraph 等重写存储。
+**后果：** 双写、权限、分支、水位、exclusion、部署复杂度全面放大。
+**替代：** 对齐其 query contract 和 Process 检索/分组能力；现有 NetworkX 对单仓有界图足够。
 
 ## Integration Points
 
-### 新增 vs 修改 清单（汇总）
+### New vs Modified
 
-| 类型 | 路径 | 说明 |
-|------|------|------|
-| NEW | `server/services/code_graph/`（约 10 文件） | 图分析层全部内核 |
-| NEW | `server/codegraph/migrations/00XX`（加表） | `SymbolCommunity` / `ProcessTrace` / `SecurityFinding` |
-| NEW | `server/agents/tools/{impact_analysis,trace_call_path,detect_changes,preview_rename}.py` + `schemas/` ×4 | 对话工具壳 |
-| MODIFIED | `server/codegraph/models.py` | 追加 3 模型（零改既有表） |
-| MODIFIED | `server/mcp_tools/serializers.py` / `views.py` / `urls.py` + schema snapshot 测试 | MCP 工具壳 ×4（+可选 `get_security_findings`） |
-| MODIFIED | `server/agents/tools/__init__.py` | import 注册 |
-| MODIFIED | `server/services/repo_mirror.py` | 新增 `diff_mirror` helper（~40 行） |
-| MODIFIED | `server/code_relations/tasks.py` | 边构建完成钩子旁追加失效 + durable defer（best-effort） |
-| MODIFIED | `server/durable/queues.py` / `tasks.py` | 社区重算 / Semgrep 任务注册 |
-| MODIFIED | `server/services/process_runtime/blueprint_route.py` + `blueprint_research_adapter.py`（或 `artifact_injection.py`） | 模块摘要 evidence 注入 |
-| MODIFIED | `server/agents/tools/repository_relevance.py` / `mcp_tools/views.py::RouteRepositoriesView` | 对话/MCP 路由链摘要信号 |
-| MODIFIED | `server/workflows/nodes/ai/coding.py::_finalize_and_notify` + `server/mcp_tools/merge_request_service.py` | MR 描述追加影响面/扫描段（fail-soft） |
-| MODIFIED | `task/core/knowledge_tools.py`（白名单）+ `task/core/executor.py`（prompt 段） | 容器提交前自查 |
-| MODIFIED | `server/friday/settings.py` | `CODE_GRAPH_CACHE_*` / Semgrep 路径与并发 / LSP 基准相关 |
-| MODIFIED | `server/Dockerfile` | semgrep 二进制（+若翻 LSP 默认：node/vue-language-server/gopls 依赖审计） |
+| Type | Components |
+|------|------------|
+| NEW | `services/code_graph_query/`、`process_search_index.py`、`impact_summary.py` |
+| NEW | `tools/contracts/` 与 versioned manifest |
+| NEW | TS/JS receiver、Python member、后置 Go selector plugin |
+| MODIFIED | `CallData`、`CallEdge`、`SymbolResolver`、`resolver/wiring.py` |
+| MODIFIED | `ProcessTrace`、process durable chain、Qdrant projection lifecycle |
+| MODIFIED | MCP URL/view、Chat whitelist/adapter、npm generated tools、task policy intersection |
+| UNCHANGED | GraphService/NetworkX 内核、Qdrant 基础设施、现有 impact/trace 算法、权限/exclusion 单一入口 |
 
-### Internal Boundaries
-
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| `code_graph` ↔ `codegraph`/`code_relations` 模型 | 只读 ORM（loader.py 独占） | 软引用不 FK；branch_name 隔离必须透传（unique 约束 Pitfall 4 在案） |
-| `code_graph` ↔ `repo_mirror` | 直接函数调用 | diff/worktree 均复用；镜像 per-repo `asyncio.Lock` 已防并发 |
-| MCP/对话壳 ↔ `code_graph` 内核 | async Python API | 壳零业务逻辑；错误结构化返回不冒泡 |
-| 索引钩子 ↔ 社区/摘要重算 | durable `QUEUE_GRAPH` defer | `queueing_lock` 去重；`initiated_by_user_id`/`system` 必带 |
-| task 容器 ↔ detect_changes | HTTP `/api/mcp/tools/` + PAT | 排除文件 fail-closed 天然继承；白名单加一条即可 |
-
-## 建议 Build Order
+### Recommended Build Order
 
 ```
-Wave 0（三线并行，互不依赖）
-├─ A. GraphService + loader + 失效/LRU + impact/trace 纯函数（地基，最长线先动）
-├─ B. semgrep_scan + SecurityFinding + durable 任务（完全独立）
-└─ C. LSP 依赖审计 + 索引耗时基准（调研型，产出开关决策数据）
+Phase A  Baseline + contract
+  ├─ 同仓同 commit v0.22 baseline
+  ├─ GraphQuery request/response model
+  └─ ToolContractRegistry / manifest skeleton
 
-Wave 1（依赖 A）
-├─ D. impact/trace 的 MCP + 对话双面接线（8 壳文件 + snapshot 测试）
-├─ E. detect_changes（diff_mirror helper + 内核 + 双面接线）
-└─ F. rename_preview（图引用 + grep_mirror 兜底，双面接线）
+Phase B  Resolver facts + TS/JS
+  ├─ additive CallEdge migration
+  ├─ extractor hints
+  └─ TS/JS import alias + receiver resolver + per-shape metrics
 
-Wave 2（依赖 A；E 完成后 G2 可并行）
-├─ G1. 社区检测 + SymbolCommunity + 索引钩子 defer 链
-├─ G2. detect_changes 接编码链（容器白名单 + prompt 段 + 两处 MR 描述挂点）
-└─ H. 执行流 ProcessTrace（依赖 A + Endpoint，与 G1 并行）
+Phase C  Python resolver
+  └─ import/member/self/class/constructor hints；复用 B 的 evidence contract
 
-Wave 3（依赖 G1）
-├─ I. module_summary LLM 摘要 + call_source 枚举
-└─ J. 摘要注入三点（blueprint_route evidence / 对话信号 / 调研 prompt）
-   （B 的 Semgrep 门禁挂 MR 描述可在 G2 同批收口）
+Phase D  Process first-class index
+  ├─ ProcessTrace derived fields/version/generation
+  ├─ deterministic document builder
+  └─ Qdrant projection + migration/backfill/reconciliation
+
+Phase E  Unified query
+  ├─ Symbol + Process concurrent lanes
+  ├─ RRF + process grouping + Community
+  └─ structured response + freshness/degradation
+
+Phase F  Impact summary
+  └─ bounded seeds + existing GraphService + affected Process mapping
+
+Phase G  Consumption convergence
+  ├─ Django MCP + Chat thin adapters
+  ├─ npm manifest/generated client
+  └─ task/container policy intersection + schema hash gates
+
+Phase H  Benchmark gate + Go
+  ├─ 锁定按语言/框架/入口类型阈值
+  └─ 仅在 TS/JS、Python 达标后扩 Go receiver/interface
 ```
 
-排序理由：A 是五个功能的共同依赖，必须最先；B/C 无依赖抢跑；detect_changes 的「工具本体」（E）与「链路集成」（G2）拆开——前者只依赖 A，后者要动 task/workflow 两条链，风险面不同；模块摘要（I/J）依赖社区结果，天然最后。
+顺序理由：baseline 必须先于任何回填；TS/JS 与 Python 共用数据契约但应分开验收；Process
+hybrid 依赖较高质量 resolved edge，否则只是把错误调用链向量化；统一 query 依赖 Process
+projection；影响摘要依赖稳定分组；最后再切消费面，避免未成熟内核同时放大到四个入口。
 
 ## Sources
 
-全部为本仓一手代码核实（2026-08-09，工作区含 charter UI 在途改动不影响本文结论）：
-
-- `server/codegraph/models.py`（Symbol/CallEdge 契约、branch_name 隔离、软引用先例）
-- `server/codegraph/galaxy/cache.py`（签名失效 + refresh_repo + warm_stale 缓存范式）
-- `server/code_relations/tasks.py:224-229`（边构建完成钩子 = 失效/重算挂点）
-- `server/services/indexer.py:120-131, 1413-1421, 3685-3706`（水位时序、FINALIZING 钩子、best-effort 范式）
-- `server/services/repo_mirror.py:217-366`（ensure_mirror_commit、worktree、per-repo 锁）
-- `server/mcp_tools/{views.py,urls.py}`（McpToolView 模式、RetrievalTrace/ToolCallRecord）
-- `server/agents/tools/{find_related_code.py,registry.py,repository_relevance.py}`（@tool 注册与 charter 信号融合范式）
-- `server/services/charter_route_signal.py`、`server/services/process_runtime/blueprint_route.py`（§13.2 冻结面 + adapter 层融合先例）
-- `server/durable/{queues.py,tasks.py}`（QUEUE_GRAPH、queueing_lock 模式）
-- `task/core/{knowledge_tools.py,executor.py,runner.py}`（容器 HTTP 工具面、git 写禁令、commit/push 时序）
-- `server/workflows/nodes/ai/coding.py`、`server/mcp_tools/merge_request_service.py`（MR 创建与描述拼接点）
-- `server/friday/settings.py:825-977`、`server/codegraph/apps.py:129-140`（LSP kill-switch 与风险注释）
-- `server/uv.lock:2371`（networkx 3.6.1 在依赖树）
+- `.planning/PROJECT.md`（v0.24.0 目标、既有能力与约束）
+- `server/codegraph/models.py`（Symbol/ImportEdge/CallEdge/SymbolCommunity/ProcessTrace canonical schema）
+- `server/codegraph/extractors/{base.py,calls.py}`（现有 qualifier 捕获能力与缺口）
+- `server/codegraph/resolver/{symbol_resolver.py,wiring.py,frontend_import.py,python_import.py}`（现有语言分派与 branch 缺口）
+- `server/codegraph/services/graph_writer.py`（per-file 原子写、async ORM 线程隔离）
+- `server/services/code_graph/{process_trace.py,affected_processes.py,impact_report.py}`（Process 构建、影响交集、formatter 边界）
+- `server/services/retrieval/{hybrid_search.py,types.py}`（既有 dense+sparse/graph enrichment 与返回类型）
+- `server/services/{community_enqueue.py,process_enqueue.py}`、`server/durable/tasks_impl.py`（durable 链与用户上下文）
+- `server/agents/tools/{graph_tools.py,schemas/graph_tools.py}`、`server/agents/chat_runner.py`（Chat 薄壳与白名单）
+- `server/mcp_tools/serializers.py::TOOL_SCHEMA_SNAPSHOT`、`mcp/src/tools.ts`、`test_mcp_package_alignment.py`（契约漂移现状）
+- GitNexus MCP `query` 当前工具契约（process-grouped hybrid query、process symbols、definitions、RRF）
 
 ---
-*Architecture research for: Friday AI v0.22.0 代码智能图分析升级*
-*Researched: 2026-08-09*
+*Architecture research for: Friday AI v0.24.0 单仓图查询对齐 GitNexus*
+*Researched: 2026-08-24*

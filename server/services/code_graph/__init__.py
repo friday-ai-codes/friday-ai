@@ -88,18 +88,26 @@ from services.code_graph.model import (
     confidence_score,
     derive_reason,
 )
+from services.code_graph.query_service import (
+    GRAPH_QUERY_RANKING_VERSION,
+    GRAPH_QUERY_RESPONSE_VERSION,
+    GraphQueryService,
+)
 
 __all__ = [
     "ChunkEvidence",
     "CodeGraph",
     "EdgeConfidence",
     "EdgeKind",
+    "GRAPH_QUERY_RANKING_VERSION",
+    "GRAPH_QUERY_RESPONSE_VERSION",
     "GraphAccessDenied",
     "GraphBuildFailed",
     "GraphBuildTimeout",
     "GraphError",
     "GraphMeta",
     "GraphNotIndexed",
+    "GraphQueryService",
     "GraphService",
     "LOW_RESOLUTION_THRESHOLD",
     "REDACTED_REPOSITORY",

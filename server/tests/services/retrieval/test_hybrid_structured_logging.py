@@ -42,8 +42,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
-from structlog.testing import capture_logs
-
 from services.code_intel.local_provider import LocalProvider
 from services.code_intel.null_provider import NullProvider
 from services.retrieval import HybridSearchService
@@ -52,6 +50,20 @@ from services.retrieval.types import LayerSnapshot
 # ---------------------------------------------------------------------------
 # shared fixtures（避免重复 mock 设置）
 # ---------------------------------------------------------------------------
+
+
+class _RecordingLogger:
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def debug(self, event: str, **kwargs: Any) -> None:
+        self.events.append({"event": event, **kwargs})
+
+    def info(self, event: str, **kwargs: Any) -> None:
+        self.events.append({"event": event, **kwargs})
+
+    def warning(self, event: str, **kwargs: Any) -> None:
+        self.events.append({"event": event, **kwargs})
 
 
 def _empty_snapshot() -> LayerSnapshot:
@@ -71,6 +83,7 @@ async def _run_graph_capable_capture(
         symbol_mock = AsyncMock(side_effect=ValueError("simulated symbol failure"))
     else:
         symbol_mock = AsyncMock(return_value=[])
+    recording = _RecordingLogger()
 
     with patch(
         "services.retrieval.hybrid_search.search_rag",
@@ -83,29 +96,34 @@ async def _run_graph_capable_capture(
         new=AsyncMock(return_value=[]),
     ), patch.object(
         LocalProvider, "lookup_symbols", new=symbol_mock,
-    ), capture_logs() as cap:
+    ), patch(
+        "services.retrieval.hybrid_search.logger", new=recording
+    ):
         await HybridSearchService(LocalProvider()).search(
             "structlog probe",
             repository_ids=["repo-a"],
             max_tokens=8000,
             top_k=30,
         )
-    return list(cap)
+    return recording.events
 
 
 async def _run_rag_only_capture() -> list[dict[str, Any]]:
     """跑 rag_only 路径（NullProvider）+ 捕获所有 structlog 事件。"""
+    recording = _RecordingLogger()
     with patch(
         "services.retrieval.hybrid_search.search_rag",
         new=AsyncMock(return_value=_empty_snapshot()),
-    ), capture_logs() as cap:
+    ), patch(
+        "services.retrieval.hybrid_search.logger", new=recording
+    ):
         await HybridSearchService(NullProvider()).search(
             "rag-only probe",
             repository_ids=["repo-a"],
             max_tokens=8000,
             top_k=30,
         )
-    return list(cap)
+    return recording.events
 
 
 def _find_event(
@@ -118,22 +136,21 @@ def _find_event(
 
 
 # ---------------------------------------------------------------------------
-# Test 1: hybrid_search_started.path == "graph_capable" + query 截断
+# Test 1: hybrid_search_started.path == "graph_capable" + 无 query 正文
 # ---------------------------------------------------------------------------
 
 
 async def test_hybrid_search_started_emits_path_field() -> None:
-    """graph_capable 路径下 ``hybrid_search_started`` 事件含 path/query 字段。"""
+    """graph_capable 路径下事件仅含低基数 path，不含 query 正文。"""
     cap = await _run_graph_capable_capture()
     started = _find_event(cap, "hybrid_search_started")
     assert started is not None, "未发现 hybrid_search_started 事件"
     assert started.get("path") == "graph_capable", (
         f"path 字段应为 'graph_capable'，got: {started.get('path')!r}"
     )
-    # query 字段截断（前 100 字符），本测试 query 短于 100 字符所以完整透出
-    assert started.get("query") == "structlog probe", (
-        f"query 字段缺失或漂移: {started!r}"
-    )
+    assert "query" not in started
+    assert started["category"] == "sampling"
+    assert started["component"] == "code_graph"
 
 
 # ---------------------------------------------------------------------------

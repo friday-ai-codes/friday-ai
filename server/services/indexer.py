@@ -3328,7 +3328,10 @@ class IndexerService:
             from codegraph.resolver.wiring import backfill_symbol_resolution
 
             resolve_stats = await sync_to_async(backfill_symbol_resolution)(
-                str(repository_id), repo_path
+                str(repository_id),
+                repo_path,
+                branch_name=branch_name,
+                initiated_by_user_id="system",
             )
             stats["calls_resolved"] = resolve_stats.get("resolved", 0)
         except Exception as exc:
