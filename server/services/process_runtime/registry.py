@@ -4,7 +4,8 @@
 后转移到哪个 stage"从写死的状态机常量泛化为**可注册的数据**：
 
 - ``StageDef``：单个 stage 的定义（``key`` / ``handler`` / ``transitions`` /
-  ``pausable`` / ``wait_status``）。``transitions`` 是 ``{event -> next_stage_key |
+  ``pausable`` / ``wait_status`` / ``event_wait_statuses``）。``transitions`` 是
+  ``{event -> next_stage_key |
   "__done__" | "__failed__"}`` 的数据化转移表（取代写死的 ``_ALLOWED``）。
 - ``ProcessDefinition``：一个 ``process_type`` 的完整定义（artifact_type / initial_stage /
   stages / clarification_policy 等）。
@@ -42,6 +43,8 @@ class StageDef:
     pausable: bool = False
     # 挂起时 ConvergenceSession.status 取值（pausable self-loop 命中时）
     wait_status: str = "waiting_event"
+    # 同一 stage 的不同 self-loop event 可有不同挂起语义；未登记 event 回落 wait_status。
+    event_wait_statuses: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

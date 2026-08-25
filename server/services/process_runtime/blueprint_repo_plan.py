@@ -30,6 +30,7 @@ from delivery.models import RepoResearchTaskStatus
 from delivery.services import ResearchService
 from services.process_runtime.blueprint_repo_plan_schema import (
     REPO_PLAN_AVAILABILITY,
+    coerce_repo_plan_shapes,
     validate_repo_plan,
 )
 from services.process_runtime.blueprint_repo_waves import build_api_waves
@@ -128,6 +129,8 @@ class LLMRepoPlanSynthesizer:
             f"阶段 1 适配度结论：{fitness.get('verdict') or 'unknown'}\n\n"
             "请只输出一个 JSON 对象，顶层键为 `repo_plan`，其值字段：\n"
             f'- repository_id: "{repository_id}"；role: "indirect"\n'
+            "- Block 固定形状为 {block_id, type, text}；text 必须是非空正文，"
+            "block_id 可省略（服务端会确定性补齐），不得用 description/title 代替 text\n"
             "- responsibility: Block[]（沿用上面锁定的职责）\n"
             "- apis_provided: [{name, method, path, description, citations}] —— 本仓已能对外"
             "提供、本次需求可能被消费的能力\n"
@@ -684,8 +687,9 @@ class BlueprintRepoPlanAdapter:
         """indirect 仓的能力引用清单：与 direct 同形落 `PartialPlan.content.repo_plan`。
 
         产物过 `validate_repo_plan`；不合格重试至 `MAX_REPO_PLAN_ATTEMPTS`，仍不合格则开
-        blocking 澄清线程并落一份 **degraded 但合法**的最小 repo_plan（`impl_items=[]` +
-        risks 记明缺失原因）——**绝不静默丢弃**（T-113-13）。
+        nonblocking 澄清线程并落一份 **degraded 但合法**的最小 repo_plan（`impl_items=[]`
+        + risks 记明缺失原因）——未决进入 merge，但不把已齐的显式方案重新卡在 barrier
+        （T-113-13）。
         """
         repository_id = repo["repository_id"]
         task = await self._aensure_task(session, repository_id)
@@ -702,6 +706,15 @@ class BlueprintRepoPlanAdapter:
                 continue
             candidate = _extract_section(raw)
             candidate = _apply_authoritative_fields(candidate, repo)
+            # ⭐ 与容器回调路径（`callbacks._parse_blueprint_repo_plan`）**同口径**：校验前必须
+            # 先吸收形状漂移。两条产出路径共用同一个 schema，归一化只接容器那一条 ⇒ 合成路径
+            # 每次都因「Block[] 项缺 block_id」这种**机械可判**的漂移被判非法，白烧
+            # MAX_REPO_PLAN_ATTEMPTS+1 轮 LLM，最后落 degraded 空壳 + 开阻塞澄清线程。
+            # 2026-08-19 实测：3 个 indirect 仓（basic-resource / onion-practice /
+            # study-stream）全数因 `$.risks[0]: 'block_id' is a required property` 落空壳。
+            # 而 block_id 本是**内部锚点标识**（`coerce` 注释已明确「可安全合成」），
+            # ⛔ 绝不该要求 LLM 自己编。
+            candidate = coerce_repo_plan_shapes(candidate)
             ok, err = validate_repo_plan(candidate)
             if ok:
                 section = candidate
@@ -709,7 +722,12 @@ class BlueprintRepoPlanAdapter:
             last_error = str(err or "")[:_MAX_ERROR_CHARS]
 
         if section is None:
-            thread_id = await self.aopen_clarification(session, repository_id, last_error)
+            thread_id = await self.aopen_clarification(
+                session,
+                repository_id,
+                last_error,
+                blocking=True,
+            )
             section = _degraded_section(repo, reason=last_error, thread_id=thread_id)
             ok, err = validate_repo_plan(section)
             if not ok:
@@ -743,15 +761,130 @@ class BlueprintRepoPlanAdapter:
 
         ⚠️ 裸传 `{"repo_plan": ...}` 会让 `acollect_fitness` 读到空 fitness —— `record_partial`
         每次都 `create` 全量新行，而下游只取最新一行，确认门快照与投影全线失血（P-1）。
+
+        direct 仓零实现项或任意角色的 degraded 占位仍落 ``valid`` PartialPlan 供人审查看，
+        但显式标 ``delivery_status``，task 置 ``stale`` 而非 ``done``；这样既不把整个流程
+        打成 failed，也不会把「有占位」伪装成「仓级方案已交付」。indirect 的语义是
+        「被依赖但本方案不改动」，其合规能力说明允许 ``impl_items=[]``，不能因此阻塞 barrier。
         """
+        repo_plan_section = dict(repo_plan_section or {})
+        delivery_status = _repo_plan_delivery_status(repo_plan_section)
+        repo_plan_section["delivery_status"] = delivery_status
+        if delivery_status != "ready" and not repo_plan_section.get("open_question_thread_ids"):
+            try:
+                from delivery.models import ConvergenceSession
+
+                session = await ConvergenceSession.objects.filter(
+                    id=getattr(task, "session_id", None)
+                ).afirst()
+                if session is not None:
+                    thread_id = await self.aopen_clarification(
+                        session,
+                        str(getattr(task, "repository_id", "") or ""),
+                        "仓级方案没有可执行实现项，需要人工确认该仓是否无需改动或补充实现方案。",
+                        blocking=True,
+                    )
+                    if thread_id:
+                        repo_plan_section["open_question_thread_ids"] = [thread_id]
+            except Exception as exc:  # noqa: BLE001 — 人审可见性 best-effort，不反噬产物落库
+                logger.warning(
+                    "blueprint_repo_plan_incomplete_clarification_failed",
+                    task_id=str(getattr(task, "id", "")),
+                    repository_id=str(getattr(task, "repository_id", "") or ""),
+                    delivery_status=delivery_status,
+                    error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+                    category="sampling",
+                    component="process_runtime",
+                )
         prev = await self._aload_latest_valid_content(task)
         content = {**prev, "repo_plan": repo_plan_section}
         # repository_id 由服务端权威写入，不采信容器/LLM 上报值
         content["repository_id"] = str(getattr(task, "repository_id", "") or "")
         partial = await self.research_service.record_partial(task, content)
+        if delivery_status != "ready":
+            task.status = RepoResearchTaskStatus.STALE
+            task.error = {
+                "reason": f"repo_plan_{delivery_status}",
+                "detail": "仓级方案没有可执行实现项，等待人工确认或补充",
+            }
+            await task.asave(update_fields=["status", "error", "updated_at"])
+            logger.warning(
+                "blueprint_repo_plan_incomplete_recorded",
+                task_id=str(getattr(task, "id", "")),
+                repository_id=str(getattr(task, "repository_id", "") or ""),
+                delivery_status=delivery_status,
+                item_count=0,
+                category="caller",
+                component="process_runtime",
+            )
+        else:
+            await self._aresolve_obsolete_plan_failure_threads(task)
         # 118（LIVE-03）：该仓分仓方案落库即可见（产出了多少实现项 / 多少接口契约）
         await self._aemit_repo_plan_completed(task, repo_plan_section)
         return partial
+
+    async def _aresolve_obsolete_plan_failure_threads(self, task: Any) -> None:
+        """合规方案补产成功后，关闭同仓此前“自动产出失败”阻塞线程。
+
+        重试耗尽会为同仓开 ``ai_clarification``；若后续人工/自动补跑已产出 ready 方案，
+        这些线程的事实前提已经消失。继续保持 open 会把会话错误地卡在
+        ``waiting_clarification``，即使所有仓级方案都已完成。
+        """
+        repository_id = str(getattr(task, "repository_id", "") or "")
+        if not repository_id:
+            return
+        try:
+            from delivery.models import (
+                BlueprintThread,
+                ConvergenceSession,
+                ThreadKind,
+                ThreadStatus,
+            )
+
+            session = await ConvergenceSession.objects.filter(
+                id=getattr(task, "session_id", None)
+            ).afirst()
+            if session is None:
+                return
+            artifact = await self._aload_artifact(getattr(session, "id", None))
+            if artifact is None:
+                return
+            threads = [
+                thread
+                async for thread in BlueprintThread.objects.filter(
+                    artifact=artifact,
+                    kind=ThreadKind.AI_CLARIFICATION,
+                    return_stage="repo_plan",
+                    status__in=(ThreadStatus.OPEN, ThreadStatus.ANSWERED),
+                    messages__body__contains=f"仓库 {repository_id} 的分仓方案连续",
+                ).distinct()
+            ]
+            lifecycle = self._get_lifecycle_service()
+            for thread in threads:
+                await lifecycle.resolve_thread(
+                    thread,
+                    resolution="仓级方案已重新产出并通过结构校验，自动关闭此前的失败澄清。",
+                    initiated_by_user_id=_initiated_by(session),
+                )
+            if threads:
+                logger.info(
+                    "blueprint_repo_plan_obsolete_clarifications_resolved",
+                    session_id=str(getattr(session, "id", "")),
+                    repository_id=repository_id,
+                    resolved_count=len(threads),
+                    initiated_by_user_id=_initiated_by(session),
+                    category="caller",
+                    component="process_runtime",
+                )
+        except Exception as exc:  # noqa: BLE001 — 清理旧线程 best-effort，不反噬方案落库
+            logger.warning(
+                "blueprint_repo_plan_obsolete_clarifications_resolve_failed",
+                task_id=str(getattr(task, "id", "")),
+                repository_id=repository_id,
+                error=redact_secrets_in_text(str(exc))[:_MAX_ERROR_CHARS],
+                category="sampling",
+                component="process_runtime",
+            )
 
     # ── 活动流埋点（118，LIVE-03；均 best-effort，绝不反噬业务）──────────────
     # ⭐ 每仓 `repo_plan.repo_started` 的发射点已收敛到派发漏斗
@@ -811,6 +944,7 @@ class BlueprintRepoPlanAdapter:
                 {
                     "repository_id": str(getattr(task, "repository_id", "") or ""),
                     "role": str(section.get("role") or ""),
+                    "delivery_status": _repo_plan_delivery_status(section),
                     "item_count": len(section.get("impl_items") or []),
                     # `api_count` 保持「本仓涉及的接口契约总数」口径（前端既有消费方按它显示），
                     # 供需两侧再各给一个分项，让「提供 3 条 / 消费 1 条」可核对。
@@ -849,22 +983,17 @@ class BlueprintRepoPlanAdapter:
     async def aall_repo_plans_ready(self, session: Any) -> bool:
         """阶段 2 的**自写完成判据**（供 113-06 的 handler 调用）。
 
-        判据 = 锁定仓集里每个仓都有非空 `repo_plan` 段，或该仓 task 已 `failed`（失败仓不
-        阻塞 barrier，由 merge 阶段标未决项）。**只看 `repo_plan` 段存在性 + 失败终态**，
-        不看 `done`/`stale`：阶段 1 与阶段 2 复用同一 task，`done` 在两阶段都出现，而
-        `mark_stale` 会让「全部终态」类判据短暂为假。
+        判据 = 锁定仓集里每个仓都有 ``delivery_status=ready`` 的非空实现方案。零实现项与
+        degraded 占位虽然保留为人审材料，但绝不满足 barrier；对应阻塞澄清线程让流程停在
+        ``needs_clarification``，而不是进入融合制造「全仓完成」假象。
         """
         repos = await self.acollect_locked_repos(session)
         if not repos:
             return True
         plans = await self.acollect_repo_plans(session)
-        task_map = await self._aload_task_map(getattr(session, "id", None))
         for repo in repos:
             repository_id = repo["repository_id"]
-            if plans.get(repository_id):
-                continue
-            task = task_map.get(repository_id) or {}
-            if str(task.get("status")) == RepoResearchTaskStatus.FAILED:
+            if _repo_plan_delivery_status(plans.get(repository_id)) == "ready":
                 continue
             return False
         return True
@@ -896,8 +1025,17 @@ class BlueprintRepoPlanAdapter:
         `waves` 传 `aplan_waves` 结果里的 `stage_state_summary`（`{waves, cycle_count,
         unresolved_count}`）即可；不传则不写该键（波次是可选摘要，缺失不影响完成判据）。
         """
-        ready = sorted(str(rid) for rid, section in (plans or {}).items() if section)
-        pending_ids = sorted({str(rid) for rid in (pending or []) if str(rid or "")} - set(ready))
+        statuses = {
+            str(rid): _repo_plan_delivery_status(section)
+            for rid, section in (plans or {}).items()
+            if str(rid or "")
+        }
+        ready = sorted(rid for rid, status in statuses.items() if status == "ready")
+        incomplete = sorted(rid for rid, status in statuses.items() if status != "ready")
+        degraded = sorted(rid for rid, status in statuses.items() if status == "degraded")
+        pending_ids = sorted(
+            ({str(rid) for rid in (pending or []) if str(rid or "")} | set(incomplete)) - set(ready)
+        )
         counter = {
             str(rid): int(count or 0) for rid, count in (attempts or {}).items() if str(rid or "")
         }
@@ -906,6 +1044,9 @@ class BlueprintRepoPlanAdapter:
         state = {
             "ready_repository_ids": ready,
             "pending_repository_ids": pending_ids,
+            "incomplete_repository_ids": incomplete,
+            "degraded_repository_ids": degraded,
+            "repository_statuses": statuses,
             "attempts": counter,
         }
         if isinstance(waves, dict) and waves:
@@ -921,8 +1062,15 @@ class BlueprintRepoPlanAdapter:
 
     # ── 澄清线程（唯一入口经 lifecycle service） ────────────────────────────
 
-    async def aopen_clarification(self, session: Any, repository_id: str, detail: str) -> str:
-        """开一条阻塞澄清线程；`return_stage` **必填**（B3），否则恢复会退回阶段 1。
+    async def aopen_clarification(
+        self,
+        session: Any,
+        repository_id: str,
+        detail: str,
+        *,
+        blocking: bool = True,
+    ) -> str:
+        """开一条澄清线程；`return_stage` **必填**（B3），否则恢复会退回阶段 1。
 
         question 只含仓名与缺失字段说明，**不含 content 正文**（半可信正文不进 HITL 面板）。
         best-effort：开不出线程只记 warning 并返回空串，绝不反噬主链。
@@ -941,7 +1089,7 @@ class BlueprintRepoPlanAdapter:
             thread = await self._get_lifecycle_service().open_thread(
                 artifact,
                 kind="ai_clarification",
-                blocking=True,
+                blocking=blocking,
                 question=(
                     f"仓库 {repository_id} 的分仓方案连续 {MAX_REPO_PLAN_ATTEMPTS + 1} 次未能"
                     f"产出合规结构，请补充信息或调整该仓职责。校验失败原因："
@@ -957,6 +1105,7 @@ class BlueprintRepoPlanAdapter:
                 session_id=str(getattr(session, "id", "")),
                 repository_id=repository_id,
                 thread_id=thread_id,
+                blocking=blocking,
                 initiated_by_user_id=_initiated_by(session),
                 category="caller",
                 component="process_runtime",
@@ -1241,6 +1390,37 @@ def _extract_section(raw: Any) -> Any:
     if isinstance(raw, dict) and isinstance(raw.get("repo_plan"), dict):
         return raw["repo_plan"]
     return raw
+
+
+def _repo_plan_delivery_status(section: Any) -> str:
+    """仓级方案交付态：``ready`` / ``empty`` / ``degraded``（纯函数、确定性）。
+
+    兼容历史降级占位：旧数据没有 ``delivery_status``，仍可从风险块锚点、未决类型与澄清
+    线程识别。direct 仓必须至少有一个实现项才是 ``ready``；indirect 仓本来就不改代码，
+    合规产物即使零实现项也算 ``ready``，但审查侧仍会给人展示「无实现项」WARNING。
+    """
+
+    if not isinstance(section, dict):
+        return "empty"
+    explicit = str(section.get("delivery_status") or "").strip().lower()
+    if explicit == "degraded":
+        return "degraded"
+    items = section.get("impl_items")
+    risks = section.get("risks")
+    for risk in risks if isinstance(risks, list) else []:
+        if not isinstance(risk, dict):
+            continue
+        block_id = str(risk.get("block_id") or "")
+        block_type = str(risk.get("type") or "").lower()
+        if block_id.startswith(("blk_repo_plan_degraded_", "degraded-")):
+            return "degraded"
+        if block_type == "unresolved" and section.get("open_question_thread_ids"):
+            return "degraded"
+    if isinstance(items, list) and items:
+        return "ready"
+    if str(section.get("role") or "").strip().lower() == "indirect":
+        return "ready"
+    return "empty"
 
 
 def _apply_authoritative_fields(section: Any, repo: dict) -> Any:

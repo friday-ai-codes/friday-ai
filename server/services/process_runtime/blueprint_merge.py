@@ -45,12 +45,21 @@ import structlog
 from asgiref.sync import sync_to_async
 
 from common.logging import redact_secrets_in_text
+from services.process_runtime.blueprint_citations import (
+    CITATION_ID_PREFIX,
+    build_citation_entries,
+)
 from services.process_runtime.blueprint_prompt_style import (
     HUMAN_WRITING_SUMMARY_GUIDE,
     MARKDOWN_LITE_WRITING_GUIDE,
 )
 from services.process_runtime.blueprint_quality import citation_coverage
 from services.process_runtime.blueprint_reconcile import coverage_gaps, reconcile_cross_repo_apis
+from services.process_runtime.blueprint_repo_alias import (
+    canonicalize_contract_support_repository_ids,
+    canonicalize_repository_alias,
+    support_alias_is_ignored,
+)
 from services.process_runtime.blueprint_repo_waves import build_api_waves
 from services.process_runtime.blueprint_schema import BLUEPRINT_SCHEMA_VERSION, validate_blueprint
 
@@ -114,9 +123,6 @@ SECTION_FALLBACKS: dict[str, Any] = {
     SECTION_INTERACTION_FLOWS: [],
     SECTION_IMPACT_ANALYSIS: {"business_impact": [], "affected_features": []},
 }
-
-# 引用池 id 前缀（`cit_` + sha1(raw)[:12]，稳定可复现：同一裸路径恒得同一 id）。
-CITATION_ID_PREFIX = "cit_"
 
 _NEEDS_SUPPORT = "needs_support"
 _VALID_ROLES = ("direct", "indirect")
@@ -401,21 +407,7 @@ def build_citation_pool(repo_plans: dict, associations: list) -> tuple[list[dict
                 if isinstance(feature, dict):
                     _add(feature.get("citations"))
 
-    entries: list[dict] = []
-    cite_map: dict[str, str] = {}
-    for raw in raws:
-        citation_id = f"{CITATION_ID_PREFIX}{_digest(raw)[:12]}"
-        cite_map[raw] = citation_id
-        entries.append(
-            {
-                "citation_id": citation_id,
-                "source_type": "repo_file",
-                "source_id": raw[:_MAX_TITLE_CHARS],
-                "locator": {"path": raw[:_MAX_TITLE_CHARS]},
-                "title": raw[:_MAX_TITLE_CHARS],
-            }
-        )
-    return entries, cite_map
+    return build_citation_entries(raws)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -1566,7 +1558,9 @@ def _support_hints(repo_plans: dict) -> dict[tuple[str, str], str]:
     return hints
 
 
-def _apply_needs_support(contracts: list, gaps: list, hints: dict) -> int:
+def _apply_needs_support(
+    contracts: list, gaps: list, hints: dict, *, associations: list | None = None
+) -> int:
     """``gaps`` 逐条把对应契约标成需要对方配合（**B4：只写 ``data_source`` 两键**）。
 
     ``data_source`` 不存在时先建 ``{}`` 再写；顶层同名键一概不产 —— 111 schema 里没有
@@ -1596,7 +1590,9 @@ def _apply_needs_support(contracts: list, gaps: list, hints: dict) -> int:
         if not str(data_source.get("support_repository_id") or "").strip():
             hint = hints.get((str(gap.get("repository_id") or ""), str(gap.get("api") or "")), "")
             if hint:
-                data_source["support_repository_id"] = hint
+                data_source["support_repository_id"] = (
+                    canonicalize_repository_alias(associations, hint) if associations else hint
+                )
         applied += 1
     return applied
 
@@ -1757,11 +1753,37 @@ class BlueprintMergeAdapter:
             if isinstance(baseline.get(key), list):
                 assembled[key] = baseline[key]
 
+        canonicalize_contract_support_repository_ids(assembled[SECTION_API_CONTRACTS], associations)
+        ignored_aliases = _ignored_support_aliases(state)
+        demoted = _demote_ignored_support_contracts(
+            assembled[SECTION_API_CONTRACTS], ignored_aliases
+        )
+        if demoted:
+            assembled.setdefault("deferred_ideas", [])
+            if not isinstance(assembled["deferred_ideas"], list):
+                assembled["deferred_ideas"] = []
+            assembled["deferred_ideas"].extend(_deferred_ideas_for_ignored_support(demoted))
+            self._log(
+                "blueprint_merge_support_repos_ignored",
+                session,
+                ignored_count=len(demoted),
+                ignored_aliases=list(ignored_aliases)[:20],
+            )
         report = reconcile_cross_repo_apis(assembled)
+        hints = _support_hints(repo_plans)
+        apply_gaps = [
+            gap for gap in report["gaps"] if not _gap_hint_is_ignored(gap, hints, ignored_aliases)
+        ]
         applied = _apply_needs_support(
-            assembled[SECTION_API_CONTRACTS], report["gaps"], _support_hints(repo_plans)
+            assembled[SECTION_API_CONTRACTS],
+            apply_gaps,
+            hints,
+            associations=associations,
         )
         if applied:
+            canonicalize_contract_support_repository_ids(
+                assembled[SECTION_API_CONTRACTS], associations
+            )
             # 重跑一次：刚标上的 needs_support 还要过「协作仓在关联清单里」那道检查。
             report = reconcile_cross_repo_apis(assembled)
         counts = {key: len(value) for key, value in report.items()}
@@ -2547,7 +2569,83 @@ def _build_stage_state(
         bucket["unresolved"] = unresolved[:_MAX_UNRESOLVED]
     if attribution:
         bucket["last_attribution"] = dict(attribution)
+    ignored = _ignored_support_aliases(state)
+    if ignored:
+        bucket["ignored_support_aliases"] = list(ignored)
     return {**(state if isinstance(state, dict) else {}), STAGE_STATE_KEY: bucket}
+
+
+def _ignored_support_aliases(state: Any) -> tuple[str, ...]:
+    """``stage_state.merge.ignored_support_aliases``：操作员本轮明确不纳入的协作仓别名。"""
+    bucket = (state or {}).get(STAGE_STATE_KEY) if isinstance(state, dict) else None
+    raw = (bucket or {}).get("ignored_support_aliases") if isinstance(bucket, dict) else None
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in raw if isinstance(raw, list) else []:
+        token = str(item or "").strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        out.append(token)
+        if len(out) >= 20:
+            break
+    return tuple(out)
+
+
+def _demote_ignored_support_contracts(contracts: Any, ignored: Any) -> list[dict]:
+    """把命中排除名单的 ``needs_support`` 契约降为 ``existing``，避免再阻塞融合/审查。"""
+    demoted: list[dict] = []
+    if not ignored:
+        return demoted
+    for contract in contracts if isinstance(contracts, list) else []:
+        if not isinstance(contract, dict):
+            continue
+        data_source = contract.get("data_source")
+        if not isinstance(data_source, dict):
+            continue
+        if str(data_source.get("availability") or "") != _NEEDS_SUPPORT:
+            continue
+        support = str(data_source.get("support_repository_id") or "").strip()
+        if not support_alias_is_ignored(support, ignored):
+            continue
+        data_source["availability"] = "existing"
+        note = f"操作员本轮不纳入协作仓 {support}，按外部依赖/本期不做处理。"
+        existing_notes = data_source.get("notes")
+        data_source["notes"] = _as_block_list(
+            list(existing_notes) + [note] if isinstance(existing_notes, list) else note,
+            block_id=f"blk_bp_ds_ignored_{str(contract.get('id') or 'x')[:12]}",
+        )
+        demoted.append(
+            {
+                "repository_id": str(contract.get("repository_id") or ""),
+                "api": str(contract.get("name") or contract.get("path") or ""),
+                "support_repository_id": support,
+            }
+        )
+    return demoted
+
+
+def _deferred_ideas_for_ignored_support(demoted: list[dict]) -> list[dict]:
+    ideas: list[dict] = []
+    for item in demoted[:20]:
+        support = str(item.get("support_repository_id") or "").strip()
+        api = str(item.get("api") or "").strip()
+        if not support:
+            continue
+        ideas.append(
+            {
+                "text": f"协作仓 {support} 不纳入本次锁定仓库集",
+                "reason": f"消费接口 {api or '（未命名）'} 所需配合本期不做",
+            }
+        )
+    return ideas
+
+
+def _gap_hint_is_ignored(gap: Any, hints: dict, ignored: Any) -> bool:
+    if not isinstance(gap, dict) or not ignored:
+        return False
+    hint = hints.get((str(gap.get("repository_id") or ""), str(gap.get("api") or "")), "")
+    return support_alias_is_ignored(hint, ignored)
 
 
 def _clarification_question(report: dict) -> str:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import inspect
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -50,14 +49,19 @@ async def repo_and_session():
     return repo, session, user
 
 
-def _summary_text(**extra) -> str:
-    payload = {
+def _summary_result(**extra) -> dict:
+    """结构化 MCP 结果 dict（260818-pt8 D-01：唯一权威渠道 output.mcp_result）。"""
+    return {
         "overview": "ok",
         "tech_stack": [],
         "entry_points": [],
         **extra,
     }
-    return json.dumps(payload, ensure_ascii=False)
+
+
+def _summary_output(**extra) -> dict:
+    """completed payload：output 携带结构化 mcp_result。"""
+    return {"result_type": "text", "output": {"mcp_result": _summary_result(**extra)}}
 
 
 async def test_summary_complete_bootstrap_enqueues_when_no_row_no_charter(
@@ -76,7 +80,7 @@ async def test_summary_complete_bootstrap_enqueues_when_no_row_no_charter(
     ):
         await _update_repository_on_summary_complete(
             session,
-            {"result_type": "text", "output": {"text": _summary_text()}},
+            _summary_output(),
         )
 
     enqueue.assert_awaited_once()
@@ -105,14 +109,9 @@ async def test_summary_complete_applies_when_charter_present(repo_and_session) -
     ):
         await _update_repository_on_summary_complete(
             session,
-            {
-                "result_type": "text",
-                "output": {
-                    "text": _summary_text(
-                        charter={"positioning": "Runner 基线", "evolution": "active"}
-                    )
-                },
-            },
+            _summary_output(
+                charter={"positioning": "Runner 基线", "evolution": "active"}
+            ),
         )
 
     apply.assert_awaited_once()
@@ -144,7 +143,7 @@ async def test_summary_complete_skips_when_fingerprint_equal(repo_and_session) -
     ):
         await _update_repository_on_summary_complete(
             session,
-            {"result_type": "text", "output": {"text": _summary_text()}},
+            _summary_output(),
         )
 
     enqueue.assert_not_awaited()
@@ -172,7 +171,7 @@ async def test_summary_complete_supplement_when_row_no_charter(repo_and_session)
     ):
         await _update_repository_on_summary_complete(
             session,
-            {"result_type": "text", "output": {"text": _summary_text()}},
+            _summary_output(),
         )
 
     enqueue.assert_awaited_once()
@@ -201,7 +200,7 @@ async def test_summary_complete_enqueue_error_swallowed(repo_and_session) -> Non
     with patch("repositories.charter_enqueue.enqueue_charter_draft", enqueue):
         await _update_repository_on_summary_complete(
             session,
-            {"result_type": "text", "output": {"text": _summary_text()}},
+            _summary_output(),
         )
 
     await repo.arefresh_from_db()

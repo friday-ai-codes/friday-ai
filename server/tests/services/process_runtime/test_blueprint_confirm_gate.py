@@ -43,6 +43,10 @@ from delivery.services import ArtifactContentInvalid, ArtifactService
 from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
 from repositories.models import Repository
 from services.process_runtime.blueprint_charter_match import score_charter_match
+from services.process_runtime.blueprint_citations import (
+    build_citation_entries,
+    citation_id_for,
+)
 from services.process_runtime.blueprint_confirm_gate import (
     _MAX_DOMAIN_CHARS,
     UNSUITABLE_REMOVE_REASON,
@@ -54,6 +58,11 @@ from services.process_runtime.blueprint_confirm_gate import (
     iter_snapshot_repos,
     merge_gate_snapshot,
 )
+from services.process_runtime.blueprint_merge import (
+    build_citation_pool,
+    project_repo_associations,
+)
+from services.process_runtime.blueprint_review import check_citations
 from services.process_runtime.blueprint_schema import validate_blueprint
 from tests.helpers.blueprint_samples import make_blueprint
 
@@ -84,6 +93,26 @@ def _stage1_blueprint(**overrides: Any) -> dict[str, Any]:
     }
     base.update(overrides)
     return make_blueprint(**base)
+
+
+def _stage1_blueprint_with_empty_citation_pool() -> dict[str, Any]:
+    """构造引用池与所有引用点都为空的合法阶段 1 蓝图。"""
+    content = _stage1_blueprint()
+
+    def _clear(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                if key == "citations":
+                    value[key] = []
+                else:
+                    _clear(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                _clear(nested)
+
+    _clear(content)
+    content["citations"] = {}
+    return content
 
 
 async def _make_repo(name: str | None = None) -> Repository:
@@ -475,6 +504,29 @@ async def test_build_locked_associations_falls_back_to_direct_for_invalid_role()
     assert build_locked_associations(snapshot=snapshot)[0]["repository_name"] == "r1"
 
 
+def test_confirm_gate_and_merge_generate_identical_citation_ids() -> None:
+    """确认门与 merge 必须共享逐字节一致的引用 id 口径。"""
+    raw = "internal/data/user.go:660"
+    entries, cite_map = build_citation_entries([raw])
+    merge_entries, merge_map = build_citation_pool(
+        {},
+        [{"fitness": {"citations": [raw]}}],
+    )
+
+    assert cite_map[raw] == citation_id_for(raw) == merge_map[raw]
+    assert entries == merge_entries
+
+
+def test_existing_citation_id_does_not_create_second_order_entry() -> None:
+    """池内 id 再过确认门时不得生成 ``cit_sha1("cit_xxx")``。"""
+    citation_id = citation_id_for("internal/data/user.go:660")
+
+    entries, cite_map = build_citation_entries([citation_id])
+
+    assert entries == []
+    assert cite_map == {}
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 3b. Fix C：unsuitable 默认不进锁定关联（D-03），人工重纳后可 lock
 # ═══════════════════════════════════════════════════════════════════════════
@@ -637,6 +689,67 @@ async def test_alock_writes_locked_associations_and_passes_schema() -> None:
     fresh_thread = await BlueprintThread.objects.filter(id=thread.id).afirst()
     assert fresh_thread.status == ThreadStatus.RESOLVED
     assert await BlueprintReviewer.objects.filter(artifact=artifact, user=user).aexists()
+
+
+async def test_alock_builds_pool_before_filtering_raw_fitness_citations() -> None:
+    """回归钉：空基线池 + 裸文件路径不能在确认门锁定时被白名单清空。"""
+    repo = await _make_repo()
+    artifact = await _make_artifact(_stage1_blueprint_with_empty_citation_pool())
+    session = await _make_session(artifact, _routing_state(_candidate(repo)))
+    adapter = _adapter(fitness=_fitness(repo))
+    await adapter.open_gate(session)
+    thread = await _gate_thread(artifact)
+    raw = "internal/data/user.go:660"
+    options = list(thread.options)
+    options[0]["fitness"]["citations"] = [raw]
+    await BlueprintThread.objects.filter(id=thread.id).aupdate(options=options)
+
+    result = await adapter.alock(session)
+
+    assert result["event"] == "confirmed"
+    content = await _latest_content(artifact)
+    citations = content["repo_associations"][0]["fitness"]["citations"]
+    assert citations
+    assert all(citation_id in content["citations"] for citation_id in citations)
+    assert validate_blueprint(content) == (True, None)
+
+
+async def test_confirm_gate_citations_survive_merge_projection_and_review() -> None:
+    """确认门锁定 → merge 投影后 rationale 有证据，审查不再报 association 缺引用。"""
+    repo = await _make_repo()
+    artifact = await _make_artifact(_stage1_blueprint_with_empty_citation_pool())
+    session = await _make_session(artifact, _routing_state(_candidate(repo)))
+    adapter = _adapter(fitness=_fitness(repo))
+    await adapter.open_gate(session)
+    thread = await _gate_thread(artifact)
+    options = list(thread.options)
+    options[0]["fitness"]["citations"] = ["internal/data/user.go:660"]
+    await BlueprintThread.objects.filter(id=thread.id).aupdate(options=options)
+    assert (await adapter.alock(session))["event"] == "confirmed"
+    locked_content = await _latest_content(artifact)
+
+    pool_entries, cite_map = build_citation_pool({}, locked_content["repo_associations"])
+    citations = {
+        **locked_content["citations"],
+        **{entry["citation_id"]: entry for entry in pool_entries},
+    }
+    cite_map = {**cite_map, **{citation_id: citation_id for citation_id in citations}}
+    merged = {
+        **locked_content,
+        "citations": citations,
+        "repo_associations": project_repo_associations(
+            locked_content["repo_associations"], cite_map
+        ),
+    }
+
+    assert merged["repo_associations"][0]["rationale"]["citations"]
+    association_missing = [
+        finding
+        for finding in check_citations(merged)
+        if finding["rule_id"] == "citation_missing"
+        and finding["section_path"].startswith("repo_associations[")
+    ]
+    assert association_missing == []
 
 
 async def test_alock_decision_log_is_idempotent() -> None:

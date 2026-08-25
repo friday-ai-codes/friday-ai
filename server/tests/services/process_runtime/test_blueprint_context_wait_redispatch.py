@@ -298,7 +298,7 @@ async def test_waiting_context_without_keys_falls_through_to_repo_plan_parsing()
     payload = {
         "output": {
             "waiting_context": {"keys": []},
-            "repo_plan": _repo_plan_section(str(repo_a.id)),
+            "mcp_result": {"repo_plan": _repo_plan_section(str(repo_a.id))},
         }
     }
     with _NO_BARRIER:

@@ -45,6 +45,7 @@ import structlog
 
 from common.logging import redact_secrets_in_text
 from delivery.services.blueprint_anchor import _block_text
+from services.process_runtime.blueprint_repo_alias import is_resolvable_repository_alias
 from services.process_runtime.blueprint_schema import (
     BLUEPRINT_SCHEMA_VERSION,
     iter_blocks,
@@ -288,12 +289,14 @@ def check_citations(content: Any) -> list[dict]:
 
 
 def check_roles(content: Any) -> list[dict]:
-    """规则③ 角色一致性：三条，按**可证伪度**分档（纯集合运算 BLOCKER / 模糊匹配 WARNING）。
+    """规则③ 角色一致性：四条，按**可证伪度**分档（纯集合运算 BLOCKER / 弱信号 WARNING）。
 
     - ``role == "direct"`` 的仓在 ``implementation_overview.items[].repository_id`` 里
       **零命中** → ``role_mismatch`` **BLOCKER**（纯集合运算）；
     - 实现项指向 ``role == "indirect"`` 的仓 → ``role_mismatch`` **BLOCKER**
       （indirect 的语义就是「被依赖但本方案不改动」，改它即越界，纯集合运算）；
+    - indirect 仓零实现项 → ``indirect_repo_plan_empty`` **WARNING**。indirect 本可合理地
+      不改代码，故不能升 BLOCKER；但仓级方案降级/空产出时必须给人审一个可见信号；
     - indirect 仓的 ``capabilities_used`` 未在任何实现项文本（``title`` / ``how``）或
       ``api_contracts[].data_source.from_api|from_service`` 中被包含匹配 →
       ``capability_unreferenced`` **WARNING**。这是本模块**唯一的模糊匹配项**：文本包含
@@ -328,6 +331,20 @@ def check_roles(content: Any) -> list[dict]:
                     section_path=f"repo_associations[{repository_id}]",
                     repository_id=repository_id,
                     detail="direct 仓无任何实现项：要么它不该是 direct，要么实现概述漏了它",
+                ),
+            )
+        for repository_id in sorted(set(indirect) - item_repos):
+            _append(
+                findings,
+                _finding(
+                    "indirect_repo_plan_empty",
+                    SEVERITY_WARNING,
+                    section_path=f"repo_associations[{repository_id}]",
+                    repository_id=repository_id,
+                    detail=(
+                        "indirect 仓没有任何实现项；该仓可能合理地无需改动，也可能是仓级方案"
+                        "降级或空产出，请在人审中确认"
+                    ),
                 ),
             )
         for item in items:
@@ -409,7 +426,7 @@ def check_api_closure(content: Any) -> list[dict]:
                     ),
                 )
 
-        association_ids = _association_ids(data)
+        associations = _associations(data)
         for index, contract in enumerate(contracts):
             if _direction(contract) != _DIRECTION_CONSUMED:
                 continue
@@ -419,7 +436,7 @@ def check_api_closure(content: Any) -> list[dict]:
             if str(data_source.get("availability") or "") != _NEEDS_SUPPORT:
                 continue
             support_id = str(data_source.get("support_repository_id") or "").strip()
-            if support_id and support_id in association_ids:
+            if support_id and _support_repository_resolved(associations, support_id):
                 continue
             contract_key = str(contract.get("id") or "") or str(index)
             _append(
@@ -921,7 +938,9 @@ async def agoal_backward_review(
         # 指令是人给的审查要求，不是起草会话历史）。
         note = str(operator_instruction or "").strip()
         if note:
-            digest = f"{digest}\n\n### 操作员补充指令（本轮审查须重点核对）\n{note[:_MAX_PROMPT_CHARS]}"
+            digest = (
+                f"{digest}\n\n### 操作员补充指令（本轮审查须重点核对）\n{note[:_MAX_PROMPT_CHARS]}"
+            )
         messages = [
             SystemMessage(content=_goal_backward_system_prompt()),
             HumanMessage(content=digest),
@@ -1145,16 +1164,15 @@ def _reference_corpus(content: Any) -> str:
     return "\n".join(parts).lower()
 
 
-def _association_ids(content: Any) -> set[str]:
-    """``repo_associations[].repository_id`` 集合（协作仓白名单）。"""
+def _associations(content: Any) -> list[dict]:
+    """``repo_associations`` 的 dict 元素列表。"""
     if not isinstance(content, dict):
-        return set()
-    ids = {
-        str(assoc.get("repository_id") or "")
-        for assoc in _dict_list(content.get("repo_associations"))
-    }
-    ids.discard("")
-    return ids
+        return []
+    return _dict_list(content.get("repo_associations"))
+
+
+def _support_repository_resolved(associations: list[dict], support_id: str) -> bool:
+    return is_resolvable_repository_alias(associations, support_id)
 
 
 def _direction(contract: Any) -> str:

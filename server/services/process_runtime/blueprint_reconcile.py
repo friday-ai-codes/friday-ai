@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.process_runtime.blueprint_repo_alias import is_resolvable_repository_alias
 from services.process_runtime.blueprint_repo_waves import match_api
 
 __all__ = ["reconcile_cross_repo_apis", "coverage_gaps"]
@@ -86,7 +87,7 @@ def reconcile_cross_repo_apis(blueprint: Any) -> dict:
         contracts = _contract_items(blueprint)
         if not contracts:
             return result
-        association_ids = _association_ids(blueprint)
+        associations = _associations(blueprint)
         provided = [item for item in contracts if _direction(item) == "provided"]
         for item in contracts:
             if _direction(item) != "consumed":
@@ -115,7 +116,7 @@ def reconcile_cross_repo_apis(blueprint: Any) -> dict:
             if str(data_source.get("availability") or "") != _NEEDS_SUPPORT:
                 continue
             support_id = str(data_source.get("support_repository_id") or "").strip()
-            if not support_id or support_id not in association_ids:
+            if not support_id or not is_resolvable_repository_alias(associations, support_id):
                 _append(
                     result["missing_support_repos"],
                     {
@@ -249,21 +250,14 @@ def _contract_items(blueprint: Any) -> list[dict]:
     return [item for item in raw if isinstance(item, dict)]
 
 
-def _association_ids(blueprint: Any) -> set[str]:
-    """``repo_associations[].repository_id`` 集合（协作仓白名单）。"""
+def _associations(blueprint: Any) -> list[dict]:
+    """``repo_associations`` 的 dict 元素列表（协作仓白名单来源）。"""
     if not isinstance(blueprint, dict):
-        return set()
+        return []
     raw = blueprint.get("repo_associations")
     if not isinstance(raw, list):
-        return set()
-    ids = set()
-    for assoc in raw:
-        if not isinstance(assoc, dict):
-            continue
-        repository_id = str(assoc.get("repository_id") or "")
-        if repository_id:
-            ids.add(repository_id)
-    return ids
+        return []
+    return [assoc for assoc in raw if isinstance(assoc, dict)]
 
 
 def _direction(item: dict) -> str:

@@ -184,6 +184,32 @@ def test_build_skeleton_returns_independent_objects() -> None:
     assert blueprint_intake.MINIMAL_BLUEPRINT_SKELETON["repo_associations"] == []
 
 
+def test_goal_text_is_not_truncated_at_the_decompose_prompt_budget() -> None:
+    """③.5 需求正文**入库不截**（quick-260819 回归门）。
+
+    历史缺陷：``_MAX_GOAL_CHARS`` 原为 4000 且与 decompose prompt 预算共用同一个常量，
+    于是 8472 字符的需求正文被截在模块 4 句中间，页面上模块 5~10 只剩兜底索引单行标题。
+
+    本条**可证伪**：把 ``build_skeleton`` 的切片改回 ``[:4000]`` 立刻转红。断言用「远大于
+    4000 的正文逐字进块」，而不是断言某个上限数值 —— 后者会把常量值本身焊死。
+    """
+    from services.process_runtime import blueprint_intake
+
+    # 拿真实形态的正文：带模块标题的多模块清单，长度取 4000 的两倍开外。
+    goal = "\n".join(f"## 模块 {n}：标题{n}\n- 功能点 A：{'验收细节' * 250}" for n in range(1, 11))
+    assert len(goal) > 8000, "语料本身必须超过旧上限，否则本条恒绿"
+
+    content = build_skeleton(title="t", project_id=_PROJECT_ID, goal_text=goal)
+    text = content["requirement_spec"]["goal"][0]["text"]
+
+    assert text == goal, "需求正文必须逐字入库"
+    # 末尾模块必须在（旧口径下模块 10 会被整段裁掉）
+    assert "## 模块 10：标题10" in text
+    # prompt 预算是**另一个**常量，仍应保持 4000（两个职责不得再共用一个常量）
+    assert blueprint_intake._MAX_DECOMPOSE_PROMPT_CHARS == 4000
+    assert blueprint_intake._MAX_GOAL_CHARS > 100_000
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # 4-6：三条硬断言（走真实 start_blueprint_orchestration + 驱一步 intake）
 # ══════════════════════════════════════════════════════════════════════════

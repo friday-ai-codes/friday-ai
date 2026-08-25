@@ -11,6 +11,7 @@ POST /api/containers/callback/
 """
 
 import asyncio
+import time
 from typing import Any
 
 import structlog
@@ -1508,22 +1509,31 @@ async def _update_repository_on_summary_complete(
         logger.warning("repo_summary_complete_repo_not_found", repo_id=repo_id)
         return
 
-    raw_text = p["output"].get("text", "") if p["result_type"] == "text" else ""
-    parsed_summary = _parse_summary_json(raw_text)
-
-    try:
-        payload_obj = json_mod.loads(parsed_summary)
-    except (json_mod.JSONDecodeError, TypeError):
-        payload_obj = None
+    # 260818-pt8 D-01/D-02：唯一权威输入=共享 MCP 工厂捕获的结构化 `mcp_result`（dict）。
+    # 删除对自由文本 / 围栏 JSON（`_parse_summary_json`）的成功路径依赖：仅含 text 的
+    # 旧渠道明确拒绝——不写树、走失败语义（fail-closed）。
+    output = p.get("output") if isinstance(p.get("output"), dict) else {}
+    payload_obj = output.get("mcp_result") if isinstance(output, dict) else None
+    if not isinstance(payload_obj, dict):
+        logger.warning(
+            "repo_summary_mcp_result_missing",
+            category="caller",
+            component="subagent_callback",
+            session_id=session.session_id,
+            repository_id=str(repo_id),
+        )
+        repo.ai_summary_status = "failed"
+        repo.ai_summary_error = (
+            "repo_summary_mcp_result_missing: 容器未经共享 MCP 提交结构化结果，拒绝以自由文本兜底"
+        )
+        await repo.asave(update_fields=["ai_summary_status", "ai_summary_error", "updated_at"])
+        return
 
     # ai_summary 存「剥离 tree 的 JSON」：tree 体积大（可达数万字符）且已
     # 单独存 ai_summary_tree；带 tree 直接截断 8192 会把 JSON 腰斩，导致
     # overview_text 解析失败、对外描述变成乱码 JSON 片段。
-    if isinstance(payload_obj, dict):
-        summary_obj = {k: v for k, v in payload_obj.items() if k != "tree"}
-        repo.ai_summary = json_mod.dumps(summary_obj, ensure_ascii=False, indent=2)[:8192]
-    else:
-        repo.ai_summary = parsed_summary[:8192]
+    summary_obj = {k: v for k, v in payload_obj.items() if k != "tree"}
+    repo.ai_summary = json_mod.dumps(summary_obj, ensure_ascii=False, indent=2)[:8192]
     repo.ai_summary_status = "completed"
     repo.ai_summary_generated_at = timezone.now()
     repo.ai_summary_error = ""
@@ -1571,7 +1581,7 @@ async def _update_repository_on_summary_complete(
     logger.info(
         "repo_summary_written",
         repository_id=repo_id,
-        summary_length=len(parsed_summary),
+        summary_length=len(repo.ai_summary),
         tree_written=tree_written,
     )
 
@@ -1607,9 +1617,7 @@ async def _update_repository_on_summary_complete(
             overview = getattr(repo, "overview_text", None) or ""
 
         observed_fingerprint = compute_charter_fingerprint(overview, tree_for_fp, facets)
-        charter_payload = (
-            payload_obj.get("charter") if isinstance(payload_obj, dict) else None
-        )
+        charter_payload = payload_obj.get("charter") if isinstance(payload_obj, dict) else None
         charter_dict = charter_payload if isinstance(charter_payload, dict) else None
 
         existing = await RepoCharter.objects.filter(repository_id=repo_id).afirst()
@@ -2176,28 +2184,20 @@ def _is_blueprint_research(session: SubAgentSession) -> bool:
 
 
 def _parse_blueprint_fitness(output: Any) -> dict[str, Any] | None:
-    """从容器 output 提取蓝图调研结论（**缺 fitness.verdict 即视为不可解析返回 None**）。
+    """从容器 output 提取蓝图调研结论（**唯一结构化渠道**：只认 ``output["mcp_result"]``）。
 
-    优先结构化透传（output 已含 ``fitness``），否则从 ``output["text"]`` 提 JSON 围栏 /
-    花括号跨度后 ``json.loads``。归一化按白名单 + 枚举校验：``verdict`` 非法即判不可解析
-    （宁可失败重跑，也不把编造结论落进蓝图投影数据）；``role_suggestion`` 非法回落保守的
-    ``direct``（要改动的仓被误判成不改动，代价远高于反过来）。
+    260818-pt8 D-01/D-02：**删除**自由文本 / 围栏 JSON / ``_parse_summary_json`` 分支——仅
+    含 ``text`` 的旧渠道明确拒绝（返回 None）。归一化仍按白名单 + 枚举校验：``verdict`` 非法
+    即判不可解析（宁可失败重跑，也不把编造结论落进蓝图投影数据）；``role_suggestion`` 非法
+    回落保守的 ``direct``（要改动的仓被误判成不改动，代价远高于反过来）。
+
+    Args:
+        output: completed 帧的 ``output`` dict；权威结果在 ``output["mcp_result"]``（dict）。
     """
-    import json as json_mod
-
     if not isinstance(output, dict):
         return None
-    raw: dict[str, Any] | None = output if "fitness" in output else None
-    if raw is None:
-        text = str(output.get("text", "") or "")
-        if not text:
-            return None
-        try:
-            parsed = json_mod.loads(_parse_summary_json(text))
-        except (json_mod.JSONDecodeError, TypeError):
-            return None
-        raw = parsed if isinstance(parsed, dict) else None
-    if raw is None:
+    raw = output.get("mcp_result")
+    if not isinstance(raw, dict):
         return None
 
     fitness = raw.get("fitness")
@@ -2316,6 +2316,24 @@ async def _apersist_subagent_sdk_session(
             component="subagent",
         )
     except Exception:  # noqa: BLE001 — 留痕 best-effort，绝不反噬结论落库
+        pass
+
+
+async def _amark_mcp_submit_ok(session: SubAgentSession, ok: bool) -> None:
+    """在 ``session.last_output`` 写入 resume 门闩 ``mcp_submit_ok``（260818-pt8 D-08）。
+
+    仅 ``mcp_submit_ok=True`` 的会话可被 ``_aresume_env`` 选中续跑：协议成功（结构化 MCP
+    结果通过校验，或 ``waiting_context`` 合法协议续作）置 ``True``；协议失败（未经 MCP 提交 /
+    结构不合格）置 ``False``，并且**不落** ``sdk_transcript``，杜绝污染会话被 resume。
+
+    best-effort：写门闩失败绝不反噬结论落库。
+    """
+    try:
+        merged = dict(session.last_output or {})
+        merged["mcp_submit_ok"] = bool(ok)
+        session.last_output = merged
+        await session.asave(update_fields=["last_output", "updated_at"])
+    except Exception:  # noqa: BLE001 — 门闩 best-effort，绝不反噬结论落库
         pass
 
 
@@ -2494,13 +2512,19 @@ async def _handle_blueprint_research_completion(
     if task is None:
         return
 
-    # 120（REDO-03）：先留痕再落结论 —— 结论落库会把 task 推到终态，之后本函数的重投递
-    # 会在上面那个守门处早退，transcript 就再没有机会落库了。
-    await _apersist_subagent_sdk_session(session, p, log)
-
     research_service = ResearchService()
     session_service = ConvergenceSessionService()
     content = _parse_blueprint_fitness(p.get("output") or {})
+
+    # 260818-pt8 D-08：先解析后留痕。仅结构化 MCP 结果通过校验（content 非 None）才落
+    # transcript 并置 resume 门闩 True；协议失败置 False 且**不留** transcript，杜绝污染会话
+    # 被 `_aresume_env` 选中续跑。（120 REDO-03：留痕须在结论落库之前——结论落库会把 task
+    # 推到终态，之后本函数重投递会早退，transcript 再没机会落库。）
+    if content is not None:
+        await _apersist_subagent_sdk_session(session, p, log)
+        await _amark_mcp_submit_ok(session, True)
+    else:
+        await _amark_mcp_submit_ok(session, False)
 
     # 展示用标量：派发时写入 last_output，回调只读回填（不采信容器上报）
     lo = session.last_output if isinstance(session.last_output, dict) else {}
@@ -2614,13 +2638,16 @@ def _is_blueprint_repo_plan(session: SubAgentSession) -> bool:
 def _parse_blueprint_repo_plan(output: Any) -> tuple[dict[str, Any] | None, str]:
     """从容器 output 提取 ``repo_plan`` 段并过 jsonschema；返回 ``(section, error)``。
 
-    优先结构化透传（output 已含 ``repo_plan``），否则从 ``output["text"]`` 提 JSON 围栏 /
-    花括号跨度后 ``json.loads``。不合格返回 ``(None, err)`` —— ``err`` 已由
+    260818-pt8 D-01/D-02：**唯一结构化渠道**——只认 ``output["mcp_result"]["repo_plan"]``。
+    **删除**自由文本 / 围栏 JSON / ``_parse_summary_json`` 分支：仅含 ``text`` 的旧渠道明确
+    拒绝（返回 ``(None, err)``）。不合格返回 ``(None, err)`` —— ``err`` 已由
     ``validate_repo_plan`` 脱敏 + 截断，可直接进 ``mark_failed`` 的 error dict。
     宁可判不合格触发有界重试，也不把残缺结构落进融合投影数据（T-113-13）。
-    """
-    import json as json_mod
 
+    Args:
+        output: completed 帧的 ``output`` dict；权威结果在 ``output["mcp_result"]``（dict，
+            顶层键 ``repo_plan``）。
+    """
     from services.process_runtime.blueprint_repo_plan_schema import (
         coerce_repo_plan_shapes,
         validate_repo_plan,
@@ -2628,21 +2655,12 @@ def _parse_blueprint_repo_plan(output: Any) -> tuple[dict[str, Any] | None, str]
 
     if not isinstance(output, dict):
         return None, "output 不是 JSON 对象"
-    raw: dict[str, Any] | None = output if isinstance(output.get("repo_plan"), dict) else None
-    if raw is None:
-        text = str(output.get("text", "") or "")
-        if not text:
-            return None, "output 既无 repo_plan 段也无 text"
-        try:
-            parsed = json_mod.loads(_parse_summary_json(text))
-        except (json_mod.JSONDecodeError, TypeError):
-            return None, "output.text 不是可解析的 JSON"
-        raw = parsed if isinstance(parsed, dict) else None
-    if raw is None:
-        return None, "output.text 解析结果不是 JSON 对象"
+    raw = output.get("mcp_result")
+    if not isinstance(raw, dict):
+        return None, "output 缺结构化 mcp_result（未经共享 MCP 提交，拒绝文本兜底）"
     section = raw.get("repo_plan")
     if not isinstance(section, dict):
-        return None, "output 缺 repo_plan 段"
+        return None, "mcp_result 缺 repo_plan 段"
     # 校验前先吸收常见形状漂移（字符串 affected_features → 对象），减少纯形状问题的整轮重跑
     section = coerce_repo_plan_shapes(section)
     ok, err = validate_repo_plan(section)
@@ -2875,6 +2893,96 @@ async def _amaintain_blueprint_waiters(blueprint_session: Any, log: BoundLogger)
         return ""
 
 
+async def _aredispatch_repo_plan_task(task: Any, blueprint_session: Any, log: BoundLogger) -> bool:
+    """重派单仓 plan；失败返回 False，调用方必须立即物化 degraded，不能遗留 stale。"""
+    from services.process_runtime.blueprint_research_adapter import BlueprintResearchAdapter
+
+    started_at = time.monotonic()
+    initiated_by_user_id = str(getattr(blueprint_session, "initiated_by_user_id", "") or "system")
+    try:
+        result = await BlueprintResearchAdapter().dispatch(
+            blueprint_session,
+            mode="plan",
+            repository_ids={str(task.repository_id)},
+        )
+        dispatched = int(result.get("dispatched") or 0)
+        if dispatched != 1:
+            raise RuntimeError(f"unexpected_dispatch_count:{dispatched}")
+        log.info(
+            "blueprint_repo_plan_retry_dispatched",
+            task_id=str(task.id),
+            repository_id=str(task.repository_id),
+            duration_ms=max(int((time.monotonic() - started_at) * 1000), 0),
+            initiated_by_user_id=initiated_by_user_id,
+            category="caller",
+            component="subagent",
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001 — callback 必须闭合 stale 状态
+        log.warning(
+            "blueprint_repo_plan_retry_dispatch_failed",
+            task_id=str(task.id),
+            repository_id=str(task.repository_id),
+            error=redact_secrets_in_text(str(exc))[:_MAX_CALLBACK_ERROR_CHARS],
+            duration_ms=max(int((time.monotonic() - started_at) * 1000), 0),
+            initiated_by_user_id=initiated_by_user_id,
+            category="caller",
+            component="subagent",
+        )
+        return False
+
+
+async def _amaterialize_degraded_repo_plan(
+    task: Any,
+    blueprint_session: Any,
+    adapter: Any,
+    *,
+    reason: str,
+    log: BoundLogger,
+) -> None:
+    """有界重试耗尽后写入 schema-valid 未决 RepoPlan，并开阻塞澄清线程。"""
+    from services.process_runtime.blueprint_repo_plan_schema import validate_repo_plan
+
+    repository_id = str(task.repository_id)
+    thread_id = ""
+    if blueprint_session is not None:
+        thread_id = await adapter.aopen_clarification(
+            blueprint_session,
+            repository_id,
+            "自动容器重试已耗尽，本仓实现方案待人工补充。",
+            blocking=True,
+        )
+
+    section = {
+        "repository_id": repository_id,
+        "role": "direct",
+        "impl_items": [],
+        "risks": [
+            {
+                "block_id": f"degraded-{str(task.id)[:8]}",
+                "type": "unresolved",
+                "text": "自动容器重试已耗尽，本仓实现方案待人工补充。",
+            }
+        ],
+        "open_question_thread_ids": [thread_id] if thread_id else [],
+    }
+    valid, schema_error = validate_repo_plan(section)
+    if not valid:  # pragma: no cover - 常量构造的防御性断言
+        raise RuntimeError(f"internal_degraded_repo_plan_invalid:{schema_error}")
+    await adapter.arecord_repo_plan(task, section)
+    log.warning(
+        "blueprint_repo_plan_degraded_completed",
+        task_id=str(task.id),
+        repository_id=repository_id,
+        reason=reason,
+        initiated_by_user_id=str(
+            getattr(blueprint_session, "initiated_by_user_id", "") or "system"
+        ),
+        category="caller",
+        component="subagent",
+    )
+
+
 async def _handle_blueprint_repo_plan_completion(
     session: SubAgentSession, p: dict[str, Any], log: BoundLogger
 ) -> None:
@@ -2898,9 +3006,21 @@ async def _handle_blueprint_repo_plan_completion(
     if task is None:
         return
 
-    # 120（REDO-03）：留痕在最前 —— 长等待退出与有界重试都会改 task 状态并提前 return，
-    # 放后面等于「恰好在需要续跑的那几条路径上」丢掉 transcript。
-    await _apersist_subagent_sdk_session(session, p, log)
+    # 260818-pt8 D-08：留痕 + resume 门闩只在「协议成功」路径落。协议成功有两种：
+    # ①合法 waiting_context 长等待退出（协议续作，条目就绪后 resume）；②结构化 repo_plan
+    # 通过 jsonschema 校验。协议失败（未经 MCP / 结构不合格）置 mcp_submit_ok=False 且**不留**
+    # transcript，杜绝污染会话被 `_aresume_env` 选中。（120 REDO-03：留痕须在结论落库/改
+    # task 终态之前——否则重投递早退会丢 transcript。）
+    output_dict = p.get("output") or {}
+    waiting = output_dict.get("waiting_context") if isinstance(output_dict, dict) else None
+    waiting_keys = (
+        [str(k) for k in waiting.get("keys") if str(k or "")]
+        if isinstance(waiting, dict) and isinstance(waiting.get("keys"), list)
+        else []
+    )
+    if waiting_keys and blueprint_session is not None:
+        await _apersist_subagent_sdk_session(session, p, log)
+        await _amark_mcp_submit_ok(session, True)
 
     # 长等待退出（113-04）：解析 repo_plan **之前**先探测 waiting_context 段。
     if await _ahandle_blueprint_waiting_context(session, p, task, blueprint_session, log):
@@ -2911,10 +3031,13 @@ async def _handle_blueprint_repo_plan_completion(
     section, error = _parse_blueprint_repo_plan(p.get("output") or {})
 
     if section is not None:
+        await _apersist_subagent_sdk_session(session, p, log)
+        await _amark_mcp_submit_ok(session, True)
         # repository_id 由服务端权威写入，不采信容器上报值
         section["repository_id"] = str(task.repository_id)
         await adapter.arecord_repo_plan(task, section)
     else:
+        await _amark_mcp_submit_ok(session, False)
         detail = redact_secrets_in_text(str(error))[:_MAX_CALLBACK_ERROR_CHARS]
         attempt = max(0, await _acount_blueprint_plan_containers(task) - 1)
         if attempt < MAX_REPO_PLAN_ATTEMPTS:
@@ -2925,15 +3048,24 @@ async def _handle_blueprint_repo_plan_completion(
             await _aemit_blueprint_repo_plan_failed(
                 blueprint_session, task, "repo_plan_invalid_retrying"
             )
-        else:
-            await research_service.mark_failed(
-                task, {"reason": "repo_plan_invalid", "detail": detail}
+            if await _aredispatch_repo_plan_task(task, blueprint_session, log):
+                return
+            await _amaterialize_degraded_repo_plan(
+                task,
+                blueprint_session,
+                adapter,
+                reason="repo_plan_retry_dispatch_failed",
+                log=log,
             )
+        else:
             await _aemit_blueprint_repo_plan_failed(blueprint_session, task, "repo_plan_invalid")
-            if blueprint_session is not None:
-                await adapter.aopen_clarification(
-                    blueprint_session, str(task.repository_id), detail
-                )
+            await _amaterialize_degraded_repo_plan(
+                task,
+                blueprint_session,
+                adapter,
+                reason="repo_plan_invalid_exhausted",
+                log=log,
+            )
 
     await _trigger_blueprint_repo_plan_barrier(blueprint_session)
     log.info(
@@ -2946,11 +3078,15 @@ async def _handle_blueprint_repo_plan_completion(
 async def _handle_blueprint_repo_plan_failure(
     session: SubAgentSession, p: dict[str, Any], log: BoundLogger
 ) -> None:
-    """拟方案容器失败 → mark_failed(container_failed) + barrier（失败也是终态，不卡续驱）。"""
+    """拟方案容器失败 → 有界自动重试；耗尽后显式 degraded RepoPlan + barrier。"""
     if not _is_blueprint_repo_plan(session):
         return
 
     from delivery.services import ResearchService
+    from services.process_runtime.blueprint_repo_plan import (
+        MAX_REPO_PLAN_ATTEMPTS,
+        BlueprintRepoPlanAdapter,
+    )
 
     task, blueprint_session = await _aload_blueprint_plan_task(session)
     if task is None:
@@ -2959,10 +3095,45 @@ async def _handle_blueprint_repo_plan_failure(
     error_detail = redact_secrets_in_text(str(p.get("error", "Unknown error")))[
         :_MAX_CALLBACK_ERROR_CHARS
     ]
-    await ResearchService().mark_failed(task, {"reason": "container_failed", "error": error_detail})
-    await _aemit_blueprint_repo_plan_failed(blueprint_session, task, "container_failed")
+    research_service = ResearchService()
+    attempt = max(0, await _acount_blueprint_plan_containers(task) - 1)
+    if attempt < MAX_REPO_PLAN_ATTEMPTS:
+        await research_service.mark_failed(
+            task,
+            {"reason": "container_failed_retrying", "error": error_detail},
+        )
+        await research_service.mark_stale([task.id])
+        await _aemit_blueprint_repo_plan_failed(
+            blueprint_session,
+            task,
+            "container_failed_retrying",
+        )
+        if await _aredispatch_repo_plan_task(task, blueprint_session, log):
+            return
+        degraded_reason = "container_retry_dispatch_failed"
+    else:
+        await _aemit_blueprint_repo_plan_failed(
+            blueprint_session,
+            task,
+            "container_failed_exhausted",
+        )
+        degraded_reason = "container_failed_exhausted"
+
+    await _amaterialize_degraded_repo_plan(
+        task,
+        blueprint_session,
+        BlueprintRepoPlanAdapter(),
+        reason=degraded_reason,
+        log=log,
+    )
     await _trigger_blueprint_repo_plan_barrier(blueprint_session)
-    log.info("blueprint_repo_plan_failure_handled", task_id=str(task.id))
+    log.info(
+        "blueprint_repo_plan_failure_handled",
+        task_id=str(task.id),
+        degraded=True,
+        category="caller",
+        component="subagent",
+    )
 
 
 # 处理器映射

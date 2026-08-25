@@ -50,6 +50,7 @@ from delivery.services.event_taxonomy import (
     EVENT_BLUEPRINT_CONFIRMATION_LOCKED,
     EVENT_BLUEPRINT_CONFIRMATION_OPENED,
 )
+from services.process_runtime.blueprint_citations import build_citation_entries
 
 logger = structlog.get_logger(__name__)
 
@@ -389,6 +390,7 @@ def build_locked_associations(
     snapshot: list[dict[str, Any]],
     decisions: dict[str, Any] | None = None,
     citation_pool: set[str] | None = None,
+    citation_map: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """快照 + 用户裁决 → 蓝图 ``repo_associations`` 条目（**纯函数**）。
 
@@ -399,9 +401,10 @@ def build_locked_associations(
     - 一律写 ``decided_by="human"`` / ``confirmed_at_gate=True``：确认门是人工裁决点。
     - 字段名严格对齐 ``blueprint_schema`` 的 ``repo_associations`` 子集，不新增 schema 外键；
       ``responsibility`` / ``fitness.reasons`` 落 block_list 形状。
-    - ``citation_pool`` 非 None 时对 ``fitness.citations`` 做**白名单过滤**：schema 后置检查
-      要求任何块内 ``citations`` id 必须存在于文档级引用池，调研产出的裸文件路径若直接落进
-      去会让整份蓝图校验失败（fail-closed 时确认门永远锁不上）。
+    - ``citation_pool`` 非 None 时对 ``fitness.citations`` 做**白名单过滤**：先经
+      ``citation_map`` 把调研裸引用换成池内 id，已经是池内 id 的值原样保留，再丢弃池外值。
+      确认门必须先建池再过滤；若沿用旧的「空池直接白名单过滤」，merge 尚未建立文档引用池
+      的时序窗口会把全部选仓证据永久丢弃。过滤仍保留，避免裸路径让 schema 后置检查失败。
     - ``decisions`` 是按 ``repository_id`` 的覆盖层（``{rid: {role, responsibility, removed}}``），
       缺省空 —— 快照本身已承载动作结果，覆盖层只服务于调用方的显式最终裁决。
     """
@@ -438,7 +441,10 @@ def build_locked_associations(
             "confirmed_at_gate": True,
         }
         fitness = _clean_fitness(
-            entry.get("fitness"), repository_id=repository_id, citation_pool=citation_pool
+            entry.get("fitness"),
+            repository_id=repository_id,
+            citation_pool=citation_pool,
+            citation_map=citation_map,
         )
         if fitness:
             association["fitness"] = fitness
@@ -447,7 +453,11 @@ def build_locked_associations(
 
 
 def _clean_fitness(
-    raw: Any, *, repository_id: str, citation_pool: set[str] | None
+    raw: Any,
+    *,
+    repository_id: str,
+    citation_pool: set[str] | None,
+    citation_map: dict[str, str] | None,
 ) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
@@ -470,12 +480,35 @@ def _clean_fitness(
                 )
     if blocks:
         fitness["reasons"] = blocks
-    citations = [str(c) for c in (raw.get("citations") or []) if str(c or "").strip()]
+    citation_values = raw.get("citations")
+    citations = (
+        [str(value).strip() for value in citation_values if str(value or "").strip()]
+        if isinstance(citation_values, list)
+        else []
+    )
+    if citation_map:
+        citations = [citation_map.get(citation, citation) for citation in citations]
     if citation_pool is not None:
         citations = [c for c in citations if c in citation_pool]
     if citations:
         fitness["citations"] = citations[:_MAX_LIST_ITEMS]
     return fitness
+
+
+def _snapshot_fitness_citations(snapshot: Any) -> list[str]:
+    """从半可信确认门快照收集 fitness 裸引用；任意畸形层级都跳过而不抛。"""
+    citations: list[str] = []
+    for entry in snapshot if isinstance(snapshot, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        fitness = entry.get("fitness")
+        if not isinstance(fitness, dict):
+            continue
+        values = fitness.get("citations")
+        if not isinstance(values, list):
+            continue
+        citations.extend(str(value).strip() for value in values if str(value or "").strip())
+    return citations
 
 
 def _clean_routing_evidence(raw: Any) -> dict[str, Any]:
@@ -601,6 +634,8 @@ class BlueprintConfirmGateAdapter:
             EVENT_BLUEPRINT_CONFIRMATION_OPENED,
             {
                 "thread_id": str(thread.id),
+                # taxonomy 契约键 + 历史别名（前端 latestFieldAny 双读，存量事件仍可读）。
+                "repository_count": len(snapshot),
                 "repo_count": len(snapshot),
                 "unsuitable_count": unsuitable,
                 "escalated": escalated,
@@ -742,11 +777,28 @@ class BlueprintConfirmGateAdapter:
         latest = await self._aload_latest_version(artifact.id)
         base = latest if latest is not None else version
         content = copy.deepcopy(base.content if isinstance(base.content, dict) else {})
-        pool = content.get("citations")
-        citation_pool = set(pool.keys()) if isinstance(pool, dict) else set()
+        baseline_pool = (
+            content.get("citations") if isinstance(content.get("citations"), dict) else {}
+        )
+        raw_citations = _snapshot_fitness_citations(snapshot)
+        citation_entries, citation_map = build_citation_entries(raw_citations)
+        generated_pool = {entry["citation_id"]: entry for entry in citation_entries}
+        # 基线优先：已有池条目是当前蓝图版本的事实，确认门只补缺、不覆盖。
+        citations = {**generated_pool, **baseline_pool}
+        content["citations"] = citations
+        citation_pool = set(citations)
+        added_citations = sum(
+            1 for entry in citation_entries if entry["citation_id"] not in baseline_pool
+        )
+        dropped_citations = sum(
+            1 for raw in raw_citations if citation_map.get(raw, raw) not in citation_pool
+        )
 
         associations = build_locked_associations(
-            snapshot=snapshot, decisions=decisions, citation_pool=citation_pool
+            snapshot=snapshot,
+            decisions=decisions,
+            citation_pool=citation_pool,
+            citation_map=citation_map,
         )
         content["repo_associations"] = associations
         content["decision_log"] = _merge_decision_log(
@@ -789,6 +841,20 @@ class BlueprintConfirmGateAdapter:
             )
             return self._result("awaiting_confirmation", str(thread.id), None, len(associations))
 
+        try:
+            logger.info(
+                "blueprint_confirm_gate_citation_pool_built",
+                category="caller",
+                component="process_runtime",
+                session_id=str(getattr(session, "id", "")),
+                artifact_id=str(artifact.id),
+                added=added_citations,
+                dropped=dropped_citations,
+                initiated_by_user_id=self._initiated_by(session),
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬确认门
+            pass
+
         await self.lifecycle.resolve_thread(
             thread,
             resolution="仓库集与职责已确认锁定。",
@@ -806,6 +872,8 @@ class BlueprintConfirmGateAdapter:
             session,
             EVENT_BLUEPRINT_CONFIRMATION_LOCKED,
             {
+                # taxonomy 契约键 + 历史别名（前端双读兼容存量事件）。
+                "locked_repository_count": len(associations),
                 "locked_repo_count": len(associations),
                 "removed_count": len(removed),
                 "decided_by": "human",

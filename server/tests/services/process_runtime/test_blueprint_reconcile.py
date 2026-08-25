@@ -65,6 +65,16 @@ def _blueprint(*contracts: dict, association_ids: tuple[str, ...] = ("repo-a", "
     }
 
 
+def _blueprint_named(*contracts: dict, associations: tuple[tuple[str, str], ...]) -> dict:
+    return {
+        "repo_associations": [
+            {"repository_id": rid, "repository_name": name, "role": "direct"}
+            for rid, name in associations
+        ],
+        "api_contracts": list(contracts),
+    }
+
+
 # ── 1. consumed 无 provider ───────────────────────────────────────────────
 
 
@@ -174,6 +184,45 @@ def test_needs_support_with_support_repo_in_associations_is_clean():
         ),
     )
     assert reconcile_cross_repo_apis(blueprint)["missing_support_repos"] == []
+
+
+def test_needs_support_with_unique_basename_alias_is_clean():
+    blueprint = _blueprint_named(
+        _contract("api_p", direction="provided", repository_id="uuid-b"),
+        _contract(
+            "api_c",
+            direction="consumed",
+            repository_id="uuid-a",
+            data_source={
+                "availability": "needs_support",
+                "support_repository_id": "service-b",
+            },
+        ),
+        associations=(("uuid-a", "team/service-a"), ("uuid-b", "team/service-b")),
+    )
+    assert reconcile_cross_repo_apis(blueprint)["missing_support_repos"] == []
+
+
+def test_needs_support_with_ambiguous_basename_alias_is_missing():
+    blueprint = _blueprint_named(
+        _contract("api_p", direction="provided", repository_id="uuid-b"),
+        _contract(
+            "api_c",
+            direction="consumed",
+            repository_id="uuid-a",
+            data_source={
+                "availability": "needs_support",
+                "support_repository_id": "service",
+            },
+        ),
+        associations=(
+            ("uuid-a", "team/service"),
+            ("uuid-b", "other/service"),
+        ),
+    )
+    result = reconcile_cross_repo_apis(blueprint)
+    assert len(result["missing_support_repos"]) == 1
+    assert result["missing_support_repos"][0]["support_repository_id"] == "service"
 
 
 # ── 4. ⭐ 顶层 availability 不被识别（B4 防回归） ──────────────────────────

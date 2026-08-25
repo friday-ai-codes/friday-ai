@@ -745,6 +745,56 @@ async def test_missing_support_repo_opens_clarification():
     assert await BlueprintThread.objects.filter(artifact_id=artifact.id).acount() == 1
 
 
+async def test_ignored_support_aliases_skip_missing_repo_clarification():
+    """操作员排除未登记协作仓后，融合不再为同一缺口开阻塞澄清。"""
+    rid_a = _repo_id("a")
+    session, artifact = await _make_locked_session(_association(rid_a))
+    session.stage_state = {
+        **(session.stage_state or {}),
+        "merge": {"ignored_support_aliases": ["onion-auth", "course-business"]},
+    }
+    await session.asave(update_fields=["stage_state"])
+    plans = {
+        rid_a: _repo_plan(
+            rid_a,
+            apis_consumed=[
+                {
+                    "name": "Auth.GetUserAuth",
+                    "method": "RPC",
+                    "path": "onion Auth.GetUserAuth",
+                    "data_source": {
+                        "availability": "needs_support",
+                        "support_repository_id": "onion-auth",
+                    },
+                },
+                {
+                    "name": "GetTrainingTreeByCvs",
+                    "method": "RPC",
+                    "path": "course-business.GetTrainingTreeByCvs",
+                    "data_source": {
+                        "availability": "needs_support",
+                        "support_repository_id": "backend/course-business",
+                    },
+                },
+            ],
+        )
+    }
+    result, _synthesizer = await _run_merge(session, plans=plans)
+    assert result["validation_status"] != "needs_clarification", result
+    assert result["reconcile"]["missing_support_repos"] == 0
+    assert await BlueprintThread.objects.filter(artifact_id=artifact.id).acount() == 0
+    assert result["stage_state"]["merge"]["ignored_support_aliases"] == [
+        "onion-auth",
+        "course-business",
+    ]
+    if result["validation_status"] == "passed":
+        content = await _landed_content(result)
+        consumed = [item for item in content["api_contracts"] if item["direction"] == "consumed"]
+        assert consumed
+        assert all(item["data_source"]["availability"] == "existing" for item in consumed)
+        assert any("onion-auth" in str(idea) for idea in content.get("deferred_ideas") or [])
+
+
 # ── 10. ⭐ consumed 无 provider 必标 needs_support（B4 路径断言） ────────────
 
 
@@ -778,6 +828,35 @@ async def test_unprovided_consumed_gets_needs_support_under_data_source_only():
     assert item["data_source"]["support_repository_id"] == rid_b
     assert "availability" not in item, "顶层 availability 会让 114/115 按 schema 路径读不到"
     assert "from_repository_id" not in item, "RepoPlan 中间产物专属键不落蓝图顶层"
+    assert result["reconcile"]["missing_support_repos"] == 0
+
+
+async def test_support_repository_alias_canonicalized_before_reconcile():
+    """RepoPlan 写短名协作仓 → merge 落 UUID，reconcile/review 不因假阳性开澄清。"""
+    rid_a, rid_b = _repo_id("a"), _repo_id("b")
+    assoc_a = _association(rid_a)
+    assoc_b = {**_association(rid_b), "repository_name": "team/support-b"}
+    session, _artifact = await _make_locked_session(assoc_a, assoc_b)
+    plans = {
+        rid_a: _repo_plan(
+            rid_a,
+            apis_consumed=[
+                {
+                    "name": "needSomething",
+                    "method": "GET",
+                    "path": "/need",
+                    "from_repository_id": "support-b",
+                }
+            ],
+        ),
+        rid_b: _repo_plan(rid_b),
+    }
+    result, _synthesizer = await _run_merge(session, plans=plans)
+    assert result["validation_status"] == "passed", result
+    content = await _landed_content(result)
+    consumed = [item for item in content["api_contracts"] if item["direction"] == "consumed"]
+    assert len(consumed) == 1
+    assert consumed[0]["data_source"]["support_repository_id"] == rid_b
     assert result["reconcile"]["missing_support_repos"] == 0
 
 

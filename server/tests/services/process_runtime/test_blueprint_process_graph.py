@@ -46,6 +46,7 @@ from delivery.models import (
     ConvergenceSession,
     ConvergenceSessionEntrypoint,
     ConvergenceSessionStatus,
+    PartialPlan,
     RepoResearchTask,
     RepoResearchTaskStatus,
     ThreadKind,
@@ -624,6 +625,129 @@ async def test_spec_gate_handler_maps_needs_clarification_and_persists_stage_sta
     assert fresh.current_stage == "spec_gate"
     assert fresh.status == ConvergenceSessionStatus.WAITING_CLARIFICATION
     assert fresh.stage_state["spec_gate"]["round"] == 1
+
+
+@pytestmark_db
+@pytest.mark.asyncio
+async def test_repo_plan_needs_clarification_pauses_without_step_limit() -> None:
+    """8/8 方案已齐但仍有 blocking 线程时，只推进一次并停在澄清态。"""
+    from services.process_runtime.blueprint_repo_plan import BlueprintRepoPlanAdapter
+    from services.process_runtime.blueprint_resume import (
+        adrive_blueprint_session_to_pause_or_terminal,
+    )
+
+    artifact = await _make_artifact()
+    repo = await _make_repo()
+    content = _stage1_blueprint()
+    content["repo_associations"] = [
+        {
+            "repository_id": str(repo.id),
+            "repository_name": repo.name,
+            "role": "direct",
+        }
+    ]
+    version = await ArtifactService().add_version(artifact, content)
+    session = await _make_session("repo_plan", artifact=artifact)
+    await ConvergenceSession.objects.filter(id=session.id).aupdate(
+        status=ConvergenceSessionStatus.WAITING_EVENT,
+        current_artifact_version_id=version.id,
+    )
+    session = await ConvergenceSession.objects.aget(id=session.id)
+    task = await RepoResearchTask.objects.acreate(
+        session=session,
+        repository=repo,
+        status=RepoResearchTaskStatus.DONE,
+    )
+    await PartialPlan.objects.acreate(
+        research_task=task,
+        content={
+            "repository_id": str(repo.id),
+            "repo_plan": {
+                "repository_id": str(repo.id),
+                "role": "direct",
+                "impl_items": [],
+            },
+        },
+        content_hash="ready",
+        valid=True,
+    )
+    # 零实现项只是人审占位，不得再伪装成仓级方案已交付；阻塞线程负责把流程停在人审。
+    assert not await BlueprintRepoPlanAdapter().aall_repo_plans_ready(session)
+    await BlueprintLifecycleService().open_thread(
+        artifact,
+        kind=ThreadKind.AI_CLARIFICATION,
+        blocking=True,
+        question="请补充降级方案的人工裁决",
+        return_stage="repo_plan",
+    )
+
+    real_engine = _engine(repo_plan=SimpleNamespace())
+    advance = AsyncMock(side_effect=real_engine.advance)
+    engine = SimpleNamespace(advance=advance, session_service=real_engine.session_service)
+
+    result = await adrive_blueprint_session_to_pause_or_terminal(engine, session, max_steps=3)
+
+    assert advance.await_count == 1
+    assert result.current_stage == "repo_plan"
+    assert result.status == ConvergenceSessionStatus.WAITING_CLARIFICATION
+    assert result.error == {}
+
+
+@pytestmark_db
+@pytest.mark.asyncio
+async def test_repo_plan_blocking_gate_ignores_prior_ai_review_findings() -> None:
+    """旧审查 BLOCKER 是本轮重做输入，不能反向阻止 repo_plan 推进。"""
+    artifact = await _make_artifact()
+    session = await _make_session("repo_plan", artifact=artifact)
+    lifecycle = BlueprintLifecycleService()
+    await lifecycle.open_thread(
+        artifact,
+        kind=ThreadKind.AI_REVIEW_FINDING,
+        severity="blocker",
+        blocking=True,
+        question="上一轮审查发现",
+        return_stage="ai_reviewing",
+    )
+
+    assert await bp._abp_has_open_blocking_threads(session) is False
+
+    await lifecycle.open_thread(
+        artifact,
+        kind=ThreadKind.AI_CLARIFICATION,
+        blocking=True,
+        question="本轮仓级方案待确认",
+        return_stage="repo_plan",
+    )
+    assert await bp._abp_has_open_blocking_threads(session) is True
+
+
+@pytestmark_db
+@pytest.mark.asyncio
+async def test_repo_plan_plan_dispatched_still_waits_for_event() -> None:
+    """event-specific 澄清态不能把正常容器派发自环也改成 waiting_clarification。"""
+    session = await _make_session("repo_plan")
+    adapter = SimpleNamespace(
+        aplan_waves=AsyncMock(return_value={}),
+        dispatch_plans=AsyncMock(
+            return_value={
+                "dispatched": 1,
+                "synthesized": 0,
+                "pending": 1,
+                "completed": [],
+                "repositories": ["repo-a"],
+            }
+        ),
+        aexpire_stale_waiters=AsyncMock(return_value=[]),
+        acollect_repo_plans=AsyncMock(return_value={}),
+        aall_repo_plans_ready=AsyncMock(return_value=False),
+        build_stage_state=lambda **_kwargs: {},
+    )
+
+    await _engine(repo_plan=adapter).advance(session)
+
+    fresh = await ConvergenceSession.objects.aget(id=session.id)
+    assert fresh.current_stage == "repo_plan"
+    assert fresh.status == ConvergenceSessionStatus.WAITING_EVENT
 
 
 @pytestmark_db
