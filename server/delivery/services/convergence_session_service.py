@@ -12,7 +12,8 @@
 
 status 派生规则（与 stage 身份正交）：
 - target == ``__done__`` → ``done``；target == ``__failed__`` → ``failed``。
-- target == from_stage（self-loop）→ pausable stage 取 ``wait_status``，否则 ``running``。
+- target == from_stage（self-loop）→ pausable stage 先按 event 取 ``event_wait_statuses``，
+  未登记时回落 ``wait_status``；非 pausable stage 取 ``running``。
 - target 为其它 stage（forward）→ ``running`` + ``current_stage = target``。
 
 状态全持久化在 DB 行，``ProcessEngine`` 可从任意状态 resume。ORM 写经 ``sync_to_async`` 桥接。
@@ -178,7 +179,9 @@ class ConvergenceSessionService:
         elif target == from_stage:
             new_stage = from_stage
             new_status = (
-                stage_def.wait_status if stage_def.pausable else ConvergenceSessionStatus.RUNNING
+                stage_def.event_wait_statuses.get(event, stage_def.wait_status)
+                if stage_def.pausable
+                else ConvergenceSessionStatus.RUNNING
             )
         else:
             new_stage, new_status = target, ConvergenceSessionStatus.RUNNING

@@ -512,13 +512,17 @@ class BlueprintLifecycleService:
     # ------------------------------------------------------------------
 
     async def ahas_open_blocking_threads(
-        self, artifact: Artifact, *, kind: str | None = None
+        self,
+        artifact: Artifact,
+        *,
+        kind: str | None = None,
+        return_stage: str | None = None,
     ) -> bool:
         """是否存在未解决的阻塞线程（复用 confirm 守卫同款查询形）。
 
-        ``kind`` 非空时再按线程种类过滤——规格门只关心 ``ai_clarification``、确认门
-        只关心 ``repo_confirmation``，互不误挡；不传则等价于 LIFE-02 守卫的全量口径
-        （112-05 的 ``blueprint_resume`` 判 pause 用）。
+        ``kind`` / ``return_stage`` 非空时按对应维度过滤——规格门只关心
+        ``ai_clarification``、仓级方案只关心恢复到 ``repo_plan`` 的线程，互不误挡；
+        均不传则等价于 LIFE-02 守卫的全量口径（112-05 的 ``blueprint_resume`` 判 pause 用）。
         """
         queryset = BlueprintThread.objects.filter(
             artifact=artifact,
@@ -527,6 +531,8 @@ class BlueprintLifecycleService:
         )
         if kind:
             queryset = queryset.filter(kind=kind)
+        if return_stage:
+            queryset = queryset.filter(return_stage=return_stage)
         return await queryset.aexists()
 
     async def aunresolved_blocker_count(self, artifact: Artifact) -> int:
@@ -1401,14 +1407,17 @@ class BlueprintLifecycleService:
         from delivery.services.event_taxonomy import EVENT_BLUEPRINT_CONFIRMATION_ACTION
 
         try:
+            payload: dict[str, Any] = {
+                "action": action,
+                "thread_id": thread_id,
+            }
+            # 整门确认等无仓动作不要塞空 repository_id —— 前端会把它渲成「未知仓库」。
+            if repository_id:
+                payload["repository_id"] = repository_id
             await ConvergenceSessionService().aemit_event(
                 EVENT_BLUEPRINT_CONFIRMATION_ACTION,
                 session,
-                {
-                    "action": action,
-                    "repository_id": repository_id,
-                    "thread_id": thread_id,
-                },
+                payload,
             )
         except Exception as exc:  # noqa: BLE001 — 观测绝不反噬确认门动作
             logger.warning(

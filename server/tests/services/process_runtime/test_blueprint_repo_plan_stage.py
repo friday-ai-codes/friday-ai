@@ -13,9 +13,10 @@
 4. ⭐ **mode 缺省等价性**：`dispatch(session)` 不传 mode → `bp-research-` 前缀 +
    `source == "blueprint_research"`（112 路径逐字未变）+ **不注入配额键**。
 5. **indirect 合成**：LLM 返合法 JSON → 落 `repo_plan` 段且 dispatcher 未被调用（不起容器）；
-   连续非法 → 落 **degraded 但过 schema** 的最小 repo_plan + 开 blocking 澄清线程
-   （`return_stage="repo_plan"`），**不静默丢弃**。
-6. **完成判据**：两仓只一仓有 repo_plan → False；都有 → True；一仓 failed + 另一仓 ready → True。
+   连续非法 → 落 **degraded 但过 schema** 的最小 repo_plan + 开 nonblocking 澄清线程
+   （`return_stage="repo_plan"`），显式未决随方案进入 merge 而不阻断 barrier。
+6. **完成判据**：两仓只一仓有 repo_plan → False；都有 → True；裸 failed 没有显式
+   degraded RepoPlan → False。
 7. **判据只看 repo_plan 段存在性**：task 状态翻成 stale 而产物仍 valid → 仍判 ready
    （不复用「全部 task 终态」那条判据）。
 8. **单仓定向补调研**：`arequest_targeted_research` 委托 `aupgrade_to_deep` 且透传返回值。
@@ -43,10 +44,14 @@ from delivery.models import (
     RepoResearchTask,
     RepoResearchTaskStatus,
     ThreadKind,
+    ThreadStatus,
 )
 from repositories.models import Repository
 from runners.models import Runner
-from services.process_runtime.blueprint_repo_plan import BlueprintRepoPlanAdapter
+from services.process_runtime.blueprint_repo_plan import (
+    BlueprintRepoPlanAdapter,
+    _repo_plan_delivery_status,
+)
 from services.process_runtime.blueprint_repo_plan_schema import validate_repo_plan
 from services.process_runtime.blueprint_research_adapter import BlueprintResearchAdapter
 from subagent.models import SubAgentSession
@@ -380,6 +385,8 @@ async def test_indirect_synthesizer_prompt_includes_requirement_context() -> Non
     assert "导出的 PDF 包含学习时长汇总" in prompt
     assert "提供用户数据" in prompt
     assert "rid-1" in prompt
+    assert "text 必须是非空正文" in prompt
+    assert "不得用 description/title 代替 text" in prompt
 
 
 @override_settings(FRIDAY_BASE_URL="https://friday.example.com")
@@ -528,8 +535,69 @@ async def test_indirect_plan_synthesized_without_container() -> None:
     assert validate_repo_plan(section) == (True, None)
 
 
+async def test_indirect_synthesis_coerces_block_shapes_like_container_path() -> None:
+    """⭐ 合成路径与容器路径**同口径**做形状归一化（quick-260819 回归门）。
+
+    历史缺陷：`coerce_repo_plan_shapes` 只接在容器回调路径（`callbacks.
+    _parse_blueprint_repo_plan`），合成路径直接 `validate_repo_plan` ⇒ LLM 只要把
+    `risks` 写成裸字符串 / 漏 `block_id`（**机械可判**的漂移，且 block_id 本是内部
+    锚点标识、按注释「可安全合成」），就白烧 3 轮 LLM 并落 degraded 空壳 + 开澄清
+    线程。2026-08-19 实测 3 个 indirect 仓全数这样报废。
+
+    本条**可证伪**：删掉 `_asynthesize_indirect_plan` 里那行 `coerce_repo_plan_shapes`
+    立刻转红（calls 变 3、impl_items 被空壳覆盖、并冒出澄清线程）。
+    """
+    repo = await _make_repo()
+    session, artifact = await _make_locked_session(_association(repo, role="indirect"))
+    dispatcher = _FakeDispatcher()
+    research = BlueprintResearchAdapter(
+        dispatcher_factory=lambda: dispatcher, charters_loader=AsyncMock(return_value={})
+    )
+    # 除 risks 缺 block_id / 写成裸字符串外一切合法 —— 正是实测挂掉的那种产物
+    synthesizer = _FakeSynthesizer(
+        {
+            "repo_plan": {
+                "role": "indirect",
+                "impl_items": [
+                    {
+                        "item_id": "it_1",
+                        "title": "补充能力引用",
+                        "change_type": "indirect_refine",
+                        "how": [{"type": "paragraph", "text": "保留既有能力说明"}],
+                    }
+                ],
+                "risks": [{"type": "paragraph", "text": "上游契约未定"}, "另一条裸字符串风险"],
+                "responsibility": ["本仓只被依赖"],
+            }
+        }
+    )
+
+    result = await _plan_adapter(research_adapter=research, synthesizer=synthesizer).dispatch_plans(
+        session
+    )
+
+    assert result["synthesized"] == 1
+    assert synthesizer.calls == 1, "机械可判的形状漂移必须首轮就被归一化吸收，⛔ 不该触发重试"
+
+    plans = await _plan_adapter().acollect_repo_plans(session)
+    section = plans[str(repo.id)]
+    assert validate_repo_plan(section) == (True, None)
+    # 原始风险正文逐字留存（归一化只补锚点，⛔ 不改语义）
+    assert [str(block.get("text")) for block in section["risks"]] == [
+        "上游契约未定",
+        "另一条裸字符串风险",
+    ]
+    assert all(str(block.get("block_id") or "") for block in section["risks"])
+    assert section["impl_items"][0]["item_id"] == "it_1"
+    assert section["impl_items"][0]["how"][0]["block_id"]
+    # 没有落 degraded 兜底，也没有开澄清线程
+    assert not await BlueprintThread.objects.filter(
+        artifact=artifact, kind=ThreadKind.AI_CLARIFICATION
+    ).aexists()
+
+
 async def test_indirect_invalid_synthesis_degrades_and_opens_clarification() -> None:
-    """连续非法 → degraded 但过 schema 的最小 repo_plan + blocking 澄清线程（不静默丢弃）。"""
+    """连续非法 → degraded 合法方案 + 阻塞澄清，停在人审且不计 ready。"""
     repo = await _make_repo()
     session, artifact = await _make_locked_session(_association(repo, role="indirect"))
     dispatcher = _FakeDispatcher()
@@ -552,6 +620,7 @@ async def test_indirect_invalid_synthesis_degrades_and_opens_clarification() -> 
     assert validate_repo_plan(section) == (True, None)
     assert section["impl_items"] == []
     assert section["risks"], "degraded 产物必须写明缺失原因"
+    assert section["delivery_status"] == "degraded"
 
     thread = await BlueprintThread.objects.filter(
         artifact=artifact, kind=ThreadKind.AI_CLARIFICATION
@@ -560,6 +629,9 @@ async def test_indirect_invalid_synthesis_degrades_and_opens_clarification() -> 
     assert thread.blocking is True
     assert thread.return_stage == "repo_plan"
     assert section["open_question_thread_ids"] == [str(thread.id)]
+    task = await RepoResearchTask.objects.aget(session=session, repository=repo)
+    assert task.status == RepoResearchTaskStatus.STALE
+    assert await _plan_adapter().aall_repo_plans_ready(session) is False
 
 
 async def test_indirect_synthesizer_exception_is_isolated() -> None:
@@ -598,8 +670,8 @@ async def test_completion_criteria_requires_every_repo() -> None:
     assert await adapter.aall_repo_plans_ready(session) is True
 
 
-async def test_failed_repo_does_not_block_barrier() -> None:
-    """失败仓不阻塞 barrier（由 merge 阶段标未决项，绝不永久卡住阶段 2）。"""
+async def test_failed_repo_without_explicit_degraded_plan_does_not_pass_barrier() -> None:
+    """裸 failed 没有 merge 输入；必须先物化 degraded RepoPlan 才能 ready。"""
     repo_a = await _make_repo()
     repo_b = await _make_repo()
     session, _artifact = await _make_locked_session(
@@ -610,7 +682,7 @@ async def test_failed_repo_does_not_block_barrier() -> None:
         session=session, repository=repo_b, status=RepoResearchTaskStatus.FAILED
     )
 
-    assert await _plan_adapter().aall_repo_plans_ready(session) is True
+    assert await _plan_adapter().aall_repo_plans_ready(session) is False
 
 
 async def test_criteria_only_looks_at_repo_plan_section_not_task_status() -> None:
@@ -721,14 +793,95 @@ async def test_repo_completed_event_counts_read_the_real_repo_plan_keys() -> Non
     assert payload["repository_id"] == str(repo.id)
 
 
+async def test_ready_repo_plan_resolves_prior_failure_clarifications() -> None:
+    """补跑成功后，旧的“连续失败”线程不得继续把会话卡在 waiting_clarification。"""
+    repo = await _make_repo()
+    session, artifact = await _make_locked_session(_association(repo, role="direct"))
+    task = await RepoResearchTask.objects.acreate(
+        session=session, repository=repo, status=RepoResearchTaskStatus.RUNNING
+    )
+    adapter = _plan_adapter()
+    thread_id = await adapter.aopen_clarification(
+        session,
+        str(repo.id),
+        "自动容器重试已耗尽，本仓实现方案待人工补充。",
+    )
+    thread = await BlueprintThread.objects.aget(id=thread_id, artifact=artifact)
+    assert thread.status == ThreadStatus.OPEN
+
+    with patch(
+        "delivery.services.convergence_session_service.ConvergenceSessionService.aemit_event",
+        new=AsyncMock(),
+    ):
+        await adapter.arecord_repo_plan(task, _repo_plan_section(str(repo.id)))
+
+    await thread.arefresh_from_db()
+    assert thread.status == ThreadStatus.RESOLVED
+    assert await thread.messages.filter(
+        body__contains="仓级方案已重新产出并通过结构校验"
+    ).aexists()
+
+
 async def test_stage_state_summary_is_ids_and_counts_only() -> None:
     summary = _plan_adapter().build_stage_state(
-        plans={"r1": {"impl_items": [{"item_id": "x"}]}, "r2": {}},
+        plans={
+            "r1": {"impl_items": [{"item_id": "x"}]},
+            "r2": {"impl_items": []},
+            "r4": {
+                "impl_items": [],
+                "delivery_status": "degraded",
+                "risks": [{"block_id": "degraded-r4", "text": "待人工补充"}],
+            },
+            "r5": {"impl_items": [], "delivery_status": "ready"},
+        },
         dispatched=["r2"],
         pending=["r2", "r3"],
     )
     assert summary["ready_repository_ids"] == ["r1"]
-    assert summary["pending_repository_ids"] == ["r2", "r3"]
+    assert summary["pending_repository_ids"] == ["r2", "r3", "r4", "r5"]
+    assert summary["incomplete_repository_ids"] == ["r2", "r4", "r5"]
+    assert summary["degraded_repository_ids"] == ["r4"]
+    assert summary["repository_statuses"] == {
+        "r1": "ready",
+        "r2": "empty",
+        "r4": "degraded",
+        "r5": "empty",
+    }
     assert summary["attempts"] == {"r2": 1}
-    assert set(summary) == {"ready_repository_ids", "pending_repository_ids", "attempts"}
+    assert set(summary) == {
+        "ready_repository_ids",
+        "pending_repository_ids",
+        "incomplete_repository_ids",
+        "degraded_repository_ids",
+        "repository_statuses",
+        "attempts",
+    }
     assert len(json.dumps(summary)) < 2048
+
+
+async def test_delivery_status_allows_valid_indirect_plan_without_impl_items() -> None:
+    """indirect 是能力提供方而非改代码仓，零实现项不能把 barrier 永久卡死。"""
+    section = {
+        "repository_id": "repo-indirect",
+        "role": "indirect",
+        "delivery_status": "empty",  # 兼容错误版本已落库的显式值
+        "responsibility": [{"block_id": "blk_resp", "type": "paragraph", "text": "提供既有能力"}],
+        "impl_items": [],
+        "risks": [{"block_id": "blk_risk", "type": "paragraph", "text": "契约待核对"}],
+    }
+
+    assert _repo_plan_delivery_status(section) == "ready"
+    section["risks"][0]["block_id"] = "blk_repo_plan_degraded_repo-indirect"
+    assert _repo_plan_delivery_status(section) == "degraded"
+
+
+async def test_delivery_status_keeps_direct_empty_plan_incomplete() -> None:
+    section = {
+        "repository_id": "repo-direct",
+        "role": "direct",
+        "delivery_status": "ready",
+        "impl_items": [],
+        "risks": [],
+    }
+
+    assert _repo_plan_delivery_status(section) == "empty"

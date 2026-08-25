@@ -59,8 +59,18 @@ def _make_subagent_session(
     transcript: str,
     sdk_session_id: str = "sdk-1",
     saved_at=None,
+    mcp_submit_ok: bool = True,
+    source: str = "blueprint_repo_plan",
 ) -> SubAgentSession:
     main = AgentSession.objects.create(session_id=f"main-{uuid.uuid4().hex[:8]}")
+    last_output = {
+        "repository_id": repository_id,
+        "blueprint_session_id": blueprint_session_id,
+        "source": source,
+    }
+    # 260818-pt8 D-08：只有「按 MCP 协议成功提交结构化结果」的会话才可续跑。
+    if mcp_submit_ok:
+        last_output["mcp_submit_ok"] = True
     return SubAgentSession.objects.create(
         session_id=f"sub-{uuid.uuid4().hex[:8]}",
         main_session=main,
@@ -70,10 +80,7 @@ def _make_subagent_session(
         sdk_session_id=sdk_session_id,
         sdk_transcript=transcript,
         sdk_session_saved_at=saved_at or timezone.now(),
-        last_output={
-            "repository_id": repository_id,
-            "blueprint_session_id": blueprint_session_id,
-        },
+        last_output=last_output,
     )
 
 
@@ -81,6 +88,12 @@ def _resume_env(task: RepoResearchTask) -> dict:
     from services.process_runtime.blueprint_research_adapter import BlueprintResearchAdapter
 
     return async_to_sync(BlueprintResearchAdapter()._aresume_env)(task)
+
+
+def _resume_env_for_mode(task: RepoResearchTask, mode: str) -> dict:
+    from services.process_runtime.blueprint_research_adapter import BlueprintResearchAdapter
+
+    return async_to_sync(BlueprintResearchAdapter()._aresume_env)(task, mode=mode)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -191,6 +204,57 @@ def test_resume_env_picks_the_latest_saved_transcript() -> None:
     )
 
     assert _resume_env(task)["env_FRIDAY_TASK_RESUME_SESSION_ID"] == "sdk-new"
+
+
+def test_resume_env_skips_sessions_that_never_submitted_via_mcp() -> None:
+    """⛔ 260818-pt8 D-08：上一轮没按 MCP 协议成功提交（mcp_submit_ok 缺失）⇒ 是「中毒会话」，
+    续它只会把同一份坏上下文重放一遍 ⇒ 不得续，回退全新执行。"""
+    repo = _make_repo("resume-poisoned")
+    blueprint = _make_blueprint_session()
+    task = RepoResearchTask.objects.create(session=blueprint, repository=repo)
+    _make_subagent_session(
+        repository_id=str(repo.id),
+        blueprint_session_id=str(blueprint.id),
+        transcript='{"m":"上一轮跑飞了"}\n',
+        sdk_session_id="sdk-poisoned",
+        mcp_submit_ok=False,
+    )
+
+    assert _resume_env(task) == {}
+
+
+def test_plan_resume_never_selects_a_research_transcript() -> None:
+    """计划续跑只能继承计划上下文；fitness 调研 transcript 属于不同提示词/工具契约。"""
+    repo = _make_repo("resume-source-isolated")
+    blueprint = _make_blueprint_session()
+    task = RepoResearchTask.objects.create(session=blueprint, repository=repo)
+    _make_subagent_session(
+        repository_id=str(repo.id),
+        blueprint_session_id=str(blueprint.id),
+        transcript='{"type":"user","message":{"content":"research"}}\n',
+        sdk_session_id="sdk-research",
+        source="blueprint_research",
+    )
+
+    assert _resume_env_for_mode(task, "plan") == {}
+
+
+def test_resume_env_rejects_malformed_and_missing_thinking_transcripts() -> None:
+    """损坏 JSONL 或 thinking block 缺 thinking 正文时必须全新执行，不能交给 SDK resume。"""
+    repo = _make_repo("resume-malformed")
+    blueprint = _make_blueprint_session()
+    task = RepoResearchTask.objects.create(session=blueprint, repository=repo)
+    _make_subagent_session(
+        repository_id=str(repo.id),
+        blueprint_session_id=str(blueprint.id),
+        transcript=(
+            '{"type":"assistant","message":{"content":'
+            '[{"type":"thinking","signature":"encrypted-only"}]}}\n'
+        ),
+        sdk_session_id="sdk-missing-thinking",
+    )
+
+    assert _resume_env_for_mode(task, "plan") == {}
 
 
 def test_resume_env_is_empty_without_any_transcript() -> None:

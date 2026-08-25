@@ -878,6 +878,10 @@ class BlueprintRouteAdapter:
             return empty
 
         candidate_ids = [c["repository_id"] for c in raw_candidates]
+        # 260818-pt8 D-09：placement 种子候选的 repository_name 恒为空串（见
+        # `_raw_candidates_from_placements`），批量补齐权威 Repository.name，避免
+        # route.scored / plan_drafted 事件与下游派发出现空仓名（前端进度文案退化）。
+        await self._ahydrate_candidate_names(raw_candidates)
         charters = await self._aload_charters(candidate_ids)
         history = await self._ascore_history(
             query=query, candidate_ids=candidate_ids, session=session
@@ -1685,6 +1689,40 @@ class BlueprintRouteAdapter:
             for item in collected or []
             if str(item.get("repository_id", ""))
         ]
+
+    async def _ahydrate_candidate_names(self, raw_candidates: list[dict]) -> None:
+        """就地批量补齐候选的 ``repository_name``（空名回退权威 ``Repository.name``）。
+
+        260818-pt8 D-09：placement 种子候选恒带空名，V2 fallback 候选才带 repo_name。
+        单批 ORM 查询取名，fail-soft：读失败保持原空名（下游派发面还有 repo.name 兜底）。
+        """
+        missing_ids = [
+            str(c.get("repository_id") or "")
+            for c in raw_candidates
+            if not str(c.get("repository_name") or "") and str(c.get("repository_id") or "")
+        ]
+        if not missing_ids:
+            return
+        try:
+            from repositories.models import Repository
+
+            name_by_id = {
+                str(rid): str(name or "")
+                async for rid, name in Repository.objects.filter(
+                    id__in=missing_ids
+                ).values_list("id", "name")
+            }
+        except Exception as exc:  # noqa: BLE001 — 补名 best-effort，绝不阻断路由
+            logger.warning(
+                "blueprint_route_candidate_name_hydrate_failed",
+                error=str(exc),
+                category="sampling",
+                component="process_runtime",
+            )
+            return
+        for c in raw_candidates:
+            if not str(c.get("repository_name") or ""):
+                c["repository_name"] = name_by_id.get(str(c.get("repository_id") or ""), "")
 
     async def _aload_charters(self, candidate_ids: list[str]) -> dict[str, dict]:
         try:

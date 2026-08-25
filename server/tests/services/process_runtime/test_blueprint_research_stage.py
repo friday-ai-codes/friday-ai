@@ -189,6 +189,8 @@ async def test_deep_dispatch_injects_three_env_keys_and_mints_token() -> None:
     # 只读语义双层拦截仍在
     assert meta["env_FRIDAY_TASK_MODE"] == "explore"
     assert meta["env_FRIDAY_TASK_TASK_MODE"] == "explore"
+    # 260818-pt8 D-01/D-04：research 链注入 fitness 结构化提交场景选择器
+    assert meta["env_FRIDAY_TASK_SUBMIT_SCENARIO"] == "blueprint_research_fitness"
 
     # AccessToken 行：kind=task + session_id == subagent session_id；DB 只有 sha256
     from runners.models import hash_token
@@ -803,3 +805,37 @@ async def test_emit_started_research_payload_has_name_and_reason() -> None:
     ).afirst()
     assert sub is not None
     assert (sub.last_output or {}).get("repository_name") == "gaosan-web"
+
+
+@override_settings(FRIDAY_BASE_URL="https://friday.example.com")
+async def test_repository_name_falls_back_to_repo_name_when_candidate_empty() -> None:
+    """260818-pt8 D-09：候选缺 repository_name 时回退权威 Repository.name（started + last_output 均非空）。"""
+    from delivery.services.event_taxonomy import EVENT_BLUEPRINT_REPO_RESEARCH_STARTED
+    from subagent.models import SubAgentSession
+
+    user = await _make_user()
+    repo = await _make_repo(name="fallback-web")
+    cand = _candidate(repo)
+    cand["repository_name"] = ""  # 模拟 placement 种子候选空名
+    session = await _make_session(_routing_state(cand), user=user)
+    await _make_online_runner()
+    dispatcher = _FakeDispatcher()
+    cfg, git = _stub_runtime()
+
+    with cfg, git:
+        await _adapter(dispatcher, charters_loader=AsyncMock(return_value={})).dispatch(session)
+
+    started = [
+        e
+        async for e in ConvergenceSessionEvent.objects.filter(
+            session=session, event=EVENT_BLUEPRINT_REPO_RESEARCH_STARTED
+        ).aiterator()
+    ]
+    assert started
+    assert started[0].payload.get("repository_name") == "fallback-web"
+
+    sub = await SubAgentSession.objects.filter(
+        last_output__blueprint_session_id=str(session.id)
+    ).afirst()
+    assert sub is not None
+    assert (sub.last_output or {}).get("repository_name") == "fallback-web"

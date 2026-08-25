@@ -78,7 +78,26 @@ GOAL_BLOCK_ID = "bp_goal_1"
 # 截断上界：title 进 `Artifact.title`（max_length=500），goal 正文是半可信输入。
 # 缺省标题为「{项目名} - 技术方案 - YYYY-MM-DD HH:mm」，200 足以容纳长项目名且不裁掉时间后缀。
 _MAX_TITLE_CHARS = 200
-_MAX_GOAL_CHARS = 4000
+
+# goal 正文入库**不做阅读性截断**，保留的上界只剩 DoS 兜底职责（半可信输入不得无界入库）。
+#
+# 历史缺陷（2026-08 实测）：本值原为 4000，且与下面那个 decompose prompt 预算**共用同一个
+# 常量** —— 于是「高三提分专项」8472 字符的需求正文被截在模块 4 的句子中间，页面上模块
+# 5~10 全部掉进兜底索引只剩单行标题，看起来像「需求丢了一半」。
+#
+# 为什么 goal 不能截：`requirement_spec.goal` 是前端需求规格段**唯一的完整正文来源** ——
+# `RequirementSpecSection.vue` 按「goal 正文本就完整包含各模块与验收细节」设计，把功能点
+# 标签内联到正文对应行尾，只有**在正文里定位不到**的功能点才落进兜底索引。正文一截，
+# 后半段功能点必然大面积落进兜底索引。阅读体验由前端折叠 + 蒙层承担，⛔ 不靠后端裁字。
+#
+# 对照组：`stage_sandbox.py` 拼同一个 goal 块时本就不截（`"text": goal_text`）——
+# 两处口径不一致，印证 4000 是历史遗留而非 schema/存储要求（blueprint/v1 无 maxLength）。
+_MAX_GOAL_CHARS = 200_000
+
+# decompose prompt 的**独立**字符预算（⛔ 绝不复用 `_MAX_GOAL_CHARS`）。
+# 与 `RepoAssociationService` 那条纪律同源：**入库/检索吃全量，prompt 吃截断版**；
+# 两个职责共用一个常量正是上面那个缺陷的根因。
+_MAX_DECOMPOSE_PROMPT_CHARS = 4000
 # 推不出 project_id 时回给四个入口的**中性** detail（⛔ 不含内部路径/异常原文）
 _PROJECT_UNRESOLVED_DETAIL = "无法确定该需求所属的项目，请在项目空间内发起或补全项目信息"
 
@@ -672,7 +691,7 @@ async def _allm_feature_points(session: Any, requirement_text: str) -> list[dict
             operator_instruction_section,
         )
 
-        human = f"## 需求原文\n{requirement_text[:_MAX_GOAL_CHARS]}"
+        human = f"## 需求原文\n{requirement_text[:_MAX_DECOMPOSE_PROMPT_CHARS]}"
         instruction = operator_instruction_section(session)
         if instruction:
             human = f"{human}\n\n{instruction}"

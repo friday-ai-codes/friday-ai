@@ -731,10 +731,13 @@ async def _abp_mark_ai_reviewing(session: Any) -> None:
 
 
 async def _abp_has_open_blocking_threads(session: Any) -> bool:
-    """该会话蓝图是否仍有 open+blocking 线程（决定 stage 是否停在 needs_clarification）。
+    """该会话蓝图是否仍有 repo_plan 阶段的 open+blocking 线程。
 
     探测失败按 **False** 处理（放行推进）：续驱侧 ``blueprint_resume`` 自己有一道
     fail-closed 的同款探测，这里再 fail-closed 会让 DB 抖动直接把 stage 钉死在澄清态。
+
+    必须按 ``return_stage=repo_plan`` 收窄：重跑仓级方案时，上一轮 AI 审查留下的 BLOCKER
+    正是本轮要修复的输入，若按全 Artifact 查询，它会反过来阻止 repo_plan 开始/完成。
     """
     from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
 
@@ -742,7 +745,12 @@ async def _abp_has_open_blocking_threads(session: Any) -> bool:
         artifact = await _abp_load_artifact(session)
         if artifact is None:
             return False
-        return bool(await BlueprintLifecycleService().ahas_open_blocking_threads(artifact))
+        return bool(
+            await BlueprintLifecycleService().ahas_open_blocking_threads(
+                artifact,
+                return_stage="repo_plan",
+            )
+        )
     except Exception:  # noqa: BLE001 — 探测失败放行（续驱侧另有 fail-closed 判据）
         return False
 
@@ -1150,6 +1158,7 @@ _TECHNICAL_BLUEPRINT_STAGES = {
         },
         pausable=True,
         wait_status="waiting_event",
+        event_wait_statuses={"needs_clarification": "waiting_clarification"},
     ),
     "reroute": StageDef(
         key="reroute",
@@ -1195,6 +1204,7 @@ _TECHNICAL_BLUEPRINT_STAGES = {
         },
         pausable=True,
         wait_status="waiting_event",
+        event_wait_statuses={"needs_clarification": "waiting_clarification"},
     ),
     "merge": StageDef(
         key="merge",

@@ -379,6 +379,32 @@ def test_item_pointing_to_indirect_repo_is_blocker():
     assert all(item["severity"] == SEVERITY_BLOCKER for item in mismatch)
 
 
+def test_indirect_repo_without_impl_item_is_warning():
+    """indirect 空仓必须显式告警，但不升级为会误伤合理无改动场景的 BLOCKER。"""
+    blueprint = _blueprint()
+    blueprint["repo_associations"].append(_assoc(_INDIRECT_ID, role="indirect"))
+
+    findings = check_roles(blueprint)
+    empty = _by_rule(findings, "indirect_repo_plan_empty")
+
+    assert len(empty) == 1, findings
+    assert empty[0]["severity"] == SEVERITY_WARNING
+    assert empty[0]["repository_id"] == _INDIRECT_ID
+    assert empty[0]["section_path"] == f"repo_associations[{_INDIRECT_ID}]"
+
+
+def test_indirect_repo_with_impl_item_has_no_empty_warning():
+    """indirect 仓存在实现项时不产空方案 WARNING；既有越界 BLOCKER 口径保持不变。"""
+    blueprint = _blueprint()
+    blueprint["repo_associations"].append(_assoc(_INDIRECT_ID, role="indirect"))
+    blueprint["implementation_overview"]["items"][0]["repository_id"] = _INDIRECT_ID
+
+    findings = check_roles(blueprint)
+
+    assert _by_rule(findings, "indirect_repo_plan_empty") == []
+    assert _by_rule(findings, "role_mismatch")
+
+
 def test_unreferenced_capability_is_warning_not_blocker():
     blueprint = _blueprint()
     blueprint["repo_associations"].append(
@@ -433,6 +459,33 @@ def test_consumed_needs_support_with_valid_support_repo_is_clean():
         "support_repository_id": _REPO_ID,
     }
     assert check_api_closure(blueprint) == []
+
+
+def test_consumed_needs_support_with_unique_basename_alias_is_clean():
+    blueprint = _blueprint()
+    blueprint["repo_associations"] = [
+        _assoc(_REPO_ID, repository_name="team/service-a"),
+        _assoc(_INDIRECT_ID, repository_name="team/service-b"),
+    ]
+    blueprint["api_contracts"][0]["direction"] = "consumed"
+    blueprint["api_contracts"][0]["data_source"] = {
+        "availability": "needs_support",
+        "support_repository_id": "service-b",
+    }
+    assert check_api_closure(blueprint) == []
+
+
+def test_consumed_needs_support_with_absent_alias_is_blocker():
+    blueprint = _blueprint()
+    blueprint["repo_associations"] = [
+        _assoc(_REPO_ID, repository_name="frontend/onion-learning"),
+    ]
+    blueprint["api_contracts"][0]["direction"] = "consumed"
+    blueprint["api_contracts"][0]["data_source"] = {
+        "availability": "needs_support",
+        "support_repository_id": "onion-auth",
+    }
+    assert _rule_ids(check_api_closure(blueprint)) == ["support_repo_missing"]
 
 
 def test_wrong_direction_literal_is_not_treated_as_consumed():

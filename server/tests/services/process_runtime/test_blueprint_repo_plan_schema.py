@@ -19,6 +19,7 @@ from __future__ import annotations
 from services.process_runtime.blueprint_repo_plan_schema import (
     REPO_PLAN_AVAILABILITY,
     REPO_PLAN_CHANGE_TYPES,
+    coerce_repo_plan_shapes,
     validate_repo_plan,
 )
 
@@ -123,6 +124,62 @@ def test_valid_indirect_capability_list_passes() -> None:
         "impl_items": [],
     }
     assert validate_repo_plan(plan) == (True, None)
+
+
+def test_missing_block_ids_are_deterministically_normalized_before_validation() -> None:
+    """缺 block_id 只补确定性锚点，完整实现项原样保留且重复归一化幂等。"""
+    plan = _direct_plan(
+        risks=[{"type": "paragraph", "text": "入口曝光可能影响首屏"}],
+    )
+    plan["impl_items"][0]["how"] = [{"type": "paragraph", "text": "在 study 页加入口卡片"}]
+    expected_items = [dict(item) for item in plan["impl_items"]]
+    expected_items[0] = {**expected_items[0], "how": [dict(plan["impl_items"][0]["how"][0])]}
+
+    normalized = coerce_repo_plan_shapes(plan)
+    first_risk_id = normalized["risks"][0]["block_id"]
+    first_how_id = normalized["impl_items"][0]["how"][0]["block_id"]
+    normalized_again = coerce_repo_plan_shapes(normalized)
+
+    assert validate_repo_plan(normalized_again) == (True, None)
+    assert first_risk_id == "blk_repo_plan_risks_repo-a_0"
+    assert first_how_id == "blk_repo_plan_how_it_1_repo-a_0"
+    assert normalized_again["risks"][0]["text"] == "入口曝光可能影响首屏"
+    assert (
+        normalized_again["impl_items"][0]["how"][0]["text"] == expected_items[0]["how"][0]["text"]
+    )
+    assert len(normalized_again["impl_items"]) == len(expected_items)
+
+
+def test_block_id_normalization_does_not_hide_missing_text() -> None:
+    """只缺锚点可修；缺实质正文仍拒绝，不能被归一化误放行。"""
+    plan = _direct_plan(risks=[{"type": "paragraph"}])
+
+    normalized = coerce_repo_plan_shapes(plan)
+    ok, error = validate_repo_plan(normalized)
+
+    assert normalized["risks"][0]["block_id"] == "blk_repo_plan_risks_repo-a_0"
+    assert ok is False
+    assert error is not None and "text" in error
+
+
+def test_block_text_aliases_are_normalized_without_rewriting_content() -> None:
+    """MCP 产物把正文写进 detail/summary 时机械搬运，避免有效方案因字段名漂移报废。"""
+    plan = _direct_plan(
+        risks=[
+            {
+                "summary": "上游字段依赖",
+                "detail": "需要 course-business 补齐章级视频字段",
+                "citations": ["services/course.go:42"],
+            }
+        ],
+    )
+
+    normalized = coerce_repo_plan_shapes(plan)
+
+    assert validate_repo_plan(normalized) == (True, None)
+    assert normalized["risks"][0]["text"] == "需要 course-business 补齐章级视频字段"
+    assert normalized["risks"][0]["summary"] == "上游字段依赖"
+    assert normalized["risks"][0]["citations"] == ["services/course.go:42"]
 
 
 # ===========================================================================

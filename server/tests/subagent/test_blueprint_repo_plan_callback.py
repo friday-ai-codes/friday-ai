@@ -10,10 +10,10 @@
    PartialPlan → 写入 repo_plan 后 `acollect_fitness(session)[repo_id]["verdict"]` 仍为
    `suitable`，且 findings 与 §7 五键仍在（**未吃掉 112 产物**）。
 4. **文本路径**：output 只有 ```json 围栏时同样解析成功。
-5. **有界重试**：非法 repo_plan 第 1 次 → task 变 `stale` 且不落非法 content；
-   超 `MAX_REPO_PLAN_ATTEMPTS`（第 3 个 plan 容器）→ `failed` + `repo_plan_invalid`
-   + 存在 `BlueprintThread(ai_clarification, blocking=True, return_stage="repo_plan")`。
-6. **失败回调**：容器失败 → mark_failed(container_failed)，回调仍返 200。
+5. **有界重试**：非法 repo_plan 第 1 次 → task 变 `stale` 并立即重派；
+   超 `MAX_REPO_PLAN_ATTEMPTS`（第 3 个 plan 容器）→ 合法 degraded RepoPlan
+   + 阻塞 `BlueprintThread(ai_clarification, return_stage="repo_plan")`，且不计 ready。
+6. **失败回调**：容器失败同样有界重派，耗尽后显式 degraded，回调仍返 200。
 7. **call_source 显式**：本链容器 LLM 来源为 `blueprint_repo_plan`，不回退 sdk_agent_task。
 """
 
@@ -83,6 +83,13 @@ def _repo_plan(**overrides) -> dict:
     }
     section.update(overrides)
     return section
+
+
+def _plan_output(section: dict | None = None, **overrides) -> dict:
+    """260818-pt8 D-01：唯一权威渠道 output.mcp_result（顶层键 repo_plan）。"""
+    return {
+        "mcp_result": {"repo_plan": section if section is not None else _repo_plan(**overrides)}
+    }
 
 
 async def _setup(
@@ -201,9 +208,7 @@ async def test_research_session_not_hijacked_by_plan_chain() -> None:
     from subagent.api.callbacks import _handle_blueprint_repo_plan_completion
 
     _s, _r, task, sub, _a = await _setup(source="blueprint_research", session_prefix="bp-research")
-    await _handle_blueprint_repo_plan_completion(
-        sub, {"output": {"repo_plan": _repo_plan()}}, _log()
-    )
+    await _handle_blueprint_repo_plan_completion(sub, {"output": _plan_output()}, _log())
 
     await task.arefresh_from_db()
     assert task.status == RepoResearchTaskStatus.RUNNING
@@ -218,10 +223,20 @@ async def test_research_session_not_hijacked_by_plan_chain() -> None:
 async def test_structured_repo_plan_recorded() -> None:
     """结构化 output → content["repo_plan"]["impl_items"] 就位，task → done。"""
     _s, repo, task, sub, _a = await _setup()
-    payload = {"result_type": "text", "output": {"repo_plan": _repo_plan()}}
+    payload = {"result_type": "text", "output": _plan_output()}
     from subagent.api.callbacks import _handle_completed
 
-    with _PATCHES[0], _PATCHES[1], _PATCHES[2], _NO_BARRIER:
+    with (
+        _PATCHES[0],
+        _PATCHES[1],
+        _PATCHES[2],
+        _NO_BARRIER,
+        patch(
+            "services.process_runtime.blueprint_research_adapter.BlueprintResearchAdapter.dispatch",
+            new_callable=AsyncMock,
+            return_value={"dispatched": 1},
+        ),
+    ):
         resp = await _handle_completed(sub, payload, _log())
 
     assert resp.status_code == 200
@@ -237,8 +252,23 @@ async def test_structured_repo_plan_recorded() -> None:
     assert section["repository_id"] == str(repo.id)
 
 
-async def test_text_fenced_repo_plan_parsed() -> None:
-    """output 只有 ```json 围栏 → 同样解析成功并落库。"""
+def test_parse_normalizes_missing_block_id_without_losing_impl_items() -> None:
+    """缺风险块锚点可确定性修复，完整实现项不得被降级清空。"""
+    from subagent.api.callbacks import _parse_blueprint_repo_plan
+
+    raw = _repo_plan(risks=[{"type": "paragraph", "text": "首屏影响"}])
+    section, error = _parse_blueprint_repo_plan(_plan_output(raw))
+    section_again, error_again = _parse_blueprint_repo_plan(_plan_output(section))
+
+    assert error == error_again == ""
+    assert section is not None and section_again is not None
+    assert section["impl_items"] == raw["impl_items"]
+    assert section["risks"][0]["block_id"] == "blk_repo_plan_risks_will-be-_0"
+    assert section_again == section
+
+
+async def test_text_fenced_repo_plan_rejected() -> None:
+    """260818-pt8 D-02：output 只有 ```json 围栏（无 mcp_result）→ 判不合格走重试，绝不落库。"""
     import json
 
     _s, _r, task, sub, _a = await _setup()
@@ -246,13 +276,23 @@ async def test_text_fenced_repo_plan_parsed() -> None:
     payload = {"result_type": "text", "output": {"text": fenced}}
     from subagent.api.callbacks import _handle_completed
 
-    with _PATCHES[0], _PATCHES[1], _PATCHES[2], _NO_BARRIER:
+    with (
+        _PATCHES[0],
+        _PATCHES[1],
+        _PATCHES[2],
+        _NO_BARRIER,
+        patch(
+            "services.process_runtime.blueprint_research_adapter.BlueprintResearchAdapter.dispatch",
+            new_callable=AsyncMock,
+            return_value={"dispatched": 1},
+        ),
+    ):
         resp = await _handle_completed(sub, payload, _log())
 
     assert resp.status_code == 200
-    partial = await PartialPlan.objects.filter(research_task=task, valid=True).afirst()
-    assert partial is not None
-    assert partial.content["repo_plan"]["impl_items"][0]["item_id"] == "it_1"
+    await task.arefresh_from_db()
+    assert task.status == RepoResearchTaskStatus.STALE
+    assert await PartialPlan.objects.filter(research_task=task).acount() == 0
 
 
 # ===========================================================================
@@ -278,9 +318,7 @@ async def test_repo_plan_write_preserves_stage1_fitness() -> None:
     assert before[str(repo.id)]["verdict"] == "suitable"
 
     with _NO_BARRIER:
-        await _handle_blueprint_repo_plan_completion(
-            sub, {"output": {"repo_plan": _repo_plan()}}, _log()
-        )
+        await _handle_blueprint_repo_plan_completion(sub, {"output": _plan_output()}, _log())
 
     after = await adapter.acollect_fitness(session)
     assert after[str(repo.id)]["verdict"] == "suitable"
@@ -321,29 +359,40 @@ async def test_invalid_repo_plan_first_round_goes_stale() -> None:
     bad = _repo_plan()
     bad.pop("impl_items")
 
-    with _NO_BARRIER:
-        await _handle_blueprint_repo_plan_completion(sub, {"output": {"repo_plan": bad}}, _log())
+    with (
+        _NO_BARRIER,
+        patch(
+            "services.process_runtime.blueprint_research_adapter.BlueprintResearchAdapter.dispatch",
+            new_callable=AsyncMock,
+            return_value={"dispatched": 1},
+        ) as dispatch,
+    ):
+        await _handle_blueprint_repo_plan_completion(sub, {"output": _plan_output(bad)}, _log())
 
     await task.arefresh_from_db()
     assert task.status == RepoResearchTaskStatus.STALE
     assert task.error.get("reason") == "repo_plan_invalid_retrying"
     assert await PartialPlan.objects.filter(research_task=task).acount() == 0
+    dispatch.assert_awaited_once()
 
 
-async def test_invalid_repo_plan_beyond_bound_fails_and_opens_clarification() -> None:
-    """超 MAX_REPO_PLAN_ATTEMPTS（第 3 个 plan 容器）→ failed + blocking 澄清线程。"""
+async def test_invalid_repo_plan_beyond_bound_records_degraded_and_opens_clarification() -> None:
+    """超 MAX_REPO_PLAN_ATTEMPTS → done + degraded + 非阻塞澄清线程。"""
     from subagent.api.callbacks import _handle_blueprint_repo_plan_completion
 
     _s, _r, task, sub, artifact = await _setup(with_artifact=True, extra_containers=2)
     bad = _repo_plan(impl_items=[{"item_id": "it_1", "title": "t"}])  # 缺 change_type / how
 
     with _NO_BARRIER:
-        await _handle_blueprint_repo_plan_completion(sub, {"output": {"repo_plan": bad}}, _log())
+        await _handle_blueprint_repo_plan_completion(sub, {"output": _plan_output(bad)}, _log())
 
     await task.arefresh_from_db()
-    assert task.status == RepoResearchTaskStatus.FAILED
-    assert task.error.get("reason") == "repo_plan_invalid"
-    assert task.error.get("detail")
+    assert task.status == RepoResearchTaskStatus.STALE
+    partial = await PartialPlan.objects.filter(research_task=task, valid=True).afirst()
+    assert partial is not None
+    assert partial.content["repo_plan"]["impl_items"] == []
+    assert partial.content["repo_plan"]["risks"]
+    assert partial.content["repo_plan"]["delivery_status"] == "degraded"
 
     thread = await BlueprintThread.objects.filter(
         artifact=artifact, kind=ThreadKind.AI_CLARIFICATION
@@ -359,7 +408,14 @@ async def test_free_text_output_is_invalid() -> None:
     from subagent.api.callbacks import _handle_blueprint_repo_plan_completion
 
     _s, _r, task, sub, _a = await _setup()
-    with _NO_BARRIER:
+    with (
+        _NO_BARRIER,
+        patch(
+            "services.process_runtime.blueprint_research_adapter.BlueprintResearchAdapter.dispatch",
+            new_callable=AsyncMock,
+            return_value={"dispatched": 1},
+        ),
+    ):
         await _handle_blueprint_repo_plan_completion(
             sub, {"output": {"text": "我看了一圈，方案大概是加个入口。"}}, _log()
         )
@@ -373,12 +429,18 @@ def test_parse_rejects_bad_shapes() -> None:
     """解析器对各类残缺形状一律返回 (None, err)，err 非空可进 mark_failed。"""
     from subagent.api.callbacks import _parse_blueprint_repo_plan
 
-    for payload in (None, {}, {"repo_plan": "not-a-dict"}, {"text": "no json"}):
+    for payload in (
+        None,
+        {},
+        {"mcp_result": {"repo_plan": "not-a-dict"}},
+        {"text": "no json"},
+        {"repo_plan": _repo_plan()},  # 无 mcp_result 的旧文本渠道一律拒绝
+    ):
         section, err = _parse_blueprint_repo_plan(payload)
         assert section is None
         assert isinstance(err, str) and err
 
-    section, err = _parse_blueprint_repo_plan({"repo_plan": _repo_plan()})
+    section, err = _parse_blueprint_repo_plan({"mcp_result": {"repo_plan": _repo_plan()}})
     assert section is not None and err == ""
 
 
@@ -388,7 +450,7 @@ def test_parse_rejects_bad_shapes() -> None:
 
 
 async def test_failure_callback_marks_container_failed() -> None:
-    """容器失败 → mark_failed(container_failed)，回调仍返 200。"""
+    """首轮容器瞬时失败 → stale + 自动重派，回调仍返 200。"""
     from subagent.api.callbacks import _handle_failed
 
     _s, _r, task, sub, _a = await _setup()
@@ -398,13 +460,54 @@ async def test_failure_callback_marks_container_failed() -> None:
         patch("subagent.api.callbacks._schedule_workflow_resume"),
         patch("subagent.api.callbacks._schedule_agent_session_resume"),
         _NO_BARRIER,
+        patch(
+            "services.process_runtime.blueprint_research_adapter.BlueprintResearchAdapter.dispatch",
+            new_callable=AsyncMock,
+            return_value={"dispatched": 1},
+        ) as dispatch,
     ):
         resp = await _handle_failed(sub, {"error": "容器超时"}, _log())
 
     assert resp.status_code == 200
     await task.arefresh_from_db()
-    assert task.status == RepoResearchTaskStatus.FAILED
-    assert task.error.get("reason") == "container_failed"
+    assert task.status == RepoResearchTaskStatus.STALE
+    assert task.error.get("reason") == "container_failed_retrying"
+    dispatch.assert_awaited_once()
+
+
+async def test_container_failure_exhaustion_records_degraded_plan_and_advances() -> None:
+    """第 3 个容器仍失败 → stale + degraded + 阻塞未决线程，不把整个流程打成 failed。"""
+    from subagent.api.callbacks import _handle_failed
+
+    session, repo, task, sub, artifact = await _setup(
+        with_artifact=True,
+        extra_containers=2,
+    )
+    with (
+        patch("subagent.api.callbacks._update_coding_session_on_fail", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._send_failure_notification", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._schedule_workflow_resume"),
+        patch("subagent.api.callbacks._schedule_agent_session_resume"),
+        _NO_BARRIER,
+    ):
+        resp = await _handle_failed(sub, {"error": "socket closed"}, _log())
+
+    assert resp.status_code == 200
+    await task.arefresh_from_db()
+    assert task.status == RepoResearchTaskStatus.STALE
+    partial = await PartialPlan.objects.filter(research_task=task, valid=True).afirst()
+    assert partial is not None
+    section = partial.content["repo_plan"]
+    assert section["repository_id"] == str(repo.id)
+    assert section["impl_items"] == []
+    assert section["risks"]
+    assert section["delivery_status"] == "degraded"
+    thread = await BlueprintThread.objects.filter(
+        artifact=artifact,
+        kind=ThreadKind.AI_CLARIFICATION,
+    ).afirst()
+    assert thread is not None
+    assert thread.blocking is True
 
 
 async def test_completion_exception_swallowed_returns_200() -> None:
@@ -452,7 +555,5 @@ async def test_terminal_task_is_noop() -> None:
     assert loaded is None
 
     with _NO_BARRIER:
-        await _handle_blueprint_repo_plan_completion(
-            sub, {"output": {"repo_plan": _repo_plan()}}, _log()
-        )
+        await _handle_blueprint_repo_plan_completion(sub, {"output": _plan_output()}, _log())
     assert await PartialPlan.objects.filter(research_task=task).acount() == 0

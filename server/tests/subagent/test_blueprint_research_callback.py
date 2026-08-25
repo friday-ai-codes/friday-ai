@@ -105,6 +105,11 @@ def _fitness_output(**overrides) -> dict:
     return payload
 
 
+def _mcp_output(**overrides) -> dict:
+    """260818-pt8 D-01：唯一权威渠道 output.mcp_result（结构化 dict）。"""
+    return {"mcp_result": _fitness_output(**overrides)}
+
+
 # ===========================================================================
 # 1. 三链互斥
 # ===========================================================================
@@ -128,7 +133,7 @@ async def test_plan_research_session_not_hijacked() -> None:
     from subagent.api.callbacks import _handle_blueprint_research_completion
 
     _s, _r, task, sub = await _setup(source="plan_research")
-    await _handle_blueprint_research_completion(sub, {"output": _fitness_output()}, _log())
+    await _handle_blueprint_research_completion(sub, {"output": _mcp_output()}, _log())
 
     await task.arefresh_from_db()
     assert task.status == RepoResearchTaskStatus.RUNNING
@@ -143,7 +148,7 @@ async def test_plan_research_session_not_hijacked() -> None:
 async def test_structured_fitness_recorded_to_partial_plan() -> None:
     """结构化 output → PartialPlan.content 含 fitness/role/responsibility/findings，task done。"""
     _s, repo, task, sub = await _setup()
-    payload = {"result_type": "text", "output": _fitness_output()}
+    payload = {"result_type": "text", "output": _mcp_output()}
     from subagent.api.callbacks import _handle_completed
 
     with _PATCHES[0], _PATCHES[1], _PATCHES[2]:
@@ -166,8 +171,8 @@ async def test_structured_fitness_recorded_to_partial_plan() -> None:
     assert content["repository_id"] == str(repo.id)
 
 
-async def test_text_fenced_json_parsed() -> None:
-    """output 只有 ```json 围栏文本 → 同样解析成功并落库。"""
+async def test_text_fenced_json_rejected() -> None:
+    """260818-pt8 D-02：output 只有 ```json 围栏文本（无 mcp_result）→ 明确拒绝，failed 且无 PartialPlan。"""
     _s, _r, task, sub = await _setup()
     fenced = (
         '```json\n{"fitness": {"verdict": "unsuitable", "reasons": ["与本仓职责无关"], '
@@ -181,10 +186,10 @@ async def test_text_fenced_json_parsed() -> None:
         resp = await _handle_completed(sub, payload, _log())
 
     assert resp.status_code == 200
-    partial = await PartialPlan.objects.filter(research_task=task, valid=True).afirst()
-    assert partial is not None
-    assert partial.content["fitness"]["verdict"] == "unsuitable"
-    assert partial.content["role_suggestion"] == "indirect"
+    await task.arefresh_from_db()
+    assert task.status == RepoResearchTaskStatus.FAILED
+    assert task.error.get("reason") == "empty_or_unparseable_result"
+    assert await PartialPlan.objects.filter(research_task=task).acount() == 0
 
 
 # ===========================================================================
@@ -195,7 +200,7 @@ async def test_text_fenced_json_parsed() -> None:
 async def test_missing_verdict_marks_failed_without_partial() -> None:
     """缺 fitness.verdict → task failed + empty_or_unparseable_result，且无 PartialPlan 行。"""
     _s, _r, task, sub = await _setup()
-    payload = {"result_type": "text", "output": {"fitness": {"reasons": ["没给结论"]}}}
+    payload = {"result_type": "text", "output": {"mcp_result": {"fitness": {"reasons": ["没给结论"]}}}}
     from subagent.api.callbacks import _handle_completed
 
     with _PATCHES[0], _PATCHES[1], _PATCHES[2]:
@@ -226,8 +231,11 @@ def test_illegal_verdict_is_unparseable() -> None:
     """非法 verdict（great）→ 判不可解析（宁可重跑也不落编造结论）。"""
     from subagent.api.callbacks import _parse_blueprint_fitness
 
-    assert _parse_blueprint_fitness(_fitness_output(fitness={"verdict": "great"})) is None
-    assert _parse_blueprint_fitness({"fitness": "not-a-dict"}) is None
+    assert _parse_blueprint_fitness(_mcp_output(fitness={"verdict": "great"})) is None
+    assert _parse_blueprint_fitness({"mcp_result": {"fitness": "not-a-dict"}}) is None
+    assert _parse_blueprint_fitness({"mcp_result": {}}) is None
+    # 无 mcp_result（旧文本渠道）一律拒绝
+    assert _parse_blueprint_fitness({"text": "free text"}) is None
     assert _parse_blueprint_fitness({}) is None
     assert _parse_blueprint_fitness(None) is None
 
@@ -236,12 +244,12 @@ def test_illegal_role_falls_back_to_direct() -> None:
     """非法 role_suggestion（maybe / 缺失）→ 回落保守的 direct。"""
     from subagent.api.callbacks import _parse_blueprint_fitness
 
-    parsed = _parse_blueprint_fitness(_fitness_output(role_suggestion="maybe"))
+    parsed = _parse_blueprint_fitness(_mcp_output(role_suggestion="maybe"))
     assert parsed is not None and parsed["role_suggestion"] == "direct"
 
     raw = _fitness_output()
     raw.pop("role_suggestion")
-    parsed2 = _parse_blueprint_fitness(raw)
+    parsed2 = _parse_blueprint_fitness({"mcp_result": raw})
     assert parsed2 is not None and parsed2["role_suggestion"] == "direct"
 
 
@@ -250,14 +258,14 @@ def test_findings_normalized_and_capped() -> None:
     from subagent.api.callbacks import _BLUEPRINT_MAX_FINDINGS, _parse_blueprint_fitness
 
     parsed = _parse_blueprint_fitness(
-        _fitness_output(findings=["纯文本发现", {"title": "t", "citations": "非法"}, 42])
+        _mcp_output(findings=["纯文本发现", {"title": "t", "citations": "非法"}, 42])
     )
     assert parsed is not None
     assert parsed["findings"][0]["detail"] == "纯文本发现"
     assert parsed["findings"][1]["citations"] == []
 
     many = _parse_blueprint_fitness(
-        _fitness_output(findings=[{"title": f"t{i}"} for i in range(60)])
+        _mcp_output(findings=[{"title": f"t{i}"} for i in range(60)])
     )
     assert many is not None and len(many["findings"]) == _BLUEPRINT_MAX_FINDINGS
 
@@ -278,7 +286,7 @@ async def test_terminal_task_is_noop() -> None:
     loaded, _bp = await _aload_blueprint_research_task(sub)
     assert loaded is None
 
-    await _handle_blueprint_research_completion(sub, {"output": _fitness_output()}, _log())
+    await _handle_blueprint_research_completion(sub, {"output": _mcp_output()}, _log())
     assert await PartialPlan.objects.filter(research_task=task).acount() == 0
 
 
@@ -353,7 +361,7 @@ async def test_completion_emits_repository_name_and_fitness_verdict() -> None:
         ),
     ):
         resp = await _handle_completed(
-            sub, {"result_type": "text", "output": _fitness_output()}, _log()
+            sub, {"result_type": "text", "output": _mcp_output()}, _log()
         )
 
     assert resp.status_code == 200
@@ -394,7 +402,9 @@ async def test_unparseable_failed_emits_repository_name_and_attempt() -> None:
         ),
     ):
         await _handle_completed(
-            sub, {"result_type": "text", "output": {"fitness": {"reasons": ["没给结论"]}}}, _log()
+            sub,
+            {"result_type": "text", "output": {"mcp_result": {"fitness": {"reasons": ["没给结论"]}}}},
+            _log(),
         )
 
     failed = [p for e, p in emitted if e == EVENT_BLUEPRINT_REPO_RESEARCH_FAILED]

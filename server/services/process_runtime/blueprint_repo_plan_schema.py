@@ -28,6 +28,7 @@ __all__ = [
     "REPO_PLAN_VERDICTS",
     "REPO_PLAN_CHANGE_TYPES",
     "REPO_PLAN_AVAILABILITY",
+    "coerce_repo_plan_shapes",
     "validate_repo_plan",
 ]
 
@@ -314,6 +315,70 @@ def _check_needs_support(content: dict) -> str | None:
     return None
 
 
+def _check_block_lists(content: dict) -> str | None:
+    """后置检查 (c)：Block[] 中每个块仍须有正文，补锚点不能掩盖畸形块。
+
+    ``block_id`` 可由服务端确定性生成，但 ``text`` 是代理交付的实质内容，不能编造。这里仅
+    检查实际采用 Block[] 形状的字段；``impl_items[].how`` / ``test_strategy`` 的纯字符串
+    仍是合法兼容形状。
+    """
+
+    fields: list[tuple[str, Any]] = [
+        ("responsibility", content.get("responsibility")),
+        ("risks", content.get("risks")),
+    ]
+    for item_index, item in enumerate(content.get("impl_items") or []):
+        if not isinstance(item, dict):
+            continue
+        for field in ("how", "test_strategy"):
+            value = item.get(field)
+            if isinstance(value, list):
+                fields.append((f"impl_items[{item_index}].{field}", value))
+
+    for path, blocks in fields:
+        if not isinstance(blocks, list):
+            continue
+        for block_index, block in enumerate(blocks):
+            if not isinstance(block, dict):
+                return f"{path}[{block_index}] 必须是内容块对象"
+            if "text" not in block:
+                return f"{path}[{block_index}] 缺 text（仅 block_id 可安全补全）"
+            text = block.get("text")
+            if not isinstance(text, (str, list)):
+                return f"{path}[{block_index}].text 必须是字符串或字符串数组"
+            if isinstance(text, list) and any(not isinstance(value, str) for value in text):
+                return f"{path}[{block_index}].text 必须是字符串数组"
+    return None
+
+
+def _coerce_block_list(value: Any, *, purpose: str, repository_short_id: str) -> Any:
+    """Block[] 形状归一：包装裸字符串、吸收常见正文别名并补稳定锚点。"""
+
+    if not isinstance(value, list):
+        return value
+    coerced: list[Any] = []
+    for index, item in enumerate(value):
+        if isinstance(item, str):
+            item = {"type": "paragraph", "text": item}
+        if isinstance(item, dict):
+            # MCP schema 已要求 text，但模型仍会把风险块写成
+            # {summary, detail, citations}。这不是缺正文，而是字段名漂移；按信息量优先级
+            # 机械搬运既有正文，不拼接、不改写语义。完全没有正文候选时仍交给后置检查拒绝。
+            if "text" not in item:
+                for alias in ("detail", "description", "summary", "title"):
+                    candidate = item.get(alias)
+                    if isinstance(candidate, (str, list)):
+                        item = {**item, "text": candidate}
+                        break
+            if not str(item.get("block_id") or ""):
+                item = {
+                    **item,
+                    "block_id": f"blk_repo_plan_{purpose}_{repository_short_id}_{index}",
+                }
+        coerced.append(item)
+    return coerced
+
+
 def coerce_repo_plan_shapes(content: Any) -> Any:
     """校验前的宽容归一化：吸收 LLM 产物的常见形状漂移（原地修改并返回）。
 
@@ -322,9 +387,10 @@ def coerce_repo_plan_shapes(content: Any) -> Any:
 
     1. ``local_impact.affected_features`` 写成字符串数组（schema 要求
        ``[{name, citations}]``）——字符串项包装为 ``{"name": s}``。
-    2. Block[] 字段（``responsibility`` / ``risks``）的项缺 ``block_id`` 或写成裸字符串
-       ——``block_id`` 是内部锚点标识（确认门产物形如 ``blk_gate_resp_*``），可安全合成；
-       裸字符串包装为 paragraph 块。
+    2. Block[] 字段（``responsibility`` / ``risks`` / ``impl_items[].how`` /
+       ``impl_items[].test_strategy``）的项缺 ``block_id``、写成裸字符串，或把既有正文放在
+       ``detail`` / ``description`` / ``summary`` / ``title``——锚点可安全合成，正文别名只做
+       字段搬运；没有任何正文候选的块仍由后置检查拒绝。
     """
     try:
         if not isinstance(content, dict):
@@ -338,17 +404,25 @@ def coerce_repo_plan_shapes(content: Any) -> Any:
                 ]
         rid = str(content.get("repository_id") or "x")[:8]
         for field in ("responsibility", "risks"):
-            blocks = content.get(field)
-            if not isinstance(blocks, list):
-                continue
-            coerced: list[Any] = []
-            for index, item in enumerate(blocks):
-                if isinstance(item, str):
-                    item = {"type": "paragraph", "text": item}
-                if isinstance(item, dict) and not str(item.get("block_id") or ""):
-                    item = {**item, "block_id": f"blk_plan_{field}_{rid}_{index}"}
-                coerced.append(item)
-            content[field] = coerced
+            if isinstance(content.get(field), list):
+                content[field] = _coerce_block_list(
+                    content[field],
+                    purpose=field,
+                    repository_short_id=rid,
+                )
+        items = content.get("impl_items")
+        if isinstance(items, list):
+            for item_index, item in enumerate(items):
+                if not isinstance(item, dict):
+                    continue
+                item_id = str(item.get("item_id") or item_index)[:16]
+                for field in ("how", "test_strategy"):
+                    if isinstance(item.get(field), list):
+                        item[field] = _coerce_block_list(
+                            item[field],
+                            purpose=f"{field}_{item_id}",
+                            repository_short_id=rid,
+                        )
         # 3. api 契约的 request_schema / response_schema 写成字符串（schema 要求 object）
         #    ——字符串是模型对「字段清单」的自然写法，包装为 {"description": s} 保语义。
         for field in ("apis_provided", "apis_consumed"):
@@ -384,7 +458,7 @@ def validate_repo_plan(content: Any) -> tuple[bool, str | None]:
         if errors:
             first = errors[0]
             return False, _format_error(first.json_path, first.message)
-        for checker in (_check_depends_on, _check_needs_support):
+        for checker in (_check_depends_on, _check_needs_support, _check_block_lists):
             problem = checker(content)
             if problem is not None:
                 return False, problem

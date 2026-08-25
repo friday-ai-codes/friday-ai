@@ -61,6 +61,7 @@ __all__ = [
 _RUNNER_HEARTBEAT_WINDOW_SECONDS = 120
 # 调研容器超时（秒）；同时作为任务 token 的 timeout_seconds（服务侧再加 10min 余量）
 _RESEARCH_TIMEOUT = 30 * 60
+_REPO_PLAN_TIMEOUT = 45 * 60
 
 # 回调路由的唯一依据（写进 `SubAgentSession.last_output["source"]`）。
 # **必须是新值**：沿用既有方案链的 source 会被它的 §7 PartialPlan handler 抢走并按错误 schema 落库。
@@ -70,6 +71,12 @@ _BLUEPRINT_RESEARCH_SOURCE = BLUEPRINT_RESEARCH_SOURCE
 # 阶段 2（113-03）拟方案容器的 source。**必须与调研链不同值**：`callbacks._is_blueprint_research`
 # 的唯一路由依据就是这个值，同值会让 plan 产物被调研解析器抢走并因缺 `fitness.verdict` 判失败。
 BLUEPRINT_REPO_PLAN_SOURCE = "blueprint_repo_plan"
+
+# 260818-pt8：容器侧共享 MCP 提交场景（经 env FRIDAY_TASK_SUBMIT_SCENARIO 注入 explore 链）。
+# 值必须与 task/core/agent_submit_mcp.py 的 SCENARIO_* 常量逐字一致（两处漂移会让容器挂错
+# 场景 schema、结构化提交解析全灭）。research → fitness；plan → repo_plan。
+SUBMIT_SCENARIO_RESEARCH = "blueprint_research_fitness"
+SUBMIT_SCENARIO_PLAN = "blueprint_repo_plan"
 
 # 自实现重试上界。**既有 ResearchService 的单仓重试入口不可复用**：它硬编码断言会话
 # stage 名为 "research"，本相位 stage 名是 repo_research，复用会恒 raise ValueError。
@@ -479,6 +486,11 @@ class BlueprintResearchAdapter:
 
         repo = await self._get_repository(task.repository_id)
         repo_url = getattr(repo, "git_url", "") if repo is not None else ""
+        # 260818-pt8 D-09：展示用仓库名优先取候选带的名，空则回退权威 Repository.name，
+        # 避免 started/failed 事件与 last_output 出现空仓名（前端卡片显示 UI 退化）。
+        repository_name = str((candidate or {}).get("repository_name") or "") or (
+            str(getattr(repo, "name", "") or "") if repo is not None else ""
+        )
         if not repo_url:
             await self.research_service.mark_failed(task, {"reason": "missing_git_url"})
             await self._emit_failed(
@@ -486,7 +498,7 @@ class BlueprintResearchAdapter:
                 task,
                 "missing_git_url",
                 mode=mode,
-                repository_name=str((candidate or {}).get("repository_name") or ""),
+                repository_name=repository_name,
             )
             return False
 
@@ -520,7 +532,7 @@ class BlueprintResearchAdapter:
                 "research_task_id": str(task.id),
                 "repository_id": str(task.repository_id),
                 # 展示用标量：completed/failed 回调只读回填，不采信容器上报
-                "repository_name": str((candidate or {}).get("repository_name") or ""),
+                "repository_name": repository_name,
             },
         )
 
@@ -539,7 +551,13 @@ class BlueprintResearchAdapter:
         )
         # 120（REDO-03）：同仓上一次容器的 agent 会话可续 ⇒ 注入 resume 分片，让重跑**接着
         # 上次的分析继续**而不是从零重新读一遍仓库。取不到就是空 dict，容器全新执行（默认安全）。
-        metadata.update(await self._aresume_env(task))
+        metadata.update(
+            await self._aresume_env(
+                task,
+                mode=mode,
+                initiated_by_user_id=self._initiated_by(session),
+            )
+        )
         # 固定路由（repo binding pin）：项目手动绑定了该仓的分支时按绑定分支调研，
         # 否则沿用仓库默认分支。
         from services.process_runtime.repo_binding_pin import apinned_branch_for
@@ -555,7 +573,7 @@ class BlueprintResearchAdapter:
             branch=pinned_branch or getattr(repo, "default_branch", "") or "main",
             target_branch="",
             prompt=prompt,
-            timeout=_RESEARCH_TIMEOUT,
+            timeout=_REPO_PLAN_TIMEOUT if mode == "plan" else _RESEARCH_TIMEOUT,
             node_execution_id=self.node_execution_id or "",
             session_id=session_id,
             metadata=metadata,
@@ -595,12 +613,18 @@ class BlueprintResearchAdapter:
             session,
             task,
             mode=mode,
-            repository_name=str((candidate or {}).get("repository_name") or ""),
+            repository_name=repository_name,
             research_reason=self._format_research_reason(candidate),
         )
         return True
 
-    async def _aresume_env(self, task: Any) -> dict[str, str]:
+    async def _aresume_env(
+        self,
+        task: Any,
+        *,
+        mode: str = "plan",
+        initiated_by_user_id: str = "system",
+    ) -> dict[str, str]:
         """同仓上一次容器的 resume 分片 env（Phase 120，REDO-03）；无可续上下文返回 ``{}``。
 
         判据：**同一 ``repository_id``、同一蓝图会话**下最近一条带 ``sdk_transcript`` 的
@@ -616,23 +640,46 @@ class BlueprintResearchAdapter:
         整段吞异常：resume 是加速项，取不到就全新执行，绝不阻断派发。
         """
         try:
-            from chat.sdk_resume import build_resume_env
+            from chat.sdk_resume import build_resume_env, validate_sdk_transcript
             from subagent.models import SubAgentSession as _SubAgentSession
 
             repository_id = str(getattr(task, "repository_id", "") or "")
             blueprint_session_id = str(getattr(task, "session_id", "") or "")
             if not repository_id or not blueprint_session_id:
                 return {}
+            expected_source = (
+                BLUEPRINT_REPO_PLAN_SOURCE if mode == "plan" else _BLUEPRINT_RESEARCH_SOURCE
+            )
+            # 260818-pt8 D-08：只续「按协议成功提交结构化结果」的会话（mcp_submit_ok=True）。
+            # 上一次未经 MCP 提交 / 结构不合格的会话是**污染上下文**，续跑会让 agent 拿着失败
+            # 推理继续复现同一处失败（实测同 SDK 会话三连败的根因），比全新执行更糟。
             previous = (
                 await _SubAgentSession.objects.filter(
                     last_output__repository_id=repository_id,
                     last_output__blueprint_session_id=blueprint_session_id,
+                    last_output__mcp_submit_ok=True,
+                    last_output__source=expected_source,
                 )
                 .exclude(sdk_transcript="")
                 .order_by("-sdk_session_saved_at")
                 .afirst()
             )
             if previous is None:
+                return {}
+            compatible, reason = validate_sdk_transcript(previous.sdk_transcript)
+            if not compatible:
+                logger.warning(
+                    "blueprint_resume_context_rejected",
+                    session_id=blueprint_session_id,
+                    repository_id=repository_id,
+                    task_id=str(task.id),
+                    mode=mode,
+                    source=expected_source,
+                    reason=reason,
+                    initiated_by_user_id=initiated_by_user_id or "system",
+                    category="sampling",
+                    component="process_runtime",
+                )
                 return {}
             env = build_resume_env(
                 previous.sdk_session_id,
@@ -645,6 +692,9 @@ class BlueprintResearchAdapter:
                     session_id=blueprint_session_id,
                     repository_id=repository_id,
                     previous_subagent_session_id=str(previous.id),
+                    mode=mode,
+                    source=expected_source,
+                    initiated_by_user_id=initiated_by_user_id or "system",
                     chunks=env.get("env_FRIDAY_TASK_RESUME_TRANSCRIPT_CHUNKS"),
                     category="caller",
                     component="process_runtime",
@@ -687,6 +737,12 @@ class BlueprintResearchAdapter:
             # 只读 explore 语义：双层 git 写操作拦截（调研阶段绝不写 git）
             "env_FRIDAY_TASK_MODE": "explore",
             "env_FRIDAY_TASK_TASK_MODE": "explore",
+            # 260818-pt8 D-01/D-04：explore 链经共享 MCP 工厂提交结构化结果的场景选择器。
+            # research → fitness / plan → repo_plan；容器据此挂载 friday-submit 对应 tool，
+            # 不再依赖模型在文本里输出可解析 JSON。
+            "env_FRIDAY_TASK_SUBMIT_SCENARIO": (
+                SUBMIT_SCENARIO_PLAN if mode == "plan" else SUBMIT_SCENARIO_RESEARCH
+            ),
         }
         if mode == "plan":
             # 阶段 2 的等待原语靠容器侧有界轮询（113-04），配额上界提到 400 吸收轮询开销；
@@ -745,8 +801,9 @@ class BlueprintResearchAdapter:
             from access_tokens.services import mint_task_token
 
             # 明文只在内存里走一趟直进容器 env（PAT-02）：不落盘、不进日志、不进事件 payload
+            task_timeout = _REPO_PLAN_TIMEOUT if mode == "plan" else _RESEARCH_TIMEOUT
             metadata["env_FRIDAY_TASK_USER_TOKEN"] = await mint_task_token(
-                dispatch_user, subagent_session_id, _RESEARCH_TIMEOUT
+                dispatch_user, subagent_session_id, task_timeout
             )
             # 31u：**非敏感**发起用户 id 随派发快照落库（不是凭证）。派发经 durable 队列后
             # 任务体只按 redacted 快照重建，rehydrate 据此键重铸 USER_TOKEN——不落则
@@ -797,7 +854,8 @@ class BlueprintResearchAdapter:
             f"{self._summarize_route_evidence(candidate)}\n\n"
             f"## 仓库章程\n{self._summarize_charter(charter)}\n\n"
             f"{module_block}"
-            "请深入阅读本仓代码后，**只输出一个 JSON 对象**，字段如下：\n"
+            "请深入阅读本仓代码后，通过结构化提交工具（见文末「结果提交方式」）提交以下字段"
+            "（不要把 JSON 写进普通文本回复）：\n"
             '- fitness: {"verdict": "suitable|partial|unsuitable", "reasons": [...], '
             '"citations": [...]}\n'
             '- role_suggestion: "direct"（需要改动本仓）或 "indirect"（只需了解/被依赖）\n'
@@ -840,7 +898,8 @@ class BlueprintResearchAdapter:
             f"## 阶段 1 对本仓的调研结论（供你续作，不要重复调研）\n"
             f"{self._summarize_stage1(session, repository_id, stage1=stage1)}\n\n"
             f"## 仓库章程\n{self._summarize_charter(charter)}\n\n"
-            "请深入阅读本仓代码后，**只输出一个 JSON 对象**，顶层键为 `repo_plan`，其值字段如下：\n"
+            "请深入阅读本仓代码后，通过结构化提交工具（见文末「结果提交方式」）提交结果，"
+            "顶层键为 `repo_plan`（不要把 JSON 写进普通文本回复），其值字段如下：\n"
             f'- repository_id: "{repository_id}"；role: "direct" 或 "indirect"\n'
             "- responsibility: Block[]（沿用上面锁定的职责，不要改写语义）\n"
             '- current_state: [{"summary": ..., "findings": [{"title", "detail", "citations"}]}]\n'
@@ -862,6 +921,13 @@ class BlueprintResearchAdapter:
             "- local_impact: {affected_modules, affected_features, migration_required, notes}\n"
             "  - affected_features 是**对象数组**：[{name, citations}]，⛔ 不要写成字符串数组\n"
             "- risks: Block[]\n\n"
+            "## 提交体积硬约束\n"
+            "- 整个结构化提交 JSON 不超过 8000 个字符；这是网关稳定性约束，不得突破\n"
+            "- impl_items 最多 6 项；相邻小改动合并为一个可执行项\n"
+            "- current_state.findings 最多 4 项；risks 最多 4 项\n"
+            "- how / test_strategy / description / notes 各字段只写验证所需信息，单字段不超过 240 字\n"
+            "- request_schema / response_schema 只列本需求实际使用的字段，不展开无关完整模型\n"
+            "- 证据充分后立即提交，不要在提交前重复总结或继续扩展调研\n\n"
             "正文约定覆盖 `current_state[].summary`、`current_state[].findings[].detail`、"
             "`impl_items[].how`，以及其他以 `paragraph` Block 输出的正文。\n\n"
             f"{MARKDOWN_LITE_WRITING_GUIDE}\n\n"
@@ -1198,7 +1264,9 @@ class BlueprintResearchAdapter:
                 # 的唯一来源就是这里——此前只聚合三标量，「适配判定」在快照/锁定/蓝图全程
                 # 为空（查看器折叠区展开无内容）。reroute 判定与 stage_state 摘要只挑标量键，
                 # 不受本键影响。
-                "reasons": fitness.get("reasons") if isinstance(fitness.get("reasons"), list) else [],
+                "reasons": fitness.get("reasons")
+                if isinstance(fitness.get("reasons"), list)
+                else [],
                 "role_suggestion": str(content.get("role_suggestion") or "")
                 if isinstance(content, dict)
                 else "",
