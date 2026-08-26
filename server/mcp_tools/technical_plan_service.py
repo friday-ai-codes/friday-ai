@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 import structlog
 
@@ -286,6 +287,67 @@ def _map_execution_plan_to_repository_tasks(content: dict[str, Any]) -> list[dic
             }
         )
     return tasks
+
+
+def _is_repository_uuid(value: str) -> bool:
+    try:
+        UUID(value)
+    except (TypeError, ValueError, AttributeError):
+        return False
+    return True
+
+
+async def _aresolve_repository_task_ids(
+    repository_tasks: list[dict[str, Any]],
+    existing_tasks: Any,
+) -> list[dict[str, Any]]:
+    """Resolve canonical repository aliases before persisting an executable task matrix.
+
+    The blueprint renderer deliberately permits stable repository aliases so historic and
+    fixture-backed blueprints remain readable.  The coding dispatcher, however, must have
+    real Friday ``Repository`` UUIDs.  The pre-approval MCP plan is the authoritative
+    per-work-item crosswalk because it was created from Friday's routed repository set.
+    Never guess globally by repository name.  An ambiguous or absent crosswalk remains visibly
+    unresolved and the downstream coding gate rejects it before any ORM UUID lookup.
+    """
+    prior = existing_tasks if isinstance(existing_tasks, list) else []
+    aliases: dict[str, set[str]] = {}
+    for item in prior:
+        if not isinstance(item, dict):
+            continue
+        repository_id = str(item.get("repository_id") or "")
+        if not _is_repository_uuid(repository_id):
+            continue
+        for alias in (str(item.get("repository_name") or ""), repository_id):
+            if alias:
+                aliases.setdefault(alias, set()).add(repository_id)
+
+    unresolved: list[str] = []
+    resolved: list[dict[str, Any]] = []
+    for task in repository_tasks:
+        task_copy = dict(task)
+        repository_id = str(task_copy.get("repository_id") or "")
+        if _is_repository_uuid(repository_id):
+            resolved.append(task_copy)
+            continue
+        candidates = set()
+        for alias in (repository_id, str(task_copy.get("repository_name") or "")):
+            candidates.update(aliases.get(alias, set()))
+        if len(candidates) != 1:
+            unresolved.append(str(task_copy.get("repository_name") or repository_id or "(empty)"))
+            resolved.append(task_copy)
+            continue
+        task_copy["repository_id"] = candidates.pop()
+        resolved.append(task_copy)
+
+    if unresolved:
+        logger.warning(
+            "blueprint_handoff_repository_alias_unresolved",
+            category="caller",
+            component="mcp_tools",
+            unresolved_count=len(unresolved),
+        )
+    return resolved
 
 
 def _map_plan_payload(
@@ -772,7 +834,9 @@ async def pin_approved_blueprint_handoff(
 
     content = version.content if isinstance(version.content, dict) else {}
     legacy_view = _project_canonical_for_legacy_mapping(content)
-    repository_tasks = _map_execution_plan_to_repository_tasks(legacy_view)
+    repository_tasks = await _aresolve_repository_task_ids(
+        _map_execution_plan_to_repository_tasks(legacy_view), technical_plan.repository_tasks
+    )
     if not repository_tasks:
         raise TechnicalPlanError("blueprint_handoff_empty", "已确认蓝图没有可交接的仓库任务")
 

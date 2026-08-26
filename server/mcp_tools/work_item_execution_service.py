@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 import structlog
 
@@ -143,6 +144,13 @@ async def create_repo_tasks_from_technical_plan(
         if not isinstance(item, dict):
             continue
         repository_id = str(item.get("repository_id") or "")
+        try:
+            UUID(repository_id)
+        except (TypeError, ValueError, AttributeError):
+            raise WorkItemExecutionError(
+                "blueprint_handoff_repository_unresolved",
+                f"已确认蓝图中的仓库尚未映射为 Friday Repository UUID: {item.get('repository_name') or repository_id}",
+            ) from None
         repo = await Repository.objects.filter(id=repository_id).afirst()
         if repo is None:
             raise WorkItemExecutionError(
