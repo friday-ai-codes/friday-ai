@@ -42,6 +42,63 @@ class TechnicalPlanResult:
     traces: list[tuple[str, dict[str, Any]]]
 
 
+def _technical_plan_output_from_record(
+    artifact: McpWorkItemTechnicalPlan,
+    *,
+    idempotency_state: str,
+) -> dict[str, Any]:
+    """Rebuild the public response for an idempotent retry without rerunning Friday.
+
+    A timed-out first request keeps running in the server.  Retries see the reservation and
+    return its current state immediately; once the original request finishes the same record
+    contains the canonical artifact/session/version data.
+    """
+
+    retry_state = dict(artifact.retry_state or {})
+    output: dict[str, Any] = {
+        "technical_plan_id": str(artifact.id),
+        "context_id": str(artifact.context_id),
+        "project_id": str(artifact.space_id or ""),
+        "plan": dict(artifact.plan_body or {}),
+        "markdown": artifact.markdown or "",
+        "repository_tasks": list(artifact.repository_tasks or []),
+        "evidence": list(artifact.evidence or []),
+        "feishu_document": (
+            dict(retry_state["feishu_document"])
+            if isinstance(retry_state.get("feishu_document"), dict)
+            else (
+                {
+                    "status": "created",
+                    "document_id": artifact.feishu_document_id,
+                    "url": artifact.feishu_document_url,
+                }
+                if artifact.feishu_document_id or artifact.feishu_document_url
+                else {"status": "skipped"}
+            )
+        ),
+        "comment": dict(artifact.comment_result or {"status": "skipped"}),
+        "status": artifact.status,
+        "retry_state": retry_state,
+        "run_id": str(artifact.run_id),
+        "session_id": str(retry_state.get("session_id") or ""),
+        "error": artifact.error or "",
+        "error_stage": artifact.error_stage or "",
+    }
+    blueprint_extras = retry_state.get("blueprint_extras")
+    if isinstance(blueprint_extras, dict):
+        # Keep the additive response seam explicit: when extras are empty the legacy payload is
+        # byte-for-byte unchanged; when enabled only Friday-owned blueprint fields are added.
+        output = {**output, **blueprint_extras,}
+    if artifact.idempotency_key:
+        output.update(
+            {
+                "idempotency_key": artifact.idempotency_key,
+                "idempotency_state": idempotency_state,
+            }
+        )
+    return output
+
+
 _STATUS_MAP: dict[str, McpWorkItemTechnicalPlan.Status] = {
     "completed": McpWorkItemTechnicalPlan.Status.COMPLETED,
     "partial": McpWorkItemTechnicalPlan.Status.PARTIAL,
@@ -582,6 +639,7 @@ async def build_work_item_technical_plan(
     write_comment: bool,
     actor: Any = None,
     assumptions_tier: str = "",
+    idempotency_key: str = "",
 ) -> TechnicalPlanResult:
     """delegate 到 ``process_runtime`` 产 canonical 方案 → 映射回旧响应外形 + 落库（UNIFY-03）。
 
@@ -594,6 +652,46 @@ async def build_work_item_technical_plan(
     ⭐ **仅在 mcp 开关切到蓝图时生效**；不传 / 旧链一律与改动前逐字相同。
     """
     context = await _resolve_context(context_id)
+    reservation: McpWorkItemTechnicalPlan | None = None
+    normalized_idempotency_key = idempotency_key.strip()
+    if normalized_idempotency_key:
+        reservation, created = await McpWorkItemTechnicalPlan.objects.aget_or_create(
+            idempotency_key=normalized_idempotency_key,
+            defaults={
+                "run": run,
+                "context": context,
+                "space": context.space,
+                "feishu_project_key": context.feishu_project_key,
+                "work_item_type": context.work_item_type,
+                "work_item_id": context.work_item_id,
+                "title": (title.strip() or f"{context.name or context.work_item_type} 技术方案")[
+                    :240
+                ],
+                "status": McpWorkItemTechnicalPlan.Status.PARTIAL,
+                "retry_state": {
+                    "retryable": True,
+                    "failed_stage": "idempotency_pending",
+                    "idempotency_key": normalized_idempotency_key,
+                },
+            },
+        )
+        if not created:
+            if str(reservation.context_id) != str(context.id):
+                raise TechnicalPlanError(
+                    "idempotency_key_conflict", "幂等键已用于另一个工作项上下文"
+                )
+            return TechnicalPlanResult(
+                artifact=reservation,
+                output=_technical_plan_output_from_record(
+                    reservation,
+                    idempotency_state=(
+                        "in_progress"
+                        if reservation.retry_state.get("failed_stage") == "idempotency_pending"
+                        else "reused"
+                    ),
+                ),
+                traces=[],
+            )
     effective_similar_cases = similar_cases
     if not effective_similar_cases:
         effective_similar_cases = await search_learning_cases(
@@ -670,6 +768,15 @@ async def build_work_item_technical_plan(
         "comment_written": False,
         "failed_stage": "",
     }
+    retry_state.update(
+        {
+            "session_id": str(delegate.session.id),
+            "run_id": str(run.run_id),
+            "blueprint_extras": blueprint_extras,
+        }
+    )
+    if normalized_idempotency_key:
+        retry_state["idempotency_key"] = normalized_idempotency_key
     if blueprint_extras:
         # ⭐ 蓝图的 DONE 语义是「等人审」而不是「方案已终结」⇒ 对 MCP 调用方一律回
         # `partial`（既有三态之一，`retry_state` 形态照旧 ⇒ 调用方零破坏），据
@@ -735,54 +842,43 @@ async def build_work_item_technical_plan(
             comment_result = {"status": "written", **comment_payload}
             retry_state["comment_written"] = True
 
+    retry_state["feishu_document"] = feishu_document
+
     # McpWorkItemTechnicalPlan 继续落库（plan_body=旧外形映射 WR-02，字段全保留兼容 A5）。
-    artifact = await McpWorkItemTechnicalPlan.objects.acreate(
-        run=run,
-        context=context,
-        space=context.space,
-        feishu_project_key=context.feishu_project_key,
-        work_item_type=context.work_item_type,
-        work_item_id=context.work_item_id,
-        title=plan_title[:240],
-        status=status,
-        plan_body=plan_payload,
-        markdown=markdown,
-        repository_tasks=repository_tasks,
-        evidence=evidence,
-        similar_cases=effective_similar_cases,
-        feishu_document_id=str(feishu_document.get("document_id") or ""),
-        feishu_document_url=str(feishu_document.get("url") or ""),
-        comment_result=comment_result,
-        retry_state=retry_state,
-        error_stage=error_stage,
-        error=error,
-        blueprint_artifact_id=blueprint_artifact_id,
-    )
-    # 响应外形兼容：保留全部既有键 + 新增可选 session_id（partial 时供调用方续推）。
-    output = {
-        "technical_plan_id": str(artifact.id),
-        "context_id": str(context.id),
-        "project_id": str(context.space_id) if context.space_id else "",
-        "plan": plan_payload,
+    artifact_values = {
+        "run": run,
+        "context": context,
+        "space": context.space,
+        "feishu_project_key": context.feishu_project_key,
+        "work_item_type": context.work_item_type,
+        "work_item_id": context.work_item_id,
+        "title": plan_title[:240],
+        "status": status,
+        "plan_body": plan_payload,
         "markdown": markdown,
         "repository_tasks": repository_tasks,
         "evidence": evidence,
-        "feishu_document": feishu_document,
-        "comment": comment_result,
-        "status": status,
+        "similar_cases": effective_similar_cases,
+        "feishu_document_id": str(feishu_document.get("document_id") or ""),
+        "feishu_document_url": str(feishu_document.get("url") or ""),
+        "comment_result": comment_result,
         "retry_state": retry_state,
-        "run_id": str(run.run_id),
-        "session_id": str(delegate.session.id),
-        # ⭐ 116-REVIEW MJ-03：失败原因必须**回传**而不是只落 McpWorkItemTechnicalPlan 行。
-        # 回退前 agent 拿到的响应体里一个字的解释都没有（`retry_state` 只有一个布尔），
-        # 而它读的正是响应体。恒写两键（成功时为空串，形态与 feature 方案三工具的 `error`
-        # 键同款）：⛔ 中性文案，不含内部路径 / 异常原文。
-        "error": error,
         "error_stage": error_stage,
-        # 116-06：⭐ 纯追加三键，**仅在 mcp 开关切到蓝图时非空**（见
-        # `_ablueprint_response_extras`）；开关关闭时本行展开为零键 ⇒ 响应逐字不变。
-        **blueprint_extras,
+        "error": error,
+        "blueprint_artifact_id": blueprint_artifact_id,
     }
+    if reservation is None:
+        artifact = await McpWorkItemTechnicalPlan.objects.acreate(**artifact_values)
+    else:
+        for field_name, field_value in artifact_values.items():
+            setattr(reservation, field_name, field_value)
+        artifact = reservation
+        await artifact.asave(update_fields=[*artifact_values.keys(), "updated_at"])
+    # 响应外形兼容：保留全部既有键 + 新增可选 session_id（partial 时供调用方续推）。
+    output = _technical_plan_output_from_record(
+        artifact,
+        idempotency_state="created",
+    )
     from knowledge import ingestion  # lazy import 防循环
 
     await ingestion.aschedule_ingestion(

@@ -313,7 +313,10 @@ def test_create_feishu_technical_plan_only_gained_three_additive_keys() -> None:
         "write_comment",
     ]
     assert [key for key in old_request if key not in entry["request"]] == []
-    assert [key for key in entry["request"] if key not in old_request] == ["assumptions_tier"]
+    assert [key for key in entry["request"] if key not in old_request] == [
+        "idempotency_key",
+        "assumptions_tier",
+    ]
     old_response = [
         "technical_plan_id",
         "context_id",
@@ -340,6 +343,8 @@ def test_create_feishu_technical_plan_only_gained_three_additive_keys() -> None:
         "blueprint_artifact_version_id",
         "blueprint_content_hash",
         "pending_clarifications",
+        "idempotency_key",
+        "idempotency_state",
     ]
     for key in (
         "blueprint_artifact_id",
