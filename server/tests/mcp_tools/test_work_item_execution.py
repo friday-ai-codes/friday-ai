@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -235,6 +237,98 @@ def test_blueprint_repo_tasks_are_blocked_until_the_same_version_is_confirmed(
     )
     assert rejected.status_code == 400
     assert rejected.json()["error_code"] == "blueprint_not_approved"
+
+
+def test_approved_handoff_resolves_gaosan_fixture_repository_aliases_before_coding(
+    mcp_client: tuple[APIClient, str], project
+) -> None:
+    """高三 golden 里的稳定别名必须在审批交接时落成可执行 Repository UUID。"""
+    from mcp_tools.technical_plan_service import pin_approved_blueprint_handoff
+
+    client, _plaintext = mcp_client
+    repositories = [
+        Repository.objects.create(
+            name=name,
+            git_url=f"https://example.com/{name}.git",
+            default_branch="main",
+            index_status=IndexStatus.INDEXED,
+        )
+        for name in ("onion-learning", "study-course", "onion-practice")
+    ]
+    plan = _technical_plan(project, repositories)
+    fixture_path = (
+        Path(__file__).resolve().parents[1] / "fixtures" / "blueprint_golden" / "gaokao_boost.json"
+    )
+    content = json.loads(fixture_path.read_text(encoding="utf-8"))["blueprint"]
+    artifact = async_to_sync(ArtifactService().create)("technical_plan", content)
+    Artifact.objects.filter(id=artifact.id).update(blueprint_status=BlueprintStatus.CONFIRMED)
+    artifact.refresh_from_db()
+    plan.blueprint_artifact_id = str(artifact.id)
+    plan.save(update_fields=["blueprint_artifact_id"])
+
+    async_to_sync(pin_approved_blueprint_handoff)(
+        technical_plan_id=str(plan.id),
+        artifact_id=str(artifact.id),
+        artifact_version_id=str(artifact.current_version_id),
+        content_hash=artifact.current_version.content_hash,
+    )
+    plan.refresh_from_db()
+    assert {item["repository_id"] for item in plan.repository_tasks} == {
+        str(repository.id) for repository in repositories
+    }
+
+    first = client.post(
+        "/api/mcp/tools/create_work_item_repo_tasks/",
+        {"technical_plan_id": str(plan.id)},
+        format="json",
+    )
+    second = client.post(
+        "/api/mcp/tools/create_work_item_repo_tasks/",
+        {"technical_plan_id": str(plan.id)},
+        format="json",
+    )
+    assert first.status_code == 200, first.json()
+    assert second.status_code == 200, second.json()
+    assert [row["task_id"] for row in first.json()["tasks"]] == [
+        row["task_id"] for row in second.json()["tasks"]
+    ]
+
+
+def test_unmapped_blueprint_alias_fails_closed_before_repository_uuid_lookup(
+    mcp_client: tuple[APIClient, str], project, indexed_repository
+) -> None:
+    """历史/fixture 蓝图没有仓库 crosswalk 时，编码必须是 400 而不是 UUID 500。"""
+    from mcp_tools.technical_plan_service import pin_approved_blueprint_handoff
+
+    client, _plaintext = mcp_client
+    plan = _technical_plan(project, [indexed_repository])
+    plan.repository_tasks = []
+    plan.plan_body = {"repository_task_matrix": []}
+    plan.save(update_fields=["repository_tasks", "plan_body"])
+    fixture_path = (
+        Path(__file__).resolve().parents[1] / "fixtures" / "blueprint_golden" / "gaokao_boost.json"
+    )
+    artifact = async_to_sync(ArtifactService().create)(
+        "technical_plan", json.loads(fixture_path.read_text(encoding="utf-8"))["blueprint"]
+    )
+    Artifact.objects.filter(id=artifact.id).update(blueprint_status=BlueprintStatus.CONFIRMED)
+    artifact.refresh_from_db()
+    plan.blueprint_artifact_id = str(artifact.id)
+    plan.save(update_fields=["blueprint_artifact_id"])
+    async_to_sync(pin_approved_blueprint_handoff)(
+        technical_plan_id=str(plan.id),
+        artifact_id=str(artifact.id),
+        artifact_version_id=str(artifact.current_version_id),
+        content_hash=artifact.current_version.content_hash,
+    )
+
+    response = client.post(
+        "/api/mcp/tools/create_work_item_repo_tasks/",
+        {"technical_plan_id": str(plan.id)},
+        format="json",
+    )
+    assert response.status_code == 400, response.json()
+    assert response.json()["error_code"] == "blueprint_handoff_repository_unresolved"
 
 
 def test_create_work_item_repo_tasks_preserves_completed_task_state(
