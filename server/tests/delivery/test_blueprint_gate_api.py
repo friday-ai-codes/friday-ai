@@ -11,7 +11,7 @@
    session 是该 artifact 的会话；``GET`` 与 ``rejected-to-boundary`` 为 0。
 6. **失败隔离**：续驱抛异常 → 六端点仍 2xx 且动作结果已持久化（不回滚、不回 5xx）。
 7. 章程回灌：``remove_repo`` 后 ``confirm`` 产 ``source=ai_draft``；``rejected`` 一键沉淀对
-   ``human_confirmed`` 章程**只写 ``draft_content``**（CHARTER-01 不变量）。
+   ``human_confirmed`` 章程冻结正式字段，差异只追加到 ``appendices/change_proposals``。
 8. ``upgrade-research``：缺参 400 / 不在快照 404 / 依赖不可用 503 / 正常 200。
 9. 视图零 ORM 写：源码扫描断言。
 10. **SC-4 端到端证伪线（真实入口，不桩续驱）**：经 REST ``add-repo`` → session 落
@@ -734,7 +734,11 @@ def test_rejected_to_boundary_never_overwrites_human_confirmed(
     fresh = RepoCharter.objects.get(repository=rejected_repo)
     for field, value in before.items():
         assert getattr(fresh, field) == value, f"{field} 被 AI 回灌覆盖了"
-    assert fresh.draft_content["boundaries"], "新禁区候选只应落 draft_content"
+    assert fresh.source == RepoCharter.Source.HUMAN_CONFIRMED
+    assert fresh.draft_content == {}
+    side_channel = [*(fresh.appendices or []), *(fresh.change_proposals or [])]
+    assert side_channel, "新禁区候选应追加到 appendices/change_proposals"
+    assert "该类需求不落此仓" in str(side_channel)
 
 
 def test_rejected_to_boundary_requires_scope(authenticated_client, user, monkeypatch) -> None:

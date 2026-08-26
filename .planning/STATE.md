@@ -4,8 +4,8 @@ milestone: v0.24.0
 milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
 status: Awaiting next milestone
 stopped_at: v0.24.0 milestone completed and archived; awaiting next milestone
-last_updated: "2026-08-24T23:30:00+08:00"
-last_activity: 2026-08-24 — Milestone v0.24.0 completed and archived
+last_updated: "2026-08-26T16:31:00+08:00"
+last_activity: 2026-08-26 — Completed quick task 260826-m6h: MCP 客户端 49 工具对齐与本地 dev 收口
 progress:
   total_phases: 8
   completed_phases: 8
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 已归档）。v0.24.0 
 Phase: Milestone v0.24.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-08-24 — Milestone v0.24.0 completed and archived
+Last activity: 2026-08-26 — Completed quick task 260826-m6h: MCP 客户端 49 工具对齐与本地 dev 收口
 
 ## Milestone Overview (v0.24.0 — Phases 133–140 — ✅ ARCHIVED)
 
@@ -996,6 +996,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 | 260811-av8 | 统一仓库路由 service：v1 的 `repo_summaries` BM25+dense+关键词微调内化为 RepoRouterV2 摘要回退通道；LayeredSearch L1 统一走 V2 且禁用 LLM；静态守卫阻止生产代码重引旧入口；126 条回归全绿 | 2026-08-11 | (pending) | [260811-av8-v1-bm25-embedding-v2-service](./quick/260811-av8-v1-bm25-embedding-v2-service/) |
 | 260817-h88 | 分仓 OpenSpec Proposal（Why/What Changes/Impact/Spec Deltas）从 `blueprint/v1` 确定性渲染：新增 `blueprint_proposal_render.py`（含 `render_single_repo_proposal_markdown` 单仓投影）；主蓝图文档「仓库关联」后追加「分仓方案（OpenSpec Proposal）」章节；`AICodingNode._prepare_repo_proposals` 把单仓完备 proposal 作为**只读 prompt 上下文**注入编码 fan-out（⛔ 不写目标仓、不新增 LLM 调用、fail-soft、含截断守门与生命周期埋点）；前端 `BlueprintResearchDrawer` 渲染 `conclusion.repo_plan`。全相关测试绿 | 2026-08-17 | (pending) | [260817-h88-openspec-proposal](./quick/260817-h88-openspec-proposal/) |
 | 260817-xb9 | 「仓库调研」过程明细可读化：此前前端 i18n（`正在调研 {repository_name}…`）早已就位，是后端 `_emit_started` 的 research 分支把入参 `repository_name` 丢了、`completed` 又发 `verdict` 而非文案要的 `fitness_verdict`，导致三条文案全回落成通用文案 + 裸 UUID。后端对齐 started/completed/failed 三事件 payload（补 `repository_name`、`attempt`，`completed` 并存 `fitness_verdict`/`verdict` 不破坏既有消费方），新增 `_format_research_reason` 从 `candidate.evidence.reasoning` 派生一句人话调研理由（`placement_primary`/`placement_supporting` → 「主落点仓」/「支撑仓」，≤120 截断，⛔ 不把 `matched_node_paths` 列表塞进 payload），派发时把 `repository_name` 写入 `last_output` 供回调回填（不采信容器上报、不新增查库）；前端补 `routed_confidence`/`research_reason`/`verdict` 中文标签与置信度高/中/低映射，字段排序改为人话键优先、`*_id` 殿后，缺 `repository_name` 的存量事件仍回落 Generic。后端 48 + 前端 124 测试绿 | 2026-08-17 | d462232b | [260817-xb9-readable-repo-research-detail](./quick/260817-xb9-readable-repo-research-detail/) |
+| 260826-m6h | MCP 客户端由 37 工具对齐服务端 49 工具，补齐图查询、影响分析、Process 与蓝图 stage 单跑；升级并重建 0.6.0，修正确认门侧信道测试，dev 从当前仓库重启 | 2026-08-26 | (pending) | [260826-m6h-mcp-dev](./quick/260826-m6h-mcp-dev/) |
 
 ## Deferred Items
 
