@@ -2092,6 +2092,7 @@ class CreateFeishuTechnicalPlanView(McpToolView):
                 # （非三档之一直接 400），此处只做透传。缺省空串 ⇒ 默认档。
                 assumptions_tier=str(input_data.get("assumptions_tier") or ""),
                 idempotency_key=str(input_data.get("idempotency_key") or ""),
+                blueprint_project_id=str(input_data.get("blueprint_project_id") or ""),
             )
         except TechnicalPlanError as exc:
             status_map = {

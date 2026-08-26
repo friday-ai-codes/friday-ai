@@ -570,6 +570,12 @@ class CreateFeishuTechnicalPlanRequestSerializer(serializers.Serializer):
         default="",
         help_text="调用方稳定事件 ID；相同 key 的超时重试复用同一技术蓝图",
     )
+    blueprint_project_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text="工作项对应的 Friday Project UUID；项目跟踪入口应显式传入，避免 Space 内多项目串线",
+    )
     repository_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
@@ -1617,6 +1623,7 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
         "request": [
             "context_id",
             "idempotency_key",
+            "blueprint_project_id",
             "repository_ids",
             "repo_hints",
             "context_chunks",
