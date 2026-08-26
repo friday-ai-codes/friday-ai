@@ -491,6 +491,7 @@ def test_mcp_read_tool_schema_snapshot() -> None:
         "create_feishu_technical_plan": {
             "request": [
                 "context_id",
+                "idempotency_key",
                 "repository_ids",
                 "repo_hints",
                 "context_chunks",
@@ -524,6 +525,8 @@ def test_mcp_read_tool_schema_snapshot() -> None:
                 "blueprint_artifact_version_id",
                 "blueprint_content_hash",
                 "pending_clarifications",
+                "idempotency_key",
+                "idempotency_state",
             ],
         },
         "create_work_item_repo_tasks": {

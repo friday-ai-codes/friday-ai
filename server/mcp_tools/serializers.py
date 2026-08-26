@@ -563,6 +563,13 @@ class GetFeishuWorkItemContextRequestSerializer(serializers.Serializer):
 
 class CreateFeishuTechnicalPlanRequestSerializer(serializers.Serializer):
     context_id = serializers.UUIDField(required=True)
+    idempotency_key = serializers.RegexField(
+        regex=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="调用方稳定事件 ID；相同 key 的超时重试复用同一技术蓝图",
+    )
     repository_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
@@ -1609,6 +1616,7 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "create_feishu_technical_plan": {
         "request": [
             "context_id",
+            "idempotency_key",
             "repository_ids",
             "repo_hints",
             "context_chunks",
@@ -1648,6 +1656,8 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "blueprint_artifact_version_id",
             "blueprint_content_hash",
             "pending_clarifications",
+            "idempotency_key",
+            "idempotency_state",
         ],
     },
     "create_work_item_repo_tasks": {

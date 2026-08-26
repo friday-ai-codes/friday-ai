@@ -352,6 +352,7 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     captured: dict[str, Any] = {}
 
     async def _fake_delegate(**kwargs: Any) -> Any:
+        captured["call_count"] = int(captured.get("call_count") or 0) + 1
         captured.update(kwargs)
         return _fake_delegate_result(
             status="completed",
@@ -365,6 +366,7 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
         "/api/mcp/tools/create_feishu_technical_plan/",
         {
             "context_id": str(context.id),
+            "idempotency_key": "test:work-item-77:context-v1",
             "repository_ids": [str(indexed_repository.id)],
             "create_document": False,
             "write_comment": False,
@@ -377,6 +379,8 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     # 响应键集合不缩减（旧键全在）+ 新增可选 session_id（T-94-03-COMPAT）。
     assert _LEGACY_OUTPUT_KEYS <= set(body.keys())
     assert "session_id" in body
+    assert body["idempotency_key"] == "test:work-item-77:context-v1"
+    assert body["idempotency_state"] == "created"
     assert body["status"] == "completed"
     # delegate 被调（走统一编排，不再走 _build_repo_task_matrix——该 seam 已移除）。
     import mcp_tools.technical_plan_service as svc
@@ -384,6 +388,7 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     assert not hasattr(svc, "_build_repo_task_matrix")
     assert captured["requirement_text"]
     assert captured["include_repos"] == [str(indexed_repository.id)]
+    assert captured["call_count"] == 1
     # canonical execution_plan → 旧矩阵形态映射（显式白名单字段）。
     task = body["repository_tasks"][0]
     assert task["repository_id"] == str(indexed_repository.id)
@@ -418,6 +423,26 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     )
     assert artifact.markdown == body["markdown"]
     assert artifact.repository_tasks[0]["repository_id"] == str(indexed_repository.id)
+    assert artifact.idempotency_key == "test:work-item-77:context-v1"
+
+    duplicate = client.post(
+        "/api/mcp/tools/create_feishu_technical_plan/",
+        {
+            "context_id": str(context.id),
+            "idempotency_key": "test:work-item-77:context-v1",
+            "repository_ids": [str(indexed_repository.id)],
+            "create_document": False,
+            "write_comment": False,
+        },
+        format="json",
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.json()["technical_plan_id"] == body["technical_plan_id"]
+    assert duplicate.json()["idempotency_state"] == "reused"
+    assert captured["call_count"] == 1
+    assert McpWorkItemTechnicalPlan.objects.filter(
+        idempotency_key="test:work-item-77:context-v1"
+    ).count() == 1
 
 
 @pytest.mark.django_db(transaction=True)

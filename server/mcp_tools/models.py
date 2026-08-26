@@ -386,6 +386,16 @@ class McpWorkItemTechnicalPlan(models.Model):
     approved_blueprint_version_id = models.CharField(max_length=64, blank=True, default="")
     approved_blueprint_version_no = models.PositiveIntegerField(default=0)
     approved_blueprint_content_hash = models.CharField(max_length=64, blank=True, default="")
+    # MCP clients can time out while the asynchronous blueprint reaches its first human gate.
+    # Reserve the request before orchestration so retrying the same external event never starts
+    # another blueprint or supersedes the still-running artifact.
+    idempotency_key = models.CharField(
+        max_length=128,
+        null=True,
+        blank=True,
+        unique=True,
+        db_index=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
