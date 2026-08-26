@@ -352,6 +352,7 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     captured: dict[str, Any] = {}
 
     async def _fake_delegate(**kwargs: Any) -> Any:
+        captured["call_count"] = int(captured.get("call_count") or 0) + 1
         captured.update(kwargs)
         return _fake_delegate_result(
             status="completed",
@@ -365,6 +366,8 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
         "/api/mcp/tools/create_feishu_technical_plan/",
         {
             "context_id": str(context.id),
+            "idempotency_key": "test:work-item-77:context-v1",
+            "blueprint_project_id": str(uuid.uuid4()),
             "repository_ids": [str(indexed_repository.id)],
             "create_document": False,
             "write_comment": False,
@@ -377,6 +380,8 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     # 响应键集合不缩减（旧键全在）+ 新增可选 session_id（T-94-03-COMPAT）。
     assert _LEGACY_OUTPUT_KEYS <= set(body.keys())
     assert "session_id" in body
+    assert body["idempotency_key"] == "test:work-item-77:context-v1"
+    assert body["idempotency_state"] == "created"
     assert body["status"] == "completed"
     # delegate 被调（走统一编排，不再走 _build_repo_task_matrix——该 seam 已移除）。
     import mcp_tools.technical_plan_service as svc
@@ -384,6 +389,8 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     assert not hasattr(svc, "_build_repo_task_matrix")
     assert captured["requirement_text"]
     assert captured["include_repos"] == [str(indexed_repository.id)]
+    assert captured["call_count"] == 1
+    assert captured["project_id"]
     # canonical execution_plan → 旧矩阵形态映射（显式白名单字段）。
     task = body["repository_tasks"][0]
     assert task["repository_id"] == str(indexed_repository.id)
@@ -418,6 +425,44 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     )
     assert artifact.markdown == body["markdown"]
     assert artifact.repository_tasks[0]["repository_id"] == str(indexed_repository.id)
+    assert artifact.idempotency_key == "test:work-item-77:context-v1"
+
+    duplicate = client.post(
+        "/api/mcp/tools/create_feishu_technical_plan/",
+        {
+            "context_id": str(context.id),
+            "idempotency_key": "test:work-item-77:context-v1",
+            "blueprint_project_id": captured["project_id"],
+            "repository_ids": [str(indexed_repository.id)],
+            "create_document": False,
+            "write_comment": False,
+        },
+        format="json",
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.json()["technical_plan_id"] == body["technical_plan_id"]
+    assert duplicate.json()["idempotency_state"] == "reused"
+    assert captured["call_count"] == 1
+    assert McpWorkItemTechnicalPlan.objects.filter(
+        idempotency_key="test:work-item-77:context-v1"
+    ).count() == 1
+
+
+def test_work_item_text_preserves_newlines_inside_structured_fields() -> None:
+    from mcp_tools.technical_plan_service import _work_item_text
+
+    context = SimpleNamespace(
+        name="高三提分专项",
+        description="需求描述",
+        fields={"feature_list": "## 模块总览\n| 1 | 入口 | 权益鉴权 | — | P0 |"},
+        relations=[],
+        documents=[],
+    )
+
+    text = _work_item_text(context)
+
+    assert "## 模块总览\n| 1 | 入口" in text
+    assert "\\n| 1 | 入口" not in text
 
 
 @pytest.mark.django_db(transaction=True)
@@ -611,6 +656,24 @@ def _switch_mcp_to_blueprint() -> None:
         key=SettingKeys.BLUEPRINT_ENTRY_SWITCH,
         defaults={"value": _json.dumps({"mcp": "technical_blueprint"})},
     )
+
+
+@pytest.mark.asyncio
+async def test_blueprint_session_without_artifact_identity_fails_closed() -> None:
+    """响应 extras 可为兼容失败，但真实 blueprint 绝不能落成无编码门禁的 legacy plan。"""
+    from mcp_tools.technical_plan_service import (
+        TechnicalPlanError,
+        _ablueprint_artifact_id_or_fail,
+    )
+
+    delegate = SimpleNamespace(
+        session=SimpleNamespace(
+            process_type="technical_blueprint", current_artifact_version_id=None
+        )
+    )
+
+    with pytest.raises(TechnicalPlanError, match="未返回可交接版本"):
+        await _ablueprint_artifact_id_or_fail(delegate)
 
 
 @pytest.fixture

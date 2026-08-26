@@ -74,6 +74,7 @@ from .models import (
     McpCodingPlan,
     McpCodingPlanVersion,
     McpRepositoryAnalysis,
+    McpWorkItemTechnicalPlan,
 )
 from .orchestration_delegate import delegate_process_runtime, map_canonical_to_coding_plan
 from .repository_analysis_service import build_repository_analysis, normalize_context_chunks
@@ -81,6 +82,7 @@ from .serializers import (
     AnalyzeRepositoryRequestSerializer,
     AnswerBlueprintClarificationRequestSerializer,
     ApplyRepoAssociationRequestSerializer,
+    ApproveTechnicalBlueprintRequestSerializer,
     ConfirmFeatureTechPlanRequestSerializer,
     CreateCodingPlanRequestSerializer,
     CreateFeatureTechPlanRequestSerializer,
@@ -117,6 +119,7 @@ from .serializers import (
     ReportBlueprintContextRequestSerializer,
     ReportProjectKnowledgeRequestSerializer,
     ReportProjectStateRequestSerializer,
+    RequestTechnicalBlueprintChangesRequestSerializer,
     ReverseLookupRequestSerializer,
     RouteBlueprintReposRequestSerializer,
     RouteRepositoriesRequestSerializer,
@@ -128,7 +131,11 @@ from .serializers import (
     SummarizeBranchRequestSerializer,
     TraceCallPathRequestSerializer,
 )
-from .technical_plan_service import TechnicalPlanError, build_work_item_technical_plan
+from .technical_plan_service import (
+    TechnicalPlanError,
+    build_work_item_technical_plan,
+    pin_approved_blueprint_handoff,
+)
 from .work_item_context_service import WorkItemContextError, build_work_item_context
 from .work_item_execution_service import (
     WorkItemExecutionError,
@@ -1514,9 +1521,7 @@ class DetectChangesView(McpToolView):
                 repo=repo,
                 user=request.user,
                 compare=str(input_data.get("compare") or ""),
-                base_ref=str(input_data["base_ref"])
-                if input_data.get("base_ref")
-                else None,
+                base_ref=str(input_data["base_ref"]) if input_data.get("base_ref") else None,
                 max_depth=int(input_data.get("max_depth", 3)),
                 min_confidence=float(input_data.get("min_confidence", 1.0)),
                 include_low_confidence=bool(input_data.get("include_low_confidence")),
@@ -2086,6 +2091,8 @@ class CreateFeishuTechnicalPlanView(McpToolView):
                 # 116-REVIEW MJ-02：assumptions 档位由 serializer 的 ChoiceField 校验过
                 # （非三档之一直接 400），此处只做透传。缺省空串 ⇒ 默认档。
                 assumptions_tier=str(input_data.get("assumptions_tier") or ""),
+                idempotency_key=str(input_data.get("idempotency_key") or ""),
+                blueprint_project_id=str(input_data.get("blueprint_project_id") or ""),
             )
         except TechnicalPlanError as exc:
             status_map = {
@@ -5198,6 +5205,18 @@ async def _alatest_version_no(artifact_id: Any) -> int:
     )
 
 
+async def _alatest_blueprint_version(artifact_id: Any) -> dict[str, Any] | None:
+    """取渲染内容所属的不可变版本标识；MCP 交接一律同时回 version id 与 hash。"""
+    from delivery.models import ArtifactVersion
+
+    return await (
+        ArtifactVersion.objects.filter(artifact_id=artifact_id)
+        .order_by("-version_no")
+        .values("id", "version_no", "content_hash", "content")
+        .afirst()
+    )
+
+
 async def _aload_pending_clarifications(artifact_id: Any) -> list[dict[str, Any]]:
     """该 artifact 上仍待人回答的**阻塞**线程（⛔ **不传 ``kind``**）。
 
@@ -5290,7 +5309,6 @@ class GetTechnicalBlueprintView(McpToolView):
         from delivery.api.blueprint_review_views import (
             _ARTIFACT_MISSING_DETAIL,
             _aassert_project_scope,
-            _alatest_content,
             _aload_artifact,
             _aload_session,
         )
@@ -5309,7 +5327,14 @@ class GetTechnicalBlueprintView(McpToolView):
             if denied is not None:
                 return _blueprint_scope_error(denied)
 
-            content = await _alatest_content(artifact)
+            version = await _alatest_blueprint_version(artifact_id)
+            content = (version or {}).get("content")
+            if not isinstance(content, dict):
+                return error_response(
+                    "not_found",
+                    str(_ARTIFACT_MISSING_DETAIL.get("detail") or ""),
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
             # ⭐ 116-REVIEW MN-06：``schema_version`` 判别 —— ``delivery.Artifact`` 里同时住着
             # 旧链 merge 产出的 v0 ``technical_plan`` content（``architect_merge_adapter``
             # 仍在生产）。⛔ 无条件走蓝图渲染器会让 v0 content 的每一段都 ``.get`` 取不到
@@ -5339,7 +5364,7 @@ class GetTechnicalBlueprintView(McpToolView):
                     status_code=status.HTTP_404_NOT_FOUND,
                 )
             session = await _aload_session(artifact_id)
-            version_no = await _alatest_version_no(artifact_id)
+            version_no = int((version or {}).get("version_no") or 0)
             current_status = str(getattr(artifact, "blueprint_status", "") or "")
         except Exception as exc:  # noqa: BLE001 — 绝不 5xx（agent 需要拿到可读结果）
             logger.warning(
@@ -5380,7 +5405,10 @@ class GetTechnicalBlueprintView(McpToolView):
             # 114-05 立的既有解法，115/116 的读侧全部沿用它。
             "current_status": current_status,
             "title": redact_secrets_in_text(str(meta.get("title") or ""))[:500],
+            "project_id": str(meta.get("project_id") or ""),
+            "artifact_version_id": str((version or {}).get("id") or ""),
             "version_no": version_no,
+            "content_hash": str((version or {}).get("content_hash") or ""),
             "sections": _blueprint_section_summary(content),
             "markdown": markdown,
             "pending_clarifications": pending,
@@ -5564,6 +5592,214 @@ class AnswerBlueprintClarificationView(McpToolView):
         await blueprint_resume.aresume_after_gate_action(
             session, initiated_by_user_id=str(getattr(request.user, "id", "") or "system")
         )
+
+
+class ApproveTechnicalBlueprintView(McpToolView):
+    """MCP 的最终人审薄适配层：确认 Friday 当前可见的同一不可变蓝图版本。
+
+    不生成、不重写 markdown，也不复制 REST 的审批逻辑；版本 CAS 与 blocker 守卫全部
+    委托 ``aapprove_blueprint``。成功后才将 canonical execution plan 钉入 legacy task
+    matrix，使下游编码服务可以二次 fail-closed 校验。
+    """
+
+    tool_name = "approve_technical_blueprint"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(ApproveTechnicalBlueprintRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from delivery.api.blueprint_review_views import (
+            _aassert_project_scope,
+            _aload_artifact,
+            _aload_session,
+        )
+        from delivery.services.blueprint_review_action import aapprove_blueprint
+
+        artifact_id = str(input_data["artifact_id"])
+        technical_plan_id = str(input_data["technical_plan_id"])
+        artifact = await _aload_artifact(artifact_id)
+        if artifact is None:
+            return error_response(
+                "not_found", "技术蓝图不存在", status_code=status.HTTP_404_NOT_FOUND
+            )
+        denied = await _aassert_project_scope(request, artifact)
+        if denied is not None:
+            return _blueprint_scope_error(denied)
+
+        technical_plan = await McpWorkItemTechnicalPlan.objects.filter(
+            id=technical_plan_id
+        ).afirst()
+        if technical_plan is None or technical_plan.blueprint_artifact_id != artifact_id:
+            # 不回显 plan 与 artifact 的关联关系，避免把另一个工作项作为探测面。
+            return error_response(
+                "not_found", "技术方案不存在", status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        session = await _aload_session(artifact_id)
+        result = await aapprove_blueprint(
+            artifact,
+            user=request.user,
+            initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+            session=session,
+            expected_artifact_version_id=str(input_data["artifact_version_id"]),
+            expected_content_hash=str(input_data["content_hash"]),
+        )
+        if result["status"] != "confirmed":
+            return error_response(
+                str(result["status"]),
+                str(result["detail"]),
+                status_code=status.HTTP_409_CONFLICT,
+            )
+
+        try:
+            handoff = await pin_approved_blueprint_handoff(
+                technical_plan_id=technical_plan_id,
+                artifact_id=artifact_id,
+                artifact_version_id=str(input_data["artifact_version_id"]),
+                content_hash=str(input_data["content_hash"]),
+            )
+        except TechnicalPlanError as exc:
+            # 已确认的蓝图但未拿到 handoff 仍然不能编码；如实故障而不是伪造成功。
+            return error_response(exc.code, exc.detail, status_code=status.HTTP_409_CONFLICT)
+
+        from services.process_runtime import blueprint_resume
+
+        if session is not None:
+            await blueprint_resume.aresume_after_gate_action(
+                session, initiated_by_user_id=str(getattr(request.user, "id", "") or "system")
+            )
+        output_data = {
+            "status": "confirmed",
+            "technical_plan_id": technical_plan_id,
+            "artifact_id": artifact_id,
+            "artifact_version_id": handoff["artifact_version_id"],
+            "version_no": handoff["version_no"],
+            "content_hash": handoff["content_hash"],
+            "current_status": "confirmed",
+            # 这是 Friday 的共享 renderer 原文；Multica 只展示和引用，不能二次改写。
+            "markdown": handoff["markdown"],
+            "repository_task_count": handoff["repository_task_count"],
+            "run_id": str(run.run_id),
+        }
+        try:
+            await self._record(
+                run,
+                input_data={
+                    "artifact_id": artifact_id,
+                    "artifact_version_id": handoff["artifact_version_id"],
+                    "technical_plan_id": technical_plan_id,
+                },
+                output_data={
+                    "status": "confirmed",
+                    "artifact_id": artifact_id,
+                    "version_no": handoff["version_no"],
+                    "repository_task_count": handoff["repository_task_count"],
+                },
+                traces=[],
+                started_at=started_at,
+            )
+        except Exception:  # noqa: BLE001 — 审计失败不得回滚已确认交接
+            pass
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class RequestTechnicalBlueprintChangesView(McpToolView):
+    """将人类的退回意见交给 Friday canonical rework 流程。"""
+
+    tool_name = "request_technical_blueprint_changes"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(
+            RequestTechnicalBlueprintChangesRequestSerializer, request
+        )
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from delivery.api.blueprint_review_views import (
+            _aassert_project_scope,
+            _aload_artifact,
+            _aload_session,
+        )
+        from delivery.services.blueprint_review_action import areject_blueprint
+
+        artifact_id = str(input_data["artifact_id"])
+        artifact = await _aload_artifact(artifact_id)
+        if artifact is None:
+            return error_response(
+                "not_found", "技术蓝图不存在", status_code=status.HTTP_404_NOT_FOUND
+            )
+        denied = await _aassert_project_scope(request, artifact)
+        if denied is not None:
+            return _blueprint_scope_error(denied)
+        session = await _aload_session(artifact_id)
+        result = await areject_blueprint(
+            artifact,
+            user=request.user,
+            comment=str(input_data.get("comment") or ""),
+            anchor=input_data.get("anchor"),
+            initiated_by_user_id=str(getattr(request.user, "id", "") or "system"),
+            session=session,
+            rework_scope=str(input_data.get("rework_scope") or "merge"),
+            rework_repository_ids=[
+                str(item) for item in input_data.get("rework_repository_ids") or []
+            ],
+        )
+        if result["status"] != "rejected":
+            return error_response(
+                str(result["status"]),
+                str(result["detail"]),
+                status_code=status.HTTP_409_CONFLICT,
+            )
+
+        from services.process_runtime import blueprint_resume
+
+        if session is not None:
+            await blueprint_resume.aresume_after_gate_action(
+                session, initiated_by_user_id=str(getattr(request.user, "id", "") or "system")
+            )
+        output_data = {
+            "status": result["status"],
+            "artifact_id": artifact_id,
+            "artifact_version_id": result["version_id"],
+            "version_no": result["version_no"],
+            "revision_round": result["revision_round"],
+            "thread_id": result["thread_id"],
+            "current_status": result["current_status"],
+            "rework_scope": result["rework_scope"],
+            "reworked_repository_count": result["reworked_repository_count"],
+            "run_id": str(run.run_id),
+        }
+        try:
+            await self._record(
+                run,
+                input_data={
+                    "artifact_id": artifact_id,
+                    "rework_scope": output_data["rework_scope"],
+                },
+                output_data={
+                    "status": output_data["status"],
+                    "artifact_id": artifact_id,
+                    "version_no": output_data["version_no"],
+                },
+                traces=[],
+                started_at=started_at,
+            )
+        except Exception:  # noqa: BLE001 — 观测不得反噬已持久化的退回
+            pass
+        return Response(output_data, status=status.HTTP_200_OK)
 
 
 # ═══════════════ 蓝图环节单跑（stage sandbox）家族（20260806 stage runner） ═══════════════

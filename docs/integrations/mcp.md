@@ -84,7 +84,7 @@ args = ["-y", "@friday-ai-codes/mcp"]
 | `friday-mcp register [--agent <name>] [--project]` | 幂等注册进 Cursor / Claude Code / Codex |
 | `friday-mcp doctor` | 检查配置、注册状态与连通性测速（不回显令牌） |
 
-## 工具集（33 个）
+## 工具集（40 个）
 
 每个工具对应 Friday 的 `POST {FRIDAY_BASE_URL}/api/mcp/tools/{tool_name}/` 端点：
 
@@ -123,6 +123,10 @@ args = ["-y", "@friday-ai-codes/mcp"]
 | feature list 技术方案 | `create_feature_tech_plan` | 由 feature list 发起技术方案：判定功能点新增 / 改造 + 给出关联仓库建议，返回**待确认项**（不返回方案） |
 | | `confirm_feature_tech_plan` | 提交用户对关联仓库与分类的确认，继续编排 |
 | | `get_feature_tech_plan` | 查询状态并推进编排；`status=completed` 时 `markdown` 为完整方案（整体 + 分仓 + 落点 + 伪代码） |
+| Friday 技术蓝图 | `get_technical_blueprint` | 读取 Friday 原始 Markdown、待澄清问题/选项及当前不可变 `artifact_version_id` / `content_hash` |
+| | `answer_blueprint_clarification` | 将一条人类答案回灌同一个 Friday thread；响应带 reflow，不能回答 review finding |
+| | `approve_technical_blueprint` | 人类最终批准后确认**刚读取的同一版本**，返回 confirmed 的 Friday 原始 Markdown 和受版本 pin 保护的编码交接 |
+| | `request_technical_blueprint_changes` | 把人类退回意见交给 Friday canonical rework，创建新版本并阻断编码 |
 
 ::: warning feature list 技术方案是两段式的
 `create_feature_tech_plan` **单次调用拿不到方案**——它只跑到「强制确认」就停下，必须把返回的
@@ -131,6 +135,18 @@ args = ["-y", "@friday-ai-codes/mcp"]
 
 调研阶段是异步的：`confirm` 可能返回 `status="researching"`，此时需轮询 `get_feature_tech_plan`
 直到 `completed`。该工具每次调用都会推进一步编排，不调它方案不会往前走。
+:::
+
+::: tip Multica / 外部调度器的技术蓝图协议
+
+不要让调度 Agent 自己撰写或总结技术方案。它只做 Friday 的薄控制层：保存 `artifact_id`，把
+`pending_clarifications` 的 `question` / `options` 原样交给人，按 `thread_id` 回灌真实答案，
+并在 `pending_review` 时展示 `get_technical_blueprint.markdown` 原文。人确认后，把同一响应的
+`artifact_version_id`、`content_hash` 与 `technical_plan_id` 传给 `approve_technical_blueprint`。
+
+只有返回 `current_status=confirmed` 且 version/hash 都匹配时才可以派发 Coding Agent。任何人退回、
+回灌或正文修改都会产生新版本或离开 confirmed，Friday 的 `create_work_item_repo_tasks` /
+`execute_work_item_repo_tasks` 会 fail-closed 拒绝旧 handoff。
 :::
 
 每个工具都带 MCP 标准 `annotations`（中文 `title` 按「阶段 · 动作」分组，外加 `readOnlyHint` / `idempotentHint` / `openWorldHint` 行为提示），agent 可据此判断工具是否只读、是否触达外部系统。

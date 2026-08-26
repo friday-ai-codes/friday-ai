@@ -457,6 +457,52 @@ async def _make_artifact():
     )
 
 
+@pytestmark_db
+@pytest.mark.asyncio
+async def test_decompose_handler_syncs_existing_spec_when_content_is_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """幂等拆解不产新版本时，调研仍必须读到既有需求目标与功能点。"""
+    content = _stage1_blueprint()
+    content["requirement_spec"] = {
+        "goal": [{"block_id": "goal", "type": "paragraph", "text": "高三提分专项"}],
+        "feature_points": [
+            {
+                "id": "fp_entry",
+                "title": "极速提分营入口",
+                "intent": "brownfield",
+                "description": [
+                    {"block_id": "fp", "type": "paragraph", "text": "按课程包权益展示入口"}
+                ],
+                "acceptance_criteria": ["有权益展示，无权益隐藏"],
+                "test_cases": [],
+            }
+        ],
+    }
+    artifact = await ArtifactService().create(
+        "technical_plan", content, created_by_user_id="tester"
+    )
+    session = await _make_session(
+        "decompose",
+        {"decomposition": {"requirement_text": "高三提分专项"}},
+        artifact=artifact,
+    )
+
+    from services.process_runtime import blueprint_intake
+
+    monkeypatch.setattr(
+        blueprint_intake,
+        "adecompose_feature_points",
+        AsyncMock(return_value=None),
+    )
+
+    outcome = await bp._h_bp_decompose(session, _engine())
+
+    assert outcome.event == "decomposed"
+    assert outcome.current_artifact_version == artifact.current_version_id
+    assert outcome.stage_state_update == {"requirement_spec": content["requirement_spec"]}
+
+
 async def _make_repo() -> Repository:
     name = f"r-{uuid.uuid4().hex[:8]}"
     return await Repository.objects.acreate(

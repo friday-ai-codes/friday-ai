@@ -410,6 +410,11 @@ async def start_blueprint_orchestration(
         # intake handler 的唯一 project_id 来源（handler 拿不到入口上下文）。
         "project_id": resolved_project_id,
     }
+    work_item_title = str(getattr(work_item, "title", "") or "").strip()
+    if work_item_title:
+        # 项目跟踪蓝图的标题属于工作项，不属于承载它的长期 Project。Project 只决定仓库与
+        # 权限范围；用 Project.name 当标题会在一个 Space 有多个项目时静默串到别的需求。
+        decomposition["blueprint_title"] = work_item_title
     if extra_evidence:
         decomposition["extra_evidence"] = extra_evidence
     if mode:

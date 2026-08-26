@@ -71,6 +71,7 @@ __all__ = [
     "EDITABLE_BLUEPRINT_STATUSES",
     "BlueprintLifecycleService",
     "ConcurrentBlueprintTransitionError",
+    "StaleBlueprintVersionError",
 ]
 
 # ⭐ 允许人工改写蓝图正文的状态白名单（114-MJ-04）。
@@ -116,6 +117,10 @@ class ConcurrentBlueprintTransitionError(RuntimeError):
     更新；条件不满足（影响行数 != 1）即说明 DB 行已被并发/陈旧推进改写或行不
     存在——拒绝盲写覆盖，抛本异常。
     """
+
+
+class StaleBlueprintVersionError(RuntimeError):
+    """审批者看到的版本不再是当前版本，拒绝确认以避免内容被静默掉包。"""
 
 
 # needs_clarification 的合法恢复目标（DESIGN §4.1-3「回到原状态」三向恢复）
@@ -194,6 +199,8 @@ class BlueprintLifecycleService:
         acting_user: Any = None,
         session: Any = None,
         return_status: str | None = None,
+        expected_artifact_version_id: str = "",
+        expected_content_hash: str = "",
     ) -> Artifact:
         """**状态唯一变更入口**：查转移表守卫并 CAS 推进 ``blueprint_status``。
 
@@ -244,6 +251,8 @@ class BlueprintLifecycleService:
             from_status=from_status,
             to_status=to_status,
             acting_user=acting_user,
+            expected_artifact_version_id=expected_artifact_version_id,
+            expected_content_hash=expected_content_hash,
         )
 
         await self._record_transition_event(
@@ -323,6 +332,8 @@ class BlueprintLifecycleService:
         from_status: str,
         to_status: str,
         acting_user: Any = None,
+        expected_artifact_version_id: str = "",
+        expected_content_hash: str = "",
     ) -> None:
         """守卫查询 + CAS 原子更新 + 评审人 upsert **同一事务**。
 
@@ -340,6 +351,31 @@ class BlueprintLifecycleService:
         成功后（事务提交）同步内存对象字段。
         """
         with transaction.atomic():
+            if to_status == BlueprintStatus.CONFIRMED and (
+                expected_artifact_version_id or expected_content_hash
+            ):
+                # 版本 pin 与状态 CAS 同事务：不能在 MCP View 里预读再批准，否则人工审阅
+                # 与提交之间的回灌/编辑能让「确认」落到另一份内容上。
+                locked = Artifact.objects.select_for_update().filter(id=artifact.id).first()
+                current = None
+                if locked is not None and locked.current_version_id:
+                    # `current_version` 是可空 FK；不能 join 后对 nullable outer side 做 FOR
+                    # UPDATE（PostgreSQL 直接拒绝）。先锁 artifact，再显式锁它指向的版本，
+                    # 两把锁仍在同一 transaction.atomic 中。
+                    from delivery.models import ArtifactVersion
+
+                    current = (
+                        ArtifactVersion.objects.select_for_update()
+                        .filter(id=locked.current_version_id)
+                        .first()
+                    )
+                if (
+                    locked is None
+                    or current is None
+                    or str(current.id) != expected_artifact_version_id
+                    or str(current.content_hash) != expected_content_hash
+                ):
+                    raise StaleBlueprintVersionError("蓝图版本已变化，请重新读取后再确认")
             if to_status == BlueprintStatus.CONFIRMED and self._has_confirm_blockers_sync(artifact):
                 raise ValueError("存在未解决的阻塞澄清线程或未决 BLOCKER 审查发现，蓝图不可确认")
 

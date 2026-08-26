@@ -77,6 +77,7 @@ from delivery.models import (
 from delivery.services.blueprint_lifecycle_service import (
     BlueprintLifecycleService,
     ConcurrentBlueprintTransitionError,
+    StaleBlueprintVersionError,
 )
 
 logger = structlog.get_logger(__name__)
@@ -227,6 +228,8 @@ async def aapprove_blueprint(
     initiated_by_user_id: str = "system",
     session: Any = None,
     lifecycle_service: Any = None,
+    expected_artifact_version_id: str = "",
+    expected_content_hash: str = "",
 ) -> dict:
     """人审通过 → ``confirmed``。恒定三键 ``{status, detail, current_status}``。
 
@@ -236,6 +239,7 @@ async def aapprove_blueprint(
     - ``blocked``：守卫拒绝（有 open+blocking 线程或未决 BLOCKER）**或**非法转移——
       两者都由 ``transition`` 抛 ``ValueError``，DB 不写；
     - ``conflict``：CAS 冲突（并发把状态推走了），DB 不写；
+    - ``stale``：调用方展示的 artifact version/hash 已不是当前版本，DB 不写；
     - ``invalid``：其余异常。
 
     ⭐ **全程零事务外查询**：不调 ``aunresolved_blocker_count`` /
@@ -252,8 +256,13 @@ async def aapprove_blueprint(
             initiated_by_user_id=initiated,
             acting_user=user,
             session=session,
+            expected_artifact_version_id=expected_artifact_version_id,
+            expected_content_hash=expected_content_hash,
         )
         result["status"] = "confirmed"
+    except StaleBlueprintVersionError as exc:
+        result["status"] = "stale"
+        result["detail"] = _detail(exc)
     except ConcurrentBlueprintTransitionError as exc:
         result["status"] = "conflict"
         result["detail"] = _detail(exc)

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 import structlog
 
@@ -41,6 +42,63 @@ class TechnicalPlanResult:
     traces: list[tuple[str, dict[str, Any]]]
 
 
+def _technical_plan_output_from_record(
+    artifact: McpWorkItemTechnicalPlan,
+    *,
+    idempotency_state: str,
+) -> dict[str, Any]:
+    """Rebuild the public response for an idempotent retry without rerunning Friday.
+
+    A timed-out first request keeps running in the server.  Retries see the reservation and
+    return its current state immediately; once the original request finishes the same record
+    contains the canonical artifact/session/version data.
+    """
+
+    retry_state = dict(artifact.retry_state or {})
+    output: dict[str, Any] = {
+        "technical_plan_id": str(artifact.id),
+        "context_id": str(artifact.context_id),
+        "project_id": str(artifact.space_id or ""),
+        "plan": dict(artifact.plan_body or {}),
+        "markdown": artifact.markdown or "",
+        "repository_tasks": list(artifact.repository_tasks or []),
+        "evidence": list(artifact.evidence or []),
+        "feishu_document": (
+            dict(retry_state["feishu_document"])
+            if isinstance(retry_state.get("feishu_document"), dict)
+            else (
+                {
+                    "status": "created",
+                    "document_id": artifact.feishu_document_id,
+                    "url": artifact.feishu_document_url,
+                }
+                if artifact.feishu_document_id or artifact.feishu_document_url
+                else {"status": "skipped"}
+            )
+        ),
+        "comment": dict(artifact.comment_result or {"status": "skipped"}),
+        "status": artifact.status,
+        "retry_state": retry_state,
+        "run_id": str(artifact.run_id),
+        "session_id": str(retry_state.get("session_id") or ""),
+        "error": artifact.error or "",
+        "error_stage": artifact.error_stage or "",
+    }
+    blueprint_extras = retry_state.get("blueprint_extras")
+    if isinstance(blueprint_extras, dict):
+        # Keep the additive response seam explicit: when extras are empty the legacy payload is
+        # byte-for-byte unchanged; when enabled only Friday-owned blueprint fields are added.
+        output = {**output, **blueprint_extras,}
+    if artifact.idempotency_key:
+        output.update(
+            {
+                "idempotency_key": artifact.idempotency_key,
+                "idempotency_state": idempotency_state,
+            }
+        )
+    return output
+
+
 _STATUS_MAP: dict[str, McpWorkItemTechnicalPlan.Status] = {
     "completed": McpWorkItemTechnicalPlan.Status.COMPLETED,
     "partial": McpWorkItemTechnicalPlan.Status.PARTIAL,
@@ -61,10 +119,12 @@ async def _ablueprint_response_extras(delegate: Any) -> dict[str, Any]:
     的 ``entrypoint`` 是既有约定的 ``"workflow"``）会让打开 workflow 键把 MCP 一起切走
     （116-01 的 ``ast`` 守卫覆盖本调用点）。
 
-    三键语义：``blueprint_artifact_id``（蓝图 artifact，**后续一切续取/作答的寻址键**）、
+    五键语义：``blueprint_artifact_id``（蓝图 artifact，**后续一切续取/作答的寻址键**）、
     ``blueprint_current_status``（⚠️ 键名刻意不叫 ``blueprint_status``——那会命中 INV-6 的
-    字段级旁路守卫 ``_RE_FIELD_DICT_KEY``）、``pending_clarifications[]``（待人回答的
-    阻塞线程，形状与 ``get_technical_blueprint`` **共享同一份装配**）。
+    字段级旁路守卫 ``_RE_FIELD_DICT_KEY``）、当前 artifact 版本的 ``blueprint_artifact_version_id`` /
+    ``blueprint_content_hash``，以及 ``pending_clarifications[]``（待人回答的阻塞线程，形状与
+    ``get_technical_blueprint`` **共享同一份装配**）。版本键只用于展示当前快照；编码交接必须
+    等待最终 approve 后另行持久化的 approved_* 键。
 
     整段 ``try/except`` 回空 dict：⭐ 这是**响应装饰**而非业务主体——读不出蓝图侧信息时
     调用方仍能拿到既有 12 键的完整方案响应，⛔ 绝不因为附加信息读失败而废掉整次调用。
@@ -80,12 +140,12 @@ async def _ablueprint_response_extras(delegate: Any) -> dict[str, Any]:
         version_id = getattr(delegate.session, "current_artifact_version_id", None)
         if not version_id:
             return {}
-        artifact_id = str(
+        version_row = (
             await ArtifactVersion.objects.filter(id=version_id)
-            .values_list("artifact_id", flat=True)
+            .values("artifact_id", "content_hash")
             .afirst()
-            or ""
         )
+        artifact_id = str((version_row or {}).get("artifact_id") or "")
         if not artifact_id:
             return {}
         current_status = str(
@@ -97,10 +157,38 @@ async def _ablueprint_response_extras(delegate: Any) -> dict[str, Any]:
         return {
             "blueprint_artifact_id": artifact_id,
             "blueprint_current_status": current_status,
+            "blueprint_artifact_version_id": str(version_id),
+            "blueprint_content_hash": str((version_row or {}).get("content_hash") or ""),
             "pending_clarifications": await _aload_pending_clarifications(artifact_id),
         }
     except Exception:  # noqa: BLE001 — 响应装饰读失败不废掉既有 12 键的方案响应
         return {}
+
+
+async def _ablueprint_artifact_id_or_fail(delegate: Any) -> str:
+    """蓝图会话必须能持久化其 artifact 归属，绝不静默降级成可执行 legacy plan。
+
+    ``_ablueprint_response_extras`` 是兼容性装饰，按历史契约允许失败回空；但编码交接的
+    artifact 关联是安全判据，不能复用这个 fail-soft 分支。真正进入 technical_blueprint
+    会话却解析不到 artifact 时，宁可整次 MCP plan 创建失败，也不能留下无 gate 的记录。
+    """
+    session = getattr(delegate, "session", None)
+    if str(getattr(session, "process_type", "") or "") != "technical_blueprint":
+        return ""
+    version_id = getattr(session, "current_artifact_version_id", None)
+    if not version_id:
+        raise TechnicalPlanError("blueprint_identity_unavailable", "技术蓝图未返回可交接版本")
+    from delivery.models import ArtifactVersion
+
+    artifact_id = str(
+        await ArtifactVersion.objects.filter(id=version_id)
+        .values_list("artifact_id", flat=True)
+        .afirst()
+        or ""
+    )
+    if not artifact_id:
+        raise TechnicalPlanError("blueprint_identity_unavailable", "技术蓝图未返回可交接版本")
+    return artifact_id
 
 
 def _str_list(value: Any) -> list[str]:
@@ -258,6 +346,67 @@ def _map_execution_plan_to_repository_tasks(content: dict[str, Any]) -> list[dic
     return tasks
 
 
+def _is_repository_uuid(value: str) -> bool:
+    try:
+        UUID(value)
+    except (TypeError, ValueError, AttributeError):
+        return False
+    return True
+
+
+async def _aresolve_repository_task_ids(
+    repository_tasks: list[dict[str, Any]],
+    existing_tasks: Any,
+) -> list[dict[str, Any]]:
+    """Resolve canonical repository aliases before persisting an executable task matrix.
+
+    The blueprint renderer deliberately permits stable repository aliases so historic and
+    fixture-backed blueprints remain readable.  The coding dispatcher, however, must have
+    real Friday ``Repository`` UUIDs.  The pre-approval MCP plan is the authoritative
+    per-work-item crosswalk because it was created from Friday's routed repository set.
+    Never guess globally by repository name.  An ambiguous or absent crosswalk remains visibly
+    unresolved and the downstream coding gate rejects it before any ORM UUID lookup.
+    """
+    prior = existing_tasks if isinstance(existing_tasks, list) else []
+    aliases: dict[str, set[str]] = {}
+    for item in prior:
+        if not isinstance(item, dict):
+            continue
+        repository_id = str(item.get("repository_id") or "")
+        if not _is_repository_uuid(repository_id):
+            continue
+        for alias in (str(item.get("repository_name") or ""), repository_id):
+            if alias:
+                aliases.setdefault(alias, set()).add(repository_id)
+
+    unresolved: list[str] = []
+    resolved: list[dict[str, Any]] = []
+    for task in repository_tasks:
+        task_copy = dict(task)
+        repository_id = str(task_copy.get("repository_id") or "")
+        if _is_repository_uuid(repository_id):
+            resolved.append(task_copy)
+            continue
+        candidates = set()
+        for alias in (repository_id, str(task_copy.get("repository_name") or "")):
+            candidates.update(aliases.get(alias, set()))
+        if len(candidates) != 1:
+            unresolved.append(str(task_copy.get("repository_name") or repository_id or "(empty)"))
+            resolved.append(task_copy)
+            continue
+        task_copy["repository_id"] = candidates.pop()
+        resolved.append(task_copy)
+
+    if unresolved:
+        logger.warning(
+            "blueprint_handoff_repository_alias_unresolved",
+            category="caller",
+            component="mcp_tools",
+            unresolved_count=len(unresolved),
+        )
+    return resolved
+
+
 def _map_plan_payload(
     *,
     content: dict[str, Any],
@@ -316,15 +465,35 @@ def _preview(value: str, limit: int = 500) -> str:
     return text[:limit] + ("..." if len(text) > limit else "")
 
 
+def _context_text(value: Any) -> list[str]:
+    """把飞书字段/关系递归展开为保留换行的文本段。
+
+    ``str(dict)`` 会把字段值里的换行转成字面量 ``\\n``，导致下游无法识别 Feature List
+    的标题、模块表格和验收项。这里只展开值，不记录字段结构之外的新信息。
+    """
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for key, item in value.items():
+            nested = _context_text(item)
+            if nested:
+                parts.append(f"[{key}]\n" + "\n".join(nested))
+        return parts
+    if isinstance(value, (list, tuple)):
+        return [part for item in value for part in _context_text(item)]
+    if value is None:
+        return []
+    return [str(value)]
+
+
 def _work_item_text(context: McpWorkItemContext) -> str:
-    parts = [
-        context.name,
-        context.description,
-        str(context.fields or {}),
-        str(context.relations or []),
-        " ".join(str(doc.get("content") or "") for doc in context.documents or []),
-    ]
-    return "\n".join(part for part in parts if part)
+    parts = [context.name, context.description]
+    parts.extend(_context_text(context.fields or {}))
+    parts.extend(_context_text(context.relations or []))
+    parts.extend(_context_text(context.documents or []))
+    return "\n\n".join(str(part).strip() for part in parts if str(part or "").strip())
 
 
 async def _resolve_context(context_id: str) -> McpWorkItemContext:
@@ -490,6 +659,8 @@ async def build_work_item_technical_plan(
     write_comment: bool,
     actor: Any = None,
     assumptions_tier: str = "",
+    idempotency_key: str = "",
+    blueprint_project_id: str = "",
 ) -> TechnicalPlanResult:
     """delegate 到 ``process_runtime`` 产 canonical 方案 → 映射回旧响应外形 + 落库（UNIFY-03）。
 
@@ -502,6 +673,46 @@ async def build_work_item_technical_plan(
     ⭐ **仅在 mcp 开关切到蓝图时生效**；不传 / 旧链一律与改动前逐字相同。
     """
     context = await _resolve_context(context_id)
+    reservation: McpWorkItemTechnicalPlan | None = None
+    normalized_idempotency_key = idempotency_key.strip()
+    if normalized_idempotency_key:
+        reservation, created = await McpWorkItemTechnicalPlan.objects.aget_or_create(
+            idempotency_key=normalized_idempotency_key,
+            defaults={
+                "run": run,
+                "context": context,
+                "space": context.space,
+                "feishu_project_key": context.feishu_project_key,
+                "work_item_type": context.work_item_type,
+                "work_item_id": context.work_item_id,
+                "title": (title.strip() or f"{context.name or context.work_item_type} 技术方案")[
+                    :240
+                ],
+                "status": McpWorkItemTechnicalPlan.Status.PARTIAL,
+                "retry_state": {
+                    "retryable": True,
+                    "failed_stage": "idempotency_pending",
+                    "idempotency_key": normalized_idempotency_key,
+                },
+            },
+        )
+        if not created:
+            if str(reservation.context_id) != str(context.id):
+                raise TechnicalPlanError(
+                    "idempotency_key_conflict", "幂等键已用于另一个工作项上下文"
+                )
+            return TechnicalPlanResult(
+                artifact=reservation,
+                output=_technical_plan_output_from_record(
+                    reservation,
+                    idempotency_state=(
+                        "in_progress"
+                        if reservation.retry_state.get("failed_stage") == "idempotency_pending"
+                        else "reused"
+                    ),
+                ),
+                traces=[],
+            )
     effective_similar_cases = similar_cases
     if not effective_similar_cases:
         effective_similar_cases = await search_learning_cases(
@@ -532,9 +743,13 @@ async def build_work_item_technical_plan(
         work_item_context=context,
         # 116-REVIEW MJ-02：档位从 MCP 请求透传到 stage_state，⇒ spec_gate 真的读得到。
         assumptions_tier=assumptions_tier,
+        project_id=blueprint_project_id,
     )
     # 116-06（GATE-01）：开关切到蓝图时的三个追加响应键（关闭时为空 dict）。
     blueprint_extras = await _ablueprint_response_extras(delegate)
+    # 蓝图真实入口的归属是编码门禁事实源；响应 extras 失败时也必须 fail-closed，不能让
+    # 后续 create_work_item_repo_tasks 把它误认成历史 legacy plan。
+    blueprint_artifact_id = await _ablueprint_artifact_id_or_fail(delegate)
     content = delegate.content if isinstance(delegate.content, dict) else {}
     # 同步点 2 / G3：blueprint/v1 先确定性派生成 v0 投影，再走既有映射链（映射器逐字不变；
     # 旧链 content 恒等穿过 ⇒ 零回归）。⛔ canonical 仍以原始 content 落 canonical_content。
@@ -575,6 +790,15 @@ async def build_work_item_technical_plan(
         "comment_written": False,
         "failed_stage": "",
     }
+    retry_state.update(
+        {
+            "session_id": str(delegate.session.id),
+            "run_id": str(run.run_id),
+            "blueprint_extras": blueprint_extras,
+        }
+    )
+    if normalized_idempotency_key:
+        retry_state["idempotency_key"] = normalized_idempotency_key
     if blueprint_extras:
         # ⭐ 蓝图的 DONE 语义是「等人审」而不是「方案已终结」⇒ 对 MCP 调用方一律回
         # `partial`（既有三态之一，`retry_state` 形态照旧 ⇒ 调用方零破坏），据
@@ -640,53 +864,43 @@ async def build_work_item_technical_plan(
             comment_result = {"status": "written", **comment_payload}
             retry_state["comment_written"] = True
 
+    retry_state["feishu_document"] = feishu_document
+
     # McpWorkItemTechnicalPlan 继续落库（plan_body=旧外形映射 WR-02，字段全保留兼容 A5）。
-    artifact = await McpWorkItemTechnicalPlan.objects.acreate(
-        run=run,
-        context=context,
-        space=context.space,
-        feishu_project_key=context.feishu_project_key,
-        work_item_type=context.work_item_type,
-        work_item_id=context.work_item_id,
-        title=plan_title[:240],
-        status=status,
-        plan_body=plan_payload,
-        markdown=markdown,
-        repository_tasks=repository_tasks,
-        evidence=evidence,
-        similar_cases=effective_similar_cases,
-        feishu_document_id=str(feishu_document.get("document_id") or ""),
-        feishu_document_url=str(feishu_document.get("url") or ""),
-        comment_result=comment_result,
-        retry_state=retry_state,
-        error_stage=error_stage,
-        error=error,
-    )
-    # 响应外形兼容：保留全部既有键 + 新增可选 session_id（partial 时供调用方续推）。
-    output = {
-        "technical_plan_id": str(artifact.id),
-        "context_id": str(context.id),
-        "project_id": str(context.space_id) if context.space_id else "",
-        "plan": plan_payload,
+    artifact_values = {
+        "run": run,
+        "context": context,
+        "space": context.space,
+        "feishu_project_key": context.feishu_project_key,
+        "work_item_type": context.work_item_type,
+        "work_item_id": context.work_item_id,
+        "title": plan_title[:240],
+        "status": status,
+        "plan_body": plan_payload,
         "markdown": markdown,
         "repository_tasks": repository_tasks,
         "evidence": evidence,
-        "feishu_document": feishu_document,
-        "comment": comment_result,
-        "status": status,
+        "similar_cases": effective_similar_cases,
+        "feishu_document_id": str(feishu_document.get("document_id") or ""),
+        "feishu_document_url": str(feishu_document.get("url") or ""),
+        "comment_result": comment_result,
         "retry_state": retry_state,
-        "run_id": str(run.run_id),
-        "session_id": str(delegate.session.id),
-        # ⭐ 116-REVIEW MJ-03：失败原因必须**回传**而不是只落 McpWorkItemTechnicalPlan 行。
-        # 回退前 agent 拿到的响应体里一个字的解释都没有（`retry_state` 只有一个布尔），
-        # 而它读的正是响应体。恒写两键（成功时为空串，形态与 feature 方案三工具的 `error`
-        # 键同款）：⛔ 中性文案，不含内部路径 / 异常原文。
-        "error": error,
         "error_stage": error_stage,
-        # 116-06：⭐ 纯追加三键，**仅在 mcp 开关切到蓝图时非空**（见
-        # `_ablueprint_response_extras`）；开关关闭时本行展开为零键 ⇒ 响应逐字不变。
-        **blueprint_extras,
+        "error": error,
+        "blueprint_artifact_id": blueprint_artifact_id,
     }
+    if reservation is None:
+        artifact = await McpWorkItemTechnicalPlan.objects.acreate(**artifact_values)
+    else:
+        for field_name, field_value in artifact_values.items():
+            setattr(reservation, field_name, field_value)
+        artifact = reservation
+        await artifact.asave(update_fields=[*artifact_values.keys(), "updated_at"])
+    # 响应外形兼容：保留全部既有键 + 新增可选 session_id（partial 时供调用方续推）。
+    output = _technical_plan_output_from_record(
+        artifact,
+        idempotency_state="created",
+    )
     from knowledge import ingestion  # lazy import 防循环
 
     await ingestion.aschedule_ingestion(
@@ -694,3 +908,94 @@ async def build_work_item_technical_plan(
     )
     traces = [(str(item.get("kind") or "file"), item) for item in evidence]
     return TechnicalPlanResult(artifact=artifact, output=output, traces=traces)
+
+
+async def pin_approved_blueprint_handoff(
+    *,
+    technical_plan_id: str,
+    artifact_id: str,
+    artifact_version_id: str,
+    content_hash: str,
+) -> dict[str, Any]:
+    """把已确认 Friday 蓝图的**当前不可变版本**写入下游编码交接。
+
+    这里不做审批状态迁移：调用方必须先经 ``aapprove_blueprint`` 成功。此函数只把与该
+    审批同一版本的 canonical content 确定性映射到既有 repository_tasks，再保存版本 id /
+    hash。下游将再次核验这四个值，因此任何一次返工或新版本都会 fail-closed 阻止编码。
+    """
+    from delivery.models import Artifact, ArtifactVersion, BlueprintStatus
+    from services.process_runtime.blueprint_render import render_blueprint_markdown
+
+    technical_plan = await McpWorkItemTechnicalPlan.objects.filter(id=technical_plan_id).afirst()
+    if technical_plan is None:
+        raise TechnicalPlanError("technical_plan_not_found", "技术方案不存在")
+    if technical_plan.blueprint_artifact_id != artifact_id:
+        raise TechnicalPlanError("blueprint_handoff_mismatch", "技术方案不属于该技术蓝图")
+
+    artifact = (
+        await Artifact.objects.select_related("current_version").filter(id=artifact_id).afirst()
+    )
+    if (
+        artifact is None
+        or str(getattr(artifact, "blueprint_status", "") or "") != BlueprintStatus.CONFIRMED
+    ):
+        raise TechnicalPlanError("blueprint_not_confirmed", "技术蓝图尚未确认，不能交接编码")
+    version = await ArtifactVersion.objects.filter(
+        id=artifact_version_id, artifact_id=artifact_id
+    ).afirst()
+    if (
+        version is None
+        or str(getattr(artifact, "current_version_id", "") or "") != artifact_version_id
+        or str(getattr(version, "content_hash", "") or "") != content_hash
+    ):
+        raise TechnicalPlanError("blueprint_handoff_stale", "技术蓝图版本已变化，请重新读取并确认")
+
+    content = version.content if isinstance(version.content, dict) else {}
+    legacy_view = _project_canonical_for_legacy_mapping(content)
+    repository_tasks = await _aresolve_repository_task_ids(
+        _map_execution_plan_to_repository_tasks(legacy_view), technical_plan.repository_tasks
+    )
+    if not repository_tasks:
+        raise TechnicalPlanError("blueprint_handoff_empty", "已确认蓝图没有可交接的仓库任务")
+
+    plan_body = dict(technical_plan.plan_body) if isinstance(technical_plan.plan_body, dict) else {}
+    plan_body["canonical_content"] = content
+    plan_body["repository_task_matrix"] = repository_tasks
+    plan_body["summary"] = str(legacy_view.get("summary") or plan_body.get("summary") or "")
+    technical_plan.plan_body = plan_body
+    technical_plan.repository_tasks = repository_tasks
+    technical_plan.markdown = render_blueprint_markdown(
+        content, blueprint_status=BlueprintStatus.CONFIRMED
+    )
+    technical_plan.approved_blueprint_version_id = artifact_version_id
+    technical_plan.approved_blueprint_version_no = int(getattr(version, "version_no", 0) or 0)
+    technical_plan.approved_blueprint_content_hash = content_hash
+    technical_plan.status = McpWorkItemTechnicalPlan.Status.COMPLETED
+    technical_plan.retry_state = {
+        **(technical_plan.retry_state if isinstance(technical_plan.retry_state, dict) else {}),
+        "retryable": False,
+        "failed_stage": "",
+        "blueprint_handoff": "approved",
+    }
+    await technical_plan.asave(
+        update_fields=[
+            "plan_body",
+            "markdown",
+            "repository_tasks",
+            "approved_blueprint_version_id",
+            "approved_blueprint_version_no",
+            "approved_blueprint_content_hash",
+            "status",
+            "retry_state",
+            "updated_at",
+        ]
+    )
+    return {
+        "technical_plan_id": str(technical_plan.id),
+        "artifact_id": artifact_id,
+        "artifact_version_id": artifact_version_id,
+        "version_no": int(version.version_no),
+        "content_hash": content_hash,
+        "markdown": technical_plan.markdown,
+        "repository_task_count": len(repository_tasks),
+    }

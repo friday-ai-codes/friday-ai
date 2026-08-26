@@ -15,7 +15,7 @@ Friday 对飞书（Lark）的集成不只是发通知：项目空间、云文档
 | 飞书机器人 / IM | 发送文本和卡片、更新卡片、读取群聊历史、下载消息资源、检查或邀请机器人入群，处理群聊和私聊 |
 | 飞书卡片回调 | 审批、方案确认、补充信息、代码审查、编码结果等卡片都有对应回调 |
 | 工作流节点 | `feishu_event_trigger`、`fetch_work_item`、`wait_feishu_field`、`notify_feishu`、`fetch_group_chat`、`join_group_chat` 等节点可直接拖进工作流画布 |
-| MCP / Agent 工具 | `get_feishu_work_item_context` 聚合工作项、关系、评论和文档；`create_feishu_technical_plan` 结合代码证据生成并写回方案 |
+| MCP / Agent 工具 | `get_feishu_work_item_context` 聚合工作项、关系、评论和文档；`create_feishu_technical_plan` 结合代码证据生成蓝图；`get_technical_blueprint` / `answer_blueprint_clarification` / `approve_technical_blueprint` 将 Friday 的澄清、人审和版本化交接带到外部 Agent 工作台 |
 
 ## 接入步骤
 

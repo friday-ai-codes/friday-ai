@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 import structlog
 
@@ -64,6 +65,46 @@ async def _resolve_technical_plan(technical_plan_id: str) -> McpWorkItemTechnica
     return technical_plan
 
 
+async def _assert_approved_blueprint_handoff(technical_plan: McpWorkItemTechnicalPlan) -> None:
+    """蓝图入口的编码闸：必须仍是 Friday 已确认的**同一不可变版本**。
+
+    空 artifact_id 代表升级前 legacy plan，维持兼容；一旦由 blueprint 创建，任何没有完成
+    approve pin、被打回、或正文版本变化的方案都 fail-closed。该检查既在建 repo task 前执行，
+    也在按既有 task 直接执行前执行，避免绕过 create 阶段。
+    """
+    artifact_id = str(technical_plan.blueprint_artifact_id or "")
+    if not artifact_id:
+        return
+    expected_version_id = str(technical_plan.approved_blueprint_version_id or "")
+    expected_hash = str(technical_plan.approved_blueprint_content_hash or "")
+    if not expected_version_id or not expected_hash:
+        raise WorkItemExecutionError(
+            "blueprint_not_approved", "技术蓝图尚未完成最终确认，不能创建或执行编码任务"
+        )
+
+    from delivery.models import Artifact, BlueprintStatus
+
+    artifact = (
+        await Artifact.objects.select_related("current_version").filter(id=artifact_id).afirst()
+    )
+    current = getattr(artifact, "current_version", None)
+    if (
+        artifact is None
+        or str(getattr(artifact, "blueprint_status", "") or "") != BlueprintStatus.CONFIRMED
+    ):
+        raise WorkItemExecutionError(
+            "blueprint_not_approved", "技术蓝图不处于已确认状态，不能创建或执行编码任务"
+        )
+    if (
+        current is None
+        or str(current.id) != expected_version_id
+        or str(getattr(current, "content_hash", "") or "") != expected_hash
+    ):
+        raise WorkItemExecutionError(
+            "blueprint_handoff_stale", "技术蓝图版本已变化，请重新读取、审核并交接后再编码"
+        )
+
+
 def repo_task_payload(task: McpWorkItemRepoTask) -> dict[str, Any]:
     return {
         "task_id": str(task.id),
@@ -90,6 +131,7 @@ async def create_repo_tasks_from_technical_plan(
     technical_plan_id: str,
 ) -> RepoTaskCreationResult:
     technical_plan = await _resolve_technical_plan(technical_plan_id)
+    await _assert_approved_blueprint_handoff(technical_plan)
     matrix = technical_plan.repository_tasks
     if not isinstance(matrix, list) or not matrix:
         raise WorkItemExecutionError(
@@ -102,6 +144,13 @@ async def create_repo_tasks_from_technical_plan(
         if not isinstance(item, dict):
             continue
         repository_id = str(item.get("repository_id") or "")
+        try:
+            UUID(repository_id)
+        except (TypeError, ValueError, AttributeError):
+            raise WorkItemExecutionError(
+                "blueprint_handoff_repository_unresolved",
+                f"已确认蓝图中的仓库尚未映射为 Friday Repository UUID: {item.get('repository_name') or repository_id}",
+            ) from None
         repo = await Repository.objects.filter(id=repository_id).afirst()
         if repo is None:
             raise WorkItemExecutionError(
@@ -387,7 +436,8 @@ async def _execute_one_task(
     if (
         create_merge_requests
         and trace is not None
-        and trace.status in {
+        and trace.status
+        in {
             McpCodingExecutionTrace.Status.COMPLETED,
             McpCodingExecutionTrace.Status.PARTIAL,
         }
@@ -529,13 +579,17 @@ async def _write_results_back(
         )
 
     technical_plan.comment_result = {
-        **(technical_plan.comment_result if isinstance(technical_plan.comment_result, dict) else {}),
+        **(
+            technical_plan.comment_result if isinstance(technical_plan.comment_result, dict) else {}
+        ),
         "execution_comment": comment,
         "document_update": document_update,
     }
     if document_update.get("status") == "error" or comment.get("status") == "error":
         technical_plan.status = McpWorkItemTechnicalPlan.Status.PARTIAL
-        retry_state = technical_plan.retry_state if isinstance(technical_plan.retry_state, dict) else {}
+        retry_state = (
+            technical_plan.retry_state if isinstance(technical_plan.retry_state, dict) else {}
+        )
         technical_plan.retry_state = {
             **retry_state,
             "retryable": True,
@@ -580,6 +634,7 @@ async def execute_work_item_repo_tasks(
         task_ids=task_ids,
         create_missing=create_missing,
     )
+    await _assert_approved_blueprint_handoff(technical_plan)
     if not tasks:
         raise WorkItemExecutionError("repo_task_not_found", "没有可执行的 repo task")
 
@@ -657,19 +712,29 @@ async def execute_work_item_repo_tasks(
     overall = "completed" if status_values == {McpWorkItemRepoTask.Status.COMPLETED} else "partial"
     if status_values == {McpWorkItemRepoTask.Status.FAILED}:
         overall = "failed"
-    if write_back and (
-        document_update.get("status") == "error" or comment.get("status") == "error"
-    ) and overall == "completed":
+    if (
+        write_back
+        and (document_update.get("status") == "error" or comment.get("status") == "error")
+        and overall == "completed"
+    ):
         overall = "partial"
     output = {
         "technical_plan_id": str(technical_plan.id),
         "tasks": [repo_task_payload(task) for task in executed],
         "summary": {
             "total": len(executed),
-            "completed": sum(1 for task in executed if task.status == McpWorkItemRepoTask.Status.COMPLETED),
-            "partial": sum(1 for task in executed if task.status == McpWorkItemRepoTask.Status.PARTIAL),
-            "failed": sum(1 for task in executed if task.status == McpWorkItemRepoTask.Status.FAILED),
-            "running": sum(1 for task in executed if task.status == McpWorkItemRepoTask.Status.RUNNING),
+            "completed": sum(
+                1 for task in executed if task.status == McpWorkItemRepoTask.Status.COMPLETED
+            ),
+            "partial": sum(
+                1 for task in executed if task.status == McpWorkItemRepoTask.Status.PARTIAL
+            ),
+            "failed": sum(
+                1 for task in executed if task.status == McpWorkItemRepoTask.Status.FAILED
+            ),
+            "running": sum(
+                1 for task in executed if task.status == McpWorkItemRepoTask.Status.RUNNING
+            ),
         },
         "document_update": document_update,
         "comment": comment,
