@@ -5405,6 +5405,7 @@ class GetTechnicalBlueprintView(McpToolView):
             # 114-05 立的既有解法，115/116 的读侧全部沿用它。
             "current_status": current_status,
             "title": redact_secrets_in_text(str(meta.get("title") or ""))[:500],
+            "project_id": str(meta.get("project_id") or ""),
             "artifact_version_id": str((version or {}).get("id") or ""),
             "version_no": version_no,
             "content_hash": str((version or {}).get("content_hash") or ""),

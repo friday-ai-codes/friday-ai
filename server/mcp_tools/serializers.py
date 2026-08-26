@@ -1801,6 +1801,7 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "session_id",
             "current_status",
             "title",
+            "project_id",
             "artifact_version_id",
             "version_no",
             "content_hash",

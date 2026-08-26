@@ -670,6 +670,7 @@ def test_mcp_read_tool_schema_snapshot() -> None:
                 "session_id",
                 "current_status",
                 "title",
+                "project_id",
                 "artifact_version_id",
                 "version_no",
                 "content_hash",
