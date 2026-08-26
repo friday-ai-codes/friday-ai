@@ -61,10 +61,12 @@ async def _ablueprint_response_extras(delegate: Any) -> dict[str, Any]:
     的 ``entrypoint`` 是既有约定的 ``"workflow"``）会让打开 workflow 键把 MCP 一起切走
     （116-01 的 ``ast`` 守卫覆盖本调用点）。
 
-    三键语义：``blueprint_artifact_id``（蓝图 artifact，**后续一切续取/作答的寻址键**）、
+    五键语义：``blueprint_artifact_id``（蓝图 artifact，**后续一切续取/作答的寻址键**）、
     ``blueprint_current_status``（⚠️ 键名刻意不叫 ``blueprint_status``——那会命中 INV-6 的
-    字段级旁路守卫 ``_RE_FIELD_DICT_KEY``）、``pending_clarifications[]``（待人回答的
-    阻塞线程，形状与 ``get_technical_blueprint`` **共享同一份装配**）。
+    字段级旁路守卫 ``_RE_FIELD_DICT_KEY``）、当前 artifact 版本的 ``blueprint_artifact_version_id`` /
+    ``blueprint_content_hash``，以及 ``pending_clarifications[]``（待人回答的阻塞线程，形状与
+    ``get_technical_blueprint`` **共享同一份装配**）。版本键只用于展示当前快照；编码交接必须
+    等待最终 approve 后另行持久化的 approved_* 键。
 
     整段 ``try/except`` 回空 dict：⭐ 这是**响应装饰**而非业务主体——读不出蓝图侧信息时
     调用方仍能拿到既有 12 键的完整方案响应，⛔ 绝不因为附加信息读失败而废掉整次调用。
@@ -80,12 +82,12 @@ async def _ablueprint_response_extras(delegate: Any) -> dict[str, Any]:
         version_id = getattr(delegate.session, "current_artifact_version_id", None)
         if not version_id:
             return {}
-        artifact_id = str(
+        version_row = (
             await ArtifactVersion.objects.filter(id=version_id)
-            .values_list("artifact_id", flat=True)
+            .values("artifact_id", "content_hash")
             .afirst()
-            or ""
         )
+        artifact_id = str((version_row or {}).get("artifact_id") or "")
         if not artifact_id:
             return {}
         current_status = str(
@@ -97,10 +99,38 @@ async def _ablueprint_response_extras(delegate: Any) -> dict[str, Any]:
         return {
             "blueprint_artifact_id": artifact_id,
             "blueprint_current_status": current_status,
+            "blueprint_artifact_version_id": str(version_id),
+            "blueprint_content_hash": str((version_row or {}).get("content_hash") or ""),
             "pending_clarifications": await _aload_pending_clarifications(artifact_id),
         }
     except Exception:  # noqa: BLE001 — 响应装饰读失败不废掉既有 12 键的方案响应
         return {}
+
+
+async def _ablueprint_artifact_id_or_fail(delegate: Any) -> str:
+    """蓝图会话必须能持久化其 artifact 归属，绝不静默降级成可执行 legacy plan。
+
+    ``_ablueprint_response_extras`` 是兼容性装饰，按历史契约允许失败回空；但编码交接的
+    artifact 关联是安全判据，不能复用这个 fail-soft 分支。真正进入 technical_blueprint
+    会话却解析不到 artifact 时，宁可整次 MCP plan 创建失败，也不能留下无 gate 的记录。
+    """
+    session = getattr(delegate, "session", None)
+    if str(getattr(session, "process_type", "") or "") != "technical_blueprint":
+        return ""
+    version_id = getattr(session, "current_artifact_version_id", None)
+    if not version_id:
+        raise TechnicalPlanError("blueprint_identity_unavailable", "技术蓝图未返回可交接版本")
+    from delivery.models import ArtifactVersion
+
+    artifact_id = str(
+        await ArtifactVersion.objects.filter(id=version_id)
+        .values_list("artifact_id", flat=True)
+        .afirst()
+        or ""
+    )
+    if not artifact_id:
+        raise TechnicalPlanError("blueprint_identity_unavailable", "技术蓝图未返回可交接版本")
+    return artifact_id
 
 
 def _str_list(value: Any) -> list[str]:
@@ -535,6 +565,9 @@ async def build_work_item_technical_plan(
     )
     # 116-06（GATE-01）：开关切到蓝图时的三个追加响应键（关闭时为空 dict）。
     blueprint_extras = await _ablueprint_response_extras(delegate)
+    # 蓝图真实入口的归属是编码门禁事实源；响应 extras 失败时也必须 fail-closed，不能让
+    # 后续 create_work_item_repo_tasks 把它误认成历史 legacy plan。
+    blueprint_artifact_id = await _ablueprint_artifact_id_or_fail(delegate)
     content = delegate.content if isinstance(delegate.content, dict) else {}
     # 同步点 2 / G3：blueprint/v1 先确定性派生成 v0 投影，再走既有映射链（映射器逐字不变；
     # 旧链 content 恒等穿过 ⇒ 零回归）。⛔ canonical 仍以原始 content 落 canonical_content。
@@ -661,6 +694,7 @@ async def build_work_item_technical_plan(
         retry_state=retry_state,
         error_stage=error_stage,
         error=error,
+        blueprint_artifact_id=blueprint_artifact_id,
     )
     # 响应外形兼容：保留全部既有键 + 新增可选 session_id（partial 时供调用方续推）。
     output = {
@@ -694,3 +728,92 @@ async def build_work_item_technical_plan(
     )
     traces = [(str(item.get("kind") or "file"), item) for item in evidence]
     return TechnicalPlanResult(artifact=artifact, output=output, traces=traces)
+
+
+async def pin_approved_blueprint_handoff(
+    *,
+    technical_plan_id: str,
+    artifact_id: str,
+    artifact_version_id: str,
+    content_hash: str,
+) -> dict[str, Any]:
+    """把已确认 Friday 蓝图的**当前不可变版本**写入下游编码交接。
+
+    这里不做审批状态迁移：调用方必须先经 ``aapprove_blueprint`` 成功。此函数只把与该
+    审批同一版本的 canonical content 确定性映射到既有 repository_tasks，再保存版本 id /
+    hash。下游将再次核验这四个值，因此任何一次返工或新版本都会 fail-closed 阻止编码。
+    """
+    from delivery.models import Artifact, ArtifactVersion, BlueprintStatus
+    from services.process_runtime.blueprint_render import render_blueprint_markdown
+
+    technical_plan = await McpWorkItemTechnicalPlan.objects.filter(id=technical_plan_id).afirst()
+    if technical_plan is None:
+        raise TechnicalPlanError("technical_plan_not_found", "技术方案不存在")
+    if technical_plan.blueprint_artifact_id != artifact_id:
+        raise TechnicalPlanError("blueprint_handoff_mismatch", "技术方案不属于该技术蓝图")
+
+    artifact = (
+        await Artifact.objects.select_related("current_version").filter(id=artifact_id).afirst()
+    )
+    if (
+        artifact is None
+        or str(getattr(artifact, "blueprint_status", "") or "") != BlueprintStatus.CONFIRMED
+    ):
+        raise TechnicalPlanError("blueprint_not_confirmed", "技术蓝图尚未确认，不能交接编码")
+    version = await ArtifactVersion.objects.filter(
+        id=artifact_version_id, artifact_id=artifact_id
+    ).afirst()
+    if (
+        version is None
+        or str(getattr(artifact, "current_version_id", "") or "") != artifact_version_id
+        or str(getattr(version, "content_hash", "") or "") != content_hash
+    ):
+        raise TechnicalPlanError("blueprint_handoff_stale", "技术蓝图版本已变化，请重新读取并确认")
+
+    content = version.content if isinstance(version.content, dict) else {}
+    legacy_view = _project_canonical_for_legacy_mapping(content)
+    repository_tasks = _map_execution_plan_to_repository_tasks(legacy_view)
+    if not repository_tasks:
+        raise TechnicalPlanError("blueprint_handoff_empty", "已确认蓝图没有可交接的仓库任务")
+
+    plan_body = dict(technical_plan.plan_body) if isinstance(technical_plan.plan_body, dict) else {}
+    plan_body["canonical_content"] = content
+    plan_body["repository_task_matrix"] = repository_tasks
+    plan_body["summary"] = str(legacy_view.get("summary") or plan_body.get("summary") or "")
+    technical_plan.plan_body = plan_body
+    technical_plan.repository_tasks = repository_tasks
+    technical_plan.markdown = render_blueprint_markdown(
+        content, blueprint_status=BlueprintStatus.CONFIRMED
+    )
+    technical_plan.approved_blueprint_version_id = artifact_version_id
+    technical_plan.approved_blueprint_version_no = int(getattr(version, "version_no", 0) or 0)
+    technical_plan.approved_blueprint_content_hash = content_hash
+    technical_plan.status = McpWorkItemTechnicalPlan.Status.COMPLETED
+    technical_plan.retry_state = {
+        **(technical_plan.retry_state if isinstance(technical_plan.retry_state, dict) else {}),
+        "retryable": False,
+        "failed_stage": "",
+        "blueprint_handoff": "approved",
+    }
+    await technical_plan.asave(
+        update_fields=[
+            "plan_body",
+            "markdown",
+            "repository_tasks",
+            "approved_blueprint_version_id",
+            "approved_blueprint_version_no",
+            "approved_blueprint_content_hash",
+            "status",
+            "retry_state",
+            "updated_at",
+        ]
+    )
+    return {
+        "technical_plan_id": str(technical_plan.id),
+        "artifact_id": artifact_id,
+        "artifact_version_id": artifact_version_id,
+        "version_no": int(version.version_no),
+        "content_hash": content_hash,
+        "markdown": technical_plan.markdown,
+        "repository_task_count": len(repository_tasks),
+    }

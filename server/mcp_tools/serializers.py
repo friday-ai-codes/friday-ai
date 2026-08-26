@@ -199,9 +199,7 @@ class GraphQueryRequestSerializer(serializers.Serializer):
 
     repository_id = serializers.UUIDField(required=True)
     query = serializers.CharField(required=True, allow_blank=False, max_length=2000)
-    branch = serializers.CharField(
-        required=False, allow_blank=True, max_length=255, default=""
-    )
+    branch = serializers.CharField(required=False, allow_blank=True, max_length=255, default="")
     max_symbols = serializers.IntegerField(default=10, min_value=0, max_value=50)
     max_processes = serializers.IntegerField(default=5, min_value=0, max_value=20)
     budget_chars = serializers.IntegerField(default=50_000, min_value=0, max_value=200_000)
@@ -360,15 +358,11 @@ class TraceCallPathRequestSerializer(serializers.Serializer):
         has_source_id = bool(attrs.get("source_symbol_id"))
         has_source = bool(str(attrs.get("source") or "").strip())
         if has_source_id == has_source:
-            raise serializers.ValidationError(
-                "必须且只能提供 source_symbol_id 或 source 之一"
-            )
+            raise serializers.ValidationError("必须且只能提供 source_symbol_id 或 source 之一")
         has_target_id = bool(attrs.get("target_symbol_id"))
         has_target = bool(str(attrs.get("target") or "").strip())
         if has_target_id == has_target:
-            raise serializers.ValidationError(
-                "必须且只能提供 target_symbol_id 或 target 之一"
-            )
+            raise serializers.ValidationError("必须且只能提供 target_symbol_id 或 target 之一")
         return attrs
 
 
@@ -1033,6 +1027,35 @@ class AnswerBlueprintClarificationRequestSerializer(serializers.Serializer):
     artifact_id = serializers.CharField(required=False, allow_blank=True, default="", max_length=64)
 
 
+class ApproveTechnicalBlueprintRequestSerializer(serializers.Serializer):
+    """最终确认当前可见的**同一份** Friday 蓝图版本。
+
+    版本 id 与内容 hash 均必传，服务端在 canonical lifecycle 的事务内比对；禁止把
+    get 时看到的旧正文在之后的回灌/编辑之后静默确认。
+    """
+
+    artifact_id = serializers.CharField(required=True, allow_blank=False, max_length=64)
+    artifact_version_id = serializers.CharField(required=True, allow_blank=False, max_length=64)
+    content_hash = serializers.RegexField(required=True, regex=r"^[0-9a-f]{64}$", max_length=64)
+    technical_plan_id = serializers.UUIDField(required=True)
+
+
+class RequestTechnicalBlueprintChangesRequestSerializer(serializers.Serializer):
+    """把 Friday 蓝图打回 canonical rework 流程，而不是由 MCP agent 改写正文。"""
+
+    artifact_id = serializers.CharField(required=True, allow_blank=False, max_length=64)
+    comment = serializers.CharField(required=False, allow_blank=True, default="", max_length=8000)
+    anchor = serializers.DictField(required=False, default=dict)
+    rework_scope = serializers.ChoiceField(
+        required=False,
+        choices=("review", "merge", "repos", "full"),
+        default="merge",
+    )
+    rework_repository_ids = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=True, default=list, max_length=20
+    )
+
+
 # ── 蓝图环节单跑（stage sandbox）工具（.planning/quick/20260806-blueprint-stage-runner）──
 
 
@@ -1080,9 +1103,7 @@ class RouteBlueprintReposRequestSerializer(serializers.Serializer):
 class GenerateRequirementSpecRequestSerializer(serializers.Serializer):
     """需求规格单跑请求：拆功能点 + intent 补齐 + 四维歧义打分（零落库）。"""
 
-    requirement_text = serializers.CharField(
-        required=True, allow_blank=False, max_length=20000
-    )
+    requirement_text = serializers.CharField(required=True, allow_blank=False, max_length=20000)
     # 直采功能点（每项 {"title", "intent"?, "module"?, "layer"?}）：非空即跳过 LLM 拆分。
     feature_points = serializers.ListField(
         child=serializers.DictField(),
@@ -1106,9 +1127,7 @@ class GenerateRequirementSpecRequestSerializer(serializers.Serializer):
 class StartRepoResearchRequestSerializer(serializers.Serializer):
     """沙箱调研发起请求：对显式仓库集跑蓝图调研链（direct 容器深调研 / indirect 轻量合成）。"""
 
-    requirement_text = serializers.CharField(
-        required=True, allow_blank=False, max_length=20000
-    )
+    requirement_text = serializers.CharField(required=True, allow_blank=False, max_length=20000)
     requirement_spec = serializers.JSONField(required=False, allow_null=True, default=None)
     project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
     # 每项 {"repository_id", "role"?: direct|indirect, "confidence"?: high|medium|low}
@@ -1170,6 +1189,38 @@ _FEATURE_SOLUTION_RESPONSE_KEYS = [
 
 
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
+    "graph_query": {
+        "request": [
+            "repository_id",
+            "query",
+            "branch",
+            "max_symbols",
+            "max_processes",
+            "budget_chars",
+            "include_impact",
+            "anchor_symbol_id",
+            "impact_max_depth",
+            "impact_limit",
+        ],
+        "response": [
+            "contract_version",
+            "manifest_hash",
+            "response_version",
+            "ranking_version",
+            "scope",
+            "partial",
+            "warnings",
+            "capabilities",
+            "symbols",
+            "communities",
+            "processes",
+            "impact",
+            "truncated",
+            "truncated_reasons",
+            "continuation_hint",
+            "run_id",
+        ],
+    },
     "route_repositories": {
         "request": ["query", "top_k"],
         "response": ["query", "ranked_repos", "total", "run_id"],
@@ -1335,6 +1386,30 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "graph",
             "error_code",
             "error",
+            "run_id",
+        ],
+    },
+    "rename_preview": {
+        "request": [
+            "repository_id",
+            "branch",
+            "symbol_id",
+            "symbol",
+            "file_path",
+            "symbol_type",
+            "new_name",
+            "context_lines",
+        ],
+        "response": [
+            "ok",
+            "error_code",
+            "error",
+            "tool",
+            "applied",
+            "coverage_limitations",
+            "query",
+            "files",
+            "summary",
             "run_id",
         ],
     },
@@ -1563,13 +1638,15 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "error",
             "error_stage",
             # Phase 116-06（GATE-01）：⭐ **仅在 mcp 入口开关切到 `technical_blueprint`
-            # 时出现**的三个追加键（开关关闭时响应与改动前逐字相同）。它们必须同步进
+            # 时出现**的五个追加键（开关关闭时响应与改动前逐字相同）。它们必须同步进
             # 本快照——`report_blueprint_context` 那条 `redispatched` 的教训逐字适用：
             # 漏在 snapshot 里会让容器侧/外部客户端按已发布契约以为它不存在。
             # ⚠️ 状态键取名 `blueprint_current_status` 而非 `blueprint_status`：后者作为
             # 响应字典键会命中 INV-6 的 `_RE_FIELD_DICT_KEY`（字段级旁路守卫）。
             "blueprint_artifact_id",
             "blueprint_current_status",
+            "blueprint_artifact_version_id",
+            "blueprint_content_hash",
             "pending_clarifications",
         ],
     },
@@ -1707,7 +1784,9 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "session_id",
             "current_status",
             "title",
+            "artifact_version_id",
             "version_no",
+            "content_hash",
             "sections",
             "markdown",
             "pending_clarifications",
@@ -1722,6 +1801,47 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "artifact_id",
             "current_status",
             "reflow",
+            "run_id",
+        ],
+    },
+    "approve_technical_blueprint": {
+        "request": [
+            "artifact_id",
+            "artifact_version_id",
+            "content_hash",
+            "technical_plan_id",
+        ],
+        "response": [
+            "status",
+            "technical_plan_id",
+            "artifact_id",
+            "artifact_version_id",
+            "version_no",
+            "content_hash",
+            "current_status",
+            "markdown",
+            "repository_task_count",
+            "run_id",
+        ],
+    },
+    "request_technical_blueprint_changes": {
+        "request": [
+            "artifact_id",
+            "comment",
+            "anchor",
+            "rework_scope",
+            "rework_repository_ids",
+        ],
+        "response": [
+            "status",
+            "artifact_id",
+            "artifact_version_id",
+            "version_no",
+            "revision_round",
+            "thread_id",
+            "current_status",
+            "rework_scope",
+            "reworked_repository_count",
             "run_id",
         ],
     },

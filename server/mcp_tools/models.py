@@ -380,6 +380,12 @@ class McpWorkItemTechnicalPlan(models.Model):
     retry_state = models.JSONField(default=dict, blank=True)
     error_stage = models.CharField(max_length=80, blank=True, default="")
     error = models.TextField(blank=True, default="")
+    # 蓝图入口的编码交接必须锚定 Friday 已确认的不可变版本。旧技术方案没有该关联，
+    # 保持空值即可沿用历史执行链；新蓝图方案空值则代表尚未通过最终人审，禁止派发编码。
+    blueprint_artifact_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    approved_blueprint_version_id = models.CharField(max_length=64, blank=True, default="")
+    approved_blueprint_version_no = models.PositiveIntegerField(default=0)
+    approved_blueprint_content_hash = models.CharField(max_length=64, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
