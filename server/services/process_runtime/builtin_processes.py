@@ -479,10 +479,22 @@ async def _h_bp_decompose(session: Any, engine: Any) -> StageOutcome:
             feature_segments=segments if isinstance(segments, list) else None,
         )
         if version is None:
-            # 无新版本（直采重跑 / LLM 不可得）：把会话**既有**指针原样带回。
+            # 无新版本不等于「无规格」。直采幂等命中、内容 hash 未变化时，service 会返回
+            # None；既有版本里仍可能已经有完整 requirement_spec。若这里只带回版本指针而不
+            # 同步规格，后续调研 prompt 会把需求目标/功能点渲染成（无），最终让确认门只能
+            # 展示仓库自身能力，无法解释「本需求的哪些功能点由该仓承载」。
+            current_id = getattr(session, "current_artifact_version_id", None)
+            from delivery.models import ArtifactVersion
+
+            current = (
+                await ArtifactVersion.objects.filter(id=current_id).afirst() if current_id else None
+            )
+            spec = (current.content or {}).get("requirement_spec") if current is not None else {}
+            spec = spec if isinstance(spec, dict) else {}
             return StageOutcome(
                 event="decomposed",
-                current_artifact_version=getattr(session, "current_artifact_version_id", None),
+                current_artifact_version=current_id,
+                stage_state_update={"requirement_spec": spec} if spec else None,
             )
         spec = (version.content or {}).get("requirement_spec") or {}
         # ⭐ 把 requirement_spec 快照同步挂进 stage_state 顶层：调研/拟方案容器的 prompt
