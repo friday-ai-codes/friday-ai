@@ -315,6 +315,7 @@ def test_create_feishu_technical_plan_only_gained_three_additive_keys() -> None:
     assert [key for key in old_request if key not in entry["request"]] == []
     assert [key for key in entry["request"] if key not in old_request] == [
         "idempotency_key",
+        "blueprint_project_id",
         "assumptions_tier",
     ]
     old_response = [

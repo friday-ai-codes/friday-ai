@@ -640,6 +640,7 @@ async def build_work_item_technical_plan(
     actor: Any = None,
     assumptions_tier: str = "",
     idempotency_key: str = "",
+    blueprint_project_id: str = "",
 ) -> TechnicalPlanResult:
     """delegate 到 ``process_runtime`` 产 canonical 方案 → 映射回旧响应外形 + 落库（UNIFY-03）。
 
@@ -722,6 +723,7 @@ async def build_work_item_technical_plan(
         work_item_context=context,
         # 116-REVIEW MJ-02：档位从 MCP 请求透传到 stage_state，⇒ spec_gate 真的读得到。
         assumptions_tier=assumptions_tier,
+        project_id=blueprint_project_id,
     )
     # 116-06（GATE-01）：开关切到蓝图时的三个追加响应键（关闭时为空 dict）。
     blueprint_extras = await _ablueprint_response_extras(delegate)

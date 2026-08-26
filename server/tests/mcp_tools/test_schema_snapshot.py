@@ -492,6 +492,7 @@ def test_mcp_read_tool_schema_snapshot() -> None:
             "request": [
                 "context_id",
                 "idempotency_key",
+                "blueprint_project_id",
                 "repository_ids",
                 "repo_hints",
                 "context_chunks",

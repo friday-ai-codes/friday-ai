@@ -367,6 +367,7 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
         {
             "context_id": str(context.id),
             "idempotency_key": "test:work-item-77:context-v1",
+            "blueprint_project_id": str(uuid.uuid4()),
             "repository_ids": [str(indexed_repository.id)],
             "create_document": False,
             "write_comment": False,
@@ -389,6 +390,7 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     assert captured["requirement_text"]
     assert captured["include_repos"] == [str(indexed_repository.id)]
     assert captured["call_count"] == 1
+    assert captured["project_id"]
     # canonical execution_plan → 旧矩阵形态映射（显式白名单字段）。
     task = body["repository_tasks"][0]
     assert task["repository_id"] == str(indexed_repository.id)
@@ -430,6 +432,7 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
         {
             "context_id": str(context.id),
             "idempotency_key": "test:work-item-77:context-v1",
+            "blueprint_project_id": captured["project_id"],
             "repository_ids": [str(indexed_repository.id)],
             "create_document": False,
             "write_comment": False,

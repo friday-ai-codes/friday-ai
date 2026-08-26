@@ -429,6 +429,7 @@ async def _h_bp_intake(session: Any, engine: Any) -> StageOutcome:
             session=session,
             requirement_text=str(decomposition.get("requirement_text") or ""),
             project_id=project_id,
+            title=str(decomposition.get("blueprint_title") or ""),
             created_by_user_id=str(getattr(session, "initiated_by_user_id", "") or ""),
         )
         return StageOutcome(
