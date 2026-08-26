@@ -378,6 +378,7 @@ def test_get_exposes_the_exact_current_immutable_version(mcp_client, access_user
     resp = client.post(_GET_URL, {"artifact_id": str(artifact.id)}, format="json")
 
     assert resp.status_code == 200, resp.json()
+    assert resp.json()["project_id"] == str(artifact.current_version.content["meta"]["project_id"])
     artifact.refresh_from_db()
     assert resp.json()["artifact_version_id"] == str(artifact.current_version_id)
     assert resp.json()["version_no"] == artifact.current_version.version_no
