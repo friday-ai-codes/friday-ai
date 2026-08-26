@@ -613,6 +613,24 @@ def _switch_mcp_to_blueprint() -> None:
     )
 
 
+@pytest.mark.asyncio
+async def test_blueprint_session_without_artifact_identity_fails_closed() -> None:
+    """响应 extras 可为兼容失败，但真实 blueprint 绝不能落成无编码门禁的 legacy plan。"""
+    from mcp_tools.technical_plan_service import (
+        TechnicalPlanError,
+        _ablueprint_artifact_id_or_fail,
+    )
+
+    delegate = SimpleNamespace(
+        session=SimpleNamespace(
+            process_type="technical_blueprint", current_artifact_version_id=None
+        )
+    )
+
+    with pytest.raises(TechnicalPlanError, match="未返回可交接版本"):
+        await _ablueprint_artifact_id_or_fail(delegate)
+
+
 @pytest.fixture
 def _clear_blueprint_settings():
     from django.core.cache import cache

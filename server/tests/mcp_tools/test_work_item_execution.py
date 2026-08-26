@@ -5,8 +5,11 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from asgiref.sync import async_to_sync
 from rest_framework.test import APIClient
 
+from delivery.models import Artifact, BlueprintStatus
+from delivery.services import ArtifactService
 from interactions.ledger import create_interaction_run
 from interactions.models import ToolCallRecord
 from mcp_tools.models import (
@@ -17,6 +20,7 @@ from mcp_tools.models import (
 )
 from repositories.models import FileIndex, IndexStatus, Repository
 from runners.models import hash_token
+from tests.helpers.blueprint_samples import make_blueprint
 
 pytestmark = pytest.mark.django_db
 
@@ -138,6 +142,16 @@ def _second_repo(project) -> Repository:
     return repo
 
 
+def _attach_unapproved_blueprint(plan: McpWorkItemTechnicalPlan) -> Artifact:
+    """用高三提分同类跨仓样例模拟尚未通过终审的蓝图交接。"""
+    artifact = async_to_sync(ArtifactService().create)("technical_plan", make_blueprint())
+    Artifact.objects.filter(id=artifact.id).update(blueprint_status=BlueprintStatus.PENDING_REVIEW)
+    artifact.blueprint_status = BlueprintStatus.PENDING_REVIEW
+    plan.blueprint_artifact_id = str(artifact.id)
+    plan.save(update_fields=["blueprint_artifact_id"])
+    return artifact
+
+
 def test_create_work_item_repo_tasks_from_technical_plan(
     mcp_client: tuple[APIClient, str],
     project,
@@ -162,6 +176,65 @@ def test_create_work_item_repo_tasks_from_technical_plan(
     assert task.tool_call_id is not None
     assert task.branch_name.startswith("feat/feishu-story-88")
     assert ToolCallRecord.objects.filter(tool_name="create_work_item_repo_tasks").count() == 1
+
+
+def test_blueprint_repo_tasks_are_blocked_until_the_same_version_is_confirmed(
+    mcp_client: tuple[APIClient, str],
+    project,
+    indexed_repository,
+) -> None:
+    """终审前、版本不一致时均不可绕过 Friday 直接创建 Coding task。"""
+    client, _plaintext = mcp_client
+    plan = _technical_plan(project, [indexed_repository])
+    artifact = _attach_unapproved_blueprint(plan)
+
+    before_approval = client.post(
+        "/api/mcp/tools/create_work_item_repo_tasks/",
+        {"technical_plan_id": str(plan.id)},
+        format="json",
+    )
+    assert before_approval.status_code == 400
+    assert before_approval.json()["error_code"] == "blueprint_not_approved"
+
+    artifact.refresh_from_db()
+    Artifact.objects.filter(id=artifact.id).update(blueprint_status=BlueprintStatus.CONFIRMED)
+    plan.refresh_from_db()
+    plan.approved_blueprint_version_id = str(artifact.current_version_id)
+    plan.approved_blueprint_version_no = artifact.current_version.version_no
+    plan.approved_blueprint_content_hash = "f" * 64
+    plan.save(
+        update_fields=[
+            "approved_blueprint_version_id",
+            "approved_blueprint_version_no",
+            "approved_blueprint_content_hash",
+        ]
+    )
+
+    stale = client.post(
+        "/api/mcp/tools/create_work_item_repo_tasks/",
+        {"technical_plan_id": str(plan.id)},
+        format="json",
+    )
+    assert stale.status_code == 400
+    assert stale.json()["error_code"] == "blueprint_handoff_stale"
+
+    plan.approved_blueprint_content_hash = artifact.current_version.content_hash
+    plan.save(update_fields=["approved_blueprint_content_hash"])
+    approved = client.post(
+        "/api/mcp/tools/create_work_item_repo_tasks/",
+        {"technical_plan_id": str(plan.id)},
+        format="json",
+    )
+    assert approved.status_code == 200, approved.json()
+
+    Artifact.objects.filter(id=artifact.id).update(blueprint_status=BlueprintStatus.DRAFTING)
+    rejected = client.post(
+        "/api/mcp/tools/create_work_item_repo_tasks/",
+        {"technical_plan_id": str(plan.id)},
+        format="json",
+    )
+    assert rejected.status_code == 400
+    assert rejected.json()["error_code"] == "blueprint_not_approved"
 
 
 def test_create_work_item_repo_tasks_preserves_completed_task_state(
@@ -235,9 +308,13 @@ def test_execute_work_item_repo_tasks_skips_completed_task_with_mr(
     async def _unexpected_call(*args, **kwargs):
         raise AssertionError("completed task should not be dispatched or create another MR")
 
-    monkeypatch.setattr("mcp_tools.work_item_execution_service.dispatch_execution", _unexpected_call)
+    monkeypatch.setattr(
+        "mcp_tools.work_item_execution_service.dispatch_execution", _unexpected_call
+    )
     monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _unexpected_call)
-    monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _unexpected_call)
+    monkeypatch.setattr(
+        "mcp_tools.work_item_execution_service.create_merge_request", _unexpected_call
+    )
 
     response = client.post(
         "/api/mcp/tools/execute_work_item_repo_tasks/",
@@ -328,6 +405,7 @@ def test_execute_work_item_repo_tasks_records_partial_multi_repo_results(
         reviewer_usernames: list[str],
         remove_source_branch: bool,
         trace: McpCodingExecutionTrace | None = None,
+        user=None,
     ) -> dict[str, Any]:
         if repository.id == repo_b.id:
             return {
@@ -347,7 +425,9 @@ def test_execute_work_item_repo_tasks_records_partial_multi_repo_results(
     async def _doc_client(_project):
         return _FakeDocClient()
 
-    monkeypatch.setattr("mcp_tools.work_item_execution_service.dispatch_execution", _dispatch_execution)
+    monkeypatch.setattr(
+        "mcp_tools.work_item_execution_service.dispatch_execution", _dispatch_execution
+    )
     monkeypatch.setattr("mcp_tools.work_item_execution_service.refresh_execution_trace", _refresh)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _summary)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _mr)
@@ -458,6 +538,7 @@ def test_execute_work_item_repo_tasks_reports_partial_when_feishu_writeback_fail
         reviewer_usernames: list[str],
         remove_source_branch: bool,
         trace: McpCodingExecutionTrace | None = None,
+        user=None,
     ) -> dict[str, Any]:
         return {
             "success": True,
@@ -470,7 +551,9 @@ def test_execute_work_item_repo_tasks_reports_partial_when_feishu_writeback_fail
     async def _doc_client(_project):
         return _FailingDocClient()
 
-    monkeypatch.setattr("mcp_tools.work_item_execution_service.dispatch_execution", _dispatch_execution)
+    monkeypatch.setattr(
+        "mcp_tools.work_item_execution_service.dispatch_execution", _dispatch_execution
+    )
     monkeypatch.setattr("mcp_tools.work_item_execution_service.refresh_execution_trace", _refresh)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _summary)
     monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _mr)
@@ -536,9 +619,13 @@ def test_writeback_delegates_to_common_service_and_keeps_partial_flip(
     async def _unexpected_call(*args, **kwargs):
         raise AssertionError("completed task should not be dispatched or create another MR")
 
-    monkeypatch.setattr("mcp_tools.work_item_execution_service.dispatch_execution", _unexpected_call)
+    monkeypatch.setattr(
+        "mcp_tools.work_item_execution_service.dispatch_execution", _unexpected_call
+    )
     monkeypatch.setattr("mcp_tools.work_item_execution_service.summarize_branch", _unexpected_call)
-    monkeypatch.setattr("mcp_tools.work_item_execution_service.create_merge_request", _unexpected_call)
+    monkeypatch.setattr(
+        "mcp_tools.work_item_execution_service.create_merge_request", _unexpected_call
+    )
 
     awrite_back_calls: list[dict[str, Any]] = []
 
@@ -664,6 +751,7 @@ def _patch_execution_io(monkeypatch: pytest.MonkeyPatch, dispatch) -> None:
         reviewer_usernames: list[str],
         remove_source_branch: bool,
         trace: McpCodingExecutionTrace | None = None,
+        user=None,
     ) -> dict[str, Any]:
         return {
             "success": True,

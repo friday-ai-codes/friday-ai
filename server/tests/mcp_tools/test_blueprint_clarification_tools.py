@@ -31,8 +31,10 @@ REST client 是同步的 ⇒ 本文件用同步用例 + ``async_to_sync`` 装配
 
 from __future__ import annotations
 
+import copy
 import json
 import uuid
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -54,7 +56,10 @@ from delivery.models import (
 )
 from delivery.services import ArtifactService
 from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+from interactions.ledger import create_interaction_run
+from mcp_tools.models import McpWorkItemContext, McpWorkItemTechnicalPlan
 from mcp_tools.serializers import TOOL_SCHEMA_SNAPSHOT
+from runners.models import hash_token
 from tests.helpers.blueprint_samples import make_blueprint
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -62,6 +67,8 @@ pytestmark = pytest.mark.django_db(transaction=True)
 # 真打 URL：端到端过认证 + serializer + view（与 urls.py 逐字一致）
 _GET_URL = "/api/mcp/tools/get_technical_blueprint/"
 _ANSWER_URL = "/api/mcp/tools/answer_blueprint_clarification/"
+_APPROVE_URL = "/api/mcp/tools/approve_technical_blueprint/"
+_REQUEST_CHANGES_URL = "/api/mcp/tools/request_technical_blueprint_changes/"
 
 _RESUME_TARGET = "services.process_runtime.blueprint_resume.aresume_after_gate_action"
 # view 内是函数级懒 import ⇒ 必须 patch **来源模块**的属性
@@ -77,6 +84,9 @@ _SECRET = "sk-ant-api03-DEADBEEFDEADBEEFDEADBEEFDEADBEEF"
 
 # 回灌五档（`blueprint_reflow.aapply_thread_answers` 的恒定取值）+ 端点兜底的 failed
 _REFLOW_STATUSES = {"applied", "unchanged", "conflict", "invalid", "noop", "failed"}
+_GAOSAN_GOLDEN_PATH = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "blueprint_golden" / "gaokao_boost.json"
+)
 
 
 # ── 工厂 ─────────────────────────────────────────────────────────────────────
@@ -153,9 +163,12 @@ def _save_switch(value: dict[str, str]) -> None:
 
 
 def _make_artifact(
-    status: str = BlueprintStatus.NEEDS_CLARIFICATION, *, project_id: str = _SCOPE_PROJECT_ID
+    status: str = BlueprintStatus.NEEDS_CLARIFICATION,
+    *,
+    project_id: str = _SCOPE_PROJECT_ID,
+    content: dict[str, Any] | None = None,
 ) -> Artifact:
-    content = make_blueprint()
+    content = copy.deepcopy(content) if content is not None else make_blueprint()
     content["meta"]["project_id"] = project_id
     artifact = async_to_sync(ArtifactService().create)(
         "technical_plan", content, created_by_user_id="tester"
@@ -173,6 +186,35 @@ def _make_session(artifact: Artifact, user: Any) -> ConvergenceSession:
         status=ConvergenceSessionStatus.RUNNING,
         current_artifact_version_id=artifact.current_version_id,
         created_by=user,
+    )
+
+
+def _make_blueprint_technical_plan(artifact: Artifact) -> McpWorkItemTechnicalPlan:
+    """一个由 MCP 创建、尚未完成最终交接的蓝图技术方案。"""
+    from initiatives.models import Project
+
+    project = Project.objects.get(id=_SCOPE_PROJECT_ID)
+    run = create_interaction_run(
+        token_fingerprint=hash_token(f"blueprint-handoff-{artifact.id}"), source="mcp"
+    )
+    context = McpWorkItemContext.objects.create(
+        run=run,
+        space=project.space,
+        feishu_project_key=project.space.feishu_project_key,
+        work_item_type="story",
+        work_item_id=20260826,
+        name="高三提分专项",
+    )
+    return McpWorkItemTechnicalPlan.objects.create(
+        run=run,
+        context=context,
+        space=project.space,
+        feishu_project_key=project.space.feishu_project_key,
+        work_item_type="story",
+        work_item_id=20260826,
+        title="高三提分专项技术蓝图",
+        status=McpWorkItemTechnicalPlan.Status.PARTIAL,
+        blueprint_artifact_id=str(artifact.id),
     )
 
 
@@ -216,9 +258,11 @@ def _thread_row(thread: BlueprintThread) -> tuple[str, Any, int]:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def test_both_new_tools_are_registered_in_the_schema_snapshot() -> None:
+def test_blueprint_controller_tools_are_registered_in_the_schema_snapshot() -> None:
     assert "get_technical_blueprint" in TOOL_SCHEMA_SNAPSHOT
     assert "answer_blueprint_clarification" in TOOL_SCHEMA_SNAPSHOT
+    assert "approve_technical_blueprint" in TOOL_SCHEMA_SNAPSHOT
+    assert "request_technical_blueprint_changes" in TOOL_SCHEMA_SNAPSHOT
     assert TOOL_SCHEMA_SNAPSHOT["get_technical_blueprint"]["request"] == ["artifact_id"]
     assert TOOL_SCHEMA_SNAPSHOT["answer_blueprint_clarification"]["request"] == [
         "thread_id",
@@ -227,8 +271,8 @@ def test_both_new_tools_are_registered_in_the_schema_snapshot() -> None:
     ]
 
 
-def test_no_third_list_tool_was_added() -> None:
-    """⛔ pending 清单内联在 ``get_technical_blueprint`` 里，⛔ 不建第三个 list 工具。
+def test_no_separate_clarification_list_tool_was_added() -> None:
+    """⛔ pending 清单内联在 ``get_technical_blueprint`` 里，审批/退回不属于 list 工具。
 
     豁免项都不是澄清清单工具：``read/report_blueprint_context`` 是容器内共享总线；
     ``route_blueprint_repos`` 是路由环节单跑（stage sandbox，20260806），与澄清协议无关。
@@ -241,7 +285,12 @@ def test_no_third_list_tool_was_added() -> None:
         and name
         not in ("read_blueprint_context", "report_blueprint_context", "route_blueprint_repos")
     }
-    assert blueprint_tools == {"get_technical_blueprint", "answer_blueprint_clarification"}
+    assert blueprint_tools == {
+        "get_technical_blueprint",
+        "answer_blueprint_clarification",
+        "approve_technical_blueprint",
+        "request_technical_blueprint_changes",
+    }
 
 
 def test_create_feishu_technical_plan_only_gained_three_additive_keys() -> None:
@@ -285,12 +334,20 @@ def test_create_feishu_technical_plan_only_gained_three_additive_keys() -> None:
         # 116-REVIEW MJ-03：失败原因回传（恒在，成功时空串）。
         "error",
         "error_stage",
-        # 116-06：仅在 mcp 开关切到蓝图时非空的三键。
+        # 116-06：仅在 mcp 开关切到蓝图时非空的五键。
         "blueprint_artifact_id",
         "blueprint_current_status",
+        "blueprint_artifact_version_id",
+        "blueprint_content_hash",
         "pending_clarifications",
     ]
-    for key in ("blueprint_artifact_id", "blueprint_current_status", "pending_clarifications"):
+    for key in (
+        "blueprint_artifact_id",
+        "blueprint_current_status",
+        "blueprint_artifact_version_id",
+        "blueprint_content_hash",
+        "pending_clarifications",
+    ):
         assert key in entry["response"], key
 
 
@@ -304,6 +361,148 @@ def test_snapshot_response_keys_match_the_actual_get_response(mcp_client, access
 
     assert resp.status_code == 200, resp.json()
     assert set(resp.json()) == set(TOOL_SCHEMA_SNAPSHOT["get_technical_blueprint"]["response"])
+
+
+def test_get_exposes_the_exact_current_immutable_version(mcp_client, access_user) -> None:
+    """Multica 必须能把展示的 Friday markdown 与审批输入钉到同一个版本。"""
+    client, _ = mcp_client
+    artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW)
+    _make_session(artifact, access_user)
+
+    resp = client.post(_GET_URL, {"artifact_id": str(artifact.id)}, format="json")
+
+    assert resp.status_code == 200, resp.json()
+    artifact.refresh_from_db()
+    assert resp.json()["artifact_version_id"] == str(artifact.current_version_id)
+    assert resp.json()["version_no"] == artifact.current_version.version_no
+    assert resp.json()["content_hash"] == artifact.current_version.content_hash
+
+
+def test_approve_rejects_a_stale_snapshot_without_confirming(
+    mcp_client, access_user, monkeypatch
+) -> None:
+    """审批的 version/hash 比对必须与状态迁移同源；旧页面不得确认新正文。"""
+    client, _ = mcp_client
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW)
+    _make_session(artifact, access_user)
+    plan = _make_blueprint_technical_plan(artifact)
+
+    resp = client.post(
+        _APPROVE_URL,
+        {
+            "artifact_id": str(artifact.id),
+            "artifact_version_id": str(artifact.current_version_id),
+            "content_hash": "0" * 64,
+            "technical_plan_id": str(plan.id),
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 409, resp.json()
+    assert resp.json()["error_code"] == "stale"
+    artifact.refresh_from_db()
+    plan.refresh_from_db()
+    assert artifact.blueprint_status == BlueprintStatus.PENDING_REVIEW
+    assert plan.approved_blueprint_version_id == ""
+
+
+def test_approve_handoff_returns_the_confirmed_friday_markdown(
+    mcp_client, access_user, monkeypatch
+) -> None:
+    """成功路径把已确认的同版 Markdown 与编码交接一起返回，供 Multica 原样保存。"""
+    client, _ = mcp_client
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW)
+    _make_session(artifact, access_user)
+    plan = _make_blueprint_technical_plan(artifact)
+
+    resp = client.post(
+        _APPROVE_URL,
+        {
+            "artifact_id": str(artifact.id),
+            "artifact_version_id": str(artifact.current_version_id),
+            "content_hash": artifact.current_version.content_hash,
+            "technical_plan_id": str(plan.id),
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.json()
+    body = resp.json()
+    artifact.refresh_from_db()
+    plan.refresh_from_db()
+    assert artifact.blueprint_status == BlueprintStatus.CONFIRMED
+    assert body["current_status"] == BlueprintStatus.CONFIRMED
+    assert body["artifact_version_id"] == str(artifact.current_version_id)
+    assert body["content_hash"] == artifact.current_version.content_hash
+    assert body["markdown"] == plan.markdown
+    assert "未经确认" not in body["markdown"].splitlines()[0]
+    assert plan.approved_blueprint_version_id == str(artifact.current_version_id)
+    assert plan.approved_blueprint_content_hash == artifact.current_version.content_hash
+
+
+def test_request_changes_uses_friday_canonical_rework(mcp_client, access_user, monkeypatch) -> None:
+    """退回必须创建 Friday 新版本并离开 confirmed，而非由 Multica 改写 markdown。"""
+    client, _ = mcp_client
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW)
+    _make_session(artifact, access_user)
+    before_version = artifact.current_version.version_no
+
+    resp = client.post(
+        _REQUEST_CHANGES_URL,
+        {
+            "artifact_id": str(artifact.id),
+            "comment": "高三提分专项的权益校验需明确复用 study-course 的现有接口。",
+            "rework_scope": "merge",
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.json()
+    body = resp.json()
+    artifact.refresh_from_db()
+    assert body["status"] == "rejected"
+    assert body["artifact_version_id"] == str(artifact.current_version_id)
+    assert body["version_no"] == before_version + 1
+    assert artifact.blueprint_status != BlueprintStatus.CONFIRMED
+
+
+def test_gaosan_golden_blueprint_handoff_is_byte_identical_to_friday_read(
+    mcp_client, access_user, monkeypatch
+) -> None:
+    """高三提分专项 golden：Multica 只保存 Friday confirmed Markdown，不重写。"""
+    client, _ = mcp_client
+    _stub_resume(monkeypatch)
+    case = json.loads(_GAOSAN_GOLDEN_PATH.read_text(encoding="utf-8"))
+    artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW, content=case["blueprint"])
+    _make_session(artifact, access_user)
+    plan = _make_blueprint_technical_plan(artifact)
+
+    displayed = client.post(_GET_URL, {"artifact_id": str(artifact.id)}, format="json")
+    assert displayed.status_code == 200, displayed.json()
+    snapshot = displayed.json()
+    approved = client.post(
+        _APPROVE_URL,
+        {
+            "artifact_id": str(artifact.id),
+            "artifact_version_id": snapshot["artifact_version_id"],
+            "content_hash": snapshot["content_hash"],
+            "technical_plan_id": str(plan.id),
+        },
+        format="json",
+    )
+    assert approved.status_code == 200, approved.json()
+
+    reread = client.post(_GET_URL, {"artifact_id": str(artifact.id)}, format="json")
+    assert reread.status_code == 200, reread.json()
+    handoff = approved.json()
+    canonical = reread.json()
+    assert handoff["artifact_version_id"] == canonical["artifact_version_id"]
+    assert handoff["content_hash"] == canonical["content_hash"]
+    assert handoff["markdown"] == canonical["markdown"]
+    assert handoff["repository_task_count"] == len(case["expected"]["direct_repos"])
 
 
 def test_snapshot_response_keys_match_the_actual_answer_response(
@@ -611,7 +810,7 @@ def test_response_extras_are_empty_when_the_mcp_switch_is_off() -> None:
     assert async_to_sync(_ablueprint_response_extras)(delegate) == {}
 
 
-def test_response_extras_carry_three_keys_when_the_mcp_switch_is_on(access_user) -> None:
+def test_response_extras_carry_five_keys_when_the_mcp_switch_is_on(access_user) -> None:
     from mcp_tools.technical_plan_service import _ablueprint_response_extras
 
     _save_switch({"mcp": "technical_blueprint"})
@@ -624,10 +823,14 @@ def test_response_extras_carry_three_keys_when_the_mcp_switch_is_on(access_user)
     assert set(extras) == {
         "blueprint_artifact_id",
         "blueprint_current_status",
+        "blueprint_artifact_version_id",
+        "blueprint_content_hash",
         "pending_clarifications",
     }
     assert extras["blueprint_artifact_id"] == str(artifact.id)
     assert extras["blueprint_current_status"] == BlueprintStatus.NEEDS_CLARIFICATION
+    assert extras["blueprint_artifact_version_id"] == str(artifact.current_version_id)
+    assert extras["blueprint_content_hash"] == artifact.current_version.content_hash
     assert len(extras["pending_clarifications"]) == 1
     assert _SECRET not in extras["pending_clarifications"][0]["question"]
 
