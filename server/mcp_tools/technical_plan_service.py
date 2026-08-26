@@ -465,15 +465,35 @@ def _preview(value: str, limit: int = 500) -> str:
     return text[:limit] + ("..." if len(text) > limit else "")
 
 
+def _context_text(value: Any) -> list[str]:
+    """把飞书字段/关系递归展开为保留换行的文本段。
+
+    ``str(dict)`` 会把字段值里的换行转成字面量 ``\\n``，导致下游无法识别 Feature List
+    的标题、模块表格和验收项。这里只展开值，不记录字段结构之外的新信息。
+    """
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for key, item in value.items():
+            nested = _context_text(item)
+            if nested:
+                parts.append(f"[{key}]\n" + "\n".join(nested))
+        return parts
+    if isinstance(value, (list, tuple)):
+        return [part for item in value for part in _context_text(item)]
+    if value is None:
+        return []
+    return [str(value)]
+
+
 def _work_item_text(context: McpWorkItemContext) -> str:
-    parts = [
-        context.name,
-        context.description,
-        str(context.fields or {}),
-        str(context.relations or []),
-        " ".join(str(doc.get("content") or "") for doc in context.documents or []),
-    ]
-    return "\n".join(part for part in parts if part)
+    parts = [context.name, context.description]
+    parts.extend(_context_text(context.fields or {}))
+    parts.extend(_context_text(context.relations or []))
+    parts.extend(_context_text(context.documents or []))
+    return "\n\n".join(str(part).strip() for part in parts if str(part or "").strip())
 
 
 async def _resolve_context(context_id: str) -> McpWorkItemContext:

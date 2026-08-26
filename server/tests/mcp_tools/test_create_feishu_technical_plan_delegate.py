@@ -448,6 +448,23 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     ).count() == 1
 
 
+def test_work_item_text_preserves_newlines_inside_structured_fields() -> None:
+    from mcp_tools.technical_plan_service import _work_item_text
+
+    context = SimpleNamespace(
+        name="高三提分专项",
+        description="需求描述",
+        fields={"feature_list": "## 模块总览\n| 1 | 入口 | 权益鉴权 | — | P0 |"},
+        relations=[],
+        documents=[],
+    )
+
+    text = _work_item_text(context)
+
+    assert "## 模块总览\n| 1 | 入口" in text
+    assert "\\n| 1 | 入口" not in text
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_build_work_item_technical_plan_missing_actor_degrades(
