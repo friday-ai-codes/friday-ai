@@ -462,6 +462,36 @@ async def test_decompose_is_fail_soft_when_llm_unavailable() -> None:
     assert session.status != "failed"
 
 
+async def test_decompose_uses_explicit_module_table_when_llm_unavailable() -> None:
+    """显式 Feature List 可确定性直采，不因模型抖动退化成空功能点。"""
+    await _make_project()
+    session = await _start_and_intake()
+    artifact = await _artifact_of(session)
+    requirement = """## 模块总览
+| # | 模块名 | 一句话描述 | 依赖模块 | 优先级 |
+|---|---|---|---|---|
+| 1 | App 入口与权益展示 | 课程包鉴权并展示入口 | — | P0 |
+| 2 | 功能主页 / 题型图谱 | 章切换、目录联动与题型卡片 | 1 | P0 |
+"""
+
+    with patch(
+        "services.provider_config.ProviderConfigService.aresolve",
+        new=AsyncMock(side_effect=RuntimeError("provider down")),
+    ):
+        version = await adecompose_feature_points(
+            session=session, artifact=artifact, requirement_text=requirement
+        )
+
+    assert version is not None
+    points = version.content["requirement_spec"]["feature_points"]
+    assert [point["title"] for point in points] == [
+        "App 入口与权益展示",
+        "功能主页 / 题型图谱",
+    ]
+    assert points[0]["module"] == "App 入口与权益展示"
+    assert "课程包鉴权" in points[0]["description"][0]["text"]
+
+
 async def test_decompose_handler_carries_pointer_when_nothing_changed() -> None:
     """⑭ handler 三种分支都带回指针：无新版本时带回会话**既有**指针。"""
     await _make_project()

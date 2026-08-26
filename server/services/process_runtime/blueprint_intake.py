@@ -47,6 +47,7 @@
 from __future__ import annotations
 
 import copy
+import re
 import time
 import uuid
 from typing import Any
@@ -650,6 +651,61 @@ def _points_from_segments(segments: list[dict]) -> list[dict]:
     return points
 
 
+def _segments_from_explicit_markdown(requirement_text: str) -> list[dict]:
+    """LLM 不可用时，只从显式 Feature List 结构确定性提取模块。
+
+    支持两种不需要猜测的形状：``模块总览`` Markdown 表格，以及 ``P0 功能`` 下的
+    ``- 模块：描述`` 清单。普通自然语言不匹配，保持原有 fail-soft 行为。
+    """
+    text = str(requirement_text or "")
+    segments: list[dict] = []
+    seen: set[str] = set()
+
+    table_row = re.compile(
+        r"^\|\s*\d+\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*[^|]*\|\s*P\d+\s*\|\s*$"
+    )
+    for line in text.splitlines():
+        match = table_row.match(line.strip())
+        if not match:
+            continue
+        module, detail = (part.strip() for part in match.groups())
+        if not module or module in seen:
+            continue
+        seen.add(module)
+        segments.append(
+            {"title": module, "module": module, "layer": detail, "intent": "brownfield"}
+        )
+        if len(segments) >= _MAX_FEATURE_POINTS:
+            return segments
+    if segments:
+        return segments
+
+    in_p0 = False
+    bullet = re.compile(r"^-\s+([^：:]{2,80})[：:]\s*(.+)$")
+    for raw in text.splitlines():
+        line = raw.strip()
+        if "P0 功能" in line:
+            in_p0 = True
+            continue
+        if in_p0 and line.startswith("**") and "P0 功能" not in line:
+            break
+        if not in_p0:
+            continue
+        match = bullet.match(line)
+        if not match:
+            continue
+        module, detail = (part.strip() for part in match.groups())
+        if module in seen:
+            continue
+        seen.add(module)
+        segments.append(
+            {"title": module, "module": module, "layer": detail, "intent": "brownfield"}
+        )
+        if len(segments) >= _MAX_FEATURE_POINTS:
+            break
+    return segments
+
+
 def _decompose_system_prompt() -> str:
     return (
         "你是技术蓝图的需求拆分助手。用户会给你一段需求原文，请把它拆成互不重叠的功能点。\n"
@@ -755,9 +811,9 @@ async def adecompose_feature_points(
       重跑得同一份 content ⇒ ``content_hash`` 相等 ⇒ ``add_version`` 复用 current ⇒
       本函数返 ``None``（无版本噪声）。
     - **(b) 否则走 LLM**（复用 ``CallSource.BLUEPRINT_DECOMPOSE``，⛔ 零新增枚举）。
-      ⭐ **LLM 不可得 / 解析失败 ⇒ fail-soft**：保留空 ``feature_points``、记一条
-      ``blueprint_decompose_unavailable`` warning，**⛔ 不抛、⛔ 不落 FAILED** —— 规格门
-      本就会因信息不足而开澄清，那才是正确的下一步；一次上游抖动不该废掉整条蓝图。
+      ⭐ LLM 不可得时先尝试从显式 Feature List 模块表/P0 清单确定性直采；仍无结果才
+      fail-soft：保留空 ``feature_points``、记 ``blueprint_decompose_unavailable``，
+      **⛔ 不抛、⛔ 不落 FAILED**。
 
     Returns:
         新 ``ArtifactVersion``（本次真的翻了版本）；``None`` = 未产版本（无 artifact /
@@ -780,6 +836,9 @@ async def adecompose_feature_points(
         source = "llm"
         items = await _allm_feature_points(session, str(requirement_text or ""))
         if items is None:
+            items = _segments_from_explicit_markdown(str(requirement_text or ""))
+            source = "deterministic_markdown"
+        if items is None or not items:
             logger.warning(
                 "blueprint_decompose_unavailable",
                 category="caller",
