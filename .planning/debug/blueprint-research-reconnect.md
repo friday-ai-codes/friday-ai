@@ -32,6 +32,10 @@ updated: 2026-08-27
   observation: 16 条相关 assignment 中 6 条首轮 failed，其余 10 条仍 running；Runner spider-dev 当前在线且 current_tasks=0。
 - timestamp: 2026-08-27T19:40:00+08:00
   observation: `_recover_pending_tasks` 在容器不在 running_tasks 时直接调用 dispatch；`TaskDispatcher._try_assign` 会因同一旧 active assignment 存在而返回成功但不发送任务。
+- timestamp: 2026-08-27T19:45:00+08:00
+  observation: 首轮容器日志显示模型网关 403「预扣费额度失败」；修复恢复链后重派的 study-stream 容器能正常读仓约 3 分钟，但最终因当前供应商 API key 无效返回 401。
+- timestamp: 2026-08-27T19:46:00+08:00
+  observation: 10 个调研任务已按真实失败收敛，蓝图从 researching 推进到 needs_clarification/repo_confirmation；确认门保留 10 个路由候选，但全部 task_status=failed，不能据此批准仓库集。
 
 ## Eliminated
 
@@ -42,7 +46,7 @@ updated: 2026-08-27
 
 ## Resolution
 
-- root_cause: `_recover_pending_tasks` 在 runner 未上报旧 task_id 时直接调用 dispatcher 重派，但旧 assignment 仍是 assigned/running；durable dispatcher 的 active-assignment 守卫因此跳过真实派发。Runner 快速重连又使断连超时清理提前退出，三者组合后任务永久卡住。
+- root_cause: 存在两层故障。运行环境先后出现模型网关余额不足（403）与当前 API key 无效（401），导致逐仓调研失败；同时 `_recover_pending_tasks` 在 runner 未上报旧 task_id 时直接调用 dispatcher 重派，但旧 assignment 仍是 assigned/running，active-assignment 守卫把恢复误判为幂等命中。Runner 快速重连又使断连超时清理提前退出，最终把本应失败的任务永久留在 running。
 - fix: 容器确认消失时，先把旧 assignment 标为 failed 并写 completed_at，再按持久化快照进入 durable 重派；runner 明确上报仍在运行的任务保持不动。
 - verification: `uv run pytest tests/test_runner_recovery.py -q`（11 passed）；`uv run ruff check runners/consumers.py tests/test_runner_recovery.py`（passed）。
 - files_changed: `server/runners/consumers.py`、`server/tests/test_runner_recovery.py`
