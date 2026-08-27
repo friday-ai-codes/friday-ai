@@ -1,0 +1,85 @@
+# Isolated local canary for blueprint-controller verification.
+#
+# Invoke with a unique project name and an env file generated outside version control:
+#   docker compose -p friday-blueprint-canary --env-file .canary.env \
+#     -f docker-compose.canary.yaml up --build -d
+#
+# This intentionally does not extend docker-compose.yaml: the production-shaped compose
+# file hard-codes container names, host ports, and ~/.friday-ai bind mounts. This file has
+# no production data mounts and publishes the server on a Docker-assigned loopback port.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: canary
+      POSTGRES_PASSWORD: canary
+      POSTGRES_DB: friday_canary
+    volumes:
+      - "${CANARY_DATA_DIR:?set CANARY_DATA_DIR}/postgres:/var/lib/postgresql/data"
+    ports:
+      - "127.0.0.1::5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U canary -d friday_canary"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    volumes:
+      - "${CANARY_DATA_DIR:?set CANARY_DATA_DIR}/redis:/data"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    environment:
+      QDRANT__SERVICE__API_KEY: canary-qdrant-key
+    volumes:
+      - "${CANARY_DATA_DIR:?set CANARY_DATA_DIR}/qdrant:/qdrant/storage"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:6333/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    image: friday-blueprint-canary-server:local
+    ports:
+      - "127.0.0.1::8000"
+    environment:
+      SECRET_KEY: ${CANARY_SECRET_KEY:?set CANARY_SECRET_KEY}
+      FRIDAY_ENCRYPTION_KEY: ${CANARY_ENCRYPTION_KEY:?set CANARY_ENCRYPTION_KEY}
+      DEBUG: "false"
+      ALLOWED_HOSTS: "127.0.0.1,localhost"
+      DATABASE_URL: postgres://canary:canary@postgres:5432/friday_canary
+      USE_REDIS_CHANNEL_LAYER: "true"
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: canary-qdrant-key
+      QDRANT_BUNDLED: "true"
+      GUNICORN_WORKERS: "1"
+      GUNICORN_TIMEOUT: "120"
+      FRIDAY_ENV: development
+    volumes:
+      - "${CANARY_DATA_DIR:?set CANARY_DATA_DIR}/server:/app/data"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s

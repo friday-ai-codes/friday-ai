@@ -890,7 +890,9 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         - runner 仍在跑该任务（session_id 在 ``running_tasks`` 上报列表里）：**不重派发**，
           旧容器会自己完成并通过补发的 WS 消息上报；重派发会起第二个容器导致
           push non-fast-forward 冲突（历史 bug 根因）。
-        - 否则（容器确已消失，如 runner 进程重启被 StartupCleanup 清掉）：重新 dispatch。
+        - 否则（容器确已消失，如 runner 进程重启被 StartupCleanup 清掉）：先关闭旧
+          assignment，再重新 dispatch。必须先关闭，否则 durable dispatcher 会把旧的
+          assigned/running 行当作幂等命中，实际不发送任务却返回成功。
 
         Args:
             running_tasks: runner 在 hello 中上报的、当前仍在运行的 task_id 列表。
@@ -922,7 +924,13 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
                 skipped_count += 1
                 continue
 
-            # 重新分发任务（容器确已消失）
+            # 容器确已消失。先把本条旧关联收敛为终态，给 dispatcher 的 active-assignment
+            # 幂等守卫让路；否则下面 dispatch 虽返回成功，durable 任务体却会因这条旧行
+            # 跳过真实派发，任务永久卡在 running。
+            assignment.status = "failed"
+            assignment.completed_at = timezone.now()
+            await assignment.asave(update_fields=["status", "completed_at"])
+
             dispatch_task = await self._rebuild_dispatch_task(session.session_id)
             if dispatch_task:
                 from runners.dispatcher import get_dispatcher

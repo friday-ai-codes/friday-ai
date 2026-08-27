@@ -111,6 +111,109 @@ class TestDisconnectRecovery:
 
     @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
+    async def test_recover_closes_stale_assignment_before_redispatch(self, project):
+        """runner 未上报旧任务时，必须先关闭旧 assignment，避免重派被幂等守卫吞掉。"""
+        from unittest.mock import AsyncMock, patch
+
+        from agents.models import AgentSession
+        from runners.consumers import RunnerConsumer
+        from subagent.models import SubAgentSession
+
+        runner = await Runner.objects.acreate(
+            name="test-runner-recover-stale",
+            token_hash="e" * 64,
+            channel_name="specific..recover-stale",
+            status=Runner.Status.ONLINE,
+        )
+        agent_session = await AgentSession.objects.acreate(
+            session_id="agent-recover-stale",
+            space=project,
+            status=AgentSession.Status.RUNNING,
+        )
+        sub_session = await SubAgentSession.objects.acreate(
+            session_id="recover-stale",
+            main_session=agent_session,
+            task_type=SubAgentSession.TaskType.PLAN,
+            status=SubAgentSession.Status.RUNNING,
+            repo_url="https://gitlab.example.com/t/recover-stale.git",
+        )
+        assignment = await RunnerTaskAssignment.objects.acreate(
+            runner=runner,
+            session=sub_session,
+            status=RunnerTaskAssignment.Status.RUNNING,
+        )
+
+        consumer = RunnerConsumer()
+        consumer.runner = runner
+        rebuilt_task = object()
+        dispatcher = AsyncMock()
+
+        with (
+            patch.object(
+                consumer,
+                "_rebuild_dispatch_task",
+                new=AsyncMock(return_value=rebuilt_task),
+            ),
+            patch("runners.dispatcher.get_dispatcher", return_value=dispatcher),
+        ):
+            await consumer._recover_pending_tasks(running_tasks=[])
+
+        await assignment.arefresh_from_db()
+        assert assignment.status == RunnerTaskAssignment.Status.FAILED
+        assert assignment.completed_at is not None
+        dispatcher.dispatch.assert_awaited_once_with(rebuilt_task)
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.asyncio
+    async def test_recover_keeps_assignment_for_task_still_running(self, project):
+        """runner 明确上报仍在运行的任务时，不关闭 assignment，也不重复派发。"""
+        from unittest.mock import AsyncMock, patch
+
+        from agents.models import AgentSession
+        from runners.consumers import RunnerConsumer
+        from subagent.models import SubAgentSession
+
+        runner = await Runner.objects.acreate(
+            name="test-runner-recover-live",
+            token_hash="f" * 64,
+            channel_name="specific..recover-live",
+            status=Runner.Status.ONLINE,
+        )
+        agent_session = await AgentSession.objects.acreate(
+            session_id="agent-recover-live",
+            space=project,
+            status=AgentSession.Status.RUNNING,
+        )
+        sub_session = await SubAgentSession.objects.acreate(
+            session_id="recover-live",
+            main_session=agent_session,
+            task_type=SubAgentSession.TaskType.PLAN,
+            status=SubAgentSession.Status.RUNNING,
+            repo_url="https://gitlab.example.com/t/recover-live.git",
+        )
+        assignment = await RunnerTaskAssignment.objects.acreate(
+            runner=runner,
+            session=sub_session,
+            status=RunnerTaskAssignment.Status.RUNNING,
+        )
+
+        consumer = RunnerConsumer()
+        consumer.runner = runner
+
+        with patch.object(
+            consumer,
+            "_rebuild_dispatch_task",
+            new=AsyncMock(),
+        ) as rebuild:
+            await consumer._recover_pending_tasks(running_tasks=[sub_session.session_id])
+
+        await assignment.arefresh_from_db()
+        assert assignment.status == RunnerTaskAssignment.Status.RUNNING
+        assert assignment.completed_at is None
+        rebuild.assert_not_awaited()
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.asyncio
     async def test_rebuild_rehydrates_redacted_credentials(self, project):
         """重派重解析（103 审查 WR-03）：落库副本按 ``_redacted_env_keys`` 标记剔除
         凭证键，重建时从权威源补回 Git token / API key；USER_TOKEN 不重铸（容器
