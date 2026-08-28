@@ -29,6 +29,25 @@ def _events(captured: list[dict], *names: str) -> list[dict]:
     return [event for event in captured if event.get("event") in allowed]
 
 
+_COMMON_EVENT_KEYS = {
+    "category",
+    "component",
+    "event",
+    "initiated_by_user_id",
+    "log_level",
+}
+_COMPLETED_EVENT_KEYS = _COMMON_EVENT_KEYS | {
+    "capture_id",
+    "duration_ms",
+    "idempotent_hit",
+    "link_reason",
+    "project_bound",
+    "repository_bound",
+    "session_present",
+}
+_FAILED_EVENT_KEYS = _COMMON_EVENT_KEYS | {"duration_ms", "error"}
+
+
 async def _persist(actor, **overrides):
     params = {
         "question": "capture-question-sentinel",
@@ -61,9 +80,15 @@ async def test_success_caller_lifecycle():
         assert event["component"] == "knowledge"
         assert event["initiated_by_user_id"] == str(actor.id)
     assert "duration_ms" not in lifecycle[0]
+    assert set(lifecycle[0]) == _COMMON_EVENT_KEYS
+    assert set(lifecycle[1]) == _COMPLETED_EVENT_KEYS
     assert lifecycle[1]["duration_ms"] >= 0
     assert lifecycle[1]["capture_id"] == str(result.capture.id)
     assert lifecycle[1]["link_reason"] == result.capture.link_reason
+    assert lifecycle[1]["repository_bound"] is False
+    assert lifecycle[1]["project_bound"] is False
+    assert lifecycle[1]["session_present"] is True
+    assert lifecycle[1]["idempotent_hit"] is False
 
 
 async def test_failure_caller_lifecycle(monkeypatch):
@@ -93,6 +118,7 @@ async def test_failure_caller_lifecycle(monkeypatch):
     assert lifecycle[1]["category"] == "caller"
     assert lifecycle[1]["component"] == "knowledge"
     assert lifecycle[1]["initiated_by_user_id"] == str(actor.id)
+    assert set(lifecycle[1]) == _FAILED_EVENT_KEYS
     assert lifecycle[1]["duration_ms"] >= 0
     serialized = json.dumps(captured, ensure_ascii=False)
     assert token not in serialized
