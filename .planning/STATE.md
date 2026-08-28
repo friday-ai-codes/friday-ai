@@ -2,20 +2,19 @@
 gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
-current_phase: 142
-current_phase_name: MCP 会话回写契约
-status: executing
-stopped_at: Completed 142-04-PLAN.md
-last_updated: "2026-08-28T09:14:57.669Z"
-last_activity: 2026-08-28 — Phase 142 Plan 04 regression and Nyquist complete
-last_activity_desc: Phase 142 Plan 04 regression and Nyquist complete
-state_head: 4451c14c
+current_phase: 143
+current_phase_name: 价值评估与中高入图
+status: planning
+stopped_at: Phase 142 complete, ready to plan Phase 143
+last_updated: "2026-08-28T09:29:39.723Z"
+last_activity: 2026-08-28
+last_activity_desc: Phase 142 complete, transitioned to Phase 143
+state_head: b849c1af275a22cddcd80da865cf83d46b2d2af1
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 8
   completed_plans: 8
-  percent: 40
 ---
 
 # Project State
@@ -29,10 +28,10 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 
 ## Current Position
 
-Phase: 142 (MCP 会话回写契约) — EXECUTING
-Plan: 4 of 4 complete
-Status: Ready to verify
-Last activity: 2026-08-28 — Phase 142 Plan 04 regression and Nyquist complete
+Phase: 143 — 价值评估与中高入图
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-28 — Phase 142 complete, transitioned to Phase 143
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -1277,7 +1276,7 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-08-28T09:14:57.659Z
-Stopped at: Completed 142-04-PLAN.md
+Stopped at: Phase 142 complete, ready to plan Phase 143
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
