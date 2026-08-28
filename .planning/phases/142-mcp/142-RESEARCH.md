@@ -350,22 +350,20 @@ path(
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | 请求收 `client` 但不入库是符合「可选元数据完整覆盖」的实现 | Don't Hand-Roll / Pitfall 4 | 用户期望 DB 可按 client 过滤；需 141 后补列（本阶段无 migration） |
+| A1 | 请求收 `client`，SessionCapture 不加列；经 MCP `_record` 审计元数据保留（audit-not-model） | Don't Hand-Roll / Pitfall 4；Open Questions #1 RESOLVED | 用户若要按 client 过滤 Capture 表，另开 STORE 增量 |
 | A2 | 成功 HTTP 状态用 200 而非 201 | Pitfall 6 | 若产品要坚持 REST「创建 201」，npm 仍可工作（`resp.ok`）；与 ROADMAP 字面「返回 200」冲突时以 CONTEXT/ROADMAP 200 为准 |
 
 **若表为空则无需确认：** 其余挂钩/鉴权/snapshot 行为均有代码引用。A1/A2 为 discretionary 边界上的实现选择，CONTEXT 已把 HTTP 200 与可选键锁定；A1 是唯一真正的模型缺口说明。
 
 ## Open Questions
 
-1. **`client` 是否要在后续相位加列？**
+1. **`client` 是否要在后续相位加列？** — **RESOLVED（本阶段）**
+   - Decision: 142 只接线公开请求键，不改 SessionCapture / CaptureService 签名。`client` 经 serializer 接受，并由既有 `McpToolView._record` → redacted `ToolCallRecord.input` 作为 audit metadata 保留（audit-not-model）；不静默从公开 schema 删除该键。按 IDE 宿主切片过滤若需要，另开 STORE 增量加列，不在 142 做 migration。
    - What we know: 141 模型无 `client`；persist 无参数。
-   - What's unclear: 评测是否要按 IDE 宿主切片。
-   - Recommendation: 142 请求面收键、落库丢弃；需要再开 STORE 增量，不在 142 加 migration。
 
-2. **字段级对齐是否扩展到全部工具？**
+2. **字段级对齐是否扩展到全部工具？** — **RESOLVED**
+   - Decision: **仅**新工具 `report_session_knowledge` 字段级三面相等；禁止全量 51 工具 properties 对齐，也不修 `report_project_knowledge` 历史 snapshot 漂移。
    - What we know: 旧 `report_project_knowledge` snapshot 已漂。
-   - What's unclear: 无。
-   - Recommendation: **仅**新工具字段级三面；禁止全量对齐任务。
 
 ## Environment Availability
 
