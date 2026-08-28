@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
 status: executing
-stopped_at: Completed 143-05-PLAN.md
-last_updated: "2026-08-28T10:48:22.284Z"
+stopped_at: Completed 143-06-PLAN.md
+last_updated: "2026-08-28T11:00:52.457Z"
 last_activity: Completed 143-05-PLAN.md
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 15
-  completed_plans: 13
-  percent: 87
+  completed_plans: 14
+  percent: 93
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 143 — 价值评估与中高入图
-Plan: 6 of 7 (143-01 through 143-05 complete; next 143-06)
-Status: Executing Wave 2
-Last activity: Completed 143-05-PLAN.md
+Plan: 7 of 7 (143-01 through 143-06 complete; next 143-07)
+Status: Executing Wave 4
+Last activity: Completed 143-06-PLAN.md
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -443,6 +443,7 @@ Last activity: Completed 143-05-PLAN.md
 | Phase 143-eval P03 | 7min | 2 tasks | 4 files |
 | Phase 143 P04 | 3min | 2 tasks | 3 files |
 | Phase 143-eval P05 | 6min | 2 tasks | 3 files |
+| Phase 143-eval P06 | 11min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -837,6 +838,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 143]: 仅摄取状态的 medium/high SessionCapture 可投影为知识事件，legacy evaluated 与 low 不进入向量层。
 - [Phase 143]: SessionCapture 知识标题、正文只来自再次脱敏的 distilled_essence，payload 仅保留四个来源标量。
 - [Phase 143]: 无锚中高价值 Capture 保留无边事件，仅已有 project FK 时建立 REFERENCES。
+- [Phase 143-eval]: 首次投递和恢复使用稳定 Capture key，worker 退避 job 不复用稳定 idempotency key。 — 避免完成态 todo 去重吞掉合法重试，同时通过同值 doing lock 保持串行。
+- [Phase 143-eval]: eval 与 ingest 独立 CAS 和失败域，ingest 重试不重新调用 LLM。 — 隔离模型收费副作用与向量摄取临时故障。
 
 ### Pending Todos
 
@@ -1292,8 +1295,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T10:48:22.275Z
-Stopped at: Completed 143-05-PLAN.md
+Last session: 2026-08-28T11:00:52.447Z
+Stopped at: Completed 143-06-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
