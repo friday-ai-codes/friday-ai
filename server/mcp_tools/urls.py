@@ -43,6 +43,7 @@ from .views import (
     ReportBlueprintContextView,
     ReportProjectKnowledgeView,
     ReportProjectStateView,
+    ReportSessionKnowledgeView,
     RequestTechnicalBlueprintChangesView,
     ReverseLookupView,
     RouteBlueprintReposView,
@@ -182,6 +183,11 @@ urlpatterns = [
         "tools/report_project_knowledge/",
         ReportProjectKnowledgeView.as_view(),
         name="mcp-tool-report-project-knowledge",
+    ),
+    path(
+        "tools/report_session_knowledge/",
+        ReportSessionKnowledgeView.as_view(),
+        name="mcp-tool-report-session-knowledge",
     ),
     # STATE 结构化回写（HOOK-03，Phase 86-04）
     path(
