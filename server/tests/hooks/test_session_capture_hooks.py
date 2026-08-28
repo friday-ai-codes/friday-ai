@@ -139,15 +139,20 @@ def test_claude_stop_fail_soft_modes_keep_pending(
             record_http=False,
         )
         assert result.returncode == 0
-    missing = run_hook(
+    run_hook(
         hook_paths["claude_prompt"],
         _claude_prompt("missing-creds", "g", cwd),
+        cwd=cwd,
+    )
+    missing = run_hook(
+        hook_paths["claude_stop"],
+        _claude_stop("missing-creds", "g", cwd),
         cwd=cwd,
         extra_env={"FRIDAY_BASE_URL": None, "FRIDAY_ACCESS_TOKEN": None},
         record_http=False,
     )
     assert missing.returncode == 0
-    assert len(pending_files()) == 2
+    assert len(pending_files()) == 3
     assert not http_record.exists()
 
 
