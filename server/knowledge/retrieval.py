@@ -37,6 +37,7 @@ class DeliveryKnowledgeSearchService:
         user,
         top_k: int = 10,
         entity_kinds: list[str] | None = None,
+        source_kinds: list[str] | None = None,
         project_ids: list[str] | None = None,
         repository_ids: list[str] | None = None,
         as_of: datetime | None = None,
@@ -58,6 +59,7 @@ class DeliveryKnowledgeSearchService:
             allowed_repository_ids=allowed_repos,
             top_k=top_k,
             entity_kinds=entity_kinds,
+            source_kinds=source_kinds,
             include_superseded=include_superseded,
             include_document_kind=include_document_kind,
         )
