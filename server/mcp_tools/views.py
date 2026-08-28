@@ -3541,7 +3541,7 @@ class LookupProjectByBranchView(McpToolView):
         assert input_data is not None
         started_at = time.perf_counter()
 
-        from services.branch_parsing import parse_work_item_id_from_branch
+        from services.branch_parsing import is_default_branch, parse_work_item_id_from_branch
 
         branch_name = str(input_data["branch_name"])
         repository_id = input_data.get("repository_id")
@@ -3557,6 +3557,7 @@ class LookupProjectByBranchView(McpToolView):
             "candidates": [],
             "context": "",
             "included_layers": [],
+            "binding_source": "",
             "run_id": str(run.run_id),
         }
         traces: list[tuple[str, dict[str, Any]]] = []
@@ -3577,13 +3578,23 @@ class LookupProjectByBranchView(McpToolView):
         binding_ids = {p.id for p in binding_projects}
 
         # 第三兜底源（quick-260723）：分支两源均无命中且已知仓库 → RepoAssociation 反查。
+        association_candidates: list[Any] = []
         if not merged and repository_id:
             association_projects = await self._lookup_by_repo_association(repository_id)
-            for p in association_projects:
-                merged.setdefault(p.id, p)
+            repository = await Repository.objects.filter(pk=repository_id).only("default_branch").afirst()
+            if repository is not None and is_default_branch(
+                branch_name, repository.default_branch
+            ):
+                association_candidates = association_projects
+                output_data["binding_source"] = "repo_association_skipped_default_branch"
+            else:
+                for p in association_projects:
+                    merged.setdefault(p.id, p)
 
         projects = list(merged.values())
-        output_data["candidates"] = [_project_summary(p) for p in projects]
+        output_data["candidates"] = [
+            _project_summary(p) for p in (association_candidates or projects)
+        ]
 
         if len(projects) == 1:
             from services.project_context_packer import pack_project_context
@@ -3601,6 +3612,7 @@ class LookupProjectByBranchView(McpToolView):
                 if in_binding
                 else "repo_association"
             )
+            output_data["binding_source"] = binding_source
             packed = await pack_project_context(project, request.user, query=branch_name)
             output_data["matched"] = True
             output_data["project"] = _project_summary(project)

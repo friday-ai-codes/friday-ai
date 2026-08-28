@@ -15,13 +15,24 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["parse_work_item_id_from_branch"]
+__all__ = ["is_default_branch", "parse_work_item_id_from_branch"]
+
+_WELL_KNOWN_DEFAULT_BRANCHES = frozenset({"main", "master", "develop"})
 
 # 严格对齐生成器：feat/xxxx-m{id}-slug（id 为飞书数值工作项 id）。
 _STRICT_RE = re.compile(r"^feat/xxxx-m(?P<id>\d+)(?:-.*)?$", re.IGNORECASE)
 
 # 宽松兜底：任意位置的 `-m{digits}` 段（边界为 `-` 或串尾），覆盖命名漂移。
 _LOOSE_RE = re.compile(r"-m(?P<id>\d+)(?:-|$)", re.IGNORECASE)
+
+
+def is_default_branch(branch_name: str | None, default_branch: str | None = None) -> bool:
+    """判断分支是否为约定或仓库配置的默认分支（大小写敏感）。"""
+    if not branch_name:
+        return False
+    return branch_name in _WELL_KNOWN_DEFAULT_BRANCHES or (
+        bool(default_branch) and branch_name == default_branch
+    )
 
 
 def parse_work_item_id_from_branch(branch_name: str | None) -> int | None:
