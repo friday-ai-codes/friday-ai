@@ -5,17 +5,17 @@ milestone_name: Cursor / Claude Code 会话知识回写
 current_phase: 142
 current_phase_name: MCP 会话回写契约
 status: executing
-stopped_at: Completed 142-03-PLAN.md
-last_updated: "2026-08-28T08:50:40.280Z"
-last_activity: 2026-08-28 — Phase 142 Plan 03 npm MCP contract complete
-last_activity_desc: Phase 142 Plan 03 npm MCP contract complete
-state_head: c5c9b024
+stopped_at: Completed 142-04-PLAN.md
+last_updated: "2026-08-28T09:14:57.669Z"
+last_activity: 2026-08-28 — Phase 142 Plan 04 regression and Nyquist complete
+last_activity_desc: Phase 142 Plan 04 regression and Nyquist complete
+state_head: 4451c14c
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8
-  completed_plans: 7
-  percent: 20
+  completed_plans: 8
+  percent: 40
 ---
 
 # Project State
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 142 (MCP 会话回写契约) — EXECUTING
-Plan: 3 of 4 complete
-Status: Ready to execute
-Last activity: 2026-08-28 — Phase 142 Plan 03 npm MCP contract complete
+Plan: 4 of 4 complete
+Status: Ready to verify
+Last activity: 2026-08-28 — Phase 142 Plan 04 regression and Nyquist complete
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -441,6 +441,7 @@ Last activity: 2026-08-28 — Phase 142 Plan 03 npm MCP contract complete
 | Phase 142-mcp P01 | 6min | 3 tasks | 4 files |
 | Phase 142-mcp P03 | 2min | 1 tasks | 1 files |
 | Phase 142-mcp P02 | 5min | 2 tasks | 3 files |
+| Phase 142 P04 | 21min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -818,6 +819,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 142]: report_session_knowledge 使用独立 annotations，准确表达 first-write-wins 幂等语义
 - [Phase 142]: client 作为开放请求元数据进入既有脱敏审计，但不传给 CaptureService 或扩展 SessionCapture
 - [Phase 142]: accepted=true 只在 CaptureService.persist 成功返回后构造，挂钩结果仅体现在 reason 与实际 FK
+- [Phase 142]: Nyquist 以 Phase 142 自有 56 pytest + 12 vitest 为准，两条蓝图脏改动失败不阻断
+- [Phase 142]: client 仅作为 redacted ToolCallRecord audit metadata，不扩展 SessionCapture 或 CaptureService
 
 ### Pending Todos
 
@@ -1273,8 +1276,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T08:50:00.121Z
-Stopped at: Completed 142-03-PLAN.md
+Last session: 2026-08-28T09:14:57.659Z
+Stopped at: Completed 142-04-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）

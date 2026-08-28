@@ -12,7 +12,7 @@ v0.25.0 把 Cursor / Claude Code 中有价值的问答沉淀为 Friday 可召回
 ## Phases
 
 - [x] **Phase 141: Capture 账本与仓库挂钩** - 原始问答先安全、可归因地落账本，仓库或项目解析失败也不丢 Capture (completed 2026-08-28)
-- [ ] **Phase 142: MCP 会话回写契约** - 通过新工具 `report_session_knowledge` 提交 Capture，并保持服务端、snapshot、npm 三面对齐
+- [x] **Phase 142: MCP 会话回写契约** - 通过新工具 `report_session_knowledge` 提交 Capture，并保持服务端、snapshot、npm 三面对齐 (completed 2026-08-28)
 - [ ] **Phase 143: 价值评估与中高入图** - 异步评估 high/medium/low，仅 medium/high 可重试地进入统一知识库
 - [ ] **Phase 144: 仓库召回与 Capture 回放** - 按仓库/项目召回会话知识并按 Capture id 安全回放原始问答
 - [ ] **Phase 145: Cursor / Claude Code 双宿主采集** - 两个宿主自动配对问题与可见答案精华，干净工作树也能 fail-soft 回写
@@ -52,14 +52,14 @@ Plans:
   3. 服务端 serializer、`TOOL_SCHEMA_SNAPSHOT` 与 npm `mcp/src/tools.ts` 暴露同一工具契约，任一面漂移都会被自动化验收阻止。
   4. 既有 `report_project_knowledge` 仍执行原有项目门闩与 git-diff 记忆路径，不会被扩成 Capture 入口或发生行为回退。
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 
 - [x] 142-01-PLAN.md — Wave 0：HTTP 接受语义、三面 schema、client 审计与旧工具隔离 RED 契约
 - [x] 142-02-PLAN.md — 服务端 serializer/snapshot/view/url 接线并复用 CaptureService 与 McpToolView lifecycle
 - [x] 142-03-PLAN.md — npm 第 52 个工具定义、完整输入 schema 与专用幂等 annotations
-- [ ] 142-04-PLAN.md — 跨面 phase gate、旧 report_project_knowledge 零回归与 Nyquist 收口
+- [x] 142-04-PLAN.md — 跨面 phase gate、旧 report_project_knowledge 零回归与 Nyquist 收口
 
 ### Phase 143: 价值评估与中高入图
 
@@ -124,7 +124,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 141. Capture 账本与仓库挂钩 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
-| 142. MCP 会话回写契约 | v0.25.0 | 3/4 | In Progress|  |
+| 142. MCP 会话回写契约 | v0.25.0 | 4/4 | Complete   | 2026-08-28 |
 | 143. 价值评估与中高入图 | v0.25.0 | 0/TBD | Not started | - |
 | 144. 仓库召回与 Capture 回放 | v0.25.0 | 0/TBD | Not started | - |
 | 145. Cursor / Claude Code 双宿主采集 | v0.25.0 | 0/TBD | Not started | - |
