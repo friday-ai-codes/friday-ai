@@ -99,13 +99,13 @@ Plans:
   4. `main`、`master`、`develop` 等默认分支不会单独把 Capture 误绑到项目，`lookup_project_by_branch` 的默认分支第三源不会返回 `matched=true`。
   5. MCP 与对话召回链 best-effort 写入脱敏 `RetrievalTrace`；观测失败不会改变检索结果。
 
-**Plans:** 1/5 plans executed
+**Plans:** 2/5 plans executed
 
 Plans:
 
 - [x] 144-01-PLAN.md — Wave 0：会话检索/回放/默认分支/双链 Trace 与 MCP 54 工具 RED 契约
 - [ ] 144-02-PLAN.md — source_kinds 透传、search_session_knowledge helper 与 packer inclusion
-- [ ] 144-03-PLAN.md — 默认分支第三源守卫与 Capture 写路径零回归
+- [x] 144-03-PLAN.md — 默认分支第三源守卫与 Capture 写路径零回归
 - [ ] 144-04-PLAN.md — MCP/Chat 会话检索与标量 RetrievalTrace
 - [ ] 144-05-PLAN.md — Capture 只读回放与 MCP 54 三面冻结
 
@@ -144,7 +144,7 @@ Plans:
 | 141. Capture 账本与仓库挂钩 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
 | 142. MCP 会话回写契约 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
 | 143. 价值评估与中高入图 | v0.25.0 | 7/7 | Complete    | 2026-08-28 |
-| 144. 仓库召回与 Capture 回放 | v0.25.0 | 1/5 | In Progress|  |
+| 144. 仓库召回与 Capture 回放 | v0.25.0 | 2/5 | In Progress|  |
 | 145. Cursor / Claude Code 双宿主采集 | v0.25.0 | 0/TBD | Not started | - |
 
 **Coverage:** 27/27 v0.25.0 requirements mapped exactly once；0 unmapped；0 duplicate。
