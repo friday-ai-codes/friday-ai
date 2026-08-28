@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
-status: executing
-stopped_at: Completed 143-06-PLAN.md
-last_updated: "2026-08-28T11:00:52.457Z"
-last_activity: Completed 143-05-PLAN.md
+status: ready_for_verification
+stopped_at: Completed 143-07-PLAN.md
+last_updated: "2026-08-28T11:14:06.635Z"
+last_activity: Completed 143-07-PLAN.md
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 15
-  completed_plans: 14
-  percent: 93
+  completed_plans: 15
+  percent: 60
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 143 — 价值评估与中高入图
-Plan: 7 of 7 (143-01 through 143-06 complete; next 143-07)
-Status: Executing Wave 4
-Last activity: Completed 143-06-PLAN.md
+Plan: 7 of 7 complete
+Status: Ready for verification
+Last activity: Completed 143-07-PLAN.md
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -36,7 +36,7 @@ Last activity: Completed 143-06-PLAN.md
 |-------|------|--------------|--------|
 | 141 | Capture 账本与仓库挂钩 | STORE-01~05, OBS-01/02 | In progress (2/4) |
 | 142 | MCP 会话回写契约 | MCP-01~04 | Not started |
-| 143 | 价值评估与中高入图 | EVAL-01~05, OBS-04 | Not started |
+| 143 | 价值评估与中高入图 | EVAL-01~05, OBS-04 | Complete (7/7, validated) |
 | 144 | 仓库召回与 Capture 回放 | RECALL-01~04, OBS-03 | Not started |
 | 145 | Cursor / Claude Code 双宿主采集 | SKILL-01~05 | Not started |
 
@@ -444,6 +444,7 @@ Last activity: Completed 143-06-PLAN.md
 | Phase 143 P04 | 3min | 2 tasks | 3 files |
 | Phase 143-eval P05 | 6min | 2 tasks | 3 files |
 | Phase 143-eval P06 | 11min | 2 tasks | 6 files |
+| Phase 143 P07 | 11min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -840,6 +841,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 143]: 无锚中高价值 Capture 保留无边事件，仅已有 project FK 时建立 REFERENCES。
 - [Phase 143-eval]: 首次投递和恢复使用稳定 Capture key，worker 退避 job 不复用稳定 idempotency key。 — 避免完成态 todo 去重吞掉合法重试，同时通过同值 doing lock 保持串行。
 - [Phase 143-eval]: eval 与 ingest 独立 CAS 和失败域，ingest 重试不重新调用 LLM。 — 隔离模型收费副作用与向量摄取临时故障。
+- [Phase 143]: CaptureService.persist 返回即为提交边界；view 直接 await durable helper，不在同步 on_commit callback 中桥接 async。
+- [Phase 143]: MCP 只为 pending_eval/eval_failed 调 helper，终态不重派；helper 或队列异常不改变 accepted 响应。
+- [Phase 143]: 观测静态门禁同时识别直接 logger 调用与统一 _log 封装。
 
 ### Pending Todos
 
@@ -1295,8 +1299,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T11:00:52.447Z
-Stopped at: Completed 143-06-PLAN.md
+Last session: 2026-08-28T11:14:06.626Z
+Stopped at: Completed 143-07-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
