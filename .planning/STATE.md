@@ -2,19 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
-current_phase: 143
-current_phase_name: 价值评估与中高入图
-status: planning
-stopped_at: Phase 142 complete, ready to plan Phase 143
-last_updated: "2026-08-28T09:29:39.723Z"
-last_activity: 2026-08-28
-last_activity_desc: Phase 142 complete, transitioned to Phase 143
-state_head: b849c1af275a22cddcd80da865cf83d46b2d2af1
+status: executing
+stopped_at: Completed 143-02-PLAN.md
+last_updated: "2026-08-28T10:20:02.505Z"
+last_activity: Completed 143-02-PLAN.md
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 15
+  completed_plans: 9
+  percent: 40
 ---
 
 # Project State
@@ -29,9 +26,9 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 143 — 价值评估与中高入图
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-28 — Phase 142 complete, transitioned to Phase 143
+Plan: 02 of 7 (143-02 complete; 143-01 still executing)
+Status: Executing Wave 0
+Last activity: Completed 143-02-PLAN.md
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -441,6 +438,7 @@ Last activity: 2026-08-28 — Phase 142 complete, transitioned to Phase 143
 | Phase 142-mcp P03 | 2min | 1 tasks | 1 files |
 | Phase 142-mcp P02 | 5min | 2 tasks | 3 files |
 | Phase 142 P04 | 21min | 2 tasks | 1 files |
+| Phase 143-eval P02 | 8min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -820,6 +818,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 142]: accepted=true 只在 CaptureService.persist 成功返回后构造，挂钩结果仅体现在 reason 与实际 FK
 - [Phase 142]: Nyquist 以 Phase 142 自有 56 pytest + 12 vitest 为准，两条蓝图脏改动失败不阻断
 - [Phase 142]: client 仅作为 redacted ToolCallRecord audit metadata，不扩展 SessionCapture 或 CaptureService
+- [Phase 143]: Wave 0 仅建立失败测试，不提前实现 eval/ingest worker 或 enqueue helper。 — 143-02 tracer-first；生产符号缺失时预期 RED。
+- [Phase 143]: Phase 141 persist 路径仍禁止提前发出 eval sampling；Phase 143 sampling 改为对尚未落地源文件做 AST 白名单。 — 避免删除 Phase 141 persist 隔离契约。
+- [Phase 143]: VALIDATION Task ID 按 143-01 与 143-02 拆分；wave_0_complete 与 nyquist_compliant 保持 false。 — Nyquist 待两边 Wave 0 与实现门禁完成。
 
 ### Pending Todos
 
@@ -1275,8 +1276,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T09:14:57.659Z
-Stopped at: Phase 142 complete, ready to plan Phase 143
+Last session: 2026-08-28T10:19:41.959Z
+Stopped at: Completed 143-02-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
