@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
 status: executing
-stopped_at: Completed 143-01-PLAN.md
-last_updated: "2026-08-28T10:31:24.709Z"
-last_activity: Completed 143-01-PLAN.md
+stopped_at: Completed 143-03-PLAN.md
+last_updated: "2026-08-28T10:40:34.417Z"
+last_activity: Completed 143-03-PLAN.md
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 15
-  completed_plans: 10
-  percent: 67
+  completed_plans: 11
+  percent: 73
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 归档见 `milestones/v0.24.0-*`。
 
 **Core value:** 让团队开箱即用、安全地把需求变成代码；本里程碑让 IDE 里问过的坑和决策可沉淀、可按仓召回，且不阻断编码。
-**Current focus:** Phase 142 — MCP 会话回写契约
+**Current focus:** Phase 143 — 价值评估与中高入图
 
 ## Current Position
 
 Phase: 143 — 价值评估与中高入图
-Plan: 3 of 7 (143-01 and 143-02 complete; next 143-03)
-Status: Executing Wave 0
-Last activity: Completed 143-01-PLAN.md
+Plan: 4 of 7 (143-01 through 143-03 complete; next 143-04)
+Status: Executing Wave 1
+Last activity: Completed 143-03-PLAN.md
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -440,6 +440,7 @@ Last activity: Completed 143-01-PLAN.md
 | Phase 142 P04 | 21min | 2 tasks | 1 files |
 | Phase 143-eval P02 | 8min | 3 tasks | 5 files |
 | Phase 143 P01 | 16min | 3 tasks | 4 files |
+| Phase 143-eval P03 | 7min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -825,6 +826,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 143]: Wave 0 只写可收集 RED 测试，不改生产枚举、CAS writer 或 session_capture normalizer。
 - [Phase 143]: 状态转移测试经 CaptureService 公共方法串联；legacy evaluated 仅在测试中模拟存量行。
 - [Phase 143]: 不勾选 REQUIREMENTS.md 产品完成态：EVAL-01~05 仍待后续实现计划变绿。
+- [Phase 143-eval]: 保留 legacy evaluated 状态，但新 writer 不写入、claim 或 resume 该状态。
+- [Phase 143-eval]: 处理中状态允许 durable 重放 resume，只有 pending/failed 到 processing 的 CAS 递增对应 attempt。
+- [Phase 143-eval]: 评估成功统一清理错误与 retry；摄取失败不修改评估 attempt 或回退评估状态。
 
 ### Pending Todos
 
@@ -1280,8 +1284,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T10:31:24.561Z
-Stopped at: Completed 143-01-PLAN.md
+Last session: 2026-08-28T10:40:34.408Z
+Stopped at: Completed 143-03-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
