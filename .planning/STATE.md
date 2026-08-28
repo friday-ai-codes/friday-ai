@@ -4,17 +4,18 @@ milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
 current_phase: 144
 current_phase_name: 仓库召回与 Capture 回放
-status: planning
-stopped_at: Phase 143 complete, ready to plan Phase 144
-last_updated: "2026-08-28T11:23:26.546Z"
-last_activity: 2026-08-28
-last_activity_desc: Phase 143 complete, transitioned to Phase 144
-state_head: 192d0782f5cef9b995e888ec7a9371e42905738d
+status: executing
+stopped_at: Completed 144-01-PLAN.md
+last_updated: "2026-08-28T11:59:50.938Z"
+last_activity: 2026-08-28 — Phase 143 complete, transitioned to Phase 144
+last_activity_desc: 144-01 Wave 0 RED contracts complete
+state_head: 950e6b19a
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 15
-  completed_plans: 15
+  total_plans: 20
+  completed_plans: 16
+  percent: 60
 ---
 
 # Project State
@@ -24,14 +25,14 @@ progress:
 See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 归档见 `milestones/v0.24.0-*`。
 
 **Core value:** 让团队开箱即用、安全地把需求变成代码；本里程碑让 IDE 里问过的坑和决策可沉淀、可按仓召回，且不阻断编码。
-**Current focus:** Phase 143 — 价值评估与中高入图
+**Current focus:** Phase 144 — 仓库召回与 Capture 回放
 
 ## Current Position
 
 Phase: 144 — 仓库召回与 Capture 回放
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-28 — Phase 143 complete, transitioned to Phase 144
+Plan: 1 of 5 complete
+Status: In progress
+Last activity: 2026-08-28 — 144-01 Wave 0 RED contracts complete
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -40,7 +41,7 @@ Last activity: 2026-08-28 — Phase 143 complete, transitioned to Phase 144
 | 141 | Capture 账本与仓库挂钩 | STORE-01~05, OBS-01/02 | In progress (2/4) |
 | 142 | MCP 会话回写契约 | MCP-01~04 | Not started |
 | 143 | 价值评估与中高入图 | EVAL-01~05, OBS-04 | Complete (7/7, validated) |
-| 144 | 仓库召回与 Capture 回放 | RECALL-01~04, OBS-03 | Not started |
+| 144 | 仓库召回与 Capture 回放 | RECALL-01~04, OBS-03 | In progress (1/5) |
 | 145 | Cursor / Claude Code 双宿主采集 | SKILL-01~05 | Not started |
 
 **Execution order:** 141 → 142 → 143 → 144 → 145。先保证 Capture 永不丢，再开放 MCP 契约；评估/入图依赖稳定写入口，召回依赖入图，宿主采集最后对接已冻结的端到端能力。
@@ -448,6 +449,7 @@ Last activity: 2026-08-28 — Phase 143 complete, transitioned to Phase 144
 | Phase 143-eval P05 | 6min | 2 tasks | 3 files |
 | Phase 143-eval P06 | 11min | 2 tasks | 6 files |
 | Phase 143 P07 | 11min | 2 tasks | 3 files |
+| Phase 144 P01 | 4 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -847,6 +849,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 143]: CaptureService.persist 返回即为提交边界；view 直接 await durable helper，不在同步 on_commit callback 中桥接 async。
 - [Phase 143]: MCP 只为 pending_eval/eval_failed 调 helper，终态不重派；helper 或队列异常不改变 accepted 响应。
 - [Phase 143]: 观测静态门禁同时识别直接 logger 调用与统一 _log 封装。
+- [Phase 144]: Wave 0 只落测试，不修改生产代码、npm 工具定义或依赖。
+- [Phase 144]: repository_id 为必填主作用域，project_id 只能形成 AND 收窄。
+- [Phase 144]: 回放正文只允许来自 SessionCapture，未授权与不存在统一返回中性 404。
 
 ### Pending Todos
 
@@ -1302,8 +1307,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T11:14:06.626Z
-Stopped at: Phase 143 complete, ready to plan Phase 144
+Last session: 2026-08-28T11:59:28.374Z
+Stopped at: Completed 144-01-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
