@@ -71,13 +71,15 @@ def test_invalid_repository_query_or_top_k_returns_400(mcp_client, payload) -> N
 
 def test_repository_and_project_are_forwarded_as_and_filters(
     mcp_client,
-    repository,
+    repository_in_user_space,
+    project,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """缺失 helper/路由必须显式 RED，不得用 skip 掩盖。"""
     from knowledge import session_capture_retrieval
 
-    project_id = str(uuid.uuid4())
+    project_id = str(project.id)
+    repository = repository_in_user_space
     search = AsyncMock(return_value=[_result(str(repository.id), project_id)])
     monkeypatch.setattr(session_capture_retrieval, "search_session_knowledge", search)
     client, _ = mcp_client

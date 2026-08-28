@@ -707,6 +707,15 @@ class SearchDeliveryKnowledgeRequestSerializer(serializers.Serializer):
     include_superseded = serializers.BooleanField(required=False, default=False)
 
 
+class SearchSessionKnowledgeRequestSerializer(serializers.Serializer):
+    """按仓库检索已入图会话精华。"""
+
+    query = serializers.CharField(required=True, allow_blank=False, max_length=4000)
+    repository_id = serializers.UUIDField(required=True)
+    project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    top_k = serializers.IntegerField(required=False, default=5, min_value=1, max_value=20)
+
+
 class GetEntityTimelineRequestSerializer(serializers.Serializer):
     entity_id = serializers.UUIDField(required=True)
     include_superseded = serializers.BooleanField(required=False, default=False)
@@ -1740,6 +1749,10 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "include_superseded",
         ],
         "response": ["query", "results", "total", "as_of", "run_id"],
+    },
+    "search_session_knowledge": {
+        "request": ["query", "repository_id", "project_id", "top_k"],
+        "response": ["query", "results", "total", "run_id"],
     },
     "get_entity_timeline": {
         "request": ["entity_id", "include_superseded", "as_of"],
