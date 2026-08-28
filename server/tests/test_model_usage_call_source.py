@@ -30,7 +30,7 @@ from agents.call_source import (
 from interactions.ledger import arecord_llm_usage, parse_upstream_status
 from interactions.models import InteractionRun, ModelUsageRecord
 
-# LOGGING-SPEC §4.1 权威 32 值（照抄，作为完整性守护基准；
+# LOGGING-SPEC §4.1 权威 47 值（照抄，作为完整性守护基准；
 # v0.15.0 Phase 80 新增 ``memory_distill``；v0.16.0 Phase 86 新增 ``ide_hook_distill``；
 # v0.16.0 Phase 87 新增 ``board_split``；v0.16.0 Phase 88 新增 ``repo_verify_container`` /
 # ``repo_association``；v0.16.0 Phase 89 新增 ``plan_deepen`` / ``plan_revision`` /
@@ -84,6 +84,9 @@ _EXPECTED_CALL_SOURCES = {
     "blueprint_charter_draft",
     # Phase 125：仓社区模块摘要（LOGGING-SPEC §4.1 已同步登记）
     "module_summary",
+    # Phase 128：专项画像抽取；Phase 143：Session Capture 价值评估。
+    "initiative_profile",
+    "session_capture_eval",
 }
 
 
@@ -108,10 +111,11 @@ class TestCallSourceEnum:
         ``blueprint_repo_research`` / ``blueprint_reroute`` / ``blueprint_repo_plan`` /
         ``blueprint_merge`` / ``blueprint_ai_review`` / ``blueprint_charter_draft``）
         与 ``feature_change_classify`` 后升至 44 值；Phase 125 新增
-        ``module_summary`` 后升至 45 值。
+        ``module_summary`` 后升至 45 值；Phase 128 新增 ``initiative_profile`` 后升至
+        46 值；Phase 143 新增 ``session_capture_eval`` 后升至 47 值。
         """
         assert {member.value for member in CallSource} == _EXPECTED_CALL_SOURCES
-        assert len(_EXPECTED_CALL_SOURCES) == 45
+        assert len(_EXPECTED_CALL_SOURCES) == 47
 
     def test_normalize_valid_value(self) -> None:
         assert CallSource.normalize("chat") == "chat"
