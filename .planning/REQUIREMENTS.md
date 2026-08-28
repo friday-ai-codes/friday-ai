@@ -24,7 +24,7 @@
 ### 价值评估与入图（EVAL）
 
 - [x] **EVAL-01**: Friday 对每条已落库 Capture 异步评估 `high`/`medium`/`low` 并提炼可检索精华；评估失败保留原文 Capture，不得删除
-- [ ] **EVAL-02**: 价值等级不得复用 `evaluate_writeback_quality` 或仓库路由 `confidence`；评估 LLM 使用新 `call_source=session_capture_eval` 并上报用量
+- [x] **EVAL-02**: 价值等级不得复用 `evaluate_writeback_quality` 或仓库路由 `confidence`；评估 LLM 使用新 `call_source=session_capture_eval` 并上报用量
 - [ ] **EVAL-03**: `medium`/`high` 经既有 `aschedule_ingestion` 进入 `delivery_knowledge`（`EntityKind.DOCUMENT` + `source_kind=session_capture`）；`low` 不向量化，仍可作评测回放
 - [x] **EVAL-04**: 入图投递必须 persist-first 且可重试（durable/outbox + Capture 状态机）；禁止把进程内 `background_runner` 当作唯一投递
 - [x] **EVAL-05**: 评估与入图不得调用 `MemoryService.append` / `record_hook_writeback` 把会话 Capture 写成 active 项目记忆
@@ -49,7 +49,7 @@
 - [x] **OBS-01**: Capture 持久化生命周期记 `category=caller` 的 started/completed/failed，含 `duration_ms` 与触发用户；评估/入图步骤用 `sampling`
 - [x] **OBS-02**: 入库前强制脱敏；凭证、token、密钥不得出现在 Capture、Ledger、日志
 - [ ] **OBS-03**: MCP 与对话召回链 best-effort 写 `RetrievalTrace`；观测失败不得改变回写或检索业务结果
-- [ ] **OBS-04**: 后台评估/入图任务携带并 re-bind `initiated_by_user_id`；无触发用户记 `system`
+- [x] **OBS-04**: 后台评估/入图任务携带并 re-bind `initiated_by_user_id`；无触发用户记 `system`
 
 ## Future Requirements
 
@@ -90,7 +90,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MCP-03 | Phase 142 | Complete |
 | MCP-04 | Phase 142 | Complete |
 | EVAL-01 | Phase 143 | Complete |
-| EVAL-02 | Phase 143 | Pending |
+| EVAL-02 | Phase 143 | Complete |
 | EVAL-03 | Phase 143 | Pending |
 | EVAL-04 | Phase 143 | Complete |
 | EVAL-05 | Phase 143 | Complete |
@@ -106,7 +106,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OBS-01 | Phase 141 | Complete |
 | OBS-02 | Phase 141 | Complete |
 | OBS-03 | Phase 144 | Pending |
-| OBS-04 | Phase 143 | Pending |
+| OBS-04 | Phase 143 | Complete |
 
 **Coverage:**
 

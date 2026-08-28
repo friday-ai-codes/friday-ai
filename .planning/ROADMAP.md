@@ -74,14 +74,14 @@ Plans:
   4. 服务重启或短暂故障不会丢失待评估/待入图工作：投递 persist-first、可重试，且后台任务保留并重新绑定触发用户。
   5. 评估与入图不会调用项目记忆写入口；`ProjectMemory` 继续保持 draft 门控，Capture 原始内容也不会被当成 RAG 正文。
 
-**Plans:** 3/7 plans executed
+**Plans:** 4/7 plans executed
 
 Plans:
 
 - [x] 143-01-PLAN.md — Wave 0：三档评估、状态机与 session_capture normalizer RED 契约
 - [x] 143-02-PLAN.md — Wave 0：durable 双任务、MCP 接受语义、INV-6 与 sampling RED 契约
 - [x] 143-03-PLAN.md — additive Capture 状态字段、0016 migration 与唯一 writer CAS
-- [ ] 143-04-PLAN.md — Friday LLM 严格三档 evaluator、session_capture_eval 用量与日志合同
+- [x] 143-04-PLAN.md — Friday LLM 严格三档 evaluator、session_capture_eval 用量与日志合同
 - [ ] 143-05-PLAN.md — medium/high DOCUMENT/session_capture 精华-only normalizer
 - [ ] 143-06-PLAN.md — durable eval/ingest、stale in-flight 恢复、退避新 job 与 keyword-only stub
 - [ ] 143-07-PLAN.md — MCP post-commit 投递接线与 Phase 143 Nyquist 总门禁
@@ -135,7 +135,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 141. Capture 账本与仓库挂钩 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
 | 142. MCP 会话回写契约 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
-| 143. 价值评估与中高入图 | v0.25.0 | 3/7 | In Progress|  |
+| 143. 价值评估与中高入图 | v0.25.0 | 4/7 | In Progress|  |
 | 144. 仓库召回与 Capture 回放 | v0.25.0 | 0/TBD | Not started | - |
 | 145. Cursor / Claude Code 双宿主采集 | v0.25.0 | 0/TBD | Not started | - |
 
