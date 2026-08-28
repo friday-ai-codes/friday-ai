@@ -52,6 +52,7 @@ def _build_knowledge_must_filter(
     allowed_project_ids: list[str],
     allowed_repository_ids: list[str],
     entity_kinds: list[str] | None,
+    source_kinds: list[str] | None = None,
     include_superseded: bool,
     require_repository: bool = True,
 ) -> models.Filter:
@@ -114,6 +115,13 @@ def _build_knowledge_must_filter(
     if entity_kinds:
         must.append(
             models.FieldCondition(key="entity_kind", match=models.MatchAny(any=entity_kinds))
+        )
+    if source_kinds:
+        must.append(
+            models.FieldCondition(
+                key="source_kind",
+                match=models.MatchAny(any=list(source_kinds)),
+            )
         )
     return models.Filter(must=must)
 
@@ -229,6 +237,7 @@ async def recall_similar_chunks(
     allowed_repository_ids: list[str],
     top_k: int = 10,
     entity_kinds: list[str] | None = None,
+    source_kinds: list[str] | None = None,
     include_superseded: bool = False,
     include_document_kind: bool = False,
 ) -> list[VectorHit]:
@@ -239,6 +248,8 @@ async def recall_similar_chunks(
     权限闸（visibility 仍由 ``allowed_project_ids`` 收口，无泄漏）。
     """
     if not allowed_project_ids:
+        return []
+    if source_kinds == []:
         return []
 
     demand_limit = max(1, math.ceil(top_k * 0.7))
@@ -282,6 +293,7 @@ async def recall_similar_chunks(
             allowed_project_ids=allowed_project_ids,
             allowed_repository_ids=allowed_repository_ids,
             entity_kinds=demand_kinds,
+            source_kinds=source_kinds,
             include_superseded=include_superseded,
             require_repository=False,
         )
@@ -296,6 +308,7 @@ async def recall_similar_chunks(
             allowed_project_ids=allowed_project_ids,
             allowed_repository_ids=allowed_repository_ids,
             entity_kinds=code_kinds,
+            source_kinds=source_kinds,
             include_superseded=include_superseded,
             require_repository=True,
         )
