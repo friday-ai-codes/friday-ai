@@ -124,7 +124,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 141. Capture 账本与仓库挂钩 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
-| 142. MCP 会话回写契约 | v0.25.0 | 4/4 | Complete   | 2026-08-28 |
+| 142. MCP 会话回写契约 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
 | 143. 价值评估与中高入图 | v0.25.0 | 0/TBD | Not started | - |
 | 144. 仓库召回与 Capture 回放 | v0.25.0 | 0/TBD | Not started | - |
 | 145. Cursor / Claude Code 双宿主采集 | v0.25.0 | 0/TBD | Not started | - |
