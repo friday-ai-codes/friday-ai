@@ -15,9 +15,23 @@ class SessionCaptureStatus(models.TextChoices):
     """Capture 从持久化到评估、入图的状态。"""
 
     PENDING_EVAL = "pending_eval", "待评估"
+    EVALUATING = "evaluating", "评估中"
     EVAL_FAILED = "eval_failed", "评估失败"
+    EVALUATED_LOW = "evaluated_low", "低价值已评估"
     INGEST_PENDING = "ingest_pending", "待入图"
+    INGESTING = "ingesting", "入图中"
+    INGESTED = "ingested", "已入图"
+    INGEST_FAILED = "ingest_failed", "入图失败"
+    # 兼容历史或手工写入的数据；新状态机不得写入或 claim 此状态。
     EVALUATED = "evaluated", "已评估"
+
+
+class SessionCaptureValueTier(models.TextChoices):
+    """Capture 评估价值档位闭集。"""
+
+    HIGH = "high", "高"
+    MEDIUM = "medium", "中"
+    LOW = "low", "低"
 
 
 class SessionCapture(models.Model):
@@ -59,6 +73,20 @@ class SessionCapture(models.Model):
         default=SessionCaptureStatus.PENDING_EVAL,
         verbose_name="状态",
     )
+    value_tier = models.CharField(
+        max_length=6,
+        choices=SessionCaptureValueTier.choices,
+        blank=True,
+        default="",
+        verbose_name="价值档位",
+    )
+    distilled_essence = models.TextField(blank=True, default="", verbose_name="评估精华")
+    eval_attempts = models.PositiveIntegerField(default=0, verbose_name="评估尝试次数")
+    ingest_attempts = models.PositiveIntegerField(default=0, verbose_name="入图尝试次数")
+    last_error = models.TextField(blank=True, default="", verbose_name="最近错误（已脱敏）")
+    next_retry_at = models.DateTimeField(null=True, blank=True, verbose_name="下次重试时间")
+    evaluated_at = models.DateTimeField(null=True, blank=True, verbose_name="评估完成时间")
+    ingested_at = models.DateTimeField(null=True, blank=True, verbose_name="入图完成时间")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -77,6 +105,7 @@ class SessionCapture(models.Model):
             models.Index(fields=["initiated_by_user_id", "session_id"]),
             models.Index(fields=["repository", "status"]),
             models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["status", "next_retry_at"]),
         ]
 
     def __str__(self) -> str:
