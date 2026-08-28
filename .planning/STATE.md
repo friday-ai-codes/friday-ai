@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
 status: executing
-stopped_at: Completed 144-04-PLAN.md
-last_updated: "2026-08-28T12:16:00.645Z"
+stopped_at: Completed 144-05-PLAN.md
+last_updated: "2026-08-28T12:31:45.182Z"
 last_activity: 2026-08-28 — 144-04 MCP/Chat 会话知识检索完成
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 20
-  completed_plans: 19
-  percent: 95
+  completed_plans: 20
+  percent: 80
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 144 — 仓库召回与 Capture 回放
-Plan: 4 of 5 complete
+Plan: 5 of 5 complete
 Status: Ready to execute
 Last activity: 2026-08-28 — 144-04 MCP/Chat 会话知识检索完成
 
@@ -449,6 +449,7 @@ Last activity: 2026-08-28 — 144-04 MCP/Chat 会话知识检索完成
 | Phase 144 P03 | 3min | 2 tasks | 3 files |
 | Phase 144 P02 | 6min | 2 tasks | 6 files |
 | Phase 144 P04 | 7min | 2 tasks | 10 files |
+| Phase 144 P05 | 14min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -857,6 +858,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 144]: 项目上下文 RAG 按当前项目收窄，但保留所有 DOCUMENT 来源的 inclusion 语义。
 - [Phase 144]: MCP 在共享 helper 前执行仓库与可选项目权限收口，未授权统一返回空结果。
 - [Phase 144]: MCP 与 Chat 空命中仍写无正文 CHUNK 汇总 RetrievalTrace。
+- [Phase 144]: 普通用户只有同时满足 Capture 创建者和全部非空挂钩 scope 仍可见时才能回放。
+- [Phase 144]: 不存在与未授权统一返回 not_found/资源不存在/404，成功响应只显式返回 SessionCapture 白名单。
+- [Phase 144]: client 固定省略，回放正文不查询 ToolCallRecord、RetrievalTrace 或其它 Ledger 数据。
 
 ### Pending Todos
 
@@ -1312,8 +1316,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T12:16:00.635Z
-Stopped at: Completed 144-04-PLAN.md
+Last session: 2026-08-28T12:31:45.124Z
+Stopped at: Completed 144-05-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）

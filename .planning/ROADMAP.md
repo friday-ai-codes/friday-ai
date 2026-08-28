@@ -14,7 +14,7 @@ v0.25.0 把 Cursor / Claude Code 中有价值的问答沉淀为 Friday 可召回
 - [x] **Phase 141: Capture 账本与仓库挂钩** - 原始问答先安全、可归因地落账本，仓库或项目解析失败也不丢 Capture (completed 2026-08-28)
 - [x] **Phase 142: MCP 会话回写契约** - 通过新工具 `report_session_knowledge` 提交 Capture，并保持服务端、snapshot、npm 三面对齐 (completed 2026-08-28)
 - [x] **Phase 143: 价值评估与中高入图** - 异步评估 high/medium/low，仅 medium/high 可重试地进入统一知识库 (completed 2026-08-28)
-- [ ] **Phase 144: 仓库召回与 Capture 回放** - 按仓库/项目召回会话知识并按 Capture id 安全回放原始问答
+- [x] **Phase 144: 仓库召回与 Capture 回放** - 按仓库/项目召回会话知识并按 Capture id 安全回放原始问答 (completed 2026-08-28)
 - [ ] **Phase 145: Cursor / Claude Code 双宿主采集** - 两个宿主自动配对问题与可见答案精华，干净工作树也能 fail-soft 回写
 
 ## Phase Details
@@ -99,7 +99,7 @@ Plans:
   4. `main`、`master`、`develop` 等默认分支不会单独把 Capture 误绑到项目，`lookup_project_by_branch` 的默认分支第三源不会返回 `matched=true`。
   5. MCP 与对话召回链 best-effort 写入脱敏 `RetrievalTrace`；观测失败不会改变检索结果。
 
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 
@@ -107,7 +107,7 @@ Plans:
 - [x] 144-02-PLAN.md — source_kinds 透传、search_session_knowledge helper 与 packer inclusion
 - [x] 144-03-PLAN.md — 默认分支第三源守卫与 Capture 写路径零回归
 - [x] 144-04-PLAN.md — MCP/Chat 会话检索与标量 RetrievalTrace
-- [ ] 144-05-PLAN.md — Capture 只读回放与 MCP 54 三面冻结
+- [x] 144-05-PLAN.md — Capture 只读回放与 MCP 54 三面冻结
 
 ### Phase 145: Cursor / Claude Code 双宿主采集
 
@@ -144,7 +144,7 @@ Plans:
 | 141. Capture 账本与仓库挂钩 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
 | 142. MCP 会话回写契约 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
 | 143. 价值评估与中高入图 | v0.25.0 | 7/7 | Complete    | 2026-08-28 |
-| 144. 仓库召回与 Capture 回放 | v0.25.0 | 4/5 | In Progress|  |
+| 144. 仓库召回与 Capture 回放 | v0.25.0 | 5/5 | Complete   | 2026-08-28 |
 | 145. Cursor / Claude Code 双宿主采集 | v0.25.0 | 0/TBD | Not started | - |
 
 **Coverage:** 27/27 v0.25.0 requirements mapped exactly once；0 unmapped；0 duplicate。
