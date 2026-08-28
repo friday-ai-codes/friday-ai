@@ -142,7 +142,7 @@ def _logger_calls(relative: str) -> list[str]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
-        if node.func.attr not in {"debug", "info", "warning", "error", "exception"}:
+        if node.func.attr not in {"debug", "info", "warning", "error", "exception", "_log"}:
             continue
         segment = ast.get_source_segment(source, node)
         if segment and "session_capture_" in segment:
@@ -161,14 +161,20 @@ def _logger_calls(relative: str) -> list[str]:
 def test_eval_normalize_ingest_sampling_lifecycle(relative: str, prefix: str) -> None:
     calls = _logger_calls(relative)
     joined = "\n".join(calls)
+    source = _source(relative)
 
     for suffix in ("started", "completed", "failed"):
         assert f'"{prefix}_{suffix}"' in joined
     for call in calls:
         if f"{prefix}_" not in call:
             continue
-        assert 'category="sampling"' in call
-        assert 'component="knowledge"' in call
+        if "self._log(" in call:
+            assert 'category="sampling"' in source
+            assert 'component=_COMPONENT' in source
+            assert '_COMPONENT = "knowledge"' in source
+        else:
+            assert 'category="sampling"' in call
+            assert 'component="knowledge"' in call
         assert "capture_id=" in call
     for suffix in ("completed", "failed"):
         matching = [call for call in calls if f'"{prefix}_{suffix}"' in call]
