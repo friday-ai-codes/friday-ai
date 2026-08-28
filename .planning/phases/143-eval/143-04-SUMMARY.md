@@ -67,7 +67,7 @@ completed: 2026-08-28
 1. **Task 1: 注册 session_capture_eval 用量与日志合同** - `e970a1394` (feat)
 2. **Task 2: 实现严格 Friday LLM 三档 evaluator** - `43a741af2` (feat)
 
-**Plan metadata:** pending docs commit after this SUMMARY
+**Plan metadata:** `d499935cf` (docs)
 
 _Task 2 的 TDD RED 契约由 Plan 143-01 提交提供，本计划提交 GREEN 实现。_
 
