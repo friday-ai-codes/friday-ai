@@ -27,6 +27,7 @@ from common.log_context import LogSource, bind_source
 from common.logging import redact_secrets_in_text
 from common.request_metrics import arecord_request_metric
 from initiatives.models import SessionCaptureStatus
+from initiatives.services.capture_access import aget_readable_capture
 from initiatives.services.capture_service import CaptureService
 from initiatives.services.session_capture_enqueue import enqueue_session_capture_eval
 from interactions.entry import AccessTokenAuthentication, begin_interaction_run
@@ -109,6 +110,7 @@ from .serializers import (
     GetRepoResearchRequestSerializer,
     GetRepositoryFileRequestSerializer,
     GetRepositoryRequestSerializer,
+    GetSessionCaptureRequestSerializer,
     GetTechnicalBlueprintRequestSerializer,
     GraphQueryRequestSerializer,
     GrepProjectRequestSerializer,
@@ -3456,6 +3458,61 @@ class SearchSessionKnowledgeView(McpToolView):
                     },
                 )
             ],
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class GetSessionCaptureView(McpToolView):
+    """仅从 SessionCapture 回放创建者可见的脱敏问答。"""
+
+    tool_name = "get_session_capture"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(GetSessionCaptureRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        capture = await aget_readable_capture(input_data["capture_id"], request.user)
+        if capture is None:
+            return error_response(
+                "not_found",
+                "资源不存在",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        output_data = {
+            "capture_id": str(capture.id),
+            "question": capture.question,
+            "answer": capture.answer,
+            "response_model": capture.response_model,
+            "provider": capture.provider,
+            "input_tokens": capture.input_tokens,
+            "output_tokens": capture.output_tokens,
+            "session_id": capture.session_id,
+            "branch_name": capture.branch_name,
+            "repository_id": str(capture.repository_id) if capture.repository_id else None,
+            "project_id": str(capture.project_id) if capture.project_id else None,
+            "link_reason": capture.link_reason,
+            "value_tier": capture.value_tier,
+            "status": capture.status,
+            "created_at": capture.created_at.isoformat(),
+            "updated_at": capture.updated_at.isoformat(),
+            "evaluated_at": capture.evaluated_at.isoformat() if capture.evaluated_at else None,
+            "ingested_at": capture.ingested_at.isoformat() if capture.ingested_at else None,
+            "run_id": str(run.run_id),
+        }
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=[],
             started_at=started_at,
         )
         return Response(output_data, status=status.HTTP_200_OK)

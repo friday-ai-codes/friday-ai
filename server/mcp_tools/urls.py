@@ -28,6 +28,7 @@ from .views import (
     GetRepoResearchView,
     GetRepositoryFileView,
     GetRepositoryView,
+    GetSessionCaptureView,
     GetTechnicalBlueprintView,
     GraphQueryView,
     GrepProjectView,
@@ -168,6 +169,11 @@ urlpatterns = [
         "tools/search_session_knowledge/",
         SearchSessionKnowledgeView.as_view(),
         name="mcp-tool-search-session-knowledge",
+    ),
+    path(
+        "tools/get_session_capture/",
+        GetSessionCaptureView.as_view(),
+        name="mcp-tool-get-session-capture",
     ),
     path(
         "tools/get_entity_timeline/",
