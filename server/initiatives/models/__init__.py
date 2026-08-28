@@ -54,6 +54,7 @@ from initiatives.models.repo_association import (
     RepoVerifyTask,
     RepoVerifyTaskStatus,
 )
+from initiatives.models.session_capture import SessionCapture, SessionCaptureStatus
 from initiatives.models.work_item_link import LinkProvenance, ProjectWorkItemLink
 
 __all__ = [
@@ -101,4 +102,6 @@ __all__ = [
     "ContextLinkKind",
     "ContextLinkStatus",
     "ContextLinkOrigin",
+    "SessionCapture",
+    "SessionCaptureStatus",
 ]
