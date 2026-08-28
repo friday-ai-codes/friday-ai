@@ -83,7 +83,7 @@ Plans:
 - [ ] 143-03-PLAN.md — additive Capture 状态字段、0016 migration 与唯一 writer CAS
 - [ ] 143-04-PLAN.md — Friday LLM 严格三档 evaluator、session_capture_eval 用量与日志合同
 - [ ] 143-05-PLAN.md — medium/high DOCUMENT/session_capture 精华-only normalizer
-- [ ] 143-06-PLAN.md — durable eval/ingest 双任务、独立重试与 stranded recovery
+- [ ] 143-06-PLAN.md — durable eval/ingest、stale in-flight 恢复、退避新 job 与 keyword-only stub
 - [ ] 143-07-PLAN.md — MCP post-commit 投递接线与 Phase 143 Nyquist 总门禁
 
 ### Phase 144: 仓库召回与 Capture 回放

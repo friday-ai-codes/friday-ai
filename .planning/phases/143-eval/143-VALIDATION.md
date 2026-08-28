@@ -29,10 +29,10 @@ created: 2026-08-28
 
 ## Sampling Rate
 
-- **After every task commit:** Run `{quick run command}` 或该任务表内 `<automated>`（取更窄者）
-- **After every plan wave:** Run `{full suite command}`（含 Capture/MCP/Memory 回归）
-- **Before `/gsd-verify-work`:** Full suite must be green
-- **Max feedback latency:** 40 seconds（quick）；wave 门禁允许 ~120s
+- **After every task commit:** Run 该任务 `<automated>`（窄命令；禁止用 full suite 当 per-task 反馈）
+- **After every plan wave:** 只跑该 wave 各 PLAN 任务的 `<automated>`；不得把 ~120s full suite 当作 wave 门禁
+- **Before `/gsd-verify-work` / Plan 07 Task 2：** Full suite must be green（阶段唯一 ~120s 门禁）
+- **Max feedback latency:** 40 seconds（per-task）；full suite 仅阶段门禁允许 ~120s
 
 ---
 
@@ -52,14 +52,15 @@ PLAN 未生成前，Plan 列固定为 `01`、Wave 为 `0`。后续 `/gsd-plan-ph
 | 143-01-06 | 01 | 0 | EVAL-02 | T-143-02 | `use_call_source(session_capture_eval)`；成功记 token/TTFT，失败记 upstream status | unit | `cd server && uv run pytest tests/initiatives/test_session_capture_eval.py::test_eval_records_usage_with_session_capture_eval -x` | ❌ W0 | ⬜ pending |
 | 143-01-07 | 01 | 0 | EVAL-02 | T-143-02 | evaluator 不得 import 质量门 / `llm_grader` / repo confidence | static | `cd server && uv run pytest tests/initiatives/test_session_capture_eval.py::test_eval_module_does_not_import_quality_gates -x` | ❌ W0 | ⬜ pending |
 | 143-01-08 | 01 | 0 | EVAL-02 | — | `CallSource` 闭集含 `session_capture_eval` + 既有 `initiative_profile`；与测试期望集相等 | unit | `cd server && uv run pytest tests/test_model_usage_call_source.py::TestCallSourceEnum -x` | ✅ 需改期望集 | ⬜ pending |
-| 143-01-09 | 01 | 0 | EVAL-01 / EVAL-04 | T-143-03 | 合法/非法 CAS：`pending_eval\|eval_failed→evaluating`、`evaluating→evaluated_low\|ingest_pending`、ingest claim/fail/ingested；竞争仅一赢家；终态 CAS=0 no-op | unit | `cd server && uv run pytest tests/initiatives/test_capture_service.py -k "claim or record_eval or record_ingest or cas or retry" -x` | ✅ 需扩展 | ⬜ pending |
+| 143-01-09 | 01 | 0 | EVAL-01 / EVAL-04 | T-143-03 | 合法/非法 CAS：`pending_eval\|eval_failed→evaluating`（递增）、`evaluating` resume 不递增、`evaluating→evaluated_low\|ingest_pending`、ingest claim/resume/fail/ingested；竞争仅一赢家；终态 CAS=0 no-op | unit | `cd server && uv run pytest tests/initiatives/test_capture_service.py -k "claim or record_eval or record_ingest or cas or retry or resume or value_tier or max_length or additive or pending_eval_row" -x` | ✅ 需扩展 | ⬜ pending |
 | 143-01-10 | 01 | 0 | EVAL-04 | T-143-03 | `QUEUE_KNOWLEDGE in ALL_QUEUES`；eval/ingest 两 adapter 均 `**payload` 调共用任务体 | unit | `cd server && uv run pytest tests/initiatives/test_session_capture_eval_tasks.py::test_queue_knowledge_in_all_queues tests/initiatives/test_session_capture_eval_tasks.py::test_inprocess_adapters_splat_payload -x` | ❌ W0 | ⬜ pending |
 | 143-01-11 | 01 | 0 | EVAL-04 | T-143-01 | durable payload 仅 `capture_id`/`attempt`/`initiated_by_user_id`；无 question/answer/essence/transcript | unit | `cd server && uv run pytest tests/initiatives/test_session_capture_eval_tasks.py::test_payload_has_only_scalar_keys -x` | ❌ W0 | ⬜ pending |
 | 143-01-12 | 01 | 0 | EVAL-04 | T-143-03 | 非 claimable 状态重放不二次 LLM；已 ingested 重放 no-op | unit | `cd server && uv run pytest tests/initiatives/test_session_capture_eval_tasks.py::test_replay_skips_llm_when_not_claimable tests/initiatives/test_session_capture_eval_tasks.py::test_ingested_replay_is_noop -x` | ❌ W0 | ⬜ pending |
 | 143-01-13 | 01 | 0 | EVAL-04 | T-143-03 | ingest 重放不调用 evaluator；ingest 失败不退回 `pending_eval` | unit | `cd server && uv run pytest tests/initiatives/test_session_capture_eval_tasks.py::test_ingest_replay_does_not_call_evaluator tests/initiatives/test_session_capture_eval_tasks.py::test_ingest_failure_does_not_reenter_eval -x` | ❌ W0 | ⬜ pending |
 | 143-01-14 | 01 | 0 | EVAL-03 / EVAL-04 | T-143-03 | medium/high 成功后 defer ingest；low 不 defer、不 await ingest/embedding | unit | `cd server && uv run pytest tests/initiatives/test_session_capture_eval_tasks.py::test_medium_high_defers_ingest tests/initiatives/test_session_capture_eval_tasks.py::test_low_skips_ingest -x` | ❌ W0 | ⬜ pending |
-| 143-01-15 | 01 | 0 | EVAL-04 | T-143-03 | 有界 backoff：`attempt`/`run_at`/稳定 key `capture-eval:{id}` 与 `capture-ingest:{id}` + lock | unit | `cd server && uv run pytest tests/initiatives/test_session_capture_eval_tasks.py::test_backoff_attempt_run_at_and_stable_keys -x` | ❌ W0 | ⬜ pending |
-| 143-01-16 | 01 | 0 | EVAL-04 | T-143-03 | 重启语义：due 且无 active job 的 pending/failed 重派；active、fresh、终态跳过；单条失败隔离 | unit | `cd server && uv run pytest tests/initiatives/test_session_capture_eval_tasks.py::test_recovery_redefers_pending_eval tests/initiatives/test_session_capture_eval_tasks.py::test_recovery_skips_active_fresh_and_terminal tests/initiatives/test_session_capture_eval_tasks.py::test_recovery_isolates_single_failure -x` | ❌ W0 | ⬜ pending |
+| 143-01-15 | 01 | 0 | EVAL-04 | T-143-03 | 首次/recovery 稳定 key；worker 退避 lock+run_at 且不复用稳定 idempotency key；双后端同语义 | unit | `cd server && uv run pytest tests/initiatives/test_session_capture_eval_tasks.py::test_initial_and_recovery_use_stable_idempotency_key tests/initiatives/test_session_capture_eval_tasks.py::test_backoff_redefer_omits_stable_idempotency_key tests/initiatives/test_session_capture_eval_tasks.py::test_backoff_schedules_new_job_with_lock_and_run_at tests/initiatives/test_session_capture_eval_tasks.py::test_backoff_dual_backend_parity_lock_run_at_without_same_key -x` | ❌ W0 | ⬜ pending |
+| 143-01-16 | 01 | 0 | EVAL-04 | T-143-03 | 重启语义：due pending/failed 与 stale evaluating/ingesting 且无 active job 重派；active、fresh、终态（evaluated_low/ingested/legacy evaluated）跳过；单条失败隔离 | unit | `cd server && uv run pytest tests/initiatives/test_session_capture_eval_tasks.py::test_recovery_redefers_pending_eval tests/initiatives/test_session_capture_eval_tasks.py::test_recovery_redefers_stale_evaluating tests/initiatives/test_session_capture_eval_tasks.py::test_recovery_redefers_stale_ingesting tests/initiatives/test_session_capture_eval_tasks.py::test_recovery_skips_active_fresh_and_terminal tests/initiatives/test_session_capture_eval_tasks.py::test_recovery_isolates_single_failure -x` | ❌ W0 | ⬜ pending |
+| 143-01-16b | 01 | 0 | EVAL-04 | T-143-03 | worker 在已是 evaluating 时仍跑 LLM 且不递增 eval_attempts；终态 skip | unit | `cd server && uv run pytest tests/initiatives/test_session_capture_eval_tasks.py::test_eval_resume_when_evaluating_still_runs_llm tests/initiatives/test_session_capture_eval_tasks.py::test_replay_skips_llm_when_not_claimable -x` | ❌ W0 | ⬜ pending |
 | 143-01-17 | 01 | 0 | EVAL-04 | T-143-03 | MCP persist 后 durable eval 入队；重复终态不二次入队；enqueue 异常仍 200/`accepted=true` | unit | `cd server && uv run pytest tests/mcp_tools/test_report_session_knowledge.py::test_accepted_enqueues_durable_eval tests/mcp_tools/test_report_session_knowledge.py::test_terminal_capture_does_not_reenqueue tests/mcp_tools/test_report_session_knowledge.py::test_enqueue_failure_still_accepted -x` | ✅ 需扩展 | ⬜ pending |
 | 143-01-18 | 01 | 0 | EVAL-03 | T-143-01 / T-143-05 | `kind=DOCUMENT`、`source_kind=session_capture`、稳定 `source_id`；content 仅为精华 | unit | `cd server && uv run pytest tests/knowledge/test_session_capture_source.py::test_document_session_capture_event tests/knowledge/test_session_capture_source.py::test_content_is_essence_not_qa -x` | ❌ W0 | ⬜ pending |
 | 143-01-19 | 01 | 0 | EVAL-03 | T-143-01 | payload 仅标量 provenance；sentinel Q/A 不在 content/payload | unit | `cd server && uv run pytest tests/knowledge/test_session_capture_source.py::test_payload_contains_only_scalar_provenance -x` | ❌ W0 | ⬜ pending |
@@ -96,10 +97,16 @@ PLAN 未生成前，Plan 列固定为 `01`、Wave 为 `0`。后续 `/gsd-plan-ph
   - `test_ingest_failure_does_not_reenter_eval`
   - `test_medium_high_defers_ingest`
   - `test_low_skips_ingest`
-  - `test_backoff_attempt_run_at_and_stable_keys`
+  - `test_initial_and_recovery_use_stable_idempotency_key`
+  - `test_backoff_redefer_omits_stable_idempotency_key`
+  - `test_backoff_schedules_new_job_with_lock_and_run_at`
+  - `test_backoff_dual_backend_parity_lock_run_at_without_same_key`
   - `test_recovery_redefers_pending_eval`
+  - `test_recovery_redefers_stale_evaluating`
+  - `test_recovery_redefers_stale_ingesting`
   - `test_recovery_skips_active_fresh_and_terminal`
   - `test_recovery_isolates_single_failure`
+  - `test_eval_resume_when_evaluating_still_runs_llm`
   - `test_worker_rebinds_initiated_by_user_id`
 - [ ] `server/tests/knowledge/test_session_capture_source.py` — EVAL-03 RED：
   - `test_document_session_capture_event`
@@ -111,7 +118,7 @@ PLAN 未生成前，Plan 列固定为 `01`、Wave 为 `0`。后续 `/gsd-plan-ph
   - `test_project_capture_adds_references_edge_and_space`
   - `test_repository_id_propagates`
   - `test_secret_redacted_from_essence`
-- [ ] 扩展 `server/tests/initiatives/test_capture_service.py` — 每条合法/非法状态 CAS、竞争 claim、终态不可回退、attempt/`next_retry_at`、错误脱敏
+- [ ] 扩展 `server/tests/initiatives/test_capture_service.py` — 每条合法/非法状态 CAS、evaluating/ingesting resume 不递增 attempt、竞争 claim、终态不可回退、闭集 `value_tier`、status 字面值 ≤20、additive 字段 default-safe、存量 pending_eval 问答不变
 - [ ] 扩展 `server/tests/initiatives/test_capture_inv6_guard.py` — 新模块禁止 Capture ORM 写、`MemoryService`、`record_hook_writeback`、`aschedule_ingestion`、`background_runner`；`test_writer_does_not_call_deferred_sinks` 允许清单：persist 仍禁 deferred sinks；enqueue 放独立模块
 - [ ] 扩展 `server/tests/mcp_tools/test_report_session_knowledge.py` — `test_accepted_enqueues_durable_eval`、`test_terminal_capture_does_not_reenqueue`、`test_enqueue_failure_still_accepted`；继续断言 ProjectMemory 零写入
 - [ ] 扩展 `server/tests/test_model_usage_call_source.py` — 期望集补 `initiative_profile` + `session_capture_eval`（长度 45→47，集合相等为权威）

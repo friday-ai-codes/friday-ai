@@ -143,29 +143,34 @@ DurableTaskService.defer ──► Postgres procrastinate jobs
 run_worker (ALL_QUEUES 含 QUEUE_KNOWLEDGE)
         │ bind_task_context(user_id or "system", source="durable")
         ▼
-CAS pending_eval|eval_failed → evaluating
-        │ 抢占失败 / 已是终态 → skipped，不调 LLM
+CAS pending_eval|eval_failed → evaluating（递增 attempt）
+        │ 已是 evaluating → resume，不递增，仍调 LLM
+        │ 抢占失败 / 终态 evaluated_low|ingested|legacy evaluated → skipped，不调 LLM
         ▼
 Evaluator: aresolve + build_chat_model + use_call_source(SESSION_CAPTURE_EVAL)
         │ JSON {value_tier, distilled_essence}
         │ 空输入：确定性拒绝，eval_failed，不调 LLM，不标 low
         │ 缺模型/非法 JSON/上游错误：eval_failed + backoff re-defer
+        │   backoff：lock + run_at，**不得**复用稳定 idempotency_key
         ├─ low  → CAS evaluating → evaluated_low  STOP（无 embed）
         └─ med/high → CAS → ingest_pending → defer durable_session_capture_ingest
-                              idempotency_key=capture-ingest:{id}
+                              idempotency_key=capture-ingest:{id}（首次/recovery）
                 ▼
-         CAS ingest_pending|ingest_failed → ingesting
+         CAS ingest_pending|ingest_failed → ingesting（递增）
+         已是 ingesting → resume，不递增
                 ▼
          await ingest(IngestionRequest(source_kind="session_capture", source_id=capture.id))
                 │ normalizer: content=distilled_essence only
                 │ DOCUMENT + delivery_knowledge + 可选 REFERENCES→project
                 ├─ 成功（events>0 或 hash skip）→ ingested
-                └─ 失败 → ingest_failed + backoff（不回退 evaluating、不重跑 LLM）
+                └─ 失败 → ingest_failed + backoff lock+run_at（不回退 evaluating、不重跑 LLM、不复用稳定 key）
 
 周期 recover_stranded_session_captures（QUEUE_MAINTENANCE）
-        │ status ∈ {pending_eval, eval_failed, ingest_pending, ingest_failed}
-        │ AND next_retry_at due AND NOT has_active_by_key
-        └─ re-defer 对应任务（进程重启 / 入队失败恢复）
+        │ status ∈ {pending_eval, eval_failed, ingest_pending, ingest_failed,
+        │           evaluating, ingesting}
+        │ AND due/stale AND NOT has_active_by_key
+        │ 终态 evaluated_low/ingested/legacy evaluated 跳过
+        └─ re-defer 对应任务（稳定 idempotency_key + lock；进程重启 / 入队失败 / in-flight 崩溃）
 ```
 
 ### Recommended Project Structure
@@ -376,7 +381,7 @@ async def durable_session_capture_eval(
     )
 ```
 
-in-process adapter：`return await run_session_capture_eval(**payload)`。Backoff 抄 `_dispatch_backoff_seconds`（5s×2^n，帽 300s）；最大尝试抄 `_FEATURE_PARSE_MAX_ATTEMPTS = 6`。达上限：保持 `eval_failed`/`ingest_failed`，`next_retry_at=None`，**仍不删除、不标 low**。`[VERIFIED: tasks_impl.py:475-487, 233]`
+in-process adapter：`return await run_session_capture_eval(**payload)`。Backoff 抄 `_dispatch_backoff_seconds`（5s×2^n，帽 300s）；最大尝试抄 `_FEATURE_PARSE_MAX_ATTEMPTS = 6`。**首次入队与 recovery** 使用稳定 `idempotency_key=capture-eval:{id}`（ingest 同理）。**worker 退避** 只传 `lock` + `run_at`，省略稳定 idempotency_key 或改用 `capture-eval:{id}:retry:{attempt}`，否则 Procrastinate 会把已完成 job 的同一 key 当成去重而不调度新 job。达上限：保持 `eval_failed`/`ingest_failed`，`next_retry_at=None`，**仍不删除、不标 low**。`[VERIFIED: tasks_impl.py:475-487, 233]`
 
 ### generate_entity_id 登记
 
@@ -392,7 +397,10 @@ in-process adapter：`return await run_session_capture_eval(**payload)`。Backof
 ```python
 # Source: server/durable/tasks.py recover_stranded_repo_summaries 周期模式
 # @app.periodic(cron="*/5 * * * *") + queueing_lock 单例
-# 业务：SessionCapture 可恢复状态 × NOT DurableTaskService.has_active_by_key
+# 业务：可恢复状态 = pending/failed + stale evaluating/ingesting
+# AND NOT DurableTaskService.has_active_by_key(稳定 key)
+# 终态 evaluated_low/ingested/legacy evaluated 跳过
+# recovery re-defer 使用与首次入队相同的稳定 idempotency_key
 ```
 
 SQLite 下 `retry_stalled` 恒 0，**必须**靠 Capture 行扫描，不能只靠 Procrastinate heartbeat。`[VERIFIED: DurableTaskService.retry_stalled in-process returns 0]`
@@ -414,22 +422,27 @@ SQLite 下 `retry_stalled` 恒 0，**必须**靠 Capture 行扫描，不能只�
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | 入队 helper 可用 `async_to_sync(defer)` 填 `on_commit` 同步回调 `[ASSUMED]` | Pattern 1 | 若在已运行的 async view 里嵌套 `async_to_sync` 会死锁；planner 应优先 persist 返回后直接 `await defer` |
-| A2 | `EntityOrigin.MCP` 为 session_capture 正确 origin `[ASSUMED]`（CONTEXT 未锁 origin） | Pattern 4 | 若产品要把仓级会话当成 `PROJECT`，边/过滤语义略变；不进 uuid5 |
-| A3 | 最大 6 次、5s 指数封顶 300s `[ASSUMED]`（CONTEXT 交 Discretion） | Pitfalls / Code Examples | 过小会过早死信；过大增加 LLM 费用 |
+| A1 | persist 返回后直接 await defer；禁止 async view 内嵌套 async_to_sync(on_commit) `[RESOLVED]` | Pattern 1 | 已选 A1：atomic 已提交；投递失败由行扫描兜底 |
+| A2 | `EntityOrigin.MCP` 为 session_capture 正确 origin `[RESOLVED]` | Pattern 4 | 仓级会话不进 PROJECT origin；不进 uuid5 |
+| A3 | 最大 6 次、5s 指数封顶 300s `[RESOLVED]` | Pitfalls / Code Examples | 失败行保留；显式重派仍可 retry |
 
-**If this table is empty:** 否。A1–A3 为实现者可调参数，不阻塞规划，但 A1 必须在计划里选一条不嵌套死锁的入队路径。
+**If this table is empty:** 否。A1–A3 均已 RESOLVED，实现者不得再改入队路径或 retry 上限。
 
 ## Open Questions
 
-1. **141 预留的 `EVALUATED` 是否从 choices 删除？**
-   - What we know: 列已存在，141 不写入。
-   - What's unclear: 是否有手工改过的行。
-   - Recommendation: **保留枚举成员但不作为 writer 目标**；CAS 不允许从 `evaluated` 进入处理中，除非当成 legacy 映射到 `evaluated_low`（若发现该值）。
+All items below are **RESOLVED** for Phase 143 (locked for executors; also listed in 143-07 `<resolved_research_questions>`).
 
-2. **无仓库的 medium/high 是否仍 ingest？**
-   - What we know: CONTEXT「无项目不阻断仓级入图」；EVAL-03 未要求必须有 `repository_id`。
-   - Recommendation: **仍 ingest**（`repository_id=None`）；Phase 144 按仓召回可能看不到它们，属召回阶段问题，本阶段不丢向量。
+1. **OQ-1 RESOLVED: 141 预留的 `EVALUATED` 是否从 choices 删除？**
+   - Decision: **保留枚举成员但不作为 writer 目标**；CAS/recovery 不 claim、不 resume；terminal skip 与 evaluated_low/ingested 同等。禁止 RunPython 批量改 low。
+
+2. **OQ-2 RESOLVED: 无仓库的 medium/high 是否仍 ingest？**
+   - Decision: **仍 ingest**（`repository_id=None`，edges 空）；Phase 144 按仓召回可能看不到它们，属读侧限制，本阶段不静默丢行、不跳过评估。
+
+3. **OQ-3 RESOLVED: evaluating/ingesting 崩溃后如何恢复？**
+   - Decision: 视为可 resume 的 in-flight。recovery 扫描 stale processing 且无 active job 后用稳定 key 重派；worker resume 不递增 attempt；不得把 processing 当终态 skip。
+
+4. **OQ-4 RESOLVED: Procrastinate 退避能否复用稳定 idempotency key？**
+   - Decision: **不能**。首次入队与 recovery 用稳定 key；worker backoff 用 lock+run_at 且省略或使用 attempt-specific key，以保证新 scheduled job；tasks.py 与 handlers.py 双后端同语义。
 
 ## Environment Availability
 
@@ -474,7 +487,7 @@ SQLite 下 `retry_stalled` 恒 0，**必须**靠 Capture 行扫描，不能只�
 | EVAL-03 | DOCUMENT + source_kind | unit | `...::test_document_session_capture_event -x` | ❌ Wave 0 |
 | EVAL-04 | persist 后 defer，非 background_runner 唯一 | unit | `pytest tests/mcp_tools/test_report_session_knowledge.py::test_accepted_enqueues_durable_eval -x` | ❌ Wave 0 |
 | EVAL-04 | 重放不二次 LLM；ingest hash skip | unit | `tests/initiatives/test_session_capture_eval_tasks.py::test_replay_skips_llm_when_not_pending` | ❌ Wave 0 |
-| EVAL-04 | pending 且无在途 job 可恢复 | unit | `...::test_recovery_redefers_pending_eval -x` | ❌ Wave 0 |
+| EVAL-04 | pending/failed 与 stale evaluating/ingesting 且无在途 job 可恢复 | unit | `...::test_recovery_redefers_pending_eval` / `test_recovery_redefers_stale_evaluating` / `test_recovery_redefers_stale_ingesting` | ❌ Wave 0 |
 | EVAL-05 | 零 MemoryService.append / record_hook_writeback | unit+static | INV-6 扩展 + `test_eval_does_not_write_project_memory` | ❌ Wave 0 |
 | OBS-04 | worker bind user；缺省 system | unit | `...::test_worker_rebinds_initiated_by_user_id -x` | ❌ Wave 0 |
 | OBS-04 / OBS-01 | sampling 无正文 | unit | 扩展 `test_capture_observability.py` 或新文件 | ❌ Wave 0 |
@@ -482,9 +495,9 @@ SQLite 下 `retry_stalled` 恒 0，**必须**靠 Capture 行扫描，不能只�
 
 ### Sampling Rate
 
-- **Per task commit:** Quick run command
-- **Per wave merge:** Full suite command（含旧 Capture/MCP/Memory 回归）
-- **Phase gate:** Full suite green before `/gsd-verify-work`
+- **Per task commit:** 该任务窄 `<automated>`（禁止 full suite）
+- **Per wave merge:** 该 wave 各 PLAN 任务的 `<automated>`
+- **Phase gate:** Full suite（~120s）仅 Plan 07 Task 2 / `/gsd-verify-work`
 
 ### Wave 0 Gaps
 
