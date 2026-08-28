@@ -75,10 +75,117 @@ _DESC_PROJECT_CONTEXT = (
     "（对话需绑定项目）。"
 )
 
+_DESC_SESSION_KNOWLEDGE = (
+    "按必填 repository_id 检索已入图的中高价值 session_capture 会话精华；"
+    "可选 project_id 只与仓库范围做 AND 收窄。"
+)
+
 _DESC_READ_PROJECT_DOC = (
     "读「当前项目」工作区单文档的渲染 markdown 与 block 分区。"
     "看项目记忆 / 状态 / 里程碑原文时用。仅项目对话有效（对话需绑定项目）。"
 )
+
+
+@tool(
+    name="search_session_knowledge",
+    description=_DESC_SESSION_KNOWLEDGE,
+    category=ToolCategory.KNOWLEDGE.value,
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "会话知识检索 query"},
+            "repository_id": {"type": "string", "description": "必填仓库 UUID，主检索范围"},
+            "project_id": {
+                "type": "string",
+                "description": "可选项目 UUID，仅用于 AND 收窄",
+            },
+            "top_k": {"type": "integer", "description": "返回条数，默认 5", "default": 5},
+            **_CONV_ID_PARAM,
+        },
+        "required": ["query", "repository_id", "conversation_id"],
+    },
+)
+async def search_session_knowledge(
+    query: str,
+    repository_id: str,
+    project_id: str | None = None,
+    top_k: int = 5,
+    conversation_id: str = "",
+) -> ToolResult:
+    started = perf_counter()
+    top_k = max(1, min(int(top_k), 20))
+    logger.info(
+        "search_session_knowledge_started",
+        repository_id=repository_id,
+        component=_COMPONENT,
+        category="caller",
+    )
+    user = await _resolve_conversation_user(conversation_id)
+    if user is None or not repository_id.strip():
+        logger.warning(
+            "search_session_knowledge_failed",
+            repository_id=repository_id,
+            reason="conversation_owner_or_repository_missing",
+            duration_ms=int((perf_counter() - started) * 1000),
+            component=_COMPONENT,
+            category="caller",
+        )
+        return ToolResult(success=False, error="无法解析会话 owner 或仓库，拒绝检索（fail-closed）")
+
+    from knowledge.session_capture_retrieval import (
+        search_session_knowledge as _search_session_knowledge,
+    )
+
+    try:
+        results = await _search_session_knowledge(
+            query=query,
+            user=user,
+            repository_id=repository_id,
+            project_id=project_id or None,
+            top_k=top_k,
+        )
+    except Exception as exc:  # noqa: BLE001 — 检索失败转工具错误，不抛
+        safe_err = redact_secrets_in_text(str(exc))
+        logger.exception(
+            "search_session_knowledge_failed",
+            repository_id=repository_id,
+            error=safe_err,
+            duration_ms=int((perf_counter() - started) * 1000),
+            component=_COMPONENT,
+            category="caller",
+        )
+        return ToolResult(success=False, error=f"检索失败: {safe_err}")
+
+    serialized = serialize_search_results(results)
+    duration_ms = int((perf_counter() - started) * 1000)
+    scores = [float(item.get("score") or 0) for item in serialized]
+    await _record_chat_retrieval(
+        "chunk",
+        {
+            "source": "chat_search_session_knowledge",
+            "repository_id": repository_id,
+            "project_id": project_id or "",
+            "source_kind": "session_capture",
+            "result_count": len(serialized),
+            "scores": scores,
+            "top_score": max(scores) if scores else 0,
+            "duration_ms": duration_ms,
+        },
+        conversation_id=conversation_id,
+        user=user,
+    )
+    logger.info(
+        "search_session_knowledge_completed",
+        repository_id=repository_id,
+        result_count=len(serialized),
+        duration_ms=duration_ms,
+        component=_COMPONENT,
+        category="caller",
+    )
+    return ToolResult(
+        success=True,
+        output={"query": query, "results": serialized, "total": len(serialized)},
+    )
 
 
 @tool(
@@ -336,6 +443,7 @@ async def read_project_doc(
 
 __all__ = [
     "search_learning_cases",
+    "search_session_knowledge",
     "search_project_context",
     "read_project_doc",
 ]
