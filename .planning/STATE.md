@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
 status: executing
-stopped_at: Completed 141-01-PLAN.md
-last_updated: "2026-08-28T07:29:15.144Z"
-last_activity: 2026-08-28 — Created v0.25.0 roadmap（27/27 requirements mapped）
+stopped_at: Completed 141-02-PLAN.md
+last_updated: "2026-08-28T07:38:13.629Z"
+last_activity: 2026-08-28 — Completed 141-02 Capture model and core persist
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
-  percent: 25
+  completed_plans: 2
+  percent: 50
 ---
 
 # Project State
@@ -21,20 +21,20 @@ progress:
 See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 归档见 `milestones/v0.24.0-*`。
 
 **Core value:** 让团队开箱即用、安全地把需求变成代码；本里程碑让 IDE 里问过的坑和决策可沉淀、可按仓召回，且不阻断编码。
-**Current focus:** Phase 141 Capture 账本 Wave 0 已完成；下一步执行 141-02 模型与核心 persist
+**Current focus:** Phase 141 Capture 核心持久化已完成；下一步执行 141-03 仓库与项目挂钩状态机
 
 ## Current Position
 
 Phase: 141 of 145 (Capture 账本与仓库挂钩)
-Plan: 1 of 4
+Plan: 2 of 4
 Status: In progress
-Last activity: 2026-08-28 — Completed 141-01 Wave 0 RED contracts
+Last activity: 2026-08-28 — Completed 141-02 Capture model and core persist
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 141 | Capture 账本与仓库挂钩 | STORE-01~05, OBS-01/02 | In progress (1/4) |
+| 141 | Capture 账本与仓库挂钩 | STORE-01~05, OBS-01/02 | In progress (2/4) |
 | 142 | MCP 会话回写契约 | MCP-01~04 | Not started |
 | 143 | 价值评估与中高入图 | EVAL-01~05, OBS-04 | Not started |
 | 144 | 仓库召回与 Capture 回放 | RECALL-01~04, OBS-03 | Not started |
@@ -431,6 +431,7 @@ Last activity: 2026-08-28 — Completed 141-01 Wave 0 RED contracts
 | Phase 140 P02 | 36min | 2 tasks | 5 files |
 | Phase 140 P03 | 15min | 2 tasks | 10 files |
 | Phase 141 P01 | 3 min | 2 tasks | 4 files |
+| Phase 141 P02 | 7 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -795,6 +796,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 141]: Wave 0 仅建立失败测试，不提前实现 SessionCapture 或 CaptureService。
 - [Phase 141]: 缺失 session_id 固定使用 unspecified，并以命名用例锁定挂钩边界。
 - [Phase 141]: SessionCapture 仅允许 CaptureService 写入，Phase 141 writer 禁止 deferred sinks。
+- [Phase 141]: Capture 幂等键采用触发用户、稳定会话号与脱敏后 NFKC 问题哈希，重复写 first-write-wins。 — 确保敏感信息不影响审计键，并由数据库唯一约束保证首写保留。
+- [Phase 141]: 141-02 仅实现 unanchored 与 project_only，完整仓库挂钩状态机留给 141-03。 — 遵循本计划边界，避免提前实现 URL、授权和 mismatch 逻辑。
 
 ### Pending Todos
 
@@ -1250,8 +1253,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T07:29:15.130Z
-Stopped at: Completed 141-01-PLAN.md
+Last session: 2026-08-28T07:37:52.302Z
+Stopped at: Completed 141-02-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
