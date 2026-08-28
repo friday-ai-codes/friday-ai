@@ -479,6 +479,8 @@ def test_mcp_read_tool_schema_snapshot() -> None:
             "response": [
                 "context_id",
                 "project_id",
+                "space_id",
+                "blueprint_project_id",
                 "work_item",
                 "relations",
                 "documents",

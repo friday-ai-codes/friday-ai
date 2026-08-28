@@ -637,8 +637,12 @@ async def _h_bp_repo_confirmation(session: Any, engine: Any) -> StageOutcome:
         return StageOutcome(event="awaiting_confirmation")
     result = await adapter.open_gate(session)
     result = result if isinstance(result, dict) else {}
-    event = "confirmed" if result.get("event") == "confirmed" else "awaiting_confirmation"
-    return StageOutcome(event=event, stage_state_update=result.get("stage_state") or None)
+    raw_event = str(result.get("event") or "")
+    event = raw_event if raw_event in {"confirmed", "research_required"} else "awaiting_confirmation"
+    return StageOutcome(
+        event=event,
+        stage_state_update=result.get("stage_state") or None,
+    )
 
 
 # ── 阶段 2/3 的蓝图状态口径（B3）：进入这两个 stage 即 `drafting` ──────────────

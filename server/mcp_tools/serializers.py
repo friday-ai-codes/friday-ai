@@ -1637,6 +1637,8 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
         "response": [
             "context_id",
             "project_id",
+            "space_id",
+            "blueprint_project_id",
             "work_item",
             "relations",
             "documents",

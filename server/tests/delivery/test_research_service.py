@@ -105,17 +105,23 @@ async def test_state_transitions_table() -> None:
         status=SubAgentSession.Status.PENDING,
     )
     svc = ResearchService()
-    task_a = await RepoResearchTask.objects.acreate(session=session, repository=repo_a)
+    task_a = await RepoResearchTask.objects.acreate(
+        session=session,
+        repository=repo_a,
+        error={"reason": "previous_attempt_failed"},
+    )
     task_b = await RepoResearchTask.objects.acreate(session=session, repository=repo_b)
 
     await svc.mark_running(task_a, sub)
     await task_a.arefresh_from_db()
     assert task_a.status == RepoResearchTaskStatus.RUNNING
     assert task_a.subagent_session_id == sub.id
+    assert task_a.error == {}
 
     await svc.mark_done(task_a)
     await task_a.arefresh_from_db()
     assert task_a.status == RepoResearchTaskStatus.DONE
+    assert task_a.error == {}
 
     await svc.mark_failed(task_b, {"reason": "boom"})
     await task_b.arefresh_from_db()

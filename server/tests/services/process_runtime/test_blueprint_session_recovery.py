@@ -24,6 +24,8 @@ from delivery.models import (
     ConvergenceSession,
     ConvergenceSessionEntrypoint,
     ConvergenceSessionStatus,
+    RepoResearchTask,
+    RepoResearchTaskStatus,
 )
 from delivery.services import ArtifactService
 from services.process_runtime import blueprint_resume
@@ -126,3 +128,81 @@ async def test_fresh_sessions_are_not_scanned(monkeypatch) -> None:
 
     assert counts["scanned"] == 0
     drive.assert_not_awaited()
+
+
+async def _make_running_research_task(project, *, started_at):
+    from agents.models import AgentSession
+    from repositories.models import Repository
+    from subagent.models import SubAgentSession
+
+    session = await _make_session(
+        status=ConvergenceSessionStatus.WAITING_EVENT,
+        stage="repo_research",
+    )
+    repo = await Repository.objects.acreate(
+        name=f"recovery-{session.id}",
+        git_url=f"https://gitlab.example.com/recovery/{session.id}.git",
+        git_platform="gitlab",
+        default_branch="main",
+    )
+    main = await AgentSession.objects.acreate(
+        session_id=f"agent-{session.id}",
+        space=project,
+        status=AgentSession.Status.RUNNING,
+    )
+    sub = await SubAgentSession.objects.acreate(
+        session_id=f"research-{session.id}",
+        main_session=main,
+        task_type=SubAgentSession.TaskType.PLAN,
+        status=SubAgentSession.Status.RUNNING,
+        repo_url=repo.git_url,
+        started_at=started_at,
+    )
+    task = await RepoResearchTask.objects.acreate(
+        session=session,
+        repository=repo,
+        subagent_session=sub,
+        status=RepoResearchTaskStatus.RUNNING,
+    )
+    return task, sub
+
+
+async def test_recovery_reconciles_runner_completion_without_structured_callback(project) -> None:
+    from runners.models import Runner, RunnerEvent
+
+    task, sub = await _make_running_research_task(project, started_at=timezone.now())
+    runner = await Runner.objects.acreate(name="callback-miss", token_hash="a" * 64)
+    await RunnerEvent.objects.acreate(
+        runner=runner,
+        event_type=RunnerEvent.EventType.TASK_COMPLETED,
+        detail={"task_id": sub.session_id},
+    )
+
+    counts = await blueprint_resume.areconcile_stalled_blueprint_research_tasks(
+        now=timezone.now()
+    )
+
+    await task.arefresh_from_db()
+    await sub.arefresh_from_db()
+    assert counts["completed_without_callback"] == 1
+    assert task.status == RepoResearchTaskStatus.FAILED
+    assert task.error["reason"] == "completed_without_structured_result_callback"
+    assert sub.status == sub.Status.COMPLETED
+
+
+async def test_recovery_enforces_research_task_timeout_without_runner_terminal_event(project) -> None:
+    from services.process_runtime.blueprint_research_adapter import _RESEARCH_TIMEOUT
+
+    started_at = timezone.now() - timedelta(seconds=_RESEARCH_TIMEOUT + 1)
+    task, sub = await _make_running_research_task(project, started_at=started_at)
+
+    counts = await blueprint_resume.areconcile_stalled_blueprint_research_tasks(
+        now=timezone.now()
+    )
+
+    await task.arefresh_from_db()
+    await sub.arefresh_from_db()
+    assert counts["timed_out"] == 1
+    assert task.status == RepoResearchTaskStatus.FAILED
+    assert task.error["reason"] == "container_timeout"
+    assert sub.status == sub.Status.TIMEOUT

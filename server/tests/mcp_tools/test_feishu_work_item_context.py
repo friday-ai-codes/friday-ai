@@ -129,7 +129,14 @@ def test_get_feishu_work_item_context_creates_snapshot_and_trace(
     project,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from initiatives.models import Project
+
     client, _plaintext = mcp_client
+    blueprint_project = Project.objects.create(
+        space=project,
+        name="登录超时治理",
+        feishu_project_key=project.feishu_project_key,
+    )
     monkeypatch.setattr(
         "mcp_tools.work_item_context_service.create_feishu_client_for_project",
         lambda _project: _FakeFeishuClient(),
@@ -162,6 +169,9 @@ def test_get_feishu_work_item_context_creates_snapshot_and_trace(
     assert {doc["status"] for doc in body["documents"]} == {"ok"}
     assert body["comments"][0]["id"] == "c1"
     assert body["status"] == "completed"
+    assert body["space_id"] == str(project.id)
+    assert body["blueprint_project_id"] == str(blueprint_project.id)
+    assert body["blueprint_project_id"] != body["space_id"]
 
     context = McpWorkItemContext.objects.get(id=body["context_id"])
     assert context.run.run_id.hex == body["run_id"].replace("-", "")

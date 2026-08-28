@@ -357,6 +357,7 @@ async def start_blueprint_orchestration(
     conversation: Any = None,
     work_item_context: Any = None,
     assumptions_tier: str = "",
+    technical_plan_id: str = "",
 ) -> ConvergenceSession:
     """建一条 ``technical_blueprint`` 会话（Phase 116-02，蓝图链的生产起点）。
 
@@ -430,6 +431,8 @@ async def start_blueprint_orchestration(
         resolved_tier = ""
     if resolved_tier:
         decomposition["assumptions_tier"] = resolved_tier
+    if technical_plan_id:
+        decomposition["mcp_technical_plan_id"] = str(technical_plan_id)
 
     session = await ConvergenceSessionService().create_session(
         "technical_blueprint",

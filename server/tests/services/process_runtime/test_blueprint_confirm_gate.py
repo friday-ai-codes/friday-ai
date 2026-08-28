@@ -34,6 +34,7 @@ from delivery.models import (
     BlueprintThread,
     ConvergenceSession,
     ConvergenceSessionEntrypoint,
+    PartialPlan,
     RepoResearchTask,
     RepoResearchTaskStatus,
     ThreadKind,
@@ -189,8 +190,10 @@ def _fitness(repo: Repository, *, verdict: str = "suitable", role: str = "direct
     return {
         str(repo.id): {
             "verdict": verdict,
+            "reasons": ["仓库职责与需求匹配"],
             "role_suggestion": role,
             "responsibility": f"{repo.name} 负责生成接口与持久化",
+            "current_state_summary": "已存在题库模型和持久化能力",
             "findings": [{"title": "已有能力", "detail": "题库模型已就位", "citations": []}],
             "task_status": "done",
         }
@@ -267,6 +270,67 @@ async def _snapshot_entry(thread, repo) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════
 # 1-2. 开门与 pending 门
 # ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.parametrize(
+    ("conclusion_patch", "task_status"),
+    [
+        ({"task_status": "failed"}, RepoResearchTaskStatus.FAILED),
+        (
+            {"task_status": "failed", "role_suggestion": "indirect"},
+            RepoResearchTaskStatus.FAILED,
+        ),
+        ({"responsibility": ""}, RepoResearchTaskStatus.DONE),
+        ({"reasons": []}, RepoResearchTaskStatus.DONE),
+        ({"current_state_summary": "", "findings": []}, RepoResearchTaskStatus.DONE),
+    ],
+)
+async def test_open_gate_retries_direct_candidates_without_complete_evidence(
+    conclusion_patch: dict[str, Any],
+    task_status: str,
+) -> None:
+    """direct 调研失败或证据不全时不得发布可回答 repo_confirmation。"""
+    repo = await _make_repo()
+    artifact = await _make_artifact()
+    session = await _make_session(artifact, _routing_state(_candidate(repo, role="direct")))
+    task = await _make_task(session, repo, task_status)
+    task.attempt = 1
+    await task.asave(update_fields=["attempt"])
+    conclusion = _fitness(repo)[str(repo.id)]
+    conclusion.update(conclusion_patch)
+
+    result = await _adapter(fitness={str(repo.id): conclusion}).open_gate(session)
+
+    assert result["event"] == "research_required"
+    assert await _gate_thread(artifact) is None
+    assert await _task_status(session, repo) == RepoResearchTaskStatus.STALE
+
+
+async def test_open_gate_retries_routed_direct_lightweight_fallback() -> None:
+    """字段齐全也不能把 routed-direct 的轻量路由合成冒充真实仓库调研。"""
+    repo = await _make_repo()
+    artifact = await _make_artifact()
+    session = await _make_session(artifact, _routing_state(_candidate(repo, role="direct")))
+    task = await _make_task(session, repo, RepoResearchTaskStatus.DONE)
+    task.attempt = 1
+    await task.asave(update_fields=["attempt"])
+    await PartialPlan.objects.acreate(
+        research_task=task,
+        content={
+            **_fitness(repo)[str(repo.id)],
+            "repository_id": str(repo.id),
+            "research_depth": "light",
+            "research_summary": "服务端轻量合成",
+        },
+        valid=True,
+        content_hash="light",
+    )
+
+    result = await _adapter(fitness=_fitness(repo)).open_gate(session)
+
+    assert result["event"] == "research_required"
+    assert await _gate_thread(artifact) is None
+    assert await _task_status(session, repo) == RepoResearchTaskStatus.STALE
 
 
 async def test_open_gate_creates_blocking_thread_with_structured_options() -> None:

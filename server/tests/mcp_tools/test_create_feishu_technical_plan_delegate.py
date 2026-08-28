@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from types import SimpleNamespace
 from typing import Any
@@ -297,6 +298,52 @@ async def test_delegate_guards_unexpected_exception_as_failed(
     assert str(result.session.id) == ""
 
 
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_delegate_cancellation_hands_exact_blueprint_session_to_durable_resume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """请求取消不得留下 running/no-lease 会话和永久 idempotency_pending 预留。"""
+    from mcp_tools.orchestration_delegate import delegate_process_runtime
+
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_blueprint",
+        entrypoint=ConvergenceSessionEntrypoint.WORKFLOW,
+        current_stage="route",
+        status=ConvergenceSessionStatus.RUNNING,
+        stage_state={"decomposition": {"requirement_text": "高三提分专项"}},
+        initiated_by_user_id="user-47",
+    )
+    resumed: list[tuple[str, str]] = []
+
+    async def _fake_start(**_kwargs: Any) -> ConvergenceSession:
+        return session
+
+    async def _cancel_drive(_engine: Any, _session: Any, **_kwargs: Any) -> ConvergenceSession:
+        raise asyncio.CancelledError
+
+    async def _capture_resume(target: ConvergenceSession, *, initiated_by_user_id: str) -> Any:
+        resumed.append((str(target.id), initiated_by_user_id))
+        return target
+
+    monkeypatch.setattr(
+        "mcp_tools.orchestration_delegate._amaybe_start_blueprint_session", _fake_start
+    )
+    monkeypatch.setattr(
+        "services.process_runtime.entrypoint.build_engine_for_session",
+        lambda *_args, **_kwargs: (MagicMock(), _cancel_drive),
+    )
+    monkeypatch.setattr(
+        "services.process_runtime.blueprint_resume.aresume_after_gate_action", _capture_resume
+    )
+
+    result = await delegate_process_runtime(requirement_text="高三提分专项")
+
+    assert result.status == "partial"
+    assert str(result.session.id) == str(session.id)
+    assert resumed == [(str(session.id), "user-47")]
+
+
 # ===================== Task 2: create_feishu_technical_plan delegate 接线 =====================
 
 
@@ -521,6 +568,84 @@ async def test_build_work_item_technical_plan_missing_actor_degrades(
     assert captured["created_by"] is None
     assert result.output["status"] == McpWorkItemTechnicalPlan.Status.COMPLETED
     assert result.output["session_id"]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_resumed_blueprint_finalizes_original_reservation_and_retry_reuses_artifact(
+    project,
+) -> None:
+    from asgiref.sync import sync_to_async
+
+    from delivery.models import (
+        ConvergenceSession,
+        ConvergenceSessionEntrypoint,
+        ConvergenceSessionStatus,
+    )
+    from delivery.services import ArtifactService
+    from initiatives.models import Project
+    from mcp_tools.technical_plan_service import (
+        _technical_plan_output_from_record,
+        areconcile_blueprint_reservation,
+    )
+    from tests.helpers.blueprint_samples import make_blueprint
+
+    context = await sync_to_async(_make_context)(project)
+    blueprint_project = await Project.objects.acreate(
+        space=project,
+        name="高三提分专项",
+        feishu_project_key=project.feishu_project_key,
+    )
+    reservation = await McpWorkItemTechnicalPlan.objects.acreate(
+        run=context.run,
+        context=context,
+        space=project,
+        feishu_project_key=context.feishu_project_key,
+        work_item_type=context.work_item_type,
+        work_item_id=context.work_item_id,
+        title="高三提分专项技术方案",
+        status=McpWorkItemTechnicalPlan.Status.PARTIAL,
+        retry_state={
+            "retryable": True,
+            "failed_stage": "idempotency_pending",
+            "idempotency_key": "resume-finalize-1",
+        },
+        idempotency_key="resume-finalize-1",
+    )
+    blueprint_content = make_blueprint()
+    blueprint_content["meta"]["project_id"] = str(blueprint_project.id)
+    artifact = await ArtifactService().create(
+        "technical_plan",
+        blueprint_content,
+        created_by_user_id="tester",
+    )
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_blueprint",
+        entrypoint=ConvergenceSessionEntrypoint.WORKFLOW,
+        status=ConvergenceSessionStatus.WAITING_CLARIFICATION,
+        current_stage="repo_confirmation",
+        current_artifact_version_id=artifact.current_version_id,
+        stage_state={"decomposition": {"project_id": str(blueprint_project.id)}},
+    )
+
+    first = await areconcile_blueprint_reservation(
+        session, technical_plan_id=str(reservation.id)
+    )
+    second = await areconcile_blueprint_reservation(
+        session, technical_plan_id=str(reservation.id)
+    )
+
+    await reservation.arefresh_from_db()
+    output = _technical_plan_output_from_record(reservation, idempotency_state="reused")
+    assert first["reconciled"] is True
+    assert second["reconciled"] is False
+    assert reservation.blueprint_artifact_id == str(artifact.id)
+    assert reservation.retry_state["failed_stage"] == "blueprint_pending"
+    assert output["technical_plan_id"] == str(reservation.id)
+    assert output["blueprint_artifact_id"] == str(artifact.id)
+    assert await McpWorkItemTechnicalPlan.objects.filter(
+        idempotency_key="resume-finalize-1"
+    ).acount() == 1
 
 
 def test_create_feishu_technical_plan_partial_when_orchestration_suspended(

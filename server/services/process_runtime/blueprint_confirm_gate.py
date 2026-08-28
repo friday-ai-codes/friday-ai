@@ -113,6 +113,8 @@ _FITNESS_REFRESH_GATE_KEYS = (
 
 # 待重调研判据的第二个合取项：只有 task 仍可派发时标记才算「有待调研」。
 _DISPATCHABLE_STATUSES = (RepoResearchTaskStatus.PENDING, RepoResearchTaskStatus.STALE)
+_RESEARCH_RETRY_MAX_ATTEMPTS = 2
+_DIRECT_REQUIRED_FIELDS = ("responsibility", "current_state_summary")
 
 _GATE_QUESTION = (
     "请确认本次需求涉及的仓库集与各仓职责。可执行的动作："
@@ -258,6 +260,33 @@ def _afilter_dispatchable_repos(session_id: Any, repository_ids: list[str]) -> l
         status__in=_DISPATCHABLE_STATUSES,
     ).values_list("repository_id", flat=True)
     return sorted({str(rid) for rid in rows})
+
+
+def _invalid_direct_evidence(
+    snapshot: Any,
+    *,
+    routed_direct_ids: set[str] | None = None,
+) -> set[str]:
+    """返回不可交给人类确认的 direct 仓 id（失败或关键证据为空）。"""
+    invalid: set[str] = set()
+    routed_direct_ids = routed_direct_ids or set()
+    for entry in iter_snapshot_repos(snapshot):
+        repository_id = str(entry.get("repository_id") or "")
+        if (
+            repository_id not in routed_direct_ids
+            and str(entry.get("role_suggestion") or "direct") != "direct"
+        ):
+            continue
+        fitness = entry.get("fitness") if isinstance(entry.get("fitness"), dict) else {}
+        missing = any(not str(entry.get(key) or "").strip() for key in _DIRECT_REQUIRED_FIELDS)
+        if (
+            str(entry.get("task_status") or "") == RepoResearchTaskStatus.FAILED
+            or not list(fitness.get("reasons") or [])
+            or missing
+        ):
+            invalid.add(repository_id)
+    invalid.discard("")
+    return invalid
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -583,6 +612,56 @@ class BlueprintConfirmGateAdapter:
             return self._result("awaiting_confirmation", None, None, 0)
 
         artifact = version.artifact
+        snapshot = await self._abuild_snapshot(session)
+        routing = self._stage_state(session).get("routing")
+        candidates = routing.get("candidates", []) if isinstance(routing, dict) else []
+        routed_direct_ids = {
+            str(candidate.get("repository_id") or "")
+            for candidate in candidates
+            if isinstance(candidate, dict)
+            and str(candidate.get("role_suggestion") or "direct") == "direct"
+        }
+        invalid_direct = _invalid_direct_evidence(
+            snapshot,
+            routed_direct_ids=routed_direct_ids,
+        )
+        invalid_direct |= await self._alightweight_direct_repositories(
+            session,
+            routed_direct_ids,
+        )
+        if invalid_direct:
+            active = await self._aload_active_gate_thread(artifact.id)
+            if active is not None:
+                await self.lifecycle.resolve_thread(
+                    active,
+                    dismissed=True,
+                    resolution="direct_research_evidence_incomplete",
+                    initiated_by_user_id=self._initiated_by(session),
+                )
+            retry_ids = await self._arequeue_invalid_direct(session, invalid_direct)
+            logger.warning(
+                "blueprint_confirmation_research_blocked",
+                category="caller",
+                component="process_runtime",
+                session_id=str(getattr(session, "id", "")),
+                artifact_id=str(artifact.id),
+                invalid_repository_ids=sorted(invalid_direct),
+                retry_repository_ids=retry_ids,
+                initiated_by_user_id=self._initiated_by(session),
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            return self._result(
+                "research_required",
+                None,
+                {
+                    STAGE_STATE_KEY: {
+                        "repos": snapshot,
+                        "research_blocked": True,
+                        "invalid_repository_ids": sorted(invalid_direct),
+                    }
+                },
+                len(snapshot),
+            )
 
         # 1. pending 门：已有 open+blocking 确认门线程 → 不重复开门，但**幂等刷新快照**：
         #    调研终态（failed→done、verdict 变化）在门开着期间发生时，旧实现直接短路返回
@@ -612,7 +691,6 @@ class BlueprintConfirmGateAdapter:
             )
 
         # 3. 首次进门：组装结构化仓库清单快照并开一条阻塞线程。
-        snapshot = await self._abuild_snapshot(session)
         thread = await self.lifecycle.open_thread(
             artifact,
             kind=ThreadKind.REPO_CONFIRMATION,
@@ -660,6 +738,55 @@ class BlueprintConfirmGateAdapter:
             {STAGE_STATE_KEY: {"thread_id": str(thread.id), "repos": snapshot}},
             len(snapshot),
         )
+
+    async def _arequeue_invalid_direct(
+        self,
+        session: Any,
+        repository_ids: set[str],
+    ) -> list[str]:
+        """把仍有重试预算的无效 direct 调研置回 stale；超限保持 failed 供终态诊断。"""
+        from delivery.models import RepoResearchTask
+        from delivery.services import ResearchService
+
+        rows = [
+            row
+            async for row in RepoResearchTask.objects.filter(
+                session_id=getattr(session, "id", None),
+                repository_id__in=sorted(repository_ids),
+                status__in=[RepoResearchTaskStatus.DONE, RepoResearchTaskStatus.FAILED],
+                attempt__lt=_RESEARCH_RETRY_MAX_ATTEMPTS,
+            ).values("id", "repository_id")
+        ]
+        if not rows:
+            return []
+        await ResearchService().mark_stale([row["id"] for row in rows])
+        return sorted(str(row["repository_id"]) for row in rows)
+
+    async def _alightweight_direct_repositories(
+        self,
+        session: Any,
+        repository_ids: set[str],
+    ) -> set[str]:
+        """识别历史上被错误轻量合成的 routed-direct 仓，强制回到深调研。"""
+        from delivery.models import PartialPlan
+
+        invalid: set[str] = set()
+        for repository_id in sorted(repository_ids):
+            content = (
+                await PartialPlan.objects.filter(
+                    research_task__session_id=getattr(session, "id", None),
+                    research_task__repository_id=repository_id,
+                    valid=True,
+                )
+                .order_by("-created_at")
+                .values_list("content", flat=True)
+                .afirst()
+            )
+            content = content if isinstance(content, dict) else {}
+            summary = str(content.get("research_summary") or "")
+            if content.get("research_depth") == "light" or "轻量合成" in summary:
+                invalid.add(repository_id)
+        return invalid
 
     # ── 幂等 refresh（D-01：门开着期间用最新调研结论刷新快照，保留人工裁决） ──
 

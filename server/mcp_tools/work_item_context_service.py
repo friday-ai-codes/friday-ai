@@ -101,6 +101,16 @@ async def _resolve_project(
     return project
 
 
+async def _resolve_blueprint_project_id(context: McpWorkItemContext) -> str:
+    """把 legacy Space 上下文换算为 canonical initiatives.Project UUID。"""
+    try:
+        from services.process_runtime.blueprint_intake import aresolve_project_id
+
+        return await aresolve_project_id(entry="mcp", work_item_context=context)
+    except Exception:  # noqa: BLE001 — 上下文快照仍可返回，蓝图入口自身继续 fail-closed
+        return ""
+
+
 def _json_from_raw(raw: str | None) -> dict[str, Any]:
     if not raw:
         return {}
@@ -294,9 +304,13 @@ async def build_work_item_context(
         context=stored_context,
         raw_response=stored_raw_response,
     )
+    blueprint_project_id = await _resolve_blueprint_project_id(artifact)
     output = {
         "context_id": str(artifact.id),
+        # legacy alias：历史调用方的 project_id 实际是 projects.Space.id。
         "project_id": str(project.id),
+        "space_id": str(project.id),
+        "blueprint_project_id": blueprint_project_id,
         "work_item": safe_work_item,
         "relations": stored_relations,
         "documents": stored_documents,
