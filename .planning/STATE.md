@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
 status: executing
-stopped_at: Completed 141-03-PLAN.md
-last_updated: "2026-08-28T07:50:52.639Z"
+stopped_at: Completed 141-04-PLAN.md
+last_updated: "2026-08-28T07:57:52.246Z"
 last_activity: 2026-08-28 — Completed 141-02 Capture model and core persist
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 4
-  completed_plans: 3
-  percent: 75
+  completed_plans: 4
+  percent: 20
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 141 of 145 (Capture 账本与仓库挂钩)
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-08-28 — Completed 141-02 Capture model and core persist
 
@@ -433,6 +433,7 @@ Last activity: 2026-08-28 — Completed 141-02 Capture model and core persist
 | Phase 141 P01 | 3 min | 2 tasks | 4 files |
 | Phase 141 P02 | 7 min | 2 tasks | 6 files |
 | Phase 141-capture P03 | 10min | 2 tasks | 3 files |
+| Phase 141 P04 | 5m | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -801,6 +802,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 141]: 141-02 仅实现 unanchored 与 project_only，完整仓库挂钩状态机留给 141-03。 — 遵循本计划边界，避免提前实现 URL、授权和 mismatch 逻辑。
 - [Phase 141-capture]: 显式 repository_id 优先，缺失时才按 normalize_git_url 生成有限变体查询。
 - [Phase 141-capture]: Capture 外键写入除 knowledge access scope 外仍要求项目成员关系，public_org 只读可见性不放宽写入。
+- [Phase 141]: Phase 141 只登记 Capture persist caller 生命周期，不新增 session_capture_eval CallSource 或 sampling 事件。
+- [Phase 141]: Capture 日志字段采用闭集白名单，问答正文、git_url 与 token 不进入事件。
 
 ### Pending Todos
 
@@ -1256,8 +1259,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T07:50:52.629Z
-Stopped at: Completed 141-03-PLAN.md
+Last session: 2026-08-28T07:57:52.235Z
+Stopped at: Completed 141-04-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
