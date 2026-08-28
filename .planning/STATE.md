@@ -2,16 +2,19 @@
 gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
-status: executing
-stopped_at: Completed 144-05-PLAN.md
-last_updated: "2026-08-28T12:31:45.182Z"
-last_activity: 2026-08-28 — 144-04 MCP/Chat 会话知识检索完成
+current_phase: 145
+current_phase_name: Cursor / Claude Code 双宿主采集
+status: planning
+stopped_at: Phase 144 complete, ready to plan Phase 145
+last_updated: "2026-08-28T12:42:45.642Z"
+last_activity: 2026-08-28
+last_activity_desc: Phase 144 complete, transitioned to Phase 145
+state_head: 0d230d22e2d862aa82962188784f4a78400e2455
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 20
   completed_plans: 20
-  percent: 80
 ---
 
 # Project State
@@ -25,10 +28,10 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 
 ## Current Position
 
-Phase: 144 — 仓库召回与 Capture 回放
-Plan: 5 of 5 complete
-Status: Ready to execute
-Last activity: 2026-08-28 — 144-04 MCP/Chat 会话知识检索完成
+Phase: 145 — Cursor / Claude Code 双宿主采集
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-28 — Phase 144 complete, transitioned to Phase 145
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -1317,7 +1320,7 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-08-28T12:31:45.124Z
-Stopped at: Completed 144-05-PLAN.md
+Stopped at: Phase 144 complete, ready to plan Phase 145
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
