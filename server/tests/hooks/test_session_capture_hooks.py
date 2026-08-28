@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from conftest import FAKE_TOKEN
-
 ALLOWED_PAYLOAD_KEYS = {
     "question",
     "answer",
@@ -19,6 +17,7 @@ ALLOWED_PAYLOAD_KEYS = {
     "output_tokens",
     "client",
 }
+FAKE_TOKEN = "friday-test-pat-never-print"
 
 
 def _capture_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
