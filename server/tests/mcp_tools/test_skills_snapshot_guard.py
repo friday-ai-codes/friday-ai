@@ -81,6 +81,43 @@ def test_skill_tool_references_subset_of_snapshot() -> None:
     )
 
 
+def test_capture_and_project_memory_responsibilities_stay_separate() -> None:
+    """145-05-01 / D-09：各入口同步声明 Capture 与项目交付记忆的职责边界。"""
+    skills_root = REPO_ROOT / "skills" / "skills"
+    documents = [
+        skills_root / "friday" / "SKILL.md",
+        skills_root / "friday-dev" / "SKILL.md",
+        skills_root / "friday-memory" / "SKILL.md",
+    ]
+    for relative in (
+        ("friday-dev", "references", "http-fallback.md"),
+        ("friday-memory", "references", "http-fallback.md"),
+    ):
+        document = skills_root.joinpath(*relative)
+        if document.exists():
+            documents.append(document)
+
+    required_terms = {
+        "report_session_knowledge",
+        "report_project_knowledge",
+        "clean tree",
+        "用户可见",
+        "最终答案",
+        "transcript",
+        "隐藏思维链",
+        "凭证",
+        "职责",
+    }
+    missing: dict[str, list[str]] = {}
+    for document in documents:
+        text = document.read_text(encoding="utf-8")
+        absent = sorted(term for term in required_terms if term not in text)
+        if absent:
+            missing[str(document.relative_to(REPO_ROOT))] = absent
+
+    assert not missing, f"会话 Capture 与项目交付记忆职责文档不完整：{missing}"
+
+
 def test_friday_solution_documents_canonical_blueprint_controller() -> None:
     """主文与 HTTP fallback 都必须保留蓝图人审/CAS/编码门禁完整协议。"""
     solution_dir = REPO_ROOT / "skills" / "skills" / "friday-solution"

@@ -120,10 +120,20 @@ def test_write_path_cursor_stop_hook(project) -> None:
     assert bundle["runtime"] == RUNTIME_CURSOR
     assert bundle["kind"] == "write"
     by_path = {f["path"]: f["content"] for f in bundle["files"]}
-    # .cursor/hooks.json 注册 stop 钩子。
+    # OQ-01：保留 stop 项目记忆路径；Capture 只走 before/after，不走 thought。
     assert ".cursor/hooks.json" in by_path
     hooks = json.loads(by_path[".cursor/hooks.json"])
     assert "stop" in hooks["hooks"]
+    assert "beforeSubmitPrompt" in hooks["hooks"]
+    assert "afterAgentResponse" in hooks["hooks"]
+    assert "afterAgentThought" not in hooks["hooks"]
+    assert ".cursor/hooks/friday-before-submit-prompt.sh" in by_path
+    assert ".cursor/hooks/friday-after-agent-response.sh" in by_path
+    before = by_path[".cursor/hooks/friday-before-submit-prompt.sh"]
+    after = by_path[".cursor/hooks/friday-after-agent-response.sh"]
+    assert "report_session_knowledge" in after
+    assert "additionalContext" not in before + after
+    assert "hookSpecificOutput" not in before + after
     # stop 脚本含 active 写回 + STATE 回写 + 无 PAT/失败静默 exit 0。
     script = by_path[".cursor/hooks/friday-stop-writeback.sh"]
     assert "report_project_knowledge" in script
@@ -132,6 +142,10 @@ def test_write_path_cursor_stop_hook(project) -> None:
     assert "FRIDAY_PAT" in script
     assert "Authorization: Bearer ${FRIDAY_PAT}" in script
     assert "exit 0" in script
+    assert "last_assistant_message" not in script
+    assert "report_session_knowledge" not in script
+    assert "hookSpecificOutput" not in script
+    assert "additionalContext" not in script
 
 
 def test_write_path_claude_code_stop_hook(project) -> None:
@@ -139,13 +153,25 @@ def test_write_path_claude_code_stop_hook(project) -> None:
     assert bundle["runtime"] == RUNTIME_CLAUDE_CODE
     assert bundle["kind"] == "write"
     by_path = {f["path"]: f["content"] for f in bundle["files"]}
-    # .claude/settings.json 注册 Stop hook。
+    # 145-01-03：Claude Capture 有独立 UPS/Stop 脚本，项目记忆脚本职责不变。
     settings = json.loads(by_path[".claude/settings.json"])
+    assert "UserPromptSubmit" in settings["hooks"]
     assert "Stop" in settings["hooks"]
+    prompt_path = ".claude/hooks/friday-session-capture-user-prompt-submit.sh"
+    capture_stop_path = ".claude/hooks/friday-session-capture-stop.sh"
+    assert prompt_path in by_path
+    assert capture_stop_path in by_path
+    assert "prompt" in by_path[prompt_path]
+    assert "report_session_knowledge" in by_path[capture_stop_path]
+    assert "last_assistant_message" in by_path[capture_stop_path]
     script = by_path[".claude/hooks/friday-stop-writeback.sh"]
     assert "report_project_knowledge" in script
     assert '"writeback_mode": "active"' in script
     assert "report_project_state" in script
+    assert "question" not in script
+    assert "answer" not in script
+    assert "last_assistant_message" not in script
+    assert "report_session_knowledge" not in script
 
 
 def test_write_path_codex_manual_script(project) -> None:
