@@ -38,8 +38,8 @@ created: 2026-08-28
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 141-01-01 | 01 | 0 | STORE-01, STORE-02, STORE-04, STORE-05 | T-141-01 | Behavior contracts pinned as RED tests including four named Wave 0 cases | unit | `cd server && uv run pytest tests/initiatives/test_capture_service.py::test_missing_session_id_uses_unspecified tests/initiatives/test_capture_service.py::test_repo_ambiguous_does_not_bind_fk tests/initiatives/test_capture_service.py::test_project_only_without_repo tests/initiatives/test_capture_service.py::test_project_repo_mismatch_binds_repo_only tests/initiatives/test_capture_service.py -x` | ❌ W0 | ⬜ pending |
-| 141-01-02 | 01 | 0 | STORE-03, OBS-01, OBS-02 | T-141-02/05 | INV-6 + observability RED scaffolds | unit + static | `cd server && uv run pytest tests/initiatives/test_capture_inv6_guard.py tests/initiatives/test_capture_observability.py -x` | ❌ W0 | ⬜ pending |
+| 141-01-01 | 01 | 0 | STORE-01, STORE-02, STORE-04, STORE-05 | T-141-01 | Behavior contracts pinned as RED tests including four named Wave 0 cases | unit | `cd server && uv run pytest tests/initiatives/test_capture_service.py::test_missing_session_id_uses_unspecified tests/initiatives/test_capture_service.py::test_repo_ambiguous_does_not_bind_fk tests/initiatives/test_capture_service.py::test_project_only_without_repo tests/initiatives/test_capture_service.py::test_project_repo_mismatch_binds_repo_only tests/initiatives/test_capture_service.py -x` | ✅ W0 | ❌ red |
+| 141-01-02 | 01 | 0 | STORE-03, OBS-01, OBS-02 | T-141-02/05 | INV-6 + observability RED scaffolds | unit + static | `cd server && uv run pytest tests/initiatives/test_capture_inv6_guard.py tests/initiatives/test_capture_observability.py -x` | ✅ W0 | ❌ red |
 | 141-02-01 | 02 | 1 | STORE-01, STORE-02, STORE-05 | T-141-06 | Model/migration SET_NULL + unknown scalars | unit | `cd server && uv run python -c "from initiatives.models import SessionCapture"` | ❌ | ⬜ pending |
 | 141-02-02 | 02 | 1 | STORE-03, OBS-02 | T-141-01/02 | Only CaptureService writes; input is redacted; missing session_id uses unspecified | unit + static | `cd server && uv run pytest tests/initiatives/test_capture_inv6_guard.py -x && uv run pytest tests/initiatives/test_capture_service.py -k "without_project_or_repo or unknown_scalars or redaction or actor or does_not_write_memory or missing_session_id_uses_unspecified" -x` | ❌ | ⬜ pending |
 | 141-03-01 | 03 | 2 | STORE-04 | T-141-03 | Named linking cases plus authorized/unresolved/unauthorized still produce a row | unit | `cd server && uv run pytest tests/initiatives/test_capture_service.py::test_repo_ambiguous_does_not_bind_fk tests/initiatives/test_capture_service.py::test_project_only_without_repo tests/initiatives/test_capture_service.py::test_project_repo_mismatch_binds_repo_only -x && uv run pytest tests/initiatives/test_capture_service.py -k "link or unauthorized" -x` | ❌ | ⬜ pending |
@@ -53,13 +53,13 @@ created: 2026-08-28
 
 ## Wave 0 Requirements
 
-- [ ] `server/tests/initiatives/test_capture_service.py` — persistence, linking, idempotency and separation tests.
-- [ ] `server/tests/initiatives/test_capture_inv6_guard.py` — unique-writer and deferred-sink static guards.
-- [ ] `server/tests/initiatives/test_capture_observability.py` — lifecycle, redaction and best-effort logging tests.
-- [ ] RED `test_missing_session_id_uses_unspecified` — missing session_id persists as literal `unspecified` (D-06; Plan 02 greens).
-- [ ] RED `test_repo_ambiguous_does_not_bind_fk` — normalized URL multi-match does not bind repository FK (Plan 03 greens).
-- [ ] RED `test_project_only_without_repo` — authorized project without repo uses `project_only` (Plan 03 greens).
-- [ ] RED `test_project_repo_mismatch_binds_repo_only` — project/repo mismatch binds repo only (Plan 03 greens).
+- [x] `server/tests/initiatives/test_capture_service.py` — persistence, linking, idempotency and separation tests（已创建，当前 RED）。
+- [x] `server/tests/initiatives/test_capture_inv6_guard.py` — unique-writer and deferred-sink static guards（已创建，当前 RED）。
+- [x] `server/tests/initiatives/test_capture_observability.py` — lifecycle, redaction and best-effort logging tests（已创建，当前 RED）。
+- [x] RED `test_missing_session_id_uses_unspecified` — missing session_id persists as literal `unspecified` (D-06; Plan 02 greens).
+- [x] RED `test_repo_ambiguous_does_not_bind_fk` — normalized URL multi-match does not bind repository FK (Plan 03 greens).
+- [x] RED `test_project_only_without_repo` — authorized project without repo uses `project_only` (Plan 03 greens).
+- [x] RED `test_project_repo_mismatch_binds_repo_only` — project/repo mismatch binds repo only (Plan 03 greens).
 
 ---
 
