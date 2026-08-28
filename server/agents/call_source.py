@@ -4,7 +4,7 @@
 ====
 QPS/TPS/TTFT/上游错误统计都按 ``call_source`` 区分维度。本模块提供：
 
-- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（45 值，v0.15.0 Phase 80
+- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（47 值，v0.15.0 Phase 80
   新增 ``memory_distill``，v0.16.0 Phase 86 新增 ``ide_hook_distill``，v0.16.0 Phase 87
   新增 ``board_split``，v0.16.0 Phase 88 新增 ``repo_verify_container`` /
   ``repo_association``，v0.16.0 Phase 89 新增 ``plan_deepen`` / ``plan_revision`` /
@@ -13,7 +13,8 @@ QPS/TPS/TTFT/上游错误统计都按 ``call_source`` 区分维度。本模块�
   ``pr_review_capture``，feature list 方案编排新增 ``feature_change_classify``，
   v0.20.0 Phase 111 新增 8 个 ``blueprint_*`` 值——蓝图编排全链路调用点，本相位
   实际接线 ``blueprint_charter_draft``，其余 7 值供 Phase 112–114 消费；Phase 125
-  新增 ``module_summary``），作为
+  新增 ``module_summary``，Phase 128 新增 ``initiative_profile``，Phase 143 新增
+  ``session_capture_eval``），作为
   ``ModelUsageRecord.call_source`` 与各 LLM chokepoint 指标标签的权威取值；任意
   非法字符串经 :meth:`CallSource.normalize` 回退安全默认，杜绝基数失控
   （T-72-02-03 Tampering mitigation）。
@@ -38,7 +39,7 @@ UNKNOWN_CALL_SOURCE = "unknown"
 
 
 class CallSource(str, Enum):
-    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，46 值，权威照抄）。
+    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，47 值，权威照抄）。
 
     取值刻意收敛为有限集合：作为指标/筛选维度时基数可控；任意字符串经
     :meth:`normalize` 回退默认，杜绝外部输入污染 call_source 维度。
@@ -139,6 +140,9 @@ class CallSource(str, Enum):
     # Phase 128：专项画像抽取——feature list 语料 → InitiativeProfile（单轮，
     # best-effort；调用点 services.process_runtime.initiative_profile）。
     INITIATIVE_PROFILE = "initiative_profile"
+    # Phase 143：Session Capture 价值评估——Friday LLM 严格输出 high/medium/low
+    # 与可独立召回精华，失败保持可重试且不猜测档位。
+    SESSION_CAPTURE_EVAL = "session_capture_eval"
 
     @classmethod
     def normalize(cls, value: object, default: str = UNKNOWN_CALL_SOURCE) -> str:
