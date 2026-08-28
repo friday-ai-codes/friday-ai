@@ -5,16 +5,16 @@ milestone_name: Cursor / Claude Code 会话知识回写
 current_phase: 142
 current_phase_name: MCP 会话回写契约
 status: executing
-stopped_at: Completed 142-01-PLAN.md
-last_updated: "2026-08-28T08:42:32.840Z"
-last_activity: 2026-08-28 — Phase 142 Plan 01 Wave 0 RED contracts complete
-last_activity_desc: Phase 142 Plan 01 Wave 0 RED contracts complete
-state_head: f106967e8f4533e8959a668b9cfadc69bdfd081a
+stopped_at: Completed 142-03-PLAN.md
+last_updated: "2026-08-28T08:45:52.658Z"
+last_activity: 2026-08-28 — Phase 142 Plan 03 npm MCP contract complete
+last_activity_desc: Phase 142 Plan 03 npm MCP contract complete
+state_head: 75b0307f
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
   percent: 20
 ---
 
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 142 (MCP 会话回写契约) — EXECUTING
-Plan: 1 of 4 complete
-Status: In progress
-Last activity: 2026-08-28 — Phase 142 Plan 01 Wave 0 RED contracts complete
+Plan: 2 of 4 complete
+Status: Ready to execute
+Last activity: 2026-08-28 — Phase 142 Plan 03 npm MCP contract complete
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -439,6 +439,7 @@ Last activity: 2026-08-28 — Phase 142 Plan 01 Wave 0 RED contracts complete
 | Phase 141-capture P03 | 10min | 2 tasks | 3 files |
 | Phase 141 P04 | 5m | 2 tasks | 3 files |
 | Phase 142-mcp P01 | 6min | 3 tasks | 4 files |
+| Phase 142-mcp P03 | 2min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -812,6 +813,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 142-mcp]: client 保持开放字符串并只通过既有 ToolCallRecord 审计，不给 SessionCapture 增列 — 审计元数据不属于 Capture 正文
 - [Phase 142-mcp]: 三面字段守卫只覆盖 report_session_knowledge，不扩大到旧工具历史漂移 — 维持 Phase 142 新工具的局部门禁边界
 - [Phase 142-mcp]: Wave 0 保持 RED，生产接线留给 Phase 142 后续计划 — 遵循 tracer-first 测试先行
+- [Phase 142]: session_id、token 计数与 client 均保持开放字符串，避免 npm schema 比服务端更严格
+- [Phase 142]: report_session_knowledge 使用独立 annotations，准确表达 first-write-wins 幂等语义
 
 ### Pending Todos
 
@@ -1267,8 +1270,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T08:42:32.831Z
-Stopped at: Completed 142-01-PLAN.md
+Last session: 2026-08-28T08:45:35.687Z
+Stopped at: Completed 142-03-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
