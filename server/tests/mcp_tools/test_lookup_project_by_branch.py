@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from asgiref.sync import sync_to_async
@@ -40,8 +41,12 @@ def _make_space(key="lpb-space"):
 
 
 @sync_to_async
-def _make_repo(name: str):
-    return Repository.objects.create(name=name, git_url=f"https://git/{name}.git")
+def _make_repo(name: str, *, default_branch: str = "main"):
+    return Repository.objects.create(
+        name=name,
+        git_url=f"https://git/{name}.git",
+        default_branch=default_branch,
+    )
 
 
 @sync_to_async
@@ -421,3 +426,113 @@ async def test_repo_association_not_used_when_branch_source_hits(mcp_client, acc
     assert body["matched"] is True
     assert body["project"]["id"] == str(p_bound.id)
     assert len(body["candidates"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("branch_name", "default_branch"),
+    [
+        ("main", "main"),
+        ("master", "main"),
+        ("develop", "main"),
+        ("trunk", "trunk"),
+    ],
+)
+async def test_default_branch_skips_repo_association_fallback(
+    mcp_client,
+    access_user,
+    branch_name: str,
+    default_branch: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """默认分支的唯一 RepoAssociation 只能作为候选，不能自动注入项目上下文。"""
+    from initiatives.models import RepoAssociationStatus
+
+    client, _ = mcp_client
+    project = await _make_project(access_user, key=f"lpb-default-{branch_name}")
+    repo = await _make_repo(
+        f"default-{branch_name}",
+        default_branch=default_branch,
+    )
+    await _make_repo_association(project, repo, RepoAssociationStatus.CONFIRMED)
+    from services import project_context_packer as pack
+
+    pack_context = AsyncMock(side_effect=AssertionError("默认分支不得打包候选项目"))
+    monkeypatch.setattr(pack, "pack_project_context", pack_context)
+
+    response = await sync_to_async(client.post)(
+        _URL,
+        {"branch_name": branch_name, "repository_id": str(repo.id)},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["matched"] is False
+    assert body["project"] is None
+    assert body["context"] == ""
+    assert body["included_layers"] == []
+    assert body["candidates"] == [
+        {
+            "id": str(project.id),
+            "name": project.name,
+            "status": project.status,
+            "space_id": str(project.space_id),
+            "feishu_project_key": project.feishu_project_key,
+        }
+    ]
+    assert body["binding_source"] == "repo_association_skipped_default_branch"
+    pack_context.assert_not_awaited()
+
+
+async def test_default_branch_explicit_project_binding_still_matches(
+    mcp_client,
+    access_user,
+) -> None:
+    """默认分支上的显式 ProjectBranch 仍是可审计的命中证据。"""
+    client, _ = mcp_client
+    project = await _make_project(access_user, key="lpb-default-explicit")
+    repo = await _make_repo("default-explicit")
+    await ProjectBranchService().bind(
+        project_id=project.id,
+        repository_id=repo.id,
+        branch_name="main",
+        actor=access_user,
+        initiated_by_user_id=access_user.id,
+    )
+
+    response = await sync_to_async(client.post)(
+        _URL,
+        {"branch_name": "main", "repository_id": str(repo.id)},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["matched"] is True
+    assert body["project"]["id"] == str(project.id)
+    assert body["binding_source"] == "branch_binding"
+
+
+async def test_default_branch_resolvable_work_item_still_matches(
+    mcp_client,
+    access_user,
+) -> None:
+    """即使仓 default_branch 与分支同名，可解析 work item 仍优先命中。"""
+    client, _ = mcp_client
+    branch = "feat/xxxx-m7441-default"
+    project = await _make_project(access_user, key="lpb-default-work-item")
+    repo = await _make_repo("default-work-item", default_branch=branch)
+    work_item = await _make_work_item(7441)
+    await ProjectService().attach_work_item(project_id=project.id, work_item=work_item)
+
+    response = await sync_to_async(client.post)(
+        _URL,
+        {"branch_name": branch, "repository_id": str(repo.id)},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["matched"] is True
+    assert body["project"]["id"] == str(project.id)
+    assert body["binding_source"] == "work_item"
