@@ -28,7 +28,13 @@ v0.25.0 把 Cursor / Claude Code 中有价值的问答沉淀为 Friday 可召回
   2. `repository_id`、`project_id` 任一或同时缺失时 Capture 仍会落库；git URL 无法解析时记录明确 `repo_unresolved` 原因而不静默跳过。
   3. 模型、provider 或 token 计数不可得时以 `unknown` 保存，服务端不会猜测补全。
   4. 每次持久化都经 `CaptureService` 完成脱敏与触发用户归因，并产生带 `duration_ms` 的 caller 生命周期事件；凭证、token、密钥不会进入 Capture、Ledger 或日志。
-**Plans**: TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 141-01-PLAN.md — Wave 0：Capture/INV-6/观测失败测试骨架（STORE/OBS 契约钉死）
+- [ ] 141-02-PLAN.md — SessionCapture 模型 + CaptureService 核心 persist + INV-6（STORE-01/02/03/05）
+- [ ] 141-03-PLAN.md — 仓库/项目挂钩状态机与幂等 first-write-wins（STORE-04/03）
+- [ ] 141-04-PLAN.md — caller 观测、LOGGING-SPEC 与账本分离回归（OBS-01/02、STORE-01）
 
 ### Phase 142: MCP 会话回写契约
 **Goal**: Cursor / Claude Code 可通过稳定的新 MCP 工具提交会话知识，任何挂钩失败都不影响 Capture 被接受
