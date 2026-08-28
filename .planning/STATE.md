@@ -2,16 +2,19 @@
 gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
-status: executing
-stopped_at: Completed 141-04-PLAN.md
-last_updated: "2026-08-28T07:57:52.246Z"
-last_activity: 2026-08-28 — Completed 141-02 Capture model and core persist
+current_phase: 142
+current_phase_name: MCP 会话回写契约
+status: planning
+stopped_at: Phase 141 complete, ready to plan Phase 142
+last_updated: "2026-08-28T08:03:53.102Z"
+last_activity: 2026-08-28
+last_activity_desc: Phase 141 complete, transitioned to Phase 142
+state_head: f106967e8f4533e8959a668b9cfadc69bdfd081a
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 4
   completed_plans: 4
-  percent: 20
 ---
 
 # Project State
@@ -25,10 +28,10 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 
 ## Current Position
 
-Phase: 141 of 145 (Capture 账本与仓库挂钩)
-Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-08-28 — Completed 141-02 Capture model and core persist
+Phase: 142 of 145 (MCP 会话回写契约)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-28 — Phase 141 complete, transitioned to Phase 142
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -1260,7 +1263,7 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-08-28T07:57:52.235Z
-Stopped at: Completed 141-04-PLAN.md
+Stopped at: Phase 141 complete, ready to plan Phase 142
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
