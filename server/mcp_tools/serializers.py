@@ -813,6 +813,33 @@ class ReportProjectKnowledgeRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class ReportSessionKnowledgeRequestSerializer(serializers.Serializer):
+    """宿主会话可见问答写入 Capture 账本的请求。"""
+
+    question = serializers.CharField(required=True, allow_blank=False, max_length=20000)
+    answer = serializers.CharField(required=True, allow_blank=False, max_length=20000)
+    repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    git_url = serializers.CharField(required=False, allow_blank=True, default="", max_length=500)
+    branch_name = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
+    project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    session_id = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
+    response_model = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=128
+    )
+    provider = serializers.CharField(required=False, allow_blank=True, default="", max_length=64)
+    input_tokens = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=64
+    )
+    output_tokens = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=64
+    )
+    client = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
+
+
 class SearchProjectContextRequestSerializer(serializers.Serializer):
     """项目上下文语义召回请求（CTX-01 RAG 读半）。"""
 
@@ -1737,6 +1764,31 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "report_project_knowledge": {
         "request": ["project_id", "content", "source_conversation_id"],
         "response": ["accepted", "draft_id", "reason", "run_id"],
+    },
+    "report_session_knowledge": {
+        "request": [
+            "question",
+            "answer",
+            "repository_id",
+            "git_url",
+            "branch_name",
+            "project_id",
+            "session_id",
+            "response_model",
+            "provider",
+            "input_tokens",
+            "output_tokens",
+            "client",
+        ],
+        "response": [
+            "accepted",
+            "capture_id",
+            "reason",
+            "repository_id",
+            "project_id",
+            "idempotent_hit",
+            "run_id",
+        ],
     },
     "report_project_state": {
         "request": ["project_id", "branch_name", "repository_id", "apis"],
