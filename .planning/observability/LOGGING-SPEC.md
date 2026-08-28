@@ -61,7 +61,7 @@
 
 ### 4.1 LLM/AI 调用来源枚举（`call_source` 标签，必须带）
 
-QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM 调用点必须赋一个 `call_source`。**权威定义是 `server/agents/call_source.py` 的 `CallSource` 枚举，当前 46 值**（v0.19.0 补登 `feature_change_classify`，v0.20.0 新增 8 个 `blueprint_*`，Phase 125 新增 `module_summary`，Phase 128 新增 `initiative_profile`），下表与之逐条对齐：
+QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM 调用点必须赋一个 `call_source`。**权威定义是 `server/agents/call_source.py` 的 `CallSource` 枚举，当前 47 值**（v0.19.0 补登 `feature_change_classify`，v0.20.0 新增 8 个 `blueprint_*`，Phase 125 新增 `module_summary`，Phase 128 新增 `initiative_profile`，Phase 143 新增 `session_capture_eval`），下表与之逐条对齐：
 
 | call_source | 入口 | 备注 |
 |-------------|------|------|
@@ -111,6 +111,7 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `blueprint_charter_draft` | `repositories.services.charter_service.adraft_charter`（v0.20.0 Phase 111） | 仓库章程 AI 起草：ai_summary/facets + MR 历史 + RepoAssociation 裁决三源蒸馏，单轮，best-effort |
 | `module_summary` | `services.code_graph.module_summary`（Phase 125 仓社区模块摘要） | 仓社区模块摘要，单轮，best-effort |
 | `initiative_profile` | `services.process_runtime.initiative_profile`（Phase 128 专项画像） | feature list → InitiativeProfile，单轮，best-effort；语料不足 clarify |
+| `session_capture_eval` | `initiatives.services.session_capture_eval.SessionCaptureEvaluator`（Phase 143） | Session Capture 严格三档价值评估与可独立召回精华提炼；失败可重试，不猜测档位 |
 
 > 埋点位置：`acquire_llm_slot`（QPS/排队/`LLMBusyError`）+ 两个 Runner 的 `astream` 循环（TTFT/TPS/上游错误）+ 各 `ainvoke` 站点。详见 MILESTONE-PROPOSAL §1。
 
@@ -386,6 +387,19 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `session_capture_persist_started` | caller | knowledge | Session Capture 持久化开始（带 `initiated_by_user_id`，不记录问答正文） |
 | `session_capture_persist_completed` | caller | knowledge | Session Capture 持久化完成（带 `duration_ms`、Capture 标识及非敏感挂钩结果） |
 | `session_capture_persist_failed` | caller | knowledge | Session Capture 持久化失败（带 `duration_ms` 与脱敏 `error`，异常原样抛出） |
+| `session_capture_eval_started` | sampling | knowledge | 评估开始；仅带 `capture_id`、`status`、`attempt`、触发用户 |
+| `session_capture_eval_completed` | sampling | knowledge | 评估完成；仅带 `capture_id`、`tier`、`status`、`attempt`、`duration_ms`、触发用户 |
+| `session_capture_eval_failed` | sampling | knowledge | 评估失败；仅带 `capture_id`、`status`、`attempt`、`duration_ms`、触发用户与脱敏错误 |
+| `session_capture_normalize_started` | sampling | knowledge | Capture 精华归一化开始；仅带 `capture_id`、`tier`、`status`、触发用户 |
+| `session_capture_normalize_completed` | sampling | knowledge | Capture 精华归一化完成；带 `duration_ms` 与事件汇总计数 |
+| `session_capture_normalize_failed` | sampling | knowledge | Capture 精华归一化失败；带 `duration_ms`、触发用户与脱敏错误 |
+| `session_capture_ingest_started` | sampling | knowledge | Capture 入图开始；仅带 `capture_id`、`tier`、`status`、`attempt`、触发用户 |
+| `session_capture_ingest_completed` | sampling | knowledge | Capture 入图完成；带 `duration_ms` 与摄取汇总计数 |
+| `session_capture_ingest_failed` | sampling | knowledge | Capture 入图失败；带 `duration_ms`、触发用户与脱敏错误 |
+| `session_capture_recovery_started` | sampling | knowledge | 到期 Capture 恢复扫描开始；仅带触发用户 |
+| `session_capture_recovery_completed` | sampling | knowledge | 恢复扫描完成；带 `duration_ms` 与扫描、跳过、重派汇总计数 |
+| `session_capture_recovery_failed` | sampling | knowledge | 恢复扫描失败；带 `duration_ms`、触发用户与脱敏错误 |
 
-> Phase 141 只登记持久化 caller 生命周期；评估与入图 sampling 事件及对应 `CallSource`
-> 留待 Phase 143。
+> Session Capture sampling 事件只允许 `capture_id`、`tier`、`status`、`attempt`、
+> `duration_ms`、触发用户及汇总计数；禁止记录 question、answer、transcript 或
+> `distilled_essence` 正文。
