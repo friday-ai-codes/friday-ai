@@ -34,6 +34,8 @@ QUEUE_DISPATCH = "dispatch"
 QUEUE_CHARTER = "charter"
 # Semgrep diff-aware 安全扫描（独立于 index/graph；lock=scan-slot-* 限并发 N=2）
 QUEUE_SCAN = "scan"
+# Session Capture 价值评估与精华入图（eval / ingest 双任务独立失败与重试）
+QUEUE_KNOWLEDGE = "knowledge"
 
 # 全部已声明队列的汇总，供注册 / 校验 / worker 启动参数等场景遍历。
 ALL_QUEUES: tuple[str, ...] = (
@@ -49,6 +51,7 @@ ALL_QUEUES: tuple[str, ...] = (
     QUEUE_DISPATCH,
     QUEUE_CHARTER,
     QUEUE_SCAN,
+    QUEUE_KNOWLEDGE,
 )
 
 __all__ = [
@@ -64,5 +67,6 @@ __all__ = [
     "QUEUE_DISPATCH",
     "QUEUE_CHARTER",
     "QUEUE_SCAN",
+    "QUEUE_KNOWLEDGE",
     "ALL_QUEUES",
 ]

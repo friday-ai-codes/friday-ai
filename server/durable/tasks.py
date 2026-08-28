@@ -19,16 +19,17 @@ from procrastinate.contrib.django import app
 from durable.queues import (
     QUEUE_BLUEPRINT,
     QUEUE_CHARTER,
-    QUEUE_SCAN,
     QUEUE_CRAWL_INGEST,
     QUEUE_DISPATCH,
     QUEUE_DOC_SYNC,
     QUEUE_FEATURE_PARSE,
     QUEUE_GRAPH,
     QUEUE_INDEX,
+    QUEUE_KNOWLEDGE,
     QUEUE_MAINTENANCE,
     QUEUE_PAGE_INDEX,
     QUEUE_REPO_SUMMARY,
+    QUEUE_SCAN,
 )
 
 logger = structlog.get_logger(__name__)
@@ -287,6 +288,42 @@ async def durable_charter_draft(
 
 
 
+@app.task(name="durable_session_capture_eval", queue=QUEUE_KNOWLEDGE)
+async def durable_session_capture_eval(
+    *,
+    capture_id: str,
+    attempt: int = 0,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """Session Capture 价值评估 durable 包壳。"""
+
+    from durable.tasks_impl import run_session_capture_eval
+
+    return await run_session_capture_eval(
+        capture_id=capture_id,
+        attempt=attempt,
+        initiated_by_user_id=initiated_by_user_id,
+    )
+
+
+@app.task(name="durable_session_capture_ingest", queue=QUEUE_KNOWLEDGE)
+async def durable_session_capture_ingest(
+    *,
+    capture_id: str,
+    attempt: int = 0,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """Session Capture 精华入图 durable 包壳。"""
+
+    from durable.tasks_impl import run_session_capture_ingest
+
+    return await run_session_capture_ingest(
+        capture_id=capture_id,
+        attempt=attempt,
+        initiated_by_user_id=initiated_by_user_id,
+    )
+
+
 @app.task(name="durable_semgrep_scan", queue=QUEUE_SCAN)
 async def durable_semgrep_scan(
     *,
@@ -370,6 +407,40 @@ async def durable_ping(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     logger.info("durable_ping", payload=payload)
     return {"pong": True, "payload": payload}
+
+
+@app.periodic(cron="*/5 * * * *")
+@app.task(
+    name="recover_stranded_session_captures",
+    queue=QUEUE_MAINTENANCE,
+    queueing_lock="recover_stranded_session_captures",
+    pass_context=True,
+)
+async def recover_stranded_session_captures(context: Any, timestamp: int) -> int:
+    """周期恢复无 active job 的 due/stale Session Capture。"""
+
+    import time
+
+    from initiatives.services.session_capture_enqueue import (
+        recover_stranded_session_captures as recover,
+    )
+
+    started = time.perf_counter()
+    recovered = await recover()
+    try:
+        logger.info(
+            "session_capture_recovery_completed",
+            category="sampling",
+            component="knowledge",
+            initiated_by_user_id="system",
+            status="completed",
+            recovered=recovered,
+            timestamp=timestamp,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+    except Exception:
+        pass
+    return recovered
 
 
 @app.periodic(cron="*/5 * * * *")
