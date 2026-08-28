@@ -603,6 +603,7 @@ def test_mcp_read_tool_schema_snapshot() -> None:
                 "candidates",
                 "context",
                 "included_layers",
+                "binding_source",
                 "run_id",
             ],
         },

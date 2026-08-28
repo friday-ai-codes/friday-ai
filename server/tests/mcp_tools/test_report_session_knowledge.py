@@ -182,6 +182,43 @@ async def test_default_branch_does_not_mean_rejected(mcp_client) -> None:
     assert body["reason"] != "branch_unresolved"
 
 
+async def test_default_branch_with_repository_association_keeps_repository_anchor(
+    mcp_client,
+    access_user,
+    repository,
+) -> None:
+    """lookup 默认分支不注入项目，但 Capture 写路径仍按真实仓库接受。"""
+    from initiatives.models import RepoAssociation, RepoAssociationStatus
+
+    project = await _make_project(access_user, repository)
+    await RepoAssociation.objects.acreate(
+        project=project,
+        repository=repository,
+        status=RepoAssociationStatus.CONFIRMED,
+    )
+    client, _ = mcp_client
+
+    status_code, body = await _post(
+        client,
+        {
+            "question": "默认分支是否仍可按仓收 Capture？",
+            "answer": "可以；项目推断跳过不应清空真实仓库挂钩。",
+            "repository_id": str(repository.id),
+            "branch_name": "main",
+            "session_id": "default-branch-repository-anchor",
+        },
+    )
+
+    assert status_code == 200
+    assert body["accepted"] is True
+    assert body["repository_id"] == str(repository.id)
+    assert body["project_id"] is None
+    assert body["reason"] != "branch_unresolved"
+    capture = await _capture(body["capture_id"])
+    assert capture.repository_id == repository.id
+    assert capture.project_id is None
+
+
 async def test_link_reason_passthrough(mcp_client, repository) -> None:
     client, _ = mcp_client
     status_code, body = await _post(
