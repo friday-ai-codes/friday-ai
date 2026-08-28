@@ -1760,6 +1760,7 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "candidates",
             "context",
             "included_layers",
+            "binding_source",
             "run_id",
         ],
     },
