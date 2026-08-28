@@ -25,7 +25,7 @@
 
 - [x] **EVAL-01**: Friday 对每条已落库 Capture 异步评估 `high`/`medium`/`low` 并提炼可检索精华；评估失败保留原文 Capture，不得删除
 - [x] **EVAL-02**: 价值等级不得复用 `evaluate_writeback_quality` 或仓库路由 `confidence`；评估 LLM 使用新 `call_source=session_capture_eval` 并上报用量
-- [ ] **EVAL-03**: `medium`/`high` 经既有 `aschedule_ingestion` 进入 `delivery_knowledge`（`EntityKind.DOCUMENT` + `source_kind=session_capture`）；`low` 不向量化，仍可作评测回放
+- [x] **EVAL-03**: `medium`/`high` 经既有 `aschedule_ingestion` 进入 `delivery_knowledge`（`EntityKind.DOCUMENT` + `source_kind=session_capture`）；`low` 不向量化，仍可作评测回放
 - [x] **EVAL-04**: 入图投递必须 persist-first 且可重试（durable/outbox + Capture 状态机）；禁止把进程内 `background_runner` 当作唯一投递
 - [x] **EVAL-05**: 评估与入图不得调用 `MemoryService.append` / `record_hook_writeback` 把会话 Capture 写成 active 项目记忆
 
@@ -91,7 +91,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MCP-04 | Phase 142 | Complete |
 | EVAL-01 | Phase 143 | Complete |
 | EVAL-02 | Phase 143 | Complete |
-| EVAL-03 | Phase 143 | Pending |
+| EVAL-03 | Phase 143 | Complete |
 | EVAL-04 | Phase 143 | Complete |
 | EVAL-05 | Phase 143 | Complete |
 | RECALL-01 | Phase 144 | Pending |
