@@ -716,6 +716,12 @@ class SearchSessionKnowledgeRequestSerializer(serializers.Serializer):
     top_k = serializers.IntegerField(required=False, default=5, min_value=1, max_value=20)
 
 
+class GetSessionCaptureRequestSerializer(serializers.Serializer):
+    """按 Capture UUID 回放脱敏问答。"""
+
+    capture_id = serializers.UUIDField(required=True)
+
+
 class GetEntityTimelineRequestSerializer(serializers.Serializer):
     entity_id = serializers.UUIDField(required=True)
     include_superseded = serializers.BooleanField(required=False, default=False)
@@ -1753,6 +1759,30 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "search_session_knowledge": {
         "request": ["query", "repository_id", "project_id", "top_k"],
         "response": ["query", "results", "total", "run_id"],
+    },
+    "get_session_capture": {
+        "request": ["capture_id"],
+        "response": [
+            "capture_id",
+            "question",
+            "answer",
+            "response_model",
+            "provider",
+            "input_tokens",
+            "output_tokens",
+            "session_id",
+            "branch_name",
+            "repository_id",
+            "project_id",
+            "link_reason",
+            "value_tier",
+            "status",
+            "created_at",
+            "updated_at",
+            "evaluated_at",
+            "ingested_at",
+            "run_id",
+        ],
     },
     "get_entity_timeline": {
         "request": ["entity_id", "include_superseded", "as_of"],
