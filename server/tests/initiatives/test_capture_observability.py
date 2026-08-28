@@ -1,9 +1,11 @@
-"""Phase 141 Wave 0：Capture 持久化 caller 生命周期与无正文契约（RED）。"""
+"""Capture 观测：persist caller（Phase 141）与 eval/normalize/ingest sampling（Phase 143 RED）。"""
 
 from __future__ import annotations
 
+import ast
 import json
 import uuid
+from pathlib import Path
 
 import pytest
 import structlog
@@ -16,6 +18,7 @@ from initiatives.services import CaptureService
 pytestmark = pytest.mark.django_db(transaction=True)
 
 User = get_user_model()
+SERVER_DIR = Path(__file__).resolve().parents[2]
 
 
 @sync_to_async
@@ -126,7 +129,91 @@ async def test_failure_caller_lifecycle(monkeypatch):
     assert "failure-question-sentinel" not in serialized
 
 
-async def test_no_eval_sampling_events():
+def _source(relative: str) -> str:
+    path = SERVER_DIR / relative
+    assert path.exists(), f"Phase 143 观测目标文件尚未建立：{relative}"
+    return path.read_text(encoding="utf-8")
+
+
+def _logger_calls(relative: str) -> list[str]:
+    source = _source(relative)
+    tree = ast.parse(source)
+    calls: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in {"debug", "info", "warning", "error", "exception"}:
+            continue
+        segment = ast.get_source_segment(source, node)
+        if segment and "session_capture_" in segment:
+            calls.append(segment)
+    return calls
+
+
+@pytest.mark.parametrize(
+    ("relative", "prefix"),
+    [
+        ("initiatives/services/session_capture_eval.py", "session_capture_eval"),
+        ("durable/tasks_impl.py", "session_capture_ingest"),
+        ("knowledge/sources/session_capture.py", "session_capture_normalize"),
+    ],
+)
+def test_eval_normalize_ingest_sampling_lifecycle(relative: str, prefix: str) -> None:
+    calls = _logger_calls(relative)
+    joined = "\n".join(calls)
+
+    for suffix in ("started", "completed", "failed"):
+        assert f'"{prefix}_{suffix}"' in joined
+    for call in calls:
+        if f"{prefix}_" not in call:
+            continue
+        assert 'category="sampling"' in call
+        assert 'component="knowledge"' in call
+        assert "capture_id=" in call
+    for suffix in ("completed", "failed"):
+        matching = [call for call in calls if f'"{prefix}_{suffix}"' in call]
+        assert matching and all("duration_ms=" in call for call in matching)
+
+
+def test_sampling_events_exclude_capture_body_and_tokens() -> None:
+    calls = []
+    for relative in (
+        "initiatives/services/session_capture_eval.py",
+        "durable/tasks_impl.py",
+        "knowledge/sources/session_capture.py",
+    ):
+        calls.extend(_logger_calls(relative))
+
+    serialized = "\n".join(calls)
+    forbidden_fields = (
+        "question=",
+        "answer=",
+        "distilled_essence=",
+        "transcript=",
+        "input_tokens=",
+        "output_tokens=",
+        "token=",
+    )
+    assert [field for field in forbidden_fields if field in serialized] == []
+    assert "initiated_by_user_id=" in serialized or "user_id=" in serialized
+    assert "status=" in serialized
+    assert "tier=" in serialized or "value_tier=" in serialized
+
+
+def test_sampling_failures_redact_errors_and_logging_is_best_effort() -> None:
+    for relative in (
+        "initiatives/services/session_capture_eval.py",
+        "durable/tasks_impl.py",
+        "knowledge/sources/session_capture.py",
+    ):
+        source = _source(relative)
+        assert "redact_secrets_in_text" in source
+        assert "except Exception:" in source
+        assert "pass" in source
+
+
+async def test_persist_does_not_emit_eval_sampling_events():
+    """Persist 路径仍不得提前发出 eval/ingest sampling；评估在 durable worker。"""
     actor = await _make_user()
 
     with structlog.testing.capture_logs() as captured:
@@ -136,16 +223,22 @@ async def test_no_eval_sampling_events():
         event
         for event in captured
         if str(event.get("event", "")).startswith(
-            ("session_capture_eval_", "session_capture_ingest_")
+            ("session_capture_eval_", "session_capture_ingest_", "session_capture_normalize_")
         )
     ]
     assert forbidden == []
-    assert not [
-        event
-        for event in captured
-        if event.get("category") == "sampling"
-        and str(event.get("event", "")).startswith("session_capture_")
-    ]
+
+
+def test_recovery_logs_rows_at_debug_and_one_sampling_summary() -> None:
+    calls = _logger_calls("initiatives/services/session_capture_enqueue.py")
+    row_calls = [call for call in calls if "capture_id=" in call]
+    summary_calls = [call for call in calls if "recovery" in call and "capture_id=" not in call]
+
+    assert row_calls and all(".debug(" in call for call in row_calls)
+    assert len(summary_calls) == 1
+    assert ".info(" in summary_calls[0]
+    assert 'category="sampling"' in summary_calls[0]
+    assert 'component="knowledge"' in summary_calls[0]
 
 
 async def test_no_body_or_secrets_in_logs():
