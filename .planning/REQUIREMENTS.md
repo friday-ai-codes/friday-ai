@@ -16,10 +16,10 @@
 
 ### MCP 工具契约（MCP）
 
-- [ ] **MCP-01**: 用户可通过新工具 `report_session_knowledge` 提交结构化会话回写（必填 `question`/`answer`；可选仓库、分支、会话、项目、`response_model`、`client`）
-- [ ] **MCP-02**: 无 `project_id`、仓解析失败或默认分支无法唯一定位项目时，工具仍返回 200 且 `accepted=true` 并产生 Capture 行；`branch_unresolved` 不得表示未收
-- [ ] **MCP-03**: 服务端 serializer、`TOOL_SCHEMA_SNAPSHOT` 与 npm `mcp/src/tools.ts` 对 `report_session_knowledge` 三面对齐；缺任一面对齐测试失败
-- [ ] **MCP-04**: 既有 `report_project_knowledge` 的项目门闩与 git-diff 记忆路径保持零回归，本里程碑不把它扩成 Capture 入口
+- [x] **MCP-01**: 用户可通过新工具 `report_session_knowledge` 提交结构化会话回写（必填 `question`/`answer`；可选仓库、分支、会话、项目、`response_model`、`client`）
+- [x] **MCP-02**: 无 `project_id`、仓解析失败或默认分支无法唯一定位项目时，工具仍返回 200 且 `accepted=true` 并产生 Capture 行；`branch_unresolved` 不得表示未收
+- [x] **MCP-03**: 服务端 serializer、`TOOL_SCHEMA_SNAPSHOT` 与 npm `mcp/src/tools.ts` 对 `report_session_knowledge` 三面对齐；缺任一面对齐测试失败
+- [x] **MCP-04**: 既有 `report_project_knowledge` 的项目门闩与 git-diff 记忆路径保持零回归，本里程碑不把它扩成 Capture 入口
 
 ### 价值评估与入图（EVAL）
 
@@ -85,10 +85,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STORE-03 | Phase 141 | Complete |
 | STORE-04 | Phase 141 | Complete |
 | STORE-05 | Phase 141 | Complete |
-| MCP-01 | Phase 142 | Pending |
-| MCP-02 | Phase 142 | Pending |
-| MCP-03 | Phase 142 | Pending |
-| MCP-04 | Phase 142 | Pending |
+| MCP-01 | Phase 142 | Complete |
+| MCP-02 | Phase 142 | Complete |
+| MCP-03 | Phase 142 | Complete |
+| MCP-04 | Phase 142 | Complete |
 | EVAL-01 | Phase 143 | Pending |
 | EVAL-02 | Phase 143 | Pending |
 | EVAL-03 | Phase 143 | Pending |
