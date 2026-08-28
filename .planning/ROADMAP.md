@@ -13,7 +13,7 @@ v0.25.0 把 Cursor / Claude Code 中有价值的问答沉淀为 Friday 可召回
 
 - [x] **Phase 141: Capture 账本与仓库挂钩** - 原始问答先安全、可归因地落账本，仓库或项目解析失败也不丢 Capture (completed 2026-08-28)
 - [x] **Phase 142: MCP 会话回写契约** - 通过新工具 `report_session_knowledge` 提交 Capture，并保持服务端、snapshot、npm 三面对齐 (completed 2026-08-28)
-- [ ] **Phase 143: 价值评估与中高入图** - 异步评估 high/medium/low，仅 medium/high 可重试地进入统一知识库
+- [x] **Phase 143: 价值评估与中高入图** - 异步评估 high/medium/low，仅 medium/high 可重试地进入统一知识库 (completed 2026-08-28)
 - [ ] **Phase 144: 仓库召回与 Capture 回放** - 按仓库/项目召回会话知识并按 Capture id 安全回放原始问答
 - [ ] **Phase 145: Cursor / Claude Code 双宿主采集** - 两个宿主自动配对问题与可见答案精华，干净工作树也能 fail-soft 回写
 
@@ -74,7 +74,7 @@ Plans:
   4. 服务重启或短暂故障不会丢失待评估/待入图工作：投递 persist-first、可重试，且后台任务保留并重新绑定触发用户。
   5. 评估与入图不会调用项目记忆写入口；`ProjectMemory` 继续保持 draft 门控，Capture 原始内容也不会被当成 RAG 正文。
 
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans complete
 
 Plans:
 
@@ -84,7 +84,7 @@ Plans:
 - [x] 143-04-PLAN.md — Friday LLM 严格三档 evaluator、session_capture_eval 用量与日志合同
 - [x] 143-05-PLAN.md — medium/high DOCUMENT/session_capture 精华-only normalizer
 - [x] 143-06-PLAN.md — durable eval/ingest、stale in-flight 恢复、退避新 job 与 keyword-only stub
-- [ ] 143-07-PLAN.md — MCP post-commit 投递接线与 Phase 143 Nyquist 总门禁
+- [x] 143-07-PLAN.md — MCP post-commit 投递接线与 Phase 143 Nyquist 总门禁
 
 ### Phase 144: 仓库召回与 Capture 回放
 
@@ -135,7 +135,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 141. Capture 账本与仓库挂钩 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
 | 142. MCP 会话回写契约 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
-| 143. 价值评估与中高入图 | v0.25.0 | 6/7 | In Progress|  |
+| 143. 价值评估与中高入图 | v0.25.0 | 7/7 | Complete   | 2026-08-28 |
 | 144. 仓库召回与 Capture 回放 | v0.25.0 | 0/TBD | Not started | - |
 | 145. Cursor / Claude Code 双宿主采集 | v0.25.0 | 0/TBD | Not started | - |
 
