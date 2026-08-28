@@ -219,7 +219,7 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 
 ---
 
-## 10. 事件目录（Phase 71–74 已埋点事件）
+## 10. 事件目录
 
 > 本节登记 **可观测性里程碑（Phase 71–74）涉及/新增**的已知日志事件及其 `category` / `component`，
 > 事件名与代码 `structlog` 调用一致（经 `rg` 核对，勿臆造）。
@@ -378,3 +378,14 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `alert_webhook_failed` | caller | alerting | 自定义 webhook 渠道发送失败 |
 | `alert_events_purged` | caller | alert_retention | 告警事件按保留策略清理 |
 | `alert_events_purge_failed` | caller | alert_retention | 告警事件清理失败 |
+
+### 10.10 Session Capture 持久化（Phase 141，component=`knowledge`）
+
+| 事件 | category | component | 说明 |
+|------|----------|-----------|------|
+| `session_capture_persist_started` | caller | knowledge | Session Capture 持久化开始（带 `initiated_by_user_id`，不记录问答正文） |
+| `session_capture_persist_completed` | caller | knowledge | Session Capture 持久化完成（带 `duration_ms`、Capture 标识及非敏感挂钩结果） |
+| `session_capture_persist_failed` | caller | knowledge | Session Capture 持久化失败（带 `duration_ms` 与脱敏 `error`，异常原样抛出） |
+
+> Phase 141 只登记持久化 caller 生命周期；评估与入图 sampling 事件及对应 `CallSource`
+> 留待 Phase 143。
