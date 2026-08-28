@@ -1,232 +1,199 @@
 # Project Research Summary
 
-**Project:** Friday AI — 里程碑 v0.24.0 单仓图查询对齐 GitNexus
-**Domain:** brownfield 增量 — 单仓 graph-aware query（Process 一等混合检索、语言感知调用解析、统一工具契约、同仓同 commit 评测）
-**Researched:** 2026-08-24
-**Confidence:** HIGH（GitNexus 主线源码、MCP/Qdrant 官方规范、本仓锁文件与实现交叉核验；排序权重与回归阈值必须 baseline 后锁定，研究阶段不定目标值）
+**Project:** Friday AI v0.25.0 Cursor / Claude Code 会话知识回写
+**Domain:** IDE 会话采集 → Capture 账本 → 价值评估 → 仓/项目 RAG（brownfield，落在 Django MCP + knowledge，不碰 runner/task）
+**Researched:** 2026-08-28
+**Confidence:** HIGH（仓内接缝与锁定决策）；MEDIUM（Cursor `afterAgentResponse` 配对、git remote 归一化、入图 durable 投递需相位内钉死）
 
-> **范围纪律：** 本文只综合本里程碑**新增**能力。v0.22.0 已交付的 GraphService、impact/trace、Community、Process 构建、权限/exclusion、Qdrant hybrid 基础设施视为既有底座，不重复立项。跨仓 impact、PDG/CFG、rename apply、以 Leiden 替换现有社区算法、引入 GitNexus runtime / 新图库 / 新搜索服务，均 out-of-scope。
+> 本文件覆盖 **v0.25.0 会话知识回写** 研究结论，供 roadmapper 排期。不保留 v0.24.0 图查询内容。
 
 ## Executive Summary
 
-v0.24.0 要交付的不是「再造一套代码图」，而是在既有 Django ORM + Qdrant + NetworkX 上，把 GitNexus 已验证的 **process-grouped hybrid query** 落到 Friday 的单仓、多消费面、可核验证据场景。专家做法是：索引期写好语言感知的调用边与 Process 投影；查询期只编排、不猜边；消费面只做协议适配。Friday 的差异化不是换存储，而是把 **Process 做成可独立召回的一等检索对象**（GitNexus 当前主线仍是先搜 Symbol 再沿 `STEP_IN_PROCESS` 归组），并一次返回可解释排序、步骤级 `file:line` 与有界 impact 摘要。
+v0.25.0 要补的不是再造一套记忆，而是把现闭环从「必须绑到唯一项目 + 有 git diff 才写 + 长度/去重门槛」升级为「仓库为主挂钩、项目可选、零散问答也收、永不静默丢 Capture、中高价值才进 `delivery_knowledge`」。产业成熟做法与 Mem0 / Claude Code hooks 一致：**hook 抽精华（非全文、非 CoT）→ 账本持久化（≠ 向量）→ 重要性分档 → 按仓/项目 on-demand 召回**。Friday 现网最大缺口是：`report_project_knowledge` 在 `_resolve_report_project_id` 失败时 200 + `accepted=false` + `branch_unresolved` **不落库**；`skills/hooks/stop` 在无 `git diff --stat` 时直接 `fail_soft()` 丢掉纯对话。
 
-推荐路线：**运行时零新增 Python/生产依赖**。Process 继续以 Django `ProcessTrace` 为事实源，Qdrant 独立 collection 做 dense+sparse+RRF 投影；resolver 沿现有 Protocol + `SymbolIndex` 扩展 TS/JS receiver/import alias/re-export 与 Python import/member/receiver，Go 后置，禁止全仓同名 fuzzy，不翻转 LSP 默认。在线唯一编排入口为 `GraphQueryService`（STACK 所称 canonical `graph_query` / `GraphQueryService.query`，同一编排层），由 ToolContractRegistry 生成 Django MCP / Chat / npm MCP / 编码容器契约，消灭已证实的 npm 工具漂移。
+推荐路径（已锁定）：**新 Capture 表 + INV-6 `CaptureService` + 新 MCP 工具**（建议名 `report_session_knowledge`，相位钉死），**禁止**扩 `report_project_knowledge` / 把 `ProjectMemory` 当账本 / 把 Interaction Ledger 当 RAG。MCP 同步只 INSERT Capture（无项目、仓解析失败仍 `accepted=true`）；评估 LLM 异步（Durable / `on_commit` 后台），`call_source` 新枚举；仅 medium/high 走既有 `aschedule_ingestion` + 新 `source_kind`，复用 `DOCUMENT` kind，**不**新建 Qdrant collection、**不**新 EntityKind、**不**引入运行时库。`ProjectMemory` 仍 draft 门控；中高仓级 RAG **自动摄取**（可 supersede/回滚）。客户端只抽问题/可见答案精华；拿不到的模型字段记 `unknown`。
 
-关键风险不在「能不能检索」，而在**评测与契约不可复现**：混 commit 的 `file:line` 是伪证据；从被测图表反导 gold 会自我打分；overall 会掩盖语言/入口退化；先调权重再补 baseline 会把旧缺陷固化；MCP 只比工具名会让 schema 继续分叉。缓解是硬顺序：**先冻结同仓同 commit 的 v0.22.0 baseline 与 evaluator 口径 → 再改 resolver/索引/查询 → baseline 后单独 review 锁阈值**；观测 best-effort 且脱敏，权限/exclusion fail-closed。研究明确**不臆造** Recall/延迟/token 目标值。
+主风险三条：① 复制旧 skip 语义导致「工具通了、库是空的」——新工具把挂钩与项目拆开，`branch_unresolved` 不得表示未收。② Cursor 与 Claude Code hook 模型不对称——Claude 用 `UserPromptSubmit` + `Stop.last_assistant_message`；Cursor 用 `beforeSubmitPrompt` 缓存问题 + `afterAgentResponse` 配对，**不要**押 `stop` 抽答案，也**不要**把 Claude 注入 hook 拷进 Cursor。③ 评估/入图若内联 MCP 或只走进程内 `background_runner`——hook 超时或重启丢向量；必须 persist-first + 可重试投递。npm `mcp` / snapshot / skills 三面必须同里程碑对齐，否则 Cursor 调不到新工具（v0.20/v0.22 已知债）。
 
 ## Key Findings
 
 ### Recommended Stack
 
-详见 [STACK.md](./STACK.md)。结论先行：**现有依赖足够，本里程碑增加的是索引对象、服务编排、契约单一事实源和 benchmark 资产，不是另一套图数据库或解析框架。**
+详见 [STACK.md](./STACK.md)。**不引入新 npm/Python 运行时库。** 发版是服务端 migration + MCP 工具，再 bump `@friday-ai-codes/mcp`（现 `0.6.0`）与 `@friday-ai-codes/skills`（现 `0.7.0`）补丁版。MCP SDK 保持 `@modelcontextprotocol/sdk ^1.29.0`；服务端 `mcp>=1.25.0,<2` 勿放开。评估与向量化走既有 `provider_config` + `aschedule_ingestion` + Qdrant `delivery_knowledge`。
 
 **Core technologies:**
-- Django ORM / PostgreSQL（既有）：`ProcessTrace` canonical 事实、索引水位与构建状态 — 避免向量库成为唯一事实源
-- Qdrant + `qdrant-client`（锁 1.16.2）：Symbol/Process named dense+sparse、`Prefetch` + `FusionQuery(RRF)`、payload 按 repo/branch/`built_at_sha` 过滤 — 复用 `hybrid_search_by_name`，不手写第二份 RRF
-- fastembed（锁 0.7.4）：Process 文本与查询共用同一 encoder/维度 — 不引入 GitNexus ONNX/transformers.js
-- NetworkX（锁 3.6.1）：membership / impact / trace / 步骤装配 — 新需求是编排与边质量，不是换图库
-- tree-sitter + 既有 grammar：TS/JS/Python 调用、import、receiver 结构事实 — 算法名不能替代证据；不加 LSP 为默认真源
-- MCP Python SDK（`mcp>=1.25,<2`）与 npm `@modelcontextprotocol/sdk ^1.29.0`：工具发现与 `outputSchema`/`structuredContent` — Python 不得盲升 2.x（`claude-agent-sdk` 约束）
-- jsonschema + Pydantic、pytest 9.0.2 + stdlib `statistics`/`random`/`time`：契约校验与评测 — **不为 benchmark 引入 NumPy/SciPy/pandas/`ir_measures`**
+- Django ORM + migration（Python 3.14 / Django ≥5.1）：新 `SessionCapture`（或同名）操作态表，仓库 FK 可空 + `git_url`/`branch` 标量，`project` 可选 —— `ProjectMemory.project` 必填 CASCADE，塞不进去
+- DRF + 现有 `McpToolView`：新工具 HTTP 面；鉴权 / `InteractionRun` / `_record` / 脱敏由基类承担；禁止另开 REST 绕过 MCP
+- `@friday-ai-codes/mcp` + `@friday-ai-codes/skills`：stdio → `POST /api/mcp/tools/{name}/`；安装器 **merge** Cursor `hooks.json`（`version: 1`），用现有 `fs`，不加 axios/zod
+- 既有 LLM 栈 + 新 `CallSource`（建议 `session_capture_eval` / `ide_session_eval`，规划时钉死一个）：high/medium/low；对标 `ide_hook_distill` 但**不要复用**该枚举
+- 既有知识摄取：新 `source_kind`（建议 `session_capture` 或 `ide_session_knowledge`）进统一 collection；禁止新建向量库
 
-**运行时零新增依赖（硬约束）：** 不新增生产 Python 包；不新增数据库或搜索服务；不更换 NetworkX/Qdrant/Django ORM/tree-sitter；不嵌入 GitNexus npm/package（Node 22+ 且 PolyForm Noncommercial）；不引入 `rank_bm25`、ES/OpenSearch、Neo4j/Kuzu/LadybugDB、LTR/新 embedding、全仓 fuzzy resolver。
+**契约要点（栈层）：** 请求必填 `question`,`answer`；可选 `response_model`（默认 `unknown`）、`repository_id`、`git_url`、`branch_name`、`session_id`、`project_id`、`client`。禁止必填 `project_id`。响应：`accepted`/`capture_id`/`reason`（`repo_unresolved` 仍可 `accepted=true`）。幂等建议 `(token_user, session_id, question_hash)`。旧工具 snapshot 已漂移——**本里程碑不要顺手修一半** `report_project_knowledge`。
 
 ### Expected Features
 
-详见 [FEATURES.md](./FEATURES.md)。GitNexus `query` 是 BM25+semantic 并行 → RRF 合并 Symbol → 沿步骤归入 Process；Process **当前不是直接检索对象**。Friday 必须把 Process 名称/入口/终点/步骤摘要/模块/业务词纳入混合检索，这是可验证差异化，不是照抄。
+详见 [FEATURES.md](./FEATURES.md)。验收锚点：用户感觉「回写发生了」且下次能搜到中高价值决策/坑。
 
-**Must have（本里程碑 table stakes / MVP）：**
-- 单一 graph-aware 入口：一次返回 Symbol 候选、Community、Process 分组、步骤证据、有界 impact；空 query 拒绝
-- Process 一等 BM25/embedding 召回 + Symbol 间接映射双路合流（「业务词只在流程摘要」仍能命中）
-- 可解释确定性排序：lane rank、RRF/图增强贡献、稳定 tie-break、排序版本；不照搬 GitNexus `cohesion*0.1`
-- 步骤级 1-based `file:line` + 同一 index commit；重名消歧后才算 impact
-- schema-preserving 预算裁剪与 lane 级降级（`partial`/unavailable 可见）；禁止 JSON 中段字符串截断
-- 五消费面同一 canonical manifest（服务端、Chat、Django MCP、npm MCP、编码容器）
-- 单仓同 commit benchmark：先记 v0.22 baseline，**后**锁门槛
-- 权限/exclusion fail-closed + 可观测约束（触发用户、脱敏、`RetrievalTrace`）
+**Must have (table stakes):**
+- 新 MCP 结构化回写（问题 / 答案 / 回答模型 / 仓库 / 分支 / 会话）；缺字段记 `unknown`，不猜
+- 仓库为主、项目可选；无 `project_id` 仍接受 Capture；解析失败仍落账本
+- 禁止把 `branch_unresolved` 静默丢数据当成成功
+- 零散问答 / 无 git 改动也采集（必须改 stop 闸）
+- Skills + Cursor / Claude Code hooks 抽精华并触发回写；禁止完整隐藏 CoT
+- Capture 账本（原始结构化问答）；**不是** Ledger，**不是** `ProjectMemory`
+- 三层分离：Capture ≠ 提炼知识 ≠ Ledger（Ledger 禁止反哺检索）
+- 价值评估 high/medium/low + 提炼；**不是** `evaluate_writeback_quality`，**不是**路由 `confidence`
+- 中高进仓/可选项目 RAG；low 留评测样本不进 Qdrant
+- 按仓/按项目可检索；Capture 可回放；PAT / 脱敏 / fail-soft / RetrievalTrace
 
-**Should have（相对 GitNexus 的差异化，仍在 v0.24 内）：**
-- Process 直接检索文档，不只 enrichment 标签
-- NL→证据→有界影响面一次返回（完整闭包仍 drill-down）
-- 完整排序账本可离线回放
-- 证据一致性硬约束：混水位不得静默拼接
+**Should have (competitive):**
+- 团队共享、自托管、权限不比代码 RAG 更松
+- 仓图谱 + 可选项目 `REFERENCES`；与 `friday-dev` 召回环合流
+- Capture 回放作 golden set；离散三档比 Mem0 连续 importance 更好测
+- 不依赖专用 IDE 插件（PROJX-04 仍 backlog）
 
-**Defer（v2+ / 本里程碑不做）：**
-- 跨仓 query/impact；PDG/CFG；rename apply；Leiden 替换 Louvain；学习排序 / LLM 当最终分
-- `task_context`/`goal` 真正入排序（GitNexus schema 有字段但单仓实现未消费；Friday 须独立增益对照后才启用）
-- Process LLM 摘要作为唯一检索文本；query 分页 cursor（仅当 top-N 语义裁剪被 benchmark 证伪）
-- 翻转 LSP 默认；Go resolver 深化；真实跨仓 impact
+**Defer (v0.25.x / v2+):**
+- 控制台价值纠偏、SessionStart 按仓注入摘要预算、与 `report_project_knowledge` 去重 —— v0.25.x
+- 专用插件、记忆矛盾消解、Capture 自动变 `ProjectMemory` active、多模态会话 —— v2+
+- 全文 transcript 入向量 —— **不做**
+
+**产品张力（已有推荐默认）：** Capture **无确认永不丢**；评估自动 fail-soft；**仓级 RAG 对 medium/high 自动摄取**；写入 `ProjectMemory` **仍默认 draft**。若中高也要人审才进 RAG，必须另做积压队列，否则「可召回」验收会系统性失败。
 
 ### Architecture Approach
 
-详见 [ARCHITECTURE.md](./ARCHITECTURE.md)。**不替换** ORM、Qdrant、NetworkX。Canonical 图仍是 `Symbol` / `CallEdge` / `SymbolCommunity` / `ProcessTrace`；Qdrant 是可重建 Process 投影；NetworkX 是按需分析投影。
+详见 [ARCHITECTURE.md](./ARCHITECTURE.md)。**不要把 v0.25 塞进 `ReportProjectKnowledgeView` + `MemoryService`。** 模式是「MCP 同步收、异步炼」：对照 learning case / PR review 的 `on_commit` + `run_in_background`/`DurableTaskService`，**不要**对照 `_maybe_distill`（请求内 LLM 会拖死 hook）。入图复用 `EntityKind.DOCUMENT` + 新 `source_kind`；`IngestionEvent.content` 只放提炼正文。skills 优先改 `friday-memory`，不要新开 `friday-capture` skill。Vue 控制台本里程碑可不做大前端。
 
 **Major components:**
-1. **语言感知 resolver（索引期）** — 抽取只记语法 hint；全仓 `wiring` 按 `(repository, branch)` 批量裁决；TS/JS → Python → Go 后置；`unresolved` 留空 + reason，禁止同名 fuzzy
-2. **Process 一等投影** — `ProcessTrace.steps` 为步骤事实；确定性 `ProcessDocument`；独立 collection（勿混 chunk）；point id 由 `(repository_id, branch, process_key)` 派生；generation/`built_at_sha` 过滤，禁止新旧混排
-3. **`GraphQueryService`** — 入口无关唯一编排：权限/exclusion/水位门 → Symbol lane ∥ Process lane → RRF + Process 分组 + Community → 有界 impact → 统一响应（含 `degradation`/`staleness`/`timing`）
-4. **ToolContractRegistry** — Pydantic + versioned manifest 单一事实源；adapter 只鉴权/注入/协议映射；npm `tools.ts` 改为生成物
-5. **ImpactSummaryAssembler** — 有限种子复用现有 `run_impact`；空结果不得解释为安全；默认不新增 LLM 调用
+1. IDE skills / hooks — 抽精华、无 diff 也 POST；Cursor 与 Claude 分模型接线
+2. npm MCP 客户端 — `mcp/src/tools.ts` 白名单与 snapshot 双向对齐
+3. 新 `McpToolView` — PAT、校验、同步 `CaptureService.persist`、Ledger `_record`
+4. `CaptureService`（INV-6）— 唯一写入、脱敏、归因；grep 守卫
+5. Distill/Eval worker — 新 call_source；low 停、中高 `aschedule_ingestion`
+6. `knowledge/sources/<kind>.py` + `DeliveryKnowledgeSearchService` — 仓/项目召回
+7. `MemoryService` / `report_project_knowledge` — **零回归保留**；与 Capture 无写入边
 
-查询不得在线补边。resolver 回填必须贯穿 `branch_name`。durable 链：resolution → invalidate → Community → Process → Qdrant sync；均携带 `initiated_by_user_id`。
+**解析顺序（意见）：** 显式 `repository_id` → 归一化 `git_url` 匹配 `Repository.git_url` → `project_id` 可选（非成员不拒绝 Capture）→ `branch_name` 仅元数据。默认分支 `main`/`master`/`develop` **禁止**当唯一项目信号（PITFALLS：lookup 第三源假命中）。
 
 ### Critical Pitfalls
 
-详见 [PITFALLS.md](./PITFALLS.md)。阈值**不得**在研究阶段填写。
+详见 [PITFALLS.md](./PITFALLS.md)。Roadmap 必须显式防住：
 
-1. **「同仓」却不同 commit** — `commit_sha == indexed_commit_sha == gold.commit_sha`，否则 run **INVALID**；`file:line` 只从该 commit blob 核验，不读工作树
-2. **分母/命中规则未锁** — 空 gold 不算 Recall=1；无预测 precision=`N/A`；Process 禁止名称模糊命中；edge gold 来自独立 callsite 抽样，不从被测 `CallEdge` 反导
-3. **overall 掩盖分桶退化** — 必报语言/框架/入口；受保护桶回退不可被 overall 抵消；稀疏桶 `INSUFFICIENT_DATA`
-4. **先调算法再保存 baseline** — 必须先跑未修改的 v0.22.0；dev/locked_test/holdout 分组切分；阈值单独提交 review；禁止测试失败自动刷新 baseline
-5. **MCP 只对齐工具名** — 比完整 input/output schema、错误枚举、构建产物（npm tarball / task 镜像）；缺失 fail 不 skip；`structuredContent` + 兼容 JSON text
+1. **`branch_unresolved` 当成功跳过** — 新工具拆开仓挂钩与项目；无仓仍落库并给显式 `reason`；禁止 `if resolved_pid is None: return 200 accepted=false`
+2. **Stop 把无 git diff 当成无知识** — Q&A 与 diff 解耦；去重键 `(session_id, question_hash, answer_hash)`；300s 节流只套 diff 摘要
+3. **Cursor `beforeSubmitPrompt` 注入幻觉** — 采集主链是 MCP；Cursor 用 `afterAgentResponse` + 规则/skill；资产树禁止 Claude `UserPromptSubmit` 注入脚本
+4. **`lookup_project_by_branch` 在 `main` 上假命中** — 默认分支第三源不 `matched`；Capture 不以 lookup 项目当主键
+5. **Ledger / `writeback_mode=active` / 新 EntityKind / 进程内 ingest 当唯一投递** — 三层分离 + MEM-04 不扩大例外 + `source_kind` 分流 + Capture 状态机 + durable/outbox
+6. **服务端有工具、npm/skills 没有** — serializer + snapshot + `tools.ts` + SKILL.md 同一验收；容器写路径要么显式加白要么标明 Out of Scope
 
 ## Implications for Roadmap
 
-相位代号与 PITFALLS 对齐：**B0 基准协议** → 改算法；ARCHITECTURE 的 A–H 映射到同一条依赖链。Process hybrid **依赖**较高质量 resolved edge，否则只是把错误调用链向量化。消费面收敛必须在内核稳定之后，避免把半成品放大到四个入口。
+四份研究对**依赖序**一致：**先账本，再 MCP 契约，再评估入图，再召回，最后客户端**（客户端不能早于契约冻结）。PITFALLS 文中的 P1→P2 指「契约字段必须先于 hook 接线」，不是「先做 hook 再建模」。建议 **5 个交付相位**（GSD 相位号由 roadmapper 续号，此处为逻辑序）。
 
-### Phase 1: B0 基准协议、v0.22 baseline 与契约骨架
-**Rationale:** 任何回填/权重/门禁若发生在冻结 baseline 之前，后续「提升」不可证明。
-**Delivers:** 同仓同 commit manifest；evaluator 分母与 identity 规则；dev/locked/holdout 切分；v0.22.0 逐 case/逐桶原始结果（**无阈值**）；`GraphQueryService` request/response 与 ToolContractRegistry 骨架。
-**Addresses:** FEATURES TS-14 / MVP-01 骨架 / BENCH-01 的冻结协议；TS-12 的 schema 雏形。
-**Avoids:** Pitfall 1/2/4；「先改看起来更好再补 baseline」。
-**Uses:** pytest + stdlib metrics；既有 `test_schema_snapshot` / alignment 测试扩展点。
+### Phase 1: Capture 账本 + 仓库解析（STORE-01）
+**Rationale:** 架构硬约束「无此步禁止接 MCP」；INV-6 与三层分离必须焊在表结构上，避免 P4 再迁一次状态机。
+**Delivers:** Capture 模型（问答、`response_model`、`repository_id` 可空、`git_url_raw`、`branch`、`project_id` 可空、`session_id`、hash、status、tier、distilled、`initiated_by_user_id`）；`CaptureService.create`（`redact_secrets_in_text`）；旁路 `objects.create` grep 守卫；git URL 归一化 helper（复用 `ssh_git_url_to_https`）；状态字段预留 `pending_eval` / `ingest_pending`。
+**Addresses:** STORE-01；三层分离；永不因无项目丢数（存储面）
+**Avoids:** Pitfall 5（Ledger 当 RAG）、6（MEM-04 / active 记忆）、Capture 直接 ORM 写
+**Uses:** Django migration；无新库
 
-### Phase 2: B1 调用边质量 — TS/JS resolver（P0）
-**Rationale:** 语言感知解析是 Process/impact/trace 的上游事实；TS/JS receiver + import alias/re-export 是本里程碑优先缺口。
-**Delivers:** additive `CallEdge` evidence 字段；extractor `resolution_hints`；TS/JS strategy；按 language×call_shape 的 resolved/unresolved/ambiguous 统计；dry-run 对比后再写 FK。
-**Addresses:** FEATURES 对 resolved edge 分语言度量；STACK resolver P0 TS/JS。
-**Avoids:** Pitfall 5（自我评测）；全仓 fuzzy；在线 query 补边。
-**Implements:** `codegraph/resolver` plugin + branch-aware `wiring`。
+### Phase 2: 新 MCP 工具面（MCP-01 / MCP-02）
+**Rationale:** IDE 打桩联调依赖冻结契约；旧工具门闩保持零回归。
+**Delivers:** 新 serializer（必填问答、禁止必填 `project_id`）、`McpToolView`、url、**完整** `TOOL_SCHEMA_SNAPSHOT`、`mcp/src/tools.ts` + `test_mcp_package_alignment`；行为：无项目 / `repo_unresolved` 仍 200 `accepted=true` 且有行；Ledger `_record`；评估可先 no-op 调度。
+**Addresses:** MCP-01/02
+**Avoids:** Pitfall 1（静默 skip）、10（三面漂移）、4（用 lookup 第三源当写主键）
+**Implements:** MCP 同步收；`report_project_knowledge` 不改门闩
 
-### Phase 3: B1 续 — Python import/member/receiver（P0）；Go 后置
-**Rationale:** 与 TS 共用 `ResolveOutcome` 契约，但必须**分开验收**，避免 Python 样本淹没 TS 回退。
-**Delivers:** Python binding/receiver 确定性优先级；不分母漂移的 per-language 报告。Go selector/interface **不阻塞**统一契约与 harness。
-**Addresses:** STACK P0 Python；FEATURES「按语言独立测」。
-**Avoids:** Pitfall 3；用总体 resolution rate 代替分桶。
-**Uses:** 现有 `PythonImportResolver` 扩展，不加 mypy/pyright。
+### Phase 3: 价值评估 + 中高入图（EVAL-01）
+**Rationale:** 先有 Capture 行再评；LLM 不可内联 hook；入图登记表必须与 worker 同批否则 `get_normalizer` KeyError。
+**Delivers:** 新评估模块 + 新 `CallSource` + LOGGING-SPEC §4.1；`use_call_source`；fail-soft `eval_failed` 保留原文；仅 medium/high `aschedule_ingestion`；normalizer（`DOCUMENT` + `repository_id` + 可选项目 `REFERENCES`）；**不**调用 `MemoryService.append`；生产路径 durable/outbox + `ingest_pending` 对账（禁止把唯一投递交给 `background_runner`）。
+**Addresses:** EVAL-01；中高 RAG；low 评测样本
+**Avoids:** Pitfall 7（新 EntityKind）、8（重启丢向量）、9（无 call_source / 混 `llm_grader`）
+**Uses:** 既有 LLM / DurableTaskService / ingestion 六步序（不改算法）
 
-### Phase 4: B2 Process 一等索引
-**Rationale:** 没有独立 Process 检索文档，就仍是 GitNexus 式 Symbol→Process enrichment，无法验收「摘要词命中流程」。
-**Delivers:** 确定性 Process 文档字段（name/entry/terminal/ordered steps/module/keywords，受 token 预算）；独立 Qdrant collection；generation 对账；重建字节级稳定 tie-break。
-**Addresses:** FEATURES TS-03 / MVP-02 / PROC-01/02。
-**Avoids:** 把 Qdrant 当事实源；混入 chunk collection；照搬 GitNexus 排序常数。
-**Uses:** 既有 hybrid_search + fastembed；`ProcessTrace` 仍 canonical。
+### Phase 4: 召回、回放与观测收口
+**Rationale:** 「入了库但 IDE 召不回」是 hollow 高发点；packer kind 白名单必须显式打开。
+**Delivers:** `search_delivery_knowledge` / `pack_project_context` 纳入新 `source_kind`；RetrievalTrace（MCP + 对话链）；Capture 只读回放（MCP 或薄 REST，不扫 Ledger）；`main` + 唯一 RepoAssociation 回归：lookup 不注入、Capture 不写错项目；观测：persist=`caller`，eval 步=`sampling`。
+**Addresses:** 按仓/按项目检索 + Capture 可回放
+**Avoids:** Pitfall 4 回归；Ledger import 守卫
+**Note:** 大前端回放 UI **本里程碑非必须**（小版本惯例）
 
-### Phase 5: B3 统一 `GraphQueryService` 与证据
-**Rationale:** 双 lane 与分组依赖 Process 投影与边质量；在线只消费索引期事实。
-**Delivers:** Symbol∥Process 并发召回、RRF、Process 嵌套结果、`standalone_symbols`、`why_matched`/breakdown、`as_of`、schema-preserving 截断、lane `retrieval_status`。
-**Addresses:** FEATURES TS-01/02/04/05/09/10/11 / MVP-03/05。
-**Avoids:** Pitfall 1 的响应侧（无 `as_of`）；字符串 maxTokens 截 JSON；静默 BM25-only。
-**Implements:** `services/code_graph_query/`。
-
-### Phase 6: B3 续 — 有界 impact 摘要
-**Rationale:** 消歧与稳定分组先于 impact；未消歧不得包装成确定影响面。
-**Delivers:** 有限种子 + 现有 GraphService；structured impact_summary + coverage/truncation；稳定错误枚举；负路径（不可达/歧义/stale/exclusion）。
-**Addresses:** FEATURES TS-07/08 / IMPACT-01 / DISAMB-01。
-**Avoids:** 空数组当安全；用生产 BFS 当 impact gold。
-**Implements:** `impact_summary.py` assembler，不把 MR formatter 当 canonical。
-
-### Phase 7: B4 五消费面契约收敛
-**Rationale:** 内核未稳就铺四入口会重演 npm 漂移；契约必须从同一 manifest 生成。
-**Delivers:** Django MCP / Chat 薄适配；npm generated client + tarball conformance；task 镜像 allowed-tools 交集 + schema hash 门；`outputSchema` + `structuredContent` + JSON text 兼容；`listChanged` 纪律。
-**Addresses:** FEATURES TS-12 / MVP-06 / CONTRACT-01 / DISCOVER-01。
-**Avoids:** Pitfall 8；只比工具名；CI skip 缺失子模块。
-**Uses:** 现有 MCP SDK 版本，不升协议大版本。
-
-### Phase 8: B5 回归门、观测与（可选）Go
-**Rationale:** 阈值只能在 baseline 分布与产品风险评审后锁定；Go 仅在 TS/JS、Python 达标后扩展。
-**Delivers:** threshold policy **单独提交**；受保护桶门禁；冷/热延迟与 token 同分母规则；caller/sampling 事件与 `RetrievalTrace`；必要时 Go receiver 增量。
-**Addresses:** FEATURES TS-13/14 / MVP-07/08 / OBS-01 / BENCH-02（阈值字段在采集前不得伪造）。
-**Avoids:** 臆造「提升 10%」或「p95 < 500ms」；自动刷新 baseline；观测反噬主查询。
+### Phase 5: 双宿主采集（SKILL-01）
+**Rationale:** 必须在 Phase 2 契约冻结之后，否则技能文档与 snapshot 互搏；现 stop 闸不改则零散问答无法验收。
+**Delivers:** Claude Code：`UserPromptSubmit` 缓存问题 + `Stop.last_assistant_message` 抽答案，无 diff 仍 POST 新工具；git `--stat` 可继续附加走旧 `report_project_knowledge`（有项目时）。Cursor：`beforeSubmitPrompt` 只缓存、不拦截；`afterAgentResponse` 配对后 MCP；`stop` 不抽答案。安装器 merge Cursor `hooks.json`；`friday-memory` + `http-fallback` + `ide_hook_assets`；`test_skills_snapshot_guard`；容器 `KNOWLEDGE_TOOL_SCHEMAS` 要么加白要么明确不做容器写。npm publish 可 Deferred，**源码必须绿**。
+**Addresses:** SKILL-01
+**Avoids:** Pitfall 2（diff 门）、3（Cursor 注入）、10（skill 仍教旧工具）
+**Uses:** Node 内置 fs/urllib；凭证顺序不变
 
 ### Phase Ordering Rationale
 
-- **评测协议先于算法：** 同 commit 冻结与分母锁定是所有质量声明的前提（PITFALLS B0）。
-- **边 → Process 索引 → 统一查询 → impact → 消费面：** 与 ARCHITECTURE A–G 及 FEATURES 依赖图一致。
-- **语言分开验收、Go 后置：** 防止 overall 掩盖；不让 interface dispatch 阻塞契约与 harness。
-- **阈值后置：** 研究只定义指标维度与冻结协议，不定义数值门。
+- STORE → MCP → EVAL → 召回 → Skills：与 ARCHITECTURE Suggested Build Order 一致；Skills 不能先于 MCP；入图不能先于账本 `source_id`。
+- 评估 call_source 必须先于首次 LLM，否则用量落入 `unknown`。
+- MCP 与 npm snapshot 同相位，避免「服务端绿、Cursor 不可达」。
+- 观测与旧工具回归可并入 Phase 4 尾或每相位门禁，不必单独第六相位。
+- 分组依据：写模型边界（P1）/ 信任边界（P2）/ LLM+图（P3）/ 读路径（P4）/ 宿主差异（P5）。
 
 ### Research Flags
 
-规划阶段建议加深研究（`/gsd-plan-phase --research-phase`）：
-- **Phase 2–3（resolver）：** TS receiver/tsconfig workspace 与 Python import/MRO 的本仓缺口对照 GitNexus ScopeResolver capability，需对着 extractor 现状逐条映射
-- **Phase 4（Process 文档与融合信号）：** 文档字段与 rank fusion 信号集合需对照真实 Process 文本长度/截断；**权重仍待 baseline，本阶段不得锁 magic weight**
-- **Phase 8（阈值）：** 必须用 B0 实测分布 + 评审，不能在计划里预填目标值
+Phases likely needing deeper research during planning:
+- **Phase 3:** Capture 入图投递：`aschedule_ingestion` + durable/outbox 与现 learning_case 窗口如何对齐；状态机字段一次定稿
+- **Phase 5:** Cursor `afterAgentResponse` 与 `beforeSubmitPrompt` 缓存的端到端配对（官方契约已核，本机配对未证）；安装器 merge `hooks.json` 与项目/用户级冲突
+- **Phase 1–2：** git remote 多命中/零命中策略与 `repo_unresolved` 文案
 
-可跳过专项调研、按既有模式落地：
-- **Phase 1 的 pytest harness / JSONL manifest：** 本仓已有 per-case macro 与 schema snapshot 模式
-- **Phase 5 的 Qdrant RRF 调用：** `QdrantService.hybrid_search_by_name` 已是官方 Query API 形态
-- **Phase 7 的 MCP 薄适配：** 规范与 SDK 已锁定；工作量在生成链与产物测试，不在换协议
+Phases with standard patterns (skip research-phase):
+- **Phase 1 模型/INV-6：** 对照 `McpLearningCase` + `test_memory_inv6_guard`
+- **Phase 2 `McpToolView`：** 现成基类 + alignment 测试
+- **Phase 4 RetrievalTrace / structlog：** LOGGING-SPEC 已有清单
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | 锁文件、本仓 hybrid/RRF 实现、MCP 1.x 约束、GitNexus 存储选型「只参考不嵌入」均有一手证据；融合权重待测 |
-| Features | HIGH | GitNexus `query` 分组/截断/降级以源码为准（文档旧说「step count 归一化」已否决）；Process 直接检索的**增益幅度** MEDIUM，须 BENCH 实测 |
-| Architecture | HIGH | 接缝来自本仓 codegraph/services/mcp 路径；入口命名以 `GraphQueryService` + registry 为准 |
-| Pitfalls | HIGH | IR 分母、call-graph 无完备 GT、MCP schema 漂移均有官方/论文/本仓测试佐证；**阈值故意未定** |
+| Stack | HIGH | 复用既有 Django/MCP/skills/Qdrant；MEDIUM 仅宿主 hook 配对与枚举命名 |
+| Features | HIGH | 仓内缺口与 PROJECT 目标一一对应；竞品 Mem0/CC hooks 官方文档交叉 |
+| Architecture | HIGH | 接缝均对照源码；MEDIUM：价值分级提示词与 git 归一化实现细节 |
+| Pitfalls | HIGH | 陷阱均有现行代码/测试/debug 会话证据 |
 
-**Overall confidence:** HIGH（方向与约束）；MEDIUM（Process 双路召回的实际 lift、具体回归数值）
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **回归阈值与排序权重：** 研究禁止填写。规划/执行必须先跑 v0.22 baseline，再单独 PR/review 锁门。处理：Phase 1 只交原始分布；Phase 8 才写 policy。
-- **Process 直接检索增益未知：** 机制补 GitNexus 间接映射缺口，幅度未知。处理：Phase 4 fixture「词只在 Process 文档」作能力验收；是否提高 Recall 看 BENCH，失败则降级为 enrichment-only 并显式 `degradation`。
-- **GitNexus `task_context`/`goal` 未入排序：** 公开 schema 有字段、实现未消费。处理：v0.24 不广告这些参数有效；P2 需独立 A/B。
-- **同 endpoint 多路径持久化条数：** 现有「最长一条」可能丢证据。处理：benchmark 评估 top-N coverage 后再决定条数，不在研究中拍板。
-- **研究文件内部命名：** STACK 使用 `GraphQueryService.query` / collection 名；ARCHITECTURE 使用 `GraphQueryService` 与 `ProcessSearchIndex`。roadmap 以 **`GraphQueryService` + Process 独立 Qdrant collection + Django `ProcessTrace` canonical** 为准，计划阶段统一符号名。
-- **MCP spec 日期：** STACK 引 2026-07-28，PITFALLS 引 2025-06-18 tools 页。处理：实现跟本仓已锁 SDK；`outputSchema`/`structuredContent`/`listChanged` 以官方 tools 规范为准，计划时核对当前 spec URL。
+规划相位必须钉死以下命名（研究文件用了两套近义词，roadmapper 选一写入 REQUIREMENTS）：
 
-## Out of Scope（再次钉死）
+- **工具名：** `report_session_knowledge` vs `capture_ide_session` — 推荐 `report_session_knowledge`（与现 `report_*` 并列、skills 更好教）
+- **`source_kind`：** `session_capture` vs `ide_session_knowledge` — 选一个写入 `generate_entity_id` docstring 规则表
+- **`CallSource`：** `session_capture_eval` vs `ide_session_eval` — 单轮 LLM 用一个值；两轮再拆 distill/value
+- **响应字段：** `accepted` vs 拆 `stored`/`accepted` — 推荐 Capture：`accepted=true` 表示已落账本；RAG 是否入图看 `value_tier`，不要再用 `accepted=false` 表示「没进记忆」
+- **Cursor 采集：** STACK 主张官方 `afterAgentResponse`；PITFALLS 强调 MCP 主链、hooks 只增强。规划按「MCP 必达 + Cursor hooks 作自动触发」合并，验收必须含 Cursor 干净工作树
+- **lookup 默认分支：** 是否在本里程碑改 `lookup_project_by_branch` 第三源，还是仅 Capture 写路径避开。推荐 **Capture 不调用第三源**；lookup 读路径修默认分支作为 P4 回归或小修补，避免读写继续分叉
+- **容器 MCP 写路径：** 默认 Out of Scope，除非产品要「编码容器也能沉淀会话」
+- **控制台回放：** 只读 API 可进 Phase 4；Vue 大页延后
 
-- 跨仓 graph-aware query / group impact
-- 自研或扩展 PDG/CFG/语句级数据流
-- rename apply；社区算法替换（Leiden）
-- 引入 GitNexus 包、新图库、新搜索服务、生产新 Python 依赖
-- 默认翻转 LSP；本里程碑深化 Go resolver（可留 phase 尾部可选）
-- LTR / LLM 最终排序分 / LLM 生成 Process 检索正文作为唯一文本
-- **任何在 baseline 前写死的 Recall@k、延迟、token 数值目标**
+## Locked Decisions（写入 roadmap 不得推翻）
 
-## Observability Constraints（横切，每相位必守）
-
-完整规范见仓库可观测性文档；本里程碑增量：
-
-| 层 | category | 要点 |
-|----|----------|------|
-| 外部 graph query | `caller` | started/completed/failed、actor、source、repo、`duration_ms`、result/degradation count |
-| resolver 批任务 | job=`caller`；边汇总=`sampling` | language、call_shape、resolved/ambiguous/unresolved、`resolver_version` |
-| Process 重建/投影 | lifecycle=`caller`；stage=`sampling` | Process 数、截断、DB/Qdrant 对账、generation |
-| hybrid lanes | `sampling` | 各路耗时与候选数、RRF overlap；**不记 query 正文** |
-| impact | `sampling` | seed/depth/截断/graph degradation |
-| MCP + AI 对话 | ledger | 两条链写 `RetrievalTrace`，用 request/run/conversation id 关联 |
-
-- 后台必须显式 `initiated_by_user_id`（无用户为 `system`），worker 入口 re-bind。
-- 日志只记长度/hash/计数/闭集枚举；凭证与异常走 `redact_secrets_in_text`；入库走 `redact_for_ledger`。
-- 观测、ledger、对账 **best-effort，失败不反噬主查询**；权限/exclusion **fail-closed**。
-- 禁止高频循环 INFO；resolver 质量按语言与 call shape 分桶。
+- 仓库为主、项目可选；**永不丢 Capture**
+- Capture ≠ 提炼知识 ≠ Interaction Ledger（Ledger 不是 RAG）
+- **新 MCP 工具**，不是扩 `report_project_knowledge`
+- **无新运行时库**
+- medium/high → 仓级 RAG；`ProjectMemory` 保持 draft 门控
+- 客户端抽精华；未知模型字段保持 `unknown`
 
 ## Sources
 
 ### Primary (HIGH confidence)
-
-- GitNexus v1.6.9 / 主线 `11a60e6`：`local-backend.ts`（并行召回、RRF、Process 分组、cohesion、tie-break）、`tools.ts`、`hybrid-search.ts`、`process-processor.ts`、TS/Python `scope-resolver.ts`、MCP resources/output-budget
-- [MCP Tools specification](https://modelcontextprotocol.io/specification/2025-06-18/server/tools) 与 STACK 所引 2026-07-28 tools 页：`outputSchema`、`structuredContent`、`listChanged`
-- [Qdrant hybrid Query API](https://qdrant.tech/documentation/search/hybrid-queries/)：prefetch + RRF；权重须 validation set，非跨项目常数
-- 本仓：`server/pyproject.toml`/`uv.lock`；`qdrant_service.py`；`ProcessTrace`/`codegraph/resolver/`；`test_mcp_package_alignment.py`（目前主要比工具名，漂移已坐实）；`.planning/PROJECT.md` v0.24.0 目标与边界
-- CodeSearchNet（去近重复、按仓切分）；Helm et al. 静态调用图 GT 不可完备；GitNexus receiver-resolution `BASELINE.md`（先 baseline.json 再设阈值）
+- 本仓：`server/mcp_tools/views.py`、`serializers.py`、`initiatives/models/memory.py`、`memory_service.py`、`ide_hook_assets.py`、`knowledge/ingestion.py`、`knowledge/sources/project_memory.py`、`skills/hooks/{stop,user-prompt-submit,hooks.json}`、`skills/lib/installer.mjs`、`mcp/src/tools.ts`、alignment/skills snapshot 测试、`.planning/PROJECT.md` v0.25.0
+- Cursor Hooks 官方：https://cursor.com/docs/hooks.md — `afterAgentResponse` 有 `text`；`stop` 无助手正文；`beforeSubmitPrompt` 仅 continue/user_message
+- Claude Code Hooks 官方：https://code.claude.com/docs/en/hooks — `last_assistant_message`；transcript 异步滞后
+- Mem0 How it works：https://docs.mem0.ai/core-concepts/how-it-works — 提炼事实 vs transcript
+- v0.15 MEM-04 / v0.16 Phase 86 active 直写 deviation / v0.17 Ledger ≠ RAG
 
 ### Secondary (MEDIUM confidence)
-
-- Agent Retrieval Bench / SWE-Explore（2026）：冻结 commit、行级 GT、正负 retrieval — **只作设计参照，不照搬其目标值**
-- GitNexus Process 直接检索对 Friday 的召回增益：机制成立，幅度待 BENCH
+- Cursor 论坛注入请求（证明官方尚未交付 per-prompt 注入）
+- 社区 Claude Code 插件（Stop 增量、fail-open exit 0）
+- `.planning/debug/multica-friday-agent-e2e.md` — `main` 假命中无关项目
 
 ### Tertiary (LOW confidence)
-
-- 无。排序常数（如 GitNexus `k=60`、cohesion 0.1）明确标为**不可迁移的实现选择**，不是证据。
+- Cursor 本机 Memory MCP 教程 — 个人 JSON，不能替代团队知识库
 
 ---
-*Research completed: 2026-08-24*
+*Research completed: 2026-08-28*
 *Ready for roadmap: yes*
-*Synthesized from: STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md*

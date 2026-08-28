@@ -1,272 +1,210 @@
 # Feature Research
 
-**Domain:** v0.24.0 单仓 graph-aware query（对齐 GitNexus 的 Process 分组混合检索）
-**Researched:** 2026-08-24
-**Confidence:** HIGH（核心结论来自 GitNexus 官方仓库 `11a60e6` 的源码、README 与官方 Skill）
-
-> 范围限定：本文只研究统一查询入口、Process 一等检索、可解释排序、`file:line` 证据、截断/降级、工具发现、多消费面契约与单仓 benchmark。Friday 已有 `GraphService`、impact、trace、Community、Process 不重复研究。跨仓 impact、PDG/CFG、rename apply、以 Leiden 替换现有社区算法均不进入 v0.24.0。
-
-## 结论先行
-
-1. GitNexus 的 `query` 不是平铺文件搜索：它并行执行 BM25 与 semantic 检索，以 RRF 合并 Symbol，再沿 `STEP_IN_PROCESS` 归入 Process；结果分为 `processes`、`process_symbols`、`definitions`。
-2. GitNexus 当前主线的 Process **不是直接检索对象**。检索先命中 Symbol，再把 Symbol 映射到 Process。因此，把 Process 名称、入口、终点、步骤摘要、模块和业务关键词直接纳入 BM25/embedding，是 Friday 可验证的差异化，而不是照抄。
-3. GitNexus 的 Process 排名为「命中 Symbol 的 RRF 分数求和 + 最大 Community cohesion 的固定小幅加成」，只返回最终 `priority`，没有返回各项贡献。Friday 要做到“可解释排序”，必须把检索 lane、原始 rank、RRF 贡献、图增强贡献和稳定 tie-break 暴露为结构化 breakdown。
-4. GitNexus 对运行降级处理较成熟：FTS 不可用时继续 semantic-only 并返回 warning；向量索引失败时尝试 exact scan；图 enrichment 真失败时返回 `partial: true`。但 embeddings 未生成、exact scan 因规模上限退出等路径仍可能静默退为 BM25-only。Friday 应把每条 lane 的实际状态统一返回。
-5. GitNexus 有三层结果约束：`limit`、`max_symbols`、MCP `maxTokens`。最后一层只是 UTF-8 安全的字符串截断，可能把结构化 JSON 截断成以 `…` 结尾的文本；Friday 不应复制这种不透明截断，应优先做 schema-preserving 语义裁剪并返回总数、返回数和裁剪原因。
-6. 工具发现不是只列工具名：GitNexus 动态 `ListTools` 会在多仓时把 `repo` 改成机器可读的必填参数，repo context resource 同时给出索引新鲜度、可用工具与下一步资源。Friday 的五个消费面应从同一 canonical manifest 生成 schema，并能发现能力、版本、仓库/commit 水位和降级状态。
-
-## 观察事实：GitNexus 的用户可见行为
-
-以下均为对 GitNexus 当前主线源码的观察，不是 Friday 的既定设计。
-
-### 查询、分组与排序
-
-| 观察事实 | 用户可见结果 | 证据 |
-|---------|--------------|------|
-| `query` 接受自然语言 `search_query`，默认最多 5 个 Process、每个 Process 最多 10 个 Symbol，源码内容默认关闭 | 一次调用先看到少量流程与定位信息，不默认灌入源码 | `tools.ts`、`local-backend.ts` |
-| BM25 与 semantic 并行执行；候选上限为 `limit × max_symbols`；两路用 RRF 合并 | 同时兼顾精确关键词和语义近似；命中两路的候选得到更高融合分 | `local-backend.ts` |
-| 每个命中 Symbol 经 `STEP_IN_PROCESS` 找到所有所属 Process | 结果按执行流分组，而不是按文件平铺 | `local-backend.ts` |
-| Process 的 `totalScore` 是成员命中 Symbol 的 RRF 分数之和；`cohesionBoost` 取成员 Community cohesion 最大值；最终 `priority = totalScore + cohesionBoost × 0.1` | 多个相关步骤同时命中的流程更靠前；内聚度只作小幅增强 | `local-backend.ts` |
-| 同分时按稳定 ID 排序，Community 多归属时也按 Community ID 稳定选第一项 | 相同索引和输入下，边界截断结果可复现 | `local-backend.ts` |
-| `task_context`、`goal` 出现在公开 schema，但当前单仓 `query()` 排序实现没有消费这两个字段 | 调用者以为它们“帮助排序”，但单仓结果实际不受其影响 | `tools.ts` 与 `local-backend.ts` 对照 |
-| `processes[].symbol_count` 在 per-process 截断和全局去重之前计算；`process_symbols` 最后按 Symbol ID 全局去重 | 一个 Symbol 同属多个 Process 时，扁平列表只保留首次出现的 `process_id`；计数与实际返回条数可能不同 | `local-backend.ts` |
-
-### `file:line`、Process 与后续动作
-
-| 观察事实 | 用户可见结果 | 证据 |
-|---------|--------------|------|
-| `query.process_symbols` 返回 `filePath`、1-based `startLine/endLine`、`process_id`、`step_index` 和可选 `module` | Agent 可从自然语言结果直接跳到代码区间，并知道它在流程第几步 | `local-backend.ts`、`resources.ts` |
-| `definitions` 保存未归入任何 Process 的文件/符号，最多 20 项 | 没有 Process 归属的类型或文件不会完全丢失 | `local-backend.ts` |
-| `process/{name}` resource 返回按 step 排序的完整 trace，但当前只显示 `name (filePath)`，未显示行号 | `query` 有行区间，完整 Process resource 反而缺少 `file:line`，证据契约不完全一致 | `resources.ts` |
-| `query` 本身不返回 blast radius；MCP 响应提示调用者下一步用 `context`，再按需用 `impact` | GitNexus 的统一程度是“发现流程”，不是 Friday 目标的 NL→…→impact 一次完成 | `server.ts`、官方 `gitnexus-exploring` Skill |
-| repo context resource 返回 stats、staleness、可用 tools/resources；官方 Skill 要求先绑定 repo、检查 freshness，再 query | 索引水位是回答可信度的一部分，而不是隐藏运维细节 | `resources.ts`、官方 Skill |
-
-### 截断与降级
-
-| 场景 | GitNexus 行为 | 对 Friday 的启示 |
-|------|---------------|------------------|
-| Process 数量过多 | `limit` 截断 Process | 需要返回匹配总数/返回数，不能只给 top-N |
-| 单 Process 符号过多 | `max_symbols` 截断该 Process；`include_content=false` 控制体积 | 保留结构证据优先于源码正文 |
-| 独立 definitions 过多 | 固定截到 20 | 固定隐式 cap 不利于调用者判断遗漏；应显式元数据化 |
-| MCP 响应超预算 | `maxTokens` 按每 token 估算 4 UTF-8 bytes，对完整文本做安全前缀截断并以 `…` 结尾 | 这是 transport guardrail，不是语义分页；Friday 应避免截断 JSON 中段 |
-| FTS 完全不可用 | semantic-only 继续；返回包含 repo/branch/indexedAt 的 warning | 降级可见且带修复上下文是 table stake |
-| FTS 部分表失败 | 保留其他结果；warning；`partial: true` | 部分成功必须区别于完整成功 |
-| 未生成 embeddings | semantic lane 返回空，通常继续 BM25-only | Friday 应显式返回 lane=`unavailable/not_indexed`，不能让用户误判为完整 hybrid |
-| VECTOR 查询失败 | 尝试 exact scan；仅首次向服务端日志写 fallback | 可自动降级，但用户结果应标实际执行模式 |
-| exact scan 超出内部规模上限 | semantic lane 返回空 | 不应静默等同于“没有语义命中” |
-| Process/Community 表不存在 | 当作正常配置，不标 `partial` | Friday v0.24.0 已承诺这两类对象；缺失时应明确 capability unavailable，而非看似完整空结果 |
-| Process/Community/content enrichment 真失败 | 继续返回已有数据；warning；`partial: true` | best-effort 不反噬主查询，同时不隐藏证据缺口 |
-| CJK 分词配置不一致或 query 超出分词保护上限 | 返回具体 warning 和修复建议 | 中文 NL query 的分词模式与索引模式必须进入 benchmark 与 capability 回显 |
-
-### 工具发现与契约
-
-| 观察事实 | 价值 | Friday 对应要求 |
-|---------|------|----------------|
-| `GITNEXUS_TOOLS` 是 MCP tools schema 的集中定义 | 工具名、描述、参数边界不散落 | 建 canonical graph-query manifest |
-| `ListTools` 根据只读策略、仓库 allowlist 动态过滤；多仓且无默认仓时，把 `repo` 注入 required | Agent 在调用前即可发现权限与必填作用域 | Friday 单仓 query 仍要显式绑定 `repository_id`，五面同一 required 语义 |
-| `gitnexus://repos` 与 repo context resource 提供仓库发现、索引 stats/staleness、available tools/resources | 先发现能力，再执行重查询 | Friday 工具发现需包含 schema version、index commit、能力 lane |
-| 工具响应附 next-step hint；官方 Skill 固化 `list_repos → context → query → context → process` | 小模型不必猜工具编排 | Friday 的统一入口应减少必需的二次编排；高级 drill-down 仍提供明确 next actions |
-| 旧 `query` 参数仍兼容，但公开 schema 只广告 `search_query`，以绕过特定客户端会丢 `query` 参数的问题 | 公开契约和兼容别名可分离 | canonical manifest 可保留 alias，但 contract test 必须覆盖每个消费面真实序列化 |
+**Domain:** IDE 会话知识回写（Cursor / Claude Code → Friday Capture 账本 → 价值评估 → 仓库/项目 RAG）
+**Researched:** 2026-08-28
+**Confidence:** HIGH（Friday 既有 MCP/记忆/RAG 以源码为准）；MEDIUM（竞品与宿主 hooks 以官方文档 + 社区实现交叉验证）
 
 ## Feature Landscape
 
-### Table Stakes（用户默认应当具备）
+本里程碑要补的不是「再造一套记忆」，而是把现有闭环从 **「分支绑定项目 + git diff 才写回 + 长度/去重门槛」** 升级为 **「仓库为主挂钩、无项目也先收、零散问答也收、永不静默丢 Capture、价值分级后中高进 RAG」**。
 
-| Feature | Why Expected | Complexity | 可转为原子验收的 Notes |
-|---------|--------------|------------|--------------------------|
-| **TS-01 单一 graph-aware query** | 用户不应手工串 Symbol、Community、Process、impact 多个底层工具 | HIGH | 给定 repository + NL query，一次响应同时含候选 Symbol、Community、Process、步骤证据和有界 impact 摘要；空 query 明确拒绝 |
-| **TS-02 Process 分组结果契约** | GitNexus 已把执行流分组做成核心用户行为 | MEDIUM | 每个 Process 内嵌自己的命中 Symbol/steps，不使用会丢多归属的全局扁平去重；返回 `matched_symbol_count` 与 `returned_symbol_count` |
-| **TS-03 Process 一等 BM25/embedding 召回** | 仅 Symbol→Process 映射会漏掉业务词只存在于流程摘要的查询 | HIGH | Process 检索文档至少覆盖名称、入口、终点、步骤摘要、模块、业务关键词；测试“Symbol 名无 query 词、Process 摘要有 query 词”仍能召回 |
-| **TS-04 双 lane 混合检索与确定性融合** | 关键词与自然语言互补；相同输入应可复现 | HIGH | Symbol lane 与 Process lane 均记录 BM25/semantic 排名；同仓同 commit 同配置重复运行排序一致；tie-break 使用稳定 ID |
-| **TS-05 可解释排序 breakdown** | 仅给一个 `priority` 无法判断为什么命中，也无法做 benchmark 归因 | MEDIUM | 每个结果返回命中 lane、各检索 rank/贡献、图增强贡献、最终分与排序版本；所有贡献可重算最终分；不在研究阶段臆造权重 |
-| **TS-06 步骤级 `file:line` 证据** | Agent 必须能核验并跳转，不可只有流程叙事 | MEDIUM | 每个返回步骤包含仓库相对路径、1-based start/end line、Symbol UID、index commit；行号落在文件范围内且源码锚点可反查 |
-| **TS-07 候选消歧与锚点选择** | 重名 Symbol 不能静默选第一个后继续算 impact | MEDIUM | 重名时返回候选及路径/行号；impact 只基于已明确 UID 的 anchor；无法唯一化时标 `needs_disambiguation`，不伪造影响面 |
-| **TS-08 有界 impact 摘要** | v0.24.0 目标要求一次回答影响面，但不能把完整传递闭包灌入 | MEDIUM | 对明确 anchor 返回既有 impact 能力的摘要、直接影响样本和截断信息；完整明细通过 next action/drill-down 获取 |
-| **TS-09 schema-preserving 截断** | LLM 工具响应必须在预算内且仍可解析 | MEDIUM | 按“源码正文→次要 Symbol→低排 Process”顺序裁剪；始终返回合法 schema、总数/返回数、`truncated=true`、原因和继续查询提示 |
-| **TS-10 lane 级降级可见** | BM25-only、semantic-only、无 Process enrichment 不能看起来像完整 hybrid | MEDIUM | 返回 `retrieval_status`，分别标 BM25、embedding、graph enrichment、impact 的 used/degraded/unavailable 及脱敏原因；部分成功置 `partial=true` |
-| **TS-11 索引水位与证据一致性** | `file:line`、Process、impact 必须来自同仓同 commit，否则组合答案不可核验 | MEDIUM | 响应顶层返回 repository、branch/index key、commit SHA；发现组件水位不一致时降级或拒绝拼接，并明确 warning |
-| **TS-12 canonical 工具契约与发现** | 服务端、Chat、Django MCP、npm MCP、容器任一漂移都会造成“服务端有、Agent 找不到” | HIGH | 五个消费面从同一 manifest 生成/适配；工具名、description、required、defaults、enums、response version 一致；schema hash snapshot 全面相等 |
-| **TS-13 权限、排除与可观测约束** | 新统一入口不能绕过既有安全边界 | MEDIUM | 所有 lane 复用 repository 权限与 exclusion fail-closed；日志/`RetrievalTrace` best-effort，携带触发用户和关联键，不记录凭证或未脱敏上游文本 |
-| **TS-14 单仓同 commit benchmark** | “更好”必须可重复证明，不能凭样例感受 | HIGH | 冻结 repo+commit+query set，先记录 v0.22 baseline；按语言/框架/入口类型分桶，产 Symbol/Process recall、`file:line` 有效率、resolved edge、impact/trace、延迟/token 原始结果；回归阈值仅在 baseline 后锁定 |
+产业上成熟产品都走同一条管线：**采集（hook/transcript）→ 抽精华（非全文、非 CoT）→ 持久化（账本 ≠ 向量）→ 重要性/去重 → 按 query 召回**。Mem0 官方模型是「发 messages，默认存提炼事实而非逐字 transcript」；Claude Code 官方 hooks 在 `Stop`/`SessionEnd` 提供 `transcript_path`，并警告 transcript 异步滞后、hook 有超时。Friday 现有 `skills/hooks/stop` 则在无 `git diff --stat` 时直接 `exit 0`，纯对话被系统性丢掉——这是 v0.25 相对 v0.16 stop hook 的核心缺口。
 
-### Differentiators（相对 GitNexus 的竞争优势）
+### Table Stakes（用户期望这些）
+
+缺任一项，产品会感觉「回写没发生」或「知识进不去下次会话」。
+
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| MCP 结构化回写契约（问题 / 答案 / 回答模型 / 仓库 / 分支 / 会话） | 宿主只能提交结构化字段；缺字段记 `unknown`，不猜 | MEDIUM | 新建专用工具优于硬扩 `report_project_knowledge`（后者契约是自由文本 `content` + 项目定位）。须同步 `TOOL_SCHEMA_SNAPSHOT`、`mcp/src/tools.ts`、skills snapshot 守卫。依赖 PAT fail-closed（v0.2）。 |
+| 仓库为主挂钩、项目可选；无 `project_id` 仍接受 Capture | 问答常挂仓、不一定挂 Friday 项目 | MEDIUM | 解析仓库：`repository_id` 优先，否则 git remote / 本机 cwd 映射既有 `Repository`。项目经 `lookup_project_by_branch` **增强**，失败不得挡写入。 |
+| 禁止 `branch_unresolved` 静默丢数据 | 用户以为沉淀了，服务端 200 + `accepted=false` 等于丢 | LOW–MEDIUM | 今日 `ReportProjectKnowledgeView` 在 `_resolve_report_project_id` 失败时 200 跳过（`views.py`）。Capture 账本必须先落库；`accepted` 只表示「是否进记忆/RAG」，不是「是否收到」。 |
+| 零散问答 / 无 git 改动也采集 | 用户在 IDE 里问架构/坑/约定，往往不改文件 | MEDIUM | 现 stop hook 注释写明「只有未提交工作区改动才上报」。须改采集触发：技能主动抽 Q&A + hook 在无 diff 时仍提交精华。 |
+| Skills + Cursor / Claude Code hooks 抽精华并触发回写 | 不靠用户每次说「记下来」 | HIGH | Claude Code：`Stop` 已 `async: true`（`skills/hooks/hooks.json`）。Cursor 侧现多为 rule/技能编排，无与 Claude 对等的 transcript stdin。客户端只抽精华，禁止上报完整隐藏思维链。 |
+| Capture 账本（原始结构化问答 + 元数据） | 评测回放、审计、永不丢 | MEDIUM | 新写模型（INV-6 单一 service）。**不是** `Interaction Ledger`，也不是 `ProjectMemory`。Ledger 继续记 MCP run/用量。 |
+| 三层分离：Capture ≠ 提炼知识 ≠ Ledger | 统一知识库口径（v0.17）：Ledger 禁止反哺检索 | LOW（纪律）/ MEDIUM（建模） | 锁定决策已在 `PROJECT.md` Key Decisions。normalizer 只吃提炼后的中高价值正文。 |
+| 价值评估 high / medium / low + 提炼 | 全量向量化会污染 `delivery_knowledge` | MEDIUM | **不是** `evaluate_writeback_quality`（过短 / 低信息量 / Jaccard 重复）。新 LLM 调用须赋 `call_source`，fail-soft 不得丢掉 Capture。路由 `confidence` 禁止当知识价值。 |
+| 中高价值进仓库/项目 RAG；低价值留评测样本 | 下次编码能搜到决策与坑 | MEDIUM | 复用 `knowledge/sources/` 摄取 + `DeliveryKnowledgeSearchService`。建议新 `source_kind`（如 `session_capture`），**不要**假装成 `project_memory`（后者要求 active `ProjectMemory` + `repository_id=None`）。 |
+| 按仓 / 按项目可检索；Capture 可回放 | 用户验收「问过的能搜到、原始问答能打开」 | MEDIUM | 读路径：MCP 检索工具扩 filter（`repository_id` / 可选 `project_id`）+ 控制台或 API 回放。写 `RetrievalTrace`。 |
+| 认证、归因、脱敏 | 团队共享知识不可泄漏凭证 | LOW（复用） | `redact_secrets_in_text` 双保险；`initiated_by_user_id`；PAT=用户身份。 |
+| Hook / 技能 fail-soft，不阻断编码 | 产业与现网纪律一致 | LOW | Claude Code Stop 可 block 会话结束；Friday 必须 exit 0 / 200。超时：采集异步，避免同步 LLM。 |
+
+### Differentiators（竞争优势）
+
+这些不是「有个 memory.json」就能交差；这是 Friday 相对 `@modelcontextprotocol/server-memory` / 本机 MEMORY.md 的差异。
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| **DF-01 Process 直接检索 + Symbol 间接映射双路合流** | GitNexus 当前只先搜 Symbol 再映射 Process；Friday 可召回“业务概念存在于流程摘要、却不在符号名”的流程 | HIGH | Process 是独立检索文档，不只是 enrichment 标签；与 Symbol→Process 证据在统一排序中合流 |
-| **DF-02 一次返回 NL→证据→影响面** | GitNexus 要 query→context→impact 多调用；Friday 面向编码/方案 Agent 可一次获得可行动摘要 | HIGH | 保持 bounded summary；不要在统一入口塞完整 impact 闭包 |
-| **DF-03 完整排序账本** | GitNexus 只暴露三位小数 `priority`；Friday 可让用户和 benchmark 精确解释每次排序变化 | MEDIUM | breakdown、排序版本、稳定 tie-break、lane 状态全部结构化；可离线回放 |
-| **DF-04 五消费面同契约** | GitNexus MCP 定义集中，但 Friday 的产品价值要求 Chat、Django MCP、npm MCP、容器与服务端真正同源 | HIGH | contract manifest + 生成物/adapter + schema hash + E2E discovery；这是 v0.22 npm 漂移的结构性修复 |
-| **DF-05 证据一致性硬约束** | 把 Process、行号、impact 锚定同一 index commit，避免“每块都真、拼起来是假” | MEDIUM | 每个 evidence item 可继承顶层水位；混水位不得静默合并 |
-| **DF-06 结构化、可续查的预算降级** | GitNexus `maxTokens` 可能截断结构化文本；Friday 可在低 token 预算下仍返回可解析且可 drill-down 的答案 | MEDIUM | 用语义裁剪替代字符串截断；测试多个预算档只验证单调裁剪与 schema 完整，不预设业务阈值 |
+| 团队共享、自托管、权限 fail-closed | 记忆属于仓/项目成员，不是个人 JSON | MEDIUM | 仓库 ACL 现状偏「登录即可读仓」（已知欠债）；项目记忆仍须成员校验。无项目 Capture 的读权限应对齐仓库可见性，禁止比代码 RAG 更松。 |
+| 挂仓库图谱 + 可选项目聚合根 | 同一条知识可被编码代理与「开发到哪一步了」共用 | MEDIUM | 有项目时 `REFERENCES` 到项目节点（镜像 `project_memory.py`）；无项目时 `repository_id` 必填进实体 payload。 |
+| 价值分级进 RAG，低价值永不进向量但仍可评测 | 召回质量可控，同时满足「永不丢 Capture」 | MEDIUM | Mem0 用 importance（约 1–10）+ recency 融合检索；Friday 用离散三档更可测、更好做 golden set。 |
+| 与既有 `friday-dev` 召回环路合流 | 开工 `lookup_project_by_branch` 能带上会话沉淀 | MEDIUM | 今日 context packer 吃项目记忆/工件；仓级 Capture 须进入 `search_rag_chunks` / `search_delivery_knowledge` / `search_project_context` 至少一条用户可走的面。 |
+| 宿主最小化：IDE 抽 Q&A 精华，Friday 评估 | 不把 CoT/token 账本塞进知识库 | LOW–MEDIUM | 模型名拿不到记 `unknown`。与 Claude Code 官方「Stop 用 `last_assistant_message` 而非滞后 transcript」对齐。 |
+| Capture 回放作评测集 | 可回归「哪些问答该进 RAG」 | MEDIUM | 低价值样本是资产不是垃圾。与 v0.19 golden set 纪律同类。 |
+| 不依赖专用 IDE 插件 | 复用 MCP + skills（CURSOR 回流 v0.15 已否决专用插件） | — | 专用插件仍是 PROJX-04 backlog，本里程碑不做。 |
 
-### Anti-Features（明确不做或不复制）
+### Anti-Features（常被要求、往往有害）
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| **AF-01 跨仓 impact / group query** | 看起来是统一查询的自然延伸 | 本里程碑验收是单仓 benchmark；跨仓真实样本与生产者仍有已知欠债，会稀释单仓质量闭环 | 响应明确 `scope=single_repository`；跨仓后续独立里程碑 |
-| **AF-02 自研或扩展 PDG/CFG** | 希望 query 解释控制/数据依赖 | 编译器级范围，与 Process 混合召回没有必要依赖；会造成范围爆炸 | 只消费现有 Symbol/调用边/Process/impact |
-| **AF-03 rename apply** | Agent 拿到 Symbol 后可顺手改名 | 引入写仓副作用，与只读统一查询无关 | 保留既有只读能力；编码 Agent 自己编辑 |
-| **AF-04 把 Louvain 换成 Leiden** | GitNexus 文档称 Community 使用 Leiden | Friday 已有固定 seed 的 Louvain 决策；替换算法会把检索改进与社区重建混为一谈 | 复用现有 Community；只改其检索/解释消费 |
-| **AF-05 仅搜 Symbol 再映射 Process** | 最接近 GitNexus 当前实现，改动较小 | Process 仍非一等对象，无法满足“业务词命中流程摘要”的目标 | Symbol 与 Process 两条 retrieval lane |
-| **AF-06 用 LLM 直接给最终排序分** | 自然语言 query 看似适合智能重排 | 不可稳定回放、难解释、难做同 commit benchmark | 确定性混合排序；如后续加 LLM，只能有界重排且不得覆盖事实分 |
-| **AF-07 全局扁平 `process_symbols` + Symbol ID 去重** | 输出紧凑、看似省 token | 多 Process 归属会丢失，Process 计数与返回项不一致 | Symbol 嵌套在 Process 内；共享 Symbol 可重复引用 UID，正文去重另做 |
-| **AF-08 仅返回最终 `priority`** | payload 更小 | 用户无法解释 Community/Process 为什么排前，也无法定位 benchmark 回归 | 返回可加和 breakdown 和排序版本 |
-| **AF-09 字符串中段 `maxTokens` 截断** | 实现简单、能硬控上下文 | 可能破坏 JSON/schema，调用者不知道漏了哪一层 | schema-preserving 语义裁剪 + truncation metadata |
-| **AF-10 静默退为 BM25-only 或空 Process** | availability-first | 用户会把能力缺失误判为“没有相关流程” | availability-first 继续，但 lane 状态、warning、partial 必须可见 |
-| **AF-11 在 baseline 前拍脑袋设门槛/权重** | 便于先写 CI | 违反同仓同 commit 实测原则，可能把旧缺陷固化或制造不可达门槛 | 先采 baseline 与分桶分布，再在需求评审中锁阈值与版本 |
-| **AF-12 为五个入口手写五份 schema** | 每个入口能快速上线 | 必然重演 npm MCP 漂移，且默认值/枚举最容易悄悄分叉 | canonical manifest 派生适配层与 snapshot |
+| 把 `report_project_knowledge` 当唯一写入口，继续 `branch_unresolved` 跳过 | 少一个 MCP 工具 | 语义是「项目记忆草稿/active」，无法表达无项目 Capture；跳过即丢数 | 新 Capture 工具（或显式 `accepted` vs `captured` 双字段）；旧工具行为保持向后兼容 |
+| 无 git diff 就不回写 | 防噪音（现 hook 实测踩过「每轮写最近提交」） | 丢掉本里程碑目标里的零散问答 | 无 diff 时改抽 transcript/本轮 Q&A 精华；噪音用价值评估 + 指纹去重，不用「有没有 diff」当闸 |
+| 全文会话 / 隐藏思维链入账本或 RAG | 「以后有完整上下文」 | 体积、隐私、脱敏失败面、RAG 被过程噪音淹没 | 只存问题、可见答案精华、模型名；CoT 禁止 |
+| 把 Interaction Ledger 当 RAG 正文 | 已经有 run 记录 | v0.17 明确 Ledger 不反哺检索；形态是调用/用量不是知识 | Ledger 只关联 `request_id`/`run_id` |
+| 用路由 `confidence` 或长度门槛当 high/medium/low | 省一次 LLM | `evaluate_writeback_quality` 只防 `too_short`/`low_information`/`duplicate`；路由分是选仓把握不是知识价值 | 独立价值评估器；长度门槛可作 **pre-filter**（过短仍落 Capture，标 low 或不评估） |
+| 无差别把所有 Capture 向量化 | 实现简单 | 污染 `delivery_knowledge`，伤害编码/方案召回 | 仅 medium/high 摄取；low 留账本 |
+| 把 Capture 写成 `ProjectMemory` 再等人工确认才「算收到」 | 对齐历史 MEM-04 | 无项目时没有 Memory 可挂；确认延迟 = 用户以为丢了；Phase 86 已用 active 直写打破「全部须确认」 | **账本无条件落**；RAG 是否 auto 见下方产品张力 |
+| 会话开始把全部记忆 dump 进 prompt | 模仿 memory.json | 社区与 Mem0 均警告撑爆上下文、旧事实压过关键约束 | 按 query / 仓 / 项目 on-demand 检索（已有 `search_project_context`） |
+| 本机 `@modelcontextprotocol/server-memory` 当 Friday 存储 | Cursor 教程多 | 个人文件、无权限、不进团队 RAG、重启路径易丢 | Friday 服务端账本 + Qdrant |
+| Stop hook 内同步跑评估 LLM | 一次完成 | Claude Code hook 超时；官方建议异步；现 Stop 已 async | Hook 只 POST Capture；评估进 durable/后台任务 |
+| 自动覆盖人工已确认的项目记忆 | 「最新会话为准」 | 蓝图/记忆「AI 不覆盖人工」；Phase 86 active 直写已是高风险特例 | Capture/RAG 与 `ProjectMemory` 解耦；可选「提议草稿」进记忆，不默默 supersede |
+| 猜测回答模型、token、项目 | 报表好看 | 锁定：拿不到记 `unknown`；不编造 `project_id` | 字段显式 optional / unknown |
+| Cursor 专用采集插件 | 更稳的 transcript | v0.15 明确留 v2；范围爆炸 | Skills + MCP；Cursor 用规则强制「有 Q&A 就调回写工具」 |
 
 ## Feature Dependencies
 
-```text
-[同仓同 commit 数据集与 v0.22 baseline]
-    └──requires──> [TS-14 benchmark 与后续门槛]
+```
+PAT 认证 MCP 入口 (v0.2)
+    └──requires──> 新 Capture MCP 工具 (MCP-01)
+                       └──requires──> Capture 账本 STORE-01
+                       └──requires──> 仓库解析（Repository 实体 / remote 映射）
+                       └──enhances──> lookup_project_by_branch（项目可选）
 
-[Process 检索文档构建]
-    └──requires──> [TS-03 Process 一等 BM25/embedding]
-                       └──requires──> [TS-04 双 lane 融合]
-                                          └──requires──> [TS-05 排序 breakdown]
+Skills / hooks 采集 (SKILL-01)
+    └──requires──> MCP-01 契约
+    └──conflicts──> 现 stop hook「无 git diff 则 skip」（必须改触发条件）
+    └──enhances──> friday-dev 收工 report_project_knowledge（并行保留，不替代 Capture）
 
-[稳定 Symbol UID + Community/Process 归属 + index commit]
-    └──requires──> [TS-02 Process 分组]
-    └──requires──> [TS-06 file:line 证据]
-    └──requires──> [TS-07 消歧]
-                       └──requires──> [TS-08 impact 摘要]
+价值评估 EVAL-01
+    └──requires──> STORE-01（先有 Capture 再评）
+    └──requires──> ProviderConfig / call_source / MemoryDistiller 同类 LLM seam（可复用 distill，不可复用其「必须 project 成员 + 只产 draft」语义）
+    └──conflicts──> 把 evaluate_writeback_quality 结果当作 high/medium/low
 
-[TS-02~TS-11 canonical response schema]
-    └──requires──> [TS-01 单一入口]
-                       └──requires──> [TS-12 五消费面契约与发现]
+RAG 摄取（中高）
+    └──requires──> EVAL-01 完成（或明确默认档）
+    └──requires──> knowledge/sources 新 normalizer + 摄取管线
+    └──requires──> DeliveryKnowledgeSearchService + 权限/exclusion fail-closed
+    └──conflicts──> 仅投影进 project_memory（无项目 / 非 active 会被 skip）
 
-[TS-09 语义截断] ──cross-cuts──> [TS-01/02/06/08/12]
-[TS-10 降级可见] ──cross-cuts──> [BM25/embedding/graph/impact]
-[TS-11 水位一致性] ──cross-cuts──> [所有证据与 benchmark]
-[TS-13 权限/排除/观测] ──cross-cuts──> [所有入口]
+召回与回放
+    └──requires──> RAG 摄取（检索）+ Capture 账本（回放原文）
+    └──enhances──> friday-dev / friday-memory / search_rag_chunks
+
+Phase 86 report_project_knowledge active 直写
+    └──conflicts──> 「所有 AI 产物必须 draft 确认才存在」
+    └──enhances──> 仅当用户仍要「改动摘要进项目记忆」时保留；与 Capture 账本分流
 ```
 
 ### Dependency Notes
 
-- **先建 Process 检索文档，再做融合排序。** 没有可独立索引的 Process 表示，就仍然只是 GitNexus 式 Symbol→Process enrichment。
-- **先定 canonical response，再铺五个入口。** 否则各入口会围绕半成品 schema 独立演化，最后只能做人工对齐。
-- **消歧先于 impact。** 任何基于名称猜中的 impact 都会把低置信候选包装成确定事实。
-- **水位一致性先于 benchmark。** benchmark 若混用不同 commit 的 Symbol、Process 或行号，指标本身不可解释。
-- **benchmark 先采 baseline，后锁回归门。** 研究只定义指标维度和数据冻结协议，不定义阈值。
-- **TS/JS 与 Python resolved edge 提升是召回质量依赖，但应按语言独立测。** Go 按项目既定依赖顺序后置，不应阻塞统一契约和 benchmark harness。
+- **MCP-01 requires Capture 账本：** 工具成功语义必须是「已持久化」，不能再等于「已解析到唯一项目」。
+- **SKILL-01 requires 改 stop 闸：** 不改 `if not changes: fail_soft()`，零散问答需求无法验收。
+- **EVAL-01 requires 独立于质量门槛：** 门槛可拒绝「进 ProjectMemory」，但 v0.25 锁定永不丢 Capture；过短条目应入库并标 low。
+- **RAG requires 新 source_kind：** `project_memory.normalize` 在非 active 或无记忆时返回空列表；仓级知识必须能带 `repository_id`。
+- **lookup_project_by_branch 是增强不是前置：** 有项目则 context packer / 记忆 UI 更完整；无项目不得阻塞。
+- **`MemoryDistiller`：** 可复用 LLM seam 与脱敏；不可复用 `distill_to_draft` 的「必须项目成员否则抛」作为 Capture 入口（无项目用户仍应能回写仓级知识，权限改对齐仓库）。
+- **npm MCP 白名单：** 历史多次「服务端有、客户端无」。新工具必须同期改 `mcp/src/tools.ts`，否则 Cursor 调不到。
 
-## MVP Definition（v0.24.0）
+## 产品张力（MEM-04 vs 中高自动入 RAG）
 
-### Launch With
+历史 MEM-04：LLM 只产 **pending draft**，人工确认后才成 active `ProjectMemory`，且 **只有 active 才被 `project_memory` 摄取进 RAG**。
 
-- [ ] **MVP-01** canonical graph query request/response schema：单仓作用域、版本、水位、Process 嵌套结果、evidence、breakdown、truncation、degradation。
-- [ ] **MVP-02** Process 检索文档与 BM25/embedding 双 lane：支持业务词直接命中 Process。
-- [ ] **MVP-03** Symbol + Process 确定性混合排序：可重算 breakdown、稳定 tie-break、重名消歧。
-- [ ] **MVP-04** 步骤级 `file:line` + bounded impact 摘要：所有结论可核验，同一 commit。
-- [ ] **MVP-05** schema-preserving 预算与 lane 级降级：部分成功不装成完整成功。
-- [ ] **MVP-06** 服务端、Chat、Django MCP、npm MCP、编码容器五面发现同一工具契约。
-- [ ] **MVP-07** 单仓 benchmark：冻结同仓同 commit，先记录 v0.22 baseline，再锁门槛。
-- [ ] **MVP-08** 权限/exclusion/脱敏/触发用户/`RetrievalTrace` 与结构化日志覆盖。
+Phase 86 已出现 **accepted deviation**：stop hook `writeback_mode=active` 直写生效记忆（质量门槛 + 脱敏 + 成员静默跳过 + 审计可回滚）。这与 MEM-04 字面冲突，但是为了「编码不中断、沉淀真正发生」。
 
-### Add After Validation
+v0.25 建议把张力拆成两道闸，避免再混在一个开关里：
 
-- [ ] **VAL-01** query drill-down cursor/分页：只有 benchmark 证明 top-N 语义裁剪不足时再增加。
-- [ ] **VAL-02** 可选 `task_context`/`goal` 真正入排序：只有建立独立增益对照后启用；不能只在 schema 声称有效。
-- [ ] **VAL-03** 更丰富的 Process 摘要生成：先验证确定性字段索引，确有召回缺口再引入额外 LLM 生成成本。
+| 层 | 建议默认 | 理由 |
+|----|----------|------|
+| Capture 账本 | **无确认、永不丢** | 评测与审计；用户可见「已收到」 |
+| 价值评估 / 提炼 | 自动（fail-soft，失败保留原文 Capture） | 客户端已抽过一版精华 |
+| 中高 → RAG 向量 | **产品决策点（须立项拍板）** | 自动：闭环像 Phase 86，编码代理立刻可搜；草案确认：更接近 MEM-04，延迟与漏确认会导致「搜不到刚问过的」。推荐：**仓级 RAG 对 medium/high 自动摄取**（可 supersede/下线，审计可回滚），**写入 `ProjectMemory` 仍默认 draft**（不把会话 Capture 冒充项目长期记忆）。低价值永不向量化。 |
+| 项目记忆 UI | 不自动 active | 避免会话噪音进入「团队长期记忆」编辑面 |
 
-### Future Consideration
+若选择「中高也须人审才进 RAG」，必须提供积压队列与超时策略，否则验收「可召回」会系统性失败（与 v0.19 澄清卡死同类）。
 
-- [ ] 跨仓 graph-aware query / impact。
-- [ ] PDG/CFG 或语句级数据流检索。
-- [ ] rename apply。
-- [ ] 社区算法替换。
-- [ ] 学习排序或 LLM 重排。
+## MVP Definition
+
+### Launch With（v0.25.0）
+
+- [ ] **MCP-01/02** — 结构化 Capture 写入；无项目按仓收；解析失败仍落账本
+- [ ] **SKILL-01** — Cursor 规则/技能 + Claude Code hooks：有/无 git 改动都抽 Q&A 精华并调用新工具
+- [ ] **STORE-01** — Capture 账本 + 与 Ledger / ProjectMemory 分表
+- [ ] **EVAL-01** — high/medium/low + 提炼；中高进仓（及可选项目）RAG；low 可回放
+- [ ] 脱敏 / PAT / fail-soft / `call_source` / RetrievalTrace / schema snapshot 与 npm 工具对齐
+
+### Add After Validation（v0.25.x）
+
+- [ ] 控制台 Capture 回放与价值纠偏（人把 low↔medium）
+- [ ] SessionStart 按仓注入「近期高价值摘要」预算（防 dump）
+- [ ] 与 `report_project_knowledge` 去重：同一会话决策不双写 Memory + Capture RAG
+- [ ] Cursor 侧更稳的 transcript 采集（仍非专用插件）
+
+### Future Consideration（v2+）
+
+- [ ] 专用 IDE 插件 / PROJX-04
+- [ ] 结构化记忆矛盾消解、时效降权（PROJX-02）
+- [ ] 记忆全自动进 `ProjectMemory` active 且无人审（PROJX-03）——与本里程碑「账本自动、项目记忆谨慎」相反，保持 backlog
+- [ ] 多模态会话（截图问答）入 Capture
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| canonical request/response + 水位 | HIGH | MEDIUM | P1 |
-| Process 一等混合召回 | HIGH | HIGH | P1 |
-| Process 分组 + `file:line` | HIGH | MEDIUM | P1 |
-| 可解释确定性排序 | HIGH | MEDIUM | P1 |
-| bounded impact 摘要 | HIGH | MEDIUM | P1 |
-| 截断/降级结构化 | HIGH | MEDIUM | P1 |
-| 五消费面契约与发现 | HIGH | HIGH | P1 |
-| 单仓 benchmark | HIGH | HIGH | P1 |
-| `task_context`/`goal` 排序增强 | MEDIUM | MEDIUM | P2 |
-| Process LLM 摘要扩充 | MEDIUM | MEDIUM | P2 |
-| 跨仓 query | OUT OF SCOPE | HIGH | P3 |
+| Capture MCP + 永不因无项目丢数 | HIGH | MEDIUM | P1 |
+| 无 git diff 的 Q&A 采集 | HIGH | MEDIUM | P1 |
+| Capture 账本三层分离 | HIGH | MEDIUM | P1 |
+| 价值分级 + 中高 RAG | HIGH | MEDIUM | P1 |
+| Skills/hooks 双宿主 | HIGH | HIGH | P1 |
+| 按仓/按项目检索 + 回放 | HIGH | MEDIUM | P1 |
+| 项目记忆 draft 确认 UI | MEDIUM | LOW（已有） | P2（不阻塞仓级 RAG） |
+| SessionStart 记忆注入 | MEDIUM | MEDIUM | P2 |
+| 价值人工纠偏 | MEDIUM | MEDIUM | P2 |
+| 专用插件 | LOW（本里程碑） | HIGH | P3 |
+| 全文 transcript 入向量 | LOW / 负 | LOW | 不做 |
+
+**Priority key:**
+- P1: Must have for launch
+- P2: Should have, add when possible
+- P3: Nice to have, future consideration
 
 ## Competitor Feature Analysis
 
-| Feature | GitNexus 当前主线 | Friday v0.24.0 建议 |
-|---------|-------------------|----------------------|
-| 检索入口 | NL query，BM25 + semantic 并行，RRF | 保留混合检索，增加 Symbol lane + Process lane |
-| Process 命中 | 先命中 Symbol，再沿 `STEP_IN_PROCESS` 分组 | Process 自身可被 BM25/embedding 直接命中，同时接受 Symbol 间接证据 |
-| Process 排名 | Symbol RRF 分数求和 + 最大 cohesion 小幅加成 | 确定性融合，但返回完整 breakdown；具体权重在 baseline 后锁定 |
-| 结果结构 | `processes` + 扁平 `process_symbols` + `definitions` | Process 内嵌命中与步骤；保留 standalone Symbol 区，避免多归属丢失 |
-| 行号 | query Symbol 为 1-based start/end；Process resource 仅 file | 所有 Process steps 一致返回 1-based `file:line` 和 index commit |
-| impact | 需 query→context→impact 后续调用 | 统一入口返回有界摘要，完整 impact 仍可 drill-down |
-| 截断 | limit、max_symbols、definitions cap、可选字符串 maxTokens | 语义裁剪、合法 schema、总数/返回数/原因/next action |
-| 降级 | FTS warning、enrichment partial；部分 semantic 降级仅日志可见 | 每条 lane 结构化状态，任何不完整结果 `partial` 可见 |
-| 工具发现 | 集中 tools 定义；动态 required repo；context resource + Skill | canonical manifest 派生五消费面，schema hash 与真实调用 E2E |
-| 评测 | 源码有单元回归与 timing，但不是 Friday 目标的同仓 v0.22 对照 | 冻结单仓 commit 与分桶 query set，先 baseline 后门槛 |
+| Feature | Mem0 / 通用 Memory MCP | Claude Code 原生 memory + hooks | Friday 现状 | Our Approach (v0.25) |
+|---------|------------------------|---------------------------------|-------------|----------------------|
+| 跨会话持久化 | `add` 提炼事实 + 向量检索 | `~/.claude/projects/.../memory/` 文件；社区要 PostMemoryWrite 才好外同步 | 项目记忆 + stop hook 改动摘要 | 服务端 Capture + 仓/项目 RAG |
+| 采集触发 | 应用显式 `add` | `Stop`/`SessionEnd` 读 transcript；超时需异步 | 有 diff 才 `report_project_knowledge` active | Hook + 技能；无 diff 也提交 Q&A |
+| 无项目/个人范围 | `user_id`/`agent_id` 过滤 | 本机目录 | **必须**唯一项目否则 skip | 仓为主、项目可选 |
+| 重要性 | LLM importance + recency 融合 | 无统一三档；靠模型自觉写 MEMORY.md | 长度/词数/Jaccard，非价值 | high/medium/low；仅中高向量化 |
+| 原始记录 | 默认可关 infer 存原文 | transcript 文件在宿主侧 | Ledger 是用量不是问答正文 | Capture 账本可回放 |
+| 团队权限 | 自建过滤 | 无 | 项目成员 + PAT | 仓可见性 + 可选项目成员 |
+| 与编码 RAG 一体 | 通常独立 memory 库 | 独立 | `delivery_knowledge` 已统一检索面 | 新 `source_kind` 进同一 collection，kind 过滤 |
 
-## 可直接转成需求的验收清单
+## 对既有 Friday 能力的依赖（落地清单）
 
-1. **QUERY-01:** 给定已索引 repository 和非空中文/英文 NL query，统一入口返回版本化 schema；空白 query 不触发检索。
-2. **QUERY-02:** 响应顶层 repository、branch/index key、commit 与每条 evidence 一致；混水位不能静默拼接。
-3. **PROC-01:** Process 文档包含名称、入口、终点、步骤摘要、模块、业务关键词，并进入 BM25 与 embedding 两路。
-4. **PROC-02:** 构造 query 词只存在于 Process 文档、不存在于 Symbol 名的 fixture，Process 仍进入候选。
-5. **GROUP-01:** 同一 Symbol 属于两个 Process 时，两个 Process 均保留该 UID 的归属/step 证据；计数与返回数各自明确。
-6. **RANK-01:** 每个候选的 breakdown 可确定性重算最终分，排序版本存在，稳定 ID 决定同分顺序。
-7. **RANK-02:** 同仓、同 commit、同配置、同 query 重复运行，候选顺序与 breakdown 相同。
-8. **EVID-01:** 每个 Process 返回的每一步都有 repo-relative file、1-based line range、Symbol UID；随机抽样可读取对应源码范围。
-9. **DISAMB-01:** 重名 anchor 返回候选而不静默选取；未消歧时 impact 标不可用/待选择。
-10. **IMPACT-01:** 已消歧 anchor 返回 bounded summary、总数/返回数和 drill-down 提示，不复制完整闭包。
-11. **BUDGET-01:** 在不同响应预算下输出始终满足 schema；预算收紧只减少可选正文/低排项，不移除水位、warning、truncation 元数据。
-12. **DEGRADE-01:** 分别模拟 FTS、embedding、Process enrichment、impact 失败；主查询 best-effort 返回，lane 状态与 `partial` 如实变化。
-13. **CONTRACT-01:** 五消费面对同一 manifest 的工具名、required/default/enum、response schema version 和 schema hash 一致。
-14. **DISCOVER-01:** 每个消费面在执行前都能发现工具能力、契约版本、仓库作用域和索引水位； npm/容器真实调用不依赖只存在于服务端的隐藏参数。
-15. **BENCH-01:** benchmark 固定 repo+commit+query set，按语言/框架/入口类型分桶；v0.22 baseline 与 v0.24 candidate 使用同一输入运行。
-16. **BENCH-02:** 报告输出 Symbol/Process recall、`file:line` 有效率、resolved edge、impact/trace、延迟、token 的逐例原始结果与汇总；阈值字段在 baseline 采集前不得伪造。
-17. **OBS-01:** query 生命周期有 started/completed/failed 结构化事件、`duration_ms`、`category`、`component` 和触发用户；各检索 lane 写 best-effort trace，任何观测失败不改变业务响应。
+| 能力 | 路径 | 本里程碑用法 |
+|------|------|----------------|
+| `report_project_knowledge` | `mcp_tools/views.py` | **保留**给「收工项目记忆」；不要让它承担无项目 Capture |
+| `evaluate_writeback_quality` | `services/cursor_writeback.py` | 仅作噪音 pre-filter；**不是** EVAL-01 |
+| `MemoryDistiller` | `initiatives/services/memory_distill.py` | 复用 LLM seam / 脱敏 / `ide_hook_distill`；评估提示词与「NONE→不写」语义要改成「始终留 Capture」 |
+| `lookup_project_by_branch` | MCP | 可选填充 `project_id` |
+| `ProjectMemory` + MEM-04 draft | `MemoryService` | 可选二次投影；默认不把 Capture 当 active 记忆 |
+| `knowledge/sources/project_memory.py` | RAG | 参考 normalizer 范式；仓级知识另建 source |
+| `DeliveryKnowledgeSearchService` | 统一检索 | 中高价值召回 |
+| `skills/hooks/stop` + `friday-dev` | 客户端 | 改触发；技能教「零散问答也调 Capture 工具」 |
+| `@friday-ai-codes/mcp` 工具表 | `mcp/src/tools.ts` | 新工具必须同期发布，防客户端不可达 |
+| Durable 队列 (v0.12) | 评估/摄取 | 评估与向量化后台跑，hook 只负责 POST |
+| 可观测 | LOGGING-SPEC | Capture started/completed/failed；评估 `call_source`；召回 `RetrievalTrace` |
 
 ## Sources
 
-**一手源码与文档（HIGH confidence，均核对于 GitNexus `11a60e6de30ac3905066c2012f47878b995e69ed`，2026-08-24）：**
-
-- GitNexus `query` 主实现：BM25/semantic 并行、RRF、Process 分组、cohesion boost、稳定 tie-break、`file:line`、warning/partial
-  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/mcp/local/local-backend.ts
-- MCP tool canonical definitions：`query` schema、`limit`、`max_symbols`、`include_content`、`maxTokens`、工具发现参数
-  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/mcp/tools.ts
-- MCP server：动态工具发现、仓库作用域 required 注入、next-step hints、response budget 应用
-  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/mcp/server.ts
-- MCP output budget：4 UTF-8 bytes/token 估算与 `…` 前缀截断
-  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/mcp/output-budget.ts
-- MCP resources：repo context/staleness/tool discovery、Process 列表与 step trace、行号口径
-  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/mcp/resources.ts
-- Hybrid search 核心：RRF 与 FTS→semantic-only fallback
-  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus/src/core/search/hybrid-search.ts
-- 官方探索 Skill：repo 绑定、freshness、query→context→process 的用户工作流
-  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/gitnexus-claude-plugin/skills/gitnexus-exploring/SKILL.md
-- 官方 README：Process-grouped query 示例、MCP response budget、当前工具面
-  https://github.com/abhigyanpatwari/GitNexus/blob/11a60e6de30ac3905066c2012f47878b995e69ed/README.md
-
-**Friday 范围与既有决策（HIGH confidence）：**
-
-- `.planning/PROJECT.md`：v0.24.0 Goal、Active features、v0.22.0 已交付基线与显式边界。
-
-## Confidence 与待验证项
-
-| Area | Confidence | Notes |
-|------|------------|-------|
-| GitNexus query 分组与排序 | HIGH | 直接阅读当前主线实现；文档中“按 step count 归一化”的旧说法与当前源码不一致，本文以源码为准 |
-| 行号与 Process resource | HIGH | `local-backend.ts` 和 `resources.ts` 可直接对照 |
-| 截断与降级 | HIGH | 直接读取 query、semantic fallback、output-budget 实现 |
-| 工具发现 | HIGH | 直接读取 MCP `ListTools`、resources 和官方 Skill |
-| Friday 排序权重/回归阈值 | 未定 | 必须由同仓同 commit baseline 决定；本文刻意不臆造 |
-| Process 直接检索的实际增益 | MEDIUM | 机制上补足 GitNexus 的间接映射缺口，但增益需 BENCH-01/02 实测 |
+- Friday 源码（HIGH）：`server/mcp_tools/views.py`（`branch_unresolved` / draft vs active）、`server/services/cursor_writeback.py`、`server/initiatives/services/memory_distill.py`、`server/knowledge/sources/project_memory.py`、`skills/hooks/stop`、`skills/skills/friday-dev/SKILL.md`、`.planning/PROJECT.md` v0.25 Active 需求
+- Mem0 官方 How it works（HIGH）：https://docs.mem0.ai/core-concepts/how-it-works — 提炼事实 vs transcript；检索须 scope filter
+- Mem0 RAG vs Memory（MEDIUM）：importance × recency × similarity，禁止纯相似度当记忆
+- Claude Code hooks 官方（HIGH）：https://code.claude.com/docs/en/hooks.md — `Stop`/`SessionEnd`、`transcript_path` 滞后、`last_assistant_message`、hook 可 block、建议异步
+- 社区：Substrate / OpenViking Claude Code 插件（MEDIUM）— Stop 增量 checkpoint、fail-open exit 0、本地 spool
+- Cursor Memory MCP 教程（LOW–MEDIUM）— 本机 JSON 图谱；Rules 做 recall-act-memorize；**不能**替代团队知识库
+- 历史里程碑：v0.15 MEM-04/CURSOR-03、v0.16 Phase 86 active 直写 deviation、v0.17 Ledger ≠ RAG
 
 ---
-*Feature research for: Friday AI v0.24.0 单仓 graph-aware query*
-*Researched: 2026-08-24*
+*Feature research for: IDE session knowledge writeback (Friday v0.25.0)*
+*Researched: 2026-08-28*
