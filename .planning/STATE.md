@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
 status: executing
-stopped_at: Completed 144-03-PLAN.md
-last_updated: "2026-08-28T12:04:17.259Z"
+stopped_at: Completed 144-02-PLAN.md
+last_updated: "2026-08-28T12:07:54.074Z"
 last_activity: 2026-08-28 — 144-01 Wave 0 RED contracts complete
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 20
-  completed_plans: 17
+  completed_plans: 18
   percent: 60
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 144 — 仓库召回与 Capture 回放
-Plan: 2 of 5 complete
+Plan: 3 of 5 complete
 Status: Ready to execute
 Last activity: 2026-08-28 — 144-01 Wave 0 RED contracts complete
 
@@ -447,6 +447,7 @@ Last activity: 2026-08-28 — 144-01 Wave 0 RED contracts complete
 | Phase 143 P07 | 11min | 2 tasks | 3 files |
 | Phase 144 P01 | 4 min | 3 tasks | 9 files |
 | Phase 144 P03 | 3min | 2 tasks | 3 files |
+| Phase 144 P02 | 6min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -851,6 +852,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 144]: 回放正文只允许来自 SessionCapture，未授权与不存在统一返回中性 404。
 - [Phase 144]: 默认分支识别对 main、master、develop 和仓库 default_branch 进行大小写敏感精确匹配。
 - [Phase 144]: 默认分支 RepoAssociation 只返回候选，不进入 merged 或调用 pack_project_context。
+- [Phase 144]: source_kinds 默认 None，空列表在 embedding 前短路，专用会话检索才使用 session_capture 闭集。
+- [Phase 144]: 项目上下文 RAG 按当前项目收窄，但保留所有 DOCUMENT 来源的 inclusion 语义。
 
 ### Pending Todos
 
@@ -1306,8 +1309,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T12:04:17.249Z
-Stopped at: Completed 144-03-PLAN.md
+Last session: 2026-08-28T12:07:54.066Z
+Stopped at: Completed 144-02-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
