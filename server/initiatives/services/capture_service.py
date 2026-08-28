@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import time
 import unicodedata
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,10 +16,13 @@ from django.db import IntegrityError, transaction
 from common.logging import redact_secrets_in_text
 from initiatives.models import (
     Project,
-    ProjectMember,
+    RepoAssociation,
     SessionCapture,
     SessionCaptureStatus,
 )
+from knowledge.access_scope import resolve_allowed_project_ids, resolve_allowed_repository_ids
+from repositories.models import Repository
+from services.git_url import normalize_git_url
 
 logger = structlog.get_logger(__name__)
 
@@ -80,9 +84,10 @@ class CaptureService:
         try:
             redacted_question = redact_secrets_in_text(question or "")
             redacted_answer = redact_secrets_in_text(answer or "")
-            project, link_reason = await self._resolve_minimal_link(
+            repository, project, link_reason = await self._resolve_link(
                 project_id=project_id,
-                repository_requested=bool(repository_id or git_url),
+                repository_id=repository_id,
+                git_url=git_url,
                 actor=actor,
             )
             result = await self._create_locked(
@@ -91,6 +96,7 @@ class CaptureService:
                 question_hash=_question_hash(redacted_question),
                 session_id=session_key,
                 project=project,
+                repository=repository,
                 link_reason=link_reason,
                 branch_name=str(branch_name or "").strip(),
                 initiated_by_user_id=initiated_by,
@@ -106,32 +112,123 @@ class CaptureService:
         self._log_completed(started, initiated_by, result)
         return result
 
+    async def _resolve_link(
+        self,
+        *,
+        project_id: Any,
+        repository_id: Any,
+        git_url: str | None,
+        actor: Any,
+    ) -> tuple[Repository | None, Project | None, str]:
+        """解析并授权 Capture 关联；失败只影响 FK 与 reason，不阻断落账。"""
+
+        repository_requested = repository_id is not None or bool(str(git_url or "").strip())
+        repository: Repository | None = None
+        if repository_requested:
+            repository, repo_reason = await self._resolve_repository(
+                repository_id=repository_id,
+                git_url=git_url,
+            )
+            if repository is None:
+                return None, None, repo_reason
+            allowed_repositories = await resolve_allowed_repository_ids(
+                actor,
+                repository_ids=[str(repository.id)],
+            )
+            can_bind_repository = await self._can_bind_repository(actor, repository)
+            if str(repository.id) not in allowed_repositories or not can_bind_repository:
+                return None, None, "repo_unauthorized"
+
+        project: Project | None = None
+        if project_id is not None:
+            project = await self._get_project(project_id)
+            if project is None:
+                return repository, None, "project_unresolved"
+            allowed_projects = await resolve_allowed_project_ids(actor, [str(project.id)])
+            is_project_member = await self._is_project_member(actor, project)
+            if str(project.id) not in allowed_projects or not is_project_member:
+                return repository, None, "project_unauthorized"
+
+        if repository is None:
+            if project is not None:
+                return None, project, "project_only"
+            return None, None, "unanchored"
+        if project is None:
+            return repository, None, "linked"
+        if not await self._project_contains_repository(project, repository):
+            return repository, None, "project_repo_mismatch"
+        return repository, project, "linked_with_project"
+
     @staticmethod
     @sync_to_async
-    def _resolve_minimal_link(
-        *, project_id: Any, repository_requested: bool, actor: Any
-    ) -> tuple[Project | None, str]:
-        """Plan 141-02 仅处理无锚与 project-only；仓库状态机在 141-03。"""
+    def _resolve_repository(
+        *, repository_id: Any, git_url: str | None
+    ) -> tuple[Repository | None, str]:
+        """显式 id 优先；否则仅用规范化 URL 变体查询未软删仓库。"""
 
-        if project_id is not None:
-            actor_id = getattr(actor, "id", None)
+        if repository_id is not None:
             try:
-                is_member = (
-                    actor_id is not None
-                    and ProjectMember.objects.filter(
-                        project_id=project_id, user_id=actor_id
-                    ).exists()
-                )
-                if is_member:
-                    project = Project.objects.filter(pk=project_id).first()
-                    if project is not None and not repository_requested:
-                        return project, "project_only"
-            except (TypeError, ValueError):
-                pass
-            return None, "project_unauthorized"
-        if repository_requested:
+                parsed_id = uuid.UUID(str(repository_id))
+            except (TypeError, ValueError, AttributeError):
+                return None, "repo_unresolved"
+            repository = Repository.objects.filter(pk=parsed_id, is_deleted=False).first()
+            return (repository, "linked") if repository is not None else (None, "repo_unresolved")
+
+        normalized = normalize_git_url(git_url)
+        if not normalized:
             return None, "repo_unresolved"
-        return None, "unanchored"
+        variants = {
+            normalized,
+            f"{normalized}/",
+            f"{normalized}.git",
+            f"{normalized}.git/",
+        }
+        matches = list(
+            Repository.objects.filter(is_deleted=False, git_url__in=variants).order_by("id")[:2]
+        )
+        if len(matches) > 1:
+            return None, "repo_ambiguous"
+        if not matches:
+            return None, "repo_unresolved"
+        return matches[0], "linked"
+
+    @staticmethod
+    @sync_to_async
+    def _get_project(project_id: Any) -> Project | None:
+        try:
+            parsed_id = uuid.UUID(str(project_id))
+        except (TypeError, ValueError, AttributeError):
+            return None
+        return Project.objects.filter(pk=parsed_id).first()
+
+    @staticmethod
+    @sync_to_async
+    def _project_contains_repository(project: Project, repository: Repository) -> bool:
+        return project.space.repositories.filter(pk=repository.id).exists() or (
+            RepoAssociation.objects.filter(project=project, repository=repository).exists()
+        )
+
+    @staticmethod
+    @sync_to_async
+    def _is_project_member(actor: Any, project: Project) -> bool:
+        if getattr(actor, "is_superuser", False):
+            return True
+        actor_id = getattr(actor, "id", None)
+        return bool(actor_id and project.members.filter(user_id=actor_id).exists())
+
+    @staticmethod
+    @sync_to_async
+    def _can_bind_repository(actor: Any, repository: Repository) -> bool:
+        if getattr(actor, "is_superuser", False):
+            return True
+        actor_id = getattr(actor, "id", None)
+        return bool(
+            actor_id
+            and Project.objects.filter(
+                members__user_id=actor_id,
+                space__repositories=repository,
+            ).exists()
+        )
 
     @staticmethod
     @sync_to_async
@@ -142,6 +239,7 @@ class CaptureService:
         question_hash: str,
         session_id: str,
         project: Project | None,
+        repository: Repository | None,
         link_reason: str,
         branch_name: str,
         initiated_by_user_id: str,
@@ -166,7 +264,7 @@ class CaptureService:
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     project=project,
-                    repository=None,
+                    repository=repository,
                     link_reason=link_reason,
                     branch_name=branch_name,
                     status=SessionCaptureStatus.PENDING_EVAL,

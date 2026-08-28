@@ -62,8 +62,8 @@ async def resolve_allowed_project_ids(
 
     D-02：members_only 项目文档向量点写 initiatives.Project id，故集合必须含
     Project 维度（否则成员乃至 superuser 的项目文档 RAG 全黑）。注意
-    ``resolve_allowed_repository_ids`` 拿本集合后走 ``Space.objects.filter(id__in=...)``，
-    新混入的 initiatives.Project UUID 匹配不到 Space 行、自然被忽略——非 bug，无需分流。
+    ``resolve_allowed_repository_ids`` 会同时按 Space id 与 initiatives.Project.space
+    映射仓库，使 ProjectMember 项目维度与知识仓库可见性保持一致。
     """
     if user is None:
         return []
@@ -119,9 +119,15 @@ async def resolve_allowed_repository_ids(
         return sorted(str(rid) for rid in repo_ids)
 
     def _repos_for_projects() -> list[str]:
+        from django.db.models import Q
+
         from projects.models import Space
 
-        qs = Space.objects.filter(id__in=allowed_projects).prefetch_related("repositories")
+        qs = (
+            Space.objects.filter(Q(id__in=allowed_projects) | Q(projects__id__in=allowed_projects))
+            .distinct()
+            .prefetch_related("repositories")
+        )
         ids: set[str] = set()
         for proj in qs:
             for repo in proj.repositories.all():
