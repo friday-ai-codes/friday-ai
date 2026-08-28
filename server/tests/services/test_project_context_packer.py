@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+import uuid
+from unittest.mock import AsyncMock
+
 import pytest
 from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
@@ -15,6 +18,7 @@ from django.contrib.auth import get_user_model
 from initiatives.models import Artifact, ArtifactType, ProjectVisibility
 from initiatives.services import MemoryService, ProjectService
 from interactions.models import RetrievalTrace
+from knowledge.retrieval_types import EntityMetadata, ProvenanceLinks, SearchResultDTO
 from projects.models import Space
 from services.project_context_packer import pack_project_context
 
@@ -137,3 +141,67 @@ async def test_retrieval_trace_written():
         source="chat_project_context", conversation_id="conv-pack-1"
     ).acount()
     assert count >= 1
+
+
+def _rag_result(
+    *,
+    title: str,
+    source_kind: str,
+    project_id: str,
+) -> SearchResultDTO:
+    return SearchResultDTO(
+        score=0.9,
+        vector_score=0.9,
+        recency_score=0.5,
+        entity=EntityMetadata(
+            entity_id=uuid.uuid4(),
+            entity_kind="document",
+            version=1,
+            title=title,
+            valid_at=None,
+            invalid_at=None,
+            source_kind=source_kind,
+            source_id=str(uuid.uuid4()),
+            origin=source_kind,
+            event_time=None,
+            space_id=project_id,
+            repository_id=None,
+            provenance=ProvenanceLinks(),
+        ),
+    )
+
+
+async def test_rag_layer_includes_session_capture_without_excluding_project_docs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase 144 inclusion：按项目收窄，同时保留 Capture 与既有 DOCUMENT 来源。"""
+    project, owner = await _make_project_with_member(key="rag-session-capture")
+    search = AsyncMock(
+        return_value=[
+            _rag_result(
+                title="会话精华",
+                source_kind="session_capture",
+                project_id=str(project.id),
+            ),
+            _rag_result(
+                title="项目状态文档",
+                source_kind="project_state",
+                project_id=str(project.id),
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "knowledge.retrieval.DeliveryKnowledgeSearchService.search_similar",
+        search,
+    )
+
+    packed = await pack_project_context(project, owner, query="部署")
+
+    kwargs = search.await_args.kwargs
+    assert kwargs["project_ids"] == [str(project.id)]
+    assert kwargs["include_document_kind"] is True
+    assert kwargs.get("source_kinds") in (None, []) or kwargs["source_kinds"] != [
+        "session_capture"
+    ]
+    assert "会话精华" in packed.text
+    assert "项目状态文档" in packed.text
