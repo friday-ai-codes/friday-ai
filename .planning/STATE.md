@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
 status: executing
-stopped_at: Completed 145-01-PLAN.md
-last_updated: "2026-08-28T13:18:33.228Z"
+stopped_at: Completed 145-02-PLAN.md
+last_updated: "2026-08-28T13:23:07.307Z"
 last_activity: 2026-08-28 -- Phase 145 execution started
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 25
-  completed_plans: 21
+  completed_plans: 22
   percent: 80
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 145 (Cursor / Claude Code 双宿主采集) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-08-28 -- Phase 145 execution started
 
@@ -451,6 +451,7 @@ Last activity: 2026-08-28 -- Phase 145 execution started
 | Phase 144 P04 | 7min | 2 tasks | 10 files |
 | Phase 144 P05 | 14min | 2 tasks | 12 files |
 | Phase 145 P01 | 5min | 3 tasks | 6 files |
+| Phase 145-cursor-claude-code P02 | 4m | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -864,6 +865,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 144]: client 固定省略，回放正文不查询 ToolCallRecord、RetrievalTrace 或其它 Ledger 数据。
 - [Phase 145]: Wave 0 只建立可收集的 RED 合同，不提前实现 helper、hook 或 installer 行为
 - [Phase 145]: skills 测试仅在子模块提交，父仓不暂存或提交 skills gitlink
+- [Phase 145-cursor-claude-code]: UserPromptSubmit 在凭证与 git 检查前缓存问题，缓存失败不影响原 lookup
+- [Phase 145-cursor-claude-code]: Stop 先独立提交可见答案，再按 FRIDAY_STOP_WRITEBACK 和 git diff 决定是否写项目记忆
+- [Phase 145-cursor-claude-code]: skills 子模块 SHA 只保留为父仓未暂存 gitlink 变化，等待 145-05 远端可达门禁
 
 ### Pending Todos
 
@@ -1319,8 +1323,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T13:18:33.219Z
-Stopped at: Completed 145-01-PLAN.md
+Last session: 2026-08-28T13:23:07.248Z
+Stopped at: Completed 145-02-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
