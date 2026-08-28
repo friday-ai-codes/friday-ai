@@ -28,11 +28,11 @@ v0.25.0 把 Cursor / Claude Code 中有价值的问答沉淀为 Friday 可召回
   2. `repository_id`、`project_id` 任一或同时缺失时 Capture 仍会落库；git URL 无法解析时记录明确 `repo_unresolved` 原因而不静默跳过。
   3. 模型、provider 或 token 计数不可得时以 `unknown` 保存，服务端不会猜测补全。
   4. 每次持久化都经 `CaptureService` 完成脱敏与触发用户归因，并产生带 `duration_ms` 的 caller 生命周期事件；凭证、token、密钥不会进入 Capture、Ledger 或日志。
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 - [x] 141-01-PLAN.md — Wave 0：Capture/INV-6/观测失败测试骨架（STORE/OBS 契约钉死）
-- [ ] 141-02-PLAN.md — SessionCapture 模型 + CaptureService 核心 persist + INV-6（STORE-01/02/03/05）
+- [x] 141-02-PLAN.md — SessionCapture 模型 + CaptureService 核心 persist + INV-6（STORE-01/02/03/05）
 - [ ] 141-03-PLAN.md — 仓库/项目挂钩状态机与幂等 first-write-wins（STORE-04/03）
 - [ ] 141-04-PLAN.md — caller 观测、LOGGING-SPEC 与账本分离回归（OBS-01/02、STORE-01）
 
@@ -100,7 +100,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 141. Capture 账本与仓库挂钩 | v0.25.0 | 1/4 | In Progress | - |
+| 141. Capture 账本与仓库挂钩 | v0.25.0 | 2/4 | In Progress | - |
 | 142. MCP 会话回写契约 | v0.25.0 | 0/TBD | Not started | - |
 | 143. 价值评估与中高入图 | v0.25.0 | 0/TBD | Not started | - |
 | 144. 仓库召回与 Capture 回放 | v0.25.0 | 0/TBD | Not started | - |
