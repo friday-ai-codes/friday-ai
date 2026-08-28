@@ -419,28 +419,11 @@ async def durable_ping(payload: dict[str, Any] | None = None) -> dict[str, Any]:
 async def recover_stranded_session_captures(context: Any, timestamp: int) -> int:
     """周期恢复无 active job 的 due/stale Session Capture。"""
 
-    import time
-
     from initiatives.services.session_capture_enqueue import (
         recover_stranded_session_captures as recover,
     )
 
-    started = time.perf_counter()
-    recovered = await recover()
-    try:
-        logger.info(
-            "session_capture_recovery_completed",
-            category="sampling",
-            component="knowledge",
-            initiated_by_user_id="system",
-            status="completed",
-            recovered=recovered,
-            timestamp=timestamp,
-            duration_ms=round((time.perf_counter() - started) * 1000, 2),
-        )
-    except Exception:
-        pass
-    return recovered
+    return await recover()
 
 
 @app.periodic(cron="*/5 * * * *")

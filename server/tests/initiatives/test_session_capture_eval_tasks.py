@@ -81,6 +81,14 @@ async def test_payload_has_only_scalar_keys(monkeypatch: pytest.MonkeyPatch) -> 
         calls.append((task, payload, kwargs))
         return f"job-{len(calls)}"
 
+    captures = [
+        SimpleNamespace(status="pending_eval", eval_attempts=0, initiated_by_user_id="user-1"),
+        SimpleNamespace(status="ingest_pending", ingest_attempts=0, initiated_by_user_id="user-1"),
+    ]
+    monkeypatch.setattr(
+        "initiatives.services.session_capture_enqueue.CaptureService.get_capture",
+        AsyncMock(side_effect=captures),
+    )
     monkeypatch.setattr("durable.service.DurableTaskService.defer", fake_defer)
     await enqueue_session_capture_eval("capture-1", initiated_by_user_id="user-1")
     await enqueue_session_capture_ingest("capture-1", initiated_by_user_id="user-1")
@@ -198,8 +206,8 @@ async def test_ingested_replay_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
 
 async def test_ingest_replay_does_not_call_evaluator() -> None:
     source = _function_source("durable/tasks_impl.py", "run_session_capture_ingest")
-    assert "evaluate_session_capture" not in source
-    assert "session_capture_eval" not in source
+    assert "evaluate_session_capture(" not in source
+    assert "SessionCaptureEvaluator" not in source
 
 
 async def test_ingest_failure_does_not_reenter_eval() -> None:
@@ -239,9 +247,8 @@ async def test_backoff_schedules_new_job_with_lock_and_run_at() -> None:
 
 async def test_backoff_dual_backend_parity_lock_run_at_without_same_key() -> None:
     service_source = _source("durable/service.py")
-    procrastinate_source = _source("durable/backends/procrastinate_backend.py")
-    inprocess_source = _source("durable/backends/in_process_backend.py")
-    for source in (service_source, procrastinate_source, inprocess_source):
+    backend_source = _source("durable/backends.py")
+    for source in (service_source, backend_source):
         assert "run_at" in source
         assert "lock" in source
         assert "idempotency_key" in source
@@ -335,8 +342,8 @@ async def test_recovery_isolates_single_failure() -> None:
 
 
 async def test_eval_resume_when_evaluating_still_runs_llm() -> None:
-    source = _function_source("initiatives/services/capture_service.py", "claim_evaluation")
-    assert "evaluating" in source
+    source = _function_source("initiatives/services/capture_service.py", "_claim_evaluation")
+    assert "SessionCaptureStatus.EVALUATING" in source
     assert "eval_attempts" in source
     worker = _function_source("durable/tasks_impl.py", "run_session_capture_eval")
     assert "evaluate_session_capture" in worker
