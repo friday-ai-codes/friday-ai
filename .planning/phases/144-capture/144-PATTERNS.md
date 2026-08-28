@@ -274,8 +274,9 @@ allowed_projects = await resolve_allowed_project_ids(actor, [str(project.id)])
 - `created_at`, `updated_at`, `evaluated_at`, `ingested_at`
 
 明确排除 `last_error`、`distilled_essence`、`question_hash`、内部 attempts/retry 字段。
-`client` 不在模型上（`server/initiatives/models/session_capture.py:37-109`），不得为补
-client 查询 `ToolCallRecord` 或其它 Ledger 表。
+`client` 不在模型上（`server/initiatives/models/session_capture.py:37-109`），回放响应
+固定省略该键；不得返回 `null`/猜测值，更不得为补 client 查询 `ToolCallRecord` 或其它
+Ledger 表。
 
 如新增 service，应按 `server/initiatives/services/__init__.py:7-16,59-97` 的
 显式 import + `__all__` 模式 re-export。
@@ -587,9 +588,10 @@ repository 的纯空返回，应该保留。
 - 同文件 `75-97`：新工具 serializer/snapshot/npm properties 三面对齐；
 - `mcp/tests/server.test.ts:19-69`：工具总数、唯一性、发现性、annotations。
 
-新增两个工具时，52 应变 54；如果最终只新增一个 MCP 工具则变 53，但计划不能在各测试里
-写不同计数。两个工具都应有 `query(...)` 只读 annotations。为新工具各增加 request key
-对齐测试，不扩大历史工具字段门禁。
+工具面按波独立冻结：Wave 0 保持 52 且 npm 测试全绿；Plan 04 只加入
+`search_session_knowledge` 后变 53，完整 snapshot/package/npm 当波全绿；Plan 05 再加入
+`get_session_capture` 后变 54。get-only RED 断言放独立测试文件，不能提前污染 Plan 04
+完整 snapshot。两个工具都使用 `query(...)` 只读 annotations；不扩大历史工具字段门禁。
 
 ## Shared Patterns
 

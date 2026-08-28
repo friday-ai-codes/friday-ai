@@ -189,8 +189,11 @@ server/agents/tools/knowledge_read_tools.py  # Chat 同契约薄封装
 server/initiatives/services/capture_access.py  # 可选：只读授权纯函数（无 objects.create）
 mcp/src/tools.ts                           # 第 53/54 个工具
 server/tests/knowledge/test_vector_recall.py
+server/tests/knowledge/test_retrieval.py
+server/tests/knowledge/test_session_capture_retrieval.py
 server/tests/mcp_tools/test_search_session_knowledge.py
 server/tests/mcp_tools/test_get_session_capture.py
+server/tests/mcp_tools/test_get_session_capture_schema_pending.py
 server/tests/mcp_tools/test_lookup_project_by_branch.py  # 增补
 server/tests/agents/tools/test_search_session_knowledge.py
 server/tests/initiatives/test_capture_service.py         # 写路径零回归
@@ -232,7 +235,7 @@ if source_kinds:
 ### Pattern 4: 回放只读与 404 防枚举
 
 **What:** `GetSessionCaptureView(McpToolView)` POST `capture_id`；`select_related` 后授权；失败与缺失同一 `error_response(..., status_code=404)` 文案（例如「资源不存在」），禁止 403 分流。
-**Read set（闭集）:** `id, question, answer, response_model, provider, session_id, branch_name, repository_id, project_id, link_reason, value_tier, status, created_at, updated_at, evaluated_at`。`client` **不在** `SessionCapture` 上（Phase 142 故意不入库）；响应可省略或恒为 `null`，**禁止**为补 client 去读 `ToolCallRecord.input`。
+**Read set（闭集）:** `id, question, answer, response_model, provider, session_id, branch_name, repository_id, project_id, link_reason, value_tier, status, created_at, updated_at, evaluated_at`。`client` **不在** `SessionCapture` 上（Phase 142 故意不入库），因此回放响应固定省略 `client`；禁止返回猜测值或恒 `null`，更禁止为补 client 去读 `ToolCallRecord.input`。
 **禁止字段:** `last_error`、`distilled_essence`（回放合同是原始问答）、token 计数字段若需展示保持字面 `unknown` 字符串、任何 Ledger join。
 
 ### Pattern 5: Lookup 第三源默认分支
@@ -313,10 +316,10 @@ def is_default_branch(branch_name: str, default_branch: str | None = None) -> bo
 **How to avoid:** Chat 已有 `_record_chat_retrieval` try/except。MCP `_record` 若内部 trace 失败需确认 `arecord_retrieval_trace` 不抛——`record_retrieval_trace` 已吞异常。会话 traces 在 `_record` 之前组装，组装期不要 IO。空结果也要 traces（一条汇总 chunk 即可，避免按 result 行展开正文）。
 **Warning signs:** monkeypatch `RetrievalTrace.objects.create` 后 HTTP 非 200。
 
-### Pitfall 6: npm 仍 52 工具
+### Pitfall 6: npm 分波计数不独立
 
-**What goes wrong:** 服务端有路由、Cursor 调不到。
-**How to avoid:** `FRIDAY_TOOLS` 长度、`TOOL_SCHEMA_SNAPSHOT` 键、`test_mcp_package_alignment.py` 双向集合。
+**What goes wrong:** Wave 0 提前写 54 导致 npm 无法绿，或 Plan 04 search-only 阶段仍期待 52/54。
+**How to avoid:** Wave 0=52；Plan 04 加 search=53；Plan 05 加 get=54。每波同步 `FRIDAY_TOOLS`、完整 `TOOL_SCHEMA_SNAPSHOT` 与 package alignment；get-only RED 放独立文件。
 **Warning signs:** 对齐测试红。
 
 ### Pitfall 7: 回放返回 `last_error`
@@ -410,22 +413,22 @@ if not merged and repository_id:
 |---|-------|---------|---------------|
 | A1 | 非创建者即使可见仓库也不得回放原始 Q/A | Pattern 4 / 回放授权 | 若产品要队友回放，计划需改授权函数与测试 |
 | A2 | git 分支名大小写敏感，不做 casefold | Pattern 5 | `Main` 不会被当默认分支 |
-| A3 | 回放响应省略 `client`（模型字段不在账本） | Pattern 4 | 若验收强制 client，只能返回 null，仍禁止 Ledger |
+| A3 | 回放响应省略 `client`（模型字段不在账本） | Pattern 4 | 已锁定：固定省略，禁止 null 占位或读取 Ledger |
 | A4 | packer/通用检索不传 exclusive `source_kinds=["session_capture"]` | RECALL-02 | 若讨论阶段要求 packer RAG **只**出会话精华，会破坏项目上下文 |
 
-## Open Questions
+## Open Questions — RESOLVED
 
-1. **packer 是否要 inclusion 白名单？**
-   - What we know: `_layer_rag` 已 `include_document_kind=True` 且 **未**传 `project_ids`（搜用户全部可见项目）。session_capture DOCUMENT 理论上已能进 RAG 层。
-   - What's unclear: RECALL-02「白名单显式包含」是测试钉还是代码里的 frozenset。
-   - Recommendation: `_layer_rag` **补传** `project_ids=[str(project_id)]`（收窄到当前项目，符合 packer 语义）；`source_kinds=None`；加测试：mock `search_similar` 的 kwargs 不含 exclusive session filter，并对 hydrate 后的 `source_kind==session_capture` 命中断言可出现。若要「显式白名单」，用 inclusion frozenset（`project_doc`,`project_memory`,`artifact`,`feishu_document`,`session_capture`,…）——漏一项即回归，**不推荐**本阶段发明完整列表。
+1. **RESOLVED — packer 使用 inclusion 语义，不建立排他白名单。**
+   - `_layer_rag` 补传 `project_ids=[str(project_id)]`，`source_kinds=None`；测试钉死 `session_capture` 与既有 DOCUMENT 源都可出现，不发明不完整 frozenset。
 
-2. **lookup 响应是否新增 `binding_source` 字段在 unmatched 时？**
-   - Recommendation: 新增可选 `binding_source` / `match_reason`；更新 snapshot + npm；未匹配默认分支时填 `repo_association_skipped_default_branch`。
+2. **RESOLVED — lookup unmatched 响应新增 `binding_source`。**
+   - 默认分支第三源跳过时固定为 `repo_association_skipped_default_branch`；更新服务端 snapshot，npm 请求 schema 无变化。
 
-3. **Chat 是否新增 tool 还是扩展 `search_project_context`？**
-   - `search_project_context` 以 bound project 为主，与仓库优先冲突。
-   - Recommendation: 新 Chat tool `search_session_knowledge`，参数对齐 MCP（必填 repository_id）。
+3. **RESOLVED — Chat 新增独立 `search_session_knowledge` 工具。**
+   - 参数对齐 MCP，必填 `repository_id`、可选 `project_id` AND 收窄；不扩展以 bound project 为主的 `search_project_context`。
+
+4. **RESOLVED — 回放响应省略 `client`。**
+   - `SessionCapture` 没有该字段；回放只读账本真源，禁止读取 Ledger 补齐。
 
 ## Environment Availability
 
@@ -452,7 +455,7 @@ Step 2.6: 已探测；无阻塞。
 | Framework | pytest 9.0.2 + pytest-django + pytest-asyncio（`asyncio_mode=auto`） |
 | Config file | `server/pyproject.toml` `[tool.pytest.ini_options]` |
 | Quick run command | `cd server && uv run pytest tests/knowledge/test_vector_recall.py tests/mcp_tools/test_lookup_project_by_branch.py tests/mcp_tools/test_retrieval_trace.py -q --tb=short` |
-| Full suite command | `cd server && uv run pytest tests/knowledge/test_vector_recall.py tests/mcp_tools/test_search_session_knowledge.py tests/mcp_tools/test_get_session_capture.py tests/mcp_tools/test_lookup_project_by_branch.py tests/mcp_tools/test_retrieval_trace.py tests/mcp_tools/test_report_session_knowledge.py tests/mcp_tools/test_mcp_package_alignment.py tests/mcp_tools/test_schema_snapshot.py tests/agents/tools/test_search_session_knowledge.py tests/initiatives/test_capture_service.py tests/knowledge/test_session_capture_source.py -q --tb=short` 以及 `cd mcp && npm test -- tests/server.test.ts` |
+| Full suite command | `cd server && uv run pytest tests/knowledge/test_vector_recall.py tests/knowledge/test_retrieval.py tests/knowledge/test_session_capture_retrieval.py tests/mcp_tools/test_search_session_knowledge.py tests/mcp_tools/test_get_session_capture.py tests/mcp_tools/test_lookup_project_by_branch.py tests/mcp_tools/test_retrieval_trace.py tests/mcp_tools/test_report_session_knowledge.py tests/mcp_tools/test_mcp_package_alignment.py tests/mcp_tools/test_schema_snapshot.py tests/mcp_tools/test_get_session_capture_schema_pending.py tests/agents/tools/test_search_session_knowledge.py tests/services/test_project_context_packer.py tests/initiatives/test_capture_service.py tests/initiatives/test_capture_access.py tests/knowledge/test_session_capture_source.py -q --tb=short` 以及 `cd mcp && npm test -- tests/server.test.ts` |
 
 ### Phase Requirements → Test Map
 
@@ -460,17 +463,18 @@ Step 2.6: 已探测；无阻塞。
 |--------|----------|-----------|-------------------|-------------|
 | RECALL-01 | 缺 `repository_id` → 400；有仓过滤；`project_id` AND 收窄；未授权仓 → 空 results 200 | unit/integration | `uv run pytest tests/mcp_tools/test_search_session_knowledge.py -x` | ❌ Wave 0 |
 | RECALL-01 | Qdrant must 含 `source_kind` MatchAny `session_capture`；`source_kinds=None` 不含该条件 | unit | `uv run pytest tests/knowledge/test_vector_recall.py -x` | ✅ 扩展现有 |
+| RECALL-01 | 真实 helper 精确传 repository/project/DOCUMENT/include/source kwargs；真实 search_similar 把 source_kinds 传给 recall | unit | `uv run pytest tests/knowledge/test_session_capture_retrieval.py tests/knowledge/test_retrieval.py -x` | ❌ Plan 02 |
 | RECALL-02 | packer `_layer_rag` 仍 include_document_kind；不 exclusive-filter；session_capture 可出现 | unit | mock `search_similar` | ❌ Wave 0（可放 `tests/services/` 或 packer 测试） |
 | RECALL-03 | 创建者 200 含 question/answer；他用户/无行 404 同 body；源码/测试断言无 Ledger 查询 | integration | `uv run pytest tests/mcp_tools/test_get_session_capture.py -x` | ❌ Wave 0 |
 | RECALL-04 | `main`+唯一 association → matched false、context 空、有 candidates；`feat/login-page` 仍 matched true；`ProjectBranch` on main 仍 matched | integration | `uv run pytest tests/mcp_tools/test_lookup_project_by_branch.py -x` | ✅ 扩展 |
 | RECALL-04 | persist `branch_name=main` 无 project_id + 唯一 association → project FK 空、accepted | integration | `uv run pytest tests/mcp_tools/test_report_session_knowledge.py -x` | ✅ 扩展 |
 | OBS-03 | MCP/Chat traces 无 query/正文；create boom 后仍 200/success；空结果 result_count=0 | unit | retrieval_trace + 新会话测试 | ✅ + ❌ Wave 0 |
-| MCP-03 延续 | 新工具三面键 + FRIDAY_TOOLS 长度 | unit | alignment + vitest | ✅ 改计数 |
+| MCP-03 延续 | 新工具三面键 + FRIDAY_TOOLS 分波长度 52→53→54 | unit | alignment + vitest | ✅ 分波改计数 |
 
 ### Sampling Rate
 
 - **Per task commit:** 该任务触及的单文件 pytest `-x`
-- **Per wave merge:** Full suite command 上表
+- **Per wave merge:** Wave 0 collect-only + npm 52；Plan 02/03 窄测；Plan 04 完整 search snapshot/package + npm 53（排除 get-only pending RED）；Plan 05 Full suite + npm 54
 - **Phase gate:** 上表全绿 + ruff 触及的生产文件
 
 ### Wave 0 Gaps
@@ -482,7 +486,7 @@ Step 2.6: 已探测；无阻塞。
 - [ ] `test_lookup_project_by_branch.py` 增默认分支第三源
 - [ ] `test_report_session_knowledge.py` 增默认分支不绑项目
 - [ ] packer RAG 回归（session_capture inclusion）
-- [ ] `mcp/tests/server.test.ts` 工具数量 52→53 或 54
+- [ ] `mcp/tests/server.test.ts` 分波独立全绿：Wave 0 保持 52；Plan 04 加 search 后 53；Plan 05 加 get 后 54
 - [ ] Framework install: 无
 
 ## Security Domain
