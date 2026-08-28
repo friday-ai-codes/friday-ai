@@ -20,7 +20,8 @@
 - `pack_project_context` 与交付知识检索的允许源白名单显式加入 `session_capture`，并继续沿用现有 `resolve_allowed_repository_ids`/`resolve_allowed_project_ids` 权限收口；项目过滤只收窄，不放宽。
 
 ### Capture id 原文回放
-- 提供按 Capture UUID 的只读回放入口，返回 `capture_id`、结构化 `question`/`answer`、模型/客户端/会话/分支元数据、仓库/项目挂钩、tier/status/reason 与时间戳；不返回隐藏 CoT、凭证或内部重试错误细节。
+- 提供按 Capture UUID 的只读回放入口，返回 `capture_id`、结构化 `question`/`answer`、模型/会话/分支元数据、仓库/项目挂钩、tier/status/reason 与时间戳；不返回隐藏 CoT、凭证或内部重试错误细节。
+- 回放响应明确省略 `client`：`SessionCapture` 未持久化该字段，禁止为补齐客户端元数据读取 Interaction Ledger / `ToolCallRecord.input`，也不返回猜测值或恒 `null`。
 - 回放正文唯一来源是 `initiatives.SessionCapture`；禁止查询、扫描或拼接 Interaction Ledger / ToolCallRecord / RetrievalTrace payload 作为正文。
 - 权限 fail-closed：创建者本人可读；若 Capture 挂仓库/项目，还必须满足当前仓库可见性与项目访问约束，未授权与不存在统一返回不泄漏存在性的 404。
 - 回放入口保持纯只读、无状态推进、无重新评估或入图副作用；大前端页面不是验收前提，薄 MCP/REST read endpoint 与测试足够完成本 Phase。
