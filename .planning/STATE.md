@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
 status: executing
-stopped_at: Completed 141-02-PLAN.md
-last_updated: "2026-08-28T07:38:13.629Z"
+stopped_at: Completed 141-03-PLAN.md
+last_updated: "2026-08-28T07:50:52.639Z"
 last_activity: 2026-08-28 — Completed 141-02 Capture model and core persist
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
-  percent: 50
+  completed_plans: 3
+  percent: 75
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 141 of 145 (Capture 账本与仓库挂钩)
-Plan: 2 of 4
-Status: In progress
+Plan: 3 of 4
+Status: Ready to execute
 Last activity: 2026-08-28 — Completed 141-02 Capture model and core persist
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
@@ -432,6 +432,7 @@ Last activity: 2026-08-28 — Completed 141-02 Capture model and core persist
 | Phase 140 P03 | 15min | 2 tasks | 10 files |
 | Phase 141 P01 | 3 min | 2 tasks | 4 files |
 | Phase 141 P02 | 7 min | 2 tasks | 6 files |
+| Phase 141-capture P03 | 10min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -798,6 +799,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 141]: SessionCapture 仅允许 CaptureService 写入，Phase 141 writer 禁止 deferred sinks。
 - [Phase 141]: Capture 幂等键采用触发用户、稳定会话号与脱敏后 NFKC 问题哈希，重复写 first-write-wins。 — 确保敏感信息不影响审计键，并由数据库唯一约束保证首写保留。
 - [Phase 141]: 141-02 仅实现 unanchored 与 project_only，完整仓库挂钩状态机留给 141-03。 — 遵循本计划边界，避免提前实现 URL、授权和 mismatch 逻辑。
+- [Phase 141-capture]: 显式 repository_id 优先，缺失时才按 normalize_git_url 生成有限变体查询。
+- [Phase 141-capture]: Capture 外键写入除 knowledge access scope 外仍要求项目成员关系，public_org 只读可见性不放宽写入。
 
 ### Pending Todos
 
@@ -1253,8 +1256,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T07:37:52.302Z
-Stopped at: Completed 141-02-PLAN.md
+Last session: 2026-08-28T07:50:52.629Z
+Stopped at: Completed 141-03-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
