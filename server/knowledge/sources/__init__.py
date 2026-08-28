@@ -33,6 +33,8 @@ _NORMALIZERS: dict[str, str] = {
     # 5 文件正文 / active 记忆 → document 投影 + REFERENCES→项目节点出边（写时增量 + 兜底重建）。
     "project_doc": "knowledge.sources.project_doc",
     "project_memory": "knowledge.sources.project_memory",
+    # Phase 143 EVAL-03：中高价值 IDE 会话评估精华 → document 投影。
+    "session_capture": "knowledge.sources.session_capture",
     # Phase 100 KNOW-01/03 先注册（13-02 先例）：learning_case 模块由 100-02 落地，
     # MCP 三类产物模块由 100-03 落地；落地前 get_normalizer 触发 ImportError 响亮失败，不静默。
     "learning_case": "knowledge.sources.learning_case",
