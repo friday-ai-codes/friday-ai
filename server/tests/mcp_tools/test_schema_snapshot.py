@@ -584,6 +584,10 @@ def test_mcp_read_tool_schema_snapshot() -> None:
             ],
             "response": ["query", "results", "total", "as_of", "run_id"],
         },
+        "search_session_knowledge": {
+            "request": ["query", "repository_id", "project_id", "top_k"],
+            "response": ["query", "results", "total", "run_id"],
+        },
         "get_entity_timeline": {
             "request": ["entity_id", "include_superseded", "as_of"],
             "response": ["entity_id", "nodes", "total", "run_id"],
