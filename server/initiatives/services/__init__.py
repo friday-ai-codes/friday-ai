@@ -12,6 +12,7 @@ from initiatives.services.artifact_service import (
 )
 from initiatives.services.board_split_service import BoardSplitService
 from initiatives.services.branch_provision_service import BranchProvisionService
+from initiatives.services.capture_access import aget_readable_capture
 from initiatives.services.capture_service import CapturePersistResult, CaptureService
 from initiatives.services.context_link_service import (
     ContextLinkError,
@@ -94,4 +95,5 @@ __all__ = [
     "apush_project_event",
     "CaptureService",
     "CapturePersistResult",
+    "aget_readable_capture",
 ]

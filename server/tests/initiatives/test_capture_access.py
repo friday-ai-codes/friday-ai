@@ -7,17 +7,23 @@ import uuid
 
 import pytest
 
-from initiatives.services import CaptureService, aget_readable_capture
+from initiatives.services import CaptureService, ProjectService, aget_readable_capture
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-async def _persist(actor, *, repository_id: str | None = None):
+async def _persist(
+    actor,
+    *,
+    repository_id: str | None = None,
+    project_id: str | None = None,
+):
     result = await CaptureService().persist(
         question="如何安全回放 Capture？",
         answer="只读 Capture 表并按创建者与挂钩 scope 授权。",
         actor=actor,
         repository_id=repository_id,
+        project_id=project_id,
         session_id=f"capture-access-{uuid.uuid4()}",
     )
     return result.capture
@@ -55,11 +61,19 @@ async def test_superuser_reads_capture(access_user, other_user) -> None:
 async def test_creator_losing_repository_scope_cannot_read(
     access_user,
     repository_in_user_space,
+    project,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    linked_project, _ = await ProjectService().create(
+        space=project,
+        name="Capture Access Project",
+        feishu_project_key=f"capture-access-{uuid.uuid4()}",
+        created_by=access_user,
+    )
     capture = await _persist(
         access_user,
         repository_id=str(repository_in_user_space.id),
+        project_id=str(linked_project.id),
     )
     assert capture.repository_id == repository_in_user_space.id
 
