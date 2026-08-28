@@ -24,6 +24,36 @@ from common.log_context import bind_task_context
 logger = structlog.get_logger(__name__)
 
 
+async def run_session_capture_eval(
+    *,
+    capture_id: str,
+    attempt: int = 0,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """Session Capture eval 任务体占位；Task 2 替换为完整 worker。"""
+
+    return {
+        "status": "skipped",
+        "reason": "not_implemented",
+        "capture_id": capture_id,
+    }
+
+
+async def run_session_capture_ingest(
+    *,
+    capture_id: str,
+    attempt: int = 0,
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """Session Capture ingest 任务体占位；Task 2 替换为完整 worker。"""
+
+    return {
+        "status": "skipped",
+        "reason": "not_implemented",
+        "capture_id": capture_id,
+    }
+
+
 async def run_index(
     *,
     repository_id: str,

@@ -89,6 +89,18 @@ async def _charter_draft(payload: dict[str, Any]) -> Any:
     return await run_charter_draft(**payload)
 
 
+async def _session_capture_eval(payload: dict[str, Any]) -> Any:
+    from durable.tasks_impl import run_session_capture_eval
+
+    return await run_session_capture_eval(**payload)
+
+
+async def _session_capture_ingest(payload: dict[str, Any]) -> Any:
+    from durable.tasks_impl import run_session_capture_ingest
+
+    return await run_session_capture_ingest(**payload)
+
+
 async def _semgrep_scan(payload: dict[str, Any]) -> Any:
     from durable.tasks_impl import run_semgrep_scan
 
@@ -125,6 +137,8 @@ def register_business_handlers() -> None:
     register_handler("durable_blueprint_resume", _blueprint_resume)
     register_handler("durable_runner_dispatch", _runner_dispatch)
     register_handler("durable_charter_draft", _charter_draft)
+    register_handler("durable_session_capture_eval", _session_capture_eval)
+    register_handler("durable_session_capture_ingest", _session_capture_ingest)
     register_handler("durable_semgrep_scan", _semgrep_scan)
     register_handler("durable_community_rebuild", _community_rebuild)
     register_handler("durable_process_rebuild", _process_rebuild)
