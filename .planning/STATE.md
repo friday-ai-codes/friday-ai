@@ -2,19 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
-current_phase: 145
-current_phase_name: Cursor / Claude Code 双宿主采集
-status: planning
-stopped_at: Phase 144 complete, ready to plan Phase 145
-last_updated: "2026-08-28T12:42:45.642Z"
-last_activity: 2026-08-28
-last_activity_desc: Phase 144 complete, transitioned to Phase 145
-state_head: 0d230d22e2d862aa82962188784f4a78400e2455
+status: executing
+stopped_at: Completed 145-01-PLAN.md
+last_updated: "2026-08-28T13:18:33.228Z"
+last_activity: 2026-08-28 -- Phase 145 execution started
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 20
-  completed_plans: 20
+  total_plans: 25
+  completed_plans: 21
+  percent: 80
 ---
 
 # Project State
@@ -24,14 +21,14 @@ progress:
 See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 归档见 `milestones/v0.24.0-*`。
 
 **Core value:** 让团队开箱即用、安全地把需求变成代码；本里程碑让 IDE 里问过的坑和决策可沉淀、可按仓召回，且不阻断编码。
-**Current focus:** Phase 144 — 仓库召回与 Capture 回放
+**Current focus:** Phase 145 — Cursor / Claude Code 双宿主采集
 
 ## Current Position
 
-Phase: 145 — Cursor / Claude Code 双宿主采集
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-28 — Phase 144 complete, transitioned to Phase 145
+Phase: 145 (Cursor / Claude Code 双宿主采集) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-08-28 -- Phase 145 execution started
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -453,6 +450,7 @@ Last activity: 2026-08-28 — Phase 144 complete, transitioned to Phase 145
 | Phase 144 P02 | 6min | 2 tasks | 6 files |
 | Phase 144 P04 | 7min | 2 tasks | 10 files |
 | Phase 144 P05 | 14min | 2 tasks | 12 files |
+| Phase 145 P01 | 5min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -864,6 +862,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 144]: 普通用户只有同时满足 Capture 创建者和全部非空挂钩 scope 仍可见时才能回放。
 - [Phase 144]: 不存在与未授权统一返回 not_found/资源不存在/404，成功响应只显式返回 SessionCapture 白名单。
 - [Phase 144]: client 固定省略，回放正文不查询 ToolCallRecord、RetrievalTrace 或其它 Ledger 数据。
+- [Phase 145]: Wave 0 只建立可收集的 RED 合同，不提前实现 helper、hook 或 installer 行为
+- [Phase 145]: skills 测试仅在子模块提交，父仓不暂存或提交 skills gitlink
 
 ### Pending Todos
 
@@ -1319,8 +1319,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T12:31:45.124Z
-Stopped at: Phase 144 complete, ready to plan Phase 145
+Last session: 2026-08-28T13:18:33.219Z
+Stopped at: Completed 145-01-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）

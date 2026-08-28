@@ -38,11 +38,11 @@
 
 ### Skills 与宿主采集（SKILL）
 
-- [ ] **SKILL-01**: Cursor 与 Claude Code 的 Friday skills/hooks 抽取本轮问题与可见答案精华并调用 `report_session_knowledge`
-- [ ] **SKILL-02**: 工作区无 git 改动（干净树 / 无 `diff --stat`）时仍回写问答 Capture
-- [ ] **SKILL-03**: Claude Code 用 `UserPromptSubmit` 缓存问题 + `Stop.last_assistant_message` 抽答案；Cursor 用 `beforeSubmitPrompt` 只缓存问题 + `afterAgentResponse` 配对，禁止把 Claude 注入脚本拷到 Cursor `stop`
-- [ ] **SKILL-04**: 客户端不上报隐藏思维链；skills / HTTP fallback / `ide_hook_assets` 与 snapshot 守卫同一验收
-- [ ] **SKILL-05**: 安装器能 merge Cursor `hooks.json`（`version: 1`），无 PAT / 接口失败时 fail-soft 不阻断编码
+- [x] **SKILL-01**: Cursor 与 Claude Code 的 Friday skills/hooks 抽取本轮问题与可见答案精华并调用 `report_session_knowledge`
+- [x] **SKILL-02**: 工作区无 git 改动（干净树 / 无 `diff --stat`）时仍回写问答 Capture
+- [x] **SKILL-03**: Claude Code 用 `UserPromptSubmit` 缓存问题 + `Stop.last_assistant_message` 抽答案；Cursor 用 `beforeSubmitPrompt` 只缓存问题 + `afterAgentResponse` 配对，禁止把 Claude 注入脚本拷到 Cursor `stop`
+- [x] **SKILL-04**: 客户端不上报隐藏思维链；skills / HTTP fallback / `ide_hook_assets` 与 snapshot 守卫同一验收
+- [x] **SKILL-05**: 安装器能 merge Cursor `hooks.json`（`version: 1`），无 PAT / 接口失败时 fail-soft 不阻断编码
 
 ### 可观测与安全（OBS）
 
@@ -98,11 +98,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RECALL-02 | Phase 144 | Complete |
 | RECALL-03 | Phase 144 | Complete |
 | RECALL-04 | Phase 144 | Complete |
-| SKILL-01 | Phase 145 | Pending |
-| SKILL-02 | Phase 145 | Pending |
-| SKILL-03 | Phase 145 | Pending |
-| SKILL-04 | Phase 145 | Pending |
-| SKILL-05 | Phase 145 | Pending |
+| SKILL-01 | Phase 145 | Complete |
+| SKILL-02 | Phase 145 | Complete |
+| SKILL-03 | Phase 145 | Complete |
+| SKILL-04 | Phase 145 | Complete |
+| SKILL-05 | Phase 145 | Complete |
 | OBS-01 | Phase 141 | Complete |
 | OBS-02 | Phase 141 | Complete |
 | OBS-03 | Phase 144 | Complete |
