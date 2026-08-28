@@ -254,6 +254,90 @@ async def test_vector_default_excludes_document_kind(recall_deps):
 
 
 # ---------------------------------------------------------------------------
+# Phase 144 Wave 0（D-01）：session_capture 闭集 source_kind 过滤
+# ---------------------------------------------------------------------------
+
+
+def _source_kind_conditions(calls: list[dict]) -> list[qmodels.FieldCondition]:
+    return [
+        cond
+        for call in calls
+        for cond in call["filter"].must
+        if getattr(cond, "key", None) == "source_kind"
+    ]
+
+
+async def test_vector_source_kinds_add_match_any_to_must(recall_deps):
+    await recall_similar_chunks(
+        "query",
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=["r1"],
+        top_k=5,
+        include_document_kind=True,
+        source_kinds=["session_capture"],
+    )
+
+    conditions = _source_kind_conditions(recall_deps)
+    assert conditions
+    for condition in conditions:
+        assert isinstance(condition.match, qmodels.MatchAny)
+        assert list(condition.match.any) == ["session_capture"]
+
+
+async def test_vector_source_kinds_none_does_not_add_condition(recall_deps):
+    await recall_similar_chunks(
+        "query",
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=["r1"],
+        top_k=5,
+        include_document_kind=True,
+        source_kinds=None,
+    )
+
+    assert recall_deps
+    assert _source_kind_conditions(recall_deps) == []
+
+
+async def test_vector_empty_source_kinds_returns_before_embedding(
+    hybrid_calls,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    embedding = AsyncMock(side_effect=AssertionError("空 source_kinds 不得生成 embedding"))
+    monkeypatch.setattr(
+        "services.embedding.EmbeddingService.generate_embedding",
+        embedding,
+    )
+
+    result = await recall_similar_chunks(
+        "query",
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=["r1"],
+        source_kinds=[],
+    )
+
+    assert result == []
+    assert hybrid_calls == []
+    embedding.assert_not_awaited()
+
+
+async def test_build_filter_source_kind_is_top_level_must():
+    flt = _build_knowledge_must_filter(
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=["r1"],
+        entity_kinds=[EntityKind.DOCUMENT],
+        source_kinds=["session_capture"],
+        include_superseded=False,
+    )
+
+    conditions = [
+        cond for cond in flt.must if getattr(cond, "key", None) == "source_kind"
+    ]
+    assert len(conditions) == 1
+    assert isinstance(conditions[0].match, qmodels.MatchAny)
+    assert list(conditions[0].match.any) == ["session_capture"]
+
+
+# ---------------------------------------------------------------------------
 # Phase 100（KNOW-02）：显式 entity_kinds 严格过滤（吞参 bug 修复）
 # ---------------------------------------------------------------------------
 
