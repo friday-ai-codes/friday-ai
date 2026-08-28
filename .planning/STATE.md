@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
 status: planning
-last_updated: "2026-08-28T04:24:41.053Z"
+last_updated: "2026-08-28T06:06:00.000Z"
 last_activity: 2026-08-28
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,17 +17,33 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 已归档）。v0.24.0 归档见 `milestones/v0.24.0-*`。
+See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 归档见 `milestones/v0.24.0-*`。
 
-**Core value:** 已知仓库后，业务/技术自然语言通过统一入口获得正确、可核验、可解释的 Symbol、Community、Process 与影响面证据，并在同仓同 commit 基准上证明优于 v0.22.0。
-**Current focus:** 无活动里程碑；等待下一里程碑立项
+**Core value:** 让团队开箱即用、安全地把需求变成代码；本里程碑让 IDE 里问过的坑和决策可沉淀、可按仓召回，且不阻断编码。
+**Current focus:** v0.25.0 roadmap 已建立；下一步规划 Phase 141 Capture 账本与仓库挂钩
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 141 of 145 (Capture 账本与仓库挂钩)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-08-28 — Milestone v0.25.0 started
+Status: Ready for phase planning
+Last activity: 2026-08-28 — Created v0.25.0 roadmap（27/27 requirements mapped）
+
+## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 141 | Capture 账本与仓库挂钩 | STORE-01~05, OBS-01/02 | Not started |
+| 142 | MCP 会话回写契约 | MCP-01~04 | Not started |
+| 143 | 价值评估与中高入图 | EVAL-01~05, OBS-04 | Not started |
+| 144 | 仓库召回与 Capture 回放 | RECALL-01~04, OBS-03 | Not started |
+| 145 | Cursor / Claude Code 双宿主采集 | SKILL-01~05 | Not started |
+
+**Execution order:** 141 → 142 → 143 → 144 → 145。先保证 Capture 永不丢，再开放 MCP 契约；评估/入图依赖稳定写入口，召回依赖入图，宿主采集最后对接已冻结的端到端能力。
+
+**Coverage:** 27/27 requirements mapped exactly once；0 unmapped；0 duplicate。
+
+**Locked decisions:** 新工具固定为 `report_session_knowledge`，不扩 `report_project_knowledge`；Capture 用 `source_kind=session_capture`，评估用 `call_source=session_capture_eval`；medium/high 自动进仓级 RAG，low 仅回放；`ProjectMemory` 保持 draft 门控；任何解析或后台失败都不得删除/跳过 Capture；不新增 Python/npm 运行时依赖。
 
 ## Milestone Overview (v0.24.0 — Phases 133–140 — ✅ ARCHIVED)
 

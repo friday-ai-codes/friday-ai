@@ -80,39 +80,40 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| STORE-01 | — | Pending |
-| STORE-02 | — | Pending |
-| STORE-03 | — | Pending |
-| STORE-04 | — | Pending |
-| STORE-05 | — | Pending |
-| MCP-01 | — | Pending |
-| MCP-02 | — | Pending |
-| MCP-03 | — | Pending |
-| MCP-04 | — | Pending |
-| EVAL-01 | — | Pending |
-| EVAL-02 | — | Pending |
-| EVAL-03 | — | Pending |
-| EVAL-04 | — | Pending |
-| EVAL-05 | — | Pending |
-| RECALL-01 | — | Pending |
-| RECALL-02 | — | Pending |
-| RECALL-03 | — | Pending |
-| RECALL-04 | — | Pending |
-| SKILL-01 | — | Pending |
-| SKILL-02 | — | Pending |
-| SKILL-03 | — | Pending |
-| SKILL-04 | — | Pending |
-| SKILL-05 | — | Pending |
-| OBS-01 | — | Pending |
-| OBS-02 | — | Pending |
-| OBS-03 | — | Pending |
-| OBS-04 | — | Pending |
+| STORE-01 | Phase 141 | Pending |
+| STORE-02 | Phase 141 | Pending |
+| STORE-03 | Phase 141 | Pending |
+| STORE-04 | Phase 141 | Pending |
+| STORE-05 | Phase 141 | Pending |
+| MCP-01 | Phase 142 | Pending |
+| MCP-02 | Phase 142 | Pending |
+| MCP-03 | Phase 142 | Pending |
+| MCP-04 | Phase 142 | Pending |
+| EVAL-01 | Phase 143 | Pending |
+| EVAL-02 | Phase 143 | Pending |
+| EVAL-03 | Phase 143 | Pending |
+| EVAL-04 | Phase 143 | Pending |
+| EVAL-05 | Phase 143 | Pending |
+| RECALL-01 | Phase 144 | Pending |
+| RECALL-02 | Phase 144 | Pending |
+| RECALL-03 | Phase 144 | Pending |
+| RECALL-04 | Phase 144 | Pending |
+| SKILL-01 | Phase 145 | Pending |
+| SKILL-02 | Phase 145 | Pending |
+| SKILL-03 | Phase 145 | Pending |
+| SKILL-04 | Phase 145 | Pending |
+| SKILL-05 | Phase 145 | Pending |
+| OBS-01 | Phase 141 | Pending |
+| OBS-02 | Phase 141 | Pending |
+| OBS-03 | Phase 144 | Pending |
+| OBS-04 | Phase 143 | Pending |
 
 **Coverage:**
 - v1 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27 ⚠️（roadmap 生成时填满）
+- Mapped to phases: 27
+- Unmapped: 0
+- Duplicate mappings: 0
 
 ---
 *Requirements defined: 2026-08-28*
-*Last updated: 2026-08-28 after confirming v0.25.0 research scope*
+*Last updated: 2026-08-28 after creating v0.25.0 roadmap*
