@@ -37,6 +37,8 @@ from interactions.ledger import (
     arecord_tool_call,
 )
 from interactions.models import InteractionEvent, InteractionRun, RetrievalTrace, ToolCallRecord
+from knowledge import session_capture_retrieval
+from knowledge.access_scope import resolve_allowed_repository_ids
 from knowledge.exposure import (
     parse_as_of,
     serialize_related,
@@ -131,6 +133,7 @@ from .serializers import (
     SearchLearningCasesRequestSerializer,
     SearchProjectContextRequestSerializer,
     SearchRagChunksRequestSerializer,
+    SearchSessionKnowledgeRequestSerializer,
     StartRepoResearchRequestSerializer,
     SummarizeBranchRequestSerializer,
     TraceCallPathRequestSerializer,
@@ -3380,6 +3383,79 @@ class SearchDeliveryKnowledgeView(McpToolView):
             input_data=input_data,
             output_data=output_data,
             traces=traces,
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class SearchSessionKnowledgeView(McpToolView):
+    tool_name = "search_session_knowledge"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(SearchSessionKnowledgeRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        repository_id = str(input_data["repository_id"])
+        project_id = str(input_data["project_id"]) if input_data.get("project_id") else ""
+        allowed_repositories = await resolve_allowed_repository_ids(
+            request.user,
+            repository_ids=[repository_id],
+            project_ids=[project_id] if project_id else None,
+        )
+        results = []
+        if allowed_repositories:
+            try:
+                results = await session_capture_retrieval.search_session_knowledge(
+                    query=str(input_data["query"]),
+                    user=request.user,
+                    repository_id=repository_id,
+                    project_id=project_id or None,
+                    top_k=int(input_data.get("top_k") or 5),
+                )
+            except Exception as exc:  # noqa: BLE001 — 检索基础设施异常降级空结果
+                logger.warning(
+                    "mcp_vector_search_degraded",
+                    tool_name=self.tool_name,
+                    error=redact_secrets_in_text(str(exc))[:500],
+                    component="mcp_tools",
+                    category="caller",
+                )
+
+        serialized = serialize_search_results(results)
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        scores = [float(item.get("score") or 0) for item in serialized]
+        output_data = {
+            "query": str(input_data["query"]),
+            "results": serialized,
+            "total": len(serialized),
+            "run_id": str(run.run_id),
+        }
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=[
+                (
+                    RetrievalTrace.Kind.CHUNK,
+                    {
+                        "source": "mcp_search_session_knowledge",
+                        "repository_id": repository_id,
+                        "project_id": project_id,
+                        "source_kind": "session_capture",
+                        "result_count": len(serialized),
+                        "scores": scores,
+                        "top_score": max(scores) if scores else 0,
+                        "duration_ms": duration_ms,
+                    },
+                )
+            ],
             started_at=started_at,
         )
         return Response(output_data, status=status.HTTP_200_OK)

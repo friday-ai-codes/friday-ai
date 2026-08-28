@@ -52,6 +52,7 @@ from .views import (
     SearchLearningCasesView,
     SearchProjectContextView,
     SearchRagChunksView,
+    SearchSessionKnowledgeView,
     StartRepoResearchView,
     SummarizeBranchView,
     TraceCallPathView,
@@ -162,6 +163,11 @@ urlpatterns = [
         "tools/search_delivery_knowledge/",
         SearchDeliveryKnowledgeView.as_view(),
         name="mcp-tool-search-delivery-knowledge",
+    ),
+    path(
+        "tools/search_session_knowledge/",
+        SearchSessionKnowledgeView.as_view(),
+        name="mcp-tool-search-session-knowledge",
     ),
     path(
         "tools/get_entity_timeline/",
