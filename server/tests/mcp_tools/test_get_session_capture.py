@@ -143,7 +143,42 @@ async def test_other_user_and_missing_capture_have_identical_404(
 
     assert denied == missing
     assert denied[0] == 404
-    assert denied[1]["error_code"] == "capture_not_found"
+    assert denied[1]["error_code"] == "not_found"
+
+
+async def test_creator_replays_capture_with_visible_repository_and_project(
+    mcp_client,
+    access_user,
+    repository_in_user_space,
+) -> None:
+    client, _ = mcp_client
+    project = await _linked_project(access_user, repository_in_user_space)
+    capture = await _persist(
+        access_user,
+        repository=repository_in_user_space,
+        project=project,
+    )
+
+    status_code, body = await _post(client, str(capture.id))
+
+    assert status_code == 200
+    assert body["repository_id"] == str(repository_in_user_space.id)
+    assert body["project_id"] == str(project.id)
+
+
+async def test_superuser_replays_other_users_capture(
+    access_user,
+    other_user,
+) -> None:
+    capture = await _persist(access_user)
+    other_user.is_superuser = True
+    await other_user.asave(update_fields=["is_superuser"])
+    client = await _other_client(other_user)
+
+    status_code, body = await _post(client, str(capture.id))
+
+    assert status_code == 200
+    assert body["capture_id"] == str(capture.id)
 
 
 async def test_creator_without_repository_scope_gets_same_neutral_404(
@@ -152,16 +187,12 @@ async def test_creator_without_repository_scope_gets_same_neutral_404(
     repository,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import mcp_tools.views as views
-
     client, _ = mcp_client
     project = await _linked_project(access_user, repository)
     capture = await _persist(access_user, repository=repository, project=project)
     monkeypatch.setattr(
-        views,
-        "resolve_allowed_repository_ids",
+        "initiatives.services.capture_access.resolve_allowed_repository_ids",
         AsyncMock(return_value=[]),
-        raising=False,
     )
 
     denied = await _post(client, str(capture.id))
@@ -177,16 +208,12 @@ async def test_creator_without_project_scope_gets_same_neutral_404(
     repository,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import mcp_tools.views as views
-
     client, _ = mcp_client
     project = await _linked_project(access_user, repository)
     capture = await _persist(access_user, repository=repository, project=project)
     monkeypatch.setattr(
-        views,
-        "resolve_allowed_project_ids",
+        "initiatives.services.capture_access.resolve_allowed_project_ids",
         AsyncMock(return_value=[]),
-        raising=False,
     )
 
     denied = await _post(client, str(capture.id))

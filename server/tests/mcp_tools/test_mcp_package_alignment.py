@@ -108,3 +108,16 @@ def test_search_session_knowledge_request_keys_aligned() -> None:
     snapshot_keys = set(TOOL_SCHEMA_SNAPSHOT["search_session_knowledge"]["request"])
     package_keys = _package_request_keys("search_session_knowledge")
     assert serializer_keys == snapshot_keys == package_keys
+
+
+def test_get_session_capture_request_keys_aligned() -> None:
+    """Capture 回放 serializer、服务端 snapshot、npm properties 三面对齐。"""
+
+    from mcp_tools import serializers as serializer_module
+
+    serializer_cls = getattr(serializer_module, "GetSessionCaptureRequestSerializer", None)
+    assert serializer_cls is not None, "GetSessionCaptureRequestSerializer 尚未实现"
+    serializer_keys = set(serializer_cls().fields)
+    snapshot_keys = set(TOOL_SCHEMA_SNAPSHOT["get_session_capture"]["request"])
+    package_keys = _package_request_keys("get_session_capture")
+    assert serializer_keys == snapshot_keys == package_keys
