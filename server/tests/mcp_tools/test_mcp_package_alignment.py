@@ -27,10 +27,24 @@ TOOLS_TS = REPO_ROOT / "mcp" / "src" / "tools.ts"
 # FRIDAY_TOOLS 条目形如 `name: 'route_repositories',`；annotations 与 schema 字段
 # 不带 `name: '` 前缀，不会误报。
 _TOOL_NAME_RE = re.compile(r"^\s*name: '([a-z0-9_]+)',$", re.MULTILINE)
+_PROPERTY_NAME_RE = re.compile(r"^\s{8}([a-z][a-z0-9_]*):", re.MULTILINE)
 
 
 def _package_tool_names() -> set[str]:
     return set(_TOOL_NAME_RE.findall(TOOLS_TS.read_text(encoding="utf-8")))
+
+
+def _package_request_keys(tool_name: str) -> set[str]:
+    """只解析指定工具的 ``inputSchema.properties``，不扩大旧工具字段门禁。"""
+
+    source = TOOLS_TS.read_text(encoding="utf-8")
+    name_marker = f"name: '{tool_name}',"
+    start = source.find(name_marker)
+    assert start >= 0, f"{tool_name} 尚未加入 {TOOLS_TS}"
+    properties_start = source.find("properties: {", start)
+    required_start = source.find("required:", properties_start)
+    assert properties_start >= 0 and required_start >= 0, f"{tool_name} inputSchema 结构无法解析"
+    return set(_PROPERTY_NAME_RE.findall(source[properties_start:required_start]))
 
 
 def test_tools_ts_discovered() -> None:
@@ -56,3 +70,28 @@ def test_mcp_package_tools_match_server_snapshot() -> None:
         f"  服务端有、包缺失（agent 经 MCP 调不到）：{missing_in_package}\n"
         f"  包有、服务端缺失（调用必 404）：{extra_in_package}"
     )
+
+
+def test_report_session_knowledge_serializer_matches_snapshot() -> None:
+    """新 serializer 与独立 snapshot 请求键精确一致。"""
+
+    from mcp_tools import serializers as serializer_module
+
+    serializer_cls = getattr(serializer_module, "ReportSessionKnowledgeRequestSerializer", None)
+    assert serializer_cls is not None, "ReportSessionKnowledgeRequestSerializer 尚未实现"
+    serializer_keys = set(serializer_cls().fields)
+    snapshot_keys = set(TOOL_SCHEMA_SNAPSHOT["report_session_knowledge"]["request"])
+    assert serializer_keys == snapshot_keys
+
+
+def test_report_session_knowledge_request_keys_aligned() -> None:
+    """仅锁新工具 serializer、服务端 snapshot、npm properties 三面对齐。"""
+
+    from mcp_tools import serializers as serializer_module
+
+    serializer_cls = getattr(serializer_module, "ReportSessionKnowledgeRequestSerializer", None)
+    assert serializer_cls is not None, "ReportSessionKnowledgeRequestSerializer 尚未实现"
+    serializer_keys = set(serializer_cls().fields)
+    snapshot_keys = set(TOOL_SCHEMA_SNAPSHOT["report_session_knowledge"]["request"])
+    package_keys = _package_request_keys("report_session_knowledge")
+    assert serializer_keys == snapshot_keys == package_keys
