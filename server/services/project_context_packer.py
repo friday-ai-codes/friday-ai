@@ -412,7 +412,7 @@ async def _layer_requirements(project_id: Any) -> _Layer:
 
 
 async def _layer_artifacts(project_id: Any) -> _Layer:
-    from initiatives.models import Artifact, TEXT_CARRIERS
+    from initiatives.models import TEXT_CARRIERS, Artifact
 
     start = perf_counter()
 
@@ -465,6 +465,7 @@ async def _layer_rag(query: str, user: Any, project_id: Any) -> _Layer:
             query,
             user=user,
             top_k=8,
+            project_ids=[str(project_id)],
             # CTX-01：AI 对话链项目上下文同样纳入 DOCUMENT 召回（项目 5 文件/记忆/工件物化），
             # 权限仍由 search_similar 内 allowed_project_ids/visibility 收口，无泄漏。
             include_document_kind=True,
