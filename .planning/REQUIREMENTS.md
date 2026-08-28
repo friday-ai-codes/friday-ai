@@ -31,10 +31,10 @@
 
 ### 召回与回放（RECALL）
 
-- [ ] **RECALL-01**: 用户可按 `repository_id` 检索已入图的会话知识；有项目时也可按 `project_id` 检索
-- [ ] **RECALL-02**: `pack_project_context` / 交付知识检索白名单显式包含 `session_capture`，避免入图后 IDE 召不回
-- [ ] **RECALL-03**: 授权用户可按 Capture id 回放原始结构化问答（只读），不扫描 Ledger payload 当正文
-- [ ] **RECALL-04**: 默认分支名 `main`/`master`/`develop` 不得单独把 Capture 写到错误项目；`lookup_project_by_branch` 第三源在默认分支上不得 `matched=true`
+- [x] **RECALL-01**: 用户可按 `repository_id` 检索已入图的会话知识；有项目时也可按 `project_id` 检索
+- [x] **RECALL-02**: `pack_project_context` / 交付知识检索白名单显式包含 `session_capture`，避免入图后 IDE 召不回
+- [x] **RECALL-03**: 授权用户可按 Capture id 回放原始结构化问答（只读），不扫描 Ledger payload 当正文
+- [x] **RECALL-04**: 默认分支名 `main`/`master`/`develop` 不得单独把 Capture 写到错误项目；`lookup_project_by_branch` 第三源在默认分支上不得 `matched=true`
 
 ### Skills 与宿主采集（SKILL）
 
@@ -48,7 +48,7 @@
 
 - [x] **OBS-01**: Capture 持久化生命周期记 `category=caller` 的 started/completed/failed，含 `duration_ms` 与触发用户；评估/入图步骤用 `sampling`
 - [x] **OBS-02**: 入库前强制脱敏；凭证、token、密钥不得出现在 Capture、Ledger、日志
-- [ ] **OBS-03**: MCP 与对话召回链 best-effort 写 `RetrievalTrace`；观测失败不得改变回写或检索业务结果
+- [x] **OBS-03**: MCP 与对话召回链 best-effort 写 `RetrievalTrace`；观测失败不得改变回写或检索业务结果
 - [x] **OBS-04**: 后台评估/入图任务携带并 re-bind `initiated_by_user_id`；无触发用户记 `system`
 
 ## Future Requirements
@@ -94,10 +94,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EVAL-03 | Phase 143 | Complete |
 | EVAL-04 | Phase 143 | Complete |
 | EVAL-05 | Phase 143 | Complete |
-| RECALL-01 | Phase 144 | Pending |
-| RECALL-02 | Phase 144 | Pending |
-| RECALL-03 | Phase 144 | Pending |
-| RECALL-04 | Phase 144 | Pending |
+| RECALL-01 | Phase 144 | Complete |
+| RECALL-02 | Phase 144 | Complete |
+| RECALL-03 | Phase 144 | Complete |
+| RECALL-04 | Phase 144 | Complete |
 | SKILL-01 | Phase 145 | Pending |
 | SKILL-02 | Phase 145 | Pending |
 | SKILL-03 | Phase 145 | Pending |
@@ -105,7 +105,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SKILL-05 | Phase 145 | Pending |
 | OBS-01 | Phase 141 | Complete |
 | OBS-02 | Phase 141 | Complete |
-| OBS-03 | Phase 144 | Pending |
+| OBS-03 | Phase 144 | Complete |
 | OBS-04 | Phase 143 | Complete |
 
 **Coverage:**
