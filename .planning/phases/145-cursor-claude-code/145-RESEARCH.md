@@ -443,16 +443,15 @@ payload = {
 
 **已验证、无需用户确认：** 事件名、Cursor v1 schema、Claude `last_assistant_message`、serializer 键、无新依赖、不传 `project_id`。
 
-## Open Questions
+## Resolved Open Questions
 
-1. **是否保留 Cursor `stop` 项目记忆脚本？**
+1. **RESOLVED — 保留 Cursor `stop` 项目记忆脚本**
    - What we know: CONTEXT 禁止用 `stop` **替代** `afterAgentResponse`，未要求删除项目记忆 stop。MCP-04 要零回归。
-   - What's unclear: 产品是否还要自动 `report_project_knowledge`。
-   - Recommendation: **保留** `friday-stop-writeback.sh` + 现 git 门闩；Capture 完全走 afterAgentResponse。测试：Cursor 资产可含 `stop`，但 stop 脚本不得含 `last_assistant_message` / `report_session_knowledge`。
+   - Resolution: **保留** `friday-stop-writeback.sh` + 现 git 门闩；Capture 完全走 afterAgentResponse。Cursor 资产可含 `stop`，但 stop 脚本不得含 `question` / `answer` / `last_assistant_message` / `report_session_knowledge`。
 
-2. **Claude `background_tasks` 非空时是否延迟 Capture？**
+2. **RESOLVED — Claude `background_tasks` 非空时不延迟 Capture**
    - What we know: 官方用该数组区分「会话结束」vs「等后台唤醒」。
-   - Recommendation: **仍在本次 Stop 上报可见答案**（用户已看到最终回复）；不要等后台。避免丢轮。标 [ASSUMED] 若产品要等，需 discuss。
+   - Resolution: **仍在本次 Stop 上报可见答案**（用户已看到最终回复）；不要等后台，避免丢轮。
 
 ## Environment Availability
 
