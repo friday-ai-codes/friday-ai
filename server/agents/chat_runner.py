@@ -130,6 +130,7 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     # 这些工具以 conversation_id 解析会话 owner 做权限 fail-closed（非成员零召回），
     # 与项目上下文打包器（context packer）互补——packer 自动注入，工具供 LLM 主动追溯。
     "search_delivery_knowledge",
+    "search_session_knowledge",
     "get_entity_timeline",
     "get_related_entities",
     # KNOW-05（v0.17.0 Phase 102）：历史任务经验检索（LearningCase 向量版），
