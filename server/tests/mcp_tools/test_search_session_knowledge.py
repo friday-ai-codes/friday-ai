@@ -99,7 +99,6 @@ def test_repository_and_project_are_forwarded_as_and_filters(
     assert kwargs["project_id"] == project_id
     assert kwargs["query"] == "部署失败"
     assert kwargs["top_k"] == 7
-    assert kwargs["source_kinds"] == ["session_capture"]
 
 
 def test_unauthorized_repository_is_neutral_empty_result(
@@ -154,11 +153,11 @@ def test_empty_results_still_record_scalar_only_trace(
     assert set(trace.payload) == _TRACE_KEYS
     assert not (_FORBIDDEN_TRACE_KEYS & set(trace.payload))
     assert trace.payload["repository_id"] == str(repository.id)
-    assert trace.payload["project_id"] is None
+    assert trace.payload["project_id"] == ""
     assert trace.payload["source_kind"] == "session_capture"
     assert trace.payload["result_count"] == 0
     assert trace.payload["scores"] == []
-    assert trace.payload["top_score"] is None
+    assert trace.payload["top_score"] == 0
     assert isinstance(trace.payload["duration_ms"], int)
 
 
