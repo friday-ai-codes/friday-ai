@@ -26,7 +26,9 @@ from common.authentication import CookieJWTAuthentication
 from common.log_context import LogSource, bind_source
 from common.logging import redact_secrets_in_text
 from common.request_metrics import arecord_request_metric
+from initiatives.models import SessionCaptureStatus
 from initiatives.services.capture_service import CaptureService
+from initiatives.services.session_capture_enqueue import enqueue_session_capture_eval
 from interactions.entry import AccessTokenAuthentication, begin_interaction_run
 from interactions.ledger import (
     arecord_event,
@@ -3772,6 +3774,18 @@ class ReportSessionKnowledgeView(McpToolView):
             output_tokens=input_data.get("output_tokens"),
         )
         capture = result.capture
+        if capture.status in {
+            SessionCaptureStatus.PENDING_EVAL,
+            SessionCaptureStatus.EVAL_FAILED,
+        }:
+            try:
+                await enqueue_session_capture_eval(
+                    str(capture.id),
+                    initiated_by_user_id=capture.initiated_by_user_id,
+                )
+            except Exception:
+                # Capture 已提交，pending/failed 恢复扫描会补投；投递故障不能撤销 accepted。
+                pass
         output_data = {
             "accepted": True,
             "capture_id": str(capture.id),
