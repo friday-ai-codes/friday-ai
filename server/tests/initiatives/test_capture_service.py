@@ -125,9 +125,12 @@ async def test_idempotent_returns_existing():
     first = await _persist(actor, answer="first answer")
     second = await _persist(actor, answer="replacement answer")
 
+    assert first.created is True
+    assert first.idempotent_hit is False
     assert second.capture.id == first.capture.id
     assert second.created is False
     assert second.idempotent_hit is True
+    assert second.link_reason == first.link_reason
     assert await SessionCapture.objects.acount() == 1
     capture = await SessionCapture.objects.aget(pk=first.capture.id)
     assert capture.answer == "first answer"
