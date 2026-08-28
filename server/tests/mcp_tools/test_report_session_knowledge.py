@@ -284,3 +284,132 @@ async def test_client_metadata_is_accepted_and_audited(mcp_client) -> None:
     assert "client" not in {field.name for field in SessionCapture._meta.get_fields()}
     tool_call = await _tool_call()
     assert tool_call.input["client"] == client_name
+
+
+async def test_accepted_enqueues_durable_eval(
+    mcp_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Capture 持久化返回后才允许投递 eval，payload 不复制正文。"""
+    import mcp_tools.views as views
+
+    order: list[str] = []
+    original_persist = views.CaptureService.persist
+
+    async def traced_persist(self, **kwargs):
+        result = await original_persist(self, **kwargs)
+        assert await SessionCapture.objects.filter(pk=result.capture.id).aexists()
+        order.append("persisted")
+        return result
+
+    async def traced_enqueue(capture_id: str, *, initiated_by_user_id: str | None = None):
+        assert order == ["persisted"]
+        assert await SessionCapture.objects.filter(pk=capture_id).aexists()
+        order.append("enqueued")
+        return "job-eval"
+
+    monkeypatch.setattr(views.CaptureService, "persist", traced_persist)
+    monkeypatch.setattr(
+        views,
+        "enqueue_session_capture_eval",
+        traced_enqueue,
+        raising=False,
+    )
+    client, _ = mcp_client
+
+    status_code, body = await _post(
+        client,
+        {"question": "持久化和投递顺序？", "answer": "必须先持久化，再投递。"},
+    )
+
+    assert status_code == 200
+    assert set(body) == _RESPONSE_KEYS
+    assert body["accepted"] is True
+    assert order == ["persisted", "enqueued"]
+
+
+async def test_enqueue_failure_still_accepted(
+    mcp_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """队列故障不得追溯性撤销已接受的 Capture。"""
+    import mcp_tools.views as views
+
+    enqueue = AsyncMock(side_effect=RuntimeError("queue unavailable"))
+    monkeypatch.setattr(
+        views,
+        "enqueue_session_capture_eval",
+        enqueue,
+        raising=False,
+    )
+    client, _ = mcp_client
+
+    status_code, body = await _post(
+        client,
+        {"question": "队列故障是否拒绝？", "answer": "不，已持久化仍 accepted。"},
+    )
+
+    assert status_code == 200
+    assert set(body) == _RESPONSE_KEYS
+    assert body["accepted"] is True
+    assert await SessionCapture.objects.filter(pk=body["capture_id"]).aexists()
+    enqueue.assert_awaited_once()
+
+
+async def test_terminal_capture_does_not_reenqueue(
+    mcp_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """幂等命中终态不重派；响应仍保持原七键契约。"""
+    import mcp_tools.views as views
+
+    enqueue = AsyncMock(return_value="job-eval")
+    monkeypatch.setattr(
+        views,
+        "enqueue_session_capture_eval",
+        enqueue,
+        raising=False,
+    )
+    client, _ = mcp_client
+    payload = {
+        "question": "终态重放是否重派？",
+        "answer": "不重派。",
+        "session_id": "terminal-replay",
+    }
+
+    first_status, first = await _post(client, payload)
+    await SessionCapture.objects.filter(pk=first["capture_id"]).aupdate(status="evaluated_low")
+    second_status, second = await _post(client, payload)
+
+    assert first_status == second_status == 200
+    assert set(first) == set(second) == _RESPONSE_KEYS
+    assert second["accepted"] is True
+    assert second["idempotent_hit"] is True
+    enqueue.assert_awaited_once()
+
+
+async def test_pending_or_failed_capture_can_reenqueue(
+    mcp_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """pending/failed 重放可进入稳定 key 去重的恢复入口。"""
+    import mcp_tools.views as views
+
+    enqueue = AsyncMock(return_value="job-eval")
+    monkeypatch.setattr(
+        views,
+        "enqueue_session_capture_eval",
+        enqueue,
+        raising=False,
+    )
+    client, _ = mcp_client
+    payload = {
+        "question": "失败态如何恢复？",
+        "answer": "按相同 capture id 使用稳定 key 重派。",
+        "session_id": "failed-replay",
+    }
+
+    _, first = await _post(client, payload)
+    await SessionCapture.objects.filter(pk=first["capture_id"]).aupdate(status="eval_failed")
+    _, second = await _post(client, payload)
+
+    assert second["capture_id"] == first["capture_id"]
+    assert second["accepted"] is True
+    assert enqueue.await_count == 2
+    assert {call.args[0] for call in enqueue.await_args_list} == {first["capture_id"]}

@@ -20,6 +20,23 @@ _PRUNE_DIRS = {
 }
 
 _ALLOWED_WRITER = "initiatives/services/capture_service.py"
+_PHASE_143_PIPELINE = (
+    "initiatives/services/session_capture_eval.py",
+    "initiatives/services/session_capture_enqueue.py",
+    "durable/tasks_impl.py",
+    "knowledge/sources/session_capture.py",
+)
+_FORBIDDEN_PIPELINE_SYMBOLS = (
+    "MemoryService",
+    "record_hook_writeback",
+    "aschedule_ingestion",
+    "background_runner",
+)
+_FORBIDDEN_DIRECT_SINKS = (
+    "KnowledgeEntity.objects.create",
+    "KnowledgeEntity.objects.update",
+    "QdrantService",
+)
 
 _RE_ORM_WRITE = re.compile(
     r"\bSessionCapture\.objects\."
@@ -87,7 +104,7 @@ def test_inv6_writer_module_actually_writes() -> None:
 
 
 def test_writer_does_not_call_deferred_sinks() -> None:
-    """Phase 141 writer 不得提前接入评估、入图、Memory 或项目分支解析。"""
+    """唯一 writer 只负责状态落库，durable enqueue 必须位于独立边界。"""
     writer = SERVER_DIR / _ALLOWED_WRITER
     assert writer.exists(), f"{_ALLOWED_WRITER} 不存在"
     text = writer.read_text(encoding="utf-8")
@@ -102,3 +119,38 @@ def test_writer_does_not_call_deferred_sinks() -> None:
     )
     found = [symbol for symbol in forbidden if symbol in text]
     assert found == [], f"CaptureService 不得调用延迟/旁路入口：{found}"
+
+
+def test_eval_enqueue_worker_and_normalizer_do_not_bypass_inv6() -> None:
+    """Phase 143 流水线不得直写 Capture、Memory 或平行摄取入口。"""
+    missing = [relative for relative in _PHASE_143_PIPELINE if not (SERVER_DIR / relative).exists()]
+    assert missing == [], f"Phase 143 流水线文件尚未建立：{missing}"
+
+    violations: list[str] = []
+    for relative in _PHASE_143_PIPELINE:
+        text = (SERVER_DIR / relative).read_text(encoding="utf-8")
+        for symbol in _FORBIDDEN_PIPELINE_SYMBOLS + _FORBIDDEN_DIRECT_SINKS:
+            if symbol in text:
+                violations.append(f"{relative}: forbidden {symbol}")
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if (
+                _RE_ORM_WRITE.search(line)
+                or _RE_CHAINED_UPDATE.search(line)
+                or _RE_INSTANCE_SAVE.search(line)
+                or _RE_INSTANTIATE.search(line)
+            ):
+                violations.append(f"{relative}:{lineno}: {line.strip()}")
+
+    assert violations == [], "INV-6 / ingestion 边界违反：\n" + "\n".join(violations)
+
+
+def test_enqueue_boundary_owns_durable_defer_not_capture_writer() -> None:
+    """persist writer 不投递；独立 enqueue helper 是 durable 边界。"""
+    enqueue_path = SERVER_DIR / "initiatives/services/session_capture_enqueue.py"
+    assert enqueue_path.exists()
+    enqueue_text = enqueue_path.read_text(encoding="utf-8")
+    writer_text = (SERVER_DIR / _ALLOWED_WRITER).read_text(encoding="utf-8")
+
+    assert "DurableTaskService.defer" in enqueue_text
+    assert "DurableTaskService.defer" not in writer_text
+    assert "enqueue_session_capture_eval" not in writer_text
