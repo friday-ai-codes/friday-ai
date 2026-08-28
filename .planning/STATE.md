@@ -2,15 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
-status: planning
-last_updated: "2026-08-28T06:06:00.000Z"
-last_activity: 2026-08-28
+status: executing
+stopped_at: Completed 141-01-PLAN.md
+last_updated: "2026-08-28T07:29:15.144Z"
+last_activity: 2026-08-28 — Created v0.25.0 roadmap（27/27 requirements mapped）
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 4
+  completed_plans: 1
+  percent: 25
 ---
 
 # Project State
@@ -20,20 +21,20 @@ progress:
 See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 归档见 `milestones/v0.24.0-*`。
 
 **Core value:** 让团队开箱即用、安全地把需求变成代码；本里程碑让 IDE 里问过的坑和决策可沉淀、可按仓召回，且不阻断编码。
-**Current focus:** v0.25.0 roadmap 已建立；下一步规划 Phase 141 Capture 账本与仓库挂钩
+**Current focus:** Phase 141 Capture 账本 Wave 0 已完成；下一步执行 141-02 模型与核心 persist
 
 ## Current Position
 
 Phase: 141 of 145 (Capture 账本与仓库挂钩)
-Plan: —
-Status: Ready for phase planning
-Last activity: 2026-08-28 — Created v0.25.0 roadmap（27/27 requirements mapped）
+Plan: 1 of 4
+Status: In progress
+Last activity: 2026-08-28 — Completed 141-01 Wave 0 RED contracts
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 141 | Capture 账本与仓库挂钩 | STORE-01~05, OBS-01/02 | Not started |
+| 141 | Capture 账本与仓库挂钩 | STORE-01~05, OBS-01/02 | In progress (1/4) |
 | 142 | MCP 会话回写契约 | MCP-01~04 | Not started |
 | 143 | 价值评估与中高入图 | EVAL-01~05, OBS-04 | Not started |
 | 144 | 仓库召回与 Capture 回放 | RECALL-01~04, OBS-03 | Not started |
@@ -429,6 +430,7 @@ Last activity: 2026-08-28 — Created v0.25.0 roadmap（27/27 requirements mappe
 | Phase 140 P01 | 35min | 2 tasks | 8 files |
 | Phase 140 P02 | 36min | 2 tasks | 5 files |
 | Phase 140 P03 | 15min | 2 tasks | 10 files |
+| Phase 141 P01 | 3 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -790,6 +792,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 140]: 四态 comparator 严格按 INVALID > FAIL > INSUFFICIENT_DATA > PASS 判定，并要求 primary quality metric 严格改善。
 - [Phase 140]: GraphQueryService 是 graph query 唯一 caller 生命周期边界，内部步骤仅发 debug/sampling 汇总。
 - [Phase 140]: Retrieval 日志禁止 query 正文，异常统一使用 redact_secrets_in_text 脱敏。
+- [Phase 141]: Wave 0 仅建立失败测试，不提前实现 SessionCapture 或 CaptureService。
+- [Phase 141]: 缺失 session_id 固定使用 unspecified，并以命名用例锁定挂钩边界。
+- [Phase 141]: SessionCapture 仅允许 CaptureService 写入，Phase 141 writer 禁止 deferred sinks。
 
 ### Pending Todos
 
@@ -1245,8 +1250,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-24T18:02:32.974Z
-Stopped at: Completed 140-03-PLAN.md
+Last session: 2026-08-28T07:29:15.130Z
+Stopped at: Completed 141-01-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）

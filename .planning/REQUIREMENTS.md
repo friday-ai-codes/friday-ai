@@ -8,11 +8,11 @@
 
 ### Capture 账本（STORE）
 
-- [ ] **STORE-01**: 用户经 MCP 提交的结构化问答会落入独立 Capture 账本（问题、可见答案精华、回答模型、仓库、分支、会话、可选项目），不写入 `ProjectMemory` 或 Interaction Ledger 正文
-- [ ] **STORE-02**: Capture 的 `project_id` 与 `repository_id` 均可空；缺少项目不得拒绝落库
-- [ ] **STORE-03**: 所有 Capture 写入只经 INV-6 `CaptureService`（脱敏、`initiated_by_user_id`、禁止旁路 `objects.create`）
-- [ ] **STORE-04**: git remote / `git_url` 归一化后尽量挂钩已有 `Repository`；解析失败仍落库并记录显式 `reason`（如 `repo_unresolved`）
-- [ ] **STORE-05**: 拿不到的模型名、provider、token 计数字段记为 `unknown`，服务端不得猜测补全
+- [x] **STORE-01**: 用户经 MCP 提交的结构化问答会落入独立 Capture 账本（问题、可见答案精华、回答模型、仓库、分支、会话、可选项目），不写入 `ProjectMemory` 或 Interaction Ledger 正文
+- [x] **STORE-02**: Capture 的 `project_id` 与 `repository_id` 均可空；缺少项目不得拒绝落库
+- [x] **STORE-03**: 所有 Capture 写入只经 INV-6 `CaptureService`（脱敏、`initiated_by_user_id`、禁止旁路 `objects.create`）
+- [x] **STORE-04**: git remote / `git_url` 归一化后尽量挂钩已有 `Repository`；解析失败仍落库并记录显式 `reason`（如 `repo_unresolved`）
+- [x] **STORE-05**: 拿不到的模型名、provider、token 计数字段记为 `unknown`，服务端不得猜测补全
 
 ### MCP 工具契约（MCP）
 
@@ -46,8 +46,8 @@
 
 ### 可观测与安全（OBS）
 
-- [ ] **OBS-01**: Capture 持久化生命周期记 `category=caller` 的 started/completed/failed，含 `duration_ms` 与触发用户；评估/入图步骤用 `sampling`
-- [ ] **OBS-02**: 入库前强制脱敏；凭证、token、密钥不得出现在 Capture、Ledger、日志
+- [x] **OBS-01**: Capture 持久化生命周期记 `category=caller` 的 started/completed/failed，含 `duration_ms` 与触发用户；评估/入图步骤用 `sampling`
+- [x] **OBS-02**: 入库前强制脱敏；凭证、token、密钥不得出现在 Capture、Ledger、日志
 - [ ] **OBS-03**: MCP 与对话召回链 best-effort 写 `RetrievalTrace`；观测失败不得改变回写或检索业务结果
 - [ ] **OBS-04**: 后台评估/入图任务携带并 re-bind `initiated_by_user_id`；无触发用户记 `system`
 
@@ -80,11 +80,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| STORE-01 | Phase 141 | Pending |
-| STORE-02 | Phase 141 | Pending |
-| STORE-03 | Phase 141 | Pending |
-| STORE-04 | Phase 141 | Pending |
-| STORE-05 | Phase 141 | Pending |
+| STORE-01 | Phase 141 | Complete |
+| STORE-02 | Phase 141 | Complete |
+| STORE-03 | Phase 141 | Complete |
+| STORE-04 | Phase 141 | Complete |
+| STORE-05 | Phase 141 | Complete |
 | MCP-01 | Phase 142 | Pending |
 | MCP-02 | Phase 142 | Pending |
 | MCP-03 | Phase 142 | Pending |
@@ -103,12 +103,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SKILL-03 | Phase 145 | Pending |
 | SKILL-04 | Phase 145 | Pending |
 | SKILL-05 | Phase 145 | Pending |
-| OBS-01 | Phase 141 | Pending |
-| OBS-02 | Phase 141 | Pending |
+| OBS-01 | Phase 141 | Complete |
+| OBS-02 | Phase 141 | Complete |
 | OBS-03 | Phase 144 | Pending |
 | OBS-04 | Phase 143 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 27 total
 - Mapped to phases: 27
 - Unmapped: 0
