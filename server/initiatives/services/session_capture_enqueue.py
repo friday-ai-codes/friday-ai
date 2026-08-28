@@ -7,6 +7,7 @@ idempotency key，worker 内退避则创建不带该 key 的新 job。
 from __future__ import annotations
 
 import datetime
+import time
 
 import structlog
 from asgiref.sync import sync_to_async
@@ -65,7 +66,7 @@ async def enqueue_session_capture_eval(
     """首次或显式手工投递 eval；终态和 processing 状态不重复投递。"""
 
     capture = await CaptureService.get_capture(capture_id)
-    if capture is not None and capture.status not in _EVAL_READY:
+    if capture is None or capture.status not in _EVAL_READY:
         return None
     actor = initiated_by_user_id or getattr(capture, "initiated_by_user_id", None)
     attempt = int(getattr(capture, "eval_attempts", 0) or 0)
@@ -91,7 +92,7 @@ async def enqueue_session_capture_ingest(
     """首次或显式手工投递 ingest；终态和 processing 状态不重复投递。"""
 
     capture = await CaptureService.get_capture(capture_id)
-    if capture is not None and capture.status not in _INGEST_READY:
+    if capture is None or capture.status not in _INGEST_READY:
         return None
     actor = initiated_by_user_id or getattr(capture, "initiated_by_user_id", None)
     attempt = int(getattr(capture, "ingest_attempts", 0) or 0)
@@ -143,6 +144,7 @@ async def recover_session_capture_tasks() -> int:
 
     from durable.service import DurableTaskService
 
+    started = time.perf_counter()
     recovered = 0
     for capture in await _list_recoverable_captures():
         try:
@@ -170,9 +172,19 @@ async def recover_session_capture_tasks() -> int:
             )
             if job_id:
                 recovered += 1
+                try:
+                    logger.debug(
+                        "session_capture_recovery_item_deferred",
+                        category="sampling",
+                        component="knowledge",
+                        capture_id=capture_id,
+                        status=status,
+                    )
+                except Exception:
+                    pass
         except Exception as exc:  # noqa: BLE001 - 单行故障不阻断恢复 sweep
             try:
-                logger.warning(
+                logger.debug(
                     "session_capture_recovery_item_failed",
                     category="sampling",
                     component="knowledge",
@@ -182,6 +194,18 @@ async def recover_session_capture_tasks() -> int:
                 )
             except Exception:
                 pass
+    try:
+        logger.info(
+            "session_capture_recovery_completed",
+            category="sampling",
+            component="knowledge",
+            initiated_by_user_id="system",
+            status="completed",
+            recovered=recovered,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+    except Exception:
+        pass
     return recovered
 
 
@@ -198,7 +222,7 @@ def _log_enqueue_failed(
     exc: BaseException,
 ) -> None:
     try:
-        logger.warning(
+        logger.debug(
             "session_capture_enqueue_failed",
             category="sampling",
             component="knowledge",

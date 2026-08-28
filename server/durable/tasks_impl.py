@@ -23,6 +23,48 @@ from common.log_context import bind_task_context
 
 logger = structlog.get_logger(__name__)
 
+_SESSION_CAPTURE_MAX_ATTEMPTS = 6
+_SESSION_CAPTURE_BACKOFF_BASE = 5
+_SESSION_CAPTURE_BACKOFF_CAP = 300
+
+
+def _session_capture_backoff_seconds(attempt: int) -> int:
+    """Session Capture 指数退避：5 * 2**attempt，封顶 300 秒。"""
+
+    try:
+        current = max(0, int(attempt))
+    except (TypeError, ValueError):
+        current = 0
+    return min(_SESSION_CAPTURE_BACKOFF_BASE * (2**current), _SESSION_CAPTURE_BACKOFF_CAP)
+
+
+def _capture_service() -> Any:
+    service_factory = globals().get("CaptureService")
+    if service_factory is None:
+        from initiatives.services.capture_service import CaptureService as service_factory
+
+    return service_factory()
+
+
+async def evaluate_session_capture(**kwargs: Any) -> Any:
+    """可替换的 evaluator 接缝，生产路径委托严格三档评估器。"""
+
+    from initiatives.services.session_capture_eval import SessionCaptureEvaluator
+
+    return await SessionCaptureEvaluator().evaluate(**kwargs)
+
+
+async def enqueue_session_capture_ingest(
+    capture_id: str, *, initiated_by_user_id: str | None = None
+) -> str | None:
+    """可替换的 ingest 投递接缝。"""
+
+    from initiatives.services.session_capture_enqueue import (
+        enqueue_session_capture_ingest as enqueue,
+    )
+
+    return await enqueue(capture_id, initiated_by_user_id=initiated_by_user_id)
+
 
 async def run_session_capture_eval(
     *,
@@ -30,13 +72,169 @@ async def run_session_capture_eval(
     attempt: int = 0,
     initiated_by_user_id: str | None = None,
 ) -> dict[str, Any]:
-    """Session Capture eval 任务体占位；Task 2 替换为完整 worker。"""
+    """独立评估 Capture；medium/high 仅投递 ingest，不在本任务入图。"""
 
-    return {
-        "status": "skipped",
-        "reason": "not_implemented",
-        "capture_id": capture_id,
-    }
+    import datetime
+    import time
+
+    from common.logging import redact_secrets_in_text
+    from durable.queues import QUEUE_KNOWLEDGE
+    from durable.service import DurableTaskService
+
+    actor = initiated_by_user_id or "system"
+    started = time.perf_counter()
+    with bind_task_context(
+        user_id=initiated_by_user_id or "system",
+        source="durable",
+        component="knowledge",
+    ):
+        try:
+            logger.info(
+                "session_capture_eval_worker_started",
+                category="sampling",
+                component="knowledge",
+                capture_id=str(capture_id),
+                status="started",
+                tier="",
+                attempt=attempt,
+                initiated_by_user_id=actor,
+            )
+        except Exception:
+            pass
+
+        service = _capture_service()
+        try:
+            capture = await service.claim_evaluation(capture_id)
+        except Exception as exc:  # noqa: BLE001 - pending 行由恢复扫描补投
+            safe_error = redact_secrets_in_text(str(exc))
+            try:
+                logger.warning(
+                    "session_capture_eval_worker_failed",
+                    category="sampling",
+                    component="knowledge",
+                    capture_id=str(capture_id),
+                    status="claim_failed",
+                    tier="",
+                    attempt=attempt,
+                    initiated_by_user_id=actor,
+                    error=safe_error,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                )
+            except Exception:
+                pass
+            return {"status": "failed", "capture_id": str(capture_id)}
+        if capture is None:
+            try:
+                logger.info(
+                    "session_capture_eval_worker_completed",
+                    category="sampling",
+                    component="knowledge",
+                    capture_id=str(capture_id),
+                    status="skipped",
+                    tier="",
+                    attempt=attempt,
+                    initiated_by_user_id=actor,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                )
+            except Exception:
+                pass
+            return {
+                "status": "skipped",
+                "reason": "not_claimable",
+                "capture_id": capture_id,
+            }
+
+        try:
+            result = await evaluate_session_capture(
+                capture_id=str(capture_id),
+                question=str(getattr(capture, "question", "") or ""),
+                answer=str(getattr(capture, "answer", "") or ""),
+                attempt=int(getattr(capture, "eval_attempts", attempt) or attempt),
+                initiated_by_user_id=actor,
+            )
+            recorded = await service.record_evaluation(
+                capture_id,
+                value_tier=result.value_tier,
+                distilled_essence=result.distilled_essence,
+            )
+            if recorded is None:
+                return {
+                    "status": "skipped",
+                    "reason": "state_changed",
+                    "capture_id": capture_id,
+                }
+            if result.value_tier in {"medium", "high"}:
+                await enqueue_session_capture_ingest(
+                    str(capture_id),
+                    initiated_by_user_id=initiated_by_user_id,
+                )
+            status = str(recorded.status)
+            try:
+                logger.info(
+                    "session_capture_eval_worker_completed",
+                    category="sampling",
+                    component="knowledge",
+                    capture_id=str(capture_id),
+                    status=status,
+                    tier=str(result.value_tier),
+                    attempt=attempt,
+                    initiated_by_user_id=actor,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                )
+            except Exception:
+                pass
+            return {
+                "status": status,
+                "capture_id": str(capture_id),
+                "tier": str(result.value_tier),
+            }
+        except Exception as exc:  # noqa: BLE001 - 失败落库并由有界 durable 退避恢复
+            safe_error = redact_secrets_in_text(str(exc))
+            next_attempt = max(
+                attempt + 1,
+                int(getattr(capture, "eval_attempts", 0) or 0),
+            )
+            delay = _session_capture_backoff_seconds(attempt)
+            run_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=delay)
+            failed = await service.record_eval_failure(
+                capture_id,
+                error=safe_error,
+                next_retry_at=run_at,
+            )
+            requeued = False
+            if failed is not None and next_attempt < _SESSION_CAPTURE_MAX_ATTEMPTS:
+                try:
+                    await DurableTaskService.defer(
+                        "durable_session_capture_eval",
+                        {"capture_id": str(capture_id), "attempt": next_attempt},
+                        queue=QUEUE_KNOWLEDGE,
+                        lock=f"capture-eval:{capture_id}",
+                        run_at=run_at,
+                        initiated_by_user_id=initiated_by_user_id,
+                    )
+                    requeued = True
+                except Exception:
+                    pass
+            try:
+                logger.warning(
+                    "session_capture_eval_worker_failed",
+                    category="sampling",
+                    component="knowledge",
+                    capture_id=str(capture_id),
+                    status="requeued" if requeued else "eval_failed",
+                    tier="",
+                    attempt=next_attempt,
+                    initiated_by_user_id=actor,
+                    error=safe_error,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                )
+            except Exception:
+                pass
+            return {
+                "status": "requeued" if requeued else "eval_failed",
+                "capture_id": str(capture_id),
+                "attempt": next_attempt,
+            }
 
 
 async def run_session_capture_ingest(
@@ -45,13 +243,155 @@ async def run_session_capture_ingest(
     attempt: int = 0,
     initiated_by_user_id: str | None = None,
 ) -> dict[str, Any]:
-    """Session Capture ingest 任务体占位；Task 2 替换为完整 worker。"""
+    """独立摄取 Capture 精华；失败只留在 ingest 域，不重新评估。"""
 
-    return {
-        "status": "skipped",
-        "reason": "not_implemented",
-        "capture_id": capture_id,
-    }
+    import datetime
+    import time
+
+    from common.logging import redact_secrets_in_text
+    from durable.queues import QUEUE_KNOWLEDGE
+    from durable.service import DurableTaskService
+    from knowledge.ingestion import IngestionRequest, ingest
+
+    actor = initiated_by_user_id or "system"
+    started = time.perf_counter()
+    with bind_task_context(
+        user_id=initiated_by_user_id or "system",
+        source="durable",
+        component="knowledge",
+    ):
+        try:
+            logger.info(
+                "session_capture_ingest_started",
+                category="sampling",
+                component="knowledge",
+                capture_id=str(capture_id),
+                status="started",
+                tier="",
+                attempt=attempt,
+                initiated_by_user_id=actor,
+            )
+        except Exception:
+            pass
+
+        service = _capture_service()
+        try:
+            capture = await service.claim_ingestion(capture_id)
+        except Exception as exc:  # noqa: BLE001 - pending 行由恢复扫描补投
+            safe_error = redact_secrets_in_text(str(exc))
+            try:
+                logger.warning(
+                    "session_capture_ingest_failed",
+                    category="sampling",
+                    component="knowledge",
+                    capture_id=str(capture_id),
+                    status="claim_failed",
+                    tier="",
+                    attempt=attempt,
+                    initiated_by_user_id=actor,
+                    error=safe_error,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                )
+            except Exception:
+                pass
+            return {"status": "failed", "capture_id": str(capture_id)}
+        if capture is None:
+            try:
+                logger.info(
+                    "session_capture_ingest_completed",
+                    category="sampling",
+                    component="knowledge",
+                    capture_id=str(capture_id),
+                    status="skipped",
+                    tier="",
+                    attempt=attempt,
+                    initiated_by_user_id=actor,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                )
+            except Exception:
+                pass
+            return {
+                "status": "skipped",
+                "reason": "not_claimable",
+                "capture_id": capture_id,
+            }
+
+        tier = str(getattr(capture, "value_tier", "") or "")
+        try:
+            event_count = await ingest(
+                IngestionRequest("session_capture", str(capture_id), "session_capture_eval")
+            )
+            if event_count <= 0:
+                raise RuntimeError("session_capture ingest 未产生知识事件")
+            recorded = await service.record_ingested(capture_id)
+            if recorded is None:
+                return {
+                    "status": "skipped",
+                    "reason": "state_changed",
+                    "capture_id": capture_id,
+                }
+            try:
+                logger.info(
+                    "session_capture_ingest_completed",
+                    category="sampling",
+                    component="knowledge",
+                    capture_id=str(capture_id),
+                    status="ingested",
+                    tier=tier,
+                    attempt=attempt,
+                    initiated_by_user_id=actor,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                )
+            except Exception:
+                pass
+            return {"status": "ingested", "capture_id": str(capture_id), "tier": tier}
+        except Exception as exc:  # noqa: BLE001 - 失败落库并由有界 durable 退避恢复
+            safe_error = redact_secrets_in_text(str(exc))
+            next_attempt = max(
+                attempt + 1,
+                int(getattr(capture, "ingest_attempts", 0) or 0),
+            )
+            delay = _session_capture_backoff_seconds(attempt)
+            run_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=delay)
+            failed = await service.record_ingest_failure(
+                capture_id,
+                error=safe_error,
+                next_retry_at=run_at,
+            )
+            requeued = False
+            if failed is not None and next_attempt < _SESSION_CAPTURE_MAX_ATTEMPTS:
+                try:
+                    await DurableTaskService.defer(
+                        "durable_session_capture_ingest",
+                        {"capture_id": str(capture_id), "attempt": next_attempt},
+                        queue=QUEUE_KNOWLEDGE,
+                        lock=f"capture-ingest:{capture_id}",
+                        run_at=run_at,
+                        initiated_by_user_id=initiated_by_user_id,
+                    )
+                    requeued = True
+                except Exception:
+                    pass
+            try:
+                logger.warning(
+                    "session_capture_ingest_failed",
+                    category="sampling",
+                    component="knowledge",
+                    capture_id=str(capture_id),
+                    status="requeued" if requeued else "ingest_failed",
+                    tier=tier,
+                    attempt=next_attempt,
+                    initiated_by_user_id=actor,
+                    error=safe_error,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                )
+            except Exception:
+                pass
+            return {
+                "status": "requeued" if requeued else "ingest_failed",
+                "capture_id": str(capture_id),
+                "attempt": next_attempt,
+            }
 
 
 async def run_index(
