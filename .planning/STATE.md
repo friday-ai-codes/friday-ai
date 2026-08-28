@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
 status: executing
-stopped_at: Completed 145-02-PLAN.md
-last_updated: "2026-08-28T13:23:07.307Z"
+stopped_at: Completed 145-04-PLAN.md
+last_updated: "2026-08-28T13:26:01.496Z"
 last_activity: 2026-08-28 -- Phase 145 execution started
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 25
-  completed_plans: 22
-  percent: 80
+  completed_plans: 23
+  percent: 92
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 145 (Cursor / Claude Code 双宿主采集) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-08-28 -- Phase 145 execution started
 
@@ -452,6 +452,7 @@ Last activity: 2026-08-28 -- Phase 145 execution started
 | Phase 144 P05 | 14min | 2 tasks | 12 files |
 | Phase 145 P01 | 5min | 3 tasks | 6 files |
 | Phase 145-cursor-claude-code P02 | 4m | 3 tasks | 4 files |
+| Phase 145-cursor-claude-code P04 | 5min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -868,6 +869,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 145-cursor-claude-code]: UserPromptSubmit 在凭证与 git 检查前缓存问题，缓存失败不影响原 lookup
 - [Phase 145-cursor-claude-code]: Stop 先独立提交可见答案，再按 FRIDAY_STOP_WRITEBACK 和 git diff 决定是否写项目记忆
 - [Phase 145-cursor-claude-code]: skills 子模块 SHA 只保留为父仓未暂存 gitlink 变化，等待 145-05 远端可达门禁
+- [Phase 145-cursor-claude-code]: 会话问答始终走 report_session_knowledge，项目交付总结仅在有 git 变更时走 report_project_knowledge。 — 保持 SessionCapture 与 ProjectMemory 生命周期及质量门槛独立。
+- [Phase 145-cursor-claude-code]: HTTP fallback 展示服务端十二字段开放契约，但禁止客户端猜测或拼装 project_id。 — 对齐服务端 schema，同时避免默认分支误绑项目。
 
 ### Pending Todos
 
@@ -1323,8 +1326,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T13:23:07.248Z
-Stopped at: Completed 145-02-PLAN.md
+Last session: 2026-08-28T13:26:01.487Z
+Stopped at: Completed 145-04-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
