@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.24.0
-milestone_name: 单仓图查询对齐 GitNexus（Phases 133–140）
-status: Awaiting next milestone
-stopped_at: v0.24.0 milestone completed and archived; awaiting next milestone
-last_updated: "2026-08-26T16:31:00+08:00"
-last_activity: 2026-08-26 — Completed quick task 260826-m6h: MCP 客户端 49 工具对齐与本地 dev 收口
+milestone: v0.25.0
+milestone_name: Cursor / Claude Code 会话知识回写
+status: planning
+last_updated: "2026-08-28T04:24:41.053Z"
+last_activity: 2026-08-28
 progress:
-  total_phases: 8
-  completed_phases: 8
-  total_plans: 16
-  completed_plans: 16
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,10 +24,10 @@ See: .planning/PROJECT.md（updated 2026-08-24，v0.24.0 已归档）。v0.24.0 
 
 ## Current Position
 
-Phase: Milestone v0.24.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-08-26 — Completed quick task 260826-m6h: MCP 客户端 49 工具对齐与本地 dev 收口
+Status: Defining requirements
+Last activity: 2026-08-28 — Milestone v0.25.0 started
 
 ## Milestone Overview (v0.24.0 — Phases 133–140 — ✅ ARCHIVED)
 
