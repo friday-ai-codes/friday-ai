@@ -122,10 +122,11 @@ Plans:
   4. 安装器可合并 Cursor `hooks.json`（`version: 1`）而不覆盖既有 hook；缺 PAT、接口失败或回写超时时均 fail-soft，不阻断用户继续编码。
   5. Claude Code 专属注入脚本不会被错误复制到 Cursor `stop`，两个宿主的 hook 资产与各自官方事件模型一致。
 
-**Plans:** 5 plans
+**Plans:** 1/5 plans executed
 
 Plans:
-- [ ] 145-01-PLAN.md — Wave 0：双宿主采集/merge/资产/文档守卫 RED 契约
+
+- [x] 145-01-PLAN.md — Wave 0：双宿主采集/merge/资产/文档守卫 RED 契约
 - [ ] 145-02-PLAN.md — 共用 session_capture helper + Claude UPS/Stop 分轨
 - [ ] 145-03-PLAN.md — Cursor before/after + hooks.json v1 merge 安装
 - [ ] 145-04-PLAN.md — friday/friday-dev/friday-memory 双工具文案与 HTTP fallback
@@ -152,7 +153,7 @@ Plans:
 | 142. MCP 会话回写契约 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
 | 143. 价值评估与中高入图 | v0.25.0 | 7/7 | Complete    | 2026-08-28 |
 | 144. 仓库召回与 Capture 回放 | v0.25.0 | 5/5 | Complete    | 2026-08-28 |
-| 145. Cursor / Claude Code 双宿主采集 | v0.25.0 | 0/5 | Not started | - |
+| 145. Cursor / Claude Code 双宿主采集 | v0.25.0 | 1/5 | In Progress|  |
 
 **Coverage:** 27/27 v0.25.0 requirements mapped exactly once；0 unmapped；0 duplicate。
 
