@@ -2,16 +2,19 @@
 gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
-status: ready_for_verification
-stopped_at: Completed 143-07-PLAN.md
-last_updated: "2026-08-28T11:14:06.635Z"
-last_activity: Completed 143-07-PLAN.md
+current_phase: 144
+current_phase_name: 仓库召回与 Capture 回放
+status: planning
+stopped_at: Phase 143 complete, ready to plan Phase 144
+last_updated: "2026-08-28T11:23:26.546Z"
+last_activity: 2026-08-28
+last_activity_desc: Phase 143 complete, transitioned to Phase 144
+state_head: 192d0782f5cef9b995e888ec7a9371e42905738d
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 15
   completed_plans: 15
-  percent: 60
 ---
 
 # Project State
@@ -25,10 +28,10 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 
 ## Current Position
 
-Phase: 143 — 价值评估与中高入图
-Plan: 7 of 7 complete
-Status: Ready for verification
-Last activity: Completed 143-07-PLAN.md
+Phase: 144 — 仓库召回与 Capture 回放
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-28 — Phase 143 complete, transitioned to Phase 144
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
 
@@ -1300,7 +1303,7 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-08-28T11:14:06.626Z
-Stopped at: Completed 143-07-PLAN.md
+Stopped at: Phase 143 complete, ready to plan Phase 144
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
