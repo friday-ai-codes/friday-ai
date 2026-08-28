@@ -12,6 +12,8 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 from django.db import IntegrityError, transaction
+from django.db.models import F
+from django.utils import timezone
 
 from common.logging import redact_secrets_in_text
 from initiatives.models import (
@@ -19,6 +21,7 @@ from initiatives.models import (
     RepoAssociation,
     SessionCapture,
     SessionCaptureStatus,
+    SessionCaptureValueTier,
 )
 from knowledge.access_scope import resolve_allowed_project_ids, resolve_allowed_repository_ids
 from repositories.models import Repository
@@ -55,6 +58,87 @@ def _question_hash(question: str) -> str:
 
 class CaptureService:
     """会话问答 Capture 的 INV-6 唯一 writer。"""
+
+    @staticmethod
+    async def get_capture(capture_id: Any) -> SessionCapture | None:
+        """按主键读取 Capture；不存在或主键非法时返回 None。"""
+
+        return await CaptureService._get_capture(capture_id)
+
+    async def claim_evaluation(self, capture_id: Any) -> SessionCapture | None:
+        """以 CAS 抢占评估；处理中重放按 resume 返回且不增加 attempt。"""
+
+        return await self._claim_evaluation(capture_id)
+
+    async def record_evaluation(
+        self,
+        capture_id: Any,
+        *,
+        value_tier: str,
+        distilled_essence: str,
+    ) -> SessionCapture | None:
+        """记录严格闭集评估结果，仅 medium/high 进入待入图态。"""
+
+        tier = str(value_tier or "").strip()
+        essence = str(distilled_essence or "").strip()
+        allowed_tiers = {choice.value for choice in SessionCaptureValueTier}
+        if tier not in allowed_tiers or not essence:
+            return None
+        target_status = (
+            SessionCaptureStatus.EVALUATED_LOW
+            if tier == SessionCaptureValueTier.LOW
+            else SessionCaptureStatus.INGEST_PENDING
+        )
+        return await self._record_evaluation(
+            capture_id,
+            value_tier=tier,
+            distilled_essence=essence,
+            target_status=target_status,
+        )
+
+    async def record_eval_failure(
+        self,
+        capture_id: Any,
+        *,
+        error: Any,
+        next_retry_at: Any = None,
+    ) -> SessionCapture | None:
+        """记录可重试评估失败，不删除或降级 Capture。"""
+
+        return await self._record_failure(
+            capture_id,
+            expected_status=SessionCaptureStatus.EVALUATING,
+            target_status=SessionCaptureStatus.EVAL_FAILED,
+            error=redact_secrets_in_text(str(error or "")),
+            next_retry_at=next_retry_at,
+        )
+
+    async def claim_ingestion(self, capture_id: Any) -> SessionCapture | None:
+        """以 CAS 抢占摄取；处理中重放按 resume 返回且不增加 attempt。"""
+
+        return await self._claim_ingestion(capture_id)
+
+    async def record_ingested(self, capture_id: Any) -> SessionCapture | None:
+        """将处理中 Capture 标记为已入图。"""
+
+        return await self._record_ingested(capture_id)
+
+    async def record_ingest_failure(
+        self,
+        capture_id: Any,
+        *,
+        error: Any,
+        next_retry_at: Any = None,
+    ) -> SessionCapture | None:
+        """记录可重试入图失败，不修改评估 attempt。"""
+
+        return await self._record_failure(
+            capture_id,
+            expected_status=SessionCaptureStatus.INGESTING,
+            target_status=SessionCaptureStatus.INGEST_FAILED,
+            error=redact_secrets_in_text(str(error or "")),
+            next_retry_at=next_retry_at,
+        )
 
     async def persist(
         self,
@@ -111,6 +195,123 @@ class CaptureService:
 
         self._log_completed(started, initiated_by, result)
         return result
+
+    @staticmethod
+    @sync_to_async
+    def _get_capture(capture_id: Any) -> SessionCapture | None:
+        try:
+            parsed_id = uuid.UUID(str(capture_id))
+        except (TypeError, ValueError, AttributeError):
+            return None
+        return SessionCapture.objects.filter(pk=parsed_id).first()
+
+    @staticmethod
+    @sync_to_async
+    def _claim_evaluation(capture_id: Any) -> SessionCapture | None:
+        updated = SessionCapture.objects.filter(
+            pk=capture_id,
+            status__in=[
+                SessionCaptureStatus.PENDING_EVAL,
+                SessionCaptureStatus.EVAL_FAILED,
+            ],
+        ).update(
+            status=SessionCaptureStatus.EVALUATING,
+            eval_attempts=F("eval_attempts") + 1,
+            updated_at=timezone.now(),
+        )
+        if updated == 1:
+            return SessionCapture.objects.get(pk=capture_id)
+        return SessionCapture.objects.filter(
+            pk=capture_id,
+            status=SessionCaptureStatus.EVALUATING,
+        ).first()
+
+    @staticmethod
+    @sync_to_async
+    def _record_evaluation(
+        capture_id: Any,
+        *,
+        value_tier: str,
+        distilled_essence: str,
+        target_status: str,
+    ) -> SessionCapture | None:
+        updated = SessionCapture.objects.filter(
+            pk=capture_id,
+            status=SessionCaptureStatus.EVALUATING,
+        ).update(
+            status=target_status,
+            value_tier=value_tier,
+            distilled_essence=distilled_essence,
+            last_error="",
+            next_retry_at=None,
+            evaluated_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        if updated != 1:
+            return None
+        return SessionCapture.objects.get(pk=capture_id)
+
+    @staticmethod
+    @sync_to_async
+    def _claim_ingestion(capture_id: Any) -> SessionCapture | None:
+        updated = SessionCapture.objects.filter(
+            pk=capture_id,
+            status__in=[
+                SessionCaptureStatus.INGEST_PENDING,
+                SessionCaptureStatus.INGEST_FAILED,
+            ],
+        ).update(
+            status=SessionCaptureStatus.INGESTING,
+            ingest_attempts=F("ingest_attempts") + 1,
+            updated_at=timezone.now(),
+        )
+        if updated == 1:
+            return SessionCapture.objects.get(pk=capture_id)
+        return SessionCapture.objects.filter(
+            pk=capture_id,
+            status=SessionCaptureStatus.INGESTING,
+        ).first()
+
+    @staticmethod
+    @sync_to_async
+    def _record_ingested(capture_id: Any) -> SessionCapture | None:
+        now = timezone.now()
+        updated = SessionCapture.objects.filter(
+            pk=capture_id,
+            status=SessionCaptureStatus.INGESTING,
+        ).update(
+            status=SessionCaptureStatus.INGESTED,
+            last_error="",
+            next_retry_at=None,
+            ingested_at=now,
+            updated_at=now,
+        )
+        if updated != 1:
+            return None
+        return SessionCapture.objects.get(pk=capture_id)
+
+    @staticmethod
+    @sync_to_async
+    def _record_failure(
+        capture_id: Any,
+        *,
+        expected_status: str,
+        target_status: str,
+        error: str,
+        next_retry_at: Any,
+    ) -> SessionCapture | None:
+        updated = SessionCapture.objects.filter(
+            pk=capture_id,
+            status=expected_status,
+        ).update(
+            status=target_status,
+            last_error=error,
+            next_retry_at=next_retry_at,
+            updated_at=timezone.now(),
+        )
+        if updated != 1:
+            return None
+        return SessionCapture.objects.get(pk=capture_id)
 
     async def _resolve_link(
         self,
