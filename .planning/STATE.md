@@ -2,19 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
-current_phase: 144
-current_phase_name: 仓库召回与 Capture 回放
 status: executing
-stopped_at: Completed 144-01-PLAN.md
-last_updated: "2026-08-28T11:59:50.938Z"
-last_activity: 2026-08-28 — Phase 143 complete, transitioned to Phase 144
-last_activity_desc: 144-01 Wave 0 RED contracts complete
-state_head: 950e6b19a
+stopped_at: Completed 144-03-PLAN.md
+last_updated: "2026-08-28T12:04:17.259Z"
+last_activity: 2026-08-28 — 144-01 Wave 0 RED contracts complete
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 20
-  completed_plans: 16
+  completed_plans: 17
   percent: 60
 ---
 
@@ -30,8 +26,8 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 ## Current Position
 
 Phase: 144 — 仓库召回与 Capture 回放
-Plan: 1 of 5 complete
-Status: In progress
+Plan: 2 of 5 complete
+Status: Ready to execute
 Last activity: 2026-08-28 — 144-01 Wave 0 RED contracts complete
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
@@ -450,6 +446,7 @@ Last activity: 2026-08-28 — 144-01 Wave 0 RED contracts complete
 | Phase 143-eval P06 | 11min | 2 tasks | 6 files |
 | Phase 143 P07 | 11min | 2 tasks | 3 files |
 | Phase 144 P01 | 4 min | 3 tasks | 9 files |
+| Phase 144 P03 | 3min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -852,6 +849,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 144]: Wave 0 只落测试，不修改生产代码、npm 工具定义或依赖。
 - [Phase 144]: repository_id 为必填主作用域，project_id 只能形成 AND 收窄。
 - [Phase 144]: 回放正文只允许来自 SessionCapture，未授权与不存在统一返回中性 404。
+- [Phase 144]: 默认分支识别对 main、master、develop 和仓库 default_branch 进行大小写敏感精确匹配。
+- [Phase 144]: 默认分支 RepoAssociation 只返回候选，不进入 merged 或调用 pack_project_context。
 
 ### Pending Todos
 
@@ -1307,8 +1306,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T11:59:28.374Z
-Stopped at: Completed 144-01-PLAN.md
+Last session: 2026-08-28T12:04:17.249Z
+Stopped at: Completed 144-03-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
