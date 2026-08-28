@@ -1,18 +1,10 @@
 # Stack Research
 
-**Domain:** v0.24.0 单仓 graph-aware query（Process 分组混合检索、语言感知调用解析、MCP 契约、可复现评测）
-**Researched:** 2026-08-24
-**Confidence:** HIGH（GitNexus v1.6.9、MCP 2026-07-28 规范、Qdrant 官方文档与本仓锁文件/源码交叉核验；排序效果仍须由本里程碑 baseline 实测）
+**Domain:** Cursor / Claude Code 会话知识回写（brownfield Friday AI）
+**Researched:** 2026-08-28
+**Confidence:** HIGH（复用既有栈）；MEDIUM（Cursor `afterAgentResponse` 与 Claude Code `last_assistant_message` 为答案采集点，官方契约已核，端到端配对需相位内验证）
 
-## 结论先行
-
-**运行时依赖零新增，现有依赖足够。** 本里程碑应增加的是索引对象、服务层编排、契约单一事实源和 benchmark 资产，不是另一套图数据库、搜索引擎或解析框架。
-
-1. **Process 检索继续用 Qdrant dense+sparse+RRF。** 本仓已锁 `qdrant-client==1.16.2`，已有 named dense/sparse vectors、`Prefetch`、`FusionQuery(RRF)` 和老索引 dense fallback。为 `ProcessTrace` 建独立的全局 `code_graph_processes` collection，以 payload 按 repository/branch 隔离；不要混入 chunk collection，也不加 `rank_bm25`、Elasticsearch、LadybugDB/Kuzu。
-2. **Process 继续落 Django `ProcessTrace`，NetworkX 继续负责图遍历。** GitNexus 的价值在“先召回 Symbol，再沿 `STEP_IN_PROCESS` 聚合 Process”，不是它选用哪种图库。本仓已有 `ProcessTrace.steps`、`SymbolCommunity`、`GraphService` 和 `networkx==3.6.1`，无需复制 GitNexus 存储栈。
-3. **resolver 演进现有 Protocol + `SymbolIndex`。** 优先补 TS/JS receiver/import alias/re-export 与 Python import/member/receiver；保留 unresolved 和证据原因，禁止全仓同名 fuzzy 兜底。Go 后置。不要把 LSP 默认翻转夹带进本里程碑。
-4. **新增一个 canonical `graph_query` 契约，而不是让 agent 编排四个旧工具。** Django service 是唯一实现；Chat、Django MCP、npm MCP、编码容器都由同一 schema/manifest 生成或校验。MCP 返回 `structuredContent` + `outputSchema`，同时保留 JSON text 兼容旧客户端。
-5. **评测零新增库即可完成。** `pytest==9.0.2` + JSON/JSONL fixtures + stdlib `statistics`/`random`/`time.perf_counter_ns` 足够计算 Recall@k、MRR、resolved-edge precision/recall、Process step/file:line 命中、impact/trace 命中、延迟与 token。先冻结同仓同 commit 的 v0.22 baseline，再从数据锁门；不预设阈值。
+本文件只回答 **v0.25.0 要加/改哪些栈**，不重研已验证的 RAG / MCP 鉴权 / 项目记忆。结论：**不引入新运行时库**；新增一张 Capture 操作态表 + 一个 MCP 工具 + skills/hooks 适配；评估与向量化走既有 LLM / `delivery_knowledge` 管线。
 
 ## Recommended Stack
 
@@ -20,290 +12,159 @@
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| Django ORM / PostgreSQL（既有） | Django 5.1+；生产 PostgreSQL 17 | `ProcessTrace` canonical 数据、索引水位与构建状态 | 已有模型含 repository/branch/process_key/name/entry/steps/community_class/built_at_sha；保持操作态事实在 SQL，避免向量库成为唯一事实源 |
-| Qdrant + qdrant-client | server 锁定 `1.16.2` | Symbol/Process dense+sparse hybrid recall 与 RRF | 本仓 `QdrantService.hybrid_search_by_name` 已是一请求双 prefetch + RRF；官方 Query API 原生支持此模式，且 payload filter 可按 repo/branch/kind/built_at_sha 限定 |
-| fastembed | server 锁定 `0.7.4` | Process 文本 dense/sparse 向量 | 已用于现有混合索引，复用同一 encoder 和维度，保证查询向量与索引向量一致；不再引入 GitNexus 的 ONNX/transformers.js 栈 |
-| NetworkX | server 锁定 `3.6.1` | Symbol→Process membership、impact/trace 与 Process 步骤装配 | v0.22 已验证；新需求是查询编排与边质量，不是图库性能迁移 |
-| tree-sitter + 既有语言 grammar | `tree-sitter>=0.21`（现有 lock） | TS/JS/Python 调用、import、receiver 结构事实采集 | resolver 质量需要 AST 事实和语言规则；算法名不能替代 receiver/import evidence。沿用现有 extractor 避免双 AST |
-| MCP Python SDK / TS SDK | Python `mcp>=1.25,<2`；npm `@modelcontextprotocol/sdk ^1.29.0` | 工具发现与调用 | 两端已在依赖树；Python `<2` 是 `claude-agent-sdk` 兼容约束，不能为本里程碑盲升 2.x |
-| jsonschema + Pydantic | `jsonschema==4.26.0`；既有 Pydantic 2 | canonical input/output schema 校验 | MCP 2026-07-28 允许 `outputSchema` + `structuredContent`；本仓已有严格 Pydantic tool input 和 schema snapshot，足以建立单一契约 |
+| Django ORM + migration | Django `>=5.1` / Python `3.14` | 新 `SessionCapture`（或同名）操作态表 | 与仓内所有写模型一致；仓库 FK + 可选项目 FK 无法塞进现有 `ProjectMemory`（后者 `project` 必填 CASCADE） |
+| DRF Serializer + `McpToolView` | `djangorestframework>=3.15` + 现有 `adrf` | 新 MCP 工具 HTTP 面 | 鉴权 / `InteractionRun` / `_record` / 脱敏已由基类承担；禁止另开 REST 资源绕过 MCP |
+| `@friday-ai-codes/mcp` | 现包 `0.6.0`，`@modelcontextprotocol/sdk ^1.29.0`，Node `>=18` | stdio → `POST /api/mcp/tools/{name}/` | 客户端不直打业务表；工具名必须与 `TOOL_SCHEMA_SNAPSHOT` + `mcp/src/tools.ts` 三方对齐（v0.20 已有漂移债） |
+| `@friday-ai-codes/skills` | 现包 `0.7.0`，Node `>=20`，零 HTTP 库 | hooks / skill 正文 / 安装器 | 安装器已是 Node `fs` + `@clack/prompts`；Claude 插件经 `.claude-plugin/plugin.json` 挂 `hooks/hooks.json` |
+| 既有 LLM 解析栈 | `provider_config` + `anthropic`/`openai`/`google-genai` 现版本 | Friday 侧 high/medium/low 评估 | 不新增评测框架；新 `CallSource` 枚举值（建议 `session_capture_eval`），对标 `ide_hook_distill` / `memory_distill` |
+| 既有知识摄取 | `knowledge.ingestion.aschedule_ingestion` + Qdrant `delivery_knowledge` | 中高价值向量化 | v0.17 已锁「统一 collection、新 `source_kind`」；禁止新建向量库 |
 
 ### Supporting Libraries
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| `QdrantService.hybrid_search_by_name` / `hybrid_search_multi_by_name` | 本仓现有 | dense+sparse RRF、单/多探针、dense fallback | Process 和 Symbol 两路召回都走这里；不要复制一份 Python RRF，避免 0/1-based rank、tie-break 和 fallback 漂移 |
-| `services.query_embedding` / 现有 SparseEncoder | 本仓现有 | 自然语言 query 的 dense/sparse 编码 | Process 文本与查询必须复用相同模型/预处理；将 model id、vector dims 写入 index metadata |
-| `GraphService` + `ProcessTrace` + `SymbolCommunity` | v0.22 既有 | graph-aware enrichment | hybrid 候选命中后批量查 membership，一次聚合 Process、Community、步骤和影响摘要；避免逐候选 N+1 |
-| `codegraph.resolver.base.ImportResolver` + `SymbolIndex` | 既有 | 按语言替换解析策略 | 扩展 TS/JS/Python resolver；语言差异封装在 strategy，writer 与统计共用统一 `ResolveOutcome` |
-| pytest parametrization | `pytest==9.0.2` | 按语言/框架/入口类型运行 golden corpus | 固定 corpus、commit、query、qrels，逐 bucket 输出结果；官方 pytest 支持 fixture/function 动态参数化 |
-| Python stdlib `statistics`, `random`, `time`, `json`, `hashlib` | Python 3.14 | 指标、bootstrap CI、计时、manifest/hash | benchmark 规模有限时足够；固定 seed、记录样本数与逐 query 结果，不需 NumPy/SciPy/pandas |
+| `structlog`（已有 `>=25.5.0`） | 现依赖 | `xxx_started/completed/failed` + `category`/`component`/`duration_ms` | Capture 写入、评估、摄取全生命周期 |
+| `common.logging.redact_secrets_in_text` / `redact_for_ledger` | 现模块 | 问答精华入库前脱敏；Ledger 请求快照 | 不可绕过；客户端已抽精华仍要服务端再 redact |
+| `DurableTaskService` | 现 v0.12 适配层 | 评估 + 中高摄取异步 | MCP 入口同步只落 Capture（200/201），评估 fail-soft 进队列，不阻塞 IDE hook |
+| `jsonschema`（已有 `>=4.23.0`） | 现依赖 | 可选：评估输出 `{grade, distilled}` 校验 | 仅当 LLM JSON 不稳时用；不要为 Capture 请求再引入第二套校验（DRF 已是真源） |
+| Node 内置 `fs` / `urllib` / `python3` | 运行时已有 | hooks 脚本、安装器 merge `hooks.json` | **不要**给 skills 加 `axios`/`zod`/`node-fetch` |
+| `httpx`（已有 `>=0.27`） | 现依赖 | 仅服务端测与内部调用 | hooks 继续用 stdlib `urllib.request`，与现 `stop` / `user-prompt-submit` 一致 |
 
 ### Development Tools
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| `pytest -m perf` | 离线质量与延迟 benchmark | 仓库已声明 `perf` marker 且默认 CI 排除；质量回归可拆成快速 deterministic gate，墙钟 benchmark 独立运行 |
-| JSONL benchmark manifest | 固定 repo、commit、branch、语言、框架、入口类型、query、qrels | manifest 必须包含 index config、embedding model、schema version、seed、机器信息；拒绝拿不同 commit/索引参数做前后对比 |
-| schema alignment tests | 保证 Django、Chat、npm MCP、容器工具发现一致 | 扩展现有 `test_schema_snapshot.py` 与 `test_mcp_package_alignment.py`；npm 当前 37 工具中缺 v0.22 图工具，漂移是已证实事实 |
-| `RetrievalTrace` / RequestMetric / ModelUsageRecord | 记录召回分层、耗时、token 与调用归因 | 新 graph query 是 `caller`；内部 dense/sparse、membership、impact enrichment 是 `sampling`；观测 best-effort |
-
-## 具体技术选择与集成点
-
-### 1. Process 索引：一等检索对象，不更换存储
-
-推荐生成稳定的 `ProcessDocument` 投影，point id 由 `(repository_id, branch, process_key)` 确定性派生，`built_at_sha` 作为 payload 水位；同分支重建按 repository/branch 过滤删除旧点后批量 upsert，避免旧 SHA 点累积。payload 至少包含：
-
-- `kind="process"`、`repository_id`、`branch_name`、`process_key`、`built_at_sha`
-- `name`、HTTP method/path、入口 handler 与入口 `file:line`
-- 终点名称与终点 `file:line`
-- 有序步骤摘要（name、symbol type、file path；正文严格受 token/字符预算）
-- community keys/summary、top modules、业务关键词
-- `step_count`、`community_class`、`flags`（cycle/async/truncated）
-
-索引文本应分别保留可解释字段，不把所有内容拼成不可审计大段：
-
-```text
-name + endpoint
-entry + terminal
-ordered step names
-module/community summaries
-file path tokens
-```
-
-**WHY：** GitNexus 当前 `query` 先对符号做 BM25+semantic RRF，再批量沿 `STEP_IN_PROCESS` 查询 Process，并以匹配符号 RRF 分累计和轻量 cohesion boost 排序。这个结构证明“候选→membership→Process 分组”有效，但不证明 Friday 必须采用 LadybugDB。Qdrant 官方支持同一请求 dense/sparse prefetch + RRF；Friday 已有完全相同能力。
-
-推荐两阶段：
-
-1. `symbol_hits` 与 `process_hits` 并行 hybrid recall；
-2. 批量补 `symbol→community/process`，按 `process_key` 聚合；
-3. 用可拆解信号排序：各召回路排名、命中步骤数、入口/终点命中、Community 命中、staleness/degradation；
-4. 返回每个信号的 rank/source，不以未经 benchmark 的 magic weight 隐藏决策。
-
-初版优先 rank fusion，不把 GitNexus 的 `totalScore + cohesion*0.1` 原样搬来。该权重是其实现选择，不是跨项目常数。若 baseline 证明某信号需要权重，再把权重外置并记录版本。
-
-### 2. Process 构建：借鉴边界与确定性，不复制算法品牌
-
-继续使用现有 Endpoint→正向 BFS→`ProcessTrace`。需要调整的是：
-
-- 入口来源从“只有 Endpoint”扩展为可配置 entry classes 时，先由 benchmark 决定；本里程碑至少保留 HTTP Endpoint。
-- 保留 depth/branch/frontier/process count ceilings，并把 dropped/truncated 计数写入构建结果与查询 degradation。
-- 同 endpoint 多路径不能永远只留“最长一条”而没有证据；至少在 benchmark 中评估 top-N path coverage，再决定持久化条数。
-- 所有排序加稳定 tie-break（process_key/symbol_id/file:line），同 commit 重建必须字节级稳定。
-- 步骤 `file:line` 来自 Symbol/Endpoint 原始事实；缺失应返回 null + reason，不猜行号。
-
-GitNexus v1.6.9 的 Process processor同样使用 entry-point scoring、受限 DFS、路径去重、entry-terminal 去重、固定 ceilings，并显式记录候选被截断、未遍历入口、深度截断、丢弃分支和丢弃 Process。这些“认识论字段”值得对齐；DFS/BFS 名称本身不构成质量证据。
-
-### 3. 语言感知 resolver：扩展现有 seam
-
-本仓当前已具备：
-
-- `SymbolResolver`：同文件裸名 → import 解析 → Go selector → component 引用；
-- `FrontendImportResolver`：相对路径、单个 tsconfig alias、扩展名/index；
-- `PythonImportResolver`：相对/绝对 import 到文件；
-- `CallEdge.callee_qualifier`：目前主要服务 Go；
-- unresolved 留空而非全仓 fuzzy，方向正确。
-
-必须调整：
-
-| 优先级 | 调整 | 复用/新增 |
-|--------|------|-----------|
-| P0 TS/JS | 捕获 receiver、import local/original binding、default/named/namespace import、re-export；读取多 tsconfig `extends`/`baseUrl`/`paths` 与 workspace package 映射；按 receiver 类型/constructor/return type 解析 method | 复用 tree-sitter、`ImportEdge`、`callee_qualifier`（必要时泛化为 receiver evidence JSON）、`SymbolIndex`；新增语言 strategy 和 evidence/outcome，不加库 |
-| P0 Python | 区分 `import a.b`、`from a.b import c`（c 可能是 symbol 或 submodule）、alias、package `__init__` re-export；用 `self`/`cls`、constructor、annotation、显式 return type 解析 member | 复用 `PythonImportResolver`；新增 binding/receiver facts 与确定性优先级，不加 mypy/pyright |
-| P1 通用 | `ResolveOutcome` 记录 resolved/unresolved/ambiguous/external，带 reason/evidence/origin/language；按语言出 denominator | 现有 `ResolveResult` 演进；用于 benchmark 与 impact epistemic，不加库 |
-| Future Go | go.mod/workspace、selector/receiver、interface dispatch 继续完善 | 本里程碑后置，避免范围扩张 |
-
-GitNexus 当前实现不是一个“万能 resolver”，而是共享 pipeline + 每语言 `ScopeResolver` 配置：TS 读取 tsconfig/workspace，Python提供 namespace import/LEGB/MRO/receiver 规则，并把 constructor、return type、field fallback 等作为明确 capability。这支持 Friday 沿现有 Protocol 演进，而非引入 GitNexus 包或 LSP 默认翻转。
-
-### 4. 统一 graph query 与 MCP 契约
-
-推荐 canonical service：
-
-```text
-GraphQueryService.query(repository_id, query, branch?, limits?, include_content?)
-  -> GraphQueryResult
-```
-
-结果顶层应稳定包含：
-
-- `candidates`: Symbol 候选（uid/name/type/file/start/end、retrieval ranks/sources、resolution）
-- `communities`: 命中的 Community 与 summary/member evidence
-- `processes`: process_key/name/type/priority/signals/entry/terminal
-- `process_steps`: process_key、step_index、symbol_id、name、`file_path`、`line`
-- `impact_summary`: seed、risk、by-depth counts、affected processes/modules、epistemic/degradation
-- `staleness`: requested branch、index SHA、current SHA（若可得）
-- `degradation`/`truncated`/`warnings`
-- `timing_ms` 与 token/size 元数据
-
-契约实施：
-
-1. Pydantic/dataclass 定义 canonical DTO；
-2. 从同一 DTO 生成/导出 JSON Schema；
-3. Django MCP 发布 input/output schema；
-4. npm package 构建时消费生成的 manifest，而非手写第二份 `tools.ts`；
-5. Chat tool 与 task 容器只做 adapter；
-6. schema snapshot 比较工具名、required、properties、enum/default、响应 shape，不只比较 key 列表。
-
-MCP 2026-07-28 规范明确：tool 可声明 `outputSchema`，返回 `structuredContent` 必须符合它；为兼容旧客户端，应同时返回序列化 JSON TextContent。现有 npm SDK `^1.29.0` 与 Python SDK 已足够，不需升级协议库。
-
-### 5. Benchmark：新增资产，不新增统计栈
-
-最小目录建议：
-
-```text
-server/tests/benchmarks/code_graph_query/
-  manifest.json
-  queries.jsonl
-  qrels_symbols.jsonl
-  qrels_processes.jsonl
-  qrels_edges.jsonl
-  run_benchmark.py
-  metrics.py
-  snapshots/
-    v0.22.json
-    candidate.json
-```
-
-必须分桶：language、framework、entry_type、query_type（业务自然语言/符号名/路径/API）、repo size。每个 case 绑定 repo remote/id、commit SHA、branch、index schema/model/config。
-
-指标建议：
-
-- Symbol：Recall@k、MRR；若 qrels 有等级再用 nDCG@k。
-- Process：Process Recall@k、首个正确 Process rank、正确步骤覆盖率、步骤顺序一致率、`file:line` 命中率。
-- Resolver：按语言分别报告 TP/FP/FN、precision/recall、unresolved/ambiguous/external 分桶；**分母必须固定**。
-- impact/trace：golden affected set/path 命中、下界/截断/degradation 比例；不能把 partial 当 clean zero。
-- 成本：index wall time、query cold/warm p50/p95、Qdrant/ORM/graph call counts、response bytes、估算 token。
-
-比较规则：
-
-- baseline 与 candidate 必须同仓、同 commit、同 query/qrels、同硬件/进程模式；输出环境 manifest。
-- 排名/质量逐 query 保存，汇总之外保留 failure diff。
-- 固定随机 seed；若用 bootstrap CI，保存 seed、重复数和样本数。
-- 先跑 v0.22 baseline，再根据实测分布和业务容忍度锁 gate；研究阶段不臆造“提升 10%”或“p95 < 500ms”。
-- 对“优于 v0.22”的证明至少同时满足：目标质量指标改善、关键 bucket 不回退、误连不增加、延迟/token 无不可接受退化。具体阈值由 baseline 后 requirements 决定。
-
-`ir_measures`/`trec_eval` 是成熟选择，但当前指标少且需要自定义 Process/edge/file:line 指标，引入它们不会减少核心实现；先用透明的 stdlib 公式和 golden tests。若未来接 TREC qrels/run 生态或指标扩展到 MAP/nDCG 大集合，再考虑把 `ir_measures` 作为 **dev-only** 依赖。
+| `server/tests/mcp_tools/test_schema_snapshot.py` | `TOOL_SCHEMA_SNAPSHOT` 键集 | 新工具必须同时改 serializer、snapshot、本测试 |
+| `test_mcp_package_alignment.py` | `mcp/src/tools.ts` 名集 == snapshot | 漏 npm 客户端则工具对 Cursor 不可达（v0.20/v0.22 已知债） |
+| `test_skills_snapshot_guard.py` | SKILL.md 引用 ⊆ snapshot | 新工具名写进 `friday-dev` / `friday-memory` 时必过 |
+| Cursor 官方 Hooks 文档 | `beforeSubmitPrompt` / `stop` / `afterAgentResponse` / `sessionStart` | 答案采集不要押在 Cursor `stop` 入参上（官方只有 `status`/`loop_count`） |
+| Claude Code Hooks 文档 | `UserPromptSubmit` / `Stop` | 用 `last_assistant_message`，不要读可能滞后的 `transcript_path` |
 
 ## Installation
 
 ```bash
-# v0.24.0 推荐：运行时与 benchmark 均零新增依赖
-cd server
-uv sync --locked
+# 不新增 npm / Python 包。发版节奏：
+# 1) 服务端：Django migration + 新 MCP 工具（随 friday-ai 镜像）
+# 2) 客户端：bump @friday-ai-codes/mcp 与 @friday-ai-codes/skills 补丁版
 
-# npm MCP 沿用现有依赖，只需同步生成契约并构建
-cd ../mcp
-npm run build
-npm test
+# 开发者本机（已有）
+# Python：沿用 server/ uv + Django 5.1+
+# MCP 包：mcp/ 内现有 @modelcontextprotocol/sdk，勿升级 major
+# Skills：npx @friday-ai-codes/skills install --agent cursor|--agent claude-code
 
-# Future：只有决定接入 TREC 格式时才评估（本里程碑不加）
-# cd ../server && uv add --dev ir-measures
+# 禁止
+# npm install mem0 zod langchain axios
+# pip install chromadb llama-index-new-memory
 ```
+
+无新 `npm install` 行。skills 安装器扩展为 **merge** Cursor `~/.cursor/hooks.json` 与项目 `.cursor/hooks.json`（`version: 1`），用现有 `readFileSync`/`writeFileSync`，不要依赖 jq。
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
 |-------------|-------------|-------------------------|
-| Qdrant Process hybrid index | PostgreSQL FTS + pgvector | 只有部署明确取消 Qdrant、并愿意迁移所有现有 RAG 索引时；本里程碑无此证据 |
-| Qdrant RRF | 手写 RRF | 只有需要融合 Qdrant 外的独立排名列表且无法在一次 Query API 表达时；仍须统一 1-based rank 与稳定 tie-break |
-| Django `ProcessTrace` canonical + Qdrant 投影 | LadybugDB/Kuzu Process nodes | 只有整体迁移代码图到 property graph DB 时；当前会复制数据、权限、分支/水位和运维体系 |
-| 现有 Protocol resolver | LSP/tsserver/pyright 作为默认真源 | 只有同 commit benchmark 证明质量收益覆盖冷启动、内存和部署成本后；默认翻转明确是 future |
-| pytest + stdlib metrics | `ir_measures` / `trec_eval` | benchmark 扩成标准 TREC run/qrels、多种 IR 指标且维护成本明显下降时，作为 dev-only |
-| canonical schema 生成多 adapter | 手写 Django/Chat/npm/task 四份 schema | 没有合理使用场景；手写多份已造成 npm MCP 漂移 |
+| **新 Capture 表**（仓库 FK 可空 + `git_url`/`branch` 标量；`project` 可选） | 扩 `ProjectMemory` | 永不：`ProjectMemory.project` 必填，与「仓库为主、无项目也先收」冲突；MEM-04 语义是成员共享记忆，不是问答账本 |
+| **新 MCP 工具**（建议名 `report_session_knowledge`） | 扩 `report_project_knowledge` | 仅当产品改口「无项目就丢」——当前锁定禁止。现工具在 `branch_unresolved` 时 `accepted=false` 且不落库 |
+| Cursor：`beforeSubmitPrompt` 缓存问题 + `afterAgentResponse` 配对答案 | Cursor `stop` 抽答案 | Cursor 官方 `stop` 无助手正文；`followup_message` 会再提交一轮，污染会话，禁止用于回写 |
+| Claude Code：`UserPromptSubmit` 记问题 + `Stop.last_assistant_message` | 解析 `transcript_path` JSONL | 官方写明 transcript 异步滞后；Stop 应用 `last_assistant_message` |
+| 中高价值 → 现 `aschedule_ingestion` + 新 `source_kind` | 新建 Qdrant collection | 违反 v0.17「统一知识库」；召回已走 `DeliveryKnowledgeSearchService` + `repository_ids` |
+| MCP 同步落 Capture，评估异步 | 在 hook 里等 LLM 打分 | hook 超时会拖 IDE；评估必须 Durable 队列 |
+| 安装器 merge Cursor `hooks.json` | 做 Cursor 专用插件 / VS Code extension | v0.15 已否决专用插件（PROJX-04）；hooks.json 是官方一等配置 |
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| `rank_bm25` | 本仓 Qdrant sparse vector 已承担 lexical/BM25 面；再建进程内索引带来刷新、分支、权限与多 worker 一致性问题 | Qdrant named sparse+dense + RRF |
-| Elasticsearch/OpenSearch | 仅为 Process BM25 引入新服务，运维和数据同步成本远大于收益 | 现有 Qdrant |
-| LadybugDB/Kuzu/Neo4j | GitNexus 的存储选型不是 Friday 功能前提；会形成第二图事实源 | Django ORM + GraphService + NetworkX + Qdrant 投影 |
-| GitNexus npm/package 直接嵌入 | GitNexus v1.6.9 为 Node 22+、不同图存储/模型/许可证；Friday 已有同类底座，集成会绕过权限、排除、归因与水位 | 参考其契约/算法结构，落到 Friday service |
-| `scikit-learn`/NumPy/SciPy/pandas 只为 benchmark | 现有指标公式简单，重依赖不带来硬收益 | stdlib + pytest |
-| LTR/学习排序 | 当前 labeled query 数量未知，小样本易过拟合且难解释；违背“先 baseline 再锁门” | RRF + 可拆解信号；有足量 qrels 后再评估 |
-| LLM 生成 Process 名/关键词作为唯一检索文本 | 不可复现、成本高、模型漂移；会让 benchmark 混入模型变化 | 先用确定性字段投影；LLM summary 仅可选信号并记录 model/version |
-| 全仓同名 fuzzy resolver | 会提高“resolved 数”同时制造误连，直接污染 Process/impact/trace | 语言 import/receiver evidence；歧义返回候选或 unresolved |
-| 只测 resolved rate | 把错误连接也算成功，无法证明边质量 | precision/recall + FP/FN + reason buckets |
-| 直接照搬 GitNexus 排序常数 | `k=60`/cohesion 0.1 是实现起点，不是 Friday 数据上的最优证据 | baseline + qrels 后决定并版本化 |
+| 把 Interaction Ledger / `raw_request` 当 RAG 正文 | 锁定三层分离；Ledger 是审计与用量，`redact_for_ledger` 后也不该进向量 | `McpToolView._begin/_record` 照常记本次工具调用；知识只进 Capture →（中高）KnowledgeEntity |
+| `ProjectMemory` / `MemoryService.append` 作为 Capture 唯一落点 | 强制项目；`branch_unresolved` 静默丢；active 直写是 Phase 86 对「git 改动摘要」的 deviation，不是零散问答 | 新表 + `CaptureService`（INV-6 单一写入） |
+| 扩 `report_project_knowledge` 的 `content` 自由文本扛 Q&A | 无 `question`/`answer`/`response_model`/`session`；snapshot 已与 serializer 漂移（snapshot 仍是 `project_id, content, source_conversation_id`） | 新工具 + **完整** snapshot（请求/响应键一次写对） |
+| 新 npm 依赖（Mem0、LangChain memory、zod、axios） | 质量门禁止；MCP/skills 已能 HTTP + JSON Schema | 现 `@modelcontextprotocol/sdk` + DRF |
+| 新向量库 / 新 `llama-index` 存储 | 重复索引、权限过滤要重做 | `delivery_knowledge` + 新 `source_kind=session_capture`（名可微调，逻辑隔离同 `project_memory`） |
+| Cursor `afterAgentThought` 落库 | 锁定「不存隐藏 CoT」；官方入参即完整 thinking 文本 | 忽略该 hook；客户端只抽精华 |
+| 客户端猜 `response_model` | 拿不到记 `unknown` | 字段可选，默认 `unknown` |
+| 为 Capture 新建 Django app / 新微服务 | 过重；FK 指向 `repositories.Repository` / `initiatives.Project` 即可 | 放 `knowledge` app（靠近摄取）或 `initiatives` 但 **project 必须 null=True** |
+| Cursor `beforeSubmitPrompt` 注入 `additionalContext` | 官方输出仅 `continue` / `user_message`；社区仍在要注入能力。Phase 86 结论仍成立 | 读路径继续 always-on rule + MCP；Cursor **会话级**注入可用 `sessionStart.additional_context`（与 per-prompt 无关） |
+| Stop hook 在「无 git diff」时 `fail_soft` 跳过 | 现 `skills/hooks/stop` 无改动即 exit 0，直接违反 MCP-02/SKILL-01 | 改 Stop：无 diff 仍回写本轮 Q&A；git 摘要可继续调旧 `report_project_knowledge`（有项目时） |
+| 升级 `@modelcontextprotocol/sdk` major / `mcp` Python 到 2.x | 服务端刻意 pin `mcp>=1.25.0,<2`（SDK 装饰器） | 保持现 pin |
 
 ## Stack Patterns by Variant
 
-**如果仓库没有可用 embedding provider 或旧 collection 只有 dense：**
-- 保持明确降级：sparse-only/dense-only 仍返回结果，`degradation` 标记缺失 lane。
-- 不把“0 Process”解释成“仓库没有相关流程”；先区分索引缺失、stale、召回为空。
+**如果宿主是 Claude Code：**
+- 用插件 `hooks/hooks.json`：`UserPromptSubmit`（stdin 有 `prompt` + `session_id`）缓存本轮问题精华；`Stop` 读 `last_assistant_message` 抽答案精华，调新 MCP 工具。
+- 现 Stop 的 git `--stat` 上报保留为 **附加** 项目记忆路径，不得再当唯一写路径。
+- 凭证顺序不变：`FRIDAY_BASE_URL`/`FRIDAY_ACCESS_TOKEN` → `FRIDAY_API_URL`/`FRIDAY_PAT` → `~/.friday/config.json`。
 
-**如果 Process 数量小、精确 endpoint/符号查询占主导：**
-- SQL 精确命中可作为独立候选 lane，再与 hybrid rank 融合。
-- 不因此取消 Process 向量索引；业务自然语言仍需要 semantic lane。
+**如果宿主是 Cursor：**
+- `beforeSubmitPrompt`：只记录 `prompt`（可 `continue: true`），**不拦截**；问题缓存到 `~/.cache/friday-skills/`（与现 ctx/stop marker 同目录）。
+- `afterAgentResponse`：官方入参 `{ text }`，配对缓存问题后 MCP 回写。这是 Cursor 侧答案的唯一可靠钩子。
+- `stop`：不要用来抽答案；可继续做 git 改动摘要（现 ide-hook-assets 写路径）。
+- `sessionStart`：可注入仓库级提示，**不能**替代 per-turn 问答采集。
+- 安装器必须 merge `.cursor/hooks.json`；今日 `skills/lib/installer.mjs` **只装 skills + friday.mdc，不装 Cursor hooks**——这是本里程碑必改集成点。
 
-**如果 resolver 无法确定 receiver 类型：**
-- 返回 unresolved + reason/evidence，impact 标为 lower-bound/unknown。
-- 可建议 grep 二次核验，但不得静默连接同名符号。
+**如果仓库解析失败 / 无 `repository_id`：**
+- 客户端仍提交 `git remote`/`branch`/`session` 标量；服务端解析 `Repository.git_url` **best-effort**。
+- 解析失败：**照样 INSERT Capture**（`repository_id=NULL`），`reason` 可标 `repo_unresolved`，**禁止**映射成现网的 `branch_unresolved` 丢弃语义。
+- 项目解析继续可选增强，失败不影响 Capture。
 
-**如果 benchmark 后发现 TS/JS 提升明显、Python 无提升：**
-- 按语言独立 gate 与发布；不要用总体均值掩盖某语言回退。
-
-**如果未来 LSP 默认翻转：**
-- 单独里程碑比较 tree-sitter-only 与 LSP cold/warm 质量、耗时、内存、故障降级。
-- 本里程碑只保留 LSP 可选实验 lane，不改变生产默认。
+**如果价值评估为 low：**
+- 行留在 Capture 表（评测回放）；**不**调用 `aschedule_ingestion`；不进 Qdrant。
+- 质量门槛（过短/低信息）可拒收向量化，但与「low 仍落账本」分开：门槛过严会违反「零散提问也收集」——建议门槛只挡空串/密钥，价值分给 LLM。
 
 ## Version Compatibility
 
-| Package | Compatible With | Notes |
-|---------|-----------------|-------|
-| `qdrant-client==1.16.2` | 现有 Qdrant deployment | 当前代码已使用 `query_points`、`Prefetch`、`FusionQuery(RRF)`；无需升级 |
-| `networkx==3.6.1` | Python 3.14 | 已锁定并直接声明 `<4` |
-| `fastembed==0.7.4` | 现有 embedding 服务 | 索引与查询必须记录并核对 model/dim，防语义 lane 静默失效 |
-| `pytest==9.0.2` | Python 3.14 | 现有 `perf` marker；参数化和 fixture 足够 |
-| `jsonschema==4.26.0` | MCP JSON Schema | 可校验 canonical tool output；注意发布时固定 schema draft |
-| Python `mcp>=1.25,<2` | `claude-agent-sdk>=0.1.58,<0.2` | 本仓注释明确 SDK 依赖 MCP 1.x lowlevel decorator，禁止盲升 2.x |
-| npm `@modelcontextprotocol/sdk ^1.29.0` | Node `>=18`（当前 npm 包） | 足够发布 tools/list/call 与 schema；不需要跟随 GitNexus 的 Node 22 runtime |
-| GitNexus `v1.6.9` | 参考实现，不作为依赖 | 最新 release 2026-07-04；其 package 要求 Node `^22.18 || >=24.11` 且是 PolyForm Noncommercial，进一步支持“不嵌入” |
+| Package A | Compatible With | Notes |
+|-----------|-----------------|-------|
+| Django `>=5.1` / Python `3.14` | 现 `sync_to_async` ORM 纪律 | Capture 写路径必须 `CaptureService`，异步 view 不直接 `.save()` |
+| `djangorestframework>=3.15` | `McpToolView` PAT/JWT | 新 serializer `required`: `question`,`answer`；其余可选 |
+| `@friday-ai-codes/mcp@0.6.x` + `@modelcontextprotocol/sdk ^1.29.0` | 服务端 `TOOL_SCHEMA_SNAPSHOT` | 发 npm 前跑 `test_mcp_package_alignment`；不同步则 Cursor 调不到新工具 |
+| `@friday-ai-codes/skills@0.7.x` | Claude Code 插件 hooks + Cursor `hooks.json` v1 | 插件根 `hooks/hooks.json` 已有 UserPromptSubmit/Stop；Cursor 侧是缺口 |
+| 服务端 `mcp>=1.25.0,<2` | `claude-agent-sdk` | 勿为会话回写放开 mcp 2 |
+| Cursor Hooks `version: 1` | `beforeSubmitPrompt` 无 additional_context | 以 [cursor.com/docs/hooks](https://cursor.com/docs/hooks.md) 为准，不以论坛猜测为准 |
+| Claude Code Stop | `last_assistant_message` | [code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks) 2026 文档 |
 
-## 明确的“不新增 / 不更换”
+## Integration map（本里程碑改哪些面）
 
-- 不新增生产 Python 包。
-- 不新增数据库或搜索服务。
-- 不更换 NetworkX、Qdrant、Django ORM、tree-sitter。
-- 不引入 GitNexus runtime/package。
-- 不引入 `rank_bm25`、Elasticsearch/OpenSearch、Neo4j/Kuzu/LadybugDB。
-- 不引入 LTR、reranker 或新 embedding model，除非 baseline 给出硬证据。
-- 不翻转 LSP 默认值；Go resolver 深化与真实跨仓 impact 留 future。
-- 不为 benchmark 引入 NumPy/SciPy/pandas/scikit-learn；`ir_measures` 仅 future dev-only 候选。
+| 层 | 动作 | 不改 |
+|----|------|------|
+| `knowledge` 新模型 + `CaptureService` + migration | **新增** | 不改 `ProjectMemory` 必填 FK |
+| `mcp_tools/serializers.py` + `views.py` + `urls.py` + `TOOL_SCHEMA_SNAPSHOT` | **新增工具** | 保留 `report_project_knowledge` 给「有项目的记忆沉淀」 |
+| `mcp/src/tools.ts` + `TOOL_ANNOTATIONS` | **同步** | 不改 MCP SDK |
+| `knowledge/sources/` 新 normalizer | 中高才跑 | 不把 Ledger payload hydrate 进图 |
+| `CallSource` + `LOGGING-SPEC.md` §4.1 | 加 1 个枚举 | 评估 LLM 必须打点 |
+| `skills/hooks/stop` + `user-prompt-submit` | 改采集逻辑 | 凭证解析/fail-soft/exit 0 模式保留 |
+| `skills/lib/installer.mjs` | merge Cursor hooks | 不引入新依赖 |
+| `server/initiatives/services/ide_hook_assets.py` | 资产脚本对齐新工具 | Cursor 读路径仍不押 `beforeSubmitPrompt` 注入 |
+| Vue 控制台 | **本里程碑可不做大前端**（PROJECT 小版本惯例） | 回放可后续 REST；先 MCP + 表 |
+
+## MCP 契约（栈层，非产品文案）
+
+建议请求键（DRF 为真源，snapshot 必须抄全）：
+
+- 必填：`question`, `answer`（客户端已抽精华，长度上限对齐现 `content` 量级，建议各 `<=20000`）
+- 可选：`response_model`（默认 `unknown`）, `repository_id`, `git_url`, `branch_name`, `session_id`, `project_id`, `client`（`cursor`/`claude_code`）
+- 禁止必填 `project_id`；禁止「无项目 → 400」
+
+建议响应键：`accepted`, `capture_id`, `repository_id`, `project_id`, `reason`, `run_id`（`reason` 可含 `repo_unresolved` 但仍 `accepted=true`）
+
+`idempotentHint: true` 可按 `(token_user, session_id, question_hash)` 幂等，避免 Stop 重试双写。
+
+现网债：`TOOL_SCHEMA_SNAPSHOT["report_project_knowledge"]` **小于**真实 serializer（缺 `branch_name`/`repository_id`/`writeback_mode`/`target`/`distill`）。本里程碑 **不要顺手「修一半」旧 snapshot** 除非单独立项；新工具必须一次对齐，避免再制造第三份漂移。
+
+## Observability（强制，无新库）
+
+- 入口：`category=caller`, `component=mcp_tools`（或 `knowledge`）
+- 评估 LLM：`call_source=session_capture_eval`（需写入 `CallSource` 与 LOGGING-SPEC）
+- 摄取：复用 knowledge normalizer 的 `sampling` 事件
+- Ledger：工具调用走既有 `begin_interaction_run`；**不要**把问答全文当 RAG 源从 Ledger 回灌
 
 ## Sources
 
-### GitNexus 官方实现（HIGH）
-
-- https://github.com/abhigyanpatwari/GitNexus/releases/tag/v1.6.9 — 当前 release v1.6.9，2026-07-04。
-- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/package.json — v1.6.9 依赖、Node 要求与 PolyForm Noncommercial license。
-- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/mcp/tools.ts — `query` 契约：process-grouped hybrid search，返回 processes/process_symbols/definitions。
-- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/mcp/local/local-backend.ts — hybrid 并行召回、批量 `STEP_IN_PROCESS`/Community enrichment、Process 聚合与 phase timing；也显示手写 RRF/常数可能漂移，故不照搬。
-- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/core/search/hybrid-search.ts — BM25 + semantic + RRF 与 FTS 失败 semantic-only fallback。
-- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/core/ingestion/process-processor.ts — entry scoring、受限遍历、路径去重、确定性 tie-break、截断统计。
-- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/core/ingestion/languages/typescript/scope-resolver.ts — tsconfig/workspace/receiver/return type 的语言 capability。
-- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/src/core/ingestion/languages/python/scope-resolver.ts — namespace import、LEGB、MRO、constructor/receiver 的语言 capability。
-- https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/gitnexus/bench/receiver-resolution/BASELINE.md — baseline.json 单一事实源、byte-exact check、按 origin/shape/language 记录 denominator，避免用直觉设阈值。
-
-### 官方协议与检索文档（HIGH）
-
-- https://modelcontextprotocol.io/specification/2026-07-28/server/tools — tools/list/call、`outputSchema`、`structuredContent` 合规要求与 text 兼容建议。
-- https://qdrant.tech/documentation/search/hybrid-queries/ — Query API prefetch、RRF/DBSF、weighted RRF；权重应基于 validation set。
-- https://qdrant.tech/documentation/search/text-search/hybrid-search/ — semantic + lexical 同请求融合，阈值需按自身数据调优。
-- https://docs.pytest.org/en/stable/how-to/parametrize.html — fixture/function/dynamic parametrization。
-- https://github.com/usnistgov/trec_eval/blob/master/README — qrels + ranked run 的标准 IR 评测工具与逐 query 输出。
-- https://trec.nist.gov/pubs/trec16/appendices/measures.pdf — precision/recall/AP 等检索指标定义。
-
-### 本仓证据（HIGH）
-
-- `server/pyproject.toml` / `server/uv.lock` — qdrant-client 1.16.2、networkx 3.6.1、fastembed 0.7.4、pytest 9.0.2、jsonschema 4.26.0 已存在。
-- `server/services/qdrant_service.py` — named dense/sparse、Qdrant RRF、multi-probe、dense fallback 已实现。
-- `server/codegraph/models.py` — `ProcessTrace`、`SymbolCommunity`、CallEdge `callee_qualifier` 与 resolved callee 字段。
-- `server/services/code_graph/process_trace.py` — Endpoint→Process 现有构建、步骤 `file:line`、硬 ceilings 与 degradation。
-- `server/codegraph/resolver/` — 现有 `ImportResolver`/`SymbolIndex`/TS·JS/Python/Go strategy seam。
-- `server/mcp_tools/serializers.py`、`server/agents/tools/`、`mcp/src/tools.ts` — 服务端/Chat/npm 多契约现状；npm 37 工具缺 `impact_analysis`、`trace_call_path`、`detect_changes`、`list_processes`、`get_process`，漂移已坐实。
-- `server/tests/mcp_tools/test_mcp_package_alignment.py` 与 `test_schema_snapshot.py` — 可扩展的契约守门点。
+- 仓库：`server/mcp_tools/views.py`（`_resolve_report_project_id` / `branch_unresolved` 丢弃）、`serializers.py` `ReportProjectKnowledgeRequestSerializer`、`initiatives/models/memory.py`、`interactions/models.py`、`knowledge/sources/project_memory.py`、`skills/hooks/{stop,user-prompt-submit}`、`skills/hooks/hooks.json`、`skills/lib/installer.mjs`、`mcp/package.json` `0.6.0`、`skills/package.json` `0.7.0` — **HIGH**
+- Cursor 官方 Hooks：[https://cursor.com/docs/hooks.md](https://cursor.com/docs/hooks.md) — `beforeSubmitPrompt` 仅 `continue`/`user_message`；`afterAgentResponse` 入参 `text`；`stop` 无助手正文；`sessionStart` 可 `additional_context` — **HIGH**
+- Claude Code 官方 Hooks：[https://code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks) — `UserPromptSubmit` 用 `hookSpecificOutput.additionalContext` 注入；Stop 用 `last_assistant_message` — **HIGH**
+- 社区 Cursor `beforeSubmitPrompt` 注入请求：[forum.cursor.com/t/150707](https://forum.cursor.com/t/hooks-allow-beforesubmitprompt-hook-to-inject-additional-context/150707) — 与官方输出 schema 一致，**不能**当已交付能力 — **MEDIUM**（仅作「不要押注入」佐证）
+- v0.16 Phase 86 / `ide_hook_assets.py`：Cursor 读路径不押注入 — 与 2026 官方文档仍一致 — **HIGH**
 
 ---
-*Stack research for: v0.24.0 单仓图查询对齐 GitNexus*
-*Researched: 2026-08-24*
+*Stack research for: Friday AI v0.25.0 IDE session knowledge writeback*
+*Researched: 2026-08-28*
