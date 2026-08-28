@@ -94,11 +94,11 @@ if updated != 1:
 
 **应新增的 symbol 形状：**
 - `get_capture(capture_id)`：worker 只读。
-- `claim_evaluation(capture_id)`：仅 `pending_eval|eval_failed -> evaluating`，同一 CAS 内 `eval_attempts=F()+1`。
+- `claim_evaluation(capture_id)`：`pending_eval|eval_failed -> evaluating` 时同一 CAS 内 `eval_attempts=F()+1`；已是 `evaluating` 则 resume、不递增。
 - `record_evaluation(capture_id, tier, essence)`：仅 `evaluating -> evaluated_low|ingest_pending`。
 - `record_eval_failure(...)`：仅 `evaluating -> eval_failed`，错误先 `redact_secrets_in_text`，写 `next_retry_at`。
-- `claim_ingestion(capture_id)`：仅 `ingest_pending|ingest_failed -> ingesting`，递增 ingest attempt。
-- `record_ingested` / `record_ingest_failure`：仅从 `ingesting` 转终态/失败态。
+- `claim_ingestion(capture_id)`：`ingest_pending|ingest_failed -> ingesting` 时递增 ingest attempt；已是 `ingesting` 则 resume、不递增。
+- `record_ingested` / `record_ingest_failure`：仅从 `ingesting` 转终态/失败态。legacy `evaluated`、`evaluated_low`、`ingested` 不得 claim。
 
 所有 `SessionCapture.objects.create/update/save` 继续只存在于该服务；worker 和 normalizer 不直接写 Capture。终态 CAS 返回 0 时按 `not_claimable` no-op，不抛成任务失败。
 
