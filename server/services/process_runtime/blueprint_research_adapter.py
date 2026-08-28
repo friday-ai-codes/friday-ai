@@ -190,21 +190,21 @@ class BlueprintResearchAdapter:
 
         deep_index, light_index = self._bucket(candidates, forced=forced)
         degraded = False
+        deep_dispatch_available = True
         if deep_index:
             online = await self._count_online_runners()
             if online == 0:
-                # 编排是后台推进（非交互）：无 runner 不做重试循环，整体降级轻量合成，
-                # 绝不阻断本 stage —— 轻量结论仍产出，确认门仍有现状可展示。
+                # direct 仓必须有真实仓库证据才能进入确认门。无 runner 时保留 task 为
+                # pending，不能把路由 matched_domains 合成为「调研结论」让人类盲确认。
                 degraded = True
+                deep_dispatch_available = False
                 logger.warning(
-                    "blueprint_repo_research_degraded_to_light",
+                    "blueprint_repo_research_waiting_for_runner",
                     session_id=str(getattr(session, "id", "")),
                     deep_count=len(deep_index),
                     category="sampling",
                     component="process_runtime",
                 )
-                light_index = {**light_index, **deep_index}
-                deep_index = {}
 
         charters = await self._aload_charters(list(candidates.keys()))
         # plan 模式：阶段 1 的完整结论（responsibility + findings）随 prompt 下发，让拟方案
@@ -227,6 +227,9 @@ class BlueprintResearchAdapter:
                 repository_id = str(task.repository_id)
                 if task.status not in _DISPATCHABLE_STATUSES:
                     continue
+                task_ids.append(str(task.id))
+                if not deep_dispatch_available:
+                    continue
                 # plan 模式豁免本上界：`attempt` 是**跨阶段共用**的派发计数（阶段 1 已把它
                 # 涨到 1），沿用会让阶段 2 的第一次重试就撞 `max_attempts_exhausted` 而静默
                 # 降级。阶段 2 的有界重试上界另在回调侧按 `bp-plan-` 容器次数判（≤2 轮）。
@@ -243,7 +246,6 @@ class BlueprintResearchAdapter:
                         repository_name=str(cand.get("repository_name") or ""),
                     )
                     continue
-                task_ids.append(str(task.id))
                 try:
                     if await self._dispatch_deep_task(
                         session,
@@ -1140,6 +1142,7 @@ class BlueprintResearchAdapter:
         )
         return {
             "repository_id": str(task.repository_id),
+            "research_depth": "light",
             "research_summary": summary,
             "proposed_changes": [],
             "candidate_files": [],

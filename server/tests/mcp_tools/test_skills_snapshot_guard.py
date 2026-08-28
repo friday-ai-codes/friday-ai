@@ -22,7 +22,7 @@ SKILL_FILES = sorted(REPO_ROOT.glob("skills/skills/*/SKILL.md"))
 
 # 只认反引号内、MCP 工具名动词前缀开头的 snake_case token
 _TOOL_TOKEN_RE = re.compile(
-    r"`((?:search|create|get|list|execute|improve|analyze|summarize|route|find|grep|read|report|lookup|reverse|update|confirm|answer|apply|generate|start)_[a-z0-9_]+)`"
+    r"`((?:search|create|get|list|execute|improve|analyze|summarize|route|find|grep|read|report|lookup|reverse|update|confirm|answer|approve|request|apply|generate|start|detect|graph|impact|rename|trace)_[a-z0-9_]+)`"
 )
 
 
@@ -79,3 +79,93 @@ def test_skill_tool_references_subset_of_snapshot() -> None:
         "skills 文档引用了 snapshot 之外的工具名：要么工具没进 TOOL_SCHEMA_SNAPSHOT，"
         "要么文档写了不存在的工具（P5 文档面漂移）：\n" + detail
     )
+
+
+def test_friday_solution_documents_canonical_blueprint_controller() -> None:
+    """主文与 HTTP fallback 都必须保留蓝图人审/CAS/编码门禁完整协议。"""
+    solution_dir = REPO_ROOT / "skills" / "skills" / "friday-solution"
+    documents = (
+        solution_dir / "SKILL.md",
+        solution_dir / "references" / "http-fallback.md",
+    )
+    required_terms = {
+        "idempotency_key",
+        "blueprint_project_id",
+        "get_technical_blueprint",
+        "answer_blueprint_clarification",
+        "request_technical_blueprint_changes",
+        "approve_technical_blueprint",
+        "artifact_version_id",
+        "content_hash",
+        "confirmed",
+        "Coding",
+        "orphan",
+        "cancelled",
+    }
+
+    missing: dict[str, list[str]] = {}
+    for document in documents:
+        text = document.read_text(encoding="utf-8")
+        absent = sorted(term for term in required_terms if term not in text)
+        if absent:
+            missing[str(document.relative_to(REPO_ROOT))] = absent
+
+    assert not missing, f"friday-solution canonical blueprint 协议不完整：{missing}"
+
+
+def test_friday_solution_cancelled_orphan_is_strictly_read_only() -> None:
+    """cancelled/orphan 只能对账，不能复活 Issue 或推进 Friday 状态机。"""
+    solution_dir = REPO_ROOT / "skills" / "skills" / "friday-solution"
+    documents = (
+        solution_dir / "SKILL.md",
+        solution_dir / "references" / "http-fallback.md",
+    )
+    required_invariants = {
+        "Issue 状态与 Friday artifact 均为只读",
+        "禁止把 `cancelled` 改为 `blocked`、`in_progress` 或 `done`",
+        "禁止调用 `create_feishu_technical_plan`",
+        "禁止调用 `answer_blueprint_clarification`",
+        "禁止调用 `approve_technical_blueprint`",
+        "禁止调用 `request_technical_blueprint_changes`",
+        "禁止调用 `start_repo_research`",
+        "禁止派发 Coding",
+        "只有宿主策略明确允许时",
+        "`metadata` 或评论",
+    }
+
+    missing: dict[str, list[str]] = {}
+    for document in documents:
+        text = " ".join(document.read_text(encoding="utf-8").split())
+        absent = sorted(term for term in required_invariants if term not in text)
+        if absent:
+            missing[str(document.relative_to(REPO_ROOT))] = absent
+
+    assert not missing, f"friday-solution cancelled/orphan 只读不变量不完整：{missing}"
+
+
+def test_friday_solution_repo_confirmation_fails_closed_without_research_evidence() -> None:
+    """仓库深调研失败或证据为空时，禁止把候选集包装成人工可确认问题。"""
+    solution_dir = REPO_ROOT / "skills" / "skills" / "friday-solution"
+    documents = (
+        solution_dir / "SKILL.md",
+        solution_dir / "references" / "http-fallback.md",
+    )
+    required_invariants = {
+        '`task_status` 为 `failed`',
+        "`responsibility` 为空",
+        "`fitness.reasons` 为空",
+        "`current_state_summary` 为空",
+        "不得发布或展示为可回答的 `repo_confirmation`",
+        "不得调用 `answer_blueprint_clarification`",
+        "必须标记为调研失败",
+        "重跑 repo_research",
+    }
+
+    missing: dict[str, list[str]] = {}
+    for document in documents:
+        text = " ".join(document.read_text(encoding="utf-8").split())
+        absent = sorted(term for term in required_invariants if term not in text)
+        if absent:
+            missing[str(document.relative_to(REPO_ROOT))] = absent
+
+    assert not missing, f"friday-solution 仓库确认 fail-closed 不变量不完整：{missing}"

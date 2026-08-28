@@ -48,6 +48,7 @@ logger = structlog.get_logger(__name__)
 __all__ = [
     "BLUEPRINT_PROCESS_TYPE",
     "adrive_blueprint_session_to_pause_or_terminal",
+    "areconcile_stalled_blueprint_research_tasks",
     "arecover_stalled_blueprint_sessions",
     "aresume_after_gate_action",
     "aresume_blueprint_session",
@@ -306,6 +307,7 @@ async def arun_blueprint_resume(session_id: str, *, initiated_by_user_id: str = 
             return result
         engine = build_blueprint_engine()
         session = await adrive_blueprint_session_to_pause_or_terminal(engine, session)
+        await _areconcile_mcp_reservation_if_any(session)
         await _afeedback_chat_barrier_if_any(session)
         await _aresume_workflow_node_if_any(session)
         result.update(
@@ -362,6 +364,7 @@ async def aresume_after_gate_action(
         # 测试直驱路径：不入队，同步驱完（与 arun_blueprint_resume 同一组合）。
         try:
             fresh = await adrive_blueprint_session_to_pause_or_terminal(engine, session)
+            await _areconcile_mcp_reservation_if_any(fresh)
             await _afeedback_chat_barrier_if_any(fresh)
             await _aresume_workflow_node_if_any(fresh)
             return fresh
@@ -407,6 +410,25 @@ async def aresume_after_gate_action(
     return session
 
 
+async def _areconcile_mcp_reservation_if_any(session: Any) -> None:
+    """durable resume 的 MCP 预留回写钩子；非 MCP 会话与任何异常均 no-op。"""
+    try:
+        from mcp_tools.technical_plan_service import areconcile_blueprint_reservation
+
+        await areconcile_blueprint_reservation(session)
+    except Exception as exc:  # noqa: BLE001 — 兼容回写不能反噬蓝图推进
+        logger.warning(
+            "blueprint_mcp_reservation_reconcile_failed",
+            category="caller",
+            component="process_runtime",
+            initiated_by_user_id=str(
+                getattr(session, "initiated_by_user_id", "") or "system"
+            ),
+            session_id=str(getattr(session, "id", "") or ""),
+            error=redact_secrets_in_text(str(exc)),
+        )
+
+
 # ── 僵尸会话周期恢复（116 事故修复的另一半）─────────────────────────────────
 
 # 挂起态（waiting_*）与 created 的滞留判定窗口；RUNNING 用更长窗口 ——
@@ -415,6 +437,101 @@ _STALL_WAITING_MINUTES = 15
 _STALL_RUNNING_MINUTES = 60
 # 单次扫描上界：恢复是兜底不是主路径，绝不为「扫全」拖垮 scheduler tick。
 _RECOVERY_BATCH_LIMIT = 20
+
+
+async def areconcile_stalled_blueprint_research_tasks(
+    *, now: Any = None, limit: int = 0
+) -> dict[str, int]:
+    """用持久化 Runner 终态与调研 deadline 收敛遗漏 business callback 的 running task。"""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from delivery.models import RepoResearchTask, RepoResearchTaskStatus
+    from delivery.services import ResearchService
+    from runners.models import RunnerEvent
+    from services.process_runtime.blueprint_research_adapter import _RESEARCH_TIMEOUT
+
+    moment = now or timezone.now()
+    batch = max(int(limit or 0), 0) or _RECOVERY_BATCH_LIMIT
+    counts = {
+        "scanned": 0,
+        "completed_without_callback": 0,
+        "runner_failed": 0,
+        "timed_out": 0,
+        "unchanged": 0,
+    }
+    tasks = [
+        task
+        async for task in RepoResearchTask.objects.select_related("subagent_session")
+        .filter(
+            session__process_type=BLUEPRINT_PROCESS_TYPE,
+            status=RepoResearchTaskStatus.RUNNING,
+            subagent_session__isnull=False,
+        )
+        .order_by("updated_at")[:batch]
+    ]
+    service = ResearchService()
+    for task in tasks:
+        counts["scanned"] += 1
+        sub = task.subagent_session
+        try:
+            terminal = (
+                await RunnerEvent.objects.filter(
+                    detail__task_id=sub.session_id,
+                    event_type__in=[
+                        RunnerEvent.EventType.TASK_COMPLETED,
+                        RunnerEvent.EventType.TASK_FAILED,
+                    ],
+                )
+                .order_by("-created_at")
+                .afirst()
+            )
+            if terminal is not None:
+                if terminal.event_type == RunnerEvent.EventType.TASK_COMPLETED:
+                    await sub.amark_completed()
+                    reason = "completed_without_structured_result_callback"
+                    counts["completed_without_callback"] += 1
+                else:
+                    detail = terminal.detail if isinstance(terminal.detail, dict) else {}
+                    reason = str(detail.get("error") or "runner_task_failed")
+                    await sub.amark_failed(reason)
+                    counts["runner_failed"] += 1
+                await service.mark_failed(task, {"reason": reason})
+                continue
+
+            started_at = sub.started_at or sub.created_at
+            if started_at <= moment - timedelta(seconds=_RESEARCH_TIMEOUT):
+                await sub.amark_timeout()
+                await service.mark_failed(
+                    task,
+                    {
+                        "reason": "container_timeout",
+                        "timeout_seconds": _RESEARCH_TIMEOUT,
+                    },
+                )
+                counts["timed_out"] += 1
+            else:
+                counts["unchanged"] += 1
+        except Exception as exc:  # noqa: BLE001 — 单 task 对账失败不阻断整批
+            counts["unchanged"] += 1
+            logger.warning(
+                "blueprint_research_terminal_reconcile_failed",
+                category="caller",
+                component="process_runtime",
+                initiated_by_user_id="system",
+                session_id=str(task.session_id),
+                task_id=str(task.id),
+                error=redact_secrets_in_text(str(exc)),
+            )
+    logger.info(
+        "blueprint_research_terminal_reconcile_completed",
+        category="caller",
+        component="process_runtime",
+        initiated_by_user_id="system",
+        **counts,
+    )
+    return counts
 
 
 async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0) -> dict:
@@ -451,6 +568,7 @@ async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0
         from .entrypoint import build_blueprint_engine
 
         moment = now or timezone.now()
+        await areconcile_stalled_blueprint_research_tasks(now=moment, limit=limit)
         waiting_before = moment - timedelta(minutes=_STALL_WAITING_MINUTES)
         running_before = moment - timedelta(minutes=_STALL_RUNNING_MINUTES)
         batch = max(int(limit or 0), 0) or _RECOVERY_BATCH_LIMIT
@@ -550,7 +668,9 @@ async def aresume_blueprint_session(session: Any, *, engine: Any = None) -> Any:
         # 测试直驱路径：同步驱完（barrier 链没有 chat/workflow 回灌职责之外的差异，
         # 两个 hook 由任务体统一承担，这里保持旧契约只驱动）。
         try:
-            return await adrive_blueprint_session_to_pause_or_terminal(engine, session)
+            fresh = await adrive_blueprint_session_to_pause_or_terminal(engine, session)
+            await _areconcile_mcp_reservation_if_any(fresh)
+            return fresh
         except Exception as exc:  # noqa: BLE001 — 回调链 best-effort
             logger.warning(
                 "blueprint_barrier_resume_failed",

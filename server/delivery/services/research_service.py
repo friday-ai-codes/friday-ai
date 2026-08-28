@@ -77,7 +77,8 @@ class ResearchService:
     def _mark_running_sync(self, task: RepoResearchTask, subagent_session: Any) -> None:
         task.status = RepoResearchTaskStatus.RUNNING
         task.subagent_session = subagent_session
-        task.save(update_fields=["status", "subagent_session", "updated_at"])
+        task.error = {}
+        task.save(update_fields=["status", "subagent_session", "error", "updated_at"])
 
     async def mark_done(self, task: RepoResearchTask) -> None:
         """task.status→done。"""
@@ -86,7 +87,8 @@ class ResearchService:
     @sync_to_async
     def _mark_done_sync(self, task: RepoResearchTask) -> None:
         task.status = RepoResearchTaskStatus.DONE
-        task.save(update_fields=["status", "updated_at"])
+        task.error = {}
+        task.save(update_fields=["status", "error", "updated_at"])
 
     async def mark_failed(self, task: RepoResearchTask, error: Any) -> None:
         """task.status→failed，error JSON 落库（非 dict 包成 {"message": str}）。"""

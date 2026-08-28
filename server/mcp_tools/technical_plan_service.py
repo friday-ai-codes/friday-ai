@@ -99,6 +99,100 @@ def _technical_plan_output_from_record(
     return output
 
 
+async def areconcile_blueprint_reservation(
+    session: Any,
+    *,
+    technical_plan_id: str = "",
+) -> dict[str, Any]:
+    """把 durable 蓝图会话的首个 artifact 幂等关联回原 MCP 预留。
+
+    ``technical_plan_id`` 仅用于修复未写入 session 引用的历史取消请求；新会话从
+    ``stage_state.decomposition.mcp_technical_plan_id`` 自动取。关联前验证 context Space
+    解析出的 Project 与蓝图 ``meta.project_id`` 相同，禁止跨项目误绑。
+    """
+    from delivery.models import ArtifactVersion
+    from services.process_runtime.blueprint_intake import aresolve_project_id
+
+    decomposition = (
+        (getattr(session, "stage_state", None) or {}).get("decomposition", {})
+        if isinstance(getattr(session, "stage_state", None), dict)
+        else {}
+    )
+    reservation_id = str(
+        technical_plan_id or decomposition.get("mcp_technical_plan_id") or ""
+    ).strip()
+    if not reservation_id:
+        return {"reconciled": False, "reason": "reservation_unlinked"}
+    reservation = (
+        await McpWorkItemTechnicalPlan.objects.select_related("context", "context__space")
+        .filter(id=reservation_id)
+        .afirst()
+    )
+    if reservation is None:
+        return {"reconciled": False, "reason": "reservation_not_found"}
+    version_id = getattr(session, "current_artifact_version_id", None)
+    version = (
+        await ArtifactVersion.objects.select_related("artifact").filter(id=version_id).afirst()
+        if version_id
+        else None
+    )
+    if version is None:
+        return {"reconciled": False, "reason": "artifact_not_available"}
+    content = version.content if isinstance(version.content, dict) else {}
+    blueprint_project_id = str((content.get("meta") or {}).get("project_id") or "")
+    expected_project_id = await aresolve_project_id(
+        entry="mcp",
+        work_item_context=reservation.context,
+    )
+    if not blueprint_project_id or blueprint_project_id != expected_project_id:
+        return {"reconciled": False, "reason": "project_identity_mismatch"}
+    artifact_id = str(version.artifact_id)
+    if reservation.blueprint_artifact_id:
+        return {
+            "reconciled": False,
+            "reason": (
+                "already_reconciled"
+                if reservation.blueprint_artifact_id == artifact_id
+                else "artifact_conflict"
+            ),
+        }
+    retry_state = dict(reservation.retry_state or {})
+    retry_state.update(
+        {
+            "retryable": True,
+            "failed_stage": "blueprint_pending",
+            "session_id": str(getattr(session, "id", "") or ""),
+            "blueprint_extras": {
+                "blueprint_artifact_id": artifact_id,
+                "blueprint_status": str(getattr(version.artifact, "blueprint_status", "") or ""),
+            },
+        }
+    )
+    updated = await McpWorkItemTechnicalPlan.objects.filter(
+        id=reservation.id,
+        blueprint_artifact_id="",
+    ).aupdate(
+        blueprint_artifact_id=artifact_id,
+        retry_state=retry_state,
+        error_stage="",
+        error="",
+    )
+    logger.info(
+        "mcp_blueprint_reservation_reconciled",
+        category="caller",
+        component="mcp_tools",
+        initiated_by_user_id=str(getattr(session, "initiated_by_user_id", "") or "system"),
+        technical_plan_id=str(reservation.id),
+        session_id=str(getattr(session, "id", "") or ""),
+        blueprint_artifact_id=artifact_id,
+        reconciled=updated == 1,
+    )
+    return {
+        "reconciled": updated == 1,
+        "reason": "reconciled" if updated == 1 else "concurrent_reconcile",
+    }
+
+
 _STATUS_MAP: dict[str, McpWorkItemTechnicalPlan.Status] = {
     "completed": McpWorkItemTechnicalPlan.Status.COMPLETED,
     "partial": McpWorkItemTechnicalPlan.Status.PARTIAL,
@@ -744,6 +838,7 @@ async def build_work_item_technical_plan(
         # 116-REVIEW MJ-02：档位从 MCP 请求透传到 stage_state，⇒ spec_gate 真的读得到。
         assumptions_tier=assumptions_tier,
         project_id=blueprint_project_id,
+        technical_plan_id=str(reservation.id) if reservation is not None else "",
     )
     # 116-06（GATE-01）：开关切到蓝图时的三个追加响应键（关闭时为空 dict）。
     blueprint_extras = await _ablueprint_response_extras(delegate)

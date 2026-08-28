@@ -18,6 +18,7 @@ mcp_tools、duration_ms、status）；编排内部 LLM/召回埋点由 process_r
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from types import SimpleNamespace
@@ -164,6 +165,7 @@ async def _amaybe_start_blueprint_session(
     work_item_context: Any,
     assumptions_tier: str = "",
     project_id: str = "",
+    technical_plan_id: str = "",
 ) -> Any:
     """``mcp`` 开关切到蓝图时建 ``technical_blueprint`` 会话；否则返回 ``None`` 走旧链。
 
@@ -205,6 +207,7 @@ async def _amaybe_start_blueprint_session(
         project_id=project_id,
         entry_key="mcp",
         assumptions_tier=assumptions_tier,
+        technical_plan_id=technical_plan_id,
     )
 
 
@@ -218,6 +221,7 @@ async def delegate_process_runtime(
     work_item_context: Any = None,
     assumptions_tier: str = "",
     project_id: str = "",
+    technical_plan_id: str = "",
 ) -> DelegateResult:
     """delegate 到 ``process_runtime`` 统一编排，产 canonical MergedPlan/PlanVersion。
 
@@ -286,6 +290,7 @@ async def delegate_process_runtime(
             work_item_context=work_item_context,
             assumptions_tier=assumptions_tier,
             project_id=project_id,
+            technical_plan_id=technical_plan_id,
         )
         session = session or await start_orchestration(
             entrypoint="workflow",
@@ -342,6 +347,55 @@ async def delegate_process_runtime(
                 markdown=markdown,
                 model_usage=model_usage,
             )
+    except asyncio.CancelledError:
+        # 客户端断开 / ASGI 请求取消发生在蓝图首驱期间时，drive_lease 会正确释放，但会话仍
+        # 停在当前 stage。CancelledError 继承 BaseException，不会进入下面的 Exception 护栏；
+        # 若继续上抛，外层也到不了 McpWorkItemTechnicalPlan 预留的收尾写入，最终形成
+        # running/no-lease session + idempotency_pending 的双孤儿。
+        #
+        # 仅蓝图链可安全接现有 durable resume；旧 technical_plan 没有对应任务体，保持取消
+        # 原语义。这里不内联重驱、不改 raw status，只把同一个 session 交给既有入队入口，
+        # 并返回 partial 让外层完成同一幂等预留。恢复任务从 DB current_stage 原地续跑。
+        if session is None or str(getattr(session, "process_type", "") or "") != "technical_blueprint":
+            raise
+        handoff_started = time.perf_counter()
+        initiated_by = str(getattr(session, "initiated_by_user_id", "") or "") or "system"
+        try:
+            logger.warning(
+                "mcp_plan_delegate_cancel_handoff_started",
+                category="caller",
+                component="mcp_tools",
+                initiated_by_user_id=initiated_by,
+                session_id=str(getattr(session, "id", "")),
+                current_stage=str(getattr(session, "current_stage", "")),
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort
+            pass
+        from services.process_runtime.blueprint_resume import aresume_after_gate_action
+
+        await aresume_after_gate_action(session, initiated_by_user_id=initiated_by)
+        model_usage = await _aggregate_orchestration_usage(start_dt)
+        pv_id, content, markdown = await _load_canonical(session)
+        result = DelegateResult(
+            session=session,
+            status="partial",
+            content=content,
+            plan_version_id=pv_id,
+            markdown=markdown,
+            model_usage=model_usage,
+        )
+        try:
+            logger.info(
+                "mcp_plan_delegate_cancel_handoff_completed",
+                category="caller",
+                component="mcp_tools",
+                initiated_by_user_id=initiated_by,
+                session_id=str(getattr(session, "id", "")),
+                current_stage=str(getattr(session, "current_stage", "")),
+                duration_ms=round((time.perf_counter() - handoff_started) * 1000, 2),
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort
+            pass
     except BlueprintIntakeRejected as exc:
         # ⭐ 推不出 meta.project_id ⇒ **拒绝发起**（此刻 ⛔ 会话与 artifact 都尚未建立）。
         # 回中性 detail：⛔ 不含内部路径 / 异常原文。⚠️ 这是**业务失败**，如实回 failed ——

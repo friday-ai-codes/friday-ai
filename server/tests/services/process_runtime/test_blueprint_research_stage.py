@@ -587,12 +587,12 @@ async def test_upgrade_to_deep_unknown_repo_returns_false() -> None:
 
 
 # ===========================================================================
-# 8. 无 runner → 整体降级轻量
+# 8. 无 runner → direct 保持待调研，indirect 可轻量
 # ===========================================================================
 
 
-async def test_no_online_runner_degrades_deep_bucket_to_light() -> None:
-    """无 online runner → deep 桶整体降级轻量合成，verdict=partial 且 dispatcher 未被调用。"""
+async def test_no_online_runner_keeps_direct_candidate_pending() -> None:
+    """无 online runner 时 direct 不得用路由证据伪造轻量调研结论。"""
     repo = await _make_repo()
     session = await _make_session(_routing_state(_candidate(repo)))
     dispatcher = _FakeDispatcher()
@@ -603,20 +603,15 @@ async def test_no_online_runner_degrades_deep_bucket_to_light() -> None:
 
     assert result == {
         "dispatched": 0,
-        "synthesized": 1,
+        "synthesized": 0,
         "degraded": True,
         "tasks": result["tasks"],
     }
     assert dispatcher.await_count == 0
 
     task = await RepoResearchTask.objects.filter(session=session).afirst()
-    assert task is not None and task.status == RepoResearchTaskStatus.DONE
-    partial = await PartialPlan.objects.filter(research_task=task, valid=True).afirst()
-    assert partial is not None
-    assert partial.content["fitness"]["verdict"] == "partial"
-    assert partial.content["role_suggestion"] == "indirect"
-    assert partial.content["findings"]
-    assert partial.content["repository_id"] == str(repo.id)
+    assert task is not None and task.status == RepoResearchTaskStatus.PENDING
+    assert not await PartialPlan.objects.filter(research_task=task, valid=True).aexists()
 
 
 async def test_indirect_candidate_synthesized_without_container() -> None:
