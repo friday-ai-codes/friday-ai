@@ -26,6 +26,7 @@ from common.authentication import CookieJWTAuthentication
 from common.log_context import LogSource, bind_source
 from common.logging import redact_secrets_in_text
 from common.request_metrics import arecord_request_metric
+from initiatives.services.capture_service import CaptureService
 from interactions.entry import AccessTokenAuthentication, begin_interaction_run
 from interactions.ledger import (
     arecord_event,
@@ -119,6 +120,7 @@ from .serializers import (
     ReportBlueprintContextRequestSerializer,
     ReportProjectKnowledgeRequestSerializer,
     ReportProjectStateRequestSerializer,
+    ReportSessionKnowledgeRequestSerializer,
     RequestTechnicalBlueprintChangesRequestSerializer,
     ReverseLookupRequestSerializer,
     RouteBlueprintReposRequestSerializer,
@@ -3736,6 +3738,59 @@ async def _resolve_report_project_id(
         input_data["project_id"] = pid
         return pid, None
     return None, "branch_unresolved"
+
+
+class ReportSessionKnowledgeView(McpToolView):
+    """将宿主会话可见问答交给 Capture 唯一 writer 持久化。"""
+
+    tool_name = "report_session_knowledge"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(ReportSessionKnowledgeRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        result = await CaptureService().persist(
+            question=input_data["question"],
+            answer=input_data["answer"],
+            actor=request.user,
+            initiated_by_user_id=request.user.id,
+            session_id=input_data.get("session_id"),
+            project_id=input_data.get("project_id"),
+            repository_id=input_data.get("repository_id"),
+            git_url=input_data.get("git_url") or None,
+            branch_name=input_data.get("branch_name") or None,
+            response_model=input_data.get("response_model"),
+            provider=input_data.get("provider"),
+            input_tokens=input_data.get("input_tokens"),
+            output_tokens=input_data.get("output_tokens"),
+        )
+        capture = result.capture
+        output_data = {
+            "accepted": True,
+            "capture_id": str(capture.id),
+            "reason": result.link_reason,
+            "repository_id": (
+                str(capture.repository_id) if capture.repository_id is not None else None
+            ),
+            "project_id": str(capture.project_id) if capture.project_id is not None else None,
+            "idempotent_hit": result.idempotent_hit,
+            "run_id": str(run.run_id),
+        }
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=[],
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
 
 
 class ReportProjectKnowledgeView(McpToolView):
