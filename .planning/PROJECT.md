@@ -10,17 +10,22 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 让团队"开箱即用、安全地"把需求自动变成代码：用户能顺利完成首次部署与登录、配好必备的 AI 供应商，然后让工作流把飞书需求自动跑成 PR。如果第一步进不去（登录/配置），后面一切都无从谈起。
 
-## Current Milestone
+## Current Milestone: v0.25.0 Cursor / Claude Code 会话知识回写
 
-无活动里程碑；v0.24.0「单仓图查询对齐 GitNexus」已于 2026-08-24 归档。
+**Goal:** 让 Cursor / Claude Code 里的问答（含零散提问）不依赖分支绑定也能回写 Friday：仓库为主挂钩、项目可选；IDE 只抽精华与结构化上下文，Friday 保存原始 Capture、做高中低价值评估，中高价值进入 RAG 可召回。
 
-下一里程碑通过 `$gsd-new-milestone` 重新定义目标与原子需求。
+**Target features:**
+- MCP 回写工具契约：问题 / 答案 / 回答模型 / 仓库 / 分支 / 会话；无项目也先收，禁止 `branch_unresolved` 静默丢数据
+- Skills + hooks（Cursor / Claude Code）：采集与精华抽取；无 git 改动的纯对话也回写
+- Friday Capture 账本与结构化存储（原始问答 ≠ 提炼知识 ≠ Interaction Ledger）
+- Friday 价值评估（high / medium / low）+ 提炼；中高进仓库/项目 RAG，低价值留评测样本
+- 召回与评测模式：按仓/按项目可检索，Capture 可回放
 
 ## Current State
 
 **Latest shipped:** v0.24.0 单仓图查询对齐 GitNexus（2026-08-24，审计 **tech_debt**，39/39 requirements 满足，Phases 133–140，16 plans，**未打 tag**）；真实 benchmark/Qdrant 数值验证保留为 `human_needed`，不宣称数值优于 v0.22.0。此前为 v0.23.0 仓库路由增强与 v0.22.0 代码智能图分析升级。里程碑 v0.1.0–v0.24.0（Phases 1–140）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
 
-**当前在建：** 无。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
+**当前在建：** v0.25.0 Cursor / Claude Code 会话知识回写。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -337,6 +342,14 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - 图片向量库（视觉相似/标注）；补齐 v0.1.0 / v0.2.0 顺延的人工验收（UAT）
 - Bitable 真实列映射（v2 REL-03，待开放平台凭证）
 
+### Active（v0.25.0）
+
+- [ ] **MCP-01**: Cursor / Claude Code 可通过 MCP 提交结构化会话回写（问题、答案、回答模型、仓库、分支、会话），不要求分支已绑定项目
+- [ ] **MCP-02**: 无 `project_id` 时按仓库挂钩仍接受 Capture；解析失败不得静默丢弃
+- [ ] **SKILL-01**: friday skills / hooks 在 Cursor 与 Claude Code 抽取精华上下文并触发回写；无 git 改动的零散问答也收集
+- [ ] **STORE-01**: Friday 以独立 Capture 账本保存结构化原始问答与元数据，不把 Interaction Ledger 当 RAG 正文
+- [ ] **EVAL-01**: Friday 对回写做高/中/低价值评估并提炼精华；中高价值可进仓库/项目 RAG，低价值保留作评测样本
+
 ### Out of Scope
 
 <!-- 明确边界，含理由，避免反复回炉。 -->
@@ -451,6 +464,10 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 | LSP（volar/gopls）默认保持 False，翻转门槛由 baseline 报告决定，本里程碑不盲翻 | 缺少完整 before/after 墙钟与质量证明时翻转会放大冷启动与 OOM 归因难度 | ✓ Validated（v0.22.0，LSP-01 / D-16） |
 | IMPACT-03 诚实 defer：CrossRepo=0 时不宣称生产跨仓 impact 可用 | 合成测绿 ≠ 生产数据流有样本；诚实空列表优于虚假安全感 | ⚠️ Revisit（v0.22.0 IMPACT-03 PARTIAL；待真样本 + LSP 生产者） |
 | v0.22.0 **不打 git tag** | 本仓 tag 是发布轨（`tags: v*`），与 GSD 里程碑轨不同编号；与 v0.19.0/v0.20.0/v0.21.0 归档纪律一致 | ✓ Validated（v0.22.0 归档） |
+| 会话知识回写以**仓库为主挂钩、项目为可选增强**；无项目也必须先收 Capture | 问答不一定是项目级，但通常能挂仓库；零散提问也要收集；`branch_unresolved` 静默跳过会丢数据 | — Pending（v0.25.0） |
+| 原始 Capture / 提炼知识 / Interaction Ledger 三层分离 | Ledger 是审计与用量，禁止反哺检索；Memory 只承载可召回精华；Capture 供评测回放 | — Pending（v0.25.0） |
+| 价值评估由 Friday LLM 打 high/medium/low，低价值不向量化 | 路由 confidence 不是知识价值；写入质量门槛只防噪音，不是评测等级 | — Pending（v0.25.0） |
+| IDE 客户端只抽象上下文并抽精华，不存完整隐藏思维链 | Cursor/Claude Code 侧最小化；模型名/token 拿不到记 `unknown`，不猜测 | — Pending（v0.25.0） |
 
 ## Evolution
 
@@ -470,4 +487,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-24 after archiving v0.24.0 milestone*
+*Last updated: 2026-08-28 after starting milestone v0.25.0*
