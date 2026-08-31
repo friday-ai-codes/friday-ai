@@ -5,28 +5,34 @@ subsystem: repositories
 tags: [durable, index, repo-summary, charter, enqueue]
 
 requires:
+
   - phase: durable-index-summary
     provides: DurableTaskService / QUEUE_INDEX / QUEUE_REPO_SUMMARY / adraft_charter
 provides:
+
   - 建仓后自动入队 full index + AI summary（含创建者归因）
   - summary 成功回写后 durable_charter_draft 串联
   - QUEUE_CHARTER + charter-slot 并发槽位
+
 affects: [repository-create, repo-summary-callback, charter-draft]
 
 tech-stack:
   added: []
   patterns:
+
     - enqueue_* 薄 helper（幂等键 + slot lock + best-effort swallow）
     - summary → charter 归因仅信任 AgentSession.user
 
 key-files:
   created:
+
     - server/repositories/index_enqueue.py
     - server/repositories/charter_enqueue.py
     - server/tests/repositories/test_create_auto_enqueue.py
     - server/tests/durable/test_charter_draft_task.py
     - server/tests/subagent/test_summary_callback_charter_enqueue.py
   modified:
+
     - server/repositories/views.py
     - server/repositories/summary_service.py
     - server/durable/queues.py
@@ -41,6 +47,7 @@ key-files:
     - server/tests/durable/test_business_tasks.py
 
 key-decisions:
+
   - "建仓只入队 durable_index + durable_repo_summary，从不单独入队 durable_graph"
   - "index defer 失败回滚 INDEXING/RUNNING，恢复先前 index_status"
   - "charter job：LLM 不可用/仓库不存在 → skipped 完成；persist/未预期异常 re-raise 供重试"
@@ -48,6 +55,7 @@ key-decisions:
   - "本 quick 按用户要求不 commit、不更新 STATE.md"
 
 patterns-established:
+
   - "enqueue_repo_index / enqueue_charter_draft 镜像 enqueue_repo_summary"
   - "dispatch_repo_summary 写入 AgentSession.user_id 供回调归因"
 
@@ -55,6 +63,10 @@ requirements-completed: [CREATE-ENQUEUE-01, CREATE-ENQUEUE-02, CREATE-ENQUEUE-03
 
 duration: ~20min
 completed: 2026-08-09
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: unknown
 ---
 
 # Quick 260809-f3z：建仓自动入队索引 / AI 描述 / 章程 — 摘要

@@ -6,6 +6,7 @@ tags: [i18n, copy-fix, zod, validation-messages]
 dependency_graph:
   requires: []
   provides:
+
     - 仓库弹窗 Git URL 帮助文案与后端仅支持 HTTPS 的行为一致
     - 工作流 zod 校验消息全量中文（数字消息含界值）
     - API 兜底错误文案与 Embedding 健康检查提示中文化
@@ -13,10 +14,13 @@ dependency_graph:
 tech_stack:
   added: []
   patterns:
+
     - zod v4 字符串简写 message（`z.number().min(1, '不能小于 1')`、`z.enum([...], '请选择有效的选项')`）
+
 key_files:
   created: []
   modified:
+
     - web/src/components/repository/CreateRepositoryModal.vue
     - web/src/components/repository/EditRepositoryModal.vue
     - web/src/types/workflow/schemas.ts
@@ -27,14 +31,21 @@ key_files:
     - web/src/components/settings/VectorIndexSettings.vue
     - web/src/api/client.ts
     - web/src/api/prompts.ts
+
 decisions:
+
   - 不实现 SSH，仅修正文案为「仅支持 HTTPS 格式（认证基于 Access Token，暂不支持 SSH）」（用户已决策）
   - 校验消息格式统一：min →「不能小于 {界值}」，max →「不能大于 {界值}」，enum →「请选择有效的选项」
+
 metrics:
   duration: ~4 min
   completed: 2026-06-10
   tasks: 3
   files: 10
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: unknown
 ---
 
 # Quick Task 260610-oug: 仓库 URL 文案修正 + 英文提示汉化 Summary
@@ -54,6 +65,7 @@ metrics:
 **Task 1：** 两个弹窗的帮助文案由「支持 HTTPS 或 SSH 格式」改为「仅支持 HTTPS 格式（认证基于 Access Token，暂不支持 SSH）」，与后端仅接受 http(s) URL 的行为及既有校验错误文案「当前仅支持 HTTPS 仓库 URL」一致。
 
 **Task 2：** zod v4 字符串简写补中文 message：
+
 - schemas.ts：4 处 `provider_credential_id` uuid →「凭证 ID 格式无效」；temperature/max_tokens/max_thinking_tokens(×2)/max_budget_usd(×2)/top_k/score_threshold/max_iterations(×2)/timeout_seconds/polling_interval 全部 min/max 带界值消息；output_format/work_item_type(×2)/filter_work_item_type/identifier_type/operator/logic/timeout_action 等 enum 补「请选择有效的选项」
 - action.ts：timeout_seconds (1–300)
 - integration.ts：timeout (1–300)、message_type/method enum
@@ -75,6 +87,7 @@ metrics:
 ### Auto-fixed Issues
 
 **1. [Rule 3 - Blocking] 计划中 verify 命令的 `--reporter=basic` 不可用**
+
 - **Found during:** Task 2 verify
 - **Issue:** vitest 4 已移除 `basic` reporter，`pnpm vitest run --reporter=basic` 报 `ERR_LOAD_URL` 启动失败
 - **Fix:** 改用默认 reporter 运行同一测试范围，验证目标不变

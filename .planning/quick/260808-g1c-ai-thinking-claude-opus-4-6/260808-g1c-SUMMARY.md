@@ -3,12 +3,18 @@ quick_id: 260808-g1c
 status: completed
 completed: 2026-08-08
 commits:
+
   - 2c2dfdf3
   - a87ed7dd
   - 67dbc613
   - 7d9868a2
   - 4cd0f763
   - a77f3470
+
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: completed
 ---
 
 # Quick Task 260808-g1c 执行总结
@@ -37,13 +43,17 @@ AI 对话的思考过程现在默认全量实时可见（不再有首行预览�
 
 - L256 `showThinking = ref(true)`（原 `ref(!!props.isStreaming)`），L266 附近换消息时的
   watch 重置同步改为恒 `true`，历史消息也默认展开。
+
 - L692–701：`expandedThinking` → `collapsedThinking`，Set 语义反转为「记录被用户手动
   收起的 id」，新增 `isThinkingExpanded(id) => !collapsedThinking.has(id)`。按计划要求
   **没有**采用「把全量 id 塞进 Set」的写法——parts 流式增长，后到的 id 不在集合里会退回收起。
+
 - 删除 `thinkingPreview()` 与 `thinkingIsMultiline()`（`rg` 确认本组件内无其他引用；
   `web/src/components/admin/ReadonlyConversationView.vue` 有各自的同名副本，不在本任务范围，未动）。
+
 - 模板 L1296–1314：删除 `timeline-step-text--preview` 分支，正文始终渲染 `item.text.trim()`；
   chevron 的 `rotate-90` 与 `is-expanded` 改绑 `isThinkingExpanded(item.id)`。
+
 - L1329 `:default-expanded="true"`（原 `!!isStreaming`）。
 - 样式：删除 `.timeline-step-text--preview` 规则（已成死代码）；`.thinking-content`
   去掉 `max-height: 30rem` 与 `overflow-y: auto`，保留 `white-space: pre-wrap`。
@@ -58,10 +68,13 @@ AI 对话的思考过程现在默认全量实时可见（不再有首行预览�
 - L62–63：新增 `collapsedRows`（thinking 行的「手动收起集合」），保留 `expandedRows`
   给 tool 行。**两个集合并存**是必须的：thinking 默认展开需要收起集合，tool 维持
   默认收起需要展开集合，单一集合无法同时表达两个默认值。
+
 - L106–117：新增 `rowExpanded(step)` 统一判定；`toggleRow(step)` 按步骤类型选桶
   （签名由 `id: string` 改为 `step: ProcessStep`，调用点 L210 同步）。
+
 - L143–145 `rowExpandable`：thinking 分支恒 `true`（原「>90 字符或含换行」），
   短思考也能展开看全文。
+
 - L120–126 `stepText` 的 90 字符截断按计划**保留**（行头单行摘要，去掉会破坏布局）。
 - 样式：`.tpg-list` 去掉 `max-height: 26rem` / `overflow-y: auto`。
 
@@ -71,6 +84,7 @@ AI 对话的思考过程现在默认全量实时可见（不再有首行预览�
 
 - 原来的裸 `<span class="typing-cursor" />` 换成 `.thinking-placeholder`：
   `icon-[lucide--sparkles]` + `animate-pulse`（复用既有 `.thinking-icon`）+ 文案「正在思考」
+
   + 保留 `typing-cursor` 作为动态指示。文案硬编码中文，未引入 i18n key。
 - L1450 的「非空时行尾光标」`v-else-if` 分支原样未动。
 - 不依赖任何后端事件，`suppressTypingCursor`（`waiting_clarification`）抑制行为不变。
@@ -85,9 +99,11 @@ AI 对话的思考过程现在默认全量实时可见（不再有首行预览�
   「出现过 thinking 块且累计文本长度为 0」则记一次
   `logger.info("chat_thinking_text_empty", category="sampling", component="chat_runner",
   model=..., provider=..., session_id=..., duration_ms=...)`。
+
 - 整段包在 `try/except Exception: pass` 里，best-effort，绝不反噬流式主链；
   只在 turn 收尾记一次，不进 chunk 循环。触发用户由入口中间件的 contextvars 注入
   （与相邻的 `arecord_llm_usage` 同一条链路），未额外传 `initiated_by_user_id`。
+
 - 未改 `_thinking_budget_tokens`，未新增面向前端的解释性 `THINKING` 事件。
 
 ### Task 5 — 测试契约同步（`a77f3470`）
@@ -97,9 +113,11 @@ AI 对话的思考过程现在默认全量实时可见（不再有首行预览�
   `isThinkingExpanded`，不存在 `timeline-step-text--preview` / `thinkingPreview` /
   `thinkingIsMultiline`，`.thinking-content` 无 `max-height`）；②「正在思考」占位存在且
   判定不依赖后端事件；③ ToolProcessGroup 默认展开且 `.tpg-list` 无 `max-height`。
+
 - `web/src/components/chat/__tests__/chatMessageBubble.parts.spec.ts`：新增 4b（长思考含换行
   且 >80 字符时默认全文可见、无 `…`、无 preview class）、4c（点击可手动收起）、
   4d（流式且无任何 part 时渲染「正在思考」）、4e（首个 thinking part 到达后占位让位）。
+
 - `web/src/stores/__tests__/chat.parts.spec.ts`：新增 2b，thinking `part_started` + 三次
   `part_delta` 累加，断言 `streamingParts[0].text` 在 `part_completed` **之前**就是拼接全文。
 

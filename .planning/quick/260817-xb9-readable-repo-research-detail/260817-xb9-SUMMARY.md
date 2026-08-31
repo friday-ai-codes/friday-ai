@@ -5,16 +5,20 @@ subsystem: ui
 tags: [blueprint, repo-research, i18n, event-payload, process-runtime]
 
 requires:
+
   - phase: 112-repo-research
     provides: blueprint.repo_research.* 事件与进度文案骨架
 provides:
+
   - started/completed/failed 可读 payload（repository_name / research_reason / fitness_verdict / attempt）
   - 过程明细字段排序（人话优先、*_id 殿后）与枚举中文化
+
 affects: [blueprint-stage-stepper, activity-timeline]
 
 tech-stack:
   added: []
   patterns:
+
     - last_output.repository_name 派发写入、回调只读回填（不采信容器上报）
     - completed 同时写 fitness_verdict + verdict 兼容键
     - describeEventPayload 标量字段 priority 排序
@@ -22,6 +26,7 @@ tech-stack:
 key-files:
   created: []
   modified:
+
     - server/services/process_runtime/blueprint_research_adapter.py
     - server/subagent/api/callbacks.py
     - server/delivery/services/event_taxonomy.py
@@ -30,10 +35,12 @@ key-files:
     - web/src/components/blueprint/BlueprintStageStepper.vue
 
 key-decisions:
+
   - "落库事件 JSON 不保证键序；人话优先排序由前端 describeEventPayload 负责"
   - "research_reason 仅取 evidence.reasoning 标量（≤120），不塞 matched_node_paths"
 
 patterns-established:
+
   - "展示用仓库名经 last_output 回填，权威关联仍靠 repository_id"
   - "进度标题插值前 humanizePayloadEnums，明细字段走 i18n fieldValue"
 
@@ -41,6 +48,10 @@ requirements-completed: [UX-RESEARCH-DETAIL-01, UX-RESEARCH-DETAIL-02, UX-RESEAR
 
 duration: 11min
 completed: 2026-08-17
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: unknown
 ---
 
 # Phase 260817-xb9 Plan 01: readable-repo-research-detail Summary
@@ -91,6 +102,7 @@ _Note: docs/SUMMARY 由 orchestrator Step 8 提交；本执行器未提交 .plan
 ### Auto-fixed Issues
 
 **1. [Rule 1 - Bug] 放宽 started 落库键序断言**
+
 - **Found during:** Task 1 (GREEN)
 - **Issue:** 事件经 DB/JSON 落库后键序变为 `task_id`/`repository_id` 在前，键序断言失败；字段值本身正确
 - **Fix:** 改为断言键存在；排序交给前端
@@ -99,6 +111,7 @@ _Note: docs/SUMMARY 由 orchestrator Step 8 提交；本执行器未提交 .plan
 - **Committed in:** `1589ad9a`
 
 **2. [Rule 3 - Blocking] 计划路径测试文件已存在，直接扩展**
+
 - **Found during:** Task 1
 - **Issue:** 编排提示「test_blueprint_research_stage.py 可能不存在」
 - **Fix:** 核实存在后就近追加用例（未新建平行文件）

@@ -1,3 +1,10 @@
+---
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: unknown
+---
+
 # Summary — 章程全量起草 + 上线记录挂仓
 
 ## Done
@@ -5,6 +12,7 @@
 - **仓库章程**：对全部 257 个有摘要的仓，用系统 mimo（`mimo-v2.5-pro`）起草
   `RepoCharter`，`source=ai_draft`，**0 失败**；走 `acquire_llm_slot`（Redis，
   凭证并发上限 50）+ 本地 Semaphore(8)
+
 - **上线挂仓**：在既有 2049 条边上继续补齐
   - 确定性（服务名/关联仓库精确匹配）+478 实体 / +632 边
   - mimo 服务别名映射（98 唯一服务名 → 10 命中）+33 实体 / +34 边

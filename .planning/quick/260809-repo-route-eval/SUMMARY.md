@@ -1,3 +1,10 @@
+---
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: unknown
+---
+
 # 「高三提分专项」仓库路由 5 次复跑评测
 
 日期：2026-08-09 ｜ 只读评测，未写业务库（不落 `RepoAssociation`）
@@ -52,6 +59,7 @@ onion-learning 仅 1/5。明细：`result-topk8.json`
 - study-course 的能力树是建好的：`repo_index_nodes` 里 55 个节点。
 - 但用本项目语料做节点级检索，它**最好的节点全局排 #80**；Stage 0 只取全局 top-50 节点
   （`STAGE0_NODE_K=50`）后按仓分桶 → study-course 拿到 0 个桶，**从未出现在喂给 LLM 的候选里**。
+
 - 放宽到 300 后即稳定进候选（B/C 组 4~5/5）。
 
 ### 2. onion-learning 被 LLM 主动剔除 —— 排序问题
@@ -65,6 +73,7 @@ onion-learning 仅 1/5。明细：`result-topk8.json`
 - `_QUERY_CHAR_BUDGET = 4000`。本项目 feature list 完整语料 21166 字符、加测试用例 28872 字符。
 - 实际只覆盖到**前 7 个功能点（9 个模块里的 2 个）**；**测试用例语料 100% 未进入 query**
   （拼接顺序在 feature list 之后，预算早已耗尽）。
+
 - 但截断不是 study-course 落选的原因：单独用被截掉的后半段语料检索，study-course 同样进不了候选。
 
 ### 4. 去掉截断会让路由整体崩掉（健壮性缺口）

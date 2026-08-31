@@ -5,25 +5,31 @@ subsystem: repositories-ui
 tags: [repo-charter, confirm-create, vue, django]
 
 requires:
+
   - phase: 111 / CHARTER-01
     provides: RepoCharter 模型、draft/confirm API、charter_service INV-6 写入纪律
 provides:
+
   - confirm 无行 + 非空 edits → 人手创建 human_confirmed
   - 仓库详情「仓库章程」分区（读 / AI 起草 / 手填确认）
   - 新建仓跳转 `#charter` 锚点
+
 affects: [仓库详情 UX, 章程人工确认闭环]
 
 tech-stack:
   added: []
   patterns:
+
     - "详情读面 fetchRepositoryCharter（404→null）与 citation 容错 getRepositoryCharter 分流"
     - "confirm 单端点兼创建：空 body 仍 404，非空 edits 走 normalize 后 create"
 
 key-files:
   created:
+
     - web/src/components/repository/RepoCharterSection.vue
     - web/src/components/repository/__tests__/RepoCharterSection.spec.ts
   modified:
+
     - server/repositories/services/charter_service.py
     - server/repositories/charter_views.py
     - server/tests/repositories/test_charter_service.py
@@ -35,6 +41,7 @@ key-files:
     - web/src/components.d.ts
 
 key-decisions:
+
   - "不新开第四端点：扩展 POST confirm，无行+非空 edits 即创建"
   - "观测增加 created/duration_ms；非预期异常记 charter_confirm_failed（脱敏后 re-raise）"
   - "未覆盖 charter_service 中 release-link 相关未提交改动，仅追加 confirm 分支"
@@ -43,6 +50,10 @@ requirements-completed: []
 
 duration: 12min
 completed: 2026-08-09
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: unknown
 ---
 
 # Quick Task 260809-3kc：仓库章程详情 UI Summary
