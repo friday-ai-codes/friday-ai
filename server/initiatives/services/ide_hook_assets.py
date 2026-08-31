@@ -47,6 +47,7 @@ _LOOKUP_TOOL_PATH = "/api/mcp/tools/lookup_project_by_branch/"
 # 写路径回写工具的 REST 入口（stop hook 脚本据此调用；与 mcp_tools.urls 路由一致）。
 _REPORT_KNOWLEDGE_TOOL_PATH = "/api/mcp/tools/report_project_knowledge/"
 _REPORT_STATE_TOOL_PATH = "/api/mcp/tools/report_project_state/"
+_REPORT_SESSION_TOOL_PATH = "/api/mcp/tools/report_session_knowledge/"
 
 # 脱敏告诫（三家资产正文通用，绝不可绕过）。
 _REDACTION_NOTICE = (
@@ -433,11 +434,233 @@ exit 0
 """
 
 
-def _cursor_stop_hooks_snippet() -> str:
-    """``.cursor/hooks.json`` 的 ``stop`` 钩子注册片段。"""
+def _session_capture_script(client: str, command: str) -> str:
+    """生成独立的可见问答 Capture 脚本，不依赖 ``skills/`` 子模块运行时文件。"""
+    answer_field = "last_assistant_message" if client == RUNTIME_CLAUDE_CODE else "text"
+    stop_guard = (
+        'if CLIENT == "claude_code" and event.get("stop_hook_active") is True:\n'
+        "        raise SystemExit(0)"
+        if command == "submit"
+        else ""
+    )
+    script = f"""#!/usr/bin/env bash
+# Friday Session Capture（{client} {command}）。仅采集用户可见问答，任何失败均 fail-soft。
+set -u
+[ "${{FRIDAY_HOOKS_DISABLED:-0}}" = "1" ] && exit 0
+command -v python3 >/dev/null 2>&1 || exit 0
+stdin_json="$(cat 2>/dev/null || true)"
+FRIDAY_CAPTURE_EVENT="$stdin_json" python3 - <<'PY' >/dev/null 2>&1 || true
+import hashlib
+import json
+import os
+import pathlib
+import subprocess
+import tempfile
+import time
+import urllib.request
+
+CLIENT = {client!r}
+COMMAND = {command!r}
+ANSWER_FIELD = {answer_field!r}
+REPORT_TIMEOUT_SECONDS = 10
+MAX_TEXT_LENGTH = 16000
+PAIR_TTL_SECONDS = 24 * 60 * 60
+
+def text(value):
+    return str(value or "").strip()[:MAX_TEXT_LENGTH]
+
+def session_key(event):
+    for field in ("conversation_id", "session_id"):
+        value = text(event.get(field))
+        if value:
+            return value
+    generation = text(event.get("generation_id"))
+    roots = event.get("workspace_roots")
+    workspace = text(roots[0]) if isinstance(roots, list) and roots else ""
+    workspace = workspace or text(event.get("workspace")) or text(event.get("cwd"))
+    if not generation or not workspace:
+        return ""
+    return hashlib.sha256(f"{{generation}}\\n{{workspace}}".encode()).hexdigest()
+
+def cache_root():
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    return pathlib.Path(base) / "friday-skills" / "pairs"
+
+def cleanup(root):
+    now = time.time()
+    pending = []
+    for path in root.glob("pending-*.json"):
+        try:
+            modified = path.stat().st_mtime
+            if now - modified > PAIR_TTL_SECONDS:
+                path.unlink(missing_ok=True)
+            else:
+                pending.append((modified, path))
+        except OSError:
+            pass
+    for _, path in sorted(pending, reverse=True)[100:]:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+def write_prompt(event):
+    key = session_key(event)
+    question = text(event.get("prompt"))
+    if not key or not question:
+        return
+    root = cache_root()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    root.chmod(0o700)
+    cleanup(root)
+    generation = text(event.get("generation_id"))
+    digest = hashlib.sha256(f"{{key}}\\n{{generation}}\\n{{question}}".encode()).hexdigest()[:40]
+    descriptor, temporary = tempfile.mkstemp(prefix=".pending-", dir=root)
+    os.fchmod(descriptor, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump({{
+            "session_key": key,
+            "generation_id": generation,
+            "question": question,
+            "client": CLIENT,
+        }}, handle, ensure_ascii=False)
+    target = root / f"pending-{{digest}}.json"
+    os.replace(temporary, target)
+    target.chmod(0o600)
+
+def strip_thinking(value):
+    result = text(value)
+    for tag in ("thinking", "thought"):
+        while True:
+            lowered = result.lower()
+            start = lowered.find(f"<{{tag}}>")
+            if start < 0:
+                break
+            end = lowered.find(f"</{{tag}}>", start)
+            if end < 0:
+                result = result[:start]
+                break
+            result = result[:start] + result[end + len(tag) + 3:]
+    return text(result)
+
+def read_pending(root, key, generation):
+    matches = []
+    for path in root.glob("pending-*.json"):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(value, dict) and value.get("session_key") == key:
+            matches.append((path, value))
+    if generation:
+        matches = [item for item in matches if item[1].get("generation_id") == generation]
+    return matches[0] if len(matches) == 1 else None
+
+def credentials():
+    base_url = os.environ.get("FRIDAY_BASE_URL") or os.environ.get("FRIDAY_API_URL") or ""
+    token = os.environ.get("FRIDAY_ACCESS_TOKEN") or os.environ.get("FRIDAY_PAT") or ""
+    if base_url and token:
+        return base_url, token
+    try:
+        config = json.loads(
+            pathlib.Path(os.path.expanduser("~/.friday/config.json")).read_text(encoding="utf-8")
+        )
+        if isinstance(config, dict):
+            base_url = base_url or text(config.get("baseUrl"))
+            token = token or text(config.get("accessToken"))
+    except (OSError, json.JSONDecodeError):
+        pass
+    return base_url, token
+
+def git(cwd, *args):
+    try:
+        return subprocess.run(
+            ["git", "-C", cwd, *args],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+def submit_answer(event):
+    {stop_guard}
+    key = session_key(event)
+    answer = strip_thinking(event.get(ANSWER_FIELD))
+    if not key or not answer:
+        return
+    root = cache_root()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    root.chmod(0o700)
+    cleanup(root)
+    matched = read_pending(root, key, text(event.get("generation_id")))
+    if matched is None:
+        return
+    path, pending = matched
+    base_url, token = credentials()
+    question = text(pending.get("question"))
+    if not base_url or not token or not question:
+        return
+    cwd = text(event.get("cwd")) or text(event.get("workspace")) or os.getcwd()
+    body = {{
+        "question": question,
+        "answer": answer,
+        "git_url": git(cwd, "remote", "get-url", "origin"),
+        "branch_name": git(cwd, "rev-parse", "--abbrev-ref", "HEAD"),
+        "session_id": key,
+        "response_model": text(event.get("response_model")),
+        "provider": text(event.get("provider")),
+        "input_tokens": text(event.get("input_tokens")),
+        "output_tokens": text(event.get("output_tokens")),
+        "client": CLIENT,
+    }}
+    request = urllib.request.Request(
+        f"{{base_url.rstrip('/')}}{_REPORT_SESSION_TOOL_PATH}",
+        data=json.dumps(body, ensure_ascii=False).encode(),
+        headers={{"Authorization": f"Bearer {{token}}", "Content-Type": "application/json"}},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=REPORT_TIMEOUT_SECONDS) as response:
+        if not 200 <= response.status < 300:
+            return
+        result = json.loads(response.read().decode("utf-8", errors="replace"))
+    if isinstance(result, dict) and result.get("accepted", True) is not False:
+        path.unlink(missing_ok=True)
+
+try:
+    event = json.loads(os.environ.get("FRIDAY_CAPTURE_EVENT", ""))
+except (TypeError, json.JSONDecodeError):
+    event = {{}}
+try:
+    if isinstance(event, dict):
+        write_prompt(event) if COMMAND == "cache" else submit_answer(event)
+except Exception:
+    pass
+PY
+"""
+    if client == RUNTIME_CURSOR and command == "cache":
+        return script + """printf '%s\n' '{"continue":true}'\nexit 0\n"""
+    return script + "exit 0\n"
+
+
+def _cursor_hooks_snippet() -> str:
+    """``.cursor/hooks.json`` 的 Session Capture 与 project-memory 完整注册。"""
     return """{
   "version": 1,
   "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "bash .cursor/hooks/friday-before-submit-prompt.sh",
+        "timeout": 15
+      }
+    ],
+    "afterAgentResponse": [
+      {
+        "command": "bash .cursor/hooks/friday-after-agent-response.sh",
+        "timeout": 15
+      }
+    ],
     "stop": [
       {
         "command": "bash .cursor/hooks/friday-stop-writeback.sh"
@@ -448,13 +671,27 @@ def _cursor_stop_hooks_snippet() -> str:
 """
 
 
-def _claude_stop_settings_snippet() -> str:
-    """``.claude/settings.json`` 的 ``hooks.Stop`` 注册片段。"""
+def _claude_write_settings_snippet() -> str:
+    """``.claude/settings.json`` 的 Capture 与 project-memory 注册片段。"""
     return """{
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/friday-session-capture-user-prompt-submit.sh"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/friday-session-capture-stop.sh"
+          },
           {
             "type": "command",
             "command": "bash .claude/hooks/friday-stop-writeback.sh"
@@ -496,7 +733,17 @@ def build_write_path_assets(project: Any, runtime: str) -> dict[str, Any]:
                 {
                     "path": ".cursor/hooks.json",
                     "filename": "hooks.json",
-                    "content": _cursor_stop_hooks_snippet(),
+                    "content": _cursor_hooks_snippet(),
+                },
+                {
+                    "path": ".cursor/hooks/friday-before-submit-prompt.sh",
+                    "filename": "friday-before-submit-prompt.sh",
+                    "content": _session_capture_script(RUNTIME_CURSOR, "cache"),
+                },
+                {
+                    "path": ".cursor/hooks/friday-after-agent-response.sh",
+                    "filename": "friday-after-agent-response.sh",
+                    "content": _session_capture_script(RUNTIME_CURSOR, "submit"),
                 },
                 {
                     "path": ".cursor/hooks/friday-stop-writeback.sh",
@@ -505,8 +752,9 @@ def build_write_path_assets(project: Any, runtime: str) -> dict[str, Any]:
                 },
             ],
             "notes": (
-                "Cursor 写路径 = `.cursor/hooks.json` 注册 `stop` 钩子 + stop 脚本，会话结束"
-                "默认开启 + 静默回写（active 直写 MEMORY + STATE 回写）。脚本需配置环境变量 "
+                "Cursor 每轮问答采集由专属 `beforeSubmitPrompt` / `afterAgentResponse` Capture "
+                "脚本完成；独立 `stop` 脚本只负责交付记忆（active 直写 MEMORY + STATE 回写）。"
+                "脚本需配置环境变量 "
                 "`FRIDAY_API_URL` / `FRIDAY_PAT`（可选 `FRIDAY_STATE_APIS_FILE` 提供结构化 API "
                 "清单）；无 PAT / 未绑项目 / 接口失败均静默 exit 0，绝不弹窗或阻断编码。"
                 + _SERVER_SAFEGUARDS_NOTICE
@@ -521,7 +769,17 @@ def build_write_path_assets(project: Any, runtime: str) -> dict[str, Any]:
                 {
                     "path": ".claude/settings.json",
                     "filename": "settings.json",
-                    "content": _claude_stop_settings_snippet(),
+                    "content": _claude_write_settings_snippet(),
+                },
+                {
+                    "path": ".claude/hooks/friday-session-capture-user-prompt-submit.sh",
+                    "filename": "friday-session-capture-user-prompt-submit.sh",
+                    "content": _session_capture_script(RUNTIME_CLAUDE_CODE, "cache"),
+                },
+                {
+                    "path": ".claude/hooks/friday-session-capture-stop.sh",
+                    "filename": "friday-session-capture-stop.sh",
+                    "content": _session_capture_script(RUNTIME_CLAUDE_CODE, "submit"),
                 },
                 {
                     "path": ".claude/hooks/friday-stop-writeback.sh",
@@ -530,10 +788,9 @@ def build_write_path_assets(project: Any, runtime: str) -> dict[str, Any]:
                 },
             ],
             "notes": (
-                "Claude Code 写路径 = `.claude/settings.json` 注册 `Stop` hook + 同款 stop "
-                "脚本，会话结束默认开启 + 静默回写（active 直写 MEMORY + STATE 回写）。若已有"
-                "读路径 `UserPromptSubmit` 注册，请把 `Stop` 合并进同一 `settings.json` 的 "
-                "`hooks`。无 PAT / 未绑项目 / 接口失败均静默 exit 0，绝不阻断编码。"
+                "Claude Code 每轮问答采集由专属 `UserPromptSubmit` cache 与 `Stop` Capture "
+                "脚本完成；独立 `friday-stop-writeback.sh` 只负责交付记忆（active 直写 MEMORY "
+                "+ STATE 回写）。无 PAT / 未绑项目 / 接口失败均静默 exit 0，绝不阻断编码。"
                 + _SERVER_SAFEGUARDS_NOTICE
             ),
         }
