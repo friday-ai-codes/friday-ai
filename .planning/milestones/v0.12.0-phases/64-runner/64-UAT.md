@@ -4,6 +4,10 @@ phase: 64-runner
 source: [64-VERIFICATION.md]
 started: 2026-06-20
 updated: 2026-06-20
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  gap_snapshot: "testing::scenarios=3"
 ---
 
 ## Current Test
@@ -18,14 +22,17 @@ awaiting: user response
 ## Tests
 
 ### 1. k8s Job executor 真机跑通（无 docker.sock）
+
 expected: 任务容器经 k8s Job 运行至退出，去 docker.sock，RBAC 生效。
 result: [pending]
 
 ### 2. 运行期日志流式 / 退出码 / Pod 清理
+
 expected: StreamLogs follow 实时回传、WaitContainer 取真实退出码、RemoveContainer/StartupCleanup/ZombieScan 正确清理本 runner Job（多副本隔离 friday.runner label）。
 result: [pending]
 
 ### 3. 失败重试 + activeDeadline 兜底
+
 expected: backoffLimit 重试生效；values-gated activeDeadlineSeconds 超时兜底杀 Job。
 result: [pending]
 

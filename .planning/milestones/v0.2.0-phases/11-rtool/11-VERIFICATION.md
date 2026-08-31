@@ -8,19 +8,27 @@ re_verification:
   previous_status: none
   note: initial verification
 accepted_followups:
+
   - item: "自动解析存量/背景任务的 PAT 明文（实时请求线程明文通道，如 contextvar）"
     rationale: "Open Q1 裁决 Option C + 机会性 B；PAT-02 禁止从 DB 读明文。_resolve_user_pat 现返回 \"\"（机制就绪、休眠），自动注入留 follow-up。此为 by-design，非 gap。"
     location: "server/workflows/nodes/ai/coding.py:812-829 (TODO(RTOOL follow-up))"
 human_verification:
+
   - test: "真实容器 + 真实 Claude SDK loop：注入 remote_tools + 有效 PAT + tools_endpoint，确认 agent 经 create_sdk_mcp_server 真正加载并调用远程工具完成端到端闭环，且 builtin Bash/Edit/Write 仍可用（execute 模式）"
     expected: "agent 实际调用 mcp__friday-remote-tools__* 工具并经 /api/tools/execute/ 以 owner 身份执行；编码内建工具不被排他白名单禁掉"
     why_human: "需真实 claude-agent-sdk query() 循环 + 运行容器；单测以 monkeypatch httpx/query 验证装配契约，无法验证真实 SDK 加载/调用行为"
+
   - test: "docker inspect <task 容器> 与 runner/task 运行日志检查"
     expected: "环境变量与日志中不出现明文 friday_pat_* 令牌（仅在 Authorization header 与 env 注入，日志只记 has_user_token/remote_tool_count 等 bool/计数）"
     why_human: "需运行中的真实容器与真实日志输出；静态审查已确认无 PAT 落入任何 log 语句，但 docker inspect 时点的运行态需人工确认"
+
   - test: "在途任务运行中吊销该用户 PAT（实时注入 PAT 场景），观察任务行为"
     expected: "已在途的工具调用收到 401/403 → 结构化工具错误回传 agent，容器不崩、任务 graceful 跑完其余工作；仅后续新调用被阻断"
     why_human: "需真实运行任务 + 实时吊销时序；单测验证 handler 对 401/403 的 graceful 返回，但完整在途时序需 E2E"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 11: task 容器接通（RemoteTool 链路闭环）Verification Report

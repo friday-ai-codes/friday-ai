@@ -4,6 +4,10 @@ phase: 63-deploy
 source: [63-VERIFICATION.md]
 started: 2026-06-20
 updated: 2026-06-20
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  gap_snapshot: "testing::scenarios=5"
 ---
 
 ## Current Test
@@ -17,22 +21,27 @@ awaiting: user response
 ## Tests
 
 ### 1. worker SIGTERM 优雅 drain（真实 k8s）
+
 expected: 滚动更新/缩容时在途 job 跑完或被接管，不丢任务。
 result: [pending]
 
 ### 2. compose `up -d` 升级既有部署不破坏
+
 expected: 既有单/多副本 compose 部署 `up -d` 拉新镜像重建后服务正常、迁移顺序正确、worker/scheduler 起得来。
 result: [pending]
 
 ### 3. scheduler 单例滚动（Recreate）
+
 expected: scheduler replicas=1 + Recreate，升级时不出现两个 scheduler 并行跑 cron（无重复 cron）。
 result: [pending]
 
 ### 4. KEDA 按队列深度真实伸缩
+
 expected: KEDA 启用集群下，todo 队列深度上升 → worker 扩容；冷却后缩容到 minReplica≥1（不缩零）。
 result: [pending]
 
 ### 5. 真实 GitLab/GitHub + 飞书外部副作用去重
+
 expected: at-least-once 重复执行下不重复开 MR/PR（命中既有 open MR 复用）、不重复建群（命中 feishu_chat_id 复用）。
 result: [pending]
 

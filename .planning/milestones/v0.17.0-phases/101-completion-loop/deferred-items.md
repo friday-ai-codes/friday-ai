@@ -3,6 +3,8 @@
 执行中发现、超出当前 plan 范围的问题（不修，仅记录）。
 
 ## 101-03 执行时发现
+- status: acknowledged
+
 
 - **存量腐坏测试**：`server/tests/test_sub_step_coding_node.py::test_plan_generation_node_still_works`
   引用不存在的模块 `workflows.nodes.ai.plan_generation`（模块早已删除，测试未随删）。
@@ -10,6 +12,8 @@
   建议：删除该用例或改为引用现存节点。
 
 ## 101-04 执行时发现
+- status: acknowledged
+
 
 - **第三处摄取投递缺归因**：`server/mcp_tools/work_item_execution_service.py`
   `execute_work_item_repo_tasks` 末尾的 `mcp_technical_plan`/`mcp_tasks_executed` 投递

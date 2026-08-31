@@ -5,12 +5,18 @@ status: human_needed
 score: 12/12 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "用真实飞书凭证向某工作项发评论（含审批语「通过/驳回」），观察 webhook 入库 + 评论树投影"
     expected: "评论以 WorkItemCommentEvent 入库；GET work-items/comments/ 返回正确线程层级与 approval 语义；payload 字段名（comment_id/operator_id/create_time/reply_comment_id）映射正确"
     why_human: "PF-11 真实飞书评论端点正确性依赖真实凭证；webhook payload 真实字段名无法离线验证（CONTEXT deferred / human-UAT）"
+
   - test: "在飞书编辑/删除一条已入库评论，观察事件流是否追加 edited/deleted 事件"
     expected: "若飞书 webhook/API 提供编辑/删除信号，应追加 event_type=edited/deleted 新事件（不就地改写）；投影按最新态折叠"
     why_human: "edited/deleted 真实信号本 phase 留枚举占位（deferred）；是否可得需真实飞书环境验证（CONTEXT Grey Area 3 / deferred）"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 29: 评论事件流 Verification Report

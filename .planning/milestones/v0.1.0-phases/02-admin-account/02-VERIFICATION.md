@@ -5,9 +5,14 @@ status: human_needed
 score: 4/4 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "全新部署 E2E 浏览器自动登录流程：空 DB 启动后端 + pnpm dev，访问任意页面被导向 /setup，填强口令提交"
     expected: "提交 201 后无需再次登录，浏览器直接进入系统首页 /；刷新后仍登录；再访问 /setup 被重定向到 /login"
     why_human: "完整浏览器导航 + cookie 会话 + 路由渲染无法由 grep/单测覆盖；后端会话下发与前端 store 写入已分别通过测试断言"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 02: 管理员账号创建与自动登录 Verification Report

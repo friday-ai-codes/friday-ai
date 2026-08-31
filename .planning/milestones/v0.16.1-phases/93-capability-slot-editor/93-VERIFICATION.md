@@ -5,21 +5,30 @@ status: human_needed
 score: 12/12 must-haves verified (automated); visual canvas UAT pending
 overrides_applied: 0
 human_verification:
+
   - test: "编辑器拖一个 ai_plan_research → 从 clarify(琥珀方形凹槽)槽拖向澄清卡 input"
     expected: "兼容槽绿色高亮放大、靠近时磁吸吸附；落下后形成琥珀虚线编组(.slot-attach-group)+ 子卡『附着』徽标"
     why_human: "compatible-highlight 放大/emerald 光环/snap-pulse 脉冲/编组容器包围盒为真实布局几何渲染，happy-dom 无布局，观感与吸附手感只能浏览器人工核对"
+
   - test: "拖一个不兼容 typed shape 端口互连"
     expected: "高亮禁止（红/降透明 forbidden 态）+ 落点弹「形状不兼容」Toast，不建边"
     why_human: "forbidden 视觉降级 + Toast 弹出时机为运行时交互观感（逻辑已自动化覆盖，视觉需人工）"
+
   - test: "删除带附着子的方案节点 / 子卡右键解除附着"
     expected: "弹「将一并移除 N 个附着澄清节点」/「解除附着」确认；确认后级联删/恢复独立坐标"
     why_human: "AlertDialog 弹出与级联视觉效果端到端观感（store 级联逻辑已自动化覆盖）"
+
   - test: "子澄清卡 feishu_message 出口拉线到飞书发群/通知节点；新建仅含 notify_feishu_im（无建群）的图"
     expected: "feishu_message→feishu_message 可连；notify_feishu_im 降级（半透明+锁徽标+tooltip），加入 create_group_chat 后解除门控"
     why_human: "IM 门控视觉降级与 tooltip 引导、跨节点连线落点为浏览器交互（判定逻辑已自动化覆盖）"
+
   - test: "既有工作流编辑/连线/单选卡/snap-grid 对齐"
     expected: "打开既有模板正常渲染/保存，节点对齐(SNAP_THRESHOLD=5)与端口吸附(28px)互不干扰，零回归"
     why_human: "既有编辑器端到端回归观感需人工打开真实工作流确认"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 93: 能力插槽编辑器（前端）Verification Report

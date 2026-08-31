@@ -5,18 +5,26 @@ status: human_needed
 score: 5/5 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "真实容器端到端：runner 派发一个编码任务，容器内 agent 实际调用 friday-knowledge MCP 工具（如 search_rag_chunks）"
     expected: "工具返回真实检索结果；服务端 InteractionRun.raw_request.task_session_id 可按 session 关联查到该次调用；RequestMetric source=mcp 有对应行"
     why_human: "自动化验证只覆盖到进程内 mock/单测层；真实 HTTP 链路（容器网络→服务端认证→检索）需要跑起 runner + 服务端联调"
+
   - test: "真实镜像构建：docker build task/ 后容器内 /opt/friday/skills/{friday-code,friday-memory} 存在，任务 workspace 出现 .claude/skills/ 注入"
     expected: "镜像含两个 skill 目录且内容与 skills/skills/ 一致；运行时注入日志 skills_injected 可见"
     why_human: "Dockerfile COPY 与运行时注入的组合效果只有真实构建+运行才能确认（单测用 tmp_path 模拟）"
+
   - test: "行为性：容器内 agent 是否实际可见并遵循 friday-code / friday-memory skills（setting_sources=[project] 加载生效）"
     expected: "agent 输出体现 skill 指引（如按 friday-code 约定先查知识再动手）"
     why_human: "LLM 行为遵循性无法 grep 验证"
+
   - test: "终态吊销时效：真实任务完成后用容器 env 里的 token 再调 /api/mcp/tools/*"
     expected: "401/403，agent 收到「令牌已失效或无权限」固定文案，容器不崩"
     why_human: "吊销五点已有单测（HTTP/WS handler 直调），但真实回调时序与容器内 401 降级路径需集成环境确认"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 103: 编码容器集成 Verification Report

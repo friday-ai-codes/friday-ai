@@ -5,19 +5,27 @@ status: human_needed
 score: 12/12 must-haves verified (4/4 ROADMAP success criteria structurally verified)
 overrides_applied: 0
 human_verification:
+
   - test: "用真实飞书凭证调 get_comments(project_key, work_item_id, work_item_type) 拉取一个已知有评论的工作项（如 example_platform issue 1000000006）"
     expected: "返回非空评论列表，逐条含 id/content/created_at/author/thread_parent_id；若端点路径/鉴权已变更则 fail-soft 返回 [] 并记 warning（不崩）"
     why_human: "真实端点路径/鉴权正确性（PF-11）需带真实凭证人工验收；自动测试仅以 respx mock 覆盖响应形状，无法验证 live 端点是否仍有效。CONTEXT 已明确记入 human-UAT。"
+
   - test: "（已知限制，非本 phase 范围）容器型工作项（URL 段 type=project）取数"
     expected: "本 phase 不支持容器型；真实 type_key 未知，按 REQUIREMENTS Out of Scope 处理。需待查\"工作项类型\"接口或字段反推后由后续 phase 补。"
     why_human: "PF-09 实测 type=project 返回 WorkItem Not Found(30005)；容器型真实 type_key 映射显式 Out of Scope，仅在此登记供人工知晓，非 gap。"
 deferred:
+
   - truth: "WorkItemRelation / WorkItem 落库与 WorkItemService.upsert（关系/字段实际写库）"
     addressed_in: "Phase 28"
     evidence: "Phase 28 Goal: 立起操作态脊柱——canonical WorkItem + WorkItemService.upsert + WorkItemRelation 字段派生 + WorkItemStatusEvent；本 phase 仅产出派生 RelationSpec 结构不落库（CONTEXT 决策 + REQUIREMENTS WIT-04 映射 Phase 28）"
+
   - truth: "评论事件流 append-only WorkItemCommentEvent 摄取"
     addressed_in: "Phase 29"
     evidence: "Phase 29 Goal: 工作项评论以 append-only WorkItemCommentEvent 流式入库；本 phase 仅返回扁平评论列表 + 解析（REQUIREMENTS CMT-01/02 映射 Phase 29）"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 27: 飞书接口前置修复 Verification Report

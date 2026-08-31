@@ -1,6 +1,8 @@
 # Phase 39 Deferred / Out-of-Scope Items
 
 ## Deferred (per CONTEXT/plan — 沿用既有里程碑惯例)
+- status: acknowledged
+
 - **真实容器端到端验收**：本 phase 全程以 mock dispatcher/runner/callback payload 覆盖
   dispatch 逻辑、prompt 注入、回调解析、barrier 聚合、stale 失效；真实 runner + docker +
   编码 agent 的端到端验收延后（本地无 runner+docker，对齐既有里程碑 deferred）。
@@ -9,6 +11,8 @@
 - 跨仓 partial 全局依赖 DAG 提取（融合 Phase 40 做；本 phase 仅产 `dependencies_on_other_repos` 字段）。
 
 ## Pre-existing / Environmental (NOT Phase 39 regression)
+- status: acknowledged
+
 扫描发现以下 3 个测试在本环境失败，经在 Phase 39 之前的 base 提交
 （`abcaece7`）复跑确认**同样失败**——根因 `orchestration/coding_graph.py`
 `_call_llm_for_pr_draft` 抛 `ValueError: Anthropic API key 未配置`（本地未 seed

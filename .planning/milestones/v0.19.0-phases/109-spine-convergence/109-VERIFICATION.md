@@ -13,43 +13,57 @@ evidence:
   debt_markers: "49 个改动源文件（server/ + web/）零 TBD / FIXME / XXX / TODO / HACK / PLACEHOLDER"
   negative_controls: "verifier 独立跑 8 组反向对照，全部按预期变红（见正文 §5）；未接受 REVIEW 自报的对照结论"
 human_verification:
+
   - test: "在真实环境导出一份草稿方案到飞书，核对文档正文顶部的「未经代码调研」告示，并与界面横幅主句逐字比对"
     expected: "导出物含告示块且置于「## 技术方案」之前；主句「本方案未经代码调研」与界面横幅逐字一致"
     why_human: "飞书文档创建依赖真实 IM 凭证与外部 API，本地只能验证 markdown 组装（已由 5 条导出器用例覆盖）"
     requirement: RELY-01
+
   - test: "真实会话触发一次编排，从「进入编码」卡片走完选目标仓 → 配置分支 → 确认编码 → 飞书导出全链"
     expected: "四步全部挂在同一个 CodingPlan.id 上，无需重新生成方案；容器真实拉起并产出 PR"
     why_human: "需真实 Git 平台、Runner 与飞书环境；本地只验证到 dispatch 契约组装（e2e 护栏覆盖四步 HTTP 面）"
     requirement: SPINE-01
+
   - test: "浏览器里核对草稿横幅 / 头部常驻徽标 / 阻断式确认弹层的视觉与交互，并确认折叠后徽标仍可见"
     expected: "与 109-UI-SPEC 一致；无新色板 / 新字号 / 新组件；弹层焦点陷阱与 label 点击生效"
     why_human: "视觉观感与真实焦点行为无法程序化断言（结构层已由 63 条 TechPlanCard 用例覆盖）"
     requirement: RELY-01
+
   - test: "核对投影出的 tech_plan 在界面 markdown 下的观感（`render_merged_plan_markdown` 产 lark_md 方言，`•` 而非 `- `）"
     expected: "项目符号显示为纯文本 `•`，可读、语义不丢"
     why_human: "109-VALIDATION 第 10 条已裁定「接受现状」，但观感是否可接受须人判；若不可接受，处置是给该函数加 flavor 参数而非 fork 渲染器"
     requirement: SPINE-01
+
   - test: "生产升级后确认迁移 0033 的影响面：存量 CodingPlan 全部落 provenance=draft，历史方案卡集体出现「未经代码调研」横幅与徽标，送编码时各弹一次确认"
     expected: "影响面可接受（存量确实是 SPINE-02 之前的徒手产物，保守标注在事实层正确）"
     why_human: "需生产存量数据规模；这是 RELY-01 的**预期行为而非回归**，109-08 must-have 已显式登记，须在 UAT 中如实向用户交代"
     requirement: RELY-01
+
   - test: "确认下游容器对 dispatch payload 里 `unresearched` 标志的消费策略"
     expected: "本 phase 只保证标志出现在 payload；容器侧是否据此调整行为由后续决定"
     why_human: "跨进程契约的下游半边不在本 phase 边界内（109-07 已显式声明「容器侧消费与否留后续」）"
     requirement: RELY-01
 deferred:
+
   - truth: "无 conversation 的编排入口（workflow / MCP）投影为 CodingPlan"
     addressed_in: "本里程碑外（裁决 D-3 显式记 deferred）"
     evidence: "109-CONTEXT 裁决 D-3：`ConvergenceSession` 无 space FK，反查有歧义；限定 chat 入口后 SC-1 的用户故事即完整成立。代码以稳定机器码 `projection_requires_chat_entrypoint` 显式拒绝，不猜 space、不建合成会话"
+
   - truth: "编排阶段流式输出、容器日志可见、阶段时间线"
     addressed_in: "Phase 110（过程可观测）"
     evidence: "ROADMAP Phase 110 目标即「阶段流式 + 容器日志 + 阶段时间线」；109-CONTEXT 裁决 D-4 明确本 phase 的 chat 呈现只做最小可操作面"
+
   - truth: "方案结构深度（DEPTH-01~05）"
     addressed_in: "里程碑 v0.20.0"
     evidence: "109-CONTEXT 边界外条款：`process_runtime` 的 prompt/schema 冻结，本 phase 以现行 §7 `execution_plan` 对接执行流"
+
   - truth: "两套 CodingPlan（chat 与 mcp_tools）合表为 canonical"
     addressed_in: "Future（REQUIREMENTS 已列）"
     evidence: "109-CONTEXT Out of Scope：本 phase 不合表"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 109: 双脊柱合流 验证报告

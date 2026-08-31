@@ -3,6 +3,10 @@ phase: 133-commit-v0-22-baseline
 status: human_needed
 verified: 2026-08-24
 score: 4/4
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 133 验证
@@ -16,8 +20,10 @@ Qdrant 和同 commit 水位，当前未执行，状态按规则记 `human_needed
 
 1. 固定 run identity 与水位 fail-closed：默认套件覆盖 INVALID manifest、非零退出和
    `get_graph` 零调用。
+
 2. 冻结 gold：manifest 与 dev/locked_test/holdout 均通过 schema 权威校验，holdout
    在 baseline command 中拒读。
+
 3. 无阈值报告：纯函数 scorer、空结果规则、macro 聚合和运行时桶下限均有单测。
 4. 薄 command：逐 case 编排 resolve/RAG/Process/edge/impact/trace，记录冷/热延迟并
    产 manifest 与 baseline JSON。

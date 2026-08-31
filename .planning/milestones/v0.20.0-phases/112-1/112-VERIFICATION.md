@@ -7,20 +7,29 @@ re_verification:
   previous_status: none
   note: "本相位曾有两轮 plan-checker BLOCKER（孤儿续驱函数 / charter_service 改动），本次为首次相位级 goal-backward 校验"
 gaps:
+
   - truth: "unsuitable 仓被排除后由主 agent 补候选重调研（ROADMAP SC-3 前半 / CONTEXT「reroute 上界 ≤2 轮：unsuitable 仓排除后由主 agent 补候选重调研」）"
     status: partial
     severity: WARNING
     reason: "reroute 轮次记账、上界、超限升门全部为真且有测试；但『排除 + 补候选』这一步无实现——`stage_state[\"reroute\"][\"excluded\"]` 是只写键，全仓无生产读取方；`reroute_needed` 回边把 session 送回 repo_research 后，dispatch 的候选来源仍只有 `routing.candidates ∪ confirmation.pending_research`，既不剔除 unsuitable 仓、也不补入新候选。结果：两轮 reroute 是空转（已完成 task 不重派、无新 task），必然走到 escalate 升确认门。安全性质（有界、绝不静默失败）成立，重调研语义不成立。"
     artifacts:
+
       - path: "server/services/process_runtime/blueprint_research_adapter.py"
         issue: ":828 写入 `excluded`，:1049 decide_reroute 返回 unsuitable_repository_ids，两者均无消费方（rg 全仓仅命中写入侧）"
+
       - path: "server/services/process_runtime/builtin_processes.py"
         issue: "_h_bp_repo_research 的 dispatch 调用不传 excluded/补候选入参，reroute 回边后与首轮判据完全相同"
     missing:
+
       - "dispatch 侧读 `stage_state[\"reroute\"][\"excluded\"]` 并从候选集剔除 unsuitable 仓（否则它们仍留在确认门快照里当有效候选）"
       - "reroute 轮内补候选的来源：或复用 blueprint_charter_match.acollect_charter_candidates（排除已试仓）再进 repo_research，或把 reroute_needed 指回 route stage 让 BlueprintRouteAdapter 带 exclude 重跑"
       - "机制级断言：第 1 轮 reroute 后 dispatcher.await_count > 0（当前 test_blueprint_reroute.py 只断言计数与 escalate 出边，不断言『真的补了新仓』——这正是空转能通过测试的原因）"
+
 deferred: []
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: gaps_found
 ---
 
 # Phase 112-1: 规格门与双面路由调研（阶段 1） 验证报告
@@ -157,6 +166,7 @@ deferred: []
 ### 占位符/debt marker 扫描
 
 新增 112 源文件对 `TODO/FIXME/XXX/TBD/HACK/PLACEHOLDER/not implemented` **零命中**。两处 grep 命中经核对为误报：
+
 - `blueprint_quality.py` 三条 `TODO(Phase 114)` —— Phase 111 既有文件，本相位未触碰（不在 diff 内）
 - `blueprint_ambiguity_score._NO_REASON_PLACEHOLDER` —— fail-closed 降级的具名兜底理由文案，有真实语义
 
@@ -198,6 +208,7 @@ deferred: []
 **Truth:** ROADMAP SC-3 前半「unsuitable 触发重路由 ≤2 轮」/ CONTEXT「unsuitable 仓排除后由主 agent 补候选重调研」
 
 **证据链：**
+
 1. `decide_reroute`（adapter:1010-1053）正确返回 `unsuitable_repository_ids` 与 `next_round`
 2. `aadvance_reroute`（:824-830）把它写进 `stage_state["reroute"]["excluded"]`
 3. `rg '\bexcluded\b' --glob '!tests/**' services/ delivery/ subagent/` → **蓝图链仅命中写入侧 adapter:828**，无任何读取方
@@ -211,6 +222,7 @@ deferred: []
 **不判 BLOCKER 的理由：** 有界性与「绝不静默失败」两条安全性质成立（必然收敛到人裁决门，不烧无界容器额度）；且用户在确认门可经 `add_repo` 手动补仓（该路径已端到端验证真的会起容器），能力在人工路径上可达。SC-3 后半（升门由用户裁决）完整为真。
 
 **建议修法（按侵入度递增）：**
+
 1. **最小**：`_collect_candidates` 读 `stage_state["reroute"]["excluded"]` 并从候选集剔除 —— 至少让「排除」为真，确认门快照不再把 unsuitable 仓当有效候选
 2. **补候选**：reroute 轮内调 `blueprint_charter_match.acollect_charter_candidates(exclude_repository_ids=已试仓 ∪ excluded)` 取补充候选，`create_tasks_for_session` 起新 task 后再回 `repo_research`
 3. **最正统**：把 `reroute_needed` 指回 `route` stage，让 `BlueprintRouteAdapter.route` 带 `exclude_repository_ids` 重跑一次真实双面路由（契约已有 `repository_ids` 入参，改动面小），代价是多一次 RepoRouterV2 调用
@@ -244,17 +256,21 @@ _Verifier: gsd-verifier（goal-backward，1268 passed 基线 + 冻结面 git dif
    （`routing.candidates` 与确认门 `pending_research`）同时剔除。被排除仓连
    `RepoResearchTask` 行都不再新建。唯一豁免口是 `allow_repository_ids`，只由**人工显式
    动作**（`aupgrade_to_deep` 的升级深调研端点）填 —— 自动流程永不重开被排除仓。
+
 2. **补候选复用双面路由**（`d6a78a43`）：`BlueprintRouteAdapter.route` 增加
    keyword-only 的 `exclude_repository_ids`（路由器候选与章程补入候选两条来源同时剔除，
    默认 `None` ⇒ 与首轮调用逐字同行为）；`aadvance_reroute` 判 `reroute` 时先在
    「排除集 ∪ 已试仓」之外重跑一次真实路由，新候选**追加**进 `routing.candidates` 后才回边
    —— 回边后 `dispatch` 的增量白名单只为新仓起容器，既有仓结论一行不动。
+
 3. **补不到就升门**（不空转）：`_arefill_candidates` 返回空（无新候选 / 路由重跑异常）时
    决策就地由 `reroute` 转 `escalate`，`reason="no_new_candidates"`，带全部现状升确认门，
    轮次不递增（不白烧一轮）。「绝不静默失败」性质不变。
+
 4. **排除集累积**：`excluded` 改为「历轮 ∪ 本轮 unsuitable」，历轮被排除仓不会因为
    「本轮无最新结论」而复活回候选。另新增 `reroute.supplemented`（本轮补入仓）与
    `escalation.excluded_repository_ids` 供确认门与 115 呈现面自取。
+
 5. **约束零变更**：`MAX_REROUTE_ROUNDS = 2` 上界、增量派发白名单（`PENDING`/`STALE`）、
    「不收敛带全部现状升确认门」三项语义逐字未动；`builtin_processes.py`（含
    `_TECHNICAL_PLAN_STAGES` 与蓝图 stage 表）**零改动** —— handler 早已原样透传
@@ -287,9 +303,11 @@ _Verifier: gsd-verifier（goal-backward，1268 passed 基线 + 冻结面 git dif
 
 - `pytest tests/services/process_runtime/ tests/delivery/ tests/subagent/ -q` → **900 passed, 0 failed**
   （`tests/mcp_tools/` 的 skills submodule 环境问题不在本子集内）
+
 - 改动文件仅 4 个（2 源 + 2 测试）：`blueprint_research_adapter.py` / `blueprint_route.py` /
   `test_blueprint_research_stage.py` / `test_blueprint_reroute.py`；九个冻结文件与
   `builtin_processes.py` 零命中。
+
 - 改动文件经 `ruff format` + `ruff check --fix`，All checks passed。
 
 **残留**：FLOW-02 的「替代建议」仍无结构化承载字段（`_parse_blueprint_fitness` 不收该键）——

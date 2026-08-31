@@ -5,15 +5,22 @@ status: human_needed
 score: 3/3 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "在配置了 Qdrant 的运行环境执行 /knowledge 搜索，输入 ragable 工件正文关键词，确认工件命中并显示类型徽标；输入非 ragable（UI 稿）的标题/类型关键词，确认元数据关键词层可命中（召回弱属预期）。"
     expected: "ragable 工件走向量 hybrid 召回命中；非 ragable 至少靠 title/type/url 元数据关键词兜底命中；结果项带类型徽标 + 所属项目名 + 一键查看/打开外链。"
     why_human: "本地测试环境 --disable-socket 无 Qdrant，无法真跑向量 hybrid 召回；召回质量需真实向量库环境验证。"
+
   - test: "浏览器打开 /knowledge?tab=overview，检查「交付文档 / 外部依赖」区块：类型计数磁贴、区块内即时搜索、空态、加载骨架、与仓库/域指标区块的视觉一致性。"
     expected: "区块与现有指标区块并列、风格一致；有数据显示类型计数磁贴 + 条目列表；无数据显示优雅空态（非空网格）；加载显示骨架。"
     why_human: "视觉呈现、风格一致性与空/加载态需人工目视确认，grep/类型检查无法覆盖。"
+
   - test: "浏览器在搜索结果命中工件项点击「查看」（feishu_doc/markdown 载体）与「打开外链」（external_link 载体）。"
     expected: "文字载体弹出 markdown 渲染查看弹窗；external_link 在新标签打开（rel=noopener noreferrer）。"
     why_human: "弹窗渲染、新标签打开为运行时 UI 行为，需人工交互验证。"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 96: 外部依赖进检索与总览 Verification Report

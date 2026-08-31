@@ -7,18 +7,26 @@ re_verification:
   previous_status: none
   previous_score: n/a
 human_verification:
+
   - test: "登录普通认证用户访问 /specs，查看 spec 列表 → 点击进详情 → 查看正文 markdown 渲染 / 评审历史时间线"
     expected: "列表按状态/仓库筛选可用；详情页正文（MarkdownRenderer）正常渲染、状态徽标 5 态色彩正确、评审时间线倒序展示 reviewer/decision/comment/time"
     why_human: "视觉渲染、markdown 排版、徽标色彩对比、时间线视觉层级无法由 grep/单测断言；需真实浏览器目测"
+
   - test: "以 superuser 在 in_review 详情点击「批准」/「驳回」，普通用户在同一详情查看操作区"
     expected: "superuser 见 approve/reject 按钮且弹出带 textarea 的 SpecReviewDialog（reject comment 必填空则禁用确认）；普通用户仅见「等待管理员评审」提示，不渲染 approve/reject/archive 按钮"
     why_human: "按钮按 state×权限的真实显隐、对话框交互、reject 必填禁用态需真实会话 + 浏览器交互验证（单测已覆盖逻辑分支，但真实权限会话端到端未跑）"
+
   - test: "完整生命周期端到端走一遍：draft → 提交评审 → 批准 → 标记已实现 → 归档，每步观察 toast 与列表/详情自动刷新"
     expected: "每次流转成功后 toast 提示对应文案、invalidateQueries 触发列表/详情即时刷新到新状态；非法流转（如已 archived 再操作）走 useErrorHandler 显示错误文案"
     why_human: "TanStack Query invalidate→真实重拉、toast 时序、跨页状态一致性属运行时实时行为，需真实后端 + 浏览器端到端确认"
+
   - test: "详情页关联链接区（repository / work_item / plan_version）真实数据下的展示与跳转"
     expected: "有关联时展示仓库链接（跳 /repositories/<id>）+ 方法论徽标 + 关联需求/方案文本；缺失关联项不渲染空占位"
     why_human: "关联摘要在真实 detail API 数据 + 路由跳转下的展示/缺省降级需浏览器目测（序列化器 get_relations 已验证缺失项不输出）"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 50: spec 状态机 + 变更记录 + 评审状态 + 前端展示 Verification Report
@@ -106,21 +114,25 @@ human_verification:
 按用户明确要求，真实浏览器视觉与端到端交互标 human_needed：
 
 #### 1. 列表 → 详情视觉渲染
+
 **Test:** 登录普通认证用户访问 `/specs`，查看列表 → 点击进详情 → 查看正文 markdown 渲染 / 评审历史时间线
 **Expected:** 列表按状态/仓库筛选可用；详情正文 MarkdownRenderer 正常渲染、状态徽标 5 态色彩正确、评审时间线倒序展示 reviewer/decision/comment/time
 **Why human:** 视觉渲染、markdown 排版、徽标色彩对比、时间线层级无法由 grep/单测断言
 
 #### 2. 权限显隐 + 评审对话框
+
 **Test:** superuser 在 in_review 详情点「批准」/「驳回」；普通用户在同详情查看操作区
 **Expected:** superuser 见 approve/reject 并弹出带 textarea 的对话框（reject comment 必填空则禁用确认）；普通用户仅见「等待管理员评审」，不渲染 approve/reject/archive
 **Why human:** 真实权限会话下 state×权限显隐、对话框交互、reject 必填禁用态的端到端验证
 
 #### 3. 生命周期端到端 + toast/刷新
+
 **Test:** draft → 提交评审 → 批准 → 标记已实现 → 归档，逐步观察 toast 与列表/详情自动刷新
 **Expected:** 每步成功 toast 文案正确、invalidate 触发即时刷新到新状态；非法流转走 errorHandler 错误文案
 **Why human:** invalidate→真实重拉、toast 时序、跨页状态一致性属运行时实时行为
 
 #### 4. 关联链接区真实数据展示与跳转
+
 **Test:** 详情页 repository/work_item/plan_version 关联区在真实数据下的展示与跳转
 **Expected:** 有关联展示链接（跳 `/repositories/<id>`）+ 方法论徽标 + 文本；缺失项不渲染空占位
 **Why human:** 关联摘要在真实 detail API + 路由跳转下的展示/降级需浏览器目测

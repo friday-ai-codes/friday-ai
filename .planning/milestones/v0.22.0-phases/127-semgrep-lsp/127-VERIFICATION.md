@@ -8,20 +8,28 @@ re_verification:
   previous_status: gaps_found
   previous_score: 2/4
   gaps_closed:
+
     - "MR 流程可触发 Semgrep diff-aware 扫描（--baseline-commit 取 merge-base），只报本次 MR 新增 finding；Semgrep 以独立 CLI/venv 形态集成，不进 server Python 依赖树"
     - "finding 带 severity 分级进 MR 描述/评论；门禁默认报告不阻断（advisory）；nosemgrep 误报通道生效；扫描超时 fail-open 且显式标注"
   gaps_remaining: []
   regressions: []
 human_verification:
+
   - test: "构建 server 镜像后记录相对基线的 size delta（+400–550MB 量级）写入发布说明"
     expected: "镜像含 /opt/semgrep、Node 22、vue-language-server、gopls；体积增量可审计"
     why_human: "需真实 docker build / docker images；静态读 Dockerfile 无法验证体积"
+
   - test: "在代表性 1× Vue/TS + 1× Go 仓上跑 measure_lsp_baseline，复核 D-16 保持默认 False 的判定"
     expected: "报告含 before/after 质量/耗时字段；recommend_flip_defaults 与 SUMMARY/ROADMAP 一致"
     why_human: "当前 lsp-baseline-report.json 缺仓与 gopls PATH，索引墙钟为 null；需真实环境复跑"
+
   - test: "开启 LSP 并重建索引后，用真实 CrossRepoApiCall 样本复验 IMPACT-03 四分支"
     expected: "样本 >0 时测出 (file_path, name) 命中率；样本仍为 0 则继续诚实延期"
     why_human: "依赖生产/夹具索引数据；本相位已诚实延期记账，闭环需人/环境"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 127: Semgrep 门禁 + LSP 基准 Verification Report

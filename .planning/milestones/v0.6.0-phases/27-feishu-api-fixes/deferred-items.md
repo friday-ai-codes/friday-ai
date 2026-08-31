@@ -1,6 +1,8 @@
 # Phase 27 — Deferred / Out-of-Scope Discoveries
 
 ## Pre-existing test failure (NOT caused by 27-01)
+- status: acknowledged
+
 
 - **Test:** `tests/knowledge/test_triggers.py::TestCodingTriggers::test_coding_chat_pr_created_branch_delivers_once`
 - **Error:** `django.core.exceptions.ValidationError: ['"[]"不是一个有效的UUID']`（在一条 coding-trigger 的关联查询里，`[]` 被当成 UUID 传入 FK lookup）。

@@ -7,12 +7,18 @@ overrides_applied: 0
 re_verification:
   previous_status: null
 human_verification:
+
   - test: "在真实 Postgres 部署上：贴链接入队爬取批次 → `docker compose up -d` / Pod 重建 worker+web 容器 → 确认队列从 DB 恢复且 durable job 自动续跑"
     expected: "刷新页面 + 容器重建后队列列表从 IngestRun(DB) 恢复，未完成批次 worker 重启后领 todo 续跑、不丢任务"
     why_human: "需真实 Postgres + 容器/Pod 重启，本环境为 SQLite in-process 后端、无法重启容器（DB-truth-source list 恢复已由 SQLite 自动化覆盖，仅 restart-resume 为人工）"
+
   - test: "在真实 Postgres 上运行 `cd server && uv run pytest -m postgres_queue` 验证同 batch 重复 enqueue 经 queueing_lock 真实去重 + 并发重复执行 at-least-once 幂等不产生重复数据"
     expected: "同 idempotency_key=crawl_ingest:{batch_id} 重复 defer 命中 queueing_lock 不堆积/不双跑；重复执行 run_crawl_ingest 不产生重复 WorkItem/Document/Archive"
     why_human: "queueing_lock 真实去重依赖 Postgres procrastinate_jobs（SQLite 默认 skip postgres_queue 标记用例）；代码层幂等键与 COMPLETED 排除已由 SQLite 守护测试覆盖"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 62: 爬取+入库 durable 队列 + PageIndex 接入 — Verification Report
@@ -126,6 +132,7 @@ human_verification:
 
 **关于唯一 1 个失败用例（已评估为非 Phase 62 回归）：**
 `tests/delivery/test_plan_session_inv6_guard.py::test_inv6_no_bypass_plan_session_write` 失败，经核实为**预存误报**，**非 Phase 62 引入**：
+
 - 根因：INV-6 守护正则 `\bPlanSession\s*\(` 误命中 `server/chat/conversation_service.py:1922` 的**中文注释** `# SDD spec 反查：conversation → PlanSession(软引用会话) ...`（注释而非实例化/写表）。
 - 证据：`conversation_service.py` 最近一次提交为 `1350f6b13 feat(config): add use_worktrees option`（**不在** Phase 62 提交集 c6bdc249e/c7716bdb8/4a54ae9c4/e51b3927b/7b86655e4/f55ba115e/8dc206bac/b7214ddd7 内）；工作树对该文件无 diff（`git status` 空）；该文件不在任何 62 plan 的 files_modified 列表。
 - 结论：守护测试质量问题（正则未剥离注释行），与本阶段爬取/入库/PageIndex 改动无关。按用户指示，**记录但不据此判定 Phase 62 失败**（已存档于 `deferred-items.md`，建议后续修复守护跳过注释行）。

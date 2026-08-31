@@ -5,12 +5,18 @@ status: human_needed
 score: 23/23 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "真实 runner + Docker + 任务容器端到端 resume：私有仓 clone 成功 + 落正确目标分支（非 friday/task-{id}）"
     expected: "派发编码容器后，容器用注入的 git token 成功 clone 私有仓，并在 env_FRIDAY_TASK_BRANCH_STRATEGY 指定的工作分支上提交（target_branch 为 base_branch）"
     why_human: "需真实 runner + Docker + 任务容器 + 真实编码 agent，本地无法闭环（VALIDATION.md Manual-Only + STATE.md Deferred Items）"
+
   - test: "真实 deep-research 容器在途完成 → chat/workflow 会话自动续驱到 done"
     expected: "调研容器完成回调后，chat 入口 PlanSession 经 callback 续驱 merging→architecting→done，barrier 回灌使对话自动 resume 呈现 canonical 主方案"
     why_human: "需真实 runner + Docker + 调研容器 + 真实编排 LLM，本地无法闭环（VALIDATION.md Manual-Only + STATE.md Deferred Items）"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 43: 编码 env 对齐 + 通用 resume 回流地基 Verification Report

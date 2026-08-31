@@ -5,9 +5,14 @@ status: human_needed
 score: 5/5 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "在浏览器中以 Web UI 走 cookie-JWT 登录（access_token HttpOnly cookie 主路径），然后访问受保护页面/接口（如 /me、对话、工作流）"
     expected: "登录成功，受保护资源正常返回 200；DEFAULT_AUTHENTICATION_CLASSES 改为 PAT-first 后，cookie 优先的 access_token 仍被 CookieJWTAuthentication 正常接住，端到端不回退"
     why_human: "认证类全局重排属高 blast-radius 改动；自动化测试覆盖了 Bearer-header JWT、refresh cookie、logout 与站点级 401，但 access_token cookie-first 路径经重排链路的真实浏览器端到端登录未在本次验证中实跑"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 7: 令牌即用户身份（认证地基） Verification Report

@@ -5,12 +5,18 @@ status: human_needed
 score: 4/4 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "启动前端，触发一次 plan 多题澄清（会话入口），确认会话内联卡渲染多题 + 单/多选 + ⭐推荐默认选中 + 自由输入，提交后切「已回复」且方案继续生成"
     expected: "ClarificationCard 渲染 questions[]（single button / multi Checkbox），推荐项默认选中；提交聚合 answers[] 打专路由，卡切「已回复」，PlanSession 续推、方案继续生成"
     why_human: "可视化渲染 + 端到端用户流程（提交→续推→方案生成）非单测可覆盖；91-05 PLAN 显式 defer 的 human-check"
+
   - test: "触发一次工作流入口（ai_plan_research）CLARIFYING 挂起，确认飞书机器人把澄清交互卡（单/多选 + ⭐推荐 + 其他）发到项目群，群内提交后方案续推"
     expected: "机器人发出 build_clarification_card（携 clarification_id + action=plan_clarify_answer）到项目群；提交触发回调 → answer_round + 续推 → approve_node 重调度 ai_plan_research → 置灰卡"
     why_human: "飞书外部服务集成（真实群发卡 + 回调）端到端非单测/grep 可验证（单测以 mock FeishuIMService.send_card 验证调用）"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 91: 澄清出口面 + 回流 resume Verification Report

@@ -6,9 +6,14 @@ score: 4/4 must-haves verified
 overrides_applied: 0
 re_verification: # No — initial verification
 human_verification:
+
   - test: "真 LLM 容器 / 真模型端到端：在配置真实 provider 的环境（或编码容器）下，对一个 facets.methodology=SDD 的真实仓走完整融合 → agenerate_specs_for_plan → LLMSddSpecSynthesizer.synthesize（不 mock）"
     expected: "LLMSddSpecSynthesizer 用真实 provider 解析 + build_chat_model 调真模型，返回符合 openspec change-proposal 结构（## Why / ## What Changes / ## Spec Deltas: ADDED/MODIFIED/REMOVED Requirements + Scenarios）的非空 markdown，落 Document(sdd_spec) 并 emit spec.drafted；融合不被阻断"
     why_human: "本 phase 真 LLM 路径仅构造 + 单测 mock（D-49-4，刻意对齐 LLMMergedPlanSynthesizer 已验范式），真容器/真模型 E2E 不在自动化范围；需真实 provider 凭证与运行环境，grep/单测无法覆盖真模型输出质量与 openspec 格式合规"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 49: 方案产 openspec spec + Document(sdd_spec) Verification Report

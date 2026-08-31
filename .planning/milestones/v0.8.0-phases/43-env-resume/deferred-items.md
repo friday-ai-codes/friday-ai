@@ -1,6 +1,8 @@
 # Phase 43 — Deferred / Out-of-Scope Items
 
 ## Pre-existing test failure (out of scope for 43-02)
+- status: acknowledged
+
 
 - **Test:** `server/tests/services/test_dependency_cache.py::TestGetVolumeName::test_get_volume_name_format`
 - **Discovered during:** 43-02 regression run (`uv run pytest tests/services/`)

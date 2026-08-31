@@ -5,9 +5,14 @@ status: human_needed
 score: 4/4 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "在真实 Cursor 客户端经 MCP 调用 improve_coding_plan（含一次触发 research/clarify 在途的场景）"
     expected: "同步场景在 HTTP 请求内返回 completed/failed；research/clarify 在途立即返回 partial + session_id，Cursor 不挂起不超时"
     why_human: "partial 短路机制已代码级验证（delegate 三态映射 + 契约进 schema），但真实 Cursor 客户端的超时/挂起行为属实时外部集成，无法用测试/grep 验证"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 104: 工具面收口（improve/analyze 收敛 + 确定性缝退役 + 端到端验收） Verification Report

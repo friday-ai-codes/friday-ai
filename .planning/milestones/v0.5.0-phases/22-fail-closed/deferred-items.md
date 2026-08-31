@@ -3,6 +3,8 @@
 记录执行期发现但**不属于本任务直接改动**的预存问题（per executor SCOPE BOUNDARY）。
 
 ## Plan 22-03
+- status: acknowledged
+
 
 - **预存 contract drift**：`tests/agents/test_tool_contracts.py::test_search_repository_code_input_schema_snapshot`
   在干净树（stash 掉本 plan 改动后）即 FAILED——`server/agents/tools/schemas/search_repository_code.py`

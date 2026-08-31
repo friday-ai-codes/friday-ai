@@ -5,18 +5,26 @@ status: human_needed
 score: 12/12 must-have truths verified (code-level); 4 runtime behaviors require real Postgres / E2E
 overrides_applied: 0
 human_verification:
+
   - test: "Postgres 部署下经 -m postgres_queue 跑 test_procrastinate_backend.py（defer 落 procrastinate_jobs / priority 领取顺序 / run_at→scheduled_at / get_worker_connector→PsycopgConnector）"
     expected: "8 个 postgres_queue 用例全绿（本机无 Postgres，仅能 collect 8 项后 skip）"
     why_human: "需真实 Postgres（CI postgres:17-alpine service 或本地 DATABASE_URL=postgres + DURABLE_TASK_BACKEND=procrastinate），本验证环境无 Postgres，pytest-socket 默认禁 TCP"
+
   - test: "forged-heartbeat stalled rescue：伪造 worker 心跳过期后 retry_stalled() 把 doing job 重投回 todo（test_stalled_rescue.py）"
     expected: "stalled 被 get_stalled_jobs() 命中且重投回 TODO；queueing_lock 单例不堆积；并发 fetch 恰一个领取"
     why_human: "依赖真实 Postgres procrastinate_workers/procrastinate_jobs 表与 SKIP LOCKED 语义，无法在 SQLite/无 PG 环境执行"
+
   - test: "真实 kill-worker E2E：起两个活 worker 进程，kill 其一，另一 worker 经周期 retry_stalled_durable_jobs（queueing_lock 单 leader）接管在途 stalled 任务"
     expected: "被杀 worker 的在途任务在心跳过期后被另一 worker 重新领取并完成，多副本仅一个 leader 周期扫 stalled"
     why_human: "60-VALIDATION.md 已标 Manual-Only：需双活 worker 进程 + 真实 Postgres + 等待心跳过期，CI 昂贵/不稳；forged-heartbeat 已自动逼近"
+
   - test: "GitHub Actions postgres-queue job 推送后实跑为绿（server-ci SQLite 零回归 + postgres-queue durable 覆盖）"
     expected: "server-ci 绿（SQLite 默认）、postgres-queue 绿（migrate 建表后 -m postgres_queue 全覆盖 defer/priority/retry/stalled/并发/fallback）"
     why_human: "workflow YAML 已合法且 job 结构正确，但需推送到 GitHub 由 Actions runner 实跑确认绿灯，本地无法触发"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 60: durable 底座地基 Verification Report

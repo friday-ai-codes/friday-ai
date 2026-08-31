@@ -1,4 +1,6 @@
 # Phase 17 Deferred Items
+- status: acknowledged
+
 
 发现于执行过程、超出当前任务范围、未修复的事项：
 

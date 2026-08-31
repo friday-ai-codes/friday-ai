@@ -17,6 +17,7 @@ evidence:
   debt_markers: "31 个改动源文件（server/ + web/，含测试）零 TBD / FIXME / XXX / TODO / HACK / PLACEHOLDER"
   verifier_probe: "verifier 自建可执行探针（跑完即删）实测 `buildOrchestrationTimeline`：无快照 + `process.session.failed` 事件 ⇒ `phase='running'` / 标题「正在生成技术方案」 / 失败步渲染为 `running`；同输入加上 `status=failed` 快照 ⇒ `phase='failed'` / 红步 / 「该阶段执行出错」。两条断言式探针均通过，GAP-1 由实测而非评审转述坐实"
 gaps_closed:
+
   - truth: "SC-3：编排失败时用户能直接看出停在哪一步、原因是什么"
     status: partial
     reason: >-
@@ -29,59 +30,79 @@ gaps_closed:
       也没有任何其它分支据它翻 phase ⇒ 前半程失败时时间线**持续宣称「正在生成技术方案」**，
       须用户刷新页面才自愈。后半程（research / merge）失败因轮询已起，表现正确。
     artifacts:
+
       - path: "web/src/composables/useOrchestrationTimeline.ts"
         issue: "`isFailed` 仅取 `snapshot?.status`，无事件流兜底；`process.session.failed` / `fail` 在折叠逻辑里被静默丢弃"
+
       - path: "web/src/stores/chat.ts"
         issue: "SSE 直播期间不起 runtime 轮询 ⇒ 前半程 `bucket.snapshot` 恒为 null，失败事实无处落地"
     missing:
+
       - "在 `foldEvents` 里认 `process.session.failed`（以及 `fail`），命中即把 `phase` 翻 `failed` 并把当前指针那一步标红"
       - "该分支下摘要行留空即可（闭集原因文案仍由快照补齐；§A.4 本就允许缺数据时整行不渲染），不得由前端推断原因码"
       - "补一条「无快照 + failed 事件 ⇒ phase=failed 且指针步为 failed」的用例；现有 71 条穷举 spec 里没有任何一条覆盖这一输入组合（也没有任何一条把当前错误行为锁死，修复不需要改既有断言）"
+
 deferred:
+
   - truth: "workflow / MCP 入口的过程可视化"
     addressed_in: "本里程碑外"
     evidence: "110-CONTEXT `<deferred>`：这两条链无 chat 会话、没有推送目标；事件照常落库，读取面（`(session, ts)` 索引）已具备"
+
   - truth: "`SOURCE_PROCESS_EVENT` 的工作流信号投影实现"
     addressed_in: "本里程碑外"
     evidence: "110-CONTEXT `<deferred>`：`workflows/reactions/signal.py:67` 有常量无投影实现，属工作流反应体系，与本相位的用户可见性目标不同源"
+
   - truth: "清理 `deep_analysis_progress` 死路径"
     addressed_in: "本里程碑外"
     evidence: "110-CONTEXT `<deferred>`：范围外的死代码清理；本相位已核实未触碰、也未救活"
+
   - truth: "把 Phase 107 的降级提示改为读事件表"
     addressed_in: "本里程碑外（裁决 D-3 明确不做）"
     evidence: "110-CONTEXT 裁决 D-3：返工面大、用户可见收益为零；SC-4 靠「谁渲染什么」的分工满足"
+
   - truth: "`RoutingDecisionPanel` 的重新上线（降级提示的可见承载）"
     addressed_in: "里程碑级缺口，非 Phase 110 缺陷"
     evidence: "该面板 2026-05 已退役，SPA 内无任何挂载点，且有锁测试断言其不渲染（`partsApiIntegration.spec.ts:178`）。110-CONTEXT 边界明确「不重做 Phase 107 已落地的降级提示」，本相位只在「路由」步加角标"
 human_verification:
+
   - test: "真实会话触发一次跨仓编排，肉眼确认前半程（拆分 / 路由 / 召回 / 澄清）的阶段是**秒级**逐个出现，而不是每 2 秒跳一格"
     expected: "阶段推进与后端事件同步出现（秒级）；若呈 2 秒节拍，说明 `get_stream_writer()` 在 tool 调用栈里解析不到 writer，SSE 直播链静默失效（功能不坏，退化为快照节拍）"
     why_human: "全部 fan-out 用例都 monkeypatch 掉了 `langgraph.config.get_stream_writer`，端到端 SSE 路径从未真正跑过。静态核验已确认写入形状与 `graph.py:312/485/642` 等既有 `StreamWriter` 用法逐字同构、消费侧 `conversation_service.py:1699-1704` 对得上、三处 `astream` 都带 `custom`，但生产解析行为无法程序化断言"
     requirement: OBS-01
+
   - test: "真实跨仓编排跑到调研阶段，核对 `plan_session_id`（后端 `str(ConvergenceSession.id)`）与编排 tool result 里的 `session_id` 是否为**同一个字符串**"
     expected: "两者逐字相同，日志组出现在编排气泡内；若出现「时间线在跑、日志组永不出现」，这个不等就是第一嫌疑"
     why_human: "两侧各有后端用例，但跨进程的字符串相等性从未被端到端测量；110-02..110-07 没有任何一个 plan 跑过真实编排，全部验证都是单元级"
     requirement: OBS-02
+
   - test: "真实调研容器起来后，确认每仓一张卡、卡标题是仓库名、日志随容器 stdout 增量刷新，且编排完成后日志仍可展开查看"
     expected: "体验与深度分析一致；无裸 UUID 上屏；凭据类文本已在服务端脱敏"
     why_human: "需真实 Docker runner 与容器 stdout；本地只验证到 `last_output.logs` 的读取与脱敏（后端用例覆盖）"
     requirement: OBS-02
+
   - test: "制造一次**前半程失败**（打断 route 或 recall stage），确认 GAP-1 的复现：时间线是否持续显示「正在生成技术方案」，刷新后是否才翻红"
     expected: "复现 ⇒ 按 gaps 的 missing 清单修复；不复现 ⇒ 说明存在我未识别的快照触发路径，需回写本报告"
     why_human: "verifier 已用可执行探针在纯函数层坐实行为，但「前半程期间确实没有快照到达」这一条是从轮询调度点静态推出的，值得在浏览器里实测一次"
     requirement: OBS-03
+
   - test: "读屏（VoiceOver / NVDA）走一遍调研日志组的折叠按钮"
     expected: "能听到「方案调研 · N 个仓库」；当前实现用 `aria-label=\"展开方案调研日志\"` 覆盖了可见文案，读屏用户听不到仓库数（WCAG 2.5.3 Label in Name，Level A）"
     why_human: "真实读屏行为无法程序化断言；结构层已确认 `aria-label` 与可见文案不含蕴（`PlanResearchLogGroup.vue:100-108`）"
     requirement: OBS-02
+
   - test: "五个仓并行调研时确认 live region 只播报阶段变化，不随各仓完成连播"
     expected: "屏幕阅读器只在活跃阶段 key 或会话状态变化时播报一次"
     why_human: "代码层已守住（`COPY.stepCount` 不进 live region，卡内 `aria-live` 恰 1 个，有用例锁），但实际播报节奏须实听"
     requirement: OBS-03
+
   - test: "亮 / 暗主题下核对 `skipped` / `unknown` 空心点（`bg-transparent border border-muted-foreground/50`）的可辨识度"
     expected: "空心与实心的形状差异在两种主题下都能分辨（它是这两态唯一的非文字信号）"
     why_human: "视觉对比度与观感无法程序化断言"
     requirement: OBS-03
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 110: 过程可观测（阶段流式 + 容器日志 + 阶段时间线）验证报告

@@ -1,3 +1,10 @@
+---
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  gap_snapshot: "unknown::scenarios=0"
+---
+
 # Phase 83 — live-Feishu UAT 待验证清单（deferred）
 
 > 本里程碑实现环境**无 live 飞书凭证**，drive 事件/订阅端点/回拉 block 形态以 `[ASSUMED]`
@@ -47,17 +54,22 @@
   与 83-02 pull / 83-03 push 同文档同值，`idempotency_key=docpull:{token}:poll:{revision}` 去重）；
   归因 `system`；单 doc try/except 隔离、结构化 `{checked, triggered}` 返回。归档/broken doc
   天然被 `project__status=developing` + `sync_status=READY` gate 过滤，不被反复触发（T-83-06-DOS）。
+
 - 边界全收口（fail-soft 不反噬主流程）：
   - 归档/终止 → pull/push 入口 gate `_stop_sync_on_archived`：best-effort `unsubscribe_file`
     释放配额 + `subscribed` 置 False（INV-6 经 ProjectDocService）+ 只读快照保留
     （`last_synced_snapshot` 不清不刷新）；记 `doc_sync_archived_stopped`(unsubscribed)。
+
   - 文档被删/移 → 回拉 `DocumentNotFoundError` → `set_sync_status(broken)` + 记
     `doc_sync_doc_not_found`(rebuild=rebuild_workspace) 供一键重建（复用 Phase 82 `rebuild_workspace`）。
+
   - 非成员飞书编辑 → operator 未映射 → 归因 `system`（contributor None，`_resolve_user` 取不到），
     fail-soft 接受不拒绝（与 83-04 受限 sync 入口一致）。
+
   - 飞书限流 → client `@retry` 指数退避 + per-doc 串行 lock；退避耗尽 → 记 `doc_sync_rate_limited`
     (sampling) + 返回 `failed/rate_limited`，**不置 broken**（瞬态可恢复，留下次事件/poll 兜底），
     绝不抛回 webhook / 编辑主流程。
+
 - 均不依赖 live 飞书：退订端点（A3-unsubscribe）/ poll revision 代理（A5-poll-revision）以
   respx / fake client 覆盖单测；真机校验后回填上表。
 
@@ -74,5 +86,6 @@
   幂等键（`docpull:{file_token}:{event_id}`）、fail-soft（归档/broken/not-found 跳过或置 broken 不抛）、
   脱敏（`redact_secrets_in_text`）、INV-6 写收口（ProjectDocService/MemoryService）均已实现并经
   respx/单测覆盖，**不依赖** live 飞书。
+
 - 真三方合并冲突编排（SYNC-04）/ TTL 轮询兜底（83-06）/ 订阅退订生命周期为后续 plan，本期 pull 编辑分支以「飞书优先覆盖快照 + capture 留痕（never-drop）」+ `TODO(83-04)` 占位。
 - 83-03 push：debounce 合并（`run_at=now+DOC_SYNC_DEBOUNCE_SECONDS`、`idempotency_key=docpush:{doc_id}`）、per-doc 串行 lock（`docsync-{feishu_document_id}`，与 pull/poll 同值）、限流退避（client `@retry`）、防回声（飞书镜像写 `_skip_doc_push=True`）、只写 section==SYSTEM、**永不整篇 replace**、fail-soft 置 broken、INV-6 写收口均已实现并经 respx/单测覆盖，**不依赖** live 飞书。本期系统区渲染器仅覆盖 MEMORY/STATE；MILESTONES/RESEARCH/PREFLIGHT 系统派生区渲染留后续（无渲染器即 `skipped`，绝不对空期望态盲删既有块）。编辑感知延迟写 + 乐观并发 rebase + 同块三方合并留 83-04。

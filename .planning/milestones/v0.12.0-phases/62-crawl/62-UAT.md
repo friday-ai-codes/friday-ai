@@ -4,6 +4,10 @@ phase: 62-crawl
 source: [62-VERIFICATION.md]
 started: 2026-06-20
 updated: 2026-06-20
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  gap_snapshot: "testing::scenarios=3"
 ---
 
 ## Current Test
@@ -18,14 +22,17 @@ awaiting: user response
 ## Tests
 
 ### 1. 真实容器/Pod 重启后队列恢复 + 自动续跑
+
 expected: 贴链接入队 → 重启容器/Pod → 队列从 DB 恢复、durable job 自动续跑、入库 at-least-once 不重复。
 result: [pending]
 
 ### 2. postgres_queue queueing_lock 去重 + 并发 at-least-once 幂等
+
 expected: 真实 Postgres 下同 batch 重复 enqueue 经 queueing_lock 去重；并发 worker 竞争下入库幂等无重复数据。
 result: [pending]
 
 ### 3. 知识树重建端到端（hash 变则真实重建）
+
 expected: 真实数据变更后触发 KnowledgeTreeRebuild → build_full 真实执行落新 snapshot；数据未变 → 跳过。（SQLite 守护已覆盖；真实 Postgres 抽验。）
 result: [pending]
 

@@ -5,12 +5,18 @@ status: human_needed
 score: 8/8 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "真实 runner + Docker 容器 E2E：未批准 spec 的 SDD 仓真实编码派发被 gate 拦截（容器不起、task failed reason=spec_not_approved），已批准仓正常起容器编码"
     expected: "未批准仓无容器产出且操作者可见阻断原因；已批准仓正常产出 PR"
     why_human: "需真实 runner 调度 + Docker 守护进程起容器，自动化测试只覆盖 server 侧派发判定，不实际拉起容器"
+
   - test: "openspec skill 真实加载：approved SDD 仓容器内 setting_sources=[project] 原生加载仓库内 .claude/skills，且 system_prompt openspec 段被真模型遵循（按 openspec/ 已批准 spec 的 delta 编码）"
     expected: "容器内 claude code 加载到仓库 openspec skill，编码产出遵循已批准 spec delta，不自行扩张范围"
     why_human: "依赖真实容器运行时 + 真模型行为，无法以 grep / 单测验证模型是否真正遵循 openspec 流程"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 51: 编码前置 gate + openspec skill 编码策略 Verification Report

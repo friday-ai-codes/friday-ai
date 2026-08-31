@@ -5,12 +5,18 @@ status: human_needed
 score: 12/12 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "用真实飞书项目加密凭证 + 真实 git platform 凭证，对真实 (看板URL, MR URL) 跑一次一键摄取"
     expected: "三步均 ok：WorkItem 经 upsert 落库、PRD/技术方案 Document + REFERENCES 边建立、MR diff 归档并入 RAG；该需求与关联文档/diff 可经现有检索/MCP 召回"
     why_human: "需真实飞书/git 平台凭证与活数据，自动化测试以 mock seam（mock_embedding/qdrant/git_platform）+ 实体/边/归档行存在为可测代理，无法替代端到端真实回源"
+
   - test: "在浏览器打开 /knowledge/ingest，提交两个 URL 并观察派发→2s 轮询→三步结果渲染"
     expected: "侧边栏「一键摄取」入口可达；表单校验、派发成功 toast、running spinner、2s 轮询、三步语义色结果（identifier/「查看」外链/error）、partial/完成提示视觉正确"
     why_human: "视觉外观、轮询实时行为、toast 与无障碍语义需人工目视确认，grep/单测只能验结构与文案不能验观感"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 32: 一键摄取编排 Verification Report

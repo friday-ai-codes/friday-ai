@@ -5,18 +5,26 @@ status: human_needed
 score: 3/3 must-haves verified (code + tests); 0 gaps
 overrides_applied: 0
 human_verification:
+
   - test: "打开某项目作战室关系星图（ProjectGalaxyCard），确认 artifact(amber #f59e0b)/capability(rose #ec4899) 节点与图例可见，力导图渲染正常"
     expected: "工件/能力节点以语义色渲染，图例含『工件』『能力』，点击节点详情正确显示类型/载体"
     why_human: "3D 力导图（3d-force-graph + three）真实渲染与交互无法用 grep/静态检查验证"
+
   - test: "在含真实 Phase 98 关联数据的环境打开一个工件（document）知识实体详情页，查看『关联』区块"
     expected: "展示关联仓库（可点跳 /repositories/{id}）、能力、关键词徽标；无关联时显示优雅空态不渲染空块"
     why_human: "真实关联召回（graph_store.neighbors / RELATES_TO 边）依赖 live 数据，单测用 mock，需真机确认端到端召回与展示"
+
   - test: "打开一个仓库（repository）知识实体详情页，查看反向『相关交付文档』并点击其中一项"
     expected: "列出相关交付文档，点击 RouterLink 跳转到该文档知识实体详情（/knowledge/entities/{entity_id}），形成双向闭环"
     why_human: "点击导航跳转与页面切换属浏览器运行时行为，需人工点击验证"
+
   - test: "在作战室『外部依赖』区（DependenciesSection）某工件行点击『知识』(brain) 图标入口"
     expected: "跳转到该工件对应知识实体详情（/knowledge/entities/{entity_id}），闭合『作战室↔知识』环"
     why_human: "跨页面路由跳转 + entity_id 映射正确性在真实数据下的端到端行为需人工点击确认"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 99: 关联可视化与交叉入口 Verification Report

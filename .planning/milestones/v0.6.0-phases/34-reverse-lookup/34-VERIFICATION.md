@@ -5,9 +5,14 @@ status: human_needed
 score: 11/11 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "真实图谱数据下的片段→需求反查端到端验收：在真实仓库 + 真实图谱边（MODIFIES_CHUNK/IMPLEMENTED_BY/HAS_PLAN/REFERENCES 由实际 diff 归档与方案/编码产出）上，调 GET /api/repositories/<id>/reverse-lookup/ 与 MCP reverse_lookup_requirements，确认反查到正确的 work_item/document 与多跳路径。"
     expected: "反查结果与真实图谱关联一致；被排除文件/失效边不泄漏；agent 可经 MCP 消费结构化结果。"
     why_human: "自动化测试用 factory-boy 在测试库构造图谱边覆盖链路语义；真实生产图谱数据的端到端关联正确性需人工对真实需求/代码核对（CONTEXT 已列为 human-UAT）。"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 34: 评论入图 + 片段→需求反查 Verification Report

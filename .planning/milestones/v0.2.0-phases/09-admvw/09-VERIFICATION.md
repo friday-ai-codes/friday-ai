@@ -8,15 +8,22 @@ re_verification:
   previous_status: none
   previous_score: n/a
 human_verification:
+
   - test: "管理员多账号端到端：用 superuser 登录控制台，侧栏点「会话管理」，确认能看到其他真实用户（user_a/user_b）创建的会话行（owner 列正确）。"
     expected: "列表展示所有用户会话，owner 列显示他人用户名/昵称；非管理员账号访问 /admin/conversations 被路由守卫挡到 /403。"
     why_human: "需真实多账号登录态 + 浏览器渲染，单测用 mock 数据无法覆盖真实跨用户数据与守卫跳转 UX。"
+
   - test: "fork→续聊端到端：在只读详情中点「fork 到我的名下」，确认跳转 /chat?conversation=<新 id> 后，管理员作为 owner 能正常发送消息续聊。"
     expected: "fork 成功 toast「已复制到我的名下」，跳转后普通 chat 界面以管理员为 owner 加载该会话并可正常续聊（不被 owner gate 403/404）。"
     why_human: "跨页面导航 + chat store restoreFromURL + owner gate 续聊链路，需真实运行的前后端与会话流式交互，超出单测/grep 范围。"
+
   - test: "只读视图视觉确认：打开他人会话详情对话框，确认无任何输入框/发送/编辑/删除控件，消息按 user/assistant 角色正确渲染 markdown。"
     expected: "对话框为纯只读消息回放，无写入入口；markdown 正常渲染，原始 HTML 不被执行。"
     why_human: "视觉外观与渲染正确性需人工目检。"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 9: 管理员只读会话管理后台 Verification Report

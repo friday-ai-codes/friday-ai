@@ -5,18 +5,26 @@ status: human_needed
 score: 3/3 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "打开 /knowledge → tree Tab，点击「代码能力树 | 交付文档」切换控件"
     expected: "默认展示代码能力树（PageIndex 行为不变）；切到「交付文档」渲染三级树（项目→类型→工件，计数/类型徽标/载体图标/更新时间），URL 出现 ?view=docs 且刷新/深链保持该视图"
     why_human: "视图切换 + URL 双向同步为浏览器运行时行为，静态代码无法确认渲染与路由联动"
+
   - test: "在交付文档树搜索框输入关键词"
     expected: "即时过滤，命中标题以 <mark> 高亮，命中路径祖先自动展开，无命中显示「没有匹配的交付文档」空态；清空恢复手动展开态"
     why_human: "即时搜索/高亮/自动展开为交互运行时表现，需人工观察"
+
   - test: "点击文字载体叶子（markdown/feishu_doc）与 external_link 叶子"
     expected: "文字载体弹出 markdown 查看弹窗（复用 Phase 96 ArtifactView，MarkdownRenderer 渲染并消毒）；external_link 在新标签打开（rel=noopener noreferrer）"
     why_human: "弹窗渲染、外链新标签打开为浏览器行为，需人工确认观感与内容"
+
   - test: "整树为空 / 数据超上限触发 truncated 时的空态与提示"
     expected: "整树空展示引导空态（指向作战室外部依赖）；truncated=true 顶部显示截断提示条"
     why_human: "空态与截断提示的视觉呈现需人工在真实数据下确认"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 97: 交付文档知识树视图 Verification Report

@@ -4,6 +4,10 @@ phase: 61-migrate
 source: [61-VERIFICATION.md]
 started: 2026-06-20
 updated: 2026-06-20
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  gap_snapshot: "testing::scenarios=3"
 ---
 
 ## Current Test
@@ -18,14 +22,17 @@ awaiting: user response
 ## Tests
 
 ### 1. 真实升级迁移（Postgres）
+
 expected: 命令把存量在途 index/graph resumable_tasks 转 durable job，旧行 MIGRATED + legacy id，重复运行幂等。
 result: [pending]
 
 ### 2. procrastinate queueing_lock 去重（真实 Postgres）
+
 expected: 同 repo 重复 defer（deterministic key index:/graph:{repo_id}）在真实 Postgres 下经 queueing_lock 去重，不产生重复在途 job。
 result: [pending]
 
 ### 3. 多副本 reconcile 不误杀（真实 Postgres）
+
 expected: 有在途 durable job 的仓库，启动 reconcile 经 has_active_by_key（queueing_lock）判定保留 RUNNING、不标 FAILED；无在途的仓库标 FAILED（旧行为）。
 result: [pending]
 
