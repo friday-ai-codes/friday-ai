@@ -1,3 +1,10 @@
+---
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: unknown
+---
+
 # Summary
 
 - Aborted production Procrastinate job `962` via `finish_job_by_id_async(..., ABORTED)` after killing/restarting `friday-worker` to stop the stuck parser process.

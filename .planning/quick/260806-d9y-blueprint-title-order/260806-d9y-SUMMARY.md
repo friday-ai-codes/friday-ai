@@ -6,24 +6,29 @@ tags: [blueprint, title, sorting, Asia/Shanghai, display_title]
 
 requires: []
 provides:
+
   - "format_blueprint_title / formatBlueprintTitle 统一标题派生"
   - "列表按 created_at 倒序 + created_at 字段"
   - "文档 display_title 与查看器顶栏对齐"
+
 affects: [knowledge-blueprints-tab, project-blueprints-card, blueprint-viewer]
 
 tech-stack:
   added: []
   patterns:
+
     - "展示层派生标题（不 migration 回填旧 Artifact.title）"
     - "前后端同模板：{project} - 技术方案 - YYYY-MM-DD HH:mm（Asia/Shanghai）"
 
 key-files:
   created:
+
     - server/services/process_runtime/blueprint_title.py
     - server/tests/services/process_runtime/test_blueprint_title.py
     - web/src/utils/blueprintTitle.ts
     - web/src/utils/__tests__/blueprintTitle.test.ts
   modified:
+
     - server/services/process_runtime/blueprint_intake.py
     - server/delivery/api/blueprint_list_views.py
     - server/delivery/api/blueprint_doc_views.py
@@ -39,12 +44,14 @@ key-files:
     - web/src/pages/knowledge/__tests__/blueprintViewer.spec.ts
 
 key-decisions:
+
   - "列表 title / 文档 display_title 始终服务端派生，不依赖 DB 回填"
   - "排序键与标题时间戳均用 artifact.created_at，不用 updated_at"
   - "空项目名前缀固定为「未关联项目」"
   - "intake 缺省 _MAX_TITLE_CHARS 提到 200，避免静默裁掉时间后缀"
 
 patterns-established:
+
   - "Blueprint title format: `{name} - 技术方案 - YYYY-MM-DD HH:mm` (Asia/Shanghai)"
   - "Frontend list time via formatBlueprintListTime — never toLocaleString with seconds"
 
@@ -52,6 +59,10 @@ requirements-completed: [QUICK-260806-D9Y]
 
 duration: 14min
 completed: 2026-08-06
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: unknown
 ---
 
 # Phase quick-260806-d9y Plan 01: Blueprint Title & Order Summary

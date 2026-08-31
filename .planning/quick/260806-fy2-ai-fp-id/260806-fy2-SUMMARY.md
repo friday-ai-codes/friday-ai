@@ -1,3 +1,10 @@
+---
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: unknown
+---
+
 # Quick 260806-fy2 SUMMARY — AI 澄清提问对话式改造
 
 ## Done
