@@ -1,8 +1,8 @@
 ---
-status: awaiting_human_verify
+status: resolved
 trigger: "额度已经恢复；升级 Multica 技术方案 Agent 使用的 Friday MCP，并完整修复此前审计发现的运行时工具缺失、调研失败、状态失同步、孤儿蓝图、skill 冲突与端到端验收缺口。"
 created: 2026-08-28
-updated: 2026-08-28T17:10:00+08:00
+updated: 2026-08-31T17:48:00+08:00
 audit_acknowledged:
   milestone: v0.25.0
   at: 2026-08-31
@@ -21,76 +21,16 @@ audit_acknowledged:
 
 ## Current Focus
 
-- hypothesis: all controllable Friday and Multica technical-plan defects reproduced in this session are fixed and validated end to end through the first mandatory human gate.
-- test: await a real human answer to AGE-47 thread 16fdd366; then verify clarification replay, pending_review verbatim Markdown, version/hash CAS approval, and confirmed Coding envelope without answering or approving on the user's behalf.
-- expecting: AGE-47 stays blocked with artifact c3ae7a71 and 10/10 deep-research evidence until a human answers; no automatic approval or Coding dispatch occurs.
-- next_action: hand the valid repository-confirmation question to the user and keep the debug session unarchived until that human-gated continuation is explicitly requested.
-- reasoning_checkpoint:
-    hypothesis: "Four missing authority bridges independently caused the parent-validation failures: confirm_gate publishes snapshots without validating direct evidence; periodic recovery only redrives sessions and never reconciles terminal runner facts or elapsed task deadlines; durable resume has no reference back to the MCP reservation; and work-item context labels a projects.Space UUID as project_id without returning the resolved initiatives.Project UUID."
-    confirming_evidence:
-
-      - "Four confirmation variants (failed, empty responsibility, empty reasons, empty current_state_summary) all returned awaiting_confirmation and opened a repo_confirmation thread."
-      - "The recovery module has no research-task reconciliation entry point although RunnerEvent persists task_completed and SubAgentSession persists started_at."
-      - "The reservation regression cannot import any reconciliation service, and live df2d4a9f remains idempotency_pending after its session produced artifact c3ae7a71."
-      - "get_feishu_work_item_context returned no explicit space_id/blueprint_project_id; its implementation assigns a projects.Space row to variable project and emits that UUID under project_id."
-    falsification_test: "If adding each bridge leaves its focused RED regression failing, or if identity validation accepts a Space UUID as an initiatives.Project UUID, the corresponding mechanism is incomplete."
-    fix_rationale: "Validate before opening the human gate and retry through ResearchService; reconcile persisted runner/deadline facts before periodic redrive; finalize only a validated reservation↔session↔artifact tuple through a service; expose both identity types explicitly while retaining the legacy alias."
-    blind_spots: "Live RunnerEvent detail shape and AGE-47's historical session lack the new automatic reservation reference, so live recovery must use the explicit validated reconciliation parameter once and then verify idempotent reuse."
-
+- hypothesis: "只在执行开始时读取 cancelled 状态会产生 TOCTOU 竞态；当用户在 Agent 运行中取消 Issue，稍后的状态、metadata、评论或 Friday mutation 仍会基于过期快照写入。"
+- test: "已扩展 skill snapshot guard，要求每次列出的写操作紧邻执行前重新读取 Issue，并以 revision/status 做 fail-closed CAS。"
+- expecting: "主文与 HTTP fallback 必须同时声明逐写入 preflight/CAS，正式 Agent 在运行中取消后应保持 cancelled。"
+- next_action: "修复已同步到 Multica；保留 AGE-63 live canary 与 snapshot guard 作为运行时和 CI 证据。"
+- known_pattern_candidate: "Async/Timing race condition + State Management dual source of truth / invalid transition"
 - tdd_checkpoint:
-    test_files:
-
-      - "server/tests/services/process_runtime/test_blueprint_confirm_gate.py"
-      - "server/tests/services/process_runtime/test_blueprint_session_recovery.py"
-      - "server/tests/mcp_tools/test_create_feishu_technical_plan_delegate.py"
-      - "server/tests/mcp_tools/test_feishu_work_item_context.py"
-    failure_output: "awaiting_confirmation != research_required; reconciliation functions absent; context response missing space_id"
+    test_file: "server/tests/mcp_tools/test_skills_snapshot_guard.py"
+    test_name: "test_friday_solution_rechecks_cancellation_immediately_before_every_mutation"
     status: "green"
-
-- reasoning_checkpoint:
-    hypothesis: "`asyncio.CancelledError` bypasses the delegate's `except Exception`, so the persisted route session loses its request driver and the caller never reaches reservation finalization."
-    confirming_evidence:
-
-      - "AGE-47 persisted a running route session with no lease immediately after CancelledError, while the idempotency reservation remained pending."
-      - "The focused regression raises CancelledError at the driver boundary and fails from orchestration_delegate.py:312 without invoking the existing resume service."
-      - "drive_lease releases in a finally block, explaining the empty lease without implying lease corruption."
-    falsification_test: "If an explicit CancelledError branch handing the exact session to the durable resume service still lets the focused test escape cancellation or leaves the reservation pending, this boundary is not sufficient."
-    fix_rationale: "Converting cancellation to a resumable partial handoff preserves the persisted session identity, uses the existing durable driver, and lets the enclosing technical-plan service finalize the same idempotency record rather than creating a duplicate."
-    blind_spots: "The focused RED test proves the delegate boundary only; green verification must also exercise service-level reservation finalization and the live AGE-47 recovery path."
-
-- tdd_checkpoint:
-    test_file: "server/tests/mcp_tools/test_create_feishu_technical_plan_delegate.py"
-    test_name: "test_delegate_cancellation_hands_exact_blueprint_session_to_durable_resume"
-    status: "green"
-    failure_output: "asyncio.exceptions.CancelledError at mcp_tools/orchestration_delegate.py:312"
-
-- reasoning_checkpoint:
--  hypothesis: under-specified orphan wording causes status resurrection because the Agent treats blocked as a non-progress terminal safety action.
--  confirming_evidence:
--    - Run 1a88329c observed cancelled correctly and immediately executed `multica issue status ... blocked --no-start`.
--    - Local SKILL.md only says "停止自动推进" and fallback only says "对账/停止自动推进"; neither says Issue status is read-only or forbids blocked/in_progress/done.
--    - The new exact-invariant regression fails on all ten required read-only/prohibited-action fragments in both documents.
--  falsification_test: if the strengthened skill and formal instructions are deployed yet a fresh cancelled-Issue run still issues any status or Friday mutation, semantic ambiguity was not the sole cause.
--  fix_rationale: making both state surfaces immutable and enumerating prohibited tools removes the model's latitude to interpret blocked as a safe stop, while allowing only policy-approved metadata/comment reconciliation.
--  blind_spots: Multica may inject higher-priority generic instructions that require blocked status; only tool-message inspection in a real rerun can validate precedence.
-- reasoning_checkpoint:
--  hypothesis: Agent 76859b8a is pinned to a deleted runtime, causing every new execution to remain queued because no daemon can claim runtime_id 0681b657.
--  confirming_evidence:
--    - Agent get reports runtime_bound=true and runtime_id=0681b657-8aa0-4852-926c-ba376afa43ff.
--    - Runtime list contains no 0681b657 entry, while the authorized vision daemon reports active Opencode runtime 53de76ee-f994-41cb-bb07-41b0327778a1.
--    - Controlled run f3774e7a stayed queued for more than five minutes with dispatched_at/start_at null and the stale runtime ID.
--  falsification_test: if rebinding to 53de76ee still leaves a new run undispatched, stale runtime binding is not the dispatch root cause.
--  fix_rationale: replacing the dead foreign-key-like runtime selection with the currently registered vision Opencode runtime lets the daemon claim executions while preserving the Agent, skills, instructions, and MCP config.
--  blind_spots: Multica server may allow rerun on cancelled Issues and the Agent may still ignore the deployed orphan text; the post-rebind canary must verify behavior and artifact immutability.
-- reasoning_checkpoint:
--  hypothesis: legacy 三段 skill 文档导致 Agent 采用错误控制协议，因为它明确宣称三工具完整且省略 canonical review/CAS 工具。
--  confirming_evidence:
--    - friday-solution/SKILL.md 第 14-24 行把 create/confirm/get 声明为不可跳过的完整三段链。
--    - references/http-fallback.md 第 3-20 行明确说只有三个工具且共享响应形状，未出现 approve/request changes/version/hash。
--  falsification_test: 若加入 canonical 工具与版本/hash/coding gate 断言后当前文档测试仍通过，则该漂移判断错误。
--  fix_rationale: 让主文和 fallback 都以 canonical blueprint 为权威，并用语义快照阻止未来退回 legacy 三工具。
--  blind_spots: Multica 服务端可能缓存已导入 skill；本地修复后仍需通过其管理 API 重新导入并跑真实任务。
-- tdd_checkpoint:
+    failure_output: "修复前稳定 RED；修复后目标文件 8 tests passed，ruff check passed。"
 
 ## Evidence
 
@@ -365,6 +305,31 @@ audit_acknowledged:
   checked: Clean-database adjacent regression suite and production model-config restoration.
   found: A single-process `pytest --create-db` run passed 144/144 tests across MCP create/context/schema/skill, research service, confirm gate, research adapter, session recovery, and context redispatch; ruff passed all modified Python files. The temporary deepseek-v4-flash Claude Code mapping was restored to the original ops credential and claude-opus-4-8 tiers.
   implication: The complete change set is regression-protected without relying on the previously corrupted shared test database, and the temporary canary model configuration did not remain in production.
+
+- timestamp: 2026-08-31T17:43:00+08:00
+  checked: Human-provided AGE-61 live timeline against the persisted skill contract.
+  found: Issue 952fe329-87cc-4b59-b64a-ec1533649f13 was cancelled at 09:30:54Z while run 6c6654c4-9eb6-44d0-aedf-1e2cfab3dc21 was active; the run finalized at 09:39:40Z by writing blocked at revision 10. Existing documents only branch on an already-observed cancelled state and allow policy-approved metadata/comment reconciliation without requiring an immediate reread/CAS before each mutation.
+  implication: The previous read-only fix closes start-time resurrection but leaves a write-time TOCTOU window across Issue and Friday mutations.
+
+- timestamp: 2026-08-31T17:43:00+08:00
+  checked: Git baseline, skills submodule, formal-instruction source search, and Friday branch lookup.
+  found: Parent and skills worktrees are clean at main/c3ed7bb; branch lookup again matched an unrelated project solely through generic main. Repository search found no persisted Multica Agent formal-instructions asset; the workflow template is a Friday workflow definition, not the Multica Agent instruction source.
+  implication: Preserve unrelated project context, change only the two skill documents/test/debug file, and provide exact remote Agent instruction text unless a more specific in-repo persistence source is discovered.
+
+- timestamp: 2026-08-31T17:48:00+08:00
+  checked: Focused write-time cancellation contract before changing skill behavior.
+  found: `test_friday_solution_rechecks_cancellation_immediately_before_every_mutation` fails while the other seven snapshot-guard tests pass. Both documents lack immediate Issue reread, status/revision capture, expected_revision CAS, no-intervening-operation ordering, revision-change retry, fail-closed behavior, and explicit coverage of Issue status/metadata/comment plus all listed Friday mutations.
+  implication: The new regression deterministically reproduces the documentation-level TOCTOU gap and is RED before the production contract fix.
+
+- timestamp: 2026-08-31T17:47:15+08:00
+  checked: Multica AGE-63 write-time cancellation live canary.
+  found: Run `5583487a-1941-4874-8bf8-8f5a96ba32fa` started from an Issue with valid Friday metadata; the Issue was changed to `cancelled` while the run was active. The updated formal Agent instructions re-read the Issue, performed no Friday mutation or explicit status/metadata/comment call, and completed with the Issue still `cancelled`. Multica automatically delivered the run final result as one audit comment; this delivery is platform behavior, not an Agent comment-tool mutation.
+  implication: The observed AGE-61 `cancelled → blocked` resurrection is closed at runtime; automatic final-result delivery must be distinguished from prohibited explicit comment writes.
+
+- timestamp: 2026-08-31T17:48:30+08:00
+  checked: Friday-solution write-time preflight/CAS contract and regression suite.
+  found: Both `SKILL.md` and `references/http-fallback.md` now require a fresh `status`/`revision` read immediately before every Issue or Friday mutation, `expected_revision` CAS where supported, fail-closed retry on revision change, and no intervening side effects. `uv run pytest tests/mcp_tools/test_skills_snapshot_guard.py -q` reports 8 passed; `uv run ruff check tests/mcp_tools/test_skills_snapshot_guard.py` passes.
+  implication: The live fix is now represented in the durable skill source and protected against snapshot drift.
 
 ## Eliminated
 

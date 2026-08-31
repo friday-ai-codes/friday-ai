@@ -180,6 +180,46 @@ def test_friday_solution_cancelled_orphan_is_strictly_read_only() -> None:
     assert not missing, f"friday-solution cancelled/orphan 只读不变量不完整：{missing}"
 
 
+def test_friday_solution_rechecks_cancellation_immediately_before_every_mutation() -> None:
+    """写入前必须用 Issue revision/status 做 CAS，关闭运行中取消的 TOCTOU 窗口。"""
+    solution_dir = REPO_ROOT / "skills" / "skills" / "friday-solution"
+    documents = (
+        solution_dir / "SKILL.md",
+        solution_dir / "references" / "http-fallback.md",
+    )
+    required_invariants = {
+        "每一次写操作都必须独立执行",
+        "紧邻写入前",
+        "重新读取宿主 Issue",
+        "`status` 与 `revision`",
+        "`expected_revision`",
+        "CAS",
+        "读取与写入之间不得执行其他操作",
+        "revision 已变化",
+        "立即重新预检",
+        "fail-closed",
+        "Issue 状态写入",
+        "Issue metadata 写入",
+        "Issue 评论写入",
+        "`create_feishu_technical_plan`",
+        "`answer_blueprint_clarification`",
+        "`approve_technical_blueprint`",
+        "`request_technical_blueprint_changes`",
+        "`start_repo_research`",
+        "`create_feature_tech_plan`",
+        "`confirm_feature_tech_plan`",
+    }
+
+    missing: dict[str, list[str]] = {}
+    for document in documents:
+        text = " ".join(document.read_text(encoding="utf-8").split())
+        absent = sorted(term for term in required_invariants if term not in text)
+        if absent:
+            missing[str(document.relative_to(REPO_ROOT))] = absent
+
+    assert not missing, f"friday-solution 写时取消 preflight/CAS 不变量不完整：{missing}"
+
+
 def test_friday_solution_repo_confirmation_fails_closed_without_research_evidence() -> None:
     """仓库深调研失败或证据为空时，禁止把候选集包装成人工可确认问题。"""
     solution_dir = REPO_ROOT / "skills" / "skills" / "friday-solution"
