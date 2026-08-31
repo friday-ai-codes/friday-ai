@@ -1,5 +1,43 @@
 # Milestones
 
+## v0.25.0 Cursor / Claude Code 会话知识回写 (Shipped: 2026-08-31)
+
+**Closeout:** `override_closeout`（audit-open Acknowledge；heading/table deferred-items 手写收口）  
+**Known verification overrides:** ~139 newly acknowledged this close；carried-forward prior suppressions 见 STATE.md Deferred Items  
+**Audit:** tech_debt（27/27 requirements；0 blockers；可选 IDE smoke / hook 双份实现等非阻断债）
+
+**Phases completed:** 5 phases, 25 plans, 57 tasks
+
+**Key accomplishments:**
+
+- 三个 tests-first 模块已钉死 Capture 永不丢失、唯一写入、挂钩权限与 caller 观测契约，并保持生产实现缺失时预期 RED。
+- 独立 SessionCapture 账本已支持脱敏、unknown 标量、稳定会话幂等与可空项目/仓库关联，并由 INV-6 CaptureService 单一写入。
+- Capture 现可按显式仓库 ID 或 SSH/HTTPS 等价 URL 安全挂钩仓库与项目，失败路径仍持久化，并保持幂等首次写入内容。
+- Session Capture 持久化 caller 三事件、元数据白名单、账本分离回归与 Nyquist 验证全部收口。
+- 用 pytest 与 Vitest 建立会话 Capture 接受语义、三面 schema、审计留痕和 npm 可发现性的可执行 RED 契约
+- Django MCP 入口通过 CaptureService 持久化会话问答，并以可审计的 200 响应稳定表达挂钩结果与幂等命中
+- npm MCP 新增可发现的 `report_session_knowledge`，以严格 12 字段 schema 和专用幂等注解公开安全的 Capture 写入语义
+- 服务端、schema snapshot 与 npm 三面在合并态对齐，Phase 142 自有 MCP/Capture/Memory 回归全绿，两条蓝图脏改动失败记为范围外非阻断基线
+- Friday 三档评估、CaptureService CAS 与 session_capture 精华-only DOCUMENT 投影已钉成可收集 tracer，生产符号缺失时预期 RED。
+- persist-first 双 durable 任务、INV-6 旁路红线与 eval/normalize/ingest sampling 生命周期已钉成可收集 tracer，生产符号缺失时预期 RED。
+- SessionCapture 现具备 additive 评估/摄取字段、恢复索引与独立 retry 元数据，CaptureService 通过条件更新提供幂等 CAS 状态流。
+- Friday 默认 LLM 现可严格输出 high/medium/low 与脱敏可检索精华，所有模型调用按 session_capture_eval 归因且失败保持可重试。
+- 中高价值 SessionCapture 现可通过既有 ingestion 内核稳定投影为脱敏 DOCUMENT，仅携带标量来源信息，并保留无项目锚事件。
+- Session Capture 现由独立 eval/ingest durable worker 驱动，稳定恢复键、CAS resume 与有界退避共同保证重启恢复和失败域隔离，ingest 重试不会重复 LLM。
+- MCP 接受的 Session Capture 现已在提交后获得 durable eval 投递机会，队列故障不回滚七键 accepted 响应，183 项阶段回归证明三档评估、精华入图、恢复、归因和 Memory 隔离。
+- 以 98 项可收集 pytest 契约冻结仓库召回、Capture 回放、默认分支防错与双链标量留痕，生产缺口保持可观测 RED。
+- 交付 `source_kind` 向量闭集、仓库优先会话知识共享 helper，以及保留既有文档来源的项目级 RAG 收窄。
+- 默认分支上的唯一仓关联不再自动注入项目上下文，同时 Capture 仍保留真实仓库挂钩并正常接受。
+- MCP 与 Chat 共享仓库优先的 session_capture 检索入口，并以无正文汇总留痕冻结 53 工具跨面契约
+- 创建者与挂钩可见性交集授权的 SessionCapture 原文回放，以统一 404 防枚举并冻结 54 工具跨面契约
+- 以 44 项可收集 pytest 合同和 4 项 Node RED 合同冻结 Claude Code/Cursor 配对、clean-tree Capture、无 CoT、fail-soft 与 hooks.json merge 行为
+- Python 标准库 helper 完成安全问答配对与 fail-soft POST，Claude Code clean tree、无 git 和后台任务场景均可采集可见答案，同时保留独立项目记忆门闩
+- Cursor 通过 beforeSubmitPrompt/afterAgentResponse 官方事件安全配对可见问答，安装器以 hooks.json v1 结构化 merge 保留用户配置并幂等升级 Friday hooks
+- 可分发技能文档现已明确分离 SessionCapture 原始问答与 ProjectMemory 交付总结，并对齐 HTTP fallback 十二字段及隐私边界。
+- 控制台 Cursor/Claude Capture 下载资产已与实体 skills 事件模型对齐，且父仓 gitlink 指向远端 `refs/heads/main` 可达的 skills SHA。
+
+---
+
 ## v0.24.0 单仓图查询对齐 GitNexus (Shipped: 2026-08-24)
 
 **Phases completed:** 8 phases, 16 plans, 15 tasks

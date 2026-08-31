@@ -1,161 +1,53 @@
 # Roadmap: Friday AI
 
-## Overview
-
-v0.25.0 把 Cursor / Claude Code 中有价值的问答沉淀为 Friday 可召回的仓库知识：先以独立 Capture 账本保证数据永不静默丢失，再冻结 `report_session_knowledge` 契约，异步完成价值评估与中高价值入图，开放仓库/项目召回和原始回放，最后接通两个 IDE 宿主。历史里程碑详情归档在 `.planning/milestones/`。
-
 ## Milestones
 
-- ✅ **v0.24.0 单仓图查询对齐 GitNexus** — Phases 133–140（completed 2026-08-24，未打 tag）
-- 🚧 **v0.25.0 Cursor / Claude Code 会话知识回写** — Phases 141–145（planning）
+- ✅ **v0.25.0 Cursor / Claude Code 会话知识回写** — Phases 141–145 (completed 2026-08-31，未打 tag) — 审计 **tech_debt**（27/27 requirements 满足 / 5 phases / 25 plans / 0 critical gaps）；可选真实 IDE smoke 与 hook 双份实现等为非阻断技术债 — [archive](./milestones/v0.25.0-ROADMAP.md) · [requirements](./milestones/v0.25.0-REQUIREMENTS.md) · [audit](./milestones/v0.25.0-MILESTONE-AUDIT.md) · [phases](./milestones/v0.25.0-phases/)
+- ✅ **v0.24.0 单仓图查询对齐 GitNexus** — Phases 133–140 (completed 2026-08-24，未打 tag) — 审计 **tech_debt**（39/39 requirements 满足 / 8 phases / 16 plans / 0 critical gaps）；真实 benchmark/Qdrant 数值验证保留为 `human_needed`，不宣称数值优于 v0.22.0
+- ✅ **v0.23.0 仓库路由增强（分阶段决策漏斗）** — Phases 128–132 (completed 2026-08-14，未打 tag) — 把「全库单段文本相似度选仓」升级为「画像 → 团队门禁 → 短名单 → 章程/历史 → 放置单元 → 门禁/反思」的可解释决策漏斗；验收锚点「高三提分专项」 — 里程碑审计 **tech_debt**（25/25 需求满足 / 5 相位全 verified passed / 0 BLOCKER）见 [audit](./milestones/v0.23.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.23.0-ROADMAP.md) · [requirements](./milestones/v0.23.0-REQUIREMENTS.md) · [phases](./milestones/v0.23.0-phases/) · [decisions](./milestones/v0.23.0-DECISIONS.md) · [research](./research/ROUTING-RANKING.md)
+- ✅ **v0.22.0 代码智能图分析升级（对标 GitNexus）** — Phases 121–127 (completed 2026-08-11，未打 tag) — 在现有 codegraph/RAG 底座上叠加内存图分析层：图缓存地基 + impact/trace（穿仓）+ detect_changes 闭环进编码链 + 社区/模块摘要 + 执行流 + rename_preview + Semgrep advisory + LSP 基准 — 里程碑审计 **tech_debt**（27 条需求 26 满足 / 1 部分（IMPACT-03）/ 0 未达；121–126 passed、127 human_needed @ 4/4）见 [audit](./milestones/v0.22.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.22.0-ROADMAP.md) · [requirements](./milestones/v0.22.0-REQUIREMENTS.md) · [phases](./milestones/v0.22.0-phases/) · [research](./research/SUMMARY.md)
+- ✅ **v0.21.0 蓝图过程可见与返工闭环（反向关联 + 门到期 + 按阶段 agent 活动流 + 带原始上下文重跑）** — Phases 117–120 (completed 2026-08-05，未打 tag) — 让蓝图的「生成过程」与「返工过程」都对人可见可控：阶段级活动流取代笼统转圈、分仓每仓进度与方案可见、人审可选重跑范围且续跑带原始 agent 上下文、HITL 门不再无限静默悬挂 — 验证 **tech_debt**（15 条需求 14 满足 / 1 部分（LIVE-04 落增量轮询而非推送通道）/ 0 未达；后端 9849 全绿、前端 1 条既存失败）见 [verification](./milestones/v0.21.0-VERIFICATION.md) — [requirements](./milestones/v0.21.0-REQUIREMENTS.md)
+- ✅ **v0.20.0 技术方案蓝图（六段结构化蓝图 + 确认门与分仓方案 + 划线澄清收敛 + 全入口收编）** — Phases 111–116 (shipped 2026-08-02) — 技术方案从单轮 JSON 升级为「人类可读、AI 可依此完备编码」的项目级结构化蓝图 — 里程碑审计 tech_debt（34/35 需求满足 / 6 相位全 verified / 0 可在本里程碑内闭合的缺口；GATE-01 与三道入口接缝因硬依赖同步点 2 判 PARTIAL / 转技术债，同步点 2 已由 2026-08-02 的分支合并满足）见 [audit](./milestones/v0.20.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.20.0-ROADMAP.md) · [requirements](./milestones/v0.20.0-REQUIREMENTS.md) · [design](./technical-blueprint/DESIGN.md)
+- ✅ **v0.19.0 技术方案可信度（编排不塌陷 + 路由可解释 + 编排产出直连执行流 + 过程可见）** — Phases 105–110（其中 108 已移交 v0.20.0）(completed 2026-08-02，未打 tag) — 让技术方案链路真正跑通并可信：编排不再中途卡死被降级工具顶替、路由基于多维证据分层呈现并可解释、编排产出直连执行流、全过程对用户实时可见 — 5 相位 39/39 plans；里程碑审计 **tech_debt**（19 条需求 17 满足 / 2 部分（ROUTE-03 生产 `nr_snapshot` 未写入、RELY-02 澄清送达需真实飞书）/ 0 未达；ROUTE 缺口已结构性闭合；遗留 27 项人工验收全未执行）见 [audit](./milestones/v0.19.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.19.0-ROADMAP.md) · [requirements](./milestones/v0.19.0-REQUIREMENTS.md) · [research](./research/ROUTING-RANKING.md)
+- ✅ **v0.17.0 统一知识库与全链路联动（知识收敛 + 完工沉淀闭环 + 容器内置 MCP/Skills）** — Phases 100–104 (shipped 2026-07-22) — 把多套"知识/经验/沉淀"收敛成统一知识库（单一摄取 + 单一检索），补齐完工沉淀闭环（三链路一致），给编码容器内置 Friday MCP 与 skills — 里程碑审计 tech_debt（19/19 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留 11 项真实 Qdrant·飞书·容器·Cursor 端人工验证 + 若干接受/递延债务）见 [audit](./milestones/v0.17.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.17.0-ROADMAP.md)
+- ✅ **v0.16.3 外部依赖接入知识体系（可检索 + 知识树 + 关联图谱）** — Phases 96–99 (shipped 2026-07-01) — 把项目外部依赖（`Artifact`：PRD/埋点评审/UI 文档等）接入知识总览/搜索/知识树，并与关键词/业务能力/仓库建关联 — 里程碑审计 tech_debt（12/12 需求满足 / integration_ok；遗留真机/浏览器视觉验收 + 既有范围外测试漂移）见 [audit](./milestones/v0.16.3-MILESTONE-AUDIT.md) — [archive](./milestones/v0.16.3-ROADMAP.md)
+- ✅ **v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）** — Phases 90–95 (shipped 2026-06-28) — 里程碑审计 tech_debt（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留真机·真实 provider·画布视觉端到端验收 + INFO 欠债）见 [audit](./milestones/v0.16.1-MILESTONE-AUDIT.md) — [archive](./milestones/v0.16.1-ROADMAP.md)
+- ✅ **v0.16.0 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）** — Phases 82–89 (shipped 2026-06-26) — 里程碑审计 tech_debt（37/37 需求满足 / integration_ok；遗留真机/live-platform 验收 + 既有并发测试欠债）见 [audit](./milestones/v0.16.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.16.0-ROADMAP.md)
+- ✅ **v0.15.0 项目（交付上下文聚合根）** — Phases 76–81 (shipped 2026-06-26) — 里程碑审计 passed（38/38 需求满足 / integration_ok）见 [audit](./milestones/v0.15.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.15.0-ROADMAP.md)
+- ✅ **v0.14.0 可观测性与日志治理** — Phases 71–75 (shipped 2026-06-24) — 里程碑审计 passed（34/34 需求满足 / integration_ok）见 [audit](./milestones/v0.14.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.14.0-ROADMAP.md)
+- ✅ **v0.13.0 并发治理与索引体验** — Phases 65–70 (shipped 2026-06-23) — 里程碑审计 tech_debt（11/11 需求满足、integration_ok；遗留既有前端测试失败 + URL 拆段拼接 UI + 真机人工验收）见 [audit](./milestones/v0.13.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.13.0-ROADMAP.md)
+- ✅ **v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）** — Phases 60–64 (shipped 2026-06-20) — 里程碑审计 tech_debt（16/16 需求满足、integration_ok；遗留真机/真实平台运行期人工验收）见 [audit](./milestones/v0.12.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.12.0-ROADMAP.md)
+- ✅ **v0.11.0 开放与协作** — Phases 56–59 (shipped 2026-06-17) — 里程碑审计 PASS（6/6 需求、INV-5/INV-6 成立）见 [audit](./milestones/v0.11.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.11.0-ROADMAP.md)
+- ✅ **v0.10.0 操作审计治理** — Phases 53–55 (shipped 2026-06-17) — [archive](./milestones/v0.10.0-ROADMAP.md)
+- ✅ **v0.9.0 SDD / OpenSpec 支持（重型）** — Phases 48–52 (shipped 2026-06-17) — [archive](./milestones/v0.9.0-ROADMAP.md)
+- ✅ **v0.8.0 多仓串行编码 → 融合 PR** — Phases 43–47 (shipped 2026-06-17) — [archive](./milestones/v0.8.0-ROADMAP.md)
+- ✅ **v0.7.0 方案编排（需求 → 主方案）** — Phases 36–42 (shipped 2026-06-16) — [archive](./milestones/v0.7.0-ROADMAP.md)
+- ✅ **v0.6.0 领域脊柱 + 知识图谱补全** — Phases 27–35 (shipped 2026-06-15) — [archive](./milestones/v0.6.0-ROADMAP.md)
+- ✅ **v0.5.0 索引检索地基与排除文件** — Phases 22–26 (shipped 2026-06-15) — [archive](./milestones/v0.5.0-ROADMAP.md)
+- ✅ **v0.4.0 工作流系统契约重构** — Phases 17–21 (shipped 2026-06-13) — [archive](./milestones/v0.4.0-ROADMAP.md)
+- ✅ **v0.3.0 交付知识图谱** — Phases 12–16 (shipped 2026-06-12) — [archive](./milestones/v0.3.0-ROADMAP.md)
+- ✅ **v0.2.0 用户身份令牌与 Agent 工具打通** — Phases 6–11 (shipped 2026-06-10) — [archive](./milestones/v0.2.0-ROADMAP.md)
+- ✅ **v0.1.0 首启初始化向导** — Phases 1–5 (shipped 2026-06-09) — [archive](./milestones/v0.1.0-ROADMAP.md)
+
+> 历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
+> v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号（v0.17.0 止于 Phase 104 → v0.19.0 从 Phase 105 续号）。
 
 ## Phases
 
-- [x] **Phase 141: Capture 账本与仓库挂钩** - 原始问答先安全、可归因地落账本，仓库或项目解析失败也不丢 Capture (completed 2026-08-28)
-- [x] **Phase 142: MCP 会话回写契约** - 通过新工具 `report_session_knowledge` 提交 Capture，并保持服务端、snapshot、npm 三面对齐 (completed 2026-08-28)
-- [x] **Phase 143: 价值评估与中高入图** - 异步评估 high/medium/low，仅 medium/high 可重试地进入统一知识库 (completed 2026-08-28)
-- [x] **Phase 144: 仓库召回与 Capture 回放** - 按仓库/项目召回会话知识并按 Capture id 安全回放原始问答 (completed 2026-08-28)
-- [x] **Phase 145: Cursor / Claude Code 双宿主采集** - 两个宿主自动配对问题与可见答案精华，干净工作树也能 fail-soft 回写 (completed 2026-08-31)
+<details>
+<summary>✅ v0.25.0 Cursor / Claude Code 会话知识回写（Phases 141–145）— SHIPPED 2026-08-31</summary>
 
-## Phase Details
+- [x] **Phase 141: Capture 账本与仓库挂钩** — 原始问答先安全落账本（4/4，passed）
+- [x] **Phase 142: MCP 会话回写契约** — `report_session_knowledge` 三面对齐（4/4，passed）
+- [x] **Phase 143: 价值评估与中高入图** — durable eval + medium/high ingest（7/7，passed）
+- [x] **Phase 144: 仓库召回与 Capture 回放** — 按仓/项目召回与只读回放（5/5，passed）
+- [x] **Phase 145: Cursor / Claude Code 双宿主采集** — hooks 配对 + hooks.json merge（5/5，passed）
 
-### Phase 141: Capture 账本与仓库挂钩
+</details>
 
-**Goal**: 用户提交的会话问答始终先进入独立、脱敏、可归因的 Capture 账本，并尽可能关联仓库与可选项目
-**Depends on**: Phase 140
-**Requirements**: STORE-01, STORE-02, STORE-03, STORE-04, STORE-05, OBS-01, OBS-02
-**Success Criteria** (what must be TRUE):
+<details>
+<summary>✅ v0.24.0 单仓图查询对齐 GitNexus（Phases 133–140）— SHIPPED 2026-08-24</summary>
 
-  1. 用户提交结构化问答后可获得一条独立 Capture；其中保留问题、可见答案精华、会话与来源元数据，但不会写成 `ProjectMemory` 或 Interaction Ledger 正文。
-  2. `repository_id`、`project_id` 任一或同时缺失时 Capture 仍会落库；git URL 无法解析时记录明确 `repo_unresolved` 原因而不静默跳过。
-  3. 模型、provider 或 token 计数不可得时以 `unknown` 保存，服务端不会猜测补全。
-  4. 每次持久化都经 `CaptureService` 完成脱敏与触发用户归因，并产生带 `duration_ms` 的 caller 生命周期事件；凭证、token、密钥不会进入 Capture、Ledger 或日志。
+- [x] **Phase 133–140** — 见 [milestones/v0.24.0-ROADMAP.md](./milestones/v0.24.0-ROADMAP.md)
 
-**Plans:** 4/4 plans complete
-
-Plans:
-
-- [x] 141-01-PLAN.md — Wave 0：Capture/INV-6/观测失败测试骨架（STORE/OBS 契约钉死）
-- [x] 141-02-PLAN.md — SessionCapture 模型 + CaptureService 核心 persist + INV-6（STORE-01/02/03/05）
-- [x] 141-03-PLAN.md — 仓库/项目挂钩状态机与幂等 first-write-wins（STORE-04/03）
-- [x] 141-04-PLAN.md — caller 观测、LOGGING-SPEC 与账本分离回归（OBS-01/02、STORE-01）
-
-### Phase 142: MCP 会话回写契约
-
-**Goal**: Cursor / Claude Code 可通过稳定的新 MCP 工具提交会话知识，任何挂钩失败都不影响 Capture 被接受
-**Depends on**: Phase 141
-**Requirements**: MCP-01, MCP-02, MCP-03, MCP-04
-**Success Criteria** (what must be TRUE):
-
-  1. 已认证用户可调用 `report_session_knowledge`，以必填 `question`/`answer` 和可选仓库、分支、会话、项目、模型、客户端字段获得 `accepted=true` 与 `capture_id`。
-  2. 无项目、仓库解析失败或默认分支无法唯一定位项目时，调用仍返回 200、`accepted=true` 并产生 Capture；`reason` 如实描述挂钩结果而不表示数据未收。
-  3. 服务端 serializer、`TOOL_SCHEMA_SNAPSHOT` 与 npm `mcp/src/tools.ts` 暴露同一工具契约，任一面漂移都会被自动化验收阻止。
-  4. 既有 `report_project_knowledge` 仍执行原有项目门闩与 git-diff 记忆路径，不会被扩成 Capture 入口或发生行为回退。
-
-**Plans:** 4/4 plans complete
-
-Plans:
-
-- [x] 142-01-PLAN.md — Wave 0：HTTP 接受语义、三面 schema、client 审计与旧工具隔离 RED 契约
-- [x] 142-02-PLAN.md — 服务端 serializer/snapshot/view/url 接线并复用 CaptureService 与 McpToolView lifecycle
-- [x] 142-03-PLAN.md — npm 第 52 个工具定义、完整输入 schema 与专用幂等 annotations
-- [x] 142-04-PLAN.md — 跨面 phase gate、旧 report_project_knowledge 零回归与 Nyquist 收口
-
-### Phase 143: 价值评估与中高入图
-
-**Goal**: Friday 在 Capture 持久化之后可靠评估知识价值，仅把可复用的中高价值精华加入统一 RAG
-**Depends on**: Phase 142
-**Requirements**: EVAL-01, EVAL-02, EVAL-03, EVAL-04, EVAL-05, OBS-04
-**Success Criteria** (what must be TRUE):
-
-  1. 每条已落库 Capture 会异步得到 `high`、`medium` 或 `low` 价值等级及可检索精华；评估失败时原始 Capture 保留且状态可重试。
-  2. 评估调用以独立 `call_source=session_capture_eval` 上报用量，不复用写回质量门或仓库路由 confidence 充当价值等级。
-  3. `medium`/`high` Capture 自动经既有摄取入口进入 `delivery_knowledge`，使用 `EntityKind.DOCUMENT` 与 `source_kind=session_capture`；`low` 不向量化但仍可回放。
-  4. 服务重启或短暂故障不会丢失待评估/待入图工作：投递 persist-first、可重试，且后台任务保留并重新绑定触发用户。
-  5. 评估与入图不会调用项目记忆写入口；`ProjectMemory` 继续保持 draft 门控，Capture 原始内容也不会被当成 RAG 正文。
-
-**Plans:** 7/7 plans complete
-
-Plans:
-
-- [x] 143-01-PLAN.md — Wave 0：三档评估、状态机与 session_capture normalizer RED 契约
-- [x] 143-02-PLAN.md — Wave 0：durable 双任务、MCP 接受语义、INV-6 与 sampling RED 契约
-- [x] 143-03-PLAN.md — additive Capture 状态字段、0016 migration 与唯一 writer CAS
-- [x] 143-04-PLAN.md — Friday LLM 严格三档 evaluator、session_capture_eval 用量与日志合同
-- [x] 143-05-PLAN.md — medium/high DOCUMENT/session_capture 精华-only normalizer
-- [x] 143-06-PLAN.md — durable eval/ingest、stale in-flight 恢复、退避新 job 与 keyword-only stub
-- [x] 143-07-PLAN.md — MCP post-commit 投递接线与 Phase 143 Nyquist 总门禁
-
-### Phase 144: 仓库召回与 Capture 回放
-
-**Goal**: 授权用户能按仓库或项目找回中高价值会话知识，并在需要时只读回放对应原始 Capture
-**Depends on**: Phase 143
-**Requirements**: RECALL-01, RECALL-02, RECALL-03, RECALL-04, OBS-03
-**Success Criteria** (what must be TRUE):
-
-  1. 授权用户可按 `repository_id` 检索已入图的会话知识，并在有项目关联时按 `project_id` 收窄结果。
-  2. `pack_project_context` 与交付知识检索会显式纳入 `session_capture`，使已入图知识可被后续 IDE/Agent 上下文召回。
-  3. 授权用户可按 Capture id 只读回放原始结构化问答；回放不会扫描 Interaction Ledger payload 作为正文来源。
-  4. `main`、`master`、`develop` 等默认分支不会单独把 Capture 误绑到项目，`lookup_project_by_branch` 的默认分支第三源不会返回 `matched=true`。
-  5. MCP 与对话召回链 best-effort 写入脱敏 `RetrievalTrace`；观测失败不会改变检索结果。
-
-**Plans:** 5/5 plans complete
-
-Plans:
-
-- [x] 144-01-PLAN.md — Wave 0：会话检索/回放/默认分支/双链 Trace 与 MCP 54 工具 RED 契约
-- [x] 144-02-PLAN.md — source_kinds 透传、search_session_knowledge helper 与 packer inclusion
-- [x] 144-03-PLAN.md — 默认分支第三源守卫与 Capture 写路径零回归
-- [x] 144-04-PLAN.md — MCP/Chat 会话检索与标量 RetrievalTrace
-- [x] 144-05-PLAN.md — Capture 只读回放与 MCP 54 三面冻结
-
-### Phase 145: Cursor / Claude Code 双宿主采集
-
-**Goal**: Cursor 与 Claude Code 都能在不阻断编码的前提下自动抽取本轮问题和可见答案精华并回写 Capture
-**Depends on**: Phase 144
-**Requirements**: SKILL-01, SKILL-02, SKILL-03, SKILL-04, SKILL-05
-**Success Criteria** (what must be TRUE):
-
-  1. Claude Code 通过 `UserPromptSubmit` 缓存问题，并以 `Stop.last_assistant_message` 提取可见答案；Cursor 通过 `beforeSubmitPrompt` 缓存问题、`afterAgentResponse` 配对答案。
-  2. 工作区无 git 改动或没有 `diff --stat` 时，零散问答仍会调用 `report_session_knowledge` 并产生 Capture。
-  3. 客户端只提交问题与可见答案精华，不上传隐藏思维链；skills、HTTP fallback、`ide_hook_assets` 与 snapshot 守卫对同一行为达成一致。
-  4. 安装器可合并 Cursor `hooks.json`（`version: 1`）而不覆盖既有 hook；缺 PAT、接口失败或回写超时时均 fail-soft，不阻断用户继续编码。
-  5. Claude Code 专属注入脚本不会被错误复制到 Cursor `stop`，两个宿主的 hook 资产与各自官方事件模型一致。
-
-**Plans:** 5/5 plans complete
-
-Plans:
-
-- [x] 145-01-PLAN.md — Wave 0：双宿主采集/merge/资产/文档守卫 RED 契约
-- [x] 145-02-PLAN.md — 共用 session_capture helper + Claude UPS/Stop 分轨
-- [x] 145-03-PLAN.md — Cursor before/after + hooks.json v1 merge 安装
-- [x] 145-04-PLAN.md — friday/friday-dev/friday-memory 双工具文案与 HTTP fallback
-- [x] 145-05-PLAN.md — ide_hook_assets 对齐 + skills gitlink 原子收口
-
-## Locked Decisions
-
-- 工具名固定为 `report_session_knowledge`，不扩展 `report_project_knowledge`。
-- Capture 以仓库为主挂钩、项目可选；任何解析失败都不得丢 Capture。
-- 原始 Capture、提炼知识、Interaction Ledger 三层分离。
-- 入图固定使用 `EntityKind.DOCUMENT` + `source_kind=session_capture`，不新增 collection 或 EntityKind。
-- 评估固定使用 `call_source=session_capture_eval`；medium/high 自动进入仓级 RAG，low 仅保留回放。
-- `ProjectMemory` 保持 draft 门控，不把 Capture 自动写成 active memory。
-- 客户端只抽可见精华，未知字段记 `unknown`；不采集全文 transcript 或隐藏思维链。
-- 不引入新的 Python/npm 运行时依赖；容器内编码代理写 Capture 保持 Out of Scope。
-
-## Progress
-
-**Execution Order:** 141 → 142 → 143 → 144 → 145
-
-| Phase | Milestone | Plans Complete | Status | Completed |
-|-------|-----------|----------------|--------|-----------|
-| 141. Capture 账本与仓库挂钩 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
-| 142. MCP 会话回写契约 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
-| 143. 价值评估与中高入图 | v0.25.0 | 7/7 | Complete    | 2026-08-28 |
-| 144. 仓库召回与 Capture 回放 | v0.25.0 | 5/5 | Complete    | 2026-08-28 |
-| 145. Cursor / Claude Code 双宿主采集 | v0.25.0 | 5/5 | Complete    | 2026-08-31 |
-
-**Coverage:** 27/27 v0.25.0 requirements mapped exactly once；0 unmapped；0 duplicate。
-
----
-*Roadmap created: 2026-08-28*
+</details>

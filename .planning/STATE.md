@@ -2,51 +2,49 @@
 gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
-current_phase: 145
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 145 complete — all phases complete
-last_updated: "2026-08-31T07:01:11.343Z"
+last_updated: "2026-08-31T07:12:47.904Z"
 last_activity: 2026-08-31
-last_activity_desc: Phase 145 complete
-state_head: 41052286d73a85db4ef3effb10164e0deb2b5748
+last_activity_desc: Milestone v0.25.0 completed and archived
+state_head: 85c9b7ba31bec549ad78b323b3790e5253b4a625
 progress:
   total_phases: 5
   completed_phases: 5
   total_plans: 25
   completed_plans: 25
+current_phase: 145
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 归档见 `milestones/v0.24.0-*`。
+See: .planning/PROJECT.md（updated 2026-08-31，v0.25.0 已归档）。归档见 `milestones/v0.25.0-*`。
 
-**Core value:** 让团队开箱即用、安全地把需求变成代码；本里程碑让 IDE 里问过的坑和决策可沉淀、可按仓召回，且不阻断编码。
-**Current focus:** Phase 145 — Cursor / Claude Code 双宿主采集
+**Core value:** 让团队开箱即用、安全地把需求变成代码；IDE 会话知识可沉淀、可按仓召回，且不阻断编码。
+**Current focus:** Awaiting next milestone（`$gsd-new-milestone`）
 
 ## Current Position
 
-Phase: 145
-Plan: Not started
-Status: All phases complete
-Last activity: 2026-08-31 — Phase 145 complete
+Phase: Milestone v0.25.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-08-31 — Milestone v0.25.0 completed and archived
 
-## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
+## Milestone Overview (v0.25.0 — Phases 141–145 — ✅ ARCHIVED 2026-08-31，审计 tech_debt，未打 tag)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 141 | Capture 账本与仓库挂钩 | STORE-01~05, OBS-01/02 | In progress (2/4) |
-| 142 | MCP 会话回写契约 | MCP-01~04 | Not started |
-| 143 | 价值评估与中高入图 | EVAL-01~05, OBS-04 | Complete (7/7, validated) |
-| 144 | 仓库召回与 Capture 回放 | RECALL-01~04, OBS-03 | In progress (1/5) |
-| 145 | Cursor / Claude Code 双宿主采集 | SKILL-01~05 | Not started |
+| 141 | Capture 账本与仓库挂钩 | STORE-01~05, OBS-01/02 | ✅ Complete (4/4, passed) |
+| 142 | MCP 会话回写契约 | MCP-01~04 | ✅ Complete (4/4, passed) |
+| 143 | 价值评估与中高入图 | EVAL-01~05, OBS-04 | ✅ Complete (7/7, passed) |
+| 144 | 仓库召回与 Capture 回放 | RECALL-01~04, OBS-03 | ✅ Complete (5/5, passed) |
+| 145 | Cursor / Claude Code 双宿主采集 | SKILL-01~05 | ✅ Complete (5/5, passed) |
 
-**Execution order:** 141 → 142 → 143 → 144 → 145。先保证 Capture 永不丢，再开放 MCP 契约；评估/入图依赖稳定写入口，召回依赖入图，宿主采集最后对接已冻结的端到端能力。
+**Coverage:** 27/27 requirements satisfied；0 unmapped；0 blockers。产物：`milestones/v0.25.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `v0.25.0-phases/`。
 
-**Coverage:** 27/27 requirements mapped exactly once；0 unmapped；0 duplicate。
-
-**Locked decisions:** 新工具固定为 `report_session_knowledge`，不扩 `report_project_knowledge`；Capture 用 `source_kind=session_capture`，评估用 `call_source=session_capture_eval`；medium/high 自动进仓级 RAG，low 仅回放；`ProjectMemory` 保持 draft 门控；任何解析或后台失败都不得删除/跳过 Capture；不新增 Python/npm 运行时依赖。
+**Locked decisions（已落地）:** 新工具固定为 `report_session_knowledge`，不扩 `report_project_knowledge`；Capture 用 `source_kind=session_capture`；评估用 `call_source=session_capture_eval`；medium/high 自动进仓级 RAG，low 仅回放；`ProjectMemory` 保持 draft 门控；任何解析或后台失败都不得删除/跳过 Capture；不新增 Python/npm 运行时依赖。
 
 ## Milestone Overview (v0.24.0 — Phases 133–140 — ✅ ARCHIVED)
 
@@ -1103,6 +1101,21 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 | 260826-m6h | MCP 客户端由 37 工具对齐服务端 49 工具，补齐图查询、影响分析、Process 与蓝图 stage 单跑；升级并重建 0.6.0，修正确认门侧信道测试，dev 从当前仓库重启 | 2026-08-26 | (pending) | [260826-m6h-mcp-dev](./quick/260826-m6h-mcp-dev/) |
 
 ## Deferred Items
+
+### 🔒 Acknowledged at v0.25.0 close（2026-08-31）
+
+Items acknowledged and deferred at milestone close（`gsd-tools query audit-open` 初扫约 139 项；问卷选 **Acknowledge**；heading/table 形 `deferred-items.md` 手写 `status: acknowledged` / 表行 `resolved` 后复扫 **0 open**；`closeout_type=override_closeout`；里程碑审计 **tech_debt**——与 v0.24.0 同口径）:
+
+| Category | Item | Status |
+|----------|------|--------|
+| deferred_items | 历史归档 phases 中 32+ leaf/heading 条目 + 表行（v0.3–v0.22 等） | acknowledged / table `resolved` |
+| verification_gaps | 既有 UAT/VERIFICATION gaps（约 50，含 archived） | acknowledged（CLI） |
+| uat_gaps | 既有 UAT gaps（约 16） | acknowledged（CLI） |
+| quick_tasks | 既有 quick tasks（约 29） | acknowledged（CLI） |
+| debug_sessions | 既有 debug sessions（约 2） | acknowledged（CLI） |
+| tech_debt | skills hook 双份实现 / 可选真实 IDE smoke / friday-memory 文档未引导召回工具 / EVAL-03 文案 vs durable await | deferred（见审计） |
+
+权威审计见 [milestones/v0.25.0-MILESTONE-AUDIT.md](./milestones/v0.25.0-MILESTONE-AUDIT.md)。**未打 tag**（发布轨与 GSD 里程碑编号独立）。Known verification overrides: ~139 newly acknowledged this close，carried-forward prior suppressions 见下方历史小节。
 
 ### 🔒 Acknowledged at v0.24.0 close（2026-08-24）
 
