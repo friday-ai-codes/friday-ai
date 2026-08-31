@@ -10,22 +10,15 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 让团队"开箱即用、安全地"把需求自动变成代码：用户能顺利完成首次部署与登录、配好必备的 AI 供应商，然后让工作流把飞书需求自动跑成 PR。如果第一步进不去（登录/配置），后面一切都无从谈起。
 
-## Current Milestone: v0.25.0 Cursor / Claude Code 会话知识回写
+## Current Milestone
 
-**Goal:** 让 Cursor / Claude Code 里的问答（含零散提问）不依赖分支绑定也能回写 Friday：仓库为主挂钩、项目可选；IDE 只抽精华与结构化上下文，Friday 保存原始 Capture、做高中低价值评估，中高价值进入 RAG 可召回。
-
-**Target features:**
-- MCP 回写工具契约：问题 / 答案 / 回答模型 / 仓库 / 分支 / 会话；无项目也先收，禁止 `branch_unresolved` 静默丢数据
-- Skills + hooks（Cursor / Claude Code）：采集与精华抽取；无 git 改动的纯对话也回写
-- Friday Capture 账本与结构化存储（原始问答 ≠ 提炼知识 ≠ Interaction Ledger）
-- Friday 价值评估（high / medium / low）+ 提炼；中高进仓库/项目 RAG，低价值留评测样本
-- 召回与评测模式：按仓/按项目可检索，Capture 可回放
+（无活跃里程碑 — v0.25.0 已于 2026-08-31 归档。下一里程碑用 `$gsd-new-milestone` 立项。）
 
 ## Current State
 
-**Latest shipped:** v0.24.0 单仓图查询对齐 GitNexus（2026-08-24，审计 **tech_debt**，39/39 requirements 满足，Phases 133–140，16 plans，**未打 tag**）；真实 benchmark/Qdrant 数值验证保留为 `human_needed`，不宣称数值优于 v0.22.0。此前为 v0.23.0 仓库路由增强与 v0.22.0 代码智能图分析升级。里程碑 v0.1.0–v0.24.0（Phases 1–140）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
+**Latest shipped:** v0.25.0 Cursor / Claude Code 会话知识回写（2026-08-31，审计 **tech_debt**，27/27 requirements 满足，Phases 141–145，25 plans，**未打 tag**）。此前为 v0.24.0 单仓图查询对齐 GitNexus。里程碑 v0.1.0–v0.25.0（Phases 1–145）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
 
-**当前在建：** v0.25.0 Cursor / Claude Code 会话知识回写。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
+**当前在建：** 无。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -37,9 +30,28 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - **v0.10.0 操作审计治理**：立起统一横切审计能力——新建零业务依赖的 `audit` Django app + `AuditEvent` append-only 不可篡改模型（actor 标量软引用 + 双时间戳 + 5 查询索引 + 模型层 save/delete 守护）+ `AuditService.emit/aemit` 唯一写入入口（INV-6）+ 入口强制脱敏（key-name / 值级密钥正则 / 高熵）+ fail-soft 吞异常不阻断主操作 + 稳定 action taxonomy；全量覆盖敏感操作 emit——身份与权限类（accounts 建用户/启停/改资料/首启 superuser + projects/members 成员增删改/角色变更 + 空间配置/仓库权限）+ 凭证与数据治理类（Provider/Git 实例/per-repo Git/PAT/飞书凭证与同步 + 排除规则增删 + v0.5 `purge` 埋点收口统一表），凭证字段 DB 绝无明文；审计查询 REST（`/api/audit/`，IsSuperUser fail-closed、只读、过滤 + 分页）+ CSV/JSON 流式导出 + `/admin/audit` superuser 审计页（过滤/表格/分页/before-after 详情弹窗/导出/侧栏入口/i18n）。审计 passed。
 - **v0.11.0 开放与协作**：对外开放与协作层——内部工具调用（RAG/grep/仓库分析）经 §15 事件 taxonomy 映射为 OpenAI 兼容流式 progress/`reasoning_summary`（INV-5 非 CoT、不误用 `tool_calls`）；新增 Anthropic 兼容 `/v1/messages` 端点（非流式 + SSE 流式 + thinking block trace）；飞书机器人对话改走原生 CardKit 流式增量卡片（替代 PATCH 全量替换）；工作流自动建群节点（建群 + 拉人 + chat_id 写回 `WorkItem.feishu_chat_id` fail-soft）。审计 passed（6/6 需求，INV-5/INV-6 成立）。
 
-**已知 follow-up（tech debt）：** v0.23.0 live_space 默认 skip + 真 Space 人工抽验 + Nyquist 128–132 未 reconcile；v0.22.0 IMPACT-03 生产样本缺席 / mcp npm 图工具白名单 / Nyquist 121–127 未 validated；v0.2.0 chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖、RTOOL-02/03/04 容器端 E2E 待真实环境验收；v0.8 多仓 wave 编码/PR/HITL 的真实 runner+Docker 容器端到端验收待真实环境。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
+**已知 follow-up（tech debt）：** v0.25.0 skills/hooks 双份实现与可选真实 IDE smoke；friday-memory 文档未引导 `search_session_knowledge` / `get_session_capture`；EVAL-03 文案与 durable await 对齐。更早：v0.23.0 live_space 默认 skip；v0.22.0 IMPACT-03 生产样本缺席；v0.8 多仓 wave 真容器 E2E。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
 
-**Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
+**Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；另含 SessionCapture 账本、`report_session_knowledge` MCP、durable eval/ingest、Cursor/Claude Code hooks 资产。完整代码地图见 `.planning/codebase/`。
+
+## Previous Milestone: v0.25.0 Cursor / Claude Code 会话知识回写 — ✅ COMPLETE 2026-08-31（审计 tech_debt，未打 tag）
+
+> **收口结论：** 5 相位 25/25 plans；27 条需求 **27 满足 / 0 部分 / 0 未达**。主路径 `IDE hooks → report_session_knowledge → CaptureService → durable eval → medium/high DOCUMENT(session_capture) → search/replay` 接通；`report_project_knowledge` 零回归；默认分支第三源不得 `matched=true`。
+>
+> **判 `tech_debt` 而非 `passed` 的理由：** 双份 hook 实现 / 可选真实 IDE smoke 为 deferred_advisory / 技能文档召回引导缺口 / EVAL-03 文案对齐——不构成归档阻断。归档口径与 v0.24.0 一致。
+>
+> **Locked decisions（已落地）：** 新工具固定 `report_session_knowledge`；Capture `source_kind=session_capture`；评估 `call_source=session_capture_eval`；medium/high 自动进仓级 RAG；low 仅回放；不扩 `report_project_knowledge`；不新增 Python/npm 运行时依赖。
+>
+> 归档产物：`milestones/v0.25.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `v0.25.0-phases/`。**刻意未打 git tag**——本仓 tag 是发布轨，与 GSD 里程碑不同编号。
+
+<details>
+<summary>立项时的原始范围（2026-08-28）</summary>
+
+**Goal:** 让 Cursor / Claude Code 里的问答（含零散提问）不依赖分支绑定也能回写 Friday：仓库为主挂钩、项目可选；IDE 只抽精华与结构化上下文，Friday 保存原始 Capture、做高中低价值评估，中高价值进入 RAG 可召回。
+
+**Target features:** MCP `report_session_knowledge`；Skills + hooks；Capture 账本；high/medium/low 评估与入图；按仓/项目召回与 Capture 回放。
+
+</details>
 
 ## Previous Milestone: v0.23.0 仓库路由增强（分阶段决策漏斗）— ✅ COMPLETE 2026-08-14（审计 tech_debt，未打 tag）
 
@@ -342,13 +354,17 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - 图片向量库（视觉相似/标注）；补齐 v0.1.0 / v0.2.0 顺延的人工验收（UAT）
 - Bitable 真实列映射（v2 REL-03，待开放平台凭证）
 
-### Active（v0.25.0）
+### Validated（v0.25.0 已归档）
 
-- [ ] **MCP-01**: Cursor / Claude Code 可通过 MCP 提交结构化会话回写（问题、答案、回答模型、仓库、分支、会话），不要求分支已绑定项目
-- [ ] **MCP-02**: 无 `project_id` 时按仓库挂钩仍接受 Capture；解析失败不得静默丢弃
-- [ ] **SKILL-01**: friday skills / hooks 在 Cursor 与 Claude Code 抽取精华上下文并触发回写；无 git 改动的零散问答也收集
-- [ ] **STORE-01**: Friday 以独立 Capture 账本保存结构化原始问答与元数据，不把 Interaction Ledger 当 RAG 正文
-- [ ] **EVAL-01**: Friday 对回写做高/中/低价值评估并提炼精华；中高价值可进仓库/项目 RAG，低价值保留作评测样本
+- ✓ **独立 SessionCapture 账本**：结构化问答经 INV-6 `CaptureService` 脱敏落库；`project_id`/`repository_id` 可空；挂钩失败仍接受并记录 reason — v0.25.0 (STORE-01~05, OBS-01/02)
+- ✓ **MCP `report_session_knowledge`**：服务端 / schema snapshot / npm 三面对齐；`accepted=true` 即 Capture 行；不扩 `report_project_knowledge` — v0.25.0 (MCP-01~04)
+- ✓ **durable 价值评估与入图**：`high`/`medium`/`low` + `call_source=session_capture_eval`；medium/high → DOCUMENT/`session_capture`；low 可回放不入向量 — v0.25.0 (EVAL-01~05, OBS-04)
+- ✓ **按仓召回与 Capture 回放**：共享检索 + 授权只读回放；默认分支第三源不得 `matched=true` — v0.25.0 (RECALL-01~04, OBS-03)
+- ✓ **Cursor / Claude Code 双宿主采集**：官方事件配对可见答案；干净树仍回写；hooks.json v1 merge；fail-soft — v0.25.0 (SKILL-01~05)
+
+### Active
+
+（无 — 下一里程碑用 `$gsd-new-milestone` 填写。）
 
 ### Out of Scope
 
@@ -487,4 +503,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-28 after starting milestone v0.25.0*
+*Last updated: 2026-08-31 after v0.25.0 milestone*
