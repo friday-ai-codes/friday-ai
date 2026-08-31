@@ -249,6 +249,31 @@
 - Sessions: 单日连续执行（128→132，`--no-transition` 收尾后独立 complete-milestone）。
 - Notable: 约 94 files / +16k LOC（含 tests）；审计当日完成。
 
+## Milestone: v0.25.0 — Cursor / Claude Code 会话知识回写
+
+**Shipped:** 2026-08-31
+**Phases:** 5 (141–145) | **Plans:** 25 | **Tasks:** 57
+
+### What Was Built
+IDE 会话知识回写全链路：独立 `SessionCapture` 账本 + INV-6 `CaptureService`；新 MCP `report_session_knowledge`（服务端/snapshot/npm 三面对齐）；durable eval（`session_capture_eval`）与 medium/high → `DOCUMENT`/`session_capture` 入图；按仓召回与 Capture 只读回放；Cursor/Claude Code hooks 配对可见问答（干净树仍回写、hooks.json v1 merge、fail-soft）。
+
+### What Worked
+- Capture 永不丢作为第一门禁：挂钩失败仍 `accepted=true`，评估/入图失败不删账本。
+- 新工具而非扩 `report_project_knowledge`，Memory 门闩零回归可测。
+- 双宿主按官方事件模型分别接线，避免 Claude Stop 脚本误拷到 Cursor。
+
+### What Was Inefficient
+- 收口时 historical `deferred-items.md` heading/table 形 CLI 无法 acknowledge，需手写 `status`/`resolved` 单元格才过 audit-open。
+- skills 子模块 push 遇 HTTPS 凭据失败，改 SSH 后才同步 gitlink。
+
+### Patterns Established
+- 会话原始问答 ≠ 提炼知识 ≠ Interaction Ledger；评估专用 `call_source`。
+- IDE 资产与实体 skills 事件模型对齐 + 父仓 gitlink 必须可达远端 tip ancestry。
+
+### Key Lessons
+- 里程碑关闭前先扫 `audit-open` 的 heading-shape deferred 项，避免最后一公里卡死。
+- 可选真实 IDE smoke 可标 `deferred_advisory`，勿与 Nyquist 门禁混为一谈。
+
 ## Cross-Milestone Trends
 
 | Milestone | Phases | Plans | Shipped |
