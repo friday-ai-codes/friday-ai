@@ -15,7 +15,7 @@ v0.25.0 把 Cursor / Claude Code 中有价值的问答沉淀为 Friday 可召回
 - [x] **Phase 142: MCP 会话回写契约** - 通过新工具 `report_session_knowledge` 提交 Capture，并保持服务端、snapshot、npm 三面对齐 (completed 2026-08-28)
 - [x] **Phase 143: 价值评估与中高入图** - 异步评估 high/medium/low，仅 medium/high 可重试地进入统一知识库 (completed 2026-08-28)
 - [x] **Phase 144: 仓库召回与 Capture 回放** - 按仓库/项目召回会话知识并按 Capture id 安全回放原始问答 (completed 2026-08-28)
-- [ ] **Phase 145: Cursor / Claude Code 双宿主采集** - 两个宿主自动配对问题与可见答案精华，干净工作树也能 fail-soft 回写
+- [x] **Phase 145: Cursor / Claude Code 双宿主采集** - 两个宿主自动配对问题与可见答案精华，干净工作树也能 fail-soft 回写 (completed 2026-08-31)
 
 ## Phase Details
 
@@ -122,15 +122,15 @@ Plans:
   4. 安装器可合并 Cursor `hooks.json`（`version: 1`）而不覆盖既有 hook；缺 PAT、接口失败或回写超时时均 fail-soft，不阻断用户继续编码。
   5. Claude Code 专属注入脚本不会被错误复制到 Cursor `stop`，两个宿主的 hook 资产与各自官方事件模型一致。
 
-**Plans:** 3/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 
 - [x] 145-01-PLAN.md — Wave 0：双宿主采集/merge/资产/文档守卫 RED 契约
 - [x] 145-02-PLAN.md — 共用 session_capture helper + Claude UPS/Stop 分轨
-- [ ] 145-03-PLAN.md — Cursor before/after + hooks.json v1 merge 安装
+- [x] 145-03-PLAN.md — Cursor before/after + hooks.json v1 merge 安装
 - [x] 145-04-PLAN.md — friday/friday-dev/friday-memory 双工具文案与 HTTP fallback
-- [ ] 145-05-PLAN.md — ide_hook_assets 对齐 + skills gitlink 原子收口
+- [x] 145-05-PLAN.md — ide_hook_assets 对齐 + skills gitlink 原子收口
 
 ## Locked Decisions
 
@@ -153,7 +153,7 @@ Plans:
 | 142. MCP 会话回写契约 | v0.25.0 | 4/4 | Complete    | 2026-08-28 |
 | 143. 价值评估与中高入图 | v0.25.0 | 7/7 | Complete    | 2026-08-28 |
 | 144. 仓库召回与 Capture 回放 | v0.25.0 | 5/5 | Complete    | 2026-08-28 |
-| 145. Cursor / Claude Code 双宿主采集 | v0.25.0 | 3/5 | In Progress|  |
+| 145. Cursor / Claude Code 双宿主采集 | v0.25.0 | 5/5 | Complete   | 2026-08-31 |
 
 **Coverage:** 27/27 v0.25.0 requirements mapped exactly once；0 unmapped；0 duplicate。
 
