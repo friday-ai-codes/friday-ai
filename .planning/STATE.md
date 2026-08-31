@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.25.0
 milestone_name: Cursor / Claude Code 会话知识回写
-status: executing
-stopped_at: Completed 145-03-PLAN.md
-last_updated: "2026-08-28T13:30:59.568Z"
+status: verifying
+stopped_at: Completed 145-05-PLAN.md
+last_updated: "2026-08-31T06:52:16.831Z"
 last_activity: 2026-08-28 -- Phase 145 execution started
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 25
-  completed_plans: 24
-  percent: 96
+  completed_plans: 25
+  percent: 100
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md（updated 2026-08-28，v0.25.0 已立项）。v0.24.0 
 
 Phase: 145 (Cursor / Claude Code 双宿主采集) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-28 -- Phase 145 execution started
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — 🚧 PLANNING)
@@ -454,6 +454,7 @@ Last activity: 2026-08-28 -- Phase 145 execution started
 | Phase 145-cursor-claude-code P02 | 4m | 3 tasks | 4 files |
 | Phase 145-cursor-claude-code P04 | 5min | 2 tasks | 5 files |
 | Phase 145 P03 | 3min | 3 tasks | 5 files |
+| Phase 145 P05 | 10min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -875,6 +876,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 145]: Cursor Capture 只使用 beforeSubmitPrompt.prompt 与 afterAgentResponse.text，不注册 stop 或 thought 事件 — 只采集官方用户可见字段，避免 stop 与隐藏思维链污染
 - [Phase 145]: hooks.json 按 Friday command basename 替换去重并保留用户配置 — 支持项目级和全局路径升级，同时保持安装幂等和非破坏性
 - [Phase 145]: skills 子模块 gitlink 等待 145-05 远端可达门禁 — 避免父仓引用未推送且远端不可达的子模块提交
+- [Phase 145]: 父仓 gitlink 仅在 skills child SHA 可由远端 advertised heads/tags 到达时提交。
 
 ### Pending Todos
 
@@ -1330,8 +1332,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-08-28T13:30:59.559Z
-Stopped at: Completed 145-03-PLAN.md
+Last session: 2026-08-31T06:52:16.820Z
+Stopped at: Completed 145-05-PLAN.md
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）
