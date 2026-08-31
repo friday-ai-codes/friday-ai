@@ -5,12 +5,18 @@ status: human_needed
 score: 14/14 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "用真实开放平台 app_id/app_secret 配置 Project / SystemSetting，对真实飞书 Bitable 表跑 BitableReleaseAdapter.ingest_from_table"
     expected: "tenant_access_token 成功获取（open.feishu.cn internal 端点），list_records 返回真实 items，ReleaseBatch/ReleaseRecord 落库且 raw_row 含真实原始行、bitable_record_key 正确"
     why_human: "需真实开放平台凭证 + 真实 Bitable 数据；pytest-socket 隔离网络，本 phase 仅 respx mock 验证端点形状（CONTEXT 明确延 human-UAT）"
+
   - test: "对照真实 Bitable 列头/样例行，校验 REL-03 真实业务列 → ReleaseRecord 字段（status/note/work_item_external_id）映射正确性"
     expected: "真实列结构映射后 ReleaseRecord 业务字段与 Bitable 列语义一致"
     why_human: "REL-03 真实列映射 deferred 到 v2（需开放平台凭证 + 列样例）；本 phase 为占位映射骨架，真实语义需人工对照真实表确认"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 31: Release 账本 + Bitable adapter 骨架 Verification Report

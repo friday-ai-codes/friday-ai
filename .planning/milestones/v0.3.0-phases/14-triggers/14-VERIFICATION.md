@@ -5,9 +5,14 @@ status: human_needed
 score: 35/35 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "真实 git platform 拉 diff 截断边界（GitHub/GitLab API 超大 diff）"
     expected: "dev 环境配置真实仓库凭证，触发一次编码完成回调后，CodeChangeArchive 落库一行且 truncated 字段在平台侧截断/patch 缺失时为 True"
     why_human: "平台超大 diff 截断行为 [ASSUMED]（14-VALIDATION Manual-Only 项），单测仅 mock SDK，需真实仓库验证"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 14: 全触发点接入与 diff 归档 Verification Report

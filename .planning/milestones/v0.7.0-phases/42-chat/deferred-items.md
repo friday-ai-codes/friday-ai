@@ -1,6 +1,8 @@
 # Phase 42 — Deferred / Out-of-Scope Items
 
 ## Chat 入口 plan_research 容器完成 → 重新驱动 engine / resume chat graph（接线缺口，WR-01）
+- status: acknowledged
+
 
 - **Gap:** chat 发起的编排进入 RESEARCHING 且容器在途时，`start_plan_research`
   返回 deep_analysis 式 `__blocking_task__` marker 并 `register_blocking_task`，但**没有任何
@@ -18,6 +20,8 @@
   `blocking_results`）。
 
 ## Pre-existing test failure (out of scope, not introduced by 42-01)
+- status: acknowledged
+
 
 - **Test:** `server/tests/agents/test_tool_contracts.py::test_search_repository_code_input_schema_snapshot`
 - **Symptom:** snapshot 描述文本漂移 —— 期望 `'implementation 灰度切换时...'` vs 实际

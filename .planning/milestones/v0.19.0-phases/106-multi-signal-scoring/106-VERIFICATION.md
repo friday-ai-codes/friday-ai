@@ -8,37 +8,50 @@ re_verification:
   previous_status: null
   note: "首次验证（此前只有 106-REVIEW.md 的评审+修复记录，无 VERIFICATION.md）"
 human_verification:
+
   - test: "以 superuser 登录管理页 → 打开「仓库路由权重」设置区：确认能读到当前生效配置（默认态有标注）；把 domain 权重调到 0.55（破坏文本主导）与填一个网格外值（如 0.13），确认前端即时内联提示；改回合法值保存，刷新页面确认回读一致；再故意直接构造一次被后端拒绝的保存，确认 400 的 errors 列表逐条展示"
     expected: "读取/修改/保存闭环可用；INV-R2 与网格外取值在前端即时提示；保存成功后回读与后端 GET 一致；400 时逐条错误可见"
     why_human: "RepoRouterWeightSettings.vue（484 行，含预校验/payload 组装/错误渲染分支）零组件测试——MN-05 已按 deferred 挂账（该目录尚无 settings 组件测试与 api mock 夹具）。grep 只能证明代码与接线存在，证明不了交互与渲染。附带需人眼确认 MN-05 记的已知缺陷：DB 里若存着网格外历史值，Select 只显示 placeholder"
+
   - test: "在生产实例 friday.yc345.tv 执行 `cd server && uv run python manage.py measure_repo_index_stats --activity --write-snapshot`，确认 SystemSetting `repo_router.nr_snapshot` 写入全表 N_r + N̄ 中位数 + generated_at，并把 last_commit_at 覆盖率/新鲜度 p50/p90 与 facets 五维覆盖率回填 106-MEASUREMENTS.md §1 两张占位表"
     expected: "快照写入成功、下一次路由 breadth 走 pivoted 归一（不再 denom_size=1.0 降级）；占位表补齐并带「生产实例」数据环境标注"
     why_human: "需要真实仓库数据的部署实例；本地开发库无真实仓，跑出的全 0 结果按数据环境标注纪律禁止回填。命令口径与写读闭环已在开发库结构性验证通过"
+
   - test: "在生产实例按 106-MEASUREMENTS.md §2 指引人工确认约 30 组正样本后执行 `calibrate_repo_router_metadata --positives-file ...`，把各 facet 的 c_lo/c_hi 与「c_hi-c_lo < 0.10 → 弃 T2」判定回填 §2 占位表，并经权重端点写入 constants.t2_c_lo/t2_c_hi 与 t2_disabled_facets"
     expected: "O-2 校准数字落表、常数经端点生效（保存即生效，无需发版）；区分度不足的 facet 进 t2_disabled_facets 后 T2 通道确实被禁用"
     why_human: "需真实需求文本 + 已配置 EmbeddingService，且第一步「人工确认正样本」本身是人工判断。管线（采样→分布→建议→判定）已在 --structural 零网络模式下结构性验证通过"
+
   - test: "生产实例跑若干次真实路由后，查 `repo_router_meta_resolved` 事件的 `dense_hit_ratio` 与 `s_top_source` 分布，确认校准余弦口径（dense_cosine）在生产是否真的会被启用"
     expected: "能给出「生产上 S_top 实际走哪套标尺」的结论，据此判断 s_top_c_lo/s_top_c_hi 两个常数是否值得校准"
     why_human: "BL-01 修复后 S_top 改为 per-query 二选一——只要任一分桶仓拿不到 dense_cos_max 就全仓回退 RRF。dense 查询 limit=STAGE0_NODE_K(50) 且已按候选仓过滤，但生产分桶仓数常在数十量级，覆盖是否满足只能实测。这不是缺陷（CONTEXT O-3 明确允许整链路回退，且口径已进快照与观测），但影响余弦校准常数的优先级"
 deferred:
+
   - truth: "SC-5 的生产实测数字（O-2 余弦校准区间 / O-5 last_commit_at 覆盖率与新鲜度）尚未回填"
     addressed_in: "本里程碑 UAT 人工步骤（106-MEASUREMENTS.md §3 挂账清单第 2/3 项）"
     evidence: "106-CONTEXT.md《Claude's Discretion》锁定：「O-2 校准若开发库缺少真实 facet 数据，允许用结构性样本先定管线并把生产校准记 deferred（同 O-1 纪律）」；deferred 节亦载明「O-1/O-2 生产环境校准数字回填 → 挂账人工步骤」"
+
   - truth: "MN-05（权重设置组件单测底座 + 网格外历史值的 legacy 选项渲染）"
     addressed_in: "Phase 107 前端改动"
     evidence: "106-REVIEW.md MN-05 fix_note：「建议随 Phase 107 前端改动一并补齐」"
+
   - truth: "MN-07（golden 负向样本 + dense 覆盖组合多样性 + fixture 数值来源标注）"
     addressed_in: "Phase 107 权重调参前的独立任务"
     evidence: "106-REVIEW.md MN-07 fix_note：「建议在 Phase 107 权重调参前作为独立任务处理」"
 warnings:
+
   - id: W-1
     title: "106-MEASUREMENTS.md §1 的结构性结论与 MJ-04 修复后的代码相矛盾"
     detail: "文档写「0 计数仓保留在 n_r_by_repo 全表中」，但 measure_repo_index_stats.py:429-435 与 test_measure_repo_index_stats.py:297,314-318 已改为只写 node_count > 0 的仓（MJ-04 修复，防「体量 0」仓凭空拿 +0.29 广度加成）。运维照文档理解会误判快照内容"
     files: [".planning/phases/106-multi-signal-scoring/106-MEASUREMENTS.md:73"]
+
   - id: W-2
     title: "ROADMAP.md 里程碑跟踪表 Phase 106 行仍写 `0/TBD | Not started`"
     detail: "同文件 L105-121 的 8 个 plan 已全部 [x]，跟踪表（L338）未同步；REQUIREMENTS.md Traceability 的 ROUTE-03~06 状态列亦仍为 Pending（该列全项目统一未维护，含已完成的 Phase 105，属既有台账惯例而非本相位遗漏）"
     files: [".planning/ROADMAP.md:338", ".planning/REQUIREMENTS.md:85-88"]
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 106：多信号打分函数重构 —— 验证报告

@@ -3,6 +3,8 @@
 执行 Phase 50 期间发现、但**不属于本 phase 范围**的问题（SCOPE BOUNDARY，仅记录不修）。
 
 ## Pre-existing test failure（Phase 49 遗留）
+- status: acknowledged
+
 
 - **Test:** `server/tests/delivery/test_plan_session_event.py::test_all_events_equals_v07_orchestration_set`
 - **现象:** `ALL_EVENTS` 含 `'spec.drafted'`，但该用例断言的 v0.7 orchestration 集合未含此事件 → `AssertionError`（Extra item `spec.drafted`）。
@@ -11,6 +13,8 @@
 - **建议:** 由维护 event taxonomy 的后续 phase 更新该断言（把 `spec.drafted` 纳入预期集合，或将该测试改为不强约束新增事件）。
 
 ## Pre-existing ruff lint（migrations import 排序）
+- status: acknowledged
+
 
 - **现象:** `ruff check delivery/` 报 `I001`（import 未排序）覆盖全部 `delivery/migrations/0008..0019`。
 - **根因:** Django `makemigrations` 自动生成的 import 顺序与 ruff isort 不一致；仓库既有 9 个 migration（0008–0018）均以该形态提交，团队约定不对自动生成 migration 跑 ruff --fix。

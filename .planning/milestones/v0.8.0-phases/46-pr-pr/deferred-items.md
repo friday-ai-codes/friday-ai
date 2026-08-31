@@ -1,6 +1,8 @@
 # Phase 46 — Deferred / Out-of-Scope Items
 
 ## 46-02 执行期发现（out-of-scope，未修复）
+- status: acknowledged
+
 
 - **`server/tests/test_batch_pr.py` 5 例 PRE-EXISTING 失败（stale）**
   - 现象：`AttributeError: module 'workflows.nodes.git.pr' has no attribute 'GitCredential'`

@@ -5,9 +5,14 @@ status: human_needed
 score: 4/4 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "浏览器端绑定流程：登录 → 个人资料页（profile）→「工具令牌绑定」卡片 → 为某 mcp/skill 工具选一把有效令牌绑定 → 刷新后绑定仍在 → 换绑另一令牌 → 解绑（二次确认）"
     expected: "卡片渲染可绑定 mcp/skill 工具行；绑定下拉仅出现 is_valid 令牌；绑定/换绑/解绑后列表即时更新且持久（刷新不丢）；任何位置都不出现完整 friday_pat_ 明文"
     why_human: "端到端 UI 用户流（需运行 server+web、真实登录与令牌），视觉与持久化只能由人工浏览器验证；自动化仅覆盖到组件 spec（mock store）与后端 API 契约层"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 10: MCP 绑定用户令牌 + RemoteTool 执行端点 Verification Report

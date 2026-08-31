@@ -5,12 +5,18 @@ status: human_needed
 score: 3/3 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "真实容器 E2E：SDD 仓经 gate 放行后编码产真实 PR，验证 _finalize_and_notify 回填到 SddSpec.implementation_prs 且 approved→implemented 流转生效"
     expected: "编码完成后该 spec 的 implementation_prs 含真实 PR ref（pr_url/repository_id/linked_at），spec 状态由 approved 变为 implemented；非 SDD 仓 PR 流程零回归"
     why_human: "需真实编码容器产出真实 PR + 真实仓库/PlanVersion 数据，单测以 mock 覆盖逻辑分支但无法验证真实容器回调链路端到端"
+
   - test: "交付验收视图真实数据渲染：在 spec 详情页 /specs/[id] 查看「交付验收」面板，沿 WorkItem → spec 状态 → 实现 PR 链路"
     expected: "需求链接（prd_url）与实现 PR 链接（pr_url）可点跳转；链断/缺数据时降级显「未关联需求」「暂无实现 PR」占位而非报错/空白崩溃"
     why_human: "视觉外观、链接跳转、真实后端数据贯通需在运行实例中人工核验；vitest 用契约 fixture 验证逻辑但不验证真实端到端数据流与视觉呈现"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 52: spec↔需求/PR 关联 + 交付验收视图 Verification Report

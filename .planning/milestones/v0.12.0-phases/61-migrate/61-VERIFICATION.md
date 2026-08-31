@@ -5,22 +5,31 @@ status: human_needed
 score: 5/5 must-have truths verified (SQLite path); 3/3 requirements satisfied
 overrides_applied: 0
 human_verification:
+
   - test: "在真实 Postgres + DURABLE_TASK_BACKEND=procrastinate 实例上跑一次性迁移命令 `python manage.py migrate_resumable_to_durable`（先 seed 若干 PENDING/RUNNING 的 index/graph resumable_tasks）"
     expected: "存量在途行平滑转入 durable（按 deterministic key defer）、旧行 status=MIGRATED 且 legacy_durable_job_id 非空；重跑命令 migrated=0、无重复 durable job（queueing_lock 唯一）"
     why_human: "postgres_queue 用例需真实 Postgres + procrastinate 队列，本地 SQLite 默认 deselect（13 deselected）；procrastinate queueing_lock 去重语义只能在真实队列断言"
+
   - test: "在真实 Postgres 上验证 5 处 index/graph 入队点的 procrastinate 路径去重（同 repo 重复触发索引/图谱重建）"
     expected: "同一 idempotency_key（index:{repo_id}/graph:{repo_id}）的重复投递在 todo 唯一，不产生重复 durable job；IndexHistory/GraphBuildHistory 仍按入队点创建"
     why_human: "procrastinate queueing_lock todo 唯一是 Postgres 侧 DB 约束，SQLite in-process 后端为同名覆盖近似，需真实队列确认"
+
   - test: "多副本部署下启动 reconcile 不误杀在途 durable 任务：A 进程跑 durable_index/durable_graph 在途时，B 进程启动 reconcile"
     expected: "has_active_by_key 命中在途（todo/doing/scheduled）→ 对应 Repository 保留 INDEXING、IndexHistory/GraphBuildHistory 保留 RUNNING，不被标 FAILED"
     why_human: "需真实 Postgres procrastinate 后端 + 多进程并发，has_active_by_key 的 procrastinate queueing_lock 查询路径无法在 SQLite 下端到端验证"
 notes_preexisting_failures:
+
   - test: "tests/repositories/test_index_retry_resume.py::test_failed_partial_index_with_checkpoint_resumes_full_index_not_incremental"
     classification: pre-existing (NOT a Phase 61 regression)
     evidence: "测试零引用 durable/defer/reconcile/wrap_resumable；直接调 services.indexer.clone_and_index_repository（Phase 61 未改 services/indexer.py，其最后提交 9be453f06 远早于 Phase 61 提交）。失败为 indexer 返回 status='error'（services 层行为 / Py3.14·Django6 环境），不触达本相迁移的入队/reconcile/迁移命令路径"
+
   - test: "tests/repositories/test_index_history_changed_files.py::test_changed_files_populated_after_incremental_index"
     classification: pre-existing (NOT a Phase 61 regression)
     evidence: "失败为 'Database access not allowed, use the django_db mark'——该用例未挂 @pytest.mark.django_db（文件内注释 line 76 明确说明），纯测试基建问题；Phase 61 未修改此测试文件，亦零引用 Phase 61 符号"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 61: 迁移 index/graph + 收口 ResumableTask Verification Report

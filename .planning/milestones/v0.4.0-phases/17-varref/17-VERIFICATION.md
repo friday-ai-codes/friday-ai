@@ -6,15 +6,22 @@ score: 18/18 must-haves verified
 overrides_applied: 0
 re_verification: false
 human_verification:
+
   - test: "端到端所选即所得：在流程编辑器中用变量选择器选中上游节点输出引用，保存工作流后执行，确认该引用取到实际值"
     expected: "执行成功且引用位置注入了上游节点的真实输出值；构造一个坏引用（如手改成不存在的节点 ID）再执行，节点显式失败且错误信息（中文）指明引用与原因"
     why_human: "完整 UI 流程（picker 选中 → bulk-update 保存 → 真实执行 → 值注入）跨前后端与运行时，grep 与单测只能验证各环节机制，无法程序化确认端到端体验"
+
   - test: "端口复制缺 short_id 防护：对一个尚未保存（store 中无 shortId）的新节点点击端口复制按钮"
     expected: "出现 toast '节点缺少 short_id，请先保存工作流'，剪贴板不写入任何 UUID 形式引用；端口路径提示区显示'保存工作流后可用'"
     why_human: "toast 弹出与剪贴板行为是运行时 UI 交互，无法静态验证"
+
   - test: "运行时变量选择器双键去重：打开一个已有执行结果的工作流的运行时变量选择器（node_outputs 含 UUID 与 short_id 双键）"
     expected: "同一字段只展示一条（short_id 形态），不重复出现 UUID 形态条目"
     why_human: "WR-02 修复改为 JSON.stringify 内容判等，其有效性依赖后端 snapshot 实际输出的 node_outputs 数据形态，需真实执行数据确认"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 17: 变量引用链路修复 Verification Report

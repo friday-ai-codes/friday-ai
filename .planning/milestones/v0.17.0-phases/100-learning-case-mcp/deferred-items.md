@@ -1,6 +1,8 @@
 # Phase 100 — Deferred Items
 
 ## 既有失败（与 100-01 无关，不在本 plan 修复范围）
+- status: acknowledged
+
 
 - `tests/knowledge/test_triggers.py::TestWorkflowTriggers::test_workflow_plan_generation_delivers_on_success`
 - `tests/knowledge/test_triggers.py::TestWorkflowTriggers::test_workflow_plan_generation_survives_runner_failure`

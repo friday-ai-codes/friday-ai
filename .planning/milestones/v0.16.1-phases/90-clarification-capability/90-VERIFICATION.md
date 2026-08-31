@@ -5,13 +5,19 @@ status: human_needed
 score: 3/3 must-haves verified
 overrides_applied: 0
 deferred:
+
   - truth: "三个生产入口（plan_research.py / plan_research_tools.py / plan_deepen.py）的 pending 读法与 marker 渲染收口到 ahas_pending"
     addressed_in: "Phase 91（澄清出口面 + 回流 resume）"
     evidence: "90-REVIEW.md WR-03 明确「出口面渲染属 Phase 91 范畴，CONTEXT 已 deferred；本 phase 可不动代码，应在 91 计划显式记账」；Phase 90 scope 为 resume + e2e helper 两处收口（90-03-PLAN）"
 human_verification:
+
   - test: "配置 default_model（真实 provider）后触发编排澄清，人工核对 LLM 产出的多问题/每题选项/推荐项是否合理、关键词是否加重"
     expected: "结构化多题质量可用：问题聚焦、选项覆盖、推荐项合理，call_source=plan_clarification 上报请求/token/TTFT"
     why_human: "需真实 LLM provider 集成 + 人工判断生成质量（VALIDATION.md Manual-Only 预先声明；自动化测试用 mock 生成器只验接线不验质量）"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 90: 澄清能力层 Verification Report

@@ -405,6 +405,10 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
+| 会话回写用新工具 `report_session_knowledge`，不扩 `report_project_knowledge` | Capture ≠ 项目记忆；保留 Memory 门闩零回归 | ✓ Validated（v0.25.0） |
+| Capture `source_kind=session_capture`；评估 `call_source=session_capture_eval` | 与既有路由 confidence / writeback quality 解耦，可归因 | ✓ Validated（v0.25.0） |
+| medium/high 自动入仓级 RAG；low 仅回放；失败不得删 Capture | 永不静默丢数据；低价值留评测样本 | ✓ Validated（v0.25.0） |
+| Cursor/Claude 双宿主官方事件配对；禁止把 Claude Stop 脚本拷到 Cursor | 宿主事件模型不同；避免 CoT / 错配 | ✓ Validated（v0.25.0） |
 | 仓库路由用分阶段决策漏斗，不推倒 `RepoRouterV2`（降为 shortlist 内细排） | feature list 场景需可解释门禁；V2 全库相似度会漂到语义巧合仓 | ✓ Validated（v0.23.0） |
 | D1/D3：蓝图/项目硬门禁；无团队 → clarify，禁止静默全库 primary | 避免 out_of_team / 无 Space 时裸路由 | ✓ Validated（v0.23.0） |
 | D2：高三四基线角色级 primary 覆盖 + out_of_team=0（合成宇宙自动化） | 客观回归锚点；live_space 默认 skip 记 tech_debt | ✓ Validated（v0.23.0，合成）；真 Space抽验 deferred |
@@ -503,4 +507,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-31 after v0.25.0 milestone*
+*Last updated: 2026-08-28 after starting milestone v0.25.0*

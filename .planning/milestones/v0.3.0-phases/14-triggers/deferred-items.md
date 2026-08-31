@@ -3,6 +3,8 @@
 执行期间发现的范围外问题（scope boundary：不在本 phase 修复，仅登记）。
 
 ## 14-04 执行中发现
+- status: acknowledged
+
 
 - **`server/workflows/` 既有 ruff lint 错误（非本 plan 引入）**：
   `engine/scheduler.py` 顶部 import 块 I001（`rest_framework` 排序）、
@@ -15,6 +17,8 @@
   本 plan 插入块本身符合 format（`--diff` 输出全部位于未触碰区段）。
 
 ## 14-06 执行中发现
+- status: acknowledged
+
 
 - **`ruff check workflows/` 既有错误延续（同 14-04 登记项，非本 plan 引入）**：
   phase verification 的 `ruff check knowledge/ orchestration/ workflows/ subagent/
@@ -27,6 +31,8 @@
   未触碰区段）；本 plan 插入块自身符合 format 形态，不做全文件重排版。
 
 ## 14-05 执行中发现
+- status: acknowledged
+
 
 - **`server/feishu/bot/service.py` 既有 ruff I001（非本 plan 引入）**：
   顶部 import 块排序不符合当前 ruff 规则；该文件最后一次改动为

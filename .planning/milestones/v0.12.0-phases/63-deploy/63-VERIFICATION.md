@@ -6,21 +6,30 @@ score: 14/14 must-haves verified (static/test/render); 5 live-cluster behaviors 
 overrides_applied: 0
 re_verification:
 human_verification:
+
   - test: "worker 滚动更新 SIGTERM 优雅 drain（DEPLOY-01）"
     expected: "kubectl rollout 重启 worker Deployment 时，收到 SIGTERM 的 pod 停止领取新 job、跑完在途或在 gracefulTimeout(110s) 内 drain，未完成 job 由 heartbeat-stalled + periodic rescue 重投，无在途 job 丢失"
     why_human: "需真实 k8s + Postgres + 在途 durable job；本地无法模拟 SIGTERM 信号经 Procrastinate install_signal_handlers 的真实 drain"
+
   - test: "compose up -d 升级不破坏既有部署（DEPLOY-02）"
     expected: "对既有单副本 compose 部署执行 `docker compose up -d`（拉新镜像重建），server 先 migrate→healthy，worker/scheduler 随后启动不崩循环，既有 server/web/runner/postgres/redis/qdrant 行为零回归"
     why_human: "需真实 Docker 守护进程 + 完整镜像 + 既有运行栈；config -q 仅校验语法，不验证运行期编排顺序"
+
   - test: "scheduler 单例滚动期不双跑 cron（DEPLOY-02）"
     expected: "scheduler 滚动更新时 strategy=Recreate 确保旧 pod 先终止再起新 pod，cron 任何时刻仅一个实例运行，无重复通知/backfill"
     why_human: "需真实 k8s 集群观察滚动更新期间 pod 生命周期"
+
   - test: "KEDA 按 todo 队列深度真实伸缩 worker（DEPLOY-03）"
     expected: "已装 KEDA operator 的集群，worker.keda.enabled=true 后，procrastinate_jobs todo 深度上升触发 worker 扩容（cooldown 300s 防抖），深度回落缩容但不低于 minReplicaCount=1"
     why_human: "需真实 KEDA operator + Postgres + 队列负载；render 仅证明 ScaledObject 正确生成"
+
   - test: "真实 GitLab/GitHub MR 去重 + 飞书建群去重（IDEMP-02）"
     expected: "at-least-once 重投下，同 source→target 分支不重复开 PR/MR（复用既有 open MR url），同 work_item 不重复建群（复用 WorkItem.feishu_chat_id）"
     why_human: "需真实 GitLab/GitHub 平台 token + 飞书应用；单测以 mock 验证 fence 逻辑，真实平台幂等行为待端到端验证"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 63: 部署硬化 + 外部副作用 fencing Verification Report
@@ -120,6 +129,7 @@ human_verification:
 ### Pre-existing Failure（非 Phase 63 回归，已确认）
 
 `tests/delivery/test_plan_session_inv6_guard.py::test_inv6_no_bypass_plan_session_write` 失败：
+
 - **根因**：静态 grep 守护把 `chat/conversation_service.py:1922` 的一行**注释**（"# SDD spec 反查：conversation → PlanSession..."）误判为旁路写表。
 - **确认无关**：Phase 63 三个 plan 均未触及 `test_plan_session_inv6_guard.py`（最后修改于 commit `df8e574d7` / phase 36-02）或 `chat/conversation_service.py`（不在任何 plan files_modified 列表）。63-03-SUMMARY 已记此为已知 pre-existing 失败。**非 Phase 63 引入的回归。**
 

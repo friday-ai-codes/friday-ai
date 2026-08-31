@@ -5,15 +5,22 @@ status: human_needed
 score: 10/10 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "在真实索引环境（容器/runner + 真实 clone）对一个仓库根含 openspec/ 的真实仓库跑一次 base 索引，索引完成后查 Repository.facets"
     expected: "FINALIZING 钩子在 rmtree 之前命中真实 clone 路径，facets[\"methodology\"]==\"SDD\"；索引 success 终态不受影响"
     why_human: "单测直接以 tmp_path 调 detect_and_tag_sdd，挂接测试为源码顺序断言 + monkeypatch fail-safe，未真实跑完整 clone→index→FINALIZING 链路；端到端需真实容器/索引环境"
+
   - test: "对一个不含 openspec/ 的真实仓库跑索引，再对一个曾打标的仓库删除 openspec/ 后重索引"
     expected: "不含的不被误标；删除后自动 SDD 标记被清除；重复索引 updated_at/facets 不漂移"
     why_human: "幂等与防漂移在单测层已证，但真实多次索引（含增量/分支 overlay 不触发）需真实索引环境端到端确认"
+
   - test: "在浏览器打开标准 /repositories 列表、仓库详情页、知识树页，查看一个已打标 SDD 的真实仓库"
     expected: "列表卡片、详情页头部、知识树卡片+能力树详情均显示 emerald 高亮的 \"SDD\" 徽标（hover title 为 zh-CN 文案），非 SDD 仓库不显示；详情 facets 通用 chip 不重复渲染 methodology=SDD"
     why_human: "视觉呈现/高亮样式/真实数据流（serializer methodology 透出 + tree_views facets 透出）端到端需人工目检"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 48: SDD 仓库检测 + facets 打标 + 前端标签 Verification Report
@@ -105,16 +112,19 @@ human_verification:
 所有可程序化验证的 truth 均已通过单测/源码核查（10/10）。以下端到端项需真实容器/真实索引环境或人工目检确认：
 
 #### 1. 真实索引链路打标（SDD-01 端到端）
+
 **Test:** 在真实索引环境对一个仓库根含 `openspec/` 的真实仓库跑一次 base 索引，索引完成后查 `Repository.facets`。
 **Expected:** FINALIZING 钩子在 rmtree 之前命中真实 clone 路径，`facets["methodology"]=="SDD"`；索引 success 终态不受影响。
 **Why human:** 单测以 `tmp_path` 直接调检测器，挂接测试为源码顺序断言 + monkeypatch fail-safe，未真实跑完整 clone→index→FINALIZING 链路。
 
 #### 2. 不误标 / 防漂移 / 幂等（SDD-01 端到端）
+
 **Test:** 对不含 `openspec/` 的真实仓库索引；对曾打标仓库删除 `openspec/` 后重索引；同仓库重复索引。
 **Expected:** 不含的不误标；删除后自动 SDD 标记被清除；重复索引 `updated_at`/facets 不漂移。
 **Why human:** 真实多次索引（含增量、功能分支 overlay 不触发）需真实索引环境端到端确认。
 
 #### 3. 前端徽标视觉呈现（SDD-02 端到端）
+
 **Test:** 浏览器打开标准 `/repositories` 列表、仓库详情页、知识树页，查看一个已打标 SDD 的真实仓库。
 **Expected:** 列表卡片、详情页头部、知识树卡片 + 能力树详情均显示 emerald 高亮的 "SDD" 徽标（hover title 为 zh-CN 文案）；非 SDD 不显示；详情 facets 通用 chip 不重复渲染 `methodology=SDD`。
 **Why human:** 视觉高亮样式与真实数据流（serializer methodology 透出 + tree_views facets 透出）端到端需人工目检。

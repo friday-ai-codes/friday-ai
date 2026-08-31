@@ -5,12 +5,18 @@ status: human_needed
 score: 5/5 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "对 technical_plan_generation 工作流（新建实例）跑一次真实飞书需求触发，确认项目群收到「干净结构化 markdown 卡片」（title/summary/执行计划/compat_risks 的 • 项目符号），且正文不含 LLM 原始文本（UNIFY-06 推群端到端）"
     expected: "群里收到结构化卡片，正文来自 plan_markdown（render_merged_plan_markdown），非 raw LLM dump"
     why_human: "notify_feishu_im 推送到真实飞书群 + 卡片视觉渲染属外部服务集成，grep/单测只能验证 plan_markdown 字段渲染与模板字段引用，无法验证真实群消息外观"
+
   - test: "在配置了真实 AI provider 的环境调用 MCP create_feishu_technical_plan 与 create_coding_plan，确认产出 canonical MergedPlan/PlanVersion 且响应外形兼容（DONE→completed 完整字段；编排在途→partial+session_id，调用方据 session_id 续推）"
     expected: "DONE 时旧响应键全在 + canonical_content；RESEARCHING 在途时 status=partial + session_id，无 5xx"
     why_human: "真实编排需 provider/容器 fan-out，DONE vs PARTIAL 取决于运行期容器就绪情况；单测以 monkeypatch/同步 stub 覆盖契约，真实端到端挂起态需人工验证"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 94: 入口统一 Verification Report

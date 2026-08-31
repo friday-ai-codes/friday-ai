@@ -5,12 +5,18 @@ status: human_needed
 score: 11/11 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "配置真实 vision-capable provider/模型，上传真实界面截图，确认提取语义与召回 work_item 质量"
     expected: "提取出合理的文字/UI/业务意图三段语义，召回相关 work_item 需求（相关度排序合理）"
     why_human: "需真实多模态模型 + 真实需求数据；recall 质量无法 mock 验证（CONTEXT Grey Area 5 / deferred human-UAT）"
+
   - test: "在浏览器打开 /knowledge/screenshot，分别用点击/拖拽/粘贴上传截图，观察 6 态视觉呈现"
     expected: "三入口均触发预览+提交；empty/loading/error/degraded(amber)/success/no-results 各态视觉正确、可读、响应式正常"
     why_human: "视觉外观、拖拽/粘贴交互、真实渲染观感无法以 grep/单测确认（视觉 UI 确认 deferred human-UAT）"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 35: 截图识别需求 Verification Report

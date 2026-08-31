@@ -6,12 +6,18 @@ score: 4/4 must-have truth-groups verified (PAT-01..06 satisfied)
 overrides_applied: 0
 re_verification: # No — initial verification
 human_verification:
+
   - test: "浏览器创建令牌 → 在创建响应弹窗点「复制」→ 粘贴到别处校验"
     expected: "一次性明文 token 被完整复制到剪贴板；弹窗关闭后明文不可再获取"
     why_human: "剪贴板交互在 jsdom 下不稳定，需真实浏览器验证（06-VALIDATION Manual-Only）"
+
   - test: "创建表单中过期策略选「永不过期」"
     expected: "出现 amber 非阻塞风险提示文案，且「创建」按钮仍可点击提交（不被阻断）"
     why_human: "视觉呈现（颜色/图标/布局）需人工确认（06-VALIDATION Manual-Only）"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 6: PAT 模型增强与一次性明文 Verification Report

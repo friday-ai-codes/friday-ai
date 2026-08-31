@@ -3,6 +3,8 @@
 Out-of-scope discoveries logged during execution (SCOPE BOUNDARY rule). NOT fixed here.
 
 ## 90-03 execution（2026-06-27）
+- status: acknowledged
+
 
 运行 `tests/services/plan_orchestration tests/delivery` 时发现 6 个失败，**全部与本 plan（澄清能力）无关**，源于工作树中并发未提交的 project-war-room / initiatives 改动（session 起始 git status 即含 `M server/initiatives/urls.py`、`M server/initiatives/views.py` 等）：
 

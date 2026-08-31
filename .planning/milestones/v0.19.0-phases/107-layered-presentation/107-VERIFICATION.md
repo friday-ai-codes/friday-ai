@@ -13,37 +13,45 @@ evidence:
   property_probe: "verifier 独立穷举 clamp_llm_permutation（n<=6、k=0..3、全部子集 × 全排列）9460 组：后置条件违规 0、集合不等 0"
   debt_markers: "26 个改动源文件零 TBD / FIXME / XXX / TODO / HACK / PLACEHOLDER"
 human_verification:
+
   - test: "对话路由面板视觉核对：两组分区、跨组 Badge 与常驻说明句、迟滞置顶提示、降级横幅与徽标灰化、折叠态降级徽标"
     expected: "与 107-UI-SPEC 一致；无新色板 / 新字号 / 新组件"
     why_human: "视觉观感与「逐像素一致」无法程序化断言（结构层已由 328 条前端用例覆盖）"
     requirement: ROUTE-01, ROUTE-02, RELY-03
+
   - test: "面板上勾选 / 取消一个候选后观察降级横幅与两组分区"
     expected: "横幅与分区仍在（override 继承 4 个 trace 级字段）"
     why_human: "需真实交互；store 层已有 5 条自动化用例，此项确认端到端"
     requirement: RELY-03
+
   - test: "真实会话触发澄清，确认飞书卡片送达且可作答；再断开配置制造 no_chat_id 确认留痕与 clarification.delivery_failed 事件"
     expected: "卡片送达且可作答；失败路径留痕并触发立即出口"
     why_human: "SC-4 前半句「澄清一定送达用户且可作答」依赖真实 IM 环境，本地无法验证"
     requirement: RELY-02
+
   - test: "生产先跑 `python manage.py expire_pending_clarifications --dry-run`，确认影响面后再启用 job"
     expected: "dry-run 列出存量卡死会话且零写库；影响面可接受"
     why_human: "需生产存量数据（A9：存量会话可能已被人工绕道处理，批量推进可能产生重复产出）"
     requirement: RELY-02
+
   - test: "生产执行 `python manage.py measure_stage1_latency --days 7 --json`（Postgres 走 percentile_cont），回填 107-MEASUREMENTS.md 的 p50/p90/p99 与采样率"
     expected: "拿到真实分位数字并回填文档；据此再议 per-call 90s 是否下调（A5）"
     why_human: "需生产数据；O-6 生产数字本 phase 已按计划 deferred 且文档已如实标注"
     requirement: RELY-05
+
   - test: "触发一轮澄清后在会话内确认 pending 态可见（ChatStatusBar / ClarificationCard / HumanTaskInbox 三处任一）"
     expected: "pending 态对用户可见"
     why_human: "确认既有实现仍有效；本 phase 不新增前端面，缺失则作为独立缺陷进 backlog"
     requirement: RELY-02
 deviations:
+
   - id: MJ-02
     plan: 107-03
     original_assumption: "`auto_selected` 只由全局最高分候选驱动，与 α / block_order 无关"
     actual: "α 确实参与 auto_selected 判定（扁平列表首位按凸组合 score_ranked 排序）。评审后取「保留现状 + 订正注释 + 补护栏 + 加观测」方案"
     accepted_because: "影响方向单调安全（α 只能把 auto_selected 由 True 变 False，绝不凭空造出 high 误开自动推进）；组别本身仍不进决策路径，SC-2 的字面要求不受影响。已由 α ∈ {0, 0.35, 0.9, 1.0} 参数化护栏用例锁定单调性，抑制经 `auto_selected_suppressed_by_alpha` 上报"
     severity: warning
+
   - id: IN-02
     plan: 107-08
     original_assumption: "迁移文件名应与内容一致"
@@ -51,6 +59,7 @@ deviations:
     accepted_because: "迁移已 applied，改名会让已部署实例的 django_migrations 与文件名不一致；内容 additive、无 RunPython、可逆。评审已标 deferred"
     severity: info
 scope_boundaries:
+
   - "D-5：chat 单题澄清（ConversationIntentTrace + LangGraph interrupt）只纳入观测，不纳入出口——出口机制只覆盖 delivery.Clarification"
   - "D-6：「未澄清假设」只写 stage_state.clarification_exit，本 phase 无前端渲染面（产出正文渲染受 v0.20.0 DEPTH 冻结约束）"
   - "A3：出口不新增 ConvergenceSessionStatus 枚举值——「超时放行」在看板/投影层与「正常运行」暂无视觉区分"
@@ -60,6 +69,11 @@ scope_boundaries:
   - "T-107-01（accept）：放开候选范围硬过滤后结果含项目外仓名与其能力树节点路径 / sub_project / LLM reasoning；沿用 MCP/REST 两个已上线全库入口的既有判断，不新增可见性面（MN-09 已把透出面如实写进注释）"
   - "UI-SPEC unresolved 3：编排链（ConvergenceSession.routing / EVENT_REPO_ROUTING）前端呈现 → Phase 110"
   - "UI-SPEC unresolved 4：降级原因的排障下钻（脱敏后原始异常文本）只入事件 payload / SystemLogEntry，不做前端展开区"
+
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 107: 分层呈现与链路韧性 — 验证报告
@@ -341,31 +355,37 @@ scope_boundaries:
 自动化侧无 gap。以下 6 项按 `107-VALIDATION.md` 的 Manual-Only Verifications 与 honest-verifier 的 abstain 纪律列出：
 
 ### 1. 分组 / 跨组 / 降级三块 UI 观感（ROUTE-01/02, RELY-03）
+
 **操作：** 对话路由面板逐项核对两组分区、跨组 Badge 与常驻说明句、迟滞置顶提示、降级横幅与徽标灰化、折叠态降级徽标。
 **预期：** 与 `107-UI-SPEC.md` 一致；无新色板 / 新字号 / 新组件（已核实零新依赖、未新建 `ui/alert`）。
 **为何人工：** 视觉观感与「历史 trace 逐像素一致」无法程序化断言（结构层已由 328 条前端用例覆盖）。
 
 ### 2. override 后横幅与分区不消失（RELY-03）
+
 **操作：** 面板上勾选 / 取消一个候选。
 **预期：** 降级横幅与两组分区仍在。
 **为何人工：** 需真实交互；store 层已有 5 条自动化用例，此项确认端到端（Pitfall 3 的 UAT 必查项）。
 
 ### 3. 澄清必达真机链路（RELY-02，**SC-4 前半句**）
+
 **操作：** 真实会话触发澄清确认飞书送达且可作答；再断开配置制造 `no_chat_id`。
 **预期：** 卡片送达且可作答；失败路径留痕 + `clarification.delivery_failed` 事件 + 立即出口。
 **为何人工：** 依赖真实 IM 环境。这是 SC-4 唯一未被自动化覆盖的半句。
 
 ### 4. 澄清超时出口首次上线影响面（RELY-02）
+
 **操作：** 生产先跑 `python manage.py expire_pending_clarifications --dry-run`，确认影响面后再启用 job。
 **预期：** dry-run 零写库、列出存量卡死会话（CONTEXT 记录会话 `ccd817d9` 有 2 条）。
 **为何人工：** 需生产存量数据；A9 提示存量会话可能已被人工绕道处理，批量推进可能产生重复产出。**同时可确认真实 stage graph 下续驱的落点分布**（补上 BL-01 守护测试使用 `_FakeEngine` 的那一段真实性）。
 
 ### 5. O-6 生产延迟分位实测（RELY-05）
+
 **操作：** 生产执行 `python manage.py measure_stage1_latency --days 7 --json`（Postgres 走 `percentile_cont`），回填 `107-MEASUREMENTS.md` 的 p50/p90/p99 与采样率。
 **预期：** 拿到真实分位；据此再议 per-call 90s 是否下调（A5）。
 **为何人工：** 需生产数据。本 phase 已按计划 deferred 且文档如实标注、命令与单测就位，**合规**。
 
 ### 6. 会话内 pending 状态对用户可见（RELY-02 子句）
+
 **操作：** 触发一轮澄清后在会话内确认 pending 态可见（`ChatStatusBar` / `ClarificationCard` / `HumanTaskInbox` 三处任一）。
 **预期：** pending 态对用户可见。
 **为何人工：** 本 phase 不新增前端面（VALIDATION 已核查既有实现满足）；此项只确认既有呈现仍有效，缺失则作为独立缺陷进 backlog，不并入本 phase 范围。

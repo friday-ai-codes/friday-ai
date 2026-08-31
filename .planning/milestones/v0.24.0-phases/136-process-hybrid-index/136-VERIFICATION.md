@@ -3,6 +3,10 @@ phase: 136-process-hybrid-index
 status: human_needed
 verified: 2026-08-24
 score: 5/5
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 136 验证

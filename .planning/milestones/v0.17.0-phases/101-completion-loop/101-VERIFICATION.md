@@ -5,18 +5,26 @@ status: human_needed
 score: 5/5 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "真实飞书回写：跑一次带 write_back=True 且绑定工作项的 ai_coding 工作流（或 MCP execute_work_item），确认飞书工作项出现『Friday 已更新执行结果：{title}』评论且表格格式正确"
     expected: "工作项评论区出现结构化结果评论；MCP 链路文档同时 append『## 执行结果』表格"
     why_human: "需要真实飞书租户凭证与外部 API，测试全部 mock 飞书客户端"
+
   - test: "真实 LLM 提炼质量：编码任务成功完成后检查自动产生的 learning case 内容（problem/root_cause/solution 是否为可复用经验而非任务日志），并观察 learning_case_rejected 事件占比"
     expected: "case 内容有信息量、可检索复用；REJECT 率不失控（质量门有效但不误杀）"
     why_human: "LLM 产物质量无法程序化断言；测试仅 mock _acall_llm 返回固定 JSON"
+
   - test: "统一检索可见性：自动提炼的 case 经 Phase 100 入图通路后，在知识检索（search_learning_cases / 编排召回）中可命中"
     expected: "以 case 关键词检索能召回该条 learning case"
     why_human: "需真实 Qdrant + embedding 环境端到端跑通；测试只断言 aschedule_ingestion 被正确调用"
+
   - test: "PR review 沉淀（可选）：打开 learning_case.pr_review_enabled 后建一次 PR，确认产生 outcome=review 的 learning case 且 ModelUsageRecord 出现 call_source=pr_review_capture 记录"
     expected: "一条 review case 入库（幂等键 {sid}:pr_review）；用量可按 source 聚合"
     why_human: "依赖真实 LLM 与 git 平台 diff"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 101: 完工沉淀闭环（公共回写 + 自动提炼 + Skill 种子）Verification Report

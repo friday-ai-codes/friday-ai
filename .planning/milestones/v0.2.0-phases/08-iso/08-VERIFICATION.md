@@ -8,12 +8,18 @@ re_verification:
   previous_status: null
   note: "Initial goal-backward verification (08-REVIEW.md is a code review, not a prior VERIFICATION.md)."
 human_verification:
+
   - test: "多账户浏览器流：用账号 A 登录创建若干会话，再用账号 B（含管理员账号）登录，确认对话列表只见各自会话，且直接粘贴对方会话 URL 不可访问。"
     expected: "A/B 各自只看到自己的会话；越权 URL 显示「不存在」而非「无权」，不泄漏存在性。"
     why_human: "需要两个真实登录态与前端渲染，自动化套件仅覆盖 API 层 IDOR。"
+
   - test: "编辑消息 → fork → 续聊 UX（CR-01 修复点）：owner 在自己会话中编辑一条历史 user message，触发前端 fork + stream 续写。"
     expected: "fork 出的新会话归 owner 所有，立即出现在列表中，编辑后的消息可正常流式发送（不被 404）。"
     why_human: "端到端前端 fork→stream 时序与可见性是 UX 行为，需浏览器实测；后端已由 TestForkInheritsOwner 覆盖。"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 8: 对话/会话用户隔离 Verification Report

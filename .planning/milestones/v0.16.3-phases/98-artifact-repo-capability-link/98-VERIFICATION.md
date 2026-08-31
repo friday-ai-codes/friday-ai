@@ -7,6 +7,7 @@ re_verification:
   previous_status: none
   previous_score: n/a
 gaps:
+
   - truth: "KDEP-08 verified RepoAssociation 同步为图谱边（功能就位，确定性红测已修复）"
     status: resolved
     reason: >-
@@ -22,8 +23,10 @@ gaps:
       commit: "728411fb"
       change: "knowledge_graph.py:328 docstring 去调用形字面量；guard 测试 2 passed"
     artifacts:
+
       - path: "server/initiatives/services/knowledge_graph.py"
         issue: "第 328 行 docstring 含字面量 `RepoAssociation(status=verified)`，触发 INV-6 守护正则误报（已修复）"
+
   - truth: "KDEP-07 边 metadata 幂等 upsert 测试稳定通过（flaky 已修复）"
     status: resolved
     reason: >-
@@ -39,12 +42,18 @@ gaps:
       commit: "728411fb"
       change: "invalid_at 显式落在 valid_at 之后；整文件连续 8 次运行全绿（7 passed×8）"
     artifacts:
+
       - path: "server/tests/knowledge/test_edge_metadata_upsert.py"
         issue: "invalid_at/valid_at 同微秒 tick 违反 kedge_valid_range 约束致时序 flaky（已修复）"
 human_verification:
+
   - test: "真机·真实 provider·真实 Qdrant 下 RepoRouterV2 对工件正文的召回质量"
     expected: "ragable 工件正文经 RepoRouterV2.route 命中合理仓库 + matched_node_paths，落 RELATES_TO 边 metadata（score/node_paths/keywords）符合预期；无匹配时仅保留 project 边（fail-soft）"
     why_human: "路由召回质量依赖真实 LLM + 向量库 + 能力树数据，无法在单测 mock 下验证；CONTEXT.md/research §4 已标注需实测（deferred）"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 98: 工件↔仓库/能力/关键词关联 Verification Report

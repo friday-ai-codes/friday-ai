@@ -5,15 +5,22 @@ status: human_needed
 score: 12/12 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "在真实 k0s/containerd 集群（无 docker.sock）部署 runner，executor=kubernetes，触发一个任务，观察 KubernetesExecutor 经 k8s API 创建 batch/v1 Job/Pod、任务容器在 containerd 上运行至退出。"
     expected: "Job 成功调度，Pod 在 containerd 运行任务镜像并以预期 exitCode 终止；runner 经 SA token + namespaced Role 完成 jobs/pods/pods/log 调用，无任何 docker.sock 依赖。"
     why_human: "需真实 k0s/containerd 集群与镜像拉取/调度，无法在本地用 fake clientset 或 helm 渲染验证（SC3 端到端运行时行为）。"
+
   - test: "任务运行时观察 StreamLogs 是否经 pods/log(Follow) 实时回传日志到 server；任务结束后确认 WaitContainer 取到真实 exitCode、Pod 经 TTL/RemoveContainer 被清理。"
     expected: "日志逐行实时回传；exitCode 准确；完成后 Job/Pod 按 TTLSecondsAfterFinished 或清理逻辑回收，残留 Job 由 StartupCleanup/ZombieScan 仅按 friday.runner label 回收本副本。"
     why_human: "日志流式/退出码/清理的运行期真实性依赖活动 Pod 生命周期，fake clientset 仅覆盖逻辑分支，需真机确认。"
+
   - test: "（已知限制，非 gap）确认 k8s 模式下 HITL answer 端到端投递与 ReadContainerFile 产物读取的当前行为符合文档化预期（退化不阻断主流程）。"
     expected: "ReadContainerFile 返回空+warning，任务仍按 exitCode 判 completed；HITL answer 在 k8s 为已知限制（需 task HTTP server 或 RWX 共享卷），核心 dispatch/wait/logs/cleanup 不依赖它。"
     why_human: "属计划 T-64-03/T-64-07 显式 accept 的已知限制，需人工确认实际运行表现与文档一致，不计为本阶段 gap。"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 64: runner k8s Job executor Verification Report

@@ -5,15 +5,22 @@ status: human_needed
 score: 35/35 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "在生产实例 friday.yc345.tv 执行 `cd server && uv run python manage.py measure_repo_index_stats --json --top 20 --verify-cosine`，把输出回填 105-MEASUREMENTS.md §1 延迟表与 §2 N_r 分布占位表"
     expected: "分位数（p50/p90/p99/max/median）与 top-20 倾斜表落盘；--verify-cosine 打印 dense-only 查询耗时与余弦 score 样例（自查询 top-1 ≈ 1.0）"
     why_human: "autonomous 模式无生产实例访问；本地开发库无 259 仓真实索引，本地结果按纪律不得回填（RESEARCH Pitfall 8）。此为 105-02-SUMMARY 显式登记的 deferred 人工步骤，Phase 106 常数定版（N̄/b、MaxP 口径）依赖此数据"
+
   - test: "从生产会话 ccd817d9 导出「高三提分专项」需求原文与真实 Stage 0 命中数值，替换 golden_main.json 中 gk-001 的合成版本，然后 GENERATE_GOLDEN=1 重建 baseline 并 review 逐例 diff"
     expected: "gk-001 变为真实生产样本；baseline 重建后门禁仍绿（或 diff 经人工确认）"
     why_human: "生产数据导出需要人工操作与访问权限；105-04-SUMMARY「待人工补充事项」显式登记"
+
   - test: "浏览器中打开含路由结果的会话，展开任一候选的「分数分解」，目视核对：明细行中文标签/3 位小数 font-mono/分隔线/合计行，confidence Badge 的 Tooltip 文案，以及候选行整体视觉与改动前一致（视觉零漂移）"
     expected: "展开区符合 105-UI-SPEC.md 契约；无 breakdown 的候选行与现状逐像素一致；无新增颜色/字号漂移"
     why_human: "视觉外观与逐像素一致性无法程序化验证；组件行为已有 vitest 10 用例 + vue-tsc 守护，仅剩观感确认"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 105: 编排解锁与评估标尺 验证报告

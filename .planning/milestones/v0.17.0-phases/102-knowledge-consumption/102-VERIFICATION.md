@@ -5,9 +5,14 @@ status: human_needed
 score: 4/4 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "真实 Qdrant 环境端到端：IDE 调 report_project_state 上报 API 清单后，用 search_project_context 检索该 API 路径关键词"
     expected: "命中 STATE 文档 chunk，结果正文含「METHOD path — status」API 清单行"
     why_human: "CI 无 Qdrant，自动化测试的诚实边界是「物化内容包含 API 清单行」这一确定性环节（102-02-SUMMARY 明示）；向量入库→检索命中需真实向量库验证"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 102: 知识消费面与对外契约 Verification Report

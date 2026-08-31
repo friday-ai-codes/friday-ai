@@ -8,12 +8,18 @@ re_verification:
   previous_status: null
   previous_score: null
 human_verification:
+
   - test: "用真实飞书开放平台凭证（多租户，如 acme）经 feishu_document normalizer 摄取真实 PRD/技术方案 docx"
     expected: "Document/DocumentVersion 落正文快照，feishu_tenant 正确派生，REFERENCES 边连真实 work_item；多租户 doc client（开放平台 token，与项目 plugin token 不同域）取材成功"
     why_human: "需真实飞书开放平台凭证 + 多租户域；自动化测试全程 mock get_document_content / doc client，无法验证真实多租户端点正确性（CONTEXT Deferred: human-UAT）"
+
   - test: "internal_generated 文档（上线说明 / SDD spec）的实际产出 + writeback 回写飞书"
     expected: "内部生成文档经 Document(source_kind=internal_generated, writeback_allowed=True) 路径产出并回写"
     why_human: "本 phase 仅立模型字段位（writeback_allowed / internal_generated），实际产出是 v0.7+ 里程碑，无实现可验证（CONTEXT Deferred）"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 30: Document + REFERENCES 边 Verification Report

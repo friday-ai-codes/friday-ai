@@ -3,6 +3,8 @@
 执行 62-01 时发现、但**不属于本 plan 范围**（SCOPE BOUNDARY：仅修复本任务改动直接引发的问题）的预存问题，记录待后续处理：
 
 ## 1. `test_plan_session_inv6_guard.py::test_inv6_no_bypass_plan_session_write` 预存失败（误报）
+- status: acknowledged
+
 
 - **状态**：执行 62-01 前即失败（与本 plan 改动无关，非本 plan 触改文件）。
 - **根因**：INV-6 守护正则 `\bPlanSession\s*\(`（`tests/delivery/test_plan_session_inv6_guard.py`）误命中**中文注释**——`server/chat/conversation_service.py:1922`：

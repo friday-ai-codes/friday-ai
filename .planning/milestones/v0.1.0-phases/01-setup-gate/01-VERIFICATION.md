@@ -5,9 +5,14 @@ status: human_needed
 score: 4/4 must-haves verified
 overrides_applied: 0
 human_verification:
+
   - test: "全新部署 E2E 浏览器重定向测试：启动无 superuser 的后端实例，访问任意非 /setup 页面"
     expected: "浏览器自动跳转到 /setup，显示「首次设置」向导界面；完成设置后跳转到 /login；再次访问 /setup 被重定向到 /login"
     why_human: "路由守卫逻辑已通过单元断言验证，但完整 E2E 流程（前端 fetch 到后端 + 路由跳转渲染）需要真实浏览器环境；01-VALIDATION.md 已登记此 Manual-Only 条目"
+audit_acknowledged:
+  milestone: v0.25.0
+  at: 2026-08-31
+  status: human_needed
 ---
 
 # Phase 01: Setup Gate Verification Report
@@ -119,6 +124,7 @@ Step 7c: SKIPPED（本阶段无 `scripts/*/tests/probe-*.sh` 文件；功能验�
 
 **Test:** 在本地启动后端（空 DB，无 superuser），然后启动前端（`pnpm dev`），以浏览器访问 `http://localhost:5173/` 或任意受保护页面（如 `/settings`）
 **Expected:**
+
 1. 页面自动跳转到 `http://localhost:5173/setup`，显示「首次设置」向导界面（标题「首次设置」，副标题显示正确，表单可填写）
 2. 填写用户名/密码/确认密码并提交，等待 201 响应后自动跳转 `/login`
 3. 登录后再次访问 `/setup` → 自动跳转到 `/login`（向导不再出现）
