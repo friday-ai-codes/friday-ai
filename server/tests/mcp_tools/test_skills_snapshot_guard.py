@@ -150,6 +150,36 @@ def test_friday_solution_documents_canonical_blueprint_controller() -> None:
     assert not missing, f"friday-solution canonical blueprint 协议不完整：{missing}"
 
 
+def test_friday_solution_separates_project_space_team_route_and_research_roles() -> None:
+    """技术方案控制器不得再从 Space 猜 Project/Team，或由 route 预判 direct。"""
+    solution_dir = REPO_ROOT / "skills" / "skills" / "friday-solution"
+    documents = (
+        solution_dir / "SKILL.md",
+        solution_dir / "references" / "http-fallback.md",
+    )
+    required_invariants = {
+        "Space-scoped unbound blueprint",
+        "不得仅因 Project 缺失而阻断",
+        "不能把 Space 全仓当 Team",
+        "Team 缺失或存在歧义时",
+        "PRD、feature list、测试 case、飞书字段、技术文档与显式仓库名",
+        "突破 Top-N 候选预算",
+        "route 阶段只产 candidate",
+        "逐仓 research 决定",
+        "具体 file/API/model 拟修改位置",
+        "`unsuitable` 必须归为 `irrelevant`",
+    }
+
+    missing: dict[str, list[str]] = {}
+    for document in documents:
+        text = " ".join(document.read_text(encoding="utf-8").split())
+        absent = sorted(term for term in required_invariants if term not in text)
+        if absent:
+            missing[str(document.relative_to(REPO_ROOT))] = absent
+
+    assert not missing, f"friday-solution 身份、范围与职责边界契约不完整：{missing}"
+
+
 def test_friday_solution_cancelled_orphan_is_strictly_read_only() -> None:
     """cancelled/orphan 只能对账，不能复活 Issue 或推进 Friday 状态机。"""
     solution_dir = REPO_ROOT / "skills" / "skills" / "friday-solution"
