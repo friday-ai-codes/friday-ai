@@ -142,7 +142,9 @@ def _patch_delegate_pipeline(
     async def _fake_adrive(_engine: Any, _session: Any, **_kwargs: Any) -> ConvergenceSession:
         return session
 
-    monkeypatch.setattr("services.process_runtime.start_orchestration", _fake_start)
+    monkeypatch.setattr(
+        "services.process_runtime.entrypoint.start_blueprint_orchestration", _fake_start
+    )
     monkeypatch.setattr(
         "services.process_runtime.entrypoint.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
@@ -254,7 +256,9 @@ async def test_delegate_aggregates_orchestration_model_usage(
         )
         return session
 
-    monkeypatch.setattr("services.process_runtime.start_orchestration", _fake_start)
+    monkeypatch.setattr(
+        "services.process_runtime.entrypoint.start_blueprint_orchestration", _fake_start
+    )
     monkeypatch.setattr(
         "services.process_runtime.entrypoint.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
@@ -282,7 +286,7 @@ async def test_delegate_guards_unexpected_exception_as_failed(
     async def _boom(*_args: Any, **_kwargs: Any) -> Any:
         raise RuntimeError("orchestration backend down")
 
-    monkeypatch.setattr("services.process_runtime.start_orchestration", _boom)
+    monkeypatch.setattr("services.process_runtime.entrypoint.start_blueprint_orchestration", _boom)
     monkeypatch.setattr(
         "services.process_runtime.entrypoint.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
@@ -490,9 +494,12 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     assert duplicate.json()["technical_plan_id"] == body["technical_plan_id"]
     assert duplicate.json()["idempotency_state"] == "reused"
     assert captured["call_count"] == 1
-    assert McpWorkItemTechnicalPlan.objects.filter(
-        idempotency_key="test:work-item-77:context-v1"
-    ).count() == 1
+    assert (
+        McpWorkItemTechnicalPlan.objects.filter(
+            idempotency_key="test:work-item-77:context-v1"
+        ).count()
+        == 1
+    )
 
 
 def test_work_item_text_preserves_newlines_inside_structured_fields() -> None:
@@ -581,9 +588,10 @@ async def test_resumed_blueprint_finalizes_original_reservation_and_retry_reuses
         ConvergenceSession,
         ConvergenceSessionEntrypoint,
         ConvergenceSessionStatus,
+        WorkItem,
     )
     from delivery.services import ArtifactService
-    from initiatives.models import Project
+    from initiatives.models import Project, ProjectWorkItemLink
     from mcp_tools.technical_plan_service import (
         _technical_plan_output_from_record,
         areconcile_blueprint_reservation,
@@ -596,6 +604,14 @@ async def test_resumed_blueprint_finalizes_original_reservation_and_retry_reuses
         name="高三提分专项",
         feishu_project_key=project.feishu_project_key,
     )
+    work_item = await WorkItem.objects.acreate(
+        space=project,
+        feishu_project_key=context.feishu_project_key,
+        work_item_type=context.work_item_type,
+        work_item_id=context.work_item_id,
+        title="高三提分专项",
+    )
+    await ProjectWorkItemLink.objects.acreate(project=blueprint_project, work_item=work_item)
     reservation = await McpWorkItemTechnicalPlan.objects.acreate(
         run=context.run,
         context=context,
@@ -628,12 +644,8 @@ async def test_resumed_blueprint_finalizes_original_reservation_and_retry_reuses
         stage_state={"decomposition": {"project_id": str(blueprint_project.id)}},
     )
 
-    first = await areconcile_blueprint_reservation(
-        session, technical_plan_id=str(reservation.id)
-    )
-    second = await areconcile_blueprint_reservation(
-        session, technical_plan_id=str(reservation.id)
-    )
+    first = await areconcile_blueprint_reservation(session, technical_plan_id=str(reservation.id))
+    second = await areconcile_blueprint_reservation(session, technical_plan_id=str(reservation.id))
 
     await reservation.arefresh_from_db()
     output = _technical_plan_output_from_record(reservation, idempotency_state="reused")
@@ -643,9 +655,10 @@ async def test_resumed_blueprint_finalizes_original_reservation_and_retry_reuses
     assert reservation.retry_state["failed_stage"] == "blueprint_pending"
     assert output["technical_plan_id"] == str(reservation.id)
     assert output["blueprint_artifact_id"] == str(artifact.id)
-    assert await McpWorkItemTechnicalPlan.objects.filter(
-        idempotency_key="resume-finalize-1"
-    ).acount() == 1
+    assert (
+        await McpWorkItemTechnicalPlan.objects.filter(idempotency_key="resume-finalize-1").acount()
+        == 1
+    )
 
 
 def test_create_feishu_technical_plan_partial_when_orchestration_suspended(
@@ -760,18 +773,6 @@ async def test_mcp_sync_research_reaches_done_via_real_delegate(
     assert refreshed.current_artifact_version_id is not None
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 116-REVIEW MJ-03：`DelegateResult.error_detail` 必须被消费
-#
-# 116-03 把中性 detail 一路送到了 delegate 边界，但 `technical_plan_service` 的 failed
-# 分支把它整个丢掉了：调用方看到的是「编排未产出 canonical 方案」+ `retryable: True`
-# —— 一句**错的原因**，外加对一次**确定性**失败的错误重试建议。而且 `error` 只落
-# `McpWorkItemTechnicalPlan` 行、不进响应体 ⇒ agent 读到的响应里一个字的解释都没有。
-# ═══════════════════════════════════════════════════════════════════════════
-
-_NEUTRAL_PROJECT_DETAIL = "无法确定该需求所属的项目，请在项目空间内发起或补全项目信息"
-
-
 def _switch_mcp_to_blueprint() -> None:
     import json as _json
 
@@ -831,17 +832,13 @@ def _post_plan(client: APIClient, context: McpWorkItemContext, repo_id: str) -> 
 
 
 @pytest.mark.django_db(transaction=True)
-def test_blueprint_intake_rejection_surfaces_the_neutral_detail_and_is_not_retryable(
+def test_unbound_blueprint_reaches_team_clarification(
     mcp_client: tuple[APIClient, str],
     project,
     indexed_repository,
     _clear_blueprint_settings,
 ) -> None:
-    """⭐ MJ-03 头号断言：mcp 开关开 + 工作项 Space 下无 Project ⇒ 中性 detail 逐字回显。
-
-    这是**确定性**失败（Space→Project 换算不出来，重试一百次结果一样）⇒
-    ``retryable`` 必须是 ``False``，``failed_stage`` 必须指向真实失败环节。
-    """
+    """MCP 无 Project 时保留 Space/caller scope，并在缺 Team 处可见暂停。"""
     _switch_mcp_to_blueprint()
     context = _make_context(project)  # 该 Space 下没有任何 initiatives.Project
 
@@ -849,21 +846,10 @@ def test_blueprint_intake_rejection_surfaces_the_neutral_detail_and_is_not_retry
 
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "failed"
-    # ① 中性文案逐字回显（⛔ 不再被「编排未产出 canonical 方案」盖掉）
-    assert body["error"] == _NEUTRAL_PROJECT_DETAIL
-    assert body["error_stage"] == "blueprint_intake"
-    # ② 确定性失败 ⛔ 不诱导重试
-    assert body["retry_state"]["retryable"] is False
-    assert body["retry_state"]["failed_stage"] == "blueprint_intake"
-    # ③ 中性纪律：⛔ 不含内部路径 / 异常原文 / 内部标识
-    assert "/" not in body["error"]
-    assert "Traceback" not in body["error"]
-    assert "BlueprintIntakeRejected" not in body["error"]
-    # ④ 落库行与响应体口径一致（⛔ 不再是「库里一句、响应里没有」）
-    artifact = McpWorkItemTechnicalPlan.objects.get(id=body["technical_plan_id"])
-    assert artifact.error == _NEUTRAL_PROJECT_DETAIL
-    assert artifact.error_stage == "blueprint_intake"
+    assert body["status"] == "partial"
+    assert body["blueprint_artifact_id"]
+    assert body["retry_state"]["retryable"] is True
+    assert body["retry_state"]["failed_stage"] == "orchestration_pending"
 
 
 @pytest.mark.django_db(transaction=True)

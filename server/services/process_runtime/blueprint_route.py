@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import structlog
@@ -403,6 +404,98 @@ def _collect_query_terms(requirement_spec: dict) -> list[str]:
     return terms
 
 
+def _context_texts(value: Any, *, limit: int = 80) -> list[str]:
+    """把已持久化上下文压成有界文本；跳过凭证/原始响应等敏感键。"""
+    sensitive_markers = {
+        "authorization",
+        "credential",
+        "password",
+        "raw_response",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+    }
+    texts: list[str] = []
+
+    def walk(item: Any, key: str = "") -> None:
+        normalized_key = key.casefold().replace("-", "_")
+        if len(texts) >= limit or any(marker in normalized_key for marker in sensitive_markers):
+            return
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                texts.append(text[:1000])
+        elif isinstance(item, Mapping):
+            for child_key, child in item.items():
+                walk(child, str(child_key))
+        elif isinstance(item, Sequence) and not isinstance(item, (str, bytes)):
+            for child in item:
+                walk(child, key)
+
+    walk(value)
+    return list(dict.fromkeys(texts))
+
+
+async def _aload_route_context(session: Any) -> list[dict[str, Any]]:
+    """汇聚带来源/置信度的软路由上下文，不把相似引用升级成 hard scope。"""
+    state = getattr(session, "stage_state", None) or {}
+    decomposition = state.get("decomposition") if isinstance(state, dict) else {}
+    decomposition = decomposition if isinstance(decomposition, dict) else {}
+    entries: list[dict[str, Any]] = []
+
+    def append(source_type: str, value: Any, confidence: str) -> None:
+        texts = _context_texts(value)
+        if texts:
+            entries.append(
+                {
+                    "source_type": source_type,
+                    "confidence": confidence,
+                    "hard_constraint": False,
+                    "texts": texts,
+                }
+            )
+
+    append("feature_meta", decomposition.get("feature_meta"), "trusted")
+    append("extra_evidence", decomposition.get("extra_evidence"), "reference")
+
+    reservation_id = str(decomposition.get("mcp_technical_plan_id") or "")
+    if reservation_id:
+        try:
+            from mcp_tools.models import McpWorkItemTechnicalPlan
+
+            reservation = (
+                await McpWorkItemTechnicalPlan.objects.select_related("context")
+                .filter(id=reservation_id)
+                .afirst()
+            )
+            context = getattr(reservation, "context", None)
+            if context is not None:
+                append(
+                    "work_item_snapshot",
+                    {
+                        "name": context.name,
+                        "description": context.description,
+                        "fields": context.fields,
+                        "relations": context.relations,
+                        "context": context.context,
+                    },
+                    "trusted",
+                )
+                append("technical_docs", context.documents, "trusted")
+                append("test_cases", context.comments, "reference")
+        except Exception as exc:  # noqa: BLE001 — 上下文增强 best-effort
+            from common.logging import redact_secrets_in_text
+
+            logger.warning(
+                "blueprint_route_context_load_failed",
+                category="sampling",
+                component="process_runtime",
+                error=redact_secrets_in_text(str(exc)),
+            )
+    return entries
+
+
 def _resolve_dominant_intent(requirement_spec: dict) -> str:
     """主导 intent：单功能点取其 intent；多功能点取多数；**平票取保守的 brownfield**。
 
@@ -483,9 +576,7 @@ def _extract_team_context(session) -> tuple[str, str, str]:
                 continue
             project_id = project_id or str(holder.get("project_id") or "")
             space_id = space_id or str(holder.get("space_id") or "")
-            team_id = team_id or str(
-                holder.get("team_id") or holder.get("primary_team") or ""
-            )
+            team_id = team_id or str(holder.get("team_id") or holder.get("primary_team") or "")
     return project_id, space_id, team_id
 
 
@@ -662,6 +753,13 @@ class BlueprintRouteAdapter:
         excluded = {str(rid) for rid in (exclude_repository_ids or set()) if str(rid or "")}
         requirement_spec = await self._aresolve_requirement_spec(session)
         query_terms = _collect_query_terms(requirement_spec)
+        route_context = await _aload_route_context(session)
+        query_terms.extend(
+            text
+            for entry in route_context
+            for text in entry.get("texts", [])
+            if isinstance(text, str)
+        )
         # 节点重跑的操作员补充指令（quick 260806）：拼进路由 query，参与能力树检索与
         # 章程/历史命中判定——「带着这段话重新路由」的落点。无指令时零扰动。
         from services.process_runtime.blueprint_stage_rerun import operator_instruction
@@ -750,9 +848,12 @@ class BlueprintRouteAdapter:
             query=query,
             query_terms=query_terms,
             team_core=repository_ids,
+            explicit_repository_ids=self._explicit_repository_ids(session),
         )
         shortlist_payload = mid["shortlist"]
         shortlist_ids = list(mid["shortlist_ids"])
+        shortlist_signal_evidence = dict(mid.get("signal_evidence") or {})
+        shortlist_router_version = str(mid.get("router_version") or "v2")
         # 后续 V2/融合硬限制在 shortlist（不得逃逸到 team 外/全库）
         repository_ids = shortlist_ids or repository_ids
 
@@ -781,14 +882,17 @@ class BlueprintRouteAdapter:
         hard_scope_set = set(hard_scope)
         # fail-soft：placement 失败不回退全库，保留 shortlist/hard_scope 收窄
         repository_ids = hard_scope or repository_ids
-        shortlist_set = set(shortlist_ids) | hard_scope_set
 
         raw_candidates: list[dict] = self._raw_candidates_from_placements(
             placement_funnel.get("placements") or [],
             hard_scope=hard_scope_set,
             excluded=excluded,
         )
-        router_version = "v2"
+        for raw in raw_candidates:
+            signal = shortlist_signal_evidence.get(raw["repository_id"])
+            if signal:
+                raw.update(signal)
+        router_version = shortlist_router_version
         # V2 auto_selected 仅作信号；最终值由发布门覆盖（下方）
         auto_selected = False
         # block / needs_human_review：禁止静默全库 V2 回填
@@ -812,10 +916,7 @@ class BlueprintRouteAdapter:
                 for c in getattr(result, "candidates", []) or []
                 if str(getattr(c, "repo_id", "") or "")
                 and str(getattr(c, "repo_id", "")) not in excluded
-                and (
-                    not hard_scope_set
-                    or str(getattr(c, "repo_id", "")) in hard_scope_set
-                )
+                and (not hard_scope_set or str(getattr(c, "repo_id", "")) in hard_scope_set)
             ]
 
         supplements = await self._collect_supplements(
@@ -861,9 +962,7 @@ class BlueprintRouteAdapter:
                     "reflection": reflection_payload,
                     "hard_scope": list(hard_scope),
                     "placements": list(placement_funnel.get("placements") or []),
-                    "placement_unit_count": int(
-                        placement_funnel.get("placement_unit_count") or 0
-                    ),
+                    "placement_unit_count": int(placement_funnel.get("placement_unit_count") or 0),
                     "shortlist": shortlist_payload,
                     "shortlist_count": len(shortlist_ids),
                     "team_core": list(team_gate.get("team_core") or []),
@@ -886,9 +985,7 @@ class BlueprintRouteAdapter:
         history = await self._ascore_history(
             query=query, candidate_ids=candidate_ids, session=session
         )
-        module_by_repo = await self._aload_module_summaries(
-            candidate_ids, query=query
-        )
+        module_by_repo = await self._aload_module_summaries(candidate_ids, query=query)
 
         vector = _weights_for(weights, intent)
         citations: list[dict] = []
@@ -943,7 +1040,7 @@ class BlueprintRouteAdapter:
         candidates.sort(key=lambda c: (-c["total"], c["repository_id"]))
         unjustified_count = await self._apply_boundary_overrides(candidates)
         for candidate in candidates:
-            candidate["role_suggestion"] = _role_suggestion(candidate)
+            candidate["role_suggestion"] = "candidate"
 
         summary = {
             "router_version": router_version,
@@ -954,6 +1051,7 @@ class BlueprintRouteAdapter:
             "unjustified_boundary_hit_count": unjustified_count,
             "candidates": candidates,
             "citations": citations,
+            "route_context": route_context,
             "status": "ok",
             "team_core": list(team_gate.get("team_core") or []),
             "team_core_count": len(list(team_gate.get("team_core") or [])),
@@ -965,9 +1063,7 @@ class BlueprintRouteAdapter:
             "placement_unit_count": int(placement_funnel.get("placement_unit_count") or 0),
             "placements": list(placement_funnel.get("placements") or []),
             "hard_scope": list(hard_scope),
-            "placement_degrade_reasons": list(
-                placement_funnel.get("degrade_reasons") or []
-            ),
+            "placement_degrade_reasons": list(placement_funnel.get("degrade_reasons") or []),
             "funnel_gates": funnel_gates_payload,
             "publish_mode": publish_mode,
             "reflection": reflection_payload,
@@ -1064,9 +1160,7 @@ class BlueprintRouteAdapter:
             "membership": dict(team_gate.get("membership") or {}),
         }
         if not team_payload["membership"]:
-            team_payload["membership"] = {
-                str(r): "team_core" for r in team_payload["team_core"]
-            }
+            team_payload["membership"] = {str(r): "team_core" for r in team_payload["team_core"]}
 
         report = evaluate_funnel_gates(
             team=team_payload,
@@ -1087,9 +1181,7 @@ class BlueprintRouteAdapter:
                 repo_ids = list(kwargs.get("repository_ids") or scope)
                 if not repo_ids:
                     repo_ids = list(scope) or list(shortlist_ids or [])
-                team_safe = [
-                    rid for rid in (list(shortlist_ids or []) + list(repo_ids)) if rid
-                ]
+                team_safe = [rid for rid in (list(shortlist_ids or []) + list(repo_ids)) if rid]
                 fixed: list[dict] = []
                 for p in kwargs.get("placements") or placements:
                     p = dict(p)
@@ -1100,15 +1192,15 @@ class BlueprintRouteAdapter:
                             p["hard_scope"] = list(repo_ids)
                         primary = str(p.get("primary_repo") or "").strip()
                         allowed = set(p.get("hard_scope") or repo_ids)
-                        safe_fallbacks = [
-                            rid for rid in team_safe if rid in allowed
-                        ] or list(allowed)
+                        safe_fallbacks = [rid for rid in team_safe if rid in allowed] or list(
+                            allowed
+                        )
                         if primary and primary not in allowed:
                             if safe_fallbacks:
                                 p["primary_repo"] = safe_fallbacks[0]
-                                p["open_questions"] = list(
-                                    p.get("open_questions") or []
-                                ) + ["reflection_primary_clamped"]
+                                p["open_questions"] = list(p.get("open_questions") or []) + [
+                                    "reflection_primary_clamped"
+                                ]
                     fixed.append(p)
                 return {"placements": fixed, "repository_ids": list(repo_ids)}
 
@@ -1220,13 +1312,13 @@ class BlueprintRouteAdapter:
         router,
     ) -> dict:
         """Phase 130：build_placement_units → place_units（fail-soft，不回退全库）。"""
-        from services.process_runtime.placement_units import (
-            build_placement_units,
-            placement_units_to_dict,
-        )
         from services.process_runtime.place_units import (
             place_units,
             placement_result_to_dict,
+        )
+        from services.process_runtime.placement_units import (
+            build_placement_units,
+            placement_units_to_dict,
         )
 
         empty = {
@@ -1295,14 +1387,10 @@ class BlueprintRouteAdapter:
                         {
                             "unit_id": getattr(p, "unit_id", ""),
                             "primary_repo": getattr(p, "primary_repo", None),
-                            "supporting_repos": list(
-                                getattr(p, "supporting_repos", []) or []
-                            ),
+                            "supporting_repos": list(getattr(p, "supporting_repos", []) or []),
                             "confidence": getattr(p, "confidence", ""),
                             "evidence": list(getattr(p, "evidence", []) or []),
-                            "open_questions": list(
-                                getattr(p, "open_questions", []) or []
-                            ),
+                            "open_questions": list(getattr(p, "open_questions", []) or []),
                             "scores": dict(getattr(p, "scores", {}) or {}),
                         }
                     )
@@ -1329,6 +1417,7 @@ class BlueprintRouteAdapter:
         query: str,
         query_terms: list[str],
         team_core: list[str],
+        explicit_repository_ids: list[str] | None = None,
     ) -> dict:
         """Phase 129 中段：history prior → shortlist。
 
@@ -1359,6 +1448,8 @@ class BlueprintRouteAdapter:
         # 信号：先在 team_core 上取 V2 粗分（不改 V2 内核）；失败则空分
         capability_scores: dict[str, float] = {}
         activity_scores: dict[str, float] = {}
+        signal_evidence: dict[str, dict[str, Any]] = {}
+        signal_router_version = "v2"
         try:
             router = self._resolve_router()
             signal_result = await router.route(
@@ -1367,6 +1458,7 @@ class BlueprintRouteAdapter:
                 repository_ids=team_ids,
                 use_llm=False,
             )
+            signal_router_version = str(getattr(signal_result, "router_version", "") or "v2")
             for c in getattr(signal_result, "candidates", []) or []:
                 rid = str(getattr(c, "repo_id", "") or "")
                 if not rid:
@@ -1374,6 +1466,11 @@ class BlueprintRouteAdapter:
                 score = float(getattr(c, "score", 0.0) or 0.0)
                 capability_scores[rid] = score
                 activity_scores[rid] = score
+                signal_evidence[rid] = {
+                    "confidence": str(getattr(c, "confidence", "") or ""),
+                    "reasoning": str(getattr(c, "reasoning", "") or ""),
+                    "matched_node_paths": list(getattr(c, "matched_node_paths", []) or []),
+                }
         except Exception as exc:  # noqa: BLE001
             from common.logging import redact_secrets_in_text
 
@@ -1407,7 +1504,16 @@ class BlueprintRouteAdapter:
                 component="process_runtime",
             )
 
-        force_ids = list(getattr(history_prior, "force_include_ids", None) or [])
+        # Top N 只是语义初筛预算；可信 Team、显式仓与历史证据必须可补回。
+        force_ids = list(
+            dict.fromkeys(
+                [
+                    *team_ids,
+                    *(explicit_repository_ids or []),
+                    *(getattr(history_prior, "force_include_ids", None) or []),
+                ]
+            )
+        )
         reason_map = dict(getattr(history_prior, "reasons_by_repo", None) or {})
         try:
             shortlist_result = await build_shortlist(
@@ -1441,6 +1547,8 @@ class BlueprintRouteAdapter:
             "shortlist": shortlist_repos,
             "shortlist_ids": shortlist_ids,
             "capability_scores": capability_scores,
+            "signal_evidence": signal_evidence,
+            "router_version": signal_router_version,
         }
 
     # ── 内部步骤（各自 best-effort，单个依赖失败不拖垮路由） ──────────────
@@ -1464,8 +1572,8 @@ class BlueprintRouteAdapter:
     def _pinned_summary(pinned: list[dict], *, intent: str, weights_used: dict) -> dict:
         """把固定绑定映射为 112-03 契约摘要（形状与自动路由逐键一致，下游零改动）。
 
-        绑定仓一律 ``confidence="high"`` / ``role_suggestion="direct"``（人工关联即
-        最高置信，全部深调研）；分量恒 ``router_base=1.0``、章程/历史 0（未参与打分，
+        绑定仓一律 ``confidence="high"`` / ``role_suggestion="candidate"``（人工关联即
+        最高候选置信，但仍由代码调研裁定角色）；分量恒 ``router_base=1.0``、章程/历史 0（未参与打分，
         breakdown 如实反映「没跑」而不是伪造分数）。
         """
         from services.process_runtime.repo_binding_pin import PINNED_ROUTER_VERSION
@@ -1488,7 +1596,7 @@ class BlueprintRouteAdapter:
                         ),
                     }
                 ),
-                "role_suggestion": "direct",
+                "role_suggestion": "candidate",
                 "pinned_branch": b["branch_name"],
             }
             for b in pinned
@@ -1631,7 +1739,10 @@ class BlueprintRouteAdapter:
     async def _aannotate_pin_team_membership(self, session, summary: dict) -> dict:
         """固定路由候选标注 team_membership（可解析时）。"""
         try:
-            from services.process_runtime.team_gate import annotate_team_membership, resolve_team_core
+            from services.process_runtime.team_gate import (
+                annotate_team_membership,
+                resolve_team_core,
+            )
 
             project_id, space_id, team_id = _extract_team_context(session)
             resolved = await resolve_team_core(
@@ -1708,9 +1819,9 @@ class BlueprintRouteAdapter:
 
             name_by_id = {
                 str(rid): str(name or "")
-                async for rid, name in Repository.objects.filter(
-                    id__in=missing_ids
-                ).values_list("id", "name")
+                async for rid, name in Repository.objects.filter(id__in=missing_ids).values_list(
+                    "id", "name"
+                )
             }
         except Exception as exc:  # noqa: BLE001 — 补名 best-effort，绝不阻断路由
             logger.warning(
@@ -1743,9 +1854,7 @@ class BlueprintRouteAdapter:
         try:
             from services.module_summary_signal import aload_module_summaries_for_repos
 
-            return await aload_module_summaries_for_repos(
-                candidate_ids, query=query
-            )
+            return await aload_module_summaries_for_repos(candidate_ids, query=query)
         except Exception as exc:  # noqa: BLE001 — 摘要读失败不阻断路由
             from common.logging import redact_secrets_in_text
 
@@ -2013,6 +2122,26 @@ class BlueprintRouteAdapter:
                 return project_repos
         return None
 
+    @staticmethod
+    def _explicit_repository_ids(session) -> list[str]:
+        """只读取用户显式 include_repos，不把 WorkItem Space 弱范围当强证据。"""
+        stage_state = getattr(session, "stage_state", None) or {}
+        if not isinstance(stage_state, dict):
+            return []
+        candidates = [
+            (stage_state.get("blueprint") or {}).get("include_repos")
+            if isinstance(stage_state.get("blueprint"), dict)
+            else None,
+            stage_state.get("include_repos"),
+            (stage_state.get("decomposition") or {}).get("include_repos")
+            if isinstance(stage_state.get("decomposition"), dict)
+            else None,
+        ]
+        for values in candidates:
+            if values:
+                return [str(value) for value in values if str(value or "").strip()]
+        return []
+
     @sync_to_async
     def _project_repository_ids(self, work_item_id) -> list[str] | None:
         """取 work_item 所属 space 的仓库 id（同步 ORM 经 sync_to_async，防裸 lazy-FK）。"""
@@ -2026,10 +2155,5 @@ class BlueprintRouteAdapter:
 
 
 def _role_suggestion(candidate: dict) -> str:
-    """路由期初判（契约表确定规则）：high confidence 或章程正分 → direct，否则 indirect。
-
-    保守方向是 `indirect`：不确定的仓走轻量合成而不是起容器深调研，代价更低。
-    """
-    if candidate["confidence"] == "high" or candidate["breakdown"]["charter_match"] > 0:
-        return "direct"
-    return "indirect"
+    """兼容旧调用点：route 只产 candidate，角色由逐仓代码调研裁定。"""
+    return "candidate"

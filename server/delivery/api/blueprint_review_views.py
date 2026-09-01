@@ -12,11 +12,9 @@
 - ``POST artifacts/<uuid>/blueprint-review/threads/<uuid>/resolve/`` —— finding 已修复
 - ``POST artifacts/<uuid>/blueprint-review/threads/<uuid>/dismiss/`` —— finding 误报忽略
 
-⭐ **授权判据不是「登录了」**（114-MJ-03）：``artifact_id`` 在 URL 里、是调用方可控的
-唯一范围约束，所以每个端点入口都过一道 :func:`_aassert_project_scope`——按蓝图自身
-``meta.project_id`` 反查项目并校验 ``ProjectMember``，**fail-closed**（读不到项目 id 一律
-400）、越权回**中性 404**（不泄露存在性）。没有这道闸，任意登录用户拿到一个 artifact
-UUID 就能确认/驳回/改写别人项目的蓝图——而「确认」与「改写正文」都是不可逆写动作。
+⭐ **授权判据不是「登录了」**（114-MJ-03）：Project-bound 蓝图按自身
+``meta.project_id`` 校验 ``ProjectMember``；未绑定 Project 的蓝图只允许创建者或
+``meta.space_id`` 对应的 ``SpaceMembership`` 成员访问。越权统一回**中性 404**。
 
 **为什么新建文件而不塞进 ``blueprint_gate_views.py``**：后者已有八个 View 与确认门专属
 helper，再塞语义不同的 View 会让「阶段 1 确认门」这个文件同时承担两个门的语义。URL 前缀
@@ -75,7 +73,7 @@ _COMPONENT = "blueprint_review_api"
 _ARTIFACT_MISSING_DETAIL = {"detail": "artifact 不存在"}
 _SESSION_MISSING_DETAIL = {"detail": "该 artifact 没有蓝图编排会话"}
 _THREAD_MISSING_DETAIL = {"detail": "线程不存在"}
-# 范围闸 fail-closed 文案（读不到 meta.project_id 一律拒，绝不放行）
+# Project id 非空但非法时 fail-closed；合法的 unbound 蓝图走 creator/Space 授权。
 _SCOPE_UNRESOLVED_DETAIL = {"detail": "无法确定该蓝图的项目范围：meta.project_id 缺失或非法"}
 
 # service `status` → 中文 detail（键对齐 blueprint_review_action 与 114-04 的取值）
@@ -257,6 +255,14 @@ async def _ais_project_member(user: Any, project_id: str) -> bool:
     return await ProjectMember.objects.filter(project_id=project_id, user=user).aexists()
 
 
+async def _ais_space_member(user: Any, space_id: str) -> bool:
+    if not getattr(user, "is_authenticated", False) or not _is_uuid(space_id):
+        return False
+    from permissions.models import SpaceMembership
+
+    return await SpaceMembership.objects.filter(space_id=space_id, user=user).aexists()
+
+
 async def _aassert_project_scope(request: Any, artifact: Any) -> Response | None:
     """七端点共用的范围闸：不在该蓝图所属项目内一律拒（``None`` = 放行）。
 
@@ -270,16 +276,27 @@ async def _aassert_project_scope(request: Any, artifact: Any) -> Response | None
 
     两条纪律：
 
-    - ⚠️ **fail-closed**：读不到 ``meta.project_id``（缺失 / 非 UUID）一律 **400**，绝不
-      放行。否则等于把闸门建在「蓝图恰好写了 project_id」这个可缺失字段上。
+    - ⚠️ **fail-closed**：非空但非法的 ``meta.project_id`` 一律 **400**；空值只允许
+      creator 或合法 ``SpaceMembership`` 通过。
     - **越权回中性 404**（不是 403）：与本模块既有的 ``_ARTIFACT_MISSING_DETAIL`` 同口径
       ——403 会让未授权者靠状态码枚举出哪些 artifact_id 存在。
 
-    superuser 直通（与 ``permissions.api_permissions.IsProjectMember`` 同口径）。
+    superuser 直通。Project-bound 蓝图始终要求 ProjectMember；creator/Space 仅作为
+    ``project_id`` 为空时的授权来源，不能绕过已有 Project 的成员校验。
     """
     if getattr(request.user, "is_superuser", False):
         return None
     project_id = await _ablueprint_project_id(artifact)
+    if not project_id:
+        user_id = str(getattr(request.user, "id", "") or "")
+        if user_id and user_id == str(getattr(artifact, "created_by_user_id", "") or ""):
+            return None
+        content = await _alatest_content(artifact)
+        meta = content.get("meta") if isinstance(content.get("meta"), dict) else {}
+        space_id = str((meta or {}).get("space_id") or "")
+        if await _ais_space_member(request.user, space_id):
+            return None
+        return Response(_ARTIFACT_MISSING_DETAIL, status=status.HTTP_404_NOT_FOUND)
     if not _is_uuid(project_id):
         return Response(_SCOPE_UNRESOLVED_DETAIL, status=status.HTTP_400_BAD_REQUEST)
     if not await _ais_project_member(request.user, project_id):

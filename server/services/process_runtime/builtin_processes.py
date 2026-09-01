@@ -410,10 +410,8 @@ async def _h_bp_intake(session: Any, engine: Any) -> StageOutcome:
     **幂等**：会话已有 ``current_artifact_version_id``（重入 / 重放）⇒ 不重复建 artifact，
     直接把既有指针原样带回。
 
-    ⛔ **本 handler 不抛**：engine 的通用 ``except`` 会把会话落 FAILED、抹掉可诊断信息。
-    ``project_id`` 缺失（正常链路上不可能 —— ``start_blueprint_orchestration`` 已在建会话
-    **之前**挡住）时**不建 artifact**、只落一条 caller 事件并**不带指针**返回，随后
-    spec_gate 会因无版本而判需澄清 —— 那是正确的**可见**失败。
+    ``project_id`` 可为空：MCP/chat 未建立权威 Project 身份时仍创建骨架，并把
+    ``space_id`` 留作授权范围；Team gate 在责任团队不明确时负责可见澄清。
     """
     from services.process_runtime.blueprint_intake import aseed_blueprint_artifact
 
@@ -422,33 +420,22 @@ async def _h_bp_intake(session: Any, engine: Any) -> StageOutcome:
         return StageOutcome(event="intaken", current_artifact_version=existing)
 
     decomposition = (session.stage_state or {}).get("decomposition") or {}
-    initiated_by = str(getattr(session, "initiated_by_user_id", "") or "") or "system"
     project_id = str(decomposition.get("project_id") or "")
-    if project_id:
-        artifact = await aseed_blueprint_artifact(
-            session=session,
-            requirement_text=str(decomposition.get("requirement_text") or ""),
-            project_id=project_id,
-            title=str(decomposition.get("blueprint_title") or ""),
-            created_by_user_id=str(getattr(session, "initiated_by_user_id", "") or ""),
-        )
-        return StageOutcome(
-            event="intaken",
-            current_artifact_version=artifact.current_version_id,
-            # stage_state **只写自己的桶**（114-03 纪律：engine 顶层浅合并，写别人的桶会互相覆盖）。
-            stage_state_update={"intake": {"artifact_id": str(artifact.id)}},
-        )
-
-    logger.warning(
-        "blueprint_intake_missing_project",
-        category="caller",
-        component="process_runtime",
-        session_id=str(getattr(session, "id", "")),
-        reason="project_unresolved",
-        initiated_by_user_id=initiated_by,
+    space_id = str(decomposition.get("space_id") or "")
+    artifact = await aseed_blueprint_artifact(
+        session=session,
+        requirement_text=str(decomposition.get("requirement_text") or ""),
+        project_id=project_id,
+        title=str(decomposition.get("blueprint_title") or ""),
+        created_by_user_id=str(getattr(session, "initiated_by_user_id", "") or ""),
+        space_id=space_id,
     )
-    # ⛔ 不带指针：随后 spec_gate 因无版本判需澄清 —— 那是正确的**可见**失败。
-    return StageOutcome(event="intaken")
+    return StageOutcome(
+        event="intaken",
+        current_artifact_version=artifact.current_version_id,
+        # stage_state **只写自己的桶**（114-03 纪律：engine 顶层浅合并，写别人的桶会互相覆盖）。
+        stage_state_update={"intake": {"artifact_id": str(artifact.id)}},
+    )
 
 
 async def _h_bp_decompose(session: Any, engine: Any) -> StageOutcome:
@@ -638,7 +625,9 @@ async def _h_bp_repo_confirmation(session: Any, engine: Any) -> StageOutcome:
     result = await adapter.open_gate(session)
     result = result if isinstance(result, dict) else {}
     raw_event = str(result.get("event") or "")
-    event = raw_event if raw_event in {"confirmed", "research_required"} else "awaiting_confirmation"
+    event = (
+        raw_event if raw_event in {"confirmed", "research_required"} else "awaiting_confirmation"
+    )
     return StageOutcome(
         event=event,
         stage_state_update=result.get("stage_state") or None,

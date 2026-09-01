@@ -88,7 +88,10 @@ def _technical_plan_output_from_record(
     if isinstance(blueprint_extras, dict):
         # Keep the additive response seam explicit: when extras are empty the legacy payload is
         # byte-for-byte unchanged; when enabled only Friday-owned blueprint fields are added.
-        output = {**output, **blueprint_extras,}
+        output = {
+            **output,
+            **blueprint_extras,
+        }
     if artifact.idempotency_key:
         output.update(
             {
@@ -144,7 +147,11 @@ async def areconcile_blueprint_reservation(
         entry="mcp",
         work_item_context=reservation.context,
     )
-    if not blueprint_project_id or blueprint_project_id != expected_project_id:
+    blueprint_space_id = str((content.get("meta") or {}).get("space_id") or "")
+    expected_space_id = str(getattr(reservation.context, "space_id", "") or "")
+    if blueprint_project_id != expected_project_id or (
+        not blueprint_project_id and blueprint_space_id != expected_space_id
+    ):
         return {"reconciled": False, "reason": "project_identity_mismatch"}
     artifact_id = str(version.artifact_id)
     if reservation.blueprint_artifact_id:
@@ -164,7 +171,9 @@ async def areconcile_blueprint_reservation(
             "session_id": str(getattr(session, "id", "") or ""),
             "blueprint_extras": {
                 "blueprint_artifact_id": artifact_id,
-                "blueprint_status": str(getattr(version.artifact, "blueprint_status", "") or ""),
+                "blueprint_current_status": str(
+                    getattr(version.artifact, "blueprint_status", "") or ""
+                ),
             },
         }
     )

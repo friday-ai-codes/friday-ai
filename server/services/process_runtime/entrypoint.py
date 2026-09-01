@@ -368,17 +368,15 @@ async def start_blueprint_orchestration(
     共享一个可传错的开关，一次误传就把在途会话打去另一条 stage 图。两个函数的唯一实质
     差异是 ``create_session`` 的第一实参（``technical_blueprint`` vs ``technical_plan``）。
 
-    **(b) ⭐ ``project_id`` 的必填语义**：调用方须传**已解析好的**
-    ``initiatives.Project.id``；为空时本函数经 ``blueprint_intake.aresolve_project_id``
-    兜底解析（四条推导链的唯一收口），**仍解析不出即抛 ``BlueprintIntakeRejected``，
-    且此刻会话尚未建立**（``ConvergenceSession`` / ``Artifact`` 计数与调用前逐字相等）。
-    ⛔ 绝不落一份 ``meta.project_id`` 为空/为 Space id 的蓝图 —— 那份蓝图的**全部 20 个
-    端点恒 400、图谱恒不入、导出恒不可用**，且三条都「安静地什么都没发生」、没有补救入口。
+    **(b) ``project_id`` 的可选语义**：显式值必须经
+    ``blueprint_intake.aresolve_project_id`` 验证为真实 ``initiatives.Project.id``；
+    MCP 只接受唯一 ``ProjectWorkItemLink``，chat 只接受显式绑定。解析不出时保留空值，
+    同时把 Space 作为授权仓库宇宙写入 decomposition，后续 Team gate 可见澄清。
 
     **(c) 「非空才写键」纪律**（逐字沿用 ``start_orchestration:93-100`` 的五个 ``if``）：
     ``extra_evidence`` / ``mode`` / ``feature_segments`` / ``feature_meta`` 均**仅在非空时
     写键** —— 不提供时会话形态与既有入口逐字一致。⭐ 本函数**额外恒写一个键**
-    ``decomposition["project_id"]``：``_h_bp_intake`` 从那里取（handler 拿不到入口上下文）。
+    ``decomposition["project_id"]``：``_h_bp_intake`` 从那里取（允许为空；handler 拿不到入口上下文）。
 
     **(d) ``assumptions_tier``（116-REVIEW MJ-02）**：本次会话的 assumptions 档位
     （``strict`` / ``balanced`` / ``assume_more``），⭐ 这是 ``spec_gate`` 读的那个键
@@ -395,7 +393,12 @@ async def start_blueprint_orchestration(
     from services.process_runtime.blueprint_intake import aresolve_project_id
 
     resolved_project_id = str(project_id or "").strip()
-    if not resolved_project_id:
+    if resolved_project_id:
+        resolved_project_id = await aresolve_project_id(
+            entry="feature_list",
+            feature_meta={"project_id": resolved_project_id},
+        )
+    else:
         # 解析失败会抛 BlueprintIntakeRejected —— **发生在建会话之前**，零副作用。
         resolved_project_id = await aresolve_project_id(
             entry=str(entry_key or entrypoint or "unknown"),
@@ -411,6 +414,15 @@ async def start_blueprint_orchestration(
         # intake handler 的唯一 project_id 来源（handler 拿不到入口上下文）。
         "project_id": resolved_project_id,
     }
+    resolved_space_id = str(
+        getattr(work_item_context, "space_id", "")
+        or getattr(conversation, "space_id", "")
+        or getattr(space, "id", "")
+        or getattr(work_item, "space_id", "")
+        or ""
+    )
+    if resolved_space_id:
+        decomposition["space_id"] = resolved_space_id
     work_item_title = str(getattr(work_item, "title", "") or "").strip()
     if work_item_title:
         # 项目跟踪蓝图的标题属于工作项，不属于承载它的长期 Project。Project 只决定仓库与

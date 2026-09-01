@@ -270,36 +270,67 @@ async def test_seeded_project_id_is_queryable_via_project_member(django_user_mod
 # ══════════════════════════════════════════════════════════════════════════
 
 
-async def test_mcp_context_resolves_to_project_not_space() -> None:
-    """⑦ ⭐ MCP 变异靶：``work_item_context.space`` 是 **Space FK**，必须换算成 Project。
-
-    ``mcp_tools/technical_plan_service.py:488`` 把 ``space_id`` 当 ``"project_id"`` 键回给
-    调用方 —— 把本函数的 MCP 分支改成透传 ``space_id``，本用例立刻转红（实跑记录见
-    116-02-SUMMARY）。
-    """
+async def test_mcp_context_space_does_not_guess_project() -> None:
+    """MCP 的 Space 只是授权仓库宇宙，不得回退绑定其首个 Project。"""
     project = await _make_project()
     space = await sync_to_async(lambda: project.space)()
     context = _FakeWorkItemContext(space)
 
     resolved = await aresolve_project_id(entry="mcp", work_item_context=context)
 
-    assert resolved != str(space.id), "⛔ 透传 space_id 即落一份 20 个端点恒不可用的蓝图"
+    assert resolved == ""
+
+
+async def test_mcp_context_uses_unique_authoritative_work_item_link() -> None:
+    """同一 canonical WorkItem 只有一个 ProjectWorkItemLink 时可绑定该 Project。"""
+    from delivery.models import WorkItem
+    from initiatives.models import ProjectWorkItemLink
+
+    project = await _make_project()
+    space = await sync_to_async(lambda: project.space)()
+    work_item = await WorkItem.objects.acreate(
+        space=space,
+        feishu_project_key="pk",
+        work_item_type="story",
+        work_item_id=64,
+        title="AGE-64",
+    )
+    await ProjectWorkItemLink.objects.acreate(project=project, work_item=work_item)
+    context = _FakeWorkItemContext(space)
+    context.feishu_project_key = "pk"
+    context.work_item_type = "story"
+    context.work_item_id = 64
+
+    resolved = await aresolve_project_id(entry="mcp", work_item_context=context)
+
     assert resolved == _PROJECT_ID
-    assert await sync_to_async(_project_exists)(resolved)
 
 
-async def test_unresolvable_project_rejects_with_zero_side_effects() -> None:
-    """⑧ ⭐ 推不出 project_id ⇒ 抛且**零副作用**（三张表计数与调用前逐字相等）。"""
+def test_projectless_skeleton_is_valid_and_keeps_space_scope() -> None:
+    """未绑 Project 的蓝图仍是合法工件，并显式保存 Space 授权范围。"""
+    content = build_skeleton(
+        title="AGE-64",
+        project_id="",
+        space_id="44444444-4444-4444-4444-444444444444",
+        goal_text=_REQUIREMENT,
+    )
+
+    assert validate_blueprint(content) == (True, None)
+    assert content["meta"]["project_id"] == ""
+    assert content["meta"]["space_id"] == "44444444-4444-4444-4444-444444444444"
+
+
+async def test_chat_without_project_starts_unbound_session() -> None:
+    """非项目 chat 入口不猜 Project，也不因缺 Project 拒绝创建会话。"""
     before = await _counts()
 
-    with pytest.raises(BlueprintIntakeRejected) as excinfo:
-        await start_blueprint_orchestration(
-            ConvergenceSessionEntrypoint.CHAT, _REQUIREMENT, entry_key="chat"
-        )
+    session = await start_blueprint_orchestration(
+        ConvergenceSessionEntrypoint.CHAT, _REQUIREMENT, entry_key="chat"
+    )
 
-    assert excinfo.value.reason == "project_unresolved"
-    assert excinfo.value.detail and "/" not in excinfo.value.detail  # 中性文案，无内部路径
-    assert await _counts() == before
+    after = await _counts()
+    assert session.stage_state["decomposition"]["project_id"] == ""
+    assert after == (before[0] + 1, before[1], before[2])
 
 
 async def test_blueprint_with_space_id_as_project_id_is_unusable_downstream(

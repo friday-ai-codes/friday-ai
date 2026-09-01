@@ -47,9 +47,8 @@ class DelegateResult:
     - ``model_usage``：本次编排聚合的模型用量（WR-03，best-effort）。编排 adapters 经
       ``arecord_llm_usage`` 落用量行但不挂 MCP run，故 delegate 把本次驱动窗口内的 token/
       duration 聚合回传，由 MCP view 落到自身 run 维度，避免 token/成本归因回退（空则 ``{}``）。
-    - ``error_detail``（116-03，**纯追加、缺省空串**）：可直接回显给调用方的**中性**失败文案
-      （当前唯一来源是蓝图分支「推不出 ``meta.project_id`` ⇒ 拒绝发起」）。⛔ 不含内部路径 /
-      异常原文。既有调用方不读它 ⇒ 响应外形零破坏；把它接进 MCP 响应体归 **116-06**。
+    - ``error_detail``（116-03，**纯追加、缺省空串**）：兼容确定性 intake 拒绝时可直接
+      回显给调用方的中性失败文案；不含内部路径或异常原文。
     """
 
     session: Any
@@ -173,9 +172,9 @@ async def _amaybe_start_blueprint_session(
     的既有约定，且它进 ``ConvergenceSession.entrypoint`` 列、有既有消费方）；静态身份走
     ``entry_key="mcp"``。两者是两回事，⛔ 绝不互相代入。
 
-    ⭐ **``project_id`` 必过 ``aresolve_project_id``**（P-8）：⛔ 绝不把
-    ``work_item_context.space_id`` 当 project id 透传。推不出即抛 ``BlueprintIntakeRejected``
-    并**在建会话之前**中止（⛔ 不建 session、不建 artifact），由调用方映射成失败 delegate 结果。
+    ⭐ **``project_id`` 必过 ``aresolve_project_id``**（P-8）：绝不把
+    ``work_item_context.space_id`` 当 project id 透传。显式 Project 或唯一 WorkItem link
+    可建立身份；否则以 unbound Project + Space 授权范围继续到 Team 澄清。
 
     ⛔ **不透传 ``skip_clarification``**：蓝图链没有 ``clarify`` dep；旧链那条
     「MCP 单次同步入口跳过交互澄清」的 policy 在蓝图链无对应面，移植它等于原地复活
@@ -206,6 +205,7 @@ async def _amaybe_start_blueprint_session(
         extra_evidence=extra_evidence,
         project_id=project_id,
         entry_key="mcp",
+        work_item_context=work_item_context,
         assumptions_tier=assumptions_tier,
         technical_plan_id=technical_plan_id,
     )
@@ -233,12 +233,13 @@ async def delegate_process_runtime(
     summary），原样透传 ``start_orchestration`` 写入 stage_state，merge 阶段消费。
 
     ``work_item_context``（116-03，**纯追加、缺省 None**）：``McpWorkItemContext``。仅在
-    ``mcp`` 开关切到 ``technical_blueprint`` 时被读，用来推导 ``meta.project_id``。
+    ``mcp`` 开关切到 ``technical_blueprint`` 时被读，用来解析唯一 WorkItem link，并把
+    Space 保留为授权范围。
     ⭐ **``McpWorkItemContext.space`` 是 ``projects.Space`` FK 不是 Project id**（P-8）：
     ``technical_plan_service.py:488`` 把 ``space_id`` 当 ``"project_id"`` 键回给调用方，直接
     透传即落一份「20 个端点恒不可用、图谱恒不入、导出恒不可用」且**没有补救入口**的蓝图。
-    故推导一律经 ``blueprint_intake.aresolve_project_id``（内部过 ``_aresolve_project``），
-    ⛔ 本模块绝不自己把 ``context.space_id`` 当 project id 用。
+    故推导一律经 ``blueprint_intake.aresolve_project_id``，本模块绝不自己把
+    ``context.space_id`` 当 project id 用。
     ⚠️ 调用方接线（``technical_plan_service`` / ``views``）与 MCP 响应体追加三键归 **116-06**。
 
     ``assumptions_tier``（116-REVIEW MJ-02，**纯追加、缺省空串**）：本次会话的 assumptions
@@ -356,7 +357,10 @@ async def delegate_process_runtime(
         # 仅蓝图链可安全接现有 durable resume；旧 technical_plan 没有对应任务体，保持取消
         # 原语义。这里不内联重驱、不改 raw status，只把同一个 session 交给既有入队入口，
         # 并返回 partial 让外层完成同一幂等预留。恢复任务从 DB current_stage 原地续跑。
-        if session is None or str(getattr(session, "process_type", "") or "") != "technical_blueprint":
+        if (
+            session is None
+            or str(getattr(session, "process_type", "") or "") != "technical_blueprint"
+        ):
             raise
         handoff_started = time.perf_counter()
         initiated_by = str(getattr(session, "initiated_by_user_id", "") or "") or "system"
@@ -397,9 +401,7 @@ async def delegate_process_runtime(
         except Exception:  # noqa: BLE001 — 观测 best-effort
             pass
     except BlueprintIntakeRejected as exc:
-        # ⭐ 推不出 meta.project_id ⇒ **拒绝发起**（此刻 ⛔ 会话与 artifact 都尚未建立）。
-        # 回中性 detail：⛔ 不含内部路径 / 异常原文。⚠️ 这是**业务失败**，如实回 failed ——
-        # ⛔ 绝不吞成「空方案的 200」（Phase 115 MJ-04：best-effort 只适用于观测）。
+        # 兼容 workflow/feature-list intake 的确定性拒绝；中性 detail 不含内部路径/异常原文。
         try:
             logger.warning(
                 "mcp_plan_delegate_blueprint_rejected",

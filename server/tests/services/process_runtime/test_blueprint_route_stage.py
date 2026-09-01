@@ -25,7 +25,7 @@ from asgiref.sync import sync_to_async
 from delivery.models import ConvergenceSession, ConvergenceSessionEntrypoint
 from repositories.models import RepoCharter, Repository
 from services.process_runtime.blueprint_charter_match import score_charter_match
-from services.process_runtime.blueprint_route import BlueprintRouteAdapter
+from services.process_runtime.blueprint_route import BlueprintRouteAdapter, _aload_route_context
 from services.process_runtime.blueprint_route_history import HistoryMatchResult
 from tests.helpers.fake_chat_model import FakeChatModel
 
@@ -82,7 +82,11 @@ _GREENFIELD_POINTS = [
 
 
 async def _make_session(spec: dict | None) -> ConvergenceSession:
-    stage_state = {"blueprint": {"requirement_spec": spec}} if spec is not None else {}
+    stage_state = (
+        {"blueprint": {"requirement_spec": spec, "primary_team": "路由测试团队"}}
+        if spec is not None
+        else {}
+    )
     return await ConvergenceSession.objects.acreate(
         process_type="technical_blueprint",
         entrypoint=ConvergenceSessionEntrypoint.CHAT,
@@ -97,6 +101,8 @@ async def _make_repo(name: str) -> Repository:
         git_url=f"https://example.com/{name}.git",
         git_platform="github",
         default_branch="main",
+        facets={"团队归属": "路由测试团队"},
+        index_status="indexed",
     )
 
 
@@ -177,7 +183,7 @@ async def test_normal_path_orders_by_total_and_emits_event() -> None:
     with patch(_EMIT, new=AsyncMock()) as emit:
         result = await _adapter(router).route(session)
 
-    router.route.assert_awaited_once()
+    assert router.route.await_count == 2  # shortlist signal + placement
     assert [c["repository_id"] for c in result["candidates"]] == [str(high.id), str(low.id)]
     assert result["candidates"][0]["total"] > result["candidates"][1]["total"]
     for candidate in result["candidates"]:
@@ -219,8 +225,8 @@ async def test_breakdown_total_equals_component_sum_end_to_end() -> None:
 # ── 高三提分专项：章程补入 + planned 计正分 ────────────────────────────────
 
 
-async def test_charter_planned_owner_enters_candidates_as_supplement() -> None:
-    """高三提分专项机制：能力树未召回的 onion-learning 靠 owned(planned) 进候选。
+async def test_charter_planned_team_owner_remains_candidate() -> None:
+    """可信 Team owner 即使能力树未召回也保留，planned 章程仍贡献正分。
 
     这条断言同时锁 SC2 的两个机制：**章程补入** + **planned 计正分**。
     """
@@ -239,12 +245,11 @@ async def test_charter_planned_owner_enters_candidates_as_supplement() -> None:
     by_id = {c["repository_id"]: c for c in result["candidates"]}
     assert str(supplement.id) in by_id, "章程 owned(planned) 命中的仓必须被补入候选"
     entered = by_id[str(supplement.id)]
-    assert entered["breakdown"]["router_base"] == 0.0
     assert entered["breakdown"]["charter_match"] > 0
     assert {"domain": "培优/学习提分", "status": "planned"} in entered["evidence"][
         "matched_domains"
     ]
-    assert result["charter_supplement_count"] == 1
+    assert entered["role_suggestion"] == "candidate"
     assert entered["confidence"] == "low"
 
 
@@ -395,13 +400,23 @@ async def test_sanity_check_llm_supplies_reason_in_single_call() -> None:
         ensure_ascii=False,
     )
 
+    profile_reply = json.dumps(
+        {
+            "product_form": "",
+            "domains": [],
+            "change_kind": "brownfield",
+            "capability_clusters": [],
+            "non_goals": [],
+            "reuse_summary": "",
+        }
+    )
     with (
         patch(_ARESOLVE, new=AsyncMock(return_value=SimpleNamespace(extra={"default_model": "m"}))),
-        patch(_BUILD, return_value=FakeChatModel(responses=[reply])) as build,
+        patch(_BUILD, return_value=FakeChatModel(responses=[profile_reply, reply])) as build,
     ):
         result = await _adapter(router).route(session)
 
-    assert build.call_count == 1, "多个禁区候选必须合并为一次 LLM 调用"
+    assert build.call_count == 2, "画像一次，多个禁区候选合并为一次解释调用"
     for candidate in result["candidates"]:
         assert candidate["evidence"]["boundary_override_reason"]
         assert candidate["evidence"]["unjustified_boundary_hit"] is False
@@ -454,7 +469,7 @@ async def test_boundary_candidates_always_carry_reason_or_flag() -> None:
 
 
 async def test_routing_contract_keys_present() -> None:
-    """顶层 8 键 + 候选七键齐备，role_suggestion ∈ {direct, indirect}（112-04/05 读取面）。"""
+    """路由只产候选，不在代码调研前裁定 direct/indirect。"""
     session = await _make_session(_spec(_GREENFIELD_POINTS))
     high = await _make_repo("study-course")
     low = await _make_repo("onion-practice")
@@ -472,11 +487,11 @@ async def test_routing_contract_keys_present() -> None:
     assert set(result["weights_used"]) == {"router_base", "charter_match", "history_match"}
     for candidate in result["candidates"]:
         assert _CANDIDATE_KEYS <= set(candidate)
-        assert candidate["role_suggestion"] in {"direct", "indirect"}
+        assert candidate["role_suggestion"] == "candidate"
 
 
-async def test_role_suggestion_rules() -> None:
-    """role_suggestion 确定规则：high confidence 或章程正分 → direct，否则 indirect。"""
+async def test_route_confidence_and_charter_do_not_decide_role() -> None:
+    """high confidence/章程命中都只是候选证据，角色由后续逐仓调研决定。"""
     session = await _make_session(_spec(_GREENFIELD_POINTS))
     high_conf = await _make_repo("study-course")
     charter_owned = await _make_repo("onion-learning")
@@ -495,9 +510,49 @@ async def test_role_suggestion_rules() -> None:
     result = await _adapter(router).route(session)
 
     by_id = {c["repository_id"]: c for c in result["candidates"]}
-    assert by_id[str(high_conf.id)]["role_suggestion"] == "direct"
-    assert by_id[str(charter_owned.id)]["role_suggestion"] == "direct"
-    assert by_id[str(plain.id)]["role_suggestion"] == "indirect"
+    assert {item["role_suggestion"] for item in by_id.values()} == {"candidate"}
+
+
+async def test_confirmed_team_repositories_survive_semantic_top_ten() -> None:
+    """Top 10 是初筛预算；可信 Team 中低语义分仓仍可进入 placement/research。"""
+    session = await _make_session(_spec(_GREENFIELD_POINTS))
+    repositories = [await _make_repo(f"team-repo-{index}") for index in range(12)]
+    router = _router(
+        [
+            _rv2_candidate(str(repo.id), repo.name, 1 - index / 20)
+            for index, repo in enumerate(repositories[:10])
+        ]
+    )
+
+    result = await _adapter(router).route(session)
+
+    assert result["shortlist_count"] == 12
+    assert set(result["hard_scope"]) == {str(repo.id) for repo in repositories}
+
+
+async def test_route_context_preserves_provenance_without_hardening_references() -> None:
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_blueprint",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="route",
+        stage_state={
+            "decomposition": {
+                "feature_meta": {
+                    "prd": "高三专项",
+                    "test_cases": ["完成课程后可练习"],
+                    "access_token": "must-not-enter-routing",
+                    "client_secret": "must-not-enter-routing",
+                },
+                "extra_evidence": [{"source": "technical_doc", "text": "调用 study-course"}],
+            }
+        },
+    )
+
+    context = await _aload_route_context(session)
+
+    assert [entry["source_type"] for entry in context] == ["feature_meta", "extra_evidence"]
+    assert all(entry["hard_constraint"] is False for entry in context)
+    assert "must-not-enter-routing" not in str(context)
 
 
 async def test_intent_recorded_from_feature_points() -> None:
@@ -582,13 +637,14 @@ async def test_v1_fallback_router_version_is_visible_in_evidence() -> None:
     assert result["candidates"][0]["evidence"]["matched_node_paths"] == []
 
 
-async def test_no_candidates_keeps_shape_and_real_router_version() -> None:
-    """路由器与章程都无候选 → 形状不变且透传真实 router_version（不谎报 skipped）。"""
+async def test_missing_team_clarifies_before_unscoped_routing() -> None:
+    """没有可信 Team 时必须先澄清，不能以空候选为由退化到全库路由。"""
     session = await _make_session(_spec(_GREENFIELD_POINTS))
     router = _router([], router_version="v2_stage0_only")
 
     result = await _adapter(router).route(session)
 
     assert result["candidates"] == []
-    assert result["router_version"] == "v2_stage0_only"
+    assert result["router_version"] == "clarify"
+    assert result["clarify_reason"] == "missing_team"
     assert _TOP_LEVEL_KEYS <= set(result)

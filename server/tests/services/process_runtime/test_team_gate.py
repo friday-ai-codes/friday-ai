@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -16,44 +15,52 @@ from services.process_runtime.team_gate import (
 
 
 @pytest.mark.asyncio
-async def test_resolve_team_core_from_project_space():
-    space = SimpleNamespace(id="space-1", repositories=SimpleNamespace())
-    project = SimpleNamespace(id="proj-1", space=space, space_id="space-1")
-
+async def test_resolve_team_core_from_confirmed_project_associations():
     with patch(
-        "services.process_runtime.team_gate.sync_to_async",
-        side_effect=lambda fn: AsyncMock(return_value=["repo-a", "repo-b"])
-        if callable(fn)
-        else fn,
-    ):
-        # Direct path: mock values_list via sync_to_async lambda — use resolve with
-        # pre-baked space repos by patching _load_project_space_repo_ids instead.
-        pass
-
-    with patch(
-        "services.process_runtime.team_gate._load_project_space_repo_ids",
-        new=AsyncMock(return_value=("space-1", ["repo-a", "repo-b"])),
+        "services.process_runtime.team_gate._load_project_repo_ids",
+        new=AsyncMock(
+            return_value=("space-1", ["repo-a", "repo-b"], ["repo-a", "repo-b", "repo-c"])
+        ),
     ):
         result = await resolve_team_core(project_id="proj-1")
 
     assert result["should_clarify"] is False
     assert set(result["team_core"]) == {"repo-a", "repo-b"}
+    assert result["accessible_repository_ids"] == ["repo-a", "repo-b", "repo-c"]
     assert result["space_id"] == "space-1"
     assert result["clarify_reason"] == ""
 
 
 @pytest.mark.asyncio
-async def test_resolve_team_core_explicit_space_and_primary_team_alias():
+async def test_space_is_accessible_universe_not_team_identity():
     with patch(
         "services.process_runtime.team_gate._load_space_repo_ids",
-        new=AsyncMock(return_value=["repo-x"]),
+        new=AsyncMock(return_value=["repo-x", "repo-y"]),
     ):
-        by_space = await resolve_team_core(space_id="space-x")
-        by_team = await resolve_team_core(primary_team="space-x")
+        result = await resolve_team_core(space_id="space-x")
 
-    assert by_space["team_core"] == ["repo-x"]
-    assert by_team["team_core"] == ["repo-x"]
-    assert by_space["resolution"] == "explicit_space"
+    assert result["team_core"] == []
+    assert result["accessible_repository_ids"] == ["repo-x", "repo-y"]
+    assert result["should_clarify"] is True
+    assert result["clarify_reason"] == "missing_team"
+
+
+async def test_explicit_team_resolves_repository_facets_within_space():
+    with (
+        patch(
+            "services.process_runtime.team_gate._load_space_repo_ids",
+            new=AsyncMock(return_value=["repo-x", "repo-y"]),
+        ),
+        patch(
+            "services.process_runtime.team_gate._load_team_repo_ids",
+            new=AsyncMock(return_value=["repo-y", "repo-z"]),
+        ),
+    ):
+        result = await resolve_team_core(space_id="space-x", primary_team="学习A")
+
+    assert result["team_core"] == ["repo-y"]
+    assert result["accessible_repository_ids"] == ["repo-x", "repo-y"]
+    assert result["resolution"] == "team_facet"
 
 
 @pytest.mark.asyncio

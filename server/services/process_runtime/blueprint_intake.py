@@ -30,12 +30,9 @@
       ``blueprint_spec_gate`` 取不到版本即判 ``needs_clarification`` +
       ``blueprint_spec_gate_no_artifact_version`` warning。调用方（handler）必须显式带回。
    c. **MCP 的 ``McpWorkItemContext.space`` 是 ``projects.Space`` FK 不是 Project id**
-      （P-8）。``mcp_tools/technical_plan_service.py:488`` 把它当 ``"project_id"`` 键回给
-      调用方；直接透传会落一份 ``meta.project_id`` 为 Space id 的蓝图 —— 它的**全部 20
-      个端点恒 400、图谱恒不入、导出恒不可用**，三条都「安静地什么都没发生」且没有任何
-      补救入口。故 :func:`aresolve_project_id` 是四条推导链的**唯一收口**，MCP 分支必过
-      ``board_split_review._aresolve_project``，推不出即抛
-      :class:`BlueprintIntakeRejected`（⛔ 不建会话、不建 artifact）。
+      （P-8）。Space 只作为授权仓库宇宙；MCP 仅在 canonical WorkItem 恰好存在唯一
+      ``ProjectWorkItemLink`` 时建立 Project 身份，否则保留 unbound 蓝图并由 Team gate
+      发起澄清。
 
 4. **观测**：结构化五件套（事件名 snake_case + ``category`` + ``component`` +
    ``duration_ms`` + 触发用户）。⛔ **需求原文/功能点标题正文绝不进日志**，只记
@@ -138,7 +135,7 @@ def _schema_version() -> str:
 
 # ⭐ blueprint/v1 的**最小合法骨架**：`blueprint_schema.py:123-135` 的 11 个必填顶层键
 # 逐字齐全。§A.2 已 `.venv` 实跑八变体：六段全部允许空数组/空对象，`meta.title` 与
-# `meta.project_id` 是仅有的两个必须有真实值的字段。
+# ``meta.title`` 必须有真实值；``meta.project_id`` 对非项目入口允许为空。
 #
 # ⛔ **绝不直接把本常量当 content 用**（`meta` 两个必填值是空串、goal 为空）——一律经
 # :func:`build_skeleton` 深拷贝后填位，否则既过不了校验、又会让调用方共享同一份可变对象。
@@ -179,10 +176,10 @@ class BlueprintIntakeRejected(Exception):
         super().__init__(self.detail)
 
 
-def build_skeleton(*, title: str, project_id: str, goal_text: str) -> dict:
+def build_skeleton(*, title: str, project_id: str, goal_text: str, space_id: str = "") -> dict:
     """产出一份**独立的**最小 blueprint/v1 content（深拷贝常量后填三个位）。
 
-    三个位：``meta.title`` / ``meta.project_id`` / ``requirement_spec.goal`` 的
+    三个位：``meta.title`` / 可选 ``meta.project_id`` / ``requirement_spec.goal`` 的
     paragraph block（承载需求原文）。返回值与 :data:`MINIMAL_BLUEPRINT_SKELETON`
     及彼此之间**无共享可变对象**（连调两次互不影响，有单测背书）。
     """
@@ -190,6 +187,8 @@ def build_skeleton(*, title: str, project_id: str, goal_text: str) -> dict:
     content["schema_version"] = _schema_version()
     content["meta"]["title"] = str(title or "").strip()[:_MAX_TITLE_CHARS] or _DEFAULT_TITLE
     content["meta"]["project_id"] = str(project_id or "")
+    if space_id:
+        content["meta"]["space_id"] = str(space_id)
     content["requirement_spec"]["goal"] = [
         {
             "block_id": GOAL_BLOCK_ID,
@@ -241,13 +240,26 @@ async def _aproject_id_from_space(space: Any) -> str:
     return str(getattr(project, "id", "") or "")
 
 
-async def _aload_space(space_id: Any) -> Any:
-    """``space_id`` → ``projects.Space`` 行（取不到返 None）。"""
-    if not space_id:
-        return None
-    from projects.models import Space
+async def _aproject_id_from_work_item_context(context: Any) -> str:
+    """仅唯一 canonical WorkItem→ProjectWorkItemLink 可建立 Project 身份。"""
+    from initiatives.models import ProjectWorkItemLink
 
-    return await Space.objects.filter(id=space_id).afirst()
+    project_key = str(getattr(context, "feishu_project_key", "") or "").strip()
+    work_item_type = str(getattr(context, "work_item_type", "") or "").strip()
+    work_item_id = getattr(context, "work_item_id", None)
+    if not project_key or not work_item_type or work_item_id in (None, ""):
+        return ""
+    project_ids = [
+        str(value)
+        async for value in ProjectWorkItemLink.objects.filter(
+            work_item__feishu_project_key=project_key,
+            work_item__work_item_type=work_item_type,
+            work_item__work_item_id=work_item_id,
+        )
+        .values_list("project_id", flat=True)
+        .distinct()[:2]
+    ]
+    return project_ids[0] if len(project_ids) == 1 else ""
 
 
 async def aresolve_project_id(
@@ -264,29 +276,21 @@ async def aresolve_project_id(
     写错即三条防线同时失效且**不报错**。故四个入口**绝不各写一份推导**。
 
     ============  =====================================  ==============================
-    入口           权威上下文                              换算
+    入口           权威上下文                              处理
     ============  =====================================  ==============================
     feature_list  ``feature_meta["project_id"]``          已是 Project id，仍校验 UUID +
                                                           ``Project`` 存在
     workflow      ``space``（工作流关联空间）              ``_aresolve_project(space)``
-    chat          ``conversation.bound_project_id``        已是 Project id；否则
-                  / ``conversation.space``                 ``_aresolve_project(space)``
-    mcp           ``work_item_context.space``              ⭐ 先取 ``Space`` 再过
-                  （``projects.Space`` **FK**）             ``_aresolve_project``
+    chat          ``conversation.bound_project_id``        仅接受显式绑定；否则返回空
+    mcp           canonical WorkItem                       唯一 ``ProjectWorkItemLink``；
+                                                           否则返回空
     ============  =====================================  ==============================
 
-    ⭐ **MCP 那条是本函数存在的首要理由**（P-8）：``mcp_tools/technical_plan_service.py:488``
-    把 ``McpWorkItemContext.space_id`` 当 ``"project_id"`` 键回给调用方 —— 那是 **Space id
-    不是 Project id**。透传即落一份「20 个端点恒 400、图谱恒不入、导出恒不可用」且无补救
-    入口的蓝图。本函数对该分支**只**返回 ``_aresolve_project`` 换算出来的 Project id。
-
     Returns:
-        非空 Project id 字符串。
+        已验证的 Project id；MCP/chat 无权威绑定时返回空字符串。
 
     Raises:
-        BlueprintIntakeRejected: 四条链都推不出 ⇒ ``reason="project_unresolved"``。
-            调用方（``start_blueprint_orchestration``）在**建会话之前**调用本函数，
-            故抛出时**零副作用**：⛔ 不建 session、⛔ 不建 artifact。
+        BlueprintIntakeRejected: workflow/feature_list 推不出 Project 时拒绝，且零副作用。
     """
     started = time.monotonic()
     entry_key = str(entry or "unknown")
@@ -299,29 +303,33 @@ async def aresolve_project_id(
     if meta_pid and _is_uuid(meta_pid) and await _aproject_exists(meta_pid):
         project_id, source = meta_pid, "feature_meta"
 
-    # ② workflow / 显式 space：Space → Project 唯一换算。
-    if not project_id and space is not None:
+    # ② workflow 保留既有 project-backed 兼容；非项目入口不得从 Space 猜 Project。
+    if not project_id and entry_key == "workflow" and space is not None:
         project_id, source = await _aproject_id_from_space(space), "space"
 
-    # ③ MCP：context.space 是 projects.Space FK（`mcp_tools/models.py:276-282`），而
-    #    `mcp_tools/technical_plan_service.py:488` 把 space_id 当 "project_id" 键回传 ——
-    #    ⛔ 绝不把 space_id 当 project id 返回，必须先取 Space 再过 _aresolve_project。
+    # ③ MCP：只接受唯一、权威的 WorkItem 关联；Space 仅用于授权范围。
     if not project_id and work_item_context is not None:
-        ctx_space = getattr(work_item_context, "space", None)
-        if ctx_space is None:
-            ctx_space = await _aload_space(getattr(work_item_context, "space_id", None))
-        project_id, source = await _aproject_id_from_space(ctx_space), "mcp_context_space"
+        project_id = await _aproject_id_from_work_item_context(work_item_context)
+        if project_id:
+            source = "project_work_item_link"
 
-    # ④ chat：优先会话显式绑定的项目，否则回落会话所属空间。
+    # ④ chat：只接受会话显式绑定的项目，不从所属 Space 猜。
     if not project_id and conversation is not None:
         bound = str(getattr(conversation, "bound_project_id", "") or "")
         if bound and await _aproject_exists(bound):
             project_id, source = bound, "conversation_bound_project"
-        else:
-            conv_space = await _aload_space(getattr(conversation, "space_id", None))
-            project_id, source = await _aproject_id_from_space(conv_space), "conversation_space"
 
     duration_ms = round((time.monotonic() - started) * 1000, 2)
+    if not project_id and entry_key in {"mcp", "chat"}:
+        logger.info(
+            "blueprint_intake_project_unresolved",
+            category="caller",
+            component=_COMPONENT,
+            entry=entry_key,
+            reason="project_unresolved",
+            duration_ms=duration_ms,
+        )
+        return ""
     if not project_id:
         logger.warning(
             "blueprint_intake_project_unresolved",
@@ -354,6 +362,7 @@ async def aseed_blueprint_artifact(
     project_id: str,
     title: str = "",
     created_by_user_id: str = "",
+    space_id: str = "",
 ) -> Any:
     """建蓝图初始 ``Artifact`` + ``blueprint/v1`` v1 骨架版本 + 跳 ``researching``。
 
@@ -398,7 +407,12 @@ async def aseed_blueprint_artifact(
         except Exception:  # noqa: BLE001 — 查名失败不阻断 seeding，前缀回落「未关联项目」
             project_name = ""
         resolved_title = format_blueprint_title(project_name, timezone.now())
-    content = build_skeleton(title=resolved_title, project_id=project_id, goal_text=goal_text)
+    content = build_skeleton(
+        title=resolved_title,
+        project_id=project_id,
+        goal_text=goal_text,
+        space_id=space_id,
+    )
 
     artifact = await ArtifactService().create(
         ARTIFACT_TYPE_TECHNICAL_PLAN,
@@ -411,18 +425,19 @@ async def aseed_blueprint_artifact(
     await _amark_researching(artifact, session)
     # 「一项目一份活跃蓝图」：新蓝图落成后把同项目旧活跃蓝图标 superseded（best-effort，
     # 整体再兜一层——supersede 任何失败都绝不阻断新蓝图创建）。
-    try:
-        await _asupersede_previous_blueprints(
-            new_artifact=artifact, session=session, project_id=str(project_id or "")
-        )
-    except Exception as exc:  # noqa: BLE001 — supersede 是收敛动作，绝不反噬 seeding
-        logger.warning(
-            "blueprint_supersede_previous_failed",
-            category="caller",
-            component=_COMPONENT,
-            new_artifact_id=str(artifact.id),
-            error=redact_secrets_in_text(str(exc)),
-        )
+    if project_id:
+        try:
+            await _asupersede_previous_blueprints(
+                new_artifact=artifact, session=session, project_id=str(project_id)
+            )
+        except Exception as exc:  # noqa: BLE001 — supersede 是收敛动作，绝不反噬 seeding
+            logger.warning(
+                "blueprint_supersede_previous_failed",
+                category="caller",
+                component=_COMPONENT,
+                new_artifact_id=str(artifact.id),
+                error=redact_secrets_in_text(str(exc)),
+            )
 
     logger.info(
         "blueprint_intake_seeded",
