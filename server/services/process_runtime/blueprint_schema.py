@@ -148,8 +148,7 @@ BLUEPRINT_JSON_SCHEMA: dict[str, Any] = {
                 "summary": {"$ref": "#/$defs/block_list", "description": "执行摘要"},
                 "project_id": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "所属项目 id（一个项目一份活跃蓝图）",
+                    "description": "显式绑定的所属项目 id；非项目入口允许为空",
                 },
                 "space_id": {"type": "string", "description": "所属空间 id"},
                 "requirement_refs": {

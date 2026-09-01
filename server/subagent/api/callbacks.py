@@ -2157,7 +2157,7 @@ async def _handle_repo_verify_failure(
 # 派发侧（services/process_runtime/blueprint_research_adapter.py）写入的 source 值
 _BLUEPRINT_RESEARCH_SOURCE = "blueprint_research"
 _BLUEPRINT_VERDICTS = ("suitable", "partial", "unsuitable")
-_BLUEPRINT_ROLES = ("direct", "indirect")
+_BLUEPRINT_ROLES = ("direct", "indirect", "irrelevant")
 # 反幻觉上界：容器编造大量 findings 时截断（T-112-18）
 _BLUEPRINT_MAX_FINDINGS = 20
 _BLUEPRINT_MAX_TEXT = 4000
@@ -2188,8 +2188,8 @@ def _parse_blueprint_fitness(output: Any) -> dict[str, Any] | None:
 
     260818-pt8 D-01/D-02：**删除**自由文本 / 围栏 JSON / ``_parse_summary_json`` 分支——仅
     含 ``text`` 的旧渠道明确拒绝（返回 None）。归一化仍按白名单 + 枚举校验：``verdict`` 非法
-    即判不可解析（宁可失败重跑，也不把编造结论落进蓝图投影数据）；``role_suggestion`` 非法
-    回落保守的 ``direct``（要改动的仓被误判成不改动，代价远高于反过来）。
+    即判不可解析（宁可失败重跑，也不把编造结论落进蓝图投影数据）；非法角色保守回落
+    ``indirect``。``direct`` 还必须有具体 proposed file/API/model 落点。
 
     Args:
         output: completed 帧的 ``output`` dict；权威结果在 ``output["mcp_result"]``（dict）。
@@ -2209,7 +2209,11 @@ def _parse_blueprint_fitness(output: Any) -> dict[str, Any] | None:
 
     role = str(raw.get("role_suggestion") or "").strip().lower()
     if role not in _BLUEPRINT_ROLES:
-        role = "direct"
+        role = "indirect"
+    if verdict == "unsuitable":
+        role = "irrelevant"
+    elif role == "direct" and not _has_concrete_blueprint_location(raw):
+        role = "indirect"
 
     content: dict[str, Any] = {
         "fitness": {
@@ -2229,6 +2233,35 @@ def _parse_blueprint_fitness(output: Any) -> dict[str, Any] | None:
         if isinstance(value, list):
             content[key] = value[:_BLUEPRINT_MAX_FINDINGS]
     return content
+
+
+def _has_concrete_blueprint_location(raw: dict[str, Any]) -> bool:
+    """direct 的确定性证据门：必须声明拟修改的文件/API/model 位置。"""
+    candidate_files = raw.get("candidate_files")
+    if isinstance(candidate_files, list) and any(
+        str(item or "").strip() for item in candidate_files
+    ):
+        return True
+    location_keys = {
+        "file",
+        "file_path",
+        "path",
+        "location",
+        "endpoint",
+        "api",
+        "model",
+        "model_name",
+    }
+    for collection_key in ("proposed_changes", "api_contracts_exposed"):
+        items = raw.get(collection_key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict) and any(
+                str(item.get(key) or "").strip() for key in location_keys
+            ):
+                return True
+    return False
 
 
 def _blueprint_str_list(value: Any) -> list[str]:

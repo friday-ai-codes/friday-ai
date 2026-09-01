@@ -430,7 +430,7 @@ class BlueprintResearchAdapter:
     def _bucket(
         candidates: dict[str, dict], *, forced: set[str]
     ) -> tuple[dict[str, dict], dict[str, dict]]:
-        """按 `role_suggestion` 分 deep(direct) / light(indirect) 两桶。
+        """按 `role_suggestion` 分 deep(candidate/direct) / light(indirect) 两桶。
 
         `role_suggestion` 缺失时才回退 `confidence`（high/medium 视为 direct）——路由期
         契约恒带 `role_suggestion`，兜底只服务于确认门快照里手填的稀疏条目。
@@ -442,7 +442,7 @@ class BlueprintResearchAdapter:
                 deep[repository_id] = candidate
                 continue
             role = candidate.get("role_suggestion") or ""
-            if role == "direct":
+            if role in {"candidate", "direct"}:
                 deep[repository_id] = candidate
             elif role == "indirect":
                 light[repository_id] = candidate

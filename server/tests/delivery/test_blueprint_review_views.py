@@ -111,12 +111,18 @@ def _project_scope(user) -> Any:
 
 
 def _make_artifact(
-    status: str = BlueprintStatus.PENDING_REVIEW, *, project_id: str = _SCOPE_PROJECT_ID
+    status: str = BlueprintStatus.PENDING_REVIEW,
+    *,
+    project_id: str = _SCOPE_PROJECT_ID,
+    space_id: str = "",
+    created_by_user_id: str = "tester",
 ) -> Artifact:
     content = make_blueprint()
     content["meta"]["project_id"] = project_id
+    if space_id:
+        content["meta"]["space_id"] = space_id
     artifact = async_to_sync(ArtifactService().create)(
-        "technical_plan", content, created_by_user_id="tester"
+        "technical_plan", content, created_by_user_id=created_by_user_id
     )
     Artifact.objects.filter(id=artifact.id).update(blueprint_status=status)
     artifact.blueprint_status = status
@@ -259,6 +265,65 @@ def test_review_endpoints_reject_non_members_of_the_blueprint_project(
     assert _version_count(artifact) == before_versions
     if thread is not None:
         assert BlueprintThread.objects.get(id=thread.id).status == ThreadStatus.OPEN
+
+
+def test_project_bound_creator_cannot_bypass_project_membership(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """creator fallback 仅适用于 unbound 蓝图，不能绕过已有 Project 的成员闸。"""
+    _stub_resume(monkeypatch)
+    _make_project(_OTHER_PROJECT_ID)
+    artifact = _make_artifact(
+        project_id=_OTHER_PROJECT_ID,
+        created_by_user_id=str(user.id),
+    )
+
+    resp = authenticated_client.get(_url("blueprint-review-snapshot", artifact))
+
+    assert resp.status_code == 404
+
+
+def test_unbound_blueprint_creator_passes_scope_gate(
+    authenticated_client, user, monkeypatch
+) -> None:
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact(project_id="", created_by_user_id=str(user.id))
+
+    resp = authenticated_client.get(_url("blueprint-review-snapshot", artifact))
+
+    assert resp.status_code == 200
+
+
+def test_unbound_blueprint_space_member_passes_scope_gate(
+    authenticated_client, user, monkeypatch
+) -> None:
+    from initiatives.models import Project
+    from permissions.models import SpaceMembership
+
+    _stub_resume(monkeypatch)
+    project = Project.objects.select_related("space").get(id=_SCOPE_PROJECT_ID)
+    SpaceMembership.objects.get_or_create(user=user, space=project.space)
+    artifact = _make_artifact(
+        project_id="",
+        space_id=str(project.space_id),
+        created_by_user_id="another-user",
+    )
+
+    resp = authenticated_client.get(_url("blueprint-review-snapshot", artifact))
+
+    assert resp.status_code == 200
+
+
+def test_unbound_blueprint_outsider_gets_neutral_not_found(
+    authenticated_client, monkeypatch
+) -> None:
+    _stub_resume(monkeypatch)
+    artifact = _make_artifact(project_id="", created_by_user_id="another-user")
+
+    resp = authenticated_client.get(_url("blueprint-review-snapshot", artifact))
+
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "artifact 不存在"}
 
 
 def test_review_endpoints_fail_closed_when_the_project_scope_is_unresolvable(

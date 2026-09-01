@@ -71,15 +71,42 @@ def filter_indexed_repository_ids(repository_ids: Collection[str]) -> list[str]:
 
 
 @sync_to_async
-def _load_project_space_repo_ids(project_id: str) -> tuple[str | None, list[str] | None]:
-    from initiatives.models import Project
+def _load_project_repo_ids(
+    project_id: str,
+) -> tuple[str | None, list[str] | None, list[str] | None]:
+    """读取 Project 责任仓，并独立返回所属 Space 的可访问仓库宇宙。"""
+    from initiatives.models import Project, RepoAssociationStatus
 
     project = Project.objects.select_related("space").filter(pk=project_id).first()
     if project is None or project.space is None:
-        return None, None
+        return None, None, None
     space_id = str(project.space_id)
-    repo_ids = [str(r) for r in project.space.repositories.values_list("id", flat=True)]
-    return space_id, repo_ids
+    team_repo_ids = [
+        str(r)
+        for r in project.repo_associations.filter(
+            status__in=[RepoAssociationStatus.CONFIRMED, RepoAssociationStatus.VERIFIED]
+        ).values_list("repository_id", flat=True)
+    ]
+    accessible_repo_ids = [str(r) for r in project.space.repositories.values_list("id", flat=True)]
+    return space_id, team_repo_ids, accessible_repo_ids
+
+
+@sync_to_async
+def _load_team_repo_ids(team_name: str) -> list[str]:
+    """按 Repository.facets 的真实“团队归属”字段解析责任团队。"""
+    from repositories.models import Repository
+
+    expected = str(team_name or "").strip().casefold()
+    if not expected:
+        return []
+    matched: list[str] = []
+    for repository in Repository.objects.filter(is_deleted=False).only("id", "facets"):
+        facets = repository.facets if isinstance(repository.facets, dict) else {}
+        raw = facets.get("团队归属")
+        values = raw if isinstance(raw, list) else [raw]
+        if any(str(value or "").strip().casefold() == expected for value in values):
+            matched.append(str(repository.id))
+    return matched
 
 
 async def resolve_team_core(
@@ -93,7 +120,7 @@ async def resolve_team_core(
     context_space_id: str | None = None,
     indexed_repository_ids: Collection[str] | None = None,
 ) -> dict[str, Any]:
-    """解析 team_core：Project→Space → 显式 space/team → 上下文 Space。
+    """独立解析责任 Team；Space 只提供可访问仓库宇宙。
 
     ``indexed_repository_ids`` 非 None 时做 ``mounted ∩ indexed``；交集空 →
     ``empty_team_core``。仅显式传 ``None`` 表示调用方未做索引探测（漏斗层不得
@@ -101,6 +128,7 @@ async def resolve_team_core(
     """
     resolution = "missing"
     resolved_space_id: str | None = None
+    accessible: list[str] = []
     mounted: list[str] = []
     clarify_reason = ""
 
@@ -109,60 +137,70 @@ async def resolve_team_core(
         str(getattr(project, "id", "") or "") if project is not None else ""
     )
     if project is not None and getattr(project, "space", None) is not None:
-        resolved_space_id = str(getattr(project, "space_id", "") or getattr(project.space, "id", ""))
+        resolved_space_id = str(
+            getattr(project, "space_id", "") or getattr(project.space, "id", "")
+        )
         try:
             if hasattr(project.space, "repositories"):
-                mounted = [
+                accessible = [
                     str(r)
                     for r in await sync_to_async(
                         lambda: list(project.space.repositories.values_list("id", flat=True))
                     )()
                 ]
-            resolution = "project_space"
+            mounted = [
+                str(r)
+                for r in await sync_to_async(
+                    lambda: list(
+                        project.repo_associations.filter(
+                            status__in=["confirmed", "verified"]
+                        ).values_list("repository_id", flat=True)
+                    )
+                )()
+            ]
+            resolution = "project_associations"
         except Exception:  # noqa: BLE001 — ORM 失败继续下级解析
             mounted = []
     elif pid:
         try:
-            sid, repos = await _load_project_space_repo_ids(pid)
+            sid, repos, space_repos = await _load_project_repo_ids(pid)
         except Exception:  # noqa: BLE001
-            sid, repos = None, None
+            sid, repos, space_repos = None, None, None
         if sid is not None:
             resolved_space_id = sid
             mounted = list(repos or [])
-            resolution = "project_space"
+            accessible = list(space_repos or [])
+            resolution = "project_associations"
 
-    # ② 显式 space_id / team_id（primary_team 别名）
-    explicit = (
-        str(space_id or "").strip()
-        or str(team_id or "").strip()
-        or str(primary_team or "").strip()
-    )
+    # ② Space 只解析可访问范围；team_id/primary_team 才表示责任 Team。
+    explicit_space_id = str(space_id or "").strip()
+    explicit_team = str(team_id or primary_team or "").strip()
     if not resolved_space_id and space is not None:
         resolved_space_id = str(getattr(space, "id", "") or "")
         try:
-            mounted = [
+            accessible = [
                 str(r)
                 for r in await sync_to_async(
                     lambda: list(space.repositories.values_list("id", flat=True))
                 )()
             ]
-            resolution = "explicit_space"
+            resolution = "space_only"
         except Exception:  # noqa: BLE001
-            mounted = []
-            resolution = "explicit_space"
-    elif not resolved_space_id and explicit:
-        resolved_space_id = explicit
+            accessible = []
+            resolution = "space_only"
+    elif not resolved_space_id and explicit_space_id:
+        resolved_space_id = explicit_space_id
         try:
-            repos = await _load_space_repo_ids(explicit)
+            repos = await _load_space_repo_ids(explicit_space_id)
         except Exception:  # noqa: BLE001
             repos = None
         if repos is None:
             clarify_reason = "missing_team"
             resolution = "explicit_missing"
-            mounted = []
+            accessible = []
         else:
-            mounted = list(repos)
-            resolution = "explicit_space"
+            accessible = list(repos)
+            resolution = "space_only"
 
     # ③ 上下文 Space
     ctx = str(context_space_id or "").strip()
@@ -175,18 +213,25 @@ async def resolve_team_core(
         if repos is None:
             clarify_reason = "missing_team"
             resolution = "context_missing"
-            mounted = []
+            accessible = []
         else:
-            mounted = list(repos)
-            resolution = "context_space"
+            accessible = list(repos)
+            resolution = "space_only"
 
-    if not resolved_space_id:
+    if explicit_team:
+        team_ids = list(await _load_team_repo_ids(explicit_team))
+        accessible_set = _as_id_set(accessible)
+        mounted = [rid for rid in team_ids if not accessible_set or rid in accessible_set]
+        resolution = "team_facet"
+
+    if not resolved_space_id and not mounted:
         return {
             "team_core": [],
             "space_id": None,
             "resolution": "missing",
             "clarify_reason": "missing_team",
             "should_clarify": True,
+            "accessible_repository_ids": [],
         }
 
     if clarify_reason == "missing_team":
@@ -196,15 +241,22 @@ async def resolve_team_core(
             "resolution": resolution,
             "clarify_reason": "missing_team",
             "should_clarify": True,
+            "accessible_repository_ids": accessible,
         }
 
     if not mounted:
+        reason = (
+            "empty_team_core"
+            if not accessible or indexed_repository_ids is not None
+            else "missing_team"
+        )
         return {
             "team_core": [],
             "space_id": resolved_space_id,
             "resolution": resolution,
-            "clarify_reason": "empty_team_core",
+            "clarify_reason": reason,
             "should_clarify": True,
+            "accessible_repository_ids": accessible,
         }
 
     team_core = list(mounted)
@@ -218,6 +270,7 @@ async def resolve_team_core(
                 "resolution": resolution,
                 "clarify_reason": "empty_team_core",
                 "should_clarify": True,
+                "accessible_repository_ids": accessible,
             }
 
     return {
@@ -226,6 +279,7 @@ async def resolve_team_core(
         "resolution": resolution,
         "clarify_reason": "",
         "should_clarify": False,
+        "accessible_repository_ids": accessible,
     }
 
 
@@ -243,12 +297,7 @@ def annotate_team_membership(
         if not isinstance(raw, Mapping):
             continue
         item = dict(raw)
-        rid = str(
-            item.get("repository_id")
-            or item.get("repo_id")
-            or item.get("id")
-            or ""
-        ).strip()
+        rid = str(item.get("repository_id") or item.get("repo_id") or item.get("id") or "").strip()
         if rid and rid in core:
             membership = TeamMembership.TEAM_CORE.value
         elif rid and rid in adjacent:
@@ -281,7 +330,9 @@ def apply_team_gate(
     }
 
     if should_clarify or not core:
-        reason = clarify_reason or ("empty_team_core" if resolved.get("space_id") else "missing_team")
+        reason = clarify_reason or (
+            "empty_team_core" if resolved.get("space_id") else "missing_team"
+        )
         payload = {
             "status": "clarify",
             "clarify_reason": reason,
@@ -308,7 +359,9 @@ def apply_team_gate(
         return payload
 
     annotated = annotate_team_membership(candidates, core, adjacent_ids=adjacent_ids)
-    primary_pool = [c for c in annotated if c.get("team_membership") == TeamMembership.TEAM_CORE.value]
+    primary_pool = [
+        c for c in annotated if c.get("team_membership") == TeamMembership.TEAM_CORE.value
+    ]
     # out_of_team / adjacent 保留旁路，不可作 primary
     bypass = [c for c in annotated if c.get("team_membership") != TeamMembership.TEAM_CORE.value]
     primary = primary_pool[0] if primary_pool else None

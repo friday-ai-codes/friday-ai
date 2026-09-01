@@ -100,6 +100,7 @@ def _fitness_output(**overrides) -> dict:
                 "citations": ["src/router/index.ts"],
             }
         ],
+        "candidate_files": ["src/pages/study/index.vue"],
     }
     payload.update(overrides)
     return payload
@@ -200,7 +201,10 @@ async def test_text_fenced_json_rejected() -> None:
 async def test_missing_verdict_marks_failed_without_partial() -> None:
     """缺 fitness.verdict → task failed + empty_or_unparseable_result，且无 PartialPlan 行。"""
     _s, _r, task, sub = await _setup()
-    payload = {"result_type": "text", "output": {"mcp_result": {"fitness": {"reasons": ["没给结论"]}}}}
+    payload = {
+        "result_type": "text",
+        "output": {"mcp_result": {"fitness": {"reasons": ["没给结论"]}}},
+    }
     from subagent.api.callbacks import _handle_completed
 
     with _PATCHES[0], _PATCHES[1], _PATCHES[2]:
@@ -240,17 +244,96 @@ def test_illegal_verdict_is_unparseable() -> None:
     assert _parse_blueprint_fitness(None) is None
 
 
-def test_illegal_role_falls_back_to_direct() -> None:
-    """非法 role_suggestion（maybe / 缺失）→ 回落保守的 direct。"""
+def test_illegal_role_falls_back_to_indirect() -> None:
+    """非法/缺失 role 不得凭路由置信度升级为 direct。"""
     from subagent.api.callbacks import _parse_blueprint_fitness
 
     parsed = _parse_blueprint_fitness(_mcp_output(role_suggestion="maybe"))
-    assert parsed is not None and parsed["role_suggestion"] == "direct"
+    assert parsed is not None and parsed["role_suggestion"] == "indirect"
 
     raw = _fitness_output()
     raw.pop("role_suggestion")
     parsed2 = _parse_blueprint_fitness({"mcp_result": raw})
-    assert parsed2 is not None and parsed2["role_suggestion"] == "direct"
+    assert parsed2 is not None and parsed2["role_suggestion"] == "indirect"
+
+
+def test_direct_requires_concrete_code_location() -> None:
+    """只有泛化职责/置信度、没有文件/API/model 落点时必须降为 indirect。"""
+    from subagent.api.callbacks import _parse_blueprint_fitness
+
+    parsed = _parse_blueprint_fitness(
+        _mcp_output(
+            candidate_files=[],
+            proposed_changes=[],
+            api_contracts_exposed=[],
+            findings=[{"title": "能力相似", "detail": "章程称可承接", "citations": []}],
+            fitness={"verdict": "suitable", "reasons": ["能力相似"], "citations": []},
+        )
+    )
+
+    assert parsed is not None
+    assert parsed["role_suggestion"] == "indirect"
+
+
+def test_explicit_irrelevant_role_is_preserved() -> None:
+    from subagent.api.callbacks import _parse_blueprint_fitness
+
+    parsed = _parse_blueprint_fitness(
+        _mcp_output(
+            role_suggestion="irrelevant",
+            fitness={"verdict": "unsuitable", "reasons": ["无具体职责"], "citations": []},
+            responsibility="",
+            candidate_files=[],
+        )
+    )
+
+    assert parsed is not None
+    assert parsed["role_suggestion"] == "irrelevant"
+
+
+def test_age64_six_in_six_out_research_verdict_shape() -> None:
+    """生产形状：六个具体落点仓可 direct，六个仅能力相似仓必须 irrelevant。"""
+    from subagent.api.callbacks import _parse_blueprint_fitness
+
+    included = {
+        "frontend/study-app": "src/pages/study/index.vue",
+        "frontend/onion-learning": "src/modules/learning/index.ts",
+        "frontend/onion-practice": "src/modules/practice/index.ts",
+        "backend/study-user-status": "apps/status/models.py",
+        "backend/study-course": "apps/course/api.py",
+        "backend/backend-config": "apps/config/models.py",
+    }
+    excluded = {
+        "frontend/onion-auth",
+        "frontend/onion-mall",
+        "backend/course-business",
+        "backend/study-plan",
+        "backend/study-report",
+        "backend/legacy-course",
+    }
+
+    roles = {}
+    for repository_name, file_path in included.items():
+        parsed = _parse_blueprint_fitness(
+            _mcp_output(
+                responsibility=f"{repository_name} 唯一承载该改动",
+                candidate_files=[file_path],
+            )
+        )
+        roles[repository_name] = parsed["role_suggestion"]
+    for repository_name in excluded:
+        parsed = _parse_blueprint_fitness(
+            _mcp_output(
+                role_suggestion="irrelevant",
+                fitness={"verdict": "unsuitable", "reasons": ["仅能力相似"], "citations": []},
+                candidate_files=[],
+                responsibility="",
+            )
+        )
+        roles[repository_name] = parsed["role_suggestion"]
+
+    assert {name for name, role in roles.items() if role == "direct"} == set(included)
+    assert {name for name, role in roles.items() if role == "irrelevant"} == excluded
 
 
 def test_findings_normalized_and_capped() -> None:
@@ -264,9 +347,7 @@ def test_findings_normalized_and_capped() -> None:
     assert parsed["findings"][0]["detail"] == "纯文本发现"
     assert parsed["findings"][1]["citations"] == []
 
-    many = _parse_blueprint_fitness(
-        _mcp_output(findings=[{"title": f"t{i}"} for i in range(60)])
-    )
+    many = _parse_blueprint_fitness(_mcp_output(findings=[{"title": f"t{i}"} for i in range(60)]))
     assert many is not None and len(many["findings"]) == _BLUEPRINT_MAX_FINDINGS
 
 
@@ -403,7 +484,10 @@ async def test_unparseable_failed_emits_repository_name_and_attempt() -> None:
     ):
         await _handle_completed(
             sub,
-            {"result_type": "text", "output": {"mcp_result": {"fitness": {"reasons": ["没给结论"]}}}},
+            {
+                "result_type": "text",
+                "output": {"mcp_result": {"fitness": {"reasons": ["没给结论"]}}},
+            },
             _log(),
         )
 

@@ -51,6 +51,15 @@ def test_absent_alias_is_unresolved():
     assert resolve_repository_alias(associations, "backend/course-business") is None
 
 
+def test_study_config_alias_resolves_only_when_actually_registered():
+    config_id = "cc11bb22-3333-4444-5555-666677778888"
+    associations = _associations((config_id, "backend/backend-config"))
+
+    assert resolve_repository_alias(associations, "backend-config") == config_id
+    assert resolve_repository_alias([], "study-config") is None
+    assert canonicalize_repository_alias([], "study-config") == "study-config"
+
+
 def test_canonicalize_returns_uuid_or_original():
     associations = _associations((_UUID_ONION, "frontend/onion-learning"))
     assert canonicalize_repository_alias(associations, "onion-learning") == _UUID_ONION

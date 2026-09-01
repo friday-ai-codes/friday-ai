@@ -633,6 +633,26 @@ async def test_indirect_candidate_synthesized_without_container() -> None:
     assert dispatcher.await_count == 0
 
 
+async def test_route_candidate_requires_deep_research_before_role_decision() -> None:
+    """route 的 candidate 状态必须进深调研，不能按 confidence 轻量伪造角色。"""
+    repo = await _make_repo()
+    session = await _make_session(
+        _routing_state(_candidate(repo, role="candidate", confidence="low"))
+    )
+    await _make_online_runner()
+    dispatcher = _FakeDispatcher()
+    cfg, git = _stub_runtime()
+
+    with cfg, git:
+        result = await _adapter(dispatcher, charters_loader=AsyncMock(return_value={})).dispatch(
+            session
+        )
+
+    assert result["dispatched"] == 1
+    assert result["synthesized"] == 0
+    assert dispatcher.await_count == 1
+
+
 # ===========================================================================
 # 9. 章程随 prompt 注入 + 明文零泄漏
 # ===========================================================================
