@@ -18,7 +18,7 @@ import asyncio
 import uuid
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from rest_framework.test import APIClient
@@ -348,6 +348,70 @@ async def test_delegate_cancellation_hands_exact_blueprint_session_to_durable_re
     assert resumed == [(str(session.id), "user-47")]
 
 
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_cancelled_preflight_releases_idempotency_reservation_for_same_key_retry(
+    project,
+    indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """首驱前取消必须把 pending 标成可接管，同 key 重试复用原预留并继续。"""
+    from asgiref.sync import sync_to_async
+
+    from mcp_tools.technical_plan_service import build_work_item_technical_plan
+
+    context = await sync_to_async(_make_context)(project)
+
+    async def _cancel_search(**_kwargs: Any) -> Any:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr("mcp_tools.technical_plan_service.search_learning_cases", _cancel_search)
+    kwargs = {
+        "run": context.run,
+        "context_id": str(context.id),
+        "repository_ids": [str(indexed_repository.id)],
+        "repo_hints": [],
+        "context_chunks": [],
+        "similar_cases": [],
+        "title": "",
+        "folder_token": "",
+        "create_document": False,
+        "write_comment": False,
+        "idempotency_key": "cancel-retry-1",
+    }
+
+    with pytest.raises(asyncio.CancelledError):
+        await build_work_item_technical_plan(**kwargs)
+
+    reservation = await McpWorkItemTechnicalPlan.objects.aget(
+        idempotency_key="cancel-retry-1"
+    )
+    assert reservation.retry_state["failed_stage"] == "idempotency_cancelled"
+
+    monkeypatch.setattr(
+        "mcp_tools.technical_plan_service.delegate_process_runtime",
+        AsyncMock(
+            return_value=_fake_delegate_result(
+                status="completed",
+                repo_id=str(indexed_repository.id),
+                repo_name=indexed_repository.name,
+            )
+        ),
+    )
+    result = await build_work_item_technical_plan(
+        **{**kwargs, "similar_cases": [{"case_id": "safe-retry"}]}
+    )
+
+    assert str(result.artifact.id) == str(reservation.id)
+    assert result.output["status"] == McpWorkItemTechnicalPlan.Status.COMPLETED
+    assert (
+        await McpWorkItemTechnicalPlan.objects.filter(
+            idempotency_key="cancel-retry-1"
+        ).acount()
+        == 1
+    )
+
+
 # ===================== Task 2: create_feishu_technical_plan delegate 接线 =====================
 
 
@@ -419,6 +483,7 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
             "context_id": str(context.id),
             "idempotency_key": "test:work-item-77:context-v1",
             "blueprint_project_id": str(uuid.uuid4()),
+            "primary_team": "学习A",
             "repository_ids": [str(indexed_repository.id)],
             "create_document": False,
             "write_comment": False,
@@ -442,6 +507,7 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     assert captured["include_repos"] == [str(indexed_repository.id)]
     assert captured["call_count"] == 1
     assert captured["project_id"]
+    assert captured["primary_team"] == "学习A"
     # canonical execution_plan → 旧矩阵形态映射（显式白名单字段）。
     task = body["repository_tasks"][0]
     assert task["repository_id"] == str(indexed_repository.id)
@@ -850,6 +916,10 @@ def test_unbound_blueprint_reaches_team_clarification(
     assert body["blueprint_artifact_id"]
     assert body["retry_state"]["retryable"] is True
     assert body["retry_state"]["failed_stage"] == "orchestration_pending"
+    # ⭐ unbound 就得如实回空 project_id。旧响应把 Space id 顶上来，agent 按契约把它当
+    # blueprint_project_id 回传，下一轮就绑进一个不存在的 Project（P-8 的入口）。
+    assert body["project_id"] == ""
+    assert body["project_id"] != str(project.id)
 
 
 @pytest.mark.django_db(transaction=True)

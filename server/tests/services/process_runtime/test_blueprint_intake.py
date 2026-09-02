@@ -333,6 +333,20 @@ async def test_chat_without_project_starts_unbound_session() -> None:
     assert after == (before[0] + 1, before[1], before[2])
 
 
+async def test_mcp_trusted_primary_team_is_persisted_independently_from_space() -> None:
+    """可信 Team 是独立 hard scope，不得丢失或退化为 Space 全仓。"""
+    session = await start_blueprint_orchestration(
+        ConvergenceSessionEntrypoint.WORKFLOW,
+        _REQUIREMENT,
+        entry_key="mcp",
+        primary_team="学习A",
+    )
+
+    decomposition = session.stage_state["decomposition"]
+    assert decomposition["project_id"] == ""
+    assert decomposition["primary_team"] == "学习A"
+
+
 async def test_blueprint_with_space_id_as_project_id_is_unusable_downstream(
     django_user_model,
 ) -> None:

@@ -626,7 +626,9 @@ async def _h_bp_repo_confirmation(session: Any, engine: Any) -> StageOutcome:
     result = result if isinstance(result, dict) else {}
     raw_event = str(result.get("event") or "")
     event = (
-        raw_event if raw_event in {"confirmed", "research_required"} else "awaiting_confirmation"
+        raw_event
+        if raw_event in {"confirmed", "research_required", "reroute_required"}
+        else "awaiting_confirmation"
     )
     return StageOutcome(
         event=event,
@@ -1189,6 +1191,11 @@ _TECHNICAL_BLUEPRINT_STAGES = {
             # 它与 repo_research → reroute → repo_confirmation 构成确认门的**有界回路**，
             # 边界由 MAX_REROUTE_ROUNDS 与「已完成仓不重派」共同约束。
             "research_required": "repo_research",
+            # 回边②：团队澄清收答后回 route 重算责任范围。团队门是 route 阶段的入口条件，
+            # 采纳新 primary_team 后必须让 route 重跑才能产出候选 —— 停在本 stage 自 loop
+            # 只会拿着同一份空候选反复出题（AGE-66 死循环）。有界性由确认门的
+            # `_MAX_TEAM_CLARIFICATION_ROUNDS` 保证：到顶不再出题，停在门里交人。
+            "reroute_required": "route",
             # ⭐ 116 重排：确认门通过后先过规格门（带调研上下文的澄清），
             # spec_locked 才进阶段 2 分仓方案。下一个接续点在 merge.merged。
             "confirmed": "spec_gate",

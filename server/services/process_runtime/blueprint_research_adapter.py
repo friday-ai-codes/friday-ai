@@ -1270,6 +1270,11 @@ class BlueprintResearchAdapter:
                 "reasons": fitness.get("reasons")
                 if isinstance(fitness.get("reasons"), list)
                 else [],
+                # 确认门快照 / 蓝图投影的结构化引用只认这个键。容器写进 PartialPlan
+                # 的 `fitness.citations` 若不在这里带上，下游永远只能看到空数组。
+                "citations": fitness.get("citations")
+                if isinstance(fitness.get("citations"), list)
+                else [],
                 "role_suggestion": str(content.get("role_suggestion") or "")
                 if isinstance(content, dict)
                 else "",

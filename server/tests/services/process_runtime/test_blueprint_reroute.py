@@ -219,11 +219,16 @@ async def _make_partial(
     valid: bool = True,
     responsibility: str = "职责",
     reasons: list | None = None,
+    citations: list | None = None,
 ):
     return await sync_to_async(PartialPlan.objects.create)(
         research_task=task,
         content={
-            "fitness": {"verdict": verdict, "reasons": reasons or [], "citations": []},
+            "fitness": {
+                "verdict": verdict,
+                "reasons": reasons or [],
+                "citations": citations or [],
+            },
             "role_suggestion": "direct",
             "responsibility": responsibility,
             "findings": [],
@@ -280,6 +285,38 @@ async def test_collect_fitness_carries_reasons() -> None:
     )
     fitness2 = await BlueprintResearchAdapter().acollect_fitness(session2)
     assert fitness2[str(repo2.id)]["reasons"] == []
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_collect_fitness_carries_citations() -> None:
+    """⭐ 结构化引用必须随聚合带上：确认门快照只认 `conclusion.citations`，
+    容器写进 PartialPlan 的路径若不在这里透出，下游只能看到空数组。"""
+    session = await _make_session()
+    repo = await _make_repo()
+    task = await _make_task(session, repo)
+    await _make_partial(
+        task,
+        verdict="partial",
+        citations=["src/exam/single.vue", "src/timer/countdown.ts"],
+    )
+
+    fitness = await BlueprintResearchAdapter().acollect_fitness(session)
+    assert fitness[str(repo.id)]["citations"] == [
+        "src/exam/single.vue",
+        "src/timer/countdown.ts",
+    ]
+
+    session2 = await _make_session()
+    repo2 = await _make_repo()
+    task2 = await _make_task(session2, repo2)
+    await sync_to_async(PartialPlan.objects.create)(
+        research_task=task2,
+        content={"fitness": {"verdict": "partial", "citations": "不是列表"}, "findings": []},
+        valid=True,
+    )
+    fitness2 = await BlueprintResearchAdapter().acollect_fitness(session2)
+    assert fitness2[str(repo2.id)]["citations"] == []
 
 
 @pytest.mark.django_db(transaction=True)
