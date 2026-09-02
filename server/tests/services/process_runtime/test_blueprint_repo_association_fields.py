@@ -29,6 +29,7 @@ def _conclusion(**overrides) -> dict:
     base = {
         "verdict": "partial",
         "reasons": ["复用 exam/single 组件即可承载", "缺 5 分钟倒计时组件需新增"],
+        "citations": ["src/exam/single.vue", "src/timer/countdown.ts"],
         "role_suggestion": "direct",
         "responsibility": "承载真题检测做题页",
         "findings": [],
@@ -48,6 +49,19 @@ def test_snapshot_entry_carries_fitness_reasons() -> None:
         "复用 exam/single 组件即可承载",
         "缺 5 分钟倒计时组件需新增",
     ]
+    assert entry["fitness"]["citations"] == [
+        "src/exam/single.vue",
+        "src/timer/countdown.ts",
+    ]
+
+
+def test_snapshot_entry_defaults_to_empty_citations() -> None:
+    """反面：conclusion 无 citations / 非 list ⇒ 空数组（与 reasons 同一形状）。"""
+    for citations in (None, "不是列表", {"k": 1}):
+        entry = _build_snapshot_entry(
+            _RID, candidate={}, conclusion=_conclusion(citations=citations), router_version="v1"
+        )
+        assert entry["fitness"]["citations"] == []
 
 
 def test_snapshot_entry_truncates_and_keeps_block_reasons() -> None:

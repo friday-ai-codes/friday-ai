@@ -357,6 +357,7 @@ async def start_blueprint_orchestration(
     conversation: Any = None,
     work_item_context: Any = None,
     assumptions_tier: str = "",
+    primary_team: str = "",
     technical_plan_id: str = "",
 ) -> ConvergenceSession:
     """建一条 ``technical_blueprint`` 会话（Phase 116-02，蓝图链的生产起点）。
@@ -423,6 +424,9 @@ async def start_blueprint_orchestration(
     )
     if resolved_space_id:
         decomposition["space_id"] = resolved_space_id
+    resolved_team = str(primary_team or "").strip()
+    if resolved_team:
+        decomposition["primary_team"] = resolved_team
     work_item_title = str(getattr(work_item, "title", "") or "").strip()
     if work_item_title:
         # 项目跟踪蓝图的标题属于工作项，不属于承载它的长期 Project。Project 只决定仓库与
@@ -468,6 +472,7 @@ async def start_blueprint_orchestration(
         # ⭐ 会话级留痕（MJ-02）：档位也进 ambiguity_report，但那要等第一次打分之后才有 ——
         # 建会话时就该能看出这条会话用的是哪一档（空串 = 默认档 balanced）。
         assumptions_tier=resolved_tier,
+        primary_team=resolved_team,
     )
     return session
 

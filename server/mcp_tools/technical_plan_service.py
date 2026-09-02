@@ -9,6 +9,7 @@ MergedPlan/PlanVersion），再**显式映射回旧 MCP 响应字段**（外形�
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -40,6 +41,22 @@ class TechnicalPlanResult:
     artifact: McpWorkItemTechnicalPlan
     output: dict[str, Any]
     traces: list[tuple[str, dict[str, Any]]]
+
+
+async def _amark_idempotency_cancelled(reservation: McpWorkItemTechnicalPlan) -> None:
+    """请求在建蓝图会话前被取消时释放幂等预留，允许同 key 安全接管。"""
+    retry_state = dict(reservation.retry_state or {})
+    retry_state.update(
+        {
+            "retryable": True,
+            "failed_stage": "idempotency_cancelled",
+            "idempotency_key": reservation.idempotency_key,
+        }
+    )
+    await McpWorkItemTechnicalPlan.objects.filter(
+        id=reservation.id,
+        blueprint_artifact_id="",
+    ).aupdate(retry_state=retry_state)
 
 
 def _technical_plan_output_from_record(
@@ -245,7 +262,7 @@ async def _ablueprint_response_extras(delegate: Any) -> dict[str, Any]:
             return {}
         version_row = (
             await ArtifactVersion.objects.filter(id=version_id)
-            .values("artifact_id", "content_hash")
+            .values("artifact_id", "content_hash", "content")
             .afirst()
         )
         artifact_id = str((version_row or {}).get("artifact_id") or "")
@@ -257,11 +274,21 @@ async def _ablueprint_response_extras(delegate: Any) -> dict[str, Any]:
             .afirst()
             or ""
         )
+        # ⭐ P-8 的响应侧另一半：旧响应把 `McpWorkItemTechnicalPlan.space_id` 当 `project_id`
+        # 回给调用方（该记录只有 space FK、没有 project FK）。编排侧已改走
+        # `blueprint_intake.aresolve_project_id`，但响应键漏了 —— 契约要求调用方重试时回传
+        # `blueprint_project_id`，agent 一旦把这个 Space UUID 传回来就正中 P-8（落一份 20 个
+        # 端点恒不可用、且无补救入口的蓝图）。故蓝图链一律以 artifact 的 `meta.project_id`
+        # 为准，unbound 时如实回空串，⛔ 绝不用 Space id 顶替。
+        content = (version_row or {}).get("content")
+        meta = content.get("meta") if isinstance(content, dict) else None
+        blueprint_project_id = str((meta or {}).get("project_id") or "")
         return {
             "blueprint_artifact_id": artifact_id,
             "blueprint_current_status": current_status,
             "blueprint_artifact_version_id": str(version_id),
             "blueprint_content_hash": str((version_row or {}).get("content_hash") or ""),
+            "project_id": blueprint_project_id,
             "pending_clarifications": await _aload_pending_clarifications(artifact_id),
         }
     except Exception:  # noqa: BLE001 — 响应装饰读失败不废掉既有 12 键的方案响应
@@ -764,6 +791,7 @@ async def build_work_item_technical_plan(
     assumptions_tier: str = "",
     idempotency_key: str = "",
     blueprint_project_id: str = "",
+    primary_team: str = "",
 ) -> TechnicalPlanResult:
     """delegate 到 ``process_runtime`` 产 canonical 方案 → 映射回旧响应外形 + 落库（UNIFY-03）。
 
@@ -804,51 +832,66 @@ async def build_work_item_technical_plan(
                 raise TechnicalPlanError(
                     "idempotency_key_conflict", "幂等键已用于另一个工作项上下文"
                 )
-            return TechnicalPlanResult(
-                artifact=reservation,
-                output=_technical_plan_output_from_record(
-                    reservation,
-                    idempotency_state=(
-                        "in_progress"
-                        if reservation.retry_state.get("failed_stage") == "idempotency_pending"
-                        else "reused"
+            if reservation.retry_state.get("failed_stage") == "idempotency_cancelled":
+                reservation.run = run
+                reservation.retry_state = {
+                    "retryable": True,
+                    "failed_stage": "idempotency_pending",
+                    "idempotency_key": normalized_idempotency_key,
+                }
+                await reservation.asave(update_fields=["run", "retry_state", "updated_at"])
+            else:
+                return TechnicalPlanResult(
+                    artifact=reservation,
+                    output=_technical_plan_output_from_record(
+                        reservation,
+                        idempotency_state=(
+                            "in_progress"
+                            if reservation.retry_state.get("failed_stage") == "idempotency_pending"
+                            else "reused"
+                        ),
                     ),
-                ),
-                traces=[],
+                    traces=[],
+                )
+    try:
+        effective_similar_cases = similar_cases
+        if not effective_similar_cases:
+            effective_similar_cases = await search_learning_cases(
+                query=_work_item_text(context),
+                work_item_type=context.work_item_type,
+                repo_hints=repo_hints,
+                file_hints=[
+                    str(chunk.get("file_path") or "")
+                    for chunk in context_chunks
+                    if isinstance(chunk, dict)
+                ],
+                symbol_hints=[],
+                limit=5,
+                # 权限主体 = 发起编排的用户（可空）：None 时 search_similar fail-closed
+                # 空召回，不泄漏越权数据（T-94-03-ELEV 同款文档化降级）。
+                user=actor,
             )
-    effective_similar_cases = similar_cases
-    if not effective_similar_cases:
-        effective_similar_cases = await search_learning_cases(
-            query=_work_item_text(context),
-            work_item_type=context.work_item_type,
-            repo_hints=repo_hints,
-            file_hints=[
-                str(chunk.get("file_path") or "")
-                for chunk in context_chunks
-                if isinstance(chunk, dict)
-            ],
-            symbol_hints=[],
-            limit=5,
-            # 权限主体 = 发起编排的用户（可空）：None 时 search_similar fail-closed
-            # 空召回，不泄漏越权数据（T-94-03-ELEV 同款文档化降级）。
-            user=actor,
-        )
 
-    # UNIFY-03：方案生成 delegate 到统一编排（绝不在 MCP 层重写拆分/路由/调研/融合）。
-    work_item = await _resolve_delivery_work_item(context)
-    delegate = await delegate_process_runtime(
-        requirement_text=_work_item_text(context),
-        work_item=work_item,
-        include_repos=repository_ids,
-        created_by=actor,
-        # 116-06：接上 116-03 交接的 `work_item_context` 形参。⛔ 不传即「推不出
-        # meta.project_id ⇒ 拒绝发起」——mcp 开关打开时蓝图链会**恒不可用**。
-        work_item_context=context,
-        # 116-REVIEW MJ-02：档位从 MCP 请求透传到 stage_state，⇒ spec_gate 真的读得到。
-        assumptions_tier=assumptions_tier,
-        project_id=blueprint_project_id,
-        technical_plan_id=str(reservation.id) if reservation is not None else "",
-    )
+        # UNIFY-03：方案生成 delegate 到统一编排（绝不在 MCP 层重写拆分/路由/调研/融合）。
+        work_item = await _resolve_delivery_work_item(context)
+        delegate = await delegate_process_runtime(
+            requirement_text=_work_item_text(context),
+            work_item=work_item,
+            include_repos=repository_ids,
+            created_by=actor,
+            # 116-06：接上 116-03 交接的 `work_item_context` 形参。⛔ 不传即「推不出
+            # meta.project_id ⇒ 拒绝发起」——mcp 开关打开时蓝图链会**恒不可用**。
+            work_item_context=context,
+            # 116-REVIEW MJ-02：档位从 MCP 请求透传到 stage_state，⇒ spec_gate 真的读得到。
+            assumptions_tier=assumptions_tier,
+            project_id=blueprint_project_id,
+            primary_team=primary_team,
+            technical_plan_id=str(reservation.id) if reservation is not None else "",
+        )
+    except asyncio.CancelledError:
+        if reservation is not None:
+            await _amark_idempotency_cancelled(reservation)
+        raise
     # 116-06（GATE-01）：开关切到蓝图时的三个追加响应键（关闭时为空 dict）。
     blueprint_extras = await _ablueprint_response_extras(delegate)
     # 蓝图真实入口的归属是编码门禁事实源；响应 extras 失败时也必须 fail-closed，不能让

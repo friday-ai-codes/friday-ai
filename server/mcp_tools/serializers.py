@@ -576,6 +576,13 @@ class CreateFeishuTechnicalPlanRequestSerializer(serializers.Serializer):
         default=None,
         help_text="工作项对应的 Friday Project UUID；项目跟踪入口应显式传入，避免 Space 内多项目串线",
     )
+    primary_team = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=200,
+        help_text="可信工作项团队字段的人类可读值；用于 Team hard scope，不得从 Space 猜测",
+    )
     repository_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
@@ -1668,6 +1675,7 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "context_id",
             "idempotency_key",
             "blueprint_project_id",
+            "primary_team",
             "repository_ids",
             "repo_hints",
             "context_chunks",

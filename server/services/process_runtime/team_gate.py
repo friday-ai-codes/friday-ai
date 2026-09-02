@@ -25,9 +25,15 @@ __all__ = [
     "annotate_team_membership",
     "apply_team_gate",
     "filter_indexed_repository_ids",
+    "alist_team_options",
+    "aresolve_accessible_space_id",
+    "match_team_answer",
 ]
 
 _COMPONENT = "process_runtime"
+
+#: 团队澄清一次最多回几个候选取值（防把整份 facet 字典糊给人看）。
+_MAX_TEAM_OPTIONS = 20
 
 
 class TeamMembership(str, Enum):
@@ -107,6 +113,97 @@ def _load_team_repo_ids(team_name: str) -> list[str]:
         if any(str(value or "").strip().casefold() == expected for value in values):
             matched.append(str(repository.id))
     return matched
+
+
+@sync_to_async
+def alist_team_options(space_id: str) -> list[dict[str, Any]]:
+    """枚举某 Space 内已索引仓库真实出现过的 ``团队归属`` 取值及其仓数。
+
+    团队澄清必须**带候选**：``options=[]`` 逼人自由作答，答复无从校验，采纳不了就只能
+    反复问同一题（AGE-66 的死循环成因）。这里只回 facet 里**真实存在**的取值 —— 问一个
+    答了也解析不出仓的团队名毫无意义。
+
+    ``space_id`` 空 → 返回空列表（fail-closed：解析不出可访问范围时不得枚举全库团队）。
+    """
+    from projects.models import Space
+    from repositories.models import IndexStatus
+
+    sid = str(space_id or "").strip()
+    if not sid:
+        return []
+    space = Space.objects.filter(pk=sid).first()
+    if space is None:
+        return []
+    counts: dict[str, int] = {}
+    queryset = space.repositories.filter(
+        index_status=IndexStatus.INDEXED, is_deleted=False
+    ).only("id", "facets")
+    for repository in queryset:
+        facets = repository.facets if isinstance(repository.facets, dict) else {}
+        raw = facets.get("团队归属")
+        values = raw if isinstance(raw, list) else [raw]
+        for value in values:
+            label = str(value or "").strip()
+            if label:
+                counts[label] = counts.get(label, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [{"team": team, "repo_count": n} for team, n in ranked[:_MAX_TEAM_OPTIONS]]
+
+
+@sync_to_async
+def _load_work_item_space_id(work_item_id: Any) -> str:
+    from delivery.models import WorkItem
+
+    if work_item_id is None:
+        return ""
+    work_item = WorkItem.objects.filter(id=work_item_id).only("space_id").first()
+    return str(work_item.space_id) if work_item and work_item.space_id else ""
+
+
+async def aresolve_accessible_space_id(session: Any) -> str:
+    """解析会话的可访问 Space id（``stage_state`` 优先，回落到宿主工作项）。
+
+    ⭐ Space 只界定**可访问仓库宇宙**，不代表责任团队 —— 本函数的结果只能用于枚举候选
+    团队取值与求交，⛔ 不得当成 ``team_core``。
+    """
+    # 函数内 lazy import 规避 import 环（blueprint_route 在模块加载期 import 本模块）。
+    from services.process_runtime.blueprint_route import _extract_team_context
+
+    try:
+        _, space_id, _ = _extract_team_context(session)
+    except Exception:  # noqa: BLE001 — 解析失败回落工作项，绝不阻断
+        space_id = ""
+    if space_id:
+        return space_id
+    try:
+        return await _load_work_item_space_id(getattr(session, "work_item_id", None))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def match_team_answer(answer: str, options: Sequence[Mapping[str, Any]]) -> str:
+    """把人类的团队澄清答复解析成**唯一**的权威团队名（解析不出回空串）。
+
+    两档匹配，都要求唯一命中：
+
+    1. 整段答复 casefold 后与某取值全串相等（人只回了团队名）。
+    2. 某取值作为子串出现在答复里（人回了带解释的整句）。
+
+    ⛔ 命中多个取值时一律回空串 —— 猜一个等于替人做范围决策，宁可带着候选再问一次。
+    """
+    text = str(answer or "").strip()
+    if not text:
+        return ""
+    labels = [str((o or {}).get("team") or "").strip() for o in options]
+    labels = [label for label in labels if label]
+    if not labels:
+        return ""
+    folded = text.casefold()
+    exact = [label for label in labels if label.casefold() == folded]
+    if len(exact) == 1:
+        return exact[0]
+    contained = [label for label in labels if label.casefold() in folded]
+    return contained[0] if len(contained) == 1 else ""
 
 
 async def resolve_team_core(

@@ -50,6 +50,7 @@ __all__ = [
     "adrive_blueprint_session_to_pause_or_terminal",
     "areconcile_stalled_blueprint_research_tasks",
     "arecover_stalled_blueprint_sessions",
+    "aredispatch_never_dispatched_blueprint_research_tasks",
     "aresume_after_gate_action",
     "aresume_blueprint_session",
     "arun_blueprint_resume",
@@ -534,6 +535,117 @@ async def areconcile_stalled_blueprint_research_tasks(
     return counts
 
 
+async def aredispatch_never_dispatched_blueprint_research_tasks(
+    *, now: Any = None, limit: int = 0
+) -> dict[str, int]:
+    """重派「派发期没有在线 runner 而降级」的调研 task —— 僵尸恢复的第三类成因。
+
+    ``BlueprintResearchAdapter.dispatch`` 在 ``_count_online_runners() == 0`` 时**故意**
+    把 deep task 留在 ``pending``（不能把路由的 matched_domains 合成成「调研结论」让人类
+    盲确认），会话随 ``research_dispatched`` 挂到 ``waiting_event``。但此后没有任何东西会
+    再碰这些 task：
+
+    - 容器从未起过 ⇒ 不会有 business callback；
+    - ``areconcile_stalled_blueprint_research_tasks`` 只扫 ``RUNNING`` + 有 subagent
+      session 的 task，够不到它们；
+    - ``_adrive_blueprint_locked`` 在 ``waiting_event`` 上以 ``aall_research_tasks_terminal``
+      为短路判据，``pending`` 非终态 ⇒ 每次重驱都在第一步原地返回。
+
+    三者合起来就是死锁：runner 恢复在线后，会话仍永久停在 ``researching``。本函数补上
+    唯一缺的那一环 —— runner 回来后重新调 ``dispatch``（增量派发天然幂等：
+    ``_DISPATCHABLE_STATUSES`` 白名单 + ``subagent_session__isnull`` 过滤，已起过容器的仓
+    不会被重开）。
+
+    无在线 runner 时**直接空转返回**，不白跑一遍 charter 加载；人审接管的蓝图跳过（与
+    :func:`arecover_stalled_blueprint_sessions` 同一判据）。单条 try/except 隔离，绝不
+    打断 scheduler tick。
+
+    Returns:
+        ``{"scanned": n, "redispatched": n, "unchanged": n}``——``redispatched`` 口径 =
+        本次真的派出了 ≥1 个容器的会话数。
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from delivery.models import (
+        ConvergenceSession,
+        ConvergenceSessionStatus,
+        RepoResearchTask,
+        RepoResearchTaskStatus,
+    )
+    from services.process_runtime.blueprint_research_adapter import BlueprintResearchAdapter
+
+    counts = {"scanned": 0, "redispatched": 0, "unchanged": 0}
+    adapter = BlueprintResearchAdapter()
+    # 没有在线 runner 时重派必然再次降级 —— 提前返回，别让兜底本身变成周期性噪声。
+    # 复用 adapter 自己的在线判据（3 倍心跳窗口）而非另写一遍查询：两处窗口一漂移，
+    # 兜底就会在 adapter 仍判「无 runner」时反复空派。
+    if await adapter._count_online_runners() == 0:
+        return counts
+
+    moment = now or timezone.now()
+    batch = max(int(limit or 0), 0) or _RECOVERY_BATCH_LIMIT
+    # 派发是「建 task 行 → 起容器」两步，中间有秒级窗口；用滞留窗口兜开，绝不与正在
+    # 进行的首轮派发抢同一个 task。
+    stale_before = moment - timedelta(minutes=_STALL_WAITING_MINUTES)
+    session_ids = [
+        str(row)
+        async for row in RepoResearchTask.objects.filter(
+            session__process_type=BLUEPRINT_PROCESS_TYPE,
+            session__status=ConvergenceSessionStatus.WAITING_EVENT,
+            status=RepoResearchTaskStatus.PENDING,
+            subagent_session__isnull=True,
+            updated_at__lt=stale_before,
+        )
+        .values_list("session_id", flat=True)
+        .distinct()[:batch]
+    ]
+    for session_id in session_ids:
+        counts["scanned"] += 1
+        try:
+            session = await ConvergenceSession.objects.aget(id=session_id)
+            artifact = await _aload_artifact(session)
+            if (
+                artifact is not None
+                and str(getattr(artifact, "blueprint_status", "") or "") in _HUMAN_OWNED_STATUSES
+            ):
+                counts["unchanged"] += 1
+                continue
+            result = await adapter.dispatch(session)
+            dispatched = int((result or {}).get("dispatched") or 0)
+            if dispatched > 0:
+                counts["redispatched"] += 1
+                logger.info(
+                    "blueprint_research_redispatched_after_runner_recovery",
+                    category="caller",
+                    component="process_runtime",
+                    initiated_by_user_id="system",
+                    session_id=str(session_id),
+                    dispatched=dispatched,
+                )
+            else:
+                counts["unchanged"] += 1
+        except Exception as exc:  # noqa: BLE001 — 单会话隔离，绝不打断整批
+            counts["unchanged"] += 1
+            logger.warning(
+                "blueprint_research_redispatch_failed",
+                category="caller",
+                component="process_runtime",
+                initiated_by_user_id="system",
+                session_id=str(session_id),
+                error=redact_secrets_in_text(str(exc)),
+            )
+    logger.info(
+        "blueprint_research_redispatch_completed",
+        category="caller",
+        component="process_runtime",
+        initiated_by_user_id="system",
+        **counts,
+    )
+    return counts
+
+
 async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0) -> dict:
     """周期扫描并重驱滞留的蓝图会话（僵尸恢复），返回恒定四键计数。
 
@@ -547,6 +659,9 @@ async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0
       优先取 :data:`_RECOVERY_BATCH_LIMIT` 条。
     - **人审接管的蓝图一律跳过**（``pending_review`` 及之后，:data:`_HUMAN_OWNED_STATUSES`）：
       这些蓝图的推进权归 approve / reject 端点，重驱会在人审面上凭空开澄清线程。
+    - 重驱前先过
+      :func:`aredispatch_never_dispatched_blueprint_research_tasks` —— 派发期无在线 runner
+      而降级的会话，光重驱推不动（见该函数 docstring 的死锁三要素）。
     - 其余逐条经 :func:`adrive_blueprint_session_to_pause_or_terminal` 重驱 —— 驱动器
       自带 pause 短路：仍在合法等待（有 open+blocking 线程 / 调研在途）的会话第一步
       就原地返回，**不会**被误推进；真僵尸则继续走到下一个挂起点或终态。
@@ -569,6 +684,9 @@ async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0
 
         moment = now or timezone.now()
         await areconcile_stalled_blueprint_research_tasks(now=moment, limit=limit)
+        # 必须在重驱循环**之前**：从未派发的 pending task 会让下面的 waiting_event 短路
+        # 恒成立，先把容器派出去，重驱这一 tick 才有可能推得动。
+        await aredispatch_never_dispatched_blueprint_research_tasks(now=moment, limit=limit)
         waiting_before = moment - timedelta(minutes=_STALL_WAITING_MINUTES)
         running_before = moment - timedelta(minutes=_STALL_RUNNING_MINUTES)
         batch = max(int(limit or 0), 0) or _RECOVERY_BATCH_LIMIT

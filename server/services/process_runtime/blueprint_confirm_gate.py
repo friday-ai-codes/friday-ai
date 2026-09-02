@@ -83,6 +83,18 @@ _MAX_DOMAIN_CHARS = 40
 
 _VALID_ROLES = ("direct", "indirect")
 _VALID_VERDICTS = ("suitable", "partial", "unsuitable")
+_TEAM_CLARIFICATION_REASONS = {"missing_team", "empty_team_core"}
+_TEAM_CLARIFICATION_QUESTION = (
+    "当前工作项尚未解析到可信的负责团队，无法安全确定仓库候选范围。"
+    "请提供负责团队的人类可读名称；系统只会在该团队的 Repository facets 与当前 Space "
+    "可访问仓库交集中继续路由。"
+)
+# `stage_state["confirmation"]` 上团队澄清的续跑账本键（承载线程 id 与已问轮次）。
+_TEAM_CLARIFICATION_STATE_KEY = "team_clarification"
+# 团队澄清最多问几轮。⭐ 上限存在的唯一理由是**止损**：答复解析不出团队时，继续问同一题
+# 只会无限循环（AGE-66 实测：第一条线程 resolved 后立刻又开一条逐字相同的新题）。
+# 到顶后停在确认门交人处置，⛔ 不再自动开新线程。
+_MAX_TEAM_CLARIFICATION_ROUNDS = 3
 
 # ⭐ D-03：`fitness.verdict == "unsuitable"` 的仓**默认不进锁定关联** —— 调研已经判定
 # 「这个需求不该落这个仓」，还把它锁进 `repo_associations` 等于让后续编码波次照着一个
@@ -614,6 +626,17 @@ class BlueprintConfirmGateAdapter:
         artifact = version.artifact
         snapshot = await self._abuild_snapshot(session)
         routing = self._stage_state(session).get("routing")
+        clarify_reason = (
+            str(routing.get("clarify_reason") or "") if isinstance(routing, dict) else ""
+        )
+        if not snapshot and clarify_reason in _TEAM_CLARIFICATION_REASONS:
+            return await self._ahandle_team_clarification(
+                session,
+                artifact,
+                version,
+                clarify_reason=clarify_reason,
+                started=started,
+            )
         candidates = routing.get("candidates", []) if isinstance(routing, dict) else []
         routed_direct_ids = {
             str(candidate.get("repository_id") or "")
@@ -1207,6 +1230,187 @@ class BlueprintConfirmGateAdapter:
             .first()
         )
 
+    # ── 团队澄清：出题 / 收答 / 止损 ──────────────────────────────────────────
+    #
+    # ⭐ 出题与收答**必须同处一地**。团队范围读的是 `stage_state["decomposition"]
+    # ["primary_team"]`，而澄清答复只会被 reflow 进 artifact **正文** —— 靠正文驱动的
+    # spec_gate 那套机制对团队门完全无效。只出题不收答 = 网关拿着过期 primary_team 重跑，
+    # 再开一条逐字相同的新题，无限循环（AGE-66 实测）。
+
+    async def _aload_team_clarification_answer(self, thread_id: str) -> str:
+        """取团队澄清线程上最后一条**人类**答复正文（无则空串）。
+
+        按 ``author_type == human`` 筛选 —— 线程里还混着 AI 出的题与 reflow 写的回灌确认
+        条目，靠正文前缀去猜谁是人类答复会随文案改动而失效。读取失败一律回空串
+        （退化成「再问一轮」，绝不崩在门里）。
+        """
+        from delivery.models import BlueprintThreadMessage, ThreadAuthorType
+
+        tid = str(thread_id or "").strip()
+        if not tid:
+            return ""
+        try:
+            body = (
+                await BlueprintThreadMessage.objects.filter(
+                    thread_id=tid, author_type=ThreadAuthorType.HUMAN
+                )
+                .order_by("-created_at")
+                .values_list("body", flat=True)
+                .afirst()
+            )
+        except Exception:  # noqa: BLE001 — 读答复 best-effort
+            return ""
+        return str(body or "").strip()
+
+    async def _ahandle_team_clarification(
+        self,
+        session: Any,
+        artifact: Any,
+        version: Any,
+        *,
+        clarify_reason: str,
+        started: float,
+    ) -> dict[str, Any]:
+        """团队缺失/为空时的收答—采纳—重跑闭环（出题带候选，轮次到顶即交人）。"""
+        from services.process_runtime.team_gate import (
+            alist_team_options,
+            aresolve_accessible_space_id,
+            match_team_answer,
+        )
+
+        state = self._stage_state(session)
+        confirmation = state.get(STAGE_STATE_KEY)
+        ledger = (
+            confirmation.get(_TEAM_CLARIFICATION_STATE_KEY)
+            if isinstance(confirmation, dict)
+            else None
+        )
+        ledger = ledger if isinstance(ledger, dict) else {}
+        rounds = int(ledger.get("rounds") or 0)
+        prior_thread_id = str(ledger.get("thread_id") or "")
+        initiated_by = self._initiated_by(session)
+
+        space_id = await aresolve_accessible_space_id(session)
+        options = await alist_team_options(space_id)
+
+        # ① 收答：上一轮线程已 resolved 时把答复解析成权威团队名并采纳。
+        adopted = ""
+        prior_answer = ""
+        if prior_thread_id:
+            prior_answer = await self._aload_team_clarification_answer(prior_thread_id)
+            adopted = match_team_answer(prior_answer, options)
+
+        if adopted:
+            # ⭐ 一次原子 transition 同时携带「新 primary_team」与「回 route」：
+            # `decomposition.primary_team` 正是 route 阶段解析责任团队读的字段
+            # （blueprint_route._extract_team_context），所以 route 重跑必然读到新值。
+            # ⛔ 不在门内调 arerun_blueprint_stage —— 那会在 handler 落 StageOutcome 之前
+            # 先回卷一次，两次写同一会话的时序不可控。
+            decomposition = state.get("decomposition")
+            decomposition = dict(decomposition) if isinstance(decomposition, dict) else {}
+            decomposition["primary_team"] = adopted
+            logger.info(
+                "blueprint_team_clarification_adopted",
+                category="caller",
+                component="process_runtime",
+                session_id=str(getattr(session, "id", "")),
+                artifact_id=str(artifact.id),
+                thread_id=prior_thread_id,
+                primary_team=adopted,
+                rounds=rounds,
+                initiated_by_user_id=initiated_by,
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            return self._result(
+                "reroute_required",
+                None,
+                {
+                    "decomposition": decomposition,
+                    STAGE_STATE_KEY: {
+                        "repos": [],
+                        "clarification_kind": "team",
+                        _TEAM_CLARIFICATION_STATE_KEY: {
+                            "rounds": rounds,
+                            "thread_id": prior_thread_id,
+                            "adopted_team": adopted,
+                        },
+                    },
+                },
+                0,
+            )
+
+        # ② 已有 open 线程 → 等人作答，不重复出题。
+        if await self.lifecycle.ahas_open_blocking_threads(
+            artifact, kind=ThreadKind.AI_CLARIFICATION
+        ):
+            return self._result("awaiting_confirmation", None, None, 0)
+
+        # ③ 止损：轮次到顶仍解析不出团队时停在确认门交人，绝不再开新线程。
+        if rounds >= _MAX_TEAM_CLARIFICATION_ROUNDS:
+            logger.warning(
+                "blueprint_team_clarification_exhausted",
+                category="caller",
+                component="process_runtime",
+                session_id=str(getattr(session, "id", "")),
+                artifact_id=str(artifact.id),
+                rounds=rounds,
+                clarify_reason=clarify_reason,
+                option_count=len(options),
+                initiated_by_user_id=initiated_by,
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            return self._result("awaiting_confirmation", None, None, 0)
+
+        # ④ 出题：带该 Space 内真实存在的团队取值，让人选而不是自由写。
+        question = _TEAM_CLARIFICATION_QUESTION
+        if prior_thread_id and prior_answer and not adopted:
+            question = (
+                f"{question}\n\n上一轮答复未能唯一匹配到任何已登记的团队取值，"
+                "请从下列候选中选一个（或说明该团队在 Repository facets 里的准确写法）。"
+            )
+        thread = await self.lifecycle.open_thread(
+            artifact,
+            kind=ThreadKind.AI_CLARIFICATION,
+            blocking=True,
+            question=question,
+            options=options,
+            initiated_by_user_id=initiated_by,
+            created_on_version=version,
+            return_stage=BlueprintStatus.RESEARCHING,
+        )
+        logger.info(
+            "blueprint_team_clarification_opened",
+            category="caller",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            artifact_id=str(artifact.id),
+            thread_id=str(thread.id),
+            clarify_reason=clarify_reason,
+            rounds=rounds + 1,
+            option_count=len(options),
+            space_id=space_id,
+            initiated_by_user_id=initiated_by,
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
+        return self._result(
+            "awaiting_confirmation",
+            str(thread.id),
+            {
+                STAGE_STATE_KEY: {
+                    "thread_id": str(thread.id),
+                    "clarification_kind": "team",
+                    "clarify_reason": clarify_reason,
+                    "repos": [],
+                    _TEAM_CLARIFICATION_STATE_KEY: {
+                        "rounds": rounds + 1,
+                        "thread_id": str(thread.id),
+                        "adopted_team": "",
+                    },
+                }
+            },
+            0,
+        )
+
     @staticmethod
     def _stage_state(session: Any) -> dict[str, Any]:
         state = getattr(session, "stage_state", None)
@@ -1291,6 +1495,17 @@ def _build_snapshot_entry(
             reasons.append(reason)
         elif str(reason or "").strip():
             reasons.append(str(reason).strip()[:_MAX_SUMMARY_CHARS])
+    # ⭐ 与 reasons 同一条缝：调研容器把路径写进 `fitness.citations`，落锁时
+    # `_snapshot_fitness_citations` 再把它们收进蓝图引用池。此前写死 []，确认门快照、
+    # 锁定关联、蓝图投影全程看不到结构化引用——证据只剩 reasons 散文。
+    citations_raw = (
+        conclusion.get("citations") if isinstance(conclusion.get("citations"), list) else []
+    )
+    citations = [
+        str(item).strip()[:_MAX_SUMMARY_CHARS]
+        for item in citations_raw[:_MAX_LIST_ITEMS]
+        if str(item or "").strip()
+    ]
     is_unsuitable = verdict == "unsuitable"
     return {
         "repository_id": repository_id,
@@ -1301,7 +1516,7 @@ def _build_snapshot_entry(
         "fitness": {
             "verdict": verdict if verdict in _VALID_VERDICTS else "",
             "reasons": reasons,
-            "citations": [],
+            "citations": citations,
         },
         "current_state_summary": _summarize_findings(conclusion.get("findings")),
         "routing_evidence": {

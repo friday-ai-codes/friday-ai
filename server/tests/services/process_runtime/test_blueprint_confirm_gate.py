@@ -352,6 +352,208 @@ async def test_open_gate_creates_blocking_thread_with_structured_options() -> No
     assert await BlueprintThread.objects.filter(artifact=artifact).acount() == 1
 
 
+async def _team_session(artifact, *, ledger: dict | None = None, decomposition: dict | None = None):
+    """构造停在团队 clarify 上的确认门会话（可带团队澄清续跑账本）。"""
+    confirmation: dict[str, Any] = {"repos": []}
+    if ledger is not None:
+        confirmation["team_clarification"] = ledger
+        confirmation["clarification_kind"] = "team"
+    stage_state: dict[str, Any] = {
+        "routing": {
+            "status": "clarify",
+            "clarify_reason": "missing_team",
+            "candidates": [],
+        },
+        "confirmation": confirmation,
+    }
+    if decomposition is not None:
+        stage_state["decomposition"] = decomposition
+    return await _make_session(artifact, stage_state)
+
+
+async def _answer_team_thread(thread, body: str) -> None:
+    """在团队澄清线程上写一条人类答复并置 resolved。"""
+    from delivery.models import BlueprintThreadMessage, ThreadAuthorType
+
+    await BlueprintThreadMessage.objects.acreate(
+        thread=thread,
+        author_type=ThreadAuthorType.HUMAN,
+        body=body,
+    )
+    # reflow 侧还会追写一条 AI 回灌确认 —— 收答必须按 author_type 挑人类那条，
+    # 否则会把系统文案当团队名去匹配。
+    await BlueprintThreadMessage.objects.acreate(
+        thread=thread,
+        author_type=ThreadAuthorType.AI,
+        body="答案已回灌，产出版本 v3。",
+    )
+    await BlueprintThread.objects.filter(id=thread.id).aupdate(status=ThreadStatus.RESOLVED)
+
+
+async def test_missing_team_opens_team_clarification_instead_of_empty_repo_gate() -> None:
+    """missing_team 必须先问 Team，禁止生成零选项 repo_confirmation。"""
+    artifact = await _make_artifact()
+    session = await _team_session(artifact)
+
+    result = await _adapter().open_gate(session)
+
+    team_thread = await BlueprintThread.objects.filter(
+        artifact=artifact,
+        kind=ThreadKind.AI_CLARIFICATION,
+        status=ThreadStatus.OPEN,
+    ).afirst()
+    assert result["event"] == "awaiting_confirmation"
+    assert result["repo_count"] == 0
+    confirmation = result["stage_state"]["confirmation"]
+    assert confirmation["clarification_kind"] == "team"
+    # 续跑账本必须落盘：轮次与线程 id 是下一轮收答与止损的唯一依据。
+    assert confirmation["team_clarification"]["rounds"] == 1
+    assert confirmation["team_clarification"]["thread_id"] == str(team_thread.id)
+    assert team_thread is not None
+    first_message = await team_thread.messages.afirst()
+    assert first_message is not None
+    assert "负责团队" in first_message.body
+    assert (
+        await BlueprintThread.objects.filter(
+            artifact=artifact,
+            kind=ThreadKind.REPO_CONFIRMATION,
+        ).acount()
+        == 0
+    )
+
+
+async def test_team_answer_is_adopted_and_reroutes_instead_of_reasking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """收答闭环：答复解析出团队 → 写进 decomposition.primary_team 并回 route 重跑。
+
+    这是 AGE-66 死循环的可证伪形式 —— 修复前这里会再开一条逐字相同的新澄清线程。
+    """
+    monkeypatch.setattr(
+        "services.process_runtime.team_gate.alist_team_options",
+        AsyncMock(return_value=[{"team": "学习工具", "repo_count": 4}]),
+    )
+    monkeypatch.setattr(
+        "services.process_runtime.team_gate.aresolve_accessible_space_id",
+        AsyncMock(return_value=str(uuid.uuid4())),
+    )
+    artifact = await _make_artifact()
+    thread = await BlueprintLifecycleService().open_thread(
+        artifact,
+        kind=ThreadKind.AI_CLARIFICATION,
+        blocking=True,
+        question="负责团队是哪个？",
+        options=[],
+        initiated_by_user_id="tester",
+    )
+    await _answer_team_thread(thread, "负责团队是「学习工具」，核心仓在该团队 facets 下。")
+    session = await _team_session(
+        artifact,
+        ledger={"rounds": 1, "thread_id": str(thread.id), "adopted_team": ""},
+        decomposition={"project_id": "", "primary_team": "学习A"},
+    )
+
+    result = await _adapter().open_gate(session)
+
+    assert result["event"] == "reroute_required"
+    assert result["stage_state"]["decomposition"]["primary_team"] == "学习工具"
+    # project_id 是独立身份，采纳团队绝不能顺手给它塞值。
+    assert result["stage_state"]["decomposition"]["project_id"] == ""
+    assert (
+        await BlueprintThread.objects.filter(
+            artifact=artifact, kind=ThreadKind.AI_CLARIFICATION, status=ThreadStatus.OPEN
+        ).acount()
+        == 0
+    ), "采纳答复后不得再开新的团队澄清线程"
+
+
+async def test_unmatched_team_answer_reasks_with_options_and_counts_round(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """答复匹配不到已登记取值时带候选再问一轮，并把轮次记上去。"""
+    options = [{"team": "学习工具", "repo_count": 4}, {"team": "商业化", "repo_count": 9}]
+    monkeypatch.setattr(
+        "services.process_runtime.team_gate.alist_team_options",
+        AsyncMock(return_value=options),
+    )
+    monkeypatch.setattr(
+        "services.process_runtime.team_gate.aresolve_accessible_space_id",
+        AsyncMock(return_value=str(uuid.uuid4())),
+    )
+    artifact = await _make_artifact()
+    thread = await BlueprintLifecycleService().open_thread(
+        artifact,
+        kind=ThreadKind.AI_CLARIFICATION,
+        blocking=True,
+        question="负责团队是哪个？",
+        options=[],
+        initiated_by_user_id="tester",
+    )
+    await _answer_team_thread(thread, "就是学习A那个团队")
+    session = await _team_session(
+        artifact,
+        ledger={"rounds": 1, "thread_id": str(thread.id), "adopted_team": ""},
+    )
+
+    result = await _adapter().open_gate(session)
+
+    assert result["event"] == "awaiting_confirmation"
+    confirmation = result["stage_state"]["confirmation"]
+    assert confirmation["team_clarification"]["rounds"] == 2
+    fresh = await BlueprintThread.objects.filter(
+        artifact=artifact, kind=ThreadKind.AI_CLARIFICATION, status=ThreadStatus.OPEN
+    ).afirst()
+    assert fresh is not None
+    assert fresh.options == options, "再问必须带候选，否则又变成无从校验的自由作答"
+
+
+async def test_team_clarification_stops_after_round_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """轮次到顶仍解析不出团队时停在确认门交人，绝不再开新线程（止损）。"""
+    from services.process_runtime.blueprint_confirm_gate import (
+        _MAX_TEAM_CLARIFICATION_ROUNDS,
+    )
+
+    monkeypatch.setattr(
+        "services.process_runtime.team_gate.alist_team_options",
+        AsyncMock(return_value=[{"team": "学习工具", "repo_count": 4}]),
+    )
+    monkeypatch.setattr(
+        "services.process_runtime.team_gate.aresolve_accessible_space_id",
+        AsyncMock(return_value=str(uuid.uuid4())),
+    )
+    artifact = await _make_artifact()
+    thread = await BlueprintLifecycleService().open_thread(
+        artifact,
+        kind=ThreadKind.AI_CLARIFICATION,
+        blocking=True,
+        question="负责团队是哪个？",
+        options=[],
+        initiated_by_user_id="tester",
+    )
+    await _answer_team_thread(thread, "说不清楚")
+    session = await _team_session(
+        artifact,
+        ledger={
+            "rounds": _MAX_TEAM_CLARIFICATION_ROUNDS,
+            "thread_id": str(thread.id),
+            "adopted_team": "",
+        },
+    )
+
+    result = await _adapter().open_gate(session)
+
+    assert result["event"] == "awaiting_confirmation"
+    assert result["stage_state"] is None
+    assert (
+        await BlueprintThread.objects.filter(
+            artifact=artifact, kind=ThreadKind.AI_CLARIFICATION, status=ThreadStatus.OPEN
+        ).acount()
+        == 0
+    ), "到顶后必须停下来交人，继续出题就是死循环"
+
+
 async def _set_thread_options(thread, options: list[dict]) -> None:
     await BlueprintThread.objects.filter(id=thread.id).aupdate(options=options)
 

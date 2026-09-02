@@ -164,6 +164,7 @@ async def _amaybe_start_blueprint_session(
     work_item_context: Any,
     assumptions_tier: str = "",
     project_id: str = "",
+    primary_team: str = "",
     technical_plan_id: str = "",
 ) -> Any:
     """``mcp`` 开关切到蓝图时建 ``technical_blueprint`` 会话；否则返回 ``None`` 走旧链。
@@ -207,6 +208,7 @@ async def _amaybe_start_blueprint_session(
         entry_key="mcp",
         work_item_context=work_item_context,
         assumptions_tier=assumptions_tier,
+        primary_team=primary_team,
         technical_plan_id=technical_plan_id,
     )
 
@@ -221,6 +223,7 @@ async def delegate_process_runtime(
     work_item_context: Any = None,
     assumptions_tier: str = "",
     project_id: str = "",
+    primary_team: str = "",
     technical_plan_id: str = "",
 ) -> DelegateResult:
     """delegate 到 ``process_runtime`` 统一编排，产 canonical MergedPlan/PlanVersion。
@@ -291,6 +294,7 @@ async def delegate_process_runtime(
             work_item_context=work_item_context,
             assumptions_tier=assumptions_tier,
             project_id=project_id,
+            primary_team=primary_team,
             technical_plan_id=technical_plan_id,
         )
         session = session or await start_orchestration(
