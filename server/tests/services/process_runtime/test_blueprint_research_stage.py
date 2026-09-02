@@ -707,6 +707,8 @@ async def test_charter_injected_into_prompt() -> None:
     assert "高三学员进入专项学习页" in prompt
     assert "专项学习页" in prompt
     assert "fitness" in prompt and "role_suggestion" in prompt
+    assert "candidate_files" in prompt
+    assert "缺少具体落点的 direct 会被服务端降为 indirect" in prompt
     # 需求规格全量段：背景 / 验收标准 / 测试用例 / 范围边界 / 约束
     assert "现有学习页只覆盖初中学段" in prompt
     assert "进入页面 1 秒内展示专项列表" in prompt

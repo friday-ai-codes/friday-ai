@@ -862,6 +862,9 @@ class BlueprintResearchAdapter:
             '"citations": [...]}\n'
             '- role_suggestion: "direct"（需要改动本仓）或 "indirect"（只需了解/被依赖）\n'
             "- responsibility: 一段话说明本仓在这次需求里承担什么职责\n"
+            '- candidate_files: [{"path": ..., "reason": ...}]；role_suggestion="direct" 时'
+            "必须至少给出一个具体文件/API/model 落点。已有文件填真实读到的路径；需要新增时"
+            "填明确的拟新增路径。缺少具体落点的 direct 会被服务端降为 indirect\n"
             '- findings: [{"title": ..., "detail": ..., "citations": [...]}]，逐条描述与本次'
             "需求相关的现状（已有能力、缺口、约束）；若功能点带验收标准/测试用例，"
             "请对照说明本仓现状能否支撑\n\n"
