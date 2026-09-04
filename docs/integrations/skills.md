@@ -36,7 +36,7 @@ Skill 仓库：[friday-ai-codes/skills](https://github.com/friday-ai-codes/skill
 npx -y @friday-ai-codes/mcp setup
 ```
 
-交互式中文向导：凭证问答（服务地址 + 访问令牌）→ 自动注册进本机 agent → 连通性测速 → 能力演示。访问令牌在 Friday Web 控制台「个人资料 → 访问令牌」创建。详见 [MCP Server](/integrations/mcp)。
+交互式中文向导：凭证问答（服务地址 + 访问令牌）→ 自动注册进当前项目的 agent 配置 → 连通性测速 → 能力演示。访问令牌在 Friday Web 控制台「个人资料 → 访问令牌」创建。详见 [MCP Server](/integrations/mcp)。
 
 ### 第二步 — 安装 Skills
 
@@ -47,14 +47,17 @@ npx @friday-ai-codes/skills
 ```
 
 ```bash [非交互（脚本 / CI）]
-# 自动嗅探本机 agent，全局安装
+# 自动嗅探本机 agent，安装到当前项目
 npx @friday-ai-codes/skills install -y
 
-# 装到当前项目而非全局
-npx @friday-ai-codes/skills install --project --agent cursor
+# 当前项目，仅 Cursor
+npx @friday-ai-codes/skills install --agent cursor
 
-# 指定 agent（可重复）
+# 指定 agent（可重复，仍为当前项目）
 npx @friday-ai-codes/skills install --agent claude-code --agent codex
+
+# 只有明确需要时才安装到用户全局
+npx @friday-ai-codes/skills install --agent claude-code --global
 
 # 只装技能，不注入各 agent 指令文件
 npx @friday-ai-codes/skills install -y --no-bootstrap
@@ -80,7 +83,7 @@ npx skills add friday-ai-codes/skills --skill '*' -g -y
 
 :::
 
-安装器自带安装能力：渐变 banner、中文向导、自动嗅探本机已装的 Cursor / Claude Code / Codex / Gemini CLI / OpenCode，把技能直接拷进各 agent 的原生技能目录（如 `~/.claude/skills/`、`.cursor/skills/`）。交互模式下装完技能还会检测 MCP 配置，未配置时直接接力拉起 `mcp setup`。
+安装器自带安装能力：渐变 banner、中文向导、自动嗅探本机已装的 Cursor / Claude Code / Codex / Gemini CLI / OpenCode，默认把技能直接拷进当前项目的原生技能目录（如 `.claude/skills/`、`.cursor/skills/`、`.agents/skills/`）。只有显式传入 `--global`（或 `-g`）才写用户级目录。交互模式下装完技能还会检测 MCP 配置，未配置时直接接力拉起 `mcp setup`。
 
 安装器还会默认把一段精简的 `friday` 入口引导注入各 agent 的原生指令文件（marker 幂等，`--no-bootstrap` 可关闭）：Cursor → `.cursor/rules/friday.mdc`（`alwaysApply`），Claude Code → `CLAUDE.md`，Codex / OpenCode → `AGENTS.md`（共用自动去重），Gemini CLI → `GEMINI.md`；全局安装则写各家的用户级文件（`~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md`、`~/.gemini/GEMINI.md`、`~/.config/opencode/AGENTS.md`）。项目级注入用相对路径，文件进 git 后队友机器同样生效。
 

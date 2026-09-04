@@ -136,7 +136,7 @@ Three steps to connect:
 3. Install the Skills (interactive wizard; auto-detects Claude Code, Cursor, Codex, and more; ships 4 skills covering requirement routing through MR creation):
 
    ```bash
-   npx @friday-ai-codes/skills
+   npx @friday-ai-codes/skills          # installs into the current project by default
    ```
 
    In interactive mode the installer also checks the connection config after installing, and hands off to the step-2 wizard if it is missing — either order closes the loop.
@@ -224,7 +224,7 @@ You only need Docker, Docker Compose v2, and Git.
 
    ```bash
    npx -y @friday-ai-codes/mcp setup    # configure connection + register MCP + latency check
-   npx @friday-ai-codes/skills          # install the 4 skills into local agents
+   npx @friday-ai-codes/skills          # install skills into the current project's agent config
    ```
 
    Cursor / Claude Code / Codex can then call Friday's code intelligence and execution tools directly.
