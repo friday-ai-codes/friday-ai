@@ -136,7 +136,7 @@ Friday 当前对飞书的集成已经很深，不只是发通知。
 3. 安装 Skill（中文向导，自动嗅探 Claude Code、Cursor、Codex 等宿主，包含从需求路由到 MR 创建的 4 个 skill）：
 
    ```bash
-   npx @friday-ai-codes/skills
+   npx @friday-ai-codes/skills          # 默认安装到当前项目
    ```
 
    交互模式下装完技能会自动检测连接配置，没配好会直接接力拉起第 2 步的向导——先跑哪步都能闭环。
@@ -224,7 +224,7 @@ Friday 会识别模型输入模态。当前 Web Chat 已支持图片上传链路
 
    ```bash
    npx -y @friday-ai-codes/mcp setup    # 配置连接 + 注册 MCP + 测速
-   npx @friday-ai-codes/skills          # 安装 4 个 skill 到本机 agent
+   npx @friday-ai-codes/skills          # 安装 skill 到当前项目的 agent 配置
    ```
 
    Cursor / Claude Code / Codex 就能直接调用 Friday 的代码智能与执行工具。

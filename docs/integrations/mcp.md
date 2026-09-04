@@ -20,7 +20,7 @@ title: MCP Server
 npx -y @friday-ai-codes/mcp setup
 ```
 
-交互式中文向导会依次完成：凭证问答（服务地址 + 令牌）→ 自动注册进 Cursor / Claude Code / Codex → 连通性测速（延迟毫秒数高亮）→ 能力演示（随机介绍一个已索引仓库）。
+交互式中文向导会依次完成：凭证问答（服务地址 + 令牌）→ 自动注册进当前项目的 Cursor / Claude Code / Codex 配置 → 连通性测速（延迟毫秒数高亮）→ 能力演示（随机介绍一个已索引仓库）。
 
 ## 初始化配置（命令式）
 
@@ -51,11 +51,11 @@ npx -y @friday-ai-codes/mcp register
 ::: code-group
 
 ```bash [Claude Code]
-claude mcp add friday -- npx -y @friday-ai-codes/mcp
+claude mcp add --scope project friday -- npx -y @friday-ai-codes/mcp
 ```
 
 ```json [Cursor]
-// .cursor/mcp.json 或 ~/.cursor/mcp.json
+// .cursor/mcp.json（默认）或 ~/.cursor/mcp.json（显式 --global）
 {
   "mcpServers": {
     "friday": { "command": "npx", "args": ["-y", "@friday-ai-codes/mcp"] }
@@ -64,7 +64,7 @@ claude mcp add friday -- npx -y @friday-ai-codes/mcp
 ```
 
 ```toml [Codex]
-# ~/.codex/config.toml
+# .codex/config.toml（默认）
 [mcp_servers.friday]
 command = "npx"
 args = ["-y", "@friday-ai-codes/mcp"]
@@ -79,10 +79,10 @@ args = ["-y", "@friday-ai-codes/mcp"]
 | 命令 | 作用 |
 | --- | --- |
 | `friday-mcp`（无参数） | 启动 stdio MCP server |
-| `friday-mcp setup` | 交互式中文向导：凭证 → 注册 → 测速 → 能力演示 |
+| `friday-mcp setup [--global]` | 交互式中文向导：凭证 → 注册 → 测速 → 能力演示；默认当前项目 |
 | `friday-mcp init` | 写入配置（带 `--base-url` / `--token` 为命令式，否则交互式问答） |
-| `friday-mcp register [--agent <name>] [--project]` | 幂等注册进 Cursor / Claude Code / Codex |
-| `friday-mcp doctor` | 检查配置、注册状态与连通性测速（不回显令牌） |
+| `friday-mcp register [--agent <name>] [--project\|--global]` | 幂等注册进 Cursor / Claude Code / Codex；默认当前项目 |
+| `friday-mcp doctor [--project\|--global]` | 检查对应范围的注册状态与连通性测速（不回显令牌）；默认当前项目 |
 
 ## 工具集（40 个）
 
