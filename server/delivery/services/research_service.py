@@ -200,15 +200,24 @@ class ResearchService:
         与 ``invalidate_for_repo``（按 repo 重索引，reason=repo_reindexed）区别：本方法按
         **指定 task_ids**（澄清 affected_partials）置 stale，``invalidated_reason="clarification"``，
         使其满足 §14「stale 须重跑后才满足 barrier」——由 researching 重派（ResearchDispatchAdapter
-        的 DISPATCHABLE 含 stale）。**只触指定 task，绝不动其他**；已 stale 幂等跳过。
+        的 DISPATCHABLE 含 stale）。**只触指定 task，绝不动其他**。
         返回失效 PartialPlan 计数。
 
-        WR-01 安全前置：仅把**已终态**（done/failed）的 affected 任务置 stale 重跑——
+        WR-01 安全前置：仅把**已终态**（done/failed/stale）的 affected 任务置 stale 重跑——
         正 ``running``/``pending`` 的在途任务**不**置 stale（让其自然完成）。否则会出现：
         running 任务被置 stale → researching 对同仓重派第二个容器；而原在途容器的晚到
         完成回调进入 ``_aload_research_task`` 时因 task 已 stale（终态判定）被静默丢弃——
         同仓双容器 + 丢弃一份结果。让在途任务自然完成可避免重复派发与结果丢弃；其结果
         正常落库后若仍需失效，可由后续重索引/再澄清按需处理。
+
+        ⭐ **已 stale 的 task 不再整条跳过**（quick-260907 回归门）：``stale`` 是可重派态，
+        但 ``blueprint_repo_plan.arecord_repo_plan`` 落 degraded 空壳时正是「task=stale +
+        PartialPlan 仍 valid」这个组合 —— 老实现按「已 stale 幂等跳过」连它名下的 valid
+        PartialPlan 一起跳过，而派发面 ``dispatch_plans`` 只要查到该仓有 valid 的 repo_plan
+        段就判「已完成」不再派。结果：节点重跑（``blueprint_stage_rerun``）与按仓驳回对
+        degraded 仓全是空操作，该仓在当前会话里**再也救不回来**，融合永远缺一块。
+        本方法是这条写路径上唯一能清 ``valid`` 位的入口，故 stale task 的 PartialPlan
+        必须照常失效；task 状态本就已是 stale，重复写入幂等无害。
         """
         return await self._mark_stale_sync(task_ids)
 
@@ -216,7 +225,7 @@ class ResearchService:
     def _mark_stale_sync(self, task_ids: list) -> int:
         if not task_ids:
             return 0
-        # WR-01：只对已终态（done/failed）的 affected 任务置 stale 重跑，跳过在途
+        # WR-01：只对已终态（done/failed/stale）的 affected 任务置 stale 重跑，跳过在途
         # （running/pending）任务——避免对在途容器同仓双派 + 晚到回调结果被静默丢弃。
         terminal_ids = list(
             RepoResearchTask.objects.filter(
@@ -224,6 +233,7 @@ class ResearchService:
                 status__in=[
                     RepoResearchTaskStatus.DONE,
                     RepoResearchTaskStatus.FAILED,
+                    RepoResearchTaskStatus.STALE,
                 ],
             ).values_list("id", flat=True)
         )

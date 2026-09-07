@@ -361,6 +361,37 @@ async def test_mark_stale_running_only_is_noop() -> None:
     assert task_running.status == RepoResearchTaskStatus.RUNNING
 
 
+@pytest.mark.asyncio
+async def test_mark_stale_invalidates_partials_of_already_stale_task() -> None:
+    """⭐ 已 stale 的 task 名下 valid PartialPlan 必须照常失效（quick-260907 回归门）。
+
+    ``blueprint_repo_plan.arecord_repo_plan`` 落 degraded 空壳时正是「task=stale +
+    PartialPlan 仍 valid」这个组合。老实现把已 stale 的 task 整条跳过 ⇒ 空壳的 ``valid``
+    位没有任何写路径能清 ⇒ 派发面查到该仓「已有方案」判完成、节点重跑与按仓驳回全成空
+    操作，degraded 仓在当前会话里再也救不回来。**可证伪**：把 STALE 从 ``_mark_stale_sync``
+    的终态集合里去掉立刻转红。
+    """
+    session = await _make_session_async()
+    repo = await _make_repo_async()
+    task_stale = await RepoResearchTask.objects.acreate(
+        session=session, repository=repo, status=RepoResearchTaskStatus.STALE
+    )
+    await PartialPlan.objects.acreate(
+        research_task=task_stale,
+        content={"repository_id": str(repo.id), "repo_plan": {"delivery_status": "degraded"}},
+        valid=True,
+    )
+
+    invalidated = await ResearchService().mark_stale([task_stale.id])
+
+    assert invalidated == 1
+    row = await PartialPlan.objects.aget(research_task=task_stale)
+    assert row.valid is False
+    assert row.invalidated_reason == "clarification"
+    await task_stale.arefresh_from_db()
+    assert task_stale.status == RepoResearchTaskStatus.STALE
+
+
 async def _make_session_async() -> ConvergenceSession:
     return await ConvergenceSession.objects.acreate(
         process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
