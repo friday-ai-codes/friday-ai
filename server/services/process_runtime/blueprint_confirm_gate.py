@@ -59,8 +59,10 @@ __all__ = [
     "STAGE_STATE_KEY",
     "LOCK_BLOCKED_PENDING_RESEARCH",
     "LOCK_BLOCKED_SNAPSHOT_CHANGED",
+    "UNSUITABLE_REMOVE_REASON",
     "acollect_pending_research_repos",
     "acollect_confirmation_state",
+    "auto_removed_repository_ids",
     "build_locked_associations",
     "merge_gate_snapshot",
 ]
@@ -370,21 +372,56 @@ def merge_gate_snapshot(
 
 
 def _human_kept_despite_unsuitable(entry: dict[str, Any]) -> bool:
-    """人工是否在门内**显式重纳**过这个仓（``add_repo`` 且 ``after.removed is False``）。
+    """人工是否在门内**显式经手**过这个仓（据此豁免 D-03 的自动移除）。
 
     只认动作留痕，不认 ``removed`` 现值：现值 False 也可能只是「门先开时 verdict 还没
     出来」，那种情况必须被 refresh 收紧成 removed，否则「先开门、调研后判不适配」的仓
     会一路锁进蓝图（D-03 要拦的正是这条时序）。
+
+    ⭐ **三个动作都算「人要这个仓」**（quick-260907 回归门）：
+
+    - ``add_repo`` 且 ``after.removed is False`` —— 显式重纳；
+    - ``reclassify_role`` —— 人给它定了角色；
+    - ``edit_responsibility`` —— 人给它写了职责。
+
+    早前只认 ``add_repo``，于是出现这条静默丢仓：门开时该仓 ``role=direct`` / 未移除，人
+    照着改了它的职责文本就点确认，而确认前的快照 refresh 恰好带回 ``unsuitable`` ⇒ 该仓被
+    自动移除、锁定集少一个仓，界面上没有任何提示，门关后也没有补仓入口。2026-09-04 实测
+    onion-practice 就是这样丢的。**人花力气编辑过的仓，机器判定不该越过人**。
+
+    ⛔ 豁免的是「自动移除」，不是「人工移除」：人显式 ``remove_repo`` 后 ``removed`` 已是
+    ``True``，:func:`_apply_unsuitable_auto_remove` 不会把它改回来，移除仍然生效。
     """
     for action in entry.get("actions") or []:
         if not isinstance(action, dict):
             continue
-        if str(action.get("action") or "").strip() != "add_repo":
+        name = str(action.get("action") or "").strip()
+        if name in ("reclassify_role", "edit_responsibility"):
+            return True
+        if name != "add_repo":
             continue
         after = action.get("after")
         if isinstance(after, dict) and after.get("removed") is False:
             return True
     return False
+
+
+def auto_removed_repository_ids(snapshot: Any) -> list[str]:
+    """锁定快照里**被机器自动移除**（非人工移除）的仓 id（纯函数，供锁定面明示）。
+
+    判据 = ``removed is True`` 且 ``remove_reason == fitness_unsuitable``。人工
+    ``remove_repo`` 写的是自己的原因，不会命中。
+    """
+    out: list[str] = []
+    for entry in snapshot if isinstance(snapshot, (list, tuple)) else []:
+        if not isinstance(entry, dict) or entry.get("removed") is not True:
+            continue
+        if str(entry.get("remove_reason") or "").strip() != UNSUITABLE_REMOVE_REASON:
+            continue
+        repository_id = str(entry.get("repository_id") or "").strip()
+        if repository_id:
+            out.append(repository_id)
+    return out
 
 
 def _apply_unsuitable_auto_remove(entry: dict[str, Any]) -> bool:
@@ -1018,6 +1055,11 @@ class BlueprintConfirmGateAdapter:
         )
 
         removed = [entry for entry in snapshot if entry.get("removed") is True]
+        # ⭐ 机器自动移除必须**人可见**（quick-260907）：D-03 的 unsuitable 自动移除在门内
+        # 没有显眼标记，人改完职责点确认就少一个仓，门关后又没有补仓入口 ⇒ 静默丢仓。
+        # 这里把被自动移除的仓 id 单列进锁定事件与日志，活动流/大盘可直接读到「这次锁定
+        # 移除了谁、为什么」。
+        auto_removed = auto_removed_repository_ids(snapshot)
         await self._emit(
             session,
             EVENT_BLUEPRINT_CONFIRMATION_LOCKED,
@@ -1026,10 +1068,26 @@ class BlueprintConfirmGateAdapter:
                 "locked_repository_count": len(associations),
                 "locked_repo_count": len(associations),
                 "removed_count": len(removed),
+                "auto_removed_count": len(auto_removed),
+                "auto_removed_repository_ids": auto_removed,
+                "auto_removed_reason": UNSUITABLE_REMOVE_REASON if auto_removed else "",
                 "decided_by": "human",
                 "charter_draft_count": draft_count,
             },
         )
+        if auto_removed:
+            logger.warning(
+                "blueprint_confirmation_locked_with_auto_removed_repos",
+                category="caller",
+                component="process_runtime",
+                session_id=str(getattr(session, "id", "")),
+                artifact_id=str(artifact.id),
+                thread_id=str(thread.id),
+                auto_removed_count=len(auto_removed),
+                auto_removed_repository_ids=auto_removed,
+                reason=UNSUITABLE_REMOVE_REASON,
+                initiated_by_user_id=self._initiated_by(session),
+            )
         logger.info(
             "blueprint_confirmation_locked",
             category="caller",
@@ -1039,12 +1097,15 @@ class BlueprintConfirmGateAdapter:
             thread_id=str(thread.id),
             locked_repo_count=len(associations),
             removed_count=len(removed),
+            auto_removed_count=len(auto_removed),
             charter_draft_count=draft_count,
             version_no=getattr(new_version, "version_no", 0),
             initiated_by_user_id=self._initiated_by(session),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
         )
-        return self._result("confirmed", str(thread.id), None, len(associations))
+        return self._result(
+            "confirmed", str(thread.id), None, len(associations), auto_removed=auto_removed
+        )
 
     # ── 章程草案回灌（一律 ai_draft，逐仓 best-effort） ────────────────────
 
@@ -1432,10 +1493,13 @@ class BlueprintConfirmGateAdapter:
         repo_count: int,
         *,
         reason: str = "",
+        auto_removed: list[str] | None = None,
     ) -> dict[str, Any]:
         """结果形状恒定：handler 只据 ``event`` 决定 StageOutcome。
 
         ``reason`` 只给视图层区分 409 文案（并发/待调研 vs 内容非法），handler 不读。
+        ``auto_removed`` 是被 D-03 自动移除（非人工移除）的仓 id，给视图层在确认响应里
+        明示「这次锁定少了谁」——否则人点完确认根本看不出仓库集被机器改过。
         """
         return {
             "event": event,
@@ -1443,6 +1507,7 @@ class BlueprintConfirmGateAdapter:
             "stage_state": stage_state,
             "repo_count": repo_count,
             "reason": reason,
+            "auto_removed_repository_ids": list(auto_removed or []),
         }
 
     async def _emit(self, session: Any, event_name: str, payload: dict[str, Any]) -> None:
@@ -1643,8 +1708,7 @@ def _build_charter_draft(entry: dict[str, Any]) -> dict[str, Any]:
                 # 职责正文不再落入 note：score_charter_match 会对 note 做 ≥3 字片段匹配，
                 # 长职责会污染路由（与 MJ-07 domain 污染同构）。领域名才是匹配面。
                 "note": (
-                    f"来自蓝图确认门的人工确认"
-                    f"{('：' + repository_name) if repository_name else ''}"
+                    f"来自蓝图确认门的人工确认{('：' + repository_name) if repository_name else ''}"
                 )[:500],
                 "citations": [],
             }

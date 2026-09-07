@@ -55,6 +55,7 @@ from services.process_runtime.blueprint_confirm_gate import (
     _build_charter_draft,
     _build_snapshot_entry,
     acollect_pending_research_repos,
+    auto_removed_repository_ids,
     build_locked_associations,
     iter_snapshot_repos,
     merge_gate_snapshot,
@@ -918,6 +919,71 @@ def test_unsuitable_auto_remove_emits_sampling_event(monkeypatch) -> None:
     assert kwargs["auto_removed_count"] == 1
 
 
+@pytest.mark.parametrize("action", ["reclassify_role", "edit_responsibility"])
+def test_human_edited_repo_is_not_auto_removed_by_late_unsuitable_verdict(action: str) -> None:
+    """⭐ 静默丢仓回归：人**编辑过**的仓，refresh 不得因 unsuitable 把它自动移除。
+
+    实测链路（2026-09-04 onion-practice）：门开时该仓未移除，人改了它的角色/职责就点确认，
+    确认前的快照 refresh 恰好带回 ``unsuitable`` ⇒ 自动移除 ⇒ 锁定集少一个仓，界面无提示、
+    门关后无补仓入口。只认 ``add_repo`` 的豁免判据漏掉了这两个动作。
+    """
+    existing = [
+        {
+            "repository_id": "r1",
+            "repository_name": "onion-practice",
+            "role_suggestion": "direct",
+            "responsibility": "人写的职责",
+            "removed": False,
+            "remove_reason": "",
+            "fitness": {"verdict": "partial"},
+            "actions": [{"action": action, "before": {}, "after": {}}],
+        }
+    ]
+    fresh = [{"repository_id": "r1", "fitness": {"verdict": "unsuitable"}}]
+
+    merged = merge_gate_snapshot(existing, fresh)
+
+    assert merged[0]["removed"] is False, "人经手过的仓不得被机器判定越过"
+    assert [a["repository_id"] for a in build_locked_associations(snapshot=merged)] == ["r1"]
+
+
+def test_human_remove_still_wins_over_edit_actions() -> None:
+    """⛔ 豁免的只是「自动移除」：人先编辑后又显式移除，移除仍然生效。"""
+    existing = [
+        {
+            "repository_id": "r1",
+            "removed": True,
+            "remove_reason": "本次不涉及该端",
+            "fitness": {"verdict": "partial"},
+            "actions": [
+                {"action": "edit_responsibility", "before": {}, "after": {}},
+                {"action": "remove_repo", "before": {"removed": False}, "after": {"removed": True}},
+            ],
+        }
+    ]
+
+    merged = merge_gate_snapshot(
+        existing, [{"repository_id": "r1", "fitness": {"verdict": "unsuitable"}}]
+    )
+
+    assert merged[0]["removed"] is True
+    assert merged[0]["remove_reason"] == "本次不涉及该端"
+    assert build_locked_associations(snapshot=merged) == []
+
+
+def test_auto_removed_repository_ids_lists_only_machine_removals() -> None:
+    """明示面只列**机器**移除的仓：人工移除有自己的原因，不该混进这条提示。"""
+    snapshot = [
+        {"repository_id": "auto", "removed": True, "remove_reason": UNSUITABLE_REMOVE_REASON},
+        {"repository_id": "human", "removed": True, "remove_reason": "本次不涉及该端"},
+        {"repository_id": "kept", "removed": False, "remove_reason": ""},
+    ]
+
+    assert auto_removed_repository_ids(snapshot) == ["auto"]
+    assert auto_removed_repository_ids([]) == []
+    assert auto_removed_repository_ids(None) == []
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 4-5. alock：锁定 / decision_log 幂等 / 章程 best-effort
 # ═══════════════════════════════════════════════════════════════════════════
@@ -955,6 +1021,26 @@ async def test_alock_writes_locked_associations_and_passes_schema() -> None:
     fresh_thread = await BlueprintThread.objects.filter(id=thread.id).afirst()
     assert fresh_thread.status == ThreadStatus.RESOLVED
     assert await BlueprintReviewer.objects.filter(artifact=artifact, user=user).aexists()
+    # 人工移除不进「机器自动移除」明示面。
+    assert result["auto_removed_repository_ids"] == []
+
+
+async def test_alock_surfaces_machine_removed_repos_to_caller() -> None:
+    """⭐ 机器移除必须回给调用方：否则确认响应里只体现「少了一个仓」，看不出少了谁。"""
+    artifact, session, thread, repo_a, repo_b, adapter = await _open_gate_with_two_repos()
+    options = [
+        {**entry, "removed": True, "remove_reason": UNSUITABLE_REMOVE_REASON}
+        if entry.get("repository_id") == str(repo_b.id)
+        else entry
+        for entry in iter_snapshot_repos(thread.options)
+    ]
+    await BlueprintThread.objects.filter(id=thread.id).aupdate(options=options)
+
+    result = await adapter.alock(session, acting_user=await _make_user())
+
+    assert result["event"] == "confirmed"
+    assert result["auto_removed_repository_ids"] == [str(repo_b.id)]
+    assert result["repo_count"] == 1
 
 
 async def test_alock_builds_pool_before_filtering_raw_fitness_citations() -> None:

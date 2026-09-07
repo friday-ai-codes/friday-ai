@@ -306,3 +306,8 @@ class BlueprintGateActionResultSerializer(serializers.Serializer):
     # 该仓调研本就在途 → 本次升级未重开容器（区别于「刚为你起了深调研」）
     already_running = serializers.BooleanField(read_only=True, required=False)
     locked_repo_count = serializers.IntegerField(read_only=True)
+    # ⭐ confirm 专用：被 D-03「调研判不适配」**自动**移除（非人工移除）的仓 id。
+    # 不回这个键，人点完确认就只看到 locked_repo_count 少了一个，看不出少了谁、为什么。
+    auto_removed_repository_ids = serializers.ListField(
+        child=serializers.CharField(), read_only=True, required=False
+    )

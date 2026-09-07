@@ -152,6 +152,9 @@ def _action_payload(action: str, result: dict, **extra: Any) -> dict:
         "upgraded": bool(extra.get("upgraded")),
         "already_running": bool(extra.get("already_running")),
         "locked_repo_count": int(extra.get("locked_repo_count") or 0),
+        "auto_removed_repository_ids": [
+            str(item) for item in (extra.get("auto_removed_repository_ids") or [])
+        ],
     }
 
 
@@ -283,7 +286,13 @@ class BlueprintGateConfirmView(APIView):
         return Response(
             await _aserialize_action(
                 _action_payload(
-                    "confirm", result, locked=True, locked_repo_count=lock.get("repo_count") or 0
+                    "confirm",
+                    result,
+                    locked=True,
+                    locked_repo_count=lock.get("repo_count") or 0,
+                    # 机器自动移除的仓必须回给调用方——否则「锁定集少一个仓」在响应里
+                    # 只体现为 locked_repo_count 少 1，人看不出少了谁、也无从补回。
+                    auto_removed_repository_ids=lock.get("auto_removed_repository_ids") or [],
                 )
             )
         )
