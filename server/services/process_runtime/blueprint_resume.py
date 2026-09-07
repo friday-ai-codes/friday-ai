@@ -422,9 +422,7 @@ async def _areconcile_mcp_reservation_if_any(session: Any) -> None:
             "blueprint_mcp_reservation_reconcile_failed",
             category="caller",
             component="process_runtime",
-            initiated_by_user_id=str(
-                getattr(session, "initiated_by_user_id", "") or "system"
-            ),
+            initiated_by_user_id=str(getattr(session, "initiated_by_user_id", "") or "system"),
             session_id=str(getattr(session, "id", "") or ""),
             error=redact_secrets_in_text(str(exc)),
         )
@@ -436,6 +434,13 @@ async def _areconcile_mcp_reservation_if_any(session: Any) -> None:
 # 单个 stage 内的多轮 LLM 调用可能持续十几分钟，误判「卡死」重驱会双跑。
 _STALL_WAITING_MINUTES = 15
 _STALL_RUNNING_MINUTES = 60
+# ⭐ 僵尸挂起（``waiting_clarification`` + 零 open&blocking 线程 + 无待调研仓）用**更短**的
+# 窗口：这个组合在语义上**不存在合法解释**——没有题可答、没有仓在调研，却停在「等人澄清」。
+# 与之相对，普通滞留窗口 15 分钟是为了避开「advance 正在跑长 LLM」的误判，而僵尸态压根不在
+# 跑任何东西，多等 12 分钟纯属让人干等（实测每次都得人手动踹一脚）。
+# ⛔ 不要调到 0：作答链是「落库 → 入队 → worker 驱动」，中间有秒级窗口，窗口太小会让扫描与
+# 正常续驱抢同一个会话（结果无害但白烧一次驱动）。
+_STALL_ZOMBIE_MINUTES = 3
 # 单次扫描上界：恢复是兜底不是主路径，绝不为「扫全」拖垮 scheduler tick。
 _RECOVERY_BATCH_LIMIT = 20
 
@@ -657,6 +662,12 @@ async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0
     - 扫描面：``process_type=technical_blueprint`` 且 ``status ∉ {done, failed}``、
       ``updated_at`` 早于滞留窗口（挂起态 15 分钟 / RUNNING 60 分钟）的会话，按最旧
       优先取 :data:`_RECOVERY_BATCH_LIMIT` 条。
+    - ⭐ **僵尸挂起特征另走短窗口**（:data:`_STALL_ZOMBIE_MINUTES`）：``waiting_clarification``
+      且**零 open+blocking 线程**且**无待调研仓**的会话没有任何合法解释——题答完了、调研也
+      终态了，却停在「等人澄清」，且界面上的待澄清清单是空的（判据与
+      ``_aload_pending_clarifications`` 同源）。这类会话按 3 分钟窗口提前捞起来重驱，
+      并单列 ``zombie_waiting`` 计数；重驱后仍不动的记 warning ——
+      那说明断点不在「没人驱动」而在驱动本身，得看日志而不是继续等。
     - **人审接管的蓝图一律跳过**（``pending_review`` 及之后，:data:`_HUMAN_OWNED_STATUSES`）：
       这些蓝图的推进权归 approve / reject 端点，重驱会在人审面上凭空开澄清线程。
     - 重驱前先过
@@ -668,8 +679,9 @@ async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0
     - 单条 try/except 隔离 + 整体兜底，绝不打断 scheduler；归因 ``system``。
 
     Returns:
-        ``{"scanned": n, "skipped_human_owned": n, "recovered": n, "unchanged": n}``——
-        ``recovered`` 口径 = 重驱后 ``(status, current_stage)`` 发生了变化。
+        ``{"scanned": n, "skipped_human_owned": n, "recovered": n, "unchanged": n,
+        "zombie_waiting": n}``—— ``recovered`` 口径 = 重驱后 ``(status, current_stage)``
+        发生了变化；``zombie_waiting`` = 命中僵尸特征的会话数（含被成功救回的）。
     """
     from datetime import timedelta
 
@@ -678,7 +690,13 @@ async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0
     from delivery.models import ConvergenceSession, ConvergenceSessionStatus
 
     started = time.perf_counter()
-    counts = {"scanned": 0, "skipped_human_owned": 0, "recovered": 0, "unchanged": 0}
+    counts = {
+        "scanned": 0,
+        "skipped_human_owned": 0,
+        "recovered": 0,
+        "unchanged": 0,
+        "zombie_waiting": 0,
+    }
     try:
         from .entrypoint import build_blueprint_engine
 
@@ -689,6 +707,7 @@ async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0
         await aredispatch_never_dispatched_blueprint_research_tasks(now=moment, limit=limit)
         waiting_before = moment - timedelta(minutes=_STALL_WAITING_MINUTES)
         running_before = moment - timedelta(minutes=_STALL_RUNNING_MINUTES)
+        zombie_before = moment - timedelta(minutes=_STALL_ZOMBIE_MINUTES)
         batch = max(int(limit or 0), 0) or _RECOVERY_BATCH_LIMIT
 
         candidates = [
@@ -699,6 +718,17 @@ async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0
             )
             .exclude(status__in=[ConvergenceSessionStatus.DONE, ConvergenceSessionStatus.FAILED])
             .order_by("updated_at")[: batch * 2]
+        ]
+        # 僵尸候选走短窗口，与上面的普通候选合流去重（同一条只驱一次）。
+        seen = {str(row.id) for row in candidates}
+        candidates += [
+            row
+            async for row in ConvergenceSession.objects.filter(
+                process_type=BLUEPRINT_PROCESS_TYPE,
+                status=ConvergenceSessionStatus.WAITING_CLARIFICATION,
+                updated_at__lt=zombie_before,
+            ).order_by("updated_at")[: batch * 2]
+            if str(row.id) not in seen
         ]
 
         engine = None
@@ -711,7 +741,14 @@ async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0
                 and session.updated_at > running_before
             ):
                 continue
+            zombie = await _ais_zombie_waiting_clarification(session)
+            # 短窗口捞上来的只有确认为僵尸的才驱：普通挂起会话继续等它的 15 分钟窗口，
+            # 免得每个 tick 都对一屋子健康的「等人答题」会话空跑一遍驱动。
+            if session.updated_at > waiting_before and not zombie:
+                continue
             counts["scanned"] += 1
+            if zombie:
+                counts["zombie_waiting"] += 1
             try:
                 artifact = await _aload_artifact(session)
                 if (
@@ -742,6 +779,18 @@ async def arecover_stalled_blueprint_sessions(*, now: Any = None, limit: int = 0
                     )
                 else:
                     counts["unchanged"] += 1
+                    if zombie:
+                        # 兜底也没救回来 ⇒ 断点不在「没人驱动」。留一条可检索的 warning，
+                        # 别让它继续以「静默不动」的形态存在（这正是上次查了半天的那种）。
+                        logger.warning(
+                            "blueprint_session_zombie_unrecovered",
+                            category="caller",
+                            component="process_runtime",
+                            initiated_by_user_id="system",
+                            session_id=str(session.id),
+                            status=before[0],
+                            stage=before[1],
+                        )
             except Exception as exc:  # noqa: BLE001 — 单条隔离，绝不打断整批
                 counts["unchanged"] += 1
                 logger.warning(
@@ -872,6 +921,39 @@ async def _ahas_open_blocking_blueprint_threads(session: Any) -> bool:
             error=redact_secrets_in_text(str(exc)),
         )
         return True
+
+
+async def _ais_zombie_waiting_clarification(session: Any) -> bool:
+    """会话是否处于**僵尸挂起**：等人澄清，却既没有题可答、也没有仓在调研。
+
+    判据逐项与人看到的东西对齐，避免「日志说有题、界面说没有」这种查不动的分歧：
+
+    - ``status == waiting_clarification``；
+    - 零 open+blocking 线程 —— 与 MCP ``pending_clarifications`` 同源查询，所以这一项为真
+      就等价于「用户打开待澄清清单看到的是空的」；
+    - 无待调研仓 —— 否则它是在等调研回来，属合法等待。
+
+    ⛔ 探测失败一律回 ``False``（不是僵尸）：这个判据只用来**提前**捞会话，误判成僵尸会让
+    健康会话被反复空驱；漏判最多退回 15 分钟的普通滞留窗口，代价小得多。
+    """
+    from delivery.models import ConvergenceSessionStatus
+    from services.process_runtime.blueprint_confirm_gate import acollect_pending_research_repos
+
+    if getattr(session, "status", "") != ConvergenceSessionStatus.WAITING_CLARIFICATION:
+        return False
+    try:
+        if await _ahas_open_blocking_blueprint_threads(session):
+            return False
+        return not await acollect_pending_research_repos(session)
+    except Exception as exc:  # noqa: BLE001 — 探测失败按「不是僵尸」处理，见 docstring
+        logger.warning(
+            "blueprint_zombie_probe_failed",
+            category="sampling",
+            component="process_runtime",
+            session_id=str(getattr(session, "id", "")),
+            error=redact_secrets_in_text(str(exc)),
+        )
+        return False
 
 
 async def _aload_artifact(session: Any) -> Any:

@@ -184,6 +184,70 @@ async def test_unexpired_lease_blocks_takeover() -> None:
         assert acquired is False
 
 
+async def test_heartbeat_extends_the_lease_while_the_handler_is_still_running() -> None:
+    """⭐ 心跳续期：跑得比 TTL 慢的 handler 不该被别人半路接管。
+
+    没有心跳时只能二选一——要么 TTL 调大（卡死恢复慢），要么 TTL 调小（慢 handler 被并发
+    接管，正是租约要消灭的那个场景）。心跳让 TTL 只需覆盖一个心跳周期。
+    """
+    session = await _make_session()
+    past_ttl = asyncio.Event()
+    rival_done = asyncio.Event()
+    rival: list[bool] = []
+
+    # 接管方必须是**另一个任务、且在持有者拿到租约之前就建好**：contextvars 会被子任务
+    # 继承，事后 spawn 的任务会蹭到重入放行，验不到接管。
+    async def _rival() -> None:
+        await past_ttl.wait()
+        async with asession_drive_lease(session.id, reason="takeover_attempt") as ok:
+            rival.append(ok)
+        rival_done.set()
+
+    async def _holder() -> None:
+        async with asession_drive_lease(session.id, ttl_seconds=1, reason="slow") as acquired:
+            assert acquired is True
+            before = (await ConvergenceSession.objects.aget(id=session.id)).drive_lease_until
+            # 睡过一个完整 TTL：没有心跳的话此刻租约已过期、可被接管。
+            await asyncio.sleep(1.2)
+            after = (await ConvergenceSession.objects.aget(id=session.id)).drive_lease_until
+            assert after > before, "租约没有被续期 ⇒ 慢 handler 会被并发接管"
+            assert after > timezone.now(), "租约已过期"
+            past_ttl.set()
+            await rival_done.wait()
+
+    await asyncio.gather(_holder(), _rival())
+
+    assert rival == [False], "心跳期间租约仍被抢走"
+
+
+async def test_heartbeat_stops_when_the_lease_was_taken_over(monkeypatch) -> None:
+    """⛔ 心跳只续**自己的**租约：已被别人接管（owner 不匹配）就停，绝不抢回来。"""
+    from services.process_runtime import drive_lease as mod
+
+    session = await _make_session()
+    lost: list[str] = []
+
+    class _FakeLogger:
+        def info(self, event, **kwargs):
+            pass
+
+        def warning(self, event, **kwargs):
+            lost.append(event)
+
+    monkeypatch.setattr(mod, "logger", _FakeLogger())
+
+    async with asession_drive_lease(session.id, ttl_seconds=1, reason="slow"):
+        await ConvergenceSession.objects.filter(id=session.id).aupdate(
+            drive_lease_owner="接管者",
+            drive_lease_until=timezone.now() + timedelta(seconds=600),
+        )
+        await asyncio.sleep(1.2)
+        holder = await ConvergenceSession.objects.aget(id=session.id)
+        assert holder.drive_lease_owner == "接管者", "心跳把别人的租约抢了回来"
+
+    assert "session_drive_lease_lost" in lost, "丢租约无声无息 ⇒ 并发驱动查不出来"
+
+
 async def test_release_never_steals_a_lease_taken_over_by_someone_else() -> None:
     """本次驱动超时后租约已被别人合法抢走 ⇒ 本次的释放**不许**动它。"""
     session = await _make_session()

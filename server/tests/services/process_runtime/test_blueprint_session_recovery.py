@@ -130,6 +130,118 @@ async def test_fresh_sessions_are_not_scanned(monkeypatch) -> None:
     drive.assert_not_awaited()
 
 
+def _zombie_now() -> object:
+    """僵尸窗口刚过、普通滞留窗口远未到的「现在」。"""
+    return timezone.now() + timedelta(minutes=blueprint_resume._STALL_ZOMBIE_MINUTES + 1)
+
+
+async def test_zombie_waiting_session_is_recovered_before_the_normal_window(monkeypatch) -> None:
+    """⭐ 僵尸特征（等澄清 + 零阻塞线程 + 无待调研仓）走短窗口，不必干等 15 分钟。"""
+    artifact = await _make_artifact()
+    await _make_session(artifact=artifact)
+
+    async def _fake_drive(engine, target):
+        target.status = ConvergenceSessionStatus.RUNNING
+        target.current_stage = "merge"
+        return target
+
+    monkeypatch.setattr(
+        blueprint_resume, "adrive_blueprint_session_to_pause_or_terminal", _fake_drive
+    )
+    monkeypatch.setattr(
+        blueprint_resume, "_afeedback_chat_barrier_if_any", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        blueprint_resume, "_aresume_workflow_node_if_any", AsyncMock(return_value=None)
+    )
+
+    counts = await blueprint_resume.arecover_stalled_blueprint_sessions(now=_zombie_now())
+
+    assert counts["zombie_waiting"] == 1
+    assert counts["scanned"] == 1
+    assert counts["recovered"] == 1
+
+
+async def test_session_still_waiting_on_an_open_thread_is_not_a_zombie(monkeypatch) -> None:
+    """⛔ 非恒真对照：还有 open+blocking 线程 = 合法等人答题，短窗口不得碰它。"""
+    artifact = await _make_artifact()
+    await _make_session(artifact=artifact)
+    monkeypatch.setattr(
+        blueprint_resume,
+        "_ahas_open_blocking_blueprint_threads",
+        AsyncMock(return_value=True),
+    )
+    drive = AsyncMock()
+    monkeypatch.setattr(blueprint_resume, "adrive_blueprint_session_to_pause_or_terminal", drive)
+
+    counts = await blueprint_resume.arecover_stalled_blueprint_sessions(now=_zombie_now())
+
+    assert counts["zombie_waiting"] == 0
+    assert counts["scanned"] == 0
+    drive.assert_not_awaited()
+
+
+async def test_session_waiting_on_pending_research_is_not_a_zombie(monkeypatch) -> None:
+    """⛔ 非恒真对照：还有仓在调研 = 合法等待，短窗口不得碰它。"""
+    artifact = await _make_artifact()
+    await _make_session(artifact=artifact)
+    monkeypatch.setattr(
+        blueprint_resume,
+        "_ahas_open_blocking_blueprint_threads",
+        AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(
+        "services.process_runtime.blueprint_confirm_gate.acollect_pending_research_repos",
+        AsyncMock(return_value=["repo-1"]),
+    )
+    drive = AsyncMock()
+    monkeypatch.setattr(blueprint_resume, "adrive_blueprint_session_to_pause_or_terminal", drive)
+
+    counts = await blueprint_resume.arecover_stalled_blueprint_sessions(now=_zombie_now())
+
+    assert counts["zombie_waiting"] == 0
+    assert counts["scanned"] == 0
+    drive.assert_not_awaited()
+
+
+async def test_unrecovered_zombie_is_logged_as_warning(monkeypatch) -> None:
+    """重驱也救不回来 ⇒ 断点不在「没人驱动」，必须留一条可检索的 warning。"""
+    artifact = await _make_artifact()
+    await _make_session(artifact=artifact)
+
+    async def _noop_drive(engine, target):
+        return target
+
+    monkeypatch.setattr(
+        blueprint_resume, "adrive_blueprint_session_to_pause_or_terminal", _noop_drive
+    )
+    monkeypatch.setattr(
+        blueprint_resume, "_afeedback_chat_barrier_if_any", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        blueprint_resume, "_aresume_workflow_node_if_any", AsyncMock(return_value=None)
+    )
+    events: list[tuple[str, dict]] = []
+
+    class _FakeLogger:
+        def info(self, event, **kwargs):
+            events.append((event, kwargs))
+
+        def warning(self, event, **kwargs):
+            events.append((event, kwargs))
+
+    monkeypatch.setattr(blueprint_resume, "logger", _FakeLogger())
+
+    counts = await blueprint_resume.arecover_stalled_blueprint_sessions(now=_zombie_now())
+
+    assert counts["zombie_waiting"] == 1
+    assert counts["unchanged"] == 1
+    event, kwargs = next((e, kw) for e, kw in events if e == "blueprint_session_zombie_unrecovered")
+    assert event
+    assert kwargs["category"] == "caller"
+    assert kwargs["status"] == ConvergenceSessionStatus.WAITING_CLARIFICATION
+
+
 async def _make_running_research_task(project, *, started_at):
     from agents.models import AgentSession
     from repositories.models import Repository
@@ -178,9 +290,7 @@ async def test_recovery_reconciles_runner_completion_without_structured_callback
         detail={"task_id": sub.session_id},
     )
 
-    counts = await blueprint_resume.areconcile_stalled_blueprint_research_tasks(
-        now=timezone.now()
-    )
+    counts = await blueprint_resume.areconcile_stalled_blueprint_research_tasks(now=timezone.now())
 
     await task.arefresh_from_db()
     await sub.arefresh_from_db()
@@ -331,15 +441,15 @@ async def test_recovery_tick_redispatches_before_it_redrives(monkeypatch) -> Non
     assert order[:2] == ["redispatch", "drive"]
 
 
-async def test_recovery_enforces_research_task_timeout_without_runner_terminal_event(project) -> None:
+async def test_recovery_enforces_research_task_timeout_without_runner_terminal_event(
+    project,
+) -> None:
     from services.process_runtime.blueprint_research_adapter import _RESEARCH_TIMEOUT
 
     started_at = timezone.now() - timedelta(seconds=_RESEARCH_TIMEOUT + 1)
     task, sub = await _make_running_research_task(project, started_at=started_at)
 
-    counts = await blueprint_resume.areconcile_stalled_blueprint_research_tasks(
-        now=timezone.now()
-    )
+    counts = await blueprint_resume.areconcile_stalled_blueprint_research_tasks(now=timezone.now())
 
     await task.arefresh_from_db()
     await sub.arefresh_from_db()

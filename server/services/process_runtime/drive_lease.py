@@ -36,14 +36,18 @@ handler 本体（含分钟级的 LLM 调用与开线程）没有任何保护。
 - **可重入**：同一驱动上下文内嵌套获取（续驱 helper 包住循环、循环里的 ``advance`` 再获取一次）
   直接放行，由最外层负责释放。靠 contextvar 识别，不查库。
 - **超时自愈**：持有者崩溃/被杀不会让会话永久卡死，租约过期后下一个驱动者可接管。
-  ⚠️ :data:`DEFAULT_LEASE_SECONDS` 必须**大于最慢的一次 stage handler**（AI 审查含多次 LLM
-  调用），否则会退化成「上一个还在跑、下一个就接管」——那正是本模块要消灭的场景。
+- **心跳续期**：持有期间后台按 TTL/3 续期（:func:`_arenew`），所以「跑得比 TTL 慢」的
+  handler **不会**被别人半路接管；而持有者一旦死掉，心跳随之停止，租约照常在 TTL 内过期
+  让下一个驱动者接管。⭐ 这两件事必须同时成立：只有 TTL 没有心跳，就得在「慢 handler 被
+  并发接管」与「卡死恢复慢」之间二选一；有了心跳，TTL 只需覆盖**一个心跳周期**。
 - **绝不反噬业务**：抢占/释放的 DB 异常一律吞掉并**按「抢到了」处理**（fail-open）。
   租约是省钱的优化，不是正确性屏障——DB 抖动时宁可重复跑一次，也不能让编排整个停摆。
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -57,11 +61,16 @@ logger = structlog.get_logger(__name__)
 
 __all__ = ["DEFAULT_LEASE_SECONDS", "asession_drive_lease"]
 
-# 租约有效期：必须覆盖最慢的一次 stage handler。蓝图 AI 审查一轮包含机械规则 + 一次
-# goal-backward LLM 调用 + 批量开线程，实测分钟级；取 15 分钟留足余量。
-# ⛔ 不要为了「卡死能快点恢复」把它调小：调小的直接后果是并发驱动重新出现（上一个还在跑
-# LLM，下一个就认为租约过期而接管），而卡死本身有僵尸会话扫描兜底。
+# 租约有效期。有心跳续期兜着，它只需覆盖**一个心跳周期加上抖动余量**，而不必覆盖最慢的
+# 那次 stage handler（AI 审查一轮含多次 LLM 调用，实测分钟级）；15 分钟同时也是「持有者
+# 进程被杀后多久可被接管」的上界。
+# ⛔ 不要为了「卡死能快点恢复」把它调小：调小会缩短心跳周期、平白增加写库频率，而卡死本身
+# 有僵尸会话扫描兜底。
 DEFAULT_LEASE_SECONDS = 900
+
+# 心跳周期 = TTL / 该除数。取 3 是为了容忍**连续两次**续期失败（DB 抖动、事件循环被长时间
+# 阻塞）仍不丢租约；调到 2 会让单次抖动就逼近过期线。
+_HEARTBEAT_DIVISOR = 3
 
 # 当前上下文已持有的租约：``{session_id: token}``。每个驱动跑在自己的后台任务里 ⇒ 各自
 # 独立的 contextvars 上下文，不会串味。
@@ -123,11 +132,70 @@ async def asession_drive_lease(
     # 整份替换而不是原地改：contextvar 的值被子任务共享，原地 mutate 会让兄弟任务看见
     # 本任务的持有记录，可重入判据随之串味。
     reset = _DRIVE_OWNER.set({**held, key: token})
+    stop = asyncio.Event()
+    beat = asyncio.ensure_future(_aheartbeat(session_id, token, ttl_seconds, stop))
     try:
         yield True
     finally:
+        stop.set()
+        beat.cancel()
+        # 心跳任务只做续期，取消/异常都不该影响业务结果 —— 但必须 await 掉，否则事件循环
+        # 关闭时会抛「Task was destroyed but it is pending」。
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await beat
         _DRIVE_OWNER.reset(reset)
         await _arelease(session_id, token)
+
+
+async def _aheartbeat(session_id: Any, token: str, ttl_seconds: int, stop: asyncio.Event) -> None:
+    """持有期间按 TTL/3 续期，直到 ``stop`` 被置位或租约已被别人接管。
+
+    ⛔ 续期失败**不**中断业务：租约丢了最坏也只是退回「没有租约」的旧世界（重复驱动一次），
+    而为此中断一个已经跑了十几分钟的 handler 才是真正的损失。丢租约记 warning，供排查
+    「同一会话被驱动两遍」时定位。
+    """
+    interval = max(int(ttl_seconds or 0), 1) / _HEARTBEAT_DIVISOR
+    while True:
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+            return  # 正常结束：上下文退出
+        except (TimeoutError, asyncio.TimeoutError):
+            pass
+        if not await _arenew(session_id, token, ttl_seconds):
+            logger.warning(
+                "session_drive_lease_lost",
+                category="sampling",
+                component="process_runtime",
+                session_id=str(session_id),
+            )
+            return
+
+
+async def _arenew(session_id: Any, token: str, ttl_seconds: int) -> bool:
+    """续期：``WHERE owner = 本 token`` —— 已被接管（0 行）就如实回 ``False``。
+
+    fail-open 同 :func:`_aacquire`：DB 异常按「续上了」处理，绝不因观测性代码丢租约。
+    """
+    try:
+        from django.utils import timezone
+
+        from delivery.models import ConvergenceSession
+
+        updated = await ConvergenceSession.objects.filter(
+            id=session_id, drive_lease_owner=token
+        ).aupdate(
+            drive_lease_until=timezone.now() + timedelta(seconds=max(int(ttl_seconds or 0), 1)),
+        )
+        return bool(updated)
+    except Exception as exc:  # noqa: BLE001 — 续期失败按「续上了」处理，绝不反噬驱动
+        logger.warning(
+            "session_drive_lease_renew_failed",
+            category="sampling",
+            component="process_runtime",
+            session_id=str(session_id),
+            error=str(exc),
+        )
+        return True
 
 
 async def _aacquire(session_id: Any, token: str, ttl_seconds: int) -> bool:
