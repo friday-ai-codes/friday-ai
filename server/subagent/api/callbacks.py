@@ -2668,7 +2668,9 @@ def _is_blueprint_repo_plan(session: SubAgentSession) -> bool:
     )
 
 
-def _parse_blueprint_repo_plan(output: Any) -> tuple[dict[str, Any] | None, str]:
+def _parse_blueprint_repo_plan(
+    output: Any, *, repository_id: str = ""
+) -> tuple[dict[str, Any] | None, str]:
     """从容器 output 提取 ``repo_plan`` 段并过 jsonschema；返回 ``(section, error)``。
 
     260818-pt8 D-01/D-02：**唯一结构化渠道**——只认 ``output["mcp_result"]["repo_plan"]``。
@@ -2677,9 +2679,17 @@ def _parse_blueprint_repo_plan(output: Any) -> tuple[dict[str, Any] | None, str]
     ``validate_repo_plan`` 脱敏 + 截断，可直接进 ``mark_failed`` 的 error dict。
     宁可判不合格触发有界重试，也不把残缺结构落进融合投影数据（T-113-13）。
 
+    ⭐ ``repository_id`` **必须在校验之前**写入（quick-260907 回归门）：服务端 schema 把它列为
+    required，而容器侧提交工具（``task/core/agent_submit_mcp.py``）刻意**不要求**容器填它
+    （注释写明「由服务端权威写入」）。两处口径相反 ⇒ 容器按契约不填就必然被判非法，重试
+    只是让同一个 prompt 再赌一次「模型这次记不记得多写一个键」，输了就落 degraded 空壳 +
+    开阻塞澄清线程。2026-09-04 实测 study-course / onion-learning / study-app 三仓各中招
+    3-4 次。服务端本就权威覆写该字段，先写再验与先验再写语义完全一致。
+
     Args:
         output: completed 帧的 ``output`` dict；权威结果在 ``output["mcp_result"]``（dict，
             顶层键 ``repo_plan``）。
+        repository_id: 服务端权威仓 id。非空时在校验前写入 section，覆盖容器上报值。
     """
     from services.process_runtime.blueprint_repo_plan_schema import (
         coerce_repo_plan_shapes,
@@ -2694,6 +2704,9 @@ def _parse_blueprint_repo_plan(output: Any) -> tuple[dict[str, Any] | None, str]
     section = raw.get("repo_plan")
     if not isinstance(section, dict):
         return None, "mcp_result 缺 repo_plan 段"
+    # 权威字段先写后验（见 docstring）：容器不填 repository_id 是契约允许的，不是产物缺陷。
+    if str(repository_id or ""):
+        section = {**section, "repository_id": str(repository_id)}
     # 校验前先吸收常见形状漂移（字符串 affected_features → 对象），减少纯形状问题的整轮重跑
     section = coerce_repo_plan_shapes(section)
     ok, err = validate_repo_plan(section)
@@ -3061,13 +3074,14 @@ async def _handle_blueprint_repo_plan_completion(
 
     adapter = BlueprintRepoPlanAdapter()
     research_service = ResearchService()
-    section, error = _parse_blueprint_repo_plan(p.get("output") or {})
+    # repository_id 由服务端权威写入，不采信容器上报值——且必须**在校验之前**注入。
+    section, error = _parse_blueprint_repo_plan(
+        p.get("output") or {}, repository_id=str(task.repository_id)
+    )
 
     if section is not None:
         await _apersist_subagent_sdk_session(session, p, log)
         await _amark_mcp_submit_ok(session, True)
-        # repository_id 由服务端权威写入，不采信容器上报值
-        section["repository_id"] = str(task.repository_id)
         await adapter.arecord_repo_plan(task, section)
     else:
         await _amark_mcp_submit_ok(session, False)

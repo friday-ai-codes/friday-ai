@@ -267,6 +267,38 @@ def test_parse_normalizes_missing_block_id_without_losing_impl_items() -> None:
     assert section_again == section
 
 
+def test_parse_injects_repository_id_before_validation() -> None:
+    """⭐ 容器按契约省略 repository_id 时**不得**判非法（quick-260907 回归门）。
+
+    服务端 schema 把 ``repository_id`` 列为 required，容器侧提交工具却刻意不要求容器填它
+    （「由服务端权威写入」）。老实现先校验后注入 ⇒ 合规产物必然被判非法、烧完重试预算、
+    最后落 degraded 空壳。本条**可证伪**：把 ``_parse_blueprint_repo_plan`` 里的注入挪回
+    校验之后立刻转红。
+    """
+    from subagent.api.callbacks import _parse_blueprint_repo_plan
+
+    raw = _repo_plan()
+    raw.pop("repository_id")
+    section, error = _parse_blueprint_repo_plan(_plan_output(raw), repository_id="repo-abc")
+
+    assert error == ""
+    assert section is not None
+    assert section["repository_id"] == "repo-abc"
+    assert section["impl_items"] == raw["impl_items"]
+
+
+def test_parse_overwrites_container_reported_repository_id() -> None:
+    """容器上报的 repository_id 一律不采信：服务端值权威覆写（注入不是「补默认值」）。"""
+    from subagent.api.callbacks import _parse_blueprint_repo_plan
+
+    section, error = _parse_blueprint_repo_plan(
+        _plan_output(_repo_plan(repository_id="container-lied")), repository_id="repo-abc"
+    )
+
+    assert error == ""
+    assert section is not None and section["repository_id"] == "repo-abc"
+
+
 async def test_text_fenced_repo_plan_rejected() -> None:
     """260818-pt8 D-02：output 只有 ```json 围栏（无 mcp_result）→ 判不合格走重试，绝不落库。"""
     import json
