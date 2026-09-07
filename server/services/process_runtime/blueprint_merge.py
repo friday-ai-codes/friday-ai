@@ -58,6 +58,7 @@ from services.process_runtime.blueprint_reconcile import coverage_gaps, reconcil
 from services.process_runtime.blueprint_repo_alias import (
     canonicalize_contract_support_repository_ids,
     canonicalize_repository_alias,
+    is_resolvable_repository_alias,
     support_alias_is_ignored,
 )
 from services.process_runtime.blueprint_repo_waves import build_api_waves
@@ -79,6 +80,8 @@ __all__ = [
     "project_current_state",
     "derive_must_haves",
     "decide_back_target",
+    "extract_ignored_support_aliases",
+    "merge_ignored_support_aliases",
 ]
 
 # 合计重试上界 2 轮（113-CONTEXT）。运行时可经
@@ -1558,6 +1561,29 @@ def _support_hints(repo_plans: dict) -> dict[tuple[str, str], str]:
     return hints
 
 
+def _is_declared_external_existing(contract: Any, associations: list | None) -> bool:
+    """该契约是否已被分仓方案明确标为「五仓外的既有依赖，只读复用」（纯函数）。
+
+    判据三条**同时**成立（缺一不可，宁可继续按 gap 处理也不放过真缺口）：
+
+    1. ``data_source.availability == "existing"`` —— 方案明确说了「对方已有」；
+    2. ``data_source.from_service`` 非空 —— 明确指出了是谁提供的（不是含糊其辞）；
+    3. 该 service **不可解析为锁定仓** —— 它就是在锁定集之外。若它其实指向某个锁定仓而
+       那个仓没声明 provider，那才是真缺口，必须照常进 needs_support。
+    """
+    if not isinstance(contract, dict):
+        return False
+    data_source = contract.get("data_source")
+    if not isinstance(data_source, dict):
+        return False
+    if str(data_source.get("availability") or "").strip() != "existing":
+        return False
+    from_service = str(data_source.get("from_service") or "").strip()
+    if not from_service:
+        return False
+    return not is_resolvable_repository_alias(associations or [], from_service)
+
+
 def _apply_needs_support(
     contracts: list, gaps: list, hints: dict, *, associations: list | None = None
 ) -> int:
@@ -1565,6 +1591,13 @@ def _apply_needs_support(
 
     ``data_source`` 不存在时先建 ``{}`` 再写；顶层同名键一概不产 —— 111 schema 里没有
     那个键，写它会让 114/115 按 schema 路径读不到（SC-4 表面通过实际失效）。
+
+    ⭐ **已声明的五仓外既有依赖不覆写**（quick-260907 回归门）：老实现**无条件**把 gap
+    契约的 ``availability`` 改成 ``needs_support``，哪怕分仓方案已经明确标了 ``existing``
+    + 外部 ``from_service``。后果是一条死循环：外部依赖找不到锁定集内的 provider → 进
+    gaps → 被改成 needs_support → 协作仓不在锁定集 → ``missing_support_repos`` → 开澄清题
+    → 人答「外部只读复用、不纳入」→ 下一轮融合从头再来一遍。2026-09-04 实测同一批外部仓
+    被问了 6 次。``existing`` 这个枚举值本来就是为「对方已有」准备的，对账不该改它。
     """
     index: dict[tuple[str, str], dict] = {}
     for contract in contracts if isinstance(contracts, list) else []:
@@ -1581,6 +1614,8 @@ def _apply_needs_support(
             continue
         contract = index.get((str(gap.get("repository_id") or ""), str(gap.get("api") or "")))
         if contract is None:
+            continue
+        if _is_declared_external_existing(contract, associations):
             continue
         data_source = contract.get("data_source")
         if not isinstance(data_source, dict):
@@ -2575,21 +2610,106 @@ def _build_stage_state(
     return {**(state if isinstance(state, dict) else {}), STAGE_STATE_KEY: bucket}
 
 
+# 排除名单上界：它会进 stage_state（单字段 <2KB 约定）且每条都是永久跳过对账的副作用。
+_MAX_IGNORED_ALIASES = 20
+
+
 def _ignored_support_aliases(state: Any) -> tuple[str, ...]:
     """``stage_state.merge.ignored_support_aliases``：操作员本轮明确不纳入的协作仓别名。"""
     bucket = (state or {}).get(STAGE_STATE_KEY) if isinstance(state, dict) else None
     raw = (bucket or {}).get("ignored_support_aliases") if isinstance(bucket, dict) else None
+    return _dedupe_aliases(raw)
+
+
+def _dedupe_aliases(raw: Any) -> tuple[str, ...]:
+    """别名序列去空 + 去重 + 封顶（保持首见顺序）。"""
     out: list[str] = []
     seen: set[str] = set()
-    for item in raw if isinstance(raw, list) else []:
+    for item in raw if isinstance(raw, (list, tuple)) else []:
         token = str(item or "").strip()
         if not token or token in seen:
             continue
         seen.add(token)
         out.append(token)
-        if len(out) >= 20:
+        if len(out) >= _MAX_IGNORED_ALIASES:
             break
     return tuple(out)
+
+
+def merge_ignored_support_aliases(state: Any, new_aliases: Any) -> dict | None:
+    """把新排除项并入 ``stage_state.merge.ignored_support_aliases``；无变化返回 ``None``。
+
+    返回值是**可直接喂给 ``ConvergenceSessionService.amerge_stage_state`` 的顶层增量**
+    （只含 ``{"merge": {...}}` 一个键），不整份替换 stage_state —— merge 桶里还有轮次
+    计数与未决快照，整份替换会把并发写者的增量吞掉。
+    """
+    existing = _ignored_support_aliases(state)
+    merged = _dedupe_aliases([*existing, *(new_aliases or ())])
+    if merged == existing:
+        return None
+    bucket = (state or {}).get(STAGE_STATE_KEY) if isinstance(state, dict) else None
+    bucket = dict(bucket) if isinstance(bucket, dict) else {}
+    bucket["ignored_support_aliases"] = list(merged)
+    return {STAGE_STATE_KEY: bucket}
+
+
+# 操作员「这个协作仓本期不纳入」语义的关键词。命中任一即认为该答复是**排除裁决**。
+# ⛔ 不做语义理解、不调 LLM：排除名单会让对账永久跳过某个协作仓，判据必须可复现、可单测。
+_IGNORE_SUPPORT_KEYWORDS = (
+    "不纳入",
+    "不需要配合",
+    "无需配合",
+    "不用配合",
+    "只读",
+    "已有",
+    "现有",
+    "外部依赖",
+    "外部仓",
+    "不在本次",
+    "不在范围",
+    "本期不做",
+)
+
+
+def extract_ignored_support_aliases(answer: Any, blueprint: Any) -> tuple[str, ...]:
+    """从人的融合裁决答复里抽出「明确排除的协作仓别名」（**纯函数**，恒不抛）。
+
+    这是 ``stage_state.merge.ignored_support_aliases`` 的**生产写入源**。此前该逃生口只有
+    测试在写、生产无任何写路径 ⇒ 装了门却没装门把手：人答完「这是外部依赖、只读复用、
+    不纳入」，下一轮融合照样从头再问一遍同一道题（2026-09-04 实测同一批外部仓问了 6 次）。
+
+    命中判据**两条同时成立**，宁可漏不可错（排除名单会让对账永久跳过某个协作仓）：
+
+    1. 答复正文含 :data:`_IGNORE_SUPPORT_KEYWORDS` 里的排除语义关键词；
+    2. 该协作仓别名（或其 ``/`` 末段 basename）**逐字出现在答复正文里** —— 人点了名的
+       才算。人只说「都不用管」而没点名 ⇒ 不写任何排除项。
+
+    候选集只取**当前蓝图对账真正卡住的那些**（``missing_support_repos``），不扫全量契约：
+    没卡住的契约本就不会开澄清题，把它们放进排除名单是无谓的永久副作用。
+    """
+    try:
+        text = str(answer or "").strip()
+        if not text or not any(keyword in text for keyword in _IGNORE_SUPPORT_KEYWORDS):
+            return ()
+        report = reconcile_cross_repo_apis(blueprint)
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in report.get("missing_support_repos") or []:
+            if not isinstance(item, dict):
+                continue
+            alias = str(item.get("support_repository_id") or "").strip()
+            if not alias or alias in seen:
+                continue
+            basename = alias.rsplit("/", 1)[-1].strip()
+            if alias not in text and (not basename or basename not in text):
+                continue
+            seen.add(alias)
+            out.append(alias)
+            if len(out) >= _MAX_IGNORED_ALIASES:
+                break
+        return tuple(out)
+    except Exception:  # noqa: BLE001 — 抽取失败只是少写一条排除项，绝不反噬作答主链
+        return ()
 
 
 def _demote_ignored_support_contracts(contracts: Any, ignored: Any) -> list[dict]:

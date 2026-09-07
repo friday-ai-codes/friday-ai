@@ -266,6 +266,45 @@ class ConvergenceSessionService:
         if event_time is not None:
             session.event_time = event_time
 
+    async def amerge_stage_state(
+        self, session: ConvergenceSession, stage_state_update: dict | None
+    ) -> bool:
+        """**只合并 ``stage_state``**，不碰 stage / status / 产物指针（顶层浅合并）。
+
+        供「人在门外做了一个只影响下游取数的裁决」这类写入使用（例如融合裁决把某个协作仓
+        写进排除名单）：它既不是状态转移也不是回卷，用 :meth:`transition` 会被迫编造一个
+        事件、用 :meth:`arewind_to_stage` 会把会话拽回 running。
+
+        合并基准在**同一事务内锁行重读**（与 :meth:`_apply_transition_sync` 同纪律）：
+        读-合并-写不收进行锁就会在并发下丢增量。返回是否真的写了行。
+        """
+        if not stage_state_update:
+            return False
+        return await self._merge_stage_state_sync(session, stage_state_update)
+
+    @sync_to_async
+    def _merge_stage_state_sync(
+        self, session: ConvergenceSession, stage_state_update: dict
+    ) -> bool:
+        with transaction.atomic():
+            current = (
+                ConvergenceSession.objects.select_for_update()
+                .filter(id=session.id)
+                .values_list("stage_state", flat=True)
+                .first()
+            )
+            if current is None:
+                return False
+            base = current if isinstance(current, dict) else {}
+            merged = {**base, **stage_state_update}
+            updated = ConvergenceSession.objects.filter(id=session.id).update(
+                stage_state=merged, updated_at=timezone.now()
+            )
+        if updated != 1:
+            return False
+        session.stage_state = merged
+        return True
+
     async def areopen_stage(
         self, session: ConvergenceSession, *, stage: str, reason: str = ""
     ) -> bool:

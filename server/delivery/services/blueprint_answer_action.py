@@ -108,6 +108,62 @@ async def _acurrent_status(artifact: Any) -> str:
     )
 
 
+async def _arecord_ignored_support_aliases(
+    artifact: Any, thread: Any, session: Any, answer: str, initiated_by_user_id: str
+) -> None:
+    """融合裁决答复「这个协作仓不纳入」→ 写进 ``stage_state.merge.ignored_support_aliases``。
+
+    ⭐ 这是那个逃生口的**唯一生产写入源**（quick-260907）。此前 ``ignored_support_aliases``
+    只有测试在写：融合对账把五仓外的既有依赖判成「缺协作仓」→ 开澄清题 → 人答「外部依赖、
+    只读复用、不纳入」→ 答案落进 ``decision_log``，但排除名单没人写 ⇒ 下一轮融合从头再问
+    一遍同一道题。2026-09-04 实测同一批外部仓被问了 6 次。
+
+    只对 ``return_stage == "merge"`` 的线程生效；抽取判据见
+    :func:`blueprint_merge.extract_ignored_support_aliases`（人点了名 + 有排除语义才算）。
+    **best-effort**：任何异常都吞掉——写不进排除名单只是下轮可能再问一次，绝不能因此让
+    已持久化的作答变成失败。
+    """
+    if session is None or str(getattr(thread, "return_stage", "") or "") != "merge":
+        return
+    try:
+        from delivery.services.convergence_session_service import ConvergenceSessionService
+        from services.process_runtime.blueprint_merge import (
+            extract_ignored_support_aliases,
+            merge_ignored_support_aliases,
+        )
+
+        version = getattr(artifact, "current_version", None)
+        content = getattr(version, "content", None)
+        if not isinstance(content, dict):
+            return
+        aliases = extract_ignored_support_aliases(answer, content)
+        if not aliases:
+            return
+        update = merge_ignored_support_aliases(getattr(session, "stage_state", None), aliases)
+        if not update:
+            return
+        if await ConvergenceSessionService().amerge_stage_state(session, update):
+            logger.info(
+                "blueprint_merge_ignored_support_aliases_recorded",
+                category="caller",
+                component=_COMPONENT,
+                artifact_id=str(getattr(artifact, "id", "") or ""),
+                thread_id=str(getattr(thread, "id", "") or ""),
+                session_id=str(getattr(session, "id", "") or ""),
+                # 别名是仓库短名、非敏感，且不记录答案正文本身
+                alias_count=len(aliases),
+                initiated_by_user_id=initiated_by_user_id or "system",
+            )
+    except Exception as exc:  # noqa: BLE001 — 排除名单写失败绝不反噬已持久化的作答
+        logger.warning(
+            "blueprint_merge_ignored_support_aliases_failed",
+            category="caller",
+            component=_COMPONENT,
+            thread_id=str(getattr(thread, "id", "") or ""),
+            error=_detail(exc),
+        )
+
+
 def _reflow_view(reflow: Any) -> dict:
     """回灌结果 → 恒定六键投影（两个调用方的响应体逐字共享这一份形状）。"""
     data = reflow if isinstance(reflow, dict) else {}
@@ -198,6 +254,9 @@ async def aanswer_thread(
         author_type=ThreadAuthorType.HUMAN,
         initiated_by_user_id=initiated,
     )
+
+    # 融合裁决的「不纳入」结论要落进排除名单，否则下一轮融合会再问同一道题（best-effort）。
+    await _arecord_ignored_support_aliases(artifact, thread, session, text, initiated)
 
     try:
         reflow = await aapply_thread_answers(

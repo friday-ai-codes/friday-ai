@@ -745,6 +745,125 @@ async def test_missing_support_repo_opens_clarification():
     assert await BlueprintThread.objects.filter(artifact_id=artifact.id).acount() == 1
 
 
+async def test_declared_external_existing_dependency_is_not_flagged_as_missing_support():
+    """⭐ 已声明的五仓外既有依赖不得被对账改判成「缺协作仓」（quick-260907 回归门）。
+
+    老实现无条件把无 provider 的消费契约改成 needs_support，哪怕方案已经写明
+    `availability=existing` + 外部 `from_service` ⇒ 协作仓不在锁定集 ⇒ 开澄清题；人答完
+    「外部只读复用、不纳入」下一轮又从头问一遍。2026-09-04 实测同一批外部仓被问了 6 次。
+
+    **可证伪**：删掉 `_apply_needs_support` 里的 `_is_declared_external_existing` 跳过分支
+    立刻转红（validation_status 变 needs_clarification、missing_support_repos 变 1）。
+    """
+    rid_a = _repo_id("a")
+    session, artifact = await _make_locked_session(_association(rid_a))
+    plans = {
+        rid_a: _repo_plan(
+            rid_a,
+            apis_consumed=[
+                {
+                    "name": "GetTrainingTreeByCvs",
+                    "method": "RPC",
+                    "path": "course-business.GetTrainingTreeByCvs",
+                    "data_source": {
+                        "availability": "existing",
+                        "from_service": "course-business",
+                        "notes": "按现有契约只读复用，本次不改对方",
+                    },
+                }
+            ],
+        )
+    }
+    result, _synthesizer = await _run_merge(session, plans=plans)
+
+    assert result["validation_status"] == "passed", result
+    assert result["reconcile"]["missing_support_repos"] == 0
+    assert await BlueprintThread.objects.filter(artifact_id=artifact.id).acount() == 0
+    content = await _landed_content(result)
+    consumed = [item for item in content["api_contracts"] if item["direction"] == "consumed"]
+    assert len(consumed) == 1
+    # 方案标的 existing 必须原样保留——被改成 needs_support 就是本条要拦的回归
+    assert consumed[0]["data_source"]["availability"] == "existing"
+
+
+async def test_existing_pointing_at_locked_repo_still_becomes_needs_support():
+    """反向对照（断言非恒真）：`existing` 但 from_service 指向**锁定仓**时仍按真缺口处理。
+
+    锁定集内的仓没声明 provider，那是真的缺一块，不能被「方案自己标了 existing」蒙混过关。
+    """
+    rid_a, rid_b = _repo_id("a"), _repo_id("b")
+    assoc_b = {**_association(rid_b), "repository_name": "team/support-b"}
+    session, _artifact = await _make_locked_session(_association(rid_a), assoc_b)
+    plans = {
+        rid_a: _repo_plan(
+            rid_a,
+            apis_consumed=[
+                {
+                    "name": "needSomething",
+                    "method": "GET",
+                    "path": "/need",
+                    "data_source": {
+                        "availability": "existing",
+                        "from_service": "support-b",
+                        "support_repository_id": "support-b",
+                    },
+                }
+            ],
+        ),
+        rid_b: _repo_plan(rid_b),
+    }
+    result, _synthesizer = await _run_merge(session, plans=plans)
+
+    assert result["validation_status"] == "passed", result
+    content = await _landed_content(result)
+    consumed = [item for item in content["api_contracts"] if item["direction"] == "consumed"]
+    assert consumed[0]["data_source"]["availability"] == "needs_support"
+
+
+def test_extract_ignored_support_aliases_requires_named_repo_and_exclusion_intent():
+    """排除名单的抽取判据：人点了名 + 有排除语义，两条同时成立才写。"""
+    from services.process_runtime.blueprint_merge import (
+        extract_ignored_support_aliases,
+        merge_ignored_support_aliases,
+    )
+
+    blueprint = {
+        "repo_associations": [{"repository_id": "rid-a", "repository_name": "team/app"}],
+        "api_contracts": [
+            {
+                "id": "c1",
+                "name": "GetTrainingTreeByCvs",
+                "direction": "consumed",
+                "repository_id": "rid-a",
+                "data_source": {
+                    "availability": "needs_support",
+                    "support_repository_id": "backend/course-business",
+                },
+            }
+        ],
+    }
+
+    # 点了名 + 排除语义 → 命中（basename 匹配也算）
+    assert extract_ignored_support_aliases(
+        "course-business 是现有外部依赖，只读复用，本次不纳入", blueprint
+    ) == ("backend/course-business",)
+    # 有排除语义但没点名 → 不写（宁可下轮再问一次，也不留错误的永久副作用）
+    assert extract_ignored_support_aliases("这些都不纳入本次范围", blueprint) == ()
+    # 点了名但没有排除语义 → 不写
+    assert extract_ignored_support_aliases("course-business 那边我去对一下", blueprint) == ()
+
+    # 并入 stage_state 增量：只动 merge 桶，保留桶内其他键
+    update = merge_ignored_support_aliases(
+        {"merge": {"count": 2, "ignored_support_aliases": ["onion-auth"]}},
+        ("backend/course-business",),
+    )
+    assert update == {
+        "merge": {"count": 2, "ignored_support_aliases": ["onion-auth", "backend/course-business"]}
+    }
+    # 无新增 → None（调用方据此完全跳过写库）
+    assert merge_ignored_support_aliases({"merge": {"ignored_support_aliases": ["x"]}}, ("x",)) is None
+
+
 async def test_ignored_support_aliases_skip_missing_repo_clarification():
     """操作员排除未登记协作仓后，融合不再为同一缺口开阻塞澄清。"""
     rid_a = _repo_id("a")
