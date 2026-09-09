@@ -30,7 +30,7 @@ See: .planning/PROJECT.md（updated 2026-08-31，v0.25.0 已归档）。归档�
 Phase: Milestone v0.25.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-08-31 — Milestone v0.25.0 completed and archived
+Last activity: 2026-09-09 - Completed quick task 260909-gpx: 示例功能专项 V2 路径合并
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — ✅ ARCHIVED 2026-08-31，审计 tech_debt，未打 tag)
 
@@ -1057,6 +1057,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260909-gpx | onion-learning Agent 应用与 study-app 跳转迁移到独立 V2 路径并合入 develop | 2026-09-09 | 83b0e56d2 / 8d99c27c3e | [260909-gpx-onion-learning-agent-learn-rapid-score-b](./quick/260909-gpx-onion-learning-agent-learn-rapid-score-b/) |
 | 260610-oug | 修复仓库 URL 提示文案为仅支持 HTTPS，并将所有英文校验/错误提示汉化 | 2026-06-10 | c4c60c4f | [260610-oug-url-https](./quick/260610-oug-url-https/) |
 | 260610-shc | OIDC 回调 URL 与登录跳转优先消费「站点 Host」(site_host) 系统设置 | 2026-06-10 | b01dc066 | [260610-shc-site-host-oidc](./quick/260610-shc-site-host-oidc/) |
 | 260610-qmv | 修复 compose 部署下任务容器回调失败（发布 runner callback 端口）并抑制 claude CLI 403 遥测噪音 | 2026-06-10 | 68ddaa4c | [260610-qmv-compose-runner-callback-claude-cli-403](./quick/260610-qmv-compose-runner-callback-claude-cli-403/) |
