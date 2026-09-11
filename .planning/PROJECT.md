@@ -122,7 +122,7 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 <details>
 <summary>立项时的原始范围与背景（2026-07-28）</summary>
 
-> 版本号避开发布轨已占用的 v0.18.0（见 STATE.md Blockers）。本里程碑源于一次生产实例（friday.example.com / 10.8.8.153）的实证排查：用户在真实需求「示例功能专项」上拿到的技术方案，**根本不是技术方案流水线产出的**——两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`（`research_tasks=0`、`architect_merges=0`、`artifact=None`），agent 等不到就绕道 `create_coding_plan` 徒手编了一份 1890 字的方案。根因链已实测定位：haiku 档误配 `mimo-v2.5-pro[1m]` → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替。前置的仓库去重与 Space 归属治理已于立项前完成（261→259 仓、7 个团队空间、17 个幽灵点清除），Stage 1 超时外置已单独修复（`1c9ebdff`）。Phases 105+ 续号。
+> 版本号避开发布轨已占用的 v0.18.0（见 STATE.md Blockers）。本里程碑源于一次生产实例（friday.example.com / 10.0.0.10）的实证排查：用户在真实需求「示例功能专项」上拿到的技术方案，**根本不是技术方案流水线产出的**——两个 `ConvergenceSession` 都停在 `clarify/waiting_clarification`（`research_tasks=0`、`architect_merges=0`、`artifact=None`），agent 等不到就绕道 `create_coding_plan` 徒手编了一份 1890 字的方案。根因链已实测定位：haiku 档误配 `mimo-v2.5-pro[1m]` → 网关 400 → Stage 1 静默降级 → 置信度恒 low → `auto_selected` 恒 false → 强制确认无差别触发 → 编排卡死 → 降级工具顶替。前置的仓库去重与 Space 归属治理已于立项前完成（261→259 仓、7 个团队空间、17 个幽灵点清除），Stage 1 超时外置已单独修复（`1c9ebdff`）。Phases 105+ 续号。
 
 **Goal:** 让技术方案链路真正跑通并可信——编排不再中途卡死被降级工具顶替，路由基于多维证据分层呈现并可解释，方案结构覆盖数据流编排 / 模块↔仓映射 / 新增改造对照 / 主动澄清，全过程对用户实时可见。
 

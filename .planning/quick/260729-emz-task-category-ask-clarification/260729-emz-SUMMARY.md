@@ -77,10 +77,10 @@ uv run pytest \
 
 ## 生产补数步骤
 
-本任务未 SSH、未连接 `10.8.8.153`、未写生产库。部署代码后，由运维在生产执行：
+本任务未 SSH、未连接 `10.0.0.10`、未写生产库。部署代码后，由运维在生产执行：
 
 ```bash
-# 在 10.8.8.153 friday-server 容器内
+# 在 10.0.0.10 friday-server 容器内
 python manage.py propose_project_repos 75248ff9-3a22-4175-b940-6093d71eb4dc --initiated-by-user-id <owner>
 # 然后 UI/API repo-decision accept
 ```

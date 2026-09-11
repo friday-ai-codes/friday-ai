@@ -168,7 +168,7 @@ done 判据（「流式等待期不再是裸光标」）真正成立的必要修
 
 首次运行时 34 条用例在 **setup 阶段**报错：`DuplicateDatabase: database "test_friday"
 already exists`，加 `--reuse-db` 后转为 `auth_permission` 外键约束冲突——远端 Postgres
-（`10.8.8.153:15432`）上遗留的 `test_friday` 处于半迁移的损坏状态，与本次代码改动无关。
+（`10.0.0.10:15432`）上遗留的 `test_friday` 处于半迁移的损坏状态，与本次代码改动无关。
 按「不修改任何数据库数据」的约束，**没有**去 drop 那个共享测试库，改为用一次性 SQLite
 覆盖 `DATABASE_URL` 跑完验证（跑完即删临时文件）：
 

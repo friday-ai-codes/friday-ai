@@ -26,7 +26,7 @@ must_haves:
     - "同 conversation 已有非终态 ConvergenceSession 时 dispatch 幂等 map 现有 session，不重复 start"
     - "项目级「方案覆盖范围」类 ask_clarification（技术方案覆盖/哪些模块/全部 N 个模块/整体方案/implies 方案类）被工具层拦截并引导立刻调 start_feature_solution；RELEV 选仓澄清（coding_change 或聚焦仓库且无模块/范围）放行"
     - "unknown task_category 被 strip + log task_category_rejected，整次 ask_clarification 仍 success（保 RELEV 选仓）"
-    - "`python manage.py propose_project_repos <project_id> --initiated-by-user-id <id>` 经 RepoAssociationService.propose 写出候选（INV-6）；本任务不 SSH 写生产；SUMMARY 写明 10.8.8.153 补「示例功能专项」步骤"
+    - "`python manage.py propose_project_repos <project_id> --initiated-by-user-id <id>` 经 RepoAssociationService.propose 写出候选（INV-6）；本任务不 SSH 写生产；SUMMARY 写明 10.0.0.10 补「示例功能专项」步骤"
   artifacts:
     - path: "server/agents/intent_router.py"
       provides: "TaskCategory / KNOWN_TASK_CATEGORIES / normalize_task_category / classify_solution_intent"
@@ -219,11 +219,11 @@ D-02 落地：项目级范围澄清被拦并引导 start_feature_solution；RELE
 
 测试 `server/tests/initiatives/test_propose_project_repos_command.py`：照 `test_rebuild_chunk_edges_command.py` 用 `call_command` + `django_db` + mock `RepoAssociationService.propose`（及 confirm）；覆盖 dry-run 不写、正式 propose 调用、缺参 CommandError、help 含参数名。
 
-**禁止：** 本任务内 SSH / 连接 10.8.8.153 / 对生产执行 command。
+**禁止：** 本任务内 SSH / 连接 10.0.0.10 / 对生产执行 command。
 
 **SUMMARY 必须写明生产步骤（D-03）：**
 ```
-# 在 10.8.8.153 friday-server 容器内
+# 在 10.0.0.10 friday-server 容器内
 python manage.py propose_project_repos 75248ff9-3a22-4175-b940-6093d71eb4dc --initiated-by-user-id &lt;owner&gt;
 # 然后 UI/API repo-decision accept
 ```

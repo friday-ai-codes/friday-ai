@@ -112,7 +112,7 @@ None - plan executed as written（未 git commit / stage，符合 git 纪律）�
 
 ## Issues Encountered
 
-- **远端测试库不可用**：`server/.env` 的 `DATABASE_URL` 指向 `10.8.8.153:15432`，本次运行期间该 socat 代理后端 Postgres 关闭连接（`postgres`/`friday`/`test_friday` 均 "server closed the connection unexpectedly"）。为跑 `transaction=True` 的 server DB 测试，临时起本地 `postgres:17-alpine`（容器 `friday-test-pg`，端口 15499），以 `DATABASE_URL=…127.0.0.1:15499` + `QDRANT_URL=""` + `REDIS_URL=""`（cache 回退 locmem 避免 pytest-socket 拦截）运行，全部通过。**未修改仓库 .env**；远端恢复后按原配置即可。
+- **远端测试库不可用**：`server/.env` 的 `DATABASE_URL` 指向 `10.0.0.10:15432`，本次运行期间该 socat 代理后端 Postgres 关闭连接（`postgres`/`friday`/`test_friday` 均 "server closed the connection unexpectedly"）。为跑 `transaction=True` 的 server DB 测试，临时起本地 `postgres:17-alpine`（容器 `friday-test-pg`，端口 15499），以 `DATABASE_URL=…127.0.0.1:15499` + `QDRANT_URL=""` + `REDIS_URL=""`（cache 回退 locmem 避免 pytest-socket 拦截）运行，全部通过。**未修改仓库 .env**；远端恢复后按原配置即可。
 - **1 个既有失败（out of scope）**：`task/tests/test_callback.py::TestClaudeExecuteModeKeepsBash::test_execute_mode_does_not_disable_bash` 失败于 `_detect_changes_guidance` 对 MagicMock `repository_id` 调 `re.fullmatch` 抛 TypeError。经 `git stash` 本文件改动后在 HEAD 上复现同样失败 → 确认为既有缺陷，且 `test_callback.py` 与 `_detect_changes_guidance` 均不在本计划 files_modified 内，未处理。
 
 ## Next Phase Readiness
