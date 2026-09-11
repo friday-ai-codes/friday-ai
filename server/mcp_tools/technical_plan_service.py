@@ -10,6 +10,7 @@ MergedPlan/PlanVersion），再**显式映射回旧 MCP 响应字段**（外形�
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -41,6 +42,102 @@ class TechnicalPlanResult:
     artifact: McpWorkItemTechnicalPlan
     output: dict[str, Any]
     traces: list[tuple[str, dict[str, Any]]]
+
+
+async def get_confirmed_blueprint_handoff(
+    *,
+    technical_plan_id: str,
+    artifact_id: str,
+    artifact_version_id: str,
+    content_hash: str,
+) -> dict[str, Any]:
+    """只读取得已确认蓝图的完整交接包。
+
+    调用方必须同时提供 artifact、version 与 hash。服务端将三者与当前 confirmed
+    版本逐项比对，再从 canonical content 确定性映射 ``repository_tasks``。本函数
+    不更新技术方案记录，也不触发任何蓝图状态迁移。
+    """
+    from delivery.models import Artifact, BlueprintStatus
+    from services.process_runtime.blueprint_render import render_blueprint_markdown
+
+    started_at = time.monotonic()
+    fields = {
+        "category": "caller",
+        "component": "mcp_tools",
+        "technical_plan_id": technical_plan_id,
+        "artifact_id": artifact_id,
+        "artifact_version_id": artifact_version_id,
+    }
+    logger.info("confirmed_blueprint_handoff_started", **fields)
+
+    try:
+        technical_plan = await McpWorkItemTechnicalPlan.objects.filter(
+            id=technical_plan_id
+        ).afirst()
+        if technical_plan is None:
+            raise TechnicalPlanError("technical_plan_not_found", "技术方案不存在")
+        if technical_plan.blueprint_artifact_id != artifact_id:
+            raise TechnicalPlanError("blueprint_handoff_mismatch", "技术方案不属于该技术蓝图")
+
+        artifact = await Artifact.objects.select_related("current_version").filter(
+            id=artifact_id
+        ).afirst()
+        if artifact is None or artifact.blueprint_status != BlueprintStatus.CONFIRMED:
+            raise TechnicalPlanError("blueprint_not_confirmed", "技术蓝图尚未确认，不能交接")
+        version = artifact.current_version
+        if (
+            version is None
+            or str(artifact.current_version_id or "") != artifact_version_id
+            or str(version.content_hash or "") != content_hash
+        ):
+            raise TechnicalPlanError(
+                "blueprint_handoff_stale",
+                "技术蓝图版本或内容哈希已变化，请使用确认时的版本坐标",
+            )
+
+        content = version.content if isinstance(version.content, dict) else {}
+        legacy_view = _project_canonical_for_legacy_mapping(content)
+        repository_tasks = await _aresolve_repository_task_ids(
+            _map_execution_plan_to_repository_tasks(legacy_view),
+            technical_plan.repository_tasks,
+        )
+        if not repository_tasks:
+            raise TechnicalPlanError("blueprint_handoff_empty", "已确认蓝图没有可交接的仓库任务")
+
+        meta = content.get("meta") if isinstance(content.get("meta"), dict) else {}
+        result = {
+            "technical_plan_id": str(technical_plan.id),
+            "artifact_id": artifact_id,
+            "artifact_version_id": artifact_version_id,
+            "version_no": int(version.version_no),
+            "content_hash": content_hash,
+            "current_status": BlueprintStatus.CONFIRMED,
+            "title": str(meta.get("title") or technical_plan.title or ""),
+            "project_id": str(meta.get("project_id") or ""),
+            "canonical_content": content,
+            "markdown": render_blueprint_markdown(
+                content,
+                blueprint_status=BlueprintStatus.CONFIRMED,
+            ),
+            "repository_tasks": repository_tasks,
+            "repository_task_count": len(repository_tasks),
+        }
+    except TechnicalPlanError as exc:
+        logger.warning(
+            "confirmed_blueprint_handoff_failed",
+            **fields,
+            error_code=exc.code,
+            duration_ms=int((time.monotonic() - started_at) * 1000),
+        )
+        raise
+
+    logger.info(
+        "confirmed_blueprint_handoff_completed",
+        **fields,
+        repository_task_count=len(repository_tasks),
+        duration_ms=int((time.monotonic() - started_at) * 1000),
+    )
+    return result
 
 
 async def _amark_idempotency_cancelled(reservation: McpWorkItemTechnicalPlan) -> None:

@@ -102,6 +102,7 @@ from .serializers import (
     FindRelatedChunksRequestSerializer,
     GenerateRequirementSpecRequestSerializer,
     GetCodingExecutionRequestSerializer,
+    GetConfirmedBlueprintHandoffRequestSerializer,
     GetEntityTimelineRequestSerializer,
     GetFeatureTechPlanRequestSerializer,
     GetFeishuWorkItemContextRequestSerializer,
@@ -143,6 +144,7 @@ from .serializers import (
 from .technical_plan_service import (
     TechnicalPlanError,
     build_work_item_technical_plan,
+    get_confirmed_blueprint_handoff,
     pin_approved_blueprint_handoff,
 )
 from .work_item_context_service import WorkItemContextError, build_work_item_context
@@ -5642,6 +5644,96 @@ class GetTechnicalBlueprintView(McpToolView):
         return Response(output_data, status=status.HTTP_200_OK)
 
 
+class GetConfirmedBlueprintHandoffView(McpToolView):
+    """按确认时的版本坐标只读返回完整蓝图与结构化仓库任务。"""
+
+    tool_name = "get_confirmed_blueprint_handoff"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(
+            GetConfirmedBlueprintHandoffRequestSerializer,
+            request,
+        )
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from delivery.api.blueprint_review_views import (
+            _ARTIFACT_MISSING_DETAIL,
+            _aassert_project_scope,
+            _aload_artifact,
+        )
+
+        artifact_id = str(input_data["artifact_id"])
+        artifact = await _aload_artifact(artifact_id)
+        if artifact is None:
+            return error_response(
+                "not_found",
+                str(_ARTIFACT_MISSING_DETAIL.get("detail") or ""),
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        denied = await _aassert_project_scope(request, artifact)
+        if denied is not None:
+            return _blueprint_scope_error(denied)
+
+        try:
+            output_data = await get_confirmed_blueprint_handoff(
+                technical_plan_id=str(input_data["technical_plan_id"]),
+                artifact_id=artifact_id,
+                artifact_version_id=str(input_data["artifact_version_id"]),
+                content_hash=str(input_data["content_hash"]),
+            )
+        except TechnicalPlanError as exc:
+            status_map = {
+                "technical_plan_not_found": status.HTTP_404_NOT_FOUND,
+                "blueprint_handoff_mismatch": status.HTTP_409_CONFLICT,
+                "blueprint_not_confirmed": status.HTTP_409_CONFLICT,
+                "blueprint_handoff_stale": status.HTTP_409_CONFLICT,
+                "blueprint_handoff_empty": status.HTTP_409_CONFLICT,
+            }
+            return error_response(
+                exc.code,
+                exc.detail,
+                status_code=status_map.get(exc.code, status.HTTP_400_BAD_REQUEST),
+            )
+        except Exception as exc:  # noqa: BLE001 — agent 必须拿到可重试的结构化错误
+            logger.warning(
+                "confirmed_blueprint_handoff_view_failed",
+                category="caller",
+                component="mcp_tools",
+                artifact_id=artifact_id,
+                error=redact_secrets_in_text(str(exc))[:500],
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+            )
+            return error_response(
+                "internal_error",
+                "蓝图交接包读取暂时不可用，请稍后重试",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        output_data["run_id"] = str(run.run_id)
+        try:
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data={
+                    "artifact_id": artifact_id,
+                    "artifact_version_id": output_data["artifact_version_id"],
+                    "repository_task_count": output_data["repository_task_count"],
+                },
+                traces=[],
+                started_at=started_at,
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+            pass
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
 class AnswerBlueprintClarificationView(McpToolView):
     """蓝图澄清作答（GATE-01，Phase 116-06）。
 
@@ -5898,7 +5990,7 @@ class ApproveTechnicalBlueprintView(McpToolView):
             "version_no": handoff["version_no"],
             "content_hash": handoff["content_hash"],
             "current_status": "confirmed",
-            # 这是 Friday 的共享 renderer 原文；orchestration 只展示和引用，不能二次改写。
+            # 这是 Friday 的共享 renderer 原文；Workflow_suite 只展示和引用，不能二次改写。
             "markdown": handoff["markdown"],
             "repository_task_count": handoff["repository_task_count"],
             "run_id": str(run.run_id),

@@ -20,6 +20,7 @@ from .views import (
     FindRelatedChunksView,
     GenerateRequirementSpecView,
     GetCodingExecutionView,
+    GetConfirmedBlueprintHandoffView,
     GetEntityTimelineView,
     GetFeatureTechPlanView,
     GetFeishuWorkItemContextView,
@@ -256,6 +257,11 @@ urlpatterns = [
         "tools/get_technical_blueprint/",
         GetTechnicalBlueprintView.as_view(),
         name="mcp-tool-get-technical-blueprint",
+    ),
+    path(
+        "tools/get_confirmed_blueprint_handoff/",
+        GetConfirmedBlueprintHandoffView.as_view(),
+        name="mcp-tool-get-confirmed-blueprint-handoff",
     ),
     path(
         "tools/answer_blueprint_clarification/",

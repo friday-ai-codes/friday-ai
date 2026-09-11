@@ -736,6 +736,29 @@ def test_mcp_read_tool_schema_snapshot() -> None:
                 "run_id",
             ],
         },
+        "get_confirmed_blueprint_handoff": {
+            "request": [
+                "technical_plan_id",
+                "artifact_id",
+                "artifact_version_id",
+                "content_hash",
+            ],
+            "response": [
+                "technical_plan_id",
+                "artifact_id",
+                "artifact_version_id",
+                "version_no",
+                "content_hash",
+                "current_status",
+                "title",
+                "project_id",
+                "canonical_content",
+                "markdown",
+                "repository_tasks",
+                "repository_task_count",
+                "run_id",
+            ],
+        },
         "answer_blueprint_clarification": {
             "request": ["thread_id", "body", "artifact_id"],
             "response": [

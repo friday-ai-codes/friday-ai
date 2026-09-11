@@ -1077,6 +1077,15 @@ class GetTechnicalBlueprintRequestSerializer(serializers.Serializer):
     artifact_id = serializers.CharField(required=True, allow_blank=False, max_length=64)
 
 
+class GetConfirmedBlueprintHandoffRequestSerializer(serializers.Serializer):
+    """按确认时的四个坐标只读取得完整蓝图交接包。"""
+
+    technical_plan_id = serializers.UUIDField(required=True)
+    artifact_id = serializers.CharField(required=True, allow_blank=False, max_length=64)
+    artifact_version_id = serializers.CharField(required=True, allow_blank=False, max_length=64)
+    content_hash = serializers.RegexField(required=True, regex=r"^[0-9a-f]{64}$", max_length=64)
+
+
 class AnswerBlueprintClarificationRequestSerializer(serializers.Serializer):
     """蓝图澄清作答请求（Phase 116-06，GATE-01）。
 
@@ -1914,6 +1923,29 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "sections",
             "markdown",
             "pending_clarifications",
+            "run_id",
+        ],
+    },
+    "get_confirmed_blueprint_handoff": {
+        "request": [
+            "technical_plan_id",
+            "artifact_id",
+            "artifact_version_id",
+            "content_hash",
+        ],
+        "response": [
+            "technical_plan_id",
+            "artifact_id",
+            "artifact_version_id",
+            "version_no",
+            "content_hash",
+            "current_status",
+            "title",
+            "project_id",
+            "canonical_content",
+            "markdown",
+            "repository_tasks",
+            "repository_task_count",
             "run_id",
         ],
     },

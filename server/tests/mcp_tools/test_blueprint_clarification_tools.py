@@ -34,7 +34,6 @@ from __future__ import annotations
 import copy
 import json
 import uuid
-from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -66,6 +65,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 # 真打 URL：端到端过认证 + serializer + view（与 urls.py 逐字一致）
 _GET_URL = "/api/mcp/tools/get_technical_blueprint/"
+_GET_HANDOFF_URL = "/api/mcp/tools/get_confirmed_blueprint_handoff/"
 _ANSWER_URL = "/api/mcp/tools/answer_blueprint_clarification/"
 _APPROVE_URL = "/api/mcp/tools/approve_technical_blueprint/"
 _REQUEST_CHANGES_URL = "/api/mcp/tools/request_technical_blueprint_changes/"
@@ -84,10 +84,6 @@ _SECRET = "sk-ant-api03-DEADBEEFDEADBEEFDEADBEEFDEADBEEF"
 
 # 回灌五档（`blueprint_reflow.aapply_thread_answers` 的恒定取值）+ 端点兜底的 failed
 _REFLOW_STATUSES = {"applied", "unchanged", "conflict", "invalid", "noop", "failed"}
-_SAMPLE_GOLDEN_PATH = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "blueprint_golden" / "assessment_boost.json"
-)
-
 
 # ── 工厂 ─────────────────────────────────────────────────────────────────────
 
@@ -260,10 +256,17 @@ def _thread_row(thread: BlueprintThread) -> tuple[str, Any, int]:
 
 def test_blueprint_controller_tools_are_registered_in_the_schema_snapshot() -> None:
     assert "get_technical_blueprint" in TOOL_SCHEMA_SNAPSHOT
+    assert "get_confirmed_blueprint_handoff" in TOOL_SCHEMA_SNAPSHOT
     assert "answer_blueprint_clarification" in TOOL_SCHEMA_SNAPSHOT
     assert "approve_technical_blueprint" in TOOL_SCHEMA_SNAPSHOT
     assert "request_technical_blueprint_changes" in TOOL_SCHEMA_SNAPSHOT
     assert TOOL_SCHEMA_SNAPSHOT["get_technical_blueprint"]["request"] == ["artifact_id"]
+    assert TOOL_SCHEMA_SNAPSHOT["get_confirmed_blueprint_handoff"]["request"] == [
+        "technical_plan_id",
+        "artifact_id",
+        "artifact_version_id",
+        "content_hash",
+    ]
     assert TOOL_SCHEMA_SNAPSHOT["answer_blueprint_clarification"]["request"] == [
         "thread_id",
         "body",
@@ -287,6 +290,7 @@ def test_no_separate_clarification_list_tool_was_added() -> None:
     }
     assert blueprint_tools == {
         "get_technical_blueprint",
+        "get_confirmed_blueprint_handoff",
         "answer_blueprint_clarification",
         "approve_technical_blueprint",
         "request_technical_blueprint_changes",
@@ -369,8 +373,124 @@ def test_snapshot_response_keys_match_the_actual_get_response(mcp_client, access
     assert set(resp.json()) == set(TOOL_SCHEMA_SNAPSHOT["get_technical_blueprint"]["response"])
 
 
+def test_confirmed_handoff_returns_full_read_only_delivery_envelope(
+    mcp_client, access_user
+) -> None:
+    """只读取件返回同版 Markdown 与结构化任务，且不修改技术方案记录。"""
+    client, _ = mcp_client
+    artifact = _make_artifact(BlueprintStatus.CONFIRMED)
+    _make_session(artifact, access_user)
+    plan = _make_blueprint_technical_plan(artifact)
+    before = (
+        plan.status,
+        plan.updated_at,
+        plan.approved_blueprint_version_id,
+        plan.approved_blueprint_content_hash,
+    )
+
+    resp = client.post(
+        _GET_HANDOFF_URL,
+        {
+            "technical_plan_id": str(plan.id),
+            "artifact_id": str(artifact.id),
+            "artifact_version_id": str(artifact.current_version_id),
+            "content_hash": artifact.current_version.content_hash,
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.json()
+    body = resp.json()
+    assert set(body) == set(
+        TOOL_SCHEMA_SNAPSHOT["get_confirmed_blueprint_handoff"]["response"]
+    )
+    assert body["current_status"] == BlueprintStatus.CONFIRMED
+    assert body["artifact_version_id"] == str(artifact.current_version_id)
+    assert body["content_hash"] == artifact.current_version.content_hash
+    assert body["canonical_content"] == artifact.current_version.content
+    assert body["markdown"]
+    assert body["repository_tasks"]
+    assert body["repository_task_count"] == len(body["repository_tasks"])
+
+    plan.refresh_from_db()
+    after = (
+        plan.status,
+        plan.updated_at,
+        plan.approved_blueprint_version_id,
+        plan.approved_blueprint_content_hash,
+    )
+    assert after == before
+
+
+def test_confirmed_handoff_rejects_stale_coordinates(mcp_client, access_user) -> None:
+    """只读取件必须按 version/hash fail closed，不能静默返回当前最新版。"""
+    client, _ = mcp_client
+    artifact = _make_artifact(BlueprintStatus.CONFIRMED)
+    _make_session(artifact, access_user)
+    plan = _make_blueprint_technical_plan(artifact)
+
+    resp = client.post(
+        _GET_HANDOFF_URL,
+        {
+            "technical_plan_id": str(plan.id),
+            "artifact_id": str(artifact.id),
+            "artifact_version_id": str(artifact.current_version_id),
+            "content_hash": "0" * 64,
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "blueprint_handoff_stale"
+
+
+def test_confirmed_handoff_rejects_unconfirmed_blueprint(mcp_client, access_user) -> None:
+    client, _ = mcp_client
+    artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW)
+    _make_session(artifact, access_user)
+    plan = _make_blueprint_technical_plan(artifact)
+
+    resp = client.post(
+        _GET_HANDOFF_URL,
+        {
+            "technical_plan_id": str(plan.id),
+            "artifact_id": str(artifact.id),
+            "artifact_version_id": str(artifact.current_version_id),
+            "content_hash": artifact.current_version.content_hash,
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "blueprint_not_confirmed"
+
+
+def test_confirmed_handoff_rejects_technical_plan_from_another_artifact(
+    mcp_client, access_user
+) -> None:
+    client, _ = mcp_client
+    artifact = _make_artifact(BlueprintStatus.CONFIRMED)
+    other = _make_artifact(BlueprintStatus.CONFIRMED)
+    _make_session(other, access_user)
+    plan = _make_blueprint_technical_plan(artifact)
+
+    resp = client.post(
+        _GET_HANDOFF_URL,
+        {
+            "technical_plan_id": str(plan.id),
+            "artifact_id": str(other.id),
+            "artifact_version_id": str(other.current_version_id),
+            "content_hash": other.current_version.content_hash,
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "blueprint_handoff_mismatch"
+
+
 def test_get_exposes_the_exact_current_immutable_version(mcp_client, access_user) -> None:
-    """orchestration 必须能把展示的 Friday markdown 与审批输入钉到同一个版本。"""
+    """Workflow_suite 必须能把展示的 Friday markdown 与审批输入钉到同一个版本。"""
     client, _ = mcp_client
     artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW)
     _make_session(artifact, access_user)
@@ -417,7 +537,7 @@ def test_approve_rejects_a_stale_snapshot_without_confirming(
 def test_approve_handoff_returns_the_confirmed_friday_markdown(
     mcp_client, access_user, monkeypatch
 ) -> None:
-    """成功路径把已确认的同版 Markdown 与编码交接一起返回，供 orchestration 原样保存。"""
+    """成功路径把已确认的同版 Markdown 与编码交接一起返回，供 Workflow_suite 原样保存。"""
     client, _ = mcp_client
     _stub_resume(monkeypatch)
     artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW)
@@ -450,7 +570,7 @@ def test_approve_handoff_returns_the_confirmed_friday_markdown(
 
 
 def test_request_changes_uses_friday_canonical_rework(mcp_client, access_user, monkeypatch) -> None:
-    """退回必须创建 Friday 新版本并离开 confirmed，而非由 orchestration 改写 markdown。"""
+    """退回必须创建 Friday 新版本并离开 confirmed，而非由 Workflow_suite 改写 markdown。"""
     client, _ = mcp_client
     _stub_resume(monkeypatch)
     artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW)
@@ -461,7 +581,7 @@ def test_request_changes_uses_friday_canonical_rework(mcp_client, access_user, m
         _REQUEST_CHANGES_URL,
         {
             "artifact_id": str(artifact.id),
-            "comment": "示例功能专项的权益校验需明确复用 study-course 的现有接口。",
+            "comment": "示例功能专项的权益校验需明确复用 sample_course_service 的现有接口。",
             "rework_scope": "merge",
         },
         format="json",
@@ -476,13 +596,23 @@ def test_request_changes_uses_friday_canonical_rework(mcp_client, access_user, m
     assert artifact.blueprint_status != BlueprintStatus.CONFIRMED
 
 
-def test_sample_golden_blueprint_handoff_is_byte_identical_to_friday_read(
+def test_sample_service_golden_blueprint_handoff_is_byte_identical_to_friday_read(
     mcp_client, access_user, monkeypatch
 ) -> None:
-    """示例功能专项 golden：orchestration 只保存 Friday confirmed Markdown，不重写。"""
+    """示例功能专项 golden：Workflow_suite 只保存 Friday confirmed Markdown，不重写。"""
     client, _ = mcp_client
     _stub_resume(monkeypatch)
-    case = json.loads(_SAMPLE_GOLDEN_PATH.read_text(encoding="utf-8"))
+    blueprint = make_blueprint()
+    case = {
+        "blueprint": blueprint,
+        "expected": {
+            "direct_repos": [
+                item["repository_name"]
+                for item in blueprint["repo_associations"]
+                if item["role"] == "direct"
+            ]
+        },
+    }
     artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW, content=case["blueprint"])
     _make_session(artifact, access_user)
     plan = _make_blueprint_technical_plan(artifact)
@@ -537,7 +667,7 @@ def test_snapshot_response_keys_match_the_actual_answer_response(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-@pytest.mark.parametrize("url", [_GET_URL, _ANSWER_URL])
+@pytest.mark.parametrize("url", [_GET_URL, _GET_HANDOFF_URL, _ANSWER_URL])
 def test_unauthenticated_is_rejected(url: str) -> None:
     from rest_framework.test import APIClient
 
@@ -555,6 +685,29 @@ def test_get_returns_neutral_404_for_non_member(mcp_client) -> None:
 
     assert resp.status_code == 404
     missing = client.post(_GET_URL, {"artifact_id": str(uuid.uuid4())}, format="json")
+    assert resp.json()["detail"] == missing.json()["detail"]
+
+
+def test_confirmed_handoff_returns_neutral_404_for_non_member(mcp_client) -> None:
+    client, _ = mcp_client
+    _make_project(_OTHER_PROJECT_ID)
+    artifact = _make_artifact(BlueprintStatus.CONFIRMED, project_id=_OTHER_PROJECT_ID)
+    plan = _make_blueprint_technical_plan(artifact)
+    payload = {
+        "technical_plan_id": str(plan.id),
+        "artifact_id": str(artifact.id),
+        "artifact_version_id": str(artifact.current_version_id),
+        "content_hash": artifact.current_version.content_hash,
+    }
+
+    resp = client.post(_GET_HANDOFF_URL, payload, format="json")
+    missing = client.post(
+        _GET_HANDOFF_URL,
+        {**payload, "artifact_id": str(uuid.uuid4())},
+        format="json",
+    )
+
+    assert resp.status_code == 404
     assert resp.json()["detail"] == missing.json()["detail"]
 
 
