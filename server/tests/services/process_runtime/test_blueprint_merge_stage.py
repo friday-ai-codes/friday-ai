@@ -861,7 +861,9 @@ def test_extract_ignored_support_aliases_requires_named_repo_and_exclusion_inten
         "merge": {"count": 2, "ignored_support_aliases": ["onion-auth", "backend/course-business"]}
     }
     # 无新增 → None（调用方据此完全跳过写库）
-    assert merge_ignored_support_aliases({"merge": {"ignored_support_aliases": ["x"]}}, ("x",)) is None
+    assert (
+        merge_ignored_support_aliases({"merge": {"ignored_support_aliases": ["x"]}}, ("x",)) is None
+    )
 
 
 async def test_ignored_support_aliases_skip_missing_repo_clarification():

@@ -126,14 +126,22 @@ async def _arecord_ignored_support_aliases(
     if session is None or str(getattr(thread, "return_stage", "") or "") != "merge":
         return
     try:
+        from delivery.models import Artifact
         from delivery.services.convergence_session_service import ConvergenceSessionService
         from services.process_runtime.blueprint_merge import (
             extract_ignored_support_aliases,
             merge_ignored_support_aliases,
         )
 
-        version = getattr(artifact, "current_version", None)
-        content = getattr(version, "content", None)
+        # ⛔ 不走 ``artifact.current_version.content``：调用方传进来的 artifact 未必
+        # ``select_related`` 过，async 上下文里穿 FK 会抛 SynchronousOnlyOperation，而本函数
+        # 的 best-effort except 会把它吞成「静默永不生效」——装了门把手却拧不动，比没装更难查。
+        # 单条 values_list 直接取 JSON，零 FK 穿透。
+        content = (
+            await Artifact.objects.filter(id=getattr(artifact, "id", None))
+            .values_list("current_version__content", flat=True)
+            .afirst()
+        )
         if not isinstance(content, dict):
             return
         aliases = extract_ignored_support_aliases(answer, content)

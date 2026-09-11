@@ -79,6 +79,37 @@ def _is_render_kwarg_line(line: str) -> bool:
     return bool(_RE_RENDER_CALL.search(line)) and not _RE_WRITE_SHAPE.search(line)
 
 
+def _render_kwarg_linenos(lines: list[str]) -> set[int]:
+    """渲染器调用**整段**（含被 formatter 折行的续行）的行号集合，1-based。
+
+    ⚠️ 豁免必须按调用而不是按物理行算：``render_blueprint_markdown(`` 与
+    ``blueprint_status=`` 常被 ruff format 拆到两行（100 列限制），只看单行会把续行判成
+    旁路写，逼着人给守护加白名单 —— 白名单一开，真正的旁路就能跟着混进来。
+
+    续行沿用同一条窄豁免：整段里只要出现任何写表形态（``setattr`` / ``.objects`` /
+    ``.update(`` / ``.save(``），整段都不豁免。
+    """
+    exempt: set[int] = set()
+    depth = 0
+    span: list[int] = []
+    for lineno, line in enumerate(lines, 1):
+        if depth == 0 and not _RE_RENDER_CALL.search(line):
+            continue
+        if depth == 0:
+            # 从调用括号本身起算，避免行内其它括号干扰。
+            line = line[_RE_RENDER_CALL.search(line).end() - 1 :]
+            depth = 0
+            span = []
+        span.append(lineno)
+        depth += line.count("(") - line.count(")")
+        if depth <= 0:
+            if not any(_RE_WRITE_SHAPE.search(lines[i - 1]) for i in span):
+                exempt.update(span)
+            depth = 0
+            span = []
+    return exempt
+
+
 def _iter_py_files() -> list[Path]:
     """遍历 server/ 下 .py 文件（剪掉 venv/缓存/静态目录）。"""
     files: list[Path] = []
@@ -149,10 +180,12 @@ def test_inv6_no_bypass_blueprint_status_field_write() -> None:
         rel = path.relative_to(SERVER_DIR).as_posix()
         if not _is_scanned(rel):
             continue
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        exempt = _render_kwarg_linenos(lines)
+        for lineno, line in enumerate(lines, 1):
             if _RE_FIELD_DEFINITION.search(line):
                 continue
-            if _is_render_kwarg_line(line):
+            if lineno in exempt:
                 continue
             if any(pattern.search(line) for pattern in _FIELD_WRITE_PATTERNS):
                 violations.append(f"{rel}:{lineno}: {line.strip()}")
@@ -210,3 +243,22 @@ def test_inv6_render_kwarg_exemption_is_narrow() -> None:
     ):
         assert not _is_render_kwarg_line(smuggled), f"写表形态不得被豁免夹带：{smuggled}"
         assert any(pattern.search(smuggled) for pattern in _FIELD_WRITE_PATTERNS)
+
+
+def test_inv6_render_kwarg_exemption_spans_wrapped_calls() -> None:
+    """折行的渲染器调用整段豁免；折行里夹带写表形态则整段照旧命中。"""
+    wrapped = [
+        "    technical_plan.markdown = render_blueprint_markdown(",
+        "        content, blueprint_status=BlueprintStatus.CONFIRMED",
+        "    )",
+    ]
+    assert _render_kwarg_linenos(wrapped) == {1, 2, 3}
+    # 前提：不豁免的话第 2 行本会被字段级正则命中（证明这条不是恒真）。
+    assert any(pattern.search(wrapped[1]) for pattern in _FIELD_WRITE_PATTERNS)
+
+    smuggled = [
+        "    x = render_blueprint_markdown(",
+        '        content, blueprint_status=Artifact.objects.filter(id=i).update(x="y")',
+        "    )",
+    ]
+    assert _render_kwarg_linenos(smuggled) == set(), "整段夹带写表形态不得豁免"
